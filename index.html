@@ -92,7 +92,7 @@
   .howto{ margin-top:18px; font-size:11px; color:var(--ink-dim); letter-spacing:1px; text-align:center; line-height:1.8; max-width:520px; }
 
   /* ---------- HUD ---------- */
-  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif;}
+  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:manipulation;}
 
   .hud-panel{
     position:absolute; background:var(--panel); border:1px solid var(--panel-line);
@@ -177,6 +177,17 @@
   }
   #dashBtn .cd{ position:absolute; inset:-2px; border-radius:50%; border:3px solid var(--amber); opacity:0; }
 
+  #turnLeftBtn, #turnRightBtn{
+    position:absolute; width:124px; height:124px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(10,16,26,0.4); border:2px solid rgba(255,255,255,0.14);
+    color:rgba(255,255,255,0.5); font-size:24px; pointer-events:auto; touch-action:none;
+    user-select:none; z-index:9;
+  }
+  #turnLeftBtn{ left:22px; bottom:170px; }
+  #turnRightBtn{ right:22px; bottom:170px; width:88px; height:88px; }
+  #turnLeftBtn:active, #turnRightBtn:active{ background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.8); }
+
   #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; transition:opacity .4s; text-align:center; white-space:nowrap;}
 
   /* ---------- RESULT SCREENS ---------- */
@@ -205,6 +216,8 @@
     #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
     #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
     #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
+    #turnLeftBtn{ left:16px; bottom:150px; width:112px; height:112px; }
+    #turnRightBtn{ right:16px; bottom:150px; width:78px; height:78px; }
   }
 
   #rotateOverlay{
@@ -293,6 +306,8 @@
   <div id="joystickBase"><div id="joystickKnob"></div></div>
   <div id="fireBtn">FIRE</div>
   <div id="dashBtn">DASH<div class="cd"></div></div>
+  <div id="turnLeftBtn">◀</div>
+  <div id="turnRightBtn">▶</div>
 </div>
 
 <!-- RESULT -->
@@ -994,7 +1009,15 @@ function startCameraSnap(target){
   camSnap.fromYaw = camState.yaw;
   camSnap.toYaw = camState.yaw + diff;
   camSnap.t = 0;
+  camSnap.duration = 0.28;
   pushToast(`${target.name} に視点を合わせた`);
+}
+function turnCameraByDegrees(deg){
+  camSnap.active = true;
+  camSnap.fromYaw = camState.yaw;
+  camSnap.toYaw = camState.yaw + deg*Math.PI/180;
+  camSnap.t = 0;
+  camSnap.duration = 0.18;
 }
 
 /* =====================================================================
@@ -1871,6 +1894,20 @@ document.addEventListener('touchmove', (e)=>{
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });
+document.addEventListener('gesturechange', (e)=>{ e.preventDefault(); });
+document.addEventListener('gestureend', (e)=>{ e.preventDefault(); });
+
+let lastTouchEndTime = 0;
+document.addEventListener('touchend', (e)=>{
+  if(e.target.closest('#startScreen')) return;
+  const now = performance.now();
+  if(now - lastTouchEndTime <= 350) e.preventDefault();
+  lastTouchEndTime = now;
+}, {passive:false});
+document.addEventListener('dblclick', (e)=>{
+  if(e.target.closest('#startScreen')) return;
+  e.preventDefault();
+});
 
 function isFullscreenNow(){
   return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
@@ -2002,6 +2039,14 @@ function tryDash(m){
 document.getElementById('dashBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) tryDash(player);
+});
+document.getElementById('turnLeftBtn').addEventListener('pointerdown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  if(game.started && !game.over) turnCameraByDegrees(-90);
+});
+document.getElementById('turnRightBtn').addEventListener('pointerdown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  if(game.started && !game.over) turnCameraByDegrees(90);
 });
 document.getElementById('moveName').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
