@@ -99,7 +99,8 @@
     clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
   }
 
-  #hpPanel{ top:14px; left:14px; width:230px; padding:9px 14px 10px; border-top:3px solid var(--accent,var(--amber)); }
+  #bottomLeft{ position:absolute; left:14px; bottom:158px; }
+  #hpPanel{ width:210px; padding:9px 14px 10px; border-top:3px solid var(--accent,var(--amber)); }
   #hpPanel .who{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }
   #hpPanel .nm{ font-weight:700; font-size:14px; letter-spacing:1px; }
   #hpPanel .elTag{ font-size:9px; color:var(--ink-dim); letter-spacing:1px; }
@@ -107,12 +108,18 @@
   .hpbar-fill{ height:100%; background:linear-gradient(90deg,#6bff8e,#2fd35a); width:100%; transition:width .15s; }
   #hpNum{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:3px; text-align:right;}
 
+  #topLeft{ position:absolute; top:14px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
   #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
   #counterPanel{ padding:8px 16px; text-align:right; }
   #aliveNum{ font-family:'Russo One',sans-serif; font-size:20px; color:var(--amber); }
   #aliveLabel{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
   #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:11px; margin-top:2px; }
   #matchClock{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); }
+
+  #statsPanel{ top:14px; left:50%; transform:translateX(-50%); padding:9px 20px; display:flex; gap:22px; }
+  .stat-row{ display:flex; align-items:baseline; justify-content:center; gap:8px; }
+  .stat-lbl{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
+  .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
 
   #minimapWrap{ width:120px; height:120px; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:#0b1320; box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
   #minimapCanvas{ width:100%; height:100%; display:block; }
@@ -199,7 +206,7 @@
   .resultScreen.win .rank{ color:var(--amber); text-shadow:0 0 30px rgba(244,196,48,0.6); }
   .resultScreen.lose .rank{ color:var(--ink-dim); }
   .resultScreen .sub{ font-size:14px; letter-spacing:3px; color:var(--ink-dim); margin-top:6px;}
-  .resultStats{ display:flex; gap:26px; margin-top:24px; }
+  .resultStats{ display:flex; gap:26px; margin-top:24px; flex-wrap:wrap; justify-content:center; }
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
@@ -210,6 +217,7 @@
 
   @media (max-width:520px){
     #hpPanel{ width:180px; }
+    #bottomLeft{ left:16px; bottom:144px; }
     #killFeed{ width:170px; top:148px;}
     #minimapWrap{ width:96px; height:96px;}
     #movePanel{ gap:8px; padding:8px 12px;}
@@ -263,16 +271,13 @@
 
 <!-- HUD -->
 <div id="hud">
-  <div class="hud-panel" id="hpPanel">
-    <div class="who">
-      <span class="nm" id="hudName">-</span>
-    </div>
-    <span class="elTag" id="hudElTag">-</span>
-    <div class="hpbar-track"><div class="hpbar-fill" id="hpFill"></div></div>
-    <div id="hpNum">100 / 100</div>
-    <div class="hpbar-track" id="gutsTrack"><div id="gutsFill"></div></div>
-    <div id="gutsNum">100 / 100</div>
-    <div id="statusIcons"></div>
+  <div id="topLeft">
+    <div id="minimapWrap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
+  </div>
+
+  <div class="hud-panel" id="statsPanel">
+    <div class="stat-row"><span class="stat-lbl">Kill</span><span id="killCountNum">0</span></div>
+    <div class="stat-row"><span class="stat-lbl">Damage</span><span id="damageDealtNum">0</span></div>
   </div>
 
   <div id="topRight">
@@ -282,8 +287,21 @@
       <div id="zoneStatus">安全圏：待機中</div>
       <div id="matchClock">00:00</div>
     </div>
-    <div id="minimapWrap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
     <div id="killFeed"></div>
+  </div>
+
+  <div id="bottomLeft">
+    <div class="hud-panel" id="hpPanel">
+      <div class="who">
+        <span class="nm" id="hudName">-</span>
+      </div>
+      <span class="elTag" id="hudElTag">-</span>
+      <div class="hpbar-track"><div class="hpbar-fill" id="hpFill"></div></div>
+      <div id="hpNum">100 / 100</div>
+      <div class="hpbar-track" id="gutsTrack"><div id="gutsFill"></div></div>
+      <div id="gutsNum">100 / 100</div>
+      <div id="statusIcons"></div>
+    </div>
   </div>
 
   <div id="toast"></div>
@@ -316,6 +334,7 @@
   <div class="sub" id="resultSub">勝利</div>
   <div class="resultStats">
     <div><div class="num" id="statKills">0</div><div class="lbl">撃破数</div></div>
+    <div><div class="num" id="statDamage">0</div><div class="lbl">与ダメージ</div></div>
     <div><div class="num" id="statTime">00:00</div><div class="lbl">生存時間</div></div>
   </div>
   <button id="replayBtn">もう一度プレイ</button>
@@ -609,7 +628,7 @@ function createMonster(elementKey, isPlayer, name){
     destination:null, attackTargetId:null,
     fireCooldown:0, dashCooldown:0, dashTimer:0, dashDirX:0, dashDirY:-1,
     facingAngle:-Math.PI/2, hitFlash:0,
-    alive:true, placement:null, kills:0, deathAt:0,
+    alive:true, placement:null, kills:0, deathAt:0, damageDealt:0,
     aiState:'WANDER', aiTimer:rand(0,0.3), aiTargetPoint:null,
     lastMoveX:0, lastMoveY:-1, inputMoveX:0, inputMoveY:0,
     burnUntil:0, slowUntil:0,
@@ -792,6 +811,7 @@ function applyDamage(target, dmg, source){
   spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
 
   if(source && source.alive && source.id!==target.id){
+    source.damageDealt += finalDmg;
     if(source.element==='aqua'){
       const healed = Math.min(finalDmg*0.2, source.maxHp - source.hp);
       if(healed > 0){
@@ -1854,6 +1874,8 @@ function updateHUD(){
   const aliveCount = entities.filter(e=>e.alive).length;
   document.getElementById('aliveNum').textContent = aliveCount;
   document.getElementById('zoneStatus').textContent = zoneLabel();
+  document.getElementById('killCountNum').textContent = player.kills;
+  document.getElementById('damageDealtNum').textContent = Math.round(player.damageDealt);
   document.getElementById('matchClock').textContent = fmtTime(matchTime);
 
   const mv = activeMove(player);
@@ -2133,6 +2155,7 @@ function showResult(isWin, placement){
   document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！野生の覇者だ' : '撃破された';
   document.getElementById('statKills').textContent = player.kills;
+  document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
   document.getElementById('resultScreen').classList.remove('hidden');
 }
