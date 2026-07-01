@@ -74,7 +74,8 @@
   }
   .monster-card:hover{ transform:translateY(-3px); }
   .monster-card.selected{ border-color:var(--accent,var(--amber)); background:rgba(244,196,48,0.08); box-shadow:0 0 0 1px var(--accent,var(--amber)) inset, 0 0 20px -4px var(--accent,var(--amber)); }
-  .m-swatch{ width:54px; height:54px; margin:0 auto 8px; border-radius:50%; position:relative; }
+  .m-swatch{ width:54px; height:54px; margin:0 auto 8px; border-radius:50%; position:relative; overflow:hidden; }
+  .m-swatch img{ width:100%; height:100%; object-fit:cover; display:block; }
   .m-name{ font-weight:700; font-size:14px; }
   .m-stat{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:4px; line-height:1.5;}
   .m-trait{ font-size:10px; color:var(--accent,var(--amber)); margin-top:6px; line-height:1.4; }
@@ -2099,7 +2100,9 @@ function buildMonsterGrid(){
     card.className='monster-card';
     card.style.setProperty('--accent', el.color);
     card.innerHTML = `
-      <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})"></div>
+      <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
+        <img src="monsters/${key}.png" alt="${el.label}" onerror="this.remove()">
+      </div>
       <div class="m-name">${el.label}</div>
       <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
       <div class="m-trait">${TRAIT_DESC[el.trait]}</div>`;
