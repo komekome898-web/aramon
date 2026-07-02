@@ -62,6 +62,12 @@
   @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.25;} }
 
   .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
+  #playerNameInput{
+    width:220px; padding:10px 14px; font-family:'Rajdhani',sans-serif; font-size:14px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px;
+    text-align:center; outline:none;
+  }
+  #playerNameInput:focus{ border-color:var(--amber); }
 
   .monster-grid{
     display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:760px;
@@ -211,10 +217,27 @@
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
-  #replayBtn{
-    margin-top:30px; padding:13px 34px; font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:2px;
+  #replayBtn, #viewRankingBtn, #closeRankingBtn{
+    margin-top:0; padding:13px 30px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
+  #viewRankingBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+  .resultBtnRow{ display:flex; gap:14px; margin-top:26px; }
+
+  #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
+
+  #rankingTabs{ display:flex; gap:10px; margin-top:18px; }
+  .rank-tab{
+    padding:8px 18px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .rank-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  #rankingList{ margin-top:18px; width:min(90vw,420px); max-height:44vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
+  .rank-row{ display:flex; align-items:center; gap:12px; padding:8px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
+  .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; }
+  .rank-row .rn{ flex:1; text-align:left; font-size:13px; }
+  .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); }
+  #rankingList .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
   @media (max-width:520px){
     #hpPanel{ width:180px; }
@@ -243,6 +266,48 @@
     #startScreen, #hud, #resultScreen{ display:none !important; }
   }
 </style>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getDatabase, ref, push, query, orderByChild, limitToLast, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyC54sYz-Uvi10qeJ_1e2u3rfa5AUlAo0Ug",
+    authDomain: "aramon-ranking.firebaseapp.com",
+    databaseURL: "https://aramon-ranking-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "aramon-ranking",
+    storageBucket: "aramon-ranking.firebasestorage.app",
+    messagingSenderId: "246981641227",
+    appId: "1:246981641227:web:7710164c6049275f4f330e",
+    measurementId: "G-W61FCCKHTK"
+  };
+
+  const fbApp = initializeApp(firebaseConfig);
+  const fbDb = getDatabase(fbApp);
+
+  window.__aramonSubmitScore = async function(entry){
+    try{
+      await push(ref(fbDb, 'scores'), entry);
+      return true;
+    }catch(err){
+      console.error('score submit failed', err);
+      return false;
+    }
+  };
+
+  window.__aramonFetchRanking = async function(field, count){
+    try{
+      const q = query(ref(fbDb, 'scores'), orderByChild(field), limitToLast(count||20));
+      const snap = await get(q);
+      const rows = [];
+      snap.forEach(child=>{ rows.push(child.val()); });
+      rows.sort((a,b)=> (b[field]||0) - (a[field]||0));
+      return rows;
+    }catch(err){
+      console.error('ranking fetch failed', err);
+      return null;
+    }
+  };
+</script>
 </head>
 <body>
 
@@ -260,7 +325,11 @@
   <div class="pick-label">使用するモンスターを選択</div>
   <div class="monster-grid" id="monsterGrid"></div>
 
+  <div class="pick-label" style="margin-top:16px;">ランキング表示名(任意)</div>
+  <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
+
   <button id="joinBtn" disabled>バトルに参加する</button>
+  <button id="titleRankingBtn" style="margin-top:12px; background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); padding:10px 24px; border-radius:6px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; cursor:pointer;">ランキングを見る</button>
 
   <div class="howto">
     左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可)<br>
@@ -338,7 +407,22 @@
     <div><div class="num" id="statDamage">0</div><div class="lbl">与ダメージ</div></div>
     <div><div class="num" id="statTime">00:00</div><div class="lbl">生存時間</div></div>
   </div>
-  <button id="replayBtn">もう一度プレイ</button>
+  <div id="scoreSubmitStatus"></div>
+  <div class="resultBtnRow">
+    <button id="viewRankingBtn">ランキングを見る</button>
+    <button id="replayBtn">もう一度プレイ</button>
+  </div>
+</div>
+
+<!-- RANKING -->
+<div id="rankingScreen" class="resultScreen hidden">
+  <div class="rank" id="rankingTitle" style="font-size:32px;">RANKING</div>
+  <div id="rankingTabs">
+    <button class="rank-tab active" data-mode="kills">キル数</button>
+    <button class="rank-tab" data-mode="damage">ダメージ数</button>
+  </div>
+  <div id="rankingList"></div>
+  <button id="closeRankingBtn">閉じる</button>
 </div>
 
 <!-- ROTATE DEVICE OVERLAY -->
@@ -2219,6 +2303,27 @@ function showResult(isWin, placement){
   document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
   document.getElementById('resultScreen').classList.remove('hidden');
+  submitScoreToRanking(isWin, placement);
+}
+function submitScoreToRanking(isWin, placement){
+  const statusEl = document.getElementById('scoreSubmitStatus');
+  if(!window.__aramonSubmitScore){ statusEl.textContent=''; return; }
+  const rawName = (document.getElementById('playerNameInput').value||'').trim();
+  const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
+  statusEl.textContent = 'ランキングに送信中…';
+  window.__aramonSubmitScore({
+    name,
+    element: player.element,
+    elementLabel: ELEMENTS[player.element].label,
+    kills: player.kills,
+    damage: Math.round(player.damageDealt),
+    placement: isWin ? 1 : placement,
+    isWin: !!isWin,
+    time: Math.round(player.deathAt||matchTime),
+    ts: Date.now(),
+  }).then(ok=>{
+    statusEl.textContent = ok ? 'ランキングに記録しました' : 'ランキング送信に失敗しました';
+  });
 }
 function onPlayerDown(){ showResult(false, player.placement||entities.filter(e=>e.alive).length+1); }
 function onPlayerWin(){ showResult(true, 1); }
@@ -2228,6 +2333,57 @@ document.getElementById('replayBtn').addEventListener('click', ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
   document.getElementById('killFeed').innerHTML='';
   game.started=false;
+});
+
+let currentRankingMode = 'kills';
+let rankingOpenedFrom = 'result';
+async function openRankingScreen(fromTitle){
+  rankingOpenedFrom = fromTitle ? 'title' : 'result';
+  document.getElementById('rankingScreen').classList.remove('hidden');
+  document.getElementById('resultScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.add('hidden');
+  await loadRankingList(currentRankingMode);
+}
+async function loadRankingList(mode){
+  const listEl = document.getElementById('rankingList');
+  listEl.innerHTML = '<div class="rank-empty">読み込み中…</div>';
+  if(!window.__aramonFetchRanking){
+    listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
+    return;
+  }
+  const field = mode==='kills' ? 'kills' : 'damage';
+  const rows = await window.__aramonFetchRanking(field, 20);
+  if(!rows){
+    listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
+    return;
+  }
+  if(rows.length===0){
+    listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
+    return;
+  }
+  listEl.innerHTML = rows.map((r,i)=>{
+    const val = mode==='kills' ? (r.kills||0) : (r.damage||0);
+    const nm = (r.name||'名無しのモンスター');
+    return `<div class="rank-row"><span class="rk">#${i+1}</span><span class="rn">${nm}（${r.elementLabel||''}）</span><span class="rv">${val}</span></div>`;
+  }).join('');
+}
+document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRankingScreen(false));
+document.getElementById('titleRankingBtn').addEventListener('click', ()=>openRankingScreen(true));
+document.getElementById('closeRankingBtn').addEventListener('click', ()=>{
+  document.getElementById('rankingScreen').classList.add('hidden');
+  if(rankingOpenedFrom==='title'){
+    document.getElementById('startScreen').classList.remove('hidden');
+  } else {
+    document.getElementById('resultScreen').classList.remove('hidden');
+  }
+});
+document.querySelectorAll('.rank-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.rank-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    currentRankingMode = tab.dataset.mode==='damage' ? 'damage' : 'kills';
+    loadRankingList(currentRankingMode);
+  });
 });
 
 /* =====================================================================
