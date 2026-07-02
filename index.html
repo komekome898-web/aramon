@@ -373,22 +373,38 @@ const ELEMENTS = {
   leaf:    { label:'プラント',   color:'#7fb236', dark:'#4f6f1f', speed:188, hp:104, trait:'gutsdrain' },
   spark:   { label:'ライガー',   color:'#f4c430', dark:'#a8801c', speed:224, hp:78,  trait:'slow' },
   rock:    { label:'ゴーレム',   color:'#a98a68', dark:'#5c4a38', speed:158, hp:132, trait:'golem', speedMod:0.8, dmgTakenMod:0.8, dmgDealtMod:1.2 },
-  phoenix: { label:'火の鳥種',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
+  phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
 };
 
 const monsterImages = {};
-Object.keys(ELEMENTS).forEach(key=>{
+const playerMonsterImages = {};
+function loadMonsterImage(src){
   const img = new Image();
-  img.src = `monsters/${key}.png`;
+  img.src = src;
   img.loaded = false;
   img.failed = false;
   img.onload = ()=>{ img.loaded = true; };
   img.onerror = ()=>{ img.failed = true; };
-  monsterImages[key] = img;
+  return img;
+}
+Object.keys(ELEMENTS).forEach(key=>{
+  monsterImages[key] = loadMonsterImage(`monsters/${key}.png`);
+  playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player.png`);
 });
-function monsterImageReady(key){
-  const img = monsterImages[key];
+function imgIsReady(img){
   return img && img.loaded && !img.failed;
+}
+function monsterImageReady(key){
+  return imgIsReady(monsterImages[key]);
+}
+function getDisplayImage(entity){
+  if(entity.isPlayer && imgIsReady(playerMonsterImages[entity.element])){
+    return playerMonsterImages[entity.element];
+  }
+  if(imgIsReady(monsterImages[entity.element])){
+    return monsterImages[entity.element];
+  }
+  return null;
 }
 
 const SIGNATURE_MOVES = {
@@ -1480,16 +1496,18 @@ function drawMonster(e,p){
   if(e.dashTimer>0){
     ctx.save(); ctx.globalAlpha=0.35;
     ctx.translate(-e.dashDirX*16,-e.dashDirY*16);
-    if(monsterImageReady(e.element)){
-      drawMonsterPortrait(e, monsterImages[e.element]);
+    const dashImg = getDisplayImage(e);
+    if(dashImg){
+      drawMonsterPortrait(e, dashImg);
     } else {
       drawMonsterShape(e, el.color, el.dark);
     }
     ctx.restore();
   }
 
-  if(monsterImageReady(e.element)){
-    drawMonsterPortrait(e, monsterImages[e.element], e.hitFlash>0);
+  const displayImg = getDisplayImage(e);
+  if(displayImg){
+    drawMonsterPortrait(e, displayImg, e.hitFlash>0);
     drawElementBadge(e);
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
