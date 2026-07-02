@@ -752,6 +752,8 @@ function createMonster(elementKey, isPlayer, name){
     aiState:'WANDER', aiTimer:rand(0,0.3), aiTargetPoint:null,
     lastMoveX:0, lastMoveY:-1, inputMoveX:0, inputMoveY:0,
     burnUntil:0, slowUntil:0,
+    stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
+    recentAttackers:{},
   };
 }
 function activeMove(m){
@@ -929,6 +931,9 @@ function applyDamage(target, dmg, source){
   }
   target.hp -= finalDmg; target.hitFlash = 0.18;
   spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
+  if(source && source.id!==target.id){
+    target.recentAttackers[source.id] = matchTime;
+  }
 
   if(source && source.alive && source.id!==target.id){
     source.damageDealt += finalDmg;
@@ -999,6 +1004,26 @@ function findNearestAliveEnemy(self, range){
   }
   return best;
 }
+function countRecentAttackers(self, windowSec){
+  let count = 0;
+  for(const id in self.recentAttackers){
+    const t = self.recentAttackers[id];
+    if(matchTime - t <= windowSec){
+      const atk = getEntity(Number(id));
+      if(atk && atk.alive) count++;
+    }
+  }
+  return count;
+}
+function findNearestHealItem(self, range){
+  let best=null, bestD=range;
+  for(const it of lootItems){
+    if(it.kind!=='heal') continue;
+    const d = dist(self,it);
+    if(d<bestD){ bestD=d; best=it; }
+  }
+  return best;
+}
 function findNearestLoot(self, range){
   let best=null, bestD=range;
   for(const it of lootItems){ const d=dist(self,it); if(d<bestD){bestD=d; best=it;} }
@@ -1016,26 +1041,37 @@ function updateBotAI(b, dt){
     b.aiTargetPoint = {x:zoneState.center.x+rand(-30,30), y:zoneState.center.y+rand(-30,30)};
     b.aiState='RETREAT'; return;
   }
-  if(b.hp < b.maxHp*0.2){
-    const threat = findNearestAliveEnemy(b, 420);
+
+  const attackerCount = countRecentAttackers(b, 2.2);
+  const lowHp = b.hp < b.maxHp*0.2;
+  const overwhelmed = attackerCount >= 2;
+
+  if(lowHp || overwhelmed){
     b.attackTargetId=null;
+    const healItem = findNearestHealItem(b, 900);
+    if(healItem){
+      b.aiTargetPoint = {x:healItem.x, y:healItem.y};
+      b.aiState='FLEE_HEAL'; return;
+    }
+    const threat = findNearestAliveEnemy(b, 500);
     if(threat){
       const away = angTo(threat,b);
-      b.aiTargetPoint = { x:b.x+Math.cos(away)*260, y:b.y+Math.sin(away)*260 };
+      b.aiTargetPoint = { x:b.x+Math.cos(away)*300, y:b.y+Math.sin(away)*300 };
     } else {
       b.aiTargetPoint = { x: zoneState.center.x+rand(-150,150), y: zoneState.center.y+rand(-150,150) };
     }
     b.aiState='FLEE'; return;
   }
-  const enemy = findNearestAliveEnemy(b, 520);
+
+  const enemy = findNearestAliveEnemy(b, 900);
   if(enemy){ b.attackTargetId = enemy.id; b.destination=null; b.aiState='FIGHT'; return; }
 
-  const loot = findNearestLoot(b, 650);
+  const loot = findNearestLoot(b, 750);
   if(loot){ b.attackTargetId=null; b.aiTargetPoint = {x:loot.x,y:loot.y}; b.aiState='LOOT'; return; }
 
   b.attackTargetId=null;
   if(!b.aiTargetPoint || dist(b,b.aiTargetPoint)<40){
-    const a=rand(0,Math.PI*2), r=rand(100,360);
+    const a=rand(0,Math.PI*2), r=rand(150,480);
     let tx=b.x+Math.cos(a)*r, ty=b.y+Math.sin(a)*r;
     tx = clamp(tx, zoneState.center.x-zoneState.radius+30, zoneState.center.x+zoneState.radius-30);
     ty = clamp(ty, zoneState.center.y-zoneState.radius+30, zoneState.center.y+zoneState.radius-30);
@@ -1084,12 +1120,30 @@ function resolveMovement(m, dt){
     if(d < 4){
       if(m.destination===target) m.destination=null;
       if(m.aiTargetPoint===target) m.aiTargetPoint=null;
+      m.stuckTimer=0; m.stuckLevel=0;
     } else {
-      const ang = angTo(m,target);
+      let ang = angTo(m,target);
+      if(!m.isPlayer){
+        m.stuckTimer += dt;
+        if(m.stuckTimer > 0.4){
+          const moved = dist(m, m.stuckCheckPos);
+          if(moved < m.speed*0.4*m.stuckTimer*0.35){
+            m.stuckLevel = Math.min(m.stuckLevel+1, 6);
+          } else {
+            m.stuckLevel = Math.max(m.stuckLevel-1, 0);
+          }
+          m.stuckCheckPos = {x:m.x, y:m.y};
+          m.stuckTimer = 0;
+          if(m.stuckLevel>=2 && Math.random()<0.5) m.avoidDirSign *= -1;
+        }
+        if(m.stuckLevel>0){
+          ang += m.avoidDirSign * Math.min(m.stuckLevel*0.35, 1.9);
+        }
+      }
       const mx = Math.cos(ang), my = Math.sin(ang);
       tryMoveAxis(m, mx*effSpeed*dt, my*effSpeed*dt);
       m.lastMoveX=mx; m.lastMoveY=my;
-      if(!m.attackTargetId) m.facingAngle = ang;
+      if(!m.attackTargetId) m.facingAngle = angTo(m,target);
     }
   }
 }
