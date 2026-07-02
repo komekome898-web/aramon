@@ -232,7 +232,11 @@
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
   .rank-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
-  #rankingList{ margin-top:18px; width:min(90vw,420px); max-height:44vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
+  #rankingList{ margin-top:18px; width:min(90vw,420px); max-height:48vh; overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
+  #rankingList::-webkit-scrollbar{ width:12px; }
+  #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
+  #rankingList::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
+  #rankingList{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
   .rank-row{ display:flex; align-items:center; gap:12px; padding:8px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
   .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; }
   .rank-row .rn{ flex:1; text-align:left; font-size:13px; }
@@ -2055,7 +2059,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#startScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingList')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });
@@ -2064,7 +2068,7 @@ document.addEventListener('gestureend', (e)=>{ e.preventDefault(); });
 
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#startScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingList')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
@@ -2352,7 +2356,7 @@ async function loadRankingList(mode){
     return;
   }
   const field = mode==='kills' ? 'kills' : 'damage';
-  const rows = await window.__aramonFetchRanking(field, 20);
+  const rows = await window.__aramonFetchRanking(field, 50);
   if(!rows){
     listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
     return;
