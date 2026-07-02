@@ -1,0 +1,37 @@
+{
+  "name": "荒野モン動",
+  "short_name": "荒野モン動",
+  "description": "WILD BATTLE ROYALE — モンスターバトルロイヤル",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#04060a",
+  "theme_color": "#04060a",
+  "icons": [
+    {
+      "src": "monsters/phoenix.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "monsters/phoenix.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "monsters/phoenix.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "monsters/phoenix.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
