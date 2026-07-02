@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>荒野モン動 - WILD BATTLE ROYALE</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04060a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="荒野モン動">
+<link rel="apple-touch-icon" href="monsters/phoenix.png">
+<link rel="icon" type="image/png" href="monsters/phoenix.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
@@ -68,6 +78,35 @@
     text-align:center; outline:none;
   }
   #playerNameInput:focus{ border-color:var(--amber); }
+
+  #modeTabs, #capacityTabs{ display:flex; gap:10px; justify-content:center; }
+  .mode-tab, .cap-tab{
+    padding:9px 20px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .mode-tab.active, .cap-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  #multiOptions{ margin-top:4px; }
+
+  #lobbyScreen{
+    position:absolute; inset:0; z-index:35;
+    background: radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%), linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px; }
+  .lobby-title{ font-family:'Russo One',sans-serif; font-size:22px; color:var(--amber); letter-spacing:1px; text-align:center; }
+  .lobby-sub{ font-size:13px; color:var(--ink-dim); letter-spacing:1px; }
+  #lobbyPlayerList{ display:flex; flex-direction:column; gap:8px; width:min(80vw,320px); margin-top:6px; }
+  .lobby-player-row{
+    display:flex; align-items:center; gap:10px; padding:9px 14px; background:rgba(255,255,255,0.04);
+    border:1px solid var(--panel-line); border-radius:6px; font-size:13px;
+  }
+  .lobby-player-row .lp-dot{ width:8px; height:8px; border-radius:50%; background:var(--amber); flex-shrink:0; }
+  .lobby-player-row.is-bot .lp-dot{ background:var(--ink-dim); }
+  #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); min-height:20px; }
+  #lobbyCancelBtn{
+    margin-top:6px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
 
   .monster-grid{
     display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:760px;
@@ -272,7 +311,11 @@
 </style>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getDatabase, ref, push, query, orderByChild, limitToLast, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  import {
+    getDatabase, ref, push, query, orderByChild, limitToLast, get,
+    set, update, onValue, off, onDisconnect, remove, serverTimestamp,
+    runTransaction, child
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyC54sYz-Uvi10qeJ_1e2u3rfa5AUlAo0Ug",
@@ -311,6 +354,154 @@
       return null;
     }
   };
+
+  /* =====================================================================
+     MATCHMAKING / ROOM SYNC
+     lobby/{lobbyEntryId}   : { roomId, capacity, count, status, createdAt }
+     rooms/{roomId}/meta    : { hostId, capacity, status, createdAt }
+     rooms/{roomId}/players/{playerId} : { name, element, joinedAt, input:{...} }
+     rooms/{roomId}/state   : ホストが配信する全体スナップショット(entities/projectiles/loot/zone/matchTime等)
+     rooms/{roomId}/events  : push()されるキルフィード等の単発イベント
+  ===================================================================== */
+  function genId(){
+    return Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+  }
+  const myPlayerId = genId();
+  window.__aramonMyPlayerId = myPlayerId;
+
+  let activeRoomId = null;
+  let roomListeners = [];
+
+  function clearRoomListeners(){
+    roomListeners.forEach(({r,cb})=>off(r,'value',cb));
+    roomListeners = [];
+  }
+
+  // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
+  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey){
+    const lobbyRef = ref(fbDb, 'lobby');
+    const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
+    let joinedRoomId = null;
+    let becameHost = false;
+
+    try{
+      const snap = await get(q);
+      const candidates = [];
+      snap.forEach(ch=>{
+        const v = ch.val();
+        if(v && v.status==='waiting' && v.capacity===capacity && v.count < v.capacity){
+          candidates.push({ lobbyKey: ch.key, roomId: v.roomId, count: v.count });
+        }
+      });
+      candidates.sort((a,b)=> b.count - a.count);
+
+      for(const cand of candidates){
+        const roomPlayersRef = ref(fbDb, `rooms/${cand.roomId}/players`);
+        const lobbyCountRef = ref(fbDb, `lobby/${cand.lobbyKey}/count`);
+        const txResult = await runTransaction(lobbyCountRef, (cur)=>{
+          if(cur===null) return cur;
+          if(cur >= capacity) return; // abort
+          return cur + 1;
+        });
+        if(txResult.committed){
+          await set(child(roomPlayersRef, myPlayerId), {
+            name: playerName, element: elementKey, joinedAt: Date.now(), isHost:false, input:{}
+          });
+          onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
+          joinedRoomId = cand.roomId;
+          break;
+        }
+      }
+    }catch(err){ console.error('room search failed', err); }
+
+    if(!joinedRoomId){
+      const roomId = genId();
+      const roomRef = ref(fbDb, `rooms/${roomId}`);
+      await set(roomRef, {
+        meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now() },
+        players: { [myPlayerId]: { name: playerName, element: elementKey, joinedAt: Date.now(), isHost:true, input:{} } },
+      });
+      const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now() });
+      onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
+      onDisconnect(lobbyEntryRef).remove();
+      window.__aramonLobbyEntryId = lobbyEntryRef.key;
+      joinedRoomId = roomId;
+      becameHost = true;
+    }
+
+    activeRoomId = joinedRoomId;
+    return { roomId: joinedRoomId, isHost: becameHost, myPlayerId };
+  };
+
+  window.__aramonLeaveRoom = async function(roomId){
+    clearRoomListeners();
+    try{
+      await remove(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`));
+    }catch(err){}
+  };
+
+  window.__aramonWatchRoomPlayers = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/players`);
+    const cb = (snap)=>{ callback(snap.val()||{}); };
+    onValue(r, cb);
+    roomListeners.push({r,cb});
+  };
+
+  window.__aramonWatchRoomMeta = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/meta`);
+    const cb = (snap)=>{ callback(snap.val()||null); };
+    onValue(r, cb);
+    roomListeners.push({r,cb});
+  };
+
+  window.__aramonSetRoomStatus = async function(roomId, status){
+    await update(ref(fbDb, `rooms/${roomId}/meta`), { status });
+  };
+
+  window.__aramonSendInput = async function(roomId, input){
+    try{
+      await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { input, inputTs: Date.now() });
+    }catch(err){}
+  };
+
+  window.__aramonWatchState = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/state`);
+    const cb = (snap)=>{ callback(snap.val()||null); };
+    onValue(r, cb);
+    roomListeners.push({r,cb});
+  };
+
+  window.__aramonPublishState = async function(roomId, stateObj){
+    try{
+      await set(ref(fbDb, `rooms/${roomId}/state`), stateObj);
+    }catch(err){}
+  };
+
+  window.__aramonWatchInputs = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/players`);
+    const cb = (snap)=>{ callback(snap.val()||{}); };
+    onValue(r, cb);
+    roomListeners.push({r,cb});
+  };
+
+  window.__aramonPushEvent = async function(roomId, evt){
+    try{ await push(ref(fbDb, `rooms/${roomId}/events`), evt); }catch(err){}
+  };
+
+  window.__aramonWatchEvents = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/events`);
+    const q = query(r, limitToLast(1));
+    const cb = (snap)=>{ snap.forEach(ch=>callback(ch.val())); };
+    onValue(q, cb);
+    roomListeners.push({r:q,cb});
+  };
+
+  window.__aramonCleanupLobbyEntry = async function(){
+    if(window.__aramonLobbyEntryId){
+      try{ await remove(ref(fbDb, `lobby/${window.__aramonLobbyEntryId}`)); }catch(err){}
+    }
+  };</script>
+</head>
 </script>
 </head>
 <body>
@@ -332,6 +523,21 @@
   <div class="pick-label" style="margin-top:16px;">ランキング表示名(任意)</div>
   <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
 
+  <div class="pick-label" style="margin-top:16px;">プレイモード</div>
+  <div id="modeTabs">
+    <button class="mode-tab active" data-mode="solo">1人でプレイ</button>
+    <button class="mode-tab" data-mode="multi">みんなと対戦</button>
+  </div>
+
+  <div id="multiOptions" class="hidden">
+    <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBotで補完)</div>
+    <div id="capacityTabs">
+      <button class="cap-tab" data-cap="2">2人</button>
+      <button class="cap-tab active" data-cap="3">3人</button>
+      <button class="cap-tab" data-cap="4">4人</button>
+    </div>
+  </div>
+
   <button id="joinBtn" disabled>バトルに参加する</button>
   <button id="titleRankingBtn" style="margin-top:12px; background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); padding:10px 24px; border-radius:6px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; cursor:pointer;">ランキングを見る</button>
 
@@ -341,6 +547,17 @@
     各モンスターは種族固有の特性を持つ(カードの説明を確認)
   </div>
  </div>
+</div>
+
+<!-- LOBBY (matchmaking wait) -->
+<div id="lobbyScreen" class="hidden">
+  <div id="lobbyInner">
+    <div class="lobby-title">対戦相手を探しています…</div>
+    <div class="lobby-sub" id="lobbySubText">部屋を検索中</div>
+    <div id="lobbyPlayerList"></div>
+    <div id="lobbyCountdown"></div>
+    <button id="lobbyCancelBtn">キャンセル</button>
+  </div>
 </div>
 
 <!-- HUD -->
@@ -974,10 +1191,14 @@ function killEntity(victim, killer){
     killer.guts = Math.min(killer.maxGuts, killer.guts + 50);
     spawnDmgText(killer.x, killer.y, killer.z, '+50', '#7fffa0');
     spawnDmgText(killer.x, killer.y, killer.z+30, '+50GT', '#ffd9e3');
-    pushKillFeed(`${killer.name} が ${victim.name} を倒した`);
+    const kfText = `${killer.name} が ${victim.name} を倒した`;
+    pushKillFeed(kfText);
+    if(netState.mode==='multi' && netState.isHost) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
     if(killer.isPlayer) pushToast('キルボーナス！ HP+50 ガッツ+50');
   } else {
-    pushKillFeed(`${victim.name} は安全圏外で力尽きた`);
+    const kfText = `${victim.name} は安全圏外で力尽きた`;
+    pushKillFeed(kfText);
+    if(netState.mode==='multi' && netState.isHost) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
   }
   if(victim.isPlayer){ onPlayerDown(); }
   checkWin();
@@ -1090,7 +1311,7 @@ function resolveMovement(m, dt){
     tryMoveAxis(m, m.dashDirX*effSpeed*3.0*dt, m.dashDirY*effSpeed*3.0*dt);
     return;
   }
-  if(m.isPlayer){
+  if(m.isPlayer || m.isRemoteHuman){
     tryMoveAxis(m, m.inputMoveX*effSpeed*dt, m.inputMoveY*effSpeed*dt);
     const moveLen = Math.hypot(m.inputMoveX,m.inputMoveY);
     if(moveLen>0.05){ m.lastMoveX=m.inputMoveX/moveLen; m.lastMoveY=m.inputMoveY/moveLen; }
@@ -1372,7 +1593,7 @@ function update(dt){
   updateCameraSnap(dt);
   computePlayerInput();
 
-  for(const e of entities){ if(e.alive && !e.isPlayer) updateBotAI(e, dt); }
+  for(const e of entities){ if(e.alive && !e.isPlayer && !e.isRemoteHuman) updateBotAI(e, dt); }
   for(const e of entities){ if(e.alive) resolveMovement(e, dt); }
   separateEntities();
   updateCamera();
@@ -1383,7 +1604,8 @@ function update(dt){
     if(e.dashCooldown>0) e.dashCooldown -= dt;
     if(e.hitFlash>0) e.hitFlash -= dt;
     if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt);
-    if(e.isPlayer) tryPlayerFire(dt); else tryFire(e);
+    if(e.isPlayer) tryPlayerFire(dt);
+    else if(!e.isRemoteHuman) tryFire(e);
   }
   updateProjectiles(dt);
   updateLootPickups();
@@ -2317,6 +2539,133 @@ function buildMonsterGrid(){
 }
 buildMonsterGrid();
 
+/* =====================================================================
+   MULTIPLAYER STATE
+===================================================================== */
+const netState = {
+  mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null,
+  humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
+};
+
+document.querySelectorAll('.mode-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    netState.mode = tab.dataset.mode==='multi' ? 'multi' : 'solo';
+    document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi');
+    document.getElementById('joinBtn').textContent = netState.mode==='multi' ? '対戦相手を探す' : 'バトルに参加する';
+  });
+});
+document.querySelectorAll('.cap-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    netState.capacity = Number(tab.dataset.cap)||3;
+  });
+});
+
+function renderLobbyPlayerList(){
+  const listEl = document.getElementById('lobbyPlayerList');
+  const rows = [];
+  const human = netState.humanPlayers || {};
+  const humanIds = Object.keys(human);
+  humanIds.forEach(id=>{
+    const p = human[id];
+    rows.push(`<div class="lobby-player-row"><span class="lp-dot"></span><span>${p.name||'名無しのモンスター'}（${ELEMENTS[p.element]?.label||'?'}）${id===netState.myPlayerId?'（あなた）':''}</span></div>`);
+  });
+  const botCount = Math.max(0, netState.capacity - humanIds.length);
+  for(let i=0;i<botCount;i++){
+    rows.push(`<div class="lobby-player-row is-bot"><span class="lp-dot"></span><span>Bot 待機枠</span></div>`);
+  }
+  listEl.innerHTML = rows.join('');
+  document.getElementById('lobbySubText').textContent = `${humanIds.length} / ${netState.capacity} 人が参加中`;
+}
+
+async function startMatchmaking(){
+  if(!window.__aramonFindOrCreateRoom){
+    pushToast('通信機能が利用できません。1人でプレイに切り替えます');
+    startGame();
+    return;
+  }
+  netState.cancelled = false;
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('lobbyScreen').classList.remove('hidden');
+  document.getElementById('lobbyCountdown').textContent='';
+  document.getElementById('lobbySubText').textContent='部屋を検索中…';
+  document.getElementById('lobbyPlayerList').innerHTML='';
+
+  const rawName = (document.getElementById('playerNameInput').value||'').trim();
+  const displayName = rawName ? rawName.slice(0,12) : '名無しのモンスター';
+
+  let result;
+  try{
+    result = await window.__aramonFindOrCreateRoom(netState.capacity, displayName, game.selectedElement);
+  }catch(err){
+    console.error(err);
+    pushToast('マッチング失敗。1人でプレイに切り替えます');
+    document.getElementById('lobbyScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+    startGame();
+    return;
+  }
+  if(netState.cancelled) return;
+
+  netState.roomId = result.roomId;
+  netState.isHost = result.isHost;
+  netState.myPlayerId = result.myPlayerId;
+
+  window.__aramonWatchRoomPlayers(netState.roomId, (players)=>{
+    netState.humanPlayers = players||{};
+    renderLobbyPlayerList();
+    if(netState.isHost) maybeStartCountdown();
+  });
+
+  if(netState.isHost){
+    document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています…';
+  } else {
+    document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
+    window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
+      if(meta && meta.status==='playing' && !game.started){
+        beginMultiplayerMatch();
+      }
+    });
+  }
+}
+
+let countdownStarted = false;
+function maybeStartCountdown(){
+  if(countdownStarted || netState.matchStarting) return;
+  const humanCount = Object.keys(netState.humanPlayers||{}).length;
+  if(humanCount < 1) return;
+  countdownStarted = true;
+  let remaining = humanCount>=netState.capacity ? 3 : 12;
+  const tick = ()=>{
+    if(netState.cancelled) return;
+    document.getElementById('lobbyCountdown').textContent = `まもなく開始… ${remaining}`;
+    if(remaining<=0){
+      netState.matchStarting = true;
+      window.__aramonSetRoomStatus(netState.roomId, 'playing');
+      window.__aramonCleanupLobbyEntry();
+      beginMultiplayerMatch();
+      return;
+    }
+    remaining--;
+    setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
+  netState.cancelled = true;
+  countdownStarted = false;
+  if(netState.roomId){
+    await window.__aramonLeaveRoom(netState.roomId);
+    await window.__aramonCleanupLobbyEntry();
+  }
+  document.getElementById('lobbyScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+});
+
 function startGame(){
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=7;
@@ -2349,7 +2698,11 @@ function startGame(){
 document.getElementById('joinBtn').addEventListener('click', ()=>{
   requestFullscreenSafe();
   requestOrientationLockSafe();
-  startGame();
+  if(netState.mode==='multi'){
+    startMatchmaking();
+  } else {
+    startGame();
+  }
 });
 
 function showResult(isWin, placement){
@@ -2386,11 +2739,16 @@ function submitScoreToRanking(isWin, placement){
 function onPlayerDown(){ showResult(false, player.placement||entities.filter(e=>e.alive).length+1); }
 function onPlayerWin(){ showResult(true, 1); }
 
-document.getElementById('replayBtn').addEventListener('click', ()=>{
+document.getElementById('replayBtn').addEventListener('click', async ()=>{
   document.getElementById('resultScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
   document.getElementById('killFeed').innerHTML='';
   game.started=false;
+  if(netState.mode==='multi' && netState.roomId){
+    await window.__aramonLeaveRoom(netState.roomId);
+    netState.roomId=null; netState.isHost=false; netState.humanPlayers={};
+    countdownStarted=false; netState.matchStarting=false;
+  }
 });
 
 let currentRankingMode = 'kills';
@@ -2448,16 +2806,282 @@ document.querySelectorAll('.rank-tab').forEach(tab=>{
    LOOP
 ===================================================================== */
 let lastT = performance.now();
+/* =====================================================================
+   MULTIPLAYER MATCH LOGIC
+===================================================================== */
+let netSyncTimer = 0;
+const NET_SYNC_INTERVAL = 0.12; // 秒。約8回/秒の配信で読み書き量を抑える
+let remotePlayerEntities = {}; // playerId -> entity (非ホスト/ホスト共通で「他人の見た目」を保持)
+
+function beginMultiplayerMatch(){
+  if(game.started) return;
+  document.getElementById('lobbyScreen').classList.add('hidden');
+  document.getElementById('resultScreen').classList.add('hidden');
+
+  entities=[]; projectiles=[]; lootItems=[]; particles=[]; nextId=1;
+  matchTime=0; game.over=false; game.tipTimer=7;
+  camState.yaw = 0; camState.pitch = 0.27;
+  camSnap.active = false;
+  monsterScreenPos.clear();
+  Object.keys(keys).forEach(k=>keys[k]=false);
+  fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
+  joyKnobEl.style.transform='translate(0,0)';
+  remotePlayerEntities = {};
+
+  const humanList = Object.keys(netState.humanPlayers||{}).map(id=>({ id, ...netState.humanPlayers[id] }));
+  if(!humanList.find(h=>h.id===netState.myPlayerId)){
+    humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement });
+  }
+
+  if(netState.isHost){
+    initZone();
+    genRocks();
+    genTerrain();
+
+    // 自分(ホスト)のプレイヤーエンティティ
+    player = createMonster(game.selectedElement, true, 'プレイヤー');
+    player.netPlayerId = netState.myPlayerId;
+    entities.push(player);
+
+    // 他の人間プレイヤー(ホストが動きを計算し、入力はネットワーク経由で反映)
+    for(const h of humanList){
+      if(h.id===netState.myPlayerId) continue;
+      const remote = createMonster(h.element||'fire', false, h.name||'プレイヤー');
+      remote.isPlayer=false; remote.isRemoteHuman=true; remote.netPlayerId=h.id;
+      entities.push(remote);
+    }
+
+    // 残りをBotで補完
+    const usedSlots = humanList.length;
+    const botCount = Math.max(0, 20-usedSlots);
+    const names = shuffle(BOT_NAMES);
+    const botElements = shuffle(Object.keys(ELEMENTS));
+    for(let i=0;i<botCount;i++){
+      const elKey = botElements[i % botElements.length];
+      entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':'')));
+    }
+    spawnLoot(138, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+    updateCamera();
+  } else {
+    // 非ホスト: 自分の見た目だけローカルに作り、他は受信状態で描画
+    player = createMonster(game.selectedElement, true, 'プレイヤー');
+    player.netPlayerId = netState.myPlayerId;
+    entities.push(player);
+    initZone();
+    updateCamera();
+
+    window.__aramonWatchState(netState.roomId, (stateObj)=>{
+      if(stateObj) applyRemoteState(stateObj);
+    });
+  }
+
+  window.__aramonWatchEvents(netState.roomId, (evt)=>{
+    if(evt && evt.kind==='kill' && evt.text) pushKillFeed(evt.text);
+    if(evt && evt.kind==='toast' && evt.text && !netState.isHost) pushToast(evt.text);
+  });
+
+  document.getElementById('startScreen').classList.add('hidden');
+  game.started=true;
+  pushToast('バトル開始！（マルチプレイ）');
+}
+
+// ホスト: 自分以外の人間プレイヤーの入力をentitiesに反映
+function applyRemoteInputsToHostSim(){
+  const players = netState.humanPlayers||{};
+  for(const id in players){
+    if(id===netState.myPlayerId) continue;
+    const ent = entities.find(e=>e.netPlayerId===id);
+    if(!ent || !ent.alive) continue;
+    const inp = players[id].input;
+    if(!inp) continue;
+    ent.inputMoveX = clamp(inp.mx||0,-1,1);
+    ent.inputMoveY = clamp(inp.my||0,-1,1);
+    ent.facingAngle = typeof inp.facing==='number' ? inp.facing : ent.facingAngle;
+    if(inp.wantFire) remoteFireQueue.add(id);
+    if(inp.wantDash) tryDash(ent);
+    if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
+  }
+}
+const remoteFireQueue = new Set();
+function processRemoteFireQueue(){
+  for(const id of remoteFireQueue){
+    const ent = entities.find(e=>e.netPlayerId===id);
+    if(!ent || !ent.alive){ remoteFireQueue.delete(id); continue; }
+    if(ent.fireCooldown>0) continue;
+    const mv = activeMove(ent);
+    if(ent.guts < mv.gutsCost) continue;
+    let targetPoint;
+    if(mv.melee){
+      let best=null, bestD=mv.range;
+      const fx=Math.cos(ent.facingAngle), fy=Math.sin(ent.facingAngle);
+      for(const e2 of entities){
+        if(e2===ent || !e2.alive) continue;
+        if(e2.z - ent.z > UPWARD_BLOCK_THRESHOLD) continue;
+        const d = dist(ent,e2);
+        if(d>mv.range) continue;
+        const dirx=(e2.x-ent.x)/Math.max(d,0.001), diry=(e2.y-ent.y)/Math.max(d,0.001);
+        if(dirx*fx+diry*fy>0.55 && d<bestD){ bestD=d; best=e2; }
+      }
+      targetPoint = best;
+    } else {
+      targetPoint = { x: ent.x+Math.cos(ent.facingAngle)*1000, y: ent.y+Math.sin(ent.facingAngle)*1000 };
+    }
+    fireMove(ent, targetPoint, mv);
+    ent.fireCooldown = effectiveCooldown(ent, mv);
+  }
+}
+
+// 非ホスト: 自分の入力を送信
+let lastInputSendTime = 0;
+function sendLocalInputIfMultiplayer(){
+  if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
+  const now = performance.now();
+  if(now-lastInputSendTime < 90) return;
+  lastInputSendTime = now;
+  window.__aramonSendInput(netState.roomId, {
+    mx: player? player.inputMoveX:0,
+    my: player? player.inputMoveY:0,
+    facing: player? player.facingAngle:0,
+    wantFire: !!(fireBtnHeld || keys['f']),
+    wantDash: false,
+    moveTierSelected: player? player.moveTierSelected:1,
+  });
+}
+
+// ホスト: 状態をシリアライズして配信
+function buildStateSnapshot(){
+  return {
+    ts: Date.now(),
+    matchTime,
+    zone: { cx:zoneState.center.x, cy:zoneState.center.y, r:zoneState.radius, phase:zoneState.phaseIndex, shrinking:zoneState.shrinking },
+    entities: entities.map(e=>({
+      id:e.id, np:e.netPlayerId||null, el:e.element, nm:e.name,
+      x:Math.round(e.x), y:Math.round(e.y), z:Math.round(e.z),
+      hp:Math.round(e.hp), mhp:e.maxHp, gt:Math.round(e.guts), mgt:e.maxGuts,
+      fa:Math.round(e.facingAngle*100)/100, alive:e.alive, tier:e.moveTierSelected,
+      burn: e.burnUntil>matchTime, slow: e.slowUntil>matchTime, dash: e.dashTimer>0,
+    })),
+    projectiles: projectiles.map(p=>({ x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z), c:p.color, r:p.hitR, w:p.hitW||0 })),
+    loot: lootItems.map(it=>({ id:it.id, k:it.kind, t:it.type, x:Math.round(it.x), y:Math.round(it.y) })),
+    alive: entities.filter(e=>e.alive).length,
+  };
+}
+function applyRemoteState(s){
+  if(!s || !s.entities) return;
+  matchTime = s.matchTime||matchTime;
+  if(s.zone){
+    zoneState.center.x=s.zone.cx; zoneState.center.y=s.zone.cy; zoneState.radius=s.zone.r;
+    zoneState.phaseIndex=s.zone.phase; zoneState.shrinking=s.zone.shrinking;
+  }
+  const seen = new Set();
+  const wasAlive = player ? player.alive : true;
+  for(const se of s.entities){
+    seen.add(se.id);
+    let ent = entities.find(e=>e.id===se.id);
+    const isMe = se.np && se.np===netState.myPlayerId;
+    if(isMe){
+      if(player){
+        player.hp = se.hp; player.maxHp = se.mhp;
+        player.guts = se.gt; player.maxGuts = se.mgt;
+        player.alive = se.alive;
+        player.burnUntil = se.burn ? matchTime+1 : 0;
+        player.slowUntil = se.slow ? matchTime+1 : 0;
+        // 位置・向きはローカル入力予測を優先(大きくズレていたら補正)
+        if(Math.hypot(player.x-se.x, player.y-se.y) > 260){ player.x=se.x; player.y=se.y; }
+      }
+      continue;
+    }
+    if(!ent){
+      ent = createMonster(se.el, false, se.nm);
+      ent.id = se.id; ent.netPlayerId = se.np;
+      entities.push(ent);
+    }
+    ent.x=se.x; ent.y=se.y; ent.z=se.z; ent.hp=se.hp; ent.maxHp=se.mhp;
+    ent.guts=se.gt; ent.maxGuts=se.mgt; ent.facingAngle=se.fa; ent.alive=se.alive;
+    ent.moveTierSelected=se.tier;
+    ent.burnUntil = se.burn ? matchTime+1 : 0;
+    ent.slowUntil = se.slow ? matchTime+1 : 0;
+    ent.dashTimer = se.dash ? 0.05 : 0;
+  }
+  if(wasAlive && player && !player.alive && !game.over){
+    onPlayerDown();
+  }
+  const aliveNow = s.entities.filter(se=>se.alive).length;
+  if(aliveNow<=1 && player && player.alive && !game.over){
+    onPlayerWin();
+  }
+  for(let i=entities.length-1;i>=0;i--){
+    if(entities[i]===player) continue;
+    if(!seen.has(entities[i].id)) entities.splice(i,1);
+  }
+  projectiles = (s.projectiles||[]).map(p=>({ x:p.x, y:p.y, z:p.z, color:p.c, hitR:p.r, hitW:p.w||0 }));
+  const lootIds = new Set((s.loot||[]).map(it=>it.id));
+  lootItems = lootItems.filter(it=>lootIds.has(it.id));
+  const existingIds = new Set(lootItems.map(it=>it.id));
+  for(const it of (s.loot||[])){
+    if(!existingIds.has(it.id)){
+      lootItems.push({ id:it.id, kind:it.k, type:it.t, x:it.x, y:it.y, bob:rand(0,Math.PI*2) });
+    } else {
+      const local = lootItems.find(li=>li.id===it.id);
+      if(local){ local.x=it.x; local.y=it.y; }
+    }
+  }
+  updateHUD();
+}
+
 function loop(now){
   const dt = Math.min(0.05, (now-lastT)/1000);
   lastT = now;
-  if(game.started && !game.over) update(dt);
+
+  if(game.started && !game.over){
+    if(netState.mode!=='multi'){
+      update(dt);
+    } else if(netState.isHost){
+      applyRemoteInputsToHostSim();
+      update(dt);
+      processRemoteFireQueue();
+      netSyncTimer += dt;
+      if(netSyncTimer >= NET_SYNC_INTERVAL){
+        netSyncTimer = 0;
+        window.__aramonPublishState(netState.roomId, buildStateSnapshot());
+      }
+    } else {
+      // 非ホスト: 自分の入力はローカルで即時反映(体感の遅延を減らす)、他者は受信状態に任せる
+      computePlayerInput();
+      if(player && player.alive) resolveMovement(player, dt);
+      for(const e of entities){
+        if(e.fireCooldown>0) e.fireCooldown -= dt;
+        if(e.dashCooldown>0) e.dashCooldown -= dt;
+        if(e.hitFlash>0) e.hitFlash -= dt;
+      }
+      for(let i=particles.length-1;i>=0;i--){
+        const p = particles[i];
+        p.x += p.vx*dt; p.y += p.vy*dt;
+        if(p.type==='text') p.vy += 60*dt;
+        p.life -= dt;
+        if(p.life<=0) particles.splice(i,1);
+      }
+      updateCamera();
+      updateCameraSnap(dt);
+      matchTime += dt;
+      updateHUD();
+      sendLocalInputIfMultiplayer();
+    }
+  }
+
   if(game.started) render();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
 })();
+</script>
+<script>
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register('sw.js').catch(()=>{});
+    });
+  }
 </script>
 </body>
 </html>
