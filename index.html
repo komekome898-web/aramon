@@ -458,7 +458,7 @@ const ZONE_PHASES = [
 const ELEMENTS = {
   fire:    { label:'ドラゴン',   color:'#ff6b35', dark:'#a8431d', speed:182, hp:100, trait:'burn' },
   aqua:    { label:'ウンディーネ', color:'#3dccc7', dark:'#1d8c88', speed:204, hp:88,  trait:'lifesteal' },
-  leaf:    { label:'プラント',   color:'#7fb236', dark:'#4f6f1f', speed:188, hp:104, trait:'gutsdrain' },
+  leaf:    { label:'プラント',   color:'#7fb236', dark:'#4f6f1f', speed:140, hp:150, trait:'gutsdrain' },
   spark:   { label:'ライガー',   color:'#f4c430', dark:'#a8801c', speed:224, hp:78,  trait:'slow' },
   rock:    { label:'ゴーレム',   color:'#a98a68', dark:'#5c4a38', speed:158, hp:132, trait:'golem', speedMod:0.8, dmgTakenMod:0.8, dmgDealtMod:1.2 },
   phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
@@ -940,7 +940,7 @@ function applyDamage(target, dmg, source){
       }
     }
     if(source.element==='leaf'){
-      const drained = Math.min(finalDmg*0.1, target.guts);
+      const drained = Math.min(finalDmg*0.3, target.guts);
       if(drained > 0){
         target.guts = Math.max(0, target.guts - drained);
         spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
@@ -2232,7 +2232,7 @@ document.getElementById('moveName').addEventListener('pointerdown', (e)=>{
 const TRAIT_DESC = {
   burn:       '攻撃命中で相手をやけど状態に(10秒間 与ダメ0.8倍)',
   lifesteal:  '与えたダメージの20%分HP回復',
-  gutsdrain:  '与えたダメージの10%分 相手のガッツを削る',
+  gutsdrain:  '与えたダメージの30%分 相手のガッツを削る',
   slow:       '技命中で相手を1秒間 移動速度半分に',
   golem:      '移動0.8倍・被ダメ0.8倍・与ダメ1.2倍',
   haste:      '技の連射速度1.5倍',
