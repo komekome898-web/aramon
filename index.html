@@ -469,6 +469,31 @@
     }catch(err){}
   };
 
+  window.__aramonSendRecon = async function(roomId, recon){
+    try{
+      await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { recon, reconTs: Date.now() });
+    }catch(err){}
+  };
+
+  window.__aramonSetRoomSeed = async function(roomId, seed){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed }); }catch(err){}
+  };
+
+  window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
+    return new Promise((resolve)=>{
+      const r = ref(fbDb, `rooms/${roomId}/meta/seed`);
+      let done = false;
+      const cb = (snap)=>{
+        const v = snap.val();
+        if(v!=null && !done){ done=true; off(r,'value',cb); resolve(v); }
+      };
+      onValue(r, cb);
+      setTimeout(()=>{
+        if(!done){ done=true; off(r,'value',cb); resolve(null); }
+      }, timeoutMs||4000);
+    });
+  };
+
   window.__aramonWatchState = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/state`);
     const cb = (snap)=>{ callback(snap.val()||null); };
@@ -517,7 +542,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v38</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v39</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -777,6 +802,24 @@ const angTo = (a,b)=>Math.atan2(b.y-a.y,b.x-a.x);
 function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=randInt(0,i); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function fmtTime(s){ s=Math.max(0,Math.floor(s)); const m=Math.floor(s/60), sec=s%60; return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0'); }
 
+// シード付き乱数(マルチプレイの初期状態を全員で一致させるために使用)
+function makeSeededRng(seed){
+  let s = seed>>>0;
+  return function(){
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seededRand(rng, a, b){ return a + rng()*(b-a); }
+function seededInt(rng, a, b){ return Math.floor(seededRand(rng,a,b+1)); }
+function seededShuffle(rng, arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j = seededInt(rng,0,i); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
 /* =====================================================================
    GAME STATE
 ===================================================================== */
@@ -958,11 +1001,12 @@ function pickSpawnPoint(){
   const a = rand(0,Math.PI*2), r = rand(0, ZONE_PHASES[0].holdRadius*0.85);
   return {x: ZONE_CENTER0.x+Math.cos(a)*r, y: ZONE_CENTER0.y+Math.sin(a)*r};
 }
-function createMonster(elementKey, isPlayer, name){
+function createMonster(elementKey, isPlayer, name, overrides){
   const el = ELEMENTS[elementKey];
-  const sp = pickSpawnPoint();
+  const sp = (overrides && overrides.spawnPoint) ? overrides.spawnPoint : pickSpawnPoint();
+  const useId = (overrides && overrides.id!=null) ? overrides.id : nextId++;
   return {
-    id: nextId++, isPlayer, element: elementKey, name,
+    id: useId, isPlayer, element: elementKey, name,
     x: sp.x, y: sp.y, z:0,
     radius: elementKey==='rock'?25:(elementKey==='spark'?19:(elementKey==='phoenix'?21:22)),
     speed: el.speed * (el.speedMod||1), hp: el.hp, maxHp: el.hp,
@@ -1073,6 +1117,70 @@ function spawnLoot(n, center, radius){
     const pick = pickLootKindAndType();
     lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x: center.x+Math.cos(a)*d, y: center.y+Math.sin(a)*d, bob: rand(0,Math.PI*2) });
   }
+}
+
+// ===== マルチプレイ用: シード付き決定論的初期化 =====
+function seededPickLootKindAndType(rng){
+  const r = rng();
+  if(r < 0.38){
+    const r2 = rng();
+    const type = r2<0.5 ? 'oilS' : (r2<0.85 ? 'oilM' : 'oilL');
+    return { kind:'heal', type };
+  }
+  if(r < 0.67) return { kind:'ticket', type:'ticket' };
+  return { kind:'guts', type:'guts' };
+}
+function seededSpawnLoot(rng, n, center, radius){
+  for(let i=0;i<n;i++){
+    const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,0,radius);
+    const pick = seededPickLootKindAndType(rng);
+    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x: center.x+Math.cos(a)*d, y: center.y+Math.sin(a)*d, bob: seededRand(rng,0,Math.PI*2) });
+  }
+}
+function seededGenRocks(rng){
+  rocks = [];
+  const count = 180;
+  let guard=0;
+  while(rocks.length<count && guard<9000){
+    guard++;
+    const rr = rng();
+    const radius = rr<0.5 ? seededRand(rng,22,34) : (rr<0.85 ? seededRand(rng,34,52) : seededRand(rng,52,72));
+    const x = seededRand(rng,80,WORLD.w-80), y = seededRand(rng,80,WORLD.h-80);
+    rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:seededRand(rng,0,10) });
+  }
+  for(let pass=0; pass<3; pass++){
+    for(let i=0;i<rocks.length;i++){
+      for(let j=i+1;j<rocks.length;j++){
+        const a=rocks[i], b=rocks[j];
+        const minD = a.radius+b.radius+20;
+        const d = Math.hypot(a.x-b.x,a.y-b.y);
+        if(d>0 && d<minD){
+          const push=(minD-d)/2, ang=Math.atan2(b.y-a.y,b.x-a.x);
+          a.x-=Math.cos(ang)*push; a.y-=Math.sin(ang)*push;
+          b.x+=Math.cos(ang)*push; b.y+=Math.sin(ang)*push;
+        }
+      }
+    }
+  }
+}
+function seededGenTerrain(rng){
+  terrainDecor = [];
+  for(let i=0;i<1980;i++){
+    const x = seededRand(rng,40,WORLD.w-40), y = seededRand(rng,40,WORLD.h-40);
+    terrainDecor.push({ x, y, r: seededRand(rng,5,16), shade: rng()<0.5 ? 'dark':'light' });
+  }
+}
+function seededPickSpawnPoint(rng){
+  for(let tries=0; tries<60; tries++){
+    const a = seededRand(rng,0,Math.PI*2), r = seededRand(rng,0, ZONE_PHASES[0].holdRadius*0.85);
+    const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
+    let onRock=false;
+    for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
+    if(onRock) continue;
+    return {x,y};
+  }
+  const a = seededRand(rng,0,Math.PI*2), r = seededRand(rng,0, ZONE_PHASES[0].holdRadius*0.85);
+  return {x: ZONE_CENTER0.x+Math.cos(a)*r, y: ZONE_CENTER0.y+Math.sin(a)*r};
 }
 
 /* =====================================================================
@@ -1198,12 +1306,13 @@ function killEntity(victim, killer){
     spawnDmgText(killer.x, killer.y, killer.z+30, '+50GT', '#ffd9e3');
     const kfText = `${killer.name} が ${victim.name} を倒した`;
     pushKillFeed(kfText);
-    if(netState.mode==='multi' && netState.isHost) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
+    const iAmInvolved = netState.mode==='multi' && ((killer.isPlayer) || (victim.isPlayer));
+    if(iAmInvolved) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
     if(killer.isPlayer) pushToast('キルボーナス！ HP+50 ガッツ+50');
   } else {
     const kfText = `${victim.name} は安全圏外で力尽きた`;
     pushKillFeed(kfText);
-    if(netState.mode==='multi' && netState.isHost) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
+    if(netState.mode==='multi' && victim.isPlayer) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
   }
   if(victim.isPlayer){ onPlayerDown(); }
   checkWin();
@@ -2811,14 +2920,33 @@ document.querySelectorAll('.rank-tab').forEach(tab=>{
    LOOP
 ===================================================================== */
 let lastT = performance.now();
-/* =====================================================================
-   MULTIPLAYER MATCH LOGIC
-===================================================================== */
-let netSyncTimer = 0;
-const NET_SYNC_INTERVAL = 0.12; // 秒。約8回/秒の配信で読み書き量を抑える
-let remotePlayerEntities = {}; // playerId -> entity (非ホスト/ホスト共通で「他人の見た目」を保持)
 
-function beginMultiplayerMatch(){
+/* =====================================================================
+   MULTIPLAYER MATCH LOGIC (全員並行実行方式)
+   - 全プレイヤーが同じシードから同じ初期状態(岩・地形・ルート・ボット構成・
+     全員のスポーン地点)をローカルで再現する
+   - 各自は「自分の入力」だけを高頻度で送信し、他人のエンティティは
+     受け取った入力を使って各自のローカルでシミュレーションする
+   - ホスト/非ホストという役割の違いは、部屋作成時のシード決定にしか残らない
+===================================================================== */
+const INPUT_SEND_INTERVAL = 0.06;   // 自分の入力を送る間隔(秒) 約16回/秒
+const RECONCILE_SEND_INTERVAL = 0.35; // 自分のHP等の権威値を軽く共有する間隔
+let lastInputSendAt = 0;
+let lastReconcileSendAt = 0;
+let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected}
+let remoteRecon = {};    // playerId -> {hp,maxHp,guts,maxGuts,alive,kills,damageDealt}
+const remoteFireQueue = new Set();
+
+function seedFromString(str){
+  let h = 2166136261;
+  for(let i=0;i<str.length;i++){
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h>>>0;
+}
+
+async function beginMultiplayerMatch(){
   if(game.started) return;
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
@@ -2831,58 +2959,66 @@ function beginMultiplayerMatch(){
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
   joyKnobEl.style.transform='translate(0,0)';
-  remotePlayerEntities = {};
+  remoteInputs = {}; remoteRecon = {}; remoteFireQueue.clear();
 
+  // 部屋のシードを決定/取得(ホストが決めて書き込み、全員がそれを読む)
+  let seed;
+  if(netState.isHost){
+    seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
+    await window.__aramonSetRoomSeed(netState.roomId, seed);
+  } else {
+    seed = await window.__aramonWaitForRoomSeed(netState.roomId, 4000);
+    if(seed==null) seed = seedFromString(netState.roomId); // 取得できなくても部屋IDから決定的に代用
+  }
+
+  const rng = makeSeededRng(seed);
+
+  initZone();
+  seededGenRocks(rng);
+  seededGenTerrain(rng);
+
+  // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
   const humanList = Object.keys(netState.humanPlayers||{}).map(id=>({ id, ...netState.humanPlayers[id] }));
   if(!humanList.find(h=>h.id===netState.myPlayerId)){
     humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement });
   }
+  humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
-  if(netState.isHost){
-    initZone();
-    genRocks();
-    genTerrain();
-
-    // 自分(ホスト)のプレイヤーエンティティ
-    player = createMonster(game.selectedElement, true, 'プレイヤー');
-    player.netPlayerId = netState.myPlayerId;
-    entities.push(player);
-
-    // 他の人間プレイヤー(ホストが動きを計算し、入力はネットワーク経由で反映)
-    for(const h of humanList){
-      if(h.id===netState.myPlayerId) continue;
-      const remote = createMonster(h.element||'fire', false, h.name||'プレイヤー');
-      remote.isPlayer=false; remote.isRemoteHuman=true; remote.netPlayerId=h.id;
-      entities.push(remote);
-    }
-
-    // 残りをBotで補完
-    const usedSlots = humanList.length;
-    const botCount = Math.max(0, 20-usedSlots);
-    const names = shuffle(BOT_NAMES);
-    const botElements = shuffle(Object.keys(ELEMENTS));
-    for(let i=0;i<botCount;i++){
-      const elKey = botElements[i % botElements.length];
-      entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':'')));
-    }
-    spawnLoot(138, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
-    updateCamera();
-  } else {
-    // 非ホスト: 自分の見た目だけローカルに作り、他は受信状態で描画
-    player = createMonster(game.selectedElement, true, 'プレイヤー');
-    player.netPlayerId = netState.myPlayerId;
-    entities.push(player);
-    initZone();
-    updateCamera();
-
-    window.__aramonWatchState(netState.roomId, (stateObj)=>{
-      if(stateObj) applyRemoteState(stateObj);
-    });
+  let idCounter = 1;
+  for(const h of humanList){
+    const sp = seededPickSpawnPoint(rng);
+    const isMe = h.id===netState.myPlayerId;
+    const ent = createMonster(h.element||'fire', isMe, h.name||'プレイヤー', { id: idCounter++, spawnPoint: sp });
+    ent.netPlayerId = h.id;
+    if(isMe){ ent.isPlayer = true; player = ent; }
+    else { ent.isPlayer=false; ent.isRemoteHuman=true; }
+    entities.push(ent);
   }
 
+  const usedSlots = humanList.length;
+  const botCount = Math.max(0, 20-usedSlots);
+  const names = seededShuffle(rng, BOT_NAMES);
+  const botElements = seededShuffle(rng, Object.keys(ELEMENTS));
+  for(let i=0;i<botCount;i++){
+    const elKey = botElements[i % botElements.length];
+    const sp = seededPickSpawnPoint(rng);
+    const nm = names[i % names.length] + (i>=names.length?'Ⅱ':'');
+    entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
+  }
+
+  seededSpawnLoot(rng, 138, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  updateCamera();
+
+  window.__aramonWatchInputs(netState.roomId, (players)=>{
+    netState.humanPlayers = players||{};
+    for(const id in players){
+      if(id===netState.myPlayerId) continue;
+      if(players[id] && players[id].input) remoteInputs[id] = players[id].input;
+      if(players[id] && players[id].recon) remoteRecon[id] = players[id].recon;
+    }
+  });
   window.__aramonWatchEvents(netState.roomId, (evt)=>{
     if(evt && evt.kind==='kill' && evt.text) pushKillFeed(evt.text);
-    if(evt && evt.kind==='toast' && evt.text && !netState.isHost) pushToast(evt.text);
   });
 
   document.getElementById('startScreen').classList.add('hidden');
@@ -2890,24 +3026,33 @@ function beginMultiplayerMatch(){
   pushToast('バトル開始！（マルチプレイ）');
 }
 
-// ホスト: 自分以外の人間プレイヤーの入力をentitiesに反映
-function applyRemoteInputsToHostSim(){
-  const players = netState.humanPlayers||{};
-  for(const id in players){
+// 他プレイヤーの入力を、対応するローカルエンティティに反映する
+function applyRemoteInputsLocally(){
+  for(const id in remoteInputs){
     if(id===netState.myPlayerId) continue;
     const ent = entities.find(e=>e.netPlayerId===id);
     if(!ent || !ent.alive) continue;
-    const inp = players[id].input;
+    const inp = remoteInputs[id];
     if(!inp) continue;
     ent.inputMoveX = clamp(inp.mx||0,-1,1);
     ent.inputMoveY = clamp(inp.my||0,-1,1);
     ent.facingAngle = typeof inp.facing==='number' ? inp.facing : ent.facingAngle;
+    if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
     if(inp.wantFire) remoteFireQueue.add(id);
     if(inp.wantDash) tryDash(ent);
-    if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
+  }
+  // 軽い補正: 大きく数値がズレていたら他人のHP/ガッツ/生存状態を合わせる
+  for(const id in remoteRecon){
+    if(id===netState.myPlayerId) continue;
+    const ent = entities.find(e=>e.netPlayerId===id);
+    const rc = remoteRecon[id];
+    if(!ent || !rc) continue;
+    if(Math.abs(ent.hp-rc.hp) > 6) ent.hp = rc.hp;
+    if(Math.abs(ent.guts-rc.guts) > 8) ent.guts = rc.guts;
+    ent.maxHp = rc.maxHp; ent.maxGuts = rc.maxGuts;
+    if(ent.alive && !rc.alive){ ent.alive=false; ent.hp=0; }
   }
 }
-const remoteFireQueue = new Set();
 function processRemoteFireQueue(){
   for(const id of remoteFireQueue){
     const ent = entities.find(e=>e.netPlayerId===id);
@@ -2936,102 +3081,29 @@ function processRemoteFireQueue(){
   }
 }
 
-// 非ホスト: 自分の入力を送信
-let lastInputSendTime = 0;
-function sendLocalInputIfMultiplayer(){
-  if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
-  const now = performance.now();
-  if(now-lastInputSendTime < 90) return;
-  lastInputSendTime = now;
-  window.__aramonSendInput(netState.roomId, {
-    mx: player? player.inputMoveX:0,
-    my: player? player.inputMoveY:0,
-    facing: player? player.facingAngle:0,
-    wantFire: !!(fireBtnHeld || keys['f']),
-    wantDash: false,
-    moveTierSelected: player? player.moveTierSelected:1,
-  });
-}
-
-// ホスト: 状態をシリアライズして配信
-function buildStateSnapshot(){
-  return {
-    ts: Date.now(),
-    matchTime,
-    zone: { cx:zoneState.center.x, cy:zoneState.center.y, r:zoneState.radius, phase:zoneState.phaseIndex, shrinking:zoneState.shrinking },
-    entities: entities.map(e=>({
-      id:e.id, np:e.netPlayerId||null, el:e.element, nm:e.name,
-      x:Math.round(e.x), y:Math.round(e.y), z:Math.round(e.z),
-      hp:Math.round(e.hp), mhp:e.maxHp, gt:Math.round(e.guts), mgt:e.maxGuts,
-      fa:Math.round(e.facingAngle*100)/100, alive:e.alive, tier:e.moveTierSelected,
-      burn: e.burnUntil>matchTime, slow: e.slowUntil>matchTime, dash: e.dashTimer>0,
-    })),
-    projectiles: projectiles.map(p=>({ x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z), c:p.color, r:p.hitR, w:p.hitW||0 })),
-    loot: lootItems.map(it=>({ id:it.id, k:it.kind, t:it.type, x:Math.round(it.x), y:Math.round(it.y) })),
-    alive: entities.filter(e=>e.alive).length,
-  };
-}
-function applyRemoteState(s){
-  if(!s || !s.entities) return;
-  matchTime = s.matchTime||matchTime;
-  if(s.zone){
-    zoneState.center.x=s.zone.cx; zoneState.center.y=s.zone.cy; zoneState.radius=s.zone.r;
-    zoneState.phaseIndex=s.zone.phase; zoneState.shrinking=s.zone.shrinking;
+function sendLocalInputIfMultiplayer(now){
+  if(netState.mode!=='multi' || !netState.roomId) return;
+  if(now-lastInputSendAt >= INPUT_SEND_INTERVAL*1000){
+    lastInputSendAt = now;
+    window.__aramonSendInput(netState.roomId, {
+      mx: player? player.inputMoveX:0,
+      my: player? player.inputMoveY:0,
+      facing: player? player.facingAngle:0,
+      wantFire: !!(fireBtnHeld || keys['f']),
+      wantDash: false,
+      moveTierSelected: player? player.moveTierSelected:1,
+    });
   }
-  const seen = new Set();
-  const wasAlive = player ? player.alive : true;
-  for(const se of s.entities){
-    seen.add(se.id);
-    let ent = entities.find(e=>e.id===se.id);
-    const isMe = se.np && se.np===netState.myPlayerId;
-    if(isMe){
-      if(player){
-        player.hp = se.hp; player.maxHp = se.mhp;
-        player.guts = se.gt; player.maxGuts = se.mgt;
-        player.alive = se.alive;
-        player.burnUntil = se.burn ? matchTime+1 : 0;
-        player.slowUntil = se.slow ? matchTime+1 : 0;
-        // 位置・向きはローカル入力予測を優先(大きくズレていたら補正)
-        if(Math.hypot(player.x-se.x, player.y-se.y) > 260){ player.x=se.x; player.y=se.y; }
-      }
-      continue;
-    }
-    if(!ent){
-      ent = createMonster(se.el, false, se.nm);
-      ent.id = se.id; ent.netPlayerId = se.np;
-      entities.push(ent);
-    }
-    ent.x=se.x; ent.y=se.y; ent.z=se.z; ent.hp=se.hp; ent.maxHp=se.mhp;
-    ent.guts=se.gt; ent.maxGuts=se.mgt; ent.facingAngle=se.fa; ent.alive=se.alive;
-    ent.moveTierSelected=se.tier;
-    ent.burnUntil = se.burn ? matchTime+1 : 0;
-    ent.slowUntil = se.slow ? matchTime+1 : 0;
-    ent.dashTimer = se.dash ? 0.05 : 0;
-  }
-  if(wasAlive && player && !player.alive && !game.over){
-    onPlayerDown();
-  }
-  const aliveNow = s.entities.filter(se=>se.alive).length;
-  if(aliveNow<=1 && player && player.alive && !game.over){
-    onPlayerWin();
-  }
-  for(let i=entities.length-1;i>=0;i--){
-    if(entities[i]===player) continue;
-    if(!seen.has(entities[i].id)) entities.splice(i,1);
-  }
-  projectiles = (s.projectiles||[]).map(p=>({ x:p.x, y:p.y, z:p.z, color:p.c, hitR:p.r, hitW:p.w||0 }));
-  const lootIds = new Set((s.loot||[]).map(it=>it.id));
-  lootItems = lootItems.filter(it=>lootIds.has(it.id));
-  const existingIds = new Set(lootItems.map(it=>it.id));
-  for(const it of (s.loot||[])){
-    if(!existingIds.has(it.id)){
-      lootItems.push({ id:it.id, kind:it.k, type:it.t, x:it.x, y:it.y, bob:rand(0,Math.PI*2) });
-    } else {
-      const local = lootItems.find(li=>li.id===it.id);
-      if(local){ local.x=it.x; local.y=it.y; }
+  if(now-lastReconcileSendAt >= RECONCILE_SEND_INTERVAL*1000){
+    lastReconcileSendAt = now;
+    if(player){
+      window.__aramonSendRecon(netState.roomId, {
+        hp: Math.round(player.hp), maxHp: player.maxHp,
+        guts: Math.round(player.guts), maxGuts: player.maxGuts,
+        alive: player.alive, kills: player.kills, damageDealt: Math.round(player.damageDealt),
+      });
     }
   }
-  updateHUD();
 }
 
 function loop(now){
@@ -3041,36 +3113,11 @@ function loop(now){
   if(game.started && !game.over){
     if(netState.mode!=='multi'){
       update(dt);
-    } else if(netState.isHost){
-      applyRemoteInputsToHostSim();
+    } else {
+      applyRemoteInputsLocally();
       update(dt);
       processRemoteFireQueue();
-      netSyncTimer += dt;
-      if(netSyncTimer >= NET_SYNC_INTERVAL){
-        netSyncTimer = 0;
-        window.__aramonPublishState(netState.roomId, buildStateSnapshot());
-      }
-    } else {
-      // 非ホスト: 自分の入力はローカルで即時反映(体感の遅延を減らす)、他者は受信状態に任せる
-      computePlayerInput();
-      if(player && player.alive) resolveMovement(player, dt);
-      for(const e of entities){
-        if(e.fireCooldown>0) e.fireCooldown -= dt;
-        if(e.dashCooldown>0) e.dashCooldown -= dt;
-        if(e.hitFlash>0) e.hitFlash -= dt;
-      }
-      for(let i=particles.length-1;i>=0;i--){
-        const p = particles[i];
-        p.x += p.vx*dt; p.y += p.vy*dt;
-        if(p.type==='text') p.vy += 60*dt;
-        p.life -= dt;
-        if(p.life<=0) particles.splice(i,1);
-      }
-      updateCamera();
-      updateCameraSnap(dt);
-      matchTime += dt;
-      updateHUD();
-      sendLocalInputIfMultiplayer();
+      sendLocalInputIfMultiplayer(now);
     }
   }
 
