@@ -288,27 +288,31 @@
   #rankingList .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
   #myStatsColumns{
-    display:flex; gap:32px; align-items:flex-start; justify-content:center;
-    width:min(92vw,760px); margin-top:6px;
+    display:flex; gap:28px; align-items:stretch; justify-content:center;
+    width:min(94vw,860px); margin-top:6px;
+    height:min(56vh, 460px);
   }
   #myStatsLeftCol{
-    display:flex; flex-direction:column; align-items:center; flex:0 0 auto; width:200px;
+    display:flex; flex-direction:column; align-items:center; flex:0 0 auto; width:280px;
+    height:100%; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #myStatsRightCol{
     display:flex; flex-direction:column; align-items:center; flex:1 1 auto; min-width:0;
+    height:100%;
   }
+  #myStatsTitle, #myMonstersTitle{ flex-shrink:0; }
   #myStatsOverall{
-    display:flex; flex-direction:column; gap:10px; margin-top:14px; width:100%;
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; width:100%;
   }
   .mystat-box{
-    display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:4px; padding:11px 16px;
-    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; width:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:14px 10px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; width:100%; flex-shrink:0;
   }
-  .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:18px; color:var(--amber); }
+  .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:19px; color:var(--amber); }
   .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
   #myStatsByElement{
-    margin-top:14px; width:100%; max-height:40vh; overflow-y:scroll;
-    display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-right:10px;
+    margin-top:14px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
+    display:grid; grid-template-columns:1fr 1fr; align-content:start; gap:8px; padding-right:10px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #myStatsByElement::-webkit-scrollbar{ width:12px; }
@@ -601,7 +605,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v44</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v46</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -3111,9 +3115,10 @@ function renderMyStats(){
   const overallEl = document.getElementById('myStatsOverall');
   overallEl.innerHTML = `
     <div class="mystat-box"><div class="ml">通算マッチ数</div><div class="mv">${stats.totalMatches||0}</div></div>
+    <div class="mystat-box"><div class="ml">通算勝利数</div><div class="mv">${stats.totalWins||0}</div></div>
     <div class="mystat-box"><div class="ml">最高キル数</div><div class="mv">${stats.bestKills||0}</div></div>
-    <div class="mystat-box"><div class="ml">最高ダメージ</div><div class="mv">${stats.bestDamage||0}</div></div>
     <div class="mystat-box"><div class="ml">K/D</div><div class="mv">${derived.kd.toFixed(2)}</div></div>
+    <div class="mystat-box"><div class="ml">最高ダメージ</div><div class="mv">${stats.bestDamage||0}</div></div>
     <div class="mystat-box"><div class="ml">平均ダメージ</div><div class="mv">${Math.round(derived.avgDamage)}</div></div>
   `;
   const byElEl = document.getElementById('myStatsByElement');
