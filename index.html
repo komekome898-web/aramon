@@ -261,11 +261,11 @@
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
-  #replayBtn, #viewRankingBtn, #closeRankingBtn{
+  #replayBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn{
     margin-top:0; padding:13px 30px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
-  #viewRankingBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+  #viewRankingBtn, #viewMyStatsBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   .resultBtnRow{ display:flex; gap:14px; margin-top:26px; }
 
   #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
@@ -298,8 +298,8 @@
   .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:19px; color:var(--amber); }
   .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
   #myStatsByElement{
-    margin-top:14px; width:min(90vw,520px); max-height:36vh; overflow-y:scroll;
-    display:flex; flex-direction:column; gap:6px; padding-right:6px;
+    margin-top:14px; width:min(90vw,560px); max-height:36vh; overflow-y:scroll;
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-right:10px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #myStatsByElement::-webkit-scrollbar{ width:12px; }
@@ -307,15 +307,12 @@
   #myStatsByElement::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #myStatsByElement{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
   .mystat-elem-row{
-    display:flex; align-items:center; gap:12px; padding:9px 14px; background:rgba(255,255,255,0.04);
+    display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.04);
     border-radius:6px; border:1px solid var(--panel-line);
   }
-  .mystat-elem-row .en{ flex:1; text-align:left; font-size:13px; }
-  .mystat-elem-row .ev{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink); text-align:right; min-width:130px; }
-  #closeMyStatsBtn{
-    margin-top:20px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
-    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
-  }
+  .mystat-elem-row .ei{ width:22px; height:22px; border-radius:50%; object-fit:cover; flex-shrink:0; background:rgba(255,255,255,0.08); }
+  .mystat-elem-row .en{ flex:1; text-align:left; font-size:12px; white-space:nowrap; }
+  .mystat-elem-row .ev{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); text-align:right; line-height:1.5; }
 
   @media (max-width:520px){
     #hpPanel{ width:180px; }
@@ -595,7 +592,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v41</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v42</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -2739,6 +2736,17 @@ function buildMonsterGrid(){
 }
 buildMonsterGrid();
 
+const PLAYER_NAME_KEY = 'aramon_player_name_v1';
+(function restorePlayerName(){
+  try{
+    const saved = localStorage.getItem(PLAYER_NAME_KEY);
+    if(saved) document.getElementById('playerNameInput').value = saved;
+  }catch(err){}
+})();
+document.getElementById('playerNameInput').addEventListener('input', (e)=>{
+  try{ localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }catch(err){}
+});
+
 /* =====================================================================
    MULTIPLAYER STATE
 ===================================================================== */
@@ -3083,7 +3091,11 @@ function renderMyStats(){
   const rows = Object.keys(ELEMENTS).map(key=>{
     const el = ELEMENTS[key];
     const es = (stats.byElement && stats.byElement[key]) || { bestDamage:0, bestKills:0, matches:0 };
-    return `<div class="mystat-elem-row"><span class="en">${el.label}</span><span class="ev">最高キル ${es.bestKills||0}　最高ダメージ ${es.bestDamage||0}</span></div>`;
+    return `<div class="mystat-elem-row">
+      <img class="ei" src="monsters/${key}.png" alt="" onerror="this.remove()">
+      <span class="en">${el.label}</span>
+      <span class="ev">キル ${es.bestKills||0}<br>Dmg ${es.bestDamage||0}</span>
+    </div>`;
   });
   byElEl.innerHTML = rows.join('');
 }
