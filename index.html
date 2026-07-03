@@ -319,7 +319,7 @@
   import {
     getDatabase, ref, push, query, orderByChild, limitToLast, get,
     set, update, onValue, off, onDisconnect, remove, serverTimestamp,
-    runTransaction, child
+    runTransaction, child, onChildAdded
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
   const firebaseConfig = {
@@ -378,7 +378,7 @@
   let roomListeners = [];
 
   function clearRoomListeners(){
-    roomListeners.forEach(({r,cb})=>off(r,'value',cb));
+    roomListeners.forEach(({r,cb,isChildAdded})=>off(r, isChildAdded?'child_added':'value', cb));
     roomListeners = [];
   }
 
@@ -526,6 +526,29 @@
     roomListeners.push({r:q,cb});
   };
 
+  // 命中報告: 誰かが人間に当てた攻撃を報告し、ホストだけが確定計算する
+  window.__aramonReportHit = async function(roomId, hit){
+    try{ await push(ref(fbDb, `rooms/${roomId}/hits`), hit); }catch(err){}
+  };
+
+  window.__aramonWatchHitsAsHost = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/hits`);
+    const cb = (snap)=>{ callback(snap.key, snap.val()); };
+    onChildAdded(r, cb);
+    roomListeners.push({r,cb,isChildAdded:true});
+  };
+
+  // ホストが確定させた権威状態(人間プレイヤーのHP/ガッツ/生存)を配信
+  window.__aramonPublishAuthState = async function(roomId, authState){
+    try{ await set(ref(fbDb, `rooms/${roomId}/authState`), authState); }catch(err){}
+  };
+  window.__aramonWatchAuthState = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/authState`);
+    const cb = (snap)=>{ callback(snap.val()||null); };
+    onValue(r, cb);
+    roomListeners.push({r,cb});
+  };
+
   window.__aramonCleanupLobbyEntry = async function(){
     if(window.__aramonLobbyEntryId){
       try{ await remove(ref(fbDb, `lobby/${window.__aramonLobbyEntryId}`)); }catch(err){}
@@ -542,7 +565,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v39</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v40</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -1251,8 +1274,28 @@ function fireMove(attacker, target, move){
     });
   }
 }
-function applyDamage(target, dmg, source){
+function isNetworkedHuman(ent){
+  return netState.mode==='multi' && (ent.isPlayer || ent.isRemoteHuman);
+}
+function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
+  const involvesHuman = isNetworkedHuman(target) || (source && isNetworkedHuman(source));
+  const isAuthoritative = (opts && opts.authoritative) || (netState.mode==='multi' && netState.isHost);
+
+  if(involvesHuman && !isAuthoritative){
+    // マルチプレイで人間が関わる場合、見た目だけ即時反映しつつ、確定計算はホストに委ねる
+    spawnHit(target.x, target.y, target.z, source ? ELEMENTS[source.element].color : '#ffffff');
+    spawnDmgText(target.x, target.y, target.z, Math.round(dmg));
+    if(netState.mode==='multi'){
+      window.__aramonReportHit(netState.roomId, {
+        targetNetId: target.netPlayerId || null, targetLocalId: target.id,
+        sourceNetId: source? (source.netPlayerId||null) : null, sourceLocalId: source? source.id : null,
+        dmg, sourceElement: source? source.element : null, ts: Date.now(),
+      });
+    }
+    return;
+  }
+
   let finalDmg = dmg;
   if(target.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgTakenMod; }
   if(source && source.alive){
@@ -1318,11 +1361,13 @@ function killEntity(victim, killer){
   checkWin();
 }
 function checkWin(){
+  if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
   const aliveList = entities.filter(e=>e.alive);
   if(aliveList.length<=1 && !game.over){
     if(aliveList.length===1){
       aliveList[0].placement = 1;
       if(aliveList[0].isPlayer) onPlayerWin();
+      if(netState.mode==='multi') window.__aramonPushEvent(netState.roomId, {kind:'matchEnd', winnerNetId: aliveList[0].netPlayerId||null, winnerName: aliveList[0].name, ts:Date.now()});
     }
   }
 }
@@ -2820,6 +2865,7 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
 });
 
 function showResult(isWin, placement){
+  if(game.over) return;
   game.over=true;
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
@@ -2930,11 +2976,8 @@ let lastT = performance.now();
    - ホスト/非ホストという役割の違いは、部屋作成時のシード決定にしか残らない
 ===================================================================== */
 const INPUT_SEND_INTERVAL = 0.06;   // 自分の入力を送る間隔(秒) 約16回/秒
-const RECONCILE_SEND_INTERVAL = 0.35; // 自分のHP等の権威値を軽く共有する間隔
 let lastInputSendAt = 0;
-let lastReconcileSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected}
-let remoteRecon = {};    // playerId -> {hp,maxHp,guts,maxGuts,alive,kills,damageDealt}
 const remoteFireQueue = new Set();
 
 function seedFromString(str){
@@ -2959,7 +3002,7 @@ async function beginMultiplayerMatch(){
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
   joyKnobEl.style.transform='translate(0,0)';
-  remoteInputs = {}; remoteRecon = {}; remoteFireQueue.clear();
+  remoteInputs = {}; remoteFireQueue.clear(); processedHitKeys.clear(); authPublishTimer=0;
 
   // 部屋のシードを決定/取得(ホストが決めて書き込み、全員がそれを読む)
   let seed;
@@ -3014,11 +3057,24 @@ async function beginMultiplayerMatch(){
     for(const id in players){
       if(id===netState.myPlayerId) continue;
       if(players[id] && players[id].input) remoteInputs[id] = players[id].input;
-      if(players[id] && players[id].recon) remoteRecon[id] = players[id].recon;
     }
   });
   window.__aramonWatchEvents(netState.roomId, (evt)=>{
     if(evt && evt.kind==='kill' && evt.text) pushKillFeed(evt.text);
+    if(evt && evt.kind==='matchEnd' && !game.over){
+      if(player && player.netPlayerId===evt.winnerNetId && player.alive){ onPlayerWin(); }
+    }
+  });
+
+  if(netState.isHost){
+    window.__aramonWatchHitsAsHost(netState.roomId, (hitKey, hit)=>{
+      if(processedHitKeys.has(hitKey)) return;
+      processedHitKeys.add(hitKey);
+      processHitAsHost(hit);
+    });
+  }
+  window.__aramonWatchAuthState(netState.roomId, (authState)=>{
+    if(authState) applyAuthState(authState);
   });
 
   document.getElementById('startScreen').classList.add('hidden');
@@ -3040,17 +3096,6 @@ function applyRemoteInputsLocally(){
     if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
     if(inp.wantFire) remoteFireQueue.add(id);
     if(inp.wantDash) tryDash(ent);
-  }
-  // 軽い補正: 大きく数値がズレていたら他人のHP/ガッツ/生存状態を合わせる
-  for(const id in remoteRecon){
-    if(id===netState.myPlayerId) continue;
-    const ent = entities.find(e=>e.netPlayerId===id);
-    const rc = remoteRecon[id];
-    if(!ent || !rc) continue;
-    if(Math.abs(ent.hp-rc.hp) > 6) ent.hp = rc.hp;
-    if(Math.abs(ent.guts-rc.guts) > 8) ent.guts = rc.guts;
-    ent.maxHp = rc.maxHp; ent.maxGuts = rc.maxGuts;
-    if(ent.alive && !rc.alive){ ent.alive=false; ent.hp=0; }
   }
 }
 function processRemoteFireQueue(){
@@ -3094,17 +3139,53 @@ function sendLocalInputIfMultiplayer(now){
       moveTierSelected: player? player.moveTierSelected:1,
     });
   }
-  if(now-lastReconcileSendAt >= RECONCILE_SEND_INTERVAL*1000){
-    lastReconcileSendAt = now;
-    if(player){
-      window.__aramonSendRecon(netState.roomId, {
-        hp: Math.round(player.hp), maxHp: player.maxHp,
-        guts: Math.round(player.guts), maxGuts: player.maxGuts,
-        alive: player.alive, kills: player.kills, damageDealt: Math.round(player.damageDealt),
-      });
+}
+
+// ===== ホスト専用: 命中報告を確定計算し、authStateとして配信 =====
+const processedHitKeys = new Set();
+let authPublishTimer = 0;
+const AUTH_PUBLISH_INTERVAL = 0.25;
+
+function processHitAsHost(hit){
+  if(!hit) return;
+  const target = entities.find(e=>
+    (hit.targetNetId && e.netPlayerId===hit.targetNetId) || (!hit.targetNetId && e.id===hit.targetLocalId)
+  );
+  const source = hit.sourceNetId ? entities.find(e=>e.netPlayerId===hit.sourceNetId)
+                 : (hit.sourceLocalId!=null ? entities.find(e=>e.id===hit.sourceLocalId) : null);
+  if(!target || !target.alive) return;
+  applyDamage(target, hit.dmg, source||null, {authoritative:true});
+}
+
+function buildAuthStatePayload(){
+  const payload = {};
+  for(const e of entities){
+    if(!e.netPlayerId) continue;
+    payload[e.netPlayerId] = {
+      hp: Math.round(e.hp), maxHp: e.maxHp, guts: Math.round(e.guts), maxGuts: e.maxGuts,
+      alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
+      x: Math.round(e.x), y: Math.round(e.y),
+    };
+  }
+  return payload;
+}
+
+function applyAuthState(authState){
+  for(const netId in authState){
+    const a = authState[netId];
+    const ent = entities.find(e=>e.netPlayerId===netId);
+    if(!ent) continue;
+    ent.hp = a.hp; ent.maxHp = a.maxHp; ent.guts = a.guts; ent.maxGuts = a.maxGuts;
+    ent.kills = a.kills; ent.damageDealt = a.damageDealt;
+    if(ent.alive && !a.alive){
+      ent.alive = false; ent.hp = 0;
+      if(ent.isPlayer && !game.over) onPlayerDown();
     }
+    // 位置は大きくズレた時だけ補正(通常はローカル計算を優先し滑らかさを保つ)
+    if(!ent.isPlayer && Math.hypot(ent.x-a.x, ent.y-a.y) > 400){ ent.x=a.x; ent.y=a.y; }
   }
 }
+
 
 function loop(now){
   const dt = Math.min(0.05, (now-lastT)/1000);
@@ -3118,6 +3199,13 @@ function loop(now){
       update(dt);
       processRemoteFireQueue();
       sendLocalInputIfMultiplayer(now);
+      if(netState.isHost){
+        authPublishTimer += dt;
+        if(authPublishTimer >= AUTH_PUBLISH_INTERVAL){
+          authPublishTimer = 0;
+          window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload());
+        }
+      }
     }
   }
 
