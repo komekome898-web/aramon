@@ -287,6 +287,10 @@
   .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); }
   #rankingList .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
+  #myStatsScreen{
+    justify-content:flex-start; overflow-y:auto; padding-top:28px; padding-bottom:28px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
   #myStatsColumns{
     display:flex; gap:28px; align-items:stretch; justify-content:center;
     width:min(94vw,860px); margin-top:6px;
@@ -312,7 +316,7 @@
   .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
   #myStatsByElement{
     margin-top:14px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
-    display:grid; grid-template-columns:1fr 1fr; align-content:start; gap:8px; padding-right:10px;
+    display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-content:start; gap:8px; padding-right:10px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #myStatsByElement::-webkit-scrollbar{ width:12px; }
@@ -321,11 +325,11 @@
   #myStatsByElement{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
   .mystat-elem-row{
     display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.04);
-    border-radius:6px; border:1px solid var(--panel-line);
+    border-radius:6px; border:1px solid var(--panel-line); min-width:0;
   }
   .mystat-elem-row .ei{ width:22px; height:22px; border-radius:50%; object-fit:cover; flex-shrink:0; background:rgba(255,255,255,0.08); }
-  .mystat-elem-row .en{ flex:1; text-align:left; font-size:12px; white-space:nowrap; }
-  .mystat-elem-row .ev{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); text-align:right; line-height:1.5; }
+  .mystat-elem-row .en{ flex:0 0 auto; text-align:left; font-size:12px; white-space:nowrap; }
+  .mystat-elem-row .ev{ flex:1 1 auto; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); text-align:right; line-height:1.5; white-space:nowrap; }
 
   @media (max-width:520px){
     #hpPanel{ width:180px; }
@@ -605,7 +609,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v46</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v47</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -2568,7 +2572,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#rankingList')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#myStatsScreen')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });
@@ -2577,7 +2581,7 @@ document.addEventListener('gestureend', (e)=>{ e.preventDefault(); });
 
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#rankingList')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#myStatsScreen')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
