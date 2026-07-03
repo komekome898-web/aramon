@@ -285,28 +285,30 @@
   .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; }
   .rank-row .rn{ flex:1; text-align:left; font-size:13px; }
   .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); }
-  #rankingList .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
+  #rankingList .rank-empty, #myStatsByElement .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
   #myStatsScreen{
-    justify-content:flex-start; overflow-y:auto; padding-top:28px; padding-bottom:28px;
-    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    justify-content:flex-start; padding-top:20px; padding-bottom:16px;
+    display:flex; flex-direction:column; align-items:center;
   }
   #myStatsColumns{
     display:flex; gap:28px; align-items:stretch; justify-content:center;
     width:min(94vw,860px); margin-top:6px;
-    height:min(56vh, 460px);
+    flex:1 1 auto; min-height:0;
   }
   #myStatsLeftCol{
     display:flex; flex-direction:column; align-items:center; flex:0 0 auto; width:280px;
-    height:100%; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    min-height:0;
   }
   #myStatsRightCol{
     display:flex; flex-direction:column; align-items:center; flex:1 1 auto; min-width:0;
-    height:100%;
+    min-height:0;
   }
-  #myStatsTitle, #myMonstersTitle{ flex-shrink:0; }
+  .mystat-col-title{ font-size:24px; flex-shrink:0; }
   #myStatsOverall{
     display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; width:100%;
+    overflow-y:auto; min-height:0; padding-bottom:4px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   .mystat-box{
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:14px 10px;
@@ -316,7 +318,7 @@
   .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
   #myStatsByElement{
     margin-top:14px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
-    display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-content:start; gap:8px; padding-right:10px;
+    display:flex; flex-direction:column; gap:8px; padding-right:10px; padding-bottom:4px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #myStatsByElement::-webkit-scrollbar{ width:12px; }
@@ -324,12 +326,12 @@
   #myStatsByElement::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #myStatsByElement{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
   .mystat-elem-row{
-    display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.04);
-    border-radius:6px; border:1px solid var(--panel-line); min-width:0;
+    display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 12px; background:rgba(255,255,255,0.04);
+    border-radius:6px; border:1px solid var(--panel-line); flex-shrink:0;
   }
-  .mystat-elem-row .ei{ width:22px; height:22px; border-radius:50%; object-fit:cover; flex-shrink:0; background:rgba(255,255,255,0.08); }
-  .mystat-elem-row .en{ flex:0 0 auto; text-align:left; font-size:12px; white-space:nowrap; }
-  .mystat-elem-row .ev{ flex:1 1 auto; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); text-align:right; line-height:1.5; white-space:nowrap; }
+  .mystat-elem-row .ei{ width:28px; height:28px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
+  .mystat-elem-row .en{ text-align:center; font-size:13px; font-weight:600; margin-top:2px; }
+  .mystat-elem-row .ev-line{ width:100%; text-align:left; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); }
 
   @media (max-width:520px){
     #hpPanel{ width:180px; }
@@ -609,7 +611,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v47</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v48</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -738,11 +740,11 @@
 <div id="myStatsScreen" class="resultScreen hidden">
   <div id="myStatsColumns">
     <div id="myStatsLeftCol">
-      <div class="rank" id="myStatsTitle" style="font-size:26px;">MY RECORD</div>
+      <div class="rank mystat-col-title" id="myStatsTitle">MY RECORD</div>
       <div id="myStatsOverall"></div>
     </div>
     <div id="myStatsRightCol">
-      <div class="rank" id="myMonstersTitle" style="font-size:26px;">MY MONSTERS</div>
+      <div class="rank mystat-col-title" id="myMonstersTitle">MY MONSTERS</div>
       <div id="myStatsByElement"></div>
     </div>
   </div>
@@ -3136,7 +3138,9 @@ function renderMyStats(){
     return `<div class="mystat-elem-row">
       <img class="ei" src="monsters/${key}.png" alt="" onerror="this.remove()">
       <span class="en">${el.label}</span>
-      <span class="ev">使用 ${es.matches||0}回<br>キル ${es.bestKills||0}　Dmg ${es.bestDamage||0}</span>
+      <span class="ev-line">使用回数　${es.matches||0}回</span>
+      <span class="ev-line">最高キル　${es.bestKills||0}</span>
+      <span class="ev-line">最高ダメージ　${es.bestDamage||0}</span>
     </div>`;
   });
   byElEl.innerHTML = rows.join('');
