@@ -592,7 +592,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v42</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v43</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -1172,11 +1172,22 @@ function pickLootKindAndType(){
   if(r < 0.67) return { kind:'ticket', type:'ticket' };
   return { kind:'guts', type:'guts' };
 }
+function isNearRock(x, y, margin){
+  for(const r of rocks){
+    if(Math.hypot(x-r.x, y-r.y) < r.radius+margin) return true;
+  }
+  return false;
+}
 function spawnLoot(n, center, radius){
   for(let i=0;i<n;i++){
-    const a = rand(0,Math.PI*2), d = rand(0,radius);
     const pick = pickLootKindAndType();
-    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x: center.x+Math.cos(a)*d, y: center.y+Math.sin(a)*d, bob: rand(0,Math.PI*2) });
+    let x, y, guard=0;
+    do{
+      const a = rand(0,Math.PI*2), d = rand(0,radius);
+      x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
+      guard++;
+    } while(isNearRock(x,y,45) && guard<20);
+    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: rand(0,Math.PI*2) });
   }
 }
 
@@ -1193,9 +1204,14 @@ function seededPickLootKindAndType(rng){
 }
 function seededSpawnLoot(rng, n, center, radius){
   for(let i=0;i<n;i++){
-    const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,0,radius);
     const pick = seededPickLootKindAndType(rng);
-    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x: center.x+Math.cos(a)*d, y: center.y+Math.sin(a)*d, bob: seededRand(rng,0,Math.PI*2) });
+    let x, y, guard=0;
+    do{
+      const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,0,radius);
+      x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
+      guard++;
+    } while(isNearRock(x,y,45) && guard<20);
+    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: seededRand(rng,0,Math.PI*2) });
   }
 }
 function seededGenRocks(rng){
@@ -1433,10 +1449,11 @@ function countRecentAttackers(self, windowSec){
   }
   return count;
 }
-function findNearestHealItem(self, range){
+function findNearestHealItem(self, range, safeZoneOnly){
   let best=null, bestD=range;
   for(const it of lootItems){
     if(it.kind!=='heal') continue;
+    if(safeZoneOnly && dist(it, zoneState.center) > zoneState.radius) continue;
     const d = dist(self,it);
     if(d<bestD){ bestD=d; best=it; }
   }
@@ -1466,7 +1483,7 @@ function updateBotAI(b, dt){
 
   if(lowHp || overwhelmed){
     b.attackTargetId=null;
-    const healItem = findNearestHealItem(b, 900);
+    const healItem = findNearestHealItem(b, 900, true) || findNearestHealItem(b, 900, false);
     if(healItem){
       b.aiTargetPoint = {x:healItem.x, y:healItem.y};
       b.aiState='FLEE_HEAL'; return;
@@ -3078,6 +3095,7 @@ function renderMyStats(){
   const derived = computeDerivedStats(stats);
   const overallEl = document.getElementById('myStatsOverall');
   overallEl.innerHTML = `
+    <div class="mystat-box"><div class="mv">${stats.totalMatches||0}</div><div class="ml">通算マッチ数</div></div>
     <div class="mystat-box"><div class="mv">${stats.bestKills||0}</div><div class="ml">最高キル数</div></div>
     <div class="mystat-box"><div class="mv">${stats.bestDamage||0}</div><div class="ml">最高ダメージ</div></div>
     <div class="mystat-box"><div class="mv">${derived.kd.toFixed(2)}</div><div class="ml">K/D</div></div>
