@@ -526,6 +526,17 @@
     roomListeners.push({r,cb});
   };
 
+  // 試合開始が確定した瞬間の参加者一覧を一度だけ取得する(全員が同じスナップショットを使うため)
+  window.__aramonFetchRoomPlayersOnce = async function(roomId){
+    try{
+      const snap = await get(ref(fbDb, `rooms/${roomId}/players`));
+      return snap.val() || {};
+    }catch(err){
+      console.error('fetch players once failed', err);
+      return {};
+    }
+  };
+
   window.__aramonWatchRoomMeta = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/meta`);
     const cb = (snap)=>{ callback(snap.val()||null); };
@@ -549,17 +560,19 @@
     }catch(err){}
   };
 
-  window.__aramonSetRoomSeed = async function(roomId, seed){
-    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed }); }catch(err){}
+  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null }); }catch(err){}
   };
 
   window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
     return new Promise((resolve)=>{
-      const r = ref(fbDb, `rooms/${roomId}/meta/seed`);
+      const r = ref(fbDb, `rooms/${roomId}/meta`);
       let done = false;
       const cb = (snap)=>{
         const v = snap.val();
-        if(v!=null && !done){ done=true; off(r,'value',cb); resolve(v); }
+        if(v && v.seed!=null && v.fixedPlayers && !done){
+          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers });
+        }
       };
       onValue(r, cb);
       setTimeout(()=>{
@@ -688,7 +701,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v53</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v55</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -3321,15 +3334,28 @@ async function beginMultiplayerMatch(){
   joyKnobEl.style.transform='translate(0,0)';
   remoteInputs = {}; remoteFireQueue.clear(); processedHitKeys.clear(); authPublishTimer=0;
 
-  // 部屋のシードを決定/取得(ホストが決めて書き込み、全員がそれを読む)
-  let seed;
+  // 部屋のシードと確定参加者リストを決定/取得
+  // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
+  let seed, fixedPlayers;
   if(netState.isHost){
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
-    await window.__aramonSetRoomSeed(netState.roomId, seed);
+    fixedPlayers = netState.humanPlayers || {};
+    if(!fixedPlayers[netState.myPlayerId]){
+      fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement } };
+    }
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers);
   } else {
-    seed = await window.__aramonWaitForRoomSeed(netState.roomId, 4000);
-    if(seed==null) seed = seedFromString(netState.roomId); // 取得できなくても部屋IDから決定的に代用
+    const result = await window.__aramonWaitForRoomSeed(netState.roomId, 4000);
+    if(result){
+      seed = result.seed;
+      fixedPlayers = result.fixedPlayers;
+    } else {
+      // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
+      seed = seedFromString(netState.roomId);
+      fixedPlayers = netState.humanPlayers || {};
+    }
   }
+  netState.humanPlayers = fixedPlayers;
 
   const rng = makeSeededRng(seed);
 
@@ -3338,7 +3364,7 @@ async function beginMultiplayerMatch(){
   seededGenTerrain(rng);
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
-  const humanList = Object.keys(netState.humanPlayers||{}).map(id=>({ id, ...netState.humanPlayers[id] }));
+  const humanList = Object.keys(fixedPlayers||{}).map(id=>({ id, ...fixedPlayers[id] }));
   if(!humanList.find(h=>h.id===netState.myPlayerId)){
     humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement });
   }
