@@ -688,7 +688,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v50</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v52</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -837,8 +837,6 @@
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
-  <div id="dedupeStatus" style="margin-top:10px; font-size:10px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace;"></div>
-  <button id="dedupeScoresBtn" style="margin-top:6px; padding:6px 14px; font-size:10px; letter-spacing:1px; color:var(--ink-dim); background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:5px; cursor:pointer;">重複記録を整理(一度だけ実行)</button>
 </div>
 
 <!-- ROTATE DEVICE OVERLAY -->
@@ -3199,15 +3197,6 @@ document.getElementById('closeRankingBtn').addEventListener('click', ()=>{
     document.getElementById('resultScreen').classList.remove('hidden');
   }
 });
-document.getElementById('dedupeScoresBtn').addEventListener('click', async ()=>{
-  const statusEl = document.getElementById('dedupeStatus');
-  if(!window.__aramonDedupeScores){ statusEl.textContent='機能が利用できません'; return; }
-  statusEl.textContent = '整理中…';
-  const result = await window.__aramonDedupeScores();
-  if(!result){ statusEl.textContent = '整理に失敗しました'; return; }
-  statusEl.textContent = `完了: ${result.totalBefore}件 → ${result.mergedCount}件（${result.deletedCount}件削除）`;
-  loadRankingList(currentRankingMode);
-});
 document.querySelectorAll('.rank-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.rank-tab').forEach(t=>t.classList.remove('active'));
@@ -3448,7 +3437,7 @@ function sendLocalInputIfMultiplayer(now){
 // ===== ホスト専用: 命中報告を確定計算し、authStateとして配信 =====
 const processedHitKeys = new Set();
 let authPublishTimer = 0;
-const AUTH_PUBLISH_INTERVAL = 0.25;
+const AUTH_PUBLISH_INTERVAL = 0.02;
 
 function processHitAsHost(hit){
   if(!hit) return;
