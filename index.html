@@ -688,7 +688,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v52</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v53</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -1386,6 +1386,14 @@ function spawnHit(x,y,z,color){ for(let i=0;i<5;i++){ const a=rand(0,Math.PI*2),
 function spawnDeath(x,y,z,color){ for(let i=0;i<14;i++){ const a=rand(0,Math.PI*2), sp=rand(60,220); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.6,maxLife:0.6,color,size:rand(3,6)}); } }
 function spawnDmgText(x,y,z,val,color){ addParticle({type:'text',x,y,z,vx:rand(-10,10),vy:-50,life:0.7,maxLife:0.7,color:color||'#fff',text:String(val)}); }
 
+function displayNameFor(ent){
+  if(!ent) return '';
+  if(netState && netState.mode==='multi' && ent.netPlayerId && ent.netPlayerId===netState.hostId){
+    return `${ent.name}（ホスト）`;
+  }
+  return ent.name;
+}
+
 /* =====================================================================
    KILL FEED / TOAST
 ===================================================================== */
@@ -1519,13 +1527,13 @@ function killEntity(victim, killer){
     killer.guts = Math.min(killer.maxGuts, killer.guts + 50);
     spawnDmgText(killer.x, killer.y, killer.z, '+50', '#7fffa0');
     spawnDmgText(killer.x, killer.y, killer.z+30, '+50GT', '#ffd9e3');
-    const kfText = `${killer.name} が ${victim.name} を倒した`;
+    const kfText = `${displayNameFor(killer)} が ${displayNameFor(victim)} を倒した`;
     pushKillFeed(kfText);
     const iAmInvolved = netState.mode==='multi' && ((killer.isPlayer) || (victim.isPlayer));
     if(iAmInvolved) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
     if(killer.isPlayer) pushToast('キルボーナス！ HP+50 ガッツ+50');
   } else {
-    const kfText = `${victim.name} は安全圏外で力尽きた`;
+    const kfText = `${displayNameFor(victim)} は安全圏外で力尽きた`;
     pushKillFeed(kfText);
     if(netState.mode==='multi' && victim.isPlayer) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
   }
@@ -1538,7 +1546,12 @@ function checkWin(){
   if(aliveList.length<=1 && !game.over){
     if(aliveList.length===1){
       aliveList[0].placement = 1;
-      if(aliveList[0].isPlayer) onPlayerWin();
+      if(aliveList[0].isPlayer){
+        onPlayerWin();
+      } else if(netState.mode==='multi' && netState.isHost && hostSpectating){
+        // ホストは既に敗退し観戦していた場合、他の誰かが優勝した時点で結果画面へ
+        showResult(false, player.placement||2);
+      }
       if(netState.mode==='multi') window.__aramonPushEvent(netState.roomId, {kind:'matchEnd', winnerNetId: aliveList[0].netPlayerId||null, winnerName: aliveList[0].name, ts:Date.now()});
     }
   }
@@ -2261,7 +2274,7 @@ function drawMonster(e,p){
 
   if(!e.isPlayer && dist(e,player)<700){
     ctx.font="11px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.85)'; ctx.textAlign='center';
-    ctx.fillText(e.name, 0, -e.radius*1.55-13);
+    ctx.fillText(displayNameFor(e), 0, -e.radius*1.55-13);
   }
   ctx.restore();
 }
@@ -2892,9 +2905,10 @@ document.getElementById('playerNameInput').addEventListener('input', (e)=>{
    MULTIPLAYER STATE
 ===================================================================== */
 const netState = {
-  mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null,
+  mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null, hostId:null,
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
 };
+let hostSpectating = false;
 
 document.querySelectorAll('.mode-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
@@ -2920,7 +2934,8 @@ function renderLobbyPlayerList(){
   const humanIds = Object.keys(human);
   humanIds.forEach(id=>{
     const p = human[id];
-    rows.push(`<div class="lobby-player-row"><span class="lp-dot"></span><span>${p.name||'名無しのモンスター'}（${ELEMENTS[p.element]?.label||'?'}）${id===netState.myPlayerId?'（あなた）':''}</span></div>`);
+    const hostTag = id===netState.hostId ? '（ホスト）' : '';
+    rows.push(`<div class="lobby-player-row"><span class="lp-dot"></span><span>${p.name||'名無しのモンスター'}${hostTag}（${ELEMENTS[p.element]?.label||'?'}）${id===netState.myPlayerId?'（あなた）':''}</span></div>`);
   });
   const botCount = Math.max(0, netState.capacity - humanIds.length);
   for(let i=0;i<botCount;i++){
@@ -2962,6 +2977,7 @@ async function startMatchmaking(){
   netState.roomId = result.roomId;
   netState.isHost = result.isHost;
   netState.myPlayerId = result.myPlayerId;
+  if(netState.isHost) netState.hostId = netState.myPlayerId;
 
   window.__aramonWatchRoomPlayers(netState.roomId, (players)=>{
     netState.humanPlayers = players||{};
@@ -2974,6 +2990,7 @@ async function startMatchmaking(){
   } else {
     document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
     window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
+      if(meta && meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
       if(meta && meta.status==='playing' && !game.started){
         beginMultiplayerMatch();
       }
@@ -3140,7 +3157,14 @@ function submitScoreToRanking(isWin, placement){
     statusEl.textContent = ok ? 'ランキングに記録しました' : 'ランキング送信に失敗しました';
   });
 }
-function onPlayerDown(){ showResult(false, player.placement||entities.filter(e=>e.alive).length+1); }
+function onPlayerDown(){
+  if(netState.mode==='multi' && netState.isHost){
+    hostSpectating = true;
+    pushToast('あなたは敗退しました。試合の決着まで観戦します');
+    return;
+  }
+  showResult(false, player.placement||entities.filter(e=>e.alive).length+1);
+}
 function onPlayerWin(){ showResult(true, 1); }
 
 document.getElementById('replayBtn').addEventListener('click', async ()=>{
@@ -3150,8 +3174,8 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
   game.started=false;
   if(netState.mode==='multi' && netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
-    netState.roomId=null; netState.isHost=false; netState.humanPlayers={};
-    countdownStarted=false; netState.matchStarting=false;
+    netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
+    countdownStarted=false; netState.matchStarting=false; hostSpectating=false;
   }
 });
 
@@ -3288,7 +3312,7 @@ async function beginMultiplayerMatch(){
   document.getElementById('resultScreen').classList.add('hidden');
 
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; nextId=1;
-  matchTime=0; game.over=false; game.tipTimer=7;
+  matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
   monsterScreenPos.clear();
