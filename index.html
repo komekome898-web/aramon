@@ -384,9 +384,35 @@
   const fbApp = initializeApp(firebaseConfig);
   const fbDb = getDatabase(fbApp);
 
+  function makeScoreKey(name, element){
+    // Firebaseキーに使えない文字を除去し、プレイヤー名+モンスターで一意なキーを作る
+    const safeName = String(name||'').replace(/[.#$/\[\]\s]/g,'_').slice(0,40) || 'anon';
+    return `${safeName}__${element}`;
+  }
+
   window.__aramonSubmitScore = async function(entry){
     try{
-      await push(ref(fbDb, 'scores'), entry);
+      const key = makeScoreKey(entry.name, entry.element);
+      const scoreRef = ref(fbDb, `scores/${key}`);
+      await runTransaction(scoreRef, (cur)=>{
+        if(!cur){
+          return {
+            name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
+            kills: entry.kills, damage: entry.damage,
+            placement: entry.placement, isWin: entry.isWin,
+            time: entry.time, ts: entry.ts,
+          };
+        }
+        return {
+          name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
+          kills: Math.max(cur.kills||0, entry.kills||0),
+          damage: Math.max(cur.damage||0, entry.damage||0),
+          placement: Math.min(cur.placement||99, entry.placement||99),
+          isWin: !!(cur.isWin || entry.isWin),
+          time: Math.max(cur.time||0, entry.time||0),
+          ts: entry.ts,
+        };
+      });
       return true;
     }catch(err){
       console.error('score submit failed', err);
@@ -601,6 +627,55 @@
     if(window.__aramonLobbyEntryId){
       try{ await remove(ref(fbDb, `lobby/${window.__aramonLobbyEntryId}`)); }catch(err){}
     }
+  };
+
+  // 既存データの整理用: 同じ名前+モンスターで複数のレコードが残っている場合、
+  // 最良のものだけを新形式キーに残し、古い重複レコードを削除する(一度だけ実行想定)
+  window.__aramonDedupeScores = async function(){
+    try{
+      const snap = await get(ref(fbDb, 'scores'));
+      const all = [];
+      snap.forEach(ch=>{ all.push({ key: ch.key, val: ch.val() }); });
+
+      const groups = {};
+      for(const item of all){
+        const v = item.val;
+        if(!v || !v.name || !v.element) continue;
+        const gkey = makeScoreKey(v.name, v.element);
+        if(!groups[gkey]) groups[gkey] = [];
+        groups[gkey].push(item);
+      }
+
+      let mergedCount = 0, deletedCount = 0;
+      for(const gkey in groups){
+        const items = groups[gkey];
+        let best = null;
+        for(const it of items){
+          if(!best){ best = it.val; continue; }
+          best = {
+            name: best.name, element: best.element, elementLabel: best.elementLabel,
+            kills: Math.max(best.kills||0, it.val.kills||0),
+            damage: Math.max(best.damage||0, it.val.damage||0),
+            placement: Math.min(best.placement||99, it.val.placement||99),
+            isWin: !!(best.isWin || it.val.isWin),
+            time: Math.max(best.time||0, it.val.time||0),
+            ts: Math.max(best.ts||0, it.val.ts||0),
+          };
+        }
+        await set(ref(fbDb, `scores/${gkey}`), best);
+        mergedCount++;
+        for(const it of items){
+          if(it.key !== gkey){
+            await remove(ref(fbDb, `scores/${it.key}`));
+            deletedCount++;
+          }
+        }
+      }
+      return { mergedCount, deletedCount, totalBefore: all.length };
+    }catch(err){
+      console.error('dedupe failed', err);
+      return null;
+    }
   };</script>
 </head>
 </script>
@@ -613,7 +688,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v49</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v50</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -762,6 +837,8 @@
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
+  <div id="dedupeStatus" style="margin-top:10px; font-size:10px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace;"></div>
+  <button id="dedupeScoresBtn" style="margin-top:6px; padding:6px 14px; font-size:10px; letter-spacing:1px; color:var(--ink-dim); background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:5px; cursor:pointer;">重複記録を整理(一度だけ実行)</button>
 </div>
 
 <!-- ROTATE DEVICE OVERLAY -->
@@ -944,14 +1021,30 @@ const miniCtx = miniCanvas.getContext('2d');
 let dpr = Math.min(window.devicePixelRatio||1, 2);
 let viewW=window.innerWidth, viewH=window.innerHeight;
 
+function getViewportSize(){
+  if(window.visualViewport){
+    return { w: window.visualViewport.width, h: window.visualViewport.height };
+  }
+  return { w: window.innerWidth, h: window.innerHeight };
+}
 function resize(){
-  viewW = window.innerWidth; viewH = window.innerHeight;
+  const vp = getViewportSize();
+  viewW = vp.w; viewH = vp.h;
   canvas.width = viewW*dpr; canvas.height = viewH*dpr;
   canvas.style.width = viewW+'px'; canvas.style.height = viewH+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
   recomputeFocal();
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', ()=>{
+  resize();
+  setTimeout(resize, 60);
+  setTimeout(resize, 250);
+  setTimeout(resize, 500);
+});
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', resize);
+}
 resize();
 
 /* =====================================================================
@@ -2622,7 +2715,13 @@ function requestOrientationLockSafe(){
   }catch(err){}
 }
 ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(evt=>{
-  document.addEventListener(evt, ()=>{ resize(); if(isFullscreenNow()) requestOrientationLockSafe(); });
+  document.addEventListener(evt, ()=>{
+    resize();
+    if(isFullscreenNow()) requestOrientationLockSafe();
+    setTimeout(resize, 60);
+    setTimeout(resize, 250);
+    setTimeout(resize, 500);
+  });
 });
 
 const keys = {};
@@ -3099,6 +3198,15 @@ document.getElementById('closeRankingBtn').addEventListener('click', ()=>{
   } else {
     document.getElementById('resultScreen').classList.remove('hidden');
   }
+});
+document.getElementById('dedupeScoresBtn').addEventListener('click', async ()=>{
+  const statusEl = document.getElementById('dedupeStatus');
+  if(!window.__aramonDedupeScores){ statusEl.textContent='機能が利用できません'; return; }
+  statusEl.textContent = '整理中…';
+  const result = await window.__aramonDedupeScores();
+  if(!result){ statusEl.textContent = '整理に失敗しました'; return; }
+  statusEl.textContent = `完了: ${result.totalBefore}件 → ${result.mergedCount}件（${result.deletedCount}件削除）`;
+  loadRankingList(currentRankingMode);
 });
 document.querySelectorAll('.rank-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
