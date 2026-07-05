@@ -701,7 +701,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v55</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v57</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -2922,6 +2922,7 @@ const netState = {
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
 };
 let hostSpectating = false;
+let matchBeginning = false; // beginMultiplayerMatchの多重起動防止フラグ
 
 document.querySelectorAll('.mode-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
@@ -2965,6 +2966,7 @@ async function startMatchmaking(){
     return;
   }
   netState.cancelled = false;
+  matchBeginning = false;
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('lobbyScreen').classList.remove('hidden');
   document.getElementById('lobbyCountdown').textContent='';
@@ -3004,7 +3006,7 @@ async function startMatchmaking(){
     document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
     window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
       if(meta && meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
-      if(meta && meta.status==='playing' && !game.started){
+      if(meta && meta.status==='playing' && !game.started && !matchBeginning){
         beginMultiplayerMatch();
       }
     });
@@ -3037,6 +3039,8 @@ function maybeStartCountdown(){
 document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
   netState.cancelled = true;
   countdownStarted = false;
+  joinInProgress = false;
+  document.getElementById('joinBtn').disabled = false;
   if(netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
     await window.__aramonCleanupLobbyEntry();
@@ -3074,7 +3078,11 @@ function startGame(){
   game.started=true;
   pushToast('バトル開始！');
 }
+let joinInProgress = false;
 document.getElementById('joinBtn').addEventListener('click', ()=>{
+  if(joinInProgress) return;
+  joinInProgress = true;
+  document.getElementById('joinBtn').disabled = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
   if(netState.mode==='multi'){
@@ -3185,10 +3193,12 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
   document.getElementById('killFeed').innerHTML='';
   game.started=false;
+  joinInProgress = false;
+  document.getElementById('joinBtn').disabled = false;
   if(netState.mode==='multi' && netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
     netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
-    countdownStarted=false; netState.matchStarting=false; hostSpectating=false;
+    countdownStarted=false; netState.matchStarting=false; hostSpectating=false; matchBeginning=false;
   }
 });
 
@@ -3320,7 +3330,8 @@ function seedFromString(str){
 }
 
 async function beginMultiplayerMatch(){
-  if(game.started) return;
+  if(game.started || matchBeginning) return;
+  matchBeginning = true;
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
 
@@ -3343,19 +3354,24 @@ async function beginMultiplayerMatch(){
     if(!fixedPlayers[netState.myPlayerId]){
       fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement } };
     }
+    console.log('[aramon] HOST: publishing seed+fixedPlayers', seed, fixedPlayers);
     await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers);
   } else {
-    const result = await window.__aramonWaitForRoomSeed(netState.roomId, 4000);
+    console.log('[aramon] NON-HOST: waiting for seed+fixedPlayers...');
+    const result = await window.__aramonWaitForRoomSeed(netState.roomId, 10000);
     if(result){
       seed = result.seed;
       fixedPlayers = result.fixedPlayers;
+      console.log('[aramon] NON-HOST: received seed+fixedPlayers', seed, fixedPlayers);
     } else {
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
+      console.warn('[aramon] NON-HOST: TIMEOUT, falling back to local snapshot', seed, fixedPlayers);
     }
   }
   netState.humanPlayers = fixedPlayers;
+  console.log('[aramon] final fixedPlayers used for this match:', JSON.stringify(fixedPlayers));
 
   const rng = makeSeededRng(seed);
 
