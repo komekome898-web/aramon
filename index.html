@@ -113,6 +113,43 @@
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
 
+  #multiActionRow{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
+  #createRoomBtn, #findRoomBtn{
+    padding:11px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+  }
+  #findRoomBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+
+  #roomListScreen{
+    position:absolute; inset:0; z-index:35;
+    background: radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%), linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #roomListInner{ display:flex; flex-direction:column; align-items:center; gap:14px; padding:24px; max-height:88vh; }
+  #roomListItems{
+    display:flex; flex-direction:column; gap:8px; width:min(85vw,380px); margin-top:6px;
+    max-height:42vh; overflow-y:scroll; padding-right:8px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  #roomListItems::-webkit-scrollbar{ width:12px; }
+  #roomListItems::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
+  #roomListItems::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
+  #roomListItems{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
+  .room-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; cursor:pointer;
+  }
+  .room-row:active{ background:rgba(244,196,48,0.1); }
+  .room-row .rm-host{ font-size:13px; font-weight:600; }
+  .room-row .rm-sub{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+  .room-row .rm-count{ font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--amber); flex-shrink:0; }
+  #roomListItems .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
+  #roomListBtnRow{ display:flex; gap:12px; margin-top:4px; }
+  #roomListRefreshBtn, #roomListCancelBtn{
+    padding:10px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+
   .monster-grid{
     display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:760px;
   }
@@ -457,6 +494,72 @@
   }
 
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
+  // 部屋を新規作成してホストになる
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey){
+    const roomId = genId();
+    const roomRef = ref(fbDb, `rooms/${roomId}`);
+    await set(roomRef, {
+      meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now(), hostName: playerName },
+      players: { [myPlayerId]: { name: playerName, element: elementKey, joinedAt: Date.now(), isHost:true, input:{} } },
+    });
+    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now(), hostName: playerName });
+    onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
+    onDisconnect(lobbyEntryRef).remove();
+    window.__aramonLobbyEntryId = lobbyEntryRef.key;
+    activeRoomId = roomId;
+    return { roomId, isHost:true, myPlayerId };
+  };
+
+  // 募集中の部屋一覧を取得する(部屋を探す画面用)
+  window.__aramonListOpenRooms = async function(){
+    try{
+      const lobbyRef = ref(fbDb, 'lobby');
+      const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
+      const snap = await get(q);
+      const rooms = [];
+      snap.forEach(ch=>{
+        const v = ch.val();
+        if(v && v.status==='waiting' && v.count < v.capacity){
+          rooms.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0 });
+        }
+      });
+      rooms.sort((a,b)=> b.createdAt - a.createdAt);
+      return rooms;
+    }catch(err){
+      console.error('list rooms failed', err);
+      return [];
+    }
+  };
+
+  // 指定した部屋に参加する(部屋を探す画面で選んだ場合)
+  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey){
+    try{
+      const roomPlayersRef = ref(fbDb, `rooms/${roomId}/players`);
+      const lobbyCountRef = ref(fbDb, `lobby/${lobbyKey}/count`);
+      const metaSnap = await get(ref(fbDb, `rooms/${roomId}/meta`));
+      const meta = metaSnap.val();
+      if(!meta || meta.status!=='waiting') return { ok:false, reason:'この部屋はもう開始しています' };
+
+      const txResult = await runTransaction(lobbyCountRef, (cur)=>{
+        if(cur===null) return cur;
+        if(cur >= meta.capacity) return; // abort
+        return cur + 1;
+      });
+      if(!txResult.committed) return { ok:false, reason:'この部屋は満員です' };
+
+      await set(child(roomPlayersRef, myPlayerId), {
+        name: playerName, element: elementKey, joinedAt: Date.now(), isHost:false, input:{}
+      });
+      onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
+      activeRoomId = roomId;
+      return { ok:true, roomId, isHost:false, myPlayerId };
+    }catch(err){
+      console.error('join room failed', err);
+      return { ok:false, reason:'参加に失敗しました' };
+    }
+  };
+
+  // 旧方式(自動マッチング)は互換のため残置
   window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey){
     const lobbyRef = ref(fbDb, 'lobby');
     const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
@@ -701,7 +804,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v57</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v58</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -725,6 +828,10 @@
       <button class="cap-tab active" data-cap="3">3人</button>
       <button class="cap-tab" data-cap="4">4人</button>
     </div>
+    <div id="multiActionRow">
+      <button id="createRoomBtn">部屋を作る</button>
+      <button id="findRoomBtn">部屋を探す</button>
+    </div>
   </div>
 
   <button id="joinBtn" disabled>バトルに参加する</button>
@@ -747,6 +854,19 @@
     <div id="lobbyPlayerList"></div>
     <div id="lobbyCountdown"></div>
     <button id="lobbyCancelBtn">キャンセル</button>
+  </div>
+</div>
+
+<!-- ROOM LIST (find room) -->
+<div id="roomListScreen" class="hidden">
+  <div id="roomListInner">
+    <div class="lobby-title">部屋を探す</div>
+    <div class="lobby-sub" id="roomListSubText">募集中の部屋を検索中…</div>
+    <div id="roomListItems"></div>
+    <div id="roomListBtnRow">
+      <button id="roomListRefreshBtn">更新</button>
+      <button id="roomListCancelBtn">キャンセル</button>
+    </div>
   </div>
 </div>
 
@@ -2930,7 +3050,7 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     tab.classList.add('active');
     netState.mode = tab.dataset.mode==='multi' ? 'multi' : 'solo';
     document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi');
-    document.getElementById('joinBtn').textContent = netState.mode==='multi' ? '対戦相手を探す' : 'バトルに参加する';
+    document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi');
   });
 });
 document.querySelectorAll('.cap-tab').forEach(tab=>{
@@ -2957,6 +3077,129 @@ function renderLobbyPlayerList(){
   }
   listEl.innerHTML = rows.join('');
   document.getElementById('lobbySubText').textContent = `${humanIds.length} / ${netState.capacity} 人が参加中`;
+}
+
+function enterLobbyForRoom(){
+  document.getElementById('lobbyScreen').classList.remove('hidden');
+  document.getElementById('lobbyCountdown').textContent='';
+  document.getElementById('lobbyPlayerList').innerHTML='';
+
+  window.__aramonWatchRoomPlayers(netState.roomId, (players)=>{
+    netState.humanPlayers = players||{};
+    renderLobbyPlayerList();
+    if(netState.isHost) maybeStartCountdown();
+  });
+
+  if(netState.isHost){
+    document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています…';
+  } else {
+    document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
+    window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
+      if(meta && meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
+      if(meta && meta.status==='playing' && !game.started && !matchBeginning){
+        beginMultiplayerMatch();
+      }
+    });
+  }
+}
+
+function getDisplayNameFromInput(){
+  const rawName = (document.getElementById('playerNameInput').value||'').trim();
+  return rawName ? rawName.slice(0,12) : '名無しのモンスター';
+}
+
+async function createRoomFlow(){
+  if(!window.__aramonCreateRoom){
+    pushToast('通信機能が利用できません。1人でプレイに切り替えます');
+    startGame();
+    return;
+  }
+  netState.cancelled = false;
+  matchBeginning = false;
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('lobbySubText').textContent='部屋を作成中…';
+  document.getElementById('lobbyScreen').classList.remove('hidden');
+  document.getElementById('lobbyPlayerList').innerHTML='';
+  document.getElementById('lobbyCountdown').textContent='';
+
+  const displayName = getDisplayNameFromInput();
+  let result;
+  try{
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement);
+  }catch(err){
+    console.error(err);
+    pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
+    document.getElementById('lobbyScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+    startGame();
+    return;
+  }
+  if(netState.cancelled) return;
+
+  netState.roomId = result.roomId;
+  netState.isHost = true;
+  netState.myPlayerId = result.myPlayerId;
+  netState.hostId = netState.myPlayerId;
+
+  enterLobbyForRoom();
+}
+
+async function openFindRoomScreen(){
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('roomListScreen').classList.remove('hidden');
+  await refreshRoomList();
+}
+async function refreshRoomList(){
+  const listEl = document.getElementById('roomListItems');
+  const subEl = document.getElementById('roomListSubText');
+  subEl.textContent = '募集中の部屋を検索中…';
+  listEl.innerHTML = '<div class="rank-empty">検索中…</div>';
+  if(!window.__aramonListOpenRooms){
+    listEl.innerHTML = '<div class="rank-empty">通信機能が利用できません</div>';
+    subEl.textContent = '';
+    return;
+  }
+  const rooms = await window.__aramonListOpenRooms();
+  if(!rooms.length){
+    listEl.innerHTML = '<div class="rank-empty">現在募集中の部屋はありません</div>';
+    subEl.textContent = '部屋が見つかりませんでした';
+    return;
+  }
+  subEl.textContent = `${rooms.length}件の部屋が見つかりました`;
+  listEl.innerHTML = rooms.map(r=>`
+    <div class="room-row" data-room-id="${r.roomId}" data-lobby-key="${r.lobbyKey}">
+      <div>
+        <div class="rm-host">${r.hostName}の部屋</div>
+        <div class="rm-sub">定員 ${r.capacity}人</div>
+      </div>
+      <div class="rm-count">${r.count} / ${r.capacity}</div>
+    </div>
+  `).join('');
+  listEl.querySelectorAll('.room-row').forEach(row=>{
+    row.addEventListener('click', ()=>joinSelectedRoom(row.dataset.roomId, row.dataset.lobbyKey));
+  });
+}
+async function joinSelectedRoom(roomId, lobbyKey){
+  if(!window.__aramonJoinRoom){
+    pushToast('通信機能が利用できません');
+    return;
+  }
+  const displayName = getDisplayNameFromInput();
+  const result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement);
+  if(!result.ok){
+    pushToast(result.reason||'参加に失敗しました');
+    await refreshRoomList();
+    return;
+  }
+  netState.cancelled = false;
+  matchBeginning = false;
+  netState.roomId = result.roomId;
+  netState.isHost = false;
+  netState.myPlayerId = result.myPlayerId;
+
+  document.getElementById('roomListScreen').classList.add('hidden');
+  document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
+  enterLobbyForRoom();
 }
 
 async function startMatchmaking(){
@@ -2994,23 +3237,7 @@ async function startMatchmaking(){
   netState.myPlayerId = result.myPlayerId;
   if(netState.isHost) netState.hostId = netState.myPlayerId;
 
-  window.__aramonWatchRoomPlayers(netState.roomId, (players)=>{
-    netState.humanPlayers = players||{};
-    renderLobbyPlayerList();
-    if(netState.isHost) maybeStartCountdown();
-  });
-
-  if(netState.isHost){
-    document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています…';
-  } else {
-    document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
-    window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
-      if(meta && meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
-      if(meta && meta.status==='playing' && !game.started && !matchBeginning){
-        beginMultiplayerMatch();
-      }
-    });
-  }
+  enterLobbyForRoom();
 }
 
 let countdownStarted = false;
@@ -3085,11 +3312,27 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   document.getElementById('joinBtn').disabled = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
-  if(netState.mode==='multi'){
-    startMatchmaking();
-  } else {
-    startGame();
-  }
+  startGame();
+});
+document.getElementById('createRoomBtn').addEventListener('click', ()=>{
+  if(joinInProgress) return;
+  joinInProgress = true;
+  requestFullscreenSafe();
+  requestOrientationLockSafe();
+  createRoomFlow();
+});
+document.getElementById('findRoomBtn').addEventListener('click', ()=>{
+  if(joinInProgress) return;
+  joinInProgress = true;
+  requestFullscreenSafe();
+  requestOrientationLockSafe();
+  openFindRoomScreen();
+});
+document.getElementById('roomListRefreshBtn').addEventListener('click', ()=>{ refreshRoomList(); });
+document.getElementById('roomListCancelBtn').addEventListener('click', ()=>{
+  joinInProgress = false;
+  document.getElementById('roomListScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
 });
 
 function showResult(isWin, placement){
