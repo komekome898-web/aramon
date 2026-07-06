@@ -804,7 +804,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v58</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v59</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -3760,25 +3760,41 @@ function processHitAsHost(hit){
 }
 
 function buildAuthStatePayload(){
-  const payload = {};
+  const payload = { players:{}, zone:{
+    cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
+    r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
+  }, aliveCount: entities.filter(e=>e.alive).length };
   for(const e of entities){
     if(!e.netPlayerId) continue;
-    payload[e.netPlayerId] = {
+    payload.players[e.netPlayerId] = {
       hp: Math.round(e.hp), maxHp: e.maxHp, guts: Math.round(e.guts), maxGuts: e.maxGuts,
       alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
-      x: Math.round(e.x), y: Math.round(e.y),
+      x: Math.round(e.x), y: Math.round(e.y), moveTierUnlocked: e.moveTierUnlocked,
     };
   }
   return payload;
 }
 
 function applyAuthState(authState){
-  for(const netId in authState){
-    const a = authState[netId];
+  if(!authState) return;
+  if(authState.zone){
+    zoneState.center.x = authState.zone.cx;
+    zoneState.center.y = authState.zone.cy;
+    zoneState.radius = authState.zone.r;
+    zoneState.phaseIndex = authState.zone.phase;
+    zoneState.shrinking = authState.zone.shrinking;
+  }
+  const players = authState.players || {};
+  for(const netId in players){
+    const a = players[netId];
     const ent = entities.find(e=>e.netPlayerId===netId);
     if(!ent) continue;
     ent.hp = a.hp; ent.maxHp = a.maxHp; ent.guts = a.guts; ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
+    if(typeof a.moveTierUnlocked==='number' && a.moveTierUnlocked>ent.moveTierUnlocked){
+      ent.moveTierUnlocked = a.moveTierUnlocked;
+      if(ent.isPlayer && ent.moveTierSelected < ent.moveTierUnlocked) ent.moveTierSelected = ent.moveTierUnlocked;
+    }
     if(ent.alive && !a.alive){
       ent.alive = false; ent.hp = 0;
       if(ent.isPlayer && !game.over) onPlayerDown();
@@ -3796,18 +3812,40 @@ function loop(now){
   if(game.started && !game.over){
     if(netState.mode!=='multi'){
       update(dt);
-    } else {
+    } else if(netState.isHost){
       applyRemoteInputsLocally();
       update(dt);
       processRemoteFireQueue();
       sendLocalInputIfMultiplayer(now);
-      if(netState.isHost){
-        authPublishTimer += dt;
-        if(authPublishTimer >= AUTH_PUBLISH_INTERVAL){
-          authPublishTimer = 0;
-          window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload());
-        }
+      authPublishTimer += dt;
+      if(authPublishTimer >= AUTH_PUBLISH_INTERVAL){
+        authPublishTimer = 0;
+        window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload());
       }
+    } else {
+      // 非ホスト: ダメージ・ガッツ・キル・ゾーン等の確定計算は一切行わず、
+      // 自分の移動だけをローカルで滑らかに再現し、残りはホストからのauthState配信に委ねる
+      updateCameraSnap(dt);
+      computePlayerInput();
+      if(player && player.alive) resolveMovement(player, dt);
+      for(const e of entities){
+        if(!e.alive) continue;
+        if(e.fireCooldown>0) e.fireCooldown -= dt;
+        if(e.dashCooldown>0) e.dashCooldown -= dt;
+        if(e.hitFlash>0) e.hitFlash -= dt;
+      }
+      updateCamera();
+      matchTime += dt;
+      if(game.tipTimer>0) game.tipTimer -= dt;
+      for(let i=particles.length-1;i>=0;i--){
+        const p = particles[i];
+        p.x += p.vx*dt; p.y += p.vy*dt;
+        if(p.type==='text') p.vy += 60*dt;
+        p.life -= dt;
+        if(p.life<=0) particles.splice(i,1);
+      }
+      updateHUD();
+      sendLocalInputIfMultiplayer(now);
     }
   }
 
