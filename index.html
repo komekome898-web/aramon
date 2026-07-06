@@ -552,7 +552,7 @@
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
-      return { ok:true, roomId, isHost:false, myPlayerId };
+      return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity };
     }catch(err){
       console.error('join room failed', err);
       return { ok:false, reason:'参加に失敗しました' };
@@ -804,7 +804,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v59</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v60</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -3096,6 +3096,7 @@ function enterLobbyForRoom(){
     document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
     window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
       if(meta && meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
+      if(meta && typeof meta.capacity==='number'){ netState.capacity = meta.capacity; }
       if(meta && meta.status==='playing' && !game.started && !matchBeginning){
         beginMultiplayerMatch();
       }
@@ -3196,6 +3197,7 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.roomId = result.roomId;
   netState.isHost = false;
   netState.myPlayerId = result.myPlayerId;
+  if(result.capacity) netState.capacity = result.capacity;
 
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
@@ -3641,7 +3643,7 @@ async function beginMultiplayerMatch(){
   }
 
   const usedSlots = humanList.length;
-  const botCount = Math.max(0, 20-usedSlots);
+  const botCount = Math.max(0, netState.capacity - usedSlots);
   const names = seededShuffle(rng, BOT_NAMES);
   const botElements = seededShuffle(rng, Object.keys(ELEMENTS));
   for(let i=0;i<botCount;i++){
