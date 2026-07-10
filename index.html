@@ -728,6 +728,19 @@
     roomListeners.push({r,cb,isChildAdded:true});
   };
 
+  // 単発の「発射しました」イベント: 誰が・どの技を・どこから・どの方向へ撃ったかを都度送信する
+  // (連射中かどうかの状態送信ではなく、1回の発射ごとに1件のイベントとして扱うことで
+  //  見た目の連射・非連射のズレを構造的に無くす)
+  window.__aramonSendFireEvent = async function(roomId, fireEvt){
+    try{ await push(ref(fbDb, `rooms/${roomId}/fireEvents`), fireEvt); }catch(err){}
+  };
+  window.__aramonWatchFireEvents = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/fireEvents`);
+    const cb = (snap)=>{ callback(snap.key, snap.val()); };
+    onChildAdded(r, cb);
+    roomListeners.push({r,cb,isChildAdded:true});
+  };
+
   // ホストが確定させた権威状態(人間プレイヤーのHP/ガッツ/生存)を配信
   window.__aramonPublishAuthState = async function(roomId, authState){
     try{ await set(ref(fbDb, `rooms/${roomId}/authState`), authState); }catch(err){}
@@ -804,7 +817,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v60</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v61</span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -1939,6 +1952,7 @@ function tryPlayerFire(dt){
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
   if(player.guts < mv.gutsCost) return;
+  let aimAngle = player.facingAngle;
   if(mv.melee){
     let best=null, bestD=mv.range;
     const fx=Math.cos(player.facingAngle), fy=Math.sin(player.facingAngle);
@@ -3563,7 +3577,6 @@ let lastT = performance.now();
 const INPUT_SEND_INTERVAL = 0.06;   // 自分の入力を送る間隔(秒) 約16回/秒
 let lastInputSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected}
-const remoteFireQueue = new Set();
 
 function seedFromString(str){
   let h = 2166136261;
@@ -3588,7 +3601,8 @@ async function beginMultiplayerMatch(){
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
   joyKnobEl.style.transform='translate(0,0)';
-  remoteInputs = {}; remoteFireQueue.clear(); processedHitKeys.clear(); authPublishTimer=0;
+  remoteInputs = {}; processedHitKeys.clear(); authPublishTimer=0;
+  pendingRemoteFireEvents.length = 0; processedFireEventKeys.clear();
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -3676,6 +3690,11 @@ async function beginMultiplayerMatch(){
       processedHitKeys.add(hitKey);
       processHitAsHost(hit);
     });
+    window.__aramonWatchFireEvents(netState.roomId, (evtKey, evt)=>{
+      if(processedFireEventKeys.has(evtKey)) return;
+      processedFireEventKeys.add(evtKey);
+      pendingRemoteFireEvents.push(evt);
+    });
   }
   window.__aramonWatchAuthState(netState.roomId, (authState)=>{
     if(authState) applyAuthState(authState);
@@ -3698,15 +3717,18 @@ function applyRemoteInputsLocally(){
     ent.inputMoveY = clamp(inp.my||0,-1,1);
     ent.facingAngle = typeof inp.facing==='number' ? inp.facing : ent.facingAngle;
     if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
-    if(inp.wantFire) remoteFireQueue.add(id);
-    if(inp.wantDash) tryDash(ent);
   }
 }
-function processRemoteFireQueue(){
-  for(const id of remoteFireQueue){
-    const ent = entities.find(e=>e.netPlayerId===id);
-    if(!ent || !ent.alive){ remoteFireQueue.delete(id); continue; }
-    if(ent.fireCooldown>0) continue;
+// ホスト専用: 非ホストから届いた「1回発射しました」イベントを、届いた分だけ正確に処理する
+const pendingRemoteFireEvents = [];
+const processedFireEventKeys = new Set();
+function processRemoteFireEvents(){
+  while(pendingRemoteFireEvents.length){
+    const evt = pendingRemoteFireEvents.shift();
+    const ent = entities.find(e=>e.netPlayerId===evt.sourceNetId);
+    if(!ent || !ent.alive) continue;
+    ent.facingAngle = evt.facing;
+    if(typeof evt.moveTier==='number') ent.moveTierSelected = evt.moveTier;
     const mv = activeMove(ent);
     if(ent.guts < mv.gutsCost) continue;
     let targetPoint;
@@ -3738,11 +3760,66 @@ function sendLocalInputIfMultiplayer(now){
       mx: player? player.inputMoveX:0,
       my: player? player.inputMoveY:0,
       facing: player? player.facingAngle:0,
-      wantFire: !!(fireBtnHeld || keys['f']),
-      wantDash: false,
       moveTierSelected: player? player.moveTierSelected:1,
     });
   }
+}
+
+// 自分が実際に1回発射した瞬間だけ、単発イベントとして送信する
+// (ホストはこれを見て、非ホストの発射をシミュレーションに反映する)
+function sendFireEventIfMultiplayer(aimAngle, mv){
+  if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
+  window.__aramonSendFireEvent(netState.roomId, {
+    sourceNetId: netState.myPlayerId,
+    facing: aimAngle,
+    moveTier: player.moveTierSelected,
+    ts: Date.now(),
+  });
+}
+
+// 非ホスト専用: ダメージ・ガッツの確定計算はホストに任せつつ、
+// クールダウン管理と「発射しました」イベント送信、体感のための見た目の弾だけを担当する
+function tryNonHostPlayerFireVisual(dt){
+  if(!player.alive || player.fireCooldown>0) return;
+  if(!(fireBtnHeld || keys['f'])) return;
+  const mv = activeMove(player);
+  if(player.guts < mv.gutsCost) return;
+  const aimAngle = player.facingAngle;
+
+  // クールダウン・見た目のガッツ消費だけローカルで進める(実値はホストのauthStateで上書きされる)
+  player.fireCooldown = effectiveCooldown(player, mv);
+  player.guts = Math.max(0, player.guts - mv.gutsCost);
+
+  if(mv.lobbed){
+    const throwDist = mv.range;
+    const landX = player.x + Math.cos(aimAngle)*throwDist;
+    const landY = player.y + Math.sin(aimAngle)*throwDist;
+    const flightTime = throwDist / mv.projSpeed;
+    projectiles.push({
+      x:player.x, y:player.y, z:player.z,
+      lobbed:true, startX:player.x, startY:player.y, startZ:player.z,
+      landX, landY, arcHeight: mv.arcHeight||120,
+      flightTime: Math.max(0.05, flightTime), flightT:0,
+      color:mv.color, hitR:mv.hitR, hitW:0, visualOnly:true,
+    });
+  } else if(!mv.melee){
+    const burstCount = mv.burst || 1;
+    const burstGap = mv.burstGap || 0;
+    for(let i=0;i<burstCount;i++){
+      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+      const ang = aimAngle + spreadOffset;
+      projectiles.push({
+        x:player.x, y:player.y, z:player.z,
+        vx:Math.cos(ang)*mv.projSpeed, vy:Math.sin(ang)*mv.projSpeed,
+        color:mv.color, hitR:mv.hitR, hitW:mv.hitW||0,
+        traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true,
+      });
+    }
+  } else {
+    spawnHit(player.x + Math.cos(aimAngle)*mv.range*0.5, player.y + Math.sin(aimAngle)*mv.range*0.5, player.z, mv.color);
+  }
+
+  sendFireEventIfMultiplayer(aimAngle, mv);
 }
 
 // ===== ホスト専用: 命中報告を確定計算し、authStateとして配信 =====
@@ -3765,7 +3842,7 @@ function buildAuthStatePayload(){
   const payload = { players:{}, zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
-  }, aliveCount: entities.filter(e=>e.alive).length };
+  }, aliveCount: entities.filter(e=>e.alive).length, projectiles: [] };
   for(const e of entities){
     if(!e.netPlayerId) continue;
     payload.players[e.netPlayerId] = {
@@ -3773,6 +3850,12 @@ function buildAuthStatePayload(){
       alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
       x: Math.round(e.x), y: Math.round(e.y), moveTierUnlocked: e.moveTierUnlocked,
     };
+  }
+  for(const p of projectiles){
+    payload.projectiles.push({
+      x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z||0),
+      c: p.color, r: p.hitR, w: p.hitW||0,
+    });
   }
   return payload;
 }
@@ -3804,6 +3887,11 @@ function applyAuthState(authState){
     // 位置は大きくズレた時だけ補正(通常はローカル計算を優先し滑らかさを保つ)
     if(!ent.isPlayer && Math.hypot(ent.x-a.x, ent.y-a.y) > 400){ ent.x=a.x; ent.y=a.y; }
   }
+  if(Array.isArray(authState.projectiles)){
+    const localVisualOnly = projectiles.filter(p=>p.visualOnly);
+    const hostProjectiles = authState.projectiles.map(p=>({ x:p.x, y:p.y, z:p.z, color:p.c, hitR:p.r, hitW:p.w||0 }));
+    projectiles = hostProjectiles.concat(localVisualOnly);
+  }
 }
 
 
@@ -3816,8 +3904,8 @@ function loop(now){
       update(dt);
     } else if(netState.isHost){
       applyRemoteInputsLocally();
+      processRemoteFireEvents();
       update(dt);
-      processRemoteFireQueue();
       sendLocalInputIfMultiplayer(now);
       authPublishTimer += dt;
       if(authPublishTimer >= AUTH_PUBLISH_INTERVAL){
@@ -3835,6 +3923,28 @@ function loop(now){
         if(e.fireCooldown>0) e.fireCooldown -= dt;
         if(e.dashCooldown>0) e.dashCooldown -= dt;
         if(e.hitFlash>0) e.hitFlash -= dt;
+      }
+      tryNonHostPlayerFireVisual(dt);
+      // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
+      for(let i=projectiles.length-1;i>=0;i--){
+        const p = projectiles[i];
+        if(!p.visualOnly) continue;
+        if(p.lobbed){
+          p.flightT += dt;
+          const t = clamp(p.flightT / p.flightTime, 0, 1);
+          p.x = lerp(p.startX, p.landX, t);
+          p.y = lerp(p.startY, p.landY, t);
+          p.z = p.startZ + Math.sin(t*Math.PI)*p.arcHeight;
+          if(t>=1){
+            spawnHit(p.x,p.y,0,p.color);
+            projectiles.splice(i,1);
+          }
+          continue;
+        }
+        if(p.delay>0){ p.delay -= dt; continue; }
+        const step = Math.hypot(p.vx,p.vy)*dt;
+        p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
+        if(p.traveled >= p.maxRange) projectiles.splice(i,1);
       }
       updateCamera();
       matchTime += dt;
