@@ -1,0 +1,383 @@
+<style>
+  :root{
+    --bg-void:#06090f;
+    --panel:rgba(10,16,26,0.82);
+    --panel-line:rgba(255,255,255,0.08);
+    --ink:#e9e6dc;
+    --ink-dim:#9aa3b0;
+    --amber:#f4c430;
+    --danger:#ff5d5d;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
+  :fullscreen{ background:var(--bg-void); }
+  #gameCanvas{position:absolute; top:0; left:0; display:block; touch-action:none; cursor:grab;}
+
+  .hidden{display:none !important;}
+
+  /* ---------- START SCREEN ---------- */
+  #startScreen{
+    position:absolute; inset:0; z-index:30;
+    background:
+      radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%),
+      linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
+    display:flex; justify-content:center;
+    overflow-y:scroll; overflow-x:hidden;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  #startScreen::-webkit-scrollbar{ width:14px; }
+  #startScreen::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); }
+  #startScreen::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:7px; border:3px solid #04060a; }
+  #startScreen{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
+  #startScreenInner{
+    display:flex; flex-direction:column; align-items:center;
+    transform:scale(0.8); transform-origin:top center;
+    padding:24px; margin:-10vh auto -10vh auto;
+  }
+  .title-block{ text-align:center; margin-bottom:18px; }
+  .title-main{
+    font-family:'Russo One', sans-serif; font-size:clamp(34px,9vw,58px);
+    letter-spacing:2px; color:var(--ink);
+    text-shadow: 0 0 18px rgba(244,196,48,0.45), 0 2px 0 rgba(0,0,0,0.6);
+    margin:0; position:relative;
+  }
+  .title-main span{ color:var(--amber); }
+  #versionTag{
+    position:absolute; right:-2px; bottom:-6px; font-family:'Share Tech Mono',monospace;
+    font-size:11px; letter-spacing:1px; color:var(--ink-dim) !important; text-shadow:none;
+    font-weight:400; opacity:0.7;
+  }
+  .title-sub{
+    font-family:'Share Tech Mono', monospace; font-size:12px; letter-spacing:4px;
+    color:var(--ink-dim); margin-top:6px;
+  }
+  .lobby-count{
+    font-family:'Share Tech Mono', monospace; font-size:12px; color:var(--amber);
+    letter-spacing:1px; margin-top:10px; opacity:0.85;
+  }
+  .lobby-count .dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--amber); margin-right:6px; animation:pulse 1.4s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
+  .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
+  #playerNameInput{
+    width:220px; padding:10px 14px; font-family:'Rajdhani',sans-serif; font-size:14px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px;
+    text-align:center; outline:none;
+  }
+  #playerNameInput:focus{ border-color:var(--amber); }
+
+  #modeTabs, #capacityTabs{ display:flex; gap:10px; justify-content:center; }
+  .mode-tab, .cap-tab{
+    padding:9px 20px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .mode-tab.active, .cap-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  #multiOptions{ margin-top:4px; }
+
+  #lobbyScreen{
+    position:absolute; inset:0; z-index:35;
+    background: radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%), linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px; }
+  .lobby-title{ font-family:'Russo One',sans-serif; font-size:22px; color:var(--amber); letter-spacing:1px; text-align:center; }
+  .lobby-sub{ font-size:13px; color:var(--ink-dim); letter-spacing:1px; }
+  #lobbyPlayerList{ display:flex; flex-direction:column; gap:8px; width:min(80vw,320px); margin-top:6px; }
+  .lobby-player-row{
+    display:flex; align-items:center; gap:10px; padding:9px 14px; background:rgba(255,255,255,0.04);
+    border:1px solid var(--panel-line); border-radius:6px; font-size:13px;
+  }
+  .lobby-player-row .lp-dot{ width:8px; height:8px; border-radius:50%; background:var(--amber); flex-shrink:0; }
+  .lobby-player-row.is-bot .lp-dot{ background:var(--ink-dim); }
+  #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); min-height:20px; }
+  #lobbyCancelBtn{
+    margin-top:6px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+
+  #multiActionRow{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
+  #createRoomBtn, #findRoomBtn{
+    padding:11px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+  }
+  #findRoomBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+
+  #roomListScreen{
+    position:absolute; inset:0; z-index:35;
+    background: radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%), linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #roomListInner{ display:flex; flex-direction:column; align-items:center; gap:14px; padding:24px; max-height:88vh; }
+  #roomListItems{
+    display:flex; flex-direction:column; gap:8px; width:min(85vw,380px); margin-top:6px;
+    max-height:42vh; overflow-y:scroll; padding-right:8px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  #roomListItems::-webkit-scrollbar{ width:12px; }
+  #roomListItems::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
+  #roomListItems::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
+  #roomListItems{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
+  .room-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; cursor:pointer;
+  }
+  .room-row:active{ background:rgba(244,196,48,0.1); }
+  .room-row .rm-host{ font-size:13px; font-weight:600; }
+  .room-row .rm-sub{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+  .room-row .rm-count{ font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--amber); flex-shrink:0; }
+  #roomListItems .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
+  #roomListBtnRow{ display:flex; gap:12px; margin-top:4px; }
+  #roomListRefreshBtn, #roomListCancelBtn{
+    padding:10px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+
+  .monster-grid{
+    display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:760px;
+  }
+  .monster-card{
+    width:148px; padding:14px 10px 12px; border-radius:10px;
+    background:var(--panel); border:1px solid var(--panel-line);
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    text-align:center; cursor:pointer; transition:transform .15s, border-color .15s, background .15s;
+  }
+  .monster-card:hover{ transform:translateY(-3px); }
+  .monster-card.selected{ border-color:var(--accent,var(--amber)); background:rgba(244,196,48,0.08); box-shadow:0 0 0 1px var(--accent,var(--amber)) inset, 0 0 20px -4px var(--accent,var(--amber)); }
+  .m-swatch{ width:54px; height:54px; margin:0 auto 8px; border-radius:50%; position:relative; overflow:hidden; }
+  .m-swatch img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .m-name{ font-weight:700; font-size:14px; }
+  .m-stat{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:4px; line-height:1.5;}
+  .m-trait{ font-size:10px; color:var(--accent,var(--amber)); margin-top:6px; line-height:1.4; }
+
+  #joinBtn{
+    margin-top:22px; padding:14px 38px; font-family:'Russo One',sans-serif; font-size:17px;
+    letter-spacing:2px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
+    border:none; border-radius:6px; cursor:pointer;
+    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+    box-shadow:0 4px 0 #8a6a10, 0 0 24px -4px rgba(244,196,48,0.7);
+  }
+  #joinBtn:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; }
+  #joinBtn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #8a6a10; }
+
+  .howto{ margin-top:18px; font-size:11px; color:var(--ink-dim); letter-spacing:1px; text-align:center; line-height:1.8; max-width:520px; }
+
+  /* ---------- HUD ---------- */
+  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:manipulation;}
+
+  .hud-panel{
+    position:absolute; background:var(--panel); border:1px solid var(--panel-line);
+    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  }
+
+  #bottomLeft{ position:absolute; left:14px; bottom:150px; }
+  #hpPanel{ width:210px; padding:7px 14px 7px; border-top:3px solid var(--accent,var(--amber)); }
+  #hpPanel .who{ display:flex; align-items:center; gap:8px; margin-bottom:3px; }
+  #hpPanel .nm{ font-weight:700; font-size:14px; letter-spacing:1px; }
+  #hpPanel .elTag{ font-size:9px; color:var(--ink-dim); letter-spacing:1px; }
+  .hpbar-track{ height:5.5px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.12);}
+  .hpbar-fill{ height:100%; background:linear-gradient(90deg,#6bff8e,#2fd35a); width:100%; transition:width .15s; }
+  #hpNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right;}
+
+  #topLeft{ position:absolute; top:14px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+  #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+  #counterPanel{ padding:7px 16px; text-align:right; min-width:190px; white-space:nowrap; }
+  #aliveNum{ font-family:'Russo One',sans-serif; font-size:16px; color:var(--amber); }
+  #aliveLabel{ font-size:8px; letter-spacing:1.5px; color:var(--ink-dim); }
+  #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:9px; margin-top:2px; }
+  #matchClock{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); }
+
+  #statsPanel{ top:14px; left:50%; transform:translateX(-50%); padding:9px 20px; display:flex; gap:22px; }
+  .stat-row{ display:flex; align-items:baseline; justify-content:center; gap:8px; }
+  .stat-lbl{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
+  .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
+
+  #minimapWrap{ width:120px; height:120px; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:#0b1320; box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
+  #minimapCanvas{ width:100%; height:100%; display:block; }
+
+  #killFeed{ position:absolute; top:165px; right:14px; width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
+  .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.72); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateX(8px); animation:kfIn .25s forwards; max-width:100%; }
+  @keyframes kfIn{ to{opacity:1; transform:translateX(0);} }
+
+  #toast{ position:absolute; left:50%; top:16%; transform:translateX(-50%); font-size:13px; letter-spacing:1px; padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px; opacity:0; transition:opacity .2s; white-space:nowrap;}
+
+  #movePanel{
+    position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:12px; padding:10px 18px;
+    border-bottom:3px solid var(--moveColor,var(--amber));
+  }
+  #moveIcon{ width:38px; height:38px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
+  #moveIcon svg{ width:22px; height:22px; }
+  #moveInfo{ min-width:120px; }
+  #moveName{ font-weight:700; font-size:15px; pointer-events:auto; cursor:pointer; text-decoration:underline dotted rgba(255,255,255,0.35); text-underline-offset:3px; }
+  #tierDots{ display:flex; gap:4px; margin-top:5px; }
+  .tier-dot{ width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); }
+  .tier-dot.unlocked{ background:rgba(255,255,255,0.32); }
+  .tier-dot.selected{ background:var(--moveColor,var(--amber)); border-color:var(--moveColor,var(--amber)); box-shadow:0 0 6px var(--moveColor,var(--amber)); }
+  #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:3px; }
+  #gutsTrack{ margin-top:2px; }
+  #gutsFill{ height:100%; background:linear-gradient(90deg,#ffb56b,#ff7a59); width:100%; transition:width .15s; }
+  #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right; }
+  #statusIcons{ display:flex; gap:5px; margin-top:3px; min-height:16px; }
+  .status-pill{ font-size:9px; padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; }
+  .status-pill.burn{ background:rgba(255,107,53,0.22); color:#ff9c5a; border:1px solid rgba(255,107,53,0.5); }
+  .status-pill.slow{ background:rgba(120,150,255,0.22); color:#a9bcff; border:1px solid rgba(120,150,255,0.5); }
+
+  #crosshair{ position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:none; }
+  #crosshair::before, #crosshair::after{ content:''; position:absolute; background:rgba(255,255,255,0.55); border-radius:2px; transition:background .12s; }
+  #crosshair::before{ left:11px; top:0; width:4px; height:26px; }
+  #crosshair::after{ left:0; top:11px; width:26px; height:4px; }
+  #crosshair.lock::before, #crosshair.lock::after{ background:#ff5d5d; }
+
+  #joystickBase{
+    position:absolute; left:22px; bottom:22px; width:124px; height:124px; border-radius:50%;
+    background:rgba(10,16,26,0.55); border:2px solid rgba(255,255,255,0.18); pointer-events:auto; touch-action:none;
+  }
+  #joystickKnob{
+    position:absolute; left:50%; top:50%; width:54px; height:54px; margin:-27px 0 0 -27px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(255,255,255,0.4), rgba(244,196,48,0.55));
+    border:2px solid rgba(255,255,255,0.4); pointer-events:none;
+  }
+  #fireBtn{
+    position:absolute; right:22px; bottom:22px; width:88px; height:88px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(255,150,120,0.55), rgba(160,30,30,0.88));
+    border:2px solid rgba(255,255,255,0.25); color:#fff; font-family:'Russo One',sans-serif; font-size:13px;
+    letter-spacing:1px; pointer-events:auto; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    touch-action:none; box-shadow:0 0 22px -4px rgba(255,80,60,0.6);
+  }
+  #fireBtn:active{ filter:brightness(1.3); }
+  #dashBtn{
+    position:absolute; right:122px; bottom:42px; width:56px; height:56px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(255,255,255,0.18), rgba(20,28,42,0.85));
+    border:2px solid rgba(255,255,255,0.18); color:var(--ink); font-family:'Russo One',sans-serif; font-size:10px;
+    letter-spacing:1px; pointer-events:auto; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    touch-action:none;
+  }
+  #dashBtn .cd{ position:absolute; inset:-2px; border-radius:50%; border:3px solid var(--amber); opacity:0; }
+
+  #turnLeftBtn, #turnRightBtn{
+    position:absolute; width:52px; height:52px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(10,16,26,0.4); border:2px solid rgba(255,255,255,0.14);
+    color:rgba(255,255,255,0.5); font-size:16px; pointer-events:auto; touch-action:none;
+    user-select:none; z-index:9;
+  }
+  #turnLeftBtn{ left:22px; bottom:160px; }
+  #turnRightBtn{ right:22px; bottom:160px; }
+  #turnLeftBtn:active, #turnRightBtn:active{ background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.8); }
+
+  #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; transition:opacity .4s; text-align:center; white-space:nowrap;}
+
+  /* ---------- RESULT SCREENS ---------- */
+  .resultScreen{
+    position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(4,6,10,0.92); text-align:center; padding:24px;
+  }
+  .resultScreen .rank{ font-family:'Russo One',sans-serif; font-size:clamp(40px,12vw,80px); letter-spacing:2px; }
+  .resultScreen.win .rank{ color:var(--amber); text-shadow:0 0 30px rgba(244,196,48,0.6); }
+  .resultScreen.lose .rank{ color:var(--ink-dim); }
+  .resultScreen .sub{ font-size:14px; letter-spacing:3px; color:var(--ink-dim); margin-top:6px;}
+  .resultStats{ display:flex; gap:26px; margin-top:24px; flex-wrap:wrap; justify-content:center; }
+  .resultStats div{ text-align:center; }
+  .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
+  .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
+  #replayBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn{
+    margin-top:0; padding:13px 30px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+  }
+  #viewRankingBtn, #viewMyStatsBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+  .resultBtnRow{ display:flex; gap:14px; margin-top:26px; }
+
+  #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
+
+  #rankingTabs{ display:flex; gap:10px; margin-top:18px; }
+  .rank-tab{
+    padding:8px 18px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .rank-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  #rankingList{ margin-top:18px; width:min(90vw,420px); max-height:48vh; overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
+  #rankingList::-webkit-scrollbar{ width:12px; }
+  #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
+  #rankingList::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
+  #rankingList{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
+  .rank-row{ display:flex; align-items:center; gap:12px; padding:8px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
+  .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; }
+  .rank-row .rn{ flex:1; text-align:left; font-size:13px; }
+  .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); }
+  #rankingList .rank-empty, #myStatsByElement .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
+
+  #myStatsScreen{
+    justify-content:flex-start; padding-top:20px; padding-bottom:16px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  #myStatsColumns{
+    display:flex; gap:28px; align-items:stretch; justify-content:center;
+    width:min(94vw,860px); margin-top:6px;
+    flex:1 1 auto; min-height:0;
+  }
+  #myStatsLeftCol{
+    display:flex; flex-direction:column; align-items:center; flex:0 0 auto; width:280px;
+    min-height:0;
+  }
+  #myStatsRightCol{
+    display:flex; flex-direction:column; align-items:center; flex:1 1 auto; min-width:0;
+    min-height:0;
+  }
+  #myStatsTitle.mystat-col-title, #myMonstersTitle.mystat-col-title{
+    font-size:14px; text-shadow:none; flex-shrink:0;
+  }
+  #myStatsOverall{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; width:100%;
+    overflow-y:auto; min-height:0; padding-bottom:4px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  .mystat-box{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:14px 10px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; width:100%; flex-shrink:0;
+  }
+  .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:19px; color:var(--amber); }
+  .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
+  #myStatsByElement{
+    margin-top:14px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
+    display:flex; flex-direction:column; gap:8px; padding-right:10px; padding-bottom:4px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  #myStatsByElement::-webkit-scrollbar{ width:12px; }
+  #myStatsByElement::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
+  #myStatsByElement::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
+  #myStatsByElement{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
+  .mystat-elem-row{
+    display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 12px; background:rgba(255,255,255,0.04);
+    border-radius:6px; border:1px solid var(--panel-line); flex-shrink:0;
+  }
+  .mystat-elem-row .ei{ width:28px; height:28px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
+  .mystat-elem-row .en{ text-align:center; font-size:13px; font-weight:600; margin-top:2px; }
+  .mystat-elem-row .ev-line{ width:100%; text-align:left; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); }
+
+  @media (max-width:520px){
+    #hpPanel{ width:180px; }
+    #bottomLeft{ left:16px; bottom:144px; }
+    #killFeed{ width:170px; top:148px;}
+    #minimapWrap{ width:96px; height:96px;}
+    #movePanel{ gap:8px; padding:8px 12px;}
+    #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
+    #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
+    #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
+    #turnLeftBtn{ left:16px; bottom:140px; width:46px; height:46px; }
+    #turnRightBtn{ right:16px; bottom:140px; width:46px; height:46px; }
+  }
+
+  #rotateOverlay{
+    display:none; position:fixed; inset:0; z-index:9999;
+    background:#04060a; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+    text-align:center; padding:24px;
+  }
+  #rotateOverlay svg{ animation:rotateHint 1.6s ease-in-out infinite; }
+  @keyframes rotateHint{ 0%,100%{ transform:rotate(0deg);} 50%{ transform:rotate(90deg);} }
+  .rotate-text{ font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:2px; color:var(--ink); }
+
+  @media (max-width:932px) and (orientation:portrait){
+    #rotateOverlay{ display:flex; }
+    #startScreen, #hud, #resultScreen{ display:none !important; }
+  }
+</style>
