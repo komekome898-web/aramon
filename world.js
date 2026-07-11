@@ -208,7 +208,7 @@ function createMonster(elementKey, isPlayer, name, overrides){
     alive:true, placement:null, kills:0, deathAt:0, damageDealt:0,
     aiState:'WANDER', aiTimer:rand(0,0.3), aiTargetPoint:null,
     lastMoveX:0, lastMoveY:-1, inputMoveX:0, inputMoveY:0,
-    burnUntil:0, slowUntil:0,
+    burnUntil:0, slowUntil:0, graceUntil:0,
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
     recentAttackers:{},
   };

@@ -17,6 +17,7 @@ const ELEMENTS = {
   spark:   { label:'ライガー',   color:'#f4c430', dark:'#a8801c', speed:224, hp:78,  trait:'slow' },
   rock:    { label:'ゴーレム',   color:'#a98a68', dark:'#5c4a38', speed:158, hp:132, trait:'golem', speedMod:0.8, dmgTakenMod:0.8, dmgDealtMod:1.2 },
   phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
+  ark:     { label:'アーク',     color:'#f5f2e0', dark:'#8a7a4a', accent:'#ffe9a8', speed:188, hp:145, trait:'grace' },
 };
 
 const monsterImages = {};
@@ -80,6 +81,11 @@ const SIGNATURE_MOVES = {
     { name:'火炎砲',     tier:1, color:'#e8432a', lobbed:true, range:725,  dmg:25, cooldown:0.82, gutsCost:6, projSpeed:540, hitR:12, splash:70, arcHeight:140 },
     { name:'火炎連砲', tier:2, color:'#e8432a', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1 },
     { name:'ファイアウェーブ', tier:3, color:'#e8432a', range:1850, dmg:47, cooldown:2.0, gutsCost:18, projSpeed:460, hitR:15, hitW:88, splash:85 },
+  ],
+  ark: [
+    { name:'しっぽふり',   tier:1, color:'#ffe9a8', lobbed:true, range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:520, hitR:12, splash:70, arcHeight:140 },
+    { name:'熾天の剣', tier:2, color:'#ffe9a8', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1 },
+    { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:47, cooldown:2.0, gutsCost:18, projSpeed:460, hitR:15, hitW:88, splash:85 },
   ],
 };
 

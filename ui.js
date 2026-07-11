@@ -5,6 +5,7 @@ const TRAIT_DESC = {
   slow:       '技命中で相手を1秒間 移動速度半分に',
   golem:      '移動0.8倍・被ダメ0.8倍・与ダメ1.2倍',
   haste:      '技の連射速度1.5倍',
+  grace:      '与えたダメージの45%分 相手のガッツを削る。天の慈悲(tier3)発動後10秒間 被ダメ0.5倍',
 };
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');

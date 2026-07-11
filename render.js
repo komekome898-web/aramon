@@ -187,6 +187,35 @@ function drawMonsterShape(e, color, dark){
       }
       break;
     }
+    case 'ark': {
+      const accent = ELEMENTS.ark.accent;
+      ctx.save();
+      ctx.shadowBlur = 14; ctx.shadowColor = accent;
+
+      // 光輪
+      ctx.beginPath();
+      ctx.arc(0,-r*1.05,r*0.62,0,Math.PI*2);
+      ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+
+      // 翼
+      [-1,1].forEach(side=>{
+        ctx.beginPath();
+        ctx.moveTo(side*r*0.25, -r*0.1);
+        ctx.quadraticCurveTo(side*r*1.5, -r*0.6, side*r*1.7, r*0.15);
+        ctx.quadraticCurveTo(side*r*1.1, r*0.05, side*r*0.35, r*0.4);
+        ctx.closePath();
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = dark; ctx.lineWidth = 1.6; ctx.stroke();
+      });
+
+      // 本体
+      ctx.beginPath(); ctx.arc(0,0,r*0.85,0,Math.PI*2);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = dark; ctx.lineWidth = 2.5; ctx.stroke();
+
+      ctx.restore();
+      break;
+    }
   }
 }
 function drawElementBadge(e){

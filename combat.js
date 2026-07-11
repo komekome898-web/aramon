@@ -1,5 +1,8 @@
 function fireMove(attacker, target, move){
   attacker.guts = Math.max(0, attacker.guts - move.gutsCost);
+  if(attacker.element==='ark' && move.tier===3){
+    attacker.graceUntil = matchTime + 10;
+  }
   if(move.melee){
     if(target && target.alive){
       applyDamage(target, move.dmg, attacker);
@@ -60,6 +63,7 @@ function applyDamage(target, dmg, source, opts){
 
   let finalDmg = dmg;
   if(target.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgTakenMod; }
+  if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
   if(source && source.alive){
     if(source.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgDealtMod; }
     if(source.burnUntil > matchTime){ finalDmg *= 0.8; }
@@ -81,6 +85,13 @@ function applyDamage(target, dmg, source, opts){
     }
     if(source.element==='leaf'){
       const drained = Math.min(finalDmg*0.3, target.guts);
+      if(drained > 0){
+        target.guts = Math.max(0, target.guts - drained);
+        spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
+      }
+    }
+    if(source.element==='ark'){
+      const drained = Math.min(finalDmg*0.45, target.guts);
       if(drained > 0){
         target.guts = Math.max(0, target.guts - drained);
         spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
