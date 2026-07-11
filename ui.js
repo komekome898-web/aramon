@@ -319,7 +319,7 @@ function startGame(){
     const elKey = botElements[i % botElements.length];
     entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':'')));
   }
-  spawnLoot(138, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  spawnLoot(420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   updateCamera();
 
   document.getElementById('startScreen').classList.add('hidden');

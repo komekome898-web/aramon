@@ -105,7 +105,7 @@ function advanceZonePhase(){
   zoneState.phaseIndex = newIndex;
   zoneState.timer = 0;
   zoneState.shrinking = true;
-  spawnLoot(12, zoneState.toCenter, zoneState.toRadius*0.8);
+  spawnLoot(30, zoneState.toCenter, zoneState.toRadius*0.8);
   pushToast('安全圏が縮小を開始した！');
   return true;
 }
@@ -269,7 +269,7 @@ function genTerrain(){
     guard++;
     const x = rand(40,WORLD.w-40), y = rand(40,WORLD.h-40);
     if(buildingBlocks(x,y,10)) continue;
-    if(isOnHazard(x,y,10)) continue;
+    if(isOnHazard(x,y,70)) continue;
     terrainDecor.push({ x, y, r: rand(5,16), shade: Math.random()<0.5 ? 'dark':'light' });
   }
 }
@@ -343,7 +343,7 @@ function genRocks(){
     const radius = rr<0.5 ? rand(22,34) : (rr<0.85 ? rand(34,52) : rand(52,72));
     const x = rand(80,WORLD.w-80), y = rand(80,WORLD.h-80);
     if(buildingBlocks(x,y,radius)) continue;
-    if(isOnHazard(x,y,radius+30)) continue;
+    if(isOnHazard(x,y,radius+220)) continue;
     rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:rand(0,10) });
   }
   for(let pass=0; pass<3; pass++){
@@ -456,7 +456,7 @@ function seededGenRocks(rng){
     const rr = rng();
     const radius = rr<0.5 ? seededRand(rng,22,34) : (rr<0.85 ? seededRand(rng,34,52) : seededRand(rng,52,72));
     const x = seededRand(rng,80,WORLD.w-80), y = seededRand(rng,80,WORLD.h-80);
-    if(isOnHazard(x,y,radius+30)) continue;
+    if(isOnHazard(x,y,radius+220)) continue;
     rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:seededRand(rng,0,10) });
   }
   for(let pass=0; pass<3; pass++){
@@ -479,7 +479,7 @@ function seededGenTerrain(rng){
   const count = currentMap.decorCount;
   for(let i=0;i<count;i++){
     const x = seededRand(rng,40,WORLD.w-40), y = seededRand(rng,40,WORLD.h-40);
-    if(isOnHazard(x,y,10)) continue;
+    if(isOnHazard(x,y,70)) continue;
     terrainDecor.push({ x, y, r: seededRand(rng,5,16), shade: rng()<0.5 ? 'dark':'light' });
   }
 }

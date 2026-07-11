@@ -256,6 +256,29 @@ function updateBotAI(b, dt){
 /* =====================================================================
    MOVEMENT
 ===================================================================== */
+function computeVolcanoAvoidAngle(m, target, ang){
+  if(!currentMap.hasVolcano || volcanoObstacles.length===0) return ang;
+  const targetDist = dist(m, target);
+  let strongestPush = 0, pushSign = m.avoidDirSign || 1;
+  for(const v of volcanoObstacles){
+    const clearance = v.radius + m.radius + 70;
+    const obDist = dist(m, v);
+    if(obDist > targetDist + clearance || obDist > 2600) continue;
+    const toOb = angTo(m, v);
+    let diff = toOb - ang;
+    while(diff > Math.PI) diff -= Math.PI*2;
+    while(diff < -Math.PI) diff += Math.PI*2;
+    const blockAngle = Math.atan2(clearance, Math.max(obDist,1)) + 0.25;
+    if(Math.abs(diff) < blockAngle){
+      const pushAmount = Math.min(1.5, (clearance/Math.max(obDist,1))*1.4);
+      if(pushAmount > strongestPush){
+        strongestPush = pushAmount;
+        pushSign = diff >= 0 ? -1 : 1; // 障害物が進路の右にあれば左へ、左にあれば右へ迂回
+      }
+    }
+  }
+  return strongestPush > 0 ? ang + pushSign*strongestPush : ang;
+}
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
   const baseSpeed = m.speed * (m.trainSpeedMult||1);
@@ -299,6 +322,7 @@ function resolveMovement(m, dt){
     } else {
       let ang = angTo(m,target);
       if(!m.isPlayer){
+        ang = computeVolcanoAvoidAngle(m, target, ang);
         m.stuckTimer += dt;
         if(m.stuckTimer > 0.4){
           const moved = dist(m, m.stuckCheckPos);

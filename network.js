@@ -106,7 +106,7 @@ async function beginMultiplayerMatch(){
     entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
   }
 
-  seededSpawnLoot(rng, 138, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  seededSpawnLoot(rng, 420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   updateCamera();
 
   window.__aramonWatchInputs(netState.roomId, (players)=>{

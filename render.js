@@ -686,39 +686,46 @@ function drawVolcanoComplex(group,p){
   ctx.save();
   ctx.globalAlpha = 1;
 
-  // 各隆起(主峰含む)を、山頂に近いほど奥から手前の順で描く(重なりの破綻を防ぐ)
-  const sorted = [...group].sort((a,b)=> (b.isMain?1:0) - (a.isMain?1:0));
+  const main = group.find(v=>v.isMain) || group[0];
+  const mainP = project(main.x, main.y, 0);
+  if(!mainP){ ctx.restore(); return; }
+  const mainR = mainP.scale * main.radius;
+
+  // 複合体全体で「地面に接する影」は1つだけにする(裾野の輪郭として自然に見せる)
+  ctx.beginPath();
+  ctx.ellipse(mainP.x, mainP.y + mainR*0.08, mainR*1.3, mainR*0.5, 0, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.fill();
+
+  // 各隆起(主峰含む)を、奥から手前の順で描く(主峰は最後=一番手前)
+  const sorted = [...group].sort((a,b)=> (a.isMain?1:0) - (b.isMain?1:0));
 
   for(const v of sorted){
     const pp = project(v.x, v.y, 0);
     if(!pp) continue;
     const r = pp.scale * v.radius;
-    const riseH = r * (v.isMain ? 1.15 : 0.85); // 地面からの盛り上がりの高さ(疑似的な3D隆起)
+    const riseH = r * (v.isMain ? 1.15 : 0.9); // 地面からの盛り上がりの高さ(疑似的な3D隆起)
 
     ctx.save();
     ctx.translate(pp.x, pp.y);
 
-    // 地面の影(裾野の輪郭)
-    ctx.beginPath(); ctx.ellipse(0, riseH*0.12, r*1.05, r*0.42, 0, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
-
     // 山肌を裾野から山頂へ向けて何段かのテラスとして描き、隆起している質感を出す
-    const terraces = 5;
+    const terraces = v.isMain ? 5 : 3;
     for(let t=terraces; t>=0; t--){
       const tt = t/terraces; // 1=裾野, 0=山頂
-      const rr = r*(0.30+0.70*tt);
-      const ry = rr*0.62;
+      const rr = r*(0.28+0.72*tt);
+      const ry = rr*0.60;
       const yOff = -riseH*(1-tt);
       const shade = 0.16 + tt*0.30; // 山頂ほど明るく
       ctx.beginPath(); ctx.ellipse(0, yOff, rr, ry, 0, 0, Math.PI*2);
       ctx.fillStyle = `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
       ctx.fill();
     }
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.ellipse(0, -riseH, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
 
     if(v.isMain){
       const glow = 0.6+0.3*Math.sin(matchTime*1.6);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, -riseH, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
       ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.26, r*0.16, 0, 0, Math.PI*2);
       ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
       ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
