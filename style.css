@@ -272,12 +272,13 @@
   .resultScreen{
     position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center;
     background:rgba(4,6,10,0.92); text-align:center; padding:24px;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y;
   }
   .resultScreen .rank{ font-family:'Russo One',sans-serif; font-size:clamp(40px,12vw,80px); letter-spacing:2px; }
   .resultScreen.win .rank{ color:var(--amber); text-shadow:0 0 30px rgba(244,196,48,0.6); }
   .resultScreen.lose .rank{ color:var(--ink-dim); }
   .result-monster-icon{
-    width:96px; height:96px; border-radius:50%; object-fit:cover; margin-bottom:10px;
+    width:96px; height:96px; border-radius:50%; object-fit:cover; margin:22px 0 18px;
     background:rgba(255,255,255,0.06); border:2px solid var(--panel-line);
   }
   .resultScreen.win .result-monster-icon{

@@ -112,6 +112,7 @@ function applyDamage(target, dmg, source, opts){
         target.poisonTickAt = matchTime + 1;
       }
       target.poisonUntil = matchTime + 10;
+      target.poisonSourceId = source.id;
     }
   }
 
@@ -563,6 +564,10 @@ function update(dt){
         e.hp -= dmg;
         e.hitFlash = 0.12;
         spawnDmgText(e.x, e.y, e.z, Math.round(dmg), '#c07bf0');
+        const poisoner = entities.find(o=>o.id===e.poisonSourceId);
+        if(poisoner && poisoner.alive && poisoner.id!==e.id){
+          poisoner.damageDealt += dmg;
+        }
       }
     }
     if(e.isPlayer) tryPlayerFire(dt);
