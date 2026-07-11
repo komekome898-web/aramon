@@ -183,6 +183,7 @@
   #aliveNum{ font-family:'Russo One',sans-serif; font-size:16px; color:var(--amber); }
   #aliveLabel{ font-size:8px; letter-spacing:1.5px; color:var(--ink-dim); }
   #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:9px; margin-top:2px; }
+  #zoneCountdown{ font-family:'Share Tech Mono',monospace; font-size:13px; font-weight:700; color:var(--amber); }
   #matchClock{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); }
 
   #statsPanel{ top:14px; left:50%; transform:translateX(-50%); padding:9px 20px; display:flex; gap:22px; }

@@ -581,11 +581,18 @@ function strokeProjectedRing(pts, strokeStyle, lineWidth, dash, glow){
   ctx.restore();
 }
 function drawZoneRings(){
-  const ring = projectCircleRing(zoneState.center, zoneState.radius, 90);
-  strokeProjectedRing(ring, 'rgba(244,196,48,0.85)', 4, [20,16], {blur:16,color:'rgba(244,196,48,0.6)'});
+  const ZONE_RENDER_THRESHOLD = 4000; // これより境界から離れていれば描画不要
+  const distToEdge = Math.abs(dist(player, zoneState.center) - zoneState.radius);
+  if(distToEdge < ZONE_RENDER_THRESHOLD){
+    const ring = projectCircleRing(zoneState.center, zoneState.radius, 90);
+    strokeProjectedRing(ring, 'rgba(244,196,48,0.85)', 4, [20,16], {blur:16,color:'rgba(244,196,48,0.6)'});
+  }
   if(zoneState.shrinking){
-    const nextRing = projectCircleRing(zoneState.toCenter, zoneState.toRadius, 90);
-    strokeProjectedRing(nextRing, 'rgba(255,255,255,0.32)', 2, [6,9], null);
+    const distToNextEdge = Math.abs(dist(player, zoneState.toCenter) - zoneState.toRadius);
+    if(distToNextEdge < ZONE_RENDER_THRESHOLD){
+      const nextRing = projectCircleRing(zoneState.toCenter, zoneState.toRadius, 90);
+      strokeProjectedRing(nextRing, 'rgba(255,255,255,0.32)', 2, [6,9], null);
+    }
   }
 }
 function drawSkyAndGround(){
@@ -622,6 +629,10 @@ function drawDangerVignette(){
   ctx.restore();
 }
 function drawDangerGround(){
+  const isOutside = dist(player, zoneState.center) > zoneState.radius;
+  const distToEdge = Math.abs(dist(player, zoneState.center) - zoneState.radius);
+  if(!isOutside && distToEdge > 4000) return; // 境界から遠く離れていれば描画不要(チラつき防止)
+
   const horizonY = clamp(viewH/2 - FOCAL*Math.tan(camState.pitch), -40, viewH+40);
   ctx.save();
   ctx.beginPath();
@@ -842,6 +853,8 @@ function updateHUD(){
   const aliveCount = entities.filter(e=>e.alive).length;
   document.getElementById('aliveNum').textContent = aliveCount;
   document.getElementById('zoneStatus').textContent = zoneLabel();
+  const countdown = zoneCountdownSeconds();
+  document.getElementById('zoneCountdown').textContent = countdown===null ? '--:--' : fmtTime(countdown);
   document.getElementById('killCountNum').textContent = player.kills;
   document.getElementById('damageDealtNum').textContent = Math.round(player.damageDealt);
   document.getElementById('matchClock').textContent = fmtTime(matchTime);

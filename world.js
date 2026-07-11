@@ -132,6 +132,15 @@ function zoneLabel(){
   if(zoneState.phaseIndex===0) return '安全圏：待機中';
   return zoneState.shrinking ? '安全圏：縮小中' : '安全圏：安定';
 }
+// 次の収縮(または現在の収縮が終わるまで)の残り秒数。もう収縮しない最終フェーズでは null を返す
+function zoneCountdownSeconds(){
+  const ph = ZONE_PHASES[zoneState.phaseIndex];
+  if(zoneState.shrinking){
+    return Math.max(0, ph.shrinkTime - zoneState.timer);
+  }
+  if(zoneState.phaseIndex >= ZONE_PHASES.length-1) return null;
+  return Math.max(0, ph.holdTime - zoneState.timer);
+}
 
 /* =====================================================================
    ENTITY FACTORY
