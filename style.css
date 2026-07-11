@@ -278,21 +278,22 @@
   .resultScreen.win .rank{ color:var(--amber); text-shadow:0 0 30px rgba(244,196,48,0.6); }
   .resultScreen.lose .rank{ color:var(--ink-dim); }
   .result-monster-icon{
-    width:96px; height:96px; border-radius:50%; object-fit:cover; margin:22px 0 18px;
+    width:64px; height:64px; border-radius:50%; object-fit:cover; flex-shrink:0;
     background:rgba(255,255,255,0.06); border:2px solid var(--panel-line);
   }
   .resultScreen.win .result-monster-icon{
-    border-color:var(--amber); box-shadow:0 0 24px -2px rgba(244,196,48,0.7);
+    border-color:var(--amber); box-shadow:0 0 18px -2px rgba(244,196,48,0.7);
     animation: resultIconHappyBounce 0.7s ease-in-out infinite;
   }
   @keyframes resultIconHappyBounce{
     0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
-    25%      { transform: translateY(-18px) scale(1.05) rotate(-6deg); }
+    25%      { transform: translateY(-10px) scale(1.05) rotate(-6deg); }
     50%      { transform: translateY(0) scale(0.96) rotate(0deg); }
-    75%      { transform: translateY(-10px) scale(1.03) rotate(6deg); }
+    75%      { transform: translateY(-6px) scale(1.03) rotate(6deg); }
   }
   .resultScreen .sub{ font-size:14px; letter-spacing:3px; color:var(--ink-dim); margin-top:6px;}
-  .resultStats{ display:flex; gap:26px; margin-top:24px; flex-wrap:wrap; justify-content:center; }
+  .resultStatsRow{ display:flex; align-items:center; justify-content:center; gap:20px; margin-top:24px; flex-wrap:wrap; }
+  .resultStats{ display:flex; gap:26px; flex-wrap:wrap; justify-content:center; }
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
