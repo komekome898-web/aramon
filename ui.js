@@ -18,7 +18,7 @@ function buildMonsterGrid(){
     card.style.setProperty('--accent', el.color);
     card.innerHTML = `
       <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-        <img src="monsters/${key}.png" alt="${el.label}" onerror="this.remove()">
+        <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
       </div>
       <div class="m-name">${el.label}</div>
       <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
@@ -357,6 +357,16 @@ function showResult(isWin, placement){
   document.getElementById('statKills').textContent = player.kills;
   document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
+  const iconEl = document.getElementById('resultMonsterIcon');
+  if(iconEl){
+    const el = ELEMENTS[player.element];
+    iconEl.alt = el ? el.label : '';
+    iconEl.style.display = '';
+    iconEl.dataset.variant = 'player';
+    iconEl.dataset.extIdx = '0';
+    iconEl.dataset.basePath = `monsters/${player.element}_player`;
+    iconEl.src = imgSrcFor(iconEl.dataset.basePath);
+  }
   document.getElementById('resultScreen').classList.remove('hidden');
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin);
   submitScoreToRanking(isWin, placement);
@@ -538,7 +548,7 @@ function renderMyStats(){
     const el = ELEMENTS[key];
     const es = (stats.byElement && stats.byElement[key]) || { bestDamage:0, bestKills:0, matches:0 };
     return `<div class="mystat-elem-row">
-      <img class="ei" src="monsters/${key}.png" alt="" onerror="this.remove()">
+      <img class="ei" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">
       <span class="en">${el.label}</span>
       <span class="ev-line">使用回数　${es.matches||0}回</span>
       <span class="ev-line">最高キル　${es.bestKills||0}</span>

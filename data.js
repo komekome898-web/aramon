@@ -44,6 +44,37 @@ function loadMonsterImage(basePath){
   tryNext();
   return img;
 }
+function imgSrcFor(basePath){
+  return `${basePath}.${EXT_CANDIDATES[0]}`;
+}
+// <img onerror="..."> から呼ばれる共通フォールバック処理。
+// .png -> .PNG -> .Png の順で再試行し、全滅したら要素を消す。
+function handleMonsterImgError(imgEl, basePath){
+  const tried = parseInt(imgEl.dataset.extIdx || '0', 10) + 1;
+  if(tried >= EXT_CANDIDATES.length){
+    imgEl.remove();
+    return;
+  }
+  imgEl.dataset.extIdx = String(tried);
+  imgEl.src = `${basePath}.${EXT_CANDIDATES[tried]}`;
+}
+// 結果画面アイコン専用: プレイヤー用画像 -> 通常画像 -> 非表示、の順にフォールバック
+function handleResultIconError(imgEl){
+  const extIdx = parseInt(imgEl.dataset.extIdx || '0', 10) + 1;
+  if(extIdx < EXT_CANDIDATES.length){
+    imgEl.dataset.extIdx = String(extIdx);
+    imgEl.src = `${imgEl.dataset.basePath}.${EXT_CANDIDATES[extIdx]}`;
+    return;
+  }
+  if(imgEl.dataset.variant === 'player'){
+    imgEl.dataset.variant = 'normal';
+    imgEl.dataset.extIdx = '0';
+    imgEl.dataset.basePath = imgEl.dataset.basePath.replace(/_player$/, '');
+    imgEl.src = `${imgEl.dataset.basePath}.${EXT_CANDIDATES[0]}`;
+    return;
+  }
+  imgEl.style.display = 'none';
+}
 Object.keys(ELEMENTS).forEach(key=>{
   monsterImages[key] = loadMonsterImage(`monsters/${key}`);
   playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player`);
