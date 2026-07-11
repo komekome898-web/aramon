@@ -594,7 +594,7 @@ function drawSkyAndGround(){
   sky.addColorStop(0,'#05070d'); sky.addColorStop(1,'#0d1726');
   ctx.fillStyle = sky;
   ctx.fillRect(0,0,viewW, Math.max(horizonY,0));
-  ctx.fillStyle = '#142433';
+  ctx.fillStyle = currentMap.groundColor || '#142433';
   ctx.fillRect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
 }
 function drawTerrainDecor(){
@@ -679,22 +679,53 @@ function drawLavaZones(){
     ctx.restore();
   }
 }
-function drawVolcanoObstacle(v,p){
-  const r = p.scale * v.radius;
+// 火山1つ分(主峰+複数の裾野の隆起)をまとめて1つの立体として描画する。
+// 個別に奥行きソートすると隙間から背景が見えてしまう(透けて見える)ため、
+// 必ずこの関数の中で複合体としてまとめて描画する。
+function drawVolcanoComplex(group,p){
   ctx.save();
-  ctx.translate(p.x,p.y);
-  const grad = ctx.createRadialGradient(0,-r*0.2,r*0.1,0,0,r);
-  grad.addColorStop(0, '#5a3a2a');
-  grad.addColorStop(1, '#2c1c14');
-  ctx.beginPath(); ctx.ellipse(0,0, r, r*0.7, 0, 0, Math.PI*2);
-  ctx.fillStyle = grad; ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3; ctx.stroke();
-  if(v.isMain){
-    ctx.beginPath(); ctx.ellipse(0,-r*0.05, r*0.32, r*0.22, 0, 0, Math.PI*2);
-    const glow = 0.6+0.3*Math.sin(matchTime*1.6);
-    ctx.fillStyle = `rgba(255,110,30,${glow})`;
-    ctx.shadowBlur=20; ctx.shadowColor='rgba(255,110,30,0.9)';
-    ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // 各隆起(主峰含む)を、山頂に近いほど奥から手前の順で描く(重なりの破綻を防ぐ)
+  const sorted = [...group].sort((a,b)=> (b.isMain?1:0) - (a.isMain?1:0));
+
+  for(const v of sorted){
+    const pp = project(v.x, v.y, 0);
+    if(!pp) continue;
+    const r = pp.scale * v.radius;
+    const riseH = r * (v.isMain ? 1.15 : 0.85); // 地面からの盛り上がりの高さ(疑似的な3D隆起)
+
+    ctx.save();
+    ctx.translate(pp.x, pp.y);
+
+    // 地面の影(裾野の輪郭)
+    ctx.beginPath(); ctx.ellipse(0, riseH*0.12, r*1.05, r*0.42, 0, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+
+    // 山肌を裾野から山頂へ向けて何段かのテラスとして描き、隆起している質感を出す
+    const terraces = 5;
+    for(let t=terraces; t>=0; t--){
+      const tt = t/terraces; // 1=裾野, 0=山頂
+      const rr = r*(0.30+0.70*tt);
+      const ry = rr*0.62;
+      const yOff = -riseH*(1-tt);
+      const shade = 0.16 + tt*0.30; // 山頂ほど明るく
+      ctx.beginPath(); ctx.ellipse(0, yOff, rr, ry, 0, 0, Math.PI*2);
+      ctx.fillStyle = `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(0, -riseH, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
+
+    if(v.isMain){
+      const glow = 0.6+0.3*Math.sin(matchTime*1.6);
+      ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.26, r*0.16, 0, 0, Math.PI*2);
+      ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
+      ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
+      ctx.fill();
+      ctx.shadowBlur=0;
+    }
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -710,7 +741,17 @@ function render(){
   const drawables = [];
   for(const b of buildings){ const p = project(b.cx,b.cy,b.wallH*0.5); if(p) drawables.push({kind:'building', obj:b, p}); }
   for(const r of rocks){ const p = project(r.x,r.y,0); if(p) drawables.push({kind:'rock', obj:r, p}); }
-  for(const v of volcanoObstacles){ const p = project(v.x,v.y,0); if(p) drawables.push({kind:'volcano', obj:v, p}); }
+  const volcanoGroups = new Map();
+  for(const v of volcanoObstacles){
+    const gid = v.complexId||0;
+    if(!volcanoGroups.has(gid)) volcanoGroups.set(gid, []);
+    volcanoGroups.get(gid).push(v);
+  }
+  for(const group of volcanoGroups.values()){
+    const main = group.find(v=>v.isMain) || group[0];
+    const p = project(main.x, main.y, 0);
+    if(p) drawables.push({kind:'volcano', obj:group, p});
+  }
   for(const it of lootItems){ const p = project(it.x,it.y,0); if(p) drawables.push({kind:'loot', obj:it, p}); }
   for(const pr of projectiles){ const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
@@ -721,7 +762,7 @@ function render(){
     if(d.p.x<-150||d.p.x>viewW+150||d.p.y<-150||d.p.y>viewH+150) continue;
     if(d.kind==='loot') drawLootItem(d.obj,d.p);
     else if(d.kind==='proj') drawProjectile(d.obj,d.p);
-    else if(d.kind==='volcano') drawVolcanoObstacle(d.obj,d.p);
+    else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
     else if(d.kind==='mon') drawMonster(d.obj,d.p);
     else if(d.kind==='rock') drawRock(d.obj,d.p);
     else if(d.kind==='building') drawBuilding(d.obj);

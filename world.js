@@ -80,8 +80,12 @@ function pickZoneTarget(prevCenter, prevRadius, nextRadius){
     x = clamp(x, nextRadius+40, WORLD.w-nextRadius-40);
     y = clamp(y, nextRadius+40, WORLD.h-nextRadius-40);
     if(currentMap.hasVolcano){
-      const v = volcanoObstacles[0];
-      if(v && Math.hypot(x-v.x, y-v.y) < v.radius + nextRadius*0.5 + 300) continue;
+      let insideAny = false;
+      for(const v of volcanoObstacles){
+        if(!v.isMain) continue;
+        if(Math.hypot(x-v.x, y-v.y) < v.radius + nextRadius*0.5 + 300){ insideAny = true; break; }
+      }
+      if(insideAny) continue;
     }
     return {x,y};
   }
@@ -276,29 +280,34 @@ function buildingBlocks(x,y,margin){
   }
   return false;
 }
-// 火山の固定位置(ワールド中央からややずらして、安全圏の最終収縮地点との重なりを軽減)
-const VOLCANO_CX_RATIO = 0.60, VOLCANO_CY_RATIO = 0.42;
+// 火山ごとに一意なIDを振り、描画側でまとめて1つの塊として扱えるようにする
 function genVolcanoAndLava(){
   volcanoObstacles = [];
   lavaZones = [];
   if(!currentMap.hasVolcano) return;
-  const vc = currentMap.volcano;
-  const cx = WORLD.w*VOLCANO_CX_RATIO, cy = WORLD.h*VOLCANO_CY_RATIO;
-  volcanoObstacles.push({ x:cx, y:cy, radius:vc.radius, isMain:true });
-  for(let i=0;i<vc.peakBumps;i++){
-    const a = (i/vc.peakBumps)*Math.PI*2 + rand(-0.15,0.15);
-    const d = vc.radius*rand(0.55,0.85);
-    volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: vc.radius*rand(0.25,0.4) });
-  }
-  for(let i=0;i<currentMap.lavaRingCount;i++){
-    const a = (i/currentMap.lavaRingCount)*Math.PI*2 + rand(-0.2,0.2);
-    const d = currentMap.lavaRingRadius*rand(0.85,1.15);
-    lavaZones.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: rand(220,340) });
+  let complexId = 0;
+  for(const site of currentMap.volcanoSites){
+    complexId++;
+    const cx = WORLD.w*site.xr, cy = WORLD.h*site.yr;
+    const radius = site.radius;
+    volcanoObstacles.push({ x:cx, y:cy, radius, isMain:true, complexId });
+    for(let i=0;i<site.peakBumps;i++){
+      const a = (i/site.peakBumps)*Math.PI*2 + rand(-0.15,0.15);
+      const d = radius*rand(0.55,0.85);
+      volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: radius*rand(0.25,0.4), complexId });
+    }
+    for(let i=0;i<currentMap.lavaRingPerVolcano;i++){
+      const a = (i/currentMap.lavaRingPerVolcano)*Math.PI*2 + rand(-0.2,0.2);
+      const d = currentMap.lavaRingRadius*rand(0.85,1.15);
+      lavaZones.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: rand(220,340) });
+    }
   }
   for(let i=0;i<currentMap.lavaPoolCount;i++){
-    const a = rand(0,Math.PI*2), d = rand(vc.radius*2.2, WORLD.w*0.42);
-    const x = clamp(cx+Math.cos(a)*d, 400, WORLD.w-400);
-    const y = clamp(cy+Math.sin(a)*d, 400, WORLD.h-400);
+    const a = rand(0,Math.PI*2), d = rand(1200, WORLD.w*0.42);
+    const site = currentMap.volcanoSites[Math.floor(rand(0,currentMap.volcanoSites.length))];
+    const baseX = WORLD.w*site.xr, baseY = WORLD.h*site.yr;
+    const x = clamp(baseX+Math.cos(a)*d, 400, WORLD.w-400);
+    const y = clamp(baseY+Math.sin(a)*d, 400, WORLD.h-400);
     lavaZones.push({ x, y, radius: rand(160,260) });
   }
 }
@@ -412,23 +421,29 @@ function seededGenVolcanoAndLava(rng){
   volcanoObstacles = [];
   lavaZones = [];
   if(!currentMap.hasVolcano) return;
-  const vc = currentMap.volcano;
-  const cx = WORLD.w*VOLCANO_CX_RATIO, cy = WORLD.h*VOLCANO_CY_RATIO;
-  volcanoObstacles.push({ x:cx, y:cy, radius:vc.radius, isMain:true });
-  for(let i=0;i<vc.peakBumps;i++){
-    const a = (i/vc.peakBumps)*Math.PI*2 + seededRand(rng,-0.15,0.15);
-    const d = vc.radius*seededRand(rng,0.55,0.85);
-    volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: vc.radius*seededRand(rng,0.25,0.4) });
-  }
-  for(let i=0;i<currentMap.lavaRingCount;i++){
-    const a = (i/currentMap.lavaRingCount)*Math.PI*2 + seededRand(rng,-0.2,0.2);
-    const d = currentMap.lavaRingRadius*seededRand(rng,0.85,1.15);
-    lavaZones.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: seededRand(rng,220,340) });
+  let complexId = 0;
+  for(const site of currentMap.volcanoSites){
+    complexId++;
+    const cx = WORLD.w*site.xr, cy = WORLD.h*site.yr;
+    const radius = site.radius;
+    volcanoObstacles.push({ x:cx, y:cy, radius, isMain:true, complexId });
+    for(let i=0;i<site.peakBumps;i++){
+      const a = (i/site.peakBumps)*Math.PI*2 + seededRand(rng,-0.15,0.15);
+      const d = radius*seededRand(rng,0.55,0.85);
+      volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: radius*seededRand(rng,0.25,0.4), complexId });
+    }
+    for(let i=0;i<currentMap.lavaRingPerVolcano;i++){
+      const a = (i/currentMap.lavaRingPerVolcano)*Math.PI*2 + seededRand(rng,-0.2,0.2);
+      const d = currentMap.lavaRingRadius*seededRand(rng,0.85,1.15);
+      lavaZones.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: seededRand(rng,220,340) });
+    }
   }
   for(let i=0;i<currentMap.lavaPoolCount;i++){
-    const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,vc.radius*2.2, WORLD.w*0.42);
-    const x = clamp(cx+Math.cos(a)*d, 400, WORLD.w-400);
-    const y = clamp(cy+Math.sin(a)*d, 400, WORLD.h-400);
+    const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,1200, WORLD.w*0.42);
+    const site = currentMap.volcanoSites[Math.floor(seededRand(rng,0,currentMap.volcanoSites.length))];
+    const baseX = WORLD.w*site.xr, baseY = WORLD.h*site.yr;
+    const x = clamp(baseX+Math.cos(a)*d, 400, WORLD.w-400);
+    const y = clamp(baseY+Math.sin(a)*d, 400, WORLD.h-400);
     lavaZones.push({ x, y, radius: seededRand(rng,160,260) });
   }
 }

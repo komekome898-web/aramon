@@ -15,11 +15,18 @@ const ZONE_PHASES = [
 const MAPS = {
   wild: {
     key:'wild', label:'荒野', rockCount:800, decorCount:9000, hasVolcano:false,
+    groundColor:'#142433',
   },
   kaurea: {
     key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
-    volcano:{ radius: 1600, peakBumps: 7 },
-    lavaRingCount: 6, lavaRingRadius: 2500, lavaPoolCount: 5,
+    groundColor:'#241708',
+    // ワールド比率(0〜1)で指定した3つの火山の位置。大きさも少しずつ変える
+    volcanoSites:[
+      { xr:0.60, yr:0.42, radius:1550, peakBumps:7 },
+      { xr:0.24, yr:0.68, radius:1250, peakBumps:6 },
+      { xr:0.80, yr:0.76, radius:1350, peakBumps:6 },
+    ],
+    lavaRingPerVolcano: 4, lavaRingRadius: 2150, lavaPoolCount: 4,
     lavaDps: 22,
   },
 };
