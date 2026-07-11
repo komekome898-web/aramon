@@ -1,14 +1,28 @@
-const WORLD = { w: 8100, h: 8100 };
+const WORLD = { w: 18100, h: 18100 };
 const ZONE_CENTER0 = { x: WORLD.w/2, y: WORLD.h/2 };
 
 const ZONE_PHASES = [
-  { holdRadius: 3540, shrinkTime: 0,  holdTime: 61, dps: 0  },
-  { holdRadius: 2459, shrinkTime: 36, holdTime: 48, dps: 3  },
-  { holdRadius: 1559, shrinkTime: 29, holdTime: 42, dps: 5  },
-  { holdRadius: 869,  shrinkTime: 28, holdTime: 36, dps: 8  },
-  { holdRadius: 390,  shrinkTime: 21, holdTime: 29, dps: 12 },
-  { holdRadius: 135,  shrinkTime: 17, holdTime: 99999, dps: 16 },
+  { holdRadius: 7910, shrinkTime: 0,  holdTime: 61, dps: 0  },
+  { holdRadius: 5495, shrinkTime: 36, holdTime: 48, dps: 3  },
+  { holdRadius: 3485, shrinkTime: 29, holdTime: 42, dps: 5  },
+  { holdRadius: 1942, shrinkTime: 28, holdTime: 36, dps: 8  },
+  { holdRadius: 872,  shrinkTime: 21, holdTime: 29, dps: 12 },
+  { holdRadius: 302,  shrinkTime: 17, holdTime: 99999, dps: 16 },
 ];
+
+// ===== マップ定義 =====
+// hasVolcano:true のマップは、通れない火山エリアと踏むとダメージを受ける溶岩エリアが生成される
+const MAPS = {
+  wild: {
+    key:'wild', label:'荒野', rockCount:800, decorCount:9000, hasVolcano:false,
+  },
+  kaurea: {
+    key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
+    volcano:{ radius: 1600, peakBumps: 7 },
+    lavaRingCount: 6, lavaRingRadius: 2500, lavaPoolCount: 5,
+    lavaDps: 22,
+  },
+};
 
 const ELEMENTS = {
   fire:    { label:'ドラゴン',   color:'#ff6b35', dark:'#a8431d', speed:182, hp:100, trait:'burn' },
@@ -147,6 +161,15 @@ const HEAL_ITEMS = {
   oilL: { name:'大ガロエオイル', heal:80, color:'#d99a2b', accent:'#ffe28a', size:1.35 },
 };
 const HEAL_TYPES = Object.keys(HEAL_ITEMS);
+
+// ===== トレーニングアイテム(出現率は低め・永続ステータス強化) =====
+const TRAINING_ITEMS = {
+  weight:   { name:'重り引き', emoji:'🏋️', color:'#c97b3d', accent:'#ffd9a8', desc:'技ダメージ上昇・最大HP上昇' },
+  meditate: { name:'めいそう', emoji:'🧘', color:'#7bd1c9', accent:'#d8fff8', desc:'技の消費ガッツ-1・技弾速上昇' },
+  pool:     { name:'プール',   emoji:'🏊', color:'#3d9fd1', accent:'#bfe9ff', desc:'最大HP上昇・被ダメ低下5%' },
+  floor:    { name:'変動ゆか', emoji:'💃', color:'#d13d9f', accent:'#ffbfe9', desc:'移動速度上昇・技の連射速度上昇' },
+};
+const TRAINING_TYPES = Object.keys(TRAINING_ITEMS);
 
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
 

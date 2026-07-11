@@ -64,6 +64,13 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi');
   });
 });
+document.querySelectorAll('.map-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.map-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    game.selectedMap = tab.dataset.map==='kaurea' ? 'kaurea' : 'wild';
+  });
+});
 document.querySelectorAll('.cap-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
@@ -298,7 +305,9 @@ function startGame(){
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
   joyKnobEl.style.transform='translate(0,0)';
+  currentMap = MAPS[game.selectedMap] || MAPS.wild;
   initZone();
+  genVolcanoAndLava();
   genRocks();
   genTerrain();
 
@@ -306,7 +315,7 @@ function startGame(){
   entities.push(player);
   const names = shuffle(BOT_NAMES);
   const botElements = shuffle(Object.keys(ELEMENTS));
-  for(let i=0;i<19;i++){
+  for(let i=0;i<29;i++){
     const elKey = botElements[i % botElements.length];
     entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':'')));
   }

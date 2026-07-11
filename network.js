@@ -40,35 +40,40 @@ async function beginMultiplayerMatch(){
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
-  let seed, fixedPlayers;
+  let seed, fixedPlayers, mapKey;
   if(netState.isHost){
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
     fixedPlayers = netState.humanPlayers || {};
     if(!fixedPlayers[netState.myPlayerId]){
       fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement } };
     }
-    console.log('[aramon] HOST: publishing seed+fixedPlayers', seed, fixedPlayers);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers);
+    mapKey = game.selectedMap || 'wild';
+    console.log('[aramon] HOST: publishing seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey);
   } else {
     console.log('[aramon] NON-HOST: waiting for seed+fixedPlayers...');
     const result = await window.__aramonWaitForRoomSeed(netState.roomId, 10000);
     if(result){
       seed = result.seed;
       fixedPlayers = result.fixedPlayers;
-      console.log('[aramon] NON-HOST: received seed+fixedPlayers', seed, fixedPlayers);
+      mapKey = result.mapKey || 'wild';
+      console.log('[aramon] NON-HOST: received seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
     } else {
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
+      mapKey = game.selectedMap || 'wild';
       console.warn('[aramon] NON-HOST: TIMEOUT, falling back to local snapshot', seed, fixedPlayers);
     }
   }
   netState.humanPlayers = fixedPlayers;
+  currentMap = MAPS[mapKey] || MAPS.wild;
   console.log('[aramon] final fixedPlayers used for this match:', JSON.stringify(fixedPlayers));
 
   const rng = makeSeededRng(seed);
 
   initZone();
+  seededGenVolcanoAndLava(rng);
   seededGenRocks(rng);
   seededGenTerrain(rng);
 
@@ -164,7 +169,7 @@ function processRemoteFireEvents(){
     ent.facingAngle = evt.facing;
     if(typeof evt.moveTier==='number') ent.moveTierSelected = evt.moveTier;
     const mv = activeMove(ent);
-    if(ent.guts < mv.gutsCost) continue;
+    if(ent.guts < effectiveGutsCost(ent, mv)) continue;
     let targetPoint;
     if(mv.melee){
       let best=null, bestD=mv.range;
@@ -217,18 +222,19 @@ function tryNonHostPlayerFireVisual(dt){
   if(!player.alive || player.fireCooldown>0) return;
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
-  if(player.guts < mv.gutsCost) return;
+  if(player.guts < effectiveGutsCost(player, mv)) return;
   const aimAngle = player.facingAngle;
 
   // クールダウン・見た目のガッツ消費だけローカルで進める(実値はホストのauthStateで上書きされる)
   player.fireCooldown = effectiveCooldown(player, mv);
-  player.guts = Math.max(0, player.guts - mv.gutsCost);
+  player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
+  const effProjSpeed = effectiveProjSpeed(player, mv);
 
   if(mv.lobbed){
     const throwDist = mv.range;
     const landX = player.x + Math.cos(aimAngle)*throwDist;
     const landY = player.y + Math.sin(aimAngle)*throwDist;
-    const flightTime = throwDist / mv.projSpeed;
+    const flightTime = throwDist / effProjSpeed;
     projectiles.push({
       x:player.x, y:player.y, z:player.z,
       lobbed:true, startX:player.x, startY:player.y, startZ:player.z,
@@ -244,7 +250,7 @@ function tryNonHostPlayerFireVisual(dt){
       const ang = aimAngle + spreadOffset;
       projectiles.push({
         x:player.x, y:player.y, z:player.z,
-        vx:Math.cos(ang)*mv.projSpeed, vy:Math.sin(ang)*mv.projSpeed,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
         color:mv.color, hitR:mv.hitR, hitW:mv.hitW||0,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true,
       });
@@ -283,6 +289,9 @@ function buildAuthStatePayload(){
       hp: Math.round(e.hp), maxHp: e.maxHp, guts: Math.round(e.guts), maxGuts: e.maxGuts,
       alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
       x: Math.round(e.x), y: Math.round(e.y), moveTierUnlocked: e.moveTierUnlocked,
+      trainCooldownMult: e.trainCooldownMult, trainGutsCostReduction: e.trainGutsCostReduction,
+      trainProjSpeedMult: e.trainProjSpeedMult, trainDmgMult: e.trainDmgMult,
+      trainDmgTakenMult: e.trainDmgTakenMult, trainSpeedMult: e.trainSpeedMult,
     };
   }
   for(const p of projectiles){
@@ -310,6 +319,12 @@ function applyAuthState(authState){
     if(!ent) continue;
     ent.hp = a.hp; ent.maxHp = a.maxHp; ent.guts = a.guts; ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
+    if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
+    if(typeof a.trainGutsCostReduction==='number') ent.trainGutsCostReduction = a.trainGutsCostReduction;
+    if(typeof a.trainProjSpeedMult==='number') ent.trainProjSpeedMult = a.trainProjSpeedMult;
+    if(typeof a.trainDmgMult==='number') ent.trainDmgMult = a.trainDmgMult;
+    if(typeof a.trainDmgTakenMult==='number') ent.trainDmgTakenMult = a.trainDmgTakenMult;
+    if(typeof a.trainSpeedMult==='number') ent.trainSpeedMult = a.trainSpeedMult;
     if(typeof a.moveTierUnlocked==='number' && a.moveTierUnlocked>ent.moveTierUnlocked){
       ent.moveTierUnlocked = a.moveTierUnlocked;
       if(ent.isPlayer && ent.moveTierSelected < ent.moveTierUnlocked) ent.moveTierSelected = ent.moveTierUnlocked;

@@ -261,8 +261,8 @@
     }catch(err){}
   };
 
-  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers){
-    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null }); }catch(err){}
+  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild' }); }catch(err){}
   };
 
   window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
@@ -272,7 +272,7 @@
       const cb = (snap)=>{
         const v = snap.val();
         if(v && v.seed!=null && v.fixedPlayers && !done){
-          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers });
+          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild' });
         }
       };
       onValue(r, cb);

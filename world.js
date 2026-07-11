@@ -1,6 +1,9 @@
 let entities = [];
 let buildings = [];
 let rocks = [];
+let volcanoObstacles = [];
+let lavaZones = [];
+let currentMap = MAPS.wild;
 let projectiles = [];
 let lootItems = [];
 let particles = [];
@@ -9,7 +12,7 @@ let nextId = 1;
 let player = null;
 let matchTime = 0;
 let zoneState = null;
-let game = { started:false, over:false, tipTimer:7, selectedElement:null };
+let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'wild' };
 
 const FOV_V = 64*Math.PI/180;
 let FOCAL = 600;
@@ -70,11 +73,22 @@ function initZone(){
 }
 function pickZoneTarget(prevCenter, prevRadius, nextRadius){
   const maxOff = Math.max(0, prevRadius - nextRadius);
+  for(let tries=0; tries<20; tries++){
+    const a = rand(0, Math.PI*2), d = rand(0, maxOff*0.75);
+    let x = prevCenter.x + Math.cos(a)*d;
+    let y = prevCenter.y + Math.sin(a)*d;
+    x = clamp(x, nextRadius+40, WORLD.w-nextRadius-40);
+    y = clamp(y, nextRadius+40, WORLD.h-nextRadius-40);
+    if(currentMap.hasVolcano){
+      const v = volcanoObstacles[0];
+      if(v && Math.hypot(x-v.x, y-v.y) < v.radius + nextRadius*0.5 + 300) continue;
+    }
+    return {x,y};
+  }
+  // 回避に失敗した場合はそのまま返す(無限ループ防止)
   const a = rand(0, Math.PI*2), d = rand(0, maxOff*0.75);
-  let x = prevCenter.x + Math.cos(a)*d;
-  let y = prevCenter.y + Math.sin(a)*d;
-  x = clamp(x, nextRadius+40, WORLD.w-nextRadius-40);
-  y = clamp(y, nextRadius+40, WORLD.h-nextRadius-40);
+  let x = clamp(prevCenter.x + Math.cos(a)*d, nextRadius+40, WORLD.w-nextRadius-40);
+  let y = clamp(prevCenter.y + Math.sin(a)*d, nextRadius+40, WORLD.h-nextRadius-40);
   return {x,y};
 }
 function advanceZonePhase(){
@@ -159,26 +173,39 @@ function blockedByRock(m,x,y){
   }
   return false;
 }
+function blockedByVolcano(m,x,y){
+  // 火山は高さに関係なく(飛び越え不可)常にブロックする
+  for(const v of volcanoObstacles){
+    if(Math.hypot(x-v.x, y-v.y) < v.radius+m.radius) return true;
+  }
+  return false;
+}
 function tryMoveAxis(m, dx, dy){
   const fullX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
   const fullY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
-  if(!blockedByHeight(m,fullX,fullY) && !blockedByRock(m,fullX,fullY)){
+  if(!blockedByHeight(m,fullX,fullY) && !blockedByRock(m,fullX,fullY) && !blockedByVolcano(m,fullX,fullY)){
     m.x = fullX; m.y = fullY;
     m.z = getTerrainHeightAt(m.x, m.y);
     return;
   }
   const onlyX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
-  if(!blockedByHeight(m,onlyX,m.y) && !blockedByRock(m,onlyX,m.y)) m.x = onlyX;
+  if(!blockedByHeight(m,onlyX,m.y) && !blockedByRock(m,onlyX,m.y) && !blockedByVolcano(m,onlyX,m.y)) m.x = onlyX;
   const onlyY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
-  if(!blockedByHeight(m,m.x,onlyY) && !blockedByRock(m,m.x,onlyY)) m.y = onlyY;
+  if(!blockedByHeight(m,m.x,onlyY) && !blockedByRock(m,m.x,onlyY) && !blockedByVolcano(m,m.x,onlyY)) m.y = onlyY;
   m.z = getTerrainHeightAt(m.x, m.y);
 }
 const MIN_SPAWN_SEPARATION = 500;
+function isOnHazard(x,y,margin){
+  for(const v of volcanoObstacles){ if(Math.hypot(x-v.x,y-v.y) < v.radius+margin) return true; }
+  for(const lz of lavaZones){ if(Math.hypot(x-lz.x,y-lz.y) < lz.radius+margin) return true; }
+  return false;
+}
 function pickSpawnPoint(){
   for(let tries=0; tries<60; tries++){
     const a = rand(0,Math.PI*2), r = rand(0, ZONE_PHASES[0].holdRadius*0.85);
     const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
     if(buildingBlocks(x,y,30)) continue;
+    if(isOnHazard(x,y,60)) continue;
     let onRock=false;
     for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
     if(onRock) continue;
@@ -209,6 +236,7 @@ function createMonster(elementKey, isPlayer, name, overrides){
     aiState:'WANDER', aiTimer:rand(0,0.3), aiTargetPoint:null,
     lastMoveX:0, lastMoveY:-1, inputMoveX:0, inputMoveY:0,
     burnUntil:0, slowUntil:0, graceUntil:0, freezeUntil:0, poisonUntil:0, poisonTickAt:0, poisonSourceId:null,
+    trainCooldownMult:1, trainGutsCostReduction:0, trainProjSpeedMult:1, trainDmgMult:1, trainDmgTakenMult:1, trainSpeedMult:1,
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
     recentAttackers:{},
   };
@@ -218,7 +246,9 @@ function activeMove(m){
 }
 function pickBestAffordableTier(m){
   for(let t=m.moveTierUnlocked; t>=1; t--){
-    if(m.guts >= SIGNATURE_MOVES[m.element][t-1].gutsCost) return t;
+    const mv = SIGNATURE_MOVES[m.element][t-1];
+    const cost = Math.max(1, mv.gutsCost - (m.trainGutsCostReduction||0));
+    if(m.guts >= cost) return t;
   }
   return 1;
 }
@@ -228,11 +258,14 @@ function pickBestAffordableTier(m){
 ===================================================================== */
 function genTerrain(){
   terrainDecor = [];
+  const count = currentMap.decorCount;
   let guard=0;
-  while(terrainDecor.length<1980 && guard<18000){
+  const guardMax = count*12;
+  while(terrainDecor.length<count && guard<guardMax){
     guard++;
     const x = rand(40,WORLD.w-40), y = rand(40,WORLD.h-40);
     if(buildingBlocks(x,y,10)) continue;
+    if(isOnHazard(x,y,10)) continue;
     terrainDecor.push({ x, y, r: rand(5,16), shade: Math.random()<0.5 ? 'dark':'light' });
   }
 }
@@ -242,6 +275,32 @@ function buildingBlocks(x,y,margin){
     if(Math.abs(x-b.cx)<m && Math.abs(y-b.cy)<m) return true;
   }
   return false;
+}
+// 火山の固定位置(ワールド中央からややずらして、安全圏の最終収縮地点との重なりを軽減)
+const VOLCANO_CX_RATIO = 0.60, VOLCANO_CY_RATIO = 0.42;
+function genVolcanoAndLava(){
+  volcanoObstacles = [];
+  lavaZones = [];
+  if(!currentMap.hasVolcano) return;
+  const vc = currentMap.volcano;
+  const cx = WORLD.w*VOLCANO_CX_RATIO, cy = WORLD.h*VOLCANO_CY_RATIO;
+  volcanoObstacles.push({ x:cx, y:cy, radius:vc.radius, isMain:true });
+  for(let i=0;i<vc.peakBumps;i++){
+    const a = (i/vc.peakBumps)*Math.PI*2 + rand(-0.15,0.15);
+    const d = vc.radius*rand(0.55,0.85);
+    volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: vc.radius*rand(0.25,0.4) });
+  }
+  for(let i=0;i<currentMap.lavaRingCount;i++){
+    const a = (i/currentMap.lavaRingCount)*Math.PI*2 + rand(-0.2,0.2);
+    const d = currentMap.lavaRingRadius*rand(0.85,1.15);
+    lavaZones.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: rand(220,340) });
+  }
+  for(let i=0;i<currentMap.lavaPoolCount;i++){
+    const a = rand(0,Math.PI*2), d = rand(vc.radius*2.2, WORLD.w*0.42);
+    const x = clamp(cx+Math.cos(a)*d, 400, WORLD.w-400);
+    const y = clamp(cy+Math.sin(a)*d, 400, WORLD.h-400);
+    lavaZones.push({ x, y, radius: rand(160,260) });
+  }
 }
 function genBuildings(){
   buildings = [];
@@ -267,14 +326,15 @@ function genBuildings(){
 }
 function genRocks(){
   rocks = [];
-  const count = 180;
+  const count = currentMap.rockCount;
   let guard=0;
-  while(rocks.length<count && guard<9000){
+  while(rocks.length<count && guard<count*50){
     guard++;
     const rr = Math.random();
     const radius = rr<0.5 ? rand(22,34) : (rr<0.85 ? rand(34,52) : rand(52,72));
     const x = rand(80,WORLD.w-80), y = rand(80,WORLD.h-80);
     if(buildingBlocks(x,y,radius)) continue;
+    if(isOnHazard(x,y,radius+30)) continue;
     rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:rand(0,10) });
   }
   for(let pass=0; pass<3; pass++){
@@ -294,13 +354,15 @@ function genRocks(){
 }
 function pickLootKindAndType(){
   const r = Math.random();
-  if(r < 0.38){
+  if(r < 0.35){
     const r2 = Math.random();
     const type = r2<0.5 ? 'oilS' : (r2<0.85 ? 'oilM' : 'oilL');
     return { kind:'heal', type };
   }
-  if(r < 0.67) return { kind:'ticket', type:'ticket' };
-  return { kind:'guts', type:'guts' };
+  if(r < 0.62) return { kind:'ticket', type:'ticket' };
+  if(r < 0.92) return { kind:'guts', type:'guts' };
+  const type = TRAINING_TYPES[Math.floor(Math.random()*TRAINING_TYPES.length)];
+  return { kind:'training', type };
 }
 function isNearRock(x, y, margin){
   for(const r of rocks){
@@ -316,7 +378,7 @@ function spawnLoot(n, center, radius){
       const a = rand(0,Math.PI*2), d = rand(0,radius);
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
-    } while(isNearRock(x,y,45) && guard<20);
+    } while((isNearRock(x,y,45) || isOnHazard(x,y,45)) && guard<20);
     lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: rand(0,Math.PI*2) });
   }
 }
@@ -324,13 +386,15 @@ function spawnLoot(n, center, radius){
 // ===== マルチプレイ用: シード付き決定論的初期化 =====
 function seededPickLootKindAndType(rng){
   const r = rng();
-  if(r < 0.38){
+  if(r < 0.35){
     const r2 = rng();
     const type = r2<0.5 ? 'oilS' : (r2<0.85 ? 'oilM' : 'oilL');
     return { kind:'heal', type };
   }
-  if(r < 0.67) return { kind:'ticket', type:'ticket' };
-  return { kind:'guts', type:'guts' };
+  if(r < 0.62) return { kind:'ticket', type:'ticket' };
+  if(r < 0.92) return { kind:'guts', type:'guts' };
+  const type = TRAINING_TYPES[Math.floor(rng()*TRAINING_TYPES.length)];
+  return { kind:'training', type };
 }
 function seededSpawnLoot(rng, n, center, radius){
   for(let i=0;i<n;i++){
@@ -340,19 +404,44 @@ function seededSpawnLoot(rng, n, center, radius){
       const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,0,radius);
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
-    } while(isNearRock(x,y,45) && guard<20);
+    } while((isNearRock(x,y,45) || isOnHazard(x,y,45)) && guard<20);
     lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: seededRand(rng,0,Math.PI*2) });
+  }
+}
+function seededGenVolcanoAndLava(rng){
+  volcanoObstacles = [];
+  lavaZones = [];
+  if(!currentMap.hasVolcano) return;
+  const vc = currentMap.volcano;
+  const cx = WORLD.w*VOLCANO_CX_RATIO, cy = WORLD.h*VOLCANO_CY_RATIO;
+  volcanoObstacles.push({ x:cx, y:cy, radius:vc.radius, isMain:true });
+  for(let i=0;i<vc.peakBumps;i++){
+    const a = (i/vc.peakBumps)*Math.PI*2 + seededRand(rng,-0.15,0.15);
+    const d = vc.radius*seededRand(rng,0.55,0.85);
+    volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: vc.radius*seededRand(rng,0.25,0.4) });
+  }
+  for(let i=0;i<currentMap.lavaRingCount;i++){
+    const a = (i/currentMap.lavaRingCount)*Math.PI*2 + seededRand(rng,-0.2,0.2);
+    const d = currentMap.lavaRingRadius*seededRand(rng,0.85,1.15);
+    lavaZones.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: seededRand(rng,220,340) });
+  }
+  for(let i=0;i<currentMap.lavaPoolCount;i++){
+    const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,vc.radius*2.2, WORLD.w*0.42);
+    const x = clamp(cx+Math.cos(a)*d, 400, WORLD.w-400);
+    const y = clamp(cy+Math.sin(a)*d, 400, WORLD.h-400);
+    lavaZones.push({ x, y, radius: seededRand(rng,160,260) });
   }
 }
 function seededGenRocks(rng){
   rocks = [];
-  const count = 180;
+  const count = currentMap.rockCount;
   let guard=0;
-  while(rocks.length<count && guard<9000){
+  while(rocks.length<count && guard<count*50){
     guard++;
     const rr = rng();
     const radius = rr<0.5 ? seededRand(rng,22,34) : (rr<0.85 ? seededRand(rng,34,52) : seededRand(rng,52,72));
     const x = seededRand(rng,80,WORLD.w-80), y = seededRand(rng,80,WORLD.h-80);
+    if(isOnHazard(x,y,radius+30)) continue;
     rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:seededRand(rng,0,10) });
   }
   for(let pass=0; pass<3; pass++){
@@ -372,8 +461,10 @@ function seededGenRocks(rng){
 }
 function seededGenTerrain(rng){
   terrainDecor = [];
-  for(let i=0;i<1980;i++){
+  const count = currentMap.decorCount;
+  for(let i=0;i<count;i++){
     const x = seededRand(rng,40,WORLD.w-40), y = seededRand(rng,40,WORLD.h-40);
+    if(isOnHazard(x,y,10)) continue;
     terrainDecor.push({ x, y, r: seededRand(rng,5,16), shade: rng()<0.5 ? 'dark':'light' });
   }
 }
@@ -381,6 +472,7 @@ function seededPickSpawnPoint(rng){
   for(let tries=0; tries<60; tries++){
     const a = seededRand(rng,0,Math.PI*2), r = seededRand(rng,0, ZONE_PHASES[0].holdRadius*0.85);
     const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
+    if(isOnHazard(x,y,60)) continue;
     let onRock=false;
     for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
     if(onRock) continue;

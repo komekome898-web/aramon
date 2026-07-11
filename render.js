@@ -417,6 +417,22 @@ function drawLootItem(it,p){
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
       ctx.fillText(GUTS_ITEM.name, 0, -14);
     }
+  } else if(it.kind==='training'){
+    const ti = TRAINING_ITEMS[it.type];
+    const bob = Math.sin(matchTime*2.4+it.bob)*2.5;
+    ctx.translate(0,-10+bob);
+    const spin = 0.7+0.3*Math.sin(matchTime*3+it.bob);
+    ctx.shadowBlur = 16*spin; ctx.shadowColor = ti.accent;
+    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
+    ctx.strokeStyle = ti.accent; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.font="14px sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(ti.emoji, 0, 1);
+    ctx.shadowBlur=0;
+    if(dist(it,player)<160){
+      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=ti.accent; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+      ctx.fillText(`${ti.name}（${ti.desc}）`, 0, -16);
+    }
   }
   ctx.restore();
 }
@@ -644,10 +660,49 @@ function drawLandingMarkers(){
     ctx.restore();
   }
 }
+function drawLavaZones(){
+  if(lavaZones.length===0) return;
+  for(const lz of lavaZones){
+    const pts = projectCircleRing(lz, lz.radius, 40);
+    if(pts.length<3) continue;
+    ctx.save();
+    const pulse = 0.75 + 0.25*Math.sin(matchTime*2.4 + lz.x*0.01);
+    ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(255,90,20,0.8)';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(255,${Math.round(70+30*pulse)},20,0.85)`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,220,120,${0.5+0.3*pulse})`; ctx.lineWidth=2.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+function drawVolcanoObstacle(v,p){
+  const r = p.scale * v.radius;
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  const grad = ctx.createRadialGradient(0,-r*0.2,r*0.1,0,0,r);
+  grad.addColorStop(0, '#5a3a2a');
+  grad.addColorStop(1, '#2c1c14');
+  ctx.beginPath(); ctx.ellipse(0,0, r, r*0.7, 0, 0, Math.PI*2);
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3; ctx.stroke();
+  if(v.isMain){
+    ctx.beginPath(); ctx.ellipse(0,-r*0.05, r*0.32, r*0.22, 0, 0, Math.PI*2);
+    const glow = 0.6+0.3*Math.sin(matchTime*1.6);
+    ctx.fillStyle = `rgba(255,110,30,${glow})`;
+    ctx.shadowBlur=20; ctx.shadowColor='rgba(255,110,30,0.9)';
+    ctx.fill();
+  }
+  ctx.restore();
+}
 function render(){
   ctx.clearRect(0,0,viewW,viewH);
   drawSkyAndGround();
   drawDangerGround();
+  drawLavaZones();
   drawTerrainDecor();
   drawZoneRings();
   drawLandingMarkers();
@@ -655,6 +710,7 @@ function render(){
   const drawables = [];
   for(const b of buildings){ const p = project(b.cx,b.cy,b.wallH*0.5); if(p) drawables.push({kind:'building', obj:b, p}); }
   for(const r of rocks){ const p = project(r.x,r.y,0); if(p) drawables.push({kind:'rock', obj:r, p}); }
+  for(const v of volcanoObstacles){ const p = project(v.x,v.y,0); if(p) drawables.push({kind:'volcano', obj:v, p}); }
   for(const it of lootItems){ const p = project(it.x,it.y,0); if(p) drawables.push({kind:'loot', obj:it, p}); }
   for(const pr of projectiles){ const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
@@ -665,6 +721,7 @@ function render(){
     if(d.p.x<-150||d.p.x>viewW+150||d.p.y<-150||d.p.y>viewH+150) continue;
     if(d.kind==='loot') drawLootItem(d.obj,d.p);
     else if(d.kind==='proj') drawProjectile(d.obj,d.p);
+    else if(d.kind==='volcano') drawVolcanoObstacle(d.obj,d.p);
     else if(d.kind==='mon') drawMonster(d.obj,d.p);
     else if(d.kind==='rock') drawRock(d.obj,d.p);
     else if(d.kind==='building') drawBuilding(d.obj);
@@ -683,6 +740,16 @@ function renderMinimap(){
   miniCtx.beginPath();
   miniCtx.arc(zoneState.center.x*scale, zoneState.center.y*scale, zoneState.radius*scale, 0, Math.PI*2);
   miniCtx.strokeStyle='rgba(244,196,48,0.85)'; miniCtx.lineWidth=2; miniCtx.stroke();
+  for(const v of volcanoObstacles){
+    miniCtx.beginPath();
+    miniCtx.arc(v.x*scale, v.y*scale, Math.max(2, v.radius*scale), 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(90,58,42,0.9)'; miniCtx.fill();
+  }
+  for(const lz of lavaZones){
+    miniCtx.beginPath();
+    miniCtx.arc(lz.x*scale, lz.y*scale, Math.max(1.5, lz.radius*scale), 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(255,90,20,0.85)'; miniCtx.fill();
+  }
   for(const e of entities){
     if(!e.alive) continue;
     miniCtx.beginPath();

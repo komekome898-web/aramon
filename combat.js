@@ -1,11 +1,13 @@
 function fireMove(attacker, target, move){
-  attacker.guts = Math.max(0, attacker.guts - move.gutsCost);
+  attacker.guts = Math.max(0, attacker.guts - effectiveGutsCost(attacker, move));
   if(attacker.element==='ark' && move.tier===3){
     attacker.graceUntil = matchTime + 10;
   }
+  const effDmg = effectiveMoveDmg(attacker, move);
+  const effProjSpeed = effectiveProjSpeed(attacker, move);
   if(move.melee){
     if(target && target.alive){
-      applyDamage(target, move.dmg, attacker);
+      applyDamage(target, effDmg, attacker);
       spawnHit(target.x, target.y, target.z, move.color);
     }
     return;
@@ -16,13 +18,13 @@ function fireMove(attacker, target, move){
     const ang = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.015:0.05);
     const landX = attacker.x + Math.cos(ang)*throwDist;
     const landY = attacker.y + Math.sin(ang)*throwDist;
-    const flightTime = throwDist / move.projSpeed;
+    const flightTime = throwDist / effProjSpeed;
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
       lobbed:true, startX:attacker.x, startY:attacker.y, startZ:attacker.z,
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
-      dmg:move.dmg, color:move.color, hitR:move.hitR, splash:move.splash||0,
+      dmg:effDmg, color:move.color, hitR:move.hitR, splash:move.splash||0,
     });
     return;
   }
@@ -33,8 +35,8 @@ function fireMove(attacker, target, move){
     const ang = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
-      vx:Math.cos(ang)*move.projSpeed, vy:Math.sin(ang)*move.projSpeed,
-      dmg:move.dmg, color:move.color, hitR:move.hitR, hitW:move.hitW||0, splash:move.splash||0,
+      vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+      dmg:effDmg, color:move.color, hitR:move.hitR, hitW:move.hitW||0, splash:move.splash||0,
       traveled:0, maxRange:move.range, delay: i*burstGap,
     });
   }
@@ -65,6 +67,7 @@ function applyDamage(target, dmg, source, opts){
   if(target.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgTakenMod; }
   if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
   if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
+  if(target.trainDmgTakenMult){ finalDmg *= target.trainDmgTakenMult; }
   if(source && source.alive){
     const srcEl = ELEMENTS[source.element];
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
@@ -255,7 +258,8 @@ function updateBotAI(b, dt){
 ===================================================================== */
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
-  const effSpeed = m.slowUntil > matchTime ? m.speed*0.5 : m.speed;
+  const baseSpeed = m.speed * (m.trainSpeedMult||1);
+  const effSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
   if(m.dashTimer>0){
     m.dashTimer -= dt;
     tryMoveAxis(m, m.dashDirX*effSpeed*3.0*dt, m.dashDirY*effSpeed*3.0*dt);
@@ -390,7 +394,16 @@ function turnCameraByDegrees(deg){
 ===================================================================== */
 function effectiveCooldown(m, mv){
   const el = ELEMENTS[m.element];
-  return mv.cooldown * (el.cooldownMod || 1);
+  return mv.cooldown * (el.cooldownMod || 1) * (m.trainCooldownMult || 1);
+}
+function effectiveGutsCost(m, mv){
+  return Math.max(1, mv.gutsCost - (m.trainGutsCostReduction || 0));
+}
+function effectiveProjSpeed(m, mv){
+  return mv.projSpeed * (m.trainProjSpeedMult || 1);
+}
+function effectiveMoveDmg(m, mv){
+  return mv.dmg * (m.trainDmgMult || 1);
 }
 function tryFire(m){
   if(m.freezeUntil > matchTime) return;
@@ -401,7 +414,7 @@ function tryFire(m){
   if(t.z - m.z > UPWARD_BLOCK_THRESHOLD) return;
   if(!m.isPlayer) m.moveTierSelected = pickBestAffordableTier(m);
   const mv = activeMove(m);
-  if(m.guts < mv.gutsCost) return;
+  if(m.guts < effectiveGutsCost(m, mv)) return;
   const d = dist(m,t);
   if(d > mv.range) return;
   fireMove(m, t, mv);
@@ -412,7 +425,7 @@ function tryPlayerFire(dt){
   if(player.freezeUntil > matchTime) return;
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
-  if(player.guts < mv.gutsCost) return;
+  if(player.guts < effectiveGutsCost(player, mv)) return;
   let aimAngle = player.facingAngle;
   if(mv.melee){
     let best=null, bestD=mv.range;
@@ -498,6 +511,10 @@ function updateProjectiles(dt){
 function updateLootPickups(){
   for(let i=lootItems.length-1;i>=0;i--){
     const it = lootItems[i];
+    if(dist(it, zoneState.center) > zoneState.radius){
+      lootItems.splice(i,1);
+      continue;
+    }
     let consumed = false;
     for(const e of entities){
       if(!e.alive) continue;
@@ -526,11 +543,46 @@ function updateLootPickups(){
           if(e.isPlayer) pushToast(`${GUTS_ITEM.name} で ガッツ上限+${GUTS_ITEM.maxBoost}・ガッツ+${Math.round(restored)}`);
           consumed = true;
         } else if(it.kind==='ticket'){
-          if(e.moveTierUnlocked >= 3) continue;
-          e.moveTierUnlocked = Math.min(3, e.moveTierUnlocked+1);
-          e.moveTierSelected = e.moveTierUnlocked;
-          const newMove = SIGNATURE_MOVES[e.element][e.moveTierUnlocked-1];
-          if(e.isPlayer) pushToast(`${TICKET_ITEM.name}！「${newMove.name}」が使えるようになった`);
+          if(e.moveTierUnlocked >= 3){
+            const roll = Math.random();
+            if(roll < 1/3){
+              e.trainCooldownMult *= 0.93;
+              spawnDmgText(e.x, e.y, e.z, '連射UP', '#9fd1ff');
+              if(e.isPlayer) pushToast(`${TICKET_ITEM.name}：技の連射速度が上がった！`);
+            } else if(roll < 2/3){
+              e.trainGutsCostReduction += 1;
+              spawnDmgText(e.x, e.y, e.z, '消費ガッツDOWN', '#9fd1ff');
+              if(e.isPlayer) pushToast(`${TICKET_ITEM.name}：全技の消費ガッツが下がった！`);
+            } else {
+              e.trainProjSpeedMult *= 1.10;
+              spawnDmgText(e.x, e.y, e.z, '弾速UP', '#9fd1ff');
+              if(e.isPlayer) pushToast(`${TICKET_ITEM.name}：技の弾速が上がった！`);
+            }
+            consumed = true;
+          } else {
+            e.moveTierUnlocked = Math.min(3, e.moveTierUnlocked+1);
+            e.moveTierSelected = e.moveTierUnlocked;
+            const newMove = SIGNATURE_MOVES[e.element][e.moveTierUnlocked-1];
+            if(e.isPlayer) pushToast(`${TICKET_ITEM.name}！「${newMove.name}」が使えるようになった`);
+            consumed = true;
+          }
+        } else if(it.kind==='training'){
+          const ti = TRAINING_ITEMS[it.type];
+          if(it.type==='weight'){
+            e.trainDmgMult *= 1.08;
+            e.maxHp += 15; e.hp += 15;
+          } else if(it.type==='meditate'){
+            e.trainGutsCostReduction += 1;
+            e.trainProjSpeedMult *= 1.10;
+          } else if(it.type==='pool'){
+            e.maxHp += 18; e.hp += 18;
+            e.trainDmgTakenMult *= 0.95;
+          } else if(it.type==='floor'){
+            e.trainSpeedMult *= 1.06;
+            e.trainCooldownMult *= 0.93;
+          }
+          spawnDmgText(e.x, e.y, e.z, ti.emoji+' 強化', ti.accent);
+          if(e.isPlayer) pushToast(`${ti.emoji} ${ti.name}：${ti.desc}`);
           consumed = true;
         }
       }
@@ -583,6 +635,22 @@ function update(dt){
       if(dist(e, zoneState.center) > zoneState.radius){
         e.hp -= dps*dt;
         if(Math.random()<0.08) spawnDmgText(e.x, e.y, e.z, Math.round(dps), '#ff9c3d');
+        if(e.hp<=0) killEntity(e, null);
+      }
+    }
+  }
+
+  if(lavaZones.length>0){
+    for(const e of entities){
+      if(!e.alive) continue;
+      let inLava = false;
+      for(const lz of lavaZones){
+        if(Math.hypot(e.x-lz.x, e.y-lz.y) < lz.radius + e.radius*0.4){ inLava = true; break; }
+      }
+      if(inLava){
+        const lavaDps = currentMap.lavaDps || 20;
+        e.hp -= lavaDps*dt;
+        if(Math.random()<0.12) spawnDmgText(e.x, e.y, e.z, Math.round(lavaDps), '#ff5a1f');
         if(e.hp<=0) killEntity(e, null);
       }
     }

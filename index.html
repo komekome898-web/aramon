@@ -29,7 +29,7 @@
   <div class="title-block">
     <h1 class="title-main">荒野<span>モン動</span><span id="versionTag"></span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
-    <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
+    <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">30</span>体が野生のフィールドへ降下中…</div>
   </div>
 
   <div class="pick-label">使用するモンスターを選択</div>
@@ -37,6 +37,12 @@
 
   <div class="pick-label" style="margin-top:16px;">ランキング表示名(任意)</div>
   <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
+
+  <div class="pick-label" style="margin-top:16px;">マップ</div>
+  <div id="mapTabs">
+    <button class="map-tab active" data-map="wild">荒野</button>
+    <button class="map-tab" data-map="kaurea">カウレア火山</button>
+  </div>
 
   <div class="pick-label" style="margin-top:16px;">プレイモード</div>
   <div id="modeTabs">
@@ -63,7 +69,7 @@
 
   <div class="howto">
     左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可)<br>
-    技はモンスター固有・ガッツを消費して発動。技名タップで使う段階を切替 ・ ガロエオイル(HP回復)・修行チケット(技強化)・ガッツ飴(ガッツ回復)を拾おう ・ 安全圏の外にいるとダメージ<br>
+    技はモンスター固有・ガッツを消費して発動。技名タップで使う段階を切替 ・ ガロエオイル(HP回復)・修行チケット(技強化、tier3後はランダムで永続強化)・ガッツ飴(ガッツ回復)・トレーニングアイテム(🏋️🧘🏊💃、低確率で出現・永続強化)を拾おう ・ 安全圏の外にいるとダメージ<br>
     各モンスターは種族固有の特性を持つ(カードの説明を確認)
   </div>
  </div>
