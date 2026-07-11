@@ -64,9 +64,10 @@ function applyDamage(target, dmg, source, opts){
   let finalDmg = dmg;
   if(target.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgTakenMod; }
   if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
+  if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
   if(source && source.alive){
-    if(source.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgDealtMod; }
-    if(source.burnUntil > matchTime){ finalDmg *= 0.8; }
+    const srcEl = ELEMENTS[source.element];
+    if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
   }
   target.hp -= finalDmg; target.hitFlash = 0.18;
   spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
@@ -81,6 +82,9 @@ function applyDamage(target, dmg, source, opts){
       if(healed > 0){
         source.hp += healed;
         spawnDmgText(source.x, source.y, source.z, '+'+Math.round(healed), '#7fffa0');
+      }
+      if(Math.random() < 0.2){
+        target.freezeUntil = matchTime + 1;
       }
     }
     if(source.element==='leaf'){
@@ -243,6 +247,7 @@ function updateBotAI(b, dt){
    MOVEMENT
 ===================================================================== */
 function resolveMovement(m, dt){
+  if(m.freezeUntil > matchTime) return;
   const effSpeed = m.slowUntil > matchTime ? m.speed*0.5 : m.speed;
   if(m.dashTimer>0){
     m.dashTimer -= dt;
@@ -381,6 +386,7 @@ function effectiveCooldown(m, mv){
   return mv.cooldown * (el.cooldownMod || 1);
 }
 function tryFire(m){
+  if(m.freezeUntil > matchTime) return;
   if(m.fireCooldown>0) return;
   if(!m.attackTargetId) return;
   const t = getEntity(m.attackTargetId);
@@ -396,6 +402,7 @@ function tryFire(m){
 }
 function tryPlayerFire(dt){
   if(!player.alive || player.fireCooldown>0) return;
+  if(player.freezeUntil > matchTime) return;
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
   if(player.guts < mv.gutsCost) return;
@@ -542,7 +549,7 @@ function update(dt){
     if(e.fireCooldown>0) e.fireCooldown -= dt;
     if(e.dashCooldown>0) e.dashCooldown -= dt;
     if(e.hitFlash>0) e.hitFlash -= dt;
-    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt);
+    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1));
     if(e.isPlayer) tryPlayerFire(dt);
     else if(!e.isRemoteHuman) tryFire(e);
   }

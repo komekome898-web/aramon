@@ -311,6 +311,13 @@ function drawMonster(e,p){
     ctx.beginPath(); ctx.arc(0,0, e.radius*1.3, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
+  if(e.freezeUntil > matchTime){
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.2, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
 
   const barW = e.radius*2.1;
   const hpPct = clamp(e.hp/e.maxHp,0,1);
@@ -683,6 +690,7 @@ function updateHUD(){
   let statusHtml = '';
   if(player.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど</span>`;
   if(player.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足</span>`;
+  if(player.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり</span>`;
   statusEl.innerHTML = statusHtml;
 
   const aliveCount = entities.filter(e=>e.alive).length;
