@@ -212,8 +212,34 @@
 <script src="network.js"></script>
 <script>
   if('serviceWorker' in navigator){
+    let refreshing = false;
+    // 新しいService Workerが制御を奪った瞬間に、ページを1回だけ自動リロードして最新版へ切り替える
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+
     window.addEventListener('load', ()=>{
-      navigator.serviceWorker.register('sw.js').catch(()=>{});
+      navigator.serviceWorker.register('sw.js').then((reg)=>{
+        // ページを開くたび / 復帰するたびに、新しいsw.jsが無いか裏でチェック
+        reg.update().catch(()=>{});
+        document.addEventListener('visibilitychange', ()=>{
+          if(document.visibilityState === 'visible') reg.update().catch(()=>{});
+        });
+
+        reg.addEventListener('updatefound', ()=>{
+          const newWorker = reg.installing;
+          if(!newWorker) return;
+          newWorker.addEventListener('statechange', ()=>{
+            // 新しいSWが「installed」になり、かつ既にSWが動いている(=初回インストールではなく更新)場合、
+            // sw.js側のskipWaiting()によってすぐactivateされ、controllerchangeで自動リロードされる
+            if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+              console.log('[aramon] 新しいバージョンを検出。自動更新します。');
+            }
+          });
+        });
+      }).catch(()=>{});
     });
   }
 </script>
