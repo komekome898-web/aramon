@@ -221,6 +221,7 @@
   .status-pill.burn{ background:rgba(255,107,53,0.22); color:#ff9c5a; border:1px solid rgba(255,107,53,0.5); }
   .status-pill.slow{ background:rgba(120,150,255,0.22); color:#a9bcff; border:1px solid rgba(120,150,255,0.5); }
   .status-pill.freeze{ background:rgba(191,233,255,0.22); color:#bfe9ff; border:1px solid rgba(191,233,255,0.6); }
+  .status-pill.poison{ background:rgba(155,95,209,0.22); color:#c9a0ee; border:1px solid rgba(155,95,209,0.6); }
 
   #crosshair{ position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:none; }
   #crosshair::before, #crosshair::after{ content:''; position:absolute; background:rgba(255,255,255,0.55); border-radius:2px; transition:background .12s; }

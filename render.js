@@ -216,6 +216,29 @@ function drawMonsterShape(e, color, dark){
       ctx.restore();
       break;
     }
+    case 'warm': {
+      ctx.save();
+      // 体節(丸を連ねた胴体)
+      for(let i=2;i>=0;i--){
+        const rr = r*(0.62+i*0.18);
+        const oy = i*r*0.18;
+        ctx.beginPath(); ctx.arc(0, oy, rr, 0, Math.PI*2);
+        ctx.fillStyle = i===0 ? color : dark; ctx.fill();
+        ctx.strokeStyle = dark; ctx.lineWidth = 2; ctx.stroke();
+      }
+      // 目
+      [-1,1].forEach(side=>{
+        ctx.beginPath(); ctx.arc(side*r*0.32,-r*0.15,r*0.13,0,Math.PI*2);
+        ctx.fillStyle='#1a1020'; ctx.fill();
+      });
+      // 毒のしずく
+      ctx.globalAlpha = 0.6+0.2*Math.sin(matchTime*4);
+      ctx.beginPath(); ctx.arc(0, r*0.85, r*0.16, 0, Math.PI*2);
+      ctx.fillStyle = '#c07bf0'; ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      break;
+    }
   }
 }
 function drawElementBadge(e){
@@ -316,6 +339,13 @@ function drawMonster(e,p){
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0,0, e.radius*1.2, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+  if(e.poisonUntil > matchTime){
+    ctx.save();
+    ctx.globalAlpha = 0.45 + 0.25*Math.sin(matchTime*5);
+    ctx.strokeStyle = '#9b5fd1'; ctx.lineWidth = 2.5; ctx.setLineDash([2,5]);
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.42, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
@@ -691,6 +721,7 @@ function updateHUD(){
   if(player.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど</span>`;
   if(player.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足</span>`;
   if(player.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり</span>`;
+  if(player.poisonUntil > matchTime) statusHtml += `<span class="status-pill poison">どく</span>`;
   statusEl.innerHTML = statusHtml;
 
   const aliveCount = entities.filter(e=>e.alive).length;

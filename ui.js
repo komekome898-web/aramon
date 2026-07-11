@@ -6,6 +6,7 @@ const TRAIT_DESC = {
   golem:      '被ダメ0.8倍・与ダメ1.2倍',
   haste:      '技の連射速度1.5倍',
   grace:      '与えたダメージの45%分 相手のガッツを削る。天の慈悲(tier3)発動後10秒間 被ダメ0.5倍',
+  poison:     '技命中で相手をどく状態に(10秒間 1秒毎に5ダメージ、どくではHPは1残る)',
 };
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');

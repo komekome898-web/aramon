@@ -107,6 +107,12 @@ function applyDamage(target, dmg, source, opts){
     if(source.element==='spark'){
       target.slowUntil = matchTime + 1;
     }
+    if(source.element==='warm'){
+      if(!(target.poisonUntil > matchTime)){
+        target.poisonTickAt = matchTime + 1;
+      }
+      target.poisonUntil = matchTime + 10;
+    }
   }
 
   if(target.hp<=0){ killEntity(target, source); }
@@ -550,6 +556,15 @@ function update(dt){
     if(e.dashCooldown>0) e.dashCooldown -= dt;
     if(e.hitFlash>0) e.hitFlash -= dt;
     if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1));
+    if(e.poisonUntil > matchTime && matchTime >= e.poisonTickAt){
+      e.poisonTickAt = matchTime + 1;
+      const dmg = Math.min(5, e.hp - 1);
+      if(dmg > 0){
+        e.hp -= dmg;
+        e.hitFlash = 0.12;
+        spawnDmgText(e.x, e.y, e.z, Math.round(dmg), '#c07bf0');
+      }
+    }
     if(e.isPlayer) tryPlayerFire(dt);
     else if(!e.isRemoteHuman) tryFire(e);
   }
