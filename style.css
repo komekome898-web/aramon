@@ -1,4 +1,3 @@
-<style>
   :root{
     --bg-void:#06090f;
     --panel:rgba(10,16,26,0.82);
@@ -380,4 +379,3 @@
     #rotateOverlay{ display:flex; }
     #startScreen, #hud, #resultScreen{ display:none !important; }
   }
-</style>
