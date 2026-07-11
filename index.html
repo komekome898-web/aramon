@@ -27,7 +27,7 @@
 <div id="startScreen">
  <div id="startScreenInner">
   <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag">v61</span></h1>
+    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag"></span></h1>
     <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
     <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">20</span>体が野生のフィールドへ降下中…</div>
   </div>
@@ -210,6 +210,15 @@
 <script src="input.js"></script>
 <script src="ui.js"></script>
 <script src="network.js"></script>
+<script>
+  // sw.js内のCACHE_NAMEを読み取り、タイトルのバージョン表記に反映する
+  // (キャッシュを絶対に経由させないため cache:'no-store' で取得)
+  fetch('sw.js', { cache: 'no-store' }).then((r)=>r.text()).then((text)=>{
+    const m = text.match(/CACHE_NAME\s*=\s*'aramon-cache-(v\d+)'/);
+    const tag = document.getElementById('versionTag');
+    if(m && tag) tag.textContent = m[1];
+  }).catch(()=>{});
+</script>
 <script>
   if('serviceWorker' in navigator){
     let refreshing = false;
