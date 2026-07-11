@@ -18,22 +18,35 @@ const ELEMENTS = {
   rock:    { label:'ゴーレム',   color:'#a98a68', dark:'#5c4a38', speed:158, hp:132, trait:'golem', dmgTakenMod:0.8, dmgDealtMod:1.2 },
   phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
   ark:     { label:'アーク',     color:'#f5f2e0', dark:'#8a7a4a', accent:'#ffe9a8', speed:188, hp:145, trait:'grace' },
+  warm:    { label:'ワーム',     color:'#9b5fd1', dark:'#5c3680', speed:185, hp:160, trait:'poison' },
 };
 
 const monsterImages = {};
 const playerMonsterImages = {};
-function loadMonsterImage(src){
+// basePath (拡張子なし) に対して .png -> .PNG -> .Png の順で読み込みを試す。
+// 最初に成功した拡張子はキャッシュしておき、次回以降は無駄なリトライをしない。
+const EXT_CANDIDATES = ['png', 'PNG', 'Png'];
+function loadMonsterImage(basePath){
   const img = new Image();
-  img.src = src;
   img.loaded = false;
   img.failed = false;
+  let attemptIndex = 0;
+  const tryNext = ()=>{
+    if(attemptIndex >= EXT_CANDIDATES.length){
+      img.failed = true;
+      return;
+    }
+    img.src = `${basePath}.${EXT_CANDIDATES[attemptIndex]}`;
+    attemptIndex++;
+  };
   img.onload = ()=>{ img.loaded = true; };
-  img.onerror = ()=>{ img.failed = true; };
+  img.onerror = ()=>{ tryNext(); };
+  tryNext();
   return img;
 }
 Object.keys(ELEMENTS).forEach(key=>{
-  monsterImages[key] = loadMonsterImage(`monsters/${key}.png`);
-  playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player.png`);
+  monsterImages[key] = loadMonsterImage(`monsters/${key}`);
+  playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player`);
 });
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
@@ -86,6 +99,11 @@ const SIGNATURE_MOVES = {
     { name:'しっぽふり',   tier:1, color:'#ffe9a8', lobbed:true, range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:520, hitR:12, splash:70, arcHeight:140 },
     { name:'熾天の剣', tier:2, color:'#ffe9a8', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1 },
     { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:47, cooldown:2.0, gutsCost:18, projSpeed:460, hitR:15, hitW:88, splash:85 },
+  ],
+  warm: [
+    { name:'毒ガス',       tier:1, color:'#9b5fd1', lobbed:true, range:700,  dmg:23, cooldown:0.85, gutsCost:6, projSpeed:500, hitR:12, splash:75, arcHeight:140 },
+    { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:9, projSpeed:470, hitR:7,  burst:3, burstGap:0.12 },
+    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:45, cooldown:2.1, gutsCost:18, projSpeed:440, hitR:15, hitW:85, splash:88 },
   ],
 };
 
