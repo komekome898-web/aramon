@@ -580,19 +580,37 @@ function strokeProjectedRing(pts, strokeStyle, lineWidth, dash, glow){
   ctx.stroke();
   ctx.restore();
 }
+const ZONE_HUGE_RADIUS_THRESHOLD = 3200; // これより大きい半径の円は、局所的な直線(接線)として近似する
+// 巨大な安全圏の円をそのまま360度分投影すると、プレイヤー付近以外の遠い点まで巻き込んで
+// 多角形が破綻する(境界に近づくと地面が全面オレンジになる等)。半径が大きい場合は
+// プレイヤー最寄りの境界点における接線(直線)で近似することで、この破綻を防ぐ。
+function nearestEdgeTangent(center, radius, span){
+  const dx = player.x-center.x, dy = player.y-center.y;
+  const d = Math.max(1, Math.hypot(dx,dy));
+  const nx = dx/d, ny = dy/d; // 中心→プレイヤー方向(=外向き法線)
+  const ex = center.x+nx*radius, ey = center.y+ny*radius; // 最寄りの境界点
+  const tx = -ny, ty = nx; // 接線方向
+  return { ex, ey, nx, ny, tx, ty, span };
+}
 function drawZoneRings(){
   const ZONE_RENDER_THRESHOLD = 4000; // これより境界から離れていれば描画不要
-  const distToEdge = Math.abs(dist(player, zoneState.center) - zoneState.radius);
-  if(distToEdge < ZONE_RENDER_THRESHOLD){
-    const ring = projectCircleRing(zoneState.center, zoneState.radius, 90);
-    strokeProjectedRing(ring, 'rgba(244,196,48,0.85)', 4, [20,16], {blur:16,color:'rgba(244,196,48,0.6)'});
-  }
+  drawOneZoneRing(zoneState.center, zoneState.radius, 'rgba(244,196,48,0.85)', 4, [20,16], {blur:16,color:'rgba(244,196,48,0.6)'}, ZONE_RENDER_THRESHOLD);
   if(zoneState.shrinking){
-    const distToNextEdge = Math.abs(dist(player, zoneState.toCenter) - zoneState.toRadius);
-    if(distToNextEdge < ZONE_RENDER_THRESHOLD){
-      const nextRing = projectCircleRing(zoneState.toCenter, zoneState.toRadius, 90);
-      strokeProjectedRing(nextRing, 'rgba(255,255,255,0.32)', 2, [6,9], null);
-    }
+    drawOneZoneRing(zoneState.toCenter, zoneState.toRadius, 'rgba(255,255,255,0.32)', 2, [6,9], null, ZONE_RENDER_THRESHOLD);
+  }
+}
+function drawOneZoneRing(center, radius, strokeStyle, lineWidth, dash, glow, threshold){
+  const distToEdge = Math.abs(dist(player, center) - radius);
+  if(distToEdge >= threshold) return;
+  if(radius > ZONE_HUGE_RADIUS_THRESHOLD){
+    const { ex, ey, tx, ty } = nearestEdgeTangent(center, radius, 6000);
+    const p1 = project(ex+tx*6000, ey+ty*6000, 0);
+    const p2 = project(ex-tx*6000, ey-ty*6000, 0);
+    if(!p1 || !p2) return;
+    strokeProjectedRing([p1,p2], strokeStyle, lineWidth, dash, glow);
+  } else {
+    const ring = projectCircleRing(center, radius, 90);
+    strokeProjectedRing(ring, strokeStyle, lineWidth, dash, glow);
   }
 }
 function drawSkyAndGround(){
@@ -639,19 +657,40 @@ function drawDangerGround(){
   ctx.rect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
   ctx.clip();
 
-  ctx.beginPath();
-  ctx.rect(0,0,viewW,viewH);
-  const ring = projectCircleRing(zoneState.center, zoneState.radius, 110);
-  if(ring.length>=3){
-    ctx.moveTo(ring[0].x,ring[0].y);
-    for(let i=1;i<ring.length;i++) ctx.lineTo(ring[i].x,ring[i].y);
-    ctx.closePath();
-  }
-  ctx.fillStyle = 'rgba(255,140,20,0.4)';
-  ctx.fill('evenodd');
+  if(zoneState.radius > ZONE_HUGE_RADIUS_THRESHOLD){
+    // 巨大な円は、最寄りの境界点における接線(直線)を境とした帯状の領域として近似する
+    const span = 9000;
+    const { ex, ey, nx, ny, tx, ty } = nearestEdgeTangent(zoneState.center, zoneState.radius, span);
+    const p1 = project(ex+tx*span, ey+ty*span, 0);
+    const p2 = project(ex-tx*span, ey-ty*span, 0);
+    const p1Far = project(ex+tx*span+nx*span, ey+ty*span+ny*span, 0);
+    const p2Far = project(ex-tx*span+nx*span, ey-ty*span+ny*span, 0);
+    if(!p1 || !p2 || !p1Far || !p2Far){ ctx.restore(); return; }
 
-  const pulse = 0.5+0.5*Math.sin(matchTime*4);
-  strokeProjectedRing(ring, `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+    ctx.beginPath();
+    ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+    ctx.lineTo(p2Far.x,p2Far.y); ctx.lineTo(p1Far.x,p1Far.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,140,20,0.4)';
+    ctx.fill();
+
+    const pulse = 0.5+0.5*Math.sin(matchTime*4);
+    strokeProjectedRing([p1,p2], `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+  } else {
+    ctx.beginPath();
+    ctx.rect(0,0,viewW,viewH);
+    const ring = projectCircleRing(zoneState.center, zoneState.radius, 110);
+    if(ring.length>=3){
+      ctx.moveTo(ring[0].x,ring[0].y);
+      for(let i=1;i<ring.length;i++) ctx.lineTo(ring[i].x,ring[i].y);
+      ctx.closePath();
+    }
+    ctx.fillStyle = 'rgba(255,140,20,0.4)';
+    ctx.fill('evenodd');
+
+    const pulse = 0.5+0.5*Math.sin(matchTime*4);
+    strokeProjectedRing(ring, `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+  }
   ctx.restore();
 }
 function drawLandingMarkers(){
@@ -720,7 +759,8 @@ function drawVolcanoComplex(group,p){
     ctx.save();
     ctx.translate(pp.x, pp.y);
 
-    // 山肌を裾野から山頂へ向けて何段かのテラスとして描き、隆起している質感を出す
+    // 山肌を裾野から山頂へ向けて何段かのテラスとして描き、隆起している質感を出す。
+    // 楕円の下半分を描くと接地点より下に膨らんで見えてしまうため、上半分(ドーム状)だけ描く
     const terraces = v.isMain ? 5 : 3;
     for(let t=terraces; t>=0; t--){
       const tt = t/terraces; // 1=裾野, 0=山頂
@@ -728,7 +768,7 @@ function drawVolcanoComplex(group,p){
       const ry = rr*0.60;
       const yOff = -riseH*(1-tt);
       const shade = 0.16 + tt*0.30; // 山頂ほど明るく
-      ctx.beginPath(); ctx.ellipse(0, yOff, rr, ry, 0, 0, Math.PI*2);
+      ctx.beginPath(); ctx.ellipse(0, yOff, rr, ry, 0, Math.PI, Math.PI*2);
       ctx.fillStyle = `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
       ctx.fill();
     }
