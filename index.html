@@ -67,10 +67,21 @@
   <button id="titleRankingBtn" style="margin-top:12px; background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); padding:10px 24px; border-radius:6px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; cursor:pointer;">ランキングを見る</button>
   <button id="titleMyStatsBtn" style="margin-top:10px; background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); padding:10px 24px; border-radius:6px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; cursor:pointer;">マイ記録を見る</button>
 
-  <div class="howto">
-    左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可)<br>
-    技はモンスター固有・ガッツを消費して発動。技名タップで使う段階を切替 ・ ガロエオイル(HP回復)・修行チケット(技強化、tier3後はランダムで永続強化)・ガッツ飴(ガッツ回復)・トレーニングアイテム(🏋️🧘🏊💃、低確率で出現・永続強化)を拾おう ・ 安全圏の外にいるとダメージ<br>
-    各モンスターは種族固有の特性を持つ(カードの説明を確認)
+  <div class="howto-wrap">
+    <div class="howto-section">
+      <div class="howto-title">操作説明</div>
+      <div class="howto-controls">
+        左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可) ・ DASHまたはSpaceで回避 ・ 技のフィールドをタップで使う段階を切替 ・ 安全圏の外にいるとダメージ
+      </div>
+    </div>
+    <div class="howto-section">
+      <div class="howto-title">アイテム</div>
+      <div class="howto-items" id="howtoItems"></div>
+    </div>
+    <div class="howto-section">
+      <div class="howto-title">状態変化</div>
+      <div class="howto-states" id="howtoStates"></div>
+    </div>
   </div>
  </div>
 </div>

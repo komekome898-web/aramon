@@ -434,19 +434,19 @@ function drawLootItem(it,p){
     }
   } else if(it.kind==='training'){
     const ti = TRAINING_ITEMS[it.type];
-    const bob = Math.sin(matchTime*2.4+it.bob)*2.5;
-    ctx.translate(0,-10+bob);
+    const bob = Math.sin(matchTime*2.4+it.bob)*3.5;
+    ctx.translate(0,-16+bob);
     const spin = 0.7+0.3*Math.sin(matchTime*3+it.bob);
-    ctx.shadowBlur = 16*spin; ctx.shadowColor = ti.accent;
-    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
-    ctx.strokeStyle = ti.accent; ctx.lineWidth = 1.4; ctx.stroke();
-    ctx.font="14px sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.shadowBlur = 22*spin; ctx.shadowColor = ti.accent;
+    ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
+    ctx.strokeStyle = ti.accent; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font="24px sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(ti.emoji, 0, 1);
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
+    if(dist(it,player)<200){
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=ti.accent; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-      ctx.fillText(`${ti.name}（${ti.desc}）`, 0, -16);
+      ctx.fillText(`${ti.name}（${ti.desc}）`, 0, -26);
     }
   }
   ctx.restore();

@@ -44,7 +44,75 @@ function buildMonsterGrid(){
     grid.appendChild(card);
   });
 }
+function describeStateEffectsText(effects){
+  const parts = [];
+  if(effects.dmgMult) parts.push(`技ダメ${effects.dmgMult}倍`);
+  if(effects.gutsRegenMult) parts.push(`ガッツ回復${effects.gutsRegenMult}倍`);
+  if(effects.cooldownMult){
+    const atkSpeed = Math.round((1/effects.cooldownMult)*10)/10;
+    parts.push(`連射${atkSpeed}倍`);
+  }
+  if(effects.gutsCostMult) parts.push(`消費ガッツ${effects.gutsCostMult}倍`);
+  if(effects.speedMult) parts.push(`移動${effects.speedMult}倍`);
+  if(effects.dmgTakenMult) parts.push(`被ダメ${effects.dmgTakenMult}倍`);
+  if(effects.lifestealPct) parts.push(`与ダメの${Math.round(effects.lifestealPct*100)}%自己回復`);
+  return parts.join('・');
+}
+function buildHowtoLists(){
+  const itemsEl = document.getElementById('howtoItems');
+  if(itemsEl){
+    const cards = [];
+    HEAL_TYPES.forEach(type=>{
+      const hi = HEAL_ITEMS[type];
+      cards.push(`
+        <div class="howto-item-card">
+          <div class="howto-item-icon" style="background:${hi.color};">🧴</div>
+          <div class="howto-item-text"><div class="howto-item-name">${hi.name}</div><div class="howto-item-effect">HP+${hi.heal}</div></div>
+        </div>`);
+    });
+    cards.push(`
+      <div class="howto-item-card">
+        <div class="howto-item-icon" style="background:${TICKET_ITEM.color};">🎫</div>
+        <div class="howto-item-text"><div class="howto-item-name">${TICKET_ITEM.name}</div><div class="howto-item-effect">技を強化(tier3後はランダムで永続強化)</div></div>
+      </div>`);
+    cards.push(`
+      <div class="howto-item-card">
+        <div class="howto-item-icon" style="background:${GUTS_ITEM.color};">🍬</div>
+        <div class="howto-item-text"><div class="howto-item-name">${GUTS_ITEM.name}</div><div class="howto-item-effect">ガッツ+${GUTS_ITEM.restore}・上限+${GUTS_ITEM.maxBoost}</div></div>
+      </div>`);
+    TRAINING_TYPES.forEach(type=>{
+      const ti = TRAINING_ITEMS[type];
+      cards.push(`
+        <div class="howto-item-card">
+          <div class="howto-item-icon" style="background:${ti.color};">${ti.emoji}</div>
+          <div class="howto-item-text"><div class="howto-item-name">${ti.name}(低確率)</div><div class="howto-item-effect">${ti.desc}</div></div>
+        </div>`);
+    });
+    itemsEl.innerHTML = cards.join('');
+  }
+
+  const statesEl = document.getElementById('howtoStates');
+  if(statesEl){
+    const cards = Object.keys(ELEMENTS).map(key=>{
+      const el = ELEMENTS[key];
+      const sc = STATE_CHANGES[key];
+      if(!sc) return '';
+      return `
+        <div class="howto-state-card">
+          <div class="howto-state-icon">
+            <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
+          </div>
+          <div class="howto-state-text">
+            <div class="howto-state-name">${el.label}：${sc.name}</div>
+            <div class="howto-state-effect">${describeStateEffectsText(sc.effects)}</div>
+          </div>
+        </div>`;
+    });
+    statesEl.innerHTML = cards.join('');
+  }
+}
 buildMonsterGrid();
+buildHowtoLists();
 
 const PLAYER_NAME_KEY = 'aramon_player_name_v1';
 (function restorePlayerName(){

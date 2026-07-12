@@ -645,17 +645,17 @@ function updateLootPickups(){
         } else if(it.kind==='training'){
           const ti = TRAINING_ITEMS[it.type];
           if(it.type==='weight'){
-            e.trainDmgMult *= 1.08;
-            e.maxHp += 15; e.hp += 15;
+            e.trainDmgMult *= 1.16;
+            e.maxHp += 30; e.hp += 30;
           } else if(it.type==='meditate'){
-            e.trainGutsCostReduction += 1;
-            e.trainProjSpeedMult *= 1.10;
+            e.trainGutsCostReduction += 2;
+            e.trainProjSpeedMult *= 1.20;
           } else if(it.type==='pool'){
-            e.maxHp += 18; e.hp += 18;
-            e.trainDmgTakenMult *= 0.95;
+            e.maxHp += 36; e.hp += 36;
+            e.trainDmgTakenMult *= 0.90;
           } else if(it.type==='floor'){
-            e.trainSpeedMult *= 1.06;
-            e.trainCooldownMult *= 0.93;
+            e.trainSpeedMult *= 1.12;
+            e.trainCooldownMult *= 0.86;
           }
           spawnDmgText(e.x, e.y, e.z, ti.emoji+' 強化', ti.accent);
           if(e.isPlayer) pushToast(`${ti.emoji} ${ti.name}：${ti.desc}`);

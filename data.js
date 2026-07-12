@@ -172,10 +172,10 @@ const HEAL_TYPES = Object.keys(HEAL_ITEMS);
 
 // ===== トレーニングアイテム(出現率は低め・永続ステータス強化) =====
 const TRAINING_ITEMS = {
-  weight:   { name:'重り引き', emoji:'🏋️', color:'#c97b3d', accent:'#ffd9a8', desc:'技ダメージ上昇・最大HP上昇' },
-  meditate: { name:'めいそう', emoji:'🧘', color:'#7bd1c9', accent:'#d8fff8', desc:'技の消費ガッツ-1・技弾速上昇' },
-  pool:     { name:'プール',   emoji:'🏊', color:'#3d9fd1', accent:'#bfe9ff', desc:'最大HP上昇・被ダメ低下5%' },
-  floor:    { name:'変動ゆか', emoji:'💃', color:'#d13d9f', accent:'#ffbfe9', desc:'移動速度上昇・技の連射速度上昇' },
+  weight:   { name:'重り引き', emoji:'🏋️', color:'#c97b3d', accent:'#ffd9a8', desc:'技ダメージ+16%・最大HP+30' },
+  meditate: { name:'めいそう', emoji:'🧘', color:'#7bd1c9', accent:'#d8fff8', desc:'技の消費ガッツ-2・技弾速+20%' },
+  pool:     { name:'プール',   emoji:'🏊', color:'#3d9fd1', accent:'#bfe9ff', desc:'最大HP+36・被ダメ-10%' },
+  floor:    { name:'変動ゆか', emoji:'💃', color:'#d13d9f', accent:'#ffbfe9', desc:'移動速度+12%・技の連射速度+16%' },
 };
 const TRAINING_TYPES = Object.keys(TRAINING_ITEMS);
 
