@@ -877,6 +877,13 @@ function renderMinimap(){
 /* =====================================================================
    HUD
 ===================================================================== */
+const CD_RING_CIRC = 2*Math.PI*46; // SVG上の半径46に合わせた円周
+function setCooldownRing(el, progress){
+  if(!el) return;
+  const p = clamp(progress, 0, 1);
+  el.style.strokeDasharray = `${CD_RING_CIRC}`;
+  el.style.strokeDashoffset = `${CD_RING_CIRC * (1-p)}`;
+}
 function updateHUD(){
   if(!player) return;
   const el = ELEMENTS[player.element];
@@ -922,8 +929,12 @@ function updateHUD(){
 
   document.getElementById('tipBox').style.opacity = game.tipTimer>0 ? '1':'0';
 
-  const dashCdEl = document.querySelector('#dashBtn .cd');
-  dashCdEl.style.opacity = player.dashCooldown>0 ? '1':'0';
+  const fireMax = effectiveCooldown(player, mv);
+  const fireProgress = fireMax>0 ? clamp(1 - player.fireCooldown/fireMax, 0, 1) : 1;
+  setCooldownRing(document.getElementById('fireCdRing'), fireProgress);
+
+  const dashProgress = clamp(1 - player.dashCooldown/DASH_COOLDOWN_MAX, 0, 1);
+  setCooldownRing(document.getElementById('dashCdRing'), dashProgress);
 
   let lockOn=false;
   if(player.alive){

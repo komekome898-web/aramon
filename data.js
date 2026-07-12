@@ -1,4 +1,5 @@
 const WORLD = { w: 18100, h: 18100 };
+const DASH_COOLDOWN_MAX = 3.0;
 const ZONE_CENTER0 = { x: WORLD.w/2, y: WORLD.h/2 };
 
 const ZONE_PHASES = [

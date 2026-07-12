@@ -153,8 +153,20 @@
   </div>
 
   <div id="joystickBase"><div id="joystickKnob"></div></div>
-  <div id="fireBtn">FIRE</div>
-  <div id="dashBtn">DASH<div class="cd"></div></div>
+  <div id="fireBtn">
+    <svg class="cd-ring" viewBox="0 0 100 100">
+      <circle class="cd-ring-bg" cx="50" cy="50" r="46"></circle>
+      <circle id="fireCdRing" class="cd-ring-fg" cx="50" cy="50" r="46"></circle>
+    </svg>
+    <span class="btn-label">FIRE</span>
+  </div>
+  <div id="dashBtn">
+    <svg class="cd-ring" viewBox="0 0 100 100">
+      <circle class="cd-ring-bg" cx="50" cy="50" r="46"></circle>
+      <circle id="dashCdRing" class="cd-ring-fg" cx="50" cy="50" r="46"></circle>
+    </svg>
+    <span class="btn-label">DASH</span>
+  </div>
   <div id="turnLeftBtn">◀</div>
   <div id="turnRightBtn">▶</div>
 </div>
