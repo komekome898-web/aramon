@@ -179,6 +179,46 @@ const TRAINING_ITEMS = {
 };
 const TRAINING_TYPES = Object.keys(TRAINING_ITEMS);
 
+// ===== モンスター専用の状態変化 =====
+// trigger: 'hpBelow'(HP割合が閾値以下) / 'gutsBelow'(ガッツ割合が閾値以下) /
+//          'onHitChance'(技命中時に確率で) / 'onKill'(撃破時に確実に)
+// effects: dmgMult(技ダメージ) gutsRegenMult(ガッツ回復速度) cooldownMult(技のクールタイム、小さいほど速い)
+//          gutsCostMult(技の消費ガッツ) speedMult(移動速度) dmgTakenMult(被ダメージ) lifestealPct(与ダメの何%を自分のHPに回復)
+const STATE_CHANGES = {
+  fire: {
+    name:'憤怒', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.5,
+    effects:{ dmgMult:1.2, gutsRegenMult:2, cooldownMult:1/1.5, speedMult:1.5 },
+  },
+  aqua: {
+    name:'元気', duration:20, cooldown:60, trigger:'onHitChance', triggerValue:0.2,
+    effects:{ cooldownMult:0.5, gutsCostMult:0.5 },
+  },
+  leaf: {
+    name:'必死', duration:20, cooldown:60, trigger:'hpBelow', triggerValue:0.5,
+    effects:{ speedMult:2, lifestealPct:0.5 },
+  },
+  spark: {
+    name:'元気', duration:20, cooldown:60, trigger:'onHitChance', triggerValue:0.2,
+    effects:{ cooldownMult:0.5, gutsCostMult:0.5 },
+  },
+  rock: {
+    name:'我慢', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.3,
+    effects:{ dmgTakenMult:0.5, gutsRegenMult:2, cooldownMult:0.5 },
+  },
+  phoenix: {
+    name:'本気', duration:30, cooldown:120, trigger:'onKill', triggerValue:null,
+    effects:{ dmgTakenMult:0.8, dmgMult:1.2, gutsRegenMult:2, speedMult:1.5 },
+  },
+  ark: {
+    name:'余裕', duration:20, cooldown:120, trigger:'hpBelow', triggerValue:0.5,
+    effects:{ gutsRegenMult:2, speedMult:1.5, dmgTakenMult:1.5 },
+  },
+  warm: {
+    name:'闘魂', duration:20, cooldown:120, trigger:'gutsBelow', triggerValue:0.5,
+    effects:{ gutsRegenMult:2, cooldownMult:1/1.5 },
+  },
+};
+
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
 
 const CLIMB_TOLERANCE = 12;

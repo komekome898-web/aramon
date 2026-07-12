@@ -147,6 +147,7 @@
   .m-name{ font-weight:700; font-size:14px; }
   .m-stat{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:4px; line-height:1.5;}
   .m-trait{ font-size:10px; color:var(--accent,var(--amber)); margin-top:6px; line-height:1.4; }
+  .m-state{ font-size:10px; color:#ff6b6b; margin-top:6px; line-height:1.4; font-weight:600; }
 
   #joinBtn{
     margin-top:22px; padding:14px 38px; font-family:'Russo One',sans-serif; font-size:17px;

@@ -68,6 +68,8 @@ function applyDamage(target, dmg, source, opts){
   if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
   if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
   if(target.trainDmgTakenMult){ finalDmg *= target.trainDmgTakenMult; }
+  const targetStateEff = activeStateEffects(target);
+  if(targetStateEff && targetStateEff.dmgTakenMult){ finalDmg *= targetStateEff.dmgTakenMult; }
   if(source && source.alive){
     const srcEl = ELEMENTS[source.element];
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
@@ -117,6 +119,21 @@ function applyDamage(target, dmg, source, opts){
       target.poisonUntil = matchTime + 10;
       target.poisonSourceId = source.id;
     }
+
+    // 状態変化「必死」(プラント): 与えたダメージの一部を自分のHPに還元
+    const srcStateEff = activeStateEffects(source);
+    if(srcStateEff && srcStateEff.lifestealPct){
+      const selfHeal = Math.min(finalDmg*srcStateEff.lifestealPct, source.maxHp - source.hp);
+      if(selfHeal > 0){
+        source.hp += selfHeal;
+        spawnDmgText(source.x, source.y, source.z, '+'+Math.round(selfHeal), '#7fffa0');
+      }
+    }
+    // 状態変化「元気」(ウンディーネ・ライガー): 技命中時に確率で発動
+    const srcSc = STATE_CHANGES[source.element];
+    if(srcSc && srcSc.trigger==='onHitChance' && canTriggerState(source) && Math.random() < srcSc.triggerValue){
+      activateState(source);
+    }
   }
 
   if(target.hp<=0){ killEntity(target, source); }
@@ -139,6 +156,10 @@ function killEntity(victim, killer){
     const iAmInvolved = netState.mode==='multi' && ((killer.isPlayer) || (victim.isPlayer));
     if(iAmInvolved) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
     if(killer.isPlayer) pushToast('キルボーナス！ HP+50 ガッツ+50');
+    const killerSc = STATE_CHANGES[killer.element];
+    if(killerSc && killerSc.trigger==='onKill' && canTriggerState(killer)){
+      activateState(killer);
+    }
   } else {
     const kfText = `${displayNameFor(victim)} は安全圏外で力尽きた`;
     pushKillFeed(kfText);
@@ -281,7 +302,8 @@ function computeVolcanoAvoidAngle(m, target, ang){
 }
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
-  const baseSpeed = m.speed * (m.trainSpeedMult||1);
+  const stateEff = activeStateEffects(m);
+  const baseSpeed = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1);
   const effSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
   if(m.dashTimer>0){
     m.dashTimer -= dt;
@@ -416,18 +438,48 @@ function turnCameraByDegrees(deg){
 /* =====================================================================
    MAIN UPDATE
 ===================================================================== */
+function activeStateEffects(m){
+  const sc = STATE_CHANGES[m.element];
+  if(!sc || !(m.stateUntil > matchTime)) return null;
+  return sc.effects;
+}
+function canTriggerState(m){
+  return !(m.stateUntil > matchTime) && !(m.stateCooldownUntil > matchTime);
+}
+function activateState(m){
+  const sc = STATE_CHANGES[m.element];
+  if(!sc) return;
+  m.stateUntil = matchTime + sc.duration;
+  m.stateCooldownUntil = matchTime + sc.cooldown;
+  spawnDmgText(m.x, m.y, m.z, sc.name+'!', '#ff3b3b');
+  if(m.isPlayer) pushToast(`${sc.name} 発動！(${sc.duration}秒間)`);
+}
+// HP割合・ガッツ割合による条件は継続的にチェックする必要があるため、毎フレーム呼び出す
+function checkPassiveStateTriggers(m){
+  const sc = STATE_CHANGES[m.element];
+  if(!sc || !canTriggerState(m)) return;
+  if(sc.trigger==='hpBelow' && m.maxHp>0 && (m.hp/m.maxHp) <= sc.triggerValue){
+    activateState(m);
+  } else if(sc.trigger==='gutsBelow' && m.maxGuts>0 && (m.guts/m.maxGuts) <= sc.triggerValue){
+    activateState(m);
+  }
+}
 function effectiveCooldown(m, mv){
   const el = ELEMENTS[m.element];
-  return mv.cooldown * (el.cooldownMod || 1) * (m.trainCooldownMult || 1);
+  const eff = activeStateEffects(m);
+  return mv.cooldown * (el.cooldownMod || 1) * (m.trainCooldownMult || 1) * (eff && eff.cooldownMult || 1);
 }
 function effectiveGutsCost(m, mv){
-  return Math.max(1, mv.gutsCost - (m.trainGutsCostReduction || 0));
+  const eff = activeStateEffects(m);
+  const scaled = mv.gutsCost * (eff && eff.gutsCostMult || 1);
+  return Math.max(1, Math.round(scaled) - (m.trainGutsCostReduction || 0));
 }
 function effectiveProjSpeed(m, mv){
   return mv.projSpeed * (m.trainProjSpeedMult || 1);
 }
 function effectiveMoveDmg(m, mv){
-  return mv.dmg * (m.trainDmgMult || 1);
+  const eff = activeStateEffects(m);
+  return mv.dmg * (m.trainDmgMult || 1) * (eff && eff.dmgMult || 1);
 }
 function tryFire(m){
   if(m.freezeUntil > matchTime) return;
@@ -632,7 +684,9 @@ function update(dt){
     if(e.fireCooldown>0) e.fireCooldown -= dt;
     if(e.dashCooldown>0) e.dashCooldown -= dt;
     if(e.hitFlash>0) e.hitFlash -= dt;
-    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1));
+    const stateEffForGuts = activeStateEffects(e);
+    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1)*(stateEffForGuts && stateEffForGuts.gutsRegenMult || 1));
+    checkPassiveStateTriggers(e);
     if(e.poisonUntil > matchTime && matchTime >= e.poisonTickAt){
       e.poisonTickAt = matchTime + 1;
       const dmg = Math.min(5, e.hp - 1);

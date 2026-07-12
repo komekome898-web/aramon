@@ -8,6 +8,17 @@ const TRAIT_DESC = {
   grace:      '与えたダメージの45%分 相手のガッツを削る。天の慈悲(tier3)発動後10秒間 被ダメ0.5倍',
   poison:     '技命中で相手をどく状態に(10秒間 1秒毎に5ダメージ、どくではHPは1残る)',
 };
+function describeStateChange(key){
+  const sc = STATE_CHANGES[key];
+  if(!sc) return '';
+  const triggerText = {
+    hpBelow: `HPが${Math.round(sc.triggerValue*100)}%以下で発動`,
+    gutsBelow: `ガッツが${Math.round(sc.triggerValue*100)}%以下で発動`,
+    onHitChance: `技命中時${Math.round(sc.triggerValue*100)}%の確率で発動`,
+    onKill: `撃破時に発動`,
+  }[sc.trigger] || '';
+  return `【${sc.name}】${triggerText}(${sc.duration}秒間・クールタイム${sc.cooldown}秒)`;
+}
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');
   grid.innerHTML='';
@@ -22,7 +33,8 @@ function buildMonsterGrid(){
       </div>
       <div class="m-name">${el.label}</div>
       <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
-      <div class="m-trait">${TRAIT_DESC[el.trait]}</div>`;
+      <div class="m-trait">${TRAIT_DESC[el.trait]}</div>
+      <div class="m-state">${describeStateChange(key)}</div>`;
     card.addEventListener('click', ()=>{
       document.querySelectorAll('.monster-card').forEach(c=>c.classList.remove('selected'));
       card.classList.add('selected');

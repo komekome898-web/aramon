@@ -292,6 +292,7 @@ function buildAuthStatePayload(){
       trainCooldownMult: e.trainCooldownMult, trainGutsCostReduction: e.trainGutsCostReduction,
       trainProjSpeedMult: e.trainProjSpeedMult, trainDmgMult: e.trainDmgMult,
       trainDmgTakenMult: e.trainDmgTakenMult, trainSpeedMult: e.trainSpeedMult,
+      stateUntil: e.stateUntil, stateCooldownUntil: e.stateCooldownUntil,
     };
   }
   for(const p of projectiles){
@@ -325,6 +326,8 @@ function applyAuthState(authState){
     if(typeof a.trainDmgMult==='number') ent.trainDmgMult = a.trainDmgMult;
     if(typeof a.trainDmgTakenMult==='number') ent.trainDmgTakenMult = a.trainDmgTakenMult;
     if(typeof a.trainSpeedMult==='number') ent.trainSpeedMult = a.trainSpeedMult;
+    if(typeof a.stateUntil==='number') ent.stateUntil = a.stateUntil;
+    if(typeof a.stateCooldownUntil==='number') ent.stateCooldownUntil = a.stateCooldownUntil;
     if(typeof a.moveTierUnlocked==='number' && a.moveTierUnlocked>ent.moveTierUnlocked){
       ent.moveTierUnlocked = a.moveTierUnlocked;
       if(ent.isPlayer && ent.moveTierSelected < ent.moveTierUnlocked) ent.moveTierSelected = ent.moveTierUnlocked;

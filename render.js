@@ -349,6 +349,21 @@ function drawMonster(e,p){
     ctx.restore();
   }
 
+  if(e.stateUntil > matchTime){
+    const sc = STATE_CHANGES[e.element];
+    if(sc){
+      ctx.save();
+      const pulse = 0.55 + 0.25*Math.sin(matchTime*6);
+      ctx.globalAlpha = pulse;
+      ctx.font = `bold ${Math.round(e.radius*0.62)}px 'Rajdhani', sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(255,40,40,0.85)';
+      ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(255,0,0,0.8)';
+      ctx.fillText(sc.name, 0, 0);
+      ctx.restore();
+    }
+  }
+
   const barW = e.radius*2.1;
   const hpPct = clamp(e.hp/e.maxHp,0,1);
   ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, -e.radius*1.55-9, barW, 6);
