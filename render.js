@@ -649,7 +649,7 @@ function drawDangerVignette(){
 function drawDangerGround(){
   const isOutside = dist(player, zoneState.center) > zoneState.radius;
   const distToEdge = Math.abs(dist(player, zoneState.center) - zoneState.radius);
-  if(!isOutside && distToEdge > 4000) return; // 境界から遠く離れていれば描画不要(チラつき防止)
+  if(!isOutside && distToEdge > 4000) return; // 内側で境界から遠く離れていれば描画不要(チラつき防止)
 
   const horizonY = clamp(viewH/2 - FOCAL*Math.tan(camState.pitch), -40, viewH+40);
   ctx.save();
@@ -657,39 +657,49 @@ function drawDangerGround(){
   ctx.rect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
   ctx.clip();
 
+  const pulse = 0.5+0.5*Math.sin(matchTime*4);
+
+  if(isOutside){
+    // 安置の外にいる間は、カメラがどちらを向いていても(境界そのものが視界に入っていなくても)
+    // 見えている地面全体を危険地帯として塗る。境界の位置計算に依存させると、境界が
+    // カメラの後ろ側に来た時に描画が抜け落ちてしまう(地面が安置内と同じ色に見える不具合)ため。
+    ctx.fillStyle = `rgba(255,140,20,${0.32+0.10*pulse})`;
+    ctx.fillRect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
+  }
+
+  // 境界そのものが視界に入っている場合は、その位置により正確な縁取り・グラデーションを重ねる(失敗しても無視してよい)
   if(zoneState.radius > ZONE_HUGE_RADIUS_THRESHOLD){
-    // 巨大な円は、最寄りの境界点における接線(直線)を境とした帯状の領域として近似する
     const span = 9000;
     const { ex, ey, nx, ny, tx, ty } = nearestEdgeTangent(zoneState.center, zoneState.radius, span);
     const p1 = project(ex+tx*span, ey+ty*span, 0);
     const p2 = project(ex-tx*span, ey-ty*span, 0);
     const p1Far = project(ex+tx*span+nx*span, ey+ty*span+ny*span, 0);
     const p2Far = project(ex-tx*span+nx*span, ey-ty*span+ny*span, 0);
-    if(!p1 || !p2 || !p1Far || !p2Far){ ctx.restore(); return; }
-
-    ctx.beginPath();
-    ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
-    ctx.lineTo(p2Far.x,p2Far.y); ctx.lineTo(p1Far.x,p1Far.y);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,140,20,0.4)';
-    ctx.fill();
-
-    const pulse = 0.5+0.5*Math.sin(matchTime*4);
-    strokeProjectedRing([p1,p2], `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+    if(p1 && p2 && p1Far && p2Far){
+      if(!isOutside){
+        ctx.beginPath();
+        ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+        ctx.lineTo(p2Far.x,p2Far.y); ctx.lineTo(p1Far.x,p1Far.y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,140,20,0.4)';
+        ctx.fill();
+      }
+      strokeProjectedRing([p1,p2], `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+    }
   } else {
-    ctx.beginPath();
-    ctx.rect(0,0,viewW,viewH);
     const ring = projectCircleRing(zoneState.center, zoneState.radius, 110);
-    if(ring.length>=3){
+    if(!isOutside && ring.length>=3){
+      ctx.beginPath();
+      ctx.rect(0,0,viewW,viewH);
       ctx.moveTo(ring[0].x,ring[0].y);
       for(let i=1;i<ring.length;i++) ctx.lineTo(ring[i].x,ring[i].y);
       ctx.closePath();
+      ctx.fillStyle = 'rgba(255,140,20,0.4)';
+      ctx.fill('evenodd');
     }
-    ctx.fillStyle = 'rgba(255,140,20,0.4)';
-    ctx.fill('evenodd');
-
-    const pulse = 0.5+0.5*Math.sin(matchTime*4);
-    strokeProjectedRing(ring, `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+    if(ring.length>=2){
+      strokeProjectedRing(ring, `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
+    }
   }
   ctx.restore();
 }
