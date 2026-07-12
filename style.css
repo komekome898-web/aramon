@@ -31,7 +31,7 @@
   #startScreenInner{
     display:flex; flex-direction:column; align-items:center;
     transform:scale(0.8); transform-origin:top center;
-    padding:24px; margin:-10vh auto -10vh auto;
+    padding:24px 8px; margin:-10vh auto -10vh auto;
   }
   .title-block{ text-align:center; margin-bottom:18px; }
   .title-main{
@@ -132,7 +132,7 @@
   }
 
   .monster-grid{
-    display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:760px;
+    display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:920px;
   }
   .monster-card{
     width:148px; padding:14px 10px 12px; border-radius:10px;
@@ -160,7 +160,7 @@
   #joinBtn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #8a6a10; }
 
   .howto{ margin-top:18px; font-size:11px; color:var(--ink-dim); letter-spacing:1px; text-align:center; line-height:1.8; max-width:520px; }
-  .howto-wrap{ margin-top:18px; max-width:580px; display:flex; flex-direction:column; gap:16px; }
+  .howto-wrap{ margin-top:18px; max-width:760px; width:100%; display:flex; flex-direction:column; gap:16px; }
   .howto-section{ text-align:left; }
   .howto-title{
     font-size:11px; letter-spacing:3px; color:var(--amber); font-weight:700; text-align:center;
@@ -190,6 +190,7 @@
   .howto-state-icon img{ width:100%; height:100%; object-fit:cover; }
   .howto-state-text{ text-align:left; font-size:10px; line-height:1.4; }
   .howto-state-name{ font-weight:700; color:#ff6b6b; }
+  .howto-state-trigger{ color:var(--ink-dim); }
   .howto-state-effect{ color:var(--ink-dim); }
 
   /* ---------- HUD ---------- */
@@ -343,21 +344,29 @@
 
   #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
 
-  #rankingTabs{ display:flex; gap:10px; margin-top:18px; }
+  #rankingControls{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  #rankingTabs{ display:flex; gap:10px; }
   .rank-tab{
     padding:8px 18px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
   .rank-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  #rankingMonsterFilter{
+    padding:8px 12px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.5px;
+    color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
   #rankingList{ margin-top:18px; width:min(90vw,420px); max-height:48vh; overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   #rankingList::-webkit-scrollbar{ width:12px; }
   #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
   #rankingList::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #rankingList{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
-  .rank-row{ display:flex; align-items:center; gap:12px; padding:8px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
-  .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; }
-  .rank-row .rn{ flex:1; text-align:left; font-size:13px; }
-  .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); }
+  .rank-row{ display:flex; align-items:center; gap:10px; padding:8px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
+  .rank-row.rank-row-top{ background:rgba(244,196,48,0.08); border-color:rgba(244,196,48,0.4); }
+  .rank-crown{ font-size:16px; width:18px; text-align:center; flex-shrink:0; }
+  .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; flex-shrink:0; }
+  .rank-icon{ width:26px; height:26px; border-radius:50%; object-fit:cover; flex-shrink:0; background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
+  .rank-row .rn{ flex:1; text-align:left; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); flex-shrink:0; }
   #rankingList .rank-empty, #myStatsByElement .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
   #myStatsScreen{

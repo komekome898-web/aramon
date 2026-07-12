@@ -8,16 +8,18 @@ const TRAIT_DESC = {
   grace:      '与えたダメージの45%分 相手のガッツを削る。天の慈悲(tier3)発動後10秒間 被ダメ0.5倍',
   poison:     '技命中で相手をどく状態に(10秒間 1秒毎に5ダメージ、どくではHPは1残る)',
 };
-function describeStateChange(key){
-  const sc = STATE_CHANGES[key];
-  if(!sc) return '';
-  const triggerText = {
+function stateTriggerText(sc){
+  return {
     hpBelow: `HPが${Math.round(sc.triggerValue*100)}%以下で発動`,
     gutsBelow: `ガッツが${Math.round(sc.triggerValue*100)}%以下で発動`,
     onHitChance: `技命中時${Math.round(sc.triggerValue*100)}%の確率で発動`,
     onKill: `撃破時に発動`,
   }[sc.trigger] || '';
-  return `【${sc.name}】${triggerText}(${sc.duration}秒間・クールタイム${sc.cooldown}秒)`;
+}
+function describeStateChange(key){
+  const sc = STATE_CHANGES[key];
+  if(!sc) return '';
+  return `【${sc.name}】${sc.duration}秒間・クールタイム${sc.cooldown}秒`;
 }
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');
@@ -104,6 +106,7 @@ function buildHowtoLists(){
           </div>
           <div class="howto-state-text">
             <div class="howto-state-name">${el.label}：${sc.name}</div>
+            <div class="howto-state-trigger">${stateTriggerText(sc)}</div>
             <div class="howto-state-effect">${describeStateEffectsText(sc.effects)}</div>
           </div>
         </div>`;
@@ -558,14 +561,31 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
 });
 
 let currentRankingMode = 'kills';
+let currentRankingMonster = 'all';
 let rankingOpenedFrom = 'result';
+function populateRankingMonsterFilter(){
+  const sel = document.getElementById('rankingMonsterFilter');
+  if(!sel || sel.dataset.built) return;
+  sel.dataset.built = '1';
+  let opts = `<option value="all">総合(全モンスター)</option>`;
+  Object.keys(ELEMENTS).forEach(key=>{
+    opts += `<option value="${key}">${ELEMENTS[key].label}</option>`;
+  });
+  sel.innerHTML = opts;
+  sel.addEventListener('change', ()=>{
+    currentRankingMonster = sel.value;
+    loadRankingList(currentRankingMode);
+  });
+}
 async function openRankingScreen(fromTitle){
   rankingOpenedFrom = fromTitle ? 'title' : 'result';
+  populateRankingMonsterFilter();
   document.getElementById('rankingScreen').classList.remove('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.add('hidden');
   await loadRankingList(currentRankingMode);
 }
+const RANK_CROWN = { 1:{ color:'#ffd700', glow:'rgba(255,215,0,0.7)' }, 2:{ color:'#dfe6ee', glow:'rgba(223,230,238,0.6)' }, 3:{ color:'#cd7f32', glow:'rgba(205,127,50,0.6)' } };
 async function loadRankingList(mode){
   const listEl = document.getElementById('rankingList');
   listEl.innerHTML = '<div class="rank-empty">読み込み中…</div>';
@@ -574,19 +594,27 @@ async function loadRankingList(mode){
     return;
   }
   const field = mode==='kills' ? 'kills' : 'damage';
-  const rows = await window.__aramonFetchRanking(field, 50);
+  // モンスター別に絞り込む場合、母数を広めに取得してからクライアント側でフィルタする
+  const fetchCount = currentRankingMonster==='all' ? 50 : 300;
+  const rows = await window.__aramonFetchRanking(field, fetchCount);
   if(!rows){
     listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
     return;
   }
-  if(rows.length===0){
+  const filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
+  const top = filtered.slice(0,50);
+  if(top.length===0){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
     return;
   }
-  listEl.innerHTML = rows.map((r,i)=>{
+  listEl.innerHTML = top.map((r,i)=>{
     const val = mode==='kills' ? (r.kills||0) : (r.damage||0);
     const nm = (r.name||'名無しのモンスター');
-    return `<div class="rank-row"><span class="rk">#${i+1}</span><span class="rn">${nm}（${r.elementLabel||''}）</span><span class="rv">${val}</span></div>`;
+    const rank = i+1;
+    const crown = RANK_CROWN[rank];
+    const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
+    const iconHtml = r.element ? `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">` : '';
+    return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}<span class="rn">${nm}</span><span class="rv">${val}</span></div>`;
   }).join('');
 }
 document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRankingScreen(false));

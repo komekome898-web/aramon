@@ -220,9 +220,12 @@
 <!-- RANKING -->
 <div id="rankingScreen" class="resultScreen hidden">
   <div class="rank" id="rankingTitle" style="font-size:32px;">RANKING</div>
-  <div id="rankingTabs">
-    <button class="rank-tab active" data-mode="kills">キル数</button>
-    <button class="rank-tab" data-mode="damage">ダメージ数</button>
+  <div id="rankingControls">
+    <div id="rankingTabs">
+      <button class="rank-tab active" data-mode="kills">キル数</button>
+      <button class="rank-tab" data-mode="damage">ダメージ数</button>
+    </div>
+    <select id="rankingMonsterFilter"></select>
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
