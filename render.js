@@ -455,16 +455,48 @@ function drawProjectile(pr,p){
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
-  ctx.shadowBlur=10; ctx.shadowColor=pr.color;
-  ctx.fillStyle=pr.color;
-  ctx.beginPath();
-  if(pr.hitW>pr.hitR){
+
+  if(pr.shape==='triangle'){
+    ctx.shadowBlur=14; ctx.shadowColor=pr.color;
     ctx.rotate(-camState.yaw);
-    ctx.ellipse(0,0,pr.hitW*0.8,pr.hitR*0.8,0,0,Math.PI*2);
+    const r = (pr.hitR||14)*1.3;
+    ctx.beginPath();
+    ctx.moveTo(r*1.4,0);
+    ctx.lineTo(-r*0.7,-r*0.9);
+    ctx.lineTo(-r*0.7,r*0.9);
+    ctx.closePath();
+    ctx.fillStyle = pr.color; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+  } else if(pr.shape==='sphere'){
+    const spin = matchTime*6;
+    ctx.shadowBlur=14; ctx.shadowColor=pr.color;
+    const r = (pr.hitR||14)*1.2;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+    ctx.fillStyle = pr.color; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2;
+    for(let i=0;i<3;i++){
+      const a = spin + i*(Math.PI*2/3);
+      ctx.beginPath();
+      ctx.ellipse(0,0,r,r*0.35,a,0,Math.PI*2);
+      ctx.stroke();
+    }
+  } else if(pr.icon){
+    ctx.shadowBlur=8; ctx.shadowColor=pr.color;
+    ctx.font = `${Math.round((pr.hitR||10)*1.8)}px sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(pr.icon, 0, 1);
   } else {
-    ctx.arc(0,0,pr.hitR,0,Math.PI*2);
+    ctx.shadowBlur=10; ctx.shadowColor=pr.color;
+    ctx.fillStyle=pr.color;
+    ctx.beginPath();
+    if(pr.hitW>pr.hitR){
+      ctx.rotate(-camState.yaw);
+      ctx.ellipse(0,0,pr.hitW*0.8,pr.hitR*0.8,0,0,Math.PI*2);
+    } else {
+      ctx.arc(0,0,pr.hitR,0,Math.PI*2);
+    }
+    ctx.fill();
   }
-  ctx.fill();
   ctx.restore();
 }
 function drawParticle(pt,p){
@@ -719,6 +751,92 @@ function drawDangerGround(){
 
   ctx.restore();
 }
+function drawAreaEffects(){
+  for(const ae of areaEffects){
+    const t = clamp((matchTime-ae.spawnAt)/ae.life, 0, 1);
+    const growT = Math.min(1, t/0.35); // 発生から0.35秒で伸びきる
+    const fadeT = t<0.7 ? 1 : clamp(1-((t-0.7)/0.3), 0, 1);
+    const alpha = fadeT * 0.55;
+    if(alpha<=0.02) continue;
+
+    if(ae.kind==='fan'){
+      const half = (ae.fanAngleDeg||45)*Math.PI/360;
+      const segs = 16;
+      const curRange = ae.range*growT;
+      const center = project(ae.x, ae.y, 0);
+      if(!center) continue;
+      const pts = [center];
+      for(let i=0;i<=segs;i++){
+        const a = ae.angle - half + (i/segs)*half*2;
+        const pp = project(ae.x+Math.cos(a)*curRange, ae.y+Math.sin(a)*curRange, 0);
+        if(pp) pts.push(pp);
+      }
+      if(pts.length<3) continue;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x,pts[0].y);
+      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = ae.color;
+      ctx.shadowBlur=18; ctx.shadowColor=ae.color;
+      ctx.fill();
+      ctx.restore();
+    } else if(ae.kind==='rect' || ae.kind==='beams'){
+      const beamAngles = ae.kind==='beams'
+        ? Array.from({length:ae.beamCount}, (_,i)=> ae.beamCount>1 ? ae.angle + (i/(ae.beamCount-1)-0.5)*(ae.beamSpreadDeg*Math.PI/180) : ae.angle)
+        : [ae.angle];
+      const halfW = ae.width/2;
+      const curRange = ae.range*growT;
+      for(const a of beamAngles){
+        const fx = Math.cos(a), fy = Math.sin(a);
+        const rx = -Math.sin(a), ry = Math.cos(a);
+        const corners = [
+          {x:ae.x+rx*halfW, y:ae.y+ry*halfW},
+          {x:ae.x-rx*halfW, y:ae.y-ry*halfW},
+          {x:ae.x-rx*halfW+fx*curRange, y:ae.y-ry*halfW+fy*curRange},
+          {x:ae.x+rx*halfW+fx*curRange, y:ae.y+ry*halfW+fy*curRange},
+        ];
+        const pts = corners.map(c=>project(c.x,c.y,0)).filter(Boolean);
+        if(pts.length<3) continue;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x,pts[0].y);
+        for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+        ctx.closePath();
+        ctx.fillStyle = ae.color;
+        ctx.shadowBlur=18; ctx.shadowColor=ae.color;
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if(ae.kind==='zigzag'){
+      const curRange = ae.range*growT;
+      const segs = 8;
+      const amp = (ae.width||110)*0.5;
+      const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+      const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+      const pts = [];
+      for(let i=0;i<=segs;i++){
+        const along = curRange*(i/segs);
+        const lateral = (i%2===0?1:-1)*amp*(i===0||i===segs?0.3:1);
+        const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+        if(pp) pts.push(pp);
+      }
+      if(pts.length<2) continue;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, alpha+0.25);
+      ctx.strokeStyle = ae.color; ctx.lineWidth = 6;
+      ctx.shadowBlur=20; ctx.shadowColor=ae.color;
+      ctx.lineJoin='round'; ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x,pts[0].y);
+      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
 function drawLandingMarkers(){
   for(const p of projectiles){
     if(!p.lobbed) continue;
@@ -821,6 +939,7 @@ function render(){
   drawTerrainDecor();
   drawZoneRings();
   drawLandingMarkers();
+  drawAreaEffects();
 
   const drawables = [];
   for(const b of buildings){ const p = project(b.cx,b.cy,b.wallH*0.5); if(p) drawables.push({kind:'building', obj:b, p}); }

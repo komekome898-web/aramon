@@ -5,6 +5,7 @@ let volcanoObstacles = [];
 let lavaZones = [];
 let currentMap = MAPS.wild;
 let projectiles = [];
+let areaEffects = [];
 let lootItems = [];
 let particles = [];
 let terrainDecor = [];

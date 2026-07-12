@@ -12,6 +12,39 @@ function fireMove(attacker, target, move){
     }
     return;
   }
+  if(move.aoeShape){
+    const aimAngle = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
+    const hitIds = new Set();
+    const tryHit = (ent)=>{
+      if(!ent.alive || ent.id===attacker.id || hitIds.has(ent.id)) return;
+      hitIds.add(ent.id);
+      applyDamage(ent, effDmg, attacker);
+      spawnHit(ent.x, ent.y, ent.z, move.color);
+    };
+    if(move.aoeShape==='fan'){
+      const halfAngle = (move.fanAngleDeg||45)*Math.PI/360;
+      for(const ent of entities){ if(hitTestFan(attacker, ent, aimAngle, move.range, halfAngle)) tryHit(ent); }
+    } else if(move.aoeShape==='rect'){
+      for(const ent of entities){ if(hitTestRect(attacker, ent, aimAngle, move.range, move.rectWidth/2)) tryHit(ent); }
+    } else if(move.aoeShape==='beams'){
+      const spread = (move.beamSpreadDeg||40)*Math.PI/180;
+      const count = move.beamCount||3;
+      for(let i=0;i<count;i++){
+        const off = count>1 ? (i/(count-1)-0.5)*spread : 0;
+        const beamAngle = aimAngle+off;
+        for(const ent of entities){ if(hitTestRect(attacker, ent, beamAngle, move.range, move.beamWidth/2)) tryHit(ent); }
+      }
+    } else if(move.aoeShape==='zigzag'){
+      for(const ent of entities){ if(hitTestRect(attacker, ent, aimAngle, move.range, move.zigzagWidth/2)) tryHit(ent); }
+    }
+    areaEffects.push({
+      id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
+      angle:aimAngle, color:move.color, range:move.range, width:move.rectWidth||move.beamWidth||move.zigzagWidth||0,
+      fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
+      spawnAt:matchTime, life:0.5,
+    });
+    return;
+  }
   if(move.lobbed){
     const d = dist(attacker, target);
     const throwDist = Math.min(d, move.range);
@@ -25,6 +58,7 @@ function fireMove(attacker, target, move){
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
       dmg:effDmg, color:move.color, hitR:move.hitR, splash:move.splash||0,
+      icon:move.icon, shape:move.shape,
     });
     return;
   }
@@ -37,9 +71,24 @@ function fireMove(attacker, target, move){
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
       vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
       dmg:effDmg, color:move.color, hitR:move.hitR, hitW:move.hitW||0, splash:move.splash||0,
-      traveled:0, maxRange:move.range, delay: i*burstGap,
+      traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
     });
   }
+}
+function angleDiff(a,b){ let d=a-b; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2; return d; }
+function hitTestFan(attacker, ent, aimAngle, range, halfAngleRad){
+  if(!ent.alive || ent.id===attacker.id) return false;
+  const d = dist(attacker, ent);
+  if(d > range + ent.radius) return false;
+  const angToEnt = angTo(attacker, ent);
+  return Math.abs(angleDiff(angToEnt, aimAngle)) <= halfAngleRad;
+}
+function hitTestRect(attacker, ent, aimAngle, length, halfWidth){
+  if(!ent.alive || ent.id===attacker.id) return false;
+  const dx = ent.x-attacker.x, dy = ent.y-attacker.y;
+  const fwd = dx*Math.cos(aimAngle)+dy*Math.sin(aimAngle);
+  const right = -dx*Math.sin(aimAngle)+dy*Math.cos(aimAngle);
+  return fwd>=-ent.radius && fwd<=length+ent.radius && Math.abs(right)<=halfWidth+ent.radius;
 }
 function isNetworkedHuman(ent){
   return netState.mode==='multi' && (ent.isPlayer || ent.isRemoteHuman);
@@ -740,6 +789,10 @@ function update(dt){
     if(p.type==='text') p.vy += 60*dt;
     p.life -= dt;
     if(p.life<=0) particles.splice(i,1);
+  }
+
+  for(let i=areaEffects.length-1;i>=0;i--){
+    if(matchTime - areaEffects[i].spawnAt > areaEffects[i].life) areaEffects.splice(i,1);
   }
 
   updateHUD();

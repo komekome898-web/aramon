@@ -27,7 +27,7 @@ async function beginMultiplayerMatch(){
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
 
-  entities=[]; projectiles=[]; lootItems=[]; particles=[]; nextId=1;
+  entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
@@ -230,7 +230,14 @@ function tryNonHostPlayerFireVisual(dt){
   player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
   const effProjSpeed = effectiveProjSpeed(player, mv);
 
-  if(mv.lobbed){
+  if(mv.aoeShape){
+    areaEffects.push({
+      id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
+      angle:aimAngle, color:mv.color, range:mv.range, width:mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0,
+      fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
+      spawnAt:matchTime, life:0.5,
+    });
+  } else if(mv.lobbed){
     const throwDist = mv.range;
     const landX = player.x + Math.cos(aimAngle)*throwDist;
     const landY = player.y + Math.sin(aimAngle)*throwDist;
@@ -240,7 +247,7 @@ function tryNonHostPlayerFireVisual(dt){
       lobbed:true, startX:player.x, startY:player.y, startZ:player.z,
       landX, landY, arcHeight: mv.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
-      color:mv.color, hitR:mv.hitR, hitW:0, visualOnly:true,
+      color:mv.color, hitR:mv.hitR, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
     });
   } else if(!mv.melee){
     const burstCount = mv.burst || 1;
@@ -252,7 +259,7 @@ function tryNonHostPlayerFireVisual(dt){
         x:player.x, y:player.y, z:player.z,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
         color:mv.color, hitR:mv.hitR, hitW:mv.hitW||0,
-        traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true,
+        traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon,
       });
     }
   } else {
@@ -298,9 +305,14 @@ function buildAuthStatePayload(){
   for(const p of projectiles){
     payload.projectiles.push({
       x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z||0),
-      c: p.color, r: p.hitR, w: p.hitW||0,
+      c: p.color, r: p.hitR, w: p.hitW||0, icon: p.icon||null, shape: p.shape||null,
     });
   }
+  payload.areaEffects = areaEffects.map(ae=>({
+    id: ae.id, kind: ae.kind, x: Math.round(ae.x), y: Math.round(ae.y), angle: ae.angle, c: ae.color,
+    range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
+    beamSpreadDeg: ae.beamSpreadDeg, life: ae.life,
+  }));
   return payload;
 }
 
@@ -341,8 +353,19 @@ function applyAuthState(authState){
   }
   if(Array.isArray(authState.projectiles)){
     const localVisualOnly = projectiles.filter(p=>p.visualOnly);
-    const hostProjectiles = authState.projectiles.map(p=>({ x:p.x, y:p.y, z:p.z, color:p.c, hitR:p.r, hitW:p.w||0 }));
+    const hostProjectiles = authState.projectiles.map(p=>({ x:p.x, y:p.y, z:p.z, color:p.c, hitR:p.r, hitW:p.w||0, icon:p.icon||undefined, shape:p.shape||undefined }));
     projectiles = hostProjectiles.concat(localVisualOnly);
+  }
+  if(Array.isArray(authState.areaEffects)){
+    const seenIds = new Set(areaEffects.filter(ae=>ae.hostId!=null).map(ae=>ae.hostId));
+    for(const ae of authState.areaEffects){
+      if(seenIds.has(ae.id)) continue;
+      areaEffects.push({
+        hostId: ae.id, kind: ae.kind, x: ae.x, y: ae.y, angle: ae.angle, color: ae.c,
+        range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
+        beamSpreadDeg: ae.beamSpreadDeg, spawnAt: matchTime, life: ae.life,
+      });
+    }
   }
 }
 
@@ -407,6 +430,9 @@ function loop(now){
         if(p.type==='text') p.vy += 60*dt;
         p.life -= dt;
         if(p.life<=0) particles.splice(i,1);
+      }
+      for(let i=areaEffects.length-1;i>=0;i--){
+        if(matchTime - areaEffects[i].spawnAt > areaEffects[i].life) areaEffects.splice(i,1);
       }
       updateHUD();
       sendLocalInputIfMultiplayer(now);

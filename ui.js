@@ -377,7 +377,7 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
 });
 
 function startGame(){
-  entities=[]; projectiles=[]; lootItems=[]; particles=[]; nextId=1;
+  entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=7;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
