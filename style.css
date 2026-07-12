@@ -204,11 +204,12 @@
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
     display:flex; align-items:center; gap:12px; padding:10px 18px;
     border-bottom:3px solid var(--moveColor,var(--amber));
+    cursor:pointer; touch-action:manipulation;
   }
   #moveIcon{ width:38px; height:38px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
   #moveIcon svg{ width:22px; height:22px; }
   #moveInfo{ min-width:120px; }
-  #moveName{ font-weight:700; font-size:15px; pointer-events:auto; cursor:pointer; text-decoration:underline dotted rgba(255,255,255,0.35); text-underline-offset:3px; }
+  #moveName{ font-weight:700; font-size:15px; }
   #tierDots{ display:flex; gap:4px; margin-top:5px; }
   .tier-dot{ width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); }
   .tier-dot.unlocked{ background:rgba(255,255,255,0.32); }

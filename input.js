@@ -155,7 +155,7 @@ document.getElementById('turnRightBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) turnCameraByDegrees(90);
 });
-document.getElementById('moveName').addEventListener('pointerdown', (e)=>{
+document.getElementById('movePanel').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(!game.started || game.over || !player || !player.alive) return;
   if(player.moveTierUnlocked<=1) return;

@@ -912,7 +912,7 @@ function updateHUD(){
   const mv = activeMove(player);
   document.getElementById('moveName').textContent = mv.name;
   document.documentElement.style.setProperty('--moveColor', mv.color);
-  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${mv.gutsCost}`;
+  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(player, mv)}`;
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
     dot.classList.toggle('unlocked', t<=player.moveTierUnlocked);
