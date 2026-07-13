@@ -250,6 +250,9 @@
   #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:3px; }
   #gutsTrack{ margin-top:2px; }
   #gutsFill{ height:100%; background:linear-gradient(90deg,#ffb56b,#ff7a59); width:100%; transition:width .15s; }
+  #stateCdTrack{ margin-top:2px; }
+  #stateCdFill{ height:100%; background:linear-gradient(90deg,#ff6b6b,#ff3b3b); width:0%; transition:width .15s; }
+  #stateCdLabel{ font-size:9px; letter-spacing:0.5px; color:#ff8a8a; margin-top:1px; }
   #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right; }
   #statusIcons{ display:flex; gap:5px; margin-top:3px; min-height:16px; }
   .status-pill{ font-size:9px; padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; }

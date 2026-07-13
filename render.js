@@ -349,26 +349,26 @@ function drawMonster(e,p){
     ctx.restore();
   }
 
-  if(e.stateUntil > matchTime){
-    const sc = STATE_CHANGES[e.element];
-    if(sc){
-      ctx.save();
-      const pulse = 0.55 + 0.25*Math.sin(matchTime*6);
-      ctx.globalAlpha = pulse;
-      ctx.font = `bold ${Math.round(e.radius*0.62)}px 'Rajdhani', sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,40,40,0.85)';
-      ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(255,0,0,0.8)';
-      ctx.fillText(sc.name, 0, 0);
-      ctx.restore();
-    }
-  }
-
   const barW = e.radius*2.1;
   const hpPct = clamp(e.hp/e.maxHp,0,1);
   ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, -e.radius*1.55-9, barW, 6);
   ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
   ctx.fillRect(-barW/2, -e.radius*1.55-9, barW*hpPct, 6);
+
+  if(e.stateUntil > matchTime){
+    const sc = STATE_CHANGES[e.element];
+    if(sc){
+      ctx.save();
+      const pulse = 0.6 + 0.25*Math.sin(matchTime*6);
+      ctx.globalAlpha = pulse;
+      ctx.font = `bold 12px 'Rajdhani', sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = 'rgba(255,60,60,0.95)';
+      ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(255,0,0,0.8)';
+      ctx.fillText(sc.name, 0, -e.radius*1.55-27);
+      ctx.restore();
+    }
+  }
 
   if(!e.isPlayer && dist(e,player)<700){
     ctx.font="11px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.85)'; ctx.textAlign='center';
@@ -682,75 +682,75 @@ function drawTerrainDecor(){
 }
 function drawDangerVignette(){
   const d = dist(player, zoneState.center);
-  if(d <= zoneState.radius) return;
-  const t = clamp((d-zoneState.radius)/150, 0, 1);
-  const pulse = 0.5+0.5*Math.sin(matchTime*4);
-  const alpha = clamp(0.08 + 0.10*t + 0.06*pulse*t, 0, 0.4);
+  const outside = d > zoneState.radius;
   ctx.save();
-  const grad = ctx.createRadialGradient(viewW/2,viewH/2, Math.min(viewW,viewH)*0.2, viewW/2,viewH/2, Math.max(viewW,viewH)*0.75);
-  grad.addColorStop(0,'rgba(200,80,0,0)');
-  grad.addColorStop(1, `rgba(255,140,20,${alpha})`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,viewW,viewH);
+  if(outside){
+    const t = clamp((d-zoneState.radius)/150, 0, 1);
+    const pulse = 0.5+0.5*Math.sin(matchTime*4);
+    const alpha = clamp(0.10 + 0.16*t + 0.08*pulse*t, 0, 0.5);
+    const grad = ctx.createRadialGradient(viewW/2,viewH/2, Math.min(viewW,viewH)*0.2, viewW/2,viewH/2, Math.max(viewW,viewH)*0.75);
+    grad.addColorStop(0,'rgba(200,80,0,0)');
+    grad.addColorStop(1, `rgba(255,90,20,${alpha})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,viewW,viewH);
+  } else {
+    // 内側でも境界に近づくにつれて、じわじわ強くなる警告ビネット(黄〜橙)を出す。
+    // 視線方向に依存しないので、いきなり安置外になって驚くことがない。
+    const distToEdge = zoneState.radius - d;
+    const WARN_RANGE = 1000;
+    if(distToEdge < WARN_RANGE){
+      const t = clamp(1-(distToEdge/WARN_RANGE), 0, 1);
+      const pulse = 0.5+0.5*Math.sin(matchTime*2.6);
+      const alpha = clamp(0.05*t*t + 0.05*pulse*t*t, 0, 0.22);
+      const grad = ctx.createRadialGradient(viewW/2,viewH/2, Math.min(viewW,viewH)*0.25, viewW/2,viewH/2, Math.max(viewW,viewH)*0.75);
+      grad.addColorStop(0,'rgba(244,196,48,0)');
+      grad.addColorStop(1, `rgba(244,196,48,${alpha})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,viewW,viewH);
+    }
+  }
   ctx.restore();
 }
-function drawDangerGround(){
-  const isOutside = dist(player, zoneState.center) > zoneState.radius;
-  const distToEdge = Math.abs(dist(player, zoneState.center) - zoneState.radius);
-  if(!isOutside && distToEdge > 4000) return; // 内側で境界から遠く離れていれば描画不要(チラつき防止)
+// 安全圏の中心方向を指すコンパス矢印。視点の向きに関係なく常に正しい方向を示すため、
+// 地面の塗り分けに頼らずに「どちらが安置内か」を確実に伝えられる。
+function drawZoneCompass(){
+  const d = dist(player, zoneState.center);
+  const outside = d > zoneState.radius;
+  const distToEdge = Math.abs(d - zoneState.radius);
+  if(!outside && distToEdge > 3000) return; // 十分安全な時は非表示
 
-  const horizonY = clamp(viewH/2 - FOCAL*Math.tan(camState.pitch), -40, viewH+40);
+  const bearingWorld = angTo(player, zoneState.center);
+  const bearingScreen = bearingWorld - camState.yaw;
+  const cx = viewW/2, cy = 70, r = 24;
+
   ctx.save();
+  ctx.translate(cx, cy);
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.fillStyle = outside ? 'rgba(255,60,20,0.22)' : 'rgba(244,196,48,0.14)';
+  ctx.fill();
+  ctx.strokeStyle = outside ? 'rgba(255,110,50,0.9)' : 'rgba(244,196,48,0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.rotate(bearingScreen);
   ctx.beginPath();
-  ctx.rect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
-  ctx.clip();
-
-  const pulse = 0.5+0.5*Math.sin(matchTime*4);
-  let drewAccurateSplit = false;
-
-  if(zoneState.radius > ZONE_HUGE_RADIUS_THRESHOLD){
-    // 巨大な円は、最寄りの境界点における接線(直線)を境に「外側だけ」を塗る
-    const span = 9000;
-    const { ex, ey, nx, ny, tx, ty } = nearestEdgeTangent(zoneState.center, zoneState.radius, span);
-    const p1 = project(ex+tx*span, ey+ty*span, 0);
-    const p2 = project(ex-tx*span, ey-ty*span, 0);
-    const p1Far = project(ex+tx*span+nx*span, ey+ty*span+ny*span, 0);
-    const p2Far = project(ex-tx*span+nx*span, ey-ty*span+ny*span, 0);
-    if(p1 && p2 && p1Far && p2Far){
-      ctx.beginPath();
-      ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
-      ctx.lineTo(p2Far.x,p2Far.y); ctx.lineTo(p1Far.x,p1Far.y);
-      ctx.closePath();
-      ctx.fillStyle = `rgba(255,140,20,${0.32+0.10*pulse})`;
-      ctx.fill();
-      strokeProjectedRing([p1,p2], `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
-      drewAccurateSplit = true;
-    }
-  } else {
-    const ring = projectCircleRing(zoneState.center, zoneState.radius, 110);
-    if(ring.length>=3){
-      ctx.beginPath();
-      ctx.rect(0,0,viewW,viewH);
-      ctx.moveTo(ring[0].x,ring[0].y);
-      for(let i=1;i<ring.length;i++) ctx.lineTo(ring[i].x,ring[i].y);
-      ctx.closePath();
-      ctx.fillStyle = `rgba(255,140,20,${0.32+0.10*pulse})`;
-      ctx.fill('evenodd');
-      drewAccurateSplit = true;
-    }
-    if(ring.length>=2){
-      strokeProjectedRing(ring, `rgba(255,170,60,${0.5+0.3*pulse})`, 3, [14,10], {blur:14,color:'rgba(255,140,20,0.7)'});
-    }
-  }
-
-  if(!drewAccurateSplit && isOutside){
-    // 境界の位置がどうしても画面上で特定できない場合(カメラが安置と逆方向を向いている等)の保険。
-    // このときに限り、見えている地面全体を危険地帯として塗る。
-    ctx.fillStyle = `rgba(255,140,20,${0.32+0.10*pulse})`;
-    ctx.fillRect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
-  }
-
+  ctx.moveTo(0,-r*0.75);
+  ctx.lineTo(-r*0.38, r*0.3);
+  ctx.lineTo(0, r*0.08);
+  ctx.lineTo(r*0.38, r*0.3);
+  ctx.closePath();
+  ctx.fillStyle = outside ? '#ff4a1f' : '#f4c430';
+  ctx.shadowBlur = 10; ctx.shadowColor = outside ? 'rgba(255,60,20,0.9)' : 'rgba(244,196,48,0.7)';
+  ctx.fill();
   ctx.restore();
+
+  if(outside){
+    ctx.save();
+    ctx.font = "bold 11px 'Rajdhani', sans-serif";
+    ctx.fillStyle = '#ff9c5a'; ctx.textAlign = 'center';
+    ctx.fillText(`安置まで ${Math.round(distToEdge)}m`, cx, cy+r+15);
+    ctx.restore();
+  }
 }
 function fanOutlinePoints(x,y,angle,range,halfAngleRad,segs){
   const center = project(x,y,0);
@@ -977,7 +977,6 @@ function drawVolcanoComplex(group,p){
 function render(){
   ctx.clearRect(0,0,viewW,viewH);
   drawSkyAndGround();
-  drawDangerGround();
   drawLavaZones();
   drawTerrainDecor();
   drawZoneRings();
@@ -1015,6 +1014,7 @@ function render(){
     else drawParticle(d.obj,d.p);
   }
   drawDangerVignette();
+  drawZoneCompass();
   renderMinimap();
 }
 function renderMinimap(){
@@ -1076,6 +1076,26 @@ function updateHUD(){
   const gutsPct = clamp(player.guts/player.maxGuts,0,1)*100;
   document.getElementById('gutsFill').style.width = gutsPct+'%';
   document.getElementById('gutsNum').textContent = `${Math.max(0,Math.round(player.guts))} / ${player.maxGuts}`;
+
+  const stateSc = STATE_CHANGES[player.element];
+  const stateCdFillEl = document.getElementById('stateCdFill');
+  const stateCdLabelEl = document.getElementById('stateCdLabel');
+  if(stateSc){
+    if(player.stateUntil > matchTime){
+      stateCdFillEl.style.width = '100%';
+      stateCdFillEl.style.background = 'linear-gradient(90deg,#ff6b6b,#ff2b2b)';
+      stateCdLabelEl.textContent = `${stateSc.name} 発動中 残り${Math.ceil(player.stateUntil-matchTime)}秒`;
+    } else if(player.stateCooldownUntil > matchTime){
+      const cdPct = clamp(1-((player.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
+      stateCdFillEl.style.width = cdPct+'%';
+      stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
+      stateCdLabelEl.textContent = `${stateSc.name} クールタイム残り${Math.ceil(player.stateCooldownUntil-matchTime)}秒`;
+    } else {
+      stateCdFillEl.style.width = '100%';
+      stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
+      stateCdLabelEl.textContent = `${stateSc.name} 発動可能`;
+    }
+  }
 
   const statusEl = document.getElementById('statusIcons');
   let statusHtml = '';

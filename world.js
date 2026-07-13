@@ -251,7 +251,7 @@ function createMonster(elementKey, isPlayer, name, overrides){
     lastMoveX:0, lastMoveY:-1, inputMoveX:0, inputMoveY:0,
     burnUntil:0, slowUntil:0, graceUntil:0, freezeUntil:0, poisonUntil:0, poisonTickAt:0, poisonSourceId:null,
     trainCooldownMult:1, trainGutsCostReduction:0, trainProjSpeedMult:1, trainDmgMult:1, trainDmgTakenMult:1, trainSpeedMult:1,
-    stateUntil:0, stateCooldownUntil:0,
+    stateUntil:0, stateCooldownUntil: (STATE_CHANGES[elementKey] ? STATE_CHANGES[elementKey].cooldown/2 : 0),
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
     recentAttackers:{},
   };
