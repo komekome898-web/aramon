@@ -620,6 +620,13 @@ function updateProjectiles(dt){
         if(p.z >= r.height) continue;
         if(Math.hypot(p.x-r.x,p.y-r.y) < r.radius+p.hitR){
           spawnHit(p.x,p.y,p.z,p.color);
+          if(p.splash>0){
+            for(const o of entities){
+              if(!o.alive || o.id===p.ownerId) continue;
+              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId));
+            }
+          }
           hit=true; break;
         }
       }
@@ -628,6 +635,13 @@ function updateProjectiles(dt){
       for(const v of volcanoObstacles){
         if(Math.hypot(p.x-v.x,p.y-v.y) < v.radius+p.hitR){
           spawnHit(p.x,p.y,p.z,p.color);
+          if(p.splash>0){
+            for(const o of entities){
+              if(!o.alive || o.id===p.ownerId) continue;
+              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId));
+            }
+          }
           hit=true; break;
         }
       }

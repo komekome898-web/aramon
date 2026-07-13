@@ -628,17 +628,19 @@ function strokeProjectedRing(pts, strokeStyle, lineWidth, dash, glow){
   ctx.stroke();
   ctx.restore();
 }
-const ZONE_HUGE_RADIUS_THRESHOLD = 3200; // これより大きい半径の円は、局所的な直線(接線)として近似する
+const ZONE_HUGE_RADIUS_THRESHOLD = 3200; // これより大きい半径の円は、プレイヤー付近だけ高解像度サンプリングする
 // 巨大な安全圏の円をそのまま360度分投影すると、プレイヤー付近以外の遠い点まで巻き込んで
-// 多角形が破綻する(境界に近づくと地面が全面オレンジになる等)。半径が大きい場合は
-// プレイヤー最寄りの境界点における接線(直線)で近似することで、この破綻を防ぐ。
-function nearestEdgeTangent(center, radius, span){
-  const dx = player.x-center.x, dy = player.y-center.y;
-  const d = Math.max(1, Math.hypot(dx,dy));
-  const nx = dx/d, ny = dy/d; // 中心→プレイヤー方向(=外向き法線)
-  const ex = center.x+nx*radius, ey = center.y+ny*radius; // 最寄りの境界点
-  const tx = -ny, ty = nx; // 接線方向
-  return { ex, ey, nx, ny, tx, ty, span };
+// 破綻していた。半径が大きい場合は、プレイヤー最寄りの境界点を中心にした狭い角度範囲だけを
+// 高解像度でサンプリングすることで、実際の円弧として綺麗に(かつ安全に)描画する。
+function projectCircleArcLocal(center, radius, segments, windowRad){
+  const centerAngle = angTo(center, player); // 中心から見てプレイヤー方向 = 最寄りの境界点の方角
+  const pts = [];
+  for(let i=0;i<=segments;i++){
+    const a = centerAngle - windowRad + (i/segments)*windowRad*2;
+    const p = project(center.x+Math.cos(a)*radius, center.y+Math.sin(a)*radius, 0);
+    if(p) pts.push(p);
+  }
+  return pts;
 }
 function drawZoneRings(){
   const ZONE_RENDER_THRESHOLD = 4000; // これより境界から離れていれば描画不要
@@ -651,11 +653,8 @@ function drawOneZoneRing(center, radius, strokeStyle, lineWidth, dash, glow, thr
   const distToEdge = Math.abs(dist(player, center) - radius);
   if(distToEdge >= threshold) return;
   if(radius > ZONE_HUGE_RADIUS_THRESHOLD){
-    const { ex, ey, tx, ty } = nearestEdgeTangent(center, radius, 6000);
-    const p1 = project(ex+tx*6000, ey+ty*6000, 0);
-    const p2 = project(ex-tx*6000, ey-ty*6000, 0);
-    if(!p1 || !p2) return;
-    strokeProjectedRing([p1,p2], strokeStyle, lineWidth, dash, glow);
+    const ring = projectCircleArcLocal(center, radius, 60, Math.PI/6); // 中心±30度だけを高解像度サンプリング
+    strokeProjectedRing(ring, strokeStyle, lineWidth, dash, glow);
   } else {
     const ring = projectCircleRing(center, radius, 90);
     strokeProjectedRing(ring, strokeStyle, lineWidth, dash, glow);
