@@ -14,35 +14,28 @@ function fireMove(attacker, target, move){
   }
   if(move.aoeShape){
     const aimAngle = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
-    const hitIds = new Set();
-    const tryHit = (ent)=>{
-      if(!ent.alive || ent.id===attacker.id || hitIds.has(ent.id)) return;
-      hitIds.add(ent.id);
-      applyDamage(ent, effDmg, attacker);
-      spawnHit(ent.x, ent.y, ent.z, move.color);
+    const width = move.rectWidth||move.beamWidth||move.zigzagWidth||0;
+    const ae = {
+      id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
+      angle:aimAngle, dmg:effDmg, color:move.color, range:move.range, width,
+      fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
+      fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
+      spawnAt:matchTime, hitIds:new Set(), resolved:false,
     };
-    if(move.aoeShape==='fan'){
-      const halfAngle = (move.fanAngleDeg||45)*Math.PI/360;
-      for(const ent of entities){ if(hitTestFan(attacker, ent, aimAngle, move.range, halfAngle)) tryHit(ent); }
-    } else if(move.aoeShape==='rect'){
-      for(const ent of entities){ if(hitTestRect(attacker, ent, aimAngle, move.range, move.rectWidth/2)) tryHit(ent); }
-    } else if(move.aoeShape==='beams'){
+    if(move.aoeShape==='beams'){
       const spread = (move.beamSpreadDeg||40)*Math.PI/180;
       const count = move.beamCount||3;
+      ae.beamRanges = [];
       for(let i=0;i<count;i++){
         const off = count>1 ? (i/(count-1)-0.5)*spread : 0;
-        const beamAngle = aimAngle+off;
-        for(const ent of entities){ if(hitTestRect(attacker, ent, beamAngle, move.range, move.beamWidth/2)) tryHit(ent); }
+        ae.beamRanges.push(raycastObstacleDistance(attacker.x, attacker.y, aimAngle+off, move.range));
       }
-    } else if(move.aoeShape==='zigzag'){
-      for(const ent of entities){ if(hitTestRect(attacker, ent, aimAngle, move.range, move.zigzagWidth/2)) tryHit(ent); }
+      ae.life = ae.telegraphTime + Math.max(...ae.beamRanges)/ae.fillSpeed + 0.25;
+    } else {
+      ae.range = raycastObstacleDistance(attacker.x, attacker.y, aimAngle, move.range);
+      ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
     }
-    areaEffects.push({
-      id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
-      angle:aimAngle, color:move.color, range:move.range, width:move.rectWidth||move.beamWidth||move.zigzagWidth||0,
-      fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
-      spawnAt:matchTime, life:0.5,
-    });
+    areaEffects.push(ae);
     return;
   }
   if(move.lobbed){
@@ -76,6 +69,32 @@ function fireMove(attacker, target, move){
   }
 }
 function angleDiff(a,b){ let d=a-b; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2; return d; }
+function raySegmentCircleDist(ox,oy,angle,cx,cy,cr){
+  const dx=Math.cos(angle), dy=Math.sin(angle);
+  const fx=ox-cx, fy=oy-cy;
+  const b = 2*(fx*dx+fy*dy);
+  const c = fx*fx+fy*fy-cr*cr;
+  const disc = b*b-4*c;
+  if(disc<0) return null;
+  const sq = Math.sqrt(disc);
+  const t1 = (-b-sq)/2, t2 = (-b+sq)/2;
+  if(t1>=0) return t1;
+  if(t2>=0) return 0;
+  return null;
+}
+// 指定方向に岩・火山などの障害物があれば、そこまでの距離を返す(貫通防止用)。無ければmaxRangeを返す
+function raycastObstacleDistance(ox,oy,angle,maxRange){
+  let closest = maxRange;
+  for(const v of volcanoObstacles){
+    const d = raySegmentCircleDist(ox,oy,angle,v.x,v.y,v.radius);
+    if(d!=null && d<closest) closest = d;
+  }
+  for(const r of rocks){
+    const d = raySegmentCircleDist(ox,oy,angle,r.x,r.y,r.radius);
+    if(d!=null && d<closest) closest = d;
+  }
+  return Math.max(30, closest);
+}
 function hitTestFan(attacker, ent, aimAngle, range, halfAngleRad){
   if(!ent.alive || ent.id===attacker.id) return false;
   const d = dist(attacker, ent);
@@ -606,6 +625,14 @@ function updateProjectiles(dt){
       }
     }
     if(!hit){
+      for(const v of volcanoObstacles){
+        if(Math.hypot(p.x-v.x,p.y-v.y) < v.radius+p.hitR){
+          spawnHit(p.x,p.y,p.z,p.color);
+          hit=true; break;
+        }
+      }
+    }
+    if(!hit){
       for(const e of entities){
         if(!e.alive || e.id===p.ownerId) continue;
         if(e.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
@@ -791,11 +818,63 @@ function update(dt){
     if(p.life<=0) particles.splice(i,1);
   }
 
-  for(let i=areaEffects.length-1;i>=0;i--){
-    if(matchTime - areaEffects[i].spawnAt > areaEffects[i].life) areaEffects.splice(i,1);
-  }
+  updateAreaEffects(dt);
 
   updateHUD();
+}
+function updateAreaEffects(dt){
+  for(let i=areaEffects.length-1;i>=0;i--){
+    const ae = areaEffects[i];
+    const elapsed = matchTime - ae.spawnAt;
+    if(elapsed > ae.life){ areaEffects.splice(i,1); continue; }
+    if(ae.resolved || !ae.hitIds) continue; // ゲスト側の同期エントリはダメージ計算しない(見た目のみ)
+    if(elapsed <= ae.telegraphTime) continue; // まだ点線予告のみ
+
+    const fillDist = (elapsed - ae.telegraphTime) * ae.fillSpeed;
+    const origin = { x:ae.x, y:ae.y, radius:0, id:ae.ownerId };
+    const owner = getEntity(ae.ownerId);
+
+    if(ae.kind==='beams'){
+      const count = ae.beamCount||3;
+      const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
+      let allDone = true;
+      for(let b=0;b<count;b++){
+        const beamMax = ae.beamRanges[b];
+        const curReach = Math.min(beamMax, fillDist);
+        if(curReach < beamMax) allDone = false;
+        const beamAngle = ae.angle + (count>1 ? (b/(count-1)-0.5)*spread : 0);
+        for(const ent of entities){
+          if(!ent.alive || ent.id===ae.ownerId) continue;
+          const key = ent.id+'_b'+b;
+          if(ae.hitIds.has(key)) continue;
+          if(hitTestRect(origin, ent, beamAngle, curReach, ae.width/2)){
+            ae.hitIds.add(key);
+            applyDamage(ent, ae.dmg, owner);
+            spawnHit(ent.x, ent.y, ent.z, ae.color);
+          }
+        }
+      }
+      if(allDone) ae.resolved = true;
+    } else {
+      const curReach = Math.min(ae.range, fillDist);
+      for(const ent of entities){
+        if(!ent.alive || ent.id===ae.ownerId) continue;
+        if(ae.hitIds.has(ent.id)) continue;
+        let hit = false;
+        if(ae.kind==='fan'){
+          hit = hitTestFan(origin, ent, ae.angle, curReach, (ae.fanAngleDeg||45)*Math.PI/360);
+        } else if(ae.kind==='rect' || ae.kind==='zigzag'){
+          hit = hitTestRect(origin, ent, ae.angle, curReach, ae.width/2);
+        }
+        if(hit){
+          ae.hitIds.add(ent.id);
+          applyDamage(ent, ae.dmg, owner);
+          spawnHit(ent.x, ent.y, ent.z, ae.color);
+        }
+      }
+      if(curReach >= ae.range) ae.resolved = true;
+    }
+  }
 }
 
 /* =====================================================================

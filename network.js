@@ -231,11 +231,16 @@ function tryNonHostPlayerFireVisual(dt){
   const effProjSpeed = effectiveProjSpeed(player, mv);
 
   if(mv.aoeShape){
+    const width = mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0;
+    const fillSpeed = Math.max(200, effProjSpeed||900);
+    const beamRanges = mv.aoeShape==='beams' ? Array.from({length:mv.beamCount||3}, ()=>mv.range) : undefined;
+    const life = 0.18 + (beamRanges ? Math.max(...beamRanges) : mv.range)/fillSpeed + 0.25;
     areaEffects.push({
       id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
-      angle:aimAngle, color:mv.color, range:mv.range, width:mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0,
+      angle:aimAngle, color:mv.color, range:mv.range, width,
       fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
-      spawnAt:matchTime, life:0.5,
+      beamRanges, fillSpeed, telegraphTime:0.18,
+      spawnAt:matchTime, life,
     });
   } else if(mv.lobbed){
     const throwDist = mv.range;
@@ -259,7 +264,7 @@ function tryNonHostPlayerFireVisual(dt){
         x:player.x, y:player.y, z:player.z,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
         color:mv.color, hitR:mv.hitR, hitW:mv.hitW||0,
-        traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon,
+        traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
       });
     }
   } else {
@@ -311,7 +316,8 @@ function buildAuthStatePayload(){
   payload.areaEffects = areaEffects.map(ae=>({
     id: ae.id, kind: ae.kind, x: Math.round(ae.x), y: Math.round(ae.y), angle: ae.angle, c: ae.color,
     range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
-    beamSpreadDeg: ae.beamSpreadDeg, life: ae.life,
+    beamSpreadDeg: ae.beamSpreadDeg, life: ae.life, fillSpeed: ae.fillSpeed, telegraphTime: ae.telegraphTime,
+    beamRanges: ae.beamRanges||null,
   }));
   return payload;
 }
@@ -364,6 +370,7 @@ function applyAuthState(authState){
         hostId: ae.id, kind: ae.kind, x: ae.x, y: ae.y, angle: ae.angle, color: ae.c,
         range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
         beamSpreadDeg: ae.beamSpreadDeg, spawnAt: matchTime, life: ae.life,
+        fillSpeed: ae.fillSpeed||900, telegraphTime: ae.telegraphTime||0.18, beamRanges: ae.beamRanges||undefined,
       });
     }
   }

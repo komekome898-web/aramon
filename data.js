@@ -145,7 +145,7 @@ const SIGNATURE_MOVES = {
   rock: [
     { name:'ロケットパンチ',       tier:1, color:'#a98a68', lobbed:true, range:600,  dmg:28, cooldown:0.95, gutsCost:7, projSpeed:440, hitR:14, splash:78, arcHeight:150, icon:'👊🏿' },
     { name:'掌打',   tier:2, color:'#a98a68', range:1200, dmg:15, cooldown:1.3, gutsCost:10, projSpeed:380, hitR:9,  burst:3, burstGap:0.14, icon:'🤚🏿' },
-    { name:'竜巻アタック', tier:3, color:'#a98a68', lobbed:true, range:1600, dmg:52, cooldown:2.4, gutsCost:19, projSpeed:400, hitR:26, splash:100, arcHeight:150, icon:'🌪️' },
+    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:62, cooldown:2.4, gutsCost:19, projSpeed:520, hitR:34, splash:60, icon:'🌪️' },
   ],
   phoenix: [
     { name:'火炎砲',     tier:1, color:'#e8432a', lobbed:true, range:725,  dmg:25, cooldown:0.82, gutsCost:6, projSpeed:540, hitR:12, splash:70, arcHeight:140, icon:'🔥' },
@@ -156,12 +156,12 @@ const SIGNATURE_MOVES = {
   ark: [
     { name:'しっぽふり',   tier:1, color:'#ffe9a8', lobbed:true, range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:520, hitR:12, splash:70, arcHeight:140, icon:'🌱' },
     { name:'熾天の剣', tier:2, color:'#ffe9a8', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🏹' },
-    { name:'天の慈悲', tier:3, color:'#ffe9a8', lobbed:true, range:1850, dmg:47, cooldown:2.0, gutsCost:18, projSpeed:460, hitR:20, splash:85, arcHeight:140, shape:'triangle' },
+    { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:58, cooldown:2.0, gutsCost:18, projSpeed:560, hitR:30, splash:55, shape:'triangle' },
   ],
   warm: [
     { name:'毒ガス',       tier:1, color:'#9b5fd1', lobbed:true, range:700,  dmg:23, cooldown:0.85, gutsCost:6, projSpeed:500, hitR:12, splash:75, arcHeight:140, icon:'☠️' },
     { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:9, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
-    { name:'シェルアタック', tier:3, color:'#9b5fd1', lobbed:true, range:1750, dmg:45, cooldown:2.1, gutsCost:18, projSpeed:440, hitR:24, splash:88, arcHeight:140, shape:'sphere' },
+    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:18, projSpeed:500, hitR:34, splash:58, shape:'sphere' },
   ],
 };
 

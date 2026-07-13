@@ -458,7 +458,8 @@ function drawProjectile(pr,p){
 
   if(pr.shape==='triangle'){
     ctx.shadowBlur=14; ctx.shadowColor=pr.color;
-    ctx.rotate(-camState.yaw);
+    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
+    ctx.rotate(travelAngle-camState.yaw);
     const r = (pr.hitR||14)*1.3;
     ctx.beginPath();
     ctx.moveTo(r*1.4,0);
@@ -751,89 +752,131 @@ function drawDangerGround(){
 
   ctx.restore();
 }
+function fanOutlinePoints(x,y,angle,range,halfAngleRad,segs){
+  const center = project(x,y,0);
+  if(!center) return null;
+  const pts = [center];
+  for(let i=0;i<=segs;i++){
+    const a = angle - halfAngleRad + (i/segs)*halfAngleRad*2;
+    const pp = project(x+Math.cos(a)*range, y+Math.sin(a)*range, 0);
+    if(pp) pts.push(pp);
+  }
+  return pts.length>=3 ? pts : null;
+}
+function rectOutlinePoints(x,y,angle,range,halfWidth){
+  const fx=Math.cos(angle), fy=Math.sin(angle);
+  const rx=-Math.sin(angle), ry=Math.cos(angle);
+  const corners = [
+    {x:x+rx*halfWidth, y:y+ry*halfWidth},
+    {x:x-rx*halfWidth, y:y-ry*halfWidth},
+    {x:x-rx*halfWidth+fx*range, y:y-ry*halfWidth+fy*range},
+    {x:x+rx*halfWidth+fx*range, y:y+ry*halfWidth+fy*range},
+  ];
+  const pts = corners.map(c=>project(c.x,c.y,0)).filter(Boolean);
+  return pts.length>=3 ? pts : null;
+}
+function strokeDashedShape(pts, color, alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.setLineDash([10,8]);
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+function fillShape(pts, color, alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.shadowBlur=18; ctx.shadowColor=color;
+  ctx.fill();
+  ctx.restore();
+}
 function drawAreaEffects(){
   for(const ae of areaEffects){
-    const t = clamp((matchTime-ae.spawnAt)/ae.life, 0, 1);
-    const growT = Math.min(1, t/0.35); // 発生から0.35秒で伸びきる
-    const fadeT = t<0.7 ? 1 : clamp(1-((t-0.7)/0.3), 0, 1);
-    const alpha = fadeT * 0.55;
-    if(alpha<=0.02) continue;
+    const elapsed = matchTime - ae.spawnAt;
+    if(elapsed > ae.life) continue;
+    const telegraphTime = ae.telegraphTime||0.18;
+    const fillSpeed = ae.fillSpeed||900;
+    const inTelegraph = elapsed <= telegraphTime;
+    const fillDist = Math.max(0, elapsed - telegraphTime) * fillSpeed;
+    const fadeStart = ae.life - 0.2;
+    const fadeAlpha = elapsed>fadeStart ? clamp(1-((elapsed-fadeStart)/0.2), 0, 1) : 1;
 
-    if(ae.kind==='fan'){
-      const half = (ae.fanAngleDeg||45)*Math.PI/360;
-      const segs = 16;
-      const curRange = ae.range*growT;
-      const center = project(ae.x, ae.y, 0);
-      if(!center) continue;
-      const pts = [center];
-      for(let i=0;i<=segs;i++){
-        const a = ae.angle - half + (i/segs)*half*2;
-        const pp = project(ae.x+Math.cos(a)*curRange, ae.y+Math.sin(a)*curRange, 0);
-        if(pp) pts.push(pp);
+    if(ae.kind==='beams'){
+      const count = ae.beamCount||3;
+      const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
+      const ranges = ae.beamRanges || Array.from({length:count}, ()=>ae.range);
+      for(let b=0;b<count;b++){
+        const a = ae.angle + (count>1 ? (b/(count-1)-0.5)*spread : 0);
+        const outline = rectOutlinePoints(ae.x, ae.y, a, ranges[b], ae.width/2);
+        if(outline) strokeDashedShape(outline, ae.color, 0.5*fadeAlpha);
+        if(!inTelegraph){
+          const curReach = Math.min(ranges[b], fillDist);
+          if(curReach>2){
+            const fillPts = rectOutlinePoints(ae.x, ae.y, a, curReach, ae.width/2);
+            if(fillPts) fillShape(fillPts, ae.color, 0.5*fadeAlpha);
+          }
+        }
       }
-      if(pts.length<3) continue;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x,pts[0].y);
-      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
-      ctx.closePath();
-      ctx.fillStyle = ae.color;
-      ctx.shadowBlur=18; ctx.shadowColor=ae.color;
-      ctx.fill();
-      ctx.restore();
-    } else if(ae.kind==='rect' || ae.kind==='beams'){
-      const beamAngles = ae.kind==='beams'
-        ? Array.from({length:ae.beamCount}, (_,i)=> ae.beamCount>1 ? ae.angle + (i/(ae.beamCount-1)-0.5)*(ae.beamSpreadDeg*Math.PI/180) : ae.angle)
-        : [ae.angle];
-      const halfW = ae.width/2;
-      const curRange = ae.range*growT;
-      for(const a of beamAngles){
-        const fx = Math.cos(a), fy = Math.sin(a);
-        const rx = -Math.sin(a), ry = Math.cos(a);
-        const corners = [
-          {x:ae.x+rx*halfW, y:ae.y+ry*halfW},
-          {x:ae.x-rx*halfW, y:ae.y-ry*halfW},
-          {x:ae.x-rx*halfW+fx*curRange, y:ae.y-ry*halfW+fy*curRange},
-          {x:ae.x+rx*halfW+fx*curRange, y:ae.y+ry*halfW+fy*curRange},
-        ];
-        const pts = corners.map(c=>project(c.x,c.y,0)).filter(Boolean);
-        if(pts.length<3) continue;
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x,pts[0].y);
-        for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
-        ctx.closePath();
-        ctx.fillStyle = ae.color;
-        ctx.shadowBlur=18; ctx.shadowColor=ae.color;
-        ctx.fill();
-        ctx.restore();
+    } else if(ae.kind==='fan'){
+      const half = (ae.fanAngleDeg||45)*Math.PI/360;
+      const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
+      if(outline) strokeDashedShape(outline, ae.color, 0.55*fadeAlpha);
+      if(!inTelegraph){
+        const curReach = Math.min(ae.range, fillDist);
+        if(curReach>2){
+          const fillPts = fanOutlinePoints(ae.x, ae.y, ae.angle, curReach, half, 16);
+          if(fillPts) fillShape(fillPts, ae.color, 0.5*fadeAlpha);
+        }
+      }
+    } else if(ae.kind==='rect'){
+      const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
+      if(outline) strokeDashedShape(outline, ae.color, 0.55*fadeAlpha);
+      if(!inTelegraph){
+        const curReach = Math.min(ae.range, fillDist);
+        if(curReach>2){
+          const fillPts = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
+          if(fillPts) fillShape(fillPts, ae.color, 0.5*fadeAlpha);
+        }
       }
     } else if(ae.kind==='zigzag'){
-      const curRange = ae.range*growT;
-      const segs = 8;
-      const amp = (ae.width||110)*0.5;
-      const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
-      const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-      const pts = [];
-      for(let i=0;i<=segs;i++){
-        const along = curRange*(i/segs);
-        const lateral = (i%2===0?1:-1)*amp*(i===0||i===segs?0.3:1);
-        const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
-        if(pp) pts.push(pp);
+      const outlineRect = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, (ae.width||110)/2);
+      if(outlineRect) strokeDashedShape(outlineRect, ae.color, 0.4*fadeAlpha);
+      if(!inTelegraph){
+        const curReach = Math.min(ae.range, fillDist);
+        const segs = Math.max(2, Math.round(8*(curReach/Math.max(ae.range,1))));
+        const amp = (ae.width||110)*0.5;
+        const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+        const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+        const pts = [];
+        for(let i=0;i<=segs;i++){
+          const along = curReach*(i/Math.max(segs,1));
+          const lateral = (i%2===0?1:-1)*amp*(i===0||i===segs?0.3:1);
+          const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+          if(pp) pts.push(pp);
+        }
+        if(pts.length>=2){
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, 0.8*fadeAlpha);
+          ctx.strokeStyle = ae.color; ctx.lineWidth = 6;
+          ctx.shadowBlur=20; ctx.shadowColor=ae.color;
+          ctx.lineJoin='round'; ctx.lineCap='round';
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x,pts[0].y);
+          for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
-      if(pts.length<2) continue;
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, alpha+0.25);
-      ctx.strokeStyle = ae.color; ctx.lineWidth = 6;
-      ctx.shadowBlur=20; ctx.shadowColor=ae.color;
-      ctx.lineJoin='round'; ctx.lineCap='round';
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x,pts[0].y);
-      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
-      ctx.stroke();
-      ctx.restore();
     }
   }
 }
