@@ -138,7 +138,7 @@ function applyDamage(target, dmg, source, opts){
   if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
   if(target.trainDmgTakenMult){ finalDmg *= target.trainDmgTakenMult; }
   const targetStateEff = activeStateEffects(target);
-  if(targetStateEff && targetStateEff.dmgTakenMult){ finalDmg *= targetStateEff.dmgTakenMult; }
+  if(targetStateEff && targetStateEff.dmgTakenMult != null){ finalDmg *= targetStateEff.dmgTakenMult; }
   if(source && source.alive){
     const srcEl = ELEMENTS[source.element];
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }

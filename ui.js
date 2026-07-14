@@ -29,7 +29,7 @@ function buildMonsterGrid(){
     const el = ELEMENTS[key];
     const card = document.createElement('div');
     card.className='monster-card';
-    card.style.setProperty('--accent', el.color);
+    card.style.setProperty('--accent', el.accent || el.color);
     card.innerHTML = `
       <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
         <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
@@ -57,7 +57,7 @@ function describeStateEffectsText(effects){
   }
   if(effects.gutsCostMult) parts.push(`消費ガッツ${effects.gutsCostMult}倍`);
   if(effects.speedMult) parts.push(`移動${effects.speedMult}倍`);
-  if(effects.dmgTakenMult) parts.push(`被ダメ${effects.dmgTakenMult}倍`);
+  if(effects.dmgTakenMult!=null) parts.push(`被ダメ${effects.dmgTakenMult}倍`);
   if(effects.lifestealPct) parts.push(`与ダメの${Math.round(effects.lifestealPct*100)}%自己回復`);
   return parts.join('・');
 }
