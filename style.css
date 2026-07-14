@@ -154,7 +154,8 @@
   .m-name{ font-weight:700; font-size:14px; }
   .m-stat{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:4px; line-height:1.5;}
   .m-trait{ font-size:10px; color:var(--accent,var(--amber)); margin-top:6px; line-height:1.4; }
-  .m-state{ font-size:10px; color:#ff6b6b; margin-top:6px; line-height:1.4; font-weight:600; }
+
+  .grid-note{ margin-top:10px; font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; text-align:center; }
 
   #joinBtn{
     margin-top:22px; padding:14px 38px; font-family:'Russo One',sans-serif; font-size:17px;
@@ -188,7 +189,7 @@
   .howto-item-effect{ color:var(--ink-dim); }
   .howto-state-card{
     display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.04);
-    border:1px solid var(--panel-line); border-radius:8px; padding:6px 10px; width:210px;
+    border:1px solid var(--panel-line); border-radius:8px; padding:6px 10px; width:224px;
   }
   .howto-state-icon{
     width:30px; height:30px; border-radius:50%; overflow:hidden; flex-shrink:0;
@@ -198,6 +199,7 @@
   .howto-state-text{ text-align:left; font-size:10px; line-height:1.4; }
   .howto-state-name{ font-weight:700; color:#ff6b6b; }
   .howto-state-trigger{ color:var(--ink-dim); }
+  .howto-state-duration{ color:var(--ink-dim); }
   .howto-state-effect{ color:var(--ink-dim); }
 
   /* ---------- HUD ---------- */
