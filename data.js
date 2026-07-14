@@ -247,6 +247,125 @@ const STATE_CHANGES = {
 
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
 
+/* =====================================================================
+   マスモン(マスターモンスター)
+===================================================================== */
+const MASTERMON_STORAGE_KEY = 'aramon_mastermons_v1';
+const MASTERMON_STAT_CAP = 999;
+const MASTERMON_LEVEL_CAP = 100;
+
+const MASTERMON_STATS = [
+  { key:'life',     label:'ライフ',   color:'#f4c430' },
+  { key:'power',    label:'ちから',   color:'#e0473f' },
+  { key:'wisdom',   label:'かしこさ', color:'#5fbf5f' },
+  { key:'accuracy', label:'命中',    color:'#ef6fb0' },
+  { key:'evasion',  label:'回避',    color:'#4fc9e0' },
+  { key:'vitality', label:'丈夫さ',   color:'#2d4fae' },
+];
+
+// モンスター毎のステータス適正(A〜E)。イルミネ・キュービは指定値、他は近縁の性質を参考に設定。
+const APTITUDE = {
+  fire:    { life:'C', power:'A', wisdom:'A', accuracy:'C', evasion:'D', vitality:'C' },
+  aqua:    { life:'C', power:'D', wisdom:'B', accuracy:'B', evasion:'A', vitality:'D' },
+  leaf:    { life:'A', power:'D', wisdom:'B', accuracy:'C', evasion:'D', vitality:'B' },
+  spark:   { life:'D', power:'B', wisdom:'C', accuracy:'B', evasion:'A', vitality:'E' },
+  rock:    { life:'C', power:'A', wisdom:'C', accuracy:'E', evasion:'E', vitality:'A' },
+  phoenix: { life:'C', power:'B', wisdom:'C', accuracy:'B', evasion:'B', vitality:'D' },
+  ark:     { life:'B', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'C' },
+  warm:    { life:'B', power:'C', wisdom:'B', accuracy:'D', evasion:'D', vitality:'B' },
+  illumine:{ life:'C', power:'B', wisdom:'E', accuracy:'A', evasion:'B', vitality:'C' },
+  fox:     { life:'C', power:'D', wisdom:'B', accuracy:'A', evasion:'B', vitality:'E' },
+};
+const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
+const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
+
+// トレーニングメニュー。upは適正に応じて上昇量が変動、downは適正に関係なく固定量で下降
+const TRAINING_MENU = [
+  { key:'domino',  label:'ドミノ倒し', desc:'ちから↑',            up:[{stat:'power',   amount:18}], down:[] },
+  { key:'shateki', label:'しゃてき',   desc:'命中↑',             up:[{stat:'accuracy',amount:18}], down:[] },
+  { key:'study',   label:'猛勉強',    desc:'かしこさ↑',          up:[{stat:'wisdom',  amount:18}], down:[] },
+  { key:'boulder', label:'巨石よけ',   desc:'回避↑',             up:[{stat:'evasion', amount:18}], down:[] },
+  { key:'run',     label:'走り込み',   desc:'ライフ↑',            up:[{stat:'life',    amount:18}], down:[] },
+  { key:'log',     label:'丸太うけ',   desc:'丈夫さ↑',            up:[{stat:'vitality',amount:18}], down:[] },
+  { key:'weight',  label:'重り引き',   desc:'ちから↑↑・ライフ↑／回避↓', up:[{stat:'power',   amount:28},{stat:'life',    amount:12}], down:[{stat:'evasion', amount:10}] },
+  { key:'floor',   label:'変動ゆか',   desc:'回避↑↑・かしこさ↑／ちから↓', up:[{stat:'evasion', amount:28},{stat:'wisdom',  amount:12}], down:[{stat:'power',   amount:10}] },
+  { key:'medit',   label:'めいそう',   desc:'かしこさ↑↑・命中↑／丈夫さ↓', up:[{stat:'wisdom',  amount:28},{stat:'accuracy',amount:12}], down:[{stat:'vitality',amount:10}] },
+  { key:'pool',    label:'プール',    desc:'丈夫さ↑↑・ライフ↑／かしこさ↓', up:[{stat:'vitality',amount:28},{stat:'life',    amount:12}], down:[{stat:'wisdom',  amount:10}] },
+];
+
+function mastermonClampStat(v){ return Math.max(1, Math.min(MASTERMON_STAT_CAP, Math.round(v))); }
+function mastermonInitialStats(elementKey){
+  const apt = APTITUDE[elementKey];
+  const stats = {};
+  MASTERMON_STATS.forEach(s=>{ stats[s.key] = APTITUDE_INITIAL_VALUE[apt[s.key]]; });
+  return stats;
+}
+function mastermonExpToNext(level){ return 80 + level*15; }
+// ステータス100を基準(倍率1.0)に、上限999で最大約2倍まで効果が伸びる
+function mastermonStatFactor(v){ return 1 + (v-100)/900; }
+
+function loadMastermons(){
+  try{ return JSON.parse(localStorage.getItem(MASTERMON_STORAGE_KEY)) || {}; }catch(err){ return {}; }
+}
+function saveMastermons(data){
+  try{ localStorage.setItem(MASTERMON_STORAGE_KEY, JSON.stringify(data)); }catch(err){}
+}
+function createMastermon(elementKey, name){
+  return {
+    element: elementKey,
+    name: (name||'').trim().slice(0,10) || ELEMENTS[elementKey].label,
+    level: 0, exp: 0, tickets: 0,
+    stats: mastermonInitialStats(elementKey),
+  };
+}
+function applyMastermonTraining(mm, trainingKey){
+  const tpl = TRAINING_MENU.find(t=>t.key===trainingKey);
+  if(!tpl || mm.tickets<=0) return null;
+  const apt = APTITUDE[mm.element];
+  const changes = {};
+  tpl.up.forEach(u=>{
+    const mult = APTITUDE_TRAIN_MULT[apt[u.stat]] || 1;
+    const gain = Math.round(u.amount*mult);
+    mm.stats[u.stat] = mastermonClampStat(mm.stats[u.stat]+gain);
+    changes[u.stat] = (changes[u.stat]||0) + gain;
+  });
+  tpl.down.forEach(d=>{
+    mm.stats[d.stat] = mastermonClampStat(mm.stats[d.stat]-d.amount);
+    changes[d.stat] = (changes[d.stat]||0) - d.amount;
+  });
+  mm.tickets -= 1;
+  return changes;
+}
+// 試合成績に応じてEXPを付与し、レベルアップ毎にトレーニングチケットを1枚獲得
+function awardMastermonExp(mm, opts){
+  opts = opts || {};
+  const kills = opts.kills||0, damage = opts.damage||0, survivalSec = opts.survivalSec||0, champion = !!opts.champion;
+  if(mm.level>=MASTERMON_LEVEL_CAP) return { expGain:0, levelsGained:0 };
+  const expGain = Math.round(kills*15 + damage/20 + survivalSec/10 + (champion?100:0));
+  mm.exp += expGain;
+  let levelsGained = 0;
+  while(mm.level<MASTERMON_LEVEL_CAP && mm.exp>=mastermonExpToNext(mm.level)){
+    mm.exp -= mastermonExpToNext(mm.level);
+    mm.level += 1;
+    mm.tickets += 1;
+    levelsGained += 1;
+  }
+  if(mm.level>=MASTERMON_LEVEL_CAP) mm.exp = 0;
+  return { expGain, levelsGained };
+}
+// マスモンのステータスから、バトル中に適用する各種倍率を算出
+function mastermonEffectMults(mm){
+  const s = mm.stats, f = mastermonStatFactor;
+  return {
+    lifeMult: f(s.life),
+    dmgDealtMult: (f(s.power)+f(s.wisdom))/2,
+    dmgTakenMult: 1/((f(s.power)+f(s.vitality))/2),
+    gutsRegenMult: f(s.wisdom),
+    cooldownMult: 1/f(s.accuracy),
+    speedMult: f(s.evasion),
+  };
+}
+
 const CLIMB_TOLERANCE = 12;
 const UPWARD_BLOCK_THRESHOLD = 35;
 

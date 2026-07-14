@@ -37,6 +37,7 @@
   <div class="pick-label">使用するモンスターを選択</div>
   <div class="monster-grid" id="monsterGrid"></div>
   <div class="grid-note">※各モンスターの状態変化については一番下に記載</div>
+  <div id="mastermonNotice" class="mastermon-notice hidden"></div>
 
   <div class="pick-label" style="margin-top:16px;">ランキング表示名(任意)</div>
   <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
@@ -277,11 +278,32 @@
     </div>
   </div>
   <div id="scoreSubmitStatus"></div>
+  <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
+  <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
+    <div class="mastermon-register-text">チャンピオン獲得！このモンスターをマスモン登録しますか？</div>
+    <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前">
+    <div class="mastermon-register-btnrow">
+      <button id="mastermonRegisterSkipBtn">スキップ</button>
+      <button id="mastermonRegisterConfirmBtn">登録する</button>
+    </div>
+  </div>
   <div class="resultBtnRow">
     <button id="viewRankingBtn">ランキングを見る</button>
     <button id="viewMyStatsBtn">マイ記録</button>
     <button id="replayBtn">もう一度プレイ</button>
   </div>
+</div>
+
+<!-- MASTERMON -->
+<div id="mastermonScreen" class="resultScreen hidden">
+  <div class="rank" style="font-size:32px;">マスモン</div>
+  <div id="mastermonColumns">
+    <div id="mastermonListCol">
+      <div id="mastermonList"></div>
+    </div>
+    <div id="mastermonDetailPanel" class="hidden"></div>
+  </div>
+  <button id="closeMastermonBtn">閉じる</button>
 </div>
 
 <!-- MY STATS -->

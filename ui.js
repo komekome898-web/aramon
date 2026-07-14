@@ -20,9 +20,23 @@ function stateTriggerText(sc){
 function stateDurationText(sc){
   return `効果時間${sc.duration}秒間・クールタイム${sc.cooldown}秒`;
 }
+game.selectedMastermonKey = null;
+
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');
   grid.innerHTML='';
+
+  const mmCard = document.createElement('div');
+  mmCard.className='monster-card mastermon-entry-card';
+  mmCard.id = 'mastermonEntryCard';
+  mmCard.innerHTML = `
+    <div class="m-swatch mastermon-entry-swatch">★</div>
+    <div class="m-name">マスモンから選ぶ</div>
+    <div class="m-stat" id="mastermonEntryCount">登録数 0</div>
+    <div class="m-trait">育てたマスモンで参戦できます</div>`;
+  mmCard.addEventListener('click', openMastermonScreen);
+  grid.appendChild(mmCard);
+
   Object.keys(ELEMENTS).forEach(key=>{
     const el = ELEMENTS[key];
     const card = document.createElement('div');
@@ -39,10 +53,18 @@ function buildMonsterGrid(){
       document.querySelectorAll('.monster-card').forEach(c=>c.classList.remove('selected'));
       card.classList.add('selected');
       game.selectedElement = key;
+      game.selectedMastermonKey = null;
       document.getElementById('joinBtn').disabled=false;
     });
     grid.appendChild(card);
   });
+  updateMastermonEntryCount();
+}
+function updateMastermonEntryCount(){
+  const countEl = document.getElementById('mastermonEntryCount');
+  if(!countEl) return;
+  const n = Object.keys(loadMastermons()).length;
+  countEl.textContent = `登録数 ${n}`;
 }
 function describeStateEffectsText(effects){
   const parts = [];
@@ -402,7 +424,13 @@ function startGame(){
   genRocks();
   genTerrain();
 
-  player = createMonster(game.selectedElement, true, 'プレイヤー');
+  let playerDisplayName = 'プレイヤー';
+  if(game.selectedMastermonKey){
+    const mmData = loadMastermons()[game.selectedMastermonKey];
+    if(mmData) playerDisplayName = mmData.name;
+  }
+  player = createMonster(game.selectedElement, true, playerDisplayName);
+  applyMastermonToPlayer();
   entities.push(player);
   const names = shuffle(BOT_NAMES);
   const botElements = shuffle(Object.keys(ELEMENTS));
@@ -470,6 +498,7 @@ function showResult(isWin, placement){
   document.getElementById('resultScreen').classList.remove('hidden');
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin);
   submitScoreToRanking(isWin, placement);
+  handleMastermonPostMatch(isWin);
 }
 /* =====================================================================
    LOCAL STATS (localStorage)
@@ -544,6 +573,198 @@ function submitScoreToRanking(isWin, placement){
     statusEl.textContent = ok ? 'ランキングに記録しました' : 'ランキング送信に失敗しました';
   });
 }
+/* =====================================================================
+   マスモン(マスターモンスター) UI
+===================================================================== */
+let mastermonDetailKey = null;
+
+function openMastermonScreen(){
+  const data = loadMastermons();
+  const keys = Object.keys(data);
+  const noticeEl = document.getElementById('mastermonNotice');
+  if(keys.length===0){
+    noticeEl.textContent = 'マスモンがいません。チャンピオンを取ってマスモン登録しよう！';
+    noticeEl.classList.remove('hidden');
+    clearTimeout(mastermonNoticeTimer);
+    mastermonNoticeTimer = setTimeout(()=>noticeEl.classList.add('hidden'), 3200);
+    return;
+  }
+  noticeEl.classList.add('hidden');
+  mastermonDetailKey = null;
+  renderMastermonList();
+  document.getElementById('mastermonDetailPanel').classList.add('hidden');
+  document.getElementById('mastermonScreen').classList.remove('hidden');
+  document.getElementById('startScreen').classList.add('hidden');
+}
+let mastermonNoticeTimer = null;
+document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
+  document.getElementById('mastermonScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+});
+
+function renderMastermonList(){
+  const data = loadMastermons();
+  const listEl = document.getElementById('mastermonList');
+  const keys = Object.keys(data);
+  listEl.innerHTML = keys.map(key=>{
+    const mm = data[key];
+    const el = ELEMENTS[key];
+    return `
+      <div class="mastermon-list-item ${key===mastermonDetailKey?'active':''}" data-key="${key}">
+        <div class="mastermon-list-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
+          <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
+        </div>
+        <div class="mastermon-list-text">
+          <div class="mastermon-list-name">${mm.name}</div>
+          <div class="mastermon-list-sub">${el.label}・Lv.${mm.level}</div>
+        </div>
+      </div>`;
+  }).join('');
+  listEl.querySelectorAll('.mastermon-list-item').forEach(item=>{
+    item.addEventListener('click', ()=>{
+      mastermonDetailKey = item.dataset.key;
+      renderMastermonList();
+      renderMastermonDetail(mastermonDetailKey);
+    });
+  });
+}
+
+function renderMastermonDetail(key){
+  const data = loadMastermons();
+  const mm = data[key];
+  const el = ELEMENTS[key];
+  const apt = APTITUDE[key];
+  const panel = document.getElementById('mastermonDetailPanel');
+  panel.classList.remove('hidden');
+
+  const expNeed = mastermonExpToNext(mm.level);
+  const expPct = mm.level>=MASTERMON_LEVEL_CAP ? 100 : Math.round(mm.exp/expNeed*100);
+
+  const statsHtml = MASTERMON_STATS.map(s=>{
+    const v = mm.stats[s.key];
+    const pct = Math.round(v/MASTERMON_STAT_CAP*100);
+    return `
+      <div class="mm-stat-row">
+        <div class="mm-stat-lbl"><span>${s.label}</span><span class="mm-stat-apt">適性${apt[s.key]}</span><span class="mm-stat-val">${v}</span></div>
+        <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
+      </div>`;
+  }).join('');
+
+  const trainingHtml = TRAINING_MENU.map(t=>`
+    <button class="mm-train-btn" data-key="${t.key}" ${mm.tickets<=0?'disabled':''}>
+      <span class="mm-train-name">${t.label}</span>
+      <span class="mm-train-desc">${t.desc}</span>
+    </button>`).join('');
+
+  panel.innerHTML = `
+    <div class="mastermon-detail-head">
+      <div class="mastermon-detail-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
+        <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
+      </div>
+      <div>
+        <div class="mastermon-detail-name">${mm.name}<span class="mastermon-detail-species">(${el.label})</span></div>
+        <div class="mastermon-detail-level">Lv.${mm.level} <span class="mm-ticket-count">🎫 チケット${mm.tickets}</span></div>
+        <div class="mm-exp-track"><div class="mm-exp-fill" style="width:${expPct}%;"></div></div>
+        <div class="mm-exp-label">${mm.level>=MASTERMON_LEVEL_CAP ? 'MAX LEVEL' : `EXP ${mm.exp} / ${expNeed}`}</div>
+      </div>
+    </div>
+    <div class="mm-stats-wrap">${statsHtml}</div>
+    <div class="mm-train-title">トレーニング(チケット消費1枚)</div>
+    <div class="mm-train-grid">${trainingHtml}</div>
+    <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
+  `;
+
+  panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const changes = applyMastermonTraining(mm, btn.dataset.key);
+      if(!changes) return;
+      data[key] = mm;
+      saveMastermons(data);
+      const parts = Object.keys(changes).map(k=>{
+        const label = MASTERMON_STATS.find(s=>s.key===k).label;
+        const v = changes[k];
+        return `${label}${v>0?'+':''}${v}`;
+      });
+      pushToast(`トレーニング結果: ${parts.join(' / ')}`);
+      renderMastermonDetail(key);
+    });
+  });
+  document.getElementById('mastermonUseBtn').addEventListener('click', ()=>{
+    game.selectedElement = key;
+    game.selectedMastermonKey = key;
+    document.querySelectorAll('.monster-card').forEach(c=>c.classList.remove('selected'));
+    document.getElementById('mastermonEntryCard').classList.add('selected');
+    document.getElementById('joinBtn').disabled = false;
+    document.getElementById('mastermonScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+    pushToast(`${mm.name} で参戦準備完了`);
+  });
+}
+
+// バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
+function applyMastermonToPlayer(){
+  if(!game.selectedMastermonKey) return;
+  const data = loadMastermons();
+  const mm = data[game.selectedMastermonKey];
+  if(!mm || !player) return;
+  const mults = mastermonEffectMults(mm);
+  player.maxHp = Math.round(player.maxHp * mults.lifeMult);
+  player.hp = player.maxHp;
+  player.speed = player.speed * mults.speedMult;
+  player.mastermonDmgDealtMult = mults.dmgDealtMult;
+  player.mastermonDmgTakenMult = mults.dmgTakenMult;
+  player.mastermonGutsRegenMult = mults.gutsRegenMult;
+  player.mastermonCooldownMult = mults.cooldownMult;
+}
+
+// 試合終了後：マスモン使用時はEXP付与、未登録の種族でチャンピオンを取った場合は登録を促す
+function handleMastermonPostMatch(isWin){
+  const infoEl = document.getElementById('mastermonResultInfo');
+  const registerEl = document.getElementById('mastermonRegisterPrompt');
+  infoEl.classList.add('hidden');
+  registerEl.classList.add('hidden');
+
+  if(game.selectedMastermonKey){
+    const data = loadMastermons();
+    const mm = data[game.selectedMastermonKey];
+    if(mm){
+      const result = awardMastermonExp(mm, {
+        kills: player.kills, damage: Math.round(player.damageDealt),
+        survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
+      });
+      saveMastermons(data);
+      infoEl.textContent = result.levelsGained>0
+        ? `${mm.name} EXP+${result.expGain}(Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained})`
+        : `${mm.name} EXP+${result.expGain}`;
+      infoEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if(isWin){
+    const data = loadMastermons();
+    if(!data[player.element]){
+      registerEl.classList.remove('hidden');
+      registerEl.dataset.element = player.element;
+      document.getElementById('mastermonRegisterName').value = '';
+    }
+  }
+}
+document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click', ()=>{
+  const registerEl = document.getElementById('mastermonRegisterPrompt');
+  const elementKey = registerEl.dataset.element;
+  if(!elementKey) return;
+  const name = document.getElementById('mastermonRegisterName').value;
+  const data = loadMastermons();
+  data[elementKey] = createMastermon(elementKey, name);
+  saveMastermons(data);
+  registerEl.classList.add('hidden');
+  updateMastermonEntryCount();
+  pushToast('マスモンに登録しました！');
+});
+document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()=>{
+  document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
+});
 function onPlayerDown(){
   if(netState.mode==='multi' && netState.isHost){
     hostSpectating = true;

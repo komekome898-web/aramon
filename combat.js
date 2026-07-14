@@ -137,11 +137,13 @@ function applyDamage(target, dmg, source, opts){
   if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
   if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
   if(target.trainDmgTakenMult){ finalDmg *= target.trainDmgTakenMult; }
+  if(target.mastermonDmgTakenMult){ finalDmg *= target.mastermonDmgTakenMult; }
   const targetStateEff = activeStateEffects(target);
   if(targetStateEff && targetStateEff.dmgTakenMult != null){ finalDmg *= targetStateEff.dmgTakenMult; }
   if(source && source.alive){
     const srcEl = ELEMENTS[source.element];
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
+    if(source.mastermonDmgDealtMult){ finalDmg *= source.mastermonDmgDealtMult; }
   }
   target.hp -= finalDmg; target.hitFlash = 0.18;
   spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
@@ -536,7 +538,7 @@ function checkPassiveStateTriggers(m){
 function effectiveCooldown(m, mv){
   const el = ELEMENTS[m.element];
   const eff = activeStateEffects(m);
-  return mv.cooldown * (el.cooldownMod || 1) * (m.trainCooldownMult || 1) * (eff && eff.cooldownMult || 1);
+  return mv.cooldown * (el.cooldownMod || 1) * (m.trainCooldownMult || 1) * (m.mastermonCooldownMult || 1) * (eff && eff.cooldownMult || 1);
 }
 function effectiveGutsCost(m, mv){
   const eff = activeStateEffects(m);
@@ -776,7 +778,7 @@ function update(dt){
     if(e.dashCooldown>0) e.dashCooldown -= dt;
     if(e.hitFlash>0) e.hitFlash -= dt;
     const stateEffForGuts = activeStateEffects(e);
-    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1)*(stateEffForGuts && stateEffForGuts.gutsRegenMult || 1));
+    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1)*(e.mastermonGutsRegenMult||1)*(stateEffForGuts && stateEffForGuts.gutsRegenMult || 1));
     checkPassiveStateTriggers(e);
     if(e.poisonUntil > matchTime && matchTime >= e.poisonTickAt){
       e.poisonTickAt = matchTime + 1;
