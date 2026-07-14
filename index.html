@@ -37,7 +37,6 @@
   <div class="pick-label">使用するモンスターを選択</div>
   <div class="monster-grid" id="monsterGrid"></div>
   <div class="grid-note">※各モンスターの状態変化については一番下に記載</div>
-  <div id="mastermonNotice" class="mastermon-notice hidden"></div>
 
   <div class="pick-label" style="margin-top:16px;">ランキング表示名(任意)</div>
   <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
@@ -334,6 +333,9 @@
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
 </div>
+
+<!-- MASTERMON NOTICE (fixed overlay, always on top) -->
+<div id="mastermonNotice" class="mastermon-fixed-notice hidden"></div>
 
 <!-- ROTATE DEVICE OVERLAY -->
 <div id="rotateOverlay">

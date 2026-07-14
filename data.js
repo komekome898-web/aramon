@@ -270,7 +270,7 @@ const APTITUDE = {
   leaf:    { life:'A', power:'D', wisdom:'B', accuracy:'C', evasion:'D', vitality:'B' },
   spark:   { life:'D', power:'B', wisdom:'C', accuracy:'B', evasion:'A', vitality:'E' },
   rock:    { life:'C', power:'A', wisdom:'C', accuracy:'E', evasion:'E', vitality:'A' },
-  phoenix: { life:'C', power:'B', wisdom:'C', accuracy:'B', evasion:'B', vitality:'D' },
+  phoenix: { life:'C', power:'E', wisdom:'A', accuracy:'C', evasion:'C', vitality:'C' },
   ark:     { life:'B', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'C' },
   warm:    { life:'B', power:'C', wisdom:'B', accuracy:'D', evasion:'D', vitality:'B' },
   illumine:{ life:'C', power:'B', wisdom:'E', accuracy:'A', evasion:'B', vitality:'C' },
