@@ -41,6 +41,8 @@ const ELEMENTS = {
   phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
   ark:     { label:'アーク',     color:'#f5f2e0', dark:'#8a7a4a', accent:'#ffe9a8', speed:188, hp:145, trait:'grace' },
   warm:    { label:'ワーム',     color:'#9b5fd1', dark:'#5c3680', speed:185, hp:160, trait:'poison' },
+  illumine:{ label:'イルミネ',   color:'#1c1c22', dark:'#0a0a0d', accent:'#c98bff', speed:206, hp:155, trait:'haste', cooldownMod:1/1.5 },
+  fox:     { label:'キュービ',   color:'#f5f2ea', dark:'#b8b2a4', speed:215, hp:105, trait:'bighitbox', hitboxMult:1.5 },
 };
 
 const monsterImages = {};
@@ -163,6 +165,17 @@ const SIGNATURE_MOVES = {
     { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:9, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
     { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:18, projSpeed:500, hitR:34, splash:58, shape:'sphere' },
   ],
+  illumine: [
+    { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:6, projSpeed:540, hitR:12, splash:70, icon:'🗡️' },
+    { name:'アサルトアロー', tier:2, color:'#8b2fc9', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:580, hitR:7,  burst:3, burstGap:0.09, icon:'🗡️' },
+    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:19, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle' },
+  ],
+  fox: [
+    { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:6, projSpeed:530, hitR:13, splash:74 },
+    { name:'超狐火',   tier:2, color:'#eaf6ff', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:540, hitR:7,  burst:3, burstGap:0.1 },
+    { name:'天河天翔', tier:3, color:'#ffffff', dmg:48, cooldown:2.1, gutsCost:18,
+      aoeShape:'rect', range:2200, rectWidth:320 },
+  ],
 };
 
 const TICKET_ITEM = { name:'修行チケット', color:'#9fd1ff', accent:'#ffffff' };
@@ -221,6 +234,14 @@ const STATE_CHANGES = {
   warm: {
     name:'闘魂', duration:20, cooldown:120, trigger:'gutsBelow', triggerValue:0.5,
     effects:{ gutsRegenMult:2, cooldownMult:1/1.5 },
+  },
+  illumine: {
+    name:'我慢', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.3,
+    effects:{ dmgTakenMult:0.5, gutsRegenMult:2, cooldownMult:0.5 },
+  },
+  fox: {
+    name:'陽炎', duration:5, cooldown:60, trigger:'onHitChance', triggerValue:0.2,
+    effects:{ dmgTakenMult:0 },
   },
 };
 

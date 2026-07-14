@@ -7,6 +7,7 @@ const TRAIT_DESC = {
   haste:      '技の連射速度1.5倍',
   grace:      '与えたダメージの45%分 相手のガッツを削る。天の慈悲(tier3)発動後10秒間 被ダメ0.5倍',
   poison:     '技命中で相手をどく状態に(10秒間 1秒毎に5ダメージ、どくではHPは1残る)',
+  bighitbox:  '技の当たり判定が1.5倍大きい',
 };
 function stateTriggerText(sc){
   return {

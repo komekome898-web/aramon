@@ -5,6 +5,7 @@ function fireMove(attacker, target, move){
   }
   const effDmg = effectiveMoveDmg(attacker, move);
   const effProjSpeed = effectiveProjSpeed(attacker, move);
+  const hbMult = ELEMENTS[attacker.element].hitboxMult || 1; // キュービ「当たり判定が大きい」特性
   if(move.melee){
     if(target && target.alive){
       applyDamage(target, effDmg, attacker);
@@ -14,7 +15,7 @@ function fireMove(attacker, target, move){
   }
   if(move.aoeShape){
     const aimAngle = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
-    const width = move.rectWidth||move.beamWidth||move.zigzagWidth||0;
+    const width = (move.rectWidth||move.beamWidth||move.zigzagWidth||0) * hbMult;
     const ae = {
       id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
       angle:aimAngle, dmg:effDmg, color:move.color, range:move.range, width,
@@ -50,7 +51,7 @@ function fireMove(attacker, target, move){
       lobbed:true, startX:attacker.x, startY:attacker.y, startZ:attacker.z,
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
-      dmg:effDmg, color:move.color, hitR:move.hitR, splash:move.splash||0,
+      dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
       icon:move.icon, shape:move.shape,
     });
     return;
@@ -63,7 +64,7 @@ function fireMove(attacker, target, move){
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
       vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
-      dmg:effDmg, color:move.color, hitR:move.hitR, hitW:move.hitW||0, splash:move.splash||0,
+      dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
     });
   }

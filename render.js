@@ -239,6 +239,40 @@ function drawMonsterShape(e, color, dark){
       ctx.restore();
       break;
     }
+    case 'illumine': {
+      const accent = ELEMENTS.illumine.accent;
+      ctx.save();
+      // 黒い刃のようなシルエット
+      ctx.beginPath();
+      ctx.moveTo(0,-r*1.1);
+      ctx.lineTo(r*0.55,-r*0.1);
+      ctx.lineTo(r*0.32,r*0.9);
+      ctx.lineTo(-r*0.32,r*0.9);
+      ctx.lineTo(-r*0.55,-r*0.1);
+      ctx.closePath();
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,-r*0.15,r*0.18,0,Math.PI*2);
+      ctx.fillStyle = accent; ctx.shadowBlur=10; ctx.shadowColor=accent; ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'fox': {
+      ctx.save();
+      // 白い狐顔のシルエット(三角の耳+丸い顔)
+      ctx.beginPath();
+      ctx.moveTo(-r*0.85,-r*0.55); ctx.lineTo(-r*0.35,-r*1.05); ctx.lineTo(-r*0.15,-r*0.35); ctx.closePath();
+      ctx.moveTo(r*0.85,-r*0.55); ctx.lineTo(r*0.35,-r*1.05); ctx.lineTo(r*0.15,-r*0.35); ctx.closePath();
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = dark; ctx.lineWidth = 1.4; ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0,0,r*0.78,r*0.7,0,0,Math.PI*2);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = dark; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,r*0.1); ctx.lineTo(-r*0.18,r*0.42); ctx.lineTo(r*0.18,r*0.42); ctx.closePath();
+      ctx.fillStyle = dark; ctx.fill();
+      ctx.restore();
+      break;
+    }
   }
 }
 function drawElementBadge(e){

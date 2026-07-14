@@ -229,9 +229,10 @@ function tryNonHostPlayerFireVisual(dt){
   player.fireCooldown = effectiveCooldown(player, mv);
   player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
   const effProjSpeed = effectiveProjSpeed(player, mv);
+  const hbMult = ELEMENTS[player.element].hitboxMult || 1;
 
   if(mv.aoeShape){
-    const width = mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0;
+    const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
     const fillSpeed = Math.max(200, effProjSpeed||900);
     const beamRanges = mv.aoeShape==='beams' ? Array.from({length:mv.beamCount||3}, ()=>mv.range) : undefined;
     const life = 0.18 + (beamRanges ? Math.max(...beamRanges) : mv.range)/fillSpeed + 0.25;
@@ -252,7 +253,7 @@ function tryNonHostPlayerFireVisual(dt){
       lobbed:true, startX:player.x, startY:player.y, startZ:player.z,
       landX, landY, arcHeight: mv.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
-      color:mv.color, hitR:mv.hitR, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
+      color:mv.color, hitR:mv.hitR*hbMult, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
     });
   } else if(!mv.melee){
     const burstCount = mv.burst || 1;
@@ -263,7 +264,7 @@ function tryNonHostPlayerFireVisual(dt){
       projectiles.push({
         x:player.x, y:player.y, z:player.z,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
-        color:mv.color, hitR:mv.hitR, hitW:mv.hitW||0,
+        color:mv.color, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
       });
     }
