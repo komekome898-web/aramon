@@ -17,10 +17,8 @@ function stateTriggerText(sc){
     onKill: `撃破時に発動`,
   }[sc.trigger] || '';
 }
-function describeStateChange(key){
-  const sc = STATE_CHANGES[key];
-  if(!sc) return '';
-  return `【${sc.name}】${sc.duration}秒間・クールタイム${sc.cooldown}秒`;
+function stateDurationText(sc){
+  return `効果時間${sc.duration}秒間・クールタイム${sc.cooldown}秒`;
 }
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');
@@ -36,8 +34,7 @@ function buildMonsterGrid(){
       </div>
       <div class="m-name">${el.label}</div>
       <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
-      <div class="m-trait">${TRAIT_DESC[el.trait]}</div>
-      <div class="m-state">${describeStateChange(key)}</div>`;
+      <div class="m-trait">${TRAIT_DESC[el.trait]}</div>`;
     card.addEventListener('click', ()=>{
       document.querySelectorAll('.monster-card').forEach(c=>c.classList.remove('selected'));
       card.classList.add('selected');
@@ -108,6 +105,7 @@ function buildHowtoLists(){
           <div class="howto-state-text">
             <div class="howto-state-name">${el.label}：${sc.name}</div>
             <div class="howto-state-trigger">${stateTriggerText(sc)}</div>
+            <div class="howto-state-duration">${stateDurationText(sc)}</div>
             <div class="howto-state-effect">${describeStateEffectsText(sc.effects)}</div>
           </div>
         </div>`;
