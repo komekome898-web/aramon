@@ -118,6 +118,15 @@ function buildHowtoLists(){
 buildMonsterGrid();
 buildHowtoLists();
 
+document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
+  document.getElementById('howToPlayScreen').classList.remove('hidden');
+  document.getElementById('startScreen').classList.add('hidden');
+});
+document.getElementById('closeHowToPlayBtn').addEventListener('click', ()=>{
+  document.getElementById('howToPlayScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+});
+
 const PLAYER_NAME_KEY = 'aramon_player_name_v1';
 (function restorePlayerName(){
   try{
