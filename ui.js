@@ -977,10 +977,8 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
     return;
   }
-  // Firebase側は kills / damage にのみ索引があるため、mastermonLevelは索引済みフィールドで
-  // 広めに取得してからクライアント側でフィルタ・ソートする(直接orderByChildすると失敗する)
-  const field = mode==='mastermonLevel' ? 'kills' : mode;
-  const fetchCount = mode==='mastermonLevel' ? 500 : (currentRankingMonster==='all' ? 50 : 300);
+  const field = mode; // kills / damage / mastermonLevel いずれもFirebase側で索引済み
+  const fetchCount = currentRankingMonster==='all' ? 50 : 300;
   const rows = await window.__aramonFetchRanking(field, fetchCount);
   if(!rows){
     listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
