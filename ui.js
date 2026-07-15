@@ -557,8 +557,8 @@ function showResult(isWin, placement){
   }
   document.getElementById('resultScreen').classList.remove('hidden');
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin);
-  submitScoreToRanking(isWin, placement);
   handleMastermonPostMatch(isWin);
+  submitScoreToRanking(isWin, placement);
 }
 /* =====================================================================
    LOCAL STATS (localStorage)

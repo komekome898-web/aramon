@@ -491,7 +491,7 @@ function drawProjectile(pr,p){
   ctx.scale(p.scale,p.scale);
 
   if(pr.shape==='triangle'){
-    ctx.shadowBlur=14; ctx.shadowColor=pr.color;
+    if(!renderHeavyLoad){ ctx.shadowBlur=14; ctx.shadowColor=pr.color; }
     const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
     ctx.rotate(travelAngle-camState.yaw);
     const r = (pr.hitR||14)*1.3;
@@ -504,7 +504,7 @@ function drawProjectile(pr,p){
     ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
   } else if(pr.shape==='sphere'){
     const spin = matchTime*6;
-    ctx.shadowBlur=14; ctx.shadowColor=pr.color;
+    if(!renderHeavyLoad){ ctx.shadowBlur=14; ctx.shadowColor=pr.color; }
     const r = (pr.hitR||14)*1.2;
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
     ctx.fillStyle = pr.color; ctx.fill();
@@ -516,12 +516,12 @@ function drawProjectile(pr,p){
       ctx.stroke();
     }
   } else if(pr.icon){
-    ctx.shadowBlur=8; ctx.shadowColor=pr.color;
+    if(!renderHeavyLoad){ ctx.shadowBlur=8; ctx.shadowColor=pr.color; }
     ctx.font = `${Math.round((pr.hitR||10)*1.8)}px sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(pr.icon, 0, 1);
   } else {
-    ctx.shadowBlur=10; ctx.shadowColor=pr.color;
+    if(!renderHeavyLoad){ ctx.shadowBlur=10; ctx.shadowColor=pr.color; }
     ctx.fillStyle=pr.color;
     ctx.beginPath();
     if(pr.hitW>pr.hitR){
@@ -1007,8 +1007,11 @@ function drawVolcanoComplex(group,p){
   }
   ctx.restore();
 }
+let renderHeavyLoad = false;
 function render(){
   ctx.clearRect(0,0,viewW,viewH);
+  // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
+  renderHeavyLoad = (projectiles.length + particles.length) > 22;
   drawSkyAndGround();
   drawLavaZones();
   drawTerrainDecor();
