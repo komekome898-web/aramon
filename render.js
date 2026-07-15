@@ -1109,15 +1109,23 @@ function renderMinimap(){
     miniCtx.fillStyle = 'rgba(90,58,42,0.9)'; miniCtx.fill();
   }
   for(const lz of lavaZones){
+    const r = Math.max(1.5, lz.radius*scale);
     miniCtx.beginPath();
-    miniCtx.arc(lz.x*scale, lz.y*scale, Math.max(1.5, lz.radius*scale), 0, Math.PI*2);
-    miniCtx.fillStyle = 'rgba(255,90,20,0.85)'; miniCtx.fill();
+    miniCtx.arc(lz.x*scale, lz.y*scale, r, 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(120,20,10,0.85)';
+    miniCtx.fill();
+    miniCtx.save();
+    miniCtx.setLineDash([2,2]);
+    miniCtx.strokeStyle = 'rgba(255,200,40,0.95)';
+    miniCtx.lineWidth = 1.2;
+    miniCtx.stroke();
+    miniCtx.restore();
   }
   for(const e of entities){
     if(!e.alive) continue;
     miniCtx.beginPath();
     miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:2.2, 0, Math.PI*2);
-    miniCtx.fillStyle = e.isPlayer ? '#ffffff' : ELEMENTS[e.element].color;
+    miniCtx.fillStyle = e.isPlayer ? '#ffffff' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color);
     miniCtx.fill();
   }
   const px=player.x*scale, py=player.y*scale, yaw=camState.yaw;
