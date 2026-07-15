@@ -619,9 +619,10 @@ function submitScoreToRanking(isWin, placement){
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
   let mastermonName = null;
+  let mastermonLevel = null;
   if(game.selectedMastermonKey){
     const mm = loadMastermons()[game.selectedMastermonKey];
-    if(mm) mastermonName = mm.name;
+    if(mm){ mastermonName = mm.name; mastermonLevel = mm.level; }
   }
   statusEl.textContent = 'ランキングに送信中…';
   window.__aramonSubmitScore({
@@ -629,6 +630,7 @@ function submitScoreToRanking(isWin, placement){
     element: player.element,
     elementLabel: ELEMENTS[player.element].label,
     mastermonName,
+    mastermonLevel,
     kills: player.kills,
     damage: Math.round(player.damageDealt),
     placement: isWin ? 1 : placement,
@@ -967,7 +969,7 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
     return;
   }
-  const field = mode==='kills' ? 'kills' : 'damage';
+  const field = mode==='mastermonLevel' ? 'mastermonLevel' : (mode==='kills' ? 'kills' : 'damage');
   // モンスター別に絞り込む場合、母数を広めに取得してからクライアント側でフィルタする
   const fetchCount = currentRankingMonster==='all' ? 50 : 300;
   const rows = await window.__aramonFetchRanking(field, fetchCount);
@@ -975,14 +977,15 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
     return;
   }
-  const filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
+  let filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
+  if(mode==='mastermonLevel') filtered = filtered.filter(r=>r.mastermonName);
   const top = filtered.slice(0,50);
   if(top.length===0){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
     return;
   }
   listEl.innerHTML = top.map((r,i)=>{
-    const val = mode==='kills' ? (r.kills||0) : (r.damage||0);
+    const val = mode==='mastermonLevel' ? `Lv.${r.mastermonLevel||0}` : (mode==='kills' ? (r.kills||0) : (r.damage||0));
     const nm = (r.name||'名無しのモンスター');
     const rank = i+1;
     const crown = RANK_CROWN[rank];
@@ -1006,7 +1009,8 @@ document.querySelectorAll('.rank-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.rank-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
-    currentRankingMode = tab.dataset.mode==='damage' ? 'damage' : 'kills';
+    const m = tab.dataset.mode;
+    currentRankingMode = (m==='damage' || m==='mastermonLevel') ? m : 'kills';
     loadRankingList(currentRankingMode);
   });
 });
