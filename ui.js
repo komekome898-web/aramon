@@ -789,8 +789,6 @@ function renderMastermonDetail(key){
     <div class="mastermon-detail-body">
       <div class="mastermon-detail-statscol">
         <div class="mm-stats-wrap">${statsHtml}</div>
-        <div class="mm-stat-desc-title">ステータス説明</div>
-        <div class="mm-stat-desc-wrap">${legendHtml}</div>
       </div>
       <div class="mastermon-detail-traincol">
         <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
@@ -798,6 +796,8 @@ function renderMastermonDetail(key){
         <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
           トレーニングを実行(チケット${mm.tickets}枚所持)
         </button>
+        <div class="mm-stat-desc-title">ステータス説明</div>
+        <div class="mm-stat-desc-wrap">${legendHtml}</div>
       </div>
     </div>
   `;

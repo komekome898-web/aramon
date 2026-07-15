@@ -478,8 +478,8 @@
   .mastermon-list-species{ font-size:9px; color:var(--ink-dim); font-weight:500; margin-left:3px; }
   .mastermon-list-sub{ font-size:9px; color:var(--ink-dim); margin-top:2px; white-space:nowrap; }
   #mastermonDetailPanel{
-    flex:1 1 auto; min-width:0; min-height:0; overflow-y:auto; text-align:left;
-    padding:4px 10px 4px 4px; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    flex:1 1 auto; min-width:0; min-height:0; overflow:hidden; text-align:left;
+    padding:4px 10px 4px 4px;
     display:flex; flex-direction:column; gap:14px;
   }
   .mm-ticket-count{ color:var(--amber); }
@@ -556,9 +556,16 @@
   }
   #mastermonDeleteNoBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
-  .mastermon-detail-body{ display:flex; gap:14px; align-items:flex-start; flex-wrap:nowrap; }
-  .mastermon-detail-statscol{ flex:0 0 150px; max-width:150px; }
-  .mastermon-detail-traincol{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px; }
+  .mastermon-detail-body{ display:flex; gap:14px; align-items:stretch; flex-wrap:nowrap; flex:1 1 auto; min-height:0; }
+  .mastermon-detail-statscol{
+    flex:0 0 150px; max-width:150px; min-height:0; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
+  }
+  .mastermon-detail-traincol{
+    flex:1 1 auto; min-width:0; min-height:0; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
+    display:flex; flex-direction:column; gap:10px;
+  }
   .mastermon-execute-btn{
     padding:12px 16px; font-family:'Russo One',sans-serif; font-size:12px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
