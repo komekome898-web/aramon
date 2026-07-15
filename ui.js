@@ -602,6 +602,35 @@ document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
 });
 
+let mastermonPendingDeleteKey = null;
+document.getElementById('mastermonDeleteNoBtn').addEventListener('click', ()=>{
+  document.getElementById('mastermonDeleteConfirm').classList.add('hidden');
+  mastermonPendingDeleteKey = null;
+});
+document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
+  if(!mastermonPendingDeleteKey) return;
+  const deletedKey = mastermonPendingDeleteKey;
+  deleteMastermon(deletedKey);
+  mastermonPendingDeleteKey = null;
+  document.getElementById('mastermonDeleteConfirm').classList.add('hidden');
+  if(game.selectedMastermonKey===deletedKey){
+    game.selectedMastermonKey = null;
+    game.selectedElement = null;
+    document.getElementById('mastermonEntryCard').classList.remove('selected');
+    document.getElementById('joinBtn').disabled = true;
+  }
+  if(mastermonDetailKey===deletedKey) mastermonDetailKey = null;
+  updateMastermonEntryCount();
+  pushToast('マスモンを削除しました');
+  if(Object.keys(loadMastermons()).length===0){
+    document.getElementById('mastermonScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+  } else {
+    document.getElementById('mastermonDetailPanel').classList.add('hidden');
+    renderMastermonList();
+  }
+});
+
 function renderMastermonList(){
   const data = loadMastermons();
   const listEl = document.getElementById('mastermonList');
@@ -671,7 +700,10 @@ function renderMastermonDetail(key){
     <div class="mm-stats-wrap">${statsHtml}</div>
     <div class="mm-train-title">トレーニング(チケット消費1枚)</div>
     <div class="mm-train-grid">${trainingHtml}</div>
-    <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
+    <div class="mastermon-detail-btnrow">
+      <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
+      <button id="mastermonDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
+    </div>
   `;
 
   panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
@@ -688,6 +720,11 @@ function renderMastermonDetail(key){
       pushToast(`トレーニング結果: ${parts.join(' / ')}`);
       renderMastermonDetail(key);
     });
+  });
+  document.getElementById('mastermonDeleteBtn').addEventListener('click', ()=>{
+    mastermonPendingDeleteKey = key;
+    document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
+    document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
   });
   document.getElementById('mastermonUseBtn').addEventListener('click', ()=>{
     game.selectedElement = key;
@@ -741,7 +778,7 @@ function handleMastermonPostMatch(isWin){
     return;
   }
 
-  if(isWin){
+  {
     const data = loadMastermons();
     if(!data[player.element]){
       registerEl.classList.remove('hidden');

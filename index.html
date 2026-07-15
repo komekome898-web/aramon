@@ -279,7 +279,7 @@
   <div id="scoreSubmitStatus"></div>
   <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
   <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
-    <div class="mastermon-register-text">チャンピオン獲得！このモンスターをマスモン登録しますか？</div>
+    <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
     <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前">
     <div class="mastermon-register-btnrow">
       <button id="mastermonRegisterSkipBtn">スキップ</button>
@@ -336,6 +336,17 @@
 
 <!-- MASTERMON NOTICE (fixed overlay, always on top) -->
 <div id="mastermonNotice" class="mastermon-fixed-notice hidden"></div>
+
+<!-- MASTERMON DELETE CONFIRM -->
+<div id="mastermonDeleteConfirm" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box">
+    <div class="mastermon-confirm-text" id="mastermonDeleteText"></div>
+    <div class="mastermon-confirm-btnrow">
+      <button id="mastermonDeleteNoBtn">いいえ</button>
+      <button id="mastermonDeleteYesBtn">はい</button>
+    </div>
+  </div>
+</div>
 
 <!-- ROTATE DEVICE OVERLAY -->
 <div id="rotateOverlay">

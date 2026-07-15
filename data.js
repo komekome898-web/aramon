@@ -310,6 +310,11 @@ function loadMastermons(){
 function saveMastermons(data){
   try{ localStorage.setItem(MASTERMON_STORAGE_KEY, JSON.stringify(data)); }catch(err){}
 }
+function deleteMastermon(elementKey){
+  const data = loadMastermons();
+  delete data[elementKey];
+  saveMastermons(data);
+}
 function createMastermon(elementKey, name){
   return {
     element: elementKey,
