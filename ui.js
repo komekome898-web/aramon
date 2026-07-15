@@ -558,11 +558,17 @@ function submitScoreToRanking(isWin, placement){
   if(!window.__aramonSubmitScore){ statusEl.textContent=''; return; }
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
+  let mastermonName = null;
+  if(game.selectedMastermonKey){
+    const mm = loadMastermons()[game.selectedMastermonKey];
+    if(mm) mastermonName = mm.name;
+  }
   statusEl.textContent = 'ランキングに送信中…';
   window.__aramonSubmitScore({
     name,
     element: player.element,
     elementLabel: ELEMENTS[player.element].label,
+    mastermonName,
     kills: player.kills,
     damage: Math.round(player.damageDealt),
     placement: isWin ? 1 : placement,
@@ -686,6 +692,10 @@ function renderMastermonDetail(key){
     </button>`).join('');
 
   panel.innerHTML = `
+    <div class="mastermon-detail-btnrow">
+      <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
+      <button id="mastermonDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
+    </div>
     <div class="mastermon-detail-head">
       <div class="mastermon-detail-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
         <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
@@ -697,12 +707,14 @@ function renderMastermonDetail(key){
         <div class="mm-exp-label">${mm.level>=MASTERMON_LEVEL_CAP ? 'MAX LEVEL' : `EXP ${mm.exp} / ${expNeed}`}</div>
       </div>
     </div>
-    <div class="mm-stats-wrap">${statsHtml}</div>
-    <div class="mm-train-title">トレーニング(チケット消費1枚)</div>
-    <div class="mm-train-grid">${trainingHtml}</div>
-    <div class="mastermon-detail-btnrow">
-      <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
-      <button id="mastermonDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
+    <div class="mastermon-detail-body">
+      <div class="mastermon-detail-statscol">
+        <div class="mm-stats-wrap">${statsHtml}</div>
+      </div>
+      <div class="mastermon-detail-traincol">
+        <div class="mm-train-title">トレーニング(チケット消費1枚)</div>
+        <div class="mm-train-grid">${trainingHtml}</div>
+      </div>
     </div>
   `;
 
@@ -880,7 +892,8 @@ async function loadRankingList(mode){
     const crown = RANK_CROWN[rank];
     const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
     const iconHtml = r.element ? `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">` : '';
-    return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}<span class="rn">${nm}</span><span class="rv">${val}</span></div>`;
+    const mmHtml = r.mastermonName ? `<span class="rank-mastermon">『${r.mastermonName}』</span>` : '';
+    return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span><span class="rv">${val}</span></div>`;
   }).join('');
 }
 document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRankingScreen(false));

@@ -33,6 +33,7 @@
         if(!cur){
           return {
             name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
+            mastermonName: entry.mastermonName || null,
             kills: entry.kills, damage: entry.damage,
             placement: entry.placement, isWin: entry.isWin,
             time: entry.time, ts: entry.ts,
@@ -40,6 +41,7 @@
         }
         return {
           name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
+          mastermonName: entry.mastermonName || cur.mastermonName || null,
           kills: Math.max(cur.kills||0, entry.kills||0),
           damage: Math.max(cur.damage||0, entry.damage||0),
           placement: Math.min(cur.placement||99, entry.placement||99),
@@ -381,6 +383,7 @@
           if(!best){ best = it.val; continue; }
           best = {
             name: best.name, element: best.element, elementLabel: best.elementLabel,
+            mastermonName: best.mastermonName || it.val.mastermonName || null,
             kills: Math.max(best.kills||0, it.val.kills||0),
             damage: Math.max(best.damage||0, it.val.damage||0),
             placement: Math.min(best.placement||99, it.val.placement||99),

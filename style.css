@@ -390,6 +390,7 @@
   .rank-crown{ font-size:16px; width:18px; text-align:center; flex-shrink:0; }
   .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; flex-shrink:0; }
   .rank-icon{ width:26px; height:26px; border-radius:50%; object-fit:cover; flex-shrink:0; background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
+  .rank-mastermon{ font-size:10px; color:var(--amber); flex-shrink:0; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rank-row .rn{ flex:1; text-align:left; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); flex-shrink:0; }
   #rankingList .rank-empty, #myStatsByElement .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
@@ -542,7 +543,11 @@
   }
   #mastermonDeleteNoBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
-  .mastermon-detail-btnrow{ display:flex; gap:10px; flex-wrap:wrap; }
+  .mastermon-detail-btnrow{ display:flex; gap:10px; flex-wrap:wrap; order:-1; }
+  .mastermon-detail-body{ display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap; }
+  .mastermon-detail-statscol{ flex:1 1 220px; max-width:280px; }
+  .mastermon-detail-traincol{ flex:1 1 260px; min-width:0; }
+  .mm-train-grid{ grid-template-columns:1fr; }
   .mastermon-delete-btn{
     padding:12px 18px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
     color:#ff8a8a; background:rgba(224,71,63,0.08); border:1px solid rgba(224,71,63,0.4); border-radius:6px; cursor:pointer;
