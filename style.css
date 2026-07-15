@@ -490,8 +490,16 @@
   .mm-stats-wrap{ display:flex; flex-direction:column; gap:9px; }
   .mm-stat-row{ display:flex; flex-direction:column; gap:2px; }
   .mm-stat-toprow{ display:flex; align-items:baseline; justify-content:space-between; gap:6px; font-size:11px; color:var(--ink); flex-wrap:nowrap; }
-  .mm-stat-name{ font-weight:600; white-space:nowrap; flex-shrink:0; }
-  .mm-stat-apt{ color:var(--ink-dim); font-size:9px; }
+  .mm-stat-name{ font-weight:600; white-space:nowrap; flex-shrink:0; display:inline-flex; align-items:center; }
+  .mm-stat-apt-badge{
+    display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+    margin-left:5px; border-radius:4px; font-size:9px; font-weight:800; color:#14090a; flex-shrink:0;
+  }
+  .mm-stat-apt-badge.apt-A{ background:#ff5a5a; }
+  .mm-stat-apt-badge.apt-B{ background:#ff8fd1; }
+  .mm-stat-apt-badge.apt-C{ background:#6fe07a; }
+  .mm-stat-apt-badge.apt-D{ background:#5fd4e8; }
+  .mm-stat-apt-badge.apt-E{ background:#b98fe8; }
   .mm-stat-val{ font-family:'Share Tech Mono',monospace; color:var(--ink); white-space:nowrap; flex-shrink:0; }
   .mm-stat-delta{ font-family:'Share Tech Mono',monospace; font-size:10px; font-weight:700; margin-left:3px; }
   .mm-stat-delta.up{ color:#6fe07a; }
