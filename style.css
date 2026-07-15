@@ -367,12 +367,13 @@
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
-  #replayBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn{
-    margin-top:0; padding:13px 30px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
+  #replayBtn, #viewMastermonBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn{
+    margin-top:0; padding:13px 16px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
   #viewRankingBtn, #viewMyStatsBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
-  .resultBtnRow{ display:flex; gap:14px; margin-top:26px; }
+  .resultBtnRow{ display:flex; gap:10px; margin-top:26px; flex-wrap:nowrap; width:100%; max-width:640px; }
+  .resultBtnRow button{ flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
 
@@ -503,20 +504,21 @@
   .mm-train-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:2px; }
   .mm-train-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
   .mm-train-btn{
-    display:flex; flex-direction:column; gap:2px; padding:8px 10px; text-align:left;
+    display:flex; align-items:center; justify-content:center; padding:10px 8px; text-align:center;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px;
     color:var(--ink); cursor:pointer;
   }
   .mm-train-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.12); box-shadow:0 0 0 1px var(--amber) inset; }
-  .mm-train-name{ font-size:12px; font-weight:700; }
-  .mm-train-desc{ font-size:10px; color:var(--ink-dim); }
+  .mm-train-name{ font-size:12px; font-weight:700; text-align:center; }
   .mastermon-use-btn{
-    margin-top:4px; padding:12px 20px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1.5px;
+    padding:13px 20px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1.5px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
-    align-self:flex-start;
+  }
+  #mastermonFooterRow{
+    margin-top:16px; display:flex; gap:10px; flex-wrap:nowrap; justify-content:center; flex-shrink:0;
   }
   #closeMastermonBtn{
-    margin-top:16px; padding:13px 30px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
+    padding:13px 26px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
     flex-shrink:0;
   }
@@ -554,7 +556,6 @@
   }
   #mastermonDeleteNoBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
-  .mastermon-detail-btnrow{ display:flex; gap:10px; flex-wrap:wrap; order:-1; }
   .mastermon-detail-body{ display:flex; gap:14px; align-items:flex-start; flex-wrap:nowrap; }
   .mastermon-detail-statscol{ flex:0 0 150px; max-width:150px; }
   .mastermon-detail-traincol{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px; }

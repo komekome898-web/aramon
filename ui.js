@@ -645,7 +645,8 @@ function submitScoreToRanking(isWin, placement){
 let mastermonDetailKey = null;
 let mastermonSelectedTraining = null;
 
-function openMastermonScreen(){
+let mastermonOpenedFrom = 'title';
+function openMastermonScreen(fromResult){
   const data = loadMastermons();
   const keys = Object.keys(data);
   const noticeEl = document.getElementById('mastermonNotice');
@@ -657,18 +658,25 @@ function openMastermonScreen(){
     return;
   }
   noticeEl.classList.add('hidden');
+  mastermonOpenedFrom = fromResult ? 'result' : 'title';
   if(!mastermonDetailKey || !data[mastermonDetailKey]) mastermonDetailKey = keys[0];
   mastermonSelectedTraining = null;
   renderMastermonList();
   renderMastermonDetail(mastermonDetailKey);
   document.getElementById('mastermonScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('resultScreen').classList.add('hidden');
 }
 let mastermonNoticeTimer = null;
 document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
   document.getElementById('mastermonScreen').classList.add('hidden');
-  document.getElementById('startScreen').classList.remove('hidden');
+  if(mastermonOpenedFrom==='result'){
+    document.getElementById('resultScreen').classList.remove('hidden');
+  } else {
+    document.getElementById('startScreen').classList.remove('hidden');
+  }
 });
+document.getElementById('viewMastermonBtn').addEventListener('click', ()=>openMastermonScreen(true));
 
 let mastermonPendingDeleteKey = null;
 document.getElementById('mastermonDeleteNoBtn').addEventListener('click', ()=>{
@@ -775,14 +783,9 @@ function renderMastermonDetail(key){
   const trainingHtml = TRAINING_MENU.map(t=>`
     <button class="mm-train-btn ${t.key===mastermonSelectedTraining?'active':''}" data-key="${t.key}">
       <span class="mm-train-name">${t.label}</span>
-      <span class="mm-train-desc">${t.desc}</span>
     </button>`).join('');
 
   panel.innerHTML = `
-    <div class="mastermon-detail-btnrow">
-      <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
-      <button id="mastermonDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
-    </div>
     <div class="mastermon-detail-body">
       <div class="mastermon-detail-statscol">
         <div class="mm-stats-wrap">${statsHtml}</div>
@@ -821,12 +824,13 @@ function renderMastermonDetail(key){
     renderMastermonList();
     renderMastermonDetail(key);
   });
-  document.getElementById('mastermonDeleteBtn').addEventListener('click', ()=>{
+  // フッターの参戦/削除ボタンは常設なので、選択中のマスモンに応じてハンドラを差し替える
+  document.getElementById('mastermonDeleteBtn').onclick = ()=>{
     mastermonPendingDeleteKey = key;
     document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
     document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
-  });
-  document.getElementById('mastermonUseBtn').addEventListener('click', ()=>{
+  };
+  document.getElementById('mastermonUseBtn').onclick = ()=>{
     game.selectedElement = key;
     game.selectedMastermonKey = key;
     document.getElementById('joinBtn').disabled = false;
@@ -834,7 +838,7 @@ function renderMastermonDetail(key){
     document.getElementById('startScreen').classList.remove('hidden');
     renderSelectorCards();
     pushToast(`${mm.name} で参戦準備完了`);
-  });
+  };
 }
 
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
