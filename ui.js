@@ -969,16 +969,19 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
     return;
   }
-  const field = mode==='mastermonLevel' ? 'mastermonLevel' : (mode==='kills' ? 'kills' : 'damage');
-  // モンスター別に絞り込む場合、母数を広めに取得してからクライアント側でフィルタする
-  const fetchCount = currentRankingMonster==='all' ? 50 : 300;
+  // Firebase側は kills / damage にのみ索引があるため、mastermonLevelは索引済みフィールドで
+  // 広めに取得してからクライアント側でフィルタ・ソートする(直接orderByChildすると失敗する)
+  const field = mode==='mastermonLevel' ? 'kills' : mode;
+  const fetchCount = mode==='mastermonLevel' ? 500 : (currentRankingMonster==='all' ? 50 : 300);
   const rows = await window.__aramonFetchRanking(field, fetchCount);
   if(!rows){
     listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
     return;
   }
   let filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
-  if(mode==='mastermonLevel') filtered = filtered.filter(r=>r.mastermonName);
+  if(mode==='mastermonLevel'){
+    filtered = filtered.filter(r=>r.mastermonName).sort((a,b)=>(b.mastermonLevel||0)-(a.mastermonLevel||0));
+  }
   const top = filtered.slice(0,50);
   if(top.length===0){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
