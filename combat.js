@@ -21,7 +21,7 @@ function fireMove(attacker, target, move){
       angle:aimAngle, dmg:effDmg, color:move.color, range:move.range, width,
       fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
       fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
-      spawnAt:matchTime, hitIds:new Set(), resolved:false,
+      spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null,
     };
     if(move.aoeShape==='beams'){
       const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -66,6 +66,7 @@ function fireMove(attacker, target, move){
       vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
       dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
+      growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
     });
   }
 }
@@ -624,6 +625,10 @@ function updateProjectiles(dt){
     if(p.delay>0){ p.delay -= dt; continue; }
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
+    if(p.growWithDistance){
+      const growT = clamp(p.traveled/Math.max(p.maxRange,1), 0, 1);
+      p.hitR = p.baseHitR * (1 + growT*1.8); // 飛距離が伸びるほど最大で約2.8倍まで巨大化
+    }
     let hit=false;
     if(p.traveled >= p.maxRange) hit=true;
     if(p.x<0||p.x>WORLD.w||p.y<0||p.y>WORLD.h) hit=true;

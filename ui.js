@@ -539,6 +539,8 @@ document.getElementById('roomListCancelBtn').addEventListener('click', ()=>{
 function showResult(isWin, placement){
   if(game.over) return;
   game.over=true;
+  game.started=false;
+  joinInProgress = false;
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';

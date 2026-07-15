@@ -147,13 +147,13 @@ const SIGNATURE_MOVES = {
   rock: [
     { name:'ロケットパンチ',       tier:1, color:'#a98a68', range:600,  dmg:28, cooldown:0.95, gutsCost:7, projSpeed:440, hitR:14, splash:78, icon:'👊🏿' },
     { name:'掌打',   tier:2, color:'#a98a68', range:1200, dmg:15, cooldown:1.3, gutsCost:10, projSpeed:380, hitR:9,  burst:3, burstGap:0.14, icon:'🤚🏿' },
-    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:62, cooldown:2.4, gutsCost:19, projSpeed:520, hitR:34, splash:60, icon:'🌪️' },
+    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:62, cooldown:2.4, gutsCost:19, projSpeed:520, hitR:34, splash:60, icon:'🌪️', growWithDistance:true },
   ],
   phoenix: [
     { name:'火炎砲',     tier:1, color:'#e8432a', range:725,  dmg:25, cooldown:0.82, gutsCost:6, projSpeed:540, hitR:12, splash:70, icon:'🔥' },
     { name:'火炎連砲', tier:2, color:'#e8432a', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🔥' },
     { name:'ファイアウェーブ', tier:3, color:'#ff8a3d', dmg:47, cooldown:2.0, gutsCost:18,
-      aoeShape:'rect', range:1000, rectWidth:220 },
+      aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava' },
   ],
   ark: [
     { name:'しっぽふり',   tier:1, color:'#ffe9a8', range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:520, hitR:12, splash:70, icon:'🌱' },
@@ -174,7 +174,7 @@ const SIGNATURE_MOVES = {
     { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:6, projSpeed:530, hitR:13, splash:74 },
     { name:'超狐火',   tier:2, color:'#eaf6ff', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:540, hitR:7,  burst:3, burstGap:0.1 },
     { name:'天河天翔', tier:3, color:'#ffffff', dmg:48, cooldown:2.1, gutsCost:18,
-      aoeShape:'rect', range:2200, rectWidth:320 },
+      aoeShape:'rect', range:2200, rectWidth:160 },
   ],
 };
 
