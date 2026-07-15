@@ -319,7 +319,7 @@ function createMastermon(elementKey, name){
   return {
     element: elementKey,
     name: (name||'').trim().slice(0,10) || ELEMENTS[elementKey].label,
-    level: 0, exp: 0, tickets: 0,
+    level: 1, exp: 0, tickets: 1,
     stats: mastermonInitialStats(elementKey),
   };
 }

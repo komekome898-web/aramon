@@ -24,23 +24,74 @@ game.selectedMastermonKey = null;
 
 function buildMonsterGrid(){
   const grid = document.getElementById('monsterGrid');
-  grid.innerHTML='';
+  grid.innerHTML = `
+    <div class="monster-card selector-card" id="mastermonSelectCard"></div>
+    <div class="monster-card selector-card" id="monsterListSelectCard"></div>
+  `;
+  document.getElementById('mastermonSelectCard').addEventListener('click', openMastermonScreen);
+  document.getElementById('monsterListSelectCard').addEventListener('click', openMonsterListScreen);
+  buildMonsterListScreenGrid();
+  renderSelectorCards();
+}
 
-  const mmCard = document.createElement('div');
-  mmCard.className='monster-card mastermon-entry-card';
-  mmCard.id = 'mastermonEntryCard';
-  mmCard.innerHTML = `
-    <div class="m-swatch mastermon-entry-swatch">★</div>
-    <div class="m-name">マスモンから選ぶ</div>
-    <div class="m-stat" id="mastermonEntryCount">登録数 0</div>
-    <div class="m-trait">育てたマスモンで参戦できます</div>`;
-  mmCard.addEventListener('click', openMastermonScreen);
-  grid.appendChild(mmCard);
+function renderSelectorCards(){
+  const mmCard = document.getElementById('mastermonSelectCard');
+  const mmData = game.selectedMastermonKey ? loadMastermons()[game.selectedMastermonKey] : null;
+  if(mmData){
+    const el = ELEMENTS[mmData.element];
+    const mults = mastermonEffectMults(mmData);
+    const effHp = Math.round(el.hp*mults.lifeMult);
+    const effSpeed = Math.round(el.speed*(el.speedMod||1)*mults.speedMult);
+    mmCard.classList.add('selected');
+    mmCard.style.setProperty('--accent', el.accent || el.color);
+    mmCard.innerHTML = `
+      <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
+        <img src="${imgSrcFor(`monsters/${mmData.element}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${mmData.element}')">
+      </div>
+      <div class="m-name">${mmData.name}<span class="m-name-sub">(${el.label})</span></div>
+      <div class="m-stat">Lv.${mmData.level}　HP ${effHp}<br>速さ ${effSpeed}</div>
+      <div class="m-trait">マスモンから選ぶ</div>`;
+  } else {
+    mmCard.classList.remove('selected');
+    mmCard.style.removeProperty('--accent');
+    mmCard.innerHTML = `
+      <div class="m-swatch mastermon-entry-swatch">★</div>
+      <div class="m-name">マスモンから選ぶ</div>
+      <div class="m-stat" id="mastermonEntryCount">登録数 0</div>
+      <div class="m-trait">育てたマスモンで参戦できます</div>`;
+    updateMastermonEntryCount();
+  }
 
+  const listCard = document.getElementById('monsterListSelectCard');
+  if(game.selectedElement && !game.selectedMastermonKey){
+    const el = ELEMENTS[game.selectedElement];
+    listCard.classList.add('selected');
+    listCard.style.setProperty('--accent', el.accent || el.color);
+    listCard.innerHTML = `
+      <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
+        <img src="${imgSrcFor(`monsters/${game.selectedElement}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${game.selectedElement}')">
+      </div>
+      <div class="m-name">${el.label}</div>
+      <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
+      <div class="m-trait">モンスター一覧から選ぶ</div>`;
+  } else {
+    listCard.classList.remove('selected');
+    listCard.style.removeProperty('--accent');
+    listCard.innerHTML = `
+      <div class="m-swatch monsterlist-entry-swatch">🐾</div>
+      <div class="m-name">モンスター一覧から選ぶ</div>
+      <div class="m-stat">${Object.keys(ELEMENTS).length}体から選択</div>
+      <div class="m-trait">お気に入りのモンスターで参戦</div>`;
+  }
+}
+
+function buildMonsterListScreenGrid(){
+  const grid = document.getElementById('monsterListGrid');
+  grid.innerHTML = '';
   Object.keys(ELEMENTS).forEach(key=>{
     const el = ELEMENTS[key];
     const card = document.createElement('div');
-    card.className='monster-card';
+    card.className = 'monster-card' + (game.selectedElement===key && !game.selectedMastermonKey ? ' selected' : '');
     card.style.setProperty('--accent', el.accent || el.color);
     card.innerHTML = `
       <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
@@ -50,16 +101,25 @@ function buildMonsterGrid(){
       <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
       <div class="m-trait">${TRAIT_DESC[el.trait]}</div>`;
     card.addEventListener('click', ()=>{
-      document.querySelectorAll('.monster-card').forEach(c=>c.classList.remove('selected'));
-      card.classList.add('selected');
       game.selectedElement = key;
       game.selectedMastermonKey = null;
-      document.getElementById('joinBtn').disabled=false;
+      document.getElementById('joinBtn').disabled = false;
+      document.getElementById('monsterListScreen').classList.add('hidden');
+      document.getElementById('startScreen').classList.remove('hidden');
+      renderSelectorCards();
     });
     grid.appendChild(card);
   });
-  updateMastermonEntryCount();
 }
+function openMonsterListScreen(){
+  buildMonsterListScreenGrid();
+  document.getElementById('monsterListScreen').classList.remove('hidden');
+  document.getElementById('startScreen').classList.add('hidden');
+}
+document.getElementById('closeMonsterListBtn').addEventListener('click', ()=>{
+  document.getElementById('monsterListScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+});
 function updateMastermonEntryCount(){
   const countEl = document.getElementById('mastermonEntryCount');
   if(!countEl) return;
@@ -624,10 +684,9 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
   if(game.selectedMastermonKey===deletedKey){
     game.selectedMastermonKey = null;
     game.selectedElement = null;
-    document.getElementById('mastermonEntryCard').classList.remove('selected');
     document.getElementById('joinBtn').disabled = true;
   }
-  updateMastermonEntryCount();
+  renderSelectorCards();
   pushToast('マスモンを削除しました');
   const remaining = Object.keys(loadMastermons());
   if(remaining.length===0){
@@ -770,11 +829,10 @@ function renderMastermonDetail(key){
   document.getElementById('mastermonUseBtn').addEventListener('click', ()=>{
     game.selectedElement = key;
     game.selectedMastermonKey = key;
-    document.querySelectorAll('.monster-card').forEach(c=>c.classList.remove('selected'));
-    document.getElementById('mastermonEntryCard').classList.add('selected');
     document.getElementById('joinBtn').disabled = false;
     document.getElementById('mastermonScreen').classList.add('hidden');
     document.getElementById('startScreen').classList.remove('hidden');
+    renderSelectorCards();
     pushToast(`${mm.name} で参戦準備完了`);
   });
 }
@@ -837,7 +895,7 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
   data[elementKey] = createMastermon(elementKey, name);
   saveMastermons(data);
   registerEl.classList.add('hidden');
-  updateMastermonEntryCount();
+  renderSelectorCards();
   pushToast('マスモンに登録しました！');
 });
 document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()=>{
@@ -860,6 +918,7 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
   game.started=false;
   joinInProgress = false;
   document.getElementById('joinBtn').disabled = false;
+  renderSelectorCards();
   if(netState.mode==='multi' && netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
     netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;

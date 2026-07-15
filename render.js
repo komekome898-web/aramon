@@ -1185,7 +1185,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });

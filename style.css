@@ -163,12 +163,19 @@
     padding:14px 20px; text-align:center; box-shadow:0 8px 30px -6px rgba(0,0,0,0.7);
     pointer-events:none;
   }
-  .mastermon-entry-card{ border-color:rgba(244,196,48,0.5); }
-  .mastermon-entry-card.selected{ border-color:var(--amber); box-shadow:0 0 0 2px var(--amber); }
+  .selector-card{ width:160px; border-color:rgba(244,196,48,0.35); }
+  .selector-card.selected{ border-color:var(--accent,var(--amber)); box-shadow:0 0 0 2px var(--accent,var(--amber)); }
+  #monsterListScreen{ justify-content:flex-start; padding-top:24px; }
+  #monsterListScreen .monster-grid{ margin-top:10px; }
   .mastermon-entry-swatch{
     display:flex; align-items:center; justify-content:center; font-size:28px; color:#1a1306;
     background:linear-gradient(180deg,#ffd76a,#f4c430) !important;
   }
+  .monsterlist-entry-swatch{
+    display:flex; align-items:center; justify-content:center; font-size:26px;
+    background:linear-gradient(180deg,#8fb4ff,#4f7fe0) !important;
+  }
+  .m-name-sub{ font-size:10px; color:var(--ink-dim); font-weight:500; margin-left:4px; }
 
   #joinBtn{
     margin-top:22px; padding:14px 38px; font-family:'Russo One',sans-serif; font-size:17px;
@@ -556,7 +563,7 @@
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
   .mastermon-execute-btn:disabled{ opacity:0.35; cursor:not-allowed; }
-  .mm-train-grid{ grid-template-columns:1fr; }
+  .mm-train-grid{ grid-template-columns:repeat(2,1fr); gap:6px; }
   .mastermon-delete-btn{
     padding:12px 18px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
     color:#ff8a8a; background:rgba(224,71,63,0.08); border:1px solid rgba(224,71,63,0.4); border-radius:6px; cursor:pointer;

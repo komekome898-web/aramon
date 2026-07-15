@@ -149,6 +149,8 @@ function applyDamage(target, dmg, source, opts){
   spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
   if(source && source.id!==target.id){
     target.recentAttackers[source.id] = matchTime;
+    target.lastAttackerId = source.id;
+    target.lastAttackerAt = matchTime;
   }
 
   if(source && source.alive && source.id!==target.id){
@@ -211,6 +213,13 @@ function applyDamage(target, dmg, source, opts){
 }
 function killEntity(victim, killer){
   if(!victim.alive) return;
+  // 安全圏外ダメージや溶岩などキラー不在の死亡は、直前に攻撃していた相手にキルを付与する
+  if(!killer){
+    const lastAtk = entities.find(o=>o.id===victim.lastAttackerId);
+    if(lastAtk && lastAtk.alive && lastAtk.id!==victim.id && (matchTime - (victim.lastAttackerAt||0)) <= 8){
+      killer = lastAtk;
+    }
+  }
   victim.alive = false;
   victim.deathAt = matchTime;
   const aliveCount = entities.filter(e=>e.alive).length + 1;
