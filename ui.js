@@ -583,6 +583,7 @@ function submitScoreToRanking(isWin, placement){
    マスモン(マスターモンスター) UI
 ===================================================================== */
 let mastermonDetailKey = null;
+let mastermonSelectedTraining = null;
 
 function openMastermonScreen(){
   const data = loadMastermons();
@@ -596,9 +597,10 @@ function openMastermonScreen(){
     return;
   }
   noticeEl.classList.add('hidden');
-  mastermonDetailKey = null;
+  if(!mastermonDetailKey || !data[mastermonDetailKey]) mastermonDetailKey = keys[0];
+  mastermonSelectedTraining = null;
   renderMastermonList();
-  document.getElementById('mastermonDetailPanel').classList.add('hidden');
+  renderMastermonDetail(mastermonDetailKey);
   document.getElementById('mastermonScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
 }
@@ -625,16 +627,18 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
     document.getElementById('mastermonEntryCard').classList.remove('selected');
     document.getElementById('joinBtn').disabled = true;
   }
-  if(mastermonDetailKey===deletedKey) mastermonDetailKey = null;
   updateMastermonEntryCount();
   pushToast('マスモンを削除しました');
-  if(Object.keys(loadMastermons()).length===0){
+  const remaining = Object.keys(loadMastermons());
+  if(remaining.length===0){
     document.getElementById('mastermonScreen').classList.add('hidden');
     document.getElementById('startScreen').classList.remove('hidden');
-  } else {
-    document.getElementById('mastermonDetailPanel').classList.add('hidden');
-    renderMastermonList();
+    return;
   }
+  if(mastermonDetailKey===deletedKey) mastermonDetailKey = remaining[0];
+  mastermonSelectedTraining = null;
+  renderMastermonList();
+  renderMastermonDetail(mastermonDetailKey);
 });
 
 function renderMastermonList(){
@@ -644,11 +648,28 @@ function renderMastermonList(){
   listEl.innerHTML = keys.map(key=>{
     const mm = data[key];
     const el = ELEMENTS[key];
+    const active = key===mastermonDetailKey;
+    const iconHtml = `
+      <div class="mastermon-list-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
+        <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
+      </div>`;
+    if(active){
+      const expNeed = mastermonExpToNext(mm.level);
+      const expPct = mm.level>=MASTERMON_LEVEL_CAP ? 100 : Math.round(mm.exp/expNeed*100);
+      return `
+        <div class="mastermon-list-item active" data-key="${key}">
+          ${iconHtml}
+          <div class="mastermon-list-text">
+            <div class="mastermon-list-name">${mm.name}<span class="mastermon-list-species">(${el.label})</span></div>
+            <div class="mastermon-list-sub">Lv.${mm.level} <span class="mm-ticket-count">🎫${mm.tickets}</span></div>
+            <div class="mm-exp-track small"><div class="mm-exp-fill" style="width:${expPct}%;"></div></div>
+            <div class="mm-exp-label">${mm.level>=MASTERMON_LEVEL_CAP ? 'MAX LEVEL' : `EXP ${mm.exp} / ${expNeed}`}</div>
+          </div>
+        </div>`;
+    }
     return `
-      <div class="mastermon-list-item ${key===mastermonDetailKey?'active':''}" data-key="${key}">
-        <div class="mastermon-list-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-          <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
-        </div>
+      <div class="mastermon-list-item" data-key="${key}">
+        ${iconHtml}
         <div class="mastermon-list-text">
           <div class="mastermon-list-name">${mm.name}</div>
           <div class="mastermon-list-sub">${el.label}・Lv.${mm.level}</div>
@@ -657,7 +678,9 @@ function renderMastermonList(){
   }).join('');
   listEl.querySelectorAll('.mastermon-list-item').forEach(item=>{
     item.addEventListener('click', ()=>{
+      if(item.dataset.key===mastermonDetailKey) return;
       mastermonDetailKey = item.dataset.key;
+      mastermonSelectedTraining = null;
       renderMastermonList();
       renderMastermonDetail(mastermonDetailKey);
     });
@@ -672,21 +695,26 @@ function renderMastermonDetail(key){
   const panel = document.getElementById('mastermonDetailPanel');
   panel.classList.remove('hidden');
 
-  const expNeed = mastermonExpToNext(mm.level);
-  const expPct = mm.level>=MASTERMON_LEVEL_CAP ? 100 : Math.round(mm.exp/expNeed*100);
+  const preview = mastermonSelectedTraining ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
 
   const statsHtml = MASTERMON_STATS.map(s=>{
     const v = mm.stats[s.key];
     const pct = Math.round(v/MASTERMON_STAT_CAP*100);
+    const delta = preview ? preview[s.key] : null;
+    const deltaHtml = delta ? `<span class="mm-stat-delta ${delta>0?'up':'down'}">(${delta>0?'+':''}${delta})</span>` : '';
     return `
       <div class="mm-stat-row">
-        <div class="mm-stat-lbl"><span>${s.label}</span><span class="mm-stat-apt">適性${apt[s.key]}</span><span class="mm-stat-val">${v}</span></div>
+        <div class="mm-stat-lbl"><span>${s.label}</span><span class="mm-stat-apt">適性${apt[s.key]}</span><span class="mm-stat-val">${v}${deltaHtml}</span></div>
         <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
       </div>`;
   }).join('');
 
+  const legendHtml = MASTERMON_STATS.map(s=>
+    `<div class="mm-stat-desc-row"><b style="color:${s.color}">${s.label}</b>：${s.desc}</div>`
+  ).join('');
+
   const trainingHtml = TRAINING_MENU.map(t=>`
-    <button class="mm-train-btn" data-key="${t.key}" ${mm.tickets<=0?'disabled':''}>
+    <button class="mm-train-btn ${t.key===mastermonSelectedTraining?'active':''}" data-key="${t.key}">
       <span class="mm-train-name">${t.label}</span>
       <span class="mm-train-desc">${t.desc}</span>
     </button>`).join('');
@@ -696,42 +724,43 @@ function renderMastermonDetail(key){
       <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
       <button id="mastermonDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
     </div>
-    <div class="mastermon-detail-head">
-      <div class="mastermon-detail-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-        <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
-      </div>
-      <div>
-        <div class="mastermon-detail-name">${mm.name}<span class="mastermon-detail-species">(${el.label})</span></div>
-        <div class="mastermon-detail-level">Lv.${mm.level} <span class="mm-ticket-count">🎫 チケット${mm.tickets}</span></div>
-        <div class="mm-exp-track"><div class="mm-exp-fill" style="width:${expPct}%;"></div></div>
-        <div class="mm-exp-label">${mm.level>=MASTERMON_LEVEL_CAP ? 'MAX LEVEL' : `EXP ${mm.exp} / ${expNeed}`}</div>
-      </div>
-    </div>
     <div class="mastermon-detail-body">
       <div class="mastermon-detail-statscol">
         <div class="mm-stats-wrap">${statsHtml}</div>
+        <div class="mm-stat-desc-title">ステータス説明</div>
+        <div class="mm-stat-desc-wrap">${legendHtml}</div>
       </div>
       <div class="mastermon-detail-traincol">
-        <div class="mm-train-title">トレーニング(チケット消費1枚)</div>
+        <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
         <div class="mm-train-grid">${trainingHtml}</div>
+        <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
+          トレーニングを実行(チケット${mm.tickets}枚所持)
+        </button>
       </div>
     </div>
   `;
 
   panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      const changes = applyMastermonTraining(mm, btn.dataset.key);
-      if(!changes) return;
-      data[key] = mm;
-      saveMastermons(data);
-      const parts = Object.keys(changes).map(k=>{
-        const label = MASTERMON_STATS.find(s=>s.key===k).label;
-        const v = changes[k];
-        return `${label}${v>0?'+':''}${v}`;
-      });
-      pushToast(`トレーニング結果: ${parts.join(' / ')}`);
+      mastermonSelectedTraining = (mastermonSelectedTraining===btn.dataset.key) ? null : btn.dataset.key;
       renderMastermonDetail(key);
     });
+  });
+  document.getElementById('mastermonExecuteTrainBtn').addEventListener('click', ()=>{
+    if(!mastermonSelectedTraining) return;
+    const changes = applyMastermonTraining(mm, mastermonSelectedTraining);
+    if(!changes) return;
+    data[key] = mm;
+    saveMastermons(data);
+    const parts = Object.keys(changes).map(k=>{
+      const label = MASTERMON_STATS.find(s=>s.key===k).label;
+      const v = changes[k];
+      return `${label}${v>0?'+':''}${v}`;
+    });
+    pushToast(`トレーニング結果: ${parts.join(' / ')}`);
+    mastermonSelectedTraining = null;
+    renderMastermonList();
+    renderMastermonDetail(key);
   });
   document.getElementById('mastermonDeleteBtn').addEventListener('click', ()=>{
     mastermonPendingDeleteKey = key;

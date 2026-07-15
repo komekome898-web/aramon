@@ -453,50 +453,54 @@
     width:min(94vw,900px); margin-top:6px; flex:1 1 auto; min-height:0;
   }
   #mastermonListCol{
-    display:flex; flex-direction:column; flex:0 0 auto; width:220px; min-height:0;
+    display:flex; flex-direction:column; flex:0 0 auto; width:150px; min-height:0;
     overflow-y:auto; gap:8px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #mastermonList{ display:flex; flex-direction:column; gap:8px; width:100%; }
   .mastermon-list-item{
-    display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px;
+    display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); cursor:pointer; text-align:left;
   }
-  .mastermon-list-item.active{ border-color:var(--amber); background:rgba(244,196,48,0.08); }
-  .mastermon-list-icon{ width:34px; height:34px; border-radius:50%; overflow:hidden; flex-shrink:0; }
+  .mastermon-list-item.active{ border-color:var(--amber); background:rgba(244,196,48,0.08); align-items:flex-start; }
+  .mastermon-list-icon{ width:28px; height:28px; border-radius:50%; overflow:hidden; flex-shrink:0; }
+  .mastermon-list-item.active .mastermon-list-icon{ width:36px; height:36px; }
   .mastermon-list-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .mastermon-list-name{ font-size:13px; font-weight:600; color:var(--ink); }
-  .mastermon-list-sub{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+  .mastermon-list-text{ min-width:0; }
+  .mastermon-list-name{ font-size:12px; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mastermon-list-species{ font-size:9px; color:var(--ink-dim); font-weight:500; margin-left:3px; }
+  .mastermon-list-sub{ font-size:9px; color:var(--ink-dim); margin-top:2px; white-space:nowrap; }
   #mastermonDetailPanel{
     flex:1 1 auto; min-width:0; min-height:0; overflow-y:auto; text-align:left;
     padding:4px 10px 4px 4px; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:14px;
   }
-  .mastermon-detail-head{ display:flex; gap:14px; align-items:center; }
-  .mastermon-detail-icon{ width:60px; height:60px; border-radius:50%; overflow:hidden; flex-shrink:0; }
-  .mastermon-detail-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .mastermon-detail-name{ font-size:16px; font-weight:700; color:var(--ink); }
-  .mastermon-detail-species{ font-size:11px; color:var(--ink-dim); font-weight:500; margin-left:6px; }
-  .mastermon-detail-level{ font-size:12px; color:var(--ink-dim); margin-top:4px; display:flex; gap:12px; align-items:center; }
   .mm-ticket-count{ color:var(--amber); }
-  .mm-exp-track{ width:220px; max-width:60vw; height:6px; border-radius:3px; background:rgba(255,255,255,0.08); margin-top:6px; overflow:hidden; }
+  .mm-exp-track{ width:100%; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); margin-top:5px; overflow:hidden; }
+  .mm-exp-track.small{ height:4px; margin-top:4px; }
   .mm-exp-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); }
-  .mm-exp-label{ font-size:10px; color:var(--ink-dim); margin-top:3px; font-family:'Share Tech Mono',monospace; }
+  .mm-exp-label{ font-size:9px; color:var(--ink-dim); margin-top:3px; font-family:'Share Tech Mono',monospace; }
   .mm-stats-wrap{ display:flex; flex-direction:column; gap:9px; }
   .mm-stat-row{ display:flex; flex-direction:column; gap:3px; }
-  .mm-stat-lbl{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--ink); }
-  .mm-stat-lbl span:first-child{ width:56px; flex-shrink:0; font-weight:600; }
-  .mm-stat-apt{ color:var(--ink-dim); font-size:10px; }
-  .mm-stat-val{ margin-left:auto; font-family:'Share Tech Mono',monospace; color:var(--ink); }
+  .mm-stat-lbl{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink); flex-wrap:wrap; }
+  .mm-stat-lbl span:first-child{ width:52px; flex-shrink:0; font-weight:600; }
+  .mm-stat-apt{ color:var(--ink-dim); font-size:9px; }
+  .mm-stat-val{ margin-left:auto; font-family:'Share Tech Mono',monospace; color:var(--ink); display:flex; gap:4px; align-items:center; }
+  .mm-stat-delta{ font-family:'Share Tech Mono',monospace; font-size:10px; font-weight:700; }
+  .mm-stat-delta.up{ color:#6fe07a; }
+  .mm-stat-delta.down{ color:#ff6b6b; }
   .mm-stat-track{ width:100%; height:7px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; }
   .mm-stat-fill{ height:100%; }
-  .mm-train-title{ font-size:12px; letter-spacing:1px; color:var(--ink-dim); margin-top:2px; }
+  .mm-stat-desc-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:6px; }
+  .mm-stat-desc-wrap{ display:flex; flex-direction:column; gap:4px; }
+  .mm-stat-desc-row{ font-size:10px; line-height:1.6; color:var(--ink-dim); }
+  .mm-train-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:2px; }
   .mm-train-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
   .mm-train-btn{
     display:flex; flex-direction:column; gap:2px; padding:8px 10px; text-align:left;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px;
     color:var(--ink); cursor:pointer;
   }
-  .mm-train-btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  .mm-train-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.12); box-shadow:0 0 0 1px var(--amber) inset; }
   .mm-train-name{ font-size:12px; font-weight:700; }
   .mm-train-desc{ font-size:10px; color:var(--ink-dim); }
   .mastermon-use-btn{
@@ -545,8 +549,13 @@
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
   .mastermon-detail-btnrow{ display:flex; gap:10px; flex-wrap:wrap; order:-1; }
   .mastermon-detail-body{ display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap; }
-  .mastermon-detail-statscol{ flex:1 1 220px; max-width:280px; }
-  .mastermon-detail-traincol{ flex:1 1 260px; min-width:0; }
+  .mastermon-detail-statscol{ flex:0 1 190px; max-width:190px; }
+  .mastermon-detail-traincol{ flex:1 1 260px; min-width:0; display:flex; flex-direction:column; gap:10px; }
+  .mastermon-execute-btn{
+    padding:12px 16px; font-family:'Russo One',sans-serif; font-size:12px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+  }
+  .mastermon-execute-btn:disabled{ opacity:0.35; cursor:not-allowed; }
   .mm-train-grid{ grid-template-columns:1fr; }
   .mastermon-delete-btn{
     padding:12px 18px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;

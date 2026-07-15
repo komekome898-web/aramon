@@ -255,12 +255,12 @@ const MASTERMON_STAT_CAP = 999;
 const MASTERMON_LEVEL_CAP = 100;
 
 const MASTERMON_STATS = [
-  { key:'life',     label:'ライフ',   color:'#f4c430' },
-  { key:'power',    label:'ちから',   color:'#e0473f' },
-  { key:'wisdom',   label:'かしこさ', color:'#5fbf5f' },
-  { key:'accuracy', label:'命中',    color:'#ef6fb0' },
-  { key:'evasion',  label:'回避',    color:'#4fc9e0' },
-  { key:'vitality', label:'丈夫さ',   color:'#2d4fae' },
+  { key:'life',     label:'ライフ',   color:'#f4c430', desc:'HPに影響' },
+  { key:'power',    label:'ちから',   color:'#e0473f', desc:'技の威力・被ダメージに影響' },
+  { key:'wisdom',   label:'かしこさ', color:'#5fbf5f', desc:'技の威力・ガッツ回復速度に影響' },
+  { key:'accuracy', label:'命中',    color:'#ef6fb0', desc:'技の連射速度に影響' },
+  { key:'evasion',  label:'回避',    color:'#4fc9e0', desc:'移動速度に影響' },
+  { key:'vitality', label:'丈夫さ',   color:'#2d4fae', desc:'被ダメージに影響' },
 ];
 
 // モンスター毎のステータス適正(A〜E)。イルミネ・キュービは指定値、他は近縁の性質を参考に設定。
@@ -323,21 +323,29 @@ function createMastermon(elementKey, name){
     stats: mastermonInitialStats(elementKey),
   };
 }
-function applyMastermonTraining(mm, trainingKey){
+// 実際には反映せず、実行した場合の各ステータス変動量(クランプ後の差分)だけを計算する
+function previewMastermonTraining(mm, trainingKey){
   const tpl = TRAINING_MENU.find(t=>t.key===trainingKey);
-  if(!tpl || mm.tickets<=0) return null;
+  if(!tpl) return null;
   const apt = APTITUDE[mm.element];
   const changes = {};
   tpl.up.forEach(u=>{
     const mult = APTITUDE_TRAIN_MULT[apt[u.stat]] || 1;
     const gain = Math.round(u.amount*mult);
-    mm.stats[u.stat] = mastermonClampStat(mm.stats[u.stat]+gain);
-    changes[u.stat] = (changes[u.stat]||0) + gain;
+    const newVal = mastermonClampStat(mm.stats[u.stat]+gain);
+    changes[u.stat] = newVal - mm.stats[u.stat];
   });
   tpl.down.forEach(d=>{
-    mm.stats[d.stat] = mastermonClampStat(mm.stats[d.stat]-d.amount);
-    changes[d.stat] = (changes[d.stat]||0) - d.amount;
+    const newVal = mastermonClampStat(mm.stats[d.stat]-d.amount);
+    changes[d.stat] = newVal - mm.stats[d.stat];
   });
+  return changes;
+}
+function applyMastermonTraining(mm, trainingKey){
+  if(mm.tickets<=0) return null;
+  const changes = previewMastermonTraining(mm, trainingKey);
+  if(!changes) return null;
+  Object.keys(changes).forEach(k=>{ mm.stats[k] = mastermonClampStat(mm.stats[k]+changes[k]); });
   mm.tickets -= 1;
   return changes;
 }
