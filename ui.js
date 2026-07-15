@@ -28,7 +28,7 @@ function buildMonsterGrid(){
     <div class="monster-card selector-card" id="mastermonSelectCard"></div>
     <div class="monster-card selector-card" id="monsterListSelectCard"></div>
   `;
-  document.getElementById('mastermonSelectCard').addEventListener('click', openMastermonScreen);
+  document.getElementById('mastermonSelectCard').addEventListener('click', ()=>openMastermonScreen(false));
   document.getElementById('monsterListSelectCard').addEventListener('click', openMonsterListScreen);
   buildMonsterListScreenGrid();
   renderSelectorCards();
