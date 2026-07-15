@@ -764,6 +764,12 @@ function renderMastermonDetail(key){
   const panel = document.getElementById('mastermonDetailPanel');
   panel.classList.remove('hidden');
 
+  // 再描画でDOMが作り直されるとスクロール位置が失われるため、事前に保存しておく
+  const prevStatsCol = panel.querySelector('.mastermon-detail-statscol');
+  const prevTrainCol = panel.querySelector('.mastermon-detail-traincol');
+  const savedStatsScroll = prevStatsCol ? prevStatsCol.scrollTop : 0;
+  const savedTrainScroll = prevTrainCol ? prevTrainCol.scrollTop : 0;
+
   const preview = mastermonSelectedTraining ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
 
   const statsHtml = MASTERMON_STATS.map(s=>{
@@ -807,6 +813,8 @@ function renderMastermonDetail(key){
       </div>
     </div>
   `;
+  panel.querySelector('.mastermon-detail-statscol').scrollTop = savedStatsScroll;
+  panel.querySelector('.mastermon-detail-traincol').scrollTop = savedTrainScroll;
 
   panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
