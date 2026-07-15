@@ -771,7 +771,11 @@ function renderMastermonDetail(key){
     const deltaHtml = delta ? `<span class="mm-stat-delta ${delta>0?'up':'down'}">(${delta>0?'+':''}${delta})</span>` : '';
     return `
       <div class="mm-stat-row">
-        <div class="mm-stat-lbl"><span>${s.label}</span><span class="mm-stat-apt">適性${apt[s.key]}</span><span class="mm-stat-val">${v}${deltaHtml}</span></div>
+        <div class="mm-stat-toprow">
+          <span class="mm-stat-name">${s.label}</span>
+          <span class="mm-stat-val">${v}${deltaHtml}</span>
+        </div>
+        <div class="mm-stat-apt">適性${apt[s.key]}</div>
         <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
       </div>`;
   }).join('');
