@@ -850,7 +850,7 @@ function fillShape(pts, color, alpha){
   ctx.fill();
   ctx.restore();
 }
-// 溶岩流のように波打つ帯を、焦茶(外)→赤(中)→オレンジ(芯)の3層で描画する
+// 溶岩流のように波打つ帯を、焦茶(外)→赤(中)→オレンジ(芯)の3層のポリゴンで地面に沿って描画する
 function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
   if(outline) strokeDashedShape(outline, '#ff8a3d', 0.5*fadeAlpha);
@@ -860,31 +860,32 @@ function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
 
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
   const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-  const segs = Math.max(8, Math.round(20*(curReach/Math.max(ae.range,1))));
+  const segs = Math.max(8, Math.round(18*(curReach/Math.max(ae.range,1))));
   const t = matchTime*2.6;
-  const pts = [];
-  for(let i=0;i<=segs;i++){
-    const along = curReach*(i/segs);
-    const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
-    const pp = project(ae.x+fx*along+rx*wobble, ae.y+fy*along+ry*wobble, 0);
-    if(pp) pts.push(pp);
-  }
-  if(pts.length<2) return;
 
-  const strokeLayer = (color, widthMult, alphaMult, glow)=>{
-    ctx.save();
-    ctx.lineJoin='round'; ctx.lineCap='round';
-    ctx.globalAlpha = Math.min(1, alphaMult*fadeAlpha);
-    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, ae.width*widthMult);
-    if(glow && !renderHeavyLoad){ ctx.shadowBlur=glow; ctx.shadowColor=color; }
-    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
-    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
-    ctx.stroke();
-    ctx.restore();
-  };
-  strokeLayer('#3a1710', 0.95, 0.6, 14);
-  strokeLayer('#c9291a', 0.6,  0.75, 16);
-  strokeLayer('#ff9a3d', 0.28, 0.95, 20);
+  // 世界座標でうねる帯状ポリゴンを作る(各頂点を個別に地面(z=0)へ投影するため、遠近感が正しく付く)
+  function buildBandPoints(halfWidthFrac){
+    const top=[], bot=[];
+    for(let i=0;i<=segs;i++){
+      const along = curReach*(i/segs);
+      const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
+      const hw = ae.width*halfWidthFrac*0.5;
+      const cx = ae.x+fx*along+rx*wobble, cy = ae.y+fy*along+ry*wobble;
+      const tp = project(cx+rx*hw, cy+ry*hw, 0);
+      const bp = project(cx-rx*hw, cy-ry*hw, 0);
+      if(tp) top.push(tp);
+      if(bp) bot.push(bp);
+    }
+    if(top.length<2 || bot.length<2) return null;
+    return top.concat(bot.reverse());
+  }
+
+  const outer = buildBandPoints(0.95);
+  const mid   = buildBandPoints(0.6);
+  const core  = buildBandPoints(0.28);
+  if(outer) fillShape(outer, '#3a1710', 0.55*fadeAlpha);
+  if(mid)   fillShape(mid,   '#c9291a', 0.7*fadeAlpha);
+  if(core)  fillShape(core,  '#ff9a3d', 0.9*fadeAlpha);
 }
 function drawAreaEffects(){
   for(const ae of areaEffects){
