@@ -1,12 +1,16 @@
 let lastT = performance.now();
 
 /* =====================================================================
-   MULTIPLAYER MATCH LOGIC (全員並行実行方式)
+   MULTIPLAYER MATCH LOGIC (ホスト完全権威方式)
    - 全プレイヤーが同じシードから同じ初期状態(岩・地形・ルート・ボット構成・
-     全員のスポーン地点)をローカルで再現する
-   - 各自は「自分の入力」だけを高頻度で送信し、他人のエンティティは
-     受け取った入力を使って各自のローカルでシミュレーションする
-   - ホスト/非ホストという役割の違いは、部屋作成時のシード決定にしか残らない
+     全員のスポーン地点)をローカルで再現し、エンティティのid割り当ても
+     全員で完全に一致する(host/非host問わず同じ順序で生成するため)
+   - ホストだけが本物のシミュレーション(ボットAI・当たり判定・ダメージ・ゾーン)を
+     実行し、その結果(全エンティティの位置・HP・ガッツ・状態)を高頻度で配信する
+   - 非ホストは「自分の入力→自分の見た目の予測」だけをローカルで行い、
+     自分以外の全エンティティ(ボットや他プレイヤー)はホストの配信値へ
+     滑らかに追従表示するだけにする(自分でシミュレーションしない)
+   - これにより非ホスト側での「同期ズレ」「ボットが止まって見える」を構造的に防ぐ
 ===================================================================== */
 const INPUT_SEND_INTERVAL = 0.06;   // 自分の入力を送る間隔(秒) 約16回/秒
 let lastInputSendAt = 0;
@@ -136,7 +140,7 @@ async function beginMultiplayerMatch(){
     });
   }
   window.__aramonWatchAuthState(netState.roomId, (authState)=>{
-    if(authState) applyAuthState(authState);
+    if(authState && !netState.isHost) applyAuthState(authState);
   });
 
   document.getElementById('startScreen').classList.add('hidden');
@@ -278,7 +282,8 @@ function tryNonHostPlayerFireVisual(dt){
 // ===== ホスト専用: 命中報告を確定計算し、authStateとして配信 =====
 const processedHitKeys = new Set();
 let authPublishTimer = 0;
-const AUTH_PUBLISH_INTERVAL = 0.02;
+let authPublishInFlight = false;
+const AUTH_PUBLISH_INTERVAL = 0.05; // 約20回/秒。高頻度配信+クライアント側補間で滑らかさを両立する
 
 function processHitAsHost(hit){
   if(!hit) return;
@@ -291,22 +296,29 @@ function processHitAsHost(hit){
   applyDamage(target, hit.dmg, source||null, {authoritative:true});
 }
 
+// 全エンティティ(ボット含む)を id(全クライアント共通の決定的な採番) をキーに配信する。
+// 以前は netPlayerId を持つ人間プレイヤーしか配信していなかったため、非ホスト側でボットが
+// 一切動かず止まって見える不具合の直接の原因になっていた。
 function buildAuthStatePayload(){
-  const payload = { players:{}, zone:{
+  const payload = { zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
-  }, aliveCount: entities.filter(e=>e.alive).length, projectiles: [] };
+  }, aliveCount: entities.filter(e=>e.alive).length, entities: [], projectiles: [] };
   for(const e of entities){
-    if(!e.netPlayerId) continue;
-    payload.players[e.netPlayerId] = {
+    payload.entities.push({
+      id: e.id,
+      x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.z||0),
+      f: Math.round((e.facingAngle||0)*1000)/1000,
       hp: Math.round(e.hp), maxHp: e.maxHp, guts: Math.round(e.guts), maxGuts: e.maxGuts,
       alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
-      x: Math.round(e.x), y: Math.round(e.y), moveTierUnlocked: e.moveTierUnlocked,
+      placement: e.placement||null,
+      moveTierUnlocked: e.moveTierUnlocked, moveTierSelected: e.moveTierSelected,
       trainCooldownMult: e.trainCooldownMult, trainGutsCostReduction: e.trainGutsCostReduction,
       trainProjSpeedMult: e.trainProjSpeedMult, trainDmgMult: e.trainDmgMult,
       trainDmgTakenMult: e.trainDmgTakenMult, trainSpeedMult: e.trainSpeedMult,
       stateUntil: e.stateUntil, stateCooldownUntil: e.stateCooldownUntil,
-    };
+      dashCooldown: Math.round((e.dashCooldown||0)*100)/100,
+    });
   }
   for(const p of projectiles){
     payload.projectiles.push({
@@ -318,11 +330,14 @@ function buildAuthStatePayload(){
     id: ae.id, kind: ae.kind, x: Math.round(ae.x), y: Math.round(ae.y), angle: ae.angle, c: ae.color,
     range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
     beamSpreadDeg: ae.beamSpreadDeg, life: ae.life, fillSpeed: ae.fillSpeed, telegraphTime: ae.telegraphTime,
-    beamRanges: ae.beamRanges||null,
+    beamRanges: ae.beamRanges||null, style: ae.style||null,
   }));
   return payload;
 }
 
+// 非ホスト側: 自分以外の全エンティティはホストの値へ「補間目標」を更新するだけにし、
+// 実際の座標移動は毎フレームのlerpで滑らかに追従させる(loop()内で処理)。
+// 自分自身は入力予測を活かしつつ、大きくズレた時だけ軽く補正する。
 function applyAuthState(authState){
   if(!authState) return;
   if(authState.zone){
@@ -332,13 +347,23 @@ function applyAuthState(authState){
     zoneState.phaseIndex = authState.zone.phase;
     zoneState.shrinking = authState.zone.shrinking;
   }
-  const players = authState.players || {};
-  for(const netId in players){
-    const a = players[netId];
-    const ent = entities.find(e=>e.netPlayerId===netId);
+  const list = Array.isArray(authState.entities) ? authState.entities : [];
+  for(const a of list){
+    const ent = entities.find(e=>e.id===a.id);
     if(!ent) continue;
+    if(ent.isPlayer){
+      // 自分の位置はローカル予測を優先。60px以上ズレた場合のみ静かに補正する
+      if(Math.hypot(ent.x-a.x, ent.y-a.y) > 60){ ent.x=a.x; ent.y=a.y; }
+    } else {
+      ent.netTargetX = a.x; ent.netTargetY = a.y; ent.netTargetZ = a.z;
+      ent.facingAngle = a.f;
+      if(typeof ent.x!=='number' || typeof ent.y!=='number'){ ent.x=a.x; ent.y=a.y; }
+    }
     ent.hp = a.hp; ent.maxHp = a.maxHp; ent.guts = a.guts; ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
+    if(a.placement!=null) ent.placement = a.placement;
+    if(typeof a.moveTierSelected==='number') ent.moveTierSelected = a.moveTierSelected;
+    if(typeof a.dashCooldown==='number') ent.dashCooldown = a.dashCooldown;
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
     if(typeof a.trainGutsCostReduction==='number') ent.trainGutsCostReduction = a.trainGutsCostReduction;
     if(typeof a.trainProjSpeedMult==='number') ent.trainProjSpeedMult = a.trainProjSpeedMult;
@@ -355,8 +380,6 @@ function applyAuthState(authState){
       ent.alive = false; ent.hp = 0;
       if(ent.isPlayer && !game.over) onPlayerDown();
     }
-    // 位置は大きくズレた時だけ補正(通常はローカル計算を優先し滑らかさを保つ)
-    if(!ent.isPlayer && Math.hypot(ent.x-a.x, ent.y-a.y) > 400){ ent.x=a.x; ent.y=a.y; }
   }
   if(Array.isArray(authState.projectiles)){
     const localVisualOnly = projectiles.filter(p=>p.visualOnly);
@@ -372,6 +395,7 @@ function applyAuthState(authState){
         range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
         beamSpreadDeg: ae.beamSpreadDeg, spawnAt: matchTime, life: ae.life,
         fillSpeed: ae.fillSpeed||900, telegraphTime: ae.telegraphTime||0.18, beamRanges: ae.beamRanges||undefined,
+        style: ae.style||null,
       });
     }
   }
@@ -391,9 +415,12 @@ function loop(now){
       update(dt);
       sendLocalInputIfMultiplayer(now);
       authPublishTimer += dt;
-      if(authPublishTimer >= AUTH_PUBLISH_INTERVAL){
+      if(authPublishTimer >= AUTH_PUBLISH_INTERVAL && !authPublishInFlight){
         authPublishTimer = 0;
-        window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload());
+        authPublishInFlight = true;
+        window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload())
+          .catch(()=>{})
+          .finally(()=>{ authPublishInFlight = false; });
       }
     } else {
       // 非ホスト: ダメージ・ガッツ・キル・ゾーン等の確定計算は一切行わず、
@@ -406,6 +433,12 @@ function loop(now){
         if(e.fireCooldown>0) e.fireCooldown -= dt;
         if(e.dashCooldown>0) e.dashCooldown -= dt;
         if(e.hitFlash>0) e.hitFlash -= dt;
+        if(e!==player && typeof e.netTargetX==='number'){
+          const lerpT = Math.min(1, dt*10);
+          e.x = lerp(e.x, e.netTargetX, lerpT);
+          e.y = lerp(e.y, e.netTargetY, lerpT);
+          if(typeof e.netTargetZ==='number') e.z = lerp(e.z, e.netTargetZ, lerpT);
+        }
       }
       tryNonHostPlayerFireVisual(dt);
       // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
