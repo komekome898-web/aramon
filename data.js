@@ -43,6 +43,8 @@ const ELEMENTS = {
   warm:    { label:'ワーム',     color:'#9b5fd1', dark:'#5c3680', speed:185, hp:160, trait:'poison' },
   illumine:{ label:'イルミネ',   color:'#1c1c22', dark:'#0a0a0d', accent:'#c98bff', speed:206, hp:155, trait:'haste', cooldownMod:1/1.5 },
   fox:     { label:'キュービ',   color:'#f5f2ea', dark:'#b8b2a4', speed:215, hp:105, trait:'bighitbox', hitboxMult:1.5 },
+  mocchi:  { label:'モッチー',   color:'#ff8fc4', dark:'#b3548a', speed:190, hp:115, trait:'soft', dmgTakenMod:0.8 },
+  suezo:   { label:'スエゾー',   color:'#ffdd33', dark:'#a8901f', speed:222, hp:76,  trait:'gutsbreak' },
 };
 
 const monsterImages = {};
@@ -176,6 +178,19 @@ const SIGNATURE_MOVES = {
     { name:'天河天翔', tier:3, color:'#ffffff', dmg:48, cooldown:2.1, gutsCost:18,
       aoeShape:'rect', range:2200, rectWidth:160 },
   ],
+  mocchi: [
+    { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻' },
+    { name:'さくらふぶき', tier:2, color:'#ff8fc4', range:1400, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🌸' },
+    { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:46, cooldown:2.1, gutsCost:18, projSpeed:1400,
+      aoeShape:'rect', range:1000, rectWidth:240 },
+  ],
+  suezo: [
+    { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:6, projSpeed:520, hitR:12, splash:70, icon:'💧' },
+    { name:'熱視線', tier:2, color:'#ffdd33', dmg:37, cooldown:1.1, gutsCost:9,
+      aoeShape:'rect', range:1300, rectWidth:70 },
+    { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:45, cooldown:2.0, gutsCost:18,
+      aoeShape:'fanZigzag', range:1300, fanAngleDeg:30 },
+  ],
 };
 
 const TICKET_ITEM = { name:'修行チケット', color:'#9fd1ff', accent:'#ffffff' };
@@ -199,7 +214,7 @@ const TRAINING_TYPES = Object.keys(TRAINING_ITEMS);
 
 // ===== モンスター専用の状態変化 =====
 // trigger: 'hpBelow'(HP割合が閾値以下) / 'gutsBelow'(ガッツ割合が閾値以下) /
-//          'onHitChance'(技命中時に確率で) / 'onKill'(撃破時に確実に)
+//          'onHitChance'(技命中時に確率で) / 'onHitTakenChance'(技を受けた時に確率で) / 'onKill'(撃破時に確実に)
 // effects: dmgMult(技ダメージ) gutsRegenMult(ガッツ回復速度) cooldownMult(技のクールタイム、小さいほど速い)
 //          gutsCostMult(技の消費ガッツ) speedMult(移動速度) dmgTakenMult(被ダメージ) lifestealPct(与ダメの何%を自分のHPに回復)
 const STATE_CHANGES = {
@@ -243,6 +258,14 @@ const STATE_CHANGES = {
     name:'陽炎', duration:5, cooldown:60, trigger:'onHitChance', triggerValue:0.2,
     effects:{ dmgTakenMult:0 },
   },
+  mocchi: {
+    name:'元気', duration:20, cooldown:60, trigger:'onHitChance', triggerValue:0.2,
+    effects:{ cooldownMult:0.5, gutsCostMult:0.5 },
+  },
+  suezo: {
+    name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,
+    effects:{ gutsRegenMult:2, speedMult:1.5 },
+  },
 };
 
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
@@ -275,6 +298,8 @@ const APTITUDE = {
   warm:    { life:'B', power:'C', wisdom:'B', accuracy:'D', evasion:'D', vitality:'B' },
   illumine:{ life:'C', power:'B', wisdom:'E', accuracy:'A', evasion:'B', vitality:'C' },
   fox:     { life:'C', power:'D', wisdom:'B', accuracy:'A', evasion:'B', vitality:'E' },
+  mocchi:  { life:'C', power:'C', wisdom:'C', accuracy:'B', evasion:'B', vitality:'B' },
+  suezo:   { life:'D', power:'C', wisdom:'A', accuracy:'B', evasion:'D', vitality:'D' },
 };
 const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
 const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };

@@ -273,6 +273,23 @@ function drawMonsterShape(e, color, dark){
       ctx.restore();
       break;
     }
+    case 'mocchi': {
+      ctx.beginPath(); ctx.ellipse(0,r*0.05,r*1.05,r*0.95,0,0,Math.PI*2);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle='rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.ellipse(-r*0.32,-r*0.32,r*0.28,r*0.18,-0.4,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=dark;
+      [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*r*0.22,-r*0.05,r*0.07,0,Math.PI*2); ctx.fill(); });
+      break;
+    }
+    case 'suezo': {
+      ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#ffffff';
+      [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*r*0.4,-r*0.15,r*0.3,0,Math.PI*2); ctx.fill(); });
+      ctx.fillStyle='#10131a';
+      [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*r*0.4,-r*0.1,r*0.15,0,Math.PI*2); ctx.fill(); });
+      break;
+    }
   }
 }
 function drawElementBadge(e){
@@ -948,6 +965,39 @@ function drawAreaEffects(){
           for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
           ctx.stroke();
           ctx.restore();
+        }
+      }
+    } else if(ae.kind==='fanZigzag'){
+      const half = (ae.fanAngleDeg||30)*Math.PI/360;
+      const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
+      if(outline) strokeDashedShape(outline, ae.color, 0.5*fadeAlpha);
+      if(!inTelegraph){
+        const curReach = Math.min(ae.range, fillDist);
+        if(curReach>2){
+          const segs = Math.max(6, Math.round(16*(curReach/Math.max(ae.range,1))));
+          const t = matchTime*3;
+          const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+          const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+          const pts = [];
+          for(let i=0;i<=segs;i++){
+            const along = curReach*(i/segs);
+            const maxLat = along*Math.tan(half)*0.85;
+            const lateral = Math.sin(along*0.02+t)*maxLat;
+            const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+            if(pp) pts.push(pp);
+          }
+          if(pts.length>=2){
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, 0.85*fadeAlpha);
+            ctx.strokeStyle = ae.color; ctx.lineWidth = 7;
+            if(!renderHeavyLoad){ ctx.shadowBlur=22; ctx.shadowColor=ae.color; }
+            ctx.lineJoin='round'; ctx.lineCap='round';
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x,pts[0].y);
+            for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
       }
     }

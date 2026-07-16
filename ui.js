@@ -8,12 +8,15 @@ const TRAIT_DESC = {
   grace:      '与えたダメージの45%分 相手のガッツを削る。天の慈悲(tier3)発動後10秒間 被ダメ0.5倍',
   poison:     '技命中で相手をどく状態に(10秒間 1秒毎に5ダメージ、どくではHPは1残る)',
   bighitbox:  '技の当たり判定が1.5倍大きい',
+  soft:       '被ダメ0.8倍',
+  gutsbreak:  '与えたダメージの40%分 相手のガッツを削る',
 };
 function stateTriggerText(sc){
   return {
     hpBelow: `HPが${Math.round(sc.triggerValue*100)}%以下で発動`,
     gutsBelow: `ガッツが${Math.round(sc.triggerValue*100)}%以下で発動`,
     onHitChance: `技命中時${Math.round(sc.triggerValue*100)}%の確率で発動`,
+    onHitTakenChance: `技を受けた時${Math.round(sc.triggerValue*100)}%の確率で発動`,
     onKill: `撃破時に発動`,
   }[sc.trigger] || '';
 }

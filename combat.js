@@ -134,7 +134,7 @@ function applyDamage(target, dmg, source, opts){
   }
 
   let finalDmg = dmg;
-  if(target.element==='rock'){ finalDmg *= ELEMENTS.rock.dmgTakenMod; }
+  if(ELEMENTS[target.element].dmgTakenMod){ finalDmg *= ELEMENTS[target.element].dmgTakenMod; }
   if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
   if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
   if(target.trainDmgTakenMult){ finalDmg *= target.trainDmgTakenMult; }
@@ -152,6 +152,11 @@ function applyDamage(target, dmg, source, opts){
     target.recentAttackers[source.id] = matchTime;
     target.lastAttackerId = source.id;
     target.lastAttackerAt = matchTime;
+  }
+  // 状態変化「逆上」(スエゾー): 技を受けた時に確率で発動
+  const targetSc = STATE_CHANGES[target.element];
+  if(targetSc && targetSc.trigger==='onHitTakenChance' && canTriggerState(target) && Math.random() < targetSc.triggerValue){
+    activateState(target);
   }
 
   if(source && source.alive && source.id!==target.id){
@@ -175,6 +180,13 @@ function applyDamage(target, dmg, source, opts){
     }
     if(source.element==='ark'){
       const drained = Math.min(finalDmg*0.45, target.guts);
+      if(drained > 0){
+        target.guts = Math.max(0, target.guts - drained);
+        spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
+      }
+    }
+    if(source.element==='suezo'){
+      const drained = Math.min(finalDmg*0.4, target.guts);
       if(drained > 0){
         target.guts = Math.max(0, target.guts - drained);
         spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
@@ -892,7 +904,7 @@ function updateAreaEffects(dt){
         if(!ent.alive || ent.id===ae.ownerId) continue;
         if(ae.hitIds.has(ent.id)) continue;
         let hit = false;
-        if(ae.kind==='fan'){
+        if(ae.kind==='fan' || ae.kind==='fanZigzag'){
           hit = hitTestFan(origin, ent, ae.angle, curReach, (ae.fanAngleDeg||45)*Math.PI/360);
         } else if(ae.kind==='rect' || ae.kind==='zigzag'){
           hit = hitTestRect(origin, ent, ae.angle, curReach, ae.width/2);
