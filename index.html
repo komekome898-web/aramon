@@ -21,6 +21,7 @@
 </head>
 <body>
 
+<div id="appRoot">
 <canvas id="gameCanvas"></canvas>
 
 <!-- START SCREEN -->
@@ -361,7 +362,10 @@
   </div>
 </div>
 
-<!-- ROTATE DEVICE OVERLAY -->
+</div>
+<!-- appRoot end -->
+
+<!-- ROTATE DEVICE OVERLAY (無効化済み: 縦向きロックでも強制横向き表示に対応したため) -->
 <div id="rotateOverlay">
   <svg viewBox="0 0 24 24" width="56" height="56"><path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5C23.44 4.84 18.29 0 12 0l-.66.03L14.92 3.5l1.56-.98zM12.66 23.97c6.29-.43 11.44-5.27 11.44-11.46h-1.5c0 5.27-4.04 9.66-9.05 10.45l-.89-3.96-1.56.98 2.56 4.99zM.5 12c0-5.27 4.04-9.66 9.05-10.45l.89 3.96 1.56-.98L9.44.54C3.15.97-2 5.81-2 12.5h1.5z" fill="white" transform="translate(0.5,0) scale(0.9)"/></svg>
   <div class="rotate-text">横向きにしてプレイしてください</div>

@@ -86,8 +86,9 @@ window.addEventListener('pointermove', (e)=>{
   camSnap.active = false;
   const dx = e.clientX-lookDrag.lastX, dy = e.clientY-lookDrag.lastY;
   lookDrag.lastX = e.clientX; lookDrag.lastY = e.clientY;
-  camState.yaw += dx*0.0045;
-  camState.pitch = clamp(camState.pitch - dy*0.0025, 0.05, 0.55);
+  const logical = toLogicalDelta(dx, dy);
+  camState.yaw += logical.x*0.0045;
+  camState.pitch = clamp(camState.pitch - logical.y*0.0025, 0.05, 0.55);
   if(Math.hypot(e.clientX-tapTrack.startX, e.clientY-tapTrack.startY) > 10) tapTrack.moved = true;
 });
 window.addEventListener('pointerup', (e)=>{
@@ -95,7 +96,8 @@ window.addEventListener('pointerup', (e)=>{
   lookDrag.active=false;
   const elapsed = performance.now()-tapTrack.startTime;
   if(!tapTrack.moved && elapsed < 300 && e.pointerId===tapTrack.pointerId){
-    handleEnemyTap(e.clientX, e.clientY);
+    const p = toLogicalPoint(e.clientX, e.clientY);
+    handleEnemyTap(p.x, p.y);
   }
 });
 window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===lookDrag.pointerId) lookDrag.active=false; });
@@ -106,8 +108,9 @@ function updateJoystickKnob(cx,cy){
   let dx = cx-joystick.baseX, dy = cy-joystick.baseY;
   const d = Math.hypot(dx,dy);
   if(d > joystick.radius){ dx = dx/d*joystick.radius; dy = dy/d*joystick.radius; }
-  joystick.nx = dx/joystick.radius; joystick.ny = dy/joystick.radius;
-  joyKnobEl.style.transform = `translate(${dx}px,${dy}px)`;
+  const logical = toLogicalDelta(dx, dy);
+  joystick.nx = logical.x/joystick.radius; joystick.ny = logical.y/joystick.radius;
+  joyKnobEl.style.transform = `translate(${logical.x}px,${logical.y}px)`;
 }
 joyBaseEl.addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();

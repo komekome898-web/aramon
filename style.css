@@ -10,6 +10,19 @@
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
   :fullscreen{ background:var(--bg-void); }
+
+  /* ---------- 強制横向き表示 ----------
+     端末が縦向き(向きロック中含む)のときは #appRoot ごと90度回転させ、
+     物理的な回転操作なしに常に横向きでプレイできるようにする。
+     JS側(world.js の getViewportSize)で html.force-landscape の付け外しを行う。 */
+  #appRoot{ position:fixed; inset:0; width:100%; height:100%; }
+  html.force-landscape #appRoot{
+    position:absolute; top:0; left:100%;
+    width:100vh; height:100vw;
+    transform-origin:0 0;
+    transform:rotate(90deg);
+  }
+
   #gameCanvas{position:absolute; top:0; left:0; display:block; touch-action:none; cursor:grab;}
 
   .hidden{display:none !important;}
@@ -570,8 +583,6 @@
     touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
   }
   .mastermon-detail-traincol{
-    flex:1 1 auto; min-width:0; min-height:0; overflow-y:auto;
-    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
     display:flex; flex-direction:column; gap:10px;
   }
   .mastermon-execute-btn{
@@ -586,8 +597,19 @@
   }
 
   /* ---------- マスモン: 詳細情報/技一覧/トレーニング 切替UI ---------- */
+  .mastermon-detail-maincol{
+    flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px;
+  }
+  .mm-subview-header{
+    display:flex; align-items:center; justify-content:space-between; gap:10px; flex-shrink:0;
+  }
+  .mm-subview-title{ font-size:13px; font-weight:700; letter-spacing:1px; color:var(--ink); }
+  .mm-subview-content{
+    flex:1 1 auto; min-height:0; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
+  }
   .mastermon-menu-body{
-    display:flex; flex-direction:column; gap:10px; flex:1 1 auto; min-height:0; justify-content:center;
+    display:flex; flex-direction:column; gap:10px; justify-content:center; min-height:100%;
   }
   .mm-menu-btn{
     display:flex; align-items:center; gap:12px; width:100%;
@@ -602,19 +624,13 @@
   }
   .mm-menu-btn-label{ flex:1 1 auto; }
 
-  .mastermon-subview{ display:flex; flex-direction:column; gap:10px; flex:1 1 auto; min-height:0; }
   .mm-back-btn{
-    align-self:flex-start; flex-shrink:0;
-    padding:8px 16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;
-    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+    flex-shrink:0; padding:8px 16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
-  .mm-back-btn:active{ background:rgba(255,255,255,0.14); }
+  .mm-back-btn:active{ filter:brightness(0.92); }
 
-  .mastermon-info-cols{ display:flex; gap:14px; flex:1 1 auto; min-height:0; }
-  .mastermon-info-col{
-    flex:1 1 0; min-width:0; min-height:0; overflow-y:auto;
-    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
-  }
+  .mastermon-info-col-single{ display:flex; flex-direction:column; }
   .mm-info-col-title{
     font-size:11px; letter-spacing:2px; color:var(--amber); font-weight:700; text-transform:uppercase; margin-bottom:8px;
   }
@@ -630,16 +646,13 @@
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; padding:8px 10px;
   }
   .mm-info-state-card{
-    margin-top:8px; background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
     border-radius:8px; padding:8px 10px;
   }
   .mm-info-state-name{ font-weight:700; color:#ff6b6b; font-size:12px; margin-bottom:4px; }
   .mm-info-state-line{ font-size:10px; line-height:1.7; color:var(--ink-dim); }
 
-  .mm-moves-list{
-    display:flex; flex-direction:column; gap:8px; flex:1 1 auto; min-height:0; overflow-y:auto;
-    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
-  }
+  .mm-moves-list{ display:flex; flex-direction:column; gap:8px; }
   .mm-move-card{
     display:flex; align-items:center; gap:10px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; padding:8px 12px;
@@ -652,10 +665,12 @@
   }
   .mm-move-info{ flex:1 1 auto; min-width:0; }
   .mm-move-name{ font-weight:700; font-size:13px; color:var(--ink); }
+  .mm-move-icon{ margin-left:6px; font-size:14px; }
   .mm-move-stats{
     display:flex; gap:10px; flex-wrap:wrap; margin-top:3px;
     font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim);
   }
+  .mm-move-feature{ margin-top:4px; font-size:10px; line-height:1.5; color:var(--ink-dim); }
 
   /* ---------- HOW TO PLAY GUIDE ---------- */
   #howToPlayScreen{
@@ -723,16 +738,4 @@
     #turnRightBtn{ right:16px; bottom:140px; width:46px; height:46px; }
   }
 
-  #rotateOverlay{
-    display:none; position:fixed; inset:0; z-index:9999;
-    background:#04060a; flex-direction:column; align-items:center; justify-content:center; gap:18px;
-    text-align:center; padding:24px;
-  }
-  #rotateOverlay svg{ animation:rotateHint 1.6s ease-in-out infinite; }
-  @keyframes rotateHint{ 0%,100%{ transform:rotate(0deg);} 50%{ transform:rotate(90deg);} }
-  .rotate-text{ font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:2px; color:var(--ink); }
-
-  @media (max-width:932px) and (orientation:portrait){
-    #rotateOverlay{ display:flex; }
-    #startScreen, #hud, #resultScreen{ display:none !important; }
-  }
+  #rotateOverlay{ display:none; }

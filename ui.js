@@ -789,15 +789,107 @@ function renderMastermonDetail(key){
     pushToast(`${mm.name} で参戦準備完了`);
   };
 
-  if(mastermonDetailTab==='info') return renderMastermonInfoTab(panel, key, mm, el);
-  if(mastermonDetailTab==='moves') return renderMastermonMovesTab(panel, key, el);
-  if(mastermonDetailTab==='training') return renderMastermonTrainingTab(panel, key, mm, apt, data);
-  renderMastermonMenuTab(panel);
+  // 再描画でDOMが作り直されるとスクロール位置が失われるため、事前に保存しておく
+  const prevStatsCol = panel.querySelector('.mastermon-detail-statscol');
+  const prevContent = panel.querySelector('.mm-subview-content');
+  const savedStatsScroll = prevStatsCol ? prevStatsCol.scrollTop : 0;
+  const savedContentScroll = prevContent ? prevContent.scrollTop : 0;
+
+  const preview = (mastermonDetailTab==='training' && mastermonSelectedTraining) ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
+  const statsColHtml = buildMastermonStatsColHtml(mm, apt, preview);
+
+  const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング' };
+  let contentHtml;
+  if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
+  else if(mastermonDetailTab==='moves') contentHtml = buildMastermonMovesHtml(key);
+  else if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
+  else contentHtml = buildMastermonMenuHtml();
+
+  const headerHtml = mastermonDetailTab ? `
+    <div class="mm-subview-header">
+      <div class="mm-subview-title">${TAB_TITLES[mastermonDetailTab]}</div>
+      <button class="mm-back-btn">← 戻る</button>
+    </div>` : '';
+
+  panel.innerHTML = `
+    <div class="mastermon-detail-body">
+      ${statsColHtml}
+      <div class="mastermon-detail-maincol">
+        ${headerHtml}
+        <div class="mm-subview-content">${contentHtml}</div>
+      </div>
+    </div>`;
+
+  const statsColEl = panel.querySelector('.mastermon-detail-statscol');
+  const contentEl = panel.querySelector('.mm-subview-content');
+  if(statsColEl) statsColEl.scrollTop = savedStatsScroll;
+  if(contentEl) contentEl.scrollTop = savedContentScroll;
+
+  if(!mastermonDetailTab){
+    panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        mastermonDetailTab = btn.dataset.tab;
+        renderMastermonDetail(key);
+      });
+    });
+    return;
+  }
+
+  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
+    mastermonDetailTab = null;
+    mastermonSelectedTraining = null;
+    renderMastermonDetail(key);
+  });
+
+  if(mastermonDetailTab==='training'){
+    panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        mastermonSelectedTraining = (mastermonSelectedTraining===btn.dataset.key) ? null : btn.dataset.key;
+        renderMastermonDetail(key);
+      });
+    });
+    document.getElementById('mastermonExecuteTrainBtn').addEventListener('click', ()=>{
+      if(!mastermonSelectedTraining) return;
+      const changes = applyMastermonTraining(mm, mastermonSelectedTraining);
+      if(!changes) return;
+      data[key] = mm;
+      saveMastermons(data);
+      const parts = Object.keys(changes).map(k=>{
+        const label = MASTERMON_STATS.find(s=>s.key===k).label;
+        const v = changes[k];
+        return `${label}${v>0?'+':''}${v}`;
+      });
+      pushToast(`トレーニング結果: ${parts.join(' / ')}`);
+      mastermonSelectedTraining = null;
+      renderMastermonList();
+      renderMastermonDetail(key);
+    });
+  }
 }
 
-// メニュー画面: 詳細情報 / 技と状態変化 / トレーニング の3ボタン
-function renderMastermonMenuTab(panel){
-  panel.innerHTML = `
+// ステータス(ライフ・ちから等)バー: メニュー/詳細情報/技一覧/トレーニングの全画面で共通表示
+function buildMastermonStatsColHtml(mm, apt, preview){
+  const statsHtml = MASTERMON_STATS.map(s=>{
+    const v = mm.stats[s.key];
+    const pct = Math.round(v/MASTERMON_STAT_CAP*100);
+    const delta = preview ? preview[s.key] : null;
+    const deltaHtml = delta ? `<span class="mm-stat-delta ${delta>0?'up':'down'}">(${delta>0?'+':''}${delta})</span>` : '';
+    const aptGrade = apt[s.key];
+    return `
+      <div class="mm-stat-row">
+        <div class="mm-stat-toprow">
+          <span class="mm-stat-name">${s.label}<span class="mm-stat-apt-badge apt-${aptGrade}">${aptGrade}</span></span>
+          <span class="mm-stat-val">${v}${deltaHtml}</span>
+        </div>
+        <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
+      </div>`;
+  }).join('');
+  return `<div class="mastermon-detail-statscol"><div class="mm-stats-wrap">${statsHtml}</div></div>`;
+}
+
+// メニュー画面: 詳細情報 / 技一覧 / トレーニング の3ボタン
+function buildMastermonMenuHtml(){
+  return `
     <div class="mastermon-menu-body">
       <button class="mm-menu-btn" data-tab="info">
         <span class="mm-menu-btn-icon">📊</span>
@@ -812,18 +904,12 @@ function renderMastermonMenuTab(panel){
         <span class="mm-menu-btn-label">トレーニング</span>
       </button>
     </div>`;
-  panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      mastermonDetailTab = btn.dataset.tab;
-      renderMastermonDetail(mastermonDetailKey);
-    });
-  });
 }
 
 function mmFmtMult(v){ return `×${(Math.round(v*100)/100).toFixed(2)}`; }
 
-// 「詳細情報」画面: 1列目=ステータスにより変動した数値、2列目=特性・状態変化
-function renderMastermonInfoTab(panel, key, mm, el){
+// 「詳細情報」画面: ステータス倍率・特性・状態変化を縦一列に表示
+function buildMastermonInfoHtml(key, mm, el){
   const mults = mastermonEffectMults(mm);
   const effHp = Math.round(el.hp*mults.lifeMult);
   const effSpeed = Math.round(el.speed*(el.speedMod||1)*mults.speedMult);
@@ -851,141 +937,79 @@ function renderMastermonInfoTab(panel, key, mm, el){
       <div class="mm-info-state-line">効果：${describeStateEffectsText(sc.effects)}</div>
     </div>` : '';
 
-  panel.innerHTML = `
-    <div class="mastermon-subview">
-      <button class="mm-back-btn">← 戻る</button>
-      <div class="mastermon-info-cols">
-        <div class="mastermon-info-col">
-          <div class="mm-info-col-title">ステータス</div>
-          ${statRows}
-        </div>
-        <div class="mastermon-info-col">
-          <div class="mm-info-col-title">特性</div>
-          <div class="mm-info-trait">${TRAIT_DESC[el.trait]}</div>
-          <div class="mm-info-col-title" style="margin-top:14px;">状態変化</div>
-          ${stateHtml}
-        </div>
-      </div>
+  return `
+    <div class="mastermon-info-col-single">
+      <div class="mm-info-col-title">ステータス倍率</div>
+      ${statRows}
+      <div class="mm-info-col-title" style="margin-top:14px;">特性</div>
+      <div class="mm-info-trait">${TRAIT_DESC[el.trait]}</div>
+      <div class="mm-info-col-title" style="margin-top:14px;">状態変化</div>
+      ${stateHtml}
     </div>`;
-  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
-    mastermonDetailTab = null;
-    renderMastermonDetail(key);
-  });
 }
 
-// 「技一覧」画面: tier毎の技情報(名前・威力・消費ガッツ・CT)
-function renderMastermonMovesTab(panel, key, el){
+// 技の見た目(aoe形状・連射・爆風など)から、簡易な特徴テキストを組み立てる
+function describeMoveFeatureText(mv){
+  const parts = [];
+  if(mv.aoeShape==='fan') parts.push(`扇状(${mv.fanAngleDeg}°)に攻撃`);
+  else if(mv.aoeShape==='rect') parts.push(`幅${mv.rectWidth}の直線状に攻撃`);
+  else if(mv.aoeShape==='beams') parts.push(`${mv.beamCount}方向のビームで攻撃`);
+  else if(mv.aoeShape==='zigzag') parts.push(`ジグザグ状(幅${mv.zigzagWidth})に攻撃`);
+  else if(mv.aoeShape==='fanZigzag') parts.push('扇状かつジグザグに攻撃');
+  if(mv.burst) parts.push(`${mv.burst}連射`);
+  if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
+  if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
+  if(!parts.length) parts.push('単体に直撃');
+  return parts.join('・');
+}
+
+// 「技一覧」画面: tier毎の技情報(アイコン・威力・消費ガッツ・CT・弾速・射程・特徴)
+function buildMastermonMovesHtml(key){
   const moves = SIGNATURE_MOVES[key] || [];
-  const movesHtml = moves.map(mv=>`
+  const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
+  const movesHtml = moves.map(mv=>{
+    const icon = mv.icon || fallbackIcon;
+    const speedText = mv.projSpeed ? `弾速 ${mv.projSpeed}` : '弾速 瞬間発動';
+    return `
     <div class="mm-move-card">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
       <div class="mm-move-info">
-        <div class="mm-move-name">${mv.name}</div>
+        <div class="mm-move-name">${mv.name}<span class="mm-move-icon">${icon}</span></div>
         <div class="mm-move-stats">
           <span>威力 ${mv.dmg}</span>
           <span>消費ガッツ ${mv.gutsCost}</span>
           <span>CT ${mv.cooldown}秒</span>
+          <span>${speedText}</span>
+          <span>射程 ${mv.range}</span>
         </div>
+        <div class="mm-move-feature">${describeMoveFeatureText(mv)}</div>
       </div>
-    </div>`).join('');
-
-  panel.innerHTML = `
-    <div class="mastermon-subview">
-      <button class="mm-back-btn">← 戻る</button>
-      <div class="mm-moves-list">${movesHtml}</div>
     </div>`;
-  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
-    mastermonDetailTab = null;
-    renderMastermonDetail(key);
-  });
+  }).join('');
+  return `<div class="mm-moves-list">${movesHtml}</div>`;
 }
 
-// 「トレーニング」画面: 従来のトレーニング一覧と同じ内容
-function renderMastermonTrainingTab(panel, key, mm, apt, data){
-  // 再描画でDOMが作り直されるとスクロール位置が失われるため、事前に保存しておく
-  const prevStatsCol = panel.querySelector('.mastermon-detail-statscol');
-  const prevTrainCol = panel.querySelector('.mastermon-detail-traincol');
-  const savedStatsScroll = prevStatsCol ? prevStatsCol.scrollTop : 0;
-  const savedTrainScroll = prevTrainCol ? prevTrainCol.scrollTop : 0;
-
-  const preview = mastermonSelectedTraining ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
-
-  const statsHtml = MASTERMON_STATS.map(s=>{
-    const v = mm.stats[s.key];
-    const pct = Math.round(v/MASTERMON_STAT_CAP*100);
-    const delta = preview ? preview[s.key] : null;
-    const deltaHtml = delta ? `<span class="mm-stat-delta ${delta>0?'up':'down'}">(${delta>0?'+':''}${delta})</span>` : '';
-    const aptGrade = apt[s.key];
-    return `
-      <div class="mm-stat-row">
-        <div class="mm-stat-toprow">
-          <span class="mm-stat-name">${s.label}<span class="mm-stat-apt-badge apt-${aptGrade}">${aptGrade}</span></span>
-          <span class="mm-stat-val">${v}${deltaHtml}</span>
-        </div>
-        <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
-      </div>`;
-  }).join('');
-
-  const legendHtml = MASTERMON_STATS.map(s=>
-    `<div class="mm-stat-desc-row"><b style="color:${s.color}">${s.label}</b>：${s.desc}</div>`
-  ).join('');
-
+// 「トレーニング」画面: 従来のトレーニング一覧と同じ内容(ステータスバーは共通の左カラムに表示)
+function buildMastermonTrainingHtml(mm){
   const trainingHtml = TRAINING_MENU.map(t=>`
     <button class="mm-train-btn ${t.key===mastermonSelectedTraining?'active':''}" data-key="${t.key}">
       <span class="mm-train-name">${t.label}</span>
     </button>`).join('');
 
-  panel.innerHTML = `
-    <div class="mastermon-subview">
-      <button class="mm-back-btn">← 戻る</button>
-      <div class="mastermon-detail-body">
-        <div class="mastermon-detail-statscol">
-          <div class="mm-stats-wrap">${statsHtml}</div>
-        </div>
-        <div class="mastermon-detail-traincol">
-          <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
-          <div class="mm-train-grid">${trainingHtml}</div>
-          <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
-            トレーニングを実行(チケット${mm.tickets}枚所持)
-          </button>
-          <div class="mm-stat-desc-title">ステータス説明</div>
-          <div class="mm-stat-desc-wrap">${legendHtml}</div>
-        </div>
-      </div>
-    </div>
-  `;
-  const statsColEl = panel.querySelector('.mastermon-detail-statscol');
-  const trainColEl = panel.querySelector('.mastermon-detail-traincol');
-  if(statsColEl) statsColEl.scrollTop = savedStatsScroll;
-  if(trainColEl) trainColEl.scrollTop = savedTrainScroll;
+  const legendHtml = MASTERMON_STATS.map(s=>
+    `<div class="mm-stat-desc-row"><b style="color:${s.color}">${s.label}</b>：${s.desc}</div>`
+  ).join('');
 
-  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
-    mastermonDetailTab = null;
-    mastermonSelectedTraining = null;
-    renderMastermonDetail(key);
-  });
-  panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      mastermonSelectedTraining = (mastermonSelectedTraining===btn.dataset.key) ? null : btn.dataset.key;
-      renderMastermonDetail(key);
-    });
-  });
-  document.getElementById('mastermonExecuteTrainBtn').addEventListener('click', ()=>{
-    if(!mastermonSelectedTraining) return;
-    const changes = applyMastermonTraining(mm, mastermonSelectedTraining);
-    if(!changes) return;
-    data[key] = mm;
-    saveMastermons(data);
-    const parts = Object.keys(changes).map(k=>{
-      const label = MASTERMON_STATS.find(s=>s.key===k).label;
-      const v = changes[k];
-      return `${label}${v>0?'+':''}${v}`;
-    });
-    pushToast(`トレーニング結果: ${parts.join(' / ')}`);
-    mastermonSelectedTraining = null;
-    renderMastermonList();
-    renderMastermonDetail(key);
-  });
+  return `
+    <div class="mastermon-detail-traincol">
+      <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
+      <div class="mm-train-grid">${trainingHtml}</div>
+      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
+        トレーニングを実行(チケット${mm.tickets}枚所持)
+      </button>
+      <div class="mm-stat-desc-title">ステータス説明</div>
+      <div class="mm-stat-desc-wrap">${legendHtml}</div>
+    </div>`;
 }
 
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用

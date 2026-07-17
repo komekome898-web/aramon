@@ -35,11 +35,45 @@ const miniCtx = miniCanvas.getContext('2d');
 let dpr = Math.min(window.devicePixelRatio||1, 2);
 let viewW=window.innerWidth, viewH=window.innerHeight;
 
-function getViewportSize(){
+// ===== 強制横向き表示(向きロック中でも横向きでプレイできるようにするCSS回転トリック) =====
+// スマホ・小型タブレットが縦長(portrait)のときは、#appRootをCSSで90度回転させて
+// 横向きの画面として描画する。実際のブラウザviewportは縦長のままなので、
+// キャンバスサイズや各種ポインタ座標は「回転後の論理座標」に変換して使う必要がある。
+const FORCE_LANDSCAPE_MAX_SIDE = 932; // このサイズ以下の小画面のみ対象(PCの縦長ウィンドウ等は対象外)
+function getRealViewportSize(){
   if(window.visualViewport){
     return { w: window.visualViewport.width, h: window.visualViewport.height };
   }
   return { w: window.innerWidth, h: window.innerHeight };
+}
+function updateForceLandscapeMode(){
+  const real = getRealViewportSize();
+  const isPortrait = real.h > real.w;
+  const isSmallScreen = Math.max(real.w, real.h) <= FORCE_LANDSCAPE_MAX_SIDE;
+  const shouldForce = isPortrait && isSmallScreen;
+  document.documentElement.classList.toggle('force-landscape', shouldForce);
+  return shouldForce;
+}
+function isForcedLandscape(){
+  return document.documentElement.classList.contains('force-landscape');
+}
+// 実際のポインタ座標(縦向きの実画面上の座標)を、回転補正した論理(横向き)座標へ変換
+function toLogicalPoint(clientX, clientY){
+  if(!isForcedLandscape()) return { x:clientX, y:clientY };
+  const real = getRealViewportSize();
+  return { x: clientY, y: real.w - clientX };
+}
+// 実際のポインタ移動量(縦向きの実画面上のdx,dy)を、回転補正した論理(横向き)の移動量へ変換
+function toLogicalDelta(dx, dy){
+  if(!isForcedLandscape()) return { x:dx, y:dy };
+  return { x: dy, y: -dx };
+}
+
+function getViewportSize(){
+  const forced = updateForceLandscapeMode();
+  const real = getRealViewportSize();
+  if(forced) return { w: real.h, h: real.w };
+  return real;
 }
 function resize(){
   const vp = getViewportSize();
