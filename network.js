@@ -315,8 +315,10 @@ function broadcastNewShotsAsHost(){
     if(p.id==null) continue;
     curProjIds.add(p.id);
     if(lastBroadcastProjIds.has(p.id)) continue;
+    const owner = p.ownerId!=null ? entities.find(e=>e.id===p.ownerId) : null;
     window.__aramonPushShotEvent(netState.roomId, {
-      type:'proj', x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
+      type:'proj', sourceNetId: (owner && owner.netPlayerId) || null,
+      x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
       vx:p.vx||0, vy:p.vy||0, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
       lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
@@ -329,8 +331,10 @@ function broadcastNewShotsAsHost(){
     if(ae.id==null) continue;
     curAeIds.add(ae.id);
     if(lastBroadcastAeIds.has(ae.id)) continue;
+    const owner = ae.ownerId!=null ? entities.find(e=>e.id===ae.ownerId) : null;
     window.__aramonPushShotEvent(netState.roomId, {
-      type:'aoe', kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y), angle:ae.angle, color:ae.color,
+      type:'aoe', sourceNetId: (owner && owner.netPlayerId) || null,
+      kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y), angle:ae.angle, color:ae.color,
       range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
       beamRanges:ae.beamRanges||null, style:ae.style||null,
@@ -342,6 +346,8 @@ function broadcastNewShotsAsHost(){
 // (当たり判定・ダメージはホストのauthStateで届くHP側が正なので、ここでは一切計算しない)
 function spawnVisualShotFromEvent(evt){
   if(!evt) return;
+  // 自分が撃った弾は既にローカルで即座に描画済みなので、ホストからのエコーで二重に描画しない
+  if(evt.sourceNetId && evt.sourceNetId===netState.myPlayerId) return;
   if(evt.type==='proj'){
     if(evt.lobbed){
       projectiles.push({
@@ -409,8 +415,14 @@ function applyAuthState(authState){
     const ent = entities.find(e=>e.id===a.id);
     if(!ent) continue;
     if(ent.isPlayer){
-      // 自分の位置はローカル予測を優先。60px以上ズレた場合のみ静かに補正する
-      if(Math.hypot(ent.x-a.x, ent.y-a.y) > 60){ ent.x=a.x; ent.y=a.y; }
+      // 自分の位置はローカル予測を優先しつつ、常にごく僅かにホスト値へ寄せて収束させる
+      // (閾値を超えたら一気に補正する方式だと、ラグ時に位置が飛んでピクつく原因になっていた)
+      const driftDist = Math.hypot(ent.x-a.x, ent.y-a.y);
+      if(driftDist > 260){
+        ent.x=a.x; ent.y=a.y; // 壁抜け等で大きくズレた時だけ即補正
+      } else {
+        ent.netSelfTargetX = a.x; ent.netSelfTargetY = a.y;
+      }
     } else {
       ent.netTargetX = a.x; ent.netTargetY = a.y; ent.netTargetZ = a.z;
       ent.facingAngle = a.f;
@@ -419,7 +431,10 @@ function applyAuthState(authState){
     ent.hp = a.hp; ent.maxHp = a.maxHp; ent.guts = a.guts; ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
     if(a.placement!=null) ent.placement = a.placement;
-    if(typeof a.moveTierSelected==='number') ent.moveTierSelected = a.moveTierSelected;
+    // moveTierSelectedは「今どの技を使うか」というプレイヤー自身の選択なので、
+    // 自分自身の分だけはホストの(1往復遅れた)値で上書きしない(タップしてもすぐ元に戻る
+    // チラつきの原因だった)。ボット・他プレイヤーの表示用には引き続き反映する
+    if(!ent.isPlayer && typeof a.moveTierSelected==='number') ent.moveTierSelected = a.moveTierSelected;
     if(typeof a.dashCooldown==='number') ent.dashCooldown = a.dashCooldown;
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
     if(typeof a.trainGutsCostReduction==='number') ent.trainGutsCostReduction = a.trainGutsCostReduction;
@@ -467,7 +482,14 @@ function loop(now){
       // 自分の移動だけをローカルで滑らかに再現し、残りはホストからのauthState配信に委ねる
       updateCameraSnap(dt);
       computePlayerInput();
-      if(player && player.alive) resolveMovement(player, dt);
+      if(player && player.alive){
+        resolveMovement(player, dt);
+        if(typeof player.netSelfTargetX==='number'){
+          const selfLerpT = Math.min(0.3, dt*2.2);
+          player.x = lerp(player.x, player.netSelfTargetX, selfLerpT);
+          player.y = lerp(player.y, player.netSelfTargetY, selfLerpT);
+        }
+      }
       for(const e of entities){
         if(!e.alive) continue;
         if(e.fireCooldown>0) e.fireCooldown -= dt;
