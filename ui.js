@@ -969,7 +969,11 @@ function buildMastermonMovesHtml(key){
   const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
   const movesHtml = moves.map(mv=>{
     const icon = mv.icon || fallbackIcon;
-    const speedText = mv.projSpeed ? `弾速 ${mv.projSpeed}` : '弾速 瞬間発動';
+    // combat.js の fireMove() と同じ計算: 範囲攻撃(aoeShape)は projSpeed が無くても
+    // 予告表示の後、この速度でダメージ範囲が塗り広がっていく(瞬間発動ではない)
+    const isAoe = !!mv.aoeShape;
+    const speedVal = isAoe ? Math.max(200, mv.projSpeed||900) : mv.projSpeed;
+    const speedText = isAoe ? `範囲拡大速度 ${speedVal}` : `弾速 ${speedVal}`;
     return `
     <div class="mm-move-card">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>

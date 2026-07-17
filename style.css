@@ -14,11 +14,12 @@
   /* ---------- 強制横向き表示 ----------
      端末が縦向き(向きロック中含む)のときは #appRoot ごと90度回転させ、
      物理的な回転操作なしに常に横向きでプレイできるようにする。
-     JS側(world.js の getViewportSize)で html.force-landscape の付け外しを行う。 */
+     width/height/left は vw/vh だとモバイルブラウザのUI表示/非表示で実際のviewportと
+     ズレて画面端が見切れることがあるため、JS側(world.js)で実測px値を直接styleに設定する。
+     JS側(world.js の getViewportSize)で html.force-landscape の付け外しと再計算を行う。 */
   #appRoot{ position:fixed; inset:0; width:100%; height:100%; }
   html.force-landscape #appRoot{
-    position:absolute; top:0; left:100%;
-    width:100vh; height:100vw;
+    position:absolute; top:0; left:0;
     transform-origin:0 0;
     transform:rotate(90deg);
   }

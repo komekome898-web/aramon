@@ -40,11 +40,29 @@ let viewW=window.innerWidth, viewH=window.innerHeight;
 // 横向きの画面として描画する。実際のブラウザviewportは縦長のままなので、
 // キャンバスサイズや各種ポインタ座標は「回転後の論理座標」に変換して使う必要がある。
 const FORCE_LANDSCAPE_MAX_SIDE = 932; // このサイズ以下の小画面のみ対象(PCの縦長ウィンドウ等は対象外)
+const appRootEl = document.getElementById('appRoot');
 function getRealViewportSize(){
   if(window.visualViewport){
     return { w: window.visualViewport.width, h: window.visualViewport.height };
   }
   return { w: window.innerWidth, h: window.innerHeight };
+}
+// #appRootの回転前サイズ・位置をpx実測値で直接指定する。
+// vw/vhだとモバイルブラウザのアドレスバー表示/非表示等で実際のviewportとズレて
+// 画面の両端が見切れることがあるため、必ずgetRealViewportSize()と同じ値を使う。
+function applyAppRootTransform(forced, real){
+  if(!appRootEl) return;
+  if(forced){
+    appRootEl.style.width = real.h + 'px';
+    appRootEl.style.height = real.w + 'px';
+    appRootEl.style.left = real.w + 'px';
+    appRootEl.style.top = '0px';
+  } else {
+    appRootEl.style.width = '';
+    appRootEl.style.height = '';
+    appRootEl.style.left = '';
+    appRootEl.style.top = '';
+  }
 }
 function updateForceLandscapeMode(){
   const real = getRealViewportSize();
@@ -52,6 +70,7 @@ function updateForceLandscapeMode(){
   const isSmallScreen = Math.max(real.w, real.h) <= FORCE_LANDSCAPE_MAX_SIDE;
   const shouldForce = isPortrait && isSmallScreen;
   document.documentElement.classList.toggle('force-landscape', shouldForce);
+  applyAppRootTransform(shouldForce, real);
   return shouldForce;
 }
 function isForcedLandscape(){
