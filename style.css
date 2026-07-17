@@ -13,7 +13,7 @@
     --vh: 1vh;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
+  html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; overscroll-behavior:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
   :fullscreen{ background:var(--bg-void); }
 
   /* ---------- 強制横向き表示 ----------
@@ -22,7 +22,7 @@
      width/height/left は vw/vh だとモバイルブラウザのUI表示/非表示で実際のviewportと
      ズレて画面端が見切れることがあるため、JS側(world.js)で実測px値を直接styleに設定する。
      JS側(world.js の getViewportSize)で html.force-landscape の付け外しと再計算を行う。 */
-  #appRoot{ position:fixed; inset:0; width:100%; height:100%; }
+  #appRoot{ position:fixed; inset:0; width:100%; height:100%; overscroll-behavior:none; touch-action:none; }
   html.force-landscape #appRoot{
     position:absolute; top:0; left:0;
     transform-origin:0 0;
@@ -82,6 +82,7 @@
     border:1px solid rgba(244,196,48,0.45); border-radius:20px; cursor:pointer;
   }
   #howToPlayBtn:active{ background:rgba(244,196,48,0.18); }
+  #orientationLockNote{ margin-top:8px; font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; text-align:center; }
 
   .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
   #playerNameInput{
@@ -255,7 +256,7 @@
   .howto-state-effect{ color:var(--ink-dim); }
 
   /* ---------- HUD ---------- */
-  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:manipulation;}
+  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:none;}
 
   .hud-panel{
     position:absolute; background:var(--panel); border:1px solid var(--panel-line);
@@ -298,7 +299,7 @@
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
     display:flex; align-items:center; gap:12px; padding:10px 18px;
     border-bottom:3px solid var(--moveColor,var(--amber));
-    cursor:pointer; touch-action:manipulation; pointer-events:auto;
+    cursor:pointer; touch-action:none; pointer-events:auto;
   }
   #moveIcon{ width:38px; height:38px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
   #moveIcon svg{ width:22px; height:22px; }
@@ -660,6 +661,8 @@
   .mm-info-row:last-child{ border-bottom:none; }
   .mm-info-label{ color:var(--ink-dim); }
   .mm-info-val{ font-family:'Share Tech Mono',monospace; color:var(--ink); font-weight:700; white-space:nowrap; }
+  .mm-info-val-up{ color:#6fe07a; }
+  .mm-info-val-down{ color:#ff6b6b; }
   .mm-info-trait{
     font-size:11px; line-height:1.6; color:var(--ink-dim);
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; padding:8px 10px;

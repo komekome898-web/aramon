@@ -1004,17 +1004,26 @@ function buildMastermonInfoHtml(key, mm, el){
   const fireRateMult = 1/mults.cooldownMult;
   const sc = STATE_CHANGES[key];
 
+  // mastermonStatFactor()はステータス100で1.0(=無補正)を返すため、1.0を基準に上昇/下降を判定する。
+  // 被ダメ倍率だけは値が低いほど良い(被ダメが減る)ので判定を反転させる。
+  const mmMultColorClass = (mult, invert)=>{
+    if(Math.abs(mult-1) < 0.001) return '';
+    const isUp = mult > 1;
+    const good = invert ? !isUp : isUp;
+    return good ? 'mm-info-val-up' : 'mm-info-val-down';
+  };
+
   const statRows = [
-    { label:'HP', val: effHp },
-    { label:'移動速度', val: effSpeed },
-    { label:'技ダメ倍率', val: mmFmtMult(mults.dmgDealtMult) },
-    { label:'被ダメ倍率', val: mmFmtMult(mults.dmgTakenMult) },
-    { label:'連射速度倍率', val: mmFmtMult(fireRateMult) },
-    { label:'ガッツ回復速度倍率', val: mmFmtMult(mults.gutsRegenMult) },
+    { label:'HP', val: effHp, cls: mmMultColorClass(mults.lifeMult, false) },
+    { label:'移動速度', val: effSpeed, cls: mmMultColorClass(mults.speedMult, false) },
+    { label:'技ダメ倍率', val: mmFmtMult(mults.dmgDealtMult), cls: mmMultColorClass(mults.dmgDealtMult, false) },
+    { label:'被ダメ倍率', val: mmFmtMult(mults.dmgTakenMult), cls: mmMultColorClass(mults.dmgTakenMult, true) },
+    { label:'連射速度倍率', val: mmFmtMult(fireRateMult), cls: mmMultColorClass(fireRateMult, false) },
+    { label:'ガッツ回復速度倍率', val: mmFmtMult(mults.gutsRegenMult), cls: mmMultColorClass(mults.gutsRegenMult, false) },
   ].map(r=>`
     <div class="mm-info-row">
       <span class="mm-info-label">${r.label}</span>
-      <span class="mm-info-val">${r.val}</span>
+      <span class="mm-info-val ${r.cls}">${r.val}</span>
     </div>`).join('');
 
   const stateHtml = sc ? `
