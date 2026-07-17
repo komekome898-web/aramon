@@ -580,14 +580,16 @@ function startGame(){
     const mmData = loadMastermons()[game.selectedMastermonKey];
     if(mmData) playerDisplayName = mmData.name;
   }
-  player = createMonster(game.selectedElement, true, playerDisplayName);
+  const totalEntityCount = 30;
+  const spawnPoints = pickSpawnPointsBatch(totalEntityCount);
+  player = createMonster(game.selectedElement, true, playerDisplayName, { spawnPoint: spawnPoints[0] });
   applyMastermonToPlayer();
   entities.push(player);
   const names = shuffle(BOT_NAMES);
   const botElements = shuffle(Object.keys(ELEMENTS));
   for(let i=0;i<29;i++){
     const elKey = botElements[i % botElements.length];
-    entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':'')));
+    entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':''), { spawnPoint: spawnPoints[i+1] }));
   }
   spawnLoot(420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   updateCamera();

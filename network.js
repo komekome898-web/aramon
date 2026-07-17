@@ -91,9 +91,15 @@ async function beginMultiplayerMatch(){
   }
   humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
+  const usedSlots = humanList.length;
+  const botCount = Math.max(0, netState.capacity - usedSlots);
+  const totalEntityCount = usedSlots + botCount;
+  const spawnPoints = seededPickSpawnPointsBatch(rng, totalEntityCount);
+
   let idCounter = 1;
+  let spawnIdx = 0;
   for(const h of humanList){
-    const sp = seededPickSpawnPoint(rng);
+    const sp = spawnPoints[spawnIdx++];
     const isMe = h.id===netState.myPlayerId;
     const ent = createMonster(h.element||'fire', isMe, h.name||'プレイヤー', { id: idCounter++, spawnPoint: sp });
     ent.netPlayerId = h.id;
@@ -102,13 +108,11 @@ async function beginMultiplayerMatch(){
     entities.push(ent);
   }
 
-  const usedSlots = humanList.length;
-  const botCount = Math.max(0, netState.capacity - usedSlots);
   const names = seededShuffle(rng, BOT_NAMES);
   const botElements = seededShuffle(rng, Object.keys(ELEMENTS));
   for(let i=0;i<botCount;i++){
     const elKey = botElements[i % botElements.length];
-    const sp = seededPickSpawnPoint(rng);
+    const sp = spawnPoints[spawnIdx++];
     const nm = names[i % names.length] + (i>=names.length?'Ⅱ':'');
     entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
   }

@@ -287,8 +287,10 @@ function isOnHazard(x,y,margin){
   return false;
 }
 function pickSpawnPoint(){
+  const R = ZONE_PHASES[0].holdRadius*0.85;
   for(let tries=0; tries<60; tries++){
-    const a = rand(0,Math.PI*2), r = rand(0, ZONE_PHASES[0].holdRadius*0.85);
+    // r=R*sqrt(u) にすることで円内に均等な密度で分布させる(単純なrand(0,R)は中心に偏る)
+    const a = rand(0,Math.PI*2), r = R*Math.sqrt(rand(0,1));
     const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
     if(buildingBlocks(x,y,30)) continue;
     if(isOnHazard(x,y,60)) continue;
@@ -302,8 +304,42 @@ function pickSpawnPoint(){
     if(tooCloseToOther) continue;
     return {x,y};
   }
-  const a = rand(0,Math.PI*2), r = rand(0, ZONE_PHASES[0].holdRadius*0.85);
+  const a = rand(0,Math.PI*2), r = R*Math.sqrt(rand(0,1));
   return {x: ZONE_CENTER0.x+Math.cos(a)*r, y: ZONE_CENTER0.y+Math.sin(a)*r};
+}
+// n体分のスポーン地点を、安置内で角度方向にできるだけ均等に割り振って生成する。
+// (1体ずつ完全ランダムに決めると、距離が近くなったり中心付近に偏ったりしやすいため、
+//  まず円周をn等分した担当角度を割り当ててから、その範囲内でランダム性を持たせる)
+function pickSpawnPointsBatch(n){
+  const R = ZONE_PHASES[0].holdRadius*0.85;
+  const angleStep = (Math.PI*2)/n;
+  const angleOffset = rand(0, angleStep); // 毎回同じ並びにならないよう全体をランダム回転
+  const points = [];
+  for(let i=0;i<n;i++){
+    const baseAngle = angleOffset + angleStep*i;
+    let placed = null;
+    for(let tries=0; tries<40 && !placed; tries++){
+      const a = baseAngle + rand(-angleStep*0.4, angleStep*0.4);
+      const r = R*Math.sqrt(rand(0,1));
+      const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
+      if(buildingBlocks(x,y,30)) continue;
+      if(isOnHazard(x,y,60)) continue;
+      let onRock=false;
+      for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
+      if(onRock) continue;
+      let tooClose=false;
+      for(const p of points){ if(Math.hypot(x-p.x,y-p.y) < MIN_SPAWN_SEPARATION){ tooClose=true; break; } }
+      if(tooClose) continue;
+      placed = {x,y};
+    }
+    if(!placed){
+      // 分離条件を満たす場所が見つからない場合は、担当角度の中心付近に妥協して配置する
+      const r = R*0.6;
+      placed = {x: ZONE_CENTER0.x+Math.cos(baseAngle)*r, y: ZONE_CENTER0.y+Math.sin(baseAngle)*r};
+    }
+    points.push(placed);
+  }
+  return points;
 }
 function createMonster(elementKey, isPlayer, name, overrides){
   const el = ELEMENTS[elementKey];
@@ -467,7 +503,8 @@ function spawnLoot(n, center, radius){
     const pick = pickLootKindAndType();
     let x, y, guard=0;
     do{
-      const a = rand(0,Math.PI*2), d = rand(0,radius);
+      // r=radius*sqrt(u) にすることで円内に均等な密度で分布させる(単純なrand(0,radius)は中心に偏る)
+      const a = rand(0,Math.PI*2), d = radius*Math.sqrt(rand(0,1));
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
     } while((isNearRock(x,y,45) || isOnHazard(x,y,45)) && guard<20);
@@ -493,7 +530,8 @@ function seededSpawnLoot(rng, n, center, radius){
     const pick = seededPickLootKindAndType(rng);
     let x, y, guard=0;
     do{
-      const a = seededRand(rng,0,Math.PI*2), d = seededRand(rng,0,radius);
+      // r=radius*sqrt(u) にすることで円内に均等な密度で分布させる(単純なrand(0,radius)は中心に偏る)
+      const a = seededRand(rng,0,Math.PI*2), d = radius*Math.sqrt(seededRand(rng,0,1));
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
     } while((isNearRock(x,y,45) || isOnHazard(x,y,45)) && guard<20);
@@ -567,8 +605,10 @@ function seededGenTerrain(rng){
   }
 }
 function seededPickSpawnPoint(rng){
+  const R = ZONE_PHASES[0].holdRadius*0.85;
   for(let tries=0; tries<60; tries++){
-    const a = seededRand(rng,0,Math.PI*2), r = seededRand(rng,0, ZONE_PHASES[0].holdRadius*0.85);
+    // r=R*sqrt(u) にすることで円内に均等な密度で分布させる(単純なrand(0,R)は中心に偏る)
+    const a = seededRand(rng,0,Math.PI*2), r = R*Math.sqrt(seededRand(rng,0,1));
     const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
     if(isOnHazard(x,y,60)) continue;
     let onRock=false;
@@ -576,8 +616,38 @@ function seededPickSpawnPoint(rng){
     if(onRock) continue;
     return {x,y};
   }
-  const a = seededRand(rng,0,Math.PI*2), r = seededRand(rng,0, ZONE_PHASES[0].holdRadius*0.85);
+  const a = seededRand(rng,0,Math.PI*2), r = R*Math.sqrt(seededRand(rng,0,1));
   return {x: ZONE_CENTER0.x+Math.cos(a)*r, y: ZONE_CENTER0.y+Math.sin(a)*r};
+}
+// マルチプレイ用: n体分のスポーン地点を角度方向にできるだけ均等に割り振って生成する(シード付き)
+function seededPickSpawnPointsBatch(rng, n){
+  const R = ZONE_PHASES[0].holdRadius*0.85;
+  const angleStep = (Math.PI*2)/n;
+  const angleOffset = seededRand(rng,0,angleStep);
+  const points = [];
+  for(let i=0;i<n;i++){
+    const baseAngle = angleOffset + angleStep*i;
+    let placed = null;
+    for(let tries=0; tries<40 && !placed; tries++){
+      const a = baseAngle + seededRand(rng,-angleStep*0.4, angleStep*0.4);
+      const r = R*Math.sqrt(seededRand(rng,0,1));
+      const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
+      if(isOnHazard(x,y,60)) continue;
+      let onRock=false;
+      for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
+      if(onRock) continue;
+      let tooClose=false;
+      for(const p of points){ if(Math.hypot(x-p.x,y-p.y) < MIN_SPAWN_SEPARATION){ tooClose=true; break; } }
+      if(tooClose) continue;
+      placed = {x,y};
+    }
+    if(!placed){
+      const r = R*0.6;
+      placed = {x: ZONE_CENTER0.x+Math.cos(baseAngle)*r, y: ZONE_CENTER0.y+Math.sin(baseAngle)*r};
+    }
+    points.push(placed);
+  }
+  return points;
 }
 
 /* =====================================================================
