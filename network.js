@@ -142,6 +142,11 @@ async function beginMultiplayerMatch(){
   window.__aramonWatchAuthState(netState.roomId, (authState)=>{
     if(authState && !netState.isHost) applyAuthState(authState);
   });
+  if(!netState.isHost){
+    window.__aramonWatchShotEvents(netState.roomId, (evtKey, evt)=>{
+      spawnVisualShotFromEvent(evt);
+    });
+  }
 
   document.getElementById('startScreen').classList.add('hidden');
   game.started=true;
@@ -299,11 +304,75 @@ function processHitAsHost(hit){
 // 全エンティティ(ボット含む)を id(全クライアント共通の決定的な採番) をキーに配信する。
 // 以前は netPlayerId を持つ人間プレイヤーしか配信していなかったため、非ホスト側でボットが
 // 一切動かず止まって見える不具合の直接の原因になっていた。
+// ホスト専用: 新しく発生した弾/範囲攻撃を検知し、取りこぼしのないイベントとして全員に配信する。
+// (authStateのような周期上書き配信だと、寿命の短い弾は次の配信までに消えてしまい
+//  「相手の弾が見えない」原因になるため、発生の瞬間を専用チャンネルで確実に届ける)
+let lastBroadcastProjIds = new Set();
+let lastBroadcastAeIds = new Set();
+function broadcastNewShotsAsHost(){
+  const curProjIds = new Set();
+  for(const p of projectiles){
+    if(p.id==null) continue;
+    curProjIds.add(p.id);
+    if(lastBroadcastProjIds.has(p.id)) continue;
+    window.__aramonPushShotEvent(netState.roomId, {
+      type:'proj', x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
+      vx:p.vx||0, vy:p.vy||0, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
+      maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
+      lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
+    });
+  }
+  lastBroadcastProjIds = curProjIds;
+
+  const curAeIds = new Set();
+  for(const ae of areaEffects){
+    if(ae.id==null) continue;
+    curAeIds.add(ae.id);
+    if(lastBroadcastAeIds.has(ae.id)) continue;
+    window.__aramonPushShotEvent(netState.roomId, {
+      type:'aoe', kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y), angle:ae.angle, color:ae.color,
+      range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
+      beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
+      beamRanges:ae.beamRanges||null, style:ae.style||null,
+    });
+  }
+  lastBroadcastAeIds = curAeIds;
+}
+// 非ホスト専用: ホストから届いた発生イベントを、見た目専用の弾/範囲攻撃として即座に再現する
+// (当たり判定・ダメージはホストのauthStateで届くHP側が正なので、ここでは一切計算しない)
+function spawnVisualShotFromEvent(evt){
+  if(!evt) return;
+  if(evt.type==='proj'){
+    if(evt.lobbed){
+      projectiles.push({
+        x:evt.x, y:evt.y, z:evt.z, lobbed:true, startX:evt.x, startY:evt.y, startZ:evt.z,
+        landX:evt.landX, landY:evt.landY, arcHeight:evt.arcHeight||120,
+        flightTime:Math.max(0.05, evt.flightTime||1), flightT:0,
+        color:evt.color, hitR:evt.hitR, hitW:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
+      });
+    } else {
+      projectiles.push({
+        x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy,
+        color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
+        traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
+      });
+    }
+  } else if(evt.type==='aoe'){
+    areaEffects.push({
+      hostId:null, kind:evt.kind, x:evt.x, y:evt.y, angle:evt.angle, color:evt.color,
+      range:evt.range, width:evt.width, fanAngleDeg:evt.fanAngleDeg, beamCount:evt.beamCount,
+      beamSpreadDeg:evt.beamSpreadDeg, spawnAt:matchTime, life:evt.life,
+      fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
+      style:evt.style||null,
+    });
+  }
+}
+
 function buildAuthStatePayload(){
   const payload = { zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
-  }, aliveCount: entities.filter(e=>e.alive).length, entities: [], projectiles: [] };
+  }, aliveCount: entities.filter(e=>e.alive).length, entities: [] };
   for(const e of entities){
     payload.entities.push({
       id: e.id,
@@ -320,18 +389,6 @@ function buildAuthStatePayload(){
       dashCooldown: Math.round((e.dashCooldown||0)*100)/100,
     });
   }
-  for(const p of projectiles){
-    payload.projectiles.push({
-      x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z||0),
-      c: p.color, r: p.hitR, w: p.hitW||0, icon: p.icon||null, shape: p.shape||null,
-    });
-  }
-  payload.areaEffects = areaEffects.map(ae=>({
-    id: ae.id, kind: ae.kind, x: Math.round(ae.x), y: Math.round(ae.y), angle: ae.angle, c: ae.color,
-    range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
-    beamSpreadDeg: ae.beamSpreadDeg, life: ae.life, fillSpeed: ae.fillSpeed, telegraphTime: ae.telegraphTime,
-    beamRanges: ae.beamRanges||null, style: ae.style||null,
-  }));
   return payload;
 }
 
@@ -381,24 +438,6 @@ function applyAuthState(authState){
       if(ent.isPlayer && !game.over) onPlayerDown();
     }
   }
-  if(Array.isArray(authState.projectiles)){
-    const localVisualOnly = projectiles.filter(p=>p.visualOnly);
-    const hostProjectiles = authState.projectiles.map(p=>({ x:p.x, y:p.y, z:p.z, color:p.c, hitR:p.r, hitW:p.w||0, icon:p.icon||undefined, shape:p.shape||undefined }));
-    projectiles = hostProjectiles.concat(localVisualOnly);
-  }
-  if(Array.isArray(authState.areaEffects)){
-    const seenIds = new Set(areaEffects.filter(ae=>ae.hostId!=null).map(ae=>ae.hostId));
-    for(const ae of authState.areaEffects){
-      if(seenIds.has(ae.id)) continue;
-      areaEffects.push({
-        hostId: ae.id, kind: ae.kind, x: ae.x, y: ae.y, angle: ae.angle, color: ae.c,
-        range: ae.range, width: ae.width, fanAngleDeg: ae.fanAngleDeg, beamCount: ae.beamCount,
-        beamSpreadDeg: ae.beamSpreadDeg, spawnAt: matchTime, life: ae.life,
-        fillSpeed: ae.fillSpeed||900, telegraphTime: ae.telegraphTime||0.18, beamRanges: ae.beamRanges||undefined,
-        style: ae.style||null,
-      });
-    }
-  }
 }
 
 
@@ -413,6 +452,7 @@ function loop(now){
       applyRemoteInputsLocally();
       processRemoteFireEvents();
       update(dt);
+      broadcastNewShotsAsHost();
       sendLocalInputIfMultiplayer(now);
       authPublishTimer += dt;
       if(authPublishTimer >= AUTH_PUBLISH_INTERVAL && !authPublishInFlight){

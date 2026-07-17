@@ -344,6 +344,19 @@
   };
 
   // ホストが確定させた権威状態(人間プレイヤーのHP/ガッツ/生存)を配信
+  // ホストが撃たれた瞬間(弾/範囲攻撃の発生)を都度ブロードキャストする専用チャンネル。
+  // authStateのような「最新状態の上書き配信」と違い、1件も取りこぼさず全員に届ける必要があるため
+  // fireEventsと同じonChildAdded方式を使う(取りこぼすと「相手の弾が見えない」原因になる)
+  window.__aramonPushShotEvent = async function(roomId, evt){
+    try{ await push(ref(fbDb, `rooms/${roomId}/shotEvents`), evt); }catch(err){}
+  };
+  window.__aramonWatchShotEvents = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/shotEvents`);
+    const cb = (snap)=>{ callback(snap.key, snap.val()); };
+    onChildAdded(r, cb);
+    roomListeners.push({r,cb,isChildAdded:true});
+  };
+
   window.__aramonPublishAuthState = async function(roomId, authState){
     try{ await set(ref(fbDb, `rooms/${roomId}/authState`), authState); }catch(err){}
   };
