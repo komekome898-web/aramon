@@ -585,6 +585,78 @@
     color:#ff8a8a; background:rgba(224,71,63,0.08); border:1px solid rgba(224,71,63,0.4); border-radius:6px; cursor:pointer;
   }
 
+  /* ---------- マスモン: 詳細情報/技一覧/トレーニング 切替UI ---------- */
+  .mastermon-menu-body{
+    display:flex; flex-direction:column; gap:10px; flex:1 1 auto; min-height:0; justify-content:center;
+  }
+  .mm-menu-btn{
+    display:flex; align-items:center; gap:12px; width:100%;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:10px;
+    padding:14px 16px; color:var(--ink); font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:14px; letter-spacing:1px; text-align:left; cursor:pointer;
+  }
+  .mm-menu-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.1); }
+  .mm-menu-btn-icon{
+    width:32px; height:32px; border-radius:50%; flex-shrink:0; background:rgba(255,255,255,0.08);
+    display:flex; align-items:center; justify-content:center; font-size:16px;
+  }
+  .mm-menu-btn-label{ flex:1 1 auto; }
+
+  .mastermon-subview{ display:flex; flex-direction:column; gap:10px; flex:1 1 auto; min-height:0; }
+  .mm-back-btn{
+    align-self:flex-start; flex-shrink:0;
+    padding:8px 16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .mm-back-btn:active{ background:rgba(255,255,255,0.14); }
+
+  .mastermon-info-cols{ display:flex; gap:14px; flex:1 1 auto; min-height:0; }
+  .mastermon-info-col{
+    flex:1 1 0; min-width:0; min-height:0; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
+  }
+  .mm-info-col-title{
+    font-size:11px; letter-spacing:2px; color:var(--amber); font-weight:700; text-transform:uppercase; margin-bottom:8px;
+  }
+  .mm-info-row{
+    display:flex; justify-content:space-between; align-items:baseline; gap:6px;
+    padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:11px;
+  }
+  .mm-info-row:last-child{ border-bottom:none; }
+  .mm-info-label{ color:var(--ink-dim); }
+  .mm-info-val{ font-family:'Share Tech Mono',monospace; color:var(--ink); font-weight:700; white-space:nowrap; }
+  .mm-info-trait{
+    font-size:11px; line-height:1.6; color:var(--ink-dim);
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; padding:8px 10px;
+  }
+  .mm-info-state-card{
+    margin-top:8px; background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
+    border-radius:8px; padding:8px 10px;
+  }
+  .mm-info-state-name{ font-weight:700; color:#ff6b6b; font-size:12px; margin-bottom:4px; }
+  .mm-info-state-line{ font-size:10px; line-height:1.7; color:var(--ink-dim); }
+
+  .mm-moves-list{
+    display:flex; flex-direction:column; gap:8px; flex:1 1 auto; min-height:0; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
+  }
+  .mm-move-card{
+    display:flex; align-items:center; gap:10px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; padding:8px 12px;
+  }
+  .mm-move-tier-badge{
+    flex-shrink:0; width:36px; height:36px; border-radius:50%;
+    background:rgba(244,196,48,0.12); border:1px solid var(--amber); color:var(--amber);
+    font-family:'Share Tech Mono',monospace; font-size:9px; font-weight:700; letter-spacing:0.5px;
+    display:flex; align-items:center; justify-content:center; text-align:center; line-height:1.15;
+  }
+  .mm-move-info{ flex:1 1 auto; min-width:0; }
+  .mm-move-name{ font-weight:700; font-size:13px; color:var(--ink); }
+  .mm-move-stats{
+    display:flex; gap:10px; flex-wrap:wrap; margin-top:3px;
+    font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim);
+  }
+
   /* ---------- HOW TO PLAY GUIDE ---------- */
   #howToPlayScreen{
     justify-content:flex-start; padding-top:22px; padding-bottom:20px;

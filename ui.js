@@ -651,6 +651,7 @@ function submitScoreToRanking(isWin, placement){
 ===================================================================== */
 let mastermonDetailKey = null;
 let mastermonSelectedTraining = null;
+let mastermonDetailTab = null; // null=メニュー / 'info' / 'moves' / 'training'
 
 let mastermonOpenedFrom = 'title';
 function openMastermonScreen(fromResult){
@@ -668,6 +669,7 @@ function openMastermonScreen(fromResult){
   mastermonOpenedFrom = fromResult ? 'result' : 'title';
   if(!mastermonDetailKey || !data[mastermonDetailKey]) mastermonDetailKey = keys[0];
   mastermonSelectedTraining = null;
+  mastermonDetailTab = null;
   renderMastermonList();
   renderMastermonDetail(mastermonDetailKey);
   document.getElementById('mastermonScreen').classList.remove('hidden');
@@ -711,6 +713,7 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
   }
   if(mastermonDetailKey===deletedKey) mastermonDetailKey = remaining[0];
   mastermonSelectedTraining = null;
+  mastermonDetailTab = null;
   renderMastermonList();
   renderMastermonDetail(mastermonDetailKey);
 });
@@ -755,6 +758,7 @@ function renderMastermonList(){
       if(item.dataset.key===mastermonDetailKey) return;
       mastermonDetailKey = item.dataset.key;
       mastermonSelectedTraining = null;
+      mastermonDetailTab = null;
       renderMastermonList();
       renderMastermonDetail(mastermonDetailKey);
     });
@@ -769,6 +773,135 @@ function renderMastermonDetail(key){
   const panel = document.getElementById('mastermonDetailPanel');
   panel.classList.remove('hidden');
 
+  // フッターの参戦/削除ボタンは常設なので、選択中のマスモンに応じてハンドラを差し替える
+  document.getElementById('mastermonDeleteBtn').onclick = ()=>{
+    mastermonPendingDeleteKey = key;
+    document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
+    document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
+  };
+  document.getElementById('mastermonUseBtn').onclick = ()=>{
+    game.selectedElement = key;
+    game.selectedMastermonKey = key;
+    document.getElementById('joinBtn').disabled = false;
+    document.getElementById('mastermonScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+    renderSelectorCards();
+    pushToast(`${mm.name} で参戦準備完了`);
+  };
+
+  if(mastermonDetailTab==='info') return renderMastermonInfoTab(panel, key, mm, el);
+  if(mastermonDetailTab==='moves') return renderMastermonMovesTab(panel, key, el);
+  if(mastermonDetailTab==='training') return renderMastermonTrainingTab(panel, key, mm, apt, data);
+  renderMastermonMenuTab(panel);
+}
+
+// メニュー画面: 詳細情報 / 技と状態変化 / トレーニング の3ボタン
+function renderMastermonMenuTab(panel){
+  panel.innerHTML = `
+    <div class="mastermon-menu-body">
+      <button class="mm-menu-btn" data-tab="info">
+        <span class="mm-menu-btn-icon">📊</span>
+        <span class="mm-menu-btn-label">詳細情報</span>
+      </button>
+      <button class="mm-menu-btn" data-tab="moves">
+        <span class="mm-menu-btn-icon">⚔️</span>
+        <span class="mm-menu-btn-label">技一覧</span>
+      </button>
+      <button class="mm-menu-btn" data-tab="training">
+        <span class="mm-menu-btn-icon">💪</span>
+        <span class="mm-menu-btn-label">トレーニング</span>
+      </button>
+    </div>`;
+  panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      mastermonDetailTab = btn.dataset.tab;
+      renderMastermonDetail(mastermonDetailKey);
+    });
+  });
+}
+
+function mmFmtMult(v){ return `×${(Math.round(v*100)/100).toFixed(2)}`; }
+
+// 「詳細情報」画面: 1列目=ステータスにより変動した数値、2列目=特性・状態変化
+function renderMastermonInfoTab(panel, key, mm, el){
+  const mults = mastermonEffectMults(mm);
+  const effHp = Math.round(el.hp*mults.lifeMult);
+  const effSpeed = Math.round(el.speed*(el.speedMod||1)*mults.speedMult);
+  const fireRateMult = 1/mults.cooldownMult;
+  const sc = STATE_CHANGES[key];
+
+  const statRows = [
+    { label:'HP', val: effHp },
+    { label:'移動速度', val: effSpeed },
+    { label:'技ダメ倍率', val: mmFmtMult(mults.dmgDealtMult) },
+    { label:'被ダメ倍率', val: mmFmtMult(mults.dmgTakenMult) },
+    { label:'連射速度倍率', val: mmFmtMult(fireRateMult) },
+    { label:'ガッツ回復速度倍率', val: mmFmtMult(mults.gutsRegenMult) },
+  ].map(r=>`
+    <div class="mm-info-row">
+      <span class="mm-info-label">${r.label}</span>
+      <span class="mm-info-val">${r.val}</span>
+    </div>`).join('');
+
+  const stateHtml = sc ? `
+    <div class="mm-info-state-card">
+      <div class="mm-info-state-name">${sc.name}</div>
+      <div class="mm-info-state-line">発動条件：${stateTriggerText(sc)}</div>
+      <div class="mm-info-state-line">${stateDurationText(sc)}</div>
+      <div class="mm-info-state-line">効果：${describeStateEffectsText(sc.effects)}</div>
+    </div>` : '';
+
+  panel.innerHTML = `
+    <div class="mastermon-subview">
+      <button class="mm-back-btn">← 戻る</button>
+      <div class="mastermon-info-cols">
+        <div class="mastermon-info-col">
+          <div class="mm-info-col-title">ステータス</div>
+          ${statRows}
+        </div>
+        <div class="mastermon-info-col">
+          <div class="mm-info-col-title">特性</div>
+          <div class="mm-info-trait">${TRAIT_DESC[el.trait]}</div>
+          <div class="mm-info-col-title" style="margin-top:14px;">状態変化</div>
+          ${stateHtml}
+        </div>
+      </div>
+    </div>`;
+  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
+    mastermonDetailTab = null;
+    renderMastermonDetail(key);
+  });
+}
+
+// 「技一覧」画面: tier毎の技情報(名前・威力・消費ガッツ・CT)
+function renderMastermonMovesTab(panel, key, el){
+  const moves = SIGNATURE_MOVES[key] || [];
+  const movesHtml = moves.map(mv=>`
+    <div class="mm-move-card">
+      <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
+      <div class="mm-move-info">
+        <div class="mm-move-name">${mv.name}</div>
+        <div class="mm-move-stats">
+          <span>威力 ${mv.dmg}</span>
+          <span>消費ガッツ ${mv.gutsCost}</span>
+          <span>CT ${mv.cooldown}秒</span>
+        </div>
+      </div>
+    </div>`).join('');
+
+  panel.innerHTML = `
+    <div class="mastermon-subview">
+      <button class="mm-back-btn">← 戻る</button>
+      <div class="mm-moves-list">${movesHtml}</div>
+    </div>`;
+  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
+    mastermonDetailTab = null;
+    renderMastermonDetail(key);
+  });
+}
+
+// 「トレーニング」画面: 従来のトレーニング一覧と同じ内容
+function renderMastermonTrainingTab(panel, key, mm, apt, data){
   // 再描画でDOMが作り直されるとスクロール位置が失われるため、事前に保存しておく
   const prevStatsCol = panel.querySelector('.mastermon-detail-statscol');
   const prevTrainCol = panel.querySelector('.mastermon-detail-traincol');
@@ -803,24 +936,34 @@ function renderMastermonDetail(key){
     </button>`).join('');
 
   panel.innerHTML = `
-    <div class="mastermon-detail-body">
-      <div class="mastermon-detail-statscol">
-        <div class="mm-stats-wrap">${statsHtml}</div>
-      </div>
-      <div class="mastermon-detail-traincol">
-        <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
-        <div class="mm-train-grid">${trainingHtml}</div>
-        <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
-          トレーニングを実行(チケット${mm.tickets}枚所持)
-        </button>
-        <div class="mm-stat-desc-title">ステータス説明</div>
-        <div class="mm-stat-desc-wrap">${legendHtml}</div>
+    <div class="mastermon-subview">
+      <button class="mm-back-btn">← 戻る</button>
+      <div class="mastermon-detail-body">
+        <div class="mastermon-detail-statscol">
+          <div class="mm-stats-wrap">${statsHtml}</div>
+        </div>
+        <div class="mastermon-detail-traincol">
+          <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
+          <div class="mm-train-grid">${trainingHtml}</div>
+          <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
+            トレーニングを実行(チケット${mm.tickets}枚所持)
+          </button>
+          <div class="mm-stat-desc-title">ステータス説明</div>
+          <div class="mm-stat-desc-wrap">${legendHtml}</div>
+        </div>
       </div>
     </div>
   `;
-  panel.querySelector('.mastermon-detail-statscol').scrollTop = savedStatsScroll;
-  panel.querySelector('.mastermon-detail-traincol').scrollTop = savedTrainScroll;
+  const statsColEl = panel.querySelector('.mastermon-detail-statscol');
+  const trainColEl = panel.querySelector('.mastermon-detail-traincol');
+  if(statsColEl) statsColEl.scrollTop = savedStatsScroll;
+  if(trainColEl) trainColEl.scrollTop = savedTrainScroll;
 
+  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
+    mastermonDetailTab = null;
+    mastermonSelectedTraining = null;
+    renderMastermonDetail(key);
+  });
   panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       mastermonSelectedTraining = (mastermonSelectedTraining===btn.dataset.key) ? null : btn.dataset.key;
@@ -843,21 +986,6 @@ function renderMastermonDetail(key){
     renderMastermonList();
     renderMastermonDetail(key);
   });
-  // フッターの参戦/削除ボタンは常設なので、選択中のマスモンに応じてハンドラを差し替える
-  document.getElementById('mastermonDeleteBtn').onclick = ()=>{
-    mastermonPendingDeleteKey = key;
-    document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
-    document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
-  };
-  document.getElementById('mastermonUseBtn').onclick = ()=>{
-    game.selectedElement = key;
-    game.selectedMastermonKey = key;
-    document.getElementById('joinBtn').disabled = false;
-    document.getElementById('mastermonScreen').classList.add('hidden');
-    document.getElementById('startScreen').classList.remove('hidden');
-    renderSelectorCards();
-    pushToast(`${mm.name} で参戦準備完了`);
-  };
 }
 
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
