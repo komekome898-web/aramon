@@ -63,6 +63,13 @@ function applyAppRootTransform(forced, real){
     appRootEl.style.left = '';
     appRootEl.style.top = '';
   }
+  // レイアウトで使う--vw/--vhも、回転後の論理サイズに合わせて更新する
+  // (生のvw/vh単位は常に実際の縦向きviewport基準になってしまい、
+  //  マスモン画面などの min(94vw,900px) 系レイアウトがズレる原因になるため)
+  const logicalW = forced ? real.h : real.w;
+  const logicalH = forced ? real.w : real.h;
+  document.documentElement.style.setProperty('--vw', (logicalW/100)+'px');
+  document.documentElement.style.setProperty('--vh', (logicalH/100)+'px');
 }
 function updateForceLandscapeMode(){
   const real = getRealViewportSize();
