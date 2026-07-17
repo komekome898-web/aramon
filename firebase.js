@@ -253,6 +253,24 @@
     await update(ref(fbDb, `rooms/${roomId}/meta`), { status });
   };
 
+  // ホストが「スタート」を押した瞬間: 全員が同じ時刻を基準にカウントダウン表示できるよう、
+  // 開始予定時刻(startAt)も一緒に書き込む
+  window.__aramonSetRoomStarting = async function(roomId, startAt){
+    await update(ref(fbDb, `rooms/${roomId}/meta`), { status:'starting', startAt });
+  };
+  // ゲスト退出などでカウントダウンを取り消す
+  window.__aramonCancelRoomStarting = async function(roomId){
+    await update(ref(fbDb, `rooms/${roomId}/meta`), { status:'waiting', startAt:null });
+  };
+  // ホストが部屋を解散する: 部屋自体を削除し、募集一覧のエントリも消す。
+  // ゲスト側はmeta購読がnullを受け取ることで解散を検知する
+  window.__aramonDisbandRoom = async function(roomId, lobbyEntryId){
+    try{ await remove(ref(fbDb, `rooms/${roomId}`)); }catch(err){}
+    if(lobbyEntryId){
+      try{ await remove(ref(fbDb, `lobby/${lobbyEntryId}`)); }catch(err){}
+    }
+  };
+
   window.__aramonSendInput = async function(roomId, input){
     try{
       await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { input, inputTs: Date.now() });
@@ -352,6 +370,18 @@
   };
   window.__aramonWatchShotEvents = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/shotEvents`);
+    const cb = (snap)=>{ callback(snap.key, snap.val()); };
+    onChildAdded(r, cb);
+    roomListeners.push({r,cb,isChildAdded:true});
+  };
+
+  // アイテムの出現/取得を都度配信する(ホストのlootItems配列は非ホストに自動同期されないため、
+  // 拾われて消えた/新たに湧いたという「変化」だけを個別イベントとして届ける)
+  window.__aramonPushLootEvent = async function(roomId, evt){
+    try{ await push(ref(fbDb, `rooms/${roomId}/lootEvents`), evt); }catch(err){}
+  };
+  window.__aramonWatchLootEvents = function(roomId, callback){
+    const r = ref(fbDb, `rooms/${roomId}/lootEvents`);
     const cb = (snap)=>{ callback(snap.key, snap.val()); };
     onChildAdded(r, cb);
     roomListeners.push({r,cb,isChildAdded:true});

@@ -166,7 +166,19 @@ function advanceZonePhase(){
   zoneState.phaseIndex = newIndex;
   zoneState.timer = 0;
   zoneState.shrinking = true;
+  const beforeCount = lootItems.length;
   spawnLoot(30, zoneState.toCenter, zoneState.toRadius*0.8);
+  // マルチプレイではこの関数はホストでしか呼ばれないため、新規に生成したアイテムを
+  // ゲスト側にも見えるよう明示的に配信する(ゲストはロビー開始時の初期アイテムしか
+  // 自前生成しておらず、以降host側だけで増える分は届けないと見えないままになる)
+  if(netState.mode==='multi' && netState.isHost){
+    for(let i=beforeCount;i<lootItems.length;i++){
+      const it = lootItems[i];
+      window.__aramonPushLootEvent(netState.roomId, {
+        evtType:'spawn', id:it.id, kind:it.kind, itemType:it.type, x:Math.round(it.x), y:Math.round(it.y), bob:it.bob,
+      });
+    }
+  }
   pushToast('安全圏が縮小を開始した！');
   return true;
 }
@@ -520,7 +532,7 @@ function seededGenVolcanoAndLava(rng){
 }
 function seededGenRocks(rng){
   rocks = [];
-  const count = currentMap.rockCount;
+  const count = Math.round(currentMap.rockCount * (worldDensityScale||1));
   let guard=0;
   while(rocks.length<count && guard<count*50){
     guard++;
@@ -547,7 +559,7 @@ function seededGenRocks(rng){
 }
 function seededGenTerrain(rng){
   terrainDecor = [];
-  const count = currentMap.decorCount;
+  const count = Math.round(currentMap.decorCount * (worldDensityScale||1));
   for(let i=0;i<count;i++){
     const x = seededRand(rng,40,WORLD.w-40), y = seededRand(rng,40,WORLD.h-40);
     if(isOnHazard(x,y,70)) continue;

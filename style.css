@@ -119,6 +119,19 @@
     margin-top:6px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
+  #lobbyHostBtnRow{ display:flex; gap:12px; margin-top:6px; }
+  #lobbyStartBtn{
+    padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+  }
+  #lobbyDisbandBtn{
+    padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,80,80,0.12); border:1px solid rgba(255,80,80,0.4); border-radius:6px; cursor:pointer;
+  }
+  #lobbyGuestLeaveBtn{
+    margin-top:6px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
 
   #multiActionRow{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
   #createRoomBtn, #findRoomBtn{

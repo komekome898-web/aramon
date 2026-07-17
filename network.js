@@ -41,6 +41,7 @@ async function beginMultiplayerMatch(){
   joyKnobEl.style.transform='translate(0,0)';
   remoteInputs = {}; processedHitKeys.clear(); authPublishTimer=0;
   pendingRemoteFireEvents.length = 0; processedFireEventKeys.clear();
+  processedLootEventKeys.clear();
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -73,6 +74,8 @@ async function beginMultiplayerMatch(){
   netState.humanPlayers = fixedPlayers;
   currentMap = MAPS[mapKey] || MAPS.wild;
   console.log('[aramon] final fixedPlayers used for this match:', JSON.stringify(fixedPlayers));
+
+  applyWorldScale(MULTI_MAP_SCALE); // マルチプレイは少人数想定のため、ソロより一回り狭いマップにする
 
   const rng = makeSeededRng(seed);
 
@@ -110,7 +113,9 @@ async function beginMultiplayerMatch(){
     entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
   }
 
-  seededSpawnLoot(rng, 420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
+  const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE);
+  seededSpawnLoot(rng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   updateCamera();
 
   window.__aramonWatchInputs(netState.roomId, (players)=>{
@@ -123,7 +128,17 @@ async function beginMultiplayerMatch(){
   window.__aramonWatchEvents(netState.roomId, (evt)=>{
     if(evt && evt.kind==='kill' && evt.text) pushKillFeed(evt.text);
     if(evt && evt.kind==='matchEnd' && !game.over){
-      if(player && player.netPlayerId===evt.winnerNetId && player.alive){ onPlayerWin(); }
+      if(player && player.netPlayerId===evt.winnerNetId && player.alive){
+        onPlayerWin();
+      } else if(player && player.netPlayerId!==evt.winnerNetId){
+        // 自分は勝者ではない側。通常はhostが即時配信するauthStateのhp/alive更新で
+        // 自然に結果画面へ移るが、通信の遅延等でそれが届かない場合に備えて、
+        // 少し待っても試合が終わっていなければここで確実に終わらせる
+        // (ゲスト側が生き残ったまま延々と試合が終わらないのを防ぐ保険)
+        setTimeout(()=>{
+          if(!game.over){ showResult(false, player.placement || (entities.filter(e=>e.alive).length+1)); }
+        }, 500);
+      }
     }
   });
 
@@ -145,6 +160,11 @@ async function beginMultiplayerMatch(){
   if(!netState.isHost){
     window.__aramonWatchShotEvents(netState.roomId, (evtKey, evt)=>{
       spawnVisualShotFromEvent(evt);
+    });
+    window.__aramonWatchLootEvents(netState.roomId, (evtKey, evt)=>{
+      if(processedLootEventKeys.has(evtKey)) return;
+      processedLootEventKeys.add(evtKey);
+      applyLootEventLocally(evt);
     });
   }
 
@@ -275,6 +295,7 @@ function tryNonHostPlayerFireVisual(dt){
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
         color:mv.color, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
+        ownerId: player.id,
       });
     }
   } else {
@@ -317,7 +338,7 @@ function broadcastNewShotsAsHost(){
     if(lastBroadcastProjIds.has(p.id)) continue;
     const owner = p.ownerId!=null ? entities.find(e=>e.id===p.ownerId) : null;
     window.__aramonPushShotEvent(netState.roomId, {
-      type:'proj', sourceNetId: (owner && owner.netPlayerId) || null,
+      type:'proj', sourceNetId: (owner && owner.netPlayerId) || null, ownerId: p.ownerId!=null ? p.ownerId : null,
       x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
       vx:p.vx||0, vy:p.vy||0, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
@@ -342,6 +363,19 @@ function broadcastNewShotsAsHost(){
   }
   lastBroadcastAeIds = curAeIds;
 }
+// 非ホスト専用: ホストから届いたアイテムの出現/取得イベントを、自分のlootItems配列にも反映する
+const processedLootEventKeys = new Set();
+function applyLootEventLocally(evt){
+  if(!evt) return;
+  if(evt.evtType==='pickup'){
+    const idx = lootItems.findIndex(it=>it.id===evt.id);
+    if(idx>=0) lootItems.splice(idx,1);
+  } else if(evt.evtType==='spawn'){
+    if(!lootItems.find(it=>it.id===evt.id)){
+      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, bob:evt.bob||0 });
+    }
+  }
+}
 // 非ホスト専用: ホストから届いた発生イベントを、見た目専用の弾/範囲攻撃として即座に再現する
 // (当たり判定・ダメージはホストのauthStateで届くHP側が正なので、ここでは一切計算しない)
 function spawnVisualShotFromEvent(evt){
@@ -361,6 +395,7 @@ function spawnVisualShotFromEvent(evt){
         x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy,
         color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
         traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
+        ownerId: evt.ownerId!=null ? evt.ownerId : null,
       });
     }
   } else if(evt.type==='aoe'){
@@ -522,7 +557,17 @@ function loop(now){
         if(p.delay>0){ p.delay -= dt; continue; }
         const step = Math.hypot(p.vx,p.vy)*dt;
         p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
-        if(p.traveled >= p.maxRange) projectiles.splice(i,1);
+        let visualHit = p.traveled >= p.maxRange;
+        if(!visualHit){
+          // 当たり判定・ダメージ計算はホストのauthState/hit報告が正なので、ここでは一切計算しない。
+          // ただし見た目上は接触した瞬間に消さないと、弾が体を貫通していくように見えてしまうため、
+          // 見た目専用の当たり「らしさ」判定だけをローカルで行う
+          for(const e of entities){
+            if(!e.alive || e.id===p.ownerId) continue;
+            if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
+          }
+        }
+        if(visualHit) projectiles.splice(i,1);
       }
       updateCamera();
       matchTime += dt;

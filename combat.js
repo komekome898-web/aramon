@@ -267,13 +267,20 @@ function checkWin(){
   if(aliveList.length<=1 && !game.over){
     if(aliveList.length===1){
       aliveList[0].placement = 1;
+      if(netState.mode==='multi'){
+        // 決着した瞬間の全員の最終状態(HP0/alive:falseや順位を含む)を、通常の配信タイマーを
+        // 待たずに即座に配信する。これを待つとこの直後にhost側がgame.over=trueとなって
+        // 配信ループそのものが止まり、非ホスト側が自分の敗北/試合終了を一生知れなくなる
+        // (=ゲストが生き残ったままマッチが終わらないように見える)不具合の原因になっていた。
+        window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload()).catch(()=>{});
+        window.__aramonPushEvent(netState.roomId, {kind:'matchEnd', winnerNetId: aliveList[0].netPlayerId||null, winnerName: aliveList[0].name, ts:Date.now()});
+      }
       if(aliveList[0].isPlayer){
         onPlayerWin();
       } else if(netState.mode==='multi' && netState.isHost && hostSpectating){
         // ホストは既に敗退し観戦していた場合、他の誰かが優勝した時点で結果画面へ
         showResult(false, player.placement||2);
       }
-      if(netState.mode==='multi') window.__aramonPushEvent(netState.roomId, {kind:'matchEnd', winnerNetId: aliveList[0].netPlayerId||null, winnerName: aliveList[0].name, ts:Date.now()});
     }
   }
 }
@@ -783,7 +790,15 @@ function updateLootPickups(){
       }
       if(consumed) break;
     }
-    if(consumed) lootItems.splice(i,1);
+    if(consumed){
+      // マルチプレイのホストはここでしか消費判定をしないため、ゲスト側の見た目からも
+      // このアイテムを消すよう明示的に配信する(効果はauthStateのhp/guts等で既に伝わるが、
+      // アイテム自体の見た目はホスト側のlootItems配列にしか無いため個別に届ける必要がある)
+      if(netState.mode==='multi' && netState.isHost){
+        window.__aramonPushLootEvent(netState.roomId, { evtType:'pickup', id: it.id });
+      }
+      lootItems.splice(i,1);
+    }
   }
 }
 function update(dt){

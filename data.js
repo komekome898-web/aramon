@@ -1,8 +1,9 @@
-const WORLD = { w: 18100, h: 18100 };
+const WORLD_BASE_SIZE = 18100;
+const WORLD = { w: WORLD_BASE_SIZE, h: WORLD_BASE_SIZE };
 const DASH_COOLDOWN_MAX = 3.0;
 const ZONE_CENTER0 = { x: WORLD.w/2, y: WORLD.h/2 };
 
-const ZONE_PHASES = [
+const ZONE_PHASES_BASE = [
   { holdRadius: 7910, shrinkTime: 0,  holdTime: 61, dps: 0  },
   { holdRadius: 5495, shrinkTime: 36, holdTime: 48, dps: 3  },
   { holdRadius: 3485, shrinkTime: 29, holdTime: 42, dps: 5  },
@@ -10,6 +11,22 @@ const ZONE_PHASES = [
   { holdRadius: 872,  shrinkTime: 21, holdTime: 29, dps: 12 },
   { holdRadius: 302,  shrinkTime: 17, holdTime: 99999, dps: 16 },
 ];
+let ZONE_PHASES = ZONE_PHASES_BASE.map(p=>({...p}));
+
+// マルチプレイ(少人数想定)はソロより一回り狭いマップにする
+const MULTI_MAP_SCALE = 0.68;
+let worldDensityScale = 1; // 岩・地形装飾の密度倍率(マップ面積縮小に応じてseededGen側で使用)
+
+// マップの規模(ワールドサイズ・安全圏半径)をスケールに応じて再計算する。
+// ソロは常にscale=1、マルチはMULTI_MAP_SCALEを使う。試合開始のたびに必ず呼び出すこと。
+function applyWorldScale(scale){
+  WORLD.w = Math.round(WORLD_BASE_SIZE * scale);
+  WORLD.h = Math.round(WORLD_BASE_SIZE * scale);
+  ZONE_CENTER0.x = WORLD.w/2;
+  ZONE_CENTER0.y = WORLD.h/2;
+  ZONE_PHASES = ZONE_PHASES_BASE.map(p=>({...p, holdRadius: Math.round(p.holdRadius*scale)}));
+  worldDensityScale = scale*scale; // 面積比に応じて岩/地形の個数密度を調整
+}
 
 // ===== マップ定義 =====
 // hasVolcano:true のマップは、通れない火山エリアと踏むとダメージを受ける溶岩エリアが生成される

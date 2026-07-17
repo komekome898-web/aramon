@@ -273,25 +273,87 @@ function renderLobbyPlayerList(){
   document.getElementById('lobbySubText').textContent = `${humanIds.length} / ${netState.capacity} 人が参加中`;
 }
 
+// ホストが「スタート」を押した後の3秒カウントダウンの状態。
+// hostCountdownSnapshotが非nullの間は「カウント中」を意味し、この間に参加者が
+// 減った場合はcancelHostCountdown()で開始を取り消す。
+let hostCountdownTimer = null;
+let hostCountdownSnapshot = null;
+let guestCountdownTimer = null;
+
+function showLobbyButtonsForRole(){
+  document.getElementById('lobbyCancelBtn').classList.add('hidden');
+  document.getElementById('lobbyHostBtnRow').classList.toggle('hidden', !netState.isHost);
+  document.getElementById('lobbyGuestLeaveBtn').classList.toggle('hidden', !!netState.isHost);
+}
+
+function resetLobbyCountdownDisplay(){
+  document.getElementById('lobbyCountdown').textContent='';
+  if(guestCountdownTimer){ clearInterval(guestCountdownTimer); guestCountdownTimer=null; }
+}
+
+function startLobbyCountdownDisplay(startAt){
+  resetLobbyCountdownDisplay();
+  const tick = ()=>{
+    const remain = Math.max(0, Math.ceil((startAt-Date.now())/1000));
+    document.getElementById('lobbyCountdown').textContent = remain>0 ? `まもなく開始… ${remain}` : 'まもなく開始…';
+  };
+  tick();
+  guestCountdownTimer = setInterval(tick, 250);
+}
+
+function cancelHostCountdown(reason){
+  if(hostCountdownTimer){ clearTimeout(hostCountdownTimer); hostCountdownTimer=null; }
+  hostCountdownSnapshot = null;
+  resetLobbyCountdownDisplay();
+  document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています。準備ができたら「スタート」を押してください';
+  if(netState.roomId) window.__aramonCancelRoomStarting(netState.roomId);
+  if(reason) pushToast(reason);
+}
+
+async function handleRoomDisbanded(){
+  matchBeginning = false;
+  resetLobbyCountdownDisplay();
+  document.getElementById('lobbyScreen').classList.add('hidden');
+  pushToast('ホストが部屋を解散しました');
+  joinInProgress = false;
+  document.getElementById('joinBtn').disabled = false;
+  await openFindRoomScreen();
+}
+
 function enterLobbyForRoom(){
   document.getElementById('lobbyScreen').classList.remove('hidden');
-  document.getElementById('lobbyCountdown').textContent='';
+  resetLobbyCountdownDisplay();
   document.getElementById('lobbyPlayerList').innerHTML='';
+  hostCountdownTimer=null; hostCountdownSnapshot=null;
+  showLobbyButtonsForRole();
 
   window.__aramonWatchRoomPlayers(netState.roomId, (players)=>{
     netState.humanPlayers = players||{};
     renderLobbyPlayerList();
-    if(netState.isHost) maybeStartCountdown();
+    // ホストのスタートカウント中に参加者が抜けた場合は開始をキャンセルする
+    if(netState.isHost && hostCountdownSnapshot){
+      const stillHere = hostCountdownSnapshot.every(id => players && players[id]);
+      if(!stillHere) cancelHostCountdown('参加者が退出したため開始をキャンセルしました');
+    }
   });
 
   if(netState.isHost){
-    document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています…';
+    document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています。準備ができたら「スタート」を押してください';
   } else {
     document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
     window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
-      if(meta && meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
-      if(meta && typeof meta.capacity==='number'){ netState.capacity = meta.capacity; }
-      if(meta && meta.status==='playing' && !game.started && !matchBeginning){
+      if(!meta){
+        if(!game.started && !matchBeginning) handleRoomDisbanded();
+        return;
+      }
+      if(meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
+      if(typeof meta.capacity==='number'){ netState.capacity = meta.capacity; }
+      if(meta.status==='starting' && meta.startAt && !matchBeginning){
+        startLobbyCountdownDisplay(meta.startAt);
+      } else if(meta.status==='waiting'){
+        resetLobbyCountdownDisplay();
+        document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
+      } else if(meta.status==='playing' && !game.started && !matchBeginning){
         beginMultiplayerMatch();
       }
     });
@@ -316,6 +378,9 @@ async function createRoomFlow(){
   document.getElementById('lobbyScreen').classList.remove('hidden');
   document.getElementById('lobbyPlayerList').innerHTML='';
   document.getElementById('lobbyCountdown').textContent='';
+  document.getElementById('lobbyHostBtnRow').classList.add('hidden');
+  document.getElementById('lobbyGuestLeaveBtn').classList.add('hidden');
+  document.getElementById('lobbyCancelBtn').classList.remove('hidden');
 
   const displayName = getDisplayNameFromInput();
   let result;
@@ -436,32 +501,54 @@ async function startMatchmaking(){
   enterLobbyForRoom();
 }
 
-let countdownStarted = false;
-function maybeStartCountdown(){
-  if(countdownStarted || netState.matchStarting) return;
-  const humanCount = Object.keys(netState.humanPlayers||{}).length;
-  if(humanCount < 1) return;
-  countdownStarted = true;
-  let remaining = humanCount>=netState.capacity ? 3 : 12;
-  const tick = ()=>{
-    if(netState.cancelled) return;
-    document.getElementById('lobbyCountdown').textContent = `まもなく開始… ${remaining}`;
-    if(remaining<=0){
-      netState.matchStarting = true;
-      window.__aramonSetRoomStatus(netState.roomId, 'playing');
-      window.__aramonCleanupLobbyEntry();
-      beginMultiplayerMatch();
-      return;
-    }
-    remaining--;
-    setTimeout(tick, 1000);
-  };
-  tick();
-}
+document.getElementById('lobbyStartBtn').addEventListener('click', async ()=>{
+  if(hostCountdownSnapshot) return; // カウント中の多重押下防止
+  hostCountdownSnapshot = Object.keys(netState.humanPlayers||{});
+  const startAt = Date.now() + 3000;
+  netState.matchStarting = false;
+  await window.__aramonSetRoomStarting(netState.roomId, startAt);
+  startLobbyCountdownDisplay(startAt);
+  hostCountdownTimer = setTimeout(async ()=>{
+    hostCountdownTimer = null;
+    if(!hostCountdownSnapshot) return; // 途中でキャンセル済み
+    hostCountdownSnapshot = null;
+    netState.matchStarting = true;
+    await window.__aramonSetRoomStatus(netState.roomId, 'playing');
+    window.__aramonCleanupLobbyEntry();
+    beginMultiplayerMatch();
+  }, 3000);
+});
+
+document.getElementById('lobbyDisbandBtn').addEventListener('click', async ()=>{
+  if(hostCountdownTimer){ clearTimeout(hostCountdownTimer); hostCountdownTimer=null; }
+  hostCountdownSnapshot = null;
+  resetLobbyCountdownDisplay();
+  const roomId = netState.roomId;
+  const lobbyEntryId = window.__aramonLobbyEntryId;
+  document.getElementById('lobbyScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+  joinInProgress = false;
+  document.getElementById('joinBtn').disabled = false;
+  netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
+  matchBeginning = false;
+  if(roomId){
+    await window.__aramonLeaveRoom(roomId); // 自分のリスナー解除+players登録解除
+    await window.__aramonDisbandRoom(roomId, lobbyEntryId); // 部屋自体を削除
+  }
+});
+
+document.getElementById('lobbyGuestLeaveBtn').addEventListener('click', async ()=>{
+  netState.cancelled = true;
+  resetLobbyCountdownDisplay();
+  joinInProgress = false;
+  document.getElementById('joinBtn').disabled = false;
+  if(netState.roomId) await window.__aramonLeaveRoom(netState.roomId);
+  document.getElementById('lobbyScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+});
 
 document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
   netState.cancelled = true;
-  countdownStarted = false;
   joinInProgress = false;
   document.getElementById('joinBtn').disabled = false;
   if(netState.roomId){
@@ -482,6 +569,7 @@ function startGame(){
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
   joyKnobEl.style.transform='translate(0,0)';
   currentMap = MAPS[game.selectedMap] || MAPS.wild;
+  applyWorldScale(1);
   initZone();
   genVolcanoAndLava();
   genRocks();
@@ -1101,7 +1189,9 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
   if(netState.mode==='multi' && netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
     netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
-    countdownStarted=false; netState.matchStarting=false; hostSpectating=false; matchBeginning=false;
+    hostCountdownTimer && clearTimeout(hostCountdownTimer);
+    hostCountdownTimer=null; hostCountdownSnapshot=null;
+    netState.matchStarting=false; hostSpectating=false; matchBeginning=false;
   }
 });
 
