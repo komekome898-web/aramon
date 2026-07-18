@@ -1207,6 +1207,11 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
   const data = loadMastermons();
   data[elementKey] = createMastermon(elementKey, name);
   saveMastermons(data);
+  // 登録直後に「マスモン」画面を開いた時、今登録したばかりのマスモンが表示されるようにする。
+  // これをしないと、既に他のマスモンを登録済みの場合に古い選択(mastermonDetailKey)が
+  // 残ったままとなり、「このマスモンで参戦する」を押しても新しく登録した方ではなく
+  // 別のマスモンが選ばれてしまい、狙った試合で経験値が入らないように見える不具合があった。
+  mastermonDetailKey = elementKey;
   registerEl.classList.add('hidden');
   renderSelectorCards();
   pushToast('マスモンに登録しました！');
