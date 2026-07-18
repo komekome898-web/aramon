@@ -42,11 +42,15 @@ const MAPS = {
   wild: {
     key:'wild', label:'荒野', rockCount:800, decorCount:9000, hasVolcano:false,
     groundColor:'#142433',
+    previewIcon:'🪨', previewColors:['#2a3a4a','#0f1a24'],
+    desc:'岩が点在するだけのシンプルな荒野。見通しが良く、初めてのバトルにもおすすめ。',
   },
   kaurea: {
     key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
     mountainStyle:'volcano',
     groundColor:'#241708',
+    previewIcon:'🌋', previewColors:['#5a2a12','#1a0c05'],
+    desc:'3つの火山と溶岩地帯が広がる灼熱の島。溶岩に触れるとダメージを受ける。',
     // ワールド比率(0〜1)で指定した3つの火山の位置。大きさも少しずつ変える
     volcanoSites:[
       { xr:0.60, yr:0.42, radius:1550, peakBumps:7 },
@@ -60,6 +64,8 @@ const MAPS = {
     key:'papas', label:'パパス雪山', rockCount:540, decorCount:6200, hasVolcano:true,
     mountainStyle:'snow',
     groundColor:'#dbe8f2',
+    previewIcon:'🏔️', previewColors:['#dce8f2','#8fa9be'],
+    desc:'白銀の雪山と尖った氷の水晶がそびえる極寒のフィールド。',
     volcanoSites:[
       { xr:0.56, yr:0.40, radius:1650, peakBumps:6 },
       { xr:0.22, yr:0.72, radius:1200, peakBumps:5 },
@@ -72,6 +78,8 @@ const MAPS = {
     key:'palepale', label:'パレパレジャングル', rockCount:520, decorCount:8200, hasVolcano:true,
     mountainStyle:'forest',
     groundColor:'#16321a',
+    previewIcon:'🌴', previewColors:['#1f4a24','#0c210f'],
+    desc:'深い森に阻まれた入り組んだジャングル。物陰からの奇襲に注意。',
     volcanoSites:[
       { xr:0.28, yr:0.30, radius:1300, peakBumps:8 },
       { xr:0.74, yr:0.26, radius:1150, peakBumps:7 },
@@ -85,6 +93,8 @@ const MAPS = {
   toble: {
     key:'toble', label:'トーブル海岸', rockCount:560, decorCount:6800, hasVolcano:false,
     groundColor:'#cdb27a',
+    previewIcon:'🌊', previewColors:['#2e6a8a','#c9ad76'],
+    desc:'左手に大海、右手から川が流れ込む海岸線。水の中は動きが鈍くなり、アイテムも湧かない。',
     hasSea:true, seaWidthRatio:0.14,
     hasRiver:true, riverCount:5, riverWidth:260,
     rockFlavors:[{ type:'rock', w:0.5 }, { type:'shell', w:0.5 }],
@@ -93,6 +103,8 @@ const MAPS = {
     key:'mandy', label:'マンディー砂漠', rockCount:480, decorCount:5200, hasVolcano:true,
     mountainStyle:'pyramid',
     groundColor:'#e8d79a',
+    previewIcon:'🔺', previewColors:['#d8c078','#8a6a3a'],
+    desc:'砂に埋もれたピラミッドが点在する砂漠。オアシスは足が遅くなる代わりにアイテムが豊富。',
     volcanoSites:[
       { xr:0.62, yr:0.35, radius:820, peakBumps:0 },
       { xr:0.24, yr:0.58, radius:650, peakBumps:0 },

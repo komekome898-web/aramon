@@ -263,8 +263,18 @@ function killEntity(victim, killer){
 }
 function checkWin(){
   if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
+  if(game.over) return;
   const aliveList = entities.filter(e=>e.alive);
-  if(aliveList.length<=1 && !game.over){
+  if(netState.mode==='multi' && hostSpectating){
+    // ホストは既に敗退し観戦中。残っているのが人間プレイヤーが誰もおらずbotだけになったら、
+    // 決着(最後の1体)を待たずにここでリザルト画面へ進む
+    const humanAlive = aliveList.some(e=>e.netPlayerId);
+    if(!humanAlive){
+      showResult(false, player.placement||2);
+      return;
+    }
+  }
+  if(aliveList.length<=1){
     if(aliveList.length===1){
       aliveList[0].placement = 1;
       if(netState.mode==='multi'){

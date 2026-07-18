@@ -240,13 +240,28 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi');
   });
 });
+function updateMapPreview(){
+  const map = MAPS[game.selectedMap] || MAPS.wild;
+  const imgEl = document.getElementById('mapPreviewImage');
+  const iconEl = document.getElementById('mapPreviewIcon');
+  const nameEl = document.getElementById('mapPreviewName');
+  const descEl = document.getElementById('mapPreviewDesc');
+  if(!imgEl) return;
+  const colors = map.previewColors || [map.groundColor||'#333', map.groundColor||'#111'];
+  imgEl.style.background = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
+  iconEl.textContent = map.previewIcon || '🗺️';
+  nameEl.textContent = map.label;
+  descEl.textContent = map.desc || '';
+}
 document.querySelectorAll('.map-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.map-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     game.selectedMap = MAPS[tab.dataset.map] ? tab.dataset.map : 'wild';
+    updateMapPreview();
   });
 });
+updateMapPreview();
 document.querySelectorAll('.cap-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));

@@ -114,6 +114,23 @@
   .mode-tab.active, .cap-tab.active, .map-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #multiOptions{ margin-top:4px; }
 
+  #mapPreview{
+    margin-top:12px; width:min(calc(90 * var(--vw)),480px); max-width:100%;
+    display:flex; align-items:center; gap:14px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:10px;
+    padding:10px 14px;
+  }
+  #mapPreviewImage{
+    flex:0 0 auto; width:64px; height:64px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:30px; border:1px solid rgba(255,255,255,0.12);
+    box-shadow:inset 0 0 18px rgba(0,0,0,0.35);
+    transition:background 0.25s ease;
+  }
+  #mapPreviewInfo{ flex:1 1 auto; min-width:0; text-align:left; }
+  #mapPreviewName{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; letter-spacing:1px; color:var(--amber); }
+  #mapPreviewDesc{ margin-top:4px; font-size:11.5px; line-height:1.5; letter-spacing:0.4px; color:var(--ink-dim); }
+
   #lobbyScreen{
     position:absolute; inset:0; z-index:35;
     background: radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%), linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
@@ -462,6 +479,13 @@
   }
   .custom-select-item:active{ background:rgba(244,196,48,0.16); }
   .custom-select-item.active{ color:#1a1306; background:var(--amber); }
+  /* #rankingScreenは.resultScreenのoverflow-y:autoを継承しているが、そのままだと
+     モンスター種フィルターのポップアップ(.custom-select-menu、position:absolute)が
+     この画面自身の小さいスクロール領域に切り取られてしまい、項目が多いときに
+     スクロールでは見えない部分ができてしまう。ポップアップ自体は既に
+     max-height+overflow-y:autoでスクロール可能なので、外側のこの画面では
+     クリッピングさせず(overflow-y:visible)、画面全体を基準にはみ出させてよい。 */
+  #rankingScreen{ overflow-y:visible; }
   #rankingList{ margin-top:18px; width:min(calc(90 * var(--vw)),420px); max-height:calc(48 * var(--vh)); overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   #rankingList::-webkit-scrollbar{ width:12px; }
   #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
