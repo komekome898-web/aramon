@@ -153,6 +153,7 @@
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
   #findRoomBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+  #createRoomBtn:disabled, #findRoomBtn:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; }
 
   #roomListScreen{
     position:absolute; inset:0; z-index:35;
@@ -469,20 +470,26 @@
   #myStatsTitle.mystat-col-title, #myMonstersTitle.mystat-col-title{
     font-size:14px; text-shadow:none; flex-shrink:0;
   }
+  #myStatsModeTabs{ display:flex; gap:8px; margin-top:8px; flex-shrink:0; }
+  .mystat-mode-tab{
+    padding:6px 16px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .mystat-mode-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #myStatsOverall{
-    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; width:100%;
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; width:100%;
     overflow-y:auto; min-height:0; padding-bottom:4px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   .mystat-box{
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:14px 10px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:9px 8px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; width:100%; flex-shrink:0;
   }
-  .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:19px; color:var(--amber); }
-  .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
+  .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
+  .mystat-box .ml{ font-size:8px; letter-spacing:1.2px; color:var(--ink-dim); }
   #myStatsByElement{
-    margin-top:14px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
-    display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-right:10px; padding-bottom:4px;
+    margin-top:10px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
+    display:grid; grid-template-columns:1fr 1fr; gap:6px; padding-right:10px; padding-bottom:4px;
     align-content:start;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
@@ -492,12 +499,12 @@
   #myStatsByElement::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #myStatsByElement{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
   .mystat-elem-row{
-    display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 12px; background:rgba(255,255,255,0.04);
+    display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 10px; background:rgba(255,255,255,0.04);
     border-radius:6px; border:1px solid var(--panel-line); flex-shrink:0;
   }
-  .mystat-elem-row .ei{ width:28px; height:28px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
-  .mystat-elem-row .en{ text-align:center; font-size:13px; font-weight:600; margin-top:2px; }
-  .mystat-elem-row .ev-line{ width:100%; text-align:left; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); }
+  .mystat-elem-row .ei{ width:24px; height:24px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
+  .mystat-elem-row .en{ text-align:center; font-size:12px; font-weight:600; margin-top:1px; }
+  .mystat-elem-row .ev-line{ width:100%; text-align:left; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); }
 
   /* ---------- MASTERMON (マスモン) ---------- */
   #mastermonScreen{

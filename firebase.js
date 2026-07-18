@@ -283,8 +283,8 @@
     }catch(err){}
   };
 
-  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey){
-    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild' }); }catch(err){}
+  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null }); }catch(err){}
   };
 
   window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
@@ -294,7 +294,7 @@
       const cb = (snap)=>{
         const v = snap.val();
         if(v && v.seed!=null && v.fixedPlayers && !done){
-          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild' });
+          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[] });
         }
       };
       onValue(r, cb);

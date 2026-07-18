@@ -45,7 +45,7 @@ async function beginMultiplayerMatch(){
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
-  let seed, fixedPlayers, mapKey;
+  let seed, fixedPlayers, mapKey, hostMastermonBots;
   if(netState.isHost){
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
     fixedPlayers = netState.humanPlayers || {};
@@ -53,8 +53,18 @@ async function beginMultiplayerMatch(){
       fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement } };
     }
     mapKey = game.selectedMap || 'wild';
+    // ホストが持っているマスモンのうち、今使っているもの以外からランダムに選んでbot候補にする。
+    // 実際にどのbot枠に割り当てるかはこの後シード共有のrngで決めるので、ここでは
+    // 「今回の試合で使う可能性がある候補一覧」を確定してゲストにも配る
+    const ownMastermons = loadMastermons();
+    const candidateKeys = Object.keys(ownMastermons).filter(k=>k!==game.selectedMastermonKey);
+    const shuffledCandidates = shuffle(candidateKeys);
+    hostMastermonBots = shuffledCandidates.map(k=>{
+      const mm = ownMastermons[k];
+      return { key:k, name:mm.name, element:mm.element, stats:mm.stats };
+    });
     console.log('[aramon] HOST: publishing seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots);
   } else {
     console.log('[aramon] NON-HOST: waiting for seed+fixedPlayers...');
     const result = await window.__aramonWaitForRoomSeed(netState.roomId, 10000);
@@ -62,12 +72,14 @@ async function beginMultiplayerMatch(){
       seed = result.seed;
       fixedPlayers = result.fixedPlayers;
       mapKey = result.mapKey || 'wild';
+      hostMastermonBots = result.hostMastermonBots || [];
       console.log('[aramon] NON-HOST: received seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
     } else {
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
       mapKey = game.selectedMap || 'wild';
+      hostMastermonBots = [];
       console.warn('[aramon] NON-HOST: TIMEOUT, falling back to local snapshot', seed, fixedPlayers);
     }
   }
@@ -110,11 +122,24 @@ async function beginMultiplayerMatch(){
 
   const names = seededShuffle(rng, BOT_NAMES);
   const botElements = seededShuffle(rng, Object.keys(ELEMENTS));
+  // ホストのマスモン候補を、どのbot枠に登場させるかも共有シードで決める(host/guest間で必ず一致させるため)
+  const mastermonBotCount = Math.min((hostMastermonBots||[]).length, botCount);
+  const slotOrder = seededShuffle(rng, Array.from({length:botCount}, (_,i)=>i));
+  const slotToMastermon = new Map();
+  for(let j=0;j<mastermonBotCount;j++){ slotToMastermon.set(slotOrder[j], hostMastermonBots[j]); }
   for(let i=0;i<botCount;i++){
-    const elKey = botElements[i % botElements.length];
     const sp = spawnPoints[spawnIdx++];
-    const nm = names[i % names.length] + (i>=names.length?'Ⅱ':'');
-    entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
+    const mmDef = slotToMastermon.get(i);
+    if(mmDef){
+      const ent = createMonster(mmDef.element, false, mmDef.name, { id: idCounter++, spawnPoint: sp });
+      applyMastermonStatsToEntity(ent, mmDef);
+      ent.isMastermonBot = true;
+      entities.push(ent);
+    } else {
+      const elKey = botElements[i % botElements.length];
+      const nm = names[i % names.length] + (i>=names.length?'Ⅱ':'');
+      entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
+    }
   }
 
   // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
@@ -130,7 +155,10 @@ async function beginMultiplayerMatch(){
     }
   });
   window.__aramonWatchEvents(netState.roomId, (evt)=>{
-    if(evt && evt.kind==='kill' && evt.text) pushKillFeed(evt.text);
+    // キルフィードはキル発生元(常にホスト)がkillEntity()で即座に一度表示済みなので、
+    // 自分が送ったイベントがそのまま自分にも返ってくるホスト側では二重表示しない。
+    // ゲスト側はこのイベント経由でしか受け取らないため、これで両者とも1回だけになる。
+    if(evt && evt.kind==='kill' && evt.text && !netState.isHost) pushKillFeed(evt.text);
     if(evt && evt.kind==='matchEnd' && !game.over){
       if(player && player.netPlayerId===evt.winnerNetId && player.alive){
         onPlayerWin();

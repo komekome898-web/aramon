@@ -65,8 +65,8 @@
       <button class="cap-tab" data-cap="4">4人</button>
     </div>
     <div id="multiActionRow">
-      <button id="createRoomBtn">部屋を作る</button>
-      <button id="findRoomBtn">部屋を探す</button>
+      <button id="createRoomBtn" disabled>部屋を作る</button>
+      <button id="findRoomBtn" disabled>部屋を探す</button>
     </div>
   </div>
 
@@ -331,6 +331,10 @@
   <div id="myStatsColumns">
     <div id="myStatsLeftCol">
       <div class="rank mystat-col-title" id="myStatsTitle">MY RECORD</div>
+      <div id="myStatsModeTabs">
+        <button class="mystat-mode-tab active" data-mode="solo">ソロ</button>
+        <button class="mystat-mode-tab" data-mode="multi">マルチ</button>
+      </div>
       <div id="myStatsOverall"></div>
     </div>
     <div id="myStatsRightCol">

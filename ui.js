@@ -106,7 +106,7 @@ function buildMonsterListScreenGrid(){
     card.addEventListener('click', ()=>{
       game.selectedElement = key;
       game.selectedMastermonKey = null;
-      document.getElementById('joinBtn').disabled = false;
+      updatePlayButtonsEnabled();
       document.getElementById('monsterListScreen').classList.add('hidden');
       document.getElementById('startScreen').classList.remove('hidden');
       renderSelectorCards();
@@ -316,7 +316,7 @@ async function handleRoomDisbanded(){
   document.getElementById('lobbyScreen').classList.add('hidden');
   pushToast('ホストが部屋を解散しました');
   joinInProgress = false;
-  document.getElementById('joinBtn').disabled = false;
+  updatePlayButtonsEnabled();
   await openFindRoomScreen();
 }
 
@@ -528,7 +528,7 @@ document.getElementById('lobbyDisbandBtn').addEventListener('click', async ()=>{
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
   joinInProgress = false;
-  document.getElementById('joinBtn').disabled = false;
+  updatePlayButtonsEnabled();
   netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
   matchBeginning = false;
   if(roomId){
@@ -541,7 +541,7 @@ document.getElementById('lobbyGuestLeaveBtn').addEventListener('click', async ()
   netState.cancelled = true;
   resetLobbyCountdownDisplay();
   joinInProgress = false;
-  document.getElementById('joinBtn').disabled = false;
+  updatePlayButtonsEnabled();
   if(netState.roomId) await window.__aramonLeaveRoom(netState.roomId);
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
@@ -550,7 +550,7 @@ document.getElementById('lobbyGuestLeaveBtn').addEventListener('click', async ()
 document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
   netState.cancelled = true;
   joinInProgress = false;
-  document.getElementById('joinBtn').disabled = false;
+  updatePlayButtonsEnabled();
   if(netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
     await window.__aramonCleanupLobbyEntry();
@@ -600,6 +600,15 @@ function startGame(){
   pushToast('バトル開始！');
 }
 let joinInProgress = false;
+// モンスター(またはマスモン)が選択されていない状態では、ソロの「バトルに参加する」だけでなく
+// マルチプレイの「部屋を作る」「部屋を探す」もクリックできないようにする
+// (未選択のままマルチプレイに入れてしまう不具合の修正)
+function updatePlayButtonsEnabled(){
+  const enabled = !!game.selectedElement;
+  document.getElementById('joinBtn').disabled = !enabled;
+  document.getElementById('createRoomBtn').disabled = !enabled;
+  document.getElementById('findRoomBtn').disabled = !enabled;
+}
 document.getElementById('joinBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
   joinInProgress = true;
@@ -610,6 +619,7 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
 });
 document.getElementById('createRoomBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
+  if(!game.selectedElement){ pushToast('先にモンスターを選択してください'); return; }
   joinInProgress = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
@@ -617,6 +627,7 @@ document.getElementById('createRoomBtn').addEventListener('click', ()=>{
 });
 document.getElementById('findRoomBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
+  if(!game.selectedElement){ pushToast('先にモンスターを選択してください'); return; }
   joinInProgress = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
@@ -651,7 +662,7 @@ function showResult(isWin, placement){
     iconEl.src = imgSrcFor(iconEl.dataset.basePath);
   }
   document.getElementById('resultScreen').classList.remove('hidden');
-  recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin);
+  recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
 }
@@ -659,14 +670,7 @@ function showResult(isWin, placement){
    LOCAL STATS (localStorage)
 ===================================================================== */
 const LOCAL_STATS_KEY = 'aramon_local_stats_v1';
-function loadLocalStats(){
-  try{
-    const raw = localStorage.getItem(LOCAL_STATS_KEY);
-    if(!raw) return null;
-    return JSON.parse(raw);
-  }catch(err){ return null; }
-}
-function defaultLocalStats(){
+function defaultModeStats(){
   const byElement = {};
   Object.keys(ELEMENTS).forEach(key=>{
     byElement[key] = { bestDamage:0, bestKills:0, matches:0 };
@@ -677,23 +681,46 @@ function defaultLocalStats(){
     byElement,
   };
 }
+function defaultLocalStats(){
+  return { solo: defaultModeStats(), multi: defaultModeStats() };
+}
+function loadLocalStats(){
+  try{
+    const raw = localStorage.getItem(LOCAL_STATS_KEY);
+    if(!raw) return null;
+    const parsed = JSON.parse(raw);
+    if(!parsed) return null;
+    // 旧フォーマット(ソロ/マルチ分離前)は、これまでの記録をまるごとソロ側へ引き継ぐ形で移行する
+    if(!parsed.solo && !parsed.multi && typeof parsed.totalMatches==='number'){
+      const migrated = { solo: parsed, multi: defaultModeStats() };
+      saveLocalStats(migrated);
+      return migrated;
+    }
+    if(!parsed.solo) parsed.solo = defaultModeStats();
+    if(!parsed.multi) parsed.multi = defaultModeStats();
+    return parsed;
+  }catch(err){ return null; }
+}
 function saveLocalStats(stats){
   try{ localStorage.setItem(LOCAL_STATS_KEY, JSON.stringify(stats)); }catch(err){}
 }
-function recordMatchResult(elementKey, kills, damage, isWin){
+function recordMatchResult(elementKey, kills, damage, isWin, mode){
   let stats = loadLocalStats();
   if(!stats) stats = defaultLocalStats();
-  if(!stats.byElement) stats.byElement = {};
-  if(!stats.byElement[elementKey]) stats.byElement[elementKey] = { bestDamage:0, bestKills:0, matches:0 };
+  const modeKey = mode==='multi' ? 'multi' : 'solo';
+  if(!stats[modeKey]) stats[modeKey] = defaultModeStats();
+  const ms = stats[modeKey];
+  if(!ms.byElement) ms.byElement = {};
+  if(!ms.byElement[elementKey]) ms.byElement[elementKey] = { bestDamage:0, bestKills:0, matches:0 };
 
-  stats.totalMatches = (stats.totalMatches||0) + 1;
-  stats.totalWins = (stats.totalWins||0) + (isWin?1:0);
-  stats.totalKills = (stats.totalKills||0) + kills;
-  stats.totalDamage = (stats.totalDamage||0) + damage;
-  stats.bestDamage = Math.max(stats.bestDamage||0, damage);
-  stats.bestKills = Math.max(stats.bestKills||0, kills);
+  ms.totalMatches = (ms.totalMatches||0) + 1;
+  ms.totalWins = (ms.totalWins||0) + (isWin?1:0);
+  ms.totalKills = (ms.totalKills||0) + kills;
+  ms.totalDamage = (ms.totalDamage||0) + damage;
+  ms.bestDamage = Math.max(ms.bestDamage||0, damage);
+  ms.bestKills = Math.max(ms.bestKills||0, kills);
 
-  const es = stats.byElement[elementKey];
+  const es = ms.byElement[elementKey];
   es.matches = (es.matches||0) + 1;
   es.bestDamage = Math.max(es.bestDamage||0, damage);
   es.bestKills = Math.max(es.bestKills||0, kills);
@@ -791,7 +818,7 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
   if(game.selectedMastermonKey===deletedKey){
     game.selectedMastermonKey = null;
     game.selectedElement = null;
-    document.getElementById('joinBtn').disabled = true;
+    updatePlayButtonsEnabled();
   }
   renderSelectorCards();
   pushToast('マスモンを削除しました');
@@ -872,7 +899,7 @@ function renderMastermonDetail(key){
   document.getElementById('mastermonUseBtn').onclick = ()=>{
     game.selectedElement = key;
     game.selectedMastermonKey = key;
-    document.getElementById('joinBtn').disabled = false;
+    updatePlayButtonsEnabled();
     document.getElementById('mastermonScreen').classList.add('hidden');
     document.getElementById('startScreen').classList.remove('hidden');
     renderSelectorCards();
@@ -1117,20 +1144,25 @@ function buildMastermonTrainingHtml(mm){
     </div>`;
 }
 
+// マスモンのステータス倍率を任意のエンティティに適用する(プレイヤー本人にも、マルチプレイの
+// マスモンbotにも共通で使う)
+function applyMastermonStatsToEntity(ent, mm){
+  if(!ent || !mm) return;
+  const mults = mastermonEffectMults(mm);
+  ent.maxHp = Math.round(ent.maxHp * mults.lifeMult);
+  ent.hp = ent.maxHp;
+  ent.speed = ent.speed * mults.speedMult;
+  ent.mastermonDmgDealtMult = mults.dmgDealtMult;
+  ent.mastermonDmgTakenMult = mults.dmgTakenMult;
+  ent.mastermonGutsRegenMult = mults.gutsRegenMult;
+  ent.mastermonCooldownMult = mults.cooldownMult;
+}
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){
   if(!game.selectedMastermonKey) return;
   const data = loadMastermons();
   const mm = data[game.selectedMastermonKey];
-  if(!mm || !player) return;
-  const mults = mastermonEffectMults(mm);
-  player.maxHp = Math.round(player.maxHp * mults.lifeMult);
-  player.hp = player.maxHp;
-  player.speed = player.speed * mults.speedMult;
-  player.mastermonDmgDealtMult = mults.dmgDealtMult;
-  player.mastermonDmgTakenMult = mults.dmgTakenMult;
-  player.mastermonGutsRegenMult = mults.gutsRegenMult;
-  player.mastermonCooldownMult = mults.cooldownMult;
+  applyMastermonStatsToEntity(player, mm);
 }
 
 // 試合終了後：マスモン使用時はEXP付与、未登録の種族でチャンピオンを取った場合は登録を促す
@@ -1198,7 +1230,7 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
   document.getElementById('killFeed').innerHTML='';
   game.started=false;
   joinInProgress = false;
-  document.getElementById('joinBtn').disabled = false;
+  updatePlayButtonsEnabled();
   renderSelectorCards();
   if(netState.mode==='multi' && netState.roomId){
     await window.__aramonLeaveRoom(netState.roomId);
@@ -1290,6 +1322,7 @@ document.querySelectorAll('.rank-tab').forEach(tab=>{
 });
 
 let myStatsOpenedFrom = 'result';
+let myStatsModeTab = 'solo';
 function openMyStatsScreen(fromTitle){
   myStatsOpenedFrom = fromTitle ? 'title' : 'result';
   document.getElementById('myStatsScreen').classList.remove('hidden');
@@ -1297,8 +1330,17 @@ function openMyStatsScreen(fromTitle){
   document.getElementById('startScreen').classList.add('hidden');
   renderMyStats();
 }
+document.querySelectorAll('.mystat-mode-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.mystat-mode-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    myStatsModeTab = tab.dataset.mode;
+    renderMyStats();
+  });
+});
 function renderMyStats(){
-  const stats = loadLocalStats() || defaultLocalStats();
+  const allStats = loadLocalStats() || defaultLocalStats();
+  const stats = allStats[myStatsModeTab] || defaultModeStats();
   const derived = computeDerivedStats(stats);
   const overallEl = document.getElementById('myStatsOverall');
   overallEl.innerHTML = `
