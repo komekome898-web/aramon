@@ -1004,6 +1004,7 @@ function buildMastermonInfoHtml(key, mm, el){
   const effHp = Math.round(el.hp*mults.lifeMult);
   const effSpeed = Math.round(el.speed*(el.speedMod||1)*mults.speedMult);
   const fireRateMult = 1/mults.cooldownMult;
+  const dashDistance = Math.round((DASH_REF_SPEED*DASH_REF_SPEED*DASH_SPEED_MULT/Math.max(effSpeed,1))*DASH_DURATION);
   const sc = STATE_CHANGES[key];
 
   // mastermonStatFactor()はステータス100で1.0(=無補正)を返すため、1.0を基準に上昇/下降を判定する。
@@ -1018,6 +1019,7 @@ function buildMastermonInfoHtml(key, mm, el){
   const statRows = [
     { label:'HP', val: effHp, cls: mmMultColorClass(mults.lifeMult, false) },
     { label:'移動速度', val: effSpeed, cls: mmMultColorClass(mults.speedMult, false) },
+    { label:'ダッシュ距離', val: dashDistance, cls: mmMultColorClass(1/mults.speedMult, false) },
     { label:'技ダメ倍率', val: mmFmtMult(mults.dmgDealtMult), cls: mmMultColorClass(mults.dmgDealtMult, false) },
     { label:'被ダメ倍率', val: mmFmtMult(mults.dmgTakenMult), cls: mmMultColorClass(mults.dmgTakenMult, true) },
     { label:'連射速度倍率', val: mmFmtMult(fireRateMult), cls: mmMultColorClass(fireRateMult, false) },

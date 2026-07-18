@@ -407,7 +407,9 @@ function resolveMovement(m, dt){
   const effSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
   if(m.dashTimer>0){
     m.dashTimer -= dt;
-    tryMoveAxis(m, m.dashDirX*effSpeed*3.0*dt, m.dashDirY*effSpeed*3.0*dt);
+    // ダッシュ速度は移動速度に反比例させる(移動速度200を基準に、遅いほど距離が伸びる)
+    const dashSpeed = (DASH_REF_SPEED*DASH_REF_SPEED*DASH_SPEED_MULT)/Math.max(effSpeed,1);
+    tryMoveAxis(m, m.dashDirX*dashSpeed*dt, m.dashDirY*dashSpeed*dt);
     return;
   }
   if(m.isPlayer || m.isRemoteHuman){

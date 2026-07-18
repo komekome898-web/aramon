@@ -144,7 +144,7 @@ function tryDash(m){
   if(Math.hypot(dx,dy)<0.1){ dx=Math.cos(m.facingAngle); dy=Math.sin(m.facingAngle); }
   const len = Math.hypot(dx,dy)||1;
   m.dashDirX=dx/len; m.dashDirY=dy/len;
-  m.dashTimer=0.2; m.dashCooldown=DASH_COOLDOWN_MAX;
+  m.dashTimer=DASH_DURATION; m.dashCooldown=DASH_COOLDOWN_MAX;
 }
 document.getElementById('dashBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();

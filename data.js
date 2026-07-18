@@ -1,6 +1,9 @@
 const WORLD_BASE_SIZE = 18100;
 const WORLD = { w: WORLD_BASE_SIZE, h: WORLD_BASE_SIZE };
 const DASH_COOLDOWN_MAX = 3.0;
+const DASH_DURATION = 0.2; // ダッシュが持続する秒数
+const DASH_SPEED_MULT = 6.0; // ダッシュ速度倍率(旧3.0から距離2倍に)
+const DASH_REF_SPEED = 200; // この移動速度を基準に、遅いほどダッシュ距離が伸び、速いほど縮む
 const ZONE_CENTER0 = { x: WORLD.w/2, y: WORLD.h/2 };
 
 const ZONE_PHASES_BASE = [
@@ -140,72 +143,72 @@ function getDisplayImage(entity){
 
 const SIGNATURE_MOVES = {
   fire: [
-    { name:'ファイア',   tier:1, color:'#ff6b35', range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
-    { name:'ファイアブレス',   tier:2, color:'#ff6b35', range:1400, dmg:13, cooldown:1.1, gutsCost:9, projSpeed:480, hitR:7,  burst:3, burstGap:0.12, icon:'🔥' },
-    { name:'インフェルノ',   tier:3, color:'#ff3b1a', dmg:46, cooldown:2.1, gutsCost:18,
+    { name:'ファイア',   tier:1, color:'#ff6b35', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
+    { name:'ファイアブレス',   tier:2, color:'#ff6b35', range:1400, dmg:13, cooldown:1.1, gutsCost:16, projSpeed:480, hitR:7,  burst:3, burstGap:0.12, icon:'🔥' },
+    { name:'インフェルノ',   tier:3, color:'#ff3b1a', dmg:46, cooldown:2.1, gutsCost:24,
       aoeShape:'fan', range:650, fanAngleDeg:45 },
   ],
   aqua: [
-    { name:'水風船',     tier:1, color:'#3dccc7', range:750,  dmg:23, cooldown:0.8,  gutsCost:6, projSpeed:560, hitR:11, splash:68, icon:'💧' },
-    { name:'アクアウェイブ',   tier:2, color:'#3dccc7', range:1500, dmg:12, cooldown:1.0, gutsCost:9, projSpeed:520, hitR:6,  burst:3, burstGap:0.1, icon:'💧' },
-    { name:'クリスタルレイン',   tier:3, color:'#3dccc7', dmg:42, cooldown:1.9, gutsCost:17,
+    { name:'水風船',     tier:1, color:'#3dccc7', range:750,  dmg:23, cooldown:0.8,  gutsCost:8, projSpeed:560, hitR:11, splash:68, icon:'💧' },
+    { name:'アクアウェイブ',   tier:2, color:'#3dccc7', range:1500, dmg:12, cooldown:1.0, gutsCost:16, projSpeed:520, hitR:6,  burst:3, burstGap:0.1, icon:'💧' },
+    { name:'クリスタルレイン',   tier:3, color:'#3dccc7', dmg:42, cooldown:1.9, gutsCost:24,
       aoeShape:'rect', range:900, rectWidth:260 },
   ],
   leaf: [
-    { name:'種',     tier:1, color:'#7fb236', range:650,  dmg:22, cooldown:0.78, gutsCost:6, projSpeed:500, hitR:12, splash:72, icon:'🍃' },
-    { name:'種マシンガン', tier:2, color:'#7fb236', range:1300, dmg:11, cooldown:1.15, gutsCost:9, projSpeed:460, hitR:6,  burst:4, burstGap:0.11, icon:'🍃' },
-    { name:'フラワービーム',   tier:3, color:'#8fe33f', dmg:44, cooldown:2.2, gutsCost:17,
+    { name:'種',     tier:1, color:'#7fb236', range:650,  dmg:22, cooldown:0.78, gutsCost:8, projSpeed:500, hitR:12, splash:72, icon:'🍃' },
+    { name:'種マシンガン', tier:2, color:'#7fb236', range:1300, dmg:11, cooldown:1.15, gutsCost:16, projSpeed:460, hitR:6,  burst:4, burstGap:0.11, icon:'🍃' },
+    { name:'フラワービーム',   tier:3, color:'#8fe33f', dmg:44, cooldown:2.2, gutsCost:24,
       aoeShape:'beams', range:1200, beamWidth:100, beamCount:3, beamSpreadDeg:40 },
   ],
   spark: [
-    { name:'かみなり',   tier:1, color:'#f4c430', range:650,  dmg:20, cooldown:0.7,  gutsCost:6, projSpeed:600, hitR:10, splash:62, icon:'⚡️' },
-    { name:'雷撃', tier:2, color:'#f4c430', range:1300, dmg:9,  cooldown:0.85, gutsCost:8, projSpeed:560, hitR:5,  burst:5, burstGap:0.08, icon:'⚡️' },
-    { name:'超雷撃',     tier:3, color:'#fff34d', dmg:40, cooldown:1.9, gutsCost:16,
+    { name:'かみなり',   tier:1, color:'#f4c430', range:650,  dmg:20, cooldown:0.7,  gutsCost:8, projSpeed:600, hitR:10, splash:62, icon:'⚡️' },
+    { name:'雷撃', tier:2, color:'#f4c430', range:1300, dmg:9,  cooldown:0.85, gutsCost:16, projSpeed:560, hitR:5,  burst:5, burstGap:0.08, icon:'⚡️' },
+    { name:'超雷撃',     tier:3, color:'#fff34d', dmg:40, cooldown:1.9, gutsCost:24,
       aoeShape:'zigzag', range:1400, zigzagWidth:110 },
   ],
   rock: [
-    { name:'ロケットパンチ',       tier:1, color:'#a98a68', range:600,  dmg:28, cooldown:0.95, gutsCost:7, projSpeed:440, hitR:14, splash:78, icon:'👊🏿' },
-    { name:'掌打',   tier:2, color:'#a98a68', range:1200, dmg:15, cooldown:1.3, gutsCost:10, projSpeed:380, hitR:9,  burst:3, burstGap:0.14, icon:'🤚🏿' },
-    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:62, cooldown:2.4, gutsCost:19, projSpeed:520, hitR:34, splash:60, icon:'🌪️', growWithDistance:true },
+    { name:'ロケットパンチ',       tier:1, color:'#a98a68', range:600,  dmg:28, cooldown:0.95, gutsCost:8, projSpeed:440, hitR:14, splash:78, icon:'👊🏿' },
+    { name:'掌打',   tier:2, color:'#a98a68', range:1200, dmg:15, cooldown:1.3, gutsCost:16, projSpeed:380, hitR:9,  burst:3, burstGap:0.14, icon:'🤚🏿' },
+    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:62, cooldown:2.4, gutsCost:24, projSpeed:520, hitR:34, splash:60, icon:'🌪️', growWithDistance:true },
   ],
   phoenix: [
-    { name:'火炎砲',     tier:1, color:'#e8432a', range:725,  dmg:25, cooldown:0.82, gutsCost:6, projSpeed:540, hitR:12, splash:70, icon:'🔥' },
-    { name:'火炎連砲', tier:2, color:'#e8432a', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🔥' },
-    { name:'ファイアウェーブ', tier:3, color:'#ff8a3d', dmg:47, cooldown:2.0, gutsCost:18,
+    { name:'火炎砲',     tier:1, color:'#e8432a', range:725,  dmg:25, cooldown:0.82, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🔥' },
+    { name:'火炎連砲', tier:2, color:'#e8432a', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🔥' },
+    { name:'ファイアウェーブ', tier:3, color:'#ff8a3d', dmg:47, cooldown:2.0, gutsCost:24,
       aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava' },
   ],
   ark: [
-    { name:'しっぽふり',   tier:1, color:'#ffe9a8', range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:520, hitR:12, splash:70, icon:'🌱' },
-    { name:'熾天の剣', tier:2, color:'#ffe9a8', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🏹' },
-    { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:58, cooldown:2.0, gutsCost:18, projSpeed:560, hitR:30, splash:55, shape:'triangle' },
+    { name:'しっぽふり',   tier:1, color:'#ffe9a8', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🌱' },
+    { name:'熾天の剣', tier:2, color:'#ffe9a8', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🏹' },
+    { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:58, cooldown:2.0, gutsCost:24, projSpeed:560, hitR:30, splash:55, shape:'triangle' },
   ],
   warm: [
-    { name:'毒ガス',       tier:1, color:'#9b5fd1', range:700,  dmg:23, cooldown:0.85, gutsCost:6, projSpeed:500, hitR:12, splash:75, icon:'☠️' },
-    { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:9, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
-    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:18, projSpeed:500, hitR:34, splash:58, shape:'sphere' },
+    { name:'毒ガス',       tier:1, color:'#9b5fd1', range:700,  dmg:23, cooldown:0.85, gutsCost:8, projSpeed:500, hitR:12, splash:75, icon:'☠️' },
+    { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:16, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
+    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:24, projSpeed:500, hitR:34, splash:58, shape:'sphere' },
   ],
   illumine: [
-    { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:6, projSpeed:540, hitR:12, splash:70, icon:'🗡️' },
-    { name:'アサルトアロー', tier:2, color:'#8b2fc9', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:580, hitR:7,  burst:3, burstGap:0.09, icon:'🗡️' },
-    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:19, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle' },
+    { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️' },
+    { name:'アサルトアロー', tier:2, color:'#8b2fc9', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:580, hitR:7,  burst:3, burstGap:0.09, icon:'🗡️' },
+    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:24, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle' },
   ],
   fox: [
-    { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:6, projSpeed:530, hitR:13, splash:74 },
-    { name:'超狐火',   tier:2, color:'#eaf6ff', range:1450, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:540, hitR:7,  burst:3, burstGap:0.1 },
-    { name:'天河天翔', tier:3, color:'#ffffff', dmg:48, cooldown:2.1, gutsCost:18,
+    { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:8, projSpeed:530, hitR:13, splash:74 },
+    { name:'超狐火',   tier:2, color:'#eaf6ff', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:540, hitR:7,  burst:3, burstGap:0.1 },
+    { name:'天河天翔', tier:3, color:'#ffffff', dmg:48, cooldown:2.1, gutsCost:24,
       aoeShape:'rect', range:2200, rectWidth:160 },
   ],
   mocchi: [
-    { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:6, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻' },
-    { name:'さくらふぶき', tier:2, color:'#ff8fc4', range:1400, dmg:13, cooldown:1.05, gutsCost:9, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🌸' },
-    { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:46, cooldown:2.1, gutsCost:18, projSpeed:1400,
+    { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻' },
+    { name:'さくらふぶき', tier:2, color:'#ff8fc4', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🌸' },
+    { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400,
       aoeShape:'rect', range:1000, rectWidth:240 },
   ],
   suezo: [
-    { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:6, projSpeed:520, hitR:12, splash:70, icon:'💧' },
-    { name:'熱視線', tier:2, color:'#ffdd33', dmg:37, cooldown:1.1, gutsCost:9,
+    { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'💧' },
+    { name:'熱視線', tier:2, color:'#ffdd33', dmg:37, cooldown:1.1, gutsCost:16,
       aoeShape:'rect', range:1300, rectWidth:70 },
-    { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:45, cooldown:2.0, gutsCost:18,
+    { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:45, cooldown:2.0, gutsCost:24,
       aoeShape:'fanZigzag', range:1300, fanAngleDeg:30 },
   ],
 };
