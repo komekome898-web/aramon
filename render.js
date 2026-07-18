@@ -1167,30 +1167,39 @@ function drawPyramidComplex(group,p){
   if(!mainP) return;
   ctx.save();
   const r = mainP.scale*main.radius;
-  const h = r*1.25;
-  ctx.beginPath();
-  ctx.ellipse(mainP.x, mainP.y + r*0.1, r*1.15, r*0.42, 0, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fill();
+  const h = r*1.3;
   ctx.translate(mainP.x, mainP.y);
-  // 左面(影)と右面(日向)で色を変え、四角錐のシルエットとして描く
+  // 土台(菱形の縁)を描いて奥行きを持たせる。volcanoの隆起表現と同じく、
+  // 接地ライン(y=0)より下には何も描かない(=地面にめり込んで見えないようにする)
+  const sideY = -r*0.14, backY = -r*0.24;
   ctx.beginPath();
-  ctx.moveTo(-r, r*0.32);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-r, sideY);
+  ctx.lineTo(0, backY);
+  ctx.lineTo(r, sideY);
+  ctx.closePath();
+  ctx.fillStyle = '#8a6a3a';
+  ctx.fill();
+  // 左面(影)
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
   ctx.lineTo(0, -h);
-  ctx.lineTo(r*0.06, r*0.30);
+  ctx.lineTo(-r, sideY);
   ctx.closePath();
   ctx.fillStyle = '#b89a58';
   ctx.fill();
+  // 右面(日向)
   ctx.beginPath();
-  ctx.moveTo(r*0.06, r*0.30);
+  ctx.moveTo(0, 0);
   ctx.lineTo(0, -h);
-  ctx.lineTo(r, r*0.32);
+  ctx.lineTo(r, sideY);
   ctx.closePath();
   ctx.fillStyle = '#e0c988';
   ctx.fill();
-  ctx.strokeStyle='rgba(70,55,25,0.55)'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(-r,r*0.32); ctx.lineTo(0,-h); ctx.lineTo(r,r*0.32); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0,-h); ctx.lineTo(r*0.06,r*0.30); ctx.stroke();
+  ctx.strokeStyle='rgba(70,50,20,0.6)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-r,sideY); ctx.lineTo(0,-h); ctx.lineTo(r,sideY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-h); ctx.lineTo(0,0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-r,sideY); ctx.lineTo(0,backY); ctx.lineTo(r,sideY); ctx.stroke();
   ctx.restore();
 }
 // 火山1つ分(主峰+複数の裾野の隆起)をまとめて1つの立体として描画する。
@@ -1206,13 +1215,6 @@ function drawVolcanoComplex(group,p){
   const main = group.find(v=>v.isMain) || group[0];
   const mainP = project(main.x, main.y, 0);
   if(!mainP){ ctx.restore(); return; }
-  const mainR = mainP.scale * main.radius;
-
-  // 複合体全体で「地面に接する影」は1つだけにする(裾野の輪郭として自然に見せる)
-  ctx.beginPath();
-  ctx.ellipse(mainP.x, mainP.y + mainR*0.08, mainR*1.3, mainR*0.5, 0, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(0,0,0,0.38)';
-  ctx.fill();
 
   // 各隆起(主峰含む)を、奥から手前の順で描く(主峰は最後=一番手前)
   const sorted = [...group].sort((a,b)=> (a.isMain?1:0) - (b.isMain?1:0));
@@ -1351,11 +1353,6 @@ function renderMinimap(){
     miniCtx.beginPath();
     miniCtx.arc(v.x*scale, v.y*scale, Math.max(2, v.radius*scale), 0, Math.PI*2);
     miniCtx.fillStyle = col; miniCtx.fill();
-  }
-  for(const c of crystalObstacles){
-    miniCtx.beginPath();
-    miniCtx.arc(c.x*scale, c.y*scale, Math.max(1.5, c.radius*scale), 0, Math.PI*2);
-    miniCtx.fillStyle = 'rgba(170,225,255,0.85)'; miniCtx.fill();
   }
   for(const lz of lavaZones){
     const r = Math.max(1.5, lz.radius*scale);

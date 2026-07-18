@@ -299,7 +299,11 @@ const MIN_SPAWN_SEPARATION = 500;
 function seaEdgeX(y){
   if(!currentMap.hasSea) return -Infinity;
   const base = WORLD.w*(currentMap.seaWidthRatio||0.14);
-  return base + Math.sin(y*0.0009)*220 + Math.sin(y*0.0025+1.3)*90;
+  // マップ(ミニマップ)の丸い外周に沿うように、縦方向の中央ほど深く、上下端ほど浅くなる円弧状の湾を作る
+  const R = WORLD.h/2;
+  const dy = clamp(y - R, -R, R);
+  const bulge = Math.sqrt(Math.max(0, R*R - dy*dy)) / R; // 0(上下端)〜1(中央)
+  return base + bulge*(WORLD.w*0.22) + Math.sin(y*0.0025+1.3)*40;
 }
 function isInSea(x,y,margin){
   if(!currentMap.hasSea) return false;
@@ -773,10 +777,13 @@ function genOasisZones(){
   if(!currentMap.hasOasis) return;
   const n = Math.max(1, Math.round((currentMap.oasisCount||0) * (worldDensityScale||1)));
   const radius = currentMap.oasisRadius||400;
+  // マップ中心寄りに出現させる(端には出さない)
+  const marginX = Math.max(radius+200, WORLD.w*0.24);
+  const marginY = Math.max(radius+200, WORLD.h*0.24);
   let guard=0;
   while(oasisZones.length<n && guard<n*40){
     guard++;
-    const x = rand(radius+200, WORLD.w-radius-200), y = rand(radius+200, WORLD.h-radius-200);
+    const x = rand(marginX, WORLD.w-marginX), y = rand(marginY, WORLD.h-marginY);
     let nearMountain=false;
     for(const v of volcanoObstacles){ if(v.isMain && Math.hypot(x-v.x,y-v.y) < v.radius+radius+400){ nearMountain=true; break; } }
     if(nearMountain) continue;
@@ -791,10 +798,13 @@ function seededGenOasisZones(rng){
   if(!currentMap.hasOasis) return;
   const n = Math.max(1, Math.round((currentMap.oasisCount||0) * (worldDensityScale||1)));
   const radius = currentMap.oasisRadius||400;
+  // マップ中心寄りに出現させる(端には出さない)
+  const marginX = Math.max(radius+200, WORLD.w*0.24);
+  const marginY = Math.max(radius+200, WORLD.h*0.24);
   let guard=0;
   while(oasisZones.length<n && guard<n*40){
     guard++;
-    const x = seededRand(rng,radius+200, WORLD.w-radius-200), y = seededRand(rng,radius+200, WORLD.h-radius-200);
+    const x = seededRand(rng,marginX, WORLD.w-marginX), y = seededRand(rng,marginY, WORLD.h-marginY);
     let nearMountain=false;
     for(const v of volcanoObstacles){ if(v.isMain && Math.hypot(x-v.x,y-v.y) < v.radius+radius+400){ nearMountain=true; break; } }
     if(nearMountain) continue;
