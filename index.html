@@ -357,11 +357,18 @@
     </div>
     <div class="custom-select" id="rankingMonsterFilterWrap">
       <button type="button" class="custom-select-btn" id="rankingMonsterFilterBtn">総合(全モンスター)</button>
-      <div class="custom-select-menu hidden" id="rankingMonsterFilterMenu"></div>
     </div>
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
+</div>
+
+<!-- ランキングのモンスター絞り込み(全画面オーバーレイ式のリスト。回転表示下でも確実にスクロールできるよう
+     他の画面と同じ「画面いっぱいのflex列+overflow-y:scroll」パターンを使う) -->
+<div id="rankingMonsterFilterOverlay" class="resultScreen hidden">
+  <div class="rank" style="font-size:22px;">モンスターで絞り込み</div>
+  <div id="rankingMonsterFilterMenu"></div>
+  <button id="rankingMonsterFilterCloseBtn">閉じる</button>
 </div>
 
 <!-- MASTERMON NOTICE (fixed overlay, always on top) -->
