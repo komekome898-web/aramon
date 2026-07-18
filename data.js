@@ -53,18 +53,18 @@ const MAPS = {
 };
 
 const ELEMENTS = {
+  mocchi:  { label:'モッチー',   color:'#ff8fc4', dark:'#b3548a', speed:190, hp:115, trait:'soft', dmgTakenMod:0.8 },
+  suezo:   { label:'スエゾー',   color:'#ffdd33', dark:'#a8901f', speed:222, hp:76,  trait:'gutsbreak' },
+  phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
   fire:    { label:'ドラゴン',   color:'#ff6b35', dark:'#a8431d', speed:182, hp:100, trait:'burn' },
   aqua:    { label:'ウンディーネ', color:'#3dccc7', dark:'#1d8c88', speed:204, hp:88,  trait:'lifesteal' },
   leaf:    { label:'プラント',   color:'#7fb236', dark:'#4f6f1f', speed:140, hp:200, trait:'gutsdrain', cooldownMod:1/1.5, dmgDealtMod:0.8, gutsRegenMod:1.5 },
   spark:   { label:'ライガー',   color:'#f4c430', dark:'#a8801c', speed:224, hp:78,  trait:'slow' },
   rock:    { label:'ゴーレム',   color:'#a98a68', dark:'#5c4a38', speed:158, hp:132, trait:'golem', dmgTakenMod:0.8, dmgDealtMod:1.2 },
-  phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
   ark:     { label:'アーク',     color:'#f5f2e0', dark:'#8a7a4a', accent:'#ffe9a8', speed:188, hp:145, trait:'grace' },
   warm:    { label:'ワーム',     color:'#9b5fd1', dark:'#5c3680', speed:185, hp:160, trait:'poison' },
   illumine:{ label:'イルミネ',   color:'#1c1c22', dark:'#0a0a0d', accent:'#c98bff', speed:206, hp:155, trait:'haste', cooldownMod:1/1.5 },
   fox:     { label:'キュービ',   color:'#f5f2ea', dark:'#b8b2a4', speed:215, hp:105, trait:'bighitbox', hitboxMult:1.5 },
-  mocchi:  { label:'モッチー',   color:'#ff8fc4', dark:'#b3548a', speed:190, hp:115, trait:'soft', dmgTakenMod:0.8 },
-  suezo:   { label:'スエゾー',   color:'#ffdd33', dark:'#a8901f', speed:222, hp:76,  trait:'gutsbreak' },
 };
 
 const monsterImages = {};
