@@ -438,10 +438,30 @@
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
   .rank-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
-  #rankingMonsterFilter{
-    padding:8px 12px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.5px;
+  /* #rankingMonsterFilterはネイティブ<select>だと、強制横向き回転(html.force-landscape)を
+     かけてもポップアップの選択肢一覧だけは回転が反映されず横倒しに見えてしまうため、
+     通常のDOM要素だけで組んだ自前ドロップダウンに置き換えている(常に画面と同じ向きになる) */
+  .custom-select{ position:relative; display:inline-block; }
+  .custom-select-btn{
+    padding:8px 30px 8px 12px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.5px;
     color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+    position:relative; text-align:left; min-width:150px;
   }
+  .custom-select-btn::after{
+    content:'▾'; position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--ink-dim); font-size:11px;
+  }
+  .custom-select-menu{
+    position:absolute; top:calc(100% + 6px); left:0; z-index:40; min-width:100%;
+    max-height:calc(38 * var(--vh)); overflow-y:auto; -webkit-overflow-scrolling:touch;
+    background:#0c1220; border:1px solid var(--panel-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.5);
+    padding:4px;
+  }
+  .custom-select-item{
+    padding:8px 12px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.5px;
+    color:var(--ink); border-radius:5px; cursor:pointer; white-space:nowrap;
+  }
+  .custom-select-item:active{ background:rgba(244,196,48,0.16); }
+  .custom-select-item.active{ color:#1a1306; background:var(--amber); }
   #rankingList{ margin-top:18px; width:min(calc(90 * var(--vw)),420px); max-height:calc(48 * var(--vh)); overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   #rankingList::-webkit-scrollbar{ width:12px; }
   #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }

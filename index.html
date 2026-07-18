@@ -355,7 +355,10 @@
       <button class="rank-tab" data-mode="damage">ダメージ数</button>
       <button class="rank-tab" data-mode="mastermonLevel">マスモンLv</button>
     </div>
-    <select id="rankingMonsterFilter"></select>
+    <div class="custom-select" id="rankingMonsterFilterWrap">
+      <button type="button" class="custom-select-btn" id="rankingMonsterFilterBtn">総合(全モンスター)</button>
+      <div class="custom-select-menu hidden" id="rankingMonsterFilterMenu"></div>
+    </div>
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
