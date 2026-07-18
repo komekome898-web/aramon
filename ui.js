@@ -1250,29 +1250,32 @@ let currentRankingMode = 'kills';
 let currentRankingMonster = 'all';
 let rankingOpenedFrom = 'result';
 function populateRankingMonsterFilter(){
+  const wrap = document.getElementById('rankingMonsterFilterWrap');
   const btn = document.getElementById('rankingMonsterFilterBtn');
-  const overlay = document.getElementById('rankingMonsterFilterOverlay');
   const menu = document.getElementById('rankingMonsterFilterMenu');
-  if(!btn || btn.dataset.built) return;
-  btn.dataset.built = '1';
+  if(!wrap || wrap.dataset.built) return;
+  wrap.dataset.built = '1';
   const options = [{ value:'all', label:'総合(全モンスター)' }]
     .concat(Object.keys(ELEMENTS).map(key=>({ value:key, label:ELEMENTS[key].label })));
   menu.innerHTML = options.map(o=>`<div class="custom-select-item${o.value==='all'?' active':''}" data-value="${o.value}">${o.label}</div>`).join('');
-  btn.addEventListener('click', ()=>{
-    overlay.classList.remove('hidden');
-  });
-  document.getElementById('rankingMonsterFilterCloseBtn').addEventListener('click', ()=>{
-    overlay.classList.add('hidden');
+  const closeMenu = ()=>menu.classList.add('hidden');
+  btn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    menu.classList.toggle('hidden');
   });
   menu.querySelectorAll('.custom-select-item').forEach(item=>{
-    item.addEventListener('click', ()=>{
+    item.addEventListener('click', (e)=>{
+      e.stopPropagation();
       menu.querySelectorAll('.custom-select-item').forEach(i=>i.classList.remove('active'));
       item.classList.add('active');
       currentRankingMonster = item.dataset.value;
       btn.textContent = item.textContent;
-      overlay.classList.add('hidden');
+      closeMenu();
       loadRankingList(currentRankingMode);
     });
+  });
+  document.addEventListener('click', (e)=>{
+    if(!wrap.contains(e.target)) closeMenu();
   });
 }
 async function openRankingScreen(fromTitle){
@@ -1322,8 +1325,8 @@ document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRank
 document.getElementById('titleRankingBtn').addEventListener('click', ()=>openRankingScreen(true));
 document.getElementById('closeRankingBtn').addEventListener('click', ()=>{
   document.getElementById('rankingScreen').classList.add('hidden');
-  const overlay = document.getElementById('rankingMonsterFilterOverlay');
-  if(overlay) overlay.classList.add('hidden');
+  const menu = document.getElementById('rankingMonsterFilterMenu');
+  if(menu) menu.classList.add('hidden');
   if(rankingOpenedFrom==='title'){
     document.getElementById('startScreen').classList.remove('hidden');
   } else {

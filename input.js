@@ -1,6 +1,6 @@
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#rankingMonsterFilterOverlay') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
