@@ -404,11 +404,13 @@ function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
   const stateEff = activeStateEffects(m);
   const baseSpeed = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1);
-  const effSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
+  const slowedSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
+  // 海/川/オアシスの中では移動速度が落ちる(ダッシュの飛距離計算には影響させない)
+  const effSpeed = slowedSpeed * terrainSpeedMult(m.x, m.y);
   if(m.dashTimer>0){
     m.dashTimer -= dt;
     // ダッシュ速度は移動速度に反比例させる(移動速度200を基準に、遅いほど距離が伸びる)
-    const dashSpeed = (DASH_REF_SPEED*DASH_REF_SPEED*DASH_SPEED_MULT)/Math.max(effSpeed,1);
+    const dashSpeed = (DASH_REF_SPEED*DASH_REF_SPEED*DASH_SPEED_MULT)/Math.max(slowedSpeed,1);
     tryMoveAxis(m, m.dashDirX*dashSpeed*dt, m.dashDirY*dashSpeed*dt);
     return;
   }

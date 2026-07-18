@@ -244,7 +244,7 @@ document.querySelectorAll('.map-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.map-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
-    game.selectedMap = tab.dataset.map==='kaurea' ? 'kaurea' : 'wild';
+    game.selectedMap = MAPS[tab.dataset.map] ? tab.dataset.map : 'wild';
   });
 });
 document.querySelectorAll('.cap-tab').forEach(tab=>{
@@ -572,7 +572,10 @@ function startGame(){
   applyWorldScale(1);
   initZone();
   genVolcanoAndLava();
+  genWater();
+  genOasisZones();
   genRocks();
+  genCrystals();
   genTerrain();
 
   let playerDisplayName = 'プレイヤー';
@@ -592,6 +595,7 @@ function startGame(){
     entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':''), { spawnPoint: spawnPoints[i+1] }));
   }
   spawnLoot(420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  spawnOasisBonusLoot();
   updateCamera();
 
   document.getElementById('startScreen').classList.add('hidden');

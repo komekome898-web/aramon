@@ -3,6 +3,10 @@ let buildings = [];
 let rocks = [];
 let volcanoObstacles = [];
 let lavaZones = [];
+let crystalObstacles = [];
+let riverZones = [];
+let seaZones = [];
+let oasisZones = [];
 let currentMap = MAPS.wild;
 let projectiles = [];
 let areaEffects = [];
@@ -148,6 +152,7 @@ function pickZoneTarget(prevCenter, prevRadius, nextRadius){
       }
       if(insideAny) continue;
     }
+    if(currentMap.hasSea && isInSea(x, y, nextRadius*0.4)) continue;
     return {x,y};
   }
   // 回避に失敗した場合はそのまま返す(無限ループ防止)
@@ -260,30 +265,70 @@ function blockedByRock(m,x,y){
   return false;
 }
 function blockedByVolcano(m,x,y){
-  // 火山は高さに関係なく(飛び越え不可)常にブロックする
+  // 火山(雪山/森/ピラミッド含む)は高さに関係なく(飛び越え不可)常にブロックする
   for(const v of volcanoObstacles){
     if(Math.hypot(x-v.x, y-v.y) < v.radius+m.radius) return true;
+  }
+  return false;
+}
+function blockedByCrystal(m,x,y){
+  if(m.z > 25) return false;
+  for(const c of crystalObstacles){
+    if(Math.hypot(x-c.x, y-c.y) < c.radius+m.radius) return true;
   }
   return false;
 }
 function tryMoveAxis(m, dx, dy){
   const fullX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
   const fullY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
-  if(!blockedByHeight(m,fullX,fullY) && !blockedByRock(m,fullX,fullY) && !blockedByVolcano(m,fullX,fullY)){
+  if(!blockedByHeight(m,fullX,fullY) && !blockedByRock(m,fullX,fullY) && !blockedByVolcano(m,fullX,fullY) && !blockedByCrystal(m,fullX,fullY)){
     m.x = fullX; m.y = fullY;
     m.z = getTerrainHeightAt(m.x, m.y);
     return;
   }
   const onlyX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
-  if(!blockedByHeight(m,onlyX,m.y) && !blockedByRock(m,onlyX,m.y) && !blockedByVolcano(m,onlyX,m.y)) m.x = onlyX;
+  if(!blockedByHeight(m,onlyX,m.y) && !blockedByRock(m,onlyX,m.y) && !blockedByVolcano(m,onlyX,m.y) && !blockedByCrystal(m,onlyX,m.y)) m.x = onlyX;
   const onlyY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
-  if(!blockedByHeight(m,m.x,onlyY) && !blockedByRock(m,m.x,onlyY) && !blockedByVolcano(m,m.x,onlyY)) m.y = onlyY;
+  if(!blockedByHeight(m,m.x,onlyY) && !blockedByRock(m,m.x,onlyY) && !blockedByVolcano(m,m.x,onlyY) && !blockedByCrystal(m,m.x,onlyY)) m.y = onlyY;
   m.z = getTerrainHeightAt(m.x, m.y);
 }
 const MIN_SPAWN_SEPARATION = 500;
+// ===== 海/川(水域) =====
+// 海はワールド左端に沿った波打つ境界線として、川は右側から海へ流れる帯状の円チェーンとして表現する。
+// 座標(x,y)から境界線を求める部分は純粋な数式なので、シード無しでもホスト/ゲスト間で常に一致する。
+function seaEdgeX(y){
+  if(!currentMap.hasSea) return -Infinity;
+  const base = WORLD.w*(currentMap.seaWidthRatio||0.14);
+  return base + Math.sin(y*0.0009)*220 + Math.sin(y*0.0025+1.3)*90;
+}
+function isInSea(x,y,margin){
+  if(!currentMap.hasSea) return false;
+  return x < seaEdgeX(y) + (margin||0);
+}
+function isInRiverZones(x,y,margin){
+  for(const rz of riverZones){ if(Math.hypot(x-rz.x,y-rz.y) < rz.radius+(margin||0)) return true; }
+  return false;
+}
+function isInWater(x,y,margin){
+  if(isInSea(x,y,margin)) return true;
+  if(currentMap.hasRiver && isInRiverZones(x,y,margin)) return true;
+  return false;
+}
+function isInOasisZone(x,y){
+  if(!currentMap.hasOasis) return false;
+  for(const oz of oasisZones){ if(Math.hypot(x-oz.x,y-oz.y) < oz.radius) return true; }
+  return false;
+}
+// 地形による移動速度倍率(海/川/オアシスの中では移動が遅くなる)
+function terrainSpeedMult(x,y){
+  if(isInWater(x,y)) return WATER_SPEED_MULT;
+  if(isInOasisZone(x,y)) return OASIS_SPEED_MULT;
+  return 1;
+}
 function isOnHazard(x,y,margin){
   for(const v of volcanoObstacles){ if(Math.hypot(x-v.x,y-v.y) < v.radius+margin) return true; }
   for(const lz of lavaZones){ if(Math.hypot(x-lz.x,y-lz.y) < lz.radius+margin) return true; }
+  if(isInWater(x,y,margin)) return true;
   return false;
 }
 function pickSpawnPoint(){
@@ -404,16 +449,17 @@ function genVolcanoAndLava(){
   volcanoObstacles = [];
   lavaZones = [];
   if(!currentMap.hasVolcano) return;
+  const style = currentMap.mountainStyle||'volcano';
   let complexId = 0;
   for(const site of currentMap.volcanoSites){
     complexId++;
     const cx = WORLD.w*site.xr, cy = WORLD.h*site.yr;
     const radius = site.radius;
-    volcanoObstacles.push({ x:cx, y:cy, radius, isMain:true, complexId });
+    volcanoObstacles.push({ x:cx, y:cy, radius, isMain:true, complexId, style });
     for(let i=0;i<site.peakBumps;i++){
       const a = (i/site.peakBumps)*Math.PI*2 + rand(-0.15,0.15);
       const d = radius*rand(0.55,0.85);
-      volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: radius*rand(0.25,0.4), complexId });
+      volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: radius*rand(0.25,0.4), complexId, style });
     }
     for(let i=0;i<currentMap.lavaRingPerVolcano;i++){
       const a = (i/currentMap.lavaRingPerVolcano)*Math.PI*2 + rand(-0.2,0.2);
@@ -452,6 +498,21 @@ function genBuildings(){
     });
   }
 }
+// マップごとの岩の見た目バリエーション(雪岩/木/貝殻/砂岩など)を重み付きで抽選する
+function pickRockFlavor(){
+  const flavors = currentMap.rockFlavors || [{ type:'rock', w:1 }];
+  const total = flavors.reduce((s,f)=>s+f.w,0);
+  let r = Math.random()*total;
+  for(const f of flavors){ if(r<f.w) return f.type; r-=f.w; }
+  return flavors[flavors.length-1].type;
+}
+function seededPickRockFlavor(rng){
+  const flavors = currentMap.rockFlavors || [{ type:'rock', w:1 }];
+  const total = flavors.reduce((s,f)=>s+f.w,0);
+  let r = rng()*total;
+  for(const f of flavors){ if(r<f.w) return f.type; r-=f.w; }
+  return flavors[flavors.length-1].type;
+}
 function genRocks(){
   rocks = [];
   const count = currentMap.rockCount;
@@ -463,7 +524,7 @@ function genRocks(){
     const x = rand(80,WORLD.w-80), y = rand(80,WORLD.h-80);
     if(buildingBlocks(x,y,radius)) continue;
     if(isOnHazard(x,y,radius+220)) continue;
-    rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:rand(0,10) });
+    rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:rand(0,10), flavor:pickRockFlavor() });
   }
   for(let pass=0; pass<3; pass++){
     for(let i=0;i<rocks.length;i++){
@@ -542,16 +603,17 @@ function seededGenVolcanoAndLava(rng){
   volcanoObstacles = [];
   lavaZones = [];
   if(!currentMap.hasVolcano) return;
+  const style = currentMap.mountainStyle||'volcano';
   let complexId = 0;
   for(const site of currentMap.volcanoSites){
     complexId++;
     const cx = WORLD.w*site.xr, cy = WORLD.h*site.yr;
     const radius = site.radius;
-    volcanoObstacles.push({ x:cx, y:cy, radius, isMain:true, complexId });
+    volcanoObstacles.push({ x:cx, y:cy, radius, isMain:true, complexId, style });
     for(let i=0;i<site.peakBumps;i++){
       const a = (i/site.peakBumps)*Math.PI*2 + seededRand(rng,-0.15,0.15);
       const d = radius*seededRand(rng,0.55,0.85);
-      volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: radius*seededRand(rng,0.25,0.4), complexId });
+      volcanoObstacles.push({ x:cx+Math.cos(a)*d, y:cy+Math.sin(a)*d, radius: radius*seededRand(rng,0.25,0.4), complexId, style });
     }
     for(let i=0;i<currentMap.lavaRingPerVolcano;i++){
       const a = (i/currentMap.lavaRingPerVolcano)*Math.PI*2 + seededRand(rng,-0.2,0.2);
@@ -578,7 +640,7 @@ function seededGenRocks(rng){
     const radius = rr<0.5 ? seededRand(rng,22,34) : (rr<0.85 ? seededRand(rng,34,52) : seededRand(rng,52,72));
     const x = seededRand(rng,80,WORLD.w-80), y = seededRand(rng,80,WORLD.h-80);
     if(isOnHazard(x,y,radius+220)) continue;
-    rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:seededRand(rng,0,10) });
+    rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:seededRand(rng,0,10), flavor:seededPickRockFlavor(rng) });
   }
   for(let pass=0; pass<3; pass++){
     for(let i=0;i<rocks.length;i++){
@@ -603,6 +665,153 @@ function seededGenTerrain(rng){
     if(isOnHazard(x,y,70)) continue;
     terrainDecor.push({ x, y, r: seededRand(rng,5,16), shade: rng()<0.5 ? 'dark':'light' });
   }
+}
+// ===== 尖った水晶(雪山マップの障害物) =====
+function genCrystals(){
+  crystalObstacles = [];
+  if(!currentMap.hasCrystals) return;
+  const count = Math.round((currentMap.crystalCount||0) * (worldDensityScale||1));
+  let guard=0;
+  while(crystalObstacles.length<count && guard<count*50){
+    guard++;
+    const radius = rand(16,38);
+    const x = rand(80,WORLD.w-80), y = rand(80,WORLD.h-80);
+    if(isOnHazard(x,y,radius+180)) continue;
+    if(isNearRock(x,y,radius+25)) continue;
+    let tooClose=false;
+    for(const c of crystalObstacles){ if(Math.hypot(x-c.x,y-c.y) < c.radius+radius+18){ tooClose=true; break; } }
+    if(tooClose) continue;
+    crystalObstacles.push({ id:nextId++, x, y, radius, height:radius*1.8, seed:rand(0,10) });
+  }
+}
+function seededGenCrystals(rng){
+  crystalObstacles = [];
+  if(!currentMap.hasCrystals) return;
+  const count = Math.round((currentMap.crystalCount||0) * (worldDensityScale||1));
+  let guard=0;
+  while(crystalObstacles.length<count && guard<count*50){
+    guard++;
+    const radius = seededRand(rng,16,38);
+    const x = seededRand(rng,80,WORLD.w-80), y = seededRand(rng,80,WORLD.h-80);
+    if(isOnHazard(x,y,radius+180)) continue;
+    if(isNearRock(x,y,radius+25)) continue;
+    let tooClose=false;
+    for(const c of crystalObstacles){ if(Math.hypot(x-c.x,y-c.y) < c.radius+radius+18){ tooClose=true; break; } }
+    if(tooClose) continue;
+    crystalObstacles.push({ id:nextId++, x, y, radius, height:radius*1.8, seed:seededRand(rng,0,10) });
+  }
+}
+// ===== 海/川(水域)の生成 =====
+// 海は海岸線(seaEdgeXの純粋な数式)に沿って大きな円を並べて描画用に敷き詰める。
+// 川は右側の適当な地点から、うねりながら海岸線まで流れる円の連なりとして生成する。
+function genSeaZones(){
+  seaZones = [];
+  if(!currentMap.hasSea) return;
+  const step = 260;
+  for(let y=-200; y<=WORLD.h+200; y+=step){
+    const edge = seaEdgeX(y);
+    seaZones.push({ x: edge-260, y, radius:520 });
+  }
+}
+function genRiverZones(){
+  riverZones = [];
+  if(!currentMap.hasRiver) return;
+  const n = Math.max(1, Math.round((currentMap.riverCount||0) * Math.sqrt(worldDensityScale||1)));
+  const baseWidth = currentMap.riverWidth||220;
+  for(let i=0;i<n;i++){
+    const startY = rand(WORLD.h*0.08, WORLD.h*0.92);
+    const wobbleFreq = rand(0.0006,0.0014);
+    const wobbleAmp = rand(180,420);
+    const wobblePhase = rand(0,Math.PI*2);
+    let x = WORLD.w*0.94;
+    let steps = 0;
+    while(x > seaEdgeX(clamp(startY,60,WORLD.h-60))-40 && steps<400){
+      const y = clamp(startY + Math.sin(x*wobbleFreq+wobblePhase)*wobbleAmp, 60, WORLD.h-60);
+      const width = baseWidth*rand(0.8,1.15);
+      riverZones.push({ x, y, radius: width/2 });
+      x -= rand(140,220);
+      steps++;
+    }
+  }
+}
+function seededGenSeaZones(){
+  // 海岸線は純粋な数式のみで決まるため、シード無しの関数と共通でよい
+  genSeaZones();
+}
+function seededGenRiverZones(rng){
+  riverZones = [];
+  if(!currentMap.hasRiver) return;
+  const n = Math.max(1, Math.round((currentMap.riverCount||0) * Math.sqrt(worldDensityScale||1)));
+  const baseWidth = currentMap.riverWidth||220;
+  for(let i=0;i<n;i++){
+    const startY = seededRand(rng,WORLD.h*0.08, WORLD.h*0.92);
+    const wobbleFreq = seededRand(rng,0.0006,0.0014);
+    const wobbleAmp = seededRand(rng,180,420);
+    const wobblePhase = seededRand(rng,0,Math.PI*2);
+    let x = WORLD.w*0.94;
+    let steps = 0;
+    while(x > seaEdgeX(clamp(startY,60,WORLD.h-60))-40 && steps<400){
+      const y = clamp(startY + Math.sin(x*wobbleFreq+wobblePhase)*wobbleAmp, 60, WORLD.h-60);
+      const width = baseWidth*seededRand(rng,0.8,1.15);
+      riverZones.push({ x, y, radius: width/2 });
+      x -= seededRand(rng,140,220);
+      steps++;
+    }
+  }
+}
+function genWater(){
+  genSeaZones();
+  genRiverZones();
+}
+function seededGenWater(rng){
+  seededGenSeaZones();
+  seededGenRiverZones(rng);
+}
+// ===== オアシス(砂漠マップの水たまり) =====
+function genOasisZones(){
+  oasisZones = [];
+  if(!currentMap.hasOasis) return;
+  const n = Math.max(1, Math.round((currentMap.oasisCount||0) * (worldDensityScale||1)));
+  const radius = currentMap.oasisRadius||400;
+  let guard=0;
+  while(oasisZones.length<n && guard<n*40){
+    guard++;
+    const x = rand(radius+200, WORLD.w-radius-200), y = rand(radius+200, WORLD.h-radius-200);
+    let nearMountain=false;
+    for(const v of volcanoObstacles){ if(v.isMain && Math.hypot(x-v.x,y-v.y) < v.radius+radius+400){ nearMountain=true; break; } }
+    if(nearMountain) continue;
+    let tooClose=false;
+    for(const o of oasisZones){ if(Math.hypot(x-o.x,y-o.y) < (o.radius+radius)*1.3){ tooClose=true; break; } }
+    if(tooClose) continue;
+    oasisZones.push({ x, y, radius });
+  }
+}
+function seededGenOasisZones(rng){
+  oasisZones = [];
+  if(!currentMap.hasOasis) return;
+  const n = Math.max(1, Math.round((currentMap.oasisCount||0) * (worldDensityScale||1)));
+  const radius = currentMap.oasisRadius||400;
+  let guard=0;
+  while(oasisZones.length<n && guard<n*40){
+    guard++;
+    const x = seededRand(rng,radius+200, WORLD.w-radius-200), y = seededRand(rng,radius+200, WORLD.h-radius-200);
+    let nearMountain=false;
+    for(const v of volcanoObstacles){ if(v.isMain && Math.hypot(x-v.x,y-v.y) < v.radius+radius+400){ nearMountain=true; break; } }
+    if(nearMountain) continue;
+    let tooClose=false;
+    for(const o of oasisZones){ if(Math.hypot(x-o.x,y-o.y) < (o.radius+radius)*1.3){ tooClose=true; break; } }
+    if(tooClose) continue;
+    oasisZones.push({ x, y, radius });
+  }
+}
+// オアシスの周りはアイテムが湧きやすいので、通常の湧き処理の後に追加でこれを呼ぶ
+function spawnOasisBonusLoot(){
+  if(!currentMap.hasOasis) return;
+  for(const oz of oasisZones){ spawnLoot(7, oz, oz.radius*1.4); }
+}
+function seededSpawnOasisBonusLoot(rng){
+  if(!currentMap.hasOasis) return;
+  for(const oz of oasisZones){ seededSpawnLoot(rng, 7, oz, oz.radius*1.4); }
 }
 function seededPickSpawnPoint(rng){
   const R = ZONE_PHASES[0].holdRadius*0.85;

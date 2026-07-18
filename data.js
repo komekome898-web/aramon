@@ -32,7 +32,12 @@ function applyWorldScale(scale){
 }
 
 // ===== マップ定義 =====
-// hasVolcano:true のマップは、通れない火山エリアと踏むとダメージを受ける溶岩エリアが生成される
+// hasVolcano:true のマップは、通れない「山(複合体)」エリアが生成される。
+// mountainStyle でその山の見た目(volcano=火山/snow=雪山/forest=森/pyramid=ピラミッド)を切り替える。
+// lavaRingPerVolcano/lavaPoolCount が0のマップは溶岩(ダメージ床)は生成されない。
+// rockFlavors は岩オブジェクトの見た目バリエーションを重み付きで指定する(未指定時は通常の岩)。
+const WATER_SPEED_MULT = 0.8; // 海・川の中での移動速度倍率
+const OASIS_SPEED_MULT = 0.8; // オアシスの中での移動速度倍率
 const MAPS = {
   wild: {
     key:'wild', label:'荒野', rockCount:800, decorCount:9000, hasVolcano:false,
@@ -40,6 +45,7 @@ const MAPS = {
   },
   kaurea: {
     key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
+    mountainStyle:'volcano',
     groundColor:'#241708',
     // ワールド比率(0〜1)で指定した3つの火山の位置。大きさも少しずつ変える
     volcanoSites:[
@@ -49,6 +55,52 @@ const MAPS = {
     ],
     lavaRingPerVolcano: 4, lavaRingRadius: 2150, lavaPoolCount: 4,
     lavaDps: 22,
+  },
+  papas: {
+    key:'papas', label:'パパス雪山', rockCount:540, decorCount:6200, hasVolcano:true,
+    mountainStyle:'snow',
+    groundColor:'#dbe8f2',
+    volcanoSites:[
+      { xr:0.56, yr:0.40, radius:1650, peakBumps:6 },
+      { xr:0.22, yr:0.72, radius:1200, peakBumps:5 },
+    ],
+    lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
+    hasCrystals:true, crystalCount:260,
+    rockFlavors:[{ type:'snowrock', w:1 }],
+  },
+  palepale: {
+    key:'palepale', label:'パレパレジャングル', rockCount:520, decorCount:8200, hasVolcano:true,
+    mountainStyle:'forest',
+    groundColor:'#16321a',
+    volcanoSites:[
+      { xr:0.28, yr:0.30, radius:1300, peakBumps:8 },
+      { xr:0.74, yr:0.26, radius:1150, peakBumps:7 },
+      { xr:0.30, yr:0.76, radius:1250, peakBumps:8 },
+      { xr:0.78, yr:0.72, radius:1100, peakBumps:6 },
+      { xr:0.52, yr:0.52, radius:900,  peakBumps:6 },
+    ],
+    lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
+    rockFlavors:[{ type:'rock', w:0.55 }, { type:'tree', w:0.45 }],
+  },
+  toble: {
+    key:'toble', label:'トーブル海岸', rockCount:560, decorCount:6800, hasVolcano:false,
+    groundColor:'#cdb27a',
+    hasSea:true, seaWidthRatio:0.14,
+    hasRiver:true, riverCount:5, riverWidth:260,
+    rockFlavors:[{ type:'rock', w:0.5 }, { type:'shell', w:0.5 }],
+  },
+  mandy: {
+    key:'mandy', label:'マンディー砂漠', rockCount:480, decorCount:5200, hasVolcano:true,
+    mountainStyle:'pyramid',
+    groundColor:'#e8d79a',
+    volcanoSites:[
+      { xr:0.62, yr:0.35, radius:820, peakBumps:0 },
+      { xr:0.24, yr:0.58, radius:650, peakBumps:0 },
+      { xr:0.78, yr:0.74, radius:700, peakBumps:0 },
+    ],
+    lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
+    hasOasis:true, oasisCount:6, oasisRadius:420,
+    rockFlavors:[{ type:'sandrock', w:1 }],
   },
 };
 

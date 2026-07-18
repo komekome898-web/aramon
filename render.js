@@ -583,15 +583,60 @@ function drawParticle(pt,p){
   }
   ctx.restore();
 }
+function rockFlavorColors(flavor){
+  if(flavor==='snowrock') return { fill:'#7c8a99', stroke:'#4a5666' };
+  if(flavor==='sandrock') return { fill:'#a68a5c', stroke:'#6b5636' };
+  return { fill:'#5a6470', stroke:'#33394a' };
+}
+function drawTreeObstacle(rock){
+  const r = rock.radius;
+  ctx.beginPath(); ctx.ellipse(0, r*0.15, r*0.95, r*0.3, 0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.fill();
+  ctx.translate(0,-r*0.9);
+  ctx.fillStyle='#4a3420';
+  ctx.fillRect(-r*0.12, r*0.15, r*0.24, r*0.95);
+  ctx.beginPath(); ctx.ellipse(0,-r*0.25, r*0.85, r*0.72, 0,0,Math.PI*2);
+  ctx.fillStyle='#2e6b2f'; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-r*0.2,-r*0.5, r*0.48, r*0.42, 0,0,Math.PI*2);
+  ctx.fillStyle='#3a8a3c'; ctx.fill();
+}
+function drawShellObstacle(rock){
+  const r = rock.radius;
+  ctx.translate(0,-r*0.15);
+  ctx.beginPath(); ctx.ellipse(0, r*0.55, r*1.0, r*0.3, 0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
+  const pts=7;
+  ctx.beginPath();
+  for(let i=0;i<=pts;i++){
+    const a = Math.PI*(i/pts);
+    const px = Math.cos(a)*r, py = -Math.sin(a)*r*0.8;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.fillStyle='#f0dcc0'; ctx.strokeStyle='#c9a67a'; ctx.lineWidth=2;
+  ctx.fill(); ctx.stroke();
+  for(let i=1;i<pts;i++){
+    const a = Math.PI*(i/pts);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(Math.cos(a)*r, -Math.sin(a)*r*0.8);
+    ctx.strokeStyle='rgba(180,140,100,0.5)'; ctx.lineWidth=1;
+    ctx.stroke();
+  }
+}
 function drawRock(rock,p){
   const r = rock.radius;
+  const flavor = rock.flavor||'rock';
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
+  if(flavor==='tree'){ drawTreeObstacle(rock); ctx.restore(); return; }
+  if(flavor==='shell'){ drawShellObstacle(rock); ctx.restore(); return; }
   ctx.translate(0,-r*0.55);
   ctx.beginPath(); ctx.ellipse(0, r*0.6, r*1.1, r*0.32, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fill();
-  ctx.fillStyle='#5a6470'; ctx.strokeStyle='#33394a'; ctx.lineWidth=2.5;
+  const colors = rockFlavorColors(flavor);
+  ctx.fillStyle=colors.fill; ctx.strokeStyle=colors.stroke; ctx.lineWidth=2.5;
   ctx.beginPath();
   const pts=8;
   for(let i=0;i<pts;i++){
@@ -603,6 +648,34 @@ function drawRock(rock,p){
   ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(-r*0.22,-r*0.28,r*0.32,r*0.2,0.3,0,Math.PI*2);
   ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fill();
+  if(flavor==='snowrock'){
+    ctx.beginPath(); ctx.ellipse(0,-r*0.35,r*0.55,r*0.28,0,Math.PI,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fill();
+  }
+  ctx.restore();
+}
+function drawCrystal(c,p){
+  const r = c.radius;
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  ctx.scale(p.scale,p.scale);
+  ctx.translate(0,-r*0.7);
+  ctx.beginPath(); ctx.ellipse(0, r*0.7, r*1.0, r*0.3, 0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
+  const pts = 6;
+  ctx.beginPath();
+  for(let i=0;i<pts;i++){
+    const a = (i/pts)*Math.PI*2 + c.seed;
+    const rr = r*(i%2===0 ? 1.0 : 0.45);
+    const px = Math.cos(a)*rr, py = Math.sin(a)*rr*0.7 - r*(i%2===0 ? 0.9 : 0.1);
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.fillStyle='rgba(200,235,255,0.85)';
+  ctx.strokeStyle='rgba(140,200,235,0.95)'; ctx.lineWidth=2;
+  ctx.shadowBlur=14; ctx.shadowColor='rgba(180,230,255,0.8)';
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur=0;
   ctx.restore();
 }
 function rampCorners(b){
@@ -1038,6 +1111,25 @@ function drawLandingMarkers(){
     ctx.restore();
   }
 }
+function drawWaterZones(){
+  if(seaZones.length===0 && riverZones.length===0) return;
+  const draw = (z, fill, stroke)=>{
+    if(Math.abs(z.x-player.x)>2400 || Math.abs(z.y-player.y)>2400) return;
+    const pts = projectCircleRing(z, z.radius, 22);
+    if(pts.length<3) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth=1.5; ctx.stroke(); }
+  };
+  ctx.save();
+  for(const sz of seaZones) draw(sz, 'rgba(40,110,175,0.72)', 'rgba(140,200,230,0.25)');
+  for(const rz of riverZones) draw(rz, 'rgba(70,150,205,0.62)', 'rgba(160,215,235,0.3)');
+  ctx.restore();
+}
 function drawLavaZones(){
   if(lavaZones.length===0) return;
   for(const lz of lavaZones){
@@ -1057,10 +1149,57 @@ function drawLavaZones(){
     ctx.restore();
   }
 }
+function terraceColor(style, shade){
+  if(style==='snow'){
+    // 白〜薄い水色の雪山
+    return `rgb(${Math.round(190+50*shade)},${Math.round(205+45*shade)},${Math.round(220+30*shade)})`;
+  }
+  if(style==='forest'){
+    // 深緑〜明るい緑の森
+    return `rgb(${Math.round(20+40*shade)},${Math.round(60+90*shade)},${Math.round(25+35*shade)})`;
+  }
+  // volcano(デフォルト): 焦げた茶〜赤茶の山肌
+  return `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
+}
+function drawPyramidComplex(group,p){
+  const main = group.find(v=>v.isMain) || group[0];
+  const mainP = project(main.x, main.y, 0);
+  if(!mainP) return;
+  ctx.save();
+  const r = mainP.scale*main.radius;
+  const h = r*1.25;
+  ctx.beginPath();
+  ctx.ellipse(mainP.x, mainP.y + r*0.1, r*1.15, r*0.42, 0, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fill();
+  ctx.translate(mainP.x, mainP.y);
+  // 左面(影)と右面(日向)で色を変え、四角錐のシルエットとして描く
+  ctx.beginPath();
+  ctx.moveTo(-r, r*0.32);
+  ctx.lineTo(0, -h);
+  ctx.lineTo(r*0.06, r*0.30);
+  ctx.closePath();
+  ctx.fillStyle = '#b89a58';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(r*0.06, r*0.30);
+  ctx.lineTo(0, -h);
+  ctx.lineTo(r, r*0.32);
+  ctx.closePath();
+  ctx.fillStyle = '#e0c988';
+  ctx.fill();
+  ctx.strokeStyle='rgba(70,55,25,0.55)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-r,r*0.32); ctx.lineTo(0,-h); ctx.lineTo(r,r*0.32); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-h); ctx.lineTo(r*0.06,r*0.30); ctx.stroke();
+  ctx.restore();
+}
 // 火山1つ分(主峰+複数の裾野の隆起)をまとめて1つの立体として描画する。
 // 個別に奥行きソートすると隙間から背景が見えてしまう(透けて見える)ため、
 // 必ずこの関数の中で複合体としてまとめて描画する。
+// style('volcano'/'snow'/'forest')に応じて色と山頂の演出を切り替える。ピラミッドは形状自体が違うため別関数に分岐する。
 function drawVolcanoComplex(group,p){
+  const style = (group.find(v=>v.isMain)||group[0]).style || 'volcano';
+  if(style==='pyramid'){ drawPyramidComplex(group,p); return; }
   ctx.save();
   ctx.globalAlpha = 1;
 
@@ -1097,19 +1236,37 @@ function drawVolcanoComplex(group,p){
       const yOff = -riseH*(1-tt);
       const shade = 0.16 + tt*0.30; // 山頂ほど明るく
       ctx.beginPath(); ctx.ellipse(0, yOff, rr, ry, 0, Math.PI, Math.PI*2);
-      ctx.fillStyle = `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
+      ctx.fillStyle = terraceColor(style, shade);
       ctx.fill();
     }
 
     if(v.isMain){
-      const glow = 0.6+0.3*Math.sin(matchTime*1.6);
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(0, -riseH, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.26, r*0.16, 0, 0, Math.PI*2);
-      ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
-      ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
-      ctx.fill();
-      ctx.shadowBlur=0;
+      if(style==='snow'){
+        const glow = 0.6+0.25*Math.sin(matchTime*1.2);
+        ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.24, r*0.15, 0, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(255,255,255,${0.75+0.2*glow})`;
+        ctx.shadowBlur=16; ctx.shadowColor='rgba(210,235,255,0.9)';
+        ctx.fill();
+        ctx.shadowBlur=0;
+      } else if(style==='forest'){
+        // 木々の茂みを頂上付近に足して密度感を出す
+        for(let i=0;i<5;i++){
+          const a = (i/5)*Math.PI*2;
+          const cx2 = r*0.35*Math.cos(a), cy2 = -riseH*0.85 + r*0.15*Math.sin(a);
+          ctx.beginPath(); ctx.ellipse(cx2, cy2, r*0.22, r*0.16, 0,0,Math.PI*2);
+          ctx.fillStyle = 'rgba(20,60,25,0.55)';
+          ctx.fill();
+        }
+      } else {
+        const glow = 0.6+0.3*Math.sin(matchTime*1.6);
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(0, -riseH, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.26, r*0.16, 0, 0, Math.PI*2);
+        ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
+        ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
+        ctx.fill();
+        ctx.shadowBlur=0;
+      }
     }
     ctx.restore();
   }
@@ -1121,6 +1278,7 @@ function render(){
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = (projectiles.length + particles.length) > 22;
   drawSkyAndGround();
+  drawWaterZones();
   drawLavaZones();
   drawTerrainDecor();
   drawZoneRings();
@@ -1130,6 +1288,7 @@ function render(){
   const drawables = [];
   for(const b of buildings){ const p = project(b.cx,b.cy,b.wallH*0.5); if(p) drawables.push({kind:'building', obj:b, p}); }
   for(const r of rocks){ const p = project(r.x,r.y,0); if(p) drawables.push({kind:'rock', obj:r, p}); }
+  for(const c of crystalObstacles){ const p = project(c.x,c.y,0); if(p) drawables.push({kind:'crystal', obj:c, p}); }
   const volcanoGroups = new Map();
   for(const v of volcanoObstacles){
     const gid = v.complexId||0;
@@ -1154,6 +1313,7 @@ function render(){
     else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
     else if(d.kind==='mon') drawMonster(d.obj,d.p);
     else if(d.kind==='rock') drawRock(d.obj,d.p);
+    else if(d.kind==='crystal') drawCrystal(d.obj,d.p);
     else if(d.kind==='building') drawBuilding(d.obj);
     else drawParticle(d.obj,d.p);
   }
@@ -1171,10 +1331,31 @@ function renderMinimap(){
   miniCtx.beginPath();
   miniCtx.arc(zoneState.center.x*scale, zoneState.center.y*scale, zoneState.radius*scale, 0, Math.PI*2);
   miniCtx.strokeStyle='rgba(244,196,48,0.85)'; miniCtx.lineWidth=2; miniCtx.stroke();
+  for(const sz of seaZones){
+    miniCtx.beginPath();
+    miniCtx.arc(sz.x*scale, sz.y*scale, Math.max(1.5, sz.radius*scale), 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(40,110,170,0.7)'; miniCtx.fill();
+  }
+  for(const rz of riverZones){
+    miniCtx.beginPath();
+    miniCtx.arc(rz.x*scale, rz.y*scale, Math.max(1.5, rz.radius*scale), 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(60,140,200,0.65)'; miniCtx.fill();
+  }
+  for(const oz of oasisZones){
+    miniCtx.beginPath();
+    miniCtx.arc(oz.x*scale, oz.y*scale, Math.max(2, oz.radius*scale), 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(80,170,220,0.55)'; miniCtx.fill();
+  }
   for(const v of volcanoObstacles){
+    const col = v.style==='snow' ? 'rgba(210,230,245,0.9)' : v.style==='forest' ? 'rgba(40,110,50,0.9)' : v.style==='pyramid' ? 'rgba(210,180,120,0.9)' : 'rgba(90,58,42,0.9)';
     miniCtx.beginPath();
     miniCtx.arc(v.x*scale, v.y*scale, Math.max(2, v.radius*scale), 0, Math.PI*2);
-    miniCtx.fillStyle = 'rgba(90,58,42,0.9)'; miniCtx.fill();
+    miniCtx.fillStyle = col; miniCtx.fill();
+  }
+  for(const c of crystalObstacles){
+    miniCtx.beginPath();
+    miniCtx.arc(c.x*scale, c.y*scale, Math.max(1.5, c.radius*scale), 0, Math.PI*2);
+    miniCtx.fillStyle = 'rgba(170,225,255,0.85)'; miniCtx.fill();
   }
   for(const lz of lavaZones){
     const r = Math.max(1.5, lz.radius*scale);

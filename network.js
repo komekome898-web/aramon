@@ -93,7 +93,10 @@ async function beginMultiplayerMatch(){
 
   initZone();
   seededGenVolcanoAndLava(rng);
+  seededGenWater(rng);
+  seededGenOasisZones(rng);
   seededGenRocks(rng);
+  seededGenCrystals(rng);
   seededGenTerrain(rng);
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
@@ -145,6 +148,7 @@ async function beginMultiplayerMatch(){
   // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
   const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE);
   seededSpawnLoot(rng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  seededSpawnOasisBonusLoot(rng);
   updateCamera();
 
   window.__aramonWatchInputs(netState.roomId, (players)=>{
