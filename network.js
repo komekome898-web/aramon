@@ -32,7 +32,7 @@ async function beginMultiplayerMatch(){
   document.getElementById('resultScreen').classList.add('hidden');
 
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; nextId=1;
-  matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false;
+  matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
   monsterScreenPos.clear();
@@ -283,7 +283,7 @@ function tryNonHostPlayerFireVisual(dt){
   if(!player.alive || player.fireCooldown>0) return;
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
-  if(player.guts < effectiveGutsCost(player, mv)) return;
+  if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
   const aimAngle = player.facingAngle;
 
   // クールダウン・見た目のガッツ消費だけローカルで進める(実値はホストのauthStateで上書きされる)

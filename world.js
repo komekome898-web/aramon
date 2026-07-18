@@ -684,6 +684,22 @@ function pushToast(text){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>{ el.style.opacity='0'; }, 1600);
 }
+// FIREを押したがガッツ不足で技が撃てなかった時、左下のガッツゲージを一瞬強調する
+function flashGutsGauge(){
+  const el = document.getElementById('gutsTrack');
+  if(!el) return;
+  el.classList.remove('guts-warn');
+  void el.offsetWidth; // 再生中に連打された時もアニメーションを最初から再生し直すためのリフロー
+  el.classList.add('guts-warn');
+}
+// 上のトースト/ゲージ強調は連打・長押しで毎フレーム呼ばれると鬱陶しいので、一定間隔だけ許可する
+let lastGutsWarnAt = -Infinity;
+function warnGutsShortage(){
+  if(matchTime - lastGutsWarnAt < 0.8) return;
+  lastGutsWarnAt = matchTime;
+  pushToast('ガッツ不足！');
+  flashGutsGauge();
+}
 
 /* =====================================================================
    COMBAT

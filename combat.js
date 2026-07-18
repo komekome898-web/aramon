@@ -603,7 +603,7 @@ function tryPlayerFire(dt){
   if(player.freezeUntil > matchTime) return;
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
-  if(player.guts < effectiveGutsCost(player, mv)) return;
+  if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
   let aimAngle = player.facingAngle;
   if(mv.melee){
     let best=null, bestD=mv.range;

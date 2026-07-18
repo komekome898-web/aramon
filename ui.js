@@ -561,7 +561,7 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
 
 function startGame(){
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; nextId=1;
-  matchTime=0; game.over=false; game.tipTimer=7;
+  matchTime=0; game.over=false; game.tipTimer=7; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
   monsterScreenPos.clear();
@@ -1356,12 +1356,16 @@ function renderMyStats(){
     byElEl.innerHTML = '<div class="rank-empty">まだ記録がありません。1試合プレイすると記録されます</div>';
     return;
   }
+  const ownMastermons = loadMastermons();
   const rows = Object.keys(ELEMENTS).map(key=>{
     const el = ELEMENTS[key];
     const es = (stats.byElement && stats.byElement[key]) || { bestDamage:0, bestKills:0, matches:0 };
+    const mm = ownMastermons[key];
+    const mmLine = mm ? `<span class="en-mastermon">★ ${mm.name} Lv.${mm.level}</span>` : '';
     return `<div class="mystat-elem-row">
       <img class="ei" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">
       <span class="en">${el.label}</span>
+      ${mmLine}
       <span class="ev-line">使用回数　${es.matches||0}回</span>
       <span class="ev-line">最高キル　${es.bestKills||0}</span>
       <span class="ev-line">最高ダメージ　${es.bestDamage||0}</span>
