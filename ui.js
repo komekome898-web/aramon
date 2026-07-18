@@ -1147,6 +1147,7 @@ function handleMastermonPostMatch(isWin){
       const result = awardMastermonExp(mm, {
         kills: player.kills, damage: Math.round(player.damageDealt),
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
+        xpMult: netState.mode==='multi' ? 5 : 1, // マルチプレイは獲得経験値5倍
       });
       saveMastermons(data);
       infoEl.textContent = result.levelsGained>0

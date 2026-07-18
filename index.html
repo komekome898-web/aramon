@@ -34,7 +34,6 @@
   </div>
 
   <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
-  <div id="orientationLockNote">※画面ロック解除推奨</div>
 
   <div class="pick-label">使用するモンスターを選択</div>
   <div class="monster-grid" id="monsterGrid"></div>
@@ -52,7 +51,10 @@
   <div class="pick-label" style="margin-top:16px;">プレイモード</div>
   <div id="modeTabs">
     <button class="mode-tab active" data-mode="solo">1人でプレイ</button>
-    <button class="mode-tab" data-mode="multi">みんなと対戦</button>
+    <div class="mode-tab-wrap">
+      <button class="mode-tab" data-mode="multi">みんなと対戦</button>
+      <span class="multi-xp-pop">経験値<br>5倍！</span>
+    </div>
   </div>
 
   <div id="multiOptions" class="hidden">

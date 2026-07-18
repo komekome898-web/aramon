@@ -398,8 +398,9 @@ function applyMastermonTraining(mm, trainingKey){
 function awardMastermonExp(mm, opts){
   opts = opts || {};
   const kills = opts.kills||0, damage = opts.damage||0, survivalSec = opts.survivalSec||0, champion = !!opts.champion;
+  const xpMult = opts.xpMult||1;
   if(mm.level>=MASTERMON_LEVEL_CAP) return { expGain:0, levelsGained:0 };
-  const expGain = Math.round(kills*15 + damage/20 + survivalSec/10 + (champion?100:0));
+  const expGain = Math.round((kills*15 + damage/20 + survivalSec/10 + (champion?100:0)) * xpMult);
   mm.exp += expGain;
   let levelsGained = 0;
   while(mm.level<MASTERMON_LEVEL_CAP && mm.exp>=mastermonExpToNext(mm.level)){

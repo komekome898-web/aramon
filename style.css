@@ -13,7 +13,7 @@
     --vh: 1vh;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; overscroll-behavior:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
+  html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
   :fullscreen{ background:var(--bg-void); }
 
   /* ---------- 強制横向き表示 ----------
@@ -22,7 +22,7 @@
      width/height/left は vw/vh だとモバイルブラウザのUI表示/非表示で実際のviewportと
      ズレて画面端が見切れることがあるため、JS側(world.js)で実測px値を直接styleに設定する。
      JS側(world.js の getViewportSize)で html.force-landscape の付け外しと再計算を行う。 */
-  #appRoot{ position:fixed; inset:0; width:100%; height:100%; overscroll-behavior:none; touch-action:none; }
+  #appRoot{ position:fixed; inset:0; width:100%; height:100%; }
   html.force-landscape #appRoot{
     position:absolute; top:0; left:0;
     transform-origin:0 0;
@@ -41,7 +41,7 @@
       linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
     display:flex; justify-content:center;
     overflow-y:scroll; overflow-x:hidden;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #startScreen::-webkit-scrollbar{ width:14px; }
   #startScreen::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); }
@@ -82,7 +82,6 @@
     border:1px solid rgba(244,196,48,0.45); border-radius:20px; cursor:pointer;
   }
   #howToPlayBtn:active{ background:rgba(244,196,48,0.18); }
-  #orientationLockNote{ margin-top:8px; font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; text-align:center; }
 
   .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
   #playerNameInput{
@@ -93,6 +92,20 @@
   #playerNameInput:focus{ border-color:var(--amber); }
 
   #modeTabs, #capacityTabs, #mapTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  .mode-tab-wrap{ position:relative; display:inline-flex; }
+  .multi-xp-pop{
+    position:absolute; top:-13px; right:-9px; z-index:2;
+    background:linear-gradient(180deg,#ff8a5b,#ff3b3b); color:#fff2c2;
+    font-family:'Russo One',sans-serif; font-size:9px; line-height:1.15; text-align:center;
+    padding:5px 4px 4px; border-radius:50%; width:34px; height:34px; box-sizing:border-box;
+    border:2px solid #fff2c2; box-shadow:0 2px 10px rgba(255,59,59,0.55);
+    transform:rotate(14deg); pointer-events:none; white-space:nowrap;
+    animation: multiXpPopPulse 1.3s ease-in-out infinite;
+  }
+  @keyframes multiXpPopPulse{
+    0%,100%{ transform:rotate(14deg) scale(1); }
+    50%{ transform:rotate(14deg) scale(1.13); }
+  }
   .mode-tab, .cap-tab, .map-tab{
     padding:9px 20px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
@@ -150,7 +163,7 @@
   #roomListItems{
     display:flex; flex-direction:column; gap:8px; width:min(calc(85 * var(--vw)),380px); margin-top:6px;
     max-height:calc(42 * var(--vh)); overflow-y:scroll; padding-right:8px;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #roomListItems::-webkit-scrollbar{ width:12px; }
   #roomListItems::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
@@ -256,7 +269,7 @@
   .howto-state-effect{ color:var(--ink-dim); }
 
   /* ---------- HUD ---------- */
-  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:none;}
+  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:manipulation;}
 
   .hud-panel{
     position:absolute; background:var(--panel); border:1px solid var(--panel-line);
@@ -299,7 +312,7 @@
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
     display:flex; align-items:center; gap:12px; padding:10px 18px;
     border-bottom:3px solid var(--moveColor,var(--amber));
-    cursor:pointer; touch-action:none; pointer-events:auto;
+    cursor:pointer; touch-action:manipulation; pointer-events:auto;
   }
   #moveIcon{ width:38px; height:38px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
   #moveIcon svg{ width:22px; height:22px; }
@@ -375,7 +388,7 @@
   .resultScreen{
     position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center;
     background:rgba(4,6,10,0.92); text-align:center; padding:24px;
-    overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y;
   }
   .resultScreen .rank{ font-family:'Russo One',sans-serif; font-size:clamp(40px,calc(12 * var(--vw)),80px); letter-spacing:2px; }
   .resultScreen.win .rank{ color:var(--amber); text-shadow:0 0 30px rgba(244,196,48,0.6); }
@@ -421,7 +434,7 @@
     padding:8px 12px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.5px;
     color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
-  #rankingList{ margin-top:18px; width:min(calc(90 * var(--vw)),420px); max-height:calc(48 * var(--vh)); overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+  #rankingList{ margin-top:18px; width:min(calc(90 * var(--vw)),420px); max-height:calc(48 * var(--vh)); overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   #rankingList::-webkit-scrollbar{ width:12px; }
   #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
   #rankingList::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
@@ -459,7 +472,7 @@
   #myStatsOverall{
     display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; width:100%;
     overflow-y:auto; min-height:0; padding-bottom:4px;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   .mystat-box{
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:14px 10px;
@@ -469,9 +482,11 @@
   .mystat-box .ml{ font-size:9px; letter-spacing:1.5px; color:var(--ink-dim); }
   #myStatsByElement{
     margin-top:14px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
-    display:flex; flex-direction:column; gap:8px; padding-right:10px; padding-bottom:4px;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-right:10px; padding-bottom:4px;
+    align-content:start;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
+  #myStatsByElement .rank-empty{ grid-column:1 / -1; }
   #myStatsByElement::-webkit-scrollbar{ width:12px; }
   #myStatsByElement::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
   #myStatsByElement::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
@@ -495,7 +510,7 @@
   }
   #mastermonListCol{
     display:flex; flex-direction:column; flex:0 0 auto; width:140px; min-height:0;
-    overflow-y:auto; gap:8px; padding-right:6px; touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    overflow-y:auto; gap:8px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #mastermonList{ display:flex; flex-direction:column; gap:8px; width:100%; }
   .mastermon-list-item{
@@ -600,7 +615,7 @@
   .mastermon-detail-body{ display:flex; gap:14px; align-items:stretch; flex-wrap:nowrap; flex:1 1 auto; min-height:0; }
   .mastermon-detail-statscol{
     flex:0 0 150px; max-width:150px; min-height:0; overflow-y:auto;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding-right:4px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
   }
   .mastermon-detail-traincol{
     display:flex; flex-direction:column; gap:10px;
@@ -626,7 +641,7 @@
   .mm-subview-title{ font-size:13px; font-weight:700; letter-spacing:1px; color:var(--ink); }
   .mm-subview-content{
     flex:1 1 auto; min-height:0; overflow-y:auto;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding-right:4px;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
   }
   .mastermon-menu-body{
     display:flex; flex-direction:column; gap:10px; justify-content:center; min-height:100%;
@@ -661,7 +676,7 @@
   .mm-info-row:last-child{ border-bottom:none; }
   .mm-info-label{ color:var(--ink-dim); }
   .mm-info-val{ font-family:'Share Tech Mono',monospace; color:var(--ink); font-weight:700; white-space:nowrap; }
-  .mm-info-val-up{ color:#6fe07a; }
+  .mm-info-val-up{ color:#7CFC8A; }
   .mm-info-val-down{ color:#ff6b6b; }
   .mm-info-trait{
     font-size:11px; line-height:1.6; color:var(--ink-dim);
@@ -702,7 +717,7 @@
   #guideContent{
     width:min(calc(94 * var(--vw)),720px); flex:1 1 auto; min-height:0; overflow-y:scroll;
     display:flex; flex-direction:column; gap:26px; margin-top:14px; padding:2px 10px 6px;
-    touch-action:pan-y; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #guideContent::-webkit-scrollbar{ width:12px; }
   #guideContent::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
