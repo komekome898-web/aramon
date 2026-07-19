@@ -699,7 +699,7 @@ function showResult(isWin, placement){
   logMatchForAdmin();
 }
 function logMatchForAdmin(){
-  if(!window.__aramonLogMatch) return;
+  if(!window.__aramonLogMatch){ console.warn('logMatchForAdmin: __aramonLogMatch not ready, skipped'); return; }
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
   const mapKey = game.selectedMap || 'wild';
@@ -1510,11 +1510,20 @@ document.querySelectorAll('#adminPassKeypad button').forEach(btn=>{
   });
 });
 
+let adminFetchFailed = false;
 async function fetchAdminMatchLogs(force){
   if(adminMatchLogsCache && !force) return adminMatchLogsCache;
+  adminFetchFailed = false;
   if(!window.__aramonFetchMatchLogs){ adminMatchLogsCache = []; return adminMatchLogsCache; }
   const rows = await window.__aramonFetchMatchLogs();
-  adminMatchLogsCache = (rows||[]).filter(r=> r && r.name !== ADMIN_EXCLUDE_NAME);
+  if(rows===null){
+    // nullは「本当にデータが0件」ではなく「取得自体に失敗した」ことを示す
+    // (Firebaseの読み取り権限がmatchLogsパスに無い場合など)。0件と混同しないよう区別する。
+    adminFetchFailed = true;
+    adminMatchLogsCache = [];
+    return adminMatchLogsCache;
+  }
+  adminMatchLogsCache = rows.filter(r=> r && r.name !== ADMIN_EXCLUDE_NAME);
   return adminMatchLogsCache;
 }
 function adminMonthKeyOf(ts){
@@ -1557,6 +1566,15 @@ function populateAdminPeriodFilter(logs){
   });
 }
 function renderAdminData(){
+  if(adminFetchFailed){
+    document.getElementById('adminTotalMatches').textContent = '取得に失敗しました(Firebaseの読み取り権限をご確認ください)';
+    document.getElementById('adminTotalMatches').classList.add('admin-total-line-error');
+    document.getElementById('adminPlayerList').innerHTML = '<div class="rank-empty">読み込みエラーのため表示できません</div>';
+    document.getElementById('adminMapCount').textContent = '';
+    document.getElementById('adminMonsterCount').textContent = '';
+    return;
+  }
+  document.getElementById('adminTotalMatches').classList.remove('admin-total-line-error');
   const logs = adminMatchLogsCache || [];
   const filtered = adminFilterByPeriod(logs, adminSelectedPeriod);
 

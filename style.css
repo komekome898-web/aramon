@@ -863,23 +863,25 @@
   }
   #adminEntryBtn:active{ color:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.18); }
 
-  #adminPassDots{ display:flex; gap:16px; margin-top:26px; }
+  #adminPassScreen{ padding:14px 24px; }
+  #adminPassScreen .rank{ font-size:20px; letter-spacing:1px; }
+  #adminPassDots{ display:flex; gap:14px; margin-top:12px; }
   .admin-pass-dot{
-    width:16px; height:16px; border-radius:50%; border:1px solid var(--panel-line); background:rgba(255,255,255,0.04);
+    width:13px; height:13px; border-radius:50%; border:1px solid var(--panel-line); background:rgba(255,255,255,0.04);
     transition:background .15s, border-color .15s;
   }
   .admin-pass-dot.filled{ background:var(--amber); border-color:var(--amber); }
-  .admin-pass-error{ margin-top:14px; font-size:12px; letter-spacing:1px; color:var(--danger); }
+  .admin-pass-error{ margin-top:8px; font-size:11px; letter-spacing:1px; color:var(--danger); min-height:14px; }
   #adminPassKeypad{
-    display:grid; grid-template-columns:repeat(3,64px); gap:10px; margin-top:22px;
+    display:grid; grid-template-columns:repeat(3,52px); grid-auto-rows:38px; gap:7px; margin-top:10px;
   }
   #adminPassKeypad button{
-    width:64px; height:52px; font-family:'Share Tech Mono',monospace; font-size:18px;
-    color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px; cursor:pointer;
+    width:52px; height:38px; font-family:'Share Tech Mono',monospace; font-size:15px;
+    color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:7px; cursor:pointer;
   }
   #adminPassKeypad button:active{ background:rgba(244,196,48,0.16); }
   #adminPassCancelBtn{
-    margin-top:26px; padding:10px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px;
+    margin-top:12px; padding:7px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px;
     letter-spacing:1px; color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
     border-radius:6px; cursor:pointer;
   }
@@ -888,6 +890,7 @@
   .admin-total-line{
     margin-top:14px; font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--amber); letter-spacing:1px;
   }
+  .admin-total-line-error{ color:var(--danger) !important; font-size:12px !important; max-width:520px; }
   #adminColumns{
     display:flex; gap:28px; align-items:stretch; justify-content:center;
     width:min(calc(94 * var(--vw)),820px); margin-top:18px; flex:1 1 auto; min-height:0;
