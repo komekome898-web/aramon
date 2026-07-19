@@ -1313,8 +1313,18 @@ function render(){
   for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }
 
   drawables.sort((a,b)=>b.p.depth-a.p.depth);
+  // 巨大なオブジェクト(火山など)は近づくほど画面上の投影位置が大きくブレるため、
+  // 固定150pxの余白だけでは実際は画面内に見えているのに誤ってカリングされてしまう。
+  // オブジェクトの見た目上の半径(ワールド半径×投影スケール)ぶん余白を広げて判定する。
+  const cullMarginFor = (d)=>{
+    let r = 0;
+    if(d.kind==='volcano'){ for(const v of d.obj){ if(v.radius>r) r=v.radius; } }
+    else if(d.kind==='rock' || d.kind==='crystal'){ r = d.obj.radius||0; }
+    return 150 + r*d.p.scale*1.2;
+  };
   for(const d of drawables){
-    if(d.p.x<-150||d.p.x>viewW+150||d.p.y<-150||d.p.y>viewH+150) continue;
+    const m = cullMarginFor(d);
+    if(d.p.x<-m||d.p.x>viewW+m||d.p.y<-m||d.p.y>viewH+m) continue;
     if(d.kind==='loot') drawLootItem(d.obj,d.p);
     else if(d.kind==='proj') drawProjectile(d.obj,d.p);
     else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
