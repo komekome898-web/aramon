@@ -103,6 +103,7 @@
       <div class="howto-states" id="howtoStates"></div>
     </div>
   </div>
+  <button id="adminEntryBtn">管理者用</button>
  </div>
 </div>
 
@@ -374,6 +375,53 @@
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
+</div>
+
+<!-- ADMIN PASSWORD -->
+<div id="adminPassScreen" class="resultScreen hidden">
+  <div class="rank" style="font-size:26px;">管理者ログイン</div>
+  <div id="adminPassDots">
+    <span class="admin-pass-dot"></span><span class="admin-pass-dot"></span><span class="admin-pass-dot"></span><span class="admin-pass-dot"></span>
+  </div>
+  <div id="adminPassError" class="admin-pass-error hidden">パスワードが違います</div>
+  <div id="adminPassKeypad">
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <button data-k="clear">C</button><button data-k="0">0</button><button data-k="back">⌫</button>
+  </div>
+  <button id="adminPassCancelBtn">閉じる</button>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="adminScreen" class="resultScreen hidden">
+  <div class="rank" style="font-size:28px;">管理者画面</div>
+  <div class="custom-select" id="adminPeriodFilterWrap" style="margin-top:14px;">
+    <button type="button" class="custom-select-btn" id="adminPeriodFilterBtn">全期間</button>
+    <div class="custom-select-menu hidden" id="adminPeriodFilterMenu"></div>
+  </div>
+  <div id="adminTotalMatches" class="admin-total-line"></div>
+  <div id="adminColumns">
+    <div class="admin-col">
+      <div class="admin-col-title">プレイヤー別プレイ回数</div>
+      <div id="adminPlayerList" class="admin-scroll-list"></div>
+    </div>
+    <div class="admin-col">
+      <div class="admin-col-title">マップ別試合回数</div>
+      <div class="custom-select" id="adminMapFilterWrap">
+        <button type="button" class="custom-select-btn" id="adminMapFilterBtn"></button>
+        <div class="custom-select-menu hidden" id="adminMapFilterMenu"></div>
+      </div>
+      <div id="adminMapCount" class="admin-count-display"></div>
+      <div class="admin-col-title" style="margin-top:18px;">モンスター別試合回数</div>
+      <div class="custom-select" id="adminMonsterFilterWrap">
+        <button type="button" class="custom-select-btn" id="adminMonsterFilterBtn"></button>
+        <div class="custom-select-menu hidden" id="adminMonsterFilterMenu"></div>
+      </div>
+      <div id="adminMonsterCount" class="admin-count-display"></div>
+    </div>
+  </div>
+  <button id="closeAdminBtn">閉じる</button>
 </div>
 
 <!-- MASTERMON NOTICE (fixed overlay, always on top) -->

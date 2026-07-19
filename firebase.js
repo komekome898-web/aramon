@@ -74,6 +74,34 @@
   };
 
   /* =====================================================================
+     MATCH LOG (管理者画面用の試合履歴)
+     matchLogs/{autoId} : { name, map, mapLabel, element, elementLabel, mode, ts }
+     試合が終わるたびに1件ずつ追記していく単純なログ。ランキング用のscoresとは別物で、
+     こちらは「誰が・いつ・どのマップ・どのモンスターで遊んだか」を集計するためだけに使う。
+  ===================================================================== */
+  window.__aramonLogMatch = async function(entry){
+    try{
+      await push(ref(fbDb, 'matchLogs'), entry);
+      return true;
+    }catch(err){
+      console.error('match log failed', err);
+      return false;
+    }
+  };
+
+  window.__aramonFetchMatchLogs = async function(){
+    try{
+      const snap = await get(ref(fbDb, 'matchLogs'));
+      const rows = [];
+      snap.forEach(child=>{ rows.push(child.val()); });
+      return rows;
+    }catch(err){
+      console.error('match logs fetch failed', err);
+      return null;
+    }
+  };
+
+  /* =====================================================================
      MATCHMAKING / ROOM SYNC
      lobby/{lobbyEntryId}   : { roomId, capacity, count, status, createdAt }
      rooms/{roomId}/meta    : { hostId, capacity, status, createdAt }

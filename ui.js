@@ -684,6 +684,25 @@ function showResult(isWin, placement){
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
+  logMatchForAdmin();
+}
+function logMatchForAdmin(){
+  if(!window.__aramonLogMatch) return;
+  const rawName = (document.getElementById('playerNameInput').value||'').trim();
+  const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
+  const mapKey = game.selectedMap || 'wild';
+  const map = MAPS[mapKey] || MAPS.wild;
+  const elementKey = player.element;
+  const el = ELEMENTS[elementKey];
+  window.__aramonLogMatch({
+    name,
+    map: mapKey,
+    mapLabel: map.label,
+    element: elementKey,
+    elementLabel: el ? el.label : elementKey,
+    mode: netState.mode==='multi' ? 'multi' : 'solo',
+    ts: Date.now(),
+  });
 }
 /* =====================================================================
    LOCAL STATS (localStorage)
@@ -1423,6 +1442,156 @@ document.getElementById('closeMyStatsBtn').addEventListener('click', ()=>{
   } else {
     document.getElementById('resultScreen').classList.remove('hidden');
   }
+});
+
+/* =====================================================================
+   管理者画面
+===================================================================== */
+const ADMIN_PASSWORD = '0008';
+const ADMIN_EXCLUDE_NAME = 'おりょう';
+let adminPassInput = '';
+let adminMatchLogsCache = null;
+let adminSelectedPeriod = 'all';
+let adminSelectedMap = null;
+let adminSelectedMonster = null;
+
+function updateAdminPassDots(){
+  const dots = document.querySelectorAll('#adminPassDots .admin-pass-dot');
+  dots.forEach((d,i)=> d.classList.toggle('filled', i < adminPassInput.length));
+}
+
+document.getElementById('adminEntryBtn').addEventListener('click', ()=>{
+  adminPassInput = '';
+  updateAdminPassDots();
+  document.getElementById('adminPassError').classList.add('hidden');
+  document.getElementById('adminPassScreen').classList.remove('hidden');
+  document.getElementById('startScreen').classList.add('hidden');
+});
+document.getElementById('adminPassCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('adminPassScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+});
+function adminPassFail(){
+  document.getElementById('adminPassError').classList.remove('hidden');
+  setTimeout(()=>{
+    document.getElementById('adminPassScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+  }, 700);
+}
+document.querySelectorAll('#adminPassKeypad button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const k = btn.dataset.k;
+    if(document.getElementById('adminPassError').classList.contains('hidden')===false) return;
+    if(k==='clear'){ adminPassInput=''; }
+    else if(k==='back'){ adminPassInput = adminPassInput.slice(0,-1); }
+    else if(adminPassInput.length<4){ adminPassInput += k; }
+    updateAdminPassDots();
+    if(adminPassInput.length===4){
+      if(adminPassInput===ADMIN_PASSWORD){
+        document.getElementById('adminPassScreen').classList.add('hidden');
+        openAdminScreen();
+      } else {
+        adminPassFail();
+      }
+    }
+  });
+});
+
+async function fetchAdminMatchLogs(force){
+  if(adminMatchLogsCache && !force) return adminMatchLogsCache;
+  if(!window.__aramonFetchMatchLogs){ adminMatchLogsCache = []; return adminMatchLogsCache; }
+  const rows = await window.__aramonFetchMatchLogs();
+  adminMatchLogsCache = (rows||[]).filter(r=> r && r.name !== ADMIN_EXCLUDE_NAME);
+  return adminMatchLogsCache;
+}
+function adminMonthKeyOf(ts){
+  const d = new Date(ts||0);
+  return `${d.getFullYear()}年${String(d.getMonth()+1).padStart(2,'0')}月`;
+}
+function adminFilterByPeriod(logs, period){
+  if(period==='all') return logs;
+  return logs.filter(r=> adminMonthKeyOf(r.ts)===period);
+}
+// 汎用の自前ドロップダウン(マップ/モンスター選択用)。呼ばれるたびに選択肢を作り直すので、
+// トグル用のクリックリスナーだけdataset.boundで一度きり登録する。
+function renderAdminSelectFilter(wrapId, btnId, menuId, options, selectedValue, onSelect){
+  const wrap = document.getElementById(wrapId);
+  const btn = document.getElementById(btnId);
+  const menu = document.getElementById(menuId);
+  const selectedOpt = options.find(o=>o.value===selectedValue) || options[0];
+  btn.textContent = selectedOpt ? selectedOpt.label : '';
+  menu.innerHTML = options.map(o=>`<div class="custom-select-item${o.value===selectedValue?' active':''}" data-value="${o.value}">${o.label}</div>`).join('');
+  if(!wrap.dataset.bound){
+    wrap.dataset.bound = '1';
+    btn.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); });
+    document.addEventListener('click', (e)=>{ if(!wrap.contains(e.target)) menu.classList.add('hidden'); });
+  }
+  menu.querySelectorAll('.custom-select-item').forEach(item=>{
+    item.onclick = (e)=>{
+      e.stopPropagation();
+      menu.classList.add('hidden');
+      onSelect(item.dataset.value);
+    };
+  });
+}
+function populateAdminPeriodFilter(logs){
+  const months = Array.from(new Set(logs.map(r=>adminMonthKeyOf(r.ts)))).sort().reverse();
+  const options = [{ value:'all', label:'全期間' }].concat(months.map(m=>({ value:m, label:m })));
+  if(!options.find(o=>o.value===adminSelectedPeriod)) adminSelectedPeriod = 'all';
+  renderAdminSelectFilter('adminPeriodFilterWrap','adminPeriodFilterBtn','adminPeriodFilterMenu', options, adminSelectedPeriod, (val)=>{
+    adminSelectedPeriod = val;
+    renderAdminData();
+  });
+}
+function renderAdminData(){
+  const logs = adminMatchLogsCache || [];
+  const filtered = adminFilterByPeriod(logs, adminSelectedPeriod);
+
+  document.getElementById('adminTotalMatches').textContent = `合計プレイ回数　${filtered.length}回`;
+
+  const byPlayer = {};
+  filtered.forEach(r=>{
+    const nm = r.name || '名無しのモンスター';
+    byPlayer[nm] = (byPlayer[nm]||0) + 1;
+  });
+  const playerRows = Object.entries(byPlayer).sort((a,b)=> b[1]-a[1]);
+  const playerListEl = document.getElementById('adminPlayerList');
+  playerListEl.innerHTML = playerRows.length ? playerRows.map(([nm,cnt],i)=>
+    `<div class="admin-row"><span class="admin-row-rank">#${i+1}</span><span class="admin-row-name">${nm}</span><span class="admin-row-count">${cnt}回</span></div>`
+  ).join('') : '<div class="rank-empty">記録がありません</div>';
+
+  if(!adminSelectedMap || !MAPS[adminSelectedMap]) adminSelectedMap = Object.keys(MAPS)[0];
+  renderAdminSelectFilter('adminMapFilterWrap','adminMapFilterBtn','adminMapFilterMenu',
+    Object.keys(MAPS).map(k=>({ value:k, label:MAPS[k].label })), adminSelectedMap, (val)=>{
+      adminSelectedMap = val;
+      renderAdminData();
+    });
+  const mapCount = filtered.filter(r=> r.map===adminSelectedMap).length;
+  document.getElementById('adminMapCount').textContent = `${MAPS[adminSelectedMap].label}　${mapCount}回`;
+
+  if(!adminSelectedMonster || !ELEMENTS[adminSelectedMonster]) adminSelectedMonster = Object.keys(ELEMENTS)[0];
+  renderAdminSelectFilter('adminMonsterFilterWrap','adminMonsterFilterBtn','adminMonsterFilterMenu',
+    Object.keys(ELEMENTS).map(k=>({ value:k, label:ELEMENTS[k].label })), adminSelectedMonster, (val)=>{
+      adminSelectedMonster = val;
+      renderAdminData();
+    });
+  const monsterCount = filtered.filter(r=> r.element===adminSelectedMonster).length;
+  document.getElementById('adminMonsterCount').textContent = `${ELEMENTS[adminSelectedMonster].label}　${monsterCount}回`;
+}
+async function openAdminScreen(){
+  document.getElementById('adminScreen').classList.remove('hidden');
+  document.getElementById('adminTotalMatches').textContent = '読み込み中…';
+  document.getElementById('adminPlayerList').innerHTML = '';
+  document.getElementById('adminMapCount').textContent = '';
+  document.getElementById('adminMonsterCount').textContent = '';
+  const logs = await fetchAdminMatchLogs(true);
+  populateAdminPeriodFilter(logs);
+  renderAdminData();
+}
+document.getElementById('closeAdminBtn').addEventListener('click', ()=>{
+  document.getElementById('adminScreen').classList.add('hidden');
+  document.querySelectorAll('#adminScreen .custom-select-menu').forEach(m=>m.classList.add('hidden'));
+  document.getElementById('startScreen').classList.remove('hidden');
 });
 
 /* =====================================================================
