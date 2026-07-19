@@ -639,6 +639,7 @@ function updatePlayButtonsEnabled(){
   document.getElementById('joinBtn').disabled = !enabled;
   document.getElementById('createRoomBtn').disabled = !enabled;
   document.getElementById('findRoomBtn').disabled = !enabled;
+  document.getElementById('pickMonsterNotice').classList.toggle('hidden', enabled);
 }
 document.getElementById('joinBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
