@@ -1038,15 +1038,16 @@ function renderMastermonDetail(key){
 function buildMastermonStatsColHtml(mm, apt, preview){
   const statsHtml = MASTERMON_STATS.map(s=>{
     const v = mm.stats[s.key];
-    const pct = Math.round(v/MASTERMON_STAT_CAP*100);
     const delta = preview ? preview[s.key] : null;
+    const resultVal = delta ? mastermonClampStat(v + delta) : v;
+    const pct = Math.round(resultVal/MASTERMON_STAT_CAP*100);
     const deltaHtml = delta ? `<span class="mm-stat-delta ${delta>0?'up':'down'}">(${delta>0?'+':''}${delta})</span>` : '';
     const aptGrade = apt[s.key];
     return `
       <div class="mm-stat-row">
         <div class="mm-stat-toprow">
           <span class="mm-stat-name">${s.label}<span class="mm-stat-apt-badge apt-${aptGrade}">${aptGrade}</span></span>
-          <span class="mm-stat-val">${v}${deltaHtml}</span>
+          <span class="mm-stat-val">${resultVal}${deltaHtml}</span>
         </div>
         <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
       </div>`;
