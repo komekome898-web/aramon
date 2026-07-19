@@ -61,7 +61,7 @@ async function beginMultiplayerMatch(){
     const shuffledCandidates = shuffle(candidateKeys);
     hostMastermonBots = shuffledCandidates.map(k=>{
       const mm = ownMastermons[k];
-      return { key:k, name:mm.name, element:mm.element, stats:mm.stats };
+      return { key:k, name:mm.name, element:mm.element, stats:mm.stats, level:mm.level||1 };
     });
     console.log('[aramon] HOST: publishing seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
     await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots);
@@ -118,6 +118,7 @@ async function beginMultiplayerMatch(){
     const isMe = h.id===netState.myPlayerId;
     const ent = createMonster(h.element||'fire', isMe, h.name||'プレイヤー', { id: idCounter++, spawnPoint: sp });
     ent.netPlayerId = h.id;
+    if(h.mmLevel) ent.mastermonLevel = h.mmLevel; // マスモン使用者は撃破時のEXPボーナス対象
     if(isMe){ ent.isPlayer = true; player = ent; }
     else { ent.isPlayer=false; ent.isRemoteHuman=true; }
     entities.push(ent);
@@ -137,6 +138,7 @@ async function beginMultiplayerMatch(){
       const ent = createMonster(mmDef.element, false, mmDef.name, { id: idCounter++, spawnPoint: sp });
       applyMastermonStatsToEntity(ent, mmDef);
       ent.isMastermonBot = true;
+      ent.mastermonLevel = mmDef.level||1;
       entities.push(ent);
     } else {
       const elKey = botElements[i % botElements.length];

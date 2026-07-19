@@ -472,12 +472,16 @@ function applyMastermonTraining(mm, trainingKey){
 }
 // 試合成績に応じてEXPを付与し、レベルアップ毎にトレーニングチケットを1枚獲得
 const MASTERMON_EXP_GLOBAL_MULT = 3; // 全試合共通のEXP倍率
+// マスモン(bot補完・他プレイヤー)撃破ボーナス: 相手のレベル×この値のEXPを追加で獲得
+// (xpMult・GLOBAL_MULTは掛けない固定値。バランス調整はこの係数で行う)
+const MASTERMON_KILL_EXP_PER_LEVEL = 10;
 function awardMastermonExp(mm, opts){
   opts = opts || {};
   const kills = opts.kills||0, damage = opts.damage||0, survivalSec = opts.survivalSec||0, champion = !!opts.champion;
   const xpMult = opts.xpMult||1;
+  const bonusExp = Math.round(opts.bonusExp||0); // マスモン撃破ボーナス等の加算EXP
   if(mm.level>=MASTERMON_LEVEL_CAP) return { expGain:0, levelsGained:0 };
-  const expGain = Math.round((kills*15 + damage/20 + survivalSec/10 + (champion?100:0)) * xpMult * MASTERMON_EXP_GLOBAL_MULT);
+  const expGain = Math.round((kills*15 + damage/20 + survivalSec/10 + (champion?100:0)) * xpMult * MASTERMON_EXP_GLOBAL_MULT) + bonusExp;
   mm.exp += expGain;
   let levelsGained = 0;
   while(mm.level<MASTERMON_LEVEL_CAP && mm.exp>=mastermonExpToNext(mm.level)){

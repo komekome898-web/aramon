@@ -392,6 +392,13 @@ function getDisplayNameFromInput(){
   return rawName ? rawName.slice(0,12) : '名無しのモンスター';
 }
 
+// マスモンで参戦する場合、そのレベルを部屋の自分のプレイヤー情報に載せる
+// (倒した相手がレベルに応じたEXPボーナスを得るために使う)
+function currentMastermonLevel(){
+  if(!game.selectedMastermonKey) return null;
+  const mm = loadMastermons()[game.selectedMastermonKey];
+  return mm ? (mm.level||1) : null;
+}
 async function createRoomFlow(){
   if(!window.__aramonCreateRoom){
     pushToast('通信機能が利用できません。1人でプレイに切り替えます');
@@ -412,7 +419,7 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement);
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonLevel());
   }catch(err){
     console.error(err);
     pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
@@ -472,7 +479,7 @@ async function joinSelectedRoom(roomId, lobbyKey){
     return;
   }
   const displayName = getDisplayNameFromInput();
-  const result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement);
+  const result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement, currentMastermonLevel());
   if(!result.ok){
     pushToast(result.reason||'参加に失敗しました');
     await refreshRoomList();
@@ -925,8 +932,7 @@ function renderMastermonList(){
     item.addEventListener('click', ()=>{
       if(item.dataset.key===mastermonDetailKey) return;
       mastermonDetailKey = item.dataset.key;
-      mastermonSelectedTraining = null;
-      mastermonDetailTab = null;
+      // 表示中のタブ(詳細情報/技一覧/トレーニング)は維持したまま、内容だけ切り替える
       renderMastermonList();
       renderMastermonDetail(mastermonDetailKey);
     });
@@ -973,9 +979,13 @@ function renderMastermonDetail(key){
   else if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
   else contentHtml = buildMastermonMenuHtml();
 
+  // トレーニング画面では実行ボタンを戻るボタンの左(ヘッダー内)に置く
+  const trainExecBtnHtml = mastermonDetailTab==='training' ? `
+      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-header-exec-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>トレ実行🎫${mm.tickets}枚</button>` : '';
   const headerHtml = mastermonDetailTab ? `
     <div class="mm-subview-header">
       <div class="mm-subview-title">${TAB_TITLES[mastermonDetailTab]}</div>
+      ${trainExecBtnHtml}
       <button class="mm-back-btn">← 戻る</button>
     </div>` : '';
 
@@ -1188,9 +1198,6 @@ function buildMastermonTrainingHtml(mm){
     <div class="mastermon-detail-traincol">
       <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
       <div class="mm-train-grid">${trainingHtml}</div>
-      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>
-        トレーニングを実行(チケット${mm.tickets}枚所持)
-      </button>
       <div class="mm-stat-desc-title">ステータス説明</div>
       <div class="mm-stat-desc-wrap">${legendHtml}</div>
     </div>`;
@@ -1228,15 +1235,18 @@ function handleMastermonPostMatch(isWin){
     const data = loadMastermons();
     const mm = data[game.selectedMastermonKey];
     if(mm){
+      const killExpBonus = Math.round(player.mastermonKillExpBonus||0);
       const result = awardMastermonExp(mm, {
         kills: player.kills, damage: Math.round(player.damageDealt),
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
         xpMult: netState.mode==='multi' ? 5 : 1, // マルチプレイは獲得経験値5倍
+        bonusExp: killExpBonus, // マスモン撃破ボーナス(相手レベル×係数の積み立て)
       });
       saveMastermons(data);
-      infoEl.textContent = result.levelsGained>0
-        ? `${mm.name} EXP+${result.expGain}(Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained})`
-        : `${mm.name} EXP+${result.expGain}`;
+      let resultText = `${mm.name} EXP+${result.expGain}`;
+      if(killExpBonus>0) resultText += `(うちマスモン撃破ボーナス+${killExpBonus})`;
+      if(result.levelsGained>0) resultText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
+      infoEl.textContent = resultText;
       infoEl.classList.remove('hidden');
     }
     return;
