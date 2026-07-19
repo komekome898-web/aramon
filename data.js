@@ -410,8 +410,20 @@ function mastermonInitialStats(elementKey){
   return stats;
 }
 function mastermonExpToNext(level){ return 80 + level*15; }
-// ステータス100を基準(倍率1.0)に、上限999で最大約2倍まで効果が伸びる
-function mastermonStatFactor(v){ return 1 + (v-100)/900; }
+// ステータス100を基準(倍率1.0)に、ステータスごとの係数(小さいほど効果の増減幅が大きい)で倍率を算出。
+// ライフ・命中・丈夫さは増減幅を拡大、回避は増減幅を縮小するためデフォルト(900)から変更。
+const MASTERMON_STAT_FACTOR_DIVISOR = {
+  life:     650,  // 増減幅アップ
+  power:    900,
+  wisdom:   900,
+  accuracy: 650,  // 増減幅アップ
+  evasion:  1300, // 増減幅ダウン
+  vitality: 650,  // 増減幅アップ
+};
+function mastermonStatFactor(v, statKey){
+  const divisor = MASTERMON_STAT_FACTOR_DIVISOR[statKey] || 900;
+  return 1 + (v-100)/divisor;
+}
 
 function loadMastermons(){
   try{ return JSON.parse(localStorage.getItem(MASTERMON_STORAGE_KEY)) || {}; }catch(err){ return {}; }
@@ -480,12 +492,12 @@ function awardMastermonExp(mm, opts){
 function mastermonEffectMults(mm){
   const s = mm.stats, f = mastermonStatFactor;
   return {
-    lifeMult: f(s.life),
-    dmgDealtMult: (f(s.power)+f(s.wisdom))/2,
-    dmgTakenMult: 1/((f(s.power)+f(s.vitality))/2),
-    gutsRegenMult: f(s.wisdom),
-    cooldownMult: 1/f(s.accuracy),
-    speedMult: f(s.evasion),
+    lifeMult: f(s.life, 'life'),
+    dmgDealtMult: (f(s.power,'power')+f(s.wisdom,'wisdom'))/2,
+    dmgTakenMult: 1/((f(s.power,'power')+f(s.vitality,'vitality'))/2),
+    gutsRegenMult: f(s.wisdom,'wisdom'),
+    cooldownMult: 1/f(s.accuracy,'accuracy'),
+    speedMult: f(s.evasion,'evasion'),
   };
 }
 
