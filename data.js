@@ -413,7 +413,7 @@ function mastermonExpToNext(level){ return 80 + level*15; }
 // ステータス100を基準(倍率1.0)に、ステータスごとの係数(小さいほど効果の増減幅が大きい)で倍率を算出。
 // ライフ・命中・丈夫さは増減幅を拡大、回避は増減幅を縮小するためデフォルト(900)から変更。
 const MASTERMON_STAT_FACTOR_DIVISOR = {
-  life:     650,  // 増減幅アップ
+  life:     450,  // 増減幅アップ(さらに拡大)
   power:    900,
   wisdom:   900,
   accuracy: 650,  // 増減幅アップ
