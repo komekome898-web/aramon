@@ -151,33 +151,34 @@
     position:absolute; inset:0; z-index:35;
     background: radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%), linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
     display:flex; align-items:center; justify-content:center;
+    overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
-  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px; }
-  .lobby-title{ font-family:'Russo One',sans-serif; font-size:22px; color:var(--amber); letter-spacing:1px; text-align:center; }
-  .lobby-sub{ font-size:13px; color:var(--ink-dim); letter-spacing:1px; }
-  #lobbyPlayerList{ display:flex; flex-direction:column; gap:8px; width:min(calc(80 * var(--vw)),320px); margin-top:6px; }
+  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:14px 24px; }
+  .lobby-title{ font-family:'Russo One',sans-serif; font-size:17px; color:var(--amber); letter-spacing:1px; text-align:center; }
+  .lobby-sub{ font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
+  #lobbyPlayerList{ display:flex; flex-direction:column; gap:5px; width:min(calc(80 * var(--vw)),320px); margin-top:2px; }
   .lobby-player-row{
-    display:flex; align-items:center; gap:10px; padding:9px 14px; background:rgba(255,255,255,0.04);
-    border:1px solid var(--panel-line); border-radius:6px; font-size:13px;
+    display:flex; align-items:center; gap:10px; padding:6px 14px; background:rgba(255,255,255,0.04);
+    border:1px solid var(--panel-line); border-radius:6px; font-size:12px;
   }
-  .lobby-player-row .lp-dot{ width:8px; height:8px; border-radius:50%; background:var(--amber); flex-shrink:0; }
+  .lobby-player-row .lp-dot{ width:7px; height:7px; border-radius:50%; background:var(--amber); flex-shrink:0; }
   .lobby-player-row.is-bot .lp-dot{ background:var(--ink-dim); }
-  #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); min-height:20px; }
+  #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); min-height:14px; }
   #lobbyCancelBtn{
-    margin-top:6px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    margin-top:2px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
-  #lobbyHostBtnRow{ display:flex; gap:12px; margin-top:6px; }
+  #lobbyHostBtnRow{ display:flex; gap:12px; margin-top:2px; }
   #lobbyStartBtn{
-    padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
   #lobbyDisbandBtn{
-    padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
     color:var(--ink); background:rgba(255,80,80,0.12); border:1px solid rgba(255,80,80,0.4); border-radius:6px; cursor:pointer;
   }
   #lobbyGuestLeaveBtn{
-    margin-top:6px; padding:11px 28px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
+    margin-top:2px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
 
