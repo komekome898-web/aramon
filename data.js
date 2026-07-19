@@ -36,7 +36,7 @@ function applyWorldScale(scale){
 // mountainStyle でその山の見た目(volcano=火山/snow=雪山/forest=森/pyramid=ピラミッド)を切り替える。
 // lavaRingPerVolcano/lavaPoolCount が0のマップは溶岩(ダメージ床)は生成されない。
 // rockFlavors は岩オブジェクトの見た目バリエーションを重み付きで指定する(未指定時は通常の岩)。
-const WATER_SPEED_MULT = 0.8; // 海・川の中での移動速度倍率
+const WATER_SPEED_MULT = 0.6; // 海・川の中での移動速度倍率
 const OASIS_SPEED_MULT = 0.8; // オアシスの中での移動速度倍率
 const MAPS = {
   wild: {

@@ -299,10 +299,11 @@ const MIN_SPAWN_SEPARATION = 500;
 function seaEdgeX(y){
   if(!currentMap.hasSea) return -Infinity;
   const base = WORLD.w*(currentMap.seaWidthRatio||0.14);
-  // マップ(ミニマップ)の丸い外周に沿うように、縦方向の中央ほど深く、上下端ほど浅くなる円弧状の湾を作る
+  // マップの丸い外周に沿うように弧を描く湾。上下端ほど深く、縦方向の中央ほど浅くなる
+  // (以前は中央が深い向きだったが、逆向きにして中央付近の可動域を広く保つ)
   const R = WORLD.h/2;
   const dy = clamp(y - R, -R, R);
-  const bulge = Math.sqrt(Math.max(0, R*R - dy*dy)) / R; // 0(上下端)〜1(中央)
+  const bulge = 1 - Math.sqrt(Math.max(0, R*R - dy*dy)) / R; // 0(中央)〜1(上下端)
   return base + bulge*(WORLD.w*0.22) + Math.sin(y*0.0025+1.3)*40;
 }
 function isInSea(x,y,margin){
@@ -712,9 +713,13 @@ function genSeaZones(){
   seaZones = [];
   if(!currentMap.hasSea) return;
   const step = 260;
+  const circleRadius = 520;
   for(let y=-200; y<=WORLD.h+200; y+=step){
     const edge = seaEdgeX(y);
-    seaZones.push({ x: edge-260, y, radius:520 });
+    // 海岸線(edge)から世界の左端(x=0)より少し先まで円を敷き詰め、砂地が覗く隙間をなくす
+    for(let x=edge-260; x>-circleRadius*1.4; x-=circleRadius*0.72){
+      seaZones.push({ x, y, radius:circleRadius });
+    }
   }
 }
 function genRiverZones(){
@@ -722,11 +727,17 @@ function genRiverZones(){
   if(!currentMap.hasRiver) return;
   const n = Math.max(1, Math.round((currentMap.riverCount||0) * Math.sqrt(worldDensityScale||1)));
   const baseWidth = currentMap.riverWidth||220;
+  // 複数の川が交差/重複しないよう、縦方向をn個の帯に分けて1本ずつ配置する
+  const bandTop = WORLD.h*0.08, bandBottom = WORLD.h*0.92;
+  const bandHeight = (bandBottom-bandTop)/n;
   for(let i=0;i<n;i++){
-    const startY = rand(WORLD.h*0.08, WORLD.h*0.92);
     const wobbleFreq = rand(0.0006,0.0014);
-    const wobbleAmp = rand(180,420);
+    const wobbleAmp = Math.min(420, bandHeight*0.32);
     const wobblePhase = rand(0,Math.PI*2);
+    const margin = wobbleAmp + baseWidth*0.7;
+    const bandLo = bandTop + bandHeight*i + margin;
+    const bandHi = bandTop + bandHeight*(i+1) - margin;
+    const startY = bandLo < bandHi ? rand(bandLo, bandHi) : bandTop + bandHeight*(i+0.5);
     let x = WORLD.w*0.94;
     let steps = 0;
     while(x > seaEdgeX(clamp(startY,60,WORLD.h-60))-40 && steps<400){
@@ -747,11 +758,17 @@ function seededGenRiverZones(rng){
   if(!currentMap.hasRiver) return;
   const n = Math.max(1, Math.round((currentMap.riverCount||0) * Math.sqrt(worldDensityScale||1)));
   const baseWidth = currentMap.riverWidth||220;
+  // 複数の川が交差/重複しないよう、縦方向をn個の帯に分けて1本ずつ配置する
+  const bandTop = WORLD.h*0.08, bandBottom = WORLD.h*0.92;
+  const bandHeight = (bandBottom-bandTop)/n;
   for(let i=0;i<n;i++){
-    const startY = seededRand(rng,WORLD.h*0.08, WORLD.h*0.92);
     const wobbleFreq = seededRand(rng,0.0006,0.0014);
-    const wobbleAmp = seededRand(rng,180,420);
+    const wobbleAmp = Math.min(420, bandHeight*0.32);
     const wobblePhase = seededRand(rng,0,Math.PI*2);
+    const margin = wobbleAmp + baseWidth*0.7;
+    const bandLo = bandTop + bandHeight*i + margin;
+    const bandHi = bandTop + bandHeight*(i+1) - margin;
+    const startY = bandLo < bandHi ? seededRand(rng,bandLo,bandHi) : bandTop + bandHeight*(i+0.5);
     let x = WORLD.w*0.94;
     let steps = 0;
     while(x > seaEdgeX(clamp(startY,60,WORLD.h-60))-40 && steps<400){
