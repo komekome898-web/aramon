@@ -248,7 +248,17 @@ function killEntity(victim, killer){
     pushKillFeed(kfText);
     const iAmInvolved = netState.mode==='multi' && ((killer.isPlayer) || (victim.isPlayer));
     if(iAmInvolved) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
-    if(killer.isPlayer) pushToast('キルボーナス！ HP+50 ガッツ+50');
+    if(killer.isPlayer){
+      let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
+      // マスモン(bot補完・他プレイヤー)を倒したら、相手レベルに応じたEXPボーナスを積み立てる
+      // (自分がマスモンで参戦しているときのみ。試合終了時にawardMastermonExpへ加算される)
+      if(victim.mastermonLevel && game.selectedMastermonKey){
+        const expBonus = victim.mastermonLevel * MASTERMON_KILL_EXP_PER_LEVEL;
+        killer.mastermonKillExpBonus = (killer.mastermonKillExpBonus||0) + expBonus;
+        bonusMsg += ` 経験値+${expBonus}`;
+      }
+      pushToast(bonusMsg);
+    }
     const killerSc = STATE_CHANGES[killer.element];
     if(killerSc && killerSc.trigger==='onKill' && canTriggerState(killer)){
       activateState(killer);

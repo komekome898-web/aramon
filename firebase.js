@@ -125,12 +125,12 @@
 
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
   // 部屋を新規作成してホストになる
-  window.__aramonCreateRoom = async function(capacity, playerName, elementKey){
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmLevel){
     const roomId = genId();
     const roomRef = ref(fbDb, `rooms/${roomId}`);
     await set(roomRef, {
       meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now(), hostName: playerName },
-      players: { [myPlayerId]: { name: playerName, element: elementKey, joinedAt: Date.now(), isHost:true, input:{} } },
+      players: { [myPlayerId]: { name: playerName, element: elementKey, mmLevel: mmLevel||null, joinedAt: Date.now(), isHost:true, input:{} } },
     });
     const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now(), hostName: playerName });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
@@ -162,7 +162,7 @@
   };
 
   // 指定した部屋に参加する(部屋を探す画面で選んだ場合)
-  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey){
+  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmLevel){
     try{
       const roomPlayersRef = ref(fbDb, `rooms/${roomId}/players`);
       const lobbyCountRef = ref(fbDb, `lobby/${lobbyKey}/count`);
@@ -178,7 +178,7 @@
       if(!txResult.committed) return { ok:false, reason:'この部屋は満員です' };
 
       await set(child(roomPlayersRef, myPlayerId), {
-        name: playerName, element: elementKey, joinedAt: Date.now(), isHost:false, input:{}
+        name: playerName, element: elementKey, mmLevel: mmLevel||null, joinedAt: Date.now(), isHost:false, input:{}
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
