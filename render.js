@@ -1112,7 +1112,7 @@ function drawLandingMarkers(){
   }
 }
 function drawWaterZones(){
-  if(seaZones.length===0 && riverZones.length===0) return;
+  if(seaZones.length===0 && riverZones.length===0 && oasisZones.length===0) return;
   const draw = (z, fill, stroke)=>{
     if(Math.abs(z.x-player.x)>2400 || Math.abs(z.y-player.y)>2400) return;
     const pts = projectCircleRing(z, z.radius, 22);
@@ -1128,6 +1128,11 @@ function drawWaterZones(){
   ctx.save();
   for(const sz of seaZones) draw(sz, 'rgba(40,110,175,0.72)', 'rgba(140,200,230,0.25)');
   for(const rz of riverZones) draw(rz, 'rgba(70,150,205,0.62)', 'rgba(160,215,235,0.3)');
+  // オアシス:砂に囲まれた青い水たまりだとひと目でわかるよう、外側に濡れた砂の縁を足してから水面を描く
+  for(const oz of oasisZones){
+    draw({ x:oz.x, y:oz.y, radius: oz.radius*1.12 }, 'rgba(150,120,70,0.55)', null);
+    draw({ x:oz.x, y:oz.y, radius: oz.radius }, 'rgba(50,140,195,0.82)', 'rgba(170,225,245,0.55)');
+  }
   ctx.restore();
 }
 function drawLavaZones(){
@@ -1482,7 +1487,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#rankingList') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });
