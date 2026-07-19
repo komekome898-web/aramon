@@ -88,7 +88,7 @@ window.addEventListener('pointermove', (e)=>{
   lookDrag.lastX = e.clientX; lookDrag.lastY = e.clientY;
   const logical = toLogicalDelta(dx, dy);
   camState.yaw += logical.x*0.0045;
-  camState.pitch = clamp(camState.pitch - logical.y*0.0025, 0.05, 0.55);
+  camState.pitch = clamp(camState.pitch + (invertPitchY ? logical.y : -logical.y)*0.0025, 0.05, 0.55);
   if(Math.hypot(e.clientX-tapTrack.startX, e.clientY-tapTrack.startY) > 10) tapTrack.moved = true;
 });
 window.addEventListener('pointerup', (e)=>{

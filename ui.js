@@ -221,6 +221,18 @@ document.getElementById('playerNameInput').addEventListener('input', (e)=>{
   try{ localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }catch(err){}
 });
 
+const INVERT_PITCH_KEY = 'aramon_invert_pitch_v1';
+let invertPitchY = false;
+(function restoreInvertPitch(){
+  try{ invertPitchY = localStorage.getItem(INVERT_PITCH_KEY) === '1'; }catch(err){}
+  document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
+})();
+document.getElementById('invertPitchToggle').addEventListener('click', ()=>{
+  invertPitchY = !invertPitchY;
+  document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
+  try{ localStorage.setItem(INVERT_PITCH_KEY, invertPitchY ? '1' : '0'); }catch(err){}
+});
+
 /* =====================================================================
    MULTIPLAYER STATE
 ===================================================================== */
