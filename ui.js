@@ -688,9 +688,9 @@ function showResult(isWin, placement){
     const el = ELEMENTS[player.element];
     iconEl.alt = el ? el.label : '';
     iconEl.style.display = '';
-    iconEl.dataset.variant = 'player';
+    iconEl.dataset.variant = 'normal';
     iconEl.dataset.extIdx = '0';
-    iconEl.dataset.basePath = `monsters/${player.element}_player`;
+    iconEl.dataset.basePath = `monsters/${player.element}`;
     iconEl.src = imgSrcFor(iconEl.dataset.basePath);
   }
   document.getElementById('resultScreen').classList.remove('hidden');
