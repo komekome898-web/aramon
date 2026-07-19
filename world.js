@@ -130,11 +130,22 @@ resize();
 ===================================================================== */
 function initZone(){
   zoneState = {
-    phaseIndex:0, timer:0, shrinking:false,
+    phaseIndex:0, timer:0, shrinking:false, hasNext:false,
     center:{...ZONE_CENTER0}, radius: ZONE_PHASES[0].holdRadius,
     fromCenter:{...ZONE_CENTER0}, fromRadius: ZONE_PHASES[0].holdRadius,
     toCenter:{...ZONE_CENTER0}, toRadius: ZONE_PHASES[0].holdRadius,
   };
+  prepareNextZoneTarget();
+}
+// 安定フェーズに入った時点で次の縮小先を先に決めておく。
+// これにより安定中から次回の安置予測(toCenter/toRadius)を点線で表示でき、
+// 縮小開始時(advanceZonePhase)はこの事前決定値をそのまま使う。
+function prepareNextZoneTarget(){
+  const nextIndex = zoneState.phaseIndex+1;
+  if(nextIndex >= ZONE_PHASES.length){ zoneState.hasNext = false; return; }
+  zoneState.toCenter = pickZoneTarget(zoneState.center, zoneState.radius, ZONE_PHASES[nextIndex].holdRadius);
+  zoneState.toRadius = ZONE_PHASES[nextIndex].holdRadius;
+  zoneState.hasNext = true;
 }
 function pickZoneTarget(prevCenter, prevRadius, nextRadius){
   const maxOff = Math.max(0, prevRadius - nextRadius);
@@ -166,8 +177,11 @@ function advanceZonePhase(){
   if(newIndex >= ZONE_PHASES.length) return false;
   zoneState.fromCenter = {...zoneState.center};
   zoneState.fromRadius = zoneState.radius;
-  zoneState.toCenter = pickZoneTarget(zoneState.center, zoneState.radius, ZONE_PHASES[newIndex].holdRadius);
-  zoneState.toRadius = ZONE_PHASES[newIndex].holdRadius;
+  // 縮小先は安定フェーズ開始時に事前決定済み(prepareNextZoneTarget)。未決定なら念のためここで決める
+  if(!zoneState.hasNext){
+    zoneState.toCenter = pickZoneTarget(zoneState.center, zoneState.radius, ZONE_PHASES[newIndex].holdRadius);
+    zoneState.toRadius = ZONE_PHASES[newIndex].holdRadius;
+  }
   zoneState.phaseIndex = newIndex;
   zoneState.timer = 0;
   zoneState.shrinking = true;
@@ -200,7 +214,7 @@ function updateZone(dt){
     zoneState.center.x = lerp(zoneState.fromCenter.x, zoneState.toCenter.x, e);
     zoneState.center.y = lerp(zoneState.fromCenter.y, zoneState.toCenter.y, e);
     zoneState.radius = lerp(zoneState.fromRadius, zoneState.toRadius, e);
-    if(t>=1){ zoneState.shrinking=false; zoneState.timer=0; }
+    if(t>=1){ zoneState.shrinking=false; zoneState.timer=0; prepareNextZoneTarget(); }
   } else {
     if(zoneState.timer >= ph.holdTime){ advanceZonePhase(); }
   }
@@ -564,6 +578,12 @@ function isNearRock(x, y, margin){
   }
   return false;
 }
+function isNearCrystal(x, y, margin){
+  for(const c of crystalObstacles){
+    if(Math.hypot(x-c.x, y-c.y) < c.radius+margin) return true;
+  }
+  return false;
+}
 function spawnLoot(n, center, radius){
   for(let i=0;i<n;i++){
     const pick = pickLootKindAndType();
@@ -573,7 +593,7 @@ function spawnLoot(n, center, radius){
       const a = rand(0,Math.PI*2), d = radius*Math.sqrt(rand(0,1));
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
-    } while((isNearRock(x,y,45) || isOnHazard(x,y,45)) && guard<20);
+    } while((isNearRock(x,y,45) || isNearCrystal(x,y,45) || isOnHazard(x,y,45)) && guard<20);
     lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: rand(0,Math.PI*2) });
   }
 }
@@ -600,7 +620,7 @@ function seededSpawnLoot(rng, n, center, radius){
       const a = seededRand(rng,0,Math.PI*2), d = radius*Math.sqrt(seededRand(rng,0,1));
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
-    } while((isNearRock(x,y,45) || isOnHazard(x,y,45)) && guard<20);
+    } while((isNearRock(x,y,45) || isNearCrystal(x,y,45) || isOnHazard(x,y,45)) && guard<20);
     lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: seededRand(rng,0,Math.PI*2) });
   }
 }

@@ -602,8 +602,8 @@ function drawTreeObstacle(rock){
 }
 function drawShellObstacle(rock){
   const r = rock.radius;
-  ctx.translate(0,-r*0.15);
-  ctx.beginPath(); ctx.ellipse(0, r*0.55, r*1.0, r*0.3, 0,0,Math.PI*2);
+  // 影を貝殻の底辺(y=0)の直下に敷き、本体を持ち上げない(浮いて見える不具合の修正)
+  ctx.beginPath(); ctx.ellipse(0, r*0.08, r*1.0, r*0.26, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
   const pts=7;
   ctx.beginPath();
@@ -659,8 +659,9 @@ function drawCrystal(c,p){
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
-  ctx.translate(0,-r*0.7);
-  ctx.beginPath(); ctx.ellipse(0, r*0.7, r*1.0, r*0.3, 0,0,Math.PI*2);
+  // 底の頂点が影(接地点)に触れる高さまでしか持ち上げない(浮いて見える不具合の修正)
+  ctx.translate(0,-r*0.2);
+  ctx.beginPath(); ctx.ellipse(0, r*0.2, r*1.0, r*0.3, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
   const pts = 6;
   ctx.beginPath();
@@ -786,8 +787,11 @@ function projectCircleArcLocal(center, radius, segments, windowRad){
 function drawZoneRings(){
   const ZONE_RENDER_THRESHOLD = 4000; // これより境界から離れていれば描画不要
   drawOneZoneRing(zoneState.center, zoneState.radius, 'rgba(244,196,48,0.85)', 4, [20,16], {blur:16,color:'rgba(244,196,48,0.6)'}, ZONE_RENDER_THRESHOLD);
-  if(zoneState.shrinking){
-    drawOneZoneRing(zoneState.toCenter, zoneState.toRadius, 'rgba(255,255,255,0.32)', 2, [6,9], null, ZONE_RENDER_THRESHOLD);
+  // 縮小中だけでなく安定中も、次の縮小先(予測)を同じ点線スタイルで表示する。
+  // 雪山マップでは白い点線が雪面と同化して見えないため青系に変える。
+  if(zoneState.shrinking || zoneState.hasNext){
+    const predColor = currentMap.mountainStyle==='snow' ? 'rgba(80,150,255,0.8)' : 'rgba(255,255,255,0.32)';
+    drawOneZoneRing(zoneState.toCenter, zoneState.toRadius, predColor, 2, [6,9], null, ZONE_RENDER_THRESHOLD);
   }
 }
 function drawOneZoneRing(center, radius, strokeStyle, lineWidth, dash, glow, threshold){
@@ -1348,6 +1352,17 @@ function renderMinimap(){
   miniCtx.beginPath();
   miniCtx.arc(zoneState.center.x*scale, zoneState.center.y*scale, zoneState.radius*scale, 0, Math.PI*2);
   miniCtx.strokeStyle='rgba(244,196,48,0.85)'; miniCtx.lineWidth=2; miniCtx.stroke();
+  // 次回の安置予測(縮小中は縮小先)を点線で表示。雪山マップでは白い山と被らない青系にする
+  if(zoneState.shrinking || zoneState.hasNext){
+    miniCtx.save();
+    miniCtx.beginPath();
+    miniCtx.arc(zoneState.toCenter.x*scale, zoneState.toCenter.y*scale, zoneState.toRadius*scale, 0, Math.PI*2);
+    miniCtx.setLineDash([3,3]);
+    miniCtx.strokeStyle = currentMap.mountainStyle==='snow' ? 'rgba(80,150,255,0.95)' : 'rgba(255,255,255,0.8)';
+    miniCtx.lineWidth=1.4;
+    miniCtx.stroke();
+    miniCtx.restore();
+  }
   for(const sz of seaZones){
     miniCtx.beginPath();
     miniCtx.arc(sz.x*scale, sz.y*scale, Math.max(1.5, sz.radius*scale), 0, Math.PI*2);

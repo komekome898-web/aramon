@@ -449,6 +449,8 @@ function buildAuthStatePayload(){
   const payload = { zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
+    tcx: Math.round(zoneState.toCenter.x), tcy: Math.round(zoneState.toCenter.y),
+    tr: Math.round(zoneState.toRadius), hasNext: !!zoneState.hasNext,
   }, aliveCount: entities.filter(e=>e.alive).length, entities: [] };
   for(const e of entities){
     payload.entities.push({
@@ -480,6 +482,12 @@ function applyAuthState(authState){
     zoneState.radius = authState.zone.r;
     zoneState.phaseIndex = authState.zone.phase;
     zoneState.shrinking = authState.zone.shrinking;
+    if(typeof authState.zone.tcx === 'number'){
+      zoneState.toCenter.x = authState.zone.tcx;
+      zoneState.toCenter.y = authState.zone.tcy;
+      zoneState.toRadius = authState.zone.tr;
+      zoneState.hasNext = !!authState.zone.hasNext;
+    }
   }
   const list = Array.isArray(authState.entities) ? authState.entities : [];
   for(const a of list){
