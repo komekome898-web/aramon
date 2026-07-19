@@ -267,6 +267,7 @@
     box-shadow:0 4px 0 #8a6a10, 0 0 24px -4px rgba(244,196,48,0.7);
   }
   #joinBtn:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; }
+  #pickMonsterNotice{ margin-top:8px; font-size:11px; color:var(--danger); letter-spacing:1px; text-align:center; }
   #joinBtn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #8a6a10; }
 
   .howto{ margin-top:18px; font-size:11px; color:var(--ink-dim); letter-spacing:1px; text-align:center; line-height:1.8; max-width:520px; }
