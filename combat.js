@@ -1,6 +1,6 @@
 function fireMove(attacker, target, move){
-  // SE: 自分の技発射のみ(負荷対策)。単発/連射/範囲で音を変える
-  if(attacker.isPlayer) playSe('fire', { kind: move.aoeShape ? 'aoe' : (move.burst ? 'burst' : 'single') });
+  // SE: 自分の技発射のみ(負荷対策)。単発/連射で音を変える(範囲技はaoe分岐内で持続時間付きで鳴らす)
+  if(attacker.isPlayer && !move.aoeShape) playSe('fire', { kind: move.burst ? 'burst' : 'single' });
   attacker.guts = Math.max(0, attacker.guts - effectiveGutsCost(attacker, move));
   if(attacker.element==='ark' && move.tier===3){
     attacker.graceUntil = matchTime + 10;
@@ -39,6 +39,7 @@ function fireMove(attacker, target, move){
       ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
     }
     areaEffects.push(ae);
+    if(attacker.isPlayer) playSe('fire', { kind:'aoe', dur: ae.life }); // 技の持続時間に合わせた長さで鳴らす
     return;
   }
   if(move.lobbed){
@@ -255,6 +256,7 @@ function killEntity(victim, killer){
     const iAmInvolved = netState.mode==='multi' && ((killer.isPlayer) || (victim.isPlayer));
     if(iAmInvolved) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
     if(killer.isPlayer){
+      playSe('kill'); // ザシュッ(切り裂き音)
       let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
       // マスモン(bot補完・他プレイヤー)を倒したら、相手レベルに応じたEXPボーナスを積み立てる
       // (自分がマスモンで参戦しているときのみ。試合終了時にawardMastermonExpへ加算される)

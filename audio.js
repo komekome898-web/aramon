@@ -51,7 +51,7 @@ document.addEventListener('visibilitychange', ()=>{
 
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
-const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5 };
+const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5 };
 const seLastAt = {};
 function playSe(name, opts){
   if(!actx || audioSettings.se<=0.005) return;
@@ -117,8 +117,13 @@ const SE_DEFS = {
   fire(t, opts){
     const kind = opts.kind||'single';
     if(kind==='aoe'){
-      seNoise(t, {dur:0.42, vol:0.4, filterFreq:1100, filterEnd:180});
-      seTone(t, {freq:220, freqEnd:70, dur:0.4, type:'sine', vol:0.45});
+      // tier3範囲技: エフェクトの持続時間(opts.dur)に合わせた長く強い轟音
+      const d = Math.min(2.8, Math.max(0.7, opts.dur||0.9));
+      seNoise(t, {dur:d, vol:0.42, filterFreq:1500, filterEnd:110});
+      seTone(t, {freq:190, freqEnd:50, dur:d, type:'sawtooth', vol:0.26});
+      seTone(t, {freq:95, freqEnd:38, dur:d*0.95, type:'sine', vol:0.42});
+      seTone(t, {freq:63, dur:d*0.9, type:'sine', vol:0.2}); // 近接周波数のうなりでゴゴゴ感
+      seNoise(t+d*0.55, {dur:d*0.45, vol:0.2, filterType:'highpass', filterFreq:2500}); // 余韻のシュウウ
     } else if(kind==='burst'){
       for(let i=0;i<3;i++){
         seTone(t+i*0.09, {freq:400, freqEnd:220, dur:0.08, type:'sine', vol:0.32});
@@ -137,6 +142,36 @@ const SE_DEFS = {
   // ガッツ不足「ピピピッ」
   noGuts(t){
     for(let i=0;i<3;i++) seTone(t+i*0.08, {freq:1250, dur:0.045, type:'square', vol:0.28});
+  },
+  // 敵をキルした時「ザシュッ」(切り裂き音)
+  kill(t){
+    seNoise(t, {dur:0.16, vol:0.5, filterType:'bandpass', filterFreq:5200, filterEnd:900});
+    seTone(t, {freq:2400, freqEnd:280, dur:0.14, type:'sawtooth', vol:0.14});
+    seNoise(t+0.06, {dur:0.2, vol:0.28, filterFreq:1300, filterEnd:180});
+  },
+  // 勝利ファンファーレ(リザルト画面・約2.2秒)
+  fanfare(t){
+    const N=(dt,f,d,v)=>{
+      seTone(t+dt, {freq:f, dur:d, type:'square', vol:(v||0.3)*0.55});
+      seTone(t+dt, {freq:f/2, dur:d, type:'triangle', vol:(v||0.3)*0.45});
+    };
+    N(0,    784, 0.15); N(0.17, 784, 0.15); N(0.34, 784, 0.15);
+    N(0.52, 1047, 0.45, 0.34);
+    N(1.0,  880, 0.15); N(1.16, 988, 0.15);
+    N(1.34, 1319, 0.85, 0.36);
+    [523,659,784,1047].forEach(f=>seTone(t+1.34, {freq:f, dur:0.85, type:'triangle', vol:0.12, attack:0.05}));
+    seNoise(t+1.34, {dur:0.5, vol:0.12, filterType:'highpass', filterFreq:5000}); // シャーンという輝き
+  },
+  // 敗北・その他(悲しげな下降フレーズ・約2.4秒)
+  sad(t){
+    const notes=[[0,659],[0.42,587],[0.84,523],[1.22,494]];
+    for(const [dt,f] of notes){
+      seTone(t+dt, {freq:f, dur:0.55, type:'triangle', vol:0.3, attack:0.04});
+      seTone(t+dt, {freq:f/2, dur:0.55, type:'sine', vol:0.18, attack:0.04});
+    }
+    seTone(t+1.62, {freq:440, dur:1.0, type:'triangle', vol:0.28, attack:0.06});
+    seTone(t+1.62, {freq:220, dur:1.0, type:'sine', vol:0.2, attack:0.06});
+    seTone(t+1.62, {freq:262, dur:1.0, type:'sine', vol:0.12, attack:0.06});
   },
 };
 // メニュー系の<button>タップで共通の「ポン」を鳴らす
@@ -170,7 +205,7 @@ function startBgmScheduler(){
   bgmState.timerId = setInterval(bgmScheduler, 90);
 }
 function bgmStepDur(){
-  const bpm = bgmState.current==='title' ? 92 : [116,126,138,132][bgmState.intensity];
+  const bpm = bgmState.current==='title' ? 92 : [116,126,138,126][bgmState.intensity];
   return 60/bpm/4;
 }
 function bgmScheduler(){
@@ -227,6 +262,29 @@ function bHat(t, vol){
   g.gain.exponentialRampToValueAtTime(0.001, t+0.035);
   src.connect(f); f.connect(g); g.connect(bgmTrackGain);
   src.start(t); src.stop(t+0.05);
+}
+function bCrash(t, vol){
+  const len = Math.floor(actx.sampleRate*0.9);
+  const buf = actx.createBuffer(1,len,actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+  const src=actx.createBufferSource(); src.buffer=buf;
+  const f=actx.createBiquadFilter(); f.type='highpass'; f.frequency.value=4200;
+  const g=actx.createGain();
+  g.gain.setValueAtTime(vol!=null?vol:0.16, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+0.9);
+  src.connect(f); f.connect(g); g.connect(bgmTrackGain);
+  src.start(t); src.stop(t+1.0);
+}
+function bTom(t, vol){
+  const osc = actx.createOscillator(), g = actx.createGain();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(190, t);
+  osc.frequency.exponentialRampToValueAtTime(80, t+0.16);
+  g.gain.setValueAtTime(vol!=null?vol:0.3, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+0.18);
+  osc.connect(g); g.connect(bgmTrackGain);
+  osc.start(t); osc.stop(t+0.22);
 }
 function bSnare(t, vol){
   const len = Math.floor(actx.sampleRate*0.12);
@@ -321,25 +379,33 @@ function bgmEpicStep(step, t){
   const bar = Math.floor(s/16), sb = s%16;
   const chord = EPIC_CHORDS[bar];
   const dur = bgmStepDur();
-  // 重厚なパッド: デチューンした2枚のノコギリ波+オクターブ
+  // 小節頭: クラッシュシンバル+重厚パッド(3枚デチューンのノコギリ波)+聖歌隊風+サブベース
   if(sb===0){
+    bCrash(t, bar===0 ? 0.2 : 0.12);
     for(const n of chord){
-      bNote(t, n, dur*15, 'sawtooth', 0.05, -7);
-      bNote(t, n, dur*15, 'sawtooth', 0.05, 7);
+      bNote(t, n, dur*15, 'sawtooth', 0.045, -12);
+      bNote(t, n, dur*15, 'sawtooth', 0.045, 12);
+      bNote(t, n, dur*15, 'sawtooth', 0.035);
+      bNote(t, n+12, dur*15, 'triangle', 0.05); // 聖歌隊風の高音レイヤー
     }
-    bNote(t, chord[0]-12, dur*15, 'sawtooth', 0.07);
+    bNote(t, chord[0]-12, dur*15, 'sawtooth', 0.09);
+    bNote(t, chord[0]-24, dur*15, 'sine', 0.2); // 地鳴りのサブベース
   }
-  // ベース: オクターブ跳躍で疾走感
-  if(sb%2===0) bNote(t, chord[0]-24 + (sb%4===2?12:0), dur*1.7, 'sawtooth', 0.15);
-  // ドラム: 4つ打ち+2・4スネア+16分ハット
-  if(sb%4===0) bKick(t, 0.5);
-  if(sb===4 || sb===12) bSnare(t, 0.32);
-  bHat(t, sb%4===0?0.12:0.07);
-  // 壮大な主旋律(オクターブ重ね)
+  // ベース: 8分刻み+シンコペーションのオクターブ跳躍
+  if(sb%2===0) bNote(t, chord[0]-24 + (sb%8===6?12:0), dur*1.7, 'sawtooth', 0.17);
+  // ドラム: 4つ打ち+小節終わりのダブルキック+2・4スネア+16分ハット+低音タム
+  if(sb%4===0) bKick(t, 0.58);
+  if(sb===14){ bKick(t, 0.45); bKick(t+dur/2, 0.45); }
+  if(sb===4 || sb===12) bSnare(t, 0.36);
+  if(sb===7 || sb===15) bTom(t, 0.3);
+  bHat(t, sb%4===0?0.13:0.08);
+  // 壮大な主旋律(低音・本体・オクターブ上・5度ハモリの4層)
   for(const [ms, note, len] of EPIC_MELODY){
     if(ms===s){
-      bNote(t, note, dur*len*0.95, 'square', 0.09);
-      bNote(t, note+12, dur*len*0.95, 'triangle', 0.11);
+      bNote(t, note-12, dur*len*0.95, 'sawtooth', 0.06);
+      bNote(t, note, dur*len*0.95, 'square', 0.1);
+      bNote(t, note+12, dur*len*0.95, 'triangle', 0.13);
+      bNote(t, note+7, dur*len*0.95, 'triangle', 0.06);
     }
   }
 }
