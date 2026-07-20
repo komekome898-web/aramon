@@ -465,9 +465,12 @@
     <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎒 バッグ</div>
     <div id="bagList" class="bag-list"></div>
     <div id="bagTargetWrap" class="hidden">
-      <div class="bag-target-title">どのマスモンに使う？</div>
+      <div class="bag-target-title" id="bagTargetTitle">どのマスモンに使う？</div>
       <div id="bagTargetList" class="bag-target-list"></div>
-      <button id="bagTargetCancelBtn" class="bag-target-cancel">やめる</button>
+      <div class="bag-target-btnrow">
+        <button id="bagTargetCancelBtn" class="bag-target-cancel">やめる</button>
+        <button id="bagUseConfirmBtn" class="bag-use-btn" disabled>使用する</button>
+      </div>
     </div>
     <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
       <button id="closeBagBtn">閉じる</button>

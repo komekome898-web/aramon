@@ -170,15 +170,25 @@
     display:flex; flex-direction:column; gap:6px;
   }
   .bag-target-btn{
-    padding:9px 10px; border-radius:6px; cursor:pointer; text-align:left;
+    display:flex; flex-direction:column; gap:5px;
+    padding:9px 10px; border-radius:8px; cursor:pointer; text-align:left;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
   }
+  .bag-target-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.12); box-shadow:0 0 0 1px var(--amber) inset; }
+  .bt-head{ display:flex; align-items:center; gap:8px; }
+  .bt-head img{ width:24px; height:24px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
+  .bt-stats{ display:flex; flex-wrap:wrap; gap:4px 10px; }
+  .bt-stat{ font-size:10px; font-weight:400; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; }
+  .bt-stat.hl{ color:var(--amber); font-weight:700; }
+  .bag-target-btnrow{ display:flex; gap:10px; margin-top:10px; }
   .bag-target-cancel{
-    margin-top:8px; width:100%; padding:8px 0; border-radius:6px; cursor:pointer;
+    flex:1 1 0; padding:9px 0; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px;
     color:var(--ink-dim); background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
   }
+  #bagUseConfirmBtn{ flex:1 1 0; padding:9px 0; }
+  #bagUseConfirmBtn:disabled{ opacity:0.35; cursor:not-allowed; }
   .gacha-box{ max-width:min(480px, calc(92 * var(--vw))); }
   .gacha-wallet{ display:flex; justify-content:center; gap:16px; font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink); margin-bottom:8px; }
   .gacha-result{
