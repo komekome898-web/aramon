@@ -205,13 +205,14 @@ const SE_DEFS = {
     seNoiseLfo(t, {dur:d, vol:0.34, filterType:'bandpass', filterFreq:2600, lfoFreq:15, lfoDepth:0.8});
     seTone(t, {freq:640, freqEnd:900, dur:d, type:'sine', vol:0.07});
   },
-  // 熱視線・サイコキネシス・モッチ砲・フラワービーム・天河天翔「ビーッ」(持続ビーム)
+  // 熱視線・サイコキネシス・モッチ砲・フラワービーム・天河天翔(持続レーザー: 低く尖った音+うなり)
   beam(t, o){
     const d = Math.min(2.6, Math.max(0.5, (o&&o.dur)||1));
-    seTone(t, {freq:990, dur:d, type:'square', vol:0.14, attack:0.02});
-    seTone(t, {freq:998, dur:d, type:'square', vol:0.12, attack:0.02}); // わずかにずらしてうなり
-    seTone(t, {freq:495, dur:d, type:'sine', vol:0.12, attack:0.02});
-    seNoise(t, {dur:d, vol:0.07, filterType:'highpass', filterFreq:5200});
+    seTone(t, {freq:1400, freqEnd:650, dur:0.12, type:'sawtooth', vol:0.16}); // 撃ち出しのザップ
+    seTone(t, {freq:330, dur:d, type:'sawtooth', vol:0.2, attack:0.015});
+    seTone(t, {freq:333, dur:d, type:'sawtooth', vol:0.18, attack:0.015}); // わずかにずらしてうなり
+    seTone(t, {freq:165, dur:d, type:'square', vol:0.13, attack:0.015});  // 低域の芯
+    seNoise(t, {dur:d, vol:0.05, filterType:'bandpass', filterFreq:2400});
   },
   // レクイエムエンド「シュンシュンシュン」(風切り3連)
   whoosh(t){
