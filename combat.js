@@ -52,7 +52,7 @@ function fireMove(attacker, target, move){
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
       dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
-      icon:move.icon, shape:move.shape,
+      icon:move.icon, shape:move.shape, projStyle:move.projStyle||null,
     });
     return;
   }
@@ -67,6 +67,7 @@ function fireMove(attacker, target, move){
       dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
+      projStyle: move.projStyle||null,
     });
   }
 }
@@ -645,6 +646,10 @@ function tryPlayerFire(dt){
   }
   player.fireCooldown = effectiveCooldown(player, mv);
 }
+// Tier3技の弾が残す軌跡の色(スタイル別)
+const PROJ_TRAIL_COLORS = {
+  tornado:'#d8c49a', holy:'#ffe9a8', shell:'#b57fe0', requiem:'#e6c35c',
+};
 function updateProjectiles(dt){
   for(let i=projectiles.length-1;i>=0;i--){
     const p = projectiles[i];
@@ -668,6 +673,13 @@ function updateProjectiles(dt){
     if(p.delay>0){ p.delay -= dt; continue; }
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
+    // Tier3技(projStyle付き)の弾は光る軌跡パーティクルを残す
+    if(p.projStyle && Math.random() < 0.6){
+      const trailColor = PROJ_TRAIL_COLORS[p.projStyle] || p.color;
+      addParticle({ type:'spark', x:p.x, y:p.y, z:p.z,
+        vx:rand(-24,24), vy:rand(-24,24), life:0.4, maxLife:0.4,
+        color:trailColor, size:rand(2.5,4.5) });
+    }
     if(p.growWithDistance){
       const growT = clamp(p.traveled/Math.max(p.maxRange,1), 0, 1);
       p.hitR = p.baseHitR * (1 + growT*1.8); // 飛距離が伸びるほど最大で約2.8倍まで巨大化
