@@ -209,6 +209,8 @@ async function beginMultiplayerMatch(){
   document.getElementById('startScreen').classList.add('hidden');
   game.started=true;
   pushToast('バトル開始！（マルチプレイ）');
+  playSe('jakiin');
+  bgmSetTrack('battle');
 }
 
 // 他プレイヤーの入力を、対応するローカルエンティティに反映する

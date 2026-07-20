@@ -201,6 +201,34 @@ function buildHowtoLists(){
 buildMonsterGrid();
 buildHowtoLists();
 
+// ===== 音量設定(BGM/SE) =====
+function syncAudioSliders(){
+  document.getElementById('bgmVolSlider').value = Math.round(audioSettings.bgm*100);
+  document.getElementById('seVolSlider').value = Math.round(audioSettings.se*100);
+  document.getElementById('bgmVolVal').textContent = Math.round(audioSettings.bgm*100);
+  document.getElementById('seVolVal').textContent = Math.round(audioSettings.se*100);
+}
+document.getElementById('audioSettingsBtn').addEventListener('click', ()=>{
+  syncAudioSliders();
+  document.getElementById('audioSettingsOverlay').classList.remove('hidden');
+});
+document.getElementById('closeAudioSettingsBtn').addEventListener('click', ()=>{
+  document.getElementById('audioSettingsOverlay').classList.add('hidden');
+  saveAudioSettings();
+});
+document.getElementById('bgmVolSlider').addEventListener('input', (e)=>{
+  audioSettings.bgm = (+e.target.value)/100;
+  document.getElementById('bgmVolVal').textContent = e.target.value;
+  applyAudioVolumes();
+});
+document.getElementById('bgmVolSlider').addEventListener('change', ()=>saveAudioSettings());
+document.getElementById('seVolSlider').addEventListener('input', (e)=>{
+  audioSettings.se = (+e.target.value)/100;
+  document.getElementById('seVolVal').textContent = e.target.value;
+  applyAudioVolumes();
+});
+document.getElementById('seVolSlider').addEventListener('change', ()=>{ saveAudioSettings(); playSe('pickup'); }); // 音量確認用に試し鳴らし
+
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
@@ -636,6 +664,8 @@ function startGame(){
   document.getElementById('resultScreen').classList.add('hidden');
   game.started=true;
   pushToast('バトル開始！');
+  playSe('jakiin');
+  bgmSetTrack('battle');
 }
 let joinInProgress = false;
 // モンスター(またはマスモン)が選択されていない状態では、ソロの「バトルに参加する」だけでなく
@@ -684,6 +714,7 @@ function showResult(isWin, placement){
   game.over=true;
   game.started=false;
   joinInProgress = false;
+  bgmSetTrack('title');
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
@@ -1060,6 +1091,7 @@ function renderMastermonDetail(key){
         return `${label}${v>0?'+':''}${v}`;
       });
       pushToast(`トレーニング結果: ${parts.join(' / ')}`);
+      playSe('train');
       mastermonSelectedTraining = null;
       renderMastermonList();
       renderMastermonDetail(key);

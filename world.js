@@ -955,6 +955,7 @@ function warnGutsShortage(){
   lastGutsWarnAt = matchTime;
   pushToast('ガッツ不足！');
   flashGutsGauge();
+  playSe('noGuts');
 }
 
 /* =====================================================================
