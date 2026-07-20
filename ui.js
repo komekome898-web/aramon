@@ -291,9 +291,17 @@ function updateAccountBar(){
     btn.textContent = `👤 ${accountState.name}`;
     btn.classList.add('logged-in');
   } else {
-    btn.textContent = '👤 ログイン';
+    btn.textContent = '👤 ログイン / アカウント作成';
     btn.classList.remove('logged-in');
   }
+  // ログイン中はランキング表示名の入力欄を隠す(アカウント名を表示名として使う)
+  document.getElementById('playerNameLabel').classList.toggle('hidden', accountState.loggedIn);
+  document.getElementById('playerNameInput').classList.toggle('hidden', accountState.loggedIn);
+}
+// アカウント名をランキング表示名として反映する(入力欄は非表示でも値は参照される)
+function applyAccountNameAsDisplayName(name){
+  document.getElementById('playerNameInput').value = name;
+  try{ localStorage.setItem('aramon_player_name_v1', name); }catch(err){}
 }
 function accountShowMsg(text, ok){
   const el = document.getElementById('accountMsg');
@@ -346,6 +354,8 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       accountState.loggedIn = true; accountState.name = acc.name; accountState.key = key; accountState.pass = pass;
       saveAccountCreds({ name: acc.name, key, pass });
       applyAccountData(acc.data);
+      applyAccountNameAsDisplayName(acc.name);
+      updateAccountBar();
       accountShowMsg('ログインしました！', true);
       pushToast(`おかえりなさい、${acc.name}！`);
     } else {
@@ -376,6 +386,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
         } else {
           accountMarkDirty(); // ローカルの方が新しい(オフラインでプレイ等)→サーバーへ送る
         }
+        applyAccountNameAsDisplayName(acc.name);
         updateAccountBar();
       }
     }catch(err){}
@@ -473,35 +484,84 @@ function updateGachaWallet(){
 }
 document.getElementById('openGachaBtn').addEventListener('click', ()=>{
   updateGachaWallet();
+  document.getElementById('gachaSingleCost').textContent = `💎 ${GACHA_COST_DIA_SINGLE}`;
+  document.getElementById('gachaTenCost').textContent = `💎 ${GACHA_COST_DIA_TEN}`;
   document.getElementById('gachaResult').innerHTML = 'ガチャを回してアイテムを手に入れよう！';
   document.getElementById('gachaOverlay').classList.remove('hidden');
 });
 document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
   document.getElementById('gachaOverlay').classList.add('hidden');
 });
-function doGacha(kind){
+function doGacha(count){
+  const cost = count===10 ? GACHA_COST_DIA_TEN : GACHA_COST_DIA_SINGLE;
   const w = loadWallet();
-  if(kind==='normal'){
-    if(w.gold < GACHA_NORMAL_COST_GOLD){ pushToast('ゴールドが足りません'); return; }
-    w.gold -= GACHA_NORMAL_COST_GOLD;
-  } else {
-    if(w.dia < GACHA_PREMIUM_COST_DIA){ pushToast('ダイヤが足りません'); return; }
-    w.dia -= GACHA_PREMIUM_COST_DIA;
-  }
+  if(w.dia < cost){ pushToast('ダイヤが足りません'); return; }
+  w.dia -= cost;
   saveWallet(w);
-  const itemKey = gachaRoll(kind==='normal' ? GACHA_NORMAL_POOL : GACHA_PREMIUM_POOL);
-  addBagItem(itemKey, 1);
-  const it = PLAYER_ITEMS[itemKey];
-  document.getElementById('gachaResult').innerHTML = `
-    <span class="gacha-result-icon">${it.icon}</span>
-    <div>${it.name} を手に入れた！</div>
-    <div class="gacha-result-desc">${playerItemDesc(itemKey)}</div>`;
+  const results = [];
+  for(let i=0;i<count;i++){
+    const k = gachaRoll(GACHA_POOL);
+    addBagItem(k, 1);
+    results.push(k);
+  }
+  if(count===1){
+    const it = PLAYER_ITEMS[results[0]];
+    document.getElementById('gachaResult').innerHTML = `
+      <span class="gacha-result-icon">${it.icon}</span>
+      <div>${it.name} を手に入れた！</div>
+      <div class="gacha-result-desc">${playerItemDesc(results[0])}</div>`;
+  } else {
+    document.getElementById('gachaResult').innerHTML = `
+      <div class="gacha-ten-grid">${results.map(k=>`
+        <span class="gacha-ten-item">${PLAYER_ITEMS[k].icon}<span>${PLAYER_ITEMS[k].name}</span></span>`).join('')}
+      </div>`;
+  }
   playSe('train');
   updateGachaWallet();
   updateAccountBar();
 }
-document.getElementById('gachaNormalBtn').addEventListener('click', ()=>doGacha('normal'));
-document.getElementById('gachaPremiumBtn').addEventListener('click', ()=>doGacha('premium'));
+document.getElementById('gachaSingleBtn').addEventListener('click', ()=>doGacha(1));
+document.getElementById('gachaTenBtn').addEventListener('click', ()=>doGacha(10));
+
+// ===== ショップ(ゴールドでアイテム購入) =====
+function renderShop(){
+  const w = loadWallet();
+  document.getElementById('shopGold').textContent = `🪙 ${w.gold}`;
+  const listEl = document.getElementById('shopList');
+  listEl.innerHTML = SHOP_ITEMS.map(([k, price])=>{
+    const it = PLAYER_ITEMS[k];
+    return `
+    <div class="bag-item">
+      <span class="bag-item-icon">${it.icon}</span>
+      <span class="bag-item-text">
+        <span class="bag-item-name">${it.name}</span>
+        <span class="bag-item-desc">${playerItemDesc(k)}</span>
+      </span>
+      <button class="bag-use-btn shop-buy-btn" data-key="${k}" data-price="${price}" ${w.gold<price?'disabled':''}>🪙${price}</button>
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('.shop-buy-btn').forEach(b=>{
+    b.addEventListener('click', ()=>buyShopItem(b.dataset.key, +b.dataset.price));
+  });
+}
+function buyShopItem(itemKey, price){
+  const w = loadWallet();
+  if(w.gold < price){ pushToast('ゴールドが足りません'); return; }
+  w.gold -= price;
+  saveWallet(w);
+  addBagItem(itemKey, 1);
+  playSe('pickup');
+  pushToast(`${PLAYER_ITEMS[itemKey].name} を購入した！`);
+  renderShop();
+  updateAccountBar();
+}
+document.getElementById('openShopBtn').addEventListener('click', ()=>{
+  renderShop();
+  document.getElementById('shopOverlay').classList.remove('hidden');
+});
+document.getElementById('closeShopBtn').addEventListener('click', ()=>{
+  document.getElementById('shopOverlay').classList.add('hidden');
+});
 updateAccountBar();
 
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
