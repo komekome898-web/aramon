@@ -826,7 +826,7 @@ function submitScoreToRanking(isWin, placement){
 ===================================================================== */
 let mastermonDetailKey = null;
 let mastermonSelectedTraining = null;
-let mastermonDetailTab = null; // null=メニュー / 'info' / 'moves' / 'training'
+let mastermonDetailTab = null; // null=メニュー / 'info' / 'moves' / 'training' / 'edit'
 
 let mastermonOpenedFrom = 'title';
 function openMastermonScreen(fromResult){
@@ -861,6 +861,13 @@ document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
   }
 });
 document.getElementById('viewMastermonBtn').addEventListener('click', ()=>openMastermonScreen(true));
+// フッター右端の「マスモン編集」ボタン → 編集画面(名前変更・削除)を開く
+document.getElementById('mastermonEditBtn').addEventListener('click', ()=>{
+  if(!mastermonDetailKey) return;
+  mastermonDetailTab = 'edit';
+  mastermonSelectedTraining = null;
+  renderMastermonDetail(mastermonDetailKey);
+});
 
 let mastermonPendingDeleteKey = null;
 document.getElementById('mastermonDeleteNoBtn').addEventListener('click', ()=>{
@@ -947,12 +954,7 @@ function renderMastermonDetail(key){
   const panel = document.getElementById('mastermonDetailPanel');
   panel.classList.remove('hidden');
 
-  // フッターの参戦/削除ボタンは常設なので、選択中のマスモンに応じてハンドラを差し替える
-  document.getElementById('mastermonDeleteBtn').onclick = ()=>{
-    mastermonPendingDeleteKey = key;
-    document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
-    document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
-  };
+  // フッターの参戦ボタンは常設なので、選択中のマスモンに応じてハンドラを差し替える
   document.getElementById('mastermonUseBtn').onclick = ()=>{
     game.selectedElement = key;
     game.selectedMastermonKey = key;
@@ -972,11 +974,12 @@ function renderMastermonDetail(key){
   const preview = (mastermonDetailTab==='training' && mastermonSelectedTraining) ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
   const statsColHtml = buildMastermonStatsColHtml(mm, apt, preview);
 
-  const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング' };
+  const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング', edit:'マスモン編集' };
   let contentHtml;
   if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
   else if(mastermonDetailTab==='moves') contentHtml = buildMastermonMovesHtml(key);
   else if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
+  else if(mastermonDetailTab==='edit') contentHtml = buildMastermonEditHtml(mm);
   else contentHtml = buildMastermonMenuHtml();
 
   // トレーニング画面では実行ボタンを戻るボタンの左(ヘッダー内)に置く
@@ -1018,6 +1021,25 @@ function renderMastermonDetail(key){
     mastermonSelectedTraining = null;
     renderMastermonDetail(key);
   });
+
+  if(mastermonDetailTab==='edit'){
+    document.getElementById('mastermonRenameBtn').addEventListener('click', ()=>{
+      const newName = document.getElementById('mastermonRenameInput').value.trim();
+      if(!newName){ pushToast('名前を入力してください'); return; }
+      mm.name = newName;
+      data[key] = mm;
+      saveMastermons(data);
+      renderMastermonList();
+      renderSelectorCards();
+      renderMastermonDetail(key);
+      pushToast('名前を変更しました');
+    });
+    document.getElementById('mastermonEditDeleteBtn').addEventListener('click', ()=>{
+      mastermonPendingDeleteKey = key;
+      document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
+      document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
+    });
+  }
 
   if(mastermonDetailTab==='training'){
     panel.querySelectorAll('.mm-train-btn').forEach(btn=>{
@@ -1067,6 +1089,22 @@ function buildMastermonStatsColHtml(mm, apt, preview){
 }
 
 // メニュー画面: 詳細情報 / 技一覧 / トレーニング の3ボタン
+// 「マスモン編集」画面: 名前変更と削除
+function buildMastermonEditHtml(mm){
+  const safeName = String(mm.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  return `
+    <div class="mm-edit-body">
+      <div style="width:100%;">
+        <div class="mm-edit-label">名前の変更</div>
+        <div class="mm-edit-row">
+          <input type="text" id="mastermonRenameInput" maxlength="10" value="${safeName}" placeholder="マスモンの名前">
+          <button id="mastermonRenameBtn" class="mm-edit-rename-btn">名前を変更</button>
+        </div>
+      </div>
+      <button id="mastermonEditDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
+    </div>`;
+}
+
 function buildMastermonMenuHtml(){
   return `
     <div class="mastermon-menu-body">
@@ -1258,9 +1296,18 @@ function handleMastermonPostMatch(isWin){
       registerEl.classList.remove('hidden');
       registerEl.dataset.element = player.element;
       document.getElementById('mastermonRegisterName').value = '';
+      // 登録した瞬間にこの試合の経験値を付与できるよう、成績を控えておく。
+      // これをしないと「新規モンスターで試合→登録」した試合の経験値が消えてしまう。
+      pendingRegisterMatchStats = {
+        kills: player.kills, damage: Math.round(player.damageDealt),
+        survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
+        xpMult: netState.mode==='multi' ? 5 : 1,
+        bonusExp: Math.round(player.mastermonKillExpBonus||0),
+      };
     }
   }
 }
+let pendingRegisterMatchStats = null;
 document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click', ()=>{
   const registerEl = document.getElementById('mastermonRegisterPrompt');
   const elementKey = registerEl.dataset.element;
@@ -1268,7 +1315,24 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
   const name = document.getElementById('mastermonRegisterName').value;
   const data = loadMastermons();
   data[elementKey] = createMastermon(elementKey, name);
+  // 登録した試合の経験値をその場で付与し、リザルトにも表示する
+  let toastExpText = '';
+  if(pendingRegisterMatchStats){
+    const mm = data[elementKey];
+    const result = awardMastermonExp(mm, pendingRegisterMatchStats);
+    pendingRegisterMatchStats = null;
+    toastExpText = ` EXP+${result.expGain}`;
+    let infoText = `${mm.name} EXP+${result.expGain}`;
+    if(result.levelsGained>0) infoText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
+    const infoEl = document.getElementById('mastermonResultInfo');
+    infoEl.textContent = infoText;
+    infoEl.classList.remove('hidden');
+  }
   saveMastermons(data);
+  // そのまま再戦しても経験値が入るように、登録と同時にこのマスモンを選択状態にする
+  game.selectedElement = elementKey;
+  game.selectedMastermonKey = elementKey;
+  updatePlayButtonsEnabled();
   // 登録直後に「マスモン」画面を開いた時、今登録したばかりのマスモンが表示されるようにする。
   // これをしないと、既に他のマスモンを登録済みの場合に古い選択(mastermonDetailKey)が
   // 残ったままとなり、「このマスモンで参戦する」を押しても新しく登録した方ではなく
@@ -1276,9 +1340,10 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
   mastermonDetailKey = elementKey;
   registerEl.classList.add('hidden');
   renderSelectorCards();
-  pushToast('マスモンに登録しました！');
+  pushToast('マスモンに登録しました！' + toastExpText);
 });
 document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()=>{
+  pendingRegisterMatchStats = null;
   document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
 });
 function onPlayerDown(){
