@@ -395,7 +395,9 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
 })();
 
 // ===== バッグ =====
+let bagSelectedItem = null; // 説明フィールドに表示中のアイテムキー
 document.getElementById('openBagBtn').addEventListener('click', ()=>{
+  bagSelectedItem = null;
   renderBag();
   document.getElementById('bagTargetWrap').classList.add('hidden');
   document.getElementById('bagOverlay').classList.remove('hidden');
@@ -408,28 +410,51 @@ document.getElementById('bagTargetCancelBtn').addEventListener('click', ()=>{
 });
 function renderBag(){
   const bag = loadBag();
-  const listEl = document.getElementById('bagList');
+  const gridEl = document.getElementById('bagIconGrid');
   const keys = Object.keys(PLAYER_ITEMS).filter(k=>bag[k]>0);
   if(keys.length===0){
-    listEl.innerHTML = '<div class="bag-empty">アイテムはありません。ガチャで手に入れよう！</div>';
+    gridEl.innerHTML = '<div class="bag-empty">アイテムはありません。ガチャやショップで手に入れよう！</div>';
+    renderBagDesc();
     return;
   }
-  listEl.innerHTML = keys.map(k=>{
+  // 説明フィールドに表示中のアイテムが無くなったら選択解除
+  if(bagSelectedItem && !(bag[bagSelectedItem]>0)) bagSelectedItem = null;
+  gridEl.innerHTML = keys.map(k=>{
     const it = PLAYER_ITEMS[k];
+    const active = k===bagSelectedItem;
     return `
-    <div class="bag-item">
-      <span class="bag-item-icon">${it.icon}</span>
-      <span class="bag-item-text">
-        <span class="bag-item-name">${it.name} ×${bag[k]}</span>
-        <span class="bag-item-desc">${playerItemDesc(k)}</span>
-      </span>
-      <button class="bag-use-btn" data-key="${k}">使う</button>
-    </div>`;
+    <button class="bag-icon-cell ${active?'active':''}" data-key="${k}">
+      <span class="bag-icon-emoji">${it.icon}</span>
+      <span class="bag-icon-count">×${bag[k]}</span>
+    </button>`;
   }).join('');
-  listEl.querySelectorAll('.bag-use-btn').forEach(b=>{
-    b.addEventListener('click', ()=>openBagTargetPicker(b.dataset.key));
+  gridEl.querySelectorAll('.bag-icon-cell').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      bagSelectedItem = (bagSelectedItem===b.dataset.key) ? null : b.dataset.key;
+      renderBag();
+    });
   });
+  renderBagDesc();
 }
+// 画面下部の説明フィールド: 選択中アイテムの名前・効果・使うボタンを表示
+function renderBagDesc(){
+  const empty = document.getElementById('bagDescEmpty');
+  const content = document.getElementById('bagDescContent');
+  if(!bagSelectedItem || !PLAYER_ITEMS[bagSelectedItem]){
+    empty.classList.remove('hidden');
+    content.classList.add('hidden');
+    return;
+  }
+  const it = PLAYER_ITEMS[bagSelectedItem];
+  empty.classList.add('hidden');
+  content.classList.remove('hidden');
+  document.getElementById('bagDescIcon').textContent = it.icon;
+  document.getElementById('bagDescName').textContent = it.name;
+  document.getElementById('bagDescText').textContent = playerItemDesc(bagSelectedItem);
+}
+document.getElementById('bagDescUseBtn').addEventListener('click', ()=>{
+  if(bagSelectedItem) openBagTargetPicker(bagSelectedItem);
+});
 // マスモン選択(トレーニングと同じく「選択→使用」の2段階)。選択中はアイテムの効果をプレビュー表示する
 let bagPicker = { itemKey:null, targetKey:null };
 function openBagTargetPicker(itemKey){
@@ -444,29 +469,24 @@ function openBagTargetPicker(itemKey){
 function renderBagTargetList(){
   const data = loadMastermons();
   const it = PLAYER_ITEMS[bagPicker.itemKey];
+  // ステータスの実は対象ステータスのプレビュー差分を作り、マスモン画面と同じステータスバーで表示
+  const preview = it.stat ? { [it.stat]: STAT_SEED_GAIN } : null;
   const pick = document.getElementById('bagTargetList');
   pick.innerHTML = Object.keys(data).map(k=>{
     const mm = data[k];
     const active = k===bagPicker.targetKey;
-    // 6ステータスを表示。アイテムの対象ステータスは「現在→使用後」でハイライト
-    const statsHtml = MASTERMON_STATS.map(s=>{
-      const v = mm.stats[s.key];
-      if(it.stat===s.key){
-        const after = mastermonClampStat(v + STAT_SEED_GAIN);
-        return `<span class="bt-stat hl">${s.label} ${v}→${after}</span>`;
-      }
-      return `<span class="bt-stat">${s.label} ${v}</span>`;
-    }).join('');
+    const statsBarHtml = buildMastermonStatsColHtml(mm, APTITUDE[k], preview);
     const extra =
-      bagPicker.itemKey==='freeTrainTicket' ? `<span class="bt-stat hl">🎫 ${mm.tickets||0}→${(mm.tickets||0)+1}枚</span>` :
-      bagPicker.itemKey==='moveTicket' ? `<span class="bt-stat hl">⚔️ 強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+1}</span>` : '';
+      bagPicker.itemKey==='freeTrainTicket' ? `<div class="bt-extra">🎫 トレチケ ${mm.tickets||0}→${(mm.tickets||0)+1}枚</div>` :
+      bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+1}</div>` : '';
     return `
     <button class="bag-target-btn ${active?'active':''}" data-key="${k}">
       <span class="bt-head">
         <img src="${imgSrcFor(`monsters/${k}`)}" data-ext-idx="0" alt="${ELEMENTS[k].label}" onerror="handleMonsterImgError(this, 'monsters/${k}')">
         ${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}
       </span>
-      <span class="bt-stats">${statsHtml}${extra}</span>
+      ${statsBarHtml}
+      ${extra}
     </button>`;
   }).join('');
   pick.querySelectorAll('.bag-target-btn').forEach(b=>{
