@@ -430,20 +430,57 @@ function renderBag(){
     b.addEventListener('click', ()=>openBagTargetPicker(b.dataset.key));
   });
 }
+// マスモン選択(トレーニングと同じく「選択→使用」の2段階)。選択中はアイテムの効果をプレビュー表示する
+let bagPicker = { itemKey:null, targetKey:null };
 function openBagTargetPicker(itemKey){
-  const data = loadMastermons();
-  const keys = Object.keys(data);
+  const keys = Object.keys(loadMastermons());
   if(keys.length===0){ pushToast('マスモンがいません。先にマスモン登録しよう！'); return; }
-  const wrap = document.getElementById('bagTargetWrap');
-  const pick = document.getElementById('bagTargetList');
-  wrap.classList.remove('hidden');
-  pick.innerHTML = keys.map(k=>
-    `<button class="bag-target-btn" data-key="${k}">${data[k].name}(${ELEMENTS[k].label}) Lv.${data[k].level}</button>`
-  ).join('');
-  pick.querySelectorAll('.bag-target-btn').forEach(b=>{
-    b.addEventListener('click', ()=>useBagItem(itemKey, b.dataset.key));
-  });
+  bagPicker = { itemKey, targetKey:null };
+  const it = PLAYER_ITEMS[itemKey];
+  document.getElementById('bagTargetTitle').textContent = `${it.icon} ${it.name} をどのマスモンに使う？`;
+  renderBagTargetList();
+  document.getElementById('bagTargetWrap').classList.remove('hidden');
 }
+function renderBagTargetList(){
+  const data = loadMastermons();
+  const it = PLAYER_ITEMS[bagPicker.itemKey];
+  const pick = document.getElementById('bagTargetList');
+  pick.innerHTML = Object.keys(data).map(k=>{
+    const mm = data[k];
+    const active = k===bagPicker.targetKey;
+    // 6ステータスを表示。アイテムの対象ステータスは「現在→使用後」でハイライト
+    const statsHtml = MASTERMON_STATS.map(s=>{
+      const v = mm.stats[s.key];
+      if(it.stat===s.key){
+        const after = mastermonClampStat(v + STAT_SEED_GAIN);
+        return `<span class="bt-stat hl">${s.label} ${v}→${after}</span>`;
+      }
+      return `<span class="bt-stat">${s.label} ${v}</span>`;
+    }).join('');
+    const extra =
+      bagPicker.itemKey==='freeTrainTicket' ? `<span class="bt-stat hl">🎫 ${mm.tickets||0}→${(mm.tickets||0)+1}枚</span>` :
+      bagPicker.itemKey==='moveTicket' ? `<span class="bt-stat hl">⚔️ 強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+1}</span>` : '';
+    return `
+    <button class="bag-target-btn ${active?'active':''}" data-key="${k}">
+      <span class="bt-head">
+        <img src="${imgSrcFor(`monsters/${k}`)}" data-ext-idx="0" alt="${ELEMENTS[k].label}" onerror="handleMonsterImgError(this, 'monsters/${k}')">
+        ${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}
+      </span>
+      <span class="bt-stats">${statsHtml}${extra}</span>
+    </button>`;
+  }).join('');
+  pick.querySelectorAll('.bag-target-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      bagPicker.targetKey = (bagPicker.targetKey===b.dataset.key) ? null : b.dataset.key;
+      renderBagTargetList();
+    });
+  });
+  document.getElementById('bagUseConfirmBtn').disabled = !bagPicker.targetKey;
+}
+document.getElementById('bagUseConfirmBtn').addEventListener('click', ()=>{
+  if(!bagPicker.itemKey || !bagPicker.targetKey) return;
+  useBagItem(bagPicker.itemKey, bagPicker.targetKey);
+});
 function useBagItem(itemKey, mmKey){
   const bag = loadBag();
   if(!(bag[itemKey]>0)) return;
