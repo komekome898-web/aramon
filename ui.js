@@ -714,7 +714,10 @@ function showResult(isWin, placement){
   game.over=true;
   game.started=false;
   joinInProgress = false;
-  bgmSetTrack('title');
+  // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
+  bgmSetTrack(null);
+  playSe(isWin ? 'fanfare' : 'sad');
+  setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, isWin ? 2600 : 3000);
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
