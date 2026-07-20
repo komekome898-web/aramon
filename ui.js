@@ -102,7 +102,7 @@ function buildMonsterListScreenGrid(){
       </div>
       <div class="m-name">${el.label}</div>
       <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
-      <div class="m-trait">${TRAIT_DESC[el.trait]}</div>`;
+      <div class="m-trait">${TRAIT_DESC[el.trait]}${moveBonusEffectText(key) ? `<br>${moveBonusEffectText(key)}` : ''}</div>`;
     card.addEventListener('click', ()=>{
       game.selectedElement = key;
       game.selectedMastermonKey = null;
@@ -1187,8 +1187,16 @@ function describeMoveFeatureText(mv){
   if(mv.burst) parts.push(`${mv.burst}連射`);
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
+  if(mv.selfSpeedBuffOnHit) parts.push(`命中時 自分の移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒間)`);
   if(!parts.length) parts.push('単体に直撃');
   return parts.join('・');
+}
+
+// 技に付随する特殊効果(ワームtier3の命中時スピードバフ等)の一言説明。無ければ空文字
+function moveBonusEffectText(key){
+  const mv = (SIGNATURE_MOVES[key]||[]).find(m=>m.selfSpeedBuffOnHit);
+  if(!mv) return '';
+  return `「${mv.name}」命中時 移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`;
 }
 
 // 「技一覧」画面: tier毎の技情報(アイコン・威力・消費ガッツ・CT・弾速・射程・特徴)
