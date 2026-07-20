@@ -365,47 +365,62 @@ function bgmBattleStep(step, t, lv){
   if(lv>=2 && sb===0) bNote(t, chord[0], dur*6, 'sawtooth', 0.08, 8);
 }
 
-// --- 残り5人以下: 壮大な決戦BGM ---
-// コード進行: Am - F - C - G(王道進行で壮大に)
-const EPIC_CHORDS = [ [57,60,64],[53,57,60],[48,52,55],[55,59,62] ];
+// --- 残り5人以下: 重厚で禍々しい決戦BGM(8小節=128ステップループ) ---
+// コード進行: Am - F - Dm - E / Am - B♭ - F - E(B♭の半音上行とEの導音で禍々しさを出す)
+const EPIC_CHORDS = [
+  [57,60,64],[53,57,60],[50,53,57],[52,56,59],
+  [57,60,64],[58,62,65],[53,57,60],[52,56,59],
+];
+// 旋律: 低音で不気味に始まり、8小節かけて頂点へ這い上がっていく
 const EPIC_MELODY = [
-  [0,69,6],[6,72,2],[8,76,8],
-  [16,77,6],[22,76,2],[24,72,8],
-  [32,76,6],[38,79,2],[40,84,8],
-  [48,83,4],[52,79,4],[56,76,8],
+  [0,57,10],[12,56,4],
+  [16,57,8],[24,60,4],[28,59,4],
+  [32,62,10],[44,60,4],
+  [48,59,8],[56,56,8],
+  [64,69,6],[70,72,2],[72,76,8],
+  [80,77,6],[86,74,2],[88,74,8],
+  [96,81,4],[100,80,4],[104,81,4],[108,84,4],
+  [112,83,4],[116,81,4],[120,80,8],
 ];
 function bgmEpicStep(step, t){
-  const s = step % 64;
+  const s = step % 128;
   const bar = Math.floor(s/16), sb = s%16;
   const chord = EPIC_CHORDS[bar];
   const dur = bgmStepDur();
-  // 小節頭: クラッシュシンバル+重厚パッド(3枚デチューンのノコギリ波)+聖歌隊風+サブベース
+  const build = bar/7; // 0→1: 8小節かけて徐々に盛り上がる係数
+  // 小節頭: クラッシュ+重厚パッド+聖歌隊風+地鳴りサブベース+うなり(禍々しさ)
   if(sb===0){
-    bCrash(t, bar===0 ? 0.2 : 0.12);
+    bCrash(t, bar===0 ? 0.22 : 0.1+build*0.08);
     for(const n of chord){
-      bNote(t, n, dur*15, 'sawtooth', 0.045, -12);
-      bNote(t, n, dur*15, 'sawtooth', 0.045, 12);
-      bNote(t, n, dur*15, 'sawtooth', 0.035);
-      bNote(t, n+12, dur*15, 'triangle', 0.05); // 聖歌隊風の高音レイヤー
+      bNote(t, n, dur*15, 'sawtooth', 0.04+build*0.02, -12);
+      bNote(t, n, dur*15, 'sawtooth', 0.04+build*0.02, 12);
+      bNote(t, n+12, dur*15, 'triangle', 0.03+build*0.05); // 聖歌隊風(後半ほど強く)
     }
-    bNote(t, chord[0]-12, dur*15, 'sawtooth', 0.09);
-    bNote(t, chord[0]-24, dur*15, 'sine', 0.2); // 地鳴りのサブベース
+    bNote(t, chord[0]-12, dur*15, 'sawtooth', 0.1);
+    bNote(t, chord[0]-24, dur*15, 'sine', 0.24);     // 地鳴りのサブベース
+    bNote(t, chord[0]-24, dur*15, 'sine', 0.06, 22); // わずかにずらした同音のうなりで不穏さを出す
   }
-  // ベース: 8分刻み+シンコペーションのオクターブ跳躍
-  if(sb%2===0) bNote(t, chord[0]-24 + (sb%8===6?12:0), dur*1.7, 'sawtooth', 0.17);
-  // ドラム: 4つ打ち+小節終わりのダブルキック+2・4スネア+16分ハット+低音タム
-  if(sb%4===0) bKick(t, 0.58);
-  if(sb===14){ bKick(t, 0.45); bKick(t+dur/2, 0.45); }
-  if(sb===4 || sb===12) bSnare(t, 0.36);
-  if(sb===7 || sb===15) bTom(t, 0.3);
+  // 重々しいベース: ノコギリ+1オクターブ下の矩形の2枚重ね。小節末に半音下をぶつける
+  if(sb%2===0){
+    const bn = chord[0]-24 + (sb===14 ? -1 : 0);
+    bNote(t, bn, dur*1.8, 'sawtooth', 0.2);
+    bNote(t, bn-12, dur*1.8, 'square', 0.07);
+  }
+  // ドラム: 4つ打ち+小節終わりのダブルキック+2・4スネア+低音タム+16分ハット
+  if(sb%4===0) bKick(t, 0.6);
+  if(sb===14){ bKick(t, 0.5); bKick(t+dur/2, 0.5); }
+  if(sb===4 || sb===12) bSnare(t, 0.3+build*0.1);
+  if(sb===7 || sb===15) bTom(t, 0.32);
   bHat(t, sb%4===0?0.13:0.08);
-  // 壮大な主旋律(低音・本体・オクターブ上・5度ハモリの4層)
+  // 鐘のような不穏なトライトーンアクセント
+  if(sb===8 && bar%2===1) bNote(t, chord[0]+18, dur*4, 'triangle', 0.05);
+  // 旋律: 小節が進むほど層が厚く・強くなる(徐々に盛り上がる)
   for(const [ms, note, len] of EPIC_MELODY){
     if(ms===s){
-      bNote(t, note-12, dur*len*0.95, 'sawtooth', 0.06);
-      bNote(t, note, dur*len*0.95, 'square', 0.1);
-      bNote(t, note+12, dur*len*0.95, 'triangle', 0.13);
-      bNote(t, note+7, dur*len*0.95, 'triangle', 0.06);
+      bNote(t, note, dur*len*0.95, 'square', 0.07+build*0.05);
+      if(bar>=2) bNote(t, note+12, dur*len*0.95, 'triangle', 0.05+build*0.09);
+      if(bar>=4) bNote(t, note-12, dur*len*0.95, 'sawtooth', 0.05);
+      if(bar>=6) bNote(t, note+7, dur*len*0.95, 'triangle', 0.06);
     }
   }
 }

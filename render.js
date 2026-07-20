@@ -1878,12 +1878,20 @@ function setCooldownRing(el, progress){
   el.style.strokeDasharray = `${CD_RING_CIRC}`;
   el.style.strokeDashoffset = `${CD_RING_CIRC * (1-p)}`;
 }
+let trainBuffsMapKey = null; // バフ表示の色をマップごとに一度だけ切り替えるためのキャッシュ
 function updateHUD(){
   if(!player) return;
   const el = ELEMENTS[player.element];
   // ランキング表示名(名前入力欄)をそのままHUDに表示する
   document.getElementById('hudName').textContent =
     (typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー');
+  // バフ表示の文字色をマップの地面の明るさに合わせる(明るいマップでは暗い文字に)
+  if(trainBuffsMapKey !== currentMap.key){
+    trainBuffsMapKey = currentMap.key;
+    const c = currentMap.groundColor || '#142433';
+    const lum = 0.2126*parseInt(c.slice(1,3),16) + 0.7152*parseInt(c.slice(3,5),16) + 0.0722*parseInt(c.slice(5,7),16);
+    document.getElementById('trainBuffsLine').classList.toggle('on-light-map', lum > 140);
+  }
   // トレーニングアイテムで得たバフの累積(初期値から変化したものだけを列挙)
   {
     const tb = [];

@@ -422,7 +422,7 @@ const MASTERMON_STAT_FACTOR_DIVISOR = {
   wisdom:   900,
   accuracy: 650,  // 増減幅アップ
   evasion:  1300, // 増減幅ダウン
-  vitality: 650,  // 増減幅アップ
+  vitality: 450,  // 増減幅アップ(さらに拡大)
 };
 function mastermonStatFactor(v, statKey){
   const divisor = MASTERMON_STAT_FACTOR_DIVISOR[statKey] || 900;
