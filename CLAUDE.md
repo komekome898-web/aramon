@@ -18,9 +18,10 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 | ファイル | 担当 |
 |---|---|
-| `index.html` | 全画面のDOMマークアップ。scriptの読み込み順: firebase.js(module) → data.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
+| `index.html` | 全画面のDOMマークアップ。scriptの読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
 | `style.css` | 全スタイル。CSS変数は`:root`(--amber, --ink, --danger等) |
 | `data.js` | 定数・マスタデータ: WORLD寸法, MAPS, ELEMENTS(モンスター), SIGNATURE_MOVES, マスモン(トレーニング/EXP/ステータス倍率), アイテム定義 |
+| `audio.js` | BGM/SE。外部音源なしでWeb Audio APIにより全合成。BGMはステップシーケンサ(タイトル/試合中/残り5人以下)、SEは`playSe(name)`。音量はlocalStorage永続化 |
 | `world.js` | ワールド生成(岩/水晶/川/海/火山/建物), 安全圏(zoneState), 地形判定, 移動・衝突 |
 | `combat.js` | 戦闘: 攻撃, ダメージ, AoE, 状態変化, Bot AI |
 | `render.js` | 3D風投影(project), 全描画, ミニマップ, グローバルtouchmove制御 |

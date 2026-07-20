@@ -1,4 +1,6 @@
 function fireMove(attacker, target, move){
+  // SE: 自分の技発射のみ(負荷対策)。単発/連射/範囲で音を変える
+  if(attacker.isPlayer) playSe('fire', { kind: move.aoeShape ? 'aoe' : (move.burst ? 'burst' : 'single') });
   attacker.guts = Math.max(0, attacker.guts - effectiveGutsCost(attacker, move));
   if(attacker.element==='ark' && move.tier===3){
     attacker.graceUntil = matchTime + 10;
@@ -119,6 +121,7 @@ function isNetworkedHuman(ent){
 }
 function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
+  if(target.isPlayer) playSe('hitTaken'); // SE: 自分の被弾のみ
   const involvesHuman = isNetworkedHuman(target) || (source && isNetworkedHuman(source));
   const isAuthoritative = (opts && opts.authoritative) || (netState.mode==='multi' && netState.isHost);
 
@@ -580,7 +583,7 @@ function activateState(m){
   m.stateUntil = matchTime + sc.duration;
   m.stateCooldownUntil = matchTime + sc.cooldown;
   spawnDmgText(m.x, m.y, m.z, sc.name+'!', '#ff3b3b');
-  if(m.isPlayer) pushToast(`${sc.name} 発動！(${sc.duration}秒間)`);
+  if(m.isPlayer){ pushToast(`${sc.name} 発動！(${sc.duration}秒間)`); playSe('jakiin'); }
 }
 // HP割合・ガッツ割合による条件は継続的にチェックする必要があるため、毎フレーム呼び出す
 function checkPassiveStateTriggers(m){
@@ -836,7 +839,10 @@ function updateLootPickups(){
           consumed = true;
         }
       }
-      if(consumed) break;
+      if(consumed){
+        if(e.isPlayer) playSe('pickup'); // SE: 自分のアイテム取得のみ
+        break;
+      }
     }
     if(consumed){
       // マルチプレイのホストはここでしか消費判定をしないため、ゲスト側の見た目からも

@@ -82,6 +82,24 @@
     border:1px solid rgba(244,196,48,0.45); border-radius:20px; cursor:pointer;
   }
   #howToPlayBtn:active{ background:rgba(244,196,48,0.18); }
+  #audioSettingsBtn{
+    margin-top:8px; padding:8px 22px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+    letter-spacing:1px; color:var(--ink); background:rgba(255,255,255,0.06);
+    border:1px solid var(--panel-line); border-radius:20px; cursor:pointer;
+  }
+  #audioSettingsBtn:active{ background:rgba(255,255,255,0.14); }
+  /* 音量設定オーバーレイのスライダー */
+  .audio-slider-row{ display:flex; align-items:center; gap:12px; margin:12px 0; }
+  .audio-slider-label{ width:38px; text-align:left; font-size:13px; font-weight:700; color:var(--ink); flex-shrink:0; }
+  .audio-slider-val{ width:32px; text-align:right; font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); flex-shrink:0; }
+  .audio-slider-row input[type=range]{
+    flex:1 1 auto; min-width:0; -webkit-appearance:none; appearance:none; height:6px; border-radius:3px;
+    background:rgba(255,255,255,0.15); outline:none;
+  }
+  .audio-slider-row input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%;
+    background:var(--amber); border:2px solid #1a1306; cursor:pointer;
+  }
   #landscapeHint{ margin-top:8px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); }
 
   .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
@@ -703,6 +721,7 @@
     flex:1 1 auto; padding:10px 0; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
   }
+  #closeAudioSettingsBtn{ background:var(--amber); color:#1a1306; border:none; }
   #mastermonDeleteNoBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
   .mastermon-detail-body{ display:flex; gap:14px; align-items:stretch; flex-wrap:nowrap; flex:1 1 auto; min-height:0; }

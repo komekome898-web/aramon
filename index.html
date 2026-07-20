@@ -34,6 +34,7 @@
   </div>
 
   <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
+  <button id="audioSettingsBtn">🔊 音量設定</button>
   <div id="landscapeHint">📱 横画面プレイ推奨</div>
 
   <div class="pick-label">使用するモンスターを選択</div>
@@ -433,6 +434,26 @@
 <!-- MASTERMON NOTICE (fixed overlay, always on top) -->
 <div id="mastermonNotice" class="mastermon-fixed-notice hidden"></div>
 
+<!-- AUDIO SETTINGS -->
+<div id="audioSettingsOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:10px;">🔊 音量設定</div>
+    <div class="audio-slider-row">
+      <span class="audio-slider-label">BGM</span>
+      <input type="range" id="bgmVolSlider" min="0" max="100" step="1">
+      <span class="audio-slider-val" id="bgmVolVal">50</span>
+    </div>
+    <div class="audio-slider-row">
+      <span class="audio-slider-label">SE</span>
+      <input type="range" id="seVolSlider" min="0" max="100" step="1">
+      <span class="audio-slider-val" id="seVolVal">70</span>
+    </div>
+    <div class="mastermon-confirm-btnrow" style="margin-top:14px;">
+      <button id="closeAudioSettingsBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- MASTERMON DELETE CONFIRM -->
 <div id="mastermonDeleteConfirm" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box">
@@ -456,6 +477,7 @@
 
 
 <script src="data.js"></script>
+<script src="audio.js"></script>
 <script src="world.js"></script>
 <script src="combat.js"></script>
 <script src="render.js"></script>
