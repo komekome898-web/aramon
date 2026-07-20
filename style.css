@@ -456,9 +456,10 @@
     color:rgba(255,255,255,0.5); font-size:16px; pointer-events:auto; touch-action:none;
     user-select:none; z-index:9;
   }
-  /* 左手はジョイスティック操作中で押しにくいため、左回転ボタンも右側(右回転ボタンの左隣)に置く */
-  #turnLeftBtn{ right:84px; bottom:160px; }
-  #turnRightBtn{ right:22px; bottom:160px; }
+  /* 左手はジョイスティック操作中で押しにくいため、左回転ボタンも右側(右回転ボタンの左隣)に置く。
+     高さは右上のミニマップ・安置情報フィールドに被らない範囲でやや上寄せ */
+  #turnLeftBtn{ right:84px; bottom:185px; }
+  #turnRightBtn{ right:22px; bottom:185px; }
   #turnLeftBtn:active, #turnRightBtn:active{ background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.8); }
 
   #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; transition:opacity .4s; text-align:center; white-space:nowrap;}
@@ -913,8 +914,8 @@
     #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
     #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
     #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
-    #turnLeftBtn{ right:70px; bottom:140px; width:46px; height:46px; }
-    #turnRightBtn{ right:16px; bottom:140px; width:46px; height:46px; }
+    #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }
+    #turnRightBtn{ right:16px; bottom:162px; width:46px; height:46px; }
   }
 
   #rotateOverlay{ display:none; }
