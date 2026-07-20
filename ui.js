@@ -228,6 +228,18 @@ document.getElementById('seVolSlider').addEventListener('input', (e)=>{
   applyAudioVolumes();
 });
 document.getElementById('seVolSlider').addEventListener('change', ()=>{ saveAudioSettings(); playSe('pickup'); }); // 音量確認用に試し鳴らし
+// ±ボタンで1ずつ調整
+function nudgeVolume(key, delta){
+  const v = Math.min(100, Math.max(0, Math.round(audioSettings[key]*100) + delta));
+  audioSettings[key] = v/100;
+  applyAudioVolumes();
+  saveAudioSettings();
+  syncAudioSliders();
+}
+document.getElementById('bgmVolMinus').addEventListener('click', ()=>nudgeVolume('bgm', -1));
+document.getElementById('bgmVolPlus').addEventListener('click', ()=>nudgeVolume('bgm', +1));
+document.getElementById('seVolMinus').addEventListener('click', ()=>nudgeVolume('se', -1));
+document.getElementById('seVolPlus').addEventListener('click', ()=>nudgeVolume('se', +1));
 
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.remove('hidden');
@@ -717,7 +729,7 @@ function showResult(isWin, placement){
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);
   playSe(isWin ? 'fanfare' : 'sad');
-  setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, isWin ? 2600 : 3000);
+  setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, isWin ? 3800 : 3000);
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';

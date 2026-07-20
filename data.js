@@ -275,7 +275,7 @@ const SIGNATURE_MOVES = {
   suezo: [
     { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'💧' },
     { name:'熱視線', tier:2, color:'#ffdd33', dmg:30, cooldown:1.1, gutsCost:16,
-      aoeShape:'rect', range:1300, rectWidth:70 },
+      aoeShape:'rect', range:1300, rectWidth:70, seStyle:'beam' },
     { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:45, cooldown:2.0, gutsCost:24,
       aoeShape:'fanZigzag', range:1300, fanAngleDeg:30, aoeStyle:'psychic' },
   ],

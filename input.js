@@ -10,6 +10,42 @@ document.addEventListener('dblclick', (e)=>{
   e.preventDefault();
 });
 
+// ===== 強制横向き(縦画面ロック)中のスクロール補助 =====
+// 画面をCSSで90度回転させているため、端末によっては回転したスクロールコンテナで
+// ネイティブスクロールが効きにくい。タッチ移動量を論理座標(回転後)に変換して
+// 自前でscrollTop/scrollLeftを動かすことで、どの画面でも確実にスクロールできるようにする。
+let forcedScrollTouch = null;
+function findScrollableAncestor(el){
+  while(el && el !== document.body && el.nodeType===1){
+    const st = getComputedStyle(el);
+    const scrollY = (st.overflowY==='auto'||st.overflowY==='scroll') && el.scrollHeight > el.clientHeight+1;
+    const scrollX = (st.overflowX==='auto'||st.overflowX==='scroll') && el.scrollWidth > el.clientWidth+1;
+    if(scrollY || scrollX) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+document.addEventListener('touchstart', (e)=>{
+  forcedScrollTouch = null;
+  if(!isForcedLandscape()) return;
+  if(e.target.closest('input[type=range]')) return; // スライダー操作は妨げない
+  const sc = findScrollableAncestor(e.target);
+  if(!sc) return;
+  forcedScrollTouch = { el: sc, x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, {passive:true});
+document.addEventListener('touchmove', (e)=>{
+  if(!forcedScrollTouch || !isForcedLandscape()) return;
+  const t = e.touches[0];
+  const dx = t.clientX - forcedScrollTouch.x, dy = t.clientY - forcedScrollTouch.y;
+  forcedScrollTouch.x = t.clientX; forcedScrollTouch.y = t.clientY;
+  const d = toLogicalDelta(dx, dy);
+  const el = forcedScrollTouch.el;
+  if(el.scrollHeight > el.clientHeight+1) el.scrollTop -= d.y;
+  if(el.scrollWidth > el.clientWidth+1) el.scrollLeft -= d.x;
+  e.preventDefault(); // ネイティブの(回転前基準の)スクロールと二重にならないように
+}, {passive:false});
+document.addEventListener('touchend', ()=>{ forcedScrollTouch = null; }, {passive:true});
+
 function isFullscreenNow(){
   return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
 }

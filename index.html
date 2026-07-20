@@ -237,8 +237,8 @@
       <div class="hpbar-track" id="stateCdTrack"><div id="stateCdFill"></div></div>
       <div id="stateCdLabel">-</div>
       <div id="statusIcons"></div>
+      <div id="trainBuffsLine"></div>
     </div>
-    <div id="trainBuffsLine"></div>
   </div>
 
   <div class="hud-panel" id="statsPanel">
@@ -436,19 +436,23 @@
 
 <!-- AUDIO SETTINGS -->
 <div id="audioSettingsOverlay" class="mastermon-confirm-overlay hidden">
-  <div class="mastermon-confirm-box">
-    <div class="mastermon-confirm-text" style="margin-bottom:10px;">🔊 音量設定</div>
+  <div class="mastermon-confirm-box audio-settings-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:12px;">🔊 音量設定</div>
     <div class="audio-slider-row">
       <span class="audio-slider-label">BGM</span>
+      <button class="audio-step-btn" id="bgmVolMinus">−</button>
       <input type="range" id="bgmVolSlider" min="0" max="100" step="1">
+      <button class="audio-step-btn" id="bgmVolPlus">＋</button>
       <span class="audio-slider-val" id="bgmVolVal">50</span>
     </div>
     <div class="audio-slider-row">
       <span class="audio-slider-label">SE</span>
+      <button class="audio-step-btn" id="seVolMinus">−</button>
       <input type="range" id="seVolSlider" min="0" max="100" step="1">
+      <button class="audio-step-btn" id="seVolPlus">＋</button>
       <span class="audio-slider-val" id="seVolVal">70</span>
     </div>
-    <div class="mastermon-confirm-btnrow" style="margin-top:14px;">
+    <div class="mastermon-confirm-btnrow" style="margin-top:16px;">
       <button id="closeAudioSettingsBtn">閉じる</button>
     </div>
   </div>

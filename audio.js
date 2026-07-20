@@ -51,7 +51,8 @@ document.addEventListener('visibilitychange', ()=>{
 
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
-const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5 };
+const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
+  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3 };
 const seLastAt = {};
 function playSe(name, opts){
   if(!actx || audioSettings.se<=0.005) return;
@@ -87,6 +88,34 @@ function seNoise(t, o){
   const g = actx.createGain();
   g.gain.setValueAtTime(o.vol!=null?o.vol:0.4, t);
   g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  src.connect(f); f.connect(g); g.connect(seGain);
+  src.start(t); src.stop(t+dur+0.05);
+}
+// ループノイズ+音量LFO(揺らぎ)付きのノイズ再生。炎や竜巻など長い持続音に使う
+function seNoiseLfo(t, o){
+  const dur = o.dur||1;
+  const len = Math.max(1, Math.floor(actx.sampleRate*Math.min(dur,1.5)));
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = Math.random()*2-1;
+  const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const f = actx.createBiquadFilter();
+  f.type = o.filterType||'lowpass';
+  f.frequency.setValueAtTime(o.filterFreq||800, t);
+  if(o.filterEnd) f.frequency.exponentialRampToValueAtTime(Math.max(o.filterEnd,10), t+dur);
+  const g = actx.createGain();
+  const v0 = o.volStart!=null ? o.volStart : (o.vol||0.4);
+  g.gain.setValueAtTime(Math.max(v0,0.001), t);
+  if(o.volEnd!=null) g.gain.linearRampToValueAtTime(Math.max(o.volEnd,0.001), t+dur*0.8);
+  g.gain.setValueAtTime(o.volEnd!=null?Math.max(o.volEnd,0.001):Math.max(v0,0.001), t+dur*0.85);
+  g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  if(o.lfoFreq){
+    const lfo = actx.createOscillator(), lg = actx.createGain();
+    lfo.frequency.value = o.lfoFreq;
+    lg.gain.value = (o.lfoDepth||0.35) * Math.max(v0, o.volEnd||0);
+    lfo.connect(lg); lg.connect(g.gain);
+    lfo.start(t); lfo.stop(t+dur+0.05);
+  }
   src.connect(f); f.connect(g); g.connect(seGain);
   src.start(t); src.stop(t+dur+0.05);
 }
@@ -143,24 +172,86 @@ const SE_DEFS = {
   noGuts(t){
     for(let i=0;i<3;i++) seTone(t+i*0.08, {freq:1250, dur:0.045, type:'square', vol:0.28});
   },
+  // インフェルノ・ファイアウェーブ「ボオオオオ」(燃え盛る炎)
+  fireRoar(t, o){
+    const d = Math.min(3, Math.max(0.8, (o&&o.dur)||1.2));
+    seNoiseLfo(t, {dur:d, vol:0.45, filterFreq:950, filterEnd:280, lfoFreq:8, lfoDepth:0.45});
+    seTone(t, {freq:90, freqEnd:45, dur:d, type:'sawtooth', vol:0.24});
+    for(let i=0;i<5;i++){ // パチパチと爆ぜる音
+      seNoise(t + Math.random()*d*0.8, {dur:0.04, vol:0.13, filterType:'highpass', filterFreq:3200});
+    }
+  },
+  // クリスタルレイン「パリンパリン」(氷が割れる)
+  iceCrack(t, o){
+    const d = Math.min(2.5, Math.max(0.8, (o&&o.dur)||1.2));
+    const n = Math.round(d*4)+2;
+    for(let i=0;i<n;i++){
+      const tt = t + i*(d/n) + Math.random()*0.05;
+      const f = 1700 + Math.random()*1500;
+      seTone(tt, {freq:f, freqEnd:f*0.65, dur:0.1, type:'triangle', vol:0.3});
+      seNoise(tt, {dur:0.05, vol:0.18, filterType:'highpass', filterFreq:4200});
+    }
+    seNoise(t+d*0.85, {dur:0.25, vol:0.25, filterType:'highpass', filterFreq:2600}); // 最後にシャラン
+  },
+  // 竜巻アタック「ゴオオオオ」(轟音が徐々に大きく)
+  tornado(t, o){
+    const d = Math.min(3, Math.max(1, (o&&o.dur)||2));
+    seNoiseLfo(t, {dur:d, volStart:0.07, volEnd:0.55, filterFreq:320, filterEnd:1300, lfoFreq:11, lfoDepth:0.3});
+    seTone(t, {freq:55, freqEnd:110, dur:d, type:'sawtooth', vol:0.18});
+  },
+  // シェルアタック「シュルルルル」(回転音)
+  spin(t, o){
+    const d = Math.min(1.6, Math.max(0.6, (o&&o.dur)||1));
+    seNoiseLfo(t, {dur:d, vol:0.34, filterType:'bandpass', filterFreq:2600, lfoFreq:15, lfoDepth:0.8});
+    seTone(t, {freq:640, freqEnd:900, dur:d, type:'sine', vol:0.07});
+  },
+  // 熱視線・サイコキネシス・モッチ砲・フラワービーム・天河天翔「ビーッ」(持続ビーム)
+  beam(t, o){
+    const d = Math.min(2.6, Math.max(0.5, (o&&o.dur)||1));
+    seTone(t, {freq:990, dur:d, type:'square', vol:0.14, attack:0.02});
+    seTone(t, {freq:998, dur:d, type:'square', vol:0.12, attack:0.02}); // わずかにずらしてうなり
+    seTone(t, {freq:495, dur:d, type:'sine', vol:0.12, attack:0.02});
+    seNoise(t, {dur:d, vol:0.07, filterType:'highpass', filterFreq:5200});
+  },
+  // レクイエムエンド「シュンシュンシュン」(風切り3連)
+  whoosh(t){
+    for(let i=0;i<3;i++){
+      seNoise(t+i*0.11, {dur:0.15, vol:0.36, filterType:'bandpass', filterFreq:3900, filterEnd:650});
+    }
+  },
+  // 天の慈悲「リンリンリーン」(鐘の音)
+  bell(t){
+    const ring=(tt,f,d,v)=>{
+      seTone(tt, {freq:f, dur:d, type:'sine', vol:v});
+      seTone(tt, {freq:f*2.76, dur:d*0.6, type:'sine', vol:v*0.4}); // 鐘の倍音
+    };
+    ring(t, 1760, 0.4, 0.3);
+    ring(t+0.22, 1760, 0.4, 0.28);
+    ring(t+0.46, 2093, 1.1, 0.32);
+  },
   // 敵をキルした時「ザシュッ」(切り裂き音)
   kill(t){
     seNoise(t, {dur:0.16, vol:0.5, filterType:'bandpass', filterFreq:5200, filterEnd:900});
     seTone(t, {freq:2400, freqEnd:280, dur:0.14, type:'sawtooth', vol:0.14});
     seNoise(t+0.06, {dur:0.2, vol:0.28, filterFreq:1300, filterEnd:180});
   },
-  // 勝利ファンファーレ(リザルト画面・約2.2秒)
+  // 勝利ファンファーレ(リザルト画面・約3.6秒)
   fanfare(t){
     const N=(dt,f,d,v)=>{
       seTone(t+dt, {freq:f, dur:d, type:'square', vol:(v||0.3)*0.55});
       seTone(t+dt, {freq:f/2, dur:d, type:'triangle', vol:(v||0.3)*0.45});
     };
+    // 第1フレーズ: パパパ、パーン!
     N(0,    784, 0.15); N(0.17, 784, 0.15); N(0.34, 784, 0.15);
     N(0.52, 1047, 0.45, 0.34);
-    N(1.0,  880, 0.15); N(1.16, 988, 0.15);
-    N(1.34, 1319, 0.85, 0.36);
-    [523,659,784,1047].forEach(f=>seTone(t+1.34, {freq:f, dur:0.85, type:'triangle', vol:0.12, attack:0.05}));
-    seNoise(t+1.34, {dur:0.5, vol:0.12, filterType:'highpass', filterFreq:5000}); // シャーンという輝き
+    // 第2フレーズ: 駆け上がり
+    N(1.05, 880, 0.15); N(1.21, 988, 0.15); N(1.38, 1047, 0.4, 0.32);
+    // 第3フレーズ: さらに高く駆け上がって大団円
+    N(1.85, 1047, 0.14); N(2.0, 1175, 0.14); N(2.16, 1319, 0.14);
+    N(2.34, 1568, 0.9, 0.38);
+    [523,659,784,1047,1319].forEach(f=>seTone(t+2.34, {freq:f, dur:1.1, type:'triangle', vol:0.11, attack:0.05}));
+    seNoise(t+0.52, {dur:0.3, vol:0.08, filterType:'highpass', filterFreq:5000});
+    seNoise(t+2.34, {dur:0.7, vol:0.13, filterType:'highpass', filterFreq:5000}); // シャーンという輝き
   },
   // 敗北・その他(悲しげな下降フレーズ・約2.4秒)
   sad(t){
@@ -371,16 +462,16 @@ const EPIC_CHORDS = [
   [57,60,64],[53,57,60],[50,53,57],[52,56,59],
   [57,60,64],[58,62,65],[53,57,60],[52,56,59],
 ];
-// 旋律: 低音で不気味に始まり、8小節かけて頂点へ這い上がっていく
+// 旋律: 上昇音形の反復(ゼクエンツ)で、8小節かけて段階的に高まっていく
 const EPIC_MELODY = [
-  [0,57,10],[12,56,4],
-  [16,57,8],[24,60,4],[28,59,4],
-  [32,62,10],[44,60,4],
-  [48,59,8],[56,56,8],
-  [64,69,6],[70,72,2],[72,76,8],
-  [80,77,6],[86,74,2],[88,74,8],
-  [96,81,4],[100,80,4],[104,81,4],[108,84,4],
-  [112,83,4],[116,81,4],[120,80,8],
+  [0,57,4],[4,60,4],[8,64,4],[12,62,4],          // 低域: A-C-E-D
+  [16,60,4],[20,64,4],[24,65,4],[28,64,4],        // 一段上がって C-E-F-E
+  [32,62,4],[36,65,4],[40,69,4],[44,67,4],        // さらに上がって D-F-A-G
+  [48,64,4],[52,68,4],[56,71,4],[60,68,4],        // E-G#-B-G#(導音で緊張)
+  [64,69,4],[68,72,4],[72,76,4],[76,74,4],        // 1オクターブ上で最初の音形を反復
+  [80,74,4],[84,77,4],[88,81,4],[92,79,4],        // D-F-A-G(高域)
+  [96,81,3],[99,84,3],[102,81,3],[105,84,3],[108,86,4], // A-C-A-C-D 畳みかけ
+  [112,88,8],[120,87,4],[124,88,4],               // E6の頂点 → 導音を挟んでループ頭のAへ
 ];
 function bgmEpicStep(step, t){
   const s = step % 128;
