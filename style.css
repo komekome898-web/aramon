@@ -215,6 +215,11 @@
   .gacha-ten-item span{ font-size:8px; font-weight:400; color:var(--ink-dim); line-height:1.2; }
   .shop-box{ max-width:min(520px, calc(92 * var(--vw))); }
   .shop-buy-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+  .admin-grant-dia-btn{
+    margin-top:10px; padding:9px 18px; border-radius:6px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
+  }
   .result-currency{ margin-top:4px; font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); letter-spacing:1px; }
   .result-currency:empty{ display:none; }
 
