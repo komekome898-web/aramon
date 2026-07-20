@@ -524,6 +524,126 @@ function drawProjectile(pr,p){
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
 
+  if(pr.projStyle==='tornado'){
+    // 竜巻アタック(ゴーレム): 回転する渦を段積みで描く(上ほど広い漏斗型)
+    const r = (pr.hitR||14);
+    const spin = matchTime*9;
+    if(!renderHeavyLoad){ ctx.shadowBlur=16; ctx.shadowColor='#d8c49a'; }
+    for(let k=0;k<4;k++){
+      const ky = -k*r*0.42;
+      const kw = r*(0.55 + k*0.3);
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(spin+k*1.3)*r*0.12, ky, kw, kw*0.34, 0, 0, Math.PI*2);
+      ctx.fillStyle = k%2 ? '#b39a72' : '#8f775a';
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(spin+k*1.3)*r*0.12, ky, kw, kw*0.34, 0, spin+k, spin+k+Math.PI*1.2);
+      ctx.stroke();
+    }
+    // 巻き上げられた破片
+    for(let d=0;d<4;d++){
+      const a = spin*1.4 + d*(Math.PI/2);
+      const rr = r*(0.7+0.3*Math.sin(spin+d));
+      ctx.beginPath();
+      ctx.arc(Math.cos(a)*rr, -r*0.6 + Math.sin(a)*rr*0.3, 2.6, 0, Math.PI*2);
+      ctx.fillStyle = '#e8dcc0'; ctx.globalAlpha = 0.9; ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+  if(pr.projStyle==='holy'){
+    // 天の慈悲(アーク): 黄金の聖剣+回転する光輪と光条
+    const r = (pr.hitR||14)*1.3;
+    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
+    const spin = matchTime*2.2;
+    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor='#ffe9a8'; }
+    ctx.save();
+    ctx.rotate(spin);
+    ctx.strokeStyle='rgba(255,233,168,0.8)'; ctx.lineWidth=2.2;
+    ctx.beginPath(); ctx.arc(0,0,r*1.5,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=0.75;
+    for(let i=0;i<4;i++){
+      const a=i*(Math.PI/2);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*r*1.5, Math.sin(a)*r*1.5);
+      ctx.lineTo(Math.cos(a)*r*2.15, Math.sin(a)*r*2.15);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.rotate(travelAngle-camState.yaw);
+    ctx.beginPath();
+    ctx.moveTo(r*1.5,0); ctx.lineTo(-r*0.7,-r*0.85); ctx.lineTo(-r*0.35,0); ctx.lineTo(-r*0.7,r*0.85);
+    ctx.closePath();
+    ctx.fillStyle='#ffe9a8'; ctx.fill();
+    ctx.strokeStyle='#ffffff'; ctx.lineWidth=2; ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  if(pr.projStyle==='shell'){
+    // シェルアタック(ワーム): 回転する甲羅+毒のオーラリング+スピード線
+    const r = (pr.hitR||14)*1.2;
+    const spin = matchTime*7;
+    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
+    if(!renderHeavyLoad){ ctx.shadowBlur=16; ctx.shadowColor='#b57fe0'; }
+    ctx.save();
+    ctx.rotate(travelAngle-camState.yaw);
+    ctx.globalAlpha=0.55; ctx.strokeStyle='#b57fe0'; ctx.lineCap='round'; ctx.lineWidth=3;
+    for(let i=-1;i<=1;i++){
+      ctx.beginPath();
+      ctx.moveTo(-r*1.3, i*r*0.55);
+      ctx.lineTo(-r*2.4 - (i===0?r*0.4:0), i*r*0.55);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.globalAlpha=0.5;
+    ctx.strokeStyle='#d9b3ff'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(0,0,r*1.45 + Math.sin(matchTime*10)*2,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+    ctx.fillStyle='#7a4aa8'; ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=2;
+    for(let i=0;i<3;i++){
+      const a = spin + i*(Math.PI*2/3);
+      ctx.beginPath(); ctx.ellipse(0,0,r,r*0.35,a,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(-r*0.3,-r*0.3,r*0.55,Math.PI,Math.PI*1.7); ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  if(pr.projStyle==='requiem'){
+    // レクイエムエンド(イルミネ): 闇の刃と黄金の刃の二重構造+瞬く光
+    const r = (pr.hitR||14)*1.3;
+    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
+    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor='#c98bff'; }
+    ctx.rotate(travelAngle-camState.yaw);
+    ctx.globalAlpha=0.7;
+    ctx.beginPath();
+    ctx.moveTo(r*1.9,0); ctx.lineTo(-r*0.95,-r*1.25); ctx.lineTo(-r*0.95,r*1.25);
+    ctx.closePath();
+    ctx.fillStyle='#3d1360'; ctx.fill();
+    ctx.strokeStyle='#c98bff'; ctx.lineWidth=1.6; ctx.stroke();
+    ctx.globalAlpha=1;
+    ctx.beginPath();
+    ctx.moveTo(r*1.4,0); ctx.lineTo(-r*0.7,-r*0.9); ctx.lineTo(-r*0.7,r*0.9);
+    ctx.closePath();
+    ctx.fillStyle='#e6c35c'; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=1.5; ctx.stroke();
+    const tw = 0.5+0.5*Math.sin(matchTime*13 + pr.id);
+    if(tw>0.4){
+      ctx.globalAlpha = tw;
+      ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.6; ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.moveTo(r*0.5,-r*0.7); ctx.lineTo(r*0.5,r*0.1);
+      ctx.moveTo(r*0.15,-r*0.3); ctx.lineTo(r*0.85,-r*0.3);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
   if(pr.shape==='triangle'){
     if(!renderHeavyLoad){ ctx.shadowBlur=14; ctx.shadowColor=pr.color; }
     const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
@@ -981,6 +1101,279 @@ function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
   if(mid)   fillShape(mid,   '#c9291a', 0.7*fadeAlpha);
   if(core)  fillShape(core,  '#ff9a3d', 0.9*fadeAlpha);
 }
+
+/* ---------- Tier3技の専用エフェクト(ヒノトリの溶岩流と同じ多層バンド方式) ---------- */
+// エフェクトごとに決定的な乱数を得る(毎フレーム同じ配置で揺らぎだけ動かすため)
+function fxHash01(x){ const s = Math.sin(x)*43758.5453; return s - Math.floor(s); }
+
+// 地面上の1点に煌めき(星・花びら・結晶・火の粉)を描く
+function drawGroundSpark(p, kind, color, alpha, seed){
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.scale(p.scale, p.scale);
+  ctx.globalAlpha = Math.min(1, alpha);
+  if(kind==='star'){
+    const s = 7 + fxHash01(seed*3.7)*5;
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(-s,0); ctx.lineTo(s,0);
+    ctx.moveTo(0,-s); ctx.lineTo(0,s);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,2.2,0,Math.PI*2); ctx.fillStyle='#ffffff'; ctx.fill();
+  } else if(kind==='petal'){
+    const rot = fxHash01(seed*7.1)*Math.PI + matchTime*0.8;
+    ctx.rotate(rot);
+    ctx.beginPath(); ctx.ellipse(0,0,6.5,3.6,0,0,Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.75)'; ctx.lineWidth=1; ctx.stroke();
+  } else if(kind==='diamond'){
+    const s = 5.5 + fxHash01(seed*5.3)*4;
+    ctx.rotate(Math.PI/4 + fxHash01(seed*9.9)*0.6);
+    ctx.beginPath(); ctx.rect(-s/2,-s/2,s,s);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=1.2; ctx.stroke();
+  } else { // ember
+    const s = 2 + fxHash01(seed*4.9)*2.5;
+    ctx.beginPath(); ctx.arc(0,0,s,0,Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 帯(rect)の内側に煌めきをばらまく
+function drawBandSparkles(ae, curReach, fadeAlpha, kind, color){
+  if(renderHeavyLoad) return;
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const n = Math.min(16, Math.round(curReach/90)+5);
+  for(let i=0;i<n;i++){
+    const h1 = fxHash01(ae.id*13.37 + i*7.77);
+    const h2 = fxHash01(ae.id*3.19 + i*13.31);
+    const along = curReach * ((i + h1) / n);
+    const lateral = (h2*2-1) * ae.width*0.34;
+    const p = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+    if(!p) continue;
+    const tw = 0.45 + 0.55*Math.sin(matchTime*5.5 + i*2.399 + ae.id);
+    if(tw <= 0.1) continue;
+    drawGroundSpark(p, kind, color, fadeAlpha*tw, ae.id + i);
+  }
+}
+
+// 多層バンドの色構成(ヒノトリの溶岩流のフォーマットを他の技に展開)
+const AOE_BAND_STYLES = {
+  crystal: { outline:'#7fe8e0', layers:[['#0d3f52',0.5],['#3dccc7',0.65],['#d9fffb',0.85]], spark:['diamond','#eafffd'] },
+  galaxy:  { outline:'#cdd9ff', layers:[['#232a5c',0.55],['#6f8dff',0.6],['#ffffff',0.85]], spark:['star','#ffffff'] },
+  sakura:  { outline:'#ffb3d9', layers:[['#8a2f5c',0.5],['#ff5fb0',0.65],['#ffe3f2',0.85]], spark:['petal','#ffc6e2'] },
+};
+
+// クリスタル/天の川/桜: うねる多層バンド+煌めき
+function drawStyledWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const st = AOE_BAND_STYLES[ae.style];
+  const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
+  if(outline) strokeDashedShape(outline, st.outline, 0.5*fadeAlpha);
+  if(inTelegraph) return;
+  const curReach = Math.min(ae.range, fillDist);
+  if(curReach<=2) return;
+
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const segs = Math.max(8, Math.round(18*(curReach/Math.max(ae.range,1))));
+  const t = matchTime*2.6;
+  function buildBandPoints(halfWidthFrac){
+    const top=[], bot=[];
+    for(let i=0;i<=segs;i++){
+      const along = curReach*(i/segs);
+      const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
+      const hw = ae.width*halfWidthFrac*0.5;
+      const cx = ae.x+fx*along+rx*wobble, cy = ae.y+fy*along+ry*wobble;
+      const tp = project(cx+rx*hw, cy+ry*hw, 0);
+      const bp = project(cx-rx*hw, cy-ry*hw, 0);
+      if(tp) top.push(tp);
+      if(bp) bot.push(bp);
+    }
+    if(top.length<2 || bot.length<2) return null;
+    return top.concat(bot.reverse());
+  }
+  const fracs = [0.95, 0.6, 0.28];
+  for(let li=0; li<3; li++){
+    const pts = buildBandPoints(fracs[li]);
+    if(pts) fillShape(pts, st.layers[li][0], st.layers[li][1]*fadeAlpha);
+  }
+  drawBandSparkles(ae, curReach, fadeAlpha, st.spark[0], st.spark[1]);
+}
+
+// インフェルノ(ドラゴン): 炎の舌がゆらめく3層の扇+火の粉
+function drawInfernoFanEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const half = (ae.fanAngleDeg||45)*Math.PI/360;
+  const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
+  if(outline) strokeDashedShape(outline, '#ffb35c', 0.55*fadeAlpha);
+  if(inTelegraph) return;
+  const curReach = Math.min(ae.range, fillDist);
+  if(curReach<=2) return;
+  const t = matchTime*3.2;
+  function flamePts(frac, wobAmp){
+    const steps = 20;
+    const apex = project(ae.x, ae.y, 0);
+    if(!apex) return null;
+    const arr=[apex];
+    for(let i=0;i<=steps;i++){
+      const a = ae.angle - half + (2*half)*(i/steps);
+      const wob = 1 + wobAmp*Math.sin(i*1.9 + t) + wobAmp*0.6*Math.sin(i*3.7 - t*1.6);
+      const r = curReach*frac*wob;
+      const p = project(ae.x+Math.cos(a)*r, ae.y+Math.sin(a)*r, 0);
+      if(p) arr.push(p);
+    }
+    return arr.length>=3 ? arr : null;
+  }
+  const o = flamePts(1.0, 0.05), m = flamePts(0.76, 0.09), c = flamePts(0.48, 0.13);
+  if(o) fillShape(o, '#5a120a', 0.55*fadeAlpha);
+  if(m) fillShape(m, '#e8432a', 0.7*fadeAlpha);
+  if(c) fillShape(c, '#ffd23d', 0.85*fadeAlpha);
+  if(!renderHeavyLoad){
+    const n = 10;
+    for(let i=0;i<n;i++){
+      const h1 = fxHash01(ae.id*11.3 + i*5.7), h2 = fxHash01(ae.id*7.7 + i*3.1);
+      const a = ae.angle + (h1*2-1)*half*0.9;
+      const rr = curReach * (0.25 + 0.7*h2);
+      const rise = 20 + 40*fxHash01(i*2.2 + Math.floor(matchTime*2));
+      const p = project(ae.x+Math.cos(a)*rr, ae.y+Math.sin(a)*rr, rise*(0.5+0.5*Math.sin(matchTime*4+i)));
+      if(!p) continue;
+      const tw = 0.4 + 0.6*Math.sin(matchTime*7 + i*2.1);
+      if(tw>0.15) drawGroundSpark(p, 'ember', '#ffd76a', fadeAlpha*tw, ae.id+i);
+    }
+  }
+}
+
+// 超雷撃(ライガー): 毎フレーム震える本物の稲妻(グロー+白い芯+枝分かれ)
+function drawThunderBoltEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const outlineRect = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, (ae.width||110)/2);
+  if(outlineRect) strokeDashedShape(outlineRect, ae.color, 0.4*fadeAlpha);
+  if(inTelegraph) return;
+  const curReach = Math.min(ae.range, fillDist);
+  if(curReach<=2) return;
+  const amp = (ae.width||110)*0.5;
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const jseed = Math.floor(matchTime*16); // 稲妻の形を毎フレーム震わせる
+  const segs = Math.max(4, Math.round(10*(curReach/Math.max(ae.range,1))));
+  const pts = [];
+  const world = [];
+  for(let i=0;i<=segs;i++){
+    const along = curReach*(i/segs);
+    const lateral = (i===0||i===segs) ? 0 : (fxHash01(jseed*31.7 + i*17.3 + ae.id)*2-1)*amp;
+    const wx = ae.x+fx*along+rx*lateral, wy = ae.y+fy*along+ry*lateral;
+    world.push([wx,wy]);
+    const pp = project(wx, wy, 0);
+    if(pp) pts.push(pp);
+  }
+  if(pts.length<2) return;
+  const flick = 0.7 + 0.3*Math.sin(matchTime*42);
+  function strokePts(list, color, lw, alpha, blur){
+    if(list.length<2) return;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, alpha*fadeAlpha*flick);
+    ctx.strokeStyle = color; ctx.lineWidth = lw;
+    if(blur && !renderHeavyLoad){ ctx.shadowBlur=blur; ctx.shadowColor=ae.color; }
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(list[0].x, list[0].y);
+    for(let i=1;i<list.length;i++) ctx.lineTo(list[i].x, list[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+  strokePts(pts, ae.color, 14, 0.28, 26); // 外側グロー
+  strokePts(pts, ae.color, 6, 0.85, 18);  // 本体
+  strokePts(pts, '#ffffff', 2.2, 0.95, 0); // 白い芯
+  // 枝分かれ: 中間の頂点からランダムに短い枝を伸ばす
+  for(let b=0;b<3;b++){
+    const vi = 1 + Math.floor(fxHash01(jseed*7.7 + b*29.1 + ae.id)* (Math.max(1,segs-2)));
+    if(vi>=world.length) continue;
+    const [wx,wy] = world[vi];
+    const ba = ae.angle + (fxHash01(jseed*3.3+b*11.1)*2-1)*1.2;
+    const bl = amp*(0.8+fxHash01(jseed*5.5+b*13.7));
+    const p1 = project(wx, wy, 0);
+    const p2 = project(wx+Math.cos(ba)*bl, wy+Math.sin(ba)*bl, 0);
+    if(p1&&p2){ strokePts([p1,p2], ae.color, 3.5, 0.7, 12); strokePts([p1,p2], '#ffffff', 1.4, 0.8, 0); }
+  }
+}
+
+// サイコキネシス(スエゾー): 位相のずれた3本の念力波+白い芯
+function drawPsychicWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const half = (ae.fanAngleDeg||30)*Math.PI/360;
+  const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
+  if(outline) strokeDashedShape(outline, ae.color, 0.5*fadeAlpha);
+  if(inTelegraph) return;
+  const curReach = Math.min(ae.range, fillDist);
+  if(curReach<=2) return;
+  const segs = Math.max(8, Math.round(18*(curReach/Math.max(ae.range,1))));
+  const t = matchTime*3;
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  for(let w=0;w<3;w++){
+    const phase = w*2.09;
+    const pts = [];
+    for(let i=0;i<=segs;i++){
+      const along = curReach*(i/segs);
+      const maxLat = along*Math.tan(half)*0.85;
+      const lateral = Math.sin(along*0.02 + t + phase)*maxLat;
+      const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+      if(pp) pts.push(pp);
+    }
+    if(pts.length<2) continue;
+    ctx.save();
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.globalAlpha = Math.min(1, (w===1?0.9:0.55)*fadeAlpha);
+    ctx.strokeStyle = ae.color; ctx.lineWidth = w===1 ? 8 : 5;
+    if(!renderHeavyLoad){ ctx.shadowBlur=22; ctx.shadowColor=ae.color; }
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+    ctx.stroke();
+    if(w===1){
+      ctx.globalAlpha = Math.min(1, 0.9*fadeAlpha);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.4; ctx.shadowBlur=0;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// フラワービーム(プラント): 3層のビーム+舞う花びら
+function drawFlowerBeamsEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const count = ae.beamCount||3;
+  const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
+  const ranges = ae.beamRanges || Array.from({length:count}, ()=>ae.range);
+  for(let b=0;b<count;b++){
+    const a = ae.angle + (count>1 ? (b/(count-1)-0.5)*spread : 0);
+    const outline = rectOutlinePoints(ae.x, ae.y, a, ranges[b], ae.width/2);
+    if(outline) strokeDashedShape(outline, '#b9f07a', 0.45*fadeAlpha);
+    if(inTelegraph) continue;
+    const curReach = Math.min(ranges[b], fillDist);
+    if(curReach<=2) continue;
+    const layers = [[1.0,'#2e5c17',0.5],[0.6,'#8fe33f',0.62],[0.3,'#eaffd0',0.82]];
+    for(const [frac,color,alpha] of layers){
+      const pts = rectOutlinePoints(ae.x, ae.y, a, curReach, ae.width*frac/2);
+      if(pts) fillShape(pts, color, alpha*fadeAlpha);
+    }
+    if(!renderHeavyLoad){
+      const fx=Math.cos(a), fy=Math.sin(a);
+      const rxb=-Math.sin(a), ryb=Math.cos(a);
+      const n = Math.min(8, Math.round(curReach/140)+3);
+      for(let i=0;i<n;i++){
+        const h1 = fxHash01(ae.id*9.1 + b*31.7 + i*7.3);
+        const h2 = fxHash01(ae.id*5.3 + b*17.9 + i*11.7);
+        const along = curReach*((i+h1)/n);
+        const lateral = (h2*2-1)*ae.width*0.55;
+        const p = project(ae.x+fx*along+rxb*lateral, ae.y+fy*along+ryb*lateral, 12+18*h1);
+        if(!p) continue;
+        const tw = 0.5+0.5*Math.sin(matchTime*5+i*2.2+b*1.3);
+        if(tw>0.15) drawGroundSpark(p, 'petal', '#ffb7d5', fadeAlpha*tw, ae.id+b*10+i);
+      }
+    }
+  }
+}
 function drawAreaEffects(){
   for(const ae of areaEffects){
     const elapsed = matchTime - ae.spawnAt;
@@ -993,6 +1386,10 @@ function drawAreaEffects(){
     const fadeAlpha = elapsed>fadeStart ? clamp(1-((elapsed-fadeStart)/0.2), 0, 1) : 1;
 
     if(ae.kind==='beams'){
+      if(ae.style==='flower'){
+        drawFlowerBeamsEffect(ae, fillDist, fadeAlpha, inTelegraph);
+        continue;
+      }
       const count = ae.beamCount||3;
       const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
       const ranges = ae.beamRanges || Array.from({length:count}, ()=>ae.range);
@@ -1009,6 +1406,10 @@ function drawAreaEffects(){
         }
       }
     } else if(ae.kind==='fan'){
+      if(ae.style==='inferno'){
+        drawInfernoFanEffect(ae, fillDist, fadeAlpha, inTelegraph);
+        continue;
+      }
       const half = (ae.fanAngleDeg||45)*Math.PI/360;
       const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
       if(outline) strokeDashedShape(outline, ae.color, 0.55*fadeAlpha);
@@ -1022,6 +1423,8 @@ function drawAreaEffects(){
     } else if(ae.kind==='rect'){
       if(ae.style==='lava'){
         drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph);
+      } else if(AOE_BAND_STYLES[ae.style]){
+        drawStyledWaveEffect(ae, fillDist, fadeAlpha, inTelegraph);
       } else {
         const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
         if(outline) strokeDashedShape(outline, ae.color, 0.55*fadeAlpha);
@@ -1034,6 +1437,10 @@ function drawAreaEffects(){
         }
       }
     } else if(ae.kind==='zigzag'){
+      if(ae.style==='thunder'){
+        drawThunderBoltEffect(ae, fillDist, fadeAlpha, inTelegraph);
+        continue;
+      }
       const outlineRect = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, (ae.width||110)/2);
       if(outlineRect) strokeDashedShape(outlineRect, ae.color, 0.4*fadeAlpha);
       if(!inTelegraph){
@@ -1063,6 +1470,10 @@ function drawAreaEffects(){
         }
       }
     } else if(ae.kind==='fanZigzag'){
+      if(ae.style==='psychic'){
+        drawPsychicWaveEffect(ae, fillDist, fadeAlpha, inTelegraph);
+        continue;
+      }
       const half = (ae.fanAngleDeg||30)*Math.PI/360;
       const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
       if(outline) strokeDashedShape(outline, ae.color, 0.5*fadeAlpha);
