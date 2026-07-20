@@ -54,13 +54,20 @@ document.addEventListener('visibilitychange', ()=>{
 const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
   fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3 };
 const seLastAt = {};
+// 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
+const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35 };
+let seCurrentBoost = 1;
 function playSe(name, opts){
   if(!actx || audioSettings.se<=0.005) return;
   const now = actx.currentTime;
   if(seLastAt[name]!=null && now - seLastAt[name] < (SE_MIN_GAP[name]||0.05)) return;
   seLastAt[name] = now;
   const fn = SE_DEFS[name];
-  if(fn) fn(now, opts||{});
+  if(fn){
+    seCurrentBoost = SE_VOL_BOOST[name] || 1;
+    fn(now, opts||{});
+    seCurrentBoost = 1;
+  }
 }
 function seTone(t, o){
   const osc = actx.createOscillator(), g = actx.createGain();
@@ -69,7 +76,7 @@ function seTone(t, o){
   osc.frequency.setValueAtTime(o.freq||440, t);
   if(o.freqEnd) osc.frequency.exponentialRampToValueAtTime(Math.max(o.freqEnd,1), t+dur);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(o.vol!=null?o.vol:0.5, t+(o.attack||0.005));
+  g.gain.linearRampToValueAtTime((o.vol!=null?o.vol:0.5)*seCurrentBoost, t+(o.attack||0.005));
   g.gain.exponentialRampToValueAtTime(0.001, t+dur);
   osc.connect(g); g.connect(seGain);
   osc.start(t); osc.stop(t+dur+0.05);
@@ -86,7 +93,7 @@ function seNoise(t, o){
   f.frequency.setValueAtTime(o.filterFreq||1000, t);
   if(o.filterEnd) f.frequency.exponentialRampToValueAtTime(Math.max(o.filterEnd,10), t+dur);
   const g = actx.createGain();
-  g.gain.setValueAtTime(o.vol!=null?o.vol:0.4, t);
+  g.gain.setValueAtTime((o.vol!=null?o.vol:0.4)*seCurrentBoost, t);
   g.gain.exponentialRampToValueAtTime(0.001, t+dur);
   src.connect(f); f.connect(g); g.connect(seGain);
   src.start(t); src.stop(t+dur+0.05);
@@ -104,15 +111,16 @@ function seNoiseLfo(t, o){
   f.frequency.setValueAtTime(o.filterFreq||800, t);
   if(o.filterEnd) f.frequency.exponentialRampToValueAtTime(Math.max(o.filterEnd,10), t+dur);
   const g = actx.createGain();
-  const v0 = o.volStart!=null ? o.volStart : (o.vol||0.4);
+  const v0 = (o.volStart!=null ? o.volStart : (o.vol||0.4)) * seCurrentBoost;
+  const vEnd = o.volEnd!=null ? o.volEnd*seCurrentBoost : null;
   g.gain.setValueAtTime(Math.max(v0,0.001), t);
-  if(o.volEnd!=null) g.gain.linearRampToValueAtTime(Math.max(o.volEnd,0.001), t+dur*0.8);
-  g.gain.setValueAtTime(o.volEnd!=null?Math.max(o.volEnd,0.001):Math.max(v0,0.001), t+dur*0.85);
+  if(vEnd!=null) g.gain.linearRampToValueAtTime(Math.max(vEnd,0.001), t+dur*0.8);
+  g.gain.setValueAtTime(vEnd!=null?Math.max(vEnd,0.001):Math.max(v0,0.001), t+dur*0.85);
   g.gain.exponentialRampToValueAtTime(0.001, t+dur);
   if(o.lfoFreq){
     const lfo = actx.createOscillator(), lg = actx.createGain();
     lfo.frequency.value = o.lfoFreq;
-    lg.gain.value = (o.lfoDepth||0.35) * Math.max(v0, o.volEnd||0);
+    lg.gain.value = (o.lfoDepth||0.35) * Math.max(v0, vEnd||0);
     lfo.connect(lg); lg.connect(g.gain);
     lfo.start(t); lfo.stop(t+dur+0.05);
   }
@@ -193,11 +201,13 @@ const SE_DEFS = {
     }
     seNoise(t+d*0.85, {dur:0.25, vol:0.25, filterType:'highpass', filterFreq:2600}); // 最後にシャラン
   },
-  // 竜巻アタック「ゴオオオオ」(轟音が徐々に大きく)
+  // 竜巻アタック「ゴオオオオ」(最初から轟音+地響き)
   tornado(t, o){
     const d = Math.min(3, Math.max(1, (o&&o.dur)||2));
-    seNoiseLfo(t, {dur:d, volStart:0.07, volEnd:0.55, filterFreq:320, filterEnd:1300, lfoFreq:11, lfoDepth:0.3});
-    seTone(t, {freq:55, freqEnd:110, dur:d, type:'sawtooth', vol:0.18});
+    seNoiseLfo(t, {dur:d, vol:0.55, filterFreq:900, filterEnd:450, lfoFreq:11, lfoDepth:0.3}); // 風の轟音
+    seNoiseLfo(t, {dur:d, vol:0.5, filterFreq:130, lfoFreq:5.5, lfoDepth:0.5});               // 地響きの揺れ
+    seTone(t, {freq:44, dur:d, type:'sine', vol:0.42});      // 地鳴りの超低音
+    seTone(t, {freq:60, dur:d, type:'sawtooth', vol:0.2});
   },
   // シェルアタック「シュルルルル」(回転音)
   spin(t, o){
@@ -220,15 +230,20 @@ const SE_DEFS = {
       seNoise(t+i*0.11, {dur:0.15, vol:0.36, filterType:'bandpass', filterFreq:3900, filterEnd:650});
     }
   },
-  // 天の慈悲「リンリンリーン」(鐘の音)
+  // 天の慈悲「リンリンリーン」(残響たっぷりの鐘の音)
   bell(t){
+    // 実際の鐘に近い非整数倍音(ハム・プライム・ティアス・クイント・ノミナル)を重ねて長く響かせる
     const ring=(tt,f,d,v)=>{
-      seTone(tt, {freq:f, dur:d, type:'sine', vol:v});
-      seTone(tt, {freq:f*2.76, dur:d*0.6, type:'sine', vol:v*0.4}); // 鐘の倍音
+      seTone(tt, {freq:f*0.5,  dur:d*1.5, type:'sine', vol:v*0.5,  attack:0.008});
+      seTone(tt, {freq:f,      dur:d,     type:'sine', vol:v,      attack:0.008});
+      seTone(tt, {freq:f*1.19, dur:d*0.85,type:'sine', vol:v*0.5,  attack:0.008});
+      seTone(tt, {freq:f*1.5,  dur:d*0.7, type:'sine', vol:v*0.35, attack:0.008});
+      seTone(tt, {freq:f*2.0,  dur:d*0.55,type:'sine', vol:v*0.3,  attack:0.008});
+      seTone(tt, {freq:f*2.74, dur:d*0.35,type:'sine', vol:v*0.2,  attack:0.008});
     };
-    ring(t, 1760, 0.4, 0.3);
-    ring(t+0.22, 1760, 0.4, 0.28);
-    ring(t+0.46, 2093, 1.1, 0.32);
+    ring(t,      1568, 1.1, 0.3);
+    ring(t+0.24, 1568, 1.1, 0.28);
+    ring(t+0.5,  2093, 2.4, 0.34); // 最後の一打は長く響かせる
   },
   // 敵をキルした時「ザシュッ」(切り裂き音)
   kill(t){
