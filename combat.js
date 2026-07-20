@@ -1,6 +1,24 @@
+// tier3技のエフェクトスタイル → 専用SE名の対応表
+const MOVE_SE_BY_STYLE = {
+  inferno:'fireRoar', lava:'fireRoar', crystal:'iceCrack',
+  psychic:'beam', sakura:'beam', flower:'beam', galaxy:'beam',
+  tornado:'tornado', shell:'spin', holy:'bell', requiem:'whoosh',
+};
+function moveSeName(move){
+  if(move.seStyle) return move.seStyle; // data.jsで個別指定(熱視線など)
+  return MOVE_SE_BY_STYLE[move.aoeStyle || move.projStyle] || null;
+}
 function fireMove(attacker, target, move){
-  // SE: 自分の技発射のみ(負荷対策)。単発/連射で音を変える(範囲技はaoe分岐内で持続時間付きで鳴らす)
-  if(attacker.isPlayer && !move.aoeShape) playSe('fire', { kind: move.burst ? 'burst' : 'single' });
+  // SE: 自分の技発射のみ(負荷対策)。専用SEがある技はそれを、無ければ単発/連射の共通音
+  if(attacker.isPlayer && !move.aoeShape){
+    const sp = moveSeName(move);
+    if(sp){
+      const flight = (move.range && move.projSpeed) ? move.range/effectiveProjSpeed(attacker, move) : undefined;
+      playSe(sp, { dur: flight });
+    } else {
+      playSe('fire', { kind: move.burst ? 'burst' : 'single' });
+    }
+  }
   attacker.guts = Math.max(0, attacker.guts - effectiveGutsCost(attacker, move));
   if(attacker.element==='ark' && move.tier===3){
     attacker.graceUntil = matchTime + 10;
@@ -39,7 +57,10 @@ function fireMove(attacker, target, move){
       ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
     }
     areaEffects.push(ae);
-    if(attacker.isPlayer) playSe('fire', { kind:'aoe', dur: ae.life }); // 技の持続時間に合わせた長さで鳴らす
+    if(attacker.isPlayer){
+      const sp = moveSeName(move);
+      playSe(sp || 'fire', sp ? { dur: ae.life } : { kind:'aoe', dur: ae.life }); // 技の持続時間に合わせた長さで鳴らす
+    }
     return;
   }
   if(move.lobbed){
