@@ -69,6 +69,7 @@ function fireMove(attacker, target, move){
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
       projStyle: move.projStyle||null,
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
+      burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
     });
   }
 }
@@ -650,7 +651,7 @@ function tryPlayerFire(dt){
 }
 // Tier3技の弾が残す軌跡の色(スタイル別)
 const PROJ_TRAIL_COLORS = {
-  tornado:'#d8c49a', holy:'#ffe9a8', shell:'#b57fe0', requiem:'#e6c35c',
+  tornado:'#d8c49a', holy:'#ffe9a8', shell:'#b57fe0', requiem:'#8b46c9',
 };
 function updateProjectiles(dt){
   for(let i=projectiles.length-1;i>=0;i--){
@@ -819,12 +820,12 @@ function updateLootPickups(){
           const ti = TRAINING_ITEMS[it.type];
           if(it.type==='weight'){
             e.trainDmgMult *= 1.16;
-            e.maxHp += 30; e.hp += 30;
+            e.maxHp += 30; e.hp += 30; e.trainMaxHpBonus = (e.trainMaxHpBonus||0)+30;
           } else if(it.type==='meditate'){
             e.trainGutsCostReduction += 2;
             e.trainProjSpeedMult *= 1.20;
           } else if(it.type==='pool'){
-            e.maxHp += 36; e.hp += 36;
+            e.maxHp += 36; e.hp += 36; e.trainMaxHpBonus = (e.trainMaxHpBonus||0)+36;
             e.trainDmgTakenMult *= 0.90;
           } else if(it.type==='floor'){
             e.trainSpeedMult *= 1.12;

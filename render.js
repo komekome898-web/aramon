@@ -622,32 +622,69 @@ function drawProjectile(pr,p){
     return;
   }
   if(pr.projStyle==='requiem'){
-    // レクイエムエンド(イルミネ): 闇の刃と黄金の刃の二重構造+瞬く光
+    // レクイエムエンド(イルミネ): 黒よりの紫を基調にした3形態の投擲武器
+    // (1発目=クナイ / 2発目=トゲトゲの球体 / 3発目=手裏剣)が回転しながら進む
     const r = (pr.hitR||14)*1.3;
-    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
-    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor='#c98bff'; }
-    ctx.rotate(travelAngle-camState.yaw);
-    ctx.globalAlpha=0.7;
-    ctx.beginPath();
-    ctx.moveTo(r*1.9,0); ctx.lineTo(-r*0.95,-r*1.25); ctx.lineTo(-r*0.95,r*1.25);
-    ctx.closePath();
-    ctx.fillStyle='#3d1360'; ctx.fill();
-    ctx.strokeStyle='#c98bff'; ctx.lineWidth=1.6; ctx.stroke();
-    ctx.globalAlpha=1;
-    ctx.beginPath();
-    ctx.moveTo(r*1.4,0); ctx.lineTo(-r*0.7,-r*0.9); ctx.lineTo(-r*0.7,r*0.9);
-    ctx.closePath();
-    ctx.fillStyle='#e6c35c'; ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=1.5; ctx.stroke();
-    const tw = 0.5+0.5*Math.sin(matchTime*13 + pr.id);
-    if(tw>0.4){
-      ctx.globalAlpha = tw;
-      ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.6; ctx.lineCap='round';
+    const DARK='#1d0b2e', MID='#3a1560', EDGE='#8b46c9', HILITE='#c98bff';
+    if(!renderHeavyLoad){ ctx.shadowBlur=16; ctx.shadowColor=EDGE; }
+    const spin = matchTime*11 + (pr.id||0);
+    ctx.rotate(spin);
+    ctx.lineJoin='round';
+    const form = (pr.burstIndex||0) % 3;
+    if(form===0){
+      // クナイ: 細長い刃+柄+尾のリング
       ctx.beginPath();
-      ctx.moveTo(r*0.5,-r*0.7); ctx.lineTo(r*0.5,r*0.1);
-      ctx.moveTo(r*0.15,-r*0.3); ctx.lineTo(r*0.85,-r*0.3);
-      ctx.stroke();
+      ctx.moveTo(r*1.9,0); ctx.lineTo(r*0.15,-r*0.5); ctx.lineTo(r*0.15,r*0.5);
+      ctx.closePath();
+      ctx.fillStyle=MID; ctx.fill();
+      ctx.strokeStyle=EDGE; ctx.lineWidth=1.6; ctx.stroke();
+      ctx.fillStyle=DARK;
+      ctx.fillRect(-r*0.95, -r*0.18, r*1.1, r*0.36);
+      ctx.strokeStyle=EDGE; ctx.lineWidth=1.2; ctx.strokeRect(-r*0.95, -r*0.18, r*1.1, r*0.36);
+      ctx.beginPath(); ctx.arc(-r*1.3,0,r*0.4,0,Math.PI*2);
+      ctx.strokeStyle=HILITE; ctx.lineWidth=1.8; ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1.1;
+      ctx.beginPath(); ctx.moveTo(r*1.7,0); ctx.lineTo(r*0.3,0); ctx.stroke();
+    } else if(form===1){
+      // トゲトゲの球体: 芯の球+放射状のトゲ
+      ctx.fillStyle=MID; ctx.strokeStyle=EDGE; ctx.lineWidth=1.4;
+      for(let k=0;k<8;k++){
+        const a = k*(Math.PI/4);
+        ctx.save(); ctx.rotate(a);
+        ctx.beginPath();
+        ctx.moveTo(r*1.45,0); ctx.lineTo(r*0.55,-r*0.3); ctx.lineTo(r*0.55,r*0.3);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      const grad = ctx.createRadialGradient(-r*0.2,-r*0.2,r*0.1, 0,0,r*0.85);
+      grad.addColorStop(0,MID); grad.addColorStop(1,DARK);
+      ctx.beginPath(); ctx.arc(0,0,r*0.85,0,Math.PI*2);
+      ctx.fillStyle=grad; ctx.fill();
+      ctx.strokeStyle=EDGE; ctx.lineWidth=1.6; ctx.stroke();
+      ctx.beginPath(); ctx.arc(-r*0.25,-r*0.25,r*0.3,0,Math.PI*2);
+      ctx.fillStyle='rgba(201,139,255,0.35)'; ctx.fill();
+    } else {
+      // 手裏剣: 4枚刃の星形+中心の穴
+      ctx.beginPath();
+      for(let k=0;k<4;k++){
+        const a = k*(Math.PI/2);
+        const ia = a + Math.PI/4;
+        const ox=Math.cos(a)*r*1.7, oy=Math.sin(a)*r*1.7;
+        const ix=Math.cos(ia)*r*0.5, iy=Math.sin(ia)*r*0.5;
+        if(k===0) ctx.moveTo(ox,oy); else ctx.lineTo(ox,oy);
+        ctx.lineTo(ix,iy);
+      }
+      ctx.closePath();
+      ctx.fillStyle=DARK; ctx.fill();
+      ctx.strokeStyle=EDGE; ctx.lineWidth=1.6; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,0,r*0.28,0,Math.PI*2);
+      ctx.strokeStyle=HILITE; ctx.lineWidth=1.8; ctx.stroke();
     }
+    // 回転の残光: 紫のうっすらした円弧
+    ctx.globalAlpha=0.3;
+    ctx.beginPath(); ctx.arc(0,0,r*1.55, spin*2, spin*2+Math.PI*0.9);
+    ctx.strokeStyle=HILITE; ctx.lineWidth=2; ctx.stroke();
+    ctx.globalAlpha=1;
     ctx.restore();
     return;
   }
@@ -1847,6 +1884,18 @@ function updateHUD(){
   // ランキング表示名(名前入力欄)をそのままHUDに表示する
   document.getElementById('hudName').textContent =
     (typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー');
+  // トレーニングアイテムで得たバフの累積(初期値から変化したものだけを列挙)
+  {
+    const tb = [];
+    if(player.trainDmgMult && Math.abs(player.trainDmgMult-1)>0.001) tb.push(`技ダメ×${player.trainDmgMult.toFixed(2)}`);
+    if(player.trainDmgTakenMult && Math.abs(player.trainDmgTakenMult-1)>0.001) tb.push(`被ダメ×${player.trainDmgTakenMult.toFixed(2)}`);
+    if(player.trainSpeedMult && Math.abs(player.trainSpeedMult-1)>0.001) tb.push(`移動×${player.trainSpeedMult.toFixed(2)}`);
+    if(player.trainCooldownMult && Math.abs(player.trainCooldownMult-1)>0.001) tb.push(`連射×${(1/player.trainCooldownMult).toFixed(2)}`);
+    if(player.trainProjSpeedMult && Math.abs(player.trainProjSpeedMult-1)>0.001) tb.push(`弾速×${player.trainProjSpeedMult.toFixed(2)}`);
+    if(player.trainGutsCostReduction) tb.push(`消費ガッツ-${player.trainGutsCostReduction}`);
+    if(player.trainMaxHpBonus) tb.push(`最大HP+${player.trainMaxHpBonus}`);
+    document.getElementById('trainBuffsLine').textContent = tb.join('・');
+  }
   document.getElementById('hudElTag').textContent = el.label;
   document.documentElement.style.setProperty('--accent', el.color);
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
