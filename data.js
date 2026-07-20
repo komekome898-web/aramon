@@ -374,8 +374,8 @@ const MASTERMON_STATS = [
 const APTITUDE = {
   fire:    { life:'C', power:'A', wisdom:'A', accuracy:'C', evasion:'D', vitality:'C' },
   aqua:    { life:'C', power:'D', wisdom:'B', accuracy:'B', evasion:'A', vitality:'D' },
-  leaf:    { life:'A', power:'D', wisdom:'B', accuracy:'C', evasion:'D', vitality:'B' },
-  spark:   { life:'D', power:'B', wisdom:'C', accuracy:'B', evasion:'A', vitality:'E' },
+  leaf:    { life:'A', power:'E', wisdom:'C', accuracy:'C', evasion:'D', vitality:'E' },
+  spark:   { life:'D', power:'D', wisdom:'B', accuracy:'A', evasion:'B', vitality:'E' },
   rock:    { life:'C', power:'A', wisdom:'C', accuracy:'E', evasion:'E', vitality:'A' },
   phoenix: { life:'C', power:'E', wisdom:'A', accuracy:'C', evasion:'C', vitality:'C' },
   ark:     { life:'B', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'C' },
