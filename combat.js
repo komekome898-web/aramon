@@ -842,7 +842,8 @@ function updateLootPickups(){
         }
       }
       if(consumed){
-        if(e.isPlayer) playSe('pickup'); // SE: 自分のアイテム取得のみ
+        // SE: 自分のアイテム取得のみ。トレーニングアイテムはトレ実行と同じ「ポワポワ」
+        if(e.isPlayer) playSe(it.kind==='training' ? 'train' : 'pickup');
         break;
       }
     }

@@ -344,8 +344,10 @@
   #hpNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right;}
 
   #topLeft{ position:absolute; top:14px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
-  /* トレーニングアイテムで得たバフの累積表示(ステータスバーの下・小さめ半透明) */
-  #trainBuffsLine{ font-size:9px; color:rgba(233,230,220,0.55); letter-spacing:0.5px; max-width:230px; line-height:1.5; margin-top:-2px; }
+  /* トレーニングアイテムで得たバフの累積表示(ステータスバーの下・小さめ半透明)。
+     文字色はマップの地面の明るさに応じてrender.jsが.on-light-mapを付け外しする */
+  #trainBuffsLine{ font-size:9px; color:rgba(233,230,220,0.6); letter-spacing:0.5px; max-width:230px; line-height:1.5; margin-top:-2px; text-shadow:0 1px 3px rgba(0,0,0,0.6); }
+  #trainBuffsLine.on-light-map{ color:rgba(18,24,34,0.75); text-shadow:0 1px 3px rgba(255,255,255,0.6); }
   /* 安置情報フィールドをミニマップの左に添える横並び配置 */
   #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:row; align-items:flex-start; gap:8px; }
   #counterPanel{ padding:7px 10px; text-align:right; white-space:nowrap; }
