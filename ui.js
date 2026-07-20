@@ -592,6 +592,12 @@ function buyShopItem(itemKey, price){
   renderShop();
   updateAccountBar();
 }
+// 管理者画面: 動作確認用のダイヤ付与(この端末のウォレットに加算→ログイン中なら自動同期)
+document.getElementById('adminGrantDiaBtn').addEventListener('click', ()=>{
+  addWallet(0, 500);
+  updateAccountBar();
+  pushToast('💎 ダイヤを500個付与しました');
+});
 document.getElementById('openShopBtn').addEventListener('click', ()=>{
   renderShop();
   document.getElementById('shopOverlay').classList.remove('hidden');
