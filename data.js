@@ -270,7 +270,7 @@ const SIGNATURE_MOVES = {
     { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻' },
     { name:'さくらふぶき', tier:2, color:'#ff8fc4', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🌸' },
     { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400,
-      aoeShape:'rect', range:1000, rectWidth:240, aoeStyle:'sakura' },
+      aoeShape:'rect', range:1000, rectWidth:120, aoeStyle:'sakura' },
   ],
   suezo: [
     { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'💧' },
