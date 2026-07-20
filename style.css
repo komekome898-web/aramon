@@ -312,8 +312,11 @@
     position:absolute; background:var(--panel); border:1px solid var(--panel-line);
     clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
   }
+  /* 試合中はマップの視認性を優先し、各フィールドを半透明にする */
+  #hud .hud-panel{ background:rgba(10,16,26,0.5); }
+  /* topLeft/topRight内のパネルはflexレイアウトに従わせる */
+  #topLeft .hud-panel, #topRight .hud-panel{ position:relative; }
 
-  #bottomLeft{ position:absolute; left:14px; bottom:150px; }
   #hpPanel{ width:210px; padding:7px 14px 7px; border-top:3px solid var(--accent,var(--amber)); }
   #hpPanel .who{ display:flex; align-items:center; gap:8px; margin-bottom:3px; }
   #hpPanel .nm{ font-weight:700; font-size:14px; letter-spacing:1px; }
@@ -323,8 +326,9 @@
   #hpNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right;}
 
   #topLeft{ position:absolute; top:14px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
-  #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
-  #counterPanel{ padding:7px 16px; text-align:right; min-width:190px; white-space:nowrap; }
+  /* 安置情報フィールドをミニマップの左に添える横並び配置 */
+  #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:row; align-items:flex-start; gap:8px; }
+  #counterPanel{ padding:7px 10px; text-align:right; white-space:nowrap; }
   #aliveNum{ font-family:'Russo One',sans-serif; font-size:16px; color:var(--amber); }
   #aliveLabel{ font-size:8px; letter-spacing:1.5px; color:var(--ink-dim); }
   #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:9px; margin-top:2px; }
@@ -336,7 +340,7 @@
   .stat-lbl{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
   .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
 
-  #minimapWrap{ width:120px; height:120px; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:#0b1320; box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
+  #minimapWrap{ width:120px; height:120px; flex-shrink:0; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:rgba(11,19,32,0.5); box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
   #minimapCanvas{ width:100%; height:100%; display:block; }
 
   #killFeed{ position:absolute; top:165px; right:14px; width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
@@ -652,6 +656,13 @@
   }
   #mastermonFooterRow{
     margin-top:16px; display:flex; gap:10px; flex-wrap:nowrap; justify-content:center; flex-shrink:0;
+    width:100%; position:relative;
+  }
+  /* 編集ボタンはフッターの右端に固定配置(中央の参戦/閉じるボタンの並びは崩さない) */
+  .mastermon-edit-btn{
+    position:absolute; right:0; top:50%; transform:translateY(-50%);
+    padding:12px 18px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
   #closeMastermonBtn{
     padding:13px 26px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
@@ -714,6 +725,20 @@
   .mastermon-delete-btn{
     padding:12px 18px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
     color:#ff8a8a; background:rgba(224,71,63,0.08); border:1px solid rgba(224,71,63,0.4); border-radius:6px; cursor:pointer;
+  }
+
+  /* ---------- マスモン: 編集画面(名前変更・削除) ---------- */
+  .mm-edit-body{ display:flex; flex-direction:column; gap:16px; align-items:flex-start; max-width:380px; }
+  .mm-edit-label{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-bottom:4px; }
+  .mm-edit-row{ display:flex; gap:10px; width:100%; }
+  .mm-edit-row input{
+    flex:1 1 auto; min-width:0; padding:9px 12px; background:rgba(0,0,0,0.3); border:1px solid var(--panel-line);
+    border-radius:6px; color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:13px;
+  }
+  .mm-edit-rename-btn{
+    flex-shrink:0; padding:9px 14px; border-radius:6px; cursor:pointer; white-space:nowrap;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
+    background:var(--amber); color:#1a1306; border:none;
   }
 
   /* ---------- マスモン: 詳細情報/技一覧/トレーニング 切替UI ---------- */
@@ -849,7 +874,6 @@
 
   @media (max-width:520px){
     #hpPanel{ width:180px; }
-    #bottomLeft{ left:16px; bottom:144px; }
     #killFeed{ width:170px; top:148px;}
     #minimapWrap{ width:96px; height:96px;}
     #movePanel{ gap:8px; padding:8px 12px;}

@@ -1756,7 +1756,7 @@ function render(){
 function renderMinimap(){
   const w = miniCanvas.width, h = miniCanvas.height;
   miniCtx.clearRect(0,0,w,h);
-  miniCtx.fillStyle='#0b1320'; miniCtx.fillRect(0,0,w,h);
+  miniCtx.fillStyle='rgba(11,19,32,0.5)'; miniCtx.fillRect(0,0,w,h);
   const scale = w/WORLD.w;
   miniCtx.save();
   miniCtx.beginPath(); miniCtx.arc(w/2,h/2,w/2-2,0,Math.PI*2); miniCtx.clip();

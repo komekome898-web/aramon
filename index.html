@@ -224,7 +224,19 @@
 <!-- HUD -->
 <div id="hud">
   <div id="topLeft">
-    <div id="minimapWrap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
+    <div class="hud-panel" id="hpPanel">
+      <div class="who">
+        <span class="nm" id="hudName">-</span>
+      </div>
+      <span class="elTag" id="hudElTag">-</span>
+      <div class="hpbar-track"><div class="hpbar-fill" id="hpFill"></div></div>
+      <div id="hpNum">100 / 100</div>
+      <div class="hpbar-track" id="gutsTrack"><div id="gutsFill"></div></div>
+      <div id="gutsNum">100 / 100</div>
+      <div class="hpbar-track" id="stateCdTrack"><div id="stateCdFill"></div></div>
+      <div id="stateCdLabel">-</div>
+      <div id="statusIcons"></div>
+    </div>
   </div>
 
   <div class="hud-panel" id="statsPanel">
@@ -240,23 +252,8 @@
       <div id="zoneCountdown">--:--</div>
       <div id="matchClock">00:00</div>
     </div>
+    <div id="minimapWrap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
     <div id="killFeed"></div>
-  </div>
-
-  <div id="bottomLeft">
-    <div class="hud-panel" id="hpPanel">
-      <div class="who">
-        <span class="nm" id="hudName">-</span>
-      </div>
-      <span class="elTag" id="hudElTag">-</span>
-      <div class="hpbar-track"><div class="hpbar-fill" id="hpFill"></div></div>
-      <div id="hpNum">100 / 100</div>
-      <div class="hpbar-track" id="gutsTrack"><div id="gutsFill"></div></div>
-      <div id="gutsNum">100 / 100</div>
-      <div class="hpbar-track" id="stateCdTrack"><div id="stateCdFill"></div></div>
-      <div id="stateCdLabel">-</div>
-      <div id="statusIcons"></div>
-    </div>
   </div>
 
   <div id="toast"></div>
@@ -336,8 +333,8 @@
   </div>
   <div id="mastermonFooterRow">
     <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
-    <button id="mastermonDeleteBtn" class="mastermon-delete-btn">マスモンを削除</button>
     <button id="closeMastermonBtn">閉じる</button>
+    <button id="mastermonEditBtn" class="mastermon-edit-btn">マスモン編集</button>
   </div>
 </div>
 
