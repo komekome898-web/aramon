@@ -205,6 +205,10 @@ function getDisplayImage(entity){
   return null;
 }
 
+// ワームtier3「シェルアタック」: 相手に命中した時、自分の移動速度にかかるバフ
+const WARM_SHELL_SPEED_BUFF_MULT = 1.5;   // 移動速度倍率
+const WARM_SHELL_SPEED_BUFF_DURATION = 10; // 効果時間(秒)
+
 const SIGNATURE_MOVES = {
   fire: [
     { name:'ファイア',   tier:1, color:'#ff6b35', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
@@ -249,7 +253,7 @@ const SIGNATURE_MOVES = {
   warm: [
     { name:'毒ガス',       tier:1, color:'#9b5fd1', range:700,  dmg:23, cooldown:0.85, gutsCost:8, projSpeed:500, hitR:12, splash:75, icon:'☠️' },
     { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:16, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
-    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:24, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell' },
+    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:24, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell', selfSpeedBuffOnHit:true },
   ],
   illumine: [
     { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️' },

@@ -68,6 +68,7 @@ function fireMove(attacker, target, move){
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
       projStyle: move.projStyle||null,
+      selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
     });
   }
 }
@@ -424,7 +425,8 @@ function computeVolcanoAvoidAngle(m, target, ang){
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
   const stateEff = activeStateEffects(m);
-  const baseSpeed = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1);
+  const hitBuffMult = (m.speedBuffUntil > matchTime) ? (m.speedBuffMult||1) : 1; // 技命中バフ(ワームtier3等)
+  const baseSpeed = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1) * hitBuffMult;
   const slowedSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
   // 海/川/オアシスの中では移動速度が落ちる(ダッシュの飛距離計算には影響させない)
   const effSpeed = slowedSpeed * terrainSpeedMult(m.x, m.y);
@@ -731,6 +733,15 @@ function updateProjectiles(dt){
         }
         if(hitNow){
           applyDamage(e, p.dmg, getEntity(p.ownerId));
+          // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
+          if(p.selfSpeedBuffOnHit){
+            const owner = getEntity(p.ownerId);
+            if(owner && owner.alive){
+              owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
+              owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
+              if(owner.isPlayer) pushToast(`命中！移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
+            }
+          }
           if(p.splash>0){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;

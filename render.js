@@ -582,34 +582,42 @@ function drawProjectile(pr,p){
     return;
   }
   if(pr.projStyle==='shell'){
-    // シェルアタック(ワーム): 回転する甲羅+毒のオーラリング+スピード線
-    const r = (pr.hitR||14)*1.2;
-    const spin = matchTime*7;
-    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
-    if(!renderHeavyLoad){ ctx.shadowBlur=16; ctx.shadowColor='#b57fe0'; }
-    ctx.save();
-    ctx.rotate(travelAngle-camState.yaw);
-    ctx.globalAlpha=0.55; ctx.strokeStyle='#b57fe0'; ctx.lineCap='round'; ctx.lineWidth=3;
-    for(let i=-1;i<=1;i++){
-      ctx.beginPath();
-      ctx.moveTo(-r*1.3, i*r*0.55);
-      ctx.lineTo(-r*2.4 - (i===0?r*0.4:0), i*r*0.55);
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.globalAlpha=0.5;
-    ctx.strokeStyle='#d9b3ff'; ctx.lineWidth=2.5;
-    ctx.beginPath(); ctx.arc(0,0,r*1.45 + Math.sin(matchTime*10)*2,0,Math.PI*2); ctx.stroke();
-    ctx.globalAlpha=1;
+    // シェルアタック(ワーム): 回転する黄色い発光球+周囲に毒紫の電撃(ビリビリ)
+    const r = (pr.hitR||14)*1.1;
+    const spin = matchTime*8;
+    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor='#ffd93d'; }
+    // 本体: 黄色く発光する球
+    const grad = ctx.createRadialGradient(-r*0.25,-r*0.25,r*0.1, 0,0,r);
+    grad.addColorStop(0,'#fffbe0');
+    grad.addColorStop(0.45,'#ffd93d');
+    grad.addColorStop(1,'#e8a00c');
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
-    ctx.fillStyle='#7a4aa8'; ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=2;
+    ctx.fillStyle=grad; ctx.fill();
+    // 回転を見せる明るい帯(3本の楕円バンドを回す)
+    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=2;
     for(let i=0;i<3;i++){
       const a = spin + i*(Math.PI*2/3);
-      ctx.beginPath(); ctx.ellipse(0,0,r,r*0.35,a,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0,0,r*0.92,r*0.32,a,0,Math.PI*2); ctx.stroke();
     }
-    ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.arc(-r*0.3,-r*0.3,r*0.55,Math.PI,Math.PI*1.7); ctx.stroke();
+    ctx.shadowBlur=0;
+    // 周囲の毒紫ビリビリ: フレームごとに形が変わる稲妻アーク
+    const jseed = Math.floor(matchTime*16);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for(let k=0;k<4;k++){
+      const baseA = fxHash01(jseed*13+k*7)*Math.PI*2;
+      const arcSpan = 0.9 + fxHash01(jseed*29+k*11)*0.9;
+      const segs = 5;
+      ctx.beginPath();
+      for(let s=0;s<=segs;s++){
+        const a = baseA + arcSpan*(s/segs);
+        const rr = r*1.4 + (fxHash01(jseed*37+k*17+s*5)-0.5)*r*0.7;
+        const px=Math.cos(a)*rr, py=Math.sin(a)*rr;
+        if(s===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.globalAlpha=0.5; ctx.strokeStyle='#8b2fc9'; ctx.lineWidth=4.5; ctx.stroke();
+      ctx.globalAlpha=0.9; ctx.strokeStyle='#d9a3ff'; ctx.lineWidth=2; ctx.stroke();
+    }
+    ctx.globalAlpha=1;
     ctx.restore();
     return;
   }
@@ -1836,7 +1844,9 @@ function setCooldownRing(el, progress){
 function updateHUD(){
   if(!player) return;
   const el = ELEMENTS[player.element];
-  document.getElementById('hudName').textContent = 'プレイヤー';
+  // ランキング表示名(名前入力欄)をそのままHUDに表示する
+  document.getElementById('hudName').textContent =
+    (typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー');
   document.getElementById('hudElTag').textContent = el.label;
   document.documentElement.style.setProperty('--accent', el.color);
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
