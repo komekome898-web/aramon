@@ -379,7 +379,7 @@ const APTITUDE = {
   rock:    { life:'C', power:'A', wisdom:'C', accuracy:'E', evasion:'E', vitality:'A' },
   phoenix: { life:'C', power:'E', wisdom:'A', accuracy:'C', evasion:'C', vitality:'C' },
   ark:     { life:'B', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'C' },
-  warm:    { life:'B', power:'C', wisdom:'B', accuracy:'D', evasion:'D', vitality:'B' },
+  warm:    { life:'B', power:'B', wisdom:'D', accuracy:'C', evasion:'C', vitality:'D' },
   illumine:{ life:'C', power:'B', wisdom:'E', accuracy:'A', evasion:'B', vitality:'C' },
   fox:     { life:'C', power:'D', wisdom:'B', accuracy:'A', evasion:'B', vitality:'E' },
   mocchi:  { life:'C', power:'C', wisdom:'C', accuracy:'B', evasion:'B', vitality:'B' },
