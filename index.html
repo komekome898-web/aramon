@@ -35,6 +35,13 @@
 
   <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
   <button id="audioSettingsBtn">🔊 音量設定</button>
+  <div id="accountBar">
+    <button id="accountLoginBtn">👤 ログイン</button>
+    <span class="wallet-chip" id="walletGold">🪙 0</span>
+    <span class="wallet-chip" id="walletDia">💎 0</span>
+    <button id="openBagBtn">🎒 バッグ</button>
+    <button id="openGachaBtn">🎰 ガチャ</button>
+  </div>
   <div id="landscapeHint">📱 横画面プレイ推奨</div>
 
   <div class="pick-label">使用するモンスターを選択</div>
@@ -307,6 +314,7 @@
     </div>
   </div>
   <div id="scoreSubmitStatus"></div>
+  <div id="resultCurrencyLine" class="result-currency"></div>
   <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
   <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
     <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
@@ -433,6 +441,55 @@
 
 <!-- MASTERMON NOTICE (fixed overlay, always on top) -->
 <div id="mastermonNotice" class="mastermon-fixed-notice hidden"></div>
+
+<!-- ACCOUNT LOGIN -->
+<div id="accountOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box account-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:6px;">👤 アカウント</div>
+    <div class="account-note">プレイヤー名と4桁のパスコードでログイン。未登録の名前なら新規作成します。データはサーバーに保存され、他の端末でも引き継げます。</div>
+    <input type="text" id="accountNameInput" maxlength="12" placeholder="プレイヤー名">
+    <input type="tel" id="accountPassInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="パスコード(4桁の数字)">
+    <div id="accountMsg" class="account-msg hidden"></div>
+    <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
+      <button id="accountCancelBtn">閉じる</button>
+      <button id="accountSubmitBtn">ログイン / 新規作成</button>
+    </div>
+    <button id="accountLogoutBtn" class="account-logout-btn hidden">ログアウト(データは端末に残ります)</button>
+  </div>
+</div>
+
+<!-- BAG -->
+<div id="bagOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box bag-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎒 バッグ</div>
+    <div id="bagList" class="bag-list"></div>
+    <div id="bagTargetWrap" class="hidden">
+      <div class="bag-target-title">どのマスモンに使う？</div>
+      <div id="bagTargetList" class="bag-target-list"></div>
+      <button id="bagTargetCancelBtn" class="bag-target-cancel">やめる</button>
+    </div>
+    <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
+      <button id="closeBagBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- GACHA -->
+<div id="gachaOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box gacha-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎰 アイテムガチャ</div>
+    <div class="gacha-wallet"><span id="gachaGold">🪙 0</span><span id="gachaDia">💎 0</span></div>
+    <div id="gachaResult" class="gacha-result"></div>
+    <div class="gacha-btn-row">
+      <button id="gachaNormalBtn" class="gacha-btn">ノーマルガチャ<br><span class="gacha-cost">🪙 100</span></button>
+      <button id="gachaPremiumBtn" class="gacha-btn premium">プレミアムガチャ<br><span class="gacha-cost">💎 5</span></button>
+    </div>
+    <div class="gacha-note">プレミアムはチケット類が出やすい！</div>
+    <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
+      <button id="closeGachaBtn">閉じる</button>
+    </div>
+  </div>
+</div>
 
 <!-- AUDIO SETTINGS -->
 <div id="audioSettingsOverlay" class="mastermon-confirm-overlay hidden">
