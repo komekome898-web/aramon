@@ -608,14 +608,10 @@ function playerItemDesc(key){
   return it.desc;
 }
 
-// ガチャ: [アイテムキー, 重み] のリストから重み付き抽選
-const GACHA_NORMAL_COST_GOLD = 100; // ノーマルガチャ(ゴールド)
-const GACHA_PREMIUM_COST_DIA = 5;   // プレミアムガチャ(ダイヤ)
-const GACHA_NORMAL_POOL = [
-  ['seed_life',15],['seed_power',15],['seed_wisdom',15],['seed_accuracy',15],['seed_evasion',15],['seed_vitality',15],
-  ['freeTrainTicket',8],['moveTicket',2],
-];
-const GACHA_PREMIUM_POOL = [
+// ガチャ(ダイヤ専用): [アイテムキー, 重み] のリストから重み付き抽選
+const GACHA_COST_DIA_SINGLE = 5;  // 単発ガチャ
+const GACHA_COST_DIA_TEN = 45;    // 10連ガチャ(単発1回分お得)
+const GACHA_POOL = [
   ['seed_life',10],['seed_power',10],['seed_wisdom',10],['seed_accuracy',10],['seed_evasion',10],['seed_vitality',10],
   ['freeTrainTicket',25],['moveTicket',15],
 ];
@@ -625,6 +621,12 @@ function gachaRoll(pool){
   for(const [k,w] of pool){ r -= w; if(r<0) return k; }
   return pool[0][0];
 }
+
+// ショップ(ゴールドでアイテム購入): [アイテムキー, 価格]
+const SHOP_ITEMS = [
+  ['seed_life',150],['seed_power',150],['seed_wisdom',150],['seed_accuracy',150],['seed_evasion',150],['seed_vitality',150],
+  ['freeTrainTicket',300],['moveTicket',500],
+];
 
 /* =====================================================================
    GAME STATE

@@ -40,6 +40,7 @@
     <span class="wallet-chip" id="walletGold">🪙 0</span>
     <span class="wallet-chip" id="walletDia">💎 0</span>
     <button id="openBagBtn">🎒 バッグ</button>
+    <button id="openShopBtn">🛒 ショップ</button>
     <button id="openGachaBtn">🎰 ガチャ</button>
   </div>
   <div id="landscapeHint">📱 横画面プレイ推奨</div>
@@ -48,7 +49,7 @@
   <div class="monster-grid" id="monsterGrid"></div>
   <div class="grid-note">※各モンスターの状態変化については一番下に記載</div>
 
-  <div class="pick-label" style="margin-top:16px;">ランキング表示名(任意)</div>
+  <div class="pick-label" id="playerNameLabel" style="margin-top:16px;">ランキング表示名(任意)</div>
   <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
 
   <div class="pick-label" style="margin-top:16px;">マップ</div>
@@ -474,6 +475,18 @@
   </div>
 </div>
 
+<!-- SHOP -->
+<div id="shopOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box shop-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🛒 ショップ</div>
+    <div class="gacha-wallet"><span id="shopGold">🪙 0</span></div>
+    <div id="shopList" class="bag-list"></div>
+    <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
+      <button id="closeShopBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- GACHA -->
 <div id="gachaOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box gacha-box">
@@ -481,10 +494,10 @@
     <div class="gacha-wallet"><span id="gachaGold">🪙 0</span><span id="gachaDia">💎 0</span></div>
     <div id="gachaResult" class="gacha-result"></div>
     <div class="gacha-btn-row">
-      <button id="gachaNormalBtn" class="gacha-btn">ノーマルガチャ<br><span class="gacha-cost">🪙 100</span></button>
-      <button id="gachaPremiumBtn" class="gacha-btn premium">プレミアムガチャ<br><span class="gacha-cost">💎 5</span></button>
+      <button id="gachaSingleBtn" class="gacha-btn premium">単発ガチャ<br><span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
+      <button id="gachaTenBtn" class="gacha-btn premium">10連ガチャ<br><span class="gacha-cost" id="gachaTenCost">💎 45</span></button>
     </div>
-    <div class="gacha-note">プレミアムはチケット類が出やすい！</div>
+    <div class="gacha-note">10連は単発1回分お得！</div>
     <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
       <button id="closeGachaBtn">閉じる</button>
     </div>
