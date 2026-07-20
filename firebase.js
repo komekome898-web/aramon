@@ -25,6 +25,24 @@
     return `${safeName}__${element}`;
   }
 
+  // ===== プレイヤーアカウント(accounts/{nameKey}) =====
+  // ※Firebaseコンソールのセキュリティルールに accounts パスの追加が必要
+  window.__aramonAccountKey = function(name){
+    return String(name||'').replace(/[.#$/\[\]\s]/g,'_').slice(0,24).toLowerCase() || 'anon';
+  };
+  window.__aramonGetAccount = async function(nameKey){
+    const snap = await get(ref(fbDb, `accounts/${nameKey}`));
+    return snap.exists() ? snap.val() : null;
+  };
+  window.__aramonSetAccount = async function(nameKey, obj){
+    await set(ref(fbDb, `accounts/${nameKey}`), obj);
+    return true;
+  };
+  window.__aramonUpdateAccountData = async function(nameKey, dataObj){
+    await update(ref(fbDb, `accounts/${nameKey}`), { data: dataObj, updatedAt: Date.now() });
+    return true;
+  };
+
   window.__aramonSubmitScore = async function(entry){
     try{
       const key = makeScoreKey(entry.name, entry.element);

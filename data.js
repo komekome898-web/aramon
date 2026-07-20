@@ -434,6 +434,7 @@ function loadMastermons(){
 }
 function saveMastermons(data){
   try{ localStorage.setItem(MASTERMON_STORAGE_KEY, JSON.stringify(data)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty(); // アカウント同期(ログイン時のみ送信)
 }
 function deleteMastermon(elementKey){
   const data = loadMastermons();
@@ -541,6 +542,88 @@ function seededShuffle(rng, arr){
   const a = arr.slice();
   for(let i=a.length-1;i>0;i--){ const j = seededInt(rng,0,i); [a[i],a[j]]=[a[j],a[i]]; }
   return a;
+}
+
+/* =====================================================================
+   プレイヤーアカウント: 通貨(ゴールド/ダイヤ)・バッグ・アイテム・ガチャ
+===================================================================== */
+const WALLET_STORAGE_KEY = 'aramon_wallet_v1';
+const BAG_STORAGE_KEY = 'aramon_bag_v1';
+function loadWallet(){
+  try{
+    const w = JSON.parse(localStorage.getItem(WALLET_STORAGE_KEY)) || {};
+    return { gold: Math.max(0, Math.round(w.gold||0)), dia: Math.max(0, Math.round(w.dia||0)) };
+  }catch(err){ return { gold:0, dia:0 }; }
+}
+function saveWallet(w){
+  try{ localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(w)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+function addWallet(gold, dia){
+  const w = loadWallet();
+  w.gold += Math.round(gold||0); w.dia += Math.round(dia||0);
+  saveWallet(w);
+  return w;
+}
+function loadBag(){
+  try{ return JSON.parse(localStorage.getItem(BAG_STORAGE_KEY)) || {}; }catch(err){ return {}; }
+}
+function saveBag(b){
+  try{ localStorage.setItem(BAG_STORAGE_KEY, JSON.stringify(b)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+function addBagItem(key, n){
+  const b = loadBag();
+  b[key] = (b[key]||0) + (n||1);
+  saveBag(b);
+}
+
+// 試合報酬(経験値と一緒に入手)
+const GOLD_MATCH_BASE = 20;      // 参加報酬
+const GOLD_PER_KILL = 10;        // キルごと
+const GOLD_CHAMPION_BONUS = 50;  // チャンピオンボーナス
+const GOLD_MULTI_MULT = 2;       // マルチプレイはゴールド2倍
+const DIA_MATCH_BASE = 1;        // 参加報酬
+const DIA_CHAMPION_BONUS = 2;    // チャンピオンボーナス
+
+// プレイヤーアイテム(主にマスモンに使う)
+const STAT_SEED_GAIN = 2; // 「実」1個で上がるステータス量
+const PLAYER_ITEMS = {
+  seed_life:      { name:'ライフの実',   icon:'🍎', stat:'life' },
+  seed_power:     { name:'ちからの実',   icon:'💪', stat:'power' },
+  seed_wisdom:    { name:'かしこさの実', icon:'🧠', stat:'wisdom' },
+  seed_accuracy:  { name:'命中の実',     icon:'🎯', stat:'accuracy' },
+  seed_evasion:   { name:'回避の実',     icon:'💨', stat:'evasion' },
+  seed_vitality:  { name:'丈夫さの実',   icon:'🛡️', stat:'vitality' },
+  freeTrainTicket:{ name:'フリートレーニングチケット', icon:'🎟️', desc:'マスモンのトレーニングチケット+1' },
+  moveTicket:     { name:'技強化チケット', icon:'⚔️', desc:'次の試合を技tier2解放状態で開始' },
+};
+function playerItemDesc(key){
+  const it = PLAYER_ITEMS[key];
+  if(!it) return '';
+  if(it.stat){
+    const s = MASTERMON_STATS.find(x=>x.key===it.stat);
+    return `マスモンの${s.label}+${STAT_SEED_GAIN}`;
+  }
+  return it.desc;
+}
+
+// ガチャ: [アイテムキー, 重み] のリストから重み付き抽選
+const GACHA_NORMAL_COST_GOLD = 100; // ノーマルガチャ(ゴールド)
+const GACHA_PREMIUM_COST_DIA = 5;   // プレミアムガチャ(ダイヤ)
+const GACHA_NORMAL_POOL = [
+  ['seed_life',15],['seed_power',15],['seed_wisdom',15],['seed_accuracy',15],['seed_evasion',15],['seed_vitality',15],
+  ['freeTrainTicket',8],['moveTicket',2],
+];
+const GACHA_PREMIUM_POOL = [
+  ['seed_life',10],['seed_power',10],['seed_wisdom',10],['seed_accuracy',10],['seed_evasion',10],['seed_vitality',10],
+  ['freeTrainTicket',25],['moveTicket',15],
+];
+function gachaRoll(pool){
+  const total = pool.reduce((s,p)=>s+p[1],0);
+  let r = Math.random()*total;
+  for(const [k,w] of pool){ r -= w; if(r<0) return k; }
+  return pool[0][0];
 }
 
 /* =====================================================================

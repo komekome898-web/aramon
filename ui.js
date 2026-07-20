@@ -241,6 +241,269 @@ document.getElementById('bgmVolPlus').addEventListener('click', ()=>nudgeVolume(
 document.getElementById('seVolMinus').addEventListener('click', ()=>nudgeVolume('se', -1));
 document.getElementById('seVolPlus').addEventListener('click', ()=>nudgeVolume('se', +1));
 
+// ===== プレイヤーアカウント(名前+パスコードでログイン・サーバー同期) =====
+const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の認証情報
+const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
+// サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
+// ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1'];
+const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
+
+function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
+function saveAccountCreds(c){ try{ localStorage.setItem(ACCOUNT_CRED_KEY, JSON.stringify(c)); }catch(err){} }
+
+function collectAccountData(){
+  const out = {};
+  for(const k of ACCOUNT_SYNC_KEYS){
+    const v = localStorage.getItem(k);
+    if(v!=null) out[k] = v;
+  }
+  return out;
+}
+function applyAccountData(d){
+  if(!d) return;
+  for(const k of ACCOUNT_SYNC_KEYS){
+    if(d[k]!=null){ try{ localStorage.setItem(k, d[k]); }catch(err){} }
+  }
+  const savedName = localStorage.getItem('aramon_player_name_v1');
+  if(savedName!=null) document.getElementById('playerNameInput').value = savedName;
+  renderSelectorCards();
+  updateAccountBar();
+}
+// ローカルデータが更新された時に呼ばれる。ログイン中ならデバウンスしてサーバーへ送信
+function accountMarkDirty(){
+  try{ localStorage.setItem(ACCOUNT_LOCAL_TS_KEY, String(Date.now())); }catch(err){}
+  updateAccountBar();
+  if(!accountState.loggedIn) return;
+  clearTimeout(accountState.syncTimer);
+  accountState.syncTimer = setTimeout(accountSyncNow, 3000);
+}
+async function accountSyncNow(){
+  if(!accountState.loggedIn || !window.__aramonUpdateAccountData) return;
+  try{ await window.__aramonUpdateAccountData(accountState.key, collectAccountData()); }catch(err){}
+}
+function updateAccountBar(){
+  const w = loadWallet();
+  document.getElementById('walletGold').textContent = `🪙 ${w.gold}`;
+  document.getElementById('walletDia').textContent = `💎 ${w.dia}`;
+  const btn = document.getElementById('accountLoginBtn');
+  if(accountState.loggedIn){
+    btn.textContent = `👤 ${accountState.name}`;
+    btn.classList.add('logged-in');
+  } else {
+    btn.textContent = '👤 ログイン';
+    btn.classList.remove('logged-in');
+  }
+}
+function accountShowMsg(text, ok){
+  const el = document.getElementById('accountMsg');
+  el.textContent = text;
+  el.classList.toggle('ok', !!ok);
+  el.classList.remove('hidden');
+}
+document.getElementById('accountLoginBtn').addEventListener('click', ()=>{
+  document.getElementById('accountNameInput').value = accountState.name || document.getElementById('playerNameInput').value.trim();
+  document.getElementById('accountPassInput').value = '';
+  document.getElementById('accountMsg').classList.add('hidden');
+  document.getElementById('accountLogoutBtn').classList.toggle('hidden', !accountState.loggedIn);
+  document.getElementById('accountOverlay').classList.remove('hidden');
+});
+document.getElementById('accountCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('accountOverlay').classList.add('hidden');
+});
+document.getElementById('accountLogoutBtn').addEventListener('click', ()=>{
+  accountState.loggedIn = false; accountState.name = null; accountState.key = null; accountState.pass = null;
+  try{ localStorage.removeItem(ACCOUNT_CRED_KEY); }catch(err){}
+  document.getElementById('accountOverlay').classList.add('hidden');
+  updateAccountBar();
+  pushToast('ログアウトしました');
+});
+document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('accountNameInput').value.trim();
+  const pass = document.getElementById('accountPassInput').value.trim();
+  if(!name){ accountShowMsg('プレイヤー名を入力してください'); return; }
+  if(!/^\d{4}$/.test(pass)){ accountShowMsg('パスコードは4桁の数字で入力してください'); return; }
+  if(!window.__aramonGetAccount){ accountShowMsg('通信の準備中です。少し待ってからもう一度お試しください'); return; }
+  const key = window.__aramonAccountKey(name);
+  accountShowMsg('確認中…', true);
+  try{
+    const acc = await window.__aramonGetAccount(key);
+    if(!acc){
+      // 新規作成: 現在のローカルデータをサーバーに保存
+      // 名前入力欄もアカウント名に合わせておく(ランキング表示名と一致させる)
+      document.getElementById('playerNameInput').value = name;
+      try{ localStorage.setItem('aramon_player_name_v1', name); }catch(err){}
+      await window.__aramonSetAccount(key, {
+        name, pass, createdAt: Date.now(), updatedAt: Date.now(), data: collectAccountData(),
+      });
+      accountState.loggedIn = true; accountState.name = name; accountState.key = key; accountState.pass = pass;
+      saveAccountCreds({ name, key, pass });
+      updateAccountBar();
+      accountShowMsg('アカウントを作成しました！今後は自動でログインします', true);
+      pushToast(`ようこそ、${name}！`);
+    } else if(String(acc.pass) === pass){
+      // ログイン: サーバーのデータを取り込む
+      accountState.loggedIn = true; accountState.name = acc.name; accountState.key = key; accountState.pass = pass;
+      saveAccountCreds({ name: acc.name, key, pass });
+      applyAccountData(acc.data);
+      accountShowMsg('ログインしました！', true);
+      pushToast(`おかえりなさい、${acc.name}！`);
+    } else {
+      // 名前の重複検知: 別人のアカウントが存在する
+      accountShowMsg('この名前は既に使われています。別の名前に変えるか、心当たりがあれば正しいパスコードを入力してください');
+    }
+  }catch(err){
+    accountShowMsg('通信に失敗しました。電波の良いところでもう一度お試しください');
+  }
+});
+// 自動ログイン: 保存済みの認証情報でサーバーと同期(Firebase読み込み完了までリトライ)
+(function accountAutoLogin(){
+  const creds = loadAccountCreds();
+  if(!creds || !creds.key) return;
+  let tries = 0;
+  const attempt = async ()=>{
+    if(!window.__aramonGetAccount){
+      if(++tries < 40) setTimeout(attempt, 500);
+      return;
+    }
+    try{
+      const acc = await window.__aramonGetAccount(creds.key);
+      if(acc && String(acc.pass) === String(creds.pass)){
+        accountState.loggedIn = true; accountState.name = acc.name; accountState.key = creds.key; accountState.pass = creds.pass;
+        const localTs = +(localStorage.getItem(ACCOUNT_LOCAL_TS_KEY)||0);
+        if((acc.updatedAt||0) >= localTs){
+          applyAccountData(acc.data); // サーバーの方が新しい→取り込む
+        } else {
+          accountMarkDirty(); // ローカルの方が新しい(オフラインでプレイ等)→サーバーへ送る
+        }
+        updateAccountBar();
+      }
+    }catch(err){}
+  };
+  attempt();
+})();
+
+// ===== バッグ =====
+document.getElementById('openBagBtn').addEventListener('click', ()=>{
+  renderBag();
+  document.getElementById('bagTargetWrap').classList.add('hidden');
+  document.getElementById('bagOverlay').classList.remove('hidden');
+});
+document.getElementById('closeBagBtn').addEventListener('click', ()=>{
+  document.getElementById('bagOverlay').classList.add('hidden');
+});
+document.getElementById('bagTargetCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('bagTargetWrap').classList.add('hidden');
+});
+function renderBag(){
+  const bag = loadBag();
+  const listEl = document.getElementById('bagList');
+  const keys = Object.keys(PLAYER_ITEMS).filter(k=>bag[k]>0);
+  if(keys.length===0){
+    listEl.innerHTML = '<div class="bag-empty">アイテムはありません。ガチャで手に入れよう！</div>';
+    return;
+  }
+  listEl.innerHTML = keys.map(k=>{
+    const it = PLAYER_ITEMS[k];
+    return `
+    <div class="bag-item">
+      <span class="bag-item-icon">${it.icon}</span>
+      <span class="bag-item-text">
+        <span class="bag-item-name">${it.name} ×${bag[k]}</span>
+        <span class="bag-item-desc">${playerItemDesc(k)}</span>
+      </span>
+      <button class="bag-use-btn" data-key="${k}">使う</button>
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('.bag-use-btn').forEach(b=>{
+    b.addEventListener('click', ()=>openBagTargetPicker(b.dataset.key));
+  });
+}
+function openBagTargetPicker(itemKey){
+  const data = loadMastermons();
+  const keys = Object.keys(data);
+  if(keys.length===0){ pushToast('マスモンがいません。先にマスモン登録しよう！'); return; }
+  const wrap = document.getElementById('bagTargetWrap');
+  const pick = document.getElementById('bagTargetList');
+  wrap.classList.remove('hidden');
+  pick.innerHTML = keys.map(k=>
+    `<button class="bag-target-btn" data-key="${k}">${data[k].name}(${ELEMENTS[k].label}) Lv.${data[k].level}</button>`
+  ).join('');
+  pick.querySelectorAll('.bag-target-btn').forEach(b=>{
+    b.addEventListener('click', ()=>useBagItem(itemKey, b.dataset.key));
+  });
+}
+function useBagItem(itemKey, mmKey){
+  const bag = loadBag();
+  if(!(bag[itemKey]>0)) return;
+  const data = loadMastermons();
+  const mm = data[mmKey];
+  const it = PLAYER_ITEMS[itemKey];
+  if(!mm || !it) return;
+  let resultText;
+  if(it.stat){
+    const before = mm.stats[it.stat];
+    mm.stats[it.stat] = mastermonClampStat(before + STAT_SEED_GAIN);
+    const gained = mm.stats[it.stat] - before;
+    resultText = `${mm.name}の${MASTERMON_STATS.find(s=>s.key===it.stat).label}+${gained}`;
+    if(gained<=0) resultText = `${mm.name}のステータスは上限です(アイテムは消費されました)`;
+  } else if(itemKey==='freeTrainTicket'){
+    mm.tickets = (mm.tickets||0) + 1;
+    resultText = `${mm.name}のトレーニングチケット+1(🎫${mm.tickets}枚)`;
+  } else if(itemKey==='moveTicket'){
+    mm.nextMoveBoost = (mm.nextMoveBoost||0) + 1;
+    resultText = `${mm.name}は次の試合を技tier2解放で開始！(${mm.nextMoveBoost}回分)`;
+  }
+  bag[itemKey]--;
+  if(bag[itemKey]<=0) delete bag[itemKey];
+  saveBag(bag);
+  saveMastermons(data);
+  playSe('train');
+  pushToast(resultText);
+  document.getElementById('bagTargetWrap').classList.add('hidden');
+  renderBag();
+  renderSelectorCards();
+}
+
+// ===== ガチャ =====
+function updateGachaWallet(){
+  const w = loadWallet();
+  document.getElementById('gachaGold').textContent = `🪙 ${w.gold}`;
+  document.getElementById('gachaDia').textContent = `💎 ${w.dia}`;
+}
+document.getElementById('openGachaBtn').addEventListener('click', ()=>{
+  updateGachaWallet();
+  document.getElementById('gachaResult').innerHTML = 'ガチャを回してアイテムを手に入れよう！';
+  document.getElementById('gachaOverlay').classList.remove('hidden');
+});
+document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
+  document.getElementById('gachaOverlay').classList.add('hidden');
+});
+function doGacha(kind){
+  const w = loadWallet();
+  if(kind==='normal'){
+    if(w.gold < GACHA_NORMAL_COST_GOLD){ pushToast('ゴールドが足りません'); return; }
+    w.gold -= GACHA_NORMAL_COST_GOLD;
+  } else {
+    if(w.dia < GACHA_PREMIUM_COST_DIA){ pushToast('ダイヤが足りません'); return; }
+    w.dia -= GACHA_PREMIUM_COST_DIA;
+  }
+  saveWallet(w);
+  const itemKey = gachaRoll(kind==='normal' ? GACHA_NORMAL_POOL : GACHA_PREMIUM_POOL);
+  addBagItem(itemKey, 1);
+  const it = PLAYER_ITEMS[itemKey];
+  document.getElementById('gachaResult').innerHTML = `
+    <span class="gacha-result-icon">${it.icon}</span>
+    <div>${it.name} を手に入れた！</div>
+    <div class="gacha-result-desc">${playerItemDesc(itemKey)}</div>`;
+  playSe('train');
+  updateGachaWallet();
+  updateAccountBar();
+}
+document.getElementById('gachaNormalBtn').addEventListener('click', ()=>doGacha('normal'));
+document.getElementById('gachaPremiumBtn').addEventListener('click', ()=>doGacha('premium'));
+updateAccountBar();
+
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
@@ -259,6 +522,7 @@ const PLAYER_NAME_KEY = 'aramon_player_name_v1';
 })();
 document.getElementById('playerNameInput').addEventListener('input', (e)=>{
   try{ localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }catch(err){}
+  accountMarkDirty();
 });
 
 const INVERT_PITCH_KEY = 'aramon_invert_pitch_v1';
@@ -736,6 +1000,15 @@ function showResult(isWin, placement){
   document.getElementById('statKills').textContent = player.kills;
   document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
+  // ゴールド/ダイヤ報酬(経験値と一緒に入手。game.overガードにより1試合1回だけ)
+  {
+    const isMultiMatch = netState.mode==='multi';
+    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1));
+    const diaGain = DIA_MATCH_BASE + (isWin?DIA_CHAMPION_BONUS:0);
+    addWallet(goldGain, diaGain);
+    document.getElementById('resultCurrencyLine').textContent = `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
+    updateAccountBar();
+  }
   const iconEl = document.getElementById('resultMonsterIcon');
   if(iconEl){
     const el = ELEMENTS[player.element];
@@ -807,6 +1080,7 @@ function loadLocalStats(){
 }
 function saveLocalStats(stats){
   try{ localStorage.setItem(LOCAL_STATS_KEY, JSON.stringify(stats)); }catch(err){}
+  accountMarkDirty();
 }
 function recordMatchResult(elementKey, kills, damage, isWin, mode){
   let stats = loadLocalStats();
@@ -1315,6 +1589,14 @@ function applyMastermonToPlayer(){
   const data = loadMastermons();
   const mm = data[game.selectedMastermonKey];
   applyMastermonStatsToEntity(player, mm);
+  // 技強化チケット: ストックがあれば1つ消費して技tier2解放でスタート
+  if(mm && mm.nextMoveBoost > 0){
+    player.moveTierUnlocked = Math.max(player.moveTierUnlocked||1, 2);
+    player.moveTierSelected = 2;
+    mm.nextMoveBoost--;
+    saveMastermons(data);
+    pushToast('⚔️ 技強化チケット発動！技tier2解放でスタート');
+  }
 }
 
 // 試合終了後：マスモン使用時はEXP付与、未登録の種族でチャンピオンを取った場合は登録を促す
