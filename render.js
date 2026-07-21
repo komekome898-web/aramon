@@ -2246,7 +2246,9 @@ function updateHUD(){
   }
   document.getElementById('moveIcon').innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${mv.color}"/></svg>`;
 
-  document.getElementById('tipBox').style.opacity = game.tipTimer>0 ? '1':'0';
+  // 召喚演出中は操作説明を出さない(演出に被って勿体無いため)。
+  // 演出中はupdate()が回らずtipTimerが減らないので、演出後にフル秒数だけ表示される。
+  document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0) ? '1':'0';
 
   const fireMax = effectiveCooldown(player, mv);
   const fireProgress = fireMax>0 ? clamp(1 - player.fireCooldown/fireMax, 0, 1) : 1;
