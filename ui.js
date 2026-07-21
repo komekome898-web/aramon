@@ -360,6 +360,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       updateAccountBar();
       accountShowMsg('アカウントを作成しました！今後は自動でログインします', true);
       pushToast(`ようこそ、${name}！`);
+      promoOryouResetIfNeeded(name);
       maybeShowSkinGachaPromo();
     } else if(String(acc.pass) === pass){
       // ログイン: サーバーのデータを取り込む
@@ -370,6 +371,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       updateAccountBar();
       accountShowMsg('ログインしました！', true);
       pushToast(`おかえりなさい、${acc.name}！`);
+      promoOryouResetIfNeeded(acc.name);
       maybeShowSkinGachaPromo();
     } else {
       // 名前の重複検知: 別人のアカウントが存在する
@@ -408,6 +410,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
         }
         applyAccountNameAsDisplayName(acc.name);
         updateAccountBar();
+        promoOryouResetIfNeeded(acc.name);
         maybeShowSkinGachaPromo();   // ログイン中アカウントに記念ダイヤ+ポップアップ(一度だけ)
       } else if(acc && String(acc.pass) !== String(creds.pass)){
         // パスコードが変更された等でサーバーと不一致→ログイン解除
@@ -610,8 +613,27 @@ function incrementGachaCount(n){
 }
 // ===== スキンガチャ実装記念ポップアップ =====
 // このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
-const SKIN_PROMO_KEY = 'aramon_promo_skingacha_v1';
+const SKIN_PROMO_KEY = 'aramon_promo_skingacha_v1';       // 受け取り済み(アカウント同期)
+const SKIN_PROMO_PENDING_KEY = 'aramon_promo_pending_v1'; // 未確認=表示中(端末ローカル。SW自動リロードをまたいで残す)
 const SKIN_PROMO_DIA = 500;
+function showSkinPromoPopup(){
+  const el = document.getElementById('skinPromoOverlay');
+  if(el) el.classList.remove('hidden');
+}
+function dismissSkinPromoPopup(){
+  try{ localStorage.removeItem(SKIN_PROMO_PENDING_KEY); }catch(e){}
+  const el = document.getElementById('skinPromoOverlay');
+  if(el) el.classList.add('hidden');
+}
+// 確認用: おりょうのアカウントは端末ごとに一度だけ記念フラグをリセットして再表示させる
+function promoOryouResetIfNeeded(name){
+  if(name !== 'おりょう') return;
+  if(localStorage.getItem('aramon_promo_oryou_reset_v1')==='1') return;
+  try{
+    localStorage.setItem('aramon_promo_oryou_reset_v1','1');
+    localStorage.removeItem(SKIN_PROMO_KEY); // 受け取り済みフラグを消す→再び付与+表示される
+  }catch(e){}
+}
 function openGachaScreen(){
   updateGachaWallet();
   document.getElementById('gachaSingleCost').textContent = `💎 ${GACHA_COST_DIA_SINGLE}`;
@@ -628,19 +650,22 @@ function maybeShowSkinGachaPromo(){
   if(!accountState.loggedIn) return;                       // ログイン中のアカウントのみ
   if(localStorage.getItem(SKIN_PROMO_KEY)==='1') return;    // 既に受け取り済みなら出さない
   try{ localStorage.setItem(SKIN_PROMO_KEY,'1'); }catch(e){}
+  try{ localStorage.setItem(SKIN_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
   addWallet(0, SKIN_PROMO_DIA);                             // ダイヤ500個付与(saveWalletがsync予約)
   accountMarkDirty();                                       // フラグもサーバーへ同期
   updateAccountBar();
-  document.getElementById('skinPromoOverlay').classList.remove('hidden');
+  showSkinPromoPopup();
   pushToast(`スキンガチャ実装記念！ 💎+${SKIN_PROMO_DIA}`);
 }
 document.getElementById('skinPromoCloseBtn').addEventListener('click', ()=>{
-  document.getElementById('skinPromoOverlay').classList.add('hidden');
+  dismissSkinPromoPopup();
 });
 document.getElementById('skinPromoGachaBtn').addEventListener('click', ()=>{
-  document.getElementById('skinPromoOverlay').classList.add('hidden');
+  dismissSkinPromoPopup();
   openGachaScreen();
 });
+// SW自動リロード等で消えても、未確認(保留中)なら起動時に再表示する
+if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
 
 document.getElementById('openGachaBtn').addEventListener('click', openGachaScreen);
 document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
