@@ -126,10 +126,19 @@
     box-shadow:0 0 18px -2px rgba(244,196,48,0.55);
   }
   #accountLoginBtn.logged-in{ color:var(--amber); border-color:rgba(244,196,48,0.45); background:rgba(244,196,48,0.08); }
-  .wallet-chip{
-    font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink);
-    background:rgba(0,0,0,0.35); border:1px solid var(--panel-line); border-radius:20px; padding:7px 12px;
+  /* トップ画面の細いヘッダー(アカウント名・ゴールド・ダイヤ) */
+  #topHeader{
+    position:absolute; top:0; left:0; right:0; height:30px; z-index:6;
+    display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 14px;
+    background:linear-gradient(180deg, rgba(6,9,17,0.96), rgba(6,9,17,0.82));
+    border-bottom:1px solid var(--panel-line);
   }
+  #headerAccountName{
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--amber);
+    letter-spacing:0.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%;
+  }
+  #topHeader .header-wallet{ display:flex; gap:12px; flex-shrink:0; }
+  #topHeader .header-wallet span{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink); }
   .account-box{ max-width:min(480px, calc(92 * var(--vw))); }
   .account-note{ font-size:11px; color:var(--ink-dim); line-height:1.6; margin-bottom:10px; text-align:left; }
   .account-box input{

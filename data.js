@@ -587,7 +587,7 @@ const DIA_MATCH_BASE = 1;        // 参加報酬
 const DIA_CHAMPION_BONUS = 2;    // チャンピオンボーナス
 
 // プレイヤーアイテム(主にマスモンに使う)
-const STAT_SEED_GAIN = 2; // 「実」1個で上がるステータス量
+const STAT_SEED_GAIN = 5; // 「実」1個で上がるステータス量
 const PLAYER_ITEMS = {
   seed_life:      { name:'ライフの実',   icon:'🍎', stat:'life' },
   seed_power:     { name:'ちからの実',   icon:'💪', stat:'power' },
@@ -610,11 +610,13 @@ function playerItemDesc(key){
 
 // ガチャ(ダイヤ専用): [アイテムキー, 重み] のリストから重み付き抽選
 const GACHA_COST_DIA_SINGLE = 5;  // 単発ガチャ
-const GACHA_COST_DIA_TEN = 45;    // 10連ガチャ(単発1回分お得)
+const GACHA_COST_DIA_TEN = 50;    // 10連ガチャ
 const GACHA_POOL = [
   ['seed_life',10],['seed_power',10],['seed_wisdom',10],['seed_accuracy',10],['seed_evasion',10],['seed_vitality',10],
   ['freeTrainTicket',25],['moveTicket',15],
 ];
+// 10連の最後の1枠はチケット類確定(この中から抽選)
+const GACHA_TICKET_POOL = [ ['freeTrainTicket',60],['moveTicket',40] ];
 function gachaRoll(pool){
   const total = pool.reduce((s,p)=>s+p[1],0);
   let r = Math.random()*total;

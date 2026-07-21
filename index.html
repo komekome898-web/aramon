@@ -26,6 +26,10 @@
 
 <!-- START SCREEN -->
 <div id="startScreen">
+ <div id="topHeader">
+   <span id="headerAccountName">ゲスト</span>
+   <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
+ </div>
  <div id="startScreenInner">
   <div class="title-block">
     <h1 class="title-main">荒野<span>モン動</span><span id="versionTag"></span></h1>
@@ -37,8 +41,6 @@
   <button id="audioSettingsBtn">🔊 音量設定</button>
   <div id="accountBar">
     <button id="accountLoginBtn">👤 ログイン</button>
-    <span class="wallet-chip" id="walletGold">🪙 0</span>
-    <span class="wallet-chip" id="walletDia">💎 0</span>
     <button id="openBagBtn">🎒 バッグ</button>
     <button id="openShopBtn">🛒 ショップ</button>
     <button id="openGachaBtn">🎰 ガチャ</button>
@@ -134,27 +136,27 @@
       <div class="guide-section-body">
         <div class="guide-shot-wrap">
           <img src="guide/hud-guide.png" alt="バトル画面の操作説明のスクリーンショット">
-          <div class="guide-badge" style="left:11%; top:20%;">1</div>
+          <div class="guide-badge" style="left:13%; top:15%;">1</div>
           <div class="guide-badge" style="left:50%; top:8%;">2</div>
-          <div class="guide-badge" style="left:94%; top:15%;">3</div>
-          <div class="guide-badge" style="left:85%; top:50%;">4</div>
-          <div class="guide-badge" style="left:13%; top:79%;">5</div>
-          <div class="guide-badge" style="left:50%; top:83%;">6</div>
-          <div class="guide-badge" style="left:78%; top:81%;">7</div>
-          <div class="guide-badge" style="left:90%; top:84%;">8</div>
+          <div class="guide-badge" style="left:79%; top:12%;">3</div>
+          <div class="guide-badge" style="left:93%; top:19%;">4</div>
+          <div class="guide-badge" style="left:91%; top:51%;">5</div>
+          <div class="guide-badge" style="left:10%; top:82%;">6</div>
+          <div class="guide-badge" style="left:50%; top:86%;">7</div>
+          <div class="guide-badge" style="left:88%; top:85%;">8</div>
         </div>
         <div class="guide-legend">
-          <div class="guide-legend-item"><span class="guide-legend-num">1</span><span><b>ミニマップ</b>：自分と周囲のモンスター、安全圏の位置を表示</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">1</span><span><b>プレイヤー情報</b>：自分のHP・ガッツ・状態変化、トレーニングアイテムのバフを表示(左上)</span></div>
           <div class="guide-legend-item"><span class="guide-legend-num">2</span><span><b>撃破数／与ダメージ</b>：この試合での成績</span></div>
           <div class="guide-legend-item"><span class="guide-legend-num">3</span><span><b>生存数・安全圏カウントダウン・経過時間</b></span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">4</span><span><b>キルフィード</b>：他のモンスターの撃破ログ</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">5</span><span><b>HP／ガッツ／状態異常</b>：自分の体力とガッツ残量、やけど等の状態</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">6</span><span><b>技パネル</b>：タップで使用する技の段階(tier)を切替</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">7</span><span><b>DASHボタン</b>：短距離回避(Spaceキーでも可)</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">8</span><span><b>FIREボタン</b>：攻撃(長押しで連射、Fキーでも可)</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">4</span><span><b>ミニマップ</b>：自分と周囲のモンスター、安全圏(点線=次の縮小先)を表示(右上)</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">5</span><span><b>視点回転ボタン ◀▶</b>：視点を左右に90度スナップ回転(右手で両方向を操作できる配置)</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">6</span><span><b>移動スティック</b>：ドラッグで移動(WASDキーでも可)</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">7</span><span><b>技パネル</b>：タップで使用する技の段階(tier)を切替</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">8</span><span><b>DASH／FIRE</b>：DASHで回避(Space)、FIREで攻撃(長押しで連射・Fキーでも可)</span></div>
         </div>
       </div>
-      <div class="guide-extra-note">この他、画面左下のスティック(またはWASD)で移動、画面をドラッグすると視点が回転します。画面端の◀▶ボタンで視点を90度スナップ回転できます。</div>
+      <div class="guide-extra-note">画面をドラッグすると視点が回転します。敵をタップすると視点をその相手に合わせます。安全圏(安置)の外にいると徐々にダメージを受けます。</div>
     </div>
 
     <div class="howto-section guide-section">
@@ -162,18 +164,22 @@
       <div class="guide-section-body">
         <div class="guide-shot-wrap">
           <img src="guide/result-guide.png" alt="試合結果画面のスクリーンショット">
-          <div class="guide-badge" style="left:50%; top:17%;">1</div>
-          <div class="guide-badge" style="left:33%; top:52%;">2</div>
-          <div class="guide-badge" style="left:25%; top:89%;">3</div>
-          <div class="guide-badge" style="left:52%; top:89%;">4</div>
-          <div class="guide-badge" style="left:78%; top:89%;">5</div>
+          <div class="guide-badge" style="left:50%; top:26%;">1</div>
+          <div class="guide-badge" style="left:52%; top:45%;">2</div>
+          <div class="guide-badge" style="left:58%; top:59%;">3</div>
+          <div class="guide-badge" style="left:23%; top:75%;">4</div>
+          <div class="guide-badge" style="left:41%; top:75%;">5</div>
+          <div class="guide-badge" style="left:59%; top:75%;">6</div>
+          <div class="guide-badge" style="left:77%; top:75%;">7</div>
         </div>
         <div class="guide-legend">
           <div class="guide-legend-item"><span class="guide-legend-num">1</span><span><b>順位／勝敗</b>：生き残るほど良い順位。1位ならWINNER表示</span></div>
           <div class="guide-legend-item"><span class="guide-legend-num">2</span><span><b>撃破数・与ダメージ・生存時間</b>：この試合の成績。ランキングに自動送信されます</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">3</span><span><b>ランキングを見る</b>：世界中のプレイヤーとの順位を確認</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">4</span><span><b>マイ記録</b>：自分の通算成績・モンスター別記録を確認</span></div>
-          <div class="guide-legend-item"><span class="guide-legend-num">5</span><span><b>もう一度プレイ</b>：タイトルに戻って再挑戦</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">3</span><span><b>報酬</b>：ゴールドとダイヤを獲得(マスモン使用時は経験値も)。ゴールドはショップ、ダイヤはガチャに使えます</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">4</span><span><b>ランキング</b>：世界中のプレイヤーとの順位を確認</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">5</span><span><b>マイ記録</b>：自分の通算成績・モンスター別記録を確認</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">6</span><span><b>マスモン</b>：育成したマスモンの確認・トレーニング</span></div>
+          <div class="guide-legend-item"><span class="guide-legend-num">7</span><span><b>トップ画面へ</b>：タイトルに戻って再挑戦</span></div>
         </div>
       </div>
     </div>
@@ -506,13 +512,13 @@
 <div id="gachaOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box gacha-box">
     <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎰 アイテムガチャ</div>
-    <div class="gacha-wallet"><span id="gachaGold">🪙 0</span><span id="gachaDia">💎 0</span></div>
+    <div class="gacha-wallet"><span id="gachaDia">💎 0</span></div>
     <div id="gachaResult" class="gacha-result"></div>
     <div class="gacha-btn-row">
       <button id="gachaSingleBtn" class="gacha-btn premium">単発ガチャ<br><span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
-      <button id="gachaTenBtn" class="gacha-btn premium">10連ガチャ<br><span class="gacha-cost" id="gachaTenCost">💎 45</span></button>
+      <button id="gachaTenBtn" class="gacha-btn premium">10連ガチャ<br><span class="gacha-cost" id="gachaTenCost">💎 50</span></button>
     </div>
-    <div class="gacha-note">10連は単発1回分お得！</div>
+    <div class="gacha-note">10連は10個目にチケット類が確定で出る！</div>
     <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
       <button id="closeGachaBtn">閉じる</button>
     </div>
