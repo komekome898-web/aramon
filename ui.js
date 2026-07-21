@@ -700,11 +700,24 @@ function gachaAnimFrame(now){
   const elapsed = (now - gachaAnim.t0)/1000;
   const topR = gachaAnim.results.length ? gachaAnim.results.reduce((a,r)=>RARITY_RANK[r.rarity]>RARITY_RANK[a]?r.rarity:a,'N') : 'N';
   const drawDisk = (ang, glow, glowColor)=>{
+    const dw = diskR*2, dh = diskR*1.24, thick = diskR*0.42; // 見かけの楕円サイズ + 厚み
     g.save(); g.translate(cx,cy);
+    // --- 側面(厚み): 上面楕円の前縁と、下へthick下げた楕円の前縁を結ぶ帯 ---
+    g.save(); g.shadowBlur=0;
+    const sideGrad = g.createLinearGradient(0, -dh*0.2, 0, dh*0.5+thick);
+    sideGrad.addColorStop(0, '#8a5e37'); sideGrad.addColorStop(0.5, '#5e3c22'); sideGrad.addColorStop(1, '#361f10');
+    g.fillStyle = sideGrad;
+    g.beginPath();
+    g.ellipse(0, 0, dw/2, dh/2, 0, 0, Math.PI, false);        // 上面楕円の下半分(右→下→左)
+    g.lineTo(-dw/2, thick);
+    g.ellipse(0, thick, dw/2, dh/2, 0, Math.PI, 0, true);     // 下面楕円の下半分(左→下→右)
+    g.closePath(); g.fill();
+    g.restore();
+    // --- 上面(回転する画像) ---
     if(glow>0){ g.shadowBlur=40*glow; g.shadowColor=glowColor||'#fff'; }
     g.rotate(ang);
-    if(imgIsReady(summonDiskImg)) g.drawImage(summonDiskImg, -diskR, -diskR*0.62, diskR*2, diskR*1.24);
-    else { g.beginPath(); g.arc(0,0,diskR,0,Math.PI*2); g.fillStyle='#c98d5a'; g.fill(); }
+    if(imgIsReady(summonDiskImg)) g.drawImage(summonDiskImg, -dw/2, -dh/2, dw, dh);
+    else { g.beginPath(); g.ellipse(0,0,dw/2,dh/2,0,0,Math.PI*2); g.fillStyle='#c98d5a'; g.fill(); }
     g.restore();
   };
   if(gachaAnim.phase==='idle'){
@@ -726,11 +739,11 @@ function gachaAnimFrame(now){
     g.fillText('回せ！', cx, cy - diskR*1.9);
     g.restore();
   } else if(gachaAnim.phase==='spin'){
-    // 加速回転しながらレアリティ色に光る
-    const p = Math.min(1, elapsed/1.2);
-    const ang = (elapsed*elapsed)*10;
+    // 加速回転しながらレアリティ色に光る(回転時間は従来の倍)
+    const p = Math.min(1, elapsed/2.4);
+    const ang = (elapsed*elapsed)*7;
     drawDisk(ang, 0.5+p, rarityCssColor(topR, now));
-    if(elapsed>=1.2){ buildGachaOrbs(w,h,cx,cy,diskR); gachaAnimStart('rain'); }
+    if(elapsed>=2.4){ buildGachaOrbs(w,h,cx,cy,diskR); gachaAnimStart('rain'); }
   } else if(gachaAnim.phase==='rain'){
     // 各レアリティ色の光の柱を1本ずつ順番に落とし、消えると球体が残る
     const n = gachaAnim.orbs.length;
@@ -771,14 +784,22 @@ function gachaAnimFrame(now){
 function buildGachaOrbs(w,h,cx,cy,diskR){
   const n = gachaAnim.count;
   gachaAnim.orbs = [];
-  const r = Math.min(w,h)* (n>1?0.05:0.11);
   if(n===1){
-    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.15, r, rarity:gachaAnim.results[0].rarity, seed:0 });
+    const r = Math.min(w,h)*0.14;
+    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.1, r, rarity:gachaAnim.results[0].rarity, seed:0 });
   } else {
-    const cols=5, gapX=Math.min(w*0.15, r*3), gapY=r*2.8;
+    // 10連は画面の横幅いっぱいを使い、玉体も大きくする(5列×2行)
+    const cols = 5;
+    const marginX = w*0.05;
+    const cellW = (w - marginX*2) / cols;
+    const r = Math.min(cellW*0.44, h*0.15);   // セル幅と高さから大きめの半径を決める
+    const rowGap = r*2.3;
+    const rows = Math.ceil(n/cols);
+    const gridH = (rows-1)*rowGap;
+    const y0 = cy - diskR*0.15 - gridH*0.35;
     for(let i=0;i<n;i++){
       const col=i%cols, rowi=Math.floor(i/cols);
-      gachaAnim.orbs.push({ x: cx + (col-(cols-1)/2)*gapX, y: cy - diskR*0.35 + rowi*gapY, r, rarity:gachaAnim.results[i].rarity, seed:i });
+      gachaAnim.orbs.push({ x: marginX + cellW*(col+0.5), y: y0 + rowi*rowGap, r, rarity:gachaAnim.results[i].rarity, seed:i });
     }
   }
 }
@@ -809,7 +830,7 @@ function doGacha(count){
   document.getElementById('gachaButtons').style.visibility='hidden';
   document.getElementById('gachaResult').classList.add('hidden');
   playSe('chupiin');
-  setTimeout(()=>playSe('shuwaa'), 1200);
+  setTimeout(()=>playSe('shuwaa'), 2400); // 円盤石の回転(2.4秒)後、光の柱が降り始めるタイミング
   gachaAnim.onReveal = ()=> showGachaResults(results, granted);
   gachaAnimStart('spin');
 }
