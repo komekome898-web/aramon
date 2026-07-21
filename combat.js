@@ -884,23 +884,40 @@ function updateLootPickups(){
    ・視点操作のみ許可(移動・攻撃はupdate()を呼ばないことで自然に封じる)
    ・matchTimeを進めないので状態変化クールタイム/ゾーン/試合時間は演出後に開始
 ===================================================================== */
+// 演出タイムライン(elapsed秒):
+//  0.0-0.7  円盤石が現れる
+//  0.45-1.25 天から光の柱が円盤石へ落ちる(SE: チュピーン)
+//  1.25     着地。光が円盤石の周りを満たしモンスターは光に隠れる
+//  1.6-4.4  光が周りから中心へ収束して細くなり、モンスターが現れる(SE: シュワァー)
+const SUMMON_CHUPIIN_AT = 0.45;
+const SUMMON_IMPACT_AT  = 1.25;
+const SUMMON_SHUWAA_AT   = 1.6;
 function beginSummonIntro(){
   introState.active = true;
   introState.timer = SUMMON_INTRO_DURATION;
   introState.duration = SUMMON_INTRO_DURATION;
+  introState.chupiinPlayed = false;
   introState.shuwaaPlayed = false;
+  introState.impactDone = false;
   camSnap.active = false;
   updateCamera();
   updateHUD();
   bgmSetTrack(null);      // 演出中はBGMを止めて神々しさを際立たせる
-  playSe('kyupiin');      // 光が差す「キュピーン」
 }
 function updateSummonIntro(dt){
   introState.timer -= dt;
   const elapsed = introState.duration - introState.timer;
-  if(!introState.shuwaaPlayed && elapsed >= 1.1){
+  if(!introState.chupiinPlayed && elapsed >= SUMMON_CHUPIIN_AT){
+    introState.chupiinPlayed = true;
+    playSe('chupiin');    // 光の柱が落ちる「チュピーン」
+  }
+  if(!introState.impactDone && elapsed >= SUMMON_IMPACT_AT){
+    introState.impactDone = true;
+    summonImpactBurst();  // 着地の光の弾け
+  }
+  if(!introState.shuwaaPlayed && elapsed >= SUMMON_SHUWAA_AT){
     introState.shuwaaPlayed = true;
-    playSe('shuwaa');     // 光が広がる「シュワァー」
+    playSe('shuwaa');     // 光が細くなっていく「シュワァー」
   }
   updateCameraSnap(dt);
   updateCamera();
@@ -908,17 +925,29 @@ function updateSummonIntro(dt){
   for(let i=particles.length-1;i>=0;i--){
     const p = particles[i];
     p.x += p.vx*dt; p.y += p.vy*dt; p.z = (p.z||0) + (p.vz||0)*dt;
+    if(p.vz!=null) p.vz -= 40*dt; // ゆるやかに落ちる
     p.life -= dt;
     if(p.life<=0) particles.splice(i,1);
   }
-  // スポーン地点から虹色のきらめきを立ち上らせる
-  if(player && player.alive && elapsed > 0.5 && Math.random() < 0.7){
-    const a = Math.random()*Math.PI*2, rr = Math.random()*player.radius*2.4;
+  // 収束中は円盤石の縁で柔らかくきらめく
+  if(player && player.alive && elapsed > SUMMON_IMPACT_AT && Math.random() < 0.5){
+    const a = Math.random()*Math.PI*2, rr = player.radius*(1.4+Math.random()*1.0);
     addParticle({ type:'spark', x:player.x+Math.cos(a)*rr, y:player.y+Math.sin(a)*rr, z:2,
-      vx:0, vy:0, vz:70+Math.random()*110, life:0.7+Math.random()*0.4, maxLife:1.1,
-      color:`hsl(${Math.floor(Math.random()*360)},90%,66%)`, size:2+Math.random()*3 });
+      vx:0, vy:0, vz:40+Math.random()*70, life:0.6+Math.random()*0.4, maxLife:1.0,
+      color:`hsl(${Math.floor(Math.random()*360)},90%,70%)`, size:2+Math.random()*2.5 });
   }
   if(introState.timer <= 0) endSummonIntro();
+}
+// 光の柱が着地した瞬間の四方への弾け
+function summonImpactBurst(){
+  if(!player) return;
+  for(let i=0;i<22;i++){
+    const a = Math.random()*Math.PI*2, sp = 60+Math.random()*180;
+    addParticle({ type:'spark', x:player.x, y:player.y, z:4+Math.random()*10,
+      vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, vz:90+Math.random()*160,
+      life:0.5+Math.random()*0.4, maxLife:0.9,
+      color:`hsl(${Math.floor(Math.random()*360)},92%,72%)`, size:2.5+Math.random()*3 });
+  }
 }
 function endSummonIntro(){
   introState.active = false;

@@ -328,18 +328,14 @@ function drawElementBadge(e){
 }
 function drawMonster(e,p){
   const el = ELEMENTS[e.element];
-  // 召喚演出中: 光の柱の中からせり上がって登場する
-  let introRise = 0;
+  // 召喚演出中: せり上がりはせず、光が収束するにつれてその場で姿を現す
   if(introState.active){
-    const emerge = clamp((introState.duration - introState.timer - 2.2)/1.9, 0, 1);
-    if(emerge <= 0) return; // まだ光の中(未登場)
-    introRise = (1-emerge) * e.radius * 2.4;
+    const reveal = summonRevealAlpha();
+    if(reveal <= 0) return; // まだ光に隠れている
   }
   ctx.save();
-  if(introState.active){
-    ctx.globalAlpha = clamp((introState.duration - introState.timer - 2.2)/1.9, 0, 1);
-  }
-  ctx.translate(p.x, p.y + introRise*p.scale);
+  if(introState.active) ctx.globalAlpha = summonRevealAlpha();
+  ctx.translate(p.x, p.y);
   ctx.scale(p.scale,p.scale);
   ctx.translate(0,-e.radius*0.85);
 
@@ -1819,52 +1815,88 @@ function render(){
     else if(d.kind==='building') drawBuilding(d.obj);
     else drawParticle(d.obj,d.p);
   }
+  if(introState.active) drawSummonIntroFront();
   drawDangerVignette();
   drawZoneCompass();
   if(introState.active) drawSummonCountdown();
   renderMinimap();
 }
-// 召喚演出: スポーン地点の円盤石と、そこから立ち上る虹色の光の柱を描く
-function drawSummonIntro(){
+// 召喚演出の各フェーズ進行度(elapsed秒基準)
+function summonPhases(){
   const elapsed = introState.duration - introState.timer;
-  const diskGrow   = clamp(elapsed/0.8, 0, 1);                 // 円盤石がせり上がる
-  const pillarGrow = clamp((elapsed-0.6)/1.6, 0, 1);           // 光の柱が広がる
-  const pillarFade = 1 - clamp((elapsed-3.6)/1.2, 0, 1);       // 終盤に収束
+  return {
+    elapsed,
+    diskGrow:  clamp(elapsed/0.7, 0, 1),                       // 円盤石が現れる
+    fallProg:  clamp((elapsed-0.45)/0.8, 0, 1),                // 光の柱が天から落ちる
+    landed:    elapsed >= 1.25,
+    narrow:    clamp((elapsed-1.6)/2.8, 0, 1),                 // 周りから中心へ収束
+    endFade:   1 - clamp((elapsed-4.4)/0.6, 0, 1),
+  };
+}
+// モンスターの出現アルファ(光が収束するにつれて姿を現す)
+function summonRevealAlpha(){
+  if(!introState.active) return 1;
+  const elapsed = introState.duration - introState.timer;
+  return clamp((elapsed - 1.5)/2.4, 0, 1);
+}
+// 召喚演出(モンスターの背面): 円盤石・落下する光の柱・虹色のオーラ・足元リング
+function drawSummonIntro(){
+  const ph = summonPhases();
   const t = performance.now()/1000;
   const diskReady = imgIsReady(summonDiskImg);
   for(const e of entities){
     if(!e.alive) continue;
     const pg = project(e.x, e.y, 0);
     if(!pg) continue;
-    if(pg.x<-220||pg.x>viewW+220||pg.y<-220||pg.y>viewH+220) continue;
-    const rWorld = e.radius*3.4;
+    if(pg.x<-240||pg.x>viewW+240||pg.y<-240||pg.y>viewH+240) continue;
+    const topH = e.radius*8;
+    const pTop = project(e.x, e.y, topH);
+    const topY = pTop ? pTop.y : pg.y - topH*pg.scale;
     // --- 円盤石(地面に伏せて平たく描画) ---
-    if(diskReady && diskGrow>0){
-      const dw = rWorld*2*pg.scale*diskGrow;
+    if(diskReady && ph.diskGrow>0){
+      const dw = e.radius*6.8*pg.scale*ph.diskGrow;
       const dh = dw*0.5;
       ctx.save();
-      ctx.globalAlpha = 0.5 + 0.45*diskGrow;
+      ctx.globalAlpha = (0.5 + 0.45*ph.diskGrow) * (0.5 + 0.5*ph.endFade);
       ctx.shadowBlur = 26*pg.scale; ctx.shadowColor = 'rgba(255,222,150,0.9)';
       ctx.drawImage(summonDiskImg, pg.x-dw/2, pg.y-dh/2, dw, dh);
       ctx.restore();
     }
-    // --- 虹色の光の柱 ---
-    if(pillarGrow>0 && pillarFade>0){
-      const topH = e.radius*7.5;
-      const pTop = project(e.x, e.y, topH);
-      const topY = pTop ? pTop.y : pg.y - topH*pg.scale;
-      const halfW = e.radius*2.3*pg.scale*pillarGrow;
-      const flick = 1 + 0.08*Math.sin(t*20 + e.id);
+    // --- 天から落ちてくる光の柱(先端が円盤石へ降りる) ---
+    if(ph.fallProg>0 && !ph.landed){
+      const botY = lerp(topY, pg.y, ph.fallProg);   // 先端(下端)が降下
+      const halfW = e.radius*1.7*pg.scale;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const grad = ctx.createLinearGradient(0, topY, 0, botY);
+      grad.addColorStop(0.0, 'rgba(255,255,255,0.0)');
+      grad.addColorStop(0.7, 'rgba(230,240,255,0.55)');
+      grad.addColorStop(1.0, 'rgba(255,255,255,0.95)');
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(pg.x - halfW*0.5, topY);
+      ctx.lineTo(pg.x + halfW*0.5, topY);
+      ctx.lineTo(pg.x + halfW, botY);
+      ctx.lineTo(pg.x - halfW, botY);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // --- 着地後: 虹色のオーラ(周りから中心へ収束) ---
+    if(ph.landed && ph.endFade>0){
+      const spread = (1 - ph.narrow);                // 収束で幅が縮む
+      const halfW = e.radius*2.4*pg.scale*(0.25 + 0.75*spread);
+      const flick = 1 + 0.07*Math.sin(t*18 + e.id);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       const grad = ctx.createLinearGradient(0, pg.y, 0, topY);
-      grad.addColorStop(0.0, 'rgba(255,255,255,0.9)');
-      grad.addColorStop(0.18, 'rgba(255,90,90,0.55)');
-      grad.addColorStop(0.38, 'rgba(255,210,70,0.55)');
-      grad.addColorStop(0.58, 'rgba(90,235,120,0.5)');
-      grad.addColorStop(0.78, 'rgba(85,165,255,0.5)');
+      grad.addColorStop(0.0, 'rgba(255,255,255,0.85)');
+      grad.addColorStop(0.18, 'rgba(255,90,90,0.5)');
+      grad.addColorStop(0.38, 'rgba(255,210,70,0.5)');
+      grad.addColorStop(0.58, 'rgba(90,235,120,0.45)');
+      grad.addColorStop(0.78, 'rgba(85,165,255,0.45)');
       grad.addColorStop(1.0, 'rgba(190,110,255,0.0)');
-      ctx.globalAlpha = 0.55*pillarFade;
+      ctx.globalAlpha = (0.35 + 0.35*spread) * ph.endFade;
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.moveTo(pg.x - halfW*1.15*flick, pg.y);
@@ -1872,23 +1904,52 @@ function drawSummonIntro(){
       ctx.lineTo(pg.x + halfW*0.5, topY);
       ctx.lineTo(pg.x - halfW*0.5, topY);
       ctx.closePath(); ctx.fill();
-      // 中心の白い光芯
-      ctx.globalAlpha = 0.6*pillarFade;
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath();
-      ctx.moveTo(pg.x - halfW*0.4, pg.y);
-      ctx.lineTo(pg.x + halfW*0.4, pg.y);
-      ctx.lineTo(pg.x + halfW*0.13, topY);
-      ctx.lineTo(pg.x - halfW*0.13, topY);
-      ctx.closePath(); ctx.fill();
       // 足元の発光リング
-      ctx.globalAlpha = 0.4*pillarFade;
+      ctx.globalAlpha = 0.4*ph.endFade;
       ctx.beginPath();
-      ctx.ellipse(pg.x, pg.y, halfW*1.5, halfW*0.6, 0, 0, Math.PI*2);
+      ctx.ellipse(pg.x, pg.y, e.radius*3*pg.scale*(0.6+0.4*spread), e.radius*1.2*pg.scale*(0.6+0.4*spread), 0, 0, Math.PI*2);
       ctx.fillStyle = 'rgba(255,240,200,0.5)';
       ctx.fill();
       ctx.restore();
     }
+  }
+}
+// 召喚演出(モンスターの前面): モンスターを覆う白い光芯が中心へ細く収束し姿を現す
+function drawSummonIntroFront(){
+  const ph = summonPhases();
+  if(!ph.landed || ph.narrow>=1) return;
+  const t = performance.now()/1000;
+  for(const e of entities){
+    if(!e.alive) continue;
+    const pg = project(e.x, e.y, 0);
+    if(!pg) continue;
+    if(pg.x<-240||pg.x>viewW+240||pg.y<-240||pg.y>viewH+240) continue;
+    const topH = e.radius*8;
+    const pTop = project(e.x, e.y, topH);
+    const topY = pTop ? pTop.y : pg.y - topH*pg.scale;
+    // 覆う幅(モンスターを隠す)→中心の細い芯へ。収束とともにアルファも落として綺麗に消す
+    const wideHalf = e.radius*1.75*pg.scale;
+    const thinHalf = e.radius*0.12*pg.scale;
+    const halfW = lerp(wideHalf, thinHalf, ph.narrow);
+    const appear = clamp((ph.elapsed - (SUMMON_IMPACT_AT-0.15))/0.25, 0, 1);
+    const alpha = 0.9 * (1 - ph.narrow) * appear * ph.endFade;
+    if(alpha<=0.01) continue;
+    const flick = 1 + 0.06*Math.sin(t*24 + e.id);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createLinearGradient(0, pg.y, 0, topY);
+    grad.addColorStop(0.0, 'rgba(255,255,255,0.98)');
+    grad.addColorStop(0.55,'rgba(255,255,255,0.85)');
+    grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(pg.x - halfW*flick, pg.y);
+    ctx.lineTo(pg.x + halfW*flick, pg.y);
+    ctx.lineTo(pg.x + halfW*0.35, topY);
+    ctx.lineTo(pg.x - halfW*0.35, topY);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 }
 // 召喚演出: 中央のカウントダウン数字
