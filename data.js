@@ -492,13 +492,19 @@ const MASTERMON_EXP_GLOBAL_MULT = 3; // 全試合共通のEXP倍率
 // マスモン(bot補完・他プレイヤー)撃破ボーナス: 相手のレベル×この値のEXPを追加で獲得
 // (xpMult・GLOBAL_MULTは掛けない固定値。バランス調整はこの係数で行う)
 const MASTERMON_KILL_EXP_PER_LEVEL = 10;
+const MASTERMON_CAP_EXP_TO_GOLD = 1; // レベル上限到達後、経験値相当をこの倍率でゴールドに変換
 function awardMastermonExp(mm, opts){
   opts = opts || {};
   const kills = opts.kills||0, damage = opts.damage||0, survivalSec = opts.survivalSec||0, champion = !!opts.champion;
   const xpMult = opts.xpMult||1;
   const bonusExp = Math.round(opts.bonusExp||0); // マスモン撃破ボーナス等の加算EXP
-  if(mm.level>=MASTERMON_LEVEL_CAP) return { expGain:0, levelsGained:0 };
-  const expGain = Math.round((kills*15 + damage/20 + survivalSec/10 + (champion?100:0)) * xpMult * MASTERMON_EXP_GLOBAL_MULT) + bonusExp;
+  const rawExp = Math.round((kills*15 + damage/20 + survivalSec/10 + (champion?100:0)) * xpMult * MASTERMON_EXP_GLOBAL_MULT) + bonusExp;
+  // レベル上限に達したマスモンは経験値の代わりにゴールドを獲得する
+  if(mm.level>=MASTERMON_LEVEL_CAP){
+    const goldGain = Math.round(rawExp * MASTERMON_CAP_EXP_TO_GOLD);
+    return { expGain:0, levelsGained:0, goldGain };
+  }
+  const expGain = rawExp;
   mm.exp += expGain;
   let levelsGained = 0;
   while(mm.level<MASTERMON_LEVEL_CAP && mm.exp>=mastermonExpToNext(mm.level)){
@@ -508,7 +514,7 @@ function awardMastermonExp(mm, opts){
     levelsGained += 1;
   }
   if(mm.level>=MASTERMON_LEVEL_CAP) mm.exp = 0;
-  return { expGain, levelsGained };
+  return { expGain, levelsGained, goldGain:0 };
 }
 // マスモンのステータスから、バトル中に適用する各種倍率を算出
 function mastermonEffectMults(mm){
@@ -669,15 +675,15 @@ const SKIN_TARGET_HUE = { red:0, yellow:52, green:120, blue:215 };
 //  colors = 持てる5色 / source = 色置換する主要部(color相 or 明度タイプ)
 //  source.type: 'chroma'(hue付近の色相を置換) / 'light'(白い部分) / 'dark'(暗い部分)
 const SKIN_CONFIG = {
-  mocchi:  { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:332, window:55} }, // ピンクの部分
+  mocchi:  { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:332, window:60} }, // ピンクの部分
   suezo:   { colors:['black','white','red','blue','green'],    source:{type:'chroma', hue:50,  window:55} }, // 黄の部分
-  phoenix: { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:8,   window:24} }, // 赤い部分
-  fire:    { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:16,  window:42} }, // 赤い部分
-  aqua:    { colors:['black','white','red','yellow','green'],  source:{type:'chroma', hue:198, window:72} }, // 青い部分
-  leaf:    { colors:['black','white','red','blue','yellow'],   source:{type:'chroma', hue:85,  window:60} }, // 緑の部分
-  spark:   { colors:['black','white','red','yellow','green'],  source:{type:'chroma', hue:210, window:55} }, // 青い部分
+  phoenix: { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:20,  window:60} }, // 赤〜橙の部分
+  fire:    { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:16,  window:72} }, // 赤い部分
+  aqua:    { colors:['black','white','red','yellow','green'],  source:{type:'chroma', hue:198, window:95} }, // 青い部分
+  leaf:    { colors:['black','white','red','blue','yellow'],   source:{type:'chroma', hue:90,  window:88} }, // 緑の部分
+  spark:   { colors:['black','white','red','yellow','green'],  source:{type:'chroma', hue:210, window:85} }, // 青い部分
   rock:    { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:31,  window:50} }, // 茶色の部分
-  ark:     { colors:['black','red','blue','yellow','white'],   source:{type:'chroma', hue:120, window:60} }, // 緑の部分
+  ark:     { colors:['black','red','blue','yellow','white'],   source:{type:'chroma', hue:110, window:95} }, // 緑の部分
   warm:    { colors:['black','white','red','blue','green'],    source:{type:'chroma', hue:30,  window:45} }, // 茶色い部分
   illumine:{ colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:272, window:55} }, // 紫の部分
   fox:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白い部分
