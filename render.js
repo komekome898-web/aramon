@@ -41,22 +41,37 @@ function recolorToCanvas(baseImg, element, colorId, maxSize){
     } else if(info.type==='dark'){
       wgt = Math.min(1, Math.max(0,(0.45-l1)/0.35)) * (1-Math.min(1,s1/0.5));
     } else { // light
-      wgt = Math.min(1, Math.max(0,(l1-0.55)/0.35)) * (1-Math.min(1,s1/0.45));
+      // キュービ等の白い部分。淡いクリーム(わずかに色味あり)も広く拾い、
+      // 色替えがハッキリ乗るよう明度しきい値を下げ彩度ペナルティを緩める。
+      wgt = Math.min(1, Math.max(0,(l1-0.48)/0.34)) * (1-Math.min(1,s1/0.78));
     }
     if(wgt<=0.01) continue;
-    let nr,ng,nb;
-    // ブラック/ホワイトは彩度をほぼ抜いて無彩色寄りにする(暗い赤/淡い青にならないように)
-    if(colorId==='black'){ [nr,ng,nb]=hslToRgb(h1, s1*0.06, l1*0.20); }
-    else if(colorId==='white'){ [nr,ng,nb]=hslToRgb(h1, s1*0.05, Math.min(0.97, 0.76+l1*0.22)); }
-    else {
+    let nr,ng,nb, ww=wgt;
+    if(colorId==='black' || colorId==='white'){
+      // ブラック/ホワイトは「主要部だけ」を無彩色でハッキリ塗る。彩度は完全に抜く。
+      if(info.type==='chroma'){
+        // 色相で主要部を判定する monster: 淡く一致する箇所(脚・ハイライト等)まで
+        // 暗く/白くすると他の色替えと違う場所が変わって見える&中間の重みで元色が
+        // 残り濁る(暗い赤/淡い青)。→ 重みを主要部に絞る(smoothstep)。
+        const t=Math.max(0,Math.min(1,(wgt-0.30)/0.30)); ww=t*t*(3-2*t);
+      } else {
+        // 明度で主要部を判定する monster(キュービ/イルミネ)は主要部が広く
+        // テクスチャの濃淡で重みがばらつくため、絞るとまだら化する。ベタ塗りに
+        // 近づくよう重みを大きく底上げして滑らかに塗る。
+        ww=Math.min(1, wgt*2.4);
+      }
+      if(ww<=0.01) continue;
+      if(colorId==='black'){ [nr,ng,nb]=hslToRgb(0, 0, clamp(l1*0.20, 0.02, 0.20)); } // 濃い黒(陰影のみ残す)
+      else               { [nr,ng,nb]=hslToRgb(0, 0, clamp(0.84+l1*0.13, 0.84, 0.98)); } // 明るい白
+    } else {
       const Ht=SKIN_TARGET_HUE[colorId]; let ns=Math.max(s1,0.5), nl=l1;
-      if(info.type==='light'){ ns=Math.max(s1,0.55); nl=clamp(l1*0.7+0.12, 0.3, 0.8); }
+      if(info.type==='light'){ ns=Math.max(s1,0.9); nl=clamp(l1*0.5+0.05, 0.32, 0.58); } // キュービ等:淡くせずハッキリ発色
       if(colorId==='yellow') nl=Math.min(0.82, nl*1.05+0.06);
       [nr,ng,nb]=hslToRgb(Ht, ns, nl);
     }
-    d[i]  =Math.round(d[i]*(1-wgt)+nr*wgt);
-    d[i+1]=Math.round(d[i+1]*(1-wgt)+ng*wgt);
-    d[i+2]=Math.round(d[i+2]*(1-wgt)+nb*wgt);
+    d[i]  =Math.round(d[i]*(1-ww)+nr*ww);
+    d[i+1]=Math.round(d[i+1]*(1-ww)+ng*ww);
+    d[i+2]=Math.round(d[i+2]*(1-ww)+nb*ww);
   }
   cx.putImageData(id,0,0);
   return c;
