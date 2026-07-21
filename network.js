@@ -208,9 +208,7 @@ async function beginMultiplayerMatch(){
 
   document.getElementById('startScreen').classList.add('hidden');
   game.started=true;
-  pushToast('バトル開始！（マルチプレイ）');
-  playSe('jakiin');
-  bgmSetTrack('battle');
+  beginSummonIntro();   // 5秒の召喚演出 → 演出後に本戦開始(バトル開始SE/BGM)
 }
 
 // 他プレイヤーの入力を、対応するローカルエンティティに反映する
@@ -544,7 +542,10 @@ function loop(now){
   lastT = now;
 
   if(game.started && !game.over){
-    if(netState.mode!=='multi'){
+    if(introState.active){
+      // 召喚演出中はmatchTimeを進めず、視点操作と演出のみ行う(ホスト/ゲスト共通)
+      updateSummonIntro(dt);
+    } else if(netState.mode!=='multi'){
       update(dt);
     } else if(netState.isHost){
       applyRemoteInputsLocally();

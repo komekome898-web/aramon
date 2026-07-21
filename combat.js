@@ -879,6 +879,55 @@ function updateLootPickups(){
     }
   }
 }
+/* =====================================================================
+   召喚演出(試合開始カウントダウン)
+   ・視点操作のみ許可(移動・攻撃はupdate()を呼ばないことで自然に封じる)
+   ・matchTimeを進めないので状態変化クールタイム/ゾーン/試合時間は演出後に開始
+===================================================================== */
+function beginSummonIntro(){
+  introState.active = true;
+  introState.timer = SUMMON_INTRO_DURATION;
+  introState.duration = SUMMON_INTRO_DURATION;
+  introState.shuwaaPlayed = false;
+  camSnap.active = false;
+  updateCamera();
+  updateHUD();
+  bgmSetTrack(null);      // 演出中はBGMを止めて神々しさを際立たせる
+  playSe('kyupiin');      // 光が差す「キュピーン」
+}
+function updateSummonIntro(dt){
+  introState.timer -= dt;
+  const elapsed = introState.duration - introState.timer;
+  if(!introState.shuwaaPlayed && elapsed >= 1.1){
+    introState.shuwaaPlayed = true;
+    playSe('shuwaa');     // 光が広がる「シュワァー」
+  }
+  updateCameraSnap(dt);
+  updateCamera();
+  // update()を通さないので、演出用のきらめき粒子だけここで進める
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z = (p.z||0) + (p.vz||0)*dt;
+    p.life -= dt;
+    if(p.life<=0) particles.splice(i,1);
+  }
+  // スポーン地点から虹色のきらめきを立ち上らせる
+  if(player && player.alive && elapsed > 0.5 && Math.random() < 0.7){
+    const a = Math.random()*Math.PI*2, rr = Math.random()*player.radius*2.4;
+    addParticle({ type:'spark', x:player.x+Math.cos(a)*rr, y:player.y+Math.sin(a)*rr, z:2,
+      vx:0, vy:0, vz:70+Math.random()*110, life:0.7+Math.random()*0.4, maxLife:1.1,
+      color:`hsl(${Math.floor(Math.random()*360)},90%,66%)`, size:2+Math.random()*3 });
+  }
+  if(introState.timer <= 0) endSummonIntro();
+}
+function endSummonIntro(){
+  introState.active = false;
+  introState.timer = 0;
+  pushToast(netState.mode==='multi' ? 'バトル開始！（マルチプレイ）' : 'バトル開始！');
+  playSe('jakiin');       // 従来の試合開始SE
+  bgmSetTrack('battle');
+}
+
 function update(dt){
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;

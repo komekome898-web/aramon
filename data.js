@@ -189,6 +189,8 @@ Object.keys(ELEMENTS).forEach(key=>{
   monsterImages[key] = loadMonsterImage(`monsters/${key}`);
   playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player`);
 });
+// 召喚演出のスポーン円盤石(画像)
+const summonDiskImg = loadMonsterImage('summon_disk');
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
 }

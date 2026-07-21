@@ -52,7 +52,7 @@ document.addEventListener('visibilitychange', ()=>{
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
-  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3 };
+  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, kyupiin:1, shuwaa:1.5 };
 const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
 const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35 };
@@ -245,6 +245,27 @@ const SE_DEFS = {
     ring(t,      1568, 1.1, 0.3);
     ring(t+0.24, 1568, 1.1, 0.28);
     ring(t+0.5,  2093, 2.4, 0.34); // 最後の一打は長く響かせる
+  },
+  // 召喚演出・光が差す「キュピーン」(神々しい高音のきらめき・駆け上がり)
+  kyupiin(t){
+    // 高く澄んだ倍音がキラッと駆け上がる
+    seTone(t,       {freq:1320, freqEnd:3140, dur:0.5,  type:'triangle', vol:0.26, attack:0.006});
+    seTone(t+0.02,  {freq:1980, freqEnd:4700, dur:0.45, type:'sine',     vol:0.18, attack:0.006});
+    seTone(t+0.04,  {freq:2640, freqEnd:6280, dur:0.4,  type:'sine',     vol:0.12, attack:0.006});
+    // 到達点で「ピーン」と鐘のように残響
+    seTone(t+0.34,  {freq:3140, dur:1.1, type:'sine', vol:0.16, attack:0.004});
+    seTone(t+0.34,  {freq:4180, dur:0.9, type:'sine', vol:0.09, attack:0.004});
+    seTone(t+0.34,  {freq:6280, dur:0.6, type:'sine', vol:0.05, attack:0.004});
+    seNoise(t+0.32, {dur:0.5, vol:0.06, filterType:'highpass', filterFreq:7000}); // きらめきのシャラ
+  },
+  // 召喚演出・光が広がる「シュワァー」(柔らかく満ちていく光のノイズ)
+  shuwaa(t){
+    // フィルタが開いていく=光が広がる感触。長い余韻で満ちていく
+    seNoiseLfo(t, {dur:1.6, volStart:0.02, volEnd:0.3, filterType:'bandpass', filterFreq:400, filterEnd:5200, lfoFreq:6, lfoDepth:0.25});
+    seNoiseLfo(t+0.1, {dur:1.5, volStart:0.02, volEnd:0.2, filterType:'highpass', filterFreq:1200, filterEnd:6500, lfoFreq:9, lfoDepth:0.3});
+    // 下支えの温かい持続音
+    seTone(t, {freq:262, freqEnd:523, dur:1.5, type:'sine', vol:0.12, attack:0.3});
+    seTone(t, {freq:392, freqEnd:784, dur:1.5, type:'sine', vol:0.08, attack:0.3});
   },
   // 敵をキルした時「ザシュッ」(切り裂き音)
   kill(t){

@@ -12,21 +12,35 @@ function project(wx, wy, wz){
 /* =====================================================================
    RENDER - shapes
 ===================================================================== */
+// 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。
+// (円形クリップを廃したため、矩形の白fillでは背景まで白くなってしまう。
+//  画像のアルファ形状に沿って白くするためにこの手法を使う)
+const _whiteMaskCache = new WeakMap();
+function whiteMaskFor(img){
+  const w = img.naturalWidth||1, h = img.naturalHeight||1;
+  const cached = _whiteMaskCache.get(img);
+  if(cached && cached.w===w && cached.h===h) return cached.canvas;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, 0, 0);
+  cx.globalCompositeOperation = 'source-in';
+  cx.fillStyle = '#fff'; cx.fillRect(0,0,w,h);
+  _whiteMaskCache.set(img, { canvas:c, w, h });
+  return c;
+}
 function drawMonsterPortrait(e, img, flash){
   const r = e.radius;
-  ctx.save();
-  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.clip();
+  // 丸めクリップ・縁取りは廃止し、モンスター画像をそのまま(透過付きで)描画する
   const iw = img.naturalWidth||1, ih = img.naturalHeight||1;
   const scale = Math.max((r*2)/iw, (r*2)/ih);
   const dw = iw*scale, dh = ih*scale;
   ctx.drawImage(img, -dw/2, -dh/2, dw, dh);
   if(flash){
-    ctx.fillStyle='rgba(255,255,255,0.55)';
-    ctx.fillRect(-r,-r,r*2,r*2);
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(whiteMaskFor(img), -dw/2, -dh/2, dw, dh);
+    ctx.restore();
   }
-  ctx.restore();
-  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
-  ctx.strokeStyle = ELEMENTS[e.element].dark; ctx.lineWidth=2.5; ctx.stroke();
 }
 function drawMonsterShape(e, color, dark){
   const r = e.radius;
@@ -314,8 +328,18 @@ function drawElementBadge(e){
 }
 function drawMonster(e,p){
   const el = ELEMENTS[e.element];
+  // 召喚演出中: 光の柱の中からせり上がって登場する
+  let introRise = 0;
+  if(introState.active){
+    const emerge = clamp((introState.duration - introState.timer - 2.2)/1.9, 0, 1);
+    if(emerge <= 0) return; // まだ光の中(未登場)
+    introRise = (1-emerge) * e.radius * 2.4;
+  }
   ctx.save();
-  ctx.translate(p.x,p.y);
+  if(introState.active){
+    ctx.globalAlpha = clamp((introState.duration - introState.timer - 2.2)/1.9, 0, 1);
+  }
+  ctx.translate(p.x, p.y + introRise*p.scale);
   ctx.scale(p.scale,p.scale);
   ctx.translate(0,-e.radius*0.85);
 
@@ -1751,6 +1775,7 @@ function render(){
   drawZoneRings();
   drawLandingMarkers();
   drawAreaEffects();
+  if(introState.active) drawSummonIntro();
 
   const drawables = [];
   for(const b of buildings){ const p = project(b.cx,b.cy,b.wallH*0.5); if(p) drawables.push({kind:'building', obj:b, p}); }
@@ -1796,7 +1821,92 @@ function render(){
   }
   drawDangerVignette();
   drawZoneCompass();
+  if(introState.active) drawSummonCountdown();
   renderMinimap();
+}
+// 召喚演出: スポーン地点の円盤石と、そこから立ち上る虹色の光の柱を描く
+function drawSummonIntro(){
+  const elapsed = introState.duration - introState.timer;
+  const diskGrow   = clamp(elapsed/0.8, 0, 1);                 // 円盤石がせり上がる
+  const pillarGrow = clamp((elapsed-0.6)/1.6, 0, 1);           // 光の柱が広がる
+  const pillarFade = 1 - clamp((elapsed-3.6)/1.2, 0, 1);       // 終盤に収束
+  const t = performance.now()/1000;
+  const diskReady = imgIsReady(summonDiskImg);
+  for(const e of entities){
+    if(!e.alive) continue;
+    const pg = project(e.x, e.y, 0);
+    if(!pg) continue;
+    if(pg.x<-220||pg.x>viewW+220||pg.y<-220||pg.y>viewH+220) continue;
+    const rWorld = e.radius*3.4;
+    // --- 円盤石(地面に伏せて平たく描画) ---
+    if(diskReady && diskGrow>0){
+      const dw = rWorld*2*pg.scale*diskGrow;
+      const dh = dw*0.5;
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.45*diskGrow;
+      ctx.shadowBlur = 26*pg.scale; ctx.shadowColor = 'rgba(255,222,150,0.9)';
+      ctx.drawImage(summonDiskImg, pg.x-dw/2, pg.y-dh/2, dw, dh);
+      ctx.restore();
+    }
+    // --- 虹色の光の柱 ---
+    if(pillarGrow>0 && pillarFade>0){
+      const topH = e.radius*7.5;
+      const pTop = project(e.x, e.y, topH);
+      const topY = pTop ? pTop.y : pg.y - topH*pg.scale;
+      const halfW = e.radius*2.3*pg.scale*pillarGrow;
+      const flick = 1 + 0.08*Math.sin(t*20 + e.id);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const grad = ctx.createLinearGradient(0, pg.y, 0, topY);
+      grad.addColorStop(0.0, 'rgba(255,255,255,0.9)');
+      grad.addColorStop(0.18, 'rgba(255,90,90,0.55)');
+      grad.addColorStop(0.38, 'rgba(255,210,70,0.55)');
+      grad.addColorStop(0.58, 'rgba(90,235,120,0.5)');
+      grad.addColorStop(0.78, 'rgba(85,165,255,0.5)');
+      grad.addColorStop(1.0, 'rgba(190,110,255,0.0)');
+      ctx.globalAlpha = 0.55*pillarFade;
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(pg.x - halfW*1.15*flick, pg.y);
+      ctx.lineTo(pg.x + halfW*1.15*flick, pg.y);
+      ctx.lineTo(pg.x + halfW*0.5, topY);
+      ctx.lineTo(pg.x - halfW*0.5, topY);
+      ctx.closePath(); ctx.fill();
+      // 中心の白い光芯
+      ctx.globalAlpha = 0.6*pillarFade;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(pg.x - halfW*0.4, pg.y);
+      ctx.lineTo(pg.x + halfW*0.4, pg.y);
+      ctx.lineTo(pg.x + halfW*0.13, topY);
+      ctx.lineTo(pg.x - halfW*0.13, topY);
+      ctx.closePath(); ctx.fill();
+      // 足元の発光リング
+      ctx.globalAlpha = 0.4*pillarFade;
+      ctx.beginPath();
+      ctx.ellipse(pg.x, pg.y, halfW*1.5, halfW*0.6, 0, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,240,200,0.5)';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+// 召喚演出: 中央のカウントダウン数字
+function drawSummonCountdown(){
+  const n = Math.max(1, Math.ceil(introState.timer));
+  const frac = introState.timer - Math.floor(introState.timer); // 秒内の進み具合(1→0)
+  const scale = 1 + Math.max(0, frac-0.7)*1.3;                   // 数字が変わった瞬間に大きくポップ
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 22px 'Rajdhani', sans-serif`;
+  ctx.fillStyle = 'rgba(255,240,205,0.92)';
+  ctx.shadowBlur = 12; ctx.shadowColor = 'rgba(255,180,80,0.9)';
+  ctx.fillText('召 喚', viewW/2, viewH*0.16);
+  ctx.font = `bold ${Math.round(66*scale)}px 'Rajdhani', sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.96)';
+  ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(120,200,255,0.95)';
+  ctx.fillText(String(n), viewW/2, viewH*0.31);
+  ctx.restore();
 }
 function renderMinimap(){
   const w = miniCanvas.width, h = miniCanvas.height;
