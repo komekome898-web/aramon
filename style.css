@@ -130,7 +130,10 @@
   #accountLoginBtn.logged-in{ color:var(--amber); border-color:rgba(244,196,48,0.45); background:rgba(244,196,48,0.08); }
   /* トップ画面の細いヘッダー(アカウント名・ゴールド・ダイヤ) */
   #topHeader{
-    position:absolute; top:0; left:0; right:0; height:30px; z-index:6;
+    /* スクロールしても画面上部に残り続けるよう固定表示にする。
+       (通常時=ビューポート基準 / 強制横向き時=transformした#appRoot基準。
+        どちらでもアプリ上端に固定され#startScreenのスクロールに追従しない) */
+    position:fixed; top:0; left:0; right:0; height:30px; z-index:31;
     display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 14px;
     background:linear-gradient(180deg, rgba(6,9,17,0.96), rgba(6,9,17,0.82));
     border-bottom:1px solid var(--panel-line);
