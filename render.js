@@ -12,12 +12,107 @@ function project(wx, wy, wz){
 /* =====================================================================
    RENDER - shapes
 ===================================================================== */
+/* =====================================================================
+   スキン(着せ替え): モンスター画像のメイン色部分だけを実行時に色置換する。
+   事前生成した画像を持たず、ベース画像から生成してキャッシュする(SSRのみ専用画像)。
+===================================================================== */
+const _skinCanvasCache = {};   // key -> HTMLCanvasElement
+const _skinDataUrlCache = {};  // key -> dataURL(string)
+function _imgW(img){ return img.naturalWidth || img.width || 1; }
+function _imgH(img){ return img.naturalHeight || img.height || 1; }
+// ベース画像のメイン色部分を colorId の色に置換した canvas を返す
+function recolorToCanvas(baseImg, element, colorId, maxSize){
+  let w=_imgW(baseImg), h=_imgH(baseImg);
+  if(maxSize && Math.max(w,h)>maxSize){ const s=maxSize/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const cx=c.getContext('2d'); cx.drawImage(baseImg,0,0,w,h);
+  const info = monsterMainInfo(element);
+  const id=cx.getImageData(0,0,w,h); const d=id.data;
+  const hueDist=(a,b)=>{ let x=Math.abs(a-b)%360; return x>180?360-x:x; };
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]<8) continue;
+    const [h1,s1,l1]=rgbToHsl(d[i],d[i+1],d[i+2]);
+    let wgt=0;
+    if(info.type==='chroma'){
+      const hueW = 1 - Math.min(1, hueDist(h1, info.hue)/55);
+      const satW = Math.min(1, Math.max(0,(s1-0.10))/0.20);
+      wgt = hueW*satW;
+    } else if(info.type==='dark'){
+      wgt = Math.min(1, Math.max(0,(0.45-l1)/0.35)) * (1-Math.min(1,s1/0.5));
+    } else { // light
+      wgt = Math.min(1, Math.max(0,(l1-0.55)/0.35)) * (1-Math.min(1,s1/0.45));
+    }
+    if(wgt<=0.01) continue;
+    let nr,ng,nb;
+    if(colorId==='black'){ [nr,ng,nb]=hslToRgb(h1, s1*0.2, l1*0.26); }
+    else if(colorId==='white'){ [nr,ng,nb]=hslToRgb(h1, s1*0.12, Math.min(0.97, 0.72+l1*0.26)); }
+    else {
+      const Ht=SKIN_TARGET_HUE[colorId]; let ns=Math.max(s1,0.5), nl=l1;
+      if(info.type==='light'){ ns=Math.max(s1,0.55); nl=clamp(l1*0.7+0.12, 0.3, 0.8); }
+      if(colorId==='yellow') nl=Math.min(0.82, nl*1.05+0.06);
+      [nr,ng,nb]=hslToRgb(Ht, ns, nl);
+    }
+    d[i]  =Math.round(d[i]*(1-wgt)+nr*wgt);
+    d[i+1]=Math.round(d[i+1]*(1-wgt)+ng*wgt);
+    d[i+2]=Math.round(d[i+2]*(1-wgt)+nb*wgt);
+  }
+  cx.putImageData(id,0,0);
+  return c;
+}
+// 色スキンの canvas を返す(view: 'icon'|'player')。ベース未ロードなら null
+function skinnedColorCanvas(element, colorId, view){
+  const key = `${element}:${colorId}:${view}`;
+  if(_skinCanvasCache[key]) return _skinCanvasCache[key];
+  let base = view==='player' ? playerMonsterImages[element] : monsterImages[element];
+  if(!imgIsReady(base)) base = monsterImages[element];      // playerが無ければiconで代用
+  if(!imgIsReady(base)) return null;
+  // アイコン用途は軽量化のため縮小して色置換(DOM表示・カタログ用)
+  const c = recolorToCanvas(base, element, colorId, view==='icon' ? 200 : 0);
+  _skinCanvasCache[key]=c;
+  return c;
+}
+// skinId から表示用画像(canvas/Image)を返す。view: 'icon'|'player'
+function skinnedImage(skinId, view){
+  if(!skinId) return null;
+  if(SSR_SKINS[skinId]){
+    const s=SSR_SKINS[skinId];
+    const img = view==='player' ? ssrSkinImages[s.playerImg] : ssrSkinImages[s.iconImg];
+    if(imgIsReady(img)) return img;
+    const alt = ssrSkinImages[s.iconImg];
+    return imgIsReady(alt) ? alt : null;
+  }
+  const m = skinMeta(skinId);
+  return skinnedColorCanvas(m.element, m.colorId, view);
+}
+// DOM(<img>)用: skinId のアイコンを dataURL で返す(キャッシュ)。未生成なら null
+function skinnedIconDataUrl(skinId){
+  if(!skinId) return null;
+  if(_skinDataUrlCache[skinId]) return _skinDataUrlCache[skinId];
+  const img = skinnedImage(skinId, 'icon');
+  if(!img) return null;
+  let url;
+  if(img instanceof HTMLCanvasElement) url = img.toDataURL('image/png');
+  else {
+    const c=document.createElement('canvas'); c.width=_imgW(img); c.height=_imgH(img);
+    c.getContext('2d').drawImage(img,0,0); url=c.toDataURL('image/png');
+  }
+  _skinDataUrlCache[skinId]=url;
+  return url;
+}
+// プレイヤーエンティティに装備中スキンがあればその表示画像を返す
+function skinnedImageForEntity(entity){
+  if(!entity || !entity.isPlayer) return null;
+  const skinId = (typeof getEquippedSkin==='function') ? getEquippedSkin(entity.element) : null;
+  if(!skinId) return null;
+  return skinnedImage(skinId, 'player');
+}
+
 // 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。
 // (円形クリップを廃したため、矩形の白fillでは背景まで白くなってしまう。
 //  画像のアルファ形状に沿って白くするためにこの手法を使う)
 const _whiteMaskCache = new WeakMap();
 function whiteMaskFor(img){
-  const w = img.naturalWidth||1, h = img.naturalHeight||1;
+  const w = _imgW(img), h = _imgH(img);
   const cached = _whiteMaskCache.get(img);
   if(cached && cached.w===w && cached.h===h) return cached.canvas;
   const c = document.createElement('canvas'); c.width=w; c.height=h;
@@ -31,7 +126,7 @@ function whiteMaskFor(img){
 function drawMonsterPortrait(e, img, flash){
   const r = e.radius;
   // 丸めクリップ・縁取りは廃止し、モンスター画像をそのまま(透過付きで)描画する
-  const iw = img.naturalWidth||1, ih = img.naturalHeight||1;
+  const iw = _imgW(img), ih = _imgH(img);
   const scale = Math.max((r*2)/iw, (r*2)/ih);
   const dw = iw*scale, dh = ih*scale;
   ctx.drawImage(img, -dw/2, -dh/2, dw, dh);

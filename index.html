@@ -508,19 +508,57 @@
   </div>
 </div>
 
-<!-- GACHA -->
-<div id="gachaOverlay" class="mastermon-confirm-overlay hidden">
-  <div class="mastermon-confirm-box gacha-box">
-    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎰 アイテムガチャ</div>
-    <div class="gacha-wallet"><span id="gachaDia">💎 0</span></div>
-    <div id="gachaResult" class="gacha-result"></div>
-    <div class="gacha-btn-row">
-      <button id="gachaSingleBtn" class="gacha-btn premium">単発ガチャ<br><span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
-      <button id="gachaTenBtn" class="gacha-btn premium">10連ガチャ<br><span class="gacha-cost" id="gachaTenCost">💎 50</span></button>
+<!-- GACHA (全画面) -->
+<div id="gachaOverlay" class="hidden">
+  <div class="gacha-screen">
+    <div class="gacha-top">
+      <div class="gacha-title">🎰 スキンガチャ</div>
+      <div class="gacha-top-right">
+        <span id="gachaDia" class="gacha-dia">💎 0</span>
+        <button id="gachaRatesBtn" class="gacha-rates-btn">提供割合</button>
+        <button id="closeGachaBtn" class="gacha-close-btn">✕</button>
+      </div>
     </div>
-    <div class="gacha-note">10連は10個目にチケット類が確定で出る！</div>
-    <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
-      <button id="closeGachaBtn">閉じる</button>
+
+    <div id="gachaField" class="gacha-field">
+      <canvas id="gachaCanvas" class="gacha-canvas"></canvas>
+      <div id="gachaResult" class="gacha-result hidden"></div>
+      <div id="gachaButtons" class="gacha-btn-row">
+        <button id="gachaSingleBtn" class="gacha-btn premium">1回ガチャ<span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
+        <button id="gachaTenBtn" class="gacha-btn premium">10連ガチャ<span class="gacha-cost" id="gachaTenCost">💎 50</span></button>
+      </div>
+    </div>
+
+    <div class="gacha-bottom">
+      <div class="gacha-counter-labels"><span>ガチャカウンター</span><span id="gachaCountNum">0 / 200</span></div>
+      <div class="gacha-gauge">
+        <div id="gachaGaugeFill" class="gacha-gauge-fill"></div>
+        <div class="gacha-milestone" data-at="100"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">100<br>SR</span></div>
+        <div class="gacha-milestone" data-at="200"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">200<br>SSR</span></div>
+      </div>
+      <div class="gacha-milestone-note">100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！</div>
+      <div id="gachaCatalogRow" class="gacha-catalog-row"></div>
+    </div>
+  </div>
+
+  <!-- 提供割合モーダル -->
+  <div id="gachaRatesModal" class="gacha-modal hidden">
+    <div class="gacha-modal-box">
+      <div class="gacha-modal-title">提供割合</div>
+      <div id="gachaRatesBody" class="gacha-rates-body"></div>
+      <button id="gachaRatesCloseBtn" class="gacha-modal-close">閉じる</button>
+    </div>
+  </div>
+
+  <!-- スキンカタログ選択モーダル -->
+  <div id="gachaCatalogModal" class="gacha-modal hidden">
+    <div class="gacha-modal-box">
+      <div class="gacha-modal-title" id="gachaCatalogTitle">スキンを選ぶ</div>
+      <div id="gachaCatalogGrid" class="gacha-catalog-grid"></div>
+      <div class="gacha-modal-btnrow">
+        <button id="gachaCatalogCancelBtn" class="gacha-modal-close">やめる</button>
+        <button id="gachaCatalogConfirmBtn" class="gacha-modal-confirm" disabled>これにする</button>
+      </div>
     </div>
   </div>
 </div>
