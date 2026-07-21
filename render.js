@@ -35,7 +35,8 @@ function recolorToCanvas(baseImg, element, colorId, maxSize){
     let wgt=0;
     if(info.type==='chroma'){
       const hueW = 1 - Math.min(1, hueDist(h1, info.hue)/(info.window||55));
-      const satW = Math.min(1, Math.max(0,(s1-0.10))/0.20);
+      // 彩度の低い(=指示色に近い淡い)箇所も拾えるようフロアを下げる
+      const satW = Math.min(1, Math.max(0,(s1-0.06))/0.16);
       wgt = hueW*satW;
     } else if(info.type==='dark'){
       wgt = Math.min(1, Math.max(0,(0.45-l1)/0.35)) * (1-Math.min(1,s1/0.5));
@@ -44,8 +45,9 @@ function recolorToCanvas(baseImg, element, colorId, maxSize){
     }
     if(wgt<=0.01) continue;
     let nr,ng,nb;
-    if(colorId==='black'){ [nr,ng,nb]=hslToRgb(h1, s1*0.2, l1*0.26); }
-    else if(colorId==='white'){ [nr,ng,nb]=hslToRgb(h1, s1*0.12, Math.min(0.97, 0.72+l1*0.26)); }
+    // ブラック/ホワイトは彩度をほぼ抜いて無彩色寄りにする(暗い赤/淡い青にならないように)
+    if(colorId==='black'){ [nr,ng,nb]=hslToRgb(h1, s1*0.06, l1*0.20); }
+    else if(colorId==='white'){ [nr,ng,nb]=hslToRgb(h1, s1*0.05, Math.min(0.97, 0.76+l1*0.22)); }
     else {
       const Ht=SKIN_TARGET_HUE[colorId]; let ns=Math.max(s1,0.5), nl=l1;
       if(info.type==='light'){ ns=Math.max(s1,0.55); nl=clamp(l1*0.7+0.12, 0.3, 0.8); }
@@ -97,6 +99,22 @@ function skinnedIconDataUrl(skinId){
     c.getContext('2d').drawImage(img,0,0); url=c.toDataURL('image/png');
   }
   _skinDataUrlCache[skinId]=url;
+  return url;
+}
+// DOM用: skinId の試合中(後ろ姿)を dataURL で返す(キャッシュ)。未生成なら null
+function skinnedPlayerDataUrl(skinId){
+  if(!skinId) return null;
+  const key = 'P:'+skinId;
+  if(_skinDataUrlCache[key]) return _skinDataUrlCache[key];
+  const img = skinnedImage(skinId, 'player');
+  if(!img) return null;
+  let url;
+  if(img instanceof HTMLCanvasElement) url = img.toDataURL('image/png');
+  else {
+    const c=document.createElement('canvas'); c.width=_imgW(img); c.height=_imgH(img);
+    c.getContext('2d').drawImage(img,0,0); url=c.toDataURL('image/png');
+  }
+  _skinDataUrlCache[key]=url;
   return url;
 }
 // プレイヤーエンティティに装備中スキンがあればその表示画像を返す

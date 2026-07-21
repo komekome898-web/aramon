@@ -37,6 +37,14 @@ function buildMonsterGrid(){
   renderSelectorCards();
 }
 
+// そのモンスターに装備中のスキンがあればスキンアイコン(dataURL)、無ければ通常画像で <img> を返す
+function equippedIconImgTag(element, altLabel){
+  if(typeof getEquippedSkin==='function'){
+    const sk = getEquippedSkin(element);
+    if(sk){ const url = skinnedIconDataUrl(sk); if(url) return `<img src="${url}" alt="${altLabel||''}">`; }
+  }
+  return `<img src="${imgSrcFor(`monsters/${element}`)}" data-ext-idx="0" alt="${altLabel||''}" onerror="handleMonsterImgError(this, 'monsters/${element}')">`;
+}
 function renderSelectorCards(){
   const mmCard = document.getElementById('mastermonSelectCard');
   const mmData = game.selectedMastermonKey ? loadMastermons()[game.selectedMastermonKey] : null;
@@ -49,7 +57,7 @@ function renderSelectorCards(){
     mmCard.style.setProperty('--accent', el.accent || el.color);
     mmCard.innerHTML = `
       <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-        <img src="${imgSrcFor(`monsters/${mmData.element}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${mmData.element}')">
+        ${equippedIconImgTag(mmData.element, el.label)}
       </div>
       <div class="m-name">${mmData.name}<span class="m-name-sub">(${el.label})</span></div>
       <div class="m-stat">Lv.${mmData.level}　HP ${effHp}<br>速さ ${effSpeed}</div>
@@ -1624,7 +1632,7 @@ function renderMastermonList(){
     const active = key===mastermonDetailKey;
     const iconHtml = `
       <div class="mastermon-list-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-        <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
+        ${equippedIconImgTag(key, el.label)}
       </div>`;
     if(active){
       const expNeed = mastermonExpToNext(mm.level);
@@ -1807,11 +1815,18 @@ function renderMastermonDetail(key){
 // 「着せ替え」画面: 大きなプレビュー + 所持スキンのサムネイル行(ステータスは非表示)
 let mastermonPreviewSkin = null; // null=このマスモンのプレビュー未初期化
 function skinPreviewImgTag(element, skinId){
-  // skinId が null/'' ならデフォルト(素の画像)
+  // skinId が null/'' ならデフォルト(素のアイコン画像)
   if(!skinId){ return `<img src="${imgSrcFor(`monsters/${element}`)}" onerror="handleMonsterImgError(this,'monsters/${element}')" alt="">`; }
   const url = skinnedIconDataUrl(skinId);
   if(url) return `<img src="${url}" alt="">`;
   return `<img src="${imgSrcFor(`monsters/${element}`)}" onerror="handleMonsterImgError(this,'monsters/${element}')" alt="">`;
+}
+// 後ろ姿(試合中の姿)プレビュー
+function skinBackImgTag(element, skinId){
+  if(!skinId){ return `<img src="${imgSrcFor(`monsters/${element}_player`)}" data-ext-idx="0" onerror="handleMonsterImgError(this,'monsters/${element}_player')" alt="">`; }
+  const url = skinnedPlayerDataUrl(skinId);
+  if(url) return `<img src="${url}" alt="">`;
+  return `<img src="${imgSrcFor(`monsters/${element}_player`)}" data-ext-idx="0" onerror="handleMonsterImgError(this,'monsters/${element}_player')" alt="">`;
 }
 function buildMastermonSkinHtml(key){
   const owned = ownedSkinsForElement(key);       // 所持スキンID一覧
@@ -1820,23 +1835,25 @@ function buildMastermonSkinHtml(key){
   if(mastermonPreviewSkin === null) mastermonPreviewSkin = equipped || '';
   const previewSkin = mastermonPreviewSkin || null;
   const previewName = previewSkin ? skinMeta(previewSkin).name : `${ELEMENTS[key].label}(デフォルト)`;
-  // デフォルト + 所持スキンのサムネイル
-  const thumbs = [{ id:'', label:'デフォルト', cls:'' }].concat(owned.map(id=>{
-    const m = skinMeta(id);
-    return { id, label:m.name, cls: m.rarity==='SSR'?'ssr':'' };
-  }));
-  const rowHtml = thumbs.map(t=>{
+  // デフォルト + 所持スキンのサムネイル(左側の縦一覧)
+  const thumbs = [{ id:'', cls:'' }].concat(owned.map(id=>({ id, cls: skinMeta(id).rarity==='SSR'?'ssr':'' })));
+  const listHtml = thumbs.map(t=>{
     const sel = ((mastermonPreviewSkin||'')===t.id) ? 'selected' : '';
     const eq = ((equipped||'')===t.id) ? 'equipped' : '';
     return `<div class="mm-skin-thumb ${t.cls} ${sel} ${eq}" data-skin="${t.id}">${skinPreviewImgTag(key, t.id||null)}</div>`;
   }).join('');
   const isEquippedNow = ((equipped||'')===(mastermonPreviewSkin||''));
   return `
-    <div class="mm-skin-body">
-      <div class="mm-skin-preview">${skinPreviewImgTag(key, previewSkin)}</div>
-      <div class="mm-skin-preview-name">${previewName}</div>
-      <div class="mm-skin-row">${rowHtml}</div>
-      <button id="mmSkinConfirmBtn" class="mm-skin-confirm" ${isEquippedNow?'disabled':''}>${isEquippedNow?'着用中':'これに着せ替える'}</button>
+    <div class="mm-skin-body2">
+      <div class="mm-skin-list">${listHtml}</div>
+      <div class="mm-skin-main">
+        <div class="mm-skin-previews">
+          <div class="mm-skin-prev"><span class="mm-skin-prev-label">正面</span>${skinPreviewImgTag(key, previewSkin)}</div>
+          <div class="mm-skin-prev"><span class="mm-skin-prev-label">後ろ</span>${skinBackImgTag(key, previewSkin)}</div>
+        </div>
+        <div class="mm-skin-preview-name">${previewName}</div>
+        <button id="mmSkinConfirmBtn" class="mm-skin-confirm" ${isEquippedNow?'disabled':''}>${isEquippedNow?'着用中':'これに着せ替える'}</button>
+      </div>
     </div>`;
 }
 
@@ -2074,9 +2091,17 @@ function handleMastermonPostMatch(isWin){
         bonusExp: killExpBonus, // マスモン撃破ボーナス(相手レベル×係数の積み立て)
       });
       saveMastermons(data);
-      let resultText = `${mm.name} EXP+${result.expGain}`;
-      if(killExpBonus>0) resultText += `(うちマスモン撃破ボーナス+${killExpBonus})`;
-      if(result.levelsGained>0) resultText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
+      let resultText;
+      if(result.goldGain>0){
+        // レベル上限に達したマスモンは経験値の代わりにゴールドを獲得
+        addWallet(result.goldGain, 0);
+        updateAccountBar();
+        resultText = `${mm.name} は最高レベル！ EXPの代わりに 🪙+${result.goldGain}`;
+      } else {
+        resultText = `${mm.name} EXP+${result.expGain}`;
+        if(killExpBonus>0) resultText += `(うちマスモン撃破ボーナス+${killExpBonus})`;
+        if(result.levelsGained>0) resultText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
+      }
       infoEl.textContent = resultText;
       infoEl.classList.remove('hidden');
     }
