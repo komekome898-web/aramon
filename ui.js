@@ -444,6 +444,17 @@ function renderBag(){
     b.addEventListener('click', ()=>{
       bagSelectedItem = (bagSelectedItem===b.dataset.key) ? null : b.dataset.key;
       renderBag();
+      // 右側のマスモン選択が開いているときは、選択中アイテムに合わせて右側も切り替える
+      // (対象マスモンの選択は維持。アイテム選択を解除したら右側を閉じる)
+      const wrap = document.getElementById('bagTargetWrap');
+      if(!wrap.classList.contains('hidden')){
+        if(bagSelectedItem){
+          bagPicker.itemKey = bagSelectedItem;
+          renderBagTargetList();
+        } else {
+          wrap.classList.add('hidden');
+        }
+      }
     });
   });
   renderBagDesc();
@@ -473,8 +484,6 @@ function openBagTargetPicker(itemKey){
   const keys = Object.keys(loadMastermons());
   if(keys.length===0){ pushToast('マスモンがいません。先にマスモン登録しよう！'); return; }
   bagPicker = { itemKey, targetKey:null };
-  const it = PLAYER_ITEMS[itemKey];
-  document.getElementById('bagTargetTitle').textContent = `${it.icon} ${it.name} をどのマスモンに使う？`;
   renderBagTargetList();
   document.getElementById('bagTargetWrap').classList.remove('hidden');
 }
