@@ -665,23 +665,34 @@ function hslToRgb(h,s,l){
   return [r*255, g*255, b*255];
 }
 const SKIN_TARGET_HUE = { red:0, yellow:52, green:120, blue:215 };
-// モンスターの元色に最も近いスキン色(=除外する色)
-function nearestSkinColor(elementKey){
-  const [r,g,b] = hexToRgb(ELEMENTS[elementKey].color);
-  let best=SKIN_COLOR_ORDER[0], bd=Infinity;
-  for(const id of SKIN_COLOR_ORDER){ const rf=SKIN_COLORS[id].ref; const d=(r-rf[0])**2+(g-rf[1])**2+(b-rf[2])**2; if(d<bd){ bd=d; best=id; } }
-  return best;
-}
+// モンスターごとのスキン設定:
+//  colors = 持てる5色 / source = 色置換する主要部(color相 or 明度タイプ)
+//  source.type: 'chroma'(hue付近の色相を置換) / 'light'(白い部分) / 'dark'(暗い部分)
+const SKIN_CONFIG = {
+  mocchi:  { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:332, window:55} }, // ピンクの部分
+  suezo:   { colors:['black','white','red','blue','green'],    source:{type:'chroma', hue:50,  window:55} }, // 黄の部分
+  phoenix: { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:8,   window:24} }, // 赤い部分
+  fire:    { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:16,  window:42} }, // 赤い部分
+  aqua:    { colors:['black','white','red','yellow','green'],  source:{type:'chroma', hue:198, window:72} }, // 青い部分
+  leaf:    { colors:['black','white','red','blue','yellow'],   source:{type:'chroma', hue:85,  window:60} }, // 緑の部分
+  spark:   { colors:['black','white','red','yellow','green'],  source:{type:'chroma', hue:210, window:55} }, // 青い部分
+  rock:    { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:31,  window:50} }, // 茶色の部分
+  ark:     { colors:['black','red','blue','yellow','white'],   source:{type:'chroma', hue:120, window:60} }, // 緑の部分
+  warm:    { colors:['black','white','red','blue','green'],    source:{type:'chroma', hue:30,  window:45} }, // 茶色い部分
+  illumine:{ colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:272, window:55} }, // 紫の部分
+  fox:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白い部分
+};
 // 各モンスターが持てる色スキン(5色)
 function monsterSkinColors(elementKey){
-  const skip = nearestSkinColor(elementKey);
-  return SKIN_COLOR_ORDER.filter(c=>c!==skip);
+  const cfg = SKIN_CONFIG[elementKey];
+  return (cfg && cfg.colors) ? cfg.colors.slice() : SKIN_COLOR_ORDER.slice(0,5);
 }
-// 色置換用の主要部情報(色相 or 明度タイプ)
+// 色置換用の主要部情報(色相 or 明度タイプ + 色相許容幅)
 function monsterMainInfo(elementKey){
-  const type = SKIN_ACHROMATIC[elementKey] || 'chroma';
+  const cfg = SKIN_CONFIG[elementKey];
+  if(cfg && cfg.source){ const s=cfg.source; return { type:s.type, hue:s.hue||0, window:s.window||55 }; }
   const [h] = rgbToHsl(...hexToRgb(ELEMENTS[elementKey].color));
-  return { type, hue:h };
+  return { type:'chroma', hue:h, window:55 };
 }
 
 // SSRスキン定義(skinId -> 情報)
@@ -708,7 +719,8 @@ function allSsrSkinIds(){ return Object.keys(SSR_SKINS); }
 // ガチャのレアリティ別アイテム
 const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','seed_evasion','seed_vitality'];
 const GACHA_R_ITEMS = ['freeTrainTicket','moveTicket'];
-const DUP_SKIN_DIA = 5; // 既に持っているスキンが出た時に貰えるダイヤ
+const DUP_SKIN_DIA = 5;     // 既に持っているSRスキンが出た時に貰えるダイヤ
+const DUP_SSR_DIA = 50;     // 既に持っているSSRスキンが出た時に貰えるダイヤ
 
 function weightedPickRarity(guaranteedSRplus){
   const entries = guaranteedSRplus ? [['SR',RARITIES.SR.rate],['SSR',RARITIES.SSR.rate]]

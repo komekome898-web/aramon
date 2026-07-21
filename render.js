@@ -34,7 +34,7 @@ function recolorToCanvas(baseImg, element, colorId, maxSize){
     const [h1,s1,l1]=rgbToHsl(d[i],d[i+1],d[i+2]);
     let wgt=0;
     if(info.type==='chroma'){
-      const hueW = 1 - Math.min(1, hueDist(h1, info.hue)/55);
+      const hueW = 1 - Math.min(1, hueDist(h1, info.hue)/(info.window||55));
       const satW = Math.min(1, Math.max(0,(s1-0.10))/0.20);
       wgt = hueW*satW;
     } else if(info.type==='dark'){
