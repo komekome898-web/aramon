@@ -189,8 +189,9 @@ Object.keys(ELEMENTS).forEach(key=>{
   monsterImages[key] = loadMonsterImage(`monsters/${key}`);
   playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player`);
 });
-// 召喚演出のスポーン円盤石(画像)
+// 召喚演出のスポーン円盤石(画像)。ガチャ演出用に厚み(立体)を焼き込んだ版も持つ
 const summonDiskImg = loadMonsterImage('summon_disk');
+const summonDiskThickImg = loadMonsterImage('summon_disk_thick');
 // SSRスキンの手描き画像(ヒノトリ「フェニックス」: アイコン/試合用後ろ姿)
 const ssrSkinImages = {
   phoenix_ssr:        loadMonsterImage('monsters/phoenix_ssr'),
