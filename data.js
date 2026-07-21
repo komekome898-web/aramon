@@ -203,8 +203,8 @@ function monsterImageReady(key){
   return imgIsReady(monsterImages[key]);
 }
 function getDisplayImage(entity){
-  // プレイヤーが着せ替えスキンを装備していれば、そのスキン画像を優先する
-  if(entity.isPlayer && typeof skinnedImageForEntity==='function'){
+  // 着せ替えスキン(自分/相手/マスモンbot)を装備していれば、そのスキン画像を優先する
+  if(typeof skinnedImageForEntity==='function'){
     const sk = skinnedImageForEntity(entity);
     if(sk) return sk;
   }

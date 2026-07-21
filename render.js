@@ -117,12 +117,18 @@ function skinnedPlayerDataUrl(skinId){
   _skinDataUrlCache[key]=url;
   return url;
 }
-// プレイヤーエンティティに装備中スキンがあればその表示画像を返す
+// エンティティに装備中スキンがあればその表示画像を返す。
+// ・自分(操作キャラ)は後ろ姿(player)、それ以外(相手/マスモンbot)は正面(icon)を使う
+//   (通常描画も自分だけ_player画像・他は正面画像を使うのに合わせる)
 function skinnedImageForEntity(entity){
-  if(!entity || !entity.isPlayer) return null;
-  const skinId = (typeof getEquippedSkin==='function') ? getEquippedSkin(entity.element) : null;
-  if(!skinId) return null;
-  return skinnedImage(skinId, 'player');
+  if(!entity) return null;
+  if(entity.isPlayer){
+    const skinId = (typeof getEquippedSkin==='function') ? getEquippedSkin(entity.element) : null;
+    if(!skinId) return null;
+    return skinnedImage(skinId, 'player');
+  }
+  if(entity.skinId) return skinnedImage(entity.skinId, 'icon');
+  return null;
 }
 
 // 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。

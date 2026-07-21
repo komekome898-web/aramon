@@ -791,7 +791,7 @@ function updateLootPickups(){
       lootItems.splice(i,1);
       continue;
     }
-    let consumed = false;
+    let consumed = false, consumedBy = null, consumedKind = null;
     for(const e of entities){
       if(!e.alive) continue;
       if(dist(e,it) < e.radius+14){
@@ -865,6 +865,8 @@ function updateLootPickups(){
       if(consumed){
         // SE: 自分のアイテム取得のみ。トレーニングアイテムはトレ実行と同じ「ポワポワ」
         if(e.isPlayer) playSe(it.kind==='training' ? 'train' : 'pickup');
+        consumedBy = e.netPlayerId || null; // 誰が拾ったか(ゲストのSE用)
+        consumedKind = it.kind;
         break;
       }
     }
@@ -873,7 +875,8 @@ function updateLootPickups(){
       // このアイテムを消すよう明示的に配信する(効果はauthStateのhp/guts等で既に伝わるが、
       // アイテム自体の見た目はホスト側のlootItems配列にしか無いため個別に届ける必要がある)
       if(netState.mode==='multi' && netState.isHost){
-        window.__aramonPushLootEvent(netState.roomId, { evtType:'pickup', id: it.id });
+        // 拾った人間プレイヤーのIDと種類も送り、ゲスト側で自分の拾得ならSEを鳴らせるようにする
+        window.__aramonPushLootEvent(netState.roomId, { evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null });
       }
       lootItems.splice(i,1);
     }

@@ -143,12 +143,12 @@
 
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
   // 部屋を新規作成してホストになる
-  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmLevel){
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmLevel, skinId){
     const roomId = genId();
     const roomRef = ref(fbDb, `rooms/${roomId}`);
     await set(roomRef, {
       meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now(), hostName: playerName },
-      players: { [myPlayerId]: { name: playerName, element: elementKey, mmLevel: mmLevel||null, joinedAt: Date.now(), isHost:true, input:{} } },
+      players: { [myPlayerId]: { name: playerName, element: elementKey, mmLevel: mmLevel||null, skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
     });
     const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now(), hostName: playerName });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
@@ -180,7 +180,7 @@
   };
 
   // 指定した部屋に参加する(部屋を探す画面で選んだ場合)
-  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmLevel){
+  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmLevel, skinId){
     try{
       const roomPlayersRef = ref(fbDb, `rooms/${roomId}/players`);
       const lobbyCountRef = ref(fbDb, `lobby/${lobbyKey}/count`);
@@ -196,7 +196,7 @@
       if(!txResult.committed) return { ok:false, reason:'この部屋は満員です' };
 
       await set(child(roomPlayersRef, myPlayerId), {
-        name: playerName, element: elementKey, mmLevel: mmLevel||null, joinedAt: Date.now(), isHost:false, input:{}
+        name: playerName, element: elementKey, mmLevel: mmLevel||null, skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
@@ -208,7 +208,7 @@
   };
 
   // 旧方式(自動マッチング)は互換のため残置
-  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey){
+  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, skinId){
     const lobbyRef = ref(fbDb, 'lobby');
     const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
     let joinedRoomId = null;
@@ -235,7 +235,7 @@
         });
         if(txResult.committed){
           await set(child(roomPlayersRef, myPlayerId), {
-            name: playerName, element: elementKey, joinedAt: Date.now(), isHost:false, input:{}
+            name: playerName, element: elementKey, skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
           });
           onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
           joinedRoomId = cand.roomId;
@@ -249,7 +249,7 @@
       const roomRef = ref(fbDb, `rooms/${roomId}`);
       await set(roomRef, {
         meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now() },
-        players: { [myPlayerId]: { name: playerName, element: elementKey, joinedAt: Date.now(), isHost:true, input:{} } },
+        players: { [myPlayerId]: { name: playerName, element: elementKey, skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
       });
       const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now() });
       onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
@@ -329,8 +329,8 @@
     }catch(err){}
   };
 
-  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots){
-    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null }); }catch(err){}
+  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null, world: worldData||null }); }catch(err){}
   };
 
   window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
@@ -340,7 +340,7 @@
       const cb = (snap)=>{
         const v = snap.val();
         if(v && v.seed!=null && v.fixedPlayers && !done){
-          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[] });
+          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[], world:v.world||null });
         }
       };
       onValue(r, cb);
