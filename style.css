@@ -151,7 +151,7 @@
   /* アイテムがアイコンのみのグリッド + 下部の説明フィールド */
   .bag-col-left{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px; }
   .bag-icon-grid{
-    display:grid; grid-template-columns:repeat(auto-fill, minmax(58px,1fr)); gap:8px;
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(48px,1fr)); gap:7px;
     max-height:calc(40 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   .bag-empty{ grid-column:1/-1; font-size:12px; color:var(--ink-dim); padding:16px 0; text-align:center; }
@@ -160,7 +160,7 @@
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:10px;
   }
   .bag-icon-cell.active{ border-color:var(--amber); background:rgba(244,196,48,0.14); box-shadow:0 0 0 1px var(--amber) inset; }
-  .bag-icon-emoji{ font-size:28px; line-height:1; }
+  .bag-icon-emoji{ font-size:22px; line-height:1; }
   .bag-icon-count{
     position:absolute; right:3px; bottom:2px; font-family:'Share Tech Mono',monospace; font-size:10px; font-weight:700;
     color:var(--ink); background:rgba(0,0,0,0.55); border-radius:5px; padding:0 4px;
@@ -182,25 +182,31 @@
   /* 右側: 使用対象のマスモン一覧(ステータスバー付き) */
   .bag-col-right{ flex:0 0 clamp(200px, 42%, 300px); min-width:0; display:flex; flex-direction:column; }
   .bag-target-title{ font-size:12px; font-weight:700; color:var(--ink); flex-shrink:0; }
+  /* マスモン情報フィールドをできるだけ大きく取り、使用/やめるボタンを下げる */
   .bag-target-list{
-    margin-top:8px; flex:1 1 auto; min-height:0; max-height:calc(42 * var(--vh));
+    margin-top:8px; flex:1 1 auto; min-height:0; max-height:calc(58 * var(--vh));
     overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:8px;
   }
   .bag-target-btn{
-    display:flex; flex-direction:column; gap:7px;
-    padding:9px 10px; border-radius:8px; cursor:pointer; text-align:left;
+    display:flex; flex-direction:column; gap:6px;
+    padding:8px 9px; border-radius:8px; cursor:pointer; text-align:left;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
   }
   .bag-target-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.12); box-shadow:0 0 0 1px var(--amber) inset; }
-  .bt-head{ display:flex; align-items:center; gap:8px; }
-  .bt-head img{ width:26px; height:26px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
-  /* マスモン画面と同じステータスバーをバッグ内でもそのまま使う(150px固定・スクロールは解除) */
+  .bt-head{ display:flex; align-items:center; gap:7px; font-size:11px; }
+  .bt-head img{ width:22px; height:22px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
+  /* マスモン画面と同じステータスバーをバッグ内でも使う(150px固定・スクロール解除・一回り小さく) */
   .bag-target-btn .mastermon-detail-statscol{
     flex:none; max-width:none; width:100%; overflow:visible; padding-right:0;
   }
-  .bt-extra{ font-size:11px; color:var(--amber); font-weight:700; }
+  .bag-target-btn .mm-stats-wrap{ gap:5px; }
+  .bag-target-btn .mm-stat-toprow{ font-size:9.5px; }
+  .bag-target-btn .mm-stat-apt-badge{ width:12px; height:12px; font-size:8px; margin-left:4px; }
+  .bag-target-btn .mm-stat-delta{ font-size:9px; }
+  .bag-target-btn .mm-stat-track{ height:5px; }
+  .bt-extra{ font-size:10px; color:var(--amber); font-weight:700; }
   .bag-target-btnrow{ display:flex; gap:10px; margin-top:10px; flex-shrink:0; }
   .bag-target-cancel{
     flex:1 1 0; padding:9px 0; border-radius:6px; cursor:pointer;
