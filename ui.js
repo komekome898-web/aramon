@@ -246,7 +246,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -557,52 +557,298 @@ function useBagItem(itemKey, mmKey){
   renderSelectorCards();
 }
 
-// ===== ガチャ =====
+// ===== ガチャ(スキンガチャ・全画面) =====
+const RARITY_RANK = { N:0, R:1, SR:2, SSR:3 };
 function updateGachaWallet(){
   const w = loadWallet();
   document.getElementById('gachaDia').textContent = `💎 ${w.dia}`;
+}
+function rarityCssColor(rarity, now){
+  if(rarity==='SSR'){ const h=((now||0)*0.12)%360; return `hsl(${h},90%,63%)`; }
+  return RARITIES[rarity].color;
+}
+// --- ガチャカウンター(ゲージ・カタログ) ---
+function updateGachaCounterUI(){
+  const c = loadGachaCount();
+  document.getElementById('gachaCountNum').textContent = `${c.count} / ${GACHA_SSR_CATALOG_AT}`;
+  document.getElementById('gachaGaugeFill').style.width = `${Math.min(100, c.count/GACHA_SSR_CATALOG_AT*100)}%`;
+  document.querySelectorAll('.gacha-milestone').forEach(m=>{
+    const at = +m.dataset.at;
+    m.classList.toggle('reached', c.count>=at);
+  });
+  const cats = loadCatalogs();
+  const row = document.getElementById('gachaCatalogRow');
+  let html='';
+  if(cats.sr>0) html += `<button class="gacha-catalog-btn sr" data-cat="sr">🎫 SRスキンカタログ ×${cats.sr}</button>`;
+  if(cats.ssr>0) html += `<button class="gacha-catalog-btn ssr" data-cat="ssr">🎫 SSRスキンカタログ ×${cats.ssr}</button>`;
+  row.innerHTML = html;
+  row.querySelectorAll('.gacha-catalog-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> openCatalogModal(btn.dataset.cat));
+  });
+}
+// カウンターを進め、100/200到達でカタログ付与。200で1周してリセット
+function incrementGachaCount(n){
+  const c = loadGachaCount(); const granted=[];
+  for(let i=0;i<n;i++){
+    c.count++;
+    if(!c.sr && c.count>=GACHA_SR_CATALOG_AT){ c.sr=true; addCatalog('sr',1); granted.push('sr'); }
+    if(!c.ssr && c.count>=GACHA_SSR_CATALOG_AT){ addCatalog('ssr',1); granted.push('ssr'); c.count=0; c.sr=false; c.ssr=false; }
+  }
+  saveGachaCount(c);
+  return granted;
 }
 document.getElementById('openGachaBtn').addEventListener('click', ()=>{
   updateGachaWallet();
   document.getElementById('gachaSingleCost').textContent = `💎 ${GACHA_COST_DIA_SINGLE}`;
   document.getElementById('gachaTenCost').textContent = `💎 ${GACHA_COST_DIA_TEN}`;
-  document.getElementById('gachaResult').innerHTML = 'ガチャを回してアイテムを手に入れよう！';
+  document.getElementById('gachaResult').classList.add('hidden');
+  document.getElementById('gachaRatesModal').classList.add('hidden');
+  document.getElementById('gachaCatalogModal').classList.add('hidden');
+  document.getElementById('gachaButtons').style.visibility='visible';
+  updateGachaCounterUI();
   document.getElementById('gachaOverlay').classList.remove('hidden');
+  gachaAnimStart('idle');
 });
 document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
+  gachaAnimStop();
   document.getElementById('gachaOverlay').classList.add('hidden');
 });
+
+// --- ガチャ演出(canvas): 円盤石が回り→光の柱→レアリティ色の球体 ---
+const gachaAnim = { raf:null, phase:'idle', t0:0, results:[], count:1, orbs:[], onReveal:null };
+function gachaCanvasSize(){
+  const cv = document.getElementById('gachaCanvas');
+  const f = document.getElementById('gachaField');
+  const w = f.clientWidth, h = f.clientHeight;
+  if(cv.width!==w) cv.width=w;
+  if(cv.height!==h) cv.height=h;
+  return { cv, w, h };
+}
+function gachaAnimStart(phase){
+  gachaAnim.phase = phase;
+  gachaAnim.t0 = performance.now();
+  if(!gachaAnim.raf) gachaAnim.raf = requestAnimationFrame(gachaAnimFrame);
+}
+function gachaAnimStop(){
+  if(gachaAnim.raf){ cancelAnimationFrame(gachaAnim.raf); gachaAnim.raf=null; }
+}
+function gachaAnimFrame(now){
+  const { cv, w, h } = gachaCanvasSize();
+  const g = cv.getContext('2d');
+  g.clearRect(0,0,w,h);
+  const cx=w/2, cy=h*0.46;
+  const diskR = Math.min(w,h)*0.20;
+  const elapsed = (now - gachaAnim.t0)/1000;
+  const topR = gachaAnim.results.length ? gachaAnim.results.reduce((a,r)=>RARITY_RANK[r.rarity]>RARITY_RANK[a]?r.rarity:a,'N') : 'N';
+  const drawDisk = (ang, glow, glowColor)=>{
+    g.save(); g.translate(cx,cy);
+    if(glow>0){ g.shadowBlur=40*glow; g.shadowColor=glowColor||'#fff'; }
+    g.rotate(ang);
+    if(imgIsReady(summonDiskImg)) g.drawImage(summonDiskImg, -diskR, -diskR*0.62, diskR*2, diskR*1.24);
+    else { g.beginPath(); g.arc(0,0,diskR,0,Math.PI*2); g.fillStyle='#c98d5a'; g.fill(); }
+    g.restore();
+  };
+  if(gachaAnim.phase==='idle'){
+    // 白く光る円盤石
+    const pulse = 0.4+0.3*Math.sin(now/380);
+    drawDisk(0, pulse, '#ffffff');
+    // 時計回りの回転矢印
+    g.save(); g.translate(cx,cy);
+    const ar = diskR*1.42, a0 = (now/600)%(Math.PI*2);
+    g.strokeStyle='rgba(255,230,150,0.9)'; g.lineWidth=5; g.lineCap='round';
+    g.beginPath(); g.arc(0,0,ar, a0, a0+Math.PI*1.4); g.stroke();
+    const ae=a0+Math.PI*1.4, ax=Math.cos(ae)*ar, ay=Math.sin(ae)*ar;
+    g.translate(ax,ay); g.rotate(ae+Math.PI/2);
+    g.fillStyle='rgba(255,230,150,0.95)'; g.beginPath(); g.moveTo(0,-11); g.lineTo(9,6); g.lineTo(-9,6); g.closePath(); g.fill();
+    g.restore();
+    // 「回せ！」
+    g.save(); g.textAlign='center'; g.font=`bold ${Math.round(Math.min(w,h)*0.09)}px 'Rajdhani',sans-serif`;
+    g.fillStyle='#fff'; g.shadowBlur=14; g.shadowColor='rgba(255,200,80,0.9)';
+    g.fillText('回せ！', cx, cy - diskR*1.9);
+    g.restore();
+  } else if(gachaAnim.phase==='spin'){
+    // 加速回転しながらレアリティ色に光る
+    const p = Math.min(1, elapsed/1.2);
+    const ang = (elapsed*elapsed)*10;
+    drawDisk(ang, 0.5+p, rarityCssColor(topR, now));
+    if(elapsed>=1.2) gachaAnimStart('pillar');
+  } else if(gachaAnim.phase==='pillar'){
+    const p = Math.min(1, elapsed/1.0);
+    const ang = 12 + elapsed*(6*(1-p));   // だんだん止まる
+    drawDisk(ang, 1.2, rarityCssColor(topR, now));
+    // 降り注ぐ光の柱
+    const topY = 0, botY = cy;
+    const lead = lerp(topY, botY, Math.min(1, elapsed/0.6));
+    const halfW = diskR*0.85;
+    g.save(); g.globalCompositeOperation='lighter';
+    const grad=g.createLinearGradient(0,topY,0,lead);
+    grad.addColorStop(0,'rgba(255,255,255,0)'); grad.addColorStop(1,'rgba(255,255,255,0.95)');
+    g.fillStyle=grad; g.globalAlpha=0.9;
+    g.beginPath(); g.moveTo(cx-halfW*0.5,topY); g.lineTo(cx+halfW*0.5,topY); g.lineTo(cx+halfW,lead); g.lineTo(cx-halfW,lead); g.closePath(); g.fill();
+    g.restore();
+    if(elapsed>=1.0){ buildGachaOrbs(w,h,cx,cy,diskR); gachaAnimStart('orbs'); }
+  } else if(gachaAnim.phase==='orbs'){
+    const p = Math.min(1, elapsed/0.8);
+    drawDisk(12, 0.6*(1-p), rarityCssColor(topR, now));
+    // 柱が引いて球体が残る
+    for(const o of gachaAnim.orbs){
+      const oy = lerp(cy, o.y, p), ox = lerp(cx, o.x, p);
+      const rr = o.r*(0.5+0.5*p);
+      const col = rarityCssColor(o.rarity, now + o.seed*90);
+      g.save();
+      g.shadowBlur=26; g.shadowColor=col;
+      const rg=g.createRadialGradient(ox,oy,rr*0.1,ox,oy,rr);
+      rg.addColorStop(0,'#ffffff'); rg.addColorStop(0.5,col); rg.addColorStop(1,'rgba(0,0,0,0)');
+      g.fillStyle=rg; g.beginPath(); g.arc(ox,oy,rr,0,Math.PI*2); g.fill();
+      g.restore();
+    }
+    if(elapsed>=1.0 && gachaAnim.onReveal){ const cb=gachaAnim.onReveal; gachaAnim.onReveal=null; cb(); }
+  }
+  if(gachaAnim.raf) gachaAnim.raf = requestAnimationFrame(gachaAnimFrame);
+}
+function buildGachaOrbs(w,h,cx,cy,diskR){
+  const n = gachaAnim.count;
+  gachaAnim.orbs = [];
+  const r = Math.min(w,h)* (n>1?0.055:0.11);
+  if(n===1){
+    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.2, r, rarity:gachaAnim.results[0].rarity, seed:0 });
+  } else {
+    const cols=5, rows=2, gapX=w*0.15, gapY=r*2.6;
+    for(let i=0;i<n;i++){
+      const col=i%cols, rowi=Math.floor(i/cols);
+      gachaAnim.orbs.push({ x: cx + (col-(cols-1)/2)*gapX, y: cy - diskR*0.4 + rowi*gapY, r, rarity:gachaAnim.results[i].rarity, seed:i });
+    }
+  }
+}
+
 function doGacha(count){
+  if(gachaAnim.phase!=='idle') return; // 演出中は無効
   const cost = count===10 ? GACHA_COST_DIA_TEN : GACHA_COST_DIA_SINGLE;
   const w = loadWallet();
   if(w.dia < cost){ pushToast('ダイヤが足りません'); return; }
-  w.dia -= cost;
-  saveWallet(w);
+  w.dia -= cost; saveWallet(w);
+  // 抽選
   const results = [];
   for(let i=0;i<count;i++){
-    // 10連の最後の1枠(10個目)はチケット類確定
-    const k = (count===10 && i===count-1) ? gachaRoll(GACHA_TICKET_POOL) : gachaRoll(GACHA_POOL);
-    addBagItem(k, 1);
-    results.push(k);
+    const guaranteed = (count===10 && i===count-1); // 10連の10個目はSR以上確定
+    const roll = gachaRollOne(guaranteed);
+    let dup = false, diaGain = 0;
+    if(roll.kind==='item'){
+      addBagItem(roll.key,1);
+    } else {
+      if(isSkinOwned(roll.skinId)){ dup=true; diaGain=DUP_SKIN_DIA; addWallet(0, DUP_SKIN_DIA); }
+      else ownSkin(roll.skinId);
+    }
+    results.push({ ...roll, dup, diaGain });
   }
-  if(count===1){
-    const it = PLAYER_ITEMS[results[0]];
-    document.getElementById('gachaResult').innerHTML = `
-      <span class="gacha-result-icon">${it.icon}</span>
-      <div>${it.name} を手に入れた！</div>
-      <div class="gacha-result-desc">${playerItemDesc(results[0])}</div>`;
-  } else {
-    document.getElementById('gachaResult').innerHTML = `
-      <div class="gacha-ten-grid">${results.map(k=>`
-        <span class="gacha-ten-item">${PLAYER_ITEMS[k].icon}<span>${PLAYER_ITEMS[k].name}</span></span>`).join('')}
-      </div>`;
-  }
-  playSe('train');
-  updateGachaWallet();
-  updateAccountBar();
+  const granted = incrementGachaCount(count);
+  gachaAnim.results = results; gachaAnim.count = count;
+  // 演出開始
+  document.getElementById('gachaButtons').style.visibility='hidden';
+  document.getElementById('gachaResult').classList.add('hidden');
+  playSe('chupiin');
+  setTimeout(()=>playSe('shuwaa'), 1200);
+  gachaAnim.onReveal = ()=> showGachaResults(results, granted);
+  gachaAnimStart('spin');
+}
+function skinCellInner(skinId){
+  const url = skinnedIconDataUrl(skinId);
+  if(url) return `<img src="${url}" alt="">`;
+  const m = skinMeta(skinId);
+  return `<span class="gacha-cell-emoji">✨</span>`;
+}
+function showGachaResults(results, granted){
+  const cells = results.map(r=>{
+    let inner, rarCls, name, dup='';
+    if(r.kind==='item'){
+      const it=PLAYER_ITEMS[r.key];
+      inner=`<span class="gacha-cell-emoji">${it.icon}</span>`;
+      rarCls=r.rarity.toLowerCase(); name=it.name;
+    } else {
+      const m=skinMeta(r.skinId);
+      inner=skinCellInner(r.skinId);
+      rarCls=r.rarity.toLowerCase(); name=m.name;
+      if(r.dup) dup=`<span class="gacha-dup-dia">💎${r.diaGain}</span>`;
+    }
+    return `<div class="gacha-cell ${rarCls}">
+      <span class="gacha-rar-tag rar-${r.rarity}">${r.rarity}</span>${dup}
+      ${inner}<span class="gacha-cell-name">${name}</span></div>`;
+  }).join('');
+  const cols = results.length>1 ? 5 : 1;
+  let grantMsg='';
+  if(granted.includes('sr')) grantMsg += `<div class="rar-SR" style="font-weight:700;">SRスキンカタログを獲得！</div>`;
+  if(granted.includes('ssr')) grantMsg += `<div class="rar-SSR" style="font-weight:700;">SSRスキンカタログを獲得！</div>`;
+  const res = document.getElementById('gachaResult');
+  res.innerHTML = `<div class="gacha-result-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
+    ${grantMsg}<div class="gacha-result-tap">タップで閉じる</div>`;
+  res.classList.remove('hidden');
+  playSe('jakiin');
+  updateGachaWallet(); updateAccountBar(); updateGachaCounterUI();
+  res.onclick = ()=>{
+    res.classList.add('hidden'); res.onclick=null;
+    document.getElementById('gachaButtons').style.visibility='visible';
+    gachaAnim.results=[]; gachaAnim.orbs=[];
+    gachaAnimStart('idle');
+  };
 }
 document.getElementById('gachaSingleBtn').addEventListener('click', ()=>doGacha(1));
 document.getElementById('gachaTenBtn').addEventListener('click', ()=>doGacha(10));
+
+// --- 提供割合モーダル ---
+document.getElementById('gachaRatesBtn').addEventListener('click', ()=>{
+  const rows = gachaRateTable();
+  const fmt = p=>{ const r=Math.round(p); if(Math.abs(p-r)<0.005) return r+'%'; return (p>=1? p.toFixed(1): p.toFixed(2))+'%'; };
+  const html = rows.map(row=>{
+    const R = RARITIES[row.rarity];
+    const items = row.items.map(it=>`<div class="gacha-rate-item"><span>${it.label}</span><span class="pct">${fmt(it.pct)}</span></div>`).join('');
+    return `<div class="gacha-rate-rar"><span class="rar-${row.rarity}">${R.label}</span><span style="font-size:11px;color:var(--ink-dim)">${R.jp}</span><span class="pct">${R.rate}%</span></div>${items}`;
+  }).join('');
+  document.getElementById('gachaRatesBody').innerHTML = html;
+  document.getElementById('gachaRatesModal').classList.remove('hidden');
+});
+document.getElementById('gachaRatesCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('gachaRatesModal').classList.add('hidden');
+});
+
+// --- スキンカタログ選択モーダル ---
+let catalogPick = null, catalogKind = null;
+function openCatalogModal(kind){
+  catalogKind = kind; catalogPick = null;
+  document.getElementById('gachaCatalogTitle').textContent = kind==='ssr' ? 'SSRスキンを選ぶ' : 'SRスキン(色違い)を選ぶ';
+  const ids = kind==='ssr' ? allSsrSkinIds() : allColorSkinIds();
+  const grid = document.getElementById('gachaCatalogGrid');
+  grid.innerHTML = ids.map(id=>{
+    const m = skinMeta(id); const owned = isSkinOwned(id);
+    const url = skinnedIconDataUrl(id);
+    const img = url ? `<img src="${url}" alt="">` : `<span class="gacha-cell-emoji">✨</span>`;
+    return `<div class="gacha-cat-cell ${owned?'owned':''}" data-id="${id}">
+      ${img}<span class="cat-name">${m.name}</span>${owned?'<span class="cat-owned-tag">所持</span>':''}</div>`;
+  }).join('');
+  grid.querySelectorAll('.gacha-cat-cell').forEach(cell=>{
+    if(cell.classList.contains('owned')) return;
+    cell.addEventListener('click', ()=>{
+      grid.querySelectorAll('.gacha-cat-cell').forEach(c=>c.classList.remove('selected'));
+      cell.classList.add('selected'); catalogPick = cell.dataset.id;
+      document.getElementById('gachaCatalogConfirmBtn').disabled = false;
+    });
+  });
+  document.getElementById('gachaCatalogConfirmBtn').disabled = true;
+  document.getElementById('gachaCatalogModal').classList.remove('hidden');
+}
+document.getElementById('gachaCatalogCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('gachaCatalogModal').classList.add('hidden');
+});
+document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>{
+  if(!catalogPick || !catalogKind) return;
+  const cats = loadCatalogs();
+  if((cats[catalogKind]||0) <= 0){ pushToast('カタログがありません'); return; }
+  ownSkin(catalogPick);
+  cats[catalogKind] -= 1; saveCatalogs(cats);
+  pushToast(`${skinMeta(catalogPick).name} を獲得！`);
+  playSe('pickup');
+  document.getElementById('gachaCatalogModal').classList.add('hidden');
+  updateGachaCounterUI();
+});
 
 // ===== ショップ(ゴールドでアイテム購入) =====
 function renderShop(){
@@ -1437,14 +1683,16 @@ function renderMastermonDetail(key){
   const savedContentScroll = prevContent ? prevContent.scrollTop : 0;
 
   const preview = (mastermonDetailTab==='training' && mastermonSelectedTraining) ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
-  const statsColHtml = buildMastermonStatsColHtml(mm, apt, preview);
+  // 着せ替え画面のみステータス列を表示しない(プレビューを大きく取るため)
+  const statsColHtml = (mastermonDetailTab==='dressup') ? '' : buildMastermonStatsColHtml(mm, apt, preview);
 
-  const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング', edit:'マスモン編集' };
+  const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
   let contentHtml;
   if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
   else if(mastermonDetailTab==='moves') contentHtml = buildMastermonMovesHtml(key);
   else if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
   else if(mastermonDetailTab==='edit') contentHtml = buildMastermonEditHtml(mm);
+  else if(mastermonDetailTab==='dressup') contentHtml = buildMastermonSkinHtml(key);
   else contentHtml = buildMastermonMenuHtml();
 
   // トレーニング画面では実行ボタンを戻るボタンの左(ヘッダー内)に置く
@@ -1475,6 +1723,7 @@ function renderMastermonDetail(key){
     panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         mastermonDetailTab = btn.dataset.tab;
+        if(btn.dataset.tab==='dressup') mastermonPreviewSkin = null; // 装備中を初期プレビューに
         renderMastermonDetail(key);
       });
     });
@@ -1484,6 +1733,7 @@ function renderMastermonDetail(key){
   panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
     mastermonDetailTab = null;
     mastermonSelectedTraining = null;
+    mastermonPreviewSkin = null;
     renderMastermonDetail(key);
   });
 
@@ -1531,6 +1781,60 @@ function renderMastermonDetail(key){
       renderMastermonDetail(key);
     });
   }
+
+  if(mastermonDetailTab==='dressup'){
+    panel.querySelectorAll('.mm-skin-thumb').forEach(thumb=>{
+      thumb.addEventListener('click', ()=>{
+        mastermonPreviewSkin = thumb.dataset.skin || null; // '' はデフォルト
+        renderMastermonDetail(key);
+      });
+    });
+    const confirmBtn = document.getElementById('mmSkinConfirmBtn');
+    if(confirmBtn) confirmBtn.addEventListener('click', ()=>{
+      setEquippedSkin(key, mastermonPreviewSkin || null);
+      renderMastermonList();
+      renderSelectorCards();
+      renderMastermonDetail(key);
+      pushToast(mastermonPreviewSkin ? 'スキンを着せ替えました' : 'デフォルトに戻しました');
+      playSe('pickup');
+    });
+  }
+}
+
+// 「着せ替え」画面: 大きなプレビュー + 所持スキンのサムネイル行(ステータスは非表示)
+let mastermonPreviewSkin = null; // null=このマスモンのプレビュー未初期化
+function skinPreviewImgTag(element, skinId){
+  // skinId が null/'' ならデフォルト(素の画像)
+  if(!skinId){ return `<img src="${imgSrcFor(`monsters/${element}`)}" onerror="handleMonsterImgError(this,'monsters/${element}')" alt="">`; }
+  const url = skinnedIconDataUrl(skinId);
+  if(url) return `<img src="${url}" alt="">`;
+  return `<img src="${imgSrcFor(`monsters/${element}`)}" onerror="handleMonsterImgError(this,'monsters/${element}')" alt="">`;
+}
+function buildMastermonSkinHtml(key){
+  const owned = ownedSkinsForElement(key);       // 所持スキンID一覧
+  const equipped = getEquippedSkin(key);
+  // 画面を開くたびに装備中スキンをプレビュー初期値にする
+  if(mastermonPreviewSkin === null) mastermonPreviewSkin = equipped || '';
+  const previewSkin = mastermonPreviewSkin || null;
+  const previewName = previewSkin ? skinMeta(previewSkin).name : `${ELEMENTS[key].label}(デフォルト)`;
+  // デフォルト + 所持スキンのサムネイル
+  const thumbs = [{ id:'', label:'デフォルト', cls:'' }].concat(owned.map(id=>{
+    const m = skinMeta(id);
+    return { id, label:m.name, cls: m.rarity==='SSR'?'ssr':'' };
+  }));
+  const rowHtml = thumbs.map(t=>{
+    const sel = ((mastermonPreviewSkin||'')===t.id) ? 'selected' : '';
+    const eq = ((equipped||'')===t.id) ? 'equipped' : '';
+    return `<div class="mm-skin-thumb ${t.cls} ${sel} ${eq}" data-skin="${t.id}">${skinPreviewImgTag(key, t.id||null)}</div>`;
+  }).join('');
+  const isEquippedNow = ((equipped||'')===(mastermonPreviewSkin||''));
+  return `
+    <div class="mm-skin-body">
+      <div class="mm-skin-preview">${skinPreviewImgTag(key, previewSkin)}</div>
+      <div class="mm-skin-preview-name">${previewName}</div>
+      <div class="mm-skin-row">${rowHtml}</div>
+      <button id="mmSkinConfirmBtn" class="mm-skin-confirm" ${isEquippedNow?'disabled':''}>${isEquippedNow?'着用中':'これに着せ替える'}</button>
+    </div>`;
 }
 
 // ステータス(ライフ・ちから等)バー: メニュー/詳細情報/技一覧/トレーニングの全画面で共通表示
@@ -1585,6 +1889,10 @@ function buildMastermonMenuHtml(){
       <button class="mm-menu-btn" data-tab="training">
         <span class="mm-menu-btn-icon">💪</span>
         <span class="mm-menu-btn-label">トレーニング</span>
+      </button>
+      <button class="mm-menu-btn" data-tab="dressup">
+        <span class="mm-menu-btn-icon">👕</span>
+        <span class="mm-menu-btn-label">着せ替え</span>
       </button>
     </div>`;
 }

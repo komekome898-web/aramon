@@ -229,30 +229,123 @@
   }
   #bagUseConfirmBtn{ flex:1 1 0; padding:9px 0; }
   #bagUseConfirmBtn:disabled{ opacity:0.35; cursor:not-allowed; }
-  .gacha-box{ max-width:min(480px, calc(92 * var(--vw))); }
+  /* ===== レアリティ配色(共通) ===== */
+  .rar-N{ color:#c88f5f; }
+  .rar-R{ color:#cfd3dd; }
+  .rar-SR{ color:#ffcf3f; }
+  .rar-SSR{ background:linear-gradient(90deg,#ff6b6b,#ffd93b,#6bff8f,#4dc9ff,#c07bff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+  /* ショップの残高表示(共有クラス) */
   .gacha-wallet{ display:flex; justify-content:center; gap:16px; font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink); margin-bottom:8px; }
-  .gacha-result{
-    min-height:74px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-    background:rgba(0,0,0,0.25); border:1px dashed var(--panel-line); border-radius:10px; padding:8px;
-    font-size:13px; font-weight:700; color:var(--ink);
-  }
-  .gacha-result-icon{ font-size:30px; }
-  .gacha-result-desc{ font-size:10px; color:var(--ink-dim); font-weight:400; }
-  .gacha-btn-row{ display:flex; gap:10px; margin-top:12px; }
+
+  /* ===== ガチャ(全画面) ===== */
+  #gachaOverlay{ position:fixed; inset:0; z-index:620; background:radial-gradient(ellipse at 50% 30%, #141a29, #070a12 70%); }
+  #gachaOverlay.hidden{ display:none !important; }
+  .gacha-screen{ position:absolute; inset:0; display:flex; flex-direction:column; padding:8px 14px 10px; }
+  .gacha-top{ display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+  .gacha-title{ font-family:'Russo One',sans-serif; font-size:18px; color:var(--ink); }
+  .gacha-top-right{ display:flex; align-items:center; gap:10px; }
+  .gacha-dia{ font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--ink); }
+  .gacha-rates-btn{ padding:6px 12px; border-radius:16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+    color:var(--amber); background:rgba(244,196,48,0.10); border:1px solid rgba(244,196,48,0.5); cursor:pointer; }
+  .gacha-close-btn{ width:32px; height:32px; border-radius:50%; font-size:15px; color:var(--ink);
+    background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .gacha-field{ position:relative; flex:1 1 auto; min-height:0; margin:6px 0; display:flex; align-items:center; justify-content:center; }
+  .gacha-canvas{ position:absolute; inset:0; width:100%; height:100%; }
+  .gacha-btn-row{ position:absolute; bottom:6px; left:50%; transform:translateX(-50%); display:flex; gap:14px; z-index:3; }
   .gacha-btn{
-    flex:1 1 0; padding:10px 6px; border-radius:8px; cursor:pointer; line-height:1.5;
-    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+    min-width:150px; padding:11px 14px; border-radius:12px; cursor:pointer; line-height:1.35; text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
   }
-  .gacha-btn.premium{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
+  .gacha-btn.premium{ color:#1a1306; background:linear-gradient(180deg,#ffe08a,#f4c430); border:none; box-shadow:0 6px 18px -6px rgba(244,196,48,0.6); }
+  .gacha-btn:disabled{ opacity:0.45; cursor:not-allowed; }
   .gacha-cost{ font-family:'Share Tech Mono',monospace; font-size:12px; }
-  .gacha-note{ margin-top:8px; font-size:10px; color:var(--ink-dim); }
+  /* ガチャ結果グリッド(演出後に表示) */
+  .gacha-result{ position:absolute; inset:0; z-index:4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    background:rgba(6,9,17,0.55); backdrop-filter:blur(2px); }
+  .gacha-result.hidden{ display:none; }
+  .gacha-result-grid{ display:grid; gap:8px; max-width:92%; }
+  .gacha-cell{ position:relative; width:74px; height:74px; border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(255,255,255,0.05); border:2px solid var(--panel-line); overflow:hidden; }
+  .gacha-cell.n{ border-color:#8a5f3f; } .gacha-cell.r{ border-color:#aab0bd; }
+  .gacha-cell.sr{ border-color:#ffcf3f; box-shadow:0 0 12px rgba(255,207,63,0.5); }
+  .gacha-cell.ssr{ border-color:transparent; box-shadow:0 0 16px rgba(180,120,255,0.7);
+    background:linear-gradient(135deg, rgba(255,107,107,0.25),rgba(255,217,59,0.25),rgba(107,255,143,0.25),rgba(77,201,255,0.25),rgba(192,123,255,0.25)); }
+  .gacha-cell img{ width:78%; height:78%; object-fit:contain; }
+  .gacha-cell .gacha-cell-emoji{ font-size:34px; }
+  .gacha-cell .gacha-cell-name{ position:absolute; bottom:2px; left:0; right:0; font-size:7px; text-align:center; color:var(--ink); line-height:1.1; text-shadow:0 1px 2px #000; }
+  .gacha-cell .gacha-rar-tag{ position:absolute; top:2px; left:3px; font-family:'Russo One',sans-serif; font-size:9px; font-weight:700; }
+  .gacha-cell .gacha-dup-dia{ position:absolute; top:2px; right:3px; font-family:'Share Tech Mono',monospace; font-size:11px; color:#7fd0ff; text-shadow:0 1px 2px #000; }
+  .gacha-result-tap{ font-size:12px; color:var(--ink-dim); letter-spacing:1px; }
+  /* ガチャ下部カウンター */
+  .gacha-bottom{ flex-shrink:0; }
+  .gacha-counter-labels{ display:flex; justify-content:space-between; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; color:var(--ink); }
+  .gacha-gauge{ position:relative; height:12px; border-radius:6px; background:rgba(255,255,255,0.10); margin:5px 0 20px; overflow:visible; }
+  .gacha-gauge-fill{ height:100%; border-radius:6px; width:0%;
+    background:linear-gradient(90deg,#ffcf3f,#ff9de0); transition:width 0.4s ease; }
+  .gacha-milestone{ position:absolute; top:-3px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; }
+  .gacha-milestone[data-at="100"]{ left:50%; } .gacha-milestone[data-at="200"]{ left:100%; }
+  .gacha-ms-dot{ width:18px; height:18px; border-radius:50%; background:#1a2130; border:2px solid var(--panel-line); }
+  .gacha-milestone.reached .gacha-ms-dot{ background:var(--amber); border-color:#fff; }
+  .gacha-ms-label{ font-size:8px; font-weight:700; color:var(--ink-dim); text-align:center; line-height:1.05; margin-top:1px; }
+  .gacha-milestone-note{ font-size:10px; color:var(--ink-dim); text-align:center; }
+  .gacha-milestone-note b{ font-weight:700; }
+  .gacha-catalog-row{ display:flex; gap:8px; justify-content:center; margin-top:6px; flex-wrap:wrap; }
+  .gacha-catalog-btn{ padding:7px 14px; border-radius:16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; cursor:pointer;
+    color:#1a1306; border:none; }
+  .gacha-catalog-btn.sr{ background:linear-gradient(180deg,#ffe08a,#f4c430); }
+  .gacha-catalog-btn.ssr{ background:linear-gradient(90deg,#ff8f8f,#ffe07a,#8fffa8,#7fd6ff,#cf9dff); color:#2a1030; }
+  /* ガチャ内モーダル(提供割合・カタログ選択) */
+  .gacha-modal{ position:absolute; inset:0; z-index:10; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.7); padding:18px; }
+  .gacha-modal.hidden{ display:none; }
+  .gacha-modal-box{ width:min(720px, 94%); max-height:88%; display:flex; flex-direction:column;
+    background:#0c1119; border:1px solid var(--panel-line); border-radius:14px; padding:18px 20px; }
+  .gacha-modal-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:16px; color:var(--ink); text-align:center; margin-bottom:12px; }
+  .gacha-rates-body{ overflow-y:auto; }
+  .gacha-rate-rar{ display:flex; align-items:center; gap:8px; font-family:'Russo One',sans-serif; font-size:13px; margin:10px 0 4px; }
+  .gacha-rate-rar .pct{ margin-left:auto; font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink); }
+  .gacha-rate-item{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-dim); padding:2px 0 2px 14px; }
+  .gacha-rate-item .pct{ font-family:'Share Tech Mono',monospace; }
+  .gacha-modal-close{ margin-top:14px; align-self:center; padding:9px 26px; border-radius:8px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
+  .gacha-modal-btnrow{ display:flex; gap:12px; justify-content:center; margin-top:12px; }
+  .gacha-modal-confirm{ padding:9px 26px; border-radius:8px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe08a,#f4c430); border:none; }
+  .gacha-modal-confirm:disabled{ opacity:0.4; cursor:not-allowed; }
+  .gacha-catalog-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); gap:8px; overflow-y:auto; }
+  .gacha-cat-cell{ position:relative; border-radius:10px; padding:4px; cursor:pointer; background:rgba(255,255,255,0.05); border:2px solid var(--panel-line);
+    display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .gacha-cat-cell.selected{ border-color:var(--amber); box-shadow:0 0 10px rgba(244,196,48,0.5); }
+  .gacha-cat-cell.owned{ opacity:0.4; }
+  .gacha-cat-cell img{ width:60px; height:60px; object-fit:contain; }
+  .gacha-cat-cell .cat-name{ font-size:8px; text-align:center; color:var(--ink); line-height:1.1; }
+  .gacha-cat-cell .cat-owned-tag{ position:absolute; top:2px; right:3px; font-size:8px; color:#5fe07c; }
   .gacha-ten-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; width:100%; }
   .gacha-ten-item{
     display:flex; flex-direction:column; align-items:center; gap:1px;
     font-size:18px; padding:4px 2px; background:rgba(255,255,255,0.05); border-radius:6px;
   }
   .gacha-ten-item span{ font-size:8px; font-weight:400; color:var(--ink-dim); line-height:1.2; }
+
+  /* ===== 着せ替え(マスモン内) ===== */
+  .mm-skin-body{ display:flex; flex-direction:column; align-items:center; width:100%; height:100%; }
+  .mm-skin-preview{ flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:center; justify-content:center; padding:6px; }
+  .mm-skin-preview img{ max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; filter:drop-shadow(0 8px 20px rgba(0,0,0,0.6)); }
+  .mm-skin-preview-name{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; color:var(--ink); text-align:center; margin-top:2px; flex-shrink:0; }
+  .mm-skin-row{ display:flex; gap:8px; overflow-x:auto; padding:8px 4px; width:100%; flex-shrink:0; justify-content:flex-start; }
+  .mm-skin-thumb{ position:relative; flex:0 0 auto; width:64px; height:64px; border-radius:10px; cursor:pointer;
+    background:rgba(255,255,255,0.05); border:2px solid var(--panel-line); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .mm-skin-thumb img{ width:88%; height:88%; object-fit:contain; }
+  .mm-skin-thumb.selected{ border-color:var(--amber); box-shadow:0 0 10px rgba(244,196,48,0.55); }
+  .mm-skin-thumb.equipped::after{ content:'着用中'; position:absolute; bottom:0; left:0; right:0; font-size:7px; text-align:center; background:rgba(244,196,48,0.85); color:#1a1306; font-weight:700; }
+  .mm-skin-thumb.ssr{ border-color:transparent; box-shadow:0 0 12px rgba(180,120,255,0.6);
+    background:linear-gradient(135deg, rgba(255,107,107,0.25),rgba(107,255,143,0.25),rgba(192,123,255,0.25)); }
+  .mm-skin-confirm{ flex-shrink:0; margin:2px 0 4px; padding:9px 30px; border-radius:8px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:#1a1306; background:linear-gradient(180deg,#ffe08a,#f4c430); border:none; }
+  .mm-skin-confirm:disabled{ opacity:0.4; cursor:not-allowed; }
+  .mm-skin-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
   .shop-box{ max-width:min(520px, calc(92 * var(--vw))); }
   .shop-buy-btn:disabled{ opacity:0.4; cursor:not-allowed; }
   /* ショップの商品リスト(旧バッグ行スタイル。ショップ専用に残す) */

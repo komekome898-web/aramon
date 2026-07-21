@@ -191,6 +191,11 @@ Object.keys(ELEMENTS).forEach(key=>{
 });
 // 召喚演出のスポーン円盤石(画像)
 const summonDiskImg = loadMonsterImage('summon_disk');
+// SSRスキンの手描き画像(ヒノトリ「フェニックス」: アイコン/試合用後ろ姿)
+const ssrSkinImages = {
+  phoenix_ssr:        loadMonsterImage('monsters/phoenix_ssr'),
+  phoenix_player_ssr: loadMonsterImage('monsters/phoenix_player_ssr'),
+};
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
 }
@@ -198,6 +203,11 @@ function monsterImageReady(key){
   return imgIsReady(monsterImages[key]);
 }
 function getDisplayImage(entity){
+  // プレイヤーが着せ替えスキンを装備していれば、そのスキン画像を優先する
+  if(entity.isPlayer && typeof skinnedImageForEntity==='function'){
+    const sk = skinnedImageForEntity(entity);
+    if(sk) return sk;
+  }
   if(entity.isPlayer && imgIsReady(playerMonsterImages[entity.element])){
     return playerMonsterImages[entity.element];
   }
@@ -585,8 +595,8 @@ const GOLD_MATCH_BASE = 20;      // 参加報酬
 const GOLD_PER_KILL = 10;        // キルごと
 const GOLD_CHAMPION_BONUS = 50;  // チャンピオンボーナス
 const GOLD_MULTI_MULT = 2;       // マルチプレイはゴールド2倍
-const DIA_MATCH_BASE = 1;        // 参加報酬
-const DIA_CHAMPION_BONUS = 2;    // チャンピオンボーナス
+const DIA_MATCH_BASE = 5;        // 参加報酬(従来の5倍)
+const DIA_CHAMPION_BONUS = 10;   // チャンピオンボーナス(従来の5倍)
 
 // プレイヤーアイテム(主にマスモンに使う)
 const STAT_SEED_GAIN = 5; // 「実」1個で上がるステータス量
@@ -610,23 +620,179 @@ function playerItemDesc(key){
   return it.desc;
 }
 
-// ガチャ(ダイヤ専用): [アイテムキー, 重み] のリストから重み付き抽選
+// ガチャ(ダイヤ専用)
 const GACHA_COST_DIA_SINGLE = 5;  // 単発ガチャ
 const GACHA_COST_DIA_TEN = 50;    // 10連ガチャ
-const GACHA_POOL = [
-  ['seed_life',10],['seed_power',10],['seed_wisdom',10],['seed_accuracy',10],['seed_evasion',10],['seed_vitality',10],
-  ['freeTrainTicket',25],['moveTicket',15],
-];
-// 10連の最後の1枠はチケット類確定(この中から抽選)
-const GACHA_TICKET_POOL = [ ['freeTrainTicket',60],['moveTicket',40] ];
-function gachaRoll(pool){
-  const total = pool.reduce((s,p)=>s+p[1],0);
-  let r = Math.random()*total;
-  for(const [k,w] of pool){ r -= w; if(r<0) return k; }
-  return pool[0][0];
+
+/* =====================================================================
+   レアリティ・スキン(着せ替え)システム
+   N ノーマル(茶) = 各ステータスの実 / R レア(銀) = チケット類 /
+   SR スーパーレア(金) = 各モンスターの色違いスキン /
+   SSR スペシャルスーパーレア(虹) = 特別スキン(ヒノトリ「フェニックス」)
+===================================================================== */
+const RARITIES = {
+  N:   { label:'N',   jp:'ノーマル',          color:'#b07a4f', rate:60 },
+  R:   { label:'R',   jp:'レア',              color:'#c9ccd6', rate:27 },
+  SR:  { label:'SR',  jp:'スーパーレア',       color:'#ffcf3f', rate:10 },
+  SSR: { label:'SSR', jp:'スペシャルスーパーレア', color:'rainbow', rate:3 },
+};
+const RARITY_ORDER = ['N','R','SR','SSR'];
+// 色違いスキンの6色(黒白赤青黄緑)。各モンスターは元色に最も近い1色を除いた5色を持つ
+const SKIN_COLORS = {
+  black:  { jp:'ブラック', hex:'#2b2b30', ref:[26,26,30] },
+  white:  { jp:'ホワイト', hex:'#eef0f4', ref:[240,240,244] },
+  red:    { jp:'レッド',   hex:'#e0453a', ref:[224,69,58] },
+  blue:   { jp:'ブルー',   hex:'#3f74e6', ref:[63,116,230] },
+  yellow: { jp:'イエロー', hex:'#f2c31e', ref:[242,195,30] },
+  green:  { jp:'グリーン', hex:'#48b84e', ref:[72,184,78] },
+};
+const SKIN_COLOR_ORDER = ['black','white','red','blue','yellow','green'];
+// 色相ではなく明度で主要部を判定する(無彩色寄りの)モンスター
+const SKIN_ACHROMATIC = { illumine:'dark', ark:'light', fox:'light' };
+
+function hexToRgb(h){ return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
+function rgbToHsl(r,g,b){
+  r/=255; g/=255; b/=255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b); let h,s,l=(mx+mn)/2;
+  if(mx===mn){ h=s=0; }
+  else { const d=mx-mn; s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    switch(mx){ case r:h=(g-b)/d+(g<b?6:0);break; case g:h=(b-r)/d+2;break; default:h=(r-g)/d+4; } h/=6; }
+  return [h*360, s, l];
+}
+function hslToRgb(h,s,l){
+  h/=360; function hue(p,q,t){ if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; }
+  let r,g,b; if(s===0){ r=g=b=l; } else { const q=l<0.5?l*(1+s):l+s-l*s, p=2*l-q; r=hue(p,q,h+1/3); g=hue(p,q,h); b=hue(p,q,h-1/3); }
+  return [r*255, g*255, b*255];
+}
+const SKIN_TARGET_HUE = { red:0, yellow:52, green:120, blue:215 };
+// モンスターの元色に最も近いスキン色(=除外する色)
+function nearestSkinColor(elementKey){
+  const [r,g,b] = hexToRgb(ELEMENTS[elementKey].color);
+  let best=SKIN_COLOR_ORDER[0], bd=Infinity;
+  for(const id of SKIN_COLOR_ORDER){ const rf=SKIN_COLORS[id].ref; const d=(r-rf[0])**2+(g-rf[1])**2+(b-rf[2])**2; if(d<bd){ bd=d; best=id; } }
+  return best;
+}
+// 各モンスターが持てる色スキン(5色)
+function monsterSkinColors(elementKey){
+  const skip = nearestSkinColor(elementKey);
+  return SKIN_COLOR_ORDER.filter(c=>c!==skip);
+}
+// 色置換用の主要部情報(色相 or 明度タイプ)
+function monsterMainInfo(elementKey){
+  const type = SKIN_ACHROMATIC[elementKey] || 'chroma';
+  const [h] = rgbToHsl(...hexToRgb(ELEMENTS[elementKey].color));
+  return { type, hue:h };
 }
 
-// ショップ(ゴールドでアイテム購入): [アイテムキー, 価格]
+// SSRスキン定義(skinId -> 情報)
+const SSR_SKINS = {
+  phoenix_ssr: { element:'phoenix', name:'フェニックス', iconImg:'phoenix_ssr', playerImg:'phoenix_player_ssr' },
+};
+
+// skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
+function colorSkinId(element, colorId){ return `${element}:${colorId}`; }
+function skinMeta(skinId){
+  if(SSR_SKINS[skinId]){
+    const s=SSR_SKINS[skinId];
+    return { skinId, rarity:'SSR', kind:'ssr', element:s.element, name:s.name };
+  }
+  const [element, colorId] = skinId.split(':');
+  return { skinId, rarity:'SR', kind:'color', element, colorId,
+           name:`${ELEMENTS[element].label} ${SKIN_COLORS[colorId] ? SKIN_COLORS[colorId].jp : colorId}` };
+}
+function allColorSkinIds(){
+  const out=[]; for(const el of Object.keys(ELEMENTS)) for(const c of monsterSkinColors(el)) out.push(colorSkinId(el,c)); return out;
+}
+function allSsrSkinIds(){ return Object.keys(SSR_SKINS); }
+
+// ガチャのレアリティ別アイテム
+const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','seed_evasion','seed_vitality'];
+const GACHA_R_ITEMS = ['freeTrainTicket','moveTicket'];
+const DUP_SKIN_DIA = 5; // 既に持っているスキンが出た時に貰えるダイヤ
+
+function weightedPickRarity(guaranteedSRplus){
+  const entries = guaranteedSRplus ? [['SR',RARITIES.SR.rate],['SSR',RARITIES.SSR.rate]]
+                                    : RARITY_ORDER.map(r=>[r, RARITIES[r].rate]);
+  const total = entries.reduce((s,e)=>s+e[1],0);
+  let r = Math.random()*total;
+  for(const [k,w] of entries){ r-=w; if(r<0) return k; }
+  return entries[0][0];
+}
+function pickRandom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+// 1回分の抽選結果を返す。{rarity, kind:'item'|'skin', key?, skinId?}
+function gachaRollOne(guaranteedSRplus){
+  const rarity = weightedPickRarity(guaranteedSRplus);
+  if(rarity==='N') return { rarity, kind:'item', key: pickRandom(GACHA_N_ITEMS) };
+  if(rarity==='R') return { rarity, kind:'item', key: pickRandom(GACHA_R_ITEMS) };
+  if(rarity==='SR') return { rarity, kind:'skin', skinId: pickRandom(allColorSkinIds()) };
+  return { rarity:'SSR', kind:'skin', skinId: pickRandom(allSsrSkinIds()) };
+}
+// 提供割合表示用: レアリティ別 & アイテム別の割合(%)を算出
+function gachaRateTable(){
+  const rows = [];
+  const perItem = (rarity, n)=> RARITIES[rarity].rate / n;
+  rows.push({ rarity:'N', items: GACHA_N_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('N', GACHA_N_ITEMS.length) })) });
+  rows.push({ rarity:'R', items: GACHA_R_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('R', GACHA_R_ITEMS.length) })) });
+  const srIds = allColorSkinIds();
+  rows.push({ rarity:'SR', items: srIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SR', srIds.length) })) });
+  const ssrIds = allSsrSkinIds();
+  rows.push({ rarity:'SSR', items: ssrIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SSR', ssrIds.length) })) });
+  return rows;
+}
+
+// --- スキン所持・装備の保存 ---
+const SKIN_STORAGE_KEY = 'aramon_skins_v1';
+function loadSkins(){
+  try{ const s=JSON.parse(localStorage.getItem(SKIN_STORAGE_KEY))||{}; return { owned:s.owned||{}, equipped:s.equipped||{} }; }
+  catch(err){ return { owned:{}, equipped:{} }; }
+}
+function saveSkins(s){
+  try{ localStorage.setItem(SKIN_STORAGE_KEY, JSON.stringify(s)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+function isSkinOwned(skinId){ return !!loadSkins().owned[skinId]; }
+function ownSkin(skinId){ const s=loadSkins(); s.owned[skinId]=true; saveSkins(s); }
+function getEquippedSkin(element){ return loadSkins().equipped[element] || null; }
+function setEquippedSkin(element, skinId){
+  const s=loadSkins();
+  if(skinId) s.equipped[element]=skinId; else delete s.equipped[element];
+  saveSkins(s);
+}
+// あるモンスターが所持している全スキン(色スキン+SSR)のskinId一覧
+function ownedSkinsForElement(element){
+  const owned = loadSkins().owned;
+  const out = [];
+  for(const c of monsterSkinColors(element)){ const id=colorSkinId(element,c); if(owned[id]) out.push(id); }
+  for(const id of allSsrSkinIds()){ if(SSR_SKINS[id].element===element && owned[id]) out.push(id); }
+  return out;
+}
+
+// --- ガチャ回数カウンター(200回で1周・100でSRカタログ・200でSSRカタログ) ---
+const GACHA_COUNT_KEY = 'aramon_gachacount_v1';
+const GACHA_SR_CATALOG_AT = 100;
+const GACHA_SSR_CATALOG_AT = 200;
+function loadGachaCount(){
+  try{ const c=JSON.parse(localStorage.getItem(GACHA_COUNT_KEY))||{}; return { count:c.count||0, sr:!!c.sr, ssr:!!c.ssr }; }
+  catch(err){ return { count:0, sr:false, ssr:false }; }
+}
+function saveGachaCount(c){
+  try{ localStorage.setItem(GACHA_COUNT_KEY, JSON.stringify(c)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+
+// --- スキンカタログ(選んで貰える引換券) ---
+const CATALOG_STORAGE_KEY = 'aramon_catalogs_v1';
+function loadCatalogs(){
+  try{ const c=JSON.parse(localStorage.getItem(CATALOG_STORAGE_KEY))||{}; return { sr:c.sr||0, ssr:c.ssr||0 }; }
+  catch(err){ return { sr:0, ssr:0 }; }
+}
+function saveCatalogs(c){
+  try{ localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(c)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+function addCatalog(kind, n){ const c=loadCatalogs(); c[kind]=(c[kind]||0)+(n||1); saveCatalogs(c); }
+
+// ショップ(ゴールドでアイテム購入): [アイテムキー, 価格] ※スキンはショップには追加しない
 const SHOP_ITEMS = [
   ['seed_life',150],['seed_power',150],['seed_wisdom',150],['seed_accuracy',150],['seed_evasion',150],['seed_vitality',150],
   ['freeTrainTicket',300],['moveTicket',500],
