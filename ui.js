@@ -367,28 +367,40 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
   }
 });
 // 自動ログイン: 保存済みの認証情報でサーバーと同期(Firebase読み込み完了までリトライ)
+// アプリ更新(controllerchangeでのリロード)直後はfirebase.js(module)やCDNの読み込みが
+// 遅れることがあるため、リトライ回数を十分に確保する。
 (function accountAutoLogin(){
   const creds = loadAccountCreds();
   if(!creds || !creds.key) return;
+  // 認証情報がある時点で、通信完了前でもログイン済みとしてUIを更新しておく
+  // (これをしないと、データ取得が遅い/失敗したときにログアウト状態に見えてしまう)
+  accountState.loggedIn = true; accountState.name = creds.name; accountState.key = creds.key; accountState.pass = creds.pass;
+  applyAccountNameAsDisplayName(creds.name);
+  updateAccountBar();
   let tries = 0;
   const attempt = async ()=>{
     if(!window.__aramonGetAccount){
-      if(++tries < 40) setTimeout(attempt, 500);
+      if(++tries < 240) setTimeout(attempt, 500); // 最大約2分リトライ
       return;
     }
     try{
       const acc = await window.__aramonGetAccount(creds.key);
       if(acc && String(acc.pass) === String(creds.pass)){
-        accountState.loggedIn = true; accountState.name = acc.name; accountState.key = creds.key; accountState.pass = creds.pass;
+        accountState.name = acc.name;
         const localTs = +(localStorage.getItem(ACCOUNT_LOCAL_TS_KEY)||0);
         if((acc.updatedAt||0) >= localTs){
-          applyAccountData(acc.data); // サーバーの方が新しい→取り込む
+          try{ applyAccountData(acc.data); }catch(e){} // サーバーの方が新しい→取り込む(失敗してもログイン状態は維持)
         } else {
           accountMarkDirty(); // ローカルの方が新しい(オフラインでプレイ等)→サーバーへ送る
         }
         applyAccountNameAsDisplayName(acc.name);
         updateAccountBar();
+      } else if(acc && String(acc.pass) !== String(creds.pass)){
+        // パスコードが変更された等でサーバーと不一致→ログイン解除
+        accountState.loggedIn = false; accountState.key = null; accountState.pass = null;
+        updateAccountBar();
       }
+      // acc が取得できなかった(通信失敗・一時的にnull)場合は、端末の認証情報を信じてログイン状態を維持
     }catch(err){}
   };
   attempt();
