@@ -1712,6 +1712,7 @@ function renderMastermonList(){
     item.addEventListener('click', ()=>{
       if(item.dataset.key===mastermonDetailKey) return;
       mastermonDetailKey = item.dataset.key;
+      mastermonPreviewSkin = null; // 切替先マスモンの装備中スキンをプレビュー初期値に(前のが残らないように)
       // 表示中のタブ(詳細情報/技一覧/トレーニング)は維持したまま、内容だけ切り替える
       renderMastermonList();
       renderMastermonDetail(mastermonDetailKey);
@@ -1847,7 +1848,7 @@ function renderMastermonDetail(key){
   if(mastermonDetailTab==='dressup'){
     panel.querySelectorAll('.mm-skin-thumb').forEach(thumb=>{
       thumb.addEventListener('click', ()=>{
-        mastermonPreviewSkin = thumb.dataset.skin || null; // '' はデフォルト
+        mastermonPreviewSkin = thumb.dataset.skin; // '' はデフォルト(nullにするとデフォルト選択が未初期化扱いになり戻せない)
         renderMastermonDetail(key);
       });
     });
