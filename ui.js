@@ -671,52 +671,55 @@ function gachaAnimFrame(now){
     const p = Math.min(1, elapsed/1.2);
     const ang = (elapsed*elapsed)*10;
     drawDisk(ang, 0.5+p, rarityCssColor(topR, now));
-    if(elapsed>=1.2) gachaAnimStart('pillar');
-  } else if(gachaAnim.phase==='pillar'){
-    const p = Math.min(1, elapsed/1.0);
-    const ang = 12 + elapsed*(6*(1-p));   // だんだん止まる
-    drawDisk(ang, 1.2, rarityCssColor(topR, now));
-    // 降り注ぐ光の柱
-    const topY = 0, botY = cy;
-    const lead = lerp(topY, botY, Math.min(1, elapsed/0.6));
-    const halfW = diskR*0.85;
-    g.save(); g.globalCompositeOperation='lighter';
-    const grad=g.createLinearGradient(0,topY,0,lead);
-    grad.addColorStop(0,'rgba(255,255,255,0)'); grad.addColorStop(1,'rgba(255,255,255,0.95)');
-    g.fillStyle=grad; g.globalAlpha=0.9;
-    g.beginPath(); g.moveTo(cx-halfW*0.5,topY); g.lineTo(cx+halfW*0.5,topY); g.lineTo(cx+halfW,lead); g.lineTo(cx-halfW,lead); g.closePath(); g.fill();
-    g.restore();
-    if(elapsed>=1.0){ buildGachaOrbs(w,h,cx,cy,diskR); gachaAnimStart('orbs'); }
-  } else if(gachaAnim.phase==='orbs'){
-    const p = Math.min(1, elapsed/0.8);
-    drawDisk(12, 0.6*(1-p), rarityCssColor(topR, now));
-    // 柱が引いて球体が残る
-    for(const o of gachaAnim.orbs){
-      const oy = lerp(cy, o.y, p), ox = lerp(cx, o.x, p);
-      const rr = o.r*(0.5+0.5*p);
+    if(elapsed>=1.2){ buildGachaOrbs(w,h,cx,cy,diskR); gachaAnimStart('rain'); }
+  } else if(gachaAnim.phase==='rain'){
+    // 各レアリティ色の光の柱を1本ずつ順番に落とし、消えると球体が残る
+    const n = gachaAnim.orbs.length;
+    const stagger = n>1 ? 0.16 : 0;
+    const fallDur = 0.42, hold = 0.55;
+    drawDisk(12, 0.5, rarityCssColor(topR, now));
+    for(let i=0;i<n;i++){
+      const o = gachaAnim.orbs[i];
+      const local = elapsed - i*stagger;
+      if(local < 0) continue;
       const col = rarityCssColor(o.rarity, now + o.seed*90);
-      g.save();
-      g.shadowBlur=26; g.shadowColor=col;
-      const rg=g.createRadialGradient(ox,oy,rr*0.1,ox,oy,rr);
-      rg.addColorStop(0,'#ffffff'); rg.addColorStop(0.5,col); rg.addColorStop(1,'rgba(0,0,0,0)');
-      g.fillStyle=rg; g.beginPath(); g.arc(ox,oy,rr,0,Math.PI*2); g.fill();
-      g.restore();
+      const fallP = Math.min(1, local/fallDur);
+      if(fallP < 1){
+        // 落ちてくる光の柱(その球体の位置へ)
+        const topY = 0, lead = lerp(topY, o.y, fallP), halfW = o.r*1.5;
+        g.save(); g.globalCompositeOperation='lighter';
+        const grad=g.createLinearGradient(0,topY,0,lead);
+        grad.addColorStop(0,'rgba(255,255,255,0)'); grad.addColorStop(0.65,col); grad.addColorStop(1,'#ffffff');
+        g.fillStyle=grad; g.globalAlpha=0.9;
+        g.beginPath(); g.moveTo(o.x-halfW*0.5,topY); g.lineTo(o.x+halfW*0.5,topY); g.lineTo(o.x+halfW,lead); g.lineTo(o.x-halfW,lead); g.closePath(); g.fill();
+        g.restore();
+      } else {
+        // 柱が消えて球体が残る(出現直後は少し弾む)
+        const pop = Math.min(1,(local-fallDur)/0.18);
+        const rr = o.r*(0.7+0.3*pop);
+        g.save(); g.shadowBlur=26; g.shadowColor=col;
+        const rg=g.createRadialGradient(o.x,o.y,rr*0.1,o.x,o.y,rr);
+        rg.addColorStop(0,'#ffffff'); rg.addColorStop(0.5,col); rg.addColorStop(1,'rgba(0,0,0,0)');
+        g.fillStyle=rg; g.beginPath(); g.arc(o.x,o.y,rr,0,Math.PI*2); g.fill();
+        g.restore();
+      }
     }
-    if(elapsed>=1.0 && gachaAnim.onReveal){ const cb=gachaAnim.onReveal; gachaAnim.onReveal=null; cb(); }
+    const total = (n-1)*stagger + fallDur + hold;
+    if(elapsed>=total && gachaAnim.onReveal){ const cb=gachaAnim.onReveal; gachaAnim.onReveal=null; cb(); }
   }
   if(gachaAnim.raf) gachaAnim.raf = requestAnimationFrame(gachaAnimFrame);
 }
 function buildGachaOrbs(w,h,cx,cy,diskR){
   const n = gachaAnim.count;
   gachaAnim.orbs = [];
-  const r = Math.min(w,h)* (n>1?0.055:0.11);
+  const r = Math.min(w,h)* (n>1?0.05:0.11);
   if(n===1){
-    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.2, r, rarity:gachaAnim.results[0].rarity, seed:0 });
+    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.15, r, rarity:gachaAnim.results[0].rarity, seed:0 });
   } else {
-    const cols=5, rows=2, gapX=w*0.15, gapY=r*2.6;
+    const cols=5, gapX=Math.min(w*0.15, r*3), gapY=r*2.8;
     for(let i=0;i<n;i++){
       const col=i%cols, rowi=Math.floor(i/cols);
-      gachaAnim.orbs.push({ x: cx + (col-(cols-1)/2)*gapX, y: cy - diskR*0.4 + rowi*gapY, r, rarity:gachaAnim.results[i].rarity, seed:i });
+      gachaAnim.orbs.push({ x: cx + (col-(cols-1)/2)*gapX, y: cy - diskR*0.35 + rowi*gapY, r, rarity:gachaAnim.results[i].rarity, seed:i });
     }
   }
 }
@@ -736,7 +739,7 @@ function doGacha(count){
     if(roll.kind==='item'){
       addBagItem(roll.key,1);
     } else {
-      if(isSkinOwned(roll.skinId)){ dup=true; diaGain=DUP_SKIN_DIA; addWallet(0, DUP_SKIN_DIA); }
+      if(isSkinOwned(roll.skinId)){ dup=true; diaGain=(roll.rarity==='SSR'?DUP_SSR_DIA:DUP_SKIN_DIA); addWallet(0, diaGain); }
       else ownSkin(roll.skinId);
     }
     results.push({ ...roll, dup, diaGain });
