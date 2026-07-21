@@ -12,7 +12,7 @@ let lastT = performance.now();
      滑らかに追従表示するだけにする(自分でシミュレーションしない)
    - これにより非ホスト側での「同期ズレ」「ボットが止まって見える」を構造的に防ぐ
 ===================================================================== */
-const INPUT_SEND_INTERVAL = 0.06;   // 自分の入力を送る間隔(秒) 約16回/秒
+const INPUT_SEND_INTERVAL = 0.045;  // 自分の入力を送る間隔(秒) 約22回/秒。ホストが自分の位置を早く反映できるようにする
 let lastInputSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected}
 
@@ -45,35 +45,33 @@ async function beginMultiplayerMatch(){
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
-  let seed, fixedPlayers, mapKey, hostMastermonBots;
+  let seed, fixedPlayers, mapKey, hostMastermonBots, sharedWorld = null;
   if(netState.isHost){
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
     fixedPlayers = netState.humanPlayers || {};
     if(!fixedPlayers[netState.myPlayerId]){
-      fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement } };
+      const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
+      fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null } };
     }
     mapKey = game.selectedMap || 'wild';
     // ホストが持っているマスモンのうち、今使っているもの以外からランダムに選んでbot候補にする。
-    // 実際にどのbot枠に割り当てるかはこの後シード共有のrngで決めるので、ここでは
-    // 「今回の試合で使う可能性がある候補一覧」を確定してゲストにも配る
     const ownMastermons = loadMastermons();
     const candidateKeys = Object.keys(ownMastermons).filter(k=>k!==game.selectedMastermonKey);
     const shuffledCandidates = shuffle(candidateKeys);
     hostMastermonBots = shuffledCandidates.map(k=>{
       const mm = ownMastermons[k];
-      return { key:k, name:mm.name, element:mm.element, stats:mm.stats, level:mm.level||1 };
+      const skin = (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null;
+      return { key:k, name:mm.name, element:mm.element, stats:mm.stats, level:mm.level||1, skin: skin||null };
     });
-    console.log('[aramon] HOST: publishing seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots);
   } else {
-    console.log('[aramon] NON-HOST: waiting for seed+fixedPlayers...');
-    const result = await window.__aramonWaitForRoomSeed(netState.roomId, 10000);
+    console.log('[aramon] NON-HOST: waiting for seed+world...');
+    const result = await window.__aramonWaitForRoomSeed(netState.roomId, 12000);
     if(result){
       seed = result.seed;
       fixedPlayers = result.fixedPlayers;
       mapKey = result.mapKey || 'wild';
       hostMastermonBots = result.hostMastermonBots || [];
-      console.log('[aramon] NON-HOST: received seed+fixedPlayers+mapKey', seed, fixedPlayers, mapKey);
+      sharedWorld = result.world || null; // ホストが生成した障害物(あれば正として使う)
     } else {
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
@@ -85,31 +83,51 @@ async function beginMultiplayerMatch(){
   }
   netState.humanPlayers = fixedPlayers;
   currentMap = MAPS[mapKey] || MAPS.wild;
-  console.log('[aramon] final fixedPlayers used for this match:', JSON.stringify(fixedPlayers));
 
   applyWorldScale(MULTI_MAP_SCALE); // マルチプレイは少人数想定のため、ソロより一回り狭いマップにする
 
-  const rng = makeSeededRng(seed);
+  // サブシステムごとに独立した派生rngを使う。こうすることで、ある生成の消費数が
+  // 環境差でズレても他(スポーン/アイテム/装飾)まで連鎖して崩れない。
+  const deriveRng = (salt)=> makeSeededRng((Math.imul(seed>>>0, 2654435761) ^ (salt>>>0)) >>> 0);
+  const rng      = makeSeededRng(seed); // bot名/属性/枠決定用(host/guestで一致)
+  const obRng    = deriveRng(0xA1);     // 障害物生成(ホスト or フォールバック)
+  const decorRng = deriveRng(0xD2);     // 地形装飾(見た目のみ)
+  const spawnRng = deriveRng(0x53);     // スポーン地点
+  const lootRng  = deriveRng(0x7C);     // アイテム
 
   initZone();
-  seededGenVolcanoAndLava(rng);
-  seededGenWater(rng);
-  seededGenOasisZones(rng);
-  seededGenRocks(rng);
-  seededGenCrystals(rng);
-  seededGenTerrain(rng);
+  if(sharedWorld){
+    // ゲスト: ホストが生成・配信した障害物をそのまま反映(座標一致で見えない岩ハマりを防ぐ)
+    applyWorldFromSync(sharedWorld, obRng);
+  } else {
+    // ホスト、またはworld未受信のフォールバック: シードから生成
+    seededGenVolcanoAndLava(obRng);
+    seededGenWater(obRng);
+    seededGenOasisZones(obRng);
+    seededGenRocks(obRng);
+    seededGenCrystals(obRng);
+  }
+  seededGenTerrain(decorRng);
+
+  // ホストは生成した障害物一式を含めてシード等を配信する(ゲストはこれを正とする)
+  if(netState.isHost){
+    const worldData = packWorldForSync();
+    console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData);
+  }
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
   const humanList = Object.keys(fixedPlayers||{}).map(id=>({ id, ...fixedPlayers[id] }));
   if(!humanList.find(h=>h.id===netState.myPlayerId)){
-    humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement });
+    const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
+    humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null });
   }
   humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
   const usedSlots = humanList.length;
   const botCount = Math.max(0, netState.capacity - usedSlots);
   const totalEntityCount = usedSlots + botCount;
-  const spawnPoints = seededPickSpawnPointsBatch(rng, totalEntityCount);
+  const spawnPoints = seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
 
   let idCounter = 1;
   let spawnIdx = 0;
@@ -119,6 +137,7 @@ async function beginMultiplayerMatch(){
     const ent = createMonster(h.element||'fire', isMe, h.name||'プレイヤー', { id: idCounter++, spawnPoint: sp });
     ent.netPlayerId = h.id;
     if(h.mmLevel) ent.mastermonLevel = h.mmLevel; // マスモン使用者は撃破時のEXPボーナス対象
+    if(h.skin) ent.skinId = h.skin;               // 相手の着せ替えスキンを反映
     if(isMe){ ent.isPlayer = true; player = ent; }
     else { ent.isPlayer=false; ent.isRemoteHuman=true; }
     entities.push(ent);
@@ -139,6 +158,7 @@ async function beginMultiplayerMatch(){
       applyMastermonStatsToEntity(ent, mmDef);
       ent.isMastermonBot = true;
       ent.mastermonLevel = mmDef.level||1;
+      if(mmDef.skin) ent.skinId = mmDef.skin;     // マスモンbotの着せ替えスキンを反映
       entities.push(ent);
     } else {
       const elKey = botElements[i % botElements.length];
@@ -149,8 +169,8 @@ async function beginMultiplayerMatch(){
 
   // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
   const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE);
-  seededSpawnLoot(rng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
-  seededSpawnOasisBonusLoot(rng);
+  seededSpawnLoot(lootRng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  seededSpawnOasisBonusLoot(lootRng);
   updateCamera();
 
   window.__aramonWatchInputs(netState.roomId, (players)=>{
@@ -297,6 +317,7 @@ function tryNonHostPlayerFireVisual(dt){
   player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
   const effProjSpeed = effectiveProjSpeed(player, mv);
   const hbMult = ELEMENTS[player.element].hitboxMult || 1;
+  const sp = moveSeName(mv); // tier3技の専用SE(無ければnull)
 
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
@@ -310,6 +331,7 @@ function tryNonHostPlayerFireVisual(dt){
       beamRanges, fillSpeed, telegraphTime:0.18,
       spawnAt:matchTime, life,
     });
+    playSe(sp || 'fire', sp ? { dur: life } : { kind:'aoe', dur: life });
   } else if(mv.lobbed){
     const throwDist = mv.range;
     const landX = player.x + Math.cos(aimAngle)*throwDist;
@@ -322,6 +344,7 @@ function tryNonHostPlayerFireVisual(dt){
       flightTime: Math.max(0.05, flightTime), flightT:0,
       color:mv.color, hitR:mv.hitR*hbMult, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
     });
+    playSe(sp || 'fire', sp ? { dur: Math.max(0.05, flightTime) } : { kind:'single' });
   } else if(!mv.melee){
     const burstCount = mv.burst || 1;
     const burstGap = mv.burstGap || 0;
@@ -336,8 +359,10 @@ function tryNonHostPlayerFireVisual(dt){
         ownerId: player.id,
       });
     }
+    playSe(sp || 'fire', sp ? { dur: mv.range/effProjSpeed } : { kind: mv.burst ? 'burst' : 'single' });
   } else {
     spawnHit(player.x + Math.cos(aimAngle)*mv.range*0.5, player.y + Math.sin(aimAngle)*mv.range*0.5, player.z, mv.color);
+    playSe('fire', { kind:'single' });
   }
 
   sendFireEventIfMultiplayer(aimAngle, mv);
@@ -408,6 +433,8 @@ function applyLootEventLocally(evt){
   if(evt.evtType==='pickup'){
     const idx = lootItems.findIndex(it=>it.id===evt.id);
     if(idx>=0) lootItems.splice(idx,1);
+    // 自分(ゲスト)が拾った場合はSEを鳴らす(ホスト側updateでは自分のSEが鳴らないため)
+    if(evt.by && evt.by===netState.myPlayerId) playSe(evt.kind==='training' ? 'train' : 'pickup');
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
       lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, bob:evt.bob||0 });
@@ -569,9 +596,20 @@ function loop(now){
       if(player && player.alive){
         resolveMovement(player, dt);
         if(typeof player.netSelfTargetX==='number'){
-          const selfLerpT = Math.min(0.3, dt*2.2);
-          player.x = lerp(player.x, player.netSelfTargetX, selfLerpT);
-          player.y = lerp(player.y, player.netSelfTargetY, selfLerpT);
+          // ローカル予測を優先し、ホスト権威位置との差が小さいうちは補正しない(ラバーバンド防止)。
+          // 障害物が同期されたので通常移動では差が小さく、ここを抑えるとゲストの操作が軽くなる。
+          // 差が大きい時(衝突/ノックバック/大きなラグ)だけ差に応じて素早く寄せて破綻を防ぐ。
+          const dx = player.netSelfTargetX - player.x, dy = player.netSelfTargetY - player.y;
+          const d = Math.hypot(dx, dy);
+          if(d > 110){
+            const t = Math.min(1, dt*10);          // 大きくズレたら一気に
+            player.x = lerp(player.x, player.netSelfTargetX, t);
+            player.y = lerp(player.y, player.netSelfTargetY, t);
+          } else if(d > 26){
+            const t = Math.min(0.18, dt*1.8);      // 中程度は緩やかに
+            player.x = lerp(player.x, player.netSelfTargetX, t);
+            player.y = lerp(player.y, player.netSelfTargetY, t);
+          } // d<=26 はローカル予測を信頼して補正しない
         }
       }
       for(const e of entities){

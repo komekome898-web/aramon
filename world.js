@@ -864,6 +864,31 @@ function seededSpawnOasisBonusLoot(rng){
   if(!currentMap.hasOasis) return;
   for(const oz of oasisZones){ seededSpawnLoot(rng, 7, oz, oz.radius*1.4); }
 }
+// ===== マルチプレイ用: ホストが生成した障害物をゲストへ配信して同一化する =====
+// (シード再生成に頼るとタイムアウト時の別シードや環境差で食い違い、見えない岩に
+//  ハマる/岩の上にスポーンして動けない等が起きるため、ホストの結果を正とする)
+function packWorldForSync(){
+  const flat = arr => { const o=[]; for(const z of arr){ o.push(Math.round(z.x),Math.round(z.y),Math.round(z.radius)); } return o; };
+  const vol = []; for(const v of volcanoObstacles){ vol.push(Math.round(v.x),Math.round(v.y),Math.round(v.radius), v.isMain?1:0, v.complexId||0); }
+  return {
+    rk: flat(rocks), cr: flat(crystalObstacles), vo: vol,
+    lv: flat(lavaZones), se: flat(seaZones), ri: flat(riverZones), oa: flat(oasisZones),
+    st: currentMap.mountainStyle || 'volcano',
+  };
+}
+// 配信された障害物を反映する。座標は配信値をそのまま使い、岩/水晶の見た目(seed/flavor)だけ
+// 派生rngでローカルに決める(当たり判定に影響しない装飾差のみ許容)
+function applyWorldFromSync(d, cosmeticRng){
+  const unflat = a => { const o=[]; for(let i=0;i+2<a.length;i+=3){ o.push({ x:a[i], y:a[i+1], radius:a[i+2] }); } return o; };
+  rocks = [];
+  for(let i=0;i+2<(d.rk||[]).length;i+=3){ const radius=d.rk[i+2]; rocks.push({ id:nextId++, x:d.rk[i], y:d.rk[i+1], radius, height:radius*1.3, seed:seededRand(cosmeticRng,0,10), flavor:seededPickRockFlavor(cosmeticRng) }); }
+  crystalObstacles = [];
+  for(let i=0;i+2<(d.cr||[]).length;i+=3){ const radius=d.cr[i+2]; crystalObstacles.push({ id:nextId++, x:d.cr[i], y:d.cr[i+1], radius, height:radius*1.8, seed:seededRand(cosmeticRng,0,10) }); }
+  volcanoObstacles = [];
+  const st = d.st || 'volcano';
+  for(let i=0;i+4<(d.vo||[]).length;i+=5){ volcanoObstacles.push({ x:d.vo[i], y:d.vo[i+1], radius:d.vo[i+2], isMain:!!d.vo[i+3], complexId:d.vo[i+4], style:st }); }
+  lavaZones = unflat(d.lv||[]); seaZones = unflat(d.se||[]); riverZones = unflat(d.ri||[]); oasisZones = unflat(d.oa||[]);
+}
 function seededPickSpawnPoint(rng){
   const R = ZONE_PHASES[0].holdRadius*0.85;
   for(let tries=0; tries<60; tries++){
