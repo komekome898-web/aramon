@@ -747,7 +747,7 @@
   #turnRightBtn{ right:22px; bottom:185px; }
   #turnLeftBtn:active, #turnRightBtn:active{ background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.8); }
 
-  #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; transition:opacity .4s; text-align:center; white-space:nowrap;}
+  #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; opacity:0; transition:opacity .4s; text-align:center; white-space:nowrap;}
 
   /* ---------- RESULT SCREENS ---------- */
   .resultScreen{
