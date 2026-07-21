@@ -1467,10 +1467,18 @@ function showResult(isWin, placement){
     const el = ELEMENTS[player.element];
     iconEl.alt = el ? el.label : '';
     iconEl.style.display = '';
-    iconEl.dataset.variant = 'normal';
-    iconEl.dataset.extIdx = '0';
-    iconEl.dataset.basePath = `monsters/${player.element}`;
-    iconEl.src = imgSrcFor(iconEl.dataset.basePath);
+    // 装備中スキンがあればそのアイコンを反映する
+    const sk = (typeof getEquippedSkin==='function') ? getEquippedSkin(player.element) : null;
+    const skUrl = sk && (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(sk) : null;
+    if(skUrl){
+      iconEl.dataset.variant = 'skin';
+      iconEl.src = skUrl;
+    } else {
+      iconEl.dataset.variant = 'normal';
+      iconEl.dataset.extIdx = '0';
+      iconEl.dataset.basePath = `monsters/${player.element}`;
+      iconEl.src = imgSrcFor(iconEl.dataset.basePath);
+    }
   }
   document.getElementById('resultScreen').classList.remove('hidden');
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
