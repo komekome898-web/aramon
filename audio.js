@@ -52,7 +52,7 @@ document.addEventListener('visibilitychange', ()=>{
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
-  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, kyupiin:1, shuwaa:1.5 };
+  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5 };
 const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
 const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35 };
@@ -246,26 +246,49 @@ const SE_DEFS = {
     ring(t+0.24, 1568, 1.1, 0.28);
     ring(t+0.5,  2093, 2.4, 0.34); // 最後の一打は長く響かせる
   },
-  // 召喚演出・光が差す「キュピーン」(神々しい高音のきらめき・駆け上がり)
-  kyupiin(t){
-    // 高く澄んだ倍音がキラッと駆け上がる
-    seTone(t,       {freq:1320, freqEnd:3140, dur:0.5,  type:'triangle', vol:0.26, attack:0.006});
-    seTone(t+0.02,  {freq:1980, freqEnd:4700, dur:0.45, type:'sine',     vol:0.18, attack:0.006});
-    seTone(t+0.04,  {freq:2640, freqEnd:6280, dur:0.4,  type:'sine',     vol:0.12, attack:0.006});
-    // 到達点で「ピーン」と鐘のように残響
-    seTone(t+0.34,  {freq:3140, dur:1.1, type:'sine', vol:0.16, attack:0.004});
-    seTone(t+0.34,  {freq:4180, dur:0.9, type:'sine', vol:0.09, attack:0.004});
-    seTone(t+0.34,  {freq:6280, dur:0.6, type:'sine', vol:0.05, attack:0.004});
-    seNoise(t+0.32, {dur:0.5, vol:0.06, filterType:'highpass', filterFreq:7000}); // きらめきのシャラ
+  // 召喚演出・光の柱が天から落ちる「チュピーン」
+  // (降ってくるきらめき → 着地して神々しい鐘＋天使の和音が広がる)
+  chupiin(t){
+    // 天から降りてくるきらめき(高音から降下)
+    for(let i=0;i<6;i++){
+      const f = 5000 - i*560;
+      seTone(t+i*0.045, {freq:f, freqEnd:f*0.9, dur:0.16, type:'triangle', vol:0.12, attack:0.003});
+      seTone(t+i*0.045, {freq:f*2, dur:0.08, type:'sine', vol:0.05, attack:0.003}); // 上倍音のきらめき
+    }
+    seNoise(t, {dur:0.32, vol:0.05, filterType:'highpass', filterFreq:8000}); // 降下のシャラ
+    // 着地の「ピーン」: 明るい鐘(実際の鐘に近い非整数倍音)を長く残響させる
+    const land = t + 0.3;
+    const ring = (f, d, v)=>{
+      seTone(land, {freq:f*0.5,  dur:d*1.4, type:'sine', vol:v*0.45, attack:0.004});
+      seTone(land, {freq:f,      dur:d,     type:'sine', vol:v,      attack:0.004});
+      seTone(land, {freq:f*1.5,  dur:d*0.8, type:'sine', vol:v*0.5,  attack:0.004});
+      seTone(land, {freq:f*2.0,  dur:d*0.6, type:'sine', vol:v*0.32, attack:0.004});
+      seTone(land, {freq:f*2.67, dur:d*0.4, type:'sine', vol:v*0.18, attack:0.004});
+      seTone(land, {freq:f*3.4,  dur:d*0.28,type:'sine', vol:v*0.1,  attack:0.004});
+    };
+    ring(1568, 1.8, 0.24);
+    ring(2093, 1.5, 0.15);
+    seNoise(land, {dur:0.7, vol:0.05, filterType:'highpass', filterFreq:7500}); // 着地の光の弾け
+    // 天使の和音が芽生える(ゆっくり立ち上げて神々しく)
+    [523, 659, 784, 1047].forEach((f,i)=> seTone(land, {freq:f, dur:1.8, type:'sine', vol:0.06-i*0.008, attack:0.5}));
   },
-  // 召喚演出・光が広がる「シュワァー」(柔らかく満ちていく光のノイズ)
+  // 召喚演出・光が中心へ細く収束していく「シュワァー」
+  // (フィルタが開くノイズ + 天使の合唱パッドで満ちていく神々しさ)
   shuwaa(t){
-    // フィルタが開いていく=光が広がる感触。長い余韻で満ちていく
-    seNoiseLfo(t, {dur:1.6, volStart:0.02, volEnd:0.3, filterType:'bandpass', filterFreq:400, filterEnd:5200, lfoFreq:6, lfoDepth:0.25});
-    seNoiseLfo(t+0.1, {dur:1.5, volStart:0.02, volEnd:0.2, filterType:'highpass', filterFreq:1200, filterEnd:6500, lfoFreq:9, lfoDepth:0.3});
-    // 下支えの温かい持続音
-    seTone(t, {freq:262, freqEnd:523, dur:1.5, type:'sine', vol:0.12, attack:0.3});
-    seTone(t, {freq:392, freqEnd:784, dur:1.5, type:'sine', vol:0.08, attack:0.3});
+    seNoiseLfo(t,     {dur:2.4, volStart:0.02, volEnd:0.24, filterType:'bandpass', filterFreq:500,  filterEnd:6200, lfoFreq:5, lfoDepth:0.2});
+    seNoiseLfo(t+0.1, {dur:2.2, volStart:0.01, volEnd:0.16, filterType:'highpass', filterFreq:1400, filterEnd:7000, lfoFreq:8, lfoDepth:0.28});
+    // 合唱パッド(オクターブ＋完全五度を薄く重ね、わずかにデチューンしてうねらせる)
+    const choir = (f, v)=>{
+      seTone(t, {freq:f,       dur:2.6, type:'sine', vol:v,      attack:0.7});
+      seTone(t, {freq:f*1.004, dur:2.6, type:'sine', vol:v*0.7,  attack:0.7}); // デチューンのうねり
+      seTone(t, {freq:f*2,     dur:2.4, type:'sine', vol:v*0.4,  attack:0.8});
+      seTone(t, {freq:f*3,     dur:2.2, type:'sine', vol:v*0.16, attack:0.9});
+    };
+    choir(392, 0.10);  // ソ
+    choir(523, 0.09);  // ド
+    choir(659, 0.07);  // ミ
+    choir(784, 0.05);  // ソ(上)
+    seNoise(t+1.8, {dur:0.8, vol:0.05, filterType:'highpass', filterFreq:6800}); // 収束のシャラーン
   },
   // 敵をキルした時「ザシュッ」(切り裂き音)
   kill(t){

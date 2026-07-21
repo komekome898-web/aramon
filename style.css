@@ -50,9 +50,9 @@
   #startScreenInner{
     display:flex; flex-direction:column; align-items:center;
     transform:scale(0.8); transform-origin:top center;
-    /* 上下が見切れないよう、負マージンを弱めて余白を残す */
-    padding:24px 8px 32px;
-    margin:calc(-6 * var(--vh)) auto calc(-6 * var(--vh)) auto;
+    /* 下は見切れないよう負マージンで詰め、上はヘッダー(高さ30px)と被らないよう余白を確保 */
+    padding:48px 8px 32px;
+    margin:0 auto calc(-6 * var(--vh)) auto;
   }
   .title-block{ text-align:center; margin-bottom:18px; }
   .title-main{
@@ -91,14 +91,16 @@
   }
   #audioSettingsBtn:active{ background:rgba(255,255,255,0.14); }
   /* 音量設定オーバーレイ(大きめ表示+±ボタン) */
-  .audio-settings-box{ max-width:min(560px, calc(92 * var(--vw))); padding:26px 30px; }
+  /* 基底.mastermon-confirm-box(max-width:340px)より後段・同詳細度に負けないよう複合セレクタで指定 */
+  .mastermon-confirm-box.audio-settings-box{ max-width:min(760px, calc(96 * var(--vw))); width:min(760px, calc(96 * var(--vw))); padding:26px 38px; }
   .audio-settings-box .mastermon-confirm-text{ font-size:17px; }
   .audio-slider-row{ display:flex; align-items:center; gap:10px; margin:16px 0; }
   .audio-slider-label{ width:44px; text-align:left; font-size:15px; font-weight:700; color:var(--ink); flex-shrink:0; }
   .audio-slider-val{ width:36px; text-align:right; font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--amber); flex-shrink:0; }
   .audio-step-btn{
     width:42px; height:42px; flex-shrink:0; border-radius:8px; cursor:pointer;
-    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:20px; line-height:1;
+    display:flex; align-items:center; justify-content:center; padding:0; text-align:center;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:22px; line-height:1;
     color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line);
   }
   .audio-step-btn:active{ background:rgba(244,196,48,0.18); }

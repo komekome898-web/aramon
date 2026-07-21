@@ -27,7 +27,7 @@ let camSnap = { active:false, fromYaw:0, toYaw:0, t:0, duration:0.28 };
 // 召喚演出(試合開始時の5秒カウントダウン)。この間は視点操作のみ可能で、
 // matchTime・状態変化クールタイム・ゾーン等は一切進行しない(演出後に本戦開始)。
 const SUMMON_INTRO_DURATION = 5;
-let introState = { active:false, timer:0, duration:SUMMON_INTRO_DURATION, shuwaaPlayed:false };
+let introState = { active:false, timer:0, duration:SUMMON_INTRO_DURATION, chupiinPlayed:false, shuwaaPlayed:false, impactDone:false };
 let monsterScreenPos = new Map();
 function recomputeFocal(){ FOCAL = (viewH/2) / Math.tan(FOV_V/2); }
 
