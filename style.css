@@ -238,6 +238,16 @@
   /* ショップの残高表示(共有クラス) */
   .gacha-wallet{ display:flex; justify-content:center; gap:16px; font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink); margin-bottom:8px; }
 
+  /* ===== スキンガチャ実装記念ポップアップ ===== */
+  .skin-promo-box{ display:flex; flex-direction:column; align-items:center; gap:14px; width:min(760px, calc(94 * var(--vw))); max-height:calc(94 * var(--vh)); }
+  .skin-promo-img{ width:100%; height:auto; max-height:calc(72 * var(--vh)); object-fit:contain; border-radius:14px; box-shadow:0 14px 44px -8px rgba(0,0,0,0.85); }
+  .skin-promo-btnrow{ display:flex; gap:16px; }
+  .skin-promo-close{ padding:11px 30px; border-radius:12px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px;
+    color:var(--ink); background:rgba(255,255,255,0.10); border:1px solid var(--panel-line); }
+  .skin-promo-gacha{ padding:11px 40px; border-radius:12px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe08a,#f4c430); border:none; box-shadow:0 6px 18px -6px rgba(244,196,48,0.6); }
+  .skin-promo-gacha:active{ filter:brightness(1.08); }
+
   /* ===== ガチャ(全画面) ===== */
   #gachaOverlay{ position:fixed; inset:0; z-index:620; background:radial-gradient(ellipse at 50% 30%, #141a29, #070a12 70%); }
   #gachaOverlay.hidden{ display:none !important; }

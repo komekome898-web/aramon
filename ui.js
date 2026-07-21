@@ -254,7 +254,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -360,6 +360,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       updateAccountBar();
       accountShowMsg('アカウントを作成しました！今後は自動でログインします', true);
       pushToast(`ようこそ、${name}！`);
+      maybeShowSkinGachaPromo();
     } else if(String(acc.pass) === pass){
       // ログイン: サーバーのデータを取り込む
       accountState.loggedIn = true; accountState.name = acc.name; accountState.key = key; accountState.pass = pass;
@@ -369,6 +370,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       updateAccountBar();
       accountShowMsg('ログインしました！', true);
       pushToast(`おかえりなさい、${acc.name}！`);
+      maybeShowSkinGachaPromo();
     } else {
       // 名前の重複検知: 別人のアカウントが存在する
       accountShowMsg('この名前は既に使われています。別の名前に変えるか、心当たりがあれば正しいパスコードを入力してください');
@@ -406,6 +408,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
         }
         applyAccountNameAsDisplayName(acc.name);
         updateAccountBar();
+        maybeShowSkinGachaPromo();   // ログイン中アカウントに記念ダイヤ+ポップアップ(一度だけ)
       } else if(acc && String(acc.pass) !== String(creds.pass)){
         // パスコードが変更された等でサーバーと不一致→ログイン解除
         accountState.loggedIn = false; accountState.key = null; accountState.pass = null;
@@ -605,7 +608,11 @@ function incrementGachaCount(n){
   saveGachaCount(c);
   return granted;
 }
-document.getElementById('openGachaBtn').addEventListener('click', ()=>{
+// ===== スキンガチャ実装記念ポップアップ =====
+// このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
+const SKIN_PROMO_KEY = 'aramon_promo_skingacha_v1';
+const SKIN_PROMO_DIA = 500;
+function openGachaScreen(){
   updateGachaWallet();
   document.getElementById('gachaSingleCost').textContent = `💎 ${GACHA_COST_DIA_SINGLE}`;
   document.getElementById('gachaTenCost').textContent = `💎 ${GACHA_COST_DIA_TEN}`;
@@ -616,7 +623,26 @@ document.getElementById('openGachaBtn').addEventListener('click', ()=>{
   updateGachaCounterUI();
   document.getElementById('gachaOverlay').classList.remove('hidden');
   gachaAnimStart('idle');
+}
+function maybeShowSkinGachaPromo(){
+  if(!accountState.loggedIn) return;                       // ログイン中のアカウントのみ
+  if(localStorage.getItem(SKIN_PROMO_KEY)==='1') return;    // 既に受け取り済みなら出さない
+  try{ localStorage.setItem(SKIN_PROMO_KEY,'1'); }catch(e){}
+  addWallet(0, SKIN_PROMO_DIA);                             // ダイヤ500個付与(saveWalletがsync予約)
+  accountMarkDirty();                                       // フラグもサーバーへ同期
+  updateAccountBar();
+  document.getElementById('skinPromoOverlay').classList.remove('hidden');
+  pushToast(`スキンガチャ実装記念！ 💎+${SKIN_PROMO_DIA}`);
+}
+document.getElementById('skinPromoCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('skinPromoOverlay').classList.add('hidden');
 });
+document.getElementById('skinPromoGachaBtn').addEventListener('click', ()=>{
+  document.getElementById('skinPromoOverlay').classList.add('hidden');
+  openGachaScreen();
+});
+
+document.getElementById('openGachaBtn').addEventListener('click', openGachaScreen);
 document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
   gachaAnimStop();
   document.getElementById('gachaOverlay').classList.add('hidden');
