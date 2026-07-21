@@ -700,24 +700,18 @@ function gachaAnimFrame(now){
   const elapsed = (now - gachaAnim.t0)/1000;
   const topR = gachaAnim.results.length ? gachaAnim.results.reduce((a,r)=>RARITY_RANK[r.rarity]>RARITY_RANK[a]?r.rarity:a,'N') : 'N';
   const drawDisk = (ang, glow, glowColor)=>{
-    const dw = diskR*2, dh = diskR*1.24, thick = diskR*0.42; // 見かけの楕円サイズ + 厚み
+    // 厚みを焼き込んだ立体円盤石を回転描画する(厚みも一緒に回る)。顔の中心=画像中心。
     g.save(); g.translate(cx,cy);
-    // --- 側面(厚み): 上面楕円の前縁と、下へthick下げた楕円の前縁を結ぶ帯 ---
-    g.save(); g.shadowBlur=0;
-    const sideGrad = g.createLinearGradient(0, -dh*0.2, 0, dh*0.5+thick);
-    sideGrad.addColorStop(0, '#8a5e37'); sideGrad.addColorStop(0.5, '#5e3c22'); sideGrad.addColorStop(1, '#361f10');
-    g.fillStyle = sideGrad;
-    g.beginPath();
-    g.ellipse(0, 0, dw/2, dh/2, 0, 0, Math.PI, false);        // 上面楕円の下半分(右→下→左)
-    g.lineTo(-dw/2, thick);
-    g.ellipse(0, thick, dw/2, dh/2, 0, Math.PI, 0, true);     // 下面楕円の下半分(左→下→右)
-    g.closePath(); g.fill();
-    g.restore();
-    // --- 上面(回転する画像) ---
     if(glow>0){ g.shadowBlur=40*glow; g.shadowColor=glowColor||'#fff'; }
     g.rotate(ang);
-    if(imgIsReady(summonDiskImg)) g.drawImage(summonDiskImg, -dw/2, -dh/2, dw, dh);
-    else { g.beginPath(); g.ellipse(0,0,dw/2,dh/2,0,0,Math.PI*2); g.fillStyle='#c98d5a'; g.fill(); }
+    if(imgIsReady(summonDiskThickImg)){
+      const S = diskR*2.2; // 顔の直径が diskR*2 相当になるよう全体を拡縮
+      g.drawImage(summonDiskThickImg, -S/2, -S/2, S, S);
+    } else if(imgIsReady(summonDiskImg)){
+      g.drawImage(summonDiskImg, -diskR, -diskR*0.62, diskR*2, diskR*1.24); // フォールバック(平ら)
+    } else {
+      g.beginPath(); g.ellipse(0,0,diskR,diskR*0.62,0,0,Math.PI*2); g.fillStyle='#c98d5a'; g.fill();
+    }
     g.restore();
   };
   if(gachaAnim.phase==='idle'){
