@@ -189,17 +189,18 @@ const SE_DEFS = {
       seNoise(t + Math.random()*d*0.8, {dur:0.04, vol:0.13, filterType:'highpass', filterFreq:3200});
     }
   },
-  // クリスタルレイン「パリンパリン」(氷が割れる)
+  // クリスタルレイン「パリパリパリ」(高く凍てつく、氷が砕ける音)
   iceCrack(t, o){
     const d = Math.min(2.5, Math.max(0.8, (o&&o.dur)||1.2));
-    const n = Math.round(d*4)+2;
+    const n = Math.round(d*8)+4; // 細かく連続した「パリパリ」
     for(let i=0;i<n;i++){
-      const tt = t + i*(d/n) + Math.random()*0.05;
-      const f = 1700 + Math.random()*1500;
-      seTone(tt, {freq:f, freqEnd:f*0.65, dur:0.1, type:'triangle', vol:0.3});
-      seNoise(tt, {dur:0.05, vol:0.18, filterType:'highpass', filterFreq:4200});
+      const tt = t + i*(d/n) + Math.random()*0.03;
+      const f = 3200 + Math.random()*2800; // 高音域(氷の冷たさ)
+      seTone(tt, {freq:f, freqEnd:f*1.15, dur:0.05, type:'triangle', vol:0.24}); // 上昇でパキッと
+      seTone(tt, {freq:f*1.5, dur:0.03, type:'sine', vol:0.12});                 // 倍音のきらめき
+      seNoise(tt, {dur:0.03, vol:0.16, filterType:'highpass', filterFreq:6500}); // 砕けるノイズ
     }
-    seNoise(t+d*0.85, {dur:0.25, vol:0.25, filterType:'highpass', filterFreq:2600}); // 最後にシャラン
+    seNoise(t+d*0.85, {dur:0.3, vol:0.2, filterType:'highpass', filterFreq:5500}); // 最後にシャラーン
   },
   // 竜巻アタック「ゴオオオオ」(最初から轟音+地響き)
   tornado(t, o){

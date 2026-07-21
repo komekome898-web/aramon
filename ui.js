@@ -284,11 +284,14 @@ async function accountSyncNow(){
 }
 function updateAccountBar(){
   const w = loadWallet();
-  document.getElementById('walletGold').textContent = `🪙 ${w.gold}`;
-  document.getElementById('walletDia').textContent = `💎 ${w.dia}`;
+  // 上部ヘッダー: アカウント名・ゴールド・ダイヤ
+  document.getElementById('headerAccountName').textContent = accountState.loggedIn ? accountState.name : 'ゲスト';
+  document.getElementById('headerGold').textContent = `🪙 ${w.gold}`;
+  document.getElementById('headerDia').textContent = `💎 ${w.dia}`;
   const btn = document.getElementById('accountLoginBtn');
   if(accountState.loggedIn){
-    btn.textContent = `👤 ${accountState.name}`;
+    // アカウント名はヘッダーに表示するため、ボタンは汎用ラベルのまま
+    btn.textContent = '👤 アカウント';
     btn.classList.add('logged-in');
   } else {
     btn.textContent = '👤 ログイン / アカウント作成';
@@ -557,7 +560,6 @@ function useBagItem(itemKey, mmKey){
 // ===== ガチャ =====
 function updateGachaWallet(){
   const w = loadWallet();
-  document.getElementById('gachaGold').textContent = `🪙 ${w.gold}`;
   document.getElementById('gachaDia').textContent = `💎 ${w.dia}`;
 }
 document.getElementById('openGachaBtn').addEventListener('click', ()=>{
@@ -578,7 +580,8 @@ function doGacha(count){
   saveWallet(w);
   const results = [];
   for(let i=0;i<count;i++){
-    const k = gachaRoll(GACHA_POOL);
+    // 10連の最後の1枠(10個目)はチケット類確定
+    const k = (count===10 && i===count-1) ? gachaRoll(GACHA_TICKET_POOL) : gachaRoll(GACHA_POOL);
     addBagItem(k, 1);
     results.push(k);
   }
