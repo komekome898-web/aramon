@@ -1086,9 +1086,7 @@ function startGame(){
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
   game.started=true;
-  pushToast('バトル開始！');
-  playSe('jakiin');
-  bgmSetTrack('battle');
+  beginSummonIntro();   // 5秒の召喚演出 → 演出後に本戦開始(バトル開始SE/BGM)
 }
 let joinInProgress = false;
 // モンスター(またはマスモン)が選択されていない状態では、ソロの「バトルに参加する」だけでなく
