@@ -458,7 +458,17 @@ function renderBagSkins(){
     grid.innerHTML = '<div class="bag-skin-empty">所持しているスキンはありません。ガチャで手に入れよう！</div>';
     return;
   }
-  ids.sort((a,b)=> (RARITY_RANK[skinMeta(b).rarity]||0)-(RARITY_RANK[skinMeta(a).rarity]||0));
+  // 並び順: レアリティ(SSR→SR)を優先しつつ、同レアリティ内は種族順→色順で並べる
+  const elemOrder = Object.keys(ELEMENTS);
+  const colOrder = (typeof SKIN_COLOR_ORDER!=='undefined') ? SKIN_COLOR_ORDER : [];
+  ids.sort((a,b)=>{
+    const ma=skinMeta(a), mb=skinMeta(b);
+    const rr = (RARITY_RANK[mb.rarity]||0)-(RARITY_RANK[ma.rarity]||0);
+    if(rr!==0) return rr;
+    const ea=elemOrder.indexOf(ma.element), eb=elemOrder.indexOf(mb.element);
+    if(ea!==eb) return ea-eb;
+    return colOrder.indexOf(ma.colorId||'') - colOrder.indexOf(mb.colorId||'');
+  });
   grid.innerHTML = ids.map(id=>{
     const m = skinMeta(id);
     const url = skinnedIconDataUrl(id);
