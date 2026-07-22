@@ -2323,15 +2323,18 @@ function updateHUD(){
   document.getElementById('matchClock').textContent = fmtTime(matchTime);
 
   const mv = activeMove(player);
+  // 技フィールドのマーク/テーマ色は、その技のオーラ色にする(tier3は装備SSRで一致技に変わる)
+  const mvAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : mv.aura;
+  const moveMarkColor = (mvAura && typeof auraColorHex==='function') ? auraColorHex(mvAura) : mv.color;
   document.getElementById('moveName').textContent = mv.name;
-  document.documentElement.style.setProperty('--moveColor', mv.color);
+  document.documentElement.style.setProperty('--moveColor', moveMarkColor);
   document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(player, mv)}`;
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
     dot.classList.toggle('unlocked', t<=player.moveTierUnlocked);
     dot.classList.toggle('selected', t===player.moveTierSelected);
   }
-  document.getElementById('moveIcon').innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${mv.color}"/></svg>`;
+  document.getElementById('moveIcon').innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
 
   // 召喚演出中は操作説明を出さない(演出に被って勿体無いため)。
   // 演出中はupdate()が回らずtipTimerが減らないので、演出後にフル秒数だけ表示される。

@@ -325,11 +325,12 @@ const SIGNATURE_MOVES = {
 ===================================================================== */
 const AURA_BEATS = { red:'green', green:'yellow', yellow:'blue', blue:'red' };
 const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
+const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white:'⚪', black:'⚫' };
 const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black' };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
-  spark:'yellow', rock:'yellow', ark:'white', warm:'blue', illumine:'black',
+  spark:'blue', rock:'black', ark:'green', warm:'yellow', illumine:'black',
   fox:'white', god:'white', zan:'black',
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
@@ -338,16 +339,16 @@ const MOVE_AURA = {
   '水風船':'blue','アクアウェイブ':'blue','クリスタルレイン':'blue',
   '種':'green','種マシンガン':'green','フラワービーム':'green',
   'かみなり':'yellow','雷撃':'yellow','超雷撃':'yellow',
-  'ロケットパンチ':'yellow','掌打':'yellow','竜巻アタック':'yellow',
+  'ロケットパンチ':'black','掌打':'black','竜巻アタック':'black',
   '火炎砲':'red','火炎連砲':'red','ファイアウェーブ':'red',
-  'しっぽふり':'white','熾天の剣':'white','天の慈悲':'white',
-  '毒ガス':'blue','毒噴射':'blue','シェルアタック':'blue',
-  'ヴェノムエッジ':'blue','アサルトアロー':'blue','レクイエムエンド':'yellow',
+  'しっぽふり':'green','熾天の剣':'red','天の慈悲':'blue',
+  '毒ガス':'green','毒噴射':'green','シェルアタック':'yellow',
+  'ヴェノムエッジ':'black','アサルトアロー':'black','レクイエムエンド':'black',
   '狐火':'white','超狐火':'white','天河天翔':'white',
   'もんた':'red','さくらふぶき':'red','モッチ砲':'red',
   'ツバはき':'yellow','熱視線':'yellow','サイコキネシス':'blue',
   'ストレート':'white','ホーリーサンダー':'yellow','ゴッドライジング':'white',
-  'ソニックナイフ':'blue','フォルターブリッツ':'blue','ダークホウスト':'black',
+  'ソニックナイフ':'black','フォルターブリッツ':'yellow','ダークホウスト':'black',
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
 Object.keys(SIGNATURE_MOVES).forEach(el=>{ SIGNATURE_MOVES[el].forEach(mv=>{ if(MOVE_AURA[mv.name]) mv.aura = MOVE_AURA[mv.name]; }); });

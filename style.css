@@ -780,6 +780,9 @@
     margin-bottom:8px; text-transform:uppercase;
   }
   .howto-controls{ font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; line-height:1.9; text-align:center; }
+  .howto-aura{ font-size:11px; color:var(--ink-dim); letter-spacing:0.3px; line-height:1.7; text-align:center; display:flex; flex-direction:column; gap:5px; }
+  .howto-aura b{ color:var(--ink); }
+  .howto-aura-ring{ font-size:13px; color:var(--ink); letter-spacing:1px; }
   .howto-items, .howto-states{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
   .howto-item-card{
     display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.04);
