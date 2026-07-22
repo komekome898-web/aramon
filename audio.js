@@ -325,27 +325,24 @@ const SE_DEFS = {
     seTone(t+1.62, {freq:220, dur:1.0, type:'sine', vol:0.2, attack:0.06});
     seTone(t+1.62, {freq:262, dur:1.0, type:'sine', vol:0.12, attack:0.06});
   },
-  // ゴッドライジング「パパパパーン」(神々しい光球の斉射)
+  // ゴッドライジング「ジャジャジャジャーン」(ベートーヴェン「運命」の重々しい動機: ソソソ→ミ♭)
   godRising(t){
-    // パパパパ(明るいスタッカート4連)
-    [784, 988, 1175, 1568].forEach((f,i)=>{
-      const tt=t+i*0.085;
-      seTone(tt, {freq:f, dur:0.1, type:'triangle', vol:0.3, attack:0.004});
-      seTone(tt, {freq:f*2, dur:0.06, type:'sine', vol:0.1, attack:0.004});
-      seNoise(tt, {dur:0.03, vol:0.06, filterType:'highpass', filterFreq:6000});
-    });
-    // パーン(大きく響く明るい和音+鐘の倍音)
-    const land=t+0.36;
-    const ring=(f,d,v)=>{
-      seTone(land, {freq:f*0.5,  dur:d*1.3, type:'sine', vol:v*0.5,  attack:0.006});
-      seTone(land, {freq:f,      dur:d,     type:'sine', vol:v,      attack:0.006});
-      seTone(land, {freq:f*1.5,  dur:d*0.75,type:'sine', vol:v*0.45, attack:0.006});
-      seTone(land, {freq:f*2,    dur:d*0.6, type:'sine', vol:v*0.3,  attack:0.006});
-      seTone(land, {freq:f*2.67, dur:d*0.4, type:'sine', vol:v*0.16, attack:0.006});
+    // 一撃ごとに低音を重ねて重々しく打ち込む
+    const hit=(tt,f,d,v)=>{
+      seTone(tt, {freq:f,      dur:d,      type:'sawtooth', vol:v,      attack:0.004}); // 主音
+      seTone(tt, {freq:f*0.5,  dur:d,      type:'square',   vol:v*0.7,  attack:0.004}); // 1オクターブ下(重み)
+      seTone(tt, {freq:f*0.25, dur:d*1.05, type:'sine',     vol:v*0.55, attack:0.004}); // 2オクターブ下の芯
+      seTone(tt, {freq:f*1.5,  dur:d*0.7,  type:'triangle', vol:v*0.18, attack:0.004}); // 上倍音でギラつき
+      seNoise(tt, {dur:0.05, vol:0.12, filterType:'highpass', filterFreq:1800});         // アタックのザッ
     };
-    [523,659,784,1047].forEach((f,i)=> ring(f, 1.6, 0.16-i*0.02));
-    seNoise(land, {dur:0.6, vol:0.09, filterType:'highpass', filterFreq:6500}); // 光の弾けシャーン
-    seTone(land, {freq:130, freqEnd:70, dur:0.5, type:'sine', vol:0.24});       // 芯の一撃
+    const G=392, Eb=311;   // ソ → ミ♭
+    hit(t,       G,  0.15, 0.42);  // ジャ
+    hit(t+0.17,  G,  0.15, 0.42);  // ジャ
+    hit(t+0.34,  G,  0.15, 0.42);  // ジャ
+    hit(t+0.56,  Eb, 1.25, 0.5);   // ジャーン(長く重く伸ばす)
+    // 締めの重低音の轟き
+    seTone(t+0.56, {freq:Eb*0.25, freqEnd:Eb*0.2, dur:1.35, type:'sine', vol:0.42, attack:0.006});
+    seNoise(t+0.56, {dur:0.55, vol:0.14, filterFreq:1100, filterEnd:110});
   },
   // ダークホウスト「ザシュザシュザシュザシュザシュ」(黒い斬撃の5連)
   zashu(t){

@@ -491,10 +491,8 @@ function drawMonster(e,p){
   const displayImg = getDisplayImage(e);
   if(displayImg){
     drawMonsterPortrait(e, displayImg, e.hitFlash>0);
-    drawElementBadge(e);
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
-    drawElementBadge(e);
 
     if(e.element==='fire'){
       const eo = e.radius*0.36;
@@ -520,10 +518,6 @@ function drawMonster(e,p){
       [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*eyeOff+Math.cos(e.facingAngle)*2,-e.radius*0.05+Math.sin(e.facingAngle)*2,e.radius*0.07,0,Math.PI*2); ctx.fill(); });
     }
   }
-
-  const mv = activeMove(e);
-  ctx.beginPath(); ctx.arc(e.radius*0.7,e.radius*0.7,5,0,Math.PI*2);
-  ctx.fillStyle=mv.color; ctx.fill(); ctx.strokeStyle='#10131a'; ctx.lineWidth=1.4; ctx.stroke();
 
   if(e.burnUntil > matchTime){
     ctx.save();
