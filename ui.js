@@ -2539,6 +2539,9 @@ function buildMastermonMovesHtml(key){
   const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
   const movesHtml = moves.map(mv=>{
     const icon = mv.icon || fallbackIcon;
+    // 技アイコンは該当オーラのアイコンを表示(tier3は装備SSRスキンで一致技に変わる)
+    const dispAura = (typeof getMoveAura==='function') ? getMoveAura(mv, {element:key, isPlayer:true}) : mv.aura;
+    const auraIcon = (dispAura && typeof AURA_EMOJI!=='undefined') ? AURA_EMOJI[dispAura] : icon;
     // combat.js の fireMove() と同じ計算: 範囲攻撃(aoeShape)は projSpeed が無くても
     // 予告表示の後、この速度でダメージ範囲が塗り広がっていく(瞬間発動ではない)
     const isAoe = !!mv.aoeShape;
@@ -2548,7 +2551,7 @@ function buildMastermonMovesHtml(key){
     <div class="mm-move-card">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
       <div class="mm-move-info">
-        <div class="mm-move-name">${mv.name}<span class="mm-move-icon">${icon}</span></div>
+        <div class="mm-move-name">${mv.name}<span class="mm-move-icon">${auraIcon}</span></div>
         <div class="mm-move-stats">
           <span>威力 ${mv.dmg}</span>
           <span>消費ガッツ ${mv.gutsCost}</span>
