@@ -2706,10 +2706,10 @@ function renderAdminData(){
 // 管理者画面: SE確認グリッド(全SEをタップで再生)
 const SE_TEST_LABELS = {
   tap:'ボタン ポン', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
-  fire:'技発射 ボゥ', hitTaken:'被弾 ドゥン', noGuts:'ガッツ不足 ピピピ', fireRoar:'炎 ボオオオ',
+  fire:'技発射 バァン', hitTaken:'被弾 ドスッ', noGuts:'ガッツ不足 ピピピ', fireRoar:'炎 ボオオオ',
   iceCrack:'氷 パリパリ', tornado:'竜巻 ゴオオオ', spin:'回転 シュルル', beam:'ビーム', whoosh:'風切り シュン',
-  bell:'鐘 リンリン', chupiin:'召喚・柱 チュピーン', shuwaa:'召喚・収束 シュワァー', kill:'撃破 ザシュ',
-  fanfare:'勝利ファンファーレ', sad:'敗北', godRising:'ゴッドライジング 運命', ssrJackpot:'SSR大当たり', zashu:'ダークホウスト ザシュ×5',
+  bell:'鐘 リンリン', chupiin:'召喚・柱 チュピーン', shuwaa:'召喚・収束 シュワァー', kill:'撃破 ズバシュ',
+  fanfare:'勝利ファンファーレ', sad:'敗北', godRising:'ゴッドライジング 運命', ssrJackpot:'SSR大当たり', zashu:'ダークホウスト ズバシュ×5',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');

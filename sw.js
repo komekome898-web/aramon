@@ -1,7 +1,7 @@
 // ファイルを更新するたびに、このバージョン番号を必ず上げてください。
 // (例: v2 -> v3 -> v4 ...) 番号を上げないと、ユーザーの端末に古いキャッシュが
 // 残り続け、更新した内容が反映されません。
-const CACHE_NAME = 'aramon-cache-v228';
+const CACHE_NAME = 'aramon-cache-v229';
 const CORE_ASSETS = [
   './',
   './index.html',
