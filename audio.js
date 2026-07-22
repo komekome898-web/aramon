@@ -344,40 +344,39 @@ const SE_DEFS = {
     seTone(t+0.56, {freq:Eb*0.25, freqEnd:Eb*0.2, dur:1.35, type:'sine', vol:0.42, attack:0.006});
     seNoise(t+0.56, {dur:0.55, vol:0.14, filterFreq:1100, filterEnd:110});
   },
-  // ガチャSSR獲得「大当たり!!」パチンコ確定音風の派手で下品な脳汁サウンド(ループ再生)
+  // ガチャSSR獲得「大当たり確定!!」パチンコの確定音風・派手で下品な脳汁サウンド(ループ再生)
   ssrJackpot(t){
-    // 立ち上がりの上昇スイープ(ヒュイーン)
-    seTone(t, {freq:220, freqEnd:2200, dur:0.5, type:'sawtooth', vol:0.09});
-    // 高速上昇アルペジオ ピロピロピロ(2巡)
-    const scale=[523,659,784,988,1175,1319,1568];
-    for(let r=0;r<2;r++){
-      for(let i=0;i<scale.length;i++){
-        const tt=t + 0.05 + r*0.36 + i*0.045;
-        seTone(tt, {freq:scale[i],   dur:0.07, type:'square',   vol:0.15, attack:0.002});
-        seTone(tt, {freq:scale[i]*2, dur:0.05, type:'triangle', vol:0.06, attack:0.002});
-      }
+    // 1) ドュルルル…(だんだん詰まるスネアロール)で溜める
+    for(let i=0;i<15;i++){
+      const tt = t + i*0.05*(1 - i*0.028);
+      seNoise(tt, {dur:0.03, vol:0.09+i*0.004, filterType:'bandpass', filterFreq:2400});
     }
-    // 明るい和音スタブ(ジャジャーン)+ 低音ドン + シャッ
-    const stab=(tt,v)=>{
-      [523,659,784,1047].forEach(f=>{
-        seTone(tt, {freq:f,       dur:0.55, type:'sawtooth', vol:v*0.11, attack:0.003});
-        seTone(tt, {freq:f*1.006, dur:0.55, type:'sawtooth', vol:v*0.08, attack:0.003}); // デチューンで下品に
-        seTone(tt, {freq:f*2,     dur:0.4,  type:'square',   vol:v*0.045});
-      });
-      seTone(tt, {freq:110, freqEnd:55, dur:0.5, type:'sine', vol:0.32});                 // ドン
-      seNoise(tt, {dur:0.08, vol:0.14, filterType:'highpass', filterFreq:4000});          // シャッ
+    // 2) キュイィーン(確定音の大きな上昇ポルタメント・デチューンで下品に)
+    seTone(t, {freq:380, freqEnd:2600, dur:0.6, type:'sawtooth', vol:0.13, attack:0.01});
+    seTone(t, {freq:384, freqEnd:2630, dur:0.6, type:'square',   vol:0.06, attack:0.01});
+    const hit = t + 0.62;
+    // 3) ドン!+ シンバルクラッシュ(着弾)
+    seTone(hit, {freq:120, freqEnd:48, dur:0.6, type:'sine', vol:0.36});
+    seNoise(hit, {dur:0.55, vol:0.2, filterType:'highpass', filterFreq:5200, filterEnd:1800});
+    // 4) テッテレー!(明るい勝利のフック)
+    const N=(dt,f,d,v)=>{
+      seTone(hit+dt, {freq:f,   dur:d,     type:'square',   vol:v*0.13, attack:0.003});
+      seTone(hit+dt, {freq:f*2, dur:d*0.8, type:'triangle', vol:v*0.05, attack:0.003});
+      seTone(hit+dt, {freq:f/2, dur:d,     type:'sawtooth', vol:v*0.06, attack:0.003});
     };
-    stab(t+0.86, 1);
-    stab(t+1.12, 1);
-    // キラキラ(高音スパークルを散らす)
+    N(0.02, 784, 0.12, 1); N(0.16, 784, 0.12, 1); N(0.30, 1047, 0.55, 1.15);
+    // 5) 下品なデチューン和音の余韻 + ワウ
+    [523,659,784,1047].forEach(f=>{
+      seTone(hit+0.3, {freq:f,       dur:0.8, type:'sawtooth', vol:0.05, attack:0.02});
+      seTone(hit+0.3, {freq:f*1.008, dur:0.8, type:'sawtooth', vol:0.04, attack:0.02});
+    });
+    seTone(hit+0.02, {freq:1700, freqEnd:520,  dur:0.18, type:'sawtooth', vol:0.09});
+    seTone(hit+0.22, {freq:520,  freqEnd:1900, dur:0.2,  type:'sawtooth', vol:0.09});
+    // 6) キラキラ(高音スパークルを散らす)
     for(let i=0;i<12;i++){
-      const tt=t+0.86+Math.random()*0.9;
-      const f=2600+Math.random()*3800;
-      seTone(tt, {freq:f, dur:0.1, type:'triangle', vol:0.09, attack:0.002});
+      const tt = hit + Math.random()*0.95;
+      seTone(tt, {freq:2700+Math.random()*3600, dur:0.09, type:'triangle', vol:0.08, attack:0.002});
     }
-    // 下品なワウ(下降→上昇)
-    seTone(t+0.86, {freq:1600, freqEnd:500,  dur:0.18, type:'sawtooth', vol:0.1});
-    seTone(t+1.04, {freq:500,  freqEnd:1800, dur:0.2,  type:'sawtooth', vol:0.1});
   },
   // ダークホウスト「ザシュザシュザシュザシュザシュ」(黒い斬撃の5連)
   zashu(t){
