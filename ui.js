@@ -1687,12 +1687,18 @@ function renderResultBadges(o){
   const el = document.getElementById('resultBadges');
   if(!el) return;
   const badges = [];
+  let rainbow = false; // 自己ベスト更新 or 称号獲得(=虹色バッジ)が出たか
   if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
-  if(o.kills>0 && o.kills > o.prevBestKills) badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`);
-  if(o.damage>0 && o.damage > o.prevBestDamage) badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`);
-  for(const t of (o.newTitles||[])) badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`);
+  if(o.kills>0 && o.kills > o.prevBestKills){ badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`); rainbow = true; }
+  if(o.damage>0 && o.damage > o.prevBestDamage){ badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`); rainbow = true; }
+  for(const t of (o.newTitles||[])){ badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; }
   el.innerHTML = badges.join('');
   el.classList.toggle('hidden', badges.length===0);
+  // 虹色バッジ(自己ベスト更新/称号獲得)が出たら、SSR獲得と同じSEを2回鳴らす
+  if(rainbow && typeof playSsrJackpotOnce==='function'){
+    playSsrJackpotOnce();
+    setTimeout(()=>{ if(typeof playSsrJackpotOnce==='function') playSsrJackpotOnce(); }, 700);
+  }
 }
 function logMatchForAdmin(){
   if(!window.__aramonLogMatch){ console.warn('logMatchForAdmin: __aramonLogMatch not ready, skipped'); return; }

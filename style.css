@@ -486,9 +486,15 @@
   .result-badges{ display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:6px; max-width:min(92 * var(--vw),560px); }
   .result-badge{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11.5px; letter-spacing:0.5px;
     padding:3px 10px; border-radius:12px; border:1px solid var(--panel-line); }
-  .result-badge.best{ color:#1a1306; background:linear-gradient(180deg,#ffe08a,#f4c430); border-color:transparent; }
-  .result-badge.title{ color:var(--amber); background:rgba(244,196,48,0.12); border-color:rgba(244,196,48,0.5); animation:titlePop 0.5s ease; }
+  /* 自己ベスト更新・称号獲得のフィールドは虹色(ゆっくり流れる)+登場ポップ */
+  .result-badge.best, .result-badge.title{
+    color:#fff; font-weight:800; border-color:transparent; text-shadow:0 1px 2px rgba(0,0,0,0.6);
+    background:linear-gradient(90deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
+    background-size:200% 100%;
+    animation:titlePop 0.5s ease, resultRainbow 3s linear infinite;
+  }
   @keyframes titlePop{ 0%{ transform:scale(0.6); opacity:0; } 60%{ transform:scale(1.12); } 100%{ transform:scale(1); opacity:1; } }
+  @keyframes resultRainbow{ from{ background-position:0 0; } to{ background-position:200% 0; } }
   /* 1位(ビクロイ)の勝利演出: タイトルを金色に脈打たせる */
   .resultScreen.win .rank{ animation:winPulse 1.5s ease-in-out infinite; }
   @keyframes winPulse{ 0%,100%{ transform:scale(1); text-shadow:0 0 30px rgba(244,196,48,0.6); }
