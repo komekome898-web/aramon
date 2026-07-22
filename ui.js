@@ -454,9 +454,10 @@ function renderBagTitles(){
   if(typeof checkTitleUnlocks==='function') checkTitleUnlocks(); // 開いた時点の実績を反映(SSR所持/全属性など)
   const t = loadTitles();
   const hint = document.getElementById('bagTitleHint');
+  const eqCount = (t.equipped||[]).length;
   if(hint){
     const cnt = TITLES.filter(d=>t.unlocked[d.id]).length;
-    hint.textContent = `獲得 ${cnt} / ${TITLES.length}　タップで装着(もう一度で外す)。装着中は名前の横に表示されます。`;
+    hint.textContent = `獲得 ${cnt} / ${TITLES.length}　タップで装着(もう一度で外す・最大${TITLE_EQUIP_MAX}つ ${eqCount}/${TITLE_EQUIP_MAX})。装着中はアイコンが名前の横に表示されます。`;
   }
   const list = TITLES.slice().sort((a,b)=>{
     const ua = t.unlocked[a.id]?0:1, ub = t.unlocked[b.id]?0:1;
@@ -464,11 +465,11 @@ function renderBagTitles(){
   });
   grid.innerHTML = list.map(def=>{
     const owned = !!t.unlocked[def.id];
-    const eq = owned && t.equipped===def.id;
+    const eq = owned && (t.equipped||[]).includes(def.id);
     return `<button class="bag-title-cell ${owned?'owned':'locked'} ${eq?'equipped':''}" data-title="${def.id}" ${owned?'':'disabled'}>
       <span class="bag-title-emoji">${owned?def.emoji:'🔒'}</span>
       <span class="bag-title-name">${owned?def.name:'？？？'}</span>
-      <span class="bag-title-cond">${owned?('★ '+def.cat):titleCondText(def)}</span>
+      <span class="bag-title-cond">${titleCondText(def)}</span>
       ${eq?'<span class="bag-title-eqbadge">装着中</span>':''}
     </button>`;
   }).join('');
@@ -476,20 +477,26 @@ function renderBagTitles(){
     btn.addEventListener('click', ()=>{
       const id = btn.dataset.title;
       const tt = loadTitles();
-      tt.equipped = (tt.equipped===id) ? null : id;
+      const arr = tt.equipped || [];
+      const idx = arr.indexOf(id);
+      if(idx>=0){ arr.splice(idx,1); } // 装着解除
+      else if(arr.length < TITLE_EQUIP_MAX){ arr.push(id); } // 装着
+      else { if(typeof pushToast==='function') pushToast(`称号は最大${TITLE_EQUIP_MAX}つまで装着できます`); return; }
+      tt.equipped = arr;
       saveTitles(tt);
       renderBagTitles();
       updateHeaderTitle();
     });
   });
 }
-// 装着中の称号をトップヘッダーのプレイヤー名の横に表示
+// 装着中の称号(最大3つ)をトップヘッダーのプレイヤー名の横にアイコンのみで表示
 function updateHeaderTitle(){
   const chip = document.getElementById('headerTitleChip');
   if(!chip || typeof loadTitles!=='function') return;
   const t = loadTitles();
-  const def = (t.equipped && typeof TITLES_BY_ID!=='undefined') ? TITLES_BY_ID[t.equipped] : null;
-  if(def){ chip.textContent = `${def.emoji} ${def.name}`; chip.classList.remove('hidden'); }
+  const ids = t.equipped || [];
+  const emojis = ids.map(id=> TITLES_BY_ID[id] ? TITLES_BY_ID[id].emoji : '').filter(Boolean);
+  if(emojis.length){ chip.textContent = emojis.join(''); chip.classList.remove('hidden'); }
   else { chip.textContent = ''; chip.classList.add('hidden'); }
 }
 document.querySelectorAll('.bag-tab').forEach(tab=>{
@@ -2759,6 +2766,22 @@ async function openRankingScreen(fromTitle){
   await loadRankingList(currentRankingMode);
 }
 const RANK_CROWN = { 1:{ color:'#ffd700', glow:'rgba(255,215,0,0.7)' }, 2:{ color:'#dfe6ee', glow:'rgba(223,230,238,0.6)' }, 3:{ color:'#cd7f32', glow:'rgba(205,127,50,0.6)' } };
+// ある値(キル/ダメージ)で満たせる最上位の称号を返す
+function highestTitleOf(type, value){
+  if(typeof TITLES==='undefined') return null;
+  let best = null;
+  for(const t of TITLES){ if(t.type===type && (value||0)>=t.n){ if(!best || t.n>best.n) best = t; } }
+  return best;
+}
+// ランキングの記録が満たす称号(最上位のキル称号＋ダメージ称号)をアイコンで表示
+function recordTitleBadgesHtml(r){
+  const chips = [];
+  const kt = highestTitleOf('matchKills', r.kills||0);
+  const dt = highestTitleOf('matchDamage', r.damage||0);
+  if(kt) chips.push(`<span class="rank-title-chip" title="${kt.name}（${titleCondText(kt)}）">${kt.emoji}</span>`);
+  if(dt) chips.push(`<span class="rank-title-chip" title="${dt.name}（${titleCondText(dt)}）">${dt.emoji}</span>`);
+  return chips.length ? `<span class="rank-titles">${chips.join('')}</span>` : '';
+}
 async function loadRankingList(mode){
   const listEl = document.getElementById('rankingList');
   listEl.innerHTML = '<div class="rank-empty">読み込み中…</div>';
@@ -2797,7 +2820,8 @@ async function loadRankingList(mode){
         : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
     }
     const mmHtml = r.mastermonName ? `<span class="rank-mastermon">『${r.mastermonName}』</span>` : '';
-    return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span><span class="rv">${val}</span></div>`;
+    const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r) : '';
+    return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
   }).join('');
 }
 document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRankingScreen(false));

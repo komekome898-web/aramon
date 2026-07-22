@@ -770,11 +770,16 @@ function saveSeason(s){
 }
 
 const TITLES_STORAGE_KEY = 'aramon_titles_v1';
+const TITLE_EQUIP_MAX = 3; // 装着できる称号の最大数
 function loadTitles(){
   try{
     const t = JSON.parse(localStorage.getItem(TITLES_STORAGE_KEY)) || {};
-    return { unlocked: t.unlocked||{}, equipped: (t.equipped && TITLES_BY_ID[t.equipped]) ? t.equipped : null };
-  }catch(err){ return { unlocked:{}, equipped:null }; }
+    let eq = t.equipped;
+    if(typeof eq==='string') eq = eq ? [eq] : []; // 旧形式(単一)を配列へ移行
+    if(!Array.isArray(eq)) eq = [];
+    eq = eq.filter(id=>TITLES_BY_ID[id]).slice(0, TITLE_EQUIP_MAX);
+    return { unlocked: t.unlocked||{}, equipped: eq };
+  }catch(err){ return { unlocked:{}, equipped:[] }; }
 }
 function saveTitles(t){
   try{ localStorage.setItem(TITLES_STORAGE_KEY, JSON.stringify(t)); }catch(err){}
