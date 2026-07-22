@@ -391,7 +391,10 @@ const SE_DEFS = {
 };
 // メニュー系の<button>タップで共通の「ポン」を鳴らす
 document.addEventListener('click', (e)=>{
-  if(e.target && e.target.closest && e.target.closest('button')) playSe('tap');
+  if(!e.target || !e.target.closest) return;
+  // 管理者のSE確認グリッドでは、確認したいSEに共通タップ音が被らないよう「ポン」を鳴らさない
+  if(e.target.closest('#adminSeGrid')) return;
+  if(e.target.closest('button')) playSe('tap');
 }, true);
 
 // ===== BGM(ステップシーケンサ) =====

@@ -1343,8 +1343,10 @@
   .admin-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
   /* 管理者: SE確認グリッド */
   .admin-se-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr)); gap:8px; width:100%; max-width:660px;
-    margin:0 auto; flex:1 1 auto; min-height:0; align-content:start; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
-  .admin-se-btn{ padding:8px 10px; border-radius:8px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px;
+    margin:0 auto; flex:1 1 auto; min-height:0; align-content:start; grid-auto-rows:max-content; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
+  .admin-se-btn{ box-sizing:border-box; min-height:34px; line-height:18px; padding:8px 10px; border-radius:8px;
+    cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); text-align:left;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .admin-se-btn:active{ background:rgba(244,196,48,0.18); border-color:var(--amber); }
