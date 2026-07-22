@@ -52,10 +52,10 @@ document.addEventListener('visibilitychange', ()=>{
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
-  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6 };
+  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6, ssrJackpot:0.9 };
 const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
-const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35, godRising:1.35, zashu:1.35 };
+const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35, godRising:1.35, zashu:1.35, ssrJackpot:1.4 };
 let seCurrentBoost = 1;
 function playSe(name, opts){
   if(!actx || audioSettings.se<=0.005) return;
@@ -343,6 +343,41 @@ const SE_DEFS = {
     // 締めの重低音の轟き
     seTone(t+0.56, {freq:Eb*0.25, freqEnd:Eb*0.2, dur:1.35, type:'sine', vol:0.42, attack:0.006});
     seNoise(t+0.56, {dur:0.55, vol:0.14, filterFreq:1100, filterEnd:110});
+  },
+  // ガチャSSR獲得「大当たり!!」パチンコ確定音風の派手で下品な脳汁サウンド(ループ再生)
+  ssrJackpot(t){
+    // 立ち上がりの上昇スイープ(ヒュイーン)
+    seTone(t, {freq:220, freqEnd:2200, dur:0.5, type:'sawtooth', vol:0.09});
+    // 高速上昇アルペジオ ピロピロピロ(2巡)
+    const scale=[523,659,784,988,1175,1319,1568];
+    for(let r=0;r<2;r++){
+      for(let i=0;i<scale.length;i++){
+        const tt=t + 0.05 + r*0.36 + i*0.045;
+        seTone(tt, {freq:scale[i],   dur:0.07, type:'square',   vol:0.15, attack:0.002});
+        seTone(tt, {freq:scale[i]*2, dur:0.05, type:'triangle', vol:0.06, attack:0.002});
+      }
+    }
+    // 明るい和音スタブ(ジャジャーン)+ 低音ドン + シャッ
+    const stab=(tt,v)=>{
+      [523,659,784,1047].forEach(f=>{
+        seTone(tt, {freq:f,       dur:0.55, type:'sawtooth', vol:v*0.11, attack:0.003});
+        seTone(tt, {freq:f*1.006, dur:0.55, type:'sawtooth', vol:v*0.08, attack:0.003}); // デチューンで下品に
+        seTone(tt, {freq:f*2,     dur:0.4,  type:'square',   vol:v*0.045});
+      });
+      seTone(tt, {freq:110, freqEnd:55, dur:0.5, type:'sine', vol:0.32});                 // ドン
+      seNoise(tt, {dur:0.08, vol:0.14, filterType:'highpass', filterFreq:4000});          // シャッ
+    };
+    stab(t+0.86, 1);
+    stab(t+1.12, 1);
+    // キラキラ(高音スパークルを散らす)
+    for(let i=0;i<12;i++){
+      const tt=t+0.86+Math.random()*0.9;
+      const f=2600+Math.random()*3800;
+      seTone(tt, {freq:f, dur:0.1, type:'triangle', vol:0.09, attack:0.002});
+    }
+    // 下品なワウ(下降→上昇)
+    seTone(t+0.86, {freq:1600, freqEnd:500,  dur:0.18, type:'sawtooth', vol:0.1});
+    seTone(t+1.04, {freq:500,  freqEnd:1800, dur:0.2,  type:'sawtooth', vol:0.1});
   },
   // ダークホウスト「ザシュザシュザシュザシュザシュ」(黒い斬撃の5連)
   zashu(t){
