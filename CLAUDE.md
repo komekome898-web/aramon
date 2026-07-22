@@ -38,7 +38,11 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### 画面(スクリーン)の追加・変更時
 - 各画面は `index.html` 内の `<div class="resultScreen hidden">` 等で定義し、`.hidden`(display:none !important)の付け外しで遷移する。
-- **新しい画面を追加したら、`render.js` と `input.js` にあるグローバルな `touchmove` / `touchend` / `dblclick` の除外リスト(`e.target.closest('#xxx')`の連鎖)に必ずその画面のIDを追加する。** 追加しないと画面内スクロールやタップが効かないバグになる(過去に管理者画面・ランキング画面で発生)。
+- **【スクロールロックの除外・必須】新しい画面/オーバーレイを追加したら、グローバルな除外リストにそのIDを必ず3か所すべて追加する:** `render.js` の `touchmove`、`input.js` の `touchend` と `dblclick`(いずれも `e.target.closest('#xxx')` の連鎖)。追加しないと画面内スクロールやタップが効かないバグになる(過去に管理者画面・ランキング画面・デイリー/シーズンで対応)。3リストは同じ内容に保つこと。
+- **【ポップアップ画面の横幅・スクロール・×ボタン 定型】`.mastermon-confirm-overlay`系のポップアップ(バッグ/ショップ/デイリー/シーズン等)を新規追加するときは、以下を守れば毎回同じ手直しが不要:**
+  - 幅は基底 `.mastermon-confirm-box`(`max-width:340px`)に負けるので、**複合セレクタ** `.mastermon-confirm-box.xxx-box{ ... }` で `max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));` を指定(ショップ/バッグと同じ広さ)。単一クラス指定だと340pxのまま。
+  - **`position:relative` を必ず付ける。** 付けないと右上の `.overlay-close-btn`(`position:absolute`)が画面全体基準になり、枠外(画面隅)に飛ぶ。
+  - 縦にはみ出す前提で **`max-height:calc(94 * var(--vh)); overflow-y:auto`** を付け、枠ごとスクロールさせる(内側に別の `max-height` スクロールを重ねない)。
 - プルダウンは `.custom-select` / `.custom-select-menu` の自前実装を再利用する。ポップアップが親のoverflowで切れないよう「外枠はoverflow可視・中のリストだけ独立スクロール」の構成にする。
 - 横長(landscape)の低い画面が前提。新しい画面は縦幅を詰めてスクロールなしで収まるようにする。
 
