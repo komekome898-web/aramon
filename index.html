@@ -484,11 +484,16 @@
     <div id="bagItemPane">
     <div class="bag-main">
       <div class="bag-col-left">
+        <div class="bag-hint">アイテムとマスモンを選んで使用</div>
         <div id="bagIconGrid" class="bag-icon-grid"></div>
         <div id="bagDescField" class="bag-desc-field">
           <div class="bag-desc-empty" id="bagDescEmpty">アイテムをタップすると説明が表示されます</div>
           <div id="bagDescContent" class="hidden">
-            <div class="bag-desc-head"><span id="bagDescIcon" class="bag-desc-icon"></span><span id="bagDescName" class="bag-desc-name"></span></div>
+            <div class="bag-desc-head">
+              <span id="bagDescIcon" class="bag-desc-icon"></span>
+              <span id="bagDescName" class="bag-desc-name"></span>
+              <button id="bagUseConfirmBtn" class="bag-use-btn" disabled>使用する</button>
+            </div>
             <div id="bagDescText" class="bag-desc-text"></div>
             <div id="bagQtyRow" class="audio-slider-row bag-qty-row">
               <span class="audio-slider-label">個数</span>
@@ -502,9 +507,6 @@
       </div>
       <div id="bagTargetWrap" class="bag-col-right hidden">
         <div id="bagTargetList" class="bag-target-list"></div>
-        <div class="bag-target-btnrow">
-          <button id="bagUseConfirmBtn" class="bag-use-btn" disabled>使用する</button>
-        </div>
       </div>
     </div>
     </div>
