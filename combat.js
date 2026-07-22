@@ -27,10 +27,12 @@ function fireMove(attacker, target, move){
   const effDmg = effectiveMoveDmg(attacker, move);
   const effProjSpeed = effectiveProjSpeed(attacker, move);
   const hbMult = ELEMENTS[attacker.element].hitboxMult || 1; // キュービ「当たり判定が大きい」特性
+  const moveAura = (typeof getMoveAura==='function') ? getMoveAura(move, attacker) : (move.aura||null);
+  const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // SSR tier3は装備オーラ色に
   if(move.melee){
     if(target && target.alive){
-      applyDamage(target, effDmg, attacker);
-      spawnHit(target.x, target.y, target.z, move.color);
+      applyDamage(target, effDmg, attacker, { moveAura });
+      spawnHit(target.x, target.y, target.z, effColor);
     }
     return;
   }
@@ -39,10 +41,10 @@ function fireMove(attacker, target, move){
     const width = (move.rectWidth||move.beamWidth||move.zigzagWidth||0) * hbMult;
     const ae = {
       id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
-      angle:aimAngle, dmg:effDmg, color:move.color, range:move.range, width,
+      angle:aimAngle, dmg:effDmg, color:effColor, range:move.range, width,
       fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
       fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
-      spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null,
+      spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura,
     };
     if(move.aoeShape==='beams'){
       const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -76,8 +78,8 @@ function fireMove(attacker, target, move){
       lobbed:true, startX:attacker.x, startY:attacker.y, startZ:attacker.z,
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
-      dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
-      icon:move.icon, shape:move.shape, projStyle:move.projStyle||null,
+      dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
+      icon:move.icon, shape:move.shape, projStyle:move.projStyle||null, moveAura,
     });
     return;
   }
@@ -94,7 +96,7 @@ function fireMove(attacker, target, move){
         id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
         dmg:effDmg, color:colors[i], hitR:(move.hitR||24)*hbMult, splash:(move.splash||0)*hbMult,
-        traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i],
+        traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i], moveAura,
       });
     }
     return;
@@ -107,10 +109,10 @@ function fireMove(attacker, target, move){
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
       vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
-      dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
+      dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
-      projStyle: move.projStyle||null,
+      projStyle: move.projStyle||null, moveAura,
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
     });
@@ -169,12 +171,16 @@ function applyDamage(target, dmg, source, opts){
   if(involvesHuman && !isAuthoritative){
     // マルチプレイで人間が関わる場合、見た目だけ即時反映しつつ、確定計算はホストに委ねる
     spawnHit(target.x, target.y, target.z, source ? ELEMENTS[source.element].color : '#ffffff');
-    spawnDmgText(target.x, target.y, target.z, Math.round(dmg));
+    const ta = opts && opts.moveAura;
+    const ar = (ta && typeof auraAdvantage==='function') ? auraAdvantage(ta, getMonsterAura(target)) : 'neutral';
+    if(ar==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(dmg*1.5), '#5aa6ff', true);
+    else if(ar==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(dmg*0.5), '#ff5555', true);
+    else                spawnDmgText(target.x, target.y, target.z, Math.round(dmg));
     if(netState.mode==='multi'){
       window.__aramonReportHit(netState.roomId, {
         targetNetId: target.netPlayerId || null, targetLocalId: target.id,
         sourceNetId: source? (source.netPlayerId||null) : null, sourceLocalId: source? source.id : null,
-        dmg, sourceElement: source? source.element : null, ts: Date.now(),
+        dmg, sourceElement: source? source.element : null, moveAura: ta || null, ts: Date.now(),
       });
     }
     return;
@@ -193,8 +199,20 @@ function applyDamage(target, dmg, source, opts){
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
     if(source.mastermonDmgDealtMult){ finalDmg *= source.mastermonDmgDealtMult; }
   }
+  // オーラ相性: 有利技×不利モンスター=1.5倍 / 不利技×有利モンスター=0.5倍 / 技オーラ=使用者オーラ=1.2倍(一致)
+  let auraResult = 'neutral';
+  const techAura = opts && opts.moveAura;
+  if(techAura && typeof auraAdvantage==='function'){
+    auraResult = auraAdvantage(techAura, getMonsterAura(target));
+    if(auraResult==='adv') finalDmg *= 1.5;
+    else if(auraResult==='dis') finalDmg *= 0.5;
+    if(source && getMonsterAura(source)===techAura) finalDmg *= 1.2; // オーラ一致
+  }
   target.hp -= finalDmg; target.hitFlash = 0.18;
-  spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
+  // ダメージ表記: 有利技=青・不利技=赤で強調 / それ以外は通常
+  if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#5aa6ff', true);
+  else if(auraResult==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
+  else                        spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
   if(source && source.id!==target.id){
     target.recentAttackers[source.id] = matchTime;
     target.lastAttackerId = source.id;
@@ -710,7 +728,7 @@ function updateProjectiles(dt){
       if(t>=1){
         for(const e of entities){
           if(!e.alive || e.id===p.ownerId) continue;
-          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId));
+          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura });
         }
         spawnHit(p.x,p.y,0,p.color);
         spawnDeath(p.x,p.y,0,p.color);
@@ -744,7 +762,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId));
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura });
             }
           }
           hit=true; break;
@@ -759,7 +777,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId));
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura });
             }
           }
           hit=true; break;
@@ -778,7 +796,7 @@ function updateProjectiles(dt){
           hitNow = dist(p,e) < e.radius+p.hitR;
         }
         if(hitNow){
-          applyDamage(e, p.dmg, getEntity(p.ownerId));
+          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit){
             const owner = getEntity(p.ownerId);
@@ -792,7 +810,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId));
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura });
             }
           }
           spawnHit(e.x,e.y,e.z,p.color);
@@ -1085,7 +1103,7 @@ function updateAreaEffects(dt){
           if(ae.hitIds.has(key)) continue;
           if(hitTestRect(origin, ent, beamAngle, curReach, ae.width/2)){
             ae.hitIds.add(key);
-            applyDamage(ent, ae.dmg, owner);
+            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura });
             spawnHit(ent.x, ent.y, ent.z, ae.color);
           }
         }
@@ -1104,7 +1122,7 @@ function updateAreaEffects(dt){
         }
         if(hit){
           ae.hitIds.add(ent.id);
-          applyDamage(ent, ae.dmg, owner);
+          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
         }
       }

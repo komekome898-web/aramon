@@ -939,9 +939,16 @@ function drawParticle(pt,p){
   ctx.translate(p.x,p.y);
   if(pt.type==='text'){
     ctx.scale(p.scale,p.scale);
-    ctx.font="bold 13px 'Share Tech Mono', monospace";
-    ctx.fillStyle = pt.color; ctx.globalAlpha=a; ctx.textAlign='center';
-    ctx.fillText(pt.text, 0,0);
+    ctx.textAlign='center'; ctx.globalAlpha=a;
+    if(pt.big){
+      // オーラ有利/不利の被弾ダメージは大きく縁取りして強調
+      ctx.font="bold 20px 'Share Tech Mono', monospace";
+      ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.strokeText(pt.text, 0,0);
+      ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
+    } else {
+      ctx.font="bold 13px 'Share Tech Mono', monospace";
+      ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
+    }
   } else {
     ctx.beginPath(); ctx.arc(0,0,Math.max(0.5,pt.size*a*p.scale),0,Math.PI*2);
     ctx.fillStyle=pt.color; ctx.globalAlpha=a; ctx.fill();

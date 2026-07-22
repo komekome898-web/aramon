@@ -315,6 +315,85 @@ const SIGNATURE_MOVES = {
   ],
 };
 
+/* =====================================================================
+   オーラ相性
+   リング 赤→緑→黄→青→赤(矢印の元が有利): 赤>緑>黄>青>赤 / 白⇔黒(相互有利)
+   ・有利技×不利モンスター = ダメージ1.5倍 / 不利技×有利モンスター = 0.5倍
+   ・技のオーラ = 使う側モンスターのオーラ = 1.2倍(オーラ一致)
+   ・モンスターのオーラは 色スキン=装備色 / SSRスキン=固定色 / 無スキン=下記デフォルト
+   ・技のオーラは基本エフェクト色由来。SSR装備時はtier3技を装備オーラの一致技に変える
+===================================================================== */
+const AURA_BEATS = { red:'green', green:'yellow', yellow:'blue', blue:'red' };
+const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
+const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black' };
+// スキンなし時のモンスターのデフォルトオーラ(体色由来)
+const MONSTER_AURA = {
+  mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
+  spark:'yellow', rock:'yellow', ark:'white', warm:'blue', illumine:'black',
+  fox:'white', god:'white', zan:'black',
+};
+// 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
+const MOVE_AURA = {
+  'ファイア':'red','ファイアブレス':'red','インフェルノ':'red',
+  '水風船':'blue','アクアウェイブ':'blue','クリスタルレイン':'blue',
+  '種':'green','種マシンガン':'green','フラワービーム':'green',
+  'かみなり':'yellow','雷撃':'yellow','超雷撃':'yellow',
+  'ロケットパンチ':'yellow','掌打':'yellow','竜巻アタック':'yellow',
+  '火炎砲':'red','火炎連砲':'red','ファイアウェーブ':'red',
+  'しっぽふり':'white','熾天の剣':'white','天の慈悲':'white',
+  '毒ガス':'blue','毒噴射':'blue','シェルアタック':'blue',
+  'ヴェノムエッジ':'blue','アサルトアロー':'blue','レクイエムエンド':'yellow',
+  '狐火':'white','超狐火':'white','天河天翔':'white',
+  'もんた':'red','さくらふぶき':'red','モッチ砲':'red',
+  'ツバはき':'yellow','熱視線':'yellow','サイコキネシス':'blue',
+  'ストレート':'white','ホーリーサンダー':'yellow','ゴッドライジング':'white',
+  'ソニックナイフ':'blue','フォルターブリッツ':'blue','ダークホウスト':'black',
+};
+// 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
+Object.keys(SIGNATURE_MOVES).forEach(el=>{ SIGNATURE_MOVES[el].forEach(mv=>{ if(MOVE_AURA[mv.name]) mv.aura = MOVE_AURA[mv.name]; }); });
+function auraColorHex(aura){ return (SKIN_COLORS[aura] && SKIN_COLORS[aura].hex) || '#ffffff'; }
+// techオーラがtargetオーラに対して 'adv'(有利=1.5倍) / 'dis'(不利=0.5倍) / 'neutral'
+function auraAdvantage(tech, target){
+  if(!tech || !target) return 'neutral';
+  if((tech==='white'&&target==='black')||(tech==='black'&&target==='white')) return 'adv';
+  if(AURA_BEATS[tech]===target) return 'adv';
+  if(AURA_BEATS[target]===tech) return 'dis';
+  return 'neutral';
+}
+// エンティティの装備スキンID(プレイヤー=装備中スキン / bot・相手=entity.skinId)
+function entitySkinId(entity){
+  if(!entity) return null;
+  if(entity.isPlayer) return (typeof getEquippedSkin==='function') ? getEquippedSkin(entity.element) : null;
+  return entity.skinId || null;
+}
+// モンスターのオーラ(スキン優先: SSR固定色 → 色スキンの色 → デフォルト)
+function getMonsterAura(entity){
+  if(!entity) return null;
+  const sid = entitySkinId(entity);
+  if(sid){
+    if(SSR_SKIN_AURA[sid]) return SSR_SKIN_AURA[sid];
+    if(sid.indexOf(':')>=0){ const colorId = sid.split(':')[1]; if(SKIN_COLORS[colorId]) return colorId; }
+  }
+  return MONSTER_AURA[entity.element] || null;
+}
+// 技のオーラ(SSR装備時はtier3を装備オーラの一致技に上書き)
+function getMoveAura(move, attacker){
+  if(!move) return null;
+  if(move.tier===3){
+    const sid = entitySkinId(attacker);
+    if(sid && SSR_SKIN_AURA[sid]) return SSR_SKIN_AURA[sid];
+  }
+  return move.aura || null;
+}
+// 技のエフェクト色(SSR装備時はtier3を装備オーラの色基調に上書き)
+function getMoveEffectColor(move, attacker){
+  if(move && move.tier===3){
+    const sid = entitySkinId(attacker);
+    if(sid && SSR_SKIN_AURA[sid]) return auraColorHex(SSR_SKIN_AURA[sid]);
+  }
+  return move ? move.color : '#ffffff';
+}
+
 const TICKET_ITEM = { name:'修行チケット', color:'#9fd1ff', accent:'#ffffff' };
 const GUTS_ITEM = { name:'ガッツ飴', restore:32, maxBoost:15, color:'#ff7a96', accent:'#ffd9e3' };
 
