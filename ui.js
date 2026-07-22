@@ -298,13 +298,18 @@ function updateAccountBar(){
   document.getElementById('headerGold').textContent = `🪙 ${w.gold}`;
   document.getElementById('headerDia').textContent = `💎 ${w.dia}`;
   const btn = document.getElementById('accountLoginBtn');
+  const slot = document.getElementById('headerAccountBtnSlot');
+  const bar = document.getElementById('accountBar');
   if(accountState.loggedIn){
-    // アカウント名はヘッダーに表示するため、ボタンは汎用ラベルのまま
+    // ログイン中はアカウントボタンをヘッダーのプレイヤー名の横へ移動(コンパクト表示)
     btn.textContent = '👤 アカウント';
     btn.classList.add('logged-in');
+    if(slot && btn.parentElement !== slot) slot.appendChild(btn);
   } else {
+    // 未ログイン時はトップのボタン群の先頭(音量設定の上)へ戻す
     btn.textContent = '👤 ログイン / アカウント作成';
     btn.classList.remove('logged-in');
+    if(bar && btn.parentElement !== bar) bar.insertBefore(btn, bar.firstChild);
   }
   // ログイン中はランキング表示名の入力欄を隠す(アカウント名を表示名として使う)
   document.getElementById('playerNameLabel').classList.toggle('hidden', accountState.loggedIn);
@@ -430,8 +435,37 @@ document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagSelectedItem = null;
   renderBag();
   document.getElementById('bagTargetWrap').classList.add('hidden');
+  bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
 });
+// バッグのタブ切替(アイテム / スキン)
+function bagShowTab(tab){
+  const isSkin = tab==='skin';
+  document.querySelectorAll('.bag-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.getElementById('bagItemPane').classList.toggle('hidden', isSkin);
+  document.getElementById('bagSkinPane').classList.toggle('hidden', !isSkin);
+  if(isSkin) renderBagSkins();
+}
+document.querySelectorAll('.bag-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=> bagShowTab(tab.dataset.tab));
+});
+// 所持スキン一覧(レアリティ順)
+function renderBagSkins(){
+  const grid = document.getElementById('bagSkinGrid');
+  const owned = loadSkins().owned;
+  const ids = Object.keys(owned).filter(id=>owned[id] && skinMeta(id));
+  if(ids.length===0){
+    grid.innerHTML = '<div class="bag-skin-empty">所持しているスキンはありません。ガチャで手に入れよう！</div>';
+    return;
+  }
+  ids.sort((a,b)=> (RARITY_RANK[skinMeta(b).rarity]||0)-(RARITY_RANK[skinMeta(a).rarity]||0));
+  grid.innerHTML = ids.map(id=>{
+    const m = skinMeta(id);
+    const url = skinnedIconDataUrl(id);
+    const img = url ? `<img src="${url}" alt="">` : `<span class="gacha-cell-emoji">✨</span>`;
+    return `<div class="bag-skin-cell">${img}<span class="bag-skin-rar rar-${m.rarity}">${m.rarity}</span><span class="bag-skin-name">${m.name}</span></div>`;
+  }).join('');
+}
 document.getElementById('closeBagBtn').addEventListener('click', ()=>{
   document.getElementById('bagOverlay').classList.add('hidden');
 });
@@ -1065,13 +1099,26 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi');
   });
 });
+// game.selectedMap が 'random' の場合は実在マップからランダムに1つ選ぶ
+function resolveMapKey(){
+  if(game.selectedMap && game.selectedMap!=='random' && MAPS[game.selectedMap]) return game.selectedMap;
+  const keys = Object.keys(MAPS);
+  return keys[Math.floor(Math.random()*keys.length)];
+}
 function updateMapPreview(){
-  const map = MAPS[game.selectedMap] || MAPS.wild;
   const imgEl = document.getElementById('mapPreviewImage');
   const iconEl = document.getElementById('mapPreviewIcon');
   const nameEl = document.getElementById('mapPreviewName');
   const descEl = document.getElementById('mapPreviewDesc');
   if(!imgEl) return;
+  if(game.selectedMap==='random'){
+    imgEl.style.background = 'linear-gradient(135deg, #4a3a6a, #1a1030)';
+    iconEl.textContent = '🎲';
+    nameEl.textContent = 'ランダム';
+    descEl.textContent = '全てのマップからランダムで選ばれる。ドキドキ';
+    return;
+  }
+  const map = MAPS[game.selectedMap] || MAPS.wild;
   const colors = map.previewColors || [map.groundColor||'#333', map.groundColor||'#111'];
   imgEl.style.background = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
   iconEl.textContent = map.previewIcon || '🗺️';
@@ -1082,7 +1129,8 @@ document.querySelectorAll('.map-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.map-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
-    game.selectedMap = MAPS[tab.dataset.map] ? tab.dataset.map : 'wild';
+    const key = tab.dataset.map;
+    game.selectedMap = (key==='random' || MAPS[key]) ? key : 'wild';
     updateMapPreview();
   });
 });
@@ -1420,7 +1468,8 @@ function startGame(){
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
   joyKnobEl.style.transform='translate(0,0)';
-  currentMap = MAPS[game.selectedMap] || MAPS.wild;
+  game.activeMapKey = resolveMapKey();   // 'ランダム'選択時はここで実マップを確定
+  currentMap = MAPS[game.activeMapKey] || MAPS.wild;
   applyWorldScale(1);
   initZone();
   genVolcanoAndLava();
@@ -1549,7 +1598,7 @@ function logMatchForAdmin(){
   if(!window.__aramonLogMatch){ console.warn('logMatchForAdmin: __aramonLogMatch not ready, skipped'); return; }
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
-  const mapKey = game.selectedMap || 'wild';
+  const mapKey = (game.activeMapKey && MAPS[game.activeMapKey]) ? game.activeMapKey : (MAPS[game.selectedMap] ? game.selectedMap : 'wild');
   const map = MAPS[mapKey] || MAPS.wild;
   const elementKey = player.element;
   const el = ELEMENTS[elementKey];

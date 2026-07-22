@@ -27,8 +27,9 @@
 <!-- START SCREEN -->
 <div id="startScreen">
  <div id="topHeader">
-   <span id="headerAccountName">ゲスト</span>
-   <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
+   <span class="header-side"></span>
+   <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span></span>
+   <span class="header-wallet header-side"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
  </div>
  <div id="startScreenInner">
   <div class="title-block">
@@ -38,12 +39,14 @@
   </div>
 
   <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
-  <button id="audioSettingsBtn">🔊 音量設定</button>
   <div id="accountBar">
-    <button id="accountLoginBtn">👤 ログイン</button>
-    <button id="openBagBtn">🎒 バッグ</button>
-    <button id="openShopBtn">🛒 ショップ</button>
-    <button id="openGachaBtn">🎰 ガチャ</button>
+    <button id="accountLoginBtn">👤 ログイン / アカウント作成</button>
+    <button id="audioSettingsBtn">🔊 音量設定</button>
+    <div id="topActionRow">
+      <button id="openBagBtn">🎒 バッグ</button>
+      <button id="openShopBtn">🛒 ショップ</button>
+      <button id="openGachaBtn">🎰 ガチャ</button>
+    </div>
   </div>
   <div id="landscapeHint">📱 横画面プレイ推奨</div>
 
@@ -56,7 +59,8 @@
 
   <div class="pick-label" style="margin-top:16px;">マップ</div>
   <div id="mapTabs">
-    <button class="map-tab active" data-map="wild">荒野</button>
+    <button class="map-tab active" data-map="random">🎲 ランダム</button>
+    <button class="map-tab" data-map="wild">荒野</button>
     <button class="map-tab" data-map="kaurea">カウレア火山</button>
     <button class="map-tab" data-map="papas">パパス雪山</button>
     <button class="map-tab" data-map="palepale">パレパレジャングル</button>
@@ -470,6 +474,11 @@
 <div id="bagOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box bag-box">
     <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎒 バッグ</div>
+    <div class="bag-tabs">
+      <button class="bag-tab active" data-tab="item">アイテム</button>
+      <button class="bag-tab" data-tab="skin">スキン</button>
+    </div>
+    <div id="bagItemPane">
     <div class="bag-main">
       <div class="bag-col-left">
         <div id="bagIconGrid" class="bag-icon-grid"></div>
@@ -490,6 +499,10 @@
         </div>
       </div>
     </div>
+    </div>
+    <div id="bagSkinPane" class="hidden">
+      <div id="bagSkinGrid" class="bag-skin-grid"></div>
+    </div>
     <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
       <button id="closeBagBtn">閉じる</button>
     </div>
@@ -501,7 +514,7 @@
   <div class="mastermon-confirm-box shop-box">
     <div class="mastermon-confirm-text" style="margin-bottom:6px;">🛒 ショップ</div>
     <div class="gacha-wallet"><span id="shopGold">🪙 0</span></div>
-    <div id="shopList" class="bag-list"></div>
+    <div id="shopList" class="bag-list shop-list-2col"></div>
     <div class="mastermon-confirm-btnrow" style="margin-top:12px;">
       <button id="closeShopBtn">閉じる</button>
     </div>
