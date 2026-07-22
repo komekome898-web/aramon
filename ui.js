@@ -2773,6 +2773,11 @@ function highestTitleOf(type, value){
   for(const t of TITLES){ if(t.type===type && (value||0)>=t.n){ if(!best || t.n>best.n) best = t; } }
   return best;
 }
+// 単一の記録値が満たす最上位称号をアイコンで返す(マイ記録用)
+function statTitleChip(type, value){
+  const t = highestTitleOf(type, value);
+  return t ? `<span class="rank-title-chip" title="${t.name}（${titleCondText(t)}）">${t.emoji}</span>` : '';
+}
 // ランキングの記録が満たす称号(最上位のキル称号＋ダメージ称号)をアイコンで表示
 function recordTitleBadgesHtml(r){
   const chips = [];
@@ -2871,9 +2876,9 @@ function renderMyStats(){
   overallEl.innerHTML = `
     <div class="mystat-box"><div class="ml">通算マッチ数</div><div class="mv">${stats.totalMatches||0}</div></div>
     <div class="mystat-box"><div class="ml">通算勝利数</div><div class="mv">${stats.totalWins||0}</div></div>
-    <div class="mystat-box"><div class="ml">最高キル数</div><div class="mv">${stats.bestKills||0}</div></div>
+    <div class="mystat-box"><div class="ml">最高キル数</div><div class="mv">${stats.bestKills||0} ${statTitleChip('matchKills', stats.bestKills||0)}</div></div>
     <div class="mystat-box"><div class="ml">K/D</div><div class="mv">${derived.kd.toFixed(2)}</div></div>
-    <div class="mystat-box"><div class="ml">最高ダメージ</div><div class="mv">${stats.bestDamage||0}</div></div>
+    <div class="mystat-box"><div class="ml">最高ダメージ</div><div class="mv">${stats.bestDamage||0} ${statTitleChip('matchDamage', stats.bestDamage||0)}</div></div>
     <div class="mystat-box"><div class="ml">平均ダメージ</div><div class="mv">${Math.round(derived.avgDamage)}</div></div>
   `;
   const byElEl = document.getElementById('myStatsByElement');
@@ -2892,8 +2897,8 @@ function renderMyStats(){
       <span class="en">${el.label}</span>
       ${mmLine}
       <span class="ev-line">使用回数　${es.matches||0}回</span>
-      <span class="ev-line">最高キル　${es.bestKills||0}</span>
-      <span class="ev-line">最高ダメージ　${es.bestDamage||0}</span>
+      <span class="ev-line">最高キル　${es.bestKills||0} ${statTitleChip('matchKills', es.bestKills||0)}</span>
+      <span class="ev-line">最高ダメージ　${es.bestDamage||0} ${statTitleChip('matchDamage', es.bestDamage||0)}</span>
     </div>`;
   });
   byElEl.innerHTML = rows.join('');
