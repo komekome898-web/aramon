@@ -169,13 +169,18 @@
     color:#ff8a8a; background:rgba(224,71,63,0.08); border:1px solid rgba(224,71,63,0.4);
   }
   /* .mastermon-confirm-box より後段の同詳細度に負けないよう複合セレクタで指定 */
-  .mastermon-confirm-box.bag-box{ max-width:min(720px, calc(94 * var(--vw))); width:100%; max-height:calc(94 * var(--vh)); overflow-y:auto; }
+  .mastermon-confirm-box.bag-box{ position:relative; max-width:min(720px, calc(94 * var(--vw))); width:100%; max-height:calc(94 * var(--vh)); overflow-y:auto; }
+  /* バッグ/ショップの右上×ボタン(ガチャと同じ見た目)。下の閉じるボタンは廃止 */
+  .overlay-close-btn{ position:absolute; top:10px; right:12px; z-index:2; width:32px; height:32px; border-radius:50%;
+    font-size:15px; color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; }
+  .overlay-close-btn:active{ background:rgba(255,255,255,0.16); }
   .bag-main{ display:flex; gap:12px; align-items:flex-start; text-align:left; }
   /* アイテムがアイコンのみのグリッド + 下部の説明フィールド */
   .bag-col-left{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px; }
   .bag-icon-grid{
     display:grid; grid-template-columns:repeat(auto-fill, minmax(48px,1fr)); gap:7px;
-    max-height:calc(40 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    max-height:calc(44 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   .bag-empty{ grid-column:1/-1; font-size:12px; color:var(--ink-dim); padding:16px 0; text-align:center; }
   .bag-icon-cell{
@@ -207,7 +212,7 @@
   .bag-target-title{ font-size:12px; font-weight:700; color:var(--ink); flex-shrink:0; }
   /* マスモン情報フィールドをできるだけ大きく取り、使用/やめるボタンを下げる */
   .bag-target-list{
-    margin-top:8px; flex:1 1 auto; min-height:0; max-height:calc(58 * var(--vh));
+    margin-top:8px; flex:1 1 auto; min-height:0; max-height:calc(66 * var(--vh));
     overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:8px;
   }
@@ -402,11 +407,11 @@
   .mm-skin-confirm:disabled{ opacity:0.4; cursor:not-allowed; }
   .mm-skin-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
   /* 基底.mastermon-confirm-box(max-width:340px)に負けないよう複合セレクタで幅指定 */
-  .mastermon-confirm-box.shop-box{ max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw))); }
+  .mastermon-confirm-box.shop-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw))); }
   .shop-buy-btn:disabled{ opacity:0.4; cursor:not-allowed; }
   /* ショップの商品リスト(旧バッグ行スタイル。ショップ専用に残す) */
   .bag-list{
-    max-height:calc(48 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    max-height:calc(62 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:8px; text-align:left;
   }
   /* ショップは2列表示 */
@@ -434,7 +439,7 @@
   .bag-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
   /* 所持スキン一覧 */
   .bag-skin-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(84px,1fr)); gap:8px;
-    max-height:calc(58 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
+    max-height:calc(66 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
   .bag-skin-cell{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 4px;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px; }
   .bag-skin-cell img{ width:58px; height:58px; object-fit:contain; }
@@ -1086,7 +1091,7 @@
     flex:1 1 auto; padding:10px 0; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
   }
-  #closeAudioSettingsBtn, #closeBagBtn, #closeGachaBtn, #closeShopBtn{ background:var(--amber); color:#1a1306; border:none; }
+  #closeAudioSettingsBtn{ background:var(--amber); color:#1a1306; border:none; }
   #mastermonDeleteNoBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
   .mastermon-detail-body{ display:flex; gap:14px; align-items:stretch; flex-wrap:nowrap; flex:1 1 auto; min-height:0; }
