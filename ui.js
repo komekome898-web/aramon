@@ -1976,16 +1976,9 @@ function buildMastermonEditHtml(mm){
 }
 
 function buildMastermonMenuHtml(){
+  // 2列表示。並び順: トレーニング・着せ替え / 技一覧・詳細情報
   return `
     <div class="mastermon-menu-body">
-      <button class="mm-menu-btn" data-tab="info">
-        <span class="mm-menu-btn-icon">📊</span>
-        <span class="mm-menu-btn-label">詳細情報</span>
-      </button>
-      <button class="mm-menu-btn" data-tab="moves">
-        <span class="mm-menu-btn-icon">⚔️</span>
-        <span class="mm-menu-btn-label">技一覧</span>
-      </button>
       <button class="mm-menu-btn" data-tab="training">
         <span class="mm-menu-btn-icon">💪</span>
         <span class="mm-menu-btn-label">トレーニング</span>
@@ -1993,6 +1986,14 @@ function buildMastermonMenuHtml(){
       <button class="mm-menu-btn" data-tab="dressup">
         <span class="mm-menu-btn-icon">👕</span>
         <span class="mm-menu-btn-label">着せ替え</span>
+      </button>
+      <button class="mm-menu-btn" data-tab="moves">
+        <span class="mm-menu-btn-icon">⚔️</span>
+        <span class="mm-menu-btn-label">技一覧</span>
+      </button>
+      <button class="mm-menu-btn" data-tab="info">
+        <span class="mm-menu-btn-icon">📊</span>
+        <span class="mm-menu-btn-label">詳細情報</span>
       </button>
     </div>`;
 }

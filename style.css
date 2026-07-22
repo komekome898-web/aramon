@@ -1073,7 +1073,7 @@
     touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
   }
   .mastermon-menu-body{
-    display:flex; flex-direction:column; gap:10px; justify-content:center; min-height:100%;
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; align-content:center; min-height:100%;
   }
   .mm-menu-btn{
     display:flex; align-items:center; gap:12px; width:100%;
