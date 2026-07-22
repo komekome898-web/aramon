@@ -129,6 +129,8 @@ const ELEMENTS = {
   warm:    { label:'ワーム',     color:'#9b5fd1', dark:'#5c3680', speed:185, hp:160, trait:'poison' },
   illumine:{ label:'イルミネ',   color:'#1c1c22', dark:'#0a0a0d', accent:'#c98bff', speed:206, hp:155, trait:'haste', cooldownMod:1/1.5 },
   fox:     { label:'キュービ',   color:'#f5f2ea', dark:'#b8b2a4', speed:215, hp:105, trait:'bighitbox', hitboxMult:1.5 },
+  god:     { label:'ガリ',       color:'#f5f0ff', dark:'#c3b3e0', accent:'#ffd23c', speed:196, hp:110, trait:'godrange' },
+  zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:224, hp:105, trait:'poison' },
 };
 
 const monsterImages = {};
@@ -292,6 +294,21 @@ const SIGNATURE_MOVES = {
     { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:45, cooldown:2.0, gutsCost:24,
       aoeShape:'fanZigzag', range:1300, fanAngleDeg:30, aoeStyle:'psychic' },
   ],
+  // ガリ(god): 特性で全技の射程が長め・消費ガッツ-12.5%(射程/gutsCostを各技に直接反映)
+  god: [
+    { name:'ストレート', tier:1, color:'#f5f0ff', range:900, dmg:24, cooldown:0.85, gutsCost:7, projSpeed:560, hitR:13, splash:70, icon:'👊🏻' },
+    { name:'ホーリーサンダー', tier:2, color:'#fff2b0', dmg:26, cooldown:1.15, gutsCost:14,
+      aoeShape:'zigzag', range:1600, zigzagWidth:105, aoeStyle:'thunder', icon:'⚡️' },
+    { name:'ゴッドライジング', tier:3, color:'#ffffff', dmg:34, cooldown:2.1, gutsCost:21, projSpeed:600,
+      range:1200, hitR:30, splash:0, projStyle:'godorb', multiOrb:['#ff4d4d','#4d7cff','#ffe14d','#4dff6a'], orbSpreadDeg:9, icon:'✨' },
+  ],
+  // ザン(zan): 命中で毒(ワームと同じ特性)。HP普通・移動速め
+  zan: [
+    { name:'ソニックナイフ', tier:1, color:'#8fa0c8', range:760, dmg:23, cooldown:0.8, gutsCost:8, projSpeed:640, hitR:11, splash:64, icon:'🗡️' },
+    { name:'フォルターブリッツ', tier:2, color:'#8fa0c8', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:6, burst:3, burstGap:0.1, icon:'🗡️' },
+    { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:24, cooldown:2.0, gutsCost:24, projSpeed:820,
+      range:1500, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙' },
+  ],
 };
 
 const TICKET_ITEM = { name:'修行チケット', color:'#9fd1ff', accent:'#ffffff' };
@@ -367,6 +384,14 @@ const STATE_CHANGES = {
     name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,
     effects:{ gutsRegenMult:2, speedMult:1.5 },
   },
+  god: {
+    name:'憤怒', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.5,
+    effects:{ dmgMult:1.2, gutsRegenMult:2, cooldownMult:1/1.5, speedMult:1.5 },
+  },
+  zan: {
+    name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,
+    effects:{ gutsRegenMult:2, speedMult:1.5 },
+  },
 };
 
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
@@ -401,6 +426,8 @@ const APTITUDE = {
   fox:     { life:'C', power:'D', wisdom:'B', accuracy:'A', evasion:'B', vitality:'E' },
   mocchi:  { life:'C', power:'C', wisdom:'C', accuracy:'B', evasion:'B', vitality:'B' },
   suezo:   { life:'D', power:'C', wisdom:'A', accuracy:'B', evasion:'D', vitality:'D' },
+  god:     { life:'D', power:'B', wisdom:'A', accuracy:'C', evasion:'D', vitality:'C' },
+  zan:     { life:'C', power:'B', wisdom:'D', accuracy:'C', evasion:'A', vitality:'D' },
 };
 const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
 const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
@@ -688,6 +715,8 @@ const SKIN_CONFIG = {
   warm:    { colors:['black','white','red','blue','green'],    source:{type:'chroma', hue:30,  window:45} }, // 茶色い部分
   illumine:{ colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:272, window:55} }, // 紫の部分
   fox:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白い部分
+  god:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白いローブ部分
+  zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'dark'} },                        // 黒い体の部分
 };
 // 各モンスターが持てる色スキン(5色)
 function monsterSkinColors(elementKey){

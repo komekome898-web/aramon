@@ -10,6 +10,7 @@ const TRAIT_DESC = {
   bighitbox:  '技の当たり判定が1.5倍大きい',
   soft:       '被ダメ0.8倍',
   gutsbreak:  '与えたダメージの40%分 相手のガッツを削る',
+  godrange:   '全ての技の射程が長い・技の消費ガッツ-12.5%',
 };
 function stateTriggerText(sc){
   return {
