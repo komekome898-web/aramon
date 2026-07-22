@@ -892,8 +892,9 @@ document.getElementById('gachaRatesCloseBtn').addEventListener('click', ()=>{
 let catalogPick = null, catalogKind = null;
 function openCatalogModal(kind){
   catalogKind = kind; catalogPick = null;
-  document.getElementById('gachaCatalogTitle').textContent = kind==='ssr' ? 'SSRスキンを選ぶ' : 'SRスキン(色違い)を選ぶ';
-  const ids = kind==='ssr' ? allSsrSkinIds() : allColorSkinIds();
+  document.getElementById('gachaCatalogTitle').textContent = kind==='ssr' ? 'SSR/SRスキンを選ぶ' : 'SRスキン(色違い)を選ぶ';
+  // SSRカタログではSSRスキンに加えてSRスキン(色違い)も選べるようにする
+  const ids = kind==='ssr' ? [...allSsrSkinIds(), ...allColorSkinIds()] : allColorSkinIds();
   const grid = document.getElementById('gachaCatalogGrid');
   grid.innerHTML = ids.map(id=>{
     const m = skinMeta(id); const owned = isSkinOwned(id);
