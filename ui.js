@@ -2725,11 +2725,45 @@ function renderAdminSeGrid(){
     });
   });
 }
+// 管理者画面: BGM確認グリッド
+const BGM_TEST_ITEMS = [
+  { id:'title',  label:'🎵 タイトル(牧場)' },
+  { id:'battle0',label:'🎵 試合中・序盤' },
+  { id:'battle1',label:'🎵 試合中・中盤' },
+  { id:'battle2',label:'🎵 試合中・終盤' },
+  { id:'final5', label:'🎵 残り5人以下(決戦・動画音源)' },
+  { id:'stop',   label:'⏹ 停止' },
+];
+function adminPlayBgm(id){
+  if(typeof audioInit==='function') audioInit();
+  if(id==='stop'){ if(typeof bgmSetTrack==='function') bgmSetTrack(null); return; }
+  if(id==='title'){ if(typeof bgmSetTrack==='function') bgmSetTrack('title'); return; }
+  const lv = { battle0:0, battle1:1, battle2:2, final5:3 }[id];
+  if(typeof bgmSetIntensity==='function') bgmSetIntensity(lv);
+  if(typeof bgmSetTrack==='function') bgmSetTrack('battle');
+}
+function renderAdminBgmGrid(){
+  const grid = document.getElementById('adminBgmGrid');
+  if(!grid) return;
+  grid.innerHTML = BGM_TEST_ITEMS.map(it=>`<button class="admin-se-btn" data-bgm="${it.id}">${it.label}</button>`).join('');
+  grid.querySelectorAll('.admin-se-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> adminPlayBgm(btn.dataset.bgm));
+  });
+}
+// 管理者画面: 音声確認タブ内のサブタブ切替(SE / BGM)
+function adminShowSeSubtab(sub){
+  document.querySelectorAll('.admin-subtab').forEach(t=>t.classList.toggle('active', t.dataset.subtab===sub));
+  document.getElementById('adminSeSubPane').classList.toggle('hidden', sub!=='se');
+  document.getElementById('adminBgmSubPane').classList.toggle('hidden', sub!=='bgm');
+  if(sub!=='bgm' && typeof bgmSetTrack==='function') bgmSetTrack('title'); // BGMサブタブを離れたらテストBGMを止めてタイトルへ
+}
+document.querySelectorAll('.admin-subtab').forEach(t=> t.addEventListener('click', ()=>adminShowSeSubtab(t.dataset.subtab)));
 // 管理者画面のタブ切替(プレイ状況 / 音声確認)
 function adminShowTab(tab){
   document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.getElementById('adminStatsPane').classList.toggle('hidden', tab!=='stats');
   document.getElementById('adminSePane').classList.toggle('hidden', tab!=='se');
+  if(tab!=='se' && typeof bgmSetTrack==='function') bgmSetTrack('title'); // 音声確認タブを離れたらテストBGMを止める
 }
 document.querySelectorAll('.admin-tab').forEach(t=> t.addEventListener('click', ()=>adminShowTab(t.dataset.tab)));
 async function openAdminScreen(){
@@ -2740,6 +2774,8 @@ async function openAdminScreen(){
   document.getElementById('adminMapCount').textContent = '';
   document.getElementById('adminMonsterCount').textContent = '';
   renderAdminSeGrid();
+  renderAdminBgmGrid();
+  adminShowSeSubtab('se'); // 音声確認タブ内はデフォルトでSE
   const logs = await fetchAdminMatchLogs(true);
   populateAdminPeriodFilter(logs);
   renderAdminData();
@@ -2747,6 +2783,7 @@ async function openAdminScreen(){
 document.getElementById('closeAdminBtn').addEventListener('click', ()=>{
   document.getElementById('adminScreen').classList.add('hidden');
   document.querySelectorAll('#adminScreen .custom-select-menu').forEach(m=>m.classList.add('hidden'));
+  if(typeof bgmSetTrack==='function') bgmSetTrack('title'); // テストBGMを止めてトップのタイトルBGMへ
   document.getElementById('startScreen').classList.remove('hidden');
 });
 
