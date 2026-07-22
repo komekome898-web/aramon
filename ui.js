@@ -890,7 +890,6 @@ function doGacha(count){
 }
 // ===== SSR獲得演出(虹色の全画面リビール) =====
 let ssrRevealContinue = null;
-let ssrRevealSeTimer = null;
 function showSsrReveal(skinId, onContinue){
   const ov = document.getElementById('ssrRevealOverlay');
   const m = skinMeta(skinId);
@@ -899,13 +898,11 @@ function showSsrReveal(skinId, onContinue){
   document.getElementById('ssrRevealText').textContent = `SSR ${m.name} 獲得！`;
   ov.classList.remove('hidden');
   ov.classList.remove('play'); void ov.offsetWidth; ov.classList.add('play'); // ループアニメーションを再スタート
-  // 派手な大当たり音をスキップまでループ再生
-  if(ssrRevealSeTimer){ clearInterval(ssrRevealSeTimer); ssrRevealSeTimer=null; }
-  playSe('ssrJackpot');
-  ssrRevealSeTimer = setInterval(()=>playSe('ssrJackpot'), 2000);
+  // 内蔵の大当たり音声をスキップまでループ再生
+  if(typeof startSsrJackpotLoop==='function') startSsrJackpotLoop();
   ssrRevealContinue = ()=>{
     ssrRevealContinue = null;
-    if(ssrRevealSeTimer){ clearInterval(ssrRevealSeTimer); ssrRevealSeTimer=null; }
+    if(typeof stopSsrJackpotLoop==='function') stopSsrJackpotLoop();
     ov.classList.add('hidden'); ov.classList.remove('play');
     if(onContinue) onContinue();
   };
