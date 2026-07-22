@@ -117,12 +117,22 @@
   /* ---------- プレイヤーアカウント(トップ画面バー・ログイン・バッグ・ガチャ) ---------- */
   /* 縦並び: (ログイン) / 音量設定 / バッグ・ショップ・ガチャ の3段。ボタンは一回り大きく */
   #accountBar{ margin-top:12px; display:flex; flex-direction:column; align-items:center; gap:12px; }
-  #topActionRow{ display:flex; align-items:center; gap:12px; justify-content:center; flex-wrap:wrap; }
-  #topActionRow button{
+  #topActionRow, #topActionRow2{ display:flex; align-items:center; gap:12px; justify-content:center; flex-wrap:wrap; }
+  #topActionRow button, #topActionRow2 button{
     padding:12px 24px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; letter-spacing:1px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:22px; cursor:pointer;
   }
-  #topActionRow button:active{ background:rgba(255,255,255,0.14); }
+  #topActionRow button:active, #topActionRow2 button:active{ background:rgba(255,255,255,0.14); }
+  /* ガチャボタンは虹色の縁取り(角丸を保つため padding-box/border-box の二重背景で表現・ゆっくり流れる) */
+  #topActionRow2 #openGachaBtn{
+    border:2px solid transparent;
+    background:
+      linear-gradient(#14181f,#14181f) padding-box,
+      linear-gradient(90deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c) border-box;
+    background-size:auto, 200% 100%;
+    animation:gachaRainbow 4s linear infinite;
+  }
+  @keyframes gachaRainbow{ from{ background-position:0 0, 0 0; } to{ background-position:0 0, 200% 0; } }
   /* 未ログイン時のログインボタンは大きく強調して目立たせる */
   #accountBar > #accountLoginBtn{
     padding:14px 32px; font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:1.5px; cursor:pointer;
@@ -546,7 +556,7 @@
   .season-claim-btn:active{ filter:brightness(0.92); }
   .season-claimed{ font-size:10px; color:var(--ink-dim); }
   .season-locked{ font-size:12px; color:var(--ink-dim); }
-  .season-note{ font-size:10px; color:var(--ink-dim); margin-top:8px; line-height:1.35; }
+  .season-note{ font-size:10px; color:var(--ink-dim); margin:0 0 10px; line-height:1.35; }
   .admin-grant-dia-btn{
     margin-top:10px; padding:9px 18px; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
