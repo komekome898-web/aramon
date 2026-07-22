@@ -255,7 +255,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_titles_v1','aramon_daily_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1116,6 +1116,7 @@ document.getElementById('closeShopBtn').addEventListener('click', ()=>{
 });
 updateAccountBar();
 if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
+if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
 
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.remove('hidden');
@@ -1664,11 +1665,12 @@ function showResult(isWin, placement){
   const _prevBestKills = _preCum.bestKills, _prevBestDamage = _preCum.bestDamage;
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
   const _newTitles = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
+  if(typeof dailyOnMatchEnd==='function') dailyOnMatchEnd({ kills: player.kills, isWin: !!isWin });
+  const _seasonSp = (typeof seasonOnMatchEnd==='function') ? seasonOnMatchEnd({ kills: player.kills, damage: Math.round(player.damageDealt), isWin: !!isWin }) : 0;
   renderResultBadges({
     kills: player.kills, damage: Math.round(player.damageDealt),
-    prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles,
+    prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles, seasonSp: _seasonSp,
   });
-  if(typeof dailyOnMatchEnd==='function') dailyOnMatchEnd({ kills: player.kills, isWin: !!isWin });
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
   logMatchForAdmin();
@@ -1678,6 +1680,7 @@ function renderResultBadges(o){
   const el = document.getElementById('resultBadges');
   if(!el) return;
   const badges = [];
+  if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
   if(o.kills>0 && o.kills > o.prevBestKills) badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`);
   if(o.damage>0 && o.damage > o.prevBestDamage) badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`);
   for(const t of (o.newTitles||[])) badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`);
@@ -1956,6 +1959,83 @@ document.getElementById('closeDailyBtn').addEventListener('click', ()=>{
 document.getElementById('loginBonusOkBtn').addEventListener('click', ()=>{
   document.getElementById('loginBonusPopup').classList.add('hidden');
   updateAccountBar();
+});
+
+/* =====================================================================
+   シーズンパス
+===================================================================== */
+// 試合終了時に呼ぶ: SP加算。加算量を返す(リザルト表示用)
+function seasonOnMatchEnd(ctx){
+  if(typeof loadSeason!=='function') return 0;
+  const gain = seasonSpForMatch(ctx.kills, ctx.damage, ctx.isWin);
+  const s = loadSeason();
+  s.sp += gain;
+  saveSeason(s);
+  updateSeasonBadge();
+  return gain;
+}
+function updateSeasonBadge(){
+  const dot = document.getElementById('seasonDot');
+  if(!dot || typeof loadSeason!=='function') return;
+  const s = loadSeason();
+  const tier = seasonTierForSp(s.sp);
+  let claimable = false;
+  for(let t=1;t<=tier;t++){ if(!s.claimed[t]){ claimable = true; break; } }
+  dot.classList.toggle('hidden', !claimable);
+}
+function seasonClaim(t){
+  const s = loadSeason();
+  if(seasonTierForSp(s.sp) >= t && !s.claimed[t]){
+    s.claimed[t] = true;
+    grantReward(SEASON_REWARDS[t-1]);
+    saveSeason(s);
+    renderSeasonOverlay();
+    updateSeasonBadge();
+    updateAccountBar();
+    if(typeof pushToast==='function') pushToast(`Tier ${t} 報酬 ${rewardText(SEASON_REWARDS[t-1])} を受け取った！`);
+  }
+}
+function renderSeasonOverlay(){
+  const s = loadSeason();
+  const tier = seasonTierForSp(s.sp);
+  const spInTier = s.sp - tier*SEASON_SP_PER_TIER;
+  const atMax = tier>=SEASON_MAX_TIER;
+  const spEl = document.getElementById('seasonSpText');
+  const tierEl = document.getElementById('seasonTierText');
+  const barEl = document.getElementById('seasonProgFill');
+  const nextEl = document.getElementById('seasonNextText');
+  if(spEl) spEl.textContent = `${s.sp} SP`;
+  if(tierEl) tierEl.textContent = `Tier ${tier} / ${SEASON_MAX_TIER}`;
+  if(barEl) barEl.style.width = (atMax ? 100 : Math.round(spInTier/SEASON_SP_PER_TIER*100)) + '%';
+  if(nextEl) nextEl.textContent = atMax ? '最大Tier到達！' : `次のTierまで ${SEASON_SP_PER_TIER - spInTier} SP`;
+  const track = document.getElementById('seasonTrack');
+  if(track){
+    track.innerHTML = SEASON_REWARDS.map((r,i)=>{
+      const t = i+1;
+      const reached = tier>=t;
+      const claimed = !!s.claimed[t];
+      const milestone = (t%5===0);
+      let action;
+      if(claimed) action = `<span class="season-claimed">受取済</span>`;
+      else if(reached) action = `<button class="season-claim-btn" data-t="${t}">受け取る</button>`;
+      else action = `<span class="season-locked">🔒</span>`;
+      return `<div class="season-tier ${reached&&!claimed?'ready':''} ${milestone?'milestone':''}">
+        <div class="season-tier-num">T${t}</div>
+        <div class="season-tier-reward">${rewardText(r)}</div>
+        <div class="season-tier-action">${action}</div>
+      </div>`;
+    }).join('');
+    track.querySelectorAll('.season-claim-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> seasonClaim(parseInt(btn.dataset.t,10)));
+    });
+  }
+}
+document.getElementById('openSeasonBtn').addEventListener('click', ()=>{
+  renderSeasonOverlay();
+  document.getElementById('seasonOverlay').classList.remove('hidden');
+});
+document.getElementById('closeSeasonBtn').addEventListener('click', ()=>{
+  document.getElementById('seasonOverlay').classList.add('hidden');
 });
 
 function submitScoreToRanking(isWin, placement){
