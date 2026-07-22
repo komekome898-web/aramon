@@ -255,7 +255,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_titles_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_titles_v1','aramon_daily_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1115,6 +1115,7 @@ document.getElementById('closeShopBtn').addEventListener('click', ()=>{
   document.getElementById('shopOverlay').classList.add('hidden');
 });
 updateAccountBar();
+if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
 
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.remove('hidden');
@@ -1667,6 +1668,7 @@ function showResult(isWin, placement){
     kills: player.kills, damage: Math.round(player.damageDealt),
     prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles,
   });
+  if(typeof dailyOnMatchEnd==='function') dailyOnMatchEnd({ kills: player.kills, isWin: !!isWin });
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
   logMatchForAdmin();
@@ -1822,6 +1824,139 @@ function checkTitleUnlocks(){
   if(newly.length){ saveTitles(t); }
   return newly;
 }
+
+/* =====================================================================
+   デイリー: ログインボーナス＋ミッション
+===================================================================== */
+function dailyEnsureMissions(d){
+  const today = dailyTodayStr();
+  if(d.missionDate !== today){
+    d.missionDate = today;
+    d.missions = {};
+    DAILY_MISSIONS.forEach(m=>{ d.missions[m.id] = { progress:0, claimed:false }; });
+    return true;
+  }
+  // 定義追加に備えて欠けているミッションを補完
+  DAILY_MISSIONS.forEach(m=>{ if(!d.missions[m.id]) d.missions[m.id] = { progress:0, claimed:false }; });
+  return false;
+}
+// 起動時: 新しい日ならログインボーナス付与＆ミッション更新
+function dailyCheckLogin(){
+  if(typeof loadDaily!=='function') return;
+  const d = loadDaily();
+  const today = dailyTodayStr();
+  let granted = null;
+  if(d.lastLoginDate !== today){
+    d.loginDay = ((d.loginDay||0) % 7) + 1; // 1..7でループ
+    d.lastLoginDate = today;
+    const reward = LOGIN_BONUS[d.loginDay];
+    grantReward(reward);
+    granted = { day:d.loginDay, reward };
+  }
+  dailyEnsureMissions(d);
+  saveDaily(d);
+  if(granted) showLoginBonusPopup(granted);
+  updateDailyBadge();
+  updateAccountBar();
+}
+// 試合終了時に呼ぶ: ミッション進捗を加算
+function dailyOnMatchEnd(ctx){
+  if(typeof loadDaily!=='function') return;
+  const d = loadDaily();
+  dailyEnsureMissions(d);
+  for(const m of DAILY_MISSIONS){
+    const st = d.missions[m.id]; if(!st || st.claimed) { /* 受取済でも進捗は進めてよいがcap不要 */ }
+    if(!st) continue;
+    if(m.track==='play') st.progress += 1;
+    else if(m.track==='kill') st.progress += (ctx.kills||0);
+    else if(m.track==='win') st.progress += (ctx.isWin?1:0);
+  }
+  saveDaily(d);
+  updateDailyBadge();
+}
+function showLoginBonusPopup(g){
+  const dayEl = document.getElementById('loginBonusDay');
+  const rewEl = document.getElementById('loginBonusReward');
+  const pop = document.getElementById('loginBonusPopup');
+  if(!dayEl || !rewEl || !pop) return;
+  dayEl.textContent = `Day ${g.day} / 7`;
+  rewEl.textContent = rewardText(g.reward);
+  pop.classList.remove('hidden');
+}
+function updateDailyBadge(){
+  const dot = document.getElementById('dailyDot');
+  if(!dot || typeof loadDaily!=='function') return;
+  const d = loadDaily();
+  dailyEnsureMissions(d);
+  const claimable = DAILY_MISSIONS.some(m=>{ const st=d.missions[m.id]; return st && st.progress>=m.target && !st.claimed; });
+  dot.classList.toggle('hidden', !claimable);
+}
+function renderDailyLoginTrack(){
+  const el = document.getElementById('dailyLoginTrack');
+  if(!el) return;
+  const d = loadDaily();
+  el.innerHTML = [1,2,3,4,5,6,7].map(day=>{
+    const isToday = day===d.loginDay;
+    const got = day<=(d.loginDay||0); // 今サイクルで受取済み(簡易表示)
+    return `<div class="daily-day ${isToday?'today':''} ${got?'got':''}">
+      <div class="daily-day-label">Day ${day}</div>
+      <div class="daily-day-reward">${rewardText(LOGIN_BONUS[day])}</div>
+      ${isToday?'<div class="daily-day-badge">本日</div>':(got?'<div class="daily-day-check">✓</div>':'')}
+    </div>`;
+  }).join('');
+}
+function renderDailyMissions(){
+  const el = document.getElementById('dailyMissionList');
+  if(!el) return;
+  const d = loadDaily();
+  dailyEnsureMissions(d);
+  saveDaily(d);
+  el.innerHTML = DAILY_MISSIONS.map(m=>{
+    const st = d.missions[m.id] || { progress:0, claimed:false };
+    const done = st.progress>=m.target;
+    const pct = Math.min(100, Math.round(st.progress/m.target*100));
+    let action;
+    if(st.claimed) action = `<span class="daily-claimed">受取済</span>`;
+    else if(done) action = `<button class="daily-claim-btn" data-m="${m.id}">受け取る</button>`;
+    else action = `<span class="daily-progress-num">${Math.min(st.progress,m.target)} / ${m.target}</span>`;
+    return `<div class="daily-mission ${done&&!st.claimed?'ready':''}">
+      <div class="daily-mission-info">
+        <div class="daily-mission-name">${m.name}</div>
+        <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
+        <div class="daily-mission-reward">報酬 ${rewardText(m.reward)}</div>
+      </div>
+      <div class="daily-mission-action">${action}</div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.daily-claim-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const m = DAILY_MISSIONS.find(x=>x.id===btn.dataset.m);
+      const dd = loadDaily();
+      const st = dd.missions[m.id];
+      if(st && st.progress>=m.target && !st.claimed){
+        st.claimed = true;
+        grantReward(m.reward);
+        saveDaily(dd);
+        renderDailyMissions();
+        updateDailyBadge();
+        updateAccountBar();
+        if(typeof pushToast==='function') pushToast(`報酬 ${rewardText(m.reward)} を受け取った！`);
+      }
+    });
+  });
+}
+document.getElementById('openDailyBtn').addEventListener('click', ()=>{
+  renderDailyLoginTrack();
+  renderDailyMissions();
+  document.getElementById('dailyOverlay').classList.remove('hidden');
+});
+document.getElementById('closeDailyBtn').addEventListener('click', ()=>{
+  document.getElementById('dailyOverlay').classList.add('hidden');
+});
+document.getElementById('loginBonusOkBtn').addEventListener('click', ()=>{
+  document.getElementById('loginBonusPopup').classList.add('hidden');
+  updateAccountBar();
+});
 
 function submitScoreToRanking(isWin, placement){
   const statusEl = document.getElementById('scoreSubmitStatus');

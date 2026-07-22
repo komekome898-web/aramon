@@ -484,6 +484,45 @@
   .resultScreen.win .rank{ animation:winPulse 1.5s ease-in-out infinite; }
   @keyframes winPulse{ 0%,100%{ transform:scale(1); text-shadow:0 0 30px rgba(244,196,48,0.6); }
     50%{ transform:scale(1.05); text-shadow:0 0 48px rgba(244,196,48,0.95); } }
+  /* 通知ドット(デイリーの受取可能サイン) */
+  .has-dot{ position:relative; }
+  .notif-dot{ position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
+    background:var(--danger); border:2px solid #04060a; box-shadow:0 0 6px rgba(255,64,64,0.8); }
+  /* デイリー画面 */
+  .daily-box{ max-width:min(94 * var(--vw),620px); }
+  .daily-section-title{ font-size:12px; font-weight:700; color:var(--amber); letter-spacing:0.5px; margin:10px 0 6px; align-self:flex-start; }
+  .daily-login-track{ display:grid; grid-template-columns:repeat(7,1fr); gap:5px; width:100%; }
+  .daily-day{ position:relative; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 2px 6px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:7px; }
+  .daily-day.got{ background:rgba(244,196,48,0.10); }
+  .daily-day.today{ border-color:var(--amber); box-shadow:0 0 10px rgba(244,196,48,0.35); }
+  .daily-day-label{ font-size:9.5px; color:var(--ink-dim); font-weight:700; }
+  .daily-day-reward{ font-size:10px; color:var(--ink); text-align:center; line-height:1.2; }
+  .daily-day-badge{ font-size:8px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
+    border-radius:6px; padding:0 5px; }
+  .daily-day-check{ font-size:11px; color:var(--amber); font-weight:700; }
+  .daily-mission-list{ display:flex; flex-direction:column; gap:7px; width:100%; }
+  .daily-mission{ display:flex; align-items:center; gap:10px; padding:8px 12px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
+  .daily-mission.ready{ border-color:var(--amber); background:rgba(244,196,48,0.10); }
+  .daily-mission-info{ flex:1 1 auto; min-width:0; }
+  .daily-mission-name{ font-size:12.5px; font-weight:700; color:var(--ink); }
+  .daily-bar{ height:6px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden; margin:5px 0 3px; }
+  .daily-bar-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); border-radius:3px; }
+  .daily-mission-reward{ font-size:10px; color:var(--ink-dim); }
+  .daily-mission-action{ flex-shrink:0; }
+  .daily-claim-btn{ padding:6px 14px; border-radius:7px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:12px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
+  .daily-claim-btn:active{ filter:brightness(0.92); }
+  .daily-claimed{ font-size:11px; color:var(--ink-dim); }
+  .daily-progress-num{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); }
+  /* ログインボーナスのポップアップ */
+  .loginbonus-box{ max-width:300px; align-items:center; text-align:center; }
+  .loginbonus-title{ font-size:18px; font-weight:700; color:var(--amber); }
+  .loginbonus-day{ font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink-dim); margin:6px 0 2px; }
+  .loginbonus-reward{ font-size:22px; color:var(--ink); margin:6px 0 14px; }
+  #loginBonusOkBtn{ padding:9px 30px; border-radius:8px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:14px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
   .admin-grant-dia-btn{
     margin-top:10px; padding:9px 18px; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;

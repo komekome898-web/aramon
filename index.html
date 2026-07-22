@@ -43,6 +43,7 @@
     <button id="accountLoginBtn">👤 ログイン / アカウント作成</button>
     <button id="audioSettingsBtn">🔊 音量設定</button>
     <div id="topActionRow">
+      <button id="openDailyBtn" class="has-dot">🎯 デイリー<span id="dailyDot" class="notif-dot hidden"></span></button>
       <button id="openBagBtn">🎒 バッグ</button>
       <button id="openShopBtn">🛒 ショップ</button>
       <button id="openGachaBtn">🎰 ガチャ</button>
@@ -542,6 +543,28 @@
       <div class="bag-title-hint" id="bagTitleHint">獲得した称号をタップで装着（もう一度で外す）。装着中の称号は名前の横に表示されます。</div>
       <div id="bagTitleGrid" class="bag-title-grid"></div>
     </div>
+  </div>
+</div>
+
+<!-- DAILY (ログインボーナス＋ミッション) -->
+<div id="dailyOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box daily-box">
+    <button id="closeDailyBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎯 デイリー</div>
+    <div class="daily-section-title">🎁 ログインボーナス（毎日ログインで受け取り）</div>
+    <div id="dailyLoginTrack" class="daily-login-track"></div>
+    <div class="daily-section-title">📋 今日のミッション（毎日リセット）</div>
+    <div id="dailyMissionList" class="daily-mission-list"></div>
+  </div>
+</div>
+
+<!-- LOGIN BONUS POPUP -->
+<div id="loginBonusPopup" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box loginbonus-box">
+    <div class="loginbonus-title">🎁 ログインボーナス</div>
+    <div id="loginBonusDay" class="loginbonus-day"></div>
+    <div id="loginBonusReward" class="loginbonus-reward"></div>
+    <button id="loginBonusOkBtn">受け取る</button>
   </div>
 </div>
 

@@ -688,6 +688,55 @@ function titleCondText(t){
     default:            return '';
   }
 }
+/* =====================================================================
+   デイリー: ログインボーナス(7日サイクル)＋今日のミッション
+===================================================================== */
+const DAILY_STORAGE_KEY = 'aramon_daily_v1';
+// 7日サイクルの報酬(徐々に豪華に→7日目で大きく→ループ)
+const LOGIN_BONUS = [
+  null,                              // index0未使用
+  { gold:100 },                      // Day1
+  { gold:150 },                      // Day2
+  { dia:5 },                         // Day3
+  { gold:200 },                      // Day4
+  { item:'freeTrainTicket', n:1 },   // Day5
+  { dia:10 },                        // Day6
+  { gold:300, dia:20 },              // Day7(大)
+];
+// 毎日リセットされるミッション(固定3種)
+const DAILY_MISSIONS = [
+  { id:'play', name:'試合に3回参加する', target:3, reward:{ gold:80 },  track:'play' },
+  { id:'kill', name:'合計5キルする',     target:5, reward:{ gold:120 }, track:'kill' },
+  { id:'win',  name:'1回勝利する',       target:1, reward:{ dia:5 },    track:'win'  },
+];
+function dailyTodayStr(){ const d=new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
+function loadDaily(){
+  try{
+    const d = JSON.parse(localStorage.getItem(DAILY_STORAGE_KEY)) || {};
+    return { lastLoginDate: d.lastLoginDate||null, loginDay: d.loginDay||0,
+      missionDate: d.missionDate||null, missions: d.missions||{} };
+  }catch(err){ return { lastLoginDate:null, loginDay:0, missionDate:null, missions:{} }; }
+}
+function saveDaily(d){
+  try{ localStorage.setItem(DAILY_STORAGE_KEY, JSON.stringify(d)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+// 報酬の表示テキスト(🪙100 💎5 🎟️×1 等)
+function rewardText(r){
+  if(!r) return '';
+  const parts = [];
+  if(r.gold) parts.push(`🪙${r.gold}`);
+  if(r.dia)  parts.push(`💎${r.dia}`);
+  if(r.item){ const it = PLAYER_ITEMS[r.item]; parts.push(`${it?it.icon:'🎁'}×${r.n||1}`); }
+  return parts.join(' ');
+}
+// 報酬を実際に付与
+function grantReward(r){
+  if(!r) return;
+  if(r.gold || r.dia) addWallet(r.gold||0, r.dia||0);
+  if(r.item) addBagItem(r.item, r.n||1);
+}
+
 const TITLES_STORAGE_KEY = 'aramon_titles_v1';
 function loadTitles(){
   try{
