@@ -826,9 +826,38 @@ function doGacha(count){
   document.getElementById('gachaResult').classList.add('hidden');
   playSe('chupiin');
   setTimeout(()=>playSe('shuwaa'), 2400); // 円盤石の回転(2.4秒)後、光の柱が降り始めるタイミング
-  gachaAnim.onReveal = ()=> showGachaResults(results, granted);
+  gachaAnim.onReveal = ()=>{
+    // SSRが出ていたら、結果一覧の前に虹色の獲得演出を挟む(複数なら順番に)
+    const ssrIds = results.filter(r=>r.kind==='skin' && r.rarity==='SSR').map(r=>r.skinId);
+    if(ssrIds.length) runSsrRevealsThen(ssrIds, ()=> showGachaResults(results, granted));
+    else showGachaResults(results, granted);
+  };
   gachaAnimStart('spin');
 }
+// ===== SSR獲得演出(虹色の全画面リビール) =====
+let ssrRevealContinue = null;
+function showSsrReveal(skinId, onContinue){
+  const ov = document.getElementById('ssrRevealOverlay');
+  const m = skinMeta(skinId);
+  const url = skinnedIconDataUrl(skinId);
+  document.getElementById('ssrRevealIcon').src = url || '';
+  document.getElementById('ssrRevealText').textContent = `SSR ${m.name} 獲得！`;
+  ov.classList.remove('hidden');
+  ov.classList.remove('play'); void ov.offsetWidth; ov.classList.add('play'); // アニメーション再生を再スタート
+  playSe('fanfare');
+  ssrRevealContinue = ()=>{
+    ssrRevealContinue = null;
+    ov.classList.add('hidden'); ov.classList.remove('play');
+    if(onContinue) onContinue();
+  };
+}
+function runSsrRevealsThen(skinIds, done){
+  let i=0;
+  const step=()=>{ if(i>=skinIds.length){ done(); return; } showSsrReveal(skinIds[i++], step); };
+  step();
+}
+document.getElementById('ssrRevealSkip').addEventListener('click', (e)=>{ e.stopPropagation(); if(ssrRevealContinue) ssrRevealContinue(); });
+document.getElementById('ssrRevealOverlay').addEventListener('click', ()=>{ if(ssrRevealContinue) ssrRevealContinue(); });
 function skinCellInner(skinId){
   const url = skinnedIconDataUrl(skinId);
   if(url) return `<img src="${url}" alt="">`;
@@ -922,12 +951,19 @@ document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>
   if(!catalogPick || !catalogKind) return;
   const cats = loadCatalogs();
   if((cats[catalogKind]||0) <= 0){ pushToast('カタログがありません'); return; }
-  ownSkin(catalogPick);
+  const pickedId = catalogPick;
+  const meta = skinMeta(pickedId);
+  ownSkin(pickedId);
   cats[catalogKind] -= 1; saveCatalogs(cats);
-  pushToast(`${skinMeta(catalogPick).name} を獲得！`);
-  playSe('pickup');
   document.getElementById('gachaCatalogModal').classList.add('hidden');
   updateGachaCounterUI();
+  if(meta.rarity==='SSR'){
+    // SSRを選んだ時も虹色の獲得演出を出す
+    showSsrReveal(pickedId, ()=> pushToast(`${meta.name} を獲得！`));
+  } else {
+    playSe('pickup');
+    pushToast(`${meta.name} を獲得！`);
+  }
 });
 
 // ===== ショップ(ゴールドでアイテム購入) =====
@@ -1609,10 +1645,12 @@ function submitScoreToRanking(isWin, placement){
     if(mm){ mastermonName = mm.name; mastermonLevel = mm.level; }
   }
   statusEl.textContent = 'ランキングに送信中…';
+  const equippedSkin = (typeof getEquippedSkin==='function') ? (getEquippedSkin(player.element) || null) : null;
   window.__aramonSubmitScore({
     name,
     element: player.element,
     elementLabel: ELEMENTS[player.element].label,
+    skin: equippedSkin,               // その試合で装備していたスキン(ランキングアイコンに反映)
     mastermonName,
     mastermonLevel,
     kills: player.kills,
@@ -2345,7 +2383,14 @@ async function loadRankingList(mode){
     const rank = i+1;
     const crown = RANK_CROWN[rank];
     const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
-    const iconHtml = r.element ? `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">` : '';
+    // 記録時に装備していたスキンがあればそのアイコンを表示(なければ通常のモンスター画像)
+    let iconHtml = '';
+    if(r.element){
+      const skinUrl = r.skin && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(r.skin) : null;
+      iconHtml = skinUrl
+        ? `<img class="rank-icon" src="${skinUrl}" alt="">`
+        : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
+    }
     const mmHtml = r.mastermonName ? `<span class="rank-mastermon">『${r.mastermonName}』</span>` : '';
     return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span><span class="rv">${val}</span></div>`;
   }).join('');

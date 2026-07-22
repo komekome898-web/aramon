@@ -319,6 +319,38 @@
   .gacha-rate-item{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-dim); padding:2px 0 2px 14px; }
   .gacha-rate-item .pct{ font-family:'Share Tech Mono',monospace; }
   .gacha-rate-note{ margin-top:12px; padding-top:10px; border-top:1px solid var(--panel-line); font-size:11px; color:var(--ink-dim); line-height:1.5; }
+
+  /* ===== SSR獲得演出(虹色の全画面リビール) ===== */
+  .ssr-reveal{ position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; overflow:hidden;
+    background:radial-gradient(circle at 50% 45%, rgba(30,16,54,0.82), rgba(6,4,14,0.96)); }
+  .ssr-reveal.play{ animation:ssrFadeIn 0.28s ease-out both; }
+  .ssr-reveal-burst, .ssr-reveal-rays{ position:absolute; top:50%; left:50%; width:230vmax; height:230vmax; border-radius:50%; pointer-events:none;
+    transform:translate(-50%,-50%); }
+  .ssr-reveal-burst{ background:conic-gradient(from 0deg,#ff6b6b,#ffd93b,#8fffa8,#7fd6ff,#cf9dff,#ff8f8f,#ff6b6b); filter:blur(8px) saturate(1.3); opacity:0.5; }
+  .ssr-reveal.play .ssr-reveal-burst{ animation:ssrSpin 18s linear infinite; }
+  .ssr-reveal-rays{ background:repeating-conic-gradient(from 0deg, rgba(255,255,255,0.45) 0deg 2.4deg, transparent 2.4deg 11deg); opacity:0; }
+  .ssr-reveal.play .ssr-reveal-rays{ animation:ssrRaysIn 0.9s ease-out both; }
+  .ssr-reveal-inner{ position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; padding:16px; }
+  .ssr-reveal-badge{ font-family:'Russo One',sans-serif; font-weight:700; font-size:clamp(15px,3.4vw,24px); letter-spacing:3px;
+    padding:2px 20px; border-radius:20px; color:#241033;
+    background:linear-gradient(90deg,#ff6b6b,#ffd93b,#8fffa8,#7fd6ff,#cf9dff); box-shadow:0 3px 16px rgba(0,0,0,0.5); }
+  .ssr-reveal.play .ssr-reveal-badge{ animation:ssrTextIn 0.45s ease-out both; }
+  .ssr-reveal-icon{ width:auto; height:min(46vh,360px); max-width:82vw; object-fit:contain;
+    filter:drop-shadow(0 0 26px rgba(180,220,255,0.9)); }
+  .ssr-reveal.play .ssr-reveal-icon{ animation:ssrIconPop 0.6s cubic-bezier(.2,1.35,.4,1) both; }
+  .ssr-reveal-text{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:clamp(22px,6vw,46px); line-height:1.1;
+    background:linear-gradient(90deg,#ff6b6b,#ffd93b,#8fffa8,#7fd6ff,#cf9dff,#ff6b6b); background-size:220% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 2px 10px rgba(0,0,0,0.6)); }
+  .ssr-reveal.play .ssr-reveal-text{ animation:ssrTextIn 0.5s 0.12s ease-out both, ssrShift 3s linear infinite; }
+  .ssr-reveal-skip{ position:absolute; right:18px; bottom:18px; z-index:3; padding:10px 22px; border-radius:22px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; letter-spacing:1px; color:#fff;
+    background:rgba(255,255,255,0.15); border:1.5px solid rgba(255,255,255,0.55); }
+  @keyframes ssrFadeIn{ from{opacity:0} to{opacity:1} }
+  @keyframes ssrSpin{ from{transform:translate(-50%,-50%) rotate(0)} to{transform:translate(-50%,-50%) rotate(360deg)} }
+  @keyframes ssrRaysIn{ 0%{opacity:0; transform:translate(-50%,-50%) scale(0.15) rotate(0)} 55%{opacity:0.4} 100%{opacity:0.22; transform:translate(-50%,-50%) scale(1.15) rotate(50deg)} }
+  @keyframes ssrIconPop{ 0%{opacity:0; transform:scale(0.35)} 60%{opacity:1; transform:scale(1.12)} 100%{transform:scale(1)} }
+  @keyframes ssrTextIn{ 0%{opacity:0; transform:translateY(20px)} 100%{opacity:1; transform:translateY(0)} }
+  @keyframes ssrShift{ to{ background-position:220% 0 } }
   .gacha-modal-close{ margin-top:14px; align-self:center; padding:9px 26px; border-radius:8px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
   .gacha-modal-btnrow{ display:flex; gap:12px; justify-content:center; margin-top:12px; }
