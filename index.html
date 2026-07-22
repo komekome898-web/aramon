@@ -490,6 +490,13 @@
             <div class="bag-desc-head"><span id="bagDescIcon" class="bag-desc-icon"></span><span id="bagDescName" class="bag-desc-name"></span></div>
             <div id="bagDescText" class="bag-desc-text"></div>
             <button id="bagDescUseBtn" class="bag-use-btn">使う</button>
+            <div id="bagQtyRow" class="audio-slider-row bag-qty-row hidden">
+              <span class="audio-slider-label">個数</span>
+              <button class="audio-step-btn" id="bagQtyMinus">−</button>
+              <input type="range" id="bagQtySlider" min="1" max="1" step="1" value="1">
+              <button class="audio-step-btn" id="bagQtyPlus">+</button>
+              <span class="audio-slider-val" id="bagQtyVal">1</span>
+            </div>
           </div>
         </div>
       </div>
