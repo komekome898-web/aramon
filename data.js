@@ -716,7 +716,7 @@ const SKIN_CONFIG = {
   illumine:{ colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:272, window:55} }, // 紫の部分
   fox:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白い部分
   god:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白いローブ部分
-  zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'dark'} },                        // 黒い体の部分
+  zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:238, window:95} },   // メインのグレー(青みがかった)ボディ部分
 };
 // 各モンスターが持てる色スキン(5色)
 function monsterSkinColors(elementKey){
