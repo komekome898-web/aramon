@@ -678,6 +678,58 @@ function drawProjectile(pr,p){
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
 
+  if(pr.projStyle==='godorb'){
+    // ゴッドライジング(ガリ): 各色に発光する球+ビリビリの電撃アーク
+    const col = pr.orbColor || pr.color || '#ffffff';
+    const r = (pr.hitR||24);
+    if(!renderHeavyLoad){ ctx.shadowBlur=22; ctx.shadowColor=col; }
+    const grad = ctx.createRadialGradient(-r*0.25,-r*0.25,r*0.1, 0,0,r);
+    grad.addColorStop(0,'#ffffff');
+    grad.addColorStop(0.4, col);
+    grad.addColorStop(1, col);
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle=grad; ctx.fill();
+    ctx.shadowBlur=0;
+    // 周囲のビリビリ(電撃アーク)
+    const jseed = Math.floor(matchTime*18) + (pr.id||0);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for(let k=0;k<4;k++){
+      const baseA = fxHash01(jseed*13+k*7)*Math.PI*2;
+      const arcSpan = 0.8 + fxHash01(jseed*29+k*11)*0.9;
+      const segs=5; ctx.beginPath();
+      for(let s=0;s<=segs;s++){
+        const a=baseA+arcSpan*(s/segs);
+        const rr=r*1.35+(fxHash01(jseed*37+k*17+s*5)-0.5)*r*0.6;
+        const px=Math.cos(a)*rr, py=Math.sin(a)*rr;
+        if(s===0)ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.globalAlpha=0.5; ctx.strokeStyle=col; ctx.lineWidth=4; ctx.stroke();
+      ctx.globalAlpha=0.95; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.6; ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore();
+    return;
+  }
+  if(pr.projStyle==='crescent'){
+    // ダークホウスト(ザン): 回転する黒い三日月型の斬撃
+    const r = (pr.hitR||20)*1.6;
+    const spin = matchTime*15 + (pr.id||0);
+    if(!renderHeavyLoad){ ctx.shadowBlur=12; ctx.shadowColor='#7a80a8'; }
+    ctx.rotate(spin);
+    // 三日月: 外円の弧から、少しずらした内円の弧で刳り抜いた形
+    const R=r, R2=r*1.02, off=r*0.62;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, Math.PI*0.55, Math.PI*1.45, false);
+    ctx.arc(off, 0, R2, Math.PI*1.28, Math.PI*0.72, true);
+    ctx.closePath();
+    ctx.fillStyle='#14151d'; ctx.fill();
+    ctx.strokeStyle='rgba(160,170,210,0.9)'; ctx.lineWidth=2; ctx.stroke();
+    // 刃の内縁の鋭い光沢
+    ctx.beginPath();
+    ctx.arc(0,0,R*0.9, Math.PI*0.62, Math.PI*1.38, false);
+    ctx.strokeStyle='rgba(210,220,255,0.75)'; ctx.lineWidth=1.4; ctx.stroke();
+    ctx.restore();
+    return;
+  }
   if(pr.projStyle==='tornado'){
     // 竜巻アタック(ゴーレム): 回転する渦を段積みで描く(上ほど広い漏斗型)
     const r = (pr.hitR||14);

@@ -3,6 +3,7 @@ const MOVE_SE_BY_STYLE = {
   inferno:'fireRoar', lava:'fireRoar', crystal:'iceCrack',
   psychic:'beam', sakura:'beam', flower:'beam', galaxy:'beam',
   tornado:'tornado', shell:'spin', holy:'bell', requiem:'whoosh',
+  godorb:'godRising', crescent:'zashu',
 };
 function moveSeName(move){
   if(move.seStyle) return move.seStyle; // data.jsで個別指定(熱視線など)
@@ -78,6 +79,24 @@ function fireMove(attacker, target, move){
       dmg:effDmg, color:move.color, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
       icon:move.icon, shape:move.shape, projStyle:move.projStyle||null,
     });
+    return;
+  }
+  if(move.multiOrb){
+    // ゴッドライジング(ガリ): 赤青黄緑の光球を同時に放射線状へ。隣同士が半分ずつ重なる
+    const colors = move.multiOrb;
+    const n = colors.length;
+    const spread = (move.orbSpreadDeg||9)*Math.PI/180;
+    const baseAng = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
+    for(let i=0;i<n;i++){
+      const off = n>1 ? ((i-(n-1)/2)/(n-1))*spread : 0;
+      const ang = baseAng + off;
+      projectiles.push({
+        id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+        dmg:effDmg, color:colors[i], hitR:(move.hitR||24)*hbMult, splash:(move.splash||0)*hbMult,
+        traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i],
+      });
+    }
     return;
   }
   const burstCount = move.burst || 1;
@@ -226,7 +245,7 @@ function applyDamage(target, dmg, source, opts){
     if(source.element==='spark'){
       target.slowUntil = matchTime + 1;
     }
-    if(source.element==='warm'){
+    if(source.element==='warm' || source.element==='zan'){
       if(!(target.poisonUntil > matchTime)){
         target.poisonTickAt = matchTime + 1;
       }

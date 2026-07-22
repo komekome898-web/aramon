@@ -52,10 +52,10 @@ document.addEventListener('visibilitychange', ()=>{
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
-  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5 };
+  fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6 };
 const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
-const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35 };
+const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35, godRising:1.35, zashu:1.35 };
 let seCurrentBoost = 1;
 function playSe(name, opts){
   if(!actx || audioSettings.se<=0.005) return;
@@ -324,6 +324,37 @@ const SE_DEFS = {
     seTone(t+1.62, {freq:440, dur:1.0, type:'triangle', vol:0.28, attack:0.06});
     seTone(t+1.62, {freq:220, dur:1.0, type:'sine', vol:0.2, attack:0.06});
     seTone(t+1.62, {freq:262, dur:1.0, type:'sine', vol:0.12, attack:0.06});
+  },
+  // ゴッドライジング「パパパパーン」(神々しい光球の斉射)
+  godRising(t){
+    // パパパパ(明るいスタッカート4連)
+    [784, 988, 1175, 1568].forEach((f,i)=>{
+      const tt=t+i*0.085;
+      seTone(tt, {freq:f, dur:0.1, type:'triangle', vol:0.3, attack:0.004});
+      seTone(tt, {freq:f*2, dur:0.06, type:'sine', vol:0.1, attack:0.004});
+      seNoise(tt, {dur:0.03, vol:0.06, filterType:'highpass', filterFreq:6000});
+    });
+    // パーン(大きく響く明るい和音+鐘の倍音)
+    const land=t+0.36;
+    const ring=(f,d,v)=>{
+      seTone(land, {freq:f*0.5,  dur:d*1.3, type:'sine', vol:v*0.5,  attack:0.006});
+      seTone(land, {freq:f,      dur:d,     type:'sine', vol:v,      attack:0.006});
+      seTone(land, {freq:f*1.5,  dur:d*0.75,type:'sine', vol:v*0.45, attack:0.006});
+      seTone(land, {freq:f*2,    dur:d*0.6, type:'sine', vol:v*0.3,  attack:0.006});
+      seTone(land, {freq:f*2.67, dur:d*0.4, type:'sine', vol:v*0.16, attack:0.006});
+    };
+    [523,659,784,1047].forEach((f,i)=> ring(f, 1.6, 0.16-i*0.02));
+    seNoise(land, {dur:0.6, vol:0.09, filterType:'highpass', filterFreq:6500}); // 光の弾けシャーン
+    seTone(land, {freq:130, freqEnd:70, dur:0.5, type:'sine', vol:0.24});       // 芯の一撃
+  },
+  // ダークホウスト「ザシュザシュザシュザシュザシュ」(黒い斬撃の5連)
+  zashu(t){
+    for(let i=0;i<5;i++){
+      const tt=t+i*0.09;
+      seNoise(tt, {dur:0.11, vol:0.42, filterType:'bandpass', filterFreq:5000, filterEnd:800});
+      seTone(tt, {freq:2200, freqEnd:260, dur:0.1, type:'sawtooth', vol:0.12});
+      seNoise(tt+0.04, {dur:0.12, vol:0.2, filterFreq:1100, filterEnd:150});
+    }
   },
 };
 // メニュー系の<button>タップで共通の「ポン」を鳴らす
