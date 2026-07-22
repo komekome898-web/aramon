@@ -2728,8 +2728,16 @@ function renderAdminSeGrid(){
     });
   });
 }
+// 管理者画面のタブ切替(プレイ状況 / 音声確認)
+function adminShowTab(tab){
+  document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.getElementById('adminStatsPane').classList.toggle('hidden', tab!=='stats');
+  document.getElementById('adminSePane').classList.toggle('hidden', tab!=='se');
+}
+document.querySelectorAll('.admin-tab').forEach(t=> t.addEventListener('click', ()=>adminShowTab(t.dataset.tab)));
 async function openAdminScreen(){
   document.getElementById('adminScreen').classList.remove('hidden');
+  adminShowTab('stats'); // デフォルトはプレイ状況
   document.getElementById('adminTotalMatches').textContent = '読み込み中…';
   document.getElementById('adminPlayerList').innerHTML = '';
   document.getElementById('adminMapCount').textContent = '';
