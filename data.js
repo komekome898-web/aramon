@@ -200,6 +200,8 @@ const ssrSkinImages = {
   phoenix_player_ssr: loadMonsterImage('monsters/phoenix_player_ssr'),
   tamamo_ssr:         loadMonsterImage('monsters/tamamo_ssr'),
   tamamo_player_ssr:  loadMonsterImage('monsters/tamamo_player_ssr'),
+  iblees_ssr:         loadMonsterImage('monsters/iblees_ssr'),
+  iblees_player_ssr:  loadMonsterImage('monsters/iblees_player_ssr'),
 };
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
@@ -739,6 +741,7 @@ function monsterMainInfo(elementKey){
 const SSR_SKINS = {
   phoenix_ssr: { element:'phoenix', name:'フェニックス', iconImg:'phoenix_ssr', playerImg:'phoenix_player_ssr' },
   tamamo_ssr:  { element:'fox', name:'タマモノマエ', iconImg:'tamamo_ssr', playerImg:'tamamo_player_ssr' },
+  iblees_ssr:  { element:'ark', name:'イブリース', iconImg:'iblees_ssr', playerImg:'iblees_player_ssr' },
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
