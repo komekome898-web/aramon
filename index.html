@@ -458,8 +458,18 @@
     </div>
   </div>
   <div id="adminSePane" class="hidden">
-    <div class="admin-col-title" style="margin-top:6px;">SE確認(タップで再生)</div>
-    <div id="adminSeGrid" class="admin-se-grid"></div>
+    <div class="admin-subtabs">
+      <button class="admin-subtab active" data-subtab="se">SE</button>
+      <button class="admin-subtab" data-subtab="bgm">BGM</button>
+    </div>
+    <div id="adminSeSubPane" class="admin-sub-pane">
+      <div class="admin-col-title" style="margin-top:6px;">SE確認(タップで再生)</div>
+      <div id="adminSeGrid" class="admin-se-grid"></div>
+    </div>
+    <div id="adminBgmSubPane" class="admin-sub-pane hidden">
+      <div class="admin-col-title" style="margin-top:6px;">BGM確認(タップで再生 / 停止で止める)</div>
+      <div id="adminBgmGrid" class="admin-se-grid"></div>
+    </div>
   </div>
   <button id="closeAdminBtn">閉じる</button>
 </div>

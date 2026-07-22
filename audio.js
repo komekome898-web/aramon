@@ -35,6 +35,7 @@ function audioInit(){
   applyAudioVolumes();
   startBgmScheduler();
   ensureSsrJackpotBuffer();
+  ensureBgmFinal5Buffer();
 }
 // 初回のタップ/クリック/キーで起動+復帰(iOSはユーザー操作が無いと音が出せない)
 ['pointerdown','touchend','keydown'].forEach(ev=>{
@@ -392,8 +393,8 @@ const SE_DEFS = {
 // メニュー系の<button>タップで共通の「ポン」を鳴らす
 document.addEventListener('click', (e)=>{
   if(!e.target || !e.target.closest) return;
-  // 管理者のSE確認グリッドでは、確認したいSEに共通タップ音が被らないよう「ポン」を鳴らさない
-  if(e.target.closest('#adminSeGrid')) return;
+  // 管理者の音声確認タブでは、確認したいSE/BGMに共通タップ音が被らないよう「ポン」を鳴らさない
+  if(e.target.closest('#adminSePane')) return;
   if(e.target.closest('button')) playSe('tap');
 }, true);
 
@@ -417,6 +418,46 @@ function bgmSetTrack(name){
 function bgmUpdateBattleIntensity(aliveCount){
   bgmState.intensity = aliveCount<=5 ? 3 : aliveCount<=10 ? 2 : aliveCount<=20 ? 1 : 0;
 }
+// テスト用: intensityを直接指定する(管理者画面のBGM確認から使う)
+function bgmSetIntensity(n){ bgmState.intensity = n|0; }
+
+// 残り5人以下(intensity 3)の戦闘BGMは、合成ではなく提供動画の音声(bgm_final5.mp3)を
+// ループ再生する。音源が未ロード/取得失敗時は従来の合成epicにフォールバックする。
+// monsters/*.png と同様に、実行時に読み込む外部アセットとして扱う。
+let bgmFinal5Buffer = null, bgmFinal5Source = null, bgmFinal5Gain = null, bgmFinal5Decoding = false;
+const BGM_FINAL5_URL = './bgm_final5.mp3';
+function ensureBgmFinal5Buffer(){
+  if(bgmFinal5Buffer || bgmFinal5Decoding || !actx) return;
+  bgmFinal5Decoding = true;
+  fetch(BGM_FINAL5_URL).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a)).then(buf=>{
+    bgmFinal5Buffer = buf; bgmFinal5Decoding = false;
+  }).catch(()=>{ bgmFinal5Decoding = false; });
+}
+function startBgmFinal5Loop(){
+  if(!actx || !bgmFinal5Buffer || bgmFinal5Source) return;
+  const src = actx.createBufferSource(); src.buffer = bgmFinal5Buffer; src.loop = true;
+  const g = actx.createGain();
+  const t = actx.currentTime;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(1, t+0.6); // フェードイン
+  src.connect(g); g.connect(bgmTrackGain); // bgmTrackGain経由でBGM音量・切替フェードが乗る
+  src.start();
+  bgmFinal5Source = src; bgmFinal5Gain = g;
+}
+function stopBgmFinal5Loop(){
+  if(!bgmFinal5Source) return;
+  const src = bgmFinal5Source, g = bgmFinal5Gain, t = actx.currentTime;
+  try{ g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0.0001, t+0.4); }catch(e){}
+  try{ src.stop(t+0.45); }catch(e){}
+  bgmFinal5Source = null; bgmFinal5Gain = null;
+}
+// スケジューラから毎tick呼び、状態に応じてループの開始/停止を判断する
+function updateBgmFinal5Loop(){
+  const shouldPlay = !!(actx && actx.state==='running' && bgmState.current && bgmState.current!=='title'
+    && bgmState.intensity>=3 && audioSettings.bgm>0.005 && bgmFinal5Buffer);
+  if(shouldPlay && !bgmFinal5Source) startBgmFinal5Loop();
+  else if(!shouldPlay && bgmFinal5Source) stopBgmFinal5Loop();
+}
 function startBgmScheduler(){
   if(bgmState.timerId) return;
   bgmState.nextTime = actx.currentTime + 0.1;
@@ -433,13 +474,15 @@ function bgmScheduler(){
     bgmState.step = 0;
     bgmState.nextTime = Math.max(bgmState.nextTime, actx.currentTime + 0.08);
   }
+  updateBgmFinal5Loop(); // 残り5人以下の動画音源ループの開始/停止を状態に追従させる
   if(!bgmState.current || audioSettings.bgm<=0.005){
     bgmState.nextTime = actx.currentTime + 0.1; // 復帰時にまとめ鳴りしないよう追従だけさせる
     return;
   }
   while(bgmState.nextTime < actx.currentTime + 0.28){
     if(bgmState.current==='title') bgmTitleStep(bgmState.step, bgmState.nextTime);
-    else if(bgmState.intensity>=3) bgmEpicStep(bgmState.step, bgmState.nextTime);
+    // 残り5人以下: 音源ロード済みなら動画音源ループ(updateBgmFinal5Loopが担当)、未ロード時のみ合成epicにフォールバック
+    else if(bgmState.intensity>=3){ if(!bgmFinal5Buffer) bgmEpicStep(bgmState.step, bgmState.nextTime); }
     else bgmBattleStep(bgmState.step, bgmState.nextTime, bgmState.intensity);
     bgmState.step++;
     bgmState.nextTime += bgmStepDur();
