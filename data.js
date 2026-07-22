@@ -737,6 +737,38 @@ function grantReward(r){
   if(r.item) addBagItem(r.item, r.n||1);
 }
 
+/* =====================================================================
+   シーズンパス: 試合でシーズンポイント(SP)を貯めて段階報酬を受け取る(全て無料)
+===================================================================== */
+const SEASON_STORAGE_KEY = 'aramon_season_v1';
+const SEASON_ID = 's1';               // シーズン識別子(変えると全員リセット)
+const SEASON_SP_PER_TIER = 120;       // 1段階に必要なSP
+const SEASON_MAX_TIER = 25;
+// 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬
+const SEASON_REWARDS = [
+  { gold:80 }, { gold:100 }, { item:'freeTrainTicket', n:1 }, { gold:120 }, { dia:15 },      // 1-5
+  { gold:120 }, { gold:150 }, { item:'seed_power', n:1 }, { gold:150 }, { dia:25 },           // 6-10
+  { gold:180 }, { item:'moveTicket', n:1 }, { gold:180 }, { gold:200 }, { dia:30 },           // 11-15
+  { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:220 }, { gold:220 }, { dia:40 },      // 16-20
+  { gold:250 }, { item:'seed_vitality', n:1 }, { gold:250 }, { gold:300 }, { gold:300, dia:60 }, // 21-25
+];
+// 1試合で得られるSP
+function seasonSpForMatch(kills, damage, isWin){
+  return 10 + (kills||0)*5 + (isWin?30:0) + Math.floor((damage||0)/100);
+}
+function seasonTierForSp(sp){ return Math.max(0, Math.min(SEASON_MAX_TIER, Math.floor((sp||0)/SEASON_SP_PER_TIER))); }
+function loadSeason(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SEASON_STORAGE_KEY)) || {};
+    if(s.seasonId !== SEASON_ID) return { seasonId:SEASON_ID, sp:0, claimed:{} }; // 新シーズンはリセット
+    return { seasonId:SEASON_ID, sp:Math.max(0, s.sp||0), claimed:s.claimed||{} };
+  }catch(err){ return { seasonId:SEASON_ID, sp:0, claimed:{} }; }
+}
+function saveSeason(s){
+  try{ localStorage.setItem(SEASON_STORAGE_KEY, JSON.stringify(s)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+
 const TITLES_STORAGE_KEY = 'aramon_titles_v1';
 function loadTitles(){
   try{

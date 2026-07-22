@@ -523,6 +523,30 @@
   .loginbonus-reward{ font-size:22px; color:var(--ink); margin:6px 0 14px; }
   #loginBonusOkBtn{ padding:9px 30px; border-radius:8px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:14px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
+  .result-badge.season{ color:#1a1306; background:linear-gradient(180deg,#8fd0ff,#4aa8f0); border-color:transparent; }
+  /* シーズンパス */
+  .season-box{ max-width:min(94 * var(--vw),640px); }
+  .season-head{ width:100%; margin-bottom:8px; }
+  .season-head-row{ display:flex; justify-content:space-between; align-items:baseline; }
+  .season-tier-text{ font-size:14px; font-weight:700; color:var(--amber); }
+  .season-sp-text{ font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink); }
+  .season-prog{ height:8px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; margin:6px 0 3px; }
+  .season-prog-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); border-radius:4px; }
+  .season-next-text{ font-size:10px; color:var(--ink-dim); text-align:right; }
+  .season-track{ display:grid; grid-template-columns:repeat(auto-fill, minmax(96px,1fr)); gap:6px; width:100%;
+    max-height:calc(52 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
+  .season-tier{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
+  .season-tier.milestone{ border-color:rgba(244,196,48,0.55); background:rgba(244,196,48,0.07); }
+  .season-tier.ready{ border-color:var(--amber); box-shadow:0 0 8px rgba(244,196,48,0.3); }
+  .season-tier-num{ font-family:'Russo One',sans-serif; font-size:12px; color:var(--amber); }
+  .season-tier-reward{ font-size:11px; color:var(--ink); text-align:center; line-height:1.2; min-height:26px; display:flex; align-items:center; }
+  .season-claim-btn{ padding:4px 10px; border-radius:6px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:11px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
+  .season-claim-btn:active{ filter:brightness(0.92); }
+  .season-claimed{ font-size:10px; color:var(--ink-dim); }
+  .season-locked{ font-size:12px; color:var(--ink-dim); }
+  .season-note{ font-size:10px; color:var(--ink-dim); margin-top:8px; line-height:1.35; }
   .admin-grant-dia-btn{
     margin-top:10px; padding:9px 18px; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;

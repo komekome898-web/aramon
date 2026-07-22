@@ -44,6 +44,7 @@
     <button id="audioSettingsBtn">🔊 音量設定</button>
     <div id="topActionRow">
       <button id="openDailyBtn" class="has-dot">🎯 デイリー<span id="dailyDot" class="notif-dot hidden"></span></button>
+      <button id="openSeasonBtn" class="has-dot">🎫 シーズン<span id="seasonDot" class="notif-dot hidden"></span></button>
       <button id="openBagBtn">🎒 バッグ</button>
       <button id="openShopBtn">🛒 ショップ</button>
       <button id="openGachaBtn">🎰 ガチャ</button>
@@ -555,6 +556,21 @@
     <div id="dailyLoginTrack" class="daily-login-track"></div>
     <div class="daily-section-title">📋 今日のミッション（毎日リセット）</div>
     <div id="dailyMissionList" class="daily-mission-list"></div>
+  </div>
+</div>
+
+<!-- SEASON PASS (シーズンパス) -->
+<div id="seasonOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box season-box">
+    <button id="closeSeasonBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎫 シーズンパス</div>
+    <div class="season-head">
+      <div class="season-head-row"><span id="seasonTierText" class="season-tier-text">Tier 0 / 25</span><span id="seasonSpText" class="season-sp-text">0 SP</span></div>
+      <div class="season-prog"><div id="seasonProgFill" class="season-prog-fill"></div></div>
+      <div id="seasonNextText" class="season-next-text"></div>
+    </div>
+    <div id="seasonTrack" class="season-track"></div>
+    <div class="season-note">試合で SP 獲得（参加10＋キル×5＋勝利30＋ダメージ100毎に1）。段階に届いたら報酬を受け取ろう。</div>
   </div>
 </div>
 
