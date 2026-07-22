@@ -318,6 +318,7 @@
   .gacha-rate-rar .pct{ margin-left:auto; font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--ink); }
   .gacha-rate-item{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-dim); padding:2px 0 2px 14px; }
   .gacha-rate-item .pct{ font-family:'Share Tech Mono',monospace; }
+  .gacha-rate-note{ margin-top:12px; padding-top:10px; border-top:1px solid var(--panel-line); font-size:11px; color:var(--ink-dim); line-height:1.5; }
   .gacha-modal-close{ margin-top:14px; align-self:center; padding:9px 26px; border-radius:8px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
   .gacha-modal-btnrow{ display:flex; gap:12px; justify-content:center; margin-top:12px; }
