@@ -628,6 +628,78 @@ function addBagItem(key, n){
   saveBag(b);
 }
 
+/* =====================================================================
+   称号(タイトル): 実績で解放。バッグの「称号」タブで確認・装備できる
+   type: matchKills/matchDamage=1試合の自己ベスト, wins/matches/totalKills/totalDamage=累計,
+         ssr=SSRスキン所持, allElem=全モンスターでプレイ
+===================================================================== */
+const TITLES = [
+  // 1試合のキル数
+  { id:'kill3',  name:'ビギナーハンター', emoji:'🎯', cat:'キル', type:'matchKills', n:3 },
+  { id:'kill5',  name:'ハンター',         emoji:'🏹', cat:'キル', type:'matchKills', n:5 },
+  { id:'kill8',  name:'スレイヤー',       emoji:'⚔️', cat:'キル', type:'matchKills', n:8 },
+  { id:'kill10', name:'キラー',           emoji:'🔪', cat:'キル', type:'matchKills', n:10 },
+  { id:'kill15', name:'プレデター',       emoji:'🐾', cat:'キル', type:'matchKills', n:15 },
+  { id:'kill20', name:'爪痕プレデター',   emoji:'🩸', cat:'キル', type:'matchKills', n:20 },
+  { id:'kill25', name:'モンスターの覇者', emoji:'👑', cat:'キル', type:'matchKills', n:25 },
+  // 1試合の与ダメージ
+  { id:'dmg1000', name:'パンチ',           emoji:'👊', cat:'ダメージ', type:'matchDamage', n:1000 },
+  { id:'dmg1500', name:'アッパー',         emoji:'🥊', cat:'ダメージ', type:'matchDamage', n:1500 },
+  { id:'dmg2000', name:'ハンマー',         emoji:'🔨', cat:'ダメージ', type:'matchDamage', n:2000 },
+  { id:'dmg2500', name:'ビリビリハンマー', emoji:'⚡', cat:'ダメージ', type:'matchDamage', n:2500 },
+  { id:'dmg3000', name:'縦ハンマー',       emoji:'🔨', cat:'ダメージ', type:'matchDamage', n:3000 },
+  { id:'dmg4000', name:'ダブルハンマー',   emoji:'🛠️', cat:'ダメージ', type:'matchDamage', n:4000 },
+  { id:'dmg5000', name:'メテオハンマー',   emoji:'☄️', cat:'ダメージ', type:'matchDamage', n:5000 },
+  // 累計勝利
+  { id:'win1',  name:'初モン勝ち',       emoji:'🎉', cat:'勝利', type:'wins', n:1 },
+  { id:'win5',  name:'常勝の風格',       emoji:'🌟', cat:'勝利', type:'wins', n:5 },
+  { id:'win10', name:'王者への道',       emoji:'🏆', cat:'勝利', type:'wins', n:10 },
+  { id:'win25', name:'覇王',             emoji:'👑', cat:'勝利', type:'wins', n:25 },
+  { id:'win50', name:'伝説のモンスター', emoji:'🔥', cat:'勝利', type:'wins', n:50 },
+  // 累計試合数
+  { id:'match1',   name:'新米モンスター', emoji:'🐣', cat:'試合数', type:'matches', n:1 },
+  { id:'match10',  name:'野生の常連',     emoji:'🌿', cat:'試合数', type:'matches', n:10 },
+  { id:'match50',  name:'歴戦の猛者',     emoji:'🗡️', cat:'試合数', type:'matches', n:50 },
+  { id:'match100', name:'百戦錬磨',       emoji:'💯', cat:'試合数', type:'matches', n:100 },
+  { id:'match300', name:'荒野の主',       emoji:'🏔️', cat:'試合数', type:'matches', n:300 },
+  // 累計キル
+  { id:'tk100',  name:'百人斬り',     emoji:'🌀', cat:'累計キル', type:'totalKills', n:100 },
+  { id:'tk500',  name:'殺戮マシン',   emoji:'🤖', cat:'累計キル', type:'totalKills', n:500 },
+  { id:'tk1000', name:'千の牙',       emoji:'🐺', cat:'累計キル', type:'totalKills', n:1000 },
+  // 累計ダメージ
+  { id:'td50k',  name:'破壊者', emoji:'💥', cat:'累計ダメージ', type:'totalDamage', n:50000 },
+  { id:'td200k', name:'天災',   emoji:'🌪️', cat:'累計ダメージ', type:'totalDamage', n:200000 },
+  // 特殊
+  { id:'ssr',     name:'強運の持ち主',   emoji:'🍀', cat:'特殊', type:'ssr' },
+  { id:'allElem', name:'オールラウンダー', emoji:'🌈', cat:'特殊', type:'allElem' },
+];
+const TITLES_BY_ID = {}; TITLES.forEach(t=>{ TITLES_BY_ID[t.id]=t; });
+// 解放条件の説明文
+function titleCondText(t){
+  switch(t.type){
+    case 'matchKills':  return `1試合で${t.n}キル`;
+    case 'matchDamage': return `1試合で${t.n}ダメージ`;
+    case 'wins':        return `通算${t.n}勝`;
+    case 'matches':     return `通算${t.n}試合プレイ`;
+    case 'totalKills':  return `通算${t.n}キル`;
+    case 'totalDamage': return `通算${t.n}ダメージ`;
+    case 'ssr':         return `SSRスキンを入手`;
+    case 'allElem':     return `全モンスターでプレイ`;
+    default:            return '';
+  }
+}
+const TITLES_STORAGE_KEY = 'aramon_titles_v1';
+function loadTitles(){
+  try{
+    const t = JSON.parse(localStorage.getItem(TITLES_STORAGE_KEY)) || {};
+    return { unlocked: t.unlocked||{}, equipped: (t.equipped && TITLES_BY_ID[t.equipped]) ? t.equipped : null };
+  }catch(err){ return { unlocked:{}, equipped:null }; }
+}
+function saveTitles(t){
+  try{ localStorage.setItem(TITLES_STORAGE_KEY, JSON.stringify(t)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+
 // 試合報酬(経験値と一緒に入手)
 const GOLD_MATCH_BASE = 20;      // 参加報酬
 const GOLD_PER_KILL = 10;        // キルごと

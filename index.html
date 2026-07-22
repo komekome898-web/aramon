@@ -28,7 +28,7 @@
 <div id="startScreen">
  <div id="topHeader">
    <span class="header-side"></span>
-   <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span></span>
+   <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span><span id="headerTitleChip" class="header-title-chip hidden"></span></span>
    <span class="header-wallet header-side"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
  </div>
  <div id="startScreenInner">
@@ -326,6 +326,7 @@
   </div>
   <div id="scoreSubmitStatus"></div>
   <div id="resultCurrencyLine" class="result-currency"></div>
+  <div id="resultBadges" class="result-badges hidden"></div>
   <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
   <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
     <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
@@ -502,6 +503,7 @@
       <div class="bag-tabs">
         <button class="bag-tab active" data-tab="item">アイテム</button>
         <button class="bag-tab" data-tab="skin">スキン</button>
+        <button class="bag-tab" data-tab="title">称号</button>
       </div>
     </div>
     <div id="bagItemPane">
@@ -535,6 +537,10 @@
     </div>
     <div id="bagSkinPane" class="hidden">
       <div id="bagSkinGrid" class="bag-skin-grid"></div>
+    </div>
+    <div id="bagTitlePane" class="hidden">
+      <div class="bag-title-hint" id="bagTitleHint">獲得した称号をタップで装着（もう一度で外す）。装着中の称号は名前の横に表示されます。</div>
+      <div id="bagTitleGrid" class="bag-title-grid"></div>
     </div>
   </div>
 </div>

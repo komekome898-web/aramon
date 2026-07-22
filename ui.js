@@ -255,7 +255,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_titles_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -314,6 +314,7 @@ function updateAccountBar(){
   // ログイン中はランキング表示名の入力欄を隠す(アカウント名を表示名として使う)
   document.getElementById('playerNameLabel').classList.toggle('hidden', accountState.loggedIn);
   document.getElementById('playerNameInput').classList.toggle('hidden', accountState.loggedIn);
+  if(typeof updateHeaderTitle==='function') updateHeaderTitle();
 }
 // アカウント名をランキング表示名として反映する(入力欄は非表示でも値は参照される)
 function applyAccountNameAsDisplayName(name){
@@ -437,13 +438,59 @@ document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
 });
-// バッグのタブ切替(アイテム / スキン)
+// バッグのタブ切替(アイテム / スキン / 称号)
 function bagShowTab(tab){
-  const isSkin = tab==='skin';
   document.querySelectorAll('.bag-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
-  document.getElementById('bagItemPane').classList.toggle('hidden', isSkin);
-  document.getElementById('bagSkinPane').classList.toggle('hidden', !isSkin);
-  if(isSkin) renderBagSkins();
+  document.getElementById('bagItemPane').classList.toggle('hidden', tab!=='item');
+  document.getElementById('bagSkinPane').classList.toggle('hidden', tab!=='skin');
+  document.getElementById('bagTitlePane').classList.toggle('hidden', tab!=='title');
+  if(tab==='skin') renderBagSkins();
+  else if(tab==='title') renderBagTitles();
+}
+// 称号一覧(獲得済みを上に、未獲得は解放条件を表示。タップで装着トグル)
+function renderBagTitles(){
+  const grid = document.getElementById('bagTitleGrid');
+  if(!grid || typeof TITLES==='undefined') return;
+  if(typeof checkTitleUnlocks==='function') checkTitleUnlocks(); // 開いた時点の実績を反映(SSR所持/全属性など)
+  const t = loadTitles();
+  const hint = document.getElementById('bagTitleHint');
+  if(hint){
+    const cnt = TITLES.filter(d=>t.unlocked[d.id]).length;
+    hint.textContent = `獲得 ${cnt} / ${TITLES.length}　タップで装着(もう一度で外す)。装着中は名前の横に表示されます。`;
+  }
+  const list = TITLES.slice().sort((a,b)=>{
+    const ua = t.unlocked[a.id]?0:1, ub = t.unlocked[b.id]?0:1;
+    return ua-ub; // 獲得済みを先頭へ(同順はカタログ順維持)
+  });
+  grid.innerHTML = list.map(def=>{
+    const owned = !!t.unlocked[def.id];
+    const eq = owned && t.equipped===def.id;
+    return `<button class="bag-title-cell ${owned?'owned':'locked'} ${eq?'equipped':''}" data-title="${def.id}" ${owned?'':'disabled'}>
+      <span class="bag-title-emoji">${owned?def.emoji:'🔒'}</span>
+      <span class="bag-title-name">${owned?def.name:'？？？'}</span>
+      <span class="bag-title-cond">${owned?('★ '+def.cat):titleCondText(def)}</span>
+      ${eq?'<span class="bag-title-eqbadge">装着中</span>':''}
+    </button>`;
+  }).join('');
+  grid.querySelectorAll('.bag-title-cell.owned').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.dataset.title;
+      const tt = loadTitles();
+      tt.equipped = (tt.equipped===id) ? null : id;
+      saveTitles(tt);
+      renderBagTitles();
+      updateHeaderTitle();
+    });
+  });
+}
+// 装着中の称号をトップヘッダーのプレイヤー名の横に表示
+function updateHeaderTitle(){
+  const chip = document.getElementById('headerTitleChip');
+  if(!chip || typeof loadTitles!=='function') return;
+  const t = loadTitles();
+  const def = (t.equipped && typeof TITLES_BY_ID!=='undefined') ? TITLES_BY_ID[t.equipped] : null;
+  if(def){ chip.textContent = `${def.emoji} ${def.name}`; chip.classList.remove('hidden'); }
+  else { chip.textContent = ''; chip.classList.add('hidden'); }
 }
 document.querySelectorAll('.bag-tab').forEach(tab=>{
   tab.addEventListener('click', ()=> bagShowTab(tab.dataset.tab));
@@ -1578,7 +1625,7 @@ function showResult(isWin, placement){
   playSe(isWin ? 'fanfare' : 'sad');
   setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, isWin ? 3800 : 3000);
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
-  document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
+  document.getElementById('resultRank').textContent = isWin ? '👑 WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
   document.getElementById('statKills').textContent = player.kills;
   document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
@@ -1611,10 +1658,29 @@ function showResult(isWin, placement){
     }
   }
   document.getElementById('resultScreen').classList.remove('hidden');
+  // 自己ベスト更新の検出用に、記録前のベストを控えておく
+  const _preCum = titlesCumulativeStats();
+  const _prevBestKills = _preCum.bestKills, _prevBestDamage = _preCum.bestDamage;
   recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
+  const _newTitles = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
+  renderResultBadges({
+    kills: player.kills, damage: Math.round(player.damageDealt),
+    prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles,
+  });
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
   logMatchForAdmin();
+}
+// リザルトの自己ベスト更新バッジ＆獲得称号バッジを描画する
+function renderResultBadges(o){
+  const el = document.getElementById('resultBadges');
+  if(!el) return;
+  const badges = [];
+  if(o.kills>0 && o.kills > o.prevBestKills) badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`);
+  if(o.damage>0 && o.damage > o.prevBestDamage) badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`);
+  for(const t of (o.newTitles||[])) badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`);
+  el.innerHTML = badges.join('');
+  el.classList.toggle('hidden', badges.length===0);
 }
 function logMatchForAdmin(){
   if(!window.__aramonLogMatch){ console.warn('logMatchForAdmin: __aramonLogMatch not ready, skipped'); return; }
@@ -1702,6 +1768,59 @@ function computeDerivedStats(stats){
   const kd = deaths>0 ? (stats.totalKills||0)/deaths : (stats.totalKills||0);
   const avgDamage = (stats.totalMatches||0)>0 ? (stats.totalDamage||0)/stats.totalMatches : 0;
   return { deaths, kd, avgDamage };
+}
+
+/* =====================================================================
+   称号(タイトル)の解放判定
+===================================================================== */
+// solo+multiを合算した通算値と、1試合の自己ベストをまとめる
+function titlesCumulativeStats(){
+  const s = loadLocalStats() || defaultLocalStats();
+  const modes = ['solo','multi'];
+  let wins=0, matches=0, kills=0, damage=0, bestKills=0, bestDamage=0;
+  const elemPlayed = new Set();
+  for(const m of modes){
+    const ms = s[m]; if(!ms) continue;
+    wins += ms.totalWins||0; matches += ms.totalMatches||0;
+    kills += ms.totalKills||0; damage += ms.totalDamage||0;
+    bestKills = Math.max(bestKills, ms.bestKills||0);
+    bestDamage = Math.max(bestDamage, ms.bestDamage||0);
+    const be = ms.byElement||{};
+    Object.keys(be).forEach(k=>{ if((be[k].matches||0)>0) elemPlayed.add(k); });
+  }
+  return { wins, matches, kills, damage, bestKills, bestDamage, elemPlayed };
+}
+function ownsAnySsr(){
+  try{
+    const owned = loadSkins().owned || {};
+    return Object.keys(owned).some(id=>{ if(!owned[id]) return false; const m=skinMeta(id); return m && m.rarity==='SSR'; });
+  }catch(e){ return false; }
+}
+function titleConditionMet(t, cum){
+  switch(t.type){
+    case 'matchKills':  return cum.bestKills  >= t.n;
+    case 'matchDamage': return cum.bestDamage >= t.n;
+    case 'wins':        return cum.wins   >= t.n;
+    case 'matches':     return cum.matches >= t.n;
+    case 'totalKills':  return cum.kills   >= t.n;
+    case 'totalDamage': return cum.damage  >= t.n;
+    case 'ssr':         return ownsAnySsr();
+    case 'allElem':     return Object.keys(ELEMENTS).every(k=> cum.elemPlayed.has(k));
+    default:            return false;
+  }
+}
+// 現在の実績で解放できる称号を解放し、新しく解放したものの配列を返す
+function checkTitleUnlocks(){
+  if(typeof TITLES==='undefined') return [];
+  const cum = titlesCumulativeStats();
+  const t = loadTitles();
+  const newly = [];
+  for(const def of TITLES){
+    if(t.unlocked[def.id]) continue;
+    if(titleConditionMet(def, cum)){ t.unlocked[def.id] = Date.now(); newly.push(def); }
+  }
+  if(newly.length){ saveTitles(t); }
+  return newly;
 }
 
 function submitScoreToRanking(isWin, placement){
