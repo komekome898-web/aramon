@@ -164,12 +164,21 @@ function seNoiseLfo(t, o){
 const SE_DEFS = {
   // 通常のボタンタップ「ポン」
   tap(t){ seTone(t, {freq:660, freqEnd:440, dur:0.09, type:'sine', vol:0.45}); },
-  // 試合開始・状態変化発動「ジャキーン」(金属的な立ち上がり+伸び)
+  // 試合開始・状態変化発動「ジャキーン」(大きなハサミ/刀で斬るような金属音)
   jakiin(t){
-    seNoise(t, {dur:0.1, vol:0.22, filterType:'highpass', filterFreq:3500});
-    seTone(t,       {freq:740,  freqEnd:1480, dur:0.34, type:'square',   vol:0.22});
-    seTone(t+0.03,  {freq:1108, freqEnd:2217, dur:0.36, type:'square',   vol:0.16});
-    seTone(t+0.05,  {freq:1480, freqEnd:2960, dur:0.4,  type:'triangle', vol:0.22});
+    // 立ち上がりの金属スクレイプ(刃が擦れる鋭いノイズ)
+    seNoise(t, {dur:0.05, vol:0.5,  filterType:'bandpass', filterFreq:6000, filterEnd:3400});
+    seNoise(t, {dur:0.09, vol:0.26, filterType:'highpass', filterFreq:4200});
+    // 金属的な非整数倍音の鳴り(上昇グライドは控えめにして「キーン」と伸ばす)
+    const ring=(f,d,v,dt)=>{
+      seTone(t+(dt||0), {freq:f,      freqEnd:f*1.03, dur:d,      type:'square', vol:v,      attack:0.002});
+      seTone(t+(dt||0), {freq:f*2.76,               dur:d*0.7,  type:'sine',   vol:v*0.5,  attack:0.002}); // 非整数倍音
+      seTone(t+(dt||0), {freq:f*5.4,                dur:d*0.5,  type:'sine',   vol:v*0.3,  attack:0.002});
+      seTone(t+(dt||0), {freq:f*8.9,                dur:d*0.35, type:'sine',   vol:v*0.16, attack:0.002}); // 高い金属倍音
+    };
+    ring(1500, 0.5,  0.22, 0);
+    ring(2020, 0.45, 0.14, 0.02); // 少しずらして厚みと「キーン」感
+    seNoise(t+0.02, {dur:0.4, vol:0.06, filterType:'highpass', filterFreq:7000}); // きらめく余韻
   },
   // トレーニング実行「ポワポワ」(ステータスが伸びていく上昇音)
   train(t){
@@ -196,19 +205,28 @@ const SE_DEFS = {
       seTone(t, {freq:63, dur:d*0.9, type:'sine', vol:0.2}); // 近接周波数のうなりでゴゴゴ感
       seNoise(t+d*0.55, {dur:d*0.45, vol:0.2, filterType:'highpass', filterFreq:2500}); // 余韻のシュウウ
     } else if(kind==='burst'){
+      // 連射: 鋭い銃声の連発
       for(let i=0;i<3;i++){
-        seTone(t+i*0.09, {freq:400, freqEnd:220, dur:0.08, type:'sine', vol:0.32});
-        seNoise(t+i*0.09, {dur:0.06, vol:0.14, filterFreq:1500, filterEnd:500});
+        const tt=t+i*0.09;
+        seNoise(tt, {dur:0.03, vol:0.6,  filterType:'highpass', filterFreq:2000}); // 発砲クラック
+        seNoise(tt, {dur:0.1,  vol:0.32, filterType:'lowpass',  filterFreq:1300, filterEnd:150}); // 銃身の轟き
+        seTone(tt,  {freq:190, freqEnd:60, dur:0.08, type:'square', vol:0.28}); // 破裂の芯
       }
     } else {
-      seTone(t, {freq:300, freqEnd:140, dur:0.17, type:'sine', vol:0.45});
-      seNoise(t, {dur:0.11, vol:0.18, filterFreq:900, filterEnd:300});
+      // 単発: 「バァン」という銃声
+      seNoise(t, {dur:0.04, vol:0.85, filterType:'highpass', filterFreq:1800}); // 発砲の鋭いクラック
+      seNoise(t, {dur:0.18, vol:0.55, filterType:'lowpass',  filterFreq:1400, filterEnd:120}); // 銃身の轟き(ボディ)
+      seTone(t,  {freq:170, freqEnd:48, dur:0.16, type:'square', vol:0.4}); // 低い破裂音の芯
+      seNoise(t+0.05, {dur:0.22, vol:0.14, filterType:'highpass', filterFreq:2600}); // 硝煙/反響の余韻
     }
   },
-  // 技被弾「ドゥン」
+  // 技被弾: 重く痛そうな衝撃音
   hitTaken(t){
-    seTone(t, {freq:150, freqEnd:55, dur:0.25, type:'sine', vol:0.55});
-    seNoise(t, {dur:0.16, vol:0.3, filterFreq:450, filterEnd:120});
+    seTone(t, {freq:180, freqEnd:42, dur:0.32, type:'sine',     vol:0.6});  // ドスンと落ちる低音の芯
+    seTone(t, {freq:110, freqEnd:34, dur:0.34, type:'triangle', vol:0.4});  // body
+    seTone(t, {freq:70,              dur:0.4,  type:'sine',     vol:0.3, attack:0.002}); // 腹に来る超低音
+    seNoise(t,      {dur:0.09, vol:0.4,  filterType:'lowpass',  filterFreq:1800, filterEnd:300}); // 叩きつけのスラップ(痛い)
+    seNoise(t+0.01, {dur:0.05, vol:0.3,  filterType:'bandpass', filterFreq:2600}); // 骨に響くパチッ
   },
   // ガッツ不足「ピピピッ」
   noGuts(t){
@@ -259,10 +277,12 @@ const SE_DEFS = {
     seTone(t, {freq:165, dur:d, type:'square', vol:0.13, attack:0.015});  // 低域の芯
     seNoise(t, {dur:d, vol:0.05, filterType:'bandpass', filterFreq:2400});
   },
-  // レクイエムエンド「シュンシュンシュン」(風切り3連)
+  // レクイエムエンド「シュンシュンシュン」(鋭い風切り3連)
   whoosh(t){
     for(let i=0;i<3;i++){
-      seNoise(t+i*0.11, {dur:0.15, vol:0.36, filterType:'bandpass', filterFreq:3900, filterEnd:650});
+      const tt=t+i*0.09;
+      seNoise(tt, {dur:0.1,  vol:0.4,  filterType:'bandpass', filterFreq:6500, filterEnd:1200}); // 高く鋭い風切り
+      seNoise(tt, {dur:0.06, vol:0.22, filterType:'highpass', filterFreq:5000}); // 切っ先の「シャッ」
     }
   },
   // 天の慈悲「リンリンリーン」(残響たっぷりの鐘の音)
@@ -324,11 +344,13 @@ const SE_DEFS = {
     choir(784, 0.05);  // ソ(上)
     seNoise(t+1.8, {dur:0.8, vol:0.05, filterType:'highpass', filterFreq:6800}); // 収束のシャラーン
   },
-  // 敵をキルした時「ザシュッ」(切り裂き音)
+  // 敵をキルした時: 人を斬って血の出る「ズバシュッ」
   kill(t){
-    seNoise(t, {dur:0.16, vol:0.5, filterType:'bandpass', filterFreq:5200, filterEnd:900});
-    seTone(t, {freq:2400, freqEnd:280, dur:0.14, type:'sawtooth', vol:0.14});
-    seNoise(t+0.06, {dur:0.2, vol:0.28, filterFreq:1300, filterEnd:180});
+    seNoise(t,      {dur:0.05, vol:0.5,  filterType:'bandpass', filterFreq:3800, filterEnd:1400}); // 刃が入る「シャッ」
+    seTone(t,       {freq:900, freqEnd:120, dur:0.12, type:'sawtooth', vol:0.16}); // 斬撃のヒュッ(下降)
+    seNoise(t+0.03, {dur:0.22, vol:0.42, filterType:'lowpass', filterFreq:1500, filterEnd:250}); // 肉を裂く「ブシュッ」(湿った質感)
+    seTone(t+0.03,  {freq:150, freqEnd:50, dur:0.2,  type:'sine', vol:0.42}); // 血が噴く重い芯
+    seNoise(t+0.09, {dur:0.16, vol:0.16, filterType:'highpass', filterFreq:2000}); // 血しぶきの余韻
   },
   // 勝利ファンファーレ(リザルト画面・約3.6秒)
   fanfare(t){
@@ -380,13 +402,14 @@ const SE_DEFS = {
   },
   // ガチャSSR獲得: 内蔵音声(パチンコ大当たり確定音)を再生。
   ssrJackpot(t, o){ playSsrJackpotOnce(); },
-  // ダークホウスト「ザシュザシュザシュザシュザシュ」(黒い斬撃の5連)
+  // ダークホウスト「ズバシュ×5」(人を斬って血の出る黒い斬撃の5連)
   zashu(t){
     for(let i=0;i<5;i++){
-      const tt=t+i*0.09;
-      seNoise(tt, {dur:0.11, vol:0.42, filterType:'bandpass', filterFreq:5000, filterEnd:800});
-      seTone(tt, {freq:2200, freqEnd:260, dur:0.1, type:'sawtooth', vol:0.12});
-      seNoise(tt+0.04, {dur:0.12, vol:0.2, filterFreq:1100, filterEnd:150});
+      const tt=t+i*0.11;
+      seNoise(tt,       {dur:0.045, vol:0.44, filterType:'bandpass', filterFreq:4200, filterEnd:1500}); // 刃の「シャッ」
+      seTone(tt,        {freq:1100, freqEnd:200, dur:0.09, type:'sawtooth', vol:0.12}); // 斬撃の下降
+      seNoise(tt+0.025, {dur:0.16, vol:0.32, filterType:'lowpass', filterFreq:1400, filterEnd:240}); // 肉を裂く「ブシュッ」
+      seTone(tt+0.025,  {freq:170, freqEnd:60, dur:0.14, type:'sine', vol:0.3}); // 血の重い芯
     }
   },
 };
