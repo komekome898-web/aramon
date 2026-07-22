@@ -53,7 +53,7 @@ async function beginMultiplayerMatch(){
       const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
       fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null } };
     }
-    mapKey = game.selectedMap || 'wild';
+    mapKey = (typeof resolveMapKey==='function') ? resolveMapKey() : (game.selectedMap || 'wild'); // 'ランダム'選択時は実マップを確定
     // ホストが持っているマスモンのうち、今使っているもの以外からランダムに選んでbot候補にする。
     const ownMastermons = loadMastermons();
     const candidateKeys = Object.keys(ownMastermons).filter(k=>k!==game.selectedMastermonKey);
@@ -82,6 +82,7 @@ async function beginMultiplayerMatch(){
     }
   }
   netState.humanPlayers = fixedPlayers;
+  game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
 
   applyWorldScale(MULTI_MAP_SCALE); // マルチプレイは少人数想定のため、ソロより一回り狭いマップにする

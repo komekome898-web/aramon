@@ -17,7 +17,7 @@ let nextId = 1;
 let player = null;
 let matchTime = 0;
 let zoneState = null;
-let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'wild' };
+let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random' };
 
 const FOV_V = 64*Math.PI/180;
 let FOCAL = 600;
