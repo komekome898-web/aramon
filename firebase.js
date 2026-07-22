@@ -51,6 +51,7 @@
         if(!cur){
           return {
             name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
+            skin: entry.skin || null,            // 装備スキン(ランキングアイコンに反映)
             mastermonName: entry.mastermonName || null,
             mastermonLevel: entry.mastermonLevel || null,
             kills: entry.kills, damage: entry.damage,
@@ -60,6 +61,7 @@
         }
         return {
           name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
+          skin: entry.skin || cur.skin || null,  // 直近の装備スキンを優先(未装備なら従来値を維持)
           mastermonName: entry.mastermonName || cur.mastermonName || null,
           mastermonLevel: Math.max(cur.mastermonLevel||0, entry.mastermonLevel||0) || null,
           kills: Math.max(cur.kills||0, entry.kills||0),
