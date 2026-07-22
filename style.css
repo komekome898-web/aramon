@@ -1328,8 +1328,8 @@
     width:min(calc(94 * var(--vw)),820px); margin-top:18px; flex:1 1 auto; min-height:0;
   }
   /* 管理者: タイトル+タブ(プレイ状況/音声確認) */
-  .admin-header{ display:flex; align-items:center; justify-content:center; gap:16px; flex-wrap:wrap; }
-  .admin-title{ font-size:28px; }
+  .admin-header{ display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:nowrap; }
+  .admin-header .admin-title{ font-size:22px; letter-spacing:1px; }
   .admin-tabs{ display:flex; gap:8px; }
   .admin-tab{ padding:7px 20px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
