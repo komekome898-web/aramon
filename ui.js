@@ -432,9 +432,8 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
 // ===== バッグ =====
 let bagSelectedItem = null; // 説明フィールドに表示中のアイテムキー
 document.getElementById('openBagBtn').addEventListener('click', ()=>{
-  bagSelectedItem = null;
+  bagSelectedItem = null;   // renderBagで先頭アイテムを自動選択→一覧+ゲージが最初から表示
   renderBag();
-  document.getElementById('bagTargetWrap').classList.add('hidden');
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
 });
@@ -479,21 +478,21 @@ function renderBagSkins(){
 document.getElementById('closeBagBtn').addEventListener('click', ()=>{
   document.getElementById('bagOverlay').classList.add('hidden');
 });
-document.getElementById('bagTargetCancelBtn').addEventListener('click', ()=>{
-  document.getElementById('bagTargetWrap').classList.add('hidden');
-  resetBagQtyGauge();
-});
+let bagUseQty = 1;
+let bagPicker = { itemKey:null, targetKey:null };
 function renderBag(){
   const bag = loadBag();
   const gridEl = document.getElementById('bagIconGrid');
   const keys = Object.keys(PLAYER_ITEMS).filter(k=>bag[k]>0);
   if(keys.length===0){
     gridEl.innerHTML = '<div class="bag-empty">アイテムはありません。ガチャやショップで手に入れよう！</div>';
+    bagSelectedItem = null;
     renderBagDesc();
     return;
   }
-  // 説明フィールドに表示中のアイテムが無くなったら選択解除
+  // 表示中のアイテムが無くなったら選択解除。未選択なら先頭を自動選択(最初から選択済み表示)
   if(bagSelectedItem && !(bag[bagSelectedItem]>0)) bagSelectedItem = null;
+  if(!bagSelectedItem) bagSelectedItem = keys[0];
   gridEl.innerHTML = keys.map(k=>{
     const it = PLAYER_ITEMS[k];
     const active = k===bagSelectedItem;
@@ -505,31 +504,22 @@ function renderBag(){
   }).join('');
   gridEl.querySelectorAll('.bag-icon-cell').forEach(b=>{
     b.addEventListener('click', ()=>{
-      bagSelectedItem = (bagSelectedItem===b.dataset.key) ? null : b.dataset.key;
+      if(bagSelectedItem===b.dataset.key) return; // 常に何か選択された状態を維持
+      bagSelectedItem = b.dataset.key;
       renderBag();
-      // 右側のマスモン選択が開いているときは、選択中アイテムに合わせて右側も切り替える
-      // (対象マスモンの選択は維持。アイテム選択を解除したら右側を閉じる)
-      const wrap = document.getElementById('bagTargetWrap');
-      if(!wrap.classList.contains('hidden')){
-        if(bagSelectedItem){
-          bagPicker.itemKey = bagSelectedItem;
-          renderBagTargetList();
-        } else {
-          wrap.classList.add('hidden');
-        }
-      }
     });
   });
   renderBagDesc();
 }
-// 画面下部の説明フィールド: 選択中アイテムの名前・効果・使うボタンを表示
+// 選択中アイテムの説明+個数ゲージ+対象マスモン一覧を常に表示する
 function renderBagDesc(){
-  resetBagQtyGauge(); // アイテムの選択が変わったら使うボタン表示に戻す
   const empty = document.getElementById('bagDescEmpty');
   const content = document.getElementById('bagDescContent');
+  const wrap = document.getElementById('bagTargetWrap');
   if(!bagSelectedItem || !PLAYER_ITEMS[bagSelectedItem]){
     empty.classList.remove('hidden');
     content.classList.add('hidden');
+    wrap.classList.add('hidden');
     return;
   }
   const it = PLAYER_ITEMS[bagSelectedItem];
@@ -538,28 +528,16 @@ function renderBagDesc(){
   document.getElementById('bagDescIcon').textContent = it.icon;
   document.getElementById('bagDescName').textContent = it.name;
   document.getElementById('bagDescText').textContent = playerItemDesc(bagSelectedItem);
-}
-// 使うボタン → 個数選択ゲージに差し替え、マスモン選択を開く
-let bagUseQty = 1;
-document.getElementById('bagDescUseBtn').addEventListener('click', ()=>{
-  if(!bagSelectedItem) return;
+  // 個数ゲージ: 最低1・最大=所持数。アイテムを切り替えたら1にリセット
   const owned = loadBag()[bagSelectedItem] || 0;
-  if(owned<=0) return;
   bagUseQty = 1;
   const slider = document.getElementById('bagQtySlider');
   slider.max = Math.max(1, owned); slider.value = 1;
   document.getElementById('bagQtyVal').textContent = '1';
-  document.getElementById('bagDescUseBtn').classList.add('hidden');
-  document.getElementById('bagQtyRow').classList.remove('hidden');
-  openBagTargetPicker(bagSelectedItem);
-});
-// 使うボタン表示に戻す(個数ゲージを隠す)
-function resetBagQtyGauge(){
-  bagUseQty = 1;
-  const btn = document.getElementById('bagDescUseBtn');
-  const row = document.getElementById('bagQtyRow');
-  if(btn) btn.classList.remove('hidden');
-  if(row) row.classList.add('hidden');
+  // 対象マスモン一覧を最初から表示(使うボタンを廃止)
+  bagPicker = { itemKey: bagSelectedItem, targetKey:null };
+  renderBagTargetList();
+  wrap.classList.remove('hidden');
 }
 function setBagQty(v){
   const slider = document.getElementById('bagQtySlider');
@@ -574,23 +552,20 @@ function setBagQty(v){
 document.getElementById('bagQtyMinus').addEventListener('click', ()=>setBagQty(bagUseQty-1));
 document.getElementById('bagQtyPlus').addEventListener('click', ()=>setBagQty(bagUseQty+1));
 document.getElementById('bagQtySlider').addEventListener('input', (e)=>setBagQty(+e.target.value));
-// マスモン選択(トレーニングと同じく「選択→使用」の2段階)。選択中はアイテムの効果をプレビュー表示する
-let bagPicker = { itemKey:null, targetKey:null };
-function openBagTargetPicker(itemKey){
-  const keys = Object.keys(loadMastermons());
-  if(keys.length===0){ pushToast('マスモンがいません。先にマスモン登録しよう！'); return; }
-  bagPicker = { itemKey, targetKey:null };
-  renderBagTargetList();
-  document.getElementById('bagTargetWrap').classList.remove('hidden');
-}
 function renderBagTargetList(){
   const data = loadMastermons();
+  const pick = document.getElementById('bagTargetList');
+  const keys = Object.keys(data);
+  if(keys.length===0){
+    pick.innerHTML = '<div class="bag-empty">マスモンがいません。先にマスモン登録しよう！</div>';
+    document.getElementById('bagUseConfirmBtn').disabled = true;
+    return;
+  }
   const it = PLAYER_ITEMS[bagPicker.itemKey];
   const qty = bagUseQty || 1;
   // ステータスの実は対象ステータスのプレビュー差分(個数分)を作り、マスモン画面と同じステータスバーで表示
   const preview = it.stat ? { [it.stat]: STAT_SEED_GAIN * qty } : null;
-  const pick = document.getElementById('bagTargetList');
-  pick.innerHTML = Object.keys(data).map(k=>{
+  pick.innerHTML = keys.map(k=>{
     const mm = data[k];
     const active = k===bagPicker.targetKey;
     const statsBarHtml = buildMastermonStatsColHtml(mm, APTITUDE[k], preview);
@@ -600,7 +575,7 @@ function renderBagTargetList(){
     return `
     <button class="bag-target-btn ${active?'active':''}" data-key="${k}">
       <span class="bt-head">
-        <img src="${imgSrcFor(`monsters/${k}`)}" data-ext-idx="0" alt="${ELEMENTS[k].label}" onerror="handleMonsterImgError(this, 'monsters/${k}')">
+        ${equippedIconImgTag(k, ELEMENTS[k].label)}
         ${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}
       </span>
       ${statsBarHtml}
@@ -647,9 +622,7 @@ function useBagItem(itemKey, mmKey, qty){
   saveMastermons(data);
   playSe('train');
   pushToast(resultText);
-  document.getElementById('bagTargetWrap').classList.add('hidden');
-  resetBagQtyGauge();
-  renderBag();
+  renderBag(); // 消費後に再描画(残っていれば一覧+ゲージを再表示、0なら別アイテムへ)
   renderSelectorCards();
 }
 

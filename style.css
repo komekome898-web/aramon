@@ -424,8 +424,11 @@
   .bag-header .bag-title{ margin:0; }
   /* バッグのアイテム/スキン タブ */
   .bag-tabs{ display:flex; gap:8px; justify-content:center; }
-  /* 使う→個数選択ゲージ(音量設定のゲージを流用) */
-  .bag-qty-row{ margin:8px 0 0; }
+  /* 個数選択ゲージ(音量設定のゲージを流用)。−+ボタンを小さめにしてスライダーを長く */
+  .bag-qty-row{ margin:8px 0 0; gap:8px; }
+  .bag-qty-row .bag-qty-step{ width:32px; height:32px; font-size:18px; }
+  .bag-qty-row .audio-slider-label{ width:34px; font-size:13px; }
+  .bag-qty-row .audio-slider-val{ width:26px; font-size:14px; }
   .bag-tab{ padding:7px 22px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
   .bag-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
