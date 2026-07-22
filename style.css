@@ -1327,6 +1327,13 @@
     display:flex; gap:28px; align-items:stretch; justify-content:center;
     width:min(calc(94 * var(--vw)),820px); margin-top:18px; flex:1 1 auto; min-height:0;
   }
+  /* 管理者: タイトル+タブ(プレイ状況/音声確認) */
+  .admin-header{ display:flex; align-items:center; justify-content:center; gap:16px; flex-wrap:wrap; }
+  .admin-title{ font-size:28px; }
+  .admin-tabs{ display:flex; gap:8px; }
+  .admin-tab{ padding:7px 20px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
+  .admin-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
   /* 管理者: SE確認グリッド */
   .admin-se-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr)); gap:8px; width:100%; max-width:660px;
     margin:0 auto; max-height:calc(30 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
