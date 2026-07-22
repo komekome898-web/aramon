@@ -881,7 +881,8 @@ document.getElementById('gachaRatesBtn').addEventListener('click', ()=>{
     const items = row.items.map(it=>`<div class="gacha-rate-item"><span>${it.label}</span><span class="pct">${fmt(it.pct)}</span></div>`).join('');
     return `<div class="gacha-rate-rar"><span class="rar-${row.rarity}">${R.label}</span><span style="font-size:11px;color:var(--ink-dim)">${R.jp}</span><span class="pct">${R.rate}%</span></div>${items}`;
   }).join('');
-  document.getElementById('gachaRatesBody').innerHTML = html;
+  const note = `<div class="gacha-rate-note">10連ガチャの10連目はSR以上確定(SR ${GUARANTEED_SLOT_RATES.SR}% / SSR ${GUARANTEED_SLOT_RATES.SSR}%)</div>`;
+  document.getElementById('gachaRatesBody').innerHTML = html + note;
   document.getElementById('gachaRatesModal').classList.remove('hidden');
 });
 document.getElementById('gachaRatesCloseBtn').addEventListener('click', ()=>{
