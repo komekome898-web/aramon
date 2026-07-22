@@ -29,6 +29,7 @@ function fireMove(attacker, target, move){
   const hbMult = ELEMENTS[attacker.element].hitboxMult || 1; // キュービ「当たり判定が大きい」特性
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(move, attacker) : (move.aura||null);
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // SSR tier3は装備オーラ色に
+  const auraTint = (move.tier===3 && effColor !== move.color) ? effColor : null; // SSR tier3のエフェクト色基調(専用スタイルの色替え用)
   if(move.melee){
     if(target && target.alive){
       applyDamage(target, effDmg, attacker, { moveAura });
@@ -44,7 +45,7 @@ function fireMove(attacker, target, move){
       angle:aimAngle, dmg:effDmg, color:effColor, range:move.range, width,
       fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
       fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
-      spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura,
+      spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
     };
     if(move.aoeShape==='beams'){
       const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -112,7 +113,7 @@ function fireMove(attacker, target, move){
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
-      projStyle: move.projStyle||null, moveAura,
+      projStyle: move.projStyle||null, moveAura, auraTint,
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
     });

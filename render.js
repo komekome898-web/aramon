@@ -754,14 +754,18 @@ function drawProjectile(pr,p){
     return;
   }
   if(pr.projStyle==='holy'){
-    // 天の慈悲(アーク): 黄金の聖剣+回転する光輪と光条
+    // 天の慈悲(アーク): 黄金の聖剣+回転する光輪と光条 (SSR装備時は装備オーラ色基調に)
+    const sh = pr.auraTint ? auraShades(pr.auraTint) : null;
+    const glow = sh ? sh.bright : '#ffe9a8';
+    const blade = sh ? sh.mid : '#ffe9a8';
+    const edge = sh ? sh.outline : '#ffffff';
     const r = (pr.hitR||14)*1.3;
     const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
     const spin = matchTime*2.2;
-    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor='#ffe9a8'; }
+    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor=glow; }
     ctx.save();
     ctx.rotate(spin);
-    ctx.strokeStyle='rgba(255,233,168,0.8)'; ctx.lineWidth=2.2;
+    ctx.strokeStyle=glow; ctx.globalAlpha=0.8; ctx.lineWidth=2.2;
     ctx.beginPath(); ctx.arc(0,0,r*1.5,0,Math.PI*2); ctx.stroke();
     ctx.globalAlpha=0.75;
     for(let i=0;i<4;i++){
@@ -776,8 +780,8 @@ function drawProjectile(pr,p){
     ctx.beginPath();
     ctx.moveTo(r*1.5,0); ctx.lineTo(-r*0.7,-r*0.85); ctx.lineTo(-r*0.35,0); ctx.lineTo(-r*0.7,r*0.85);
     ctx.closePath();
-    ctx.fillStyle='#ffe9a8'; ctx.fill();
-    ctx.strokeStyle='#ffffff'; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle=blade; ctx.fill();
+    ctx.strokeStyle=edge; ctx.lineWidth=2; ctx.stroke();
     ctx.restore();
     return;
   }
@@ -1317,9 +1321,23 @@ function fillShape(pts, color, alpha){
   ctx.restore();
 }
 // 溶岩流のように波打つ帯を、焦茶(外)→赤(中)→オレンジ(芯)の3層のポリゴンで地面に沿って描画する
+// aura色(hex)から陰影3層+outline/sparkを生成(SSR tier3の色替え用)。RGB線形ミックスで彩度を問わない
+function _clip8(v){ return Math.max(0,Math.min(255,Math.round(v))); }
+function _rgbToHex(a){ return '#'+a.map(v=>_clip8(v).toString(16).padStart(2,'0')).join(''); }
+function _mixHex(hex, target, amt){ const a=hexToRgb(hex), b=hexToRgb(target); return _rgbToHex([a[0]+(b[0]-a[0])*amt, a[1]+(b[1]-a[1])*amt, a[2]+(b[2]-a[2])*amt]); }
+function auraShades(hex){
+  return {
+    outline: _mixHex(hex,'#ffffff',0.35),
+    dark:    _mixHex(hex,'#000000',0.6),
+    mid:     _mixHex(hex,'#000000',0.12),
+    bright:  _mixHex(hex,'#ffffff',0.55),
+    spark:   _mixHex(hex,'#ffffff',0.7),
+  };
+}
 function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const sh = ae.auraTint ? auraShades(ae.auraTint) : null; // SSR tier3で色替え
   const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
-  if(outline) strokeDashedShape(outline, '#ff8a3d', 0.5*fadeAlpha);
+  if(outline) strokeDashedShape(outline, sh?sh.outline:'#ff8a3d', 0.5*fadeAlpha);
   if(inTelegraph) return;
   const curReach = Math.min(ae.range, fillDist);
   if(curReach<=2) return;
@@ -1349,9 +1367,9 @@ function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const outer = buildBandPoints(0.95);
   const mid   = buildBandPoints(0.6);
   const core  = buildBandPoints(0.28);
-  if(outer) fillShape(outer, '#3a1710', 0.55*fadeAlpha);
-  if(mid)   fillShape(mid,   '#c9291a', 0.7*fadeAlpha);
-  if(core)  fillShape(core,  '#ff9a3d', 0.9*fadeAlpha);
+  if(outer) fillShape(outer, sh?sh.dark:'#3a1710', 0.55*fadeAlpha);
+  if(mid)   fillShape(mid,   sh?sh.mid:'#c9291a',  0.7*fadeAlpha);
+  if(core)  fillShape(core,  sh?sh.bright:'#ff9a3d', 0.9*fadeAlpha);
 }
 
 /* ---------- Tier3技の専用エフェクト(ヒノトリの溶岩流と同じ多層バンド方式) ---------- */
@@ -1422,7 +1440,8 @@ const AOE_BAND_STYLES = {
 
 // クリスタル/天の川/桜: うねる多層バンド+煌めき
 function drawStyledWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
-  const st = AOE_BAND_STYLES[ae.style];
+  let st = AOE_BAND_STYLES[ae.style];
+  if(ae.auraTint){ const sh=auraShades(ae.auraTint); st = { outline:sh.outline, layers:[[sh.dark,0.55],[sh.mid,0.6],[sh.bright,0.85]], spark:[st.spark[0], sh.spark] }; }
   const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
   if(outline) strokeDashedShape(outline, st.outline, 0.5*fadeAlpha);
   if(inTelegraph) return;
