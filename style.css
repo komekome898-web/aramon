@@ -444,6 +444,8 @@
   .bag-item-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
   .bag-item-name{ font-size:13px; font-weight:700; color:var(--ink); }
   .bag-item-desc{ font-size:10px; color:var(--ink-dim); }
+  /* ショップ: 現在の所持数(購入で増える) */
+  .shop-item-owned{ font-size:10px; font-weight:700; color:var(--amber); margin-top:2px; }
   /* バッグのタイトル+タブを同じ行に並べて縦スペースを節約 */
   .bag-header{ display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:10px; flex-wrap:wrap; }
   .bag-header .bag-title{ margin:0; }

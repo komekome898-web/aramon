@@ -1080,15 +1080,18 @@ document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>
 function renderShop(){
   const w = loadWallet();
   document.getElementById('shopGold').textContent = `🪙 ${w.gold}`;
+  const bag = loadBag();
   const listEl = document.getElementById('shopList');
   listEl.innerHTML = SHOP_ITEMS.map(([k, price])=>{
     const it = PLAYER_ITEMS[k];
+    const owned = bag[k] || 0;
     return `
     <div class="bag-item">
       <span class="bag-item-icon">${it.icon}</span>
       <span class="bag-item-text">
         <span class="bag-item-name">${it.name}</span>
         <span class="bag-item-desc">${playerItemDesc(k)}</span>
+        <span class="shop-item-owned">所持数 ${owned}</span>
       </span>
       <button class="bag-use-btn shop-buy-btn" data-key="${k}" data-price="${price}" ${w.gold<price?'disabled':''}>🪙${price}</button>
     </div>`;
