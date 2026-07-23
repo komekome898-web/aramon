@@ -55,7 +55,7 @@ async function beginMultiplayerMatch(){
   document.getElementById('resultScreen').classList.add('hidden');
 
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; nextId=1;
-  matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false; lastGutsWarnAt=-Infinity;
+  matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false; spectateTargetId=null; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
   monsterScreenPos.clear();
@@ -363,18 +363,30 @@ function tryNonHostPlayerFireVisual(dt){
   const effProjSpeed = effectiveProjSpeed(player, mv);
   const hbMult = ELEMENTS[player.element].hitboxMult || 1;
   const sp = moveSeName(mv, player); // tier3技の専用SE(無ければnull。ゼウス等のスキン専用SEも反映)
+  // combat.jsのfireMoveと同じ見た目情報(スタイル・オーラ色・SSR色替え)を付与し、
+  // ゲスト自身のtier3エフェクトがホストと同じ見た目で描画されるようにする
+  const moveAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : (mv.aura||null);
+  const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(mv, player) : mv.color;
+  const auraTint = (mv.tier===3 && effColor !== mv.color) ? effColor : null;
 
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
     const fillSpeed = Math.max(200, effProjSpeed||900);
-    const beamRanges = mv.aoeShape==='beams' ? Array.from({length:mv.beamCount||3}, ()=>mv.range) : undefined;
-    const life = 0.18 + (beamRanges ? Math.max(...beamRanges) : mv.range)/fillSpeed + 0.25;
+    const beamRanges = mv.aoeShape==='beams'
+      ? Array.from({length:mv.beamCount||3}, (_,b)=>{
+          const spread=(mv.beamSpreadDeg||40)*Math.PI/180, count=mv.beamCount||3;
+          const off=count>1 ? (b/(count-1)-0.5)*spread : 0;
+          return raycastObstacleDistance(player.x, player.y, aimAngle+off, mv.range);
+        })
+      : undefined;
+    const reach = beamRanges ? Math.max(...beamRanges) : raycastObstacleDistance(player.x, player.y, aimAngle, mv.range);
+    const life = 0.18 + reach/fillSpeed + 0.25;
     areaEffects.push({
       id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
-      angle:aimAngle, color:mv.color, range:mv.range, width,
+      angle:aimAngle, color:effColor, range: beamRanges ? mv.range : reach, width,
       fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
       beamRanges, fillSpeed, telegraphTime:0.18,
-      spawnAt:matchTime, life,
+      spawnAt:matchTime, life, style:mv.aoeStyle||null, moveAura, auraTint,
     });
     playSe(sp || 'fire', sp ? { dur: life } : { kind:'aoe', dur: life });
   } else if(mv.lobbed){
@@ -387,9 +399,29 @@ function tryNonHostPlayerFireVisual(dt){
       lobbed:true, startX:player.x, startY:player.y, startZ:player.z,
       landX, landY, arcHeight: mv.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
-      color:mv.color, hitR:mv.hitR*hbMult, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
+      color:effColor, hitR:mv.hitR*hbMult, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
+      projStyle:mv.projStyle||null, moveAura,
     });
     playSe(sp || 'fire', sp ? { dur: Math.max(0.05, flightTime) } : { kind:'single' });
+  } else if(mv.multiOrb){
+    // ゴッドライジング等: 赤青黄緑の光球を放射線状に。見た目専用(当たり判定はホスト)
+    const colors = mv.multiOrb;
+    const orbAuras = mv.orbAuras || [];
+    const n = colors.length;
+    const spread = (mv.orbSpreadDeg||9)*Math.PI/180;
+    for(let i=0;i<n;i++){
+      const off = n>1 ? ((i-(n-1)/2)/(n-1))*spread : 0;
+      const ang = aimAngle + off;
+      projectiles.push({
+        x:player.x, y:player.y, z:player.z,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+        color:colors[i], hitR:(mv.hitR||24)*hbMult, hitW:0,
+        traveled:0, maxRange:mv.range, delay:0, visualOnly:true,
+        projStyle:'godorb', orbColor:colors[i], moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
+        ownerId: player.id,
+      });
+    }
+    playSe(sp || 'fire', sp ? { dur: mv.range/effProjSpeed } : { kind:'single' });
   } else if(!mv.melee){
     const burstCount = mv.burst || 1;
     const burstGap = mv.burstGap || 0;
@@ -399,14 +431,16 @@ function tryNonHostPlayerFireVisual(dt){
       projectiles.push({
         x:player.x, y:player.y, z:player.z,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
-        color:mv.color, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
+        color:effColor, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
+        projStyle:mv.projStyle||null, moveAura, auraTint,
+        growWithDistance: mv.growWithDistance||false, baseHitR: mv.hitR*hbMult, burstIndex:i,
         ownerId: player.id,
       });
     }
     playSe(sp || 'fire', sp ? { dur: mv.range/effProjSpeed } : { kind: mv.burst ? 'burst' : 'single' });
   } else {
-    spawnHit(player.x + Math.cos(aimAngle)*mv.range*0.5, player.y + Math.sin(aimAngle)*mv.range*0.5, player.z, mv.color);
+    spawnHit(player.x + Math.cos(aimAngle)*mv.range*0.5, player.y + Math.sin(aimAngle)*mv.range*0.5, player.z, effColor);
     playSe('fire', { kind:'single' });
   }
 
@@ -450,6 +484,7 @@ function broadcastNewShotsAsHost(){
       x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
       vx:p.vx||0, vy:p.vy||0, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
+      projStyle:p.projStyle||null, orbColor:p.orbColor||null, auraTint:p.auraTint||null, moveAura:p.moveAura||null,
       lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
     });
   }
@@ -466,7 +501,7 @@ function broadcastNewShotsAsHost(){
       kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y), angle:ae.angle, color:ae.color,
       range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
-      beamRanges:ae.beamRanges||null, style:ae.style||null,
+      beamRanges:ae.beamRanges||null, style:ae.style||null, auraTint:ae.auraTint||null, moveAura:ae.moveAura||null,
     });
   }
   lastBroadcastAeIds = curAeIds;
@@ -499,12 +534,14 @@ function spawnVisualShotFromEvent(evt){
         landX:evt.landX, landY:evt.landY, arcHeight:evt.arcHeight||120,
         flightTime:Math.max(0.05, evt.flightTime||1), flightT:0,
         color:evt.color, hitR:evt.hitR, hitW:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
+        projStyle:evt.projStyle||null, moveAura:evt.moveAura||null,
       });
     } else {
       projectiles.push({
         x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy,
         color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
         traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
+        projStyle:evt.projStyle||null, orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
         ownerId: evt.ownerId!=null ? evt.ownerId : null,
       });
     }
@@ -514,7 +551,7 @@ function spawnVisualShotFromEvent(evt){
       range:evt.range, width:evt.width, fanAngleDeg:evt.fanAngleDeg, beamCount:evt.beamCount,
       beamSpreadDeg:evt.beamSpreadDeg, spawnAt:matchTime, life:evt.life,
       fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
-      style:evt.style||null,
+      style:evt.style||null, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
     });
   }
 }

@@ -298,18 +298,61 @@ function blockedByCrystal(m,x,y){
   }
   return false;
 }
+function blockedAt(m,x,y){
+  return blockedByHeight(m,x,y) || blockedByRock(m,x,y) || blockedByVolcano(m,x,y) || blockedByCrystal(m,x,y);
+}
+// 目標地点(tx,ty)でmをブロックする円形障害物について、現在位置から見た外向きの合成法線を返す。
+// (法線を現在位置基準で取ることで、接線すべり後も円の外側に留まりやすくする)
+function obstacleNormalAt(m,tx,ty){
+  let nx=0, ny=0;
+  const add=(cx,cy,r)=>{ if(Math.hypot(tx-cx,ty-cy) < r+m.radius){ const ox=m.x-cx, oy=m.y-cy; const d=Math.hypot(ox,oy)||0.0001; nx+=ox/d; ny+=oy/d; } };
+  if(m.z<=25){ for(const rk of rocks) add(rk.x,rk.y,rk.radius); }
+  for(const v of volcanoObstacles) add(v.x,v.y,v.radius);
+  if(m.z<=25){ for(const c of crystalObstacles) add(c.x,c.y,c.radius); }
+  const nl=Math.hypot(nx,ny);
+  if(nl<0.0001) return null;
+  return {x:nx/nl, y:ny/nl};
+}
+// 円形障害物にめり込んでいたら境界の外へ少しずつ押し出す(ノックバックや押し合いでのハマり防止)
+function depenetrateObstacles(m){
+  let ox=0, oy=0, depth=0;
+  const consider=(cx,cy,r)=>{ const ddx=m.x-cx, ddy=m.y-cy; const d=Math.hypot(ddx,ddy)||0.0001; const pen=(r+m.radius)-d; if(pen>depth){ depth=pen; ox=ddx/d; oy=ddy/d; } };
+  if(m.z<=25){ for(const rk of rocks) consider(rk.x,rk.y,rk.radius); }
+  for(const v of volcanoObstacles) consider(v.x,v.y,v.radius);
+  if(m.z<=25){ for(const c of crystalObstacles) consider(c.x,c.y,c.radius); }
+  if(depth>0.5){
+    const step = Math.min(depth, Math.max(6, m.radius)); // 一気にワープさせない
+    m.x = clamp(m.x + ox*step, m.radius, WORLD.w-m.radius);
+    m.y = clamp(m.y + oy*step, m.radius, WORLD.h-m.radius);
+  }
+}
 function tryMoveAxis(m, dx, dy){
+  // まず現在位置のめり込みを解消(高さブロックには影響しない)
+  depenetrateObstacles(m);
   const fullX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
   const fullY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
-  if(!blockedByHeight(m,fullX,fullY) && !blockedByRock(m,fullX,fullY) && !blockedByVolcano(m,fullX,fullY) && !blockedByCrystal(m,fullX,fullY)){
+  if(!blockedAt(m,fullX,fullY)){
     m.x = fullX; m.y = fullY;
     m.z = getTerrainHeightAt(m.x, m.y);
     return;
   }
+  // 円形障害物への接触時は、法線方向(内向き)成分を除いた「接線すべり」でなめらかに回り込む。
+  // 斜めに突っ込むと縦横スライドの両方が塞がれて動けなくなる=スタックの主因を解消する。
+  const n = obstacleNormalAt(m, fullX, fullY);
+  if(n){
+    const dot = dx*n.x + dy*n.y;
+    const sx = dx - dot*n.x, sy = dy - dot*n.y; // 接線成分だけ残す
+    if(sx!==0 || sy!==0){
+      const sfx = clamp(m.x+sx, m.radius, WORLD.w-m.radius);
+      const sfy = clamp(m.y+sy, m.radius, WORLD.h-m.radius);
+      if(!blockedAt(m,sfx,sfy)){ m.x=sfx; m.y=sfy; m.z=getTerrainHeightAt(m.x,m.y); return; }
+    }
+  }
+  // フォールバック: 従来の縦横スライド
   const onlyX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
-  if(!blockedByHeight(m,onlyX,m.y) && !blockedByRock(m,onlyX,m.y) && !blockedByVolcano(m,onlyX,m.y) && !blockedByCrystal(m,onlyX,m.y)) m.x = onlyX;
+  if(!blockedAt(m,onlyX,m.y)) m.x = onlyX;
   const onlyY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
-  if(!blockedByHeight(m,m.x,onlyY) && !blockedByRock(m,m.x,onlyY) && !blockedByVolcano(m,m.x,onlyY) && !blockedByCrystal(m,m.x,onlyY)) m.y = onlyY;
+  if(!blockedAt(m,m.x,onlyY)) m.y = onlyY;
   m.z = getTerrainHeightAt(m.x, m.y);
 }
 const MIN_SPAWN_SEPARATION = 500;

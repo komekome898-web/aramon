@@ -609,10 +609,43 @@ function computePlayerInput(){
   player.inputMoveY = my;
   player.facingAngle = yaw;
 }
+// ===== 観戦(ホスト敗退後) =====
+let spectateTargetId = null;
+// 観戦対象候補: 生存中の人間プレイヤー(自分=敗退したホスト以外)
+function spectateCandidates(){
+  return entities.filter(e=>e.alive && e.netPlayerId && e!==player);
+}
+// 現在の観戦対象を返す(不在なら先頭へ差し替え)。観戦していなければnull
+function ensureSpectateTarget(){
+  const cands = spectateCandidates();
+  if(!cands.length){ if(spectateTargetId!=null){ spectateTargetId=null; if(typeof updateSpectateBar==='function') updateSpectateBar(); } return null; }
+  let cur = cands.find(e=>e.id===spectateTargetId);
+  if(!cur){ cur = cands[0]; spectateTargetId = cur.id; if(typeof updateSpectateBar==='function') updateSpectateBar(); }
+  return cur;
+}
+// 次の生存プレイヤーへ観戦対象を切り替える
+function spectateNext(){
+  const cands = spectateCandidates();
+  if(!cands.length){ spectateTargetId=null; if(typeof updateSpectateBar==='function') updateSpectateBar(); return; }
+  let idx = cands.findIndex(e=>e.id===spectateTargetId);
+  idx = (idx+1) % cands.length;
+  spectateTargetId = cands[idx].id;
+  if(typeof updateSpectateBar==='function') updateSpectateBar();
+  startCameraSnap(cands[idx]);
+}
+// カメラ・描画の視点主体(観戦中は生存プレイヤー、通常は自分)
+function currentViewEntity(){
+  if(netState.mode==='multi' && hostSpectating){
+    const t = ensureSpectateTarget();
+    if(t) return t;
+  }
+  return player;
+}
 function updateCamera(){
-  camPos.x = player.x - Math.cos(camState.yaw)*camState.distBehind;
-  camPos.y = player.y - Math.sin(camState.yaw)*camState.distBehind;
-  camPos.z = player.z + camState.height;
+  const v = currentViewEntity();
+  camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
+  camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
+  camPos.z = v.z + camState.height;
 }
 function updateCameraSnap(dt){
   if(!camSnap.active) return;

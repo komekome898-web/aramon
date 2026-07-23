@@ -93,7 +93,7 @@
   .ssr-banner-face{ width:100%; height:min(84px, 22 * var(--vw)); border-radius:8px; background-repeat:no-repeat;
     filter:drop-shadow(0 3px 8px rgba(255,200,60,0.5)); }
   .ssr-banner-face.face-mocchi{ background-image:url("monsters/mocchi_ssr.png"); background-size:165%; background-position:50% 20%; }
-  .ssr-banner-face.face-zeus{ background-image:url("monsters/zeus_ssr.png"); background-size:230%; background-position:50% 13%; }
+  .ssr-banner-face.face-zeus{ background-image:url("monsters/zeus_banner.png"); background-size:cover; background-position:50% 42%; }
   .ssr-banner-label{ display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:nowrap; }
   .ssr-banner-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; color:#ffe08a; white-space:nowrap;
     text-shadow:0 1px 4px rgba(0,0,0,0.7); }
@@ -977,6 +977,20 @@
     background:linear-gradient(180deg,#ffd76a,#f4c430); padding:3px 6px; border-radius:10px;
     box-shadow:0 2px 8px rgba(0,0,0,0.45); animation:autoRunBob 1.2s ease-in-out infinite; }
   @keyframes autoRunBob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
+
+  /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */
+  #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40;
+    display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:12px;
+    background:linear-gradient(180deg, rgba(20,16,8,0.92), rgba(8,6,3,0.92));
+    border:1px solid rgba(244,196,48,0.55); box-shadow:0 4px 16px -4px rgba(0,0,0,0.7);
+    font-family:'Rajdhani',sans-serif; }
+  #spectateBar .spectate-eye{ font-weight:800; font-size:12px; letter-spacing:0.5px; color:#ffd76a; white-space:nowrap; }
+  #spectateBar #spectateName{ font-weight:800; font-size:13px; color:#fff; white-space:nowrap;
+    max-width:36vw; overflow:hidden; text-overflow:ellipsis; }
+  #spectateBar #spectateNextBtn{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:0.5px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:9px;
+    padding:5px 12px; cursor:pointer; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); }
+  #spectateBar #spectateNextBtn:active{ transform:translateY(1px); }
 
   /* ===== 画面カスタマイズ(HUD配置編集)モード ===== */
   /* ヘッダーは廃止し、操作UIは画面中央に小さく固定(移動・サイズ変更不可) */
