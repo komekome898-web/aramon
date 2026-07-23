@@ -950,11 +950,23 @@
   @keyframes autoRunBob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
 
   /* ===== 画面カスタマイズ(HUD配置編集)モード ===== */
-  #hudCustomizeBar{ position:absolute; top:0; left:0; right:0; z-index:40; display:flex; align-items:center; justify-content:space-between;
-    gap:10px; padding:8px 12px; background:rgba(6,10,18,0.92); border-bottom:1px solid var(--panel-line); pointer-events:auto; }
+  /* ヘッダーは廃止し、操作UIは画面中央に小さく固定(移動・サイズ変更不可) */
+  #hudCustomizeBar{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:40;
+    display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 14px;
+    background:rgba(6,10,18,0.9); border:1px solid var(--panel-line); border-radius:12px; box-shadow:0 8px 30px -6px rgba(0,0,0,0.7);
+    pointer-events:none; max-width:min(88 * var(--vw), 420px); }
+  /* パネル自体は素通し。ボタン類だけ受け付ける(パネルの裏にあるパーツも掴めるように) */
+  #hudCustomizeBar button{ pointer-events:auto; }
   #hudCustomizeBar.hidden{ display:none; }
-  .hud-cust-hint{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; color:var(--amber); letter-spacing:0.5px; }
-  .hud-cust-btns{ display:flex; gap:8px; }
+  .hud-cust-title{ font-family:'Russo One',sans-serif; font-size:13px; color:var(--amber); letter-spacing:1px; }
+  .hud-cust-hint{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:10.5px; color:var(--ink-dim); letter-spacing:0.3px; text-align:center; }
+  .hud-cust-size{ display:flex; align-items:center; gap:8px; margin-top:2px; }
+  #hudCustSel{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink); min-width:70px; text-align:right; }
+  .hud-cust-size-lbl{ font-size:10px; color:var(--ink-dim); }
+  #hudCustSizeUp, #hudCustSizeDown{ width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:17px; font-weight:800; line-height:1;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:1px solid #e0af1e; display:flex; align-items:center; justify-content:center; }
+  #hudCustSizeUp:active, #hudCustSizeDown:active{ filter:brightness(0.92); }
+  .hud-cust-btns{ display:flex; gap:8px; margin-top:2px; }
   .hud-cust-btns button{ padding:7px 14px; border-radius:8px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
     color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
   #hudCustSaveBtn{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:#e0af1e; }
@@ -962,15 +974,15 @@
   /* 編集中: 暗幕を敷き、対象を触れる状態にして枠とラベルを出す */
   .hud-editing #hud{ pointer-events:auto; }
   .hud-editing #hud::before{ content:''; position:absolute; inset:0; background:rgba(4,8,14,0.72); z-index:0; pointer-events:none; }
-  .hud-editing #crosshair, .hud-editing #tipBox, .hud-editing #toast, .hud-editing #statsPanel .stat-row,
-  .hud-editing #killFeed{ /* 編集の邪魔になる装飾は控えめに */ }
   .hud-editing #crosshair{ display:none; }
   .hud-editing [data-hud-drag]{ pointer-events:auto !important; cursor:grab; outline:2px dashed rgba(244,196,48,0.95); outline-offset:2px;
     opacity:1 !important; z-index:6; touch-action:none; }
-  .hud-editing [data-hud-drag].hud-dragging{ cursor:grabbing; outline-color:#fff; outline-style:solid; z-index:7; }
+  .hud-editing [data-hud-drag].hud-dragging{ cursor:grabbing; outline-color:#fff; outline-style:solid; z-index:8; }
+  .hud-editing [data-hud-drag].hud-selected{ outline-color:#7fd6ff; outline-style:solid; z-index:7; }
   .hud-editing [data-hud-drag]::after{ content:attr(data-hud-label); position:absolute; left:50%; top:1px; transform:translateX(-50%);
     background:rgba(244,196,48,0.96); color:#1a1306; font-family:'Rajdhani',sans-serif; font-size:10px; font-weight:800; letter-spacing:0.3px;
     padding:1px 6px; border-radius:8px; white-space:nowrap; pointer-events:none; z-index:8; box-shadow:0 1px 4px rgba(0,0,0,0.5); }
+  .hud-editing [data-hud-drag].hud-selected::after{ background:#7fd6ff; }
   #joystickKnob{
     position:absolute; left:50%; top:50%; width:54px; height:54px; margin:-27px 0 0 -27px; border-radius:50%;
     background:radial-gradient(circle at 35% 30%, rgba(255,255,255,0.4), rgba(244,196,48,0.55));
