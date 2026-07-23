@@ -1858,6 +1858,7 @@ function showResult(isWin, placement){
   game.started=false;
   joinInProgress = false;
   if(typeof setAutoRun==='function') setAutoRun(false); // 試合終了でオートラン解除
+  if(typeof updateSpectateBar==='function'){ const sb=document.getElementById('spectateBar'); if(sb) sb.classList.add('hidden'); }
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);
   playSe(isWin ? 'fanfare' : 'sad');
@@ -2993,11 +2994,37 @@ document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()
 function onPlayerDown(){
   if(netState.mode==='multi' && netState.isHost){
     hostSpectating = true;
-    pushToast('あなたは敗退しました。試合の決着まで観戦します');
+    pushToast('あなたは敗退しました。生き残っているプレイヤーを観戦します');
+    // 生存プレイヤーへ視点を移し、観戦バーを表示する
+    if(typeof ensureSpectateTarget==='function'){
+      const t = ensureSpectateTarget();
+      if(t && typeof startCameraSnap==='function') startCameraSnap(t);
+    }
+    updateSpectateBar();
     return;
   }
   showResult(false, player.placement||entities.filter(e=>e.alive).length+1);
 }
+// 観戦バーの表示更新(ホスト敗退中のみ表示。対象名を反映)
+function updateSpectateBar(){
+  const bar = document.getElementById('spectateBar');
+  if(!bar) return;
+  const spectating = netState.mode==='multi' && hostSpectating && typeof spectateTargetId!=='undefined' && spectateTargetId!=null;
+  if(spectating){
+    const t = getEntity(spectateTargetId);
+    if(t){
+      const nameEl = document.getElementById('spectateName');
+      if(nameEl) nameEl.textContent = displayNameFor(t);
+      bar.classList.remove('hidden');
+      return;
+    }
+  }
+  bar.classList.add('hidden');
+}
+document.getElementById('spectateNextBtn').addEventListener('click', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  if(typeof spectateNext==='function') spectateNext();
+});
 function onPlayerWin(){ showResult(true, 1); }
 
 document.getElementById('replayBtn').addEventListener('click', async ()=>{
@@ -3014,6 +3041,8 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
     hostCountdownTimer && clearTimeout(hostCountdownTimer);
     hostCountdownTimer=null; hostCountdownSnapshot=null;
     netState.matchStarting=false; hostSpectating=false; matchBeginning=false;
+    if(typeof spectateTargetId!=='undefined') spectateTargetId=null;
+    updateSpectateBar();
   }
 });
 
