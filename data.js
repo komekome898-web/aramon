@@ -841,9 +841,10 @@ const SEASON_REWARDS = [
   { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:220 }, { gold:220 }, { dia:40 },      // 16-20
   { gold:250 }, { item:'seed_vitality', n:1 }, { gold:250 }, { gold:300 }, { skin:'mocchi_ssr' }, // 21-25(最終=限定SSRスキン「ラガモッチー」)
 ];
-// 1試合で得られるSP
+// 1試合で得られるSP(SEASON_SP_GLOBAL_MULTで全体倍率を調整)
+const SEASON_SP_GLOBAL_MULT = 3;
 function seasonSpForMatch(kills, damage, isWin){
-  return 10 + (kills||0)*5 + (isWin?30:0) + Math.floor((damage||0)/100);
+  return (10 + (kills||0)*5 + (isWin?30:0) + Math.floor((damage||0)/100)) * SEASON_SP_GLOBAL_MULT;
 }
 function seasonTierForSp(sp){ return Math.max(0, Math.min(SEASON_MAX_TIER, Math.floor((sp||0)/SEASON_SP_PER_TIER))); }
 function loadSeason(){
