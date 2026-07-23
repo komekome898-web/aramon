@@ -383,7 +383,7 @@ function processHitAsHost(hit){
   const source = hit.sourceNetId ? entities.find(e=>e.netPlayerId===hit.sourceNetId)
                  : (hit.sourceLocalId!=null ? entities.find(e=>e.id===hit.sourceLocalId) : null);
   if(!target || !target.alive) return;
-  applyDamage(target, hit.dmg, source||null, {authoritative:true, moveAura: hit.moveAura||null});
+  applyDamage(target, hit.dmg, source||null, {authoritative:true, moveAura: hit.moveAura||null, matchAura: hit.matchAura||null});
 }
 
 // 全エンティティ(ボット含む)を id(全クライアント共通の決定的な採番) をキーに配信する。
