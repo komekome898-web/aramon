@@ -3216,6 +3216,8 @@ let adminMatchLogsCache = null;
 let adminSelectedPeriod = 'all';
 let adminSelectedMap = null;
 let adminSelectedMonster = null;
+let adminStatSubtab = 'count';    // プレイ状況タブ内のサブタブ(count=プレイ回数 / player=プレイヤー情報)
+let adminSelectedPlayer = null;   // プレイヤー情報で詳細表示中のプレイヤー名
 
 function updateAdminPassDots(){
   const dots = document.querySelectorAll('#adminPassDots .admin-pass-dot');
@@ -3305,59 +3307,131 @@ function renderAdminSelectFilter(wrapId, btnId, menuId, options, selectedValue, 
     };
   });
 }
-function populateAdminPeriodFilter(logs){
-  const months = Array.from(new Set(logs.map(r=>adminMonthKeyOf(r.ts)))).sort().reverse();
-  const options = [{ value:'all', label:'全期間' }].concat(months.map(m=>({ value:m, label:m })));
-  if(!options.find(o=>o.value===adminSelectedPeriod)) adminSelectedPeriod = 'all';
-  renderAdminSelectFilter('adminPeriodFilterWrap','adminPeriodFilterBtn','adminPeriodFilterMenu', options, adminSelectedPeriod, (val)=>{
-    adminSelectedPeriod = val;
-    renderAdminData();
-  });
+// 横棒グラフのHTMLを組む。entries=[{label,count}], 最大値基準で幅を割合表示
+function adminBarChartHtml(entries, color){
+  if(!entries.length) return '<div class="rank-empty">記録がありません</div>';
+  const max = Math.max(1, ...entries.map(e=>e.count));
+  return entries.map(e=>{
+    const pct = Math.round(e.count/max*100);
+    return `<div class="admin-bar-row"${e.player?` data-player="${encodeURIComponent(e.player)}"`:''}>
+      <span class="admin-bar-label">${e.label}</span>
+      <span class="admin-bar-track"><span class="admin-bar-fill" style="width:${pct}%;background:${color||'#f4c430'}"></span></span>
+      <span class="admin-bar-count">${e.count}</span>
+    </div>`;
+  }).join('');
 }
+// 月フィルタ(全期間＋各月)のボタン列を作る
+function renderAdminMonthFilter(logs){
+  const months = Array.from(new Set(logs.map(r=>adminMonthKeyOf(r.ts)))).sort().reverse();
+  if(adminSelectedPeriod!=='all' && !months.includes(adminSelectedPeriod)) adminSelectedPeriod = 'all';
+  const opts = [{ v:'all', l:'全期間' }].concat(months.map(m=>({ v:m, l:m })));
+  const wrap = document.getElementById('adminMonthFilter');
+  wrap.innerHTML = opts.map(o=>`<button class="admin-month-btn${o.v===adminSelectedPeriod?' active':''}" data-period="${o.v}">${o.l}</button>`).join('');
+  wrap.querySelectorAll('.admin-month-btn').forEach(b=> b.onclick = ()=>{ adminSelectedPeriod = b.dataset.period; renderAdminData(); });
+}
+function adminFmtDate(ts){ if(!ts) return '—'; const d=new Date(ts); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; }
+function adminFmtDateTime(ts){ if(!ts) return '—'; const d=new Date(ts); return `${adminFmtDate(ts)} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+function adminMapLabel(r){ return MAPS[r.map] ? MAPS[r.map].label : (r.mapLabel || r.map || '?'); }
+function adminMonLabel(r){ return ELEMENTS[r.element] ? ELEMENTS[r.element].label : (r.elementLabel || r.element || '?'); }
+
 function renderAdminData(){
+  const totalEl = document.getElementById('adminTotalMatches');
   if(adminFetchFailed){
-    document.getElementById('adminTotalMatches').textContent = '取得に失敗しました(Firebaseの読み取り権限をご確認ください)';
-    document.getElementById('adminTotalMatches').classList.add('admin-total-line-error');
+    totalEl.textContent = '取得に失敗しました(Firebaseの読み取り権限をご確認ください)';
+    totalEl.classList.add('admin-total-line-error');
+    document.getElementById('adminMapChart').innerHTML = '';
+    document.getElementById('adminMonsterChart').innerHTML = '';
     document.getElementById('adminPlayerList').innerHTML = '<div class="rank-empty">読み込みエラーのため表示できません</div>';
-    document.getElementById('adminMapCount').textContent = '';
-    document.getElementById('adminMonsterCount').textContent = '';
     return;
   }
-  document.getElementById('adminTotalMatches').classList.remove('admin-total-line-error');
+  totalEl.classList.remove('admin-total-line-error');
   const logs = adminMatchLogsCache || [];
+  // --- プレイ回数タブ(月フィルタあり) ---
+  renderAdminMonthFilter(logs);
   const filtered = adminFilterByPeriod(logs, adminSelectedPeriod);
-
-  document.getElementById('adminTotalMatches').textContent = `合計プレイ回数　${filtered.length}回`;
-
-  const byPlayer = {};
-  filtered.forEach(r=>{
-    const nm = r.name || '名無しのモンスター';
-    byPlayer[nm] = (byPlayer[nm]||0) + 1;
-  });
-  const playerRows = Object.entries(byPlayer).sort((a,b)=> b[1]-a[1]);
-  const playerListEl = document.getElementById('adminPlayerList');
-  playerListEl.innerHTML = playerRows.length ? playerRows.map(([nm,cnt],i)=>
-    `<div class="admin-row"><span class="admin-row-rank">#${i+1}</span><span class="admin-row-name">${nm}</span><span class="admin-row-count">${cnt}回</span></div>`
-  ).join('') : '<div class="rank-empty">記録がありません</div>';
-
-  if(!adminSelectedMap || !MAPS[adminSelectedMap]) adminSelectedMap = Object.keys(MAPS)[0];
-  renderAdminSelectFilter('adminMapFilterWrap','adminMapFilterBtn','adminMapFilterMenu',
-    Object.keys(MAPS).map(k=>({ value:k, label:MAPS[k].label })), adminSelectedMap, (val)=>{
-      adminSelectedMap = val;
-      renderAdminData();
-    });
-  const mapCount = filtered.filter(r=> r.map===adminSelectedMap).length;
-  document.getElementById('adminMapCount').textContent = `${MAPS[adminSelectedMap].label}　${mapCount}回`;
-
-  if(!adminSelectedMonster || !ELEMENTS[adminSelectedMonster]) adminSelectedMonster = Object.keys(ELEMENTS)[0];
-  renderAdminSelectFilter('adminMonsterFilterWrap','adminMonsterFilterBtn','adminMonsterFilterMenu',
-    Object.keys(ELEMENTS).map(k=>({ value:k, label:ELEMENTS[k].label })), adminSelectedMonster, (val)=>{
-      adminSelectedMonster = val;
-      renderAdminData();
-    });
-  const monsterCount = filtered.filter(r=> r.element===adminSelectedMonster).length;
-  document.getElementById('adminMonsterCount').textContent = `${ELEMENTS[adminSelectedMonster].label}　${monsterCount}回`;
+  totalEl.textContent = `合計プレイ回数　${filtered.length}回`;
+  const mapEntries = Object.keys(MAPS)
+    .map(k=>({ label:MAPS[k].label, count: filtered.filter(r=>r.map===k).length }))
+    .sort((a,b)=> b.count-a.count);
+  document.getElementById('adminMapChart').innerHTML = adminBarChartHtml(mapEntries, '#5aa6ff');
+  const monEntries = Object.keys(ELEMENTS)
+    .map(k=>({ label:ELEMENTS[k].label, count: filtered.filter(r=>r.element===k).length }))
+    .sort((a,b)=> b.count-a.count);
+  document.getElementById('adminMonsterChart').innerHTML = adminBarChartHtml(monEntries, '#f4c430');
+  // --- プレイヤー情報タブ(全期間) ---
+  renderAdminPlayerTab();
 }
+// プレイヤー情報タブ: 一覧 or 詳細
+function renderAdminPlayerTab(){
+  if(adminSelectedPlayer){ renderAdminPlayerDetail(adminSelectedPlayer); return; }
+  document.getElementById('adminPlayerListWrap').classList.remove('hidden');
+  document.getElementById('adminPlayerDetail').classList.add('hidden');
+  const logs = adminMatchLogsCache || [];
+  const byPlayer = {};
+  logs.forEach(r=>{ const nm = r.name || '名無しのモンスター'; byPlayer[nm] = (byPlayer[nm]||0)+1; });
+  const rows = Object.entries(byPlayer).sort((a,b)=> b[1]-a[1])
+    .map(([nm,cnt],i)=>({ label:`#${i+1} ${nm}`, count:cnt, player:nm }));
+  const listEl = document.getElementById('adminPlayerList');
+  listEl.innerHTML = rows.length ? adminBarChartHtml(rows, '#6bff8e') : '<div class="rank-empty">記録がありません</div>';
+  listEl.querySelectorAll('.admin-bar-row[data-player]').forEach(row=>{
+    row.style.cursor = 'pointer';
+    row.onclick = ()=>{ adminSelectedPlayer = decodeURIComponent(row.dataset.player); renderAdminPlayerTab(); };
+  });
+}
+// プレイヤー詳細: そのプレイヤーの情報をできるだけ多く表示
+function renderAdminPlayerDetail(name){
+  document.getElementById('adminPlayerListWrap').classList.add('hidden');
+  const detail = document.getElementById('adminPlayerDetail');
+  detail.classList.remove('hidden');
+  const logs = (adminMatchLogsCache||[]).filter(r=> (r.name||'名無しのモンスター')===name);
+  const total = logs.length;
+  const solo = logs.filter(r=> r.mode!=='multi').length;
+  const multi = logs.filter(r=> r.mode==='multi').length;
+  const tsList = logs.map(r=> r.ts||0).filter(Boolean);
+  const first = tsList.length ? Math.min(...tsList) : 0;
+  const last  = tsList.length ? Math.max(...tsList) : 0;
+  const monMap={}; logs.forEach(r=>{ const l=adminMonLabel(r); monMap[l]=(monMap[l]||0)+1; });
+  const monEntries = Object.entries(monMap).map(([l,c])=>({label:l,count:c})).sort((a,b)=>b.count-a.count);
+  const mapMap={}; logs.forEach(r=>{ const l=adminMapLabel(r); mapMap[l]=(mapMap[l]||0)+1; });
+  const mapEntries = Object.entries(mapMap).map(([l,c])=>({label:l,count:c})).sort((a,b)=>b.count-a.count);
+  const monthMap={}; logs.forEach(r=>{ const k=adminMonthKeyOf(r.ts); monthMap[k]=(monthMap[k]||0)+1; });
+  const monthEntries = Object.entries(monthMap).sort((a,b)=> a[0]<b[0]?1:-1).map(([k,c])=>({label:k,count:c}));
+  const recent = logs.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,12);
+  const favMon = monEntries[0] ? monEntries[0].label : '—';
+  const favMap = mapEntries[0] ? mapEntries[0].label : '—';
+  detail.innerHTML = `
+    <button class="admin-back-btn" id="adminPlayerBackBtn">← 一覧へ戻る</button>
+    <div class="admin-detail-name">${name}</div>
+    <div class="admin-detail-grid">
+      <div><span class="admin-dk">合計プレイ</span><span class="admin-dv">${total}回</span></div>
+      <div><span class="admin-dk">ソロ / マルチ</span><span class="admin-dv">${solo} / ${multi}</span></div>
+      <div><span class="admin-dk">初プレイ</span><span class="admin-dv">${adminFmtDate(first)}</span></div>
+      <div><span class="admin-dk">最終プレイ</span><span class="admin-dv">${adminFmtDate(last)}</span></div>
+      <div><span class="admin-dk">最多モンスター</span><span class="admin-dv">${favMon}</span></div>
+      <div><span class="admin-dk">最多地形</span><span class="admin-dv">${favMap}</span></div>
+    </div>
+    <div class="admin-col-title" style="margin-top:14px;">月別プレイ回数</div>
+    <div class="admin-bar-chart">${adminBarChartHtml(monthEntries,'#a24bff')}</div>
+    <div class="admin-col-title" style="margin-top:14px;">モンスター別</div>
+    <div class="admin-bar-chart">${adminBarChartHtml(monEntries,'#f4c430')}</div>
+    <div class="admin-col-title" style="margin-top:14px;">地形別</div>
+    <div class="admin-bar-chart">${adminBarChartHtml(mapEntries,'#5aa6ff')}</div>
+    <div class="admin-col-title" style="margin-top:14px;">直近の試合(最大12件)</div>
+    <div class="admin-recent-list">${recent.map(r=>
+      `<div class="admin-recent-row"><span class="ar-dt">${adminFmtDateTime(r.ts)}</span><span class="ar-map">${adminMapLabel(r)}</span><span class="ar-mon">${adminMonLabel(r)}</span><span class="ar-mode">${r.mode==='multi'?'マルチ':'ソロ'}</span></div>`
+    ).join('')}</div>
+  `;
+  document.getElementById('adminPlayerBackBtn').onclick = ()=>{ adminSelectedPlayer = null; renderAdminPlayerTab(); };
+}
+// プレイ状況タブ内のサブタブ切替(プレイ回数 / プレイヤー情報)
+function adminShowStatSubtab(sub){
+  adminStatSubtab = sub;
+  document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=>t.classList.toggle('active', t.dataset.substat===sub));
+  document.getElementById('adminStatCountPane').classList.toggle('hidden', sub!=='count');
+  document.getElementById('adminStatPlayerPane').classList.toggle('hidden', sub!=='player');
+  if(sub==='player'){ adminSelectedPlayer = null; renderAdminPlayerTab(); }
+}
+document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=> t.addEventListener('click', ()=>adminShowStatSubtab(t.dataset.substat)));
 // 管理者画面: SE確認グリッド(全SEをタップで再生)
 const SE_TEST_LABELS = {
   tap:'ボタン ポン', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
@@ -3424,15 +3498,16 @@ document.querySelectorAll('.admin-tab').forEach(t=> t.addEventListener('click', 
 async function openAdminScreen(){
   document.getElementById('adminScreen').classList.remove('hidden');
   adminShowTab('stats'); // デフォルトはプレイ状況
+  adminSelectedPlayer = null;
+  adminShowStatSubtab('count'); // プレイ状況内はデフォルトで「プレイ回数」
   document.getElementById('adminTotalMatches').textContent = '読み込み中…';
+  document.getElementById('adminMapChart').innerHTML = '';
+  document.getElementById('adminMonsterChart').innerHTML = '';
   document.getElementById('adminPlayerList').innerHTML = '';
-  document.getElementById('adminMapCount').textContent = '';
-  document.getElementById('adminMonsterCount').textContent = '';
   renderAdminSeGrid();
   renderAdminBgmGrid();
   adminShowSeSubtab('se'); // 音声確認タブ内はデフォルトでSE
-  const logs = await fetchAdminMatchLogs(true);
-  populateAdminPeriodFilter(logs);
+  await fetchAdminMatchLogs(true);
   renderAdminData();
 }
 document.getElementById('closeAdminBtn').addEventListener('click', ()=>{

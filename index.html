@@ -466,30 +466,28 @@
   <!-- 動作確認用ダイヤ付与(現在は非表示。機能は残す。再表示する時は hidden を外す) -->
   <button id="adminGrantDiaBtn" class="admin-grant-dia-btn hidden">💎 ダイヤ+500(動作確認用・この端末のアカウントに付与)</button>
   <div id="adminStatsPane">
-    <div class="custom-select" id="adminPeriodFilterWrap" style="margin-top:14px;">
-      <button type="button" class="custom-select-btn" id="adminPeriodFilterBtn">全期間</button>
-      <div class="custom-select-menu hidden" id="adminPeriodFilterMenu"></div>
+    <div class="admin-subtabs" id="adminStatSubtabs">
+      <button class="admin-substat active" data-substat="count">プレイ回数</button>
+      <button class="admin-substat" data-substat="player">プレイヤー情報</button>
     </div>
-    <div id="adminTotalMatches" class="admin-total-line"></div>
-    <div id="adminColumns">
-      <div class="admin-col">
-        <div class="admin-col-title">プレイヤー別プレイ回数</div>
-        <div id="adminPlayerList" class="admin-scroll-list"></div>
+    <!-- サブタブ: プレイ回数 -->
+    <div id="adminStatCountPane" class="admin-sub-pane">
+      <div id="adminMonthFilter" class="admin-month-filter"></div>
+      <div id="adminTotalMatches" class="admin-total-line"></div>
+      <div id="adminCountScroll" class="admin-chart-scroll">
+        <div class="admin-col-title">地形別プレイ回数</div>
+        <div id="adminMapChart" class="admin-bar-chart"></div>
+        <div class="admin-col-title" style="margin-top:16px;">モンスター別プレイ回数</div>
+        <div id="adminMonsterChart" class="admin-bar-chart"></div>
       </div>
-      <div class="admin-col">
-        <div class="admin-col-title">マップ別試合回数</div>
-        <div class="custom-select" id="adminMapFilterWrap">
-          <button type="button" class="custom-select-btn" id="adminMapFilterBtn"></button>
-          <div class="custom-select-menu hidden" id="adminMapFilterMenu"></div>
-        </div>
-        <div id="adminMapCount" class="admin-count-display"></div>
-        <div class="admin-col-title" style="margin-top:18px;">モンスター別試合回数</div>
-        <div class="custom-select" id="adminMonsterFilterWrap">
-          <button type="button" class="custom-select-btn" id="adminMonsterFilterBtn"></button>
-          <div class="custom-select-menu hidden" id="adminMonsterFilterMenu"></div>
-        </div>
-        <div id="adminMonsterCount" class="admin-count-display"></div>
+    </div>
+    <!-- サブタブ: プレイヤー情報 -->
+    <div id="adminStatPlayerPane" class="admin-sub-pane hidden">
+      <div id="adminPlayerListWrap" class="admin-chart-scroll">
+        <div class="admin-col-title">プレイヤー別プレイ回数(名前タップで詳細)</div>
+        <div id="adminPlayerList" class="admin-bar-chart"></div>
       </div>
+      <div id="adminPlayerDetail" class="admin-chart-scroll hidden"></div>
     </div>
   </div>
   <div id="adminSePane" class="hidden">
