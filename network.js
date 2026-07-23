@@ -362,7 +362,7 @@ function tryNonHostPlayerFireVisual(dt){
   player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
   const effProjSpeed = effectiveProjSpeed(player, mv);
   const hbMult = ELEMENTS[player.element].hitboxMult || 1;
-  const sp = moveSeName(mv); // tier3技の専用SE(無ければnull)
+  const sp = moveSeName(mv, player); // tier3技の専用SE(無ければnull。ゼウス等のスキン専用SEも反映)
 
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
