@@ -8,6 +8,24 @@ function project(wx, wy, wz){
   const scale = clamp(FOCAL/camDepth, 0, 6);
   return { x: viewW/2 + lateral*scale, y: viewH/2 - camVert*scale, scale, depth: camDepth };
 }
+// 巨大な静止オブジェクト(火山・ピラミッド・建物)専用の投影。
+// 通常のprojectは基準点(足元中心)がカメラ近平面を少しでも越えるとnullを返すため、
+// 至近で視点を回すと本体はまだ画面内なのに丸ごと消えたり、投影位置が跳ねて見える不具合があった。
+// ・オブジェクトの手前端(半径ぶんの余裕)がまだ前方にある間は消さない
+// ・カメラに寄りすぎた時はdepthを下限でクランプし、スケール暴走・位置の跳ねを抑える
+function projectObstacle(wx, wy, wz, objRadius){
+  const tx = wx-camPos.x, ty = wy-camPos.y, tz=(wz||0)-camPos.z;
+  const depthFlat = tx*Math.cos(camState.yaw) + ty*Math.sin(camState.yaw);
+  const lateral   = -tx*Math.sin(camState.yaw) + ty*Math.cos(camState.yaw);
+  // 手前端すら背後(=完全にカメラの後ろ)なら描かない。半径ぶんは前方判定に余裕を持たせる。
+  if(depthFlat + (objRadius||0) < 1) return null;
+  let camDepth = depthFlat*Math.cos(camState.pitch) - tz*Math.sin(camState.pitch);
+  const OBSTACLE_MIN_DEPTH = 80; // これ未満はクランプ(スケールは頭打ち・位置は横移動のみで安定)
+  if(camDepth < OBSTACLE_MIN_DEPTH) camDepth = OBSTACLE_MIN_DEPTH;
+  const camVert = depthFlat*Math.sin(camState.pitch) + tz*Math.cos(camState.pitch);
+  const scale = clamp(FOCAL/camDepth, 0, 6);
+  return { x: viewW/2 + lateral*scale, y: viewH/2 - camVert*scale, scale, depth: camDepth };
+}
 
 /* =====================================================================
    RENDER - shapes
@@ -1980,7 +1998,11 @@ function render(){
   if(introState.active) drawSummonIntro();
 
   const drawables = [];
-  for(const b of buildings){ const p = project(b.cx,b.cy,b.wallH*0.5); if(p) drawables.push({kind:'building', obj:b, p}); }
+  for(const b of buildings){
+    const bRad = Math.hypot(b.hw||0, b.hd||0) + (b.rampLen||0); // 建物の外接半径(ランプ含む)
+    const p = projectObstacle(b.cx,b.cy,b.wallH*0.5, bRad);
+    if(p) drawables.push({kind:'building', obj:b, p});
+  }
   for(const r of rocks){ const p = project(r.x,r.y,0); if(p) drawables.push({kind:'rock', obj:r, p}); }
   for(const c of crystalObstacles){ const p = project(c.x,c.y,0); if(p) drawables.push({kind:'crystal', obj:c, p}); }
   const volcanoGroups = new Map();
@@ -1991,7 +2013,8 @@ function render(){
   }
   for(const group of volcanoGroups.values()){
     const main = group.find(v=>v.isMain) || group[0];
-    const p = project(main.x, main.y, 0);
+    let gRad = 0; for(const v of group){ if(v.radius>gRad) gRad = v.radius; } // 複合火山の最大半径
+    const p = projectObstacle(main.x, main.y, 0, gRad);
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
   for(const it of lootItems){ const p = project(it.x,it.y,0); if(p) drawables.push({kind:'loot', obj:it, p}); }
