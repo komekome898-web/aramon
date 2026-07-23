@@ -1300,6 +1300,17 @@ document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>
 });
 
 // ===== ショップ(ゴールドでアイテム購入) =====
+// ショップ店主「ラガゼウスモチ」の会話。購入回数(累計)に応じてセリフが変化する
+const SHOP_BUYS_KEY = 'aramon_shop_buys_v1';
+function loadShopBuys(){ return parseInt(localStorage.getItem(SHOP_BUYS_KEY)||'0',10) || 0; }
+function saveShopBuys(n){ localStorage.setItem(SHOP_BUYS_KEY, String(n)); }
+const SHOP_NPC_DEFAULT = '神界のアイテムを分けてやろう\n金はいただくがの';
+function shopNpcBuyLine(count){
+  if(count>=10) return '金じゃ金じゃうひょひょひょひょ！';
+  if(count>=5) return '欲しがりじゃのう';
+  return '上手く使うが良い';
+}
+function setShopDialogue(text){ const el=document.getElementById('shopNpcText'); if(el) el.textContent = text; }
 function renderShop(){
   const w = loadWallet();
   document.getElementById('shopGold').textContent = `🪙 ${w.gold}`;
@@ -1331,6 +1342,10 @@ function buyShopItem(itemKey, price){
   addBagItem(itemKey, 1);
   playSe('pickup');
   pushToast(`${PLAYER_ITEMS[itemKey].name} を購入した！`);
+  // 購入回数(累計)を増やし、店主のセリフを回数帯に応じて変化させる
+  const buys = loadShopBuys() + 1;
+  saveShopBuys(buys);
+  setShopDialogue(shopNpcBuyLine(buys));
   renderShop();
   updateAccountBar();
 }
@@ -1342,6 +1357,7 @@ document.getElementById('adminGrantDiaBtn').addEventListener('click', ()=>{
 });
 document.getElementById('openShopBtn').addEventListener('click', ()=>{
   renderShop();
+  setShopDialogue(SHOP_NPC_DEFAULT); // 開いた直後はデフォルトセリフ
   document.getElementById('shopOverlay').classList.remove('hidden');
 });
 document.getElementById('closeShopBtn').addEventListener('click', ()=>{
