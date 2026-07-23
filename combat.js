@@ -174,8 +174,8 @@ function applyDamage(target, dmg, source, opts){
     spawnHit(target.x, target.y, target.z, source ? ELEMENTS[source.element].color : '#ffffff');
     const ta = opts && opts.moveAura;
     const ar = (ta && typeof auraAdvantage==='function') ? auraAdvantage(ta, getMonsterAura(target)) : 'neutral';
-    if(ar==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(dmg*1.5), '#5aa6ff', true);
-    else if(ar==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(dmg*0.5), '#ff5555', true);
+    if(ar==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(dmg*1.5), '#ff5555', true);
+    else if(ar==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(dmg*0.5), '#5aa6ff', true);
     else                spawnDmgText(target.x, target.y, target.z, Math.round(dmg));
     if(netState.mode==='multi'){
       window.__aramonReportHit(netState.roomId, {
@@ -210,9 +210,9 @@ function applyDamage(target, dmg, source, opts){
     if(source && getMonsterAura(source)===techAura) finalDmg *= 1.2; // オーラ一致
   }
   target.hp -= finalDmg; target.hitFlash = 0.18;
-  // ダメージ表記: 有利技=青・不利技=赤で強調 / それ以外は通常
-  if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#5aa6ff', true);
-  else if(auraResult==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
+  // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
+  if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
+  else if(auraResult==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#5aa6ff', true);
   else                        spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
   if(source && source.id!==target.id){
     target.recentAttackers[source.id] = matchTime;

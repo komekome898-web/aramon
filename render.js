@@ -2329,8 +2329,13 @@ function updateHUD(){
   document.getElementById('moveName').textContent = mv.name;
   document.documentElement.style.setProperty('--moveColor', moveMarkColor);
   document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(player, mv)}`;
+  const tierMoves = SIGNATURE_MOVES[player.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
+    const tierMove = tierMoves[t-1];
+    const tierAura = (typeof getMoveAura==='function') ? getMoveAura(tierMove, player) : tierMove.aura;
+    const tierColor = (tierAura && typeof auraColorHex==='function') ? auraColorHex(tierAura) : moveMarkColor;
+    dot.style.setProperty('--dotColor', tierColor);
     dot.classList.toggle('unlocked', t<=player.moveTierUnlocked);
     dot.classList.toggle('selected', t===player.moveTierSelected);
   }
