@@ -3184,8 +3184,14 @@ function renderMyStats(){
     const es = (stats.byElement && stats.byElement[key]) || { bestDamage:0, bestKills:0, matches:0 };
     const mm = ownMastermons[key];
     const mmLine = mm ? `<span class="en-mastermon">★ ${mm.name} Lv.${mm.level}</span>` : '';
+    // アイコンは、そのモンスターに現在装備中のスキンがあればそれを使う(無ければデフォルト画像)
+    const equippedSkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
+    const skinUrl = (equippedSkin && typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(equippedSkin) : null;
+    const iconImg = skinUrl
+      ? `<img class="ei" src="${skinUrl}" alt="">`
+      : `<img class="ei" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">`;
     return `<div class="mystat-elem-row">
-      <img class="ei" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">
+      ${iconImg}
       <span class="en">${el.label}</span>
       ${mmLine}
       <span class="ev-line">使用回数　${es.matches||0}回</span>
