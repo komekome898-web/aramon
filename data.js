@@ -732,7 +732,7 @@ const TITLES = [
   { id:'dmg1500', name:'アッパー',         emoji:'🥊', cat:'ダメージ', type:'matchDamage', n:1500 },
   { id:'dmg2000', name:'ハンマー',         emoji:'🔨', cat:'ダメージ', type:'matchDamage', n:2000 },
   { id:'dmg2500', name:'ビリビリハンマー', emoji:'⚡', cat:'ダメージ', type:'matchDamage', n:2500 },
-  { id:'dmg3000', name:'縦ハンマー',       emoji:'🔨', cat:'ダメージ', type:'matchDamage', n:3000 },
+  { id:'dmg3000', name:'縦ハンマー',       emoji:'⛏️', cat:'ダメージ', type:'matchDamage', n:3000 },
   { id:'dmg4000', name:'ダブルハンマー',   emoji:'🛠️', cat:'ダメージ', type:'matchDamage', n:4000 },
   { id:'dmg5000', name:'メテオハンマー',   emoji:'☄️', cat:'ダメージ', type:'matchDamage', n:5000 },
   // 累計勝利
