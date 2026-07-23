@@ -86,7 +86,9 @@ function fireMove(attacker, target, move){
   }
   if(move.multiOrb){
     // ゴッドライジング(ガリ): 赤青黄緑の光球を同時に放射線状へ。隣同士が半分ずつ重なる
+    // 有利不利の判定は球体ごとの色オーラで個別に行い、オーラ一致(1.2倍)は技本来のオーラ(白)で判定する
     const colors = move.multiOrb;
+    const orbAuras = move.orbAuras || [];
     const n = colors.length;
     const spread = (move.orbSpreadDeg||9)*Math.PI/180;
     const baseAng = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
@@ -97,7 +99,8 @@ function fireMove(attacker, target, move){
         id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
         dmg:effDmg, color:colors[i], hitR:(move.hitR||24)*hbMult, splash:(move.splash||0)*hbMult,
-        traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i], moveAura,
+        traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i],
+        moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
       });
     }
     return;
@@ -173,6 +176,7 @@ function applyDamage(target, dmg, source, opts){
     // マルチプレイで人間が関わる場合、見た目だけ即時反映しつつ、確定計算はホストに委ねる
     spawnHit(target.x, target.y, target.z, source ? ELEMENTS[source.element].color : '#ffffff');
     const ta = opts && opts.moveAura;
+    const ma = (opts && opts.matchAura) || ta;
     const ar = (ta && typeof auraAdvantage==='function') ? auraAdvantage(ta, getMonsterAura(target)) : 'neutral';
     if(ar==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(dmg*1.5), '#ff5555', true);
     else if(ar==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(dmg*0.5), '#5aa6ff', true);
@@ -181,7 +185,7 @@ function applyDamage(target, dmg, source, opts){
       window.__aramonReportHit(netState.roomId, {
         targetNetId: target.netPlayerId || null, targetLocalId: target.id,
         sourceNetId: source? (source.netPlayerId||null) : null, sourceLocalId: source? source.id : null,
-        dmg, sourceElement: source? source.element : null, moveAura: ta || null, ts: Date.now(),
+        dmg, sourceElement: source? source.element : null, moveAura: ta || null, matchAura: ma || null, ts: Date.now(),
       });
     }
     return;
@@ -201,14 +205,17 @@ function applyDamage(target, dmg, source, opts){
     if(source.mastermonDmgDealtMult){ finalDmg *= source.mastermonDmgDealtMult; }
   }
   // オーラ相性: 有利技×不利モンスター=1.5倍 / 不利技×有利モンスター=0.5倍 / 技オーラ=使用者オーラ=1.2倍(一致)
+  // matchAuraは「一致」判定専用(未指定ならmoveAuraと同じ)。ゴッドライジングの光球のように
+  // 有利不利の判定だけ個別色にして、一致判定は技本来のオーラ(白)のまま保ちたいケースで分離指定する。
   let auraResult = 'neutral';
   const techAura = opts && opts.moveAura;
+  const matchAura = (opts && opts.matchAura) || techAura;
   if(techAura && typeof auraAdvantage==='function'){
     auraResult = auraAdvantage(techAura, getMonsterAura(target));
     if(auraResult==='adv') finalDmg *= 1.5;
     else if(auraResult==='dis') finalDmg *= 0.5;
-    if(source && getMonsterAura(source)===techAura) finalDmg *= 1.2; // オーラ一致
   }
+  if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= 1.2; // オーラ一致
   target.hp -= finalDmg; target.hitFlash = 0.18;
   // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
   if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
@@ -729,7 +736,7 @@ function updateProjectiles(dt){
       if(t>=1){
         for(const e of entities){
           if(!e.alive || e.id===p.ownerId) continue;
-          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura });
+          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
         }
         spawnHit(p.x,p.y,0,p.color);
         spawnDeath(p.x,p.y,0,p.color);
@@ -763,7 +770,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
             }
           }
           hit=true; break;
@@ -778,7 +785,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
             }
           }
           hit=true; break;
@@ -797,7 +804,7 @@ function updateProjectiles(dt){
           hitNow = dist(p,e) < e.radius+p.hitR;
         }
         if(hitNow){
-          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura });
+          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit){
             const owner = getEntity(p.ownerId);
@@ -811,7 +818,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
             }
           }
           spawnHit(e.x,e.y,e.z,p.color);

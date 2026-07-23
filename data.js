@@ -304,7 +304,8 @@ const SIGNATURE_MOVES = {
     { name:'ホーリーサンダー', tier:2, color:'#fff2b0', dmg:26, cooldown:1.15, gutsCost:14,
       aoeShape:'zigzag', range:1600, zigzagWidth:105, aoeStyle:'thunder', icon:'⚡️' },
     { name:'ゴッドライジング', tier:3, color:'#ffffff', dmg:34, cooldown:2.1, gutsCost:21, projSpeed:600,
-      range:1200, hitR:30, splash:0, projStyle:'godorb', multiOrb:['#ff4d4d','#4d7cff','#ffe14d','#4dff6a'], orbSpreadDeg:9, icon:'✨' },
+      range:1200, hitR:30, splash:0, projStyle:'godorb', multiOrb:['#ff4d4d','#4d7cff','#ffe14d','#4dff6a'],
+      orbAuras:['red','blue','yellow','green'], orbSpreadDeg:9, icon:'✨' },
   ],
   // ザン(zan): 命中で毒(ワームと同じ特性)。HP普通・移動速め
   zan: [

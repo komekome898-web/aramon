@@ -2522,6 +2522,7 @@ function describeMoveFeatureText(mv){
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
   if(mv.selfSpeedBuffOnHit) parts.push(`命中時 自分の移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒間)`);
+  if(mv.multiOrb) parts.push('赤青黄緑のオーラ球体を発射');
   if(!parts.length) parts.push('単体に直撃');
   return parts.join('・');
 }

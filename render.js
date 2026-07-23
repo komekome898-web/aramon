@@ -2274,7 +2274,10 @@ function updateHUD(){
     document.getElementById('trainBuffsLine').textContent = tb.join('・');
   }
   document.getElementById('hudElTag').textContent = el.label;
-  document.documentElement.style.setProperty('--accent', el.color);
+  // HUD左上バーの色はモンスター本来の色ではなくオーラ色(スキンによる変化を考慮)
+  const playerAura = (typeof getMonsterAura==='function') ? getMonsterAura(player) : null;
+  const accentColor = (playerAura && typeof auraColorHex==='function') ? auraColorHex(playerAura) : el.color;
+  document.documentElement.style.setProperty('--accent', accentColor);
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
   document.getElementById('hpFill').style.width = hpPct+'%';
   document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');
