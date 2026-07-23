@@ -1593,6 +1593,7 @@ function startGame(){
   monsterScreenPos.clear();
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
+  if(typeof setAutoRun==='function') setAutoRun(false); // 試合開始時はオートラン解除
   joyKnobEl.style.transform='translate(0,0)';
   game.activeMapKey = resolveMapKey();   // 'ランダム'選択時はここで実マップを確定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
@@ -1677,6 +1678,7 @@ function showResult(isWin, placement){
   game.over=true;
   game.started=false;
   joinInProgress = false;
+  if(typeof setAutoRun==='function') setAutoRun(false); // 試合終了でオートラン解除
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);
   playSe(isWin ? 'fanfare' : 'sad');

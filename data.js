@@ -842,7 +842,7 @@ const SEASON_REWARDS = [
   { gold:250 }, { item:'seed_vitality', n:1 }, { gold:250 }, { gold:300 }, { skin:'mocchi_ssr' }, // 21-25(最終=限定SSRスキン「ラガモッチー」)
 ];
 // 1試合で得られるSP(SEASON_SP_GLOBAL_MULTで全体倍率を調整)
-const SEASON_SP_GLOBAL_MULT = 3;
+const SEASON_SP_GLOBAL_MULT = 2;
 function seasonSpForMatch(kills, damage, isWin){
   return (10 + (kills||0)*5 + (isWin?30:0) + Math.floor((damage||0)/100)) * SEASON_SP_GLOBAL_MULT;
 }
