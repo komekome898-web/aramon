@@ -1030,12 +1030,13 @@ function gachaRollOne(guaranteedSRplus){
 function gachaRateTable(){
   const rows = [];
   const perItem = (rarity, n)=> RARITIES[rarity].rate / n;
-  rows.push({ rarity:'N', items: GACHA_N_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('N', GACHA_N_ITEMS.length) })) });
-  rows.push({ rarity:'R', items: GACHA_R_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('R', GACHA_R_ITEMS.length) })) });
-  const srIds = allColorSkinIds();
-  rows.push({ rarity:'SR', items: srIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SR', srIds.length) })) });
+  // 高いレアリティ順(SSR→SR→R→N)で表示する
   const ssrIds = allSsrSkinIds();
   rows.push({ rarity:'SSR', items: ssrIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SSR', ssrIds.length) })) });
+  const srIds = allColorSkinIds();
+  rows.push({ rarity:'SR', items: srIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SR', srIds.length) })) });
+  rows.push({ rarity:'R', items: GACHA_R_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('R', GACHA_R_ITEMS.length) })) });
+  rows.push({ rarity:'N', items: GACHA_N_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('N', GACHA_N_ITEMS.length) })) });
   return rows;
 }
 
