@@ -913,11 +913,12 @@
   #moveIcon svg{ width:22px; height:22px; }
   #moveInfo{ min-width:120px; }
   #moveName{ font-weight:700; font-size:15px; }
-  #tierDots{ display:flex; gap:4px; margin-top:5px; }
-  /* 各点はその段階の技のオーラ色(--dotColorはJSで技ごとに設定)。ロック中は薄く・選択中は発光 */
-  .tier-dot{ width:9px; height:9px; border-radius:50%; background:var(--dotColor,rgba(255,255,255,0.32)); opacity:0.35; border:1px solid rgba(255,255,255,0.25); }
+  #tierDots{ display:flex; align-items:center; gap:5px; margin-top:5px; }
+  /* 各点はその段階の技のオーラ色(--dotColorはJSで技ごとに設定)。ロック中は薄く・選択中は発光＆拡大 */
+  .tier-dot{ width:9px; height:9px; border-radius:50%; background:var(--dotColor,rgba(255,255,255,0.32)); opacity:0.35; border:1px solid rgba(255,255,255,0.25);
+    flex-shrink:0; transition:width .12s, height .12s; }
   .tier-dot.unlocked{ opacity:0.75; }
-  .tier-dot.selected{ opacity:1; border-color:var(--dotColor,var(--amber)); box-shadow:0 0 6px var(--dotColor,var(--amber)); }
+  .tier-dot.selected{ width:15px; height:15px; opacity:1; border-color:var(--dotColor,var(--amber)); box-shadow:0 0 7px var(--dotColor,var(--amber)); }
   #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:3px; }
   #gutsTrack{ margin-top:2px; }
   #gutsFill{ height:100%; background:linear-gradient(90deg,#ffb56b,#ff7a59); width:100%; transition:width .15s; }
