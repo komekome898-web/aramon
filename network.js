@@ -254,6 +254,7 @@ async function beginMultiplayerMatch(){
   }
 
   document.getElementById('startScreen').classList.add('hidden');
+  if(typeof applyHudLayout==='function') applyHudLayout(); // カスタマイズしたHUD配置を反映
   game.started=true;
   beginSummonIntro();   // 5秒の召喚演出 → 演出後に本戦開始(バトル開始SE/BGM)
 }

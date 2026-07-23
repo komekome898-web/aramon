@@ -116,6 +116,8 @@ function resize(){
   canvas.style.width = viewW+'px'; canvas.style.height = viewH+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
   recomputeFocal();
+  // HUD配置(割合保存)を新しいサイズへ再反映。ただし編集中は触らない。
+  if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', ()=>{

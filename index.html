@@ -41,7 +41,10 @@
   <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
   <div id="accountBar">
     <button id="accountLoginBtn">👤 ログイン / アカウント作成</button>
-    <button id="audioSettingsBtn">🔊 音量設定</button>
+    <div id="settingsBtnRow">
+      <button id="audioSettingsBtn">🔊 音量設定</button>
+      <button id="openHudCustomizeBtn">🎛️ 画面カスタマイズ</button>
+    </div>
     <div id="topActionRow">
       <button id="openDailyBtn" class="has-dot">🎯 デイリー<span id="dailyDot" class="notif-dot hidden"></span></button>
       <button id="openSeasonBtn" class="has-dot">🎫 シーズン<span id="seasonDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span></button>
@@ -324,6 +327,16 @@
   </div>
   <div id="turnLeftBtn">◀</div>
   <div id="turnRightBtn">▶</div>
+</div>
+
+<!-- 画面カスタマイズ(HUD配置編集)の操作バー。編集中だけ表示 -->
+<div id="hudCustomizeBar" class="hidden">
+  <span class="hud-cust-hint">🎛️ 各パーツを好きな位置へドラッグ</span>
+  <div class="hud-cust-btns">
+    <button id="hudCustResetBtn">リセット</button>
+    <button id="hudCustCancelBtn">やめる</button>
+    <button id="hudCustSaveBtn">保存</button>
+  </div>
 </div>
 
 <!-- RESULT -->
