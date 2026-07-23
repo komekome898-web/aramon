@@ -204,6 +204,8 @@ const ssrSkinImages = {
   iblees_player_ssr:  loadMonsterImage('monsters/iblees_player_ssr'),
   mocchi_ssr:         loadMonsterImage('monsters/mocchi_ssr'),
   mocchi_player_ssr:  loadMonsterImage('monsters/mocchi_player_ssr'),
+  zeus_ssr:           loadMonsterImage('monsters/zeus_ssr'),
+  zeus_player_ssr:    loadMonsterImage('monsters/zeus_player_ssr'),
 };
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
@@ -333,7 +335,7 @@ const AURA_DIS_MULT = 0.75;  // 不利技×有利モンスター
 const AURA_MATCH_MULT = 1.2; // 技オーラ=使用者オーラ(一致)
 const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
 const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white:'⚪', black:'⚫' };
-const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black' };
+const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black', zeus_ssr:'yellow' };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
@@ -1004,6 +1006,8 @@ const SSR_SKINS = {
   iblees_ssr:  { element:'ark', name:'イブリース', iconImg:'iblees_ssr', playerImg:'iblees_player_ssr' },
   // ラガモッチー: シーズンパス最終報酬限定のオリジナルSSR(ガチャ・カタログには出さない)
   mocchi_ssr:  { element:'mocchi', name:'ラガモッチー', iconImg:'mocchi_ssr', playerImg:'mocchi_player_ssr', seasonExclusive:true },
+  // ゼウス: ガリのオリジナルSSR。ガチャ・SSRカタログにも出る(seasonExclusiveは付けない)
+  zeus_ssr:    { element:'god', name:'ゼウス', iconImg:'zeus_ssr', playerImg:'zeus_player_ssr' },
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
