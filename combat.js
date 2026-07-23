@@ -178,8 +178,8 @@ function applyDamage(target, dmg, source, opts){
     const ta = opts && opts.moveAura;
     const ma = (opts && opts.matchAura) || ta;
     const ar = (ta && typeof auraAdvantage==='function') ? auraAdvantage(ta, getMonsterAura(target)) : 'neutral';
-    if(ar==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(dmg*1.5), '#ff5555', true);
-    else if(ar==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(dmg*0.5), '#5aa6ff', true);
+    if(ar==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(dmg*AURA_ADV_MULT), '#ff5555', true);
+    else if(ar==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(dmg*AURA_DIS_MULT), '#5aa6ff', true);
     else                spawnDmgText(target.x, target.y, target.z, Math.round(dmg));
     if(netState.mode==='multi'){
       window.__aramonReportHit(netState.roomId, {
@@ -204,7 +204,7 @@ function applyDamage(target, dmg, source, opts){
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
     if(source.mastermonDmgDealtMult){ finalDmg *= source.mastermonDmgDealtMult; }
   }
-  // オーラ相性: 有利技×不利モンスター=1.5倍 / 不利技×有利モンスター=0.5倍 / 技オーラ=使用者オーラ=1.2倍(一致)
+  // オーラ相性: 有利技×不利モンスター=AURA_ADV_MULT倍 / 不利技×有利モンスター=AURA_DIS_MULT倍 / 技オーラ=使用者オーラ=AURA_MATCH_MULT倍(一致)
   // matchAuraは「一致」判定専用(未指定ならmoveAuraと同じ)。ゴッドライジングの光球のように
   // 有利不利の判定だけ個別色にして、一致判定は技本来のオーラ(白)のまま保ちたいケースで分離指定する。
   let auraResult = 'neutral';
@@ -212,10 +212,10 @@ function applyDamage(target, dmg, source, opts){
   const matchAura = (opts && opts.matchAura) || techAura;
   if(techAura && typeof auraAdvantage==='function'){
     auraResult = auraAdvantage(techAura, getMonsterAura(target));
-    if(auraResult==='adv') finalDmg *= 1.5;
-    else if(auraResult==='dis') finalDmg *= 0.5;
+    if(auraResult==='adv') finalDmg *= AURA_ADV_MULT;
+    else if(auraResult==='dis') finalDmg *= AURA_DIS_MULT;
   }
-  if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= 1.2; // オーラ一致
+  if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= AURA_MATCH_MULT; // オーラ一致
   target.hp -= finalDmg; target.hitFlash = 0.18;
   // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
   if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
