@@ -1717,16 +1717,21 @@ function showResult(isWin, placement){
     }
   }
   document.getElementById('resultScreen').classList.remove('hidden');
-  // 自己ベスト更新の検出用に、記録前のベストを控えておく
+  // 自己ベスト更新の検出用に、記録前のベストを控えておく(全体＋このモンスター毎)
   const _preCum = titlesCumulativeStats();
   const _prevBestKills = _preCum.bestKills, _prevBestDamage = _preCum.bestDamage;
-  recordMatchResult(player.element, player.kills, Math.round(player.damageDealt), !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
+  const _dmg = Math.round(player.damageDealt);
+  const _preElem = elementBestAcrossModes(player.element);
+  const _elemNewTitles = elementNewTitleBadges(_preElem, player.kills, _dmg);
+  recordMatchResult(player.element, player.kills, _dmg, !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
   const _newTitles = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
   if(typeof dailyOnMatchEnd==='function') dailyOnMatchEnd({ kills: player.kills, isWin: !!isWin });
-  const _seasonSp = (typeof seasonOnMatchEnd==='function') ? seasonOnMatchEnd({ kills: player.kills, damage: Math.round(player.damageDealt), isWin: !!isWin }) : 0;
+  const _seasonSp = (typeof seasonOnMatchEnd==='function') ? seasonOnMatchEnd({ kills: player.kills, damage: _dmg, isWin: !!isWin }) : 0;
   renderResultBadges({
-    kills: player.kills, damage: Math.round(player.damageDealt),
+    kills: player.kills, damage: _dmg,
     prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles, seasonSp: _seasonSp,
+    elementLabel: (ELEMENTS[player.element] ? ELEMENTS[player.element].label : player.element),
+    prevElemBestKills: _preElem.bestKills, prevElemBestDamage: _preElem.bestDamage, elemNewTitles: _elemNewTitles,
   });
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
@@ -1739,9 +1744,21 @@ function renderResultBadges(o){
   const badges = [];
   let rainbow = false; // 自己ベスト更新 or 称号獲得(=虹色バッジ)が出たか
   if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
-  if(o.kills>0 && o.kills > o.prevBestKills){ badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`); rainbow = true; }
-  if(o.damage>0 && o.damage > o.prevBestDamage){ badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`); rainbow = true; }
+  const globalKillsBest = o.kills>0 && o.kills > o.prevBestKills;
+  const globalDamageBest = o.damage>0 && o.damage > o.prevBestDamage;
+  if(globalKillsBest){ badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`); rainbow = true; }
+  if(globalDamageBest){ badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`); rainbow = true; }
+  // モンスター毎の最高記録更新(全体ベストと重複しない場合のみ)
+  const elemLabel = o.elementLabel || 'このモンスター';
+  if(!globalKillsBest && o.kills>0 && o.kills > (o.prevElemBestKills||0)){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 キル数 ${o.kills}!</span>`); rainbow = true; }
+  if(!globalDamageBest && o.damage>0 && o.damage > (o.prevElemBestDamage||0)){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 ダメージ ${o.damage}!</span>`); rainbow = true; }
   for(const t of (o.newTitles||[])){ badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; }
+  // モンスター毎の新称号(全体の新称号に含まれないもの)
+  const globalNewIds = new Set((o.newTitles||[]).map(t=>t.id));
+  for(const t of (o.elemNewTitles||[])){
+    if(globalNewIds.has(t.id)) continue;
+    badges.push(`<span class="result-badge title">🎖️ ${elemLabel}で称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true;
+  }
   el.innerHTML = badges.join('');
   el.classList.toggle('hidden', badges.length===0);
   // 虹色バッジ(自己ベスト更新/称号獲得)が出たら、SSR獲得と同じSEを2回鳴らす
@@ -1836,6 +1853,29 @@ function computeDerivedStats(stats){
   const kd = deaths>0 ? (stats.totalKills||0)/deaths : (stats.totalKills||0);
   const avgDamage = (stats.totalMatches||0)>0 ? (stats.totalDamage||0)/stats.totalMatches : 0;
   return { deaths, kd, avgDamage };
+}
+// あるモンスター(element)のソロ+マルチ合算の最高キル/ダメージ
+function elementBestAcrossModes(elementKey){
+  const s = loadLocalStats() || defaultLocalStats();
+  let bestKills=0, bestDamage=0;
+  for(const m of ['solo','multi']){
+    const be = s[m] && s[m].byElement && s[m].byElement[elementKey];
+    if(be){ bestKills = Math.max(bestKills, be.bestKills||0); bestDamage = Math.max(bestDamage, be.bestDamage||0); }
+  }
+  return { bestKills, bestDamage };
+}
+// このモンスターが今回の試合で新たに超えたキル/ダメージ称号(各カテゴリの最高の1つ)を返す
+function elementNewTitleBadges(prevElem, kills, damage){
+  if(typeof TITLES==='undefined') return [];
+  const out = [];
+  let bestKillT=null, bestDmgT=null;
+  for(const def of TITLES){
+    if(def.type==='matchKills' && kills>0 && prevElem.bestKills < def.n && kills >= def.n){ if(!bestKillT || def.n>bestKillT.n) bestKillT = def; }
+    else if(def.type==='matchDamage' && damage>0 && prevElem.bestDamage < def.n && damage >= def.n){ if(!bestDmgT || def.n>bestDmgT.n) bestDmgT = def; }
+  }
+  if(bestKillT) out.push(bestKillT);
+  if(bestDmgT) out.push(bestDmgT);
+  return out;
 }
 
 /* =====================================================================
