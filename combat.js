@@ -5,14 +5,20 @@ const MOVE_SE_BY_STYLE = {
   tornado:'tornado', shell:'spin', holy:'bell', requiem:'whoosh',
   godorb:'godRising', crescent:'zashu',
 };
-function moveSeName(move){
+// SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
+const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3' };
+function moveSeName(move, attacker){
+  if(move.tier===3 && attacker){
+    const sid = (typeof entitySkinId==='function') ? entitySkinId(attacker) : null;
+    if(sid && SKIN_TIER3_SE[sid]) return SKIN_TIER3_SE[sid]; // ゼウス等のSSRスキン専用tier3 SE
+  }
   if(move.seStyle) return move.seStyle; // data.jsで個別指定(熱視線など)
   return MOVE_SE_BY_STYLE[move.aoeStyle || move.projStyle] || null;
 }
 function fireMove(attacker, target, move){
   // SE: 自分の技発射のみ(負荷対策)。専用SEがある技はそれを、無ければ単発/連射の共通音
   if(attacker.isPlayer && !move.aoeShape){
-    const sp = moveSeName(move);
+    const sp = moveSeName(move, attacker);
     if(sp){
       const flight = (move.range && move.projSpeed) ? move.range/effectiveProjSpeed(attacker, move) : undefined;
       playSe(sp, { dur: flight });
@@ -62,7 +68,7 @@ function fireMove(attacker, target, move){
     }
     areaEffects.push(ae);
     if(attacker.isPlayer){
-      const sp = moveSeName(move);
+      const sp = moveSeName(move, attacker);
       playSe(sp || 'fire', sp ? { dur: ae.life } : { kind:'aoe', dur: ae.life }); // 技の持続時間に合わせた長さで鳴らす
     }
     return;
