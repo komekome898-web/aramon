@@ -502,6 +502,39 @@ function updateHeaderTitle(){
 document.querySelectorAll('.bag-tab').forEach(tab=>{
   tab.addEventListener('click', ()=> bagShowTab(tab.dataset.tab));
 });
+// ===== スキンのプレビュー(正面=アイコン / 後ろ姿=試合中)を大きく表示 =====
+// バッグ・ガチャ結果・カタログ・シーズン報酬など、スキンをタップしたら共通で開く
+let skinPreviewSelect = null; // カタログからのプレビュー時のみ「選ぶ」ボタンのコールバックを保持
+function skinPreviewSrc(skinId, view){
+  const url = view==='back' ? skinnedPlayerDataUrl(skinId) : skinnedIconDataUrl(skinId);
+  if(url) return url;
+  // フォールバック: 画像がまだdataURL化されていない場合、SSRは元ファイルを直接読む
+  if(SSR_SKINS[skinId]){ const s = SSR_SKINS[skinId]; return `monsters/${view==='back'? s.playerImg : s.iconImg}.png`; }
+  return '';
+}
+function showSkinPreview(skinId, opts){
+  opts = opts || {};
+  const m = skinMeta(skinId);
+  if(!m) return;
+  document.getElementById('skinPreviewName').textContent = m.name;
+  const rarEl = document.getElementById('skinPreviewRar');
+  rarEl.textContent = m.rarity; rarEl.className = 'skin-preview-rar rar-'+m.rarity;
+  document.getElementById('skinPreviewFront').src = skinPreviewSrc(skinId, 'front');
+  document.getElementById('skinPreviewBack').src = skinPreviewSrc(skinId, 'back');
+  const selBtn = document.getElementById('skinPreviewSelectBtn');
+  if(opts.selectable){ selBtn.classList.remove('hidden'); skinPreviewSelect = opts.onSelect || null; }
+  else { selBtn.classList.add('hidden'); skinPreviewSelect = null; }
+  document.getElementById('skinPreviewOverlay').classList.remove('hidden');
+}
+document.getElementById('skinPreviewCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('skinPreviewOverlay').classList.add('hidden'); skinPreviewSelect = null;
+});
+document.getElementById('skinPreviewSelectBtn').addEventListener('click', ()=>{
+  const fn = skinPreviewSelect; skinPreviewSelect = null;
+  document.getElementById('skinPreviewOverlay').classList.add('hidden');
+  if(fn) fn();
+});
+
 // 所持スキン一覧(レアリティ順)
 function renderBagSkins(){
   const grid = document.getElementById('bagSkinGrid');
@@ -526,8 +559,11 @@ function renderBagSkins(){
     const m = skinMeta(id);
     const url = skinnedIconDataUrl(id);
     const img = url ? `<img src="${url}" alt="">` : `<span class="gacha-cell-emoji">✨</span>`;
-    return `<div class="bag-skin-cell">${img}<span class="bag-skin-rar rar-${m.rarity}">${m.rarity}</span><span class="bag-skin-name">${m.name}</span></div>`;
+    return `<div class="bag-skin-cell" data-skin="${id}">${img}<span class="bag-skin-rar rar-${m.rarity}">${m.rarity}</span><span class="bag-skin-name">${m.name}</span></div>`;
   }).join('');
+  grid.querySelectorAll('.bag-skin-cell').forEach(cell=>{
+    cell.addEventListener('click', ()=> showSkinPreview(cell.dataset.skin));
+  });
 }
 document.getElementById('closeBagBtn').addEventListener('click', ()=>{
   document.getElementById('bagOverlay').classList.add('hidden');
@@ -987,7 +1023,8 @@ function showGachaResults(results, granted){
       rarCls=r.rarity.toLowerCase(); name=m.name;
       if(r.dup) dup=`<span class="gacha-dup-dia">💎${r.diaGain}</span>`;
     }
-    return `<div class="gacha-cell ${rarCls}">
+    const skinAttr = r.kind==='skin' ? ` data-skin="${r.skinId}"` : '';
+    return `<div class="gacha-cell ${rarCls}"${skinAttr}>
       <span class="gacha-rar-tag rar-${r.rarity}">${r.rarity}</span>${dup}
       ${inner}<span class="gacha-cell-name">${name}</span></div>`;
   }).join('');
@@ -1001,6 +1038,10 @@ function showGachaResults(results, granted){
   res.classList.remove('hidden');
   playSe('jakiin');
   updateGachaWallet(); updateAccountBar(); updateGachaCounterUI();
+  // スキンのセルをタップしたら正面/後ろ姿のプレビューを開く(結果を閉じない)
+  res.querySelectorAll('.gacha-cell[data-skin]').forEach(cell=>{
+    cell.addEventListener('click', (e)=>{ e.stopPropagation(); showSkinPreview(cell.dataset.skin); });
+  });
   res.onclick = ()=>{
     res.classList.add('hidden'); res.onclick=null;
     document.getElementById('gachaButtons').style.visibility='visible';
@@ -1034,7 +1075,7 @@ function openCatalogModal(kind){
   catalogKind = kind; catalogPick = null;
   document.getElementById('gachaCatalogTitle').textContent = kind==='ssr' ? 'SSR/SRスキンを選ぶ' : 'SRスキン(色違い)を選ぶ';
   // SSRカタログではSSRスキンに加えてSRスキン(色違い)も選べるようにする
-  const ids = kind==='ssr' ? [...allSsrSkinIds(), ...allColorSkinIds()] : allColorSkinIds();
+  const ids = kind==='ssr' ? [...gachaSsrSkinIds(), ...allColorSkinIds()] : allColorSkinIds();
   const grid = document.getElementById('gachaCatalogGrid');
   grid.innerHTML = ids.map(id=>{
     const m = skinMeta(id); const owned = isSkinOwned(id);
@@ -1044,11 +1085,15 @@ function openCatalogModal(kind){
       ${img}<span class="cat-name">${m.name}</span>${owned?'<span class="cat-owned-tag">所持</span>':''}</div>`;
   }).join('');
   grid.querySelectorAll('.gacha-cat-cell').forEach(cell=>{
-    if(cell.classList.contains('owned')) return;
+    const id = cell.dataset.id;
+    const owned = cell.classList.contains('owned');
     cell.addEventListener('click', ()=>{
-      grid.querySelectorAll('.gacha-cat-cell').forEach(c=>c.classList.remove('selected'));
-      cell.classList.add('selected'); catalogPick = cell.dataset.id;
-      document.getElementById('gachaCatalogConfirmBtn').disabled = false;
+      // タップで正面/後ろ姿のプレビューを表示。未所持なら「このスキンを選ぶ」ボタンで選択できる
+      showSkinPreview(id, owned ? {} : { selectable:true, onSelect:()=>{
+        grid.querySelectorAll('.gacha-cat-cell').forEach(c=>c.classList.remove('selected'));
+        cell.classList.add('selected'); catalogPick = id;
+        document.getElementById('gachaCatalogConfirmBtn').disabled = false;
+      }});
     });
   });
   document.getElementById('gachaCatalogConfirmBtn').disabled = true;
@@ -2003,12 +2048,18 @@ function seasonClaim(t){
   const s = loadSeason();
   if(seasonTierForSp(s.sp) >= t && !s.claimed[t]){
     s.claimed[t] = true;
-    grantReward(SEASON_REWARDS[t-1]);
+    const reward = SEASON_REWARDS[t-1];
+    grantReward(reward);
     saveSeason(s);
     renderSeasonOverlay();
     updateSeasonBadge();
     updateAccountBar();
-    if(typeof pushToast==='function') pushToast(`Tier ${t} 報酬 ${rewardText(SEASON_REWARDS[t-1])} を受け取った！`);
+    // 限定SSRスキンはSSR獲得演出(虹色リビール)を出す
+    if(reward && reward.skin && typeof showSsrReveal==='function'){
+      showSsrReveal(reward.skin, ()=>{ if(typeof pushToast==='function') pushToast(`${skinMeta(reward.skin).name} を獲得！`); });
+    } else if(typeof pushToast==='function'){
+      pushToast(`Tier ${t} 報酬 ${rewardText(reward)} を受け取った！`);
+    }
   }
 }
 function renderSeasonOverlay(){
@@ -2035,14 +2086,21 @@ function renderSeasonOverlay(){
       if(claimed) action = `<span class="season-claimed">受取済</span>`;
       else if(reached) action = `<button class="season-claim-btn" data-t="${t}">受け取る</button>`;
       else action = `<span class="season-locked">🔒</span>`;
-      return `<div class="season-tier ${reached&&!claimed?'ready':''} ${milestone?'milestone':''}">
+      // 限定SSRスキン報酬は虹色背景のアイコンで表示(タップで正面/後ろ姿プレビュー)
+      const rewardMid = r.skin
+        ? `<div class="season-skin-reward" data-skin="${r.skin}"><img class="season-skin-img" src="${skinPreviewSrc(r.skin,'front')}" alt=""><span class="season-skin-name">${skinMeta(r.skin).name}</span></div>`
+        : `<div class="season-tier-reward">${rewardText(r)}</div>`;
+      return `<div class="season-tier ${reached&&!claimed?'ready':''} ${milestone?'milestone':''} ${r.skin?'season-tier-final':''}">
         <div class="season-tier-num">T${t}</div>
-        <div class="season-tier-reward">${rewardText(r)}</div>
+        ${rewardMid}
         <div class="season-tier-action">${action}</div>
       </div>`;
     }).join('');
     track.querySelectorAll('.season-claim-btn').forEach(btn=>{
       btn.addEventListener('click', ()=> seasonClaim(parseInt(btn.dataset.t,10)));
+    });
+    track.querySelectorAll('.season-skin-reward[data-skin]').forEach(el=>{
+      el.addEventListener('click', ()=> showSkinPreview(el.dataset.skin));
     });
   }
 }

@@ -202,6 +202,8 @@ const ssrSkinImages = {
   tamamo_player_ssr:  loadMonsterImage('monsters/tamamo_player_ssr'),
   iblees_ssr:         loadMonsterImage('monsters/iblees_ssr'),
   iblees_player_ssr:  loadMonsterImage('monsters/iblees_player_ssr'),
+  mocchi_ssr:         loadMonsterImage('monsters/mocchi_ssr'),
+  mocchi_player_ssr:  loadMonsterImage('monsters/mocchi_player_ssr'),
 };
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
@@ -331,7 +333,7 @@ const AURA_DIS_MULT = 0.75;  // 不利技×有利モンスター
 const AURA_MATCH_MULT = 1.2; // 技オーラ=使用者オーラ(一致)
 const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
 const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white:'⚪', black:'⚫' };
-const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black' };
+const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black' };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
@@ -813,6 +815,7 @@ function rewardText(r){
   if(r.gold) parts.push(`🪙${r.gold}`);
   if(r.dia)  parts.push(`💎${r.dia}`);
   if(r.item){ const it = PLAYER_ITEMS[r.item]; parts.push(`${it?it.icon:'🎁'}×${r.n||1}`); }
+  if(r.skin){ const m = (typeof skinMeta==='function') ? skinMeta(r.skin) : null; parts.push(`✨${m?m.name:'スキン'}`); }
   return parts.join(' ');
 }
 // 報酬を実際に付与
@@ -820,6 +823,7 @@ function grantReward(r){
   if(!r) return;
   if(r.gold || r.dia) addWallet(r.gold||0, r.dia||0);
   if(r.item) addBagItem(r.item, r.n||1);
+  if(r.skin && typeof ownSkin==='function') ownSkin(r.skin);
 }
 
 /* =====================================================================
@@ -835,7 +839,7 @@ const SEASON_REWARDS = [
   { gold:120 }, { gold:150 }, { item:'seed_power', n:1 }, { gold:150 }, { dia:25 },           // 6-10
   { gold:180 }, { item:'moveTicket', n:1 }, { gold:180 }, { gold:200 }, { dia:30 },           // 11-15
   { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:220 }, { gold:220 }, { dia:40 },      // 16-20
-  { gold:250 }, { item:'seed_vitality', n:1 }, { gold:250 }, { gold:300 }, { gold:300, dia:60 }, // 21-25
+  { gold:250 }, { item:'seed_vitality', n:1 }, { gold:250 }, { gold:300 }, { skin:'mocchi_ssr' }, // 21-25(最終=限定SSRスキン「ラガモッチー」)
 ];
 // 1試合で得られるSP
 function seasonSpForMatch(kills, damage, isWin){
@@ -985,6 +989,8 @@ const SSR_SKINS = {
   phoenix_ssr: { element:'phoenix', name:'フェニックス', iconImg:'phoenix_ssr', playerImg:'phoenix_player_ssr' },
   tamamo_ssr:  { element:'fox', name:'タマモノマエ', iconImg:'tamamo_ssr', playerImg:'tamamo_player_ssr' },
   iblees_ssr:  { element:'ark', name:'イブリース', iconImg:'iblees_ssr', playerImg:'iblees_player_ssr' },
+  // ラガモッチー: シーズンパス最終報酬限定のオリジナルSSR(ガチャ・カタログには出さない)
+  mocchi_ssr:  { element:'mocchi', name:'ラガモッチー', iconImg:'mocchi_ssr', playerImg:'mocchi_player_ssr', seasonExclusive:true },
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
@@ -1002,6 +1008,8 @@ function allColorSkinIds(){
   const out=[]; for(const el of Object.keys(ELEMENTS)) for(const c of monsterSkinColors(el)) out.push(colorSkinId(el,c)); return out;
 }
 function allSsrSkinIds(){ return Object.keys(SSR_SKINS); }
+// ガチャ・カタログで入手可能なSSR(シーズン限定を除く)
+function gachaSsrSkinIds(){ return Object.keys(SSR_SKINS).filter(id=>!SSR_SKINS[id].seasonExclusive); }
 
 // ガチャのレアリティ別アイテム
 const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','seed_evasion','seed_vitality'];
@@ -1024,14 +1032,14 @@ function gachaRollOne(guaranteedSRplus){
   if(rarity==='N') return { rarity, kind:'item', key: pickRandom(GACHA_N_ITEMS) };
   if(rarity==='R') return { rarity, kind:'item', key: pickRandom(GACHA_R_ITEMS) };
   if(rarity==='SR') return { rarity, kind:'skin', skinId: pickRandom(allColorSkinIds()) };
-  return { rarity:'SSR', kind:'skin', skinId: pickRandom(allSsrSkinIds()) };
+  return { rarity:'SSR', kind:'skin', skinId: pickRandom(gachaSsrSkinIds()) };
 }
 // 提供割合表示用: レアリティ別 & アイテム別の割合(%)を算出
 function gachaRateTable(){
   const rows = [];
   const perItem = (rarity, n)=> RARITIES[rarity].rate / n;
-  // 高いレアリティ順(SSR→SR→R→N)で表示する
-  const ssrIds = allSsrSkinIds();
+  // 高いレアリティ順(SSR→SR→R→N)で表示する(シーズン限定SSRはガチャに出ないので除外)
+  const ssrIds = gachaSsrSkinIds();
   rows.push({ rarity:'SSR', items: ssrIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SSR', ssrIds.length) })) });
   const srIds = allColorSkinIds();
   rows.push({ rarity:'SR', items: srIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SR', srIds.length) })) });

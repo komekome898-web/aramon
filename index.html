@@ -44,7 +44,7 @@
     <button id="audioSettingsBtn">🔊 音量設定</button>
     <div id="topActionRow">
       <button id="openDailyBtn" class="has-dot">🎯 デイリー<span id="dailyDot" class="notif-dot hidden"></span></button>
-      <button id="openSeasonBtn" class="has-dot">🎫 シーズン<span id="seasonDot" class="notif-dot hidden"></span></button>
+      <button id="openSeasonBtn" class="has-dot">🎫 シーズン<span id="seasonDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span></button>
     </div>
     <div id="topActionRow2">
       <button id="openBagBtn">🎒 バッグ</button>
@@ -602,6 +602,28 @@
     <div class="mastermon-confirm-text" style="margin-bottom:6px;">🛒 ショップ</div>
     <div class="gacha-wallet"><span id="shopGold">🪙 0</span></div>
     <div id="shopList" class="bag-list shop-list-2col"></div>
+  </div>
+</div>
+
+<!-- スキンプレビュー(正面/後ろ姿を大きく表示。バッグ/ガチャ/カタログ/シーズン報酬から開く) -->
+<div id="skinPreviewOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box skin-preview-box">
+    <button id="skinPreviewCloseBtn" class="overlay-close-btn">✕</button>
+    <div class="skin-preview-head">
+      <span id="skinPreviewName" class="skin-preview-name">-</span>
+      <span id="skinPreviewRar" class="skin-preview-rar rar-SSR">SSR</span>
+    </div>
+    <div class="skin-preview-views">
+      <div class="skin-preview-view">
+        <img id="skinPreviewFront" class="skin-preview-img" alt="">
+        <span class="skin-preview-label">正面</span>
+      </div>
+      <div class="skin-preview-view">
+        <img id="skinPreviewBack" class="skin-preview-img" alt="">
+        <span class="skin-preview-label">後ろ姿</span>
+      </div>
+    </div>
+    <button id="skinPreviewSelectBtn" class="skin-preview-select hidden">このスキンを選ぶ</button>
   </div>
 </div>
 
