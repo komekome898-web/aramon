@@ -798,12 +798,15 @@ function updateProjectiles(dt){
       for(const e of entities){
         if(!e.alive || e.id===p.ownerId) continue;
         if(e.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+        // ③ ラグ補正弾(ゲスト発射)は、対象を「一定遅延だけ巻き戻した位置」で当たり判定する。
+        //   ダメージ自体は本物のエンティティeに与える。通常弾はp.lagDelaySeq未設定でそのまま。
+        const tp = (p.lagDelaySeq && typeof entityRewoundPos==='function' && entityRewoundPos(e.id, p.lagDelaySeq)) || e;
         let hitNow;
         if(p.hitW>p.hitR){
-          const rx=e.x-p.x, ry=e.y-p.y;
+          const rx=tp.x-p.x, ry=tp.y-p.y;
           hitNow = Math.abs(rx) < e.radius+p.hitW && Math.abs(ry) < e.radius+p.hitR;
         } else {
-          hitNow = dist(p,e) < e.radius+p.hitR;
+          hitNow = Math.hypot(tp.x-p.x, tp.y-p.y) < e.radius+p.hitR;
         }
         if(hitNow){
           applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
@@ -823,7 +826,7 @@ function updateProjectiles(dt){
               if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
             }
           }
-          spawnHit(e.x,e.y,e.z,p.color);
+          spawnHit(tp.x,tp.y,e.z,p.color);
           hit=true; break;
         }
       }

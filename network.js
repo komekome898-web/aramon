@@ -16,6 +16,29 @@ const INPUT_SEND_INTERVAL = 0.045;  // 自分の入力を送る間隔(秒) 約22
 let lastInputSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected}
 
+// ===== スナップショット補間(①)＋速度外挿(②)＋ラグ補正(③)＋差分/分割配信(④) =====
+// 遠隔エンティティは「一定の描画遅延」を挟んで直近2スナップショット間を線形補間する。
+// これにより更新間隔のムラを吸収し、ホスト/ゲストで見た目の滑らかさを揃える。
+// 時間軸はゲストローカルの受信時刻(performance.now)を使い、機体間の時計同期を不要にする。
+const INTERP_DELAY_MS = 120;   // 遠隔エンティティを一定遅延で描画(publish間隔+ジッタを吸収)
+const EXTRAP_CAP_MS = 180;     // スナップショット欠落時に速度で外挿する上限
+const AUTH_FULL_EVERY = 8;     // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
+const HOST_HISTORY_CAP = 60;   // ホストの位置履歴(ラグ補正の巻き戻し用)保持スナップショット数
+let guestSnapBuf = [];         // ゲスト: 補間用スナップショット {rt, seq, ents:{id:{x,y,z,f,vx,vy,alive}}}
+let guestCurViewSeq = 0;       // ゲスト: 今まさに描画している(=狙いを定めている)ホストseq
+let hostPosHistory = [];       // ホスト: [{seq, ents:{id:{x,y}}}] 直近のみ保持(巻き戻し用)
+let authPublishSeq = 0;        // ホスト: authStateの連番
+let lastPubPos = {};           // ホスト: 速度算出用 id->{x,y,t}
+// 最短方向で角度を補間する(±πをまたぐズレを防ぐ)
+function lerpAngleShort(a, b, t){ let d=b-a; while(d>Math.PI)d-=Math.PI*2; while(d<-Math.PI)d+=Math.PI*2; return a+d*t; }
+// ホスト: あるエンティティの「lagDelaySeqスナップショット前」の位置を返す(ラグ補正の巻き戻し)
+function entityRewoundPos(entId, lagDelaySeq){
+  if(!hostPosHistory.length) return null;
+  const back = Math.max(0, Math.min(lagDelaySeq|0, hostPosHistory.length-1));
+  const snap = hostPosHistory[hostPosHistory.length-1-back];
+  return snap ? snap.ents[entId] : null;
+}
+
 function seedFromString(str){
   let h = 2166136261;
   for(let i=0;i<str.length;i++){
@@ -43,6 +66,8 @@ async function beginMultiplayerMatch(){
   remoteInputs = {}; processedHitKeys.clear(); authPublishTimer=0;
   pendingRemoteFireEvents.length = 0; processedFireEventKeys.clear();
   processedLootEventKeys.clear();
+  // 補間/ラグ補正の状態をリセット
+  guestSnapBuf = []; guestCurViewSeq = 0; hostPosHistory = []; authPublishSeq = 0; lastPubPos = {};
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -259,24 +284,38 @@ function processRemoteFireEvents(){
     if(typeof evt.moveTier==='number') ent.moveTierSelected = evt.moveTier;
     const mv = activeMove(ent);
     if(ent.guts < effectiveGutsCost(ent, mv)) continue;
+    // ③ ラグ補正: ゲストが撃った瞬間の自分の位置(fx,fy)から発射し、
+    //   ゲストが見ていたホストseq(viewSeq)からの遅延ぶん、敵位置を巻き戻して当てる。
+    const hasLagComp = (typeof evt.fx==='number' && typeof evt.fy==='number');
+    const lagDelaySeq = (typeof evt.viewSeq==='number')
+      ? Math.max(0, Math.min(HOST_HISTORY_CAP-1, authPublishSeq - evt.viewSeq)) : 0;
+    const savedX=ent.x, savedY=ent.y;
+    if(hasLagComp){ ent.x=evt.fx; ent.y=evt.fy; }
     let targetPoint;
     if(mv.melee){
       let best=null, bestD=mv.range;
-      const fx=Math.cos(ent.facingAngle), fy=Math.sin(ent.facingAngle);
+      const dfx=Math.cos(ent.facingAngle), dfy=Math.sin(ent.facingAngle);
       for(const e2 of entities){
         if(e2===ent || !e2.alive) continue;
         if(e2.z - ent.z > UPWARD_BLOCK_THRESHOLD) continue;
-        const d = dist(ent,e2);
+        const rp = (hasLagComp && entityRewoundPos(e2.id, lagDelaySeq)) || e2; // 巻き戻し位置で判定
+        const d = Math.hypot(rp.x-ent.x, rp.y-ent.y);
         if(d>mv.range) continue;
-        const dirx=(e2.x-ent.x)/Math.max(d,0.001), diry=(e2.y-ent.y)/Math.max(d,0.001);
-        if(dirx*fx+diry*fy>0.55 && d<bestD){ bestD=d; best=e2; }
+        const dirx=(rp.x-ent.x)/Math.max(d,0.001), diry=(rp.y-ent.y)/Math.max(d,0.001);
+        if(dirx*dfx+diry*dfy>0.55 && d<bestD){ bestD=d; best=e2; }
       }
       targetPoint = best;
     } else {
       targetPoint = { x: ent.x+Math.cos(ent.facingAngle)*1000, y: ent.y+Math.sin(ent.facingAngle)*1000 };
     }
+    const projBefore = projectiles.length;
     fireMove(ent, targetPoint, mv);
     ent.fireCooldown = effectiveCooldown(ent, mv);
+    if(hasLagComp){
+      ent.x=savedX; ent.y=savedY;
+      // 生成された飛び道具に遅延量を刻む。飛翔中の当たり判定を「一定遅延の敵位置」で行う(combat.js)
+      for(let k=projBefore; k<projectiles.length; k++) projectiles[k].lagDelaySeq = lagDelaySeq;
+    }
   }
 }
 
@@ -301,6 +340,9 @@ function sendFireEventIfMultiplayer(aimAngle, mv){
     sourceNetId: netState.myPlayerId,
     facing: aimAngle,
     moveTier: player.moveTierSelected,
+    // ③ ラグ補正用: 撃った瞬間の自分の位置(予測=正確)と、その時見ていたホストseq
+    fx: Math.round(player.x), fy: Math.round(player.y),
+    viewSeq: guestCurViewSeq,
     ts: Date.now(),
   });
 }
@@ -477,28 +519,48 @@ function spawnVisualShotFromEvent(evt){
 }
 
 function buildAuthStatePayload(){
-  const payload = { zone:{
+  authPublishSeq++;
+  const seq = authPublishSeq;
+  const full = (seq % AUTH_FULL_EVERY === 0); // ④ たまに静的値も載せる「フル」配信、それ以外は位置等の軽量配信
+  const nowT = matchTime;                     // ② 速度算出の時刻基準(ホストのmatchTime秒)
+  const payload = { seq, full, zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
     tcx: Math.round(zoneState.toCenter.x), tcy: Math.round(zoneState.toCenter.y),
     tr: Math.round(zoneState.toRadius), hasNext: !!zoneState.hasNext,
   }, aliveCount: entities.filter(e=>e.alive).length, entities: [] };
+  const hist = {}; // ③ ラグ補正用の位置履歴
   for(const e of entities){
-    payload.entities.push({
+    // ② 前回配信位置との差分から速度(px/秒)を求め、ゲストの外挿に使う
+    const prev = lastPubPos[e.id];
+    let vx=0, vy=0;
+    if(prev){ const dtp = nowT - prev.t; if(dtp > 0.0001){ vx=(e.x-prev.x)/dtp; vy=(e.y-prev.y)/dtp; } }
+    lastPubPos[e.id] = { x:e.x, y:e.y, t:nowT };
+    hist[e.id] = { x: Math.round(e.x), y: Math.round(e.y) };
+    // 毎tick載せる「ホット」フィールド(位置・向き・速度・HP・ガッツ・生存・キル等)
+    const o = {
       id: e.id,
       x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.z||0),
       f: Math.round((e.facingAngle||0)*1000)/1000,
-      hp: Math.round(e.hp), maxHp: e.maxHp, guts: Math.round(e.guts), maxGuts: e.maxGuts,
+      vx: Math.round(vx*10)/10, vy: Math.round(vy*10)/10,
+      hp: Math.round(e.hp), guts: Math.round(e.guts),
       alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
       placement: e.placement||null,
-      moveTierUnlocked: e.moveTierUnlocked, moveTierSelected: e.moveTierSelected,
-      trainCooldownMult: e.trainCooldownMult, trainGutsCostReduction: e.trainGutsCostReduction,
-      trainProjSpeedMult: e.trainProjSpeedMult, trainDmgMult: e.trainDmgMult,
-      trainDmgTakenMult: e.trainDmgTakenMult, trainSpeedMult: e.trainSpeedMult,
-      stateUntil: e.stateUntil, stateCooldownUntil: e.stateCooldownUntil,
-      dashCooldown: Math.round((e.dashCooldown||0)*100)/100,
-    });
+    };
+    // ④ フル配信の時だけ載せる「コールド」フィールド(ほぼ静的・低頻度で十分)
+    if(full){
+      o.maxHp = e.maxHp; o.maxGuts = e.maxGuts;
+      o.moveTierUnlocked = e.moveTierUnlocked; o.moveTierSelected = e.moveTierSelected;
+      o.trainCooldownMult = e.trainCooldownMult; o.trainGutsCostReduction = e.trainGutsCostReduction;
+      o.trainProjSpeedMult = e.trainProjSpeedMult; o.trainDmgMult = e.trainDmgMult;
+      o.trainDmgTakenMult = e.trainDmgTakenMult; o.trainSpeedMult = e.trainSpeedMult;
+      o.stateUntil = e.stateUntil; o.stateCooldownUntil = e.stateCooldownUntil;
+      o.dashCooldown = Math.round((e.dashCooldown||0)*100)/100;
+    }
+    payload.entities.push(o);
   }
+  hostPosHistory.push({ seq, ents: hist });
+  if(hostPosHistory.length > HOST_HISTORY_CAP) hostPosHistory.shift();
   return payload;
 }
 
@@ -521,6 +583,7 @@ function applyAuthState(authState){
     }
   }
   const list = Array.isArray(authState.entities) ? authState.entities : [];
+  const snapEnts = {}; // ① このスナップショットの位置(自分以外)を補間バッファへ
   for(const a of list){
     const ent = entities.find(e=>e.id===a.id);
     if(!ent) continue;
@@ -534,11 +597,14 @@ function applyAuthState(authState){
         ent.netSelfTargetX = a.x; ent.netSelfTargetY = a.y;
       }
     } else {
-      ent.netTargetX = a.x; ent.netTargetY = a.y; ent.netTargetZ = a.z;
-      ent.facingAngle = a.f;
-      if(typeof ent.x!=='number' || typeof ent.y!=='number'){ ent.x=a.x; ent.y=a.y; }
+      // 自分以外は位置を即書きせず、補間(interpolateRemoteEntities)で滑らかに動かす。
+      // 初回だけは位置が無いので即座に配置しておく。
+      if(typeof ent.x!=='number' || typeof ent.y!=='number'){ ent.x=a.x; ent.y=a.y; ent.z=a.z; ent.facingAngle=a.f; }
     }
-    ent.hp = a.hp; ent.maxHp = a.maxHp; ent.guts = a.guts; ent.maxGuts = a.maxGuts;
+    // 位置以外の権威フィールドは受信時に即反映する(補間しない)
+    ent.hp = a.hp; ent.guts = a.guts;
+    if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
+    if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
     if(a.placement!=null) ent.placement = a.placement;
     // moveTierSelectedは「今どの技を使うか」というプレイヤー自身の選択なので、
@@ -561,6 +627,41 @@ function applyAuthState(authState){
     if(ent.alive && !a.alive){
       ent.alive = false; ent.hp = 0;
       if(ent.isPlayer && !game.over) onPlayerDown();
+    }
+    if(!ent.isPlayer){
+      snapEnts[a.id] = { x:a.x, y:a.y, z:a.z||0, f:a.f, vx:a.vx||0, vy:a.vy||0, alive:a.alive };
+    }
+  }
+  // ① 受信時刻(ローカル)付きでスナップショットをバッファに積む
+  guestSnapBuf.push({ rt: performance.now(), seq: authState.seq||0, ents: snapEnts });
+  const cutoff = performance.now() - 1500;
+  while(guestSnapBuf.length>2 && guestSnapBuf[0].rt < cutoff) guestSnapBuf.shift();
+}
+// ① 遠隔エンティティを「一定遅延の描画時刻」で直近2スナップショット間を補間(欠落時は②速度で外挿)
+function interpolateRemoteEntities(){
+  const buf = guestSnapBuf;
+  if(buf.length===0) return;
+  const renderT = performance.now() - INTERP_DELAY_MS;
+  let s0=null, s1=null;
+  for(let i=buf.length-1;i>=0;i--){
+    if(buf[i].rt <= renderT){ s0=buf[i]; s1=buf[i+1]||null; break; }
+  }
+  if(!s0){ s0=buf[0]; s1=buf[1]||null; } // 描画時刻がバッファ最古より前 → 最古で代用
+  guestCurViewSeq = s0.seq||0;            // ③ 今狙いを定めているホストseqを記録(発射イベントで送る)
+  for(const e of entities){
+    if(e===player || !e.alive) continue;
+    const a0 = s0.ents[e.id];
+    if(!a0) continue;
+    if(s1 && s1.ents[e.id]){
+      const a1 = s1.ents[e.id];
+      const span = s1.rt - s0.rt;
+      const alpha = span>0 ? clamp((renderT - s0.rt)/span, 0, 1) : 0;
+      e.x = lerp(a0.x, a1.x, alpha); e.y = lerp(a0.y, a1.y, alpha);
+      e.z = lerp(a0.z, a1.z, alpha); e.facingAngle = lerpAngleShort(a0.f, a1.f, alpha);
+    } else {
+      // 最新スナップより先(欠落/遅延) → 速度で短時間だけ外挿
+      const ahead = Math.min(EXTRAP_CAP_MS, Math.max(0, renderT - s0.rt)) / 1000;
+      e.x = a0.x + a0.vx*ahead; e.y = a0.y + a0.vy*ahead; e.z = a0.z; e.facingAngle = a0.f;
     }
   }
 }
@@ -619,13 +720,8 @@ function loop(now){
         if(e.fireCooldown>0) e.fireCooldown -= dt;
         if(e.dashCooldown>0) e.dashCooldown -= dt;
         if(e.hitFlash>0) e.hitFlash -= dt;
-        if(e!==player && typeof e.netTargetX==='number'){
-          const lerpT = Math.min(1, dt*10);
-          e.x = lerp(e.x, e.netTargetX, lerpT);
-          e.y = lerp(e.y, e.netTargetY, lerpT);
-          if(typeof e.netTargetZ==='number') e.z = lerp(e.z, e.netTargetZ, lerpT);
-        }
       }
+      interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
       tryNonHostPlayerFireVisual(dt);
       // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
       for(let i=projectiles.length-1;i>=0;i--){
