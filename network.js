@@ -38,6 +38,7 @@ async function beginMultiplayerMatch(){
   monsterScreenPos.clear();
   Object.keys(keys).forEach(k=>keys[k]=false);
   fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
+  if(typeof setAutoRun==='function') setAutoRun(false); // 試合開始時はオートラン解除
   joyKnobEl.style.transform='translate(0,0)';
   remoteInputs = {}; processedHitKeys.clear(); authPublishTimer=0;
   pendingRemoteFireEvents.length = 0; processedFireEventKeys.clear();

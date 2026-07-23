@@ -591,6 +591,8 @@ function computePlayerInput(){
   if(keys['d']||keys['arrowright']) strafe += 1;
   if(keys['a']||keys['arrowleft']) strafe -= 1;
   if(joystick.active){ fwd += -joystick.ny; strafe += joystick.nx; }
+  // オートラン中(ジョイスティック非操作時)は視点方向へ前進し続ける
+  if(game.autoRun && !joystick.active) fwd += 1;
   fwd = clamp(fwd,-1,1); strafe = clamp(strafe,-1,1);
   const yaw = camState.yaw;
   let mx = fwd*Math.cos(yaw) + strafe*Math.cos(yaw+Math.PI/2);

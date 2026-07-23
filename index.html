@@ -118,7 +118,7 @@
     <div class="howto-section">
       <div class="howto-title">操作説明</div>
       <div class="howto-controls">
-        左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可) ・ DASHまたはSpaceで回避 ・ 技のフィールドをタップで使う段階を切替 ・ 安全圏の外にいるとダメージ
+        左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可) ・ DASHまたはSpaceで回避 ・ 技のフィールドをタップで使う段階を切替 ・ 左下スティックを上に2回弾くとオートラン(視点方向へ進み続ける・スティックに触れると解除) ・ 安全圏の外にいるとダメージ
       </div>
     </div>
     <div class="howto-section">
@@ -290,7 +290,7 @@
   </div>
 
   <div id="toast"></div>
-  <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／Spaceでダッシュ</div>
+  <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／Spaceでダッシュ／スティックを上に2回弾くとオートラン</div>
   <div id="crosshair"></div>
 
   <div class="hud-panel" id="movePanel">
@@ -306,6 +306,7 @@
     </div>
   </div>
 
+  <div id="autoRunLabel" class="hidden">🏃 オートラン中</div>
   <div id="joystickBase"><div id="joystickKnob"></div></div>
   <div id="fireBtn">
     <svg class="cd-ring" viewBox="0 0 100 100">
@@ -575,7 +576,7 @@
   <div class="mastermon-confirm-box season-box">
     <button id="closeSeasonBtn" class="overlay-close-btn">✕</button>
     <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎫 シーズンパス</div>
-    <div class="season-note">試合で SP 獲得（参加30＋キル×15＋勝利90＋ダメージ100毎に3）。段階に届いたら報酬を受け取ろう。</div>
+    <div class="season-note">試合で SP 獲得（参加20＋キル×10＋勝利60＋ダメージ100毎に2）。段階に届いたら報酬を受け取ろう。</div>
     <div class="season-head">
       <div class="season-head-row"><span id="seasonTierText" class="season-tier-text">Tier 0 / 25</span><span id="seasonSpText" class="season-sp-text">0 SP</span></div>
       <div class="season-prog"><div id="seasonProgFill" class="season-prog-fill"></div></div>

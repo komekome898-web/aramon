@@ -939,6 +939,12 @@
     position:absolute; left:22px; bottom:22px; width:124px; height:124px; border-radius:50%;
     background:rgba(10,16,26,0.55); border:2px solid rgba(255,255,255,0.18); pointer-events:auto; touch-action:none;
   }
+  /* オートラン発動中にジョイスティックの上へ出すラベル */
+  #autoRunLabel{ position:absolute; left:22px; bottom:154px; width:124px; text-align:center; z-index:5; pointer-events:none;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:0.5px; color:#1a1306;
+    background:linear-gradient(180deg,#ffd76a,#f4c430); padding:3px 6px; border-radius:10px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.45); animation:autoRunBob 1.2s ease-in-out infinite; }
+  @keyframes autoRunBob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
   #joystickKnob{
     position:absolute; left:50%; top:50%; width:54px; height:54px; margin:-27px 0 0 -27px; border-radius:50%;
     background:radial-gradient(circle at 35% 30%, rgba(255,255,255,0.4), rgba(244,196,48,0.55));
@@ -1431,6 +1437,7 @@
     #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
     #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
     #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
+    #autoRunLabel{ left:16px; bottom:134px; width:112px; }
     #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }
     #turnRightBtn{ right:16px; bottom:162px; width:46px; height:46px; }
   }

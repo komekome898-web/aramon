@@ -151,6 +151,7 @@ function updateJoystickKnob(cx,cy){
 joyBaseEl.addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(!game.started || game.over) return;
+  if(game.autoRun) setAutoRun(false); // 再度ジョイスティックに触れたらオートラン解除
   joystick.active = true; joystick.pointerId = e.pointerId;
   const rect = joyBaseEl.getBoundingClientRect();
   joystick.baseX = rect.left+rect.width/2; joystick.baseY = rect.top+rect.height/2;
@@ -159,10 +160,30 @@ joyBaseEl.addEventListener('pointerdown', (e)=>{
 window.addEventListener('pointermove', (e)=>{
   if(joystick.active && e.pointerId===joystick.pointerId) updateJoystickKnob(e.clientX, e.clientY);
 });
+// オートラン: ジョイスティックを上に2回弾く(素早く上へ倒して離す×2)と発動
+const AUTORUN_FLICK_NY = -0.6;    // 離した瞬間これより上ならフリック上とみなす
+const AUTORUN_FLICK_WINDOW = 600; // 1回目→2回目までの許容ms
+let autoRunFlickTime = 0;
+function setAutoRun(on){
+  game.autoRun = !!on;
+  const label = document.getElementById('autoRunLabel');
+  if(label) label.classList.toggle('hidden', !on);
+  if(on){
+    autoRunFlickTime = 0;
+    if(typeof pushToast==='function') pushToast('🏃 オートラン発動！ジョイスティックに触れると解除');
+  }
+}
 function releaseJoystick(e){
   if(joystick.active && e.pointerId===joystick.pointerId){
+    const releasedNy = joystick.ny; // 離した瞬間の上下(上=負)
     joystick.active=false; joystick.nx=0; joystick.ny=0;
     joyKnobEl.style.transform = 'translate(0,0)';
+    // オートランOFF時のみ、上フリック2回連続で発動
+    if(!game.autoRun && game.started && !game.over && releasedNy < AUTORUN_FLICK_NY){
+      const now = performance.now();
+      if(now - autoRunFlickTime < AUTORUN_FLICK_WINDOW){ setAutoRun(true); }
+      else autoRunFlickTime = now;
+    }
   }
 }
 window.addEventListener('pointerup', releaseJoystick);
