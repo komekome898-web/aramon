@@ -588,6 +588,9 @@
   @keyframes seasonPopFlow{ from{ background-position:0 0; } to{ background-position:200% 0; } }
   @keyframes seasonPopBob{ 0%,100%{ transform:rotate(-4deg) translateY(0); } 50%{ transform:rotate(-4deg) translateY(-2px); } }
   /* スキンプレビュー(正面/後ろ姿) */
+  /* ガチャ全画面(z-index:620)から開くため、基底.mastermon-confirm-overlay(600)より上に置く。
+     低いとガチャ画面の裏に隠れ「カタログをタップしても何も反応しない」ように見える不具合になる */
+  #skinPreviewOverlay{ z-index:700; }
   .mastermon-confirm-box.skin-preview-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
     max-height:calc(94 * var(--vh)); overflow-y:auto; }
   .skin-preview-head{ display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px; }
