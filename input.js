@@ -84,7 +84,7 @@ function requestOrientationLockSafe(){
 
 const keys = {};
 let fireBtnHeld = false;
-let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46 };
+let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46, peakUpNy:0 };
 let lookDrag = { active:false, pointerId:null, lastX:0, lastY:0 };
 
 window.addEventListener('keydown', (e)=>{
@@ -146,13 +146,15 @@ function updateJoystickKnob(cx,cy){
   if(d > joystick.radius){ dx = dx/d*joystick.radius; dy = dy/d*joystick.radius; }
   const logical = toLogicalDelta(dx, dy);
   joystick.nx = logical.x/joystick.radius; joystick.ny = logical.y/joystick.radius;
+  // ドラッグ中に到達した「最も上」を覚えておく(離す直前に中央へ戻っても上フリックと判定できるように)
+  if(joystick.ny < joystick.peakUpNy) joystick.peakUpNy = joystick.ny;
   joyKnobEl.style.transform = `translate(${logical.x}px,${logical.y}px)`;
 }
 joyBaseEl.addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(!game.started || game.over) return;
   if(game.autoRun) setAutoRun(false); // 再度ジョイスティックに触れたらオートラン解除
-  joystick.active = true; joystick.pointerId = e.pointerId;
+  joystick.active = true; joystick.pointerId = e.pointerId; joystick.peakUpNy = 0;
   const rect = joyBaseEl.getBoundingClientRect();
   joystick.baseX = rect.left+rect.width/2; joystick.baseY = rect.top+rect.height/2;
   updateJoystickKnob(e.clientX, e.clientY);
@@ -161,8 +163,10 @@ window.addEventListener('pointermove', (e)=>{
   if(joystick.active && e.pointerId===joystick.pointerId) updateJoystickKnob(e.clientX, e.clientY);
 });
 // オートラン: ジョイスティックを上に2回弾く(素早く上へ倒して離す×2)と発動
-const AUTORUN_FLICK_NY = -0.6;    // 離した瞬間これより上ならフリック上とみなす
-const AUTORUN_FLICK_WINDOW = 600; // 1回目→2回目までの許容ms
+// 判定を広めに: 真上ちょうどでなくても、ドラッグ中に「上向き成分がしきい値を超えた」なら上フリックとみなす。
+// peakUpNy(=最も上に到達した値)基準。しきい値-0.45は真上から±約63°の広いコーンを許容する。
+const AUTORUN_FLICK_NY = -0.45;   // ドラッグ中の最上到達がこれより上なら「上フリック」とみなす(広め)
+const AUTORUN_FLICK_WINDOW = 750; // 1回目→2回目までの許容ms(少し長めで押しやすく)
 let autoRunFlickTime = 0;
 function setAutoRun(on){
   game.autoRun = !!on;
@@ -175,11 +179,11 @@ function setAutoRun(on){
 }
 function releaseJoystick(e){
   if(joystick.active && e.pointerId===joystick.pointerId){
-    const releasedNy = joystick.ny; // 離した瞬間の上下(上=負)
-    joystick.active=false; joystick.nx=0; joystick.ny=0;
+    const peakUp = joystick.peakUpNy; // ドラッグ中に到達した最も上の値(離す直前の戻りに影響されない)
+    joystick.active=false; joystick.nx=0; joystick.ny=0; joystick.peakUpNy=0;
     joyKnobEl.style.transform = 'translate(0,0)';
     // オートランOFF時のみ、上フリック2回連続で発動
-    if(!game.autoRun && game.started && !game.over && releasedNy < AUTORUN_FLICK_NY){
+    if(!game.autoRun && game.started && !game.over && peakUp < AUTORUN_FLICK_NY){
       const now = performance.now();
       if(now - autoRunFlickTime < AUTORUN_FLICK_WINDOW){ setAutoRun(true); }
       else autoRunFlickTime = now;
