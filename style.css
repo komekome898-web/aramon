@@ -351,7 +351,9 @@
   .gacha-rate-note{ margin-top:12px; padding-top:10px; border-top:1px solid var(--panel-line); font-size:11px; color:var(--ink-dim); line-height:1.5; }
 
   /* ===== SSR獲得演出(虹色の全画面リビール) ===== */
-  .ssr-reveal{ position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; overflow:hidden;
+  /* z-indexはガチャ全画面(620)・各ポップアップ(600)より上にする。
+     低いとシーズン/カタログから出した時に裏に隠れ、スキップが押せずSEが鳴り続ける不具合になる */
+  .ssr-reveal{ position:absolute; inset:0; z-index:700; display:flex; align-items:center; justify-content:center; overflow:hidden;
     background:radial-gradient(circle at 50% 45%, rgba(30,16,54,0.82), rgba(6,4,14,0.96)); }
   .ssr-reveal.play{ animation:ssrFadeIn 0.28s ease-out both; }
   .ssr-reveal-burst, .ssr-reveal-rays{ position:absolute; top:50%; left:50%; width:230vmax; height:230vmax; border-radius:50%; pointer-events:none;
