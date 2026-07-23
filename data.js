@@ -715,6 +715,18 @@ function addBagItem(key, n){
   saveBag(b);
 }
 
+// ===== バトル操作画面カスタマイズ(端末ごとにHUD配置を保存。アカウント同期はしない) =====
+const HUD_LAYOUT_KEY = 'aramon_hud_layout_v1';
+// カスタマイズ対象の要素id → 編集モードで表示するラベル。値は#hud基準の割合(fx,fy)で保存する
+const HUD_DRAGGABLE = {
+  joystickBase:'移動', fireBtn:'攻撃', dashBtn:'回避',
+  turnLeftBtn:'左回転', turnRightBtn:'右回転', movePanel:'技',
+  topLeft:'HP/ガッツ', statsPanel:'撃破/ダメ', topRight:'情報/地図',
+};
+const HUD_DRAGGABLE_IDS = Object.keys(HUD_DRAGGABLE);
+function loadHudLayout(){ try{ return JSON.parse(localStorage.getItem(HUD_LAYOUT_KEY)) || {}; }catch(e){ return {}; } }
+function saveHudLayout(o){ try{ localStorage.setItem(HUD_LAYOUT_KEY, JSON.stringify(o||{})); }catch(e){} }
+
 /* =====================================================================
    称号(タイトル): 実績で解放。バッグの「称号」タブで確認・装備できる
    type: matchKills/matchDamage=1試合の自己ベスト, wins/matches/totalKills/totalDamage=累計,

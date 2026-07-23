@@ -225,6 +225,139 @@ document.getElementById('closeAudioSettingsBtn').addEventListener('click', ()=>{
   document.getElementById('audioSettingsOverlay').classList.add('hidden');
   saveAudioSettings();
 });
+
+/* =====================================================================
+   バトル操作画面カスタマイズ(HUD配置編集)
+   - 各パーツ(ジョイスティック/各ボタン/各フィールド)を#hud基準の割合で保存し、
+     次回以降のバトルに反映する。
+   - 見た目とタップ判定のズレを防ぐため、判定は各DOM要素自身(=見た目そのもの)で
+     行われる前提で「要素そのもの」を動かす。座標は回転(強制横向き)をtoLogicalDeltaで補正。
+   ===================================================================== */
+// 要素の現在の見た目位置(transform込み)を、transform無しのleft/topに正規化する(ドラッグ開始時のズレ防止)
+function hudFlattenElement(el){
+  const st = getComputedStyle(el);
+  let tx=0, ty=0;
+  if(st.transform && st.transform!=='none'){
+    try{ const m=new DOMMatrixReadOnly(st.transform); tx=m.m41; ty=m.m42; }catch(e){}
+  }
+  const left = el.offsetLeft + tx, top = el.offsetTop + ty;
+  el.style.left = left+'px'; el.style.top = top+'px';
+  el.style.right='auto'; el.style.bottom='auto'; el.style.transform='none';
+}
+// オートラン中ラベルはジョイスティックの真上に追従させる
+function hudPositionAutoRunLabel(){
+  const label = document.getElementById('autoRunLabel');
+  const joy = document.getElementById('joystickBase');
+  if(!label || !joy) return;
+  const layout = loadHudLayout();
+  if(layout.joystickBase && typeof layout.joystickBase.fx==='number'){
+    label.style.left = joy.style.left || (joy.offsetLeft+'px');
+    label.style.width = joy.offsetWidth+'px';
+    label.style.top = (joy.offsetTop - 30)+'px';
+    label.style.bottom = 'auto';
+  } else {
+    label.style.left=''; label.style.top=''; label.style.width=''; label.style.bottom='';
+  }
+}
+// 保存済みレイアウトをHUDへ反映(未設定の要素はCSSデフォルトに戻す)
+function applyHudLayout(){
+  const hud = document.getElementById('hud');
+  if(!hud || typeof HUD_DRAGGABLE_IDS==='undefined') return;
+  const layout = loadHudLayout();
+  const hudW = hud.offsetWidth || 1, hudH = hud.offsetHeight || 1;
+  for(const id of HUD_DRAGGABLE_IDS){
+    const el = document.getElementById(id);
+    if(!el) continue;
+    const pos = layout[id];
+    if(pos && typeof pos.fx==='number' && typeof pos.fy==='number'){
+      // 画面外へ出ないようにクランプ
+      const maxX = Math.max(0, hudW - el.offsetWidth), maxY = Math.max(0, hudH - el.offsetHeight);
+      el.style.left = clamp(pos.fx*hudW, 0, maxX)+'px';
+      el.style.top  = clamp(pos.fy*hudH, 0, maxY)+'px';
+      el.style.right='auto'; el.style.bottom='auto'; el.style.transform='none';
+    } else {
+      el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform='';
+    }
+  }
+  hudPositionAutoRunLabel();
+}
+
+let hudEditDraft = null;
+let hudDrag = null;
+function enterHudCustomize(){
+  if(game.started) return; // バトル中は不可(トップ画面から入る)
+  hudEditDraft = JSON.parse(JSON.stringify(loadHudLayout()));
+  applyHudLayout();
+  document.getElementById('startScreen').classList.add('hidden');
+  document.documentElement.classList.add('hud-editing');
+  document.getElementById('hudCustomizeBar').classList.remove('hidden');
+  // 各対象を「transform無しのleft/top」に正規化し、ドラッグ可能マーク＆ラベルを付与
+  for(const id of HUD_DRAGGABLE_IDS){
+    const el = document.getElementById(id);
+    if(!el) continue;
+    hudFlattenElement(el);
+    el.dataset.hudDrag = '1';
+    el.dataset.hudLabel = HUD_DRAGGABLE[id] || '';
+  }
+}
+function exitHudCustomize(save){
+  if(save && hudEditDraft) saveHudLayout(hudEditDraft);
+  hudEditDraft = null; hudDrag = null;
+  document.documentElement.classList.remove('hud-editing');
+  document.getElementById('hudCustomizeBar').classList.add('hidden');
+  for(const id of HUD_DRAGGABLE_IDS){
+    const el = document.getElementById(id);
+    if(el){ delete el.dataset.hudDrag; delete el.dataset.hudLabel; el.classList.remove('hud-dragging'); }
+  }
+  applyHudLayout(); // 保存後(またはキャンセルで元に戻して)反映
+  document.getElementById('startScreen').classList.remove('hidden');
+}
+function resetHudCustomize(){
+  hudEditDraft = {};
+  for(const id of HUD_DRAGGABLE_IDS){
+    const el = document.getElementById(id);
+    if(el){ el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform=''; }
+  }
+  // 反映(CSSデフォルト)後、続けて編集できるよう再度フラット化
+  for(const id of HUD_DRAGGABLE_IDS){ const el=document.getElementById(id); if(el) hudFlattenElement(el); }
+  hudPositionAutoRunLabel();
+}
+// ドラッグ: captureで最初に拾い、ゲーム側のジョイスティック等のハンドラより先に処理する
+document.addEventListener('pointerdown', (e)=>{
+  if(!document.documentElement.classList.contains('hud-editing')) return;
+  const el = e.target.closest('[data-hud-drag]');
+  if(!el) return;
+  e.preventDefault(); e.stopPropagation();
+  const hud = document.getElementById('hud');
+  hudDrag = { el, pid:e.pointerId, sx:e.clientX, sy:e.clientY,
+    startLeft:el.offsetLeft, startTop:el.offsetTop,
+    hudW:hud.offsetWidth||1, hudH:hud.offsetHeight||1, w:el.offsetWidth, h:el.offsetHeight };
+  try{ el.setPointerCapture(e.pointerId); }catch(_){}
+  el.classList.add('hud-dragging');
+}, true);
+window.addEventListener('pointermove', (e)=>{
+  if(!hudDrag || e.pointerId!==hudDrag.pid) return;
+  const ld = toLogicalDelta(e.clientX-hudDrag.sx, e.clientY-hudDrag.sy);
+  const nl = clamp(hudDrag.startLeft+ld.x, 0, Math.max(0, hudDrag.hudW-hudDrag.w));
+  const nt = clamp(hudDrag.startTop +ld.y, 0, Math.max(0, hudDrag.hudH-hudDrag.h));
+  hudDrag.el.style.left=nl+'px'; hudDrag.el.style.top=nt+'px';
+  hudDrag.el.style.right='auto'; hudDrag.el.style.bottom='auto'; hudDrag.el.style.transform='none';
+  if(hudDrag.el.id==='joystickBase') hudPositionAutoRunLabel();
+});
+function hudDragEnd(e){
+  if(!hudDrag || (e && e.pointerId!==hudDrag.pid)) return;
+  const el = hudDrag.el;
+  el.classList.remove('hud-dragging');
+  if(hudEditDraft) hudEditDraft[el.id] = { fx: el.offsetLeft/hudDrag.hudW, fy: el.offsetTop/hudDrag.hudH };
+  hudDrag = null;
+}
+window.addEventListener('pointerup', hudDragEnd);
+window.addEventListener('pointercancel', hudDragEnd);
+document.getElementById('openHudCustomizeBtn').addEventListener('click', enterHudCustomize);
+document.getElementById('hudCustSaveBtn').addEventListener('click', ()=>exitHudCustomize(true));
+document.getElementById('hudCustCancelBtn').addEventListener('click', ()=>exitHudCustomize(false));
+document.getElementById('hudCustResetBtn').addEventListener('click', resetHudCustomize);
+applyHudLayout(); // 起動時に反映
 document.getElementById('bgmVolSlider').addEventListener('input', (e)=>{
   audioSettings.bgm = (+e.target.value)/100;
   document.getElementById('bgmVolVal').textContent = e.target.value;
@@ -1628,6 +1761,7 @@ function startGame(){
 
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
+  if(typeof applyHudLayout==='function') applyHudLayout(); // カスタマイズしたHUD配置を反映
   game.started=true;
   beginSummonIntro();   // 5秒の召喚演出 → 演出後に本戦開始(バトル開始SE/BGM)
 }
