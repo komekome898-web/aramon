@@ -591,18 +591,21 @@
   /* ガチャ全画面(z-index:620)から開くため、基底.mastermon-confirm-overlay(600)より上に置く。
      低いとガチャ画面の裏に隠れ「カタログをタップしても何も反応しない」ように見える不具合になる */
   #skinPreviewOverlay{ z-index:700; }
-  .mastermon-confirm-box.skin-preview-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
-    max-height:calc(94 * var(--vh)); overflow-y:auto; }
-  .skin-preview-head{ display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px; }
+  .mastermon-confirm-box.skin-preview-box{ position:relative; display:flex; flex-direction:column; align-items:center;
+    max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
+    max-height:calc(94 * var(--vh)); overflow-y:auto; padding:16px 18px; }
+  .skin-preview-head{ display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px; flex-shrink:0; }
   .skin-preview-name{ font-size:16px; font-weight:800; color:var(--ink); }
   .skin-preview-rar{ font-size:12px; font-weight:800; }
   .skin-preview-views{ display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; }
-  .skin-preview-view{ display:flex; flex-direction:column; align-items:center; gap:5px;
-    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:12px; padding:8px; }
-  .skin-preview-img{ width:100%; max-width:340px; height:auto; aspect-ratio:1/1; object-fit:contain; border-radius:10px;
+  .skin-preview-view{ display:flex; flex-direction:column; align-items:center; gap:4px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:12px; padding:6px; }
+  /* 画像は横幅340pxで頭打ちしつつ、縦の低い画面(横持ちスマホ等)では画面高さでも制限して、
+     ヘッダー＋2枚＋「選ぶ」ボタンが必ず画面内に収まるようにする(正方形維持のため幅で制限) */
+  .skin-preview-img{ width:100%; max-width:min(340px, calc(50 * var(--vh))); height:auto; aspect-ratio:1/1; object-fit:contain; border-radius:10px;
     background:radial-gradient(circle at 50% 42%, rgba(255,255,255,0.08), rgba(0,0,0,0.25)); }
   .skin-preview-label{ font-size:11px; font-weight:700; color:var(--ink-dim); }
-  .skin-preview-select{ flex-shrink:0; margin-top:12px; padding:10px 30px; border-radius:8px; cursor:pointer;
+  .skin-preview-select{ flex-shrink:0; margin-top:10px; padding:10px 30px; border-radius:8px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; color:#1a1306;
     background:linear-gradient(180deg,#ffe08a,#f4c430); border:none; }
   .skin-preview-select:active{ filter:brightness(0.92); }
