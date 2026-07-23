@@ -1300,10 +1300,9 @@ document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>
 });
 
 // ===== ショップ(ゴールドでアイテム購入) =====
-// ショップ店主「ラガゼウスモチ」の会話。購入回数(累計)に応じてセリフが変化する
-const SHOP_BUYS_KEY = 'aramon_shop_buys_v1';
-function loadShopBuys(){ return parseInt(localStorage.getItem(SHOP_BUYS_KEY)||'0',10) || 0; }
-function saveShopBuys(n){ localStorage.setItem(SHOP_BUYS_KEY, String(n)); }
+// ショップ店主「ラガゼウスモチ」の会話。購入回数に応じてセリフが変化する。
+// 購入回数はショップを開く度にリセット(今回開いてからの回数)。
+let shopBuysThisOpen = 0;
 const SHOP_NPC_DEFAULT = '神界のアイテムを分けてやろう\n金はいただくがの';
 function shopNpcBuyLine(count){
   if(count>=10) return '金じゃ金じゃうひょひょひょひょ！';
@@ -1342,10 +1341,9 @@ function buyShopItem(itemKey, price){
   addBagItem(itemKey, 1);
   playSe('pickup');
   pushToast(`${PLAYER_ITEMS[itemKey].name} を購入した！`);
-  // 購入回数(累計)を増やし、店主のセリフを回数帯に応じて変化させる
-  const buys = loadShopBuys() + 1;
-  saveShopBuys(buys);
-  setShopDialogue(shopNpcBuyLine(buys));
+  // 今回開いてからの購入回数を増やし、店主のセリフを回数帯に応じて変化させる
+  shopBuysThisOpen++;
+  setShopDialogue(shopNpcBuyLine(shopBuysThisOpen));
   renderShop();
   updateAccountBar();
 }
@@ -1356,8 +1354,9 @@ document.getElementById('adminGrantDiaBtn').addEventListener('click', ()=>{
   pushToast('💎 ダイヤを500個付与しました');
 });
 document.getElementById('openShopBtn').addEventListener('click', ()=>{
+  shopBuysThisOpen = 0;               // 開く度に購入回数をリセット
   renderShop();
-  setShopDialogue(SHOP_NPC_DEFAULT); // 開いた直後はデフォルトセリフ
+  setShopDialogue(SHOP_NPC_DEFAULT);  // 開いた直後はデフォルトセリフ
   document.getElementById('shopOverlay').classList.remove('hidden');
 });
 document.getElementById('closeShopBtn').addEventListener('click', ()=>{
