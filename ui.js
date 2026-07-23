@@ -233,16 +233,28 @@ document.getElementById('closeAudioSettingsBtn').addEventListener('click', ()=>{
    - 見た目とタップ判定のズレを防ぐため、判定は各DOM要素自身(=見た目そのもの)で
      行われる前提で「要素そのもの」を動かす。座標は回転(強制横向き)をtoLogicalDeltaで補正。
    ===================================================================== */
-// 要素の現在の見た目位置(transform込み)を、transform無しのleft/topに正規化する(ドラッグ開始時のズレ防止)
+// 現在のtransformから拡縮率(scale)を取り出す
+function hudElScale(el){
+  const st = getComputedStyle(el);
+  if(st.transform && st.transform!=='none'){ try{ return new DOMMatrixReadOnly(st.transform).m11 || 1; }catch(e){} }
+  return 1;
+}
+// 位置(left/top)と拡縮(scale)をまとめて適用。scaleは左上基準にして位置の基準点をズラさない。
+function hudApplyPosScale(el, left, top, s){
+  el.style.left = left+'px'; el.style.top = top+'px';
+  el.style.right='auto'; el.style.bottom='auto';
+  el.style.transformOrigin = 'top left';
+  el.style.transform = (s && Math.abs(s-1)>0.001) ? ('scale('+s+')') : 'none';
+}
+// 要素の現在の見た目(中央寄せtranslate等)を left/top へ畳み込み、拡縮scaleは保ったまま正規化する
+// (ドラッグ開始時のガタつき防止。scaleは左上基準へ統一)
 function hudFlattenElement(el){
   const st = getComputedStyle(el);
-  let tx=0, ty=0;
+  let a=1, tx=0, ty=0;
   if(st.transform && st.transform!=='none'){
-    try{ const m=new DOMMatrixReadOnly(st.transform); tx=m.m41; ty=m.m42; }catch(e){}
+    try{ const m=new DOMMatrixReadOnly(st.transform); a=m.m11||1; tx=m.m41; ty=m.m42; }catch(e){}
   }
-  const left = el.offsetLeft + tx, top = el.offsetTop + ty;
-  el.style.left = left+'px'; el.style.top = top+'px';
-  el.style.right='auto'; el.style.bottom='auto'; el.style.transform='none';
+  hudApplyPosScale(el, el.offsetLeft + tx, el.offsetTop + ty, a);
 }
 // オートラン中ラベルはジョイスティックの真上に追従させる
 function hudPositionAutoRunLabel(){
@@ -251,15 +263,16 @@ function hudPositionAutoRunLabel(){
   if(!label || !joy) return;
   const layout = loadHudLayout();
   if(layout.joystickBase && typeof layout.joystickBase.fx==='number'){
+    const s = layout.joystickBase.s || 1;
     label.style.left = joy.style.left || (joy.offsetLeft+'px');
-    label.style.width = joy.offsetWidth+'px';
+    label.style.width = (joy.offsetWidth*s)+'px';
     label.style.top = (joy.offsetTop - 30)+'px';
     label.style.bottom = 'auto';
   } else {
     label.style.left=''; label.style.top=''; label.style.width=''; label.style.bottom='';
   }
 }
-// 保存済みレイアウトをHUDへ反映(未設定の要素はCSSデフォルトに戻す)
+// 保存済みレイアウト(位置fx,fy＋サイズs)をHUDへ反映(未設定の要素はCSSデフォルトに戻す)
 function applyHudLayout(){
   const hud = document.getElementById('hud');
   if(!hud || typeof HUD_DRAGGABLE_IDS==='undefined') return;
@@ -270,13 +283,10 @@ function applyHudLayout(){
     if(!el) continue;
     const pos = layout[id];
     if(pos && typeof pos.fx==='number' && typeof pos.fy==='number'){
-      // 画面外へ出ないようにクランプ
       const maxX = Math.max(0, hudW - el.offsetWidth), maxY = Math.max(0, hudH - el.offsetHeight);
-      el.style.left = clamp(pos.fx*hudW, 0, maxX)+'px';
-      el.style.top  = clamp(pos.fy*hudH, 0, maxY)+'px';
-      el.style.right='auto'; el.style.bottom='auto'; el.style.transform='none';
+      hudApplyPosScale(el, clamp(pos.fx*hudW, 0, maxX), clamp(pos.fy*hudH, 0, maxY), pos.s || 1);
     } else {
-      el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform='';
+      el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform=''; el.style.transformOrigin='';
     }
   }
   hudPositionAutoRunLabel();
@@ -284,6 +294,32 @@ function applyHudLayout(){
 
 let hudEditDraft = null;
 let hudDrag = null;
+let hudSelectedId = null;
+// 編集中の選択パーツを更新(枠を強調＋操作パネルに名前表示)
+function hudSelect(id){
+  hudSelectedId = id;
+  for(const k of HUD_DRAGGABLE_IDS){ const el=document.getElementById(k); if(el) el.classList.toggle('hud-selected', k===id); }
+  const selEl = document.getElementById('hudCustSel');
+  if(selEl) selEl.textContent = id ? (HUD_DRAGGABLE[id]||'パーツ') : '(パーツを選択)';
+}
+// 選択中パーツのサイズを±調整(0.6〜2.0倍)。当たり判定もscaleで一緒に拡縮されるためズレない。
+function hudResizeSelected(delta){
+  if(!hudSelectedId) return;
+  const el = document.getElementById(hudSelectedId);
+  if(!el) return;
+  const hud = document.getElementById('hud');
+  const hudW = hud.offsetWidth||1, hudH = hud.offsetHeight||1;
+  const ns = clamp(Math.round((hudElScale(el)+delta)*100)/100, 0.6, 2.0);
+  el.style.transformOrigin='top left';
+  el.style.transform = (Math.abs(ns-1)>0.001) ? ('scale('+ns+')') : 'none';
+  if(hudEditDraft){
+    const d = hudEditDraft[hudSelectedId] || {};
+    if(typeof d.fx!=='number') d.fx = el.offsetLeft/hudW;
+    if(typeof d.fy!=='number') d.fy = el.offsetTop/hudH;
+    d.s = ns; hudEditDraft[hudSelectedId] = d;
+  }
+  if(hudSelectedId==='joystickBase') hudPositionAutoRunLabel();
+}
 function enterHudCustomize(){
   if(game.started) return; // バトル中は不可(トップ画面から入る)
   hudEditDraft = JSON.parse(JSON.stringify(loadHudLayout()));
@@ -291,7 +327,7 @@ function enterHudCustomize(){
   document.getElementById('startScreen').classList.add('hidden');
   document.documentElement.classList.add('hud-editing');
   document.getElementById('hudCustomizeBar').classList.remove('hidden');
-  // 各対象を「transform無しのleft/top」に正規化し、ドラッグ可能マーク＆ラベルを付与
+  // 各対象を left/top へ正規化(scaleは保持)し、ドラッグ可能マーク＆ラベルを付与
   for(const id of HUD_DRAGGABLE_IDS){
     const el = document.getElementById(id);
     if(!el) continue;
@@ -299,6 +335,7 @@ function enterHudCustomize(){
     el.dataset.hudDrag = '1';
     el.dataset.hudLabel = HUD_DRAGGABLE[id] || '';
   }
+  hudSelect(null);
 }
 function exitHudCustomize(save){
   if(save && hudEditDraft) saveHudLayout(hudEditDraft);
@@ -307,8 +344,9 @@ function exitHudCustomize(save){
   document.getElementById('hudCustomizeBar').classList.add('hidden');
   for(const id of HUD_DRAGGABLE_IDS){
     const el = document.getElementById(id);
-    if(el){ delete el.dataset.hudDrag; delete el.dataset.hudLabel; el.classList.remove('hud-dragging'); }
+    if(el){ delete el.dataset.hudDrag; delete el.dataset.hudLabel; el.classList.remove('hud-dragging'); el.classList.remove('hud-selected'); }
   }
+  hudSelectedId = null;
   applyHudLayout(); // 保存後(またはキャンセルで元に戻して)反映
   document.getElementById('startScreen').classList.remove('hidden');
 }
@@ -316,10 +354,11 @@ function resetHudCustomize(){
   hudEditDraft = {};
   for(const id of HUD_DRAGGABLE_IDS){
     const el = document.getElementById(id);
-    if(el){ el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform=''; }
+    if(el){ el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform=''; el.style.transformOrigin=''; }
   }
   // 反映(CSSデフォルト)後、続けて編集できるよう再度フラット化
   for(const id of HUD_DRAGGABLE_IDS){ const el=document.getElementById(id); if(el) hudFlattenElement(el); }
+  hudSelect(null);
   hudPositionAutoRunLabel();
 }
 // ドラッグ: captureで最初に拾い、ゲーム側のジョイスティック等のハンドラより先に処理する
@@ -328,10 +367,13 @@ document.addEventListener('pointerdown', (e)=>{
   const el = e.target.closest('[data-hud-drag]');
   if(!el) return;
   e.preventDefault(); e.stopPropagation();
+  hudSelect(el.id); // 触れたパーツを選択(サイズ調整の対象になる)
   const hud = document.getElementById('hud');
+  const s = hudElScale(el);
   hudDrag = { el, pid:e.pointerId, sx:e.clientX, sy:e.clientY,
     startLeft:el.offsetLeft, startTop:el.offsetTop,
-    hudW:hud.offsetWidth||1, hudH:hud.offsetHeight||1, w:el.offsetWidth, h:el.offsetHeight };
+    hudW:hud.offsetWidth||1, hudH:hud.offsetHeight||1,
+    w:el.offsetWidth*s, h:el.offsetHeight*s }; // 論理サイズ(拡縮込み)で画面内クランプ
   try{ el.setPointerCapture(e.pointerId); }catch(_){}
   el.classList.add('hud-dragging');
 }, true);
@@ -340,15 +382,16 @@ window.addEventListener('pointermove', (e)=>{
   const ld = toLogicalDelta(e.clientX-hudDrag.sx, e.clientY-hudDrag.sy);
   const nl = clamp(hudDrag.startLeft+ld.x, 0, Math.max(0, hudDrag.hudW-hudDrag.w));
   const nt = clamp(hudDrag.startTop +ld.y, 0, Math.max(0, hudDrag.hudH-hudDrag.h));
+  // 位置のみ更新(transform=scaleはそのまま維持)
   hudDrag.el.style.left=nl+'px'; hudDrag.el.style.top=nt+'px';
-  hudDrag.el.style.right='auto'; hudDrag.el.style.bottom='auto'; hudDrag.el.style.transform='none';
+  hudDrag.el.style.right='auto'; hudDrag.el.style.bottom='auto';
   if(hudDrag.el.id==='joystickBase') hudPositionAutoRunLabel();
 });
 function hudDragEnd(e){
   if(!hudDrag || (e && e.pointerId!==hudDrag.pid)) return;
   const el = hudDrag.el;
   el.classList.remove('hud-dragging');
-  if(hudEditDraft) hudEditDraft[el.id] = { fx: el.offsetLeft/hudDrag.hudW, fy: el.offsetTop/hudDrag.hudH };
+  if(hudEditDraft) hudEditDraft[el.id] = { fx: el.offsetLeft/hudDrag.hudW, fy: el.offsetTop/hudDrag.hudH, s: hudElScale(el) };
   hudDrag = null;
 }
 window.addEventListener('pointerup', hudDragEnd);
@@ -357,6 +400,8 @@ document.getElementById('openHudCustomizeBtn').addEventListener('click', enterHu
 document.getElementById('hudCustSaveBtn').addEventListener('click', ()=>exitHudCustomize(true));
 document.getElementById('hudCustCancelBtn').addEventListener('click', ()=>exitHudCustomize(false));
 document.getElementById('hudCustResetBtn').addEventListener('click', resetHudCustomize);
+document.getElementById('hudCustSizeUp').addEventListener('click', ()=>hudResizeSelected(+0.1));
+document.getElementById('hudCustSizeDown').addEventListener('click', ()=>hudResizeSelected(-0.1));
 applyHudLayout(); // 起動時に反映
 document.getElementById('bgmVolSlider').addEventListener('input', (e)=>{
   audioSettings.bgm = (+e.target.value)/100;

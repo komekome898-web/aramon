@@ -329,9 +329,16 @@
   <div id="turnRightBtn">▶</div>
 </div>
 
-<!-- 画面カスタマイズ(HUD配置編集)の操作バー。編集中だけ表示 -->
+<!-- 画面カスタマイズ(HUD配置編集)の操作パネル。編集中だけ画面中央に小さく表示(移動/サイズ変更不可) -->
 <div id="hudCustomizeBar" class="hidden">
-  <span class="hud-cust-hint">🎛️ 各パーツを好きな位置へドラッグ</span>
+  <div class="hud-cust-title">🎛️ 画面カスタマイズ</div>
+  <div class="hud-cust-hint">パーツをドラッグで移動 ／ タップで選択してサイズ変更</div>
+  <div class="hud-cust-size">
+    <span id="hudCustSel">(パーツを選択)</span>
+    <button id="hudCustSizeDown" aria-label="小さく">－</button>
+    <span class="hud-cust-size-lbl">サイズ</span>
+    <button id="hudCustSizeUp" aria-label="大きく">＋</button>
+  </div>
   <div class="hud-cust-btns">
     <button id="hudCustResetBtn">リセット</button>
     <button id="hudCustCancelBtn">やめる</button>

@@ -84,7 +84,7 @@ function requestOrientationLockSafe(){
 
 const keys = {};
 let fireBtnHeld = false;
-let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46, peakUpNy:0 };
+let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46, peakUpNy:0, scale:1 };
 let lookDrag = { active:false, pointerId:null, lastX:0, lastY:0 };
 
 window.addEventListener('keydown', (e)=>{
@@ -141,7 +141,10 @@ window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===lookDrag.pointe
 const joyBaseEl = document.getElementById('joystickBase');
 const joyKnobEl = document.getElementById('joystickKnob');
 function updateJoystickKnob(cx,cy){
-  let dx = cx-joystick.baseX, dy = cy-joystick.baseY;
+  // 画面カスタマイズでスティックを拡縮(transform:scale)している場合、
+  // 画面px移動量をスティック内ローカルpxへ戻してから判定する(拡縮しても操作感を一定に保つ)
+  const s = joystick.scale || 1;
+  let dx = (cx-joystick.baseX)/s, dy = (cy-joystick.baseY)/s;
   const d = Math.hypot(dx,dy);
   if(d > joystick.radius){ dx = dx/d*joystick.radius; dy = dy/d*joystick.radius; }
   const logical = toLogicalDelta(dx, dy);
@@ -157,6 +160,7 @@ joyBaseEl.addEventListener('pointerdown', (e)=>{
   joystick.active = true; joystick.pointerId = e.pointerId; joystick.peakUpNy = 0;
   const rect = joyBaseEl.getBoundingClientRect();
   joystick.baseX = rect.left+rect.width/2; joystick.baseY = rect.top+rect.height/2;
+  joystick.scale = rect.width / (joyBaseEl.offsetWidth || rect.width); // 拡縮率(正方形なので幅で算出)
   updateJoystickKnob(e.clientX, e.clientY);
 });
 window.addEventListener('pointermove', (e)=>{
