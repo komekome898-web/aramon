@@ -1320,12 +1320,14 @@ function renderShop(){
     const owned = bag[k] || 0;
     return `
     <div class="bag-item">
-      <span class="bag-item-icon">${it.icon}</span>
-      <span class="bag-item-text">
-        <span class="bag-item-name">${it.name}</span>
-        <span class="bag-item-desc">${playerItemDesc(k)}</span>
-        <span class="shop-item-owned">所持数 ${owned}</span>
-      </span>
+      <div class="shop-item-top">
+        <span class="bag-item-icon">${it.icon}</span>
+        <span class="bag-item-text">
+          <span class="bag-item-name">${it.name}</span>
+          <span class="bag-item-desc">${playerItemDesc(k)}</span>
+          <span class="shop-item-owned">所持数 ${owned}</span>
+        </span>
+      </div>
       <button class="bag-use-btn shop-buy-btn" data-key="${k}" data-price="${price}" ${w.gold<price?'disabled':''}>🪙${price}</button>
     </div>`;
   }).join('');
