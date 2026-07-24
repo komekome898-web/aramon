@@ -213,7 +213,57 @@ function imgIsReady(img){
 function monsterImageReady(key){
   return imgIsReady(monsterImages[key]);
 }
+
+// ===== ラガモッチー(mocchi_ssrスキン)の歩行アニメーション =====
+// 動画から1歩行ループを8コマに分割した実素材(正面8/後ろ8、背景透過)。
+// 歩行中はコマ送り、停止中は静止。進行方向がカメラ手前向き=正面、奥向き=後ろ姿を出す。
+const mocchiWalkFront = [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/mocchi_ssr_walk_f${i}`));
+const mocchiWalkBack  = [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/mocchi_ssr_walk_b${i}`));
+function mocchiWalkReady(){
+  for(const im of mocchiWalkFront) if(!imgIsReady(im)) return false;
+  for(const im of mocchiWalkBack)  if(!imgIsReady(im)) return false;
+  return true;
+}
+const MOCCHI_WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
+const MOCCHI_WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
+function _entityDisplaySkinId(e){
+  if(!e) return null;
+  if(e.isPlayer) return (typeof getEquippedSkin==='function') ? getEquippedSkin(e.element) : null;
+  return e.skinId || null;
+}
+// ラガモッチー装備エンティティの、この瞬間に表示すべき歩行コマ画像を返す(対象外はnull)
+function mocchiWalkFrameImage(e){
+  if(_entityDisplaySkinId(e)!=='mocchi_ssr' || !mocchiWalkReady()) return null;
+  const t = (typeof matchTime==='number') ? matchTime : 0;
+  // 1フレームに1回だけ移動量を更新(matchTimeをトークンにして重複呼び出しを吸収)
+  if(e._mwToken!==t){
+    const dt = (e._mwToken!=null) ? Math.max(1e-3, t-e._mwToken) : 0.016;
+    const dx = e.x-(e._mwX!=null?e._mwX:e.x), dy = e.y-(e._mwY!=null?e._mwY:e.y);
+    const sp = Math.hypot(dx,dy)/dt;
+    e._mwSpeed = (e._mwSpeed||0)*0.5 + sp*0.5; // 速度をならす
+    if(sp>1){ e._mwDirX=dx; e._mwDirY=dy; }     // 実移動時の向きを記憶
+    e._mwX=e.x; e._mwY=e.y; e._mwToken=t;
+  }
+  const moving = (e._mwSpeed||0) > MOCCHI_WALK_MOVE_EPS;
+  // 進行方向がカメラ前方(奥)成分ならば後ろ姿、手前成分なら正面
+  const yaw = (typeof camState!=='undefined' && camState) ? camState.yaw : 0;
+  let back;
+  if(!moving){
+    back = !!e.isPlayer;                          // 停止中の既定(自分=後ろ姿/他=正面)
+  } else {
+    const mvx=e._mwDirX||0, mvy=e._mwDirY||0;
+    back = (Math.hypot(mvx,mvy)<1e-3) ? !!e.isPlayer : (mvx*Math.cos(yaw)+mvy*Math.sin(yaw))>0;
+  }
+  const frames = back ? mocchiWalkBack : mocchiWalkFront;
+  let idx = 0; // 停止中は静止(先頭コマ)
+  if(moving){ const phase = Math.floor((t + (e.id||0)*0.13)/MOCCHI_WALK_FRAME_DUR); idx = ((phase%8)+8)%8; }
+  return frames[idx] || null;
+}
+
 function getDisplayImage(entity){
+  // ラガモッチーの歩行アニメがあれば最優先(進行方向で前後・停止で静止)
+  const wf = mocchiWalkFrameImage(entity);
+  if(wf) return wf;
   // 着せ替えスキン(自分/相手/マスモンbot)を装備していれば、そのスキン画像を優先する
   if(typeof skinnedImageForEntity==='function'){
     const sk = skinnedImageForEntity(entity);
@@ -433,6 +483,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-24', items:[
+    'ラガモッチー（SSRスキン）にバトル中の歩行アニメーションを追加（進行方向でスプライトが前向き／後ろ向きに切り替わり、停止中は静止）',
     'SSRスキン装備でtier3技の名前と威力が変化（天衣無縫／終焉に救いを／王狐炎衝／ゼウスライジング／ラガモッチ砲）',
     '技フィールドを左右フリックでも切り替え可能に（タップでの切替も継続）',
     '更新履歴画面を追加',
