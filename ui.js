@@ -1813,9 +1813,18 @@ function startGame(){
   entities.push(player);
   const names = shuffle(BOT_NAMES);
   const botElements = shuffle(Object.keys(ELEMENTS));
+  // 敵botのステータスは、プレイヤーのマスモンレベル±10程度(適正に応じた育ち方)に合わせる。
+  // マスモン未選択時はベースのまま(既存挙動を維持)。
+  const playerMmLevel = (game.selectedMastermonKey && loadMastermons()[game.selectedMastermonKey])
+    ? loadMastermons()[game.selectedMastermonKey].level : null;
   for(let i=0;i<29;i++){
     const elKey = botElements[i % botElements.length];
-    entities.push(createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':''), { spawnPoint: spawnPoints[i+1] }));
+    const bot = createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':''), { spawnPoint: spawnPoints[i+1] });
+    if(playerMmLevel){
+      const botLevel = clamp(playerMmLevel + randInt(-10, 10), 1, MASTERMON_LEVEL_CAP);
+      applyMastermonStatsToEntity(bot, syntheticMastermonForLevel(elKey, botLevel));
+    }
+    entities.push(bot);
   }
   spawnLoot(420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   spawnOasisBonusLoot();

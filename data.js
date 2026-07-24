@@ -637,6 +637,22 @@ function awardMastermonExp(mm, opts){
   if(mm.level>=MASTERMON_LEVEL_CAP) mm.exp = 0;
   return { expGain, levelsGained, goldGain:0 };
 }
+// 指定レベル・種族の「それっぽいマスモン」を合成する(敵botのステータス生成用)。
+// レベル1=適正初期値。以降1レベルにつき訓練1回分(≈18pt)を、適正(A〜E)に応じた配分で
+// 各ステータスへ振り分ける(適正が高いステータスほど多く伸びる=適正に応じた育ち方)。
+function syntheticMastermonForLevel(elementKey, level){
+  const apt = APTITUDE[elementKey] || APTITUDE.mocchi;
+  const stats = mastermonInitialStats(elementKey);
+  const lv = clamp(Math.round(level)||1, 1, MASTERMON_LEVEL_CAP);
+  const trainings = Math.max(0, lv-1);
+  const totalPoints = trainings * 18; // 訓練1回≈18ポイント相当
+  const mults = MASTERMON_STATS.map(s=>APTITUDE_TRAIN_MULT[apt[s.key]]||1);
+  const sumMult = mults.reduce((a,b)=>a+b,0) || 1;
+  MASTERMON_STATS.forEach((s,i)=>{
+    stats[s.key] = mastermonClampStat(stats[s.key] + totalPoints*(mults[i]/sumMult));
+  });
+  return { element:elementKey, level:lv, stats };
+}
 // マスモンのステータスから、バトル中に適用する各種倍率を算出
 function mastermonEffectMults(mm){
   const s = mm.stats, f = mastermonStatFactor;
