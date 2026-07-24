@@ -214,31 +214,53 @@ function monsterImageReady(key){
   return imgIsReady(monsterImages[key]);
 }
 
-// ===== ラガモッチー(mocchi_ssrスキン)の歩行アニメーション =====
-// 動画から1歩行ループを8コマに分割した実素材(正面8/後ろ8、背景透過)。
-// 歩行中はコマ送り、停止中は静止。進行方向がカメラ手前向き=正面、奥向き=後ろ姿を出す。
-const mocchiWalkFront = [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/mocchi_ssr_walk_f${i}`)); // ラガモッチー(SSR)正面
-const mocchiWalkBack  = [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/mocchi_ssr_walk_b${i}`)); // ラガモッチー(SSR)後ろ
-const mocchiBaseWalkFront = [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/mocchi_walk_f${i}`));  // 素モッチー正面(色スキン対応)
-const mocchiBaseWalkBack  = [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/mocchi_walk_b${i}`));  // 素モッチー後ろ
+// ===== モンスターのバトル歩行アニメーション =====
+// 動画から1歩行ループを8コマに分割した透過スプライト(正面8/後ろ8)。
+// 歩行中はコマ送り、停止中は静止。進行方向がカメラ奥向き=後ろ姿/手前向き=正面。
+// 素体は色スキン装備時に各コマを再着色。SSR専用コマがあればそれを使う(再着色しない)。
+// 新しいモンスターの歩行を足すときは WALK_ANIM に画像プレフィックスを追加するだけでよい。
+function _loadWalk(prefix){ return [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/${prefix}${i}`)); }
 function _framesReady(arr){ for(const im of arr) if(!imgIsReady(im)) return false; return true; }
-function mocchiWalkReady(){ return _framesReady(mocchiWalkFront) && _framesReady(mocchiWalkBack); }
-function mocchiBaseWalkReady(){ return _framesReady(mocchiBaseWalkFront) && _framesReady(mocchiBaseWalkBack); }
-const _mocchiWalkRecolor = {}; // 色スキン再着色コマのキャッシュ colorId:view:idx -> canvas
-const MOCCHI_WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
-const MOCCHI_WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
+const WALK_ANIM = {
+  mocchi: {
+    base: { front:_loadWalk('mocchi_walk_f'),     back:_loadWalk('mocchi_walk_b') },     // 素モッチー(色スキン対応)
+    ssr:  { skinId:'mocchi_ssr', front:_loadWalk('mocchi_ssr_walk_f'), back:_loadWalk('mocchi_ssr_walk_b') }, // ラガモッチー
+  },
+  god: {
+    base: { front:_loadWalk('god_walk_f'), back:_loadWalk('god_walk_b') },               // ガリ(色スキン対応。ゼウス専用コマは未提供)
+  },
+  suezo: {
+    base: { front:_loadWalk('suezo_walk_f'), back:_loadWalk('suezo_walk_b') },            // スエゾー(色スキン対応)
+  },
+  zan: {
+    base: { front:_loadWalk('zan_walk_f'), back:_loadWalk('zan_walk_b') },                // ザン(色スキン対応)
+  },
+  fox: {
+    base: { front:_loadWalk('fox_walk_f'), back:_loadWalk('fox_walk_b') },                // キュービ(色スキン対応。タマモノマエ専用コマは未提供)
+  },
+  spark: {
+    base: { front:_loadWalk('spark_walk_f'), back:_loadWalk('spark_walk_b') },            // ライガー(色スキン対応)
+  },
+};
+const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
+const WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
+const _walkRecolor = {};     // 色スキン再着色コマのキャッシュ element:colorId:view:idx -> canvas
 function _entityDisplaySkinId(e){
   if(!e) return null;
   if(e.isPlayer) return (typeof getEquippedSkin==='function') ? getEquippedSkin(e.element) : null;
   return e.skinId || null;
 }
-// モッチー系(素モッチー/ラガモッチー)の、この瞬間に表示すべき歩行コマ画像を返す(対象外はnull)。
-// 素モッチーは色スキン装備時に各コマを再着色。歩行中はコマ送り、停止中は静止、進行方向で前後切替。
-function mocchiWalkFrameImage(e){
-  if(!e || e.element!=='mocchi') return null;
+// エンティティのこの瞬間に表示すべき歩行コマ画像を返す(対象外/未ロードはnull)。
+function entityWalkFrameImage(e){
+  if(!e) return null;
+  const reg = WALK_ANIM[e.element];
+  if(!reg) return null;
   const skin = _entityDisplaySkinId(e);
-  const isSsr = (skin==='mocchi_ssr');
-  if(isSsr ? !mocchiWalkReady() : !mocchiBaseWalkReady()) return null;
+  const useSsr = !!(reg.ssr && skin===reg.ssr.skinId);
+  // 歩行コマが用意されていないSSRスキン(例:ガリのゼウス)装備時は静止スキン画像を優先する
+  if(skin && skin.indexOf(':')<0 && !useSsr) return null;
+  const set = useSsr ? reg.ssr : reg.base;
+  if(!set || !_framesReady(set.front) || !_framesReady(set.back)) return null;
   const t = (typeof matchTime==='number') ? matchTime : 0;
   // 1フレームに1回だけ移動量を更新(matchTimeをトークンにして重複呼び出しを吸収)
   if(e._mwToken!==t){
@@ -249,36 +271,34 @@ function mocchiWalkFrameImage(e){
     if(sp>1){ e._mwDirX=dx; e._mwDirY=dy; }     // 実移動時の向きを記憶
     e._mwX=e.x; e._mwY=e.y; e._mwToken=t;
   }
-  const moving = (e._mwSpeed||0) > MOCCHI_WALK_MOVE_EPS;
-  // 進行方向がカメラ前方(奥)成分ならば後ろ姿、手前成分なら正面
+  const moving = (e._mwSpeed||0) > WALK_MOVE_EPS;
   const yaw = (typeof camState!=='undefined' && camState) ? camState.yaw : 0;
   let back;
   if(!moving){
     back = !!e.isPlayer;                          // 停止中の既定(自分=後ろ姿/他=正面)
   } else {
-    const mvx=e._mwDirX||0, mvy=e._mwDirY||0;
+    const mvx=e._mwDirX||0, mvy=e._mwDirY||0;     // 進行方向がカメラ奥向き=後ろ姿/手前=正面
     back = (Math.hypot(mvx,mvy)<1e-3) ? !!e.isPlayer : (mvx*Math.cos(yaw)+mvy*Math.sin(yaw))>0;
   }
   let idx = 0; // 停止中は静止(先頭コマ)
-  if(moving){ const phase = Math.floor((t + (e.id||0)*0.13)/MOCCHI_WALK_FRAME_DUR); idx = ((phase%8)+8)%8; }
-  if(isSsr) return (back ? mocchiWalkBack : mocchiWalkFront)[idx] || null;
-  // 素モッチー: 色スキン装備なら各コマを再着色(キャッシュ)
-  const baseImg = (back ? mocchiBaseWalkBack : mocchiBaseWalkFront)[idx];
+  if(moving){ const phase = Math.floor((t + (e.id||0)*0.13)/WALK_FRAME_DUR); idx = ((phase%8)+8)%8; }
+  const baseImg = (back ? set.back : set.front)[idx];
   if(!imgIsReady(baseImg)) return null;
-  if(skin && skin.indexOf(':')>=0 && typeof recolorToCanvas==='function' && typeof SKIN_COLORS!=='undefined'){
-    const colorId = skin.split(':')[1];
-    if(SKIN_COLORS[colorId]){
-      const ck = `${colorId}:${back?'b':'f'}:${idx}`;
-      if(!_mocchiWalkRecolor[ck]) _mocchiWalkRecolor[ck] = recolorToCanvas(baseImg, 'mocchi', colorId, 0);
-      return _mocchiWalkRecolor[ck];
+  // SSR専用コマは再着色しない。素体で色スキン(element:colorId)装備時のみ再着色。
+  if(!useSsr && skin && skin.indexOf(':')>=0 && typeof recolorToCanvas==='function' && typeof SKIN_COLORS!=='undefined'){
+    const [selem, colorId] = skin.split(':');
+    if(selem===e.element && SKIN_COLORS[colorId]){
+      const ck = `${e.element}:${colorId}:${back?'b':'f'}:${idx}`;
+      if(!_walkRecolor[ck]) _walkRecolor[ck] = recolorToCanvas(baseImg, e.element, colorId, 0);
+      return _walkRecolor[ck];
     }
   }
   return baseImg;
 }
 
 function getDisplayImage(entity){
-  // ラガモッチーの歩行アニメがあれば最優先(進行方向で前後・停止で静止)
-  const wf = mocchiWalkFrameImage(entity);
+  // 歩行アニメがあれば最優先(進行方向で前後・停止で静止)
+  const wf = entityWalkFrameImage(entity);
   if(wf) return wf;
   // 着せ替えスキン(自分/相手/マスモンbot)を装備していれば、そのスキン画像を優先する
   if(typeof skinnedImageForEntity==='function'){
@@ -499,6 +519,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-24', items:[
+    'ガリ・スエゾー・ザン・キュービ・ライガーにもバトル中の歩行アニメーションを追加（色スキンにも対応）',
     'モッチーにバトル中の歩行アニメーションを追加（進行方向でスプライトが前向き／後ろ向きに切り替わり、停止中は静止。色スキン・ラガモッチーSSRスキンにも対応）',
     'SSRスキン装備でtier3技の名前と威力が変化（天衣無縫／終焉に救いを／王狐炎衝／ゼウスライジング／ラガモッチ砲）',
     '技フィールドを左右フリックでも切り替え可能に（タップでの切替も継続）',
