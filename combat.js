@@ -423,17 +423,90 @@ function findNearestLoot(self, range){
   for(const it of lootItems){ const d=dist(self,it); if(d<bestD){bestD=d; best=it;} }
   return best;
 }
+// 最寄りのガッツ飴(kind==='guts')を返す
+function findNearestGutsItem(self, range){
+  let best=null, bestD=range;
+  for(const it of lootItems){
+    if(it.kind!=='guts') continue;
+    const d=dist(self,it); if(d<bestD){bestD=d; best=it;}
+  }
+  return best;
+}
+// このモンスターが使える技のうち、最も安いガッツ消費量を返す(=これ未満だと一切技が撃てない)
+function minMoveGutsCost(b){
+  const moves = SIGNATURE_MOVES[b.element];
+  if(!moves) return 0;
+  const maxTier = Math.min(moves.length, b.moveTierUnlocked || moves.length);
+  let mn = Infinity;
+  for(let t=1; t<=maxTier; t++){
+    const mv = moves[t-1];
+    if(mv){ const c = effectiveGutsCost(b, mv); if(c<mn) mn=c; }
+  }
+  return mn===Infinity ? 0 : mn;
+}
+const BOT_STUCK_MOVE_EPS = 55;   // このpx以内しか動いていなければ「その場に留まっている」とみなす
+const BOT_STUCK_SECONDS = 1.5;   // 留まり続けたら迂回を開始する秒数
+const BOT_DETOUR_SECONDS = 1.4;  // 迂回移動を維持する秒数(この間は通常の目標選択を抑制)
 function updateBotAI(b, dt){
   if(b.attackTargetId){ const t=getEntity(b.attackTargetId); if(!t||!t.alive) b.attackTargetId=null; }
   b.aiTimer -= dt;
   if(b.aiTimer>0) return;
   b.aiTimer = rand(0.22,0.4);
 
+  // ===== スタック検知＆迂回 =====
+  // 攻撃射程内で待機している場合(=意図的に止まっている)はスタック扱いしない。
+  // それ以外で長時間ほとんど動けていない場合は、反対方向を向いて迂回ルートへ切り替える。
+  let holdingInRange = false;
+  if(b.attackTargetId){
+    const t = getEntity(b.attackTargetId);
+    if(t && t.alive){ const mv = activeMove(b); if(mv && dist(b,t) <= mv.range*0.92) holdingInRange = true; }
+  }
+  if(holdingInRange || !b.moveAnchor || dist(b, b.moveAnchor) > BOT_STUCK_MOVE_EPS){
+    b.moveAnchor = {x:b.x, y:b.y}; b.moveAnchorAt = matchTime;
+  }
+  if(matchTime < (b.detourUntil||0)){
+    // 迂回移動を継続(迂回先に近づいたら解除して通常AIへ戻す)
+    if(b.aiTargetPoint && dist(b, b.aiTargetPoint) < 45){ b.detourUntil = 0; }
+    else { b.aiState='DETOUR'; return; }
+  }
+  if(!holdingInRange && (matchTime - (b.moveAnchorAt||matchTime)) > BOT_STUCK_SECONDS){
+    // 反対方向(±)へ中距離の迂回先を設定し、追跡を一旦やめて回り込む
+    const backAng = (b.facingAngle!=null ? b.facingAngle : rand(0,Math.PI*2)) + Math.PI + rand(-0.7,0.7);
+    let tx = b.x + Math.cos(backAng)*360, ty = b.y + Math.sin(backAng)*360;
+    tx = clamp(tx, zoneState.center.x-zoneState.radius+30, zoneState.center.x+zoneState.radius-30);
+    ty = clamp(ty, zoneState.center.y-zoneState.radius+30, zoneState.center.y+zoneState.radius-30);
+    b.attackTargetId=null; b.destination=null;
+    b.aiTargetPoint = {x:tx, y:ty};
+    b.avoidDirSign = -(b.avoidDirSign||1); // 障害物回避の迂回方向も反転
+    b.detourUntil = matchTime + BOT_DETOUR_SECONDS;
+    b.moveAnchor = {x:b.x, y:b.y}; b.moveAnchorAt = matchTime;
+    b.aiState='DETOUR'; return;
+  }
+
   const outOfZone = dist(b, zoneState.center) > zoneState.radius - b.radius;
   if(outOfZone){
     b.attackTargetId=null; b.destination=null;
     b.aiTargetPoint = {x:zoneState.center.x+rand(-30,30), y:zoneState.center.y+rand(-30,30)};
     b.aiState='RETREAT'; return;
+  }
+
+  // ===== ガッツ枯渇: どの技も撃てないほどガッツが無ければ、ガッツ飴を探して移動 =====
+  if(b.guts < minMoveGutsCost(b)){
+    b.attackTargetId=null;
+    const gutsItem = findNearestGutsItem(b, 1400);
+    if(gutsItem){ b.aiTargetPoint = {x:gutsItem.x, y:gutsItem.y}; b.aiState='SEEK_GUTS'; return; }
+    // ガッツ飴が見つからない: 敵とは交戦せず(撃てないので)、他アイテムか徘徊で回復を待つ
+    const otherLoot = findNearestLoot(b, 700);
+    if(otherLoot){ b.aiTargetPoint = {x:otherLoot.x, y:otherLoot.y}; b.aiState='SEEK_GUTS'; return; }
+    const threat = findNearestAliveEnemy(b, 420);
+    if(threat){ const away = angTo(threat,b); b.aiTargetPoint = {x:b.x+Math.cos(away)*300, y:b.y+Math.sin(away)*300}; b.aiState='SEEK_GUTS'; return; }
+    if(!b.aiTargetPoint || dist(b,b.aiTargetPoint)<40){
+      const a=rand(0,Math.PI*2), r=rand(150,420);
+      let tx=clamp(b.x+Math.cos(a)*r, zoneState.center.x-zoneState.radius+30, zoneState.center.x+zoneState.radius-30);
+      let ty=clamp(b.y+Math.sin(a)*r, zoneState.center.y-zoneState.radius+30, zoneState.center.y+zoneState.radius-30);
+      b.aiTargetPoint = {x:tx, y:ty};
+    }
+    b.aiState='SEEK_GUTS'; return;
   }
 
   const attackerCount = countRecentAttackers(b, 2.2);
