@@ -2371,7 +2371,7 @@ function updateHUD(){
   // 技フィールドのマーク/テーマ色は、その技のオーラ色にする(tier3は装備SSRで一致技に変わる)
   const mvAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : mv.aura;
   const moveMarkColor = (mvAura && typeof auraColorHex==='function') ? auraColorHex(mvAura) : mv.color;
-  document.getElementById('moveName').textContent = mv.name;
+  document.getElementById('moveName').textContent = (typeof getMoveName==='function') ? getMoveName(mv, player) : mv.name;
   document.documentElement.style.setProperty('--moveColor', moveMarkColor);
   document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(player, mv)}`;
   const tierMoves = SIGNATURE_MOVES[player.element];

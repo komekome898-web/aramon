@@ -2866,13 +2866,17 @@ function buildMastermonMovesHtml(key){
     const isAoe = !!mv.aoeShape;
     const speedVal = isAoe ? Math.max(200, mv.projSpeed||900) : mv.projSpeed;
     const speedText = isAoe ? `範囲拡大速度 ${speedVal}` : `弾速 ${speedVal}`;
+    // tier3は装備SSRスキンで技名・威力が変わる(該当スキン装備時のみ)
+    const pseudo = { element:key, isPlayer:true };
+    const dispName = (typeof getMoveName==='function') ? getMoveName(mv, pseudo) : mv.name;
+    const dispDmg = Math.round(mv.dmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
     return `
     <div class="mm-move-card">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
       <div class="mm-move-info">
-        <div class="mm-move-name">${mv.name}<span class="mm-move-icon">${auraIcon}</span></div>
+        <div class="mm-move-name">${dispName}<span class="mm-move-icon">${auraIcon}</span></div>
         <div class="mm-move-stats">
-          <span>威力 ${mv.dmg}</span>
+          <span>威力 ${dispDmg}</span>
           <span>消費ガッツ ${mv.gutsCost}</span>
           <span>CT ${mv.cooldown}秒</span>
           <span>${speedText}</span>

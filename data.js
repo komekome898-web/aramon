@@ -403,6 +403,31 @@ function getMoveEffectColor(move, attacker){
   }
   return move ? move.color : '#ffffff';
 }
+// SSRスキン装備時のtier3の専用技名と威力倍率(少し上げる)。元の技の効果(オーラ・エフェクト・
+// アーク=イブリースの被ダメ0.5倍など)は変えず、名前と威力だけ上書きする。
+const SSR_SKIN_TIER3 = {
+  phoenix_ssr: { name:'天衣無縫',         dmgMult:1.15 },
+  iblees_ssr:  { name:'終焉に救いを',     dmgMult:1.15 },
+  tamamo_ssr:  { name:'王狐炎衝',         dmgMult:1.15 },
+  zeus_ssr:    { name:'ゼウスライジング', dmgMult:1.15 },
+  mocchi_ssr:  { name:'ラガモッチ砲',     dmgMult:1.15 },
+};
+// 技の表示名(SSR装備時はtier3を専用名に上書き)
+function getMoveName(move, attacker){
+  if(move && move.tier===3){
+    const sid = entitySkinId(attacker);
+    if(sid && SSR_SKIN_TIER3[sid]) return SSR_SKIN_TIER3[sid].name;
+  }
+  return move ? move.name : '';
+}
+// SSR装備時のtier3威力倍率(非装備/非tier3は1)
+function ssrTier3DmgMult(move, attacker){
+  if(move && move.tier===3){
+    const sid = entitySkinId(attacker);
+    if(sid && SSR_SKIN_TIER3[sid]) return SSR_SKIN_TIER3[sid].dmgMult || 1;
+  }
+  return 1;
+}
 
 const TICKET_ITEM = { name:'修行チケット', color:'#9fd1ff', accent:'#ffffff' };
 const GUTS_ITEM = { name:'ガッツ飴', restore:32, maxBoost:15, color:'#ff7a96', accent:'#ffd9e3' };
