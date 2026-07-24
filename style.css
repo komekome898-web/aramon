@@ -455,7 +455,12 @@
   /* 基底.mastermon-confirm-box(max-width:340px)に負けないよう複合セレクタで幅指定 */
   .mastermon-confirm-box.shop-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw))); }
   .shop-buy-btn:disabled{ opacity:0.4; cursor:not-allowed; }
-  /* ショップ: 左=店主(ラガゼウスモチ)＋会話ウィンドウ / 右=商品リスト */
+  /* ショップ: ヘッダー(タイトル＋所持ゴールド)を全幅で効かせ、その下に左右2カラム */
+  .shop-header{ display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding-bottom:8px; margin-bottom:10px; padding-right:42px; border-bottom:1px solid var(--panel-line); }
+  .shop-header-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:16px; color:var(--ink); letter-spacing:0.5px; }
+  .shop-header-gold{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:15px; color:var(--amber); white-space:nowrap; }
+  /* 左=店主(ラガゼウスモチ)＋会話ウィンドウ / 右=商品リスト */
   .shop-inner{ display:flex; gap:12px; align-items:flex-start; text-align:left; }
   .shop-npc{ flex:0 0 34%; max-width:210px; min-width:120px; display:flex; flex-direction:column; gap:8px; }
   .shop-npc-img{ width:100%; display:block; border-radius:10px;
@@ -482,9 +487,12 @@
   /* ショップは2列表示 */
   .bag-list.shop-list-2col{ display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start; }
   .bag-item{
-    display:flex; align-items:center; gap:10px; padding:8px 10px;
+    display:flex; flex-direction:column; gap:8px; padding:8px 10px;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px;
   }
+  /* ショップ商品: 上段(アイコン+説明/所持数)、下段に購入ボタン */
+  .shop-item-top{ display:flex; align-items:center; gap:10px; }
+  .bag-list.shop-list-2col .shop-buy-btn{ width:100%; }
   .bag-item-icon{ font-size:22px; flex-shrink:0; }
   .bag-item-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
   .bag-item-name{ font-size:13px; font-weight:700; color:var(--ink); }
