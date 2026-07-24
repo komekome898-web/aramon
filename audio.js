@@ -36,6 +36,7 @@ function audioInit(){
   startBgmScheduler();
   ensureSsrJackpotBuffer();
   ensureZeusTier3Buffer();
+  ensureBestUpdateBuffer();
   ensureBgmFinal5Buffer();
 }
 // 初回のタップ/クリック/キーで起動+復帰(iOSはユーザー操作が無いと音が出せない)
@@ -85,6 +86,28 @@ function startSsrJackpotLoop(){
 }
 function stopSsrJackpotSource(){ if(ssrJackpotSource){ try{ ssrJackpotSource.stop(); }catch(e){} ssrJackpotSource=null; } }
 function stopSsrJackpotLoop(){ ssrJackpotLoopWanted = false; stopSsrJackpotSource(); }
+
+// リザルトの自己ベスト更新SE。発注者提供動画の音声(約9秒)を外部mp3として読み込み、
+// ループせず一回だけ再生する。未ロード/取得失敗時はSSR獲得SEにフォールバック(無音回避)。
+let bestUpdateBuffer = null, bestUpdateDecoding = false, bestUpdateSource = null;
+const BEST_UPDATE_URL = './best_update.mp3';
+function ensureBestUpdateBuffer(){
+  if(bestUpdateBuffer || bestUpdateDecoding || !actx) return;
+  bestUpdateDecoding = true;
+  fetch(BEST_UPDATE_URL).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a))
+    .then(buf=>{ bestUpdateBuffer = buf; bestUpdateDecoding=false; })
+    .catch(()=>{ bestUpdateDecoding=false; });
+}
+function playBestUpdateOnce(){
+  if(!actx || audioSettings.se<=0.005){ ensureBestUpdateBuffer(); return; }
+  if(!bestUpdateBuffer){ ensureBestUpdateBuffer(); if(typeof playSsrJackpotOnce==='function') playSsrJackpotOnce(); return; } // 未ロード時は従来SEで代替
+  if(bestUpdateSource){ try{ bestUpdateSource.stop(); }catch(e){} bestUpdateSource=null; } // 二重再生防止(ループしない)
+  const src = actx.createBufferSource(); src.buffer = bestUpdateBuffer;
+  const g = actx.createGain(); g.gain.value = 1.2;
+  src.connect(g); g.connect(seGain); src.start();
+  bestUpdateSource = src;
+  src.onended = ()=>{ if(bestUpdateSource===src) bestUpdateSource=null; };
+}
 
 // ゼウス(SSR)装備時のtier3「ゴッドライジング」専用SE。発注者提供動画の音声を内蔵mp3データURIで再生。
 // 未ロード/取得失敗時は通常のgodRising合成SEにフォールバック(playSeの分岐で対応)。

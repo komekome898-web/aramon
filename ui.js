@@ -1947,19 +1947,28 @@ function renderResultBadges(o){
   if(globalDamageBest){ badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`); rainbow = true; }
   // モンスター毎の最高記録更新(全体ベストと重複しない場合のみ)
   const elemLabel = o.elementLabel || 'このモンスター';
-  if(!globalKillsBest && o.kills>0 && o.kills > (o.prevElemBestKills||0)){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 キル数 ${o.kills}!</span>`); rainbow = true; }
-  if(!globalDamageBest && o.damage>0 && o.damage > (o.prevElemBestDamage||0)){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 ダメージ ${o.damage}!</span>`); rainbow = true; }
-  for(const t of (o.newTitles||[])){ badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; }
+  const monsterKillsBest = !globalKillsBest && o.kills>0 && o.kills > (o.prevElemBestKills||0);
+  const monsterDamageBest = !globalDamageBest && o.damage>0 && o.damage > (o.prevElemBestDamage||0);
+  if(monsterKillsBest){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 キル数 ${o.kills}!</span>`); rainbow = true; }
+  if(monsterDamageBest){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 ダメージ ${o.damage}!</span>`); rainbow = true; }
+  let titleGot = false;
+  for(const t of (o.newTitles||[])){ badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; titleGot = true; }
   // モンスター毎の新称号(全体の新称号に含まれないもの)
   const globalNewIds = new Set((o.newTitles||[]).map(t=>t.id));
   for(const t of (o.elemNewTitles||[])){
     if(globalNewIds.has(t.id)) continue;
-    badges.push(`<span class="result-badge title">🎖️ ${elemLabel}で称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true;
+    badges.push(`<span class="result-badge title">🎖️ ${elemLabel}で称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; titleGot = true;
   }
   el.innerHTML = badges.join('');
   el.classList.toggle('hidden', badges.length===0);
-  // 虹色バッジ(自己ベスト更新/称号獲得)が出たら、SSR獲得と同じSEを2回鳴らす
-  if(rainbow && typeof playSsrJackpotOnce==='function'){
+  // リザルトSE:
+  //  ・全体の自己ベスト更新 → 専用SE(提供動画音声)を1回だけ。重複時はこれを優先(SSR獲得SEは鳴らさない)
+  //  ・称号獲得 / モンスター毎の最高記録更新 → 従来どおりSSR獲得SEを2回
+  const globalBestUpdate = globalKillsBest || globalDamageBest;
+  const otherCelebrate = monsterKillsBest || monsterDamageBest || titleGot;
+  if(globalBestUpdate){
+    if(typeof playBestUpdateOnce==='function') playBestUpdateOnce();
+  } else if(otherCelebrate && typeof playSsrJackpotOnce==='function'){
     playSsrJackpotOnce();
     setTimeout(()=>{ if(typeof playSsrJackpotOnce==='function') playSsrJackpotOnce(); }, 700);
   }
