@@ -562,8 +562,21 @@ function mastermonStatFactor(v, statKey){
   return 1 + (v-100)/divisor;
 }
 
+// マスモンをレベル降順(同レベルはキー順で安定)に並べ替えた新しいオブジェクトを返す。
+// JSオブジェクトは文字列キーの挿入順を保持し、マスモンのキーは要素名(非数値)なので、
+// ここで並べ替えておけば Object.keys で列挙する全画面が自動的にレベル降順になる。
+function sortMastermonsByLevel(data){
+  const keys = Object.keys(data).sort((a,b)=>{
+    const la = (data[a] && data[a].level) || 0, lb = (data[b] && data[b].level) || 0;
+    if(lb !== la) return lb - la;      // レベル降順
+    return a < b ? -1 : a > b ? 1 : 0; // 同レベルはキー順で安定化
+  });
+  const out = {};
+  for(const k of keys) out[k] = data[k];
+  return out;
+}
 function loadMastermons(){
-  try{ return JSON.parse(localStorage.getItem(MASTERMON_STORAGE_KEY)) || {}; }catch(err){ return {}; }
+  try{ return sortMastermonsByLevel(JSON.parse(localStorage.getItem(MASTERMON_STORAGE_KEY)) || {}); }catch(err){ return {}; }
 }
 function saveMastermons(data){
   try{ localStorage.setItem(MASTERMON_STORAGE_KEY, JSON.stringify(data)); }catch(err){}
