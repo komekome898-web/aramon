@@ -1870,6 +1870,45 @@ function terraceColor(style, shade){
   // volcano(デフォルト): 焦げた茶〜赤茶の山肌
   return `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
 }
+// 円錐(火山)の面ごとの色。light=0.35(影)〜1.0(日向)。世界固定の光で面を陰影付けする
+function coneFacetColor(style, light){
+  if(style==='snow')   return `rgb(${Math.round(150+95*light)},${Math.round(175+75*light)},${Math.round(200+50*light)})`;
+  if(style==='forest') return `rgb(${Math.round(18+55*light)},${Math.round(48+105*light)},${Math.round(22+45*light)})`;
+  return `rgb(${Math.round(52+130*light)},${Math.round(34+82*light)},${Math.round(22+56*light)})`; // volcano
+}
+// 火山1つ分を「本当の3D円錐」として面(ファセット)分割して描く。
+// ・底面の円周を等分した各点を世界座標で投影し、隣同士＋山頂で三角形の面を作る
+// ・面は奥→手前に塗り、凸形状の隠面を成立させる(билборドではなく実体)
+// ・陰影は「世界に固定した光の向き」で面ごとに決めるため、視点を回すと日向/影の面が
+//   入れ替わり、地面に固定された立体を回り込んでいるように見える(=泳がない)
+function drawSolidCone(v, style){
+  const worldRise = v.radius * (v.isMain ? 1.15 : 0.9);
+  const apex = project(v.x, v.y, worldRise);
+  if(!apex) return null;
+  const N = v.isMain ? 30 : 18;
+  const ring = [];
+  for(let i=0;i<=N;i++){
+    const a = (i/N)*Math.PI*2;
+    ring.push(project(v.x+Math.cos(a)*v.radius, v.y+Math.sin(a)*v.radius, 0));
+  }
+  const LX = 0.55, LY = -0.83; // 世界固定の光の向き(北西からの日差し)
+  const facets = [];
+  for(let i=0;i<N;i++){
+    const p1 = ring[i], p2 = ring[i+1];
+    if(!p1 || !p2) continue;
+    const mid = ((i+0.5)/N)*Math.PI*2;
+    const light = 0.35 + 0.65*Math.max(0, Math.cos(mid)*LX + Math.sin(mid)*LY);
+    facets.push({ p1, p2, light, depth:(p1.depth+p2.depth)/2 });
+  }
+  facets.sort((a,b)=> b.depth - a.depth); // 奥の面から塗る
+  for(const f of facets){
+    ctx.beginPath();
+    ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(apex.x, apex.y); ctx.closePath();
+    ctx.fillStyle = coneFacetColor(style, f.light);
+    ctx.fill();
+  }
+  return apex;
+}
 function drawPyramidComplex(group,p){
   const main = group.find(v=>v.isMain) || group[0];
   // 正方形の底面4隅と頂点を「本当の世界座標/高さ」で投影し、真の立体ピラミッドとして描く。
@@ -1925,27 +1964,10 @@ function drawVolcanoComplex(group,p){
   const sorted = [...group].sort((a,b)=> (a.isMain?1:0) - (b.isMain?1:0));
 
   for(const v of sorted){
-    // 各テラス(段)を「本当の世界高さ」で個別に投影することで、視点を動かしても
-    // 山頂と裾野が正しくパララックスし、地面に固定された立体として見える
-    // (以前は裾野を基準にスクリーン上へ一定量ずらしていたため、視点移動で山が泳いで見えた)
-    const worldRise = v.radius * (v.isMain ? 1.15 : 0.9); // 地面からの盛り上がり(世界単位)
-    const terraces = v.isMain ? 5 : 3;
-    // 山肌を裾野から山頂へ向けて何段かのテラスとして描き、隆起している質感を出す。
-    // 楕円の下半分を描くと接地点より下に膨らんで見えてしまうため、上半分(ドーム状)だけ描く
-    for(let t=terraces; t>=0; t--){
-      const tt = t/terraces; // 1=裾野, 0=山頂
-      const cp = project(v.x, v.y, worldRise*(1-tt)); // このテラスの真の3D位置
-      if(!cp) continue;
-      const rr = cp.scale * v.radius*(0.28+0.72*tt);
-      const ry = rr*0.60;
-      const shade = 0.16 + tt*0.30; // 山頂ほど明るく
-      ctx.beginPath(); ctx.ellipse(cp.x, cp.y, rr, ry, 0, Math.PI, Math.PI*2);
-      ctx.fillStyle = terraceColor(style, shade);
-      ctx.fill();
-    }
+    // 実体の3D円錐として面分割描画(billboardをやめ、視点移動で泳がないようにする)
+    const peakP = drawSolidCone(v, style);
 
     if(v.isMain){
-      const peakP = project(v.x, v.y, worldRise); // 山頂の真の3D位置
       if(peakP){
         const r = peakP.scale * v.radius;
         if(style==='snow'){
@@ -1957,7 +1979,7 @@ function drawVolcanoComplex(group,p){
           ctx.shadowBlur=0;
         } else if(style==='forest'){
           // 木々の茂みを頂上付近に足して密度感を出す(頂上少し下の高さに配置)
-          const cluster = project(v.x, v.y, worldRise*0.85) || peakP;
+          const cluster = project(v.x, v.y, v.radius*0.9*0.85) || peakP;
           for(let i=0;i<5;i++){
             const a = (i/5)*Math.PI*2;
             const cx2 = cluster.x + r*0.35*Math.cos(a), cy2 = cluster.y + r*0.15*Math.sin(a);
