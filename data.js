@@ -241,6 +241,10 @@ const WALK_ANIM = {
   spark: {
     base: { front:_loadWalk('spark_walk_f'), back:_loadWalk('spark_walk_b') },            // ライガー(色スキン対応)
   },
+  phoenix: {
+    base: { front:_loadWalk('phoenix_walk_f'),     back:_loadWalk('phoenix_walk_b') },     // ヒノトリ(色スキン対応)
+    ssr:  { skinId:'phoenix_ssr', front:_loadWalk('phoenix_ssr_walk_f'), back:_loadWalk('phoenix_ssr_walk_b') }, // SSRフェニックス
+  },
 };
 const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
 const WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
@@ -519,6 +523,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-24', items:[
+    'ヒノトリとSSRフェニックスにもバトル中の歩行アニメーションを追加（色スキンにも対応）',
     'ガリ・スエゾー・ザン・キュービ・ライガーにもバトル中の歩行アニメーションを追加（色スキンにも対応）',
     'モッチーにバトル中の歩行アニメーションを追加（進行方向でスプライトが前向き／後ろ向きに切り替わり、停止中は静止。色スキン・ラガモッチーSSRスキンにも対応）',
     'SSRスキン装備でtier3技の名前と威力が変化（天衣無縫／終焉に救いを／王狐炎衝／ゼウスライジング／ラガモッチ砲）',
