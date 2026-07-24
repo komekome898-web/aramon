@@ -1872,43 +1872,39 @@ function terraceColor(style, shade){
 }
 function drawPyramidComplex(group,p){
   const main = group.find(v=>v.isMain) || group[0];
-  const mainP = project(main.x, main.y, 0);
-  if(!mainP) return;
+  // 正方形の底面4隅と頂点を「本当の世界座標/高さ」で投影し、真の立体ピラミッドとして描く。
+  // これにより視点を動かしても地面に固定されたまま(以前はスクリーン上に頂点を一定量ずらす
+  // 疑似表現だったため、視点移動でピラミッドが泳いで見えた)。
+  const s = main.radius * 0.82;            // 底面の半辺(当たり半径に対する見た目の広がり)
+  const worldH = main.radius * 1.35;       // 頂点の世界高さ
+  const cx = main.x, cy = main.y;
+  const cornersW = [
+    {x:cx-s, y:cy-s}, {x:cx+s, y:cy-s}, {x:cx+s, y:cy+s}, {x:cx-s, y:cy+s},
+  ];
+  const bp = cornersW.map(c=>project(c.x, c.y, 0));
+  const apex = project(cx, cy, worldH);
+  if(bp.some(pt=>!pt) || !apex) return;    // 至近等で投影できない場合は描かない(群カリングで別途担保)
   ctx.save();
-  const r = mainP.scale*main.radius;
-  const h = r*1.3;
-  ctx.translate(mainP.x, mainP.y);
-  // 土台(菱形の縁)を描いて奥行きを持たせる。volcanoの隆起表現と同じく、
-  // 接地ライン(y=0)より下には何も描かない(=地面にめり込んで見えないようにする)
-  const sideY = -r*0.14, backY = -r*0.24;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-r, sideY);
-  ctx.lineTo(0, backY);
-  ctx.lineTo(r, sideY);
-  ctx.closePath();
-  ctx.fillStyle = '#8a6a3a';
-  ctx.fill();
-  // 左面(影)
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, -h);
-  ctx.lineTo(-r, sideY);
-  ctx.closePath();
-  ctx.fillStyle = '#b89a58';
-  ctx.fill();
-  // 右面(日向)
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, -h);
-  ctx.lineTo(r, sideY);
-  ctx.closePath();
-  ctx.fillStyle = '#e0c988';
-  ctx.fill();
-  ctx.strokeStyle='rgba(70,50,20,0.6)'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(-r,sideY); ctx.lineTo(0,-h); ctx.lineTo(r,sideY); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0,-h); ctx.lineTo(0,0); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-r,sideY); ctx.lineTo(0,backY); ctx.lineTo(r,sideY); ctx.stroke();
+  // 光の向き(日向/影)を底辺の向きで決める。奥→手前の順に面を塗って凸形状の隠面を成立させる
+  const lightDir = {x:0.45, y:-0.89};
+  const faces = [];
+  for(let i=0;i<4;i++){
+    const a = bp[i], b = bp[(i+1)%4];
+    const wa = cornersW[i], wb = cornersW[(i+1)%4];
+    let nx = (wa.x+wb.x)/2 - cx, ny = (wa.y+wb.y)/2 - cy;
+    const nl = Math.hypot(nx,ny)||1; nx/=nl; ny/=nl;
+    const light = 0.5 + 0.5*Math.max(0, nx*lightDir.x + ny*lightDir.y);
+    faces.push({ a, b, light, depth:(a.depth+b.depth)/2 });
+  }
+  faces.sort((f,g)=> g.depth - f.depth); // 奥の面から描く
+  for(const f of faces){
+    ctx.beginPath();
+    ctx.moveTo(f.a.x, f.a.y); ctx.lineTo(f.b.x, f.b.y); ctx.lineTo(apex.x, apex.y); ctx.closePath();
+    const base = 120 + 120*f.light;
+    ctx.fillStyle = `rgb(${Math.round(base)},${Math.round(base*0.82)},${Math.round(base*0.5)})`;
+    ctx.fill();
+    ctx.strokeStyle='rgba(70,50,20,0.55)'; ctx.lineWidth=1.5; ctx.stroke();
+  }
   ctx.restore();
 }
 // 火山1つ分(主峰+複数の裾野の隆起)をまとめて1つの立体として描画する。
@@ -1929,57 +1925,58 @@ function drawVolcanoComplex(group,p){
   const sorted = [...group].sort((a,b)=> (a.isMain?1:0) - (b.isMain?1:0));
 
   for(const v of sorted){
-    const pp = project(v.x, v.y, 0);
-    if(!pp) continue;
-    const r = pp.scale * v.radius;
-    const riseH = r * (v.isMain ? 1.15 : 0.9); // 地面からの盛り上がりの高さ(疑似的な3D隆起)
-
-    ctx.save();
-    ctx.translate(pp.x, pp.y);
-
+    // 各テラス(段)を「本当の世界高さ」で個別に投影することで、視点を動かしても
+    // 山頂と裾野が正しくパララックスし、地面に固定された立体として見える
+    // (以前は裾野を基準にスクリーン上へ一定量ずらしていたため、視点移動で山が泳いで見えた)
+    const worldRise = v.radius * (v.isMain ? 1.15 : 0.9); // 地面からの盛り上がり(世界単位)
+    const terraces = v.isMain ? 5 : 3;
     // 山肌を裾野から山頂へ向けて何段かのテラスとして描き、隆起している質感を出す。
     // 楕円の下半分を描くと接地点より下に膨らんで見えてしまうため、上半分(ドーム状)だけ描く
-    const terraces = v.isMain ? 5 : 3;
     for(let t=terraces; t>=0; t--){
       const tt = t/terraces; // 1=裾野, 0=山頂
-      const rr = r*(0.28+0.72*tt);
+      const cp = project(v.x, v.y, worldRise*(1-tt)); // このテラスの真の3D位置
+      if(!cp) continue;
+      const rr = cp.scale * v.radius*(0.28+0.72*tt);
       const ry = rr*0.60;
-      const yOff = -riseH*(1-tt);
       const shade = 0.16 + tt*0.30; // 山頂ほど明るく
-      ctx.beginPath(); ctx.ellipse(0, yOff, rr, ry, 0, Math.PI, Math.PI*2);
+      ctx.beginPath(); ctx.ellipse(cp.x, cp.y, rr, ry, 0, Math.PI, Math.PI*2);
       ctx.fillStyle = terraceColor(style, shade);
       ctx.fill();
     }
 
     if(v.isMain){
-      if(style==='snow'){
-        const glow = 0.6+0.25*Math.sin(matchTime*1.2);
-        ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.24, r*0.15, 0, 0, Math.PI*2);
-        ctx.fillStyle = `rgba(255,255,255,${0.75+0.2*glow})`;
-        ctx.shadowBlur=16; ctx.shadowColor='rgba(210,235,255,0.9)';
-        ctx.fill();
-        ctx.shadowBlur=0;
-      } else if(style==='forest'){
-        // 木々の茂みを頂上付近に足して密度感を出す
-        for(let i=0;i<5;i++){
-          const a = (i/5)*Math.PI*2;
-          const cx2 = r*0.35*Math.cos(a), cy2 = -riseH*0.85 + r*0.15*Math.sin(a);
-          ctx.beginPath(); ctx.ellipse(cx2, cy2, r*0.22, r*0.16, 0,0,Math.PI*2);
-          ctx.fillStyle = 'rgba(20,60,25,0.55)';
+      const peakP = project(v.x, v.y, worldRise); // 山頂の真の3D位置
+      if(peakP){
+        const r = peakP.scale * v.radius;
+        if(style==='snow'){
+          const glow = 0.6+0.25*Math.sin(matchTime*1.2);
+          ctx.beginPath(); ctx.ellipse(peakP.x, peakP.y, r*0.24, r*0.15, 0, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(255,255,255,${0.75+0.2*glow})`;
+          ctx.shadowBlur=16; ctx.shadowColor='rgba(210,235,255,0.9)';
           ctx.fill();
+          ctx.shadowBlur=0;
+        } else if(style==='forest'){
+          // 木々の茂みを頂上付近に足して密度感を出す(頂上少し下の高さに配置)
+          const cluster = project(v.x, v.y, worldRise*0.85) || peakP;
+          for(let i=0;i<5;i++){
+            const a = (i/5)*Math.PI*2;
+            const cx2 = cluster.x + r*0.35*Math.cos(a), cy2 = cluster.y + r*0.15*Math.sin(a);
+            ctx.beginPath(); ctx.ellipse(cx2, cy2, r*0.22, r*0.16, 0,0,Math.PI*2);
+            ctx.fillStyle = 'rgba(20,60,25,0.55)';
+            ctx.fill();
+          }
+        } else {
+          const glow = 0.6+0.3*Math.sin(matchTime*1.6);
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(peakP.x, peakP.y, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
+          ctx.beginPath(); ctx.ellipse(peakP.x, peakP.y, r*0.26, r*0.16, 0, 0, Math.PI*2);
+          ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
+          ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
+          ctx.fill();
+          ctx.shadowBlur=0;
         }
-      } else {
-        const glow = 0.6+0.3*Math.sin(matchTime*1.6);
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.ellipse(0, -riseH, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
-        ctx.beginPath(); ctx.ellipse(0,-riseH, r*0.26, r*0.16, 0, 0, Math.PI*2);
-        ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
-        ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
-        ctx.fill();
-        ctx.shadowBlur=0;
       }
     }
-    ctx.restore();
   }
   ctx.restore();
 }
