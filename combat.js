@@ -792,7 +792,8 @@ function effectiveProjSpeed(m, mv){
 }
 function effectiveMoveDmg(m, mv){
   const eff = activeStateEffects(m);
-  return mv.dmg * (m.trainDmgMult || 1) * (eff && eff.dmgMult || 1);
+  const ssrMult = (typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, m) : 1; // SSR装備時tier3威力アップ
+  return mv.dmg * (m.trainDmgMult || 1) * (eff && eff.dmgMult || 1) * ssrMult;
 }
 function tryFire(m){
   if(m.freezeUntil > matchTime) return;
