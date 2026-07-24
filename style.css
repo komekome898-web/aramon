@@ -100,12 +100,22 @@
   .ssr-banner-tag{ font-size:10px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
     border-radius:8px; padding:2px 9px; letter-spacing:0.5px; white-space:nowrap; }
 
-  #howToPlayBtn{
-    margin-top:14px; padding:9px 22px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+  #topInfoBtnRow{ display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  #howToPlayBtn, #changelogBtn{
+    padding:9px 22px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
     letter-spacing:1px; color:var(--amber); background:rgba(244,196,48,0.08);
     border:1px solid rgba(244,196,48,0.45); border-radius:20px; cursor:pointer;
   }
-  #howToPlayBtn:active{ background:rgba(244,196,48,0.18); }
+  #howToPlayBtn:active, #changelogBtn:active{ background:rgba(244,196,48,0.18); }
+  #changelogBtn{ white-space:nowrap; }
+  /* 更新履歴ポップ */
+  .mastermon-confirm-box.changelog-box{ position:relative; max-width:min(680px, calc(94 * var(--vw))); width:min(680px, calc(94 * var(--vw)));
+    max-height:calc(90 * var(--vh)); overflow-y:auto; text-align:left; }
+  .changelog-list{ display:flex; flex-direction:column; gap:14px; }
+  .changelog-entry{ border-left:2px solid rgba(244,196,48,0.5); padding-left:12px; }
+  .changelog-date{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; color:var(--amber); margin-bottom:4px; letter-spacing:0.5px; }
+  .changelog-items{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:4px; }
+  .changelog-items li{ font-size:12px; line-height:1.45; color:var(--ink); }
   #settingsBtnRow{ display:flex; align-items:center; gap:12px; justify-content:center; flex-wrap:wrap; }
   #audioSettingsBtn, #openHudCustomizeBtn{
     padding:11px 26px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px;

@@ -59,7 +59,10 @@
     </div>
   </div>
 
-  <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
+  <div id="topInfoBtnRow">
+    <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
+    <button id="changelogBtn">🆕 更新履歴</button>
+  </div>
   <div id="accountBar">
     <button id="accountLoginBtn">👤 ログイン / アカウント作成</button>
     <div id="settingsBtnRow">
@@ -660,6 +663,15 @@
         <div id="shopList" class="bag-list shop-list-2col"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 更新履歴 -->
+<div id="changelogOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box changelog-box">
+    <button id="closeChangelogBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text" style="margin-bottom:8px;">🆕 更新履歴</div>
+    <div id="changelogList" class="changelog-list"></div>
   </div>
 </div>
 

@@ -1,12 +1,12 @@
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
 }, {passive:false});
 document.addEventListener('dblclick', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
   e.preventDefault();
 });
 
@@ -223,14 +223,45 @@ document.getElementById('turnRightBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) turnCameraByDegrees(90);
 });
-document.getElementById('movePanel').addEventListener('pointerdown', (e)=>{
-  e.preventDefault(); e.stopPropagation();
-  if(!game.started || game.over || !player || !player.alive) return;
-  if(player.moveTierUnlocked<=1) return;
-  player.moveTierSelected = player.moveTierSelected>=player.moveTierUnlocked ? 1 : player.moveTierSelected+1;
-  const newMv = SIGNATURE_MOVES[player.element][player.moveTierSelected-1];
-  pushToast(`${newMv.name} に切り替え`);
-});
+// 技フィールド: タップで次の技へ循環。左右フリックでも切替(右=上位tier/左=下位tier、端は反対端へループ)
+(function(){
+  const panel = document.getElementById('movePanel');
+  const MOVE_FLICK_DIST = 28; // 論理px。これ以上の横移動でフリックと判定
+  let moveGesture = null;
+  function changeMoveTier(dir){
+    if(!player || player.moveTierUnlocked<=1) return;
+    let t = player.moveTierSelected + dir;
+    if(t > player.moveTierUnlocked) t = 1;                 // 右端の右フリック→左端へ
+    else if(t < 1) t = player.moveTierUnlocked;            // 左端の左フリック→右端へ
+    player.moveTierSelected = t;
+    const newMv = SIGNATURE_MOVES[player.element][t-1];
+    const nm = (typeof getMoveName==='function') ? getMoveName(newMv, player) : newMv.name;
+    pushToast(`${nm} に切り替え`);
+  }
+  panel.addEventListener('pointerdown', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    if(!game.started || game.over || !player || !player.alive) return;
+    moveGesture = { id:e.pointerId, x:e.clientX, y:e.clientY, moved:false };
+  });
+  window.addEventListener('pointermove', (e)=>{
+    if(!moveGesture || e.pointerId!==moveGesture.id) return;
+    if(Math.hypot(e.clientX-moveGesture.x, e.clientY-moveGesture.y) > 6) moveGesture.moved = true;
+  });
+  window.addEventListener('pointerup', (e)=>{
+    if(!moveGesture || e.pointerId!==moveGesture.id) return;
+    const rawdx = e.clientX-moveGesture.x, rawdy = e.clientY-moveGesture.y;
+    // 強制横向き(回転)時も見た目どおりの左右になるよう論理座標へ変換
+    const L = (typeof toLogicalDelta==='function') ? toLogicalDelta(rawdx, rawdy) : {x:rawdx, y:rawdy};
+    const g = moveGesture; moveGesture = null;
+    if(!game.started || game.over || !player || !player.alive) return;
+    if(Math.abs(L.x) > MOVE_FLICK_DIST && Math.abs(L.x) > Math.abs(L.y)){
+      changeMoveTier(L.x > 0 ? 1 : -1); // 右フリック=上位tier / 左フリック=下位tier
+    } else if(!g.moved){
+      changeMoveTier(1);                // タップ=従来どおり次の技へ(循環)
+    }
+  });
+  window.addEventListener('pointercancel', (e)=>{ if(moveGesture && e.pointerId===moveGesture.id) moveGesture = null; });
+})();
 
 /* =====================================================================
    GAME FLOW

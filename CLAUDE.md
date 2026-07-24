@@ -13,6 +13,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 3. **ビルドツール・npmパッケージ・フレームワークを導入しない。** すべて素のJS/CSS/HTMLのまま維持する。
 4. **モジュール分割構成を維持する。** 新機能も既存の担当ファイルに追記する(下記参照)。1ファイルに戻すリファクタリングはしない。
 5. **変更は動作する実用的な解を優先する。** アーキテクチャ的な完璧さのための大規模リファクタリングは指示がない限りしない。
+6. **プレイに関わる大きな変更をしたら「更新履歴」も更新する。** `data.js` の `UPDATE_HISTORY`(トップ画面「更新履歴」ボタンで表示)に、その日の日付の項目として1行追記する。対象=**新機能の追加・既存機能の変更・バランス/仕様の調整など、プレイヤーの遊びに影響する内容**。対象外=細かい画面レイアウト・見た目・軽微なバグ修正・内部リファクタ・ドキュメントのみ。日付は降順(新しい日を上に)。文言は発注者向けに簡潔な日本語で(技術用語を避ける)。1回のPRで複数の大きな変更をした場合は複数行に分ける。
 
 ## ファイル構成と担当範囲
 
@@ -20,7 +21,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 |---|---|
 | `index.html` | 全画面のDOMマークアップ。scriptの読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
 | `style.css` | 全スタイル。CSS変数は`:root`(--amber, --ink, --danger等) |
-| `data.js` | 定数・マスタデータ: WORLD寸法, MAPS, ELEMENTS(モンスター), SIGNATURE_MOVES, マスモン(トレーニング/EXP/ステータス倍率), 試合内アイテム定義, プレイヤーアカウント系(通貨=ゴールド/ダイヤ, バッグ, PLAYER_ITEMS, ガチャ, ショップ, 試合報酬) |
+| `data.js` | 定数・マスタデータ: WORLD寸法, MAPS, ELEMENTS(モンスター), SIGNATURE_MOVES, マスモン(トレーニング/EXP/ステータス倍率), 試合内アイテム定義, プレイヤーアカウント系(通貨=ゴールド/ダイヤ, バッグ, PLAYER_ITEMS, ガチャ, ショップ, 試合報酬), **更新履歴`UPDATE_HISTORY`**, オーラ/SSRスキン関連(`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`/`getMoveAura`/`getMoveName`/`ssrTier3DmgMult`) |
 | `audio.js` | BGM/SE。原則Web Audio APIで合成。BGMはステップシーケンサ(タイトル/試合中/残り5人以下)、SEは`playSe(name)`。音量はlocalStorage永続化。**例外的に一部だけ実音源を使う**(下記「音」参照): SSR獲得SE=内蔵mp3データURI、残り5人以下BGM=`bgm_final5.mp3` |
 | `world.js` | ワールド生成(岩/水晶/川/海/火山/建物), 安全圏(zoneState), 地形判定, 移動・衝突 |
 | `combat.js` | 戦闘: 攻撃, ダメージ, AoE, 状態変化, Bot AI |
@@ -86,9 +87,11 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - BGM: タイトル(牧場)/試合中(残り人数で段階変化 intensity 0〜2)/残り5人以下(intensity 3)。`bgmSetTrack('title'|'battle'|null)`/`bgmUpdateBattleIntensity(aliveCount)`(render.jsのHUD更新から呼ぶ)。ステップシーケンサ`bgmScheduler`が16分音符単位で先読みスケジュール。全ノードは`bgmTrackGain`(切替フェード用)→`bgmGain`(音量=`audioSettings.bgm`)→出力。
 
 #### 実音源を使う例外(合成ではない箇所)
-「全合成」が原則だが、発注者提供の実音を使う箇所が2つある。どちらも**外部依存を増やさない/オフラインでも壊さない**方針。
+「全合成」が原則だが、発注者提供の実音を使う箇所がいくつかある。いずれも**外部依存を増やさない/オフラインでも壊さない**方針。
 - **SSR獲得SE**(`playSsrJackpotOnce`/`startSsrJackpotLoop`): 動画音声を**内蔵mp3データURI**(`SSR_JACKPOT_DATAURL`)にして`decodeAudioData`→`AudioBuffer`再生。SSR演出中はループ、スキップで停止。短いのでインライン埋め込み。
 - **残り5人以下BGM**(`ensureBgmFinal5Buffer`/`startBgmFinal5Loop`/`updateBgmFinal5Loop`): 約64秒と長いので**外部ファイル`bgm_final5.mp3`**を`fetch`+`decodeAudioData`し、`loop:true`の`AudioBufferSourceNode`を`bgmTrackGain`経由で再生。スケジューラの毎tickで`updateBgmFinal5Loop()`が「試合BGM && intensity≥3 && 音量>0」を判定して開始/停止。**音源未ロード/取得失敗時は従来の合成epic(`bgmEpicStep`)にフォールバック**するので無音にならない。
+- **ゼウス(SSR)装備時のtier3専用SE**(`playZeusTier3Once`): 動画音声(約1秒)を内蔵mp3データURI(`ZEUS_TIER3_DATAURL`)で再生。`moveSeName`が`SKIN_TIER3_SE`(combat.js)経由でゼウス装備tier3のみこのSEに差し替え。未ロード時は合成`godRising`にフォールバック。
+- **リザルトの自己ベスト更新SE**(`playBestUpdateOnce`): 約9秒と長いので外部ファイル`best_update.mp3`を`fetch`+`decodeAudioData`し1回だけ再生(ループ無し)。全体の自己ベスト更新時に鳴らし、称号/モンスター毎ベストのSSR獲得SEより優先。未ロード時はSSR獲得SEにフォールバック。
 - **実音の抽出手順**(この環境): `pip install imageio-ffmpeg`で静的ffmpegが入る(`python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"`)。Chromium(OSSビルド)は**AAC/HEVCをデコード不可・mp3は可**。動画音声はAACなので一旦ffmpegでmp3化してから埋め込む。整音は`loudnorm`。
 - 別の実音を足すときの判断: 短い効果音はデータURIインライン、長い曲は外部mp3+`fetch`。いずれもSWのネットワーク優先キャッシュに乗る。
 
@@ -107,6 +110,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - 数値バランス(倍率・係数)は発注者が実機プレイテスト後に反復調整するので、調整しやすいよう名前付き定数にまとめる。
 - 変更したファイルだけをコミットする。コミットメッセージは日本語でよい。
 - 動作確認はiPhone実機(PWA)で発注者が行う。デプロイ後にキャッシュバージョンが上がっていれば次回アクセス時に自動更新される。
+- **PRはsquashマージ運用**。前回PRのコミットが作業ブランチに残ったまま次の作業を重ねると、mainのsquashコミットと内容が重複してPR作成時にコンフリクトする。次のPR前に `git fetch origin main && git rebase --onto origin/main <前回のブランチ先端(=squash元)> <作業ブランチ>` で既マージ分を落としてから `push --force-with-lease` する(このセッションで毎回実施している手順)。
+- **プレイに関わる大きな変更時は`data.js`の`UPDATE_HISTORY`にも追記**(絶対に守るルール6)。同じコミットに含める。
 
 ### ヘッドレスでの動作確認(重要)
 - 発注者は実機だが、こちら側でもコミット前に**Playwright(ヘッドレスChromium)で必ず検証する**。UIロジック・ゲーム状態・レイアウト・SE発音の有無まで確認できる。

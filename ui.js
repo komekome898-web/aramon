@@ -1364,6 +1364,24 @@ document.getElementById('openShopBtn').addEventListener('click', ()=>{
 document.getElementById('closeShopBtn').addEventListener('click', ()=>{
   document.getElementById('shopOverlay').classList.add('hidden');
 });
+// 更新履歴: 日付降順で「プレイに関わる大きな変更」を表示する
+function renderChangelog(){
+  const listEl = document.getElementById('changelogList');
+  if(!listEl || typeof UPDATE_HISTORY==='undefined') return;
+  const entries = [...UPDATE_HISTORY].sort((a,b)=> (a.date<b.date?1:a.date>b.date?-1:0)); // 日付降順
+  listEl.innerHTML = entries.map(e=>`
+    <div class="changelog-entry">
+      <div class="changelog-date">${e.date}</div>
+      <ul class="changelog-items">${(e.items||[]).map(it=>`<li>${it}</li>`).join('')}</ul>
+    </div>`).join('');
+}
+document.getElementById('changelogBtn').addEventListener('click', ()=>{
+  renderChangelog();
+  document.getElementById('changelogOverlay').classList.remove('hidden');
+});
+document.getElementById('closeChangelogBtn').addEventListener('click', ()=>{
+  document.getElementById('changelogOverlay').classList.add('hidden');
+});
 updateAccountBar();
 if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
 if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
