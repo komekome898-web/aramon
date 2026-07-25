@@ -384,10 +384,14 @@ JOBS = [
     ('m2','illumine_walk_b',    False, 'white',     'single'),
     ('n1','warm_walk_f',        True,  'blackopen', 'single'),
     ('n2','warm_walk_b',        False, 'blackopen', 'single'),
+    # 2026-07-25(2回目): ピクシー追加。黒背景+本体に黒い部位が無い(blackopen)。
+    ('x1','pixie_walk_f',       True,  'blackopen', 'single'),
+    ('x2','pixie_walk_b',       False, 'blackopen', 'single'),
 ]
 U='/root/.claude/uploads/2dcee4de-18cc-599b-9320-655c57e78387'
 U2='/root/.claude/uploads/18073022-2206-5ef7-b9d6-78426f00390e'
 U3='/home/claude/aramon/scratchpad/src_videos'
+U4='/home/claude/aramon/scratchpad/src_videos2'
 MOV = {
  'v1':f'{U}/8de170af-ScreenRecording_07242026_183303_1.mov',
  'v2':f'{U}/211b4e0f-ScreenRecording_07242026_183329_1.mov',
@@ -421,6 +425,8 @@ MOV = {
  'm2':f'{U3}/illumine_back.mp4',
  'n1':f'{U3}/warm_front.mp4',
  'n2':f'{U3}/warm_back.mp4',
+ 'x1':f'{U4}/pixie_front.mp4',
+ 'x2':f'{U4}/pixie_back.mp4',
 }
 import sys
 only = set(sys.argv[1:])
