@@ -227,7 +227,8 @@ const WALK_ANIM = {
     ssr:  { skinId:'mocchi_ssr', front:_loadWalk('mocchi_ssr_walk_f'), back:_loadWalk('mocchi_ssr_walk_b') }, // ラガモッチー
   },
   god: {
-    base: { front:_loadWalk('god_walk_f'), back:_loadWalk('god_walk_b') },               // ガリ(色スキン対応。ゼウス専用コマは未提供)
+    base: { front:_loadWalk('god_walk_f'), back:_loadWalk('god_walk_b') },               // ガリ(色スキン対応)
+    ssr:  { skinId:'zeus_ssr', front:_loadWalk('zeus_ssr_walk_f'), back:_loadWalk('zeus_ssr_walk_b') }, // SSRゼウス
   },
   suezo: {
     base: { front:_loadWalk('suezo_walk_f'), back:_loadWalk('suezo_walk_b') },            // スエゾー(色スキン対応)
@@ -236,7 +237,8 @@ const WALK_ANIM = {
     base: { front:_loadWalk('zan_walk_f'), back:_loadWalk('zan_walk_b') },                // ザン(色スキン対応)
   },
   fox: {
-    base: { front:_loadWalk('fox_walk_f'), back:_loadWalk('fox_walk_b') },                // キュービ(色スキン対応。タマモノマエ専用コマは未提供)
+    base: { front:_loadWalk('fox_walk_f'), back:_loadWalk('fox_walk_b') },                // キュービ(色スキン対応)
+    ssr:  { skinId:'tamamo_ssr', front:_loadWalk('tamamo_ssr_walk_f'), back:_loadWalk('tamamo_ssr_walk_b') }, // SSRタマモノマエ
   },
   spark: {
     base: { front:_loadWalk('spark_walk_f'), back:_loadWalk('spark_walk_b') },            // ライガー(色スキン対応)
@@ -522,6 +524,9 @@ function ssrTier3DmgMult(move, attacker){
 // 更新履歴(プレイに関わる大きな機能の追加・変更・調整のみ。日付降順で表示する)。
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
+  { date:'2026-07-25', items:[
+    'SSRスキン「ゼウス」「タマモノマエ」にもバトル中の歩行アニメーションを追加',
+  ]},
   { date:'2026-07-24', items:[
     'ヒノトリとSSRフェニックスにもバトル中の歩行アニメーションを追加（色スキンにも対応）',
     'ガリ・スエゾー・ザン・キュービ・ライガーにもバトル中の歩行アニメーションを追加（色スキンにも対応）',

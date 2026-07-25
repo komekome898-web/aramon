@@ -29,7 +29,7 @@ import cv2
 from scipy import ndimage
 
 FF = subprocess.check_output(['python3','-c','import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())']).decode().strip()
-W = '/tmp/claude-0/-home-user-aramon/2dcee4de-18cc-599b-9320-655c57e78387/scratchpad/sz'
+W = '/tmp/claude-0/-home-user-aramon/18073022-2206-5ef7-b9d6-78426f00390e/scratchpad/sz'
 OUTDIR = '/home/user/aramon/monsters'
 TARGET_H = 250
 CANVAS = 320
@@ -98,6 +98,22 @@ def white_alpha(bgr):
     fg = _largest(fg)
     fg = _fill_small_holes(fg)
     fg = cv2.erode(fg, np.ones((2,2),np.uint8), iterations=1)  # 白フリンジを1px削る
+    alpha = (fg*255).astype(np.uint8)
+    alpha = cv2.GaussianBlur(alpha, (3,3), 0)
+    return alpha
+
+def black_alpha(bgr, T=14):
+    # 純黒背景用(白背景版の反転): 隅からつながる黒のみ背景にする(内部の黒い毛/影は残す)
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.int32)
+    maxc = rgb.max(axis=2)
+    nearblack = (maxc < T)
+    lbl, num = ndimage.label(nearblack.astype(np.uint8))
+    border = set(np.unique(np.concatenate([lbl[0,:], lbl[-1,:], lbl[:,0], lbl[:,-1]])))
+    border.discard(0)
+    bgmask = np.isin(lbl, list(border))
+    fg = (~bgmask).astype(np.uint8)
+    fg = _largest(fg)
+    fg = _fill_small_holes(fg)
     alpha = (fg*255).astype(np.uint8)
     alpha = cv2.GaussianBlur(alpha, (3,3), 0)
     return alpha
@@ -273,6 +289,7 @@ def process(mov, prefix, front, mode='grass', knockout='single'):
       'phoenix_bb':(0.42,46,'full',True),   # フェニックス 後ろ(尾は塗りつぶし)
     }
     if mode=='white': segfn = lambda bgr: white_alpha(bgr)
+    elif mode=='black': segfn = lambda bgr: black_alpha(bgr)
     elif knockout in _PHX:
         sT,dT,fl,wt = _PHX[knockout]; segfn = lambda bgr: phoenixcut_alpha(bgr, sT, dT, fl, wt)
     elif knockout=='phoenixcut': segfn = lambda bgr: phoenixcut_alpha(bgr)
@@ -330,8 +347,13 @@ JOBS = [
     ('p2','phoenix_walk_b',     False, 'grass', 'phoenix_o'),
     ('p3','phoenix_ssr_walk_f', True,  'grass', 'phoenix_bf'),
     ('p4','phoenix_ssr_walk_b', False, 'grass', 'phoenix_bb'),
+    ('z1','zeus_ssr_walk_f',    True,  'black', 'single'),
+    ('z2','zeus_ssr_walk_b',    False, 'black', 'single'),
+    ('t1','tamamo_ssr_walk_f',  True,  'black', 'single'),
+    ('t2','tamamo_ssr_walk_b',  False, 'black', 'single'),
 ]
 U='/root/.claude/uploads/2dcee4de-18cc-599b-9320-655c57e78387'
+U2='/root/.claude/uploads/18073022-2206-5ef7-b9d6-78426f00390e'
 MOV = {
  'v1':f'{U}/8de170af-ScreenRecording_07242026_183303_1.mov',
  'v2':f'{U}/211b4e0f-ScreenRecording_07242026_183329_1.mov',
@@ -345,6 +367,10 @@ MOV = {
  'p2':f'{U}/32a39bea-ScreenRecording_07242026_190056_1.mov',
  'p3':f'{U}/73a9a406-ScreenRecording_07242026_190859_1.mov',
  'p4':f'{U}/f2ed6008-ScreenRecording_07242026_191006_1.mov',
+ 'z1':f'{U2}/e4a52144-_________07256_Full_HD_1080p.mp4',
+ 'z2':f'{U2}/5c8b44e1-_________07257_Full_HD_1080p.mp4',
+ 't1':f'{U2}/634ef545-_________072518_Full_HD_1080p.mp4',
+ 't2':f'{U2}/cbb79517-_________072519_Full_HD_1080p.mp4',
 }
 import sys
 only = set(sys.argv[1:])
