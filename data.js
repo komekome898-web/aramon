@@ -266,6 +266,7 @@ const WALK_ANIM = {
 };
 const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
 const WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
+const MOVE_FACING_LOCK_MELEE_DUR = 0.3; // 近接技発生中の向き固定秒数(飛翔体等と違いエフェクト時間が無いため固定値)
 const _walkRecolor = {};     // 色スキン再着色コマのキャッシュ element:colorId:view:idx -> canvas
 function _entityDisplaySkinId(e){
   if(!e) return null;
@@ -296,7 +297,11 @@ function entityWalkFrameImage(e){
   const moving = (e._mwSpeed||0) > WALK_MOVE_EPS;
   const yaw = (typeof camState!=='undefined' && camState) ? camState.yaw : 0;
   let back;
-  if(!moving){
+  // 技発生中は移動方向に関わらず技を打った方向を向く(プレイヤーは奥に向けて打つため後ろ姿になる)
+  if(typeof e.moveFacingUntil==='number' && t < e.moveFacingUntil && typeof e.moveFacingAngle==='number'){
+    const fax=Math.cos(e.moveFacingAngle), fay=Math.sin(e.moveFacingAngle);
+    back = (fax*Math.cos(yaw)+fay*Math.sin(yaw))>0;
+  } else if(!moving){
     back = !!e.isPlayer;                          // 停止中の既定(自分=後ろ姿/他=正面)
   } else {
     const mvx=e._mwDirX||0, mvy=e._mwDirY||0;     // 進行方向がカメラ奥向き=後ろ姿/手前=正面
@@ -541,6 +546,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-25', items:[
+    '技を出している間は、移動していてもその技を打った方向を向くように調整(自分の技発生中は後ろ姿になる)',
     'アーク・ウンディーネ・ドラゴン・プラント・ゴーレムとSSRスキン「イブリース」にもバトル中の歩行アニメーションを追加',
     'SSRスキン「ゼウス」「タマモノマエ」にもバトル中の歩行アニメーションを追加',
   ]},

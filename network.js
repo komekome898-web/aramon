@@ -388,6 +388,7 @@ function tryNonHostPlayerFireVisual(dt){
       beamRanges, fillSpeed, telegraphTime:0.18,
       spawnAt:matchTime, life, style:mv.aoeStyle||null, moveAura, auraTint,
     });
+    lockMoveFacing(player, aimAngle, life);
     playSe(sp || 'fire', sp ? { dur: life } : { kind:'aoe', dur: life });
   } else if(mv.lobbed){
     const throwDist = mv.range;
@@ -402,6 +403,7 @@ function tryNonHostPlayerFireVisual(dt){
       color:effColor, hitR:mv.hitR*hbMult, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
       projStyle:mv.projStyle||null, moveAura,
     });
+    lockMoveFacing(player, aimAngle, Math.max(0.05, flightTime));
     playSe(sp || 'fire', sp ? { dur: Math.max(0.05, flightTime) } : { kind:'single' });
   } else if(mv.multiOrb){
     // ゴッドライジング等: 赤青黄緑の光球を放射線状に。見た目専用(当たり判定はホスト)
@@ -421,6 +423,7 @@ function tryNonHostPlayerFireVisual(dt){
         ownerId: player.id,
       });
     }
+    lockMoveFacing(player, aimAngle, mv.range/effProjSpeed);
     playSe(sp || 'fire', sp ? { dur: mv.range/effProjSpeed } : { kind:'single' });
   } else if(!mv.melee){
     const burstCount = mv.burst || 1;
@@ -438,8 +441,10 @@ function tryNonHostPlayerFireVisual(dt){
         ownerId: player.id,
       });
     }
+    lockMoveFacing(player, aimAngle, mv.range/effProjSpeed + burstGap*Math.max(0, burstCount-1));
     playSe(sp || 'fire', sp ? { dur: mv.range/effProjSpeed } : { kind: mv.burst ? 'burst' : 'single' });
   } else {
+    lockMoveFacing(player, aimAngle, MOVE_FACING_LOCK_MELEE_DUR);
     spawnHit(player.x + Math.cos(aimAngle)*mv.range*0.5, player.y + Math.sin(aimAngle)*mv.range*0.5, player.z, effColor);
     playSe('fire', { kind:'single' });
   }

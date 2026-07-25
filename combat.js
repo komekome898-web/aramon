@@ -15,6 +15,11 @@ function moveSeName(move, attacker){
   if(move.seStyle) return move.seStyle; // data.jsで個別指定(熱視線など)
   return MOVE_SE_BY_STYLE[move.aoeStyle || move.projStyle] || null;
 }
+// 技発生中は移動方向に関わらず技を打った方向を向かせる(歩行アニメの前向き/後ろ向き判定用。data.jsのentityWalkFrameImageが参照)
+function lockMoveFacing(attacker, angle, duration){
+  attacker.moveFacingAngle = angle;
+  attacker.moveFacingUntil = matchTime + Math.max(0, duration);
+}
 function fireMove(attacker, target, move){
   // SE: 自分の技発射のみ(負荷対策)。専用SEがある技はそれを、無ければ単発/連射の共通音
   if(attacker.isPlayer && !move.aoeShape){
@@ -37,6 +42,7 @@ function fireMove(attacker, target, move){
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // SSR tier3は装備オーラ色に
   const auraTint = (move.tier===3 && effColor !== move.color) ? effColor : null; // SSR tier3のエフェクト色基調(専用スタイルの色替え用)
   if(move.melee){
+    lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){
       applyDamage(target, effDmg, attacker, { moveAura });
       spawnHit(target.x, target.y, target.z, effColor);
@@ -67,6 +73,7 @@ function fireMove(attacker, target, move){
       ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
     }
     areaEffects.push(ae);
+    lockMoveFacing(attacker, aimAngle, ae.life);
     if(attacker.isPlayer){
       const sp = moveSeName(move, attacker);
       playSe(sp || 'fire', sp ? { dur: ae.life } : { kind:'aoe', dur: ae.life }); // 技の持続時間に合わせた長さで鳴らす
@@ -88,6 +95,7 @@ function fireMove(attacker, target, move){
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
       icon:move.icon, shape:move.shape, projStyle:move.projStyle||null, moveAura,
     });
+    lockMoveFacing(attacker, ang, Math.max(0.05, flightTime));
     return;
   }
   if(move.multiOrb){
@@ -109,13 +117,15 @@ function fireMove(attacker, target, move){
         moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
       });
     }
+    lockMoveFacing(attacker, baseAng, move.range/effProjSpeed);
     return;
   }
   const burstCount = move.burst || 1;
   const burstGap = move.burstGap || 0;
+  const baseAng = angTo(attacker, target);
   for(let i=0;i<burstCount;i++){
     const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
-    const ang = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
+    const ang = baseAng + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
       vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
@@ -127,6 +137,7 @@ function fireMove(attacker, target, move){
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
     });
   }
+  lockMoveFacing(attacker, baseAng, move.range/effProjSpeed + burstGap*Math.max(0, burstCount-1));
 }
 function angleDiff(a,b){ let d=a-b; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2; return d; }
 function raySegmentCircleDist(ox,oy,angle,cx,cy,cr){
