@@ -34,8 +34,8 @@ import cv2
 from scipy import ndimage
 
 FF = subprocess.check_output(['python3','-c','import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())']).decode().strip()
-W = '/tmp/claude-0/-home-user-aramon/18073022-2206-5ef7-b9d6-78426f00390e/scratchpad/sz'
-OUTDIR = '/home/user/aramon/monsters'
+W = '/home/claude/aramon/scratchpad/sz'
+OUTDIR = '/home/claude/aramon/aramon-main/monsters'
 TARGET_H = 250
 CANVAS = 320
 FEET_Y = 0.94  # feet baseline at 94% of canvas height
@@ -378,9 +378,16 @@ JOBS = [
     ('l2','leaf_walk_b',        False, 'blackopen', 'single'),
     ('r1','rock_walk_f',        True,  'blackopen', 'single'),
     ('r2','rock_walk_b',        False, 'blackopen', 'single'),
+    # 2026-07-25: イルミネ/ワーム追加。イルミネは白背景(white)、ワームは黒背景+
+    # 本体に黒い部位が無い(blackopen)。
+    ('m1','illumine_walk_f',    True,  'white',     'single'),
+    ('m2','illumine_walk_b',    False, 'white',     'single'),
+    ('n1','warm_walk_f',        True,  'blackopen', 'single'),
+    ('n2','warm_walk_b',        False, 'blackopen', 'single'),
 ]
 U='/root/.claude/uploads/2dcee4de-18cc-599b-9320-655c57e78387'
 U2='/root/.claude/uploads/18073022-2206-5ef7-b9d6-78426f00390e'
+U3='/home/claude/aramon/scratchpad/src_videos'
 MOV = {
  'v1':f'{U}/8de170af-ScreenRecording_07242026_183303_1.mov',
  'v2':f'{U}/211b4e0f-ScreenRecording_07242026_183329_1.mov',
@@ -410,6 +417,10 @@ MOV = {
  'l2':f'{U2}/22ca86ab-_________072511_Full_HD_1080p.mp4',
  'r1':f'{U2}/a99064e1-_________072512_Full_HD_1080p.mp4',
  'r2':f'{U2}/4d81ddde-_________072513_Full_HD_1080p.mp4',
+ 'm1':f'{U3}/illumine_front.mp4',
+ 'm2':f'{U3}/illumine_back.mp4',
+ 'n1':f'{U3}/warm_front.mp4',
+ 'n2':f'{U3}/warm_back.mp4',
 }
 import sys
 only = set(sys.argv[1:])
