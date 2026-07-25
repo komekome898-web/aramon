@@ -263,6 +263,12 @@ const WALK_ANIM = {
   rock: {
     base: { front:_loadWalk('rock_walk_f'), back:_loadWalk('rock_walk_b') },              // ゴーレム(色スキン対応)
   },
+  illumine: {
+    base: { front:_loadWalk('illumine_walk_f'), back:_loadWalk('illumine_walk_b') },      // イルミネ(色スキン対応)
+  },
+  warm: {
+    base: { front:_loadWalk('warm_walk_f'), back:_loadWalk('warm_walk_b') },              // ワーム(色スキン対応)
+  },
 };
 const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
 const WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
@@ -546,6 +552,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-25', items:[
+    'イルミネ・ワームにもバトル中の歩行アニメーションを追加（色スキンにも対応）。これで全モンスターが歩行アニメーションに対応',
     '技を出している間は、移動していてもその技を打った方向を向くように調整(自分の技発生中は後ろ姿になる)',
     'アーク・ウンディーネ・ドラゴン・プラント・ゴーレムとSSRスキン「イブリース」にもバトル中の歩行アニメーションを追加',
     'SSRスキン「ゼウス」「タマモノマエ」にもバトル中の歩行アニメーションを追加',
