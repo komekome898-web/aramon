@@ -1795,8 +1795,39 @@ function drawAreaEffects(){
           }
         }
       }
+    } else if(ae.kind==='circle'){
+      drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph);
     }
   }
+}
+// 円形に広がるドーム状の爆発エフェクト(ビッグバン等)
+function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  const proj = project(ae.x, ae.y, 0);
+  if(!proj) return;
+  const maxR = ae.range;
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  ctx.scale(proj.scale, proj.scale);
+  // 最大範囲を薄い点線で予告
+  ctx.globalAlpha = 0.5*fadeAlpha;
+  ctx.strokeStyle = ae.color; ctx.lineWidth = 3; ctx.setLineDash([10,8]);
+  ctx.beginPath(); ctx.ellipse(0,0, maxR*0.95, maxR*0.5, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  if(!inTelegraph){
+    const curReach = Math.min(maxR, fillDist);
+    if(curReach>2){
+      const g = ctx.createRadialGradient(0,0,0, 0,0, curReach*0.95);
+      g.addColorStop(0, ae.color); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.55*fadeAlpha;
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(0,0, curReach*0.95, curReach*0.5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 0.9*fadeAlpha;
+      ctx.strokeStyle = '#c98bff'; ctx.lineWidth = 4;
+      if(!renderHeavyLoad){ ctx.shadowBlur=24; ctx.shadowColor=ae.color; }
+      ctx.beginPath(); ctx.ellipse(0,0, curReach*0.95, curReach*0.5, 0, 0, Math.PI*2); ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 function drawLandingMarkers(){
   for(const p of projectiles){

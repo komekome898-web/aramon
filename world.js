@@ -10,6 +10,7 @@ let oasisZones = [];
 let currentMap = MAPS.wild;
 let projectiles = [];
 let areaEffects = [];
+let pendingAoeCasts = []; // AoE技(aoeShape)でburst>1のときの2発目以降の発射待ちキュー(ピクシー「ライトニング」等)
 let lootItems = [];
 let particles = [];
 let terrainDecor = [];

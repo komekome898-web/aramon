@@ -83,7 +83,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### バトル歩行アニメーション(data.js / render.js)
 - 動画から1歩行ループを8コマに分割した透過スプライトで歩行を表現する。`monsters/<prefix>_walk_f1..8.png`(正面)/`<prefix>_walk_b1..8.png`(後ろ)。
-- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ(+ゼウスSSR)/スエゾー/ザン/キュービ(+タマモノマエSSR)/ライガー/ヒノトリ(+フェニックスSSR)/アーク(+イブリースSSR)/ウンディーネ/ドラゴン/プラント/ゴーレム/イルミネ/ワーム。**全13エレメント対応完了。**
+- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ(+ゼウスSSR)/スエゾー/ザン/キュービ(+タマモノマエSSR)/ライガー/ヒノトリ(+フェニックスSSR)/アーク(+イブリースSSR)/ウンディーネ/ドラゴン/プラント/ゴーレム/イルミネ/ワーム/ピクシー。**全15エレメント対応完了。**
 - 描画の入口は `getDisplayImage(entity)`。先頭で `entityWalkFrameImage(entity)` を呼び、歩行コマがあればそれを返す(なければ従来の静止画にフォールバック)。`drawMonster`/`drawMonsterPortrait` がこれを描く。
 - コマ選択(`entityWalkFrameImage`): `matchTime`でコマ送り、平滑化速度`_mwSpeed`が`WALK_MOVE_EPS`超で「歩行中」。進行方向とカメラ`camState.yaw`の内積で正面/後ろを切替(カメラ奥向き=後ろ姿)。停止中は静止(自分=後ろ姿/他=正面)。素体は色スキン装備時に`recolorToCanvas`で各コマ再着色し`_walkRecolor`にキャッシュ。**歩行コマ未提供のSSRスキン装備時は`null`を返し従来の静止スキン画像を表示**(ガード有り。現在対応済みSSRはラガモッチー/ゼウス/タマモノマエ/フェニックス/イブリースの5種で、これ以外の新規SSRを追加した際に歩行コマを用意しなければこのガードが働く)。
 - **スプライト生成は `tools/build_walk.py`(開発用)。** 動画→60fps抽出→自己相関で1周期検出→8コマ抽出→モンスター別セグメンテーション→320px・256色透過PNGに統一(足を94%基準・中央寄せ)。背景/被写体別モード:
@@ -91,6 +91,21 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - 淡い草/金背景 = `grabcut_alpha`(`single`/`gentle`/`hard`/`hardgentle`): grabCut切り抜き。`gentle`はopen省略で細い足を守る(スエゾーの一本足)、`hard`は縁を確定背景にしたマスク初期化(金色ボケ背景)。
   - 鳥(ヒノトリ/フェニックス。炎・羽が背景色に近い) = `phoenixcut_alpha`: 彩度/明度/背景色距離で本体抽出。**かぎ爪の足(暗色)を明示追加し中央下部限定の縦closeで本体に接続**(largestで足が消えるのを防ぐ)、足元の淡い地面/オーラを色で除去、トサカを上端中央で復元。正面は脚間を残すため小穴のみ塗り、後ろは尾を塗りつぶして密度確保。パラメータは`_PHX`(satT/distT/fill/warm_trim)で正面・後ろ別。
 - **【検証必須・過去に鳥系で何度も手戻り】新しい歩行スプライトは、全16コマ(正面8+後ろ8)を1コマずつ目視し「トサカ等の突起」「足」が欠けないこと・足元の背景/地面が透過していることを確認してから採用する。** `tools/build_walk.py`の隣に置く判定(bboxの上端中央=トサカ、下端中央=足に画素があるか)で全コマ自動チェックしつつ、必ず目視も行う。ヘッドレスでも`getDisplayImage`→`drawMonster`で実描画確認する。
+- **`tools/build_walk.py`のJOBS/MOVに新規ジョブを足すとき、job id(例:`'p1'`)が既存行と重複していないか必ず`grep`で確認すること。** 重複するとMOV辞書は後勝ちで上書きされ、既存モンスターのjob定義に新しい動画パスが紛れ込み、**既存モンスターの歩行スプライトを気づかずに上書き破壊する**(2026-07-25に実際発生。phoenixのp1/p2とピクシーのp1/p2が衝突し、修復にmd5sum比較+元zipからの復元が必要だった)。空いている文字を使うこと。
+
+### 新モンスターの追加(data.js内の登録箇所チェックリスト)
+新しい要素キー(例:`pixie`)を1体追加する際、以下**すべて**に対応する行を追加する。上から順にやれば漏れない。1つでも欠けると「選択はできるが技が出ない」「色スキンが効かない」等の不具合になる。
+1. `ELEMENTS`: label/color/dark/(accent)/speed/(speedMod)/hp/trait/(dmgTakenMod等の特性モディファイア)
+2. `TRAIT_DESC`(ui.js): `trait`キーに対応する説明文
+3. `SIGNATURE_MOVES`: tier1/2/3の技配列
+4. `MOVE_AURA`: 各技名→オーラ色
+5. `MONSTER_AURA`: 無スキン時のデフォルトオーラ
+6. `SKIN_CONFIG`: 5色スキンの置換対象色相(`source.hue`は実画像から主要色をサンプリングして決める)
+7. `STATE_CHANGES`: 状態変化(発動条件/効果)。全モンスターが1つずつ持つ設計なので省略しない
+8. `APTITUDE`: マスモンのステータス適正(A〜E)
+9. `WALK_ANIM`(任意・歩行動画がある場合): `_loadWalk`で front/back を登録
+10. `monsters/<key>.png`・`<key>_player.png`(静止画。正方形キャンバス・被写体が高さの9割前後を占め足元が下端付近、という既存ファイルの規格に正規化してから配置する)
+- 技に`aoeShape`(範囲技)や独自の着弾処理(例:ピクシー「ビッグバン」の着弾ドームAoE=`blast`フィールド+`spawnGroundBlast`)等、既存にないギミックが必要な場合はcombat.js/render.jsの拡張が必要になる。既存の同系統実装(`aoeShape`分岐・`areaEffects`)を参考に、新しい`kind`を増やす形で実装するのが素直。
 
 ### 音(audio.js)
 - 原則Web Audio APIで合成。iOS対策で初回タップ後に`audioInit()`でAudioContext起動。

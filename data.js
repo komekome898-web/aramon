@@ -131,6 +131,7 @@ const ELEMENTS = {
   fox:     { label:'キュービ',   color:'#f5f2ea', dark:'#b8b2a4', speed:215, hp:105, trait:'bighitbox', hitboxMult:1.5 },
   god:     { label:'ガリ',       color:'#f5f0ff', dark:'#c3b3e0', accent:'#ffd23c', speed:196, hp:110, trait:'godrange' },
   zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:224, hp:105, trait:'poison' },
+  pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble', dmgTakenMod:1.2 },
 };
 
 const monsterImages = {};
@@ -268,6 +269,9 @@ const WALK_ANIM = {
   },
   warm: {
     base: { front:_loadWalk('warm_walk_f'), back:_loadWalk('warm_walk_b') },              // ワーム(色スキン対応)
+  },
+  pixie: {
+    base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
   },
 };
 const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
@@ -437,6 +441,17 @@ const SIGNATURE_MOVES = {
     { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:24, cooldown:2.0, gutsCost:24, projSpeed:820,
       range:1500, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙' },
   ],
+  // ピクシー: 特性で移動速度1.2倍・被ダメ1.2倍(高機動・低耐久のグラスキャノン)
+  pixie: [
+    { name:'キッス',     tier:1, color:'#ff4d6d', range:700,  dmg:18, cooldown:0.8,  gutsCost:8,  projSpeed:530, hitR:11, splash:66, icon:'💋' },
+    // 「ライガー種の超雷撃」と同じエフェクト(zigzag/aoeStyle:thunder)を、幅半分(55)で3連発
+    { name:'ライトニング', tier:2, color:'#fff34d', dmg:10, cooldown:1.15, gutsCost:16,
+      aoeShape:'zigzag', range:1300, zigzagWidth:55, burst:3, burstGap:0.15, aoeStyle:'thunder', icon:'⚡️' },
+    // 黒い球体を発射し、命中/最大射程到達で着弾点に円形ダメージのドームが広がる
+    { name:'ビッグバン', tier:3, color:'#14121c', dmg:0, cooldown:2.3, gutsCost:24,
+      range:1500, projSpeed:640, hitR:20, splash:0, projStyle:'voidOrb', icon:'🔮',
+      blast:{ radius:260, dmg:50, color:'#14121c', expandTime:0.5 } },
+  ],
 };
 
 /* =====================================================================
@@ -459,7 +474,7 @@ const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
   spark:'blue', rock:'black', ark:'green', warm:'yellow', illumine:'black',
-  fox:'white', god:'white', zan:'black',
+  fox:'white', god:'white', zan:'black', pixie:'red',
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
 const MOVE_AURA = {
@@ -477,6 +492,7 @@ const MOVE_AURA = {
   'ツバはき':'yellow','熱視線':'yellow','サイコキネシス':'blue',
   'ストレート':'white','ホーリーサンダー':'yellow','ゴッドライジング':'white',
   'ソニックナイフ':'black','フォルターブリッツ':'yellow','ダークホウスト':'black',
+  'キッス':'red','ライトニング':'yellow','ビッグバン':'black',
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
 Object.keys(SIGNATURE_MOVES).forEach(el=>{ SIGNATURE_MOVES[el].forEach(mv=>{ if(MOVE_AURA[mv.name]) mv.aura = MOVE_AURA[mv.name]; }); });
@@ -552,6 +568,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-25', items:[
+    '新モンスター「ピクシー」を追加(専用技「キッス」「ライトニング」「ビッグバン」・バトル歩行アニメーション・色スキン対応)。移動速度1.2倍・被ダメ1.2倍の高機動グラスキャノン',
     'イルミネ・ワームにもバトル中の歩行アニメーションを追加（色スキンにも対応）。これで全モンスターが歩行アニメーションに対応',
     '技を出している間は、移動していてもその技を打った方向を向くように調整(自分の技発生中は後ろ姿になる)',
     'アーク・ウンディーネ・ドラゴン・プラント・ゴーレムとSSRスキン「イブリース」にもバトル中の歩行アニメーションを追加',
@@ -673,6 +690,11 @@ const STATE_CHANGES = {
     name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,
     effects:{ gutsRegenMult:2, speedMult:1.5 },
   },
+  // ピクシー: HPが減ると悪戯心が加速し、さらに素早く技を連発する
+  pixie: {
+    name:'暴走', duration:20, cooldown:90, trigger:'hpBelow', triggerValue:0.4,
+    effects:{ speedMult:1.5, cooldownMult:1/1.5, dmgMult:1.15 },
+  },
 };
 
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
@@ -709,6 +731,8 @@ const APTITUDE = {
   suezo:   { life:'D', power:'C', wisdom:'A', accuracy:'B', evasion:'D', vitality:'D' },
   god:     { life:'D', power:'B', wisdom:'A', accuracy:'C', evasion:'D', vitality:'C' },
   zan:     { life:'C', power:'B', wisdom:'D', accuracy:'C', evasion:'A', vitality:'D' },
+  // ピクシー: 高速・低耐久のグラスキャノン想定でevasion(速さ)を最高、life/vitality(HP・耐久)を最低に
+  pixie:   { life:'E', power:'D', wisdom:'C', accuracy:'B', evasion:'A', vitality:'E' },
 };
 const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
 const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
@@ -1202,6 +1226,7 @@ const SKIN_CONFIG = {
   fox:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白い部分
   god:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白いローブ部分
   zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:238, window:95} },   // メインのグレー(青みがかった)ボディ部分
+  pixie:   { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:349, window:50} },   // 赤い部分
 };
 // 各モンスターが持てる色スキン(5色)
 function monsterSkinColors(elementKey){

@@ -11,6 +11,7 @@ const TRAIT_DESC = {
   soft:       '被ダメ0.8倍',
   gutsbreak:  '与えたダメージの40%分 相手のガッツを削る',
   godrange:   '全ての技の射程が長い・技の消費ガッツ-12.5%',
+  nimble:     '移動速度1.2倍・被ダメ1.2倍',
 };
 function stateTriggerText(sc){
   return {

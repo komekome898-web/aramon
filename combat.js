@@ -50,33 +50,50 @@ function fireMove(attacker, target, move){
     return;
   }
   if(move.aoeShape){
-    const aimAngle = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
+    const aimAngleBase = angTo(attacker, target) + rand(-1,1)*(attacker.isPlayer?0.01:0.03);
     const width = (move.rectWidth||move.beamWidth||move.zigzagWidth||0) * hbMult;
-    const ae = {
-      id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
-      angle:aimAngle, dmg:effDmg, color:effColor, range:move.range, width,
-      fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
-      fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
-      spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
-    };
-    if(move.aoeShape==='beams'){
-      const spread = (move.beamSpreadDeg||40)*Math.PI/180;
-      const count = move.beamCount||3;
-      ae.beamRanges = [];
-      for(let i=0;i<count;i++){
-        const off = count>1 ? (i/(count-1)-0.5)*spread : 0;
-        ae.beamRanges.push(raycastObstacleDistance(attacker.x, attacker.y, aimAngle+off, move.range));
+    const burstCount = move.burst || 1;
+    const burstGap = move.burstGap || 0;
+    const buildAe = (aimAngle)=>{
+      const ae = {
+        id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
+        angle:aimAngle, dmg:effDmg, color:effColor, range:move.range, width,
+        fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
+        fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
+        spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
+      };
+      if(move.aoeShape==='beams'){
+        const spread = (move.beamSpreadDeg||40)*Math.PI/180;
+        const count = move.beamCount||3;
+        ae.beamRanges = [];
+        for(let i=0;i<count;i++){
+          const off = count>1 ? (i/(count-1)-0.5)*spread : 0;
+          ae.beamRanges.push(raycastObstacleDistance(attacker.x, attacker.y, aimAngle+off, move.range));
+        }
+        ae.life = ae.telegraphTime + Math.max(...ae.beamRanges)/ae.fillSpeed + 0.25;
+      } else {
+        ae.range = raycastObstacleDistance(attacker.x, attacker.y, aimAngle, move.range);
+        ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
       }
-      ae.life = ae.telegraphTime + Math.max(...ae.beamRanges)/ae.fillSpeed + 0.25;
-    } else {
-      ae.range = raycastObstacleDistance(attacker.x, attacker.y, aimAngle, move.range);
-      ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
+      return ae;
+    };
+    let firstAe = null;
+    for(let i=0;i<burstCount;i++){
+      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+      const aimAngle = aimAngleBase + spreadOffset;
+      if(i===0){
+        firstAe = buildAe(aimAngle);
+        areaEffects.push(firstAe);
+      } else {
+        // 2発目以降は発射時刻になってから実際にhit判定用のaeを組み立てる(pendingAoeCastsで待機)
+        pendingAoeCasts.push({ at: matchTime + i*burstGap, attackerId:attacker.id, aimAngle, build: buildAe });
+      }
     }
-    areaEffects.push(ae);
-    lockMoveFacing(attacker, aimAngle, ae.life);
+    const totalLife = firstAe.life + (burstCount-1)*burstGap;
+    lockMoveFacing(attacker, aimAngleBase, totalLife);
     if(attacker.isPlayer){
       const sp = moveSeName(move, attacker);
-      playSe(sp || 'fire', sp ? { dur: ae.life } : { kind:'aoe', dur: ae.life }); // 技の持続時間に合わせた長さで鳴らす
+      playSe(sp || 'fire', sp ? { dur: totalLife } : { kind:'aoe', dur: totalLife }); // 技の持続時間に合わせた長さで鳴らす
     }
     return;
   }
@@ -135,6 +152,7 @@ function fireMove(attacker, target, move){
       projStyle: move.projStyle||null, moveAura, auraTint,
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
+      blast: move.blast||null, // ピクシー「ビッグバン」等: 着弾/最大射程到達で地面にドーム状AoEを発生させる
     });
   }
   lockMoveFacing(attacker, baseAng, move.range/effProjSpeed + burstGap*Math.max(0, burstCount-1));
@@ -933,21 +951,23 @@ function updateProjectiles(dt){
           hitNow = Math.hypot(tp.x-p.x, tp.y-p.y) < e.radius+p.hitR;
         }
         if(hitNow){
-          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
-          // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
-          if(p.selfSpeedBuffOnHit){
-            const owner = getEntity(p.ownerId);
-            if(owner && owner.alive){
-              owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
-              owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
-              if(owner.isPlayer) pushToast(`命中！移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
+          if(!p.blast){
+            applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+            // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
+            if(p.selfSpeedBuffOnHit){
+              const owner = getEntity(p.ownerId);
+              if(owner && owner.alive){
+                owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
+                owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
+                if(owner.isPlayer) pushToast(`命中！移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
+              }
             }
-          }
-          if(p.splash>0){
-            for(const o of entities){
-              if(o===e || !o.alive || o.id===p.ownerId) continue;
-              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+            if(p.splash>0){
+              for(const o of entities){
+                if(o===e || !o.alive || o.id===p.ownerId) continue;
+                if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+                if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+              }
             }
           }
           spawnHit(tp.x,tp.y,e.z,p.color);
@@ -955,7 +975,27 @@ function updateProjectiles(dt){
         }
       }
     }
+    if(hit && p.blast) spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura); // ピクシー「ビッグバン」: 着弾/最大射程到達で地面にドームAoEを発生
     if(hit) projectiles.splice(i,1);
+  }
+}
+// 着弾/最大射程到達点に、円形に広がるドーム状のダメージAoEを発生させる(ビッグバン等)
+function spawnGroundBlast(x, y, blast, ownerId, moveAura){
+  const radius = blast.radius||220;
+  const expandTime = blast.expandTime||0.45;
+  const telegraphTime = blast.telegraphTime!=null ? blast.telegraphTime : 0.05;
+  const ae = {
+    id:nextId++, ownerId, kind:'circle', x, y, z:0, angle:0,
+    dmg: blast.dmg||0, color: blast.color||'#000000', range: radius, width:0,
+    fanAngleDeg:0, beamCount:0, beamSpreadDeg:0,
+    fillSpeed: radius/expandTime, telegraphTime,
+    spawnAt: matchTime, hitIds:new Set(), resolved:false, style: blast.style||null, moveAura, auraTint:null,
+  };
+  ae.life = telegraphTime + expandTime + 0.25;
+  areaEffects.push(ae);
+  const owner = getEntity(ownerId);
+  if(owner && owner.isPlayer){
+    playSe(blast.se || 'fire', { kind:'aoe', dur: ae.life });
   }
 }
 function updateLootPickups(){
@@ -1210,8 +1250,19 @@ function update(dt){
   }
 
   updateAreaEffects(dt);
+  updatePendingAoeCasts();
 
   updateHUD();
+}
+function updatePendingAoeCasts(){
+  for(let i=pendingAoeCasts.length-1;i>=0;i--){
+    const pc = pendingAoeCasts[i];
+    if(matchTime < pc.at) continue;
+    pendingAoeCasts.splice(i,1);
+    const attacker = getEntity(pc.attackerId);
+    if(!attacker || !attacker.alive) continue; // 発射前に本体が倒れた場合は不発
+    areaEffects.push(pc.build(pc.aimAngle));
+  }
 }
 function updateAreaEffects(dt){
   for(let i=areaEffects.length-1;i>=0;i--){
@@ -1256,6 +1307,8 @@ function updateAreaEffects(dt){
           hit = hitTestFan(origin, ent, ae.angle, curReach, (ae.fanAngleDeg||45)*Math.PI/360);
         } else if(ae.kind==='rect' || ae.kind==='zigzag'){
           hit = hitTestRect(origin, ent, ae.angle, curReach, ae.width/2);
+        } else if(ae.kind==='circle'){
+          hit = dist(ae, ent) < curReach + ent.radius;
         }
         if(hit){
           ae.hitIds.add(ent.id);
