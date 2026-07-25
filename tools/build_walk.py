@@ -18,6 +18,11 @@
 #   white_alpha    : 白背景(隅から連結する白のみ透過。内側の白い毛は残す)
 #   grabcut_alpha  : 淡い草/金背景。knockout= single/gentle/hard/hardgentle
 #   phoenixcut_alpha: 鳥(炎/羽が背景色に近い)。彩度/明度/背景色距離で本体抽出+足を明示追加
+#   black_alpha(mode='black')    : 純黒背景。隅から連結する黒のみ透過(内側の黒い毛/羽/影は残す)。
+#                                   本体に黒い部位がある(ゼウス/タマモノマエ/アーク/イブリース等)場合に使う。
+#   black_alpha(mode='blackopen'): 同上だが、輪郭に囲まれた黒(腕と胴の隙間等)も背景として抜く。
+#                                   本体に黒い部位が無い場合(ウンディーネ/ドラゴン/プラント/ゴーレム等)に使う。
+#                                   本体に黒い部位があるモンスターにこれを使うと、その部位ごと透過してしまうので注意。
 #
 # ★採用前に全16コマ(正面8+後ろ8)を1コマずつ目視し、トサカ等の突起・足が欠けない/
 #   足元の地面が透過している ことを必ず確認する(過去に鳥系で何度も手戻りした)。
@@ -102,18 +107,24 @@ def white_alpha(bgr):
     alpha = cv2.GaussianBlur(alpha, (3,3), 0)
     return alpha
 
-def black_alpha(bgr, T=14):
-    # 純黒背景用(白背景版の反転): 隅からつながる黒のみ背景にする(内部の黒い毛/影は残す)
+def black_alpha(bgr, T=14, keep_enclosed=True):
+    # 純黒背景用(白背景版の反転): 隅からつながる黒のみ背景にする(内部の黒い毛/影は残す)。
+    # keep_enclosed=False: 本体に黒い部位が無いモンスター用。輪郭に囲まれた黒(腕と胴の隙間・
+    # 花と茎の隙間等から覗く背景)も背景として抜く(そうしないと隙間が黒い塊として残ってしまう)。
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.int32)
     maxc = rgb.max(axis=2)
     nearblack = (maxc < T)
-    lbl, num = ndimage.label(nearblack.astype(np.uint8))
-    border = set(np.unique(np.concatenate([lbl[0,:], lbl[-1,:], lbl[:,0], lbl[:,-1]])))
-    border.discard(0)
-    bgmask = np.isin(lbl, list(border))
+    if keep_enclosed:
+        lbl, num = ndimage.label(nearblack.astype(np.uint8))
+        border = set(np.unique(np.concatenate([lbl[0,:], lbl[-1,:], lbl[:,0], lbl[:,-1]])))
+        border.discard(0)
+        bgmask = np.isin(lbl, list(border))
+    else:
+        bgmask = nearblack
     fg = (~bgmask).astype(np.uint8)
     fg = _largest(fg)
-    fg = _fill_small_holes(fg)
+    # keep_enclosed=Falseは隙間を意図的に穴のまま残すため、小穴埋めはしない
+    if keep_enclosed: fg = _fill_small_holes(fg)
     alpha = (fg*255).astype(np.uint8)
     alpha = cv2.GaussianBlur(alpha, (3,3), 0)
     return alpha
@@ -290,6 +301,7 @@ def process(mov, prefix, front, mode='grass', knockout='single'):
     }
     if mode=='white': segfn = lambda bgr: white_alpha(bgr)
     elif mode=='black': segfn = lambda bgr: black_alpha(bgr)
+    elif mode=='blackopen': segfn = lambda bgr: black_alpha(bgr, keep_enclosed=False)
     elif knockout in _PHX:
         sT,dT,fl,wt = _PHX[knockout]; segfn = lambda bgr: phoenixcut_alpha(bgr, sT, dT, fl, wt)
     elif knockout=='phoenixcut': segfn = lambda bgr: phoenixcut_alpha(bgr)
@@ -351,6 +363,18 @@ JOBS = [
     ('z2','zeus_ssr_walk_b',    False, 'black', 'single'),
     ('t1','tamamo_ssr_walk_f',  True,  'black', 'single'),
     ('t2','tamamo_ssr_walk_b',  False, 'black', 'single'),
+    ('a1','ark_walk_f',         True,  'black', 'single'),
+    ('a2','ark_walk_b',         False, 'black', 'single'),
+    ('i1','iblees_ssr_walk_f',  True,  'black', 'single'),
+    ('i2','iblees_ssr_walk_b',  False, 'black', 'single'),
+    ('u1','aqua_walk_f',        True,  'blackopen', 'single'),
+    ('u2','aqua_walk_b',        False, 'blackopen', 'single'),
+    ('d1','fire_walk_f',        True,  'blackopen', 'single'),
+    ('d2','fire_walk_b',        False, 'blackopen', 'single'),
+    ('l1','leaf_walk_f',        True,  'blackopen', 'single'),
+    ('l2','leaf_walk_b',        False, 'blackopen', 'single'),
+    ('r1','rock_walk_f',        True,  'blackopen', 'single'),
+    ('r2','rock_walk_b',        False, 'blackopen', 'single'),
 ]
 U='/root/.claude/uploads/2dcee4de-18cc-599b-9320-655c57e78387'
 U2='/root/.claude/uploads/18073022-2206-5ef7-b9d6-78426f00390e'
@@ -371,6 +395,18 @@ MOV = {
  'z2':f'{U2}/5c8b44e1-_________07257_Full_HD_1080p.mp4',
  't1':f'{U2}/634ef545-_________072518_Full_HD_1080p.mp4',
  't2':f'{U2}/cbb79517-_________072519_Full_HD_1080p.mp4',
+ 'a1':f'{U2}/c2e24ef4-_________07258_Full_HD_1080p.mp4',
+ 'a2':f'{U2}/9c797abb-_________07259_Full_HD_1080p.mp4',
+ 'i1':f'{U2}/8400516c-_________072520_Full_HD_1080p.mp4',
+ 'i2':f'{U2}/4e92e389-_________072521_Full_HD_1080p.mp4',
+ 'u1':f'{U2}/63faab44-_________07252_Full_HD_1080p.mp4',
+ 'u2':f'{U2}/c13595ec-_________07253_Full_HD_1080p.mp4',
+ 'd1':f'{U2}/5440c89f-_________07254_Full_HD_1080p.mp4',
+ 'd2':f'{U2}/9ababe1c-_________07255_Full_HD_1080p.mp4',
+ 'l1':f'{U2}/39c55a7c-_________072510_Full_HD_1080p.mp4',
+ 'l2':f'{U2}/22ca86ab-_________072511_Full_HD_1080p.mp4',
+ 'r1':f'{U2}/a99064e1-_________072512_Full_HD_1080p.mp4',
+ 'r2':f'{U2}/4d81ddde-_________072513_Full_HD_1080p.mp4',
 }
 import sys
 only = set(sys.argv[1:])
