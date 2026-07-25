@@ -83,7 +83,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### バトル歩行アニメーション(data.js / render.js)
 - 動画から1歩行ループを8コマに分割した透過スプライトで歩行を表現する。`monsters/<prefix>_walk_f1..8.png`(正面)/`<prefix>_walk_b1..8.png`(後ろ)。
-- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ/スエゾー/ザン/キュービ/ライガー/ヒノトリ(+フェニックスSSR)。
+- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ(+ゼウスSSR)/スエゾー/ザン/キュービ(+タマモノマエSSR)/ライガー/ヒノトリ(+フェニックスSSR)。
 - 描画の入口は `getDisplayImage(entity)`。先頭で `entityWalkFrameImage(entity)` を呼び、歩行コマがあればそれを返す(なければ従来の静止画にフォールバック)。`drawMonster`/`drawMonsterPortrait` がこれを描く。
 - コマ選択(`entityWalkFrameImage`): `matchTime`でコマ送り、平滑化速度`_mwSpeed`が`WALK_MOVE_EPS`超で「歩行中」。進行方向とカメラ`camState.yaw`の内積で正面/後ろを切替(カメラ奥向き=後ろ姿)。停止中は静止(自分=後ろ姿/他=正面)。素体は色スキン装備時に`recolorToCanvas`で各コマ再着色し`_walkRecolor`にキャッシュ。**歩行コマ未提供のSSRスキン(ゼウス/タマモノマエ)装備時は`null`を返し従来の静止スキン画像を表示**(ガード有り)。
 - **スプライト生成は `tools/build_walk.py`(開発用)。** 動画→60fps抽出→自己相関で1周期検出→8コマ抽出→モンスター別セグメンテーション→320px・256色透過PNGに統一(足を94%基準・中央寄せ)。背景/被写体別モード:
