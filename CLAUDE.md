@@ -21,7 +21,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 |---|---|
 | `index.html` | 全画面のDOMマークアップ。scriptの読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
 | `style.css` | 全スタイル。CSS変数は`:root`(--amber, --ink, --danger等) |
-| `data.js` | 定数・マスタデータ: WORLD寸法, MAPS, ELEMENTS(モンスター), SIGNATURE_MOVES, マスモン(トレーニング/EXP/ステータス倍率), 試合内アイテム定義, プレイヤーアカウント系(通貨=ゴールド/ダイヤ, バッグ, PLAYER_ITEMS, ガチャ, ショップ, 試合報酬), **更新履歴`UPDATE_HISTORY`**, オーラ/SSRスキン関連(`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`/`getMoveAura`/`getMoveName`/`ssrTier3DmgMult`) |
+| `data.js` | 定数・マスタデータ: WORLD寸法, MAPS, ELEMENTS(モンスター), SIGNATURE_MOVES, マスモン(トレーニング/EXP/ステータス倍率), 試合内アイテム定義, プレイヤーアカウント系(通貨=ゴールド/ダイヤ, バッグ, PLAYER_ITEMS, ガチャ, ショップ, 試合報酬), **更新履歴`UPDATE_HISTORY`**, オーラ/SSRスキン関連(`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`/`getMoveAura`/`getMoveName`/`ssrTier3DmgMult`), 色スキン(`SKIN_CONFIG`/`recolorToCanvas`), **バトル歩行アニメ**(`WALK_ANIM`/`entityWalkFrameImage`/`getDisplayImage`) |
 | `audio.js` | BGM/SE。原則Web Audio APIで合成。BGMはステップシーケンサ(タイトル/試合中/残り5人以下)、SEは`playSe(name)`。音量はlocalStorage永続化。**例外的に一部だけ実音源を使う**(下記「音」参照): SSR獲得SE=内蔵mp3データURI、残り5人以下BGM=`bgm_final5.mp3` |
 | `world.js` | ワールド生成(岩/水晶/川/海/火山/建物), 安全圏(zoneState), 地形判定, 移動・衝突 |
 | `combat.js` | 戦闘: 攻撃, ダメージ, AoE, 状態変化, Bot AI |
@@ -32,7 +32,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 | `firebase.js` | Firebase初期化とAPI。`window.__aramon*` 関数群としてグローバル公開(ESモジュールなのでこの橋渡しが必要) |
 | `sw.js` | サービスワーカー。ネットワーク優先+キャッシュフォールバック |
 | `manifest.json` | PWAマニフェスト |
-| `monsters/*.png` | モンスター画像 |
+| `monsters/*.png` | モンスター画像。静止画に加え**歩行アニメ用スプライト** `<prefix>_walk_f1..8.png`(正面8コマ)/`<prefix>_walk_b1..8.png`(後ろ8コマ)。320px・256色透過PNG |
+| `tools/build_walk.py` | **歩行スプライト生成の開発用スクリプト**(ゲームには読み込まれない)。動画→8コマ透過PNG。この環境のffmpeg/PIL/numpy/scipy/opencvで動く。詳細は「バトル歩行アニメーション」節 |
 | `bgm_final5.mp3` | 残り5人以下BGMの実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
 
 ## 重要な設計知識
@@ -79,6 +80,17 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - `project(wx,wy,wz)`で3D風投影。描画物は`drawables`に集めてdepthソート後に描画。
 - 画面外カリングは`cullMarginFor`でオブジェクトの見た目上の半径に応じた余白を取る(固定余白だと巨大オブジェクトが近距離で誤って消える)。
 - 障害物は影(接地点)と本体の底が接するように描く(浮いて見えるバグ防止)。
+
+### バトル歩行アニメーション(data.js / render.js)
+- 動画から1歩行ループを8コマに分割した透過スプライトで歩行を表現する。`monsters/<prefix>_walk_f1..8.png`(正面)/`<prefix>_walk_b1..8.png`(後ろ)。
+- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ/スエゾー/ザン/キュービ/ライガー/ヒノトリ(+フェニックスSSR)。
+- 描画の入口は `getDisplayImage(entity)`。先頭で `entityWalkFrameImage(entity)` を呼び、歩行コマがあればそれを返す(なければ従来の静止画にフォールバック)。`drawMonster`/`drawMonsterPortrait` がこれを描く。
+- コマ選択(`entityWalkFrameImage`): `matchTime`でコマ送り、平滑化速度`_mwSpeed`が`WALK_MOVE_EPS`超で「歩行中」。進行方向とカメラ`camState.yaw`の内積で正面/後ろを切替(カメラ奥向き=後ろ姿)。停止中は静止(自分=後ろ姿/他=正面)。素体は色スキン装備時に`recolorToCanvas`で各コマ再着色し`_walkRecolor`にキャッシュ。**歩行コマ未提供のSSRスキン(ゼウス/タマモノマエ)装備時は`null`を返し従来の静止スキン画像を表示**(ガード有り)。
+- **スプライト生成は `tools/build_walk.py`(開発用)。** 動画→60fps抽出→自己相関で1周期検出→8コマ抽出→モンスター別セグメンテーション→320px・256色透過PNGに統一(足を94%基準・中央寄せ)。背景/被写体別モード:
+  - 白背景(キュービ等) = `white_alpha`: 隅から連結する白のみ透過(内側の白い毛は残す)。
+  - 淡い草/金背景 = `grabcut_alpha`(`single`/`gentle`/`hard`/`hardgentle`): grabCut切り抜き。`gentle`はopen省略で細い足を守る(スエゾーの一本足)、`hard`は縁を確定背景にしたマスク初期化(金色ボケ背景)。
+  - 鳥(ヒノトリ/フェニックス。炎・羽が背景色に近い) = `phoenixcut_alpha`: 彩度/明度/背景色距離で本体抽出。**かぎ爪の足(暗色)を明示追加し中央下部限定の縦closeで本体に接続**(largestで足が消えるのを防ぐ)、足元の淡い地面/オーラを色で除去、トサカを上端中央で復元。正面は脚間を残すため小穴のみ塗り、後ろは尾を塗りつぶして密度確保。パラメータは`_PHX`(satT/distT/fill/warm_trim)で正面・後ろ別。
+- **【検証必須・過去に鳥系で何度も手戻り】新しい歩行スプライトは、全16コマ(正面8+後ろ8)を1コマずつ目視し「トサカ等の突起」「足」が欠けないこと・足元の背景/地面が透過していることを確認してから採用する。** `tools/build_walk.py`の隣に置く判定(bboxの上端中央=トサカ、下端中央=足に画素があるか)で全コマ自動チェックしつつ、必ず目視も行う。ヘッドレスでも`getDisplayImage`→`drawMonster`で実描画確認する。
 
 ### 音(audio.js)
 - 原則Web Audio APIで合成。iOS対策で初回タップ後に`audioInit()`でAudioContext起動。
