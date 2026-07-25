@@ -721,6 +721,37 @@ function drawProjectile(pr,p){
     ctx.restore();
     return;
   }
+  if(pr.projStyle==='voidOrb'){
+    // ビッグバン(ピクシー): 黒く発光する球+周囲に黒いビリビリ(電撃アーク)
+    const col = pr.color || '#14121c';
+    const r = (pr.hitR||24);
+    if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor='#6b2fa8'; }
+    const grad = ctx.createRadialGradient(-r*0.25,-r*0.25,r*0.1, 0,0,r);
+    grad.addColorStop(0,'#3a2050');
+    grad.addColorStop(0.5, col);
+    grad.addColorStop(1, '#000000');
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle=grad; ctx.fill();
+    ctx.shadowBlur=0;
+    // 周囲の黒いビリビリ(電撃アーク)
+    const jseed = Math.floor(matchTime*18) + (pr.id||0);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for(let k=0;k<4;k++){
+      const baseA = fxHash01(jseed*13+k*7)*Math.PI*2;
+      const arcSpan = 0.8 + fxHash01(jseed*29+k*11)*0.9;
+      const segs=5; ctx.beginPath();
+      for(let s=0;s<=segs;s++){
+        const a=baseA+arcSpan*(s/segs);
+        const rr=r*1.35+(fxHash01(jseed*37+k*17+s*5)-0.5)*r*0.6;
+        const px=Math.cos(a)*rr, py=Math.sin(a)*rr;
+        if(s===0)ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.globalAlpha=0.55; ctx.strokeStyle='#3a1560'; ctx.lineWidth=4; ctx.stroke();
+      ctx.globalAlpha=0.9; ctx.strokeStyle='#8b46c9'; ctx.lineWidth=1.6; ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore();
+    return;
+  }
   if(pr.projStyle==='crescent'){
     // ダークホウスト(ザン): 回転する黒い三日月型の斬撃
     const r = (pr.hitR||20)*1.6;
@@ -1809,22 +1840,34 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
   ctx.translate(proj.x, proj.y);
   ctx.scale(proj.scale, proj.scale);
   // 最大範囲を薄い点線で予告
-  ctx.globalAlpha = 0.5*fadeAlpha;
-  ctx.strokeStyle = ae.color; ctx.lineWidth = 3; ctx.setLineDash([10,8]);
+  ctx.globalAlpha = 0.45*fadeAlpha;
+  ctx.strokeStyle = '#000000'; ctx.lineWidth = 3; ctx.setLineDash([10,8]);
   ctx.beginPath(); ctx.ellipse(0,0, maxR*0.95, maxR*0.5, 0, 0, Math.PI*2); ctx.stroke();
   ctx.setLineDash([]);
   if(!inTelegraph){
     const curReach = Math.min(maxR, fillDist);
     if(curReach>2){
-      const g = ctx.createRadialGradient(0,0,0, 0,0, curReach*0.95);
-      g.addColorStop(0, ae.color); g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = 0.55*fadeAlpha;
+      const rx = curReach*0.95, ry = curReach*0.5, domeRy = curReach*0.85;
+      // 1) ドーム本体: 地面に接地した半球(上半分の球体)のシルエット
+      ctx.globalAlpha = 0.7*fadeAlpha;
+      const g = ctx.createRadialGradient(0,-domeRy*0.3, 0, 0,-domeRy*0.1, Math.max(rx,domeRy)*1.05);
+      g.addColorStop(0, '#3a3a44');
+      g.addColorStop(0.55, ae.color);
+      g.addColorStop(1, '#000000');
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.ellipse(0,0, curReach*0.95, curReach*0.5, 0, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 0.9*fadeAlpha;
-      ctx.strokeStyle = '#c98bff'; ctx.lineWidth = 4;
-      if(!renderHeavyLoad){ ctx.shadowBlur=24; ctx.shadowColor=ae.color; }
-      ctx.beginPath(); ctx.ellipse(0,0, curReach*0.95, curReach*0.5, 0, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, domeRy, 0, Math.PI, Math.PI*2, false); // 上半分の弧(ドームの丸み)
+      ctx.closePath(); // 地面の底辺で閉じる
+      ctx.fill();
+      // 2) 地面との設置ライン(接地の輪郭をくっきりさせる)
+      ctx.globalAlpha = 0.85*fadeAlpha;
+      ctx.strokeStyle = '#0a0a0d'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0,0, rx, ry, 0, 0, Math.PI*2); ctx.stroke();
+      // 3) 外周の衝撃波リング(視認性のための淡いハイライト)
+      ctx.globalAlpha = 0.55*fadeAlpha;
+      ctx.strokeStyle = '#6b6b78'; ctx.lineWidth = 3;
+      if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor=ae.color; }
+      ctx.beginPath(); ctx.ellipse(0, 0, rx, domeRy, 0, Math.PI, Math.PI*2, false); ctx.stroke();
     }
   }
   ctx.restore();

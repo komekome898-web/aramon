@@ -3,7 +3,7 @@ const MOVE_SE_BY_STYLE = {
   inferno:'fireRoar', lava:'fireRoar', crystal:'iceCrack',
   psychic:'beam', sakura:'beam', flower:'beam', galaxy:'beam',
   tornado:'tornado', shell:'spin', holy:'bell', requiem:'whoosh',
-  godorb:'godRising', crescent:'zashu',
+  godorb:'godRising', crescent:'zashu', voidOrb:'voidLaunch',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
 const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3' };

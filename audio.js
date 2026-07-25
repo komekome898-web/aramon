@@ -331,6 +331,13 @@ const SE_DEFS = {
       seNoise(tt, {dur:0.06, vol:0.22, filterType:'highpass', filterFreq:5000}); // 切っ先の「シャッ」
     }
   },
+  // ピクシー「ビッグバン」発射音「ビューン」(甲高い音から下がっていく黒い球体の発射音)
+  voidLaunch(t, opts){
+    const d = Math.max(0.15, Math.min(0.6, (opts&&opts.dur)||0.35));
+    seTone(t, {freq:1400, freqEnd:220, dur:d,      type:'sawtooth', vol:0.3});  // 甲高いところから下がる芯
+    seTone(t, {freq:700,  freqEnd:110, dur:d*0.9,  type:'sine',     vol:0.24}); // 低音side
+    seNoise(t, {dur:d*0.6, vol:0.18, filterType:'bandpass', filterFreq:3000, filterEnd:600}); // シュー
+  },
   // 天の慈悲「リンリンリーン」(残響たっぷりの鐘の音)
   bell(t){
     // 実際の鐘に近い非整数倍音(ハム・プライム・ティアス・クイント・ノミナル)を重ねて長く響かせる

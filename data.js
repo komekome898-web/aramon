@@ -436,10 +436,10 @@ const SIGNATURE_MOVES = {
   ],
   // ザン(zan): 命中で毒(ワームと同じ特性)。HP普通・移動速め
   zan: [
-    { name:'ソニックナイフ', tier:1, color:'#8fa0c8', range:760, dmg:23, cooldown:0.8, gutsCost:8, projSpeed:640, hitR:11, splash:64, icon:'🗡️' },
-    { name:'フォルターブリッツ', tier:2, color:'#8fa0c8', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:6, burst:3, burstGap:0.1, icon:'🗡️' },
-    { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:24, cooldown:2.0, gutsCost:24, projSpeed:820,
-      range:1500, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙' },
+    { name:'ソニックナイフ', tier:1, color:'#8fa0c8', range:680, dmg:20, cooldown:0.8, gutsCost:8, projSpeed:640, hitR:11, splash:64, icon:'🗡️' },
+    { name:'フォルターブリッツ', tier:2, color:'#8fa0c8', range:1250, dmg:11, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:6, burst:3, burstGap:0.1, icon:'🗡️' },
+    { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:21, cooldown:2.0, gutsCost:24, projSpeed:820,
+      range:1340, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙' },
   ],
   // ピクシー: 特性で移動速度1.2倍・被ダメ1.2倍(高機動・低耐久のグラスキャノン)
   pixie: [
@@ -449,7 +449,7 @@ const SIGNATURE_MOVES = {
       aoeShape:'zigzag', range:1300, zigzagWidth:55, burst:3, burstGap:0.15, aoeStyle:'thunder', icon:'⚡️' },
     // 黒い球体を発射し、命中/最大射程到達で着弾点に円形ダメージのドームが広がる
     { name:'ビッグバン', tier:3, color:'#14121c', dmg:0, cooldown:2.3, gutsCost:24,
-      range:1500, projSpeed:640, hitR:20, splash:0, projStyle:'voidOrb', icon:'🔮',
+      range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮',
       blast:{ radius:260, dmg:50, color:'#14121c', expandTime:0.5 } },
   ],
 };
@@ -568,6 +568,8 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-25', items:[
+    'ザンの全技の威力・射程を少し下方修正',
+    'ピクシーのtier3「ビッグバン」を調整: 発射する球体を少し大きく、着弾時のエフェクトを地面に接地した半球型の黒い爆風に変更、発射音/着弾音を専用SEに変更',
     '新モンスター「ピクシー」を追加(専用技「キッス」「ライトニング」「ビッグバン」・バトル歩行アニメーション・色スキン対応)。移動速度1.2倍・被ダメ1.2倍の高機動グラスキャノン',
     'イルミネ・ワームにもバトル中の歩行アニメーションを追加（色スキンにも対応）。これで全モンスターが歩行アニメーションに対応',
     '技を出している間は、移動していてもその技を打った方向を向くように調整(自分の技発生中は後ろ姿になる)',
