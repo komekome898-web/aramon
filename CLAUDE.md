@@ -158,7 +158,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - 白背景(キュービ等) = `white_alpha`: 隅から連結する白のみ透過(内側の白い毛は残す)。
   - 淡い草/金背景 = `grabcut_alpha`(`single`/`gentle`/`hard`/`hardgentle`): grabCut切り抜き。`gentle`はopen省略で細い足を守る(スエゾーの一本足)、`hard`は縁を確定背景にしたマスク初期化(金色ボケ背景)。
   - 鳥(ヒノトリ/フェニックス。炎・羽が背景色に近い) = `phoenixcut_alpha`: 彩度/明度/背景色距離で本体抽出。**かぎ爪の足(暗色)を明示追加し中央下部限定の縦closeで本体に接続**(largestで足が消えるのを防ぐ)、足元の淡い地面/オーラを色で除去、トサカを上端中央で復元。正面は脚間を残すため小穴のみ塗り、後ろは尾を塗りつぶして密度確保。パラメータは`_PHX`(satT/distT/fill/warm_trim)で正面・後ろ別。
-- **【検証必須・過去に鳥系で何度も手戻り】新しい歩行スプライトは、全16コマ(正面8+後ろ8)を1コマずつ目視し「トサカ等の突起」「足」が欠けないこと・足元の背景/地面が透過していることを確認してから採用する。** `tools/build_walk.py`の隣に置く判定(bboxの上端中央=トサカ、下端中央=足に画素があるか)で全コマ自動チェックしつつ、必ず目視も行う。ヘッドレスでも`getDisplayImage`→`drawMonster`で実描画確認する。
+- **【検証必須・過去に鳥系で何度も手戻り】新しい歩行スプライトは、全16コマ(正面8+後ろ8)を1コマずつ目視し「トサカ等の突起」「足」が欠けないこと・足元の背景/地面が透過していることを確認してから採用する。** `tools/build_walk.py`の隣に置く判定(bboxの上端中央=トサカ、下端中央=足に画素があるか)で全コマ自動チェックしつつ、必ず目視も行う。
 - **`tools/build_walk.py`の`W`/`OUTDIR`は環境変数`BUILD_WALK_WORK`/`BUILD_WALK_OUT`で上書きでき、既定の出力先はスクリプト位置から解決した`<repo>/monsters`。** セッションごとに更新が必要なのは`MOV{}`の動画パス(`/root/.claude/uploads/<セッションID>/...`)だけ。
 - **`tools/build_walk.py`のJOBS/MOVに新規ジョブを足すとき、job id(例:`'p1'`)が既存行と重複していないか必ず`grep`で確認すること。** 重複するとMOV辞書は後勝ちで上書きされ、既存モンスターのjob定義に新しい動画パスが紛れ込み、**既存モンスターの歩行スプライトを気づかずに上書き破壊する**(2026-07-25に実際発生。phoenixのp1/p2とピクシーのp1/p2が衝突し、修復にmd5sum比較+元zipからの復元が必要だった)。空いている文字を使うこと。
 
@@ -189,7 +189,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - CSSとJSの二段構えで全画面に効かせている。**新しい画面を足しても個別対応は不要。**
   - style.css の `*` に `-webkit-user-select:none; user-select:none; -webkit-touch-callout:none;`(callout無しだとiOSで長押し時に「コピー/調べる/画像を保存」が出る)。**直後の `input, textarea{ user-select:text }` で入力欄だけ選択可能に戻しているので、この2行はセットで維持する。**
   - input.js の `contextmenu`/`selectstart` を`preventDefault`(`isTextEntry()`で入力欄は除外)。
-  - **`-webkit-touch-callout`はiOS Safari専用で、ChromiumはCSSOMからも落とすためヘッドレスでは計算値を検証できない。** style.cssのテキストを直接確認するしかない(実機では効く)。
+  - **`-webkit-touch-callout`はiOS Safari専用。** ブラウザの計算値には出ないので、style.cssのテキストで確認する(実機では効く)。
 
 ### 更新履歴の未読バッジ(ui.js)
 - `changelogSignature()` = `最新日付#全項目数`。これを`localStorage`の`aramon_changelog_seen_v1`と比較して未読判定(`changelogHasUnread`)し、`#changelogNewPop`の`new`バッジを出す(`updateChangelogBadge`)。ボタンを開いた時点で`markChangelogSeen()`が既読化する。
@@ -243,15 +243,16 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - 動作確認はiPhone実機(PWA)で発注者が行う。デプロイ後にキャッシュバージョンが上がっていれば次回アクセス時に自動更新される。
 - **PRはsquashマージ運用**。前回PRのコミットが作業ブランチに残ったまま次の作業を重ねると、mainのsquashコミットと内容が重複してPR作成時にコンフリクトする。次のPR前に `git fetch origin main && git rebase --onto origin/main <前回のブランチ先端(=squash元)> <作業ブランチ>` で既マージ分を落としてから `push --force-with-lease` する(このセッションで毎回実施している手順)。
 - **プレイに関わる大きな変更時は`data.js`の`UPDATE_HISTORY`にも追記**(絶対に守るルール6)。同じコミットに含める。
-
-### ヘッドレスでの動作確認(重要)
-- 発注者は実機だが、こちら側でもコミット前に**Playwright(ヘッドレスChromium)で必ず検証する**。UIロジック・ゲーム状態・レイアウト・SE発音の有無まで確認できる。
-  - Playwright: `/opt/node22/lib/node_modules/playwright/index.mjs`、chromium: `/opt/pw-browsers/chromium`。ローカルにhttpサーバを立て`page.goto`。
-  - **PWAのService Workerが初回インストール後に1度ページを自動リロードする**ため、`waitForFunction`は失敗しやすい。`for`ループで `waitForTimeout(500)`+`try{ evaluate(()=> typeof 関数==='function') }catch` をリトライする方式を使う(既存の`scratchpad/*.mjs`が手本)。
-  - localStorageのseedは`addInitScript`で(例: `aramon_mastermons_v1`, `aramon_bag_v1`, `aramon_wallet_v1`, `aramon_account_v1`)。Firebaseは`window.__aramon*`をスタブで差し替えて検証できる。
-  - `js/check`: `node --check <file>` で構文チェック。
-  - **戦闘ロジックの検証は、UI操作を再現せず直接関数を叩くのが速い。** `entities/projectiles/areaEffects/pendingAoeCasts`を空にして`createMonster(element, isPlayer, name, {spawnPoint})`で2体生成→`fireMove(攻撃側, 標的, SIGNATURE_MOVES[key][tier-1])`→`matchTime`を進めながら`updateProjectiles(dt)`/`updateAreaEffects(dt)`を回し、標的の`hp`推移で威力を数値確認する(手打ちのentityオブジェクトでは`recentAttackers`等の初期化漏れで落ちるので必ず`createMonster`を使う)。
-  - **見た目の確認は`startGame()`で実戦を起動してスクリーンショットを撮る。** `game.selectedElement`/`game.activeMapKey`/`game.selectedMap`をセットして`startGame()`→相手の座標を動かして狙った状況を作る→`fireMove`→`waitForTimeout`後に`page.screenshot`。障害物との重なりを見たいときは`rocks[0]`の座標・半径を書き換えて着弾点の近くに置く。
-  - **エフェクトの幾何は目視だけでなく数値でも検証できる。** 例: `groundCirclePoints()`が返す点群の外接矩形から扁平率(縦÷横)を出し、地面に貼り付いているか(≈0.165)を確認する。目視しづらいズレを確実に捉えられる。
+- **ヘッドレスブラウザ(Playwright)での動作確認はしない。** 動作確認はiPhone実機で発注者が行う。こちら側は`node --check <file>`の構文チェックまでで、検証用スクリプトを新規に書かない。
 - GitHub Actionsの`actions_list`はレスポンスが巨大でトークン超過するので、保存されたファイルを`jq -r '.workflow_runs[:N][] | [.head_sha[0:7], .status, .conclusion] | @tsv'`で読む。
 - マージ後の「pages build and deployment」成功確認は、対象コミットSHAのrunが`completed/success`になっているかで判断する。
+
+### 報告・文章のスタイル
+- **返答は短く、要点だけ。** 前置き・但し書きは最小限にし、答えそのものに文字数を使う。説明を求められたときも、詳しく知りたいと言われない限り要点のまとめだけ返す。
+- **作業前に「これから何をするか」を一文だけ言う。** 作業中の報告は、重要なことが分かったときと方針を変えるときだけ。
+- **終わったら結論から書く。** 最初の一文で「何をしたか」「何が分かったか」に答え、細かい話はその後。
+- **書き出す文書(PR説明・コミットメッセージ・ドキュメント)は必要な長さに収める。** 中身は省かなくてよいが、埋めるための章・同じ内容の繰り返しの要約・お決まりの前置きで長くしない。
+
+<tone_preference>
+出力は簡潔に。
+</tone_preference>
