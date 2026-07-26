@@ -80,6 +80,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - `project(wx,wy,wz)`で3D風投影。描画物は`drawables`に集めてdepthソート後に描画。
 - 画面外カリングは`cullMarginFor`でオブジェクトの見た目上の半径に応じた余白を取る(固定余白だと巨大オブジェクトが近距離で誤って消える)。
 - 障害物は影(接地点)と本体の底が接するように描く(浮いて見えるバグ防止)。
+- **`areaEffects`も`drawables`に`kind:'ae'`として積み、他のオブジェクトと同じdepthソートに乗せる**(実描画は`drawSingleAreaEffect(ae)`)。かつては`drawAreaEffects()`を地面直後に一括描画していたため、**大きな岩・建物・火山と重なると範囲エフェクトがその裏に隠れて見えなくなっていた**(2026-07-25修正)。`cullMarginFor`では`kind:'ae'`に`ae.range`ぶんの余白を与える(発生地点=足元が画面外でも射程が長い技は画面内に届くため)。
+- **地面に貼り付く円(範囲予告・爆風など)は、画面上で楕円を決め打ちしてはならない。** `groundCirclePoints(cx,cy,radius,segs)`でワールド座標の円周をサンプルし1点ずつ`project(x,y,0)`して多角形として描く。**このカメラでの地面円の実際の扁平率は約0.165で、`ry = rx*0.5`のような固定比率で描くと縦に約3倍伸び、円が「宙に浮いて」見える**(2026-07-25にビッグバンで発生・修正)。遠近により円の外接矩形の中心は投影中心より下にずれるのが正しい挙動。立体物(ドーム等)の高さも`project(x,y,高さ)`で頂点を投影して求めること。
 
 ### バトル歩行アニメーション(data.js / render.js)
 - 動画から1歩行ループを8コマに分割した透過スプライトで歩行を表現する。`monsters/<prefix>_walk_f1..8.png`(正面)/`<prefix>_walk_b1..8.png`(後ろ)。
@@ -106,6 +108,12 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 9. `WALK_ANIM`(任意・歩行動画がある場合): `_loadWalk`で front/back を登録
 10. `monsters/<key>.png`・`<key>_player.png`(静止画。正方形キャンバス・被写体が高さの9割前後を占め足元が下端付近、という既存ファイルの規格に正規化してから配置する)
 - 技に`aoeShape`(範囲技)や独自の着弾処理(例:ピクシー「ビッグバン」の着弾ドームAoE=`blast`フィールド+`spawnGroundBlast`)等、既存にないギミックが必要な場合はcombat.js/render.jsの拡張が必要になる。既存の同系統実装(`aoeShape`分岐・`areaEffects`)を参考に、新しい`kind`を増やす形で実装するのが素直。
+
+### 技のギミック(combat.js / render.js / ui.js)
+- **`blast`(着弾ドームAoE。ピクシー「ビッグバン」)**: 弾に`blast:{radius,dmg,color,expandTime,(telegraphTime),(style),(se)}`を付けると、命中/最大射程到達の地点で`spawnGroundBlast()`が`kind:'circle'`の`areaEffect`を発生させ、円が広がりながらダメージ判定する。**弾の直撃ダメージ(`mv.dmg`)と爆風ダメージ(`mv.blast.dmg`)は別々に入る**(両方当たれば合計)。描画は`drawDomeBurstEffect`。
+- **`aoeShape`技の`burst`(範囲技の連射。ピクシー「ライトニング」)**: 通常の弾と違い`areaEffect`は即時生成なので、2発目以降は`pendingAoeCasts`(world.js)に「発射時刻+生成関数」を積み、`updatePendingAoeCasts()`が時刻到達で生成する。撃った本人が発射前に倒れた場合は不発になる。
+- **範囲エフェクトの見た目は必ずダメージ判定と同じ半径で描く。** `updateAreaEffects`のヒット判定は`curReach`(=`fillDist`を`range`でクランプした値)を使うので、描画側も同じ値を使う。見栄えのために0.95倍などを掛けると判定と見た目がズレる。
+- **新しいダメージ源のフィールドを増やしたら、`ui.js`の技一覧(`buildMastermonMovesHtml`)の威力表示にも足すこと。** 表示は`mv.dmg`ベースなので、威力を`blast`など別フィールドに持たせると**技一覧が「威力 0」と表示されてしまう**(2026-07-25にビッグバンで発生・修正。現在は`mv.dmg + mv.blast.dmg`の合計を表示)。特徴テキストは`describeMoveFeatureText`に分岐を足す。
 
 ### 音(audio.js)
 - 原則Web Audio APIで合成。iOS対策で初回タップ後に`audioInit()`でAudioContext起動。
@@ -146,5 +154,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - **PWAのService Workerが初回インストール後に1度ページを自動リロードする**ため、`waitForFunction`は失敗しやすい。`for`ループで `waitForTimeout(500)`+`try{ evaluate(()=> typeof 関数==='function') }catch` をリトライする方式を使う(既存の`scratchpad/*.mjs`が手本)。
   - localStorageのseedは`addInitScript`で(例: `aramon_mastermons_v1`, `aramon_bag_v1`, `aramon_wallet_v1`, `aramon_account_v1`)。Firebaseは`window.__aramon*`をスタブで差し替えて検証できる。
   - `js/check`: `node --check <file>` で構文チェック。
+  - **戦闘ロジックの検証は、UI操作を再現せず直接関数を叩くのが速い。** `entities/projectiles/areaEffects/pendingAoeCasts`を空にして`createMonster(element, isPlayer, name, {spawnPoint})`で2体生成→`fireMove(攻撃側, 標的, SIGNATURE_MOVES[key][tier-1])`→`matchTime`を進めながら`updateProjectiles(dt)`/`updateAreaEffects(dt)`を回し、標的の`hp`推移で威力を数値確認する(手打ちのentityオブジェクトでは`recentAttackers`等の初期化漏れで落ちるので必ず`createMonster`を使う)。
+  - **見た目の確認は`startGame()`で実戦を起動してスクリーンショットを撮る。** `game.selectedElement`/`game.activeMapKey`/`game.selectedMap`をセットして`startGame()`→相手の座標を動かして狙った状況を作る→`fireMove`→`waitForTimeout`後に`page.screenshot`。障害物との重なりを見たいときは`rocks[0]`の座標・半径を書き換えて着弾点の近くに置く。
+  - **エフェクトの幾何は目視だけでなく数値でも検証できる。** 例: `groundCirclePoints()`が返す点群の外接矩形から扁平率(縦÷横)を出し、地面に貼り付いているか(≈0.165)を確認する。目視しづらいズレを確実に捉えられる。
 - GitHub Actionsの`actions_list`はレスポンスが巨大でトークン超過するので、保存されたファイルを`jq -r '.workflow_runs[:N][] | [.head_sha[0:7], .status, .conclusion] | @tsv'`で読む。
 - マージ後の「pages build and deployment」成功確認は、対象コミットSHAのrunが`completed/success`になっているかで判断する。
