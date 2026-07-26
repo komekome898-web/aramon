@@ -960,6 +960,15 @@
     background:linear-gradient(105deg, transparent 36%, rgba(255,255,255,0.22) 50%, transparent 64%);
   }
   .ml-card.is-center .ml-card-shine{ opacity:1; animation:mlShine 3.4s ease-in-out infinite; }
+  /* 装備スキンのレア度で光沢の色を変える(SR=金 / SSR=虹 / 無し=白) */
+  .ml-shine-sr .ml-card-shine{
+    background:linear-gradient(105deg, transparent 34%, rgba(255,215,106,0.5) 50%, transparent 66%);
+  }
+  .ml-shine-ssr .ml-card-shine{
+    background:linear-gradient(105deg, transparent 26%,
+      rgba(255,90,90,0.34) 38%, rgba(255,225,90,0.42) 46%, rgba(120,255,170,0.42) 54%,
+      rgba(120,180,255,0.38) 62%, rgba(210,130,255,0.34) 70%, transparent 80%);
+  }
   @keyframes mlShine{ 0%{ transform:translateX(-115%); } 55%,100%{ transform:translateX(115%); } }
   .ml-card.is-center::after{ box-shadow:inset 0 0 0 1px var(--ml-accent,#f4c430), inset 0 -34px 30px -22px rgba(0,0,0,0.9); }
   .ml-card-art{
@@ -970,6 +979,12 @@
   .ml-card-art img{ width:96%; height:96%; object-fit:contain; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.6)); }
   .ml-card-art{ height:58%; }
   .ml-card-body{ position:absolute; left:0; right:0; bottom:0; top:58%; padding:5px 7px 0; text-align:center; }
+  /* 名前の横のオーラマーク(オーラ色の丸) */
+  .ml-aura-mark{
+    display:inline-block; width:0.62em; height:0.62em; margin-left:5px; border-radius:50%;
+    vertical-align:middle; background:var(--am,#fff);
+    box-shadow:0 0 6px var(--am,#fff), inset 0 0 0 1px rgba(0,0,0,0.35);
+  }
   .ml-card-name{ font-weight:700; font-size:clamp(11px, calc(3.2 * var(--vh)), 14px); letter-spacing:0.5px; line-height:1.2; }
   /* HP・速さは数値を大きく見せる(ラベルは小さく、数字はRusso Oneでオーラ色に発光) */
   .ml-card-figs{ margin-top:3px; display:flex; flex-direction:column; gap:1px; }
@@ -1114,15 +1129,17 @@
   .ml-sec-status .mm-stat-toprow{ font-size:10px; }
   .ml-sec-status .mm-stat-track{ height:6px; }
   .ml-sec-status .mm-stat-apt-badge{ width:13px; height:13px; font-size:8px; margin-left:4px; }
-  /* ステータス説明。3つずつ2行に分けて小さく収める(折り返さない前提の短縮文) */
-  .ml-stat-desc{ margin-top:7px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.07);
-    display:flex; flex-direction:column; gap:2px; }
-  .ml-stat-desc-line{
-    display:flex; flex-wrap:nowrap; justify-content:space-between; gap:5px;
-    font-size:clamp(6.5px, calc(1.95 * var(--vh)), 8.5px); line-height:1.5; letter-spacing:-0.3px;
-    color:var(--ink-dim); white-space:nowrap; overflow:hidden;
+  /* 3行2列。grid-auto-flow:column なので MASTERMON_STATS の並び順のまま
+     左列=ライフ/ちから/かしこさ、右列=命中/回避/丈夫さ になる */
+  .ml-stat-desc{
+    margin-top:7px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.07);
+    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,auto);
+    grid-auto-flow:column; column-gap:8px; row-gap:1px;
   }
-  .ml-stat-desc-item{ flex:0 0 auto; }
+  .ml-stat-desc-item{
+    font-size:clamp(7px, calc(2 * var(--vh)), 9px); line-height:1.5; letter-spacing:-0.2px;
+    color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+  }
   .ml-stat-desc-item b{ font-weight:700; }
   .ml-trait-text{ font-size:11px; line-height:1.6; color:var(--ink); }
   .ml-trait-bonus{ margin-top:4px; font-size:10px; line-height:1.5; color:var(--amber); }
@@ -1569,6 +1586,10 @@
     display:flex; flex-direction:column; gap:8px;
   }
   .mm-subview-sub{ margin-left:8px; font-size:10px; font-weight:600; letter-spacing:1px; color:var(--amber); }
+  /* 詳細情報タブ: 2列 + 技を全幅。まとめて1つのスクロール(.mm-subview-content)に載せる */
+  /* IDセレクタで幅と独立スクロールを付けているので、同じ強さ以上で打ち消す */
+  #mastermonDetailPanel .mm-info-grid .ml-sec-status{ flex:none; max-width:none; overflow:visible; }
+  .mm-info-moves{ grid-column:1 / -1; }
   /* ステータスの上まで全幅で伸ばすヘッダー(モンスター一覧の .ml-info-head と同じ位置) */
   #mastermonDetailPanel .mm-subview-header{ flex:0 0 auto; padding-right:46px; flex-wrap:nowrap; }
   #mastermonDetailPanel .mm-subview-title{
@@ -1623,9 +1644,6 @@
   .mm-stat-delta.down{ color:#ff6b6b; }
   .mm-stat-track{ width:100%; height:7px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; }
   .mm-stat-fill{ height:100%; }
-  .mm-stat-desc-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:6px; }
-  .mm-stat-desc-wrap{ display:flex; flex-direction:column; gap:4px; }
-  .mm-stat-desc-row{ font-size:10px; line-height:1.6; color:var(--ink-dim); }
   .mm-train-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:2px; }
   .mm-train-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
   .mm-train-btn{
@@ -1723,10 +1741,6 @@
   .mm-subview-content{
     flex:1 1 auto; min-height:0; overflow-y:auto;
     touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
-  }
-  .mastermon-info-col-single{ display:flex; flex-direction:column; }
-  .mm-info-col-title{
-    font-size:11px; letter-spacing:2px; color:var(--amber); font-weight:700; text-transform:uppercase; margin-bottom:8px;
   }
   .mm-info-row{
     display:flex; justify-content:space-between; align-items:baseline; gap:6px;
