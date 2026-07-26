@@ -836,6 +836,15 @@ function activateState(m){
   m.stateCooldownUntil = matchTime + sc.cooldown;
   spawnDmgText(m.x, m.y, m.z, sc.name+'!', '#ff3b3b');
   if(m.isPlayer){ pushToast(`${sc.name} 発動！(${sc.duration}秒間)`); playSe('jakiin'); }
+  // マルチのゲストはこの関数を実行しないため、発動したこと自体が伝わらない
+  // (効果はstateUntilの同期で効くが、演出・トースト・SEが出ず気づけない)。
+  // ホストが人間プレイヤーの発動を配信し、ゲスト側で同じ演出を再現する。
+  else if(netState.mode==='multi' && netState.isHost && m.netPlayerId){
+    window.__aramonPushEvent(netState.roomId, {
+      kind:'state', entId:m.id, name:sc.name, duration:sc.duration, ts:Date.now(),
+    });
+    hostForceFullNext = true; // stateUntilはフル配信でしか載らないので即座に届ける
+  }
 }
 // HP割合・ガッツ割合による条件は継続的にチェックする必要があるため、毎フレーム呼び出す
 function checkPassiveStateTriggers(m){
