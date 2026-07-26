@@ -167,7 +167,7 @@ function ensureChocoSeBuffers(){ seChocoSummon.ensure(); seChocoVanish.ensure();
 
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
-const SE_MIN_GAP = { tap:0.05, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
+const SE_MIN_GAP = { tap:0.05, cardSwipe:0.07, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
   fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6, ssrJackpot:0.9, zeusTier3:0.8,
   chocoSummon:1.5, chocoVanish:0.8, chocoHit:0.5 };
 const seLastAt = {};
@@ -247,6 +247,15 @@ function seNoiseLfo(t, o){
 const SE_DEFS = {
   // 通常のボタンタップ「ポン」
   tap(t){ seTone(t, {freq:660, freqEnd:440, dur:0.09, type:'sine', vol:0.45}); },
+  // モンスター選択のカード送り「シュッ」(紙のカードをめくる/弾く音)
+  cardSwipe(t){
+    // 高域から下がっていくノイズのひと吹き = 空気が抜ける「シュッ」
+    seNoise(t, {dur:0.10, vol:0.34, filterType:'bandpass', filterFreq:5600, filterEnd:1300});
+    // カードの縁が擦れる細い高域を少し重ねる
+    seNoise(t+0.008, {dur:0.055, vol:0.15, filterType:'highpass', filterFreq:3600});
+    // めくり終わりの「トッ」(紙が指から離れる当たり)
+    seTone(t+0.03, {freq:1250, freqEnd:520, dur:0.05, type:'triangle', vol:0.10, attack:0.003});
+  },
   // 試合開始・状態変化発動「ジャキーン」(大きなハサミ/刀で斬るような金属音)
   jakiin(t){
     // 立ち上がりの金属スクレイプ(刃が擦れる鋭いノイズ)
@@ -514,6 +523,8 @@ document.addEventListener('click', (e)=>{
   if(!e.target || !e.target.closest) return;
   // 管理者の音声確認タブでは、確認したいSE/BGMに共通タップ音が被らないよう「ポン」を鳴らさない
   if(e.target.closest('#adminSePane')) return;
+  // モンスター選択の送りボタンは専用のカード送りSEを鳴らすので、共通タップ音は重ねない
+  if(e.target.closest('.ml-nav')) return;
   if(e.target.closest('button')) playSe('tap');
 }, true);
 

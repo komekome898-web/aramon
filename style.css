@@ -1047,12 +1047,17 @@
     display:flex; align-items:center; gap:6px;
   }
   .ml-sec-title::after{ content:''; flex:1 1 auto; height:1px; background:linear-gradient(90deg,rgba(244,196,48,0.4),transparent); }
-  .ml-stat-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,1fr)); gap:6px 12px; max-width:480px; }
-  .ml-stat-row{ display:flex; align-items:center; gap:6px; }
-  .ml-stat-key{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); width:30px; }
-  .ml-stat-track{ flex:1 1 auto; height:6px; border-radius:3px; background:rgba(255,255,255,0.1); overflow:hidden; }
-  .ml-stat-fill{ height:100%; border-radius:3px; }
-  .ml-stat-val{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); width:30px; text-align:right; }
+  .ml-sec-note{ font-size:9px; font-weight:600; letter-spacing:0.4px; color:var(--ink-dim); }
+  /* 上段は「STATUS」と「特性+状態変化」の2列、その下に「技」を全幅で置く */
+  .ml-info-cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:9px; align-items:start; }
+  .ml-info-col2{ display:flex; flex-direction:column; gap:9px; min-width:0; }
+  @media (max-width:520px){ .ml-info-cols{ grid-template-columns:minmax(0,1fr); } }
+  /* マスモン画面のステータス列を流用するので、そちら用の固定幅・独立スクロールを解除する */
+  #mlDetailRight .mastermon-detail-statscol{ flex:none; max-width:none; overflow:visible; padding-right:0; }
+  #mlDetailRight .mm-stats-wrap{ gap:6px; }
+  #mlDetailRight .mm-stat-toprow{ font-size:10px; }
+  #mlDetailRight .mm-stat-track{ height:6px; }
+  #mlDetailRight .mm-stat-apt-badge{ width:13px; height:13px; font-size:8px; margin-left:4px; }
   .ml-trait-text{ font-size:11px; line-height:1.6; color:var(--ink); }
   .ml-trait-bonus{ margin-top:4px; font-size:10px; line-height:1.5; color:var(--amber); }
   .ml-state-name{ font-size:12px; font-weight:700; color:var(--ink); }

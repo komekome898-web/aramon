@@ -39,6 +39,11 @@ function buildMonsterGrid(){
   renderSelectorCards();
 }
 
+// スキンを一切考慮しないデフォルト画像の <img>(モンスター選択画面のカードで使う。
+// 装備スキンを反映すると「素のモンスターを選ぶ」画面なのに見た目と情報が食い違うため)
+function defaultMonsterImgTag(element, altLabel){
+  return `<img src="${imgSrcFor(`monsters/${element}`)}" data-ext-idx="0" alt="${altLabel||''}" onerror="handleMonsterImgError(this, 'monsters/${element}')">`;
+}
 // そのモンスターに装備中のスキンがあればスキンアイコン(dataURL)、無ければ通常画像で <img> を返す
 function equippedIconImgTag(element, altLabel){
   if(typeof getEquippedSkin==='function'){
@@ -126,6 +131,7 @@ const mlState = {
   lastT: 0,
   velocity: 0,     // px/ms
   suppressClick: false, // ドラッグ直後のclickを1回だけ無視するためのフラグ
+  lastCenterIdx: null,  // 中央のカードが変わった瞬間だけSEを鳴らすための直前値
   built: false,
   cards: [],       // DOM要素(ML_KEYSと同じ順)
   detailKey: null,
@@ -150,7 +156,8 @@ function mlRingDelta(i, pos){
   if(d < -n/2) d += n;
   return d;
 }
-function mlAuraOf(key){ return (typeof getMonsterAura==='function') ? getMonsterAura({ element:key, isPlayer:true }) : MONSTER_AURA[key]; }
+// この画面は「素のモンスター」を選ぶ画面なので、オーラも装備スキンを見ないデフォルト値を使う
+function mlAuraOf(key){ return MONSTER_AURA[key] || null; }
 function mlAccentOf(key){
   const aura = mlAuraOf(key);
   return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
@@ -166,7 +173,7 @@ function mlCardInnerHtml(key){
   return `
     ${picked}
     <div class="ml-card-aura" title="オーラ">${auraIcon}</div>
-    <div class="ml-card-art">${equippedIconImgTag(key, el.label)}</div>
+    <div class="ml-card-art">${defaultMonsterImgTag(key, el.label)}</div>
     <div class="ml-card-shine"></div>
     <div class="ml-card-body">
       <div class="ml-card-name">${el.label}</div>
@@ -244,6 +251,12 @@ function renderMonsterCarousel(){
     card.style.filter = `brightness(${bright}) saturate(${0.7 + 0.3 * near})`;
     card.classList.toggle('is-center', i === centerIdx);
   });
+  // 中央のカードが切り替わった瞬間に「シュッ」を鳴らす。ドラッグ・送りボタン・隣カードのタップの
+  // どの経路でもここを通るので、鳴らす場所はこの1か所に集約している
+  if(mlState.lastCenterIdx !== centerIdx){
+    if(mlState.lastCenterIdx != null && typeof playSe==='function') playSe('cardSwipe');
+    mlState.lastCenterIdx = centerIdx;
+  }
   const glow = document.getElementById('mlGlow');
   const accent = mlAccentOf(ML_KEYS[centerIdx]);
   glow.style.setProperty('--ml-glow', mlHexToRgba(accent, 0.5));
@@ -276,10 +289,9 @@ function mlStartAnim(){
   };
   mlState.raf = requestAnimationFrame(tick);
 }
-function mlGoTo(target, playSound){
+function mlGoTo(target){
   mlState.target = target;
-  if(playSound && typeof playSe==='function') playSe('tap');
-  mlStartAnim();
+  mlStartAnim();   // SEは renderMonsterCarousel() が中央の切り替わりを見て鳴らす
 }
 // 表示中の中央インデックス(0〜n-1)
 function mlCenterIndex(){
@@ -334,7 +346,7 @@ function mlOnPointerUp(e){
   if(Math.abs(flick) > ML_FLICK_THRESHOLD && target === Math.round(mlState.dragStartPos)){
     target += (flick > 0 ? 1 : -1);
   }
-  mlGoTo(target, false);
+  mlGoTo(target);
 }
 
 // カードのタップ: 中央のカードなら詳細へ、隣のカードならそのカードを中央へ送る
@@ -344,14 +356,12 @@ function mlOnCardClick(e){
   if(!card) return;
   const i = parseInt(card.dataset.index, 10);
   if(i === mlCenterIndex()) openMonsterDetail(ML_KEYS[i], card);
-  else mlGoTo(mlState.pos + mlRingDelta(i, mlState.pos), true);
+  else mlGoTo(mlState.pos + mlRingDelta(i, mlState.pos));
 }
 
 /* ---------------- 詳細ビュー ---------------- */
 function mlDetailInfoHtml(key){
   const el = ELEMENTS[key];
-  const r = mlGetStatRange();
-  const sp = mlSpeedOf(key);
   const aura = mlAuraOf(key);
   const auraName = (aura && typeof AURA_JP!=='undefined') ? `${AURA_EMOJI[aura]} ${AURA_JP[aura]}オーラ` : '';
   // 属性が持つ常時モディファイア(被ダメ0.8倍など)を読める形で並べる
@@ -364,44 +374,43 @@ function mlDetailInfoHtml(key){
   if(el.speedMod) mods.push(`移動 ${el.speedMod}倍`);
   const sc = STATE_CHANGES[key];
   const bonus = moveBonusEffectText(key);
+  // ステータスは「マスモンに登録したときの初期値+適正(A〜E)」。表示はマスモン画面と共通の
+  // buildMastermonStatsColHtml を流用する(バー・適正バッジの見た目をそろえるため)
+  const apt = APTITUDE[key] || {};
+  const statsHtml = buildMastermonStatsColHtml({ stats: mastermonInitialStats(key) }, apt);
   return `
     <div class="ml-info-head">
       <span class="ml-info-name">${el.label}</span>
       ${auraName ? `<span class="ml-info-chip aura">${auraName}</span>` : ''}
+      <span class="ml-info-chip">HP ${el.hp}</span>
+      <span class="ml-info-chip">速さ ${mlSpeedOf(key)}</span>
       ${mods.map(m=>`<span class="ml-info-chip">${m}</span>`).join('')}
     </div>
-    <div class="ml-sec">
-      <div class="ml-sec-title">STATUS</div>
-      <div class="ml-stat-grid">
-        <div class="ml-stat-row">
-          <span class="ml-stat-key">HP</span>
-          <span class="ml-stat-track"><span class="ml-stat-fill" style="width:${Math.round(mlRatio(el.hp,r.hpMin,r.hpMax)*100)}%;background:linear-gradient(90deg,#4fd97a,#8dffb0)"></span></span>
-          <span class="ml-stat-val">${el.hp}</span>
+    <div class="ml-info-cols">
+      <div class="ml-sec">
+        <div class="ml-sec-title">STATUS<span class="ml-sec-note">初期値 / 適正</span></div>
+        ${statsHtml}
+      </div>
+      <div class="ml-info-col2">
+        <div class="ml-sec">
+          <div class="ml-sec-title">特性</div>
+          <div class="ml-trait-text">${TRAIT_DESC[el.trait] || ''}</div>
+          ${bonus ? `<div class="ml-trait-bonus">${bonus}</div>` : ''}
         </div>
-        <div class="ml-stat-row">
-          <span class="ml-stat-key">速さ</span>
-          <span class="ml-stat-track"><span class="ml-stat-fill" style="width:${Math.round(mlRatio(sp,r.spMin,r.spMax)*100)}%;background:linear-gradient(90deg,#3d9dff,#8fd0ff)"></span></span>
-          <span class="ml-stat-val">${sp}</span>
-        </div>
+        ${sc ? `
+        <div class="ml-sec">
+          <div class="ml-sec-title">状態変化</div>
+          <div class="ml-state-name">${sc.name}</div>
+          <div class="ml-state-line">${stateTriggerText(sc)}</div>
+          <div class="ml-state-line">${stateDurationText(sc)}</div>
+          <div class="ml-state-effect">${describeStateEffectsText(sc.effects)}</div>
+        </div>` : ''}
       </div>
     </div>
     <div class="ml-sec">
-      <div class="ml-sec-title">特性</div>
-      <div class="ml-trait-text">${TRAIT_DESC[el.trait] || ''}</div>
-      ${bonus ? `<div class="ml-trait-bonus">${bonus}</div>` : ''}
-    </div>
-    <div class="ml-sec">
       <div class="ml-sec-title">技</div>
-      ${buildMastermonMovesHtml(key)}
-    </div>
-    ${sc ? `
-    <div class="ml-sec">
-      <div class="ml-sec-title">状態変化</div>
-      <div class="ml-state-name">${sc.name}</div>
-      <div class="ml-state-line">${stateTriggerText(sc)}</div>
-      <div class="ml-state-line">${stateDurationText(sc)}</div>
-      <div class="ml-state-effect">${describeStateEffectsText(sc.effects)}</div>
-    </div>` : ''}`;
+      ${buildMastermonMovesHtml(key, { ignoreSkin:true })}
+    </div>`;
 }
 
 // 一覧のカードの見た目をそのまま詳細へ持ち込み、元の位置から左へ飛んで拡大させる(FLIP)
@@ -476,6 +485,7 @@ function openMonsterListScreen(){
   const cur = (game.selectedElement && !game.selectedMastermonKey) ? ML_KEYS.indexOf(game.selectedElement) : -1;
   const start = cur >= 0 ? cur : 0;
   mlState.pos = start; mlState.target = start;
+  mlState.lastCenterIdx = null;   // 開いた瞬間はSEを鳴らさない(次の切り替わりから鳴る)
   ML_KEYS.forEach((k,i)=>{ if(mlState.cards[i]) mlState.cards[i].innerHTML = mlCardInnerHtml(k); });
   document.getElementById('mlDetailView').classList.add('hidden');
   document.getElementById('mlCarouselView').classList.remove('hidden');
@@ -497,16 +507,16 @@ function closeMonsterListScreen(){
   stage.addEventListener('pointerup', mlOnPointerUp);
   stage.addEventListener('pointercancel', mlOnPointerUp);
   stage.addEventListener('click', mlOnCardClick);
-  document.getElementById('mlPrevBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) - 1, true); });
-  document.getElementById('mlNextBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) + 1, true); });
+  document.getElementById('mlPrevBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) - 1); });
+  document.getElementById('mlNextBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) + 1); });
   document.getElementById('mlBackBtn').addEventListener('click', closeMonsterDetail);
   document.getElementById('mlEntryBtn').addEventListener('click', mlConfirmEntry);
   document.getElementById('closeMonsterListBtn').addEventListener('click', closeMonsterListScreen);
   window.addEventListener('keydown', (e)=>{
     if(document.getElementById('monsterListScreen').classList.contains('hidden')) return;
     if(!document.getElementById('mlDetailView').classList.contains('hidden')) return;
-    if(e.key==='ArrowLeft') mlGoTo(Math.round(mlState.pos) - 1, true);
-    else if(e.key==='ArrowRight') mlGoTo(Math.round(mlState.pos) + 1, true);
+    if(e.key==='ArrowLeft') mlGoTo(Math.round(mlState.pos) - 1);
+    else if(e.key==='ArrowRight') mlGoTo(Math.round(mlState.pos) + 1);
     else if(e.key==='Enter') openMonsterDetail(ML_KEYS[mlCenterIndex()], mlState.cards[mlCenterIndex()]);
   });
 }
@@ -3323,12 +3333,17 @@ function moveBonusEffectText(key){
 }
 
 // 「技一覧」画面: tier毎の技情報(アイコン・威力・消費ガッツ・CT・弾速・射程・特徴)
-function buildMastermonMovesHtml(key){
+// opts.ignoreSkin=true にすると装備スキンを一切見ないデフォルトの技を表示する
+// (モンスター選択画面は素のモンスターを選ぶ画面なのでこちらを使う)
+function buildMastermonMovesHtml(key, opts){
   const moves = SIGNATURE_MOVES[key] || [];
   const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
+  const ignoreSkin = !!(opts && opts.ignoreSkin);
   const movesHtml = moves.map(baseMv=>{
-    // 装備スキンでtier3が専用技(ちょこの「ヴァニッシュ」等)に変わる場合は解決後の性能を表示する
-    const pseudoForMove = { element:key, isPlayer:true };
+    // 装備スキンでtier3が専用技(ちょこの「ヴァニッシュ」等)に変わる場合は解決後の性能を表示する。
+    // ignoreSkin時は isPlayer:false + skinId:null にすることで entitySkinId() が null を返し、
+    // getMoveAura / skinTier3Move / getMoveName / ssrTier3DmgMult がすべて既定値になる
+    const pseudoForMove = ignoreSkin ? { element:key, isPlayer:false, skinId:null } : { element:key, isPlayer:true };
     const mv = (typeof skinTier3Move==='function') ? skinTier3Move(baseMv, pseudoForMove) : baseMv;
     const icon = mv.icon || fallbackIcon;
     // 技アイコンは該当オーラのアイコンを表示(tier3は装備SSRスキンで一致技に変わる)
@@ -3983,7 +3998,7 @@ function adminShowStatSubtab(sub){
 document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=> t.addEventListener('click', ()=>adminShowStatSubtab(t.dataset.substat)));
 // 管理者画面: SE確認グリッド(全SEをタップで再生)
 const SE_TEST_LABELS = {
-  tap:'ボタン ポン', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
+  tap:'ボタン ポン', cardSwipe:'カード送り シュッ', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
   fire:'技発射 バァン', hitTaken:'被弾 ドスッ', noGuts:'ガッツ不足 ピピピ', fireRoar:'炎 ボオオオ',
   iceCrack:'氷 パリパリ', tornado:'竜巻 ゴオオオ', spin:'回転 シュルル', beam:'ビーム', whoosh:'風切り シュン',
   bell:'鐘 リンリン', chupiin:'召喚・柱 チュピーン', shuwaa:'召喚・収束 シュワァー', kill:'撃破 ズバシュ',

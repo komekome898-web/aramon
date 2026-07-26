@@ -57,7 +57,10 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **1回のスワイプで2枚飛ばないようにしてある**: 離した時点の最寄りへ吸着し、フリック加算は「ドラッグだけではカードが変わらなかったとき」だけ効く(`target === Math.round(dragStartPos)`の判定)。
 - **ドラッグ直後のclickは`mlState.suppressClick`で1回だけ無視する。** `dragMoved`を見たままにすると次のタップまで無視され続ける(詳細が開かなくなる)。
 - **強制横向き(端末が縦画面ロック)対応は2か所**: ドラッグ量は`toLogicalDelta()`で回転補正する / 詳細を開くFLIP演出は`getBoundingClientRect()`が実画面基準なので`isForcedLandscape()`で幅と高さを入れ替え、中心座標は`toLogicalPoint()`で論理座標に直してから差分を出す。どちらも入れないと縦画面ロック端末で「横スワイプが効かない」「カードが変な方向から飛んでくる」になる。
-- 詳細ビューは一覧のカードDOMを`cloneNode`して左カラムに置き、右カラムに情報を出す。技一覧は**マスモン画面の`buildMastermonMovesHtml(key)`をそのまま流用**(スキンでtier3が変わる解決もそちらに入っているため)。左右の`.ml-card`のスタイルは共通で、詳細側は`#mlDetailCardSlot .ml-card`で中央寄せを解除して枠いっぱいに広げている。
+- **この画面は「素のモンスター」を選ぶ画面なので、装備スキンを一切見ない。** カード画像は`defaultMonsterImgTag()`(`equippedIconImgTag()`ではない)、オーラは`mlAuraOf()`が`MONSTER_AURA`を直に引く、技は`buildMastermonMovesHtml(key, {ignoreSkin:true})`。ignoreSkinは擬似エンティティを`{isPlayer:false, skinId:null}`にすることで`entitySkinId()`をnullにし、`getMoveAura`/`skinTier3Move`/`getMoveName`/`ssrTier3DmgMult`をまとめて既定値にしている(1か所で効く)。**スキン込みの見た目を出したいのはマスモン画面側だけ**なので、そちらは引数なしのまま。
+- 詳細ビューは一覧のカードDOMを`cloneNode`して左カラムに置き、右カラムに情報を出す。左右の`.ml-card`のスタイルは共通で、詳細側は`#mlDetailCardSlot .ml-card`で中央寄せを解除して枠いっぱいに広げている。
+- 右カラムの構成は**上段2列(`.ml-info-cols`: STATUS / 特性+状態変化) + 下に技を全幅**。STATUSは`buildMastermonStatsColHtml({stats: mastermonInitialStats(key)}, APTITUDE[key])`の流用で「初期値+適正バッジ」を出す。流用元は`flex:0 0 150px`の固定幅なので、`#mlDetailRight .mastermon-detail-statscol`で解除している。
+- **カード送りSE(`cardSwipe`)を鳴らすのは`renderMonsterCarousel()`の1か所だけ。** 中央インデックスが`mlState.lastCenterIdx`から変わった瞬間に鳴らすので、ドラッグ・送りボタン・隣カードのタップの全経路が自動でカバーされる。画面を開くときは`lastCenterIdx = null`にして鳴らさない。送りボタンは`<button>`なので、audio.jsの共通タップ音を`.ml-nav`で除外して二重鳴りを防いでいる。
 - 画面を閉じるときは`closeMonsterListScreen()`で**必ずrAFを止める**(`mlState.raf`)。
 
 ### 安全圏(zoneState)
