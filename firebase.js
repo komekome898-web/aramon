@@ -376,12 +376,15 @@
     try{ await push(ref(fbDb, `rooms/${roomId}/events`), evt); }catch(err){}
   };
 
+  // キルフィード等の単発イベント。limitToLast(1)+onValueだと短時間に複数件発生したとき
+  // 途中のイベントが丸ごと消えてしまう(キルフィードが流れない原因だった)ので、
+  // shotEvents/lootEventsと同じonChildAdded方式にして1件も取りこぼさないようにする。
+  // 呼び出し側はキーで重複処理を防ぐこと。
   window.__aramonWatchEvents = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/events`);
-    const q = query(r, limitToLast(1));
-    const cb = (snap)=>{ snap.forEach(ch=>callback(ch.val())); };
-    onValue(q, cb);
-    roomListeners.push({r:q,cb});
+    const cb = (snap)=>{ callback(snap.val(), snap.key); };
+    onChildAdded(r, cb);
+    roomListeners.push({r,cb,isChildAdded:true});
   };
 
   // 命中報告: 誰かが人間に当てた攻撃を報告し、ホストだけが確定計算する

@@ -2205,7 +2205,8 @@ function render(){
     const p = projectObstacle(main.x, main.y, 0, gRad);
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
-  for(const it of lootItems){ const p = project(it.x,it.y,0); if(p) drawables.push({kind:'loot', obj:it, p}); }
+  // predictedPickup: マルチのゲストが「拾った」と先読みして消したアイテム(ホストの確定待ち)
+  for(const it of lootItems){ if(it.predictedPickup != null) continue; const p = project(it.x,it.y,0); if(p) drawables.push({kind:'loot', obj:it, p}); }
   for(const pr of projectiles){ const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }
