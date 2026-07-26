@@ -98,41 +98,418 @@ function renderSelectorCards(){
   }
 }
 
-function buildMonsterListScreenGrid(){
-  const grid = document.getElementById('monsterListGrid');
-  grid.innerHTML = '';
-  Object.keys(ELEMENTS).forEach(key=>{
+/* =====================================================================
+   モンスター一覧(カルーセル選択画面)
+   ・15体のカードを弧状に並べ、中央だけ1.2倍に拡大・両隣以降は暗く小さく表示する
+   ・左右スワイプ(ドラッグ)で滑らかに送り、離すと最寄りのカードへ吸着する
+   ・両端は繋がっていて無限にスワイプできる(位置は「環状の最短距離」で計算する)
+   ・カードをタップすると詳細ビューへ。カードは一覧の位置から左へ飛んで拡大する(FLIP)
+   ===================================================================== */
+const ML_KEYS = Object.keys(ELEMENTS);
+const ML_VISIBLE_SIDE = 2;        // 中央の左右に何枚見せるか(中央+左右2枚=計5枚)
+const ML_CENTER_SCALE = 1.2;      // 中央カードの拡大率(他は1.0)
+const ML_SIDE_BRIGHTNESS = 0.55;  // 隣のカードの明るさ(中央=1.0)
+const ML_SNAP_RATE = 0.22;        // 吸着アニメの追従率(1フレームあたり)
+const ML_FLICK_THRESHOLD = 0.45;  // これ以上の速さで離したら次のカードまで送る(枚/秒相当)
+
+const mlState = {
+  pos: 0,          // 現在の表示位置(小数。整数のときちょうどそのカードが中央)
+  target: 0,       // 吸着先(整数)
+  raf: null,
+  dragging: false,
+  pointerId: null,
+  dragStartX: 0,
+  dragStartY: 0,
+  dragStartPos: 0,
+  dragMoved: 0,
+  lastX: 0,
+  lastT: 0,
+  velocity: 0,     // px/ms
+  suppressClick: false, // ドラッグ直後のclickを1回だけ無視するためのフラグ
+  built: false,
+  cards: [],       // DOM要素(ML_KEYSと同じ順)
+  detailKey: null,
+};
+
+// カードの見た目用に、全モンスターの中でのHP・速さの相対値(0〜1)を出す
+let mlStatRange = null;
+function mlGetStatRange(){
+  if(mlStatRange) return mlStatRange;
+  const hps = ML_KEYS.map(k=>ELEMENTS[k].hp);
+  const sps = ML_KEYS.map(k=>mlSpeedOf(k));
+  mlStatRange = { hpMin:Math.min(...hps), hpMax:Math.max(...hps), spMin:Math.min(...sps), spMax:Math.max(...sps) };
+  return mlStatRange;
+}
+function mlSpeedOf(key){ const el = ELEMENTS[key]; return Math.round(el.speed * (el.speedMod||1)); }
+function mlRatio(v, min, max){ return max>min ? (v-min)/(max-min) : 1; }
+// 環状の最短距離(-n/2 〜 n/2)。これで先頭と末尾が繋がる
+function mlRingDelta(i, pos){
+  const n = ML_KEYS.length;
+  let d = (i - pos) % n;
+  if(d > n/2) d -= n;
+  if(d < -n/2) d += n;
+  return d;
+}
+function mlAuraOf(key){ return (typeof getMonsterAura==='function') ? getMonsterAura({ element:key, isPlayer:true }) : MONSTER_AURA[key]; }
+function mlAccentOf(key){
+  const aura = mlAuraOf(key);
+  return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
+}
+
+function mlCardInnerHtml(key){
+  const el = ELEMENTS[key];
+  const r = mlGetStatRange();
+  const sp = mlSpeedOf(key);
+  const aura = mlAuraOf(key);
+  const auraIcon = (aura && typeof AURA_EMOJI!=='undefined') ? AURA_EMOJI[aura] : '';
+  const picked = (game.selectedElement===key && !game.selectedMastermonKey) ? '<div class="ml-card-picked">選択中</div>' : '';
+  return `
+    ${picked}
+    <div class="ml-card-aura" title="オーラ">${auraIcon}</div>
+    <div class="ml-card-art">${equippedIconImgTag(key, el.label)}</div>
+    <div class="ml-card-shine"></div>
+    <div class="ml-card-body">
+      <div class="ml-card-name">${el.label}</div>
+      <div class="ml-card-bars">
+        <div class="ml-card-bar">
+          <span class="ml-card-bar-label">HP</span>
+          <span class="ml-card-bar-track"><span class="ml-card-bar-fill" style="width:${Math.round(mlRatio(el.hp,r.hpMin,r.hpMax)*100)}%;background:linear-gradient(90deg,#4fd97a,#8dffb0)"></span></span>
+          <span class="ml-card-bar-val">${el.hp}</span>
+        </div>
+        <div class="ml-card-bar">
+          <span class="ml-card-bar-label">SPD</span>
+          <span class="ml-card-bar-track"><span class="ml-card-bar-fill" style="width:${Math.round(mlRatio(sp,r.spMin,r.spMax)*100)}%;background:linear-gradient(90deg,#3d9dff,#8fd0ff)"></span></span>
+          <span class="ml-card-bar-val">${sp}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildMonsterCarousel(){
+  const track = document.getElementById('mlTrack');
+  const dots = document.getElementById('mlDots');
+  track.innerHTML = '';
+  dots.innerHTML = '';
+  mlState.cards = ML_KEYS.map((key, i)=>{
     const el = ELEMENTS[key];
     const card = document.createElement('div');
-    card.className = 'monster-card' + (game.selectedElement===key && !game.selectedMastermonKey ? ' selected' : '');
-    card.style.setProperty('--accent', el.accent || el.color);
-    card.innerHTML = `
-      <div class="m-swatch" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-        <img src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="${el.label}" onerror="handleMonsterImgError(this, 'monsters/${key}')">
-      </div>
-      <div class="m-name">${el.label}</div>
-      <div class="m-stat">HP ${el.hp}<br>速さ ${Math.round(el.speed*(el.speedMod||1))}</div>
-      <div class="m-trait">${TRAIT_DESC[el.trait]}${moveBonusEffectText(key) ? `<br>${moveBonusEffectText(key)}` : ''}</div>`;
-    card.addEventListener('click', ()=>{
-      game.selectedElement = key;
-      game.selectedMastermonKey = null;
-      updatePlayButtonsEnabled();
-      document.getElementById('monsterListScreen').classList.add('hidden');
-      document.getElementById('startScreen').classList.remove('hidden');
-      renderSelectorCards();
-    });
-    grid.appendChild(card);
+    card.className = 'ml-card';
+    card.dataset.key = key;
+    card.dataset.index = String(i);
+    card.style.setProperty('--ml-accent', mlAccentOf(key));
+    card.style.setProperty('--ml-art-a', el.color);
+    card.style.setProperty('--ml-art-b', el.dark);
+    card.innerHTML = mlCardInnerHtml(key);
+    track.appendChild(card);
+    const dot = document.createElement('div');
+    dot.className = 'ml-dot';
+    dots.appendChild(dot);
+    return card;
   });
+  document.getElementById('mlCounterAll').textContent = String(ML_KEYS.length);
+  mlState.built = true;
+  renderMonsterCarousel();
 }
+// 旧関数名(トップ画面の初期化から呼ばれる)を残しておく
+function buildMonsterListScreenGrid(){ buildMonsterCarousel(); }
+
+function renderMonsterCarousel(){
+  if(!mlState.built) return;
+  const stage = document.getElementById('mlStage');
+  const step = parseFloat(getComputedStyle(stage).getPropertyValue('--ml-step')) || 106;
+  const n = ML_KEYS.length;
+  const centerIdx = ((Math.round(mlState.pos) % n) + n) % n;
+  mlState.cards.forEach((card, i)=>{
+    const d = mlRingDelta(i, mlState.pos);
+    const ad = Math.abs(d);
+    if(ad > ML_VISIBLE_SIDE + 0.75){
+      card.style.opacity = '0';
+      card.style.pointerEvents = 'none';
+      card.style.transform = 'translate3d(0,0,-600px)';
+      card.classList.remove('is-center');
+      return;
+    }
+    const near = Math.max(0, 1 - ad);                       // 中央でだけ1、隣で0
+    const scale = 1 + (ML_CENTER_SCALE - 1) * near;
+    const bright = 1 - (1 - ML_SIDE_BRIGHTNESS) * Math.min(1, ad);
+    const x = d * step;
+    const z = -Math.min(ad, ML_VISIBLE_SIDE) * 60;          // 奥に引いて弧に見せる
+    const rotY = -d * 13;
+    // 一番外側は少しだけ薄くして、見切れが自然に見えるようにする
+    const fade = ad > ML_VISIBLE_SIDE ? Math.max(0, 1 - (ad - ML_VISIBLE_SIDE) / 0.75) : 1;
+    card.style.opacity = String(fade);
+    card.style.pointerEvents = fade > 0.35 ? 'auto' : 'none';
+    card.style.zIndex = String(50 - Math.round(ad * 10));
+    card.style.transform = `translate3d(${x}px,0,${z}px) rotateY(${rotY}deg) scale(${scale})`;
+    card.style.filter = `brightness(${bright}) saturate(${0.7 + 0.3 * near})`;
+    card.classList.toggle('is-center', i === centerIdx);
+  });
+  const glow = document.getElementById('mlGlow');
+  const accent = mlAccentOf(ML_KEYS[centerIdx]);
+  glow.style.setProperty('--ml-glow', mlHexToRgba(accent, 0.5));
+  document.getElementById('mlCounterNow').textContent = String(centerIdx + 1);
+  const dotEls = document.getElementById('mlDots').children;
+  for(let i=0;i<dotEls.length;i++) dotEls[i].classList.toggle('active', i === centerIdx);
+}
+function mlHexToRgba(hex, a){
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex||'');
+  if(!m) return `rgba(244,196,48,${a})`;
+  const v = parseInt(m[1],16);
+  return `rgba(${(v>>16)&255},${(v>>8)&255},${v&255},${a})`;
+}
+
+// 吸着アニメ: target へ滑らかに寄せる。十分近づいたら整数にスナップして停止する
+function mlStartAnim(){
+  if(mlState.raf) return;
+  const tick = ()=>{
+    mlState.raf = null;
+    if(mlState.dragging){ renderMonsterCarousel(); return; }
+    const diff = mlState.target - mlState.pos;
+    if(Math.abs(diff) < 0.004){
+      mlState.pos = mlState.target;
+      renderMonsterCarousel();
+      return;
+    }
+    mlState.pos += diff * ML_SNAP_RATE;
+    renderMonsterCarousel();
+    mlState.raf = requestAnimationFrame(tick);
+  };
+  mlState.raf = requestAnimationFrame(tick);
+}
+function mlGoTo(target, playSound){
+  mlState.target = target;
+  if(playSound && typeof playSe==='function') playSe('tap');
+  mlStartAnim();
+}
+// 表示中の中央インデックス(0〜n-1)
+function mlCenterIndex(){
+  const n = ML_KEYS.length;
+  return ((Math.round(mlState.pos) % n) + n) % n;
+}
+
+function mlOnPointerDown(e){
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  mlState.dragging = true;
+  mlState.pointerId = e.pointerId;
+  mlState.dragStartX = e.clientX;
+  mlState.dragStartY = e.clientY;
+  mlState.dragStartPos = mlState.pos;
+  mlState.dragMoved = 0;
+  mlState.lastX = 0;
+  mlState.lastT = performance.now();
+  mlState.velocity = 0;
+  try{ document.getElementById('mlStage').setPointerCapture(e.pointerId); }catch(_){}
+}
+function mlOnPointerMove(e){
+  if(!mlState.dragging || e.pointerId !== mlState.pointerId) return;
+  const stage = document.getElementById('mlStage');
+  const step = parseFloat(getComputedStyle(stage).getPropertyValue('--ml-step')) || 106;
+  // 強制横向き(端末が縦画面ロック)のときはUI全体がCSSで回転しているので、
+  // 実画面の移動量を toLogicalDelta で回転補正してから横方向として使う
+  const d = (typeof toLogicalDelta==='function')
+    ? toLogicalDelta(e.clientX - mlState.dragStartX, e.clientY - mlState.dragStartY)
+    : { x: e.clientX - mlState.dragStartX };
+  const dx = d.x;
+  mlState.dragMoved = Math.max(mlState.dragMoved, Math.abs(dx));
+  mlState.pos = mlState.dragStartPos - dx / step;
+  const now = performance.now();
+  const dt = now - mlState.lastT;
+  if(dt > 0){ mlState.velocity = (dx - mlState.lastX) / dt; mlState.lastX = dx; mlState.lastT = now; }
+  renderMonsterCarousel();
+}
+function mlOnPointerUp(e){
+  if(!mlState.dragging || (e && e.pointerId !== mlState.pointerId)) return;
+  mlState.dragging = false;
+  mlState.pointerId = null;
+  // ドラッグして離した直後は click も飛んでくるので、その1回だけ無視する。
+  // (dragMovedを見たままにすると次のタップまで無視され続けてしまう)
+  mlState.suppressClick = mlState.dragMoved > 8;
+  const stage = document.getElementById('mlStage');
+  const step = parseFloat(getComputedStyle(stage).getPropertyValue('--ml-step')) || 106;
+  // 基本は最寄りのカードへ吸着する。少しだけ払って離した(=半分も動かしていない)ときは
+  // フリック扱いで1枚送る。既にドラッグで1枚以上動いている場合は、そのぶんを尊重して
+  // さらに上乗せしない(1回のスワイプで2枚飛ぶのを防ぐ)
+  const flick = -mlState.velocity * 1000 / step;   // 枚/秒。正=前(右のカード)へ
+  let target = Math.round(mlState.pos);
+  if(Math.abs(flick) > ML_FLICK_THRESHOLD && target === Math.round(mlState.dragStartPos)){
+    target += (flick > 0 ? 1 : -1);
+  }
+  mlGoTo(target, false);
+}
+
+// カードのタップ: 中央のカードなら詳細へ、隣のカードならそのカードを中央へ送る
+function mlOnCardClick(e){
+  if(mlState.suppressClick){ mlState.suppressClick = false; return; } // ドラッグ後のクリックは無視する
+  const card = e.target.closest('.ml-card');
+  if(!card) return;
+  const i = parseInt(card.dataset.index, 10);
+  if(i === mlCenterIndex()) openMonsterDetail(ML_KEYS[i], card);
+  else mlGoTo(mlState.pos + mlRingDelta(i, mlState.pos), true);
+}
+
+/* ---------------- 詳細ビュー ---------------- */
+function mlDetailInfoHtml(key){
+  const el = ELEMENTS[key];
+  const r = mlGetStatRange();
+  const sp = mlSpeedOf(key);
+  const aura = mlAuraOf(key);
+  const auraName = (aura && typeof AURA_JP!=='undefined') ? `${AURA_EMOJI[aura]} ${AURA_JP[aura]}オーラ` : '';
+  // 属性が持つ常時モディファイア(被ダメ0.8倍など)を読める形で並べる
+  const mods = [];
+  if(el.dmgTakenMod) mods.push(`被ダメ ${el.dmgTakenMod}倍`);
+  if(el.dmgDealtMod) mods.push(`与ダメ ${el.dmgDealtMod}倍`);
+  if(el.cooldownMod) mods.push(`連射 ${Math.round((1/el.cooldownMod)*10)/10}倍`);
+  if(el.gutsRegenMod) mods.push(`ガッツ回復 ${el.gutsRegenMod}倍`);
+  if(el.hitboxMult) mods.push(`当たり判定 ${el.hitboxMult}倍`);
+  if(el.speedMod) mods.push(`移動 ${el.speedMod}倍`);
+  const sc = STATE_CHANGES[key];
+  const bonus = moveBonusEffectText(key);
+  return `
+    <div class="ml-info-head">
+      <span class="ml-info-name">${el.label}</span>
+      ${auraName ? `<span class="ml-info-chip aura">${auraName}</span>` : ''}
+      ${mods.map(m=>`<span class="ml-info-chip">${m}</span>`).join('')}
+    </div>
+    <div class="ml-sec">
+      <div class="ml-sec-title">STATUS</div>
+      <div class="ml-stat-grid">
+        <div class="ml-stat-row">
+          <span class="ml-stat-key">HP</span>
+          <span class="ml-stat-track"><span class="ml-stat-fill" style="width:${Math.round(mlRatio(el.hp,r.hpMin,r.hpMax)*100)}%;background:linear-gradient(90deg,#4fd97a,#8dffb0)"></span></span>
+          <span class="ml-stat-val">${el.hp}</span>
+        </div>
+        <div class="ml-stat-row">
+          <span class="ml-stat-key">速さ</span>
+          <span class="ml-stat-track"><span class="ml-stat-fill" style="width:${Math.round(mlRatio(sp,r.spMin,r.spMax)*100)}%;background:linear-gradient(90deg,#3d9dff,#8fd0ff)"></span></span>
+          <span class="ml-stat-val">${sp}</span>
+        </div>
+      </div>
+    </div>
+    <div class="ml-sec">
+      <div class="ml-sec-title">特性</div>
+      <div class="ml-trait-text">${TRAIT_DESC[el.trait] || ''}</div>
+      ${bonus ? `<div class="ml-trait-bonus">${bonus}</div>` : ''}
+    </div>
+    <div class="ml-sec">
+      <div class="ml-sec-title">技</div>
+      ${buildMastermonMovesHtml(key)}
+    </div>
+    ${sc ? `
+    <div class="ml-sec">
+      <div class="ml-sec-title">状態変化</div>
+      <div class="ml-state-name">${sc.name}</div>
+      <div class="ml-state-line">${stateTriggerText(sc)}</div>
+      <div class="ml-state-line">${stateDurationText(sc)}</div>
+      <div class="ml-state-effect">${describeStateEffectsText(sc.effects)}</div>
+    </div>` : ''}`;
+}
+
+// 一覧のカードの見た目をそのまま詳細へ持ち込み、元の位置から左へ飛んで拡大させる(FLIP)
+function openMonsterDetail(key, srcCard){
+  mlState.detailKey = key;
+  const slot = document.getElementById('mlDetailCardSlot');
+  const right = document.getElementById('mlDetailRight');
+  const clone = srcCard ? srcCard.cloneNode(true) : (()=>{
+    const c = document.createElement('div');
+    c.className = 'ml-card';
+    c.style.setProperty('--ml-accent', mlAccentOf(key));
+    c.style.setProperty('--ml-art-a', ELEMENTS[key].color);
+    c.style.setProperty('--ml-art-b', ELEMENTS[key].dark);
+    c.innerHTML = mlCardInnerHtml(key);
+    return c;
+  })();
+  clone.classList.add('is-center');
+  slot.innerHTML = '';
+  slot.appendChild(clone);
+  right.innerHTML = mlDetailInfoHtml(key);
+  right.scrollTop = 0;
+
+  const srcRect = srcCard ? srcCard.getBoundingClientRect() : null;
+  document.getElementById('mlCarouselView').classList.add('hidden');
+  document.getElementById('mlDetailView').classList.remove('hidden');
+  if(srcRect){
+    // 表示後の位置を測り、元の位置へ一旦戻してからtransitionで戻す(=飛んで拡大して見える)
+    const dstRect = clone.getBoundingClientRect();
+    // getBoundingClientRectは実画面基準なので、強制横向き時は幅と高さ・座標軸が入れ替わる。
+    // カードのローカル座標系(=論理座標系)に直してから差分を出す
+    const forced = (typeof isForcedLandscape==='function') && isForcedLandscape();
+    const srcW = forced ? srcRect.height : srcRect.width;
+    const srcH = forced ? srcRect.width  : srcRect.height;
+    const dstW = forced ? dstRect.height : dstRect.width;
+    const dstH = forced ? dstRect.width  : dstRect.height;
+    const sx = dstW ? srcW / dstW : 1;
+    const sy = dstH ? srcH / dstH : 1;
+    const toL = (typeof toLogicalPoint==='function') ? toLogicalPoint : ((x,y)=>({x,y}));
+    const sc = toL(srcRect.left + srcRect.width/2, srcRect.top + srcRect.height/2);
+    const dc = toL(dstRect.left + dstRect.width/2, dstRect.top + dstRect.height/2);
+    const dx = sc.x - dc.x;
+    const dy = sc.y - dc.y;
+    slot.classList.remove('ml-flip');
+    clone.style.setProperty('transform', `translate(${dx}px,${dy}px) scale(${sx},${sy})`, 'important');
+    requestAnimationFrame(()=>{
+      slot.classList.add('ml-flip');
+      clone.style.setProperty('transform', 'none', 'important');
+    });
+  }
+}
+function closeMonsterDetail(){
+  document.getElementById('mlDetailView').classList.add('hidden');
+  document.getElementById('mlCarouselView').classList.remove('hidden');
+  renderMonsterCarousel();
+}
+// 「このモンスターで参戦」= 選択を確定してトップ画面へ戻る
+function mlConfirmEntry(){
+  const key = mlState.detailKey;
+  if(!key) return;
+  game.selectedElement = key;
+  game.selectedMastermonKey = null;
+  updatePlayButtonsEnabled();
+  closeMonsterListScreen();
+  renderSelectorCards();
+  ML_KEYS.forEach((k,i)=>{ if(mlState.cards[i]) mlState.cards[i].innerHTML = mlCardInnerHtml(k); });
+  if(typeof pushToast==='function') pushToast(`${ELEMENTS[key].label} で参戦します`);
+}
+
 function openMonsterListScreen(){
-  buildMonsterListScreenGrid();
+  if(!mlState.built) buildMonsterCarousel();
+  // 選択中のモンスター(あれば)を中央にして開く
+  const cur = (game.selectedElement && !game.selectedMastermonKey) ? ML_KEYS.indexOf(game.selectedElement) : -1;
+  const start = cur >= 0 ? cur : 0;
+  mlState.pos = start; mlState.target = start;
+  ML_KEYS.forEach((k,i)=>{ if(mlState.cards[i]) mlState.cards[i].innerHTML = mlCardInnerHtml(k); });
+  document.getElementById('mlDetailView').classList.add('hidden');
+  document.getElementById('mlCarouselView').classList.remove('hidden');
   document.getElementById('monsterListScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
+  renderMonsterCarousel();
 }
-document.getElementById('closeMonsterListBtn').addEventListener('click', ()=>{
+function closeMonsterListScreen(){
+  if(mlState.raf){ cancelAnimationFrame(mlState.raf); mlState.raf = null; }
+  mlState.dragging = false;
   document.getElementById('monsterListScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
-});
+}
+
+{
+  const stage = document.getElementById('mlStage');
+  stage.addEventListener('pointerdown', mlOnPointerDown);
+  stage.addEventListener('pointermove', mlOnPointerMove);
+  stage.addEventListener('pointerup', mlOnPointerUp);
+  stage.addEventListener('pointercancel', mlOnPointerUp);
+  stage.addEventListener('click', mlOnCardClick);
+  document.getElementById('mlPrevBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) - 1, true); });
+  document.getElementById('mlNextBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) + 1, true); });
+  document.getElementById('mlBackBtn').addEventListener('click', closeMonsterDetail);
+  document.getElementById('mlEntryBtn').addEventListener('click', mlConfirmEntry);
+  document.getElementById('closeMonsterListBtn').addEventListener('click', closeMonsterListScreen);
+  window.addEventListener('keydown', (e)=>{
+    if(document.getElementById('monsterListScreen').classList.contains('hidden')) return;
+    if(!document.getElementById('mlDetailView').classList.contains('hidden')) return;
+    if(e.key==='ArrowLeft') mlGoTo(Math.round(mlState.pos) - 1, true);
+    else if(e.key==='ArrowRight') mlGoTo(Math.round(mlState.pos) + 1, true);
+    else if(e.key==='Enter') openMonsterDetail(ML_KEYS[mlCenterIndex()], mlState.cards[mlCenterIndex()]);
+  });
+}
 function updateMastermonEntryCount(){
   const countEl = document.getElementById('mastermonEntryCount');
   if(!countEl) return;

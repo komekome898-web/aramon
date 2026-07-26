@@ -81,7 +81,7 @@
   </div>
   <div id="landscapeHint">📱 横画面プレイ推奨</div>
 
-  <div class="pick-label">使用するモンスターを選択</div>
+  <div class="pick-label">モンスター選択</div>
   <div class="monster-grid" id="monsterGrid"></div>
   <div class="grid-note">※各モンスターの状態変化については一番下に記載</div>
 
@@ -425,9 +425,39 @@
 
 <!-- MONSTER LIST -->
 <div id="monsterListScreen" class="resultScreen hidden">
-  <div class="rank" style="font-size:32px;">モンスター一覧</div>
-  <div class="monster-grid" id="monsterListGrid"></div>
-  <button id="closeMonsterListBtn">閉じる</button>
+  <button class="overlay-close-btn" id="closeMonsterListBtn" aria-label="閉じる">✕</button>
+
+  <!-- カルーセル(一覧)ビュー -->
+  <div id="mlCarouselView">
+    <div class="ml-head">
+      <div class="ml-title">MONSTER SELECT</div>
+      <div class="ml-sub">スワイプして選ぶ / カードをタップで詳細</div>
+    </div>
+    <div id="mlStage">
+      <div id="mlGlow"></div>
+      <div id="mlTrack"></div>
+    </div>
+    <div class="ml-foot">
+      <div id="mlDots"></div>
+      <div class="ml-foot-row">
+        <button class="ml-nav" id="mlPrevBtn" aria-label="前のモンスター">‹</button>
+        <div id="mlCounter"><span id="mlCounterNow">1</span><span class="ml-counter-sep">/</span><span id="mlCounterAll">15</span></div>
+        <button class="ml-nav" id="mlNextBtn" aria-label="次のモンスター">›</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 詳細ビュー(カードが左に寄り、右に情報) -->
+  <div id="mlDetailView" class="hidden">
+    <div id="mlDetailLeft">
+      <div id="mlDetailCardSlot"></div>
+      <div id="mlDetailBtnRow">
+        <button id="mlEntryBtn">このモンスターで参戦</button>
+        <button id="mlBackBtn">一覧へ戻る</button>
+      </div>
+    </div>
+    <div id="mlDetailRight"></div>
+  </div>
 </div>
 
 <!-- MY STATS -->
