@@ -48,6 +48,18 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - プルダウンは `.custom-select` / `.custom-select-menu` の自前実装を再利用する。ポップアップが親のoverflowで切れないよう「外枠はoverflow可視・中のリストだけ独立スクロール」の構成にする。
 - 横長(landscape)の低い画面が前提。新しい画面は縦幅を詰めてスクロールなしで収まるようにする。
 
+### モンスター選択(トップ画面の分岐 → モンスター一覧カルーセル)
+- 導線は「トップ画面の`モンスター選択`(`.selector-card`が2枚: マスモン / モンスター一覧) → それぞれの画面」。分岐カードは`renderSelectorCards()`が中身を書き、CSSでアイコン左・テキスト右・右端`::after`の`›`という横並びにしている(縦積みだと日本語が折り返して崩れる)。
+- `#monsterListScreen`のカルーセルは**位置を全部JSがtransformで書く方式**。`mlState.pos`(小数。整数のときそのカードが中央)を唯一の状態とし、`renderMonsterCarousel()`が全カードに`translate3d/rotateY/scale`と`filter:brightness`を設定する。**`.ml-card`にtransitionを付けてはいけない**(ドラッグ追従が鈍る)。滑らかな吸着は`mlStartAnim()`のrAFで`pos`を`target`へ寄せて実現している。
+- **無限ループは「環状の最短距離」`mlRingDelta(i, pos)`で成立している。** `pos`は正規化せず単調な小数のまま持ち、各カードの相対位置だけを`-n/2〜n/2`に畳む。これで先頭の左に末尾が並び、末尾の右に先頭が並ぶ。`pos`を0〜nに丸めようとすると境界でカードが飛ぶ。
+- 見た目の定数は先頭にまとめてある(`ML_CENTER_SCALE`=1.2 / `ML_SIDE_BRIGHTNESS`=0.55 / `ML_VISIBLE_SIDE`=2 / `ML_SNAP_RATE` / `ML_FLICK_THRESHOLD`)。**カード間隔は CSS の `#mlStage{--ml-step}` が正**で、JSは`getComputedStyle`で読む(2か所に数字を書かないため)。
+- **「少しだけ見切れる」のは`#mlStage`の幅を`calc(var(--ml-step) * 4.4)`にして`overflow:hidden`しているから。** 画面幅基準にすると広い画面で5枚とも収まってしまい、スワイプできることが伝わらなくなる。`--ml-step`を変えたらこの倍率も見直す。
+- **1回のスワイプで2枚飛ばないようにしてある**: 離した時点の最寄りへ吸着し、フリック加算は「ドラッグだけではカードが変わらなかったとき」だけ効く(`target === Math.round(dragStartPos)`の判定)。
+- **ドラッグ直後のclickは`mlState.suppressClick`で1回だけ無視する。** `dragMoved`を見たままにすると次のタップまで無視され続ける(詳細が開かなくなる)。
+- **強制横向き(端末が縦画面ロック)対応は2か所**: ドラッグ量は`toLogicalDelta()`で回転補正する / 詳細を開くFLIP演出は`getBoundingClientRect()`が実画面基準なので`isForcedLandscape()`で幅と高さを入れ替え、中心座標は`toLogicalPoint()`で論理座標に直してから差分を出す。どちらも入れないと縦画面ロック端末で「横スワイプが効かない」「カードが変な方向から飛んでくる」になる。
+- 詳細ビューは一覧のカードDOMを`cloneNode`して左カラムに置き、右カラムに情報を出す。技一覧は**マスモン画面の`buildMastermonMovesHtml(key)`をそのまま流用**(スキンでtier3が変わる解決もそちらに入っているため)。左右の`.ml-card`のスタイルは共通で、詳細側は`#mlDetailCardSlot .ml-card`で中央寄せを解除して枠いっぱいに広げている。
+- 画面を閉じるときは`closeMonsterListScreen()`で**必ずrAFを止める**(`mlState.raf`)。
+
 ### 安全圏(zoneState)
 - `ZONE_PHASES`でフェーズ定義。安定フェーズ開始時に`prepareNextZoneTarget()`で次の縮小先を事前決定し、`toCenter/toRadius`を予測点線として表示する。
 - マルチプレイではホストのzoneState(toCenter含む)をauthStateで同期する。

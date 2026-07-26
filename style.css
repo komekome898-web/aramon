@@ -860,10 +860,206 @@
     padding:14px 20px; text-align:center; box-shadow:0 8px 30px -6px rgba(0,0,0,0.7);
     pointer-events:none;
   }
-  .selector-card{ width:160px; border-color:rgba(244,196,48,0.35); }
+  /* 「モンスター選択」の分岐カード(マスモン / モンスター一覧)。
+     アイコン左・テキスト右・右端に進む記号の横並びにして、文字の折り返しを防ぐ */
+  .selector-card{
+    position:relative; width:min(302px, calc(45 * var(--vw))); padding:11px 30px 11px 12px;
+    border-color:rgba(244,196,48,0.32); text-align:left;
+    display:grid; grid-template-columns:auto minmax(0,1fr); gap:1px 11px;
+    grid-template-areas:"sw name" "sw stat" "sw trait";
+    background:linear-gradient(120deg, rgba(28,38,56,0.92), rgba(9,13,21,0.96));
+  }
+  .selector-card::before{
+    content:''; position:absolute; left:0; right:0; top:0; height:2px;
+    background:linear-gradient(90deg, transparent, var(--accent,var(--amber)), transparent);
+  }
+  /* 右端の「›」で、押すと次の画面へ進むことを示す */
+  .selector-card::after{
+    content:'›'; position:absolute; right:10px; top:50%; transform:translateY(-50%);
+    font-family:'Russo One',sans-serif; font-size:20px; line-height:1; color:var(--accent,var(--amber)); opacity:0.75;
+  }
+  .selector-card .m-swatch{ grid-area:sw; margin:0; width:50px; height:50px; }
+  .selector-card .m-name{ grid-area:name; font-size:13px; }
+  .selector-card .m-stat{ grid-area:stat; margin-top:1px; }
+  .selector-card .m-trait{ grid-area:trait; margin-top:3px; font-size:9px; }
   .selector-card.selected{ border-color:var(--accent,var(--amber)); box-shadow:0 0 0 2px var(--accent,var(--amber)); }
-  #monsterListScreen{ justify-content:flex-start; padding-top:24px; }
-  #monsterListScreen .monster-grid{ margin-top:10px; }
+  /* =====================================================================
+     モンスター一覧(カルーセル選択画面)
+     - 5枚のカードを弧状に並べ、中央だけ1.2倍・他は暗く小さく表示する
+     - #mlStage は overflow:hidden なので両端のカードが見切れ、スワイプ可能だと直感的に伝わる
+     - 位置は全てJS(renderMonsterCarousel)がtransformで指定する。段送り幅は --ml-step を
+       JS側が getComputedStyle で読むので、CSSの値を変えるだけで間隔が変わる
+     ===================================================================== */
+  #monsterListScreen{
+    justify-content:center; padding:10px 12px; overflow:hidden;
+    /* 他の.resultScreenは半透明だが、この画面は「選ぶこと」に集中させたいので不透明にする
+       (裏のバトルHUDが透けると情報が読みにくくなるため) */
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(244,196,48,0.13), transparent 58%),
+      radial-gradient(ellipse at 50% 115%, rgba(64,124,255,0.12), transparent 60%),
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.016) 0 1px, transparent 1px 7px),
+      linear-gradient(180deg,#080b13,#04060a 58%,#070a12);
+  }
+  #mlCarouselView, #mlDetailView{ width:100%; max-width:min(940px, calc(96 * var(--vw))); }
+  #mlCarouselView{ display:flex; flex-direction:column; align-items:center; gap:calc(1.4 * var(--vh)); }
+  .ml-head{ text-align:center; }
+  .ml-title{
+    font-family:'Russo One',sans-serif; font-size:clamp(17px, calc(4.6 * var(--vh)), 27px); letter-spacing:3px;
+    background:linear-gradient(180deg,#fff3c4,#f4c430 55%,#c48f12);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 14px rgba(244,196,48,0.35));
+  }
+  .ml-sub{ margin-top:2px; font-size:10px; letter-spacing:1.2px; color:var(--ink-dim); }
+
+  #mlStage{
+    --ml-step: 118px; --ml-card-w: 124px; --ml-card-h: 178px;
+    /* 幅はカード間隔基準。中央+左右2枚(計5枚)を並べると一番外の2枚がこの枠から
+       はみ出すので、overflow:hidden により「少しだけ見切れる」= スワイプできると伝わる */
+    position:relative; width:min(100%, calc(var(--ml-step) * 4.4)); height:calc(var(--ml-card-h) * 1.34);
+    perspective:1000px; overflow:hidden; touch-action:none; cursor:grab;
+  }
+  #mlStage:active{ cursor:grabbing; }
+  @media (max-height:400px){ #mlStage{ --ml-step:104px; --ml-card-w:110px; --ml-card-h:154px; } }
+  @media (max-height:340px){ #mlStage{ --ml-step:92px;  --ml-card-w:98px;  --ml-card-h:136px; } }
+  /* 中央カードの真後ろに置く光。選択中のオーラ色を --ml-glow で受け取る */
+  #mlGlow{
+    position:absolute; left:50%; top:50%; width:calc(var(--ml-card-w) * 2.1); height:calc(var(--ml-card-w) * 2.1);
+    transform:translate(-50%,-50%); border-radius:50%; pointer-events:none;
+    background:radial-gradient(circle, var(--ml-glow,rgba(244,196,48,0.55)) 0%, transparent 68%);
+    opacity:0.5; transition:background .35s;
+  }
+  #mlTrack{ position:absolute; inset:0; transform-style:preserve-3d; }
+
+  .ml-card{
+    position:absolute; left:50%; top:50%; width:var(--ml-card-w); height:var(--ml-card-h);
+    margin-left:calc(var(--ml-card-w) / -2); margin-top:calc(var(--ml-card-h) / -2);
+    border-radius:12px; overflow:hidden; cursor:pointer;
+    background:linear-gradient(165deg, rgba(28,38,56,0.96), rgba(8,12,20,0.98));
+    border:1px solid rgba(255,255,255,0.12);
+    clip-path:polygon(11px 0,100% 0,100% calc(100% - 11px),calc(100% - 11px) 100%,0 100%,0 11px);
+    will-change:transform,filter,opacity;
+    /* transform/filterはJSが毎フレーム書くのでtransitionを付けない(ドラッグ追従が鈍るため) */
+  }
+  /* カード上端の装備オーラ色ライン + 縁の発光 */
+  .ml-card::before{
+    content:''; position:absolute; left:0; right:0; top:0; height:3px; z-index:3;
+    background:linear-gradient(90deg, transparent, var(--ml-accent,#f4c430), transparent);
+  }
+  .ml-card::after{
+    content:''; position:absolute; inset:0; z-index:2; pointer-events:none;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05), inset 0 -34px 30px -22px rgba(0,0,0,0.9);
+  }
+  .ml-card.is-center{ border-color:var(--ml-accent,#f4c430); }
+  /* 中央カードにだけゆっくり光沢を走らせる(ゲームのカードらしい質感) */
+  .ml-card-shine{
+    position:absolute; inset:0; z-index:5; pointer-events:none; opacity:0;
+    background:linear-gradient(105deg, transparent 36%, rgba(255,255,255,0.22) 50%, transparent 64%);
+  }
+  .ml-card.is-center .ml-card-shine{ opacity:1; animation:mlShine 3.4s ease-in-out infinite; }
+  @keyframes mlShine{ 0%{ transform:translateX(-115%); } 55%,100%{ transform:translateX(115%); } }
+  .ml-card.is-center::after{ box-shadow:inset 0 0 0 1px var(--ml-accent,#f4c430), inset 0 -34px 30px -22px rgba(0,0,0,0.9); }
+  .ml-card-art{
+    position:absolute; left:0; right:0; top:0; height:62%;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+    background:radial-gradient(circle at 50% 42%, var(--ml-art-a,#444) 0%, var(--ml-art-b,#111) 78%);
+  }
+  .ml-card-art img{ width:96%; height:96%; object-fit:contain; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.6)); }
+  .ml-card-body{ position:absolute; left:0; right:0; bottom:0; top:62%; padding:6px 7px 0; text-align:center; }
+  .ml-card-name{ font-weight:700; font-size:clamp(11px, calc(3.2 * var(--vh)), 14px); letter-spacing:0.5px; line-height:1.2; }
+  .ml-card-aura{
+    position:absolute; top:6px; right:6px; z-index:4; font-size:11px; line-height:1;
+    padding:3px; border-radius:50%; background:rgba(0,0,0,0.55);
+  }
+  .ml-card-picked{
+    position:absolute; top:6px; left:6px; z-index:4; font-size:8px; font-weight:700; letter-spacing:0.5px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-radius:4px; padding:2px 5px;
+  }
+  .ml-card-bars{ margin-top:5px; display:flex; flex-direction:column; gap:3px; }
+  .ml-card-bar{ display:flex; align-items:center; gap:4px; }
+  .ml-card-bar-label{ font-family:'Share Tech Mono',monospace; font-size:8px; color:var(--ink-dim); width:22px; text-align:left; }
+  .ml-card-bar-track{ flex:1 1 auto; height:4px; border-radius:2px; background:rgba(255,255,255,0.1); overflow:hidden; }
+  .ml-card-bar-fill{ height:100%; border-radius:2px; }
+  .ml-card-bar-val{ font-family:'Share Tech Mono',monospace; font-size:8px; color:var(--ink); width:22px; text-align:right; }
+
+  /* 送りボタンはカードに重ねず下段に置く(カードの絵を隠さないため) */
+  .ml-nav{
+    width:32px; height:26px; border-radius:7px; cursor:pointer;
+    font-family:'Russo One',sans-serif; font-size:18px; line-height:1; color:var(--amber);
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ml-nav:active{ background:rgba(244,196,48,0.2); }
+
+  .ml-foot{ display:flex; flex-direction:column; align-items:center; gap:7px; }
+  .ml-foot-row{ display:flex; align-items:center; gap:12px; }
+  #mlDots{ display:flex; gap:5px; justify-content:center; flex-wrap:wrap; max-width:min(420px, calc(80 * var(--vw))); }
+  .ml-dot{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.22); transition:background .2s, transform .2s; }
+  .ml-dot.active{ background:var(--amber); transform:scale(1.5); }
+  #mlCounter{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
+  #mlCounterNow{ color:var(--amber); font-size:14px; font-weight:700; }
+  .ml-counter-sep{ margin:0 3px; opacity:0.5; }
+
+  /* ---- 詳細ビュー ---- */
+  #mlDetailView{ display:flex; gap:12px; align-items:stretch; text-align:left; height:calc(84 * var(--vh)); }
+  #mlDetailLeft{ flex:0 0 clamp(136px, calc(28 * var(--vw)), 200px); display:flex; flex-direction:column; gap:8px; min-width:0; }
+  #mlDetailCardSlot{ flex:1 1 auto; position:relative; min-height:0; }
+  /* 詳細のカードは一覧のカードをそのまま拡大したもの。left/topの中央寄せを解除して枠いっぱいに使う */
+  #mlDetailCardSlot .ml-card{
+    position:absolute; inset:0; left:0; top:0; width:auto; height:auto; margin:0;
+    transform:none !important; filter:none !important; opacity:1 !important; cursor:default;
+  }
+  #mlDetailCardSlot .ml-card-art{ height:66%; }
+  #mlDetailCardSlot .ml-card-body{ top:66%; padding-top:8px; }
+  #mlDetailCardSlot .ml-card-name{ font-size:clamp(13px, calc(3.8 * var(--vh)), 17px); }
+  /* FLIP: 一覧のカード位置から詳細の位置へ飛んで拡大する演出 */
+  #mlDetailCardSlot.ml-flip .ml-card{ transition:transform .42s cubic-bezier(.2,.75,.25,1); }
+  #mlDetailBtnRow{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
+  #mlEntryBtn{
+    /* 日本語なのでRusso Oneはフォールバックになる。折り返して枠から出ないよう字間を詰める */
+    padding:10px 6px; font-family:'Rajdhani',sans-serif; font-weight:700; line-height:1.3;
+    font-size:clamp(11px, calc(3 * var(--vh)), 13px); letter-spacing:0; color:#1a1306;
+    background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    box-shadow:0 3px 0 #8a6a10, 0 0 18px -4px rgba(244,196,48,0.7);
+  }
+  #mlEntryBtn:active{ transform:translateY(2px); box-shadow:0 1px 0 #8a6a10; }
+  #mlBackBtn{
+    padding:8px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
+    border-radius:6px; cursor:pointer;
+  }
+  #mlBackBtn:active{ background:rgba(255,255,255,0.12); }
+
+  #mlDetailRight{
+    flex:1 1 auto; min-width:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    padding-right:4px; display:flex; flex-direction:column; gap:9px;
+  }
+  .ml-info-head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .ml-info-name{ font-family:'Russo One',sans-serif; font-size:clamp(15px, calc(4.2 * var(--vh)), 21px); letter-spacing:1px; }
+  .ml-info-chip{
+    font-size:10px; font-weight:700; letter-spacing:0.5px; padding:3px 8px; border-radius:11px;
+    background:rgba(255,255,255,0.07); border:1px solid var(--panel-line); color:var(--ink);
+  }
+  .ml-info-chip.aura{ border-color:var(--ml-accent,#f4c430); color:var(--ml-accent,#f4c430); }
+  .ml-sec{ background:rgba(0,0,0,0.26); border:1px solid var(--panel-line); border-radius:9px; padding:8px 10px; }
+  .ml-sec-title{
+    font-size:10px; font-weight:700; letter-spacing:1.4px; color:var(--amber); margin-bottom:6px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .ml-sec-title::after{ content:''; flex:1 1 auto; height:1px; background:linear-gradient(90deg,rgba(244,196,48,0.4),transparent); }
+  .ml-stat-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,1fr)); gap:6px 12px; max-width:480px; }
+  .ml-stat-row{ display:flex; align-items:center; gap:6px; }
+  .ml-stat-key{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); width:30px; }
+  .ml-stat-track{ flex:1 1 auto; height:6px; border-radius:3px; background:rgba(255,255,255,0.1); overflow:hidden; }
+  .ml-stat-fill{ height:100%; border-radius:3px; }
+  .ml-stat-val{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); width:30px; text-align:right; }
+  .ml-trait-text{ font-size:11px; line-height:1.6; color:var(--ink); }
+  .ml-trait-bonus{ margin-top:4px; font-size:10px; line-height:1.5; color:var(--amber); }
+  .ml-state-name{ font-size:12px; font-weight:700; color:var(--ink); }
+  .ml-state-line{ font-size:10px; line-height:1.6; color:var(--ink-dim); }
+  .ml-state-effect{ font-size:10px; line-height:1.6; color:var(--amber); }
+  /* 技一覧はマスモン画面のカードをそのまま流用する(mm-move-*) */
+  #mlDetailRight .mm-moves-list{ display:flex; flex-direction:column; gap:6px; }
   .mastermon-entry-swatch{
     display:flex; align-items:center; justify-content:center; font-size:28px; color:#1a1306;
     background:linear-gradient(180deg,#ffd76a,#f4c430) !important;
