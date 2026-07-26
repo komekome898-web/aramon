@@ -1046,17 +1046,16 @@
   #mlDetailCardSlot.ml-flip .ml-card, #mmDetailCardSlot.ml-flip .ml-card{ transition:transform .42s cubic-bezier(.2,.75,.25,1); }
   /* カードの絵(アイコン部分)の両サイドに重ねる「隣のモンスターへ」ボタン */
   /* カードの絵(アイコン部分)の両サイドに重ねる「隣へ」ボタン。
-     絵の上に乗るので、埋もれないよう縁を琥珀色にして少し光らせる */
+     背景・枠は持たせず記号だけを置く(絵を隠さないため)。影で視認性を確保する */
   .ml-card-nav{
     position:absolute; top:30%; transform:translateY(-50%); z-index:12;
-    width:27px; height:46px; border-radius:8px; cursor:pointer;
-    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:18px; line-height:1; color:#1a1306;
-    background:linear-gradient(180deg, rgba(255,215,106,0.92), rgba(244,196,48,0.92));
-    border:1px solid rgba(255,238,180,0.9);
-    box-shadow:0 2px 10px -2px rgba(0,0,0,0.8), 0 0 12px -3px rgba(244,196,48,0.9);
+    width:30px; height:48px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:26px; line-height:1;
+    color:rgba(255,255,255,0.95); background:none; border:none; border-radius:0; box-shadow:none;
+    text-shadow:0 1px 3px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.8);
     display:flex; align-items:center; justify-content:center;
   }
-  .ml-card-nav:active{ filter:brightness(0.9); }
+  .ml-card-nav:active{ color:var(--amber); }
   .ml-card-nav-prev{ left:0; } .ml-card-nav-next{ right:0; }
   /* ≪ ≫ で切り替えたときに、その方向から差し込むように見せる */
   .ml-slide-in-right{ animation:mlSlideInR .26s ease-out; }
@@ -1080,11 +1079,17 @@
   }
   #mlBackBtn:active{ background:rgba(255,255,255,0.12); }
 
+  /* ヘッダーは固定し、その下(.ml-info-scroll)だけスクロールさせる */
   #mlDetailRight{
-    flex:1 1 auto; min-width:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    flex:1 1 auto; min-width:0; min-height:0; overflow:hidden;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .ml-info-scroll{
+    flex:1 1 auto; min-height:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     padding-right:4px; display:flex; flex-direction:column; gap:9px;
   }
-  .ml-info-head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  /* 右上の×ボタン(right:12px / 37px幅)と重ならないよう右側を空けておく */
+  .ml-info-head{ flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-right:46px; }
   .ml-info-name{ font-family:'Russo One',sans-serif; font-size:clamp(15px, calc(4.2 * var(--vh)), 21px); letter-spacing:1px; }
   .ml-info-chip{
     font-size:10px; font-weight:700; letter-spacing:0.5px; padding:3px 8px; border-radius:11px;
@@ -1103,12 +1108,22 @@
      判定されてしまい、横画面なのに縦並びになる */
   .ml-info-cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:9px; align-items:start; }
   .ml-info-col2{ display:flex; flex-direction:column; gap:9px; min-width:0; }
-  /* マスモン画面のステータス列を流用するので、そちら用の固定幅・独立スクロールを解除する */
-  #mlDetailRight .mastermon-detail-statscol{ flex:none; max-width:none; overflow:visible; padding-right:0; }
-  #mlDetailRight .mm-stats-wrap{ gap:6px; }
-  #mlDetailRight .mm-stat-toprow{ font-size:10px; }
-  #mlDetailRight .mm-stat-track{ height:6px; }
-  #mlDetailRight .mm-stat-apt-badge{ width:13px; height:13px; font-size:8px; margin-left:4px; }
+  /* buildMastermonStatsColHtml を流用しているので、そちら用の固定幅・独立スクロールを解除する */
+  .ml-sec-status .mastermon-detail-statscol{ flex:none; max-width:none; overflow:visible; padding-right:0; }
+  .ml-sec-status .mm-stats-wrap{ gap:6px; }
+  .ml-sec-status .mm-stat-toprow{ font-size:10px; }
+  .ml-sec-status .mm-stat-track{ height:6px; }
+  .ml-sec-status .mm-stat-apt-badge{ width:13px; height:13px; font-size:8px; margin-left:4px; }
+  /* ステータス説明。3つずつ2行に分けて小さく収める(折り返さない前提の短縮文) */
+  .ml-stat-desc{ margin-top:7px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.07);
+    display:flex; flex-direction:column; gap:2px; }
+  .ml-stat-desc-line{
+    display:flex; flex-wrap:nowrap; justify-content:space-between; gap:5px;
+    font-size:clamp(6.5px, calc(1.95 * var(--vh)), 8.5px); line-height:1.5; letter-spacing:-0.3px;
+    color:var(--ink-dim); white-space:nowrap; overflow:hidden;
+  }
+  .ml-stat-desc-item{ flex:0 0 auto; }
+  .ml-stat-desc-item b{ font-weight:700; }
   .ml-trait-text{ font-size:11px; line-height:1.6; color:var(--ink); }
   .ml-trait-bonus{ margin-top:4px; font-size:10px; line-height:1.5; color:var(--amber); }
   .ml-state-name{ font-size:12px; font-weight:700; color:var(--ink); }
@@ -1530,15 +1545,14 @@
   }
   #mmDetailView{ display:flex; gap:12px; align-items:stretch; text-align:left; height:calc(84 * var(--vh)); }
   #mmDetailLeft{ flex:0 0 clamp(146px, calc(27 * var(--vw)), 192px); display:flex; flex-direction:column; gap:6px; min-width:0; }
-  /* 縦が低い画面(568x320等)でも絵が潰れないように、カードに最低の高さを確保する。
-     残りをボタン群が使うので、ボタン側は1行に収まる詰めたサイズにしてある */
-  #mmDetailCardSlot{ min-height:calc(34 * var(--vh)); }
+  /* ボタンが「参戦」「編集」「一覧へ」の3つだけになったので、残りは全部カードに使う */
+  #mmDetailCardSlot{ min-height:calc(40 * var(--vh)); }
   .mm-detail-use-btn{ flex:0 0 auto; padding:8px 4px; white-space:nowrap; line-height:1.2;
     font-size:clamp(10px, calc(2.8 * var(--vh)), 13px); letter-spacing:0;
     clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
     box-shadow:0 3px 0 #8a6a10, 0 0 18px -4px rgba(244,196,48,0.7); }
   .mm-detail-use-btn:active{ transform:translateY(2px); box-shadow:0 1px 0 #8a6a10; }
-  /* 詳細情報/技一覧/トレーニング/着せ替え/編集/一覧へ の6ボタンを2列3行に収める */
+  /* 編集 / 一覧へ の2ボタンを1行に */
   #mmDetailTabGrid{ flex:0 0 auto; display:grid; grid-template-columns:1fr 1fr; gap:4px; }
   .mm-tab-btn{
     padding:5px 2px; border-radius:6px; cursor:pointer; text-align:center; white-space:nowrap; overflow:hidden;
@@ -1552,9 +1566,39 @@
   #mastermonDetailPanel{
     flex:1 1 auto; min-width:0; min-height:0; overflow:hidden; text-align:left;
     padding:2px 6px 2px 2px;
-    display:flex; flex-direction:column; gap:10px;
+    display:flex; flex-direction:column; gap:8px;
   }
   .mm-subview-sub{ margin-left:8px; font-size:10px; font-weight:600; letter-spacing:1px; color:var(--amber); }
+  /* ステータスの上まで全幅で伸ばすヘッダー(モンスター一覧の .ml-info-head と同じ位置) */
+  #mastermonDetailPanel .mm-subview-header{ flex:0 0 auto; padding-right:46px; flex-wrap:nowrap; }
+  #mastermonDetailPanel .mm-subview-title{
+    font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.7 * var(--vh)), 19px); letter-spacing:1px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+  }
+  /* STATUSセクションはモンスター一覧と同じ見た目。横幅だけここで決める */
+  #mastermonDetailPanel .ml-sec-status{
+    flex:0 0 clamp(172px, calc(33 * var(--vw)), 250px); min-height:0;
+    overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  /* 初期画面: ステータスの右に縦並びの3ボタン */
+  .mm-menu-list{ display:flex; flex-direction:column; gap:8px; justify-content:center; min-height:100%; }
+  .mm-menu-btn{
+    display:flex; align-items:center; gap:10px; width:100%; cursor:pointer; text-align:left;
+    padding:12px 14px; border-radius:10px; color:var(--ink);
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+    font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px;
+    font-size:clamp(12px, calc(3.4 * var(--vh)), 15px);
+  }
+  .mm-menu-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.12); }
+  .mm-menu-btn-icon{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0; background:rgba(255,255,255,0.08);
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .mm-back-btn{
+    flex-shrink:0; padding:6px 12px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+  }
+  .mm-back-btn:active{ filter:brightness(0.92); }
   .mm-ticket-count{ color:var(--amber); }
   .mm-exp-track{ width:100%; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); margin-top:5px; overflow:hidden; }
   .mm-exp-track.small{ height:4px; margin-top:4px; }

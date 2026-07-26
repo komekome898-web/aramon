@@ -343,6 +343,27 @@ function mlAccentOf(key){
   const aura = mlAuraOf(key);
   return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
 }
+// STATUSの下に置く短縮版の説明。1行に3つ×2行で収めるため、MASTERMON_STATSのdescより
+// さらに短い言い回しを使う(長い文だと折り返して2行に収まらない)
+const STAT_SHORT_DESC = {
+  life:'HP', power:'威力/被ダメ', wisdom:'威力/ガッツ',
+  accuracy:'連射', evasion:'移動', vitality:'被ダメ',
+};
+function caroStatDescHtml(){
+  const item = s => `<span class="ml-stat-desc-item"><b style="color:${s.color}">${s.label}</b>=${STAT_SHORT_DESC[s.key]}</span>`;
+  return `<div class="ml-stat-desc">
+    <div class="ml-stat-desc-line">${MASTERMON_STATS.slice(0,3).map(item).join('')}</div>
+    <div class="ml-stat-desc-line">${MASTERMON_STATS.slice(3).map(item).join('')}</div>
+  </div>`;
+}
+// STATUSセクション。モンスター一覧とマスモン選択で同じ見た目にするため共用する
+function caroStatusSecHtml(mm, apt, preview, note){
+  return `<div class="ml-sec ml-sec-status">
+    <div class="ml-sec-title">STATUS<span class="ml-sec-note">${note}</span></div>
+    ${buildMastermonStatsColHtml(mm, apt || {}, preview)}
+    ${caroStatDescHtml()}
+  </div>`;
+}
 // カード下部の数値(HP・速さ)。大きく見せたいので専用クラスで組む
 function caroFigsHtml(rows){
   return `<div class="ml-card-figs">${rows.map(r=>`
@@ -391,18 +412,18 @@ function mlDetailInfoHtml(key){
   const bonus = moveBonusEffectText(key);
   // ステータスは「マスモンに登録したときの初期値+適正(A〜E)」。表示はマスモン画面と共通の
   // buildMastermonStatsColHtml を流用する(バー・適正バッジの見た目をそろえるため)
-  const statsHtml = buildMastermonStatsColHtml({ stats: mastermonInitialStats(key) }, APTITUDE[key] || {});
+  // ヘッダー(名前・チップ)はスクロールさせないので .ml-info-scroll の外に出す
   return `
     <div class="ml-info-head">
       <span class="ml-info-name">${el.label}</span>
       ${auraName ? `<span class="ml-info-chip aura">${auraName}</span>` : ''}
+      <span class="ml-info-chip">HP ${el.hp}</span>
+      <span class="ml-info-chip">速さ ${mlSpeedOf(key)}</span>
       ${mods.map(m=>`<span class="ml-info-chip">${m}</span>`).join('')}
     </div>
+    <div class="ml-info-scroll">
     <div class="ml-info-cols">
-      <div class="ml-sec">
-        <div class="ml-sec-title">STATUS<span class="ml-sec-note">初期値 / 適正</span></div>
-        ${statsHtml}
-      </div>
+      ${caroStatusSecHtml({ stats: mastermonInitialStats(key) }, APTITUDE[key], null, '初期値 / 適正')}
       <div class="ml-info-col2">
         <div class="ml-sec">
           <div class="ml-sec-title">特性</div>
@@ -422,6 +443,7 @@ function mlDetailInfoHtml(key){
     <div class="ml-sec">
       <div class="ml-sec-title">技</div>
       ${buildMastermonMovesHtml(key, { ignoreSkin:true })}
+    </div>
     </div>`;
 }
 
@@ -3003,6 +3025,7 @@ function mmDetailStep(dir){
   mastermonDetailKey = key;
   mastermonSelectedTraining = null;
   mastermonPreviewSkin = null;   // 切替先の装備中スキンをプレビュー初期値にする
+  mastermonDetailTab = null;     // 隣へ移ったらメニューに戻す
   const card = renderMastermonCard(key, null);
   card.classList.add(dir > 0 ? 'ml-slide-in-right' : 'ml-slide-in-left');
   renderMastermonDetail(key);
@@ -3011,7 +3034,7 @@ function openMastermonDetail(key, srcCard){
   mastermonDetailKey = key;
   mastermonSelectedTraining = null;
   mastermonPreviewSkin = null;
-  if(!mastermonDetailTab) mastermonDetailTab = 'info';
+  mastermonDetailTab = null;   // 初期はステータスの右に「詳細情報/トレーニング/着せ替え」の3ボタン
   const srcRect = srcCard ? srcCard.getBoundingClientRect() : null;
   const clone = renderMastermonCard(key, srcCard);
   document.getElementById('mmCarouselView').classList.add('hidden');
@@ -3020,29 +3043,39 @@ function openMastermonDetail(key, srcCard){
   if(srcRect) caroFlipCard(document.getElementById('mmDetailCardSlot'), clone, srcRect);
 }
 function closeMastermonDetail(){
+  mastermonDetailTab = null;
   document.getElementById('mmDetailView').classList.add('hidden');
   document.getElementById('mmCarouselView').classList.remove('hidden');
   mmCarousel.refreshCards();
   mmCarousel.render();
 }
-// 左カラムのタブボタン(詳細情報/技一覧/トレーニング/着せ替え/編集)
+// 左カラムのボタン(編集 / 一覧へ)。他のタブはメニュー画面(ステータスの右)から開く
 {
-  const grid = document.getElementById('mmDetailTabGrid');
-  grid.querySelectorAll('.mm-tab-btn[data-tab]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      mastermonDetailTab = btn.dataset.tab;
-      mastermonSelectedTraining = null;
-      if(btn.dataset.tab==='dressup') mastermonPreviewSkin = null; // 装備中を初期プレビューに
-      renderMastermonDetail(mastermonDetailKey);
-    });
+  document.getElementById('mmDetailTabGrid').querySelectorAll('.mm-tab-btn[data-tab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ mmOpenTab(btn.dataset.tab); });
   });
   document.getElementById('mmBackToListBtn').addEventListener('click', closeMastermonDetail);
 }
-// 左カラムのタブボタンの選択状態を現在のタブに合わせる
+function mmOpenTab(tab){
+  mastermonDetailTab = tab;
+  mastermonSelectedTraining = null;
+  if(tab==='dressup') mastermonPreviewSkin = null;   // 装備中を初期プレビューに
+  renderMastermonDetail(mastermonDetailKey);
+}
+// 左カラムのボタンの選択状態を現在のタブに合わせる
 function mmSyncTabButtons(){
   document.querySelectorAll('#mmDetailTabGrid .mm-tab-btn[data-tab]').forEach(b=>{
     b.classList.toggle('active', b.dataset.tab === mastermonDetailTab);
   });
+}
+// メニュー(初期画面): ステータスの右に並べる3ボタン
+function buildMastermonMenuHtml(){
+  return `
+    <div class="mm-menu-list">
+      <button class="mm-menu-btn" data-tab="info"><span class="mm-menu-btn-icon">📊</span>詳細情報</button>
+      <button class="mm-menu-btn" data-tab="training"><span class="mm-menu-btn-icon">💪</span>トレーニング</button>
+      <button class="mm-menu-btn" data-tab="dressup"><span class="mm-menu-btn-icon">👕</span>着せ替え</button>
+    </div>`;
 }
 
 function openMastermonScreen(fromResult){
@@ -3061,7 +3094,7 @@ function openMastermonScreen(fromResult){
   if(!mastermonDetailKey || !data[mastermonDetailKey]) mastermonDetailKey = keys[0];
   mastermonSelectedTraining = null;
   mastermonPreviewSkin = null;
-  mastermonDetailTab = 'info';
+  mastermonDetailTab = null;
   mmCarousel.build();
   mmCarousel.reset(game.selectedMastermonKey && data[game.selectedMastermonKey] ? game.selectedMastermonKey : mastermonDetailKey);
   document.getElementById('mmDetailView').classList.add('hidden');
@@ -3109,7 +3142,7 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
   if(mastermonDetailKey===deletedKey) mastermonDetailKey = remaining[0];
   mastermonSelectedTraining = null;
   mastermonPreviewSkin = null;
-  mastermonDetailTab = 'info';
+  mastermonDetailTab = null;
   mmCarousel.build();
   mmCarousel.reset(mastermonDetailKey);
   closeMastermonDetail();   // 消したマスモンの詳細に留まらないよう一覧へ戻す
@@ -3136,48 +3169,64 @@ function renderMastermonDetail(key){
   };
 
   // 再描画でDOMが作り直されるとスクロール位置が失われるため、事前に保存しておく
-  const prevStatsCol = panel.querySelector('.mastermon-detail-statscol');
+  const prevStatsCol = panel.querySelector('.ml-sec-status');
   const prevContent = panel.querySelector('.mm-subview-content');
   const savedStatsScroll = prevStatsCol ? prevStatsCol.scrollTop : 0;
   const savedContentScroll = prevContent ? prevContent.scrollTop : 0;
 
   const preview = (mastermonDetailTab==='training' && mastermonSelectedTraining) ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
-  // 着せ替え画面のみステータス列を表示しない(プレビューを大きく取るため)
-  const statsColHtml = (mastermonDetailTab==='dressup') ? '' : buildMastermonStatsColHtml(mm, apt, preview);
+  // 着せ替え画面のみステータス列を表示しない(プレビューを大きく取るため)。
+  // それ以外はモンスター一覧と同じSTATUSセクション(バー+説明2行)にそろえる
+  const statsColHtml = (mastermonDetailTab==='dressup') ? '' : caroStatusSecHtml(mm, apt, preview, '育成後 / 適正');
 
-  const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
+  const TAB_TITLES = { info:'詳細情報', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
   let contentHtml;
-  if(mastermonDetailTab==='moves') contentHtml = buildMastermonMovesHtml(key);
-  else if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
+  if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
   else if(mastermonDetailTab==='edit') contentHtml = buildMastermonEditHtml(mm);
   else if(mastermonDetailTab==='dressup') contentHtml = buildMastermonSkinHtml(key);
-  else contentHtml = buildMastermonInfoHtml(key, mm, el);   // 既定は詳細情報
+  else if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
+  else contentHtml = buildMastermonMenuHtml();   // 初期はメニュー(3ボタン)
 
-  // トレーニング画面では実行ボタンをヘッダー右に置く。
-  // タブの切り替えは左カラムのボタンで行うので、ヘッダーに戻るボタンは持たない
+  // トレーニング画面では実行ボタンをヘッダー右に置く。ヘッダーはステータスの上まで
+  // 全幅で伸ばす(モンスター一覧の画面と同じ形)。タブを開いているときだけ戻るボタンを出す
   const trainExecBtnHtml = mastermonDetailTab==='training' ? `
       <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-header-exec-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>トレ実行🎫${mm.tickets}枚</button>` : '';
   const headerHtml = `
     <div class="mm-subview-header">
-      <div class="mm-subview-title">${mm.name}<span class="mm-subview-sub">${TAB_TITLES[mastermonDetailTab]||'詳細情報'}</span></div>
+      <div class="mm-subview-title">${mm.name}<span class="mm-subview-sub">Lv.${mm.level}${mastermonDetailTab?` ／ ${TAB_TITLES[mastermonDetailTab]}`:''}</span></div>
       ${trainExecBtnHtml}
+      ${mastermonDetailTab ? '<button class="mm-back-btn">← 戻る</button>' : ''}
     </div>`;
 
   panel.innerHTML = `
+    ${headerHtml}
     <div class="mastermon-detail-body">
       ${statsColHtml}
       <div class="mastermon-detail-maincol">
-        ${headerHtml}
         <div class="mm-subview-content">${contentHtml}</div>
       </div>
     </div>`;
 
-  const statsColEl = panel.querySelector('.mastermon-detail-statscol');
+  const statsColEl = panel.querySelector('.ml-sec-status');
   const contentEl = panel.querySelector('.mm-subview-content');
   if(statsColEl) statsColEl.scrollTop = savedStatsScroll;
   if(contentEl) contentEl.scrollTop = savedContentScroll;
 
   mmSyncTabButtons();
+
+  if(!mastermonDetailTab){
+    panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> mmOpenTab(btn.dataset.tab));
+    });
+    return;
+  }
+  const backBtn = panel.querySelector('.mm-back-btn');
+  if(backBtn) backBtn.addEventListener('click', ()=>{
+    mastermonDetailTab = null;
+    mastermonSelectedTraining = null;
+    mastermonPreviewSkin = null;
+    renderMastermonDetail(key);
+  });
 
   if(mastermonDetailTab==='edit'){
     document.getElementById('mastermonRenameBtn').addEventListener('click', ()=>{
@@ -3376,6 +3425,8 @@ function buildMastermonInfoHtml(key, mm, el){
       <div class="mm-info-trait">${TRAIT_DESC[el.trait]}</div>
       <div class="mm-info-col-title" style="margin-top:14px;">状態変化</div>
       ${stateHtml}
+      <div class="mm-info-col-title" style="margin-top:14px;">技</div>
+      ${buildMastermonMovesHtml(key)}
     </div>`;
 }
 
