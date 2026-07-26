@@ -1658,12 +1658,19 @@ function getDisplayNameFromInput(){
   return rawName ? rawName.slice(0,12) : '名無しのモンスター';
 }
 
-// マスモンで参戦する場合、そのレベルを部屋の自分のプレイヤー情報に載せる
-// (倒した相手がレベルに応じたEXPボーナスを得るために使う)
-function currentMastermonLevel(){
+// マスモンで参戦する場合、そのレベルと育成ステータスを部屋の自分のプレイヤー情報に載せる。
+// level = 倒した相手がレベルに応じたEXPボーナスを得るために使う。
+// stats = ホスト・ゲストの双方が同じ育成補正(HP/速度/与ダメ等)を計算するために使う。
+// ステータスを共有しないとホストだけが自分の育成値を知っている状態になり、
+// マルチではマスモンを育てても強くならない/HPが食い違うことになる。
+function currentMastermonInfo(){
   if(!game.selectedMastermonKey) return null;
   const mm = loadMastermons()[game.selectedMastermonKey];
-  return mm ? (mm.level||1) : null;
+  if(!mm) return null;
+  const src = mm.stats || {};
+  const stats = {};
+  MASTERMON_STATS.forEach(s=>{ stats[s.key] = Math.round(src[s.key]||0); });
+  return { level: mm.level||1, stats };
 }
 // 今参戦するモンスターに装備中のスキンID(マルチプレイで相手にも見せるため送る)
 function currentEquippedSkinId(){
@@ -1690,7 +1697,7 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonLevel(), currentEquippedSkinId());
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
   }catch(err){
     console.error(err);
     pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
@@ -1750,7 +1757,7 @@ async function joinSelectedRoom(roomId, lobbyKey){
     return;
   }
   const displayName = getDisplayNameFromInput();
-  const result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement, currentMastermonLevel(), currentEquippedSkinId());
+  const result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
   if(!result.ok){
     pushToast(result.reason||'参加に失敗しました');
     await refreshRoomList();
@@ -1787,7 +1794,7 @@ async function startMatchmaking(){
 
   let result;
   try{
-    result = await window.__aramonFindOrCreateRoom(netState.capacity, displayName, game.selectedElement, currentEquippedSkinId());
+    result = await window.__aramonFindOrCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
   }catch(err){
     console.error(err);
     pushToast('マッチング失敗。1人でプレイに切り替えます');

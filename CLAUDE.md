@@ -90,6 +90,12 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - localStorage永続化(`data.js`の`loadMastermons`/`saveMastermons`)。
 - 6ステータス(ライフ/ちから/かしこさ/命中/回避/丈夫さ)。戦闘への反映は`mastermonStatFactor(v, statKey)`で、`MASTERMON_STAT_FACTOR_DIVISOR`によりステータスごとに増減幅が異なる(数値が小さいほど効きが強い)。
 - EXPは`awardMastermonExp`。全試合共通倍率`MASTERMON_EXP_GLOBAL_MULT`(現在3)×マルチボーナス等の`xpMult`。
+- **育成ステータスの適用は「エンティティ生成 → `applyMastermonStatsToEntity(ent, mm)`」の1本道。** ソロは`startGame()`の`applyMastermonToPlayer()`、マルチは`beginMultiplayerMatchInner()`の人間ループ。
+- **マルチでは育成ステータスを部屋の参加者情報で共有する。** `currentMastermonInfo()`(ui.js)が`{level, stats}`を返し、入室時に`rooms/{id}/players/{pid}.mm`へ書き込む(`mmLevel`は旧クライアント互換の残置)。`beginMultiplayerMatchInner`は`h.mm`から**自分・相手・ホスト・ゲストの区別なく同じ倍率**を計算する。**ステータスを共有せず片側だけで掛けるとHPと移動速度が食い違い、ゲストの位置補正が暴れる(ラバーバンドの原因になる)。**
+  - **入室経路は3つあり、`mm`を載せ忘れやすい**: `__aramonCreateRoom` / `__aramonJoinRoom` / `__aramonFindOrCreateRoom`(自動マッチング。以前ここだけ`mmLevel`を送っておらず、この経路で作った部屋では撃破ボーナスが一切入らなかった)。firebase.js側は書き込みを`mmEntryFields(mmInfo)`に集約したので、**プレイヤー項目を書く行(計4か所)は必ずこれをスプレッドする**。
+  - `maxHp`はauthStateのコールドフィールドで上書きされるので最終的にホストが正。**同期していないのは`speed`と各`mastermon*Mult`なので、そこが一致することが重要。**
+- **撃破EXPボーナス(`victim.mastermonLevel` × `MASTERMON_KILL_EXP_PER_LEVEL`)はbot・人間の区別なく与える。** ホストが`killEntity`で積み、`hostForceFullNext = true`で次の配信をフルにして`mmKillExp`を最短で届ける。ゲストは`kill`イベント受信時にも自前で積む(最後のキルで試合が終わると同期が間に合わないため)。**`mmKillExp`の反映は`Math.max`で行う**(積み上がるだけの値なので、遅れて届いた古い値で減らさない)。
+- **技強化チケット(`nextMoveBoost`)はソロ専用。** マルチでは`moveTierUnlocked`がホスト権威で、authStateは「上げる方向にしか」反映しないため、開始tierを共有しないと食い違う。マルチにも入れるなら参加者情報に載せて両側で同じtierから始めること。
 
 ### Firebase
 - Realtime Database。パス: `scores`(ランキングのベスト記録), `matchLogs`(管理者画面用の試合ログ), `lobby`, `rooms`, `accounts`(プレイヤーアカウント)。

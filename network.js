@@ -101,6 +101,10 @@ function handleRoomEvent(evt, evtKey){
       let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
       if(evt.expBonus && game.selectedMastermonKey) bonusMsg += ` 経験値+${evt.expBonus}`;
       pushToast(bonusMsg);
+      // 撃破EXPボーナスは本来authStateのmmKillExpで届くが、最後のキルで試合が終わると
+      // 間に合わずリザルトに乗らないことがある。ここで先に積んでおく
+      // (積み上がるだけの値なので、受信側はmaxで反映して二重加算にならないようにしてある)
+      if(evt.expBonus) player.mastermonKillExpBonus = (player.mastermonKillExpBonus||0) + evt.expBonus;
     }
   }
   // 状態変化の発動(ゲストは自分の分でも演出が出ないため、ここで再現する)
@@ -182,7 +186,8 @@ async function beginMultiplayerMatchInner(){
     fixedPlayers = netState.humanPlayers || {};
     if(!fixedPlayers[netState.myPlayerId]){
       const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
-      fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null } };
+      const myMm = (typeof currentMastermonInfo==='function') ? currentMastermonInfo() : null;
+      fixedPlayers = { ...fixedPlayers, [netState.myPlayerId]: { name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null, mm: myMm||null, mmLevel: myMm?myMm.level:null } };
     }
     mapKey = (typeof resolveMapKey==='function') ? resolveMapKey() : (game.selectedMap || 'wild'); // 'ランダム'選択時は実マップを確定
     // ホストが持っているマスモンのうち、今使っているもの以外からランダムに選んでbot候補にする。
@@ -252,7 +257,8 @@ async function beginMultiplayerMatchInner(){
   const humanList = Object.keys(fixedPlayers||{}).map(id=>({ id, ...fixedPlayers[id] }));
   if(!humanList.find(h=>h.id===netState.myPlayerId)){
     const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
-    humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null });
+    const myMm = (typeof currentMastermonInfo==='function') ? currentMastermonInfo() : null;
+    humanList.push({ id:netState.myPlayerId, name:'名無しのモンスター', element: game.selectedElement, skin: mySkin||null, mm: myMm||null, mmLevel: myMm?myMm.level:null });
   }
   humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
@@ -268,7 +274,14 @@ async function beginMultiplayerMatchInner(){
     const isMe = h.id===netState.myPlayerId;
     const ent = createMonster(h.element||'fire', isMe, h.name||'プレイヤー', { id: idCounter++, spawnPoint: sp });
     ent.netPlayerId = h.id;
-    if(h.mmLevel) ent.mastermonLevel = h.mmLevel; // マスモン使用者は撃破時のEXPボーナス対象
+    // マスモンで参戦している人間プレイヤーには、本人・相手・ホスト・ゲストの区別なく
+    // 同じ育成ステータス補正を掛ける(部屋の参加者情報に載っているstatsを使うので、
+    // ホストとゲストで必ず同じHP・速度・与ダメ倍率になる)
+    const hMm = (h.mm && h.mm.stats) ? h.mm : null;
+    if(hMm) applyMastermonStatsToEntity(ent, hMm);
+    // マスモン使用者は撃破時のEXPボーナス対象(bot・人間の区別なく与える)
+    const hMmLevel = (hMm && hMm.level) || h.mmLevel || 0;
+    if(hMmLevel) ent.mastermonLevel = hMmLevel;
     if(h.skin) ent.skinId = h.skin;               // 相手の着せ替えスキンを反映
     if(isMe){ ent.isPlayer = true; player = ent; }
     else { ent.isPlayer=false; ent.isRemoteHuman=true; }
@@ -920,7 +933,7 @@ function applyAuthState(authState){
     ent.burnUntil   = (typeof a.bn==='number') ? matchTime + a.bn : 0;
     ent.poisonUntil = (typeof a.po==='number') ? matchTime + a.po : 0;
     if(typeof a.trainMaxHpBonus==='number') ent.trainMaxHpBonus = a.trainMaxHpBonus;
-    if(typeof a.mmKillExp==='number') ent.mastermonKillExpBonus = a.mmKillExp;
+    if(typeof a.mmKillExp==='number') ent.mastermonKillExpBonus = Math.max(ent.mastermonKillExpBonus||0, a.mmKillExp);
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
     if(typeof a.trainGutsCostReduction==='number') ent.trainGutsCostReduction = a.trainGutsCostReduction;
     if(typeof a.trainProjSpeedMult==='number') ent.trainProjSpeedMult = a.trainProjSpeedMult;
