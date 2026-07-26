@@ -714,6 +714,17 @@ function drawLootItem(it,p){
   }
   ctx.restore();
 }
+// ビリビリ(電撃アーク)の[暗い色, 明るい色]を返す。装備スキンの差し色(auraTint)があれば
+// その色基調にする(ちょこの「ヴァニッシュ」= 球体とドームは黒のままアークだけ赤)。
+function arcColorsFor(tint){
+  if(!tint) return ['#3a1560', '#8b46c9']; // 既定: ビッグバンの紫
+  return [_mixHex(tint, '#000000', 0.55), tint];
+}
+function _mixHex(a, b, t){
+  const [r1,g1,b1] = hexToRgb(a), [r2,g2,b2] = hexToRgb(b);
+  const m = (x,y)=> Math.round(x + (y-x)*t);
+  return '#' + [m(r1,r2), m(g1,g2), m(b1,b2)].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 function drawProjectile(pr,p){
   ctx.save();
   ctx.translate(p.x,p.y);
@@ -761,7 +772,8 @@ function drawProjectile(pr,p){
     grad.addColorStop(1, '#000000');
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle=grad; ctx.fill();
     ctx.shadowBlur=0;
-    // 周囲の黒いビリビリ(電撃アーク)
+    // 周囲のビリビリ(電撃アーク)。既定は黒紫、装備スキンの差し色があればその色に
+    const [arcDim, arcLit] = arcColorsFor(pr.auraTint);
     const jseed = Math.floor(matchTime*18) + (pr.id||0);
     ctx.lineCap='round'; ctx.lineJoin='round';
     for(let k=0;k<4;k++){
@@ -774,8 +786,8 @@ function drawProjectile(pr,p){
         const px=Math.cos(a)*rr, py=Math.sin(a)*rr;
         if(s===0)ctx.moveTo(px,py); else ctx.lineTo(px,py);
       }
-      ctx.globalAlpha=0.55; ctx.strokeStyle='#3a1560'; ctx.lineWidth=4; ctx.stroke();
-      ctx.globalAlpha=0.9; ctx.strokeStyle='#8b46c9'; ctx.lineWidth=1.6; ctx.stroke();
+      ctx.globalAlpha=0.55; ctx.strokeStyle=arcDim; ctx.lineWidth=4; ctx.stroke();
+      ctx.globalAlpha=0.9; ctx.strokeStyle=arcLit; ctx.lineWidth=1.6; ctx.stroke();
     }
     ctx.globalAlpha=1;
     ctx.restore();
@@ -1935,7 +1947,8 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
   ctx.stroke();
   ctx.shadowBlur=0;
 
-  // 5) 発射時の球体と同じ「黒いビリビリ」電撃アークをドームの縁に沿わせる
+  // 5) 発射時の球体と同じビリビリ電撃アークをドームの縁に沿わせる(差し色があればその色)
+  const [arcDim, arcLit] = arcColorsFor(ae.auraTint);
   const jseed = Math.floor(matchTime*18) + (ae.id||0);
   ctx.lineCap='round'; ctx.lineJoin='round';
   for(let k=0;k<6;k++){
@@ -1949,8 +1962,8 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
       const py = center.y + Math.sin(a)*domeH*rr;
       if(n===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     }
-    ctx.globalAlpha=0.55*fadeAlpha; ctx.strokeStyle='#3a1560'; ctx.lineWidth=4*s; ctx.stroke();
-    ctx.globalAlpha=0.9*fadeAlpha;  ctx.strokeStyle='#8b46c9'; ctx.lineWidth=1.6*s; ctx.stroke();
+    ctx.globalAlpha=0.55*fadeAlpha; ctx.strokeStyle=arcDim; ctx.lineWidth=4*s; ctx.stroke();
+    ctx.globalAlpha=0.9*fadeAlpha;  ctx.strokeStyle=arcLit; ctx.lineWidth=1.6*s; ctx.stroke();
   }
   ctx.restore();
 }
@@ -2525,7 +2538,9 @@ function updateHUD(){
   document.getElementById('damageDealtNum').textContent = Math.round(player.damageDealt);
   document.getElementById('matchClock').textContent = fmtTime(matchTime);
 
-  const mv = activeMove(player);
+  // 装備スキンでtier3が専用技に変わる場合は解決後の技を表示する(技名・消費ガッツが変わる)
+  let mv = activeMove(player);
+  if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
   // 技フィールドのマーク/テーマ色は、その技のオーラ色にする(tier3は装備SSRで一致技に変わる)
   const mvAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : mv.aura;
   const moveMarkColor = (mvAura && typeof auraColorHex==='function') ? auraColorHex(mvAura) : mv.color;

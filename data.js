@@ -207,6 +207,8 @@ const ssrSkinImages = {
   mocchi_player_ssr:  loadMonsterImage('monsters/mocchi_player_ssr'),
   zeus_ssr:           loadMonsterImage('monsters/zeus_ssr'),
   zeus_player_ssr:    loadMonsterImage('monsters/zeus_player_ssr'),
+  choco_ssr:          loadMonsterImage('monsters/choco_ssr'),
+  choco_player_ssr:   loadMonsterImage('monsters/choco_player_ssr'),
 };
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
@@ -272,6 +274,7 @@ const WALK_ANIM = {
   },
   pixie: {
     base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
+    ssr:  { skinId:'choco_ssr', front:_loadWalk('choco_ssr_walk_f'), back:_loadWalk('choco_ssr_walk_b') }, // SSRちょこ
   },
 };
 const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
@@ -470,7 +473,7 @@ const AURA_DIS_MULT = 0.75;  // 不利技×有利モンスター
 const AURA_MATCH_MULT = 1.2; // 技オーラ=使用者オーラ(一致)
 const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
 const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white:'⚪', black:'⚫' };
-const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black', zeus_ssr:'yellow' };
+const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black', zeus_ssr:'yellow', choco_ssr:'red' };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
@@ -539,23 +542,62 @@ function getMoveAura(move, attacker){
   }
   return move.aura || null;
 }
-// 技のエフェクト色(スキン装備時はtier3を装備オーラの色基調に上書き。SSR/SR色スキンどちらも対象)
+// 技のエフェクト色(スキン装備時はtier3を装備オーラの色基調に上書き。SSR/SR色スキンどちらも対象)。
+// keepBaseColor が付いた技は本体色を変えない(ちょこの「ヴァニッシュ」= 球体とドームは黒のまま、
+// 赤オーラはビリビリ電撃だけに乗せる)。その場合の差し色は getMoveAuraTint が担当する。
 function getMoveEffectColor(move, attacker){
-  if(move && move.tier===3){
+  if(move && move.tier===3 && !move.keepBaseColor){
     const a = skinTier3Aura(entitySkinId(attacker));
     if(a) return auraColorHex(a);
   }
   return move ? move.color : '#ffffff';
 }
+// tier3エフェクトの差し色(ビリビリ電撃等のアクセント)。装備スキンのオーラ色を返す。
+// keepBaseColorの有無に関わらず返すので、本体色を黒に保ったまま差し色だけ変えられる。
+function getMoveAuraTint(move, attacker){
+  if(!move || move.tier!==3) return null;
+  const a = skinTier3Aura(entitySkinId(attacker));
+  return a ? auraColorHex(a) : null;
+}
 // SSRスキン装備時のtier3の専用技名と威力倍率(少し上げる)。元の技の効果(オーラ・エフェクト・
 // アーク=イブリースの被ダメ0.5倍など)は変えず、名前と威力だけ上書きする。
+// dmgMult = 元の技の威力に掛ける倍率(名前と威力だけを変える従来型)。
+// move    = 元の技のフィールドを直接上書きする差分(専用技として性能ごと変えたいとき)。
+//           blastは中身をマージするので、変えたいキーだけ書けばよい。
 const SSR_SKIN_TIER3 = {
   phoenix_ssr: { name:'天衣無縫',         dmgMult:1.15 },
   iblees_ssr:  { name:'終焉に救いを',     dmgMult:1.15 },
   tamamo_ssr:  { name:'王狐炎衝',         dmgMult:1.15 },
   zeus_ssr:    { name:'ゼウスライジング', dmgMult:1.15 },
   mocchi_ssr:  { name:'ラガモッチ砲',     dmgMult:1.15 },
+  // ちょこ(ピクシー): ビッグバンを置き換える専用tier3。倍率ではなく数値を直接指定する。
+  // 威力アップ・弾速アップ・射程は少し短く・爆風範囲は大きく・消費ガッツ30。
+  // keepBaseColor: 球体とドームは黒のまま(赤オーラはビリビリ電撃だけに乗る)
+  choco_ssr:   { name:'ヴァニッシュ', move:{
+    dmg:30, projSpeed:860, range:1300, gutsCost:30, keepBaseColor:true,
+    blast:{ radius:420, dmg:85 },
+  }},
 };
+// スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
+// 対象外はそのまま元の技を返す。結果はスキンID+技名でキャッシュし毎フレームの生成を避ける。
+// 威力倍率(dmgMult)は従来どおり effectiveMoveDmg 側の ssrTier3DmgMult が掛けるので、ここでは触らない。
+const _skinTier3MoveCache = {};
+function skinTier3Move(move, attacker){
+  if(!move || move.tier!==3) return move;
+  const sid = entitySkinId(attacker);
+  const def = sid ? SSR_SKIN_TIER3[sid] : null;
+  if(!def) return move;
+  const ck = `${sid}:${move.name}`;
+  if(_skinTier3MoveCache[ck]) return _skinTier3MoveCache[ck];
+  const out = Object.assign({}, move);
+  if(def.name) out.name = def.name;
+  if(def.move){
+    for(const k of Object.keys(def.move)){ if(k!=='blast') out[k] = def.move[k]; }
+    if(def.move.blast) out.blast = Object.assign({}, move.blast||{}, def.move.blast);
+  }
+  _skinTier3MoveCache[ck] = out;
+  return out;
+}
 // 技の表示名(SSR装備時はtier3を専用名に上書き)
 function getMoveName(move, attacker){
   if(move && move.tier===3){
@@ -577,6 +619,9 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-26', items:[
+    'ピクシーのSSRスキン「ちょこ」を追加(ガチャ・SSRカタログから入手可能)。赤オーラで、バトル歩行アニメーションにも対応',
+    '「ちょこ」装備中はtier3が専用技「ヴァニッシュ」に変化: 威力アップ・弾速アップ・射程は少し短く・爆風の範囲は大きく・消費ガッツ30。球体と爆風は黒のまま、ビリビリの電撃だけが赤くなります',
+    '「ちょこ」装備中は召喚演出・ヴァニッシュ・被弾がそれぞれ専用の音になります',
     '色スキン(SR)を装備すると、SSRスキンと同じようにtier3技のオーラとエフェクトがスキンの色に変わるようになりました(技名と威力は変わりません)',
     'スキンのプレビュー画面で、正面と後ろの歩行モーションが動いて見えるようになりました',
     '残り2人になったときの専用BGM「ラストバトル」を追加',
@@ -1276,6 +1321,8 @@ const SSR_SKINS = {
   mocchi_ssr:  { element:'mocchi', name:'ラガモッチー', iconImg:'mocchi_ssr', playerImg:'mocchi_player_ssr', seasonExclusive:true },
   // ゼウス: ガリのオリジナルSSR。ガチャ・SSRカタログにも出る(seasonExclusiveは付けない)
   zeus_ssr:    { element:'god', name:'ゼウス', iconImg:'zeus_ssr', playerImg:'zeus_player_ssr' },
+  // ちょこ: ピクシーのオリジナルSSR。ガチャ・SSRカタログにも出る
+  choco_ssr:   { element:'pixie', name:'ちょこ', iconImg:'choco_ssr', playerImg:'choco_player_ssr' },
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー

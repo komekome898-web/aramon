@@ -9,10 +9,12 @@
 #   python3 tools/build_walk.py [job_key ...]   (引数省略で全JOB実行)
 #   例: python3 tools/build_walk.py p1 p2        (特定JOBのみ)
 #
-# ★セッション依存の絶対パスを必ず更新すること:
-#   - W       : 作業用tmpディレクトリ(フレーム展開先)
-#   - OUTDIR  : 出力先(通常 <repo>/monsters)
-#   - MOV{}   : 各動画の絶対パス(発注者アップロードは /root/.claude/uploads/... に入る)
+# ★セッション依存のパス:
+#   - W       : 作業用tmpディレクトリ(フレーム展開先)。環境変数 BUILD_WALK_WORK で上書き可
+#   - OUTDIR  : 出力先。既定は <repo>/monsters(このファイルの位置から解決)。
+#               環境変数 BUILD_WALK_OUT で上書き可
+#   - MOV{}   : 各動画の絶対パス(発注者アップロードは /root/.claude/uploads/... に入る)。
+#               セッションごとにディレクトリ名が変わるのでここは毎回更新が必要
 #
 # セグメンテーションのモード(背景/被写体で使い分け。CLAUDE.md「バトル歩行アニメ」節参照):
 #   white_alpha    : 白背景(隅から連結する白のみ透過。内側の白い毛は残す)
@@ -34,8 +36,9 @@ import cv2
 from scipy import ndimage
 
 FF = subprocess.check_output(['python3','-c','import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())']).decode().strip()
-W = '/home/claude/aramon/scratchpad/sz'
-OUTDIR = '/home/claude/aramon/aramon-main/monsters'
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+W = os.environ.get('BUILD_WALK_WORK', '/tmp/build_walk_work')
+OUTDIR = os.environ.get('BUILD_WALK_OUT', os.path.join(_REPO, 'monsters'))
 TARGET_H = 250
 CANVAS = 320
 FEET_Y = 0.94  # feet baseline at 94% of canvas height
@@ -387,11 +390,15 @@ JOBS = [
     # 2026-07-25(2回目): ピクシー追加。黒背景+本体に黒い部位が無い(blackopen)。
     ('x1','pixie_walk_f',       True,  'blackopen', 'single'),
     ('x2','pixie_walk_b',       False, 'blackopen', 'single'),
+    # 2026-07-26: ピクシーのSSRスキン「ちょこ」。黒背景+本体に黒い部位が無い(blackopen)。
+    ('c1','choco_ssr_walk_f',   True,  'blackopen', 'single'),
+    ('c2','choco_ssr_walk_b',   False, 'blackopen', 'single'),
 ]
 U='/root/.claude/uploads/2dcee4de-18cc-599b-9320-655c57e78387'
 U2='/root/.claude/uploads/18073022-2206-5ef7-b9d6-78426f00390e'
 U3='/home/claude/aramon/scratchpad/src_videos'
 U4='/home/claude/aramon/scratchpad/src_videos2'
+U5='/root/.claude/uploads/5f56cd30-9807-5952-b9f9-ef87c478de6f'  # 2026-07-26セッション(ちょこ)
 MOV = {
  'v1':f'{U}/8de170af-ScreenRecording_07242026_183303_1.mov',
  'v2':f'{U}/211b4e0f-ScreenRecording_07242026_183329_1.mov',
@@ -427,6 +434,8 @@ MOV = {
  'n2':f'{U3}/warm_back.mp4',
  'x1':f'{U4}/pixie_front.mp4',
  'x2':f'{U4}/pixie_back.mp4',
+ 'c1':f'{U5}/b9d5a08f-_________072528_Full_HD_1080p.mp4',
+ 'c2':f'{U5}/b1443462-_________072529_Full_HD_1080p.mp4',
 }
 import sys
 only = set(sys.argv[1:])
