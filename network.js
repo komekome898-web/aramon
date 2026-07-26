@@ -103,6 +103,15 @@ function handleRoomEvent(evt, evtKey){
       pushToast(bonusMsg);
     }
   }
+  // 状態変化の発動(ゲストは自分の分でも演出が出ないため、ここで再現する)
+  if(evt.kind==='state' && !netState.isHost){
+    const ent = getEntity(evt.entId);
+    if(ent) spawnDmgText(ent.x, ent.y, ent.z, (evt.name||'状態変化')+'!', '#ff3b3b');
+    if(player && evt.entId===player.id){
+      pushToast(`${evt.name} 発動！(${evt.duration}秒間)`);
+      playSe('jakiin');
+    }
+  }
   if(evt.kind==='matchEnd' && !game.over){
     if(player && player.netPlayerId===evt.winnerNetId && player.alive){
       onPlayerWin();
@@ -147,7 +156,7 @@ async function beginMultiplayerMatchInner(){
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
 
-  entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; nextId=1;
+  entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false; spectateTargetId=null; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
@@ -370,6 +379,7 @@ function processRemoteFireEvents(){
     const evt = pendingRemoteFireEvents.shift();
     const ent = entities.find(e=>e.netPlayerId===evt.sourceNetId);
     if(!ent || !ent.alive) continue;
+    if(ent.freezeUntil > matchTime) continue; // 凍結中は撃てない(ホスト自身と同じ条件)
     ent.facingAngle = evt.facing;
     if(typeof evt.moveTier==='number') ent.moveTierSelected = evt.moveTier;
     const mv = activeMove(ent);
@@ -450,6 +460,10 @@ function sendFireEventIfMultiplayer(aimAngle, mv){
 // クールダウン管理と「発射しました」イベント送信、体感のための見た目の弾だけを担当する
 function tryNonHostPlayerFireVisual(dt){
   if(!player.alive || player.fireCooldown>0) return;
+  // 凍結中は撃てない(ホストのtryPlayerFireと同じ条件にそろえる)。
+  // ここを見ていないと、ゲストだけ凍結中に撃てる/撃ったのにホストが実行せず
+  // 見た目だけの弾が飛ぶ、という食い違いになる
+  if(player.freezeUntil > matchTime) return;
   if(!(fireBtnHeld || keys['f'])) return;
   // combat.jsのfireMoveと同じく、スキン装備でtier3が専用技に変わる場合は先に解決する
   let mv = activeMove(player);
@@ -472,22 +486,42 @@ function tryNonHostPlayerFireVisual(dt){
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
     const fillSpeed = Math.max(200, effProjSpeed||900);
-    const beamRanges = mv.aoeShape==='beams'
-      ? Array.from({length:mv.beamCount||3}, (_,b)=>{
-          const spread=(mv.beamSpreadDeg||40)*Math.PI/180, count=mv.beamCount||3;
-          const off=count>1 ? (b/(count-1)-0.5)*spread : 0;
-          return raycastObstacleDistance(player.x, player.y, aimAngle+off, mv.range);
-        })
-      : undefined;
-    const reach = beamRanges ? Math.max(...beamRanges) : raycastObstacleDistance(player.x, player.y, aimAngle, mv.range);
-    const life = 0.18 + reach/fillSpeed + 0.25;
-    areaEffects.push({
-      id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
-      angle:aimAngle, color:effColor, range: beamRanges ? mv.range : reach, width,
-      fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
-      beamRanges, fillSpeed, telegraphTime:0.18,
-      spawnAt:matchTime, life, style:mv.aoeStyle||null, moveAura, auraTint,
-    });
+    // combat.jsのfireMoveと同じく、連射(burst)ぶんを角度をずらして順番に出す。
+    // 1発しか出していなかったため、ライトニング等の連射技がゲストだけ1発に見えていた。
+    const burstCount = mv.burst || 1;
+    const burstGap = mv.burstGap || 0;
+    const buildVisualAe = (ang)=>{
+      const beamRanges = mv.aoeShape==='beams'
+        ? Array.from({length:mv.beamCount||3}, (_,b)=>{
+            const spread=(mv.beamSpreadDeg||40)*Math.PI/180, count=mv.beamCount||3;
+            const off=count>1 ? (b/(count-1)-0.5)*spread : 0;
+            return raycastObstacleDistance(player.x, player.y, ang+off, mv.range);
+          })
+        : undefined;
+      const reach = beamRanges ? Math.max(...beamRanges) : raycastObstacleDistance(player.x, player.y, ang, mv.range);
+      return {
+        id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
+        angle:ang, color:effColor, range: beamRanges ? mv.range : reach, width,
+        fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
+        beamRanges, fillSpeed, telegraphTime:0.18,
+        spawnAt:matchTime, life: 0.18 + reach/fillSpeed + 0.25,
+        style:mv.aoeStyle||null, moveAura, auraTint,
+      };
+    };
+    let firstLife = 0;
+    for(let i=0;i<burstCount;i++){
+      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+      const ang = aimAngle + spreadOffset;
+      if(i===0){
+        const ae = buildVisualAe(ang);
+        firstLife = ae.life;
+        areaEffects.push(ae);
+      } else {
+        // 2発目以降は発射時刻になってから生成する(ホスト側と同じくpendingAoeCastsで待つ)
+        pendingAoeCasts.push({ at: matchTime + i*burstGap, attackerId:player.id, aimAngle:ang, build: buildVisualAe });
+      }
+    }
+    const life = firstLife + (burstCount-1)*burstGap;
     lockMoveFacing(player, aimAngle, life);
     playSe(sp || 'fire', sp ? { dur: life } : { kind:'aoe', dur: life });
   } else if(mv.lobbed){
@@ -538,6 +572,10 @@ function tryNonHostPlayerFireVisual(dt){
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
         projStyle:mv.projStyle||null, moveAura, auraTint,
         growWithDistance: mv.growWithDistance||false, baseHitR: mv.hitR*hbMult, burstIndex:i,
+        // 着弾ドーム(ビッグバン/ヴァニッシュ)。これを持たせないと、着弾時にゲスト側で
+        // 爆風を出せないうえ、ホストからのエコーは「自分の弾」として弾かれるため
+        // 自分で撃ったときだけ爆発が一切見えなくなる
+        blast: mv.blast||null,
         ownerId: player.id,
       });
     }
@@ -631,6 +669,26 @@ function sanitizeSelfPosition(){
   selfCorrX = 0; selfCorrY = 0;
   console.warn('[aramon] self position was invalid; recovered');
 }
+// 安全圏外・溶岩のダメージ表示をゲスト側で再現する(数字は見た目だけ。HPはauthStateが正)。
+// ホストのupdate()内でしか数字を出していないため、ゲストはHPだけが静かに減っていき
+// 「なぜ減っているのか分からない」状態だった。安全圏と溶岩の位置は同期済みなので
+// ゲスト側でも同じ条件で判定できる。
+function showGuestEnvironmentDamage(dt){
+  if(!player || !player.alive || !zoneState) return;
+  const dps = (typeof currentDps==='function') ? currentDps() : 0;
+  if(dps>0 && dist(player, zoneState.center) > zoneState.radius){
+    if(Math.random() < 0.08) spawnDmgText(player.x, player.y, player.z, Math.round(dps), '#ff9c3d');
+  }
+  if(lavaZones && lavaZones.length){
+    for(const lz of lavaZones){
+      if(Math.hypot(player.x-lz.x, player.y-lz.y) < lz.radius + player.radius*0.4){
+        const lavaDps = (currentMap && currentMap.lavaDps) || 20;
+        if(Math.random() < 0.12) spawnDmgText(player.x, player.y, player.z, Math.round(lavaDps), '#ff5a1f');
+        break;
+      }
+    }
+  }
+}
 const GUEST_PICKUP_CONFIRM_WAIT = 2.5; // 確定待ちの上限(秒)
 function predictLootPickupsAsGuest(){
   if(!player || !player.alive) return;
@@ -710,6 +768,9 @@ function buildAuthStatePayload(){
   const payload = { seq, full, t: Math.round(matchTime*1000), zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
+    // フェーズ内経過秒。これを送らないとゲストのzoneState.timerが0のままで、
+    // 「次の縮小まであと何秒」のカウントダウンが一切進まない(縮小に備えられない)
+    tm: Math.round(zoneState.timer*10)/10,
     tcx: Math.round(zoneState.toCenter.x), tcy: Math.round(zoneState.toCenter.y),
     tr: Math.round(zoneState.toRadius), hasNext: !!zoneState.hasNext,
   }, aliveCount: entities.filter(e=>e.alive).length, entities: [] };
@@ -741,6 +802,12 @@ function buildAuthStatePayload(){
     if(slR > 0) o.sl = Math.round(slR*100)/100;
     const sbR = (e.speedBuffUntil||0) - nowT;
     if(sbR > 0){ o.sb = Math.round(sbR*100)/100; o.sbm = e.speedBuffMult||1; }
+    // やけど・どくも残り秒数で送る。これが無いとゲストでは状態表示(ピル)も
+    // エンティティの燃焼/毒エフェクトも一切出ず、何を受けているのか分からない
+    const bnR = (e.burnUntil||0) - nowT;
+    if(bnR > 0) o.bn = Math.round(bnR*100)/100;
+    const poR = (e.poisonUntil||0) - nowT;
+    if(poR > 0) o.po = Math.round(poR*100)/100;
     // 人間プレイヤーには「最後に適用した入力seq」を返す(ゲストの位置突き合わせ用)
     if(e.netPlayerId && typeof e.netAckInputSeq==='number') o.aseq = e.netAckInputSeq;
     // ④ フル配信の時だけ載せる「コールド」フィールド(ほぼ静的・低頻度で十分)
@@ -750,7 +817,12 @@ function buildAuthStatePayload(){
       o.trainCooldownMult = e.trainCooldownMult; o.trainGutsCostReduction = e.trainGutsCostReduction;
       o.trainProjSpeedMult = e.trainProjSpeedMult; o.trainDmgMult = e.trainDmgMult;
       o.trainDmgTakenMult = e.trainDmgTakenMult; o.trainSpeedMult = e.trainSpeedMult;
-      o.stateUntil = e.stateUntil; o.stateCooldownUntil = e.stateCooldownUntil;
+      // 状態変化も「残り秒数」で送る(絶対時刻だとホストとゲストのmatchTimeのズレで
+      // 効果時間が伸び縮みする)。0以下の場合は送らない=切れている扱い
+      const stR = (e.stateUntil||0) - nowT;
+      if(stR > 0) o.stR = Math.round(stR*100)/100;
+      const stcR = (e.stateCooldownUntil||0) - nowT;
+      if(stcR > 0) o.stcR = Math.round(stcR*100)/100;
       o.dashCooldown = Math.round((e.dashCooldown||0)*100)/100;
       o.trainMaxHpBonus = e.trainMaxHpBonus||0;
       // 撃破EXPボーナスはゲスト側では計算されないので、リザルトで反映できるよう同期する
@@ -774,6 +846,7 @@ function applyAuthState(authState){
     zoneState.radius = authState.zone.r;
     zoneState.phaseIndex = authState.zone.phase;
     zoneState.shrinking = authState.zone.shrinking;
+    if(typeof authState.zone.tm === 'number') zoneState.timer = authState.zone.tm; // 縮小までの残り秒数の表示用
     if(typeof authState.zone.tcx === 'number'){
       zoneState.toCenter.x = authState.zone.tcx;
       zoneState.toCenter.y = authState.zone.tcy;
@@ -782,6 +855,7 @@ function applyAuthState(authState){
     }
   }
   const list = Array.isArray(authState.entities) ? authState.entities : [];
+  const isFull = !!authState.full; // 静的値(train系・状態変化等)が載っている配信かどうか
   const snapEnts = {}; // ① このスナップショットの位置(自分以外)を補間バッファへ
   for(const a of list){
     const ent = entities.find(e=>e.id===a.id);
@@ -843,6 +917,8 @@ function applyAuthState(authState){
     ent.slowUntil   = (typeof a.sl==='number') ? matchTime + a.sl : 0;
     if(typeof a.sb==='number'){ ent.speedBuffUntil = matchTime + a.sb; ent.speedBuffMult = a.sbm||1; }
     else ent.speedBuffUntil = 0;
+    ent.burnUntil   = (typeof a.bn==='number') ? matchTime + a.bn : 0;
+    ent.poisonUntil = (typeof a.po==='number') ? matchTime + a.po : 0;
     if(typeof a.trainMaxHpBonus==='number') ent.trainMaxHpBonus = a.trainMaxHpBonus;
     if(typeof a.mmKillExp==='number') ent.mastermonKillExpBonus = a.mmKillExp;
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
@@ -851,8 +927,11 @@ function applyAuthState(authState){
     if(typeof a.trainDmgMult==='number') ent.trainDmgMult = a.trainDmgMult;
     if(typeof a.trainDmgTakenMult==='number') ent.trainDmgTakenMult = a.trainDmgTakenMult;
     if(typeof a.trainSpeedMult==='number') ent.trainSpeedMult = a.trainSpeedMult;
-    if(typeof a.stateUntil==='number') ent.stateUntil = a.stateUntil;
-    if(typeof a.stateCooldownUntil==='number') ent.stateCooldownUntil = a.stateCooldownUntil;
+    // 状態変化は残り秒数で届く(フル配信のときだけ載る)。届いた時だけ更新する
+    if(isFull){
+      ent.stateUntil = (typeof a.stR==='number') ? matchTime + a.stR : 0;
+      ent.stateCooldownUntil = (typeof a.stcR==='number') ? matchTime + a.stcR : 0;
+    }
     if(typeof a.moveTierUnlocked==='number' && a.moveTierUnlocked>ent.moveTierUnlocked){
       ent.moveTierUnlocked = a.moveTierUnlocked;
       if(ent.isPlayer && ent.moveTierSelected < ent.moveTierUnlocked) ent.moveTierSelected = ent.moveTierUnlocked;
@@ -978,6 +1057,8 @@ function loop(now){
         interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
         predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
         tryNonHostPlayerFireVisual(dt);
+        updatePendingAoeCasts();        // 連射する範囲技の2発目以降を時刻到達で出す(見た目専用)
+        showGuestEnvironmentDamage(dt); // 安全圏外/溶岩のダメージ表示(HPの確定はホスト)
         // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
         for(let i=projectiles.length-1;i>=0;i--){
           const p = projectiles[i];
@@ -1007,7 +1088,15 @@ function loop(now){
               if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
             }
           }
-          if(visualHit) projectiles.splice(i,1);
+          if(visualHit){
+            // 着弾ドームを持つ弾(ビッグバン/ヴァニッシュ)は、ここで見た目の爆風も出す。
+            // ダメージ判定はホストが確定するが、ゲスト側でこれを出さないと
+            // 自分で撃ったときだけ爆発が見えない(ホストのエコーは自分の弾として弾かれる)
+            if(p.blast && typeof spawnGroundBlast==='function'){
+              spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint);
+            }
+            projectiles.splice(i,1);
+          }
         }
         updateCamera();
         matchTime += dt;
