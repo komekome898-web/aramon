@@ -568,6 +568,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-25', items:[
+    'ピクシーのマスモン適正を調整(EDABBE)。ビッグバンの爆風エフェクトが大きな障害物の裏に隠れず正しい前後関係で表示されるよう修正、ダメージ判定円にエフェクトの見た目を正確に一致させ、発射時と同じ黒いビリビリ電撃も追加',
     'ザンの全技の威力・射程を少し下方修正',
     'ピクシーのtier3「ビッグバン」を調整: 発射する球体を少し大きく、着弾時のエフェクトを地面に接地した半球型の黒い爆風に変更、発射音/着弾音を専用SEに変更',
     '新モンスター「ピクシー」を追加(専用技「キッス」「ライトニング」「ビッグバン」・バトル歩行アニメーション・色スキン対応)。移動速度1.2倍・被ダメ1.2倍の高機動グラスキャノン',
@@ -734,7 +735,7 @@ const APTITUDE = {
   god:     { life:'D', power:'B', wisdom:'A', accuracy:'C', evasion:'D', vitality:'C' },
   zan:     { life:'C', power:'B', wisdom:'D', accuracy:'C', evasion:'A', vitality:'D' },
   // ピクシー: 高速・低耐久のグラスキャノン想定でevasion(速さ)を最高、life/vitality(HP・耐久)を最低に
-  pixie:   { life:'E', power:'D', wisdom:'C', accuracy:'B', evasion:'A', vitality:'E' },
+  pixie:   { life:'E', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'E' },
 };
 const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
 const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };

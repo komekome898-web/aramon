@@ -1695,9 +1695,11 @@ function drawFlowerBeamsEffect(ae, fillDist, fadeAlpha, inTelegraph){
   }
 }
 function drawAreaEffects(){
-  for(const ae of areaEffects){
+  for(const ae of areaEffects) drawSingleAreaEffect(ae);
+}
+function drawSingleAreaEffect(ae){
     const elapsed = matchTime - ae.spawnAt;
-    if(elapsed > ae.life) continue;
+    if(elapsed > ae.life) return;
     const telegraphTime = ae.telegraphTime||0.18;
     const fillSpeed = ae.fillSpeed||900;
     const inTelegraph = elapsed <= telegraphTime;
@@ -1708,7 +1710,7 @@ function drawAreaEffects(){
     if(ae.kind==='beams'){
       if(ae.style==='flower'){
         drawFlowerBeamsEffect(ae, fillDist, fadeAlpha, inTelegraph);
-        continue;
+        return;
       }
       const count = ae.beamCount||3;
       const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
@@ -1728,7 +1730,7 @@ function drawAreaEffects(){
     } else if(ae.kind==='fan'){
       if(ae.style==='inferno'){
         drawInfernoFanEffect(ae, fillDist, fadeAlpha, inTelegraph);
-        continue;
+        return;
       }
       const half = (ae.fanAngleDeg||45)*Math.PI/360;
       const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
@@ -1759,7 +1761,7 @@ function drawAreaEffects(){
     } else if(ae.kind==='zigzag'){
       if(ae.style==='thunder'){
         drawThunderBoltEffect(ae, fillDist, fadeAlpha, inTelegraph);
-        continue;
+        return;
       }
       const outlineRect = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, (ae.width||110)/2);
       if(outlineRect) strokeDashedShape(outlineRect, ae.color, 0.4*fadeAlpha);
@@ -1792,7 +1794,7 @@ function drawAreaEffects(){
     } else if(ae.kind==='fanZigzag'){
       if(ae.style==='psychic'){
         drawPsychicWaveEffect(ae, fillDist, fadeAlpha, inTelegraph);
-        continue;
+        return;
       }
       const half = (ae.fanAngleDeg||30)*Math.PI/360;
       const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
@@ -1829,7 +1831,6 @@ function drawAreaEffects(){
     } else if(ae.kind==='circle'){
       drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph);
     }
-  }
 }
 // 円形に広がるドーム状の爆発エフェクト(ビッグバン等)
 function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
@@ -1839,16 +1840,16 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
   ctx.save();
   ctx.translate(proj.x, proj.y);
   ctx.scale(proj.scale, proj.scale);
-  // 最大範囲を薄い点線で予告
+  // 最大範囲を薄い点線で予告(実際のダメージ判定と同じ半径)
   ctx.globalAlpha = 0.45*fadeAlpha;
   ctx.strokeStyle = '#000000'; ctx.lineWidth = 3; ctx.setLineDash([10,8]);
-  ctx.beginPath(); ctx.ellipse(0,0, maxR*0.95, maxR*0.5, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0,0, maxR, maxR*0.5, 0, 0, Math.PI*2); ctx.stroke();
   ctx.setLineDash([]);
   if(!inTelegraph){
-    const curReach = Math.min(maxR, fillDist);
+    const curReach = Math.min(maxR, fillDist); // ダメージ判定の半径そのもの(hitTestと同じcurReach)
     if(curReach>2){
-      const rx = curReach*0.95, ry = curReach*0.5, domeRy = curReach*0.85;
-      // 1) ドーム本体: 地面に接地した半球(上半分の球体)のシルエット
+      const rx = curReach, ry = curReach*0.5, domeRy = curReach*0.8;
+      // 1) ドーム本体: 地面に接地した半球(上半分の球体)のシルエット。ダメージ判定円(rx)にぴったり沿わせる
       ctx.globalAlpha = 0.7*fadeAlpha;
       const g = ctx.createRadialGradient(0,-domeRy*0.3, 0, 0,-domeRy*0.1, Math.max(rx,domeRy)*1.05);
       g.addColorStop(0, '#3a3a44');
@@ -1859,7 +1860,7 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
       ctx.ellipse(0, 0, rx, domeRy, 0, Math.PI, Math.PI*2, false); // 上半分の弧(ドームの丸み)
       ctx.closePath(); // 地面の底辺で閉じる
       ctx.fill();
-      // 2) 地面との設置ライン(接地の輪郭をくっきりさせる)
+      // 2) 地面との設置ライン(ダメージ判定円の輪郭そのもの)
       ctx.globalAlpha = 0.85*fadeAlpha;
       ctx.strokeStyle = '#0a0a0d'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.ellipse(0,0, rx, ry, 0, 0, Math.PI*2); ctx.stroke();
@@ -1868,6 +1869,24 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
       ctx.strokeStyle = '#6b6b78'; ctx.lineWidth = 3;
       if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor=ae.color; }
       ctx.beginPath(); ctx.ellipse(0, 0, rx, domeRy, 0, Math.PI, Math.PI*2, false); ctx.stroke();
+      // 4) 発射時の球体と同じ「黒いビリビリ」電撃アークを、判定円の縁に沿わせて描く
+      ctx.shadowBlur=0;
+      const jseed = Math.floor(matchTime*18) + (ae.id||0);
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      for(let k=0;k<6;k++){
+        const baseA = Math.PI + fxHash01(jseed*13+k*7)*Math.PI; // 上半分(接地アーチ)側に沿わせる
+        const arcSpan = 0.5 + fxHash01(jseed*29+k*11)*0.6;
+        const segs=5; ctx.beginPath();
+        for(let s=0;s<=segs;s++){
+          const a = baseA + arcSpan*(s/segs);
+          const rr = 1 + (fxHash01(jseed*37+k*17+s*5)-0.5)*0.22;
+          const px = Math.cos(a)*rx*rr, py = Math.sin(a)*domeRy*rr;
+          if(s===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.globalAlpha=0.55*fadeAlpha; ctx.strokeStyle='#3a1560'; ctx.lineWidth=4; ctx.stroke();
+        ctx.globalAlpha=0.9*fadeAlpha; ctx.strokeStyle='#8b46c9'; ctx.lineWidth=1.6; ctx.stroke();
+      }
+      ctx.globalAlpha=1;
     }
   }
   ctx.restore();
@@ -2087,10 +2106,10 @@ function render(){
   drawTerrainDecor();
   drawZoneRings();
   drawLandingMarkers();
-  drawAreaEffects();
   if(introState.active) drawSummonIntro();
 
   const drawables = [];
+  for(const ae of areaEffects){ const p = project(ae.x,ae.y,0); if(p) drawables.push({kind:'ae', obj:ae, p}); } // 建物・岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
   for(const b of buildings){
     const bRad = Math.hypot(b.hw||0, b.hd||0) + (b.rampLen||0); // 建物の外接半径(ランプ含む)
     const p = projectObstacle(b.cx,b.cy,b.wallH*0.5, bRad);
@@ -2123,6 +2142,7 @@ function render(){
     let r = 0;
     if(d.kind==='volcano'){ for(const v of d.obj){ if(v.radius>r) r=v.radius; } }
     else if(d.kind==='rock' || d.kind==='crystal'){ r = d.obj.radius||0; }
+    else if(d.kind==='ae'){ r = d.obj.range||0; } // 発生地点(自分の足元)が画面外でも、射程が長い技は画面内まで届くため
     return 150 + r*d.p.scale*1.2;
   };
   for(const d of drawables){
@@ -2135,6 +2155,7 @@ function render(){
     else if(d.kind==='rock') drawRock(d.obj,d.p);
     else if(d.kind==='crystal') drawCrystal(d.obj,d.p);
     else if(d.kind==='building') drawBuilding(d.obj);
+    else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
     else drawParticle(d.obj,d.p);
   }
   if(introState.active) drawSummonIntroFront();
