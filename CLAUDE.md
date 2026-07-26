@@ -86,7 +86,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### バトル歩行アニメーション(data.js / render.js)
 - 動画から1歩行ループを8コマに分割した透過スプライトで歩行を表現する。`monsters/<prefix>_walk_f1..8.png`(正面)/`<prefix>_walk_b1..8.png`(後ろ)。
-- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ(+ゼウスSSR)/スエゾー/ザン/キュービ(+タマモノマエSSR)/ライガー/ヒノトリ(+フェニックスSSR)/アーク(+イブリースSSR)/ウンディーネ/ドラゴン/プラント/ゴーレム/イルミネ/ワーム/ピクシー。**全15エレメント対応完了。**
+- **有効化はレジストリ `WALK_ANIM`(data.js)に登録するだけ。** 要素キーごとに `{ base:{front:_loadWalk('x_walk_f'), back:_loadWalk('x_walk_b')}, ssr?:{skinId, front, back} }`。現在対応: モッチー(+ラガモッチーSSR)/ガリ(+ゼウスSSR)/スエゾー/ザン/キュービ(+タマモノマエSSR)/ライガー/ヒノトリ(+フェニックスSSR)/アーク(+イブリースSSR)/ウンディーネ/ドラゴン/プラント/ゴーレム/イルミネ/ワーム/ピクシー(+ちょこSSR)。**全15エレメント対応完了。**
 - 描画の入口は `getDisplayImage(entity)`。先頭で `entityWalkFrameImage(entity)` を呼び、歩行コマがあればそれを返す(なければ従来の静止画にフォールバック)。`drawMonster`/`drawMonsterPortrait` がこれを描く。
 - コマ選択(`entityWalkFrameImage`): `matchTime`でコマ送り、平滑化速度`_mwSpeed`が`WALK_MOVE_EPS`超で「歩行中」。進行方向とカメラ`camState.yaw`の内積で正面/後ろを切替(カメラ奥向き=後ろ姿)。停止中は静止(自分=後ろ姿/他=正面)。素体は色スキン装備時に`recolorToCanvas`で各コマ再着色し`_walkRecolor`にキャッシュ。**歩行コマ未提供のSSRスキン装備時は`null`を返し従来の静止スキン画像を表示**(ガード有り。現在対応済みSSRはラガモッチー/ゼウス/タマモノマエ/フェニックス/イブリースの5種で、これ以外の新規SSRを追加した際に歩行コマを用意しなければこのガードが働く)。
 - **スプライト生成は `tools/build_walk.py`(開発用)。** 動画→60fps抽出→自己相関で1周期検出→8コマ抽出→モンスター別セグメンテーション→320px・256色透過PNGに統一(足を94%基準・中央寄せ)。背景/被写体別モード:
@@ -94,6 +94,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - 淡い草/金背景 = `grabcut_alpha`(`single`/`gentle`/`hard`/`hardgentle`): grabCut切り抜き。`gentle`はopen省略で細い足を守る(スエゾーの一本足)、`hard`は縁を確定背景にしたマスク初期化(金色ボケ背景)。
   - 鳥(ヒノトリ/フェニックス。炎・羽が背景色に近い) = `phoenixcut_alpha`: 彩度/明度/背景色距離で本体抽出。**かぎ爪の足(暗色)を明示追加し中央下部限定の縦closeで本体に接続**(largestで足が消えるのを防ぐ)、足元の淡い地面/オーラを色で除去、トサカを上端中央で復元。正面は脚間を残すため小穴のみ塗り、後ろは尾を塗りつぶして密度確保。パラメータは`_PHX`(satT/distT/fill/warm_trim)で正面・後ろ別。
 - **【検証必須・過去に鳥系で何度も手戻り】新しい歩行スプライトは、全16コマ(正面8+後ろ8)を1コマずつ目視し「トサカ等の突起」「足」が欠けないこと・足元の背景/地面が透過していることを確認してから採用する。** `tools/build_walk.py`の隣に置く判定(bboxの上端中央=トサカ、下端中央=足に画素があるか)で全コマ自動チェックしつつ、必ず目視も行う。ヘッドレスでも`getDisplayImage`→`drawMonster`で実描画確認する。
+- **`tools/build_walk.py`の`W`/`OUTDIR`は環境変数`BUILD_WALK_WORK`/`BUILD_WALK_OUT`で上書きでき、既定の出力先はスクリプト位置から解決した`<repo>/monsters`。** セッションごとに更新が必要なのは`MOV{}`の動画パス(`/root/.claude/uploads/<セッションID>/...`)だけ。
 - **`tools/build_walk.py`のJOBS/MOVに新規ジョブを足すとき、job id(例:`'p1'`)が既存行と重複していないか必ず`grep`で確認すること。** 重複するとMOV辞書は後勝ちで上書きされ、既存モンスターのjob定義に新しい動画パスが紛れ込み、**既存モンスターの歩行スプライトを気づかずに上書き破壊する**(2026-07-25に実際発生。phoenixのp1/p2とピクシーのp1/p2が衝突し、修復にmd5sum比較+元zipからの復元が必要だった)。空いている文字を使うこと。
 
 ### 新モンスターの追加(data.js内の登録箇所チェックリスト)
@@ -113,6 +114,10 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 ### スキンとオーラ・プレビュー(data.js / render.js / ui.js)
 - **tier3技のオーラ/エフェクト色はSSRスキンもSR色スキンも変える。** 判定は`skinTier3Aura(skinId)`1か所に集約(SSR=`SSR_SKIN_AURA`の固定色 / SR=`element:colorId`のcolorId)。`getMoveAura`/`getMoveEffectColor`がこれを見るので、**エフェクト色の伝搬(combat.jsとnetwork.jsの`effColor`/`auraTint`)は触らなくてよい**。
 - **SSRだけの特典は「tier3の技名と威力」**(`SSR_SKIN_TIER3`/`getMoveName`/`ssrTier3DmgMult`)。SRはオーラ・エフェクトのみでここは変えない。新しいスキン種別を足すときもこの線引きを守る。
+- **`SSR_SKIN_TIER3`は2通りの書き方ができる。** `dmgMult`=元の技の威力に倍率を掛けるだけ(従来型)。`move:{...}`=元の技のフィールドを直接上書きし、性能ごと変える専用技にする(ちょこの「ヴァニッシュ」)。`blast`は中身をマージするので変えたいキーだけ書けばよい。**`move`側に`dmg`を書くときは`dmgMult`を併記しない**(`ssrTier3DmgMult`が別途掛かって二重適用になる)。
+- **専用技の解決は`skinTier3Move(move, attacker)`。** 解決結果はスキンID+技名でキャッシュする(元の`SIGNATURE_MOVES`は書き換えない)。**呼ぶ場所は4か所で、増やしたら全部に通すこと**: `combat.js`の`fireMove`先頭 / `network.js`のゲスト発射(`tryNonHostPlayerFireVisual`) / `render.js`のHUD技フィールド / `ui.js`の技一覧(`buildMastermonMovesHtml`)。fireMove先頭で解決すれば威力・弾速・射程・爆風・消費ガッツ・SEはすべて解決後の値で流れる。
+- **「本体色は元のまま、差し色だけオーラ色にしたい」技は`keepBaseColor:true`。** `getMoveEffectColor`が本体色を返し、差し色は`getMoveAuraTint`が別に返す(ちょこ=球体とドームは黒のまま、ビリビリ電撃だけ赤)。ビリビリの2色は`render.js`の`arcColorsFor(tint)`に集約してあり、弾(`voidOrb`)とドーム(`drawDomeBurstEffect`)の両方が使う。**`spawnGroundBlast`には弾の`auraTint`を渡すこと**(渡さないとドームだけ既定色に戻る)。
+- **スキン別のSE差し替えは3つの対応表で行う**(combat.js): `SKIN_TIER3_SE`(tier3発射) / `SKIN_SUMMON_SE`(召喚演出) / `SKIN_HIT_SE`(被弾)。いずれも`playSe(skinXxxSeName(entity) || '既定SE')`の形で呼ぶので、未定義スキンは自動で既定SEになる。
 - **スキンプレビュー(`showSkinPreview`)は歩行モーションを再生する。** `skinWalkFrameDataUrls(skinId, view)`(render.js)が歩行8コマをdataURL配列で返し(色スキンは`recolorToCanvas`で再着色・`_skinDataUrlCache`にキャッシュ)、ui.jsの`startSkinPreviewAnim`が`WALK_FRAME_DUR`間隔で正面/後ろの`<img>.src`を差し替える。**歩行コマ未用意/未ロードならnullを返し静止画のまま**(画像ロード待ちの可能性があるので0.35秒×最大6回リトライする)。オーバーレイを閉じたら必ず`stopSkinPreviewAnim()`でタイマーを止める。
 
 ### 長押しでの選択・メニュー抑止(style.css / input.js)
@@ -148,6 +153,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - 合成パートとの二重再生は`bgmFileLoopActive()`で防ぐ。**実音源が鳴っている間はスケジューラの合成ステップを一切呼ばない。** 音源未ロード/取得失敗時のみ合成にフォールバック(決戦/ラストバトル=`bgmEpicStep`、ショップ=`bgmTitleStep`)するので無音にならない。
   - 読み込みタイミング: 試合中に必要な2曲(`bgm_final5`/`bgm_lastbattle`)は`audioInit()`の`ensureBgmFileBuffers()`で先読み。**ショップ曲は画面を開いたとき(`ensureBgmShopBuffer()`)に初回ロード**する(起動時のfetchを増やさないため)。長い曲を足すときもこの使い分けにする。
 - **ゼウス(SSR)装備時のtier3専用SE**(`playZeusTier3Once`): 動画音声(約1秒)を内蔵mp3データURI(`ZEUS_TIER3_DATAURL`)で再生。`moveSeName`が`SKIN_TIER3_SE`(combat.js)経由でゼウス装備tier3のみこのSEに差し替え。未ロード時は合成`godRising`にフォールバック。
+- **短い内蔵SEを増やすときは`createSeOneShot(dataUrl, gain)`を使う**(ちょこの召喚/ヴァニッシュ/被弾の3種)。`ensure()`で先読み・`play()`は未ロード/音量0ならfalseを返すので、`SE_DEFS`側で `if(!seXxx.play()) SE_DEFS.既定SE(t,o)` と書けば必ず音が出る。**`SE_DEFS`に足せば管理者画面のSE確認に自動で載る**(表示名は`SE_TEST_LABELS`に追記、連打間引きは`SE_MIN_GAP`に追記)。
 - **リザルトの自己ベスト更新SE**(`playBestUpdateOnce`): 約9秒と長いので外部ファイル`best_update.mp3`を`fetch`+`decodeAudioData`し1回だけ再生(ループ無し)。全体の自己ベスト更新時に鳴らし、称号/モンスター毎ベストのSSR獲得SEより優先。未ロード時はSSR獲得SEにフォールバック。
 - **実音の抽出手順**(この環境): `pip install imageio-ffmpeg`で静的ffmpegが入る(`python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"`)。Chromium(OSSビルド)は**AAC/HEVCをデコード不可・mp3は可**。動画音声はAACなので一旦ffmpegでmp3化してから埋め込む。整音は`loudnorm`。
 - 別の実音を足すときの判断: 短い効果音はデータURIインライン、長い曲は外部mp3+`fetch`。いずれもSWのネットワーク優先キャッシュに乗る。

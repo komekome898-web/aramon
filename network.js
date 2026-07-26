@@ -353,7 +353,9 @@ function sendFireEventIfMultiplayer(aimAngle, mv){
 function tryNonHostPlayerFireVisual(dt){
   if(!player.alive || player.fireCooldown>0) return;
   if(!(fireBtnHeld || keys['f'])) return;
-  const mv = activeMove(player);
+  // combat.jsのfireMoveと同じく、スキン装備でtier3が専用技に変わる場合は先に解決する
+  let mv = activeMove(player);
+  if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
   if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
   const aimAngle = player.facingAngle;
 
@@ -367,7 +369,7 @@ function tryNonHostPlayerFireVisual(dt){
   // ゲスト自身のtier3エフェクトがホストと同じ見た目で描画されるようにする
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : (mv.aura||null);
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(mv, player) : mv.color;
-  const auraTint = (mv.tier===3 && effColor !== mv.color) ? effColor : null;
+  const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(mv, player) : null;
 
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;

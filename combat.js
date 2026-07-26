@@ -6,7 +6,18 @@ const MOVE_SE_BY_STYLE = {
   godorb:'godRising', crescent:'zashu', voidOrb:'voidLaunch',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
-const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3' };
+const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish' };
+// SSRスキン装備時に召喚演出SE/被弾SEを差し替える対応表(スキンID → SE名)
+const SKIN_SUMMON_SE = { choco_ssr:'chocoSummon' };
+const SKIN_HIT_SE    = { choco_ssr:'chocoHit' };
+function skinSummonSeName(entity){
+  const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
+  return (sid && SKIN_SUMMON_SE[sid]) || null;
+}
+function skinHitSeName(entity){
+  const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
+  return (sid && SKIN_HIT_SE[sid]) || null;
+}
 function moveSeName(move, attacker){
   if(move.tier===3 && attacker){
     const sid = (typeof entitySkinId==='function') ? entitySkinId(attacker) : null;
@@ -21,6 +32,9 @@ function lockMoveFacing(attacker, angle, duration){
   attacker.moveFacingUntil = matchTime + Math.max(0, duration);
 }
 function fireMove(attacker, target, move){
+  // スキン装備でtier3が専用技に変わる場合はここで解決し、以降すべて解決後の技で処理する
+  // (威力・弾速・射程・爆風・消費ガッツ・技名がまとめて差し替わる)
+  if(typeof skinTier3Move==='function') move = skinTier3Move(move, attacker);
   // SE: 自分の技発射のみ(負荷対策)。専用SEがある技はそれを、無ければ単発/連射の共通音
   if(attacker.isPlayer && !move.aoeShape){
     const sp = moveSeName(move, attacker);
@@ -40,7 +54,8 @@ function fireMove(attacker, target, move){
   const hbMult = ELEMENTS[attacker.element].hitboxMult || 1; // キュービ「当たり判定が大きい」特性
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(move, attacker) : (move.aura||null);
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // スキン装備tier3は装備オーラ色に
-  const auraTint = (move.tier===3 && effColor !== move.color) ? effColor : null; // スキン装備tier3のエフェクト色基調(専用スタイルの色替え用)
+  // 差し色(ビリビリ電撃等のアクセント)。keepBaseColorの技は本体が黒のままここだけオーラ色になる
+  const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null;
   if(move.melee){
     lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){
@@ -203,7 +218,7 @@ function isNetworkedHuman(ent){
 }
 function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
-  if(target.isPlayer) playSe('hitTaken'); // SE: 自分の被弾のみ
+  if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
   const involvesHuman = isNetworkedHuman(target) || (source && isNetworkedHuman(source));
   const isAuthoritative = (opts && opts.authoritative) || (netState.mode==='multi' && netState.isHost);
 
@@ -974,12 +989,12 @@ function updateProjectiles(dt){
         }
       }
     }
-    if(hit && p.blast) spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura); // ピクシー「ビッグバン」: 着弾/最大射程到達で地面にドームAoEを発生
+    if(hit && p.blast) spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint); // ピクシー「ビッグバン」: 着弾/最大射程到達で地面にドームAoEを発生
     if(hit) projectiles.splice(i,1);
   }
 }
 // 着弾/最大射程到達点に、円形に広がるドーム状のダメージAoEを発生させる(ビッグバン等)
-function spawnGroundBlast(x, y, blast, ownerId, moveAura){
+function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
   const radius = blast.radius||220;
   const expandTime = blast.expandTime||0.45;
   const telegraphTime = blast.telegraphTime!=null ? blast.telegraphTime : 0.05;
@@ -988,7 +1003,7 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura){
     dmg: blast.dmg||0, color: blast.color||'#000000', range: radius, width:0,
     fanAngleDeg:0, beamCount:0, beamSpreadDeg:0,
     fillSpeed: radius/expandTime, telegraphTime,
-    spawnAt: matchTime, hitIds:new Set(), resolved:false, style: blast.style||null, moveAura, auraTint:null,
+    spawnAt: matchTime, hitIds:new Set(), resolved:false, style: blast.style||null, moveAura, auraTint: auraTint||null,
   };
   ae.life = telegraphTime + expandTime + 0.25;
   areaEffects.push(ae);
@@ -1133,7 +1148,8 @@ function updateSummonIntro(dt){
   }
   if(!introState.shuwaaPlayed && elapsed >= SUMMON_SHUWAA_AT){
     introState.shuwaaPlayed = true;
-    playSe('shuwaa');     // 光が細くなっていく「シュワァー」
+    // 光が細くなっていく「シュワァー」。スキン専用の召喚SEがあればそれに差し替える
+    playSe(skinSummonSeName(player) || 'shuwaa');
   }
   updateCameraSnap(dt);
   updateCamera();

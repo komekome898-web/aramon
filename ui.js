@@ -2941,10 +2941,13 @@ function moveBonusEffectText(key){
 function buildMastermonMovesHtml(key){
   const moves = SIGNATURE_MOVES[key] || [];
   const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
-  const movesHtml = moves.map(mv=>{
+  const movesHtml = moves.map(baseMv=>{
+    // 装備スキンでtier3が専用技(ちょこの「ヴァニッシュ」等)に変わる場合は解決後の性能を表示する
+    const pseudoForMove = { element:key, isPlayer:true };
+    const mv = (typeof skinTier3Move==='function') ? skinTier3Move(baseMv, pseudoForMove) : baseMv;
     const icon = mv.icon || fallbackIcon;
     // 技アイコンは該当オーラのアイコンを表示(tier3は装備SSRスキンで一致技に変わる)
-    const dispAura = (typeof getMoveAura==='function') ? getMoveAura(mv, {element:key, isPlayer:true}) : mv.aura;
+    const dispAura = (typeof getMoveAura==='function') ? getMoveAura(mv, pseudoForMove) : mv.aura;
     const auraIcon = (dispAura && typeof AURA_EMOJI!=='undefined') ? AURA_EMOJI[dispAura] : icon;
     // combat.js の fireMove() と同じ計算: 範囲攻撃(aoeShape)は projSpeed が無くても
     // 予告表示の後、この速度でダメージ範囲が塗り広がっていく(瞬間発動ではない)
@@ -2952,7 +2955,7 @@ function buildMastermonMovesHtml(key){
     const speedVal = isAoe ? Math.max(200, mv.projSpeed||900) : mv.projSpeed;
     const speedText = isAoe ? `範囲拡大速度 ${speedVal}` : `弾速 ${speedVal}`;
     // tier3は装備SSRスキンで技名・威力が変わる(該当スキン装備時のみ)
-    const pseudo = { element:key, isPlayer:true };
+    const pseudo = pseudoForMove;
     const dispName = (typeof getMoveName==='function') ? getMoveName(mv, pseudo) : mv.name;
     // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)
     const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0);
@@ -3600,6 +3603,7 @@ const SE_TEST_LABELS = {
   iceCrack:'氷 パリパリ', tornado:'竜巻 ゴオオオ', spin:'回転 シュルル', beam:'ビーム', whoosh:'風切り シュン',
   bell:'鐘 リンリン', chupiin:'召喚・柱 チュピーン', shuwaa:'召喚・収束 シュワァー', kill:'撃破 ズバシュ',
   fanfare:'勝利ファンファーレ', sad:'敗北', godRising:'ゴッドライジング 運命', ssrJackpot:'SSR大当たり', zashu:'ダークホウスト ズバシュ×5',
+  chocoSummon:'ちょこ 召喚', chocoVanish:'ちょこ ヴァニッシュ', chocoHit:'ちょこ 被弾',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');
