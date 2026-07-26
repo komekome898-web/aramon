@@ -900,8 +900,8 @@
       repeating-linear-gradient(115deg, rgba(255,255,255,0.016) 0 1px, transparent 1px 7px),
       linear-gradient(180deg,#080b13,#04060a 58%,#070a12);
   }
-  #mlCarouselView, #mlDetailView{ width:100%; max-width:min(940px, calc(96 * var(--vw))); }
-  #mlCarouselView{ display:flex; flex-direction:column; align-items:center; gap:calc(1.4 * var(--vh)); }
+  #mlCarouselView, #mlDetailView, #mmCarouselView, #mmDetailView{ width:100%; max-width:min(940px, calc(96 * var(--vw))); }
+  #mlCarouselView, #mmCarouselView{ display:flex; flex-direction:column; align-items:center; gap:calc(1.4 * var(--vh)); }
   .ml-head{ text-align:center; }
   .ml-title{
     font-family:'Russo One',sans-serif; font-size:clamp(17px, calc(4.6 * var(--vh)), 27px); letter-spacing:3px;
@@ -911,24 +911,28 @@
   }
   .ml-sub{ margin-top:2px; font-size:10px; letter-spacing:1.2px; color:var(--ink-dim); }
 
-  #mlStage{
-    --ml-step: 118px; --ml-card-w: 124px; --ml-card-h: 178px;
+  #mlStage, #mmStage{
+    /* 強制横向き(端末が縦画面ロック)ではCSSの生のvh/メディアクエリが「縦向きの実画面」
+       基準になり論理サイズと食い違うため、必ず --vh 基準で決める(メディアクエリ禁止) */
+    --ml-card-h: clamp(124px, calc(45 * var(--vh)), 182px);
+    --ml-card-w: calc(var(--ml-card-h) * 0.70);
+    --ml-step:   calc(var(--ml-card-w) * 0.95);
     /* 幅はカード間隔基準。中央+左右2枚(計5枚)を並べると一番外の2枚がこの枠から
        はみ出すので、overflow:hidden により「少しだけ見切れる」= スワイプできると伝わる */
     position:relative; width:min(100%, calc(var(--ml-step) * 4.4)); height:calc(var(--ml-card-h) * 1.34);
     perspective:1000px; overflow:hidden; touch-action:none; cursor:grab;
   }
-  #mlStage:active{ cursor:grabbing; }
-  @media (max-height:400px){ #mlStage{ --ml-step:104px; --ml-card-w:110px; --ml-card-h:154px; } }
-  @media (max-height:340px){ #mlStage{ --ml-step:92px;  --ml-card-w:98px;  --ml-card-h:136px; } }
+  #mlStage:active, #mmStage:active{ cursor:grabbing; }
   /* 中央カードの真後ろに置く光。選択中のオーラ色を --ml-glow で受け取る */
-  #mlGlow{
+  #mlGlow, #mmGlow{
     position:absolute; left:50%; top:50%; width:calc(var(--ml-card-w) * 2.1); height:calc(var(--ml-card-w) * 2.1);
     transform:translate(-50%,-50%); border-radius:50%; pointer-events:none;
     background:radial-gradient(circle, var(--ml-glow,rgba(244,196,48,0.55)) 0%, transparent 68%);
     opacity:0.5; transition:background .35s;
   }
-  #mlTrack{ position:absolute; inset:0; transform-style:preserve-3d; }
+  #mlTrack, #mmTrack{ position:absolute; inset:0; transform-style:preserve-3d; }
+  /* JSがカード間隔(--ml-step)の解決後のpxを offsetWidth で読むための見えない目印 */
+  .caro-step-probe{ position:absolute; left:0; top:0; width:var(--ml-step); height:0; visibility:hidden; pointer-events:none; }
 
   .ml-card{
     position:absolute; left:50%; top:50%; width:var(--ml-card-w); height:var(--ml-card-h);
@@ -964,11 +968,29 @@
     background:radial-gradient(circle at 50% 42%, var(--ml-art-a,#444) 0%, var(--ml-art-b,#111) 78%);
   }
   .ml-card-art img{ width:96%; height:96%; object-fit:contain; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.6)); }
-  .ml-card-body{ position:absolute; left:0; right:0; bottom:0; top:62%; padding:6px 7px 0; text-align:center; }
+  .ml-card-art{ height:58%; }
+  .ml-card-body{ position:absolute; left:0; right:0; bottom:0; top:58%; padding:5px 7px 0; text-align:center; }
   .ml-card-name{ font-weight:700; font-size:clamp(11px, calc(3.2 * var(--vh)), 14px); letter-spacing:0.5px; line-height:1.2; }
-  .ml-card-aura{
-    position:absolute; top:6px; right:6px; z-index:4; font-size:11px; line-height:1;
-    padding:3px; border-radius:50%; background:rgba(0,0,0,0.55);
+  /* HP・速さは数値を大きく見せる(ラベルは小さく、数字はRusso Oneでオーラ色に発光) */
+  .ml-card-figs{ margin-top:3px; display:flex; flex-direction:column; gap:1px; }
+  .ml-card-fig{ display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
+  .ml-card-fig-k{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9px; letter-spacing:0.6px; color:var(--ink-dim); }
+  .ml-card-fig-v{
+    font-family:'Russo One',sans-serif; line-height:1.05; color:#fff;
+    font-size:clamp(15px, calc(4.7 * var(--vh)), 23px);
+    text-shadow:0 0 10px var(--ml-accent,#f4c430), 0 1px 0 rgba(0,0,0,0.6);
+  }
+  /* マスモンカードはEXPバー等で本文が長いので、絵の比率を下げて本文の場所を作る */
+  .ml-card-art-mm{ height:50%; }
+  .ml-card-body-mm{ top:50%; }
+  .ml-card-body-mm .ml-card-fig-v{ font-size:clamp(13px, calc(4.1 * var(--vh)), 20px); }
+  .ml-card-exp{ margin-top:4px; height:4px; border-radius:2px; background:rgba(255,255,255,0.1); overflow:hidden; }
+  .ml-card-exp-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); }
+  .ml-card-exp-label{ margin-top:2px; font-family:'Share Tech Mono',monospace; font-size:8px; color:var(--ink-dim); }
+  .ml-card-lv{
+    position:absolute; top:6px; right:6px; z-index:4; padding:2px 6px; border-radius:5px;
+    font-family:'Russo One',sans-serif; font-size:10px; line-height:1.2; color:#1a1306;
+    background:linear-gradient(180deg,#ffd76a,#f4c430);
   }
   .ml-card-picked{
     position:absolute; top:6px; left:6px; z-index:4; font-size:8px; font-weight:700; letter-spacing:0.5px;
@@ -992,7 +1014,7 @@
 
   .ml-foot{ display:flex; flex-direction:column; align-items:center; gap:7px; }
   .ml-foot-row{ display:flex; align-items:center; gap:12px; }
-  #mlDots{ display:flex; gap:5px; justify-content:center; flex-wrap:wrap; max-width:min(420px, calc(80 * var(--vw))); }
+  #mlDots, #mmDots{ display:flex; gap:5px; justify-content:center; flex-wrap:wrap; max-width:min(420px, calc(80 * var(--vw))); }
   .ml-dot{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.22); transition:background .2s, transform .2s; }
   .ml-dot.active{ background:var(--amber); transform:scale(1.5); }
   #mlCounter{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
@@ -1002,17 +1024,45 @@
   /* ---- 詳細ビュー ---- */
   #mlDetailView{ display:flex; gap:12px; align-items:stretch; text-align:left; height:calc(84 * var(--vh)); }
   #mlDetailLeft{ flex:0 0 clamp(136px, calc(28 * var(--vw)), 200px); display:flex; flex-direction:column; gap:8px; min-width:0; }
-  #mlDetailCardSlot{ flex:1 1 auto; position:relative; min-height:0; }
+  #mlDetailCardSlot, #mmDetailCardSlot{ flex:1 1 auto; position:relative; min-height:0; }
   /* 詳細のカードは一覧のカードをそのまま拡大したもの。left/topの中央寄せを解除して枠いっぱいに使う */
-  #mlDetailCardSlot .ml-card{
+  /* 一覧のカードをcloneNodeで持ち込むので、カルーセルがインラインで書いた
+     transform/filter/opacity/z-index を打ち消す。z-indexを消さないと、カード(z:50)が
+     上に乗って ≪≫ ボタン(z:12)が見えなくなる */
+  #mlDetailCardSlot .ml-card, #mmDetailCardSlot .ml-card{
     position:absolute; inset:0; left:0; top:0; width:auto; height:auto; margin:0;
     transform:none !important; filter:none !important; opacity:1 !important; cursor:default;
+    z-index:1 !important;
   }
-  #mlDetailCardSlot .ml-card-art{ height:66%; }
-  #mlDetailCardSlot .ml-card-body{ top:66%; padding-top:8px; }
-  #mlDetailCardSlot .ml-card-name{ font-size:clamp(13px, calc(3.8 * var(--vh)), 17px); }
+  #mlDetailCardSlot .ml-card, #mmDetailCardSlot .ml-card{ display:flex; flex-direction:column; }
+  #mlDetailCardSlot .ml-card-art, #mmDetailCardSlot .ml-card-art{
+    position:relative; left:auto; right:auto; top:auto; height:auto; flex:1 1 auto; min-height:0;
+  }
+  #mlDetailCardSlot .ml-card-body, #mmDetailCardSlot .ml-card-body{
+    position:relative; left:auto; right:auto; bottom:auto; top:auto; flex:0 0 auto; padding:7px 10px 13px;
+  }
+  #mlDetailCardSlot .ml-card-name, #mmDetailCardSlot .ml-card-name{ font-size:clamp(13px, calc(3.8 * var(--vh)), 17px); }
   /* FLIP: 一覧のカード位置から詳細の位置へ飛んで拡大する演出 */
-  #mlDetailCardSlot.ml-flip .ml-card{ transition:transform .42s cubic-bezier(.2,.75,.25,1); }
+  #mlDetailCardSlot.ml-flip .ml-card, #mmDetailCardSlot.ml-flip .ml-card{ transition:transform .42s cubic-bezier(.2,.75,.25,1); }
+  /* カードの絵(アイコン部分)の両サイドに重ねる「隣のモンスターへ」ボタン */
+  /* カードの絵(アイコン部分)の両サイドに重ねる「隣へ」ボタン。
+     絵の上に乗るので、埋もれないよう縁を琥珀色にして少し光らせる */
+  .ml-card-nav{
+    position:absolute; top:30%; transform:translateY(-50%); z-index:12;
+    width:27px; height:46px; border-radius:8px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:18px; line-height:1; color:#1a1306;
+    background:linear-gradient(180deg, rgba(255,215,106,0.92), rgba(244,196,48,0.92));
+    border:1px solid rgba(255,238,180,0.9);
+    box-shadow:0 2px 10px -2px rgba(0,0,0,0.8), 0 0 12px -3px rgba(244,196,48,0.9);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ml-card-nav:active{ filter:brightness(0.9); }
+  .ml-card-nav-prev{ left:0; } .ml-card-nav-next{ right:0; }
+  /* ≪ ≫ で切り替えたときに、その方向から差し込むように見せる */
+  .ml-slide-in-right{ animation:mlSlideInR .26s ease-out; }
+  .ml-slide-in-left{ animation:mlSlideInL .26s ease-out; }
+  @keyframes mlSlideInR{ from{ opacity:0; transform:translateX(26%) scale(0.94) !important; } }
+  @keyframes mlSlideInL{ from{ opacity:0; transform:translateX(-26%) scale(0.94) !important; } }
   #mlDetailBtnRow{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
   #mlEntryBtn{
     /* 日本語なのでRusso Oneはフォールバックになる。折り返して枠から出ないよう字間を詰める */
@@ -1049,9 +1099,10 @@
   .ml-sec-title::after{ content:''; flex:1 1 auto; height:1px; background:linear-gradient(90deg,rgba(244,196,48,0.4),transparent); }
   .ml-sec-note{ font-size:9px; font-weight:600; letter-spacing:0.4px; color:var(--ink-dim); }
   /* 上段は「STATUS」と「特性+状態変化」の2列、その下に「技」を全幅で置く */
+  /* 常に2列。メディアクエリで1列に落とすと、強制横向き時に実viewportの幅(=縦向きの幅)で
+     判定されてしまい、横画面なのに縦並びになる */
   .ml-info-cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:9px; align-items:start; }
   .ml-info-col2{ display:flex; flex-direction:column; gap:9px; min-width:0; }
-  @media (max-width:520px){ .ml-info-cols{ grid-template-columns:minmax(0,1fr); } }
   /* マスモン画面のステータス列を流用するので、そちら用の固定幅・独立スクロールを解除する */
   #mlDetailRight .mastermon-detail-statscol{ flex:none; max-width:none; overflow:visible; padding-right:0; }
   #mlDetailRight .mm-stats-wrap{ gap:6px; }
@@ -1467,36 +1518,43 @@
   .mystat-elem-row .ev-line{ width:100%; text-align:left; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); }
 
   /* ---------- MASTERMON (マスモン) ---------- */
+  /* カルーセル + 詳細(モンスター選択と同じ作り)。背景は不透明にして裏のHUDを透かさない */
   #mastermonScreen{
-    justify-content:flex-start; padding-top:20px; padding-bottom:16px;
     display:flex; flex-direction:column; align-items:center;
+    justify-content:center; padding:10px 12px; overflow:hidden;
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(244,196,48,0.13), transparent 58%),
+      radial-gradient(ellipse at 50% 115%, rgba(64,124,255,0.12), transparent 60%),
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.016) 0 1px, transparent 1px 7px),
+      linear-gradient(180deg,#080b13,#04060a 58%,#070a12);
   }
-  #mastermonColumns{
-    display:flex; gap:16px; align-items:stretch; justify-content:center;
-    width:min(calc(94 * var(--vw)),900px); margin-top:6px; flex:1 1 auto; min-height:0;
+  #mmDetailView{ display:flex; gap:12px; align-items:stretch; text-align:left; height:calc(84 * var(--vh)); }
+  #mmDetailLeft{ flex:0 0 clamp(146px, calc(27 * var(--vw)), 192px); display:flex; flex-direction:column; gap:6px; min-width:0; }
+  /* 縦が低い画面(568x320等)でも絵が潰れないように、カードに最低の高さを確保する。
+     残りをボタン群が使うので、ボタン側は1行に収まる詰めたサイズにしてある */
+  #mmDetailCardSlot{ min-height:calc(34 * var(--vh)); }
+  .mm-detail-use-btn{ flex:0 0 auto; padding:8px 4px; white-space:nowrap; line-height:1.2;
+    font-size:clamp(10px, calc(2.8 * var(--vh)), 13px); letter-spacing:0;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    box-shadow:0 3px 0 #8a6a10, 0 0 18px -4px rgba(244,196,48,0.7); }
+  .mm-detail-use-btn:active{ transform:translateY(2px); box-shadow:0 1px 0 #8a6a10; }
+  /* 詳細情報/技一覧/トレーニング/着せ替え/編集/一覧へ の6ボタンを2列3行に収める */
+  #mmDetailTabGrid{ flex:0 0 auto; display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+  .mm-tab-btn{
+    padding:5px 2px; border-radius:6px; cursor:pointer; text-align:center; white-space:nowrap; overflow:hidden;
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); color:var(--ink);
+    font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:0;
+    font-size:clamp(9px, calc(2.4 * var(--vh)), 11px); line-height:1.3;
   }
-  #mastermonListCol{
-    display:flex; flex-direction:column; flex:0 0 auto; width:140px; min-height:0;
-    overflow-y:auto; gap:8px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch;
-  }
-  #mastermonList{ display:flex; flex-direction:column; gap:8px; width:100%; }
-  .mastermon-list-item{
-    display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px;
-    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); cursor:pointer; text-align:left;
-  }
-  .mastermon-list-item.active{ border-color:var(--amber); background:rgba(244,196,48,0.08); align-items:flex-start; }
-  .mastermon-list-icon{ width:28px; height:28px; border-radius:50%; overflow:hidden; flex-shrink:0; }
-  .mastermon-list-item.active .mastermon-list-icon{ width:36px; height:36px; }
-  .mastermon-list-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .mastermon-list-text{ min-width:0; }
-  .mastermon-list-name{ font-size:12px; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .mastermon-list-species{ font-size:9px; color:var(--ink-dim); font-weight:500; margin-left:3px; }
-  .mastermon-list-sub{ font-size:9px; color:var(--ink-dim); margin-top:2px; white-space:nowrap; }
+  .mm-tab-btn:active{ background:rgba(244,196,48,0.14); }
+  .mm-tab-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.14); color:var(--amber); }
+
   #mastermonDetailPanel{
     flex:1 1 auto; min-width:0; min-height:0; overflow:hidden; text-align:left;
-    padding:4px 10px 4px 4px;
-    display:flex; flex-direction:column; gap:14px;
+    padding:2px 6px 2px 2px;
+    display:flex; flex-direction:column; gap:10px;
   }
+  .mm-subview-sub{ margin-left:8px; font-size:10px; font-weight:600; letter-spacing:1px; color:var(--amber); }
   .mm-ticket-count{ color:var(--amber); }
   .mm-exp-track{ width:100%; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); margin-top:5px; overflow:hidden; }
   .mm-exp-track.small{ height:4px; margin-top:4px; }
@@ -1536,21 +1594,6 @@
   .mastermon-use-btn{
     padding:13px 20px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1.5px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
-  }
-  #mastermonFooterRow{
-    margin-top:16px; display:flex; gap:10px; flex-wrap:nowrap; justify-content:center; flex-shrink:0;
-    width:100%; position:relative;
-  }
-  /* 編集ボタンはフッターの右端に固定配置(中央の参戦/閉じるボタンの並びは崩さない) */
-  .mastermon-edit-btn{
-    position:absolute; right:0; top:50%; transform:translateY(-50%);
-    padding:12px 18px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
-    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
-  }
-  #closeMastermonBtn{
-    padding:13px 26px; font-family:'Russo One',sans-serif; font-size:14px; letter-spacing:2px;
-    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
-    flex-shrink:0;
   }
   .mastermon-result-info{
     margin-top:10px; font-size:12px; color:var(--amber); background:rgba(244,196,48,0.08);
@@ -1637,28 +1680,6 @@
     flex:1 1 auto; min-height:0; overflow-y:auto;
     touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:4px;
   }
-  .mastermon-menu-body{
-    display:grid; grid-template-columns:1fr 1fr; gap:10px; align-content:center; min-height:100%;
-  }
-  .mm-menu-btn{
-    display:flex; align-items:center; gap:12px; width:100%;
-    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:10px;
-    padding:14px 16px; color:var(--ink); font-family:'Rajdhani',sans-serif; font-weight:700;
-    font-size:14px; letter-spacing:1px; text-align:left; cursor:pointer;
-  }
-  .mm-menu-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.1); }
-  .mm-menu-btn-icon{
-    width:32px; height:32px; border-radius:50%; flex-shrink:0; background:rgba(255,255,255,0.08);
-    display:flex; align-items:center; justify-content:center; font-size:16px;
-  }
-  .mm-menu-btn-label{ flex:1 1 auto; }
-
-  .mm-back-btn{
-    flex-shrink:0; padding:8px 16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;
-    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
-  }
-  .mm-back-btn:active{ filter:brightness(0.92); }
-
   .mastermon-info-col-single{ display:flex; flex-direction:column; }
   .mm-info-col-title{
     font-size:11px; letter-spacing:2px; color:var(--amber); font-weight:700; text-transform:uppercase; margin-bottom:8px;

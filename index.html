@@ -409,17 +409,43 @@
 
 <!-- MASTERMON -->
 <div id="mastermonScreen" class="resultScreen hidden">
-  <div class="rank" style="font-size:32px;">マスモン</div>
-  <div id="mastermonColumns">
-    <div id="mastermonListCol">
-      <div id="mastermonList"></div>
+  <button class="overlay-close-btn" id="closeMastermonBtn" aria-label="閉じる">✕</button>
+
+  <!-- カルーセル(一覧)ビュー -->
+  <div id="mmCarouselView">
+    <div class="ml-head">
+      <div class="ml-title">MASTERMON</div>
+      <div class="ml-sub">スワイプして選ぶ / カードをタップで詳細</div>
     </div>
-    <div id="mastermonDetailPanel" class="hidden"></div>
+    <div id="mmStage">
+      <div id="mmGlow"></div>
+      <div id="mmTrack"></div>
+    </div>
+    <div class="ml-foot">
+      <div id="mmDots"></div>
+      <div class="ml-foot-row">
+        <button class="ml-nav" id="mmPrevBtn" aria-label="前のマスモン">‹</button>
+        <div id="mlCounter"><span id="mmCounterNow">1</span><span class="ml-counter-sep">/</span><span id="mmCounterAll">0</span></div>
+        <button class="ml-nav" id="mmNextBtn" aria-label="次のマスモン">›</button>
+      </div>
+    </div>
   </div>
-  <div id="mastermonFooterRow">
-    <button id="mastermonUseBtn" class="mastermon-use-btn">このマスモンで参戦する</button>
-    <button id="closeMastermonBtn">閉じる</button>
-    <button id="mastermonEditBtn" class="mastermon-edit-btn">マスモン編集</button>
+
+  <!-- 詳細ビュー(カードが左に寄り、右に情報) -->
+  <div id="mmDetailView" class="hidden">
+    <div id="mmDetailLeft">
+      <div id="mmDetailCardSlot"></div>
+      <button id="mastermonUseBtn" class="mastermon-use-btn mm-detail-use-btn">このマスモンで参戦</button>
+      <div id="mmDetailTabGrid">
+        <button class="mm-tab-btn" data-tab="info">📊 詳細情報</button>
+        <button class="mm-tab-btn" data-tab="moves">⚔️ 技一覧</button>
+        <button class="mm-tab-btn" data-tab="training">💪 トレーニング</button>
+        <button class="mm-tab-btn" data-tab="dressup">👕 着せ替え</button>
+        <button class="mm-tab-btn" data-tab="edit">✏️ 編集</button>
+        <button class="mm-tab-btn" id="mmBackToListBtn">↩ 一覧へ</button>
+      </div>
+    </div>
+    <div id="mastermonDetailPanel"></div>
   </div>
 </div>
 

@@ -48,20 +48,34 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - プルダウンは `.custom-select` / `.custom-select-menu` の自前実装を再利用する。ポップアップが親のoverflowで切れないよう「外枠はoverflow可視・中のリストだけ独立スクロール」の構成にする。
 - 横長(landscape)の低い画面が前提。新しい画面は縦幅を詰めてスクロールなしで収まるようにする。
 
-### モンスター選択(トップ画面の分岐 → モンスター一覧カルーセル)
-- 導線は「トップ画面の`モンスター選択`(`.selector-card`が2枚: マスモン / モンスター一覧) → それぞれの画面」。分岐カードは`renderSelectorCards()`が中身を書き、CSSでアイコン左・テキスト右・右端`::after`の`›`という横並びにしている(縦積みだと日本語が折り返して崩れる)。
-- `#monsterListScreen`のカルーセルは**位置を全部JSがtransformで書く方式**。`mlState.pos`(小数。整数のときそのカードが中央)を唯一の状態とし、`renderMonsterCarousel()`が全カードに`translate3d/rotateY/scale`と`filter:brightness`を設定する。**`.ml-card`にtransitionを付けてはいけない**(ドラッグ追従が鈍る)。滑らかな吸着は`mlStartAnim()`のrAFで`pos`を`target`へ寄せて実現している。
-- **無限ループは「環状の最短距離」`mlRingDelta(i, pos)`で成立している。** `pos`は正規化せず単調な小数のまま持ち、各カードの相対位置だけを`-n/2〜n/2`に畳む。これで先頭の左に末尾が並び、末尾の右に先頭が並ぶ。`pos`を0〜nに丸めようとすると境界でカードが飛ぶ。
-- 見た目の定数は先頭にまとめてある(`ML_CENTER_SCALE`=1.2 / `ML_SIDE_BRIGHTNESS`=0.55 / `ML_VISIBLE_SIDE`=2 / `ML_SNAP_RATE` / `ML_FLICK_THRESHOLD`)。**カード間隔は CSS の `#mlStage{--ml-step}` が正**で、JSは`getComputedStyle`で読む(2か所に数字を書かないため)。
-- **「少しだけ見切れる」のは`#mlStage`の幅を`calc(var(--ml-step) * 4.4)`にして`overflow:hidden`しているから。** 画面幅基準にすると広い画面で5枚とも収まってしまい、スワイプできることが伝わらなくなる。`--ml-step`を変えたらこの倍率も見直す。
+### カードカルーセル(モンスター選択 / マスモン選択で共用)
+- **エンジンは`createCardCarousel(cfg)`(ui.js)1つだけ。** モンスター一覧(`mlCarousel`)とマスモン(`mmCarousel`)が同じ実装を共有し、`cfg`で「並べるキー」「カードの中身」「アクセント色」「タップ時の動作」だけを差し替える。**カルーセルの挙動を直すときは必ずエンジン側を直す**(片方だけ直すと必ず食い違う)。
+- 位置は**全部JSがtransformで書く**。`st.pos`(小数。整数のときそのカードが中央)を唯一の状態とし、`render()`が全カードに`translate3d/rotateY/scale`と`filter:brightness`を設定する。**`.ml-card`にtransitionを付けてはいけない**(ドラッグ追従が鈍る)。滑らかな吸着は`startAnim()`のrAFで`pos`を`target`へ寄せて実現している。
+- **無限ループは「環状の最短距離」`ringDelta(i, pos)`で成立している。** `pos`は正規化せず単調な小数のまま持ち、各カードの相対位置だけを`-n/2〜n/2`に畳む。`pos`を0〜nに丸めようとすると境界でカードが飛ぶ。登録数が5未満(マスモン)でも破綻せず、見えるカードが減るだけ。
+- 見た目の定数は`CARO_*`にまとめてある(`CARO_CENTER_SCALE`=1.2 / `CARO_SIDE_BRIGHTNESS`=0.55 / `CARO_VISIBLE_SIDE`=2 / `CARO_SNAP_RATE` / `CARO_FLICK_THRESHOLD`)。
+- **カード寸法とカード間隔はCSSの`#mlStage/#mmStage{--ml-card-h / --ml-card-w / --ml-step}`が正。** JSは`--ml-step`を**プローブ要素の`offsetWidth`で読む**(`.caro-step-probe`= 幅が`var(--ml-step)`の見えないdiv)。`getComputedStyle().getPropertyValue('--ml-step')`は未登録のカスタムプロパティを`calc(...)`の文字列で返すため数値にできない(`@property`は古いiOSで使えないので採用しない)。**JS側に間隔の数字を書かないこと。**
+- **【メディアクエリ禁止】この画面のレイアウトに`@media`を使ってはいけない。** 強制横向き(端末が縦画面ロック)ではCSSの生の`vw/vh`とメディアクエリが「縦向きの実viewport」基準になり論理サイズと食い違う。実際に`@media (max-width:520px)`で詳細の2列が1列に落ちる不具合が出た。サイズは必ず`var(--vw)/var(--vh)`基準の`clamp()`で決める。
+- **「少しだけ見切れる」のは`#mlStage`の幅を`calc(var(--ml-step) * 4.4)`にして`overflow:hidden`しているから。** 画面幅基準にすると広い画面で5枚とも収まってしまい、スワイプできることが伝わらなくなる。
 - **1回のスワイプで2枚飛ばないようにしてある**: 離した時点の最寄りへ吸着し、フリック加算は「ドラッグだけではカードが変わらなかったとき」だけ効く(`target === Math.round(dragStartPos)`の判定)。
-- **ドラッグ直後のclickは`mlState.suppressClick`で1回だけ無視する。** `dragMoved`を見たままにすると次のタップまで無視され続ける(詳細が開かなくなる)。
-- **強制横向き(端末が縦画面ロック)対応は2か所**: ドラッグ量は`toLogicalDelta()`で回転補正する / 詳細を開くFLIP演出は`getBoundingClientRect()`が実画面基準なので`isForcedLandscape()`で幅と高さを入れ替え、中心座標は`toLogicalPoint()`で論理座標に直してから差分を出す。どちらも入れないと縦画面ロック端末で「横スワイプが効かない」「カードが変な方向から飛んでくる」になる。
-- **この画面は「素のモンスター」を選ぶ画面なので、装備スキンを一切見ない。** カード画像は`defaultMonsterImgTag()`(`equippedIconImgTag()`ではない)、オーラは`mlAuraOf()`が`MONSTER_AURA`を直に引く、技は`buildMastermonMovesHtml(key, {ignoreSkin:true})`。ignoreSkinは擬似エンティティを`{isPlayer:false, skinId:null}`にすることで`entitySkinId()`をnullにし、`getMoveAura`/`skinTier3Move`/`getMoveName`/`ssrTier3DmgMult`をまとめて既定値にしている(1か所で効く)。**スキン込みの見た目を出したいのはマスモン画面側だけ**なので、そちらは引数なしのまま。
-- 詳細ビューは一覧のカードDOMを`cloneNode`して左カラムに置き、右カラムに情報を出す。左右の`.ml-card`のスタイルは共通で、詳細側は`#mlDetailCardSlot .ml-card`で中央寄せを解除して枠いっぱいに広げている。
-- 右カラムの構成は**上段2列(`.ml-info-cols`: STATUS / 特性+状態変化) + 下に技を全幅**。STATUSは`buildMastermonStatsColHtml({stats: mastermonInitialStats(key)}, APTITUDE[key])`の流用で「初期値+適正バッジ」を出す。流用元は`flex:0 0 150px`の固定幅なので、`#mlDetailRight .mastermon-detail-statscol`で解除している。
-- **カード送りSE(`cardSwipe`)を鳴らすのは`renderMonsterCarousel()`の1か所だけ。** 中央インデックスが`mlState.lastCenterIdx`から変わった瞬間に鳴らすので、ドラッグ・送りボタン・隣カードのタップの全経路が自動でカバーされる。画面を開くときは`lastCenterIdx = null`にして鳴らさない。送りボタンは`<button>`なので、audio.jsの共通タップ音を`.ml-nav`で除外して二重鳴りを防いでいる。
-- 画面を閉じるときは`closeMonsterListScreen()`で**必ずrAFを止める**(`mlState.raf`)。
+- **ドラッグ直後のclickは`st.suppressClick`で1回だけ無視する。** `dragMoved`を見たままにすると次のタップまで無視され続ける(詳細が開かなくなる)。
+- **カード送りSE(`cardSwipe`)を鳴らすのは`render()`の1か所だけ。** 中央インデックスが`st.lastCenterIdx`から変わった瞬間に鳴らすので、ドラッグ・下段の送りボタン・隣カードのタップ・詳細の`≪ ≫`の全経路が自動でカバーされる。画面を開くときは`reset(key)`が`lastCenterIdx = null`にして鳴らさない。送りボタンは`<button>`なので、audio.jsの共通タップ音を`.ml-nav`と`.ml-card-nav`で除外して二重鳴りを防いでいる。
+- **強制横向き対応は2か所**: ドラッグ量は`toLogicalDelta()`で回転補正する / 詳細を開くFLIP演出(`caroFlipCard`)は`getBoundingClientRect()`が実画面基準なので`isForcedLandscape()`で幅と高さを入れ替え、中心座標は`toLogicalPoint()`で論理座標に直してから差分を出す。
+- 画面を閉じるときは`stopAnim()`で**必ずrAFを止める**。
+- **詳細ビューは一覧のカードDOMを`cloneNode`して左カラムに置く。** カルーセルがインラインで書いた`transform/filter/opacity/z-index`が付いてくるので、`#mlDetailCardSlot .ml-card`側で全部`!important`で打ち消している。**特に`z-index:1 !important`を外すと、カード(z:50)が上に乗って`≪ ≫`ボタン(z:12)が見えなくなる。**
+- 詳細のカードは**絵が余りを埋める / 本文は必要な高さだけ**のフレックス配置にしてある(一覧と同じパーセント指定のままだと、カードが横長になったときに本文がはみ出して切れる)。
+- カードの`HP/速さ`は`.ml-card-fig-v`で大きく表示する(Russo One + オーラ色の発光)。**オーラのアイコンはカードにも詳細のチップにも出さない**(枠と上端のラインの色で表現する)。
+
+### モンスター選択(トップ画面の分岐 → モンスター一覧)
+- 導線は「トップ画面の`モンスター選択`(`.selector-card`が2枚: マスモン / モンスター一覧) → それぞれの画面」。分岐カードは`renderSelectorCards()`が中身を書き、CSSでアイコン左・テキスト右・右端`::after`の`›`という横並びにしている(縦積みだと日本語が折り返して崩れる)。
+- **この画面は「素のモンスター」を選ぶ画面なので、装備スキンを一切見ない。** カード画像は`defaultMonsterImgTag()`(`equippedIconImgTag()`ではない)、オーラは`mlAuraOf()`が`MONSTER_AURA`を直に引く、技は`buildMastermonMovesHtml(key, {ignoreSkin:true})`。ignoreSkinは擬似エンティティを`{isPlayer:false, skinId:null}`にすることで`entitySkinId()`をnullにし、`getMoveAura`/`skinTier3Move`/`getMoveName`/`ssrTier3DmgMult`をまとめて既定値にしている(1か所で効く)。
+- 詳細の右カラムは**上段2列(`.ml-info-cols`: STATUS / 特性+状態変化) + 下に技を全幅**。STATUSは`buildMastermonStatsColHtml({stats: mastermonInitialStats(key)}, APTITUDE[key])`の流用で「初期値+適正バッジ」を出す。流用元は`flex:0 0 150px`の固定幅なので、`#mlDetailRight .mastermon-detail-statscol`で解除している。
+
+### マスモン選択(カルーセル + 詳細)
+- カードは`mmCardInnerHtml()`。**マスモンは「着せ替え済みの姿」なので、こちらは装備スキンを反映する**(画像=`equippedIconImgTag`、アクセント色=`getMonsterAura`)。モンスター一覧と逆なので混同しないこと。
+- カードにはLvバッジ・育成後の実効HP/速さ(`mmEffectiveStats`)・EXPバー・チケット数を出す。**EXP行があるぶん本文が長いので、`.ml-card-art-mm`/`.ml-card-body-mm`で絵の比率を50%に下げている**(下げないと本文が枠外に出て切れる)。
+- 詳細の左カラムは「カード → このマスモンで参戦 → 2列3行のタブボタン(詳細情報/技一覧/トレーニング/着せ替え/編集/一覧へ)」。**縦が低い画面でも絵が潰れないように`#mmDetailCardSlot{min-height:calc(34 * var(--vh))}`を入れ、ボタン側は1行に収まるサイズに詰めてある。**
+- 右カラムは既存の`#mastermonDetailPanel`をそのまま使い、`renderMastermonDetail(key)`が中身を描く。**`mastermonDetailTab`のnull(旧メニュー画面)は廃止し、既定は`'info'`。** タブ切替は左カラムのボタンが担当し、`mmSyncTabButtons()`が選択状態を同期する。着せ替えタブだけステータス列を出さないのは従来通り。
+- `renderMastermonList()`は名前を残したまま中身が「カルーセルのカードを作り直す」に変わっている(改名・トレーニング・着せ替えの後から呼ばれるため)。**登録数が変わったときは`build()`、値だけ変わったときは`refreshCards()`。**
 
 ### 安全圏(zoneState)
 - `ZONE_PHASES`でフェーズ定義。安定フェーズ開始時に`prepareNextZoneTarget()`で次の縮小先を事前決定し、`toCenter/toRadius`を予測点線として表示する。
