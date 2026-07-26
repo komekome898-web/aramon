@@ -61,7 +61,7 @@
 
   <div id="topInfoBtnRow">
     <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
-    <button id="changelogBtn">🆕 更新履歴</button>
+    <button id="changelogBtn" class="has-dot">🆕 更新履歴<span id="changelogNewPop" class="changelog-new-pop hidden">new</span></button>
   </div>
   <div id="accountBar">
     <button id="accountLoginBtn">👤 ログイン / アカウント作成</button>
@@ -154,7 +154,7 @@
         <div class="howto-aura-ring">🔴→🟢→🟡→🔵→🔴（矢印の元が有利）　⚪⇔⚫（相互に有利）</div>
         <div>モンスターと技はそれぞれ<b>オーラ</b>を持ちます。<b>有利な技</b>を<b>不利なオーラ</b>のモンスターに当てるとダメージ<b>1.5倍</b>、逆に<b>不利な技</b>は<b>0.75倍</b>。技のオーラが自分のオーラと同じなら<b>1.2倍</b>（オーラ一致）。</div>
         <div>被弾したダメージ数字は、オーラ相性でダメージが<span style="color:#ff5555;font-weight:700">増えているなら赤</span>・<span style="color:#5aa6ff;font-weight:700">減っているなら青</span>で大きく表示されます。</div>
-        <div>オーラは<b>スキン</b>で変わります（色スキン＝その色 ／ <span class="rar-SSR">SSRスキン</span>＝固定色で<span class="rar-SSR">tier3技も一致技に変化</span>）。</div>
+        <div>オーラは<b>スキン</b>で変わります（<span class="rar-SR">色スキン</span>＝その色 ／ <span class="rar-SSR">SSRスキン</span>＝固定色）。どちらも装備中は<b>tier3技のオーラとエフェクトが装備オーラに変化</b>（一致技になるので1.2倍が乗ります）。<span class="rar-SSR">SSRスキン</span>はさらに<span class="rar-SSR">tier3の技名と威力も変化</span>します。</div>
       </div>
     </div>
     <div class="howto-section">

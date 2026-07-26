@@ -12,7 +12,11 @@
     --vw: 1vw;
     --vh: 1vh;
   }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  /* 長押しで文字/画像が選択されたり、iOSのコピー・調べる・画像を保存のメニューが
+     出るのを全画面で防ぐ。入力欄だけは下で選択可能に戻す。 */
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
+  input, textarea{ -webkit-user-select:text; user-select:text; }
   html,body{margin:0; padding:0; width:100%; height:100%; position:fixed; inset:0; overflow:hidden; touch-action:none; background:var(--bg-void); font-family:'Rajdhani',sans-serif; color:var(--ink); user-select:none;}
   :fullscreen{ background:var(--bg-void); }
 
@@ -108,6 +112,10 @@
   }
   #howToPlayBtn:active, #changelogBtn:active{ background:rgba(244,196,48,0.18); }
   #changelogBtn{ white-space:nowrap; }
+  /* 未読の更新履歴があるときだけ出す「new」バッジ */
+  .changelog-new-pop{ position:absolute; top:-8px; right:-7px; font-size:9px; font-weight:800; letter-spacing:0.3px;
+    color:#2a0b0b; background:linear-gradient(180deg,#ff8a6a,var(--danger)); border-radius:8px; padding:1px 6px;
+    text-transform:uppercase; box-shadow:0 0 8px rgba(255,64,64,0.7); pointer-events:none; }
   /* 更新履歴ポップ */
   .mastermon-confirm-box.changelog-box{ position:relative; max-width:min(680px, calc(94 * var(--vw))); width:min(680px, calc(94 * var(--vw)));
     max-height:calc(90 * var(--vh)); overflow-y:auto; text-align:left; }

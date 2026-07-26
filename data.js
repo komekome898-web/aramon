@@ -522,20 +522,28 @@ function getMonsterAura(entity){
   }
   return MONSTER_AURA[entity.element] || null;
 }
-// 技のオーラ(SSR装備時はtier3を装備オーラの一致技に上書き)
+// スキンID(SSR / 色スキン)から、tier3技に乗せるオーラを返す(非対象はnull)。
+// SSRは固定色、SR(色スキン)はその色。getMonsterAuraと同じ優先順で揃えている。
+function skinTier3Aura(skinId){
+  if(!skinId) return null;
+  if(SSR_SKIN_AURA[skinId]) return SSR_SKIN_AURA[skinId];
+  if(skinId.indexOf(':')>=0){ const colorId = skinId.split(':')[1]; if(SKIN_COLORS[colorId]) return colorId; }
+  return null;
+}
+// 技のオーラ(スキン装備時はtier3を装備オーラの一致技に上書き。SSR/SR色スキンどちらも対象)
 function getMoveAura(move, attacker){
   if(!move) return null;
   if(move.tier===3){
-    const sid = entitySkinId(attacker);
-    if(sid && SSR_SKIN_AURA[sid]) return SSR_SKIN_AURA[sid];
+    const a = skinTier3Aura(entitySkinId(attacker));
+    if(a) return a;
   }
   return move.aura || null;
 }
-// 技のエフェクト色(SSR装備時はtier3を装備オーラの色基調に上書き)
+// 技のエフェクト色(スキン装備時はtier3を装備オーラの色基調に上書き。SSR/SR色スキンどちらも対象)
 function getMoveEffectColor(move, attacker){
   if(move && move.tier===3){
-    const sid = entitySkinId(attacker);
-    if(sid && SSR_SKIN_AURA[sid]) return auraColorHex(SSR_SKIN_AURA[sid]);
+    const a = skinTier3Aura(entitySkinId(attacker));
+    if(a) return auraColorHex(a);
   }
   return move ? move.color : '#ffffff';
 }
@@ -568,6 +576,17 @@ function ssrTier3DmgMult(move, attacker){
 // 更新履歴(プレイに関わる大きな機能の追加・変更・調整のみ。日付降順で表示する)。
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
+  { date:'2026-07-26', items:[
+    '色スキン(SR)を装備すると、SSRスキンと同じようにtier3技のオーラとエフェクトがスキンの色に変わるようになりました(技名と威力は変わりません)',
+    'スキンのプレビュー画面で、正面と後ろの歩行モーションが動いて見えるようになりました',
+    '残り2人になったときの専用BGM「ラストバトル」を追加',
+    'ショップに専用BGMを追加',
+    'バトルの視点を自分のモンスターに寄せて、モンスターが大きく見えるように変更',
+    'ショップの値段を変更(〇〇の実 300 / トレーニングチケット 1000 / 技強化チケット 1000)',
+    'シーズンパスのゴールド報酬を100から1000まで100単位で上がるように変更',
+    'デイリー報酬のゴールドを100単位に変更',
+    '更新履歴に未読の項目があるとき、ボタンに「new」が付くようになりました',
+  ]},
   { date:'2026-07-25', items:[
     'ピクシー「ビッグバン」を強化: 発射した球体の直撃と着弾後の爆風の両方でダメージが入るように変更、爆風の範囲と威力をアップ。技一覧の威力が0と表示されていたのを修正(直撃+爆風の合計を表示)。ダメージ範囲の円が宙に浮いて見えていたのを、地面に正しく貼り付くよう描画方式を修正',
     'ピクシーのマスモン適正を調整(EDABBE)。ビッグバンの爆風エフェクトが大きな障害物の裏に隠れず正しい前後関係で表示されるよう修正、ダメージ判定円にエフェクトの見た目を正確に一致させ、発射時と同じ黒いビリビリ電撃も追加',
@@ -1040,20 +1059,21 @@ function titleCondText(t){
 ===================================================================== */
 const DAILY_STORAGE_KEY = 'aramon_daily_v1';
 // 7日サイクルの報酬(徐々に豪華に→7日目で大きく→ループ)
+// ゴールドはすべて100単位の値にする(端数の出ないきりの良い数値にそろえる方針)
 const LOGIN_BONUS = [
   null,                              // index0未使用
   { gold:100 },                      // Day1
-  { gold:150 },                      // Day2
+  { gold:200 },                      // Day2
   { dia:5 },                         // Day3
-  { gold:200 },                      // Day4
+  { gold:300 },                      // Day4
   { item:'freeTrainTicket', n:1 },   // Day5
   { dia:10 },                        // Day6
-  { gold:300, dia:20 },              // Day7(大)
+  { gold:500, dia:20 },              // Day7(大)
 ];
-// 毎日リセットされるミッション(固定3種)
+// 毎日リセットされるミッション(固定3種)。ゴールドは100単位
 const DAILY_MISSIONS = [
-  { id:'play', name:'試合に3回参加する', target:3, reward:{ gold:80 },  track:'play' },
-  { id:'kill', name:'合計5キルする',     target:5, reward:{ gold:120 }, track:'kill' },
+  { id:'play', name:'試合に3回参加する', target:3, reward:{ gold:100 }, track:'play' },
+  { id:'kill', name:'合計5キルする',     target:5, reward:{ gold:200 }, track:'kill' },
   { id:'win',  name:'1回勝利する',       target:1, reward:{ dia:5 },    track:'win'  },
 ];
 function dailyTodayStr(){ const d=new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
@@ -1093,13 +1113,14 @@ const SEASON_STORAGE_KEY = 'aramon_season_v1';
 const SEASON_ID = 's1';               // シーズン識別子(変えると全員リセット)
 const SEASON_SP_PER_TIER = 120;       // 1段階に必要なSP
 const SEASON_MAX_TIER = 25;
-// 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬
+// 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬。
+// ゴールドは100から始めて100単位で上がっていき、最後のゴールド報酬(24段階目)が1000になる。
 const SEASON_REWARDS = [
-  { gold:80 }, { gold:100 }, { item:'freeTrainTicket', n:1 }, { gold:120 }, { dia:15 },      // 1-5
-  { gold:120 }, { gold:150 }, { item:'seed_power', n:1 }, { gold:150 }, { dia:25 },           // 6-10
-  { gold:180 }, { item:'moveTicket', n:1 }, { gold:180 }, { gold:200 }, { dia:30 },           // 11-15
-  { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:220 }, { gold:220 }, { dia:40 },      // 16-20
-  { gold:250 }, { item:'seed_vitality', n:1 }, { gold:250 }, { gold:300 }, { skin:'mocchi_ssr' }, // 21-25(最終=限定SSRスキン「ラガモッチー」)
+  { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },      // 1-5
+  { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },           // 6-10
+  { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },           // 11-15
+  { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },      // 16-20
+  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'mocchi_ssr' }, // 21-25(最終=限定SSRスキン「ラガモッチー」)
 ];
 // 1試合で得られるSP(SEASON_SP_GLOBAL_MULTで全体倍率を調整)
 const SEASON_SP_GLOBAL_MULT = 2;
@@ -1366,8 +1387,8 @@ function addCatalog(kind, n){ const c=loadCatalogs(); c[kind]=(c[kind]||0)+(n||1
 
 // ショップ(ゴールドでアイテム購入): [アイテムキー, 価格] ※スキンはショップには追加しない
 const SHOP_ITEMS = [
-  ['seed_life',150],['seed_power',150],['seed_wisdom',150],['seed_accuracy',150],['seed_evasion',150],['seed_vitality',150],
-  ['freeTrainTicket',300],['moveTicket',500],
+  ['seed_life',300],['seed_power',300],['seed_wisdom',300],['seed_accuracy',300],['seed_evasion',300],['seed_vitality',300],
+  ['freeTrainTicket',1000],['moveTicket',1000],
 ];
 
 /* =====================================================================

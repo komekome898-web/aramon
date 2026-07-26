@@ -150,6 +150,35 @@ function skinnedPlayerDataUrl(skinId){
   _skinDataUrlCache[key]=url;
   return url;
 }
+// DOM用: skinId の歩行8コマを dataURL 配列で返す(キャッシュ)。view: 'front'|'back'
+// スキンプレビューで歩行モーションを再生するために使う。歩行コマが未用意/未ロードなら null
+// (呼び出し側は従来の静止画にフォールバックする)。
+function skinWalkFrameDataUrls(skinId, view){
+  if(!skinId || typeof WALK_ANIM==='undefined') return null;
+  const m = (typeof skinMeta==='function') ? skinMeta(skinId) : null;
+  if(!m) return null;
+  const reg = WALK_ANIM[m.element];
+  if(!reg) return null;
+  const useSsr = !!(reg.ssr && reg.ssr.skinId===skinId);
+  if(m.kind==='ssr' && !useSsr) return null; // 歩行コマ未提供のSSRスキンは静止画のまま
+  const set = useSsr ? reg.ssr : reg.base;
+  const frames = (view==='back') ? (set && set.back) : (set && set.front);
+  if(!frames || !_framesReady(frames)) return null;
+  const key = `W:${skinId}:${view}`;
+  if(_skinDataUrlCache[key]) return _skinDataUrlCache[key];
+  const urls = frames.map(img=>{
+    // SSR専用コマは再着色しない。色スキンは各コマを装備色に再着色する。
+    let src = img;
+    if(!useSsr && m.kind==='color' && typeof recolorToCanvas==='function'){
+      src = recolorToCanvas(img, m.element, m.colorId, 0) || img;
+    }
+    if(src instanceof HTMLCanvasElement) return src.toDataURL('image/png');
+    const c=document.createElement('canvas'); c.width=_imgW(src); c.height=_imgH(src);
+    c.getContext('2d').drawImage(src,0,0); return c.toDataURL('image/png');
+  });
+  _skinDataUrlCache[key]=urls;
+  return urls;
+}
 // エンティティに装備中スキンがあればその表示画像を返す。
 // ・自分(操作キャラ)は後ろ姿(player)、それ以外(相手/マスモンbot)は正面(icon)を使う
 //   (通常描画も自分だけ_player画像・他は正面画像を使うのに合わせる)

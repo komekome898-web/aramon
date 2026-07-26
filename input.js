@@ -1,3 +1,10 @@
+// ===== 長押しでの選択・コンテキストメニューを全画面で抑止 =====
+// CSS(user-select:none / -webkit-touch-callout:none)と合わせて二重に止める。
+// 入力欄(名前・パスコード)は文字を選択・編集できるよう除外する。
+function isTextEntry(el){ return !!(el && el.closest && el.closest('input, textarea')); }
+document.addEventListener('contextmenu', (e)=>{ if(!isTextEntry(e.target)) e.preventDefault(); });
+document.addEventListener('selectstart', (e)=>{ if(!isTextEntry(e.target)) e.preventDefault(); });
+
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
   if(e.target.closest('#startScreen') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
