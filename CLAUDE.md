@@ -64,17 +64,21 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **詳細ビューは一覧のカードDOMを`cloneNode`して左カラムに置く。** カルーセルがインラインで書いた`transform/filter/opacity/z-index`が付いてくるので、`#mlDetailCardSlot .ml-card`側で全部`!important`で打ち消している。**特に`z-index:1 !important`を外すと、カード(z:50)が上に乗って`≪ ≫`ボタン(z:12)が見えなくなる。**
 - 詳細のカードは**絵が余りを埋める / 本文は必要な高さだけ**のフレックス配置にしてある(一覧と同じパーセント指定のままだと、カードが横長になったときに本文がはみ出して切れる)。
 - カードの`HP/速さ`は`.ml-card-fig-v`で大きく表示する(Russo One + オーラ色の発光)。**オーラのアイコンはカードにも詳細のチップにも出さない**(枠と上端のラインの色で表現する)。
+- カード上の`≪ ≫`(`.ml-card-nav`)は**背景・枠なしで記号だけ**。絵を隠さないため。視認性は`text-shadow`で確保する。
 
 ### モンスター選択(トップ画面の分岐 → モンスター一覧)
 - 導線は「トップ画面の`モンスター選択`(`.selector-card`が2枚: マスモン / モンスター一覧) → それぞれの画面」。分岐カードは`renderSelectorCards()`が中身を書き、CSSでアイコン左・テキスト右・右端`::after`の`›`という横並びにしている(縦積みだと日本語が折り返して崩れる)。
 - **この画面は「素のモンスター」を選ぶ画面なので、装備スキンを一切見ない。** カード画像は`defaultMonsterImgTag()`(`equippedIconImgTag()`ではない)、オーラは`mlAuraOf()`が`MONSTER_AURA`を直に引く、技は`buildMastermonMovesHtml(key, {ignoreSkin:true})`。ignoreSkinは擬似エンティティを`{isPlayer:false, skinId:null}`にすることで`entitySkinId()`をnullにし、`getMoveAura`/`skinTier3Move`/`getMoveName`/`ssrTier3DmgMult`をまとめて既定値にしている(1か所で効く)。
-- 詳細の右カラムは**上段2列(`.ml-info-cols`: STATUS / 特性+状態変化) + 下に技を全幅**。STATUSは`buildMastermonStatsColHtml({stats: mastermonInitialStats(key)}, APTITUDE[key])`の流用で「初期値+適正バッジ」を出す。流用元は`flex:0 0 150px`の固定幅なので、`#mlDetailRight .mastermon-detail-statscol`で解除している。
+- 詳細の右カラムは**上段2列(`.ml-info-cols`: STATUS / 特性+状態変化) + 下に技を全幅**。STATUSは共用の`caroStatusSecHtml()`で出す(初期値+適正バッジ)。
+- **ヘッダー(`.ml-info-head`)はスクロールさせない。** 中身は`.ml-info-scroll`に入れ、`#mlDetailRight`は`overflow:hidden`のフレックス縦置きにする。右上の×と重ならないようヘッダーに`padding-right:46px`を入れている。
 
 ### マスモン選択(カルーセル + 詳細)
 - カードは`mmCardInnerHtml()`。**マスモンは「着せ替え済みの姿」なので、こちらは装備スキンを反映する**(画像=`equippedIconImgTag`、アクセント色=`getMonsterAura`)。モンスター一覧と逆なので混同しないこと。
 - カードにはLvバッジ・育成後の実効HP/速さ(`mmEffectiveStats`)・EXPバー・チケット数を出す。**EXP行があるぶん本文が長いので、`.ml-card-art-mm`/`.ml-card-body-mm`で絵の比率を50%に下げている**(下げないと本文が枠外に出て切れる)。
-- 詳細の左カラムは「カード → このマスモンで参戦 → 2列3行のタブボタン(詳細情報/技一覧/トレーニング/着せ替え/編集/一覧へ)」。**縦が低い画面でも絵が潰れないように`#mmDetailCardSlot{min-height:calc(34 * var(--vh))}`を入れ、ボタン側は1行に収まるサイズに詰めてある。**
-- 右カラムは既存の`#mastermonDetailPanel`をそのまま使い、`renderMastermonDetail(key)`が中身を描く。**`mastermonDetailTab`のnull(旧メニュー画面)は廃止し、既定は`'info'`。** タブ切替は左カラムのボタンが担当し、`mmSyncTabButtons()`が選択状態を同期する。着せ替えタブだけステータス列を出さないのは従来通り。
+- 詳細の左カラムは「カード → このマスモンで参戦 → 編集 / 一覧へ」の3ボタンだけ。**残りの縦幅は全部カードに使う**(`#mmDetailCardSlot{min-height:calc(40 * var(--vh))}`)。
+- 右カラムは`#mastermonDetailPanel`で、`renderMastermonDetail(key)`が「全幅ヘッダー(名前+Lv+タブ名+戻る) → STATUS + 内容」を描く。**ヘッダーはステータスの上まで全幅**(モンスター一覧と同じ位置)。
+- **`mastermonDetailTab`がnullのときが初期画面**で、STATUSの右に`詳細情報 / トレーニング / 着せ替え`の3ボタン(`buildMastermonMenuHtml`)を出す。タブを開くと右上に`← 戻る`が出てnullへ戻る。**技一覧タブは廃止し、内容は詳細情報(`buildMastermonInfoHtml`)に統合した。** 着せ替えタブだけステータス列を出さないのは従来通り。
+- STATUSはモンスター一覧と共用の`caroStatusSecHtml()`。**バーの下に6ステータスの短縮説明を3つ×2行で置く(`STAT_SHORT_DESC`)。** `MASTERMON_STATS`の`desc`は長すぎて折り返すので、この画面用の短い文を別に持っている。
 - `renderMastermonList()`は名前を残したまま中身が「カルーセルのカードを作り直す」に変わっている(改名・トレーニング・着せ替えの後から呼ばれるため)。**登録数が変わったときは`build()`、値だけ変わったときは`refreshCards()`。**
 
 ### 安全圏(zoneState)
