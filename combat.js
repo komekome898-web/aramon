@@ -395,6 +395,9 @@ function killEntity(victim, killer){
         kind:'kill', text:kfText, killerId:killer.id, victimId:victim.id,
         expBonus, ts:Date.now(),
       });
+      // 撃破EXPボーナスはフル配信でしか載らない「コールド」フィールドなので、
+      // 次の配信をフルにして最短でゲストへ届ける
+      if(expBonus > 0) hostForceFullNext = true;
     }
     if(killer.isPlayer){
       playSe('kill'); // ザシュッ(切り裂き音)

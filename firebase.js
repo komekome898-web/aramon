@@ -143,14 +143,21 @@
     roomListeners = [];
   }
 
+  // 部屋のプレイヤー情報に載せるマスモン情報(レベル+育成ステータス)。
+  // mmLevel は旧クライアント互換のために残す(新クライアントは mm.level を見る)。
+  function mmEntryFields(mmInfo){
+    const lv = (mmInfo && mmInfo.level) || null;
+    return { mmLevel: lv, mm: (mmInfo && mmInfo.stats) ? { level: lv||1, stats: mmInfo.stats } : null };
+  }
+
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
   // 部屋を新規作成してホストになる
-  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmLevel, skinId){
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId){
     const roomId = genId();
     const roomRef = ref(fbDb, `rooms/${roomId}`);
     await set(roomRef, {
       meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now(), hostName: playerName },
-      players: { [myPlayerId]: { name: playerName, element: elementKey, mmLevel: mmLevel||null, skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
+      players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
     });
     const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now(), hostName: playerName });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
@@ -182,7 +189,7 @@
   };
 
   // 指定した部屋に参加する(部屋を探す画面で選んだ場合)
-  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmLevel, skinId){
+  window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmInfo, skinId){
     try{
       const roomPlayersRef = ref(fbDb, `rooms/${roomId}/players`);
       const lobbyCountRef = ref(fbDb, `lobby/${lobbyKey}/count`);
@@ -198,7 +205,7 @@
       if(!txResult.committed) return { ok:false, reason:'この部屋は満員です' };
 
       await set(child(roomPlayersRef, myPlayerId), {
-        name: playerName, element: elementKey, mmLevel: mmLevel||null, skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
+        name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
@@ -210,7 +217,7 @@
   };
 
   // 旧方式(自動マッチング)は互換のため残置
-  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, skinId){
+  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId){
     const lobbyRef = ref(fbDb, 'lobby');
     const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
     let joinedRoomId = null;
@@ -237,7 +244,7 @@
         });
         if(txResult.committed){
           await set(child(roomPlayersRef, myPlayerId), {
-            name: playerName, element: elementKey, skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
+            name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
           });
           onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
           joinedRoomId = cand.roomId;
@@ -251,7 +258,7 @@
       const roomRef = ref(fbDb, `rooms/${roomId}`);
       await set(roomRef, {
         meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now() },
-        players: { [myPlayerId]: { name: playerName, element: elementKey, skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
+        players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
       });
       const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now() });
       onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
