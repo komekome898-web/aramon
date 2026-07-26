@@ -523,8 +523,9 @@ document.addEventListener('click', (e)=>{
   if(!e.target || !e.target.closest) return;
   // 管理者の音声確認タブでは、確認したいSE/BGMに共通タップ音が被らないよう「ポン」を鳴らさない
   if(e.target.closest('#adminSePane')) return;
-  // モンスター選択の送りボタンは専用のカード送りSEを鳴らすので、共通タップ音は重ねない
-  if(e.target.closest('.ml-nav')) return;
+  // モンスター選択/マスモン選択の送りボタン(下段の‹›と、カード上の≪≫)は専用の
+  // カード送りSEを鳴らすので、共通タップ音は重ねない
+  if(e.target.closest('.ml-nav') || e.target.closest('.ml-card-nav')) return;
   if(e.target.closest('button')) playSe('tap');
 }, true);
 

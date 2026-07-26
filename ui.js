@@ -104,266 +104,281 @@ function renderSelectorCards(){
 }
 
 /* =====================================================================
-   モンスター一覧(カルーセル選択画面)
-   ・15体のカードを弧状に並べ、中央だけ1.2倍に拡大・両隣以降は暗く小さく表示する
-   ・左右スワイプ(ドラッグ)で滑らかに送り、離すと最寄りのカードへ吸着する
-   ・両端は繋がっていて無限にスワイプできる(位置は「環状の最短距離」で計算する)
-   ・カードをタップすると詳細ビューへ。カードは一覧の位置から左へ飛んで拡大する(FLIP)
+   カードカルーセルの共通エンジン(モンスター選択 / マスモン選択で共用)
+   ・弧状に並べたカードを左右スワイプで送る。中央だけ拡大・他は暗くする
+   ・両端が繋がって無限にスワイプできる(位置は「環状の最短距離」で計算する)
+   ・位置は全部JSがtransformで書く。CSS側にtransitionを付けてはいけない(追従が鈍る)
+   画面固有の「カードの中身」「タップしたときの動き」だけを cfg で渡す。
    ===================================================================== */
-const ML_KEYS = Object.keys(ELEMENTS);
-const ML_VISIBLE_SIDE = 2;        // 中央の左右に何枚見せるか(中央+左右2枚=計5枚)
-const ML_CENTER_SCALE = 1.2;      // 中央カードの拡大率(他は1.0)
-const ML_SIDE_BRIGHTNESS = 0.55;  // 隣のカードの明るさ(中央=1.0)
-const ML_SNAP_RATE = 0.22;        // 吸着アニメの追従率(1フレームあたり)
-const ML_FLICK_THRESHOLD = 0.45;  // これ以上の速さで離したら次のカードまで送る(枚/秒相当)
+const CARO_VISIBLE_SIDE = 2;        // 中央の左右に何枚見せるか(中央+左右2枚=計5枚)
+const CARO_CENTER_SCALE = 1.2;      // 中央カードの拡大率(他は1.0)
+const CARO_SIDE_BRIGHTNESS = 0.55;  // 隣のカードの明るさ(中央=1.0)
+const CARO_SNAP_RATE = 0.22;        // 吸着アニメの追従率(1フレームあたり)
+const CARO_FLICK_THRESHOLD = 0.45;  // これ以上の速さで離したら1枚送る(枚/秒相当)
 
-const mlState = {
-  pos: 0,          // 現在の表示位置(小数。整数のときちょうどそのカードが中央)
-  target: 0,       // 吸着先(整数)
-  raf: null,
-  dragging: false,
-  pointerId: null,
-  dragStartX: 0,
-  dragStartY: 0,
-  dragStartPos: 0,
-  dragMoved: 0,
-  lastX: 0,
-  lastT: 0,
-  velocity: 0,     // px/ms
-  suppressClick: false, // ドラッグ直後のclickを1回だけ無視するためのフラグ
-  lastCenterIdx: null,  // 中央のカードが変わった瞬間だけSEを鳴らすための直前値
-  built: false,
-  cards: [],       // DOM要素(ML_KEYSと同じ順)
-  detailKey: null,
-};
-
-// カードの見た目用に、全モンスターの中でのHP・速さの相対値(0〜1)を出す
-let mlStatRange = null;
-function mlGetStatRange(){
-  if(mlStatRange) return mlStatRange;
-  const hps = ML_KEYS.map(k=>ELEMENTS[k].hp);
-  const sps = ML_KEYS.map(k=>mlSpeedOf(k));
-  mlStatRange = { hpMin:Math.min(...hps), hpMax:Math.max(...hps), spMin:Math.min(...sps), spMax:Math.max(...sps) };
-  return mlStatRange;
-}
-function mlSpeedOf(key){ const el = ELEMENTS[key]; return Math.round(el.speed * (el.speedMod||1)); }
-function mlRatio(v, min, max){ return max>min ? (v-min)/(max-min) : 1; }
-// 環状の最短距離(-n/2 〜 n/2)。これで先頭と末尾が繋がる
-function mlRingDelta(i, pos){
-  const n = ML_KEYS.length;
-  let d = (i - pos) % n;
-  if(d > n/2) d -= n;
-  if(d < -n/2) d += n;
-  return d;
-}
-// この画面は「素のモンスター」を選ぶ画面なので、オーラも装備スキンを見ないデフォルト値を使う
-function mlAuraOf(key){ return MONSTER_AURA[key] || null; }
-function mlAccentOf(key){
-  const aura = mlAuraOf(key);
-  return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
-}
-
-function mlCardInnerHtml(key){
-  const el = ELEMENTS[key];
-  const r = mlGetStatRange();
-  const sp = mlSpeedOf(key);
-  const aura = mlAuraOf(key);
-  const auraIcon = (aura && typeof AURA_EMOJI!=='undefined') ? AURA_EMOJI[aura] : '';
-  const picked = (game.selectedElement===key && !game.selectedMastermonKey) ? '<div class="ml-card-picked">選択中</div>' : '';
-  return `
-    ${picked}
-    <div class="ml-card-aura" title="オーラ">${auraIcon}</div>
-    <div class="ml-card-art">${defaultMonsterImgTag(key, el.label)}</div>
-    <div class="ml-card-shine"></div>
-    <div class="ml-card-body">
-      <div class="ml-card-name">${el.label}</div>
-      <div class="ml-card-bars">
-        <div class="ml-card-bar">
-          <span class="ml-card-bar-label">HP</span>
-          <span class="ml-card-bar-track"><span class="ml-card-bar-fill" style="width:${Math.round(mlRatio(el.hp,r.hpMin,r.hpMax)*100)}%;background:linear-gradient(90deg,#4fd97a,#8dffb0)"></span></span>
-          <span class="ml-card-bar-val">${el.hp}</span>
-        </div>
-        <div class="ml-card-bar">
-          <span class="ml-card-bar-label">SPD</span>
-          <span class="ml-card-bar-track"><span class="ml-card-bar-fill" style="width:${Math.round(mlRatio(sp,r.spMin,r.spMax)*100)}%;background:linear-gradient(90deg,#3d9dff,#8fd0ff)"></span></span>
-          <span class="ml-card-bar-val">${sp}</span>
-        </div>
-      </div>
-    </div>`;
-}
-
-function buildMonsterCarousel(){
-  const track = document.getElementById('mlTrack');
-  const dots = document.getElementById('mlDots');
-  track.innerHTML = '';
-  dots.innerHTML = '';
-  mlState.cards = ML_KEYS.map((key, i)=>{
-    const el = ELEMENTS[key];
-    const card = document.createElement('div');
-    card.className = 'ml-card';
-    card.dataset.key = key;
-    card.dataset.index = String(i);
-    card.style.setProperty('--ml-accent', mlAccentOf(key));
-    card.style.setProperty('--ml-art-a', el.color);
-    card.style.setProperty('--ml-art-b', el.dark);
-    card.innerHTML = mlCardInnerHtml(key);
-    track.appendChild(card);
-    const dot = document.createElement('div');
-    dot.className = 'ml-dot';
-    dots.appendChild(dot);
-    return card;
-  });
-  document.getElementById('mlCounterAll').textContent = String(ML_KEYS.length);
-  mlState.built = true;
-  renderMonsterCarousel();
-}
-// 旧関数名(トップ画面の初期化から呼ばれる)を残しておく
-function buildMonsterListScreenGrid(){ buildMonsterCarousel(); }
-
-function renderMonsterCarousel(){
-  if(!mlState.built) return;
-  const stage = document.getElementById('mlStage');
-  const step = parseFloat(getComputedStyle(stage).getPropertyValue('--ml-step')) || 106;
-  const n = ML_KEYS.length;
-  const centerIdx = ((Math.round(mlState.pos) % n) + n) % n;
-  mlState.cards.forEach((card, i)=>{
-    const d = mlRingDelta(i, mlState.pos);
-    const ad = Math.abs(d);
-    if(ad > ML_VISIBLE_SIDE + 0.75){
-      card.style.opacity = '0';
-      card.style.pointerEvents = 'none';
-      card.style.transform = 'translate3d(0,0,-600px)';
-      card.classList.remove('is-center');
-      return;
+// cfg: { stage, track, dots, counterNow, counterAll, glow, prevBtn, nextBtn,
+//        keys:()=>[...], cardHtml:(key)=>html, accent:(key)=>'#rrggbb',
+//        art:(key)=>{a,b}, onPick:(key, cardEl)=>void }
+function createCardCarousel(cfg){
+  const st = {
+    pos: 0, target: 0, raf: null,
+    dragging: false, pointerId: null,
+    dragStartX: 0, dragStartY: 0, dragStartPos: 0, dragMoved: 0,
+    lastX: 0, lastT: 0, velocity: 0,
+    suppressClick: false,   // ドラッグ直後のclickを1回だけ無視する
+    lastCenterIdx: null,    // 中央が変わった瞬間だけSEを鳴らすための直前値
+    built: false, cards: [], keys: [],
+  };
+  const el = id => document.getElementById(id);
+  const stageEl = () => el(cfg.stage);
+  // カード間隔はCSSの --ml-step が正。ただし getComputedStyle は未登録のカスタム
+  // プロパティを「calc(...)」の文字列で返すので数値にできない。そこで幅が --ml-step の
+  // 見えない要素(プローブ)を1つ置き、その offsetWidth で解決後のpxを読む。
+  // (JS側に数字を書かないため。@property は古いiOSで使えないので採用しない)
+  let stepProbe = null;
+  function stepPx(){
+    if(!stepProbe){
+      stepProbe = document.createElement('div');
+      stepProbe.className = 'caro-step-probe';
+      stageEl().appendChild(stepProbe);
     }
-    const near = Math.max(0, 1 - ad);                       // 中央でだけ1、隣で0
-    const scale = 1 + (ML_CENTER_SCALE - 1) * near;
-    const bright = 1 - (1 - ML_SIDE_BRIGHTNESS) * Math.min(1, ad);
-    const x = d * step;
-    const z = -Math.min(ad, ML_VISIBLE_SIDE) * 60;          // 奥に引いて弧に見せる
-    const rotY = -d * 13;
-    // 一番外側は少しだけ薄くして、見切れが自然に見えるようにする
-    const fade = ad > ML_VISIBLE_SIDE ? Math.max(0, 1 - (ad - ML_VISIBLE_SIDE) / 0.75) : 1;
-    card.style.opacity = String(fade);
-    card.style.pointerEvents = fade > 0.35 ? 'auto' : 'none';
-    card.style.zIndex = String(50 - Math.round(ad * 10));
-    card.style.transform = `translate3d(${x}px,0,${z}px) rotateY(${rotY}deg) scale(${scale})`;
-    card.style.filter = `brightness(${bright}) saturate(${0.7 + 0.3 * near})`;
-    card.classList.toggle('is-center', i === centerIdx);
-  });
-  // 中央のカードが切り替わった瞬間に「シュッ」を鳴らす。ドラッグ・送りボタン・隣カードのタップの
-  // どの経路でもここを通るので、鳴らす場所はこの1か所に集約している
-  if(mlState.lastCenterIdx !== centerIdx){
-    if(mlState.lastCenterIdx != null && typeof playSe==='function') playSe('cardSwipe');
-    mlState.lastCenterIdx = centerIdx;
+    return stepProbe.offsetWidth || 118;
   }
-  const glow = document.getElementById('mlGlow');
-  const accent = mlAccentOf(ML_KEYS[centerIdx]);
-  glow.style.setProperty('--ml-glow', mlHexToRgba(accent, 0.5));
-  document.getElementById('mlCounterNow').textContent = String(centerIdx + 1);
-  const dotEls = document.getElementById('mlDots').children;
-  for(let i=0;i<dotEls.length;i++) dotEls[i].classList.toggle('active', i === centerIdx);
+
+  // 環状の最短距離(-n/2 〜 n/2)。これで先頭と末尾が繋がる
+  function ringDelta(i, pos){
+    const n = st.keys.length;
+    if(!n) return 0;
+    let d = (i - pos) % n;
+    if(d > n/2) d -= n;
+    if(d < -n/2) d += n;
+    return d;
+  }
+  function centerIndex(){
+    const n = st.keys.length;
+    return n ? ((Math.round(st.pos) % n) + n) % n : 0;
+  }
+  function centerKey(){ return st.keys[centerIndex()]; }
+
+  function build(){
+    const track = el(cfg.track), dots = el(cfg.dots);
+    st.keys = cfg.keys() || [];
+    track.innerHTML = '';
+    dots.innerHTML = '';
+    st.cards = st.keys.map((key, i)=>{
+      const card = document.createElement('div');
+      card.className = 'ml-card';
+      card.dataset.key = key;
+      card.dataset.index = String(i);
+      card.style.setProperty('--ml-accent', cfg.accent(key));
+      const art = cfg.art(key);
+      card.style.setProperty('--ml-art-a', art.a);
+      card.style.setProperty('--ml-art-b', art.b);
+      card.innerHTML = cfg.cardHtml(key);
+      track.appendChild(card);
+      const dot = document.createElement('div');
+      dot.className = 'ml-dot';
+      dots.appendChild(dot);
+      return card;
+    });
+    if(cfg.counterAll) el(cfg.counterAll).textContent = String(st.keys.length);
+    // 1枚しかないときは送りボタン・ドットを出さない
+    const single = st.keys.length <= 1;
+    [cfg.prevBtn, cfg.nextBtn].forEach(id=>{ if(id && el(id)) el(id).classList.toggle('hidden', single); });
+    dots.classList.toggle('hidden', single);
+    st.built = true;
+    render();
+  }
+  // カードの中身だけ作り直す(選択中バッジ・レベル等が変わったとき)
+  function refreshCards(){
+    st.keys.forEach((key,i)=>{ if(st.cards[i]) st.cards[i].innerHTML = cfg.cardHtml(key); });
+  }
+
+  function render(){
+    if(!st.built) return;
+    const step = stepPx();
+    const centerIdx = centerIndex();
+    st.cards.forEach((card, i)=>{
+      const d = ringDelta(i, st.pos);
+      const ad = Math.abs(d);
+      if(ad > CARO_VISIBLE_SIDE + 0.75){
+        card.style.opacity = '0';
+        card.style.pointerEvents = 'none';
+        card.style.transform = 'translate3d(0,0,-600px)';
+        card.classList.remove('is-center');
+        return;
+      }
+      const near = Math.max(0, 1 - ad);                    // 中央でだけ1、隣で0
+      const scale = 1 + (CARO_CENTER_SCALE - 1) * near;
+      const bright = 1 - (1 - CARO_SIDE_BRIGHTNESS) * Math.min(1, ad);
+      const z = -Math.min(ad, CARO_VISIBLE_SIDE) * 60;     // 奥に引いて弧に見せる
+      // 一番外側は少しだけ薄くして、見切れが自然に見えるようにする
+      const fade = ad > CARO_VISIBLE_SIDE ? Math.max(0, 1 - (ad - CARO_VISIBLE_SIDE) / 0.75) : 1;
+      card.style.opacity = String(fade);
+      card.style.pointerEvents = fade > 0.35 ? 'auto' : 'none';
+      card.style.zIndex = String(50 - Math.round(ad * 10));
+      card.style.transform = `translate3d(${d * step}px,0,${z}px) rotateY(${-d * 13}deg) scale(${scale})`;
+      card.style.filter = `brightness(${bright}) saturate(${0.7 + 0.3 * near})`;
+      card.classList.toggle('is-center', i === centerIdx);
+    });
+    if(cfg.glow && el(cfg.glow) && st.keys.length){
+      el(cfg.glow).style.setProperty('--ml-glow', caroHexToRgba(cfg.accent(st.keys[centerIdx]), 0.5));
+    }
+    if(cfg.counterNow) el(cfg.counterNow).textContent = String(centerIdx + 1);
+    const dotEls = el(cfg.dots).children;
+    for(let i=0;i<dotEls.length;i++) dotEls[i].classList.toggle('active', i === centerIdx);
+    // 中央のカードが切り替わった瞬間に「シュッ」を鳴らす。ドラッグ・送りボタン・隣カードの
+    // タップ・詳細の≪≫ のどの経路でもここを通るので、鳴らす場所はこの1か所に集約している
+    if(st.lastCenterIdx !== centerIdx){
+      if(st.lastCenterIdx != null && typeof playSe==='function') playSe('cardSwipe');
+      st.lastCenterIdx = centerIdx;
+    }
+  }
+
+  // 吸着アニメ: target へ滑らかに寄せる。十分近づいたら整数にスナップして停止する
+  function startAnim(){
+    if(st.raf) return;
+    const tick = ()=>{
+      st.raf = null;
+      if(st.dragging){ render(); return; }
+      const diff = st.target - st.pos;
+      if(Math.abs(diff) < 0.004){ st.pos = st.target; render(); return; }
+      st.pos += diff * CARO_SNAP_RATE;
+      render();
+      st.raf = requestAnimationFrame(tick);
+    };
+    st.raf = requestAnimationFrame(tick);
+  }
+  function goTo(target){ st.target = target; startAnim(); }
+  // 隣のカードへ即座に送る(詳細画面の≪≫用。アニメを待たず位置を確定させる)
+  function jump(dir){
+    const n = st.keys.length;
+    if(n <= 1) return centerKey();
+    const next = Math.round(st.pos) + dir;
+    st.pos = next; st.target = next;
+    render();
+    return centerKey();
+  }
+  function stopAnim(){ if(st.raf){ cancelAnimationFrame(st.raf); st.raf = null; } st.dragging = false; }
+  // 指定キーを中央にしてSEを鳴らさずに開く
+  function reset(key){
+    const idx = Math.max(0, st.keys.indexOf(key));
+    st.pos = idx; st.target = idx; st.lastCenterIdx = null;
+    render();
+  }
+
+  function onDown(e){
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    st.dragging = true; st.pointerId = e.pointerId;
+    st.dragStartX = e.clientX; st.dragStartY = e.clientY;
+    st.dragStartPos = st.pos; st.dragMoved = 0;
+    st.lastX = 0; st.lastT = performance.now(); st.velocity = 0;
+    try{ stageEl().setPointerCapture(e.pointerId); }catch(_){}
+  }
+  function onMove(e){
+    if(!st.dragging || e.pointerId !== st.pointerId) return;
+    // 強制横向き(端末が縦画面ロック)のときはUI全体がCSSで回転しているので、
+    // 実画面の移動量を toLogicalDelta で回転補正してから横方向として使う
+    const d = (typeof toLogicalDelta==='function')
+      ? toLogicalDelta(e.clientX - st.dragStartX, e.clientY - st.dragStartY)
+      : { x: e.clientX - st.dragStartX };
+    st.dragMoved = Math.max(st.dragMoved, Math.abs(d.x));
+    st.pos = st.dragStartPos - d.x / stepPx();
+    const now = performance.now(), dt = now - st.lastT;
+    if(dt > 0){ st.velocity = (d.x - st.lastX) / dt; st.lastX = d.x; st.lastT = now; }
+    render();
+  }
+  function onUp(e){
+    if(!st.dragging || (e && e.pointerId !== st.pointerId)) return;
+    st.dragging = false; st.pointerId = null;
+    // ドラッグして離した直後は click も飛んでくるので、その1回だけ無視する
+    st.suppressClick = st.dragMoved > 8;
+    // 基本は最寄りへ吸着。少しだけ払って離したときだけフリック扱いで1枚送る
+    // (既にドラッグで1枚以上動いている場合は上乗せしない=1回のスワイプで2枚飛ばない)
+    const flick = -st.velocity * 1000 / stepPx();
+    let target = Math.round(st.pos);
+    if(Math.abs(flick) > CARO_FLICK_THRESHOLD && target === Math.round(st.dragStartPos)){
+      target += (flick > 0 ? 1 : -1);
+    }
+    goTo(target);
+  }
+  function onClick(e){
+    if(st.suppressClick){ st.suppressClick = false; return; }
+    const card = e.target.closest('.ml-card');
+    if(!card) return;
+    const i = parseInt(card.dataset.index, 10);
+    if(i === centerIndex()) cfg.onPick(st.keys[i], card);
+    else goTo(st.pos + ringDelta(i, st.pos));
+  }
+
+  const stage = stageEl();
+  stage.addEventListener('pointerdown', onDown);
+  stage.addEventListener('pointermove', onMove);
+  stage.addEventListener('pointerup', onUp);
+  stage.addEventListener('pointercancel', onUp);
+  stage.addEventListener('click', onClick);
+  if(cfg.prevBtn) el(cfg.prevBtn).addEventListener('click', (e)=>{ e.stopPropagation(); goTo(Math.round(st.pos) - 1); });
+  if(cfg.nextBtn) el(cfg.nextBtn).addEventListener('click', (e)=>{ e.stopPropagation(); goTo(Math.round(st.pos) + 1); });
+
+  return { st, build, refreshCards, render, goTo, jump, stopAnim, reset, centerIndex, centerKey, ringDelta };
 }
-function mlHexToRgba(hex, a){
+function caroHexToRgba(hex, a){
   const m = /^#?([0-9a-f]{6})$/i.exec(hex||'');
   if(!m) return `rgba(244,196,48,${a})`;
   const v = parseInt(m[1],16);
   return `rgba(${(v>>16)&255},${(v>>8)&255},${v&255},${a})`;
 }
 
-// 吸着アニメ: target へ滑らかに寄せる。十分近づいたら整数にスナップして停止する
-function mlStartAnim(){
-  if(mlState.raf) return;
-  const tick = ()=>{
-    mlState.raf = null;
-    if(mlState.dragging){ renderMonsterCarousel(); return; }
-    const diff = mlState.target - mlState.pos;
-    if(Math.abs(diff) < 0.004){
-      mlState.pos = mlState.target;
-      renderMonsterCarousel();
-      return;
-    }
-    mlState.pos += diff * ML_SNAP_RATE;
-    renderMonsterCarousel();
-    mlState.raf = requestAnimationFrame(tick);
-  };
-  mlState.raf = requestAnimationFrame(tick);
+/* =====================================================================
+   モンスター選択(モンスター一覧カルーセル)
+   この画面は「素のモンスター」を選ぶ画面なので、装備スキンを一切見ない。
+   ===================================================================== */
+const ML_KEYS = Object.keys(ELEMENTS);
+let mlDetailKey = null;
+
+function mlSpeedOf(key){ const el = ELEMENTS[key]; return Math.round(el.speed * (el.speedMod||1)); }
+// オーラも装備スキンを見ないデフォルト値を使う
+function mlAuraOf(key){ return MONSTER_AURA[key] || null; }
+function mlAccentOf(key){
+  const aura = mlAuraOf(key);
+  return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
 }
-function mlGoTo(target){
-  mlState.target = target;
-  mlStartAnim();   // SEは renderMonsterCarousel() が中央の切り替わりを見て鳴らす
+// カード下部の数値(HP・速さ)。大きく見せたいので専用クラスで組む
+function caroFigsHtml(rows){
+  return `<div class="ml-card-figs">${rows.map(r=>`
+    <div class="ml-card-fig"><span class="ml-card-fig-k">${r.k}</span><span class="ml-card-fig-v">${r.v}</span></div>`).join('')}</div>`;
 }
-// 表示中の中央インデックス(0〜n-1)
-function mlCenterIndex(){
-  const n = ML_KEYS.length;
-  return ((Math.round(mlState.pos) % n) + n) % n;
+function mlCardInnerHtml(key){
+  const el = ELEMENTS[key];
+  const picked = (game.selectedElement===key && !game.selectedMastermonKey) ? '<div class="ml-card-picked">選択中</div>' : '';
+  return `
+    ${picked}
+    <div class="ml-card-art">${defaultMonsterImgTag(key, el.label)}</div>
+    <div class="ml-card-shine"></div>
+    <div class="ml-card-body">
+      <div class="ml-card-name">${el.label}</div>
+      ${caroFigsHtml([{k:'HP', v:el.hp}, {k:'速さ', v:mlSpeedOf(key)}])}
+    </div>`;
 }
 
-function mlOnPointerDown(e){
-  if(e.pointerType === 'mouse' && e.button !== 0) return;
-  mlState.dragging = true;
-  mlState.pointerId = e.pointerId;
-  mlState.dragStartX = e.clientX;
-  mlState.dragStartY = e.clientY;
-  mlState.dragStartPos = mlState.pos;
-  mlState.dragMoved = 0;
-  mlState.lastX = 0;
-  mlState.lastT = performance.now();
-  mlState.velocity = 0;
-  try{ document.getElementById('mlStage').setPointerCapture(e.pointerId); }catch(_){}
-}
-function mlOnPointerMove(e){
-  if(!mlState.dragging || e.pointerId !== mlState.pointerId) return;
-  const stage = document.getElementById('mlStage');
-  const step = parseFloat(getComputedStyle(stage).getPropertyValue('--ml-step')) || 106;
-  // 強制横向き(端末が縦画面ロック)のときはUI全体がCSSで回転しているので、
-  // 実画面の移動量を toLogicalDelta で回転補正してから横方向として使う
-  const d = (typeof toLogicalDelta==='function')
-    ? toLogicalDelta(e.clientX - mlState.dragStartX, e.clientY - mlState.dragStartY)
-    : { x: e.clientX - mlState.dragStartX };
-  const dx = d.x;
-  mlState.dragMoved = Math.max(mlState.dragMoved, Math.abs(dx));
-  mlState.pos = mlState.dragStartPos - dx / step;
-  const now = performance.now();
-  const dt = now - mlState.lastT;
-  if(dt > 0){ mlState.velocity = (dx - mlState.lastX) / dt; mlState.lastX = dx; mlState.lastT = now; }
-  renderMonsterCarousel();
-}
-function mlOnPointerUp(e){
-  if(!mlState.dragging || (e && e.pointerId !== mlState.pointerId)) return;
-  mlState.dragging = false;
-  mlState.pointerId = null;
-  // ドラッグして離した直後は click も飛んでくるので、その1回だけ無視する。
-  // (dragMovedを見たままにすると次のタップまで無視され続けてしまう)
-  mlState.suppressClick = mlState.dragMoved > 8;
-  const stage = document.getElementById('mlStage');
-  const step = parseFloat(getComputedStyle(stage).getPropertyValue('--ml-step')) || 106;
-  // 基本は最寄りのカードへ吸着する。少しだけ払って離した(=半分も動かしていない)ときは
-  // フリック扱いで1枚送る。既にドラッグで1枚以上動いている場合は、そのぶんを尊重して
-  // さらに上乗せしない(1回のスワイプで2枚飛ぶのを防ぐ)
-  const flick = -mlState.velocity * 1000 / step;   // 枚/秒。正=前(右のカード)へ
-  let target = Math.round(mlState.pos);
-  if(Math.abs(flick) > ML_FLICK_THRESHOLD && target === Math.round(mlState.dragStartPos)){
-    target += (flick > 0 ? 1 : -1);
-  }
-  mlGoTo(target);
-}
-
-// カードのタップ: 中央のカードなら詳細へ、隣のカードならそのカードを中央へ送る
-function mlOnCardClick(e){
-  if(mlState.suppressClick){ mlState.suppressClick = false; return; } // ドラッグ後のクリックは無視する
-  const card = e.target.closest('.ml-card');
-  if(!card) return;
-  const i = parseInt(card.dataset.index, 10);
-  if(i === mlCenterIndex()) openMonsterDetail(ML_KEYS[i], card);
-  else mlGoTo(mlState.pos + mlRingDelta(i, mlState.pos));
-}
+const mlCarousel = createCardCarousel({
+  stage:'mlStage', track:'mlTrack', dots:'mlDots', glow:'mlGlow',
+  counterNow:'mlCounterNow', counterAll:'mlCounterAll',
+  prevBtn:'mlPrevBtn', nextBtn:'mlNextBtn',
+  keys: ()=>ML_KEYS,
+  cardHtml: mlCardInnerHtml,
+  accent: mlAccentOf,
+  art: (key)=>({ a: ELEMENTS[key].color, b: ELEMENTS[key].dark }),
+  onPick: (key, cardEl)=>openMonsterDetail(key, cardEl),
+});
+// 旧関数名(トップ画面の初期化から呼ばれる)を残しておく
+function buildMonsterListScreenGrid(){ mlCarousel.build(); }
 
 /* ---------------- 詳細ビュー ---------------- */
 function mlDetailInfoHtml(key){
   const el = ELEMENTS[key];
   const aura = mlAuraOf(key);
-  const auraName = (aura && typeof AURA_JP!=='undefined') ? `${AURA_EMOJI[aura]} ${AURA_JP[aura]}オーラ` : '';
+  const auraName = (aura && typeof AURA_JP!=='undefined') ? `${AURA_JP[aura]}オーラ` : '';
   // 属性が持つ常時モディファイア(被ダメ0.8倍など)を読める形で並べる
   const mods = [];
   if(el.dmgTakenMod) mods.push(`被ダメ ${el.dmgTakenMod}倍`);
@@ -376,14 +391,11 @@ function mlDetailInfoHtml(key){
   const bonus = moveBonusEffectText(key);
   // ステータスは「マスモンに登録したときの初期値+適正(A〜E)」。表示はマスモン画面と共通の
   // buildMastermonStatsColHtml を流用する(バー・適正バッジの見た目をそろえるため)
-  const apt = APTITUDE[key] || {};
-  const statsHtml = buildMastermonStatsColHtml({ stats: mastermonInitialStats(key) }, apt);
+  const statsHtml = buildMastermonStatsColHtml({ stats: mastermonInitialStats(key) }, APTITUDE[key] || {});
   return `
     <div class="ml-info-head">
       <span class="ml-info-name">${el.label}</span>
       ${auraName ? `<span class="ml-info-chip aura">${auraName}</span>` : ''}
-      <span class="ml-info-chip">HP ${el.hp}</span>
-      <span class="ml-info-chip">速さ ${mlSpeedOf(key)}</span>
       ${mods.map(m=>`<span class="ml-info-chip">${m}</span>`).join('')}
     </div>
     <div class="ml-info-cols">
@@ -413,113 +425,125 @@ function mlDetailInfoHtml(key){
     </div>`;
 }
 
-// 一覧のカードの見た目をそのまま詳細へ持ち込み、元の位置から左へ飛んで拡大させる(FLIP)
-function openMonsterDetail(key, srcCard){
-  mlState.detailKey = key;
+// カードの左右に置く「隣のモンスターへ」ボタン。カードのアイコン(絵)の両サイドに重ねる
+function caroDetailNavHtml(){
+  return `
+    <button class="ml-card-nav ml-card-nav-prev" aria-label="前へ">«</button>
+    <button class="ml-card-nav ml-card-nav-next" aria-label="次へ">»</button>`;
+}
+// 詳細ビューの中身(カード+情報)を描く。srcCardがあると一覧の位置から飛ぶ演出(FLIP)を付ける
+function renderMonsterDetail(key, srcCard){
+  mlDetailKey = key;
   const slot = document.getElementById('mlDetailCardSlot');
   const right = document.getElementById('mlDetailRight');
-  const clone = srcCard ? srcCard.cloneNode(true) : (()=>{
-    const c = document.createElement('div');
-    c.className = 'ml-card';
-    c.style.setProperty('--ml-accent', mlAccentOf(key));
-    c.style.setProperty('--ml-art-a', ELEMENTS[key].color);
-    c.style.setProperty('--ml-art-b', ELEMENTS[key].dark);
-    c.innerHTML = mlCardInnerHtml(key);
-    return c;
-  })();
+  let clone;
+  if(srcCard){
+    clone = srcCard.cloneNode(true);
+  } else {
+    clone = document.createElement('div');
+    clone.className = 'ml-card';
+    clone.dataset.key = key;
+    clone.style.setProperty('--ml-accent', mlAccentOf(key));
+    clone.style.setProperty('--ml-art-a', ELEMENTS[key].color);
+    clone.style.setProperty('--ml-art-b', ELEMENTS[key].dark);
+    clone.innerHTML = mlCardInnerHtml(key);
+  }
   clone.classList.add('is-center');
   slot.innerHTML = '';
   slot.appendChild(clone);
+  slot.insertAdjacentHTML('beforeend', caroDetailNavHtml());
+  slot.querySelector('.ml-card-nav-prev').addEventListener('click', (e)=>{ e.stopPropagation(); mlDetailStep(-1); });
+  slot.querySelector('.ml-card-nav-next').addEventListener('click', (e)=>{ e.stopPropagation(); mlDetailStep(1); });
   right.innerHTML = mlDetailInfoHtml(key);
   right.scrollTop = 0;
-
+  return clone;
+}
+// 詳細を開いたまま隣のモンスターへ移動する(カード送りSEはカルーセル側が鳴らす)
+function mlDetailStep(dir){
+  const key = mlCarousel.jump(dir);
+  if(!key) return;
+  const card = renderMonsterDetail(key, null);
+  card.classList.add(dir > 0 ? 'ml-slide-in-right' : 'ml-slide-in-left');
+}
+// 一覧のカードの見た目をそのまま詳細へ持ち込み、元の位置から左へ飛んで拡大させる(FLIP)
+function openMonsterDetail(key, srcCard){
   const srcRect = srcCard ? srcCard.getBoundingClientRect() : null;
+  const clone = renderMonsterDetail(key, srcCard);
+  const slot = document.getElementById('mlDetailCardSlot');
   document.getElementById('mlCarouselView').classList.add('hidden');
   document.getElementById('mlDetailView').classList.remove('hidden');
-  if(srcRect){
-    // 表示後の位置を測り、元の位置へ一旦戻してからtransitionで戻す(=飛んで拡大して見える)
-    const dstRect = clone.getBoundingClientRect();
-    // getBoundingClientRectは実画面基準なので、強制横向き時は幅と高さ・座標軸が入れ替わる。
-    // カードのローカル座標系(=論理座標系)に直してから差分を出す
-    const forced = (typeof isForcedLandscape==='function') && isForcedLandscape();
-    const srcW = forced ? srcRect.height : srcRect.width;
-    const srcH = forced ? srcRect.width  : srcRect.height;
-    const dstW = forced ? dstRect.height : dstRect.width;
-    const dstH = forced ? dstRect.width  : dstRect.height;
-    const sx = dstW ? srcW / dstW : 1;
-    const sy = dstH ? srcH / dstH : 1;
-    const toL = (typeof toLogicalPoint==='function') ? toLogicalPoint : ((x,y)=>({x,y}));
-    const sc = toL(srcRect.left + srcRect.width/2, srcRect.top + srcRect.height/2);
-    const dc = toL(dstRect.left + dstRect.width/2, dstRect.top + dstRect.height/2);
-    const dx = sc.x - dc.x;
-    const dy = sc.y - dc.y;
-    slot.classList.remove('ml-flip');
-    clone.style.setProperty('transform', `translate(${dx}px,${dy}px) scale(${sx},${sy})`, 'important');
-    requestAnimationFrame(()=>{
-      slot.classList.add('ml-flip');
-      clone.style.setProperty('transform', 'none', 'important');
-    });
-  }
+  if(srcRect) caroFlipCard(slot, clone, srcRect);
+}
+// 表示後の位置を測り、元の位置へ一旦戻してからtransitionで戻す(=飛んで拡大して見える)
+function caroFlipCard(slot, clone, srcRect){
+  const dstRect = clone.getBoundingClientRect();
+  // getBoundingClientRectは実画面基準なので、強制横向き時は幅と高さ・座標軸が入れ替わる。
+  // カードのローカル座標系(=論理座標系)に直してから差分を出す
+  const forced = (typeof isForcedLandscape==='function') && isForcedLandscape();
+  const srcW = forced ? srcRect.height : srcRect.width;
+  const srcH = forced ? srcRect.width  : srcRect.height;
+  const dstW = forced ? dstRect.height : dstRect.width;
+  const dstH = forced ? dstRect.width  : dstRect.height;
+  const sx = dstW ? srcW / dstW : 1;
+  const sy = dstH ? srcH / dstH : 1;
+  const toL = (typeof toLogicalPoint==='function') ? toLogicalPoint : ((x,y)=>({x,y}));
+  const sc = toL(srcRect.left + srcRect.width/2, srcRect.top + srcRect.height/2);
+  const dc = toL(dstRect.left + dstRect.width/2, dstRect.top + dstRect.height/2);
+  slot.classList.remove('ml-flip');
+  clone.style.setProperty('transform', `translate(${sc.x-dc.x}px,${sc.y-dc.y}px) scale(${sx},${sy})`, 'important');
+  requestAnimationFrame(()=>{
+    slot.classList.add('ml-flip');
+    clone.style.setProperty('transform', 'none', 'important');
+  });
 }
 function closeMonsterDetail(){
   document.getElementById('mlDetailView').classList.add('hidden');
   document.getElementById('mlCarouselView').classList.remove('hidden');
-  renderMonsterCarousel();
+  mlCarousel.render();
 }
 // 「このモンスターで参戦」= 選択を確定してトップ画面へ戻る
 function mlConfirmEntry(){
-  const key = mlState.detailKey;
+  const key = mlDetailKey;
   if(!key) return;
   game.selectedElement = key;
   game.selectedMastermonKey = null;
   updatePlayButtonsEnabled();
   closeMonsterListScreen();
   renderSelectorCards();
-  ML_KEYS.forEach((k,i)=>{ if(mlState.cards[i]) mlState.cards[i].innerHTML = mlCardInnerHtml(k); });
+  mlCarousel.refreshCards();
   if(typeof pushToast==='function') pushToast(`${ELEMENTS[key].label} で参戦します`);
 }
 
 function openMonsterListScreen(){
-  if(!mlState.built) buildMonsterCarousel();
+  if(!mlCarousel.st.built) mlCarousel.build();
+  else mlCarousel.refreshCards();
   // 選択中のモンスター(あれば)を中央にして開く
-  const cur = (game.selectedElement && !game.selectedMastermonKey) ? ML_KEYS.indexOf(game.selectedElement) : -1;
-  const start = cur >= 0 ? cur : 0;
-  mlState.pos = start; mlState.target = start;
-  mlState.lastCenterIdx = null;   // 開いた瞬間はSEを鳴らさない(次の切り替わりから鳴る)
-  ML_KEYS.forEach((k,i)=>{ if(mlState.cards[i]) mlState.cards[i].innerHTML = mlCardInnerHtml(k); });
+  const cur = (game.selectedElement && !game.selectedMastermonKey) ? game.selectedElement : ML_KEYS[0];
+  mlCarousel.reset(cur);
   document.getElementById('mlDetailView').classList.add('hidden');
   document.getElementById('mlCarouselView').classList.remove('hidden');
   document.getElementById('monsterListScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
-  renderMonsterCarousel();
 }
 function closeMonsterListScreen(){
-  if(mlState.raf){ cancelAnimationFrame(mlState.raf); mlState.raf = null; }
-  mlState.dragging = false;
+  mlCarousel.stopAnim();
   document.getElementById('monsterListScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
 }
-
-{
-  const stage = document.getElementById('mlStage');
-  stage.addEventListener('pointerdown', mlOnPointerDown);
-  stage.addEventListener('pointermove', mlOnPointerMove);
-  stage.addEventListener('pointerup', mlOnPointerUp);
-  stage.addEventListener('pointercancel', mlOnPointerUp);
-  stage.addEventListener('click', mlOnCardClick);
-  document.getElementById('mlPrevBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) - 1); });
-  document.getElementById('mlNextBtn').addEventListener('click', (e)=>{ e.stopPropagation(); mlGoTo(Math.round(mlState.pos) + 1); });
-  document.getElementById('mlBackBtn').addEventListener('click', closeMonsterDetail);
-  document.getElementById('mlEntryBtn').addEventListener('click', mlConfirmEntry);
-  document.getElementById('closeMonsterListBtn').addEventListener('click', closeMonsterListScreen);
-  window.addEventListener('keydown', (e)=>{
-    if(document.getElementById('monsterListScreen').classList.contains('hidden')) return;
-    if(!document.getElementById('mlDetailView').classList.contains('hidden')) return;
-    if(e.key==='ArrowLeft') mlGoTo(Math.round(mlState.pos) - 1);
-    else if(e.key==='ArrowRight') mlGoTo(Math.round(mlState.pos) + 1);
-    else if(e.key==='Enter') openMonsterDetail(ML_KEYS[mlCenterIndex()], mlState.cards[mlCenterIndex()]);
-  });
-}
+document.getElementById('mlBackBtn').addEventListener('click', closeMonsterDetail);
+document.getElementById('mlEntryBtn').addEventListener('click', mlConfirmEntry);
+document.getElementById('closeMonsterListBtn').addEventListener('click', closeMonsterListScreen);
+window.addEventListener('keydown', (e)=>{
+  if(document.getElementById('monsterListScreen').classList.contains('hidden')) return;
+  if(!document.getElementById('mlDetailView').classList.contains('hidden')){
+    if(e.key==='ArrowLeft') mlDetailStep(-1);
+    else if(e.key==='ArrowRight') mlDetailStep(1);
+    return;
+  }
+  if(e.key==='ArrowLeft') mlCarousel.goTo(Math.round(mlCarousel.st.pos) - 1);
+  else if(e.key==='ArrowRight') mlCarousel.goTo(Math.round(mlCarousel.st.pos) + 1);
+  else if(e.key==='Enter') openMonsterDetail(mlCarousel.centerKey(), mlCarousel.st.cards[mlCarousel.centerIndex()]);
+});
 function updateMastermonEntryCount(){
   const countEl = document.getElementById('mastermonEntryCount');
   if(!countEl) return;
@@ -2882,9 +2906,145 @@ function submitScoreToRanking(isWin, placement){
 ===================================================================== */
 let mastermonDetailKey = null;
 let mastermonSelectedTraining = null;
-let mastermonDetailTab = null; // null=メニュー / 'info' / 'moves' / 'training' / 'edit'
+let mastermonDetailTab = null; // 'info'(既定) / 'moves' / 'training' / 'dressup' / 'edit'
 
 let mastermonOpenedFrom = 'title';
+/* =====================================================================
+   マスモン選択(カルーセル + 詳細)
+   モンスター選択と同じカードカルーセルのエンジン(createCardCarousel)を共用する。
+   違いは「登録済みマスモンだけを並べる」「装備スキンを反映する」「詳細の右側が
+   既存のサブビュー(詳細情報/技一覧/トレーニング/着せ替え/編集)になる」の3点。
+   ===================================================================== */
+function mmKeys(){ return Object.keys(loadMastermons()); }
+// 育成後の実効値(バトルで実際に使われる値)を出す
+function mmEffectiveStats(mm){
+  const el = ELEMENTS[mm.element];
+  const mults = mastermonEffectMults(mm);
+  return {
+    hp: Math.round(el.hp * mults.lifeMult),
+    speed: Math.round(el.speed * (el.speedMod||1) * mults.speedMult),
+  };
+}
+function mmAccentOf(key){
+  // マスモンは「着せ替え済みの姿」なのでスキン込みのオーラ色を使う
+  const aura = (typeof getMonsterAura==='function') ? getMonsterAura({ element:key, isPlayer:true }) : MONSTER_AURA[key];
+  return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
+}
+function mmCardInnerHtml(key){
+  const mm = loadMastermons()[key];
+  if(!mm) return '';
+  const el = ELEMENTS[key];
+  const eff = mmEffectiveStats(mm);
+  const expNeed = mastermonExpToNext(mm.level);
+  const maxed = mm.level >= MASTERMON_LEVEL_CAP;
+  const expPct = maxed ? 100 : Math.round(mm.exp/expNeed*100);
+  const picked = (game.selectedMastermonKey===key) ? '<div class="ml-card-picked">選択中</div>' : '';
+  return `
+    ${picked}
+    <div class="ml-card-lv">Lv.${mm.level}</div>
+    <div class="ml-card-art ml-card-art-mm">${equippedIconImgTag(key, el.label)}</div>
+    <div class="ml-card-shine"></div>
+    <div class="ml-card-body ml-card-body-mm">
+      <div class="ml-card-name">${mm.name}</div>
+      ${caroFigsHtml([{k:'HP', v:eff.hp}, {k:'速さ', v:eff.speed}])}
+      <div class="ml-card-exp"><div class="ml-card-exp-fill" style="width:${expPct}%"></div></div>
+      <div class="ml-card-exp-label">${maxed ? 'MAX LEVEL' : `EXP ${mm.exp}/${expNeed}`}　🎫${mm.tickets}</div>
+    </div>`;
+}
+
+const mmCarousel = createCardCarousel({
+  stage:'mmStage', track:'mmTrack', dots:'mmDots', glow:'mmGlow',
+  counterNow:'mmCounterNow', counterAll:'mmCounterAll',
+  prevBtn:'mmPrevBtn', nextBtn:'mmNextBtn',
+  keys: mmKeys,
+  cardHtml: mmCardInnerHtml,
+  accent: mmAccentOf,
+  art: (key)=>({ a: ELEMENTS[key].color, b: ELEMENTS[key].dark }),
+  onPick: (key, cardEl)=>openMastermonDetail(key, cardEl),
+});
+// 旧関数名(削除・改名・トレーニング後などから呼ばれる)。カードの中身を作り直す
+function renderMastermonList(){
+  const keys = mmKeys();
+  // 登録数が変わったときはカード自体を作り直す
+  if(!mmCarousel.st.built || mmCarousel.st.keys.length !== keys.length) mmCarousel.build();
+  else mmCarousel.refreshCards();
+}
+
+// 詳細ビューのカードだけ描く(右側の内容は既存の renderMastermonDetail が担当)
+function renderMastermonCard(key, srcCard){
+  const slot = document.getElementById('mmDetailCardSlot');
+  let clone;
+  if(srcCard){
+    clone = srcCard.cloneNode(true);
+  } else {
+    clone = document.createElement('div');
+    clone.className = 'ml-card';
+    clone.dataset.key = key;
+    clone.style.setProperty('--ml-accent', mmAccentOf(key));
+    clone.style.setProperty('--ml-art-a', ELEMENTS[key].color);
+    clone.style.setProperty('--ml-art-b', ELEMENTS[key].dark);
+    clone.innerHTML = mmCardInnerHtml(key);
+  }
+  clone.classList.add('is-center');
+  slot.innerHTML = '';
+  slot.appendChild(clone);
+  // マスモンが1体だけのときは隣へ移動できないので≪≫は出さない
+  if(mmCarousel.st.keys.length > 1){
+    slot.insertAdjacentHTML('beforeend', caroDetailNavHtml());
+    slot.querySelector('.ml-card-nav-prev').addEventListener('click', (e)=>{ e.stopPropagation(); mmDetailStep(-1); });
+    slot.querySelector('.ml-card-nav-next').addEventListener('click', (e)=>{ e.stopPropagation(); mmDetailStep(1); });
+  }
+  return clone;
+}
+// 詳細を開いたまま隣のマスモンへ移動する(カード送りSEはカルーセル側が鳴らす)
+function mmDetailStep(dir){
+  const key = mmCarousel.jump(dir);
+  if(!key) return;
+  mastermonDetailKey = key;
+  mastermonSelectedTraining = null;
+  mastermonPreviewSkin = null;   // 切替先の装備中スキンをプレビュー初期値にする
+  const card = renderMastermonCard(key, null);
+  card.classList.add(dir > 0 ? 'ml-slide-in-right' : 'ml-slide-in-left');
+  renderMastermonDetail(key);
+}
+function openMastermonDetail(key, srcCard){
+  mastermonDetailKey = key;
+  mastermonSelectedTraining = null;
+  mastermonPreviewSkin = null;
+  if(!mastermonDetailTab) mastermonDetailTab = 'info';
+  const srcRect = srcCard ? srcCard.getBoundingClientRect() : null;
+  const clone = renderMastermonCard(key, srcCard);
+  document.getElementById('mmCarouselView').classList.add('hidden');
+  document.getElementById('mmDetailView').classList.remove('hidden');
+  renderMastermonDetail(key);
+  if(srcRect) caroFlipCard(document.getElementById('mmDetailCardSlot'), clone, srcRect);
+}
+function closeMastermonDetail(){
+  document.getElementById('mmDetailView').classList.add('hidden');
+  document.getElementById('mmCarouselView').classList.remove('hidden');
+  mmCarousel.refreshCards();
+  mmCarousel.render();
+}
+// 左カラムのタブボタン(詳細情報/技一覧/トレーニング/着せ替え/編集)
+{
+  const grid = document.getElementById('mmDetailTabGrid');
+  grid.querySelectorAll('.mm-tab-btn[data-tab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      mastermonDetailTab = btn.dataset.tab;
+      mastermonSelectedTraining = null;
+      if(btn.dataset.tab==='dressup') mastermonPreviewSkin = null; // 装備中を初期プレビューに
+      renderMastermonDetail(mastermonDetailKey);
+    });
+  });
+  document.getElementById('mmBackToListBtn').addEventListener('click', closeMastermonDetail);
+}
+// 左カラムのタブボタンの選択状態を現在のタブに合わせる
+function mmSyncTabButtons(){
+  document.querySelectorAll('#mmDetailTabGrid .mm-tab-btn[data-tab]').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab === mastermonDetailTab);
+  });
+}
+
 function openMastermonScreen(fromResult){
   const data = loadMastermons();
   const keys = Object.keys(data);
@@ -2900,15 +3060,19 @@ function openMastermonScreen(fromResult){
   mastermonOpenedFrom = fromResult ? 'result' : 'title';
   if(!mastermonDetailKey || !data[mastermonDetailKey]) mastermonDetailKey = keys[0];
   mastermonSelectedTraining = null;
-  mastermonDetailTab = null;
-  renderMastermonList();
-  renderMastermonDetail(mastermonDetailKey);
+  mastermonPreviewSkin = null;
+  mastermonDetailTab = 'info';
+  mmCarousel.build();
+  mmCarousel.reset(game.selectedMastermonKey && data[game.selectedMastermonKey] ? game.selectedMastermonKey : mastermonDetailKey);
+  document.getElementById('mmDetailView').classList.add('hidden');
+  document.getElementById('mmCarouselView').classList.remove('hidden');
   document.getElementById('mastermonScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
 }
 let mastermonNoticeTimer = null;
 document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
+  mmCarousel.stopAnim();
   document.getElementById('mastermonScreen').classList.add('hidden');
   if(mastermonOpenedFrom==='result'){
     document.getElementById('resultScreen').classList.remove('hidden');
@@ -2917,13 +3081,6 @@ document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
   }
 });
 document.getElementById('viewMastermonBtn').addEventListener('click', ()=>openMastermonScreen(true));
-// フッター右端の「マスモン編集」ボタン → 編集画面(名前変更・削除)を開く
-document.getElementById('mastermonEditBtn').addEventListener('click', ()=>{
-  if(!mastermonDetailKey) return;
-  mastermonDetailTab = 'edit';
-  mastermonSelectedTraining = null;
-  renderMastermonDetail(mastermonDetailKey);
-});
 
 let mastermonPendingDeleteKey = null;
 document.getElementById('mastermonDeleteNoBtn').addEventListener('click', ()=>{
@@ -2951,57 +3108,12 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
   }
   if(mastermonDetailKey===deletedKey) mastermonDetailKey = remaining[0];
   mastermonSelectedTraining = null;
-  mastermonDetailTab = null;
-  renderMastermonList();
-  renderMastermonDetail(mastermonDetailKey);
+  mastermonPreviewSkin = null;
+  mastermonDetailTab = 'info';
+  mmCarousel.build();
+  mmCarousel.reset(mastermonDetailKey);
+  closeMastermonDetail();   // 消したマスモンの詳細に留まらないよう一覧へ戻す
 });
-
-function renderMastermonList(){
-  const data = loadMastermons();
-  const listEl = document.getElementById('mastermonList');
-  const keys = Object.keys(data);
-  listEl.innerHTML = keys.map(key=>{
-    const mm = data[key];
-    const el = ELEMENTS[key];
-    const active = key===mastermonDetailKey;
-    const iconHtml = `
-      <div class="mastermon-list-icon" style="background:radial-gradient(circle at 35% 30%, ${el.color}, ${el.dark})">
-        ${equippedIconImgTag(key, el.label)}
-      </div>`;
-    if(active){
-      const expNeed = mastermonExpToNext(mm.level);
-      const expPct = mm.level>=MASTERMON_LEVEL_CAP ? 100 : Math.round(mm.exp/expNeed*100);
-      return `
-        <div class="mastermon-list-item active" data-key="${key}">
-          ${iconHtml}
-          <div class="mastermon-list-text">
-            <div class="mastermon-list-name">${mm.name}<span class="mastermon-list-species">(${el.label})</span></div>
-            <div class="mastermon-list-sub">Lv.${mm.level} <span class="mm-ticket-count">🎫${mm.tickets}</span></div>
-            <div class="mm-exp-track small"><div class="mm-exp-fill" style="width:${expPct}%;"></div></div>
-            <div class="mm-exp-label">${mm.level>=MASTERMON_LEVEL_CAP ? 'MAX LEVEL' : `EXP ${mm.exp} / ${expNeed}`}</div>
-          </div>
-        </div>`;
-    }
-    return `
-      <div class="mastermon-list-item" data-key="${key}">
-        ${iconHtml}
-        <div class="mastermon-list-text">
-          <div class="mastermon-list-name">${mm.name}</div>
-          <div class="mastermon-list-sub">${el.label}・Lv.${mm.level}</div>
-        </div>
-      </div>`;
-  }).join('');
-  listEl.querySelectorAll('.mastermon-list-item').forEach(item=>{
-    item.addEventListener('click', ()=>{
-      if(item.dataset.key===mastermonDetailKey) return;
-      mastermonDetailKey = item.dataset.key;
-      mastermonPreviewSkin = null; // 切替先マスモンの装備中スキンをプレビュー初期値に(前のが残らないように)
-      // 表示中のタブ(詳細情報/技一覧/トレーニング)は維持したまま、内容だけ切り替える
-      renderMastermonList();
-      renderMastermonDetail(mastermonDetailKey);
-    });
-  });
-}
 
 function renderMastermonDetail(key){
   const data = loadMastermons();
@@ -3016,6 +3128,7 @@ function renderMastermonDetail(key){
     game.selectedElement = key;
     game.selectedMastermonKey = key;
     updatePlayButtonsEnabled();
+    mmCarousel.stopAnim();
     document.getElementById('mastermonScreen').classList.add('hidden');
     document.getElementById('startScreen').classList.remove('hidden');
     renderSelectorCards();
@@ -3034,22 +3147,21 @@ function renderMastermonDetail(key){
 
   const TAB_TITLES = { info:'詳細情報', moves:'技一覧', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
   let contentHtml;
-  if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
-  else if(mastermonDetailTab==='moves') contentHtml = buildMastermonMovesHtml(key);
+  if(mastermonDetailTab==='moves') contentHtml = buildMastermonMovesHtml(key);
   else if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
   else if(mastermonDetailTab==='edit') contentHtml = buildMastermonEditHtml(mm);
   else if(mastermonDetailTab==='dressup') contentHtml = buildMastermonSkinHtml(key);
-  else contentHtml = buildMastermonMenuHtml();
+  else contentHtml = buildMastermonInfoHtml(key, mm, el);   // 既定は詳細情報
 
-  // トレーニング画面では実行ボタンを戻るボタンの左(ヘッダー内)に置く
+  // トレーニング画面では実行ボタンをヘッダー右に置く。
+  // タブの切り替えは左カラムのボタンで行うので、ヘッダーに戻るボタンは持たない
   const trainExecBtnHtml = mastermonDetailTab==='training' ? `
       <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-header-exec-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>トレ実行🎫${mm.tickets}枚</button>` : '';
-  const headerHtml = mastermonDetailTab ? `
+  const headerHtml = `
     <div class="mm-subview-header">
-      <div class="mm-subview-title">${TAB_TITLES[mastermonDetailTab]}</div>
+      <div class="mm-subview-title">${mm.name}<span class="mm-subview-sub">${TAB_TITLES[mastermonDetailTab]||'詳細情報'}</span></div>
       ${trainExecBtnHtml}
-      <button class="mm-back-btn">← 戻る</button>
-    </div>` : '';
+    </div>`;
 
   panel.innerHTML = `
     <div class="mastermon-detail-body">
@@ -3065,23 +3177,7 @@ function renderMastermonDetail(key){
   if(statsColEl) statsColEl.scrollTop = savedStatsScroll;
   if(contentEl) contentEl.scrollTop = savedContentScroll;
 
-  if(!mastermonDetailTab){
-    panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        mastermonDetailTab = btn.dataset.tab;
-        if(btn.dataset.tab==='dressup') mastermonPreviewSkin = null; // 装備中を初期プレビューに
-        renderMastermonDetail(key);
-      });
-    });
-    return;
-  }
-
-  panel.querySelector('.mm-back-btn').addEventListener('click', ()=>{
-    mastermonDetailTab = null;
-    mastermonSelectedTraining = null;
-    mastermonPreviewSkin = null;
-    renderMastermonDetail(key);
-  });
+  mmSyncTabButtons();
 
   if(mastermonDetailTab==='edit'){
     document.getElementById('mastermonRenameBtn').addEventListener('click', ()=>{
@@ -3213,7 +3309,6 @@ function buildMastermonStatsColHtml(mm, apt, preview){
   return `<div class="mastermon-detail-statscol"><div class="mm-stats-wrap">${statsHtml}</div></div>`;
 }
 
-// メニュー画面: 詳細情報 / 技一覧 / トレーニング の3ボタン
 // 「マスモン編集」画面: 名前変更と削除
 function buildMastermonEditHtml(mm){
   const safeName = String(mm.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -3230,28 +3325,6 @@ function buildMastermonEditHtml(mm){
     </div>`;
 }
 
-function buildMastermonMenuHtml(){
-  // 2列表示。並び順: トレーニング・着せ替え / 技一覧・詳細情報
-  return `
-    <div class="mastermon-menu-body">
-      <button class="mm-menu-btn" data-tab="training">
-        <span class="mm-menu-btn-icon">💪</span>
-        <span class="mm-menu-btn-label">トレーニング</span>
-      </button>
-      <button class="mm-menu-btn" data-tab="dressup">
-        <span class="mm-menu-btn-icon">👕</span>
-        <span class="mm-menu-btn-label">着せ替え</span>
-      </button>
-      <button class="mm-menu-btn" data-tab="moves">
-        <span class="mm-menu-btn-icon">⚔️</span>
-        <span class="mm-menu-btn-label">技一覧</span>
-      </button>
-      <button class="mm-menu-btn" data-tab="info">
-        <span class="mm-menu-btn-icon">📊</span>
-        <span class="mm-menu-btn-label">詳細情報</span>
-      </button>
-    </div>`;
-}
 
 function mmFmtMult(v){ return `×${(Math.round(v*100)/100).toFixed(2)}`; }
 
