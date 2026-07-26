@@ -106,7 +106,30 @@ function handleRoomEvent(evt, evtKey){
   }
 }
 
+// 試合開始処理の外枠。中で例外が出たときに必ずフラグを戻してトップ画面へ帰す。
+// これが無いと matchBeginning が立ったまま・game.started が false のまま抜けてしまい、
+// 画面が固まったように見えたうえ「次に試合を始めようとしても何も起きない」状態になる。
 async function beginMultiplayerMatch(){
+  try{
+    await beginMultiplayerMatchInner();
+  }catch(err){
+    console.error('[aramon] beginMultiplayerMatch failed', err);
+    matchBeginning = false;
+    game.started = false;
+    netState.matchStarting = false;
+    try{
+      document.getElementById('lobbyScreen').classList.add('hidden');
+      document.getElementById('startScreen').classList.remove('hidden');
+      joinInProgress = false;
+      if(typeof updatePlayButtonsEnabled==='function') updatePlayButtonsEnabled();
+      const rid = netState.roomId;
+      netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
+      if(rid && window.__aramonLeaveRoom) await window.__aramonLeaveRoom(rid);
+    }catch(e){}
+    pushToast('試合の開始に失敗しました。もう一度お試しください');
+  }
+}
+async function beginMultiplayerMatchInner(){
   if(game.started || matchBeginning) return;
   matchBeginning = true;
   document.getElementById('lobbyScreen').classList.add('hidden');
@@ -572,6 +595,20 @@ const processedLootEventKeys = new Set();
 // 「重なってもしばらく消えない」「効果が遅れて出る」ように見える。
 // 重なった瞬間に見た目だけ消し、ホストの確定(pickupイベント)を待つ。
 // 確定が来なければ(他の人が先に拾った・ホストの判定では届いていない等)元に戻す。
+// 自分の座標がNaN/範囲外になっていないか点検して復旧する。
+// 一度でもNaNが入ると以降ずっと描画もされず操作もできなくなる(フリーズしたように見える)ので、
+// 直前の正常な位置(無ければマップ中央)へ戻して必ず動ける状態を保つ。
+let lastGoodSelfPos = null;
+function sanitizeSelfPosition(){
+  if(!player) return;
+  const ok = Number.isFinite(player.x) && Number.isFinite(player.y) && Number.isFinite(player.z||0)
+    && player.x > -1e4 && player.y > -1e4 && player.x < WORLD.w+1e4 && player.y < WORLD.h+1e4;
+  if(ok){ lastGoodSelfPos = { x:player.x, y:player.y, z:player.z||0 }; return; }
+  const fb = lastGoodSelfPos || { x:WORLD.w/2, y:WORLD.h/2, z:0 };
+  player.x = fb.x; player.y = fb.y; player.z = fb.z;
+  selfCorrX = 0; selfCorrY = 0;
+  console.warn('[aramon] self position was invalid; recovered');
+}
 const GUEST_PICKUP_CONFIRM_WAIT = 2.5; // 確定待ちの上限(秒)
 function predictLootPickupsAsGuest(){
   if(!player || !player.alive) return;
@@ -591,8 +628,12 @@ function applyLootEventLocally(evt){
   if(evt.evtType==='pickup'){
     const idx = lootItems.findIndex(it=>it.id===evt.id);
     if(idx>=0) lootItems.splice(idx,1);
-    // 自分(ゲスト)が拾った場合はSEを鳴らす(ホスト側updateでは自分のSEが鳴らないため)
-    if(evt.by && evt.by===netState.myPlayerId) playSe(evt.kind==='training' ? 'train' : 'pickup');
+    // 自分(ゲスト)が拾った場合はSEと効果メッセージを出す
+    // (ホスト側のupdateでは自分のSE/トーストは鳴らないため、ここで再現する)
+    if(evt.by && evt.by===netState.myPlayerId){
+      playSe(evt.kind==='training' ? 'train' : 'pickup');
+      if(evt.msg) pushToast(evt.msg);
+    }
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
       lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, bob:evt.bob||0 });
@@ -851,107 +892,118 @@ function interpolateRemoteEntities(){
 }
 
 
+// 1フレーム内で例外が出てもRAFの連鎖を必ず継続させる。
+// 例外をそのまま投げるとrequestAnimationFrameが再登録されずゲームが完全に停止し、
+// 画面が固まったまま入力も描画も戻らない(次の試合を始めても動かない)。
+let loopErrorCount = 0;
 function loop(now){
-  const dt = Math.min(0.05, (now-lastT)/1000);
-  lastT = now;
+  try{
+    const dt = Math.min(0.05, (now-lastT)/1000);
+    lastT = now;
 
-  if(game.started && !game.over){
-    if(introState.active){
-      // 召喚演出中はmatchTimeを進めず、視点操作と演出のみ行う(ホスト/ゲスト共通)
-      updateSummonIntro(dt);
-    } else if(netState.mode!=='multi'){
-      update(dt);
-    } else if(netState.isHost){
-      applyRemoteInputsLocally();
-      processRemoteFireEvents();
-      update(dt);
-      broadcastNewShotsAsHost();
-      sendLocalInputIfMultiplayer(now);
-      authPublishTimer += dt;
-      if(authPublishTimer >= AUTH_PUBLISH_INTERVAL && !authPublishInFlight){
-        authPublishTimer = 0;
-        authPublishInFlight = true;
-        window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload())
-          .catch(()=>{})
-          .finally(()=>{ authPublishInFlight = false; });
-      }
-    } else {
-      // 非ホスト: ダメージ・ガッツ・キル・ゾーン等の確定計算は一切行わず、
-      // 自分の移動だけをローカルで滑らかに再現し、残りはホストからのauthState配信に委ねる
-      updateCameraSnap(dt);
-      computePlayerInput();
-      if(player && player.alive){
-        resolveMovement(player, dt);
-        // 溜まっている補正量(=同じ入力時点で比べたホストとの誤差)を少しずつ消費する。
-        // 遅延ぶんは誤差に含まれないので、まっすぐ歩いている間は補正がほぼゼロになり
-        // 後ろへ引っ張られない。衝突・ノックバック等で本当にズレた時だけ効く。
-        if(selfCorrX || selfCorrY){
-          const k = Math.min(1, dt*SELF_CORRECT_RATE);
-          const sx = selfCorrX*k, sy = selfCorrY*k;
-          player.x += sx; player.y += sy;
-          selfCorrX -= sx; selfCorrY -= sy;
-          if(Math.hypot(selfCorrX, selfCorrY) < 0.5){ selfCorrX = 0; selfCorrY = 0; }
+    if(game.started && !game.over){
+      if(introState.active){
+        // 召喚演出中はmatchTimeを進めず、視点操作と演出のみ行う(ホスト/ゲスト共通)
+        updateSummonIntro(dt);
+      } else if(netState.mode!=='multi'){
+        update(dt);
+      } else if(netState.isHost){
+        applyRemoteInputsLocally();
+        processRemoteFireEvents();
+        update(dt);
+        broadcastNewShotsAsHost();
+        sendLocalInputIfMultiplayer(now);
+        authPublishTimer += dt;
+        if(authPublishTimer >= AUTH_PUBLISH_INTERVAL && !authPublishInFlight){
+          authPublishTimer = 0;
+          authPublishInFlight = true;
+          window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload())
+            .catch(()=>{})
+            .finally(()=>{ authPublishInFlight = false; });
         }
-      }
-      for(const e of entities){
-        if(!e.alive) continue;
-        if(e.fireCooldown>0) e.fireCooldown -= dt;
-        if(e.dashCooldown>0) e.dashCooldown -= dt;
-        if(e.hitFlash>0) e.hitFlash -= dt;
-      }
-      interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
-      predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
-      tryNonHostPlayerFireVisual(dt);
-      // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
-      for(let i=projectiles.length-1;i>=0;i--){
-        const p = projectiles[i];
-        if(!p.visualOnly) continue;
-        if(p.lobbed){
-          p.flightT += dt;
-          const t = clamp(p.flightT / p.flightTime, 0, 1);
-          p.x = lerp(p.startX, p.landX, t);
-          p.y = lerp(p.startY, p.landY, t);
-          p.z = p.startZ + Math.sin(t*Math.PI)*p.arcHeight;
-          if(t>=1){
-            spawnHit(p.x,p.y,0,p.color);
-            projectiles.splice(i,1);
+      } else {
+        // 非ホスト: ダメージ・ガッツ・キル・ゾーン等の確定計算は一切行わず、
+        // 自分の移動だけをローカルで滑らかに再現し、残りはホストからのauthState配信に委ねる
+        updateCameraSnap(dt);
+        computePlayerInput();
+        if(player && player.alive){
+          resolveMovement(player, dt);
+          // 溜まっている補正量(=同じ入力時点で比べたホストとの誤差)を少しずつ消費する。
+          // 遅延ぶんは誤差に含まれないので、まっすぐ歩いている間は補正がほぼゼロになり
+          // 後ろへ引っ張られない。衝突・ノックバック等で本当にズレた時だけ効く。
+          if(selfCorrX || selfCorrY){
+            const k = Math.min(1, dt*SELF_CORRECT_RATE);
+            const sx = selfCorrX*k, sy = selfCorrY*k;
+            player.x += sx; player.y += sy;
+            selfCorrX -= sx; selfCorrY -= sy;
+            if(Math.hypot(selfCorrX, selfCorrY) < 0.5){ selfCorrX = 0; selfCorrY = 0; }
           }
-          continue;
+          sanitizeSelfPosition(); // NaN等でハマったまま操作不能にならないよう点検
         }
-        if(p.delay>0){ p.delay -= dt; continue; }
-        const step = Math.hypot(p.vx,p.vy)*dt;
-        p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
-        let visualHit = p.traveled >= p.maxRange;
-        if(!visualHit){
-          // 当たり判定・ダメージ計算はホストのauthState/hit報告が正なので、ここでは一切計算しない。
-          // ただし見た目上は接触した瞬間に消さないと、弾が体を貫通していくように見えてしまうため、
-          // 見た目専用の当たり「らしさ」判定だけをローカルで行う
-          for(const e of entities){
-            if(!e.alive || e.id===p.ownerId) continue;
-            if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
+        for(const e of entities){
+          if(!e.alive) continue;
+          if(e.fireCooldown>0) e.fireCooldown -= dt;
+          if(e.dashCooldown>0) e.dashCooldown -= dt;
+          if(e.hitFlash>0) e.hitFlash -= dt;
+        }
+        interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
+        predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
+        tryNonHostPlayerFireVisual(dt);
+        // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
+        for(let i=projectiles.length-1;i>=0;i--){
+          const p = projectiles[i];
+          if(!p.visualOnly) continue;
+          if(p.lobbed){
+            p.flightT += dt;
+            const t = clamp(p.flightT / p.flightTime, 0, 1);
+            p.x = lerp(p.startX, p.landX, t);
+            p.y = lerp(p.startY, p.landY, t);
+            p.z = p.startZ + Math.sin(t*Math.PI)*p.arcHeight;
+            if(t>=1){
+              spawnHit(p.x,p.y,0,p.color);
+              projectiles.splice(i,1);
+            }
+            continue;
           }
+          if(p.delay>0){ p.delay -= dt; continue; }
+          const step = Math.hypot(p.vx,p.vy)*dt;
+          p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
+          let visualHit = p.traveled >= p.maxRange;
+          if(!visualHit){
+            // 当たり判定・ダメージ計算はホストのauthState/hit報告が正なので、ここでは一切計算しない。
+            // ただし見た目上は接触した瞬間に消さないと、弾が体を貫通していくように見えてしまうため、
+            // 見た目専用の当たり「らしさ」判定だけをローカルで行う
+            for(const e of entities){
+              if(!e.alive || e.id===p.ownerId) continue;
+              if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
+            }
+          }
+          if(visualHit) projectiles.splice(i,1);
         }
-        if(visualHit) projectiles.splice(i,1);
+        updateCamera();
+        matchTime += dt;
+        if(game.tipTimer>0) game.tipTimer -= dt;
+        for(let i=particles.length-1;i>=0;i--){
+          const p = particles[i];
+          p.x += p.vx*dt; p.y += p.vy*dt;
+          if(p.type==='text') p.vy += 60*dt;
+          p.life -= dt;
+          if(p.life<=0) particles.splice(i,1);
+        }
+        for(let i=areaEffects.length-1;i>=0;i--){
+          if(matchTime - areaEffects[i].spawnAt > areaEffects[i].life) areaEffects.splice(i,1);
+        }
+        updateHUD();
+        sendLocalInputIfMultiplayer(now);
       }
-      updateCamera();
-      matchTime += dt;
-      if(game.tipTimer>0) game.tipTimer -= dt;
-      for(let i=particles.length-1;i>=0;i--){
-        const p = particles[i];
-        p.x += p.vx*dt; p.y += p.vy*dt;
-        if(p.type==='text') p.vy += 60*dt;
-        p.life -= dt;
-        if(p.life<=0) particles.splice(i,1);
-      }
-      for(let i=areaEffects.length-1;i>=0;i--){
-        if(matchTime - areaEffects[i].spawnAt > areaEffects[i].life) areaEffects.splice(i,1);
-      }
-      updateHUD();
-      sendLocalInputIfMultiplayer(now);
     }
-  }
 
-  if(game.started) render();
+    if(game.started) render();
+  }catch(err){
+    loopErrorCount++;
+    if(loopErrorCount<=5) console.error("[aramon] loop error", err);
+    if(loopErrorCount===1 && typeof pushToast==="function") pushToast("内部エラーが発生しましたが復帰しました");
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

@@ -545,8 +545,30 @@ function bgmSetIntensity(n){ bgmState.intensity = n|0; }
 // 残り5人以下(intensity 3)=決戦 / 残り2人(intensity 4)=ラストバトル / ショップ画面。
 // 音源が未ロード/取得失敗時は従来の合成BGMにフォールバックするので無音にはならない。
 // monsters/*.png と同様に、実行時に読み込む外部アセットとして扱う。
-function createBgmLoop(url){
-  const L = { url, buffer:null, source:null, gain:null, decoding:false };
+// 曲ごとの音量の微調整。3曲の短時間ラウドネスを実測し、決戦BGM(bgm_final5)に合わせた値。
+// 実測値(短時間LUFSの中央値): final5 -16.57 / lastbattle -16.81 / shop -16.22
+// → 差は0.35LU以内(ほぼ可聴外)だが、決戦BGM基準にきっちり揃えてある。
+// 体感でまだ差があれば、この数値だけを増減すれば調整できる(1.0=そのまま)。
+const BGM_FILE_GAIN = { final5: 1.00, lastBattle: 1.03, shop: 0.96 };
+// 曲の切替は「等パワークロスフェード」で行う。単純な線形フェードで前の曲と重ねると
+// 2曲の合計音量が一時的に1.5倍近くまで上がり、切替の瞬間だけ音が大きくなる
+// (決戦→ラストバトルの切替で実際に起きていた)。sin/cosカーブなら合計パワーが一定になる。
+const BGM_CROSSFADE = 0.5; // 秒
+// rising=true : from→to を sin カーブで上げる
+// rising=false: from→to を cos カーブで下げる(上げ側と2乗の和が一定=等パワーになる)
+function _equalPowerCurve(from, to, rising){
+  const n = 32, arr = new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const x = i/(n-1);
+    // 下げ側は cos が 1→0 なので、始点fromから終点toへ正しく向かうよう to 基準で組む
+    const v = rising ? (from + (to-from)*Math.sin(x*Math.PI/2))
+                     : (to   + (from-to)*Math.cos(x*Math.PI/2));
+    arr[i] = Math.max(0.0001, v);
+  }
+  return arr;
+}
+function createBgmLoop(url, gainVal){
+  const L = { url, buffer:null, source:null, gain:null, decoding:false, vol:(gainVal!=null?gainVal:1) };
   L.ensure = ()=>{
     if(L.buffer || L.decoding || !actx) return;
     L.decoding = true;
@@ -560,7 +582,9 @@ function createBgmLoop(url){
     const g = actx.createGain();
     const t = actx.currentTime;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(1, t+0.6); // フェードイン
+    // 等パワーで立ち上げる(古い環境でsetValueCurveAtTimeが使えなければ線形にフォールバック)
+    try{ g.gain.setValueCurveAtTime(_equalPowerCurve(0, L.vol, true), t, BGM_CROSSFADE); }
+    catch(e){ g.gain.linearRampToValueAtTime(L.vol, t+BGM_CROSSFADE); }
     src.connect(g); g.connect(bgmTrackGain); // bgmTrackGain経由でBGM音量・切替フェードが乗る
     src.start();
     L.source = src; L.gain = g;
@@ -568,16 +592,23 @@ function createBgmLoop(url){
   L.stop = ()=>{
     if(!L.source) return;
     const src = L.source, g = L.gain, t = actx.currentTime;
-    try{ g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0.0001, t+0.4); }catch(e){}
-    try{ src.stop(t+0.45); }catch(e){}
+    try{
+      g.gain.cancelScheduledValues(t);
+      const cur = g.gain.value;
+      g.gain.setValueAtTime(cur, t);
+      // 立ち上げと相補のカーブで落とす(合計パワーが一定に保たれる)
+      try{ g.gain.setValueCurveAtTime(_equalPowerCurve(cur, 0, false), t, BGM_CROSSFADE); }
+      catch(e){ g.gain.linearRampToValueAtTime(0.0001, t+BGM_CROSSFADE); }
+    }catch(e){}
+    try{ src.stop(t+BGM_CROSSFADE+0.05); }catch(e){}
     L.source = null; L.gain = null;
   };
   L.setPlaying = (on)=>{ if(on && !L.source) L.start(); else if(!on && L.source) L.stop(); };
   return L;
 }
-const bgmFinal5     = createBgmLoop('./bgm_final5.mp3');     // 残り5人以下(決戦)
-const bgmLastBattle = createBgmLoop('./bgm_lastbattle.mp3'); // 残り2人(ラストバトル)
-const bgmShop       = createBgmLoop('./bgm_shop.mp3');       // ショップ画面
+const bgmFinal5     = createBgmLoop('./bgm_final5.mp3',     BGM_FILE_GAIN.final5);     // 残り5人以下(決戦)
+const bgmLastBattle = createBgmLoop('./bgm_lastbattle.mp3', BGM_FILE_GAIN.lastBattle); // 残り2人(ラストバトル)
+const bgmShop       = createBgmLoop('./bgm_shop.mp3',       BGM_FILE_GAIN.shop);       // ショップ画面
 // 試合中に必要な2曲は先読みする(その場でのfetch+decode待ちで無音になるのを防ぐ)。
 // ショップ曲は画面を開いたときに読み込む(ensureBgmShopBuffer)。
 function ensureBgmFileBuffers(){ bgmFinal5.ensure(); bgmLastBattle.ensure(); }

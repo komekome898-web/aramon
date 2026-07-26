@@ -70,6 +70,11 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **他エンティティの補間はホストの試合時刻(`payload.t`)を時間軸にする。** 到着時刻を軸にすると、配信がまとめて届いた(ジッタ)ときにスナップショット間隔が実際より短く見積もられ、**速い相手が瞬間移動したように飛ぶ**。`hostClockOffset`(最速で届いた配信を基準)でローカル時刻へ変換する。
 - 新しい試合を始めるときは`beginMultiplayerMatch`の先頭で補間・突き合わせの状態(`guestSnapBuf`/`hostClockOffset`/`selfPredHistory`/`selfCorrX/Y`/`selfInputSeq`)を必ずリセットする。
 
+#### 落ちないための保険(フリーズ対策)
+- **`loop()`の中身は必ずtry/catchで囲む。** 例外をそのまま投げると`requestAnimationFrame`が再登録されず、**描画も入力も完全に止まり、次の試合を始めても動かない**(復帰不能のフリーズ)。捕まえたら`console.error`+初回のみトーストで知らせ、RAFは必ず継続する。
+- **`beginMultiplayerMatch()`は外枠のtry/catchでフラグを必ず戻す。** 中で例外が出ると`matchBeginning`が立ったまま・`game.started`がfalseのまま抜け、以降「試合を始めようとしても何も起きない」状態になる。失敗時はトップ画面へ帰して部屋も離脱する。
+- **ゲストの自分の座標は`sanitizeSelfPosition()`で毎フレーム点検する。** 一度NaNが入ると以降ずっと描画されず操作もできない。直前の正常な位置へ戻す。
+
 #### 観戦(ホスト敗退後)
 - `spectateCandidates()`は**自分以外の生存者全員**(人間を先、botを後)。人間だけを候補にすると、生き残りが1人のときに「次のプレイヤー」を押しても切り替わらない。観戦の終了判定(`checkWin`の`humanAlive`)は候補とは別なので、botを候補に含めても試合終了の条件は変わらない。
 
@@ -152,6 +157,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **`blast`(着弾ドームAoE。ピクシー「ビッグバン」)**: 弾に`blast:{radius,dmg,color,expandTime,(telegraphTime),(style),(se)}`を付けると、命中/最大射程到達の地点で`spawnGroundBlast()`が`kind:'circle'`の`areaEffect`を発生させ、円が広がりながらダメージ判定する。**弾の直撃ダメージ(`mv.dmg`)と爆風ダメージ(`mv.blast.dmg`)は別々に入る**(両方当たれば合計)。描画は`drawDomeBurstEffect`。
 - **`aoeShape`技の`burst`(範囲技の連射。ピクシー「ライトニング」)**: 通常の弾と違い`areaEffect`は即時生成なので、2発目以降は`pendingAoeCasts`(world.js)に「発射時刻+生成関数」を積み、`updatePendingAoeCasts()`が時刻到達で生成する。撃った本人が発射前に倒れた場合は不発になる。
 - **範囲エフェクトの見た目は必ずダメージ判定と同じ半径で描く。** `updateAreaEffects`のヒット判定は`curReach`(=`fillDist`を`range`でクランプした値)を使うので、描画側も同じ値を使う。見栄えのために0.95倍などを掛けると判定と見た目がズレる。
+- **`gutsDrainRatio`(技単位のガッツ削り。ピクシー「キッス」)**: 技に付けると、与えたダメージ×この割合ぶん相手のガッツも削る。伝搬は`gutsDrain`という名前で弾・AoEに載せ、`applyDamage`の`opts.gutsDrain`で適用する。**属性単位のガッツ削り(プラント0.3/アーク0.45)とは別系統**なので混同しないこと。
 - **新しいダメージ源のフィールドを増やしたら、`ui.js`の技一覧(`buildMastermonMovesHtml`)の威力表示にも足すこと。** 表示は`mv.dmg`ベースなので、威力を`blast`など別フィールドに持たせると**技一覧が「威力 0」と表示されてしまう**(2026-07-25にビッグバンで発生・修正。現在は`mv.dmg + mv.blast.dmg`の合計を表示)。特徴テキストは`describeMoveFeatureText`に分岐を足す。
 
 ### 音(audio.js)
@@ -169,6 +175,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - どのループを鳴らすかは毎tickの`updateBgmFileLoops()`が一括判定する。**ラストバトル音源が鳴るときは決戦BGMを止める**(重複防止)。**ラストバトル音源が未ロードなら決戦BGMを鳴らし続ける**(合成に落とすより自然)。
   - 合成パートとの二重再生は`bgmFileLoopActive()`で防ぐ。**実音源が鳴っている間はスケジューラの合成ステップを一切呼ばない。** 音源未ロード/取得失敗時のみ合成にフォールバック(決戦/ラストバトル=`bgmEpicStep`、ショップ=`bgmTitleStep`)するので無音にならない。
   - 読み込みタイミング: 試合中に必要な2曲(`bgm_final5`/`bgm_lastbattle`)は`audioInit()`の`ensureBgmFileBuffers()`で先読み。**ショップ曲は画面を開いたとき(`ensureBgmShopBuffer()`)に初回ロード**する(起動時のfetchを増やさないため)。長い曲を足すときもこの使い分けにする。
+  - **曲ごとの音量は`BGM_FILE_GAIN`で微調整する**(決戦BGM=1.0を基準に実測でそろえた値)。音源を再エンコードせずに数値だけで直せるようにしてある。新しい曲を足したらここにも1行足す。
+  - **切替は等パワークロスフェード(`_equalPowerCurve`)で行う。** 単純な線形フェードで2曲を重ねると合計音量が一時的に1.4倍近くまで上がり、切替の瞬間だけ音が大きくなる(決戦→ラストバトルで実際に起きていた)。上げ側は`sin`、下げ側は`cos`で、**下げ側は終点基準(`to + (from-to)*cos`)で組む**(始点基準にすると逆向きに立ち上がってしまう)。
 - **ゼウス(SSR)装備時のtier3専用SE**(`playZeusTier3Once`): 動画音声(約1秒)を内蔵mp3データURI(`ZEUS_TIER3_DATAURL`)で再生。`moveSeName`が`SKIN_TIER3_SE`(combat.js)経由でゼウス装備tier3のみこのSEに差し替え。未ロード時は合成`godRising`にフォールバック。
 - **短い内蔵SEを増やすときは`createSeOneShot(dataUrl, gain)`を使う**(ちょこの召喚/ヴァニッシュ/被弾の3種)。`ensure()`で先読み・`play()`は未ロード/音量0ならfalseを返すので、`SE_DEFS`側で `if(!seXxx.play()) SE_DEFS.既定SE(t,o)` と書けば必ず音が出る。**`SE_DEFS`に足せば管理者画面のSE確認に自動で載る**(表示名は`SE_TEST_LABELS`に追記、連打間引きは`SE_MIN_GAP`に追記)。
 - **リザルトの自己ベスト更新SE**(`playBestUpdateOnce`): 約9秒と長いので外部ファイル`best_update.mp3`を`fetch`+`decodeAudioData`し1回だけ再生(ループ無し)。全体の自己ベスト更新時に鳴らし、称号/モンスター毎ベストのSSR獲得SEより優先。未ロード時はSSR獲得SEにフォールバック。
