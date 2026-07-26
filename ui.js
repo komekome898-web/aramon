@@ -167,7 +167,7 @@ function createCardCarousel(cfg){
     dots.innerHTML = '';
     st.cards = st.keys.map((key, i)=>{
       const card = document.createElement('div');
-      card.className = 'ml-card';
+      card.className = 'ml-card' + (cfg.cardClass ? ' ' + cfg.cardClass(key) : '');
       card.dataset.key = key;
       card.dataset.index = String(i);
       card.style.setProperty('--ml-accent', cfg.accent(key));
@@ -191,7 +191,14 @@ function createCardCarousel(cfg){
   }
   // カードの中身だけ作り直す(選択中バッジ・レベル等が変わったとき)
   function refreshCards(){
-    st.keys.forEach((key,i)=>{ if(st.cards[i]) st.cards[i].innerHTML = cfg.cardHtml(key); });
+    st.keys.forEach((key,i)=>{
+      const c = st.cards[i];
+      if(!c) return;
+      // 位置は render() がインラインで書くので、クラスの付け替えは中身の作り直しと一緒に行う
+      const center = c.classList.contains('is-center');
+      c.className = 'ml-card' + (cfg.cardClass ? ' ' + cfg.cardClass(key) : '') + (center ? ' is-center' : '');
+      c.innerHTML = cfg.cardHtml(key);
+    });
   }
 
   function render(){
@@ -346,15 +353,15 @@ function mlAccentOf(key){
 // STATUSの下に置く短縮版の説明。1行に3つ×2行で収めるため、MASTERMON_STATSのdescより
 // さらに短い言い回しを使う(長い文だと折り返して2行に収まらない)
 const STAT_SHORT_DESC = {
-  life:'HP', power:'威力/被ダメ', wisdom:'威力/ガッツ',
-  accuracy:'連射', evasion:'移動', vitality:'被ダメ',
+  life:'HP', power:'与ダメ/被ダメ', wisdom:'与ダメ/ガッツ回復',
+  accuracy:'連射速度', evasion:'移動速度', vitality:'被ダメ',
 };
+// 3行2列(左=ライフ/ちから/かしこさ, 右=命中/回避/丈夫さ)。CSSのgrid-auto-flow:columnで
+// MASTERMON_STATSの並び順そのままがこの配置になる
 function caroStatDescHtml(){
-  const item = s => `<span class="ml-stat-desc-item"><b style="color:${s.color}">${s.label}</b>=${STAT_SHORT_DESC[s.key]}</span>`;
-  return `<div class="ml-stat-desc">
-    <div class="ml-stat-desc-line">${MASTERMON_STATS.slice(0,3).map(item).join('')}</div>
-    <div class="ml-stat-desc-line">${MASTERMON_STATS.slice(3).map(item).join('')}</div>
-  </div>`;
+  return `<div class="ml-stat-desc">${MASTERMON_STATS.map(s=>
+    `<span class="ml-stat-desc-item"><b style="color:${s.color}">${s.label}</b>=${STAT_SHORT_DESC[s.key]}</span>`
+  ).join('')}</div>`;
 }
 // STATUSセクション。モンスター一覧とマスモン選択で同じ見た目にするため共用する
 function caroStatusSecHtml(mm, apt, preview, note){
@@ -363,6 +370,13 @@ function caroStatusSecHtml(mm, apt, preview, note){
     ${buildMastermonStatsColHtml(mm, apt || {}, preview)}
     ${caroStatDescHtml()}
   </div>`;
+}
+// 名前の横に置くオーラのマーク(●をオーラ色で。絵文字だと色が固定なので自前で描く)
+function caroAuraMarkHtml(aura){
+  if(!aura) return '';
+  const hex = (typeof auraColorHex==='function') ? auraColorHex(aura) : '#fff';
+  const jp = (typeof AURA_JP!=='undefined') ? AURA_JP[aura] : '';
+  return `<span class="ml-aura-mark" style="--am:${hex}" title="${jp}オーラ"></span>`;
 }
 // カード下部の数値(HP・速さ)。大きく見せたいので専用クラスで組む
 function caroFigsHtml(rows){
@@ -377,7 +391,7 @@ function mlCardInnerHtml(key){
     <div class="ml-card-art">${defaultMonsterImgTag(key, el.label)}</div>
     <div class="ml-card-shine"></div>
     <div class="ml-card-body">
-      <div class="ml-card-name">${el.label}</div>
+      <div class="ml-card-name">${el.label}${caroAuraMarkHtml(mlAuraOf(key))}</div>
       ${caroFigsHtml([{k:'HP', v:el.hp}, {k:'速さ', v:mlSpeedOf(key)}])}
     </div>`;
 }
@@ -415,7 +429,7 @@ function mlDetailInfoHtml(key){
   // ヘッダー(名前・チップ)はスクロールさせないので .ml-info-scroll の外に出す
   return `
     <div class="ml-info-head">
-      <span class="ml-info-name">${el.label}</span>
+      <span class="ml-info-name">${el.label}${caroAuraMarkHtml(aura)}</span>
       ${auraName ? `<span class="ml-info-chip aura">${auraName}</span>` : ''}
       <span class="ml-info-chip">HP ${el.hp}</span>
       <span class="ml-info-chip">速さ ${mlSpeedOf(key)}</span>
@@ -2947,10 +2961,21 @@ function mmEffectiveStats(mm){
     speed: Math.round(el.speed * (el.speedMod||1) * mults.speedMult),
   };
 }
+// マスモンは「着せ替え済みの姿」なのでスキン込みのオーラを使う
+function mmAuraOf(key){
+  return (typeof getMonsterAura==='function') ? getMonsterAura({ element:key, isPlayer:true }) : MONSTER_AURA[key];
+}
 function mmAccentOf(key){
-  // マスモンは「着せ替え済みの姿」なのでスキン込みのオーラ色を使う
-  const aura = (typeof getMonsterAura==='function') ? getMonsterAura({ element:key, isPlayer:true }) : MONSTER_AURA[key];
+  const aura = mmAuraOf(key);
   return (aura && typeof auraColorHex==='function') ? auraColorHex(aura) : (ELEMENTS[key].accent || ELEMENTS[key].color);
+}
+// 装備スキンのレア度でカードの光沢の色を変える(SR=金 / SSR=虹 / 無し=白)
+function mmShineClass(key){
+  const sid = (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
+  if(!sid) return '';
+  if(typeof SSR_SKINS!=='undefined' && SSR_SKINS[sid]) return 'ml-shine-ssr';
+  if(sid.indexOf(':')>=0) return 'ml-shine-sr';
+  return '';
 }
 function mmCardInnerHtml(key){
   const mm = loadMastermons()[key];
@@ -2967,7 +2992,7 @@ function mmCardInnerHtml(key){
     <div class="ml-card-art ml-card-art-mm">${equippedIconImgTag(key, el.label)}</div>
     <div class="ml-card-shine"></div>
     <div class="ml-card-body ml-card-body-mm">
-      <div class="ml-card-name">${mm.name}</div>
+      <div class="ml-card-name">${mm.name}${caroAuraMarkHtml(mmAuraOf(key))}</div>
       ${caroFigsHtml([{k:'HP', v:eff.hp}, {k:'速さ', v:eff.speed}])}
       <div class="ml-card-exp"><div class="ml-card-exp-fill" style="width:${expPct}%"></div></div>
       <div class="ml-card-exp-label">${maxed ? 'MAX LEVEL' : `EXP ${mm.exp}/${expNeed}`}　🎫${mm.tickets}</div>
@@ -2980,6 +3005,7 @@ const mmCarousel = createCardCarousel({
   prevBtn:'mmPrevBtn', nextBtn:'mmNextBtn',
   keys: mmKeys,
   cardHtml: mmCardInnerHtml,
+  cardClass: mmShineClass,
   accent: mmAccentOf,
   art: (key)=>({ a: ELEMENTS[key].color, b: ELEMENTS[key].dark }),
   onPick: (key, cardEl)=>openMastermonDetail(key, cardEl),
@@ -3000,7 +3026,7 @@ function renderMastermonCard(key, srcCard){
     clone = srcCard.cloneNode(true);
   } else {
     clone = document.createElement('div');
-    clone.className = 'ml-card';
+    clone.className = 'ml-card ' + mmShineClass(key);
     clone.dataset.key = key;
     clone.style.setProperty('--ml-accent', mmAccentOf(key));
     clone.style.setProperty('--ml-art-a', ELEMENTS[key].color);
@@ -3177,7 +3203,9 @@ function renderMastermonDetail(key){
   const preview = (mastermonDetailTab==='training' && mastermonSelectedTraining) ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
   // 着せ替え画面のみステータス列を表示しない(プレビューを大きく取るため)。
   // それ以外はモンスター一覧と同じSTATUSセクション(バー+説明2行)にそろえる
-  const statsColHtml = (mastermonDetailTab==='dressup') ? '' : caroStatusSecHtml(mm, apt, preview, '育成後 / 適正');
+  // 着せ替え(プレビューを大きく取る)と詳細情報(グリッド内にSTATUSを含む)は左の列を出さない
+  const statsColHtml = (mastermonDetailTab==='dressup' || mastermonDetailTab==='info')
+    ? '' : caroStatusSecHtml(mm, apt, preview, '育成後 / 適正');
 
   const TAB_TITLES = { info:'詳細情報', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
   let contentHtml;
@@ -3417,16 +3445,29 @@ function buildMastermonInfoHtml(key, mm, el){
       <div class="mm-info-state-line">効果：${describeStateEffectsText(sc.effects)}</div>
     </div>` : '';
 
+  // 2列 + 技を全幅で1つのグリッドに入れ、まとめてスクロールさせる
+  //   ステータス   ステータス倍率
+  //   特性         状態変化
+  //   技(2列分)
   return `
-    <div class="mastermon-info-col-single">
-      <div class="mm-info-col-title">ステータス倍率</div>
-      ${statRows}
-      <div class="mm-info-col-title" style="margin-top:14px;">特性</div>
-      <div class="mm-info-trait">${TRAIT_DESC[el.trait]}</div>
-      <div class="mm-info-col-title" style="margin-top:14px;">状態変化</div>
-      ${stateHtml}
-      <div class="mm-info-col-title" style="margin-top:14px;">技</div>
-      ${buildMastermonMovesHtml(key)}
+    <div class="ml-info-cols mm-info-grid">
+      ${caroStatusSecHtml(mm, APTITUDE[key], null, '育成後 / 適正')}
+      <div class="ml-sec">
+        <div class="ml-sec-title">ステータス倍率</div>
+        ${statRows}
+      </div>
+      <div class="ml-sec">
+        <div class="ml-sec-title">特性</div>
+        <div class="ml-trait-text">${TRAIT_DESC[el.trait]}</div>
+      </div>
+      <div class="ml-sec">
+        <div class="ml-sec-title">状態変化</div>
+        ${stateHtml}
+      </div>
+      <div class="ml-sec mm-info-moves">
+        <div class="ml-sec-title">技</div>
+        ${buildMastermonMovesHtml(key)}
+      </div>
     </div>`;
 }
 
@@ -3510,16 +3551,11 @@ function buildMastermonTrainingHtml(mm){
       <span class="mm-train-name">${t.label}</span>
     </button>`).join('');
 
-  const legendHtml = MASTERMON_STATS.map(s=>
-    `<div class="mm-stat-desc-row"><b style="color:${s.color}">${s.label}</b>：${s.desc}</div>`
-  ).join('');
-
+  // ステータス説明はSTATUSセクションの下に常に出ているので、ここには置かない
   return `
     <div class="mastermon-detail-traincol">
       <div class="mm-train-title">トレーニング(選択で変動値をプレビュー)</div>
       <div class="mm-train-grid">${trainingHtml}</div>
-      <div class="mm-stat-desc-title">ステータス説明</div>
-      <div class="mm-stat-desc-wrap">${legendHtml}</div>
     </div>`;
 }
 
