@@ -119,8 +119,8 @@ const MAPS = {
 const ELEMENTS = {
   mocchi:  { label:'モッチー',   color:'#ff8fc4', dark:'#b3548a', speed:190, hp:115, trait:'soft', dmgTakenMod:0.8 },
   suezo:   { label:'スエゾー',   color:'#ffdd33', dark:'#a8901f', speed:222, hp:76,  trait:'gutsbreak' },
-  phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:198, hp:110, trait:'haste', cooldownMod:1/1.5 },
-  fire:    { label:'ドラゴン',   color:'#ff6b35', dark:'#a8431d', speed:182, hp:100, trait:'burn' },
+  phoenix: { label:'ヒノトリ',   color:'#f2b33d', dark:'#9c6a1a', accent:'#e8432a', speed:200, hp:130, trait:'haste', cooldownMod:1/1.5 },
+  fire:    { label:'ドラゴン',   color:'#ff6b35', dark:'#a8431d', speed:182, hp:125, trait:'burn' },
   aqua:    { label:'ウンディーネ', color:'#3dccc7', dark:'#1d8c88', speed:204, hp:88,  trait:'lifesteal' },
   leaf:    { label:'プラント',   color:'#7fb236', dark:'#4f6f1f', speed:140, hp:200, trait:'gutsdrain', cooldownMod:1/1.5, dmgDealtMod:0.8, gutsRegenMod:1.5 },
   spark:   { label:'ライガー',   color:'#f4c430', dark:'#a8801c', speed:224, hp:78,  trait:'slow' },
@@ -130,8 +130,8 @@ const ELEMENTS = {
   illumine:{ label:'イルミネ',   color:'#1c1c22', dark:'#0a0a0d', accent:'#c98bff', speed:206, hp:155, trait:'haste', cooldownMod:1/1.5 },
   fox:     { label:'キュービ',   color:'#f5f2ea', dark:'#b8b2a4', speed:215, hp:105, trait:'bighitbox', hitboxMult:1.5 },
   god:     { label:'ガリ',       color:'#f5f0ff', dark:'#c3b3e0', accent:'#ffd23c', speed:196, hp:110, trait:'godrange' },
-  zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:224, hp:105, trait:'poison' },
-  pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble', dmgTakenMod:1.2 },
+  zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:215, hp:95, trait:'poison' },
+  pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble' },
 };
 
 const monsterImages = {};
@@ -446,7 +446,8 @@ const SIGNATURE_MOVES = {
   ],
   // ピクシー: 特性で移動速度1.2倍・被ダメ1.2倍(高機動・低耐久のグラスキャノン)
   pixie: [
-    { name:'キッス',     tier:1, color:'#ff4d6d', range:700,  dmg:18, cooldown:0.8,  gutsCost:8,  projSpeed:530, hitR:11, splash:66, icon:'💋' },
+    // gutsDrainRatio: 与えたダメージのこの割合ぶん、相手のガッツも削る(技単位の効果)
+    { name:'キッス',     tier:1, color:'#ff4d6d', range:700,  dmg:18, cooldown:0.8,  gutsCost:8,  projSpeed:530, hitR:11, splash:66, gutsDrainRatio:0.5, icon:'💋' },
     // 「ライガー種の超雷撃」と同じエフェクト(zigzag/aoeStyle:thunder)を、幅半分(55)で3連発
     { name:'ライトニング', tier:2, color:'#fff34d', dmg:10, cooldown:1.15, gutsCost:16,
       aoeShape:'zigzag', range:1300, zigzagWidth:55, burst:3, burstGap:0.15, aoeStyle:'thunder', icon:'⚡️' },
@@ -619,6 +620,11 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-26', items:[
+    'バランス調整: ヒノトリのHPを130・移動速度を200に / ザンのHPを95・移動速度を215に / ドラゴンのHPを125に',
+    'ピクシーの特性から「被ダメージ1.2倍」を削除(移動速度1.2倍はそのまま)。tier1「キッス」に、与えたダメージの50%ぶん相手のガッツも削る効果を追加',
+    'オリジナルBGM(決戦・ラストバトル・ショップ)の音量を決戦BGM基準にそろえ、曲の切り替わりで一瞬音が大きくなるのを修正',
+    'マルチプレイのゲスト側でアイテムの効果メッセージが出ないのを修正',
+    'マルチプレイで試合中に不具合が起きても画面が固まったままにならず、次の試合を普通に始められるように改善',
     'マルチプレイのゲスト側の不具合を修正: キルフィードが流れない／キルボーナス(HP・ガッツ・経験値)が入らない／拾ったアイテムが消えず効果も遅れて出る',
     'マルチプレイのゲスト側の操作感を改善: ラグで自分のモンスターが後ろに引っ張り戻される動きを解消し、川など足が遅くなる場所で動けなくなる問題も修正',
     'マルチプレイで移動の速い相手が瞬間移動して見える問題を修正(滑らかに動くようになりました)',

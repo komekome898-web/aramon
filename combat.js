@@ -59,7 +59,7 @@ function fireMove(attacker, target, move){
   if(move.melee){
     lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){
-      applyDamage(target, effDmg, attacker, { moveAura });
+      applyDamage(target, effDmg, attacker, { moveAura, gutsDrain: move.gutsDrainRatio||0 });
       spawnHit(target.x, target.y, target.z, effColor);
     }
     return;
@@ -76,6 +76,7 @@ function fireMove(attacker, target, move){
         fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
         fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
         spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
+        gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
       };
       if(move.aoeShape==='beams'){
         const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -165,6 +166,7 @@ function fireMove(attacker, target, move){
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
       projStyle: move.projStyle||null, moveAura, auraTint,
+      gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り(キッス等)
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
       blast: move.blast||null, // ピクシー「ビッグバン」等: 着弾/最大射程到達で地面にドーム状AoEを発生させる
@@ -292,6 +294,14 @@ function applyDamage(target, dmg, source, opts){
       }
       if(Math.random() < 0.2){
         target.freezeUntil = matchTime + 1;
+      }
+    }
+    // 技単位のガッツ削り(ピクシー「キッス」等)。与えたダメージに比例して相手のガッツを削る
+    if(opts && opts.gutsDrain){
+      const drained = Math.min(finalDmg*opts.gutsDrain, target.guts);
+      if(drained > 0){
+        target.guts = Math.max(0, target.guts - drained);
+        spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
       }
     }
     if(source.element==='leaf'){
@@ -911,7 +921,7 @@ function updateProjectiles(dt){
       if(t>=1){
         for(const e of entities){
           if(!e.alive || e.id===p.ownerId) continue;
-          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
         }
         spawnHit(p.x,p.y,0,p.color);
         spawnDeath(p.x,p.y,0,p.color);
@@ -945,7 +955,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
             }
           }
           hit=true; break;
@@ -960,7 +970,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
             }
           }
           hit=true; break;
@@ -983,7 +993,7 @@ function updateProjectiles(dt){
         }
         if(hitNow){
           // blast付き(ビッグバン等)も球体の直撃ダメージを与える。着弾後の爆風ダメージは別途spawnGroundBlastで判定
-          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit){
             const owner = getEntity(p.ownerId);
@@ -997,7 +1007,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;
               if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
             }
           }
           spawnHit(tp.x,tp.y,e.z,p.color);
@@ -1028,6 +1038,15 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
     playSe(blast.se || 'fire', { kind:'aoe', dur: ae.life });
   }
 }
+// アイテム取得メッセージ。自分が拾ったならその場で表示する。
+// マルチのホストが「ゲストが拾った」ぶんを処理したときは、その文言を控えておき
+// pickupイベントに載せて本人へ届ける(ゲストは取得判定自体を行わないため、
+// これをしないとゲスト側に効果のメッセージが一切出ない)。
+let pendingLootToast = null;
+function lootToast(e, msg){
+  if(e.isPlayer) pushToast(msg);
+  else if(netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootToast = msg;
+}
 function updateLootPickups(){
   for(let i=lootItems.length-1;i>=0;i--){
     const it = lootItems[i];
@@ -1036,6 +1055,7 @@ function updateLootPickups(){
       continue;
     }
     let consumed = false, consumedBy = null, consumedKind = null;
+    pendingLootToast = null;
     for(const e of entities){
       if(!e.alive) continue;
       if(dist(e,it) < e.radius+14){
@@ -1046,13 +1066,13 @@ function updateLootPickups(){
             e.maxHp += boost;
             e.hp += boost;
             spawnDmgText(e.x, e.y, e.z, '上限+'+boost, '#ffe06b');
-            if(e.isPlayer) pushToast(`${hi.name}：HP上限+${boost}`);
+            lootToast(e, `${hi.name}：HP上限+${boost}`);
             consumed = true;
           } else {
             const healed = Math.min(hi.heal, e.maxHp-e.hp);
             e.hp += healed;
             spawnDmgText(e.x, e.y, e.z, '+'+Math.round(healed), '#7fffa0');
-            if(e.isPlayer) pushToast(`${hi.name} で HP+${Math.round(healed)}`);
+            lootToast(e, `${hi.name} で HP+${Math.round(healed)}`);
             consumed = true;
           }
         } else if(it.kind==='guts'){
@@ -1060,7 +1080,7 @@ function updateLootPickups(){
           const restored = Math.min(GUTS_ITEM.restore, e.maxGuts-e.guts);
           e.guts = Math.min(e.maxGuts, e.guts + GUTS_ITEM.restore);
           spawnDmgText(e.x, e.y, e.z, '+'+Math.round(restored), '#ffd9e3');
-          if(e.isPlayer) pushToast(`${GUTS_ITEM.name} で ガッツ上限+${GUTS_ITEM.maxBoost}・ガッツ+${Math.round(restored)}`);
+          lootToast(e, `${GUTS_ITEM.name} で ガッツ上限+${GUTS_ITEM.maxBoost}・ガッツ+${Math.round(restored)}`);
           consumed = true;
         } else if(it.kind==='ticket'){
           if(e.moveTierUnlocked >= 3){
@@ -1068,22 +1088,22 @@ function updateLootPickups(){
             if(roll < 1/3){
               e.trainCooldownMult *= 0.93;
               spawnDmgText(e.x, e.y, e.z, '連射UP', '#9fd1ff');
-              if(e.isPlayer) pushToast(`${TICKET_ITEM.name}：技の連射速度が上がった！`);
+              lootToast(e, `${TICKET_ITEM.name}：技の連射速度が上がった！`);
             } else if(roll < 2/3){
               e.trainGutsCostReduction += 1;
               spawnDmgText(e.x, e.y, e.z, '消費ガッツDOWN', '#9fd1ff');
-              if(e.isPlayer) pushToast(`${TICKET_ITEM.name}：全技の消費ガッツが下がった！`);
+              lootToast(e, `${TICKET_ITEM.name}：全技の消費ガッツが下がった！`);
             } else {
               e.trainProjSpeedMult *= 1.10;
               spawnDmgText(e.x, e.y, e.z, '弾速UP', '#9fd1ff');
-              if(e.isPlayer) pushToast(`${TICKET_ITEM.name}：技の弾速が上がった！`);
+              lootToast(e, `${TICKET_ITEM.name}：技の弾速が上がった！`);
             }
             consumed = true;
           } else {
             e.moveTierUnlocked = Math.min(3, e.moveTierUnlocked+1);
             e.moveTierSelected = e.moveTierUnlocked;
             const newMove = SIGNATURE_MOVES[e.element][e.moveTierUnlocked-1];
-            if(e.isPlayer) pushToast(`${TICKET_ITEM.name}！「${newMove.name}」が使えるようになった`);
+            lootToast(e, `${TICKET_ITEM.name}！「${newMove.name}」が使えるようになった`);
             consumed = true;
           }
         } else if(it.kind==='training'){
@@ -1102,7 +1122,7 @@ function updateLootPickups(){
             e.trainCooldownMult *= 0.86;
           }
           spawnDmgText(e.x, e.y, e.z, ti.emoji+' 強化', ti.accent);
-          if(e.isPlayer) pushToast(`${ti.emoji} ${ti.name}：${ti.desc}`);
+          lootToast(e, `${ti.emoji} ${ti.name}：${ti.desc}`);
           consumed = true;
         }
       }
@@ -1120,7 +1140,10 @@ function updateLootPickups(){
       // アイテム自体の見た目はホスト側のlootItems配列にしか無いため個別に届ける必要がある)
       if(netState.mode==='multi' && netState.isHost){
         // 拾った人間プレイヤーのIDと種類も送り、ゲスト側で自分の拾得ならSEを鳴らせるようにする
-        window.__aramonPushLootEvent(netState.roomId, { evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null });
+        window.__aramonPushLootEvent(netState.roomId, {
+          evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null,
+          msg: pendingLootToast||null, // 拾った本人(ゲスト)に出す効果メッセージ
+        });
         // 強化値(maxHp/train係数)は普段8回に1回のフル配信でしか送っていないため、
         // そのままだと効果の反映が最大0.4秒遅れる。取得直後は次の配信を強制的にフルにする
         hostForceFullNext = true;
@@ -1325,7 +1348,7 @@ function updateAreaEffects(dt){
           if(ae.hitIds.has(key)) continue;
           if(hitTestRect(origin, ent, beamAngle, curReach, ae.width/2)){
             ae.hitIds.add(key);
-            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura });
+            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0 });
             spawnHit(ent.x, ent.y, ent.z, ae.color);
           }
         }
@@ -1346,7 +1369,7 @@ function updateAreaEffects(dt){
         }
         if(hit){
           ae.hitIds.add(ent.id);
-          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura });
+          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0 });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
         }
       }

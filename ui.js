@@ -11,7 +11,7 @@ const TRAIT_DESC = {
   soft:       '被ダメ0.8倍',
   gutsbreak:  '与えたダメージの40%分 相手のガッツを削る',
   godrange:   '全ての技の射程が長い・技の消費ガッツ-12.5%',
-  nimble:     '移動速度1.2倍・被ダメ1.2倍',
+  nimble:     '移動速度1.2倍',
 };
 function stateTriggerText(sc){
   return {
@@ -2923,6 +2923,7 @@ function describeMoveFeatureText(mv){
   if(mv.burst) parts.push(`${mv.burst}連射`);
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);
+  if(mv.gutsDrainRatio) parts.push(`与えたダメージの${Math.round(mv.gutsDrainRatio*100)}%ぶん相手のガッツを削る`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
   if(mv.selfSpeedBuffOnHit) parts.push(`命中時 自分の移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒間)`);
   if(mv.multiOrb) parts.push('赤青黄緑のオーラ球体を発射');
