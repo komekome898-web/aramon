@@ -22,7 +22,13 @@ let game = { started:false, over:false, tipTimer:7, selectedElement:null, select
 
 const FOV_V = 64*Math.PI/180;
 let FOCAL = 600;
-let camState = { yaw:0, pitch:0.27, height:120, distBehind:190 };
+// TPS視点のカメラ配置。distBehindを小さくすると自分のモンスターが大きく見える。
+// heightを下げると画面内で上に動くので、寄せたぶんを打ち消して自分のモンスターの
+// 画面上の位置(足元Y)と地平線の高さを従来どおりに保っている(見た目だけ約1.35倍)。
+// 数値を変えたら、足元が下の技フィールドに隠れないかを確認すること。
+const CAM_DIST_BEHIND = 145; // 以前は190
+const CAM_HEIGHT      = 90;  // 以前は120
+let camState = { yaw:0, pitch:0.27, height:CAM_HEIGHT, distBehind:CAM_DIST_BEHIND };
 let camPos = { x:0, y:0, z:0 };
 let camSnap = { active:false, fromYaw:0, toYaw:0, t:0, duration:0.28 };
 // 召喚演出(試合開始時の5秒カウントダウン)。この間は視点操作のみ可能で、

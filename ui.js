@@ -691,6 +691,38 @@ function skinPreviewSrc(skinId, view){
   if(SSR_SKINS[skinId]){ const s = SSR_SKINS[skinId]; return `monsters/${view==='back'? s.playerImg : s.iconImg}.png`; }
   return '';
 }
+// プレビューの歩行モーション再生。正面・後ろの2枚を同じタイマーでコマ送りする。
+// 歩行コマが未用意/未ロードのスキンは静止画のままにする(数回だけロードを待って再試行)。
+let skinPreviewAnimTimer = null, skinPreviewAnimRetry = null;
+const SKIN_PREVIEW_FRAME_MS = (typeof WALK_FRAME_DUR==='number' ? WALK_FRAME_DUR : 0.11) * 1000;
+function stopSkinPreviewAnim(){
+  if(skinPreviewAnimTimer){ clearInterval(skinPreviewAnimTimer); skinPreviewAnimTimer = null; }
+  if(skinPreviewAnimRetry){ clearTimeout(skinPreviewAnimRetry); skinPreviewAnimRetry = null; }
+}
+function startSkinPreviewAnim(skinId, tries){
+  stopSkinPreviewAnim();
+  if(typeof skinWalkFrameDataUrls!=='function') return;
+  const frontEl = document.getElementById('skinPreviewFront');
+  const backEl  = document.getElementById('skinPreviewBack');
+  const front = skinWalkFrameDataUrls(skinId, 'front');
+  const back  = skinWalkFrameDataUrls(skinId, 'back');
+  if(!front && !back){
+    // 画像の読み込み待ちの可能性があるので少し待って再試行(上限あり)
+    if((tries||0) < 6){
+      skinPreviewAnimRetry = setTimeout(()=>{ skinPreviewAnimRetry = null; startSkinPreviewAnim(skinId, (tries||0)+1); }, 350);
+    }
+    return;
+  }
+  let i = 0;
+  const tick = ()=>{
+    if(document.getElementById('skinPreviewOverlay').classList.contains('hidden')){ stopSkinPreviewAnim(); return; }
+    if(front && frontEl) frontEl.src = front[i];
+    if(back && backEl)   backEl.src  = back[i];
+    i = (i+1) % 8;
+  };
+  tick();
+  skinPreviewAnimTimer = setInterval(tick, SKIN_PREVIEW_FRAME_MS);
+}
 function showSkinPreview(skinId, opts){
   opts = opts || {};
   const m = skinMeta(skinId);
@@ -698,19 +730,23 @@ function showSkinPreview(skinId, opts){
   document.getElementById('skinPreviewName').textContent = m.name;
   const rarEl = document.getElementById('skinPreviewRar');
   rarEl.textContent = m.rarity; rarEl.className = 'skin-preview-rar rar-'+m.rarity;
+  // まず静止画を入れておき(歩行コマ未対応スキンのフォールバック)、あれば歩行モーションに差し替える
   document.getElementById('skinPreviewFront').src = skinPreviewSrc(skinId, 'front');
   document.getElementById('skinPreviewBack').src = skinPreviewSrc(skinId, 'back');
   const selBtn = document.getElementById('skinPreviewSelectBtn');
   if(opts.selectable){ selBtn.classList.remove('hidden'); skinPreviewSelect = opts.onSelect || null; }
   else { selBtn.classList.add('hidden'); skinPreviewSelect = null; }
   document.getElementById('skinPreviewOverlay').classList.remove('hidden');
+  startSkinPreviewAnim(skinId, 0);
 }
 document.getElementById('skinPreviewCloseBtn').addEventListener('click', ()=>{
   document.getElementById('skinPreviewOverlay').classList.add('hidden'); skinPreviewSelect = null;
+  stopSkinPreviewAnim();
 });
 document.getElementById('skinPreviewSelectBtn').addEventListener('click', ()=>{
   const fn = skinPreviewSelect; skinPreviewSelect = null;
   document.getElementById('skinPreviewOverlay').classList.add('hidden');
+  stopSkinPreviewAnim();
   if(fn) fn();
 });
 
@@ -1361,10 +1397,37 @@ document.getElementById('openShopBtn').addEventListener('click', ()=>{
   renderShop();
   setShopDialogue(SHOP_NPC_DEFAULT);  // 開いた直後はデフォルトセリフ
   document.getElementById('shopOverlay').classList.remove('hidden');
+  // ショップ専用BGMに切替(音源はここで初回ロード。未ロード時はタイトル曲のまま代替)
+  if(typeof ensureBgmShopBuffer==='function') ensureBgmShopBuffer();
+  if(typeof bgmSetTrack==='function') bgmSetTrack('shop');
 });
 document.getElementById('closeShopBtn').addEventListener('click', ()=>{
   document.getElementById('shopOverlay').classList.add('hidden');
+  if(typeof bgmSetTrack==='function') bgmSetTrack('title'); // トップ画面のBGMに戻す
 });
+// 更新履歴の未読管理: まだ開いて確認していない項目があるとボタンに「new」を出す。
+// 署名は「最新日付#全項目数」なので、同じ日付に項目を足した場合も未読扱いになる。
+// 端末ごとの既読状態なのでアカウント同期はしない(localStorageのみ)。
+const CHANGELOG_SEEN_KEY = 'aramon_changelog_seen_v1';
+function changelogSignature(){
+  if(typeof UPDATE_HISTORY==='undefined' || !UPDATE_HISTORY.length) return '';
+  const newest = UPDATE_HISTORY.map(e=>e.date).sort().pop();
+  const total = UPDATE_HISTORY.reduce((n,e)=>n + ((e.items && e.items.length) || 0), 0);
+  return `${newest}#${total}`;
+}
+function changelogHasUnread(){
+  const sig = changelogSignature();
+  if(!sig) return false;
+  try{ return localStorage.getItem(CHANGELOG_SEEN_KEY) !== sig; }catch(err){ return false; }
+}
+function updateChangelogBadge(){
+  const pop = document.getElementById('changelogNewPop');
+  if(pop) pop.classList.toggle('hidden', !changelogHasUnread());
+}
+function markChangelogSeen(){
+  try{ localStorage.setItem(CHANGELOG_SEEN_KEY, changelogSignature()); }catch(err){}
+  updateChangelogBadge();
+}
 // 更新履歴: 日付降順で「プレイに関わる大きな変更」を表示する
 function renderChangelog(){
   const listEl = document.getElementById('changelogList');
@@ -1379,6 +1442,7 @@ function renderChangelog(){
 document.getElementById('changelogBtn').addEventListener('click', ()=>{
   renderChangelog();
   document.getElementById('changelogOverlay').classList.remove('hidden');
+  markChangelogSeen(); // 開いたら既読にして「new」を消す
 });
 document.getElementById('closeChangelogBtn').addEventListener('click', ()=>{
   document.getElementById('changelogOverlay').classList.add('hidden');
@@ -1386,6 +1450,7 @@ document.getElementById('closeChangelogBtn').addEventListener('click', ()=>{
 updateAccountBar();
 if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
 if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
+updateChangelogBadge(); // 更新履歴の未読「new」バッジ
 
 document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.remove('hidden');
@@ -3557,13 +3622,20 @@ const BGM_TEST_ITEMS = [
   { id:'battle1',label:'🎵 試合中・中盤' },
   { id:'battle2',label:'🎵 試合中・終盤' },
   { id:'final5', label:'🎵 残り5人以下(決戦・動画音源)' },
+  { id:'last2',  label:'🎵 残り2人(ラストバトル・動画音源)' },
+  { id:'shop',   label:'🎵 ショップ(動画音源)' },
   { id:'stop',   label:'⏹ 停止' },
 ];
 function adminPlayBgm(id){
   if(typeof audioInit==='function') audioInit();
   if(id==='stop'){ if(typeof bgmSetTrack==='function') bgmSetTrack(null); return; }
   if(id==='title'){ if(typeof bgmSetTrack==='function') bgmSetTrack('title'); return; }
-  const lv = { battle0:0, battle1:1, battle2:2, final5:3 }[id];
+  if(id==='shop'){
+    if(typeof ensureBgmShopBuffer==='function') ensureBgmShopBuffer();
+    if(typeof bgmSetTrack==='function') bgmSetTrack('shop');
+    return;
+  }
+  const lv = { battle0:0, battle1:1, battle2:2, final5:3, last2:4 }[id];
   if(typeof bgmSetIntensity==='function') bgmSetIntensity(lv);
   if(typeof bgmSetTrack==='function') bgmSetTrack('battle');
 }

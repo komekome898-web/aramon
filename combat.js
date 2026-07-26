@@ -39,8 +39,8 @@ function fireMove(attacker, target, move){
   const effProjSpeed = effectiveProjSpeed(attacker, move);
   const hbMult = ELEMENTS[attacker.element].hitboxMult || 1; // キュービ「当たり判定が大きい」特性
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(move, attacker) : (move.aura||null);
-  const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // SSR tier3は装備オーラ色に
-  const auraTint = (move.tier===3 && effColor !== move.color) ? effColor : null; // SSR tier3のエフェクト色基調(専用スタイルの色替え用)
+  const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // スキン装備tier3は装備オーラ色に
+  const auraTint = (move.tier===3 && effColor !== move.color) ? effColor : null; // スキン装備tier3のエフェクト色基調(専用スタイルの色替え用)
   if(move.melee){
     lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){

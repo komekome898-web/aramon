@@ -34,7 +34,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 | `manifest.json` | PWAマニフェスト |
 | `monsters/*.png` | モンスター画像。静止画に加え**歩行アニメ用スプライト** `<prefix>_walk_f1..8.png`(正面8コマ)/`<prefix>_walk_b1..8.png`(後ろ8コマ)。320px・256色透過PNG |
 | `tools/build_walk.py` | **歩行スプライト生成の開発用スクリプト**(ゲームには読み込まれない)。動画→8コマ透過PNG。この環境のffmpeg/PIL/numpy/scipy/opencvで動く。詳細は「バトル歩行アニメーション」節 |
-| `bgm_final5.mp3` | 残り5人以下BGMの実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
+| `bgm_final5.mp3` / `bgm_lastbattle.mp3` / `bgm_shop.mp3` | 残り5人以下(決戦) / 残り2人(ラストバトル) / ショップのBGM実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
 
 ## 重要な設計知識
 
@@ -78,6 +78,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### 描画(render.js)
 - `project(wx,wy,wz)`で3D風投影。描画物は`drawables`に集めてdepthソート後に描画。
+- **TPSカメラは`world.js`の`CAM_DIST_BEHIND`(=145)と`CAM_HEIGHT`(=90)の2つで決まる。この2つは必ずセットで調整する。** `distBehind`を小さくすると自分のモンスターは大きくなるが**同時に画面内で下へ動き、足元が下の技フィールドに隠れる**。`height`を下げると上へ戻るので、両方を組み合わせて「大きさだけ変えて画面上の位置(足元Y)と地平線の高さは維持する」のが正解(190/120→145/90で見た目約1.35倍・足元Yは318→316でほぼ同じ)。数値を変えたら実際に`startGame()`後の`project(player.x,player.y,0)`のyと、見下ろし角(遠景の地面Y)を測って確認すること。
 - 画面外カリングは`cullMarginFor`でオブジェクトの見た目上の半径に応じた余白を取る(固定余白だと巨大オブジェクトが近距離で誤って消える)。
 - 障害物は影(接地点)と本体の底が接するように描く(浮いて見えるバグ防止)。
 - **`areaEffects`も`drawables`に`kind:'ae'`として積み、他のオブジェクトと同じdepthソートに乗せる**(実描画は`drawSingleAreaEffect(ae)`)。かつては`drawAreaEffects()`を地面直後に一括描画していたため、**大きな岩・建物・火山と重なると範囲エフェクトがその裏に隠れて見えなくなっていた**(2026-07-25修正)。`cullMarginFor`では`kind:'ae'`に`ae.range`ぶんの余白を与える(発生地点=足元が画面外でも射程が長い技は画面内に届くため)。
@@ -109,6 +110,22 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 10. `monsters/<key>.png`・`<key>_player.png`(静止画。正方形キャンバス・被写体が高さの9割前後を占め足元が下端付近、という既存ファイルの規格に正規化してから配置する)
 - 技に`aoeShape`(範囲技)や独自の着弾処理(例:ピクシー「ビッグバン」の着弾ドームAoE=`blast`フィールド+`spawnGroundBlast`)等、既存にないギミックが必要な場合はcombat.js/render.jsの拡張が必要になる。既存の同系統実装(`aoeShape`分岐・`areaEffects`)を参考に、新しい`kind`を増やす形で実装するのが素直。
 
+### スキンとオーラ・プレビュー(data.js / render.js / ui.js)
+- **tier3技のオーラ/エフェクト色はSSRスキンもSR色スキンも変える。** 判定は`skinTier3Aura(skinId)`1か所に集約(SSR=`SSR_SKIN_AURA`の固定色 / SR=`element:colorId`のcolorId)。`getMoveAura`/`getMoveEffectColor`がこれを見るので、**エフェクト色の伝搬(combat.jsとnetwork.jsの`effColor`/`auraTint`)は触らなくてよい**。
+- **SSRだけの特典は「tier3の技名と威力」**(`SSR_SKIN_TIER3`/`getMoveName`/`ssrTier3DmgMult`)。SRはオーラ・エフェクトのみでここは変えない。新しいスキン種別を足すときもこの線引きを守る。
+- **スキンプレビュー(`showSkinPreview`)は歩行モーションを再生する。** `skinWalkFrameDataUrls(skinId, view)`(render.js)が歩行8コマをdataURL配列で返し(色スキンは`recolorToCanvas`で再着色・`_skinDataUrlCache`にキャッシュ)、ui.jsの`startSkinPreviewAnim`が`WALK_FRAME_DUR`間隔で正面/後ろの`<img>.src`を差し替える。**歩行コマ未用意/未ロードならnullを返し静止画のまま**(画像ロード待ちの可能性があるので0.35秒×最大6回リトライする)。オーバーレイを閉じたら必ず`stopSkinPreviewAnim()`でタイマーを止める。
+
+### 長押しでの選択・メニュー抑止(style.css / input.js)
+- CSSとJSの二段構えで全画面に効かせている。**新しい画面を足しても個別対応は不要。**
+  - style.css の `*` に `-webkit-user-select:none; user-select:none; -webkit-touch-callout:none;`(callout無しだとiOSで長押し時に「コピー/調べる/画像を保存」が出る)。**直後の `input, textarea{ user-select:text }` で入力欄だけ選択可能に戻しているので、この2行はセットで維持する。**
+  - input.js の `contextmenu`/`selectstart` を`preventDefault`(`isTextEntry()`で入力欄は除外)。
+  - **`-webkit-touch-callout`はiOS Safari専用で、ChromiumはCSSOMからも落とすためヘッドレスでは計算値を検証できない。** style.cssのテキストを直接確認するしかない(実機では効く)。
+
+### 更新履歴の未読バッジ(ui.js)
+- `changelogSignature()` = `最新日付#全項目数`。これを`localStorage`の`aramon_changelog_seen_v1`と比較して未読判定(`changelogHasUnread`)し、`#changelogNewPop`の`new`バッジを出す(`updateChangelogBadge`)。ボタンを開いた時点で`markChangelogSeen()`が既読化する。
+- 項目数を含めているので**同じ日付に項目を足しただけでも再び未読になる**。`UPDATE_HISTORY`に追記すれば自動でバッジが出るので、バッジ側の作業は不要。
+- 端末ごとの既読状態なのでアカウント同期(`ACCOUNT_SYNC_KEYS`/`accountMarkDirty`)には**入れない**。
+
 ### 技のギミック(combat.js / render.js / ui.js)
 - **`blast`(着弾ドームAoE。ピクシー「ビッグバン」)**: 弾に`blast:{radius,dmg,color,expandTime,(telegraphTime),(style),(se)}`を付けると、命中/最大射程到達の地点で`spawnGroundBlast()`が`kind:'circle'`の`areaEffect`を発生させ、円が広がりながらダメージ判定する。**弾の直撃ダメージ(`mv.dmg`)と爆風ダメージ(`mv.blast.dmg`)は別々に入る**(両方当たれば合計)。描画は`drawDomeBurstEffect`。
 - **`aoeShape`技の`burst`(範囲技の連射。ピクシー「ライトニング」)**: 通常の弾と違い`areaEffect`は即時生成なので、2発目以降は`pendingAoeCasts`(world.js)に「発射時刻+生成関数」を積み、`updatePendingAoeCasts()`が時刻到達で生成する。撃った本人が発射前に倒れた場合は不発になる。
@@ -119,12 +136,17 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - 原則Web Audio APIで合成。iOS対策で初回タップ後に`audioInit()`でAudioContext起動。
 - SE合成ヘルパー: `seTone`(オシレータ)/`seNoise`(ノイズ+フィルタ)/`seNoiseLfo`(持続ノイズ+揺らぎ)。SE定義は`SE_DEFS`オブジェクト。音作りはこの3つの組み合わせ。
 - SE: `playSe(name, opts)`。**負荷対策として自分の操作モンスターに関わる音のみ鳴らす**。`SE_MIN_GAP`で連打間引き、`SE_VOL_BOOST`で技SEを一括増幅。tier3技はエフェクトスタイル→SE名の対応表`MOVE_SE_BY_STYLE`(combat.js)で個別化。技名個別指定は`move.seStyle`。
-- BGM: タイトル(牧場)/試合中(残り人数で段階変化 intensity 0〜2)/残り5人以下(intensity 3)。`bgmSetTrack('title'|'battle'|null)`/`bgmUpdateBattleIntensity(aliveCount)`(render.jsのHUD更新から呼ぶ)。ステップシーケンサ`bgmScheduler`が16分音符単位で先読みスケジュール。全ノードは`bgmTrackGain`(切替フェード用)→`bgmGain`(音量=`audioSettings.bgm`)→出力。
+- BGM: タイトル(牧場)/試合中(残り人数で段階変化 intensity 0〜2)/残り5人以下(intensity 3=決戦)/残り2人(intensity 4=ラストバトル)/ショップ。`bgmSetTrack('title'|'battle'|'shop'|null)`/`bgmUpdateBattleIntensity(aliveCount)`(render.jsのHUD更新から呼ぶ)。ステップシーケンサ`bgmScheduler`が16分音符単位で先読みスケジュール。全ノードは`bgmTrackGain`(切替フェード用)→`bgmGain`(音量=`audioSettings.bgm`)→出力。
+- **intensityを増やしたら`bgmStepDur()`のbpm配列も同じ長さに伸ばすこと。** 配列外だと`undefined`→BPMがNaNになりスケジューラが無限ループ的に進む。`|| 126`のフォールバックも入れてある。
+- **トラック/intensityを追加したら管理者画面のBGM確認(`BGM_TEST_ITEMS`/`adminPlayBgm`)にも足す。** 実機で1タップ確認できるようにしておく。
 
 #### 実音源を使う例外(合成ではない箇所)
 「全合成」が原則だが、発注者提供の実音を使う箇所がいくつかある。いずれも**外部依存を増やさない/オフラインでも壊さない**方針。
 - **SSR獲得SE**(`playSsrJackpotOnce`/`startSsrJackpotLoop`): 動画音声を**内蔵mp3データURI**(`SSR_JACKPOT_DATAURL`)にして`decodeAudioData`→`AudioBuffer`再生。SSR演出中はループ、スキップで停止。短いのでインライン埋め込み。
-- **残り5人以下BGM**(`ensureBgmFinal5Buffer`/`startBgmFinal5Loop`/`updateBgmFinal5Loop`): 約64秒と長いので**外部ファイル`bgm_final5.mp3`**を`fetch`+`decodeAudioData`し、`loop:true`の`AudioBufferSourceNode`を`bgmTrackGain`経由で再生。スケジューラの毎tickで`updateBgmFinal5Loop()`が「試合BGM && intensity≥3 && 音量>0」を判定して開始/停止。**音源未ロード/取得失敗時は従来の合成epic(`bgmEpicStep`)にフォールバック**するので無音にならない。
+- **長いBGM(mp3ループ)は`createBgmLoop(url)`で作る**(`bgmFinal5`=残り5人以下 / `bgmLastBattle`=残り2人 / `bgmShop`=ショップ)。返り値に`ensure()`(fetch+decodeAudioData)・`start()`/`stop()`(0.6秒フェードイン/0.4秒フェードアウト)・`setPlaying(bool)`・`buffer`/`source`を持つ。全ノードは`bgmTrackGain`経由なのでBGM音量・切替フェードがそのまま乗る。
+  - どのループを鳴らすかは毎tickの`updateBgmFileLoops()`が一括判定する。**ラストバトル音源が鳴るときは決戦BGMを止める**(重複防止)。**ラストバトル音源が未ロードなら決戦BGMを鳴らし続ける**(合成に落とすより自然)。
+  - 合成パートとの二重再生は`bgmFileLoopActive()`で防ぐ。**実音源が鳴っている間はスケジューラの合成ステップを一切呼ばない。** 音源未ロード/取得失敗時のみ合成にフォールバック(決戦/ラストバトル=`bgmEpicStep`、ショップ=`bgmTitleStep`)するので無音にならない。
+  - 読み込みタイミング: 試合中に必要な2曲(`bgm_final5`/`bgm_lastbattle`)は`audioInit()`の`ensureBgmFileBuffers()`で先読み。**ショップ曲は画面を開いたとき(`ensureBgmShopBuffer()`)に初回ロード**する(起動時のfetchを増やさないため)。長い曲を足すときもこの使い分けにする。
 - **ゼウス(SSR)装備時のtier3専用SE**(`playZeusTier3Once`): 動画音声(約1秒)を内蔵mp3データURI(`ZEUS_TIER3_DATAURL`)で再生。`moveSeName`が`SKIN_TIER3_SE`(combat.js)経由でゼウス装備tier3のみこのSEに差し替え。未ロード時は合成`godRising`にフォールバック。
 - **リザルトの自己ベスト更新SE**(`playBestUpdateOnce`): 約9秒と長いので外部ファイル`best_update.mp3`を`fetch`+`decodeAudioData`し1回だけ再生(ループ無し)。全体の自己ベスト更新時に鳴らし、称号/モンスター毎ベストのSSR獲得SEより優先。未ロード時はSSR獲得SEにフォールバック。
 - **実音の抽出手順**(この環境): `pip install imageio-ffmpeg`で静的ffmpegが入る(`python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"`)。Chromium(OSSビルド)は**AAC/HEVCをデコード不可・mp3は可**。動画音声はAACなので一旦ffmpegでmp3化してから埋め込む。整音は`loudnorm`。
