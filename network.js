@@ -14,18 +14,38 @@ let lastT = performance.now();
 ===================================================================== */
 const INPUT_SEND_INTERVAL = 0.045;  // 自分の入力を送る間隔(秒) 約22回/秒。ホストが自分の位置を早く反映できるようにする
 let lastInputSendAt = 0;
-let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected}
+let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected,seq}
+const processedRoomEventKeys = new Set(); // events(キルフィード等)の重複処理防止
+
+// ===== 自分の位置の突き合わせ(ラバーバンド対策) =====
+// 入力に連番(seq)を付けて送り、ホストは「最後に適用した入力seq」をauthStateで返す。
+// ゲストは自分の予測位置をseqごとに覚えておき、同じ入力時点どうしで誤差を取る。
+// 現在位置とホストの過去位置を比べる従来方式は、遅延そのものが誤差として出てしまい
+// 移動中はずっと後ろへ引っ張られていた(水中など低速だと前進できず操作不能になっていた)。
+let selfInputSeq = 0;
+let selfPredHistory = [];               // [{seq,x,y}] 入力送信時点の自分の予測位置
+const SELF_HISTORY_CAP = 80;
+const SELF_CORRECT_DEADZONE = 14;       // これ以下の誤差は無視(予測を信頼する)
+const SELF_CORRECT_SNAP = 240;          // これを超えたら即座に合わせる(壁抜け等)
+const SELF_CORRECT_RATE = 6;            // 誤差を秒あたりどれだけ詰めるか(大きいほど速く収束)
+let selfCorrX = 0, selfCorrY = 0;       // 未適用の補正量(毎フレーム少しずつ消費する)
 
 // ===== スナップショット補間(①)＋速度外挿(②)＋ラグ補正(③)＋差分/分割配信(④) =====
 // 遠隔エンティティは「一定の描画遅延」を挟んで直近2スナップショット間を線形補間する。
 // これにより更新間隔のムラを吸収し、ホスト/ゲストで見た目の滑らかさを揃える。
-// 時間軸はゲストローカルの受信時刻(performance.now)を使い、機体間の時計同期を不要にする。
+// 時間軸は「ホストの試合時刻(payload.t)」を使う。到着時刻を時間軸にすると、配信が
+// まとめて届いた(ジッタ)ときにスナップショット間隔が実際より短く見積もられ、
+// 速い相手が瞬間移動したように飛ぶ。ホスト時刻なら間隔が常に正しくなる。
 const INTERP_DELAY_MS = 120;   // 遠隔エンティティを一定遅延で描画(publish間隔+ジッタを吸収)
 const EXTRAP_CAP_MS = 180;     // スナップショット欠落時に速度で外挿する上限
 const AUTH_FULL_EVERY = 8;     // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
 const HOST_HISTORY_CAP = 60;   // ホストの位置履歴(ラグ補正の巻き戻し用)保持スナップショット数
-let guestSnapBuf = [];         // ゲスト: 補間用スナップショット {rt, seq, ents:{id:{x,y,z,f,vx,vy,alive}}}
+let guestSnapBuf = [];         // ゲスト: 補間用スナップショット {rt, ht, seq, ents:{id:{x,y,z,f,vx,vy,alive}}}
 let guestCurViewSeq = 0;       // ゲスト: 今まさに描画している(=狙いを定めている)ホストseq
+// ホスト時刻(ms) と ローカル時刻(performance.now) の差の推定値。
+// 「最も早く着いた配信」を基準にすることで、遅れて届いた配信に引きずられないようにする。
+let hostClockOffset = null;    // localNow - hostT の推定値
+let hostForceFullNext = false; // ホスト: 次のauthStateを強制的にフル配信にする(強化値の即時反映用)
 let hostPosHistory = [];       // ホスト: [{seq, ents:{id:{x,y}}}] 直近のみ保持(巻き戻し用)
 let authPublishSeq = 0;        // ホスト: authStateの連番
 let lastPubPos = {};           // ホスト: 速度算出用 id->{x,y,t}
@@ -48,6 +68,44 @@ function seedFromString(str){
   return h>>>0;
 }
 
+// 部屋の単発イベント(キルフィード・試合終了)の処理。onChildAdded経由で1件ずつ届く
+function handleRoomEvent(evt, evtKey){
+  if(!evt) return;
+  if(evtKey){
+    if(processedRoomEventKeys.has(evtKey)) return; // onChildAddedは再アタッチ時に再送されるため重複を弾く
+    processedRoomEventKeys.add(evtKey);
+  }
+  // キルフィードはキル発生元(常にホスト)がkillEntity()で即座に一度表示済みなので、
+  // 自分が送ったイベントがそのまま自分にも返ってくるホスト側では二重表示しない。
+  // ゲスト側はこのイベント経由でしか受け取らないため、これで両者とも1回だけになる。
+  if(evt.kind==='kill' && !netState.isHost){
+    if(evt.text) pushKillFeed(evt.text);
+    // 自分が倒した場合のキルボーナス演出(HP/ガッツの実値はauthStateで届く)。
+    // ゲストはkillEntity()を実行しないため、ここで演出だけを再現する
+    if(player && evt.killerId===player.id && player.alive){
+      playSe('kill');
+      spawnDmgText(player.x, player.y, player.z, '+50', '#7fffa0');
+      spawnDmgText(player.x, player.y, player.z+30, '+50GT', '#ffd9e3');
+      let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
+      if(evt.expBonus && game.selectedMastermonKey) bonusMsg += ` 経験値+${evt.expBonus}`;
+      pushToast(bonusMsg);
+    }
+  }
+  if(evt.kind==='matchEnd' && !game.over){
+    if(player && player.netPlayerId===evt.winnerNetId && player.alive){
+      onPlayerWin();
+    } else if(player && player.netPlayerId!==evt.winnerNetId){
+      // 自分は勝者ではない側。通常はhostが即時配信するauthStateのhp/alive更新で
+      // 自然に結果画面へ移るが、通信の遅延等でそれが届かない場合に備えて、
+      // 少し待っても試合が終わっていなければここで確実に終わらせる
+      // (ゲスト側が生き残ったまま延々と試合が終わらないのを防ぐ保険)
+      setTimeout(()=>{
+        if(!game.over){ showResult(false, player.placement || (entities.filter(e=>e.alive).length+1)); }
+      }, 500);
+    }
+  }
+}
+
 async function beginMultiplayerMatch(){
   if(game.started || matchBeginning) return;
   matchBeginning = true;
@@ -65,9 +123,12 @@ async function beginMultiplayerMatch(){
   joyKnobEl.style.transform='translate(0,0)';
   remoteInputs = {}; processedHitKeys.clear(); authPublishTimer=0;
   pendingRemoteFireEvents.length = 0; processedFireEventKeys.clear();
-  processedLootEventKeys.clear();
+  processedLootEventKeys.clear(); processedRoomEventKeys.clear();
   // 補間/ラグ補正の状態をリセット
   guestSnapBuf = []; guestCurViewSeq = 0; hostPosHistory = []; authPublishSeq = 0; lastPubPos = {};
+  hostClockOffset = null; hostForceFullNext = false;
+  // 自分の位置の突き合わせ状態をリセット(前の試合の履歴が残ると初回補正が暴れる)
+  selfInputSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -207,25 +268,7 @@ async function beginMultiplayerMatch(){
       if(players[id] && players[id].input) remoteInputs[id] = players[id].input;
     }
   });
-  window.__aramonWatchEvents(netState.roomId, (evt)=>{
-    // キルフィードはキル発生元(常にホスト)がkillEntity()で即座に一度表示済みなので、
-    // 自分が送ったイベントがそのまま自分にも返ってくるホスト側では二重表示しない。
-    // ゲスト側はこのイベント経由でしか受け取らないため、これで両者とも1回だけになる。
-    if(evt && evt.kind==='kill' && evt.text && !netState.isHost) pushKillFeed(evt.text);
-    if(evt && evt.kind==='matchEnd' && !game.over){
-      if(player && player.netPlayerId===evt.winnerNetId && player.alive){
-        onPlayerWin();
-      } else if(player && player.netPlayerId!==evt.winnerNetId){
-        // 自分は勝者ではない側。通常はhostが即時配信するauthStateのhp/alive更新で
-        // 自然に結果画面へ移るが、通信の遅延等でそれが届かない場合に備えて、
-        // 少し待っても試合が終わっていなければここで確実に終わらせる
-        // (ゲスト側が生き残ったまま延々と試合が終わらないのを防ぐ保険)
-        setTimeout(()=>{
-          if(!game.over){ showResult(false, player.placement || (entities.filter(e=>e.alive).length+1)); }
-        }, 500);
-      }
-    }
-  });
+  window.__aramonWatchEvents(netState.roomId, handleRoomEvent);
 
   if(netState.isHost){
     window.__aramonWatchHitsAsHost(netState.roomId, (hitKey, hit)=>{
@@ -271,6 +314,8 @@ function applyRemoteInputsLocally(){
     ent.inputMoveY = clamp(inp.my||0,-1,1);
     ent.facingAngle = typeof inp.facing==='number' ? inp.facing : ent.facingAngle;
     if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
+    // 「どのseqの入力まで反映したか」を覚えてauthStateで返す(ゲストの位置突き合わせ用)
+    if(typeof inp.seq==='number') ent.netAckInputSeq = inp.seq;
   }
 }
 // ホスト専用: 非ホストから届いた「1回発射しました」イベントを、届いた分だけ正確に処理する
@@ -324,11 +369,19 @@ function sendLocalInputIfMultiplayer(now){
   if(netState.mode!=='multi' || !netState.roomId) return;
   if(now-lastInputSendAt >= INPUT_SEND_INTERVAL*1000){
     lastInputSendAt = now;
+    selfInputSeq++;
+    // この入力を送った時点の自分の予測位置を先に覚えておく。
+    // ホストが「このseqまで適用した」と返してきたとき、同じ時点どうしで誤差を比較する
+    if(player && !netState.isHost){
+      selfPredHistory.push({ seq:selfInputSeq, x:player.x, y:player.y });
+      if(selfPredHistory.length > SELF_HISTORY_CAP) selfPredHistory.shift();
+    }
     window.__aramonSendInput(netState.roomId, {
       mx: player? player.inputMoveX:0,
       my: player? player.inputMoveY:0,
       facing: player? player.facingAngle:0,
       moveTierSelected: player? player.moveTierSelected:1,
+      seq: selfInputSeq,
     });
   }
 }
@@ -515,6 +568,24 @@ function broadcastNewShotsAsHost(){
 }
 // 非ホスト専用: ホストから届いたアイテムの出現/取得イベントを、自分のlootItems配列にも反映する
 const processedLootEventKeys = new Set();
+// ゲスト側のアイテム取得先読み。ホストしか取得判定をしないため、そのままだと
+// 「重なってもしばらく消えない」「効果が遅れて出る」ように見える。
+// 重なった瞬間に見た目だけ消し、ホストの確定(pickupイベント)を待つ。
+// 確定が来なければ(他の人が先に拾った・ホストの判定では届いていない等)元に戻す。
+const GUEST_PICKUP_CONFIRM_WAIT = 2.5; // 確定待ちの上限(秒)
+function predictLootPickupsAsGuest(){
+  if(!player || !player.alive) return;
+  for(const it of lootItems){
+    // 先読み済みの判定は「!= null」で行う(matchTimeが0=試合開始直後だと
+    // 真偽値では未先読みと区別できず、開始直後のアイテムが消えなくなる)
+    if(it.predictedPickup != null){
+      // 一定時間確定が来なければ復活させる(消えたままにならないように)
+      if(matchTime - it.predictedPickup > GUEST_PICKUP_CONFIRM_WAIT) it.predictedPickup = null;
+      continue;
+    }
+    if(dist(player, it) < player.radius+14) it.predictedPickup = matchTime; // ホストと同じ判定距離
+  }
+}
 function applyLootEventLocally(evt){
   if(!evt) return;
   if(evt.evtType==='pickup'){
@@ -566,9 +637,14 @@ function spawnVisualShotFromEvent(evt){
 function buildAuthStatePayload(){
   authPublishSeq++;
   const seq = authPublishSeq;
-  const full = (seq % AUTH_FULL_EVERY === 0); // ④ たまに静的値も載せる「フル」配信、それ以外は位置等の軽量配信
+  // ④ たまに静的値も載せる「フル」配信、それ以外は位置等の軽量配信。
+  // アイテム取得直後などは即座に強化値を届けたいので、強制フラグでフルにする
+  const full = hostForceFullNext || (seq % AUTH_FULL_EVERY === 0);
+  hostForceFullNext = false;
   const nowT = matchTime;                     // ② 速度算出の時刻基準(ホストのmatchTime秒)
-  const payload = { seq, full, zone:{
+  // t: ホストの試合時刻(ms)。ゲストはこれを時間軸にして補間するので、配信が
+  // まとめて届いても相手の動きが等速に見える(瞬間移動対策)
+  const payload = { seq, full, t: Math.round(matchTime*1000), zone:{
     cx: Math.round(zoneState.center.x), cy: Math.round(zoneState.center.y),
     r: Math.round(zoneState.radius), phase: zoneState.phaseIndex, shrinking: zoneState.shrinking,
     tcx: Math.round(zoneState.toCenter.x), tcy: Math.round(zoneState.toCenter.y),
@@ -592,6 +668,18 @@ function buildAuthStatePayload(){
       alive: e.alive, kills: e.kills, damageDealt: Math.round(e.damageDealt),
       placement: e.placement||null,
     };
+    // 移動に効く状態異常は「残り秒数」で毎tick送る。絶対時刻で送るとホストとゲストの
+    // matchTimeのズレでそのまま食い違うため。これを送らないとゲストは凍結/鈍足を知らずに
+    // 通常速度で予測してしまい、ホスト位置との差が開いて引き戻される
+    // (川など低速地形では前進できず操作不能に見えていた)
+    const fzR = (e.freezeUntil||0) - nowT;
+    if(fzR > 0) o.fz = Math.round(fzR*100)/100;
+    const slR = (e.slowUntil||0) - nowT;
+    if(slR > 0) o.sl = Math.round(slR*100)/100;
+    const sbR = (e.speedBuffUntil||0) - nowT;
+    if(sbR > 0){ o.sb = Math.round(sbR*100)/100; o.sbm = e.speedBuffMult||1; }
+    // 人間プレイヤーには「最後に適用した入力seq」を返す(ゲストの位置突き合わせ用)
+    if(e.netPlayerId && typeof e.netAckInputSeq==='number') o.aseq = e.netAckInputSeq;
     // ④ フル配信の時だけ載せる「コールド」フィールド(ほぼ静的・低頻度で十分)
     if(full){
       o.maxHp = e.maxHp; o.maxGuts = e.maxGuts;
@@ -601,6 +689,9 @@ function buildAuthStatePayload(){
       o.trainDmgTakenMult = e.trainDmgTakenMult; o.trainSpeedMult = e.trainSpeedMult;
       o.stateUntil = e.stateUntil; o.stateCooldownUntil = e.stateCooldownUntil;
       o.dashCooldown = Math.round((e.dashCooldown||0)*100)/100;
+      o.trainMaxHpBonus = e.trainMaxHpBonus||0;
+      // 撃破EXPボーナスはゲスト側では計算されないので、リザルトで反映できるよう同期する
+      o.mmKillExp = Math.round(e.mastermonKillExpBonus||0);
     }
     payload.entities.push(o);
   }
@@ -633,13 +724,33 @@ function applyAuthState(authState){
     const ent = entities.find(e=>e.id===a.id);
     if(!ent) continue;
     if(ent.isPlayer){
-      // 自分の位置はローカル予測を優先しつつ、常にごく僅かにホスト値へ寄せて収束させる
-      // (閾値を超えたら一気に補正する方式だと、ラグ時に位置が飛んでピクつく原因になっていた)
-      const driftDist = Math.hypot(ent.x-a.x, ent.y-a.y);
-      if(driftDist > 260){
-        ent.x=a.x; ent.y=a.y; // 壁抜け等で大きくズレた時だけ即補正
+      // 自分の位置: ホストが「このseqの入力まで反映した」と返してきた時点の
+      // 自分の予測位置と比べ、その誤差だけを補正量として溜める。
+      // 現在位置と比べると遅延ぶんがそのまま誤差になり、移動中ずっと後ろへ
+      // 引っ張られてしまう(水中では前進できず操作不能になっていた)。
+      let errX = null, errY = null;
+      if(typeof a.aseq==='number' && selfPredHistory.length){
+        let hist = null;
+        for(let i=selfPredHistory.length-1;i>=0;i--){
+          if(selfPredHistory[i].seq===a.aseq){ hist = selfPredHistory[i]; break; }
+        }
+        if(hist){
+          errX = a.x - hist.x; errY = a.y - hist.y;
+          // 適用済みより古い履歴は破棄
+          while(selfPredHistory.length && selfPredHistory[0].seq < a.aseq) selfPredHistory.shift();
+        }
+      }
+      if(errX===null){
+        // ackがまだ無い(参加直後など)場合のみ現在位置と比較する従来方式にフォールバック
+        errX = a.x - ent.x; errY = a.y - ent.y;
+      }
+      const err = Math.hypot(errX, errY);
+      if(err > SELF_CORRECT_SNAP){
+        ent.x = a.x; ent.y = a.y; selfCorrX = 0; selfCorrY = 0; // 壁抜け等は即座に合わせる
+      } else if(err > SELF_CORRECT_DEADZONE){
+        selfCorrX = errX; selfCorrY = errY; // 毎フレーム少しずつ消費して滑らかに寄せる
       } else {
-        ent.netSelfTargetX = a.x; ent.netSelfTargetY = a.y;
+        selfCorrX = 0; selfCorrY = 0;       // 誤差が小さいうちは予測を信頼して一切動かさない
       }
     } else {
       // 自分以外は位置を即書きせず、補間(interpolateRemoteEntities)で滑らかに動かす。
@@ -657,6 +768,13 @@ function applyAuthState(authState){
     // チラつきの原因だった)。ボット・他プレイヤーの表示用には引き続き反映する
     if(!ent.isPlayer && typeof a.moveTierSelected==='number') ent.moveTierSelected = a.moveTierSelected;
     if(typeof a.dashCooldown==='number') ent.dashCooldown = a.dashCooldown;
+    // 移動に効く状態異常は残り秒数で届くので、ローカルのmatchTime基準に直して反映する
+    ent.freezeUntil = (typeof a.fz==='number') ? matchTime + a.fz : 0;
+    ent.slowUntil   = (typeof a.sl==='number') ? matchTime + a.sl : 0;
+    if(typeof a.sb==='number'){ ent.speedBuffUntil = matchTime + a.sb; ent.speedBuffMult = a.sbm||1; }
+    else ent.speedBuffUntil = 0;
+    if(typeof a.trainMaxHpBonus==='number') ent.trainMaxHpBonus = a.trainMaxHpBonus;
+    if(typeof a.mmKillExp==='number') ent.mastermonKillExpBonus = a.mmKillExp;
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
     if(typeof a.trainGutsCostReduction==='number') ent.trainGutsCostReduction = a.trainGutsCostReduction;
     if(typeof a.trainProjSpeedMult==='number') ent.trainProjSpeedMult = a.trainProjSpeedMult;
@@ -677,35 +795,56 @@ function applyAuthState(authState){
       snapEnts[a.id] = { x:a.x, y:a.y, z:a.z||0, f:a.f, vx:a.vx||0, vy:a.vy||0, alive:a.alive };
     }
   }
-  // ① 受信時刻(ローカル)付きでスナップショットをバッファに積む
-  guestSnapBuf.push({ rt: performance.now(), seq: authState.seq||0, ents: snapEnts });
-  const cutoff = performance.now() - 1500;
+  // ① スナップショットをバッファに積む。時間軸はホストの試合時刻(ht)を使う。
+  const rtNow = performance.now();
+  const ht = (typeof authState.t==='number') ? authState.t : null;
+  if(ht!==null){
+    // ホスト時刻→ローカル時刻の差を推定する。最小値(=最速で届いた配信)へ寄せることで、
+    // 遅れて届いた配信に引きずられて時間軸がぶれるのを防ぐ
+    const off = rtNow - ht;
+    if(hostClockOffset===null || off < hostClockOffset) hostClockOffset = off;
+    else hostClockOffset += (off - hostClockOffset) * 0.002; // 端末間のクロックドリフトへゆっくり追従
+  }
+  guestSnapBuf.push({ rt: rtNow, ht, seq: authState.seq||0, ents: snapEnts });
+  // ホスト時刻がある場合は順序が入れ替わって届いても正しく並べる
+  if(ht!==null && guestSnapBuf.length>1 && guestSnapBuf[guestSnapBuf.length-2].ht!==null){
+    guestSnapBuf.sort((p,q)=> (p.ht||0)-(q.ht||0));
+  }
+  const cutoff = rtNow - 1500;
   while(guestSnapBuf.length>2 && guestSnapBuf[0].rt < cutoff) guestSnapBuf.shift();
 }
 // ① 遠隔エンティティを「一定遅延の描画時刻」で直近2スナップショット間を補間(欠落時は②速度で外挿)
 function interpolateRemoteEntities(){
   const buf = guestSnapBuf;
   if(buf.length===0) return;
-  const renderT = performance.now() - INTERP_DELAY_MS;
+  // ホスト時刻が使えるならその時間軸で、無ければ従来の受信時刻で補間する。
+  // ホスト時刻を使うとスナップショット間隔が常に正しくなるので、配信がまとめて
+  // 届いても速い相手が飛ばずに等速で動いて見える。
+  const useHostClock = (buf[buf.length-1].ht!==null && hostClockOffset!==null);
+  const timeOf = (s)=> useHostClock ? s.ht : s.rt;
+  const renderT = useHostClock
+    ? (performance.now() - hostClockOffset - INTERP_DELAY_MS)
+    : (performance.now() - INTERP_DELAY_MS);
   let s0=null, s1=null;
   for(let i=buf.length-1;i>=0;i--){
-    if(buf[i].rt <= renderT){ s0=buf[i]; s1=buf[i+1]||null; break; }
+    if(timeOf(buf[i]) <= renderT){ s0=buf[i]; s1=buf[i+1]||null; break; }
   }
   if(!s0){ s0=buf[0]; s1=buf[1]||null; } // 描画時刻がバッファ最古より前 → 最古で代用
   guestCurViewSeq = s0.seq||0;            // ③ 今狙いを定めているホストseqを記録(発射イベントで送る)
+  const t0 = timeOf(s0);
   for(const e of entities){
     if(e===player || !e.alive) continue;
     const a0 = s0.ents[e.id];
     if(!a0) continue;
     if(s1 && s1.ents[e.id]){
       const a1 = s1.ents[e.id];
-      const span = s1.rt - s0.rt;
-      const alpha = span>0 ? clamp((renderT - s0.rt)/span, 0, 1) : 0;
+      const span = timeOf(s1) - t0;
+      const alpha = span>0 ? clamp((renderT - t0)/span, 0, 1) : 0;
       e.x = lerp(a0.x, a1.x, alpha); e.y = lerp(a0.y, a1.y, alpha);
       e.z = lerp(a0.z, a1.z, alpha); e.facingAngle = lerpAngleShort(a0.f, a1.f, alpha);
     } else {
       // 最新スナップより先(欠落/遅延) → 速度で短時間だけ外挿
-      const ahead = Math.min(EXTRAP_CAP_MS, Math.max(0, renderT - s0.rt)) / 1000;
+      const ahead = Math.min(EXTRAP_CAP_MS, Math.max(0, renderT - t0)) / 1000;
       e.x = a0.x + a0.vx*ahead; e.y = a0.y + a0.vy*ahead; e.z = a0.z; e.facingAngle = a0.f;
     }
   }
@@ -743,21 +882,15 @@ function loop(now){
       computePlayerInput();
       if(player && player.alive){
         resolveMovement(player, dt);
-        if(typeof player.netSelfTargetX==='number'){
-          // ローカル予測を優先し、ホスト権威位置との差が小さいうちは補正しない(ラバーバンド防止)。
-          // 障害物が同期されたので通常移動では差が小さく、ここを抑えるとゲストの操作が軽くなる。
-          // 差が大きい時(衝突/ノックバック/大きなラグ)だけ差に応じて素早く寄せて破綻を防ぐ。
-          const dx = player.netSelfTargetX - player.x, dy = player.netSelfTargetY - player.y;
-          const d = Math.hypot(dx, dy);
-          if(d > 110){
-            const t = Math.min(1, dt*10);          // 大きくズレたら一気に
-            player.x = lerp(player.x, player.netSelfTargetX, t);
-            player.y = lerp(player.y, player.netSelfTargetY, t);
-          } else if(d > 26){
-            const t = Math.min(0.18, dt*1.8);      // 中程度は緩やかに
-            player.x = lerp(player.x, player.netSelfTargetX, t);
-            player.y = lerp(player.y, player.netSelfTargetY, t);
-          } // d<=26 はローカル予測を信頼して補正しない
+        // 溜まっている補正量(=同じ入力時点で比べたホストとの誤差)を少しずつ消費する。
+        // 遅延ぶんは誤差に含まれないので、まっすぐ歩いている間は補正がほぼゼロになり
+        // 後ろへ引っ張られない。衝突・ノックバック等で本当にズレた時だけ効く。
+        if(selfCorrX || selfCorrY){
+          const k = Math.min(1, dt*SELF_CORRECT_RATE);
+          const sx = selfCorrX*k, sy = selfCorrY*k;
+          player.x += sx; player.y += sy;
+          selfCorrX -= sx; selfCorrY -= sy;
+          if(Math.hypot(selfCorrX, selfCorrY) < 0.5){ selfCorrX = 0; selfCorrY = 0; }
         }
       }
       for(const e of entities){
@@ -767,6 +900,7 @@ function loop(now){
         if(e.hitFlash>0) e.hitFlash -= dt;
       }
       interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
+      predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
       tryNonHostPlayerFireVisual(dt);
       // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
       for(let i=projectiles.length-1;i>=0;i--){

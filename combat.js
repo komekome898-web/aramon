@@ -369,18 +369,27 @@ function killEntity(victim, killer){
     spawnDmgText(killer.x, killer.y, killer.z+30, '+50GT', '#ffd9e3');
     const kfText = `${displayNameFor(killer)} が ${displayNameFor(victim)} を倒した`;
     pushKillFeed(kfText);
-    const iAmInvolved = netState.mode==='multi' && ((killer.isPlayer) || (victim.isPlayer));
-    if(iAmInvolved) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
+    // マスモン(bot補完・他プレイヤー)を倒したら、相手レベルに応じたEXPボーナスを積み立てる。
+    // マルチではゲストの分もホストが計算するので、ここでは撃破者がプレイヤーかどうかを問わず積む
+    // (使われるのは「自分がマスモンで参戦している側」だけなので、他者に積んでも害はない)
+    let expBonus = 0;
+    if(victim.mastermonLevel){
+      expBonus = victim.mastermonLevel * MASTERMON_KILL_EXP_PER_LEVEL;
+      killer.mastermonKillExpBonus = (killer.mastermonKillExpBonus||0) + expBonus;
+    }
+    // マルチではホストが全てのキルを配信する。ゲストはこのイベントでしかキルフィードと
+    // キルボーナスの演出を受け取れないため、自分が関与したキルだけに絞ってはいけない
+    // (以前は絞っていたため、ゲスト側のキルフィードがほぼ流れていなかった)
+    if(netState.mode==='multi' && netState.isHost){
+      window.__aramonPushEvent(netState.roomId, {
+        kind:'kill', text:kfText, killerId:killer.id, victimId:victim.id,
+        expBonus, ts:Date.now(),
+      });
+    }
     if(killer.isPlayer){
       playSe('kill'); // ザシュッ(切り裂き音)
       let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
-      // マスモン(bot補完・他プレイヤー)を倒したら、相手レベルに応じたEXPボーナスを積み立てる
-      // (自分がマスモンで参戦しているときのみ。試合終了時にawardMastermonExpへ加算される)
-      if(victim.mastermonLevel && game.selectedMastermonKey){
-        const expBonus = victim.mastermonLevel * MASTERMON_KILL_EXP_PER_LEVEL;
-        killer.mastermonKillExpBonus = (killer.mastermonKillExpBonus||0) + expBonus;
-        bonusMsg += ` 経験値+${expBonus}`;
-      }
+      if(expBonus && game.selectedMastermonKey) bonusMsg += ` 経験値+${expBonus}`;
       pushToast(bonusMsg);
     }
     const killerSc = STATE_CHANGES[killer.element];
@@ -390,7 +399,10 @@ function killEntity(victim, killer){
   } else {
     const kfText = `${displayNameFor(victim)} は安全圏外で力尽きた`;
     pushKillFeed(kfText);
-    if(netState.mode==='multi' && victim.isPlayer) window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, ts:Date.now()});
+    // 安全圏外での力尽きもホストが全員分を配信する(ゲストのキルフィードに流すため)
+    if(netState.mode==='multi' && netState.isHost){
+      window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, victimId:victim.id, ts:Date.now()});
+    }
   }
   if(victim.isPlayer){ onPlayerDown(); }
   checkWin();
@@ -728,9 +740,13 @@ function computePlayerInput(){
 }
 // ===== 観戦(ホスト敗退後) =====
 let spectateTargetId = null;
-// 観戦対象候補: 生存中の人間プレイヤー(自分=敗退したホスト以外)
+// 観戦対象候補: 自分以外の生存者。人間プレイヤーを先に並べ、その後にbotを並べる。
+// 以前は人間プレイヤーだけを候補にしていたため、生き残りが1人しかいない場面
+// (2人対戦でbotが残っている等)では「次のプレイヤー」を押しても切り替わらなかった。
 function spectateCandidates(){
-  return entities.filter(e=>e.alive && e.netPlayerId && e!==player);
+  const humans = entities.filter(e=>e.alive && e.netPlayerId && e!==player);
+  const bots   = entities.filter(e=>e.alive && !e.netPlayerId && e!==player);
+  return humans.concat(bots);
 }
 // 現在の観戦対象を返す(不在なら先頭へ差し替え)。観戦していなければnull
 function ensureSpectateTarget(){
@@ -1105,6 +1121,9 @@ function updateLootPickups(){
       if(netState.mode==='multi' && netState.isHost){
         // 拾った人間プレイヤーのIDと種類も送り、ゲスト側で自分の拾得ならSEを鳴らせるようにする
         window.__aramonPushLootEvent(netState.roomId, { evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null });
+        // 強化値(maxHp/train係数)は普段8回に1回のフル配信でしか送っていないため、
+        // そのままだと効果の反映が最大0.4秒遅れる。取得直後は次の配信を強制的にフルにする
+        hostForceFullNext = true;
       }
       lootItems.splice(i,1);
     }
