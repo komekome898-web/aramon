@@ -23,9 +23,15 @@ const processedRoomEventKeys = new Set(); // events(キルフィード等)の重
 // 現在位置とホストの過去位置を比べる従来方式は、遅延そのものが誤差として出てしまい
 // 移動中はずっと後ろへ引っ張られていた(水中など低速だと前進できず操作不能になっていた)。
 let selfInputSeq = 0;
+let selfDashSeq = 0;                    // ダッシュした回数。入力に載せてホストへ伝える
 let selfPredHistory = [];               // [{seq,x,y}] 入力送信時点の自分の予測位置
 const SELF_HISTORY_CAP = 80;
 const SELF_CORRECT_DEADZONE = 14;       // これ以下の誤差は無視(予測を信頼する)
+// ダッシュ中と直後だけ許容を広げる。ダッシュは短時間に大きく動くので、ホストが
+// ダッシュを受け取るまでの数フレームぶん位置が離れる。両者がダッシュを終えれば移動量は
+// 同じになり誤差は自然に消えるため、ここで補正すると「ダッシュしたのに引き戻される」動きになる。
+const SELF_CORRECT_DEADZONE_DASH = 70;
+const SELF_DASH_GRACE = 0.45;           // ダッシュ終了後も許容を広げておく秒数
 const SELF_CORRECT_SNAP = 240;          // これを超えたら即座に合わせる(壁抜け等)
 const SELF_CORRECT_RATE = 6;            // 誤差を秒あたりどれだけ詰めるか(大きいほど速く収束)
 let selfCorrX = 0, selfCorrY = 0;       // 未適用の補正量(毎フレーム少しずつ消費する)
@@ -68,6 +74,12 @@ function seedFromString(str){
   return h>>>0;
 }
 
+// ゲストが自分でダッシュしたときに呼ばれる(input.jsのtryDashから)。
+// 回数を1つ増やし、次の入力送信でホストへ伝える
+function noteLocalDash(){
+  if(netState.mode!=='multi' || netState.isHost) return;
+  selfDashSeq++;
+}
 // 部屋の単発イベント(キルフィード・試合終了)の処理。onChildAdded経由で1件ずつ届く
 function handleRoomEvent(evt, evtKey){
   if(!evt) return;
@@ -151,7 +163,7 @@ async function beginMultiplayerMatchInner(){
   guestSnapBuf = []; guestCurViewSeq = 0; hostPosHistory = []; authPublishSeq = 0; lastPubPos = {};
   hostClockOffset = null; hostForceFullNext = false;
   // 自分の位置の突き合わせ状態をリセット(前の試合の履歴が残ると初回補正が暴れる)
-  selfInputSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
+  selfInputSeq = 0; selfDashSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -339,6 +351,15 @@ function applyRemoteInputsLocally(){
     if(typeof inp.moveTierSelected==='number') ent.moveTierSelected = inp.moveTierSelected;
     // 「どのseqの入力まで反映したか」を覚えてauthStateで返す(ゲストの位置突き合わせ用)
     if(typeof inp.seq==='number') ent.netAckInputSeq = inp.seq;
+    // ダッシュ: 回数が増えていたらホスト側でも同じように実行する。
+    // これを反映しないとホストは通常移動のまま計算し続けるので、ゲストのダッシュぶんが
+    // そのまま位置の誤差になり、ダッシュした直後に元の位置へ引き戻されてしまう。
+    if(typeof inp.dashSeq==='number' && inp.dashSeq > (ent.netLastDashSeq||0)){
+      ent.netLastDashSeq = inp.dashSeq;
+      // クールタイムはゲスト側で既に判定済みなので、ここでは二重ダッシュだけを防ぐ
+      // (ホストのクールタイムで弾くと、ゲストだけが動いてズレる原因になる)
+      if(ent.alive && !(ent.dashTimer>0) && typeof startEntityDash==='function') startEntityDash(ent);
+    }
   }
 }
 // ホスト専用: 非ホストから届いた「1回発射しました」イベントを、届いた分だけ正確に処理する
@@ -405,6 +426,7 @@ function sendLocalInputIfMultiplayer(now){
       facing: player? player.facingAngle:0,
       moveTierSelected: player? player.moveTierSelected:1,
       seq: selfInputSeq,
+      dashSeq: selfDashSeq, // ダッシュは連続値ではなく回数で伝える(ホストは増えた分だけ実行する)
     });
   }
 }
@@ -786,9 +808,12 @@ function applyAuthState(authState){
         errX = a.x - ent.x; errY = a.y - ent.y;
       }
       const err = Math.hypot(errX, errY);
+      // ダッシュ中/直後は許容を広げる(ホストがダッシュを受け取るまでの一時的なズレを補正しない)
+      const dashing = (ent.dashTimer>0) || (matchTime - (ent.lastDashAt!=null?ent.lastDashAt:-99) < SELF_DASH_GRACE);
+      const deadzone = dashing ? SELF_CORRECT_DEADZONE_DASH : SELF_CORRECT_DEADZONE;
       if(err > SELF_CORRECT_SNAP){
         ent.x = a.x; ent.y = a.y; selfCorrX = 0; selfCorrY = 0; // 壁抜け等は即座に合わせる
-      } else if(err > SELF_CORRECT_DEADZONE){
+      } else if(err > deadzone){
         selfCorrX = errX; selfCorrY = errY; // 毎フレーム少しずつ消費して滑らかに寄せる
       } else {
         selfCorrX = 0; selfCorrY = 0;       // 誤差が小さいうちは予測を信頼して一切動かさない
@@ -808,7 +833,11 @@ function applyAuthState(authState){
     // 自分自身の分だけはホストの(1往復遅れた)値で上書きしない(タップしてもすぐ元に戻る
     // チラつきの原因だった)。ボット・他プレイヤーの表示用には引き続き反映する
     if(!ent.isPlayer && typeof a.moveTierSelected==='number') ent.moveTierSelected = a.moveTierSelected;
-    if(typeof a.dashCooldown==='number') ent.dashCooldown = a.dashCooldown;
+    // ダッシュのクールタイムは自分の分だけホスト値で上書きしない。
+    // ホストが自分のダッシュを反映するのは1往復あとなので、その間に届く古い0で
+    // ローカルのクールタイムが解除され、連続ダッシュできてしまう
+    // (moveTierSelectedと同じ理由。ボット・他プレイヤーの表示用には反映する)
+    if(!ent.isPlayer && typeof a.dashCooldown==='number') ent.dashCooldown = a.dashCooldown;
     // 移動に効く状態異常は残り秒数で届くので、ローカルのmatchTime基準に直して反映する
     ent.freezeUntil = (typeof a.fz==='number') ? matchTime + a.fz : 0;
     ent.slowUntil   = (typeof a.sl==='number') ? matchTime + a.sl : 0;

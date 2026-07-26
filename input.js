@@ -210,13 +210,22 @@ fireBtnEl.addEventListener('pointerup', ()=>{ fireBtnHeld=false; });
 fireBtnEl.addEventListener('pointercancel', ()=>{ fireBtnHeld=false; });
 fireBtnEl.addEventListener('pointerleave', ()=>{ fireBtnHeld=false; });
 
-function tryDash(m){
-  if(!m.alive || m.dashCooldown>0) return;
+// ダッシュを実際に開始する(向きの決め方をホスト/ゲストで完全に同じにするため関数に分けてある。
+// マルチではホストが applyRemoteInputsLocally からこれを呼んでゲストのダッシュを再現する)
+function startEntityDash(m){
   let dx=m.lastMoveX, dy=m.lastMoveY;
   if(Math.hypot(dx,dy)<0.1){ dx=Math.cos(m.facingAngle); dy=Math.sin(m.facingAngle); }
   const len = Math.hypot(dx,dy)||1;
   m.dashDirX=dx/len; m.dashDirY=dy/len;
   m.dashTimer=DASH_DURATION; m.dashCooldown=DASH_COOLDOWN_MAX;
+  m.lastDashAt = matchTime; // 位置の突き合わせでダッシュ直後を判別するのに使う
+}
+function tryDash(m){
+  if(!m.alive || m.dashCooldown>0) return;
+  startEntityDash(m);
+  // マルチのゲストは「ダッシュした」ことをホストへ伝える(入力にdashSeqとして載る)。
+  // 伝えないとホスト側は通常移動のまま計算し、ダッシュぶんが誤差になって引き戻される。
+  if(m.isPlayer && typeof noteLocalDash==='function') noteLocalDash();
 }
 document.getElementById('dashBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
