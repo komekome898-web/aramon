@@ -1832,62 +1832,96 @@ function drawSingleAreaEffect(ae){
       drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph);
     }
 }
+// 地面(z=0)の円周をワールド座標でサンプルして投影する。画面上の楕円を決め打ちせず
+// 実際のカメラ投影に従わせることで、円がきちんと地面に貼り付いて見える。
+function groundCirclePoints(cx, cy, radius, segs){
+  const pts = [];
+  for(let i=0;i<segs;i++){
+    const a = (i/segs)*Math.PI*2;
+    const p = project(cx+Math.cos(a)*radius, cy+Math.sin(a)*radius, 0);
+    if(p) pts.push(p);
+  }
+  return pts.length>=3 ? pts : null;
+}
 // 円形に広がるドーム状の爆発エフェクト(ビッグバン等)
 function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
-  const proj = project(ae.x, ae.y, 0);
-  if(!proj) return;
+  const center = project(ae.x, ae.y, 0);
+  if(!center) return;
   const maxR = ae.range;
+  // 最大範囲の予告(実際のダメージ判定と同じ半径の地面円)
+  const outline = groundCirclePoints(ae.x, ae.y, maxR, 40);
+  if(outline) strokeDashedShape(outline, '#000000', 0.45*fadeAlpha);
+  if(inTelegraph) return;
+
+  const curReach = Math.min(maxR, fillDist); // ダメージ判定の半径そのもの(hitTestと同じcurReach)
+  if(curReach<=2) return;
+  const ring = groundCirclePoints(ae.x, ae.y, curReach, 40);
+  if(!ring) return;
+  const apex = project(ae.x, ae.y, curReach); // ドーム頂点も実際に投影して高さを求める
+  const s = center.scale;
+
+  // 地面円の画面上の広がり(左右端)からドームの横半径を求める
+  let minX=Infinity, maxX=-Infinity;
+  for(const p of ring){ if(p.x<minX) minX=p.x; if(p.x>maxX) maxX=p.x; }
+  const halfW = Math.max(2, (maxX-minX)/2);
+  const domeH = apex ? Math.max(2, center.y - apex.y) : halfW*0.8;
+
   ctx.save();
-  ctx.translate(proj.x, proj.y);
-  ctx.scale(proj.scale, proj.scale);
-  // 最大範囲を薄い点線で予告(実際のダメージ判定と同じ半径)
-  ctx.globalAlpha = 0.45*fadeAlpha;
-  ctx.strokeStyle = '#000000'; ctx.lineWidth = 3; ctx.setLineDash([10,8]);
-  ctx.beginPath(); ctx.ellipse(0,0, maxR, maxR*0.5, 0, 0, Math.PI*2); ctx.stroke();
-  ctx.setLineDash([]);
-  if(!inTelegraph){
-    const curReach = Math.min(maxR, fillDist); // ダメージ判定の半径そのもの(hitTestと同じcurReach)
-    if(curReach>2){
-      const rx = curReach, ry = curReach*0.5, domeRy = curReach*0.8;
-      // 1) ドーム本体: 地面に接地した半球(上半分の球体)のシルエット。ダメージ判定円(rx)にぴったり沿わせる
-      ctx.globalAlpha = 0.7*fadeAlpha;
-      const g = ctx.createRadialGradient(0,-domeRy*0.3, 0, 0,-domeRy*0.1, Math.max(rx,domeRy)*1.05);
-      g.addColorStop(0, '#3a3a44');
-      g.addColorStop(0.55, ae.color);
-      g.addColorStop(1, '#000000');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, rx, domeRy, 0, Math.PI, Math.PI*2, false); // 上半分の弧(ドームの丸み)
-      ctx.closePath(); // 地面の底辺で閉じる
-      ctx.fill();
-      // 2) 地面との設置ライン(ダメージ判定円の輪郭そのもの)
-      ctx.globalAlpha = 0.85*fadeAlpha;
-      ctx.strokeStyle = '#0a0a0d'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.ellipse(0,0, rx, ry, 0, 0, Math.PI*2); ctx.stroke();
-      // 3) 外周の衝撃波リング(視認性のための淡いハイライト)
-      ctx.globalAlpha = 0.55*fadeAlpha;
-      ctx.strokeStyle = '#6b6b78'; ctx.lineWidth = 3;
-      if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor=ae.color; }
-      ctx.beginPath(); ctx.ellipse(0, 0, rx, domeRy, 0, Math.PI, Math.PI*2, false); ctx.stroke();
-      // 4) 発射時の球体と同じ「黒いビリビリ」電撃アークを、判定円の縁に沿わせて描く
-      ctx.shadowBlur=0;
-      const jseed = Math.floor(matchTime*18) + (ae.id||0);
-      ctx.lineCap='round'; ctx.lineJoin='round';
-      for(let k=0;k<6;k++){
-        const baseA = Math.PI + fxHash01(jseed*13+k*7)*Math.PI; // 上半分(接地アーチ)側に沿わせる
-        const arcSpan = 0.5 + fxHash01(jseed*29+k*11)*0.6;
-        const segs=5; ctx.beginPath();
-        for(let s=0;s<=segs;s++){
-          const a = baseA + arcSpan*(s/segs);
-          const rr = 1 + (fxHash01(jseed*37+k*17+s*5)-0.5)*0.22;
-          const px = Math.cos(a)*rx*rr, py = Math.sin(a)*domeRy*rr;
-          if(s===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-        }
-        ctx.globalAlpha=0.55*fadeAlpha; ctx.strokeStyle='#3a1560'; ctx.lineWidth=4; ctx.stroke();
-        ctx.globalAlpha=0.9*fadeAlpha; ctx.strokeStyle='#8b46c9'; ctx.lineWidth=1.6; ctx.stroke();
-      }
-      ctx.globalAlpha=1;
+  // 1) 地面に貼り付いた円(ダメージ判定そのもの)
+  ctx.globalAlpha = 0.55*fadeAlpha;
+  ctx.beginPath();
+  ctx.moveTo(ring[0].x, ring[0].y);
+  for(let i=1;i<ring.length;i++) ctx.lineTo(ring[i].x, ring[i].y);
+  ctx.closePath();
+  ctx.fillStyle = '#0a0a0d';
+  ctx.fill();
+
+  // 2) ドーム本体: 地面円の上に乗る半球(上半分の球体)
+  ctx.globalAlpha = 0.7*fadeAlpha;
+  const g = ctx.createRadialGradient(center.x, center.y-domeH*0.3, 0, center.x, center.y-domeH*0.1, Math.max(halfW,domeH)*1.05);
+  g.addColorStop(0, '#3a3a44');
+  g.addColorStop(0.55, ae.color);
+  g.addColorStop(1, '#000000');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y, halfW, domeH, 0, Math.PI, Math.PI*2, false);
+  ctx.closePath();
+  ctx.fill();
+
+  // 3) 地面との接地ライン(ダメージ判定円の輪郭そのもの)
+  ctx.globalAlpha = 0.9*fadeAlpha;
+  ctx.strokeStyle = '#0a0a0d'; ctx.lineWidth = 3*s;
+  ctx.beginPath();
+  ctx.moveTo(ring[0].x, ring[0].y);
+  for(let i=1;i<ring.length;i++) ctx.lineTo(ring[i].x, ring[i].y);
+  ctx.closePath();
+  ctx.stroke();
+
+  // 4) 外周の衝撃波リング(視認性のための淡いハイライト)
+  ctx.globalAlpha = 0.55*fadeAlpha;
+  ctx.strokeStyle = '#6b6b78'; ctx.lineWidth = 3*s;
+  if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor=ae.color; }
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y, halfW, domeH, 0, Math.PI, Math.PI*2, false);
+  ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // 5) 発射時の球体と同じ「黒いビリビリ」電撃アークをドームの縁に沿わせる
+  const jseed = Math.floor(matchTime*18) + (ae.id||0);
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for(let k=0;k<6;k++){
+    const baseA = Math.PI + fxHash01(jseed*13+k*7)*Math.PI; // 上半分(ドームのアーチ)側
+    const arcSpan = 0.5 + fxHash01(jseed*29+k*11)*0.6;
+    const segs=5; ctx.beginPath();
+    for(let n=0;n<=segs;n++){
+      const a = baseA + arcSpan*(n/segs);
+      const rr = 1 + (fxHash01(jseed*37+k*17+n*5)-0.5)*0.22;
+      const px = center.x + Math.cos(a)*halfW*rr;
+      const py = center.y + Math.sin(a)*domeH*rr;
+      if(n===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     }
+    ctx.globalAlpha=0.55*fadeAlpha; ctx.strokeStyle='#3a1560'; ctx.lineWidth=4*s; ctx.stroke();
+    ctx.globalAlpha=0.9*fadeAlpha;  ctx.strokeStyle='#8b46c9'; ctx.lineWidth=1.6*s; ctx.stroke();
   }
   ctx.restore();
 }

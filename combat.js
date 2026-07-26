@@ -951,23 +951,22 @@ function updateProjectiles(dt){
           hitNow = Math.hypot(tp.x-p.x, tp.y-p.y) < e.radius+p.hitR;
         }
         if(hitNow){
-          if(!p.blast){
-            applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
-            // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
-            if(p.selfSpeedBuffOnHit){
-              const owner = getEntity(p.ownerId);
-              if(owner && owner.alive){
-                owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
-                owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
-                if(owner.isPlayer) pushToast(`命中！移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
-              }
+          // blast付き(ビッグバン等)も球体の直撃ダメージを与える。着弾後の爆風ダメージは別途spawnGroundBlastで判定
+          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
+          // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
+          if(p.selfSpeedBuffOnHit){
+            const owner = getEntity(p.ownerId);
+            if(owner && owner.alive){
+              owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
+              owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
+              if(owner.isPlayer) pushToast(`命中！移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
             }
-            if(p.splash>0){
-              for(const o of entities){
-                if(o===e || !o.alive || o.id===p.ownerId) continue;
-                if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
-                if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
-              }
+          }
+          if(p.splash>0){
+            for(const o of entities){
+              if(o===e || !o.alive || o.id===p.ownerId) continue;
+              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura });
             }
           }
           spawnHit(tp.x,tp.y,e.z,p.color);

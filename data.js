@@ -448,9 +448,10 @@ const SIGNATURE_MOVES = {
     { name:'ライトニング', tier:2, color:'#fff34d', dmg:10, cooldown:1.15, gutsCost:16,
       aoeShape:'zigzag', range:1300, zigzagWidth:55, burst:3, burstGap:0.15, aoeStyle:'thunder', icon:'⚡️' },
     // 黒い球体を発射し、命中/最大射程到達で着弾点に円形ダメージのドームが広がる
-    { name:'ビッグバン', tier:3, color:'#14121c', dmg:0, cooldown:2.3, gutsCost:24,
+    // dmg=球体の直撃ダメージ / blast.dmg=着弾後の爆風ダメージ(両方当たれば合計値)
+    { name:'ビッグバン', tier:3, color:'#14121c', dmg:20, cooldown:2.3, gutsCost:24,
       range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮',
-      blast:{ radius:260, dmg:50, color:'#14121c', expandTime:0.5 } },
+      blast:{ radius:330, dmg:60, color:'#14121c', expandTime:0.5 } },
   ],
 };
 
@@ -568,6 +569,7 @@ function ssrTier3DmgMult(move, attacker){
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 const UPDATE_HISTORY = [
   { date:'2026-07-25', items:[
+    'ピクシー「ビッグバン」を強化: 発射した球体の直撃と着弾後の爆風の両方でダメージが入るように変更、爆風の範囲と威力をアップ。技一覧の威力が0と表示されていたのを修正(直撃+爆風の合計を表示)。ダメージ範囲の円が宙に浮いて見えていたのを、地面に正しく貼り付くよう描画方式を修正',
     'ピクシーのマスモン適正を調整(EDABBE)。ビッグバンの爆風エフェクトが大きな障害物の裏に隠れず正しい前後関係で表示されるよう修正、ダメージ判定円にエフェクトの見た目を正確に一致させ、発射時と同じ黒いビリビリ電撃も追加',
     'ザンの全技の威力・射程を少し下方修正',
     'ピクシーのtier3「ビッグバン」を調整: 発射する球体を少し大きく、着弾時のエフェクトを地面に接地した半球型の黒い爆風に変更、発射音/着弾音を専用SEに変更',

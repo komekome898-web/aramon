@@ -2857,6 +2857,7 @@ function describeMoveFeatureText(mv){
   else if(mv.aoeShape==='fanZigzag') parts.push('扇状かつジグザグに攻撃');
   if(mv.burst) parts.push(`${mv.burst}連射`);
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
+  if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
   if(mv.selfSpeedBuffOnHit) parts.push(`命中時 自分の移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒間)`);
   if(mv.multiOrb) parts.push('赤青黄緑のオーラ球体を発射');
@@ -2888,7 +2889,9 @@ function buildMastermonMovesHtml(key){
     // tier3は装備SSRスキンで技名・威力が変わる(該当スキン装備時のみ)
     const pseudo = { element:key, isPlayer:true };
     const dispName = (typeof getMoveName==='function') ? getMoveName(mv, pseudo) : mv.name;
-    const dispDmg = Math.round(mv.dmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
+    // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)
+    const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0);
+    const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
     return `
     <div class="mm-move-card">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
