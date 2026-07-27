@@ -840,8 +840,15 @@ function stopLobbyBannerLoop(){ if(lobbyBannerTimer){ clearInterval(lobbyBannerT
 
 // トップ画面を表示/非表示にするたびに、歩行アニメとバナーのタイマーを合わせて動かす。
 // 画面が隠れている間にタイマーを回し続けないため、MutationObserverで .hidden を監視する。
+// ヘッダーのロビーBGMチップの表示を今の選択に合わせる
+function updateLobbyBgmLabel(){
+  const el = document.getElementById('headerBgmName');
+  if(!el || typeof getLobbyBgmMode!=='function') return;
+  el.textContent = getLobbyBgmMode()==='ichika' ? 'いちか' : 'オリジナル';
+}
 function refreshLobby(){
   updateLobbyPickLabels();
+  updateLobbyBgmLabel();
   renderLobbyMonster();
   startLobbyBannerLoop();
 }
@@ -2005,7 +2012,7 @@ function buyShopItem(itemKey, price){
   w.gold -= price;
   saveWallet(w);
   addBagItem(itemKey, 1);
-  playSe('pickup');
+  playSe('buy');
   pushToast(`${PLAYER_ITEMS[itemKey].name} を購入した！`);
   // 今回開いてからの購入回数を増やし、店主のセリフを回数帯に応じて変化させる
   shopBuysThisOpen++;
@@ -3325,6 +3332,20 @@ function mmOpenTab(tab){
   mastermonSelectedTraining = null;
   if(tab==='dressup') mastermonPreviewSkin = null;   // 装備中を初期プレビューに
   renderMastermonDetail(mastermonDetailKey);
+  updateMetaBgm();
+}
+// 試合外(メタ画面)のBGMを今の画面に合わせる。
+// トレーニング画面だけ専用曲にし、それ以外はロビー曲へ戻す。
+// ショップは専用の開閉ハンドラが 'shop' を出しているのでここでは触らない。
+function updateMetaBgm(){
+  if(typeof bgmSetTrack!=='function') return;
+  if(game.started) return;
+  const shop = document.getElementById('shopOverlay');
+  if(shop && !shop.classList.contains('hidden')) return;
+  const mmScr = document.getElementById('mastermonScreen');
+  const onTraining = !!(mmScr && !mmScr.classList.contains('hidden') && mastermonDetailTab==='training');
+  if(onTraining && typeof ensureBgmTrainingBuffer==='function') ensureBgmTrainingBuffer();
+  bgmSetTrack(onTraining ? 'training' : 'title');
 }
 // 左カラムのボタンの選択状態を現在のタブに合わせる
 function mmSyncTabButtons(){
@@ -4466,6 +4487,9 @@ const SE_TEST_LABELS = {
   fanfare:'勝利ファンファーレ', sad:'敗北', godRising:'ゴッドライジング 運命', ssrJackpot:'SSR大当たり', zashu:'ダークホウスト ズバシュ×5',
   chocoSummon:'ちょこ 召喚', chocoVanish:'ちょこ ヴァニッシュ', chocoHit:'ちょこ 被弾',
   titleStart:'タイトル TAP START',
+  buy:'ショップ購入', darkHoust:'ザン ダークホウスト', requiemEnd:'イルミネ レクイエムエンド',
+  mocchiBeam:'モッチー モッチ砲', monta:'モッチー もんた', crystalRain:'ウンディーネ クリスタルレイン',
+  fireWave:'ヒノトリ ファイアウェーブ',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');
@@ -4490,12 +4514,27 @@ const BGM_TEST_ITEMS = [
   { id:'final5', label:'🎵 残り5人以下(決戦・動画音源)' },
   { id:'last2',  label:'🎵 残り2人(ラストバトル・動画音源)' },
   { id:'shop',   label:'🎵 ショップ(動画音源)' },
+  { id:'lobby',  label:'🎵 ロビー(いちか・実音源)' },
+  { id:'training',label:'🎵 トレーニング(実音源)' },
   { id:'stop',   label:'⏹ 停止' },
 ];
 function adminPlayBgm(id){
   if(typeof audioInit==='function') audioInit();
   if(id==='stop'){ if(typeof bgmSetTrack==='function') bgmSetTrack(null); return; }
   if(id==='title'){ if(typeof bgmSetTrack==='function') bgmSetTrack('title'); return; }
+  if(id==='lobby'){
+    // ロビー曲の確認。切替モードに関係なく鳴らしたいので一時的に「いちか」にしてタイトルへ
+    if(typeof setLobbyBgmMode==='function') setLobbyBgmMode('ichika');
+    if(typeof updateLobbyBgmLabel==='function') updateLobbyBgmLabel();
+    if(typeof ensureBgmLobbyBuffer==='function') ensureBgmLobbyBuffer();
+    if(typeof bgmSetTrack==='function') bgmSetTrack('title');
+    return;
+  }
+  if(id==='training'){
+    if(typeof ensureBgmTrainingBuffer==='function') ensureBgmTrainingBuffer();
+    if(typeof bgmSetTrack==='function') bgmSetTrack('training');
+    return;
+  }
   if(id==='shop'){
     if(typeof ensureBgmShopBuffer==='function') ensureBgmShopBuffer();
     if(typeof bgmSetTrack==='function') bgmSetTrack('shop');
@@ -4638,6 +4677,19 @@ function initTitleScreen(){
     else refreshLobby();
   };
   new MutationObserver(sync).observe(scr, { attributes:true, attributeFilter:['class'] });
+
+  // マスモン画面の開閉に合わせてBGMを戻す(トレーニング中に一覧やトップへ抜けた場合)
+  const mmScr = document.getElementById('mastermonScreen');
+  if(mmScr) new MutationObserver(()=>updateMetaBgm()).observe(mmScr, { attributes:true, attributeFilter:['class'] });
+
+  // ヘッダーのロビーBGM切替
+  const bgmBtn = document.getElementById('headerBgmBtn');
+  if(bgmBtn) bgmBtn.addEventListener('click', ()=>{
+    if(typeof toggleLobbyBgmMode==='function') toggleLobbyBgmMode();
+    updateLobbyBgmLabel();
+  });
+  updateLobbyBgmLabel();
+
   buildLobbyBanner();
   buildMonsterGrid();
   buildHowtoLists();

@@ -36,7 +36,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 | `tools/build_walk.py` | **歩行スプライト生成の開発用スクリプト**(ゲームには読み込まれない)。動画→8コマ透過PNG。この環境のffmpeg/PIL/numpy/scipy/opencvで動く。詳細は「バトル歩行アニメーション」節 |
 | `top_bg.jpg` | トップ画面(ロビー)の背景画像。`#topBg`が`cover`で敷く |
 | `title_bg.jpg` / `title_logo.png` | タイトル画面の背景とロゴ。ロゴは背景を透過済み(白背景を縁から連結する成分だけ抜き、文字内部に閉じた白いハイライトは黒で塗った)。**ロビーのタイトル(`#lobbyTitleLogo`)も同じ画像を使う** |
-| `bgm_final5.mp3` / `bgm_lastbattle.mp3` / `bgm_shop.mp3` | 残り5人以下(決戦) / 残り2人(ラストバトル) / ショップのBGM実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
+| `bgm_final5.mp3` / `bgm_lastbattle.mp3` / `bgm_shop.mp3` / `bgm_lobby.mp3` / `bgm_training.mp3` | 決戦(残り5人以下) / ラストバトル(残り2人) / ショップ / **ロビー(既定)** / **マスモンのトレーニング** のBGM実音源。すべてmono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11`で整音。`monsters/*.png`同様に実行時読み込みの外部アセット |
+| `se_darkhost.mp3` / `se_mocchibeam.mp3` / `se_crystal.mp3` | 3秒級の技SE実音源。短いSEは内蔵データURIだが、この長さは外部ファイルにしている(`createSeOneShot`はfetchなのでURLでもデータURIでも同じに動く) |
 
 ## 重要な設計知識
 
@@ -257,7 +258,12 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **短い内蔵SEを増やすときは`createSeOneShot(dataUrl, gain)`を使う**(ちょこの召喚/ヴァニッシュ/被弾の3種)。`ensure()`で先読み・`play()`は未ロード/音量0ならfalseを返すので、`SE_DEFS`側で `if(!seXxx.play()) SE_DEFS.既定SE(t,o)` と書けば必ず音が出る。**`SE_DEFS`に足せば管理者画面のSE確認に自動で載る**(表示名は`SE_TEST_LABELS`に追記、連打間引きは`SE_MIN_GAP`に追記)。
 - **リザルトの自己ベスト更新SE**(`playBestUpdateOnce`): 約9秒と長いので外部ファイル`best_update.mp3`を`fetch`+`decodeAudioData`し1回だけ再生(ループ無し)。全体の自己ベスト更新時に鳴らし、称号/モンスター毎ベストのSSR獲得SEより優先。未ロード時はSSR獲得SEにフォールバック。
 - **実音の抽出手順**(この環境): `pip install imageio-ffmpeg`で静的ffmpegが入る(`python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"`)。Chromium(OSSビルド)は**AAC/HEVCをデコード不可・mp3は可**。動画音声はAACなので一旦ffmpegでmp3化してから埋め込む。整音は`loudnorm`。
-- 別の実音を足すときの判断: 短い効果音はデータURIインライン、長い曲は外部mp3+`fetch`。いずれもSWのネットワーク優先キャッシュに乗る。
+- **ロビーBGMは「いちか(実音源)」と「オリジナル(合成)」を切り替えられる。** 選択は`lobbyBgmMode`(localStorage `aramon_lobby_bgm_v1`)で、ヘッダーの`#headerBgmBtn`が`toggleLobbyBgmMode()`を呼ぶ。表示更新は`updateLobbyBgmLabel()`(ui.js)。
+- **ロビーBGMだけ再生位置を記憶する。** `createBgmLoop(url, gain, keepPos)`の第3引数で、`stop()`時に`offset`へ経過を足し、`start()`で`src.start(t, offset)`から再開する。他の曲は従来どおり頭から。
+- **トレーニング画面は`bgmSetTrack('training')`。** 切替の判断は`updateMetaBgm()`(ui.js)1か所に集約してあり、`mmOpenTab()`と`#mastermonScreen`のMutationObserverから呼ぶ(タブを離れても画面を抜けてもロビー曲へ戻る)。試合中とショップ表示中は触らない。
+- 別の実音を足すときの判断: 1.2秒程度までの効果音はデータURIインライン、3秒級のSEと長い曲は外部mp3+`fetch`。いずれもSWのネットワーク優先キャッシュに乗る。
+- **提供音源の技SEは`move.seStyle`で指定する**(`MOVE_SE_BY_STYLE`は`aoeStyle/projStyle`単位なので、同じ見た目の技を共有している他モンスターまで巻き込んでしまう)。現在: `darkHoust`/`requiemEnd`/`mocchiBeam`/`monta`/`crystalRain`/`fireWave`。
+- **「実音源のあとに合成SEをつなげる」ときは`createSeOneShot(...).play(when)`に開始時刻を渡す**(ヒノトリ`fireWave`= bard音源→`fireRoar`)。長さは`.dur()`で取れる。
 
 ## 用語(発注者の言い回し)
 

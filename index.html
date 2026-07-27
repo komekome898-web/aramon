@@ -51,7 +51,11 @@
      <button id="changelogBtn" class="header-icon-btn has-dot" aria-label="更新履歴">🆕<span id="changelogNewPop" class="changelog-new-pop hidden">new</span></button>
    </span>
    <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span><span id="headerTitleChip" class="header-title-chip hidden"></span></span>
-   <span class="header-wallet header-side"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
+   <span class="header-side header-right">
+     <!-- ロビーBGMの表示・切替(提供音源「いちか」/従来の合成BGM) -->
+     <button id="headerBgmBtn" class="header-bgm-btn" aria-label="ロビーBGM"><span class="header-bgm-icon">🎵</span><span id="headerBgmName">いちか</span></button>
+     <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
+   </span>
  </div>
 
  <div id="lobbyLayout">

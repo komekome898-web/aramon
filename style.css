@@ -487,7 +487,17 @@
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--amber);
     letter-spacing:0.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:44vw;
   }
+  #topHeader .header-right{ justify-self:end; gap:10px; }
   #topHeader .header-wallet{ justify-self:end; display:flex; gap:12px; flex-shrink:0; }
+  /* ロビーBGMの切替チップ。押すたびに提供音源/オリジナルが入れ替わる */
+  .header-bgm-btn{
+    display:flex; align-items:center; gap:4px; flex-shrink:0; cursor:pointer;
+    height:22px; padding:0 8px; border-radius:11px;
+    color:var(--ink); background:rgba(255,255,255,0.07); border:1px solid var(--panel-line);
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.5px; line-height:1;
+  }
+  .header-bgm-btn:active{ background:rgba(244,196,48,0.22); }
+  .header-bgm-btn .header-bgm-icon{ font-size:10px; }
   #topHeader .header-wallet span{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink); }
   .account-box{ max-width:min(480px, calc(92 * var(--vw))); }
   .account-note{ font-size:11px; color:var(--ink-dim); line-height:1.6; margin-bottom:10px; text-align:left; }
