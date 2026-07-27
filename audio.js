@@ -581,6 +581,9 @@ const MIDI = n => 440*Math.pow(2,(n-69)/12);
 function bgmSetTrack(name){
   if(bgmState.desired===name) return;
   bgmState.desired = name;
+  // 試合以外の画面へ移るときはintensityを持ち越さない(前の試合の決戦BGMが後を引かないように)。
+  // nullは試合中の演出でも使うのでここでは触らない。
+  if(name==='title' || name==='shop' || name==='training') bgmState.intensity = 0;
   if(actx && bgmTrackGain){
     // 切替時は短くフェードアウト→インして繋ぎ目を柔らかく
     const t = actx.currentTime;
@@ -693,21 +696,36 @@ function setLobbyBgmMode(mode){
   if(actx) updateBgmFileLoops();   // ロビーを開いたまま押しても即切り替わる
 }
 function toggleLobbyBgmMode(){ setLobbyBgmMode(lobbyBgmMode==='ichika' ? 'original' : 'ichika'); }
-// スケジューラから毎tick呼び、状態に応じて各ループの開始/停止を判断する
-function updateBgmFileLoops(){
-  const live = !!(actx && actx.state==='running' && audioSettings.bgm>0.005);
+// 実音源ループの一覧。重複再生の防御はこの配列を使った「1曲だけ」の保証で行う
+const BGM_FILE_LOOPS = [bgmFinal5, bgmLastBattle, bgmShop, bgmLobby, bgmTraining];
+// いま鳴らすべき実音源ループを1つだけ返す(なければnull=合成BGMの担当)。
+// 【重要】トラック名は必ず明示で判定する。以前は「title/shop以外はすべて試合中」としていたため、
+// トレーニング画面で前の試合のintensity(3〜4)が残っていると決戦BGMが同時に鳴っていた。
+function bgmFileLoopTarget(){
+  if(!(actx && actx.state==='running' && audioSettings.bgm>0.005)) return null;
   const cur = bgmState.current;
-  const inBattle = !!(live && cur && cur!=='title' && cur!=='shop');
-  bgmShop.setPlaying(live && cur==='shop');
-  bgmLobby.setPlaying(live && cur==='title' && lobbyBgmMode==='ichika');
-  bgmTraining.setPlaying(live && cur==='training');
-  bgmLastBattle.setPlaying(inBattle && bgmState.intensity>=4);
-  // ラストバトル音源が鳴るときは決戦BGMを止める(重ならないように)。
-  // ラストバトル音源が未ロードなら決戦BGMを鳴らし続ける(合成に落ちるより自然)。
-  bgmFinal5.setPlaying(inBattle && bgmState.intensity>=3 && !(bgmState.intensity>=4 && !!bgmLastBattle.buffer));
+  if(cur==='shop') return bgmShop;
+  if(cur==='training') return bgmTraining;
+  if(cur==='title') return lobbyBgmMode==='ichika' ? bgmLobby : null;
+  if(cur==='battle'){
+    // ラストバトル音源が使えるならそちら、無ければ決戦BGMのまま(合成に落ちるより自然)
+    if(bgmState.intensity>=4 && bgmLastBattle.buffer) return bgmLastBattle;
+    if(bgmState.intensity>=3) return bgmFinal5;
+    return null;  // 序盤〜終盤は合成BGM
+  }
+  return null;    // null(停止)や未知のトラック
+}
+// スケジューラから毎tick呼ぶ。「目的の1曲以外は必ず止める」ので、
+// 判定条件を足しても複数の実音源が同時に鳴ることはない。
+function updateBgmFileLoops(){
+  const want = bgmFileLoopTarget();
+  BGM_FILE_LOOPS.forEach(L=>{ if(L!==want && L.source) L.stop(); });
+  if(want && !want.source) want.start();
 }
 // 実音源のループが鳴っている間は合成パートを鳴らさない(二重再生の防止)
-function bgmFileLoopActive(){ return !!(bgmFinal5.source || bgmLastBattle.source || bgmShop.source || bgmLobby.source || bgmTraining.source); }
+function bgmFileLoopActive(){ return BGM_FILE_LOOPS.some(L=>!!L.source); }
+// いま望まれているトラック名(リザルト後の復帰処理が、先に決まった行き先を上書きしないよう参照する)
+function bgmDesiredTrack(){ return bgmState.desired; }
 function startBgmScheduler(){
   if(bgmState.timerId) return;
   bgmState.nextTime = actx.currentTime + 0.1;
