@@ -61,10 +61,10 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 ### トップ画面(ロビー)
 - **1画面完結でスクロールしない。** `#startScreen`は`overflow:hidden`、`#lobbyLayout`が `左メニュー / 中央 / 右` の3カラムグリッド。サイズは全部`var(--vw)/var(--vh)`基準(メディアクエリ禁止の理由はカルーセル節と同じ)。
 - 背景は`top_bg.jpg`(`#topBg`)。文字を読ませるため`#topBg::after`で左右と上下から暗いグラデーションを重ねている。
-- **左カラム**: シーズン/デイリー/ガチャ/ショップ/バッグ(`.lobby-side-btn`)+ 最下部にバナー。`justify-content:center`+バナーは`margin-top:auto`なので、短い画面でも重ならない。
+- **左カラム**: シーズン/デイリー/ガチャ/ショップ/バッグ/ランキング(`.lobby-side-btn`)+ 最下部にバナー。`justify-content:center`+バナーは`margin-top:auto`なので、短い画面でも重ならない。
 - **中央**: タイトル → `#lobbyMonsterStage`(選択中モンスターの正面歩行) → 名前 → タップ案内。**`#lobbyMonsterStage`自体が`<button>`で、これを押すとモンスター選択のオーバーレイが開く**(独立した「モンスター選択」ボタンは廃止)。`<button>`にしているのは共通タップSE(audio.jsのclickハンドラが`closest('button')`で判定)とフォーカスを効かせるためなので、`div`に戻さないこと。未選択時は`#lobbyMonsterEmpty`が枠付きで点滅し、選択後は`#lobbyMonsterTapHint`が「タップしてモンスター変更」を出す。歩行は`renderLobbyMonster()`が`monsterWalkFrameDataUrls(element, skinId, 'front')`のdataURLを`setInterval`で差し替える。**マスモン選択中だけ装備スキンを反映**(モンスター一覧は素の姿を選ぶ画面なので反映しない)。歩行コマ未ロードなら静止画のまま0.35秒×6回リトライする。
-- **右カラム**: `マップ` / `プレイモード` の値表示ボタン(押すとオーバーレイ)→ `バトル開始`。マップ・モードの実体(`#mapTabs`/`#mapPreview`/`#modeTabs`/`#capacityTabs`/`#invertPitchRow`)はオーバーレイの中に移してあるだけなので、既存のハンドラはそのまま効く。値の表示更新は`updateLobbyPickLabels()`。
-- **ヘッダー**: ⚙️設定(遊び方/画面カスタマイズ/音量) / 👤マイページ(ログイン/マイ記録/ランキング/表示名) / 🆕更新履歴。**中身は元のボタンをDOMごと移動しただけ**なのでIDもハンドラも変わっていない。
+- **右カラム**: `マップ` / `プレイモード` の値表示ボタン(押すとオーバーレイ)→ `バトル開始`(`#joinBtn`。大きめ+`::after`の斜め光沢スイープ+`margin-top`で下寄せ。光沢は無効時は止める)。マップ・モードの実体(`#mapTabs`/`#mapPreview`/`#modeTabs`/`#capacityTabs`/`#invertPitchRow`)はオーバーレイの中に移してあるだけなので、既存のハンドラはそのまま効く。値の表示更新は`updateLobbyPickLabels()`。
+- **ヘッダー**: ⚙️設定(遊び方/画面カスタマイズ/音量) / 👤マイページ(ログイン/マイ記録/表示名) / 🆕更新履歴。**中身は元のボタンをDOMごと移動しただけ**なのでIDもハンドラも変わっていない。
 - バナーは`data.js`の`LOBBY_BANNERS`に1件足すだけで増える(`LOBBY_BANNER_MS`=3秒でループ。`open`で押したとき開く画面を指定)。
 - **タイマーはトップ画面の表示/非表示に合わせて止める。** `#startScreen`の`class`をMutationObserverで見て、隠れたら歩行アニメとバナーのループを停止する。
 - **ロビーの初期化ブロックはui.jsの末尾に置く。** `netState`など後方で`let`宣言している値を読むため、途中で実行するとTDZで落ちる(実際に踏んだ)。
