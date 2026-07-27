@@ -394,9 +394,12 @@ const SIGNATURE_MOVES = {
     { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:24, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell', selfSpeedBuffOnHit:true },
   ],
   illumine: [
-    { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️' },
-    { name:'アサルトアロー', tier:2, color:'#8b2fc9', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:580, hitR:7,  burst:3, burstGap:0.09, icon:'🗡️' },
-    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:24, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle', projStyle:'requiem', seStyle:'requiemEnd' },
+    { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️', seStyle:'venomEdge' },
+    { name:'アサルトアロー', tier:2, color:'#8b2fc9', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:580, hitR:7,  burst:3, burstGap:0.09, icon:'🗡️', seStyle:'assaultArrow' },
+    // 3発それぞれの着弾点にドーム状の爆風が広がる(アムピトリテと同じ blast の仕組み)。
+    // ドームの色は requiem の暗い紫(render.jsのDARKと同色)に合わせてある
+    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:24, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle', projStyle:'requiem', seStyle:'requiemEnd',
+      blast:{ radius:260, dmg:18, color:'#1d0b2e', expandTime:0.45, se:'requiemBlast' } },
   ],
   fox: [
     { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:8, projSpeed:530, hitR:13, splash:74 },
@@ -575,12 +578,14 @@ const SSR_SKIN_TIER3 = {
   // 威力アップ・弾速アップ・射程は少し短く・爆風範囲は大きく・消費ガッツ24。
   // keepArcColor: 槍とドームは青(オーラ色)のまま、ビリビリ電撃だけ既定の紫にする。
   // 威力は「槍の直撃(dmg)+ドームの爆風(blast.dmg)」が3本ぶん入る前提の数値。
+  // burstSpread: 3本の発射角を広げて着弾点(=ドーム)がバラけやすくする(既定0.05rad)
   persephone_ssr: { name:'アムピトリテ', move:{
-    dmg:22, projSpeed:1150, range:1350, gutsCost:24, hitR:34, burstGap:0.12,
+    dmg:22, projSpeed:1150, range:1350, gutsCost:24, hitR:34, burstGap:0.12, burstSpread:0.11,
     shape:null, projStyle:'seaSpear', keepArcColor:true,
     // ドームの色はブルーのオーラ色。SKIN_COLORS はこの定義より後で宣言されるので
     // auraColorHex() を呼ぶとTDZで落ちる。リテラルで持つ(SKIN_COLORS.blue.hex と同値)
-    blast:{ radius:460, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
+    // 面積を半分にするので半径は1/√2(460→325)
+    blast:{ radius:325, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
   }},
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -647,6 +652,9 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'イルミネ「レクイエムエンド」にも、3発それぞれの着弾点でドーム状の爆風が広がる効果を追加しました(専用の爆発音つき)', g:['monster','balance','av'] },
+    { t:'イルミネのtier1「ヴェノムエッジ」とtier2「アサルトアロー」に専用の効果音を追加しました(tier2は同じ音の3連射)', g:['monster','av'] },
+    { t:'アムピトリテの槍が進行方向を向くようになり、3連射の発射角が広がって着弾点がバラけやすくなりました。爆風ドームの面積は半分に調整しました', g:['monster','balance','av'] },
     { t:'ペルセポネがスキンカタログ・バッグのスキン欄・着せ替え画面・装備時の見た目に反映されない不具合を修正しました', g:['fix','monster'] },
     { t:'ペルセポネに歩行モーションを追加しました。バトル中もロビーも、正面・後ろ姿ともに歩くようになります', g:['monster','av'] },
     { t:'イルミネのSSRスキン「ペルセポネ」を追加しました。スキンガチャとSSRカタログから入手でき、オーラは青になります', g:['feature','monster'] },

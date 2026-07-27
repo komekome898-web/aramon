@@ -951,8 +951,19 @@ function drawProjectile(pr,p){
     // 色は pr.color(=装備オーラ色)なので、スキンのオーラを変えればそのまま追従する。
     const col = pr.color || '#3d7dff';
     const r = (pr.hitR||30)*1.25;
+    // 進行方向を「画面上での向き」に直して回転させる。
+    // 他の弾と同じ (travelAngle - camState.yaw) だと、カメラの奥へ撃ったときに
+    // 長い槍が画面右向き=横倒しに見えてしまう(短い弾では目立たないが槍は目立つ)。
+    // 進行方向へ少し進んだ点を投影し、画面上の差分から角度を取れば奥行きも正しく向く。
     const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
-    ctx.rotate(travelAngle - camState.yaw);
+    let screenAngle = travelAngle - camState.yaw;
+    const pA = project(pr.x, pr.y, pr.z);
+    const pB = project(pr.x + Math.cos(travelAngle)*80, pr.y + Math.sin(travelAngle)*80, pr.z);
+    if(pA && pB){
+      const dx = pB.x - pA.x, dy = pB.y - pA.y;
+      if(Math.hypot(dx,dy) > 0.5) screenAngle = Math.atan2(dy, dx);
+    }
+    ctx.rotate(screenAngle);
     if(!renderHeavyLoad){ ctx.shadowBlur=24; ctx.shadowColor=col; }
     ctx.lineJoin='round'; ctx.lineCap='round';
     // 後方へ伸びる水の尾

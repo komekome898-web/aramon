@@ -244,6 +244,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### 技のギミック(combat.js / render.js / ui.js)
 - **`blast`(着弾ドームAoE。ピクシー「ビッグバン」)**: 弾に`blast:{radius,dmg,color,expandTime,(telegraphTime),(style),(se)}`を付けると、命中/最大射程到達の地点で`spawnGroundBlast()`が`kind:'circle'`の`areaEffect`を発生させ、円が広がりながらダメージ判定する。**弾の直撃ダメージ(`mv.dmg`)と爆風ダメージ(`mv.blast.dmg`)は別々に入る**(両方当たれば合計)。描画は`drawDomeBurstEffect`。
+- **`burstSpread`(連射の広がり。既定0.05rad)**: 連射する技の発射角の刻みを技ごとに変えられる。**指定を読む場所は4か所**(combat.jsの`aoeShape`分岐と通常弾、network.jsのゲスト見た目の同2か所)なので、増やすときは全部に通す。アムピトリテは0.11で着弾ドームをバラけさせている。
+- **長い弾(槍など)は`travelAngle - camState.yaw`で回してはいけない。** カメラ奥へ撃つと画面右向き=横倒しに見える。進行方向へ少し進んだ点を`project()`し、画面上の差分から角度を取る(`seaSpear`が実装例)。短い弾では目立たないので既存の弾はそのままでよい。
 - **`aoeShape`技の`burst`(範囲技の連射。ピクシー「ライトニング」)**: 通常の弾と違い`areaEffect`は即時生成なので、2発目以降は`pendingAoeCasts`(world.js)に「発射時刻+生成関数」を積み、`updatePendingAoeCasts()`が時刻到達で生成する。撃った本人が発射前に倒れた場合は不発になる。
 - **範囲エフェクトの見た目は必ずダメージ判定と同じ半径で描く。** `updateAreaEffects`のヒット判定は`curReach`(=`fillDist`を`range`でクランプした値)を使うので、描画側も同じ値を使う。見栄えのために0.95倍などを掛けると判定と見た目がズレる。
 - **`gutsDrainRatio`(技単位のガッツ削り。ピクシー「キッス」)**: 技に付けると、与えたダメージ×この割合ぶん相手のガッツも削る。伝搬は`gutsDrain`という名前で弾・AoEに載せ、`applyDamage`の`opts.gutsDrain`で適用する。**属性単位のガッツ削り(プラント0.3/アーク0.45)とは別系統**なので混同しないこと。

@@ -4494,6 +4494,7 @@ const SE_TEST_LABELS = {
   mocchiBeam:'モッチー モッチ砲', monta:'モッチー もんた', crystalRain:'ウンディーネ クリスタルレイン',
   fireWave:'ヒノトリ ファイアウェーブ',
   amphitrite:'ペルセポネ アムピトリテ(3連射)', amphitriteBlast:'ペルセポネ アムピトリテ 爆風',
+  venomEdge:'イルミネ ヴェノムエッジ', assaultArrow:'イルミネ アサルトアロー(3連射)', requiemBlast:'イルミネ レクイエムエンド 爆風',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');
