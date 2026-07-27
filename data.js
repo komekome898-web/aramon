@@ -369,7 +369,7 @@ const SIGNATURE_MOVES = {
     { name:'水風船',     tier:1, color:'#3dccc7', range:750,  dmg:23, cooldown:0.8,  gutsCost:8, projSpeed:560, hitR:11, splash:68, icon:'💧' },
     { name:'アクアウェイブ',   tier:2, color:'#3dccc7', range:1500, dmg:12, cooldown:1.0, gutsCost:16, projSpeed:520, hitR:6,  burst:3, burstGap:0.1, icon:'💧' },
     { name:'クリスタルレイン',   tier:3, color:'#3dccc7', dmg:42, cooldown:1.9, gutsCost:24,
-      aoeShape:'rect', range:900, rectWidth:260, aoeStyle:'crystal' },
+      aoeShape:'rect', range:900, rectWidth:260, aoeStyle:'crystal', seStyle:'crystalRain' },
   ],
   leaf: [
     { name:'種',     tier:1, color:'#7fb236', range:650,  dmg:22, cooldown:0.78, gutsCost:8, projSpeed:500, hitR:12, splash:72, icon:'🍃' },
@@ -392,7 +392,7 @@ const SIGNATURE_MOVES = {
     { name:'火炎砲',     tier:1, color:'#e8432a', range:725,  dmg:25, cooldown:0.82, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🔥' },
     { name:'火炎連砲', tier:2, color:'#e8432a', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🔥' },
     { name:'ファイアウェーブ', tier:3, color:'#ff8a3d', dmg:47, cooldown:2.0, gutsCost:24,
-      aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava' },
+      aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava', seStyle:'fireWave' },
   ],
   ark: [
     { name:'しっぽふり',   tier:1, color:'#ffe9a8', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🌱' },
@@ -407,7 +407,7 @@ const SIGNATURE_MOVES = {
   illumine: [
     { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️' },
     { name:'アサルトアロー', tier:2, color:'#8b2fc9', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:580, hitR:7,  burst:3, burstGap:0.09, icon:'🗡️' },
-    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:24, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle', projStyle:'requiem' },
+    { name:'レクイエムエンド', tier:3, color:'#e6c35c', range:1750, dmg:24, cooldown:2.2, gutsCost:24, projSpeed:720, hitR:20, burst:3, burstGap:0.1, shape:'triangle', projStyle:'requiem', seStyle:'requiemEnd' },
   ],
   fox: [
     { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:8, projSpeed:530, hitR:13, splash:74 },
@@ -416,10 +416,10 @@ const SIGNATURE_MOVES = {
       aoeShape:'rect', range:2200, rectWidth:160, aoeStyle:'galaxy' },
   ],
   mocchi: [
-    { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻' },
+    { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻', seStyle:'monta' },
     { name:'さくらふぶき', tier:2, color:'#ff8fc4', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🌸' },
     { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400,
-      aoeShape:'rect', range:1000, rectWidth:120, aoeStyle:'sakura' },
+      aoeShape:'rect', range:1000, rectWidth:120, aoeStyle:'sakura', seStyle:'mocchiBeam' },
   ],
   suezo: [
     { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'💧' },
@@ -442,7 +442,7 @@ const SIGNATURE_MOVES = {
     { name:'ソニックナイフ', tier:1, color:'#8fa0c8', range:680, dmg:20, cooldown:0.8, gutsCost:8, projSpeed:640, hitR:11, splash:64, icon:'🗡️' },
     { name:'フォルターブリッツ', tier:2, color:'#8fa0c8', range:1250, dmg:11, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:6, burst:3, burstGap:0.1, icon:'🗡️' },
     { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:21, cooldown:2.0, gutsCost:24, projSpeed:820,
-      range:1340, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙' },
+      range:1340, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙', seStyle:'darkHoust' },
   ],
   // ピクシー: 特性で移動速度1.2倍・被ダメ1.2倍(高機動・低耐久のグラスキャノン)
   pixie: [
@@ -641,6 +641,11 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'ロビーのBGMを新しい曲に変更しました。画面右上の🎵ボタンで、これまでのBGMと切り替えられます(選んだ曲は次回も引き継がれます)', g:['general','av'] },
+    { t:'ロビーのBGMは、他の画面へ移って戻ってきたときに続きから流れるようになりました', g:['general','av'] },
+    { t:'マスモンのトレーニング画面に専用BGMを追加しました', g:['general','av'] },
+    { t:'ボタンのタップ音とショップの購入音を新しい効果音に変更しました', g:['general','av'] },
+    { t:'技の効果音を専用のものに差し替えました(ザン「ダークホウスト」/イルミネ「レクイエムエンド」/モッチー「モッチ砲・ラガモッチ砲」「もんた」/ウンディーネ「クリスタルレイン」/ヒノトリ「ファイアウェーブ」)', g:['monster','av'] },
     { t:'「ランキング」をマイページからトップ画面左のメニュー(バッグの下)に移し、1タップで開けるようにしました', g:['general'] },
     { t:'トップ画面の「モンスター選択」ボタンをなくし、画面中央のモンスター(未選択のときは「モンスターを選択してください」)を直接タップして選べるようにしました', g:['general'] },
     { t:'タイトル画面の「TAP START」に専用の効果音が付きました。タイトルロゴの見た目も整え、トップ画面のタイトルにも同じロゴを使うようにしました', g:['general','av'] },
