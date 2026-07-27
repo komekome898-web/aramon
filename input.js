@@ -7,57 +7,93 @@ document.addEventListener('selectstart', (e)=>{ if(!isTextEntry(e.target)) e.pre
 
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#textInputOverlay')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
 }, {passive:false});
 document.addEventListener('dblclick', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#textInputOverlay')) return;
   e.preventDefault();
 });
 
-// ===== ソフトキーボードで入力欄が隠れないようにする =====
-// iOSはキーボードを出してもレイアウトの高さが変わらないため、visualViewportで
-// 「実際に見えている範囲」を測り、入力欄が隠れるぶんだけアプリ全体をずらす。
-// 強制横向き(#appRootを90度回転)ではアプリ空間の「上」が実画面の別の軸になるので、
-// 回転後にどちらの軸へ寄せるかは style.css の #appRoot.kb-lift 側で切り替えている。
-const KB_LIFT_MARGIN = 12;
-function clearKeyboardLift(){
-  const root = document.getElementById('appRoot');
-  if(!root) return;
-  root.classList.remove('kb-lift');
-  root.style.removeProperty('--kb-lift');
-}
-// キーボードが出る入力だけを対象にする(音量やアイテム個数のスライダーは対象外)
+// ===== 文字入力は共通ポップアップで行う =====
+// iOSのソフトキーボードは実画面の下側を覆う。強制横向き(#appRootを90度回転)では
+// それがアプリの右側にあたるため、画面のどこに入力欄を置いても隠れることがある。
+// そこで元の入力欄は readonly にしてキーボードを出さず、タップされたら
+// キーボードに邪魔されない位置のポップアップで入力し、確定時に元の欄へ書き戻す。
+// document への委譲なので、動的に作られる入力欄(マスモンの名前変更など)にも自動で効く。
 const KB_SKIP_TYPES = ['range','checkbox','radio','button','submit','reset','color','file'];
 function isKeyboardInput(el){
-  if(!el) return false;
+  if(!el || !el.tagName) return false;
   if(el.tagName==='TEXTAREA') return true;
   if(el.tagName!=='INPUT') return false;
   return KB_SKIP_TYPES.indexOf((el.type||'text').toLowerCase()) < 0;
 }
-function updateKeyboardLift(){
-  const root = document.getElementById('appRoot');
-  const vv = window.visualViewport;
-  const el = document.activeElement;
-  if(!root || !vv || !isKeyboardInput(el)){ clearKeyboardLift(); return; }
-  const r = el.getBoundingClientRect();               // 実画面基準
-  const visibleBottom = (vv.offsetTop || 0) + vv.height;
-  const over = r.bottom + KB_LIFT_MARGIN - visibleBottom;
-  if(over > 0){
-    root.style.setProperty('--kb-lift', Math.round(over) + 'px');
-    root.classList.add('kb-lift');
-  } else {
-    clearKeyboardLift();
-  }
+let textInputTarget = null;
+// ポップアップの見出し: data-kb-title → 直前のラベル要素 → placeholder の順で決める
+function textInputTitleFor(el){
+  if(el.dataset && el.dataset.kbTitle) return el.dataset.kbTitle;
+  const prev = el.previousElementSibling;
+  const label = prev && prev.textContent ? prev.textContent.trim() : '';
+  if(label && label.length<=20) return label;   // 長い説明文は見出しにしない
+  return el.placeholder || '入力';
 }
-// フォーカス直後はまだキーボードが出ていないので、出そろってから測る
-document.addEventListener('focusin', ()=>{ setTimeout(updateKeyboardLift, 320); });
-document.addEventListener('focusout', ()=>{ setTimeout(clearKeyboardLift, 60); });
-if(window.visualViewport){
-  window.visualViewport.addEventListener('resize', ()=>{ setTimeout(updateKeyboardLift, 60); });
-  window.visualViewport.addEventListener('scroll', updateKeyboardLift);
+function openTextInputPopup(el){
+  const ov = document.getElementById('textInputOverlay');
+  const field = document.getElementById('textInputField');
+  if(!ov || !field) return;
+  textInputTarget = el;
+  document.getElementById('textInputTitle').textContent = textInputTitleFor(el);
+  // 元の入力欄の入力条件(桁数・種別・IME)をそのまま引き継ぐ
+  field.type = el.type==='tel' || el.type==='number' ? 'tel' : 'text';
+  if(el.maxLength && el.maxLength>0) field.maxLength = el.maxLength; else field.removeAttribute('maxlength');
+  if(el.getAttribute('inputmode')) field.setAttribute('inputmode', el.getAttribute('inputmode')); else field.removeAttribute('inputmode');
+  if(el.getAttribute('pattern')) field.setAttribute('pattern', el.getAttribute('pattern')); else field.removeAttribute('pattern');
+  field.placeholder = el.placeholder || '';
+  field.value = el.value || '';
+  ov.classList.remove('hidden');
+  // タップ(ユーザー操作)と同じターンでfocusしないとiOSはキーボードを出さない
+  field.focus();
+  try{ field.setSelectionRange(field.value.length, field.value.length); }catch(e){}
+}
+function closeTextInputPopup(commit){
+  const ov = document.getElementById('textInputOverlay');
+  const field = document.getElementById('textInputField');
+  if(!ov) return;
+  const el = textInputTarget;
+  textInputTarget = null;
+  if(commit && el){
+    el.value = field.value;
+    // 値を見ている既存のハンドラ(保存や表示更新)が動くようにイベントを流す
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+    el.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+  field.blur();
+  ov.classList.add('hidden');
+}
+// 入力欄にフォーカスが来たら、その場では編集させずポップアップへ回す
+document.addEventListener('focusin', (e)=>{
+  const el = e.target;
+  if(!isKeyboardInput(el)) return;
+  if(el.id==='textInputField') return;          // ポップアップ自身は対象外
+  el.readOnly = true;                            // 以降このinputは直接キーボードを出さない
+  el.blur();
+  openTextInputPopup(el);
+}, true);
+{
+  const ok = document.getElementById('textInputOkBtn');
+  const cancel = document.getElementById('textInputCancelBtn');
+  const ov = document.getElementById('textInputOverlay');
+  const field = document.getElementById('textInputField');
+  if(ok) ok.addEventListener('click', ()=> closeTextInputPopup(true));
+  if(cancel) cancel.addEventListener('click', ()=> closeTextInputPopup(false));
+  // 背景(暗い部分)をタップしたらキャンセル。枠の中は閉じない
+  if(ov) ov.addEventListener('click', (e)=>{ if(e.target===ov) closeTextInputPopup(false); });
+  if(field) field.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); closeTextInputPopup(true); }
+    else if(e.key==='Escape'){ e.preventDefault(); closeTextInputPopup(false); }
+  });
 }
 
 // ===== 強制横向き(縦画面ロック)中のスクロール補助 =====
