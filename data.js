@@ -268,6 +268,7 @@ const WALK_ANIM = {
   },
   illumine: {
     base: { front:_loadWalk('illumine_walk_f'), back:_loadWalk('illumine_walk_b') },      // イルミネ(色スキン対応)
+    ssr:  { skinId:'persephone_ssr', front:_loadWalk('persephone_ssr_walk_f'), back:_loadWalk('persephone_ssr_walk_b') }, // SSRペルセポネ
   },
   warm: {
     base: { front:_loadWalk('warm_walk_f'), back:_loadWalk('warm_walk_b') },              // ワーム(色スキン対応)
@@ -656,6 +657,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'ペルセポネに歩行モーションを追加しました。バトル中もロビーも、正面・後ろ姿ともに歩くようになります', g:['monster','av'] },
     { t:'イルミネのSSRスキン「ペルセポネ」を追加しました。スキンガチャとSSRカタログから入手でき、オーラは青になります', g:['feature','monster'] },
     { t:'ペルセポネ装備時のtier3が専用技「アムピトリテ」に変わります。大きな青い槍を3本発射し、着弾地点ごとにドーム状の爆風が広がります(威力アップ・弾速アップ・射程は少し短く・爆風範囲は大きく・消費ガッツ24)', g:['monster','balance','av'] },
     { t:'マルチプレイのマッチング画面と部屋一覧を画面右側のパネルにしました。相手を待っている間も、選んだモンスターがロビーに見えたままになります', g:['multi','general'] },
