@@ -1247,6 +1247,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
 let bagSelectedItem = null; // 説明フィールドに表示中のアイテムキー
 document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagSelectedItem = null;   // renderBagで先頭アイテムを自動選択→一覧+ゲージが最初から表示
+  bagPicker.targetKey = null; // 開き直したときは対象マスモン未選択から(アイテム切替では維持する)
   renderBag();
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
@@ -1451,6 +1452,30 @@ function renderBag(){
   renderBagDesc();
 }
 // 選択中アイテムの説明+個数ゲージ+対象マスモン一覧を常に表示する
+// ステータスの実を選んでいるとき、選択中マスモンが上限(999)に達するまでに使える個数。
+// 対象未選択やステータス以外のアイテムなら null(=所持数まで使える)。
+// 0 は「もう上限なので1個も使えない」を意味する。
+function bagStatUsableQty(itemKey, targetKey){
+  const it = PLAYER_ITEMS[itemKey];
+  if(!it || !it.stat || !targetKey) return null;
+  const mm = loadMastermons()[targetKey];
+  if(!mm) return null;
+  const cur = mm.stats[it.stat] || 0;
+  return Math.max(0, Math.ceil((MASTERMON_STAT_CAP - cur) / STAT_SEED_GAIN));
+}
+// 個数ゲージの上限を「所持数」と「上限までに必要な個数」の小さい方に合わせる
+function syncBagQtyLimit(){
+  const owned = loadBag()[bagSelectedItem] || 0;
+  const need = bagStatUsableQty(bagSelectedItem, bagPicker.targetKey);
+  const max = Math.max(1, need==null ? owned : Math.min(owned, Math.max(need, 1)));
+  const slider = document.getElementById('bagQtySlider');
+  slider.max = max;
+  if(bagUseQty > max) bagUseQty = max;
+  if(bagUseQty < 1) bagUseQty = 1;
+  slider.value = bagUseQty;
+  document.getElementById('bagQtyVal').textContent = bagUseQty;
+  return need;
+}
 function renderBagDesc(){
   const empty = document.getElementById('bagDescEmpty');
   const content = document.getElementById('bagDescContent');
@@ -1467,14 +1492,13 @@ function renderBagDesc(){
   document.getElementById('bagDescIcon').textContent = it.icon;
   document.getElementById('bagDescName').textContent = it.name;
   document.getElementById('bagDescText').textContent = playerItemDesc(bagSelectedItem);
-  // 個数ゲージ: 最低1・最大=所持数。アイテムを切り替えたら1にリセット
-  const owned = loadBag()[bagSelectedItem] || 0;
+  // 対象マスモンの選択はアイテムを切り替えても維持する(選び直しの手間を無くす)。
+  // 消えたマスモンを選んだままにならないよう、存在チェックだけ行う
+  const keep = bagPicker.targetKey && loadMastermons()[bagPicker.targetKey] ? bagPicker.targetKey : null;
+  bagPicker = { itemKey: bagSelectedItem, targetKey: keep };
+  // 個数ゲージ: 最低1。アイテムを切り替えたら1に戻し、上限は所持数と残り伸びしろで決める
   bagUseQty = 1;
-  const slider = document.getElementById('bagQtySlider');
-  slider.max = Math.max(1, owned); slider.value = 1;
-  document.getElementById('bagQtyVal').textContent = '1';
-  // 対象マスモン一覧を最初から表示(使うボタンを廃止)
-  bagPicker = { itemKey: bagSelectedItem, targetKey:null };
+  syncBagQtyLimit();
   renderBagTargetList();
   wrap.classList.remove('hidden');
 }
@@ -1524,10 +1548,16 @@ function renderBagTargetList(){
   pick.querySelectorAll('.bag-target-btn').forEach(b=>{
     b.addEventListener('click', ()=>{
       bagPicker.targetKey = (bagPicker.targetKey===b.dataset.key) ? null : b.dataset.key;
+      syncBagQtyLimit();      // 対象が変わると残り伸びしろも変わるので個数上限を引き直す
       renderBagTargetList();
     });
   });
-  document.getElementById('bagUseConfirmBtn').disabled = !bagPicker.targetKey;
+  // ステータスが既に上限のマスモンには使わせない(アイテムの無駄使いを防ぐ)
+  const need = bagStatUsableQty(bagPicker.itemKey, bagPicker.targetKey);
+  const capped = need===0;
+  const btn = document.getElementById('bagUseConfirmBtn');
+  btn.disabled = !bagPicker.targetKey || capped;
+  btn.textContent = capped ? '上限に到達' : '使用する';
 }
 document.getElementById('bagUseConfirmBtn').addEventListener('click', ()=>{
   if(!bagPicker.itemKey || !bagPicker.targetKey) return;
@@ -1544,10 +1574,14 @@ function useBagItem(itemKey, mmKey, qty){
   let resultText;
   if(it.stat){
     const before = mm.stats[it.stat];
+    const label = MASTERMON_STATS.find(s=>s.key===it.stat).label;
+    // 上限(999)に必要な個数までに絞る。余分なアイテムは消費しない
+    const need = Math.max(0, Math.ceil((MASTERMON_STAT_CAP - before) / STAT_SEED_GAIN));
+    if(need<=0){ pushToast(`${mm.name}の${label}は既に上限です`); return; }
+    qty = Math.min(qty, need);
     for(let i=0;i<qty;i++) mm.stats[it.stat] = mastermonClampStat(mm.stats[it.stat] + STAT_SEED_GAIN);
     const gained = mm.stats[it.stat] - before;
-    resultText = `${mm.name}の${MASTERMON_STATS.find(s=>s.key===it.stat).label}+${gained}`;
-    if(gained<=0) resultText = `${mm.name}のステータスは上限です(アイテムは消費されました)`;
+    resultText = `${mm.name}の${label}+${gained}`;
   } else if(itemKey==='freeTrainTicket'){
     mm.tickets = (mm.tickets||0) + qty;
     resultText = `${mm.name}のトレーニングチケット+${qty}(🎫${mm.tickets}枚)`;
@@ -3697,7 +3731,10 @@ function buildMastermonStatsColHtml(mm, apt, preview){
     const delta = preview ? preview[s.key] : null;
     const resultVal = delta ? mastermonClampStat(v + delta) : v;
     const pct = Math.round(resultVal/MASTERMON_STAT_CAP*100);
-    const deltaHtml = delta ? `<span class="mm-stat-delta ${delta>0?'up':'down'}">(${delta>0?'+':''}${delta})</span>` : '';
+    // 表示する差分は上限(999)で頭打ちにした「実際に動く量」にする。
+    // 要求値をそのまま出すと、997に+25と書いてあるのに値は999、という食い違いになる
+    const effDelta = resultVal - v;
+    const deltaHtml = effDelta ? `<span class="mm-stat-delta ${effDelta>0?'up':'down'}">(${effDelta>0?'+':''}${effDelta})</span>` : '';
     const aptGrade = apt[s.key];
     return `
       <div class="mm-stat-row">
