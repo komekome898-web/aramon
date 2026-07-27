@@ -3621,7 +3621,8 @@ function renderMastermonDetail(key){
       mm.name = newName;
       data[key] = mm;
       saveMastermons(data);
-      renderMastermonList();
+      renderMastermonList();      // 一覧のカルーセルのカード
+      renderMastermonCard(key);   // 詳細ビュー左のカード(cloneなので作り直さないと古い名前のまま)
       renderSelectorCards();
       renderMastermonDetail(key);
       pushToast('名前を変更しました');
