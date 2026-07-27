@@ -1133,12 +1133,14 @@
      左列=ライフ/ちから/かしこさ、右列=命中/回避/丈夫さ になる */
   .ml-stat-desc{
     margin-top:7px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.07);
-    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,auto);
-    grid-auto-flow:column; column-gap:8px; row-gap:1px;
+    /* 左列は中身に合わせた幅(auto)。1fr半々だと一番長い「かしこさ=与ダメ/ガッツ回復」が
+       見切れるため、左列に必要な幅を先に取って右列(命中/回避/丈夫さ)を寄せる */
+    display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:repeat(3,auto);
+    grid-auto-flow:column; column-gap:10px; row-gap:1px;
   }
   .ml-stat-desc-item{
     font-size:clamp(7px, calc(2 * var(--vh)), 9px); line-height:1.5; letter-spacing:-0.2px;
-    color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+    color:var(--ink-dim); white-space:nowrap; min-width:0;
   }
   .ml-stat-desc-item b{ font-weight:700; }
   .ml-trait-text{ font-size:11px; line-height:1.6; color:var(--ink); }
