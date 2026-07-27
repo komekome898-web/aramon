@@ -3094,6 +3094,56 @@ function mmSyncTabButtons(){
     b.classList.toggle('active', b.dataset.tab === mastermonDetailTab);
   });
 }
+// スクロールできることが分かるように、常に見えるスライドバーを右端に付ける。
+// iOSのネイティブスクロールバーはスクロール中しか出ないため、自前で描いて掴んで動かせるようにする。
+let mmScrollbarRO = null;
+function attachVisibleScrollbar(el, bar){
+  if(!el || !bar) return;
+  const thumb = bar.querySelector('.mm-scrollbar-thumb');
+  const MIN_THUMB = 26;
+  function update(){
+    const h = el.clientHeight, sh = el.scrollHeight;
+    if(sh <= h + 1){ bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    const thumbH = Math.max(MIN_THUMB, Math.round(h * (h / sh)));
+    const maxTop = h - thumbH;
+    const top = maxTop > 0 ? (el.scrollTop / (sh - h)) * maxTop : 0;
+    thumb.style.height = thumbH + 'px';
+    thumb.style.transform = `translateY(${top}px)`;
+  }
+  el.addEventListener('scroll', update);
+  // 画像の読み込みや内容の切り替えで高さが変わるので、変化を監視して追従する
+  if(mmScrollbarRO){ mmScrollbarRO.disconnect(); mmScrollbarRO = null; }
+  if(typeof ResizeObserver === 'function'){
+    mmScrollbarRO = new ResizeObserver(update);
+    mmScrollbarRO.observe(el);
+    if(el.firstElementChild) mmScrollbarRO.observe(el.firstElementChild);
+  }
+  requestAnimationFrame(update);
+  update();
+
+  // つまみを掴んでスクロールできるようにする(強制横向きでは移動量を回転補正する)
+  let dragId = null, startY = 0, startTop = 0;
+  thumb.addEventListener('pointerdown', (e)=>{
+    dragId = e.pointerId; startY = e.clientY; startTop = el.scrollTop;
+    thumb.classList.add('dragging');
+    try{ thumb.setPointerCapture(e.pointerId); }catch(_){}
+    e.stopPropagation();
+  });
+  thumb.addEventListener('pointermove', (e)=>{
+    if(dragId !== e.pointerId) return;
+    const dy = (typeof toLogicalDelta==='function') ? toLogicalDelta(0, e.clientY - startY).y : (e.clientY - startY);
+    const h = el.clientHeight, sh = el.scrollHeight;
+    const thumbH = thumb.offsetHeight, maxTop = h - thumbH;
+    if(maxTop > 0) el.scrollTop = startTop + (dy / maxTop) * (sh - h);
+    update();
+    e.stopPropagation();
+  });
+  const end = (e)=>{ if(dragId===e.pointerId){ dragId = null; thumb.classList.remove('dragging'); } };
+  thumb.addEventListener('pointerup', end);
+  thumb.addEventListener('pointercancel', end);
+}
+
 // メニュー(初期画面): ステータスの右に並べる3ボタン
 function buildMastermonMenuHtml(){
   return `
@@ -3231,7 +3281,10 @@ function renderMastermonDetail(key){
     <div class="mastermon-detail-body">
       ${statsColHtml}
       <div class="mastermon-detail-maincol">
-        <div class="mm-subview-content">${contentHtml}</div>
+        <div class="mm-content-wrap">
+          <div class="mm-subview-content">${contentHtml}</div>
+          <div class="mm-scrollbar hidden"><div class="mm-scrollbar-thumb"></div></div>
+        </div>
       </div>
     </div>`;
 
@@ -3239,6 +3292,7 @@ function renderMastermonDetail(key){
   const contentEl = panel.querySelector('.mm-subview-content');
   if(statsColEl) statsColEl.scrollTop = savedStatsScroll;
   if(contentEl) contentEl.scrollTop = savedContentScroll;
+  attachVisibleScrollbar(contentEl, panel.querySelector('.mm-scrollbar'));
 
   mmSyncTabButtons();
 
