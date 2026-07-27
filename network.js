@@ -35,6 +35,17 @@ const SELF_DASH_GRACE = 0.45;           // ダッシュ終了後も許容を広�
 const SELF_CORRECT_SNAP = 240;          // これを超えたら即座に合わせる(壁抜け等)
 const SELF_CORRECT_RATE = 6;            // 誤差を秒あたりどれだけ詰めるか(大きいほど速く収束)
 let selfCorrX = 0, selfCorrY = 0;       // 未適用の補正量(毎フレーム少しずつ消費する)
+// 【移動速度を考慮した補正】しきい値を固定距離にすると、育成やバフで移動速度が上がるほど
+// 1フレーム/1往復ぶんの移動量が大きくなり、通常の前進でも許容を超えて引き戻され、
+// スナップ距離にも届いて瞬間移動して見える(=飛び飛びになる)。
+// 実効移動速度に比例して許容と収束速度を広げ、速いモンスターでも滑らかに追従させる。
+const SELF_CORRECT_REF_SPEED = 300;        // この速度のとき倍率1.0(既定のモンスター相当)
+const SELF_CORRECT_SPEED_SCALE_MAX = 2.4;  // 上限(いくら速くてもここまで)
+function selfCorrectSpeedScale(ent){
+  if(!ent || typeof entityMoveSpeed!=='function') return 1;
+  const spd = entityMoveSpeed(ent) * (typeof multiMoveSpeedMult==='function' ? multiMoveSpeedMult() : 1);
+  return clamp(spd / SELF_CORRECT_REF_SPEED, 1, SELF_CORRECT_SPEED_SCALE_MAX);
+}
 
 // ===== スナップショット補間(①)＋速度外挿(②)＋ラグ補正(③)＋差分/分割配信(④) =====
 // 遠隔エンティティは「一定の描画遅延」を挟んで直近2スナップショット間を線形補間する。
@@ -897,8 +908,10 @@ function applyAuthState(authState){
       const err = Math.hypot(errX, errY);
       // ダッシュ中/直後は許容を広げる(ホストがダッシュを受け取るまでの一時的なズレを補正しない)
       const dashing = (ent.dashTimer>0) || (matchTime - (ent.lastDashAt!=null?ent.lastDashAt:-99) < SELF_DASH_GRACE);
-      const deadzone = dashing ? SELF_CORRECT_DEADZONE_DASH : SELF_CORRECT_DEADZONE;
-      if(err > SELF_CORRECT_SNAP){
+      // 速いモンスターほど許容を広げる(固定距離だと前進中ずっと補正が掛かって飛ぶ)
+      const scale = selfCorrectSpeedScale(ent);
+      const deadzone = (dashing ? SELF_CORRECT_DEADZONE_DASH : SELF_CORRECT_DEADZONE) * scale;
+      if(err > SELF_CORRECT_SNAP * scale){
         ent.x = a.x; ent.y = a.y; selfCorrX = 0; selfCorrY = 0; // 壁抜け等は即座に合わせる
       } else if(err > deadzone){
         selfCorrX = errX; selfCorrY = errY; // 毎フレーム少しずつ消費して滑らかに寄せる
@@ -1053,7 +1066,8 @@ function loop(now){
           // 遅延ぶんは誤差に含まれないので、まっすぐ歩いている間は補正がほぼゼロになり
           // 後ろへ引っ張られない。衝突・ノックバック等で本当にズレた時だけ効く。
           if(selfCorrX || selfCorrY){
-            const k = Math.min(1, dt*SELF_CORRECT_RATE);
+            // 許容を広げたぶん残る誤差も大きくなるので、収束速度も同じ倍率で上げる
+            const k = Math.min(1, dt*SELF_CORRECT_RATE*selfCorrectSpeedScale(player));
             const sx = selfCorrX*k, sy = selfCorrY*k;
             player.x += sx; player.y += sy;
             selfCorrX -= sx; selfCorrY -= sy;
