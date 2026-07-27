@@ -43,6 +43,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### 画面(スクリーン)の追加・変更時
 - 各画面は `index.html` 内の `<div class="resultScreen hidden">` 等で定義し、`.hidden`(display:none !important)の付け外しで遷移する。
+- **マルチのマッチング(`#lobbyScreen`)と部屋一覧(`#roomListScreen`)は全面ではなく画面右側のパネル。** 背後のロビーを見せたままにするため`#startScreen`を隠さず、代わりに`#startScreen.behind-matching`で`#lobbyLayout`/`#topHeader`を`pointer-events:none`にして誤操作を防いでいる(class の付け外しはui.js末尾のMutationObserver1か所)。
 - **【スクロールロックの除外・必須】新しい画面/オーバーレイを追加したら、グローバルな除外リストにそのIDを必ず3か所すべて追加する:** `render.js` の `touchmove`、`input.js` の `touchend` と `dblclick`(いずれも `e.target.closest('#xxx')` の連鎖)。追加しないと画面内スクロールやタップが効かないバグになる(過去に管理者画面・ランキング画面・デイリー/シーズンで対応)。3リストは同じ内容に保つこと。
 - **【ポップアップ画面の横幅・スクロール・×ボタン 定型】`.mastermon-confirm-overlay`系のポップアップ(バッグ/ショップ/デイリー/シーズン等)を新規追加するときは、以下を守れば毎回同じ手直しが不要:**
   - 幅は基底 `.mastermon-confirm-box`(`max-width:340px`)に負けるので、**複合セレクタ** `.mastermon-confirm-box.xxx-box{ ... }` で `max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));` を指定(ショップ/バッグと同じ広さ)。単一クラス指定だと340pxのまま。
@@ -128,6 +129,8 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **取得判定のようにホストしか行わない処理は、ゲスト側で見た目だけ先読みする。** アイテムは`predictLootPickupsAsGuest()`が重なった瞬間に隠し、ホストの確定が来なければ一定時間後に復活させる。**先読みフラグの判定は`!= null`で行う**(`matchTime`が0=試合開始直後だと真偽値では未先読みと区別できない)。
 
 #### ゲスト側の位置・動きの扱い(ラバーバンド/瞬間移動対策)
+- **位置補正のしきい値は移動速度に比例させる(`selfCorrectSpeedScale`)。** 固定距離だと、育成やバフで速くなるほど1往復ぶんの移動量が許容を超え、通常の前進でも引き戻され`SELF_CORRECT_SNAP`にも届いて瞬間移動して見える。`entityMoveSpeed(ent)`(combat.js)を基準に許容と収束速度を同じ倍率で広げる。
+- **マルチだけ移動速度と弾速を落とす**(`MULTI_MOVE_SPEED_MULT`/`MULTI_PROJ_SPEED_MULT`、combat.js)。掛ける場所は`resolveMovement`の`effSpeed`と`effectiveProjSpeed`の各1か所だけなので、ホスト/ゲストの計算が自動で一致する。**ダッシュ速度は`slowedSpeed`基準のままにして飛距離を変えない。**
 - **自分の位置は「同じ入力時点どうし」で突き合わせる。** 入力に`seq`を付けて送り、ホストは`applyRemoteInputsLocally`で適用したseqを`aseq`として返す。ゲストは`selfPredHistory`(送信時点の予測位置)と突き合わせて誤差を出し、`SELF_CORRECT_DEADZONE`以下は無視、それ以上は`selfCorrX/Y`に溜めて毎フレーム少しずつ消費する。**現在位置とホストの(遅れた)位置を直接比べてはいけない** — 遅延そのものが誤差になり、移動中ずっと後ろへ引っ張られる。水中など低速地形では前進速度を上回って操作不能になっていた。
 - **ダッシュのような「一瞬だけ大きく動く操作」は入力に回数(`dashSeq`)を載せてホストに再現させる。** 送っていないとホストは通常移動のまま計算するので、動いたぶんがそのまま誤差になり引き戻される(実際にダッシュで起きていた)。連続値のフラグではなく回数にすることで、二重発動も取りこぼしも防げる。ダッシュ開始処理は`startEntityDash()`に切り出してホスト/ゲストで同じ向き計算を使う。**自分のダッシュのクールタイムはauthStateで上書きしない**(1往復遅れた0が届いて連続ダッシュできてしまう)。
 - **ダッシュ中と直後だけ位置の許容を広げる(`SELF_CORRECT_DEADZONE_DASH`)。** ホストがダッシュ入力を受け取るまでの数フレームぶんは必ず位置が離れるが、両者がダッシュを終えれば移動量は一致して誤差は自然に消える。ここで補正すると「ダッシュしたのに引き戻される」動きに戻ってしまう。

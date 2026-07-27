@@ -2377,7 +2377,6 @@ async function createRoomFlow(){
   }
   netState.cancelled = false;
   matchBeginning = false;
-  document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='部屋を作成中…';
   document.getElementById('lobbyScreen').classList.remove('hidden');
   document.getElementById('lobbyPlayerList').innerHTML='';
@@ -2409,7 +2408,6 @@ async function createRoomFlow(){
 }
 
 async function openFindRoomScreen(){
-  document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('roomListScreen').classList.remove('hidden');
   await refreshRoomList();
 }
@@ -2475,7 +2473,6 @@ async function startMatchmaking(){
   }
   netState.cancelled = false;
   matchBeginning = false;
-  document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('lobbyScreen').classList.remove('hidden');
   document.getElementById('lobbyCountdown').textContent='';
   document.getElementById('lobbySubText').textContent='部屋を検索中…';
@@ -4683,6 +4680,17 @@ function initTitleScreen(){
     else refreshLobby();
   };
   new MutationObserver(sync).observe(scr, { attributes:true, attributeFilter:['class'] });
+
+  // マッチング/部屋一覧パネルが出ている間は、背後のロビーを操作させない
+  {
+    const panels = ['lobbyScreen','roomListScreen'].map(id=>document.getElementById(id)).filter(Boolean);
+    const syncBehind = ()=>{
+      const open = panels.some(p=>!p.classList.contains('hidden'));
+      scr.classList.toggle('behind-matching', open);
+    };
+    panels.forEach(p=> new MutationObserver(syncBehind).observe(p, { attributes:true, attributeFilter:['class'] }));
+    syncBehind();
+  }
 
   // マスモン画面の開閉に合わせてBGMを戻す(トレーニング中に一覧やトップへ抜けた場合)
   const mmScr = document.getElementById('mastermonScreen');

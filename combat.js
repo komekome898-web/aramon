@@ -642,14 +642,29 @@ function computeVolcanoAvoidAngle(m, target, ang){
   }
   return strongestPush > 0 ? ang + pushSign*strongestPush : ang;
 }
-function resolveMovement(m, dt){
-  if(m.freezeUntil > matchTime) return;
+// ===== マルチプレイ用の速度補正 =====
+// 通信ありでは必ず1往復ぶんの遅延が乗るため、速く動くほど位置の食い違い(飛び)が目立つ。
+// マルチのときだけ移動速度と弾速をわずかに落として同期しやすくする。
+// プレイテストで調整する前提の名前付き定数(1=補正なし)。
+const MULTI_MOVE_SPEED_MULT = 0.9;
+const MULTI_PROJ_SPEED_MULT = 0.9;
+function multiMoveSpeedMult(){ return netState.mode==='multi' ? MULTI_MOVE_SPEED_MULT : 1; }
+function multiProjSpeedMult(){ return netState.mode==='multi' ? MULTI_PROJ_SPEED_MULT : 1; }
+
+// 実効移動速度(育成・状態変化・技命中バフ・鈍足を反映。地形とマルチ補正は含めない)。
+// resolveMovement とゲストの位置補正(network.js)が同じ値を見るように関数へ切り出してある。
+function entityMoveSpeed(m){
   const stateEff = activeStateEffects(m);
   const hitBuffMult = (m.speedBuffUntil > matchTime) ? (m.speedBuffMult||1) : 1; // 技命中バフ(ワームtier3等)
-  const baseSpeed = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1) * hitBuffMult;
-  const slowedSpeed = m.slowUntil > matchTime ? baseSpeed*0.5 : baseSpeed;
-  // 海/川/オアシスの中では移動速度が落ちる(ダッシュの飛距離計算には影響させない)
-  const effSpeed = slowedSpeed * terrainSpeedMult(m.x, m.y);
+  const base = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1) * hitBuffMult;
+  return m.slowUntil > matchTime ? base*0.5 : base;
+}
+function resolveMovement(m, dt){
+  if(m.freezeUntil > matchTime) return;
+  const slowedSpeed = entityMoveSpeed(m);
+  // 海/川/オアシスの中では移動速度が落ちる(ダッシュの飛距離計算には影響させない)。
+  // マルチ補正もここで掛ける(ダッシュ速度は slowedSpeed 基準なので飛距離は変わらない)
+  const effSpeed = slowedSpeed * terrainSpeedMult(m.x, m.y) * multiMoveSpeedMult();
   if(m.dashTimer>0){
     m.dashTimer -= dt;
     // ダッシュ速度は移動速度に反比例させる(移動速度200を基準に、遅いほど距離が伸びる)
@@ -870,7 +885,7 @@ function effectiveGutsCost(m, mv){
   return Math.max(1, Math.round(scaled) - (m.trainGutsCostReduction || 0));
 }
 function effectiveProjSpeed(m, mv){
-  return mv.projSpeed * (m.trainProjSpeedMult || 1);
+  return mv.projSpeed * (m.trainProjSpeedMult || 1) * multiProjSpeedMult();
 }
 function effectiveMoveDmg(m, mv){
   const eff = activeStateEffects(m);
