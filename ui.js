@@ -33,8 +33,16 @@ function buildMonsterGrid(){
     <div class="monster-card selector-card" id="mastermonSelectCard"></div>
     <div class="monster-card selector-card" id="monsterListSelectCard"></div>
   `;
-  document.getElementById('mastermonSelectCard').addEventListener('click', ()=>openMastermonScreen(false));
-  document.getElementById('monsterListSelectCard').addEventListener('click', openMonsterListScreen);
+  // 分岐カードを押したら、この選択オーバーレイを閉じてから目的の画面を開く
+  // (閉じないと上に残り続けてカルーセルが操作できない)
+  document.getElementById('mastermonSelectCard').addEventListener('click', ()=>{
+    lobbyCloseOverlay('monsterPickOverlay');
+    openMastermonScreen(false);
+  });
+  document.getElementById('monsterListSelectCard').addEventListener('click', ()=>{
+    lobbyCloseOverlay('monsterPickOverlay');
+    openMonsterListScreen();
+  });
   buildMonsterListScreenGrid();
   renderSelectorCards();
 }
