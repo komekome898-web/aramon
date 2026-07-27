@@ -701,7 +701,8 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', ()=> lobbyCloseOverlay('settingsOverlay'));
   });
-  ['titleMyStatsBtn','titleRankingBtn'].forEach(id=>{
+  // ランキングは左カラムへ移したので、閉じる対象はマイ記録だけ
+  ['titleMyStatsBtn'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', ()=> lobbyCloseOverlay('myPageOverlay'));
   });

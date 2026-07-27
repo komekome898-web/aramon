@@ -74,6 +74,9 @@
      <button id="openBagBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🎒</span><span class="lobby-side-label">バッグ</span>
      </button>
+     <button id="titleRankingBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🏆</span><span class="lobby-side-label">ランキング</span>
+     </button>
      <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え) -->
      <div id="lobbyBanner">
        <div id="lobbyBannerTrack"></div>
@@ -109,7 +112,7 @@
        <span class="lobby-pick-label">プレイモード</span>
        <span class="lobby-pick-value" id="lobbyModeValue">1人でプレイ</span>
      </button>
-     <button id="joinBtn" disabled>バトル開始</button>
+     <button id="joinBtn" disabled><span class="join-label">バトル開始</span></button>
      <div id="multiActionRow" class="hidden">
        <button id="createRoomBtn" disabled>部屋を作る</button>
        <button id="findRoomBtn" disabled>部屋を探す</button>
@@ -140,7 +143,6 @@
     <div class="lobby-menu-list">
       <button id="accountLoginBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>ログイン / アカウント作成</b><i>記録とマスモンを他の端末でも引き継ぐ</i></span></button>
       <button id="titleMyStatsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📈</span><span class="lobby-menu-text"><b>マイ記録</b><i>これまでの戦績・称号を見る</i></span></button>
-      <button id="titleRankingBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🏆</span><span class="lobby-menu-text"><b>ランキング</b><i>他のプレイヤーの記録を見る</i></span></button>
     </div>
     <div class="lobby-menu-field">
       <div class="pick-label" id="playerNameLabel">ランキング表示名(任意)</div>

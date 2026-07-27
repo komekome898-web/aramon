@@ -1448,17 +1448,30 @@
   }
   .m-name-sub{ font-size:10px; color:var(--ink-dim); font-weight:500; margin-left:4px; }
 
+  /* 出撃ボタン。ロビーの主役なので大きめ・光沢のスイープ付き・マップ/モードから離して下に置く */
   #joinBtn{
-    margin-top:calc(0.5 * var(--vh)); padding:calc(1.5 * var(--vh)) 10px;
-    font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.8 * var(--vh)), 18px);
-    letter-spacing:2px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
-    border:none; border-radius:6px; cursor:pointer; width:100%;
-    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
-    box-shadow:0 4px 0 #8a6a10, 0 0 24px -4px rgba(244,196,48,0.7);
+    position:relative; overflow:hidden;
+    margin-top:calc(4.5 * var(--vh)); padding:calc(2.4 * var(--vh)) 10px;
+    font-family:'Russo One',sans-serif; font-size:clamp(16px, calc(5 * var(--vh)), 24px);
+    letter-spacing:2.5px; color:#1a1306;
+    background:linear-gradient(180deg,#fff1bd 0%,#ffd76a 36%,#f4c430 62%,#d9a520 100%);
+    border:none; border-radius:7px; cursor:pointer; width:100%;
+    clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px);
+    box-shadow:0 6px 0 #8a6a10, 0 0 34px -4px rgba(244,196,48,0.85), inset 0 1px 0 rgba(255,255,255,0.85);
   }
+  #joinBtn .join-label{ position:relative; z-index:2; }
+  /* 斜めの光がボタンを横切る。無効(モンスター未選択)のときは止める */
+  #joinBtn::after{
+    content:''; position:absolute; top:-10%; bottom:-10%; left:-45%; width:34%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,0.9), transparent);
+    transform:skewX(-18deg); pointer-events:none; z-index:1;
+    animation:joinShine 2.8s ease-in-out infinite;
+  }
+  @keyframes joinShine{ 0%{ left:-45%; } 55%,100%{ left:125%; } }
   #joinBtn:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; }
+  #joinBtn:disabled::after{ animation:none; opacity:0; }
   #pickMonsterNotice{ margin-top:4px; font-size:10px; color:var(--danger); letter-spacing:0.5px; text-align:center; }
-  #joinBtn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #8a6a10; }
+  #joinBtn:active:not(:disabled){ transform:translateY(4px); box-shadow:0 2px 0 #8a6a10, 0 0 22px -6px rgba(244,196,48,0.8); }
 
   .howto{ margin-top:18px; font-size:11px; color:var(--ink-dim); letter-spacing:1px; text-align:center; line-height:1.8; max-width:520px; }
   .howto-wrap{ margin-top:18px; max-width:760px; width:100%; display:flex; flex-direction:column; gap:16px; }
