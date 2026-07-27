@@ -4493,6 +4493,7 @@ const SE_TEST_LABELS = {
   buy:'ショップ購入', darkHoust:'ザン ダークホウスト', requiemEnd:'イルミネ レクイエムエンド',
   mocchiBeam:'モッチー モッチ砲', monta:'モッチー もんた', crystalRain:'ウンディーネ クリスタルレイン',
   fireWave:'ヒノトリ ファイアウェーブ',
+  amphitrite:'ペルセポネ アムピトリテ(3連射)', amphitriteBlast:'ペルセポネ アムピトリテ 爆風',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');

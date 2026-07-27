@@ -6,7 +6,7 @@ const MOVE_SE_BY_STYLE = {
   godorb:'godRising', crescent:'zashu', voidOrb:'voidLaunch',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
-const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish' };
+const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite' };
 // SSRスキン装備時に召喚演出SE/被弾SEを差し替える対応表(スキンID → SE名)
 const SKIN_SUMMON_SE = { choco_ssr:'chocoSummon' };
 const SKIN_HIT_SE    = { choco_ssr:'chocoHit' };
