@@ -34,6 +34,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 | `manifest.json` | PWAマニフェスト |
 | `monsters/*.png` | モンスター画像。静止画に加え**歩行アニメ用スプライト** `<prefix>_walk_f1..8.png`(正面8コマ)/`<prefix>_walk_b1..8.png`(後ろ8コマ)。320px・256色透過PNG |
 | `tools/build_walk.py` | **歩行スプライト生成の開発用スクリプト**(ゲームには読み込まれない)。動画→8コマ透過PNG。この環境のffmpeg/PIL/numpy/scipy/opencvで動く。詳細は「バトル歩行アニメーション」節 |
+| `top_bg.jpg` | トップ画面(ロビー)の背景画像。`#topBg`が`cover`で敷く |
 | `bgm_final5.mp3` / `bgm_lastbattle.mp3` / `bgm_shop.mp3` | 残り5人以下(決戦) / 残り2人(ラストバトル) / ショップのBGM実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
 
 ## 重要な設計知識
@@ -47,6 +48,17 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - 縦にはみ出す前提で **`max-height:calc(94 * var(--vh)); overflow-y:auto`** を付け、枠ごとスクロールさせる(内側に別の `max-height` スクロールを重ねない)。
 - プルダウンは `.custom-select` / `.custom-select-menu` の自前実装を再利用する。ポップアップが親のoverflowで切れないよう「外枠はoverflow可視・中のリストだけ独立スクロール」の構成にする。
 - 横長(landscape)の低い画面が前提。新しい画面は縦幅を詰めてスクロールなしで収まるようにする。
+
+### トップ画面(ロビー)
+- **1画面完結でスクロールしない。** `#startScreen`は`overflow:hidden`、`#lobbyLayout`が `左メニュー / 中央 / 右` の3カラムグリッド。サイズは全部`var(--vw)/var(--vh)`基準(メディアクエリ禁止の理由はカルーセル節と同じ)。
+- 背景は`top_bg.jpg`(`#topBg`)。文字を読ませるため`#topBg::after`で左右と上下から暗いグラデーションを重ねている。
+- **左カラム**: シーズン/デイリー/ガチャ/ショップ/バッグ(`.lobby-side-btn`)+ 最下部にバナー。`justify-content:center`+バナーは`margin-top:auto`なので、短い画面でも重ならない。
+- **中央**: タイトル → `#lobbyMonsterStage`(選択中モンスターの正面歩行) → 名前 → `モンスター選択`ボタン。歩行は`renderLobbyMonster()`が`monsterWalkFrameDataUrls(element, skinId, 'front')`のdataURLを`setInterval`で差し替える。**マスモン選択中だけ装備スキンを反映**(モンスター一覧は素の姿を選ぶ画面なので反映しない)。歩行コマ未ロードなら静止画のまま0.35秒×6回リトライする。
+- **右カラム**: `マップ` / `プレイモード` の値表示ボタン(押すとオーバーレイ)→ `バトル開始`。マップ・モードの実体(`#mapTabs`/`#mapPreview`/`#modeTabs`/`#capacityTabs`/`#invertPitchRow`)はオーバーレイの中に移してあるだけなので、既存のハンドラはそのまま効く。値の表示更新は`updateLobbyPickLabels()`。
+- **ヘッダー**: ⚙️設定(遊び方/画面カスタマイズ/音量) / 👤マイページ(ログイン/マイ記録/ランキング/表示名) / 🆕更新履歴。**中身は元のボタンをDOMごと移動しただけ**なのでIDもハンドラも変わっていない。
+- バナーは`data.js`の`LOBBY_BANNERS`に1件足すだけで増える(`LOBBY_BANNER_MS`=3秒でループ。`open`で押したとき開く画面を指定)。
+- **タイマーはトップ画面の表示/非表示に合わせて止める。** `#startScreen`の`class`をMutationObserverで見て、隠れたら歩行アニメとバナーのループを停止する。
+- **ロビーの初期化ブロックはui.jsの末尾に置く。** `netState`など後方で`let`宣言している値を読むため、途中で実行するとTDZで落ちる(実際に踏んだ)。
 
 ### カードカルーセル(モンスター選択 / マスモン選択で共用)
 - **エンジンは`createCardCarousel(cfg)`(ui.js)1つだけ。** モンスター一覧(`mlCarousel`)とマスモン(`mmCarousel`)が同じ実装を共有し、`cfg`で「並べるキー」「カードの中身」「アクセント色」「タップ時の動作」だけを差し替える。**カルーセルの挙動を直すときは必ずエンジン側を直す**(片方だけ直すと必ず食い違う)。

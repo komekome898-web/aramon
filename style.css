@@ -38,29 +38,158 @@
   .hidden{display:none !important;}
 
   /* ---------- START SCREEN ---------- */
+  /* ===== トップ画面(ロビー) =====
+     背景画像の上に、左=各種メニュー / 中央=選択中モンスター / 右=出撃 の3カラムを置く。
+     スクロールしない1画面レイアウトなので、サイズは全部 --vw/--vh 基準で決める */
   #startScreen{
-    position:absolute; inset:0; z-index:30;
+    position:absolute; inset:0; z-index:30; overflow:hidden;
+    background:linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
+  }
+  #topBg{
+    position:absolute; inset:0; pointer-events:none;
+    background:url("top_bg.jpg") center/cover no-repeat;
+  }
+  /* 文字が読めるように、背景の上に暗いグラデーションを重ねる */
+  #topBg::after{
+    content:''; position:absolute; inset:0;
     background:
-      radial-gradient(ellipse at 50% 20%, rgba(244,196,48,0.08), transparent 60%),
-      linear-gradient(180deg,#0a0f18 0%, #060911 60%, #04060a 100%);
-    display:flex; justify-content:center;
-    overflow-y:scroll; overflow-x:hidden;
-    touch-action:pan-y; -webkit-overflow-scrolling:touch;
+      linear-gradient(90deg, rgba(4,6,10,0.92) 0%, rgba(4,6,10,0.45) 26%, rgba(4,6,10,0.28) 50%, rgba(4,6,10,0.5) 74%, rgba(4,6,10,0.92) 100%),
+      linear-gradient(180deg, rgba(4,6,10,0.86) 0%, rgba(4,6,10,0.15) 34%, rgba(4,6,10,0.55) 100%);
   }
-  #startScreen::-webkit-scrollbar{ width:14px; }
-  #startScreen::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); }
-  #startScreen::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:7px; border:3px solid #04060a; }
-  #startScreen{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
-  #startScreenInner{
-    display:flex; flex-direction:column; align-items:center;
-    transform:scale(0.8); transform-origin:top center;
-    /* 下は見切れないよう負マージンで詰め、上はヘッダー(高さ30px)と被らないよう余白を確保 */
-    padding:48px 8px 32px;
-    margin:0 auto calc(-6 * var(--vh)) auto;
+  #lobbyLayout{
+    position:absolute; left:0; right:0; top:30px; bottom:0; z-index:1;
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+    align-items:center; gap:calc(2 * var(--vw)); padding:calc(1 * var(--vh)) calc(2 * var(--vw)) calc(1.6 * var(--vh));
   }
-  .title-block{ text-align:center; margin-bottom:18px; }
+
+  /* ---- 左端の縦メニュー ---- */
+  /* 左メニューの吹き出し(限定SSRスキンGET)はボタンの右上に小さく載せる */
+  #lobbyLeft .season-ssr-pop{
+    position:absolute; left:auto; right:-2px; top:-7px; bottom:auto; transform:none; margin:0;
+    font-size:7.5px; padding:1px 5px; white-space:nowrap; z-index:3;
+  }
+  #lobbyLeft .season-ssr-pop::after{ display:none; }
+  #lobbyLeft{ display:flex; flex-direction:column; gap:calc(1 * var(--vh)); height:100%; justify-content:center; padding-top:9px; }
+  .lobby-side-btn{
+    position:relative; display:flex; align-items:center; gap:8px; cursor:pointer; text-align:left;
+    padding:calc(0.9 * var(--vh)) 12px calc(0.9 * var(--vh)) 8px; border-radius:10px;
+    width:clamp(104px, calc(19 * var(--vw)), 148px);
+    color:var(--ink); background:linear-gradient(90deg, rgba(12,18,30,0.88), rgba(12,18,30,0.42));
+    border:1px solid var(--panel-line); border-left:3px solid var(--amber);
+    font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:0.5px;
+    backdrop-filter:blur(2px);
+  }
+  .lobby-side-btn:active{ background:linear-gradient(90deg, rgba(244,196,48,0.28), rgba(12,18,30,0.5)); }
+  .lobby-side-icon{
+    flex-shrink:0; width:clamp(26px, calc(6 * var(--vh)), 34px); height:clamp(26px, calc(6 * var(--vh)), 34px);
+    border-radius:8px; background:rgba(255,255,255,0.08);
+    display:flex; align-items:center; justify-content:center; font-size:clamp(14px, calc(3.6 * var(--vh)), 19px);
+  }
+  .lobby-side-label{ font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; }
+
+  /* ---- 中央: タイトル + 選択中モンスター ---- */
+  #lobbyCenter{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:calc(0.6 * var(--vh)); min-width:0; height:100%; overflow:hidden; padding-bottom:6px;
+  }
+  #lobbyCenter .title-block{ flex:0 0 auto; }
+  #lobbyCenter .title-sub{ font-size:clamp(8px, calc(2.3 * var(--vh)), 12px); }
+  #lobbyCenter .lobby-count{ font-size:clamp(9px, calc(2.5 * var(--vh)), 12px); margin-top:2px; }
+  #lobbyMonsterStage{
+    position:relative; flex:1 1 auto; min-height:0; width:100%;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  #lobbyMonsterGlow{
+    position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    width:min(58%, calc(30 * var(--vh))); height:calc(4 * var(--vh));
+    border-radius:50%; pointer-events:none;
+    background:radial-gradient(ellipse, rgba(244,196,48,0.34), transparent 70%);
+  }
+  #lobbyMonsterImg{
+    max-height:100%; max-width:min(80%, calc(46 * var(--vh))); object-fit:contain;
+    filter:drop-shadow(0 8px 16px rgba(0,0,0,0.8));
+  }
+  #lobbyMonsterImg.hidden{ display:none !important; }
+  #lobbyMonsterEmpty{ font-size:12px; color:var(--ink-dim); letter-spacing:1px; align-self:center; }
+  #lobbyMonsterName{
+    font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.8 * var(--vh)), 19px); letter-spacing:1px;
+    color:var(--ink); text-shadow:0 2px 6px rgba(0,0,0,0.9); display:flex; align-items:center; gap:6px;
+  }
+  #lobbyMonsterName .lobby-mon-sub{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink-dim); }
+  #openMonsterPickBtn{
+    padding:calc(1 * var(--vh)) clamp(18px, calc(5 * var(--vw)), 34px); cursor:pointer;
+    font-family:'Russo One',sans-serif; font-size:clamp(12px, calc(3.4 * var(--vh)), 16px); letter-spacing:1.5px;
+    color:var(--ink); background:linear-gradient(180deg, rgba(24,34,52,0.94), rgba(10,15,24,0.94));
+    border:1px solid var(--amber); border-radius:8px;
+    clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+    box-shadow:0 0 18px -6px rgba(244,196,48,0.8);
+  }
+  #openMonsterPickBtn:active{ background:rgba(244,196,48,0.22); }
+
+  /* ---- 右: マップ / モード / 出撃 ---- */
+  #lobbyRight{ display:flex; flex-direction:column; gap:calc(1.1 * var(--vh)); align-items:stretch;
+    width:clamp(126px, calc(23 * var(--vw)), 186px); }
+  .lobby-pick-btn{
+    display:flex; flex-direction:column; align-items:flex-start; gap:2px; cursor:pointer; text-align:left;
+    padding:calc(0.8 * var(--vh)) 11px; border-radius:9px;
+    color:var(--ink); background:linear-gradient(90deg, rgba(12,18,30,0.42), rgba(12,18,30,0.88));
+    border:1px solid var(--panel-line); backdrop-filter:blur(2px);
+  }
+  .lobby-pick-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.16); }
+  .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; letter-spacing:1px; color:var(--ink-dim); }
+  .lobby-pick-value{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
+    font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+
+  /* ---- 左下のバナー(3秒ごとに切り替え) ---- */
+  #lobbyBanner{ margin-top:auto; width:100%; }
+  #lobbyBannerTrack{ position:relative; height:calc(13 * var(--vh)); min-height:52px; }
+  .lobby-banner-card{
+    position:absolute; inset:0; border-radius:12px; overflow:hidden; cursor:pointer;
+    opacity:0; transition:opacity .5s ease; pointer-events:none;
+    border:1px solid rgba(255,255,255,0.45);
+    box-shadow:0 6px 22px -6px rgba(0,0,0,0.85);
+  }
+  .lobby-banner-card.active{ opacity:1; pointer-events:auto; }
+  .lobby-banner-face{ position:absolute; inset:0; background-repeat:no-repeat; }
+  .lobby-banner-shade{ position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.82) 100%); }
+  .lobby-banner-rar{
+    position:absolute; left:0; top:0; padding:2px 8px; font-family:'Russo One',sans-serif; font-size:9px; letter-spacing:1px;
+    color:#241a04; background:linear-gradient(90deg,#ff6b6b,#ffd93b,#6bff8f,#4dc9ff,#c07bff,#ff6b6b);
+    background-size:200% 100%; animation:resultRainbow 6s linear infinite;
+    border-bottom-right-radius:8px;
+  }
+  .lobby-banner-foot{ position:absolute; left:7px; right:7px; bottom:5px; display:flex; align-items:center; gap:6px; }
+  .lobby-banner-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; color:#ffe08a;
+    text-shadow:0 1px 4px rgba(0,0,0,0.9); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lobby-banner-tag{ flex-shrink:0; font-size:9px; font-weight:700; color:#1a1306;
+    background:linear-gradient(180deg,#ffd76a,#f4c430); border-radius:7px; padding:1px 7px; white-space:nowrap; }
+  #lobbyBannerDots{ display:flex; gap:4px; justify-content:center; margin-top:5px; }
+  #lobbyBannerDots .ml-dot{ width:5px; height:5px; }
+
+  /* ---- 設定 / マイページ / 各選択のオーバーレイ ---- */
+  .mastermon-confirm-box.lobby-menu-box{ position:relative; max-width:min(430px, calc(92 * var(--vw))); width:min(430px, calc(92 * var(--vw)));
+    max-height:calc(92 * var(--vh)); overflow-y:auto; text-align:left; }
+  .mastermon-confirm-box.lobby-wide-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
+    max-height:calc(92 * var(--vh)); overflow-y:auto; }
+  .lobby-menu-title{ font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:1px; color:var(--ink);
+    margin-bottom:10px; padding-right:46px; }
+  .lobby-menu-list{ display:flex; flex-direction:column; gap:7px; }
+  .lobby-menu-btn{
+    display:flex; align-items:center; gap:10px; width:100%; cursor:pointer; text-align:left;
+    padding:10px 12px; border-radius:10px; color:var(--ink);
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+  }
+  .lobby-menu-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.12); }
+  .lobby-menu-icon{ flex-shrink:0; width:30px; height:30px; border-radius:50%; background:rgba(255,255,255,0.08);
+    display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .lobby-menu-text{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .lobby-menu-text b{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:0.5px; }
+  .lobby-menu-text i{ font-style:normal; font-size:10px; line-height:1.35; color:var(--ink-dim); }
+  .lobby-menu-field{ margin-top:12px; }
+  .title-block{ text-align:center; margin-bottom:0; }
   .title-main{
-    font-family:'Russo One', sans-serif; font-size:clamp(34px,calc(9 * var(--vw)),58px);
+    font-family:'Russo One', sans-serif; font-size:clamp(20px,calc(6.6 * var(--vh)),40px);
     letter-spacing:2px; color:var(--ink);
     text-shadow: 0 0 18px rgba(244,196,48,0.45), 0 2px 0 rgba(0,0,0,0.6);
     margin:0; position:relative;
@@ -220,6 +349,21 @@
     border-bottom:1px solid var(--panel-line);
   }
   #topHeader .header-side{ display:flex; align-items:center; gap:8px; min-width:0; }
+  #topHeader .header-left{ gap:6px; }
+  .header-icon-btn{
+    position:relative; width:24px; height:22px; border-radius:6px; cursor:pointer; font-size:13px; line-height:1;
+    color:var(--ink); background:rgba(255,255,255,0.07); border:1px solid var(--panel-line);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .header-icon-btn:active{ background:rgba(244,196,48,0.22); }
+  /* 更新履歴アイコンの未読ポップ。アイコンの右上に小さく載せる */
+  .header-icon-btn .changelog-new-pop{
+    position:absolute; top:-5px; right:-6px; margin:0; padding:0 3px; min-width:0;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:7.5px; letter-spacing:0;
+    line-height:11px; height:11px; border-radius:6px; color:#1a1306;
+    background:var(--danger); border:1px solid #04060a; animation:none; transform:none;
+  }
+  .header-icon-btn .changelog-new-pop::after{ display:none; }
   #headerCenter{ justify-self:center; display:flex; align-items:center; gap:8px; min-width:0; }
   #headerAccountBtnSlot:empty{ display:none; }
   /* ログイン中にヘッダーへ移動したアカウントボタン(コンパクト表示) */
@@ -826,6 +970,7 @@
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
 
+  #lobbyRight #multiActionRow{ flex-direction:column; gap:7px; }
   #multiActionRow{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
   #createRoomBtn, #findRoomBtn{
     padding:11px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
@@ -1061,8 +1206,8 @@
   #mlDots, #mmDots{ display:flex; gap:5px; justify-content:center; flex-wrap:wrap; max-width:min(420px, calc(80 * var(--vw))); }
   .ml-dot{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.22); transition:background .2s, transform .2s; }
   .ml-dot.active{ background:var(--amber); transform:scale(1.5); }
-  #mlCounter{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
-  #mlCounterNow{ color:var(--amber); font-size:14px; font-weight:700; }
+  .ml-counter{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
+  #mlCounterNow, #mmCounterNow{ color:var(--amber); font-size:14px; font-weight:700; }
   .ml-counter-sep{ margin:0 3px; opacity:0.5; }
 
   /* ---- 詳細ビュー ---- */
@@ -1192,14 +1337,15 @@
   .m-name-sub{ font-size:10px; color:var(--ink-dim); font-weight:500; margin-left:4px; }
 
   #joinBtn{
-    margin-top:22px; padding:14px 38px; font-family:'Russo One',sans-serif; font-size:17px;
+    margin-top:calc(0.5 * var(--vh)); padding:calc(1.5 * var(--vh)) 10px;
+    font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.8 * var(--vh)), 18px);
     letter-spacing:2px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
-    border:none; border-radius:6px; cursor:pointer;
+    border:none; border-radius:6px; cursor:pointer; width:100%;
     clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
     box-shadow:0 4px 0 #8a6a10, 0 0 24px -4px rgba(244,196,48,0.7);
   }
   #joinBtn:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; }
-  #pickMonsterNotice{ margin-top:8px; font-size:11px; color:var(--danger); letter-spacing:1px; text-align:center; }
+  #pickMonsterNotice{ margin-top:4px; font-size:10px; color:var(--danger); letter-spacing:0.5px; text-align:center; }
   #joinBtn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #8a6a10; }
 
   .howto{ margin-top:18px; font-size:11px; color:var(--ink-dim); letter-spacing:1px; text-align:center; line-height:1.8; max-width:520px; }

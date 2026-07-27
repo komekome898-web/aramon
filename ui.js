@@ -53,6 +53,8 @@ function equippedIconImgTag(element, altLabel){
   return `<img src="${imgSrcFor(`monsters/${element}`)}" data-ext-idx="0" alt="${altLabel||''}" onerror="handleMonsterImgError(this, 'monsters/${element}')">`;
 }
 function renderSelectorCards(){
+  if(typeof renderLobbyMonster==='function') renderLobbyMonster();   // 中央の歩行モーションも更新
+  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   const mmCard = document.getElementById('mastermonSelectCard');
   const mmData = game.selectedMastermonKey ? loadMastermons()[game.selectedMastermonKey] : null;
   if(mmData){
@@ -665,8 +667,173 @@ function buildHowtoLists(){
     statesEl.innerHTML = cards.join('');
   }
 }
-buildMonsterGrid();
-buildHowtoLists();
+/* =====================================================================
+   トップ画面(ロビー)
+   ・左端メニュー / 中央の選択中モンスター / 右の出撃ボタン の3カラム
+   ・各種設定・マイページ・マップ・モードはオーバーレイに逃がして1画面に収める
+   ===================================================================== */
+
+// ---- 設定 / マイページ / 各選択オーバーレイの開閉 ----
+function lobbyOpenOverlay(id){ document.getElementById(id).classList.remove('hidden'); }
+function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidden'); }
+{
+  const pairs = [
+    ['headerSettingsBtn','settingsOverlay','closeSettingsBtn'],
+    ['headerMyPageBtn','myPageOverlay','closeMyPageBtn'],
+    ['openMonsterPickBtn','monsterPickOverlay','closeMonsterPickBtn'],
+    ['openMapPickBtn','mapPickOverlay','closeMapPickBtn'],
+    ['openModePickBtn','modePickOverlay','closeModePickBtn'],
+  ];
+  pairs.forEach(([openId, ovId, closeId])=>{
+    document.getElementById(openId).addEventListener('click', ()=> lobbyOpenOverlay(ovId));
+    document.getElementById(closeId).addEventListener('click', ()=> lobbyCloseOverlay(ovId));
+  });
+  // 設定・マイページの中のボタンは、押したらそのオーバーレイを閉じてから目的の画面を開く
+  ['howToPlayBtn','openHudCustomizeBtn','audioSettingsBtn','adminEntryBtn'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('click', ()=> lobbyCloseOverlay('settingsOverlay'));
+  });
+  ['titleMyStatsBtn','titleRankingBtn'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('click', ()=> lobbyCloseOverlay('myPageOverlay'));
+  });
+}
+
+// ---- 右カラムの「マップ」「プレイモード」の表示値を更新 ----
+function updateLobbyPickLabels(){
+  const mapEl = document.getElementById('lobbyMapValue');
+  if(mapEl){
+    if(game.selectedMap==='random') mapEl.textContent = '🎲 ランダム';
+    else {
+      const m = MAPS[game.selectedMap] || MAPS.wild;
+      mapEl.textContent = `${m.previewIcon||'🗺️'} ${m.label}`;
+    }
+  }
+  const modeEl = document.getElementById('lobbyModeValue');
+  if(modeEl){
+    modeEl.textContent = netState.mode==='multi' ? `みんなと対戦 (${netState.capacity}人)` : '1人でプレイ';
+  }
+}
+
+// ---- 中央: 選択中モンスターの正面歩行モーション ----
+// 選択中が「マスモン」なら装備スキン込みの姿、「モンスター一覧」なら素の姿を出す。
+// 歩行コマが未対応/未ロードなら静止画にフォールバックする。
+let lobbyWalkTimer = null;
+let lobbyWalkRetry = 0;
+function stopLobbyWalkAnim(){ if(lobbyWalkTimer){ clearInterval(lobbyWalkTimer); lobbyWalkTimer = null; } }
+function lobbySelectedSkinId(){
+  // マスモンで参戦するときだけ装備スキンを反映する(モンスター一覧は素のモンスターを選ぶ画面)
+  if(!game.selectedMastermonKey || typeof getEquippedSkin!=='function') return null;
+  return getEquippedSkin(game.selectedMastermonKey) || null;
+}
+function renderLobbyMonster(){
+  const img = document.getElementById('lobbyMonsterImg');
+  const empty = document.getElementById('lobbyMonsterEmpty');
+  const nameEl = document.getElementById('lobbyMonsterName');
+  if(!img) return;
+  stopLobbyWalkAnim();
+  const key = game.selectedElement;
+  if(!key || !ELEMENTS[key]){
+    img.classList.add('hidden');
+    empty.classList.remove('hidden');
+    nameEl.textContent = '';
+    return;
+  }
+  empty.classList.add('hidden');
+  img.classList.remove('hidden');
+
+  // 名前(マスモンなら「マスモン名(種族)Lv.n」)
+  const el = ELEMENTS[key];
+  if(game.selectedMastermonKey){
+    const mm = loadMastermons()[game.selectedMastermonKey];
+    nameEl.innerHTML = mm
+      ? `${mm.name}<span class="lobby-mon-sub">${el.label} / Lv.${mm.level}</span>`
+      : el.label;
+  } else {
+    nameEl.textContent = el.label;
+  }
+
+  const skinId = lobbySelectedSkinId();
+  // まず静止画を出しておく(歩行コマの用意ができ次第、下でコマ送りに差し替える)
+  const still = skinId && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(skinId) : null;
+  img.src = still || imgSrcFor(`monsters/${key}`);
+
+  const frames = (typeof monsterWalkFrameDataUrls==='function')
+    ? monsterWalkFrameDataUrls(key, skinId, 'front') : null;
+  if(!frames || !frames.length){
+    // 画像の読み込み待ちのことがあるので少しリトライする
+    if(lobbyWalkRetry < 6){
+      lobbyWalkRetry++;
+      setTimeout(()=>{ if(!document.getElementById('startScreen').classList.contains('hidden')) renderLobbyMonster(); }, 350);
+    }
+    return;
+  }
+  lobbyWalkRetry = 0;
+  let i = 0;
+  img.src = frames[0];
+  const dur = (typeof WALK_FRAME_DUR==='number' ? WALK_FRAME_DUR : 0.11) * 1000;
+  lobbyWalkTimer = setInterval(()=>{
+    i = (i + 1) % frames.length;
+    img.src = frames[i];
+  }, dur);
+}
+
+// ---- 左下バナー(3秒ごとに切り替えてループ) ----
+let lobbyBannerTimer = null;
+let lobbyBannerIdx = 0;
+function buildLobbyBanner(){
+  const track = document.getElementById('lobbyBannerTrack');
+  const dots = document.getElementById('lobbyBannerDots');
+  if(!track || typeof LOBBY_BANNERS==='undefined') return;
+  track.innerHTML = LOBBY_BANNERS.map((b,i)=>`
+    <div class="lobby-banner-card ${i===0?'active':''}" data-i="${i}" data-open="${b.open||''}">
+      <div class="lobby-banner-face" style="background-image:url('${b.img}');background-size:${b.size||'cover'};background-position:${b.pos||'50% 40%'}"></div>
+      <div class="lobby-banner-shade"></div>
+      <div class="lobby-banner-rar">${b.rar||'SSR'}</div>
+      <div class="lobby-banner-foot">
+        <span class="lobby-banner-name">${b.name}</span>
+        <span class="lobby-banner-tag">${b.tag}</span>
+      </div>
+    </div>`).join('');
+  dots.innerHTML = LOBBY_BANNERS.map((_,i)=>`<div class="ml-dot ${i===0?'active':''}"></div>`).join('');
+  dots.classList.toggle('hidden', LOBBY_BANNERS.length <= 1);
+  track.querySelectorAll('.lobby-banner-card').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      const to = card.dataset.open;
+      if(to==='gacha') document.getElementById('openGachaBtn').click();
+      else if(to==='season') document.getElementById('openSeasonBtn').click();
+      else if(to==='shop') document.getElementById('openShopBtn').click();
+    });
+  });
+  lobbyBannerIdx = 0;
+}
+function showLobbyBanner(i){
+  const track = document.getElementById('lobbyBannerTrack');
+  const dots = document.getElementById('lobbyBannerDots');
+  if(!track) return;
+  const cards = track.children, dotEls = dots.children;
+  for(let n=0;n<cards.length;n++) cards[n].classList.toggle('active', n===i);
+  for(let n=0;n<dotEls.length;n++) dotEls[n].classList.toggle('active', n===i);
+  lobbyBannerIdx = i;
+}
+function startLobbyBannerLoop(){
+  stopLobbyBannerLoop();
+  if(typeof LOBBY_BANNERS==='undefined' || LOBBY_BANNERS.length<=1) return;
+  const ms = (typeof LOBBY_BANNER_MS==='number') ? LOBBY_BANNER_MS : 3000;
+  lobbyBannerTimer = setInterval(()=>{
+    showLobbyBanner((lobbyBannerIdx + 1) % LOBBY_BANNERS.length);
+  }, ms);
+}
+function stopLobbyBannerLoop(){ if(lobbyBannerTimer){ clearInterval(lobbyBannerTimer); lobbyBannerTimer = null; } }
+
+// トップ画面を表示/非表示にするたびに、歩行アニメとバナーのタイマーを合わせて動かす。
+// 画面が隠れている間にタイマーを回し続けないため、MutationObserverで .hidden を監視する。
+function refreshLobby(){
+  updateLobbyPickLabels();
+  renderLobbyMonster();
+  startLobbyBannerLoop();
+}
+
 
 // ===== 音量設定(BGM/SE) =====
 function syncAudioSliders(){
@@ -933,20 +1100,11 @@ function updateAccountBar(){
   document.getElementById('headerAccountName').textContent = accountState.loggedIn ? accountState.name : 'ゲスト';
   document.getElementById('headerGold').textContent = `🪙 ${w.gold}`;
   document.getElementById('headerDia').textContent = `💎 ${w.dia}`;
+  // アカウントボタンはマイページの中に常設。文言だけログイン状態で切り替える
   const btn = document.getElementById('accountLoginBtn');
-  const slot = document.getElementById('headerAccountBtnSlot');
-  const bar = document.getElementById('accountBar');
-  if(accountState.loggedIn){
-    // ログイン中はアカウントボタンをヘッダーのプレイヤー名の横へ移動(コンパクト表示)
-    btn.textContent = '👤 アカウント';
-    btn.classList.add('logged-in');
-    if(slot && btn.parentElement !== slot) slot.appendChild(btn);
-  } else {
-    // 未ログイン時はトップのボタン群の先頭(音量設定の上)へ戻す
-    btn.textContent = '👤 ログイン / アカウント作成';
-    btn.classList.remove('logged-in');
-    if(bar && btn.parentElement !== bar) bar.insertBefore(btn, bar.firstChild);
-  }
+  const label = btn.querySelector('.lobby-menu-text b');
+  if(label) label.textContent = accountState.loggedIn ? 'アカウント' : 'ログイン / アカウント作成';
+  btn.classList.toggle('logged-in', accountState.loggedIn);
   // ログイン中はランキング表示名の入力欄を隠す(アカウント名を表示名として使う)
   document.getElementById('playerNameLabel').classList.toggle('hidden', accountState.loggedIn);
   document.getElementById('playerNameInput').classList.toggle('hidden', accountState.loggedIn);
@@ -2011,8 +2169,11 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     netState.mode = tab.dataset.mode==='multi' ? 'multi' : 'solo';
+    // 人数などの細かい設定はプレイモードのオーバーレイ内、出撃ボタンは右カラムに出す
     document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi');
+    document.getElementById('multiActionRow').classList.toggle('hidden', netState.mode!=='multi');
     document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi');
+    if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   });
 });
 // game.selectedMap が 'random' の場合は実在マップからランダムに1つ選ぶ
@@ -2048,6 +2209,7 @@ document.querySelectorAll('.map-tab').forEach(tab=>{
     const key = tab.dataset.map;
     game.selectedMap = (key==='random' || MAPS[key]) ? key : 'wild';
     updateMapPreview();
+    if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   });
 });
 updateMapPreview();
@@ -4379,3 +4541,22 @@ document.getElementById('closeAdminBtn').addEventListener('click', ()=>{
 /* =====================================================================
    LOOP
 ===================================================================== */
+
+/* =====================================================================
+   トップ画面(ロビー)の初期化。
+   netState など後方で let / const 宣言している値を読むので、
+   必ずファイル末尾(全ての宣言が済んだあと)で実行する。
+===================================================================== */
+{
+  const scr = document.getElementById('startScreen');
+  const sync = ()=>{
+    // 画面が隠れている間はタイマーを回さない(歩行アニメ・バナー切り替え)
+    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); stopLobbyBannerLoop(); }
+    else refreshLobby();
+  };
+  new MutationObserver(sync).observe(scr, { attributes:true, attributeFilter:['class'] });
+  buildLobbyBanner();
+  buildMonsterGrid();
+  buildHowtoLists();
+  sync();
+}

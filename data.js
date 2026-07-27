@@ -618,6 +618,15 @@ function ssrTier3DmgMult(move, attacker){
 
 // 更新履歴(プレイに関わる大きな機能の追加・変更・調整のみ。日付降順で表示する)。
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
+// トップ画面左下のバナー。3秒ごとに切り替わってループする。増やすときはここに1件足すだけ。
+// open は押したときに開く画面('gacha' / 'season' / 'shop')
+const LOBBY_BANNERS = [
+  { rar:'SSR', name:'ラガモッチー', tag:'シーズンパス', img:'monsters/mocchi_ssr.png',  size:'165%', pos:'50% 18%', open:'season' },
+  { rar:'SSR', name:'ゼウス',       tag:'ガチャ',       img:'monsters/zeus_banner.png', size:'cover', pos:'50% 42%', open:'gacha' },
+  { rar:'SSR', name:'ちょこ',       tag:'ガチャ',       img:'monsters/choco_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
+];
+const LOBBY_BANNER_MS = 3000;
+
 // 更新履歴のタグ(トップ画面「更新履歴」でタイトル横に並び、選ぶと絞り込める)
 const CHANGELOG_TAGS = [
   { id:'general', label:'全般',     color:'#b9c4d4' },
@@ -632,6 +641,10 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'トップ画面を刷新しました。荒野の背景の上に、左=シーズン/デイリー/ガチャ/ショップ/バッグ、中央=選択中のモンスター、右=マップ/プレイモード/バトル開始という並びになり、スクロールなしで1画面に収まります', g:['general','feature'] },
+    { t:'トップ画面の中央に、選んだモンスター(マスモンなら着せ替え済みの姿)の歩くアニメーションが表示されるようになりました', g:['general','av'] },
+    { t:'遊び方説明・画面カスタマイズ・音量設定をヘッダーの⚙️「設定」にまとめ、マイ記録・ランキング・ログインを👤「マイページ」にまとめました', g:['general'] },
+    { t:'トップ画面の左下にSSRスキンのバナーを置き、3秒ごとに切り替わるようにしました(タップでガチャ/シーズンへ移動できます)', g:['general','av'] },
     { t:'更新履歴にタグを付けました。タイトル横のタグを選ぶと、そのタグが付いた更新だけを表示できます', g:['general','feature'] },
     { t:'マスモンの着せ替えをすると、カードの見た目とオーラの色もすぐに変わるようになりました', g:['fix'] },
   ]},
