@@ -17,6 +17,49 @@ document.addEventListener('dblclick', (e)=>{
   e.preventDefault();
 });
 
+// ===== ソフトキーボードで入力欄が隠れないようにする =====
+// iOSはキーボードを出してもレイアウトの高さが変わらないため、visualViewportで
+// 「実際に見えている範囲」を測り、入力欄が隠れるぶんだけアプリ全体をずらす。
+// 強制横向き(#appRootを90度回転)ではアプリ空間の「上」が実画面の別の軸になるので、
+// 回転後にどちらの軸へ寄せるかは style.css の #appRoot.kb-lift 側で切り替えている。
+const KB_LIFT_MARGIN = 12;
+function clearKeyboardLift(){
+  const root = document.getElementById('appRoot');
+  if(!root) return;
+  root.classList.remove('kb-lift');
+  root.style.removeProperty('--kb-lift');
+}
+// キーボードが出る入力だけを対象にする(音量やアイテム個数のスライダーは対象外)
+const KB_SKIP_TYPES = ['range','checkbox','radio','button','submit','reset','color','file'];
+function isKeyboardInput(el){
+  if(!el) return false;
+  if(el.tagName==='TEXTAREA') return true;
+  if(el.tagName!=='INPUT') return false;
+  return KB_SKIP_TYPES.indexOf((el.type||'text').toLowerCase()) < 0;
+}
+function updateKeyboardLift(){
+  const root = document.getElementById('appRoot');
+  const vv = window.visualViewport;
+  const el = document.activeElement;
+  if(!root || !vv || !isKeyboardInput(el)){ clearKeyboardLift(); return; }
+  const r = el.getBoundingClientRect();               // 実画面基準
+  const visibleBottom = (vv.offsetTop || 0) + vv.height;
+  const over = r.bottom + KB_LIFT_MARGIN - visibleBottom;
+  if(over > 0){
+    root.style.setProperty('--kb-lift', Math.round(over) + 'px');
+    root.classList.add('kb-lift');
+  } else {
+    clearKeyboardLift();
+  }
+}
+// フォーカス直後はまだキーボードが出ていないので、出そろってから測る
+document.addEventListener('focusin', ()=>{ setTimeout(updateKeyboardLift, 320); });
+document.addEventListener('focusout', ()=>{ setTimeout(clearKeyboardLift, 60); });
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', ()=>{ setTimeout(updateKeyboardLift, 60); });
+  window.visualViewport.addEventListener('scroll', updateKeyboardLift);
+}
+
 // ===== 強制横向き(縦画面ロック)中のスクロール補助 =====
 // 画面をCSSで90度回転させているため、端末によっては回転したスクロールコンテナで
 // ネイティブスクロールが効きにくい。タッチ移動量を論理座標(回転後)に変換して

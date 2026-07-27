@@ -32,6 +32,11 @@
     transform-origin:0 0;
     transform:rotate(90deg);
   }
+  /* ソフトキーボードで入力欄が隠れるときだけ、隠れるぶんアプリ全体をずらす(input.jsが--kb-liftを設定)。
+     回転していないときは画面上へ。強制横向き(rotate(90deg))では回転後のX方向が実画面の上になるので
+     translateX を使う。ずらす量はどちらも「実画面で隠れているpx」で共通。 */
+  #appRoot.kb-lift{ transform:translateY(calc(-1 * var(--kb-lift, 0px))); transition:transform .18s ease; }
+  html.force-landscape #appRoot.kb-lift{ transform:rotate(90deg) translateX(calc(-1 * var(--kb-lift, 0px))); }
 
   #gameCanvas{position:absolute; top:0; left:0; display:block; touch-action:none; cursor:grab;}
 
