@@ -637,6 +637,8 @@ function ssrTier3DmgMult(move, attacker){
 // トップ画面左下のバナー。3秒ごとに切り替わってループする。増やすときはここに1件足すだけ。
 // open は押したときに開く画面('gacha' / 'season' / 'shop')
 const LOBBY_BANNERS = [
+  // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)
+  { rar:'SSR', name:'ペルセポネ',   tag:'新登場・ガチャ', img:'monsters/persephone_ssr.png', size:'150%', pos:'50% 15%', open:'gacha' },
   { rar:'SSR', name:'ラガモッチー', tag:'シーズンパス', img:'monsters/mocchi_ssr.png',  size:'165%', pos:'50% 18%', open:'season' },
   { rar:'SSR', name:'ゼウス',       tag:'ガチャ',       img:'monsters/zeus_banner.png', size:'cover', pos:'50% 42%', open:'gacha' },
   { rar:'SSR', name:'ちょこ',       tag:'ガチャ',       img:'monsters/choco_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
