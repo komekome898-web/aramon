@@ -95,7 +95,8 @@ function fireMove(attacker, target, move){
     };
     let firstAe = null;
     for(let i=0;i<burstCount;i++){
-      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+      const spreadStep = (move.burstSpread!=null ? move.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
+      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
       const aimAngle = aimAngleBase + spreadOffset;
       if(i===0){
         firstAe = buildAe(aimAngle);
@@ -157,7 +158,8 @@ function fireMove(attacker, target, move){
   const burstGap = move.burstGap || 0;
   const baseAng = angTo(attacker, target);
   for(let i=0;i<burstCount;i++){
-    const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+    const spreadStep = (move.burstSpread!=null ? move.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
+    const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
     const ang = baseAng + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,

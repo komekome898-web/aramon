@@ -534,7 +534,8 @@ function tryNonHostPlayerFireVisual(dt){
     };
     let firstLife = 0;
     for(let i=0;i<burstCount;i++){
-      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+      const spreadStep = (mv.burstSpread!=null ? mv.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
+      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
       const ang = aimAngle + spreadOffset;
       if(i===0){
         const ae = buildVisualAe(ang);
@@ -587,7 +588,8 @@ function tryNonHostPlayerFireVisual(dt){
     const burstCount = mv.burst || 1;
     const burstGap = mv.burstGap || 0;
     for(let i=0;i<burstCount;i++){
-      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*0.05 : 0;
+      const spreadStep = (mv.burstSpread!=null ? mv.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
+      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
       const ang = aimAngle + spreadOffset;
       projectiles.push({
         x:player.x, y:player.y, z:player.z,
