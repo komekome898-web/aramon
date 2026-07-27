@@ -212,6 +212,9 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - 技に`aoeShape`(範囲技)や独自の着弾処理(例:ピクシー「ビッグバン」の着弾ドームAoE=`blast`フィールド+`spawnGroundBlast`)等、既存にないギミックが必要な場合はcombat.js/render.jsの拡張が必要になる。既存の同系統実装(`aoeShape`分岐・`areaEffects`)を参考に、新しい`kind`を増やす形で実装するのが素直。
 
 ### スキンとオーラ・プレビュー(data.js / render.js / ui.js)
+- **【新しいSSRスキンを足すときの登録先】画像は`SSR_SKINS`に書けば`ssrSkinImages`が自動で読み込む。** 以前は`ssrSkinImages`(data.js)がスキンIDを手書きで並べた表で、追記を忘れると**カタログ・バッグのスキン欄・着せ替え画面・装備時の見た目すべてが素のモンスターや✨にフォールバックする**(ペルセポネで実際に発生)。`SSR_SKINS`のキー走査で生成するようにしたので、もう表への追記は不要。**`ssrSkinImages`の実体生成は`SSR_SKINS`の宣言直後に置くこと**(data.js前半の宣言位置では`SSR_SKINS`がTDZで落ちる)。
+- **DOM表示は事前ロードに依存させない。** `skinnedIconDataUrl`/`skinnedPlayerDataUrl`は画像が未ロードでもSSRなら`ssrSkinFileUrl()`でファイルのURLを返す。`<img src>`はブラウザが自分で読むので、読み込み待ちや事前ロードの取りこぼしで素のモンスターに化けない。**canvasへ描く経路(`skinnedImage`)はロード済みのImageが必要**なので、こちらは`ssrSkinImages`が正しく揃っていることが前提。
+- 新SSR追加時のチェックリスト: `SSR_SKINS` / `SSR_SKIN_AURA` / `SSR_SKIN_TIER3`(専用技を出すなら) / `SKIN_TIER3_SE`(専用SEを出すなら) / `WALK_ANIM`の`ssr`(歩行コマがあるなら) / `monsters/<iconImg>.png`・`<playerImg>.png`。ガチャとカタログは`gachaSsrSkinIds()`が`SSR_SKINS`から作るので作業不要。
 - **tier3技のオーラ/エフェクト色はSSRスキンもSR色スキンも変える。** 判定は`skinTier3Aura(skinId)`1か所に集約(SSR=`SSR_SKIN_AURA`の固定色 / SR=`element:colorId`のcolorId)。`getMoveAura`/`getMoveEffectColor`がこれを見るので、**エフェクト色の伝搬(combat.jsとnetwork.jsの`effColor`/`auraTint`)は触らなくてよい**。
 - **SSRだけの特典は「tier3の技名と威力」**(`SSR_SKIN_TIER3`/`getMoveName`/`ssrTier3DmgMult`)。SRはオーラ・エフェクトのみでここは変えない。新しいスキン種別を足すときもこの線引きを守る。
 - **`SSR_SKIN_TIER3`は2通りの書き方ができる。** `dmgMult`=元の技の威力に倍率を掛けるだけ(従来型)。`move:{...}`=元の技のフィールドを直接上書きし、性能ごと変える専用技にする(ちょこの「ヴァニッシュ」)。`blast`は中身をマージするので変えたいキーだけ書けばよい。**`move`側に`dmg`を書くときは`dmgMult`を併記しない**(`ssrTier3DmgMult`が別途掛かって二重適用になる)。

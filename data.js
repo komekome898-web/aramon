@@ -195,21 +195,9 @@ Object.keys(ELEMENTS).forEach(key=>{
 // 召喚演出のスポーン円盤石(画像)。ガチャ演出用に厚み(立体)を焼き込んだ版も持つ
 const summonDiskImg = loadMonsterImage('summon_disk');
 const summonDiskThickImg = loadMonsterImage('summon_disk_thick');
-// SSRスキンの手描き画像(ヒノトリ「フェニックス」: アイコン/試合用後ろ姿)
-const ssrSkinImages = {
-  phoenix_ssr:        loadMonsterImage('monsters/phoenix_ssr'),
-  phoenix_player_ssr: loadMonsterImage('monsters/phoenix_player_ssr'),
-  tamamo_ssr:         loadMonsterImage('monsters/tamamo_ssr'),
-  tamamo_player_ssr:  loadMonsterImage('monsters/tamamo_player_ssr'),
-  iblees_ssr:         loadMonsterImage('monsters/iblees_ssr'),
-  iblees_player_ssr:  loadMonsterImage('monsters/iblees_player_ssr'),
-  mocchi_ssr:         loadMonsterImage('monsters/mocchi_ssr'),
-  mocchi_player_ssr:  loadMonsterImage('monsters/mocchi_player_ssr'),
-  zeus_ssr:           loadMonsterImage('monsters/zeus_ssr'),
-  zeus_player_ssr:    loadMonsterImage('monsters/zeus_player_ssr'),
-  choco_ssr:          loadMonsterImage('monsters/choco_ssr'),
-  choco_player_ssr:   loadMonsterImage('monsters/choco_player_ssr'),
-};
+// SSRスキンの手描き画像(アイコン=正面 / 試合用=後ろ姿)。
+// 実体は SSR_SKINS の宣言直後に自動生成する(この位置では SSR_SKINS がまだTDZなので中身は入れない)。
+const ssrSkinImages = {};
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
 }
@@ -659,6 +647,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'ペルセポネがスキンカタログ・バッグのスキン欄・着せ替え画面・装備時の見た目に反映されない不具合を修正しました', g:['fix','monster'] },
     { t:'ペルセポネに歩行モーションを追加しました。バトル中もロビーも、正面・後ろ姿ともに歩くようになります', g:['monster','av'] },
     { t:'イルミネのSSRスキン「ペルセポネ」を追加しました。スキンガチャとSSRカタログから入手でき、オーラは青になります', g:['feature','monster'] },
     { t:'ペルセポネ装備時のtier3が専用技「アムピトリテ」に変わります。大きな青い槍を3本発射し、着弾地点ごとにドーム状の爆風が広がります(威力アップ・弾速アップ・射程は少し短く・爆風範囲は大きく・消費ガッツ24)', g:['monster','balance','av'] },
@@ -1413,6 +1402,18 @@ const SSR_SKINS = {
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
+// SSRスキンの画像を SSR_SKINS から自動で読み込む。
+// 【重要】以前はスキンIDを手書きで並べた表だったため、新しいSSRを足したときにここへの
+// 追記を忘れると「カタログ・バッグのスキン欄・着せ替え画面・装備時の見た目に反映されない」
+// (画像が null になり素のモンスターや✨にフォールバックする)という不具合になった。
+// 実際にペルセポネで発生したので、SSR_SKINS を唯一の登録先にして取りこぼしを防いでいる。
+Object.keys(SSR_SKINS).forEach(id=>{
+  const s = SSR_SKINS[id];
+  [s.iconImg, s.playerImg].forEach(name=>{
+    if(name && !ssrSkinImages[name]) ssrSkinImages[name] = loadMonsterImage(`monsters/${name}`);
+  });
+});
+
 function colorSkinId(element, colorId){ return `${element}:${colorId}`; }
 function skinMeta(skinId){
   if(SSR_SKINS[skinId]){

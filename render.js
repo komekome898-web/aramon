@@ -119,12 +119,23 @@ function skinnedImage(skinId, view){
   const m = skinMeta(skinId);
   return skinnedColorCanvas(m.element, m.colorId, view);
 }
+// SSRスキンは手描き画像そのままなので、事前ロードが間に合っていなくても
+// ファイルのURLを返せば<img>としては正しく表示できる。
+// canvasへ描く用途は skinnedImage() 側なので、ここはDOM専用の保険。
+// (事前ロードの取りこぼしや読み込み待ちで、カタログ・バッグ・着せ替えが
+//  素のモンスターにフォールバックしてしまうのを防ぐ)
+function ssrSkinFileUrl(skinId, view){
+  const s = SSR_SKINS[skinId];
+  if(!s) return null;
+  const name = (view==='player' && s.playerImg) ? s.playerImg : s.iconImg;
+  return name ? imgSrcFor(`monsters/${name}`) : null;
+}
 // DOM(<img>)用: skinId のアイコンを dataURL で返す(キャッシュ)。未生成なら null
 function skinnedIconDataUrl(skinId){
   if(!skinId) return null;
   if(_skinDataUrlCache[skinId]) return _skinDataUrlCache[skinId];
   const img = skinnedImage(skinId, 'icon');
-  if(!img) return null;
+  if(!img) return ssrSkinFileUrl(skinId, 'icon');
   let url;
   if(img instanceof HTMLCanvasElement) url = img.toDataURL('image/png');
   else {
@@ -140,7 +151,7 @@ function skinnedPlayerDataUrl(skinId){
   const key = 'P:'+skinId;
   if(_skinDataUrlCache[key]) return _skinDataUrlCache[key];
   const img = skinnedImage(skinId, 'player');
-  if(!img) return null;
+  if(!img) return ssrSkinFileUrl(skinId, 'player');
   let url;
   if(img instanceof HTMLCanvasElement) url = img.toDataURL('image/png');
   else {
