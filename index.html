@@ -722,8 +722,14 @@
 <div id="changelogOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box changelog-box">
     <button id="closeChangelogBtn" class="overlay-close-btn">✕</button>
-    <div class="mastermon-confirm-text" style="margin-bottom:8px;">🆕 更新履歴</div>
-    <div id="changelogList" class="changelog-list"></div>
+    <div class="changelog-head">
+      <div class="changelog-title">🆕 更新履歴</div>
+      <div id="changelogTags" class="changelog-tags"></div>
+    </div>
+    <div class="mm-content-wrap">
+      <div id="changelogList" class="changelog-list"></div>
+      <div class="mm-scrollbar hidden"><div class="mm-scrollbar-thumb"></div></div>
+    </div>
   </div>
 </div>
 

@@ -13,7 +13,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 3. **ビルドツール・npmパッケージ・フレームワークを導入しない。** すべて素のJS/CSS/HTMLのまま維持する。
 4. **モジュール分割構成を維持する。** 新機能も既存の担当ファイルに追記する(下記参照)。1ファイルに戻すリファクタリングはしない。
 5. **変更は動作する実用的な解を優先する。** アーキテクチャ的な完璧さのための大規模リファクタリングは指示がない限りしない。
-6. **プレイに関わる大きな変更をしたら「更新履歴」も更新する。** `data.js` の `UPDATE_HISTORY`(トップ画面「更新履歴」ボタンで表示)に、その日の日付の項目として1行追記する。対象=**新機能の追加・既存機能の変更・バランス/仕様の調整など、プレイヤーの遊びに影響する内容**。対象外=細かい画面レイアウト・見た目・軽微なバグ修正・内部リファクタ・ドキュメントのみ。日付は降順(新しい日を上に)。文言は発注者向けに簡潔な日本語で(技術用語を避ける)。1回のPRで複数の大きな変更をした場合は複数行に分ける。
+6. **プレイに関わる大きな変更をしたら「更新履歴」も更新する。** `data.js` の `UPDATE_HISTORY`(トップ画面「更新履歴」ボタンで表示)に、その日の日付の項目として1行追記する。**項目は`{ t:'本文', g:['タグid',…] }`の形式**で、タグは`CHANGELOG_TAGS`(全般/新要素/モンスター/バランス/ソロ/マルチ/不具合/演出・音)から必要なだけ付ける(絞り込みに使われる)。対象=**新機能の追加・既存機能の変更・バランス/仕様の調整など、プレイヤーの遊びに影響する内容**。対象外=細かい画面レイアウト・見た目・軽微なバグ修正・内部リファクタ・ドキュメントのみ。日付は降順(新しい日を上に)。文言は発注者向けに簡潔な日本語で(技術用語を避ける)。1回のPRで複数の大きな変更をした場合は複数行に分ける。
 
 ## ファイル構成と担当範囲
 
@@ -196,6 +196,12 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - style.css の `*` に `-webkit-user-select:none; user-select:none; -webkit-touch-callout:none;`(callout無しだとiOSで長押し時に「コピー/調べる/画像を保存」が出る)。**直後の `input, textarea{ user-select:text }` で入力欄だけ選択可能に戻しているので、この2行はセットで維持する。**
   - input.js の `contextmenu`/`selectstart` を`preventDefault`(`isTextEntry()`で入力欄は除外)。
   - **`-webkit-touch-callout`はiOS Safari専用。** ブラウザの計算値には出ないので、style.cssのテキストで確認する(実機では効く)。
+
+### 更新履歴(ui.js / data.js)
+- 項目は`{ t:本文, g:[タグid…] }`。タグ定義は`data.js`の`CHANGELOG_TAGS`(id/label/color)。
+- タイトルとタグ行(`.changelog-head`)はスクロールさせず、下の`.changelog-list`だけをスクロールさせる。右端のスライドバーはマスモン詳細と共用の`attachVisibleScrollbar()`。
+- 絞り込みは`changelogFilterTag`(nullで全件)。タグを押すたびに`renderChangelogTags()`+`renderChangelogList()`を呼ぶ。該当が0件の日付は行ごと出さない。
+- **タグの色は`color-mix()`を使わずJS側で`changelogTagVars()`が透過色を作ってCSS変数で渡す**(`color-mix`は古いiOSで使えない)。
 
 ### 更新履歴の未読バッジ(ui.js)
 - `changelogSignature()` = `最新日付#全項目数`。これを`localStorage`の`aramon_changelog_seen_v1`と比較して未読判定(`changelogHasUnread`)し、`#changelogNewPop`の`new`バッジを出す(`updateChangelogBadge`)。ボタンを開いた時点で`markChangelogSeen()`が既読化する。
