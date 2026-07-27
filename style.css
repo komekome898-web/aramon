@@ -826,9 +826,9 @@
   .shop-npc-text{ font-size:12px; color:var(--ink); white-space:pre-line; line-height:1.4; }
   .shop-main{ flex:1 1 auto; min-width:0; }
   /* 論理幅が狭いときの調整。@media(max-width)は強制横向きで「実画面(縦向き)の幅」に
-     反応してしまうため、world.jsが論理幅で付ける html.logical-narrow を使う */
-  html.logical-narrow .shop-npc{ flex-basis:30%; }
-  html.logical-narrow .shop-npc-text{ font-size:11px; }
+     反応してしまうため、world.jsが論理幅で付ける html.narrow-screen を使う */
+  html.narrow-screen .shop-npc{ flex-basis:30%; }
+  html.narrow-screen .shop-npc-text{ font-size:11px; }
   /* ショップの商品リスト(旧バッグ行スタイル。ショップ専用に残す) */
   .bag-list{
     max-height:calc(62 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
@@ -2221,17 +2221,17 @@
     flex-shrink:0;
   }
 
-  /* 同上。バトルHUDも論理幅で判定する */
-  html.logical-narrow #hpPanel{ width:180px; }
-  html.logical-narrow #killFeed{ width:170px; top:148px;}
-  html.logical-narrow #minimapWrap{ width:96px; height:96px;}
-  html.logical-narrow #movePanel{ gap:8px; padding:8px 12px;}
-  html.logical-narrow #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
-  html.logical-narrow #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
-  html.logical-narrow #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
-  html.logical-narrow #autoRunLabel{ left:16px; bottom:134px; width:112px; }
-  html.logical-narrow #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }
-  html.logical-narrow #turnRightBtn{ right:16px; bottom:162px; width:46px; height:46px; }
+  /* 同上。バトルHUDも同じ条件で切り替える */
+  html.narrow-screen #hpPanel{ width:180px; }
+  html.narrow-screen #killFeed{ width:170px; top:148px;}
+  html.narrow-screen #minimapWrap{ width:96px; height:96px;}
+  html.narrow-screen #movePanel{ gap:8px; padding:8px 12px;}
+  html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
+  html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
+  html.narrow-screen #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
+  html.narrow-screen #autoRunLabel{ left:16px; bottom:134px; width:112px; }
+  html.narrow-screen #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }
+  html.narrow-screen #turnRightBtn{ right:16px; bottom:162px; width:46px; height:46px; }
 
   #rotateOverlay{ display:none; }
 

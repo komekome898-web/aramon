@@ -77,7 +77,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **無限ループは「環状の最短距離」`ringDelta(i, pos)`で成立している。** `pos`は正規化せず単調な小数のまま持ち、各カードの相対位置だけを`-n/2〜n/2`に畳む。`pos`を0〜nに丸めようとすると境界でカードが飛ぶ。登録数が5未満(マスモン)でも破綻せず、見えるカードが減るだけ。
 - 見た目の定数は`CARO_*`にまとめてある(`CARO_CENTER_SCALE`=1.2 / `CARO_SIDE_BRIGHTNESS`=0.55 / `CARO_VISIBLE_SIDE`=2 / `CARO_SNAP_RATE` / `CARO_FLICK_THRESHOLD`)。
 - **カード寸法とカード間隔はCSSの`#mlStage/#mmStage{--ml-card-h / --ml-card-w / --ml-step}`が正。** JSは`--ml-step`を**プローブ要素の`offsetWidth`で読む**(`.caro-step-probe`= 幅が`var(--ml-step)`の見えないdiv)。`getComputedStyle().getPropertyValue('--ml-step')`は未登録のカスタムプロパティを`calc(...)`の文字列で返すため数値にできない(`@property`は古いiOSで使えないので採用しない)。**JS側に間隔の数字を書かないこと。**
-- **【メディアクエリ禁止・全画面共通】レイアウトに`@media`を使ってはいけない。** 幅で分岐したいときはworld.jsが論理幅で付ける`html.logical-narrow`(論理幅520px以下)を使う。
+- **【メディアクエリ禁止・全画面共通】レイアウトに`@media`を使ってはいけない。** 幅で分岐したいときはworld.jsが論理幅で付ける`html.narrow-screen`(実画面の幅520px以下。旧`@media (max-width:520px)`と同条件)を使う。
 - **【メディアクエリ禁止】この画面のレイアウトに`@media`を使ってはいけない。** 強制横向き(端末が縦画面ロック)ではCSSの生の`vw/vh`とメディアクエリが「縦向きの実viewport」基準になり論理サイズと食い違う。実際に`@media (max-width:520px)`で詳細の2列が1列に落ちる不具合が出た。サイズは必ず`var(--vw)/var(--vh)`基準の`clamp()`で決める。
 - **「少しだけ見切れる」のは`#mlStage`の幅を`calc(var(--ml-step) * 4.4)`にして`overflow:hidden`しているから。** 画面幅基準にすると広い画面で5枚とも収まってしまい、スワイプできることが伝わらなくなる。
 - **1回のスワイプで2枚飛ばないようにしてある**: 離した時点の最寄りへ吸着し、フリック加算は「ドラッグだけではカードが変わらなかったとき」だけ効く(`target === Math.round(dragStartPos)`の判定)。
@@ -298,12 +298,14 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 
 ### 見切れを出さないための決まり(style.css / world.js)
 - **サイズ指定に生の`vw`/`vh`/`vmax`/`vmin`を使ってはいけない。** 強制横向きでは実viewportが縦向きのままなので、`1vh`が論理画面の高さの1%より大きくなり、要素が画面より大きくなって上下が見切れる(SSR獲得演出で実際に発生)。必ず`calc(N * var(--vh))`/`var(--vw)`を使う。`--vw`/`--vh`の定義(`:root`の`1vw`/`1vh`)だけが例外。
-- **幅による分岐は`html.logical-narrow`**(world.jsが論理幅520px以下で付ける)。`@media (max-width:…)`は実画面の幅に反応するため強制横向きで誤発動する。
+- **幅による分岐は`html.narrow-screen`**(world.jsが実画面の幅520px以下で付ける。旧`@media (max-width:520px)`と同条件)。`@media`をやめてクラスにしておけば、強制横向きで基準が食い違う問題に巻き込まれず、JS側から意図した基準を選べる。
 - **画像は`height`を固定せず`max-height`+`flex:0 1 auto`にする。** 縦が足りない端末では縮んで収まる。`object-fit:contain`と併用する。
 - **`.mastermon-confirm-box`は共通で`max-height:calc(94 * var(--vh))`+`overflow-y:auto`を持つ。** 個別のポップアップで指定を忘れても縦にはみ出さない。
 
 ### 強制横向き / タッチ
 - 縦画面ロック端末では`#appRoot`をCSS回転させ横向き表示にする(`world.js`の`updateForceLandscapeMode`等)。ポインタ座標・移動量は`toLogicalPoint`/`toLogicalDelta`で回転補正する。
+- **向きの判定は`matchMedia('(orientation: portrait)')`で行う。** 実測pxは起動直後に確定していないことがあり、その値で一度だけ判定すると「縦持ちで起動したときだけ効かない」状態で固定される。`getRealViewportSize()`も`visualViewport`→`innerWidth/Height`→`clientWidth/Height`の順にフォールバックする。
+- **起動直後は`resize()`を何度も呼び直す**(`DOMContentLoaded`/`load`/`pageshow` + 50〜2000msのタイマー + メディアクエリのchange)。iOSは`orientationchange`を取りこぼすことがある。`resize()`のキャンバス処理はtry/catchで囲み、失敗しても向きの判定だけは済んだ状態にする。
 - 縦画面ロック中はネイティブスクロールが効きにくいので、`input.js`が回転補正した移動量で手動スクロールする補助を入れている。新しいスクロール要素はこの仕組みで動く(overflow:auto/scrollを付ければ拾われる)。
 
 ## 作業の進め方

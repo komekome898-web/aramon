@@ -54,13 +54,18 @@ let viewW=window.innerWidth, viewH=window.innerHeight;
 // スマホ・小型タブレットが縦長(portrait)のときは、#appRootをCSSで90度回転させて
 // 横向きの画面として描画する。実際のブラウザviewportは縦長のままなので、
 // キャンバスサイズや各種ポインタ座標は「回転後の論理座標」に変換して使う必要がある。
-const FORCE_LANDSCAPE_MAX_SIDE = 932; // このサイズ以下の小画面のみ対象(PCの縦長ウィンドウ等は対象外)
+const FORCE_LANDSCAPE_MAX_SIDE = 1000; // このサイズ以下の小画面のみ対象(PC・タブレットの縦長は対象外)
 const appRootEl = document.getElementById('appRoot');
+// 向きの判定はメディアクエリで行う。実測pxは起動直後に確定していないことがあり、
+// その値で判定すると「縦持ちで起動したのに強制横向きが効かない」状態のまま固定されてしまう。
+const _mqPortrait = window.matchMedia ? window.matchMedia('(orientation: portrait)') : null;
 function getRealViewportSize(){
-  if(window.visualViewport){
-    return { w: window.visualViewport.width, h: window.visualViewport.height };
-  }
-  return { w: window.innerWidth, h: window.innerHeight };
+  const vv = window.visualViewport;
+  let w = vv ? vv.width : 0, h = vv ? vv.height : 0;
+  // 起動直後は visualViewport が 0 や未確定値を返すことがあるので順にフォールバックする
+  if(!(w > 0) || !(h > 0)){ w = window.innerWidth; h = window.innerHeight; }
+  if(!(w > 0) || !(h > 0)){ w = document.documentElement.clientWidth; h = document.documentElement.clientHeight; }
+  return { w: w || 1, h: h || 1 };
 }
 // #appRootの回転前サイズ・位置をpx実測値で直接指定する。
 // vw/vhだとモバイルブラウザのアドレスバー表示/非表示等で実際のviewportとズレて
@@ -85,14 +90,21 @@ function applyAppRootTransform(forced, real){
   const logicalH = forced ? real.w : real.h;
   document.documentElement.style.setProperty('--vw', (logicalW/100)+'px');
   document.documentElement.style.setProperty('--vh', (logicalH/100)+'px');
-  // 「幅が狭い端末向けの調整」は論理幅で判定する。CSSの@media(max-width)は
-  // 強制横向きでも実画面(縦向き)の幅に反応してしまい、誤って発動するため
-  document.documentElement.classList.toggle('logical-narrow', logicalW <= 520);
+  // 旧 @media (max-width:520px) の代わり。判定は「実画面の幅」で、旧メディアクエリと
+  // 同じ条件をそのまま再現している(HUDの寸法はこの条件で調整済みなので変えない)。
+  // クラスにしておけば、強制横向きで --vw/--vh とメディアクエリの基準が食い違う問題に
+  // 巻き込まれず、JS側から意図した基準で切り替えられる。
+  document.documentElement.classList.toggle('narrow-screen', real.w <= 520);
 }
 function updateForceLandscapeMode(){
   const real = getRealViewportSize();
-  const isPortrait = real.h > real.w;
-  const isSmallScreen = Math.max(real.w, real.h) <= FORCE_LANDSCAPE_MAX_SIDE;
+  // 向きはメディアクエリを優先(実測pxはアドレスバーやキーボードで揺れる)
+  const isPortrait = _mqPortrait ? _mqPortrait.matches : (real.h > real.w);
+  // 画面の長辺は screen も見る。実測が未確定でも端末サイズで判定できるようにする
+  const sw = (window.screen && window.screen.width) || 0;
+  const sh = (window.screen && window.screen.height) || 0;
+  const longSide = Math.max(sw, sh, real.w, real.h);
+  const isSmallScreen = longSide <= FORCE_LANDSCAPE_MAX_SIDE;
   const shouldForce = isPortrait && isSmallScreen;
   document.documentElement.classList.toggle('force-landscape', shouldForce);
   applyAppRootTransform(shouldForce, real);
@@ -120,14 +132,17 @@ function getViewportSize(){
   return real;
 }
 function resize(){
-  const vp = getViewportSize();
+  const vp = getViewportSize();   // ここで向きの判定と html.force-landscape の付け外しも行われる
   viewW = vp.w; viewH = vp.h;
-  canvas.width = viewW*dpr; canvas.height = viewH*dpr;
-  canvas.style.width = viewW+'px'; canvas.style.height = viewH+'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  recomputeFocal();
-  // HUD配置(割合保存)を新しいサイズへ再反映。ただし編集中は触らない。
-  if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
+  // キャンバス側で失敗しても、向きの判定だけは必ず済んでいる状態にする
+  try{
+    canvas.width = viewW*dpr; canvas.height = viewH*dpr;
+    canvas.style.width = viewW+'px'; canvas.style.height = viewH+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    recomputeFocal();
+    // HUD配置(割合保存)を新しいサイズへ再反映。ただし編集中は触らない。
+    if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
+  }catch(err){ console.error('[aramon] resize失敗', err); }
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', ()=>{
@@ -139,6 +154,15 @@ window.addEventListener('orientationchange', ()=>{
 if(window.visualViewport){
   window.visualViewport.addEventListener('resize', resize);
 }
+// 向きの変化をメディアクエリでも拾う(iOSのorientationchangeは取りこぼすことがある)
+if(_mqPortrait){
+  if(_mqPortrait.addEventListener) _mqPortrait.addEventListener('change', resize);
+  else if(_mqPortrait.addListener) _mqPortrait.addListener(resize);
+}
+// 起動直後はviewportが確定していないことがあるため、読み込み完了と数回のタイマーで必ず再判定する
+// (これが無いと「縦持ちで起動したときだけ強制横向きが効かない」状態が残る)
+['DOMContentLoaded','load','pageshow'].forEach(ev=> window.addEventListener(ev, resize));
+[50, 150, 400, 900, 2000].forEach(ms=> setTimeout(resize, ms));
 resize();
 
 /* =====================================================================
