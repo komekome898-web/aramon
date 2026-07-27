@@ -85,6 +85,9 @@ function applyAppRootTransform(forced, real){
   const logicalH = forced ? real.w : real.h;
   document.documentElement.style.setProperty('--vw', (logicalW/100)+'px');
   document.documentElement.style.setProperty('--vh', (logicalH/100)+'px');
+  // 「幅が狭い端末向けの調整」は論理幅で判定する。CSSの@media(max-width)は
+  // 強制横向きでも実画面(縦向き)の幅に反応してしまい、誤って発動するため
+  document.documentElement.classList.toggle('logical-narrow', logicalW <= 520);
 }
 function updateForceLandscapeMode(){
   const real = getRealViewportSize();
