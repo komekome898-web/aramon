@@ -225,10 +225,12 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **スキン別のSE差し替えは3つの対応表で行う**(combat.js): `SKIN_TIER3_SE`(tier3発射) / `SKIN_SUMMON_SE`(召喚演出) / `SKIN_HIT_SE`(被弾)。いずれも`playSe(skinXxxSeName(entity) || '既定SE')`の形で呼ぶので、未定義スキンは自動で既定SEになる。
 - **スキンプレビュー(`showSkinPreview`)は歩行モーションを再生する。** `skinWalkFrameDataUrls(skinId, view)`(render.js)が歩行8コマをdataURL配列で返し(色スキンは`recolorToCanvas`で再着色・`_skinDataUrlCache`にキャッシュ)、ui.jsの`startSkinPreviewAnim`が`WALK_FRAME_DUR`間隔で正面/後ろの`<img>.src`を差し替える。**歩行コマ未用意/未ロードならnullを返し静止画のまま**(画像ロード待ちの可能性があるので0.35秒×最大6回リトライする)。オーバーレイを閉じたら必ず`stopSkinPreviewAnim()`でタイマーを止める。
 
-### ソフトキーボードで入力欄が隠れないようにする(input.js / style.css)
-- iOSはキーボードを出してもレイアウトの高さが変わらないので、`visualViewport`で実際に見えている範囲を測り、隠れるぶんだけ`#appRoot`をずらす(`--kb-lift` + `.kb-lift`)。**全画面の入力欄に効くので、新しい入力欄を足しても個別対応は不要。**
-- **強制横向きではアプリ空間の「上」が実画面の別の軸になる。** `rotate(90deg)`のあとに`translateX(-L)`すると実画面では上へ動く(回転していないときは`translateY(-L)`)。ずらす量はどちらも「実画面で隠れているpx」で共通なので、JS側は`getBoundingClientRect()`の実画面座標のまま計算してよい。
-- 対象は文字入力だけ(`isKeyboardInput`)。スライダー(`type=range`)でフォーカスが移っても持ち上げない。
+### 文字入力(input.js / index.html / style.css)
+- **文字入力はすべて共通ポップアップ(`#textInputOverlay`)で行う。** iOSのソフトキーボードは実画面の下側を覆い、**強制横向きではそれがアプリの右側にあたる**ため、画面のどこに入力欄を置いても隠れうる。アプリ全体をずらす方式は強制横向きと相性が悪く実機で破綻したので採用しない(2026-07-27に一度試して差し戻した)。
+- 仕組み: `focusin`(capture)で対象の`<input>`を`readOnly`にして`blur()`し、ポップアップを開いて中の入力欄に`focus()`する。**focusはタップと同じターンで呼ぶこと**(iOSはユーザー操作外だとキーボードを出さない)。確定時に元の欄へ値を書き戻し、`input`/`change`イベントを流して既存のハンドラを動かす。
+- **documentへの委譲なので、新しい入力欄を足しても個別対応は不要**(動的に生成されるマスモンの名前変更欄にも効く)。対象外にしたい入力は`type`を`range`等にするか`KB_SKIP_TYPES`を見る。
+- 見出しは`data-kb-title` → 直前の要素のテキスト(20文字以内) → `placeholder` の順。長い説明文が見出しにならないよう文字数で弾いている。
+- ポップアップの位置は**通常時は上端中央 / 強制横向き時は左端寄せ**(回転後のアプリ右側が実画面の下=キーボードの位置になるため)。`#textInputOverlay`はスクロールロックの除外リスト3か所にも入れる。
 
 ### 長押しでの選択・メニュー抑止(style.css / input.js)
 - CSSとJSの二段構えで全画面に効かせている。**新しい画面を足しても個別対応は不要。**

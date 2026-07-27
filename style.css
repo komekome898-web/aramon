@@ -32,13 +32,37 @@
     transform-origin:0 0;
     transform:rotate(90deg);
   }
-  /* ソフトキーボードで入力欄が隠れるときだけ、隠れるぶんアプリ全体をずらす(input.jsが--kb-liftを設定)。
-     回転していないときは画面上へ。強制横向き(rotate(90deg))では回転後のX方向が実画面の上になるので
-     translateX を使う。ずらす量はどちらも「実画面で隠れているpx」で共通。 */
-  #appRoot.kb-lift{ transform:translateY(calc(-1 * var(--kb-lift, 0px))); transition:transform .18s ease; }
-  html.force-landscape #appRoot.kb-lift{ transform:rotate(90deg) translateX(calc(-1 * var(--kb-lift, 0px))); }
 
   #gameCanvas{position:absolute; top:0; left:0; display:block; touch-action:none; cursor:grab;}
+
+  /* ---- 文字入力の共通ポップアップ ----
+     ソフトキーボードは実画面の下側に出る。回転していないときはアプリの下側なので上端寄せに、
+     強制横向き(#appRootを90度回転)ではアプリの右側が実画面の下になるので左端寄せにして、
+     どちらでもキーボードに隠れない位置に置く。 */
+  #textInputOverlay{ position:absolute; inset:0; z-index:900; background:rgba(0,0,0,0.55); }
+  #textInputBox{
+    position:absolute; top:calc(4 * var(--vh)); left:50%; transform:translateX(-50%);
+    width:min(520px, calc(86 * var(--vw)));
+    display:flex; flex-direction:column; gap:10px; padding:14px 16px; border-radius:12px;
+    background:linear-gradient(180deg, rgba(16,22,34,0.98), rgba(8,12,20,0.98));
+    border:1px solid var(--amber); box-shadow:0 10px 34px -8px rgba(0,0,0,0.95);
+  }
+  html.force-landscape #textInputBox{
+    top:calc(4 * var(--vh)); left:calc(2 * var(--vw)); transform:none;
+    width:min(420px, calc(44 * var(--vw)));
+  }
+  #textInputTitle{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); letter-spacing:1px; }
+  #textInputField{
+    width:100%; padding:10px 12px; border-radius:8px; font-size:16px; color:var(--ink);
+    background:rgba(255,255,255,0.07); border:1px solid var(--panel-line);
+  }
+  #textInputBtns{ display:flex; gap:10px; justify-content:flex-end; }
+  #textInputBtns button{
+    padding:8px 18px; border-radius:8px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line);
+  }
+  #textInputBtns #textInputOkBtn{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
 
   .hidden{display:none !important;}
 
