@@ -4461,6 +4461,7 @@ const SE_TEST_LABELS = {
   bell:'鐘 リンリン', chupiin:'召喚・柱 チュピーン', shuwaa:'召喚・収束 シュワァー', kill:'撃破 ズバシュ',
   fanfare:'勝利ファンファーレ', sad:'敗北', godRising:'ゴッドライジング 運命', ssrJackpot:'SSR大当たり', zashu:'ダークホウスト ズバシュ×5',
   chocoSummon:'ちょこ 召喚', chocoVanish:'ちょこ ヴァニッシュ', chocoHit:'ちょこ 被弾',
+  titleStart:'タイトル TAP START',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');
@@ -4608,7 +4609,7 @@ function initTitleScreen(){
     entered = true;
     // タップはユーザー操作なので、ここでオーディオを起動してタイトルBGMを鳴らす
     if(typeof audioInit==='function') audioInit();
-    if(typeof playSe==='function') playSe('jakiin');
+    if(typeof playSe==='function') playSe('titleStart');
     if(typeof bgmSetTrack==='function') bgmSetTrack('title');
     scr.classList.add('fading');
     document.getElementById('startScreen').classList.remove('hidden');
