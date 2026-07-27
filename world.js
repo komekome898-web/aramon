@@ -30,6 +30,8 @@ const CAM_DIST_BEHIND = 145; // 以前は190
 const CAM_HEIGHT      = 90;  // 以前は120
 let camState = { yaw:0, pitch:0.27, height:CAM_HEIGHT, distBehind:CAM_DIST_BEHIND };
 let camPos = { x:0, y:0, z:0 };
+// real3d.js(ESモジュール)からカメラを読むための橋渡し。参照を渡すので中身は常に最新
+window.camPos = camPos; window.camState = camState;
 let camSnap = { active:false, fromYaw:0, toYaw:0, t:0, duration:0.28 };
 // 召喚演出(試合開始時の5秒カウントダウン)。この間は視点操作のみ可能で、
 // matchTime・状態変化クールタイム・ゾーン等は一切進行しない(演出後に本戦開始)。
@@ -140,6 +142,9 @@ function resize(){
     canvas.style.width = viewW+'px'; canvas.style.height = viewH+'px';
     ctx.setTransform(dpr,0,0,dpr,0,0);
     recomputeFocal();
+    // ESモジュール(real3d.js)からはトップレベルのletが見えないのでwindowに出す
+    window.viewW = viewW; window.viewH = viewH;
+    if(window.__aramonReal3D) window.__aramonReal3D.resize();
     // HUD配置(割合保存)を新しいサイズへ再反映。ただし編集中は触らない。
     if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
   }catch(err){ console.error('[aramon] resize失敗', err); }
@@ -300,19 +305,25 @@ function rampHeightAt(b, x, y){
 function isInsideFootprint(b,x,y){
   return Math.abs(x-b.cx)<=b.hw && Math.abs(y-b.cy)<=b.hd;
 }
+// 建物やランプを除いた「地面そのもの」の高さ。リアルマップ(テスト)では起伏を返す。
+// 岩・水晶の当たり判定が「登っているか」を見るときの基準にもなる
+function baseTerrainHeightAt(x,y){
+  return (currentMap && currentMap.real3d && typeof real3dHeightAt==='function') ? real3dHeightAt(x,y) : 0;
+}
 function getTerrainHeightAt(x,y){
   for(const b of buildings){
     const r = rampHeightAt(b,x,y);
     if(r!==null) return r;
     if(isInsideFootprint(b,x,y)) return b.wallH;
   }
-  return 0;
+  return baseTerrainHeightAt(x,y);
 }
 function blockedByHeight(m,x,y){
   return getTerrainHeightAt(x,y) > m.z + CLIMB_TOLERANCE;
 }
 function blockedByRock(m,x,y){
-  if(m.z > 25) return false;
+  // 建物の上に登っているときだけ岩をすり抜ける。起伏で z が上がっても効くよう地面基準で見る
+  if(m.z > baseTerrainHeightAt(m.x,m.y) + 25) return false;
   for(const r of rocks){
     if(Math.hypot(x-r.x, y-r.y) < r.radius+m.radius) return true;
   }
@@ -326,7 +337,7 @@ function blockedByVolcano(m,x,y){
   return false;
 }
 function blockedByCrystal(m,x,y){
-  if(m.z > 25) return false;
+  if(m.z > baseTerrainHeightAt(m.x,m.y) + 25) return false;
   for(const c of crystalObstacles){
     if(Math.hypot(x-c.x, y-c.y) < c.radius+m.radius) return true;
   }
@@ -494,7 +505,8 @@ function createMonster(elementKey, isPlayer, name, overrides){
   const useId = (overrides && overrides.id!=null) ? overrides.id : nextId++;
   return {
     id: useId, isPlayer, element: elementKey, name,
-    x: sp.x, y: sp.y, z:0,
+    // リアルマップ(テスト)では生成時点から地形の高さに乗せる(最初の移動計算まで埋まる/浮くのを防ぐ)
+    x: sp.x, y: sp.y, z: baseTerrainHeightAt(sp.x, sp.y),
     radius: elementKey==='rock'?25:(elementKey==='spark'?19:(elementKey==='phoenix'?21:22)),
     speed: el.speed * (el.speedMod||1), hp: el.hp, maxHp: el.hp,
     guts:100, maxGuts:100, moveTierUnlocked:1, moveTierSelected:1,
@@ -677,7 +689,7 @@ function spawnLoot(n, center, radius){
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
     } while((isNearRock(x,y,45) || isNearCrystal(x,y,45) || isOnHazard(x,y,45)) && guard<20);
-    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: rand(0,Math.PI*2) });
+    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, z: baseTerrainHeightAt(x,y), bob: rand(0,Math.PI*2) });
   }
 }
 
@@ -704,7 +716,7 @@ function seededSpawnLoot(rng, n, center, radius){
       x = center.x+Math.cos(a)*d; y = center.y+Math.sin(a)*d;
       guard++;
     } while((isNearRock(x,y,45) || isNearCrystal(x,y,45) || isOnHazard(x,y,45)) && guard<20);
-    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, bob: seededRand(rng,0,Math.PI*2) });
+    lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, z: baseTerrainHeightAt(x,y), bob: seededRand(rng,0,Math.PI*2) });
   }
 }
 function seededGenVolcanoAndLava(rng){

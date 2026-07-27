@@ -2230,9 +2230,15 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
   });
 });
 // game.selectedMap が 'random' の場合は実在マップからランダムに1つ選ぶ
+// リアルマップ(テスト)ならWebGLの地形レイヤーを有効化する。
+// 初期化に失敗した端末では自動的に従来の2D地面に戻る(render.js側で判定)
+function applyReal3DLayer(){
+  if(!window.__aramonReal3D) return;
+  window.__aramonReal3D.setActive(!!(currentMap && currentMap.real3d));
+}
 function resolveMapKey(){
   if(game.selectedMap && game.selectedMap!=='random' && MAPS[game.selectedMap]) return game.selectedMap;
-  const keys = Object.keys(MAPS);
+  const keys = Object.keys(MAPS).filter(k=>!MAPS[k].testOnly);  // テスト用マップは抽選対象外
   return keys[Math.floor(Math.random()*keys.length)];
 }
 function updateMapPreview(){
@@ -2606,6 +2612,7 @@ function startGame(){
   joyKnobEl.style.transform='translate(0,0)';
   game.activeMapKey = resolveMapKey();   // 'ランダム'選択時はここで実マップを確定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
+  applyReal3DLayer();
   applyWorldScale(1);
   initZone();
   genVolcanoAndLava();
@@ -2698,6 +2705,7 @@ function showResult(isWin, placement){
   game.started=false;
   joinInProgress = false;
   if(typeof setAutoRun==='function') setAutoRun(false); // 試合終了でオートラン解除
+  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false); // WebGL地形を止めてロビーへ戻す
   if(typeof updateSpectateBar==='function'){ const sb=document.getElementById('spectateBar'); if(sb) sb.classList.add('hidden'); }
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);

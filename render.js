@@ -1306,11 +1306,17 @@ function drawBuilding(b){
   }
   drawRamp(b);
 }
+// 地面に貼り付く円は、地形の高さに沿わせる。
+// groundZAt() はリアルマップ(テスト)以外では常に0を返すので、他マップの見た目は変わらない。
+function groundZAt(x,y){
+  return (typeof baseTerrainHeightAt==='function') ? baseTerrainHeightAt(x,y) : 0;
+}
 function projectCircleRing(center, radius, segments){
   const pts = [];
   for(let i=0;i<=segments;i++){
     const a = (i/segments)*Math.PI*2;
-    const p = project(center.x+Math.cos(a)*radius, center.y+Math.sin(a)*radius, 0);
+    const wx = center.x+Math.cos(a)*radius, wy = center.y+Math.sin(a)*radius;
+    const p = project(wx, wy, groundZAt(wx,wy));
     if(p) pts.push(p);
   }
   return pts;
@@ -1337,7 +1343,8 @@ function projectCircleArcLocal(center, radius, segments, windowRad){
   const pts = [];
   for(let i=0;i<=segments;i++){
     const a = centerAngle - windowRad + (i/segments)*windowRad*2;
-    const p = project(center.x+Math.cos(a)*radius, center.y+Math.sin(a)*radius, 0);
+    const wx = center.x+Math.cos(a)*radius, wy = center.y+Math.sin(a)*radius;
+    const p = project(wx, wy, groundZAt(wx,wy));
     if(p) pts.push(p);
   }
   return pts;
@@ -1971,7 +1978,8 @@ function groundCirclePoints(cx, cy, radius, segs){
   const pts = [];
   for(let i=0;i<segs;i++){
     const a = (i/segs)*Math.PI*2;
-    const p = project(cx+Math.cos(a)*radius, cy+Math.sin(a)*radius, 0);
+    const wx = cx+Math.cos(a)*radius, wy = cy+Math.sin(a)*radius;
+    const p = project(wx, wy, groundZAt(wx,wy));
     if(p) pts.push(p);
   }
   return pts.length>=3 ? pts : null;
@@ -2268,10 +2276,15 @@ function render(){
   ctx.clearRect(0,0,viewW,viewH);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = (projectiles.length + particles.length) > 22;
-  drawSkyAndGround();
+  // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
+  // 地面の装飾を描かずに透かす。初期化に失敗した場合はfalseが返るので従来描画に戻る
+  const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render());
+  if(!gl3d){
+    drawSkyAndGround();
+  }
   drawWaterZones();
   drawLavaZones();
-  drawTerrainDecor();
+  if(!gl3d) drawTerrainDecor();
   drawZoneRings();
   drawLandingMarkers();
   if(introState.active) drawSummonIntro();
@@ -2298,7 +2311,7 @@ function render(){
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
   // predictedPickup: マルチのゲストが「拾った」と先読みして消したアイテム(ホストの確定待ち)
-  for(const it of lootItems){ if(it.predictedPickup != null) continue; const p = project(it.x,it.y,0); if(p) drawables.push({kind:'loot', obj:it, p}); }
+  for(const it of lootItems){ if(it.predictedPickup != null) continue; const p = project(it.x,it.y,it.z||0); if(p) drawables.push({kind:'loot', obj:it, p}); }
   for(const pr of projectiles){ const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }

@@ -22,6 +22,8 @@
 <body>
 
 <div id="appRoot">
+<!-- リアルマップ(テスト)専用のWebGLキャンバス。2Dキャンバスの下に敷き、地面だけを立体で描く -->
+<canvas id="glCanvas" class="hidden"></canvas>
 <canvas id="gameCanvas"></canvas>
 
 <!-- START SCREEN -->
@@ -193,6 +195,7 @@
         <button class="map-tab" data-map="palepale">パレパレジャングル</button>
         <button class="map-tab" data-map="toble">トーブル海岸</button>
         <button class="map-tab" data-map="mandy">マンディー砂漠</button>
+        <button class="map-tab" data-map="real3d">⛰️ リアルマップ(テスト)</button>
       </div>
       <div id="mapPreview">
         <div id="mapPreviewImage"><span id="mapPreviewIcon">🪨</span></div>
@@ -975,6 +978,8 @@
 <script src="render.js"></script>
 <script src="input.js"></script>
 <script src="ui.js"></script>
+<!-- リアルマップ(テスト)のWebGL描画。ESモジュールなので window.__aramonReal3D 経由で使う -->
+<script type="module" src="real3d.js"></script>
 <script src="network.js"></script>
 <script>
   // sw.js内のCACHE_NAMEを読み取り、タイトルのバージョン表記に反映する

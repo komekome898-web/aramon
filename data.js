@@ -39,6 +39,13 @@ function applyWorldScale(scale){
 const WATER_SPEED_MULT = 0.6; // 海・川の中での移動速度倍率
 const OASIS_SPEED_MULT = 0.8; // オアシスの中での移動速度倍率
 const MAPS = {
+  // テスト用。マップ選択には出すが「ランダム」の抽選対象からは外す(testOnly)
+  real3d: {
+    key:'real3d', label:'リアルマップ(テスト)', rockCount:420, decorCount:0, hasVolcano:false,
+    groundColor:'#b9a072', real3d:true, testOnly:true,
+    previewIcon:'⛰️', previewColors:['#8c7a55','#3a3122'],
+    desc:'WebGLで地形を立体的に描くテスト用マップ。丘や谷があり、当たり判定も起伏に沿う。',
+  },
   wild: {
     key:'wild', label:'荒野', rockCount:800, decorCount:9000, hasVolcano:false,
     groundColor:'#142433',
@@ -652,6 +659,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'マップ選択に「リアルマップ(テスト)」を追加しました。地形が立体的な丘や谷になり、当たり判定も起伏に沿います(テスト中のため、ランダム選択では選ばれません)', g:['feature','general'] },
     { t:'ランキングで同じスコアのプレイヤーが同じ順位になるようにしました。マスモン名が長いときも「…」で切らず全部表示します', g:['general','fix'] },
     { t:'縦持ちで起動したときに強制横向きが効かないことがある不具合を修正しました', g:['general','fix'] },
     { t:'端末によってSSR獲得演出などの画面が上下左右に見切れてしまう不具合を修正しました', g:['fix','av'] },
@@ -1051,6 +1059,29 @@ function mastermonEffectMults(mm){
 }
 
 const CLIMB_TOLERANCE = 12;
+
+/* =====================================================================
+   リアルマップ(テスト): WebGL(Three.js)で起伏のある地形を描くテスト用マップ。
+   高さは real3dHeightAt(x,y) という純関数なので、ホストとゲストで自動的に一致する
+   (シード付き乱数を通す必要がない)。当たり判定もこの高さを使う。
+   ・振幅と周波数の積(=最大傾斜)の合計を約0.29に抑えてある。ダッシュ中は1フレームで
+     20単位ほど進むため、傾斜が大きすぎると CLIMB_TOLERANCE(12)を超えて登れなくなる。
+   ・数値はプレイテストで調整する前提の名前付き定数。
+   ===================================================================== */
+const REAL3D_TERRAIN = [
+  { amp:120, fx:0.00042, fy:0.00037, ph:0.0 },   // 大きなうねり
+  { amp: 80, fx:0.00097, fy:0.00081, ph:1.7 },
+  { amp: 40, fx:0.00210, fy:0.00185, ph:3.1 },
+  { amp: 14, fx:0.00520, fy:0.00470, ph:5.2 },   // 細かい凹凸
+];
+function real3dHeightAt(x, y){
+  let h = 0;
+  for(let i=0;i<REAL3D_TERRAIN.length;i++){
+    const w = REAL3D_TERRAIN[i];
+    h += w.amp * (Math.sin(x*w.fx + w.ph) * 0.5 + Math.cos(y*w.fy + w.ph*1.3) * 0.5);
+  }
+  return h;
+}
 const UPWARD_BLOCK_THRESHOLD = 35;
 
 /* =====================================================================

@@ -231,6 +231,7 @@ async function beginMultiplayerMatchInner(){
   netState.humanPlayers = fixedPlayers;
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
+  if(typeof applyReal3DLayer==='function') applyReal3DLayer();  // リアルマップならWebGL地形を有効化
 
   applyWorldScale(MULTI_MAP_SCALE); // マルチプレイは少人数想定のため、ソロより一回り狭いマップにする
 
@@ -742,7 +743,8 @@ function applyLootEventLocally(evt){
     }
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
-      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, bob:evt.bob||0 });
+      // zは座標から一意に決まるので配信不要(real3dHeightAtは純関数)
+      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, z:baseTerrainHeightAt(evt.x,evt.y), bob:evt.bob||0 });
     }
   }
 }
