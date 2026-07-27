@@ -35,6 +35,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 | `monsters/*.png` | モンスター画像。静止画に加え**歩行アニメ用スプライト** `<prefix>_walk_f1..8.png`(正面8コマ)/`<prefix>_walk_b1..8.png`(後ろ8コマ)。320px・256色透過PNG |
 | `tools/build_walk.py` | **歩行スプライト生成の開発用スクリプト**(ゲームには読み込まれない)。動画→8コマ透過PNG。この環境のffmpeg/PIL/numpy/scipy/opencvで動く。詳細は「バトル歩行アニメーション」節 |
 | `top_bg.jpg` | トップ画面(ロビー)の背景画像。`#topBg`が`cover`で敷く |
+| `title_bg.jpg` / `title_logo.png` | タイトル画面の背景とロゴ。ロゴは背景を透過済み(白背景を縁から連結する成分だけ抜いた) |
 | `bgm_final5.mp3` / `bgm_lastbattle.mp3` / `bgm_shop.mp3` | 残り5人以下(決戦) / 残り2人(ラストバトル) / ショップのBGM実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
 
 ## 重要な設計知識
@@ -48,6 +49,13 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
   - 縦にはみ出す前提で **`max-height:calc(94 * var(--vh)); overflow-y:auto`** を付け、枠ごとスクロールさせる(内側に別の `max-height` スクロールを重ねない)。
 - プルダウンは `.custom-select` / `.custom-select-menu` の自前実装を再利用する。ポップアップが親のoverflowで切れないよう「外枠はoverflow可視・中のリストだけ独立スクロール」の構成にする。
 - 横長(landscape)の低い画面が前提。新しい画面は縦幅を詰めてスクロールなしで収まるようにする。
+
+### タイトル画面(起動直後)
+- 流れは「起動 → `#titleScreen` → タップ → `#startScreen`(ロビー)」。ロビーはHTMLで`.hidden`を付けた状態で始まり、タップで外す。
+- ロゴ(`title_logo.png`)は左下の外からスライドイン(`titleLogoIn`)し、着地後に光沢(`titleShine`)がループする。**光沢は要素をtransformで動かしてはいけない。** ロゴ画像をmaskに使っているので要素が動くとマスクも動き、別の位置にロゴの形が浮き出る(実際に出た)。`background-position`だけを動かす。
+- 読み込みは`initTitleScreen()`が待つ: `document.fonts.ready` / タイトル背景・ロゴ・ロビー背景の画像 / `window.load`。**最低`TITLE_MIN_MS`(1.9秒)は必ず見せる**のでロゴのアニメが途中で消えない。完了後に`#titleTapStart`を出す。
+- **タップはユーザー操作なので、ここで`audioInit()`とタイトルBGMを開始する**(iOSは操作なしに音が出せない)。
+- `#titleScreen`もスクロールロックの除外リスト3か所に入れる。入れないと`touchend`の`preventDefault`でタップが効かない。
 
 ### トップ画面(ロビー)
 - **1画面完結でスクロールしない。** `#startScreen`は`overflow:hidden`、`#lobbyLayout`が `左メニュー / 中央 / 右` の3カラムグリッド。サイズは全部`var(--vw)/var(--vh)`基準(メディアクエリ禁止の理由はカルーセル節と同じ)。

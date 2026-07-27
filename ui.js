@@ -4551,6 +4551,76 @@ document.getElementById('closeAdminBtn').addEventListener('click', ()=>{
 ===================================================================== */
 
 /* =====================================================================
+   タイトル画面
+   ・起動直後に表示。ロゴのスライドイン中に読み込み(フォント・画像・SW登録)を待つ
+   ・終わったら中央に「TAP START」を点滅させ、タップでロビーへ
+   ・タップはユーザー操作なので、ここでBGM/SEの起動(audioInit)も済ませる
+===================================================================== */
+const TITLE_MIN_MS = 1900;   // ロゴのスライドイン+光沢を見せる最低時間
+function initTitleScreen(){
+  const scr = document.getElementById('titleScreen');
+  if(!scr) return;
+  const fill = document.getElementById('titleLoadingFill');
+  const loading = document.getElementById('titleLoading');
+  const tap = document.getElementById('titleTapStart');
+  const started = performance.now();
+  let ready = false, entered = false;
+
+  // 実際に待つもの: Webフォント / タイトル画像 / ページのload(SW登録・スクリプト)
+  const waitImage = (src)=> new Promise(res=>{
+    const im = new Image();
+    im.onload = im.onerror = ()=>res();
+    im.src = src;
+  });
+  const waitLoad = () => (document.readyState==='complete')
+    ? Promise.resolve()
+    : new Promise(res=>window.addEventListener('load', res, { once:true }));
+  const tasks = [
+    (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(),
+    waitImage('title_bg.jpg'),
+    waitImage('title_logo.png'),
+    waitImage('top_bg.jpg'),
+    waitLoad(),
+  ];
+  // 進捗はタスクの完了数で出す(止まって見えないよう、待っている間も少しずつ進める)
+  let done = 0;
+  const setPct = p => { if(fill) fill.style.width = Math.min(100, Math.round(p)) + '%'; };
+  const tick = setInterval(()=>{
+    const byTime = Math.min(88, (performance.now()-started) / TITLE_MIN_MS * 88);
+    setPct(Math.max(byTime, done / tasks.length * 100));
+  }, 80);
+  tasks.forEach(t=>Promise.resolve(t).then(()=>{ done++; }).catch(()=>{ done++; }));
+
+  Promise.all(tasks.map(t=>Promise.resolve(t).catch(()=>{})))
+    .then(()=> new Promise(res=>setTimeout(res, Math.max(0, TITLE_MIN_MS - (performance.now()-started)))))
+    .then(()=>{
+      clearInterval(tick);
+      setPct(100);
+      ready = true;
+      setTimeout(()=>{
+        if(loading) loading.classList.add('hidden');
+        if(tap) tap.classList.remove('hidden');
+      }, 220);
+    });
+
+  function enterLobby(){
+    if(!ready || entered) return;
+    entered = true;
+    // タップはユーザー操作なので、ここでオーディオを起動してタイトルBGMを鳴らす
+    if(typeof audioInit==='function') audioInit();
+    if(typeof playSe==='function') playSe('jakiin');
+    if(typeof bgmSetTrack==='function') bgmSetTrack('title');
+    scr.classList.add('fading');
+    document.getElementById('startScreen').classList.remove('hidden');
+    setTimeout(()=>{ scr.classList.add('hidden'); }, 480);
+  }
+  scr.addEventListener('click', enterLobby);
+  window.addEventListener('keydown', (e)=>{
+    if(!scr.classList.contains('hidden')) enterLobby();
+  });
+}
+
+/* =====================================================================
    トップ画面(ロビー)の初期化。
    netState など後方で let / const 宣言している値を読むので、
    必ずファイル末尾(全ての宣言が済んだあと)で実行する。
@@ -4567,4 +4637,5 @@ document.getElementById('closeAdminBtn').addEventListener('click', ()=>{
   buildMonsterGrid();
   buildHowtoLists();
   sync();
+  initTitleScreen();
 }
