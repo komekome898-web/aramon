@@ -435,6 +435,7 @@ function mlDetailInfoHtml(key){
       <span class="ml-info-chip">速さ ${mlSpeedOf(key)}</span>
       ${mods.map(m=>`<span class="ml-info-chip">${m}</span>`).join('')}
     </div>
+    <div class="mm-content-wrap">
     <div class="ml-info-scroll">
     <div class="ml-info-cols">
       ${caroStatusSecHtml({ stats: mastermonInitialStats(key) }, APTITUDE[key], null, '初期値 / 適正')}
@@ -458,6 +459,8 @@ function mlDetailInfoHtml(key){
       <div class="ml-sec-title">技</div>
       ${buildMastermonMovesHtml(key, { ignoreSkin:true })}
     </div>
+    </div>
+    <div class="mm-scrollbar hidden"><div class="mm-scrollbar-thumb"></div></div>
     </div>`;
 }
 
@@ -491,7 +494,9 @@ function renderMonsterDetail(key, srcCard){
   slot.querySelector('.ml-card-nav-prev').addEventListener('click', (e)=>{ e.stopPropagation(); mlDetailStep(-1); });
   slot.querySelector('.ml-card-nav-next').addEventListener('click', (e)=>{ e.stopPropagation(); mlDetailStep(1); });
   right.innerHTML = mlDetailInfoHtml(key);
-  right.scrollTop = 0;
+  const scrollEl = right.querySelector('.ml-info-scroll');
+  if(scrollEl) scrollEl.scrollTop = 0;
+  attachVisibleScrollbar(scrollEl, right.querySelector('.mm-scrollbar'));
   return clone;
 }
 // 詳細を開いたまま隣のモンスターへ移動する(カード送りSEはカルーセル側が鳴らす)
@@ -3096,7 +3101,6 @@ function mmSyncTabButtons(){
 }
 // スクロールできることが分かるように、常に見えるスライドバーを右端に付ける。
 // iOSのネイティブスクロールバーはスクロール中しか出ないため、自前で描いて掴んで動かせるようにする。
-let mmScrollbarRO = null;
 function attachVisibleScrollbar(el, bar){
   if(!el || !bar) return;
   const thumb = bar.querySelector('.mm-scrollbar-thumb');
@@ -3113,11 +3117,12 @@ function attachVisibleScrollbar(el, bar){
   }
   el.addEventListener('scroll', update);
   // 画像の読み込みや内容の切り替えで高さが変わるので、変化を監視して追従する
-  if(mmScrollbarRO){ mmScrollbarRO.disconnect(); mmScrollbarRO = null; }
+  if(el._scrollbarRO){ el._scrollbarRO.disconnect(); el._scrollbarRO = null; }
   if(typeof ResizeObserver === 'function'){
-    mmScrollbarRO = new ResizeObserver(update);
-    mmScrollbarRO.observe(el);
-    if(el.firstElementChild) mmScrollbarRO.observe(el.firstElementChild);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    if(el.firstElementChild) ro.observe(el.firstElementChild);
+    el._scrollbarRO = ro;
   }
   requestAnimationFrame(update);
   update();

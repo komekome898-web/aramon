@@ -71,6 +71,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - **この画面は「素のモンスター」を選ぶ画面なので、装備スキンを一切見ない。** カード画像は`defaultMonsterImgTag()`(`equippedIconImgTag()`ではない)、オーラは`mlAuraOf()`が`MONSTER_AURA`を直に引く、技は`buildMastermonMovesHtml(key, {ignoreSkin:true})`。ignoreSkinは擬似エンティティを`{isPlayer:false, skinId:null}`にすることで`entitySkinId()`をnullにし、`getMoveAura`/`skinTier3Move`/`getMoveName`/`ssrTier3DmgMult`をまとめて既定値にしている(1か所で効く)。
 - 詳細の右カラムは**上段2列(`.ml-info-cols`: STATUS / 特性+状態変化) + 下に技を全幅**。STATUSは共用の`caroStatusSecHtml()`で出す(初期値+適正バッジ)。
 - **ヘッダー(`.ml-info-head`)はスクロールさせない。** 中身は`.ml-info-scroll`に入れ、`#mlDetailRight`は`overflow:hidden`のフレックス縦置きにする。右上の×と重ならないようヘッダーに`padding-right:46px`を入れている。
+- スクロール部の右端には**マスモン側と同じ自前のスライドバー**を置く(`.mm-content-wrap` + `.mm-scrollbar` + `attachVisibleScrollbar()`)。両画面で同じ実装を使うので、直すときはヘルパー側を直す。
 
 ### マスモン選択(カルーセル + 詳細)
 - カードは`mmCardInnerHtml()`。**マスモンは「着せ替え済みの姿」なので、こちらは装備スキンを反映する**(画像=`equippedIconImgTag`、アクセント色=`getMonsterAura`)。モンスター一覧と逆なので混同しないこと。
@@ -78,7 +79,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - 詳細の左カラムは「カード → このマスモンで参戦 → 編集 / 一覧へ」の3ボタンだけ。**残りの縦幅は全部カードに使う**(`#mmDetailCardSlot{min-height:calc(40 * var(--vh))}`)。
 - 右カラムは`#mastermonDetailPanel`で、`renderMastermonDetail(key)`が「全幅ヘッダー(名前+Lv+タブ名+戻る) → STATUS + 内容」を描く。**ヘッダーはステータスの上まで全幅**(モンスター一覧と同じ位置)。
 - **`mastermonDetailTab`がnullのときが初期画面**で、STATUSの右に`詳細情報 / トレーニング / 着せ替え`の3ボタン(`buildMastermonMenuHtml`)を出す。タブを開くと右上に`← 戻る`が出てnullへ戻る。**技一覧タブは廃止し、内容は詳細情報(`buildMastermonInfoHtml`)に統合した。** 着せ替えタブだけステータス列を出さないのは従来通り。
-- **詳細情報タブの内容は`.mm-subview-content`の1スクロールにまとめてある**(2列+技は全幅の1グリッド)。右端には`attachVisibleScrollbar()`が更新する**自前のスライドバー**を置く。iOSのネイティブスクロールバーはスクロール中しか出ないため、スクロールできることが見て分かるように自前で描いてつまみをドラッグできるようにしている(高さ変化はResizeObserverで追従)。
+- **詳細情報タブの内容は`.mm-subview-content`の1スクロールにまとめてある**(2列+技は全幅の1グリッド)。右端には`attachVisibleScrollbar()`が更新する**自前のスライドバー**を置く(モンスター一覧の詳細と共用)。iOSのネイティブスクロールバーはスクロール中しか出ないため、スクロールできることが見て分かるように自前で描いてつまみをドラッグできるようにしている(高さ変化はResizeObserverで追従。監視対象は要素ごとに`el._scrollbarRO`へ持たせるので2画面で同時に使っても壊れない)。
 - STATUSはモンスター一覧と共用の`caroStatusSecHtml()`。**バーの下に6ステータスの短縮説明を3つ×2行で置く(`STAT_SHORT_DESC`)。** `MASTERMON_STATS`の`desc`は長すぎて折り返すので、この画面用の短い文を別に持っている。
 - `renderMastermonList()`は名前を残したまま中身が「カルーセルのカードを作り直す」に変わっている(改名・トレーニング・着せ替えの後から呼ばれるため)。**登録数が変わったときは`build()`、値だけ変わったときは`refreshCards()`。**
 
