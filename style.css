@@ -201,10 +201,15 @@
   }
   #lobbyCenter .title-sub{ font-size:clamp(8px, calc(2.3 * var(--vh)), 12px); }
   #lobbyCenter .lobby-count{ font-size:clamp(9px, calc(2.5 * var(--vh)), 12px); margin-top:2px; }
+  /* ステージ自体が選択ボタン。<button>なので見た目をリセットしてから並べる */
   #lobbyMonsterStage{
     position:relative; flex:1 1 auto; min-height:0; width:100%;
     display:flex; align-items:flex-end; justify-content:center;
+    -webkit-appearance:none; appearance:none; background:none; border:0; padding:0;
+    font:inherit; color:inherit; cursor:pointer;
   }
+  #lobbyMonsterStage:active #lobbyMonsterImg{ transform:scale(0.97); }
+  #lobbyMonsterStage:active #lobbyMonsterEmpty{ background:rgba(244,196,48,0.22); }
   #lobbyMonsterGlow{
     position:absolute; left:50%; bottom:0; transform:translateX(-50%);
     width:min(58%, calc(30 * var(--vh))); height:calc(4 * var(--vh));
@@ -214,24 +219,28 @@
   #lobbyMonsterImg{
     max-height:100%; max-width:min(80%, calc(46 * var(--vh))); object-fit:contain;
     filter:drop-shadow(0 8px 16px rgba(0,0,0,0.8));
+    transition:transform 0.12s ease;
   }
   #lobbyMonsterImg.hidden{ display:none !important; }
-  #lobbyMonsterEmpty{ font-size:12px; color:var(--ink-dim); letter-spacing:1px; align-self:center; }
+  /* 未選択のときの案内。ここをタップして選択させるのでボタンらしく見せる */
+  #lobbyMonsterEmpty{
+    align-self:center; font-family:'Russo One',sans-serif; letter-spacing:1px;
+    font-size:clamp(11px, calc(3.2 * var(--vh)), 15px); color:var(--amber);
+    padding:calc(1.2 * var(--vh)) clamp(16px, calc(4.5 * var(--vw)), 30px);
+    border:1px dashed var(--amber); border-radius:10px;
+    background:linear-gradient(180deg, rgba(24,34,52,0.72), rgba(10,15,24,0.72));
+    animation:lobbyPickPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes lobbyPickPulse{ 0%,100%{ box-shadow:0 0 0 rgba(244,196,48,0); } 50%{ box-shadow:0 0 20px -4px rgba(244,196,48,0.75); } }
+  #lobbyMonsterTapHint{
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:clamp(9px, calc(2.5 * var(--vh)), 12px);
+    letter-spacing:1px; color:var(--ink-dim); opacity:0.9;
+  }
   #lobbyMonsterName{
     font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.8 * var(--vh)), 19px); letter-spacing:1px;
     color:var(--ink); text-shadow:0 2px 6px rgba(0,0,0,0.9); display:flex; align-items:center; gap:6px;
   }
   #lobbyMonsterName .lobby-mon-sub{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink-dim); }
-  #openMonsterPickBtn{
-    padding:calc(1 * var(--vh)) clamp(18px, calc(5 * var(--vw)), 34px); cursor:pointer;
-    font-family:'Russo One',sans-serif; font-size:clamp(12px, calc(3.4 * var(--vh)), 16px); letter-spacing:1.5px;
-    color:var(--ink); background:linear-gradient(180deg, rgba(24,34,52,0.94), rgba(10,15,24,0.94));
-    border:1px solid var(--amber); border-radius:8px;
-    clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
-    box-shadow:0 0 18px -6px rgba(244,196,48,0.8);
-  }
-  #openMonsterPickBtn:active{ background:rgba(244,196,48,0.22); }
-
   /* ---- 右: マップ / モード / 出撃 ---- */
   #lobbyRight{ display:flex; flex-direction:column; gap:calc(1.1 * var(--vh)); align-items:stretch;
     width:clamp(126px, calc(23 * var(--vw)), 186px); }
