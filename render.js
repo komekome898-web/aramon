@@ -935,6 +935,56 @@ function drawProjectile(pr,p){
     ctx.restore();
     return;
   }
+  if(pr.projStyle==='seaSpear'){
+    // アムピトリテ(ペルセポネ): 大きな三叉の槍。進行方向を向き、白い芯+オーラ色の刃で光る。
+    // 色は pr.color(=装備オーラ色)なので、スキンのオーラを変えればそのまま追従する。
+    const col = pr.color || '#3d7dff';
+    const r = (pr.hitR||30)*1.25;
+    const travelAngle = (pr.vx!=null && pr.vy!=null) ? Math.atan2(pr.vy,pr.vx) : 0;
+    ctx.rotate(travelAngle - camState.yaw);
+    if(!renderHeavyLoad){ ctx.shadowBlur=24; ctx.shadowColor=col; }
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    // 後方へ伸びる水の尾
+    const tail = ctx.createLinearGradient(-r*2.6,0, -r*0.4,0);
+    tail.addColorStop(0,'rgba(255,255,255,0)');
+    tail.addColorStop(1, col);
+    ctx.beginPath();
+    ctx.moveTo(-r*2.6, 0); ctx.lineTo(-r*0.4, -r*0.34); ctx.lineTo(-r*0.4, r*0.34);
+    ctx.closePath(); ctx.fillStyle=tail; ctx.globalAlpha=0.75; ctx.fill(); ctx.globalAlpha=1;
+    // 柄
+    ctx.beginPath();
+    ctx.moveTo(-r*1.5, -r*0.11); ctx.lineTo(r*0.45, -r*0.11);
+    ctx.lineTo(r*0.45, r*0.11); ctx.lineTo(-r*1.5, r*0.11);
+    ctx.closePath(); ctx.fillStyle=col; ctx.fill();
+    // 三叉の穂先(中央が長い)
+    const prong = (off, len)=>{
+      ctx.beginPath();
+      ctx.moveTo(r*len, off*0.35);
+      ctx.lineTo(r*0.5, off - Math.sign(off||1)*r*0.06);
+      ctx.lineTo(r*0.5, off + Math.sign(off||1)*r*0.16);
+      ctx.closePath();
+      ctx.fillStyle=col; ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=1.6; ctx.stroke();
+    };
+    prong(-r*0.72, 1.55);
+    prong( r*0.72, 1.55);
+    // 中央の刃(白い芯を入れて鋭く見せる)
+    ctx.beginPath();
+    ctx.moveTo(r*2.15, 0); ctx.lineTo(r*0.35, -r*0.3); ctx.lineTo(r*0.35, r*0.3);
+    ctx.closePath(); ctx.fillStyle=col; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=1.8; ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.beginPath();
+    ctx.moveTo(r*1.85, 0); ctx.lineTo(r*0.55, -r*0.1); ctx.lineTo(r*0.55, r*0.1);
+    ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.fill();
+    // 根元の球(杖の宝珠)
+    const g = ctx.createRadialGradient(-r*0.85,-r*0.1,r*0.05, -r*0.75,0,r*0.4);
+    g.addColorStop(0,'#ffffff'); g.addColorStop(1,col);
+    ctx.beginPath(); ctx.arc(-r*0.75,0,r*0.34,0,Math.PI*2);
+    ctx.fillStyle=g; ctx.fill();
+    ctx.restore();
+    return;
+  }
   if(pr.projStyle==='requiem'){
     // レクイエムエンド(イルミネ): 黒よりの紫を基調にした3形態の投擲武器
     // (1発目=クナイ / 2発目=トゲトゲの球体 / 3発目=手裏剣)が回転しながら進む

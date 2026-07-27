@@ -474,7 +474,7 @@ const AURA_DIS_MULT = 0.75;  // 不利技×有利モンスター
 const AURA_MATCH_MULT = 1.2; // 技オーラ=使用者オーラ(一致)
 const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
 const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white:'⚪', black:'⚫' };
-const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black', zeus_ssr:'yellow', choco_ssr:'red' };
+const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black', zeus_ssr:'yellow', choco_ssr:'red', persephone_ssr:'blue' };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
@@ -557,6 +557,9 @@ function getMoveEffectColor(move, attacker){
 // keepBaseColorの有無に関わらず返すので、本体色を黒に保ったまま差し色だけ変えられる。
 function getMoveAuraTint(move, attacker){
   if(!move || move.tier!==3) return null;
+  // keepArcColor: 本体はオーラ色にしつつ、ビリビリ電撃だけ既定色(紫)のままにする
+  // (ペルセポネの「アムピトリテ」= 青い槍と青いドームに紫の電撃)
+  if(move.keepArcColor) return null;
   const a = skinTier3Aura(entitySkinId(attacker));
   return a ? auraColorHex(a) : null;
 }
@@ -577,6 +580,18 @@ const SSR_SKIN_TIER3 = {
   choco_ssr:   { name:'ヴァニッシュ', move:{
     dmg:30, projSpeed:860, range:1300, gutsCost:30, keepBaseColor:true,
     blast:{ radius:420, dmg:85 },
+  }},
+  // ペルセポネ(イルミネ): レクイエムエンドを置き換える専用tier3。
+  // 大きい青い槍を3本発射し、着弾地点ごとにドーム状の爆風が広がる(ビッグバンの3個版)。
+  // 威力アップ・弾速アップ・射程は少し短く・爆風範囲は大きく・消費ガッツ24。
+  // keepArcColor: 槍とドームは青(オーラ色)のまま、ビリビリ電撃だけ既定の紫にする。
+  // 威力は「槍の直撃(dmg)+ドームの爆風(blast.dmg)」が3本ぶん入る前提の数値。
+  persephone_ssr: { name:'アムピトリテ', move:{
+    dmg:22, projSpeed:1150, range:1350, gutsCost:24, hitR:34, burstGap:0.12,
+    shape:null, projStyle:'seaSpear', keepArcColor:true,
+    // ドームの色はブルーのオーラ色。SKIN_COLORS はこの定義より後で宣言されるので
+    // auraColorHex() を呼ぶとTDZで落ちる。リテラルで持つ(SKIN_COLORS.blue.hex と同値)
+    blast:{ radius:460, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
   }},
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -641,6 +656,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-27', items:[
+    { t:'イルミネのSSRスキン「ペルセポネ」を追加しました。スキンガチャとSSRカタログから入手でき、オーラは青になります', g:['feature','monster'] },
+    { t:'ペルセポネ装備時のtier3が専用技「アムピトリテ」に変わります。大きな青い槍を3本発射し、着弾地点ごとにドーム状の爆風が広がります(威力アップ・弾速アップ・射程は少し短く・爆風範囲は大きく・消費ガッツ24)', g:['monster','balance','av'] },
     { t:'マルチプレイのマッチング画面と部屋一覧を画面右側のパネルにしました。相手を待っている間も、選んだモンスターがロビーに見えたままになります', g:['multi','general'] },
     { t:'ホストが倒された後の観戦で「次のプレイヤー」ボタンが反応しない不具合を修正しました', g:['multi','fix'] },
     { t:'移動速度が速いモンスターほど位置のズレが大きくなる性質に合わせて、マルチプレイの位置補正を移動速度に応じた幅にしました。飛び飛びに見える動きが出にくくなります', g:['multi','fix'] },
@@ -1387,6 +1404,8 @@ const SSR_SKINS = {
   zeus_ssr:    { element:'god', name:'ゼウス', iconImg:'zeus_ssr', playerImg:'zeus_player_ssr' },
   // ちょこ: ピクシーのオリジナルSSR。ガチャ・SSRカタログにも出る
   choco_ssr:   { element:'pixie', name:'ちょこ', iconImg:'choco_ssr', playerImg:'choco_player_ssr' },
+  // ペルセポネ: イルミネのオリジナルSSR。ガチャ・SSRカタログにも出る
+  persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
