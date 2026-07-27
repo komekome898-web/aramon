@@ -4160,6 +4160,15 @@ function recordTitleBadgesHtml(r){
   if(dt) chips.push(`<span class="rank-title-chip" title="${dt.name}（${titleCondText(dt)}）">${dt.emoji}</span>`);
   return chips.length ? `<span class="rank-titles">${chips.join('')}</span>` : '';
 }
+// マスモン名は長くても「…」で切らず、枠幅に収まるよう文字数に応じて字を小さくする
+const RANK_MM_MAX_PX = 96;   // 名前チップに使える横幅
+function rankMastermonHtml(name){
+  if(!name) return '';
+  const safe = String(name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const chars = String(name).length + 2;   // 『』の2文字ぶんも幅を取る
+  const size = Math.max(7, Math.min(10, Math.floor(RANK_MM_MAX_PX / chars)));
+  return `<span class="rank-mastermon" style="font-size:${size}px">『${safe}』</span>`;
+}
 async function loadRankingList(mode){
   const listEl = document.getElementById('rankingList');
   listEl.innerHTML = '<div class="rank-empty">読み込み中…</div>';
@@ -4183,10 +4192,15 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
     return;
   }
+  // 同じスコアは同じ順位にする(次の順位は人数ぶん飛ぶ = 一般的な競技順位)
+  const scoreOf = (r)=> mode==='mastermonLevel' ? (r.mastermonLevel||0) : (mode==='kills' ? (r.kills||0) : (r.damage||0));
+  let prevScore = null, prevRank = 0;
   listEl.innerHTML = top.map((r,i)=>{
-    const val = mode==='mastermonLevel' ? `Lv.${r.mastermonLevel||0}` : (mode==='kills' ? (r.kills||0) : (r.damage||0));
+    const score = scoreOf(r);
+    const val = mode==='mastermonLevel' ? `Lv.${r.mastermonLevel||0}` : score;
     const nm = (r.name||'名無しのモンスター');
-    const rank = i+1;
+    const rank = (prevScore!==null && score===prevScore) ? prevRank : i+1;
+    prevScore = score; prevRank = rank;
     const crown = RANK_CROWN[rank];
     const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
     // 記録時に装備していたスキンがあればそのアイコンを表示(なければ通常のモンスター画像)
@@ -4197,7 +4211,7 @@ async function loadRankingList(mode){
         ? `<img class="rank-icon" src="${skinUrl}" alt="">`
         : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
     }
-    const mmHtml = r.mastermonName ? `<span class="rank-mastermon">『${r.mastermonName}』</span>` : '';
+    const mmHtml = rankMastermonHtml(r.mastermonName);
     const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r) : '';
     return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
   }).join('');
