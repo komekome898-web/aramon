@@ -26,148 +26,172 @@
 
 <!-- START SCREEN -->
 <div id="startScreen">
+ <div id="topBg"></div>
  <div id="topHeader">
-   <span class="header-side"></span>
+   <span class="header-side header-left">
+     <button id="headerSettingsBtn" class="header-icon-btn" aria-label="設定">⚙️</button>
+     <button id="headerMyPageBtn" class="header-icon-btn" aria-label="マイページ">👤</button>
+     <button id="changelogBtn" class="header-icon-btn has-dot" aria-label="更新履歴">🆕<span id="changelogNewPop" class="changelog-new-pop hidden">new</span></button>
+   </span>
    <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span><span id="headerTitleChip" class="header-title-chip hidden"></span></span>
    <span class="header-wallet header-side"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
  </div>
- <div id="startScreenInner">
-  <div class="title-block">
-    <h1 class="title-main">荒野<span>モン動</span><span id="versionTag"></span></h1>
-    <div class="title-sub">WILD BATTLE ROYALE — TPS PROTOTYPE</div>
-    <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">30</span>体が野生のフィールドへ降下中…</div>
-  </div>
 
-  <!-- オリジナルSSRモンスタースキン宣伝バナー -->
-  <div id="ssrSkinBanner">
-    <div class="ssr-banner-head">✨ オリジナル SSR モンスタースキン ✨</div>
-    <div class="ssr-banner-items">
-      <div class="ssr-banner-item">
-        <div class="ssr-banner-face face-mocchi" role="img" aria-label="ラガモッチー"></div>
-        <div class="ssr-banner-label">
-          <span class="ssr-banner-name">ラガモッチー</span>
-          <span class="ssr-banner-tag">シーズンパス</span>
-        </div>
-      </div>
-      <div class="ssr-banner-item">
-        <div class="ssr-banner-face face-zeus" role="img" aria-label="ゼウス"></div>
-        <div class="ssr-banner-label">
-          <span class="ssr-banner-name">ゼウス</span>
-          <span class="ssr-banner-tag">ガチャ</span>
-        </div>
-      </div>
-    </div>
-  </div>
+ <div id="lobbyLayout">
+   <!-- 左端: シーズン / デイリー / ガチャ / ショップ / バッグ -->
+   <div id="lobbyLeft">
+     <button id="openSeasonBtn" class="lobby-side-btn has-dot">
+       <span class="lobby-side-icon">🎫</span><span class="lobby-side-label">シーズン</span>
+       <span id="seasonDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span>
+     </button>
+     <button id="openDailyBtn" class="lobby-side-btn has-dot">
+       <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">デイリー</span>
+       <span id="dailyDot" class="notif-dot hidden"></span>
+     </button>
+     <button id="openGachaBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
+     </button>
+     <button id="openShopBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🛒</span><span class="lobby-side-label">ショップ</span>
+     </button>
+     <button id="openBagBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🎒</span><span class="lobby-side-label">バッグ</span>
+     </button>
+     <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え) -->
+     <div id="lobbyBanner">
+       <div id="lobbyBannerTrack"></div>
+       <div id="lobbyBannerDots"></div>
+     </div>
+   </div>
 
-  <div id="topInfoBtnRow">
-    <button id="howToPlayBtn">📖 遊び方・ホーム画面への追加方法を見る</button>
-    <button id="changelogBtn" class="has-dot">🆕 更新履歴<span id="changelogNewPop" class="changelog-new-pop hidden">new</span></button>
-  </div>
-  <div id="accountBar">
-    <button id="accountLoginBtn">👤 ログイン / アカウント作成</button>
-    <div id="settingsBtnRow">
-      <button id="audioSettingsBtn">🔊 音量設定</button>
-      <button id="openHudCustomizeBtn">🎛️ 画面カスタマイズ</button>
-    </div>
-    <div id="topActionRow">
-      <button id="openDailyBtn" class="has-dot">🎯 デイリー<span id="dailyDot" class="notif-dot hidden"></span></button>
-      <button id="openSeasonBtn" class="has-dot">🎫 シーズン<span id="seasonDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span></button>
-    </div>
-    <div id="topActionRow2">
-      <button id="openBagBtn">🎒 バッグ</button>
-      <button id="openShopBtn">🛒 ショップ</button>
-      <button id="openGachaBtn">🎰 ガチャ</button>
-    </div>
-  </div>
-  <div id="landscapeHint">📱 横画面プレイ推奨</div>
+   <!-- 中央: タイトル + 選択中モンスターの歩行モーション + モンスター選択ボタン -->
+   <div id="lobbyCenter">
+     <div class="title-block">
+       <h1 class="title-main">荒野<span>モン動</span><span id="versionTag"></span></h1>
+       <div class="title-sub">WILD BATTLE ROYALE</div>
+       <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">30</span>体が野生のフィールドへ降下中…</div>
+     </div>
+     <div id="lobbyMonsterStage">
+       <div id="lobbyMonsterGlow"></div>
+       <img id="lobbyMonsterImg" alt="">
+       <div id="lobbyMonsterEmpty">モンスターを選択してください</div>
+     </div>
+     <div id="lobbyMonsterName"></div>
+     <button id="openMonsterPickBtn">モンスター選択</button>
+     <div id="pickMonsterNotice">上のボタンからマスモンかモンスターを選択してください</div>
+   </div>
 
-  <div class="pick-label">モンスター選択</div>
-  <div class="monster-grid" id="monsterGrid"></div>
-  <div class="grid-note">※各モンスターの状態変化については一番下に記載</div>
-
-  <div class="pick-label" id="playerNameLabel" style="margin-top:16px;">ランキング表示名(任意)</div>
-  <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
-
-  <div class="pick-label" style="margin-top:16px;">マップ</div>
-  <div id="mapTabs">
-    <button class="map-tab active" data-map="random">🎲 ランダム</button>
-    <button class="map-tab" data-map="wild">荒野</button>
-    <button class="map-tab" data-map="kaurea">カウレア火山</button>
-    <button class="map-tab" data-map="papas">パパス雪山</button>
-    <button class="map-tab" data-map="palepale">パレパレジャングル</button>
-    <button class="map-tab" data-map="toble">トーブル海岸</button>
-    <button class="map-tab" data-map="mandy">マンディー砂漠</button>
-  </div>
-
-  <div id="mapPreview">
-    <div id="mapPreviewImage"><span id="mapPreviewIcon">🪨</span></div>
-    <div id="mapPreviewInfo">
-      <div id="mapPreviewName"></div>
-      <div id="mapPreviewDesc"></div>
-    </div>
-  </div>
-
-  <div class="pick-label" style="margin-top:16px;">プレイモード</div>
-  <div id="modeTabs">
-    <button class="mode-tab active" data-mode="solo">1人でプレイ</button>
-    <div class="mode-tab-wrap">
-      <button class="mode-tab" data-mode="multi">みんなと対戦</button>
-      <span class="multi-xp-pop">経験値<br>5倍！</span>
-    </div>
-  </div>
-
-  <div id="invertPitchRow">
-    <span id="invertPitchLabel">視点上下反転</span>
-    <button id="invertPitchToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="invertPitchLabel">
-      <span class="toggle-switch-knob"></span>
-    </button>
-  </div>
-
-  <div id="multiOptions" class="hidden">
-    <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBot・マスモンで補完)</div>
-    <div id="capacityTabs">
-      <button class="cap-tab" data-cap="2">2人</button>
-      <button class="cap-tab active" data-cap="3">3人</button>
-      <button class="cap-tab" data-cap="4">4人</button>
-    </div>
-    <div id="multiActionRow">
-      <button id="createRoomBtn" disabled>部屋を作る</button>
-      <button id="findRoomBtn" disabled>部屋を探す</button>
-    </div>
-  </div>
-
-  <button id="joinBtn" disabled>バトルに参加する</button>
-  <div id="pickMonsterNotice">上のマスモンかモンスター一覧からモンスターを選択してください</div>
-  <button id="titleRankingBtn" style="margin-top:12px; background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); padding:10px 24px; border-radius:6px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; cursor:pointer;">ランキングを見る</button>
-  <button id="titleMyStatsBtn" style="margin-top:10px; background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); padding:10px 24px; border-radius:6px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; cursor:pointer;">マイ記録を見る</button>
-
-  <div class="howto-wrap">
-    <div class="howto-section">
-      <div class="howto-title">操作説明</div>
-      <div class="howto-controls">
-        左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可) ・ DASHまたはSpaceで回避 ・ 技のフィールドをタップで使う段階を切替 ・ 左下スティックを上に2回弾くとオートラン(視点方向へ進み続ける・スティックに触れると解除) ・ 安全圏の外にいるとダメージ
-      </div>
-    </div>
-    <div class="howto-section">
-      <div class="howto-title">オーラ相性</div>
-      <div class="howto-aura">
-        <div class="howto-aura-ring">🔴→🟢→🟡→🔵→🔴（矢印の元が有利）　⚪⇔⚫（相互に有利）</div>
-        <div>モンスターと技はそれぞれ<b>オーラ</b>を持ちます。<b>有利な技</b>を<b>不利なオーラ</b>のモンスターに当てるとダメージ<b>1.5倍</b>、逆に<b>不利な技</b>は<b>0.75倍</b>。技のオーラが自分のオーラと同じなら<b>1.2倍</b>（オーラ一致）。</div>
-        <div>被弾したダメージ数字は、オーラ相性でダメージが<span style="color:#ff5555;font-weight:700">増えているなら赤</span>・<span style="color:#5aa6ff;font-weight:700">減っているなら青</span>で大きく表示されます。</div>
-        <div>オーラは<b>スキン</b>で変わります（<span class="rar-SR">色スキン</span>＝その色 ／ <span class="rar-SSR">SSRスキン</span>＝固定色）。どちらも装備中は<b>tier3技のオーラとエフェクトが装備オーラに変化</b>（一致技になるので1.2倍が乗ります）。<span class="rar-SSR">SSRスキン</span>はさらに<span class="rar-SSR">tier3の技名と威力も変化</span>します。</div>
-      </div>
-    </div>
-    <div class="howto-section">
-      <div class="howto-title">アイテム</div>
-      <div class="howto-items" id="howtoItems"></div>
-    </div>
-    <div class="howto-section">
-      <div class="howto-title">状態変化</div>
-      <div class="howto-states" id="howtoStates"></div>
-    </div>
-  </div>
-  <button id="adminEntryBtn">管理者用</button>
+   <!-- 右: マップ選択 / プレイモード / バトル開始 -->
+   <div id="lobbyRight">
+     <button id="openMapPickBtn" class="lobby-pick-btn">
+       <span class="lobby-pick-label">マップ</span>
+       <span class="lobby-pick-value" id="lobbyMapValue">🎲 ランダム</span>
+     </button>
+     <button id="openModePickBtn" class="lobby-pick-btn">
+       <span class="lobby-pick-label">プレイモード</span>
+       <span class="lobby-pick-value" id="lobbyModeValue">1人でプレイ</span>
+     </button>
+     <button id="joinBtn" disabled>バトル開始</button>
+     <div id="multiActionRow" class="hidden">
+       <button id="createRoomBtn" disabled>部屋を作る</button>
+       <button id="findRoomBtn" disabled>部屋を探す</button>
+     </div>
+   </div>
  </div>
+</div>
+
+<!-- 設定(遊び方・画面カスタマイズ・音量) -->
+<div id="settingsOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-menu-box">
+    <button id="closeSettingsBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">⚙️ 設定</div>
+    <div class="lobby-menu-list">
+      <button id="howToPlayBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📖</span><span class="lobby-menu-text"><b>遊び方説明</b><i>操作・オーラ相性・アイテム・状態変化とホーム画面への追加方法</i></span></button>
+      <button id="openHudCustomizeBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🎛️</span><span class="lobby-menu-text"><b>画面カスタマイズ</b><i>バトル画面のボタン配置とサイズを変える</i></span></button>
+      <button id="audioSettingsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔊</span><span class="lobby-menu-text"><b>音量設定</b><i>BGMと効果音の音量を調整する</i></span></button>
+    </div>
+    <button id="adminEntryBtn">管理者用</button>
+  </div>
+</div>
+
+<!-- マイページ(アカウント・記録) -->
+<div id="myPageOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-menu-box">
+    <button id="closeMyPageBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">👤 マイページ</div>
+    <div class="lobby-menu-list">
+      <button id="accountLoginBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>ログイン / アカウント作成</b><i>記録とマスモンを他の端末でも引き継ぐ</i></span></button>
+      <button id="titleMyStatsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📈</span><span class="lobby-menu-text"><b>マイ記録</b><i>これまでの戦績・称号を見る</i></span></button>
+      <button id="titleRankingBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🏆</span><span class="lobby-menu-text"><b>ランキング</b><i>他のプレイヤーの記録を見る</i></span></button>
+    </div>
+    <div class="lobby-menu-field">
+      <div class="pick-label" id="playerNameLabel">ランキング表示名(任意)</div>
+      <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
+    </div>
+  </div>
+</div>
+
+<!-- モンスター選択の分岐(マスモン / モンスター一覧) -->
+<div id="monsterPickOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-menu-box">
+    <button id="closeMonsterPickBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">モンスター選択</div>
+    <div class="monster-grid" id="monsterGrid"></div>
+    <div class="grid-note">※各モンスターの詳しいデータは、それぞれの選択画面で見られます</div>
+  </div>
+</div>
+
+<!-- マップ選択 -->
+<div id="mapPickOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-wide-box">
+    <button id="closeMapPickBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">🗺️ マップ選択</div>
+      <div id="mapTabs">
+        <button class="map-tab active" data-map="random">🎲 ランダム</button>
+        <button class="map-tab" data-map="wild">荒野</button>
+        <button class="map-tab" data-map="kaurea">カウレア火山</button>
+        <button class="map-tab" data-map="papas">パパス雪山</button>
+        <button class="map-tab" data-map="palepale">パレパレジャングル</button>
+        <button class="map-tab" data-map="toble">トーブル海岸</button>
+        <button class="map-tab" data-map="mandy">マンディー砂漠</button>
+      </div>
+      <div id="mapPreview">
+        <div id="mapPreviewImage"><span id="mapPreviewIcon">🪨</span></div>
+        <div id="mapPreviewInfo">
+          <div id="mapPreviewName"></div>
+          <div id="mapPreviewDesc"></div>
+        </div>
+      </div>
+  </div>
+</div>
+
+<!-- プレイモード選択 -->
+<div id="modePickOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-wide-box">
+    <button id="closeModePickBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">🎮 プレイモード</div>
+      <div id="modeTabs">
+        <button class="mode-tab active" data-mode="solo">1人でプレイ</button>
+        <div class="mode-tab-wrap">
+          <button class="mode-tab" data-mode="multi">みんなと対戦</button>
+          <span class="multi-xp-pop">経験値<br>5倍！</span>
+        </div>
+      </div>
+      <div id="multiOptions" class="hidden">
+        <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBot・マスモンで補完)</div>
+        <div id="capacityTabs">
+          <button class="cap-tab" data-cap="2">2人</button>
+          <button class="cap-tab active" data-cap="3">3人</button>
+          <button class="cap-tab" data-cap="4">4人</button>
+        </div>
+      </div>
+      <div id="invertPitchRow">
+        <span id="invertPitchLabel">視点上下反転</span>
+        <button id="invertPitchToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="invertPitchLabel">
+          <span class="toggle-switch-knob"></span>
+        </button>
+      </div>
+  </div>
 </div>
 
 <!-- HOW TO PLAY GUIDE -->
@@ -245,6 +269,32 @@
           <div class="guide-legend-item"><span class="guide-legend-num">2</span><span>このメニューの<b>「ホーム画面に追加」</b>をタップすると、次回からホーム画面のアイコンからすぐに起動できます</span></div>
         </div>
       </div>
+    </div>
+
+    <div class="howto-wrap guide-howto-wrap">
+    <div class="howto-section">
+      <div class="howto-title">操作説明</div>
+      <div class="howto-controls">
+        左下スティック / WASDで移動 ・ 画面ドラッグで視点回転 ・ 右下FIREで攻撃(長押しで連射、Fキーでも可) ・ DASHまたはSpaceで回避 ・ 技のフィールドをタップで使う段階を切替 ・ 左下スティックを上に2回弾くとオートラン(視点方向へ進み続ける・スティックに触れると解除) ・ 安全圏の外にいるとダメージ
+      </div>
+    </div>
+    <div class="howto-section">
+      <div class="howto-title">オーラ相性</div>
+      <div class="howto-aura">
+        <div class="howto-aura-ring">🔴→🟢→🟡→🔵→🔴（矢印の元が有利）　⚪⇔⚫（相互に有利）</div>
+        <div>モンスターと技はそれぞれ<b>オーラ</b>を持ちます。<b>有利な技</b>を<b>不利なオーラ</b>のモンスターに当てるとダメージ<b>1.5倍</b>、逆に<b>不利な技</b>は<b>0.75倍</b>。技のオーラが自分のオーラと同じなら<b>1.2倍</b>（オーラ一致）。</div>
+        <div>被弾したダメージ数字は、オーラ相性でダメージが<span style="color:#ff5555;font-weight:700">増えているなら赤</span>・<span style="color:#5aa6ff;font-weight:700">減っているなら青</span>で大きく表示されます。</div>
+        <div>オーラは<b>スキン</b>で変わります（<span class="rar-SR">色スキン</span>＝その色 ／ <span class="rar-SSR">SSRスキン</span>＝固定色）。どちらも装備中は<b>tier3技のオーラとエフェクトが装備オーラに変化</b>（一致技になるので1.2倍が乗ります）。<span class="rar-SSR">SSRスキン</span>はさらに<span class="rar-SSR">tier3の技名と威力も変化</span>します。</div>
+      </div>
+    </div>
+    <div class="howto-section">
+      <div class="howto-title">アイテム</div>
+      <div class="howto-items" id="howtoItems"></div>
+    </div>
+    <div class="howto-section">
+      <div class="howto-title">状態変化</div>
+      <div class="howto-states" id="howtoStates"></div>
+    </div>
     </div>
 
   </div>
@@ -425,7 +475,7 @@
       <div id="mmDots"></div>
       <div class="ml-foot-row">
         <button class="ml-nav" id="mmPrevBtn" aria-label="前のマスモン">‹</button>
-        <div id="mlCounter"><span id="mmCounterNow">1</span><span class="ml-counter-sep">/</span><span id="mmCounterAll">0</span></div>
+        <div class="ml-counter"><span id="mmCounterNow">1</span><span class="ml-counter-sep">/</span><span id="mmCounterAll">0</span></div>
         <button class="ml-nav" id="mmNextBtn" aria-label="次のマスモン">›</button>
       </div>
     </div>
@@ -463,7 +513,7 @@
       <div id="mlDots"></div>
       <div class="ml-foot-row">
         <button class="ml-nav" id="mlPrevBtn" aria-label="前のモンスター">‹</button>
-        <div id="mlCounter"><span id="mlCounterNow">1</span><span class="ml-counter-sep">/</span><span id="mlCounterAll">15</span></div>
+        <div class="ml-counter"><span id="mlCounterNow">1</span><span class="ml-counter-sep">/</span><span id="mlCounterAll">15</span></div>
         <button class="ml-nav" id="mlNextBtn" aria-label="次のモンスター">›</button>
       </div>
     </div>

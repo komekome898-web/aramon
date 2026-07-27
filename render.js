@@ -153,6 +153,26 @@ function skinnedPlayerDataUrl(skinId){
 // DOM用: skinId の歩行8コマを dataURL 配列で返す(キャッシュ)。view: 'front'|'back'
 // スキンプレビューで歩行モーションを再生するために使う。歩行コマが未用意/未ロードなら null
 // (呼び出し側は従来の静止画にフォールバックする)。
+// 指定モンスターの歩行コマをdataURL配列で返す。スキン未装備なら素のコマを使う。
+// 未ロード/歩行コマ未対応なら null(呼び側は静止画にフォールバックする)
+function monsterWalkFrameDataUrls(elementKey, skinId, view){
+  if(skinId) return skinWalkFrameDataUrls(skinId, view);
+  if(typeof WALK_ANIM==='undefined') return null;
+  const reg = WALK_ANIM[elementKey];
+  const set = reg && reg.base;
+  const frames = (view==='back') ? (set && set.back) : (set && set.front);
+  if(!frames || !_framesReady(frames)) return null;
+  const key = `W:base:${elementKey}:${view}`;
+  if(_skinDataUrlCache[key]) return _skinDataUrlCache[key];
+  const urls = frames.map(img=>{
+    const c = document.createElement('canvas');
+    c.width = _imgW(img); c.height = _imgH(img);
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c.toDataURL('image/png');
+  });
+  _skinDataUrlCache[key] = urls;
+  return urls;
+}
 function skinWalkFrameDataUrls(skinId, view){
   if(!skinId || typeof WALK_ANIM==='undefined') return null;
   const m = (typeof skinMeta==='function') ? skinMeta(skinId) : null;
@@ -2589,7 +2609,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#startScreen') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
+  if(e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });
