@@ -38,6 +38,106 @@
   .hidden{display:none !important;}
 
   /* ---------- START SCREEN ---------- */
+  /* ===== タイトル画面(起動直後) =====
+     ロゴが画面左下の外からスライドインし、着地後にキラッと光沢が走る。
+     読み込みが終わると中央に半透明の「TAP START」が点滅し、タップでロビーへ。 */
+  #titleScreen{
+    position:absolute; inset:0; z-index:60; overflow:hidden; cursor:pointer;
+    background:#04060a;
+    transition:opacity .45s ease;
+  }
+  #titleScreen.fading{ opacity:0; pointer-events:none; }
+  #titleBg{
+    position:absolute; inset:0; background:url("title_bg.jpg") center/cover no-repeat;
+    animation:titleBgDrift 18s ease-in-out infinite alternate;
+  }
+  /* ゆっくり寄っていく“生きている”感じの動き */
+  @keyframes titleBgDrift{ from{ transform:scale(1.06) translate3d(0,0,0); } to{ transform:scale(1.14) translate3d(-1.5%,-1%,0); } }
+  #titleVignette{
+    position:absolute; inset:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse at 50% 45%, transparent 30%, rgba(4,6,10,0.55) 100%),
+      linear-gradient(180deg, rgba(4,6,10,0.55) 0%, transparent 25%, transparent 55%, rgba(4,6,10,0.85) 100%);
+  }
+  /* ---- ロゴ(左下からスライドイン → 光沢) ---- */
+  #titleLogoWrap{
+    position:absolute; left:calc(4 * var(--vw)); bottom:calc(9 * var(--vh)); z-index:2;
+    width:min(calc(56 * var(--vw)), 460px);
+    animation:titleLogoIn 1.05s cubic-bezier(.16,.9,.24,1) .25s both;
+    filter:drop-shadow(0 6px 18px rgba(0,0,0,0.85));
+  }
+  #titleLogo{ display:block; width:100%; height:auto; }
+  @keyframes titleLogoIn{
+    from{ opacity:0; transform:translate3d(-60%, 55%, 0) scale(0.82) rotate(-4deg); }
+    60%{  opacity:1; }
+    to{   opacity:1; transform:translate3d(0,0,0) scale(1) rotate(0deg); }
+  }
+  /* ロゴの形に沿って光沢を走らせる(ロゴ画像をマスクにする)。
+     要素自体をtransformで動かすとマスクも一緒に動いてロゴの形が別の位置に出てしまうので、
+     要素は固定したまま background-position だけを動かす */
+  #titleLogoShine{
+    position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.9) 50%, transparent 60%);
+    background-size:300% 100%; background-repeat:no-repeat;
+    -webkit-mask:url("title_logo.png") no-repeat center/100% 100%;
+    mask:url("title_logo.png") no-repeat center/100% 100%;
+    opacity:0;
+    animation:titleShine 2.8s ease-in-out 1.3s infinite;
+  }
+  @keyframes titleShine{
+    0%{   opacity:0; background-position:-160% 0; }
+    10%{  opacity:1; }
+    40%{  opacity:1; background-position:260% 0; }
+    41%,100%{ opacity:0; background-position:260% 0; }
+  }
+  #titleSub{
+    position:absolute; left:calc(4.6 * var(--vw)); bottom:calc(5.4 * var(--vh)); z-index:2;
+    font-family:'Russo One',sans-serif; letter-spacing:calc(0.6 * var(--vw));
+    font-size:clamp(9px, calc(2.6 * var(--vh)), 14px); color:rgba(255,232,170,0.85);
+    text-shadow:0 2px 8px rgba(0,0,0,0.9);
+    animation:titleSubIn .6s ease-out 1.15s both;
+  }
+  @keyframes titleSubIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+  /* ---- 読み込み表示(ロゴのアニメ中に進む) ---- */
+  /* ロゴ(左下)と重ならないよう、読み込み表示は右下に置く */
+  #titleLoading{
+    position:absolute; right:calc(3 * var(--vw)); bottom:calc(4.5 * var(--vh)); z-index:3;
+    display:flex; flex-direction:column; align-items:flex-end; gap:5px;
+    transition:opacity .3s ease;
+  }
+  #titleLoading.hidden{ display:none !important; }
+  #titleLoadingBar{
+    width:min(calc(38 * var(--vw)), 240px); height:4px; border-radius:2px; overflow:hidden;
+    background:rgba(255,255,255,0.14); box-shadow:0 0 0 1px rgba(0,0,0,0.5);
+  }
+  #titleLoadingFill{
+    height:100%; width:0%; border-radius:2px;
+    background:linear-gradient(90deg,#ffd76a,#f4c430);
+    box-shadow:0 0 10px -2px rgba(244,196,48,0.9);
+    transition:width .25s ease;
+  }
+  #titleLoadingText{
+    font-family:'Share Tech Mono',monospace; font-size:9.5px; letter-spacing:1.5px;
+    color:rgba(233,230,220,0.7);
+  }
+  /* ---- TAP START(半透明で点滅) ---- */
+  #titleTapStart{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3;
+    font-family:'Russo One',sans-serif; letter-spacing:calc(1.2 * var(--vw));
+    font-size:clamp(16px, calc(5.2 * var(--vh)), 30px); color:#fff;
+    padding:calc(1 * var(--vh)) calc(4 * var(--vw)); border-radius:999px; white-space:nowrap;
+    /* 背景が賑やかなので、文字の後ろをふんわり暗くして読ませる */
+    background:radial-gradient(ellipse at 50% 50%, rgba(4,6,10,0.66), transparent 72%);
+    text-shadow:0 0 18px rgba(244,196,48,0.9), 0 2px 10px rgba(0,0,0,1), 0 0 3px rgba(0,0,0,0.9);
+    animation:titleTapBlink 1.5s ease-in-out infinite;
+  }
+  @keyframes titleTapBlink{ 0%,100%{ opacity:0.22; } 50%{ opacity:0.95; } }
+  #titleVersion{
+    position:absolute; right:calc(2.5 * var(--vw)); bottom:calc(2 * var(--vh)); z-index:3;
+    font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:1px;
+    color:rgba(233,230,220,0.55);
+  }
+
   /* ===== トップ画面(ロビー) =====
      背景画像の上に、左=各種メニュー / 中央=選択中モンスター / 右=出撃 の3カラムを置く。
      スクロールしない1画面レイアウトなので、サイズは全部 --vw/--vh 基準で決める */
@@ -195,11 +295,8 @@
     margin:0; position:relative;
   }
   .title-main span{ color:var(--amber); }
-  #versionTag{
-    position:absolute; right:-2px; bottom:-6px; font-family:'Share Tech Mono',monospace;
-    font-size:11px; letter-spacing:1px; color:var(--ink-dim) !important; text-shadow:none;
-    font-weight:400; opacity:0.9;
-  }
+  /* バージョン表記はタイトル画面の右下に置く(#titleVersion がその枠) */
+  #versionTag{ font-family:'Share Tech Mono',monospace; letter-spacing:1px; }
   .title-sub{
     font-family:'Share Tech Mono', monospace; font-size:12px; letter-spacing:4px;
     color:var(--ink-dim); margin-top:6px;

@@ -25,7 +25,24 @@
 <canvas id="gameCanvas"></canvas>
 
 <!-- START SCREEN -->
-<div id="startScreen">
+<!-- TITLE SCREEN(起動直後。読み込みが終わるとTAP STARTでロビーへ) -->
+<div id="titleScreen">
+  <div id="titleBg"></div>
+  <div id="titleVignette"></div>
+  <div id="titleLogoWrap">
+    <img id="titleLogo" src="title_logo.png" alt="荒野モン動">
+    <div id="titleLogoShine"></div>
+  </div>
+  <div id="titleSub">WILD BATTLE ROYALE</div>
+  <div id="titleLoading">
+    <div id="titleLoadingBar"><div id="titleLoadingFill"></div></div>
+    <div id="titleLoadingText">読み込み中…</div>
+  </div>
+  <div id="titleTapStart" class="hidden">TAP START</div>
+  <div id="titleVersion"><span id="versionTag"></span></div>
+</div>
+
+<div id="startScreen" class="hidden">
  <div id="topBg"></div>
  <div id="topHeader">
    <span class="header-side header-left">
@@ -67,7 +84,7 @@
    <!-- 中央: タイトル + 選択中モンスターの歩行モーション + モンスター選択ボタン -->
    <div id="lobbyCenter">
      <div class="title-block">
-       <h1 class="title-main">荒野<span>モン動</span><span id="versionTag"></span></h1>
+       <h1 class="title-main">荒野<span>モン動</span></h1>
        <div class="title-sub">WILD BATTLE ROYALE</div>
        <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">30</span>体が野生のフィールドへ降下中…</div>
      </div>
