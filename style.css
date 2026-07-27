@@ -193,6 +193,12 @@
     gap:calc(0.6 * var(--vh)); min-width:0; height:100%; overflow:hidden; padding-bottom:6px;
   }
   #lobbyCenter .title-block{ flex:0 0 auto; }
+  /* ロビーのタイトルはタイトル画面と同じロゴ画像を使う */
+  #lobbyCenter .title-main{ line-height:0; text-shadow:none; }
+  #lobbyTitleLogo{
+    display:block; width:min(100%, calc(38 * var(--vw))); height:auto; margin:0 auto;
+    filter:drop-shadow(0 0 14px rgba(244,196,48,0.35)) drop-shadow(0 3px 6px rgba(0,0,0,0.7));
+  }
   #lobbyCenter .title-sub{ font-size:clamp(8px, calc(2.3 * var(--vh)), 12px); }
   #lobbyCenter .lobby-count{ font-size:clamp(9px, calc(2.5 * var(--vh)), 12px); margin-top:2px; }
   #lobbyMonsterStage{

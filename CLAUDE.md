@@ -35,7 +35,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 | `monsters/*.png` | モンスター画像。静止画に加え**歩行アニメ用スプライト** `<prefix>_walk_f1..8.png`(正面8コマ)/`<prefix>_walk_b1..8.png`(後ろ8コマ)。320px・256色透過PNG |
 | `tools/build_walk.py` | **歩行スプライト生成の開発用スクリプト**(ゲームには読み込まれない)。動画→8コマ透過PNG。この環境のffmpeg/PIL/numpy/scipy/opencvで動く。詳細は「バトル歩行アニメーション」節 |
 | `top_bg.jpg` | トップ画面(ロビー)の背景画像。`#topBg`が`cover`で敷く |
-| `title_bg.jpg` / `title_logo.png` | タイトル画面の背景とロゴ。ロゴは背景を透過済み(白背景を縁から連結する成分だけ抜いた) |
+| `title_bg.jpg` / `title_logo.png` | タイトル画面の背景とロゴ。ロゴは背景を透過済み(白背景を縁から連結する成分だけ抜き、文字内部に閉じた白いハイライトは黒で塗った)。**ロビーのタイトル(`#lobbyTitleLogo`)も同じ画像を使う** |
 | `bgm_final5.mp3` / `bgm_lastbattle.mp3` / `bgm_shop.mp3` | 残り5人以下(決戦) / 残り2人(ラストバトル) / ショップのBGM実音源(発注者提供動画の音声を抽出・整音したもの)。`monsters/*.png`同様に実行時読み込みの外部アセット |
 
 ## 重要な設計知識
@@ -55,6 +55,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - ロゴ(`title_logo.png`)は左下の外からスライドイン(`titleLogoIn`)し、着地後に光沢(`titleShine`)がループする。**光沢は要素をtransformで動かしてはいけない。** ロゴ画像をmaskに使っているので要素が動くとマスクも動き、別の位置にロゴの形が浮き出る(実際に出た)。`background-position`だけを動かす。
 - 読み込みは`initTitleScreen()`が待つ: `document.fonts.ready` / タイトル背景・ロゴ・ロビー背景の画像 / `window.load`。**最低`TITLE_MIN_MS`(1.9秒)は必ず見せる**のでロゴのアニメが途中で消えない。完了後に`#titleTapStart`を出す。
 - **タップはユーザー操作なので、ここで`audioInit()`とタイトルBGMを開始する**(iOSは操作なしに音が出せない)。
+- タップSEは内蔵mp3の`titleStart`(`createSeOneShot`。未ロード時は`jakiin`にフォールバック)。
 - `#titleScreen`もスクロールロックの除外リスト3か所に入れる。入れないと`touchend`の`preventDefault`でタップが効かない。
 
 ### トップ画面(ロビー)
