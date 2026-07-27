@@ -88,14 +88,15 @@
        <div class="title-sub">WILD BATTLE ROYALE</div>
        <div class="lobby-count"><span class="dot"></span><span id="lobbyCount">30</span>体が野生のフィールドへ降下中…</div>
      </div>
-     <div id="lobbyMonsterStage">
+     <!-- ステージ自体が「モンスター選択」のボタン(表示中のモンスター/未選択の案内をタップする) -->
+     <button type="button" id="lobbyMonsterStage">
        <div id="lobbyMonsterGlow"></div>
        <img id="lobbyMonsterImg" alt="">
        <div id="lobbyMonsterEmpty">モンスターを選択してください</div>
-     </div>
+     </button>
      <div id="lobbyMonsterName"></div>
-     <button id="openMonsterPickBtn">モンスター選択</button>
-     <div id="pickMonsterNotice">上のボタンからマスモンかモンスターを選択してください</div>
+     <div id="lobbyMonsterTapHint" class="hidden">タップしてモンスター変更</div>
+     <div id="pickMonsterNotice">中央をタップしてマスモンかモンスターを選択してください</div>
    </div>
 
    <!-- 右: マップ選択 / プレイモード / バトル開始 -->

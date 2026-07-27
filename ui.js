@@ -688,7 +688,7 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
   const pairs = [
     ['headerSettingsBtn','settingsOverlay','closeSettingsBtn'],
     ['headerMyPageBtn','myPageOverlay','closeMyPageBtn'],
-    ['openMonsterPickBtn','monsterPickOverlay','closeMonsterPickBtn'],
+    ['lobbyMonsterStage','monsterPickOverlay','closeMonsterPickBtn'],
     ['openMapPickBtn','mapPickOverlay','closeMapPickBtn'],
     ['openModePickBtn','modePickOverlay','closeModePickBtn'],
   ];
@@ -738,17 +738,20 @@ function renderLobbyMonster(){
   const img = document.getElementById('lobbyMonsterImg');
   const empty = document.getElementById('lobbyMonsterEmpty');
   const nameEl = document.getElementById('lobbyMonsterName');
+  const hint = document.getElementById('lobbyMonsterTapHint');
   if(!img) return;
   stopLobbyWalkAnim();
   const key = game.selectedElement;
   if(!key || !ELEMENTS[key]){
     img.classList.add('hidden');
     empty.classList.remove('hidden');
+    if(hint) hint.classList.add('hidden');
     nameEl.textContent = '';
     return;
   }
   empty.classList.add('hidden');
   img.classList.remove('hidden');
+  if(hint) hint.classList.remove('hidden');
 
   // 名前(マスモンなら「マスモン名(種族)Lv.n」)
   const el = ELEMENTS[key];
