@@ -244,6 +244,9 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - BGM: タイトル(牧場)/試合中(残り人数で段階変化 intensity 0〜2)/残り5人以下(intensity 3=決戦)/残り2人(intensity 4=ラストバトル)/ショップ。`bgmSetTrack('title'|'battle'|'shop'|null)`/`bgmUpdateBattleIntensity(aliveCount)`(render.jsのHUD更新から呼ぶ)。ステップシーケンサ`bgmScheduler`が16分音符単位で先読みスケジュール。全ノードは`bgmTrackGain`(切替フェード用)→`bgmGain`(音量=`audioSettings.bgm`)→出力。
 - **intensityを増やしたら`bgmStepDur()`のbpm配列も同じ長さに伸ばすこと。** 配列外だと`undefined`→BPMがNaNになりスケジューラが無限ループ的に進む。`|| 126`のフォールバックも入れてある。
 - **トラック/intensityを追加したら管理者画面のBGM確認(`BGM_TEST_ITEMS`/`adminPlayBgm`)にも足す。** 実機で1タップ確認できるようにしておく。
+- **実音源ループは「常に1曲だけ」を`updateBgmFileLoops()`が保証する。** `bgmFileLoopTarget()`が鳴らすべきループを1つ返し、それ以外は必ず`stop()`する。**トラック名は必ず明示で判定すること**(以前「title/shop以外はすべて試合中」としていたため、トレーニング画面で前の試合の`intensity`が残っていると決戦BGMが重なって鳴った)。新しいトラックを足すときは`bgmFileLoopTarget()`に1行足すだけでよく、重複の心配はいらない。
+- **`bgmSetTrack('title'|'shop'|'training')`は`intensity`を0に戻す**(試合の盛り上がり段階を画面遷移後に持ち越さない)。`null`は試合中の演出でも使うので触らない。
+- **リザルト後にロビー曲へ戻す遅延処理は、その間に決まった行き先を上書きしない**(`bgmDesiredTrack()!==null`なら何もしない)。
 
 #### 実音源を使う例外(合成ではない箇所)
 「全合成」が原則だが、発注者提供の実音を使う箇所がいくつかある。いずれも**外部依存を増やさない/オフラインでも壊さない**方針。

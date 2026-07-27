@@ -2671,7 +2671,13 @@ function showResult(isWin, placement){
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);
   playSe(isWin ? 'fanfare' : 'sad');
-  setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, isWin ? 3800 : 3000);
+  // リザルトSEが鳴り終わったらロビー曲へ。ただしこの3〜4秒の間にマスモン画面などで
+  // 別のトラックが選ばれていたら上書きしない(トレーニングBGMが即座に消える不具合の防止)
+  setTimeout(()=>{
+    if(game.started) return;
+    if(typeof bgmDesiredTrack==='function' && bgmDesiredTrack()!==null) return;
+    bgmSetTrack('title');
+  }, isWin ? 3800 : 3000);
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? '👑 WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
