@@ -78,6 +78,7 @@ iPhoneブラウザ(PWA)向けのTPSバトルロイヤルゲーム。HTML5 Canvas
 - 詳細の左カラムは「カード → このマスモンで参戦 → 編集 / 一覧へ」の3ボタンだけ。**残りの縦幅は全部カードに使う**(`#mmDetailCardSlot{min-height:calc(40 * var(--vh))}`)。
 - 右カラムは`#mastermonDetailPanel`で、`renderMastermonDetail(key)`が「全幅ヘッダー(名前+Lv+タブ名+戻る) → STATUS + 内容」を描く。**ヘッダーはステータスの上まで全幅**(モンスター一覧と同じ位置)。
 - **`mastermonDetailTab`がnullのときが初期画面**で、STATUSの右に`詳細情報 / トレーニング / 着せ替え`の3ボタン(`buildMastermonMenuHtml`)を出す。タブを開くと右上に`← 戻る`が出てnullへ戻る。**技一覧タブは廃止し、内容は詳細情報(`buildMastermonInfoHtml`)に統合した。** 着せ替えタブだけステータス列を出さないのは従来通り。
+- **詳細情報タブの内容は`.mm-subview-content`の1スクロールにまとめてある**(2列+技は全幅の1グリッド)。右端には`attachVisibleScrollbar()`が更新する**自前のスライドバー**を置く。iOSのネイティブスクロールバーはスクロール中しか出ないため、スクロールできることが見て分かるように自前で描いてつまみをドラッグできるようにしている(高さ変化はResizeObserverで追従)。
 - STATUSはモンスター一覧と共用の`caroStatusSecHtml()`。**バーの下に6ステータスの短縮説明を3つ×2行で置く(`STAT_SHORT_DESC`)。** `MASTERMON_STATS`の`desc`は長すぎて折り返すので、この画面用の短い文を別に持っている。
 - `renderMastermonList()`は名前を残したまま中身が「カルーセルのカードを作り直す」に変わっている(改名・トレーニング・着せ替えの後から呼ばれるため)。**登録数が変わったときは`build()`、値だけ変わったときは`refreshCards()`。**
 
