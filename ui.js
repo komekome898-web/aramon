@@ -197,6 +197,11 @@ function createCardCarousel(cfg){
       // 位置は render() がインラインで書くので、クラスの付け替えは中身の作り直しと一緒に行う
       const center = c.classList.contains('is-center');
       c.className = 'ml-card' + (cfg.cardClass ? ' ' + cfg.cardClass(key) : '') + (center ? ' is-center' : '');
+      // 着せ替えでオーラ色(枠・上端ライン・数値の発光)も変わるので、アクセント色も更新する
+      c.style.setProperty('--ml-accent', cfg.accent(key));
+      const art = cfg.art(key);
+      c.style.setProperty('--ml-art-a', art.a);
+      c.style.setProperty('--ml-art-b', art.b);
       c.innerHTML = cfg.cardHtml(key);
     });
   }
@@ -1881,15 +1886,69 @@ function markChangelogSeen(){
   updateChangelogBadge();
 }
 // 更新履歴: 日付降順で「プレイに関わる大きな変更」を表示する
-function renderChangelog(){
+// 選択中のタグ(nullで全件表示)
+let changelogFilterTag = null;
+function changelogItemText(it){ return (typeof it==='string') ? it : (it.t||''); }
+function changelogItemTags(it){ return (typeof it==='string') ? [] : (it.g||[]); }
+// color-mix()は古いiOSで使えないので、透過色はここで作ってCSS変数として渡す
+function changelogTagVars(hex){
+  return `--tg:${hex};--tgb:${caroHexToRgba(hex,0.15)};--tgl:${caroHexToRgba(hex,0.45)}`;
+}
+function changelogTagMeta(id){
+  return (typeof CHANGELOG_TAGS!=='undefined' ? CHANGELOG_TAGS : []).find(t=>t.id===id) || null;
+}
+// タイトル横のタグ一覧。押すとそのタグを含む項目だけに絞り込む(もう一度押すと解除)
+function renderChangelogTags(){
+  const el = document.getElementById('changelogTags');
+  if(!el || typeof CHANGELOG_TAGS==='undefined') return;
+  // 件数も出しておくと、そのタグに何件あるか分かる
+  const count = id => UPDATE_HISTORY.reduce((n,e)=>
+    n + (e.items||[]).filter(it=>changelogItemTags(it).includes(id)).length, 0);
+  el.innerHTML = [
+    `<button class="changelog-tag all ${changelogFilterTag===null?'active':''}" data-tag="">すべて</button>`,
+    ...CHANGELOG_TAGS.map(t=>{
+      const n = count(t.id);
+      if(!n) return '';
+      return `<button class="changelog-tag ${changelogFilterTag===t.id?'active':''}" data-tag="${t.id}" style="${changelogTagVars(t.color)}">${t.label}<span class="changelog-tag-n">${n}</span></button>`;
+    }),
+  ].join('');
+  el.querySelectorAll('.changelog-tag').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.dataset.tag || null;
+      changelogFilterTag = (id && changelogFilterTag===id) ? null : id;
+      renderChangelogTags();
+      renderChangelogList();
+    });
+  });
+}
+function renderChangelogList(){
   const listEl = document.getElementById('changelogList');
   if(!listEl || typeof UPDATE_HISTORY==='undefined') return;
   const entries = [...UPDATE_HISTORY].sort((a,b)=> (a.date<b.date?1:a.date>b.date?-1:0)); // 日付降順
-  listEl.innerHTML = entries.map(e=>`
+  const tagChips = it => changelogItemTags(it).map(id=>{
+    const m = changelogTagMeta(id);
+    return m ? `<span class="changelog-item-tag" style="${changelogTagVars(m.color)}">${m.label}</span>` : '';
+  }).join('');
+  let shown = 0;
+  const html = entries.map(e=>{
+    const items = (e.items||[]).filter(it=>
+      !changelogFilterTag || changelogItemTags(it).includes(changelogFilterTag));
+    if(!items.length) return '';       // その日に該当が無ければ日付ごと出さない
+    shown += items.length;
+    return `
     <div class="changelog-entry">
       <div class="changelog-date">${e.date}</div>
-      <ul class="changelog-items">${(e.items||[]).map(it=>`<li>${it}</li>`).join('')}</ul>
-    </div>`).join('');
+      <ul class="changelog-items">${items.map(it=>
+        `<li>${changelogItemText(it)}<span class="changelog-item-tags">${tagChips(it)}</span></li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+  listEl.innerHTML = shown ? html : '<div class="changelog-empty">該当する更新はありません</div>';
+  listEl.scrollTop = 0;
+  attachVisibleScrollbar(listEl, listEl.parentElement.querySelector('.mm-scrollbar'));
+}
+function renderChangelog(){
+  renderChangelogTags();
+  renderChangelogList();
 }
 document.getElementById('changelogBtn').addEventListener('click', ()=>{
   renderChangelog();
@@ -3150,13 +3209,21 @@ function attachVisibleScrollbar(el, bar){
 }
 
 // メニュー(初期画面): ステータスの右に並べる3ボタン
+const MM_MENU_ITEMS = [
+  { tab:'info',     icon:'📊', label:'詳細情報',     desc:'ステ倍率・特性・状態変化・技の詳しいデータを見る' },
+  { tab:'training', icon:'💪', label:'トレーニング', desc:'チケットを使ってステータスを上げる' },
+  { tab:'dressup',  icon:'👕', label:'着せ替え',     desc:'スキンを変更し見た目とオーラを変える' },
+];
 function buildMastermonMenuHtml(){
   return `
-    <div class="mm-menu-list">
-      <button class="mm-menu-btn" data-tab="info"><span class="mm-menu-btn-icon">📊</span>詳細情報</button>
-      <button class="mm-menu-btn" data-tab="training"><span class="mm-menu-btn-icon">💪</span>トレーニング</button>
-      <button class="mm-menu-btn" data-tab="dressup"><span class="mm-menu-btn-icon">👕</span>着せ替え</button>
-    </div>`;
+    <div class="mm-menu-list">${MM_MENU_ITEMS.map(m=>`
+      <button class="mm-menu-btn" data-tab="${m.tab}">
+        <span class="mm-menu-btn-icon">${m.icon}</span>
+        <span class="mm-menu-btn-text">
+          <span class="mm-menu-btn-label">${m.label}</span>
+          <span class="mm-menu-btn-desc">${m.desc}</span>
+        </span>
+      </button>`).join('')}</div>`;
 }
 
 function openMastermonScreen(fromResult){
@@ -3370,7 +3437,8 @@ function renderMastermonDetail(key){
     const confirmBtn = document.getElementById('mmSkinConfirmBtn');
     if(confirmBtn) confirmBtn.addEventListener('click', ()=>{
       setEquippedSkin(key, mastermonPreviewSkin || null);
-      renderMastermonList();
+      renderMastermonList();       // 一覧のカード(画像・オーラ色・光沢)を作り直す
+      renderMastermonCard(key);    // 詳細の大きいカードも同時に差し替える
       renderSelectorCards();
       renderMastermonDetail(key);
       pushToast(mastermonPreviewSkin ? 'スキンを着せ替えました' : 'デフォルトに戻しました');
