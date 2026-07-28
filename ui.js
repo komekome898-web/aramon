@@ -714,10 +714,11 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
 function updateLobbyPickLabels(){
   const mapEl = document.getElementById('lobbyMapValue');
   if(mapEl){
-    if(game.selectedMap==='random') mapEl.textContent = '🎲 ランダム';
+    const realTag = game.realMapMode ? '⛰️リアル ' : '';
+    if(game.selectedMap==='random') mapEl.textContent = realTag+'🎲 ランダム';
     else {
       const m = MAPS[game.selectedMap] || MAPS.wild;
-      mapEl.textContent = `${m.previewIcon||'🗺️'} ${m.label}`;
+      mapEl.textContent = `${realTag}${m.previewIcon||'🗺️'} ${m.label}`;
     }
   }
   const modeEl = document.getElementById('lobbyModeValue');
@@ -2293,11 +2294,23 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
 // 初期化に失敗した端末では自動的に従来の2D地面に戻る(render.js側で判定)
 function applyReal3DLayer(){
   if(!window.__aramonReal3D) return;
+  // マップごとの見た目(空・霞・地面の色・遠景の山)をWebGL側へ渡してから有効化する
+  window.__aramonRealTheme = (currentMap && currentMap.real3dTheme && REAL3D_THEMES[currentMap.real3dTheme])
+    ? REAL3D_THEMES[currentMap.real3dTheme] : null;
   window.__aramonReal3D.setActive(!!(currentMap && currentMap.real3d));
 }
+/* マップ選択は「通常マップのキー」+「リアル切替(game.realMapMode)」で持つ。
+   実際に使うマップキーはここで組み立てる(リアル版は <キー>_real)。 */
+function mapKeyForMode(baseKey){
+  const k = game.realMapMode ? baseKey+REAL_MAP_SUFFIX : baseKey;
+  return MAPS[k] ? k : (MAPS[baseKey] ? baseKey : 'wild');
+}
 function resolveMapKey(){
-  if(game.selectedMap && game.selectedMap!=='random' && MAPS[game.selectedMap]) return game.selectedMap;
-  const keys = Object.keys(MAPS).filter(k=>!MAPS[k].testOnly);  // テスト用マップは抽選対象外
+  if(game.selectedMap && game.selectedMap!=='random') return mapKeyForMode(game.selectedMap);
+  // ランダムは、いま選んでいる側(通常/リアル)の中から選ぶ
+  const wantReal = !!game.realMapMode;
+  const keys = Object.keys(MAPS).filter(k=>!MAPS[k].testOnly && !!MAPS[k].real3d===wantReal);
+  if(!keys.length) return 'wild';
   return keys[Math.floor(Math.random()*keys.length)];
 }
 function updateMapPreview(){
@@ -2309,28 +2322,46 @@ function updateMapPreview(){
   if(game.selectedMap==='random'){
     imgEl.style.background = 'linear-gradient(135deg, #4a3a6a, #1a1030)';
     iconEl.textContent = '🎲';
-    nameEl.textContent = 'ランダム';
-    descEl.textContent = '全てのマップからランダムで選ばれる。ドキドキ';
+    nameEl.textContent = game.realMapMode ? 'ランダム(リアル)' : 'ランダム';
+    descEl.textContent = game.realMapMode
+      ? 'リアルマップの中からランダムで選ばれる。報酬2倍'
+      : '全てのマップからランダムで選ばれる。ドキドキ';
     return;
   }
-  const map = MAPS[game.selectedMap] || MAPS.wild;
+  const map = MAPS[mapKeyForMode(game.selectedMap)] || MAPS.wild;
   const colors = map.previewColors || [map.groundColor||'#333', map.groundColor||'#111'];
   imgEl.style.background = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
   iconEl.textContent = map.previewIcon || '🗺️';
   nameEl.textContent = map.label;
   descEl.textContent = map.desc || '';
 }
+// 通常/リアルの切替。選んでいるマップはそのままで、地形の種類だけ入れ替える
+function setRealMapMode(on){
+  game.realMapMode = !!on;
+  document.querySelectorAll('#mapModeToggle .map-mode-btn').forEach(b=>{
+    b.classList.toggle('active', (b.dataset.mode==='real') === game.realMapMode);
+  });
+  const note = document.getElementById('mapModeNote');
+  if(note) note.textContent = game.realMapMode
+    ? '地面が立体になった上級者向けマップ。獲得ゴールド・ダイヤが2倍になります'
+    : '従来のマップ。地面は平らです';
+  updateMapPreview();
+  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+}
+document.querySelectorAll('#mapModeToggle .map-mode-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=> setRealMapMode(btn.dataset.mode==='real'));
+});
 document.querySelectorAll('.map-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.map-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     const key = tab.dataset.map;
-    game.selectedMap = (key==='random' || MAPS[key]) ? key : 'wild';
+    game.selectedMap = (key==='random' || MAPS[key]) ? key : 'wild';   // 通常マップのキーで保持し、リアルかどうかはトグルで決める
     updateMapPreview();
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   });
 });
-updateMapPreview();
+setRealMapMode(false);   // 起動時は通常マップ
 document.querySelectorAll('.cap-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
@@ -2787,8 +2818,8 @@ function startShootingRange(){
   joyKnobEl.style.transform='translate(0,0)';
 
   game.trainingRange = true;
-  game.activeMapKey = 'real3d';
-  currentMap = MAPS.real3d;
+  game.activeMapKey = 'wild'+REAL_MAP_SUFFIX;      // 訓練場は荒野のリアル版で固定
+  currentMap = MAPS[game.activeMapKey] || MAPS.wild;
   applyStartPitchForMap();
   applyReal3DLayer();
   applyWorldScale(RANGE_WORLD_SCALE);
@@ -2936,8 +2967,10 @@ function showResult(isWin, placement){
   // ゴールド/ダイヤ報酬(経験値と一緒に入手。game.overガードにより1試合1回だけ)
   {
     const isMultiMatch = netState.mode==='multi';
-    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1));
-    const diaGain = DIA_MATCH_BASE + (isWin?DIA_CHAMPION_BONUS:0);
+    // リアルマップは上級者向けなので獲得報酬2倍
+    const realMult = (currentMap && currentMap.real3d) ? REAL_MAP_REWARD_MULT : 1;
+    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1) * realMult);
+    const diaGain = (DIA_MATCH_BASE + (isWin?DIA_CHAMPION_BONUS:0)) * realMult;
     addWallet(goldGain, diaGain);
     document.getElementById('resultCurrencyLine').textContent = `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
     updateAccountBar();

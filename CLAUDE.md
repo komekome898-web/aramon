@@ -8,7 +8,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 1. **コミットのたびに `sw.js` の `CACHE_NAME` を1つ上げる**(例 `aramon-cache-v335` → `v336`)。上げないと古いキャッシュが残る。例外: ドキュメントのみの変更。
 2. **本番公開まで自動で完了させる。** 作業ブランチへpush後、確認なしでmainへPR作成→マージ。GitHub Actions「pages build and deployment」の成功を確認してから完了報告する(発注者合意済み)。
 3. **ビルドツール・npm・フレームワークを導入しない。** 素のJS/CSS/HTMLを維持。
-   **例外(発注者判断・2026-07-28)**: 「リアルマップ(テスト)」のみThree.jsを使う。`vendor/three.module.min.js`を同梱するだけで、package.jsonもnode_modulesもビルド手順も無い。**この例外を他機能へ広げない。**
+   **例外(発注者判断・2026-07-28)**: 「リアルマップ」のみThree.jsを使う。`vendor/three.module.min.js`を同梱するだけで、package.jsonもnode_modulesもビルド手順も無い。**この例外を他機能へ広げない。**
 4. **モジュール分割構成を維持する。** 新機能も既存の担当ファイルに追記。1ファイルに戻さない。
 5. **動作する実用的な解を優先。** 指示のない大規模リファクタはしない。
 6. **プレイに関わる大きな変更をしたら `data.js` の `UPDATE_HISTORY` に1行追記する。** 形式は `{ t:'本文', g:['タグid',…] }`、タグは`CHANGELOG_TAGS`(全般/新要素/モンスター/バランス/ソロ/マルチ/不具合/演出・音)から必要なだけ。対象=新機能・仕様/バランス変更などプレイに影響するもの。対象外=レイアウト・見た目・軽微なバグ修正・内部リファクタ・ドキュメント。日付は降順、文言は技術用語を避けた簡潔な日本語。複数の大きな変更は複数行に分ける。
@@ -91,7 +91,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 ### 射撃訓練場
 - ロビー右上の「射撃訓練場へ」(`#openRangeBtn`。バトル開始と同じくモンスター未選択では押せない)から`startShootingRange()`。
 - **通常の試合と同じ初期化を通し、分岐は`game.trainingRange`1つだけ**にしてある(安置を止める/的の復活/アイテム再出現/勝敗なし)。触る場所は`update()`・`checkWin()`・`updateLootPickups()`・`drawZoneRings`系。
-- マップは`real3d`固定・`applyWorldScale(RANGE_WORLD_SCALE)`で狭くする。**安置は`zoneState.radius`をワールドより大きくして無効化する**(圏外のアイテムは消えてしまうため)。
+- マップは`wild_real`固定・`applyWorldScale(RANGE_WORLD_SCALE)`で狭くする。**安置は`zoneState.radius`をワールドより大きくして無効化する**(圏外のアイテムは消えてしまうため)。
 - 的は`isTargetBot`。`updateTargetBotAI()`が2点間を往復させるだけで攻撃しない。倒すと`updateTrainingRange()`が数秒後に元の位置へ復活させる。射線上の岩は生成後に取り除く。
 - アイテムは`rangeRespawn:true`。拾っても消さず`respawnAt`まで隠すだけ(描画側も`respawnAt`を見る)。
 - モンスター切替はロビーと同じ`monsterPickOverlay`を開く。**選択画面を閉じたときの戻り先は`game.trainingRange`で分岐**(ロビーを出さずに訓練場へ戻り、`rangeApplyMonsterChange()`でその場で作り直す)。
@@ -123,20 +123,25 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **地面に貼り付く円は画面上で楕円を決め打ちしない。** `groundCirclePoints()`でワールド円周をサンプルし1点ずつ投影して多角形で描く。**このカメラの地面円の扁平率は約0.165**で、`ry=rx*0.5`のような固定比だと3倍近く縦に伸びて浮いて見える。立体物の高さも`project(x,y,高さ)`で求める。
 - **地面に接する物は`projectGround(x,y)`で投影する**(`groundZAt()`は他マップで0を返すので見た目不変)。エンティティに紐づく地面描画(召喚円盤石・降下ビーム)は`e.z`を使う。
 
-## リアルマップ(テスト): WebGL地形(real3d.js)
+## リアルマップ: WebGL地形(real3d.js)
 
+- **通常6マップそれぞれにリアル版がある**(`wild_real`等)。中身(岩・山・水・溶岩・アイテム)は通常版と同じで、違うのは地面が立体になることだけ。**`MAPS`の各マップから`data.js`末尾の`Object.keys(MAPS).forEach`が自動生成する**ので、マップを足せばリアル版も自動で増える。
+- 選択は「通常マップのキー(`game.selectedMap`)+ リアル切替(`game.realMapMode`)」。実キーは`mapKeyForMode()`が組み立て、ランダムは同じ側からだけ抽選する(`resolveMapKey()`)。**マップのキーをそのまま保存しない。**
+- **リアルマップは報酬2倍**(`REAL_MAP_REWARD_MULT`。`showResult`のゴールド/ダイヤに掛ける)。
+- 地形の形は`REAL3D_TERRAIN_SETS`からマップごとに選ぶ(`real3dTerrain`)。見た目(空・霞・地面の色・遠景の山・テクスチャの作り方)は`REAL3D_THEMES`(`real3dTheme`)。**色を足すときはreal3d.jsの`DEFAULT_THEME`にも足す。**
+- テーマの反映は`applyReal3DLayer()`が`window.__aramonRealTheme`に入れ、real3d.jsの`setActive()`→`applyTheme()`が空・霞・頂点色・テクスチャ・遠景の山を差し替える(地形メッシュは使い回し)。
 - **地面だけWebGLで描き、モンスター・弾・エフェクト・HUDは従来の2Dキャンバスが上に重なる**(`#glCanvas` z:0 / `#gameCanvas` z:1)。この分担なので既存描画を書き換えずに済んでいる。
 - **2Dの`project()`と3Dカメラを完全に一致させてある**(`FOV_V`=64° / `camPos` / `camState.yaw,pitch`)。**`FOV_V`や`CAM_*`を変えたらreal3d.js側も合わせる。** 丘による遮蔽は2D側に無い(割り切り)。
 - **高さは`data.js`の`real3dHeightAt(x,y)`。純関数なのでホスト/ゲストで自動一致**し、当たり判定(`world.js`の`getTerrainHeightAt`)も同じ関数を使う。
-- **`REAL3D_TERRAIN`の最大傾斜は0.3程度まで。** ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
+- **各`REAL3D_TERRAIN_SETS`の最大傾斜は0.3程度まで**(`Σ(amp×freq)/2`)。 ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
 - **岩・水晶の「登っているからすり抜ける」判定は`baseTerrainHeightAt`基準**(絶対値`m.z>25`だと起伏だけですり抜ける)。
-- **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を`REAL3D_TERRAIN`に足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
+- **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を地形セットに足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
 - 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。細かい粒立ちは`buildDetailBumpTexture()`の`bumpMap`(Phongの弱い反射つき)。**色・凹凸の2枚とも`offset`をパッチ位置に合わせる**(片方だけだと模様が滑る)。
 - **テクスチャ生成は試合開始時に1回だけ走る同期処理。** オクターブ数やサイズを上げると実機の待ち時間に直結する(色512px/凹凸128pxが上限の目安)。
 - 遠景の山は`RIDGE_LAYERS`(距離の違う3枚)を縦にも分割して高度で色を変える(麓=霞/中腹=岩/頂上=雪)。**奥の層から順に頂点を積む**(空も山も深度を書かないので、手前を後に描かないと消される)。描画順は`renderOrder`(空-2 / 山-1)で固定。
 - 岩は2Dのまま`drawRealisticRock()`(render.js)で描く。光の向き`REAL_ROCK_SUN`はreal3d.jsの`SUN_DIR`と同じ値。**3Dへ移すと2Dのモンスターが必ず手前に描かれ、岩に隠れなくなる。**
 - ESモジュールなので`window.__aramonReal3D`(`setActive`/`render`/`resize`)経由。WebGL初期化失敗時は`render()`がfalseを返し2D地面にフォールバックする。
-- テストマップは`MAPS`に`testOnly:true`を付けて「ランダム」抽選から外している(`resolveMapKey()`)。
+- **地面に立つ大きな物(火山・雪山・森・ピラミッド)の頂点は`groundZAt()+高さ`で投影する**(底面は`projectGround`)。通常マップでは`groundZAt`が0なので見た目は変わらない。
 
 ### リアルマップの弾道(上下のねらい)
 - **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も一切変わらない。
