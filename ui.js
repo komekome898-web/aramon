@@ -2612,6 +2612,7 @@ function startGame(){
   joyKnobEl.style.transform='translate(0,0)';
   game.activeMapKey = resolveMapKey();   // 'ランダム'選択時はここで実マップを確定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
+  applyStartPitchForMap();   // マップが決まってから視点の初期角度を決める
   applyReal3DLayer();
   applyWorldScale(1);
   initZone();

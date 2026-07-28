@@ -31,6 +31,72 @@ function lockMoveFacing(attacker, angle, duration){
   attacker.moveFacingAngle = angle;
   attacker.moveFacingUntil = matchTime + Math.max(0, duration);
 }
+/* =====================================================================
+   リアルマップ(テスト)専用: 弾の上下方向(高低差のねらい)
+
+   通常マップでは isReal3dMap() が false になり、下の関数はすべて 0 /
+   従来と同じ値を返すので、既存マップの弾道・当たり判定は一切変わらない。
+   リアルマップでは「画面中心のレティクルが指している地点」へ向けて弾を飛ばし、
+   地形にぶつかったらそこで着弾する。
+   ===================================================================== */
+const AIM_MUZZLE_Z      = 34;   // 弾が出る高さ(足元から)。0だと足元の起伏で即着弾してしまう
+const AIM_TARGET_BODY_Z = 40;   // bot・遠隔プレイヤーがねらう相手の高さ(胴のあたり)
+const AIM_SLOPE_LIMIT   = 1.6;  // 上下の傾きの上限(約58度)
+const AIM_RAY_STEP      = 26;   // レティクルの先の地面を探すときの刻み幅
+const PROJ_OVERHEAD_MISS  = 95; // 相手の頭上をこれ以上越えて飛ぶ弾は当たらない
+const PROJ_UNDERFOOT_MISS = 50; // 相手の足元をこれ以上下で通る弾も当たらない
+const REAL3D_UPWARD_BLOCK_THRESHOLD = 400; // 上下にねらえるので「高い所は撃てない」制限をゆるめる
+function isReal3dMap(){ return !!(currentMap && currentMap.real3d); }
+// 「自分より高い所にいる相手は撃てない」しきい値。リアルマップだけ丘の分をゆるめる
+function upwardBlockLimit(){ return isReal3dMap() ? REAL3D_UPWARD_BLOCK_THRESHOLD : UPWARD_BLOCK_THRESHOLD; }
+function projectileMuzzleZ(a){ return (a.z||0) + (isReal3dMap() ? AIM_MUZZLE_Z : 0); }
+// 弾と相手の高さが合っているか。上下にねらえる弾(リアルマップ)だけ上下両方向で判定し、
+// 通常マップは従来どおり「相手が自分より大きく上にいるか」だけを見る(挙動そのまま)
+function projHeightHits(p, e){
+  if(!p.terrain3d) return !(e.z - p.z > UPWARD_BLOCK_THRESHOLD);
+  return (p.z - e.z <= PROJ_OVERHEAD_MISS) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
+}
+function terrainZAt(x,y){ return (typeof getTerrainHeightAt==='function') ? getTerrainHeightAt(x,y) : 0; }
+// 画面中心(レティクル)から伸ばした視線が地形に当たる点を探し、そこへ向かう弾の傾きを返す
+function cameraAimSlope(attacker, maxRange){
+  const cosP = Math.max(0.2, Math.cos(camState.pitch)), sinP = Math.sin(camState.pitch);
+  const dx = Math.cos(camState.yaw)*Math.cos(camState.pitch);
+  const dy = Math.sin(camState.yaw)*Math.cos(camState.pitch);
+  const dz = -sinP;
+  const t0 = camState.distBehind / cosP;              // カメラは後ろにあるので自分の足元あたりから探す
+  const tEnd = t0 + Math.max(200, maxRange||600) / cosP;
+  let hitT = null, prevT = t0;
+  for(let t=t0+AIM_RAY_STEP; t<=tEnd; t+=AIM_RAY_STEP){
+    if(camPos.z + dz*t <= terrainZAt(camPos.x+dx*t, camPos.y+dy*t)){ hitT = t; break; }
+    prevT = t;
+  }
+  let t = tEnd;
+  if(hitT!=null){
+    let lo = prevT, hi = hitT;                        // 二分探索で接地点を詰める
+    for(let i=0;i<5;i++){
+      const mid = (lo+hi)/2;
+      if(camPos.z + dz*mid <= terrainZAt(camPos.x+dx*mid, camPos.y+dy*mid)) hi = mid; else lo = mid;
+    }
+    t = hi;
+  }
+  const tx = camPos.x+dx*t, ty = camPos.y+dy*t, tz = camPos.z+dz*t;
+  const hDist = Math.hypot(tx-attacker.x, ty-attacker.y);
+  return clamp((tz - projectileMuzzleZ(attacker)) / Math.max(40, hDist), -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+}
+// bot: 相手の胴をねらう
+function targetAimSlope(attacker, target){
+  const d = Math.hypot(target.x-attacker.x, target.y-attacker.y);
+  const tz = (target.z||0) + AIM_TARGET_BODY_Z;
+  return clamp((tz - projectileMuzzleZ(attacker)) / Math.max(40, d), -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+}
+// 弾の上下の傾き(縦速度 = この値 × 水平弾速)。水平の弾速・射程は変えないので飛距離は従来どおり
+function fireAimSlope(attacker, target, maxRange){
+  if(!isReal3dMap()) return 0;
+  if(attacker.aimSlopeOverride!=null) return attacker.aimSlopeOverride; // マルチ: ゲストの発射イベントで届いたねらい
+  if(attacker.isPlayer && attacker===player) return cameraAimSlope(attacker, maxRange);
+  if(target && target.x!=null) return targetAimSlope(attacker, target);
+  return 0;
+}
 function fireMove(attacker, target, move){
   // スキン装備でtier3が専用技に変わる場合はここで解決し、以降すべて解決後の技で処理する
   // (威力・弾速・射程・爆風・消費ガッツ・技名がまとめて差し替わる)
@@ -56,6 +122,10 @@ function fireMove(attacker, target, move){
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // スキン装備tier3は装備オーラ色に
   // 差し色(ビリビリ電撃等のアクセント)。keepBaseColorの技は本体が黒のままここだけオーラ色になる
   const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null;
+  // リアルマップ以外では常に0(=水平に飛ぶ従来どおりの弾道)
+  const aimSlope = fireAimSlope(attacker, target, move.range);
+  const muzzleZ = projectileMuzzleZ(attacker);
+  const onReal3d = isReal3dMap();
   if(move.melee){
     lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){
@@ -124,6 +194,7 @@ function fireMove(attacker, target, move){
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
       lobbed:true, startX:attacker.x, startY:attacker.y, startZ:attacker.z,
+      landZ: terrainZAt(landX, landY), // 落下先の地面の高さ(通常マップでは0なので従来と同じ)
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
@@ -144,8 +215,8 @@ function fireMove(attacker, target, move){
       const off = n>1 ? ((i-(n-1)/2)/(n-1))*spread : 0;
       const ang = baseAng + off;
       projectiles.push({
-        id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
-        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+        id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:muzzleZ,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
         dmg:effDmg, color:colors[i], hitR:(move.hitR||24)*hbMult, splash:(move.splash||0)*hbMult,
         traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i],
         moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
@@ -162,8 +233,8 @@ function fireMove(attacker, target, move){
     const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
     const ang = baseAng + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
     projectiles.push({
-      id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:attacker.z,
-      vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+      id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:muzzleZ,
+      vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
@@ -463,7 +534,7 @@ function findNearestAliveEnemy(self, range){
   let best=null, bestD=range;
   for(const e of entities){
     if(e===self || !e.alive) continue;
-    if(e.z - self.z > UPWARD_BLOCK_THRESHOLD) continue;
+    if(e.z - self.z > upwardBlockLimit()) continue;
     const d=dist(self,e); if(d<bestD){bestD=d; best=e;}
   }
   return best;
@@ -806,6 +877,8 @@ function currentViewEntity(){
 }
 function updateCamera(){
   const v = currentViewEntity();
+  // マップを移ったときに前のマップの視点角度が残らないようにする(リアルマップだけ上向きが広い)
+  camState.pitch = clamp(camState.pitch, camPitchMin(), CAM_PITCH_MAX);
   camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
   camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
   camPos.z = v.z + camState.height;
@@ -900,7 +973,7 @@ function tryFire(m){
   if(!m.attackTargetId) return;
   const t = getEntity(m.attackTargetId);
   if(!t || !t.alive) return;
-  if(t.z - m.z > UPWARD_BLOCK_THRESHOLD) return;
+  if(t.z - m.z > upwardBlockLimit()) return;
   if(!m.isPlayer) m.moveTierSelected = pickBestAffordableTier(m);
   const mv = activeMove(m);
   if(m.guts < effectiveGutsCost(m, mv)) return;
@@ -921,7 +994,7 @@ function tryPlayerFire(dt){
     const fx=Math.cos(player.facingAngle), fy=Math.sin(player.facingAngle);
     for(const e of entities){
       if(e===player || !e.alive) continue;
-      if(e.z - player.z > UPWARD_BLOCK_THRESHOLD) continue;
+      if(e.z - player.z > upwardBlockLimit()) continue;
       const d = dist(player,e);
       if(d>mv.range) continue;
       const dirx=(e.x-player.x)/Math.max(d,0.001), diry=(e.y-player.y)/Math.max(d,0.001);
@@ -946,14 +1019,14 @@ function updateProjectiles(dt){
       const t = clamp(p.flightT / p.flightTime, 0, 1);
       p.x = lerp(p.startX, p.landX, t);
       p.y = lerp(p.startY, p.landY, t);
-      p.z = p.startZ + Math.sin(t*Math.PI)*p.arcHeight;
+      p.z = lerp(p.startZ, p.landZ||0, t) + Math.sin(t*Math.PI)*p.arcHeight;
       if(t>=1){
         for(const e of entities){
           if(!e.alive || e.id===p.ownerId) continue;
           if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
         }
-        spawnHit(p.x,p.y,0,p.color);
-        spawnDeath(p.x,p.y,0,p.color);
+        spawnHit(p.x,p.y,p.landZ||0,p.color);
+        spawnDeath(p.x,p.y,p.landZ||0,p.color);
         projectiles.splice(i,1);
       }
       continue;
@@ -961,6 +1034,7 @@ function updateProjectiles(dt){
     if(p.delay>0){ p.delay -= dt; continue; }
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
+    if(p.vz) p.z += p.vz*dt; // リアルマップ: 視線の高さに合わせて上下にも進む
     // Tier3技(projStyle付き)の弾は光る軌跡パーティクルを残す
     if(p.projStyle && Math.random() < 0.6){
       const trailColor = PROJ_TRAIL_COLORS[p.projStyle] || p.color;
@@ -975,15 +1049,31 @@ function updateProjectiles(dt){
     let hit=false;
     if(p.traveled >= p.maxRange) hit=true;
     if(p.x<0||p.x>WORLD.w||p.y<0||p.y>WORLD.h) hit=true;
+    // リアルマップ: 地面(丘)にぶつかったらそこで着弾する
+    if(!hit && p.terrain3d){
+      const gz = terrainZAt(p.x, p.y);
+      if(p.z <= gz){
+        p.z = gz;
+        spawnHit(p.x,p.y,p.z,p.color);
+        if(p.splash>0){
+          for(const o of entities){
+            if(!o.alive || o.id===p.ownerId) continue;
+            if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
+          }
+        }
+        hit = true;
+      }
+    }
     if(!hit){
       for(const r of rocks){
-        if(p.z >= r.height) continue;
+        // 岩の高さは地面からの高さ。起伏のあるマップでは岩の足元の地面を基準にする
+        if(p.z >= (p.terrain3d ? baseTerrainHeightAt(r.x,r.y) : 0) + r.height) continue;
         if(Math.hypot(p.x-r.x,p.y-r.y) < r.radius+p.hitR){
           spawnHit(p.x,p.y,p.z,p.color);
           if(p.splash>0){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
-              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+              if(!projHeightHits(p,o)) continue;
               if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
             }
           }
@@ -998,7 +1088,7 @@ function updateProjectiles(dt){
           if(p.splash>0){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
-              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+              if(!projHeightHits(p,o)) continue;
               if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
             }
           }
@@ -1009,7 +1099,7 @@ function updateProjectiles(dt){
     if(!hit){
       for(const e of entities){
         if(!e.alive || e.id===p.ownerId) continue;
-        if(e.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+        if(!projHeightHits(p,e)) continue;
         // ③ ラグ補正弾(ゲスト発射)は、対象を「一定遅延だけ巻き戻した位置」で当たり判定する。
         //   ダメージ自体は本物のエンティティeに与える。通常弾はp.lagDelaySeq未設定でそのまま。
         const tp = (p.lagDelaySeq && typeof entityRewoundPos==='function' && entityRewoundPos(e.id, p.lagDelaySeq)) || e;
@@ -1035,7 +1125,7 @@ function updateProjectiles(dt){
           if(p.splash>0){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;
-              if(o.z - p.z > UPWARD_BLOCK_THRESHOLD) continue;
+              if(!projHeightHits(p,o)) continue;
               if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
             }
           }

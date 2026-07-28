@@ -117,8 +117,19 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **`REAL3D_TERRAIN`の最大傾斜は0.3程度まで。** ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
 - **岩・水晶の「登っているからすり抜ける」判定は`baseTerrainHeightAt`基準**(絶対値`m.z>25`だと起伏だけですり抜ける)。
 - **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を`REAL3D_TERRAIN`に足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
+- 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。細かい粒立ちは`buildDetailBumpTexture()`の`bumpMap`(Phongの弱い反射つき)。**色・凹凸の2枚とも`offset`をパッチ位置に合わせる**(片方だけだと模様が滑る)。
+- **テクスチャ生成は試合開始時に1回だけ走る同期処理。** オクターブ数やサイズを上げると実機の待ち時間に直結する(色512px/凹凸128pxが上限の目安)。
+- 岩は2Dのまま`drawRealisticRock()`(render.js)で描く。光の向き`REAL_ROCK_SUN`はreal3d.jsの`SUN_DIR`と同じ値。**3Dへ移すと2Dのモンスターが必ず手前に描かれ、岩に隠れなくなる。**
 - ESモジュールなので`window.__aramonReal3D`(`setActive`/`render`/`resize`)経由。WebGL初期化失敗時は`render()`がfalseを返し2D地面にフォールバックする。
 - テストマップは`MAPS`に`testOnly:true`を付けて「ランダム」抽選から外している(`resolveMapKey()`)。
+
+### リアルマップの弾道(上下のねらい)
+- **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も一切変わらない。
+- 弾は`vz = aimSlope × 水平弾速`で飛ぶ。**水平速度と`traveled`は変えない**ので飛距離(`move.range`)は従来どおり。
+- プレイヤーの`aimSlope`は`cameraAimSlope()`= 画面中心から視線を伸ばして地形に当たる点を探し、銃口(`足元+AIM_MUZZLE_Z`)からそこへ向ける。botは`targetAimSlope()`で相手の胴をねらう。
+- **マルチではゲストのカメラをホストが知らないので、発射イベントに`slope`を載せて`ent.aimSlopeOverride`で渡す**(処理後にnullへ戻す)。弾の配信にも`vz`/`terrain3d`が要る。
+- 地形への着弾は`p.terrain3d && p.z <= getTerrainHeightAt()`。**ホスト(combat.js)とゲストの見た目ループ(network.js)の両方に入れる。**
+- 視点の上下範囲は`camPitchMin()`(リアルマップだけ空側`-0.42`まで)、試合開始角度は`applyStartPitchForMap()`。**マップ確定の直後に呼ぶ**(startGame/beginMultiplayerMatchInner)。前のマップの角度が残らないよう`updateCamera()`でも毎フレームclampしている。
 
 ## モンスター・スキン
 
