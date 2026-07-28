@@ -1283,7 +1283,7 @@ function drawBuilding(b){
   };
   function wallPoly(c1,c2,shade){
     const p1t=project(c1.x,c1.y,b.wallH), p2t=project(c2.x,c2.y,b.wallH);
-    const p1b=project(c1.x,c1.y,0), p2b=project(c2.x,c2.y,0);
+    const p1b=projectGround(c1.x,c1.y), p2b=projectGround(c2.x,c2.y);
     if(!p1t||!p2t||!p1b||!p2b) return;
     ctx.beginPath();
     ctx.moveTo(p1b.x,p1b.y); ctx.lineTo(p2b.x,p2b.y); ctx.lineTo(p2t.x,p2t.y); ctx.lineTo(p1t.x,p1t.y); ctx.closePath();
@@ -1311,6 +1311,9 @@ function drawBuilding(b){
 function groundZAt(x,y){
   return (typeof baseTerrainHeightAt==='function') ? baseTerrainHeightAt(x,y) : 0;
 }
+// 地面に接する物(岩・水晶・アイテム・範囲技・円盤石など)の投影。
+// リアルマップ(テスト)では地形の高さに乗せる。他マップでは groundZAt が0なので従来どおり。
+function projectGround(x,y){ return project(x, y, groundZAt(x,y)); }
 function projectCircleRing(center, radius, segments){
   const pts = [];
   for(let i=0;i<=segments;i++){
@@ -1382,7 +1385,7 @@ function drawSkyAndGround(){
 function drawTerrainDecor(){
   for(const d of terrainDecor){
     if(Math.abs(d.x-player.x)>1000 || Math.abs(d.y-player.y)>1000) continue;
-    const p = project(d.x,d.y,0);
+    const p = projectGround(d.x,d.y);
     if(!p || p.x<-40||p.x>viewW+40||p.y<-40||p.y>viewH+40) continue;
     ctx.beginPath(); ctx.ellipse(p.x,p.y, d.r*p.scale, d.r*p.scale*0.4, 0,0,Math.PI*2);
     ctx.fillStyle = d.shade==='dark' ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.06)';
@@ -1462,12 +1465,12 @@ function drawZoneCompass(){
   }
 }
 function fanOutlinePoints(x,y,angle,range,halfAngleRad,segs){
-  const center = project(x,y,0);
+  const center = projectGround(x,y);
   if(!center) return null;
   const pts = [center];
   for(let i=0;i<=segs;i++){
     const a = angle - halfAngleRad + (i/segs)*halfAngleRad*2;
-    const pp = project(x+Math.cos(a)*range, y+Math.sin(a)*range, 0);
+    const pp = projectGround(x+Math.cos(a)*range, y+Math.sin(a)*range);
     if(pp) pts.push(pp);
   }
   return pts.length>=3 ? pts : null;
@@ -1481,7 +1484,7 @@ function rectOutlinePoints(x,y,angle,range,halfWidth){
     {x:x-rx*halfWidth+fx*range, y:y-ry*halfWidth+fy*range},
     {x:x+rx*halfWidth+fx*range, y:y+ry*halfWidth+fy*range},
   ];
-  const pts = corners.map(c=>project(c.x,c.y,0)).filter(Boolean);
+  const pts = corners.map(c=>projectGround(c.x,c.y)).filter(Boolean);
   return pts.length>=3 ? pts : null;
 }
 function strokeDashedShape(pts, color, alpha){
@@ -1544,8 +1547,8 @@ function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
       const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
       const hw = ae.width*halfWidthFrac*0.5;
       const cx = ae.x+fx*along+rx*wobble, cy = ae.y+fy*along+ry*wobble;
-      const tp = project(cx+rx*hw, cy+ry*hw, 0);
-      const bp = project(cx-rx*hw, cy-ry*hw, 0);
+      const tp = projectGround(cx+rx*hw, cy+ry*hw);
+      const bp = projectGround(cx-rx*hw, cy-ry*hw);
       if(tp) top.push(tp);
       if(bp) bot.push(bp);
     }
@@ -1612,7 +1615,7 @@ function drawBandSparkles(ae, curReach, fadeAlpha, kind, color){
     const h2 = fxHash01(ae.id*3.19 + i*13.31);
     const along = curReach * ((i + h1) / n);
     const lateral = (h2*2-1) * ae.width*0.34;
-    const p = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+    const p = projectGround(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral);
     if(!p) continue;
     const tw = 0.45 + 0.55*Math.sin(matchTime*5.5 + i*2.399 + ae.id);
     if(tw <= 0.1) continue;
@@ -1648,8 +1651,8 @@ function drawStyledWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
       const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
       const hw = ae.width*halfWidthFrac*0.5;
       const cx = ae.x+fx*along+rx*wobble, cy = ae.y+fy*along+ry*wobble;
-      const tp = project(cx+rx*hw, cy+ry*hw, 0);
-      const bp = project(cx-rx*hw, cy-ry*hw, 0);
+      const tp = projectGround(cx+rx*hw, cy+ry*hw);
+      const bp = projectGround(cx-rx*hw, cy-ry*hw);
       if(tp) top.push(tp);
       if(bp) bot.push(bp);
     }
@@ -1675,14 +1678,14 @@ function drawInfernoFanEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const t = matchTime*3.2;
   function flamePts(frac, wobAmp){
     const steps = 20;
-    const apex = project(ae.x, ae.y, 0);
+    const apex = projectGround(ae.x, ae.y);
     if(!apex) return null;
     const arr=[apex];
     for(let i=0;i<=steps;i++){
       const a = ae.angle - half + (2*half)*(i/steps);
       const wob = 1 + wobAmp*Math.sin(i*1.9 + t) + wobAmp*0.6*Math.sin(i*3.7 - t*1.6);
       const r = curReach*frac*wob;
-      const p = project(ae.x+Math.cos(a)*r, ae.y+Math.sin(a)*r, 0);
+      const p = projectGround(ae.x+Math.cos(a)*r, ae.y+Math.sin(a)*r);
       if(p) arr.push(p);
     }
     return arr.length>=3 ? arr : null;
@@ -1725,7 +1728,7 @@ function drawThunderBoltEffect(ae, fillDist, fadeAlpha, inTelegraph){
     const lateral = (i===0||i===segs) ? 0 : (fxHash01(jseed*31.7 + i*17.3 + ae.id)*2-1)*amp;
     const wx = ae.x+fx*along+rx*lateral, wy = ae.y+fy*along+ry*lateral;
     world.push([wx,wy]);
-    const pp = project(wx, wy, 0);
+    const pp = projectGround(wx, wy);
     if(pp) pts.push(pp);
   }
   if(pts.length<2) return;
@@ -1753,8 +1756,8 @@ function drawThunderBoltEffect(ae, fillDist, fadeAlpha, inTelegraph){
     const [wx,wy] = world[vi];
     const ba = ae.angle + (fxHash01(jseed*3.3+b*11.1)*2-1)*1.2;
     const bl = amp*(0.8+fxHash01(jseed*5.5+b*13.7));
-    const p1 = project(wx, wy, 0);
-    const p2 = project(wx+Math.cos(ba)*bl, wy+Math.sin(ba)*bl, 0);
+    const p1 = projectGround(wx, wy);
+    const p2 = projectGround(wx+Math.cos(ba)*bl, wy+Math.sin(ba)*bl);
     if(p1&&p2){ strokePts([p1,p2], ae.color, 3.5, 0.7, 12); strokePts([p1,p2], '#ffffff', 1.4, 0.8, 0); }
   }
 }
@@ -1778,7 +1781,7 @@ function drawPsychicWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
       const along = curReach*(i/segs);
       const maxLat = along*Math.tan(half)*0.85;
       const lateral = Math.sin(along*0.02 + t + phase)*maxLat;
-      const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+      const pp = projectGround(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral);
       if(pp) pts.push(pp);
     }
     if(pts.length<2) continue;
@@ -1915,7 +1918,7 @@ function drawSingleAreaEffect(ae){
         for(let i=0;i<=segs;i++){
           const along = curReach*(i/Math.max(segs,1));
           const lateral = (i%2===0?1:-1)*amp*(i===0||i===segs?0.3:1);
-          const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+          const pp = projectGround(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral);
           if(pp) pts.push(pp);
         }
         if(pts.length>=2){
@@ -1951,7 +1954,7 @@ function drawSingleAreaEffect(ae){
             const along = curReach*(i/segs);
             const maxLat = along*Math.tan(half)*0.85;
             const lateral = Math.sin(along*0.02+t)*maxLat;
-            const pp = project(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, 0);
+            const pp = projectGround(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral);
             if(pp) pts.push(pp);
           }
           if(pts.length>=2){
@@ -1986,7 +1989,7 @@ function groundCirclePoints(cx, cy, radius, segs){
 }
 // 円形に広がるドーム状の爆発エフェクト(ビッグバン等)
 function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
-  const center = project(ae.x, ae.y, 0);
+  const center = projectGround(ae.x, ae.y);
   if(!center) return;
   const maxR = ae.range;
   // 最大範囲の予告(実際のダメージ判定と同じ半径の地面円)
@@ -2071,7 +2074,7 @@ function drawLandingMarkers(){
   for(const p of projectiles){
     if(!p.lobbed) continue;
     const t = clamp(p.flightT / p.flightTime, 0, 1);
-    const proj = project(p.landX, p.landY, 0);
+    const proj = projectGround(p.landX, p.landY);
     if(!proj) continue;
     const fade = 0.25 + 0.35*t;
     ctx.save();
@@ -2158,7 +2161,7 @@ function drawSolidCone(v, style){
   const ring = [];
   for(let i=0;i<=N;i++){
     const a = (i/N)*Math.PI*2;
-    ring.push(project(v.x+Math.cos(a)*v.radius, v.y+Math.sin(a)*v.radius, 0));
+    ring.push(projectGround(v.x+Math.cos(a)*v.radius, v.y+Math.sin(a)*v.radius));
   }
   const LX = 0.55, LY = -0.83; // 世界固定の光の向き(北西からの日差し)
   const facets = [];
@@ -2189,7 +2192,7 @@ function drawPyramidComplex(group,p){
   const cornersW = [
     {x:cx-s, y:cy-s}, {x:cx+s, y:cy-s}, {x:cx+s, y:cy+s}, {x:cx-s, y:cy+s},
   ];
-  const bp = cornersW.map(c=>project(c.x, c.y, 0));
+  const bp = cornersW.map(c=>projectGround(c.x, c.y));
   const apex = project(cx, cy, worldH);
   if(bp.some(pt=>!pt) || !apex) return;    // 至近等で投影できない場合は描かない(群カリングで別途担保)
   ctx.save();
@@ -2226,7 +2229,7 @@ function drawVolcanoComplex(group,p){
   ctx.globalAlpha = 1;
 
   const main = group.find(v=>v.isMain) || group[0];
-  const mainP = project(main.x, main.y, 0);
+  const mainP = projectGround(main.x, main.y);
   if(!mainP){ ctx.restore(); return; }
 
   // 各隆起(主峰含む)を、奥から手前の順で描く(主峰は最後=一番手前)
@@ -2290,14 +2293,14 @@ function render(){
   if(introState.active) drawSummonIntro();
 
   const drawables = [];
-  for(const ae of areaEffects){ const p = project(ae.x,ae.y,0); if(p) drawables.push({kind:'ae', obj:ae, p}); } // 建物・岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
+  for(const ae of areaEffects){ const p = projectGround(ae.x,ae.y); if(p) drawables.push({kind:'ae', obj:ae, p}); } // 建物・岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
   for(const b of buildings){
     const bRad = Math.hypot(b.hw||0, b.hd||0) + (b.rampLen||0); // 建物の外接半径(ランプ含む)
     const p = projectObstacle(b.cx,b.cy,b.wallH*0.5, bRad);
     if(p) drawables.push({kind:'building', obj:b, p});
   }
-  for(const r of rocks){ const p = project(r.x,r.y,0); if(p) drawables.push({kind:'rock', obj:r, p}); }
-  for(const c of crystalObstacles){ const p = project(c.x,c.y,0); if(p) drawables.push({kind:'crystal', obj:c, p}); }
+  for(const r of rocks){ const p = projectGround(r.x,r.y); if(p) drawables.push({kind:'rock', obj:r, p}); }
+  for(const c of crystalObstacles){ const p = projectGround(c.x,c.y); if(p) drawables.push({kind:'crystal', obj:c, p}); }
   const volcanoGroups = new Map();
   for(const v of volcanoObstacles){
     const gid = v.complexId||0;
@@ -2371,10 +2374,10 @@ function drawSummonIntro(){
   const diskReady = imgIsReady(summonDiskImg);
   for(const e of entities){
     if(!e.alive) continue;
-    const pg = project(e.x, e.y, 0);
+    const pg = project(e.x, e.y, e.z||0);
     if(!pg) continue;
     if(pg.x<-240||pg.x>viewW+240||pg.y<-240||pg.y>viewH+240) continue;
-    const topH = e.radius*8;
+    const topH = (e.z||0) + e.radius*8;
     const pTop = project(e.x, e.y, topH);
     const topY = pTop ? pTop.y : pg.y - topH*pg.scale;
     // --- 円盤石(地面に伏せて平たく描画) ---
@@ -2446,10 +2449,10 @@ function drawSummonIntroFront(){
   const t = performance.now()/1000;
   for(const e of entities){
     if(!e.alive) continue;
-    const pg = project(e.x, e.y, 0);
+    const pg = project(e.x, e.y, e.z||0);
     if(!pg) continue;
     if(pg.x<-240||pg.x>viewW+240||pg.y<-240||pg.y>viewH+240) continue;
-    const topH = e.radius*8;
+    const topH = (e.z||0) + e.radius*8;
     const pTop = project(e.x, e.y, topH);
     const topY = pTop ? pTop.y : pg.y - topH*pg.scale;
     // 覆う幅(モンスターを隠す)→中心の細い芯へ。収束とともにアルファも落として綺麗に消す
