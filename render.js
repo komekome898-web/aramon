@@ -2172,7 +2172,8 @@ function drawWaterZones(){
   if(seaZones.length===0 && riverZones.length===0 && oasisZones.length===0) return;
   const draw = (z, fill, stroke)=>{
     if(Math.abs(z.x-player.x)>2400 || Math.abs(z.y-player.y)>2400) return;
-    const pts = projectCircleRing(z, z.radius, 22);
+    // 塗りつぶしなので投影できない点は詰めてつなぐ(線と違い、切ると水面に穴が空く)
+    const pts = projectCircleRing(z, z.radius, 22).filter(Boolean);
     if(pts.length<3) return;
     ctx.beginPath();
     ctx.moveTo(pts[0].x,pts[0].y);
@@ -2195,7 +2196,7 @@ function drawWaterZones(){
 function drawLavaZones(){
   if(lavaZones.length===0) return;
   for(const lz of lavaZones){
-    const pts = projectCircleRing(lz, lz.radius, 40);
+    const pts = projectCircleRing(lz, lz.radius, 40).filter(Boolean); // 塗りつぶしなので詰めてつなぐ
     if(pts.length<3) continue;
     ctx.save();
     const pulse = 0.75 + 0.25*Math.sin(matchTime*2.4 + lz.x*0.01);
