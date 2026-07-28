@@ -81,22 +81,74 @@ function buildSky(){
   return mesh;
 }
 
-// 遠景の山並み。実際の地形パッチの外側を埋めて「世界の終わり」を隠す
+/* 遠景の山並み。実際の地形パッチの外側を埋めて「世界の終わり」を隠す。
+   ・稜線は周期の違う波を4つ重ねてギザギザにする(1本の正弦波だと作り物に見える)
+   ・距離の違う層を3枚重ね、遠い層ほど霞ませて空の色に近づける(空気遠近)
+   ・縦にも分割し、高度で色を変える(麓=霞んだ土 / 中腹=岩 / 頂上付近=雪)
+   ・太陽の方位に向いた面を明るくして、のっぺりした影絵に見えないようにする      */
+const RIDGE_LAYERS = [
+  // dist: RIDGE_DISTからの倍率 / peak: 稜線の高さ / haze: 空気遠近(1で完全に霞む)
+  // 遠い層ほど高くしてある。同じ見かけの高さだと手前の山に完全に隠れてしまう
+  { dist:1.00, base:260, peak: 850, haze:0.30, snow:0.62 },
+  { dist:1.42, base:220, peak:1640, haze:0.55, snow:0.55 },
+  { dist:1.95, base:180, peak:2840, haze:0.78, snow:0.46 },
+];
+const COL_RIDGE_ROCK = 0x6a6a74;   // 岩肌
+const COL_RIDGE_FOOT = 0x8a8072;   // 麓(手前の地面に近い色)
+const COL_RIDGE_SNOW = 0xe8eef6;   // 冠雪
+function ridgeProfile(a, seed){
+  // 角度の周期関数を重ねた稜線。層ごとにseedで位相をずらして同じ形を並べない
+  return (
+    Math.abs(Math.sin(a*2.0  + seed*1.7)) * 0.50 +
+    Math.abs(Math.sin(a*4.3  + seed*2.9)) * 0.27 +
+    Math.abs(Math.sin(a*9.1  + seed*4.1)) * 0.15 +
+    Math.abs(Math.sin(a*17.3 + seed*5.3)) * 0.08
+  );
+}
 function buildDistantRidge(){
-  const R = RIDGE_DIST, SEGS = 96;
+  const SEGS = 168, BANDS = 4;   // 円周の分割数 / 縦の分割数(高度で色を変えるため)
   const geo = new THREE.BufferGeometry();
   const pos = [], col = [];
-  const c1 = new THREE.Color(0x747a8c), c2 = new THREE.Color(COL_HAZE);
-  for(let i=0;i<SEGS;i++){
-    const a0 = (i/SEGS)*Math.PI*2, a1 = ((i+1)/SEGS)*Math.PI*2;
-    const h0 = 420 + Math.abs(Math.sin(a0*3.1))*520 + Math.abs(Math.cos(a0*1.7))*260;
-    const h1 = 420 + Math.abs(Math.sin(a1*3.1))*520 + Math.abs(Math.cos(a1*1.7))*260;
-    const x0 = Math.cos(a0)*R, z0 = Math.sin(a0)*R;
-    const x1 = Math.cos(a1)*R, z1 = Math.sin(a1)*R;
-    pos.push(x0,-200,z0,  x1,-200,z1,  x1,h1,z1);
-    pos.push(x0,-200,z0,  x1,h1,z1,   x0,h0,z0);
-    for(const c of [c2,c2,c1,c2,c1,c1]) col.push(c.r,c.g,c.b);
-  }
+  const cHaze = new THREE.Color(COL_HAZE), cSkyBot = new THREE.Color(COL_SKY_BOT);
+  const cRock = new THREE.Color(COL_RIDGE_ROCK), cFoot = new THREE.Color(COL_RIDGE_FOOT);
+  const cSnow = new THREE.Color(COL_RIDGE_SNOW);
+  const tmp = new THREE.Color();
+  // 太陽の方位(水平成分)。この向きを向いた斜面が明るくなる
+  const sunLen = Math.hypot(SUN_DIR.x, SUN_DIR.z) || 1;
+  const sunAx = SUN_DIR.x/sunLen, sunAz = SUN_DIR.z/sunLen;
+  // 奥の層から先に積む。この網は深度を書かない(depthWrite:false)ので、
+  // 手前の層をあとに描かないと遠い山が近い山を塗りつぶしてしまう
+  RIDGE_LAYERS.map((L,i)=>({L, li:i})).sort((a,b)=>b.L.dist-a.L.dist).forEach(({L, li})=>{
+    const R = RIDGE_DIST * L.dist;
+    // 頂点の色: 高度t(0=麓, 1=その山の頂上)と、山の高さhNormで雪を乗せる
+    const colorAt = (a, t, hNorm)=>{
+      tmp.copy(cFoot).lerp(cRock, Math.min(1, t*1.35));
+      const snowT = (hNorm > L.snow) ? Math.min(1, (t - 0.72)/0.28) * Math.min(1,(hNorm-L.snow)*3.2) : 0;
+      if(snowT > 0) tmp.lerp(cSnow, snowT);
+      // 斜面の向きによる明暗(山は内側=カメラ側を向いている)
+      const lightness = 0.82 + 0.18*(-Math.cos(a)*sunAx - Math.sin(a)*sunAz);
+      tmp.multiplyScalar(lightness);
+      // 空気遠近。麓ほど強く霞ませると、地表のフォグと自然につながる
+      tmp.lerp(cHaze, Math.min(1, L.haze + (1-t)*0.30));
+      tmp.lerp(cSkyBot, L.haze*0.25);
+      return tmp;
+    };
+    const push = (a, t, h)=>{
+      pos.push(Math.cos(a)*R, -L.base + (h + L.base)*t, Math.sin(a)*R);
+      const c = colorAt(a, t, h/L.peak);
+      col.push(c.r, c.g, c.b);
+    };
+    for(let i=0;i<SEGS;i++){
+      const a0 = (i/SEGS)*Math.PI*2, a1 = ((i+1)/SEGS)*Math.PI*2;
+      const h0 = L.peak*ridgeProfile(a0, li+1);
+      const h1 = L.peak*ridgeProfile(a1, li+1);
+      for(let b=0;b<BANDS;b++){
+        const t0 = b/BANDS, t1 = (b+1)/BANDS;
+        push(a0,t0,h0); push(a1,t0,h1); push(a1,t1,h1);
+        push(a0,t0,h0); push(a1,t1,h1); push(a0,t1,h0);
+      }
+    }
+  });
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors:true, fog:false, depthWrite:false }));
@@ -272,8 +324,10 @@ function ensureScene(){
     scene = new THREE.Scene();
     scene.fog = new THREE.Fog(COL_HAZE, FOG_NEAR, FOG_FAR);
     camera = new THREE.PerspectiveCamera(64, 1, 8, CAM_FAR);
-    sky = buildSky();   scene.add(sky);
-    ridge = buildDistantRidge(); scene.add(ridge);
+    // 空 → 遠景の山 → 地形 の順で必ず塗る。空も山も深度を書かないため、
+    // 描画順が入れ替わると遠くの山が空に消される(renderOrderで固定する)
+    sky = buildSky();   sky.renderOrder = -2;   scene.add(sky);
+    ridge = buildDistantRidge(); ridge.renderOrder = -1; scene.add(ridge);
     terrain = buildTerrain();
     scene.add(terrain);
     const sun = new THREE.DirectionalLight(0xfff1d6, 1.55);

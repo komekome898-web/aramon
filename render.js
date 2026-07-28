@@ -649,14 +649,16 @@ function drawMonster(e,p){
   if(e.stateUntil > matchTime){
     const sc = STATE_CHANGES[e.element];
     if(sc){
+      // バトルの邪魔にならないよう、半透明・小さめでHPゲージのすぐ上に出す。
+      // 発動直後(stateFlashUntil)だけ「!」付きで少し強く光らせて気づけるようにする
+      const flashing = e.stateFlashUntil > matchTime;
       ctx.save();
-      const pulse = 0.6 + 0.25*Math.sin(matchTime*6);
-      ctx.globalAlpha = pulse;
-      ctx.font = `bold 12px 'Rajdhani', sans-serif`;
+      ctx.globalAlpha = flashing ? (0.66 + 0.22*Math.sin(matchTime*14)) : (0.34 + 0.10*Math.sin(matchTime*6));
+      ctx.font = `bold 10px 'Rajdhani', sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = 'rgba(255,60,60,0.95)';
-      ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(255,0,0,0.8)';
-      ctx.fillText(sc.name, 0, -e.radius*1.55-27);
+      ctx.fillStyle = 'rgba(255,70,70,0.95)';
+      ctx.shadowBlur = flashing ? 7 : 3; ctx.shadowColor = 'rgba(255,0,0,0.75)';
+      ctx.fillText(flashing ? sc.name+'!' : sc.name, 0, -e.radius*1.55-13);
       ctx.restore();
     }
   }

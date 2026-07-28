@@ -39,6 +39,7 @@ function lockMoveFacing(attacker, angle, duration){
    リアルマップでは「画面中心のレティクルが指している地点」へ向けて弾を飛ばし、
    地形にぶつかったらそこで着弾する。
    ===================================================================== */
+const PROJ_GRAVITY      = 420;  // 弾の落下加速度(リアルマップのみ)。大きいほど弾道が大きく弧を描く
 const AIM_MUZZLE_Z      = 34;   // 弾が出る高さ(足元から)。0だと足元の起伏で即着弾してしまう
 const AIM_TARGET_BODY_Z = 40;   // bot・遠隔プレイヤーがねらう相手の高さ(胴のあたり)
 const AIM_SLOPE_LIMIT   = 1.6;  // 上下の傾きの上限(約58度)
@@ -57,8 +58,15 @@ function projHeightHits(p, e){
   return (p.z - e.z <= PROJ_OVERHEAD_MISS) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
 }
 function terrainZAt(x,y){ return (typeof getTerrainHeightAt==='function') ? getTerrainHeightAt(x,y) : 0; }
+// 落下するぶんを見越した打ち上げ角。水平距離hDistの的にちょうど当たる傾きを返す
+// (落下量 = 1/2・g・t^2、t = 水平距離 ÷ 水平弾速)
+function ballisticSlope(dz, hDist, speed){
+  const d = Math.max(40, hDist);
+  const t = d / Math.max(1, speed||900);
+  return clamp((dz + 0.5*PROJ_GRAVITY*t*t) / d, -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+}
 // 画面中心(レティクル)から伸ばした視線が地形に当たる点を探し、そこへ向かう弾の傾きを返す
-function cameraAimSlope(attacker, maxRange){
+function cameraAimSlope(attacker, maxRange, speed){
   const cosP = Math.max(0.2, Math.cos(camState.pitch)), sinP = Math.sin(camState.pitch);
   const dx = Math.cos(camState.yaw)*Math.cos(camState.pitch);
   const dy = Math.sin(camState.yaw)*Math.cos(camState.pitch);
@@ -81,20 +89,20 @@ function cameraAimSlope(attacker, maxRange){
   }
   const tx = camPos.x+dx*t, ty = camPos.y+dy*t, tz = camPos.z+dz*t;
   const hDist = Math.hypot(tx-attacker.x, ty-attacker.y);
-  return clamp((tz - projectileMuzzleZ(attacker)) / Math.max(40, hDist), -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+  return ballisticSlope(tz - projectileMuzzleZ(attacker), hDist, speed);
 }
 // bot: 相手の胴をねらう
-function targetAimSlope(attacker, target){
+function targetAimSlope(attacker, target, speed){
   const d = Math.hypot(target.x-attacker.x, target.y-attacker.y);
   const tz = (target.z||0) + AIM_TARGET_BODY_Z;
-  return clamp((tz - projectileMuzzleZ(attacker)) / Math.max(40, d), -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+  return ballisticSlope(tz - projectileMuzzleZ(attacker), d, speed);
 }
-// 弾の上下の傾き(縦速度 = この値 × 水平弾速)。水平の弾速・射程は変えないので飛距離は従来どおり
-function fireAimSlope(attacker, target, maxRange){
+// 弾の上下の傾き(初速の縦成分 = この値 × 水平弾速)。水平の弾速・射程は変えないので飛距離は従来どおり
+function fireAimSlope(attacker, target, maxRange, speed){
   if(!isReal3dMap()) return 0;
   if(attacker.aimSlopeOverride!=null) return attacker.aimSlopeOverride; // マルチ: ゲストの発射イベントで届いたねらい
-  if(attacker.isPlayer && attacker===player) return cameraAimSlope(attacker, maxRange);
-  if(target && target.x!=null) return targetAimSlope(attacker, target);
+  if(attacker.isPlayer && attacker===player) return cameraAimSlope(attacker, maxRange, speed);
+  if(target && target.x!=null) return targetAimSlope(attacker, target, speed);
   return 0;
 }
 function fireMove(attacker, target, move){
@@ -123,7 +131,7 @@ function fireMove(attacker, target, move){
   // 差し色(ビリビリ電撃等のアクセント)。keepBaseColorの技は本体が黒のままここだけオーラ色になる
   const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null;
   // リアルマップ以外では常に0(=水平に飛ぶ従来どおりの弾道)
-  const aimSlope = fireAimSlope(attacker, target, move.range);
+  const aimSlope = fireAimSlope(attacker, target, move.range, effProjSpeed);
   const muzzleZ = projectileMuzzleZ(attacker);
   const onReal3d = isReal3dMap();
   if(move.melee){
@@ -922,12 +930,15 @@ function activeStateEffects(m){
 function canTriggerState(m){
   return !(m.stateUntil > matchTime) && !(m.stateCooldownUntil > matchTime);
 }
+const STATE_FLASH_DUR = 1.4; // 状態変化発動の合図(名前を強調して光らせる)の長さ
 function activateState(m){
   const sc = STATE_CHANGES[m.element];
   if(!sc) return;
   m.stateUntil = matchTime + sc.duration;
   m.stateCooldownUntil = matchTime + sc.cooldown;
-  spawnDmgText(m.x, m.y, m.z, sc.name+'!', '#ff3b3b');
+  // 発動の合図はHPゲージのすぐ上の表示を短く光らせるだけにする
+  // (以前は大きな文字が浮き上がってバトルの邪魔になっていた)
+  m.stateFlashUntil = matchTime + STATE_FLASH_DUR;
   if(m.isPlayer){ pushToast(`${sc.name} 発動！(${sc.duration}秒間)`); playSe('jakiin'); }
   // マルチのゲストはこの関数を実行しないため、発動したこと自体が伝わらない
   // (効果はstateUntilの同期で効くが、演出・トースト・SEが出ず気づけない)。
@@ -1034,7 +1045,9 @@ function updateProjectiles(dt){
     if(p.delay>0){ p.delay -= dt; continue; }
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
-    if(p.vz) p.z += p.vz*dt; // リアルマップ: 視線の高さに合わせて上下にも進む
+    // リアルマップ: 上下にも進み、重力で落ちる(発射時の傾きは落下ぶんを見越してある)
+    if(p.terrain3d){ p.z += (p.vz||0)*dt; p.vz = (p.vz||0) - PROJ_GRAVITY*dt; }
+    else if(p.vz) p.z += p.vz*dt;
     // Tier3技(projStyle付き)の弾は光る軌跡パーティクルを残す
     if(p.projStyle && Math.random() < 0.6){
       const trailColor = PROJ_TRAIL_COLORS[p.projStyle] || p.color;

@@ -121,7 +121,7 @@ function handleRoomEvent(evt, evtKey){
   // 状態変化の発動(ゲストは自分の分でも演出が出ないため、ここで再現する)
   if(evt.kind==='state' && !netState.isHost){
     const ent = getEntity(evt.entId);
-    if(ent) spawnDmgText(ent.x, ent.y, ent.z, (evt.name||'状態変化')+'!', '#ff3b3b');
+    if(ent) ent.stateFlashUntil = matchTime + STATE_FLASH_DUR; // ホストと同じ合図(HPゲージ上の表示を光らせる)
     if(player && evt.entId===player.id){
       pushToast(`${evt.name} 発動！(${evt.duration}秒間)`);
       playSe('jakiin');
@@ -501,15 +501,15 @@ function tryNonHostPlayerFireVisual(dt){
   if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
   if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
   const aimAngle = player.facingAngle;
-  // リアルマップの上下のねらい(通常マップでは0)。ホスト側の再現用に発射イベントでも送る
-  const aimSlope = fireAimSlope(player, null, mv.range);
-  const muzzleZ = projectileMuzzleZ(player);
-  const onReal3d = isReal3dMap();
 
   // クールダウン・見た目のガッツ消費だけローカルで進める(実値はホストのauthStateで上書きされる)
   player.fireCooldown = effectiveCooldown(player, mv);
   player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
   const effProjSpeed = effectiveProjSpeed(player, mv);
+  // リアルマップの上下のねらい(通常マップでは0)。ホスト側の再現用に発射イベントでも送る
+  const aimSlope = fireAimSlope(player, null, mv.range, effProjSpeed);
+  const muzzleZ = projectileMuzzleZ(player);
+  const onReal3d = isReal3dMap();
   const hbMult = ELEMENTS[player.element].hitboxMult || 1;
   const sp = moveSeName(mv, player); // tier3技の専用SE(無ければnull。ゼウス等のスキン専用SEも反映)
   // combat.jsのfireMoveと同じ見た目情報(スタイル・オーラ色・SSR色替え)を付与し、
@@ -1120,7 +1120,9 @@ function loop(now){
           if(p.delay>0){ p.delay -= dt; continue; }
           const step = Math.hypot(p.vx,p.vy)*dt;
           p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
-          if(p.vz) p.z += p.vz*dt; // リアルマップ: 視線の高さに合わせて上下にも進む
+          // リアルマップ: 上下にも進み、重力で落ちる(combat.jsのupdateProjectilesと同じ式)
+          if(p.terrain3d){ p.z += (p.vz||0)*dt; p.vz = (p.vz||0) - PROJ_GRAVITY*dt; }
+          else if(p.vz) p.z += p.vz*dt;
           let visualHit = p.traveled >= p.maxRange;
           // リアルマップ: 丘に当たったら見た目もそこで止める(当たり判定はホストが確定)
           if(!visualHit && p.terrain3d && typeof getTerrainHeightAt==='function'){
