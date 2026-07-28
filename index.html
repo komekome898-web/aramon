@@ -188,6 +188,12 @@
   <div class="mastermon-confirm-box lobby-wide-box">
     <button id="closeMapPickBtn" class="overlay-close-btn">✕</button>
     <div class="lobby-menu-title">🗺️ マップ選択</div>
+      <!-- 通常 / リアル の切替。マップの中身は同じで、地形が立体になるかどうかが変わる -->
+      <div id="mapModeToggle">
+        <button class="map-mode-btn active" data-mode="normal">通常マップ</button>
+        <button class="map-mode-btn" data-mode="real">⛰️ リアルマップ</button>
+        <span id="mapModeNote">従来のマップ。地面は平らです</span>
+      </div>
       <div id="mapTabs">
         <button class="map-tab active" data-map="random">🎲 ランダム</button>
         <button class="map-tab" data-map="wild">荒野</button>
@@ -196,7 +202,6 @@
         <button class="map-tab" data-map="palepale">パレパレジャングル</button>
         <button class="map-tab" data-map="toble">トーブル海岸</button>
         <button class="map-tab" data-map="mandy">マンディー砂漠</button>
-        <button class="map-tab" data-map="real3d">⛰️ リアルマップ(テスト)</button>
       </div>
       <div id="mapPreview">
         <div id="mapPreviewImage"><span id="mapPreviewIcon">🪨</span></div>

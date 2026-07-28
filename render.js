@@ -1188,8 +1188,15 @@ function drawShellObstacle(rock){
    立体的に見せる。通常マップの岩(この下のdrawRock後半)には一切影響しない。 */
 const REAL_ROCK_SUN = { x:-0.55, y:-0.38 };   // real3d.jsのSUN_DIRと同じ向き(ゲーム座標)
 const REAL_ROCK_DETAIL_PX = 14;               // 画面上でこれより小さい岩は細部を描かない(負荷対策)
+// 岩の色(リアルマップ用)。マップの岩の種類に合わせる
+const REAL_ROCK_COLORS = {
+  rock:     ['#c6b697','#8c7f68','#484137'],
+  sandrock: ['#e0c894','#b39a68','#6a5738'],
+  snowrock: ['#ffffff','#c3d2e0','#7d8b9c'],
+};
 function drawRealisticRock(rock, r, screenR){
   const seed = rock.seed || 0;
+  const pal = REAL_ROCK_COLORS[rock.flavor] || REAL_ROCK_COLORS.rock;
   const rnd = (i)=>{ const n = Math.sin((seed+1.7)*12.9898 + i*78.233)*43758.5453; return n - Math.floor(n); };
   // 太陽の向きを画面の左右に変換する(カメラを回すと光の当たる側も入れ替わる)
   const lit = clamp((-REAL_ROCK_SUN.x*Math.sin(camState.yaw) + REAL_ROCK_SUN.y*Math.cos(camState.yaw))/0.67, -1, 1);
@@ -1205,9 +1212,9 @@ function drawRealisticRock(rock, r, screenR){
   }
   const path = ()=>{ ctx.beginPath(); pts.forEach((q,i)=>{ if(i===0) ctx.moveTo(q.x,q.y); else ctx.lineTo(q.x,q.y); }); ctx.closePath(); };
   const g = ctx.createLinearGradient(lit*r, cy-h*0.55, -lit*r, cy+h*0.6);
-  g.addColorStop(0,   '#c6b697');
-  g.addColorStop(0.45,'#8c7f68');
-  g.addColorStop(1,   '#484137');
+  g.addColorStop(0,   pal[0]);
+  g.addColorStop(0.45, pal[1]);
+  g.addColorStop(1,   pal[2]);
   path(); ctx.fillStyle=g; ctx.fill();
   if(screenR >= REAL_ROCK_DETAIL_PX){
     // 光の当たる面と陰の面を1枚ずつ重ねて、丸い塊ではなく多面体に見せる
@@ -2237,7 +2244,8 @@ function coneFacetColor(style, light){
 //   入れ替わり、地面に固定された立体を回り込んでいるように見える(=泳がない)
 function drawSolidCone(v, style){
   const worldRise = v.radius * (v.isMain ? 1.15 : 0.9);
-  const apex = project(v.x, v.y, worldRise);
+  // リアルマップでは足元の地面の高さから積み上げる(groundZAtは通常マップでは0)
+  const apex = project(v.x, v.y, groundZAt(v.x, v.y) + worldRise);
   if(!apex) return null;
   const N = v.isMain ? 30 : 18;
   const ring = [];
@@ -2275,7 +2283,7 @@ function drawPyramidComplex(group,p){
     {x:cx-s, y:cy-s}, {x:cx+s, y:cy-s}, {x:cx+s, y:cy+s}, {x:cx-s, y:cy+s},
   ];
   const bp = cornersW.map(c=>projectGround(c.x, c.y));
-  const apex = project(cx, cy, worldH);
+  const apex = project(cx, cy, groundZAt(cx, cy) + worldH);
   if(bp.some(pt=>!pt) || !apex) return;    // 至近等で投影できない場合は描かない(群カリングで別途担保)
   ctx.save();
   // 光の向き(日向/影)を底辺の向きで決める。奥→手前の順に面を塗って凸形状の隠面を成立させる
@@ -2333,7 +2341,7 @@ function drawVolcanoComplex(group,p){
           ctx.shadowBlur=0;
         } else if(style==='forest'){
           // 木々の茂みを頂上付近に足して密度感を出す(頂上少し下の高さに配置)
-          const cluster = project(v.x, v.y, v.radius*0.9*0.85) || peakP;
+          const cluster = project(v.x, v.y, groundZAt(v.x,v.y) + v.radius*0.9*0.85) || peakP;
           for(let i=0;i<5;i++){
             const a = (i/5)*Math.PI*2;
             const cx2 = cluster.x + r*0.35*Math.cos(a), cy2 = cluster.y + r*0.15*Math.sin(a);
@@ -2392,7 +2400,7 @@ function render(){
   for(const group of volcanoGroups.values()){
     const main = group.find(v=>v.isMain) || group[0];
     let gRad = 0; for(const v of group){ if(v.radius>gRad) gRad = v.radius; } // 複合火山の最大半径
-    const p = projectObstacle(main.x, main.y, 0, gRad);
+    const p = projectObstacle(main.x, main.y, groundZAt(main.x, main.y), gRad);
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
   // predictedPickup: マルチのゲストが「拾った」と先読みして消したアイテム(ホストの確定待ち)

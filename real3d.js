@@ -24,19 +24,21 @@ const RIDGE_DIST  = 5200;  // 遠景の山並みの距離(パッチの外。フ�
 const SKY_RADIUS  = 9000;
 const CAM_FAR     = 12000;
 const SUN_DIR     = new THREE.Vector3(-0.55, 0.62, -0.38).normalize();
-const COL_SKY_TOP = 0x223652;
-const COL_SKY_BOT = 0x9aa8b0;
-const COL_HAZE    = 0xcfc2a6;
-const COL_LOW     = 0xa89066;   // 低地(やや湿った土)
-const COL_HIGH    = 0xd9c79b;   // 高地(乾いた明るい砂)
-const COL_STEEP   = 0x6f6152;   // 急斜面(むき出しの岩肌)
-const COL_GRAVEL  = 0x8d8371;   // 砂利まじりの地面(まだら模様用)
-const COL_SCRUB   = 0x8a8a5c;   // 乾いた草地(まだら模様用)
+/* マップごとの見た目は data.js の REAL3D_THEMES から window.__aramonRealTheme 経由で受け取る。
+   ここにあるのは受け取れなかった時の既定値(荒野相当)。色を足すときは両方に足すこと。 */
+const DEFAULT_THEME = {
+  tex:'dry', bump:0.30,
+  skyTop:0x223652, skyBot:0x9aa8b0, haze:0xcfc2a6,
+  low:0xa89066, high:0xd9c79b, steep:0x6f6152, gravel:0x8d8371, scrub:0x8a8a5c,
+  ridgeRock:0x6a6a74, ridgeFoot:0x8a8072, ridgeSnow:0xe8eef6, snowLine:0.62,
+};
+let theme = DEFAULT_THEME;
+const COL_SKY_BOT = DEFAULT_THEME.skyBot;   // 初期化時のクリア色にだけ使う
+const COL_HAZE    = DEFAULT_THEME.haze;
 
 const CELL = PATCH_SIZE / PATCH_SEGS;   // 頂点間隔。この単位でパッチ位置をスナップする
 const TEX_TILE    = 420;                // 色テクスチャ1枚が覆うワールド単位(小さいほど細かい)
 const DETAIL_TILE = 105;                // 凹凸(バンプ)テクスチャが覆うワールド単位。足元の砂利感を出す
-const BUMP_SCALE  = 0.3;                // 凹凸の強さ。上げるとザラつくが不自然になりやすい
 const MACRO_TILE  = 900;                // 地面のまだら模様(砂/砂利/枯れ草)の大きさ
 
 let renderer = null, scene = null, camera = null;
@@ -56,9 +58,9 @@ function buildSky(){
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
-      top:   { value: new THREE.Color(COL_SKY_TOP) },
-      bot:   { value: new THREE.Color(COL_SKY_BOT) },
-      haze:  { value: new THREE.Color(COL_HAZE) },
+      top:   { value: new THREE.Color(theme.skyTop) },
+      bot:   { value: new THREE.Color(theme.skyBot) },
+      haze:  { value: new THREE.Color(theme.haze) },
     },
     vertexShader: `
       varying float vH;
@@ -88,14 +90,12 @@ function buildSky(){
    ・太陽の方位に向いた面を明るくして、のっぺりした影絵に見えないようにする      */
 const RIDGE_LAYERS = [
   // dist: RIDGE_DISTからの倍率 / peak: 稜線の高さ / haze: 空気遠近(1で完全に霞む)
+  // ※雪が乗り始める高さはマップごと(theme.snowLine)
   // 遠い層ほど高くしてある。同じ見かけの高さだと手前の山に完全に隠れてしまう
-  { dist:1.00, base:260, peak: 850, haze:0.30, snow:0.62 },
-  { dist:1.42, base:220, peak:1640, haze:0.55, snow:0.55 },
-  { dist:1.95, base:180, peak:2840, haze:0.78, snow:0.46 },
+  { dist:1.00, base:260, peak: 850, haze:0.30 },
+  { dist:1.42, base:220, peak:1640, haze:0.55 },
+  { dist:1.95, base:180, peak:2840, haze:0.78 },
 ];
-const COL_RIDGE_ROCK = 0x6a6a74;   // 岩肌
-const COL_RIDGE_FOOT = 0x8a8072;   // 麓(手前の地面に近い色)
-const COL_RIDGE_SNOW = 0xe8eef6;   // 冠雪
 function ridgeProfile(a, seed){
   // 角度の周期関数を重ねた稜線。層ごとにseedで位相をずらして同じ形を並べない
   return (
@@ -109,9 +109,9 @@ function buildDistantRidge(){
   const SEGS = 168, BANDS = 4;   // 円周の分割数 / 縦の分割数(高度で色を変えるため)
   const geo = new THREE.BufferGeometry();
   const pos = [], col = [];
-  const cHaze = new THREE.Color(COL_HAZE), cSkyBot = new THREE.Color(COL_SKY_BOT);
-  const cRock = new THREE.Color(COL_RIDGE_ROCK), cFoot = new THREE.Color(COL_RIDGE_FOOT);
-  const cSnow = new THREE.Color(COL_RIDGE_SNOW);
+  const cHaze = new THREE.Color(theme.haze), cSkyBot = new THREE.Color(theme.skyBot);
+  const cRock = new THREE.Color(theme.ridgeRock), cFoot = new THREE.Color(theme.ridgeFoot);
+  const cSnow = new THREE.Color(theme.ridgeSnow);
   const tmp = new THREE.Color();
   // 太陽の方位(水平成分)。この向きを向いた斜面が明るくなる
   const sunLen = Math.hypot(SUN_DIR.x, SUN_DIR.z) || 1;
@@ -123,7 +123,8 @@ function buildDistantRidge(){
     // 頂点の色: 高度t(0=麓, 1=その山の頂上)と、山の高さhNormで雪を乗せる
     const colorAt = (a, t, hNorm)=>{
       tmp.copy(cFoot).lerp(cRock, Math.min(1, t*1.35));
-      const snowT = (hNorm > L.snow) ? Math.min(1, (t - 0.72)/0.28) * Math.min(1,(hNorm-L.snow)*3.2) : 0;
+      const snowLine = Math.max(0.12, theme.snowLine - li*0.07);   // 遠い層ほど高い山なので雪が広い
+      const snowT = (hNorm > snowLine) ? Math.min(1, (t - 0.72)/0.28) * Math.min(1,(hNorm-snowLine)*3.2) : 0;
       if(snowT > 0) tmp.lerp(cSnow, snowT);
       // 斜面の向きによる明暗(山は内側=カメラ側を向いている)
       const lightness = 0.82 + 0.18*(-Math.cos(a)*sunAx - Math.sin(a)*sunAz);
@@ -179,7 +180,23 @@ function fbmTile(u, v, per, oct){
   for(let o=0;o<oct;o++){ s += tileNoise(u*p, v*p, p)*amp; amp *= 0.5; p *= 2; }
   return s;
 }
-function buildGroundTexture(){
+/* 地面テクスチャの作り分け。crack=ひび割れ / grit=粒 / tint=色みの散らし / fine=砂目 */
+const TEX_STYLES = {
+  dry:      { crack:1.00, grit:1.00, tint:1.00, fine:1.00 },
+  volcanic: { crack:1.30, grit:1.25, tint:0.60, fine:1.15 },
+  sand:     { crack:0.15, grit:0.70, tint:0.80, fine:1.25 },
+  snow:     { crack:0.00, grit:0.45, tint:0.30, fine:0.70 },
+  jungle:   { crack:0.35, grit:1.10, tint:1.25, fine:1.10 },
+};
+const groundTexCache = {};
+function groundTextureFor(style){
+  if(!groundTexCache[style]){
+    groundTexCache[style] = buildGroundTexture(TEX_STYLES[style] || TEX_STYLES.dry);
+    groundTexCache[style].repeat.set(PATCH_SIZE/TEX_TILE, PATCH_SIZE/TEX_TILE);
+  }
+  return groundTexCache[style];
+}
+function buildGroundTexture(st){
   const S = 512;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
@@ -193,13 +210,13 @@ function buildGroundTexture(){
       const fine = tileNoise(u*48, v*48, 48);           // 細かい砂目
       // 尾根状ノイズを細い暗線として使う = 乾いた地面のひび割れ
       const ridge = 1 - Math.abs(fbmTile(u, v, 12, 2)*2 - 1);
-      const crack = Math.max(0, ridge - 0.86) * 3.4;
+      const crack = Math.max(0, ridge - 0.86) * 3.4 * st.crack;
       // 砂利の粒。明るい粒と暗い粒を混ぜると単調な砂に見えない
       const grit = _hash(x*1.7, y*2.3);
-      let lum = 0.66 + base*0.30 + (fine-0.5)*0.13 + (grit-0.5)*0.10 - crack*0.30;
+      let lum = 0.66 + base*0.30 + (fine-0.5)*0.13*st.fine + (grit-0.5)*0.10*st.grit - crack*0.30;
       lum = Math.max(0.35, Math.min(1, lum));
       // ほんのり色みを散らす(赤茶⇔灰)。頂点色と喧嘩しないよう振れ幅は小さく
-      const tint = tileNoise(u*5, v*5, 5) - 0.5;
+      const tint = (tileNoise(u*5, v*5, 5) - 0.5) * st.tint;
       const r = lum*(1 + tint*0.10), gg = lum*(1 + tint*0.02), b = lum*(1 - tint*0.10);
       const i = (y*S+x)*4;
       img.data[i]   = Math.round(Math.max(0,Math.min(1,r))*255);
@@ -246,15 +263,14 @@ function buildTerrain(){
   geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n*3), 3));
   // UVはパッチのローカル座標そのままなので、repeatで「何単位に1回」貼るかを決める。
   // パッチ位置はCELLの倍数にスナップして動かすため、模様がワールドに固定されて見える。
-  groundTex = buildGroundTexture();
-  groundTex.repeat.set(PATCH_SIZE/TEX_TILE, PATCH_SIZE/TEX_TILE);
+  groundTex = groundTextureFor(theme.tex);
   detailTex = buildDetailBumpTexture();
   detailTex.repeat.set(PATCH_SIZE/DETAIL_TILE, PATCH_SIZE/DETAIL_TILE);
   // Phongの弱い反射で、太陽に対して地面がわずかに照り返す(砂の質感)。
   // 光沢を強くするとプラスチックに見えるので shininess は低く、specularは暗く保つ
   const mat = new THREE.MeshPhongMaterial({
     vertexColors:true, map:groundTex,
-    bumpMap:detailTex, bumpScale:BUMP_SCALE,
+    bumpMap:detailTex, bumpScale:theme.bump,
     shininess:2, specular:new THREE.Color(0x0e0c09),
   });
   const mesh = new THREE.Mesh(geo, mat);
@@ -265,8 +281,8 @@ function buildTerrain(){
 }
 
 const _c = new THREE.Color(), _cMacro = new THREE.Color();
-const _cLow = new THREE.Color(COL_LOW), _cHigh = new THREE.Color(COL_HIGH), _cSteep = new THREE.Color(COL_STEEP);
-const _cGravel = new THREE.Color(COL_GRAVEL), _cScrub = new THREE.Color(COL_SCRUB);
+const _cLow = new THREE.Color(DEFAULT_THEME.low), _cHigh = new THREE.Color(DEFAULT_THEME.high), _cSteep = new THREE.Color(DEFAULT_THEME.steep);
+const _cGravel = new THREE.Color(DEFAULT_THEME.gravel), _cScrub = new THREE.Color(DEFAULT_THEME.scrub);
 // ワールド座標で決まるまだら模様(砂/砂利/枯れ草)。同じ場所は常に同じ色になる純関数
 function macroPatch(wx, wy){
   const u = wx/MACRO_TILE, v = wy/MACRO_TILE;
@@ -342,6 +358,38 @@ function ensureScene(){
   }
 }
 
+/* マップが変わったときに、空・霞・地面の色・遠景の山をそのマップのテーマへ差し替える。
+   地形メッシュそのものは使い回し、色(頂点カラー)とテクスチャだけ作り直す。   */
+let appliedTheme = null;
+function applyTheme(){
+  if(!scene || appliedTheme === theme) return;
+  appliedTheme = theme;
+  renderer.setClearColor(theme.skyBot, 1);
+  scene.fog.color.setHex(theme.haze);
+  if(sky){
+    sky.material.uniforms.top.value.setHex(theme.skyTop);
+    sky.material.uniforms.bot.value.setHex(theme.skyBot);
+    sky.material.uniforms.haze.value.setHex(theme.haze);
+  }
+  _cLow.setHex(theme.low); _cHigh.setHex(theme.high); _cSteep.setHex(theme.steep);
+  _cGravel.setHex(theme.gravel); _cScrub.setHex(theme.scrub);
+  if(terrain){
+    groundTex = groundTextureFor(theme.tex);
+    terrain.material.map = groundTex;
+    terrain.material.bumpScale = theme.bump;
+    terrain.material.needsUpdate = true;
+  }
+  // 遠景の山は色を頂点に焼き込んでいるので作り直す(三角形数は少ないので毎試合1回で十分)
+  if(ridge){
+    scene.remove(ridge);
+    ridge.geometry.dispose();
+    ridge = buildDistantRidge();
+    ridge.renderOrder = -1;
+    scene.add(ridge);
+  }
+  patchCX = patchCY = null;   // 頂点カラーを塗り直させる
+}
+
 function applySize(){
   if(!renderer) return;
   const w = window.viewW || 1, h = window.viewH || 1;
@@ -357,7 +405,9 @@ const api = {
   setActive(on){
     const cv = document.getElementById('glCanvas');
     if(on){
+      theme = window.__aramonRealTheme || DEFAULT_THEME;   // マップごとの見た目(data.jsのREAL3D_THEMES)
       if(!ensureScene()){ if(cv) cv.classList.add('hidden'); active = false; return false; }
+      applyTheme();
       if(cv) cv.classList.remove('hidden');
       patchCX = patchCY = null;   // 次のrenderで作り直す
       applySize();

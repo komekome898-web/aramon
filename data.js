@@ -39,13 +39,6 @@ function applyWorldScale(scale){
 const WATER_SPEED_MULT = 0.6; // 海・川の中での移動速度倍率
 const OASIS_SPEED_MULT = 0.8; // オアシスの中での移動速度倍率
 const MAPS = {
-  // テスト用。マップ選択には出すが「ランダム」の抽選対象からは外す(testOnly)
-  real3d: {
-    key:'real3d', label:'リアルマップ(テスト)', rockCount:420, decorCount:0, hasVolcano:false,
-    groundColor:'#b9a072', real3d:true, testOnly:true,
-    previewIcon:'⛰️', previewColors:['#8c7a55','#3a3122'],
-    desc:'WebGLで地形を立体的に描くテスト用マップ。丘や谷があり、当たり判定も起伏に沿う。',
-  },
   wild: {
     key:'wild', label:'荒野', rockCount:800, decorCount:9000, hasVolcano:false,
     groundColor:'#142433',
@@ -659,6 +652,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-28', items:[
+    { t:'6つのマップすべてに「リアルマップ」を用意しました。マップ選択画面のスイッチで通常/リアルを切り替えられます。地面に丘と谷があり、技は視線の向きへ飛びます', g:['feature','general'] },
+    { t:'リアルマップは上級者向けとして、獲得できるゴールドとダイヤが2倍になります', g:['general','balance'] },
     { t:'ロビーに「射撃訓練場へ」を追加しました。狭いリアルマップで、技を全部使える状態・安置なし・アイテム取り放題・左右に動く的を相手に、自由に撃ち込んで練習できます', g:['feature','general','solo'] },
     { t:'視点の上下感度を少し下げました。射撃訓練場の「視点設定」から視野角・左右感度・上下感度を自分に合わせて変えられます(バトルにも反映されます)', g:['general'] },
     { t:'リアルマップ(テスト)で、遠くにあるはずの安全圏の線と予測線が目の前を横切って見えてしまう不具合を修正しました', g:['fix','general'] },
@@ -1073,30 +1068,138 @@ function mastermonEffectMults(mm){
 const CLIMB_TOLERANCE = 12;
 
 /* =====================================================================
-   リアルマップ(テスト): WebGL(Three.js)で起伏のある地形を描くテスト用マップ。
-   高さは real3dHeightAt(x,y) という純関数なので、ホストとゲストで自動的に一致する
-   (シード付き乱数を通す必要がない)。当たり判定もこの高さを使う。
-   ・振幅と周波数の積(=最大傾斜)の合計を約0.29に抑えてある。ダッシュ中は1フレームで
-     20単位ほど進むため、傾斜が大きすぎると CLIMB_TOLERANCE(12)を超えて登れなくなる。
-   ・数値はプレイテストで調整する前提の名前付き定数。
+   リアルマップ: WebGL(Three.js)で起伏のある地形を描くマップ。
+   通常の6マップそれぞれに対応するリアル版があり(<キー>_real)、出てくる岩・山・水・
+   溶岩などの中身は通常版とまったく同じ。違うのは「地面が立体になる」ことだけ。
+   ・高さは real3dHeightAt(x,y) という純関数なので、ホストとゲストで自動的に一致する
+     (シード付き乱数を通す必要がない)。当たり判定もこの高さを使う。
+   ・地形の形はマップごとに REAL3D_TERRAIN_SETS から選ぶ。
+     振幅×周波数の合計(=最大傾斜)は0.3までに抑える。ダッシュ中は1フレームで20単位ほど
+     進むため、傾斜が大きすぎると CLIMB_TOLERANCE(12)を超えて坂を登れなくなる。
+   ・見た目(空・霞・地面の色・遠景の山)は REAL3D_THEMES。real3d.jsが読む。
    ===================================================================== */
-const REAL3D_TERRAIN = [
-  { amp:120, fx:0.00042, fy:0.00037, ph:0.0 },   // 大きなうねり(丘と谷)
-  { amp: 80, fx:0.00097, fy:0.00081, ph:1.7 },
-  { amp: 40, fx:0.00210, fy:0.00185, ph:3.1 },
-  { amp: 14, fx:0.00520, fy:0.00470, ph:5.2 },
-  // 中間スケールの起伏。メッシュの分割(約50単位)で表現できる波長にしてある。
-  // これより細かい凹凸は地形メッシュではなくテクスチャ(real3d.js)で出す
-  { amp: 12, fx:0.00750, fy:0.00680, ph:2.4 },
-];
+const REAL3D_TERRAIN_SETS = {
+  // hills: 標準的な丘と谷(荒野)
+  hills: [
+    { amp:120, fx:0.00042, fy:0.00037, ph:0.0 },
+    { amp: 80, fx:0.00097, fy:0.00081, ph:1.7 },
+    { amp: 40, fx:0.00210, fy:0.00185, ph:3.1 },
+    { amp: 14, fx:0.00520, fy:0.00470, ph:5.2 },
+    // 中間スケールの起伏。メッシュの分割(約50単位)で表現できる波長にしてある。
+    // これより細かい凹凸は地形メッシュではなくテクスチャ(real3d.js)で出す
+    { amp: 12, fx:0.00750, fy:0.00680, ph:2.4 },
+  ],
+  // crags: 荒れた溶岩台地(カウレア火山)。細かい段差が多い
+  crags: [
+    { amp:110, fx:0.00050, fy:0.00044, ph:0.6 },
+    { amp: 90, fx:0.00120, fy:0.00104, ph:2.2 },
+    { amp: 45, fx:0.00260, fy:0.00232, ph:3.8 },
+    { amp: 18, fx:0.00560, fy:0.00510, ph:1.1 },
+    { amp: 10, fx:0.00900, fy:0.00820, ph:4.6 },
+  ],
+  // drift: なだらかな雪原(パパス雪山)
+  drift: [
+    { amp:140, fx:0.00035, fy:0.00031, ph:1.3 },
+    { amp: 60, fx:0.00090, fy:0.00078, ph:2.9 },
+    { amp: 24, fx:0.00230, fy:0.00205, ph:0.4 },
+    { amp:  9, fx:0.00550, fy:0.00490, ph:3.3 },
+  ],
+  // jungle: 細かい起伏が続く森(パレパレジャングル)
+  jungle: [
+    { amp: 90, fx:0.00060, fy:0.00053, ph:2.1 },
+    { amp: 60, fx:0.00140, fy:0.00122, ph:0.8 },
+    { amp: 30, fx:0.00300, fy:0.00268, ph:4.2 },
+    { amp: 14, fx:0.00650, fy:0.00580, ph:1.9 },
+    { amp:  8, fx:0.01050, fy:0.00940, ph:5.5 },
+  ],
+  // coast: 平坦寄りで低い海岸(トーブル海岸)。水面が丘に乗って見えないようにする
+  coast: [
+    { amp: 70, fx:0.00040, fy:0.00035, ph:0.2 },
+    { amp: 40, fx:0.00105, fy:0.00092, ph:2.6 },
+    { amp: 18, fx:0.00250, fy:0.00224, ph:4.9 },
+    { amp:  8, fx:0.00600, fy:0.00540, ph:1.5 },
+  ],
+  // dunes: 大きくうねる砂丘(マンディー砂漠)
+  dunes: [
+    { amp:160, fx:0.00030, fy:0.00027, ph:0.9 },
+    { amp: 70, fx:0.00085, fy:0.00074, ph:3.4 },
+    { amp: 22, fx:0.00260, fy:0.00230, ph:1.7 },
+    { amp:  8, fx:0.00620, fy:0.00560, ph:4.1 },
+  ],
+};
+function real3dLayers(){
+  const k = (typeof currentMap!=='undefined' && currentMap && currentMap.real3dTerrain) || 'hills';
+  return REAL3D_TERRAIN_SETS[k] || REAL3D_TERRAIN_SETS.hills;
+}
 function real3dHeightAt(x, y){
+  const L = real3dLayers();
   let h = 0;
-  for(let i=0;i<REAL3D_TERRAIN.length;i++){
-    const w = REAL3D_TERRAIN[i];
+  for(let i=0;i<L.length;i++){
+    const w = L[i];
     h += w.amp * (Math.sin(x*w.fx + w.ph) * 0.5 + Math.cos(y*w.fy + w.ph*1.3) * 0.5);
   }
   return h;
 }
+/* リアルマップの見た目。real3d.jsが window.__aramonRealTheme 経由で読む。
+   tex: 地面テクスチャの作り方(ひび割れ・粒の強さ)。snowLine: 遠景の山に雪が乗り始める高さ比 */
+const REAL3D_THEMES = {
+  wild: {
+    tex:'dry', bump:0.30,
+    skyTop:0x1b2740, skyBot:0x6d7b8c, haze:0x8d9099,
+    low:0x4a5666, high:0x7d8798, steep:0x3a4351, gravel:0x5b6572, scrub:0x55603f,
+    ridgeRock:0x4a5260, ridgeFoot:0x5d6675, ridgeSnow:0xd2dbe6, snowLine:0.80,
+  },
+  kaurea: {
+    tex:'volcanic', bump:0.34,
+    skyTop:0x2a1408, skyBot:0xb0693a, haze:0x8a4a22,
+    low:0x2b1d13, high:0x50392a, steep:0x1b1310, gravel:0x3b2b1f, scrub:0x5c3c1e,
+    ridgeRock:0x3a2418, ridgeFoot:0x6a4426, ridgeSnow:0xd8a878, snowLine:0.92,
+  },
+  papas: {
+    tex:'snow', bump:0.18,
+    skyTop:0x2e4a72, skyBot:0xcfe0ef, haze:0xdbe8f2,
+    low:0xb9cad9, high:0xf4f9ff, steep:0x7f8ea0, gravel:0xc8d4e0, scrub:0xa9bccd,
+    ridgeRock:0x7c8b9d, ridgeFoot:0xb7c6d6, ridgeSnow:0xffffff, snowLine:0.28,
+  },
+  palepale: {
+    tex:'jungle', bump:0.30,
+    skyTop:0x1a3a2a, skyBot:0x93b58c, haze:0x9db98f,
+    low:0x24451f, high:0x4f7030, steep:0x3a3a24, gravel:0x3f4a2c, scrub:0x648020,
+    ridgeRock:0x3a4a34, ridgeFoot:0x4c6440, ridgeSnow:0xdfe8d8, snowLine:0.82,
+  },
+  toble: {
+    tex:'sand', bump:0.22,
+    skyTop:0x1f4a72, skyBot:0xa9d0e4, haze:0xcfe0e8,
+    low:0xb09a6a, high:0xeaddb0, steep:0x8a7a5c, gravel:0xc0ac82, scrub:0x9aa86a,
+    ridgeRock:0x6d7a86, ridgeFoot:0xa89a7a, ridgeSnow:0xe8f0f6, snowLine:0.70,
+  },
+  mandy: {
+    tex:'sand', bump:0.24,
+    skyTop:0x2a4a7a, skyBot:0xe0c98f, haze:0xe6d3a4,
+    low:0xc9ab6f, high:0xf2e2ae, steep:0xa08a5c, gravel:0xd8c48c, scrub:0xc0b070,
+    ridgeRock:0x8a7a5a, ridgeFoot:0xc8ae7e, ridgeSnow:0xf2ead8, snowLine:0.86,
+  },
+};
+// 通常マップ → リアルマップの対応。地形の形だけマップごとに変える
+const REAL3D_TERRAIN_OF = { wild:'hills', kaurea:'crags', papas:'drift', palepale:'jungle', toble:'coast', mandy:'dunes' };
+const REAL_MAP_SUFFIX = '_real';
+const REAL_MAP_REWARD_MULT = 2;   // リアルマップは上級者向け。ゴールド/ダイヤの獲得量を倍にする
+// 通常マップから対応するリアルマップを自動生成する(中身は同じで、地面だけ立体になる)。
+// マップを1つ足せばリアル版も自動で増えるので、追加時にここを触る必要はない。
+Object.keys(MAPS).forEach(key=>{
+  const base = MAPS[key];
+  if(base.real3d) return;
+  const terrain = REAL3D_TERRAIN_OF[key];
+  if(!terrain) return;
+  MAPS[key+REAL_MAP_SUFFIX] = {
+    ...base,
+    key: key+REAL_MAP_SUFFIX,
+    label: base.label+'(リアル)',
+    real3d: true, realOf: key, real3dTerrain: terrain, real3dTheme: key,
+    decorCount: 0,   // 地面の模様はWebGLのテクスチャが担当するので2Dの装飾は作らない
+    desc: '【上級者向け・報酬2倍】'+(base.desc||'')+' 地面に丘と谷があり、技は視線の向きへ飛ぶ。',
+  };
+});
 const UPWARD_BLOCK_THRESHOLD = 35;
 
 /* =====================================================================

@@ -1056,6 +1056,21 @@
   #playerNameInput:focus{ border-color:var(--amber); }
 
   #modeTabs, #capacityTabs, #mapTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  /* 通常 / リアル の切替スイッチ(マップ選択の上) */
+  #mapModeToggle{ display:flex; align-items:center; justify-content:center; gap:0; flex-wrap:wrap;
+    margin-bottom:calc(1.4 * var(--vh)); }
+  .map-mode-btn{
+    padding:calc(0.9 * var(--vh)) 18px; cursor:pointer; white-space:nowrap;
+    font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:1px;
+    font-size:clamp(11px, calc(2.9 * var(--vh)), 14px);
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+  }
+  .map-mode-btn:first-of-type{ border-radius:20px 0 0 20px; }
+  .map-mode-btn:nth-of-type(2){ border-radius:0 20px 20px 0; border-left:none; }
+  .map-mode-btn.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:#f4c430; }
+  .map-mode-btn:nth-of-type(2).active{ color:#eaf6ff; background:linear-gradient(180deg,#4a86c8,#2b5f97); border-color:#8fd0ff; }
+  #mapModeNote{ flex-basis:100%; text-align:center; margin-top:6px;
+    font-size:11px; letter-spacing:0.5px; color:var(--ink-dim); }
   .mode-tab-wrap{ position:relative; display:inline-flex; }
   .multi-xp-pop{
     position:absolute; top:-13px; right:-9px; z-index:2;
