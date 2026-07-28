@@ -61,7 +61,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - 左: シーズン/デイリー/ガチャ/ショップ/バッグ/ランキング + 最下部バナー(`LOBBY_BANNERS`に1件足すだけで増える)。
 - 中央: ロゴ → `#lobbyMonsterStage`(**これ自体が`<button>`。押すとモンスター選択オーバーレイ。`div`に戻さない**) → 名前 → タップ案内。歩行は`renderLobbyMonster()`が`monsterWalkFrameDataUrls()`のdataURLを差し替える。**マスモン選択中だけ装備スキンを反映。** 未ロードなら静止画のまま0.35秒×6回リトライ。
 - 右: マップ/プレイモードの値表示ボタン(押すとオーバーレイ。実体のDOMを移しただけなのでハンドラは不変。表示更新は`updateLobbyPickLabels()`)→ `バトル開始`(`#joinBtn`。光沢スイープは無効時に止める)。
-- ヘッダー: ⚙️設定 / 👤マイページ / 🆕更新履歴 / 🎵ロビーBGM切替。**元のボタンをDOMごと移動しただけ**でIDもハンドラも同じ。
+- ヘッダー: ⚙️設定 / 👤マイページ / 🆕更新履歴 / 🎵ロビーBGM切替。**元のボタンをDOMごと移動しただけ**でIDもハンドラも同じ。高さは`--top-header-h`(`#lobbyLayout`と右パネルの`top`も同じ変数。**数値を直書きしない**)。
 - **タイマーは`#startScreen`のclassをMutationObserverで見て、隠れたら停止**(歩行・バナー)。
 - **ロビーの初期化ブロックはui.js末尾に置く**(`netState`等を読むためTDZで落ちる)。
 - マルチのマッチング(`#lobbyScreen`)と部屋一覧(`#roomListScreen`)は**右側パネル**。背後のロビーを見せるため`#startScreen`を隠さず、`#startScreen.behind-matching`で`#lobbyLayout`/`#topHeader`を`pointer-events:none`にする(付け外しはui.js末尾のMutationObserver1か所)。
@@ -119,13 +119,15 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を`REAL3D_TERRAIN`に足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
 - 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。細かい粒立ちは`buildDetailBumpTexture()`の`bumpMap`(Phongの弱い反射つき)。**色・凹凸の2枚とも`offset`をパッチ位置に合わせる**(片方だけだと模様が滑る)。
 - **テクスチャ生成は試合開始時に1回だけ走る同期処理。** オクターブ数やサイズを上げると実機の待ち時間に直結する(色512px/凹凸128pxが上限の目安)。
+- 遠景の山は`RIDGE_LAYERS`(距離の違う3枚)を縦にも分割して高度で色を変える(麓=霞/中腹=岩/頂上=雪)。**奥の層から順に頂点を積む**(空も山も深度を書かないので、手前を後に描かないと消される)。描画順は`renderOrder`(空-2 / 山-1)で固定。
 - 岩は2Dのまま`drawRealisticRock()`(render.js)で描く。光の向き`REAL_ROCK_SUN`はreal3d.jsの`SUN_DIR`と同じ値。**3Dへ移すと2Dのモンスターが必ず手前に描かれ、岩に隠れなくなる。**
 - ESモジュールなので`window.__aramonReal3D`(`setActive`/`render`/`resize`)経由。WebGL初期化失敗時は`render()`がfalseを返し2D地面にフォールバックする。
 - テストマップは`MAPS`に`testOnly:true`を付けて「ランダム」抽選から外している(`resolveMapKey()`)。
 
 ### リアルマップの弾道(上下のねらい)
 - **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も一切変わらない。
-- 弾は`vz = aimSlope × 水平弾速`で飛ぶ。**水平速度と`traveled`は変えない**ので飛距離(`move.range`)は従来どおり。
+- 弾は`vz = aimSlope × 水平弾速`で飛び、`PROJ_GRAVITY`で落ちる。**水平速度と`traveled`は変えない**ので飛距離(`move.range`)は従来どおり。
+- **打ち上げ角は`ballisticSlope(dz, 水平距離, 弾速)`が落下ぶんを見越して決める**ので、重力を足しても狙点に当たる。`PROJ_GRAVITY`を変えても照準はずれない。
 - プレイヤーの`aimSlope`は`cameraAimSlope()`= 画面中心から視線を伸ばして地形に当たる点を探し、銃口(`足元+AIM_MUZZLE_Z`)からそこへ向ける。botは`targetAimSlope()`で相手の胴をねらう。
 - **マルチではゲストのカメラをホストが知らないので、発射イベントに`slope`を載せて`ent.aimSlopeOverride`で渡す**(処理後にnullへ戻す)。弾の配信にも`vz`/`terrain3d`が要る。
 - 地形への着弾は`p.terrain3d && p.z <= getTerrainHeightAt()`。**ホスト(combat.js)とゲストの見た目ループ(network.js)の両方に入れる。**
@@ -239,6 +241,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **「実音源のあとに合成SEをつなげる」ときは`play(when)`に開始時刻を渡す**(ヒノトリ`fireWave`)。長さは`.dur()`。
 - **提供音源の技SEは`move.seStyle`で指定する**(`MOVE_SE_BY_STYLE`はスタイル単位なので他モンスターまで巻き込む)。現在: `darkHoust`/`requiemEnd`/`mocchiBeam`/`monta`/`crystalRain`/`fireWave`。
 - 使い分け: 1.2秒程度まではデータURIインライン、3秒級のSEと長い曲は外部mp3+fetch。
+- **提供音源の前後の無音はmp3の側で切っておく**(再生時にずらす仕組みは持たない)。`silencedetect`で位置を測り、`-ss/-to`で切り直してからデータURIへ。
 - 実音の抽出(この環境): `pip install imageio-ffmpeg`で静的ffmpeg。**Chromium(OSSビルド)はAAC不可・mp3可**なので動画音声は一旦mp3化する。整音は`loudnorm`。
 
 ## Firebase・アカウント
