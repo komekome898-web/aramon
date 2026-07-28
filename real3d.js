@@ -375,6 +375,9 @@ const api = {
     if(!active || !scene) return false;
     const cp = window.camPos, cs = window.camState;
     if(!cp || !cs) return false;
+    // 視野角は2Dのproject()(world.jsのFOV_V)と必ず同じ値にする。設定で変えられるので毎フレーム見る
+    const fovDeg = (window.__aramonLook && window.__aramonLook.fovDeg) || 64;
+    if(camera.fov !== fovDeg){ camera.fov = fovDeg; camera.updateProjectionMatrix(); }
     updateTerrain(cp.x, cp.y);
     // 空と遠景はカメラに追従させる。ワールドは18100単位あるので原点固定だと視界から外れる
     if(sky) sky.position.set(cp.x, 0, cp.y);

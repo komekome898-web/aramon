@@ -1431,6 +1431,7 @@ function projectCircleArcLocal(center, radius, segments, windowRad){
   return pts;
 }
 function drawZoneRings(){
+  if(game.trainingRange) return; // 射撃訓練場は安置なし
   const ZONE_RENDER_THRESHOLD = 4000; // これより境界から離れていれば描画不要
   drawOneZoneRing(zoneState.center, zoneState.radius, 'rgba(244,196,48,0.85)', 4, [20,16], {blur:16,color:'rgba(244,196,48,0.6)'}, ZONE_RENDER_THRESHOLD);
   // 縮小中だけでなく安定中も、次の縮小先(予測)を同じ点線スタイルで表示する。
@@ -1471,6 +1472,7 @@ function drawTerrainDecor(){
   }
 }
 function drawDangerVignette(){
+  if(game.trainingRange) return; // 射撃訓練場は安置なし
   const d = dist(player, zoneState.center);
   const outside = d > zoneState.radius;
   ctx.save();
@@ -1504,6 +1506,7 @@ function drawDangerVignette(){
 // 安全圏の中心方向を指すコンパス矢印。視点の向きに関係なく常に正しい方向を示すため、
 // 地面の塗り分けに頼らずに「どちらが安置内か」を確実に伝えられる。
 function drawZoneCompass(){
+  if(game.trainingRange) return; // 射撃訓練場は安置なし
   const d = dist(player, zoneState.center);
   const outside = d > zoneState.radius;
   const distToEdge = Math.abs(d - zoneState.radius);
@@ -2392,7 +2395,7 @@ function render(){
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
   // predictedPickup: マルチのゲストが「拾った」と先読みして消したアイテム(ホストの確定待ち)
-  for(const it of lootItems){ if(it.predictedPickup != null) continue; const p = project(it.x,it.y,it.z||0); if(p) drawables.push({kind:'loot', obj:it, p}); }
+  for(const it of lootItems){ if(it.predictedPickup != null || it.respawnAt > matchTime) continue; const p = project(it.x,it.y,it.z||0); if(p) drawables.push({kind:'loot', obj:it, p}); }
   for(const pr of projectiles){ const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }
@@ -2775,7 +2778,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#textInputOverlay')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });

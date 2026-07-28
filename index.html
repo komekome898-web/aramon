@@ -110,6 +110,7 @@
 
    <!-- 右: マップ選択 / プレイモード / バトル開始 -->
    <div id="lobbyRight">
+     <button id="openRangeBtn" class="lobby-range-btn" disabled>🎯 射撃訓練場へ</button>
      <button id="openMapPickBtn" class="lobby-pick-btn">
        <span class="lobby-pick-label">マップ</span>
        <span class="lobby-pick-value" id="lobbyMapValue">🎲 ランダム</span>
@@ -424,6 +425,14 @@
       <div id="gutsCostLabel">ガッツ消費 0</div>
     </div>
   </div>
+
+  <!-- 射撃訓練場のときだけ出す操作バー(画面右上) -->
+  <div id="rangeBar" class="hidden">
+    <button id="rangeMonsterBtn">🐾 モンスター</button>
+    <button id="rangeLookBtn">🎚️ 視点設定</button>
+    <button id="rangeExitBtn">🚪 退出</button>
+  </div>
+  <div id="rangeHint" class="hidden">的は倒しても復活します／アイテムは何度でも拾えます</div>
 
   <div id="autoRunLabel" class="hidden">🏃 オートラン中</div>
   <div id="spectateBar" class="hidden">
@@ -945,6 +954,39 @@
     </div>
     <div class="mastermon-confirm-btnrow" style="margin-top:16px;">
       <button id="closeAudioSettingsBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 視点設定(視野角・左右/上下の感度)。射撃訓練場から開き、バトルにもそのまま反映される -->
+<div id="lookSettingsOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box audio-settings-box look-settings-box">
+    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎚️ 視点設定</div>
+    <div class="look-settings-note">バトルにもそのまま反映されます</div>
+    <div class="audio-slider-row">
+      <span class="audio-slider-label">視野角</span>
+      <button class="audio-step-btn" id="fovMinus">−</button>
+      <input type="range" id="fovSlider" min="45" max="85" step="1">
+      <button class="audio-step-btn" id="fovPlus">+</button>
+      <span class="audio-slider-val" id="fovVal">64</span>
+    </div>
+    <div class="audio-slider-row">
+      <span class="audio-slider-label">左右感度</span>
+      <button class="audio-step-btn" id="sensXMinus">−</button>
+      <input type="range" id="sensXSlider" min="15" max="90" step="1">
+      <button class="audio-step-btn" id="sensXPlus">+</button>
+      <span class="audio-slider-val" id="sensXVal">45</span>
+    </div>
+    <div class="audio-slider-row">
+      <span class="audio-slider-label">上下感度</span>
+      <button class="audio-step-btn" id="sensYMinus">−</button>
+      <input type="range" id="sensYSlider" min="6" max="45" step="1">
+      <button class="audio-step-btn" id="sensYPlus">+</button>
+      <span class="audio-slider-val" id="sensYVal">18</span>
+    </div>
+    <div class="mastermon-confirm-btnrow" style="margin-top:14px;">
+      <button id="lookResetBtn">初期値に戻す</button>
+      <button id="closeLookSettingsBtn">閉じる</button>
     </div>
   </div>
 </div>
