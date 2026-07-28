@@ -126,11 +126,13 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 
 ### リアルマップの弾道(上下のねらい)
 - **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も一切変わらない。
-- 弾は`vz = aimSlope × 水平弾速`で飛び、`PROJ_GRAVITY`で落ちる。**水平速度と`traveled`は変えない**ので飛距離(`move.range`)は従来どおり。
-- **打ち上げ角は`ballisticSlope(dz, 水平距離, 弾速)`が落下ぶんを見越して決める**ので、重力を足しても狙点に当たる。`PROJ_GRAVITY`を変えても照準はずれない。
+- 弾は`vz = aimSlope × 水平弾速`で飛び、弾ごとの`grav`で落ちる。**水平速度と`traveled`は変えない**ので飛距離(`move.range`)は従来どおり。
+- **落下加速度は`projGravityFor(range, 弾速)`が技ごとに決める。** 「平らな地面で水平に撃つと、ちょうど射程距離の地点で銃口の高さぶん落ちて着地する」強さ。射程も弾速も技ごとに違うので固定値にしない。強さの調整は`PROJ_DROP_Z`1か所。
+- **打ち上げ角は`ballisticSlope(dz, 水平距離, 弾速, 重力)`が落下ぶんを見越して決める**ので、重力を変えても狙点はずれない。
 - プレイヤーの`aimSlope`は`cameraAimSlope()`= 画面中心から視線を伸ばして地形に当たる点を探し、銃口(`足元+AIM_MUZZLE_Z`)からそこへ向ける。botは`targetAimSlope()`で相手の胴をねらう。
 - **マルチではゲストのカメラをホストが知らないので、発射イベントに`slope`を載せて`ent.aimSlopeOverride`で渡す**(処理後にnullへ戻す)。弾の配信にも`vz`/`terrain3d`が要る。
 - 地形への着弾は`p.terrain3d && p.z <= getTerrainHeightAt()`。**ホスト(combat.js)とゲストの見た目ループ(network.js)の両方に入れる。**
+- **安全圏の円は投影できない点(カメラの後ろ)をnullのまま残し、`strokeProjectedRing`が線を切る。** 詰めて連結すると円の左右が1本の直線で結ばれ、遠くの安置線が目の前を横切って見える(高低差のあるリアルマップで顕著)。画面上で飛びすぎた区間も切る。
 - 視点の上下範囲は`camPitchMin()`(リアルマップだけ空側`-0.42`まで)、試合開始角度は`applyStartPitchForMap()`。**マップ確定の直後に呼ぶ**(startGame/beginMultiplayerMatchInner)。前のマップの角度が残らないよう`updateCamera()`でも毎フレームclampしている。
 
 ## モンスター・スキン

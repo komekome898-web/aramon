@@ -39,8 +39,11 @@ function lockMoveFacing(attacker, angle, duration){
    リアルマップでは「画面中心のレティクルが指している地点」へ向けて弾を飛ばし、
    地形にぶつかったらそこで着弾する。
    ===================================================================== */
-const PROJ_GRAVITY      = 420;  // 弾の落下加速度(リアルマップのみ)。大きいほど弾道が大きく弧を描く
 const AIM_MUZZLE_Z      = 34;   // 弾が出る高さ(足元から)。0だと足元の起伏で即着弾してしまう
+// 弾の落下量。平らな地面で水平に撃ったとき、ちょうど「射程距離」の地点で
+// 銃口の高さぶん落ちて着地する。技ごとに射程も弾速も違うので加速度は弾ごとに決める
+// (この値を上げるほど手前で落ちて弧が大きくなる)
+const PROJ_DROP_Z       = AIM_MUZZLE_Z;
 const AIM_TARGET_BODY_Z = 40;   // bot・遠隔プレイヤーがねらう相手の高さ(胴のあたり)
 const AIM_SLOPE_LIMIT   = 1.6;  // 上下の傾きの上限(約58度)
 const AIM_RAY_STEP      = 26;   // レティクルの先の地面を探すときの刻み幅
@@ -58,15 +61,20 @@ function projHeightHits(p, e){
   return (p.z - e.z <= PROJ_OVERHEAD_MISS) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
 }
 function terrainZAt(x,y){ return (typeof getTerrainHeightAt==='function') ? getTerrainHeightAt(x,y) : 0; }
+// 技ごとの落下加速度。射程いっぱいを飛ぶ時間で PROJ_DROP_Z だけ落ちる強さにする
+function projGravityFor(range, speed){
+  const t = Math.max(0.05, (range||600) / Math.max(1, speed||900));
+  return (2*PROJ_DROP_Z) / (t*t);
+}
 // 落下するぶんを見越した打ち上げ角。水平距離hDistの的にちょうど当たる傾きを返す
 // (落下量 = 1/2・g・t^2、t = 水平距離 ÷ 水平弾速)
-function ballisticSlope(dz, hDist, speed){
+function ballisticSlope(dz, hDist, speed, grav){
   const d = Math.max(40, hDist);
   const t = d / Math.max(1, speed||900);
-  return clamp((dz + 0.5*PROJ_GRAVITY*t*t) / d, -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+  return clamp((dz + 0.5*(grav||0)*t*t) / d, -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
 }
 // 画面中心(レティクル)から伸ばした視線が地形に当たる点を探し、そこへ向かう弾の傾きを返す
-function cameraAimSlope(attacker, maxRange, speed){
+function cameraAimSlope(attacker, maxRange, speed, grav){
   const cosP = Math.max(0.2, Math.cos(camState.pitch)), sinP = Math.sin(camState.pitch);
   const dx = Math.cos(camState.yaw)*Math.cos(camState.pitch);
   const dy = Math.sin(camState.yaw)*Math.cos(camState.pitch);
@@ -89,20 +97,20 @@ function cameraAimSlope(attacker, maxRange, speed){
   }
   const tx = camPos.x+dx*t, ty = camPos.y+dy*t, tz = camPos.z+dz*t;
   const hDist = Math.hypot(tx-attacker.x, ty-attacker.y);
-  return ballisticSlope(tz - projectileMuzzleZ(attacker), hDist, speed);
+  return ballisticSlope(tz - projectileMuzzleZ(attacker), hDist, speed, grav);
 }
 // bot: 相手の胴をねらう
-function targetAimSlope(attacker, target, speed){
+function targetAimSlope(attacker, target, speed, grav){
   const d = Math.hypot(target.x-attacker.x, target.y-attacker.y);
   const tz = (target.z||0) + AIM_TARGET_BODY_Z;
-  return ballisticSlope(tz - projectileMuzzleZ(attacker), d, speed);
+  return ballisticSlope(tz - projectileMuzzleZ(attacker), d, speed, grav);
 }
 // 弾の上下の傾き(初速の縦成分 = この値 × 水平弾速)。水平の弾速・射程は変えないので飛距離は従来どおり
-function fireAimSlope(attacker, target, maxRange, speed){
+function fireAimSlope(attacker, target, maxRange, speed, grav){
   if(!isReal3dMap()) return 0;
   if(attacker.aimSlopeOverride!=null) return attacker.aimSlopeOverride; // マルチ: ゲストの発射イベントで届いたねらい
-  if(attacker.isPlayer && attacker===player) return cameraAimSlope(attacker, maxRange, speed);
-  if(target && target.x!=null) return targetAimSlope(attacker, target, speed);
+  if(attacker.isPlayer && attacker===player) return cameraAimSlope(attacker, maxRange, speed, grav);
+  if(target && target.x!=null) return targetAimSlope(attacker, target, speed, grav);
   return 0;
 }
 function fireMove(attacker, target, move){
@@ -131,9 +139,10 @@ function fireMove(attacker, target, move){
   // 差し色(ビリビリ電撃等のアクセント)。keepBaseColorの技は本体が黒のままここだけオーラ色になる
   const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null;
   // リアルマップ以外では常に0(=水平に飛ぶ従来どおりの弾道)
-  const aimSlope = fireAimSlope(attacker, target, move.range, effProjSpeed);
-  const muzzleZ = projectileMuzzleZ(attacker);
   const onReal3d = isReal3dMap();
+  const projGrav = onReal3d ? projGravityFor(move.range, effProjSpeed) : 0;
+  const aimSlope = fireAimSlope(attacker, target, move.range, effProjSpeed, projGrav);
+  const muzzleZ = projectileMuzzleZ(attacker);
   if(move.melee){
     lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){
@@ -224,7 +233,7 @@ function fireMove(attacker, target, move){
       const ang = baseAng + off;
       projectiles.push({
         id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:muzzleZ,
-        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
         dmg:effDmg, color:colors[i], hitR:(move.hitR||24)*hbMult, splash:(move.splash||0)*hbMult,
         traveled:0, maxRange:move.range, delay:0, projStyle:'godorb', orbColor:colors[i],
         moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
@@ -242,7 +251,7 @@ function fireMove(attacker, target, move){
     const ang = baseAng + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
     projectiles.push({
       id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:muzzleZ,
-      vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
+      vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
@@ -1046,7 +1055,7 @@ function updateProjectiles(dt){
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
     // リアルマップ: 上下にも進み、重力で落ちる(発射時の傾きは落下ぶんを見越してある)
-    if(p.terrain3d){ p.z += (p.vz||0)*dt; p.vz = (p.vz||0) - PROJ_GRAVITY*dt; }
+    if(p.terrain3d){ p.z += (p.vz||0)*dt; p.vz = (p.vz||0) - (p.grav||0)*dt; }
     else if(p.vz) p.z += p.vz*dt;
     // Tier3技(projStyle付き)の弾は光る軌跡パーティクルを残す
     if(p.projStyle && Math.random() < 0.6){

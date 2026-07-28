@@ -1379,26 +1379,41 @@ function groundZAt(x,y){
 // 地面に接する物(岩・水晶・アイテム・範囲技・円盤石など)の投影。
 // リアルマップ(テスト)では地形の高さに乗せる。他マップでは groundZAt が0なので従来どおり。
 function projectGround(x,y){ return project(x, y, groundZAt(x,y)); }
+/* 安全圏の円は「カメラの後ろに回り込む部分」を必ず持つ。投影できない点を詰めて
+   つなぐと、円の左端と右端が1本の直線で結ばれ、遠くにあるはずの安置線が
+   目の前を横切っているように見えてしまう(リアルマップで顕著。地面に高低差が
+   あると、その直線が画面の中央付近に来るため)。
+   ・投影できない点/近すぎる点は null を入れて「線の切れ目」として残す
+   ・切れ目と、画面上で飛びすぎた区間では線をつなぎ直す                        */
+const RING_MIN_DEPTH = 140;    // これより近い円周上の点は投影が暴れるので描かない
+function projectRingPoint(wx, wy){
+  const p = project(wx, wy, groundZAt(wx,wy));
+  return (p && p.depth > RING_MIN_DEPTH) ? p : null;
+}
 function projectCircleRing(center, radius, segments){
   const pts = [];
   for(let i=0;i<=segments;i++){
     const a = (i/segments)*Math.PI*2;
-    const wx = center.x+Math.cos(a)*radius, wy = center.y+Math.sin(a)*radius;
-    const p = project(wx, wy, groundZAt(wx,wy));
-    if(p) pts.push(p);
+    pts.push(projectRingPoint(center.x+Math.cos(a)*radius, center.y+Math.sin(a)*radius));
   }
   return pts;
 }
 function strokeProjectedRing(pts, strokeStyle, lineWidth, dash, glow){
-  if(pts.length<3) return;
+  if(pts.filter(Boolean).length<3) return;
+  const maxStep = Math.max(viewW, viewH)*1.2; // これ以上飛ぶ区間は円弧ではなく破綻した線
   ctx.save();
   ctx.setLineDash(dash||[]);
   ctx.lineWidth=lineWidth;
   if(glow){ ctx.shadowBlur=glow.blur; ctx.shadowColor=glow.color; }
   ctx.strokeStyle=strokeStyle;
   ctx.beginPath();
-  ctx.moveTo(pts[0].x,pts[0].y);
-  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+  let prev = null;
+  for(const p of pts){
+    if(!p){ prev = null; continue; }
+    if(prev && Math.hypot(p.x-prev.x, p.y-prev.y) <= maxStep) ctx.lineTo(p.x, p.y);
+    else ctx.moveTo(p.x, p.y);
+    prev = p;
+  }
   ctx.stroke();
   ctx.restore();
 }
@@ -1411,9 +1426,7 @@ function projectCircleArcLocal(center, radius, segments, windowRad){
   const pts = [];
   for(let i=0;i<=segments;i++){
     const a = centerAngle - windowRad + (i/segments)*windowRad*2;
-    const wx = center.x+Math.cos(a)*radius, wy = center.y+Math.sin(a)*radius;
-    const p = project(wx, wy, groundZAt(wx,wy));
-    if(p) pts.push(p);
+    pts.push(projectRingPoint(center.x+Math.cos(a)*radius, center.y+Math.sin(a)*radius));
   }
   return pts;
 }
