@@ -1182,6 +1182,68 @@ function drawShellObstacle(rock){
     ctx.stroke();
   }
 }
+/* リアルマップ(テスト)用の岩。WebGL地形と同じ向きの太陽で陰影を付け、面と粒感で
+   立体的に見せる。通常マップの岩(この下のdrawRock後半)には一切影響しない。 */
+const REAL_ROCK_SUN = { x:-0.55, y:-0.38 };   // real3d.jsのSUN_DIRと同じ向き(ゲーム座標)
+const REAL_ROCK_DETAIL_PX = 14;               // 画面上でこれより小さい岩は細部を描かない(負荷対策)
+function drawRealisticRock(rock, r, screenR){
+  const seed = rock.seed || 0;
+  const rnd = (i)=>{ const n = Math.sin((seed+1.7)*12.9898 + i*78.233)*43758.5453; return n - Math.floor(n); };
+  // 太陽の向きを画面の左右に変換する(カメラを回すと光の当たる側も入れ替わる)
+  const lit = clamp((-REAL_ROCK_SUN.x*Math.sin(camState.yaw) + REAL_ROCK_SUN.y*Math.cos(camState.yaw))/0.67, -1, 1);
+  const h = r*1.12, cy = -h*0.5;
+  // 接地影は光の反対側へ伸ばす
+  ctx.beginPath(); ctx.ellipse(-lit*r*0.3, -r*0.02, r*1.12, r*0.32, 0,0,Math.PI*2);
+  ctx.fillStyle='rgba(26,20,13,0.36)'; ctx.fill();
+  const N = 9, pts = [];
+  for(let i=0;i<N;i++){
+    const a = (i/N)*Math.PI*2 + seed*0.31;
+    const k = 0.74 + 0.34*rnd(i);
+    pts.push({ x:Math.cos(a)*r*k, y:cy + Math.sin(a)*h*0.5*k, a });
+  }
+  const path = ()=>{ ctx.beginPath(); pts.forEach((q,i)=>{ if(i===0) ctx.moveTo(q.x,q.y); else ctx.lineTo(q.x,q.y); }); ctx.closePath(); };
+  const g = ctx.createLinearGradient(lit*r, cy-h*0.55, -lit*r, cy+h*0.6);
+  g.addColorStop(0,   '#c6b697');
+  g.addColorStop(0.45,'#8c7f68');
+  g.addColorStop(1,   '#484137');
+  path(); ctx.fillStyle=g; ctx.fill();
+  if(screenR >= REAL_ROCK_DETAIL_PX){
+    // 光の当たる面と陰の面を1枚ずつ重ねて、丸い塊ではなく多面体に見せる
+    const litAng = Math.atan2(-0.8, lit || 0.001);
+    const facet = (baseAng, style)=>{
+      let idx = 0, best = 9;
+      for(let i=0;i<N;i++){
+        let d = Math.abs(((pts[i].a - baseAng + Math.PI*3)%(Math.PI*2)) - Math.PI);
+        if(d < best){ best = d; idx = i; }
+      }
+      ctx.beginPath();
+      for(let k=-1;k<=1;k++){
+        const q = pts[(idx+k+N)%N];
+        if(k===-1) ctx.moveTo(q.x*0.98, q.y*0.98); else ctx.lineTo(q.x*0.98, q.y*0.98);
+      }
+      ctx.lineTo(0, cy); ctx.closePath();
+      ctx.fillStyle = style; ctx.fill();
+    };
+    facet(litAng, 'rgba(255,246,224,0.20)');
+    facet(litAng + Math.PI, 'rgba(20,15,10,0.22)');
+    // 粒感(小石と欠け)
+    for(let i=0;i<7;i++){
+      const a = rnd(i+20)*Math.PI*2, rr = Math.sqrt(rnd(i+30))*0.72;
+      const px = Math.cos(a)*r*rr, py = cy + Math.sin(a)*h*0.5*rr;
+      ctx.beginPath(); ctx.arc(px, py, r*(0.035+0.045*rnd(i+40)), 0, Math.PI*2);
+      ctx.fillStyle = (i%2 ? 'rgba(255,250,235,0.14)' : 'rgba(25,19,12,0.18)');
+      ctx.fill();
+    }
+    // ひび割れ
+    ctx.beginPath();
+    ctx.moveTo(-r*0.5, cy - h*0.1);
+    ctx.lineTo(-r*0.1, cy + h*0.08*(rnd(5)-0.5)*4);
+    ctx.lineTo(r*0.45, cy - h*0.16);
+    ctx.strokeStyle='rgba(30,23,15,0.35)'; ctx.lineWidth=Math.max(1, r*0.035); ctx.stroke();
+  }
+  path();
+  ctx.strokeStyle='rgba(34,27,18,0.55)'; ctx.lineWidth=Math.max(1, r*0.045); ctx.stroke();
+}
 function drawRock(rock,p){
   const r = rock.radius;
   const flavor = rock.flavor||'rock';
@@ -1190,6 +1252,7 @@ function drawRock(rock,p){
   ctx.scale(p.scale,p.scale);
   if(flavor==='tree'){ drawTreeObstacle(rock); ctx.restore(); return; }
   if(flavor==='shell'){ drawShellObstacle(rock); ctx.restore(); return; }
+  if(currentMap && currentMap.real3d){ drawRealisticRock(rock, r, r*p.scale); ctx.restore(); return; }
   ctx.translate(0,-r*0.55);
   ctx.beginPath(); ctx.ellipse(0, r*0.6, r*1.1, r*0.32, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fill();
@@ -2684,7 +2747,7 @@ function updateHUD(){
     const fx=Math.cos(player.facingAngle), fy=Math.sin(player.facingAngle);
     for(const e of entities){
       if(e===player||!e.alive) continue;
-      if(e.z - player.z > UPWARD_BLOCK_THRESHOLD) continue;
+      if(e.z - player.z > (typeof upwardBlockLimit==='function' ? upwardBlockLimit() : UPWARD_BLOCK_THRESHOLD)) continue;
       const d=dist(player,e); if(d>mv.range) continue;
       const dirx=(e.x-player.x)/Math.max(d,0.001), diry=(e.y-player.y)/Math.max(d,0.001);
       if(dirx*fx+diry*fy>0.9){ lockOn=true; break; }

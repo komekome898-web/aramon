@@ -231,6 +231,7 @@ async function beginMultiplayerMatchInner(){
   netState.humanPlayers = fixedPlayers;
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
+  if(typeof applyStartPitchForMap==='function') applyStartPitchForMap(); // マップが決まってから視点の初期角度を決める
   if(typeof applyReal3DLayer==='function') applyReal3DLayer();  // リアルマップならWebGL地形を有効化
 
   applyWorldScale(MULTI_MAP_SCALE); // マルチプレイは少人数想定のため、ソロより一回り狭いマップにする
@@ -422,7 +423,7 @@ function processRemoteFireEvents(){
       const dfx=Math.cos(ent.facingAngle), dfy=Math.sin(ent.facingAngle);
       for(const e2 of entities){
         if(e2===ent || !e2.alive) continue;
-        if(e2.z - ent.z > UPWARD_BLOCK_THRESHOLD) continue;
+        if(e2.z - ent.z > upwardBlockLimit()) continue;
         const rp = (hasLagComp && entityRewoundPos(e2.id, lagDelaySeq)) || e2; // 巻き戻し位置で判定
         const d = Math.hypot(rp.x-ent.x, rp.y-ent.y);
         if(d>mv.range) continue;
@@ -434,7 +435,10 @@ function processRemoteFireEvents(){
       targetPoint = { x: ent.x+Math.cos(ent.facingAngle)*1000, y: ent.y+Math.sin(ent.facingAngle)*1000 };
     }
     const projBefore = projectiles.length;
+    // リアルマップの上下のねらいは撃った本人のカメラでしか分からないので、届いた値を使う
+    ent.aimSlopeOverride = (typeof evt.slope==='number') ? evt.slope : null;
     fireMove(ent, targetPoint, mv);
+    ent.aimSlopeOverride = null;
     ent.fireCooldown = effectiveCooldown(ent, mv);
     if(hasLagComp){
       ent.x=savedX; ent.y=savedY;
@@ -468,11 +472,13 @@ function sendLocalInputIfMultiplayer(now){
 
 // 自分が実際に1回発射した瞬間だけ、単発イベントとして送信する
 // (ホストはこれを見て、非ホストの発射をシミュレーションに反映する)
-function sendFireEventIfMultiplayer(aimAngle, mv){
+function sendFireEventIfMultiplayer(aimAngle, mv, aimSlope){
   if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
   window.__aramonSendFireEvent(netState.roomId, {
     sourceNetId: netState.myPlayerId,
     facing: aimAngle,
+    // リアルマップの上下のねらい。ホストは自分のカメラしか持っていないので必ず送る
+    slope: aimSlope || 0,
     moveTier: player.moveTierSelected,
     // ③ ラグ補正用: 撃った瞬間の自分の位置(予測=正確)と、その時見ていたホストseq
     fx: Math.round(player.x), fy: Math.round(player.y),
@@ -495,6 +501,10 @@ function tryNonHostPlayerFireVisual(dt){
   if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
   if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
   const aimAngle = player.facingAngle;
+  // リアルマップの上下のねらい(通常マップでは0)。ホスト側の再現用に発射イベントでも送る
+  const aimSlope = fireAimSlope(player, null, mv.range);
+  const muzzleZ = projectileMuzzleZ(player);
+  const onReal3d = isReal3dMap();
 
   // クールダウン・見た目のガッツ消費だけローカルで進める(実値はホストのauthStateで上書きされる)
   player.fireCooldown = effectiveCooldown(player, mv);
@@ -558,6 +568,7 @@ function tryNonHostPlayerFireVisual(dt){
     projectiles.push({
       x:player.x, y:player.y, z:player.z,
       lobbed:true, startX:player.x, startY:player.y, startZ:player.z,
+      landZ: (typeof getTerrainHeightAt==='function') ? getTerrainHeightAt(landX, landY) : 0,
       landX, landY, arcHeight: mv.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
       color:effColor, hitR:mv.hitR*hbMult, hitW:0, visualOnly:true, icon:mv.icon, shape:mv.shape,
@@ -575,8 +586,8 @@ function tryNonHostPlayerFireVisual(dt){
       const off = n>1 ? ((i-(n-1)/2)/(n-1))*spread : 0;
       const ang = aimAngle + off;
       projectiles.push({
-        x:player.x, y:player.y, z:player.z,
-        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+        x:player.x, y:player.y, z:muzzleZ,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
         color:colors[i], hitR:(mv.hitR||24)*hbMult, hitW:0,
         traveled:0, maxRange:mv.range, delay:0, visualOnly:true,
         projStyle:'godorb', orbColor:colors[i], moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
@@ -593,8 +604,8 @@ function tryNonHostPlayerFireVisual(dt){
       const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
       const ang = aimAngle + spreadOffset;
       projectiles.push({
-        x:player.x, y:player.y, z:player.z,
-        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed,
+        x:player.x, y:player.y, z:muzzleZ,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
         color:effColor, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
         projStyle:mv.projStyle||null, moveAura, auraTint,
@@ -614,7 +625,7 @@ function tryNonHostPlayerFireVisual(dt){
     playSe('fire', { kind:'single' });
   }
 
-  sendFireEventIfMultiplayer(aimAngle, mv);
+  sendFireEventIfMultiplayer(aimAngle, mv, aimSlope);
 }
 
 // ===== ホスト専用: 命中報告を確定計算し、authStateとして配信 =====
@@ -652,10 +663,10 @@ function broadcastNewShotsAsHost(){
     window.__aramonPushShotEvent(netState.roomId, {
       type:'proj', sourceNetId: (owner && owner.netPlayerId) || null, ownerId: p.ownerId!=null ? p.ownerId : null,
       x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
-      vx:p.vx||0, vy:p.vy||0, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
+      vx:p.vx||0, vy:p.vy||0, vz:p.vz||0, terrain3d:!!p.terrain3d, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
       projStyle:p.projStyle||null, orbColor:p.orbColor||null, auraTint:p.auraTint||null, moveAura:p.moveAura||null,
-      lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
+      lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, landZ:p.landZ||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
     });
   }
   lastBroadcastProjIds = curProjIds;
@@ -758,14 +769,14 @@ function spawnVisualShotFromEvent(evt){
     if(evt.lobbed){
       projectiles.push({
         x:evt.x, y:evt.y, z:evt.z, lobbed:true, startX:evt.x, startY:evt.y, startZ:evt.z,
-        landX:evt.landX, landY:evt.landY, arcHeight:evt.arcHeight||120,
+        landX:evt.landX, landY:evt.landY, landZ:evt.landZ||0, arcHeight:evt.arcHeight||120,
         flightTime:Math.max(0.05, evt.flightTime||1), flightT:0,
         color:evt.color, hitR:evt.hitR, hitW:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
         projStyle:evt.projStyle||null, moveAura:evt.moveAura||null,
       });
     } else {
       projectiles.push({
-        x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy,
+        x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy, vz:evt.vz||0, terrain3d:!!evt.terrain3d,
         color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
         traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
         projStyle:evt.projStyle||null, orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
@@ -1099,9 +1110,9 @@ function loop(now){
             const t = clamp(p.flightT / p.flightTime, 0, 1);
             p.x = lerp(p.startX, p.landX, t);
             p.y = lerp(p.startY, p.landY, t);
-            p.z = p.startZ + Math.sin(t*Math.PI)*p.arcHeight;
+            p.z = lerp(p.startZ, p.landZ||0, t) + Math.sin(t*Math.PI)*p.arcHeight;
             if(t>=1){
-              spawnHit(p.x,p.y,0,p.color);
+              spawnHit(p.x,p.y,p.landZ||0,p.color);
               projectiles.splice(i,1);
             }
             continue;
@@ -1109,13 +1120,20 @@ function loop(now){
           if(p.delay>0){ p.delay -= dt; continue; }
           const step = Math.hypot(p.vx,p.vy)*dt;
           p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
+          if(p.vz) p.z += p.vz*dt; // リアルマップ: 視線の高さに合わせて上下にも進む
           let visualHit = p.traveled >= p.maxRange;
+          // リアルマップ: 丘に当たったら見た目もそこで止める(当たり判定はホストが確定)
+          if(!visualHit && p.terrain3d && typeof getTerrainHeightAt==='function'){
+            const gz = getTerrainHeightAt(p.x, p.y);
+            if(p.z <= gz){ p.z = gz; visualHit = true; spawnHit(p.x,p.y,gz,p.color); }
+          }
           if(!visualHit){
             // 当たり判定・ダメージ計算はホストのauthState/hit報告が正なので、ここでは一切計算しない。
             // ただし見た目上は接触した瞬間に消さないと、弾が体を貫通していくように見えてしまうため、
             // 見た目専用の当たり「らしさ」判定だけをローカルで行う
             for(const e of entities){
               if(!e.alive || e.id===p.ownerId) continue;
+              if(p.terrain3d && !projHeightHits(p,e)) continue; // 頭上/足元を大きく外れた弾は見た目も当てない
               if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
             }
           }

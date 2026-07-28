@@ -29,6 +29,19 @@ let FOCAL = 600;
 const CAM_DIST_BEHIND = 145; // 以前は190
 const CAM_HEIGHT      = 90;  // 以前は120
 let camState = { yaw:0, pitch:0.27, height:CAM_HEIGHT, distBehind:CAM_DIST_BEHIND };
+// 視点の上下の可動範囲。pitchが大きいほど下を向く(0.05でほぼ水平)。
+// リアルマップは弾が視線方向へ飛ぶので、遠くや丘の上をねらえるよう空側(マイナス)まで振れる。
+// 通常マップは従来どおりの範囲を維持する(弾道も水平のまま変わらない)。
+const CAM_PITCH_MIN        = 0.05;
+const CAM_PITCH_MIN_REAL3D = -0.42;
+const CAM_PITCH_MAX        = 0.55;
+function camPitchMin(){ return (currentMap && currentMap.real3d) ? CAM_PITCH_MIN_REAL3D : CAM_PITCH_MIN; }
+// 試合開始時の視点角度。リアルマップは弾が視線方向へ飛ぶため、既定では遠くをねらえる角度から始める
+const CAM_PITCH_START        = 0.27;
+const CAM_PITCH_START_REAL3D = 0.15;
+function applyStartPitchForMap(){
+  camState.pitch = (currentMap && currentMap.real3d) ? CAM_PITCH_START_REAL3D : CAM_PITCH_START;
+}
 let camPos = { x:0, y:0, z:0 };
 // real3d.js(ESモジュール)からカメラを読むための橋渡し。参照を渡すので中身は常に最新
 window.camPos = camPos; window.camState = camState;
