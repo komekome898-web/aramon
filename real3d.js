@@ -27,11 +27,12 @@ const SUN_DIR     = new THREE.Vector3(-0.55, 0.62, -0.38).normalize();
 const COL_SKY_TOP = 0x223652;
 const COL_SKY_BOT = 0x9aa8b0;
 const COL_HAZE    = 0xcfc2a6;
-const COL_LOW     = 0xb59a67;   // 低地(砂)
-const COL_HIGH    = 0xd8c69a;   // 高地(明るい砂)
-const COL_STEEP   = 0x8a7a63;   // 急斜面(岩肌)
+const COL_LOW     = 0xa89066;   // 低地(やや湿った土)
+const COL_HIGH    = 0xd9c79b;   // 高地(乾いた明るい砂)
+const COL_STEEP   = 0x6f6152;   // 急斜面(むき出しの岩肌)
 
 const CELL = PATCH_SIZE / PATCH_SEGS;   // 頂点間隔。この単位でパッチ位置をスナップする
+const TEX_TILE = 420;                   // 地面テクスチャ1枚が覆うワールド単位(小さいほど細かい)
 
 let renderer = null, scene = null, camera = null;
 let terrain = null, terrainPos = null, terrainCol = null;
@@ -97,13 +98,62 @@ function buildDistantRidge(){
   return mesh;
 }
 
+// 砂・岩肌の質感を出す手続き的なテクスチャ。画像ファイルを増やさずに済ませる。
+// 値ノイズを4オクターブ重ねたグレースケールを、頂点色に掛け合わせて使う。
+function buildGroundTexture(){
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  const img = g.createImageData(S, S);
+  // 決まった疑似乱数(端末が変わっても同じ模様になるように)
+  const rnd = (x,y)=>{
+    const n = Math.sin(x*127.1 + y*311.7) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  const smooth = (x,y,per)=>{
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x-xi, yf = y-yi;
+    const u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+    const w = (a,b)=>((a%per)+per)%per;   // タイル境界で継ぎ目が出ないよう周期化
+    const a = rnd(w(xi,per),   w(yi,per));
+    const b = rnd(w(xi+1,per), w(yi,per));
+    const c = rnd(w(xi,per),   w(yi+1,per));
+    const e = rnd(w(xi+1,per), w(yi+1,per));
+    return (a*(1-u)+b*u)*(1-v) + (c*(1-u)+e*u)*v;
+  };
+  for(let y=0;y<S;y++){
+    for(let x=0;x<S;x++){
+      let v = 0, amp = 0.5, per = 8;
+      for(let o=0;o<4;o++){
+        v += smooth(x/S*per, y/S*per, per) * amp;
+        amp *= 0.5; per *= 2;
+      }
+      // 砂目が細かく見えるよう、ざらつきを少し足す
+      v = v*0.86 + rnd(x*1.7, y*2.3)*0.14;
+      const c = Math.round(150 + v*105);   // 150〜255。頂点色に掛けるので明るめに寄せる
+      const i = (y*S+x)*4;
+      img.data[i]=c; img.data[i+1]=c; img.data[i+2]=c; img.data[i+3]=255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 function buildTerrain(){
   // 平面を作ってからX-Z平面へ倒す。頂点の高さ(y)は毎回 updateTerrain で書き換える
   const geo = new THREE.PlaneGeometry(PATCH_SIZE, PATCH_SIZE, PATCH_SEGS, PATCH_SEGS);
   geo.rotateX(-Math.PI/2);
   const n = geo.attributes.position.count;
   geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n*3), 3));
-  const mat = new THREE.MeshLambertMaterial({ vertexColors:true });
+  // UVはパッチのローカル座標そのままなので、repeatで「何単位に1回」貼るかを決める。
+  // パッチ位置はCELLの倍数にスナップして動かすため、模様がワールドに固定されて見える。
+  const tex = buildGroundTexture();
+  tex.repeat.set(PATCH_SIZE/TEX_TILE, PATCH_SIZE/TEX_TILE);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors:true, map:tex });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   terrainPos = geo.attributes.position;
@@ -133,13 +183,17 @@ function updateTerrain(cx, cy){
     const gy = (heightAt(wx, wy+CELL) - h) / CELL;
     const slope = Math.min(1, Math.hypot(gx, gy) / 0.45);
     const t = Math.min(1, Math.max(0, (h + 240) / 480));
-    _c.copy(_cLow).lerp(_cHigh, t).lerp(_cSteep, slope*0.85);
+    _c.copy(_cLow).lerp(_cHigh, t).lerp(_cSteep, slope);
     col[j] = _c.r; col[j+1] = _c.g; col[j+2] = _c.b;
   }
   terrainPos.needsUpdate = true;
   terrainCol.needsUpdate = true;
   terrain.geometry.computeVertexNormals();
   terrain.position.set(sx, 0, sy);
+  // テクスチャの模様をワールドに固定する。これをしないとパッチと一緒に模様が動き、
+  // 地面の上を滑っているように見えてしまう(uv.yは回転で反転しているので符号が逆)
+  const tex = terrain.material.map;
+  if(tex) tex.offset.set(sx / TEX_TILE, -sy / TEX_TILE);
 }
 
 function ensureScene(){
