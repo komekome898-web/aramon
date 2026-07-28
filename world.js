@@ -18,10 +18,22 @@ let nextId = 1;
 let player = null;
 let matchTime = 0;
 let zoneState = null;
-let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', autoRun:false };
+let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', autoRun:false, trainingRange:false };
 
-const FOV_V = 64*Math.PI/180;
+/* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
+   バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが
+   window.__aramonLook から読んで3D側のカメラにも同じ角度を設定する。          */
+const LOOK_DEFAULTS = { fovDeg:64, sensX:0.0045, sensY:0.0018 };
+const LOOK_LIMITS   = { fovDeg:[45,85], sensX:[0.0015,0.0090], sensY:[0.0006,0.0045] };
+let lookSettings = { ...LOOK_DEFAULTS };
+window.__aramonLook = lookSettings;
+let FOV_V = LOOK_DEFAULTS.fovDeg*Math.PI/180;
 let FOCAL = 600;
+// 設定を変えたら必ず呼ぶ(視野角→FOCAL。3D側は毎フレームwindow.__aramonLookを見る)
+function applyLookSettings(){
+  FOV_V = lookSettings.fovDeg*Math.PI/180;
+  recomputeFocal();
+}
 // TPS視点のカメラ配置。distBehindを小さくすると自分のモンスターが大きく見える。
 // heightを下げると画面内で上に動くので、寄せたぶんを打ち消して自分のモンスターの
 // 画面上の位置(足元Y)と地平線の高さを従来どおりに保っている(見た目だけ約1.35倍)。

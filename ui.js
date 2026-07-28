@@ -567,6 +567,7 @@ function mlConfirmEntry(){
   closeMonsterListScreen();
   renderSelectorCards();
   mlCarousel.refreshCards();
+  if(game.trainingRange) rangeApplyMonsterChange(); // 訓練場では即その場で乗り換える
   if(typeof pushToast==='function') pushToast(`${ELEMENTS[key].label} で参戦します`);
 }
 
@@ -584,6 +585,7 @@ function openMonsterListScreen(){
 function closeMonsterListScreen(){
   mlCarousel.stopAnim();
   document.getElementById('monsterListScreen').classList.add('hidden');
+  if(game.trainingRange) return; // 射撃訓練場から開いた場合はロビーを出さずに訓練場へ戻る
   document.getElementById('startScreen').classList.remove('hidden');
 }
 document.getElementById('mlBackBtn').addEventListener('click', closeMonsterDetail);
@@ -861,6 +863,63 @@ function syncAudioSliders(){
   document.getElementById('bgmVolVal').textContent = Math.round(audioSettings.bgm*100);
   document.getElementById('seVolVal').textContent = Math.round(audioSettings.se*100);
 }
+/* ===== 視点設定(視野角・左右/上下の感度) =====
+   実体は world.js の lookSettings。ここでは保存/復元とスライダーの面倒を見る。
+   端末ごとの操作設定なのでアカウント同期には入れない(更新履歴の既読と同じ扱い)。 */
+const LOOK_LS_KEY = 'aramon_look_v1';
+function loadLookSettings(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(LOOK_LS_KEY) || '{}');
+    for(const k of Object.keys(LOOK_DEFAULTS)){
+      const lim = LOOK_LIMITS[k];
+      if(typeof raw[k]==='number' && isFinite(raw[k])) lookSettings[k] = clamp(raw[k], lim[0], lim[1]);
+    }
+  }catch(e){}
+  applyLookSettings();
+}
+function saveLookSettings(){
+  try{ localStorage.setItem(LOOK_LS_KEY, JSON.stringify(lookSettings)); }catch(e){}
+}
+// スライダーは整数で扱う(感度は 0.0001 刻み = 表示値/10000)
+const LOOK_SLIDERS = [
+  { key:'fovDeg', slider:'fovSlider', val:'fovVal',  minus:'fovMinus',   plus:'fovPlus',   scale:1,     step:1 },
+  { key:'sensX',  slider:'sensXSlider', val:'sensXVal', minus:'sensXMinus', plus:'sensXPlus', scale:10000, step:3 },
+  { key:'sensY',  slider:'sensYSlider', val:'sensYVal', minus:'sensYMinus', plus:'sensYPlus', scale:10000, step:2 },
+];
+function syncLookSliders(){
+  for(const s of LOOK_SLIDERS){
+    const v = Math.round(lookSettings[s.key]*s.scale);
+    document.getElementById(s.slider).value = v;
+    document.getElementById(s.val).textContent = v;
+  }
+}
+function setLookValue(s, rawVal){
+  const lim = LOOK_LIMITS[s.key];
+  lookSettings[s.key] = clamp(rawVal/s.scale, lim[0], lim[1]);
+  applyLookSettings();
+  syncLookSliders();
+}
+LOOK_SLIDERS.forEach(s=>{
+  document.getElementById(s.slider).addEventListener('input', (e)=>setLookValue(s, +e.target.value));
+  document.getElementById(s.slider).addEventListener('change', saveLookSettings);
+  document.getElementById(s.minus).addEventListener('click', ()=>{ setLookValue(s, Math.round(lookSettings[s.key]*s.scale)-s.step); saveLookSettings(); });
+  document.getElementById(s.plus ).addEventListener('click', ()=>{ setLookValue(s, Math.round(lookSettings[s.key]*s.scale)+s.step); saveLookSettings(); });
+});
+document.getElementById('lookResetBtn').addEventListener('click', ()=>{
+  Object.assign(lookSettings, LOOK_DEFAULTS);
+  applyLookSettings(); syncLookSliders(); saveLookSettings();
+  pushToast('視点設定を初期値に戻しました');
+});
+function openLookSettings(){
+  syncLookSliders();
+  document.getElementById('lookSettingsOverlay').classList.remove('hidden');
+}
+document.getElementById('closeLookSettingsBtn').addEventListener('click', ()=>{
+  document.getElementById('lookSettingsOverlay').classList.add('hidden');
+  saveLookSettings();
+});
+loadLookSettings();
+
 document.getElementById('audioSettingsBtn').addEventListener('click', ()=>{
   syncAudioSliders();
   document.getElementById('audioSettingsOverlay').classList.remove('hidden');
@@ -2601,6 +2660,10 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
 });
 
 function startGame(){
+  game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
+  document.getElementById('rangeBar').classList.add('hidden');
+  document.getElementById('rangeHint').classList.add('hidden');
+  document.getElementById('hud').classList.remove('range-mode');
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=7; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
@@ -2658,6 +2721,137 @@ function startGame(){
   game.started=true;
   beginSummonIntro();   // 5秒の召喚演出 → 演出後に本戦開始(バトル開始SE/BGM)
 }
+/* =====================================================================
+   射撃訓練場
+   ・狭いリアルマップで、バトルと同じ操作のまま技を撃ち込んで練習する場所。
+   ・安置は動かさず(update()がupdateTrainingRangeを呼ぶ)、的は倒しても復活する。
+   ・アイテムは一列に並んでいて何度でも拾える(combat.jsのrangeRespawn)。
+   ・通常の試合と同じ初期化を通すので、追加の分岐は game.trainingRange 1つだけ。
+   ===================================================================== */
+const RANGE_WORLD_SCALE  = 0.18;              // 訓練場の広さ(通常マップに対する比)
+const RANGE_TARGET_DISTS = [260, 460, 700, 980, 1240]; // 的を置く距離(弾の落ち方を距離ごとに試せる)
+const RANGE_TARGET_HP    = 320;               // 的の耐久
+const RANGE_TARGET_SPAN  = [140, 200, 260, 320, 380];  // 的が左右に往復する幅(遠いほど大きい)
+function rangeSpawnTargets(cx, cy){
+  const names = ['的 近','的 中','的 遠','的 超遠','的 最遠'];
+  RANGE_TARGET_DISTS.forEach((d, i)=>{
+    const hx = clamp(cx + d, 120, WORLD.w-120);
+    const hy = clamp(cy, 120, WORLD.h-120);
+    const span = RANGE_TARGET_SPAN[i];
+    const t = createMonster('rock', false, names[i], { spawnPoint:{ x:hx, y:hy } });
+    t.isTargetBot = true;
+    t.homeX = hx; t.homeY = hy;
+    // 進行方向(+x)に対して左右=y方向へ往復させる
+    t.rangePoints = [
+      { x:hx, y: clamp(hy-span, 80, WORLD.h-80) },
+      { x:hx, y: clamp(hy+span, 80, WORLD.h-80) },
+    ];
+    t.rangeEndIdx = 0;
+    t.maxHp = RANGE_TARGET_HP; t.hp = RANGE_TARGET_HP;
+    t.speed = t.speed * (0.6 + i*0.12); // 遠い的ほど速く動く
+    entities.push(t);
+  });
+}
+// バトルで出てくるアイテムを1種類ずつ横一列に並べる(拾っても少し待てば同じ場所に出る)
+function rangeSpawnLootRow(cx, cy){
+  const list = [
+    { kind:'heal', type:'oilS' }, { kind:'heal', type:'oilM' }, { kind:'heal', type:'oilL' },
+    { kind:'guts', type:'guts' }, { kind:'ticket', type:'ticket' },
+    ...TRAINING_TYPES.map(t=>({ kind:'training', type:t })),
+  ];
+  const gap = 62, x = cx - 120;
+  const y0 = cy - ((list.length-1)/2)*gap;
+  list.forEach((it, i)=>{
+    const y = clamp(y0 + i*gap, 80, WORLD.h-80);
+    lootItems.push({ id:nextId++, kind:it.kind, type:it.type, x, y, z: baseTerrainHeightAt(x,y), bob: rand(0,Math.PI*2), rangeRespawn:true, respawnAt:0 });
+  });
+}
+function rangePlayerName(){
+  if(game.selectedMastermonKey){
+    const mm = loadMastermons()[game.selectedMastermonKey];
+    if(mm) return mm.name;
+  }
+  return 'プレイヤー';
+}
+function startShootingRange(){
+  entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
+  netState.mode='solo';           // 訓練場は常にローカル(マルチの後でも確実にソロ扱いにする)
+  introState.active=false;        // 召喚演出は挟まない
+  camState.yaw = 0;
+  camSnap.active = false;
+  monsterScreenPos.clear();
+  Object.keys(keys).forEach(k=>keys[k]=false);
+  fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
+  if(typeof setAutoRun==='function') setAutoRun(false);
+  joyKnobEl.style.transform='translate(0,0)';
+
+  game.trainingRange = true;
+  game.activeMapKey = 'real3d';
+  currentMap = MAPS.real3d;
+  applyStartPitchForMap();
+  applyReal3DLayer();
+  applyWorldScale(RANGE_WORLD_SCALE);
+  initZone();
+  // 安置は縮小させないうえ、ワールド全体を圏内にする(圏外のアイテムは消えてしまうため)
+  zoneState.radius = WORLD.w*2;
+  zoneState.fromRadius = zoneState.toRadius = zoneState.radius;
+  zoneState.shrinking = false; zoneState.hasNext = false;
+  genVolcanoAndLava(); genWater(); genOasisZones(); genRocks(); genCrystals(); genTerrain();
+
+  const cx = WORLD.w/2, cy = WORLD.h/2;
+  // 的を並べる射線上の岩は取り除く(弾が岩に吸われて練習にならないため)
+  rocks = rocks.filter(r=> !(r.x > cx-260 && r.x < cx+RANGE_TARGET_DISTS[RANGE_TARGET_DISTS.length-1]+220 && Math.abs(r.y-cy) < 480));
+  player = createMonster(game.selectedElement, true, rangePlayerName(), { spawnPoint:{x:cx, y:cy} });
+  applyMastermonToPlayer();
+  player.moveTierUnlocked = 3;    // 訓練場では技をすべて解放しておく
+  player.moveTierSelected = 1;
+  entities.push(player);
+  rangeSpawnTargets(cx, cy);
+  rangeSpawnLootRow(cx, cy);
+  updateCamera();
+
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('resultScreen').classList.add('hidden');
+  document.getElementById('hud').classList.add('range-mode');
+  document.getElementById('rangeBar').classList.remove('hidden');
+  document.getElementById('rangeHint').classList.remove('hidden');
+  if(typeof applyHudLayout==='function') applyHudLayout();
+  game.started = true;
+  if(typeof ensureBgmTrainingBuffer==='function') ensureBgmTrainingBuffer();
+  bgmSetTrack('training');
+  pushToast('🎯 射撃訓練場：技は全解放・的は復活します');
+}
+function exitShootingRange(){
+  game.started = false;
+  game.trainingRange = false;
+  game.over = false;
+  joinInProgress = false;
+  if(typeof setAutoRun==='function') setAutoRun(false);
+  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  document.getElementById('rangeBar').classList.add('hidden');
+  document.getElementById('rangeHint').classList.add('hidden');
+  document.getElementById('hud').classList.remove('range-mode');
+  document.getElementById('lookSettingsOverlay').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+  bgmSetTrack('title');
+}
+// 訓練場でモンスターを切り替える。その場の位置を保ったまま作り直す
+function rangeApplyMonsterChange(){
+  if(!game.trainingRange || !player) return;
+  const idx = entities.indexOf(player);
+  const keepX = player.x, keepY = player.y, keepFacing = player.facingAngle;
+  // 飛んでいる自分の弾は持ち主が入れ替わると自分自身に当たりうるので、まとめて消す
+  projectiles.length = 0; areaEffects.length = 0; pendingAoeCasts.length = 0;
+  const np = createMonster(game.selectedElement, true, rangePlayerName(), { spawnPoint:{x:keepX, y:keepY} });
+  np.facingAngle = keepFacing;
+  if(idx>=0) entities[idx] = np; else entities.push(np);
+  player = np;
+  applyMastermonToPlayer();
+  player.moveTierUnlocked = 3;
+  player.moveTierSelected = 1;
+  updateCamera();
+}
 let joinInProgress = false;
 // モンスター(またはマスモン)が選択されていない状態では、ソロの「バトルに参加する」だけでなく
 // マルチプレイの「部屋を作る」「部屋を探す」もクリックできないようにする
@@ -2665,6 +2859,7 @@ let joinInProgress = false;
 function updatePlayButtonsEnabled(){
   const enabled = !!game.selectedElement;
   document.getElementById('joinBtn').disabled = !enabled;
+  document.getElementById('openRangeBtn').disabled = !enabled; // 射撃訓練場もモンスター選択が要る
   document.getElementById('createRoomBtn').disabled = !enabled;
   document.getElementById('findRoomBtn').disabled = !enabled;
   document.getElementById('pickMonsterNotice').classList.toggle('hidden', enabled);
@@ -2676,6 +2871,20 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   requestFullscreenSafe();
   requestOrientationLockSafe();
   startGame();
+});
+document.getElementById('openRangeBtn').addEventListener('click', ()=>{
+  if(joinInProgress) return;
+  if(!game.selectedElement){ pushToast('先にモンスターを選択してください'); return; }
+  requestFullscreenSafe();
+  requestOrientationLockSafe();
+  startShootingRange();
+});
+// 訓練場の操作バー
+document.getElementById('rangeExitBtn').addEventListener('click', exitShootingRange);
+document.getElementById('rangeLookBtn').addEventListener('click', openLookSettings);
+document.getElementById('rangeMonsterBtn').addEventListener('click', ()=>{
+  // ロビーと同じ「マスモン / モンスター」の選択。閉じたときの戻り先は game.trainingRange で分岐する
+  lobbyOpenOverlay('monsterPickOverlay');
 });
 document.getElementById('createRoomBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
@@ -3496,7 +3705,8 @@ let mastermonNoticeTimer = null;
 document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
   mmCarousel.stopAnim();
   document.getElementById('mastermonScreen').classList.add('hidden');
-  if(mastermonOpenedFrom==='result'){
+  if(game.trainingRange){ /* 射撃訓練場から開いた場合はそのまま訓練場へ戻る */ }
+  else if(mastermonOpenedFrom==='result'){
     document.getElementById('resultScreen').classList.remove('hidden');
   } else {
     document.getElementById('startScreen').classList.remove('hidden');
@@ -3552,7 +3762,8 @@ function renderMastermonDetail(key){
     updatePlayButtonsEnabled();
     mmCarousel.stopAnim();
     document.getElementById('mastermonScreen').classList.add('hidden');
-    document.getElementById('startScreen').classList.remove('hidden');
+    if(game.trainingRange) rangeApplyMonsterChange();   // 訓練場では即その場で乗り換える
+    else document.getElementById('startScreen').classList.remove('hidden');
     renderSelectorCards();
     pushToast(`${mm.name} で参戦準備完了`);
   };
@@ -3951,7 +4162,7 @@ function applyMastermonToPlayer(){
   const mm = data[game.selectedMastermonKey];
   applyMastermonStatsToEntity(player, mm);
   // 技強化チケット: ストックがあれば1つ消費して技tier2解放でスタート
-  if(mm && mm.nextMoveBoost > 0){
+  if(mm && mm.nextMoveBoost > 0 && !game.trainingRange){   // 訓練場ではチケットを消費しない(最初から全解放)
     player.moveTierUnlocked = Math.max(player.moveTierUnlocked||1, 2);
     player.moveTierSelected = 2;
     mm.nextMoveBoost--;

@@ -285,6 +285,16 @@
     border:1px solid var(--panel-line); backdrop-filter:blur(2px);
   }
   .lobby-pick-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.16); }
+  /* 射撃訓練場へ(マップ選択の上)。バトル開始と同じくモンスター未選択では押せない */
+  .lobby-range-btn{
+    padding:calc(0.9 * var(--vh)) 10px; border-radius:9px; cursor:pointer; width:100%;
+    font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:1px;
+    font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap;
+    color:#cfe9ff; background:linear-gradient(90deg, rgba(18,40,64,0.55), rgba(18,40,64,0.9));
+    border:1px solid rgba(120,190,255,0.42);
+  }
+  .lobby-range-btn:active{ border-color:#8fd0ff; background:rgba(80,160,255,0.22); }
+  .lobby-range-btn:disabled{ opacity:0.4; }
   .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; letter-spacing:1px; color:var(--ink-dim); }
   .lobby-pick-value{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
     font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
@@ -1672,6 +1682,28 @@
     background:linear-gradient(180deg,#ffd76a,#f4c430); padding:3px 6px; border-radius:10px;
     box-shadow:0 2px 8px rgba(0,0,0,0.45); animation:autoRunBob 1.2s ease-in-out infinite; }
   @keyframes autoRunBob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
+
+  /* ===== 射撃訓練場の操作バー(画面右上) ===== */
+  /* 訓練場では安置が無いので、安置情報のパネルは出さない */
+  #hud.range-mode #topRight{ display:none; }
+  #rangeBar{ position:absolute; right:10px; top:8px; z-index:22; pointer-events:auto;
+    display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+  #rangeBar button{
+    padding:7px 12px; border-radius:9px; cursor:pointer; white-space:nowrap;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:0.5px;
+    color:var(--ink); background:linear-gradient(180deg, rgba(14,22,36,0.94), rgba(8,12,20,0.94));
+    border:1px solid rgba(150,200,255,0.4);
+  }
+  #rangeBar button:active{ background:rgba(80,160,255,0.26); border-color:#8fd0ff; }
+  #rangeBar #rangeExitBtn{ border-color:rgba(255,140,120,0.5); color:#ffd0c6; }
+  #rangeHint{ position:absolute; left:50%; top:54px; transform:translateX(-50%); z-index:21; pointer-events:none;
+    padding:4px 12px; border-radius:11px; white-space:nowrap;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.5px;
+    color:#cfe9ff; background:rgba(8,14,24,0.72); border:1px solid rgba(120,190,255,0.32); }
+  .look-settings-box{ max-width:min(560px, calc(92 * var(--vw))); width:min(560px, calc(92 * var(--vw))); position:relative; }
+  .look-settings-note{ font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; margin-bottom:6px; }
+  .look-settings-box .audio-slider-row{ margin:12px 0; }
+  .look-settings-box .audio-slider-label{ width:56px; font-size:13px; }
 
   /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */
   #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40;

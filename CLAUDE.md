@@ -88,6 +88,20 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - ヘッダーはスクロールさせず中身だけスクロール。右端には自前スライドバー`attachVisibleScrollbar()`(iOSのネイティブバーはスクロール中しか出ないため)。両画面共用なので修正はヘルパー側。ResizeObserverは`el._scrollbarRO`に持たせて同時使用でも壊れない。
 - `renderMastermonList()`は「カードを作り直す」処理。**登録数が変わったら`build()`、値だけなら`refreshCards()`。改名後はカード再生成も呼ぶ**(詳細カードはcloneなので古い名前が残る)。
 
+### 射撃訓練場
+- ロビー右上の「射撃訓練場へ」(`#openRangeBtn`。バトル開始と同じくモンスター未選択では押せない)から`startShootingRange()`。
+- **通常の試合と同じ初期化を通し、分岐は`game.trainingRange`1つだけ**にしてある(安置を止める/的の復活/アイテム再出現/勝敗なし)。触る場所は`update()`・`checkWin()`・`updateLootPickups()`・`drawZoneRings`系。
+- マップは`real3d`固定・`applyWorldScale(RANGE_WORLD_SCALE)`で狭くする。**安置は`zoneState.radius`をワールドより大きくして無効化する**(圏外のアイテムは消えてしまうため)。
+- 的は`isTargetBot`。`updateTargetBotAI()`が2点間を往復させるだけで攻撃しない。倒すと`updateTrainingRange()`が数秒後に元の位置へ復活させる。射線上の岩は生成後に取り除く。
+- アイテムは`rangeRespawn:true`。拾っても消さず`respawnAt`まで隠すだけ(描画側も`respawnAt`を見る)。
+- モンスター切替はロビーと同じ`monsterPickOverlay`を開く。**選択画面を閉じたときの戻り先は`game.trainingRange`で分岐**(ロビーを出さずに訓練場へ戻り、`rangeApplyMonsterChange()`でその場で作り直す)。
+- HUDは`#hud.range-mode`で安置パネル(`#topRight`)を隠し、`#rangeBar`(モンスター/視点設定/退出)を出す。BGMは`training`。
+
+### 視点設定(視野角・左右/上下の感度)
+- 実体は`world.js`の`lookSettings`(既定値`LOOK_DEFAULTS`・範囲`LOOK_LIMITS`)。**変更したら必ず`applyLookSettings()`**(視野角→`FOV_V`→`recomputeFocal()`)。
+- **3D側は`window.__aramonLook`を毎フレーム読んでカメラのfovを合わせる。** 2Dの`project()`と視野角がずれると地面と2D描画が食い違う。
+- 保存はui.jsの`aramon_look_v1`(端末ごとの操作設定なのでアカウント同期に入れない)。UIは音量設定と同じスライダー部品を流用。
+
 ### 更新履歴
 - 項目`{t,g}`、タグ定義は`CHANGELOG_TAGS`。見出し+タグ行は固定、`.changelog-list`だけスクロール(自前スライドバー共用)。
 - 絞り込みは`changelogFilterTag`。該当0件の日付は行ごと出さない。

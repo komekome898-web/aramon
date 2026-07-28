@@ -511,6 +511,7 @@ function killEntity(victim, killer){
   checkWin();
 }
 function checkWin(){
+  if(game.trainingRange) return; // 射撃訓練場は勝敗なし(的は倒しても復活する)
   if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
   if(game.over) return;
   const aliveList = entities.filter(e=>e.alive);
@@ -606,11 +607,21 @@ function minMoveGutsCost(b){
 const BOT_STUCK_MOVE_EPS = 55;   // このpx以内しか動いていなければ「その場に留まっている」とみなす
 const BOT_STUCK_SECONDS = 1.5;   // 留まり続けたら迂回を開始する秒数
 const BOT_DETOUR_SECONDS = 1.4;  // 迂回移動を維持する秒数(この間は通常の目標選択を抑制)
+// 射撃訓練場の的。攻撃はせず、決められた2点の間を左右に往復するだけ
+function updateTargetBotAI(b){
+  b.attackTargetId = null;
+  b.destination = null;
+  if(!b.aiTargetPoint || dist(b, b.aiTargetPoint) < 40){
+    b.rangeEndIdx = b.rangeEndIdx ? 0 : 1;
+    b.aiTargetPoint = b.rangePoints[b.rangeEndIdx];
+  }
+}
 function updateBotAI(b, dt){
   if(b.attackTargetId){ const t=getEntity(b.attackTargetId); if(!t||!t.alive) b.attackTargetId=null; }
   b.aiTimer -= dt;
   if(b.aiTimer>0) return;
   b.aiTimer = rand(0.22,0.4);
+  if(b.isTargetBot){ updateTargetBotAI(b); return; }
 
   // ===== スタック検知＆迂回 =====
   // 攻撃射程内で待機している場合(=意図的に止まっている)はスタック扱いしない。
@@ -959,6 +970,29 @@ function activateState(m){
     hostForceFullNext = true; // stateUntilはフル配信でしか載らないので即座に届ける
   }
 }
+/* 射撃訓練場の毎フレーム処理。安置は縮小させず(updateZoneを呼ばない)、
+   倒した的を一定時間後に元の位置へ復活させる。プレイヤーのガッツは自然回復のほか
+   ここで少し多めに戻して、技を撃ち続けられるようにしている                     */
+const RANGE_TARGET_RESPAWN = 2.5;   // 的が復活するまでの秒数
+const RANGE_GUTS_REGEN     = 6;     // 訓練場での追加ガッツ回復(毎秒)
+const RANGE_LOOT_RESPAWN   = 1.2;   // 訓練場のアイテムが同じ場所に出直すまでの秒数
+function updateTrainingRange(dt){
+  for(const e of entities){
+    if(!e.isTargetBot) continue;
+    if(e.alive) continue;
+    if(matchTime - e.deathAt < RANGE_TARGET_RESPAWN) continue;
+    e.alive = true;
+    e.hp = e.maxHp;
+    e.guts = e.maxGuts;
+    e.x = e.homeX; e.y = e.homeY; e.z = baseTerrainHeightAt(e.x, e.y);
+    e.hitFlash = 0; e.aiTargetPoint = null;
+    e.burnUntil = e.slowUntil = e.freezeUntil = e.poisonUntil = 0;
+  }
+  if(player && player.alive){
+    player.guts = Math.min(player.maxGuts, player.guts + RANGE_GUTS_REGEN*dt);
+    if(player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + player.maxHp*0.05*dt);
+  }
+}
 // HP割合・ガッツ割合による条件は継続的にチェックする必要があるため、毎フレーム呼び出す
 function checkPassiveStateTriggers(m){
   const sc = STATE_CHANGES[m.element];
@@ -1191,6 +1225,7 @@ function lootToast(e, msg){
 function updateLootPickups(){
   for(let i=lootItems.length-1;i>=0;i--){
     const it = lootItems[i];
+    if(it.respawnAt > matchTime) continue; // 射撃訓練場: 取り直せるようになるまで消えている
     if(dist(it, zoneState.center) > zoneState.radius){
       lootItems.splice(i,1);
       continue;
@@ -1289,7 +1324,9 @@ function updateLootPickups(){
         // そのままだと効果の反映が最大0.4秒遅れる。取得直後は次の配信を強制的にフルにする
         hostForceFullNext = true;
       }
-      lootItems.splice(i,1);
+      // 射撃訓練場のアイテムは無くならない。少し待つと同じ場所にまた出る
+      if(it.rangeRespawn) it.respawnAt = matchTime + RANGE_LOOT_RESPAWN;
+      else lootItems.splice(i,1);
     }
   }
 }
@@ -1375,7 +1412,8 @@ function endSummonIntro(){
 function update(dt){
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;
-  updateZone(dt);
+  if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
+  else updateZone(dt);
   updateCameraSnap(dt);
   computePlayerInput();
 
