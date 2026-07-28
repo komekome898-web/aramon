@@ -507,9 +507,10 @@ function tryNonHostPlayerFireVisual(dt){
   player.guts = Math.max(0, player.guts - effectiveGutsCost(player, mv));
   const effProjSpeed = effectiveProjSpeed(player, mv);
   // リアルマップの上下のねらい(通常マップでは0)。ホスト側の再現用に発射イベントでも送る
-  const aimSlope = fireAimSlope(player, null, mv.range, effProjSpeed);
-  const muzzleZ = projectileMuzzleZ(player);
   const onReal3d = isReal3dMap();
+  const projGrav = onReal3d ? projGravityFor(mv.range, effProjSpeed) : 0;
+  const aimSlope = fireAimSlope(player, null, mv.range, effProjSpeed, projGrav);
+  const muzzleZ = projectileMuzzleZ(player);
   const hbMult = ELEMENTS[player.element].hitboxMult || 1;
   const sp = moveSeName(mv, player); // tier3技の専用SE(無ければnull。ゼウス等のスキン専用SEも反映)
   // combat.jsのfireMoveと同じ見た目情報(スタイル・オーラ色・SSR色替え)を付与し、
@@ -587,7 +588,7 @@ function tryNonHostPlayerFireVisual(dt){
       const ang = aimAngle + off;
       projectiles.push({
         x:player.x, y:player.y, z:muzzleZ,
-        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
         color:colors[i], hitR:(mv.hitR||24)*hbMult, hitW:0,
         traveled:0, maxRange:mv.range, delay:0, visualOnly:true,
         projStyle:'godorb', orbColor:colors[i], moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
@@ -605,7 +606,7 @@ function tryNonHostPlayerFireVisual(dt){
       const ang = aimAngle + spreadOffset;
       projectiles.push({
         x:player.x, y:player.y, z:muzzleZ,
-        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d,
+        vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
         color:effColor, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
         projStyle:mv.projStyle||null, moveAura, auraTint,
@@ -663,7 +664,7 @@ function broadcastNewShotsAsHost(){
     window.__aramonPushShotEvent(netState.roomId, {
       type:'proj', sourceNetId: (owner && owner.netPlayerId) || null, ownerId: p.ownerId!=null ? p.ownerId : null,
       x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
-      vx:p.vx||0, vy:p.vy||0, vz:p.vz||0, terrain3d:!!p.terrain3d, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
+      vx:p.vx||0, vy:p.vy||0, vz:p.vz||0, grav:p.grav||0, terrain3d:!!p.terrain3d, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
       projStyle:p.projStyle||null, orbColor:p.orbColor||null, auraTint:p.auraTint||null, moveAura:p.moveAura||null,
       lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, landZ:p.landZ||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
@@ -776,7 +777,7 @@ function spawnVisualShotFromEvent(evt){
       });
     } else {
       projectiles.push({
-        x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy, vz:evt.vz||0, terrain3d:!!evt.terrain3d,
+        x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy, vz:evt.vz||0, grav:evt.grav||0, terrain3d:!!evt.terrain3d,
         color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
         traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
         projStyle:evt.projStyle||null, orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
@@ -1121,7 +1122,7 @@ function loop(now){
           const step = Math.hypot(p.vx,p.vy)*dt;
           p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
           // リアルマップ: 上下にも進み、重力で落ちる(combat.jsのupdateProjectilesと同じ式)
-          if(p.terrain3d){ p.z += (p.vz||0)*dt; p.vz = (p.vz||0) - PROJ_GRAVITY*dt; }
+          if(p.terrain3d){ p.z += (p.vz||0)*dt; p.vz = (p.vz||0) - (p.grav||0)*dt; }
           else if(p.vz) p.z += p.vz*dt;
           let visualHit = p.traveled >= p.maxRange;
           // リアルマップ: 丘に当たったら見た目もそこで止める(当たり判定はホストが確定)
