@@ -4604,7 +4604,7 @@ let adminMatchLogsCache = null;
 let adminSelectedPeriod = 'all';
 let adminSelectedMap = null;
 let adminSelectedMonster = null;
-let adminStatSubtab = 'count';    // プレイ状況タブ内のサブタブ(count=プレイ回数 / player=プレイヤー情報)
+let adminStatSubtab = 'count';    // プレイ状況タブ内のサブタブ(count=プレイ回数 / player=プレイヤー情報 / recent=直近プレイ)
 let adminSelectedPlayer = null;   // プレイヤー情報で詳細表示中のプレイヤー名
 
 function updateAdminPassDots(){
@@ -4748,6 +4748,8 @@ function renderAdminData(){
   document.getElementById('adminMonsterChart').innerHTML = adminBarChartHtml(monEntries, '#f4c430');
   // --- プレイヤー情報タブ(全期間) ---
   renderAdminPlayerTab();
+  // --- 直近プレイタブ(全期間・日時降順) ---
+  renderAdminRecentTab();
 }
 // プレイヤー情報タブ: 一覧 or 詳細
 function renderAdminPlayerTab(){
@@ -4811,13 +4813,30 @@ function renderAdminPlayerDetail(name){
   `;
   document.getElementById('adminPlayerBackBtn').onclick = ()=>{ adminSelectedPlayer = null; renderAdminPlayerTab(); };
 }
-// プレイ状況タブ内のサブタブ切替(プレイ回数 / プレイヤー情報)
+// プレイ状況タブ内のサブタブ切替(プレイ回数 / プレイヤー情報 / 直近プレイ)
 function adminShowStatSubtab(sub){
   adminStatSubtab = sub;
   document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=>t.classList.toggle('active', t.dataset.substat===sub));
   document.getElementById('adminStatCountPane').classList.toggle('hidden', sub!=='count');
   document.getElementById('adminStatPlayerPane').classList.toggle('hidden', sub!=='player');
+  document.getElementById('adminStatRecentPane').classList.toggle('hidden', sub!=='recent');
   if(sub==='player'){ adminSelectedPlayer = null; renderAdminPlayerTab(); }
+  if(sub==='recent'){ renderAdminRecentTab(); }
+}
+// 直近プレイ: 全プレイヤーの試合履歴を日時降順で最大100件表示(日時/プレイヤー名/マップ/モンスター/ソロ・マルチ)
+function renderAdminRecentTab(){
+  const logs = adminMatchLogsCache || [];
+  const recent = logs.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,100);
+  const listEl = document.getElementById('adminRecentPlayList');
+  listEl.innerHTML = recent.length ? recent.map(r=>
+    `<div class="admin-recent-row">
+      <span class="ar-dt">${adminFmtDateTime(r.ts)}</span>
+      <span class="ar-name">${r.name || '名無しのモンスター'}</span>
+      <span class="ar-map">${adminMapLabel(r)}</span>
+      <span class="ar-mon">${adminMonLabel(r)}</span>
+      <span class="ar-mode">${r.mode==='multi'?'マルチ':'ソロ'}</span>
+    </div>`
+  ).join('') : '<div class="rank-empty">記録がありません</div>';
 }
 document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=> t.addEventListener('click', ()=>adminShowStatSubtab(t.dataset.substat)));
 // 管理者画面: SE確認グリッド(全SEをタップで再生)

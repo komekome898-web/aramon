@@ -2401,9 +2401,9 @@
   .admin-count-display{
     margin-top:10px; font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); letter-spacing:1px;
   }
-  /* 管理者: プレイ状況のサブタブ(プレイ回数 / プレイヤー情報) */
-  #adminStatSubtabs{ margin-top:8px; }
-  .admin-substat{ padding:5px 20px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
+  /* 管理者: プレイ状況のサブタブ(プレイ回数 / プレイヤー情報 / 直近プレイ) */
+  #adminStatSubtabs{ margin-top:8px; flex-wrap:wrap; justify-content:center; }
+  .admin-substat{ padding:5px 14px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:14px; cursor:pointer; }
   .admin-substat.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
   /* 月フィルタのボタン列 */
@@ -2442,6 +2442,7 @@
   .admin-recent-row{ display:flex; gap:8px; align-items:baseline; font-size:10.5px; color:var(--ink);
     background:rgba(255,255,255,0.03); border-radius:5px; padding:4px 8px; }
   .admin-recent-row .ar-dt{ flex:0 0 auto; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; }
+  .admin-recent-row .ar-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .admin-recent-row .ar-map{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .admin-recent-row .ar-mon{ flex:0 0 auto; }
   .admin-recent-row .ar-mode{ flex:0 0 auto; color:var(--amber); }

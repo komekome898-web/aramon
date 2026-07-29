@@ -660,16 +660,17 @@
     <div class="admin-subtabs" id="adminStatSubtabs">
       <button class="admin-substat active" data-substat="count">プレイ回数</button>
       <button class="admin-substat" data-substat="player">プレイヤー情報</button>
+      <button class="admin-substat" data-substat="recent">直近プレイ</button>
     </div>
     <!-- サブタブ: プレイ回数 -->
     <div id="adminStatCountPane" class="admin-sub-pane">
       <div id="adminMonthFilter" class="admin-month-filter"></div>
       <div id="adminTotalMatches" class="admin-total-line"></div>
       <div id="adminCountScroll" class="admin-chart-scroll">
-        <div class="admin-col-title">地形別プレイ回数</div>
-        <div id="adminMapChart" class="admin-bar-chart"></div>
-        <div class="admin-col-title" style="margin-top:16px;">モンスター別プレイ回数</div>
+        <div class="admin-col-title">モンスター別プレイ回数</div>
         <div id="adminMonsterChart" class="admin-bar-chart"></div>
+        <div class="admin-col-title" style="margin-top:16px;">地形別プレイ回数</div>
+        <div id="adminMapChart" class="admin-bar-chart"></div>
       </div>
     </div>
     <!-- サブタブ: プレイヤー情報 -->
@@ -679,6 +680,13 @@
         <div id="adminPlayerList" class="admin-bar-chart"></div>
       </div>
       <div id="adminPlayerDetail" class="admin-chart-scroll hidden"></div>
+    </div>
+    <!-- サブタブ: 直近プレイ -->
+    <div id="adminStatRecentPane" class="admin-sub-pane hidden">
+      <div class="admin-chart-scroll">
+        <div class="admin-col-title">直近のプレイ履歴(日時降順・最大100件)</div>
+        <div id="adminRecentPlayList" class="admin-recent-list"></div>
+      </div>
     </div>
   </div>
   <div id="adminSePane" class="hidden">
