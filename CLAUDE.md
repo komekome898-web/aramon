@@ -136,10 +136,18 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **各`REAL3D_TERRAIN_SETS`の最大傾斜は0.3程度まで**(`Σ(amp×freq)/2`)。 ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
 - **岩・水晶の「登っているからすり抜ける」判定は`baseTerrainHeightAt`基準**(絶対値`m.z>25`だと起伏だけですり抜ける)。
 - **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を地形セットに足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
-- 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。細かい粒立ちは`buildDetailBumpTexture()`の`bumpMap`(Phongの弱い反射つき)。**色・凹凸の2枚とも`offset`をパッチ位置に合わせる**(片方だけだと模様が滑る)。
-- **テクスチャ生成は試合開始時に1回だけ走る同期処理。** オクターブ数やサイズを上げると実機の待ち時間に直結する(色512px/凹凸128pxが上限の目安)。
+- 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。
+- **地面はPBR(`MeshStandardMaterial`)。** 色(`buildGroundTexture`)+ 法線・粗さ・AO(`buildDetailMaps`)の4枚組で、`groundMapsFor(style)`がスタイルごとに1回だけ作って使い回す。**4枚すべての`offset`をパッチ位置に合わせる**(1枚でも忘れると模様が地面の上を滑る)。凹凸の強さはテーマの`bump`→`normalScale`(`bump*3`)。金属ではないので`metalness`は0。
+- **色テクスチャだけ`colorSpace = SRGBColorSpace`。** 法線・粗さ・AOはデータなので`NoColorSpace`。取り違えると色が沈む/凹凸が壊れる。
+- **ライティングは「空から作った環境マップ(PMREM)+ DirectionalLight」。** HDRI画像は持たず、`applyEnvironment()`が同じ空シェーダーを`PMREMGenerator.fromScene()`に通す。テーマを変えたら必ず作り直す(空の色が変わるため)。**前の`envRT`は`dispose()`する。**
+- **仕上げはrenderer側で完結**(`toneMapping = ACESFilmic` / `outputColorSpace = SRGB` / `antialias:true`)。**ポストプロセス(EffectComposer)は入れない。** 挟むとMSAAが無効になり、フルスクリーンのバッファでiPhoneのメモリと帯域を大きく使う。SSAOは開けた地形では画素差0.4/255程度しか出ず割に合わない(計測済み)。
+- **`scene.environmentIntensity`はThree r160に無い**(r163から)。環境光の強さは`material.envMapIntensity`で指定する。
+- **空と遠景の山は`material.toneMapped = false`。** テーマで決め打ちした色なので、トーンマッピングを通すと意図した色でなくなる。
+- **テクスチャ生成は試合開始時に1回だけ走る同期処理。** オクターブ数やサイズを上げると実機の待ち時間に直結する(色512px/細部256pxが上限の目安)。法線・粗さ・AOは**同じ高さ場を1回だけ作って共有する**(3回計算すると初期化が3倍になる)。
 - 遠景の山は`RIDGE_LAYERS`(距離の違う3枚)を縦にも分割して高度で色を変える(麓=霞/中腹=岩/頂上=雪)。**奥の層から順に頂点を積む**(空も山も深度を書かないので、手前を後に描かないと消される)。描画順は`renderOrder`(空-2 / 山-1)で固定。
 - 岩は2Dのまま`drawRealisticRock()`(render.js)で描く。光の向き`REAL_ROCK_SUN`はreal3d.jsの`SUN_DIR`と同じ値。**3Dへ移すと2Dのモンスターが必ず手前に描かれ、岩に隠れなくなる。**
+- **岩の影だけは3Dが落とす。** render.jsが`__aramonReal3D.render(rocks)`で岩の配列を渡し、`updateShadowCasters()`が`colorWrite:false`/`depthWrite:false`のダミー球(最大18個・近い順)を置く。**画面には出ずシャドウマップにだけ現れる**ので、岩の前後関係は2Dのまま保たれる。`material.visible=false`にすると影も消えるので使わない。
+- **影の範囲はカメラ前方(`SHADOW_AHEAD`)を中心に`SHADOW_HALF`四方だけ**。ワールド全体を1枚で覆うと解像度が足りずガビガビになる。`SHADOW_MAP`(1024)を上げるとiPhoneで重くなる。
 - ESモジュールなので`window.__aramonReal3D`(`setActive`/`render`/`resize`)経由。WebGL初期化失敗時は`render()`がfalseを返し2D地面にフォールバックする。
 - **地面に立つ大きな物(火山・雪山・森・ピラミッド)の頂点は`groundZAt()+高さ`で投影する**(底面は`projectGround`)。通常マップでは`groundZAt`が0なので見た目は変わらない。
 

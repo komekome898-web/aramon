@@ -1,9 +1,13 @@
 /* =====================================================================
-   リアルマップ(テスト)のWebGL描画レイヤー(Three.js)
+   リアルマップのWebGL描画レイヤー(Three.js)
 
    ・地面だけをWebGLで立体的に描く。モンスター・弾・技エフェクト・HUDは
      従来どおり2Dキャンバス(render.js)が上に重ねて描く。
      この分担なら既存の描画コードを一切書き換えずに済む。
+   ・地面はPBR(物理ベース描画): MeshStandardMaterial に色・法線・粗さ・AOの
+     4枚を貼り、空から作った環境マップ(PMREM)と太陽光で照らす。仕上げは
+     ACESフィルミックトーンマッピング + sRGB出力。ポストプロセスは使わない。
+   ・岩は2Dのままだが、影だけは3D側の「色を書かないダミー」が落とす(下部参照)。
    ・2Dの project() とカメラを完全に一致させてあるので、2D側が描く物の
      画面位置は3Dの地形とズレない(縦画角64°・カメラ位置・yaw/pitchを共有)。
      ただし丘の裏に隠れる遮蔽は2D側には無い(テストマップの割り切り)。
@@ -24,6 +28,17 @@ const RIDGE_DIST  = 5200;  // 遠景の山並みの距離(パッチの外。フ�
 const SKY_RADIUS  = 9000;
 const CAM_FAR     = 12000;
 const SUN_DIR     = new THREE.Vector3(-0.55, 0.62, -0.38).normalize();
+/* ---- PBR(物理ベース描画)の調整値 ----
+   地面は MeshStandardMaterial + 手続き的な baseColor/normal/roughness/AO で描く。
+   環境光は「空をそのままPMREMに通した環境マップ」(=HDRIの代わり。画像ファイルは増やさない)。
+   ポストプロセス(SSAO/Bloom)は入れない。フルスクリーンのバッファを何枚も持つと
+   iPhoneではメモリと帯域を大きく使うわりに、開けた地形では見た目がほとんど変わらないため。 */
+const SUN_INTENSITY = 3.1;   // 太陽光。PBRなので従来のPhongより大きい値になる
+const ENV_INTENSITY = 1.15;  // 空からの環境光の強さ(materialのenvMapIntensity)
+const EXPOSURE      = 1.15;  // ACESフィルミックトーンマッピングの露出
+const SHADOW_MAP    = 1024;  // 影の解像度。上げるとくっきりするがiPhoneでは重い
+const SHADOW_HALF   = 900;   // 影を計算する範囲(この四角の中だけ影が落ちる)
+const SHADOW_AHEAD  = 420;   // 影の範囲の中心をカメラの前方へずらす量
 /* マップごとの見た目は data.js の REAL3D_THEMES から window.__aramonRealTheme 経由で受け取る。
    ここにあるのは受け取れなかった時の既定値(荒野相当)。色を足すときは両方に足すこと。 */
 const DEFAULT_THEME = {
@@ -38,13 +53,14 @@ const COL_HAZE    = DEFAULT_THEME.haze;
 
 const CELL = PATCH_SIZE / PATCH_SEGS;   // 頂点間隔。この単位でパッチ位置をスナップする
 const TEX_TILE    = 420;                // 色テクスチャ1枚が覆うワールド単位(小さいほど細かい)
-const DETAIL_TILE = 105;                // 凹凸(バンプ)テクスチャが覆うワールド単位。足元の砂利感を出す
+const DETAIL_TILE = 120;                // 凹凸(バンプ)テクスチャが覆うワールド単位。足元の砂利感を出す
 const MACRO_TILE  = 900;                // 地面のまだら模様(砂/砂利/枯れ草)の大きさ
 
 let renderer = null, scene = null, camera = null;
 let terrain = null, terrainPos = null, terrainCol = null;
-let groundTex = null, detailTex = null;
-let sky = null, ridge = null;
+let groundMaps = null;                   // { map, normalMap, roughnessMap, aoMap }
+let sky = null, ridge = null, sun = null;
+let envRT = null;                        // 空から作った環境マップ(PMREM)
 let patchCX = null, patchCY = null;      // 現在のパッチ中心(スナップ済み)
 let active = false, failed = false;
 
@@ -52,15 +68,18 @@ function heightAt(x, y){
   return (typeof window.real3dHeightAt === 'function') ? window.real3dHeightAt(x, y) : 0;
 }
 
-// 空: 内側を向いた大きな球に2色グラデーションを描く(テクスチャ不要)
-function buildSky(){
-  const geo = new THREE.SphereGeometry(SKY_RADIUS, 24, 16);
+/* 空: 内側を向いた大きな球に2色グラデーションを描く(テクスチャ不要)。
+   forEnv=true のときは環境マップ(PMREM)を作るための小さな複製。
+   gainを上げて「空からの光」として使える明るさにする。                        */
+function buildSky(forEnv){
+  const geo = new THREE.SphereGeometry(forEnv ? 100 : SKY_RADIUS, 24, 16);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
       top:   { value: new THREE.Color(theme.skyTop) },
       bot:   { value: new THREE.Color(theme.skyBot) },
       haze:  { value: new THREE.Color(theme.haze) },
+      gain:  { value: forEnv ? 1.9 : 1.0 },
     },
     vertexShader: `
       varying float vH;
@@ -69,17 +88,19 @@ function buildSky(){
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }`,
     fragmentShader: `
-      uniform vec3 top; uniform vec3 bot; uniform vec3 haze;
+      uniform vec3 top; uniform vec3 bot; uniform vec3 haze; uniform float gain;
       varying float vH;
       void main(){
         // 地平線付近はヘイズ色に寄せて、地面のフォグと自然につなぐ
         float t = clamp(vH, -1.0, 1.0);
         vec3 c = (t >= 0.0) ? mix(bot, top, pow(t, 0.7)) : mix(bot, haze, clamp(-t*3.0, 0.0, 1.0));
-        gl_FragColor = vec4(c, 1.0);
+        gl_FragColor = vec4(c * gain, 1.0);
       }`,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
+  // 空の色はテーマで決め打ちした値なので、トーンマッピングを通さずそのまま出す
+  mesh.material.toneMapped = !forEnv;
   return mesh;
 }
 
@@ -154,6 +175,8 @@ function buildDistantRidge(){
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors:true, fog:false, depthWrite:false }));
   mesh.frustumCulled = false;
+  // 遠景の山も色を頂点に焼き込んであるので、空と同じくトーンマッピングを通さない
+  mesh.material.toneMapped = false;
   return mesh;
 }
 
@@ -180,21 +203,30 @@ function fbmTile(u, v, per, oct){
   for(let o=0;o<oct;o++){ s += tileNoise(u*p, v*p, p)*amp; amp *= 0.5; p *= 2; }
   return s;
 }
-/* 地面テクスチャの作り分け。crack=ひび割れ / grit=粒 / tint=色みの散らし / fine=砂目 */
+/* 地面テクスチャの作り分け。crack=ひび割れ / grit=粒 / tint=色みの散らし / fine=砂目
+   rough=ざらつき(PBRのroughness。小さいほどツヤが出る)                        */
 const TEX_STYLES = {
-  dry:      { crack:1.00, grit:1.00, tint:1.00, fine:1.00 },
-  volcanic: { crack:1.30, grit:1.25, tint:0.60, fine:1.15 },
-  sand:     { crack:0.15, grit:0.70, tint:0.80, fine:1.25 },
-  snow:     { crack:0.00, grit:0.45, tint:0.30, fine:0.70 },
-  jungle:   { crack:0.35, grit:1.10, tint:1.25, fine:1.10 },
+  dry:      { crack:1.00, grit:1.00, tint:1.00, fine:1.00, rough:[0.72,0.96] },
+  volcanic: { crack:1.30, grit:1.25, tint:0.60, fine:1.15, rough:[0.66,0.98] },
+  sand:     { crack:0.15, grit:0.70, tint:0.80, fine:1.25, rough:[0.80,0.98] },
+  snow:     { crack:0.00, grit:0.45, tint:0.30, fine:0.70, rough:[0.35,0.72] },
+  jungle:   { crack:0.35, grit:1.10, tint:1.25, fine:1.10, rough:[0.62,0.92] },
 };
-const groundTexCache = {};
-function groundTextureFor(style){
-  if(!groundTexCache[style]){
-    groundTexCache[style] = buildGroundTexture(TEX_STYLES[style] || TEX_STYLES.dry);
-    groundTexCache[style].repeat.set(PATCH_SIZE/TEX_TILE, PATCH_SIZE/TEX_TILE);
+/* PBRの4枚組(色/法線/粗さ/AO)をスタイルごとに1回だけ作って使い回す。
+   法線・粗さ・AOは同じ「細かい高さ場」から作るので、生成は1回で済ませる。   */
+const groundMapCache = {};
+function groundMapsFor(style){
+  if(!groundMapCache[style]){
+    const st = TEX_STYLES[style] || TEX_STYLES.dry;
+    const map = buildGroundTexture(st);
+    map.repeat.set(PATCH_SIZE/TEX_TILE, PATCH_SIZE/TEX_TILE);
+    const detail = buildDetailMaps(st);
+    [detail.normalMap, detail.roughnessMap, detail.aoMap].forEach(t=>{
+      t.repeat.set(PATCH_SIZE/DETAIL_TILE, PATCH_SIZE/DETAIL_TILE);
+    });
+    groundMapCache[style] = { map, ...detail };
   }
-  return groundTexCache[style];
+  return groundMapCache[style];
 }
 function buildGroundTexture(st){
   const S = 512;
@@ -228,31 +260,85 @@ function buildGroundTexture(st){
   g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;   // 色として作った画像なのでsRGBと明示する
   tex.anisotropy = 4;
   return tex;
 }
-// 足元の砂利・小石の凹凸。色テクスチャより細かい周期で貼り、陰影だけを作る
-function buildDetailBumpTexture(){
-  const S = 128;
+// 画素を1枚ずつ埋めてテクスチャにする共通処理。srgb=falseはデータ(法線・粗さ・AO)用
+function makeTexture(S, fill, srgb){
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
   const g = cv.getContext('2d');
   const img = g.createImageData(S, S);
-  for(let y=0;y<S;y++){
-    for(let x=0;x<S;x++){
-      const u = x/S, v = y/S;
-      const n = fbmTile(u, v, 16, 2);
-      const pebble = Math.pow(tileNoise(u*32, v*32, 32), 3); // 粒の立ち上がり(小石)
-      const c = Math.round(Math.max(0, Math.min(1, n*0.72 + pebble*0.5 + _hash(x*3.1,y*1.3)*0.08))*255);
-      const i = (y*S+x)*4;
-      img.data[i]=c; img.data[i+1]=c; img.data[i+2]=c; img.data[i+3]=255;
-    }
-  }
+  fill(img.data, S);
   g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.anisotropy = 2;
   return tex;
+}
+/* 足元の砂利・小石。法線(normalMap)・粗さ(roughnessMap)・遮蔽(aoMap)の3枚を、
+   同じ「細かい高さ場」から作る。高さ場を1回だけ計算して3枚で共有するので、
+   試合開始時の生成時間は従来のbumpMap1枚と大きくは変わらない。               */
+const DETAIL_S = 256;
+// 法線マップに焼き込む凹凸の強さ。テーマごとの強弱は normalScale(theme.bump)で調整する
+const NORMAL_BAKE = 0.28;
+function buildDetailMaps(st){
+  // 細かい高さ場: 砂目のfBm + 小石の粒 - ひび割れの溝
+  const H = new Float32Array(DETAIL_S*DETAIL_S);
+  for(let y=0;y<DETAIL_S;y++){
+    for(let x=0;x<DETAIL_S;x++){
+      const u = x/DETAIL_S, v = y/DETAIL_S;
+      const n = fbmTile(u, v, 16, 3);
+      const pebble = Math.pow(tileNoise(u*32, v*32, 32), 3);
+      const ridge = 1 - Math.abs(fbmTile(u, v, 12, 2)*2 - 1);
+      const crack = Math.max(0, ridge - 0.86) * 3.4 * st.crack;
+      H[y*DETAIL_S+x] = n*0.7 + pebble*0.55 - crack*0.6;
+    }
+  }
+  const at = (x,y)=>H[(((y%DETAIL_S)+DETAIL_S)%DETAIL_S)*DETAIL_S + (((x%DETAIL_S)+DETAIL_S)%DETAIL_S)];
+  // 法線: 高さ場の傾きをそのままRGBに入れる(接空間なのでZは常に手前向き)
+  const normalMap = makeTexture(DETAIL_S, (d)=>{
+    for(let y=0;y<DETAIL_S;y++){
+      for(let x=0;x<DETAIL_S;x++){
+        const dx = (at(x+1,y) - at(x-1,y)) * NORMAL_BAKE * DETAIL_S/64;
+        const dy = (at(x,y+1) - at(x,y-1)) * NORMAL_BAKE * DETAIL_S/64;
+        const len = Math.hypot(dx, dy, 1);
+        const i = (y*DETAIL_S+x)*4;
+        d[i]   = Math.round((-dx/len*0.5+0.5)*255);
+        d[i+1] = Math.round(( dy/len*0.5+0.5)*255);
+        d[i+2] = Math.round((  1/len*0.5+0.5)*255);
+        d[i+3] = 255;
+      }
+    }
+  }, false);
+  // 粗さ: 出っ張った粒はわずかにツヤ、窪みはマット
+  const lo = st.rough[0], hi = st.rough[1];
+  const roughnessMap = makeTexture(DETAIL_S, (d)=>{
+    for(let y=0;y<DETAIL_S;y++){
+      for(let x=0;x<DETAIL_S;x++){
+        const h = at(x,y);
+        const r = lo + (hi-lo)*Math.max(0, Math.min(1, 0.55 + (0.5-h)*0.9 + (_hash(x*2.7,y*1.9)-0.5)*0.25));
+        const c = Math.round(r*255), i = (y*DETAIL_S+x)*4;
+        d[i]=d[i+1]=d[i+2]=c; d[i+3]=255;
+      }
+    }
+  }, false);
+  // AO: まわりより低い所を暗くする(粒の間に落ちる細かい影)
+  const aoMap = makeTexture(DETAIL_S, (d)=>{
+    for(let y=0;y<DETAIL_S;y++){
+      for(let x=0;x<DETAIL_S;x++){
+        let avg = 0;
+        for(let oy=-3;oy<=3;oy+=3) for(let ox=-3;ox<=3;ox+=3) avg += at(x+ox, y+oy);
+        avg /= 9;
+        const occ = Math.max(0, Math.min(1, 0.82 + (at(x,y)-avg)*1.9));
+        const c = Math.round((0.55 + occ*0.45)*255), i = (y*DETAIL_S+x)*4;
+        d[i]=d[i+1]=d[i+2]=c; d[i+3]=255;
+      }
+    }
+  }, false);
+  return { normalMap, roughnessMap, aoMap };
 }
 
 function buildTerrain(){
@@ -263,18 +349,24 @@ function buildTerrain(){
   geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n*3), 3));
   // UVはパッチのローカル座標そのままなので、repeatで「何単位に1回」貼るかを決める。
   // パッチ位置はCELLの倍数にスナップして動かすため、模様がワールドに固定されて見える。
-  groundTex = groundTextureFor(theme.tex);
-  detailTex = buildDetailBumpTexture();
-  detailTex.repeat.set(PATCH_SIZE/DETAIL_TILE, PATCH_SIZE/DETAIL_TILE);
-  // Phongの弱い反射で、太陽に対して地面がわずかに照り返す(砂の質感)。
-  // 光沢を強くするとプラスチックに見えるので shininess は低く、specularは暗く保つ
-  const mat = new THREE.MeshPhongMaterial({
-    vertexColors:true, map:groundTex,
-    bumpMap:detailTex, bumpScale:theme.bump,
-    shininess:2, specular:new THREE.Color(0x0e0c09),
+  groundMaps = groundMapsFor(theme.tex);
+  // PBR。金属ではないので metalness は0、粗さはテクスチャに任せる。
+  // theme.bump は法線の強さ(凹凸の見え方)として使う。
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors:true,
+    map: groundMaps.map,
+    normalMap: groundMaps.normalMap,
+    roughnessMap: groundMaps.roughnessMap,
+    aoMap: groundMaps.aoMap,
+    normalScale: new THREE.Vector2(theme.bump*3, theme.bump*3),
+    metalness: 0.0, roughness: 1.0, aoMapIntensity: 0.9,
+    envMapIntensity: ENV_INTENSITY, dithering: true,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
+  // 丘が自分自身へ影を落とす(影を受ける側にもなる)
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   terrainPos = geo.attributes.position;
   terrainCol = geo.attributes.color;
   return mesh;
@@ -325,9 +417,14 @@ function updateTerrain(cx, cy){
   terrain.geometry.computeVertexNormals();
   terrain.position.set(sx, 0, sy);
   // テクスチャの模様をワールドに固定する。これをしないとパッチと一緒に模様が動き、
-  // 地面の上を滑っているように見えてしまう(uv.yは回転で反転しているので符号が逆)
-  if(groundTex) groundTex.offset.set(sx / TEX_TILE, -sy / TEX_TILE);
-  if(detailTex) detailTex.offset.set(sx / DETAIL_TILE, -sy / DETAIL_TILE);
+  // 地面の上を滑っているように見えてしまう(uv.yは回転で反転しているので符号が逆)。
+  // 色・法線・粗さ・AOの4枚すべてに同じ処理が必要(1枚でも忘れると模様が滑る)
+  if(groundMaps){
+    groundMaps.map.offset.set(sx / TEX_TILE, -sy / TEX_TILE);
+    [groundMaps.normalMap, groundMaps.roughnessMap, groundMaps.aoMap].forEach(t=>{
+      t.offset.set(sx / DETAIL_TILE, -sy / DETAIL_TILE);
+    });
+  }
 }
 
 function ensureScene(){
@@ -335,8 +432,15 @@ function ensureScene(){
   try{
     const cv = document.getElementById('glCanvas');
     if(!cv) { failed = true; return false; }
-    renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:false, alpha:false });
+    renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:true, alpha:false });
     renderer.setClearColor(COL_SKY_BOT, 1);
+    // 色管理: テクスチャはsRGB、計算はリニア、出力はsRGB。ポストプロセスを挟まないので
+    // MSAA(antialias:true)がそのまま効き、トーンマッピングもrenderer側で完結する
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = EXPOSURE;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     scene = new THREE.Scene();
     scene.fog = new THREE.Fog(COL_HAZE, FOG_NEAR, FOG_FAR);
     camera = new THREE.PerspectiveCamera(64, 1, 8, CAM_FAR);
@@ -346,16 +450,90 @@ function ensureScene(){
     ridge = buildDistantRidge(); ridge.renderOrder = -1; scene.add(ridge);
     terrain = buildTerrain();
     scene.add(terrain);
-    const sun = new THREE.DirectionalLight(0xfff1d6, 1.55);
-    sun.position.copy(SUN_DIR);
+    // 環境光は空そのもの(HDRIの代わり)。半球ライトは環境マップが担うので置かない
+    applyEnvironment();
+    sun = new THREE.DirectionalLight(0xfff1d6, SUN_INTENSITY);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+    sun.shadow.camera.left = -SHADOW_HALF; sun.shadow.camera.right = SHADOW_HALF;
+    sun.shadow.camera.top  =  SHADOW_HALF; sun.shadow.camera.bottom = -SHADOW_HALF;
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 4200;
+    // 影のにじみ・自己影(縞)対策。normalBiasは地形のスケールに合わせて大きめ
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 3;
     scene.add(sun);
-    scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x6b5a3e, 0.62));
+    scene.add(sun.target);
     return true;
   }catch(err){
     console.error('[aramon] WebGLの初期化に失敗しました。従来の描画にフォールバックします', err);
     failed = true; scene = null;
     return false;
   }
+}
+
+/* ---- 岩の影 ----
+   岩そのものは今までどおり2D(render.jsのdrawRealisticRock)で描く。3Dへ移すと
+   2Dのモンスターが必ず岩の手前に描かれてしまい、岩に隠れなくなるため。
+   代わりに「色を書かない影専用のダミー」だけを3Dに置き、地面に落ちる影を作る。
+   ダミーは colorWrite:false / depthWrite:false なので画面には一切出ず、
+   シャドウマップにだけ現れる。                                                */
+const SHADOW_PROXY_MAX = 18;   // 同時に影を落とせる岩の数(近い順)
+let proxyPool = null;
+function ensureProxies(){
+  if(proxyPool || !scene) return;
+  const geo = new THREE.SphereGeometry(1, 10, 7);
+  const mat = new THREE.MeshBasicMaterial({ colorWrite:false, depthWrite:false });
+  proxyPool = [];
+  for(let i=0;i<SHADOW_PROXY_MAX;i++){
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.receiveShadow = false;
+    m.frustumCulled = false;
+    m.visible = false;
+    scene.add(m);
+    proxyPool.push(m);
+  }
+}
+function updateShadowCasters(list, fx, fy){
+  ensureProxies();
+  if(!proxyPool) return;
+  let n = 0;
+  if(Array.isArray(list) && list.length){
+    // 影の範囲に入っている岩を近い順に拾う(範囲外は影を計算しても見えない)
+    const near = [];
+    for(let i=0;i<list.length;i++){
+      const r = list[i];
+      const dx = r.x - fx, dy = r.y - fy;
+      const lim = SHADOW_HALF + (r.radius || 0);
+      const d2 = dx*dx + dy*dy;
+      if(d2 <= lim*lim) near.push({ r, d2 });
+    }
+    near.sort((a,b)=>a.d2 - b.d2);
+    for(; n < near.length && n < SHADOW_PROXY_MAX; n++){
+      const r = near[n].r, m = proxyPool[n];
+      const rad = r.radius || 30, h = r.height || rad*1.3;
+      const isTree = (r.flavor === 'tree');
+      // 木は葉の高さに丸い影、岩は本体の高さでつぶれた影
+      m.position.set(r.x, heightAt(r.x, r.y) + (isTree ? h*0.85 : h*0.42), r.y);
+      m.scale.set(rad*0.95, isTree ? rad*0.75 : h*0.55, rad*0.95);
+      m.visible = true;
+    }
+  }
+  for(let i=n;i<SHADOW_PROXY_MAX;i++) proxyPool[i].visible = false;
+}
+
+/* 環境マップ(=HDRIの代わり)。そのマップの空をPMREMに通し、地面が空の色で
+   ほんのり照らされるようにする。画像ファイルは増えない。テーマを変えたら作り直す。 */
+function applyEnvironment(){
+  if(!renderer || !scene) return;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.add(buildSky(true));
+  const next = pmrem.fromScene(envScene, 0, 1, 500);
+  if(envRT) envRT.dispose();       // 前のマップぶんを捨てる(貯めるとGPUメモリを食う)
+  envRT = next;
+  scene.environment = envRT.texture;
+  pmrem.dispose();
 }
 
 /* マップが変わったときに、空・霞・地面の色・遠景の山をそのマップのテーマへ差し替える。
@@ -374,11 +552,16 @@ function applyTheme(){
   _cLow.setHex(theme.low); _cHigh.setHex(theme.high); _cSteep.setHex(theme.steep);
   _cGravel.setHex(theme.gravel); _cScrub.setHex(theme.scrub);
   if(terrain){
-    groundTex = groundTextureFor(theme.tex);
-    terrain.material.map = groundTex;
-    terrain.material.bumpScale = theme.bump;
-    terrain.material.needsUpdate = true;
+    groundMaps = groundMapsFor(theme.tex);
+    const mt = terrain.material;
+    mt.map = groundMaps.map;
+    mt.normalMap = groundMaps.normalMap;
+    mt.roughnessMap = groundMaps.roughnessMap;
+    mt.aoMap = groundMaps.aoMap;
+    mt.normalScale.set(theme.bump*3, theme.bump*3);
+    mt.needsUpdate = true;
   }
+  applyEnvironment();   // 空の色が変わったので環境光も作り直す
   // 遠景の山は色を頂点に焼き込んでいるので作り直す(三角形数は少ないので毎試合1回で十分)
   if(ridge){
     scene.remove(ridge);
@@ -420,8 +603,9 @@ const api = {
   },
   isActive(){ return active && !!scene; },
   resize(){ if(active) applySize(); },
-  // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る
-  render(){
+  // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る。
+  // shadowCasters には2Dで描く岩の配列(world.jsのrocks)を渡す = 地面に影だけ落とす
+  render(shadowCasters){
     if(!active || !scene) return false;
     const cp = window.camPos, cs = window.camState;
     if(!cp || !cs) return false;
@@ -440,6 +624,16 @@ const api = {
       cp.z - sinP*1000,
       cp.y + Math.sin(cs.yaw)*cosP*1000
     );
+    // 影の計算範囲はカメラの少し前方に置く。ワールド全体を1枚の影で覆うと
+    // 解像度が足りずガビガビになるので、プレイヤー周辺だけを高い密度で覆う
+    if(sun){
+      const fx = cp.x + Math.cos(cs.yaw)*SHADOW_AHEAD;
+      const fy = cp.y + Math.sin(cs.yaw)*SHADOW_AHEAD;
+      const fz = heightAt(fx, fy);
+      sun.target.position.set(fx, fz, fy);
+      sun.position.set(fx + SUN_DIR.x*2200, fz + SUN_DIR.y*2200, fy + SUN_DIR.z*2200);
+      updateShadowCasters(shadowCasters, fx, fy);
+    }
     renderer.render(scene, camera);
     return true;
   },
