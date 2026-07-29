@@ -394,9 +394,10 @@ function caroAuraMarkHtml(aura){
   return `<span class="ml-aura-mark" style="--am:${hex}" title="${jp}オーラ"></span>`;
 }
 // カード下部の数値(HP・速さ)。大きく見せたいので専用クラスで組む
+// r.colorClassを指定すると数値の文字色を差し替えられる(マスモンカードの育成強調用)
 function caroFigsHtml(rows){
   return `<div class="ml-card-figs">${rows.map(r=>`
-    <div class="ml-card-fig"><span class="ml-card-fig-k">${r.k}</span><span class="ml-card-fig-v">${r.v}</span></div>`).join('')}</div>`;
+    <div class="ml-card-fig"><span class="ml-card-fig-k">${r.k}</span><span class="ml-card-fig-v${r.colorClass?(' '+r.colorClass):''}">${r.v}</span></div>`).join('')}</div>`;
 }
 function mlCardInnerHtml(key){
   const el = ELEMENTS[key];
@@ -3495,6 +3496,13 @@ function mmEffectiveStats(mm){
     speed: Math.round(el.speed * (el.speedMod||1) * mults.speedMult),
   };
 }
+// マスモンカードのHP/速さが育つほど数値の色を目立たせる(200:オレンジ/300:金/400:虹)
+function mmStatValueColorClass(v){
+  if(v>=400) return 'ml-fig-v-rainbow';
+  if(v>=300) return 'ml-fig-v-gold';
+  if(v>=200) return 'ml-fig-v-orange';
+  return '';
+}
 // マスモンは「着せ替え済みの姿」なのでスキン込みのオーラを使う
 function mmAuraOf(key){
   return (typeof getMonsterAura==='function') ? getMonsterAura({ element:key, isPlayer:true }) : MONSTER_AURA[key];
@@ -3527,9 +3535,9 @@ function mmCardInnerHtml(key){
     <div class="ml-card-shine"></div>
     <div class="ml-card-body ml-card-body-mm">
       <div class="ml-card-name">${mm.name}${caroAuraMarkHtml(mmAuraOf(key))}</div>
-      ${caroFigsHtml([{k:'HP', v:eff.hp}, {k:'速さ', v:eff.speed}])}
+      ${caroFigsHtml([{k:'HP', v:eff.hp, colorClass:mmStatValueColorClass(eff.hp)}, {k:'速さ', v:eff.speed, colorClass:mmStatValueColorClass(eff.speed)}])}
       <div class="ml-card-exp"><div class="ml-card-exp-fill" style="width:${expPct}%"></div></div>
-      <div class="ml-card-exp-label">${maxed ? 'MAX LEVEL' : `EXP ${mm.exp}/${expNeed}`}　🎫${mm.tickets}</div>
+      <div class="ml-card-exp-label"><span class="${maxed?'ml-card-maxlv':''}">${maxed ? 'MAX LEVEL' : `EXP ${mm.exp}/${expNeed}`}</span>　<span class="ml-card-ticket">🎫${mm.tickets}</span></div>
     </div>`;
 }
 
@@ -3910,6 +3918,7 @@ function renderMastermonDetail(key){
       playSe('train');
       mastermonSelectedTraining = null;
       renderMastermonList();
+      renderMastermonCard(key);   // 詳細ビュー左の大きいカードもHP/速さを即反映(cloneなので作り直さないと古い数値のまま)
       renderMastermonDetail(key);
     });
   }

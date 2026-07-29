@@ -1368,6 +1368,14 @@
     font-size:clamp(15px, calc(4.7 * var(--vh)), 23px);
     text-shadow:0 0 10px var(--ml-accent,#f4c430), 0 1px 0 rgba(0,0,0,0.6);
   }
+  /* マスモンカードのHP/速さ育成強調(200:オレンジ/300:金/400:虹) */
+  .ml-card-fig-v.ml-fig-v-orange{ color:#ff9d3d; text-shadow:0 0 10px rgba(255,157,61,0.85), 0 1px 0 rgba(0,0,0,0.6); }
+  .ml-card-fig-v.ml-fig-v-gold{ color:#ffd700; text-shadow:0 0 12px rgba(255,215,0,0.9), 0 1px 0 rgba(0,0,0,0.6); }
+  .ml-card-fig-v.ml-fig-v-rainbow{
+    background:linear-gradient(90deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
+    background-size:200% 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent;
+    text-shadow:none; animation:resultRainbow 3s linear infinite;
+  }
   /* マスモンカードはEXPバー等で本文が長いので、絵の比率を下げて本文の場所を作る */
   .ml-card-art-mm{ height:50%; }
   .ml-card-body-mm{ top:50%; }
@@ -1375,6 +1383,15 @@
   .ml-card-exp{ margin-top:4px; height:4px; border-radius:2px; background:rgba(255,255,255,0.1); overflow:hidden; }
   .ml-card-exp-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); }
   .ml-card-exp-label{ margin-top:2px; font-family:'Share Tech Mono',monospace; font-size:8px; color:var(--ink-dim); }
+  /* 100レベル到達時の「MAX LEVEL」表示を虹色に */
+  .ml-card-maxlv{
+    font-weight:700;
+    background:linear-gradient(90deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
+    background-size:200% 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent;
+    animation:resultRainbow 3s linear infinite;
+  }
+  /* トレチケのアイコン・枚数はラベルより少し大きく見せる */
+  .ml-card-ticket{ font-size:11px; }
   .ml-card-lv{
     position:absolute; top:6px; right:6px; z-index:4; padding:2px 6px; border-radius:5px;
     font-family:'Russo One',sans-serif; font-size:10px; line-height:1.2; color:#1a1306;
