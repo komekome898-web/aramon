@@ -93,8 +93,11 @@
 
   window.__aramonFetchRanking = async function(field, count){
     try{
-      const q = query(ref(fbDb, 'scores'), orderByChild(field), limitToLast(count||20));
-      const snap = await get(q);
+      // orderByChild(field) + limitToLast(count) だと、対象フィールド(killsNormal等)を
+      // まだ持っていない旧形式のレコードがFirebase側の並び替えで最下位扱いになり、
+      // 母数が多いと件数指定で足切りされて結果に出てこなくなる(「除外」のように見えるバグの原因)。
+      // ここでは scores を全件取得し、フォールバック込みの並び替えはui.js側に任せる。
+      const snap = await get(ref(fbDb, 'scores'));
       const rows = [];
       snap.forEach(child=>{ rows.push(child.val()); });
       rows.sort((a,b)=> (b[field]||0) - (a[field]||0));
