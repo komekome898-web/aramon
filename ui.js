@@ -3457,6 +3457,7 @@ function submitScoreToRanking(isWin, placement){
     name,
     element: player.element,
     elementLabel: ELEMENTS[player.element].label,
+    mapType: (currentMap && currentMap.real3d) ? 'real' : 'normal', // 通常/リアルマップでランキングを分ける
     skin: equippedSkin,               // その試合で装備していたスキン(ランキングアイコンに反映)
     mastermonName,
     mastermonLevel,
@@ -4353,6 +4354,7 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
 
 let currentRankingMode = 'kills';
 let currentRankingMonster = 'all';
+let currentRankingMapType = 'normal'; // 通常マップ / リアルマップでランキングを分けて集計
 let rankingOpenedFrom = 'result';
 function populateRankingMonsterFilter(){
   const wrap = document.getElementById('rankingMonsterFilterWrap');
@@ -4405,10 +4407,12 @@ function statTitleChip(type, value){
   return t ? `<span class="rank-title-chip" title="${t.name}（${titleCondText(t)}）">${t.emoji}</span>` : '';
 }
 // ランキングの記録が満たす称号(最上位のキル称号＋ダメージ称号)をアイコンで表示
-function recordTitleBadgesHtml(r){
+// mapType('normal'/'real')に応じて通常/リアルマップどちらの記録を見るか切り替える
+function recordTitleBadgesHtml(r, mapType){
+  const suffix = mapType==='real' ? 'Real' : 'Normal';
   const chips = [];
-  const kt = highestTitleOf('matchKills', r.kills||0);
-  const dt = highestTitleOf('matchDamage', r.damage||0);
+  const kt = highestTitleOf('matchKills', r['kills'+suffix]||0);
+  const dt = highestTitleOf('matchDamage', r['damage'+suffix]||0);
   if(kt) chips.push(`<span class="rank-title-chip" title="${kt.name}（${titleCondText(kt)}）">${kt.emoji}</span>`);
   if(dt) chips.push(`<span class="rank-title-chip" title="${dt.name}（${titleCondText(dt)}）">${dt.emoji}</span>`);
   return chips.length ? `<span class="rank-titles">${chips.join('')}</span>` : '';
@@ -4429,7 +4433,9 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
     return;
   }
-  const field = mode; // kills / damage / mastermonLevel いずれもFirebase側で索引済み
+  // kills/damageは通常マップ/リアルマップで別カウンタ(killsNormal等)に集計しているので、
+  // モードとマップ種別タブから実際に索引する項目名を組み立てる。mastermonLevelはマップ別に分けない。
+  const field = mode==='mastermonLevel' ? 'mastermonLevel' : (mode + (currentRankingMapType==='real' ? 'Real' : 'Normal'));
   const fetchCount = currentRankingMonster==='all' ? 50 : 300;
   const rows = await window.__aramonFetchRanking(field, fetchCount);
   if(!rows){
@@ -4446,7 +4452,7 @@ async function loadRankingList(mode){
     return;
   }
   // 同じスコアは同じ順位にする(次の順位は人数ぶん飛ぶ = 一般的な競技順位)
-  const scoreOf = (r)=> mode==='mastermonLevel' ? (r.mastermonLevel||0) : (mode==='kills' ? (r.kills||0) : (r.damage||0));
+  const scoreOf = (r)=> mode==='mastermonLevel' ? (r.mastermonLevel||0) : (r[field]||0);
   let prevScore = null, prevRank = 0;
   listEl.innerHTML = top.map((r,i)=>{
     const score = scoreOf(r);
@@ -4465,7 +4471,7 @@ async function loadRankingList(mode){
         : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
     }
     const mmHtml = rankMastermonHtml(r.mastermonName);
-    const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r) : '';
+    const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r, currentRankingMapType) : '';
     return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
   }).join('');
 }
@@ -4487,6 +4493,14 @@ document.querySelectorAll('.rank-tab').forEach(tab=>{
     tab.classList.add('active');
     const m = tab.dataset.mode;
     currentRankingMode = (m==='damage' || m==='mastermonLevel') ? m : 'kills';
+    loadRankingList(currentRankingMode);
+  });
+});
+document.querySelectorAll('.rank-map-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.rank-map-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    currentRankingMapType = tab.dataset.maptype==='real' ? 'real' : 'normal';
     loadRankingList(currentRankingMode);
   });
 });

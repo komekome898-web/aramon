@@ -1848,6 +1848,12 @@
   #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
 
   #rankingControls{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  #rankingMapTabs{ display:flex; gap:8px; width:100%; justify-content:center; }
+  .rank-map-tab{
+    padding:6px 16px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  }
+  .rank-map-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #rankingTabs{ display:flex; gap:10px; }
   .rank-tab{
     padding:8px 18px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;

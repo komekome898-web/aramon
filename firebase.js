@@ -47,25 +47,37 @@
     try{
       const key = makeScoreKey(entry.name, entry.element);
       const scoreRef = ref(fbDb, `scores/${key}`);
+      const isReal = entry.mapType === 'real';
       await runTransaction(scoreRef, (cur)=>{
         if(!cur){
-          return {
+          const base = {
             name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
             skin: entry.skin || null,            // 装備スキン(ランキングアイコンに反映)
             mastermonName: entry.mastermonName || null,
             mastermonLevel: entry.mastermonLevel || null,
-            kills: entry.kills, damage: entry.damage,
+            // 通常マップ/リアルマップでキル数・ダメージ数を別々に集計する
+            killsNormal: 0, damageNormal: 0, killsReal: 0, damageReal: 0,
             placement: entry.placement, isWin: entry.isWin,
             time: entry.time, ts: entry.ts,
           };
+          if(isReal){ base.killsReal = entry.kills||0; base.damageReal = entry.damage||0; }
+          else { base.killsNormal = entry.kills||0; base.damageNormal = entry.damage||0; }
+          return base;
         }
+        // 旧データ(通常/リアル分離前のkills/damage)は通常マップの実績として引き継ぐ
+        const killsNormal = cur.killsNormal!=null ? cur.killsNormal : (cur.kills||0);
+        const damageNormal = cur.damageNormal!=null ? cur.damageNormal : (cur.damage||0);
+        const killsReal = cur.killsReal||0;
+        const damageReal = cur.damageReal||0;
         return {
           name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
           skin: entry.skin || cur.skin || null,  // 直近の装備スキンを優先(未装備なら従来値を維持)
           mastermonName: entry.mastermonName || cur.mastermonName || null,
           mastermonLevel: Math.max(cur.mastermonLevel||0, entry.mastermonLevel||0) || null,
-          kills: Math.max(cur.kills||0, entry.kills||0),
-          damage: Math.max(cur.damage||0, entry.damage||0),
+          killsNormal: isReal ? killsNormal : Math.max(killsNormal, entry.kills||0),
+          damageNormal: isReal ? damageNormal : Math.max(damageNormal, entry.damage||0),
+          killsReal: isReal ? Math.max(killsReal, entry.kills||0) : killsReal,
+          damageReal: isReal ? Math.max(damageReal, entry.damage||0) : damageReal,
           placement: Math.min(cur.placement||99, entry.placement||99),
           isWin: !!(cur.isWin || entry.isWin),
           time: Math.max(cur.time||0, entry.time||0),
@@ -484,12 +496,18 @@
         let best = null;
         for(const it of items){
           if(!best){ best = it.val; continue; }
+          const bKN = best.killsNormal!=null ? best.killsNormal : (best.kills||0);
+          const bDN = best.damageNormal!=null ? best.damageNormal : (best.damage||0);
+          const iKN = it.val.killsNormal!=null ? it.val.killsNormal : (it.val.kills||0);
+          const iDN = it.val.damageNormal!=null ? it.val.damageNormal : (it.val.damage||0);
           best = {
             name: best.name, element: best.element, elementLabel: best.elementLabel,
             mastermonName: best.mastermonName || it.val.mastermonName || null,
             mastermonLevel: Math.max(best.mastermonLevel||0, it.val.mastermonLevel||0) || null,
-            kills: Math.max(best.kills||0, it.val.kills||0),
-            damage: Math.max(best.damage||0, it.val.damage||0),
+            killsNormal: Math.max(bKN, iKN),
+            damageNormal: Math.max(bDN, iDN),
+            killsReal: Math.max(best.killsReal||0, it.val.killsReal||0),
+            damageReal: Math.max(best.damageReal||0, it.val.damageReal||0),
             placement: Math.min(best.placement||99, it.val.placement||99),
             isWin: !!(best.isWin || it.val.isWin),
             time: Math.max(best.time||0, it.val.time||0),
