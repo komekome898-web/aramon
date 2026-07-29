@@ -1864,8 +1864,10 @@
 
   #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
 
-  #rankingControls{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:18px; flex-wrap:wrap; }
-  #rankingMapTabs{ display:flex; gap:8px; width:100%; justify-content:center; }
+  #rankingHeaderRow{ display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap; }
+  #rankingTitle{ font-size:24px; }
+  #rankingControls{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  #rankingMapTabs{ display:flex; gap:8px; }
   .rank-map-tab{
     padding:6px 16px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
@@ -1908,12 +1910,12 @@
      max-height+overflow-y:autoでスクロール可能なので、外側のこの画面では
      クリッピングさせず(overflow-y:visible)、画面全体を基準にはみ出させてよい。 */
   #rankingScreen{ overflow-y:visible; }
-  #rankingList{ margin-top:18px; width:min(calc(90 * var(--vw)),420px); max-height:calc(48 * var(--vh)); overflow-y:scroll; display:flex; flex-direction:column; gap:6px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
+  #rankingList{ margin-top:14px; width:min(calc(90 * var(--vw)),420px); max-height:calc(60 * var(--vh)); overflow-y:scroll; display:flex; flex-direction:column; gap:5px; padding-right:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   #rankingList::-webkit-scrollbar{ width:12px; }
   #rankingList::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
   #rankingList::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #rankingList{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
-  .rank-row{ display:flex; align-items:center; gap:10px; padding:8px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
+  .rank-row{ display:flex; align-items:center; gap:10px; padding:6px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
   .rank-row.rank-row-top{ background:rgba(244,196,48,0.08); border-color:rgba(244,196,48,0.4); }
   .rank-crown{ font-size:16px; width:18px; text-align:center; flex-shrink:0; }
   .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; flex-shrink:0; }
