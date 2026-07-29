@@ -4403,6 +4403,14 @@ async function openRankingScreen(fromTitle){
   await loadRankingList(currentRankingMode);
 }
 const RANK_CROWN = { 1:{ color:'#ffd700', glow:'rgba(255,215,0,0.7)' }, 2:{ color:'#dfe6ee', glow:'rgba(223,230,238,0.6)' }, 3:{ color:'#cd7f32', glow:'rgba(205,127,50,0.6)' } };
+// scoresの1レコードからkills/damageを通常/リアル別に取り出す。
+// killsNormal等はこの機能を追加した後に試合を送信したレコードにしか無いので、
+// 未移行の旧データ(kills/damageのみ)は読み取り時にも通常マップの実績として引き継ぐ(リアルは0扱い)。
+function mmMapStat(r, statName, mapType){
+  const field = statName + (mapType==='real' ? 'Real' : 'Normal');
+  if(r[field]!=null) return r[field]||0;
+  return mapType==='normal' ? (r[statName]||0) : 0;
+}
 // ある値(キル/ダメージ)で満たせる最上位の称号を返す
 function highestTitleOf(type, value){
   if(typeof TITLES==='undefined') return null;
@@ -4418,10 +4426,9 @@ function statTitleChip(type, value){
 // ランキングの記録が満たす称号(最上位のキル称号＋ダメージ称号)をアイコンで表示
 // mapType('normal'/'real')に応じて通常/リアルマップどちらの記録を見るか切り替える
 function recordTitleBadgesHtml(r, mapType){
-  const suffix = mapType==='real' ? 'Real' : 'Normal';
   const chips = [];
-  const kt = highestTitleOf('matchKills', r['kills'+suffix]||0);
-  const dt = highestTitleOf('matchDamage', r['damage'+suffix]||0);
+  const kt = highestTitleOf('matchKills', mmMapStat(r,'kills',mapType));
+  const dt = highestTitleOf('matchDamage', mmMapStat(r,'damage',mapType));
   if(kt) chips.push(`<span class="rank-title-chip" title="${kt.name}（${titleCondText(kt)}）">${kt.emoji}</span>`);
   if(dt) chips.push(`<span class="rank-title-chip" title="${dt.name}（${titleCondText(dt)}）">${dt.emoji}</span>`);
   return chips.length ? `<span class="rank-titles">${chips.join('')}</span>` : '';
@@ -4452,16 +4459,20 @@ async function loadRankingList(mode){
     return;
   }
   let filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
+  // 同じスコアは同じ順位にする(次の順位は人数ぶん飛ぶ = 一般的な競技順位)
+  const scoreOf = (r)=> mode==='mastermonLevel' ? (r.mastermonLevel||0) : mmMapStat(r, mode, currentRankingMapType);
   if(mode==='mastermonLevel'){
     filtered = filtered.filter(r=>r.mastermonName).sort((a,b)=>(b.mastermonLevel||0)-(a.mastermonLevel||0));
+  } else {
+    // Firebase側の索引(killsNormal等)は旧データに存在せず並び順に反映されないため、
+    // 読み取り時のフォールバック込みの値で改めて並べ直す
+    filtered = filtered.slice().sort((a,b)=>scoreOf(b)-scoreOf(a));
   }
   const top = filtered.slice(0,50);
   if(top.length===0){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
     return;
   }
-  // 同じスコアは同じ順位にする(次の順位は人数ぶん飛ぶ = 一般的な競技順位)
-  const scoreOf = (r)=> mode==='mastermonLevel' ? (r.mastermonLevel||0) : (r[field]||0);
   let prevScore = null, prevRank = 0;
   listEl.innerHTML = top.map((r,i)=>{
     const score = scoreOf(r);
