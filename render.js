@@ -2405,10 +2405,13 @@ function obstacleFade(x, y){
    くり抜く」だけにする。くり抜くと、その障害物より前(=奥)に描かれたものだけが消えて
    3Dの障害物が見え、後(=手前)に描かれるものはそのまま上に乗る。つまりモンスターや技の
    前後関係は従来の奥行きソートのままで変わらない。
-   輪郭の寸法はdata.jsのOBST_SHAPES(3Dモデルと共通)を使い、取りこぼしが出ないよう
-   少しだけ大きめに消す(2Dの地面はリアルマップでは描いていないので、大きすぎても
-   下のWebGLの地面が見えるだけで害はない)。                                        */
-const OBST_ERASE_PAD = 1.07;
+   輪郭の寸法はdata.jsのOBST_SHAPES(3Dモデルと共通)を使う。**隠れる範囲が実物と
+   ずれないよう、3D側の置き方をそのまま再現すること**:
+   ・地面へ埋める深さ(sink)を引いた位置がモデルの原点。ここを外すと全体が上へずれ、
+     障害物より高い所まで消えてしまう
+   ・高さの個体差(hk)は3D側と同じ式でseedから作る
+   ・接地高さは3D側と同じ「足元4点のいちばん低い高さ」を使う(坂でずれないため) */
+const OBST_ERASE_PAD = 1.02;
 function obstShapeOf(o, fallbackFlavor){
   const t = (typeof OBST_SHAPES!=='undefined') ? OBST_SHAPES : null;
   const key = o.flavor || fallbackFlavor || 'rock';
@@ -2423,13 +2426,34 @@ function obstacleVisible(x, y){
   if(!real3dActive) return 1;
   return Math.hypot(x-camPos.x, y-camPos.y) <= obstacleCullDist() ? 1 : 0;
 }
+// 3D側と同じ「足元4点のいちばん低い高さ」。岩は動かないので一度計算したら覚えておく
+function obstacleBaseZ(o){
+  if(o._obz === undefined){
+    const r = o.radius || 30;
+    o._obz = Math.min(
+      groundZAt(o.x - r*0.7, o.y), groundZAt(o.x + r*0.7, o.y),
+      groundZAt(o.x, o.y - r*0.7), groundZAt(o.x, o.y + r*0.7)
+    );
+  }
+  return o._obz;
+}
 function eraseObstacle(o, p, fallbackFlavor){
   const sh = obstShapeOf(o, fallbackFlavor);
   const r = o.radius || 30;
+  const seed = o.seed || 0;
+  const hk = 0.90 + (seed - Math.floor(seed))*0.26;   // 3D側の高さの個体差と同じ式
+  const baseZ = obstacleBaseZ(o) - r*sh.sink;         // モデルの原点(地面より少し下)
   // 高さは決め打ちの縮尺ではなく実際に投影して求める(近くの高い木ほど差が出る)
-  const top = project(o.x, o.y, groundZAt(o.x, o.y) + r*sh.h);
-  if(!top) return;
-  const hPx = p.y - top.y;
+  const pBot = project(o.x, o.y, baseZ) || p;
+  const pTop = project(o.x, o.y, baseZ + r*sh.h*hk);
+  if(!pBot || !pTop) return;
+  const hPx = pBot.y - pTop.y;
+  // モデルのローカル高さ(0=原点 h=天辺)と横方向のずれから画面上の点を出す
+  const ptX = (ly, lx)=>{
+    const f = ly/sh.h;
+    return pBot.x + (pTop.x-pBot.x)*f + lx*r*(pBot.scale + (pTop.scale-pBot.scale)*f)*OBST_ERASE_PAD;
+  };
+  const ptY = (ly)=> pBot.y + (pTop.y-pBot.y)*(ly/sh.h);
   // 1フレームに何十回も通るので save/restore は使わず必要な状態だけ戻す
   const prevAlpha = ctx.globalAlpha;
   ctx.globalAlpha = 1;
@@ -2437,13 +2461,29 @@ function eraseObstacle(o, p, fallbackFlavor){
   ctx.fillStyle = '#000';
   ctx.beginPath();
   for(const s of sh.sil){
-    const f = s[0];
-    const cx = p.x + (top.x-p.x)*f, cy = p.y + (top.y-p.y)*f;
-    const sc = p.scale + (top.scale-p.scale)*f;
-    const rx = Math.max(1, s[1]*r*sc*OBST_ERASE_PAD);
-    const ry = Math.max(1, Math.abs(s[2]*hPx)*OBST_ERASE_PAD);
-    ctx.moveTo(cx+rx, cy);          // 楕円ごとに独立した部分パスにする
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+    const cy = s[0], rx = s[1], ry = s[2], type = s[3]||0;
+    const rxTop = (s[4] != null) ? s[4] : rx;   // 箱の上端の太さ(幹は上ほど細い)
+    const lo = cy - ry, hi = cy + ry;
+    /* 【重要】部分パスの回り方は全部そろえる。ctx.ellipse(0→2π)と逆回りの多角形を
+       同じパスに入れると、重なった所が非ゼロ規則で穴になり、そこだけ消し残る
+       (幹と葉が重なる木で実際に出た)。多角形は右下→左下→左上→右上で回す。   */
+    if(type === 1){          // 箱(幹・柱)。上下で幅が変わるよう両端を別々に投影する
+      ctx.moveTo(ptX(lo, rx), ptY(lo));
+      ctx.lineTo(ptX(lo,-rx), ptY(lo));
+      ctx.lineTo(ptX(hi,-rxTop), ptY(hi));
+      ctx.lineTo(ptX(hi, rxTop), ptY(hi));
+      ctx.closePath();
+    } else if(type === 2){   // 三角(円錐)
+      ctx.moveTo(ptX(lo, rx), ptY(lo));
+      ctx.lineTo(ptX(lo,-rx), ptY(lo));
+      ctx.lineTo(ptX(hi, 0),  ptY(hi));
+      ctx.closePath();
+    } else {                 // 楕円(丸い塊)
+      const ex = ptX(cy, rx) - ptX(cy, 0);
+      const ey = Math.abs(ry*hPx/sh.h)*OBST_ERASE_PAD;
+      ctx.moveTo(ptX(cy,0)+ex, ptY(cy));   // 楕円ごとに独立した部分パスにする
+      ctx.ellipse(ptX(cy,0), ptY(cy), Math.max(0.5,ex), Math.max(0.5,ey), 0, 0, Math.PI*2);
+    }
   }
   ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
