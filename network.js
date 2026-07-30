@@ -1050,6 +1050,8 @@ function loop(now){
   try{
     const dt = Math.min(0.05, (now-lastT)/1000);
     lastT = now;
+    // パフォーマンス計測(管理者画面でONのときだけ実際に時計を読む)
+    if(typeof perfFrameStart==='function') perfFrameStart(now);
 
     if(game.started && !game.over){
       if(introState.active){
@@ -1168,7 +1170,10 @@ function loop(now){
       }
     }
 
+    if(typeof perfMark==='function') perfMark('update');
     if(game.started) render();
+    if(typeof perfMark==='function') perfMark('render');
+    if(typeof perfFrameEnd==='function') perfFrameEnd();
   }catch(err){
     loopErrorCount++;
     if(loopErrorCount<=5) console.error("[aramon] loop error", err);

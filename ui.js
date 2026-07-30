@@ -2132,6 +2132,20 @@ function buyShopItem(itemKey, price){
   updateAccountBar();
 }
 // 管理者画面: 動作確認用のダイヤ付与(この端末のウォレットに加算→ログイン中なら自動同期)
+/* パフォーマンス表示のON/OFF。端末ごとの開発用設定なのでアカウント同期には入れない。
+   実体は render.js の perfEnabled()(OFFのときは計測処理そのものが走らない)。 */
+const PERF_KEY = 'aramon_perf_v1';
+function loadPerfPref(){ try{ return localStorage.getItem(PERF_KEY)==='1'; }catch(e){ return false; } }
+function applyPerfPref(on){
+  try{ localStorage.setItem(PERF_KEY, on?'1':'0'); }catch(e){}
+  if(typeof perfEnabled==='function') perfEnabled(on);
+  const btn = document.getElementById('adminPerfToggle');
+  if(btn) btn.textContent = `📊 パフォーマンス表示: ${on?'ON':'OFF'}`;
+}
+document.getElementById('adminPerfToggle').addEventListener('click', ()=>{
+  applyPerfPref(!loadPerfPref());
+});
+applyPerfPref(loadPerfPref());
 document.getElementById('adminGrantDiaBtn').addEventListener('click', ()=>{
   addWallet(0, 500);
   updateAccountBar();

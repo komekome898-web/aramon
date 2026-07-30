@@ -4034,6 +4034,68 @@ function occludedByMountain(x, y, z){
   }
   return false;
 }
+/* =====================================================================
+   パフォーマンス計測(管理者画面から表示を切り替える)
+   ・OFFのときは perfFrameStart が即returnするので、通常プレイに負荷を足さない
+   ・見るのは「1フレーム全体・update・2D描画・WebGL」の内訳と、描いている物の数。
+     実機でどこが重いかを数字で確かめてから手を入れるためのもの
+===================================================================== */
+let perfOn = false;
+const PERF_AVG = 30;             // 平均を取るフレーム数
+const perf = {
+  t0:0, last:0, prevFrame:0,
+  sum:{ frame:0, update:0, render:0, gl:0 }, n:0,
+  avg:{ frame:0, update:0, render:0, gl:0 },
+  glMs:0, drawables:0, lastShownAt:0,
+};
+function perfEnabled(on){
+  perfOn = !!on;
+  const el = document.getElementById('perfOverlay');
+  if(el) el.classList.toggle('hidden', !perfOn);
+}
+function perfIsOn(){ return perfOn; }
+function perfFrameStart(now){
+  if(!perfOn) return;
+  perf.prevFrame = perf.t0 ? (now - perf.t0) : 0;
+  perf.t0 = now;
+  perf.last = performance.now();
+  perf.glMs = 0;
+}
+function perfMark(key){
+  if(!perfOn) return;
+  const t = performance.now();
+  const d = t - perf.last;
+  perf.last = t;
+  if(key==='update') perf.sum.update += d;
+  else if(key==='render') perf.sum.render += d;
+}
+// WebGLの描画時間だけは render() の中から個別に記録する
+function perfGl(ms){ if(perfOn) perf.glMs += ms; }
+function perfFrameEnd(){
+  if(!perfOn) return;
+  perf.sum.frame += perf.prevFrame;
+  perf.sum.gl += perf.glMs;
+  perf.n++;
+  if(perf.n < PERF_AVG) return;
+  for(const k in perf.sum){ perf.avg[k] = perf.sum[k]/perf.n; perf.sum[k] = 0; }
+  perf.n = 0;
+  const el = document.getElementById('perfOverlay');
+  if(!el) return;
+  const fps = perf.avg.frame > 0 ? 1000/perf.avg.frame : 0;
+  const st = (window.__aramonReal3D && window.__aramonReal3D.stats) ? window.__aramonReal3D.stats() : null;
+  const f = (v)=>v.toFixed(1).padStart(5);
+  const lines = [
+    `${fps.toFixed(0).padStart(3)} fps   frame ${f(perf.avg.frame)}ms`,
+    `update ${f(perf.avg.update)}  2D ${f(perf.avg.render)}`,
+    `WebGL  ${f(perf.avg.gl)}  dpr ${(typeof dpr!=='undefined'?dpr:1).toFixed(2)}`,
+    `mon ${entities.filter(e=>e.alive).length}  proj ${projectiles.length}  fx ${particles.length}  ae ${areaEffects.length}`,
+    `draw ${perf.drawables}${renderHeavyLoad ? '  [heavy]' : ''}`,
+  ];
+  if(st) lines.push(`地形 ${String(st.patchVerts).padStart(5)}頂点 ${st.patchMs.toFixed(1)}ms x${st.patchCount}  岩${st.obst}`);
+  el.textContent = lines.join('\n');
+  el.classList.toggle('warn', fps < 50 && fps >= 35);
+  el.classList.toggle('bad', fps < 35);
+}
 function render(){
   ctx.clearRect(0,0,viewW,viewH);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
@@ -4042,6 +4104,7 @@ function render(){
   // 地面の装飾を描かずに透かす。初期化に失敗した場合はfalseが返るので従来描画に戻る
   // 障害物(岩・木・水晶など)も3D側が描く。2D側は同じ輪郭をくり抜くだけ(eraseObstacle)。
   // 山と地面のしみ(溶岩・海・川・オアシス)は3D側が地形に沿わせて描く
+  const _glT0 = perfOn ? performance.now() : 0;
   const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks, {
     volcanoes: volcanoObstacles, lava: lavaZones, sea: seaZones, river: riverZones, oasis: oasisZones,
     crystals: crystalObstacles,
@@ -4049,6 +4112,7 @@ function render(){
     seaEdge: (currentMap && currentMap.hasSea) ? seaEdgeX : null,
     bounds: { w: WORLD.w, h: WORLD.h },
   }));
+  if(perfOn) perfGl(performance.now() - _glT0);
   real3dActive = gl3d;
   prepareMountainOccluders();
   if(!gl3d){
@@ -4102,6 +4166,7 @@ function render(){
     if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }
 
+  if(perfOn) perf.drawables = drawables.length;
   drawables.sort((a,b)=>b.p.depth-a.p.depth);
   // 巨大なオブジェクト(火山など)は近づくほど画面上の投影位置が大きくブレるため、
   // 固定150pxの余白だけでは実際は画面内に見えているのに誤ってカリングされてしまう。

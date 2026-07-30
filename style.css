@@ -2453,3 +2453,18 @@
   .admin-recent-row .ar-map{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .admin-recent-row .ar-mon{ flex:0 0 auto; }
   .admin-recent-row .ar-mode{ flex:0 0 auto; color:var(--amber); }
+
+/* ===== パフォーマンス計測オーバーレイ(管理者画面から表示を切り替える) =====
+   タップを一切拾わないので、スクロールロック除外リストへの追加は不要 */
+#perfOverlay{
+  position:absolute; left:calc(1 * var(--vw)); top:calc(1 * var(--vh));
+  z-index:60; pointer-events:none;
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+  font-size:calc(1.7 * var(--vh)); line-height:1.35;
+  color:#b8f5c0; text-shadow:0 1px 2px rgba(0,0,0,0.9);
+  background:rgba(0,0,0,0.42); border:1px solid rgba(184,245,192,0.35);
+  border-radius:6px; padding:calc(0.8 * var(--vh)) calc(1.2 * var(--vw));
+  white-space:pre;
+}
+#perfOverlay.warn{ color:#ffd27a; border-color:rgba(255,210,122,0.45); }
+#perfOverlay.bad{ color:#ff9a8a; border-color:rgba(255,154,138,0.5); }
