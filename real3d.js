@@ -476,17 +476,22 @@ function ensureScene(){
 /* ---- 大きな物(火山・雪山・森・ピラミッド)と地面のしみ(溶岩・海・川・オアシス) ----
    これらは2Dで描くと「起伏のある地面に平らな楕円が貼り付く」形になって浮くので、
    リアルマップでは3D側で地形に沿わせて描く(2D側は描画をやめる)。
-   ・山は面を粗く割った円錐(flatShading)。2Dの drawSolidCone と同じ高さ・半径で作るので
-     山頂の演出(火口の光・雪の輝き)は2Dのまま重ねてもズレない。
-   ・地面のしみは中心から放射状に分割したリングメッシュを地形の高さに沿わせる。      */
+   ・山は面を粗く割った円錐(flatShading)。火口・雪・木々は2Dの円を重ねるのではなく、
+     形(火山は先を切って火口を作る)と頂点カラー(高さで色を変える)で表現する。
+   ・地面のしみは中心から放射状に分割したリングメッシュを地形の高さに沿わせる。
+     UVはワールド座標から作るので、1組のテクスチャを全部のしみで共有できる。      */
 const ZONE_SEGS = 28, ZONE_RINGS = 5;   // しみの分割数(粗いと起伏から浮く)
 const ZONE_LIFT = 2.5;                  // 地面から少しだけ浮かせてZファイティングを避ける
+const ZONE_UV_TILE = 300;               // しみのテクスチャが1周するワールド単位
 const MOUNT_SKIRT = 120;                // 山の裾を地面へ埋める深さ(地形の凹みで隙間が出ないように)
+const CRATER_RATIO = 0.17;              // 火山の火口の広さ(山の半径に対する比)
+/* 山の色。高さ(0=麓 1=頂上)で麓・中腹・頂上の3色を混ぜる。
+   これが「山頂の丸い演出」の代わりで、視点を変えても山に沿ったまま崩れない。   */
 const MOUNT_COLORS = {
-  volcano: { color:0x6b452c, roughness:0.95 },
-  snow:    { color:0xdfe9f6, roughness:0.55 },
-  forest:  { color:0x2f5d28, roughness:0.92 },
-  pyramid: { color:0xc0a068, roughness:0.80 },
+  volcano: { foot:0x4e3320, mid:0x36251a, top:0x1d1512, rough:0.95 },
+  snow:    { foot:0x6d7d90, mid:0xb4c6da, top:0xf2f8ff, rough:0.55 },
+  forest:  { foot:0x36421f, mid:0x27461c, top:0x152e12, rough:0.92 },
+  pyramid: { foot:0x8a6f3f, mid:0xa88a54, top:0xc0a068, rough:0.80 },
 };
 /* 水は空をよく映すので、粗さを下げすぎる/環境光を上げすぎると白く飛んで水に見えない。
    青みを残すため roughness は少し高め、envMapIntensity は控えめにする。          */
@@ -498,6 +503,7 @@ const ZONE_MATS = {
 };
 let worldGroup = null, worldSig = '', lavaMats = [];
 const mountTexCache = {};
+let zoneTex = null, zoneMatCache = null;
 /* 山の肌。地面用に作ったテクスチャを複製して貼り、のっぺりした面を防ぐ。
    複製は画像を共有するので生成コストはかからない(repeat/offsetだけ別に持てる)。 */
 function mountainTextures(){
@@ -510,14 +516,88 @@ function mountainTextures(){
   return mountTexCache;
 }
 
-// 地形に沿う円盤(溶岩・水面)。ワールド座標で高さを引くのでメッシュ自体は原点に置く
+/* 溶岩と水面のテクスチャ。ここも画像ファイルは持たず手続き的に作る。
+   ・溶岩: 冷えた黒い地殻 + 割れ目だけが光る(emissiveMap)。割れ目から法線も作る
+   ・水面: さざ波の法線マップ。offsetを毎フレーム流して水が動いて見えるようにする   */
+function buildZoneTextures(){
+  if(zoneTex) return zoneTex;
+  const S = 256;
+  // 地殻の高さ場(尾根ノイズの谷が割れ目になる)
+  const H = new Float32Array(S*S), CR = new Float32Array(S*S);
+  for(let y=0;y<S;y++){
+    for(let x=0;x<S;x++){
+      const u = x/S, v = y/S;
+      const plate = fbmTile(u, v, 6, 3);
+      const ridge = 1 - Math.abs(fbmTile(u, v, 9, 2)*2 - 1);
+      const crack = Math.max(0, ridge - 0.72) * 3.6;      // 0=地殻 1=割れ目の中心
+      H[y*S+x] = plate*0.8 - crack*0.9;
+      CR[y*S+x] = Math.min(1, crack);
+    }
+  }
+  const at = (A,x,y)=>A[(((y%S)+S)%S)*S + (((x%S)+S)%S)];
+  const lavaColor = makeTexture(S, (d)=>{
+    for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+      const c = CR[y*S+x], h = H[y*S+x];
+      // 冷えた地殻は黒〜焦げ茶、割れ目に近いほど赤熱する
+      const r = 0.10 + h*0.10 + c*0.85, g = 0.06 + h*0.05 + c*0.30, b = 0.05 + h*0.04 + c*0.06;
+      const i = (y*S+x)*4;
+      d[i]   = Math.round(Math.max(0,Math.min(1,r))*255);
+      d[i+1] = Math.round(Math.max(0,Math.min(1,g))*255);
+      d[i+2] = Math.round(Math.max(0,Math.min(1,b))*255);
+      d[i+3] = 255;
+    }
+  }, true);
+  const lavaGlow = makeTexture(S, (d)=>{
+    for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+      const c = Math.pow(CR[y*S+x], 0.7);
+      const i = (y*S+x)*4;
+      d[i]   = Math.round(c*255);          // 割れ目だけが光る
+      d[i+1] = Math.round(c*c*150);
+      d[i+2] = Math.round(c*c*c*40);
+      d[i+3] = 255;
+    }
+  }, true);
+  const lavaNormal = makeTexture(S, (d)=>{
+    for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+      const dx = (at(H,x+1,y)-at(H,x-1,y))*2.2, dy = (at(H,x,y+1)-at(H,x,y-1))*2.2;
+      const len = Math.hypot(dx,dy,1), i=(y*S+x)*4;
+      d[i]   = Math.round((-dx/len*0.5+0.5)*255);
+      d[i+1] = Math.round(( dy/len*0.5+0.5)*255);
+      d[i+2] = Math.round((  1/len*0.5+0.5)*255);
+      d[i+3] = 255;
+    }
+  }, false);
+  // さざ波: 向きの違う波を重ねた高さ場から法線を作る
+  const W = 128;
+  const waterNormal = makeTexture(W, (d)=>{
+    const wave = (u,v)=> Math.sin((u*6.0 + v*2.0)*Math.PI*2)*0.5
+                       + Math.sin((u*-3.0 + v*7.0)*Math.PI*2)*0.35
+                       + fbmTile(u, v, 8, 2)*0.8;
+    for(let y=0;y<W;y++) for(let x=0;x<W;x++){
+      const u=x/W, v=y/W, e=1/W;
+      const dx = (wave(u+e,v)-wave(u-e,v))*0.9, dy = (wave(u,v+e)-wave(u,v-e))*0.9;
+      const len = Math.hypot(dx,dy,1), i=(y*W+x)*4;
+      d[i]   = Math.round((-dx/len*0.5+0.5)*255);
+      d[i+1] = Math.round(( dy/len*0.5+0.5)*255);
+      d[i+2] = Math.round((  1/len*0.5+0.5)*255);
+      d[i+3] = 255;
+    }
+  }, false);
+  waterNormal.repeat.set(2.5, 2.5);
+  zoneTex = { lavaColor, lavaGlow, lavaNormal, waterNormal };
+  return zoneTex;
+}
+// 地形に沿う円盤(溶岩・水面)。ワールド座標で高さとUVを決めるのでメッシュ自体は原点に置く
 function buildZoneMesh(z, mat, radius, lift){
   const geo = new THREE.RingGeometry(0.5, radius, ZONE_SEGS, ZONE_RINGS);
   geo.rotateX(-Math.PI/2);
-  const pos = geo.attributes.position;
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
   for(let i=0;i<pos.count;i++){
     const wx = z.x + pos.getX(i), wy = z.y + pos.getZ(i);
     pos.setY(i, heightAt(wx, wy) + lift);
+    // UVをワールド座標から作ると、大きさの違うしみでも模様の細かさが揃い、
+    // テクスチャを1組だけ作って全部で共有できる(複製するとGPUメモリを食う)
+    uv.setXY(i, wx/ZONE_UV_TILE, wy/ZONE_UV_TILE);
   }
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, mat);
@@ -525,29 +605,96 @@ function buildZoneMesh(z, mat, radius, lift){
   mesh.receiveShadow = true;
   return mesh;
 }
+// しみの材質は種類ごとに1つだけ作って共有する
 function zoneMaterial(kind){
-  const c = ZONE_MATS[kind];
-  return new THREE.MeshStandardMaterial({
-    color:c.color, roughness:c.roughness, metalness:0.0,
-    transparent:true, opacity:c.opacity, envMapIntensity:c.env,
-    // 地面のすぐ上に乗るので、深度の取り合い(ちらつき)を避ける
-    polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
-  });
+  if(!zoneMatCache){
+    const tex = buildZoneTextures();
+    const water = (c)=> new THREE.MeshStandardMaterial({
+      color:c.color, roughness:c.roughness, metalness:0.0,
+      normalMap: tex.waterNormal, normalScale: new THREE.Vector2(0.45, 0.45),
+      transparent:true, opacity:c.opacity, envMapIntensity:c.env,
+      // 地面のすぐ上に乗るので、深度の取り合い(ちらつき)を避ける
+      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    });
+    const sandConf = ZONE_MATS.sand;
+    const sandNormal = groundMaps ? groundMaps.normalMap.clone() : null;
+    if(sandNormal){ sandNormal.needsUpdate = true; sandNormal.repeat.set(1,1); sandNormal.offset.set(0,0); }
+    zoneMatCache = {
+      sea: water(ZONE_MATS.sea), river: water(ZONE_MATS.river), oasis: water(ZONE_MATS.oasis),
+      sand: new THREE.MeshStandardMaterial({
+        color:sandConf.color, roughness:sandConf.roughness, metalness:0.0,
+        normalMap:sandNormal, normalScale:new THREE.Vector2(0.6,0.6),
+        transparent:true, opacity:sandConf.opacity, envMapIntensity:sandConf.env,
+        polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+      }),
+      // 溶岩: 黒い地殻の割れ目だけが光る。明るさは render() で脈打たせる
+      lava: new THREE.MeshStandardMaterial({
+        map: tex.lavaColor, normalMap: tex.lavaNormal, normalScale:new THREE.Vector2(1.1,1.1),
+        emissiveMap: tex.lavaGlow, emissive:new THREE.Color(0xffffff), emissiveIntensity:1.4,
+        roughness:0.85, metalness:0.0,
+        polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+      }),
+    };
+  }
+  Object.values(zoneMatCache).forEach(m=>{ m.userData.shared = true; });
+  return zoneMatCache[kind];
 }
-// 山1つ。2Dの drawSolidCone と同じ寸法(半径 / 高さ = radius*(isMain?1.15:0.9))
+/* 山1つ。2Dの drawSolidCone と同じ寸法(半径 / 高さ = radius*(isMain?1.15:0.9))。
+   火山の主峰だけ先端を切って火口にする。色は高さで麓→中腹→頂上を混ぜ、
+   ワールド座標のノイズでまだらにする(のっぺりした一色の面を防ぐ)。          */
+const _mc = new THREE.Color(), _mcTmp = new THREE.Color();
+function mountainVertexColor(conf, t, mottle){
+  // t: 0=麓 1=頂上
+  if(t < 0.5) _mc.setHex(conf.foot).lerp(_mcTmp.setHex(conf.mid), t/0.5);
+  else        _mc.setHex(conf.mid).lerp(_mcTmp.setHex(conf.top), (t-0.5)/0.5);
+  _mc.multiplyScalar(0.88 + mottle*0.24);
+  return _mc;
+}
 function buildMountainMesh(v){
   const style = v.style || 'volcano';
   const conf = MOUNT_COLORS[style] || MOUNT_COLORS.volcano;
   const rise = v.radius * (v.isMain ? 1.15 : 0.9);
   const isPyramid = (style === 'pyramid');
+  const hasCrater = (style === 'volcano' && v.isMain);
   const h = rise + MOUNT_SKIRT;
   // ピラミッドは4面。底面の半対角が2D側の半辺(radius*0.82)に合うよう広げる
   const seg = isPyramid ? 4 : (v.isMain ? 30 : 18);
   const rad = isPyramid ? v.radius*0.82*Math.SQRT2 : v.radius;
-  const geo = new THREE.ConeGeometry(rad, h, seg, 1, true);
+  // 火山は先を切った円錐にして、頂上に火口の穴を作る
+  const geo = hasCrater
+    ? new THREE.CylinderGeometry(rad*CRATER_RATIO, rad, h, seg, 3, true)
+    : new THREE.ConeGeometry(rad, h, seg, 3, true);
+  const pos = geo.attributes.position;
+  /* 側面を内側にだけ少しへこませて、きれいすぎる円錐に見えないようにする。
+     外へ膨らませると当たり判定(半径)の外に山肌が出て、山にめり込んで見えるので
+     必ず内向き(k<=1)にする。ピラミッドは形が崩れるので凹ませない。          */
+  if(!isPyramid){
+    // 山ごとに違う形にするための種。volcanoObstaclesにseedは無いので位置から作る
+    const seed = _hash(v.x*0.013, v.y*0.017) * 10;
+    for(let i=0;i<pos.count;i++){
+      const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
+      const r = Math.hypot(px, pz);
+      if(r < 1) continue;
+      const ang = Math.atan2(pz, px) + Math.PI;
+      const n = tileNoise(ang*2.2 + seed*0.7, (py + h/2)/h*3.5, 32);
+      const k = 1 - 0.11*n;
+      pos.setXYZ(i, px*k, py, pz*k);
+    }
+  }
+  // 頂点カラー(高さ + ワールド座標のまだら)
+  const col = new Float32Array(pos.count*3);
+  for(let i=0;i<pos.count;i++){
+    const localY = pos.getY(i);
+    const t = Math.max(0, Math.min(1, (localY + h/2 - MOUNT_SKIRT) / rise));
+    const wx = v.x + pos.getX(i), wz = v.y + pos.getZ(i);
+    const mottle = tileNoise(wx/220, wz/220, 64);
+    const c = mountainVertexColor(conf, t, mottle);
+    col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const tex = mountainTextures();
   const mat = new THREE.MeshStandardMaterial({
-    color: conf.color, roughness: conf.roughness, metalness:0.0,
+    vertexColors:true, roughness: conf.rough, metalness:0.0,
     normalMap: tex ? tex.normalMap : null,
     roughnessMap: tex ? tex.roughnessMap : null,
     normalScale: new THREE.Vector2(0.7, 0.7),
@@ -559,7 +706,28 @@ function buildMountainMesh(v){
   if(isPyramid) mesh.rotation.y = Math.PI/4;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return mesh;
+  if(!hasCrater) return mesh;
+  // 火口: 少しへこませた円盤。溶岩と同じ脈動で赤熱させる
+  const craterMat = new THREE.MeshStandardMaterial({
+    color:0x1c0a05, roughness:0.9, metalness:0.0,
+    emissive:new THREE.Color(0xff4a10), emissiveIntensity:1.4,
+  });
+  lavaMats.push(craterMat);
+  const crater = new THREE.Mesh(new THREE.CircleGeometry(rad*CRATER_RATIO*0.96, seg), craterMat);
+  crater.geometry.rotateX(-Math.PI/2);
+  crater.position.set(v.x, base + h - rad*0.05, v.y);
+  // 火口の縁。下から見上げても「熱を持った火山」だと分かるよう、山頂の縁だけ赤熱させる。
+  // 画面に貼る円ではなく山の一部なので、視点を変えても山からずれない
+  const rimMat = new THREE.MeshStandardMaterial({
+    color:0x2a1108, roughness:0.9, metalness:0.0,
+    emissive:new THREE.Color(0xff3c08), emissiveIntensity:0.55, side:THREE.DoubleSide,
+  });
+  lavaMats.push(rimMat);
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(rad*CRATER_RATIO*1.02, rad*CRATER_RATIO*1.12, rise*0.05, seg, 1, true), rimMat);
+  rim.position.set(v.x, base + h - rise*0.025, v.y);
+  const group = new THREE.Group();
+  group.add(mesh); group.add(crater); group.add(rim);
+  return group;
 }
 // 中身が変わったときだけ作り直すための署名(試合ごとに1回)
 function worldSignature(w){
@@ -573,7 +741,12 @@ function worldSignature(w){
 }
 function buildWorldObjects(w){
   if(worldGroup){
-    worldGroup.traverse(o=>{ if(o.isMesh){ o.geometry.dispose(); o.material.dispose(); } });
+    // 材質は種類ごとに共有しているものがあるので、共有印の無いものだけ捨てる
+    worldGroup.traverse(o=>{
+      if(!o.isMesh) return;
+      o.geometry.dispose();
+      if(!o.material.userData.shared) o.material.dispose();
+    });
     scene.remove(worldGroup);
   }
   worldGroup = new THREE.Group();
@@ -586,16 +759,11 @@ function buildWorldObjects(w){
   });
   (w.sea||[]).forEach(z=> worldGroup.add(buildZoneMesh(z, zoneMaterial('sea'), z.radius, ZONE_LIFT)));
   (w.river||[]).forEach(z=> worldGroup.add(buildZoneMesh(z, zoneMaterial('river'), z.radius, ZONE_LIFT)));
-  (w.lava||[]).forEach(z=>{
-    // 溶岩は自ら光る。明るさは render() で脈打たせる
-    const mat = new THREE.MeshStandardMaterial({
-      color:0x2a0b04, roughness:0.75, metalness:0.0,
-      emissive:new THREE.Color(0xff5a14), emissiveIntensity:1.5,
-      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
-    });
-    lavaMats.push(mat);
-    worldGroup.add(buildZoneMesh(z, mat, z.radius, ZONE_LIFT));
-  });
+  if((w.lava||[]).length){
+    const lavaMat = zoneMaterial('lava');   // 材質は全部の溶岩で共有(脈動もまとめて効く)
+    lavaMats.push(lavaMat);
+    w.lava.forEach(z=> worldGroup.add(buildZoneMesh(z, lavaMat, z.radius, ZONE_LIFT)));
+  }
   scene.add(worldGroup);
 }
 function updateWorldObjects(w){
