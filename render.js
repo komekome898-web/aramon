@@ -1259,7 +1259,8 @@ function drawRock(rock,p){
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
-  if(flavor==='tree'){ drawTreeObstacle(rock); ctx.restore(); return; }
+  // 木の仲間はまとめて木として描く(リアルマップ専用の種類はWebGL失敗時にここへ来る)
+  if(flavor==='tree'||flavor==='pine'||flavor==='deadtree'||flavor==='palm'){ drawTreeObstacle(rock); ctx.restore(); return; }
   if(flavor==='shell'){ drawShellObstacle(rock); ctx.restore(); return; }
   if(currentMap && currentMap.real3d){ drawRealisticRock(rock, r, r*p.scale); ctx.restore(); return; }
   ctx.translate(0,-r*0.55);
@@ -2386,10 +2387,11 @@ function prepareMountainOccluders(){
     });
   }
 }
-/* リアルマップでは3Dの山が奥行きを持つのに対し、2Dで描く岩は距離に関係なく
-   そのまま重なるため、遠くの小さな岩が手前の山の上に点々と乗って見える。
-   遠い障害物は描かない(境目が目立たないよう手前から徐々に薄くする)。       */
-const OBSTACLE_VIEW_DIST = 2300;   // これより遠い岩・水晶・建物は描かない
+/* リアルマップでは3Dの山が奥行きを持つのに対し、2Dで描く建物は距離に関係なく
+   そのまま重なるため、遠くの小さな建物が手前の山の上に乗って見える。
+   遠い建物は描かない(境目が目立たないよう手前から徐々に薄くする)。
+   岩・木・水晶は3Dモデルになったのでこの処理は要らない(奥行きで正しく隠れる)。 */
+const OBSTACLE_VIEW_DIST = 2300;   // これより遠い建物は描かない
 const OBSTACLE_FADE_DIST = 1750;   // ここから薄くしていく
 function obstacleFade(x, y){
   if(!real3dActive) return 1;
@@ -2397,6 +2399,55 @@ function obstacleFade(x, y){
   if(d <= OBSTACLE_FADE_DIST) return 1;
   if(d >= OBSTACLE_VIEW_DIST) return 0;
   return 1 - (d-OBSTACLE_FADE_DIST)/(OBSTACLE_VIEW_DIST-OBSTACLE_FADE_DIST);
+}
+/* ---- リアルマップの障害物(3Dで描く) ----
+   岩・木・水晶などはreal3d.jsが3Dモデルで描く。2D側は「同じ輪郭を destination-out で
+   くり抜く」だけにする。くり抜くと、その障害物より前(=奥)に描かれたものだけが消えて
+   3Dの障害物が見え、後(=手前)に描かれるものはそのまま上に乗る。つまりモンスターや技の
+   前後関係は従来の奥行きソートのままで変わらない。
+   輪郭の寸法はdata.jsのOBST_SHAPES(3Dモデルと共通)を使い、取りこぼしが出ないよう
+   少しだけ大きめに消す(2Dの地面はリアルマップでは描いていないので、大きすぎても
+   下のWebGLの地面が見えるだけで害はない)。                                        */
+const OBST_ERASE_PAD = 1.07;
+function obstShapeOf(o, fallbackFlavor){
+  const t = (typeof OBST_SHAPES!=='undefined') ? OBST_SHAPES : null;
+  const key = o.flavor || fallbackFlavor || 'rock';
+  return (t && (t[key] || t.rock)) || { h:1.3, sink:0.2, sil:[[0.5,1.1,0.66]] };
+}
+function obstacleCullDist(){
+  const api = window.__aramonReal3D;
+  return (api && api.obstacleCullDist) ? api.obstacleCullDist() : 3300;
+}
+// リアルマップでは3D側が出している距離までを対象にする(出していない物をくり抜かない)
+function obstacleVisible(x, y){
+  if(!real3dActive) return 1;
+  return Math.hypot(x-camPos.x, y-camPos.y) <= obstacleCullDist() ? 1 : 0;
+}
+function eraseObstacle(o, p, fallbackFlavor){
+  const sh = obstShapeOf(o, fallbackFlavor);
+  const r = o.radius || 30;
+  // 高さは決め打ちの縮尺ではなく実際に投影して求める(近くの高い木ほど差が出る)
+  const top = project(o.x, o.y, groundZAt(o.x, o.y) + r*sh.h);
+  if(!top) return;
+  const hPx = p.y - top.y;
+  // 1フレームに何十回も通るので save/restore は使わず必要な状態だけ戻す
+  const prevAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  for(const s of sh.sil){
+    const f = s[0];
+    const cx = p.x + (top.x-p.x)*f, cy = p.y + (top.y-p.y)*f;
+    const sc = p.scale + (top.scale-p.scale)*f;
+    const rx = Math.max(1, s[1]*r*sc*OBST_ERASE_PAD);
+    const ry = Math.max(1, Math.abs(s[2]*hPx)*OBST_ERASE_PAD);
+    ctx.moveTo(cx+rx, cy);          // 楕円ごとに独立した部分パスにする
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+  }
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = prevAlpha;
 }
 function occludedByMountain(x, y, z){
   if(!mountOccluders.length) return false;
@@ -2420,10 +2471,11 @@ function render(){
   renderHeavyLoad = (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
   // 地面の装飾を描かずに透かす。初期化に失敗した場合はfalseが返るので従来描画に戻る
-  // 岩は2Dで描くが、地面に落ちる影だけは3D側に作らせる(rocksを影専用に渡す)。
+  // 障害物(岩・木・水晶など)も3D側が描く。2D側は同じ輪郭をくり抜くだけ(eraseObstacle)。
   // 山と地面のしみ(溶岩・海・川・オアシス)は3D側が地形に沿わせて描く
   const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks, {
     volcanoes: volcanoObstacles, lava: lavaZones, sea: seaZones, river: riverZones, oasis: oasisZones,
+    crystals: crystalObstacles,
     // 海は円の集合ではなく海岸線の式そのものから水面を張る(seaEdgeXはworld.jsの純関数)
     seaEdge: (currentMap && currentMap.hasSea) ? seaEdgeX : null,
     bounds: { w: WORLD.w, h: WORLD.h },
@@ -2451,13 +2503,13 @@ function render(){
     if(p) drawables.push({kind:'building', obj:b, p, fade:bFade});
   }
   for(const r of rocks){
-    const fade = obstacleFade(r.x, r.y);
-    if(fade <= 0 || occludedByMountain(r.x, r.y, (r.height||r.radius)*0.5)) continue;
+    const fade = obstacleVisible(r.x, r.y, (r.height||r.radius)*0.5);
+    if(fade <= 0) continue;
     const p = projectGround(r.x,r.y); if(p) drawables.push({kind:'rock', obj:r, p, fade});
   }
   for(const c of crystalObstacles){
-    const fade = obstacleFade(c.x, c.y);
-    if(fade <= 0 || occludedByMountain(c.x, c.y, (c.height||c.radius)*0.5)) continue;
+    const fade = obstacleVisible(c.x, c.y, (c.height||c.radius)*0.5);
+    if(fade <= 0) continue;
     const p = projectGround(c.x,c.y); if(p) drawables.push({kind:'crystal', obj:c, p, fade});
   }
   const volcanoGroups = new Map();
@@ -2487,7 +2539,8 @@ function render(){
   const cullMarginFor = (d)=>{
     let r = 0;
     if(d.kind==='volcano'){ for(const v of d.obj){ if(v.radius>r) r=v.radius; } }
-    else if(d.kind==='rock' || d.kind==='crystal'){ r = d.obj.radius||0; }
+    // 3Dの障害物は木のように背が高いものがある。足元が画面外でも上は見えるので高さぶん広げる
+    else if(d.kind==='rock' || d.kind==='crystal'){ r = (d.obj.radius||0) * (real3dActive ? obstShapeOf(d.obj, d.kind).h : 1); }
     else if(d.kind==='ae'){ r = d.obj.range||0; } // 発生地点(自分の足元)が画面外でも、射程が長い技は画面内まで届くため
     return 150 + r*d.p.scale*1.2;
   };
@@ -2500,8 +2553,9 @@ function render(){
     else if(d.kind==='proj') drawProjectile(d.obj,d.p);
     else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
     else if(d.kind==='mon') drawMonster(d.obj,d.p);
-    else if(d.kind==='rock') drawRock(d.obj,d.p);
-    else if(d.kind==='crystal') drawCrystal(d.obj,d.p);
+    // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
+    else if(d.kind==='rock'){ if(real3dActive) eraseObstacle(d.obj,d.p); else drawRock(d.obj,d.p); }
+    else if(d.kind==='crystal'){ if(real3dActive) eraseObstacle(d.obj,d.p,'crystal'); else drawCrystal(d.obj,d.p); }
     else if(d.kind==='building') drawBuilding(d.obj);
     else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
     else drawParticle(d.obj,d.p);
