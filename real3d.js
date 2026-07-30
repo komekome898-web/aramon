@@ -118,12 +118,14 @@ const RIDGE_LAYERS = [
   { dist:1.95, base:180, peak:2840, haze:0.78 },
 ];
 function ridgeProfile(a, seed){
-  // 角度の周期関数を重ねた稜線。層ごとにseedで位相をずらして同じ形を並べない
+  /* 角度の周期関数を重ねた稜線。層ごとにseedで位相をずらして同じ形を並べない。
+     【重要】周波数は必ず整数にする。半端な値(4.3など)だと一周(2π)して戻ったときに
+     高さが一致せず、輪の閉じ目に垂直な段差(背景の切れ目)が出る。          */
   return (
-    Math.abs(Math.sin(a*2.0  + seed*1.7)) * 0.50 +
-    Math.abs(Math.sin(a*4.3  + seed*2.9)) * 0.27 +
-    Math.abs(Math.sin(a*9.1  + seed*4.1)) * 0.15 +
-    Math.abs(Math.sin(a*17.3 + seed*5.3)) * 0.08
+    Math.abs(Math.sin(a*2  + seed*1.7)) * 0.50 +
+    Math.abs(Math.sin(a*5  + seed*2.9)) * 0.27 +
+    Math.abs(Math.sin(a*9  + seed*4.1)) * 0.15 +
+    Math.abs(Math.sin(a*17 + seed*5.3)) * 0.08
   );
 }
 function buildDistantRidge(){
@@ -471,6 +473,140 @@ function ensureScene(){
   }
 }
 
+/* ---- 大きな物(火山・雪山・森・ピラミッド)と地面のしみ(溶岩・海・川・オアシス) ----
+   これらは2Dで描くと「起伏のある地面に平らな楕円が貼り付く」形になって浮くので、
+   リアルマップでは3D側で地形に沿わせて描く(2D側は描画をやめる)。
+   ・山は面を粗く割った円錐(flatShading)。2Dの drawSolidCone と同じ高さ・半径で作るので
+     山頂の演出(火口の光・雪の輝き)は2Dのまま重ねてもズレない。
+   ・地面のしみは中心から放射状に分割したリングメッシュを地形の高さに沿わせる。      */
+const ZONE_SEGS = 28, ZONE_RINGS = 5;   // しみの分割数(粗いと起伏から浮く)
+const ZONE_LIFT = 2.5;                  // 地面から少しだけ浮かせてZファイティングを避ける
+const MOUNT_SKIRT = 120;                // 山の裾を地面へ埋める深さ(地形の凹みで隙間が出ないように)
+const MOUNT_COLORS = {
+  volcano: { color:0x6b452c, roughness:0.95 },
+  snow:    { color:0xdfe9f6, roughness:0.55 },
+  forest:  { color:0x2f5d28, roughness:0.92 },
+  pyramid: { color:0xc0a068, roughness:0.80 },
+};
+/* 水は空をよく映すので、粗さを下げすぎる/環境光を上げすぎると白く飛んで水に見えない。
+   青みを残すため roughness は少し高め、envMapIntensity は控えめにする。          */
+const ZONE_MATS = {
+  sea:   { color:0x134b78, roughness:0.20, opacity:0.90, env:0.75 },
+  river: { color:0x1d6392, roughness:0.22, opacity:0.84, env:0.70 },
+  oasis: { color:0x14719d, roughness:0.18, opacity:0.90, env:0.80 },
+  sand:  { color:0x9a7a46, roughness:0.90, opacity:0.70, env:0.50 },
+};
+let worldGroup = null, worldSig = '', lavaMats = [];
+const mountTexCache = {};
+/* 山の肌。地面用に作ったテクスチャを複製して貼り、のっぺりした面を防ぐ。
+   複製は画像を共有するので生成コストはかからない(repeat/offsetだけ別に持てる)。 */
+function mountainTextures(){
+  if(!groundMaps) return null;
+  if(!mountTexCache.normalMap){
+    const clone = (t, rep)=>{ const c = t.clone(); c.needsUpdate = true; c.repeat.set(rep, rep); c.offset.set(0,0); return c; };
+    mountTexCache.normalMap = clone(groundMaps.normalMap, 8);
+    mountTexCache.roughnessMap = clone(groundMaps.roughnessMap, 8);
+  }
+  return mountTexCache;
+}
+
+// 地形に沿う円盤(溶岩・水面)。ワールド座標で高さを引くのでメッシュ自体は原点に置く
+function buildZoneMesh(z, mat, radius, lift){
+  const geo = new THREE.RingGeometry(0.5, radius, ZONE_SEGS, ZONE_RINGS);
+  geo.rotateX(-Math.PI/2);
+  const pos = geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const wx = z.x + pos.getX(i), wy = z.y + pos.getZ(i);
+    pos.setY(i, heightAt(wx, wy) + lift);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(z.x, 0, z.y);
+  mesh.receiveShadow = true;
+  return mesh;
+}
+function zoneMaterial(kind){
+  const c = ZONE_MATS[kind];
+  return new THREE.MeshStandardMaterial({
+    color:c.color, roughness:c.roughness, metalness:0.0,
+    transparent:true, opacity:c.opacity, envMapIntensity:c.env,
+    // 地面のすぐ上に乗るので、深度の取り合い(ちらつき)を避ける
+    polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+  });
+}
+// 山1つ。2Dの drawSolidCone と同じ寸法(半径 / 高さ = radius*(isMain?1.15:0.9))
+function buildMountainMesh(v){
+  const style = v.style || 'volcano';
+  const conf = MOUNT_COLORS[style] || MOUNT_COLORS.volcano;
+  const rise = v.radius * (v.isMain ? 1.15 : 0.9);
+  const isPyramid = (style === 'pyramid');
+  const h = rise + MOUNT_SKIRT;
+  // ピラミッドは4面。底面の半対角が2D側の半辺(radius*0.82)に合うよう広げる
+  const seg = isPyramid ? 4 : (v.isMain ? 30 : 18);
+  const rad = isPyramid ? v.radius*0.82*Math.SQRT2 : v.radius;
+  const geo = new THREE.ConeGeometry(rad, h, seg, 1, true);
+  const tex = mountainTextures();
+  const mat = new THREE.MeshStandardMaterial({
+    color: conf.color, roughness: conf.roughness, metalness:0.0,
+    normalMap: tex ? tex.normalMap : null,
+    roughnessMap: tex ? tex.roughnessMap : null,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    flatShading:true, envMapIntensity:ENV_INTENSITY, side:THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  const base = heightAt(v.x, v.y) - MOUNT_SKIRT;
+  mesh.position.set(v.x, base + h/2, v.y);
+  if(isPyramid) mesh.rotation.y = Math.PI/4;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+// 中身が変わったときだけ作り直すための署名(試合ごとに1回)
+function worldSignature(w){
+  if(!w) return '';
+  const part = (arr)=>{
+    if(!arr || !arr.length) return '0';
+    const f = arr[0], l = arr[arr.length-1];
+    return arr.length+':'+Math.round(f.x)+','+Math.round(f.y)+','+Math.round(l.x)+','+Math.round(l.y);
+  };
+  return [part(w.volcanoes), part(w.lava), part(w.sea), part(w.river), part(w.oasis)].join('|');
+}
+function buildWorldObjects(w){
+  if(worldGroup){
+    worldGroup.traverse(o=>{ if(o.isMesh){ o.geometry.dispose(); o.material.dispose(); } });
+    scene.remove(worldGroup);
+  }
+  worldGroup = new THREE.Group();
+  lavaMats = [];
+  (w.volcanoes||[]).forEach(v=> worldGroup.add(buildMountainMesh(v)));
+  // オアシスは濡れた砂の縁を先に敷いてから水面を重ねる(2Dと同じ見せ方)
+  (w.oasis||[]).forEach(z=>{
+    worldGroup.add(buildZoneMesh(z, zoneMaterial('sand'), z.radius*1.12, ZONE_LIFT*0.6));
+    worldGroup.add(buildZoneMesh(z, zoneMaterial('oasis'), z.radius, ZONE_LIFT));
+  });
+  (w.sea||[]).forEach(z=> worldGroup.add(buildZoneMesh(z, zoneMaterial('sea'), z.radius, ZONE_LIFT)));
+  (w.river||[]).forEach(z=> worldGroup.add(buildZoneMesh(z, zoneMaterial('river'), z.radius, ZONE_LIFT)));
+  (w.lava||[]).forEach(z=>{
+    // 溶岩は自ら光る。明るさは render() で脈打たせる
+    const mat = new THREE.MeshStandardMaterial({
+      color:0x2a0b04, roughness:0.75, metalness:0.0,
+      emissive:new THREE.Color(0xff5a14), emissiveIntensity:1.5,
+      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    });
+    lavaMats.push(mat);
+    worldGroup.add(buildZoneMesh(z, mat, z.radius, ZONE_LIFT));
+  });
+  scene.add(worldGroup);
+}
+function updateWorldObjects(w){
+  if(!scene) return;
+  const sig = worldSignature(w);
+  if(sig === worldSig) return;
+  worldSig = sig;
+  if(!sig){ if(worldGroup){ scene.remove(worldGroup); worldGroup = null; } return; }
+  buildWorldObjects(w);
+}
+
 /* ---- 岩の影 ----
    岩そのものは今までどおり2D(render.jsのdrawRealisticRock)で描く。3Dへ移すと
    2Dのモンスターが必ず岩の手前に描かれてしまい、岩に隠れなくなるため。
@@ -593,6 +729,7 @@ const api = {
       applyTheme();
       if(cv) cv.classList.remove('hidden');
       patchCX = patchCY = null;   // 次のrenderで作り直す
+      worldSig = '';              // 山としみも作り直す(マップが変わると地面の高さが変わるため)
       applySize();
       active = true;
       return true;
@@ -604,8 +741,9 @@ const api = {
   isActive(){ return active && !!scene; },
   resize(){ if(active) applySize(); },
   // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る。
-  // shadowCasters には2Dで描く岩の配列(world.jsのrocks)を渡す = 地面に影だけ落とす
-  render(shadowCasters){
+  // shadowCasters には2Dで描く岩の配列(world.jsのrocks)を渡す = 地面に影だけ落とす。
+  // world には山と地面のしみ({volcanoes, lava, sea, river, oasis})を渡す = 3Dで描く
+  render(shadowCasters, world){
     if(!active || !scene) return false;
     const cp = window.camPos, cs = window.camState;
     if(!cp || !cs) return false;
@@ -613,6 +751,13 @@ const api = {
     const fovDeg = (window.__aramonLook && window.__aramonLook.fovDeg) || 64;
     if(camera.fov !== fovDeg){ camera.fov = fovDeg; camera.updateProjectionMatrix(); }
     updateTerrain(cp.x, cp.y);
+    updateWorldObjects(world);
+    if(lavaMats.length){
+      // 溶岩の脈動(2DのdrawLavaZonesと同じ揺らし方)
+      const t = performance.now()*0.001;
+      const pulse = 0.75 + 0.25*Math.sin(t*2.4);
+      for(let i=0;i<lavaMats.length;i++) lavaMats[i].emissiveIntensity = 1.15 + 0.6*pulse;
+    }
     // 空と遠景はカメラに追従させる。ワールドは18100単位あるので原点固定だと視界から外れる
     if(sky) sky.position.set(cp.x, 0, cp.y);
     if(ridge) ridge.position.set(cp.x, 0, cp.y);
