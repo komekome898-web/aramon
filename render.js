@@ -2371,7 +2371,8 @@ function render(){
   renderHeavyLoad = (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
   // 地面の装飾を描かずに透かす。初期化に失敗した場合はfalseが返るので従来描画に戻る
-  const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render());
+  // 岩は2Dで描くが、地面に落ちる影だけは3D側に作らせる(rocksを影専用に渡す)
+  const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks));
   if(!gl3d){
     drawSkyAndGround();
   }
