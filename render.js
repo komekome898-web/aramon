@@ -3020,7 +3020,6 @@ const FX3D_RAIN_H     = 900;                // 降ってくる結晶の初期高
 const FX3D_WALL_H     = FX3D_MON_H;         // 念力の壁の高さ
 const FX3D_DOME_H_RATIO = 0.62;             // 爆風ドームの高さ(判定半径に対する比)
 const FX3D_DOME_H_MIN   = FX3D_MON_H;      // 小さい爆風でもこれ以上は高さを出す
-const FX3D_BEAM_Z     = 40;                 // ビームの芯の高さ(胴のあたり)
 const FX3D_BOLT_SKY   = 820;                // 落雷が始まる高さ(雷だけは背を低くしない)
 const FX3D_BOLT_N     = 5;                  // 1回の雷で空から落とす本数
 const FX3D_RING_SEGS  = 30;                 // 輪・弧のサンプル数
@@ -3180,26 +3179,43 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
      こうしないと坂の下へ撃った時や真上から見た時に筒がねじれて見える
    ・断面方向のグラデーション(縁=薄い技色 / 芯=白)で丸みを出す
    ・加算合成なので重なるほど明るくなり、光の筒に見える                       */
-// radius には必ず「技の当たり幅の半分」(ae.width/2)を渡す。
-// 断面の直径が当たり幅と一致するので、真後ろから見ると判定どおりの円になる
+/* ビーム(筒)。ビーム系の技はすべてこれ1つで描き、違うのは色だけにする。
+   ・断面は「横=技の当たり幅 / 縦=モンスターの背丈」の楕円。
+     真円にすると幅の広い技(モッチ砲は120)で縦にも同じだけ塗ることになり、
+     実際に塗る面積が倍近くなる。横に広く縦は背丈ぶん、が技の見た目にも合う。
+   ・断面の楕円は uH(横)と uV(縦)の2本のベクトルで持つ。どちらも実際に投影して
+     求めるので、坂の下へ撃っても真上から見ても正しく傾く。
+   ・輪郭の膨らみは「その向きへの楕円の張り出し」= hypot(n・uH, n・uV) で厳密に出る。
+   ・加算合成なので重なるほど明るくなり、光の筒に見える                         */
 function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   const segs = 16;
-  const dz = Math.max(FX3D_BEAM_Z, radius*0.92);   // 地面へめり込ませない
-  const pts = [];
+  const halfH = FX3D_MON_H*0.5;          // 縦半径(モンスターの背丈の半分)
+  const dz    = FX3D_MON_H*0.55;         // 芯の高さ。下端が地面すれすれに来る
+  const px = -Math.sin(angle), py = Math.cos(angle);   // 進行方向に垂直(ワールド水平)
+  const pts = [], uH = [], uV = [];
   for(let i=0;i<=segs;i++){
     const along = reach*(i/segs);
-    const p = fx3dPoint(ox+Math.cos(angle)*along, oy+Math.sin(angle)*along, dz);
-    if(p) pts.push(p);
+    const x = ox+Math.cos(angle)*along, y = oy+Math.sin(angle)*along;
+    const c = fx3dPoint(x, y, dz);
+    if(!c) continue;
+    const h = fx3dPoint(x + px*radius, y + py*radius, dz);
+    const v = fx3dPoint(x, y, dz + halfH);
+    if(!h || !v) continue;
+    pts.push(c);
+    uH.push({ x:h.x-c.x, y:h.y-c.y });
+    uV.push({ x:v.x-c.x, y:v.y-c.y });
   }
   if(pts.length<2) return;
-  // 各点での「画面上の垂直方向」(前後の区間の向きを平均する)
+  // 各点での「画面上の垂直方向」(前後の区間の向きを平均する)と、その向きへの張り出し
   const nrm = [];
   for(let i=0;i<pts.length;i++){
     const a = pts[Math.max(0,i-1)], b = pts[Math.min(pts.length-1,i+1)];
     let dx = b.x-a.x, dy = b.y-a.y;
     const len = Math.hypot(dx,dy);
     if(len < 0.001){ dx=1; dy=0; } else { dx/=len; dy/=len; }
-    nrm.push({ x:-dy, y:dx, r:radius*pts[i].scale });
+    const nx = -dy, ny = dx;
+    const r = Math.hypot(nx*uH[i].x + ny*uH[i].y, nx*uV[i].x + ny*uV[i].y);
+    nrm.push({ x:nx, y:ny, r:Math.max(0.5, r) });
   }
   const sh = auraShades(col);
   const shell = _mixHex(col, '#ffffff', 0.25);   // 外殻の色(技色より少し明るい)
@@ -3217,7 +3233,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
     ];
     const mx=(a.x+b.x)/2, my=(a.y+b.y)/2, mr=(na.r+nb.r)/2, mnx=(na.x+nb.x)/2, mny=(na.y+nb.y)/2;
     // 断面方向の色: 縁(外殻)が濃く、少し内側で一度沈み、芯で白く光る。
-    // 縁を薄いままにすると帯にしか見えないので、外殻をはっきり出して円筒に見せる
+    // 縁を薄いままにすると帯にしか見えないので、外殻をはっきり出して筒に見せる
     const g = ctx.createLinearGradient(mx-mnx*mr, my-mny*mr, mx+mnx*mr, my+mny*mr);
     g.addColorStop(0,    _hexA(shell, 1));
     g.addColorStop(0.08, _hexA(col, 0.85));
@@ -3234,28 +3250,30 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
     ctx.fillStyle = g; ctx.fill();
     edgeA.push(q[0], q[1]); edgeB.push(q[3], q[2]);
   }
-  // 外殻の輪郭線。ここが無いと縁がぼやけて円筒に見えない。
+  // 外殻の輪郭線。ここが無いと縁がぼやけて筒に見えない。
   // 線は輪郭の内側へ寄せて引く(中心に置くと線の太さの半分だけ当たり幅からはみ出す)
-  const rimW = Math.max(1.6, radius*pts[Math.floor(pts.length/2)].scale*0.1);
+  const rimW = Math.max(1.6, nrm[Math.floor(nrm.length/2)].r*0.11);
   const inset = (list, sign)=>list.map((q,i)=>{
     const n = nrm[Math.min(nrm.length-1, i>>1)];
     return { x:q.x - n.x*sign*rimW*0.5, y:q.y - n.y*sign*rimW*0.5 };
   });
   fxStrokePath(inset(edgeA, 1), shell, rimW, 0.95*fade, 0);
   fxStrokePath(inset(edgeB, -1), shell, rimW, 0.95*fade, 0);
-  // 両端の断面(真後ろ・真正面から見たときに円として見える)
-  for(const p of [pts[0], pts[pts.length-1]]){
-    const rr = radius*p.scale;   // 当たり幅の半分ちょうど
-    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rr);
+  // 両端の断面。uH/uV をそのまま基底にすれば、投影された楕円がそのまま描ける
+  for(const i of [0, pts.length-1]){
+    const c = pts[i], h = uH[i], v = uV[i];
+    const det = h.x*v.y - h.y*v.x;
+    if(Math.abs(det) < 1) continue;        // 真横から見て潰れているときは描かない
+    ctx.save();
+    ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
+    const g = ctx.createRadialGradient(0,0,0, 0,0,1);
     g.addColorStop(0, 'rgba(255,255,255,0.98)');
     g.addColorStop(0.4, _hexA(sh.bright, 0.55));
     g.addColorStop(0.82, _hexA(col, 0.35));
     g.addColorStop(1, _hexA(shell, 0.9));
-    ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI*2);
+    ctx.beginPath(); ctx.arc(0,0,1,0,Math.PI*2);
     ctx.fillStyle = g; ctx.fill();
-    const cw = Math.max(1.6, rr*0.1);
-    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1, rr-cw*0.5), 0, Math.PI*2);
-    ctx.strokeStyle = _hexA(shell, 0.95); ctx.lineWidth = cw; ctx.stroke();
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -4195,8 +4213,10 @@ function perfGl(ms){ if(perfOn) perf.glMs += ms; }
    そこは描画するピクセル数に比例するので、重いフレームが続いたら描画倍率を下げ、
    軽くなったら元へ戻す。上限(端末の実解像度・最大2倍)は変えないので、
    余裕のある端末では今までと同じ見た目のまま。                                 */
-const RS_SLOW_MS    = 20;    // これより遅い = 50fps未満。続いたら解像度を下げる
-const RS_BAD_MS     = 30;    // これより遅い = 33fps未満。早めに大きく下げる
+/* 落とし方は控えめに、戻し方は素早く。
+   範囲攻撃が重なって一瞬重くなるのは許容し、収まったらすぐ元の画質へ戻す方針。 */
+const RS_SLOW_MS    = 20;    // これより遅い = 50fps未満
+const RS_BAD_MS     = 30;    // これより遅い = 33fps未満
 const RS_PANIC_MS   = 55;    // これより遅い = 18fps未満。すぐに大きく下げる
 // 60fpsのフレーム時間は16.7ms。ここを16.7より下にすると「余裕がある」と一生判定されず、
 // 一度下げた画質が戻らなくなる(実際に起きた)
@@ -4209,27 +4229,28 @@ function updateRenderScale(frameMs){
   else if(frameMs > RS_SLOW_MS){ rsPanic = 0; rsSlow++; rsBad = 0; rsFast = 0; }
   else if(frameMs < RS_RECOVER_MS){ rsFast++; rsSlow = 0; rsBad = 0; rsPanic = 0; }
   else { rsSlow = 0; rsBad = 0; rsFast = 0; rsPanic = 0; }
-  // 目に見えて崩れている時(18fps未満)は3フレームで大きく落とす
-  if(rsPanic >= 3){
+  // 目に見えて崩れている時(18fps未満)は5フレームで大きく落とす
+  if(rsPanic >= 5){
     rsPanic = 0; rsBad = 0; rsSlow = 0;
     if(gfxLevel < 1) gfxLevel = 1;
     setRenderScale(renderScale - 0.35);
     return;
   }
   // ひどく重いときは0.5秒で大きく、そこそこのときは1.5秒かけて少しずつ下げる
-  // 影を切るのがいちばん安く効くので先に落とし、それでも足りなければ解像度を下げる
-  if(rsBad >= 15){
+  // 影を切るのがいちばん安く効くので先に落とし、それでも足りなければ解像度を下げる。
+  // 一瞬の重さでは動かさず、続いたときだけ落とす
+  if(rsBad >= 30){
     rsBad = 0; rsSlow = 0;
     if(gfxLevel < 1) gfxLevel = 1;
-    else setRenderScale(renderScale - 0.3);
-  } else if(rsSlow >= 60){
+    else setRenderScale(renderScale - 0.25);
+  } else if(rsSlow >= 120){
     rsSlow = 0;
     if(gfxLevel < 1) gfxLevel = 1;
     else setRenderScale(renderScale - 0.12);
-  } else if(rsFast >= 240){
-    // 戻すのは慎重に(4秒ぶん余裕が続いてから1段)。解像度を先に戻し、最後に影を戻す
+  } else if(rsFast >= 40){
+    // 戻すのは速く(0.7秒ぶん余裕が続けば1段)。解像度を先に戻し、最後に影を戻す
     rsFast = 0;
-    if(!setRenderScale(renderScale + 0.12)) gfxLevel = 0;
+    if(!setRenderScale(renderScale + 0.2)) gfxLevel = 0;
   }
 }
 function perfFrameEnd(){
