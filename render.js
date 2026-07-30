@@ -793,37 +793,72 @@ function fxStrokePath(pts, color, w, alpha, blur){
   ctx.restore();
 }
 // 火の玉(ファイア/ファイアブレス/火炎砲)
+// 炎は「くすんだ煙 → 技色 → 白熱の芯」の3層を加算合成で重ねて作る。
+// 平らな色を塗り重ねると安っぽく見えるので、必ずグラデーションと乱れた輪郭で描く
 function fxIconFire(pr, r){
   const col = pr.color || '#ff6b35';
-  const sh = auraShades(col);
+  const ramp = fx3dFireRamp(col);
+  const seed = (pr.id||0);
+  const ang = fxProjScreenAngle(pr);
   ctx.save();
-  ctx.rotate(fxProjScreenAngle(pr));
-  for(let k=0;k<3;k++){                       // 後ろへたなびく炎の舌
-    const len = r*(3.4 - k*0.95), w = r*(1.05 - k*0.3);
-    const wob = Math.sin(matchTime*20 + k*2.1 + (pr.id||0))*r*0.3;
+  ctx.rotate(ang);
+  // 後ろへ長く伸びる炎の尾。3枚を長さ・太さ・揺れの速さを変えて重ねる
+  for(let k=0;k<3;k++){
+    const len = r*(4.2 - k*1.05), w = r*(1.15 - k*0.3);
+    const segs = 7;
+    const up=[], dn=[];
+    for(let i=0;i<=segs;i++){
+      const f = i/segs;                                  // 0=先頭 1=尾の先
+      const x = r*0.6 - len*f;
+      const wob = Math.sin(matchTime*(16+k*6) + seed + f*5.2 + k*2.1)*r*0.42*f
+                + Math.sin(matchTime*(27+k*4) + seed*1.7 + f*9.1)*r*0.16*f;
+      const hw = w*Math.pow(1-f, 0.55)*(1 + 0.22*Math.sin(f*8 + matchTime*13 + k));
+      up.push({ x, y: wob - hw });
+      dn.push({ x, y: wob + hw });
+    }
+    const g = ctx.createLinearGradient(r*0.6, 0, r*0.6-len, 0);
+    if(k===0){      g.addColorStop(0, ramp.body); g.addColorStop(0.45, ramp.smoke); g.addColorStop(1, _hexA(ramp.smoke, 0)); }
+    else if(k===1){ g.addColorStop(0, ramp.hot);  g.addColorStop(0.5,  ramp.body);  g.addColorStop(1, _hexA(ramp.body, 0)); }
+    else {          g.addColorStop(0, ramp.core); g.addColorStop(0.45, ramp.hot);   g.addColorStop(1, _hexA(ramp.hot, 0)); }
+    ctx.save();
+    ctx.globalAlpha = k===0 ? 0.55 : 0.7;
+    if(k>0) ctx.globalCompositeOperation = 'lighter';
     ctx.beginPath();
-    ctx.moveTo(r*0.5, 0);
-    ctx.quadraticCurveTo(-len*0.45, -w + wob, -len, wob*0.6);
-    ctx.quadraticCurveTo(-len*0.45,  w + wob,  r*0.5, 0);
+    ctx.moveTo(up[0].x, up[0].y);
+    for(let i=1;i<up.length;i++) ctx.lineTo(up[i].x, up[i].y);
+    for(let i=dn.length-1;i>=0;i--) ctx.lineTo(dn[i].x, dn[i].y);
     ctx.closePath();
-    ctx.globalAlpha = 0.5 + k*0.16;
-    ctx.fillStyle = [sh.dark, col, sh.bright][k];
-    if(!renderHeavyLoad){ ctx.shadowBlur = 18; ctx.shadowColor = col; }
+    ctx.fillStyle = g; ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+  // 火球本体: 外側の熱の輝き → 技色 → 白熱の芯(すべて加算)
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const pulse = 1 + 0.08*Math.sin(matchTime*17 + seed);
+  const halo = ctx.createRadialGradient(0,0, r*0.2, 0,0, r*2.1*pulse);
+  halo.addColorStop(0, _hexA(ramp.hot, 0.55));
+  halo.addColorStop(1, _hexA(ramp.body, 0));
+  ctx.beginPath(); ctx.arc(0,0, r*2.1*pulse, 0, Math.PI*2);
+  ctx.fillStyle = halo; ctx.fill();
+  const body = ctx.createRadialGradient(-r*0.2,-r*0.2, r*0.05, 0,0, r*1.2*pulse);
+  body.addColorStop(0, '#ffffff');
+  body.addColorStop(0.3, ramp.core);
+  body.addColorStop(0.62, ramp.hot);
+  body.addColorStop(1, _hexA(ramp.body, 0.15));
+  ctx.beginPath(); ctx.arc(0,0, r*1.2*pulse, 0, Math.PI*2);
+  ctx.fillStyle = body; ctx.fill();
+  // 舞い上がる火の粉
+  for(let k=0;k<5;k++){
+    const t = ((matchTime*1.8 + k*0.21 + seed*0.13) % 1);
+    const a = matchTime*4 + k*1.9 + seed;
+    const er = r*0.14*(1-t*0.7);
+    ctx.beginPath();
+    ctx.arc(Math.cos(a)*r*(1.2+t*0.8) - r*t*1.6, -r*(0.9 + t*1.8), er, 0, Math.PI*2);
+    ctx.fillStyle = _hexA(ramp.core, 0.9*(1-t));
     ctx.fill();
   }
   ctx.restore();
-  const g = ctx.createRadialGradient(-r*0.25,-r*0.25, r*0.08, 0,0, r*1.15);
-  g.addColorStop(0,'#fffbe8'); g.addColorStop(0.45, sh.bright); g.addColorStop(1, col);
-  ctx.globalAlpha = 1;
-  if(!renderHeavyLoad){ ctx.shadowBlur = 22; ctx.shadowColor = col; }
-  ctx.beginPath(); ctx.arc(0,0,r*1.1,0,Math.PI*2); ctx.fillStyle = g; ctx.fill();
-  ctx.shadowBlur = 0;
-  for(let k=0;k<4;k++){                       // 舞い上がる火の粉
-    const a = matchTime*5 + k*1.9 + (pr.id||0);
-    ctx.beginPath();
-    ctx.arc(Math.cos(a)*r*1.5, -r*(1.1+0.5*((matchTime*1.6+k*0.25)%1)), r*0.16, 0, Math.PI*2);
-    ctx.fillStyle = sh.spark; ctx.globalAlpha = 0.8; ctx.fill();
-  }
 }
 // 水球(水風船/アクアウェイブ/ツバはき)
 function fxIconWater(pr, r){
@@ -889,9 +924,12 @@ function fxIconBolt(pr, r){
     const y = (i===0||i===N) ? 0 : (fxHash01(seed*7.3 + i*3.7)*2-1)*r*0.9;
     pts.push({ x: -len*(1-f) + r*1.3*f, y });
   }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';   // 加算で「光っている」電気に見せる
   fxStrokePath(pts, col, r*0.6, 0.35, 22);
   fxStrokePath(pts, col, r*0.28, 0.9, 14);
   fxStrokePath(pts, '#ffffff', r*0.11, 1, 0);
+  ctx.restore();
   for(let b=0;b<2;b++){                        // 枝分かれ
     const vi = 2 + Math.floor(fxHash01(seed*5.1 + b*17.3)*(N-2));
     const p0 = pts[Math.min(vi, N)];
@@ -2345,18 +2383,23 @@ function drawFlowerBeamsEffect(ae, fillDist, fadeAlpha, inTelegraph){
      画面上で楕円や矩形を決め打ちしないので、坂の上でも地面から生えて見える
      (この決まりは地面に貼る円と同じ。扁平率を固定すると浮いて見える)。
 ===================================================================== */
-const FX3D_FLAME_H    = 165;   // 炎の柱の基準の高さ
-const FX3D_FLAME_N    = 13;    // 1つの範囲技に立てる炎の柱の本数(増やすと重い)
-const FX3D_FLAME_R    = 46;    // 炎の柱の根元の太さ
-const FX3D_BOLT_SKY   = 820;   // 落雷が始まる高さ
-const FX3D_BOLT_N     = 5;     // 1回の雷で空から落とす本数
-const FX3D_SPIKE_H    = 210;   // 結晶の柱の高さ
-const FX3D_SPIKE_N    = 11;    // 結晶の柱の本数
-const FX3D_RAIN_H     = 900;   // 降ってくる結晶の初期高度
-const FX3D_BEAM_Z     = 48;    // 宙に浮くビームの高さ(足元から)
-const FX3D_WALL_H     = 180;   // 念力の壁の高さ
-const FX3D_DOME_RINGS = 5;     // ドームの横輪の枚数
-const FX3D_RING_SEGS  = 30;    // 輪・弧のサンプル数
+// 高さの基準は「モンスターの背丈」。ここを変えると範囲技の背の高さがまとめて変わる
+// (drawMonsterは足元から radius*1.85 ぶんの高さに絵を描くので、radius22なら約50)
+const FX3D_MON_H      = 52;
+const FX3D_FLAME_H    = FX3D_MON_H;         // 炎の高さ
+const FX3D_FLAME_N    = 15;                 // 1つの範囲技に立てる炎の数(増やすと重い)
+const FX3D_FLAME_R    = 30;                 // 炎1つの根元の太さ
+const FX3D_SPIKE_H    = FX3D_MON_H*1.15;    // 結晶の柱の高さ
+const FX3D_SPIKE_N    = 11;                 // 結晶の柱の本数
+const FX3D_RAIN_H     = 900;                // 降ってくる結晶の初期高度
+const FX3D_WALL_H     = FX3D_MON_H;         // 念力の壁の高さ
+const FX3D_DOME_H     = FX3D_MON_H;         // 爆風ドームの高さ(横の広さは技の範囲そのまま)
+const FX3D_BEAM_Z     = 40;                 // ビームの芯の高さ(胴のあたり)
+const FX3D_BOLT_SKY   = 820;                // 落雷が始まる高さ(雷だけは背を低くしない)
+const FX3D_BOLT_N     = 5;                  // 1回の雷で空から落とす本数
+const FX3D_RING_SEGS  = 30;                 // 輪・弧のサンプル数
+const FX3D_AREA_ALPHA = 0.58;               // 範囲技の透け具合(小さいほど後ろが見える)
+const FX3D_DOME_ALPHA = 1.0;                // 爆風ドームだけは濃いまま残す
 
 function real3dFx(){ return typeof isReal3dMap==='function' && isReal3dMap(); }
 
@@ -2402,69 +2445,157 @@ function fx3dRingPts(cx, cy, radius, dz, segs){
   }
   return pts.length>=3 ? pts : null;
 }
-// 中心線(投影済み)をワールド半径ぶん上下へ膨らませて筒に見せる。
-// 半径に p.scale を掛けるので、遠いほど細くなり筒が寝て見える
-function fx3dTube(center, radius, color, alpha, blur){
-  if(!center || center.length<2) return;
-  const top=[], bot=[];
-  for(const p of center){ const r=radius*p.scale; top.push({x:p.x, y:p.y-r}); bot.push({x:p.x, y:p.y+r}); }
-  fx3dFill(top.concat(bot.reverse()), color, alpha, blur);
+// hex色を透明度つきの rgba() にする(グラデーションの端を透明にするのに使う)
+function _hexA(hex, a){ const c = hexToRgb(hex); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
+// 炎の色段階。技の色から作るので、SSRスキンで色が変わっても青い炎・黒い炎になる
+function fx3dFireRamp(col){
+  return {
+    smoke: _mixHex(col, '#160603', 0.72),
+    body:  col,
+    hot:   _mixHex(col, '#ffc24a', 0.6),
+    core:  _mixHex(col, '#fffbe0', 0.85),
+  };
 }
-// 技の軸(ae.angle方向)に沿って点を並べる。lateralFn/dzで曲げたり浮かせたりできる
-function fx3dAxisPts(ae, curReach, dz, segs, lateralFn){
-  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
-  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-  const pts=[];
-  for(let i=0;i<=segs;i++){
-    const f=i/segs, along=curReach*f;
-    const lat = lateralFn ? lateralFn(f, along) : 0;
-    const zz  = (typeof dz==='function') ? dz(f, along) : dz;
-    const wx=ae.x+fx*along+rx*lat, wy=ae.y+fy*along+ry*lat;
-    const p=fx3dPoint(wx, wy, zz);
-    if(p) pts.push(p);
-  }
-  return pts;
-}
-// 縦に伸びる柱(炎・光柱)。上ほど細く、揺らぎながら立つ。
-// 段ごとに投影するので坂の上でもきちんと地面から生えて見える
-function fx3dPillar(x, y, gz, h, rBase, sway, seed, layers, fade){
-  const N = 5;
-  for(const L of layers){
-    const hh = h*(L.h||1);
+/* 炎1つ。外側=くすんだ赤い煙 / 中=技色 / 芯=白熱、の3枚の舌を重ねる。
+   ・舌の輪郭は上へいくほど細くゆらぐ(平らな三角形にしない)
+   ・下から上へ「白熱→技色→透明」のグラデーションを掛ける(炎の温度差)
+   ・内側2枚は加算合成(lighter)なので、重なった所が本物の炎のように白く輝く
+   ・段ごとに投影するので坂の上でもきちんと地面から生えて見える                */
+function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp){
+  const N = 7;
+  const base = fx3dPoint(x, y, 0, gz);
+  const top  = fx3dPoint(x, y, h*1.1, gz);
+  if(!base || !top) return;
+  for(let k=0;k<3;k++){
+    const hk  = h*(1 - k*0.2);
+    const wk  = rBase*(1 - k*0.3);
+    const spd = 5.2 + k*1.7;
     const left=[], right=[];
     let ok = true;
     for(let i=0;i<=N;i++){
       const f = i/N;
-      const wob = Math.sin(matchTime*5.5 + seed*1.7 + f*3.2)*sway*f;
-      const p = fx3dPoint(x + wob, y + wob*0.7, hh*f, gz);
+      const wob = Math.sin(matchTime*spd + seed*1.7 + f*4.2 + k*2.1)*rBase*0.5*f
+                + Math.sin(matchTime*spd*1.7 + seed*3.1 + f*7.5)*rBase*0.2*f;
+      const p = fx3dPoint(x + wob, y + wob*0.65, hk*f, gz);
       if(!p){ ok=false; break; }
-      const r = rBase*L.w*(1-f*0.85)*p.scale;
-      left.push({x:p.x-r, y:p.y});
-      right.push({x:p.x+r, y:p.y});
+      const flick = 1 + 0.24*Math.sin(f*9 + matchTime*11 + seed);
+      const hw = wk*Math.pow(1-f, 0.6)*flick*p.scale;
+      left.push({x:p.x-hw, y:p.y});
+      right.push({x:p.x+hw, y:p.y});
     }
     if(!ok) continue;
-    fx3dFill(left.concat(right.reverse()), L.color, L.a*fade, L.blur||0);
+    const pts = left.concat(right.reverse());
+    const g = ctx.createLinearGradient(base.x, base.y, top.x, top.y);
+    if(k===0){
+      g.addColorStop(0, ramp.body); g.addColorStop(0.5, ramp.smoke); g.addColorStop(1, _hexA(ramp.smoke, 0));
+    } else if(k===1){
+      g.addColorStop(0, ramp.hot); g.addColorStop(0.55, ramp.body); g.addColorStop(1, _hexA(ramp.body, 0));
+    } else {
+      g.addColorStop(0, ramp.core); g.addColorStop(0.5, ramp.hot); g.addColorStop(1, _hexA(ramp.hot, 0));
+    }
+    ctx.save();
+    ctx.globalAlpha = (k===0 ? 0.5 : 0.6)*fade;
+    if(k>0) ctx.globalCompositeOperation = 'lighter';   // 加算で重なりを白熱させる
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
   }
 }
-// 技の色から炎/光の3層(外=暗い・中=技色・芯=明るい)を作る。
-// SSRスキンで色が変わってもそのまま追従する
-function fx3dPalette(color){
-  const sh = auraShades(color || '#ffffff');
-  return [
-    { w:1.0,  h:1.0,  color:sh.dark,   a:0.5,  blur:0  },
-    { w:0.62, h:0.86, color:sh.mid,    a:0.72, blur:14 },
-    { w:0.3,  h:0.64, color:sh.bright, a:0.92, blur:10 },
-  ];
+// 炎の根元の照り返し(地面が赤く光る)。炎そのものより広く、薄く敷く
+function fx3dFireGlow(x, y, gz, r, col, fade){
+  if(renderHeavyLoad) return;
+  const p = fx3dPoint(x, y, 2, gz);
+  if(!p) return;
+  const rr = r*p.scale;
+  const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rr);
+  g.addColorStop(0, _hexA(col, 0.55));
+  g.addColorStop(1, _hexA(col, 0));
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = fade;
+  ctx.beginPath(); ctx.ellipse(p.x, p.y, rr, rr*0.3, 0, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.restore();
+}
+/* ビーム(筒)。ビーム系の技はすべてこれ1つで描き、違うのは色だけにする。
+   ・断面の半径 = 技の当たり幅の半分。真後ろから見るとちょうど円になる
+   ・輪郭は「画面上の進行方向に対して垂直」へ膨らませる(画面の上下に固定しない)。
+     こうしないと坂の下へ撃った時や真上から見た時に筒がねじれて見える
+   ・断面方向のグラデーション(縁=薄い技色 / 芯=白)で丸みを出す
+   ・加算合成なので重なるほど明るくなり、光の筒に見える                       */
+function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
+  const segs = 16;
+  const dz = Math.max(FX3D_BEAM_Z, radius*0.92);   // 地面へめり込ませない
+  const pts = [];
+  for(let i=0;i<=segs;i++){
+    const along = reach*(i/segs);
+    const p = fx3dPoint(ox+Math.cos(angle)*along, oy+Math.sin(angle)*along, dz);
+    if(p) pts.push(p);
+  }
+  if(pts.length<2) return;
+  // 各点での「画面上の垂直方向」(前後の区間の向きを平均する)
+  const nrm = [];
+  for(let i=0;i<pts.length;i++){
+    const a = pts[Math.max(0,i-1)], b = pts[Math.min(pts.length-1,i+1)];
+    let dx = b.x-a.x, dy = b.y-a.y;
+    const len = Math.hypot(dx,dy);
+    if(len < 0.001){ dx=1; dy=0; } else { dx/=len; dy/=len; }
+    nrm.push({ x:-dy, y:dx, r:radius*pts[i].scale });
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = fade;
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i], b=pts[i+1], na=nrm[i], nb=nrm[i+1];
+    const q = [
+      { x:a.x+na.x*na.r, y:a.y+na.y*na.r },
+      { x:b.x+nb.x*nb.r, y:b.y+nb.y*nb.r },
+      { x:b.x-nb.x*nb.r, y:b.y-nb.y*nb.r },
+      { x:a.x-na.x*na.r, y:a.y-na.y*na.r },
+    ];
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2, mr=(na.r+nb.r)/2, mnx=(na.x+nb.x)/2, mny=(na.y+nb.y)/2;
+    const g = ctx.createLinearGradient(mx-mnx*mr, my-mny*mr, mx+mnx*mr, my+mny*mr);
+    g.addColorStop(0,    _hexA(col, 0.10));
+    g.addColorStop(0.3,  _hexA(col, 0.55));
+    g.addColorStop(0.5,  'rgba(255,255,255,0.92)');
+    g.addColorStop(0.7,  _hexA(col, 0.55));
+    g.addColorStop(1,    _hexA(col, 0.10));
+    ctx.beginPath();
+    ctx.moveTo(q[0].x,q[0].y); ctx.lineTo(q[1].x,q[1].y); ctx.lineTo(q[2].x,q[2].y); ctx.lineTo(q[3].x,q[3].y);
+    ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+  }
+  // 両端の断面(真後ろ・真正面から見たときに円として見える)
+  for(const [p, boost] of [[pts[0], 1.0], [pts[pts.length-1], 1.15]]){
+    const rr = radius*p.scale*boost;
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rr);
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.45, _hexA(col, 0.6));
+    g.addColorStop(1, _hexA(col, 0));
+    ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI*2);
+    ctx.fillStyle = g; ctx.fill();
+  }
+  ctx.restore();
 }
 // 地面から生える尖った柱(結晶・氷柱)
-function fx3dSpike(x, y, gz, h, rBase, colors, fade){
+function fx3dSpike(x, y, gz, h, rBase, col, fade){
   const apex = fx3dPoint(x, y, h, gz);
   const base = fx3dPoint(x, y, 0, gz);
   if(!apex || !base) return;
+  const sh = auraShades(col);
   const r = rBase*base.scale;
-  fx3dFill([{x:base.x-r,y:base.y},{x:base.x+r,y:base.y},apex], colors[0], 0.8*fade, 0);
-  fx3dFill([{x:base.x-r*0.45,y:base.y},{x:base.x+r*0.2,y:base.y},apex], colors[1], 0.85*fade, 12);
-  fx3dStroke([{x:base.x-r,y:base.y},apex,{x:base.x+r,y:base.y}], colors[2], 1.6, 0.75*fade, 8);
+  const g = ctx.createLinearGradient(base.x, base.y, apex.x, apex.y);
+  g.addColorStop(0, _hexA(sh.dark, 0.85));
+  g.addColorStop(0.55, _hexA(col, 0.7));
+  g.addColorStop(1, _hexA(sh.bright, 0.5));
+  fx3dFill([{x:base.x-r,y:base.y},{x:base.x+r,y:base.y},apex], g, fade, 0);
+  // 光を受けている面(片側だけ明るくして立体に見せる)
+  fx3dFill([{x:base.x-r*0.5,y:base.y},{x:base.x+r*0.15,y:base.y},apex], _hexA(sh.bright, 0.55), fade, 10);
+  fx3dStroke([{x:base.x-r,y:base.y},apex,{x:base.x+r,y:base.y}], sh.outline, 1.4, 0.6*fade, 8);
 }
 // 空から地面へ落ちる稲妻。上ほど大きく振れる折れ線を3層で描く
 function fx3dBoltDown(x, y, topZ, color, seed, fade){
@@ -2487,12 +2618,13 @@ function fx3dBoltDown(x, y, topZ, color, seed, fade){
 
 /* ---------- 種類ごとの立体エフェクト ---------- */
 
-// 扇(インフェルノ): 地面の焦げ跡+炎の柱がゆらめく火炎放射
+// 扇(インフェルノ): 地面の焦げ跡+ゆらめく炎の火炎放射
 function fx3dFlameFan(ae, curReach, fade){
   const half = (ae.fanAngleDeg||45)*Math.PI/360;
+  const col = ae.auraTint || ae.color;
+  const ramp = fx3dFireRamp(col);
   const scorch = fanOutlinePoints(ae.x, ae.y, ae.angle, curReach, half, 16);
-  if(scorch) fx3dFill(scorch, auraShades(ae.color).dark, 0.4*fade, 0);
-  const pal = fx3dPalette(ae.auraTint || ae.color);
+  if(scorch) fx3dFill(scorch, ramp.smoke, 0.42*fade, 0);
   const cols = [];
   for(let i=0;i<FX3D_FLAME_N;i++){
     const h1 = fxHash01(ae.id*11.3 + i*5.7), h2 = fxHash01(ae.id*7.7 + i*3.1), h3 = fxHash01(ae.id*4.1 + i*9.3);
@@ -2500,28 +2632,32 @@ function fx3dFlameFan(ae, curReach, fade){
     const rr = curReach*(0.12 + 0.88*h2);
     const x = ae.x+Math.cos(a)*rr, y = ae.y+Math.sin(a)*rr;
     // 手前(術者側)ほど高い炎にして、噴き出している向きを見せる
-    const h = FX3D_FLAME_H*(0.55 + 0.75*h3)*(1 - 0.3*(rr/Math.max(curReach,1)));
+    const h = FX3D_FLAME_H*(0.65 + 0.6*h3)*(1 - 0.25*(rr/Math.max(curReach,1)));
     const p = fx3dPoint(x, y, 0);
     cols.push({ x, y, gz:groundZAt(x,y), h, seed:i+ae.id, depth:p?p.depth:0 });
   }
   cols.sort((a,b)=>b.depth-a.depth);   // 奥から手前へ重ねる
-  for(const c of cols) fx3dPillar(c.x, c.y, c.gz, c.h, FX3D_FLAME_R, 16, c.seed, pal, fade);
+  for(const c of cols){
+    fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.4, ramp.hot, fade*0.5);
+    fx3dFlame(c.x, c.y, c.gz, c.h, FX3D_FLAME_R, c.seed, fade, ramp);
+  }
   if(!renderHeavyLoad){
     for(let i=0;i<8;i++){
       const h1 = fxHash01(ae.id*3.3 + i*7.1), h2 = fxHash01(ae.id*9.7 + i*2.9);
       const a = ae.angle + (h1*2-1)*half;
       const rr = curReach*(0.2 + 0.75*h2);
-      const rise = FX3D_FLAME_H*(0.6 + 0.8*((matchTime*0.9 + h1) % 1));
+      const rise = FX3D_FLAME_H*(0.7 + 1.1*((matchTime*0.9 + h1) % 1));
       const p = fx3dPoint(ae.x+Math.cos(a)*rr, ae.y+Math.sin(a)*rr, rise);
-      if(p) drawGroundSpark(p, 'ember', auraShades(ae.color).spark, fade*0.8, ae.id+i);
+      if(p) drawGroundSpark(p, 'ember', ramp.core, fade*0.8, ae.id+i);
     }
   }
 }
-// 帯(ファイアウェーブ): 先端に高い炎の壁、後方に低い残り火
+// 帯(ファイアウェーブ): 先端に炎の壁、後方に低い残り火
 function fx3dFireWave(ae, curReach, fade){
+  const col = ae.auraTint || ae.color;
+  const ramp = fx3dFireRamp(col);
   const band = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
-  if(band) fx3dFill(band, auraShades(ae.color).dark, 0.45*fade, 0);
-  const pal = fx3dPalette(ae.auraTint || ae.color);
+  if(band) fx3dFill(band, ramp.smoke, 0.42*fade, 0);
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
   const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
   const cols = [];
@@ -2533,21 +2669,24 @@ function fx3dFireWave(ae, curReach, fade){
   const wallN = 7;
   for(let i=0;i<wallN;i++){                       // 先端の炎の壁
     const lat = (i/(wallN-1)-0.5)*ae.width*0.92;
-    push(curReach - ae.width*0.12, lat, FX3D_FLAME_H*(1.05+0.3*fxHash01(ae.id+i*3.7)), ae.id+i);
+    push(curReach - ae.width*0.12, lat, FX3D_FLAME_H*(1.0+0.25*fxHash01(ae.id+i*3.7)), ae.id+i);
   }
   for(let i=0;i<FX3D_FLAME_N;i++){                // 後方の残り火
     const h1 = fxHash01(ae.id*5.1 + i*7.3), h2 = fxHash01(ae.id*2.7 + i*11.9);
-    push(curReach*(0.05+0.8*h1), (h2*2-1)*ae.width*0.42, FX3D_FLAME_H*(0.35+0.4*h2), ae.id+i*3);
+    push(curReach*(0.05+0.8*h1), (h2*2-1)*ae.width*0.42, FX3D_FLAME_H*(0.4+0.4*h2), ae.id+i*3);
   }
   cols.sort((a,b)=>b.depth-a.depth);
-  for(const c of cols) fx3dPillar(c.x, c.y, c.gz, c.h, FX3D_FLAME_R*0.85, 14, c.seed, pal, fade);
+  for(const c of cols){
+    fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
+    fx3dFlame(c.x, c.y, c.gz, c.h, FX3D_FLAME_R*0.9, c.seed, fade, ramp);
+  }
 }
 // 帯(クリスタルレイン): 空から結晶が降り、地面から結晶の柱がせり上がる
 function fx3dCrystalRain(ae, curReach, fade, progress){
+  const col = ae.auraTint || ae.color;
+  const sh = auraShades(col);
   const band = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
-  if(band) fx3dFill(band, '#0d3f52', 0.35*fade, 0);
-  const sh = auraShades(ae.auraTint || ae.color);
-  const cols = [sh.mid, sh.bright, sh.outline];
+  if(band) fx3dFill(band, sh.dark, 0.32*fade, 0);
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
   const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
   for(let i=0;i<FX3D_SPIKE_N;i++){
@@ -2557,7 +2696,7 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
     const x = ae.x+fx*along+rx*lat, y = ae.y+fy*along+ry*lat;
     const grow = clamp((progress - h1*0.25)*3.2, 0, 1);   // せり上がる
     if(grow<=0.02) continue;
-    fx3dSpike(x, y, groundZAt(x,y), FX3D_SPIKE_H*(0.6+0.6*h2)*grow, 22+14*h1, cols, fade);
+    fx3dSpike(x, y, groundZAt(x,y), FX3D_SPIKE_H*(0.65+0.5*h2)*grow, 20+12*h1, col, fade);
   }
   if(renderHeavyLoad) return;
   for(let i=0;i<10;i++){                                   // 降ってくる結晶
@@ -2568,88 +2707,30 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
     if(p) drawGroundSpark(p, 'diamond', sh.spark, fade*(0.4+0.6*phase), ae.id+i);
   }
 }
-// 帯(天河天翔): 宙に浮く星の川。帯そのものが浮いて流れる
-function fx3dGalaxyStream(ae, curReach, fade){
-  const wob = (f,along)=>Math.sin(along*0.014 + matchTime*2.2)*ae.width*0.3;
-  const hz  = (f,along)=>FX3D_BEAM_Z*1.6 + Math.sin(along*0.01 - matchTime*1.8)*22;
-  const segs = 20;
-  const center = fx3dAxisPts(ae, curReach, hz, segs, wob);
-  const sh = auraShades(ae.auraTint || ae.color);
-  fx3dTube(center, ae.width*0.5,  sh.dark,   0.5*fade, 0);
-  fx3dTube(center, ae.width*0.28, sh.mid,    0.6*fade, 18);
-  fx3dTube(center, ae.width*0.11, sh.bright, 0.9*fade, 14);
-  if(renderHeavyLoad) return;
-  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
-  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-  for(let i=0;i<12;i++){
-    const h1 = fxHash01(ae.id*5.9 + i*3.7), h2 = fxHash01(ae.id*2.3 + i*8.1);
-    const along = curReach*((i+h1)/12);
-    const spin = matchTime*2.4 + i*1.7;
-    const lat = Math.cos(spin)*ae.width*(0.3+0.35*h2) + Math.sin(along*0.014 + matchTime*2.2)*ae.width*0.3;
-    const p = fx3dPoint(ae.x+fx*along+rx*lat, ae.y+fy*along+ry*lat, FX3D_BEAM_Z*1.6 + Math.sin(spin)*ae.width*0.4);
-    if(p) drawGroundSpark(p, 'star', sh.spark, fade*(0.5+0.5*Math.sin(matchTime*5+i)), ae.id+i);
-  }
+// 帯(モッチ砲・ラガモッチ砲・熱視線・天河天翔): ビームは色以外すべて共通の見た目
+function fx3dRectBeam(ae, curReach, fade){
+  const col = ae.auraTint || ae.color;
+  fx3dBeamTube(ae.x, ae.y, ae.angle, curReach, ae.width/2, col, fade);
 }
-// 帯(モッチ砲): 胸の高さを貫くビーム+周りを回る花びら
-function fx3dSakuraBeam(ae, curReach, fade){
-  const center = fx3dAxisPts(ae, curReach, FX3D_BEAM_Z, 14, null);
-  const sh = auraShades(ae.auraTint || ae.color);
-  fx3dTube(center, ae.width*0.5,  sh.dark,   0.45*fade, 0);
-  fx3dTube(center, ae.width*0.3,  sh.mid,    0.7*fade, 20);
-  fx3dTube(center, ae.width*0.12, '#ffffff', 0.92*fade, 16);
-  if(renderHeavyLoad) return;
-  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
-  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-  for(let i=0;i<14;i++){                                   // ビームに巻きつく螺旋
-    const h1 = fxHash01(ae.id*7.1 + i*2.9);
-    const along = curReach*((i+h1)/14);
-    const spin = matchTime*4.5 + i*0.9;
-    const rr = ae.width*(0.45+0.25*h1);
-    const p = fx3dPoint(ae.x+fx*along+rx*Math.cos(spin)*rr, ae.y+fy*along+ry*Math.cos(spin)*rr, FX3D_BEAM_Z + Math.sin(spin)*rr);
-    if(p) drawGroundSpark(p, 'petal', sh.spark, fade*0.9, ae.id+i);
-  }
-}
-// 帯(熱視線など素の帯): 宙を走る細いレーザーと地面の焦げ線
-function fx3dHeatBeam(ae, curReach, fade){
-  const sh = auraShades(ae.auraTint || ae.color);
-  const ground = fx3dAxisPts(ae, curReach, 1, 12, null);
-  fx3dStroke(ground, sh.dark, Math.max(2, ae.width*0.06), 0.5*fade, 0);
-  const center = fx3dAxisPts(ae, curReach, FX3D_BEAM_Z, 12, null);
-  fx3dTube(center, ae.width*0.5,  sh.mid,    0.45*fade, 20);
-  fx3dTube(center, ae.width*0.22, sh.bright, 0.75*fade, 16);
-  fx3dTube(center, ae.width*0.08, '#ffffff', 0.95*fade, 0);
-}
-// ビーム3本(フラワービーム): 宙に浮く3本の光の筒+舞う花びら
+// ビーム3本(フラワービーム): 同じビームを3本ぶん
 function fx3dFlowerBeams(ae, fillDist, fade, inTelegraph){
   const count = ae.beamCount||3;
   const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
   const ranges = ae.beamRanges || Array.from({length:count}, ()=>ae.range);
-  const sh = auraShades(ae.auraTint || ae.color);
+  const col = ae.auraTint || ae.color;
+  const outlineCol = auraShades(col).outline;
   for(let b=0;b<count;b++){
     const a = ae.angle + (count>1 ? (b/(count-1)-0.5)*spread : 0);
     const outline = rectOutlinePoints(ae.x, ae.y, a, ranges[b], ae.width/2);
-    if(outline) strokeDashedShape(outline, sh.outline, 0.4*fade);
+    if(outline) strokeDashedShape(outline, outlineCol, 0.4*fade);
     if(inTelegraph) continue;
     const curReach = Math.min(ranges[b], fillDist);
     if(curReach<=2) continue;
-    const sub = { x:ae.x, y:ae.y, angle:a, width:ae.width, id:ae.id+b*97 };
-    const center = fx3dAxisPts(sub, curReach, FX3D_BEAM_Z*0.8, 12, null);
-    fx3dTube(center, ae.width*0.5,  sh.dark,   0.45*fade, 0);
-    fx3dTube(center, ae.width*0.28, sh.mid,    0.65*fade, 18);
-    fx3dTube(center, ae.width*0.1,  sh.bright, 0.9*fade, 14);
-    if(renderHeavyLoad) continue;
-    const fx=Math.cos(a), fy=Math.sin(a);
-    const rx=-Math.sin(a), ry=Math.cos(a);
-    for(let i=0;i<5;i++){
-      const h1 = fxHash01(ae.id*9.1 + b*31.7 + i*7.3), h2 = fxHash01(ae.id*5.3 + b*17.9 + i*11.7);
-      const along = curReach*((i+h1)/5);
-      const lateral = (h2*2-1)*ae.width*0.6;
-      const p = fx3dPoint(ae.x+fx*along+rx*lateral, ae.y+fy*along+ry*lateral, FX3D_BEAM_Z*(0.4+1.2*h1));
-      if(p) drawGroundSpark(p, 'petal', '#ffb7d5', fade*0.9, ae.id+b*10+i);
-    }
+    fx3dBeamTube(ae.x, ae.y, a, curReach, ae.width/2, col, fade);
   }
 }
 // ジグザグ(超雷撃・ホーリーサンダー・ライトニング): 空から落ちる本物の落雷にする
+// (雷だけは「高さをモンスターに合わせる」対象外。空から落ちてこそ雷なので)
 function fx3dThunder(ae, curReach, fade){
   const amp = (ae.width||110)*0.5;
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
@@ -2675,13 +2756,14 @@ function fx3dThunder(ae, curReach, fade){
     const [wx,wy] = world[i];
     fx3dBoltDown(wx, wy, FX3D_BOLT_SKY, ae.color, jseed*0.37 + i*3.1 + ae.id, fade*flick);
     const flash = fx3dRingPts(wx, wy, amp*0.75, 2, 14);
-    if(flash) fx3dFill(flash, '#ffffff', 0.35*fade*flick, 24);
+    if(flash) fx3dFill(flash, '#ffffff', 0.3*fade*flick, 24);
   }
 }
 // 扇のジグザグ(サイコキネシス): 弧を描く念力の壁が押し寄せる
 function fx3dPsychicWall(ae, curReach, fade){
   const half = (ae.fanAngleDeg||30)*Math.PI/360;
-  const sh = auraShades(ae.auraTint || ae.color);
+  const col = ae.auraTint || ae.color;
+  const sh = auraShades(col);
   const segs = 14;
   for(let w=0;w<3;w++){
     // 3枚の壁が時間差で外へ進む(位相をずらして波に見せる)。
@@ -2690,63 +2772,79 @@ function fx3dPsychicWall(ae, curReach, fade){
     const d = curReach*(0.25 + 0.75*phase);
     if(d<=4) continue;
     const wallFade = fade*(1-phase*0.55);
-    const h = FX3D_WALL_H*(0.6+0.6*(1-phase));
+    const h = FX3D_WALL_H*(0.75+0.4*(1-phase));
     const low=[], high=[];
+    let base=null, topP=null;
     for(let i=0;i<=segs;i++){
       const a = ae.angle - half + (2*half)*(i/segs);
       const wx = ae.x+Math.cos(a)*d, wy = ae.y+Math.sin(a)*d;
       const gz = groundZAt(wx,wy);
       const lp = fx3dPoint(wx, wy, 2, gz);
       const hp = fx3dPoint(wx, wy, h + Math.sin(i*1.7 + matchTime*4)*h*0.12, gz);
-      if(lp && hp){ low.push(lp); high.push(hp); }
+      if(lp && hp){ low.push(lp); high.push(hp); if(!base){ base=lp; topP=hp; } }
     }
-    if(low.length<2) continue;
-    fx3dFill(low.concat(high.reverse()), sh.mid, 0.3*wallFade, 18);
-    fx3dStroke(high, '#ffffff', 2.4, 0.75*wallFade, 12);
-    fx3dStroke(low, sh.bright, 3, 0.6*wallFade, 10);
+    if(low.length<2 || !base) continue;
+    // 上へ向かって薄くなる壁(念力の膜)
+    const g = ctx.createLinearGradient(base.x, base.y, topP.x, topP.y);
+    g.addColorStop(0, _hexA(sh.bright, 0.5));
+    g.addColorStop(1, _hexA(col, 0));
+    fx3dFill(low.concat(high.reverse()), g, wallFade, 0);
+    fx3dStroke(high, '#ffffff', 2.2, 0.6*wallFade, 12);
+    fx3dStroke(low, sh.bright, 2.6, 0.5*wallFade, 10);
   }
 }
-// 円(ビッグバン・レクイエムエンドの爆風): 本物のドーム(横輪+縦の弧)にする
+/* 円(ビッグバン・ヴァニッシュ・レクイエムエンドの爆風)
+   ・横の広さは判定と同じ curReach、高さはモンスターの背丈ぶんに抑える
+   ・中身の詰まった球に見せるため、上へ積む輪を「濃いまま」重ねる
+     (薄くすると地面の色が透けて煙にしか見えない)                          */
 function fx3dDomeBurst(ae, curReach, fade){
   const R = curReach;
+  const H = Math.min(FX3D_DOME_H, R);
   const col = ae.auraTint || ae.color || '#ffffff';
   const sh = auraShades(col);
-  const disc = fx3dRingPts(ae.x, ae.y, R, 2);
-  if(disc){ fx3dFill(disc, sh.dark, 0.35*fade, 0); fx3dStroke(disc, sh.bright, 3, 0.8*fade, 18, true); }
-  // 横輪を高さごとに重ねる(半径 R*cosθ / 高さ R*sinθ)
-  for(let k=1;k<=FX3D_DOME_RINGS;k++){
-    const th = (k/(FX3D_DOME_RINGS+1))*(Math.PI/2);
-    const ring = fx3dRingPts(ae.x, ae.y, R*Math.cos(th), R*Math.sin(th));
+  const rings = 6;
+  // 下から上へ、輪を重ねて塊にする。上の輪ほど明るくして丸みを出す
+  for(let k=0;k<=rings;k++){
+    const th = (k/rings)*(Math.PI/2);
+    const ring = fx3dRingPts(ae.x, ae.y, R*Math.cos(th), 2 + H*Math.sin(th));
     if(!ring) continue;
-    fx3dFill(ring, sh.mid, 0.13*fade, 0);
-    fx3dStroke(ring, sh.bright, 1.8, 0.4*fade, 10, true);
+    const t = k/rings;
+    fx3dFill(ring, _mixHex(col, sh.bright, t*0.55), (0.34 - t*0.1)*fade, 0);
   }
-  // 縦の弧(経線)。8本でドームの丸みを見せる
+  // 縁と稜線(ドームの形をはっきりさせる)
+  const rim = fx3dRingPts(ae.x, ae.y, R, 2);
+  if(rim) fx3dStroke(rim, sh.bright, 3.5, 0.9*fade, 20, true);
   for(let m=0;m<8;m++){
     const a = (m/8)*Math.PI*2;
     const arc=[];
     for(let i=0;i<=8;i++){
       const th = (i/8)*(Math.PI/2);
       const rr = R*Math.cos(th);
-      const p = fx3dPoint(ae.x+Math.cos(a)*rr, ae.y+Math.sin(a)*rr, R*Math.sin(th));
+      const p = fx3dPoint(ae.x+Math.cos(a)*rr, ae.y+Math.sin(a)*rr, 2 + H*Math.sin(th));
       if(p) arc.push(p);
     }
-    fx3dStroke(arc, sh.bright, 1.6, 0.35*fade, 8);
+    fx3dStroke(arc, sh.bright, 1.6, 0.4*fade, 8);
   }
-  const apex = fx3dPoint(ae.x, ae.y, R);
+  const apex = fx3dPoint(ae.x, ae.y, H + 4);
   if(apex){
     ctx.save();
-    ctx.globalAlpha = Math.min(1, 0.75*fade);
-    ctx.fillStyle = sh.spark;
-    if(!renderHeavyLoad){ ctx.shadowBlur = 26; ctx.shadowColor = col; }
-    ctx.beginPath(); ctx.arc(apex.x, apex.y, Math.max(3, 16*apex.scale), 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = Math.min(1, 0.8*fade);
+    ctx.globalCompositeOperation = 'lighter';
+    const rr = Math.max(4, 26*apex.scale);
+    const g = ctx.createRadialGradient(apex.x, apex.y, 0, apex.x, apex.y, rr);
+    g.addColorStop(0, _hexA(sh.spark, 0.9));
+    g.addColorStop(1, _hexA(col, 0));
+    ctx.beginPath(); ctx.arc(apex.x, apex.y, rr, 0, Math.PI*2);
+    ctx.fillStyle = g; ctx.fill();
     ctx.restore();
   }
 }
 // リアルマップでの範囲技の描画。ここで描いたらtrueを返し、2Dの描画は行わない
 function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
+  // 爆風ドームだけは濃いまま、それ以外は半透明にして技以外を見やすくする
+  const fade = fadeAlpha * (ae.kind==='circle' ? FX3D_DOME_ALPHA : FX3D_AREA_ALPHA);
   if(ae.kind==='beams'){
-    fx3dFlowerBeams(ae, fillDist, fadeAlpha, inTelegraph);
+    fx3dFlowerBeams(ae, fillDist, fade, inTelegraph);
     return true;
   }
   // 予告(最大範囲)は通常マップと同じ点線。判定範囲がどこかを必ず見せる
@@ -2766,16 +2864,14 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const curReach = Math.min(ae.range, fillDist);
   if(curReach<=2) return true;
   const progress = clamp(curReach/Math.max(ae.range,1), 0, 1);
-  if(ae.kind==='fan')          fx3dFlameFan(ae, curReach, fadeAlpha);
-  else if(ae.kind==='zigzag')  fx3dThunder(ae, curReach, fadeAlpha);
-  else if(ae.kind==='fanZigzag') fx3dPsychicWall(ae, curReach, fadeAlpha);
-  else if(ae.kind==='circle')  fx3dDomeBurst(ae, curReach, fadeAlpha);
+  if(ae.kind==='fan')            fx3dFlameFan(ae, curReach, fade);
+  else if(ae.kind==='zigzag')    fx3dThunder(ae, curReach, fade);
+  else if(ae.kind==='fanZigzag') fx3dPsychicWall(ae, curReach, fade);
+  else if(ae.kind==='circle')    fx3dDomeBurst(ae, curReach, fade);
   else if(ae.kind==='rect'){
-    if(ae.style==='crystal')     fx3dCrystalRain(ae, curReach, fadeAlpha, progress);
-    else if(ae.style==='lava')   fx3dFireWave(ae, curReach, fadeAlpha);
-    else if(ae.style==='galaxy') fx3dGalaxyStream(ae, curReach, fadeAlpha);
-    else if(ae.style==='sakura') fx3dSakuraBeam(ae, curReach, fadeAlpha);
-    else                         fx3dHeatBeam(ae, curReach, fadeAlpha);
+    if(ae.style==='crystal')   fx3dCrystalRain(ae, curReach, fade, progress);
+    else if(ae.style==='lava') fx3dFireWave(ae, curReach, fade);
+    else                       fx3dRectBeam(ae, curReach, fade);   // モッチ砲/天河天翔/熱視線
   } else return false;
   return true;
 }
