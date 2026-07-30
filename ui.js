@@ -2384,6 +2384,8 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     netState.capacity = Number(tab.dataset.cap)||3;
+    // 右カラムの「プレイモード」の表示にも人数を反映する(マップ側と同じ扱い)
+    if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   });
 });
 
@@ -2479,7 +2481,7 @@ function enterLobbyForRoom(){
         return;
       }
       if(meta.hostId){ netState.hostId = meta.hostId; renderLobbyPlayerList(); }
-      if(typeof meta.capacity==='number'){ netState.capacity = meta.capacity; }
+      if(typeof meta.capacity==='number'){ netState.capacity = meta.capacity; if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels(); }
       if(meta.status==='starting' && meta.startAt && !matchBeginning){
         startLobbyCountdownDisplay(meta.startAt);
       } else if(meta.status==='waiting'){
@@ -2605,7 +2607,7 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.roomId = result.roomId;
   netState.isHost = false;
   netState.myPlayerId = result.myPlayerId;
-  if(result.capacity) netState.capacity = result.capacity;
+  if(result.capacity){ netState.capacity = result.capacity; if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels(); }
 
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
