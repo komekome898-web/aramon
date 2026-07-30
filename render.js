@@ -1724,7 +1724,7 @@ function drawProjectile(pr,p){
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
 
-  // リアルマップでは絵文字の弾をその技に合った実体のあるエフェクトに差し替える。
+  // 絵文字の弾をその技に合った実体のあるエフェクトに差し替える。
   // 専用の見た目を持つ技(projStyle/shape)は対象外なので、条件は2Dの絵文字分岐と同じ。
   if(pr.icon && !pr.projStyle && !pr.shape && real3dFx()){
     const fn = REAL_ICON_FX[fxIconKey(pr.icon)] || fxIconEnergy;
@@ -1732,7 +1732,7 @@ function drawProjectile(pr,p){
     ctx.restore();
     return;
   }
-  // tier3の専用弾もリアルマップでは立体的に描き直す(通常マップの分岐はそのまま残す)
+  // tier3の専用弾も立体的に描き直す(従来の平面描画は下の分岐に残してある)
   if(pr.projStyle && real3dFx() && REAL_STYLE_FX[pr.projStyle]){
     REAL_STYLE_FX[pr.projStyle](pr, Math.max(8, pr.hitR||14));
     ctx.restore();
@@ -2907,7 +2907,7 @@ function drawFlowerBeamsEffect(ae, fillDist, fadeAlpha, inTelegraph){
    ・読む値は通常マップとまったく同じ(range/width/fanAngleDeg/color/curReach)。
      ここは「同じ技を立体的に描き直す」だけなので、技の性能をいじれば
      2D(通常マップ)にも3D(リアルマップ)にも同じように効く。
-   ・入口は drawSingleAreaEffect 先頭の real3dFx() 1か所。通常マップでは一切通らない。
+   ・入口は drawSingleAreaEffect 先頭の real3dFx() 1か所。falseなら従来の平面エフェクトが走る。
    ・柱・弧・ドームの各点は project(x, y, 地面の高さ+dz) で個別に投影する。
      画面上で楕円や矩形を決め打ちしないので、坂の上でも地面から生えて見える
      (この決まりは地面に貼る円と同じ。扁平率を固定すると浮いて見える)。
@@ -2931,7 +2931,12 @@ const FX3D_RING_SEGS  = 30;                 // 輪・弧のサンプル数
 const FX3D_AREA_ALPHA = 0.58;               // 範囲技の透け具合(小さいほど後ろが見える)
 const FX3D_DOME_ALPHA = 1.0;                // 爆風ドームだけは濃いまま残す
 
-function real3dFx(){ return typeof isReal3dMap==='function' && isReal3dMap(); }
+/* 技のエフェクトは地面(WebGL)と違って全部2Dキャンバスで描いている。
+   WebGLに一切依存していないので、通常マップでも同じ立体エフェクトをそのまま出せる。
+   違いは groundZAt() が通常マップでは常に0を返すこと=平らな地面の上に乗るだけ。
+   FX_SOLID_ALL_MAPS を false にすると通常マップだけ従来の平面エフェクトへ戻る。     */
+const FX_SOLID_ALL_MAPS = true;
+function real3dFx(){ return FX_SOLID_ALL_MAPS || (typeof isReal3dMap==='function' && isReal3dMap()); }
 
 // 投影済みの点列を塗る/なぞる(shadowBlurは重い端末では自動で切る)
 function fx3dFill(pts, color, alpha, blur){
@@ -3057,6 +3062,8 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
      こうしないと坂の下へ撃った時や真上から見た時に筒がねじれて見える
    ・断面方向のグラデーション(縁=薄い技色 / 芯=白)で丸みを出す
    ・加算合成なので重なるほど明るくなり、光の筒に見える                       */
+// radius には必ず「技の当たり幅の半分」(ae.width/2)を渡す。
+// 断面の直径が当たり幅と一致するので、真後ろから見ると判定どおりの円になる
 function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   const segs = 16;
   const dz = Math.max(FX3D_BEAM_Z, radius*0.92);   // 地面へめり込ませない
@@ -3094,28 +3101,33 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
     // 断面方向の色: 縁(外殻)が濃く、少し内側で一度沈み、芯で白く光る。
     // 縁を薄いままにすると帯にしか見えないので、外殻をはっきり出して円筒に見せる
     const g = ctx.createLinearGradient(mx-mnx*mr, my-mny*mr, mx+mnx*mr, my+mny*mr);
-    g.addColorStop(0,    _hexA(shell, 0.95));
-    g.addColorStop(0.1,  _hexA(col, 0.75));
-    g.addColorStop(0.24, _hexA(col, 0.3));
-    g.addColorStop(0.44, _hexA(sh.bright, 0.7));
+    g.addColorStop(0,    _hexA(shell, 1));
+    g.addColorStop(0.08, _hexA(col, 0.85));
+    g.addColorStop(0.26, _hexA(col, 0.55));
+    g.addColorStop(0.42, _hexA(sh.bright, 0.8));
     g.addColorStop(0.5,  'rgba(255,255,255,0.98)');
-    g.addColorStop(0.56, _hexA(sh.bright, 0.7));
-    g.addColorStop(0.76, _hexA(col, 0.3));
-    g.addColorStop(0.9,  _hexA(col, 0.75));
-    g.addColorStop(1,    _hexA(shell, 0.95));
+    g.addColorStop(0.58, _hexA(sh.bright, 0.8));
+    g.addColorStop(0.74, _hexA(col, 0.55));
+    g.addColorStop(0.92, _hexA(col, 0.85));
+    g.addColorStop(1,    _hexA(shell, 1));
     ctx.beginPath();
     ctx.moveTo(q[0].x,q[0].y); ctx.lineTo(q[1].x,q[1].y); ctx.lineTo(q[2].x,q[2].y); ctx.lineTo(q[3].x,q[3].y);
     ctx.closePath();
     ctx.fillStyle = g; ctx.fill();
     edgeA.push(q[0], q[1]); edgeB.push(q[3], q[2]);
   }
-  // 外殻の輪郭線。ここが無いと縁がぼやけて円筒に見えない
-  const rimW = Math.max(1.6, radius*pts[Math.floor(pts.length/2)].scale*0.11);
-  fxStrokePath(edgeA, shell, rimW, 0.9*fade, 0);
-  fxStrokePath(edgeB, shell, rimW, 0.9*fade, 0);
+  // 外殻の輪郭線。ここが無いと縁がぼやけて円筒に見えない。
+  // 線は輪郭の内側へ寄せて引く(中心に置くと線の太さの半分だけ当たり幅からはみ出す)
+  const rimW = Math.max(1.6, radius*pts[Math.floor(pts.length/2)].scale*0.1);
+  const inset = (list, sign)=>list.map((q,i)=>{
+    const n = nrm[Math.min(nrm.length-1, i>>1)];
+    return { x:q.x - n.x*sign*rimW*0.5, y:q.y - n.y*sign*rimW*0.5 };
+  });
+  fxStrokePath(inset(edgeA, 1), shell, rimW, 0.95*fade, 0);
+  fxStrokePath(inset(edgeB, -1), shell, rimW, 0.95*fade, 0);
   // 両端の断面(真後ろ・真正面から見たときに円として見える)
-  for(const [p, boost] of [[pts[0], 1.0], [pts[pts.length-1], 1.15]]){
-    const rr = radius*p.scale*boost;
+  for(const p of [pts[0], pts[pts.length-1]]){
+    const rr = radius*p.scale;   // 当たり幅の半分ちょうど
     const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rr);
     g.addColorStop(0, 'rgba(255,255,255,0.98)');
     g.addColorStop(0.4, _hexA(sh.bright, 0.55));
@@ -3123,8 +3135,9 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
     g.addColorStop(1, _hexA(shell, 0.9));
     ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI*2);
     ctx.fillStyle = g; ctx.fill();
-    ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI*2);
-    ctx.strokeStyle = _hexA(shell, 0.9); ctx.lineWidth = Math.max(1.6, rr*0.1); ctx.stroke();
+    const cw = Math.max(1.6, rr*0.1);
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1, rr-cw*0.5), 0, Math.PI*2);
+    ctx.strokeStyle = _hexA(shell, 0.95); ctx.lineWidth = cw; ctx.stroke();
   }
   ctx.restore();
 }
@@ -3452,7 +3465,7 @@ function drawSingleAreaEffect(ae){
     const fadeStart = ae.life - 0.2;
     const fadeAlpha = elapsed>fadeStart ? clamp(1-((elapsed-fadeStart)/0.2), 0, 1) : 1;
 
-    // リアルマップだけ立体エフェクトに差し替える(判定・数値は通常マップと同じものを読む)
+    // 立体エフェクトに差し替える(判定・数値はマップによらず同じものを読む)
     if(real3dFx() && drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph)) return;
 
     if(ae.kind==='beams'){
