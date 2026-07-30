@@ -2424,6 +2424,9 @@ function render(){
   // 山と地面のしみ(溶岩・海・川・オアシス)は3D側が地形に沿わせて描く
   const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks, {
     volcanoes: volcanoObstacles, lava: lavaZones, sea: seaZones, river: riverZones, oasis: oasisZones,
+    // 海は円の集合ではなく海岸線の式そのものから水面を張る(seaEdgeXはworld.jsの純関数)
+    seaEdge: (currentMap && currentMap.hasSea) ? seaEdgeX : null,
+    bounds: { w: WORLD.w, h: WORLD.h },
   }));
   real3dActive = gl3d;
   prepareMountainOccluders();
