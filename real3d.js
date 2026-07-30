@@ -1472,7 +1472,8 @@ function applyTheme(){
 function applySize(){
   if(!renderer) return;
   const w = window.viewW || 1, h = window.viewH || 1;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // 2Dキャンバスと同じ描画倍率を使う(world.jsが負荷に応じて動かす)
+  renderer.setPixelRatio(window.__aramonRenderScale || Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(w, h, true);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();

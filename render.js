@@ -224,9 +224,40 @@ function skinnedImageForEntity(entity){
   return null;
 }
 
+/* 縮小版スプライトのキャッシュ
+   モンスター画像は320〜1024pxあるが、画面上では40〜200px程度にしか出ない。
+   大きいまま毎フレームdrawImageすると、端末のGPUが抱えるテクスチャが膨れ上がる
+   (歩行コマは1体16枚。試合開始直後は27体ぶん=200枚以上が同時に必要になり、
+    ここでフレーム時間の大半を失っていた)。
+   実際に必要な大きさの2の冪(64/128/256)へ1回だけ縮小して使い回す。
+   ・必要な大きさが256pxを超えるとき(自分がカメラに近いとき)は元画像をそのまま使う
+   ・縮小は高品質補間で1回だけなので、見た目は落ちない                          */
+const SPRITE_BUCKETS = [64, 128, 256];
+let _monDrawScale = 1;   // 直前にdrawMonsterが掛けた投影スケール(縮小版の選択に使う)
+const _spriteCache = new WeakMap();   // img -> { 64:canvas, 128:canvas, ... }
+function scaledSpriteFor(img, needPx){
+  const iw = _imgW(img), ih = _imgH(img);
+  const src = Math.max(iw, ih);
+  let bucket = 0;
+  for(const b of SPRITE_BUCKETS){ if(b >= needPx){ bucket = b; break; } }
+  if(!bucket || bucket >= src) return img;      // 元画像より大きくするなら意味がない
+  let set = _spriteCache.get(img);
+  if(!set){ set = {}; _spriteCache.set(img, set); }
+  if(set[bucket]) return set[bucket];
+  const k = bucket / src;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(iw*k)); c.height = Math.max(1, Math.round(ih*k));
+  const cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = true;
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(img, 0, 0, c.width, c.height);
+  set[bucket] = c;
+  return c;
+}
 // 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。
 // (円形クリップを廃したため、矩形の白fillでは背景まで白くなってしまう。
 //  画像のアルファ形状に沿って白くするためにこの手法を使う)
+// 縮小版から作るので、マスクのテクスチャも小さくて済む。
 const _whiteMaskCache = new WeakMap();
 function whiteMaskFor(img){
   const w = _imgW(img), h = _imgH(img);
@@ -246,11 +277,14 @@ function drawMonsterPortrait(e, img, flash){
   const iw = _imgW(img), ih = _imgH(img);
   const scale = Math.max((r*2)/iw, (r*2)/ih);
   const dw = iw*scale, dh = ih*scale;
-  ctx.drawImage(img, -dw/2, -dh/2, dw, dh);
+  // 画面上での実ピクセル数に合う縮小版を使う(投影スケール×描画解像度)
+  const need = Math.max(dw, dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
+  const spr = scaledSpriteFor(img, need);
+  ctx.drawImage(spr, -dw/2, -dh/2, dw, dh);
   if(flash){
     ctx.save();
     ctx.globalAlpha = 0.55;
-    ctx.drawImage(whiteMaskFor(img), -dw/2, -dh/2, dw, dh);
+    ctx.drawImage(whiteMaskFor(spr), -dw/2, -dh/2, dw, dh);
     ctx.restore();
   }
 }
@@ -332,7 +366,7 @@ function drawMonsterShape(e, color, dark){
     case 'phoenix': {
       const accent = ELEMENTS.phoenix.accent;
       ctx.save();
-      ctx.shadowBlur = 16; ctx.shadowColor = color;
+      if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = color; }
 
       for(let i=-1;i<=1;i++){
         const a = Math.PI/2 + i*0.46;
@@ -416,7 +450,7 @@ function drawMonsterShape(e, color, dark){
     case 'ark': {
       const accent = ELEMENTS.ark.accent;
       ctx.save();
-      ctx.shadowBlur = 14; ctx.shadowColor = accent;
+      if(!renderHeavyLoad){ ctx.shadowBlur = 14; ctx.shadowColor = accent; }
 
       // 光輪
       ctx.beginPath();
@@ -479,7 +513,7 @@ function drawMonsterShape(e, color, dark){
       ctx.fillStyle = color; ctx.fill();
       ctx.strokeStyle = accent; ctx.lineWidth = 1.6; ctx.stroke();
       ctx.beginPath(); ctx.arc(0,-r*0.15,r*0.18,0,Math.PI*2);
-      ctx.fillStyle = accent; ctx.shadowBlur=10; ctx.shadowColor=accent; ctx.fill();
+      ctx.fillStyle = accent; if(!renderHeavyLoad){ ctx.shadowBlur=10; ctx.shadowColor=accent; } ctx.fill();
       ctx.restore();
       break;
     }
@@ -549,6 +583,7 @@ function drawMonster(e,p){
   if(introState.active) ctx.globalAlpha = summonRevealAlpha();
   ctx.translate(p.x, p.y);
   ctx.scale(p.scale,p.scale);
+  _monDrawScale = p.scale;
   ctx.translate(0,-e.radius*0.85);
 
   ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9, e.radius*0.4, 0,0,Math.PI*2);
@@ -575,7 +610,7 @@ function drawMonster(e,p){
     if(e.element==='fire'){
       const eo = e.radius*0.36;
       ctx.save();
-      ctx.shadowBlur=8; ctx.shadowColor='#ffd76a';
+      if(!renderHeavyLoad){ ctx.shadowBlur=8; ctx.shadowColor='#ffd76a'; }
       ctx.strokeStyle = e.hitFlash>0 ? '#10131a' : '#ffd76a';
       ctx.lineWidth = e.radius*0.13; ctx.lineCap='round';
       [-1,1].forEach(s=>{
@@ -632,7 +667,7 @@ function drawMonster(e,p){
     ctx.globalAlpha = pulse;
     ctx.strokeStyle = '#ffd76a';
     ctx.lineWidth = 2.6;
-    ctx.shadowBlur = 16; ctx.shadowColor = '#ffe9a8';
+    if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = '#ffe9a8'; }
     ctx.beginPath(); ctx.arc(0,0, e.radius*1.55, 0, Math.PI*2); ctx.stroke();
     ctx.globalAlpha = pulse*0.6;
     ctx.lineWidth = 1.4;
@@ -657,7 +692,7 @@ function drawMonster(e,p){
       ctx.font = `bold 10px 'Rajdhani', sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = 'rgba(255,70,70,0.95)';
-      ctx.shadowBlur = flashing ? 7 : 3; ctx.shadowColor = 'rgba(255,0,0,0.75)';
+      if(!renderHeavyLoad){ ctx.shadowBlur = flashing ? 7 : 3; ctx.shadowColor = 'rgba(255,0,0,0.75)'; }
       ctx.fillText(flashing ? sc.name+'!' : sc.name, 0, -e.radius*1.55-13);
       ctx.restore();
     }
@@ -667,12 +702,35 @@ function drawMonster(e,p){
     ctx.font="11px 'Rajdhani', sans-serif";
     ctx.fillStyle = e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)';
     ctx.textAlign='center';
-    if(e.isMastermonBot){ ctx.shadowBlur=6; ctx.shadowColor='#ffb703'; }
+    if(e.isMastermonBot && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor='#ffb703'; }
     ctx.fillText((e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
   }
   ctx.restore();
 }
+/* 遠くのアイテムは簡略化して描く。
+   試合開始直後はアイテムが数十個あり、1個ずつ楕円・矩形・文字を重ねると
+   端末側のラスタ化がフレーム時間の大半を占める。画面上で十数pxしかない距離では
+   細部は元から見えないので、色の付いた粒だけにしても見た目は変わらない。      */
+const LOOT_SIMPLE_SCALE = 0.42;   // これより小さく映るアイテムは粒で描く
+function lootTintOf(it){
+  if(it.kind==='heal'){ const hi = HEAL_ITEMS[it.type]; return hi ? hi.accent : '#8fe38f'; }
+  if(it.kind==='ticket') return TICKET_ITEM.accent;
+  if(it.kind==='guts')   return GUTS_ITEM.accent;
+  if(it.kind==='training'){ const ti = TRAINING_ITEMS[it.type]; return ti ? ti.accent : '#ffd23c'; }
+  return '#ffffff';
+}
 function drawLootItem(it,p){
+  if(p.scale < LOOT_SIMPLE_SCALE){
+    const col = lootTintOf(it);
+    const r = Math.max(1.6, 9*p.scale);
+    const bob = Math.sin(matchTime*2.4+it.bob)*2.5*p.scale;
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath(); ctx.arc(p.x, p.y - 9*p.scale + bob, r, 0, Math.PI*2);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
@@ -681,7 +739,7 @@ function drawLootItem(it,p){
     const sz = hi.size;
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5;
     ctx.translate(0,-9*sz+bob);
-    ctx.shadowBlur=10; ctx.shadowColor=hi.accent;
+    if(!renderHeavyLoad){ ctx.shadowBlur=10; ctx.shadowColor=hi.accent; }
     ctx.fillStyle=hi.color; ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=1.2;
     ctx.beginPath(); ctx.ellipse(0, 2*sz, 5*sz, 7*sz, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
     ctx.fillRect(-1.6*sz, -7*sz, 3.2*sz, 5*sz); ctx.strokeRect(-1.6*sz, -7*sz, 3.2*sz, 5*sz);
@@ -697,7 +755,7 @@ function drawLootItem(it,p){
   } else if(it.kind==='ticket'){
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5;
     ctx.translate(0,-8+bob);
-    ctx.shadowBlur=10; ctx.shadowColor=TICKET_ITEM.accent;
+    if(!renderHeavyLoad){ ctx.shadowBlur=10; ctx.shadowColor=TICKET_ITEM.accent; }
     ctx.fillStyle = TICKET_ITEM.color;
     ctx.fillRect(-8,-5,16,10);
     ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1.2;
@@ -716,7 +774,7 @@ function drawLootItem(it,p){
   } else if(it.kind==='guts'){
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5;
     ctx.translate(0,-8+bob);
-    ctx.shadowBlur=10; ctx.shadowColor=GUTS_ITEM.accent;
+    if(!renderHeavyLoad){ ctx.shadowBlur=10; ctx.shadowColor=GUTS_ITEM.accent; }
     ctx.fillStyle = GUTS_ITEM.color;
     ctx.beginPath(); ctx.ellipse(0,0,7,4.5,0,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1.2; ctx.stroke();
@@ -733,7 +791,7 @@ function drawLootItem(it,p){
     const bob = Math.sin(matchTime*2.4+it.bob)*3.5;
     ctx.translate(0,-16+bob);
     const spin = 0.7+0.3*Math.sin(matchTime*3+it.bob);
-    ctx.shadowBlur = 22*spin; ctx.shadowColor = ti.accent;
+    if(!renderHeavyLoad){ ctx.shadowBlur = 22*spin; ctx.shadowColor = ti.accent; }
     ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2);
     ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
     ctx.strokeStyle = ti.accent; ctx.lineWidth = 2; ctx.stroke();
@@ -2281,7 +2339,7 @@ function drawCrystal(c,p){
   ctx.closePath();
   ctx.fillStyle='rgba(200,235,255,0.85)';
   ctx.strokeStyle='rgba(140,200,235,0.95)'; ctx.lineWidth=2;
-  ctx.shadowBlur=14; ctx.shadowColor='rgba(180,230,255,0.8)';
+  if(!renderHeavyLoad){ ctx.shadowBlur=14; ctx.shadowColor='rgba(180,230,255,0.8)'; }
   ctx.fill(); ctx.stroke();
   ctx.shadowBlur=0;
   ctx.restore();
@@ -2517,7 +2575,7 @@ function drawZoneCompass(){
   ctx.lineTo(r*0.38, r*0.3);
   ctx.closePath();
   ctx.fillStyle = outside ? '#ff4a1f' : '#f4c430';
-  ctx.shadowBlur = 10; ctx.shadowColor = outside ? 'rgba(255,60,20,0.9)' : 'rgba(244,196,48,0.7)';
+  if(!renderHeavyLoad){ ctx.shadowBlur = 10; ctx.shadowColor = outside ? 'rgba(255,60,20,0.9)' : 'rgba(244,196,48,0.7)'; }
   ctx.fill();
   ctx.restore();
 
@@ -2573,7 +2631,7 @@ function fillShape(pts, color, alpha){
   for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
   ctx.closePath();
   ctx.fillStyle = color;
-  ctx.shadowBlur=18; ctx.shadowColor=color;
+  if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor=color; }
   ctx.fill();
   ctx.restore();
 }
@@ -2663,7 +2721,7 @@ function drawGroundSpark(p, kind, color, alpha, seed){
     const s = 2 + fxHash01(seed*4.9)*2.5;
     ctx.beginPath(); ctx.arc(0,0,s,0,Math.PI*2);
     ctx.fillStyle = color;
-    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    if(!renderHeavyLoad){ ctx.shadowBlur = 10; ctx.shadowColor = color; }
     ctx.fill();
   }
   ctx.restore();
@@ -3543,7 +3601,7 @@ function drawSingleAreaEffect(ae){
           ctx.save();
           ctx.globalAlpha = Math.min(1, 0.8*fadeAlpha);
           ctx.strokeStyle = ae.color; ctx.lineWidth = 6;
-          ctx.shadowBlur=20; ctx.shadowColor=ae.color;
+          if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor=ae.color; }
           ctx.lineJoin='round'; ctx.lineCap='round';
           ctx.beginPath();
           ctx.moveTo(pts[0].x,pts[0].y);
@@ -3737,7 +3795,7 @@ function drawLavaZones(){
     if(pts.length<3) continue;
     ctx.save();
     const pulse = 0.75 + 0.25*Math.sin(matchTime*2.4 + lz.x*0.01);
-    ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(255,90,20,0.8)';
+    if(!renderHeavyLoad){ ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(255,90,20,0.8)'; }
     ctx.beginPath();
     ctx.moveTo(pts[0].x,pts[0].y);
     for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
@@ -3867,7 +3925,7 @@ function drawVolcanoComplex(group,p){
           const glow = 0.6+0.25*Math.sin(matchTime*1.2);
           ctx.beginPath(); ctx.ellipse(peakP.x, peakP.y, r*0.24, r*0.15, 0, 0, Math.PI*2);
           ctx.fillStyle = `rgba(255,255,255,${0.75+0.2*glow})`;
-          ctx.shadowBlur=16; ctx.shadowColor='rgba(210,235,255,0.9)';
+          if(!renderHeavyLoad){ ctx.shadowBlur=16; ctx.shadowColor='rgba(210,235,255,0.9)'; }
           ctx.fill();
           ctx.shadowBlur=0;
         } else if(style==='forest'){
@@ -3886,7 +3944,7 @@ function drawVolcanoComplex(group,p){
           ctx.beginPath(); ctx.ellipse(peakP.x, peakP.y, r*0.30, r*0.19, 0, 0, Math.PI*2); ctx.stroke();
           ctx.beginPath(); ctx.ellipse(peakP.x, peakP.y, r*0.26, r*0.16, 0, 0, Math.PI*2);
           ctx.fillStyle = `rgb(${Math.round(200+30*glow)},${Math.round(70+30*glow)},20)`;
-          ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)';
+          if(!renderHeavyLoad){ ctx.shadowBlur=22; ctx.shadowColor='rgba(255,110,30,0.95)'; }
           ctx.fill();
           ctx.shadowBlur=0;
         }
@@ -3895,6 +3953,10 @@ function drawVolcanoComplex(group,p){
   }
   ctx.restore();
 }
+/* 描画品質レベル(0=通常 / 1=影を切る)。
+   shadowBlur は端末側のラスタ化で最も高い処理で、アイテムやモンスターのように
+   数が多いものに掛けると一気に重くなる。フレーム時間が続けて悪いときだけ切る。 */
+let gfxLevel = 0;
 let renderHeavyLoad = false;
 // 3Dレイヤーが地面を描いているか(リアルマップ)。山・しみの描き分けと遮蔽判定に使う
 let real3dActive = false;
@@ -4055,9 +4117,10 @@ function perfEnabled(on){
 }
 function perfIsOn(){ return perfOn; }
 function perfFrameStart(now){
-  if(!perfOn) return;
+  // フレーム時間だけは常に測る(動的解像度がこれを見るため。コストはほぼゼロ)
   perf.prevFrame = perf.t0 ? (now - perf.t0) : 0;
   perf.t0 = now;
+  if(!perfOn) return;
   perf.last = performance.now();
   perf.glMs = 0;
 }
@@ -4071,7 +4134,39 @@ function perfMark(key){
 }
 // WebGLの描画時間だけは render() の中から個別に記録する
 function perfGl(ms){ if(perfOn) perf.glMs += ms; }
+/* 動的解像度
+   計測でわかったこと: JSは9msしか使っておらず、残りはブラウザ側(GPUのラスタ化と合成)。
+   そこは描画するピクセル数に比例するので、重いフレームが続いたら描画倍率を下げ、
+   軽くなったら元へ戻す。上限(端末の実解像度・最大2倍)は変えないので、
+   余裕のある端末では今までと同じ見た目のまま。                                 */
+const RS_SLOW_MS    = 20;    // これより遅い = 50fps未満。続いたら解像度を下げる
+const RS_BAD_MS     = 30;    // これより遅い = 33fps未満。早めに大きく下げる
+const RS_RECOVER_MS = 14;    // これより速い状態が続いたら元へ戻す
+let rsSlow = 0, rsBad = 0, rsFast = 0;
+function updateRenderScale(frameMs){
+  if(typeof setRenderScale!=='function' || !game.started || game.over) return;
+  if(frameMs > RS_BAD_MS){ rsBad++; rsSlow++; rsFast = 0; }
+  else if(frameMs > RS_SLOW_MS){ rsSlow++; rsBad = 0; rsFast = 0; }
+  else if(frameMs < RS_RECOVER_MS){ rsFast++; rsSlow = 0; rsBad = 0; }
+  else { rsSlow = 0; rsBad = 0; rsFast = 0; }
+  // ひどく重いときは0.5秒で大きく、そこそこのときは1.5秒かけて少しずつ下げる
+  // 影を切るのがいちばん安く効くので先に落とし、それでも足りなければ解像度を下げる
+  if(rsBad >= 15){
+    rsBad = 0; rsSlow = 0;
+    if(gfxLevel < 1) gfxLevel = 1;
+    else setRenderScale(renderScale - 0.3);
+  } else if(rsSlow >= 60){
+    rsSlow = 0;
+    if(gfxLevel < 1) gfxLevel = 1;
+    else setRenderScale(renderScale - 0.12);
+  } else if(rsFast >= 240){
+    // 戻すのは慎重に(4秒ぶん余裕が続いてから1段)。解像度を先に戻し、最後に影を戻す
+    rsFast = 0;
+    if(!setRenderScale(renderScale + 0.12)) gfxLevel = 0;
+  }
+}
 function perfFrameEnd(){
+  updateRenderScale(perf.prevFrame || 16.7);
   if(!perfOn) return;
   perf.sum.frame += perf.prevFrame;
   perf.sum.gl += perf.glMs;
@@ -4087,7 +4182,8 @@ function perfFrameEnd(){
   const lines = [
     `${fps.toFixed(0).padStart(3)} fps   frame ${f(perf.avg.frame)}ms`,
     `update ${f(perf.avg.update)}  2D ${f(perf.avg.render)}`,
-    `WebGL  ${f(perf.avg.gl)}  dpr ${(typeof dpr!=='undefined'?dpr:1).toFixed(2)}`,
+    `WebGL  ${f(perf.avg.gl)}  他+待 ${f(Math.max(0, perf.avg.frame - perf.avg.update - perf.avg.render))}`,
+    `dpr ${(typeof dpr!=='undefined'?dpr:1).toFixed(2)}  gfx ${gfxLevel}`,
     `mon ${entities.filter(e=>e.alive).length}  proj ${projectiles.length}  fx ${particles.length}  ae ${areaEffects.length}`,
     `draw ${perf.drawables}${renderHeavyLoad ? '  [heavy]' : ''}`,
   ];
@@ -4099,7 +4195,7 @@ function perfFrameEnd(){
 function render(){
   ctx.clearRect(0,0,viewW,viewH);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
-  renderHeavyLoad = (projectiles.length + particles.length) > 22;
+  renderHeavyLoad = gfxLevel >= 1 || (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
   // 地面の装飾を描かずに透かす。初期化に失敗した場合はfalseが返るので従来描画に戻る
   // 障害物(岩・木・水晶など)も3D側が描く。2D側は同じ輪郭をくり抜くだけ(eraseObstacle)。
@@ -4239,7 +4335,7 @@ function drawSummonIntro(){
       const dh = dw*0.5;
       ctx.save();
       ctx.globalAlpha = (0.5 + 0.45*ph.diskGrow) * (0.5 + 0.5*ph.endFade);
-      ctx.shadowBlur = 26*pg.scale; ctx.shadowColor = 'rgba(255,222,150,0.9)';
+      if(!renderHeavyLoad){ ctx.shadowBlur = 26*pg.scale; ctx.shadowColor = 'rgba(255,222,150,0.9)'; }
       ctx.drawImage(summonDiskImg, pg.x-dw/2, pg.y-dh/2, dw, dh);
       ctx.restore();
     }
@@ -4342,11 +4438,11 @@ function drawSummonCountdown(){
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = `bold 22px 'Rajdhani', sans-serif`;
   ctx.fillStyle = 'rgba(255,240,205,0.92)';
-  ctx.shadowBlur = 12; ctx.shadowColor = 'rgba(255,180,80,0.9)';
+  if(!renderHeavyLoad){ ctx.shadowBlur = 12; ctx.shadowColor = 'rgba(255,180,80,0.9)'; }
   ctx.fillText('召 喚', viewW/2, viewH*0.16);
   ctx.font = `bold ${Math.round(66*scale)}px 'Rajdhani', sans-serif`;
   ctx.fillStyle = 'rgba(255,255,255,0.96)';
-  ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(120,200,255,0.95)';
+  if(!renderHeavyLoad){ ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(120,200,255,0.95)'; }
   ctx.fillText(String(n), viewW/2, viewH*0.31);
   ctx.restore();
 }

@@ -74,7 +74,23 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const miniCanvas = document.getElementById('minimapCanvas');
 const miniCtx = miniCanvas.getContext('2d');
-let dpr = Math.min(window.devicePixelRatio||1, 2);
+/* 描画解像度。端末の実解像度(最大2倍)を上限に、重いときだけ自動で下げる。
+   ・上限を変えないので、余裕のある端末の見た目は今までと同じ
+   ・フレーム時間を見て render.js の updateRenderScale() が renderScale を動かす */
+const DPR_MAX = Math.min(window.devicePixelRatio||1, 2);
+const DPR_MIN = Math.max(1, DPR_MAX*0.55);   // これ以上は下げない(文字がにじむため)
+let renderScale = DPR_MAX;
+let dpr = renderScale;
+window.__aramonRenderScale = renderScale;
+// 描画解像度を変える(レイアウトは変えないのでキャンバスの実ピクセル数だけが変わる)
+function setRenderScale(s){
+  const v = Math.max(DPR_MIN, Math.min(DPR_MAX, s));
+  if(Math.abs(v - renderScale) < 0.02) return false;
+  renderScale = v; dpr = v;
+  window.__aramonRenderScale = v;
+  resize();
+  return true;
+}
 let viewW=window.innerWidth, viewH=window.innerHeight;
 
 // ===== 強制横向き表示(向きロック中でも横向きでプレイできるようにするCSS回転トリック) =====
