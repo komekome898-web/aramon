@@ -57,7 +57,7 @@ const DETAIL_TILE = 120;                // 凹凸(バンプ)テクスチャが�
 const MACRO_TILE  = 900;                // 地面のまだら模様(砂/砂利/枯れ草)の大きさ
 
 let renderer = null, scene = null, camera = null;
-let terrain = null, terrainPos = null, terrainCol = null;
+let terrain = null, terrainPos = null, terrainCol = null, terrainNrm = null;
 let groundMaps = null;                   // { map, normalMap, roughnessMap, aoMap }
 let sky = null, ridge = null, sun = null;
 let envRT = null;                        // 空から作った環境マップ(PMREM)
@@ -371,6 +371,7 @@ function buildTerrain(){
   mesh.receiveShadow = true;
   terrainPos = geo.attributes.position;
   terrainCol = geo.attributes.color;
+  terrainNrm = geo.attributes.normal;
   return mesh;
 }
 
@@ -378,45 +379,95 @@ const _c = new THREE.Color(), _cMacro = new THREE.Color();
 const _cLow = new THREE.Color(DEFAULT_THEME.low), _cHigh = new THREE.Color(DEFAULT_THEME.high), _cSteep = new THREE.Color(DEFAULT_THEME.steep);
 const _cGravel = new THREE.Color(DEFAULT_THEME.gravel), _cScrub = new THREE.Color(DEFAULT_THEME.scrub);
 // ワールド座標で決まるまだら模様(砂/砂利/枯れ草)。同じ場所は常に同じ色になる純関数
+// 内側で関数を作ると呼び出しのたびにクロージャが1個できる(2万頂点で2万個)ので外へ出す
+function _macroH(x, y){ return _hash(x*1.31+7.7, y*2.17-3.3); }
 function macroPatch(wx, wy){
   const u = wx/MACRO_TILE, v = wy/MACRO_TILE;
   const xi = Math.floor(u), yi = Math.floor(v);
   const xf = u-xi, yf = v-yi;
   const a = xf*xf*(3-2*xf), b = yf*yf*(3-2*yf);
-  const h = (x,y)=>_hash(x*1.31+7.7, y*2.17-3.3);
-  return (h(xi,yi)*(1-a)+h(xi+1,yi)*a)*(1-b) + (h(xi,yi+1)*(1-a)+h(xi+1,yi+1)*a)*b;
+  return (_macroH(xi,yi)*(1-a)+_macroH(xi+1,yi)*a)*(1-b) + (_macroH(xi,yi+1)*(1-a)+_macroH(xi+1,yi+1)*a)*b;
 }
 // パッチをプレイヤー位置へ動かし、頂点の高さと色を書き直す。
 // 中心を CELL の倍数にスナップするので、動かしても頂点が同じワールド座標に乗り
 // 地形が波打って見えない。
+const PATCH_SNAP_CELLS = 2;              // パッチを動かす刻み(セル数)。大きいほど作り直しが減る
+const PATCH_SNAP = CELL * PATCH_SNAP_CELLS;
+const PATCH_VERTS = PATCH_SEGS + 1;      // 1辺の頂点数
+let patchStepX = 0, patchStepZ = 0;      // 頂点1つぶんのローカル座標の刻み(符号込み)
+let scratchPos = null, scratchCol = null, scratchNrm = null;
+let lastPatchVerts = 0, lastPatchMs = 0, patchRebuilds = 0; // 計測用(管理者画面のパフォーマンス表示)
+
+/* パッチをプレイヤー位置へ動かし、頂点の高さ・色・法線を書き直す。
+   ・中心を PATCH_SNAP の倍数にスナップするので、動かしても頂点が同じワールド座標に乗る
+   ・パッチが k セルぶん動いただけなら、重なっている部分の値は前回とまったく同じ。
+     ずらしてコピーし、新しく現れた帯だけを計算する(1セル移動なら計算量が約1/70)
+   ・傾きは real3dHeightGrad() の解析微分。法線もそこから直接作るので
+     computeVertexNormals()(4万三角形の走査)が丸ごと不要になる                    */
 function updateTerrain(cx, cy){
-  const sx = Math.round(cx / CELL) * CELL;
-  const sy = Math.round(cy / CELL) * CELL;
+  const sx = Math.round(cx / PATCH_SNAP) * PATCH_SNAP;
+  const sy = Math.round(cy / PATCH_SNAP) * PATCH_SNAP;
   if(patchCX === sx && patchCY === sy) return;
+  const t0 = performance.now();
+  const pos = terrainPos.array, col = terrainCol.array, nrm = terrainNrm.array;
+  const V = PATCH_VERTS;
+  if(!patchStepX){
+    patchStepX = pos[1*3] - pos[0];               // 隣の頂点とのローカルx差
+    patchStepZ = pos[V*3+2] - pos[2];             // 1行下の頂点とのローカルz差
+    scratchPos = new Float32Array(pos.length);
+    scratchCol = new Float32Array(col.length);
+    scratchNrm = new Float32Array(nrm.length);
+  }
+  // 前回のパッチから何頂点ぶんずれたか(整数でなければ作り直す)
+  let shiftX = 0, shiftY = 0, reuse = false;
+  if(patchCX !== null && patchStepX && patchStepZ){
+    const fx = (sx - patchCX) / patchStepX, fy = (sy - patchCY) / patchStepZ;
+    shiftX = Math.round(fx); shiftY = Math.round(fy);
+    reuse = Math.abs(fx-shiftX) < 1e-6 && Math.abs(fy-shiftY) < 1e-6
+         && Math.abs(shiftX) < V && Math.abs(shiftY) < V;
+  }
+  if(reuse){ scratchPos.set(pos); scratchCol.set(col); scratchNrm.set(nrm); }
   patchCX = sx; patchCY = sy;
-  const arr = terrainPos.array, col = terrainCol.array;
-  for(let i=0, j=0; i<terrainPos.count; i++, j+=3){
-    // ローカルのx,z(=ゲームのx,y相対)からワールド座標を出して高さを引く
-    const wx = sx + arr[j];
-    const wy = sy + arr[j+2];
-    const h = heightAt(wx, wy);
-    arr[j+1] = h;
-    // 高さと傾斜で色を決める(テクスチャ画像を持たずに岩肌と砂を描き分ける)
-    const gx = (heightAt(wx+CELL, wy) - h) / CELL;
-    const gy = (heightAt(wx, wy+CELL) - h) / CELL;
-    const slope = Math.min(1, Math.hypot(gx, gy) / 0.45);
-    const t = Math.min(1, Math.max(0, (h + 240) / 480));
-    _c.copy(_cLow).lerp(_cHigh, t);
-    // 高さだけで色を決めると縞に見えるので、場所ごとのまだら(砂利・枯れ草)を混ぜる
-    const mp = macroPatch(wx, wy);
-    _cMacro.copy(mp < 0.5 ? _cGravel : _cScrub);
-    _c.lerp(_cMacro, Math.min(0.42, Math.abs(mp-0.5)*0.84));
-    _c.lerp(_cSteep, slope);   // 急斜面はむき出しの岩肌
-    col[j] = _c.r; col[j+1] = _c.g; col[j+2] = _c.b;
+  let computed = 0;
+  for(let iy=0; iy<V; iy++){
+    const sIy = iy + shiftY;
+    const rowOk = reuse && sIy>=0 && sIy<V;
+    for(let ix=0; ix<V; ix++){
+      const d = (iy*V + ix)*3;
+      if(rowOk){
+        const sIx = ix + shiftX;
+        if(sIx>=0 && sIx<V){
+          const s = (sIy*V + sIx)*3;
+          pos[d+1] = scratchPos[s+1];
+          col[d]=scratchCol[s]; col[d+1]=scratchCol[s+1]; col[d+2]=scratchCol[s+2];
+          nrm[d]=scratchNrm[s]; nrm[d+1]=scratchNrm[s+1]; nrm[d+2]=scratchNrm[s+2];
+          continue;
+        }
+      }
+      const wx = sx + pos[d], wy = sy + pos[d+2];
+      const g = window.real3dHeightGrad ? window.real3dHeightGrad(wx, wy) : null;
+      const h = g ? g.h : heightAt(wx, wy);
+      const gx = g ? g.gx : 0, gy = g ? g.gy : 0;
+      pos[d+1] = h;
+      // 法線は解析微分から直接。面の平均を取るより正確で、走査も要らない
+      const inv = 1 / Math.hypot(gx, 1, gy);
+      nrm[d] = -gx*inv; nrm[d+1] = inv; nrm[d+2] = -gy*inv;
+      // 高さと傾斜で色を決める(テクスチャ画像を持たずに岩肌と砂を描き分ける)
+      const slope = Math.min(1, Math.hypot(gx, gy) / 0.45);
+      const t = Math.min(1, Math.max(0, (h + 240) / 480));
+      _c.copy(_cLow).lerp(_cHigh, t);
+      // 高さだけで色を決めると縞に見えるので、場所ごとのまだら(砂利・枯れ草)を混ぜる
+      const mp = macroPatch(wx, wy);
+      _cMacro.copy(mp < 0.5 ? _cGravel : _cScrub);
+      _c.lerp(_cMacro, Math.min(0.42, Math.abs(mp-0.5)*0.84));
+      _c.lerp(_cSteep, slope);   // 急斜面はむき出しの岩肌
+      col[d] = _c.r; col[d+1] = _c.g; col[d+2] = _c.b;
+      computed++;
+    }
   }
   terrainPos.needsUpdate = true;
   terrainCol.needsUpdate = true;
-  terrain.geometry.computeVertexNormals();
+  terrainNrm.needsUpdate = true;
   terrain.position.set(sx, 0, sy);
   // テクスチャの模様をワールドに固定する。これをしないとパッチと一緒に模様が動き、
   // 地面の上を滑っているように見えてしまう(uv.yは回転で反転しているので符号が逆)。
@@ -427,6 +478,9 @@ function updateTerrain(cx, cy){
       t.offset.set(sx / DETAIL_TILE, -sy / DETAIL_TILE);
     });
   }
+  lastPatchVerts = computed;
+  lastPatchMs = performance.now() - t0;
+  patchRebuilds++;
 }
 
 function ensureScene(){
@@ -989,7 +1043,7 @@ const OBST_VARIANTS = 3;   // 同じ種類でも形を3通り作って「同じ�
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 const OBST_SHAPE_FB = { h:1.2, sink:0.2 };
 let obstGroup = null, obstKinds = null, obstSrc = null, obstSig = '';
-let obstCX = null, obstCY = null, obstCull = OBST_VIEW;
+let obstCX = null, obstCY = null, obstCull = OBST_VIEW, obstDrawn = 0;
 
 function shapeOf(flavor){
   const t = window.__aramonObstShapes;
@@ -1349,6 +1403,7 @@ function updateObstacleInstances(cx, cy){
     m.instanceMatrix.needsUpdate = true;
     if(m.instanceColor) m.instanceColor.needsUpdate = true;
   }
+  obstDrawn = near.length;
 }
 function updateObstacles(rocks, crystals, cx, cy){
   if(!scene) return;
@@ -1449,6 +1504,8 @@ const api = {
   resize(){ if(active) applySize(); },
   // 障害物を実際に出している距離。2D側はこれより遠い障害物をくり抜かない
   obstacleCullDist(){ return obstCull; },
+  // 計測用: 直近の地形パッチ再計算(計算した頂点数と所要ms)と、その回数
+  stats(){ return { patchVerts:lastPatchVerts, patchMs:lastPatchMs, patchCount:patchRebuilds, obst:obstDrawn }; },
   // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る。
   // obstacles には障害物の配列(world.jsのrocks)を渡す = 3Dモデルで描く。
   // world には山・地面のしみ・水晶({volcanoes, lava, sea, river, oasis, crystals})を渡す

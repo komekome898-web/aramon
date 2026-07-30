@@ -147,10 +147,13 @@ const playerMonsterImages = {};
 // basePath (拡張子なし) に対して .png -> .PNG -> .Png の順で読み込みを試す。
 // 最初に成功した拡張子はキャッシュしておき、次回以降は無駄なリトライをしない。
 const EXT_CANDIDATES = ['png', 'PNG', 'Png'];
-function loadMonsterImage(basePath){
+// lazy=true のときは src をまだ入れず、img._start() が呼ばれてから読み込みを始める
+// (歩行スプライトは352枚あるので、起動時に全部読むと通信量もメモリも大きい)
+function loadMonsterImage(basePath, lazy){
   const img = new Image();
   img.loaded = false;
   img.failed = false;
+  img.decoding = 'async';
   let attemptIndex = 0;
   const tryNext = ()=>{
     if(attemptIndex >= EXT_CANDIDATES.length){
@@ -162,7 +165,8 @@ function loadMonsterImage(basePath){
   };
   img.onload = ()=>{ img.loaded = true; };
   img.onerror = ()=>{ tryNext(); };
-  tryNext();
+  if(lazy) img._start = ()=>{ img._start = null; tryNext(); };
+  else tryNext();
   return img;
 }
 function imgSrcFor(basePath){
@@ -218,8 +222,19 @@ function monsterImageReady(key){
 // 歩行中はコマ送り、停止中は静止。進行方向がカメラ奥向き=後ろ姿/手前向き=正面。
 // 素体は色スキン装備時に各コマを再着色。SSR専用コマがあればそれを使う(再着色しない)。
 // 新しいモンスターの歩行を足すときは WALK_ANIM に画像プレフィックスを追加するだけでよい。
-function _loadWalk(prefix){ return [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/${prefix}${i}`)); }
-function _framesReady(arr){ for(const im of arr) if(!imgIsReady(im)) return false; return true; }
+function _loadWalk(prefix){ return [1,2,3,4,5,6,7,8].map(i=>loadMonsterImage(`monsters/${prefix}${i}`, true)); }
+/* 歩行コマは全部で352枚(6.8MB)ある。起動時に一括で読むと通信もメモリも大きいので、
+   「実際に表示しようとした時」= この判定が最初に呼ばれた時に読み始める。
+   揃うまでは呼び出し側が静止画にフォールバックし、揃い次第コマ送りへ切り替わる
+   (この仕組みは元から入っているので、遅延ロードのために足す処理は無い)。      */
+function _framesReady(arr){
+  let ok = true;
+  for(const im of arr){
+    if(im._start) im._start();
+    if(!imgIsReady(im)) ok = false;
+  }
+  return ok;
+}
 const WALK_ANIM = {
   mocchi: {
     base: { front:_loadWalk('mocchi_walk_f'),     back:_loadWalk('mocchi_walk_b') },     // 素モッチー(色スキン対応)
@@ -293,7 +308,10 @@ function entityWalkFrameImage(e){
   // 歩行コマが用意されていないSSRスキン(例:ガリのゼウス)装備時は静止スキン画像を優先する
   if(skin && skin.indexOf(':')<0 && !useSsr) return null;
   const set = useSsr ? reg.ssr : reg.base;
-  if(!set || !_framesReady(set.front) || !_framesReady(set.back)) return null;
+  if(!set) return null;
+  // 短絡させると後ろ姿のコマの読み込みが始まらないので、必ず両方を呼ぶ
+  const frontOk = _framesReady(set.front), backOk = _framesReady(set.back);
+  if(!frontOk || !backOk) return null;
   const t = (typeof matchTime==='number') ? matchTime : 0;
   // 1フレームに1回だけ移動量を更新(matchTimeをトークンにして重複呼び出しを吸収)
   if(e._mwToken!==t){
@@ -660,6 +678,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-30', items:[
+    { t:'ゲームの動作を軽くしました。歩行モーションの画像を必要になってから読み込むようにし、画像と音を端末に貯めて起動を速くし、リアルマップの地形の計算量を大幅に減らしています。見た目は変わりません', g:['general'] },
     { t:'リアルマップの範囲技を立体的なエフェクトにしました。インフェルノやファイアウェーブは炎が立ち上がり、超雷撃は空から雷が落ち、クリスタルレインは結晶が降って地面から突き出し、サイコキネシスは弧を描く壁が押し寄せます。高さはモンスターの背丈ぶんに抑え、半透明にして周りが見えるようにしています', g:['general','av'] },
     { t:'リアルマップのビーム技(モッチ砲・ラガモッチ砲・天河天翔・熱視線・フラワービーム)を、当たり判定の幅そのままの太さの光の筒にしました。真後ろから見ると円形になります', g:['general','av'] },
     { t:'リアルマップの爆風ドーム(ビッグバン・ヴァニッシュ・レクイエムエンドなど)を、透けすぎないよう濃い塊に描き直しました', g:['general','av'] },
@@ -1169,6 +1188,25 @@ function real3dHeightAt(x, y){
     h += w.amp * (Math.sin(x*w.fx + w.ph) * 0.5 + Math.cos(y*w.fy + w.ph*1.3) * 0.5);
   }
   return h;
+}
+/* 高さと傾き(∂h/∂x, ∂h/∂y)を1回の走査でまとめて求める。
+   sin/cos の微分は同じ角度の cos/sin なので、隣の点を追加で評価して差分を取るより速く、
+   しかも傾きが近似ではなく厳密になる(地形の法線がそのまま正確になる)。
+   毎フレーム数万回呼ぶので戻り値のオブジェクトは使い回す(呼んだ側で即座に読むこと)。 */
+const _r3grad = { h:0, gx:0, gy:0 };
+function real3dHeightGrad(x, y){
+  const L = real3dLayers();
+  let h = 0, gx = 0, gy = 0;
+  for(let i=0;i<L.length;i++){
+    const w = L[i];
+    const ax = x*w.fx + w.ph, ay = y*w.fy + w.ph*1.3;
+    const half = w.amp*0.5;
+    h  += half * (Math.sin(ax) + Math.cos(ay));
+    gx += half * w.fx * Math.cos(ax);
+    gy -= half * w.fy * Math.sin(ay);
+  }
+  _r3grad.h = h; _r3grad.gx = gx; _r3grad.gy = gy;
+  return _r3grad;
 }
 /* リアルマップの見た目。real3d.jsが window.__aramonRealTheme 経由で読む。
    tex: 地面テクスチャの作り方(ひび割れ・粒の強さ)。snowLine: 遠景の山に雪が乗り始める高さ比 */

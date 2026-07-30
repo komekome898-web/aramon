@@ -405,6 +405,8 @@
 
 <!-- HUD -->
 <div id="hud">
+  <!-- パフォーマンス計測(管理者画面から表示を切り替える)。タップは素通りさせる -->
+  <div id="perfOverlay" class="hidden"></div>
   <div id="topLeft">
     <div class="hud-panel" id="hpPanel">
       <div class="who">
@@ -681,6 +683,7 @@
       <button class="admin-tab" data-tab="se">音声確認</button>
     </div>
   </div>
+  <button id="adminPerfToggle" class="admin-grant-dia-btn">📊 パフォーマンス表示: OFF</button>
   <!-- 動作確認用ダイヤ付与(現在は非表示。機能は残す。再表示する時は hidden を外す) -->
   <button id="adminGrantDiaBtn" class="admin-grant-dia-btn hidden">💎 ダイヤ+500(動作確認用・この端末のアカウントに付与)</button>
   <div id="adminStatsPane">
