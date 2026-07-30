@@ -188,9 +188,10 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **安全圏の円は投影できない点(カメラの後ろ)をnullのまま残し、`strokeProjectedRing`が線を切る。** 詰めて連結すると円の左右が1本の直線で結ばれ、遠くの安置線が目の前を横切って見える(高低差のあるリアルマップで顕著)。画面上で飛びすぎた区間も切る。
 - 視点の上下範囲は`camPitchMin()`(リアルマップだけ空側`-0.42`まで)、試合開始角度は`applyStartPitchForMap()`。**マップ確定の直後に呼ぶ**(startGame/beginMultiplayerMatchInner)。前のマップの角度が残らないよう`updateCamera()`でも毎フレームclampしている。
 
-### リアルマップの技エフェクト(立体化)
+### 技エフェクトの立体化(全マップ共通)
 - **描くのは2Dキャンバスのまま。** real3d.jsは触らない(地面=WebGL / 技=2Dの分担を維持)。立体感は`project(x, y, 地面の高さ+dz)`で点を1つずつ投影して出す。**画面上で楕円・矩形を決め打ちしない**(地面に貼る円と同じ理由)。
-- **分岐は2か所だけ**: `drawSingleAreaEffect`先頭の`drawReal3dAreaEffect()`と、`drawProjectile`の絵文字分岐。どちらも`real3dFx()`(=`isReal3dMap()`)がfalseなら従来の2D描画がそのまま走る。**性能値(range/width/dmg/hitR/color/curReach)は通常マップと同じものを読む**ので、技を調整すれば2Dにも3Dにも同じに効く。
+- **WebGLに依存していないので通常マップでも同じエフェクトを出す**(`FX_SOLID_ALL_MAPS`)。違いは`groundZAt()`が通常マップでは常に0を返すこと=平らな地面に乗るだけ。**falseにすると通常マップだけ従来の平面エフェクトへ戻る**(従来の描画関数は残してある)。
+- **分岐は2か所だけ**: `drawSingleAreaEffect`先頭の`drawReal3dAreaEffect()`と、`drawProjectile`の絵文字/`projStyle`分岐。どちらも`real3dFx()`がfalseなら従来の2D描画がそのまま走る。**性能値(range/width/dmg/hitR/color/curReach)はマップによらず同じものを読む**ので、技を調整すれば全マップに同じに効く。
 - 共通部品: `fx3dFlame`(炎)/ `fx3dSpike`(結晶)/ `fx3dBoltDown`(空から落ちる雷)/ `fx3dBeamTube`(ビーム)/ `fx3dRingPts`(高さdzの輪)。段ごとに投影するので坂でも地面から生えて見える。
 - **高さの基準は`FX3D_MON_H`(モンスターの背丈≈`radius*1.85`)1か所。** 炎・結晶・念力の壁・爆風ドームの高さはすべてここから決める。**雷(`FX3D_BOLT_SKY`)だけは対象外**(空から落ちてこそ雷)。
 - **透け具合は`FX3D_AREA_ALPHA`(範囲技)と`FX3D_DOME_ALPHA`(爆風ドーム)の2つだけ。** `drawReal3dAreaEffect`が入口でfadeに掛けるので、個々の技をいじらずに濃さを変えられる。**ドームは「濃い輪を下から積む」**(薄くすると地面が透けて煙にしか見えない)。
