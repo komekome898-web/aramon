@@ -188,6 +188,16 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **安全圏の円は投影できない点(カメラの後ろ)をnullのまま残し、`strokeProjectedRing`が線を切る。** 詰めて連結すると円の左右が1本の直線で結ばれ、遠くの安置線が目の前を横切って見える(高低差のあるリアルマップで顕著)。画面上で飛びすぎた区間も切る。
 - 視点の上下範囲は`camPitchMin()`(リアルマップだけ空側`-0.42`まで)、試合開始角度は`applyStartPitchForMap()`。**マップ確定の直後に呼ぶ**(startGame/beginMultiplayerMatchInner)。前のマップの角度が残らないよう`updateCamera()`でも毎フレームclampしている。
 
+### リアルマップの技エフェクト(立体化)
+- **描くのは2Dキャンバスのまま。** real3d.jsは触らない(地面=WebGL / 技=2Dの分担を維持)。立体感は`project(x, y, 地面の高さ+dz)`で点を1つずつ投影して出す。**画面上で楕円・矩形を決め打ちしない**(地面に貼る円と同じ理由)。
+- **分岐は2か所だけ**: `drawSingleAreaEffect`先頭の`drawReal3dAreaEffect()`と、`drawProjectile`の絵文字分岐。どちらも`real3dFx()`(=`isReal3dMap()`)がfalseなら従来の2D描画がそのまま走る。**性能値(range/width/dmg/hitR/color/curReach)は通常マップと同じものを読む**ので、技を調整すれば2Dにも3Dにも同じに効く。
+- 共通部品: `fx3dPillar`(炎・光の柱。段ごとに投影するので坂でも生えて見える)/ `fx3dSpike`(結晶)/ `fx3dBoltDown`(空から落ちる雷)/ `fx3dTube`(宙に浮くビーム。半径×`p.scale`で遠いほど細くなる)/ `fx3dRingPts`(高さdzの輪)/ `fx3dAxisPts`(技の軸に沿った点列)。
+- 色は`auraShades(ae.auraTint || ae.color)`から3層(暗い/技色/明るい)を作る。**SSRスキンの色替えが自動で乗る**ので色を決め打ちしない。
+- kindごとの担当: fan=炎の柱の扇 / rect=style別(crystal 結晶・lava 炎の壁・galaxy 星の川・sakura ビーム・無印 レーザー)/ beams=浮かぶ光の筒3本 / zigzag=空からの落雷 / fanZigzag=弧を描く念力の壁 / circle=横輪+経線のドーム。**予告(点線)は通常マップと同じく最大範囲で必ず出す。**
+- **`groundZAt()`は柱1本につき1回だけ呼んで使い回す**(柱は垂直なので根元の高さだけで足りる)。段ごとに呼ぶと地形サンプルが数倍になる。
+- 弾の絵文字置換は`REAL_ICON_FX`(絵文字→描画関数)。**キーは`fxIconKey()`で異体字セレクタと肌色modifierを落として引く**(👊🏻と👊🏿は同じ拳)。表に無い絵文字は`fxIconEnergy`(光の弾)にフォールバックする。**`projStyle`/`shape`を持つ技は対象外**(条件を2Dの絵文字分岐と同じにしてある)。
+- 長い弾(矢・刃・拳)の向きは`fxProjScreenAngle()`。`travelAngle - camState.yaw`では奥へ撃った時に横倒しに見える。
+
 ## モンスター・スキン
 
 ### 新モンスター追加チェックリスト(1つでも欠けると不具合)
