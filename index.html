@@ -51,6 +51,7 @@
      <button id="headerSettingsBtn" class="header-icon-btn" aria-label="設定">⚙️</button>
      <button id="headerMyPageBtn" class="header-icon-btn" aria-label="マイページ">👤</button>
      <button id="changelogBtn" class="header-icon-btn has-dot" aria-label="更新履歴">🆕<span id="changelogNewPop" class="changelog-new-pop hidden">new</span></button>
+     <button id="headerHelpBtn" class="header-icon-btn" aria-label="ヘルプ">❓</button>
    </span>
    <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span><span id="headerTitleChip" class="header-title-chip hidden"></span></span>
    <span class="header-side header-right">
@@ -155,6 +156,30 @@
       <div class="pick-label" id="playerNameLabel">ランキング表示名(任意)</div>
       <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
     </div>
+  </div>
+</div>
+
+<!-- ヘルプ(操作マニュアル一覧) -->
+<div id="helpOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-menu-box">
+    <button id="closeHelpBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">❓ ヘルプ / 操作マニュアル</div>
+    <div class="lobby-menu-list">
+      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_account.png" data-title="アカウントの作り方"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>アカウントの作り方</b><i>ログインしてデータを他の端末にも引き継ぐ</i></span></button>
+      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_battle.png" data-title="バトルの始め方"><span class="lobby-menu-icon">⚔️</span><span class="lobby-menu-text"><b>バトルの始め方</b><i>モンスター選択からバトル開始まで</i></span></button>
+      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_register.png" data-title="マスモン登録の仕方"><span class="lobby-menu-icon">📋</span><span class="lobby-menu-text"><b>マスモン登録の仕方</b><i>バトルを1回終えるだけで登録できます</i></span></button>
+      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_training.png" data-title="マスモンの育て方"><span class="lobby-menu-icon">💪</span><span class="lobby-menu-text"><b>マスモンの育て方</b><i>トレーニングでステータスを強化</i></span></button>
+      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_skin.png" data-title="スキンの着せ替え方法"><span class="lobby-menu-icon">👕</span><span class="lobby-menu-text"><b>スキンの着せ替え方法</b><i>見た目とオーラを変更する</i></span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ヘルプ: マニュアル画像ビューア -->
+<div id="helpImageOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box help-image-box">
+    <button id="closeHelpImageBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title" id="helpImageTitle"></div>
+    <div id="helpImageScroll"><img id="helpImageTag" src="" alt="操作マニュアル"></div>
   </div>
 </div>
 

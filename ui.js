@@ -691,6 +691,7 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
   const pairs = [
     ['headerSettingsBtn','settingsOverlay','closeSettingsBtn'],
     ['headerMyPageBtn','myPageOverlay','closeMyPageBtn'],
+    ['headerHelpBtn','helpOverlay','closeHelpBtn'],
     ['lobbyMonsterStage','monsterPickOverlay','closeMonsterPickBtn'],
     ['openMapPickBtn','mapPickOverlay','closeMapPickBtn'],
     ['openModePickBtn','modePickOverlay','closeModePickBtn'],
@@ -710,6 +711,21 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
     if(el) el.addEventListener('click', ()=> lobbyCloseOverlay('myPageOverlay'));
   });
 }
+
+// ---- ヘルプ: マニュアル画像ビューア(一覧のボタンを押すと該当画像を表示) ----
+document.querySelectorAll('.help-manual-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.getElementById('helpImageTag').src = btn.dataset.manual;
+    document.getElementById('helpImageTitle').textContent = btn.dataset.title || '';
+    document.getElementById('helpImageScroll').scrollTop = 0;
+    lobbyCloseOverlay('helpOverlay');
+    lobbyOpenOverlay('helpImageOverlay');
+  });
+});
+document.getElementById('closeHelpImageBtn').addEventListener('click', ()=>{
+  lobbyCloseOverlay('helpImageOverlay');
+  lobbyOpenOverlay('helpOverlay');
+});
 
 // ---- 右カラムの「マップ」「プレイモード」の表示値を更新 ----
 function updateLobbyPickLabels(){

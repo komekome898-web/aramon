@@ -331,6 +331,11 @@
     max-height:calc(92 * var(--vh)); overflow-y:auto; text-align:left; }
   .mastermon-confirm-box.lobby-wide-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
     max-height:calc(92 * var(--vh)); overflow-y:auto; }
+  /* ヘルプ: マニュアル画像ビューア(ボックス自体はスクロールしない。画像側だけスクロール) */
+  .mastermon-confirm-box.help-image-box{ position:relative; max-width:min(900px, calc(96 * var(--vw))); width:min(900px, calc(96 * var(--vw)));
+    max-height:calc(92 * var(--vh)); display:flex; flex-direction:column; }
+  #helpImageScroll{ overflow:auto; max-height:calc(80 * var(--vh)); border-radius:10px; }
+  #helpImageTag{ display:block; width:100%; height:auto; border-radius:10px; }
   .lobby-menu-title{ font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:1px; color:var(--ink);
     margin-bottom:10px; padding-right:46px; }
   .lobby-menu-list{ display:flex; flex-direction:column; gap:7px; }
