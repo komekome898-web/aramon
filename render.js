@@ -2327,10 +2327,8 @@ function drawVolcanoComplex(group,p){
 
   for(const v of sorted){
     // 実体の3D円錐として面分割描画(billboardをやめ、視点移動で泳がないようにする)。
-    // リアルマップでは山の本体をWebGL側が描くので、2Dは山頂の演出だけを重ねる
-    const peakP = real3dActive
-      ? project(v.x, v.y, groundZAt(v.x, v.y) + v.radius * (v.isMain ? 1.15 : 0.9))
-      : drawSolidCone(v, style);
+    // ※リアルマップではこの関数自体を呼ばない(山も山頂の演出もWebGL側が描く)
+    const peakP = drawSolidCone(v, style);
 
     if(v.isMain){
       if(peakP){
@@ -2388,6 +2386,18 @@ function prepareMountainOccluders(){
     });
   }
 }
+/* リアルマップでは3Dの山が奥行きを持つのに対し、2Dで描く岩は距離に関係なく
+   そのまま重なるため、遠くの小さな岩が手前の山の上に点々と乗って見える。
+   遠い障害物は描かない(境目が目立たないよう手前から徐々に薄くする)。       */
+const OBSTACLE_VIEW_DIST = 2300;   // これより遠い岩・水晶・建物は描かない
+const OBSTACLE_FADE_DIST = 1750;   // ここから薄くしていく
+function obstacleFade(x, y){
+  if(!real3dActive) return 1;
+  const d = Math.hypot(x-camPos.x, y-camPos.y);
+  if(d <= OBSTACLE_FADE_DIST) return 1;
+  if(d >= OBSTACLE_VIEW_DIST) return 0;
+  return 1 - (d-OBSTACLE_FADE_DIST)/(OBSTACLE_VIEW_DIST-OBSTACLE_FADE_DIST);
+}
 function occludedByMountain(x, y, z){
   if(!mountOccluders.length) return false;
   const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
@@ -2431,19 +2441,30 @@ function render(){
   const drawables = [];
   for(const ae of areaEffects){ const p = projectGround(ae.x,ae.y); if(p) drawables.push({kind:'ae', obj:ae, p}); } // 建物・岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
   for(const b of buildings){
+    const bFade = obstacleFade(b.cx, b.cy);
+    if(bFade <= 0) continue;
     const bRad = Math.hypot(b.hw||0, b.hd||0) + (b.rampLen||0); // 建物の外接半径(ランプ含む)
     const p = projectObstacle(b.cx,b.cy,b.wallH*0.5, bRad);
-    if(p) drawables.push({kind:'building', obj:b, p});
+    if(p) drawables.push({kind:'building', obj:b, p, fade:bFade});
   }
-  for(const r of rocks){ const p = projectGround(r.x,r.y); if(p) drawables.push({kind:'rock', obj:r, p}); }
-  for(const c of crystalObstacles){ const p = projectGround(c.x,c.y); if(p) drawables.push({kind:'crystal', obj:c, p}); }
+  for(const r of rocks){
+    const fade = obstacleFade(r.x, r.y);
+    if(fade <= 0 || occludedByMountain(r.x, r.y, (r.height||r.radius)*0.5)) continue;
+    const p = projectGround(r.x,r.y); if(p) drawables.push({kind:'rock', obj:r, p, fade});
+  }
+  for(const c of crystalObstacles){
+    const fade = obstacleFade(c.x, c.y);
+    if(fade <= 0 || occludedByMountain(c.x, c.y, (c.height||c.radius)*0.5)) continue;
+    const p = projectGround(c.x,c.y); if(p) drawables.push({kind:'crystal', obj:c, p, fade});
+  }
   const volcanoGroups = new Map();
   for(const v of volcanoObstacles){
     const gid = v.complexId||0;
     if(!volcanoGroups.has(gid)) volcanoGroups.set(gid, []);
     volcanoGroups.get(gid).push(v);
   }
-  for(const group of volcanoGroups.values()){
+  // リアルマップでは山は3Dが描く(2Dの山頂の円は山に沿わず浮くので出さない)
+  if(!real3dActive) for(const group of volcanoGroups.values()){
     const main = group.find(v=>v.isMain) || group[0];
     let gRad = 0; for(const v of group){ if(v.radius>gRad) gRad = v.radius; } // 複合火山の最大半径
     const p = projectObstacle(main.x, main.y, groundZAt(main.x, main.y), gRad);
@@ -2470,6 +2491,8 @@ function render(){
   for(const d of drawables){
     const m = cullMarginFor(d);
     if(d.p.x<-m||d.p.x>viewW+m||d.p.y<-m||d.p.y>viewH+m) continue;
+    const faded = (d.fade != null && d.fade < 1);
+    if(faded) ctx.globalAlpha = d.fade;
     if(d.kind==='loot') drawLootItem(d.obj,d.p);
     else if(d.kind==='proj') drawProjectile(d.obj,d.p);
     else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
@@ -2479,6 +2502,7 @@ function render(){
     else if(d.kind==='building') drawBuilding(d.obj);
     else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
     else drawParticle(d.obj,d.p);
+    if(faded) ctx.globalAlpha = 1;
   }
   if(introState.active) drawSummonIntroFront();
   drawDangerVignette();
