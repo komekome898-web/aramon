@@ -711,9 +711,11 @@ function drawMonster(e,p){
    試合開始直後はアイテムが数十個あり、1個ずつ楕円・矩形・文字を重ねると
    端末側のラスタ化がフレーム時間の大半を占める。画面上で十数pxしかない距離では
    細部は元から見えないので、色の付いた粒だけにしても見た目は変わらない。      */
-// 通常時はかなり遠いものだけ、重いときは早めに粒へ切り替える
-const LOOT_SIMPLE_SCALE      = 0.14;   // 通常(画面上で数pxしかない距離)
-const LOOT_SIMPLE_SCALE_HEAVY = 0.42;  // 弾やエフェクトが多くて重いとき
+/* 粒に切り替える距離。負荷の状態には連動させない。
+   renderHeavyLoad は gfxLevel が上がると貼り付いたままになるため、これに連動させると
+   端末が一度重くなった後ずっと近くのアイテムまで粒になってしまう(実際に起きた)。
+   0.14 は「画面上で数pxしかない」距離で、その大きさでは細部は元から見えない。      */
+const LOOT_SIMPLE_SCALE = 0.14;
 function lootTintOf(it){
   if(it.kind==='heal'){ const hi = HEAL_ITEMS[it.type]; return hi ? hi.color : '#8fe38f'; }
   if(it.kind==='ticket') return TICKET_ITEM.color;
@@ -722,7 +724,7 @@ function lootTintOf(it){
   return '#ffffff';
 }
 function drawLootItem(it,p){
-  if(p.scale < (renderHeavyLoad ? LOOT_SIMPLE_SCALE_HEAVY : LOOT_SIMPLE_SCALE)){
+  if(p.scale < LOOT_SIMPLE_SCALE){
     const col = lootTintOf(it);
     const r = Math.max(2, 10*p.scale);
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5*p.scale;
@@ -1791,11 +1793,13 @@ const PROJ_SIMPLE_PX_HEAVY = 48;   // 弾が多いときのしきい値
 const PROJ_DETAIL_BUDGET   = 14;   // 同時にこの数までは全部きちんと描く
 function drawSimpleProjectile(pr, r){
   const col = pr.orbColor || pr.color || '#ffffff';
-  const g = ctx.createRadialGradient(0,0, 0, 0,0, r*1.35);
-  g.addColorStop(0, '#ffffff');
-  g.addColorStop(0.4, col);
-  g.addColorStop(1, _hexA(col, 0));
-  ctx.beginPath(); ctx.arc(0,0, r*1.35, 0, Math.PI*2);
+  // 芯を小さく締めて外へ素早く消す。均等に塗ると「色の付いた玉」に見えてしまう
+  const g = ctx.createRadialGradient(0,0, 0, 0,0, r*1.25);
+  g.addColorStop(0,    '#ffffff');
+  g.addColorStop(0.22, _hexA(col, 0.95));
+  g.addColorStop(0.55, _hexA(col, 0.45));
+  g.addColorStop(1,    _hexA(col, 0));
+  ctx.beginPath(); ctx.arc(0,0, r*1.25, 0, Math.PI*2);
   ctx.fillStyle = g; ctx.fill();
 }
 function drawProjectile(pr,p){
@@ -3026,6 +3030,13 @@ const FX3D_DOME_ALPHA = 1.0;                // 爆風ドームだけは濃いま
    FX_SOLID_ALL_MAPS を false にすると通常マップだけ従来の平面エフェクトへ戻る。     */
 const FX_SOLID_ALL_MAPS = true;
 function real3dFx(){ return FX_SOLID_ALL_MAPS || (typeof isReal3dMap==='function' && isReal3dMap()); }
+/* 範囲技を簡略化するかどうか。
+   加算合成(lighter)は端末側でフレームバッファの読み書きが要るため、画面の広い面積に
+   掛けると一気に重くなる。範囲技が同時に何本も出ると顕著(実測でフレーム104msを記録)。
+   ・同時に出ている範囲技が FX_LITE_AE 本以上、または品質レベルが下がっているとき
+   ・炎や結晶の本数を減らし、加算合成をやめ、ビームの分割も粗くする              */
+const FX_LITE_AE = 3;
+function fxLite(){ return gfxLevel >= 1 || areaEffects.length >= FX_LITE_AE; }
 
 // 投影済みの点列を塗る/なぞる(shadowBlurは重い端末では自動で切る)
 function fx3dFill(pts, color, alpha, blur){
@@ -3086,11 +3097,13 @@ function fx3dFireRamp(col){
    ・内側2枚は加算合成(lighter)なので、重なった所が本物の炎のように白く輝く
    ・段ごとに投影するので坂の上でもきちんと地面から生えて見える                */
 function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp){
-  const N = 7;
+  const lite = fxLite();
+  const N = lite ? 5 : 7;
   const base = fx3dPoint(x, y, 0, gz);
   const top  = fx3dPoint(x, y, h*1.1, gz);
   if(!base || !top) return;
-  for(let k=0;k<3;k++){
+  const layers = lite ? 2 : 3;
+  for(let k=0;k<layers;k++){
     const hk  = h*(1 - k*0.2);
     const wk  = rBase*(1 - k*0.3);
     const spd = 5.2 + k*1.7;
@@ -3119,7 +3132,7 @@ function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp){
     }
     ctx.save();
     ctx.globalAlpha = (k===0 ? 0.72 : 0.85)*fade;   // 炎は密度が命なので濃いめに重ねる
-    if(k>0) ctx.globalCompositeOperation = 'lighter';   // 加算で重なりを白熱させる
+    if(k>0 && !lite) ctx.globalCompositeOperation = 'lighter';   // 加算で重なりを白熱させる
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -3154,7 +3167,8 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
 // radius には必ず「技の当たり幅の半分」(ae.width/2)を渡す。
 // 断面の直径が当たり幅と一致するので、真後ろから見ると判定どおりの円になる
 function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
-  const segs = 16;
+  const lite = fxLite();
+  const segs = lite ? 8 : 16;
   const dz = Math.max(FX3D_BEAM_Z, radius*0.92);   // 地面へめり込ませない
   const pts = [];
   for(let i=0;i<=segs;i++){
@@ -3176,7 +3190,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   const shell = _mixHex(col, '#ffffff', 0.25);   // 外殻の色(技色より少し明るい)
   const edgeA = [], edgeB = [];
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  if(!lite) ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = fade;
   for(let i=0;i<pts.length-1;i++){
     const a=pts[i], b=pts[i+1], na=nrm[i], nb=nrm[i+1];
@@ -3275,7 +3289,8 @@ function fx3dFlameFan(ae, curReach, fade){
   const scorch = fanOutlinePoints(ae.x, ae.y, ae.angle, curReach, half, 16);
   if(scorch) fx3dFill(scorch, ramp.smoke, 0.42*fade, 0);
   const cols = [];
-  for(let i=0;i<FX3D_FLAME_N;i++){
+  const flameN = fxLite() ? 9 : FX3D_FLAME_N;
+  for(let i=0;i<flameN;i++){
     const h1 = fxHash01(ae.id*11.3 + i*5.7), h2 = fxHash01(ae.id*7.7 + i*3.1), h3 = fxHash01(ae.id*4.1 + i*9.3);
     const a = ae.angle + (h1*2-1)*half*0.95;
     const rr = curReach*(0.12 + 0.88*h2);
@@ -3320,7 +3335,8 @@ function fx3dFireWave(ae, curReach, fade){
     const lat = (i/(wallN-1)-0.5)*ae.width*0.92;
     push(curReach - ae.width*0.12, lat, FX3D_FLAME_H*(1.0+0.25*fxHash01(ae.id+i*3.7)), ae.id+i);
   }
-  for(let i=0;i<FX3D_FLAME_N;i++){                // 後方の残り火
+  const emberN = fxLite() ? 8 : FX3D_FLAME_N;
+  for(let i=0;i<emberN;i++){          // 後方の残り火
     const h1 = fxHash01(ae.id*5.1 + i*7.3), h2 = fxHash01(ae.id*2.7 + i*11.9);
     push(curReach*(0.05+0.8*h1), (h2*2-1)*ae.width*0.42, FX3D_FLAME_H*(0.4+0.4*h2), ae.id+i*3);
   }
@@ -3338,7 +3354,8 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
   if(band) fx3dFill(band, sh.dark, 0.32*fade, 0);
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
   const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-  for(let i=0;i<FX3D_SPIKE_N;i++){
+  const spikeN = fxLite() ? 6 : FX3D_SPIKE_N;
+  for(let i=0;i<spikeN;i++){
     const h1 = fxHash01(ae.id*6.1 + i*4.3), h2 = fxHash01(ae.id*8.9 + i*2.1);
     const along = curReach*((i+h1)/FX3D_SPIKE_N);
     const lat = (h2*2-1)*ae.width*0.44;
@@ -3400,7 +3417,7 @@ function fx3dThunder(ae, curReach, fade){
   fx3dStroke(ground, ae.color, 9, 0.35*fade*flick, 22);
   fx3dStroke(ground, '#ffffff', 2, 0.8*fade*flick, 0);
   // 空から落ちる雷本体
-  const step = Math.max(1, Math.floor(world.length/FX3D_BOLT_N));
+  const step = Math.max(1, Math.floor(world.length/(fxLite() ? 3 : FX3D_BOLT_N)));
   for(let i=step; i<world.length; i+=step){
     const [wx,wy] = world[i];
     fx3dBoltDown(wx, wy, FX3D_BOLT_SKY, ae.color, jseed*0.37 + i*3.1 + ae.id, fade*flick);
@@ -3413,8 +3430,9 @@ function fx3dPsychicWall(ae, curReach, fade){
   const half = (ae.fanAngleDeg||30)*Math.PI/360;
   const col = ae.auraTint || ae.color;
   const sh = auraShades(col);
-  const segs = 14;
-  for(let w=0;w<3;w++){
+  const segs = fxLite() ? 9 : 14;
+  const walls = fxLite() ? 2 : 3;
+  for(let w=0;w<walls;w++){
     // 3枚の壁が時間差で外へ進む(位相をずらして波に見せる)。
     // 技の発動時刻を基準にするので、1枚目は必ず術者の側から出る
     const phase = (((matchTime - ae.spawnAt)*1.5 + w/3) % 1);
@@ -3452,7 +3470,7 @@ function fx3dDomeBurst(ae, curReach, fade){
   const H = Math.max(FX3D_DOME_H_MIN, R*FX3D_DOME_H_RATIO);
   const col = ae.auraTint || ae.color || '#ffffff';
   const sh = auraShades(col);
-  const rings = 6;
+  const rings = fxLite() ? 3 : 6;
   // 下から上へ、輪を重ねて塊にする。上の輪ほど明るくして丸みを出す
   for(let k=0;k<=rings;k++){
     const th = (k/rings)*(Math.PI/2);
@@ -3464,8 +3482,9 @@ function fx3dDomeBurst(ae, curReach, fade){
   // 縁と稜線(ドームの形をはっきりさせる)
   const rim = fx3dRingPts(ae.x, ae.y, R, 2);
   if(rim) fx3dStroke(rim, sh.bright, 3.5, 0.9*fade, 20, true);
-  for(let m=0;m<8;m++){
-    const a = (m/8)*Math.PI*2;
+  const merid = fxLite() ? 4 : 8;
+  for(let m=0;m<merid;m++){
+    const a = (m/merid)*Math.PI*2;
     const arc=[];
     for(let i=0;i<=8;i++){
       const th = (i/8)*(Math.PI/2);
@@ -4172,14 +4191,25 @@ function perfGl(ms){ if(perfOn) perf.glMs += ms; }
    余裕のある端末では今までと同じ見た目のまま。                                 */
 const RS_SLOW_MS    = 20;    // これより遅い = 50fps未満。続いたら解像度を下げる
 const RS_BAD_MS     = 30;    // これより遅い = 33fps未満。早めに大きく下げる
-const RS_RECOVER_MS = 14;    // これより速い状態が続いたら元へ戻す
-let rsSlow = 0, rsBad = 0, rsFast = 0;
+const RS_PANIC_MS   = 55;    // これより遅い = 18fps未満。すぐに大きく下げる
+// 60fpsのフレーム時間は16.7ms。ここを16.7より下にすると「余裕がある」と一生判定されず、
+// 一度下げた画質が戻らなくなる(実際に起きた)
+const RS_RECOVER_MS = 17.6;
+let rsSlow = 0, rsBad = 0, rsFast = 0, rsPanic = 0;
 function updateRenderScale(frameMs){
   if(typeof setRenderScale!=='function' || !game.started || game.over) return;
-  if(frameMs > RS_BAD_MS){ rsBad++; rsSlow++; rsFast = 0; }
-  else if(frameMs > RS_SLOW_MS){ rsSlow++; rsBad = 0; rsFast = 0; }
-  else if(frameMs < RS_RECOVER_MS){ rsFast++; rsSlow = 0; rsBad = 0; }
-  else { rsSlow = 0; rsBad = 0; rsFast = 0; }
+  if(frameMs > RS_PANIC_MS){ rsPanic++; rsBad++; rsSlow++; rsFast = 0; }
+  else if(frameMs > RS_BAD_MS){ rsPanic = 0; rsBad++; rsSlow++; rsFast = 0; }
+  else if(frameMs > RS_SLOW_MS){ rsPanic = 0; rsSlow++; rsBad = 0; rsFast = 0; }
+  else if(frameMs < RS_RECOVER_MS){ rsFast++; rsSlow = 0; rsBad = 0; rsPanic = 0; }
+  else { rsSlow = 0; rsBad = 0; rsFast = 0; rsPanic = 0; }
+  // 目に見えて崩れている時(18fps未満)は3フレームで大きく落とす
+  if(rsPanic >= 3){
+    rsPanic = 0; rsBad = 0; rsSlow = 0;
+    if(gfxLevel < 1) gfxLevel = 1;
+    setRenderScale(renderScale - 0.35);
+    return;
+  }
   // ひどく重いときは0.5秒で大きく、そこそこのときは1.5秒かけて少しずつ下げる
   // 影を切るのがいちばん安く効くので先に落とし、それでも足りなければ解像度を下げる
   if(rsBad >= 15){
