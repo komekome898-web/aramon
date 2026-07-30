@@ -711,11 +711,14 @@ function drawMonster(e,p){
    試合開始直後はアイテムが数十個あり、1個ずつ楕円・矩形・文字を重ねると
    端末側のラスタ化がフレーム時間の大半を占める。画面上で十数pxしかない距離では
    細部は元から見えないので、色の付いた粒だけにしても見た目は変わらない。      */
-/* 粒に切り替える距離。負荷の状態には連動させない。
-   renderHeavyLoad は gfxLevel が上がると貼り付いたままになるため、これに連動させると
-   端末が一度重くなった後ずっと近くのアイテムまで粒になってしまう(実際に起きた)。
-   0.14 は「画面上で数pxしかない」距離で、その大きさでは細部は元から見えない。      */
-const LOOT_SIMPLE_SCALE = 0.14;
+/* アイテムの表示距離(カメラからの奥行き。ワールド単位)。
+   ・LOOT_VIEW より遠いものはそもそも描かない。マルチでは420個ほど撒かれるため、
+     全部描くと描画数が数百に膨らみ、地平線に粒が並んで浮いて見える
+   ・LOOT_SIMPLE_DEPTH より遠いものは粒だけにする(その距離では細部は元から見えない)
+   ・負荷の状態(renderHeavyLoad)には連動させない。gfxLevelが上がると貼り付いたままになり、
+     近くのアイテムまでずっと粒になってしまう(実際に起きた)                       */
+const LOOT_VIEW         = 2400;
+const LOOT_SIMPLE_DEPTH = 1450;
 function lootTintOf(it){
   if(it.kind==='heal'){ const hi = HEAL_ITEMS[it.type]; return hi ? hi.color : '#8fe38f'; }
   if(it.kind==='ticket') return TICKET_ITEM.color;
@@ -724,7 +727,7 @@ function lootTintOf(it){
   return '#ffffff';
 }
 function drawLootItem(it,p){
-  if(p.scale < LOOT_SIMPLE_SCALE){
+  if(p.depth > LOOT_SIMPLE_DEPTH){
     const col = lootTintOf(it);
     const r = Math.max(2, 10*p.scale);
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5*p.scale;
@@ -3030,13 +3033,10 @@ const FX3D_DOME_ALPHA = 1.0;                // 爆風ドームだけは濃いま
    FX_SOLID_ALL_MAPS を false にすると通常マップだけ従来の平面エフェクトへ戻る。     */
 const FX_SOLID_ALL_MAPS = true;
 function real3dFx(){ return FX_SOLID_ALL_MAPS || (typeof isReal3dMap==='function' && isReal3dMap()); }
-/* 範囲技を簡略化するかどうか。
-   加算合成(lighter)は端末側でフレームバッファの読み書きが要るため、画面の広い面積に
-   掛けると一気に重くなる。範囲技が同時に何本も出ると顕著(実測でフレーム104msを記録)。
-   ・同時に出ている範囲技が FX_LITE_AE 本以上、または品質レベルが下がっているとき
-   ・炎や結晶の本数を減らし、加算合成をやめ、ビームの分割も粗くする              */
-const FX_LITE_AE = 3;
-function fxLite(){ return gfxLevel >= 1 || areaEffects.length >= FX_LITE_AE; }
+/* 技のエフェクトは負荷が高くても簡略化しない(発注者方針: ゲームのクオリティを下げない)。
+   代わりに「同じ見た目のまま安くする」方向で詰める:
+   ・加算合成(lighter)の切り替えは端末側でレイヤの吐き出しが起きるため、
+     炎1本ごとに切り替えず、まとめて1回で済ませる(fx3dFlameField)               */
 
 // 投影済みの点列を塗る/なぞる(shadowBlurは重い端末では自動で切る)
 function fx3dFill(pts, color, alpha, blur){
@@ -3096,14 +3096,31 @@ function fx3dFireRamp(col){
    ・下から上へ「白熱→技色→透明」のグラデーションを掛ける(炎の温度差)
    ・内側2枚は加算合成(lighter)なので、重なった所が本物の炎のように白く輝く
    ・段ごとに投影するので坂の上でもきちんと地面から生えて見える                */
-function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp){
-  const lite = fxLite();
-  const N = lite ? 5 : 7;
+/* 炎をまとめて描く。
+   炎1本ごとに save/合成モード切り替え/restore をしていると、24本×3層で
+   72回の切り替えになる。加算合成への切り替えは端末側でレイヤの吐き出しを伴うため、
+   ここが積み上がる。見た目は変えずに「外側の層を全部 → 内側2層を加算でまとめて」
+   の2パスにして、切り替えを2回に減らす。                                       */
+let fxFlameBatched = false;
+function fx3dFlameField(list, rBase, fade, ramp){
+  fxFlameBatched = true;
+  try{
+    // 1パス目: くすんだ外側(通常合成)
+    for(const c of list) fx3dFlame(c.x, c.y, c.gz, c.h, rBase, c.seed, fade, ramp, 0, 1);
+    // 2パス目: 技色と白熱の芯(加算合成をここで1回だけ立てる)
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for(const c of list) fx3dFlame(c.x, c.y, c.gz, c.h, rBase, c.seed, fade, ramp, 1, 3);
+    ctx.restore();
+  } finally { fxFlameBatched = false; }
+}
+function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp, kFrom, kTo){
+  const N = 7;
   const base = fx3dPoint(x, y, 0, gz);
   const top  = fx3dPoint(x, y, h*1.1, gz);
   if(!base || !top) return;
-  const layers = lite ? 2 : 3;
-  for(let k=0;k<layers;k++){
+  const k0 = kFrom||0, k1 = (kTo==null ? 3 : kTo);
+  for(let k=k0;k<k1;k++){
     const hk  = h*(1 - k*0.2);
     const wk  = rBase*(1 - k*0.3);
     const spd = 5.2 + k*1.7;
@@ -3132,7 +3149,7 @@ function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp){
     }
     ctx.save();
     ctx.globalAlpha = (k===0 ? 0.72 : 0.85)*fade;   // 炎は密度が命なので濃いめに重ねる
-    if(k>0 && !lite) ctx.globalCompositeOperation = 'lighter';   // 加算で重なりを白熱させる
+    if(k>0 && !fxFlameBatched) ctx.globalCompositeOperation = 'lighter'; // 加算で重なりを白熱させる
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -3144,7 +3161,6 @@ function fx3dFlame(x, y, gz, h, rBase, seed, fade, ramp){
 }
 // 炎の根元の照り返し(地面が赤く光る)。炎そのものより広く、薄く敷く
 function fx3dFireGlow(x, y, gz, r, col, fade){
-  if(renderHeavyLoad) return;
   const p = fx3dPoint(x, y, 2, gz);
   if(!p) return;
   const rr = r*p.scale;
@@ -3167,8 +3183,7 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
 // radius には必ず「技の当たり幅の半分」(ae.width/2)を渡す。
 // 断面の直径が当たり幅と一致するので、真後ろから見ると判定どおりの円になる
 function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
-  const lite = fxLite();
-  const segs = lite ? 8 : 16;
+  const segs = 16;
   const dz = Math.max(FX3D_BEAM_Z, radius*0.92);   // 地面へめり込ませない
   const pts = [];
   for(let i=0;i<=segs;i++){
@@ -3190,7 +3205,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   const shell = _mixHex(col, '#ffffff', 0.25);   // 外殻の色(技色より少し明るい)
   const edgeA = [], edgeB = [];
   ctx.save();
-  if(!lite) ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = fade;
   for(let i=0;i<pts.length-1;i++){
     const a=pts[i], b=pts[i+1], na=nrm[i], nb=nrm[i+1];
@@ -3289,8 +3304,7 @@ function fx3dFlameFan(ae, curReach, fade){
   const scorch = fanOutlinePoints(ae.x, ae.y, ae.angle, curReach, half, 16);
   if(scorch) fx3dFill(scorch, ramp.smoke, 0.42*fade, 0);
   const cols = [];
-  const flameN = fxLite() ? 9 : FX3D_FLAME_N;
-  for(let i=0;i<flameN;i++){
+  for(let i=0;i<FX3D_FLAME_N;i++){
     const h1 = fxHash01(ae.id*11.3 + i*5.7), h2 = fxHash01(ae.id*7.7 + i*3.1), h3 = fxHash01(ae.id*4.1 + i*9.3);
     const a = ae.angle + (h1*2-1)*half*0.95;
     const rr = curReach*(0.12 + 0.88*h2);
@@ -3301,10 +3315,8 @@ function fx3dFlameFan(ae, curReach, fade){
     cols.push({ x, y, gz:groundZAt(x,y), h, seed:i+ae.id, depth:p?p.depth:0 });
   }
   cols.sort((a,b)=>b.depth-a.depth);   // 奥から手前へ重ねる
-  for(const c of cols){
-    fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.4, ramp.hot, fade*0.5);
-    fx3dFlame(c.x, c.y, c.gz, c.h, FX3D_FLAME_R, c.seed, fade, ramp);
-  }
+  for(const c of cols) fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.4, ramp.hot, fade*0.5);
+  fx3dFlameField(cols, FX3D_FLAME_R, fade, ramp);
   if(!renderHeavyLoad){
     for(let i=0;i<8;i++){
       const h1 = fxHash01(ae.id*3.3 + i*7.1), h2 = fxHash01(ae.id*9.7 + i*2.9);
@@ -3335,16 +3347,13 @@ function fx3dFireWave(ae, curReach, fade){
     const lat = (i/(wallN-1)-0.5)*ae.width*0.92;
     push(curReach - ae.width*0.12, lat, FX3D_FLAME_H*(1.0+0.25*fxHash01(ae.id+i*3.7)), ae.id+i);
   }
-  const emberN = fxLite() ? 8 : FX3D_FLAME_N;
-  for(let i=0;i<emberN;i++){          // 後方の残り火
+  for(let i=0;i<FX3D_FLAME_N;i++){                // 後方の残り火
     const h1 = fxHash01(ae.id*5.1 + i*7.3), h2 = fxHash01(ae.id*2.7 + i*11.9);
     push(curReach*(0.05+0.8*h1), (h2*2-1)*ae.width*0.42, FX3D_FLAME_H*(0.4+0.4*h2), ae.id+i*3);
   }
   cols.sort((a,b)=>b.depth-a.depth);
-  for(const c of cols){
-    fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
-    fx3dFlame(c.x, c.y, c.gz, c.h, FX3D_FLAME_R*0.9, c.seed, fade, ramp);
-  }
+  for(const c of cols) fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
+  fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
 }
 // 帯(クリスタルレイン): 空から結晶が降り、地面から結晶の柱がせり上がる
 function fx3dCrystalRain(ae, curReach, fade, progress){
@@ -3354,8 +3363,7 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
   if(band) fx3dFill(band, sh.dark, 0.32*fade, 0);
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
   const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
-  const spikeN = fxLite() ? 6 : FX3D_SPIKE_N;
-  for(let i=0;i<spikeN;i++){
+  for(let i=0;i<FX3D_SPIKE_N;i++){
     const h1 = fxHash01(ae.id*6.1 + i*4.3), h2 = fxHash01(ae.id*8.9 + i*2.1);
     const along = curReach*((i+h1)/FX3D_SPIKE_N);
     const lat = (h2*2-1)*ae.width*0.44;
@@ -3417,7 +3425,7 @@ function fx3dThunder(ae, curReach, fade){
   fx3dStroke(ground, ae.color, 9, 0.35*fade*flick, 22);
   fx3dStroke(ground, '#ffffff', 2, 0.8*fade*flick, 0);
   // 空から落ちる雷本体
-  const step = Math.max(1, Math.floor(world.length/(fxLite() ? 3 : FX3D_BOLT_N)));
+  const step = Math.max(1, Math.floor(world.length/FX3D_BOLT_N));
   for(let i=step; i<world.length; i+=step){
     const [wx,wy] = world[i];
     fx3dBoltDown(wx, wy, FX3D_BOLT_SKY, ae.color, jseed*0.37 + i*3.1 + ae.id, fade*flick);
@@ -3430,9 +3438,8 @@ function fx3dPsychicWall(ae, curReach, fade){
   const half = (ae.fanAngleDeg||30)*Math.PI/360;
   const col = ae.auraTint || ae.color;
   const sh = auraShades(col);
-  const segs = fxLite() ? 9 : 14;
-  const walls = fxLite() ? 2 : 3;
-  for(let w=0;w<walls;w++){
+  const segs = 14;
+  for(let w=0;w<3;w++){
     // 3枚の壁が時間差で外へ進む(位相をずらして波に見せる)。
     // 技の発動時刻を基準にするので、1枚目は必ず術者の側から出る
     const phase = (((matchTime - ae.spawnAt)*1.5 + w/3) % 1);
@@ -3470,7 +3477,7 @@ function fx3dDomeBurst(ae, curReach, fade){
   const H = Math.max(FX3D_DOME_H_MIN, R*FX3D_DOME_H_RATIO);
   const col = ae.auraTint || ae.color || '#ffffff';
   const sh = auraShades(col);
-  const rings = fxLite() ? 3 : 6;
+  const rings = 6;
   // 下から上へ、輪を重ねて塊にする。上の輪ほど明るくして丸みを出す
   for(let k=0;k<=rings;k++){
     const th = (k/rings)*(Math.PI/2);
@@ -3482,9 +3489,8 @@ function fx3dDomeBurst(ae, curReach, fade){
   // 縁と稜線(ドームの形をはっきりさせる)
   const rim = fx3dRingPts(ae.x, ae.y, R, 2);
   if(rim) fx3dStroke(rim, sh.bright, 3.5, 0.9*fade, 20, true);
-  const merid = fxLite() ? 4 : 8;
-  for(let m=0;m<merid;m++){
-    const a = (m/merid)*Math.PI*2;
+  for(let m=0;m<8;m++){
+    const a = (m/8)*Math.PI*2;
     const arc=[];
     for(let i=0;i<=8;i++){
       const th = (i/8)*(Math.PI/2);
@@ -4331,7 +4337,14 @@ function render(){
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
   // predictedPickup: マルチのゲストが「拾った」と先読みして消したアイテム(ホストの確定待ち)
-  for(const it of lootItems){ if(it.predictedPickup != null || it.respawnAt > matchTime) continue; if(occludedByMountain(it.x, it.y, it.z||0)) continue; const p = project(it.x,it.y,it.z||0); if(p) drawables.push({kind:'loot', obj:it, p}); }
+  // アイテムはマルチで420個ほど撒かれる。遠くのぶんまで描くと描画数が一気に増え、
+  // 地平線に沿って粒が数珠つなぎに並んで浮いて見えるので、一定より遠いものは描かない
+  for(const it of lootItems){
+    if(it.predictedPickup != null || it.respawnAt > matchTime) continue;
+    if(occludedByMountain(it.x, it.y, it.z||0)) continue;
+    const p = project(it.x,it.y,it.z||0);
+    if(p && p.depth <= LOOT_VIEW) drawables.push({kind:'loot', obj:it, p});
+  }
   for(const pr of projectiles){ if(occludedByMountain(pr.x, pr.y, pr.z+20)) continue; const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
     if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
