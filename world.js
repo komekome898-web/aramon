@@ -637,16 +637,21 @@ function genBuildings(){
     });
   }
 }
-// マップごとの岩の見た目バリエーション(雪岩/木/貝殻/砂岩など)を重み付きで抽選する
+// マップごとの岩の見た目バリエーション(雪岩/木/貝殻/砂岩など)を重み付きで抽選する。
+// リアルマップは3Dモデルで描くので、そのマップに合った専用の内訳(realObstacles)を使う
+function rockFlavorTable(){
+  if(currentMap.real3d && currentMap.realObstacles) return currentMap.realObstacles;
+  return currentMap.rockFlavors || [{ type:'rock', w:1 }];
+}
 function pickRockFlavor(){
-  const flavors = currentMap.rockFlavors || [{ type:'rock', w:1 }];
+  const flavors = rockFlavorTable();
   const total = flavors.reduce((s,f)=>s+f.w,0);
   let r = Math.random()*total;
   for(const f of flavors){ if(r<f.w) return f.type; r-=f.w; }
   return flavors[flavors.length-1].type;
 }
 function seededPickRockFlavor(rng){
-  const flavors = currentMap.rockFlavors || [{ type:'rock', w:1 }];
+  const flavors = rockFlavorTable();
   const total = flavors.reduce((s,f)=>s+f.w,0);
   let r = rng()*total;
   for(const f of flavors){ if(r<f.w) return f.type; r-=f.w; }

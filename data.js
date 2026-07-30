@@ -36,6 +36,8 @@ function applyWorldScale(scale){
 // mountainStyle でその山の見た目(volcano=火山/snow=雪山/forest=森/pyramid=ピラミッド)を切り替える。
 // lavaRingPerVolcano/lavaPoolCount が0のマップは溶岩(ダメージ床)は生成されない。
 // rockFlavors は岩オブジェクトの見た目バリエーションを重み付きで指定する(未指定時は通常の岩)。
+// realObstacles はリアルマップだけで使う障害物の内訳(real3d.jsが3Dモデルで描く)。
+// 通常マップは今までどおり rockFlavors を使うので見た目は変わらない。
 const WATER_SPEED_MULT = 0.6; // 海・川の中での移動速度倍率
 const OASIS_SPEED_MULT = 0.8; // オアシスの中での移動速度倍率
 const MAPS = {
@@ -44,6 +46,7 @@ const MAPS = {
     groundColor:'#142433',
     previewIcon:'🪨', previewColors:['#2a3a4a','#0f1a24'],
     desc:'岩が点在するだけのシンプルな荒野。見通しが良く、初めてのバトルにもおすすめ。',
+    realObstacles:[{ type:'rock', w:0.74 }, { type:'deadtree', w:0.26 }],
   },
   kaurea: {
     key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
@@ -59,6 +62,7 @@ const MAPS = {
     ],
     lavaRingPerVolcano: 4, lavaRingRadius: 2150, lavaPoolCount: 4,
     lavaDps: 22,
+    realObstacles:[{ type:'rock', w:0.58 }, { type:'basalt', w:0.42 }],
   },
   papas: {
     key:'papas', label:'パパス雪山', rockCount:540, decorCount:6200, hasVolcano:true,
@@ -73,6 +77,7 @@ const MAPS = {
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     hasCrystals:true, crystalCount:260,
     rockFlavors:[{ type:'snowrock', w:1 }],
+    realObstacles:[{ type:'snowrock', w:0.6 }, { type:'pine', w:0.4 }],
   },
   palepale: {
     key:'palepale', label:'パレパレジャングル', rockCount:520, decorCount:8200, hasVolcano:true,
@@ -89,6 +94,7 @@ const MAPS = {
     ],
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     rockFlavors:[{ type:'rock', w:0.55 }, { type:'tree', w:0.45 }],
+    realObstacles:[{ type:'tree', w:0.5 }, { type:'rock', w:0.28 }, { type:'log', w:0.22 }],
   },
   toble: {
     key:'toble', label:'トーブル海岸', rockCount:560, decorCount:6800, hasVolcano:false,
@@ -98,6 +104,7 @@ const MAPS = {
     hasSea:true, seaWidthRatio:0.14,
     hasRiver:true, riverCount:5, riverWidth:260,
     rockFlavors:[{ type:'rock', w:0.5 }, { type:'shell', w:0.5 }],
+    realObstacles:[{ type:'palm', w:0.36 }, { type:'rock', w:0.34 }, { type:'shell', w:0.30 }],
   },
   mandy: {
     key:'mandy', label:'マンディー砂漠', rockCount:480, decorCount:5200, hasVolcano:true,
@@ -113,6 +120,7 @@ const MAPS = {
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     hasOasis:true, oasisCount:6, oasisRadius:420,
     rockFlavors:[{ type:'sandrock', w:1 }],
+    realObstacles:[{ type:'sandrock', w:0.66 }, { type:'cactus', w:0.34 }],
   },
 };
 
@@ -652,6 +660,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-07-30', items:[
+    { t:'リアルマップの岩や木などの障害物を立体にしました。地面のくぼみに埋まって影を落とすようになり、モンスターや技との前後の重なり方は今までどおりです', g:['general','av'] },
+    { t:'リアルマップごとに合った障害物を置くようにしました。荒野は枯れ木、火山は黒い岩柱、雪山は雪をかぶった針葉樹、ジャングルは大木と倒木、海岸はヤシと貝殻、砂漠はサボテンが生えます', g:['general','av'] },
     { t:'ロビー上部に❓ヘルプボタンを追加しました。アカウント作成・バトルの始め方・マスモン登録・育成・スキン着せ替えの手順を、いつでも画像で確認できます', g:['feature','general'] },
     { t:'リアルマップの海と川を、円をつなげた形ではなく1枚のつながった水面にしました。川は海へ向かって流れ、海は海岸に向かって波が寄せて白く泡立ちます', g:['general','av'] },
     { t:'リアルマップの火山に火口を作り、山の形と色で火山・雪山・森を表現するようにしました。山頂に浮いて見えていた丸い光は廃止しました', g:['general','av'] },
@@ -1193,8 +1203,30 @@ const REAL3D_THEMES = {
     ridgeRock:0x8a7a5a, ridgeFoot:0xc8ae7e, ridgeSnow:0xf2ead8, snowLine:0.86,
   },
 };
+/* リアルマップの障害物の形。real3d.jsが3Dモデルを作り、render.jsが「同じ形」で2Dを
+   くり抜く(destination-out)ので、必ずこの1つの表を両方が見る。
+   単位は当たり判定の半径(radius)を1としたときの比。地面が y=0 で上が+。
+   ・h    全高
+   ・sink 地面へ埋める深さ(埋めないと坂で浮いて見える)
+   ・sil  くり抜く楕円の並び [中心の高さ比, 横半径(半径比), 縦半径(全高比)]。
+          少し大きめに消す(小さいと奥のモンスターが障害物の縁に乗って見える)   */
+const OBST_SHAPES = {
+  rock:     { h:1.24, sink:0.24, sil:[[0.46,1.24,0.66]] },
+  sandrock: { h:0.92, sink:0.20, sil:[[0.46,1.26,0.70]] },
+  snowrock: { h:1.24, sink:0.24, sil:[[0.46,1.24,0.66]] },
+  basalt:   { h:2.10, sink:0.22, sil:[[0.48,1.08,0.62]] },
+  deadtree: { h:2.55, sink:0.12, sil:[[0.30,0.38,0.40],[0.74,1.05,0.34]] },
+  pine:     { h:2.70, sink:0.10, sil:[[0.12,0.30,0.18],[0.56,1.05,0.54]] },
+  tree:     { h:2.60, sink:0.10, sil:[[0.24,0.34,0.32],[0.74,1.14,0.36]] },
+  log:      { h:0.68, sink:0.16, sil:[[0.42,1.20,0.70]] },
+  palm:     { h:3.20, sink:0.12, sil:[[0.40,0.32,0.48],[0.88,1.55,0.24]] },
+  shell:    { h:0.56, sink:0.12, sil:[[0.44,1.16,0.72]] },
+  cactus:   { h:2.45, sink:0.14, sil:[[0.46,0.55,0.58],[0.60,1.05,0.30]] },
+  crystal:  { h:1.85, sink:0.18, sil:[[0.44,1.06,0.60]] },
+};
+window.__aramonObstShapes = OBST_SHAPES;   // ESモジュール(real3d.js)への橋渡し
 // 通常マップ → リアルマップの対応。地形の形だけマップごとに変える
-const REAL3D_TERRAIN_OF = { wild:'hills', kaurea:'crags', papas:'drift', palepale:'jungle', toble:'coast', mandy:'dunes' };
+const REAL3D_TERRAIN_OF ={ wild:'hills', kaurea:'crags', papas:'drift', palepale:'jungle', toble:'coast', mandy:'dunes' };
 const REAL_MAP_SUFFIX = '_real';
 const REAL_MAP_REWARD_MULT = 2;   // リアルマップは上級者向け。ゴールド/ダイヤの獲得量を倍にする
 // 通常マップから対応するリアルマップを自動生成する(中身は同じで、地面だけ立体になる)。

@@ -973,55 +973,391 @@ function updateWorldObjects(w){
   buildWorldObjects(w);
 }
 
-/* ---- 岩の影 ----
-   岩そのものは今までどおり2D(render.jsのdrawRealisticRock)で描く。3Dへ移すと
-   2Dのモンスターが必ず岩の手前に描かれてしまい、岩に隠れなくなるため。
-   代わりに「色を書かない影専用のダミー」だけを3Dに置き、地面に落ちる影を作る。
-   ダミーは colorWrite:false / depthWrite:false なので画面には一切出ず、
-   シャドウマップにだけ現れる。                                                */
-const SHADOW_PROXY_MAX = 18;   // 同時に影を落とせる岩の数(近い順)
-let proxyPool = null;
-function ensureProxies(){
-  if(proxyPool || !scene) return;
-  const geo = new THREE.SphereGeometry(1, 10, 7);
-  const mat = new THREE.MeshBasicMaterial({ colorWrite:false, depthWrite:false });
-  proxyPool = [];
-  for(let i=0;i<SHADOW_PROXY_MAX;i++){
-    const m = new THREE.Mesh(geo, mat);
-    m.castShadow = true;
-    m.receiveShadow = false;
-    m.frustumCulled = false;
-    m.visible = false;
-    scene.add(m);
-    proxyPool.push(m);
+/* ---- 障害物(岩・木・水晶など) ----
+   2Dで描いていた障害物を3Dモデルに置き換える。地形に沿って埋まり、影も落とす。
+   【前後関係】3Dに移すと2Dで描くモンスター・弾は必ず障害物より手前に来てしまう。
+   そこでrender.jsが「同じ輪郭を destination-out でくり抜く」ことで、その障害物より
+   奥に描かれたものだけを消している。手前のものは後から普通に上へ描かれるので、
+   従来の奥行きソートと同じ見え方のまま変わらない。形の定義(OBST_SHAPES)は
+   data.jsに1つだけ置き、3Dモデルと2Dのくり抜きが必ず同じ寸法を見るようにしてある。
+   【数】1マップに数百個あるので種類ごとにInstancedMeshへまとめ(描画命令は十数回)、
+   プレイヤーの近くのぶんだけを並べ替えて使う。                                  */
+const OBST_VIEW = 3300;    // これより遠い障害物は出さない(霞で見えなくなる距離)
+const OBST_MAX  = 620;     // 同時に並べられる数の上限(訓練場は狭くて密なので多め)
+const OBST_STEP = 200;     // プレイヤーがこの距離だけ動いたら並べ直す
+const OBST_VARIANTS = 3;   // 同じ種類でも形を3通り作って「同じ岩の繰り返し」を防ぐ
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
+const OBST_SHAPE_FB = { h:1.2, sink:0.2 };
+let obstGroup = null, obstKinds = null, obstSrc = null, obstSig = '';
+let obstCX = null, obstCY = null, obstCull = OBST_VIEW;
+
+function shapeOf(flavor){
+  const t = window.__aramonObstShapes;
+  return (t && (t[flavor] || t.rock)) || OBST_SHAPE_FB;
+}
+/* 小さなモデルを1つのジオメトリにまとめる(three本体にmergeGeometriesは無い)。
+   一度も描いていないジオメトリはGPU資源を持たないのでdisposeは不要。          */
+function mergeGeos(list){
+  const parts = list.map(g=>{
+    if(!g.attributes.normal) g.computeVertexNormals();
+    return g.index ? g.toNonIndexed() : g;
+  });
+  let n = 0;
+  for(const g of parts) n += g.attributes.position.count;
+  const pos = new Float32Array(n*3), nor = new Float32Array(n*3), col = new Float32Array(n*3), uv = new Float32Array(n*2);
+  let o = 0;
+  for(const g of parts){
+    const p = g.attributes.position;
+    pos.set(p.array, o*3);
+    if(g.attributes.normal) nor.set(g.attributes.normal.array, o*3);
+    if(g.attributes.color) col.set(g.attributes.color.array, o*3);
+    else col.fill(1, o*3, (o+p.count)*3);
+    if(g.attributes.uv) uv.set(g.attributes.uv.array, o*2);
+    o += p.count;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal',   new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uv, 2));
+  return geo;
+}
+// モデルのローカル高さ(y0→y1)で色を塗る。mottleはワールドではなく形に乗るまだら
+function paintGeo(geo, lo, hi, y0, y1, mottle){
+  const pos = geo.attributes.position, n = pos.count, col = new Float32Array(n*3);
+  const cA = new THREE.Color(lo), cB = new THREE.Color(hi), c = new THREE.Color();
+  const amp = (mottle == null) ? 0.20 : mottle;
+  for(let i=0;i<n;i++){
+    const t = Math.max(0, Math.min(1, (pos.getY(i)-y0) / Math.max(0.0001, y1-y0)));
+    c.copy(cA).lerp(cB, t);
+    const m = 1 + (tileNoise(pos.getX(i)*2.7+11, pos.getZ(i)*2.7+7, 32) - 0.5)*amp;
+    col[i*3] = c.r*m; col[i*3+1] = c.g*m; col[i*3+2] = c.b*m;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return geo;
+}
+// 上の面だけ別の色を乗せる(岩の雪・倒木の苔)。塗り済みの色に混ぜる
+function tintTop(geo, hex, y0, y1, strength){
+  const pos = geo.attributes.position, col = geo.attributes.color;
+  if(!col) return geo;
+  const w = new THREE.Color(hex), c = new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const t = Math.max(0, Math.min(1, (pos.getY(i)-y0) / Math.max(0.0001, y1-y0)));
+    const k = t*t*(0.6 + tileNoise(pos.getX(i)*3.3+3, pos.getZ(i)*3.3+5, 32)*0.8)*(strength==null?1:strength);
+    c.setRGB(col.getX(i), col.getY(i), col.getZ(i)).lerp(w, Math.min(1, k));
+    col.setXYZ(i, c.r, c.g, c.b);
+  }
+  col.needsUpdate = true;
+  return geo;
+}
+// でこぼこの塊。半径1・底が地面(y=0)より少し下に来るように置く
+function boulderGeo(seed, flat){
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const pos = geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const n = tileNoise(x*1.7+seed*3.1, z*1.7+seed*1.9, 32)*0.6
+            + tileNoise(y*2.9+seed*2.3, x*2.9+seed*4.7, 32)*0.4;
+    const k = 0.72 + n*0.56;   // 振れ幅を大きくして「丸い塊」ではなく角のある岩にする
+    pos.setXYZ(i, x*k, y*k*flat, z*k);
+  }
+  geo.computeVertexNormals();
+  geo.translate(0, flat*0.94, 0);
+  return geo;
+}
+// 幹・柱。根元がy0、上へ伸ばす
+function trunkGeo(rBot, rTop, h, y0, seg){
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, seg||7, 1, false);
+  g.translate(0, y0 + h/2, 0);
+  return g;
+}
+// 縦の筋(柱状節理・サボテンの畝)を付ける
+function ribbed(geo, count, amp){
+  const pos = geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), z = pos.getZ(i);
+    const k = 1 + Math.cos(Math.atan2(z, x)*count)*amp;
+    pos.setXYZ(i, x*k, pos.getY(i), z*k);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+/* 種類ごとの3Dモデル。すべて「当たり判定の半径=1、地面=y0」のローカル空間で作る。
+   全高は data.js の OBST_SHAPES.h と揃えること(2Dのくり抜きがこの値を見る)。   */
+function obstacleGeo(flavor, variant){
+  const s = variant*2.7 + 1.3;
+  const frac = (v)=>{ const f = v - Math.floor(v); return f; };
+  switch(flavor){
+    case 'sandrock':
+      // 砂岩: 平たく、風で削れた層の色が出る
+      return paintGeo(boulderGeo(s, 0.42), 0x7a6140, 0xdcc08a, 0, 0.9, 0.34);
+    case 'snowrock':
+      // 雪をかぶった岩
+      return tintTop(paintGeo(boulderGeo(s, 0.58), 0x55606f, 0x8593a6, 0, 1.24, 0.30), 0xf6fbff, 0.62, 1.15, 1.0);
+    case 'basalt': {
+      // 溶岩が固まった黒い柱(柱状節理)。太い1本のまわりに細い柱を寄せる
+      const parts = [];
+      const n = 3 + (variant % 2);
+      for(let i=0;i<n;i++){
+        const a = s*1.3 + i*2.2, d = i===0 ? 0 : 0.42;
+        const rr = i===0 ? 0.48 : 0.30;
+        const hh = i===0 ? 2.05 : (1.05 + frac(i*0.37 + s)*0.65);
+        const c = ribbed(new THREE.CylinderGeometry(rr*0.90, rr, hh, 6), 6, 0.05);
+        c.translate(0, hh/2 - 0.06, 0);
+        c.rotateZ((i===0 ? 0.03 : 0.11) * (i%2 ? 1 : -1));
+        c.translate(Math.cos(a)*d, 0, Math.sin(a)*d);
+        parts.push(c);
+      }
+      return paintGeo(mergeGeos(parts), 0x0d0b0a, 0x2c231c, 0, 2.05, 0.26);
+    }
+    case 'deadtree': {
+      // 枯れ木: 葉の無い幹と数本の枝
+      const parts = [ trunkGeo(0.21, 0.09, 2.25, 0, 7) ];
+      const ys = [1.05, 1.40, 1.72, 1.98], ls = [1.00, 0.88, 0.76, 0.60], ts = [0.95, 0.82, 0.70, 0.55];
+      for(let i=0;i<4;i++){
+        const b = new THREE.CylinderGeometry(0.045, 0.115, ls[i], 5);
+        b.translate(0, ls[i]/2, 0);
+        b.rotateZ(ts[i] * (i%2 ? 1 : -1));
+        b.rotateY(s*1.7 + i*1.9);
+        b.translate(0, ys[i], 0);
+        parts.push(b);
+      }
+      return paintGeo(mergeGeos(parts), 0x3a2c1e, 0x7a6650, 0, 2.55, 0.24);
+    }
+    case 'pine': {
+      // 雪をかぶった針葉樹。段ごとに上へ行くほど白くする
+      const parts = [ paintGeo(trunkGeo(0.14, 0.10, 0.78, 0, 6), 0x3a2a1c, 0x584232, 0, 0.78) ];
+      const bases = [0.52, 1.12, 1.72], rs = [0.98, 0.78, 0.54], hs = [1.18, 1.10, 0.98];
+      for(let i=0;i<3;i++){
+        const c = ribbed(new THREE.ConeGeometry(rs[i], hs[i], 9), 9, 0.07);
+        c.translate(0, bases[i] + hs[i]/2, 0);
+        paintGeo(c, 0x1b3a1c, 0x2f5c2a, bases[i], bases[i]+hs[i], 0.26);
+        tintTop(c, 0xf2f9ff, bases[i]+hs[i]*0.35, bases[i]+hs[i]*0.95, 1.15);
+        parts.push(c);
+      }
+      return mergeGeos(parts);
+    }
+    case 'tree': {
+      // ジャングルの広葉樹。幹 + 重ねた葉の塊
+      const parts = [ paintGeo(trunkGeo(0.23, 0.15, 1.5, 0, 7), 0x40301f, 0x6b5136, 0, 1.5) ];
+      const put = [[0, 1.88, 0, 0.78], [0.40, 1.55, 0.16, 0.50], [-0.34, 1.62, -0.28, 0.52]];
+      for(let i=0;i<put.length;i++){
+        const [px, py, pz, rr] = put[i];
+        const g = boulderGeo(s + i*1.6, 0.92);
+        g.scale(rr, rr, rr);
+        g.translate(px, py - rr*0.86, pz);
+        paintGeo(g, 0x1c4a1a, 0x53913a, py-rr, py+rr, 0.30);
+        parts.push(g);
+      }
+      return mergeGeos(parts);
+    }
+    case 'log': {
+      // 倒木。地面に横たわり、上面に苔が乗る
+      const body = new THREE.CylinderGeometry(0.27, 0.31, 1.75, 9);
+      body.rotateZ(Math.PI/2);
+      body.translate(0, 0.30, 0);
+      const stub = new THREE.CylinderGeometry(0.07, 0.09, 0.45, 5);
+      stub.rotateZ(0.9); stub.rotateY(s);
+      stub.translate(0.25, 0.42, 0.10);
+      const geo = paintGeo(mergeGeos([body, stub]), 0x3d2c1c, 0x6d5738, 0, 0.62, 0.28);
+      return tintTop(geo, 0x4c6b28, 0.34, 0.62, 1.1);
+    }
+    case 'palm': {
+      // ヤシ。少し傾いた幹と放射状の葉
+      const trunk = trunkGeo(0.17, 0.10, 2.8, 0, 7);
+      trunk.rotateZ(0.12);
+      paintGeo(trunk, 0x60492c, 0xa08a5e, 0, 2.8, 0.30);
+      const parts = [trunk];
+      const tx = Math.sin(0.12)*2.8, ty = Math.cos(0.12)*2.8;
+      for(let i=0;i<7;i++){
+        const leaf = new THREE.ConeGeometry(0.24, 1.30, 4);
+        leaf.scale(1, 1, 0.30);
+        leaf.translate(0, 0.63, 0);
+        leaf.rotateZ(Math.PI*0.44 + (i%3)*0.09);   // 横へ倒して先を垂らす
+        leaf.rotateY(s + i*(Math.PI*2/7));
+        leaf.translate(tx, ty - 0.08, 0);
+        paintGeo(leaf, 0x24541f, 0x4a8a32, ty-0.6, ty+0.5, 0.26);
+        parts.push(leaf);
+      }
+      return mergeGeos(parts);
+    }
+    case 'shell': {
+      // 貝殻。放射状の筋を入れた低いドーム
+      const g = new THREE.SphereGeometry(1, 14, 5, 0, Math.PI*2, 0, Math.PI*0.5);
+      const pos = g.attributes.position;
+      for(let i=0;i<pos.count;i++){
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const rib = Math.cos(Math.atan2(z, x)*9 + s);
+        const k = 1 + rib*0.055;
+        pos.setXYZ(i, x*k, y*0.50*(1 + rib*0.12), z*k);
+      }
+      g.computeVertexNormals();
+      return paintGeo(g, 0xd9b184, 0xf6e7cd, 0, 0.56, 0.16);
+    }
+    case 'cactus': {
+      // サボテン。畝のある柱と2本の腕
+      const body = ribbed(new THREE.CylinderGeometry(0.32, 0.36, 2.2, 12), 8, 0.10);
+      body.translate(0, 1.1, 0);
+      const cap = new THREE.SphereGeometry(0.32, 10, 3, 0, Math.PI*2, 0, Math.PI*0.5);
+      cap.scale(1, 0.6, 1); cap.translate(0, 2.2, 0);
+      const parts = [body, cap];
+      for(let i=0;i<2;i++){
+        const sg = i ? -1 : 1;
+        const y0 = 1.0 + i*0.34;
+        const arm = new THREE.CylinderGeometry(0.14, 0.14, 0.52, 8);
+        arm.rotateZ(Math.PI/2); arm.translate(sg*0.44, y0, 0);
+        const up = new THREE.CylinderGeometry(0.13, 0.145, 0.78, 8);
+        up.translate(sg*0.66, y0 + 0.39, 0);
+        const tip = new THREE.SphereGeometry(0.13, 8, 4, 0, Math.PI*2, 0, Math.PI*0.5);
+        tip.scale(1, 0.7, 1); tip.translate(sg*0.66, y0 + 0.78, 0);
+        const a = mergeGeos([arm, up, tip]);
+        a.rotateY(s*1.3 + i*2.4);
+        parts.push(a);
+      }
+      return paintGeo(mergeGeos(parts), 0x24471f, 0x4e7d3c, 0, 2.45, 0.18);
+    }
+    case 'crystal': {
+      // 尖った水晶。太い1本のまわりに小さい結晶を生やす
+      const parts = [];
+      for(let i=0;i<3;i++){
+        const a = s + i*2.1, d = i===0 ? 0 : 0.34;
+        const hh = i===0 ? 1.82 : (0.85 + frac(i*0.5 + s)*0.55);
+        const rr = i===0 ? 0.40 : 0.25;
+        const c = new THREE.ConeGeometry(rr, hh, 6);
+        c.translate(0, hh/2 - 0.12, 0);
+        c.rotateZ((i===0 ? 0.05 : 0.24) * (i%2 ? 1 : -1));
+        c.translate(Math.cos(a)*d, 0, Math.sin(a)*d);
+        parts.push(c);
+      }
+      return paintGeo(mergeGeos(parts), 0x1f5c8e, 0x8fd0ee, 0, 1.85, 0.10);
+    }
+    default: {
+      /* 既定の岩。荒野・火山・ジャングル・海岸に出るので色を決め打ちにすると
+         その場だけ浮く。地面と同じテーマ色(岩肌=steep / 砂利=gravel)から作る。 */
+      const lo = new THREE.Color(theme.steep || DEFAULT_THEME.steep).multiplyScalar(0.80);
+      const hi = new THREE.Color(theme.gravel || DEFAULT_THEME.gravel).multiplyScalar(1.30);
+      return paintGeo(boulderGeo(s, 0.58), lo.getHex(), hi.getHex(), 0, 1.24, 0.28);
+    }
   }
 }
-function updateShadowCasters(list, fx, fy){
-  ensureProxies();
-  if(!proxyPool) return;
-  let n = 0;
-  if(Array.isArray(list) && list.length){
-    // 影の範囲に入っている岩を近い順に拾う(範囲外は影を計算しても見えない)
-    const near = [];
-    for(let i=0;i<list.length;i++){
-      const r = list[i];
-      const dx = r.x - fx, dy = r.y - fy;
-      const lim = SHADOW_HALF + (r.radius || 0);
-      const d2 = dx*dx + dy*dy;
-      if(d2 <= lim*lim) near.push({ r, d2 });
-    }
-    near.sort((a,b)=>a.d2 - b.d2);
-    for(; n < near.length && n < SHADOW_PROXY_MAX; n++){
-      const r = near[n].r, m = proxyPool[n];
-      const rad = r.radius || 30, h = r.height || rad*1.3;
-      const isTree = (r.flavor === 'tree');
-      // 木は葉の高さに丸い影、岩は本体の高さでつぶれた影
-      m.position.set(r.x, heightAt(r.x, r.y) + (isTree ? h*0.85 : h*0.42), r.y);
-      m.scale.set(rad*0.95, isTree ? rad*0.75 : h*0.55, rad*0.95);
-      m.visible = true;
-    }
+/* 材質は種類ごとに1つだけ作り、形の3通りで共有する。
+   tex は山と同じ肌テクスチャ(法線)の強さ。木や葉には貼らない(粒が浮くだけ)。 */
+const OBST_MATS = {
+  rock:     { rough:0.93, tex:1.0 },
+  sandrock: { rough:0.96, tex:1.0 },
+  snowrock: { rough:0.70, tex:0.7 },
+  basalt:   { rough:0.86, tex:1.2 },
+  deadtree: { rough:0.94 },
+  pine:     { rough:0.90 },
+  tree:     { rough:0.92 },
+  log:      { rough:0.95, tex:0.7 },
+  palm:     { rough:0.90 },
+  shell:    { rough:0.38 },
+  cactus:   { rough:0.78 },
+  crystal:  { rough:0.16, env:1.3 },
+};
+function obstacleMaterial(flavor){
+  const conf = OBST_MATS[flavor] || OBST_MATS.rock;
+  const tex = conf.tex ? mountainTextures() : null;
+  return new THREE.MeshStandardMaterial({
+    vertexColors:true, roughness:conf.rough, metalness:0.0,
+    normalMap: tex ? tex.normalMap : null,
+    normalScale: new THREE.Vector2(conf.tex||1, conf.tex||1),
+    flatShading:true,
+    envMapIntensity: conf.env || ENV_INTENSITY,
+  });
+}
+// 中身が変わったときだけ作り直すための署名(試合ごとに1回)
+function obstacleSignature(list){
+  if(!list || !list.length) return '0';
+  const f = list[0], l = list[list.length-1];
+  return list.length+':'+Math.round(f.x)+','+Math.round(f.y)+','+Math.round(l.x)+','+Math.round(l.y);
+}
+function buildObstacles(list){
+  if(obstGroup){
+    obstGroup.traverse(o=>{ if(o.isMesh){ o.geometry.dispose(); o.material.dispose(); } });
+    scene.remove(obstGroup);
   }
-  for(let i=n;i<SHADOW_PROXY_MAX;i++) proxyPool[i].visible = false;
+  obstGroup = new THREE.Group();
+  obstKinds = {};
+  const flavors = {};
+  for(const o of list) flavors[o.flavor || 'rock'] = 1;
+  for(const f in flavors){
+    const mat = obstacleMaterial(f);
+    const vars = [];
+    for(let v=0; v<OBST_VARIANTS; v++){
+      const mesh = new THREE.InstancedMesh(obstacleGeo(f, v), mat, OBST_MAX);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;   // 上限まで並べるので毎フレームの判定はしない
+      mesh.count = 0;
+      obstGroup.add(mesh);
+      vars.push(mesh);
+    }
+    obstKinds[f] = vars;
+  }
+  scene.add(obstGroup);
+  obstCX = obstCY = null;
+}
+const _om = new THREE.Matrix4(), _oq = new THREE.Quaternion();
+const _ov = new THREE.Vector3(), _os = new THREE.Vector3(), _oc = new THREE.Color();
+function updateObstacleInstances(cx, cy){
+  if(!obstKinds || !obstSrc) return;
+  if(obstCX != null && Math.abs(cx-obstCX) + Math.abs(cy-obstCY) < OBST_STEP) return;
+  obstCX = cx; obstCY = cy;
+  const near = [];
+  for(let i=0;i<obstSrc.length;i++){
+    const o = obstSrc[i];
+    const dx = o.x-cx, dy = o.y-cy, d2 = dx*dx + dy*dy;
+    if(d2 <= OBST_VIEW*OBST_VIEW) near.push({ o, d2 });
+  }
+  near.sort((a,b)=>a.d2 - b.d2);
+  // 上限で切ったときは「実際に出している距離」を2D側へ伝える(くり抜きと食い違わせない)
+  obstCull = near.length > OBST_MAX ? Math.sqrt(near[OBST_MAX].d2) : OBST_VIEW;
+  if(near.length > OBST_MAX) near.length = OBST_MAX;
+  for(const f in obstKinds) for(const m of obstKinds[f]) m.count = 0;
+  for(let i=0;i<near.length;i++){
+    const o = near[i].o;
+    const vars = obstKinds[o.flavor || 'rock'] || obstKinds.rock;
+    if(!vars) continue;
+    const seed = o.seed || 0;
+    const mesh = vars[Math.floor(Math.abs(seed)*3.7) % OBST_VARIANTS];
+    const idx = mesh.count;
+    if(idx >= OBST_MAX) continue;
+    const sh = shapeOf(o.flavor);
+    const r = o.radius || 30;
+    // 坂で浮かないよう、足元4点のいちばん低い高さに合わせてから少し埋める
+    const gy = Math.min(
+      heightAt(o.x - r*0.7, o.y), heightAt(o.x + r*0.7, o.y),
+      heightAt(o.x, o.y - r*0.7), heightAt(o.x, o.y + r*0.7)
+    ) - r*sh.sink;
+    _ov.set(o.x, gy, o.y);
+    _oq.setFromAxisAngle(UP_AXIS, seed*1.17);
+    const hk = 0.90 + (seed - Math.floor(seed))*0.26;   // 高さだけ個体差を付ける
+    _os.set(r, r*hk, r);
+    _om.compose(_ov, _oq, _os);
+    mesh.setMatrixAt(idx, _om);
+    const tint = 0.86 + ((seed*3.1) % 1)*0.28;
+    _oc.setRGB(tint, tint*0.995, tint*0.985);
+    mesh.setColorAt(idx, _oc);
+    mesh.count = idx + 1;
+  }
+  for(const f in obstKinds) for(const m of obstKinds[f]){
+    m.instanceMatrix.needsUpdate = true;
+    if(m.instanceColor) m.instanceColor.needsUpdate = true;
+  }
+}
+function updateObstacles(rocks, crystals, cx, cy){
+  if(!scene) return;
+  const sig = obstacleSignature(rocks) + '/' + obstacleSignature(crystals);
+  if(sig !== obstSig){
+    obstSig = sig;
+    // 水晶はflavorを持たないのでここで付ける(元の配列は書き換えない)
+    obstSrc = (rocks || []).slice();
+    for(const c of (crystals || [])) obstSrc.push({ x:c.x, y:c.y, radius:c.radius, seed:c.seed, flavor:'crystal' });
+    buildObstacles(obstSrc);
+  }
+  updateObstacleInstances(cx, cy);
 }
 
 /* 環境マップ(=HDRIの代わり)。そのマップの空をPMREMに通し、地面が空の色で
@@ -1096,6 +1432,8 @@ const api = {
       if(cv) cv.classList.remove('hidden');
       patchCX = patchCY = null;   // 次のrenderで作り直す
       worldSig = '';              // 山としみも作り直す(マップが変わると地面の高さが変わるため)
+      obstSig = '';               // 障害物も同じ理由で作り直す
+      obstCull = OBST_VIEW;
       applySize();
       active = true;
       return true;
@@ -1106,10 +1444,12 @@ const api = {
   },
   isActive(){ return active && !!scene; },
   resize(){ if(active) applySize(); },
+  // 障害物を実際に出している距離。2D側はこれより遠い障害物をくり抜かない
+  obstacleCullDist(){ return obstCull; },
   // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る。
-  // shadowCasters には2Dで描く岩の配列(world.jsのrocks)を渡す = 地面に影だけ落とす。
-  // world には山と地面のしみ({volcanoes, lava, sea, river, oasis})を渡す = 3Dで描く
-  render(shadowCasters, world){
+  // obstacles には障害物の配列(world.jsのrocks)を渡す = 3Dモデルで描く。
+  // world には山・地面のしみ・水晶({volcanoes, lava, sea, river, oasis, crystals})を渡す
+  render(obstacles, world){
     if(!active || !scene) return false;
     const cp = window.camPos, cs = window.camState;
     if(!cp || !cs) return false;
@@ -1118,6 +1458,7 @@ const api = {
     if(camera.fov !== fovDeg){ camera.fov = fovDeg; camera.updateProjectionMatrix(); }
     updateTerrain(cp.x, cp.y);
     updateWorldObjects(world);
+    updateObstacles(obstacles, world && world.crystals, cp.x, cp.y);
     if(waterShaders.length){
       const t = performance.now()*0.001;
       for(let i=0;i<waterShaders.length;i++) waterShaders[i].uniforms.uTime.value = t;
@@ -1147,7 +1488,6 @@ const api = {
       const fz = heightAt(fx, fy);
       sun.target.position.set(fx, fz, fy);
       sun.position.set(fx + SUN_DIR.x*2200, fz + SUN_DIR.y*2200, fy + SUN_DIR.z*2200);
-      updateShadowCasters(shadowCasters, fx, fy);
     }
     renderer.render(scene, camera);
     return true;
