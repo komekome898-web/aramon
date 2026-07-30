@@ -2326,8 +2326,11 @@ function drawVolcanoComplex(group,p){
   const sorted = [...group].sort((a,b)=> (a.isMain?1:0) - (b.isMain?1:0));
 
   for(const v of sorted){
-    // 実体の3D円錐として面分割描画(billboardをやめ、視点移動で泳がないようにする)
-    const peakP = drawSolidCone(v, style);
+    // 実体の3D円錐として面分割描画(billboardをやめ、視点移動で泳がないようにする)。
+    // リアルマップでは山の本体をWebGL側が描くので、2Dは山頂の演出だけを重ねる
+    const peakP = real3dActive
+      ? project(v.x, v.y, groundZAt(v.x, v.y) + v.radius * (v.isMain ? 1.15 : 0.9))
+      : drawSolidCone(v, style);
 
     if(v.isMain){
       if(peakP){
@@ -2365,19 +2368,61 @@ function drawVolcanoComplex(group,p){
   ctx.restore();
 }
 let renderHeavyLoad = false;
+// 3Dレイヤーが地面を描いているか(リアルマップ)。山・しみの描き分けと遮蔽判定に使う
+let real3dActive = false;
+/* リアルマップでは山を3Dで描くので、2Dで描くモンスター・弾・アイテムは山より必ず
+   手前に描かれてしまう。そのままだと山の裏の相手が透けて見えるため、カメラから対象
+   までの線が山(円錐)の内側を通るかを調べ、通るなら描かない
+   (=従来の奥行きソートと同じ見え方に戻す)。                                      */
+const MOUNT_OCCLUDE_STEPS = 10;
+let mountOccluders = [];
+function prepareMountainOccluders(){
+  mountOccluders.length = 0;
+  if(!real3dActive) return;
+  for(const v of volcanoObstacles){
+    mountOccluders.push({
+      x:v.x, y:v.y, r:v.radius,
+      rise: v.radius * (v.isMain ? 1.15 : 0.9),
+      baseZ: groundZAt(v.x, v.y),
+      camDist: Math.hypot(v.x-camPos.x, v.y-camPos.y),
+    });
+  }
+}
+function occludedByMountain(x, y, z){
+  if(!mountOccluders.length) return false;
+  const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
+  const targetDist = Math.hypot(dx, dy);
+  for(const m of mountOccluders){
+    // 対象より奥にある山は遮れない(手前の山だけ調べる)
+    if(m.camDist > targetDist + m.r) continue;
+    for(let i=1;i<=MOUNT_OCCLUDE_STEPS;i++){
+      const t = i/(MOUNT_OCCLUDE_STEPS+1);
+      const d = Math.hypot(camPos.x+dx*t-m.x, camPos.y+dy*t-m.y);
+      if(d >= m.r) continue;
+      if(camPos.z+dz*t < m.baseZ + m.rise*(1 - d/m.r)) return true;
+    }
+  }
+  return false;
+}
 function render(){
   ctx.clearRect(0,0,viewW,viewH);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
   // 地面の装飾を描かずに透かす。初期化に失敗した場合はfalseが返るので従来描画に戻る
-  // 岩は2Dで描くが、地面に落ちる影だけは3D側に作らせる(rocksを影専用に渡す)
-  const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks));
+  // 岩は2Dで描くが、地面に落ちる影だけは3D側に作らせる(rocksを影専用に渡す)。
+  // 山と地面のしみ(溶岩・海・川・オアシス)は3D側が地形に沿わせて描く
+  const gl3d = !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks, {
+    volcanoes: volcanoObstacles, lava: lavaZones, sea: seaZones, river: riverZones, oasis: oasisZones,
+  }));
+  real3dActive = gl3d;
+  prepareMountainOccluders();
   if(!gl3d){
     drawSkyAndGround();
+    // しみは起伏に沿わせる必要があるためリアルマップでは3D側が描く
+    drawWaterZones();
+    drawLavaZones();
   }
-  drawWaterZones();
-  drawLavaZones();
   if(!gl3d) drawTerrainDecor();
   drawZoneRings();
   drawLandingMarkers();
@@ -2405,9 +2450,10 @@ function render(){
     if(p) drawables.push({kind:'volcano', obj:group, p});
   }
   // predictedPickup: マルチのゲストが「拾った」と先読みして消したアイテム(ホストの確定待ち)
-  for(const it of lootItems){ if(it.predictedPickup != null || it.respawnAt > matchTime) continue; const p = project(it.x,it.y,it.z||0); if(p) drawables.push({kind:'loot', obj:it, p}); }
-  for(const pr of projectiles){ const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
-  for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
+  for(const it of lootItems){ if(it.predictedPickup != null || it.respawnAt > matchTime) continue; if(occludedByMountain(it.x, it.y, it.z||0)) continue; const p = project(it.x,it.y,it.z||0); if(p) drawables.push({kind:'loot', obj:it, p}); }
+  for(const pr of projectiles){ if(occludedByMountain(pr.x, pr.y, pr.z+20)) continue; const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
+  for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
+    if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }
 
   drawables.sort((a,b)=>b.p.depth-a.p.depth);
