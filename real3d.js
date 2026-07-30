@@ -1164,17 +1164,19 @@ function obstacleGeo(flavor, variant){
     }
     case 'palm': {
       // ヤシ。少し傾いた幹と放射状の葉
+      // 傾けすぎると2Dのくり抜き(縦の箱)が幹より太くなってしまうので控えめにする
       const trunk = trunkGeo(0.17, 0.10, 2.8, 0, 7);
-      trunk.rotateZ(0.12);
+      trunk.rotateZ(0.05);
       paintGeo(trunk, 0x60492c, 0xa08a5e, 0, 2.8, 0.30);
       const parts = [trunk];
-      const tx = Math.sin(0.12)*2.8, ty = Math.cos(0.12)*2.8;
-      for(let i=0;i<7;i++){
-        const leaf = new THREE.ConeGeometry(0.24, 1.30, 4);
-        leaf.scale(1, 1, 0.30);
+      const tx = Math.sin(0.05)*2.8, ty = Math.cos(0.05)*2.8;
+      // 葉は数を増やして幅も持たせる(まばらだと2Dのくり抜き(楕円)と食い違う)
+      for(let i=0;i<9;i++){
+        const leaf = new THREE.ConeGeometry(0.26, 1.30, 4);
+        leaf.scale(1, 1, 0.45);
         leaf.translate(0, 0.63, 0);
         leaf.rotateZ(Math.PI*0.44 + (i%3)*0.09);   // 横へ倒して先を垂らす
-        leaf.rotateY(s + i*(Math.PI*2/7));
+        leaf.rotateY(s + i*(Math.PI*2/9));
         leaf.translate(tx, ty - 0.08, 0);
         paintGeo(leaf, 0x24541f, 0x4a8a32, ty-0.6, ty+0.5, 0.26);
         parts.push(leaf);
@@ -1204,12 +1206,13 @@ function obstacleGeo(flavor, variant){
       for(let i=0;i<2;i++){
         const sg = i ? -1 : 1;
         const y0 = 1.0 + i*0.34;
-        const arm = new THREE.CylinderGeometry(0.14, 0.14, 0.52, 8);
-        arm.rotateZ(Math.PI/2); arm.translate(sg*0.44, y0, 0);
+        // 腕は幹に寄せる(離すと2Dのくり抜きが腕のない所まで広がってしまう)
+        const arm = new THREE.CylinderGeometry(0.14, 0.14, 0.34, 8);
+        arm.rotateZ(Math.PI/2); arm.translate(sg*0.24, y0, 0);
         const up = new THREE.CylinderGeometry(0.13, 0.145, 0.78, 8);
-        up.translate(sg*0.66, y0 + 0.39, 0);
+        up.translate(sg*0.38, y0 + 0.39, 0);
         const tip = new THREE.SphereGeometry(0.13, 8, 4, 0, Math.PI*2, 0, Math.PI*0.5);
-        tip.scale(1, 0.7, 1); tip.translate(sg*0.66, y0 + 0.78, 0);
+        tip.scale(1, 0.7, 1); tip.translate(sg*0.38, y0 + 0.78, 0);
         const a = mergeGeos([arm, up, tip]);
         a.rotateY(s*1.3 + i*2.4);
         parts.push(a);
