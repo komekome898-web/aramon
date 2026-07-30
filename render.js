@@ -860,57 +860,94 @@ function fxIconFire(pr, r){
   }
   ctx.restore();
 }
+/* 以下の弾はどれも同じ作り方でリアルに寄せている:
+   ①平らな塗りを使わず、必ずグラデーション(球なら放射・面なら線形)で陰影を付ける
+   ②光っている部分(炎・電気・水の反射・魔力)は加算合成(lighter)で重ねる
+   ③進行方向は fxProjScreenAngle()、回るものは matchTime から作る                */
+// 加算合成で光の暈(かさ)を敷く。弾の周りの空気が光っているように見せる
+function fxHalo(r, col, a){
+  if(renderHeavyLoad) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(0,0, r*0.25, 0,0, r);
+  g.addColorStop(0, _hexA(col, a));
+  g.addColorStop(1, _hexA(col, 0));
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.restore();
+}
 // 水球(水風船/アクアウェイブ/ツバはき)
 function fxIconWater(pr, r){
   const col = pr.color || '#3dccc7';
+  const deep = _mixHex(col, '#00203f', 0.6);
   ctx.save();
   ctx.rotate(fxProjScreenAngle(pr));
-  for(let k=0;k<5;k++){                       // 後ろに散るしぶき
-    const t = (k+1)/5;
-    ctx.beginPath();
-    ctx.arc(-r*(1.2+t*2.2), Math.sin(matchTime*16+k*1.7)*r*0.35, r*(0.46-0.07*k), 0, Math.PI*2);
-    ctx.globalAlpha = 0.45*(1-t*0.8); ctx.fillStyle = col; ctx.fill();
+  for(let k=0;k<6;k++){                       // 後ろに散る水滴(だんだん小さく薄く)
+    const t = (k+1)/6;
+    const rr = r*(0.5-0.06*k);
+    const px = -r*(1.2+t*2.4), py = Math.sin(matchTime*16+k*1.7)*r*0.4;
+    const g = ctx.createRadialGradient(px-rr*0.3, py-rr*0.3, rr*0.1, px, py, rr);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.5, col);
+    g.addColorStop(1, _hexA(deep, 0.2));
+    ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI*2);
+    ctx.globalAlpha = 0.7*(1-t*0.75); ctx.fillStyle = g; ctx.fill();
   }
   ctx.restore();
   ctx.globalAlpha = 1;
   const wob = Math.sin(matchTime*13 + (pr.id||0))*0.16;
   ctx.save();
-  ctx.scale(1+wob, 1-wob);                    // 水の玉なので少し波打たせる
-  const g = ctx.createRadialGradient(-r*0.3,-r*0.35, r*0.1, 0,0, r*1.1);
-  g.addColorStop(0,'rgba(255,255,255,0.95)');
-  g.addColorStop(0.35, col);
-  g.addColorStop(1, _mixHex(col, '#00203f', 0.55));
-  if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = col; }
+  ctx.scale(1+wob, 1-wob);                    // 表面張力で揺れる水の玉
+  // 本体: 中は透けて、縁が濃く見える(水越しに背景が沈んで見える感じ)
+  const g = ctx.createRadialGradient(-r*0.3,-r*0.35, r*0.05, 0,0, r*1.08);
+  g.addColorStop(0, _hexA(col, 0.35));
+  g.addColorStop(0.55, _hexA(col, 0.6));
+  g.addColorStop(0.88, _hexA(deep, 0.85));
+  g.addColorStop(1, _hexA(col, 0.5));
   ctx.beginPath(); ctx.arc(0,0,r*1.05,0,Math.PI*2); ctx.fillStyle = g; ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.beginPath(); ctx.arc(0,0,r*1.02, Math.PI*0.18, Math.PI*0.92);
-  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = r*0.13; ctx.stroke();
+  ctx.save();                                  // 縁の反射光
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.beginPath(); ctx.arc(0,0,r*1.0, Math.PI*0.2, Math.PI*0.9);
+  ctx.strokeStyle = _hexA('#ffffff', 0.55); ctx.lineWidth = r*0.16; ctx.stroke();
   ctx.restore();
-  ctx.beginPath(); ctx.ellipse(-r*0.35,-r*0.42, r*0.3, r*0.17, -0.6, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
+  ctx.restore();
+  ctx.save();                                  // 白いハイライト(光源の映り込み)
+  ctx.globalCompositeOperation = 'lighter';
+  const hg = ctx.createRadialGradient(-r*0.35,-r*0.42, 0, -r*0.35,-r*0.42, r*0.45);
+  hg.addColorStop(0, 'rgba(255,255,255,0.95)');
+  hg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath(); ctx.ellipse(-r*0.35,-r*0.42, r*0.42, r*0.26, -0.6, 0, Math.PI*2);
+  ctx.fillStyle = hg; ctx.fill();
+  ctx.restore();
 }
 // 種(種/種マシンガン): 回転する種+葉
 function fxIconSeed(pr, r){
   const col = pr.color || '#7fb236';
+  const dark = _mixHex(col, '#12240a', 0.55);
   ctx.rotate(matchTime*13 + (pr.id||0));
   for(let k=0;k<2;k++){
     ctx.save(); ctx.rotate(k*Math.PI);
+    const g = ctx.createLinearGradient(r*0.2, -r*0.5, r*1.8, r*0.3);
+    g.addColorStop(0, _mixHex(col, '#ffffff', 0.35));
+    g.addColorStop(0.6, col);
+    g.addColorStop(1, dark);
     ctx.beginPath();
     ctx.moveTo(r*0.2, 0);
     ctx.quadraticCurveTo(r*1.4, -r*0.8, r*2.0, 0);
     ctx.quadraticCurveTo(r*1.4,  r*0.35, r*0.2, 0);
     ctx.closePath();
-    if(!renderHeavyLoad){ ctx.shadowBlur = 12; ctx.shadowColor = col; }
-    ctx.fillStyle = col; ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = _hexA(dark, 0.9); ctx.lineWidth = 1.1; ctx.stroke();
+    ctx.beginPath();                              // 葉脈
+    ctx.moveTo(r*0.3, -r*0.02); ctx.quadraticCurveTo(r*1.2, -r*0.24, r*1.95, 0);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.restore();
   }
-  const g = ctx.createRadialGradient(-r*0.25,-r*0.25, r*0.1, 0,0, r*0.9);
-  g.addColorStop(0,'#d3b276'); g.addColorStop(1,'#5b3d1c');
+  const g = ctx.createRadialGradient(-r*0.3,-r*0.3, r*0.05, 0,0, r*0.9);
+  g.addColorStop(0,'#e0c390'); g.addColorStop(0.6,'#9a7038'); g.addColorStop(1,'#4a3014');
   ctx.beginPath(); ctx.ellipse(0,0, r*0.85, r*0.62, 0, 0, Math.PI*2);
   ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle = 'rgba(50,32,10,0.9)'; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.strokeStyle = 'rgba(40,26,8,0.9)'; ctx.lineWidth = 1.3; ctx.stroke();
 }
 // 稲妻(かみなり/雷撃): 進行方向へ伸びる折れ線+枝
 function fxIconBolt(pr, r){
@@ -929,7 +966,6 @@ function fxIconBolt(pr, r){
   fxStrokePath(pts, col, r*0.6, 0.35, 22);
   fxStrokePath(pts, col, r*0.28, 0.9, 14);
   fxStrokePath(pts, '#ffffff', r*0.11, 1, 0);
-  ctx.restore();
   for(let b=0;b<2;b++){                        // 枝分かれ
     const vi = 2 + Math.floor(fxHash01(seed*5.1 + b*17.3)*(N-2));
     const p0 = pts[Math.min(vi, N)];
@@ -940,24 +976,37 @@ function fxIconBolt(pr, r){
     fxStrokePath(br, '#ffffff', r*0.06, 0.85, 0);
   }
   if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = col; }
-  ctx.beginPath(); ctx.arc(r*1.3, 0, r*0.42, 0, Math.PI*2);
-  ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.shadowBlur = 0;
+  const hg = ctx.createRadialGradient(r*1.3, 0, 0, r*1.3, 0, r*0.9);
+  hg.addColorStop(0, 'rgba(255,255,255,0.95)');
+  hg.addColorStop(0.45, _hexA(col, 0.7));
+  hg.addColorStop(1, _hexA(col, 0));
+  ctx.beginPath(); ctx.arc(r*1.3, 0, r*0.9, 0, Math.PI*2);
+  ctx.fillStyle = hg; ctx.fill();
+  ctx.restore();
 }
 // ロケットパンチ: 岩の拳+後方の噴射炎
 function fxIconFist(pr, r){
   const col = pr.color || '#a98a68';
   const sh = auraShades(col);
+  const ramp = fx3dFireRamp('#ff8a3d');
   ctx.rotate(fxProjScreenAngle(pr));
-  const jet = r*(2.4 + 0.6*Math.sin(matchTime*28));
+  const jet = r*(2.6 + 0.7*Math.sin(matchTime*28));
+  ctx.save();                                    // 噴射炎(加算で本物の炎に寄せる)
+  ctx.globalCompositeOperation = 'lighter';
+  const jg = ctx.createLinearGradient(-r*0.8, 0, -jet, 0);
+  jg.addColorStop(0, ramp.core); jg.addColorStop(0.4, ramp.hot); jg.addColorStop(1, _hexA(ramp.body, 0));
   ctx.beginPath();
-  ctx.moveTo(-r*0.8, -r*0.6); ctx.lineTo(-jet, 0); ctx.lineTo(-r*0.8, r*0.6);
+  ctx.moveTo(-r*0.8, -r*0.62);
+  ctx.quadraticCurveTo(-jet*0.55, -r*0.3, -jet, 0);
+  ctx.quadraticCurveTo(-jet*0.55,  r*0.3, -r*0.8, r*0.62);
   ctx.closePath();
-  ctx.globalAlpha = 0.85; ctx.fillStyle = '#ffb347';
-  if(!renderHeavyLoad){ ctx.shadowBlur = 18; ctx.shadowColor = '#ff8a3d'; }
-  ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-  const g = ctx.createLinearGradient(0, -r, 0, r);
-  g.addColorStop(0, sh.bright); g.addColorStop(0.5, col); g.addColorStop(1, sh.dark);
-  ctx.beginPath();                              // 拳の塊
+  ctx.fillStyle = jg; ctx.globalAlpha = 0.9; ctx.fill();
+  ctx.restore();
+  const g = ctx.createLinearGradient(0, -r, 0, r);   // 岩肌の陰影(上から光)
+  g.addColorStop(0, _mixHex(col, '#ffffff', 0.4));
+  g.addColorStop(0.45, col);
+  g.addColorStop(1, sh.dark);
+  ctx.beginPath();
   ctx.moveTo(-r*0.85, -r*0.85);
   ctx.lineTo(r*0.55, -r*0.9);
   ctx.quadraticCurveTo(r*1.15, 0, r*0.55, r*0.9);
@@ -965,40 +1014,53 @@ function fxIconFist(pr, r){
   ctx.closePath();
   ctx.fillStyle = g; ctx.fill();
   ctx.strokeStyle = sh.dark; ctx.lineWidth = 1.8; ctx.stroke();
-  for(let k=0;k<4;k++){                          // 指の関節
-    ctx.beginPath();
-    ctx.arc(r*0.55, -r*0.62 + k*r*0.42, r*0.24, 0, Math.PI*2);
-    ctx.fillStyle = sh.bright; ctx.globalAlpha = 0.9; ctx.fill();
-    ctx.strokeStyle = sh.dark; ctx.lineWidth = 1.2; ctx.stroke();
+  for(let k=0;k<4;k++){                              // 指の関節(球状に陰影を付ける)
+    const ky = -r*0.62 + k*r*0.42;
+    const kg = ctx.createRadialGradient(r*0.48, ky-r*0.08, r*0.03, r*0.55, ky, r*0.26);
+    kg.addColorStop(0, _mixHex(col, '#ffffff', 0.6));
+    kg.addColorStop(1, sh.dark);
+    ctx.beginPath(); ctx.arc(r*0.55, ky, r*0.24, 0, Math.PI*2);
+    ctx.fillStyle = kg; ctx.fill();
   }
-  ctx.globalAlpha = 1;
   ctx.beginPath(); ctx.ellipse(-r*0.15, r*0.62, r*0.34, r*0.2, 0.5, 0, Math.PI*2);
-  ctx.fillStyle = sh.mid; ctx.fill();          // 親指
+  ctx.fillStyle = sh.mid; ctx.fill();               // 親指
   ctx.strokeStyle = sh.dark; ctx.lineWidth = 1.2; ctx.stroke();
+  for(let k=0;k<3;k++){                              // 岩肌のひび
+    const h = fxHash01((pr.id||0)*3.7 + k*11.3);
+    ctx.beginPath();
+    ctx.moveTo(-r*0.7 + h*r*0.8, -r*0.7 + k*r*0.55);
+    ctx.lineTo(-r*0.3 + h*r*0.9, -r*0.4 + k*r*0.55);
+    ctx.strokeStyle = _hexA(sh.dark, 0.7); ctx.lineWidth = 1; ctx.stroke();
+  }
 }
 // 掌打(掌打/もんた): 手のひら+前方に広がる衝撃の輪
 function fxIconPalm(pr, r){
   const col = pr.color || '#a98a68';
   const sh = auraShades(col);
   ctx.rotate(fxProjScreenAngle(pr));
-  for(let k=0;k<3;k++){                          // 空気の輪
+  ctx.save();                                       // 押し出される空気の輪
+  ctx.globalCompositeOperation = 'lighter';
+  for(let k=0;k<3;k++){
     const t = ((matchTime*2.4 + k/3) % 1);
     ctx.beginPath();
-    ctx.ellipse(r*(0.9 + t*1.6), 0, r*0.22, r*(0.9 + t*0.8), 0, 0, Math.PI*2);
-    ctx.globalAlpha = 0.5*(1-t);
-    ctx.strokeStyle = sh.bright; ctx.lineWidth = r*0.14; ctx.stroke();
+    ctx.ellipse(r*(0.9 + t*1.8), 0, r*0.22, r*(0.9 + t*0.9), 0, 0, Math.PI*2);
+    ctx.strokeStyle = _hexA(sh.bright, 0.55*(1-t)); ctx.lineWidth = r*0.16; ctx.stroke();
   }
-  ctx.globalAlpha = 1;
-  const g = ctx.createLinearGradient(0, -r, 0, r);
-  g.addColorStop(0, sh.bright); g.addColorStop(1, sh.mid);
+  ctx.restore();
+  const g = ctx.createRadialGradient(-r*0.3,-r*0.4, r*0.05, 0, 0, r*1.1);
+  g.addColorStop(0, _mixHex(col, '#ffffff', 0.5));
+  g.addColorStop(0.6, col);
+  g.addColorStop(1, sh.dark);
   ctx.beginPath(); ctx.ellipse(-r*0.1, 0, r*0.9, r*1.0, 0, 0, Math.PI*2);
-  if(!renderHeavyLoad){ ctx.shadowBlur = 14; ctx.shadowColor = col; }
-  ctx.fillStyle = g; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = g; ctx.fill();
   ctx.strokeStyle = sh.dark; ctx.lineWidth = 1.8; ctx.stroke();
-  for(let k=0;k<4;k++){                           // 指
-    ctx.beginPath();
-    ctx.ellipse(r*0.72, -r*0.66 + k*r*0.44, r*0.34, r*0.19, 0, 0, Math.PI*2);
-    ctx.fillStyle = sh.bright; ctx.fill();
+  for(let k=0;k<4;k++){                              // 指
+    const fy = -r*0.66 + k*r*0.44;
+    const fg = ctx.createLinearGradient(r*0.4, fy-r*0.2, r*1.05, fy+r*0.2);
+    fg.addColorStop(0, _mixHex(col, '#ffffff', 0.55));
+    fg.addColorStop(1, sh.mid);
+    ctx.beginPath(); ctx.ellipse(r*0.72, fy, r*0.34, r*0.19, 0, 0, Math.PI*2);
+    ctx.fillStyle = fg; ctx.fill();
     ctx.strokeStyle = sh.dark; ctx.lineWidth = 1.1; ctx.stroke();
   }
   ctx.beginPath(); ctx.ellipse(-r*0.2, r*0.95, r*0.36, r*0.2, 0.6, 0, Math.PI*2);
@@ -1009,103 +1071,143 @@ function fxIconPalm(pr, r){
 function fxIconBlade(pr, r){
   const col = pr.color || '#8b2fc9';
   const sh = auraShades(col);
-  ctx.rotate(matchTime*14 + (pr.id||0));
-  ctx.globalAlpha = 0.35;                         // 回転の残光
-  ctx.beginPath(); ctx.arc(0,0, r*1.9, 0, Math.PI*1.1);
-  ctx.strokeStyle = sh.bright; ctx.lineWidth = r*0.22; ctx.stroke();
-  ctx.globalAlpha = 1;
-  if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = col; }
-  const g = ctx.createLinearGradient(0, -r*0.3, 0, r*0.3);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, sh.bright); g.addColorStop(1, sh.mid);
-  ctx.beginPath();                                // 刃
+  const spin = matchTime*14 + (pr.id||0);
+  ctx.rotate(spin);
+  ctx.save();                                        // 回転の残光
+  ctx.globalCompositeOperation = 'lighter';
+  const tg = ctx.createLinearGradient(-r*1.9, 0, r*1.9, 0);
+  tg.addColorStop(0, _hexA(col, 0));
+  tg.addColorStop(1, _hexA(sh.bright, 0.5));
+  ctx.beginPath(); ctx.arc(0,0, r*1.9, 0, Math.PI*1.15);
+  ctx.strokeStyle = tg; ctx.lineWidth = r*0.26; ctx.stroke();
+  ctx.restore();
+  // 刃: 峰から刃先へ向かう金属のグラデーション(白い筋を入れて鋼に見せる)
+  const g = ctx.createLinearGradient(0, -r*0.45, 0, r*0.45);
+  g.addColorStop(0, sh.dark);
+  g.addColorStop(0.38, '#ffffff');
+  g.addColorStop(0.55, sh.bright);
+  g.addColorStop(1, sh.mid);
+  ctx.beginPath();
   ctx.moveTo(r*2.1, 0); ctx.lineTo(r*0.2, -r*0.45); ctx.lineTo(r*0.2, r*0.45);
   ctx.closePath(); ctx.fillStyle = g; ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = sh.outline; ctx.lineWidth = 1.4; ctx.stroke();
-  ctx.beginPath();                                // 鍔
-  ctx.moveTo(r*0.2, -r*0.7); ctx.lineTo(r*0.35, -r*0.7);
-  ctx.lineTo(r*0.35, r*0.7); ctx.lineTo(r*0.2, r*0.7);
+  ctx.strokeStyle = sh.outline; ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.save();                                        // 刃先の光沢が流れる
+  ctx.globalCompositeOperation = 'lighter';
+  const shine = (Math.sin(spin*0.7)*0.5+0.5);
+  ctx.beginPath();
+  ctx.moveTo(r*(0.4+1.5*shine), -r*0.06); ctx.lineTo(r*(0.7+1.3*shine), 0); ctx.lineTo(r*(0.4+1.5*shine), r*0.06);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath();                                   // 鍔
+  ctx.moveTo(r*0.16, -r*0.7); ctx.lineTo(r*0.36, -r*0.7);
+  ctx.lineTo(r*0.36, r*0.7); ctx.lineTo(r*0.16, r*0.7);
   ctx.closePath(); ctx.fillStyle = sh.dark; ctx.fill();
-  ctx.beginPath();                                // 柄
+  const hg = ctx.createLinearGradient(0, -r*0.2, 0, r*0.2);   // 柄
+  hg.addColorStop(0, sh.mid); hg.addColorStop(1, sh.dark);
+  ctx.beginPath();
   ctx.moveTo(-r*1.1, -r*0.2); ctx.lineTo(r*0.2, -r*0.2);
   ctx.lineTo(r*0.2, r*0.2); ctx.lineTo(-r*1.1, r*0.2);
-  ctx.closePath(); ctx.fillStyle = sh.dark; ctx.fill();
-  ctx.strokeStyle = sh.mid; ctx.lineWidth = 1.1; ctx.stroke();
+  ctx.closePath(); ctx.fillStyle = hg; ctx.fill();
+  ctx.strokeStyle = sh.outline; ctx.lineWidth = 1; ctx.stroke();
 }
 // 光の矢(熾天の剣): 進行方向を向いた黄金の矢
 function fxIconArrow(pr, r){
   const col = pr.color || '#ffe9a8';
   const sh = auraShades(col);
   ctx.rotate(fxProjScreenAngle(pr));
-  const tail = ctx.createLinearGradient(-r*3.2, 0, 0, 0);
-  tail.addColorStop(0, 'rgba(255,255,255,0)'); tail.addColorStop(1, col);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const tail = ctx.createLinearGradient(-r*3.4, 0, r*0.5, 0);   // 尾を引く光
+  tail.addColorStop(0, _hexA(col, 0));
+  tail.addColorStop(1, _hexA(sh.bright, 0.8));
   ctx.beginPath();
-  ctx.moveTo(-r*3.2, 0); ctx.lineTo(-r*0.4, -r*0.28); ctx.lineTo(-r*0.4, r*0.28);
-  ctx.closePath(); ctx.fillStyle = tail; ctx.globalAlpha = 0.8; ctx.fill();
-  ctx.globalAlpha = 1;
-  if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = col; }
-  ctx.beginPath();                                 // 矢柄
+  ctx.moveTo(-r*3.4, 0); ctx.lineTo(-r*0.4, -r*0.3); ctx.lineTo(-r*0.4, r*0.3);
+  ctx.closePath(); ctx.fillStyle = tail; ctx.fill();
+  ctx.restore();
+  const sg = ctx.createLinearGradient(0, -r*0.13, 0, r*0.13);   // 矢柄
+  sg.addColorStop(0, sh.bright); sg.addColorStop(1, sh.mid);
+  ctx.beginPath();
   ctx.moveTo(-r*1.2, -r*0.13); ctx.lineTo(r*0.9, -r*0.13);
   ctx.lineTo(r*0.9, r*0.13); ctx.lineTo(-r*1.2, r*0.13);
-  ctx.closePath(); ctx.fillStyle = sh.mid; ctx.fill();
-  ctx.beginPath();                                 // 鏃
+  ctx.closePath(); ctx.fillStyle = sg; ctx.fill();
+  const hg = ctx.createLinearGradient(r*0.7, -r*0.62, r*2.2, r*0.62);  // 鏃
+  hg.addColorStop(0, '#ffffff'); hg.addColorStop(0.5, sh.bright); hg.addColorStop(1, col);
+  ctx.beginPath();
   ctx.moveTo(r*2.2, 0); ctx.lineTo(r*0.7, -r*0.62); ctx.lineTo(r*1.0, 0); ctx.lineTo(r*0.7, r*0.62);
-  ctx.closePath(); ctx.fillStyle = sh.bright; ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4; ctx.stroke();
-  for(let k=-1;k<=1;k+=2){                          // 矢羽
+  ctx.closePath(); ctx.fillStyle = hg; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.3; ctx.stroke();
+  for(let k=-1;k<=1;k+=2){                                       // 矢羽
+    const fg = ctx.createLinearGradient(-r*1.2, 0, -r*2.0, k*r*0.6);
+    fg.addColorStop(0, sh.bright); fg.addColorStop(1, _hexA(col, 0.25));
     ctx.beginPath();
     ctx.moveTo(-r*1.2, 0); ctx.lineTo(-r*2.0, k*r*0.6); ctx.lineTo(-r*0.7, k*r*0.16);
-    ctx.closePath(); ctx.fillStyle = sh.bright; ctx.globalAlpha = 0.85; ctx.fill();
+    ctx.closePath(); ctx.fillStyle = fg; ctx.fill();
   }
-  ctx.globalAlpha = 1;
+  fxHalo(r*2.2, col, 0.3);
 }
-// 毒ガス(毒ガス/毒噴射): もやもや渦巻く紫の雲
+// 毒ガス(毒ガス/毒噴射): 湧き上がる濃い霧の塊
 function fxIconGas(pr, r){
   const col = pr.color || '#9b5fd1';
   const sh = auraShades(col);
-  if(!renderHeavyLoad){ ctx.shadowBlur = 18; ctx.shadowColor = col; }
-  for(let k=0;k<5;k++){
-    const a = matchTime*2.2 + k*(Math.PI*2/5) + (pr.id||0);
-    const rr = r*(0.55 + 0.2*Math.sin(matchTime*3.4 + k));
-    ctx.beginPath();
-    ctx.arc(Math.cos(a)*r*0.62, Math.sin(a)*r*0.62, rr, 0, Math.PI*2);
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = k%2 ? sh.dark : col;
-    ctx.fill();
+  const seed = (pr.id||0);
+  // 平らな円を並べるとシャボン玉に見えるので、縁がぼける放射グラデーションで雲にする
+  for(let k=0;k<6;k++){
+    const a = matchTime*1.6 + k*(Math.PI*2/6) + seed;
+    const dist = r*(0.5 + 0.22*Math.sin(matchTime*2.6 + k*1.7));
+    const px = Math.cos(a)*dist, py = Math.sin(a)*dist*0.85;
+    const rr = r*(0.85 + 0.28*Math.sin(matchTime*3.1 + k*2.3));
+    const g = ctx.createRadialGradient(px, py, 0, px, py, rr);
+    g.addColorStop(0, _hexA(k%2 ? col : sh.bright, 0.5));
+    g.addColorStop(0.55, _hexA(sh.dark, 0.34));
+    g.addColorStop(1, _hexA(sh.dark, 0));
+    ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI*2);
+    ctx.fillStyle = g; ctx.fill();
   }
-  ctx.shadowBlur = 0;
-  ctx.globalAlpha = 0.8;
-  ctx.beginPath(); ctx.arc(0, 0, r*0.7, 0, Math.PI*2);
-  ctx.fillStyle = sh.bright; ctx.fill();
-  ctx.globalAlpha = 1;
-  for(let k=0;k<3;k++){                              // 立ちのぼる泡
-    const t = ((matchTime*1.4 + k/3) % 1);
+  const cg = ctx.createRadialGradient(0,0,0, 0,0, r*0.95);       // 濃い芯
+  cg.addColorStop(0, _hexA(sh.bright, 0.75));
+  cg.addColorStop(0.6, _hexA(col, 0.5));
+  cg.addColorStop(1, _hexA(col, 0));
+  ctx.beginPath(); ctx.arc(0,0, r*0.95, 0, Math.PI*2);
+  ctx.fillStyle = cg; ctx.fill();
+  for(let k=0;k<3;k++){                                          // 立ちのぼる泡
+    const t = ((matchTime*1.4 + k/3 + seed*0.11) % 1);
+    const br = r*0.17*(1-t*0.5);
     ctx.beginPath();
-    ctx.arc(Math.sin(matchTime*3+k*2)*r*0.5, -r*(0.8 + t*1.4), r*0.16*(1-t*0.5), 0, Math.PI*2);
-    ctx.globalAlpha = 0.6*(1-t); ctx.fillStyle = sh.spark; ctx.fill();
+    ctx.arc(Math.sin(matchTime*3+k*2)*r*0.5, -r*(0.8 + t*1.5), br, 0, Math.PI*2);
+    ctx.fillStyle = _hexA(sh.spark, 0.55*(1-t)); ctx.fill();
   }
-  ctx.globalAlpha = 1;
 }
 // 花びら(さくらふぶき): 渦を巻く花びらの塊
 function fxIconPetals(pr, r){
   const col = pr.color || '#ff8fc4';
   const sh = auraShades(col);
-  if(!renderHeavyLoad){ ctx.shadowBlur = 14; ctx.shadowColor = col; }
-  for(let k=0;k<6;k++){
-    const a = matchTime*5.5 + k*(Math.PI*2/6) + (pr.id||0);
-    const rr = r*(0.55 + 0.35*Math.sin(matchTime*4 + k*1.3));
+  fxHalo(r*2.0, col, 0.3);
+  for(let k=0;k<7;k++){
+    const a = matchTime*5.5 + k*(Math.PI*2/7) + (pr.id||0);
+    const rr = r*(0.5 + 0.4*Math.sin(matchTime*4 + k*1.3));
+    const tilt = Math.sin(matchTime*6 + k*2.1);        // 裏返りを厚みの変化で見せる
     ctx.save();
     ctx.translate(Math.cos(a)*rr, Math.sin(a)*rr*0.75);
     ctx.rotate(a*1.4);
-    ctx.beginPath(); ctx.ellipse(0, 0, r*0.55, r*0.3, 0, 0, Math.PI*2);
-    ctx.fillStyle = k%2 ? sh.bright : col; ctx.globalAlpha = 0.92; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1; ctx.stroke();
+    const g = ctx.createLinearGradient(-r*0.55, 0, r*0.55, 0);
+    g.addColorStop(0, sh.bright);
+    g.addColorStop(0.5, col);
+    g.addColorStop(1, _mixHex(col, '#8a2f5c', 0.45));
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r*0.55, r*0.3*Math.max(0.25, Math.abs(tilt)), 0, 0, Math.PI*2);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.9; ctx.stroke();
     ctx.restore();
   }
-  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-  ctx.beginPath(); ctx.arc(0,0,r*0.34,0,Math.PI*2);
-  ctx.fillStyle = '#fff2f8'; ctx.fill();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const cg = ctx.createRadialGradient(0,0,0, 0,0, r*0.5);
+  cg.addColorStop(0, 'rgba(255,255,255,0.9)');
+  cg.addColorStop(1, _hexA(col, 0));
+  ctx.beginPath(); ctx.arc(0,0,r*0.5,0,Math.PI*2);
+  ctx.fillStyle = cg; ctx.fill();
+  ctx.restore();
 }
 // ハート(キッス): 光るハート+後ろに続く小さなハート
 function fxIconHeart(pr, r){
@@ -1129,16 +1231,23 @@ function fxIconHeart(pr, r){
     ctx.restore();
   }
   ctx.restore();
+  fxHalo(r*2.2, col, 0.4);
   const pulse = 1 + 0.12*Math.sin(matchTime*11 + (pr.id||0));
   ctx.save();
   ctx.scale(pulse, pulse);
-  if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = col; }
   heart(r*1.15);
-  const g = ctx.createRadialGradient(-r*0.3,-r*0.35, r*0.1, 0,0, r*1.3);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, sh.bright); g.addColorStop(1, col);
+  const g = ctx.createRadialGradient(-r*0.35,-r*0.45, r*0.05, 0,0, r*1.4);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.32, sh.bright);
+  g.addColorStop(0.75, col);
+  g.addColorStop(1, _mixHex(col, '#3a0010', 0.5));
   ctx.fillStyle = g; ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = sh.outline; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.strokeStyle = _hexA(sh.outline, 0.9); ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.save();                                        // 表面の照り
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.beginPath(); ctx.ellipse(-r*0.4,-r*0.42, r*0.26, r*0.15, -0.5, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fill();
+  ctx.restore();
   ctx.restore();
 }
 // 斬撃(しっぽふり): 進行方向へ振り抜く三日月の斬り跡
@@ -1146,20 +1255,25 @@ function fxIconSlash(pr, r){
   const col = pr.color || '#ffe9a8';
   const sh = auraShades(col);
   ctx.rotate(fxProjScreenAngle(pr) + Math.sin(matchTime*10 + (pr.id||0))*0.12);
-  if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = col; }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // 三日月の内側(刃筋)が明るく、外へ向かって消えていくグラデーション
+  const g = ctx.createRadialGradient(-r*0.5, 0, r*1.5, -r*0.5, 0, r*2.4);
+  g.addColorStop(0, _hexA(sh.bright, 0.85));
+  g.addColorStop(0.55, _hexA(col, 0.6));
+  g.addColorStop(1, _hexA(col, 0));
   ctx.beginPath();
   ctx.arc(-r*0.5, 0, r*1.9, -Math.PI*0.42, Math.PI*0.42, false);
   ctx.arc(-r*1.5, 0, r*2.35, Math.PI*0.32, -Math.PI*0.32, true);
   ctx.closePath();
-  ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.fill();
-  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(-r*0.5, 0, r*1.72, -Math.PI*0.36, Math.PI*0.36, false);
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = r*0.16; ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(-r*0.5, 0, r*2.05, -Math.PI*0.3, Math.PI*0.3, false);
-  ctx.strokeStyle = sh.bright; ctx.lineWidth = r*0.08; ctx.globalAlpha = 0.7; ctx.stroke();
-  ctx.globalAlpha = 1;
+  ctx.fillStyle = g; ctx.fill();
+  ctx.beginPath();                                    // 刃筋の白い芯
+  ctx.arc(-r*0.5, 0, r*1.74, -Math.PI*0.36, Math.PI*0.36, false);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = r*0.14; ctx.stroke();
+  ctx.beginPath();                                    // 外へ散る余韻
+  ctx.arc(-r*0.5, 0, r*2.08, -Math.PI*0.28, Math.PI*0.28, false);
+  ctx.strokeStyle = _hexA(sh.bright, 0.5); ctx.lineWidth = r*0.07; ctx.stroke();
+  ctx.restore();
 }
 // 既定: 光の弾(表にない絵文字が来てもリアルマップでは絵文字を出さない)
 function fxIconEnergy(pr, r){
@@ -1174,11 +1288,15 @@ function fxIconEnergy(pr, r){
   ctx.closePath(); ctx.fillStyle = tail; ctx.globalAlpha = 0.7; ctx.fill();
   ctx.restore();
   ctx.globalAlpha = 1;
-  if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = col; }
-  const g = ctx.createRadialGradient(-r*0.25,-r*0.25, r*0.08, 0,0, r*1.1);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, sh.bright); g.addColorStop(1, col);
+  fxHalo(r*2.2, col, 0.45);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(-r*0.25,-r*0.25, r*0.05, 0,0, r*1.1);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.4, sh.bright);
+  g.addColorStop(1, _hexA(col, 0.2));
   ctx.beginPath(); ctx.arc(0,0,r*1.05,0,Math.PI*2); ctx.fillStyle = g; ctx.fill();
-  ctx.shadowBlur = 0;
+  ctx.restore();
 }
 // 絵文字 → リアルマップでの見た目
 const REAL_ICON_FX = {
