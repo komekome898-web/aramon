@@ -711,23 +711,26 @@ function drawMonster(e,p){
    試合開始直後はアイテムが数十個あり、1個ずつ楕円・矩形・文字を重ねると
    端末側のラスタ化がフレーム時間の大半を占める。画面上で十数pxしかない距離では
    細部は元から見えないので、色の付いた粒だけにしても見た目は変わらない。      */
-const LOOT_SIMPLE_SCALE = 0.42;   // これより小さく映るアイテムは粒で描く
+// 通常時はかなり遠いものだけ、重いときは早めに粒へ切り替える
+const LOOT_SIMPLE_SCALE      = 0.14;   // 通常(画面上で数pxしかない距離)
+const LOOT_SIMPLE_SCALE_HEAVY = 0.42;  // 弾やエフェクトが多くて重いとき
 function lootTintOf(it){
-  if(it.kind==='heal'){ const hi = HEAL_ITEMS[it.type]; return hi ? hi.accent : '#8fe38f'; }
-  if(it.kind==='ticket') return TICKET_ITEM.accent;
-  if(it.kind==='guts')   return GUTS_ITEM.accent;
-  if(it.kind==='training'){ const ti = TRAINING_ITEMS[it.type]; return ti ? ti.accent : '#ffd23c'; }
+  if(it.kind==='heal'){ const hi = HEAL_ITEMS[it.type]; return hi ? hi.color : '#8fe38f'; }
+  if(it.kind==='ticket') return TICKET_ITEM.color;
+  if(it.kind==='guts')   return GUTS_ITEM.color;
+  if(it.kind==='training'){ const ti = TRAINING_ITEMS[it.type]; return ti ? ti.color : '#ffd23c'; }
   return '#ffffff';
 }
 function drawLootItem(it,p){
-  if(p.scale < LOOT_SIMPLE_SCALE){
+  if(p.scale < (renderHeavyLoad ? LOOT_SIMPLE_SCALE_HEAVY : LOOT_SIMPLE_SCALE)){
     const col = lootTintOf(it);
-    const r = Math.max(1.6, 9*p.scale);
+    const r = Math.max(2, 10*p.scale);
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5*p.scale;
+    const cy = p.y - 9*p.scale + bob;
     ctx.save();
-    ctx.globalAlpha = 0.95;
-    ctx.beginPath(); ctx.arc(p.x, p.y - 9*p.scale + bob, r, 0, Math.PI*2);
+    ctx.beginPath(); ctx.arc(p.x, cy, r, 0, Math.PI*2);
     ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.restore();
     return;
   }
@@ -1777,10 +1780,38 @@ const REAL_STYLE_FX = {
   seaSpear: fxStyleSeaSpear,
   requiem:  fxStyleRequiem,
 };
+/* 弾の簡易描画
+   新しい弾エフェクトは1発ごとにグラデーションを何枚も作り、加算合成で重ねている。
+   近くで見ると効果的だが、画面上で小さい弾では細部が見えないうえ、
+   同時に数十発飛ぶと端末側のラスタ化と合成でフレーム時間を大きく食う。
+   ・小さく映る弾は「光る球」1枚に落とす(見た目はほぼ変わらない)
+   ・tier3の専用弾は同時に数発しか出ないので、しきい値を上げずに見た目を守る    */
+const PROJ_SIMPLE_PX       = 12;   // 画面上の半径(実ピクセル)がこれ未満なら簡易
+const PROJ_SIMPLE_PX_HEAVY = 48;   // 弾が多いときのしきい値
+const PROJ_DETAIL_BUDGET   = 14;   // 同時にこの数までは全部きちんと描く
+function drawSimpleProjectile(pr, r){
+  const col = pr.orbColor || pr.color || '#ffffff';
+  const g = ctx.createRadialGradient(0,0, 0, 0,0, r*1.35);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.4, col);
+  g.addColorStop(1, _hexA(col, 0));
+  ctx.beginPath(); ctx.arc(0,0, r*1.35, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+}
 function drawProjectile(pr,p){
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
+
+  const _pxR = (pr.hitR||10) * p.scale * (typeof dpr!=='undefined' ? dpr : 1);
+  // tier3の専用弾は同時に数発しか出ないので常に細かく描く
+  const _pressed = gfxLevel >= 1 || projectiles.length > PROJ_DETAIL_BUDGET;
+  const _lim = pr.projStyle ? PROJ_SIMPLE_PX : (_pressed ? PROJ_SIMPLE_PX_HEAVY : PROJ_SIMPLE_PX);
+  if(_pxR < _lim){
+    drawSimpleProjectile(pr, Math.max(4, pr.hitR||10));
+    ctx.restore();
+    return;
+  }
 
   // 絵文字の弾をその技に合った実体のあるエフェクトに差し替える。
   // 専用の見た目を持つ技(projStyle/shape)は対象外なので、条件は2Dの絵文字分岐と同じ。
@@ -4192,7 +4223,21 @@ function perfFrameEnd(){
   el.classList.toggle('warn', fps < 50 && fps >= 35);
   el.classList.toggle('bad', fps < 35);
 }
+/* パーティクル(火花・ダメージ数字)の上限。
+   激しい撃ち合いでは100個を超え、1個ずつ塗りや文字描画が入るので効いてくる。
+   情報のあるダメージ数字(text)は残し、火花から先に間引く。                   */
+const PARTICLE_MAX = 90;
+function trimParticles(){
+  if(particles.length <= PARTICLE_MAX) return;
+  let over = particles.length - PARTICLE_MAX;
+  for(let i=0; i<particles.length && over>0; ){
+    if(particles[i].type !== 'text'){ particles.splice(i,1); over--; }
+    else i++;
+  }
+  if(particles.length > PARTICLE_MAX) particles.splice(0, particles.length - PARTICLE_MAX);
+}
 function render(){
+  trimParticles();
   ctx.clearRect(0,0,viewW,viewH);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = gfxLevel >= 1 || (projectiles.length + particles.length) > 22;
