@@ -1,0 +1,5 @@
+# モンスター追加ツールの素材と出力(サイズが大きいのでgitには入れない)
+assets/
+tools/out/
+__pycache__/
+*.pyc

@@ -356,6 +356,18 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **動的解像度と品質レベルは`updateRenderScale()`1か所。** フレーム時間を見て、まず`gfxLevel`を1に上げて影を切り、それでも足りなければ`setRenderScale()`で描画倍率を下げる(戻すときは逆順)。**上限`DPR_MAX`は変えない**ので余裕のある端末の見た目は今までと同じ。2DとWebGLは`window.__aramonRenderScale`で同じ倍率を使う。
 - **毎フレーム数万回呼ぶ関数の中で関数を作らない**(`macroPatch`が呼び出しごとにクロージャを1個作っており、1回の再計算で2万個生成していた)。
 
+## モンスター追加ツール(tools/)
+
+**新しいモンスターは手作業で表に書かず、ツールで追加する。** 詳細は`tools/README.md`。
+
+- **GUI**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。書き出し→静止画→登録→検証までボタンで通る。
+- **CLI**: `python3 tools/monster_add.py <key>`(`--dry-run` / `--revert` / `--only sprites|portraits|code|check`)。仕様は`monsters/specs/<key>.json`。
+- **検証**: `python3 tools/check_monsters.py`。`ELEMENTS`の全モンスターについて9表と画像の有無を機械的に見る。**上のチェックリストはこれで強制される**ので、追加作業の最後に必ず通す。
+- **表への挿入位置は各表末尾の`// <<AUTO:表名>>`の行。この行を消さない。** 追記した行には`/*@key*/`の目印が入り、`--revert`はこれを見て消す。
+- 技はテンプレートを選ぶだけでコードを書かずに済む。tier1/2は絵文字(`REAL_ICON_FX`から自動列挙)、tier3は`fan`/`wave`/`crystal`/`beam`/`river`/`beams3`/`thunder`/`psychic`/`orb`/`tornado`/`sword`/`shell`/`crescent`/`spear`から選ぶ。
+- **背景除去は`tools/build_walk.py`をそのまま呼んでいる**(モンスターごとに積み上げたモードの資産を捨てない)。`build_walk.py`は`import`しても`JOBS`が走らないようにしてあり、`build_frames()`が8コマを返し`process()`が保存する。
+- 素材は`assets/<key>/`(gitに入れない)。ツールは`sw.js`を触らないので**コミット前に`CACHE_NAME`を上げる**。
+
 ## 作業の進め方
 
 - 数値バランスは発注者が実機で反復調整するので、名前付き定数にまとめる。

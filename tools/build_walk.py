@@ -43,8 +43,11 @@ TARGET_H = 250
 CANVAS = 320
 FEET_Y = 0.94  # feet baseline at 94% of canvas height
 
-def extract_all(mov, outd):
+def extract_all(mov, outd, cache=False):
     os.makedirs(outd, exist_ok=True)
+    if cache:
+        have = sorted(glob.glob(f'{outd}/a*.png'))
+        if len(have) >= 8: return have          # 展開済みならそのまま使う(GUIのプレビュー用)
     for f in glob.glob(f'{outd}/*.png'): os.remove(f)
     subprocess.run([FF,'-i',mov,'-vf','fps=60',f'{outd}/a%03d.png','-y'],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -285,12 +288,14 @@ def grabcut_alpha(bgr, knockout='single'):
     alpha = cv2.GaussianBlur(alpha, (3,3), 0)
     return alpha
 
-def process(mov, prefix, front, mode='grass', knockout='single'):
+def build_frames(mov, prefix, front, mode='grass', knockout='single', cache=False):
+    """8コマぶんのRGBA画像(PIL)とメタ情報を返す。保存はしない。
+       process() と tools/monster_studio.py のプレビューが共用する。"""
     tag = prefix
     outd = f'{W}/_raw_{tag}'
-    files = extract_all(mov, outd)
+    files = extract_all(mov, outd, cache=cache)
     if len(files) < 8:
-        print('  too few frames', len(files)); return
+        print('  too few frames', len(files)); return None, {}
     period = detect_period(files)
     # choose 8 frames evenly across one period starting a bit in
     start = max(0, int(len(files)*0.02))
@@ -325,7 +330,7 @@ def process(mov, prefix, front, mode='grass', knockout='single'):
     heights = [ (b[3]-b[2]) for b in bboxes if b ]
     medh = float(np.median(heights))
     scale = TARGET_H / medh
-    os.makedirs(f'{W}/_out_{tag}', exist_ok=True)
+    out_imgs = []
     for k in range(8):
         b = bboxes[k]
         rgb = rgbs[k]; a = alphas[k]
@@ -344,10 +349,15 @@ def process(mov, prefix, front, mode='grass', knockout='single'):
             cy = feet - nh
             canvas.alpha_composite(crop, (cx, max(0,cy)))
         # quantize to 256 colors preserving alpha
-        q = canvas.convert('RGBA').quantize(colors=256, method=Image.FASTOCTREE)
-        out = f'{OUTDIR}/{prefix}{k+1}.png'
-        q.save(out)
-    print(f'  {prefix}: period={period} idxs={idxs} medh={medh:.0f} scale={scale:.2f} -> 8 frames')
+        out_imgs.append(canvas.convert('RGBA').quantize(colors=256, method=Image.FASTOCTREE))
+    return out_imgs, dict(period=period, idxs=idxs, medh=medh, scale=scale)
+
+def process(mov, prefix, front, mode='grass', knockout='single'):
+    imgs, meta = build_frames(mov, prefix, front, mode, knockout)
+    if not imgs: return
+    for k, q in enumerate(imgs):
+        q.save(f'{OUTDIR}/{prefix}{k+1}.png')
+    print(f"  {prefix}: period={meta['period']} idxs={meta['idxs']} medh={meta['medh']:.0f} scale={meta['scale']:.2f} -> 8 frames")
 
 JOBS = [
     ('v1','suezo_walk_f', True,  'grass', 'gentle'),
@@ -437,10 +447,12 @@ MOV = {
  'c1':f'{U5}/b9d5a08f-_________072528_Full_HD_1080p.mp4',
  'c2':f'{U5}/b1443462-_________072529_Full_HD_1080p.mp4',
 }
-import sys
-only = set(sys.argv[1:])
-for vk, prefix, front, mode, knockout in JOBS:
-    if only and vk not in only and prefix not in only: continue
-    print('==', prefix, f'({mode}/{knockout})')
-    process(MOV[vk], prefix, front, mode, knockout)
-print('DONE')
+# 直接実行したときだけ JOBS を回す。import したときは関数だけ使える
+# (tools/monster_add.py と tools/monster_studio.py がこのファイルを再利用する)
+if __name__ == '__main__':
+    only = set(sys.argv[1:])
+    for vk, prefix, front, mode, knockout in JOBS:
+        if only and vk not in only and prefix not in only: continue
+        print('==', prefix, f'({mode}/{knockout})')
+        process(MOV[vk], prefix, front, mode, knockout)
+    print('DONE')

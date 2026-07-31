@@ -1,0 +1,42 @@
+{
+  "_readme": "新モンスターの仕様。このファイルをコピーして <key>.json にし、値を埋めてください。_ で始まるキーは無視されます。",
+  "key": "_example",
+  "label": "サンプル",
+  "color": "#7fb236",
+  "dark": "#4f6f1f",
+  "accent": "#d8ff9a",
+  "speed": 190,
+  "hp": 120,
+  "trait": "burn",
+  "traitDesc": "攻撃命中で相手をやけど状態に(10秒間 被ダメ1.5倍)",
+  "aura": "green",
+
+  "_aptitude": "6ステータスの育成適性。S/A/B/C/D/E",
+  "aptitude": { "life": "B", "power": "B", "wisdom": "C", "accuracy": "C", "evasion": "C", "vitality": "C" },
+
+  "_stateChange": "HPが減ると発動する固有の状態変化(省略可)",
+  "stateChange": {
+    "name": "奮起", "duration": 20, "cooldown": 90, "trigger": "hpBelow", "triggerValue": 0.4,
+    "effects": { "dmgMult": 1.2, "speedMult": 1.2 }
+  },
+
+  "_skin": "色スキン。source.hue を null にすると静止画から自動サンプリングする",
+  "skin": {
+    "colors": ["black", "white", "red", "blue", "yellow"],
+    "source": { "type": "chroma", "hue": null, "window": 60 },
+    "note": "主役の色の部分"
+  },
+
+  "_moves": "tier1/2 は icon(絵文字)を選ぶだけで既存のリアル弾エフェクトが乗る。tier3 は template を選ぶ。",
+  "_icons": "🔥 火 / 💧 水 / 🍃 種 / ⚡️ 雷 / 👊 拳 / 🤚 掌 / 🗡️ 刃 / 🏹 矢 / ☠️ 毒 / 🌸 花 / 💋 ハート / 🌱 斬撃",
+  "_templates": "fan 炎の扇 / wave 炎の壁 / crystal 結晶 / beam 光の筒 / river 星の川 / beams3 光の筒3本 / thunder 落雷 / psychic 念力の壁 / orb 爆風ドーム / tornado 竜巻 / sword 聖剣 / shell 殻 / crescent 三日月 / spear 三叉槍",
+  "moves": [
+    { "name": "サンプル1", "icon": "🍃" },
+    { "name": "サンプル2", "icon": "🍃" },
+    { "name": "サンプル3", "template": "beams3" }
+  ],
+
+  "_assets": "素材のパス。リポジトリからの相対 or 絶対パス",
+  "walk": { "front": "assets/_example/front.mp4", "back": "assets/_example/back.mp4", "mode": "blackopen", "knockout": "single" },
+  "images": { "icon": "assets/_example/icon.png", "player": "assets/_example/player.png" }
+}

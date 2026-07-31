@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>モンスター作成スタジオ — 荒野モン動</title>
+<style>
+  :root{ --bg:#12161f; --panel:#1b2130; --line:#2c3547; --ink:#e6ecf7; --dim:#93a2bd;
+         --amber:#f4c430; --ok:#7fe38f; --ng:#ff8a7a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink);
+        font-family:system-ui,-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif; font-size:14px; }
+  header{ padding:10px 16px; background:#0e121a; border-bottom:1px solid var(--line);
+          display:flex; gap:12px; align-items:center; position:sticky; top:0; z-index:5; }
+  header h1{ font-size:16px; margin:0; letter-spacing:1px; }
+  .wrap{ display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:14px; align-items:start; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .panel h2{ font-size:13px; margin:0 0 10px; color:var(--amber); letter-spacing:1px; }
+  label{ display:block; font-size:11px; color:var(--dim); margin:8px 0 2px; }
+  input,select,textarea{ width:100%; background:#0e131c; color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:6px 8px; font:inherit; }
+  textarea{ min-height:60px; resize:vertical; }
+  .row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .row2{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  .row6{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
+  button{ background:#243049; color:var(--ink); border:1px solid var(--line); border-radius:7px;
+    padding:8px 12px; font:inherit; cursor:pointer; }
+  button:hover{ border-color:var(--amber); }
+  button.primary{ background:linear-gradient(90deg,#3a2f10,#5a4614); border-color:var(--amber); }
+  button.danger{ border-color:#7a3630; }
+  .btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .strip{ display:grid; grid-template-columns:repeat(8,1fr); gap:4px; margin-top:8px; }
+  .cell{ position:relative; border:1px solid var(--line); border-radius:4px; overflow:hidden;
+    background-color:#4e545f;
+    background-image:linear-gradient(45deg,#3f444d 25%,transparent 25%,transparent 75%,#3f444d 75%),
+                     linear-gradient(45deg,#3f444d 25%,transparent 25%,transparent 75%,#3f444d 75%);
+    background-size:16px 16px; background-position:0 0,8px 8px; }
+  .cell img{ width:100%; display:block; }
+  .cell.bad{ border-color:var(--ng); border-width:2px; }
+  .cell .n{ position:absolute; left:3px; top:2px; font-size:10px; text-shadow:0 1px 2px #000; }
+  .cell .why{ position:absolute; left:0; right:0; bottom:0; font-size:9px; background:rgba(160,30,20,0.85);
+    padding:1px 2px; line-height:1.2; }
+  pre{ background:#0b0f16; border:1px solid var(--line); border-radius:6px; padding:8px;
+    max-height:260px; overflow:auto; font-size:11px; white-space:pre-wrap; margin:8px 0 0; }
+  .hint{ font-size:11px; color:var(--dim); margin-top:4px; line-height:1.5; }
+  .ok{ color:var(--ok); } .ng{ color:var(--ng); }
+  .movebox{ border:1px solid var(--line); border-radius:8px; padding:8px; margin-top:8px; }
+</style></head>
+<body>
+<header>
+  <h1>モンスター作成スタジオ</h1>
+  <select id="specSel" style="width:180px"></select>
+  <button onclick="loadSpec()">読み込む</button>
+  <button onclick="newSpec()">新規</button>
+  <button class="primary" onclick="saveSpec()">仕様を保存</button>
+  <span id="status" class="hint"></span>
+</header>
+
+<div class="wrap">
+  <!-- ------------------------------------------------ 左: 仕様 -->
+  <div>
+    <div class="panel">
+      <h2>基本</h2>
+      <div class="row">
+        <div><label>key(英小文字)</label><input id="f_key"></div>
+        <div><label>表示名</label><input id="f_label"></div>
+        <div><label>オーラ</label><select id="f_aura"></select></div>
+      </div>
+      <div class="row">
+        <div><label>色</label><input id="f_color" placeholder="#7fb236"></div>
+        <div><label>暗い色</label><input id="f_dark" placeholder="#4f6f1f"></div>
+        <div><label>差し色(任意)</label><input id="f_accent"></div>
+      </div>
+      <div class="row">
+        <div><label>移動速度</label><input id="f_speed" type="number" value="190"></div>
+        <div><label>HP</label><input id="f_hp" type="number" value="120"></div>
+        <div><label>特性id</label><input id="f_trait" placeholder="burn"></div>
+      </div>
+      <label>特性の説明(TRAIT_DESC)</label><textarea id="f_traitDesc"></textarea>
+      <div class="hint">特性idが既存モンスターと同じなら、説明は追記されず既存のものが使われます。</div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h2>育成適性(S〜E)</h2>
+      <div class="row6" id="aptRow"></div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h2>技</h2>
+      <div class="movebox">
+        <div class="row2">
+          <div><label>tier1 技名</label><input id="m0_name"></div>
+          <div><label>弾の絵文字</label><select id="m0_icon"></select></div>
+        </div>
+      </div>
+      <div class="movebox">
+        <div class="row2">
+          <div><label>tier2 技名(連射)</label><input id="m1_name"></div>
+          <div><label>弾の絵文字</label><select id="m1_icon"></select></div>
+        </div>
+      </div>
+      <div class="movebox">
+        <div class="row2">
+          <div><label>tier3 技名</label><input id="m2_name"></div>
+          <div><label>形(テンプレート)</label><select id="m2_tpl"></select></div>
+        </div>
+        <div class="hint" id="tplHint"></div>
+      </div>
+      <div class="hint">絵文字は既存のリアル弾エフェクトに対応しています。表に無い絵文字を選ぶと光の弾になります。</div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h2>色スキン</h2>
+      <div class="row2">
+        <div><label>主役の色の取り方</label>
+          <select id="f_srcType"><option value="chroma">chroma(色で拾う)</option><option value="light">light(白っぽい部分)</option></select></div>
+        <div><label>色相 hue(空欄なら静止画から自動)</label><input id="f_hue" placeholder="自動"></div>
+      </div>
+      <label>選べる5色(カンマ区切り)</label><input id="f_colors" value="black,white,red,blue,yellow">
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------ 右: 素材と実行 -->
+  <div>
+    <div class="panel">
+      <h2>歩行モーション</h2>
+      <div class="row2">
+        <div><label>正面の動画</label><input id="f_front" placeholder="assets/xxx/front.mp4"></div>
+        <div><label>後ろの動画</label><input id="f_back" placeholder="assets/xxx/back.mp4"></div>
+      </div>
+      <div class="row2">
+        <div><label>背景の抜き方</label><select id="f_mode"></select></div>
+        <div><label>細かさ(grassのとき)</label><select id="f_knock"></select></div>
+      </div>
+      <div class="hint">
+        blackopen=黒背景・本体に黒い部位が無い / black=黒背景・本体に黒がある /
+        white=白背景 / grass=淡い草・金背景
+      </div>
+      <div class="btns">
+        <button onclick="preview(true)">正面をプレビュー</button>
+        <button onclick="preview(false)">後ろをプレビュー</button>
+        <button class="primary" onclick="buildWalk()">この設定で書き出す</button>
+      </div>
+      <div class="strip" id="strip"></div>
+      <div class="hint" id="previewMeta"></div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h2>静止画</h2>
+      <div class="row2">
+        <div><label>アイコン用の画像</label><input id="f_img_icon" placeholder="assets/xxx/icon.png"></div>
+        <div><label>試合用(省略ならアイコンと同じ)</label><input id="f_img_player"></div>
+      </div>
+      <div class="hint">正方形・被写体が高さの9割・足元が下端付近、に自動で整えます。</div>
+      <div class="btns"><button onclick="doPortraits()">静止画を整える(+色相を自動取得)</button></div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h2>登録と検証</h2>
+      <div class="btns">
+        <button onclick="register(true)">差分を見る(書き込まない)</button>
+        <button class="primary" onclick="register(false)">data.js / ui.js へ登録</button>
+        <button class="danger" onclick="revert()">登録を取り消す</button>
+        <button onclick="check()">検証</button>
+        <button onclick="contact()">コンタクトシート</button>
+      </div>
+      <pre id="log">ここに結果が出ます。</pre>
+      <img id="sheet" style="width:100%; margin-top:8px; display:none; border:1px solid var(--line); border-radius:6px">
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let META = { templates:[], icons:[], auras:[], ranks:[], stats:[], modes:[], knockouts:[] };
+const TPL_HINT = {
+  fan:'炎の扇(インフェルノ型)', wave:'炎の壁が前進(ファイアウェーブ型)',
+  crystal:'結晶が降って地面から突き出る', beam:'光の筒(モッチ砲型)',
+  river:'宙を走る星の川(天河天翔型)', beams3:'光の筒3本(フラワービーム型)',
+  thunder:'空から落雷(超雷撃型)', psychic:'弧を描く念力の壁(サイコキネシス型)',
+  orb:'黒い球+着弾でドーム爆風(ビッグバン型)', tornado:'地面に立つ竜巻',
+  sword:'黄金の聖剣(天の慈悲型)', shell:'回る殻+毒の電撃(シェルアタック型)',
+  crescent:'黒い三日月を5連射(ダークホウスト型)', spear:'三叉の槍3本+爆風(アムピトリテ型)',
+};
+function log(t, cls){ const el=$('log'); el.textContent = t; el.className = cls||''; }
+function status(t){ $('status').textContent = t; }
+async function api(path, body){
+  const r = await fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {});
+  return r.json();
+}
+function opts(sel, list, cur){
+  sel.innerHTML = list.map(v=>`<option${v===cur?' selected':''}>${v}</option>`).join('');
+}
+
+async function boot(){
+  META = await api('/api/meta');
+  opts($('f_aura'), META.auras);
+  opts($('f_mode'), META.modes);
+  opts($('f_knock'), META.knockouts);
+  const icons = META.icons.length ? META.icons : ['🔥','💧','🍃','⚡','👊','🤚','🗡','🏹','☠','🌸','💋','🌱'];
+  opts($('m0_icon'), icons); opts($('m1_icon'), icons);
+  opts($('m2_tpl'), META.templates);
+  $('m2_tpl').onchange = ()=> $('tplHint').textContent = TPL_HINT[$('m2_tpl').value]||'';
+  $('m2_tpl').onchange();
+  $('aptRow').innerHTML = META.stats.map(s=>
+    `<div><label>${s}</label><select id="apt_${s}">${META.ranks.map(r=>`<option${r==='C'?' selected':''}>${r}</option>`).join('')}</select></div>`).join('');
+  const r = await api('/api/specs');
+  $('specSel').innerHTML = (r.keys||[]).map(k=>`<option>${k}</option>`).join('');
+}
+function newSpec(){
+  ['f_key','f_label','f_accent','f_trait','f_traitDesc','f_front','f_back','f_img_icon','f_img_player','f_hue','m0_name','m1_name','m2_name'].forEach(i=>$(i).value='');
+  $('f_color').value='#7fb236'; $('f_dark').value='#4f6f1f';
+  $('f_speed').value=190; $('f_hp').value=120; $('f_colors').value='black,white,red,blue,yellow';
+  status('新規');
+}
+function fill(s){
+  $('f_key').value=s.key||''; $('f_label').value=s.label||'';
+  $('f_color').value=s.color||''; $('f_dark').value=s.dark||''; $('f_accent').value=s.accent||'';
+  $('f_speed').value=s.speed??190; $('f_hp').value=s.hp??120;
+  $('f_trait').value=s.trait||''; $('f_traitDesc').value=s.traitDesc||'';
+  $('f_aura').value=s.aura||'red';
+  (META.stats||[]).forEach(k=>{ const e=$('apt_'+k); if(e && s.aptitude) e.value=s.aptitude[k]||'C'; });
+  const m=s.moves||[];
+  $('m0_name').value=(m[0]||{}).name||''; if((m[0]||{}).icon) $('m0_icon').value=m[0].icon;
+  $('m1_name').value=(m[1]||{}).name||''; if((m[1]||{}).icon) $('m1_icon').value=m[1].icon;
+  $('m2_name').value=(m[2]||{}).name||''; if((m[2]||{}).template) $('m2_tpl').value=m[2].template;
+  $('m2_tpl').onchange();
+  const sk=s.skin||{}, src=sk.source||{};
+  $('f_srcType').value=src.type||'chroma';
+  $('f_hue').value=(src.hue==null?'':src.hue);
+  if(sk.colors) $('f_colors').value=sk.colors.join(',');
+  const w=s.walk||{}; $('f_front').value=w.front||''; $('f_back').value=w.back||'';
+  if(w.mode) $('f_mode').value=w.mode; if(w.knockout) $('f_knock').value=w.knockout;
+  const im=s.images||{}; $('f_img_icon').value=im.icon||''; $('f_img_player').value=im.player||'';
+}
+function collect(){
+  const apt={}; (META.stats||[]).forEach(k=>apt[k]=($('apt_'+k)||{}).value||'C');
+  const hue=$('f_hue').value.trim();
+  return {
+    key:$('f_key').value.trim(), label:$('f_label').value.trim(),
+    color:$('f_color').value.trim(), dark:$('f_dark').value.trim(),
+    accent:$('f_accent').value.trim()||undefined,
+    speed:+$('f_speed').value, hp:+$('f_hp').value,
+    trait:$('f_trait').value.trim(), traitDesc:$('f_traitDesc').value.trim(),
+    aura:$('f_aura').value, aptitude:apt,
+    skin:{ colors:$('f_colors').value.split(',').map(s=>s.trim()).filter(Boolean),
+           source: $('f_srcType').value==='light' ? {type:'light'}
+                 : {type:'chroma', hue: hue===''?null:+hue, window:60} },
+    moves:[ {name:$('m0_name').value.trim(), icon:$('m0_icon').value},
+            {name:$('m1_name').value.trim(), icon:$('m1_icon').value},
+            {name:$('m2_name').value.trim(), template:$('m2_tpl').value} ],
+    walk:{ front:$('f_front').value.trim(), back:$('f_back').value.trim(),
+           mode:$('f_mode').value, knockout:$('f_knock').value },
+    images:{ icon:$('f_img_icon').value.trim(), player:$('f_img_player').value.trim()||undefined },
+  };
+}
+async function loadSpec(){
+  const k=$('specSel').value; if(!k) return;
+  const r=await api('/api/spec?key='+encodeURIComponent(k));
+  if(r.error) return log(r.error,'ng');
+  fill(r.spec); status('読み込み: '+k);
+}
+async function saveSpec(){
+  const r=await api('/api/save',{spec:collect()});
+  if(r.error) return log(r.error,'ng');
+  status('保存: '+r.path);
+  const s=await api('/api/specs');
+  $('specSel').innerHTML=(s.keys||[]).map(k=>`<option${k===$('f_key').value?' selected':''}>${k}</option>`).join('');
+}
+async function preview(front){
+  const s=collect();
+  status('プレビュー中…(初回はフレーム展開に時間がかかります)');
+  const r=await api('/api/preview',{video: front?s.walk.front:s.walk.back, front, key:s.key,
+                                    mode:s.walk.mode, knockout:s.walk.knockout});
+  status('');
+  if(r.error) return log(r.error,'ng');
+  $('strip').innerHTML = r.frames.map((f,i)=>{
+    const why=(r.issues||[])[i]||'';
+    return `<div class="cell${why?' bad':''}"><img src="${f}"><span class="n">${i+1}</span>${why?`<span class="why">${why}</span>`:''}</div>`;
+  }).join('');
+  $('previewMeta').textContent = `周期=${r.meta.period} 使用コマ=${(r.meta.idxs||[]).join(',')}  ` +
+    ((r.issues||[]).some(Boolean) ? '赤枠のコマを確認してください(モードを変えて再プレビュー)' : '問題は見つかりませんでした');
+}
+async function buildWalk(){
+  await saveSpec();
+  status('書き出し中…');
+  const r=await api('/api/buildwalk',{key:$('f_key').value.trim(), mode:$('f_mode').value, knockout:$('f_knock').value});
+  status('');
+  log(r.error||'歩行8コマ×2を monsters/ に書き出しました', r.error?'ng':'ok');
+}
+async function doPortraits(){
+  await saveSpec();
+  const r=await api('/api/portraits',{key:$('f_key').value.trim()});
+  if(r.error) return log(r.error,'ng');
+  if(r.hue!=null && $('f_srcType').value==='chroma' && $('f_hue').value===''){ $('f_hue').value=r.hue; }
+  log('整えました: '+(r.files||[]).join(', ')+(r.hue!=null?`  / 色相=${r.hue}`:'  / 白っぽいので light 推奨'),'ok');
+}
+async function register(dryRun){
+  await saveSpec();
+  const r=await api('/api/register',{key:$('f_key').value.trim(), dryRun});
+  if(r.error) return log(r.error,'ng');
+  log((dryRun?'[差分のみ / 書き込みなし]\n':'[登録しました]\n')+r.diff, 'ok');
+}
+async function revert(){
+  const r=await api('/api/revert',{key:$('f_key').value.trim()});
+  log(r.error||('取り消しました: '+JSON.stringify(r.removed)), r.error?'ng':'ok');
+}
+async function check(){
+  const r=await api('/api/check',{});
+  log(r.text, r.ok?'ok':'ng');
+}
+async function contact(){
+  const r=await api('/api/contact?key='+encodeURIComponent($('f_key').value.trim()));
+  if(r.error) return log(r.error,'ng');
+  $('sheet').src=r.image; $('sheet').style.display='block';
+}
+boot();
+</script>
+</body></html>

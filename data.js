@@ -140,6 +140,7 @@ const ELEMENTS = {
   god:     { label:'ガリ',       color:'#f5f0ff', dark:'#c3b3e0', accent:'#ffd23c', speed:196, hp:110, trait:'godrange' },
   zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:215, hp:95, trait:'poison' },
   pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble' },
+  // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
 const monsterImages = {};
@@ -288,6 +289,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
     ssr:  { skinId:'choco_ssr', front:_loadWalk('choco_ssr_walk_f'), back:_loadWalk('choco_ssr_walk_b') }, // SSRちょこ
   },
+  // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 const WALK_FRAME_DUR = 0.11; // 1コマの表示秒数(8コマ≒0.9秒/周)
 const WALK_MOVE_EPS  = 30;   // これ以上の速度(ワールド単位/秒)で「歩行中」と判定
@@ -475,6 +477,7 @@ const SIGNATURE_MOVES = {
       range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮',
       blast:{ radius:330, dmg:60, color:'#14121c', expandTime:0.5 } },
   ],
+  // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
 /* =====================================================================
@@ -498,6 +501,7 @@ const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
   spark:'blue', rock:'black', ark:'green', warm:'yellow', illumine:'black',
   fox:'white', god:'white', zan:'black', pixie:'red',
+  // <<AUTO:MONSTER_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
 const MOVE_AURA = {
@@ -516,6 +520,7 @@ const MOVE_AURA = {
   'ストレート':'white','ホーリーサンダー':'yellow','ゴッドライジング':'white',
   'ソニックナイフ':'black','フォルターブリッツ':'yellow','ダークホウスト':'black',
   'キッス':'red','ライトニング':'yellow','ビッグバン':'black',
+  // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
 Object.keys(SIGNATURE_MOVES).forEach(el=>{ SIGNATURE_MOVES[el].forEach(mv=>{ if(MOVE_AURA[mv.name]) mv.aura = MOVE_AURA[mv.name]; }); });
@@ -922,6 +927,7 @@ const STATE_CHANGES = {
     name:'暴走', duration:20, cooldown:90, trigger:'hpBelow', triggerValue:0.4,
     effects:{ speedMult:1.5, cooldownMult:1/1.5, dmgMult:1.15 },
   },
+  // <<AUTO:STATE_CHANGES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
 const BOT_NAMES = ['ガロン','ヒスイ','ボムリン','ナギ','ソルト','ピコ','ザンギ','ウル','ミドリ','カイト','ルゥ','テスラ','ドンガラ','フブキ','イグニ','クラゲン','モグ','ライ','バサル','ジン','ヌマル','コゲ'];
@@ -960,6 +966,7 @@ const APTITUDE = {
   zan:     { life:'C', power:'B', wisdom:'D', accuracy:'C', evasion:'A', vitality:'D' },
   // ピクシー: 高速・低耐久のグラスキャノン想定でevasion(速さ)を最高、life/vitality(HP・耐久)を最低に
   pixie:   { life:'E', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'E' },
+  // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
 const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
@@ -1637,6 +1644,7 @@ const SKIN_CONFIG = {
   god:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白いローブ部分
   zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:238, window:95} },   // メインのグレー(青みがかった)ボディ部分
   pixie:   { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:349, window:50} },   // 赤い部分
+  // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)
 function monsterSkinColors(elementKey){
