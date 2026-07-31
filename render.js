@@ -3187,7 +3187,7 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
      求めるので、坂の下へ撃っても真上から見ても正しく傾く。
    ・輪郭の膨らみは「その向きへの楕円の張り出し」= hypot(n・uH, n・uV) で厳密に出る。
    ・加算合成なので重なるほど明るくなり、光の筒に見える                         */
-function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
+function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   const segs = 16;
   // 縦半径は横の半分。これより薄くすると、正面から撃った時に地面へ貼り付いた
   // 板にしか見えなくなる(実際に起きた)。細いビームでも背丈の半分は確保する
@@ -3195,28 +3195,43 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   // 芯の高さ。筒の下端が必ず地面から浮くようにして、地面の模様と一体化させない
   const dz    = halfH + FX3D_MON_H*0.35;
   const px = -Math.sin(angle), py = Math.cos(angle);   // 進行方向に垂直(ワールド水平)
+  const fx = Math.cos(angle), fy = Math.sin(angle);
+  /* 芯はワールド座標で「まっすぐな線分」にする。
+     地形の高さを1点ずつ拾って芯を通すと、丘のでこぼこで芯がジグザグになり、
+     断面の向きが区間ごとに反転して筒がねじれて見える(2026-07-31に発生)。
+     始点と終点の地面の高さだけを見て、その間は直線で結ぶ = 全体の傾斜には乗る。 */
+  // 傾きの基準は「最大射程の先」で取る。伸びている途中の先端で取ると、
+  // 先端が凸凹を通るたびに筒全体が揺れてしまう
+  const refLen = fullReach || reach;
+  const gz0 = groundZAt(ox, oy) + dz;
+  const gzEnd = groundZAt(ox+fx*refLen, oy+fy*refLen) + dz;
+  const slope = refLen > 1 ? (gzEnd - gz0)/refLen : 0;
   const pts = [], uH = [], uV = [];
   for(let i=0;i<=segs;i++){
-    const along = reach*(i/segs);
-    const x = ox+Math.cos(angle)*along, y = oy+Math.sin(angle)*along;
-    const c = fx3dPoint(x, y, dz);
+    const f = i/segs, along = reach*f;
+    const z = gz0 + slope*along;
+    const x = ox+fx*along, y = oy+fy*along;
+    const c = project(x, y, z);
     if(!c) continue;
-    const h = fx3dPoint(x + px*radius, y + py*radius, dz);
-    const v = fx3dPoint(x, y, dz + halfH);
+    const h = project(x + px*radius, y + py*radius, z);
+    const v = project(x, y, z + halfH);
     if(!h || !v) continue;
     pts.push(c);
     uH.push({ x:h.x-c.x, y:h.y-c.y });
     uV.push({ x:v.x-c.x, y:v.y-c.y });
   }
   if(pts.length<2) return;
-  // 各点での「画面上の垂直方向」(前後の区間の向きを平均する)と、その向きへの張り出し
+  /* 画面上の垂直方向は「芯の全体の向き」から1つだけ作る。
+     芯がワールドで直線なら画面上でも直線になるので、区間ごとに取り直す必要はない。
+     区間ごとに取ると、遠くで点が詰まったときに向きが暴れて輪郭が交差する。      */
+  const a0 = pts[0], a1 = pts[pts.length-1];
+  let dx = a1.x-a0.x, dy = a1.y-a0.y;
+  const len = Math.hypot(dx,dy);
+  if(len < 0.5){ dx = 0; dy = 1; }   // ほぼ真正面。断面だけを見せる
+  else { dx/=len; dy/=len; }
+  const nx = -dy, ny = dx;
   const nrm = [];
   for(let i=0;i<pts.length;i++){
-    const a = pts[Math.max(0,i-1)], b = pts[Math.min(pts.length-1,i+1)];
-    let dx = b.x-a.x, dy = b.y-a.y;
-    const len = Math.hypot(dx,dy);
-    if(len < 0.001){ dx=1; dy=0; } else { dx/=len; dy/=len; }
-    const nx = -dy, ny = dx;
     const r = Math.hypot(nx*uH[i].x + ny*uH[i].y, nx*uV[i].x + ny*uV[i].y);
     nrm.push({ x:nx, y:ny, r:Math.max(0.5, r) });
   }
@@ -3421,7 +3436,7 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
 // 帯(モッチ砲・ラガモッチ砲・熱視線・天河天翔): ビームは色以外すべて共通の見た目
 function fx3dRectBeam(ae, curReach, fade){
   const col = ae.auraTint || ae.color;
-  fx3dBeamTube(ae.x, ae.y, ae.angle, curReach, ae.width/2, col, fade);
+  fx3dBeamTube(ae.x, ae.y, ae.angle, curReach, ae.width/2, col, fade, ae.range);
 }
 // ビーム3本(フラワービーム): 同じビームを3本ぶん
 function fx3dFlowerBeams(ae, fillDist, fade, inTelegraph){
@@ -3437,7 +3452,7 @@ function fx3dFlowerBeams(ae, fillDist, fade, inTelegraph){
     if(inTelegraph) continue;
     const curReach = Math.min(ranges[b], fillDist);
     if(curReach<=2) continue;
-    fx3dBeamTube(ae.x, ae.y, a, curReach, ae.width/2, col, fade);
+    fx3dBeamTube(ae.x, ae.y, a, curReach, ae.width/2, col, fade, ranges[b]);
   }
 }
 // ジグザグ(超雷撃・ホーリーサンダー・ライトニング): 空から落ちる本物の落雷にする
