@@ -29,34 +29,62 @@ assets/mymon/back.mp4    歩行(後ろ)
 assets/mymon/icon.png    静止画(透過済み)
 ```
 
-## 使い方A: GUI(おすすめ)
+## 使い方A: iPhoneだけで完結(おすすめ)
+
+Safariで開くだけの1ページです。Mac も Python も要りません。
+
+**https://komekome898-web.github.io/aramon/tools/studio_web.html**
+
+動画のデコード・背景透過・8コマ生成・9表への登録・GitHubへのコミットまで、
+すべて端末の中で動きます(送信先は `api.github.com` だけ)。
+ホーム画面に追加しておくと、トークンが消えにくくなります。
+
+### 準備: GitHubのトークンを作る(初回のみ / Safariだけで完結)
+
+1. Safariで **github.com** を開いてログイン
+2. 右上のアバター → **Settings** → 左メニュー最下部の **Developer settings**
+3. **Personal access tokens → Fine-grained tokens** → **Generate new token**
+4. 設定
+   - Token name: `aramon-studio`(任意)
+   - Expiration: 90日など(切れたら作り直す)
+   - Repository access: **Only select repositories** → `komekome898-web/aramon`
+   - Permissions → Repository permissions → **Contents** を **Read and write** へ
+     (`Metadata: Read-only` は自動で付く。他は触らない)
+5. **Generate token** → 出てきた `github_pat_...` を**その場でコピー**(再表示されません)
+6. スタジオの「1 GitHub設定」の欄に貼って**保存** → 「接続テスト」が通ればOK
+
+保存先はSafariの localStorage(このドメイン・この端末のみ)。
+権限はこのリポジトリの Contents だけなので、漏れても影響は限定されます。不要になったら
+GitHubの同じ画面から **Revoke** できます。長期間開かないとSafariが消すことがありますが、
+そのときは貼り直すだけです。
+
+### 手順(上から順に押すだけ)
+
+1. **GitHub設定** — トークンを保存 → 接続テスト
+2. **歩行モーション** — 正面/後ろの動画を選ぶ → 背景の抜き方としきい値を変えながら8コマを確認。
+   問題のあるコマは赤枠で理由付きに出ます
+3. **静止画** — 画像を選ぶ → 背景透過+正方形に整形。色スキンの色相も自動で入ります
+4. **仕様** — key・表示名・色・特性・オーラ・適性6項目
+5. **技** — tier1/2 は絵文字を選ぶだけ、tier3 はテンプレートを選ぶだけ
+6. **登録して本番へ反映** — 差分を確認 → 1コミットで `main` へ送信。
+   `sw.js` の `CACHE_NAME` も自動で上がります。数分後のPagesデプロイで本番に出ます。
+   間違えたら「登録を取り消す」で元に戻せます
+
+**抜けない素材だけMac版へ回してください。** 難しい背景(草・金屏風など)のGrabCutはMac版だけにあります。
+
+## 使い方B: GUI(Mac / PC)
 
 ```
-python3 tools/monster_studio.py
+python3 tools/monster_studio.py         # http://127.0.0.1:8777
+python3 tools/monster_studio.py --lan   # 同じWi-FiのiPhoneから画面だけ開く
 ```
-
-ブラウザで `http://127.0.0.1:8777` を開きます。
-
-### iPhoneから使う
-
-このツールは動画処理に `opencv` / `scipy` / `ffmpeg` を使っており、iOSでは動きません。
-**Mac(またはPC)でサーバーを起動し、iPhoneのSafariからは画面を見るだけ**という形で使います。
-
-```
-python3 tools/monster_studio.py --lan
-```
-
-`--lan` を付けるとMacと同じWi-FiのiPhoneから開けるようになります(既定は自分のMacからしか開けない安全な状態)。
-起動すると `同じWi-FiのiPhoneからは http://192.168.x.x:8777 を開いてください` のように出るので、
-その通りにiPhoneのSafariでアドレスを入力してください。歩行動画の撮影はiPhoneで行い、
-AirDropなどでMacの `assets/<key>/` に転送してから使う流れが自然です。
 
 - 左で仕様(名前・色・特性・適性・技)を入力
 - 右で歩行動画の**背景の抜き方を切り替えながら8コマをその場でプレビュー**。
   問題のあるコマは赤枠で理由付きで印が付くので、良い設定が見つかるまで切り替えます
 - 「この設定で書き出す」→「静止画を整える」→「data.js / ui.js へ登録」→「検証」の順に押すだけ
 
-## 使い方B: CLI
+## 使い方C: CLI
 
 ```
 python3 tools/monster_add.py mymon --dry-run   # 入る差分を確認
@@ -98,7 +126,11 @@ tier1/2 の弾は絵文字を選ぶだけです。選択肢は `render.js` の `
 - 挿入は全表を1回のトランザクションで書きます(途中で失敗したら何も書きません)。
 - 背景除去のアルゴリズムは既存の `tools/build_walk.py` をそのまま呼んでいます。
   モンスターごとに積み上げたモード(`white` / `black` / `blackopen` / `grass`)の資産はそのまま使えます。
+- **iPhone版(`studio_web.html`)は同じ目印方式をJSへ1:1移植したもの**なので、どちらで作っても
+  出来上がる行は同一です(`renderRows` の出力がPython版と一致することを確認済み)。
+  移植していないのは `grass`(GrabCut)と256色量子化だけです。
 
 ## 最後にやること
 
-ツールは `sw.js` を触りません。**コミット前に `CACHE_NAME` を1つ上げてください。**
+CLI・Mac版GUIは `sw.js` を触りません。**コミット前に `CACHE_NAME` を1つ上げてください。**
+iPhone版はコミット時に自動で上げます。

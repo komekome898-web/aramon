@@ -1,0 +1,1087 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>モンスター作成スタジオ(iPhone) — 荒野モン動</title>
+<style>
+  :root{ --bg:#12161f; --panel:#1b2130; --line:#2c3547; --ink:#e6ecf7; --dim:#93a2bd;
+         --amber:#f4c430; --ok:#7fe38f; --ng:#ff8a7a; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-size:15px;
+        font-family:system-ui,-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif;
+        padding:0 0 60px; }
+  header{ position:sticky; top:0; z-index:9; background:#0e121a; border-bottom:1px solid var(--line);
+          padding:10px 14px; padding-top:max(10px, env(safe-area-inset-top)); }
+  header h1{ margin:0; font-size:15px; letter-spacing:1px; }
+  header .sub{ font-size:11px; color:var(--dim); margin-top:2px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          margin:12px; padding:12px; }
+  .panel h2{ font-size:13px; margin:0 0 10px; color:var(--amber); letter-spacing:1px; }
+  label{ display:block; font-size:11px; color:var(--dim); margin:9px 0 3px; }
+  input,select,textarea,button{ font:inherit; }
+  input,select,textarea{ width:100%; background:#0e131c; color:var(--ink);
+    border:1px solid var(--line); border-radius:8px; padding:9px 10px; }
+  input[type=range]{ padding:0; }
+  input[type=file]{ padding:7px; font-size:13px; }
+  textarea{ min-height:56px; resize:vertical; }
+  .r2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .r3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .r6{ display:grid; grid-template-columns:repeat(6,1fr); gap:5px; }
+  .r6 label{ text-align:center; }
+  button{ background:#243049; color:var(--ink); border:1px solid var(--line);
+    border-radius:9px; padding:11px 14px; cursor:pointer; }
+  button:active{ border-color:var(--amber); }
+  button.primary{ background:linear-gradient(90deg,#3a2f10,#5a4614); border-color:var(--amber); }
+  button.danger{ border-color:#7a3630; background:#2a1614; }
+  button:disabled{ opacity:0.45; }
+  .btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .btns button{ flex:1 1 auto; min-width:120px; }
+  .strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:10px; }
+  .cell{ position:relative; border:1px solid var(--line); border-radius:5px; overflow:hidden;
+    background-color:#4e545f;
+    background-image:linear-gradient(45deg,#3f444d 25%,transparent 25%,transparent 75%,#3f444d 75%),
+                     linear-gradient(45deg,#3f444d 25%,transparent 25%,transparent 75%,#3f444d 75%);
+    background-size:14px 14px; background-position:0 0,7px 7px; }
+  .cell img{ width:100%; display:block; }
+  .cell.bad{ border-color:var(--ng); border-width:2px; }
+  .cell .n{ position:absolute; left:3px; top:1px; font-size:10px; text-shadow:0 1px 2px #000; }
+  .cell .why{ position:absolute; left:0; right:0; bottom:0; font-size:8.5px; line-height:1.25;
+    background:rgba(160,30,20,0.88); padding:1px 2px; }
+  pre{ background:#0b0f16; border:1px solid var(--line); border-radius:8px; padding:9px;
+    max-height:300px; overflow:auto; font-size:11px; white-space:pre-wrap;
+    word-break:break-all; margin:10px 0 0; }
+  .hint{ font-size:11.5px; color:var(--dim); margin-top:5px; line-height:1.55; }
+  .ok{ color:var(--ok); } .ng{ color:var(--ng); }
+  .badge{ display:inline-block; font-size:10px; padding:2px 7px; border-radius:99px;
+    border:1px solid var(--line); color:var(--dim); }
+  .badge.on{ color:var(--ok); border-color:var(--ok); }
+  .movebox{ border:1px solid var(--line); border-radius:9px; padding:9px; margin-top:9px; }
+  .step{ display:inline-block; width:19px; height:19px; line-height:19px; text-align:center;
+    border-radius:50%; background:var(--amber); color:#1a1a1a; font-size:11px; font-weight:700;
+    margin-right:6px; }
+  progress{ width:100%; height:6px; margin-top:8px; }
+</style></head>
+<body>
+
+<header>
+  <h1>モンスター作成スタジオ</h1>
+  <div class="sub">iPhoneだけで 撮影 → 背景透過 → 登録 → 本番反映 まで完結します</div>
+</header>
+
+<!-- ============================================================ 1. GitHub -->
+<div class="panel">
+  <h2><span class="step">1</span>GitHub設定 <span id="authBadge" class="badge">未接続</span></h2>
+  <label>アクセストークン(fine-grained / Contents: Read and write)</label>
+  <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
+  <div class="r2">
+    <div><label>リポジトリ</label><input id="repo" value="komekome898-web/aramon"></div>
+    <div><label>ブランチ</label><input id="branch" value="main"></div>
+  </div>
+  <div class="btns">
+    <button class="primary" onclick="saveToken()">保存して接続テスト</button>
+    <button onclick="forgetToken()">トークンを消す</button>
+  </div>
+  <div class="hint">
+    トークンはこの端末のSafariにだけ保存され、送信先は api.github.com のみです。
+    作り方: GitHub → Settings → Developer settings → Personal access tokens →
+    Fine-grained tokens → Generate new token →
+    リポジトリを <b>aramon</b> だけに絞り、<b>Contents</b> を <b>Read and write</b> に。
+  </div>
+</div>
+
+<!-- ============================================================ 2. 歩行 -->
+<div class="panel">
+  <h2><span class="step">2</span>歩行モーション</h2>
+  <div class="r2">
+    <div><label>正面の動画</label><input id="vidF" type="file" accept="video/*"></div>
+    <div><label>後ろの動画</label><input id="vidB" type="file" accept="video/*"></div>
+  </div>
+  <label>背景の抜き方</label>
+  <select id="mode">
+    <option value="blackopen">黒背景・本体に黒い部分が無い(既定)</option>
+    <option value="black">黒背景・本体に黒い部分がある</option>
+    <option value="white">白背景</option>
+    <option value="chroma">色で抜く(背景をタップして色を拾う)</option>
+  </select>
+  <div id="thWrap">
+    <label>しきい値 <span id="thVal">14</span> — 大きくすると背景を多く抜きます</label>
+    <input id="th" type="range" min="4" max="120" value="14">
+  </div>
+  <div id="chromaWrap" style="display:none">
+    <label>背景の色(プレビューの画像をタップして拾う) <span id="ckSwatch" class="badge">未取得</span></label>
+  </div>
+  <div class="btns">
+    <button onclick="preview('f')">正面をプレビュー</button>
+    <button onclick="preview('b')">後ろをプレビュー</button>
+  </div>
+  <progress id="prog" value="0" max="100" style="display:none"></progress>
+  <div class="strip" id="strip"></div>
+  <div class="hint" id="walkMeta">動画を選んで「プレビュー」を押すと8コマを作ります。赤枠のコマは問題ありです。</div>
+  <div class="hint">できあがった8コマは<b>そのまま保持されます</b>。正面・後ろの両方をプレビューしてから登録してください。</div>
+</div>
+
+<!-- ============================================================ 3. 静止画 -->
+<div class="panel">
+  <h2><span class="step">3</span>静止画</h2>
+  <div class="r2">
+    <div><label>アイコン用の画像</label><input id="imgIcon" type="file" accept="image/*"></div>
+    <div><label>試合用(省略可)</label><input id="imgPlayer" type="file" accept="image/*"></div>
+  </div>
+  <div class="btns"><button onclick="buildPortraits()">背景を抜いて整える</button></div>
+  <div class="strip" id="portraitStrip" style="grid-template-columns:repeat(2,1fr)"></div>
+  <div class="hint" id="portraitMeta">
+    透過していない写真でもかまいません。上で選んだ「背景の抜き方」を使って抜いてから、
+    正方形・被写体が高さの9割・足元が下端付近に整えます。色相も自動で取得します。
+  </div>
+</div>
+
+<!-- ============================================================ 4. 仕様 -->
+<div class="panel">
+  <h2><span class="step">4</span>仕様</h2>
+  <div class="r2">
+    <div><label>key(英小文字)</label><input id="f_key" placeholder="mymon"></div>
+    <div><label>表示名</label><input id="f_label" placeholder="マイモン"></div>
+  </div>
+  <div class="r3">
+    <div><label>色</label><input id="f_color" value="#7fb236"></div>
+    <div><label>暗い色</label><input id="f_dark" value="#4f6f1f"></div>
+    <div><label>差し色</label><input id="f_accent" placeholder="任意"></div>
+  </div>
+  <div class="r3">
+    <div><label>移動速度</label><input id="f_speed" type="number" value="190"></div>
+    <div><label>HP</label><input id="f_hp" type="number" value="120"></div>
+    <div><label>オーラ</label><select id="f_aura"></select></div>
+  </div>
+  <label>特性id(既存と同じidなら説明は追加されません)</label>
+  <input id="f_trait" placeholder="burn">
+  <label>特性の説明</label><textarea id="f_traitDesc"></textarea>
+  <label>育成適性(S〜E)</label>
+  <div class="r6" id="aptRow"></div>
+  <label>色スキンの主役の色</label>
+  <div class="r2">
+    <div><select id="f_srcType">
+      <option value="chroma">色で拾う(chroma)</option>
+      <option value="light">白っぽい部分(light)</option>
+    </select></div>
+    <div><input id="f_hue" placeholder="色相(空欄なら静止画から自動)"></div>
+  </div>
+</div>
+
+<!-- ============================================================ 5. 技 -->
+<div class="panel">
+  <h2><span class="step">5</span>技</h2>
+  <div class="movebox">
+    <div class="r2">
+      <div><label>tier1 技名</label><input id="m0_name"></div>
+      <div><label>弾</label><select id="m0_icon"></select></div>
+    </div>
+  </div>
+  <div class="movebox">
+    <div class="r2">
+      <div><label>tier2 技名(連射)</label><input id="m1_name"></div>
+      <div><label>弾</label><select id="m1_icon"></select></div>
+    </div>
+  </div>
+  <div class="movebox">
+    <div class="r2">
+      <div><label>tier3 技名</label><input id="m2_name"></div>
+      <div><label>形</label><select id="m2_tpl"></select></div>
+    </div>
+    <div class="hint" id="tplHint"></div>
+  </div>
+</div>
+
+<!-- ============================================================ 6. 送信 -->
+<div class="panel">
+  <h2><span class="step">6</span>登録して本番へ反映</h2>
+  <div class="btns">
+    <button onclick="preflight()">差分を確認する</button>
+    <button class="primary" id="commitBtn" onclick="doCommit()" disabled>この内容でコミット</button>
+  </div>
+  <div class="btns">
+    <button class="danger" onclick="doRevert()">このモンスターの登録を取り消す</button>
+  </div>
+  <pre id="log">「差分を確認する」を押すと、送信されるファイルと data.js / ui.js への追記内容が出ます。</pre>
+  <div class="hint">
+    コミットすると数分後に本番へ反映されます(GitHub Actions の Pages デプロイ)。
+    sw.js のキャッシュ番号も自動で1つ上がります。
+  </div>
+</div>
+
+<script>
+/* ===================================================================
+   荒野モン動 モンスター作成スタジオ(iPhone完結版)
+   ・tools/build_walk.py / monster_spec.py / monster_code.py の移植。
+     同じ目印方式(<<AUTO:表名>> / 行末の @key コメント)を使うので、
+     Mac版のCLIで作っても結果は同じになる。
+   ・重い処理はすべてブラウザのcanvasで行い、外部ライブラリは使わない。
+=================================================================== */
+const $ = id => document.getElementById(id);
+const TARGET_H = 250, CANVAS = 320, FEET_Y = 0.94;   // build_walk.py と同じ
+const PORTRAIT_SIZE = 512, PORTRAIT_H = 0.90, PORTRAIT_FEET = 0.97;
+const ANALYZE_N = 72;        // 周期検出に使うコマ数
+const WORK_H = 640;          // 解析・切り抜きに使う作業解像度(高さ)
+
+const state = { walk:{f:null, b:null}, portraits:null, hue:null, chroma:null, files:null };
+
+/* ---------------------------------------------------------- 汎用 */
+function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
+function setProg(v){ const p=$('prog'); if(v==null){ p.style.display='none'; return; }
+  p.style.display='block'; p.value=v; }
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* ---------------------------------------------------------- 連結成分 */
+// 4近傍ラベリング。mask は Uint8Array(1=対象)。ラベル配列と個数を返す
+function label4(mask, w, h){
+  const lbl = new Int32Array(w*h);
+  const stack = new Int32Array(w*h);
+  let n = 0;
+  for(let i=0;i<w*h;i++){
+    if(!mask[i] || lbl[i]) continue;
+    n++; let sp=0; stack[sp++]=i; lbl[i]=n;
+    while(sp>0){
+      const p = stack[--sp], x = p%w, y = (p-x)/w;
+      if(x>0   && mask[p-1] && !lbl[p-1]){ lbl[p-1]=n; stack[sp++]=p-1; }
+      if(x<w-1 && mask[p+1] && !lbl[p+1]){ lbl[p+1]=n; stack[sp++]=p+1; }
+      if(y>0   && mask[p-w] && !lbl[p-w]){ lbl[p-w]=n; stack[sp++]=p-w; }
+      if(y<h-1 && mask[p+w] && !lbl[p+w]){ lbl[p+w]=n; stack[sp++]=p+w; }
+    }
+  }
+  return { lbl, n };
+}
+// _largest: 最大の成分だけ残す
+function keepLargest(fg, w, h){
+  const { lbl, n } = label4(fg, w, h);
+  if(n < 1) return fg;
+  const size = new Int32Array(n+1);
+  for(let i=0;i<w*h;i++) if(lbl[i]) size[lbl[i]]++;
+  let best=1; for(let i=2;i<=n;i++) if(size[i]>size[best]) best=i;
+  const out = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) if(lbl[i]===best) out[i]=1;
+  return out;
+}
+// _fill_small_holes: 外周に触れない背景成分のうち小さいものを前景にする
+function fillSmallHoles(fg, w, h){
+  const bg = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) bg[i] = fg[i] ? 0 : 1;
+  const { lbl, n } = label4(bg, w, h);
+  if(n < 1) return fg;
+  const size = new Int32Array(n+1);
+  const touch = new Uint8Array(n+1);
+  for(let i=0;i<w*h;i++){
+    const L = lbl[i]; if(!L) continue;
+    size[L]++;
+    const x = i%w, y = (i-x)/w;
+    if(x===0||y===0||x===w-1||y===h-1) touch[L]=1;
+  }
+  const thresh = 0.008*w*h;
+  for(let i=0;i<w*h;i++){
+    const L = lbl[i];
+    if(L && !touch[L] && size[L] < thresh) fg[i]=1;
+  }
+  return fg;
+}
+// 外周につながる成分だけを背景とみなす
+function borderConnected(mask, w, h){
+  const { lbl, n } = label4(mask, w, h);
+  const touch = new Uint8Array(n+1);
+  for(let x=0;x<w;x++){ if(lbl[x]) touch[lbl[x]]=1; if(lbl[(h-1)*w+x]) touch[lbl[(h-1)*w+x]]=1; }
+  for(let y=0;y<h;y++){ if(lbl[y*w]) touch[lbl[y*w]]=1; if(lbl[y*w+w-1]) touch[lbl[y*w+w-1]]=1; }
+  const out = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) if(lbl[i] && touch[lbl[i]]) out[i]=1;
+  return out;
+}
+// 3x3 ぼかし(cv2.GaussianBlur(3,3) 相当の軽い平滑化)
+function blur3(a, w, h){
+  const out = new Uint8Array(w*h);
+  const k = [1,2,1, 2,4,2, 1,2,1];
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    let s=0, wsum=0, i=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++,i++){
+      const nx=x+dx, ny=y+dy;
+      if(nx<0||ny<0||nx>=w||ny>=h) continue;
+      s += a[ny*w+nx]*k[i]; wsum += k[i];
+    }
+    out[y*w+x] = wsum ? Math.round(s/wsum) : 0;
+  }
+  return out;
+}
+// 2x2 収縮(白フリンジを1px削る)
+function erode2(fg, w, h){
+  const out = new Uint8Array(w*h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const a = fg[y*w+x];
+    const b = x<w-1 ? fg[y*w+x+1] : 0;
+    const c = y<h-1 ? fg[(y+1)*w+x] : 0;
+    const d = (x<w-1&&y<h-1) ? fg[(y+1)*w+x+1] : 0;
+    out[y*w+x] = (a&&b&&c&&d) ? 1 : 0;
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------- 背景透過 */
+// ImageData -> alpha(Uint8Array)。mode/th は画面の設定
+function segment(img, mode, th, chroma){
+  const w = img.width, h = img.height, d = img.data, N = w*h;
+  const mask = new Uint8Array(N);       // 背景候補
+  if(mode === 'white'){
+    for(let i=0,p=0;i<N;i++,p+=4){
+      const r=d[p], g=d[p+1], b=d[p+2];
+      const mn = Math.min(r,g,b), mx = Math.max(r,g,b);
+      mask[i] = (mn > 236 && (mx-mn) < 20) ? 1 : 0;
+    }
+  } else if(mode === 'chroma' && chroma){
+    const [cr,cg,cb] = chroma;
+    const t2 = th*th;
+    for(let i=0,p=0;i<N;i++,p+=4){
+      const dr=d[p]-cr, dg=d[p+1]-cg, db=d[p+2]-cb;
+      mask[i] = (dr*dr+dg*dg+db*db) < t2*3 ? 1 : 0;
+    }
+  } else {  // black / blackopen
+    for(let i=0,p=0;i<N;i++,p+=4){
+      mask[i] = Math.max(d[p],d[p+1],d[p+2]) < th ? 1 : 0;
+    }
+  }
+  // blackopen(本体に黒が無い)は囲まれた背景も抜く。それ以外は外周連結のみ
+  const keepEnclosed = (mode !== 'blackopen');
+  const bg = keepEnclosed ? borderConnected(mask, w, h) : mask;
+  let fg = new Uint8Array(N);
+  for(let i=0;i<N;i++) fg[i] = bg[i] ? 0 : 1;
+  fg = keepLargest(fg, w, h);
+  if(keepEnclosed) fg = fillSmallHoles(fg, w, h);
+  if(mode === 'white') fg = erode2(fg, w, h);
+  const a = new Uint8Array(N);
+  for(let i=0;i<N;i++) a[i] = fg[i] ? 255 : 0;
+  return blur3(a, w, h);
+}
+function bboxOf(alpha, w, h, thr){
+  thr = thr==null ? 40 : thr;
+  let x0=1e9,x1=-1,y0=1e9,y1=-1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    if(alpha[y*w+x] > thr){
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+    }
+  }
+  return x1<0 ? null : {x0,x1,y0,y1};
+}
+
+/* ---------------------------------------------------------- 動画 */
+function loadVideo(file){
+  return new Promise((res, rej)=>{
+    const v = document.createElement('video');
+    v.playsInline = true; v.muted = true; v.preload = 'auto';
+    v.src = URL.createObjectURL(file);
+    v.onloadedmetadata = ()=> res(v);
+    v.onerror = ()=> rej(new Error('動画を読み込めませんでした'));
+  });
+}
+function seekTo(v, t){
+  return new Promise(res=>{
+    let done = false;
+    const fin = ()=>{ if(done) return; done = true; v.onseeked = null; res(); };
+    v.onseeked = fin;
+    v.currentTime = Math.max(0, Math.min(t, (v.duration||1) - 0.001));
+    setTimeout(fin, 400);   // シークが返らない端末向けの保険
+  });
+}
+// detect_period の移植: 平均を引いた 48x48 スタックの自己相関
+function detectPeriod(grays, n){
+  const S = 48*48;
+  const mean = new Float32Array(S);
+  for(let i=0;i<n;i++){ const g=grays[i]; for(let j=0;j<S;j++) mean[j]+=g[j]; }
+  for(let j=0;j<S;j++) mean[j]/=n;
+  const flat = [];
+  for(let i=0;i<n;i++){
+    const a = new Float32Array(S), g = grays[i];
+    for(let j=0;j<S;j++) a[j] = g[j]-mean[j];
+    flat.push(a);
+  }
+  const ac = new Float32Array(n);
+  for(let lag=0; lag<n; lag++){
+    let s=0;
+    for(let i=0;i+lag<n;i++){ const a=flat[i], b=flat[i+lag]; for(let j=0;j<S;j++) s+=a[j]*b[j]; }
+    ac[lag] = s/Math.max(1, n-lag);
+  }
+  const a0 = ac[0] + 1e-9;
+  for(let i=0;i<n;i++) ac[i] /= a0;
+  const lo = Math.max(6, Math.floor(n*0.2));
+  const hi = Math.min(n-1, Math.floor(n*0.95));
+  if(hi <= lo) return n-1;
+  let peak = lo;
+  for(let i=lo;i<hi;i++) if(ac[i] > ac[peak]) peak = i;
+  return peak;
+}
+
+// 動画 -> 8コマの RGBA ImageData(320x320)
+async function buildWalkFrames(file, onProgress){
+  const v = await loadVideo(file);
+  const dur = v.duration || 0;
+  if(!dur) throw new Error('動画の長さが取れませんでした');
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.min(1, WORK_H/vh);
+  const w = Math.round(vw*sc), h = Math.round(vh*sc);
+
+  const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
+  const cx = cv.getContext('2d', { willReadFrequently:true });
+  const gv = document.createElement('canvas'); gv.width=48; gv.height=48;
+  const gc = gv.getContext('2d', { willReadFrequently:true });
+
+  // ---- 1パス目: 解析用のグレースケール(48x48)
+  const span = Math.min(dur*0.96, 4.0);          // 長い動画は先頭4秒だけ見る
+  const t0 = dur*0.02;
+  const grays = [];
+  for(let i=0;i<ANALYZE_N;i++){
+    await seekTo(v, t0 + span*i/(ANALYZE_N-1));
+    gc.drawImage(v, 0, 0, 48, 48);
+    const g = gc.getImageData(0,0,48,48).data;
+    const arr = new Float32Array(48*48);
+    for(let j=0,p=0;j<48*48;j++,p+=4) arr[j] = 0.299*g[p] + 0.587*g[p+1] + 0.114*g[p+2];
+    grays.push(arr);
+    if(onProgress) onProgress(Math.round(i/ANALYZE_N*55));
+  }
+  const period = detectPeriod(grays, ANALYZE_N);
+  const dt = span/(ANALYZE_N-1);
+
+  // ---- 2パス目: 選ばれた8コマだけ作業解像度で取り直して背景を抜く
+  const mode = $('mode').value, th = +$('th').value;
+  const raws = [], alphas = [], boxes = [];
+  for(let k=0;k<8;k++){
+    const idx = Math.min(ANALYZE_N-1, Math.round(period*k/8));
+    await seekTo(v, t0 + idx*dt);
+    cx.drawImage(v, 0, 0, w, h);
+    const img = cx.getImageData(0,0,w,h);
+    const a = segment(img, mode, th, state.chroma);
+    raws.push(img); alphas.push(a); boxes.push(bboxOf(a, w, h));
+    if(onProgress) onProgress(55 + Math.round((k+1)/8*45));
+  }
+  URL.revokeObjectURL(v.src);
+
+  // ---- 高さの中央値でスケールを決め、320x320 に足元合わせで置く
+  const hs = boxes.filter(Boolean).map(b => b.y1-b.y0).sort((a,b)=>a-b);
+  if(!hs.length) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
+  const medh = hs.length%2 ? hs[(hs.length-1)/2] : (hs[hs.length/2-1]+hs[hs.length/2])/2;
+  const scale = TARGET_H/medh;
+
+  const out = [];
+  const oc = document.createElement('canvas'); oc.width=CANVAS; oc.height=CANVAS;
+  const octx = oc.getContext('2d', { willReadFrequently:true });
+  const tmp = document.createElement('canvas');
+  const tctx = tmp.getContext('2d', { willReadFrequently:true });
+  for(let k=0;k<8;k++){
+    octx.clearRect(0,0,CANVAS,CANVAS);
+    const b = boxes[k];
+    if(b){
+      const cw = b.x1-b.x0+1, ch = b.y1-b.y0+1;
+      tmp.width=cw; tmp.height=ch;
+      const crop = tctx.createImageData(cw, ch);
+      const src = raws[k].data, al = alphas[k];
+      for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+        const s = ((b.y0+y)*w + (b.x0+x)), dst = (y*cw+x)*4;
+        crop.data[dst]   = src[s*4];
+        crop.data[dst+1] = src[s*4+1];
+        crop.data[dst+2] = src[s*4+2];
+        crop.data[dst+3] = al[s];
+      }
+      tctx.putImageData(crop, 0, 0);
+      const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
+      octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
+      octx.drawImage(tmp, 0, 0, cw, ch,
+                     Math.round((CANVAS-nw)/2), Math.round(CANVAS*FEET_Y) - nh, nw, nh);
+    }
+    out.push(await canvasToBlobPng(oc));
+  }
+  return { frames: out, period };
+}
+function canvasToBlobPng(c){
+  return new Promise(res=> c.toBlob(b=>res(b), 'image/png'));
+}
+function blobToDataUrl(b){
+  return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); });
+}
+async function blobToBase64(b){
+  const u = await blobToDataUrl(b);
+  return u.slice(u.indexOf(',')+1);
+}
+
+/* ---------------------------------------------------------- 異常検出 */
+async function inspectFrames(blobs){
+  const areas=[], tops=[], foots=[], edges=[];
+  const c = document.createElement('canvas'); c.width=CANVAS; c.height=CANVAS;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  for(const b of blobs){
+    const im = await createImageBitmap(b);
+    cx.clearRect(0,0,CANVAS,CANVAS); cx.drawImage(im,0,0);
+    const d = cx.getImageData(0,0,CANVAS,CANVAS).data;
+    let area=0, top=1e9, foot=0, edge=false;
+    for(let y=0;y<CANVAS;y++) for(let x=0;x<CANVAS;x++){
+      if(d[(y*CANVAS+x)*4+3] > 40){
+        area++; if(y<top) top=y;
+        if(y >= CANVAS*0.8) foot++;
+        if(x===0||y===0||x===CANVAS-1||y===CANVAS-1) edge=true;
+      }
+    }
+    areas.push(area); tops.push(top); foots.push(foot); edges.push(edge);
+  }
+  const med = a => { const s=[...a].sort((x,y)=>x-y);
+    return s.length%2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2; };
+  const ma=med(areas), mt=med(tops), mf=med(foots);
+  return blobs.map((_,i)=>{
+    const why=[];
+    if(ma>0 && Math.abs(areas[i]-ma)/ma > 0.28) why.push(`面積${((areas[i]-ma)/ma*100).toFixed(0)}%ずれ`);
+    if(tops[i]-mt > 18) why.push(`上端が${(tops[i]-mt).toFixed(0)}px低い`);
+    if(mf>0 && (mf-foots[i])/mf > 0.4) why.push(`足元が${((mf-foots[i])/mf*100).toFixed(0)}%少ない`);
+    if(edges[i]) why.push('縁に接触');
+    return why.join('/');
+  });
+}
+
+/* ---------------------------------------------------------- プレビュー */
+async function preview(side){
+  const file = (side==='f' ? $('vidF') : $('vidB')).files[0];
+  if(!file) return log('動画を選んでください', 'ng');
+  try{
+    setProg(0);
+    $('walkMeta').textContent = 'コマを作っています…';
+    const r = await buildWalkFrames(file, p=>setProg(p));
+    const issues = await inspectFrames(r.frames);
+    state.walk[side] = { frames:r.frames, issues };
+    const urls = await Promise.all(r.frames.map(blobToDataUrl));
+    $('strip').innerHTML = urls.map((u,i)=>
+      `<div class="cell${issues[i]?' bad':''}" onclick="pickChroma(${i})">
+         <img src="${u}"><span class="n">${i+1}</span>
+         ${issues[i]?`<span class="why">${issues[i]}</span>`:''}</div>`).join('');
+    const bad = issues.filter(Boolean).length;
+    $('walkMeta').innerHTML = `${side==='f'?'正面':'後ろ'}の8コマができました(周期=${r.period})。` +
+      (bad ? `<span class="ng"> ${bad}コマに問題あり。抜き方やしきい値を変えて再プレビューしてください。</span>`
+           : '<span class="ok"> 問題は見つかりませんでした。</span>') +
+      `<br>保持中: 正面${state.walk.f?'○':'—'} / 後ろ${state.walk.b?'○':'—'}`;
+    setProg(null);
+  }catch(e){ setProg(null); log(String(e.message||e), 'ng'); }
+}
+// 「色で抜く」用: プレビュー画像をタップして背景色を拾う
+function pickChroma(){ /* 色拾いは静止画側で行う。ここでは何もしない */ }
+
+/* ---------------------------------------------------------- 静止画 */
+async function fileToImageData(file){
+  const bmp = await createImageBitmap(file);
+  const sc = Math.min(1, 900/Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width*sc), h = Math.round(bmp.height*sc);
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  cx.drawImage(bmp, 0, 0, w, h);
+  return cx.getImageData(0,0,w,h);
+}
+// normalize_portrait の移植(手前に背景透過を通す)
+async function makePortrait(file){
+  const img = await fileToImageData(file);
+  const w = img.width, h = img.height;
+  // すでに透過済みならそのまま、そうでなければ背景を抜く
+  let alpha = new Uint8Array(w*h);
+  let hasAlpha = false;
+  for(let i=0;i<w*h;i++){ alpha[i] = img.data[i*4+3]; if(alpha[i] < 250) hasAlpha = true; }
+  if(!hasAlpha) alpha = segment(img, $('mode').value, +$('th').value, state.chroma);
+  const b = bboxOf(alpha, w, h, 8);
+  if(!b) throw new Error('被写体を検出できませんでした');
+  const cw = b.x1-b.x0+1, ch = b.y1-b.y0+1;
+  const tmp = document.createElement('canvas'); tmp.width=cw; tmp.height=ch;
+  const tctx = tmp.getContext('2d', { willReadFrequently:true });
+  const crop = tctx.createImageData(cw, ch);
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    const s = (b.y0+y)*w + (b.x0+x), d = (y*cw+x)*4;
+    crop.data[d]=img.data[s*4]; crop.data[d+1]=img.data[s*4+1];
+    crop.data[d+2]=img.data[s*4+2]; crop.data[d+3]=alpha[s];
+  }
+  tctx.putImageData(crop, 0, 0);
+  const S = PORTRAIT_SIZE;
+  let k = (S*PORTRAIT_H)/ch;
+  let nw = Math.max(1, Math.round(cw*k)), nh = Math.max(1, Math.round(ch*k));
+  if(nw > S){ k *= S/nw; nw = Math.max(1, Math.round(cw*k)); nh = Math.max(1, Math.round(ch*k)); }
+  const oc = document.createElement('canvas'); oc.width=S; oc.height=S;
+  const octx = oc.getContext('2d', { willReadFrequently:true });
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
+  octx.drawImage(tmp, 0, 0, cw, ch, Math.round((S-nw)/2),
+                 Math.max(0, Math.round(S*PORTRAIT_FEET) - nh), nw, nh);
+  return { blob: await canvasToBlobPng(oc), imageData: octx.getImageData(0,0,S,S) };
+}
+// sample_hue の移植
+function sampleHue(img, window_){
+  window_ = window_ || 60;
+  const d = img.data, N = img.width*img.height;
+  const hist = new Float64Array(72);
+  let cnt = 0;
+  for(let i=0,p=0;i<N;i++,p+=4){
+    const r=d[p]/255, g=d[p+1]/255, b=d[p+2]/255, al=d[p+3]/255;
+    const mx = Math.max(r,g,b), mn = Math.min(r,g,b);
+    const s = mx>0 ? (mx-mn)/mx : 0;
+    if(!(al>0.6 && s>0.35 && mx>0.2)) continue;
+    cnt++;
+    const dd = Math.max(mx-mn, 1e-6);
+    let hh;
+    if(mx===r) hh = ((g-b)/dd) % 6;
+    else if(mx===g) hh = (b-r)/dd + 2;
+    else hh = (r-g)/dd + 4;
+    hh = ((hh*60) % 360 + 360) % 360;
+    hist[Math.min(71, Math.floor(hh/5))] += s;
+  }
+  if(cnt < N*0.01) return null;
+  const wb = Math.max(1, Math.round(window_/5));
+  let best=0, bestv=-1;
+  for(let i=0;i<72;i++){
+    let s=0; for(let j=0;j<wb;j++) s += hist[(i+j)%72];
+    if(s>bestv){ bestv=s; best=i; }
+  }
+  return Math.round((best*5 + window_/2) % 360);
+}
+async function buildPortraits(){
+  const fi = $('imgIcon').files[0];
+  if(!fi) return log('アイコン用の画像を選んでください', 'ng');
+  try{
+    $('portraitMeta').textContent = '整えています…';
+    const icon = await makePortrait(fi);
+    const pf = $('imgPlayer').files[0];
+    const player = pf ? await makePortrait(pf) : icon;
+    state.portraits = { icon: icon.blob, player: player.blob };
+    state.hue = sampleHue(icon.imageData, 60);
+    if(state.hue != null && !$('f_hue').value) $('f_hue').value = state.hue;
+    if(state.hue == null) $('f_srcType').value = 'light';
+    const urls = await Promise.all([blobToDataUrl(icon.blob), blobToDataUrl(player.blob)]);
+    $('portraitStrip').innerHTML = urls.map((u,i)=>
+      `<div class="cell"><img src="${u}"><span class="n">${i?'試合用':'アイコン'}</span></div>`).join('');
+    $('portraitMeta').innerHTML = state.hue!=null
+      ? `<span class="ok">整えました。色相=${state.hue} を自動で入れました。</span>`
+      : '<span class="ok">整えました。</span>彩度の高い部分が少ないので、色スキンは light にしました。';
+  }catch(e){ log(String(e.message||e), 'ng'); }
+}
+
+/* ---------------------------------------------------------- 技テンプレート */
+// monster_spec.py の TIER3_TEMPLATES / MOVE_T1 / MOVE_T2 と同じ値
+const MOVE_T1 = { tier:1, range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70 };
+const MOVE_T2 = { tier:2, range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1 };
+const TIER3 = {
+  fan:     { tier:3, dmg:55, cooldown:2.1, gutsCost:24, aoeShape:'fan', range:800, fanAngleDeg:45, aoeStyle:'inferno' },
+  wave:    { tier:3, dmg:47, cooldown:2.0, gutsCost:24, aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava' },
+  crystal: { tier:3, dmg:42, cooldown:1.9, gutsCost:24, aoeShape:'rect', range:900, rectWidth:260, aoeStyle:'crystal' },
+  beam:    { tier:3, dmg:46, cooldown:2.1, gutsCost:24, aoeShape:'rect', range:1000, rectWidth:120, projSpeed:1400, aoeStyle:'sakura' },
+  river:   { tier:3, dmg:48, cooldown:2.1, gutsCost:24, aoeShape:'rect', range:2200, rectWidth:160, aoeStyle:'galaxy' },
+  beams3:  { tier:3, dmg:44, cooldown:2.2, gutsCost:24, aoeShape:'beams', range:1200, beamWidth:100, beamCount:3, beamSpreadDeg:40, aoeStyle:'flower' },
+  thunder: { tier:3, dmg:40, cooldown:1.9, gutsCost:24, aoeShape:'zigzag', range:1400, zigzagWidth:110, aoeStyle:'thunder' },
+  psychic: { tier:3, dmg:45, cooldown:2.0, gutsCost:24, aoeShape:'fanZigzag', range:1300, fanAngleDeg:30, aoeStyle:'psychic' },
+  orb:     { tier:3, dmg:20, cooldown:2.3, gutsCost:24, range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮', blast:{ radius:330, dmg:60, expandTime:0.5 } },
+  tornado: { tier:3, dmg:62, cooldown:2.4, gutsCost:24, range:1600, projSpeed:520, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true },
+  sword:   { tier:3, dmg:58, cooldown:2.0, gutsCost:24, range:1850, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' },
+  shell:   { tier:3, dmg:56, cooldown:2.1, gutsCost:24, range:1750, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell' },
+  crescent:{ tier:3, dmg:21, cooldown:2.0, gutsCost:24, range:1340, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' },
+  spear:   { tier:3, dmg:22, cooldown:2.2, gutsCost:24, range:1350, projSpeed:1150, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5 } },
+};
+const TPL_HINT = {
+  fan:'炎の扇(インフェルノ型)', wave:'炎の壁が前進(ファイアウェーブ型)',
+  crystal:'結晶が降って地面から突き出る', beam:'光の筒(モッチ砲型)',
+  river:'宙を走る星の川(天河天翔型)', beams3:'光の筒3本(フラワービーム型)',
+  thunder:'空から落雷(超雷撃型)', psychic:'弧を描く念力の壁(サイコキネシス型)',
+  orb:'黒い球+着弾でドーム爆風(ビッグバン型)', tornado:'地面に立つ竜巻',
+  sword:'黄金の聖剣(天の慈悲型)', shell:'回る殻+毒の電撃(シェルアタック型)',
+  crescent:'黒い三日月を5連射(ダークホウスト型)', spear:'三叉の槍3本+爆風(アムピトリテ型)',
+};
+const ICONS = ['🔥','💧','🍃','⚡️','👊🏿','🤚🏿','🖐🏻','🗡️','🏹','☠️','🌸','💋','🌱'];
+const AURAS = ['red','blue','yellow','green','white','black'];
+const RANKS = ['S','A','B','C','D','E'];
+const STATS = ['life','power','wisdom','accuracy','evasion','vitality'];
+
+/* ---------------------------------------------------------- JSリテラル化 */
+// monster_spec.py の js_str / js_value / js_move と同じ出力にする
+function jsStr(s){ return "'" + String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + "'"; }
+function jsNum(v){
+  if(v === true) return 'true';
+  if(v === false) return 'false';
+  return String(v);
+}
+function jsValue(v){
+  if(v && typeof v === 'object' && !Array.isArray(v))
+    return '{ ' + Object.keys(v).map(k=>`${k}:${jsValue(v[k])}`).join(', ') + ' }';
+  if(Array.isArray(v)) return '[' + v.map(jsValue).join(',') + ']';
+  if(typeof v === 'string') return jsStr(v);
+  return jsNum(v);
+}
+const JS_ORDER = ['name','tier','color','range','dmg','cooldown','gutsCost','projSpeed','hitR','hitW',
+  'splash','burst','burstGap','burstSpread','icon','shape','projStyle','aoeShape','aoeStyle','rectWidth',
+  'beamWidth','zigzagWidth','fanAngleDeg','beamCount','beamSpreadDeg','seStyle','growWithDistance',
+  'gutsDrainRatio','melee','blast'];
+function jsMove(mv){
+  const keys = JS_ORDER.filter(k=>k in mv).concat(Object.keys(mv).filter(k=>!JS_ORDER.includes(k)));
+  return '{ ' + keys.map(k=>`${k}:${jsValue(mv[k])}`).join(', ') + ' }';
+}
+// build_moves の移植
+function buildMoves(spec){
+  const t3col = spec.tier3Color || spec.accent || spec.color;
+  const out = spec.moves.map((mv, i)=>{
+    let base;
+    if(i===0){ base = Object.assign({}, MOVE_T1, { color: spec.color }); if(mv.icon) base.icon = mv.icon; }
+    else if(i===1){ base = Object.assign({}, MOVE_T2, { color: spec.color }); if(mv.icon) base.icon = mv.icon; }
+    else { base = JSON.parse(JSON.stringify(TIER3[mv.template])); base.color = t3col; }
+    base.name = mv.name;
+    for(const k in mv){ if(k !== 'template') base[k] = mv[k]; }
+    if(base.blast && typeof base.blast === 'object' && base.blast.color == null) base.blast.color = base.color;
+    delete base.key;
+    return base;
+  });
+  out[0].tier = 1; out[1].tier = 2; out[2].tier = 3;
+  return out;
+}
+
+/* ---------------------------------------------------------- 9表への行 */
+function pad(k, w){ w = w||9; const s = k + ':'; return s + ' '.repeat(Math.max(0, w - s.length)); }
+// monster_code.py の render_rows と同じ出力
+function renderRows(spec, moves, traitExists){
+  const k = spec.key, mark = '/*@' + k + '*/';
+  const el = [`label:${jsStr(spec.label)}`, `color:${jsStr(spec.color)}`, `dark:${jsStr(spec.dark)}`];
+  if(spec.accent) el.push(`accent:${jsStr(spec.accent)}`);
+  el.push(`speed:${spec.speed==null?190:spec.speed}`);
+  if(spec.speedMod) el.push(`speedMod:${spec.speedMod}`);
+  el.push(`hp:${spec.hp==null?120:spec.hp}`);
+  el.push(`trait:${jsStr(spec.trait)}`);
+  for(const opt of ['cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
+    if(spec[opt]) el.push(`${opt}:${spec[opt]}`);
+  const rows = {};
+  rows.ELEMENTS = [`  ${pad(k)}{ ${el.join(', ')} }, ${mark}`];
+  const w = spec.walk || {};
+  if(w.front && w.back){
+    rows.WALK_ANIM = [
+      `  ${pad(k)}{ ${mark}`,
+      `    base: { front:_loadWalk('${k}_walk_f'), back:_loadWalk('${k}_walk_b') },`,
+      `  },`,
+    ];
+  }
+  rows.SIGNATURE_MOVES = [`  ${pad(k)}[ ${mark}`,
+    moves.map(m=>'    ' + jsMove(m)).join(',\n'), `  ],`];
+  rows.MONSTER_AURA = [`  ${pad(k)}${jsStr(spec.aura)}, ${mark}`];
+  const ma = moves.map(m=>`${jsStr(m.name)}:${jsStr(spec.moveAura || spec.aura)}`).join(',');
+  rows.MOVE_AURA = [`  ${ma}, ${mark}`];
+  const st = spec.stateChange;
+  if(st){
+    const eff = Object.keys(st.effects||{}).map(a=>`${a}:${jsValue(st.effects[a])}`).join(', ');
+    rows.STATE_CHANGES = [
+      `  ${pad(k)}{ ${mark}`,
+      `    name:${jsStr(st.name||'覚醒')}, duration:${st.duration||20}, cooldown:${st.cooldown||90}, trigger:${jsStr(st.trigger||'hpBelow')}, triggerValue:${st.triggerValue==null?0.4:st.triggerValue},`,
+      `    effects:{ ${eff} },`,
+      `  },`,
+    ];
+  }
+  const ap = spec.aptitude;
+  rows.APTITUDE = [`  ${pad(k)}{ life:${jsStr(ap.life)}, power:${jsStr(ap.power)}, wisdom:${jsStr(ap.wisdom)}, accuracy:${jsStr(ap.accuracy)}, evasion:${jsStr(ap.evasion)}, vitality:${jsStr(ap.vitality)} }, ${mark}`];
+  const sk = spec.skin || {};
+  const colors = sk.colors || ['black','white','blue','yellow','green'];
+  const src = sk.source || { type:'light' };
+  const srcjs = src.type === 'chroma'
+    ? `{type:'chroma', hue:${Math.round(src.hue||0)}, window:${Math.round(src.window||60)}}`
+    : `{type:'light'}`;
+  const note = sk.note ? ('   // ' + sk.note) : '';
+  rows.SKIN_CONFIG = [`  ${pad(k)}{ colors:[${colors.map(jsStr).join(',')}], source:${srcjs} }, ${mark}${note}`];
+  if(!traitExists){
+    const t = spec.trait + ':';
+    rows.TRAIT_DESC = [`  ${t}${' '.repeat(Math.max(0, 12 - t.length))}${jsStr(spec.traitDesc)}, ${mark}`];
+  }
+  return rows;
+}
+const TABLES = [['ELEMENTS','data.js'],['WALK_ANIM','data.js'],['SIGNATURE_MOVES','data.js'],
+  ['MONSTER_AURA','data.js'],['MOVE_AURA','data.js'],['STATE_CHANGES','data.js'],
+  ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js']];
+const TABLE_FILE = Object.fromEntries(TABLES);
+// apply_rows の移植: 目印の直前へ挿入
+function applyRows(texts, rows){
+  const out = Object.assign({}, texts);
+  for(const name of Object.keys(rows)){
+    const fn = TABLE_FILE[name];
+    const rx = new RegExp('^[ \\t]*// <<AUTO:' + name + '>>.*$', 'm');
+    const m = rx.exec(out[fn]);
+    if(!m) throw new Error(`${fn} に目印 <<AUTO:${name}>> が見つかりません`);
+    const ins = rows[name].join('\n') + '\n';
+    out[fn] = out[fn].slice(0, m.index) + ins + out[fn].slice(m.index);
+  }
+  return out;
+}
+// revert の移植: @key の目印が付いた行(と、その行が開いたブロック)を消す
+function revertRows(texts, key){
+  const mark = '/*@' + key + '*/';
+  const out = {}; const counts = {};
+  for(const fn of Object.keys(texts)){
+    const lines = texts[fn].split('\n');
+    const keep = []; let i=0, removed=0;
+    while(i < lines.length){
+      if(lines[i].includes(mark)){
+        removed++;
+        const cnt = s => (s.split('{').length-1) + (s.split('[').length-1)
+                       - (s.split('}').length-1) - (s.split(']').length-1);
+        let depth = cnt(lines[i]); i++;
+        while(depth > 0 && i < lines.length){ depth += cnt(lines[i]); i++; }
+        continue;
+      }
+      keep.push(lines[i]); i++;
+    }
+    out[fn] = keep.join('\n'); counts[fn] = removed;
+  }
+  return { out, counts };
+}
+function traitExistsIn(uiText, trait){
+  const m = /^const TRAIT_DESC\s*=\s*\{/m.exec(uiText);
+  if(!m) return false;
+  const end = uiText.indexOf('\n};', m.index);
+  const body = uiText.slice(m.index, end > 0 ? end : uiText.length);
+  return new RegExp('^  ' + trait + '\\s*:', 'm').test(body);
+}
+function bumpCache(swText){
+  return swText.replace(/const CACHE_NAME = 'aramon-cache-v(\d+)';/,
+    (_s, n) => `const CACHE_NAME = 'aramon-cache-v${+n + 1}';`);
+}
+
+/* ---------------------------------------------------------- GitHub */
+const GH = 'https://api.github.com';
+function tok(){ return localStorage.getItem('aramon_gh_token') || ''; }
+function repo(){ return (localStorage.getItem('aramon_gh_repo') || $('repo').value).trim(); }
+function branch(){ return (localStorage.getItem('aramon_gh_branch') || $('branch').value).trim() || 'main'; }
+async function gh(path, opt){
+  const r = await fetch(GH + path, Object.assign({
+    headers: { 'Authorization': 'Bearer ' + tok(), 'Accept': 'application/vnd.github+json' },
+  }, opt || {}));
+  const t = await r.text();
+  let j = null; try{ j = JSON.parse(t); }catch(e){}
+  if(!r.ok) throw new Error(`GitHub ${r.status}: ${(j && j.message) || t.slice(0,200)}`);
+  return j;
+}
+async function ghPost(path, body){
+  return gh(path, { method:'POST', body: JSON.stringify(body),
+    headers: { 'Authorization':'Bearer '+tok(), 'Accept':'application/vnd.github+json',
+               'Content-Type':'application/json' } });
+}
+async function saveToken(){
+  const t = $('tok').value.trim();
+  if(t) localStorage.setItem('aramon_gh_token', t);
+  localStorage.setItem('aramon_gh_repo', $('repo').value.trim());
+  localStorage.setItem('aramon_gh_branch', $('branch').value.trim() || 'main');
+  try{
+    const r = await gh(`/repos/${repo()}`);
+    $('authBadge').textContent = '接続OK: ' + r.full_name;
+    $('authBadge').className = 'badge on';
+    log('接続できました。トークンはこの端末に保存されました。', 'ok');
+  }catch(e){
+    $('authBadge').textContent = '接続できません';
+    $('authBadge').className = 'badge';
+    log(String(e.message||e), 'ng');
+  }
+}
+function forgetToken(){
+  localStorage.removeItem('aramon_gh_token');
+  $('tok').value = '';
+  $('authBadge').textContent = '未接続'; $('authBadge').className = 'badge';
+  log('トークンを消しました。');
+}
+async function getFile(path){
+  const j = await gh(`/repos/${repo()}/contents/${path}?ref=${branch()}`);
+  const bin = atob(j.content.replace(/\n/g,''));
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/* ---------------------------------------------------------- 仕様の収集 */
+function collectSpec(){
+  const apt = {}; STATS.forEach(s=> apt[s] = $('apt_'+s).value);
+  const hue = $('f_hue').value.trim();
+  const spec = {
+    key: $('f_key').value.trim(), label: $('f_label').value.trim(),
+    color: $('f_color').value.trim(), dark: $('f_dark').value.trim(),
+    speed: +$('f_speed').value, hp: +$('f_hp').value,
+    trait: $('f_trait').value.trim(), traitDesc: $('f_traitDesc').value.trim(),
+    aura: $('f_aura').value, aptitude: apt,
+    skin: { colors: ['black','white','red','blue','yellow'],
+            source: $('f_srcType').value === 'light' ? { type:'light' }
+                  : { type:'chroma', hue: hue==='' ? (state.hue||0) : +hue, window:60 } },
+    moves: [ { name: $('m0_name').value.trim(), icon: $('m0_icon').value },
+             { name: $('m1_name').value.trim(), icon: $('m1_icon').value },
+             { name: $('m2_name').value.trim(), template: $('m2_tpl').value } ],
+    walk: { front: `assets/${$('f_key').value.trim()}/front.mp4`,
+            back:  `assets/${$('f_key').value.trim()}/back.mp4`,
+            mode: $('mode').value },
+    images: { icon: `assets/${$('f_key').value.trim()}/icon.png` },
+  };
+  const acc = $('f_accent').value.trim();
+  if(acc) spec.accent = acc;
+  return spec;
+}
+function validate(spec){
+  if(!/^[a-z][a-z0-9_]*$/.test(spec.key)) return 'key は英小文字で始まる英数字にしてください';
+  for(const [k, n] of [['label','表示名'],['trait','特性id'],['traitDesc','特性の説明']])
+    if(!spec[k]) return n + 'を入れてください';
+  for(const k of ['color','dark'])
+    if(!/^#[0-9a-fA-F]{6}$/.test(spec[k])) return k + ' は #rrggbb 形式にしてください';
+  for(let i=0;i<3;i++) if(!spec.moves[i].name) return `tier${i+1} の技名を入れてください`;
+  if(!state.walk.f || !state.walk.b) return '歩行モーションの正面・後ろの両方をプレビューしてください';
+  if(!state.portraits) return '静止画を整えてください';
+  return null;
+}
+
+/* ---------------------------------------------------------- 送信 */
+async function preflight(){
+  try{
+    if(!tok()) return log('先にトークンを保存してください', 'ng');
+    const spec = collectSpec();
+    const err = validate(spec);
+    if(err) return log(err, 'ng');
+    log('GitHub から data.js / ui.js / sw.js を取得しています…');
+    const [dataJs, uiJs, swJs] = await Promise.all(
+      ['data.js','ui.js','sw.js'].map(getFile));
+    if(dataJs.includes('/*@' + spec.key + '*/'))
+      return log(`${spec.key} はすでに登録済みです。やり直すなら「登録を取り消す」を先に押してください。`, 'ng');
+    const moves = buildMoves(spec);
+    const rows = renderRows(spec, moves, traitExistsIn(uiJs, spec.trait));
+    const texts = applyRows({ 'data.js': dataJs, 'ui.js': uiJs }, rows);
+    const newSw = bumpCache(swJs);
+    const swVer = (/aramon-cache-v(\d+)/.exec(newSw) || [])[1];
+
+    const lines = [];
+    lines.push('■ 送信されるファイル');
+    lines.push(`  monsters/${spec.key}_walk_f1..8.png  (8枚)`);
+    lines.push(`  monsters/${spec.key}_walk_b1..8.png  (8枚)`);
+    lines.push(`  monsters/${spec.key}.png / ${spec.key}_player.png`);
+    lines.push(`  monsters/specs/${spec.key}.json`);
+    lines.push(`  data.js / ui.js  (9表へ追記)`);
+    lines.push(`  sw.js  (キャッシュ番号を v${swVer} へ)`);
+    lines.push('');
+    lines.push('■ data.js / ui.js への追記');
+    for(const [name] of TABLES){
+      if(!rows[name]) continue;
+      lines.push(`--- ${name} (${TABLE_FILE[name]})`);
+      rows[name].forEach(l => l.split('\n').forEach(s => lines.push('+' + s)));
+    }
+    const badF = state.walk.f.issues.filter(Boolean).length;
+    const badB = state.walk.b.issues.filter(Boolean).length;
+    if(badF || badB){
+      lines.push('');
+      lines.push(`※ 歩行コマに問題の指摘があります(正面${badF}件 / 後ろ${badB}件)。`);
+      lines.push('   このまま進めることもできますが、抜き方を見直すことをおすすめします。');
+    }
+    state.files = { spec, texts, newSw };
+    $('commitBtn').disabled = false;
+    log(lines.join('\n'), 'ok');
+  }catch(e){ log(String(e.message||e), 'ng'); }
+}
+
+async function doCommit(){
+  if(!state.files) return log('先に「差分を確認する」を押してください', 'ng');
+  const { spec, texts, newSw } = state.files;
+  try{
+    $('commitBtn').disabled = true;
+    const R = repo(), B = branch();
+    const files = [];
+    for(let k=0;k<8;k++){
+      files.push({ path:`monsters/${spec.key}_walk_f${k+1}.png`, blob: state.walk.f.frames[k] });
+      files.push({ path:`monsters/${spec.key}_walk_b${k+1}.png`, blob: state.walk.b.frames[k] });
+    }
+    files.push({ path:`monsters/${spec.key}.png`, blob: state.portraits.icon });
+    files.push({ path:`monsters/${spec.key}_player.png`, blob: state.portraits.player });
+    const texts2 = Object.assign({}, texts, { 'sw.js': newSw,
+      [`monsters/specs/${spec.key}.json`]: JSON.stringify(spec, null, 2) });
+
+    log('コミットを作っています… (1/4) 画像を送信');
+    const tree = [];
+    let done = 0;
+    for(const f of files){
+      const b64 = await blobToBase64(f.blob);
+      const r = await ghPost(`/repos/${R}/git/blobs`, { content: b64, encoding: 'base64' });
+      tree.push({ path: f.path, mode: '100644', type: 'blob', sha: r.sha });
+      done++; setProg(Math.round(done/files.length*60));
+      log(`コミットを作っています… (1/4) 画像 ${done}/${files.length}`);
+    }
+    log('コミットを作っています… (2/4) テキストを送信');
+    for(const path of Object.keys(texts2)){
+      const r = await ghPost(`/repos/${R}/git/blobs`, { content: texts2[path], encoding: 'utf-8' });
+      tree.push({ path, mode: '100644', type: 'blob', sha: r.sha });
+    }
+    setProg(75);
+    log('コミットを作っています… (3/4) ツリーを作成');
+    const ref = await gh(`/repos/${R}/git/ref/heads/${B}`);
+    const base = ref.object.sha;
+    const baseCommit = await gh(`/repos/${R}/git/commits/${base}`);
+    const newTree = await ghPost(`/repos/${R}/git/trees`,
+      { base_tree: baseCommit.tree.sha, tree });
+    setProg(88);
+    log('コミットを作っています… (4/4) 反映');
+    const commit = await ghPost(`/repos/${R}/git/commits`, {
+      message: `モンスター「${spec.label}」を追加した(スタジオ)`,
+      tree: newTree.sha, parents: [base],
+    });
+    await gh(`/repos/${R}/git/refs/heads/${B}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sha: commit.sha }),
+      headers: { 'Authorization':'Bearer '+tok(), 'Accept':'application/vnd.github+json',
+                 'Content-Type':'application/json' },
+    });
+    setProg(null);
+    state.files = null;
+    log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
+        `数分後に本番へ反映されます(GitHub Actions の Pages デプロイ)。\n` +
+        `反映されたらロビーのモンスター選択に「${spec.label}」が出ます。`, 'ok');
+  }catch(e){
+    setProg(null); $('commitBtn').disabled = false;
+    log('コミットに失敗しました:\n' + String(e.message||e), 'ng');
+  }
+}
+
+async function doRevert(){
+  const key = $('f_key').value.trim();
+  if(!key) return log('key を入れてください', 'ng');
+  if(!confirm(`${key} の登録行を data.js / ui.js から消してコミットします。よろしいですか?`)) return;
+  try{
+    const R = repo(), B = branch();
+    const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
+    const { out, counts } = revertRows({ 'data.js': dataJs, 'ui.js': uiJs }, key);
+    const total = Object.values(counts).reduce((a,b)=>a+b, 0);
+    if(!total) return log(`${key} の登録行は見つかりませんでした`, 'ng');
+    out['sw.js'] = bumpCache(swJs);
+    const tree = [];
+    for(const path of Object.keys(out)){
+      const r = await ghPost(`/repos/${R}/git/blobs`, { content: out[path], encoding: 'utf-8' });
+      tree.push({ path, mode:'100644', type:'blob', sha: r.sha });
+    }
+    const ref = await gh(`/repos/${R}/git/ref/heads/${B}`);
+    const baseCommit = await gh(`/repos/${R}/git/commits/${ref.object.sha}`);
+    const newTree = await ghPost(`/repos/${R}/git/trees`, { base_tree: baseCommit.tree.sha, tree });
+    const commit = await ghPost(`/repos/${R}/git/commits`, {
+      message: `モンスター「${key}」の登録を取り消した(スタジオ)`,
+      tree: newTree.sha, parents: [ref.object.sha],
+    });
+    await gh(`/repos/${R}/git/refs/heads/${B}`, { method:'PATCH',
+      body: JSON.stringify({ sha: commit.sha }),
+      headers: { 'Authorization':'Bearer '+tok(), 'Accept':'application/vnd.github+json',
+                 'Content-Type':'application/json' } });
+    log(`取り消しました(${total}か所)。コミット: ${commit.sha.slice(0,7)}\n` +
+        `画像ファイルは残ります(参照されないので害はありません)。`, 'ok');
+  }catch(e){ log(String(e.message||e), 'ng'); }
+}
+
+/* ---------------------------------------------------------- 起動 */
+function boot(){
+  const opts = (sel, list) => sel.innerHTML = list.map(v=>`<option>${v}</option>`).join('');
+  opts($('f_aura'), AURAS);
+  opts($('m0_icon'), ICONS); opts($('m1_icon'), ICONS);
+  opts($('m2_tpl'), Object.keys(TIER3));
+  $('m2_tpl').onchange = ()=> $('tplHint').textContent = TPL_HINT[$('m2_tpl').value] || '';
+  $('m2_tpl').onchange();
+  $('aptRow').innerHTML = STATS.map(s=>
+    `<div><label>${s.slice(0,4)}</label><select id="apt_${s}">${
+      RANKS.map(r=>`<option${r==='C'?' selected':''}>${r}</option>`).join('')}</select></div>`).join('');
+  $('th').oninput = ()=> $('thVal').textContent = $('th').value;
+  $('mode').onchange = ()=>{
+    const m = $('mode').value;
+    $('thWrap').style.display = 'block';
+    $('chromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
+    $('th').value = m === 'white' ? 20 : (m === 'chroma' ? 60 : 14);
+    $('thVal').textContent = $('th').value;
+  };
+  const t = localStorage.getItem('aramon_gh_token');
+  if(t){ $('tok').value = t; saveToken(); }
+  const r = localStorage.getItem('aramon_gh_repo'); if(r) $('repo').value = r;
+  const b = localStorage.getItem('aramon_gh_branch'); if(b) $('branch').value = b;
+}
+boot();
+</script>
+</body></html>
