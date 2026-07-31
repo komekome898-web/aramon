@@ -700,6 +700,8 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
     document.getElementById(openId).addEventListener('click', ()=> lobbyOpenOverlay(ovId));
     document.getElementById(closeId).addEventListener('click', ()=> lobbyCloseOverlay(ovId));
   });
+  // ロビー右上「🔰 はじめての方へ」→ ヘルプ画面(headerHelpBtnと同じオーバーレイを開くだけ)
+  document.getElementById('openHelpFromLobbyBtn').addEventListener('click', ()=> lobbyOpenOverlay('helpOverlay'));
   // 設定・マイページの中のボタンは、押したらそのオーバーレイを閉じてから目的の画面を開く
   ['howToPlayBtn','openHudCustomizeBtn','audioSettingsBtn','adminEntryBtn'].forEach(id=>{
     const el = document.getElementById(id);

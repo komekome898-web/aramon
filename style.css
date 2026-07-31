@@ -295,6 +295,15 @@
   }
   .lobby-range-btn:active{ border-color:#8fd0ff; background:rgba(80,160,255,0.22); }
   .lobby-range-btn:disabled{ opacity:0.4; }
+  /* はじめての方へ(射撃訓練場への上)。タップでヘルプ画面を開く */
+  .lobby-help-btn{
+    padding:calc(0.9 * var(--vh)) 10px; border-radius:9px; cursor:pointer; width:100%;
+    font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:1px;
+    font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap;
+    color:#1a1306; background:linear-gradient(90deg, #f4c430, #ffdd78);
+    border:1px solid rgba(244,196,48,0.65);
+  }
+  .lobby-help-btn:active{ background:linear-gradient(90deg, #ffdd78, #f4c430); }
   .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; letter-spacing:1px; color:var(--ink-dim); }
   .lobby-pick-value{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
     font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
