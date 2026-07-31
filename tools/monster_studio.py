@@ -249,12 +249,34 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._send(200, {'error': traceback.format_exc(limit=3)})
 
+def _lan_ip():
+    """自分のLAN内IPを推測する(表示用。失敗しても致命的ではない)。"""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=8777)
+    ap.add_argument('--lan', action='store_true',
+                     help='同じWi-Fi上の他端末(iPhone等)から開けるようにする。'
+                          '既定は自分のPCからしか開けない127.0.0.1のまま')
     a = ap.parse_args()
-    srv = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
+    host = '0.0.0.0' if a.lan else '127.0.0.1'
+    srv = ThreadingHTTPServer((host, a.port), Handler)
     print(f'モンスター作成スタジオ: http://127.0.0.1:{a.port}  (Ctrl+C で終了)')
+    if a.lan:
+        ip = _lan_ip()
+        if ip:
+            print(f'  同じWi-FiのiPhoneからは http://{ip}:{a.port} を開いてください')
+        else:
+            print('  --lan で起動しました(この端末のIPアドレスをiPhoneのブラウザに入力してください)')
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
