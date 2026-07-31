@@ -360,13 +360,17 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 
 **新しいモンスターは手作業で表に書かず、ツールで追加する。** 詳細は`tools/README.md`。
 
-- **GUI**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。書き出し→静止画→登録→検証までボタンで通る。**iOSはopencv/scipyが動かないのでMac側で起動する。`--lan`を付けると同じWi-FiのiPhoneのSafariから画面だけ開ける**(既定は127.0.0.1で自分のMacからしか開けない)。
+- **iPhone完結版(主役)**: `tools/studio_web.html` = GitHub Pagesに置いた静的HTML1枚(`.../aramon/tools/studio_web.html`)。**依存ゼロ・端末内で完結**し、動画→8コマ・静止画整形・9表への登録・**GitHubへの1コミット送信**まで行う。認証はfine-grained PAT(Contents: Read and write、対象リポジトリのみ)をlocalStorage(`aramon_gh_token`)に保存。**コミット先はmain直接**で`sw.js`の`CACHE_NAME`も自動で+1する。取り消しボタンは`/*@key*/`の行を消してコミットし直す(CLIの`--revert`相当)。
+  - **Python版と同じ行を出すことが前提。** `renderRows`/`buildMoves`/`jsMove`は`monster_code.py`/`monster_spec.py`の1:1移植なので、**片方を直したらもう片方も直す**(出力一致はnodeで文字列比較して確認できる)。
+  - 移植していないのは`grass`(GrabCut)と256色量子化だけ。難しい背景はMac版へ回す。
+  - 書き込みは**Git Data API**(blobs→tree→commit→PATCH ref)。ファイル単位のPUTだと18コミットになる。読み込みは**Contents API**(Pages経由だとSWのキャッシュで古い内容を掴む)。
+- **GUI(Mac/PC)**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。`--lan`で同じWi-FiのiPhoneから画面だけ開ける。
 - **CLI**: `python3 tools/monster_add.py <key>`(`--dry-run` / `--revert` / `--only sprites|portraits|code|check`)。仕様は`monsters/specs/<key>.json`。
 - **検証**: `python3 tools/check_monsters.py`。`ELEMENTS`の全モンスターについて9表と画像の有無を機械的に見る。**上のチェックリストはこれで強制される**ので、追加作業の最後に必ず通す。
 - **表への挿入位置は各表末尾の`// <<AUTO:表名>>`の行。この行を消さない。** 追記した行には`/*@key*/`の目印が入り、`--revert`はこれを見て消す。
 - 技はテンプレートを選ぶだけでコードを書かずに済む。tier1/2は絵文字(`REAL_ICON_FX`から自動列挙)、tier3は`fan`/`wave`/`crystal`/`beam`/`river`/`beams3`/`thunder`/`psychic`/`orb`/`tornado`/`sword`/`shell`/`crescent`/`spear`から選ぶ。
 - **背景除去は`tools/build_walk.py`をそのまま呼んでいる**(モンスターごとに積み上げたモードの資産を捨てない)。`build_walk.py`は`import`しても`JOBS`が走らないようにしてあり、`build_frames()`が8コマを返し`process()`が保存する。
-- 素材は`assets/<key>/`(gitに入れない)。ツールは`sw.js`を触らないので**コミット前に`CACHE_NAME`を上げる**。
+- 素材は`assets/<key>/`(gitに入れない)。CLI・Mac版GUIは`sw.js`を触らないので**コミット前に`CACHE_NAME`を上げる**(iPhone版だけ自動)。
 
 ## 作業の進め方
 
