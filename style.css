@@ -2362,7 +2362,8 @@
   #adminScreen{ justify-content:flex-start; padding-top:20px; padding-bottom:16px; overflow-y:hidden; }
   /* 各タブのペインをflexで縦いっぱいに伸ばし、中身をペイン内でスクロールさせる
      (block のままだと内側の flex 高さ制約が効かず、はみ出した内容が見えなくなる/閉じるボタンが中央に浮く) */
-  #adminStatsPane, #adminSePane{ display:flex; flex-direction:column; align-items:center; width:100%; flex:1 1 auto; min-height:0; }
+  #adminStatsPane, #adminSePane, #adminToolsPane{ display:flex; flex-direction:column; align-items:center; width:100%; flex:1 1 auto; min-height:0; }
+  #adminToolsPane{ margin-top:18px; gap:10px; }
   #closeAdminBtn{ flex:0 0 auto; margin-top:14px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:13px; letter-spacing:1px; color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
     border-radius:8px; cursor:pointer; }

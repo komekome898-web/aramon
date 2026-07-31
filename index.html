@@ -683,11 +683,13 @@
     <div class="admin-tabs">
       <button class="admin-tab active" data-tab="stats">プレイ状況</button>
       <button class="admin-tab" data-tab="se">音声確認</button>
+      <button class="admin-tab" data-tab="tools">機能</button>
     </div>
   </div>
-  <button id="adminPerfToggle" class="admin-grant-dia-btn">📊 パフォーマンス表示: OFF</button>
-  <!-- 動作確認用ダイヤ付与(現在は非表示。機能は残す。再表示する時は hidden を外す) -->
-  <button id="adminGrantDiaBtn" class="admin-grant-dia-btn hidden">💎 ダイヤ+500(動作確認用・この端末のアカウントに付与)</button>
+  <div id="adminToolsPane" class="hidden">
+    <button id="adminPerfToggle" class="admin-grant-dia-btn">📊 パフォーマンス表示: OFF</button>
+    <button id="adminGrantDiaBtn" class="admin-grant-dia-btn">💎 ダイヤ+500(動作確認用・この端末のアカウントに付与)</button>
+  </div>
   <div id="adminStatsPane">
     <div class="admin-subtabs" id="adminStatSubtabs">
       <button class="admin-substat active" data-substat="count">プレイ回数</button>

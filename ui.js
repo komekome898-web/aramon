@@ -4962,6 +4962,7 @@ function adminShowTab(tab){
   document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.getElementById('adminStatsPane').classList.toggle('hidden', tab!=='stats');
   document.getElementById('adminSePane').classList.toggle('hidden', tab!=='se');
+  document.getElementById('adminToolsPane').classList.toggle('hidden', tab!=='tools');
   if(tab!=='se' && typeof bgmSetTrack==='function') bgmSetTrack('title'); // 音声確認タブを離れたらテストBGMを止める
 }
 document.querySelectorAll('.admin-tab').forEach(t=> t.addEventListener('click', ()=>adminShowTab(t.dataset.tab)));
