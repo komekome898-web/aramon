@@ -51,6 +51,8 @@
     max-height:300px; overflow:auto; font-size:11px; white-space:pre-wrap;
     word-break:break-all; margin:10px 0 0; }
   .hint{ font-size:11.5px; color:var(--dim); margin-top:5px; line-height:1.55; }
+  canvas.pick{ width:100%; display:block; border:1px solid var(--line); border-radius:8px;
+    margin-top:6px; background:#0b0f16; }
   .ok{ color:var(--ok); } .ng{ color:var(--ng); }
   .badge{ display:inline-block; font-size:10px; padding:2px 7px; border-radius:99px;
     border:1px solid var(--line); color:var(--dim); }
@@ -92,9 +94,29 @@
 <!-- ============================================================ 2. 歩行 -->
 <div class="panel">
   <h2><span class="step">2</span>歩行モーション</h2>
-  <div class="r2">
-    <div><label>正面の動画</label><input id="vidF" type="file" accept="video/*"></div>
-    <div><label>後ろの動画</label><input id="vidB" type="file" accept="video/*"></div>
+  <label>素材</label>
+  <select id="walkSrc">
+    <option value="video">動画から作る</option>
+    <option value="image">画像から作る(動画なし)</option>
+  </select>
+  <div id="walkVideoWrap">
+    <div class="r2">
+      <div><label>正面の動画</label><input id="vidF" type="file" accept="video/*"></div>
+      <div><label>後ろの動画</label><input id="vidB" type="file" accept="video/*"></div>
+    </div>
+  </div>
+  <div id="walkImageWrap" style="display:none">
+    <div class="r2">
+      <div><label>正面の画像(複数選べます)</label><input id="imgF" type="file" accept="image/*" multiple></div>
+      <div><label>後ろの画像(省略可)</label><input id="imgB" type="file" accept="image/*" multiple></div>
+    </div>
+    <label>揺れの強さ <span id="swayVal">100</span> — 1枚だけのときに使います</label>
+    <input id="sway" type="range" min="0" max="200" value="100">
+    <div class="hint">
+      <b>2枚以上</b>ならその絵を順にコマとして並べます(8コマに足りなければ繰り返し、多ければ等間隔に選びます)。
+      <b>1枚だけ</b>なら上下の弾み・傾き・踏み込みを付けて歩いているように見せます。
+      後ろの画像を省くと正面の絵をそのまま使います。透過済みの画像はそのまま使い、そうでなければ下の抜き方で抜きます。
+    </div>
   </div>
   <label>背景の抜き方</label>
   <select id="mode">
@@ -108,7 +130,8 @@
     <input id="th" type="range" min="4" max="120" value="14">
   </div>
   <div id="chromaWrap" style="display:none">
-    <label>背景の色(プレビューの画像をタップして拾う) <span id="ckSwatch" class="badge">未取得</span></label>
+    <label>背景の色 — 下の絵の<b>背景</b>をタップして拾ってください <span id="ckSwatch" class="badge">未取得</span></label>
+    <canvas id="pickW" class="pick"></canvas>
   </div>
   <div class="btns">
     <button onclick="preview('f')">正面をプレビュー</button>
@@ -116,7 +139,7 @@
   </div>
   <progress id="prog" value="0" max="100" style="display:none"></progress>
   <div class="strip" id="strip"></div>
-  <div class="hint" id="walkMeta">動画を選んで「プレビュー」を押すと8コマを作ります。赤枠のコマは問題ありです。</div>
+  <div class="hint" id="walkMeta">素材を選んで「プレビュー」を押すと8コマを作ります。赤枠のコマは問題ありです。</div>
   <div class="hint">できあがった8コマは<b>そのまま保持されます</b>。正面・後ろの両方をプレビューしてから登録してください。</div>
 </div>
 
@@ -127,10 +150,27 @@
     <div><label>アイコン用の画像</label><input id="imgIcon" type="file" accept="image/*"></div>
     <div><label>試合用(省略可)</label><input id="imgPlayer" type="file" accept="image/*"></div>
   </div>
+  <label>背景の抜き方</label>
+  <select id="pmode">
+    <option value="auto">自動(透過済みならそのまま・それ以外は歩行と同じ設定)</option>
+    <option value="keep">そのまま使う(透過済みの画像)</option>
+    <option value="blackopen">黒背景・本体に黒い部分が無い</option>
+    <option value="black">黒背景・本体に黒い部分がある</option>
+    <option value="white">白背景</option>
+    <option value="chroma">色で抜く(背景をタップして色を拾う)</option>
+  </select>
+  <div id="pthWrap" style="display:none">
+    <label>しきい値 <span id="pthVal">14</span> — 大きくすると背景を多く抜きます</label>
+    <input id="pth" type="range" min="4" max="120" value="14">
+  </div>
+  <div id="pchromaWrap" style="display:none">
+    <label>背景の色 — 下の絵の<b>背景</b>をタップして拾ってください <span id="pckSwatch" class="badge">未取得</span></label>
+    <canvas id="pickP" class="pick"></canvas>
+  </div>
   <div class="btns"><button onclick="buildPortraits()">背景を抜いて整える</button></div>
   <div class="strip" id="portraitStrip" style="grid-template-columns:repeat(2,1fr)"></div>
   <div class="hint" id="portraitMeta">
-    透過していない写真でもかまいません。上で選んだ「背景の抜き方」を使って抜いてから、
+    透過していない写真でもかまいません。上で選んだ抜き方で背景を抜いてから、
     正方形・被写体が高さの9割・足元が下端付近に整えます。色相も自動で取得します。
   </div>
 </div>
@@ -222,7 +262,8 @@ const PORTRAIT_SIZE = 512, PORTRAIT_H = 0.90, PORTRAIT_FEET = 0.97;
 const ANALYZE_N = 72;        // 周期検出に使うコマ数
 const WORK_H = 640;          // 解析・切り抜きに使う作業解像度(高さ)
 
-const state = { walk:{f:null, b:null}, portraits:null, hue:null, chroma:null, files:null };
+const state = { walk:{f:null, b:null}, portraits:null, hue:null,
+                chroma:null, chromaP:null, files:null };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -364,6 +405,55 @@ function bboxOf(alpha, w, h, thr){
   }
   return x1<0 ? null : {x0,x1,y0,y1};
 }
+// 画面で選ばれている抜き方(歩行 / 静止画)
+function walkSeg(){
+  return { mode: $('mode').value, th: +$('th').value, chroma: state.chroma };
+}
+// 透過済みの画像はその透過をそのまま使い、そうでなければ抜く
+function imageAlphaFor(img, seg){
+  const N = img.width*img.height;
+  const a = new Uint8Array(N);
+  let has = false;
+  for(let i=0;i<N;i++){ a[i] = img.data[i*4+3]; if(a[i] < 250) has = true; }
+  return has ? a : segment(img, seg.mode, seg.th, seg.chroma);
+}
+// {img, alpha, box} -> 切り抜いた RGBA の canvas
+function cropCanvas(cut){
+  const img = cut.img, al = cut.alpha, b = cut.box, w = img.width;
+  const cw = b.x1-b.x0+1, ch = b.y1-b.y0+1;
+  const t = document.createElement('canvas'); t.width=cw; t.height=ch;
+  const tc = t.getContext('2d', { willReadFrequently:true });
+  const crop = tc.createImageData(cw, ch);
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    const s = (b.y0+y)*w + (b.x0+x), d = (y*cw+x)*4;
+    crop.data[d]=img.data[s*4]; crop.data[d+1]=img.data[s*4+1];
+    crop.data[d+2]=img.data[s*4+2]; crop.data[d+3]=al[s];
+  }
+  tc.putImageData(crop, 0, 0);
+  return t;
+}
+// 高さの中央値でスケールを決め、320x320 に足元合わせで並べる(build_walk.py と同じ)
+async function composeStrip(cuts){
+  const hs = cuts.filter(c=>c.box).map(c=>c.box.y1-c.box.y0).sort((a,b)=>a-b);
+  if(!hs.length) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
+  const medh = hs.length%2 ? hs[(hs.length-1)/2] : (hs[hs.length/2-1]+hs[hs.length/2])/2;
+  const scale = TARGET_H/medh;
+  const oc = document.createElement('canvas'); oc.width=CANVAS; oc.height=CANVAS;
+  const octx = oc.getContext('2d', { willReadFrequently:true });
+  const out = [];
+  for(const c of cuts){
+    octx.clearRect(0,0,CANVAS,CANVAS);
+    if(c.box){
+      const tmp = cropCanvas(c), cw = tmp.width, ch = tmp.height;
+      const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
+      octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
+      octx.drawImage(tmp, 0, 0, cw, ch,
+                     Math.round((CANVAS-nw)/2), Math.round(CANVAS*FEET_Y) - nh, nw, nh);
+    }
+    out.push(await canvasToBlobPng(oc));
+  }
+  return out;
+}
 
 /* ---------------------------------------------------------- 動画 */
 function loadVideo(file){
@@ -443,54 +533,74 @@ async function buildWalkFrames(file, onProgress){
   const dt = span/(ANALYZE_N-1);
 
   // ---- 2パス目: 選ばれた8コマだけ作業解像度で取り直して背景を抜く
-  const mode = $('mode').value, th = +$('th').value;
-  const raws = [], alphas = [], boxes = [];
+  const seg = walkSeg();
+  const cuts = [];
   for(let k=0;k<8;k++){
     const idx = Math.min(ANALYZE_N-1, Math.round(period*k/8));
     await seekTo(v, t0 + idx*dt);
     cx.drawImage(v, 0, 0, w, h);
     const img = cx.getImageData(0,0,w,h);
-    const a = segment(img, mode, th, state.chroma);
-    raws.push(img); alphas.push(a); boxes.push(bboxOf(a, w, h));
+    const a = segment(img, seg.mode, seg.th, seg.chroma);
+    cuts.push({ img, alpha:a, box: bboxOf(a, w, h) });
     if(onProgress) onProgress(55 + Math.round((k+1)/8*45));
   }
   URL.revokeObjectURL(v.src);
+  return { frames: await composeStrip(cuts), note: `周期=${period}` };
+}
 
-  // ---- 高さの中央値でスケールを決め、320x320 に足元合わせで置く
-  const hs = boxes.filter(Boolean).map(b => b.y1-b.y0).sort((a,b)=>a-b);
-  if(!hs.length) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
-  const medh = hs.length%2 ? hs[(hs.length-1)/2] : (hs[hs.length/2-1]+hs[hs.length/2])/2;
-  const scale = TARGET_H/medh;
+// 画像 -> 8コマ。2枚以上ならそれを並べ、1枚なら揺れを付けて歩かせる
+async function buildWalkFromImages(files, onProgress){
+  const seg = walkSeg();
+  const cuts = [];
+  for(let i=0;i<files.length;i++){
+    const img = await fileToImageData(files[i]);
+    const a = imageAlphaFor(img, seg);
+    cuts.push({ img, alpha:a, box: bboxOf(a, img.width, img.height) });
+    if(onProgress) onProgress(Math.round((i+1)/files.length*70));
+  }
+  if(cuts.length >= 2){
+    const pick = [];
+    for(let k=0;k<8;k++) pick.push(cuts[Math.min(cuts.length-1, Math.floor(k*cuts.length/8))]);
+    if(onProgress) onProgress(80);
+    return { frames: await composeStrip(pick), note: `${cuts.length}枚から` };
+  }
+  if(onProgress) onProgress(80);
+  return { frames: await synthWalkFrames(cuts[0]), note: '1枚から自動生成' };
+}
 
-  const out = [];
+// 1枚の絵に歩行らしい動きを付けて8コマにする。
+// 足元(CANVAS*FEET_Y)を軸にするので、接地位置はコマ間でずれない。
+async function synthWalkFrames(cut){
+  if(!cut.box) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
+  const s = (+$('sway').value)/100;
+  const tmp = cropCanvas(cut), cw = tmp.width, ch = tmp.height;
+  const scale = TARGET_H/ch;
+  const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
+  const amp = TARGET_H*0.030*s;   // 上下の弾み(2歩で1往復)
+  const lean = 0.045*s;           // 前後の傾き
+  const swayX = TARGET_H*0.012*s; // 左右の揺れ
+  const q = 0.035*s;              // 踏み込みの縮み
   const oc = document.createElement('canvas'); oc.width=CANVAS; oc.height=CANVAS;
   const octx = oc.getContext('2d', { willReadFrequently:true });
-  const tmp = document.createElement('canvas');
-  const tctx = tmp.getContext('2d', { willReadFrequently:true });
+  const out = [];
+  const foot = Math.round(CANVAS*FEET_Y);
   for(let k=0;k<8;k++){
+    const t = k/8;
+    const bob = -amp*(0.5 - 0.5*Math.cos(4*Math.PI*t));   // 0(接地) 〜 -amp(浮き)
+    const rot = lean*Math.sin(2*Math.PI*t);
+    const dx  = swayX*Math.sin(2*Math.PI*t);
+    const sy  = 1 - q*Math.cos(4*Math.PI*t);
+    const sx  = 1 + q*0.6*Math.cos(4*Math.PI*t);
     octx.clearRect(0,0,CANVAS,CANVAS);
-    const b = boxes[k];
-    if(b){
-      const cw = b.x1-b.x0+1, ch = b.y1-b.y0+1;
-      tmp.width=cw; tmp.height=ch;
-      const crop = tctx.createImageData(cw, ch);
-      const src = raws[k].data, al = alphas[k];
-      for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
-        const s = ((b.y0+y)*w + (b.x0+x)), dst = (y*cw+x)*4;
-        crop.data[dst]   = src[s*4];
-        crop.data[dst+1] = src[s*4+1];
-        crop.data[dst+2] = src[s*4+2];
-        crop.data[dst+3] = al[s];
-      }
-      tctx.putImageData(crop, 0, 0);
-      const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
-      octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
-      octx.drawImage(tmp, 0, 0, cw, ch,
-                     Math.round((CANVAS-nw)/2), Math.round(CANVAS*FEET_Y) - nh, nw, nh);
-    }
+    octx.save();
+    octx.translate(CANVAS/2 + dx, foot + bob);
+    octx.rotate(rot); octx.scale(sx, sy);
+    octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
+    octx.drawImage(tmp, 0, 0, cw, ch, -nw/2, -nh, nw, nh);
+    octx.restore();
     out.push(await canvasToBlobPng(oc));
   }
-  return { frames: out, period };
+  return out;
 }
 function canvasToBlobPng(c){
   return new Promise(res=> c.toBlob(b=>res(b), 'image/png'));
@@ -536,30 +646,91 @@ async function inspectFrames(blobs){
 }
 
 /* ---------------------------------------------------------- プレビュー */
+// 「色で抜く」なのに色を拾っていないと黒背景として抜いてしまうので止める
+function assertChroma(mode, rgb){
+  if(mode === 'chroma' && !rgb)
+    throw new Error('背景の色を拾ってください(下の絵の背景をタップします)');
+}
 async function preview(side){
-  const file = (side==='f' ? $('vidF') : $('vidB')).files[0];
-  if(!file) return log('動画を選んでください', 'ng');
   try{
+    assertChroma($('mode').value, state.chroma);
     setProg(0);
     $('walkMeta').textContent = 'コマを作っています…';
-    const r = await buildWalkFrames(file, p=>setProg(p));
+    let r;
+    if($('walkSrc').value === 'video'){
+      const file = (side==='f' ? $('vidF') : $('vidB')).files[0];
+      if(!file) throw new Error('動画を選んでください');
+      r = await buildWalkFrames(file, p=>setProg(p));
+    }else{
+      let fs = Array.from((side==='f' ? $('imgF') : $('imgB')).files);
+      if(side==='b' && !fs.length) fs = Array.from($('imgF').files);   // 後ろが無ければ正面を使う
+      if(!fs.length) throw new Error('画像を選んでください');
+      r = await buildWalkFromImages(fs, p=>setProg(p));
+    }
     const issues = await inspectFrames(r.frames);
     state.walk[side] = { frames:r.frames, issues };
     const urls = await Promise.all(r.frames.map(blobToDataUrl));
     $('strip').innerHTML = urls.map((u,i)=>
-      `<div class="cell${issues[i]?' bad':''}" onclick="pickChroma(${i})">
+      `<div class="cell${issues[i]?' bad':''}">
          <img src="${u}"><span class="n">${i+1}</span>
          ${issues[i]?`<span class="why">${issues[i]}</span>`:''}</div>`).join('');
     const bad = issues.filter(Boolean).length;
-    $('walkMeta').innerHTML = `${side==='f'?'正面':'後ろ'}の8コマができました(周期=${r.period})。` +
+    $('walkMeta').innerHTML = `${side==='f'?'正面':'後ろ'}の8コマができました(${r.note})。` +
       (bad ? `<span class="ng"> ${bad}コマに問題あり。抜き方やしきい値を変えて再プレビューしてください。</span>`
            : '<span class="ok"> 問題は見つかりませんでした。</span>') +
       `<br>保持中: 正面${state.walk.f?'○':'—'} / 後ろ${state.walk.b?'○':'—'}`;
     setProg(null);
   }catch(e){ setProg(null); log(String(e.message||e), 'ng'); }
 }
-// 「色で抜く」用: プレビュー画像をタップして背景色を拾う
-function pickChroma(){ /* 色拾いは静止画側で行う。ここでは何もしない */ }
+
+/* ---------------------------------------------------------- 背景色を拾う */
+function setChroma(which, rgb){
+  const hex = '#' + rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+  const b = $(which==='w' ? 'ckSwatch' : 'pckSwatch');
+  if(which==='w') state.chroma = rgb; else state.chromaP = rgb;
+  b.textContent = hex; b.style.background = hex; b.style.color = '#000';
+  b.style.borderColor = hex;
+}
+function pickFromCanvas(cv, ev, which){
+  if(!cv.width) return;
+  const r = cv.getBoundingClientRect();
+  const x = Math.round((ev.clientX - r.left) * cv.width / r.width);
+  const y = Math.round((ev.clientY - r.top) * cv.height / r.height);
+  const cx = cv.getContext('2d', { willReadFrequently:true });
+  const d = cx.getImageData(Math.max(0, Math.min(cv.width-1, x)),
+                            Math.max(0, Math.min(cv.height-1, y)), 1, 1).data;
+  setChroma(which, [d[0], d[1], d[2]]);
+}
+// 色を拾うための下絵を描く(動画なら先頭付近の1コマ、画像ならその画像)
+async function fillPicker(which){
+  const cv = $(which==='w' ? 'pickW' : 'pickP');
+  const badge = $(which==='w' ? 'ckSwatch' : 'pckSwatch');
+  const noSrc = ()=>{ cv.width = 0; badge.textContent = '素材を選んでください'; };
+  let src = null, sw = 0, sh = 0, vid = null;
+  try{
+    if(which === 'w' && $('walkSrc').value === 'video'){
+      const f = $('vidF').files[0] || $('vidB').files[0];
+      if(!f) return noSrc();
+      vid = await loadVideo(f);
+      await seekTo(vid, (vid.duration||1)*0.1);
+      src = vid; sw = vid.videoWidth; sh = vid.videoHeight;
+    }else{
+      const f = which === 'w'
+        ? ($('imgF').files[0] || $('imgB').files[0])
+        : ($('imgIcon').files[0] || $('imgPlayer').files[0]);
+      if(!f) return noSrc();
+      src = await createImageBitmap(f); sw = src.width; sh = src.height;
+    }
+    if(!sw || !sh) return;
+    const W = 300, H = Math.max(1, Math.round(sh*W/sw));
+    cv.width = W; cv.height = H;
+    cv.getContext('2d', { willReadFrequently:true }).drawImage(src, 0, 0, W, H);
+  }catch(e){
+    log(String(e.message||e), 'ng');
+  }finally{
+    if(vid) URL.revokeObjectURL(vid.src);
+  }
+}
 
 /* ---------------------------------------------------------- 静止画 */
 async function fileToImageData(file){
@@ -575,11 +746,16 @@ async function fileToImageData(file){
 async function makePortrait(file){
   const img = await fileToImageData(file);
   const w = img.width, h = img.height;
-  // すでに透過済みならそのまま、そうでなければ背景を抜く
-  let alpha = new Uint8Array(w*h);
-  let hasAlpha = false;
-  for(let i=0;i<w*h;i++){ alpha[i] = img.data[i*4+3]; if(alpha[i] < 250) hasAlpha = true; }
-  if(!hasAlpha) alpha = segment(img, $('mode').value, +$('th').value, state.chroma);
+  const pm = $('pmode').value;
+  let alpha;
+  if(pm === 'keep'){                       // 画像の透過をそのまま使う
+    alpha = new Uint8Array(w*h);
+    for(let i=0;i<w*h;i++) alpha[i] = img.data[i*4+3];
+  }else if(pm === 'auto'){                 // 透過済みならそのまま / それ以外は歩行と同じ設定
+    alpha = imageAlphaFor(img, walkSeg());
+  }else{                                   // 静止画だけの抜き方を明示指定
+    alpha = segment(img, pm, +$('pth').value, state.chromaP);
+  }
   const b = bboxOf(alpha, w, h, 8);
   if(!b) throw new Error('被写体を検出できませんでした');
   const cw = b.x1-b.x0+1, ch = b.y1-b.y0+1;
@@ -636,6 +812,9 @@ async function buildPortraits(){
   const fi = $('imgIcon').files[0];
   if(!fi) return log('アイコン用の画像を選んでください', 'ng');
   try{
+    const pm = $('pmode').value;
+    assertChroma(pm, state.chromaP);
+    if(pm === 'auto') assertChroma($('mode').value, state.chroma);
     $('portraitMeta').textContent = '整えています…';
     const icon = await makePortrait(fi);
     const pf = $('imgPlayer').files[0];
@@ -898,9 +1077,9 @@ function collectSpec(){
     moves: [ { name: $('m0_name').value.trim(), icon: $('m0_icon').value },
              { name: $('m1_name').value.trim(), icon: $('m1_icon').value },
              { name: $('m2_name').value.trim(), template: $('m2_tpl').value } ],
-    walk: { front: `assets/${$('f_key').value.trim()}/front.mp4`,
-            back:  `assets/${$('f_key').value.trim()}/back.mp4`,
-            mode: $('mode').value },
+    walk: { front: `assets/${$('f_key').value.trim()}/front.${$('walkSrc').value==='video'?'mp4':'png'}`,
+            back:  `assets/${$('f_key').value.trim()}/back.${$('walkSrc').value==='video'?'mp4':'png'}`,
+            source: $('walkSrc').value, mode: $('mode').value },
     images: { icon: `assets/${$('f_key').value.trim()}/icon.png` },
   };
   const acc = $('f_accent').value.trim();
@@ -1069,14 +1248,38 @@ function boot(){
   $('aptRow').innerHTML = STATS.map(s=>
     `<div><label>${s.slice(0,4)}</label><select id="apt_${s}">${
       RANKS.map(r=>`<option${r==='C'?' selected':''}>${r}</option>`).join('')}</select></div>`).join('');
+  const defTh = m => m === 'white' ? 20 : (m === 'chroma' ? 60 : 14);
   $('th').oninput = ()=> $('thVal').textContent = $('th').value;
   $('mode').onchange = ()=>{
     const m = $('mode').value;
     $('thWrap').style.display = 'block';
     $('chromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
-    $('th').value = m === 'white' ? 20 : (m === 'chroma' ? 60 : 14);
+    $('th').value = defTh(m);
     $('thVal').textContent = $('th').value;
+    if(m === 'chroma') fillPicker('w');
   };
+  $('pth').oninput = ()=> $('pthVal').textContent = $('pth').value;
+  $('pmode').onchange = ()=>{
+    const m = $('pmode').value, own = (m !== 'auto' && m !== 'keep');
+    $('pthWrap').style.display = own ? 'block' : 'none';
+    $('pchromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
+    if(own){ $('pth').value = defTh(m); $('pthVal').textContent = $('pth').value; }
+    if(m === 'chroma') fillPicker('p');
+  };
+  $('walkSrc').onchange = ()=>{
+    const v = $('walkSrc').value === 'video';
+    $('walkVideoWrap').style.display = v ? 'block' : 'none';
+    $('walkImageWrap').style.display = v ? 'none' : 'block';
+    if($('mode').value === 'chroma') fillPicker('w');
+  };
+  $('sway').oninput = ()=> $('swayVal').textContent = $('sway').value;
+  // 素材を選び直したら色拾いの下絵も入れ替える
+  for(const id of ['vidF','vidB','imgF','imgB'])
+    $(id).addEventListener('change', ()=>{ if($('mode').value === 'chroma') fillPicker('w'); });
+  for(const id of ['imgIcon','imgPlayer'])
+    $(id).addEventListener('change', ()=>{ if($('pmode').value === 'chroma') fillPicker('p'); });
+  $('pickW').addEventListener('click', e=> pickFromCanvas($('pickW'), e, 'w'));
+  $('pickP').addEventListener('click', e=> pickFromCanvas($('pickP'), e, 'p'));
   const t = localStorage.getItem('aramon_gh_token');
   if(t){ $('tok').value = t; saveToken(); }
   const r = localStorage.getItem('aramon_gh_repo'); if(r) $('repo').value = r;

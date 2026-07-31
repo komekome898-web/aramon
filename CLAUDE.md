@@ -363,6 +363,8 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **iPhone完結版(主役)**: `tools/studio_web.html` = GitHub Pagesに置いた静的HTML1枚(`.../aramon/tools/studio_web.html`)。**依存ゼロ・端末内で完結**し、動画→8コマ・静止画整形・9表への登録・**GitHubへの1コミット送信**まで行う。認証はfine-grained PAT(Contents: Read and write、対象リポジトリのみ)をlocalStorage(`aramon_gh_token`)に保存。**コミット先はmain直接**で`sw.js`の`CACHE_NAME`も自動で+1する。取り消しボタンは`/*@key*/`の行を消してコミットし直す(CLIの`--revert`相当)。
   - **Python版と同じ行を出すことが前提。** `renderRows`/`buildMoves`/`jsMove`は`monster_code.py`/`monster_spec.py`の1:1移植なので、**片方を直したらもう片方も直す**(出力一致はnodeで文字列比較して確認できる)。
   - 移植していないのは`grass`(GrabCut)と256色量子化だけ。難しい背景はMac版へ回す。
+  - **歩行は動画が無くても作れる**(iPhone版のみ)。2枚以上の画像はそのままコマとして並べ、1枚だけなら`synthWalkFrames()`が上下の弾み・傾き・踏み込みを付ける。**足元(`CANVAS*FEET_Y`)を軸に変形する**ので接地位置がコマ間でずれない。上下は2歩で1往復(`cos(4πt)`)。
+  - **背景の抜き方は歩行と静止画で別々**(`walkSeg()` / `#pmode`)。静止画の既定は`auto`=透過済みならそのまま・それ以外は歩行と同じ設定。「色で抜く」の色は下絵をタップして拾い、`state.chroma`(歩行)/`state.chromaP`(静止画)に持つ。**色を拾っていないまま抜くと黒背景として処理されてしまうので`assertChroma()`で止める。**
   - 書き込みは**Git Data API**(blobs→tree→commit→PATCH ref)。ファイル単位のPUTだと18コミットになる。読み込みは**Contents API**(Pages経由だとSWのキャッシュで古い内容を掴む)。
 - **GUI(Mac/PC)**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。`--lan`で同じWi-FiのiPhoneから画面だけ開ける。
 - **CLI**: `python3 tools/monster_add.py <key>`(`--dry-run` / `--revert` / `--only sprites|portraits|code|check`)。仕様は`monsters/specs/<key>.json`。
