@@ -360,7 +360,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 
 **新しいモンスターは手作業で表に書かず、ツールで追加する。** 詳細は`tools/README.md`。
 
-- **GUI**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。書き出し→静止画→登録→検証までボタンで通る。
+- **GUI**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。書き出し→静止画→登録→検証までボタンで通る。**iOSはopencv/scipyが動かないのでMac側で起動する。`--lan`を付けると同じWi-FiのiPhoneのSafariから画面だけ開ける**(既定は127.0.0.1で自分のMacからしか開けない)。
 - **CLI**: `python3 tools/monster_add.py <key>`(`--dry-run` / `--revert` / `--only sprites|portraits|code|check`)。仕様は`monsters/specs/<key>.json`。
 - **検証**: `python3 tools/check_monsters.py`。`ELEMENTS`の全モンスターについて9表と画像の有無を機械的に見る。**上のチェックリストはこれで強制される**ので、追加作業の最後に必ず通す。
 - **表への挿入位置は各表末尾の`// <<AUTO:表名>>`の行。この行を消さない。** 追記した行には`/*@key*/`の目印が入り、`--revert`はこれを見て消す。
