@@ -364,6 +364,8 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
   - **Python版と同じ行を出すことが前提。** `renderRows`/`buildMoves`/`jsMove`は`monster_code.py`/`monster_spec.py`の1:1移植なので、**片方を直したらもう片方も直す**(出力一致はnodeで文字列比較して確認できる)。
   - 移植していないのは`grass`(GrabCut)と256色量子化だけ。難しい背景はMac版へ回す。
   - **歩行は動画が無くても作れる**(iPhone版のみ)。2枚以上の画像はそのままコマとして並べ、1枚だけなら`synthWalkFrames()`が上下の弾み・傾き・踏み込みを付ける。**足元(`CANVAS*FEET_Y`)を軸に変形する**ので接地位置がコマ間でずれない。上下は2歩で1往復(`cos(4πt)`)。
+  - **SSRスキンの登録もできる**(iPhone版のみ)。入れるのは`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`と`WALK_ANIM`の素体の中の4か所。**`WALK_ANIM`だけは表の末尾ではなく素体ブロックの中に挿す**ので`applySsrWalk()`が専用に処理する(`reg.ssr`は1素体に1つだけなので、埋まっていたら静止画だけで登録し、ゲーム側の静止画フォールバックに任せる)。素体一覧はツールに書かず`data.js`の`ELEMENTS`から読む。`SKIN_TIER3_SE`は音源が要るので扱わない。
+  - **8コマの下にゲームと同じ速さ(`WALK_FRAME_DUR`=0.11秒)のアニメーションを出す。** この値はdata.jsと二重に持っているので、変えたら両方直す。
   - **背景の抜き方は歩行と静止画で別々**(`walkSeg()` / `#pmode`)。静止画の既定は`auto`=透過済みならそのまま・それ以外は歩行と同じ設定。「色で抜く」の色は下絵をタップして拾い、`state.chroma`(歩行)/`state.chromaP`(静止画)に持つ。**色を拾っていないまま抜くと黒背景として処理されてしまうので`assertChroma()`で止める。**
   - 書き込みは**Git Data API**(blobs→tree→commit→PATCH ref)。ファイル単位のPUTだと18コミットになる。読み込みは**Contents API**(Pages経由だとSWのキャッシュで古い内容を掴む)。
 - **GUI(Mac/PC)**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。`--lan`で同じWi-FiのiPhoneから画面だけ開ける。
