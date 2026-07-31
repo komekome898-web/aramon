@@ -3189,8 +3189,11 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
    ・加算合成なので重なるほど明るくなり、光の筒に見える                         */
 function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   const segs = 16;
-  const halfH = FX3D_MON_H*0.5;          // 縦半径(モンスターの背丈の半分)
-  const dz    = FX3D_MON_H*0.55;         // 芯の高さ。下端が地面すれすれに来る
+  // 縦半径は横の半分。これより薄くすると、正面から撃った時に地面へ貼り付いた
+  // 板にしか見えなくなる(実際に起きた)。細いビームでも背丈の半分は確保する
+  const halfH = Math.max(FX3D_MON_H*0.5, radius*0.5);
+  // 芯の高さ。筒の下端が必ず地面から浮くようにして、地面の模様と一体化させない
+  const dz    = halfH + FX3D_MON_H*0.35;
   const px = -Math.sin(angle), py = Math.cos(angle);   // 進行方向に垂直(ワールド水平)
   const pts = [], uH = [], uV = [];
   for(let i=0;i<=segs;i++){
@@ -3259,22 +3262,38 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade){
   });
   fxStrokePath(inset(edgeA, 1), shell, rimW, 0.95*fade, 0);
   fxStrokePath(inset(edgeB, -1), shell, rimW, 0.95*fade, 0);
-  // 両端の断面。uH/uV をそのまま基底にすれば、投影された楕円がそのまま描ける
-  for(const i of [0, pts.length-1]){
+  // 断面の輪。両端は塗りつぶし、途中は輪郭だけを等間隔に入れて「筒」だと分かるようにする。
+  // uH/uV をそのまま基底にすれば、投影された楕円がそのまま描ける
+  const ringAt = (i, filled)=>{
     const c = pts[i], h = uH[i], v = uV[i];
     const det = h.x*v.y - h.y*v.x;
-    if(Math.abs(det) < 1) continue;        // 真横から見て潰れているときは描かない
+    if(Math.abs(det) < 1) return;          // 真横から見て潰れているときは描かない
+    // 自分の足元から撃つと手前の断面が画面いっぱいに広がるので、大きすぎる断面は出さない
+    if(Math.hypot(h.x, h.y) > viewW*0.4) return;
     ctx.save();
     ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
-    const g = ctx.createRadialGradient(0,0,0, 0,0,1);
-    g.addColorStop(0, 'rgba(255,255,255,0.98)');
-    g.addColorStop(0.4, _hexA(sh.bright, 0.55));
-    g.addColorStop(0.82, _hexA(col, 0.35));
-    g.addColorStop(1, _hexA(shell, 0.9));
     ctx.beginPath(); ctx.arc(0,0,1,0,Math.PI*2);
-    ctx.fillStyle = g; ctx.fill();
+    if(filled){
+      const g = ctx.createRadialGradient(0,0,0, 0,0,1);
+      g.addColorStop(0, 'rgba(255,255,255,0.98)');
+      g.addColorStop(0.4, _hexA(sh.bright, 0.55));
+      g.addColorStop(0.82, _hexA(col, 0.35));
+      g.addColorStop(1, _hexA(shell, 0.9));
+      ctx.fillStyle = g; ctx.fill();
+    } else {
+      // 線幅は変換前の空間で指定するので、拡大率で割って画面上の太さを揃える
+      ctx.lineWidth = 2.2 / Math.max(1, Math.sqrt(Math.abs(det)));
+      ctx.strokeStyle = _hexA(shell, 0.5);
+      ctx.stroke();
+    }
     ctx.restore();
+  };
+  const last = pts.length-1;
+  for(let k=1;k<4;k++){
+    const i = Math.round(last*k/4);
+    if(i>0 && i<last) ringAt(i, false);
   }
+  ringAt(0, true); ringAt(last, true);
   ctx.restore();
 }
 // 地面から生える尖った柱(結晶・氷柱)
