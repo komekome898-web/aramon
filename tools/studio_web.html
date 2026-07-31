@@ -91,9 +91,43 @@
   </div>
 </div>
 
-<!-- ============================================================ 2. 歩行 -->
+<!-- ============================================================ 2. 登録の種類 -->
 <div class="panel">
-  <h2><span class="step">2</span>歩行モーション</h2>
+  <h2><span class="step">2</span>登録の種類</h2>
+  <select id="regKind">
+    <option value="monster">新しいモンスターを追加する</option>
+    <option value="ssr">既存モンスターのSSRスキンを追加する</option>
+  </select>
+  <div id="ssrForm" style="display:none">
+    <div class="r2">
+      <div><label>素体(どのモンスターのスキンか)</label><select id="s_element"></select></div>
+      <div><label>スキンid(<b>_ssr</b> で終える)</label><input id="s_id" placeholder="mymon_ssr"></div>
+    </div>
+    <div class="r2">
+      <div><label>表示名</label><input id="s_name" placeholder="マイモンSSR"></div>
+      <div><label>オーラ</label><select id="s_aura"></select></div>
+    </div>
+    <div class="r2">
+      <div><label>tier3の専用技名(空なら付けない)</label><input id="s_t3name"></div>
+      <div><label>威力倍率</label><input id="s_t3mult" type="number" step="0.05" value="1.15"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:10px">
+      <input id="s_season" type="checkbox" style="width:auto"> シーズンパス限定にする(ガチャ・カタログに出さない)
+    </label>
+    <div class="hint">
+      画像名はスキンidから決まります(<code>mymon_ssr</code> → アイコン <code>mymon_ssr.png</code> /
+      試合用 <code>mymon_player_ssr.png</code> / 歩行 <code>mymon_ssr_walk_f1..8</code>)。
+      SSRだけの特典は<b>tier3の技名と威力</b>です。素体の技・特性・適性は変わりません。
+      歩行コマは<b>1素体に1つ</b>しか持てないので、その素体にすでにSSRの歩行があるときは
+      静止画だけで登録します(ゲーム側が自動で静止画に切り替わります)。
+    </div>
+  </div>
+  <div class="hint" id="regHint"></div>
+</div>
+
+<!-- ============================================================ 3. 歩行 -->
+<div class="panel">
+  <h2><span class="step">3</span>歩行モーション</h2>
   <label>素材</label>
   <select id="walkSrc">
     <option value="video">動画から作る</option>
@@ -140,12 +174,24 @@
   <progress id="prog" value="0" max="100" style="display:none"></progress>
   <div class="strip" id="strip"></div>
   <div class="hint" id="walkMeta">素材を選んで「プレビュー」を押すと8コマを作ります。赤枠のコマは問題ありです。</div>
+  <div id="animWrap" style="display:none">
+    <label>ゲームと同じ動き(1コマ0.11秒・8コマで約0.9秒)</label>
+    <div class="strip" style="grid-template-columns:repeat(2,1fr)">
+      <div class="cell"><img id="animF"><span class="n">正面</span></div>
+      <div class="cell"><img id="animB"><span class="n">後ろ</span></div>
+    </div>
+    <div class="btns">
+      <button id="animBtn" onclick="toggleWalkAnim()">止める</button>
+      <button onclick="animStep()">1コマ進める</button>
+    </div>
+    <div class="hint" id="animMeta"></div>
+  </div>
   <div class="hint">できあがった8コマは<b>そのまま保持されます</b>。正面・後ろの両方をプレビューしてから登録してください。</div>
 </div>
 
-<!-- ============================================================ 3. 静止画 -->
+<!-- ============================================================ 4. 静止画 -->
 <div class="panel">
-  <h2><span class="step">3</span>静止画</h2>
+  <h2><span class="step">4</span>静止画</h2>
   <div class="r2">
     <div><label>アイコン用の画像</label><input id="imgIcon" type="file" accept="image/*"></div>
     <div><label>試合用(省略可)</label><input id="imgPlayer" type="file" accept="image/*"></div>
@@ -175,9 +221,9 @@
   </div>
 </div>
 
-<!-- ============================================================ 4. 仕様 -->
-<div class="panel">
-  <h2><span class="step">4</span>仕様</h2>
+<!-- ============================================================ 5. 仕様 -->
+<div class="panel" id="specPanel">
+  <h2><span class="step">5</span>仕様</h2>
   <div class="r2">
     <div><label>key(英小文字)</label><input id="f_key" placeholder="mymon"></div>
     <div><label>表示名</label><input id="f_label" placeholder="マイモン"></div>
@@ -207,9 +253,9 @@
   </div>
 </div>
 
-<!-- ============================================================ 5. 技 -->
-<div class="panel">
-  <h2><span class="step">5</span>技</h2>
+<!-- ============================================================ 6. 技 -->
+<div class="panel" id="movePanel">
+  <h2><span class="step">6</span>技</h2>
   <div class="movebox">
     <div class="r2">
       <div><label>tier1 技名</label><input id="m0_name"></div>
@@ -231,9 +277,9 @@
   </div>
 </div>
 
-<!-- ============================================================ 6. 送信 -->
+<!-- ============================================================ 7. 送信 -->
 <div class="panel">
-  <h2><span class="step">6</span>登録して本番へ反映</h2>
+  <h2><span class="step">7</span>登録して本番へ反映</h2>
   <div class="btns">
     <button onclick="preflight()">差分を確認する</button>
     <button class="primary" id="commitBtn" onclick="doCommit()" disabled>この内容でコミット</button>
@@ -262,8 +308,9 @@ const PORTRAIT_SIZE = 512, PORTRAIT_H = 0.90, PORTRAIT_FEET = 0.97;
 const ANALYZE_N = 72;        // 周期検出に使うコマ数
 const WORK_H = 640;          // 解析・切り抜きに使う作業解像度(高さ)
 
+const WALK_FRAME_DUR = 0.11;  // data.js と同じ。1コマの表示秒数(8コマ≒0.9秒/周)
 const state = { walk:{f:null, b:null}, portraits:null, hue:null,
-                chroma:null, chromaP:null, files:null };
+                chroma:null, chromaP:null, files:null, elements:null };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -668,8 +715,8 @@ async function preview(side){
       r = await buildWalkFromImages(fs, p=>setProg(p));
     }
     const issues = await inspectFrames(r.frames);
-    state.walk[side] = { frames:r.frames, issues };
     const urls = await Promise.all(r.frames.map(blobToDataUrl));
+    state.walk[side] = { frames:r.frames, issues, urls };
     $('strip').innerHTML = urls.map((u,i)=>
       `<div class="cell${issues[i]?' bad':''}">
          <img src="${u}"><span class="n">${i+1}</span>
@@ -679,9 +726,37 @@ async function preview(side){
       (bad ? `<span class="ng"> ${bad}コマに問題あり。抜き方やしきい値を変えて再プレビューしてください。</span>`
            : '<span class="ok"> 問題は見つかりませんでした。</span>') +
       `<br>保持中: 正面${state.walk.f?'○':'—'} / 後ろ${state.walk.b?'○':'—'}`;
+    startWalkAnim();
     setProg(null);
   }catch(e){ setProg(null); log(String(e.message||e), 'ng'); }
 }
+
+/* ------------------------------------------------ 歩行アニメのプレビュー */
+// ゲームの entityWalkFrameImage と同じ間隔(WALK_FRAME_DUR)でコマを送る。
+let animTimer = null, animIdx = 0;
+function animDraw(){
+  for(const side of ['f','b']){
+    const w = state.walk[side];
+    const im = $(side==='f' ? 'animF' : 'animB');
+    if(w && w.urls){ im.src = w.urls[animIdx]; im.style.visibility = 'visible'; }
+    else im.style.visibility = 'hidden';
+  }
+  $('animMeta').textContent = `${animIdx+1} / 8 コマ目`;
+}
+function startWalkAnim(){
+  if(!state.walk.f && !state.walk.b){ $('animWrap').style.display = 'none'; return; }
+  $('animWrap').style.display = 'block';
+  stopWalkAnim();
+  animDraw();
+  animTimer = setInterval(()=>{ animIdx = (animIdx+1)%8; animDraw(); }, WALK_FRAME_DUR*1000);
+  $('animBtn').textContent = '止める';
+}
+function stopWalkAnim(){
+  if(animTimer){ clearInterval(animTimer); animTimer = null; }
+  $('animBtn').textContent = '動かす';
+}
+function toggleWalkAnim(){ animTimer ? stopWalkAnim() : startWalkAnim(); }
+function animStep(){ stopWalkAnim(); animIdx = (animIdx+1)%8; animDraw(); }
 
 /* ---------------------------------------------------------- 背景色を拾う */
 function setChroma(which, rgb){
@@ -963,8 +1038,46 @@ function renderRows(spec, moves, traitExists){
 }
 const TABLES = [['ELEMENTS','data.js'],['WALK_ANIM','data.js'],['SIGNATURE_MOVES','data.js'],
   ['MONSTER_AURA','data.js'],['MOVE_AURA','data.js'],['STATE_CHANGES','data.js'],
-  ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js']];
+  ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js'],
+  ['SSR_SKINS','data.js'],['SSR_SKIN_AURA','data.js'],['SSR_SKIN_TIER3','data.js']];
 const TABLE_FILE = Object.fromEntries(TABLES);
+
+/* ---------------------------------------------------------- SSRスキンの行 */
+// SSRの特典は「tier3の技名と威力」だけ(素体の技・特性・適性は変えない)。
+// 登録先は SSR_SKINS / SSR_SKIN_AURA /(あれば)SSR_SKIN_TIER3 と、WALK_ANIM の素体の中。
+function renderSsrRows(ss){
+  const mark = '/*@' + ss.id + '*/';
+  const f = [`element:${jsStr(ss.element)}`, `name:${jsStr(ss.name)}`,
+             `iconImg:${jsStr(ss.iconImg)}`, `playerImg:${jsStr(ss.playerImg)}`];
+  if(ss.seasonExclusive) f.push('seasonExclusive:true');
+  const rows = {};
+  rows.SSR_SKINS = [`  ${pad(ss.id,16)}{ ${f.join(', ')} }, ${mark}`];
+  rows.SSR_SKIN_AURA = [`  ${pad(ss.id,16)}${jsStr(ss.aura)}, ${mark}`];
+  if(ss.t3name)
+    rows.SSR_SKIN_TIER3 = [`  ${pad(ss.id,16)}{ name:${jsStr(ss.t3name)}, dmgMult:${ss.t3mult} }, ${mark}`];
+  return rows;
+}
+// WALK_ANIM は表の末尾ではなく「素体の中」に入れるので、目印方式ではなく素体ブロックを探して挿す。
+// 1素体に ssr は1つしか持てない(entityWalkFrameImage が reg.ssr を1つだけ見る)。
+function applySsrWalk(dataJs, ss){
+  const start = dataJs.indexOf('const WALK_ANIM = {');
+  if(start < 0) throw new Error('data.js に WALK_ANIM が見つかりません');
+  const endMark = dataJs.indexOf('// <<AUTO:WALK_ANIM>>', start);
+  if(endMark < 0) throw new Error('data.js に目印 <<AUTO:WALK_ANIM>> が見つかりません');
+  const block = dataJs.slice(start, endMark);
+  const m = new RegExp('^  ' + ss.element + '\\s*:\\s*\\{[^\\n]*$', 'm').exec(block);
+  if(!m) return { text:dataJs, added:false, reason:`WALK_ANIM に素体「${ss.element}」がありません` };
+  const from = m.index + m[0].length;
+  const rest = block.slice(from);
+  const c = /^  \},?[ \t]*$/m.exec(rest);
+  const bodyEnd = from + (c ? c.index : rest.length);
+  if(/\bssr\s*:/.test(block.slice(from, bodyEnd)))
+    return { text:dataJs, added:false, reason:`素体「${ss.element}」にはすでにSSRの歩行コマがあります` };
+  const line = `    ssr:  { skinId:${jsStr(ss.id)}, front:_loadWalk(${jsStr(ss.walkPrefix+'f')}),` +
+               ` back:_loadWalk(${jsStr(ss.walkPrefix+'b')}) }, /*@${ss.id}*/\n`;
+  const at = start + bodyEnd;
+  return { text: dataJs.slice(0, at) + line + dataJs.slice(at), added:true };
+}
 // apply_rows の移植: 目印の直前へ挿入
 function applyRows(texts, rows){
   const out = Object.assign({}, texts);
@@ -1041,6 +1154,7 @@ async function saveToken(){
     $('authBadge').textContent = '接続OK: ' + r.full_name;
     $('authBadge').className = 'badge on';
     log('接続できました。トークンはこの端末に保存されました。', 'ok');
+    loadElementList();
   }catch(e){
     $('authBadge').textContent = '接続できません';
     $('authBadge').className = 'badge';
@@ -1052,6 +1166,29 @@ function forgetToken(){
   $('tok').value = '';
   $('authBadge').textContent = '未接続'; $('authBadge').className = 'badge';
   log('トークンを消しました。');
+}
+// SSRの「素体」一覧は data.js の ELEMENTS から読む(こちらに一覧を書き写さない)
+async function loadElementList(){
+  try{
+    const dataJs = await getFile('data.js');
+    const s = dataJs.indexOf('const ELEMENTS = {');
+    if(s < 0) return;
+    const e = dataJs.indexOf('// <<AUTO:ELEMENTS>>', s);
+    const body = dataJs.slice(s, e > 0 ? e : s + 20000);
+    const rx = /^  ([a-z][a-z0-9_]*)\s*:\s*\{[^\n]*?label\s*:\s*'([^']*)'/gm;
+    const out = []; let m;
+    while((m = rx.exec(body))) out.push([m[1], m[2]]);
+    if(!out.length) return;
+    state.elements = out;
+    const cur = $('s_element').value;
+    $('s_element').innerHTML = out.map(([k,l])=>`<option value="${k}">${l}(${k})</option>`).join('');
+    if(cur && out.some(([k])=>k===cur)) $('s_element').value = cur;
+    onElementChange();
+  }catch(err){ /* 接続前は一覧が出ないだけ */ }
+}
+// 素体を選んだらスキンidの雛形を入れる(すでに入力済みなら触らない)
+function onElementChange(){
+  if(!$('s_id').value.trim()) $('s_id').placeholder = `${$('s_element').value}_ssr`;
 }
 async function getFile(path){
   const j = await gh(`/repos/${repo()}/contents/${path}?ref=${branch()}`);
@@ -1086,6 +1223,26 @@ function collectSpec(){
   if(acc) spec.accent = acc;
   return spec;
 }
+function isSsr(){ return $('regKind').value === 'ssr'; }
+function activeKey(){ return (isSsr() ? $('s_id').value : $('f_key').value).trim(); }
+function collectSsr(){
+  const id = $('s_id').value.trim();
+  const base = id.replace(/_ssr$/, '');
+  return {
+    id, element: $('s_element').value, name: $('s_name').value.trim(),
+    aura: $('s_aura').value, seasonExclusive: $('s_season').checked,
+    iconImg: `${base}_ssr`, playerImg: `${base}_player_ssr`,
+    walkPrefix: `${base}_ssr_walk_`,
+    t3name: $('s_t3name').value.trim(), t3mult: (+$('s_t3mult').value) || 1.15,
+  };
+}
+function validateSsr(ss){
+  if(!/^[a-z][a-z0-9_]*_ssr$/.test(ss.id)) return 'スキンidは英小文字で始まり _ssr で終える形にしてください';
+  if(!ss.element) return '素体を選んでください(先にGitHubへ接続すると一覧が出ます)';
+  if(!ss.name) return '表示名を入れてください';
+  if(!state.portraits) return '静止画を整えてください';
+  return null;
+}
 function validate(spec){
   if(!/^[a-z][a-z0-9_]*$/.test(spec.key)) return 'key は英小文字で始まる英数字にしてください';
   for(const [k, n] of [['label','表示名'],['trait','特性id'],['traitDesc','特性の説明']])
@@ -1099,46 +1256,117 @@ function validate(spec){
 }
 
 /* ---------------------------------------------------------- 送信 */
+// 歩行コマの指摘をまとめる
+function walkIssueLines(lines){
+  const badF = state.walk.f ? state.walk.f.issues.filter(Boolean).length : 0;
+  const badB = state.walk.b ? state.walk.b.issues.filter(Boolean).length : 0;
+  if(!badF && !badB) return;
+  lines.push('');
+  lines.push(`※ 歩行コマに問題の指摘があります(正面${badF}件 / 後ろ${badB}件)。`);
+  lines.push('   このまま進めることもできますが、抜き方を見直すことをおすすめします。');
+}
+function rowLines(rows, lines){
+  for(const [name] of TABLES){
+    if(!rows[name]) continue;
+    lines.push(`--- ${name} (${TABLE_FILE[name]})`);
+    rows[name].forEach(l => l.split('\n').forEach(s => lines.push('+' + s)));
+  }
+}
+// 新しいモンスター
+async function planMonster(dataJs, uiJs, swJs, lines){
+  const spec = collectSpec();
+  const err = validate(spec);
+  if(err) throw new Error(err);
+  if(dataJs.includes('/*@' + spec.key + '*/'))
+    throw new Error(`${spec.key} はすでに登録済みです。やり直すなら「登録を取り消す」を先に押してください。`);
+  const moves = buildMoves(spec);
+  const rows = renderRows(spec, moves, traitExistsIn(uiJs, spec.trait));
+  const texts = applyRows({ 'data.js': dataJs, 'ui.js': uiJs }, rows);
+  const newSw = bumpCache(swJs);
+  const images = [];
+  for(let k=0;k<8;k++){
+    images.push({ path:`monsters/${spec.key}_walk_f${k+1}.png`, blob: state.walk.f.frames[k] });
+    images.push({ path:`monsters/${spec.key}_walk_b${k+1}.png`, blob: state.walk.b.frames[k] });
+  }
+  images.push({ path:`monsters/${spec.key}.png`, blob: state.portraits.icon });
+  images.push({ path:`monsters/${spec.key}_player.png`, blob: state.portraits.player });
+  texts['sw.js'] = newSw;
+  texts[`monsters/specs/${spec.key}.json`] = JSON.stringify(spec, null, 2);
+
+  lines.push('■ 送信されるファイル');
+  lines.push(`  monsters/${spec.key}_walk_f1..8.png / _b1..8.png  (16枚)`);
+  lines.push(`  monsters/${spec.key}.png / ${spec.key}_player.png`);
+  lines.push(`  monsters/specs/${spec.key}.json`);
+  lines.push('  data.js / ui.js  (9表へ追記)');
+  lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(newSw)||[])[1]} へ)`);
+  lines.push('');
+  lines.push('■ data.js / ui.js への追記');
+  rowLines(rows, lines);
+  walkIssueLines(lines);
+  return { texts, images, message: `モンスター「${spec.label}」を追加した(スタジオ)` };
+}
+// 既存モンスターのSSRスキン
+async function planSsr(dataJs, swJs, lines){
+  const ss = collectSsr();
+  const err = validateSsr(ss);
+  if(err) throw new Error(err);
+  if(dataJs.includes('/*@' + ss.id + '*/'))
+    throw new Error(`${ss.id} はすでに登録済みです。やり直すなら「登録を取り消す」を先に押してください。`);
+  const rows = renderSsrRows(ss);
+  const texts = applyRows({ 'data.js': dataJs }, rows);
+  // 歩行コマは素体に1つだけ。両面そろっていて枠が空いているときだけ登録する
+  const haveWalk = !!(state.walk.f && state.walk.b);
+  let walkNote = '歩行コマは登録しません(正面・後ろの両方をプレビューすると登録できます)';
+  const images = [];
+  if(haveWalk){
+    const r = applySsrWalk(texts['data.js'], ss);
+    if(r.added){
+      texts['data.js'] = r.text;
+      walkNote = null;
+      for(let k=0;k<8;k++){
+        images.push({ path:`monsters/${ss.walkPrefix}f${k+1}.png`, blob: state.walk.f.frames[k] });
+        images.push({ path:`monsters/${ss.walkPrefix}b${k+1}.png`, blob: state.walk.b.frames[k] });
+      }
+    }else{
+      walkNote = `${r.reason}。静止画だけで登録します(ゲーム側が自動で静止画に切り替わります)`;
+    }
+  }
+  const newSw = bumpCache(swJs);
+  images.push({ path:`monsters/${ss.iconImg}.png`, blob: state.portraits.icon });
+  images.push({ path:`monsters/${ss.playerImg}.png`, blob: state.portraits.player });
+  texts['sw.js'] = newSw;
+  texts[`monsters/specs/${ss.id}.json`] = JSON.stringify(ss, null, 2);
+
+  lines.push('■ 送信されるファイル');
+  if(!walkNote) lines.push(`  monsters/${ss.walkPrefix}f1..8.png / ${ss.walkPrefix}b1..8.png  (16枚)`);
+  lines.push(`  monsters/${ss.iconImg}.png / ${ss.playerImg}.png`);
+  lines.push(`  monsters/specs/${ss.id}.json`);
+  lines.push('  data.js  (SSRの表へ追記)');
+  lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(newSw)||[])[1]} へ)`);
+  lines.push('');
+  lines.push('■ data.js への追記');
+  rowLines(rows, lines);
+  if(!walkNote){
+    lines.push(`--- WALK_ANIM.${ss.element} (data.js)`);
+    lines.push(`+    ssr:  { skinId:'${ss.id}', front:_loadWalk('${ss.walkPrefix}f'), back:_loadWalk('${ss.walkPrefix}b') },`);
+  }
+  if(!ss.t3name){
+    lines.push('');
+    lines.push('※ tier3の専用技名が空なので SSR_SKIN_TIER3 には入れません(技名・威力は素体のままです)。');
+  }
+  if(walkNote){ lines.push(''); lines.push('※ ' + walkNote + '。'); }
+  walkIssueLines(lines);
+  return { texts, images, message: `SSRスキン「${ss.name}」を追加した(スタジオ)` };
+}
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
-    const spec = collectSpec();
-    const err = validate(spec);
-    if(err) return log(err, 'ng');
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
-    const [dataJs, uiJs, swJs] = await Promise.all(
-      ['data.js','ui.js','sw.js'].map(getFile));
-    if(dataJs.includes('/*@' + spec.key + '*/'))
-      return log(`${spec.key} はすでに登録済みです。やり直すなら「登録を取り消す」を先に押してください。`, 'ng');
-    const moves = buildMoves(spec);
-    const rows = renderRows(spec, moves, traitExistsIn(uiJs, spec.trait));
-    const texts = applyRows({ 'data.js': dataJs, 'ui.js': uiJs }, rows);
-    const newSw = bumpCache(swJs);
-    const swVer = (/aramon-cache-v(\d+)/.exec(newSw) || [])[1];
-
+    const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
     const lines = [];
-    lines.push('■ 送信されるファイル');
-    lines.push(`  monsters/${spec.key}_walk_f1..8.png  (8枚)`);
-    lines.push(`  monsters/${spec.key}_walk_b1..8.png  (8枚)`);
-    lines.push(`  monsters/${spec.key}.png / ${spec.key}_player.png`);
-    lines.push(`  monsters/specs/${spec.key}.json`);
-    lines.push(`  data.js / ui.js  (9表へ追記)`);
-    lines.push(`  sw.js  (キャッシュ番号を v${swVer} へ)`);
-    lines.push('');
-    lines.push('■ data.js / ui.js への追記');
-    for(const [name] of TABLES){
-      if(!rows[name]) continue;
-      lines.push(`--- ${name} (${TABLE_FILE[name]})`);
-      rows[name].forEach(l => l.split('\n').forEach(s => lines.push('+' + s)));
-    }
-    const badF = state.walk.f.issues.filter(Boolean).length;
-    const badB = state.walk.b.issues.filter(Boolean).length;
-    if(badF || badB){
-      lines.push('');
-      lines.push(`※ 歩行コマに問題の指摘があります(正面${badF}件 / 後ろ${badB}件)。`);
-      lines.push('   このまま進めることもできますが、抜き方を見直すことをおすすめします。');
-    }
-    state.files = { spec, texts, newSw };
+    const plan = isSsr() ? await planSsr(dataJs, swJs, lines)
+                         : await planMonster(dataJs, uiJs, swJs, lines);
+    state.files = plan;
     $('commitBtn').disabled = false;
     log(lines.join('\n'), 'ok');
   }catch(e){ log(String(e.message||e), 'ng'); }
@@ -1146,19 +1374,10 @@ async function preflight(){
 
 async function doCommit(){
   if(!state.files) return log('先に「差分を確認する」を押してください', 'ng');
-  const { spec, texts, newSw } = state.files;
+  const { texts: texts2, images: files, message } = state.files;
   try{
     $('commitBtn').disabled = true;
     const R = repo(), B = branch();
-    const files = [];
-    for(let k=0;k<8;k++){
-      files.push({ path:`monsters/${spec.key}_walk_f${k+1}.png`, blob: state.walk.f.frames[k] });
-      files.push({ path:`monsters/${spec.key}_walk_b${k+1}.png`, blob: state.walk.b.frames[k] });
-    }
-    files.push({ path:`monsters/${spec.key}.png`, blob: state.portraits.icon });
-    files.push({ path:`monsters/${spec.key}_player.png`, blob: state.portraits.player });
-    const texts2 = Object.assign({}, texts, { 'sw.js': newSw,
-      [`monsters/specs/${spec.key}.json`]: JSON.stringify(spec, null, 2) });
 
     log('コミットを作っています… (1/4) 画像を送信');
     const tree = [];
@@ -1185,8 +1404,7 @@ async function doCommit(){
     setProg(88);
     log('コミットを作っています… (4/4) 反映');
     const commit = await ghPost(`/repos/${R}/git/commits`, {
-      message: `モンスター「${spec.label}」を追加した(スタジオ)`,
-      tree: newTree.sha, parents: [base],
+      message, tree: newTree.sha, parents: [base],
     });
     await gh(`/repos/${R}/git/refs/heads/${B}`, {
       method: 'PATCH',
@@ -1198,7 +1416,8 @@ async function doCommit(){
     state.files = null;
     log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
         `数分後に本番へ反映されます(GitHub Actions の Pages デプロイ)。\n` +
-        `反映されたらロビーのモンスター選択に「${spec.label}」が出ます。`, 'ok');
+        (isSsr() ? '反映されたらガチャとSSRカタログに出ます(シーズン限定にした場合を除く)。'
+                 : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
   }catch(e){
     setProg(null); $('commitBtn').disabled = false;
     log('コミットに失敗しました:\n' + String(e.message||e), 'ng');
@@ -1206,8 +1425,8 @@ async function doCommit(){
 }
 
 async function doRevert(){
-  const key = $('f_key').value.trim();
-  if(!key) return log('key を入れてください', 'ng');
+  const key = activeKey();
+  if(!key) return log(isSsr() ? 'スキンidを入れてください' : 'key を入れてください', 'ng');
   if(!confirm(`${key} の登録行を data.js / ui.js から消してコミットします。よろしいですか?`)) return;
   try{
     const R = repo(), B = branch();
@@ -1280,6 +1499,21 @@ function boot(){
     $(id).addEventListener('change', ()=>{ if($('pmode').value === 'chroma') fillPicker('p'); });
   $('pickW').addEventListener('click', e=> pickFromCanvas($('pickW'), e, 'w'));
   $('pickP').addEventListener('click', e=> pickFromCanvas($('pickP'), e, 'p'));
+  opts($('s_aura'), AURAS);
+  $('s_element').innerHTML = '<option value="">先にGitHubへ接続してください</option>';
+  $('s_element').onchange = onElementChange;
+  $('regKind').onchange = ()=>{
+    const ssr = isSsr();
+    $('ssrForm').style.display = ssr ? 'block' : 'none';
+    $('specPanel').style.display = ssr ? 'none' : 'block';
+    $('movePanel').style.display = ssr ? 'none' : 'block';
+    $('regHint').textContent = ssr
+      ? 'SSRスキンは「素体の見た目替え+tier3の技名と威力」です。技・特性・適性は素体のものを使います。'
+      : '新しいモンスターとして9つの表すべてに登録します。';
+    state.files = null; $('commitBtn').disabled = true;
+    if(ssr && !state.elements) loadElementList();
+  };
+  $('regKind').onchange();
   const t = localStorage.getItem('aramon_gh_token');
   if(t){ $('tok').value = t; saveToken(); }
   const r = localStorage.getItem('aramon_gh_repo'); if(r) $('repo').value = r;

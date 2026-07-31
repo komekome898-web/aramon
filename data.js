@@ -495,7 +495,11 @@ const AURA_DIS_MULT = 0.75;  // 不利技×有利モンスター
 const AURA_MATCH_MULT = 1.2; // 技オーラ=使用者オーラ(一致)
 const AURA_JP = { red:'赤', green:'緑', yellow:'黄', blue:'青', white:'白', black:'黒' };
 const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white:'⚪', black:'⚫' };
-const SSR_SKIN_AURA = { phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black', zeus_ssr:'yellow', choco_ssr:'red', persephone_ssr:'blue' };
+const SSR_SKIN_AURA = {
+  phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black',
+  zeus_ssr:'yellow', choco_ssr:'red', persephone_ssr:'blue',
+  // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
+};
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
 const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
@@ -618,6 +622,7 @@ const SSR_SKIN_TIER3 = {
     // 面積を半分にするので半径は1/√2(460→325)
     blast:{ radius:325, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
   }},
+  // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
 // 対象外はそのまま元の技を返す。結果はスキンID+技名でキャッシュし毎フレームの生成を避ける。
@@ -1672,6 +1677,7 @@ const SSR_SKINS = {
   choco_ssr:   { element:'pixie', name:'ちょこ', iconImg:'choco_ssr', playerImg:'choco_player_ssr' },
   // ペルセポネ: イルミネのオリジナルSSR。ガチャ・SSRカタログにも出る
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
+  // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
