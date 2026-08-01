@@ -365,7 +365,7 @@
 const $ = id => document.getElementById(id);
 const TARGET_H = 250, CANVAS = 320, FEET_Y = 0.94;   // build_walk.py と同じ
 const PORTRAIT_SIZE = 512, PORTRAIT_H = 0.90, PORTRAIT_FEET = 0.97;
-const ANALYZE_N = 72;        // 周期検出に使うコマ数
+const ANALYZE_N = 48;        // 周期検出に使うコマ数(多いほど遅い。48で0.75秒まで見分けられる)
 const WORK_H = 640;          // 解析・切り抜きに使う作業解像度(高さ)
 const CAND_N = 16;           // 動画から出す候補のコマ数(この中から8コマ選ぶ)
 
@@ -744,26 +744,48 @@ async function composeStrip(cuts){
      ① コマが用意される readyState>=2(loadeddata)まで待つ
      ② 無音・インラインで一瞬だけ再生してデコーダを起こす
      ③ シーク後、実際にコマが描けるようになるまで待ってから drawImage する      */
+// 待ち時間に必ず上限を付ける。どれか1つでも返らないと「コマを作っています」のまま固まる
+function withTimeout(p, ms, fallback){
+  return Promise.race([p, new Promise(r=> setTimeout(()=> r(fallback), ms))]);
+}
 function loadVideo(file){
   return new Promise((res, rej)=>{
     const v = document.createElement('video');
     v.playsInline = true; v.muted = true; v.defaultMuted = true; v.preload = 'auto';
     v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
     v.setAttribute('muted', '');
+    // iOSは画面に無い動画だと再生できないことがあるので、見えない場所に置いておく
+    v.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(v);
     v.src = URL.createObjectURL(file);
-    const ready = ()=>{ if(v.readyState >= 2) res(v); };
-    v.onloadeddata = ready; v.oncanplay = ready; v.onloadedmetadata = ready;
-    v.onerror = ()=> rej(new Error('動画を読み込めませんでした'));
+    let done = false;
+    const ok = ()=>{ if(!done){ done = true; res(v); } };
+    const ng = (m)=>{ if(!done){ done = true; releaseVideo(v); rej(new Error(m)); } };
+    const ready = ()=>{ if(v.readyState >= 2) ok(); };
+    v.onloadeddata = ready; v.oncanplay = ready; v.oncanplaythrough = ready;
+    v.onloadedmetadata = ready;
+    v.onerror = ()=> ng('動画を読み込めませんでした');
     try{ v.load(); }catch(e){}
-    setTimeout(()=>{ if(v.readyState >= 1) res(v); }, 5000);   // 保険
+    // コマまでは用意できなくても、大きさが分かっていれば進んでみる
+    setTimeout(()=>{ if(v.readyState >= 1) ok(); }, 3000);
+    // ここまでで何も来なければ必ず終わらせる(黙って固まらせない)
+    setTimeout(()=> ng('動画を読み込めませんでした(時間切れ)。' +
+      '別の動画を試すか、「画像から作る」をお使いください。'), 12000);
   });
 }
-// 一瞬だけ再生してデコーダを起こす(音は出ない)
+function releaseVideo(v){
+  if(!v) return;
+  try{ v.pause(); }catch(e){}
+  try{ if(v.src) URL.revokeObjectURL(v.src); }catch(e){}
+  try{ v.removeAttribute('src'); v.load(); }catch(e){}
+  try{ if(v.parentNode) v.parentNode.removeChild(v); }catch(e){}
+}
+// 一瞬だけ再生してデコーダを起こす(音は出ない)。play()が返らない端末があるので上限を付ける
 async function primeVideo(v){
   try{
     const p = v.play();
-    if(p && p.then) await p;
-    await new Promise(r=>setTimeout(r, 80));
+    if(p && p.then) await withTimeout(p.catch(()=>{}), 1200);
+    await new Promise(r=> setTimeout(r, 80));
   }catch(e){ /* 再生できなくても続ける */ }
   try{ v.pause(); }catch(e){}
 }
@@ -774,7 +796,7 @@ function afterSeekPaint(v){
     const fin = ()=>{ if(!done){ done = true; res(); } };
     if(v.requestVideoFrameCallback){ try{ v.requestVideoFrameCallback(fin); }catch(e){} }
     requestAnimationFrame(()=> requestAnimationFrame(fin));
-    setTimeout(fin, 150);
+    setTimeout(fin, 120);
   });
 }
 function seekTo(v, t){
@@ -785,8 +807,9 @@ function seekTo(v, t){
       afterSeekPaint(v).then(res);
     };
     v.onseeked = fin;
-    v.currentTime = Math.max(0, Math.min(t, (v.duration||1) - 0.05));
-    setTimeout(fin, 700);   // シークが返らない端末向けの保険
+    try{ v.currentTime = Math.max(0, Math.min(t, (v.duration||1) - 0.05)); }
+    catch(e){ fin(); return; }
+    setTimeout(fin, 600);   // シークが返らない端末向けの保険
   });
 }
 /* 周期の見つけ方。素朴に「全体の自己相関のいちばん高い所」を取ると、
@@ -860,73 +883,83 @@ function detectPeriod(grays, n){
 }
 
 // 動画 -> 8コマの RGBA ImageData(320x320)
+const walkStep = (t)=>{ const e = $('walkMeta'); if(e) e.textContent = t; };
 async function buildWalkFrames(file, onProgress){
+  walkStep('動画を読み込んでいます…');
   const v = await loadVideo(file);
-  await primeVideo(v);
-  const dur = v.duration || 0;
-  if(!dur) throw new Error('動画の長さが取れませんでした');
-  const vw = v.videoWidth, vh = v.videoHeight;
-  if(!vw || !vh) throw new Error('動画の大きさが取れませんでした');
-  const sc = Math.min(1, WORK_H/vh);
-  const w = Math.round(vw*sc), h = Math.round(vh*sc);
+  try{
+    walkStep('動画を用意しています…');
+    await primeVideo(v);
+    const dur = v.duration || 0;
+    if(!dur) throw new Error('動画の長さが取れませんでした');
+    const vw = v.videoWidth, vh = v.videoHeight;
+    if(!vw || !vh) throw new Error('動画の大きさが取れませんでした');
+    const sc = Math.min(1, WORK_H/vh);
+    const w = Math.round(vw*sc), h = Math.round(vh*sc);
 
-  const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
-  const cx = cv.getContext('2d', { willReadFrequently:true });
-  const gv = document.createElement('canvas'); gv.width=48; gv.height=48;
-  const gc = gv.getContext('2d', { willReadFrequently:true });
+    const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
+    const cx = cv.getContext('2d', { willReadFrequently:true });
+    const gv = document.createElement('canvas'); gv.width=48; gv.height=48;
+    const gc = gv.getContext('2d', { willReadFrequently:true });
 
-  // ---- 1パス目: 解析用のグレースケール(48x48)
-  const span = Math.min(dur*0.96, 4.0);          // 長い動画は先頭4秒だけ見る
-  const t0 = dur*0.02;
-  const grays = [];
-  for(let i=0;i<ANALYZE_N;i++){
-    await seekTo(v, t0 + span*i/(ANALYZE_N-1));
-    gc.drawImage(v, 0, 0, 48, 48);
-    const g = gc.getImageData(0,0,48,48).data;
-    const arr = new Float32Array(48*48);
-    for(let j=0,p=0;j<48*48;j++,p+=4) arr[j] = 0.299*g[p] + 0.587*g[p+1] + 0.114*g[p+2];
-    grays.push(arr);
-    if(onProgress) onProgress(Math.round(i/ANALYZE_N*55));
-  }
-  // コマがまったく描けていなければここで止める。
-  // 気づかずに進むと「背景が1つも無い=全面が被写体」となり真っ黒な8コマができる
-  let gmin = 255, gmax = 0;
-  for(const g of grays) for(let j=0;j<g.length;j++){
-    if(g[j] < gmin) gmin = g[j];
-    if(g[j] > gmax) gmax = g[j];
-  }
-  if(gmax - gmin < 3)
-    throw new Error('動画のコマを読み取れませんでした(端末がこの動画を再生できていません)。' +
-                    'もう一度お試しいただくか、別の動画か「画像から作る」をお使いください。');
-  const period = detectPeriod(grays, ANALYZE_N);
-  const dt = span/(ANALYZE_N-1);
+    // ---- 1パス目: 解析用のグレースケール(48x48)
+    const span = Math.min(dur*0.96, 4.0);          // 長い動画は先頭4秒だけ見る
+    const t0 = dur*0.02;
+    const grays = [];
+    for(let i=0;i<ANALYZE_N;i++){
+      await seekTo(v, t0 + span*i/(ANALYZE_N-1));
+      gc.drawImage(v, 0, 0, 48, 48);
+      const g = gc.getImageData(0,0,48,48).data;
+      const arr = new Float32Array(48*48);
+      for(let j=0,p=0;j<48*48;j++,p+=4) arr[j] = 0.299*g[p] + 0.587*g[p+1] + 0.114*g[p+2];
+      grays.push(arr);
+      if(onProgress) onProgress(Math.round(i/ANALYZE_N*55));
+      walkStep(`歩き方を調べています… ${i+1} / ${ANALYZE_N}`);
+    }
+    // コマがまったく描けていなければここで止める。
+    // 気づかずに進むと「背景が1つも無い=全面が被写体」となり真っ黒な8コマができる
+    let gmin = 255, gmax = 0;
+    for(const g of grays) for(let j=0;j<g.length;j++){
+      if(g[j] < gmin) gmin = g[j];
+      if(g[j] > gmax) gmax = g[j];
+    }
+    if(gmax - gmin < 3)
+      throw new Error('動画のコマを読み取れませんでした(端末がこの動画を再生できていません)。' +
+                      'もう一度お試しいただくか、別の動画か「画像から作る」をお使いください。');
+    const period = detectPeriod(grays, ANALYZE_N);
+    const dt = span/(ANALYZE_N-1);
 
-  // ---- 2パス目: 候補の16コマを作業解像度で取り直して背景を抜く
-  // 切り出す長さは「見つけた周期 × 倍率」。周期を半分で拾って片足しか上がらないときは
-  // 倍率2にすると1歩ぶんではなく2歩ぶん(=本当の1周期)が入る
-  const mul = +($('spanMul').value) || 1;
-  const pEff = Math.max(2, Math.min(ANALYZE_N-1, Math.round(period*mul)));
-  const seg = walkSeg();
-  const cuts = [];
-  for(let k=0;k<CAND_N;k++){
-    const idx = Math.min(ANALYZE_N-1, Math.round(pEff*k/CAND_N));
-    await seekTo(v, t0 + idx*dt);
-    cx.drawImage(v, 0, 0, w, h);
-    const img = cx.getImageData(0,0,w,h);
-    const a = segment(img, seg.mode, seg.th, seg.chroma);
-    cuts.push({ img, alpha:a, box: bboxOf(a, w, h) });
-    if(onProgress) onProgress(55 + Math.round((k+1)/CAND_N*45));
+    // ---- 2パス目: 候補の16コマを作業解像度で取り直して背景を抜く
+    // 切り出す長さは「見つけた周期 × 倍率」。周期を半分で拾って片足しか上がらないときは
+    // 倍率2にすると1歩ぶんではなく2歩ぶん(=本当の1周期)が入る
+    // 時刻は秒で直接決める。解析の目盛りに丸めると、周期が短いときに
+    // 同じコマが何組も候補に並んでしまう
+    const mul = +($('spanMul').value) || 1;
+    const cycle = Math.max(2*dt, Math.min(span, period*mul*dt));
+    const seg = walkSeg();
+    const cuts = [];
+    for(let k=0;k<CAND_N;k++){
+      await seekTo(v, t0 + cycle*k/CAND_N);
+      cx.drawImage(v, 0, 0, w, h);
+      const img = cx.getImageData(0,0,w,h);
+      const a = segment(img, seg.mode, seg.th, seg.chroma);
+      cuts.push({ img, alpha:a, box: bboxOf(a, w, h) });
+      if(onProgress) onProgress(55 + Math.round((k+1)/CAND_N*45));
+      walkStep(`コマを切り出しています… ${k+1} / ${CAND_N}`);
+    }
+    // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
+    // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
+    const full = cuts.filter(c => c.box &&
+      (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
+    if(full >= CAND_N*0.75)
+      throw new Error('背景を見つけられませんでした。抜き方(白背景/黒背景/色で抜く)と' +
+                      'しきい値を見直してください。');
+    walkStep('絵を整えています…');
+    return { frames: await composeStrip(cuts), period,
+             note: `周期=${period}${mul!==1 ? ` ×${mul}` : ''}` };
+  }finally{
+    releaseVideo(v);   // 途中で失敗しても必ず片付ける
   }
-  URL.revokeObjectURL(v.src);
-  // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
-  // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
-  const full = cuts.filter(c => c.box &&
-    (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
-  if(full >= CAND_N*0.75)
-    throw new Error('背景を見つけられませんでした。抜き方(白背景/黒背景/色で抜く)と' +
-                    'しきい値を見直してください。');
-  return { frames: await composeStrip(cuts), period,
-           note: `周期=${period}${mul!==1 ? ` ×${mul}` : ''}` };
 }
 
 /* ------------------------------------------------------ パーツ一覧のUI */
@@ -1230,10 +1263,16 @@ async function synthWalkFrames(cut, rig){
   return out;
 }
 function canvasToBlobPng(c){
-  return new Promise(res=> c.toBlob(b=>res(b), 'image/png'));
+  return new Promise((res, rej)=> c.toBlob(b=> b ? res(b)
+    : rej(new Error('画像を書き出せませんでした(絵が大きすぎるかもしれません)')), 'image/png'));
 }
 function blobToDataUrl(b){
-  return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); });
+  return new Promise((res, rej)=>{
+    const r = new FileReader();
+    r.onload = ()=> res(r.result);
+    r.onerror = ()=> rej(new Error('画像を読み出せませんでした'));
+    r.readAsDataURL(b);
+  });
 }
 async function blobToBase64(b){
   const u = await blobToDataUrl(b);
@@ -1317,7 +1356,13 @@ async function preview(side){
       await useFrames(side, r.frames, r.note);
     }
     setProg(null);
-  }catch(e){ setProg(null); log(String(e.message||e), 'ng'); }
+  }catch(e){
+    setProg(null);
+    const m = String(e.message||e);
+    // 「コマを作っています」のまま止まったように見えないよう、その場にも理由を出す
+    $('walkMeta').innerHTML = `<span class="ng">${m}</span>`;
+    log(m, 'ng');
+  }
 }
 
 /* ------------------------------------------- 候補16コマから8コマを選ぶ */
@@ -1425,6 +1470,7 @@ async function fillPicker(which){
       await primeVideo(vid);
       await seekTo(vid, (vid.duration||1)*0.1);
       src = vid; sw = vid.videoWidth; sh = vid.videoHeight;
+      if(!sw || !sh) return noSrc();
     }else{
       const f = which === 'w'
         ? ($('imgF').files[0] || $('imgB').files[0])
@@ -1439,7 +1485,7 @@ async function fillPicker(which){
   }catch(e){
     log(String(e.message||e), 'ng');
   }finally{
-    if(vid) URL.revokeObjectURL(vid.src);
+    releaseVideo(vid);
   }
 }
 
