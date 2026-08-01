@@ -53,28 +53,67 @@ def extract_all(mov, outd, cache=False):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return sorted(glob.glob(f'{outd}/a*.png'))
 
+PERIOD_BAND = 0.58        # 下から42%(脚のあたり)だけ見る
+PERIOD_PEAK_MIN = 0.35    # これ以上の山があればそれを周期とみなす
+PERIOD_DIP_MAX = -0.15    # これ以下の谷があれば半周期とみなす
+
 def detect_period(files):
-    # downsample grayscale stack, autocorrelation of frame差分energy over lag
+    """1歩行周期のコマ数を返す。
+
+    素朴に「全体の自己相関のいちばん高い所」を取ると、寄り・ズーム・明るさの
+    ゆっくりした変化に埋もれて右肩下がりの曲線にしかならず、探索範囲の下限が
+    そのまま返る(=1歩ぶんに足りない長さで切られ、片足しか上がらない)。
+    次の4つで拾えるようになる。
+      ① 脚が写っている下の帯だけ見る(胴や背景の変化に埋もれさせない)
+      ② 移動平均を引いてゆっくりした変化を消す
+      ③ 自己相関は n で割る。n-lag で割ると後ろのlagほど値が大きくなり、
+         周期そのものではなくその2倍・4倍の所が最大になってしまう
+      ④ はっきりした山があればそれを周期とし、無ければ「半周期でいちばん
+         似ていない(左右の脚が入れ替わる)」を使って谷の2倍を周期とする
+    tools/studio_web.html の detectPeriod と同じ手順・同じ定数。
+    """
     small = []
     for f in files:
         im = Image.open(f).convert('L').resize((48,48))
         small.append(np.asarray(im, dtype=np.float32))
-    arr = np.stack(small)                 # (N,48,48)
-    arr -= arr.mean(axis=0, keepdims=True)
-    flat = arr.reshape(len(files), -1)
-    n = len(files)
+    return _period_from_stack(np.stack(small))
+
+
+def _period_from_stack(arr):
+    """detect_period の計算部分。(N,48,48) のグレースケールから周期を返す。"""
+    n = len(arr)
+    y0 = int(48*PERIOD_BAND)
+    flat = arr[:, y0:, :].reshape(n, -1).astype(np.float32)
+    flat -= flat.mean(axis=0, keepdims=True)
+    # ゆっくりした変化を移動平均で引く
+    wm = max(4, int(round(n*0.17)))
+    sm = np.empty_like(flat)
+    for i in range(n):
+        lo_i = max(0, i-wm); hi_i = min(n, i+wm+1)
+        sm[i] = flat[lo_i:hi_i].mean(axis=0)
+    flat -= sm
     ac = np.zeros(n)
     for lag in range(n):
-        a = flat[:n-lag]; b = flat[lag:]
-        ac[lag] = (a*b).sum()/max(1,(n-lag))
+        ac[lag] = (flat[:n-lag]*flat[lag:]).sum()/n
     ac /= ac[0] + 1e-9
-    # find first strong peak after a dip
-    lo = max(6, int(n*0.2))
     hi = min(n-1, int(n*0.95))
+    # はっきりした山があればそこが周期(自己相関の中心の盛り上がりは避けて探す)
+    plo = max(6, int(round(n*0.12)))
+    if hi > plo:
+        peak = plo + int(np.argmax(ac[plo:hi]))
+        if ac[peak] >= PERIOD_PEAK_MIN:
+            return peak
+    # 山が出ない素材は「半周期でいちばん似ていない」を使う。その2倍が1周期
+    hlo = max(3, int(round(n*0.05)))
+    hhi = min(n-1, int(round(n*0.34)))
+    if hhi > hlo:
+        half = hlo + int(np.argmin(ac[hlo:hhi+1]))
+        if ac[half] <= PERIOD_DIP_MAX:
+            return max(6, min(hi, half*2))
+    # どちらも出ない素材は従来どおり自己相関のいちばん高い所を使う
+    lo = max(6, int(n*0.2))
     if hi <= lo: return n-1
-    seg = ac[lo:hi]
-    peak = lo + int(np.argmax(seg))
-    return peak
+    return lo + int(np.argmax(ac[lo:hi]))
 
 def _largest(f):
     lbl, num = ndimage.label(f)

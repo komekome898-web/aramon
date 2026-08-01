@@ -1,7 +1,7 @@
 // ファイルを更新するたびに、このバージョン番号を必ず上げてください。
 // (例: v2 -> v3 -> v4 ...) 番号を上げないと、ユーザーの端末に古いキャッシュが
 // 残り続け、更新した内容が反映されません。
-const CACHE_NAME = 'aramon-cache-v379';
+const CACHE_NAME = 'aramon-cache-v380';
 // 画像と音は「別のキャッシュ」に入れ、バージョンを上げても消さない。
 // コード(html/js/css)だけが毎回入れ替わり、11MBの画像と5.7MBの音は貯めたまま使える。
 const MEDIA_CACHE = 'aramon-media';
