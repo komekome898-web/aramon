@@ -1,0 +1,12 @@
+{
+  "id": "rock_ssr",
+  "element": "rock",
+  "name": "轟金剛",
+  "aura": "blue",
+  "seasonExclusive": true,
+  "iconImg": "rock_ssr",
+  "playerImg": "rock_player_ssr",
+  "walkPrefix": "rock_ssr_walk_",
+  "t3name": "超番長ボーナス",
+  "t3mult": 1.15
+}

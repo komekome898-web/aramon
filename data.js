@@ -277,6 +277,7 @@ const WALK_ANIM = {
   },
   rock: {
     base: { front:_loadWalk('rock_walk_f'), back:_loadWalk('rock_walk_b') },              // ゴーレム(色スキン対応)
+    ssr:  { skinId:'rock_ssr', front:_loadWalk('rock_ssr_walk_f'), back:_loadWalk('rock_ssr_walk_b') }, /*@rock_ssr*/
   },
   illumine: {
     base: { front:_loadWalk('illumine_walk_f'), back:_loadWalk('illumine_walk_b') },      // イルミネ(色スキン対応)
@@ -498,6 +499,7 @@ const AURA_EMOJI = { red:'🔴', green:'🟢', yellow:'🟡', blue:'🔵', white
 const SSR_SKIN_AURA = {
   phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black',
   zeus_ssr:'yellow', choco_ssr:'red', persephone_ssr:'blue',
+  rock_ssr:       'blue', /*@rock_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -622,6 +624,7 @@ const SSR_SKIN_TIER3 = {
     // 面積を半分にするので半径は1/√2(460→325)
     blast:{ radius:325, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
   }},
+  rock_ssr:       { name:'超番長ボーナス', dmgMult:1.15 }, /*@rock_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1677,6 +1680,7 @@ const SSR_SKINS = {
   choco_ssr:   { element:'pixie', name:'ちょこ', iconImg:'choco_ssr', playerImg:'choco_player_ssr' },
   // ペルセポネ: イルミネのオリジナルSSR。ガチャ・SSRカタログにも出る
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
+  rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr', seasonExclusive:true }, /*@rock_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
