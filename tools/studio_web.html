@@ -708,22 +708,55 @@ async function composeStrip(cuts){
 }
 
 /* ---------------------------------------------------------- 動画 */
+/* iOSの落とし穴: メタデータだけ読めた動画を canvas へ描くと**何も描かれない**。
+   その状態で背景を抜くと「背景が1つも無い=全面が被写体」となり、8コマが真っ黒な
+   矩形になる(2026-08-01に発生)。防ぐには次の3つが要る。
+     ① コマが用意される readyState>=2(loadeddata)まで待つ
+     ② 無音・インラインで一瞬だけ再生してデコーダを起こす
+     ③ シーク後、実際にコマが描けるようになるまで待ってから drawImage する      */
 function loadVideo(file){
   return new Promise((res, rej)=>{
     const v = document.createElement('video');
-    v.playsInline = true; v.muted = true; v.preload = 'auto';
+    v.playsInline = true; v.muted = true; v.defaultMuted = true; v.preload = 'auto';
+    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+    v.setAttribute('muted', '');
     v.src = URL.createObjectURL(file);
-    v.onloadedmetadata = ()=> res(v);
+    const ready = ()=>{ if(v.readyState >= 2) res(v); };
+    v.onloadeddata = ready; v.oncanplay = ready; v.onloadedmetadata = ready;
     v.onerror = ()=> rej(new Error('動画を読み込めませんでした'));
+    try{ v.load(); }catch(e){}
+    setTimeout(()=>{ if(v.readyState >= 1) res(v); }, 5000);   // 保険
+  });
+}
+// 一瞬だけ再生してデコーダを起こす(音は出ない)
+async function primeVideo(v){
+  try{
+    const p = v.play();
+    if(p && p.then) await p;
+    await new Promise(r=>setTimeout(r, 80));
+  }catch(e){ /* 再生できなくても続ける */ }
+  try{ v.pause(); }catch(e){}
+}
+// シーク後、コマが描ける状態になるまで待つ
+function afterSeekPaint(v){
+  return new Promise(res=>{
+    let done = false;
+    const fin = ()=>{ if(!done){ done = true; res(); } };
+    if(v.requestVideoFrameCallback){ try{ v.requestVideoFrameCallback(fin); }catch(e){} }
+    requestAnimationFrame(()=> requestAnimationFrame(fin));
+    setTimeout(fin, 150);
   });
 }
 function seekTo(v, t){
   return new Promise(res=>{
     let done = false;
-    const fin = ()=>{ if(done) return; done = true; v.onseeked = null; res(); };
+    const fin = ()=>{
+      if(done) return; done = true; v.onseeked = null;
+      afterSeekPaint(v).then(res);
+    };
     v.onseeked = fin;
-    v.currentTime = Math.max(0, Math.min(t, (v.duration||1) - 0.001));
-    setTimeout(fin, 400);   // シークが返らない端末向けの保険
+    v.currentTime = Math.max(0, Math.min(t, (v.duration||1) - 0.05));
+    setTimeout(fin, 700);   // シークが返らない端末向けの保険
   });
 }
 // detect_period の移植: 平均を引いた 48x48 スタックの自己相関
@@ -757,9 +790,11 @@ function detectPeriod(grays, n){
 // 動画 -> 8コマの RGBA ImageData(320x320)
 async function buildWalkFrames(file, onProgress){
   const v = await loadVideo(file);
+  await primeVideo(v);
   const dur = v.duration || 0;
   if(!dur) throw new Error('動画の長さが取れませんでした');
   const vw = v.videoWidth, vh = v.videoHeight;
+  if(!vw || !vh) throw new Error('動画の大きさが取れませんでした');
   const sc = Math.min(1, WORK_H/vh);
   const w = Math.round(vw*sc), h = Math.round(vh*sc);
 
@@ -781,6 +816,16 @@ async function buildWalkFrames(file, onProgress){
     grays.push(arr);
     if(onProgress) onProgress(Math.round(i/ANALYZE_N*55));
   }
+  // コマがまったく描けていなければここで止める。
+  // 気づかずに進むと「背景が1つも無い=全面が被写体」となり真っ黒な8コマができる
+  let gmin = 255, gmax = 0;
+  for(const g of grays) for(let j=0;j<g.length;j++){
+    if(g[j] < gmin) gmin = g[j];
+    if(g[j] > gmax) gmax = g[j];
+  }
+  if(gmax - gmin < 3)
+    throw new Error('動画のコマを読み取れませんでした(端末がこの動画を再生できていません)。' +
+                    'もう一度お試しいただくか、別の動画か「画像から作る」をお使いください。');
   const period = detectPeriod(grays, ANALYZE_N);
   const dt = span/(ANALYZE_N-1);
 
@@ -797,6 +842,13 @@ async function buildWalkFrames(file, onProgress){
     if(onProgress) onProgress(55 + Math.round((k+1)/8*45));
   }
   URL.revokeObjectURL(v.src);
+  // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
+  // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
+  const full = cuts.filter(c => c.box &&
+    (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
+  if(full >= 6)
+    throw new Error('背景を見つけられませんでした。抜き方(白背景/黒背景/色で抜く)と' +
+                    'しきい値を見直してください。');
   return { frames: await composeStrip(cuts), note: `周期=${period}` };
 }
 
@@ -1237,6 +1289,7 @@ async function fillPicker(which){
       const f = $('vidF').files[0] || $('vidB').files[0];
       if(!f) return noSrc();
       vid = await loadVideo(f);
+      await primeVideo(vid);
       await seekTo(vid, (vid.duration||1)*0.1);
       src = vid; sw = vid.videoWidth; sh = vid.videoHeight;
     }else{
