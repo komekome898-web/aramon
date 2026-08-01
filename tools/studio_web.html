@@ -53,6 +53,11 @@
   .hint{ font-size:11.5px; color:var(--dim); margin-top:5px; line-height:1.55; }
   canvas.pick{ width:100%; display:block; border:1px solid var(--line); border-radius:8px;
     margin-top:6px; background:#0b0f16; }
+  .strip.cand{ grid-template-columns:repeat(4,1fr); }
+  .cell.sel{ border-color:var(--amber); border-width:2px; }
+  .cell .k{ position:absolute; right:2px; top:1px; font-size:11px; font-weight:700;
+    color:var(--amber); text-shadow:0 1px 2px #000; }
+  .cell.dim img{ opacity:0.42; }
   .parts{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:8px; }
   .part{ border:1px solid var(--line); border-radius:7px; padding:4px; background:#0e131c; }
   .part img{ width:100%; display:block; border-radius:4px; background:#2b3040; }
@@ -143,6 +148,17 @@
       <div><label>正面の動画</label><input id="vidF" type="file" accept="video/*"></div>
       <div><label>後ろの動画</label><input id="vidB" type="file" accept="video/*"></div>
     </div>
+    <label>切り出す長さ</label>
+    <select id="spanMul">
+      <option value="1">自動(見つけた周期のぶん)</option>
+      <option value="2">周期の2倍 — 片足しか上がらないときはこれ</option>
+      <option value="1.5">周期の1.5倍</option>
+      <option value="0.5">周期の半分 — 2歩ぶん入ってしまうときはこれ</option>
+    </select>
+    <div class="hint">
+      正面向きの動画は半周期の絵が似ているため、周期を半分で拾って<b>片足しか上がらない</b>ことがあります。
+      そのときは「周期の2倍」にしてプレビューし直してください。変えたらプレビューし直しが要ります。
+    </div>
   </div>
   <div id="walkImageWrap" style="display:none">
     <div class="r2">
@@ -204,6 +220,18 @@
     <button onclick="preview('b')">後ろをプレビュー</button>
   </div>
   <progress id="prog" value="0" max="100" style="display:none"></progress>
+  <div id="candWrap" style="display:none">
+    <label>候補の16コマ — タップして<b>使う8コマ</b>を選びます <span id="candCount" class="badge">8 / 8</span></label>
+    <div class="strip cand" id="candStrip"></div>
+    <div class="btns">
+      <button onclick="candPreset('every')">1つおき(既定)</button>
+      <button onclick="candPreset('first')">前半8コマ</button>
+      <button onclick="candPreset('last')">後半8コマ</button>
+    </div>
+    <div class="btns">
+      <button class="primary" id="candApply" onclick="applySelection()">この8コマにする</button>
+    </div>
+  </div>
   <div class="strip" id="strip"></div>
   <div class="hint" id="walkMeta">素材を選んで「プレビュー」を押すと8コマを作ります。赤枠のコマは問題ありです。</div>
   <div id="animWrap" style="display:none">
@@ -339,11 +367,13 @@ const TARGET_H = 250, CANVAS = 320, FEET_Y = 0.94;   // build_walk.py と同じ
 const PORTRAIT_SIZE = 512, PORTRAIT_H = 0.90, PORTRAIT_FEET = 0.97;
 const ANALYZE_N = 72;        // 周期検出に使うコマ数
 const WORK_H = 640;          // 解析・切り抜きに使う作業解像度(高さ)
+const CAND_N = 16;           // 動画から出す候補のコマ数(この中から8コマ選ぶ)
 
 const WALK_FRAME_DUR = 0.11;  // data.js と同じ。1コマの表示秒数(8コマ≒0.9秒/周)
 const state = { walk:{f:null, b:null}, portraits:null, hue:null,
                 chroma:null, chromaP:null, files:null, elements:null,
-                rig:{f:null, b:null}, rigSide:'f' };
+                rig:{f:null, b:null}, rigSide:'f',
+                cand:{f:null, b:null}, candSide:'f' };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -759,28 +789,56 @@ function seekTo(v, t){
     setTimeout(fin, 700);   // シークが返らない端末向けの保険
   });
 }
-// detect_period の移植: 平均を引いた 48x48 スタックの自己相関
+/* 周期の見つけ方。素朴に「全体の自己相関のいちばん高い所」を取ると、
+   寄り・ズーム・明るさのゆっくりした変化に埋もれて**右肩下がりの曲線にしかならず**、
+   探索範囲の下限がそのまま返る(=1歩ぶんに足りない長さで切られ、片足しか上がらない。
+   2026-08-01に発生)。次の3つで拾えるようになる。
+     ① 脚が写っている下の帯だけ見る(胴や背景の変化に埋もれさせない)
+     ② 移動平均を引いてゆっくりした変化を消す
+     ③ 歩きは半周期でいちばん似ていない(左右の脚が入れ替わる)ので、
+        いちばん負の相関を半周期とみなし、その2倍を1周期とする              */
+const PERIOD_BAND = 0.58;   // 下から42%(脚のあたり)だけ見る
 function detectPeriod(grays, n){
-  const S = 48*48;
-  const mean = new Float32Array(S);
-  for(let i=0;i<n;i++){ const g=grays[i]; for(let j=0;j<S;j++) mean[j]+=g[j]; }
-  for(let j=0;j<S;j++) mean[j]/=n;
+  const W = 48, y0 = Math.floor(W*PERIOD_BAND), rows = W - y0, S = W*rows;
   const flat = [];
   for(let i=0;i<n;i++){
     const a = new Float32Array(S), g = grays[i];
-    for(let j=0;j<S;j++) a[j] = g[j]-mean[j];
+    for(let y=0;y<rows;y++) for(let x=0;x<W;x++) a[y*W+x] = g[(y0+y)*W+x];
     flat.push(a);
   }
+  const mean = new Float32Array(S);
+  for(const g of flat) for(let j=0;j<S;j++) mean[j] += g[j];
+  for(let j=0;j<S;j++) mean[j] /= n;
+  for(const g of flat) for(let j=0;j<S;j++) g[j] -= mean[j];
+  // ゆっくりした変化を移動平均で引く
+  const Wm = Math.max(4, Math.round(n*0.17));
+  const sm = [];
+  for(let i=0;i<n;i++){
+    const a = new Float32Array(S); let c = 0;
+    for(let k=Math.max(0,i-Wm); k<=Math.min(n-1,i+Wm); k++){
+      const f = flat[k]; for(let j=0;j<S;j++) a[j] += f[j];
+      c++;
+    }
+    for(let j=0;j<S;j++) a[j] /= c;
+    sm.push(a);
+  }
+  for(let i=0;i<n;i++){ const f = flat[i], s = sm[i]; for(let j=0;j<S;j++) f[j] -= s[j]; }
   const ac = new Float32Array(n);
   for(let lag=0; lag<n; lag++){
-    let s=0;
+    let s = 0;
     for(let i=0;i+lag<n;i++){ const a=flat[i], b=flat[i+lag]; for(let j=0;j<S;j++) s+=a[j]*b[j]; }
     ac[lag] = s/Math.max(1, n-lag);
   }
   const a0 = ac[0] + 1e-9;
   for(let i=0;i<n;i++) ac[i] /= a0;
-  const lo = Math.max(6, Math.floor(n*0.2));
   const hi = Math.min(n-1, Math.floor(n*0.95));
+  // 半周期 = いちばん負の相関。その2倍が1周期
+  const hlo = Math.max(3, Math.round(n*0.05)), hhi = Math.min(n-1, Math.round(n*0.34));
+  let half = hlo;
+  for(let i=hlo;i<=hhi;i++) if(ac[i] < ac[half]) half = i;
+  if(ac[half] <= -0.15) return Math.max(6, Math.min(hi, half*2));
+  // はっきりした山が出ない素材は従来どおり自己相関のいちばん高い所を使う
+  const lo = Math.max(6, Math.floor(n*0.2));
   if(hi <= lo) return n-1;
   let peak = lo;
   for(let i=lo;i<hi;i++) if(ac[i] > ac[peak]) peak = i;
@@ -829,27 +887,32 @@ async function buildWalkFrames(file, onProgress){
   const period = detectPeriod(grays, ANALYZE_N);
   const dt = span/(ANALYZE_N-1);
 
-  // ---- 2パス目: 選ばれた8コマだけ作業解像度で取り直して背景を抜く
+  // ---- 2パス目: 候補の16コマを作業解像度で取り直して背景を抜く
+  // 切り出す長さは「見つけた周期 × 倍率」。周期を半分で拾って片足しか上がらないときは
+  // 倍率2にすると1歩ぶんではなく2歩ぶん(=本当の1周期)が入る
+  const mul = +($('spanMul').value) || 1;
+  const pEff = Math.max(2, Math.min(ANALYZE_N-1, Math.round(period*mul)));
   const seg = walkSeg();
   const cuts = [];
-  for(let k=0;k<8;k++){
-    const idx = Math.min(ANALYZE_N-1, Math.round(period*k/8));
+  for(let k=0;k<CAND_N;k++){
+    const idx = Math.min(ANALYZE_N-1, Math.round(pEff*k/CAND_N));
     await seekTo(v, t0 + idx*dt);
     cx.drawImage(v, 0, 0, w, h);
     const img = cx.getImageData(0,0,w,h);
     const a = segment(img, seg.mode, seg.th, seg.chroma);
     cuts.push({ img, alpha:a, box: bboxOf(a, w, h) });
-    if(onProgress) onProgress(55 + Math.round((k+1)/8*45));
+    if(onProgress) onProgress(55 + Math.round((k+1)/CAND_N*45));
   }
   URL.revokeObjectURL(v.src);
   // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
   // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
   const full = cuts.filter(c => c.box &&
     (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
-  if(full >= 6)
+  if(full >= CAND_N*0.75)
     throw new Error('背景を見つけられませんでした。抜き方(白背景/黒背景/色で抜く)と' +
                     'しきい値を見直してください。');
-  return { frames: await composeStrip(cuts), note: `周期=${period}` };
+  return { frames: await composeStrip(cuts), period,
+           note: `周期=${period}${mul!==1 ? ` ×${mul}` : ''}` };
 }
 
 /* ------------------------------------------------------ パーツ一覧のUI */
@@ -1201,36 +1264,92 @@ function assertChroma(mode, rgb){
   if(mode === 'chroma' && !rgb)
     throw new Error('背景の色を拾ってください(下の絵の背景をタップします)');
 }
+// 選ばれた8コマを見せて保持する(動画・画像で共通)
+async function useFrames(side, frames, note){
+  const issues = await inspectFrames(frames);
+  const urls = await Promise.all(frames.map(blobToDataUrl));
+  state.walk[side] = { frames, issues, urls };
+  $('strip').innerHTML = urls.map((u,i)=>
+    `<div class="cell${issues[i]?' bad':''}">
+       <img src="${u}"><span class="n">${i+1}</span>
+       ${issues[i]?`<span class="why">${issues[i]}</span>`:''}</div>`).join('');
+  const bad = issues.filter(Boolean).length;
+  $('walkMeta').innerHTML = `${side==='f'?'正面':'後ろ'}の8コマができました(${note})。` +
+    (bad ? `<span class="ng"> ${bad}コマに問題あり。抜き方やしきい値を変えて再プレビューしてください。</span>`
+         : '<span class="ok"> 問題は見つかりませんでした。</span>') +
+    `<br>保持中: 正面${state.walk.f?'○':'—'} / 後ろ${state.walk.b?'○':'—'}`;
+  startWalkAnim();
+}
 async function preview(side){
   try{
     assertChroma($('mode').value, state.chroma);
     setProg(0);
     $('walkMeta').textContent = 'コマを作っています…';
-    let r;
     if($('walkSrc').value === 'video'){
       const file = (side==='f' ? $('vidF') : $('vidB')).files[0];
       if(!file) throw new Error('動画を選んでください');
-      r = await buildWalkFrames(file, p=>setProg(p));
+      const r = await buildWalkFrames(file, p=>setProg(p));
+      const urls = await Promise.all(r.frames.map(blobToDataUrl));
+      state.cand[side] = { frames:r.frames, urls, note:r.note, sel:candDefault('every') };
+      state.candSide = side;
+      renderCand();
+      await applySelection(side);
     }else{
       const fs = imageFilesFor(side);   // 後ろが無ければ正面を使う
       if(!fs.length) throw new Error('画像を選んでください');
-      r = await buildWalkFromImages(fs, p=>setProg(p), side);
+      const r = await buildWalkFromImages(fs, p=>setProg(p), side);
+      state.cand[side] = null;
+      renderCand();
+      await useFrames(side, r.frames, r.note);
     }
-    const issues = await inspectFrames(r.frames);
-    const urls = await Promise.all(r.frames.map(blobToDataUrl));
-    state.walk[side] = { frames:r.frames, issues, urls };
-    $('strip').innerHTML = urls.map((u,i)=>
-      `<div class="cell${issues[i]?' bad':''}">
-         <img src="${u}"><span class="n">${i+1}</span>
-         ${issues[i]?`<span class="why">${issues[i]}</span>`:''}</div>`).join('');
-    const bad = issues.filter(Boolean).length;
-    $('walkMeta').innerHTML = `${side==='f'?'正面':'後ろ'}の8コマができました(${r.note})。` +
-      (bad ? `<span class="ng"> ${bad}コマに問題あり。抜き方やしきい値を変えて再プレビューしてください。</span>`
-           : '<span class="ok"> 問題は見つかりませんでした。</span>') +
-      `<br>保持中: 正面${state.walk.f?'○':'—'} / 後ろ${state.walk.b?'○':'—'}`;
-    startWalkAnim();
     setProg(null);
   }catch(e){ setProg(null); log(String(e.message||e), 'ng'); }
+}
+
+/* ------------------------------------------- 候補16コマから8コマを選ぶ */
+function candDefault(kind){
+  const sel = [];
+  for(let k=0;k<8;k++)
+    sel.push(kind==='first' ? k : kind==='last' ? CAND_N-8+k : k*2);
+  return sel;
+}
+function renderCand(){
+  const c = state.cand[state.candSide];
+  if(!c){ $('candWrap').style.display = 'none'; return; }
+  $('candWrap').style.display = 'block';
+  const rank = {};
+  c.sel.forEach((v,i)=> rank[v] = i+1);
+  $('candStrip').innerHTML = c.urls.map((u,i)=>
+    `<div class="cell${rank[i]?' sel':' dim'}" onclick="candToggle(${i})">
+       <img src="${u}"><span class="n">${i+1}</span>
+       ${rank[i]?`<span class="k">${rank[i]}</span>`:''}</div>`).join('');
+  const ok = c.sel.length === 8;
+  const b = $('candCount');
+  b.textContent = `${c.sel.length} / 8`;
+  b.className = ok ? 'badge on' : 'badge';
+  $('candApply').disabled = !ok;
+}
+function candToggle(i){
+  const c = state.cand[state.candSide];
+  if(!c) return;
+  const at = c.sel.indexOf(i);
+  if(at >= 0) c.sel.splice(at, 1);
+  else if(c.sel.length >= 8) return;      // 8コマまで。外してから選び直す
+  else { c.sel.push(i); c.sel.sort((a,b)=>a-b); }
+  renderCand();
+}
+function candPreset(kind){
+  const c = state.cand[state.candSide];
+  if(!c) return;
+  c.sel = candDefault(kind);
+  renderCand();
+}
+async function applySelection(side){
+  side = side || state.candSide;
+  const c = state.cand[side];
+  if(!c || c.sel.length !== 8) return;
+  await useFrames(side, c.sel.map(i=>c.frames[i]),
+                  `${c.note}・16コマ中 ${c.sel.map(i=>i+1).join(',')}`);
 }
 
 /* ------------------------------------------------ 歩行アニメのプレビュー */
@@ -1992,6 +2111,7 @@ function boot(){
     const v = $('walkSrc').value === 'video';
     $('walkVideoWrap').style.display = v ? 'block' : 'none';
     $('walkImageWrap').style.display = v ? 'none' : 'block';
+    state.cand = { f:null, b:null }; renderCand();
     if($('mode').value === 'chroma') fillPicker('w');
   };
   $('sway').oninput = ()=> $('swayVal').textContent = $('sway').value;
