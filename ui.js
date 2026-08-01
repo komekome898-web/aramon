@@ -2154,6 +2154,84 @@ document.getElementById('adminGrantDiaBtn').addEventListener('click', ()=>{
   updateAccountBar();
   pushToast('💎 ダイヤを500個付与しました');
 });
+
+/* 管理者画面の「機能」タブ: スキンをこの端末のアカウントへ付与/取り消しする。
+   シーズンパス報酬のように通常は手に入らないスキンを、実機で確認・調整するため。
+   saveSkins() が accountMarkDirty() を呼ぶのでサーバーにも同期される。          */
+let adminSkinPick = null;
+function adminSkinLabel(skinId){
+  const m = skinMeta(skinId);
+  if(m.kind === 'ssr'){
+    const el = ELEMENTS[m.element] ? ELEMENTS[m.element].label : m.element;
+    return `${el} / ${m.name}`;
+  }
+  return m.name;
+}
+function buildAdminSkinMenu(){
+  const wrap = document.getElementById('adminSkinWrap');
+  const menu = document.getElementById('adminSkinMenu');
+  const btn  = document.getElementById('adminSkinBtn');
+  if(!wrap || !menu || !btn) return;
+  if(wrap.dataset.built){ adminSkinMarkOwned(); return; }
+  wrap.dataset.built = '1';
+  const rows = ['<div class="custom-select-group">SSRスキン</div>'];
+  for(const id of allSsrSkinIds())
+    rows.push(`<div class="custom-select-item" data-skin="${id}">${adminSkinLabel(id)}` +
+              `${SSR_SKINS[id].seasonExclusive ? '(シーズン限定)' : ''}</div>`);
+  rows.push('<div class="custom-select-group">色スキン</div>');
+  for(const el of Object.keys(ELEMENTS))
+    for(const c of monsterSkinColors(el)){
+      const id = colorSkinId(el, c);
+      rows.push(`<div class="custom-select-item" data-skin="${id}">${adminSkinLabel(id)}</div>`);
+    }
+  menu.innerHTML = rows.join('');
+  btn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    adminSkinMarkOwned();               // 開くたびに所持の印を付け直す
+    menu.classList.toggle('hidden');
+  });
+  menu.addEventListener('click', (e)=>{
+    const item = e.target.closest('.custom-select-item');
+    if(!item) return;
+    e.stopPropagation();
+    menu.querySelectorAll('.custom-select-item').forEach(i=>i.classList.remove('active'));
+    item.classList.add('active');
+    adminSkinPick = item.dataset.skin;
+    btn.textContent = item.textContent;
+    menu.classList.add('hidden');
+    updateAdminSkinBtn();
+  });
+  document.addEventListener('click', ()=> menu.classList.add('hidden'));
+  adminSkinMarkOwned();
+}
+function adminSkinMarkOwned(){
+  const menu = document.getElementById('adminSkinMenu');
+  if(!menu) return;
+  menu.querySelectorAll('.custom-select-item').forEach(i=>{
+    i.classList.toggle('owned', isSkinOwned(i.dataset.skin));
+  });
+}
+function updateAdminSkinBtn(){
+  const b = document.getElementById('adminGrantSkinBtn');
+  if(!b) return;
+  if(!adminSkinPick){ b.disabled = true; b.textContent = '✨ スキンを選んでください'; return; }
+  b.disabled = false;
+  b.textContent = isSkinOwned(adminSkinPick)
+    ? '🗑 このスキンの所持を取り消す' : '✨ このスキンを付与する';
+}
+document.getElementById('adminGrantSkinBtn').addEventListener('click', ()=>{
+  if(!adminSkinPick) return;
+  const name = adminSkinLabel(adminSkinPick);
+  if(isSkinOwned(adminSkinPick)){
+    disownSkin(adminSkinPick);
+    pushToast(`${name} の所持を取り消しました`);
+  }else{
+    ownSkin(adminSkinPick);
+    pushToast(`✨ ${name} を付与しました`);
+  }
+  updateAdminSkinBtn();
+  adminSkinMarkOwned();
+});
 document.getElementById('openShopBtn').addEventListener('click', ()=>{
   shopBuysThisOpen = 0;               // 開く度に購入回数をリセット
   renderShop();
@@ -4964,6 +5042,7 @@ function adminShowTab(tab){
   document.getElementById('adminStatsPane').classList.toggle('hidden', tab!=='stats');
   document.getElementById('adminSePane').classList.toggle('hidden', tab!=='se');
   document.getElementById('adminToolsPane').classList.toggle('hidden', tab!=='tools');
+  if(tab==='tools'){ buildAdminSkinMenu(); updateAdminSkinBtn(); }
   if(tab!=='se' && typeof bgmSetTrack==='function') bgmSetTrack('title'); // 音声確認タブを離れたらテストBGMを止める
 }
 document.querySelectorAll('.admin-tab').forEach(t=> t.addEventListener('click', ()=>adminShowTab(t.dataset.tab)));
