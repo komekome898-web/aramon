@@ -53,6 +53,11 @@
   .hint{ font-size:11.5px; color:var(--dim); margin-top:5px; line-height:1.55; }
   canvas.pick{ width:100%; display:block; border:1px solid var(--line); border-radius:8px;
     margin-top:6px; background:#0b0f16; }
+  .parts{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:8px; }
+  .part{ border:1px solid var(--line); border-radius:7px; padding:4px; background:#0e131c; }
+  .part img{ width:100%; display:block; border-radius:4px; background:#2b3040; }
+  .part select{ padding:5px 4px; font-size:12px; margin-top:4px; }
+  .part .pn{ font-size:10px; color:var(--dim); text-align:center; margin-top:3px; }
   .ok{ color:var(--ok); } .ng{ color:var(--ng); }
   .badge{ display:inline-block; font-size:10px; padding:2px 7px; border-radius:99px;
     border:1px solid var(--line); color:var(--dim); }
@@ -144,12 +149,39 @@
       <div><label>正面の画像(複数選べます)</label><input id="imgF" type="file" accept="image/*" multiple></div>
       <div><label>後ろの画像(省略可)</label><input id="imgB" type="file" accept="image/*" multiple></div>
     </div>
-    <label>揺れの強さ <span id="swayVal">100</span> — 1枚だけのときに使います</label>
+    <div class="r2">
+      <div><label>動きの種類</label>
+        <select id="motionKind">
+          <option value="sway">揺れる</option>
+          <option value="walk">歩く</option>
+        </select>
+      </div>
+      <div id="swayTargetWrap"><label>揺らし方</label>
+        <select id="swayTarget">
+          <option value="whole">全体を揺らす</option>
+          <option value="parts">選んだパーツを揺らす</option>
+        </select>
+      </div>
+    </div>
+    <label>動きの強さ <span id="swayVal">100</span> — 1枚だけのときに使います</label>
     <input id="sway" type="range" min="0" max="200" value="100">
+    <div id="stepWrap" style="display:none">
+      <label>踏み出し量 <span id="stepVal">0</span> — 0なら付け根で振るだけ(足元がずれません)</label>
+      <input id="step" type="range" min="0" max="100" value="0">
+    </div>
+    <div id="rigWrap" style="display:none">
+      <label>パーツ(役割を選ぶと、その動きになります)</label>
+      <div class="btns">
+        <button id="rigBtnF" onclick="runRig('f')">正面のパーツを調べる</button>
+        <button id="rigBtnB" onclick="runRig('b')">後ろのパーツを調べる</button>
+      </div>
+      <div class="parts" id="partsBox"></div>
+      <div class="hint" id="rigMeta">「調べる」を押すと、絵から脚・腕・しっぽなどの候補を探します。</div>
+    </div>
     <div class="hint">
       <b>2枚以上</b>ならその絵を順にコマとして並べます(8コマに足りなければ繰り返し、多ければ等間隔に選びます)。
-      <b>1枚だけ</b>なら上下の弾み・傾き・踏み込みを付けて歩いているように見せます。
-      後ろの画像を省くと正面の絵をそのまま使います。透過済みの画像はそのまま使い、そうでなければ下の抜き方で抜きます。
+      <b>1枚だけ</b>なら上の設定で動かします。後ろの画像を省くと正面の絵とパーツ指定をそのまま使います。
+      透過済みの画像はそのまま使い、そうでなければ下の抜き方で抜きます。
     </div>
   </div>
   <label>背景の抜き方</label>
@@ -310,7 +342,8 @@ const WORK_H = 640;          // 解析・切り抜きに使う作業解像度(�
 
 const WALK_FRAME_DUR = 0.11;  // data.js と同じ。1コマの表示秒数(8コマ≒0.9秒/周)
 const state = { walk:{f:null, b:null}, portraits:null, hue:null,
-                chroma:null, chromaP:null, files:null, elements:null };
+                chroma:null, chromaP:null, files:null, elements:null,
+                rig:{f:null, b:null}, rigSide:'f' };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -336,6 +369,128 @@ function label4(mask, w, h){
     }
   }
   return { lbl, n };
+}
+/* -------------------------------------------------- パーツ判別(純関数)
+   1枚の絵から脚・腕・しっぽなどを見つけて「候補」として返す。
+   canvas を触らないので node だけで検証できる(ブラウザ外でも同じ結果になる)。
+   考え方: 太い所=胴(芯)/ 芯からはみ出した細い出っ張り=手足やしっぽ。          */
+const PART_ROLES = [
+  ['leg',  '脚'], ['arm',  '腕'], ['tail', 'しっぽ・羽'],
+  ['ear',  '耳・角'], ['sway', '揺らす'], ['none', '動かさない'],
+];
+const PART_ROLE_JP = Object.fromEntries(PART_ROLES);
+// chamfer(3,4)の距離変換。seed からの距離を返す(seed自身は0)
+function chamferDist(seed, w, h){
+  const INF = 1e9, d = new Float32Array(w*h);
+  for(let i=0;i<w*h;i++) d[i] = seed[i] ? 0 : INF;
+  const put = (i, v)=>{ if(v < d[i]) d[i] = v; };
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const i = y*w+x;
+    if(y>0){ put(i, d[i-w]+3); if(x>0) put(i, d[i-w-1]+4); if(x<w-1) put(i, d[i-w+1]+4); }
+    if(x>0) put(i, d[i-1]+3);
+  }
+  for(let y=h-1;y>=0;y--) for(let x=w-1;x>=0;x--){
+    const i = y*w+x;
+    if(y<h-1){ put(i, d[i+w]+3); if(x<w-1) put(i, d[i+w+1]+4); if(x>0) put(i, d[i+w-1]+4); }
+    if(x<w-1) put(i, d[i+1]+3);
+  }
+  for(let i=0;i<w*h;i++) d[i] /= 3;   // 画素単位へ戻す
+  return d;
+}
+// mask(1=被写体) から出っ張りを拾う。返すのは付け根・先端・向き・自動判定の役割。
+function detectParts(mask, w, h){
+  const NONE = { parts:[], lbl:null };
+  let fgArea = 0;
+  for(let i=0;i<w*h;i++) if(mask[i]) fgArea++;
+  if(fgArea < 64) return NONE;
+  // 背景からの距離 = その画素の「太さ」。細い出っ張りほど小さい
+  const bg = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) bg[i] = mask[i] ? 0 : 1;
+  const dist = chamferDist(bg, w, h);
+  let maxD = 0;
+  for(let i=0;i<w*h;i++) if(mask[i] && dist[i] > maxD) maxD = dist[i];
+  const r0 = Math.max(1.5, maxD*0.45);
+  // 半径r0のディスクでオープニング = 芯(胴・頭)
+  const seed = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) if(mask[i] && dist[i] >= r0) seed[i] = 1;
+  let seedN = 0; for(let i=0;i<w*h;i++) seedN += seed[i];
+  if(!seedN) return NONE;
+  const dCore = chamferDist(seed, w, h);
+  const core = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) if(mask[i] && dCore[i] <= r0) core[i] = 1;
+  // 芯からはみ出した部分が出っ張りの候補
+  const protr = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) protr[i] = (mask[i] && !core[i]) ? 1 : 0;
+  const { lbl, n } = label4(protr, w, h);
+  if(n < 1) return NONE;
+  // 被写体の高さと、芯(胴)の縦の範囲。腕としっぽは胴のどこに付くかで分ける
+  let y0 = h, y1 = -1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(mask[y*w+x]){ if(y<y0) y0=y; if(y>y1) y1=y; }
+  const bodyH = Math.max(1, y1-y0+1);
+  let cy0 = h, cy1 = -1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(core[y*w+x]){ if(y<cy0) cy0=y; if(y>cy1) cy1=y; }
+  const coreH = Math.max(1, cy1-cy0+1);
+  // 芯からどれだけ張り出しているか。角が丸まって出来ただけの欠片を落とすための下限
+  const minReach = Math.max(bodyH*0.05, r0*0.6);
+  // 画素はラベルごとに1パスで振り分ける(ラベル数×全画素で回すと候補が多い絵で重くなる)
+  const bucket = [], bb = [];
+  for(let L=0; L<=n; L++){ bucket.push([]); bb.push({ x0:w, x1:-1, y0:h, y1:-1 }); }
+  for(let i=0;i<w*h;i++){
+    const L = lbl[i]; if(!L) continue;
+    const x = i%w, y = (i-x)/w, k = bb[L];
+    bucket[L].push(x, y);
+    if(x<k.x0)k.x0=x; if(x>k.x1)k.x1=x; if(y<k.y0)k.y0=y; if(y>k.y1)k.y1=y;
+  }
+  const out = [];
+  for(let L=1; L<=n; L++){
+    const px = bucket[L];
+    const bx0 = bb[L].x0, bx1 = bb[L].x1, by0 = bb[L].y0, by1 = bb[L].y1;
+    const area = px.length/2;
+    if(area < fgArea*0.004) continue;
+    // 付け根 = 芯に接している画素の重心。接していなければ芯に最も近い画素
+    let ax=0, ay=0, an=0, best=-1, bestD=1e9, reach=0;
+    for(let k=0;k<px.length;k+=2){
+      const x = px[k], y = px[k+1], i = y*w+x;
+      const touch = (x>0 && core[i-1]) || (x<w-1 && core[i+1]) ||
+                    (y>0 && core[i-w]) || (y<h-1 && core[i+w]);
+      if(touch){ ax+=x; ay+=y; an++; }
+      if(dCore[i] < bestD){ bestD = dCore[i]; best = k; }
+      if(dCore[i] > reach) reach = dCore[i];
+    }
+    if(reach - r0 < minReach) continue;   // 芯の縁にへばり付いているだけ = 手足ではない
+    const pivot = an ? { x:ax/an, y:ay/an } : { x:px[best], y:px[best+1] };
+    // 先端 = 付け根から最も遠い画素
+    let tip = { x:pivot.x, y:pivot.y }, far = -1;
+    for(let k=0;k<px.length;k+=2){
+      const dx = px[k]-pivot.x, dy = px[k+1]-pivot.y, d2 = dx*dx+dy*dy;
+      if(d2 > far){ far = d2; tip = { x:px[k], y:px[k+1] }; }
+    }
+    const length = Math.sqrt(Math.max(0, far));
+    if(length < bodyH*0.08) continue;
+    const th = Math.atan2(tip.y-pivot.y, tip.x-pivot.x);   // 画面座標(下が正)
+    const ty = (tip.y-y0)/bodyH;             // 先端が下端寄りか
+    const cy = (pivot.y-cy0)/coreH;          // 胴のどのあたりに付いているか
+    const down = Math.sin(th), side = Math.abs(Math.cos(th));
+    let role;
+    if(ty > 0.72 && down > 0.5) role = 'leg';
+    else if(cy > 0.05 && cy < 0.55 && ty <= 0.72 && side > 0.5) role = 'arm';
+    else if(cy < 0.2 && down < -0.5) role = 'ear';
+    else if(length > bodyH*0.12) role = 'tail';
+    else role = 'none';
+    out.push({ label:L, area, pivot, tip, length, angle:th, role,
+               box:{ x0:bx0, x1:bx1, y0:by0, y1:by1 } });
+  }
+  // 脚・腕は左→右に並べる(左右で位相を反転させるため)
+  out.sort((a,b)=>{
+    const r = (p)=> p.role==='leg' ? 0 : p.role==='arm' ? 1 : 2;
+    return r(a)-r(b) || a.pivot.x-b.pivot.x;
+  });
+  const seq = {};
+  for(const p of out){
+    seq[p.role] = (seq[p.role]||0) + 1;
+    p.name = `${PART_ROLE_JP[p.role]} ${seq[p.role]}`;
+  }
+  return { parts: out, lbl };
 }
 // _largest: 最大の成分だけ残す
 function keepLargest(fg, w, h){
@@ -595,8 +750,65 @@ async function buildWalkFrames(file, onProgress){
   return { frames: await composeStrip(cuts), note: `周期=${period}` };
 }
 
-// 画像 -> 8コマ。2枚以上ならそれを並べ、1枚なら揺れを付けて歩かせる
-async function buildWalkFromImages(files, onProgress){
+/* ------------------------------------------------------ パーツ一覧のUI */
+// 後ろの画像を選んでいなければ、後ろも正面のリグを使う(コマ生成の falls back と同じ)
+function rigSideFor(side){
+  return (side === 'b' && !$('imgB').files.length) ? 'f' : side;
+}
+function imageFilesFor(side){
+  const fs = Array.from((side === 'f' ? $('imgF') : $('imgB')).files);
+  return (side === 'b' && !fs.length) ? Array.from($('imgF').files) : fs;
+}
+async function cutForSide(side){
+  const fs = imageFilesFor(side);
+  if(!fs.length) throw new Error('画像を選んでください');
+  const img = await fileToImageData(fs[0]);
+  const a = imageAlphaFor(img, walkSeg());
+  return { img, alpha:a, box: bboxOf(a, img.width, img.height) };
+}
+async function ensureRig(side){
+  const key = rigSideFor(side);
+  if(!state.rig[key]) state.rig[key] = await analyzeRigFromCut(await cutForSide(key));
+  return state.rig[key];
+}
+async function runRig(side){
+  try{
+    $('rigMeta').textContent = 'パーツを探しています…';
+    state.rig[side] = null;
+    state.rigSide = side;
+    const rig = await analyzeRigFromCut(await cutForSide(side));
+    state.rig[side] = rig;
+    renderParts();
+    const n = rig.parts.length;
+    $('rigMeta').innerHTML = n
+      ? `<span class="ok">${side==='f'?'正面':'後ろ'}で${n}個の候補が見つかりました。</span>` +
+        '役割を選び直したら、もう一度プレビューしてください。'
+      : `<span class="ng">パーツが見つかりませんでした。</span>絵が1塊なので、全体の動きで作ります。`;
+  }catch(e){ $('rigMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`; }
+}
+function renderParts(){
+  const rig = state.rig[state.rigSide];
+  const side = state.rigSide==='f' ? '正面' : '後ろ';
+  $('rigBtnF').style.borderColor = state.rigSide==='f' ? 'var(--amber)' : '';
+  $('rigBtnB').style.borderColor = state.rigSide==='b' ? 'var(--amber)' : '';
+  if(!rig || !rig.parts.length){ $('partsBox').innerHTML = ''; return; }
+  $('partsBox').innerHTML = rig.parts.map((p,i)=>
+    `<div class="part"><img src="${rig.thumbs[i]}">
+       <select onchange="setPartRole(${i}, this.value)">${
+         PART_ROLES.map(([v,jp])=>`<option value="${v}"${v===p.role?' selected':''}>${jp}</option>`).join('')
+       }</select>
+       <div class="pn">${side} ${p.name}</div></div>`).join('');
+}
+function setPartRole(i, role){
+  const rig = state.rig[state.rigSide];
+  if(rig && rig.parts[i]) rig.parts[i].role = role;
+}
+// 素材や抜き方を変えたらリグは作り直す
+function invalidateRig(){ state.rig = { f:null, b:null }; renderParts();
+  $('rigMeta').textContent = '素材か抜き方が変わりました。もう一度「調べる」を押してください。'; }
+
+// 画像 -> 8コマ。2枚以上ならそれを並べ、1枚ならパーツを動かして歩かせる
+async function buildWalkFromImages(files, onProgress, side){
   const seg = walkSeg();
   const cuts = [];
   for(let i=0;i<files.length;i++){
@@ -612,21 +824,168 @@ async function buildWalkFromImages(files, onProgress){
     return { frames: await composeStrip(pick), note: `${cuts.length}枚から` };
   }
   if(onProgress) onProgress(80);
-  return { frames: await synthWalkFrames(cuts[0]), note: '1枚から自動生成' };
+  // 全体を揺らすだけならパーツ判別は要らない
+  const whole = ($('motionKind').value === 'sway' && $('swayTarget').value === 'whole');
+  let rig = null;
+  if(!whole){ try{ rig = await ensureRig(side); }catch(e){ rig = null; } }
+  const n = rig ? rig.parts.filter(p=>p.role!=='none').length : 0;
+  const how = whole ? '全体の動き' : (n ? `パーツ${n}個` : 'パーツ無し→全体の動き');
+  if(onProgress) onProgress(90);
+  return { frames: await synthWalkFrames(cuts[0], rig),
+           note: `1枚から自動生成・${$('motionKind').value==='walk'?'歩く':'揺れる'}・${how}` };
 }
 
-// 1枚の絵に歩行らしい動きを付けて8コマにする。
-// 足元(CANVAS*FEET_Y)を軸にするので、接地位置はコマ間でずれない。
-async function synthWalkFrames(cut){
+/* ------------------------------------------------------------ リグ作り
+   絵をパーツ層と土台層に切り分ける。パーツ層は付け根を中心に回すので、
+   ・パーツ側は付け根まわりを少し太らせる(回したとき継ぎ目が開かないように)
+   ・土台側は抜いた穴の縁を周囲の色で数px埋める(抜けた跡が見えないように)   */
+const RIG_GROW = 2;     // パーツを太らせる幅(px)
+const RIG_PATCH = 3;    // 土台の穴を埋めるパス数
+function maskToCanvas(src, mask, w, h, box){
+  const bx = Math.max(0, box.x0-1), by = Math.max(0, box.y0-1);
+  const pw = Math.min(w-1, box.x1+1) - bx + 1, ph = Math.min(h-1, box.y1+1) - by + 1;
+  const c = document.createElement('canvas'); c.width=pw; c.height=ph;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  const im = cx.createImageData(pw, ph);
+  const a = new Uint8Array(pw*ph);
+  for(let y=0;y<ph;y++) for(let x=0;x<pw;x++){
+    const s = (by+y)*w + (bx+x), d = (y*pw+x)*4;
+    if(!mask[s]) continue;
+    im.data[d]=src[s*4]; im.data[d+1]=src[s*4+1]; im.data[d+2]=src[s*4+2];
+    a[y*pw+x] = src[s*4+3];
+  }
+  const sm = blur3(a, pw, ph);   // 縁を1pxぼかして継ぎ目を目立たなくする
+  for(let i=0;i<pw*ph;i++) im.data[i*4+3] = sm[i];
+  cx.putImageData(im, 0, 0);
+  return { canvas:c, bx, by, cw:pw, ch:ph };
+}
+// パーツを1つずつ層にして、サムネ用の絵も作る
+async function analyzeRigFromCut(cut){
+  if(!cut.box) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
+  const tmp = cropCanvas(cut), cw = tmp.width, ch = tmp.height;
+  const cx = tmp.getContext('2d', { willReadFrequently:true });
+  const src = cx.getImageData(0,0,cw,ch).data;
+  const body = new Uint8Array(cw*ch);
+  for(let i=0;i<cw*ch;i++) body[i] = src[i*4+3] > 40 ? 1 : 0;
+  const det = detectParts(body, cw, ch);
+  const parts = [];
+  for(const p of det.parts){
+    const raw = new Uint8Array(cw*ch);
+    for(let i=0;i<cw*ch;i++) if(det.lbl[i] === p.label) raw[i] = 1;
+    // 付け根まわりを太らせた層(元の絵の範囲内でだけ広げる)
+    const grow = chamferDist(raw, cw, ch);
+    const wide = new Uint8Array(cw*ch);
+    let gx0=cw, gx1=-1, gy0=ch, gy1=-1;
+    for(let i=0;i<cw*ch;i++){
+      if(!body[i] || grow[i] > RIG_GROW) continue;
+      wide[i] = 1;
+      const x = i%cw, y = (i-x)/cw;
+      if(x<gx0)gx0=x; if(x>gx1)gx1=x; if(y<gy0)gy0=y; if(y>gy1)gy1=y;
+    }
+    const layer = maskToCanvas(src, wide, cw, ch, { x0:gx0, x1:gx1, y0:gy0, y1:gy1 });
+    parts.push(Object.assign({}, p, { raw, layer }));
+  }
+  const rig = { cw, ch, src, body, srcCanvas:tmp, parts };
+  rig.thumbs = await Promise.all(parts.map(p=>rigThumb(rig, p)));
+  return rig;
+}
+// 本体を薄く、そのパーツだけ濃く描いたサムネ
+async function rigThumb(rig, part){
+  const W = 96, H = Math.max(1, Math.round(rig.ch*W/rig.cw));
+  const c = document.createElement('canvas'); c.width=W; c.height=H;
+  const cx = c.getContext('2d');
+  const k = W/rig.cw;
+  cx.globalAlpha = 0.22; cx.drawImage(rig.srcCanvas, 0, 0, W, H);
+  cx.globalAlpha = 1;
+  cx.drawImage(part.layer.canvas, 0, 0, part.layer.cw, part.layer.ch,
+               part.layer.bx*k, part.layer.by*k, part.layer.cw*k, part.layer.ch*k);
+  return blobToDataUrl(await canvasToBlobPng(c));
+}
+// 動かすパーツを抜いた土台。穴の縁は周囲の色で数px埋める
+function rigBase(rig, active){
+  const { cw, ch, src } = rig;
+  const hole = new Uint8Array(cw*ch);
+  for(const p of active) for(let i=0;i<cw*ch;i++) if(p.raw[i]) hole[i] = 1;
+  const px = new Uint8ClampedArray(src);
+  for(let i=0;i<cw*ch;i++) if(hole[i]) px[i*4+3] = 0;
+  for(let pass=0; pass<RIG_PATCH; pass++){
+    const add = [];
+    for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+      const i = y*cw+x;
+      if(!hole[i] || px[i*4+3]) continue;
+      let r=0,g=0,b=0,a=0,n=0;
+      const nb = [x>0?i-1:-1, x<cw-1?i+1:-1, y>0?i-cw:-1, y<ch-1?i+cw:-1];
+      for(const j of nb){ if(j<0 || !px[j*4+3]) continue; r+=px[j*4]; g+=px[j*4+1]; b+=px[j*4+2]; a+=px[j*4+3]; n++; }
+      if(n >= 2) add.push(i, r/n, g/n, b/n, a/n);
+    }
+    if(!add.length) break;
+    for(let k=0;k<add.length;k+=5){
+      const i = add[k];
+      px[i*4]=add[k+1]; px[i*4+1]=add[k+2]; px[i*4+2]=add[k+3]; px[i*4+3]=add[k+4];
+    }
+  }
+  const c = document.createElement('canvas'); c.width=cw; c.height=ch;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  const im = cx.createImageData(cw, ch);
+  im.data.set(px);
+  cx.putImageData(im, 0, 0);
+  return c;
+}
+
+/* ------------------------------------------------------------ 動きを付ける
+   足元(CANVAS*FEET_Y)を軸にするので、接地位置はコマ間でずれない。       */
+const DEG = Math.PI/180;
+const MOT = {
+  legSwing:16*DEG, armSwing:12*DEG, secSwing:7*DEG, swaySwing:12*DEG,
+  stepMax:0.05,                       // 踏み出し量100%のときの体高比
+  bob:0.030, lean:0.045, swayX:0.012, squash:0.035,   // 全体モーション(従来値)
+  limbBody:0.6,                       // 手足が動くときは本体を控えめに
+};
+// パーツごとの回転角と平行移動を返す(t=0〜1の1周期)
+function partMotion(part, t, ctxOpt){
+  const { kind, s, step, legIdx, armIdx, order, bodyH } = ctxOpt;
+  const ph = 2*Math.PI*t;
+  if(kind === 'walk'){
+    if(part.role === 'leg'){
+      const a = ph + Math.PI*legIdx;
+      return { rot: MOT.legSwing*s*Math.sin(a), dx: step*bodyH*Math.sin(a), dy:0 };
+    }
+    if(part.role === 'arm'){
+      const a = ph + Math.PI*armIdx + Math.PI;
+      return { rot: MOT.armSwing*s*Math.sin(a), dx:0, dy:0 };
+    }
+    return { rot: MOT.secSwing*s*Math.sin(ph - 0.35*Math.PI), dx:0, dy:0 };  // しっぽ・耳は遅れて揺れる
+  }
+  const k = Math.min(1.4, part.length/(0.25*ctxOpt.ch));   // 長いパーツほど大きく振る
+  return { rot: MOT.swaySwing*s*k*Math.sin(ph + 0.5*order), dx:0, dy:0 };
+}
+async function synthWalkFrames(cut, rig){
   if(!cut.box) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
   const s = (+$('sway').value)/100;
+  const kind = $('motionKind').value;
+  const wholeSway = (kind === 'sway' && $('swayTarget').value === 'whole');
+  const step = (+$('step').value)/100 * MOT.stepMax;
   const tmp = cropCanvas(cut), cw = tmp.width, ch = tmp.height;
   const scale = TARGET_H/ch;
   const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
-  const amp = TARGET_H*0.030*s;   // 上下の弾み(2歩で1往復)
-  const lean = 0.045*s;           // 前後の傾き
-  const swayX = TARGET_H*0.012*s; // 左右の揺れ
-  const q = 0.035*s;              // 踏み込みの縮み
+  const active = (rig && !wholeSway) ? rig.parts.filter(p=>p.role !== 'none') : [];
+  const hasLimb = active.some(p=>p.role==='leg' || p.role==='arm');
+  const base = active.length ? rigBase(rig, active) : tmp;
+  // 手足が動くぶん本体の動きは控えめにする。パーツが無いときは従来どおり
+  const bodyK = (kind === 'walk')
+    ? (hasLimb ? MOT.limbBody : 1)
+    : (active.length ? 0.2 : 1);
+  const amp = TARGET_H*MOT.bob*s*bodyK;
+  const lean = MOT.lean*s*bodyK*(kind==='walk' ? 0.5 : 1);
+  const swayX = TARGET_H*MOT.swayX*s*(active.length ? 0 : 1);
+  const q = MOT.squash*s*bodyK;
+  // 脚・腕は左→右に番号を振って交互に振らせる
+  let li = 0, aj = 0;
+  const plan = active.map((p, idx)=>({
+    part: p, order: idx,
+    legIdx: p.role==='leg' ? li++ : 0,
+    armIdx: p.role==='arm' ? aj++ : 0,
+  }));
   const oc = document.createElement('canvas'); oc.width=CANVAS; oc.height=CANVAS;
   const octx = oc.getContext('2d', { willReadFrequently:true });
   const out = [];
@@ -643,7 +1002,21 @@ async function synthWalkFrames(cut){
     octx.translate(CANVAS/2 + dx, foot + bob);
     octx.rotate(rot); octx.scale(sx, sy);
     octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
-    octx.drawImage(tmp, 0, 0, cw, ch, -nw/2, -nh, nw, nh);
+    const ox = -nw/2, oy = -nh;
+    octx.drawImage(base, 0, 0, cw, ch, ox, oy, nw, nh);
+    for(const it of plan){
+      const p = it.part, L = p.layer;
+      const m = partMotion(p, t, { kind, s, step, ch,
+        legIdx:it.legIdx, armIdx:it.armIdx, order:it.order, bodyH:TARGET_H });
+      const pvx = ox + p.pivot.x*scale, pvy = oy + p.pivot.y*scale;
+      octx.save();
+      octx.translate(pvx + m.dx, pvy + m.dy);
+      octx.rotate(m.rot);
+      octx.translate(-pvx, -pvy);
+      octx.drawImage(L.canvas, 0, 0, L.cw, L.ch,
+                     ox + L.bx*scale, oy + L.by*scale, L.cw*scale, L.ch*scale);
+      octx.restore();
+    }
     octx.restore();
     out.push(await canvasToBlobPng(oc));
   }
@@ -709,10 +1082,9 @@ async function preview(side){
       if(!file) throw new Error('動画を選んでください');
       r = await buildWalkFrames(file, p=>setProg(p));
     }else{
-      let fs = Array.from((side==='f' ? $('imgF') : $('imgB')).files);
-      if(side==='b' && !fs.length) fs = Array.from($('imgF').files);   // 後ろが無ければ正面を使う
+      const fs = imageFilesFor(side);   // 後ろが無ければ正面を使う
       if(!fs.length) throw new Error('画像を選んでください');
-      r = await buildWalkFromImages(fs, p=>setProg(p));
+      r = await buildWalkFromImages(fs, p=>setProg(p), side);
     }
     const issues = await inspectFrames(r.frames);
     const urls = await Promise.all(r.frames.map(blobToDataUrl));
@@ -1492,9 +1864,21 @@ function boot(){
     if($('mode').value === 'chroma') fillPicker('w');
   };
   $('sway').oninput = ()=> $('swayVal').textContent = $('sway').value;
-  // 素材を選び直したら色拾いの下絵も入れ替える
+  $('step').oninput = ()=> $('stepVal').textContent = $('step').value;
+  const syncMotion = ()=>{
+    const walk = $('motionKind').value === 'walk';
+    $('swayTargetWrap').style.display = walk ? 'none' : 'block';
+    $('stepWrap').style.display = walk ? 'block' : 'none';
+    $('rigWrap').style.display = (walk || $('swayTarget').value === 'parts') ? 'block' : 'none';
+  };
+  $('motionKind').onchange = syncMotion;
+  $('swayTarget').onchange = syncMotion;
+  syncMotion();
+  // 素材を選び直したら色拾いの下絵も入れ替え、パーツも作り直す
   for(const id of ['vidF','vidB','imgF','imgB'])
     $(id).addEventListener('change', ()=>{ if($('mode').value === 'chroma') fillPicker('w'); });
+  for(const id of ['imgF','imgB']) $(id).addEventListener('change', invalidateRig);
+  for(const id of ['mode','th']) $(id).addEventListener('change', invalidateRig);
   for(const id of ['imgIcon','imgPlayer'])
     $(id).addEventListener('change', ()=>{ if($('pmode').value === 'chroma') fillPicker('p'); });
   $('pickW').addEventListener('click', e=> pickFromCanvas($('pickW'), e, 'w'));
