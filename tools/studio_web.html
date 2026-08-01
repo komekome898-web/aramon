@@ -604,15 +604,38 @@ function fillSmallHoles(fg, w, h){
   }
   return fg;
 }
-// 外周につながる成分だけを背景とみなす
+/* 外周につながる成分だけを背景とみなす。
+   ただし動画の外周に細い枠線が入っていると、背景が画像のいちばん外の画素に触れず
+   「外周につながる背景」が1つも見つからない(=全面が被写体になり、抜けなくなる)。
+   実際に外周2pxが暗い枠線の動画で発生したので、見つからないときは少し内側の輪から探す。 */
+const BORDER_INSETS = [0, 2, 4, 8, 16];
 function borderConnected(mask, w, h){
+  const N = w*h;
   const { lbl, n } = label4(mask, w, h);
-  const touch = new Uint8Array(n+1);
-  for(let x=0;x<w;x++){ if(lbl[x]) touch[lbl[x]]=1; if(lbl[(h-1)*w+x]) touch[lbl[(h-1)*w+x]]=1; }
-  for(let y=0;y<h;y++){ if(lbl[y*w]) touch[lbl[y*w]]=1; if(lbl[y*w+w-1]) touch[lbl[y*w+w-1]]=1; }
-  const out = new Uint8Array(w*h);
-  for(let i=0;i<w*h;i++) if(lbl[i] && touch[lbl[i]]) out[i]=1;
-  return out;
+  const out = new Uint8Array(N);
+  if(n < 1) return out;
+  const size = new Int32Array(n+1);
+  for(let i=0;i<N;i++) if(lbl[i]) size[lbl[i]]++;
+  let best = null, bestN = 0, bestIns = 0;
+  for(const ins of BORDER_INSETS){
+    if(ins*2 >= Math.min(w, h)) break;
+    const touch = new Uint8Array(n+1);
+    for(let x=ins;x<w-ins;x++){
+      const a = lbl[ins*w+x], b = lbl[(h-1-ins)*w+x];
+      if(a) touch[a]=1; if(b) touch[b]=1;
+    }
+    for(let y=ins;y<h-ins;y++){
+      const a = lbl[y*w+ins], b = lbl[y*w+(w-1-ins)];
+      if(a) touch[a]=1; if(b) touch[b]=1;
+    }
+    let c = 0;
+    for(let L=1;L<=n;L++) if(touch[L]) c += size[L];
+    if(c > bestN){ bestN = c; best = touch; bestIns = ins; }
+    if(c >= N*0.01) break;      // 十分な広さの背景が見つかった
+  }
+  if(!best) return { out, inset:0 };
+  for(let i=0;i<N;i++) if(lbl[i] && best[lbl[i]]) out[i]=1;
+  return { out, inset:bestIns };
 }
 // 3x3 ぼかし(cv2.GaussianBlur(3,3) 相当の軽い平滑化)
 function blur3(a, w, h){
@@ -667,9 +690,17 @@ function segment(img, mode, th, chroma){
   }
   // blackopen(本体に黒が無い)は囲まれた背景も抜く。それ以外は外周連結のみ
   const keepEnclosed = (mode !== 'blackopen');
-  const bg = keepEnclosed ? borderConnected(mask, w, h) : mask;
+  const bc = keepEnclosed ? borderConnected(mask, w, h) : { out:mask, inset:0 };
+  const bg = bc.out;
   let fg = new Uint8Array(N);
   for(let i=0;i<N;i++) fg[i] = bg[i] ? 0 : 1;
+  // 内側の輪で背景が見つかった=外周に枠線がある。枠ぶんは切り離してから最大成分を取る
+  // (被写体に触れている枠線を残すと、被写体の枠がコマ全体になってしまう)
+  if(bc.inset > 0){
+    const k = bc.inset;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+      if(x < k || y < k || x >= w-k || y >= h-k) fg[y*w+x] = 0;
+  }
   fg = keepLargest(fg, w, h);
   if(keepEnclosed) fg = fillSmallHoles(fg, w, h);
   if(mode === 'white') fg = erode2(fg, w, h);
@@ -884,6 +915,19 @@ function detectPeriod(grays, n){
 
 // 動画 -> 8コマの RGBA ImageData(320x320)
 const walkStep = (t)=>{ const e = $('walkMeta'); if(e) e.textContent = t; };
+// 抜けなかったとき、四隅の色から「どの抜き方を試すとよいか」を伝える
+function cornerHint(img){
+  const w = img.width, h = img.height, d = img.data;
+  const k = Math.max(3, Math.round(Math.min(w, h)*0.03));
+  let r=0, g=0, b=0;
+  for(const [x,y] of [[k,k],[w-1-k,k],[k,h-1-k],[w-1-k,h-1-k]]){
+    const i = (y*w+x)*4; r += d[i]; g += d[i+1]; b += d[i+2];
+  }
+  r/=4; g/=4; b/=4;
+  if(Math.min(r,g,b) > 200) return '四隅が白っぽいので「白背景」を試してください。';
+  if(Math.max(r,g,b) < 60)  return '四隅が黒っぽいので「黒背景」を試してください。';
+  return `四隅の色は rgb(${r|0},${g|0},${b|0}) です。「色で抜く」でこの色を拾ってください。`;
+}
 async function buildWalkFrames(file, onProgress){
   walkStep('動画を読み込んでいます…');
   const v = await loadVideo(file);
@@ -952,8 +996,7 @@ async function buildWalkFrames(file, onProgress){
     const full = cuts.filter(c => c.box &&
       (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
     if(full >= CAND_N*0.75)
-      throw new Error('背景を見つけられませんでした。抜き方(白背景/黒背景/色で抜く)と' +
-                      'しきい値を見直してください。');
+      throw new Error('背景を見つけられませんでした。' + cornerHint(cuts[0].img));
     walkStep('絵を整えています…');
     return { frames: await composeStrip(cuts), period,
              note: `周期=${period}${mul!==1 ? ` ×${mul}` : ''}` };
