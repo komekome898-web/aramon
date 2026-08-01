@@ -166,7 +166,7 @@
     <label>動きの強さ <span id="swayVal">100</span> — 1枚だけのときに使います</label>
     <input id="sway" type="range" min="0" max="200" value="100">
     <div id="stepWrap" style="display:none">
-      <label>踏み出し量 <span id="stepVal">0</span> — 0なら付け根で振るだけ(足元がずれません)</label>
+      <label>踏み出し量 <span id="stepVal">0</span> — 手前へ踏み出す量。0なら付け根で振るだけ</label>
       <input id="step" type="range" min="0" max="100" value="0">
     </div>
     <div id="rigWrap" style="display:none">
@@ -397,6 +397,83 @@ function chamferDist(seed, w, h){
   for(let i=0;i<w*h;i++) d[i] /= 3;   // 画素単位へ戻す
   return d;
 }
+/* 出っ張りの拾い方は「芯の太さ」1つで決まるので、1段階だけだと必ずどちらかで外す:
+   芯を大きく取ると隣り合う脚が根元でつながって1個に見え、小さく取ると太い手足が
+   芯に飲まれて出てこない。そこで **太さを3段階変えて候補を出し**、重なったものは
+   細長い方(=手足らしい方)を採る。                                            */
+const PART_SCALES = [1.0, 0.7, 0.5];
+// 長さ²/面積。丸いかたまりは1/π(≒0.32)前後なので、ずんぐりした手足まで拾える所に置く
+const PART_MIN_ELONG = 1.25;
+// 1段階ぶんの出っ張り候補を返す(純関数)
+function protrusionsAt(mask, dist, w, h, r0, fgArea, bodyH){
+  const seed = new Uint8Array(w*h);
+  let seedN = 0;
+  for(let i=0;i<w*h;i++) if(mask[i] && dist[i] >= r0){ seed[i] = 1; seedN++; }
+  if(!seedN) return null;
+  const dCore = chamferDist(seed, w, h);
+  const core = new Uint8Array(w*h);
+  const protr = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++){
+    if(!mask[i]) continue;
+    if(dCore[i] <= r0) core[i] = 1; else protr[i] = 1;
+  }
+  const { lbl, n } = label4(protr, w, h);
+  if(n < 1) return { core, cands:[] };
+  // ラベルごとの面積・太さ・張り出し量を1パスで集計する
+  const area = new Int32Array(n+1), thick = new Float32Array(n+1), reach = new Float32Array(n+1);
+  for(let i=0;i<w*h;i++){
+    const L = lbl[i]; if(!L) continue;
+    area[L]++;
+    if(dist[i] > thick[L]) thick[L] = dist[i];
+    if(dCore[i] > reach[L]) reach[L] = dCore[i];
+  }
+  const minReach = Math.max(bodyH*0.05, r0*0.5);
+  const keep = new Uint8Array(n+1);
+  let kept = 0;
+  for(let L=1; L<=n; L++){
+    if(area[L] < fgArea*0.003) continue;        // 小さすぎる
+    if(thick[L] > r0*0.8) continue;             // 手足にしては太い = 胴の一部
+    if(reach[L] - r0 < minReach) continue;      // 芯の縁にへばり付いているだけ
+    keep[L] = 1; kept++;
+  }
+  if(!kept) return { core, cands:[] };
+  const px = {}, bb = {};
+  for(let L=1; L<=n; L++) if(keep[L]){ px[L] = []; bb[L] = { x0:w, x1:-1, y0:h, y1:-1 }; }
+  for(let i=0;i<w*h;i++){
+    const L = lbl[i]; if(!L || !keep[L]) continue;
+    const x = i%w, y = (i-x)/w, k = bb[L];
+    px[L].push(x, y);
+    if(x<k.x0)k.x0=x; if(x>k.x1)k.x1=x; if(y<k.y0)k.y0=y; if(y>k.y1)k.y1=y;
+  }
+  const cands = [];
+  for(let L=1; L<=n; L++){
+    if(!keep[L]) continue;
+    const p = px[L];
+    // 付け根 = 芯に接している画素の重心。接していなければ芯に最も近い画素
+    let ax=0, ay=0, an=0, best=0, bestD=1e9;
+    for(let k=0;k<p.length;k+=2){
+      const x = p[k], y = p[k+1], i = y*w+x;
+      const touch = (x>0 && core[i-1]) || (x<w-1 && core[i+1]) ||
+                    (y>0 && core[i-w]) || (y<h-1 && core[i+w]);
+      if(touch){ ax+=x; ay+=y; an++; }
+      if(dCore[i] < bestD){ bestD = dCore[i]; best = k; }
+    }
+    const pivot = an ? { x:ax/an, y:ay/an } : { x:p[best], y:p[best+1] };
+    let tip = { x:pivot.x, y:pivot.y }, far = -1;
+    for(let k=0;k<p.length;k+=2){
+      const dx = p[k]-pivot.x, dy = p[k+1]-pivot.y, d2 = dx*dx+dy*dy;
+      if(d2 > far){ far = d2; tip = { x:p[k], y:p[k+1] }; }
+    }
+    const length = Math.sqrt(Math.max(0, far));
+    if(length < bodyH*0.08) continue;
+    const elong = length*length/Math.max(1, area[L]);
+    if(elong < PART_MIN_ELONG) continue;        // 細長くない = かたまり
+    cands.push({ px:p, area:area[L], pivot, tip, length, elong,
+                 angle: Math.atan2(tip.y-pivot.y, tip.x-pivot.x),
+                 box:{ x0:bb[L].x0, x1:bb[L].x1, y0:bb[L].y0, y1:bb[L].y1 } });
+  }
+  return { core, cands };
+}
 // mask(1=被写体) から出っ張りを拾う。返すのは付け根・先端・向き・自動判定の役割。
 function detectParts(mask, w, h){
   const NONE = { parts:[], lbl:null };
@@ -409,76 +486,49 @@ function detectParts(mask, w, h){
   const dist = chamferDist(bg, w, h);
   let maxD = 0;
   for(let i=0;i<w*h;i++) if(mask[i] && dist[i] > maxD) maxD = dist[i];
-  const r0 = Math.max(1.5, maxD*0.45);
-  // 半径r0のディスクでオープニング = 芯(胴・頭)
-  const seed = new Uint8Array(w*h);
-  for(let i=0;i<w*h;i++) if(mask[i] && dist[i] >= r0) seed[i] = 1;
-  let seedN = 0; for(let i=0;i<w*h;i++) seedN += seed[i];
-  if(!seedN) return NONE;
-  const dCore = chamferDist(seed, w, h);
-  const core = new Uint8Array(w*h);
-  for(let i=0;i<w*h;i++) if(mask[i] && dCore[i] <= r0) core[i] = 1;
-  // 芯からはみ出した部分が出っ張りの候補
-  const protr = new Uint8Array(w*h);
-  for(let i=0;i<w*h;i++) protr[i] = (mask[i] && !core[i]) ? 1 : 0;
-  const { lbl, n } = label4(protr, w, h);
-  if(n < 1) return NONE;
-  // 被写体の高さと、芯(胴)の縦の範囲。腕としっぽは胴のどこに付くかで分ける
   let y0 = h, y1 = -1;
   for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(mask[y*w+x]){ if(y<y0) y0=y; if(y>y1) y1=y; }
   const bodyH = Math.max(1, y1-y0+1);
-  let cy0 = h, cy1 = -1;
-  for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(core[y*w+x]){ if(y<cy0) cy0=y; if(y>cy1) cy1=y; }
-  const coreH = Math.max(1, cy1-cy0+1);
-  // 芯からどれだけ張り出しているか。角が丸まって出来ただけの欠片を落とすための下限
-  const minReach = Math.max(bodyH*0.05, r0*0.6);
-  // 画素はラベルごとに1パスで振り分ける(ラベル数×全画素で回すと候補が多い絵で重くなる)
-  const bucket = [], bb = [];
-  for(let L=0; L<=n; L++){ bucket.push([]); bb.push({ x0:w, x1:-1, y0:h, y1:-1 }); }
-  for(let i=0;i<w*h;i++){
-    const L = lbl[i]; if(!L) continue;
-    const x = i%w, y = (i-x)/w, k = bb[L];
-    bucket[L].push(x, y);
-    if(x<k.x0)k.x0=x; if(x>k.x1)k.x1=x; if(y<k.y0)k.y0=y; if(y>k.y1)k.y1=y;
+  // 太さを変えて候補を集める。分類のものさしにする芯はいちばん粗い段階のものを使う
+  let all = [], refCore = null;
+  for(const k of PART_SCALES){
+    const r = Math.max(1.5, maxD*0.45*k);
+    const res = protrusionsAt(mask, dist, w, h, r, fgArea, bodyH);
+    if(!res) continue;
+    if(!refCore) refCore = res.core;
+    all = all.concat(res.cands);
   }
+  if(!refCore || !all.length) return NONE;
+  // 細長い順に採用し、すでに採った画素と半分近く重なるものは捨てる
+  // (同じ手足が段階違いで何度も出るため。細長い方=根元で分かれている方が残る)
+  all.sort((a,b)=> b.elong - a.elong);
+  const owner = new Int32Array(w*h);
+  const lbl = new Int32Array(w*h);
   const out = [];
-  for(let L=1; L<=n; L++){
-    const px = bucket[L];
-    const bx0 = bb[L].x0, bx1 = bb[L].x1, by0 = bb[L].y0, by1 = bb[L].y1;
-    const area = px.length/2;
-    if(area < fgArea*0.004) continue;
-    // 付け根 = 芯に接している画素の重心。接していなければ芯に最も近い画素
-    let ax=0, ay=0, an=0, best=-1, bestD=1e9, reach=0;
-    for(let k=0;k<px.length;k+=2){
-      const x = px[k], y = px[k+1], i = y*w+x;
-      const touch = (x>0 && core[i-1]) || (x<w-1 && core[i+1]) ||
-                    (y>0 && core[i-w]) || (y<h-1 && core[i+w]);
-      if(touch){ ax+=x; ay+=y; an++; }
-      if(dCore[i] < bestD){ bestD = dCore[i]; best = k; }
-      if(dCore[i] > reach) reach = dCore[i];
-    }
-    if(reach - r0 < minReach) continue;   // 芯の縁にへばり付いているだけ = 手足ではない
-    const pivot = an ? { x:ax/an, y:ay/an } : { x:px[best], y:px[best+1] };
-    // 先端 = 付け根から最も遠い画素
-    let tip = { x:pivot.x, y:pivot.y }, far = -1;
-    for(let k=0;k<px.length;k+=2){
-      const dx = px[k]-pivot.x, dy = px[k+1]-pivot.y, d2 = dx*dx+dy*dy;
-      if(d2 > far){ far = d2; tip = { x:px[k], y:px[k+1] }; }
-    }
-    const length = Math.sqrt(Math.max(0, far));
-    if(length < bodyH*0.08) continue;
-    const th = Math.atan2(tip.y-pivot.y, tip.x-pivot.x);   // 画面座標(下が正)
-    const ty = (tip.y-y0)/bodyH;             // 先端が下端寄りか
-    const cy = (pivot.y-cy0)/coreH;          // 胴のどのあたりに付いているか
-    const down = Math.sin(th), side = Math.abs(Math.cos(th));
-    let role;
-    if(ty > 0.72 && down > 0.5) role = 'leg';
-    else if(cy > 0.05 && cy < 0.55 && ty <= 0.72 && side > 0.5) role = 'arm';
-    else if(cy < 0.2 && down < -0.5) role = 'ear';
-    else if(length > bodyH*0.12) role = 'tail';
-    else role = 'none';
-    out.push({ label:L, area, pivot, tip, length, angle:th, role,
-               box:{ x0:bx0, x1:bx1, y0:by0, y1:by1 } });
+  for(const c of all){
+    let dup = 0;
+    for(let k=0;k<c.px.length;k+=2) if(owner[c.px[k+1]*w + c.px[k]]) dup++;
+    if(dup > c.area*0.45) continue;
+    const id = out.length + 1;
+    for(let k=0;k<c.px.length;k+=2){ const i = c.px[k+1]*w + c.px[k]; owner[i] = id; lbl[i] = id; }
+    c.label = id; delete c.px;
+    out.push(c);
+  }
+  if(!out.length) return NONE;
+  // 腕としっぽは「胴のどこに付くか」で分ける(全体の縦位置だと脚や耳が混ざって基準がずれる)
+  let cy0 = h, cy1 = -1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(refCore[y*w+x]){ if(y<cy0) cy0=y; if(y>cy1) cy1=y; }
+  if(cy1 < 0){ cy0 = y0; cy1 = y1; }
+  const coreH = Math.max(1, cy1-cy0+1);
+  for(const c of out){
+    const ty = (c.tip.y-y0)/bodyH;             // 先端が下端寄りか
+    const cy = (c.pivot.y-cy0)/coreH;          // 胴のどのあたりに付いているか
+    const down = Math.sin(c.angle), side = Math.abs(Math.cos(c.angle));
+    if(ty > 0.72 && down > 0.5) c.role = 'leg';
+    else if(cy > 0.05 && cy < 0.55 && ty <= 0.72 && side > 0.5) c.role = 'arm';
+    else if(cy < 0.2 && down < -0.5) c.role = 'ear';
+    else if(c.length > bodyH*0.12) c.role = 'tail';
+    else c.role = 'none';
   }
   // 脚・腕は左→右に並べる(左右で位相を反転させるため)
   out.sort((a,b)=>{
@@ -857,7 +907,14 @@ function maskToCanvas(src, mask, w, h, box){
   const sm = blur3(a, pw, ph);   // 縁を1pxぼかして継ぎ目を目立たなくする
   for(let i=0;i<pw*ph;i++) im.data[i*4+3] = sm[i];
   cx.putImageData(im, 0, 0);
-  return { canvas:c, bx, by, cw:pw, ch:ph };
+  // 奥へ行ったときに重ねる暗い版(1回だけ作って使い回す)
+  const dk = document.createElement('canvas'); dk.width=pw; dk.height=ph;
+  const dcx = dk.getContext('2d');
+  dcx.drawImage(c, 0, 0);
+  dcx.globalCompositeOperation = 'source-atop';
+  dcx.fillStyle = '#0a0e16';
+  dcx.fillRect(0, 0, pw, ph);
+  return { canvas:c, dark:dk, bx, by, cw:pw, ch:ph };
 }
 // パーツを1つずつ層にして、サムネ用の絵も作る
 async function analyzeRigFromCut(cut){
@@ -934,37 +991,46 @@ function rigBase(rig, active){
 
 /* ------------------------------------------------------------ 動きを付ける
    足元(CANVAS*FEET_Y)を軸にするので、接地位置はコマ間でずれない。       */
+/* 歩きは「左右に振る」のではなく「前後(奥行き)に振る」。正面向きの絵なので、
+   前後の振りは画面上では次の3つに化ける。この3つが揃って初めて立体的に見える。
+     ・付け根から先が短く見える(foreshortening = cos φ)
+     ・手前に来たものは大きく、奥へ行ったものは小さく(遠近)
+     ・奥へ行ったものは体の後ろに隠れ、暗くなる(前後関係と陰り)               */
 const DEG = Math.PI/180;
 const MOT = {
-  legSwing:16*DEG, armSwing:12*DEG, secSwing:7*DEG, swaySwing:12*DEG,
-  stepMax:0.05,                       // 踏み出し量100%のときの体高比
+  legSwing:30*DEG, armSwing:22*DEG,   // 前後方向の振り角(3D)
+  depthScale:0.12,                    // 手前に来たときに大きく見える割合
+  depthDark:0.42,                     // 奥へ行ったときの暗さ
+  step:0.06,                          // 踏み出し量100%のときの体高比(手前ほど画面下へ)
+  secSwing:7*DEG, swaySwing:12*DEG,   // しっぽ・耳の揺れ(こちらは横揺れでよい)
   bob:0.030, lean:0.045, swayX:0.012, squash:0.035,   // 全体モーション(従来値)
   limbBody:0.6,                       // 手足が動くときは本体を控えめに
 };
-// パーツごとの回転角と平行移動を返す(t=0〜1の1周期)
-function partMotion(part, t, ctxOpt){
-  const { kind, s, step, legIdx, armIdx, order, bodyH } = ctxOpt;
+// パーツごとの動きを返す(t=0〜1の1周期)。z は奥行き(-1=奥 / +1=手前)
+function partMotion(part, t, o){
   const ph = 2*Math.PI*t;
-  if(kind === 'walk'){
-    if(part.role === 'leg'){
-      const a = ph + Math.PI*legIdx;
-      return { rot: MOT.legSwing*s*Math.sin(a), dx: step*bodyH*Math.sin(a), dy:0 };
-    }
-    if(part.role === 'arm'){
-      const a = ph + Math.PI*armIdx + Math.PI;
-      return { rot: MOT.armSwing*s*Math.sin(a), dx:0, dy:0 };
-    }
-    return { rot: MOT.secSwing*s*Math.sin(ph - 0.35*Math.PI), dx:0, dy:0 };  // しっぽ・耳は遅れて揺れる
+  const leg = part.role === 'leg', arm = part.role === 'arm';
+  if(o.kind === 'walk' && (leg || arm)){
+    // 脚は左右で逆位相、腕は脚と逆位相
+    const u = Math.sin(ph + Math.PI*(leg ? o.legIdx : o.armIdx) + (leg ? 0 : Math.PI));
+    const phi = (leg ? MOT.legSwing : MOT.armSwing) * o.s * u;
+    return { rot:0, dx:0,                      // 左右には振らない
+             dy: o.step*o.bodyH*u,             // 手前に踏み出すほど画面の下へ
+             fore: Math.cos(phi),              // 前後に振ると画面上では短く見える
+             scale: 1 + MOT.depthScale*o.s*u,
+             z: u };
   }
-  const k = Math.min(1.4, part.length/(0.25*ctxOpt.ch));   // 長いパーツほど大きく振る
-  return { rot: MOT.swaySwing*s*k*Math.sin(ph + 0.5*order), dx:0, dy:0 };
+  if(o.kind === 'walk')                        // しっぽ・耳は遅れて揺れる
+    return { rot: MOT.secSwing*o.s*Math.sin(ph - 0.35*Math.PI), dx:0, dy:0, fore:1, scale:1, z:0 };
+  const k = Math.min(1.4, part.length/(0.25*o.ch));   // 長いパーツほど大きく振る
+  return { rot: MOT.swaySwing*o.s*k*Math.sin(ph + 0.5*o.order), dx:0, dy:0, fore:1, scale:1, z:0 };
 }
 async function synthWalkFrames(cut, rig){
   if(!cut.box) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
   const s = (+$('sway').value)/100;
   const kind = $('motionKind').value;
   const wholeSway = (kind === 'sway' && $('swayTarget').value === 'whole');
-  const step = (+$('step').value)/100 * MOT.stepMax;
+  const step = (+$('step').value)/100 * MOT.step;
   const tmp = cropCanvas(cut), cw = tmp.width, ch = tmp.height;
   const scale = TARGET_H/ch;
   const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
@@ -1003,20 +1069,32 @@ async function synthWalkFrames(cut, rig){
     octx.rotate(rot); octx.scale(sx, sy);
     octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
     const ox = -nw/2, oy = -nh;
-    octx.drawImage(base, 0, 0, cw, ch, ox, oy, nw, nh);
-    for(const it of plan){
-      const p = it.part, L = p.layer;
-      const m = partMotion(p, t, { kind, s, step, ch,
-        legIdx:it.legIdx, armIdx:it.armIdx, order:it.order, bodyH:TARGET_H });
+    const items = plan.map(it=>({ it, m: partMotion(it.part, t, { kind, s, step, ch,
+      legIdx:it.legIdx, armIdx:it.armIdx, order:it.order, bodyH:TARGET_H }) }));
+    const drawPart = (o)=>{
+      const p = o.it.part, L = p.layer, m = o.m;
       const pvx = ox + p.pivot.x*scale, pvy = oy + p.pivot.y*scale;
       octx.save();
       octx.translate(pvx + m.dx, pvy + m.dy);
-      octx.rotate(m.rot);
+      if(m.scale !== 1) octx.scale(m.scale, m.scale);
+      if(m.rot) octx.rotate(m.rot);
+      // 付け根から先の向きに沿って縮める = 前後に振ったときの見え方
+      if(m.fore !== 1){ octx.rotate(p.angle); octx.scale(m.fore, 1); octx.rotate(-p.angle); }
       octx.translate(-pvx, -pvy);
-      octx.drawImage(L.canvas, 0, 0, L.cw, L.ch,
-                     ox + L.bx*scale, oy + L.by*scale, L.cw*scale, L.ch*scale);
+      const lx = ox + L.bx*scale, ly = oy + L.by*scale, lw = L.cw*scale, lh = L.ch*scale;
+      octx.drawImage(L.canvas, 0, 0, L.cw, L.ch, lx, ly, lw, lh);
+      if(m.z < 0 && L.dark){        // 奥にあるものは暗くする
+        octx.globalAlpha = Math.min(0.85, -m.z*MOT.depthDark*s);
+        octx.drawImage(L.dark, 0, 0, L.cw, L.ch, lx, ly, lw, lh);
+        octx.globalAlpha = 1;
+      }
       octx.restore();
-    }
+    };
+    // 奥のパーツ → 本体 → 手前のパーツ の順に描くと前後関係が出る
+    const byZ = (a,b)=> a.m.z - b.m.z;
+    items.filter(o=>o.m.z < 0).sort(byZ).forEach(drawPart);
+    octx.drawImage(base, 0, 0, cw, ch, ox, oy, nw, nh);
+    items.filter(o=>o.m.z >= 0).sort(byZ).forEach(drawPart);
     octx.restore();
     out.push(await canvasToBlobPng(oc));
   }
