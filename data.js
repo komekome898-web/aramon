@@ -1763,6 +1763,14 @@ function saveSkins(s){
 }
 function isSkinOwned(skinId){ return !!loadSkins().owned[skinId]; }
 function ownSkin(skinId){ const s=loadSkins(); s.owned[skinId]=true; saveSkins(s); }
+// 所持を取り消す(管理者画面の動作確認用)。装備したままだと持っていないスキンを
+// 着ている状態になるので、装備からも外す。
+function disownSkin(skinId){
+  const s = loadSkins();
+  delete s.owned[skinId];
+  for(const el of Object.keys(s.equipped)) if(s.equipped[el]===skinId) delete s.equipped[el];
+  saveSkins(s);
+}
 function getEquippedSkin(element){ return loadSkins().equipped[element] || null; }
 function setEquippedSkin(element, skinId){
   const s=loadSkins();
