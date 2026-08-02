@@ -1018,11 +1018,26 @@
   .s1prev-card.milestone{ border-color:rgba(244,196,48,0.55); background:rgba(244,196,48,0.07); }
   .s1prev-card-num{ font-family:'Russo One',sans-serif; font-size:11px; color:var(--amber); }
   .s1prev-card-reward{ font-size:10px; color:var(--ink); text-align:center; line-height:1.25; }
-  .s1prev-calendar{ display:flex; flex-direction:column; gap:5px; width:100%; }
-  .s1prev-day{ display:flex; align-items:baseline; gap:8px; padding:7px 9px;
+  .s1prev-card.s1prev-card-final{ border-color:transparent;
+    background:linear-gradient(135deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
+    background-size:200% 200%; animation:seasonFinalRainbow 4s linear infinite; }
+  .s1prev-card-skin{ width:40px; height:40px; object-fit:contain; border-radius:6px; background:rgba(0,0,0,0.25); }
+  .s1prev-calendar{ display:flex; flex-direction:column; width:100%; }
+  .s1prev-cal-month{ font-size:10.5px; color:var(--ink-dim); margin-bottom:6px; line-height:1.4; }
+  .s1prev-cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:4px; }
+  .s1prev-cal-head .s1prev-cal-dow{ text-align:center; font-size:10px; color:var(--ink-dim); font-weight:700; }
+  .s1prev-cal-cell{ min-height:52px; padding:4px 3px; background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
+    border-radius:7px; display:flex; flex-direction:column; gap:3px; }
+  .s1prev-cal-cell.empty{ background:transparent; border-color:transparent; }
+  .s1prev-cal-cell.before-start{ opacity:0.35; }
+  .s1prev-cal-date{ font-size:10px; color:var(--ink-dim); }
+  .s1prev-cal-badges{ display:flex; flex-direction:column; gap:2px; }
+  .s1prev-badge{ font-size:8.5px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
+    border-radius:4px; padding:1px 4px; text-align:center; white-space:nowrap; }
+  .s1prev-legend{ display:flex; flex-direction:column; gap:6px; width:100%; }
+  .s1prev-legend-item{ display:flex; align-items:center; gap:8px; padding:6px 9px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
-  .s1prev-day-label{ flex:0 0 auto; width:52px; font-size:11px; font-weight:700; color:var(--amber); }
-  .s1prev-day-rule{ font-size:11px; color:var(--ink); line-height:1.35; }
+  .s1prev-legend-desc{ font-size:11px; color:var(--ink); line-height:1.35; }
   /* トップ「シーズン」ボタンの限定SSR告知ポップ */
   .season-ssr-pop{ position:absolute; top:-9px; right:-6px; font-size:8.5px; font-weight:800; letter-spacing:0.3px;
     color:#1a1306; padding:1px 6px; border-radius:9px; white-space:nowrap; transform:rotate(-4deg);
@@ -2390,7 +2405,10 @@
   /* 各タブのペインをflexで縦いっぱいに伸ばし、中身をペイン内でスクロールさせる
      (block のままだと内側の flex 高さ制約が効かず、はみ出した内容が見えなくなる/閉じるボタンが中央に浮く) */
   #adminStatsPane, #adminSePane, #adminToolsPane{ display:flex; flex-direction:column; align-items:center; width:100%; flex:1 1 auto; min-height:0; }
-  #adminToolsPane{ margin-top:18px; gap:10px; }
+  #adminToolsPane{ margin-top:18px; gap:10px; overflow-y:auto; min-height:0; width:100%; padding-bottom:16px; }
+  #adminToolsPane::-webkit-scrollbar{ width:10px; }
+  #adminToolsPane::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
+  #adminToolsPane::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #closeAdminBtn{ flex:0 0 auto; margin-top:14px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:13px; letter-spacing:1px; color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
     border-radius:8px; cursor:pointer; }

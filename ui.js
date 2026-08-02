@@ -5066,26 +5066,58 @@ document.querySelectorAll('.admin-subtab').forEach(t=> t.addEventListener('click
    SEASON1_MUTATORS / SEASON1_REWARDS_PREVIEW(data.js)を表示するだけの確認画面。
    ここでの表示・操作はゲームプレイに一切影響しない。
 ===================================================================== */
+// 開始日(SEASON1_START_DATE)の月を、日曜始まりの週グリッドに組み立てる
+function buildSeason1CalendarWeeks(){
+  const start = new Date(SEASON1_START_DATE+'T00:00:00');
+  const year = start.getFullYear(), month = start.getMonth();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const startWeekday = new Date(year, month, 1).getDay(); // 0=日
+  const cells = [];
+  for(let i=0;i<startWeekday;i++) cells.push(null);
+  for(let d=1; d<=daysInMonth; d++) cells.push(new Date(year, month, d));
+  while(cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for(let i=0;i<cells.length;i+=7) weeks.push(cells.slice(i,i+7));
+  return { weeks, start };
+}
 function renderSeason1Preview(){
   const track = document.getElementById('season1PreviewTrack');
   if(track && typeof SEASON1_REWARDS_PREVIEW!=='undefined'){
     track.innerHTML = SEASON1_REWARDS_PREVIEW.map((r,i)=>{
       const t = i+1;
       const milestone = (t%5===0);
-      return `<div class="s1prev-card ${milestone?'milestone':''}">
+      const rewardMid = r.skin
+        ? `<img class="s1prev-card-skin" src="${skinPreviewSrc(r.skin,'front')}" alt=""><div class="s1prev-card-reward">✨${skinMeta(r.skin).name}</div>`
+        : `<div class="s1prev-card-reward">${rewardText(r)}</div>`;
+      return `<div class="s1prev-card ${milestone?'milestone':''} ${r.skin?'s1prev-card-final':''}">
         <div class="s1prev-card-num">T${t}</div>
-        <div class="s1prev-card-reward">${rewardText(r)}</div>
+        ${rewardMid}
       </div>`;
     }).join('');
   }
   const cal = document.getElementById('season1PreviewCalendar');
   if(cal && typeof SEASON1_MUTATORS!=='undefined'){
-    cal.innerHTML = SEASON1_MUTATORS.map(m=>{
-      return `<div class="s1prev-day">
-        <div class="s1prev-day-label">${m.label}</div>
-        <div class="s1prev-day-rule">${mutatorRuleText(m)}</div>
-      </div>`;
-    }).join('');
+    const { weeks, start } = buildSeason1CalendarWeeks();
+    const dow = ['日','月','火','水','木','金','土'];
+    let html = `<div class="s1prev-cal-month">${start.getFullYear()}年${start.getMonth()+1}月〜(シーズン1開始 ${start.getMonth()+1}/${start.getDate()}・以降は同じ曜日パターンで毎週繰り返し)</div>`;
+    html += `<div class="s1prev-cal-grid s1prev-cal-head">${dow.map(d=>`<div class="s1prev-cal-dow">${d}</div>`).join('')}</div>`;
+    weeks.forEach(week=>{
+      html += `<div class="s1prev-cal-grid">` + week.map(date=>{
+        if(!date) return `<div class="s1prev-cal-cell empty"></div>`;
+        const before = date < start;
+        const m = SEASON1_MUTATORS.find(mm=>mm.day===date.getDay());
+        const badges = before ? [] : mutatorBadgeLabels(m);
+        return `<div class="s1prev-cal-cell ${before?'before-start':''}">
+          <div class="s1prev-cal-date">${date.getDate()}</div>
+          <div class="s1prev-cal-badges">${badges.map(b=>`<span class="s1prev-badge">${b}</span>`).join('')}</div>
+        </div>`;
+      }).join('') + `</div>`;
+    });
+    cal.innerHTML = html;
+  }
+  const legend = document.getElementById('season1PreviewLegend');
+  if(legend && typeof MUTATOR_LEGEND!=='undefined'){
+    legend.innerHTML = MUTATOR_LEGEND.map(l=>`<div class="s1prev-legend-item"><span class="s1prev-badge">${l.label}</span><span class="s1prev-legend-desc">${l.desc}</span></div>`).join('');
   }
 }
 document.getElementById('adminSeason1Btn').addEventListener('click', ()=>{
