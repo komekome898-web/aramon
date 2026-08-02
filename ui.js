@@ -3064,7 +3064,8 @@ function showResult(isWin, placement){
   if(typeof updateSpectateBar==='function'){ const sb=document.getElementById('spectateBar'); if(sb) sb.classList.add('hidden'); }
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);
-  playSe(isWin ? 'fanfare' : 'sad');
+  // 勝利SEはSSRスキンで差し替わる(轟金剛など)。敗北SEは共通
+  playSe(isWin ? ((typeof skinWinSeName==='function' && skinWinSeName(player)) || 'fanfare') : 'sad');
   // リザルトSEが鳴り終わったらロビー曲へ。ただしこの3〜4秒の間にマスモン画面などで
   // 別のトラックが選ばれていたら上書きしない(トレーニングBGMが即座に消える不具合の防止)
   setTimeout(()=>{
@@ -4966,6 +4967,7 @@ const SE_TEST_LABELS = {
   fireWave:'ヒノトリ ファイアウェーブ',
   amphitrite:'ペルセポネ アムピトリテ(3連射)', amphitriteBlast:'ペルセポネ アムピトリテ 爆風',
   venomEdge:'イルミネ ヴェノムエッジ', assaultArrow:'イルミネ アサルトアロー(3連射)', requiemBlast:'イルミネ レクイエムエンド 爆風',
+  gokongo:'轟金剛 超番長ボーナス', gokongoWin:'轟金剛 勝利', gokongoKill:'轟金剛 キル',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');

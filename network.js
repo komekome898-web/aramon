@@ -106,7 +106,7 @@ function handleRoomEvent(evt, evtKey){
     // 自分が倒した場合のキルボーナス演出(HP/ガッツの実値はauthStateで届く)。
     // ゲストはkillEntity()を実行しないため、ここで演出だけを再現する
     if(player && evt.killerId===player.id && player.alive){
-      playSe('kill');
+      playSe(skinKillSeName(player) || 'kill');
       spawnDmgText(player.x, player.y, player.z, '+50', '#7fffa0');
       spawnDmgText(player.x, player.y, player.z+30, '+50GT', '#ffd9e3');
       let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
@@ -609,7 +609,9 @@ function tryNonHostPlayerFireVisual(dt){
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
         color:effColor, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
-        projStyle:mv.projStyle||null, moveAura, auraTint,
+        projStyle:mv.projStyle||null, projVariant: mv.projVariant||null, moveAura,
+        // burstTints があれば連射の何発目かで色を変える(ホスト側の fireMove と同じ式)
+        auraTint: (mv.burstTints && mv.burstTints[i % mv.burstTints.length]) || auraTint,
         growWithDistance: mv.growWithDistance||false, baseHitR: mv.hitR*hbMult, burstIndex:i,
         // 着弾ドーム(ビッグバン/ヴァニッシュ)。これを持たせないと、着弾時にゲスト側で
         // 爆風を出せないうえ、ホストからのエコーは「自分の弾」として弾かれるため
@@ -666,7 +668,8 @@ function broadcastNewShotsAsHost(){
       x:Math.round(p.x), y:Math.round(p.y), z:Math.round(p.z||0),
       vx:p.vx||0, vy:p.vy||0, vz:p.vz||0, grav:p.grav||0, terrain3d:!!p.terrain3d, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
-      projStyle:p.projStyle||null, orbColor:p.orbColor||null, auraTint:p.auraTint||null, moveAura:p.moveAura||null,
+      projStyle:p.projStyle||null, projVariant:p.projVariant||null,
+      orbColor:p.orbColor||null, auraTint:p.auraTint||null, moveAura:p.moveAura||null,
       lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, landZ:p.landZ||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
     });
   }
@@ -780,7 +783,8 @@ function spawnVisualShotFromEvent(evt){
         x:evt.x, y:evt.y, z:evt.z, vx:evt.vx, vy:evt.vy, vz:evt.vz||0, grav:evt.grav||0, terrain3d:!!evt.terrain3d,
         color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
         traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
-        projStyle:evt.projStyle||null, orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
+        projStyle:evt.projStyle||null, projVariant:evt.projVariant||null,
+        orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
         ownerId: evt.ownerId!=null ? evt.ownerId : null,
       });
     }

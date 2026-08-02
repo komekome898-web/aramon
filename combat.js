@@ -6,10 +6,14 @@ const MOVE_SE_BY_STYLE = {
   godorb:'godRising', crescent:'zashu', voidOrb:'voidLaunch',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
-const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite' };
+const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite',
+                        rock_ssr:'gokongo' };
 // SSRスキン装備時に召喚演出SE/被弾SEを差し替える対応表(スキンID → SE名)
 const SKIN_SUMMON_SE = { choco_ssr:'chocoSummon' };
 const SKIN_HIT_SE    = { choco_ssr:'chocoHit' };
+// 同・撃破時/勝利時のSE(スキンID → SE名)。未登録なら従来の kill / fanfare が鳴る
+const SKIN_KILL_SE   = { rock_ssr:'gokongoKill' };
+const SKIN_WIN_SE    = { rock_ssr:'gokongoWin' };
 function skinSummonSeName(entity){
   const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
   return (sid && SKIN_SUMMON_SE[sid]) || null;
@@ -17,6 +21,14 @@ function skinSummonSeName(entity){
 function skinHitSeName(entity){
   const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
   return (sid && SKIN_HIT_SE[sid]) || null;
+}
+function skinKillSeName(entity){
+  const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
+  return (sid && SKIN_KILL_SE[sid]) || null;
+}
+function skinWinSeName(entity){
+  const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
+  return (sid && SKIN_WIN_SE[sid]) || null;
 }
 function moveSeName(move, attacker){
   if(move.tier===3 && attacker){
@@ -255,7 +267,9 @@ function fireMove(attacker, target, move){
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
-      projStyle: move.projStyle||null, moveAura, auraTint,
+      projStyle: move.projStyle||null, projVariant: move.projVariant||null, moveAura,
+      // burstTints があれば連射の何発目かで色を変える(轟金剛の青→赤→青)
+      auraTint: (move.burstTints && move.burstTints[i % move.burstTints.length]) || auraTint,
       gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り(キッス等)
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
@@ -490,7 +504,7 @@ function killEntity(victim, killer){
       if(expBonus > 0) hostForceFullNext = true;
     }
     if(killer.isPlayer){
-      playSe('kill'); // ザシュッ(切り裂き音)
+      playSe(skinKillSeName(killer) || 'kill'); // ザシュッ(切り裂き音)
       let bonusMsg = 'キルボーナス！ HP+50 ガッツ+50';
       if(expBonus && game.selectedMastermonKey) bonusMsg += ` 経験値+${expBonus}`;
       pushToast(bonusMsg);

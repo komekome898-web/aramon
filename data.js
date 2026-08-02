@@ -626,7 +626,15 @@ const SSR_SKIN_TIER3 = {
     // 面積を半分にするので半径は1/√2(460→325)
     blast:{ radius:325, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
   }},
-  rock_ssr:       { name:'超番長ボーナス', dmgMult:1.15 }, /*@rock_ssr*/
+  // 轟金剛(ゴーレム): 竜巻アタックを置き換える専用tier3。
+  // 青・赤・青の半透明の竜巻を3連射し、それぞれの中で同じ色の「電撃の7」が回る。
+  // burstTints は連射の何発目かで色を変えるための一覧(弾の auraTint に入る)。
+  // projVariant は描画側が専用の見た目に切り替えるための目印。
+  rock_ssr:       { name:'超番長ボーナス', move:{ /*@rock_ssr*/
+    dmg:26, burst:3, burstGap:0.18, burstSpread:0.09, projSpeed:560, range:1500, gutsCost:26,
+    projStyle:'tornado', projVariant:'bonus7',
+    burstTints:['#3f74e6','#e6453f','#3f74e6'],
+  }},
   aqua_ssr:       { name:'鱗赫', dmgMult:1.15 }, /*@aqua_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
