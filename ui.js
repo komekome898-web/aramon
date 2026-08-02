@@ -2856,7 +2856,9 @@ function startGame(){
     }
     entities.push(bot);
   }
-  spawnLoot(420, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  // ミューテーター「スポーンアイテム数1.5倍」(非公開中は常に1)
+  const mutSpawnMultSolo = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1;
+  spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   spawnOasisBonusLoot();
   updateCamera();
 
@@ -3084,8 +3086,10 @@ function showResult(isWin, placement){
     const isMultiMatch = netState.mode==='multi';
     // リアルマップは上級者向けなので獲得報酬2倍
     const realMult = (currentMap && currentMap.real3d) ? REAL_MAP_REWARD_MULT : 1;
-    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1) * realMult);
-    const diaGain = (DIA_MATCH_BASE + (isWin?DIA_CHAMPION_BONUS:0)) * realMult;
+    // ミューテーター「報酬2倍」(非公開中は常に1)
+    const mutRewardMult = (typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1;
+    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1) * realMult * mutRewardMult);
+    const diaGain = Math.round((DIA_MATCH_BASE + (isWin?DIA_CHAMPION_BONUS:0)) * realMult * mutRewardMult);
     addWallet(goldGain, diaGain);
     document.getElementById('resultCurrencyLine').textContent = `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
     updateAccountBar();
@@ -4318,13 +4322,21 @@ function applyMastermonToPlayer(){
   const data = loadMastermons();
   const mm = data[game.selectedMastermonKey];
   applyMastermonStatsToEntity(player, mm);
-  // 技強化チケット: ストックがあれば1つ消費して技tier2解放でスタート
-  if(mm && mm.nextMoveBoost > 0 && !game.trainingRange){   // 訓練場ではチケットを消費しない(最初から全解放)
+  // ミューテーター「技tier2スタート」: 全員tier2からスタート(訓練場除く。非公開中は常にfalse)
+  const mutTierActive = (typeof mutatorTierStartActive==='function') && mutatorTierStartActive() && !game.trainingRange;
+  if(mutTierActive){
     player.moveTierUnlocked = Math.max(player.moveTierUnlocked||1, 2);
     player.moveTierSelected = 2;
+  }
+  // 技強化チケット: ストックがあれば1つ消費して技tier2解放でスタート
+  // (ミューテーター発動中はさらに1段上がりtier3解放でスタート)
+  if(mm && mm.nextMoveBoost > 0 && !game.trainingRange){   // 訓練場ではチケットを消費しない(最初から全解放)
+    const bumpTier = mutTierActive ? 3 : 2;
+    player.moveTierUnlocked = Math.max(player.moveTierUnlocked||1, bumpTier);
+    player.moveTierSelected = bumpTier;
     mm.nextMoveBoost--;
     saveMastermons(data);
-    pushToast('⚔️ 技強化チケット発動！技tier2解放でスタート');
+    pushToast(mutTierActive ? '⚔️ 技強化チケット発動！技tier3解放でスタート' : '⚔️ 技強化チケット発動！技tier2解放でスタート');
   }
 }
 
@@ -5048,6 +5060,41 @@ function adminShowSeSubtab(sub){
   if(sub!=='bgm' && typeof bgmSetTrack==='function') bgmSetTrack('title'); // BGMサブタブを離れたらテストBGMを止めてタイトルへ
 }
 document.querySelectorAll('.admin-subtab').forEach(t=> t.addEventListener('click', ()=>adminShowSeSubtab(t.dataset.subtab)));
+
+/* =====================================================================
+   シーズン1 準備プレビュー(管理者専用・非公開)
+   SEASON1_MUTATORS / SEASON1_REWARDS_PREVIEW(data.js)を表示するだけの確認画面。
+   ここでの表示・操作はゲームプレイに一切影響しない。
+===================================================================== */
+function renderSeason1Preview(){
+  const track = document.getElementById('season1PreviewTrack');
+  if(track && typeof SEASON1_REWARDS_PREVIEW!=='undefined'){
+    track.innerHTML = SEASON1_REWARDS_PREVIEW.map((r,i)=>{
+      const t = i+1;
+      const milestone = (t%5===0);
+      return `<div class="s1prev-card ${milestone?'milestone':''}">
+        <div class="s1prev-card-num">T${t}</div>
+        <div class="s1prev-card-reward">${rewardText(r)}</div>
+      </div>`;
+    }).join('');
+  }
+  const cal = document.getElementById('season1PreviewCalendar');
+  if(cal && typeof SEASON1_MUTATORS!=='undefined'){
+    cal.innerHTML = SEASON1_MUTATORS.map(m=>{
+      return `<div class="s1prev-day">
+        <div class="s1prev-day-label">${m.label}</div>
+        <div class="s1prev-day-rule">${mutatorRuleText(m)}</div>
+      </div>`;
+    }).join('');
+  }
+}
+document.getElementById('adminSeason1Btn').addEventListener('click', ()=>{
+  renderSeason1Preview();
+  document.getElementById('season1PreviewOverlay').classList.remove('hidden');
+});
+document.getElementById('closeSeason1PreviewBtn').addEventListener('click', ()=>{
+  document.getElementById('season1PreviewOverlay').classList.add('hidden');
+});
 // 管理者画面のタブ切替(プレイ状況 / 音声確認)
 function adminShowTab(tab){
   document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));

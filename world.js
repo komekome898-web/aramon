@@ -272,7 +272,7 @@ function advanceZonePhase(){
   zoneState.timer = 0;
   zoneState.shrinking = true;
   const beforeCount = lootItems.length;
-  spawnLoot(30, zoneState.toCenter, zoneState.toRadius*0.8);
+  spawnLoot(Math.round(30 * mutSpawnMultSafe()), zoneState.toCenter, zoneState.toRadius*0.8);
   // マルチプレイではこの関数はホストでしか呼ばれないため、新規に生成したアイテムを
   // ゲスト側にも見えるよう明示的に配信する(ゲストはロビー開始時の初期アイテムしか
   // 自前生成しておらず、以降host側だけで増える分は届けないと見えないままになる)
@@ -995,12 +995,14 @@ function seededGenOasisZones(rng){
 // オアシスの周りはアイテムが湧きやすいので、通常の湧き処理の後に追加でこれを呼ぶ
 function spawnOasisBonusLoot(){
   if(!currentMap.hasOasis) return;
-  for(const oz of oasisZones){ spawnLoot(7, oz, oz.radius*1.4); }
+  for(const oz of oasisZones){ spawnLoot(Math.round(7 * mutSpawnMultSafe()), oz, oz.radius*1.4); }
 }
 function seededSpawnOasisBonusLoot(rng){
   if(!currentMap.hasOasis) return;
-  for(const oz of oasisZones){ seededSpawnLoot(rng, 7, oz, oz.radius*1.4); }
+  for(const oz of oasisZones){ seededSpawnLoot(rng, Math.round(7 * mutSpawnMultSafe()), oz, oz.radius*1.4); }
 }
+// ミューテーター「スポーンアイテム数1.5倍」の倍率(非公開中/未定義時は1)
+function mutSpawnMultSafe(){ return (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; }
 // ===== マルチプレイ用: ホストが生成した障害物をゲストへ配信して同一化する =====
 // (シード再生成に頼るとタイムアウト時の別シードや環境差で食い違い、見えない岩に
 //  ハマる/岩の上にスポーンして動けない等が起きるため、ホストの結果を正とする)

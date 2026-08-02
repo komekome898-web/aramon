@@ -1523,6 +1523,49 @@ function grantReward(r){
 }
 
 /* =====================================================================
+   シーズン1 準備(非公開・管理者プレビューのみ): ミューテーター(日替わり変則ルール)
+   SEASON1_ACTIVE を true にするまでゲームプレイに一切影響しない。
+   公開時は true へ変更し、CLAUDE.mdのルールに従って UPDATE_HISTORY に告知を追記すること。
+===================================================================== */
+const SEASON1_ACTIVE = false; // シーズン1公開日にtrueへ変更
+
+// 曜日ごとのミューテーター設定(表示は月始まり。dayはDate.getDay()準拠 0=日〜6=土)
+const SEASON1_MUTATORS = [
+  { day:1, label:'月曜日', tier:true,  reward:false, spawn:false },
+  { day:2, label:'火曜日', tier:false, reward:true,  spawn:false },
+  { day:3, label:'水曜日', tier:false, reward:false, spawn:true  },
+  { day:4, label:'木曜日', tier:true,  reward:false, spawn:false },
+  { day:5, label:'金曜日', tier:false, reward:true,  spawn:false },
+  { day:6, label:'土曜日', tier:true,  reward:true,  spawn:true  },
+  { day:0, label:'日曜日', tier:true,  reward:true,  spawn:true  },
+];
+// 今日のミューテーター設定(非公開中はnull)
+function mutatorToday(){
+  if(!SEASON1_ACTIVE) return null;
+  return SEASON1_MUTATORS.find(m=>m.day===new Date().getDay()) || null;
+}
+function mutatorTierStartActive(){ const m = mutatorToday(); return !!(m && m.tier); }
+function mutatorRewardMult(){ const m = mutatorToday(); return (m && m.reward) ? 2 : 1; }
+function mutatorSpawnMult(){ const m = mutatorToday(); return (m && m.spawn) ? 1.5 : 1; }
+// ミューテーター内容のルール文(管理者プレビュー用)
+function mutatorRuleText(m){
+  if(!m) return 'なし';
+  const parts = [];
+  if(m.tier) parts.push('全員技tier2スタート(技強化チケット使用済みならtier3)');
+  if(m.reward) parts.push('報酬2倍');
+  if(m.spawn) parts.push('スポーンアイテム数1.5倍');
+  return parts.length ? parts.join('／') : 'なし';
+}
+// シーズン1 SPパス報酬(準備中プレースホルダー。公開前に実際の内容へ差し替えること)
+const SEASON1_REWARDS_PREVIEW = [
+  { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },
+  { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },
+  { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },
+  { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },
+  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { dia:80 }, // TODO: 最終報酬は要検討(スキン等)
+];
+
+/* =====================================================================
    シーズンパス: 試合でシーズンポイント(SP)を貯めて段階報酬を受け取る(全て無料)
 ===================================================================== */
 const SEASON_STORAGE_KEY = 'aramon_season_v1';

@@ -326,7 +326,8 @@ async function beginMultiplayerMatchInner(){
   }
 
   // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
-  const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE);
+  const mutSpawnMult = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; // ミューテーター「スポーン数1.5倍」
+  const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE * mutSpawnMult);
   seededSpawnLoot(lootRng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
   seededSpawnOasisBonusLoot(lootRng);
   updateCamera();

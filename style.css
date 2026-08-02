@@ -1008,6 +1008,21 @@
   .season-skin-img{ width:52px; height:52px; object-fit:contain; border-radius:8px; background:rgba(0,0,0,0.25);
     box-shadow:0 2px 8px rgba(0,0,0,0.4); }
   .season-skin-name{ font-size:9.5px; font-weight:800; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.7); }
+  /* シーズン1準備プレビュー(管理者専用・非公開) */
+  .mastermon-confirm-box.s1prev-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
+    max-height:calc(94 * var(--vh)); overflow-y:auto; }
+  .s1prev-sub-title{ font-size:12px; font-weight:700; color:var(--amber); margin:10px 0 6px; }
+  .s1prev-track{ display:flex; overflow-x:auto; gap:6px; padding:2px 2px 8px; -webkit-overflow-scrolling:touch; }
+  .s1prev-card{ flex:0 0 auto; width:82px; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
+  .s1prev-card.milestone{ border-color:rgba(244,196,48,0.55); background:rgba(244,196,48,0.07); }
+  .s1prev-card-num{ font-family:'Russo One',sans-serif; font-size:11px; color:var(--amber); }
+  .s1prev-card-reward{ font-size:10px; color:var(--ink); text-align:center; line-height:1.25; }
+  .s1prev-calendar{ display:flex; flex-direction:column; gap:5px; width:100%; }
+  .s1prev-day{ display:flex; align-items:baseline; gap:8px; padding:7px 9px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
+  .s1prev-day-label{ flex:0 0 auto; width:52px; font-size:11px; font-weight:700; color:var(--amber); }
+  .s1prev-day-rule{ font-size:11px; color:var(--ink); line-height:1.35; }
   /* トップ「シーズン」ボタンの限定SSR告知ポップ */
   .season-ssr-pop{ position:absolute; top:-9px; right:-6px; font-size:8.5px; font-weight:800; letter-spacing:0.3px;
     color:#1a1306; padding:1px 6px; border-radius:9px; white-space:nowrap; transform:rotate(-4deg);

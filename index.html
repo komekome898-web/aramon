@@ -697,6 +697,7 @@
       </div>
       <button id="adminGrantSkinBtn" class="admin-grant-dia-btn" disabled>✨ スキンを選んでください</button>
     </div>
+    <button id="adminSeason1Btn" class="admin-grant-dia-btn">🗓️ シーズン1(準備プレビュー・非公開)</button>
   </div>
   <div id="adminStatsPane">
     <div class="admin-subtabs" id="adminStatSubtabs">
@@ -842,6 +843,19 @@
       <div id="seasonNextText" class="season-next-text"></div>
     </div>
     <div id="seasonTrack" class="season-track"></div>
+  </div>
+</div>
+
+<!-- SEASON 1 PREVIEW(管理者専用・非公開。プレイヤーには表示されない準備画面) -->
+<div id="season1PreviewOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box s1prev-box">
+    <button id="closeSeason1PreviewBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🗓️ シーズン1 プレビュー(非公開・管理者確認用)</div>
+    <div class="season-note">公開前の確認用です。数値・報酬は仮のもの。この画面はプレイヤーには表示されません。</div>
+    <div class="s1prev-sub-title">🎫 SP報酬(仮)</div>
+    <div id="season1PreviewTrack" class="s1prev-track"></div>
+    <div class="s1prev-sub-title">📅 日替わりミューテーター</div>
+    <div id="season1PreviewCalendar" class="s1prev-calendar"></div>
   </div>
 </div>
 
