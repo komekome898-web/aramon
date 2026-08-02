@@ -7,13 +7,16 @@ const MOVE_SE_BY_STYLE = {
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
 const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite',
-                        rock_ssr:'gokongo' };
+                        rock_ssr:'gokongo', aqua_ssr:'rize' };
 // SSRスキン装備時に召喚演出SE/被弾SEを差し替える対応表(スキンID → SE名)
 const SKIN_SUMMON_SE = { choco_ssr:'chocoSummon' };
-const SKIN_HIT_SE    = { choco_ssr:'chocoHit' };
+const SKIN_HIT_SE    = { choco_ssr:'chocoHit', aqua_ssr:'rizeHit' };
 // 同・撃破時/勝利時のSE(スキンID → SE名)。未登録なら従来の kill / fanfare が鳴る
-const SKIN_KILL_SE   = { rock_ssr:'gokongoKill' };
+const SKIN_KILL_SE   = { rock_ssr:'gokongoKill', aqua_ssr:'rizeKill' };
 const SKIN_WIN_SE    = { rock_ssr:'gokongoWin' };
+// ウンディーネの特性「与えたダメージの一部を自分のHPへ」の基本割合。
+// 技側の lifestealMult で倍にできる(大喰いの利世の鱗赫)
+const AQUA_LIFESTEAL = 0.2;
 function skinSummonSeName(entity){
   const sid = (typeof entitySkinId==='function') ? entitySkinId(entity) : null;
   return (sid && SKIN_SUMMON_SE[sid]) || null;
@@ -158,7 +161,8 @@ function fireMove(attacker, target, move){
   if(move.melee){
     lockMoveFacing(attacker, (target ? angTo(attacker, target) : attacker.facingAngle), MOVE_FACING_LOCK_MELEE_DUR);
     if(target && target.alive){
-      applyDamage(target, effDmg, attacker, { moveAura, gutsDrain: move.gutsDrainRatio||0 });
+      applyDamage(target, effDmg, attacker, { moveAura, gutsDrain: move.gutsDrainRatio||0,
+                                              lifestealMult: move.lifestealMult||1 });
       spawnHit(target.x, target.y, target.z, effColor);
     }
     return;
@@ -176,6 +180,7 @@ function fireMove(attacker, target, move){
         fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
         spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
         gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
+        lifestealMult: move.lifestealMult||1, // この技だけHP回復を増やす(鱗赫)
       };
       if(move.aoeShape==='beams'){
         const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -398,7 +403,9 @@ function applyDamage(target, dmg, source, opts){
   if(source && source.alive && source.id!==target.id){
     source.damageDealt += finalDmg;
     if(source.element==='aqua'){
-      const healed = Math.min(finalDmg*0.2, source.maxHp - source.hp);
+      // 技によってはHP回復を増やす(大喰いの利世の鱗赫は2倍)
+      const lsMult = (opts && opts.lifestealMult) || 1;
+      const healed = Math.min(finalDmg*AQUA_LIFESTEAL*lsMult, source.maxHp - source.hp);
       if(healed > 0){
         source.hp += healed;
         spawnDmgText(source.x, source.y, source.z, '+'+Math.round(healed), '#7fffa0');
@@ -1548,7 +1555,8 @@ function updateAreaEffects(dt){
           if(ae.hitIds.has(key)) continue;
           if(hitTestRect(origin, ent, beamAngle, curReach, ae.width/2)){
             ae.hitIds.add(key);
-            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0 });
+            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0,
+                                              lifestealMult: ae.lifestealMult||1 });
             spawnHit(ent.x, ent.y, ent.z, ae.color);
           }
         }
@@ -1569,7 +1577,8 @@ function updateAreaEffects(dt){
         }
         if(hit){
           ae.hitIds.add(ent.id);
-          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0 });
+          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0,
+                                            lifestealMult: ae.lifestealMult||1 });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
         }
       }

@@ -637,7 +637,11 @@ const SSR_SKIN_TIER3 = {
     projStyle:'tornado', projVariant:'bonus7',
     burstTints:['#3f74e6','#e6453f','#3f74e6'],
   }},
-  aqua_ssr:       { name:'鱗赫', dmgMult:1.15 }, /*@aqua_ssr*/
+  // 大喰いの利世(ウンディーネ): クリスタルレインを置き換える専用tier3。
+  // 赤い触手が足元から生えて範囲を進む。lifestealMult はこの技だけHP回復を倍にする。
+  aqua_ssr:       { name:'鱗赫', move:{ /*@aqua_ssr*/
+    dmg:48, rectWidth:340, aoeStyle:'kagune', lifestealMult:2,
+  }},
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
