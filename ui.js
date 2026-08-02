@@ -4968,6 +4968,7 @@ const SE_TEST_LABELS = {
   amphitrite:'ペルセポネ アムピトリテ(3連射)', amphitriteBlast:'ペルセポネ アムピトリテ 爆風',
   venomEdge:'イルミネ ヴェノムエッジ', assaultArrow:'イルミネ アサルトアロー(3連射)', requiemBlast:'イルミネ レクイエムエンド 爆風',
   gokongo:'轟金剛 超番長ボーナス', gokongoWin:'轟金剛 勝利', gokongoKill:'轟金剛 キル',
+  rize:'大喰いの利世 鱗赫', rizeKill:'大喰いの利世 キル', rizeHit:'大喰いの利世 被弾',
 };
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');

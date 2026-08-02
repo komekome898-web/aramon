@@ -3520,6 +3520,92 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
     if(p) drawGroundSpark(p, 'diamond', sh.spark, fade*(0.4+0.6*phase), ae.id+i);
   }
 }
+/* 鱗赫(大喰いの利世): 赤い触手が足元から生えて範囲を進んでいく。
+   触手は「地面に沿ってうねる背骨」を1本ずつ投影し、太さを先細りさせた帯として描く。
+   画面上で決め打ちの楕円や矩形を使わないので、坂でも地面から生えて見える。      */
+const KAGUNE_N       = 6;            // 触手の本数
+const KAGUNE_SEG     = 14;           // 1本あたりの節の数
+const KAGUNE_H       = FX3D_MON_H*0.9;  // 持ち上がる高さ
+const KAGUNE_ARC_COL = '#b45cff';    // 帯びるビリビリの色(紫)
+function fx3dKagune(ae, curReach, fade, progress){
+  const col = ae.auraTint || ae.color;
+  const sh = auraShades(col);
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const band = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
+  if(band) fx3dFill(band, sh.dark, 0.22*fade, 0);   // 足元の血だまり
+  for(let k=0;k<KAGUNE_N;k++){
+    const h1 = fxHash01(ae.id*5.3 + k*7.7), h2 = fxHash01(ae.id*9.1 + k*3.3);
+    // 触手ごとに横位置と、うねりの速さ・向きを変える
+    const lat0 = ((k+0.5)/KAGUNE_N*2-1) * ae.width*0.42;
+    const wob  = 1.6 + h1*1.8, ph = h2*6.28, dirn = (k%2 ? 1 : -1);
+    const reach = curReach*(0.72 + 0.28*h1);       // 先端の伸び方に差を付ける
+    const rBase = ae.width*0.085*(0.8+0.4*h2);
+    const pts=[], wid=[];
+    for(let i=0;i<=KAGUNE_SEG;i++){
+      const t = i/KAGUNE_SEG;
+      const along = reach*t;
+      if(along > curReach) break;
+      // 進むほど横に大きくうねり、中ほどで一番持ち上がる
+      const sway = Math.sin(t*wob*Math.PI + ph + matchTime*3.4*dirn) * ae.width*0.16*t;
+      const lat  = lat0*(1-t*0.45) + sway;
+      const x = ae.x+fx*along+rx*lat, y = ae.y+fy*along+ry*lat;
+      // 足元(t=0)から立ち上がり、中ほどは持ち上がったまま、先端で地面へ潜る。
+      // 素直な sin だと途中で寝てしまうので、指数を掛けて上がりを早く・保ちを長くする
+      const dz = KAGUNE_H*Math.pow(Math.sin(Math.PI*t), 0.65)*(0.55+0.45*h1);
+      const p = fx3dPoint(x, y, dz);
+      if(!p) break;
+      pts.push(p);
+      wid.push(rBase*(1-t*0.8)*Math.min(1, progress*3));
+    }
+    if(pts.length<2) continue;
+    // 背骨に沿って太さを持たせた帯にする(画面上の法線でふくらませる)
+    const left=[], right=[];
+    for(let i=0;i<pts.length;i++){
+      const a = pts[Math.max(0,i-1)], b = pts[Math.min(pts.length-1,i+1)];
+      let nx = -(b.y-a.y), ny = (b.x-a.x);
+      const L = Math.hypot(nx,ny) || 1;
+      nx/=L; ny/=L;
+      const w = wid[i]*(pts[i].scale||1);
+      left.push({ x:pts[i].x+nx*w, y:pts[i].y+ny*w });
+      right.push({ x:pts[i].x-nx*w, y:pts[i].y-ny*w });
+    }
+    const poly = left.concat(right.reverse());
+    fx3dFill(poly, sh.dark, 0.85*fade, 0);
+    fx3dFill(poly, sh.mid, 0.45*fade, 0);
+    // ぬめった照り返し(芯を細く明るく)
+    ctx.save();
+    ctx.globalAlpha = 0.55*fade;
+    ctx.strokeStyle = _hexA(sh.bright, 0.9);
+    ctx.lineWidth = Math.max(1, (wid[0]||2)*(pts[0].scale||1)*0.5);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.restore();
+    // 紫のビリビリ。触手に沿って何本か枝分かれさせる
+    if(!renderHeavyLoad){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.75*fade;
+      ctx.lineCap = 'round';
+      for(let a=0;a<2;a++){
+        const seed = Math.floor(matchTime*22) + k*13 + a*5;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for(let i=1;i<pts.length;i++){
+          const j = (fxHash01(seed + i*3.7)-0.5) * (wid[i]||2) * 4;
+          ctx.lineTo(pts[i].x + j, pts[i].y + j*0.5);
+        }
+        ctx.strokeStyle = _hexA(a ? '#ffffff' : KAGUNE_ARC_COL, a ? 0.5 : 0.95);
+        ctx.lineWidth = a ? 1 : 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
 // 帯(モッチ砲・ラガモッチ砲・熱視線・天河天翔): ビームは色以外すべて共通の見た目
 function fx3dRectBeam(ae, curReach, fade){
   const col = ae.auraTint || ae.color;
@@ -3684,6 +3770,7 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   else if(ae.kind==='circle')    fx3dDomeBurst(ae, curReach, fade);
   else if(ae.kind==='rect'){
     if(ae.style==='crystal')   fx3dCrystalRain(ae, curReach, fade, progress);
+    else if(ae.style==='kagune') fx3dKagune(ae, curReach, fade, progress);
     else if(ae.style==='lava') fx3dFireWave(ae, curReach, fade);
     else                       fx3dRectBeam(ae, curReach, fade);   // モッチ砲/天河天翔/熱視線
   } else return false;

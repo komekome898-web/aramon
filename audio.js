@@ -197,12 +197,17 @@ const SE_VENOM_DATAURL = 'data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF
 const seGokongo       = createSeOneShot('./se_gokongo.mp3', 1.25);
 const seGokongoWin    = createSeOneShot('./se_gokongo_win.mp3', 1.2);
 const seGokongoKill   = createSeOneShot('./se_gokongo_kill.mp3', 1.2);
+// 大喰いの利世(ウンディーネのSSR): tier3「鱗赫」・キル・被弾の専用音
+const seRize          = createSeOneShot('./se_rize.mp3', 1.25);
+const seRizeKill      = createSeOneShot('./se_rize_kill.mp3', 1.2);
+const seRizeHit       = createSeOneShot('./se_rize_hit.mp3', 1.15);
 const seVenomEdge     = createSeOneShot(SE_VENOM_DATAURL, 1.25);            // イルミネ tier1「ヴェノムエッジ」(tier2は同じ音の3連射)
 const seRequiemBlast  = createSeOneShot('./se_requiem_blast.mp3', 1.2);     // イルミネ tier3「レクイエムエンド」の着弾ドーム
 function ensureProvidedSeBuffers(){
   [seChoice, seBuy, seMonta, seRequiemEnd, seBard, seDarkHoust, seMocchiBeam, seCrystalRain,
    seAmphiShot, seAmphiBlast, seVenomEdge, seRequiemBlast,
-   seGokongo, seGokongoWin, seGokongoKill].forEach(s=>s.ensure());
+   seGokongo, seGokongoWin, seGokongoKill,
+   seRize, seRizeKill, seRizeHit].forEach(s=>s.ensure());
 }
 
 // ===== SE =====
@@ -212,7 +217,8 @@ const SE_MIN_GAP = { tap:0.05, cardSwipe:0.07, jakiin:0.25, train:0.3, pickup:0.
   chocoSummon:1.5, chocoVanish:0.8, chocoHit:0.5, titleStart:1.2,
   buy:0.2, darkHoust:0.6, requiemEnd:0.3, mocchiBeam:0.5, monta:0.2, crystalRain:0.5, fireWave:0.5,
   amphitrite:0.8, amphitriteBlast:0.06, venomEdge:0.2, assaultArrow:0.5, requiemBlast:0.06,
-  gokongo:0.8, gokongoWin:1.5, gokongoKill:0.4 };
+  gokongo:0.8, gokongoWin:1.5, gokongoKill:0.4,
+  rize:0.8, rizeKill:0.4, rizeHit:0.3 };
 const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
 const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35, godRising:1.35, zashu:1.35, ssrJackpot:1.4 };
@@ -575,6 +581,10 @@ const SE_DEFS = {
   gokongo(t, o){ if(!seGokongo.play(t)) SE_DEFS.tornado(t, o); },
   gokongoWin(t, o){ if(!seGokongoWin.play(t)) SE_DEFS.fanfare(t, o); },
   gokongoKill(t, o){ if(!seGokongoKill.play(t)) SE_DEFS.kill(t, o); },
+  // 大喰いの利世(ウンディーネのSSR)専用。未ロード時は従来のSEに落とす
+  rize(t, o){ if(!seRize.play(t)) SE_DEFS.whoosh(t, o); },
+  rizeKill(t, o){ if(!seRizeKill.play(t)) SE_DEFS.kill(t, o); },
+  rizeHit(t, o){ if(!seRizeHit.play(t)) SE_DEFS.hitTaken(t, o); },
   // イルミネ tier1「ヴェノムエッジ」
   venomEdge(t, o){ if(!seVenomEdge.play(t)) SE_DEFS.fire(t, o); },
   // 同 tier2「アサルトアロー」: tier1と同じ音を技のburstGap(0.09)に合わせて3連射する
