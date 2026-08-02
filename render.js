@@ -1516,6 +1516,45 @@ function fxStyleCrescent(pr, r){
   ctx.restore();
 }
 // 竜巻アタック: 地面に立つ本物の漏斗。輪の潰れ方をカメラに合わせて立体にする
+/* 「電撃の7」(轟金剛の超番長ボーナス)。竜巻の中で回るので、
+   横幅だけを縮めて回転を表す(板を回している見え方になる)。
+   色は竜巻と同じものを渡す。                                              */
+const SEVEN_PTS = [   // 7の字。左上の横棒 → 右上 → 斜めに左下へ下りる。単位は高さ1
+  [-0.46,-0.50], [0.46,-0.50], [0.46,-0.31], [0.06,0.50],
+  [-0.18,0.50],  [0.20,-0.28], [-0.46,-0.28],
+];
+function fxSevenBolt(cx, cy, h, phase, sh, alpha){
+  const sx = Math.cos(phase);                 // 回転して見える横幅
+  const w = h*0.78*sx;
+  if(Math.abs(w) < h*0.06) return;            // 真横を向いた瞬間は線になるので描かない
+  const jag = h*0.05;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.translate(cx, cy);
+  // 稲妻らしいギザギザを縁に足しながら7の輪郭を作る
+  ctx.beginPath();
+  for(let i=0;i<SEVEN_PTS.length;i++){
+    const p = SEVEN_PTS[i], q = SEVEN_PTS[(i+1)%SEVEN_PTS.length];
+    const x0 = p[0]*w, y0 = p[1]*h, x1 = q[0]*w, y1 = q[1]*h;
+    if(i===0) ctx.moveTo(x0, y0);
+    for(let k=1;k<=3;k++){
+      const t = k/3;
+      const n = (fxHash01(i*5.7 + k*2.3 + Math.floor(matchTime*18)*0.37) - 0.5)*jag;
+      ctx.lineTo(x0+(x1-x0)*t + n, y0+(y1-y0)*t + n*0.6);
+    }
+  }
+  ctx.closePath();
+  ctx.fillStyle = _hexA(sh.dark, 0.55*alpha);
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = _hexA(sh.bright, 0.95*alpha);
+  ctx.lineWidth = Math.max(1.2, h*0.055);
+  ctx.stroke();
+  ctx.strokeStyle = _hexA(sh.spark, 0.9*alpha);
+  ctx.lineWidth = Math.max(0.8, h*0.022);
+  ctx.stroke();
+  ctx.restore();
+}
 function fxStyleTornado(pr, r){
   const gz = groundZAt(pr.x, pr.y);
   const drop = Math.max(0, (pr.z||0) - gz);           // 地面までの高さ(ワールド)
@@ -1523,6 +1562,11 @@ function fxStyleTornado(pr, r){
   const N = 8;
   const spin = matchTime*7 + (pr.id||0);
   const up = fxUp(), flat = fxFlatten();
+  // 轟金剛の「超番長ボーナス」は色付き・半透明で、中に電撃の7が回る。
+  // 素のゴーレム(竜巻アタック)は従来の砂色のまま。
+  const bonus = pr.projVariant === 'bonus7';
+  const sh = bonus ? auraShades(pr.auraTint || pr.color || '#3f74e6') : null;
+  const A = bonus ? 0.5 : 1;                           // 半透明にする度合い
   const ringAt = (t)=>({
     rx: r*(0.4 + 1.25*Math.pow(t, 1.25)),
     y: (drop - H*t)*up,
@@ -1537,15 +1581,26 @@ function fxStyleTornado(pr, r){
   }
   const top = ringAt(1), bot = ringAt(0);
   const bg = ctx.createLinearGradient(0, bot.y, 0, top.y);
-  bg.addColorStop(0, 'rgba(90,74,54,0.85)');
-  bg.addColorStop(0.5, 'rgba(150,128,96,0.7)');
-  bg.addColorStop(1, 'rgba(214,196,160,0.55)');
+  if(bonus){
+    bg.addColorStop(0, _hexA(sh.dark, 0.72*A));
+    bg.addColorStop(0.5, _hexA(sh.mid, 0.62*A));
+    bg.addColorStop(1, _hexA(sh.bright, 0.5*A));
+  }else{
+    bg.addColorStop(0, 'rgba(90,74,54,0.85)');
+    bg.addColorStop(0.5, 'rgba(150,128,96,0.7)');
+    bg.addColorStop(1, 'rgba(214,196,160,0.55)');
+  }
   ctx.beginPath();
   ctx.moveTo(left[0].x, left[0].y);
   for(let i=1;i<left.length;i++) ctx.lineTo(left[i].x, left[i].y);
   for(let i=right.length-1;i>=0;i--) ctx.lineTo(right[i].x, right[i].y);
   ctx.closePath();
   ctx.fillStyle = bg; ctx.fill();
+  // 7は漏斗を塗ったあと・巻き上がる筋の前に描く(渦の中に入って見える)
+  if(bonus){
+    const mid = ringAt(0.45);
+    fxSevenBolt(mid.ox, mid.y, H*0.62, spin*0.55, sh, 1);
+  }
   // 巻き上がる筋(輪を少しずつずらして描くと回転が見える)
   ctx.save();
   ctx.lineCap='round';
@@ -1553,19 +1608,21 @@ function fxStyleTornado(pr, r){
     const t=i/N, k=ringAt(t);
     ctx.beginPath();
     ctx.ellipse(k.ox, k.y, k.rx, k.rx*flat, 0, spin+t*4, spin+t*4+Math.PI*1.3);
-    ctx.strokeStyle = `rgba(255,246,225,${0.15+0.3*t})`;
+    ctx.strokeStyle = bonus ? _hexA(sh.bright, (0.15+0.3*t)*A) : `rgba(255,246,225,${0.15+0.3*t})`;
     ctx.lineWidth = r*0.1;
     ctx.stroke();
   }
   ctx.restore();
   // 足元の砂煙
+  const dust = bonus ? hexToRgb(sh.mid) : [180,158,120];
   const dg = ctx.createRadialGradient(0, bot.y, 0, 0, bot.y, r*2.2);
-  dg.addColorStop(0, 'rgba(180,158,120,0.6)');
-  dg.addColorStop(1, 'rgba(180,158,120,0)');
+  dg.addColorStop(0, `rgba(${dust[0]},${dust[1]},${dust[2]},${0.6*A})`);
+  dg.addColorStop(1, `rgba(${dust[0]},${dust[1]},${dust[2]},0)`);
   ctx.beginPath(); ctx.ellipse(0, bot.y, r*2.2, r*2.2*flat, 0, 0, Math.PI*2);
   ctx.fillStyle = dg; ctx.fill();
   // 巻き上げられた小石
   if(!renderHeavyLoad){
+    const grit = bonus ? hexToRgb(sh.spark) : [232,220,192];
     for(let d=0; d<7; d++){
       const h1 = fxHash01((pr.id||0)*3.1 + d*7.9);
       const t = (h1 + matchTime*0.9) % 1;
@@ -1573,7 +1630,7 @@ function fxStyleTornado(pr, r){
       const a = spin*1.5 + d*(Math.PI*2/7);
       ctx.beginPath();
       ctx.arc(k.ox + Math.cos(a)*k.rx*1.1, k.y + Math.sin(a)*k.rx*flat*1.1, r*0.09*(1.2-t*0.5), 0, Math.PI*2);
-      ctx.fillStyle = `rgba(232,220,192,${0.9-t*0.5})`;
+      ctx.fillStyle = `rgba(${grit[0]},${grit[1]},${grit[2]},${(0.9-t*0.5)*A})`;
       ctx.fill();
     }
   }
