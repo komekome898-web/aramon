@@ -631,6 +631,10 @@ function bgmSetTrack(name){
   // 試合以外の画面へ移るときはintensityを持ち越さない(前の試合の決戦BGMが後を引かないように)。
   // nullは試合中の演出でも使うのでここでは触らない。
   if(name==='title' || name==='shop' || name==='training') bgmState.intensity = 0;
+  // 轟金剛(ゴーレムのSSR)装備中なら、試合開始と同時に専用BGM3曲の読み込みを始めておく
+  // (残り人数がその区間に入ってから取りに行くと間に合わないため)
+  if(name==='battle' && typeof player!=='undefined' && player && typeof entitySkinId==='function'
+     && entitySkinId(player)==='rock_ssr' && typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
   if(actx && bgmTrackGain){
     // 切替時は短くフェードアウト→インして繋ぎ目を柔らかく
     const t = actx.currentTime;
@@ -654,7 +658,8 @@ function bgmSetIntensity(n){ bgmState.intensity = n|0; }
 // 実測値(短時間LUFSの中央値): final5 -16.57 / lastbattle -16.81 / shop -16.22
 // → 差は0.35LU以内(ほぼ可聴外)だが、決戦BGM基準にきっちり揃えてある。
 // 体感でまだ差があれば、この数値だけを増減すれば調整できる(1.0=そのまま)。
-const BGM_FILE_GAIN = { final5: 1.00, lastBattle: 1.03, shop: 0.96, lobby: 1.00, training: 1.00 };
+const BGM_FILE_GAIN = { final5: 1.00, lastBattle: 1.03, shop: 0.96, lobby: 1.00, training: 1.00,
+  gokongoBattle: 1.00, gokongoFinal5: 1.00, gokongoLastBattle: 1.00 };
 // 曲の切替は「等パワークロスフェード」で行う。単純な線形フェードで前の曲と重ねると
 // 2曲の合計音量が一時的に1.5倍近くまで上がり、切替の瞬間だけ音が大きくなる
 // (決戦→ラストバトルの切替で実際に起きていた)。sin/cosカーブなら合計パワーが一定になる。
@@ -723,12 +728,19 @@ const bgmLastBattle = createBgmLoop('./bgm_lastbattle.mp3', BGM_FILE_GAIN.lastBa
 const bgmShop       = createBgmLoop('./bgm_shop.mp3',       BGM_FILE_GAIN.shop);       // ショップ画面
 const bgmLobby      = createBgmLoop('./bgm_lobby.mp3',     BGM_FILE_GAIN.lobby, true);// ロビー(既定)。位置を記憶する
 const bgmTraining   = createBgmLoop('./bgm_training.mp3',  BGM_FILE_GAIN.training);   // マスモンのトレーニング画面
+// 轟金剛(ゴーレムのSSR)装備時だけ使う試合中BGM3曲。通常のfinal5/lastbattleと同じ枠組みで
+// 曲だけ差し替える(bgmFileLoopTarget が game.started かつ装備スキンがrock_ssrのときだけ選ぶ)。
+// スキンを装備していないプレイヤーの起動時ロードを増やさないよう、試合開始時にだけ読み込む。
+const bgmGokongoBattle     = createBgmLoop('./bgm_gokongo_battle.mp3',     BGM_FILE_GAIN.gokongoBattle);     // 残り30〜6人
+const bgmGokongoFinal5     = createBgmLoop('./bgm_gokongo_final5.mp3',     BGM_FILE_GAIN.gokongoFinal5);     // 残り5〜3人(決戦)
+const bgmGokongoLastBattle = createBgmLoop('./bgm_gokongo_lastbattle.mp3', BGM_FILE_GAIN.gokongoLastBattle); // 残り2人(ラストバトル)
 // 試合中に必要な2曲は先読みする(その場でのfetch+decode待ちで無音になるのを防ぐ)。
 // ショップ/トレーニング曲は画面を開いたときに読み込む。ロビー曲は起動直後に必要なのでaudioInitで読む。
 function ensureBgmFileBuffers(){ bgmFinal5.ensure(); bgmLastBattle.ensure(); }
 function ensureBgmShopBuffer(){ bgmShop.ensure(); }
 function ensureBgmLobbyBuffer(){ bgmLobby.ensure(); }
 function ensureBgmTrainingBuffer(){ bgmTraining.ensure(); }
+function ensureGokongoBgmBuffers(){ bgmGokongoBattle.ensure(); bgmGokongoFinal5.ensure(); bgmGokongoLastBattle.ensure(); }
 
 // ロビーBGMは提供音源(いちか)と従来の合成BGM(オリジナル)を切り替えられる。選択は端末に保存する
 const LOBBY_BGM_KEY = 'aramon_lobby_bgm_v1';
@@ -744,7 +756,16 @@ function setLobbyBgmMode(mode){
 }
 function toggleLobbyBgmMode(){ setLobbyBgmMode(lobbyBgmMode==='ichika' ? 'original' : 'ichika'); }
 // 実音源ループの一覧。重複再生の防御はこの配列を使った「1曲だけ」の保証で行う
-const BGM_FILE_LOOPS = [bgmFinal5, bgmLastBattle, bgmShop, bgmLobby, bgmTraining];
+const BGM_FILE_LOOPS = [bgmFinal5, bgmLastBattle, bgmShop, bgmLobby, bgmTraining,
+  bgmGokongoBattle, bgmGokongoFinal5, bgmGokongoLastBattle];
+// 実際の試合中(game.started)に、自分のモンスターへ轟金剛(rock_ssr)を装備しているかどうか。
+// 管理者画面のBGM確認は試合を開始しないので、game.started で確認専用の final5/last2 ボタンと
+// 混線しない(装備スキンに関係なく通常曲を聴ける)。
+function gokongoBgmActive(){
+  return typeof game!=='undefined' && game.started
+      && typeof player!=='undefined' && player
+      && typeof entitySkinId==='function' && entitySkinId(player)==='rock_ssr';
+}
 // いま鳴らすべき実音源ループを1つだけ返す(なければnull=合成BGMの担当)。
 // 【重要】トラック名は必ず明示で判定する。以前は「title/shop以外はすべて試合中」としていたため、
 // トレーニング画面で前の試合のintensity(3〜4)が残っていると決戦BGMが同時に鳴っていた。
@@ -754,7 +775,17 @@ function bgmFileLoopTarget(){
   if(cur==='shop') return bgmShop;
   if(cur==='training') return bgmTraining;
   if(cur==='title') return lobbyBgmMode==='ichika' ? bgmLobby : null;
+  // 管理者画面の音声確認から直接指定されたときだけ通る名前(実際の試合では使わない)
+  if(cur==='gokongoBattle') return bgmGokongoBattle;
+  if(cur==='gokongoFinal5') return bgmGokongoFinal5;
+  if(cur==='gokongoLastBattle') return bgmGokongoLastBattle;
   if(cur==='battle'){
+    if(gokongoBgmActive()){
+      if(bgmState.intensity>=4 && bgmGokongoLastBattle.buffer) return bgmGokongoLastBattle;
+      if(bgmState.intensity>=3 && bgmGokongoFinal5.buffer) return bgmGokongoFinal5;
+      if(bgmState.intensity<3 && bgmGokongoBattle.buffer) return bgmGokongoBattle;
+      // 読み込みが間に合っていなければここを素通りし、下の通常曲にフォールバックする
+    }
     // ラストバトル音源が使えるならそちら、無ければ決戦BGMのまま(合成に落ちるより自然)
     if(bgmState.intensity>=4 && bgmLastBattle.buffer) return bgmLastBattle;
     if(bgmState.intensity>=3) return bgmFinal5;
@@ -801,6 +832,9 @@ function bgmScheduler(){
     else if(bgmState.current==='title') bgmTitleStep(bgmState.step, bgmState.nextTime);
     else if(bgmState.current==='shop') bgmTitleStep(bgmState.step, bgmState.nextTime); // ショップ音源未ロード時はタイトル曲で代替
     else if(bgmState.current==='training') bgmTitleStep(bgmState.step, bgmState.nextTime); // トレーニング音源未ロード時も同様
+    else if(bgmState.current==='gokongoBattle') bgmBattleStep(bgmState.step, bgmState.nextTime, 0); // 管理者確認・未ロード時の代替
+    else if(bgmState.current==='gokongoFinal5' || bgmState.current==='gokongoLastBattle')
+      bgmEpicStep(bgmState.step, bgmState.nextTime);                                   // 同上
     else if(bgmState.intensity>=3) bgmEpicStep(bgmState.step, bgmState.nextTime);      // 決戦/ラストバトル音源が未ロードのとき
     else bgmBattleStep(bgmState.step, bgmState.nextTime, bgmState.intensity);
     bgmState.step++;
