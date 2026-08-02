@@ -33,7 +33,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 | `monsters/*.png` | モンスター画像。静止画+歩行スプライト `<prefix>_walk_f1..8` / `_b1..8`(320px・256色透過) |
 | `tools/build_walk.py` | 歩行スプライト生成の開発用スクリプト(ゲームには読み込まない) |
 | `top_bg.jpg` / `title_bg.jpg` / `title_logo.png` | ロビー背景 / タイトル背景・ロゴ(ロビーのタイトルも同ロゴ) |
-| `bgm_*.mp3` | final5(残り5人)/ lastbattle(残り2人)/ shop / lobby(既定)/ training。mono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11` |
+| `bgm_*.mp3` | final5(残り5人)/ lastbattle(残り2人)/ shop / lobby(既定)/ training / gokongo_battle・gokongo_final5・gokongo_lastbattle(轟金剛装備時の専用3曲)。mono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11` |
 | `se_*.mp3` / `best_update.mp3` | 3秒級以上のSE実音源(短いSEは内蔵データURI) |
 
 ## 全画面に効く決まり
@@ -304,6 +304,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **intensityを増やしたら`bgmStepDur()`のbpm配列も伸ばす**(配列外でBPMがNaNになる)。
 - **トラック/intensityを追加したら管理者画面の`BGM_TEST_ITEMS`にも足す。**
 - **実音源ループは「常に1曲だけ」を`updateBgmFileLoops()`が保証する。** `bgmFileLoopTarget()`が鳴らすべき1曲を返し、それ以外は`stop()`。**トラック名は明示で判定する**(「title/shop以外は試合中」としていたためトレーニング画面で決戦BGMが重なった)。新トラックは1行足すだけ。
+- **SSRスキン専用のBGM(轟金剛の3曲)は`gokongoBgmActive()`(`game.started && entitySkinId(player)==='rock_ssr'`)でだけ切り替わる。** `game.started`を見るのは、管理者画面のBGM確認(`final5`/`last2`ボタン)が試合を開始せずに`cur:'battle'`を使うため。ここを見ないと、開発者アカウントがたまたま轟金剛を装備していると確認ボタンが専用曲を鳴らしてしまい、通常曲を確認できなくなる。**専用曲が未ロードの区間だけ通常のfinal5/lastbattle/合成BGMへ自動フォールバックする**(3曲を個別にensureする、無音にしない)。管理者画面には`cur`にそのまま渡る専用のテストID(`gokongoBattle`等)を用意し、装備や試合中かどうかに関係なく単体で確認できるようにしてある。
 - `bgmSetTrack('title'|'shop'|'training')`はintensityを0に戻す(`null`は試合中の演出でも使うので触らない)。リザルト後にロビー曲へ戻す遅延処理は`bgmDesiredTrack()!==null`なら何もしない。
 
 ### 実音源を使う例外

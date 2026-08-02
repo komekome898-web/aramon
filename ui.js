@@ -4992,6 +4992,9 @@ const BGM_TEST_ITEMS = [
   { id:'battle2',label:'🎵 試合中・終盤' },
   { id:'final5', label:'🎵 残り5人以下(決戦・動画音源)' },
   { id:'last2',  label:'🎵 残り2人(ラストバトル・動画音源)' },
+  { id:'gokongoBattle',    label:'🎵 轟金剛・残り30〜6人' },
+  { id:'gokongoFinal5',    label:'🎵 轟金剛・残り5〜3人' },
+  { id:'gokongoLastBattle',label:'🎵 轟金剛・残り2人' },
   { id:'shop',   label:'🎵 ショップ(動画音源)' },
   { id:'lobby',  label:'🎵 ロビー(いちか・実音源)' },
   { id:'training',label:'🎵 トレーニング(実音源)' },
@@ -5017,6 +5020,12 @@ function adminPlayBgm(id){
   if(id==='shop'){
     if(typeof ensureBgmShopBuffer==='function') ensureBgmShopBuffer();
     if(typeof bgmSetTrack==='function') bgmSetTrack('shop');
+    return;
+  }
+  if(id==='gokongoBattle' || id==='gokongoFinal5' || id==='gokongoLastBattle'){
+    // 装備スキンや試合中かどうかに関係なく、専用曲そのものを確認できるようにする
+    if(typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
+    if(typeof bgmSetTrack==='function') bgmSetTrack(id);
     return;
   }
   const lv = { battle0:0, battle1:1, battle2:2, final5:3, last2:4 }[id];
