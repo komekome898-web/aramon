@@ -3559,25 +3559,69 @@ function fx3dKagune(ae, curReach, fade, progress){
       wid.push(rBase*(1-t*0.8)*Math.min(1, progress*3));
     }
     if(pts.length<2) continue;
-    // 背骨に沿って太さを持たせた帯にする(画面上の法線でふくらませる)
-    const left=[], right=[];
+    // 背骨に沿って太さを持たせた帯にする(画面上の法線でふくらませる)。
+    // 法線は鱗を貼る向きにも使うので取っておく。
+    const left=[], right=[], normals=[];
     for(let i=0;i<pts.length;i++){
       const a = pts[Math.max(0,i-1)], b = pts[Math.min(pts.length-1,i+1)];
       let nx = -(b.y-a.y), ny = (b.x-a.x);
       const L = Math.hypot(nx,ny) || 1;
       nx/=L; ny/=L;
+      normals.push({ nx, ny });
       const w = wid[i]*(pts[i].scale||1);
       left.push({ x:pts[i].x+nx*w, y:pts[i].y+ny*w });
       right.push({ x:pts[i].x-nx*w, y:pts[i].y-ny*w });
     }
     const poly = left.concat(right.reverse());
-    fx3dFill(poly, sh.dark, 0.85*fade, 0);
-    fx3dFill(poly, sh.mid, 0.45*fade, 0);
+    // 血肉のような不透明な実体(背景が透けないよう一度で塗り切る)
+    fx3dFill(poly, sh.dark, Math.min(1, 0.97*fade), 0);
+    // 縁取りで輪郭をはっきりさせる(半透明にせず実体として読めるようにする)
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, 0.9*fade);
+    ctx.strokeStyle = _hexA(sh.dark, 1);
+    ctx.lineWidth = Math.max(1, (wid[1]||wid[0]||2)*0.35);
+    ctx.lineJoin='round';
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for(let i=1;i<poly.length;i++) ctx.lineTo(poly[i].x, poly[i].y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+    // 表面の鱗(魚鱗状に重ねて描く。ザラついた実体の質感を出す)。
+    // 先端側から描くことで、根元側の鱗が先端側の縁を覆う(実物の鱗の重なりと同じ)。
+    if(!renderHeavyLoad){
+      for(let i=pts.length-1;i>=1;i--){
+        const w = wid[i]*(pts[i].scale||1);
+        if(w < 1.4) continue;
+        const nrm = normals[i];
+        const tx0 = pts[i].x-pts[i-1].x, ty0 = pts[i].y-pts[i-1].y;
+        const tl = Math.hypot(tx0,ty0) || 1;
+        const ang = Math.atan2(ty0/tl, tx0/tl);
+        for(let c=-1;c<=1;c++){
+          const h3 = fxHash01(ae.id*4.1 + k*11.3 + i*2.7 + c*1.9);
+          const off = c*w*0.58;
+          const cx = pts[i].x + nrm.nx*off, cy = pts[i].y + nrm.ny*off;
+          const rw = w*(0.5+0.1*h3), rh = w*(0.36+0.08*h3);
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, 0.9*fade);
+          ctx.translate(cx, cy);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rw, rh, 0, 0, Math.PI*2);
+          ctx.fillStyle = _hexA(((i+c)&1) ? sh.mid : sh.dark, 1);
+          ctx.fill();
+          ctx.lineWidth = Math.max(0.5, w*0.045);
+          ctx.strokeStyle = _hexA(sh.bright, 0.4);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
     // ぬめった照り返し(芯を細く明るく)
     ctx.save();
-    ctx.globalAlpha = 0.55*fade;
-    ctx.strokeStyle = _hexA(sh.bright, 0.9);
-    ctx.lineWidth = Math.max(1, (wid[0]||2)*(pts[0].scale||1)*0.5);
+    ctx.globalAlpha = 0.5*fade;
+    ctx.strokeStyle = _hexA(sh.bright, 0.85);
+    ctx.lineWidth = Math.max(0.8, (wid[0]||2)*(pts[0].scale||1)*0.32);
     ctx.lineCap='round'; ctx.lineJoin='round';
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
