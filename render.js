@@ -1516,43 +1516,73 @@ function fxStyleCrescent(pr, r){
   ctx.restore();
 }
 // 竜巻アタック: 地面に立つ本物の漏斗。輪の潰れ方をカメラに合わせて立体にする
-/* 「電撃の7」(轟金剛の超番長ボーナス)。竜巻の中で回るので、
-   横幅だけを縮めて回転を表す(板を回している見え方になる)。
-   色は竜巻と同じものを渡す。                                              */
-const SEVEN_PTS = [   // 7の字。左上の横棒 → 右上 → 斜めに左下へ下りる。単位は高さ1
+/* 「電撃の7」(轟金剛の超番長ボーナス)。図柄は用意した画像そのものを使い、
+   竜巻の色に合わせて**色相だけ差し替えた版**を1色につき1回だけ作って使い回す
+   (青の画像から赤の竜巻用を作る、という使い方)。
+   竜巻の中で回るので、横幅だけを縮めて回転を表す(板を回している見え方)。   */
+const fxSevenImg = new Image();
+let fxSevenReady = false;
+fxSevenImg.onload = ()=>{ fxSevenReady = true; };
+fxSevenImg.src = './fx_seven.png';
+const _fxSevenTint = {};
+function fxSevenSprite(hex){
+  if(!fxSevenReady) return null;
+  if(_fxSevenTint[hex]) return _fxSevenTint[hex];
+  const w = fxSevenImg.naturalWidth, h = fxSevenImg.naturalHeight;
+  if(!w || !h) return null;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  cx.drawImage(fxSevenImg, 0, 0);
+  const rgbT = hexToRgb(hex), hueT = rgbToHsl(rgbT[0], rgbT[1], rgbT[2])[0];
+  const im = cx.getImageData(0, 0, w, h), d = im.data;
+  for(let i=0;i<d.length;i+=4){
+    if(!d[i+3]) continue;
+    const hsl = rgbToHsl(d[i], d[i+1], d[i+2]);   // 明るさと鮮やかさはそのまま
+    const o = hslToRgb(hueT, hsl[1], hsl[2]);
+    d[i]=o[0]; d[i+1]=o[1]; d[i+2]=o[2];
+  }
+  cx.putImageData(im, 0, 0);
+  _fxSevenTint[hex] = c;
+  return c;
+}
+// 画像が来るまでのつなぎ(7の字を線で描く)。単位は高さ1
+const SEVEN_PTS = [
   [-0.46,-0.50], [0.46,-0.50], [0.46,-0.31], [0.06,0.50],
   [-0.18,0.50],  [0.20,-0.28], [-0.46,-0.28],
 ];
-function fxSevenBolt(cx, cy, h, phase, sh, alpha){
-  const sx = Math.cos(phase);                 // 回転して見える横幅
-  const w = h*0.78*sx;
-  if(Math.abs(w) < h*0.06) return;            // 真横を向いた瞬間は線になるので描かない
-  const jag = h*0.05;
+function fxSevenBolt(cx0, cy, wide, phase, hex, sh, alpha){
+  const sx = Math.cos(phase);                 // 回転して見える横幅の縮み
+  if(Math.abs(sx) < 0.06) return;             // 真横を向いた瞬間は線になるので描かない
+  const sprite = fxSevenSprite(hex);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.translate(cx, cy);
-  // 稲妻らしいギザギザを縁に足しながら7の輪郭を作る
-  ctx.beginPath();
-  for(let i=0;i<SEVEN_PTS.length;i++){
-    const p = SEVEN_PTS[i], q = SEVEN_PTS[(i+1)%SEVEN_PTS.length];
-    const x0 = p[0]*w, y0 = p[1]*h, x1 = q[0]*w, y1 = q[1]*h;
-    if(i===0) ctx.moveTo(x0, y0);
-    for(let k=1;k<=3;k++){
-      const t = k/3;
-      const n = (fxHash01(i*5.7 + k*2.3 + Math.floor(matchTime*18)*0.37) - 0.5)*jag;
-      ctx.lineTo(x0+(x1-x0)*t + n, y0+(y1-y0)*t + n*0.6);
+  ctx.translate(cx0, cy);
+  ctx.scale(sx, 1);                           // 横だけ縮める = 板が回って見える
+  if(sprite){
+    const h = wide * (sprite.height/sprite.width);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sprite, -wide/2, -h/2, wide, h);
+  }else{
+    const h = wide/0.78, jag = h*0.05;
+    ctx.beginPath();
+    for(let i=0;i<SEVEN_PTS.length;i++){
+      const p = SEVEN_PTS[i], q = SEVEN_PTS[(i+1)%SEVEN_PTS.length];
+      const x0 = p[0]*wide/0.78*0.78, y0 = p[1]*h, x1 = q[0]*wide, y1 = q[1]*h;
+      if(i===0) ctx.moveTo(x0, y0);
+      for(let k=1;k<=3;k++){
+        const t = k/3;
+        const n = (fxHash01(i*5.7 + k*2.3 + Math.floor(matchTime*18)*0.37) - 0.5)*jag;
+        ctx.lineTo(x0+(x1-x0)*t + n, y0+(y1-y0)*t + n*0.6);
+      }
     }
+    ctx.closePath();
+    ctx.fillStyle = _hexA(sh.dark, 0.55*alpha);
+    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = _hexA(sh.bright, 0.95*alpha);
+    ctx.lineWidth = Math.max(1.2, h*0.055);
+    ctx.stroke();
   }
-  ctx.closePath();
-  ctx.fillStyle = _hexA(sh.dark, 0.55*alpha);
-  ctx.fill();
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = _hexA(sh.bright, 0.95*alpha);
-  ctx.lineWidth = Math.max(1.2, h*0.055);
-  ctx.stroke();
-  ctx.strokeStyle = _hexA(sh.spark, 0.9*alpha);
-  ctx.lineWidth = Math.max(0.8, h*0.022);
-  ctx.stroke();
   ctx.restore();
 }
 function fxStyleTornado(pr, r){
@@ -1599,7 +1629,7 @@ function fxStyleTornado(pr, r){
   // 7は漏斗を塗ったあと・巻き上がる筋の前に描く(渦の中に入って見える)
   if(bonus){
     const mid = ringAt(0.45);
-    fxSevenBolt(mid.ox, mid.y, H*0.62, spin*0.55, sh, 1);
+    fxSevenBolt(mid.ox, mid.y, r*2.3, spin*0.55, pr.auraTint || pr.color || '#3f74e6', sh, 1);
   }
   // 巻き上がる筋(輪を少しずつずらして描くと回転が見える)
   ctx.save();

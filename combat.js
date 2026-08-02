@@ -257,12 +257,19 @@ function fireMove(attacker, target, move){
   const burstCount = move.burst || 1;
   const burstGap = move.burstGap || 0;
   const baseAng = angTo(attacker, target);
+  // burstSideStep があると、扇状に散らさず発射位置を進行方向の左右へずらして横並びに飛ばす
+  const sideStep = move.burstSideStep || 0;
+  const sideX = -Math.sin(baseAng), sideY = Math.cos(baseAng);
   for(let i=0;i<burstCount;i++){
     const spreadStep = (move.burstSpread!=null ? move.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
     const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
-    const ang = baseAng + rand(-1,1)*(attacker.isPlayer?0.02:0.07) + spreadOffset;
+    // 横並びのときは進行方向をそろえたいので、狙いのぶれを乗せない
+    const jitter = sideStep ? 0 : rand(-1,1)*(attacker.isPlayer?0.02:0.07);
+    const ang = baseAng + jitter + spreadOffset;
+    const sideOff = (burstCount>1 ? (i-(burstCount-1)/2) : 0) * sideStep;
     projectiles.push({
-      id:nextId++, ownerId:attacker.id, x:attacker.x, y:attacker.y, z:muzzleZ,
+      id:nextId++, ownerId:attacker.id,
+      x:attacker.x + sideX*sideOff, y:attacker.y + sideY*sideOff, z:muzzleZ,
       vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, hitW:(move.hitW||0)*hbMult, splash:(move.splash||0)*hbMult,
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,

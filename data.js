@@ -630,8 +630,10 @@ const SSR_SKIN_TIER3 = {
   // 青・赤・青の半透明の竜巻を3連射し、それぞれの中で同じ色の「電撃の7」が回る。
   // burstTints は連射の何発目かで色を変えるための一覧(弾の auraTint に入る)。
   // projVariant は描画側が専用の見た目に切り替えるための目印。
+  // burstSideStep があると、扇状に散らさず発射位置を横にずらして「横並び」で同時に飛ばす
   rock_ssr:       { name:'超番長ボーナス', move:{ /*@rock_ssr*/
-    dmg:26, burst:3, burstGap:0.18, burstSpread:0.09, projSpeed:560, range:1500, gutsCost:26,
+    dmg:40, burst:3, burstGap:0, burstSpread:0, burstSideStep:105,
+    cooldown:3.0, projSpeed:560, range:1500, gutsCost:26,
     projStyle:'tornado', projVariant:'bonus7',
     burstTints:['#3f74e6','#e6453f','#3f74e6'],
   }},

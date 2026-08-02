@@ -600,12 +600,16 @@ function tryNonHostPlayerFireVisual(dt){
   } else if(!mv.melee){
     const burstCount = mv.burst || 1;
     const burstGap = mv.burstGap || 0;
+    // 横並びの発射(ホスト側の fireMove と同じ式)
+    const sideStep = mv.burstSideStep || 0;
+    const sideX = -Math.sin(aimAngle), sideY = Math.cos(aimAngle);
     for(let i=0;i<burstCount;i++){
       const spreadStep = (mv.burstSpread!=null ? mv.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
       const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
       const ang = aimAngle + spreadOffset;
+      const sideOff = (burstCount>1 ? (i-(burstCount-1)/2) : 0) * sideStep;
       projectiles.push({
-        x:player.x, y:player.y, z:muzzleZ,
+        x:player.x + sideX*sideOff, y:player.y + sideY*sideOff, z:muzzleZ,
         vx:Math.cos(ang)*effProjSpeed, vy:Math.sin(ang)*effProjSpeed, vz:aimSlope*effProjSpeed, terrain3d:onReal3d, grav:projGrav,
         color:effColor, hitR:mv.hitR*hbMult, hitW:(mv.hitW||0)*hbMult,
         traveled:0, maxRange:mv.range, delay: i*burstGap, visualOnly:true, icon:mv.icon, shape:mv.shape,
