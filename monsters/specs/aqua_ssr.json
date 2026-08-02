@@ -1,0 +1,12 @@
+{
+  "id": "aqua_ssr",
+  "element": "aqua",
+  "name": "大喰いの利世",
+  "aura": "red",
+  "seasonExclusive": true,
+  "iconImg": "aqua_ssr",
+  "playerImg": "aqua_player_ssr",
+  "walkPrefix": "aqua_ssr_walk_",
+  "t3name": "鱗赫",
+  "t3mult": 1.15
+}

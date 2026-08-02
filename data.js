@@ -268,6 +268,7 @@ const WALK_ANIM = {
   },
   aqua: {
     base: { front:_loadWalk('aqua_walk_f'), back:_loadWalk('aqua_walk_b') },              // ウンディーネ(色スキン対応)
+    ssr:  { skinId:'aqua_ssr', front:_loadWalk('aqua_ssr_walk_f'), back:_loadWalk('aqua_ssr_walk_b') }, /*@aqua_ssr*/
   },
   fire: {
     base: { front:_loadWalk('fire_walk_f'), back:_loadWalk('fire_walk_b') },              // ドラゴン(色スキン対応)
@@ -500,6 +501,7 @@ const SSR_SKIN_AURA = {
   phoenix_ssr:'white', tamamo_ssr:'red', iblees_ssr:'black', mocchi_ssr:'black',
   zeus_ssr:'yellow', choco_ssr:'red', persephone_ssr:'blue',
   rock_ssr:       'blue', /*@rock_ssr*/
+  aqua_ssr:       'red', /*@aqua_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -625,6 +627,7 @@ const SSR_SKIN_TIER3 = {
     blast:{ radius:325, dmg:26, color:'#3f74e6', expandTime:0.5, se:'amphitriteBlast' },
   }},
   rock_ssr:       { name:'超番長ボーナス', dmgMult:1.15 }, /*@rock_ssr*/
+  aqua_ssr:       { name:'鱗赫', dmgMult:1.15 }, /*@aqua_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1681,6 +1684,7 @@ const SSR_SKINS = {
   // ペルセポネ: イルミネのオリジナルSSR。ガチャ・SSRカタログにも出る
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
   rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr', seasonExclusive:true }, /*@rock_ssr*/
+  aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
