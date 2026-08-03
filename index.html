@@ -976,6 +976,12 @@
     <button id="ssrRevealSkip" class="ssr-reveal-skip">スキップ ▶</button>
   </div>
 
+  <!-- SSR昇格演出(SR演出のあと、50%でこちらを挟んでからSSR演出へ) -->
+  <div id="ssrPromoteOverlay" class="ssr-promote hidden">
+    <video id="ssrPromoteVideo" class="ssr-promote-video hidden" src="ssr_promote.mp4" playsinline muted></video>
+    <img id="ssrPromoteTapImg" class="ssr-promote-tap hidden" src="ssr_promote_tap.jpg" alt="画面をタップしてください">
+  </div>
+
   <!-- 提供割合モーダル -->
   <div id="gachaRatesModal" class="gacha-modal hidden">
     <div class="gacha-modal-box">

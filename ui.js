@@ -1783,6 +1783,11 @@ document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
 
 // --- ガチャ演出(canvas): 円盤石が回り→光の柱→レアリティ色の球体 ---
 const gachaAnim = { raf:null, phase:'idle', t0:0, results:[], count:1, orbs:[], onReveal:null };
+// SSRのうち昇格演出対象(promoted)は、円盤/光の玉の演出だけSRとして扱う(見た目のみ。結果は変わらない)
+function gachaEffRarity(r){
+  if(!r) return 'N';
+  return (r.rarity==='SSR' && r.promoted) ? 'SR' : r.rarity;
+}
 function gachaCanvasSize(){
   const cv = document.getElementById('gachaCanvas');
   const f = document.getElementById('gachaField');
@@ -1806,7 +1811,7 @@ function gachaAnimFrame(now){
   const cx=w/2, cy=h*0.46;
   const diskR = Math.min(w,h)*0.20;
   const elapsed = (now - gachaAnim.t0)/1000;
-  const topR = gachaAnim.results.length ? gachaAnim.results.reduce((a,r)=>RARITY_RANK[r.rarity]>RARITY_RANK[a]?r.rarity:a,'N') : 'N';
+  const topR = gachaAnim.results.length ? gachaAnim.results.reduce((a,r)=>{ const er=gachaEffRarity(r); return RARITY_RANK[er]>RARITY_RANK[a]?er:a; },'N') : 'N';
   const drawDisk = (ang, glow, glowColor)=>{
     // 厚みを焼き込んだ立体円盤石を回転描画する(厚みも一緒に回る)。顔の中心=画像中心。
     g.save(); g.translate(cx,cy);
@@ -1888,7 +1893,7 @@ function buildGachaOrbs(w,h,cx,cy,diskR){
   gachaAnim.orbs = [];
   if(n===1){
     const r = Math.min(w,h)*0.14;
-    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.1, r, rarity:gachaAnim.results[0].rarity, seed:0 });
+    gachaAnim.orbs.push({ x:cx, y:cy-diskR*0.1, r, rarity:gachaEffRarity(gachaAnim.results[0]), seed:0 });
   } else {
     // 10連は画面の横幅いっぱいを使い、玉体も大きくする(5列×2行)
     const cols = 5;
@@ -1901,7 +1906,7 @@ function buildGachaOrbs(w,h,cx,cy,diskR){
     const y0 = cy - diskR*0.15 - gridH*0.35;
     for(let i=0;i<n;i++){
       const col=i%cols, rowi=Math.floor(i/cols);
-      gachaAnim.orbs.push({ x: marginX + cellW*(col+0.5), y: y0 + rowi*rowGap, r, rarity:gachaAnim.results[i].rarity, seed:i });
+      gachaAnim.orbs.push({ x: marginX + cellW*(col+0.5), y: y0 + rowi*rowGap, r, rarity:gachaEffRarity(gachaAnim.results[i]), seed:i });
     }
   }
 }
@@ -1924,7 +1929,7 @@ function doGacha(count){
       if(isSkinOwned(roll.skinId)){ dup=true; diaGain=(roll.rarity==='SSR'?DUP_SSR_DIA:DUP_SKIN_DIA); addWallet(0, diaGain); }
       else ownSkin(roll.skinId);
     }
-    results.push({ ...roll, dup, diaGain });
+    results.push({ ...roll, dup, diaGain, promoted: (roll.kind==='skin' && roll.rarity==='SSR') ? (Math.random()<0.5) : false });
   }
   const granted = incrementGachaCount(count);
   gachaAnim.results = results; gachaAnim.count = count;
@@ -1934,9 +1939,9 @@ function doGacha(count){
   playSe('chupiin');
   setTimeout(()=>playSe('shuwaa'), 2400); // 円盤石の回転(2.4秒)後、光の柱が降り始めるタイミング
   gachaAnim.onReveal = ()=>{
-    // SSRが出ていたら、結果一覧の前に虹色の獲得演出を挟む(複数なら順番に)
-    const ssrIds = results.filter(r=>r.kind==='skin' && r.rarity==='SSR').map(r=>r.skinId);
-    if(ssrIds.length) runSsrRevealsThen(ssrIds, ()=> showGachaResults(results, granted));
+    // SSRが出ていたら、結果一覧の前に虹色の獲得演出を挟む(複数なら順番に。50%は昇格演出を経由)
+    const ssrResults = results.filter(r=>r.kind==='skin' && r.rarity==='SSR');
+    if(ssrResults.length) runSsrRevealsThen(ssrResults, ()=> showGachaResults(results, granted));
     else showGachaResults(results, granted);
   };
   gachaAnimStart('spin');
@@ -1960,11 +1965,49 @@ function showSsrReveal(skinId, onContinue){
     if(onContinue) onContinue();
   };
 }
-function runSsrRevealsThen(skinIds, done){
+function runSsrRevealsThen(ssrResults, done){
   let i=0;
-  const step=()=>{ if(i>=skinIds.length){ done(); return; } showSsrReveal(skinIds[i++], step); };
+  const step=()=>{
+    if(i>=ssrResults.length){ done(); return; }
+    const r = ssrResults[i++];
+    if(r.promoted) runSsrPromotionSequence(()=> showSsrReveal(r.skinId, step));
+    else showSsrReveal(r.skinId, step);
+  };
   step();
 }
+// ===== SSR昇格演出(SRだと思わせておいて、動画→タップ待ち画像を経てSSRリビールへ繋ぐ) =====
+let ssrPromoteContinue = null;
+function runSsrPromotionSequence(onContinue){
+  const ov = document.getElementById('ssrPromoteOverlay');
+  const video = document.getElementById('ssrPromoteVideo');
+  const tapImg = document.getElementById('ssrPromoteTapImg');
+  video.classList.remove('hidden'); tapImg.classList.add('hidden');
+  ov.classList.remove('hidden');
+  const showTapImage = ()=>{
+    video.classList.add('hidden'); video.pause();
+    tapImg.classList.remove('hidden');
+  };
+  video.currentTime = 0;
+  video.onended = showTapImage;
+  video.play().catch(showTapImage); // 自動再生に失敗した場合も進行を止めない
+  ssrPromoteContinue = ()=>{
+    ssrPromoteContinue = null;
+    video.onended = null;
+    ov.classList.add('hidden');
+    if(onContinue) onContinue();
+  };
+}
+document.getElementById('ssrPromoteOverlay').addEventListener('click', ()=>{
+  // 動画再生中のタップはスキップして即タップ待ち画像へ、画像表示中のタップで先へ進む
+  const video = document.getElementById('ssrPromoteVideo');
+  if(!video.classList.contains('hidden')){
+    video.pause();
+    video.classList.add('hidden');
+    document.getElementById('ssrPromoteTapImg').classList.remove('hidden');
+    return;
+  }
+  if(ssrPromoteContinue) ssrPromoteContinue();
+});
 document.getElementById('ssrRevealSkip').addEventListener('click', (e)=>{ e.stopPropagation(); if(ssrRevealContinue) ssrRevealContinue(); });
 document.getElementById('ssrRevealOverlay').addEventListener('click', ()=>{ if(ssrRevealContinue) ssrRevealContinue(); });
 function skinCellInner(skinId){
