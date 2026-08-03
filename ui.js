@@ -2004,10 +2004,13 @@ function ssrPromoteDebugLog(line){
   el.textContent = ssrPromoteDebugLines.join('\n');
 }
 // スキンごとの昇格演出メディア設定。未指定のSSRは既定(ssr_promote.*)を使う
+// se/ensureSeはSE本体・先読み関数を直接参照する(audio.jsのconstはwindowのプロパティにならないため、
+// 文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)
 const SSR_PROMOTION_MEDIA = {
   rock_ssr: {
     videoWebm: 'rock_promote.webm', videoMp4: 'rock_promote.mp4',
-    seKey: 'seRockPromote', ensureSe: 'ensureRockPromoteSeBuffer',
+    se: (typeof seRockPromote!=='undefined') ? seRockPromote : null,
+    ensureSe: (typeof ensureRockPromoteSeBuffer==='function') ? ensureRockPromoteSeBuffer : null,
     skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
     safetyMs: 23000,        // 動画+音声とも約22秒あるため、セーフティは長めに取る
     bgmOnReveal: 'gokongoLastBattle', // リビール時、元のBGMへ戻さずこちらへ切り替える(以後は次のbgmSetTrackまで継続)
@@ -2016,7 +2019,8 @@ const SSR_PROMOTION_MEDIA = {
 function ssrPromotionMediaFor(skinId){
   return SSR_PROMOTION_MEDIA[skinId] || {
     videoWebm: 'ssr_promote.webm', videoMp4: 'ssr_promote.mp4',
-    seKey: 'seSsrPromote', ensureSe: null,
+    se: (typeof seSsrPromote!=='undefined') ? seSsrPromote : null,
+    ensureSe: (typeof ensureSsrPromoteSeBuffer==='function') ? ensureSsrPromoteSeBuffer : null,
     skipTapImage: false, safetyMs: 4000, bgmOnReveal: null,
   };
 }
@@ -2037,9 +2041,11 @@ function runSsrPromotionSequence(skinId, onContinue){
   // ミュートにしておくと自動再生がブロックされにくく、映像の頭切れも防げる。
   video.muted = true;
   // このスキン専用の動画ソースへ差し替える(source子要素のsrcを書き換えてload()し直す)
-  const sources = video.querySelectorAll('source');
-  if(sources[0]) sources[0].src = media.videoWebm;
-  if(sources[1]) sources[1].src = media.videoMp4;
+  // type属性で対象を選ぶ(子要素の並び順に依存すると、拡張子とtypeが食い違って再生できなくなる)
+  const sourceMp4 = video.querySelector('source[type="video/mp4"]');
+  const sourceWebm = video.querySelector('source[type="video/webm"]');
+  if(sourceMp4) sourceMp4.src = media.videoMp4;
+  if(sourceWebm) sourceWebm.src = media.videoWebm;
   video.load();
   ov.classList.remove('hidden');
   ssrPromoteDebugLog(`skinId=${skinId} 動画src(webm)=${media.videoWebm} 動画src(mp4)=${media.videoMp4}`);
@@ -2076,8 +2082,8 @@ function runSsrPromotionSequence(skinId, onContinue){
   video.play().then(()=>{
     ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
     // 動画と同じタイミングでWeb Audio側の音声を鳴らす(動画ファイル自体は音無し)
-    const se = (typeof window!=='undefined') ? window[media.seKey] : null;
-    if(se && !se.play()){
+    if(media.ensureSe) media.ensureSe(); // 万一まだ先読みされていない場合の保険
+    if(media.se && !media.se.play()){
       ssrPromoteDebugLog('⚠️ 音声未ロードのため今回は無音(次回以降は鳴る)');
     }
   }).catch((err)=>{

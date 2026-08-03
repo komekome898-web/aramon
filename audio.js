@@ -41,6 +41,7 @@ function audioInit(){
   ensureChocoSeBuffers();
   ensureTitleStartSeBuffer();
   ensureSsrPromoteSeBuffer();
+  ensureRockPromoteSeBuffer();
   ensureProvidedSeBuffers();
   ensureBgmLobbyBuffer();
 }
