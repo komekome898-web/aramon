@@ -1977,15 +1977,31 @@ function runSsrRevealsThen(ssrResults, done){
 }
 // ===== SSR昇格演出(SRだと思わせておいて、動画→タップ待ち画像を経てSSRリビールへ繋ぐ) =====
 let ssrPromoteContinue = null;
+// 管理者確認ボタンで true にすると、演出中の状態を画面内の診断パネルに逐次表示する
+// (通常プレイ中は false のままなので、プレイヤーに見えることはない)
+let ssrPromoteDebugMode = false;
+let ssrPromoteDebugLines = [];
+function ssrPromoteDebugLog(line){
+  if(!ssrPromoteDebugMode) return;
+  console.log('[ssrPromote]', line);
+  ssrPromoteDebugLines.push(line);
+  const el = document.getElementById('ssrPromoteDebug');
+  el.classList.remove('hidden');
+  el.textContent = ssrPromoteDebugLines.join('\n');
+}
 function runSsrPromotionSequence(onContinue){
   const ov = document.getElementById('ssrPromoteOverlay');
   const video = document.getElementById('ssrPromoteVideo');
   const tapImg = document.getElementById('ssrPromoteTapImg');
+  const debugEl = document.getElementById('ssrPromoteDebug');
+  if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   video.classList.remove('hidden'); tapImg.classList.add('hidden');
   ov.classList.remove('hidden');
+  ssrPromoteDebugLog(`動画src: ${video.currentSrc || '(まだ決定していません)'}`);
   let advanced = false;
-  const showTapImage = ()=>{
+  const showTapImage = (reason)=>{
     if(advanced) return; advanced = true;
+    ssrPromoteDebugLog(`→ タップ待ち画像を表示 (${reason})`);
     clearTimeout(safetyTimer);
     video.classList.add('hidden'); video.pause();
     tapImg.classList.remove('hidden');
@@ -1993,23 +2009,31 @@ function runSsrPromotionSequence(onContinue){
   // 動画が読み込み・再生に失敗しても(端末やファイル欠落等)必ずタップ待ち画像へフォールバックする
   video.onerror = ()=>{
     const err = video.error;
-    console.error('[ssrPromote] 動画の読み込みに失敗:', video.currentSrc, 'code=', err&&err.code, 'message=', err&&err.message);
-    showTapImage();
+    ssrPromoteDebugLog(`❌ 動画onerror: code=${err&&err.code} message=${err&&err.message}`);
+    showTapImage('動画エラー');
   };
-  video.onended = showTapImage;
+  video.onended = ()=>{ ssrPromoteDebugLog('✅ 動画再生完了(ended)'); showTapImage('再生完了'); };
+  video.onplaying = ()=> ssrPromoteDebugLog('✅ 動画再生開始(playing)');
+  video.onstalled = ()=> ssrPromoteDebugLog('⚠️ 動画stalled');
+  video.onwaiting = ()=> ssrPromoteDebugLog('⚠️ 動画waiting');
   // 万一どちらのイベントも発火しない場合の保険(動画は1秒強のため十分な余裕を持たせる)
-  const safetyTimer = setTimeout(showTapImage, 4000);
-  try{ video.currentTime = 0; }catch(err){}
-  video.play().catch((err)=>{ console.error('[ssrPromote] 動画の再生に失敗:', err); showTapImage(); });
+  const safetyTimer = setTimeout(()=>showTapImage('4秒経過セーフティ'), 4000);
+  try{ video.currentTime = 0; }catch(err){ ssrPromoteDebugLog(`⚠️ currentTime設定失敗: ${err.message}`); }
+  video.play().then(()=>{
+    ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
+  }).catch((err)=>{
+    ssrPromoteDebugLog(`❌ play()失敗: ${err.name} ${err.message} currentSrc=${video.currentSrc||'(なし)'}`);
+    showTapImage('play失敗');
+  });
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
     clearTimeout(safetyTimer);
-    video.onended = null; video.onerror = null;
+    video.onended = null; video.onerror = null; video.onplaying = null; video.onstalled = null; video.onwaiting = null;
     ov.classList.add('hidden');
     if(onContinue) onContinue();
   };
 }
-// 開発・管理者確認用: 2つの素材(動画/画像)が実際に読み込めるかをHTTPステータスで確認する。
+// 開発・管理者確認用: 3つの素材(動画mp4/動画webm/画像)が実際に読み込めるかをHTTPステータスで確認する。
 // (端末のHTTPキャッシュに古い404が残っていると、ファイルを正しく置いても再現し続けるため
 //  cache:'no-store' で必ずサーバーへ問い合わせる)
 async function checkSsrPromoteAssets(){
@@ -2024,8 +2048,12 @@ async function checkSsrPromoteAssets(){
   console.log('[ssrPromote] asset check:', v, '|', vw, '|', i);
   return { video: v, videoWebm: vw, img: i };
 }
+document.getElementById('ssrPromoteTapImg').addEventListener('load', ()=>{
+  ssrPromoteDebugLog('✅ タップ待ち画像 読み込み成功');
+});
 document.getElementById('ssrPromoteTapImg').addEventListener('error', ()=>{
   console.warn('[ssrPromote] ssr_promote_tap.jpg の読み込みに失敗しました(ファイルが配置されているか確認してください)。画面タップでは先へ進めます。');
+  ssrPromoteDebugLog('❌ タップ待ち画像 読み込み失敗(404等)。画面タップでは先へ進めます');
 });
 document.getElementById('ssrPromoteOverlay').addEventListener('click', ()=>{
   // 動画再生中のタップはスキップして即タップ待ち画像へ、画像表示中のタップで先へ進む
@@ -5205,19 +5233,21 @@ document.getElementById('closeSeason1PreviewBtn').addEventListener('click', ()=>
 
 // 管理者確認用: 動画・画像の読み込み状況をチェックしてから昇格演出→SSRリビールまでを通しで再生する
 document.getElementById('adminSsrPromoteCheckBtn').addEventListener('click', async ()=>{
-  const noticeEl = document.getElementById('mastermonNotice');
   const { video, videoWebm, img } = await checkSsrPromoteAssets();
-  const ok = (video.includes('HTTP 200')||videoWebm.includes('HTTP 200')) && img.includes('HTTP 200');
-  noticeEl.textContent = ok ? `✅ 素材読み込みOK。演出を再生します\n${video}\n${videoWebm}\n${img}` : `❌ 素材読み込みに失敗\n${video}\n${videoWebm}\n${img}`;
-  noticeEl.style.whiteSpace = 'pre-line';
-  noticeEl.classList.remove('hidden');
-  clearTimeout(mastermonNoticeTimer);
-  mastermonNoticeTimer = setTimeout(()=>noticeEl.classList.add('hidden'), 6000);
   const sampleSkin = (typeof gachaSsrSkinIds==='function' ? gachaSsrSkinIds() : [])[0];
-  if(!sampleSkin) return;
+  if(!sampleSkin){ alert('SSRスキンが1つも定義されていないため確認できません'); return; }
+  ssrPromoteDebugMode = true;
+  ssrPromoteDebugLines = [];
+  // ファイル取得結果は演出パネル(黒画面)の診断表示に直接書き込む(演出に隠れて見えなくなる別要素には出さない)
+  ssrPromoteDebugLog('--- 素材読み込み診断(cache:no-store) ---');
+  ssrPromoteDebugLog(video);
+  ssrPromoteDebugLog(videoWebm);
+  ssrPromoteDebugLog(img);
   document.getElementById('closeAdminBtn').click(); // 演出を隠さないよう管理者画面を正規の手順で閉じておく
   openGachaScreen(); // ssrPromoteOverlay/ssrRevealOverlayはガチャ画面の子要素なので、開いておかないと表示されない
-  runSsrPromotionSequence(()=> showSsrReveal(sampleSkin, ()=> pushToast('🎬 演出確認 完了')));
+  runSsrPromotionSequence(()=>{
+    showSsrReveal(sampleSkin, ()=>{ pushToast('🎬 演出確認 完了'); ssrPromoteDebugMode = false; });
+  });
 });
 // 管理者画面のタブ切替(プレイ状況 / 音声確認)
 function adminShowTab(tab){
