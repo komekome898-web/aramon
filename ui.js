@@ -1952,6 +1952,11 @@ function showSsrReveal(skinId, onContinue){
   const ov = document.getElementById('ssrRevealOverlay');
   const m = skinMeta(skinId);
   const url = skinnedIconDataUrl(skinId);
+  // 昇格演出でBGMを止めていた場合はここで元のトラックへ戻す
+  if(ssrPromoteBgmResumeTrack!==null){
+    if(typeof bgmSetTrack==='function') bgmSetTrack(ssrPromoteBgmResumeTrack);
+    ssrPromoteBgmResumeTrack = null;
+  }
   document.getElementById('ssrRevealIcon').src = url || '';
   document.getElementById('ssrRevealText').textContent = `SSR ${m.name} 獲得！`;
   ov.classList.remove('hidden');
@@ -1977,6 +1982,8 @@ function runSsrRevealsThen(ssrResults, done){
 }
 // ===== SSR昇格演出(SRだと思わせておいて、動画→タップ待ち画像を経てSSRリビールへ繋ぐ) =====
 let ssrPromoteContinue = null;
+// 昇格演出中はBGMを止め、SSR獲得画面(showSsrReveal)の表示と同時に元のトラックへ戻す
+let ssrPromoteBgmResumeTrack = null;
 // 管理者確認ボタンで true にすると、演出中の状態を画面内の診断パネルに逐次表示する
 // (通常プレイ中は false のままなので、プレイヤーに見えることはない)
 let ssrPromoteDebugMode = false;
@@ -1996,6 +2003,11 @@ function runSsrPromotionSequence(onContinue){
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   video.classList.remove('hidden'); tapImg.classList.add('hidden');
+  // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラックへ戻す
+  if(typeof bgmSetTrack==='function' && typeof bgmDesiredTrack==='function'){
+    ssrPromoteBgmResumeTrack = bgmDesiredTrack();
+    bgmSetTrack(null);
+  }
   // 動画ファイル自体は音無し(音声はWeb Audio側のseSsrPromoteを別途同時再生する)。
   // ミュートにしておくと自動再生がブロックされにくく、映像の頭切れも防げる。
   video.muted = true;
