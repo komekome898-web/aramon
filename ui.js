@@ -1982,7 +1982,7 @@ function runSsrRevealsThen(ssrResults, done){
   const step=()=>{
     if(i>=ssrResults.length){ done(); return; }
     const r = ssrResults[i++];
-    if(r.promoted) runSsrPromotionSequence(()=> showSsrReveal(r.skinId, step));
+    if(r.promoted) runSsrPromotionSequence(r.skinId, ()=> showSsrReveal(r.skinId, step));
     else showSsrReveal(r.skinId, step);
   };
   step();
@@ -2003,24 +2003,54 @@ function ssrPromoteDebugLog(line){
   el.classList.remove('hidden');
   el.textContent = ssrPromoteDebugLines.join('\n');
 }
-function runSsrPromotionSequence(onContinue){
+// スキンごとの昇格演出メディア設定。未指定のSSRは既定(ssr_promote.*)を使う
+const SSR_PROMOTION_MEDIA = {
+  rock_ssr: {
+    videoWebm: 'rock_promote.webm', videoMp4: 'rock_promote.mp4',
+    seKey: 'seRockPromote', ensureSe: 'ensureRockPromoteSeBuffer',
+    skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
+    safetyMs: 23000,        // 動画+音声とも約22秒あるため、セーフティは長めに取る
+    bgmOnReveal: 'gokongoLastBattle', // リビール時、元のBGMへ戻さずこちらへ切り替える(以後は次のbgmSetTrackまで継続)
+  },
+};
+function ssrPromotionMediaFor(skinId){
+  return SSR_PROMOTION_MEDIA[skinId] || {
+    videoWebm: 'ssr_promote.webm', videoMp4: 'ssr_promote.mp4',
+    seKey: 'seSsrPromote', ensureSe: null,
+    skipTapImage: false, safetyMs: 4000, bgmOnReveal: null,
+  };
+}
+function runSsrPromotionSequence(skinId, onContinue){
+  const media = ssrPromotionMediaFor(skinId);
   const ov = document.getElementById('ssrPromoteOverlay');
   const video = document.getElementById('ssrPromoteVideo');
   const tapImg = document.getElementById('ssrPromoteTapImg');
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   video.classList.remove('hidden'); tapImg.classList.add('hidden');
-  // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラックへ戻す
+  // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック(またはmedia.bgmOnReveal)へ切り替える
   if(typeof bgmSetTrack==='function' && typeof bgmDesiredTrack==='function'){
-    ssrPromoteBgmResumeTrack = bgmDesiredTrack();
+    ssrPromoteBgmResumeTrack = media.bgmOnReveal || bgmDesiredTrack();
     bgmSetTrack(null);
   }
-  // 動画ファイル自体は音無し(音声はWeb Audio側のseSsrPromoteを別途同時再生する)。
+  // 動画ファイル自体は音無し(音声はWeb Audio側のSEを別途同時再生する)。
   // ミュートにしておくと自動再生がブロックされにくく、映像の頭切れも防げる。
   video.muted = true;
+  // このスキン専用の動画ソースへ差し替える(source子要素のsrcを書き換えてload()し直す)
+  const sources = video.querySelectorAll('source');
+  if(sources[0]) sources[0].src = media.videoWebm;
+  if(sources[1]) sources[1].src = media.videoMp4;
+  video.load();
   ov.classList.remove('hidden');
-  ssrPromoteDebugLog(`動画src: ${video.currentSrc || '(まだ決定していません)'}`);
+  ssrPromoteDebugLog(`skinId=${skinId} 動画src(webm)=${media.videoWebm} 動画src(mp4)=${media.videoMp4}`);
   let advanced = false;
+  const finish = (reason)=>{
+    if(advanced) return; advanced = true;
+    ssrPromoteDebugLog(`→ 演出終了・次へ (${reason})`);
+    clearTimeout(safetyTimer);
+    video.classList.add('hidden'); video.pause();
+    if(ssrPromoteContinue) ssrPromoteContinue(); // ov非表示・後片付けも含めてここで実行される
+  };
   const showTapImage = (reason)=>{
     if(advanced) return; advanced = true;
     ssrPromoteDebugLog(`→ タップ待ち画像を表示 (${reason})`);
@@ -2028,28 +2058,31 @@ function runSsrPromotionSequence(onContinue){
     video.classList.add('hidden'); video.pause();
     tapImg.classList.remove('hidden');
   };
-  // 動画が読み込み・再生に失敗しても(端末やファイル欠落等)必ずタップ待ち画像へフォールバックする
+  // このスキンの昇格演出は「タップ待ち画像なし」の設定なら、動画終了時に直接次へ進む
+  const onMediaEnd = (reason)=> media.skipTapImage ? finish(reason) : showTapImage(reason);
+  // 動画が読み込み・再生に失敗しても(端末やファイル欠落等)必ず先へ進める
   video.onerror = ()=>{
     const err = video.error;
     ssrPromoteDebugLog(`❌ 動画onerror: code=${err&&err.code} message=${err&&err.message}`);
-    showTapImage('動画エラー');
+    onMediaEnd('動画エラー');
   };
-  video.onended = ()=>{ ssrPromoteDebugLog('✅ 動画再生完了(ended)'); showTapImage('再生完了'); };
+  video.onended = ()=>{ ssrPromoteDebugLog('✅ 動画再生完了(ended)'); onMediaEnd('再生完了'); };
   video.onplaying = ()=> ssrPromoteDebugLog('✅ 動画再生開始(playing)');
   video.onstalled = ()=> ssrPromoteDebugLog('⚠️ 動画stalled');
   video.onwaiting = ()=> ssrPromoteDebugLog('⚠️ 動画waiting');
-  // 万一どちらのイベントも発火しない場合の保険(動画は2秒強のため十分な余裕を持たせる)
-  const safetyTimer = setTimeout(()=>showTapImage('4秒経過セーフティ'), 4000);
+  // 万一どちらのイベントも発火しない場合の保険(動画の長さに応じてmedia.safetyMsを使う)
+  const safetyTimer = setTimeout(()=>onMediaEnd('セーフティタイムアウト'), media.safetyMs);
   try{ video.currentTime = 0; }catch(err){ ssrPromoteDebugLog(`⚠️ currentTime設定失敗: ${err.message}`); }
   video.play().then(()=>{
     ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
     // 動画と同じタイミングでWeb Audio側の音声を鳴らす(動画ファイル自体は音無し)
-    if(typeof seSsrPromote!=='undefined' && !seSsrPromote.play()){
+    const se = (typeof window!=='undefined') ? window[media.seKey] : null;
+    if(se && !se.play()){
       ssrPromoteDebugLog('⚠️ 音声未ロードのため今回は無音(次回以降は鳴る)');
     }
   }).catch((err)=>{
     ssrPromoteDebugLog(`❌ play()失敗: ${err.name} ${err.message} currentSrc=${video.currentSrc||'(なし)'}`);
-    showTapImage('play失敗');
+    onMediaEnd('play失敗');
   });
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
@@ -2062,7 +2095,7 @@ function runSsrPromotionSequence(onContinue){
 // 開発・管理者確認用: 3つの素材(動画mp4/動画webm/画像)が実際に読み込めるかをHTTPステータスで確認する。
 // (端末のHTTPキャッシュに古い404が残っていると、ファイルを正しく置いても再現し続けるため
 //  cache:'no-store' で必ずサーバーへ問い合わせる)
-async function checkSsrPromoteAssets(){
+async function checkAssetUrls(urls){
   const check = async (url)=>{
     try{
       const res = await fetch(url, { cache:'no-store' });
@@ -2070,9 +2103,17 @@ async function checkSsrPromoteAssets(){
       return `${url}: HTTP ${res.status}${res.ok?'':'(失敗)'} / ${res.headers.get('content-type')||'?'}${len?` / ${len}bytes`:''}`;
     }catch(err){ return `${url}: 通信エラー(${err.message})`; }
   };
-  const [v, vw, i] = await Promise.all([check('ssr_promote.mp4'), check('ssr_promote.webm'), check('ssr_promote_tap.jpg')]);
+  return Promise.all(urls.map(check));
+}
+async function checkSsrPromoteAssets(){
+  const [v, vw, i] = await checkAssetUrls(['ssr_promote.mp4', 'ssr_promote.webm', 'ssr_promote_tap.jpg']);
   console.log('[ssrPromote] asset check:', v, '|', vw, '|', i);
   return { video: v, videoWebm: vw, img: i };
+}
+async function checkRockPromoteAssets(){
+  const [v, vw, a] = await checkAssetUrls(['rock_promote.mp4', 'rock_promote.webm', 'rock_promote_audio.mp3']);
+  console.log('[rockPromote] asset check:', v, '|', vw, '|', a);
+  return { video: v, videoWebm: vw, audio: a };
 }
 document.getElementById('ssrPromoteTapImg').addEventListener('load', ()=>{
   ssrPromoteDebugLog('✅ タップ待ち画像 読み込み成功');
@@ -5270,8 +5311,9 @@ document.getElementById('closeSeason1PreviewBtn').addEventListener('click', ()=>
 // 管理者確認用: 動画・画像の読み込み状況をチェックしてから昇格演出→SSRリビールまでを通しで再生する
 document.getElementById('adminSsrPromoteCheckBtn').addEventListener('click', async ()=>{
   const { video, videoWebm, img } = await checkSsrPromoteAssets();
-  const sampleSkin = (typeof gachaSsrSkinIds==='function' ? gachaSsrSkinIds() : [])[0];
-  if(!sampleSkin){ alert('SSRスキンが1つも定義されていないため確認できません'); return; }
+  // 轟金剛は専用演出なので、確認用には轟金剛以外のSSRを1つ選ぶ
+  const sampleSkin = (typeof gachaSsrSkinIds==='function' ? gachaSsrSkinIds().find(id=>id!=='rock_ssr') : null);
+  if(!sampleSkin){ alert('確認用のSSRスキンが見つかりません'); return; }
   ssrPromoteDebugMode = true;
   ssrPromoteDebugLines = [];
   // ファイル取得結果は演出パネル(黒画面)の診断表示に直接書き込む(演出に隠れて見えなくなる別要素には出さない)
@@ -5281,8 +5323,24 @@ document.getElementById('adminSsrPromoteCheckBtn').addEventListener('click', asy
   ssrPromoteDebugLog(img);
   document.getElementById('closeAdminBtn').click(); // 演出を隠さないよう管理者画面を正規の手順で閉じておく
   openGachaScreen(); // ssrPromoteOverlay/ssrRevealOverlayはガチャ画面の子要素なので、開いておかないと表示されない
-  runSsrPromotionSequence(()=>{
+  runSsrPromotionSequence(sampleSkin, ()=>{
     showSsrReveal(sampleSkin, ()=>{ pushToast('🎬 演出確認 完了'); ssrPromoteDebugMode = false; });
+  });
+});
+// 轟金剛専用の昇格演出(動画+22秒音声→直接リビール→BGM切替)を確認するボタン
+document.getElementById('adminRockPromoteCheckBtn').addEventListener('click', async ()=>{
+  const { video, videoWebm, audio } = await checkRockPromoteAssets();
+  ssrPromoteDebugMode = true;
+  ssrPromoteDebugLines = [];
+  ssrPromoteDebugLog('--- 轟金剛 素材読み込み診断(cache:no-store) ---');
+  ssrPromoteDebugLog(video);
+  ssrPromoteDebugLog(videoWebm);
+  ssrPromoteDebugLog(audio);
+  if(typeof ensureRockPromoteSeBuffer==='function') ensureRockPromoteSeBuffer();
+  document.getElementById('closeAdminBtn').click();
+  openGachaScreen();
+  runSsrPromotionSequence('rock_ssr', ()=>{
+    showSsrReveal('rock_ssr', ()=>{ pushToast('🎬 轟金剛 演出確認 完了(BGMがgokongoLastBattleに切り替わっているはず)'); ssrPromoteDebugMode = false; });
   });
 });
 // 管理者画面のタブ切替(プレイ状況 / 音声確認)

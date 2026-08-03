@@ -708,6 +708,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-03', items:[
+    { t:'SSRスキン「轟金剛」がガチャ・スキンカタログに登場するようになりました。獲得時には専用の昇格演出とBGMが流れます', g:['feature','monster'] },
     { t:'SSR昇格演出が一瞬で終わってしまう・音が鳴らない不具合を修正しました', g:['fix','av'] },
     { t:'ガチャ・カタログ・シーズンパスでSSRを獲得したとき、「SRだと思ったら実はSSRだった」という昇格演出が入るようになりました(初獲得は100%、重複獲得は5割の確率)', g:['feature','general'] },
   ]},
@@ -1752,7 +1753,7 @@ const SSR_SKINS = {
   choco_ssr:   { element:'pixie', name:'ちょこ', iconImg:'choco_ssr', playerImg:'choco_player_ssr' },
   // ペルセポネ: イルミネのオリジナルSSR。ガチャ・SSRカタログにも出る
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
-  rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr', seasonExclusive:true }, /*@rock_ssr*/
+  rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr' }, /*@rock_ssr*/
   aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
