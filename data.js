@@ -708,6 +708,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-03', items:[
+    { t:'SSR昇格演出が一瞬で終わってしまう・音が鳴らない不具合を修正しました', g:['fix','av'] },
     { t:'ガチャでSSRを獲得したとき、5割の確率で「SRだと思ったら実はSSRだった」という昇格演出が入るようになりました', g:['feature','general'] },
   ]},
   { date:'2026-07-31', items:[

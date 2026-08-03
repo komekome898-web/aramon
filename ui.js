@@ -1996,7 +1996,9 @@ function runSsrPromotionSequence(onContinue){
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   video.classList.remove('hidden'); tapImg.classList.add('hidden');
-  video.muted = false; // 前回ミュート再試行した状態が残らないようリセット
+  // 動画ファイル自体は音無し(音声はWeb Audio側のseSsrPromoteを別途同時再生する)。
+  // ミュートにしておくと自動再生がブロックされにくく、映像の頭切れも防げる。
+  video.muted = true;
   ov.classList.remove('hidden');
   ssrPromoteDebugLog(`動画src: ${video.currentSrc || '(まだ決定していません)'}`);
   let advanced = false;
@@ -2017,22 +2019,18 @@ function runSsrPromotionSequence(onContinue){
   video.onplaying = ()=> ssrPromoteDebugLog('✅ 動画再生開始(playing)');
   video.onstalled = ()=> ssrPromoteDebugLog('⚠️ 動画stalled');
   video.onwaiting = ()=> ssrPromoteDebugLog('⚠️ 動画waiting');
-  // 万一どちらのイベントも発火しない場合の保険(動画は1秒強のため十分な余裕を持たせる)
+  // 万一どちらのイベントも発火しない場合の保険(動画は2秒強のため十分な余裕を持たせる)
   const safetyTimer = setTimeout(()=>showTapImage('4秒経過セーフティ'), 4000);
   try{ video.currentTime = 0; }catch(err){ ssrPromoteDebugLog(`⚠️ currentTime設定失敗: ${err.message}`); }
   video.play().then(()=>{
-    ssrPromoteDebugLog(`▶️ play()成功(音声あり) currentSrc=${video.currentSrc}`);
+    ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
+    // 動画と同じタイミングでWeb Audio側の音声を鳴らす(動画ファイル自体は音無し)
+    if(typeof seSsrPromote!=='undefined' && !seSsrPromote.play()){
+      ssrPromoteDebugLog('⚠️ 音声未ロードのため今回は無音(次回以降は鳴る)');
+    }
   }).catch((err)=>{
-    ssrPromoteDebugLog(`⚠️ 音声ありのplay()失敗: ${err.name} ${err.message} → ミュートで再試行`);
-    // 音声ありの自動再生がブラウザにブロックされた場合(iOS Safari等でよくある)、
-    // 映像だけでも見せるためミュートで再試行する
-    video.muted = true;
-    video.play().then(()=>{
-      ssrPromoteDebugLog(`▶️ play()成功(ミュート再試行) currentSrc=${video.currentSrc}`);
-    }).catch((err2)=>{
-      ssrPromoteDebugLog(`❌ ミュート再試行も失敗: ${err2.name} ${err2.message} currentSrc=${video.currentSrc||'(なし)'}`);
-      showTapImage('play失敗');
-    });
+    ssrPromoteDebugLog(`❌ play()失敗: ${err.name} ${err.message} currentSrc=${video.currentSrc||'(なし)'}`);
+    showTapImage('play失敗');
   });
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
