@@ -1983,20 +1983,31 @@ function runSsrPromotionSequence(onContinue){
   const tapImg = document.getElementById('ssrPromoteTapImg');
   video.classList.remove('hidden'); tapImg.classList.add('hidden');
   ov.classList.remove('hidden');
+  let advanced = false;
   const showTapImage = ()=>{
+    if(advanced) return; advanced = true;
+    clearTimeout(safetyTimer);
     video.classList.add('hidden'); video.pause();
     tapImg.classList.remove('hidden');
   };
-  video.currentTime = 0;
+  // 動画が読み込み・再生に失敗しても(端末やファイル欠落等)必ずタップ待ち画像へフォールバックする
+  video.onerror = showTapImage;
   video.onended = showTapImage;
+  // 万一どちらのイベントも発火しない場合の保険(動画は1秒強のため十分な余裕を持たせる)
+  const safetyTimer = setTimeout(showTapImage, 4000);
+  try{ video.currentTime = 0; }catch(err){}
   video.play().catch(showTapImage); // 自動再生に失敗した場合も進行を止めない
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
-    video.onended = null;
+    clearTimeout(safetyTimer);
+    video.onended = null; video.onerror = null;
     ov.classList.add('hidden');
     if(onContinue) onContinue();
   };
 }
+document.getElementById('ssrPromoteTapImg').addEventListener('error', ()=>{
+  console.warn('[ssrPromote] ssr_promote_tap.jpg の読み込みに失敗しました(ファイルが配置されているか確認してください)。画面タップでは先へ進めます。');
+});
 document.getElementById('ssrPromoteOverlay').addEventListener('click', ()=>{
   // 動画再生中のタップはスキップして即タップ待ち画像へ、画像表示中のタップで先へ進む
   const video = document.getElementById('ssrPromoteVideo');
