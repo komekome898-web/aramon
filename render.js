@@ -3554,7 +3554,7 @@ function fx3dKagune(ae, curReach, fade, progress){
       // 素直な sin だと途中で寝てしまうので、指数を掛けて上がりを早く・保ちを長くする
       const dz = KAGUNE_H*Math.pow(Math.sin(Math.PI*t), 0.65)*(0.55+0.45*h1);
       const p = fx3dPoint(x, y, dz);
-      if(!p) break;
+      if(!p) continue;
       pts.push(p);
       wid.push(rBase*(1-t*0.8)*Math.min(1, progress*3));
     }
