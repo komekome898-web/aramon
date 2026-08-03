@@ -2133,14 +2133,10 @@ document.getElementById('ssrPromoteTapImg').addEventListener('error', ()=>{
   ssrPromoteDebugLog('❌ タップ待ち画像 読み込み失敗(404等)。画面タップでは先へ進めます');
 });
 document.getElementById('ssrPromoteOverlay').addEventListener('click', ()=>{
-  // 動画再生中のタップはスキップして即タップ待ち画像へ、画像表示中のタップで先へ進む
+  // 動画再生中はタップを無効化する(誤タップでスキップされないように)。
+  // 動画が隠れた後(タップ待ち画像の表示中)だけタップに反応して先へ進む。
   const video = document.getElementById('ssrPromoteVideo');
-  if(!video.classList.contains('hidden')){
-    video.pause();
-    video.classList.add('hidden');
-    document.getElementById('ssrPromoteTapImg').classList.remove('hidden');
-    return;
-  }
+  if(!video.classList.contains('hidden')) return;
   if(ssrPromoteContinue) ssrPromoteContinue();
 });
 document.getElementById('ssrRevealSkip').addEventListener('click', (e)=>{ e.stopPropagation(); if(ssrRevealContinue) ssrRevealContinue(); });
