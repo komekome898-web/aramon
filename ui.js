@@ -1911,6 +1911,13 @@ function buildGachaOrbs(w,h,cx,cy,diskR){
   }
 }
 
+// SSR昇格演出(SRだと思わせる演出)が発生するかどうか。
+// ・未取得(初めて手に入れた)SSRなら100%発生
+// ・取得済(重複)SSRなら50%発生
+// ガチャ以外(カタログ交換・シーズンパス報酬)でのSSR獲得にも共通で使う
+function ssrShouldPromote(alreadyOwned){
+  return alreadyOwned ? (Math.random()<0.5) : true;
+}
 function doGacha(count){
   if(gachaAnim.phase!=='idle') return; // 演出中は無効
   const cost = count===10 ? GACHA_COST_DIA_TEN : GACHA_COST_DIA_SINGLE;
@@ -1929,7 +1936,7 @@ function doGacha(count){
       if(isSkinOwned(roll.skinId)){ dup=true; diaGain=(roll.rarity==='SSR'?DUP_SSR_DIA:DUP_SKIN_DIA); addWallet(0, diaGain); }
       else ownSkin(roll.skinId);
     }
-    results.push({ ...roll, dup, diaGain, promoted: (roll.kind==='skin' && roll.rarity==='SSR') ? (Math.random()<0.5) : false });
+    results.push({ ...roll, dup, diaGain, promoted: (roll.kind==='skin' && roll.rarity==='SSR') ? ssrShouldPromote(dup) : false });
   }
   const granted = incrementGachaCount(count);
   gachaAnim.results = results; gachaAnim.count = count;
@@ -2196,8 +2203,8 @@ document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>
   document.getElementById('gachaCatalogModal').classList.add('hidden');
   updateGachaCounterUI();
   if(meta.rarity==='SSR'){
-    // SSRを選んだ時も虹色の獲得演出を出す
-    showSsrReveal(pickedId, ()=> pushToast(`${meta.name} を獲得！`));
+    // SSRを選んだ時も虹色の獲得演出を出す(カタログは常に未取得スキンのみ選べるため昇格演出は100%)
+    runSsrPromotionSequence(()=> showSsrReveal(pickedId, ()=> pushToast(`${meta.name} を獲得！`)));
   } else {
     playSe('pickup');
     pushToast(`${meta.name} を獲得！`);
@@ -3616,6 +3623,7 @@ function seasonClaim(t){
   if(seasonTierForSp(s.sp) >= t && !s.claimed[t]){
     s.claimed[t] = true;
     const reward = SEASON_REWARDS[t-1];
+    const rewardSkinAlreadyOwned = (reward && reward.skin && typeof isSkinOwned==='function') ? isSkinOwned(reward.skin) : false;
     grantReward(reward);
     saveSeason(s);
     renderSeasonOverlay();
@@ -3623,7 +3631,16 @@ function seasonClaim(t){
     updateAccountBar();
     // 限定SSRスキンはSSR獲得演出(虹色リビール)を出す
     if(reward && reward.skin && typeof showSsrReveal==='function'){
-      showSsrReveal(reward.skin, ()=>{ if(typeof pushToast==='function') pushToast(`${skinMeta(reward.skin).name} を獲得！`); });
+      // ssrPromoteOverlay/ssrRevealOverlayはガチャ画面の子要素なので、表示中だけ裏で開いておく
+      const gachaOv = document.getElementById('gachaOverlay');
+      const gachaWasOpen = gachaOv && !gachaOv.classList.contains('hidden');
+      if(gachaOv) gachaOv.classList.remove('hidden');
+      const finishReveal = ()=>{
+        if(gachaOv && !gachaWasOpen) gachaOv.classList.add('hidden');
+        if(typeof pushToast==='function') pushToast(`${skinMeta(reward.skin).name} を獲得！`);
+      };
+      if(ssrShouldPromote(rewardSkinAlreadyOwned)) runSsrPromotionSequence(()=> showSsrReveal(reward.skin, finishReveal));
+      else showSsrReveal(reward.skin, finishReveal);
     } else if(typeof pushToast==='function'){
       pushToast(`Tier ${t} 報酬 ${rewardText(reward)} を受け取った！`);
     }
