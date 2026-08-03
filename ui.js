@@ -1996,6 +1996,7 @@ function runSsrPromotionSequence(onContinue){
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   video.classList.remove('hidden'); tapImg.classList.add('hidden');
+  video.muted = false; // 前回ミュート再試行した状態が残らないようリセット
   ov.classList.remove('hidden');
   ssrPromoteDebugLog(`動画src: ${video.currentSrc || '(まだ決定していません)'}`);
   let advanced = false;
@@ -2020,10 +2021,18 @@ function runSsrPromotionSequence(onContinue){
   const safetyTimer = setTimeout(()=>showTapImage('4秒経過セーフティ'), 4000);
   try{ video.currentTime = 0; }catch(err){ ssrPromoteDebugLog(`⚠️ currentTime設定失敗: ${err.message}`); }
   video.play().then(()=>{
-    ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
+    ssrPromoteDebugLog(`▶️ play()成功(音声あり) currentSrc=${video.currentSrc}`);
   }).catch((err)=>{
-    ssrPromoteDebugLog(`❌ play()失敗: ${err.name} ${err.message} currentSrc=${video.currentSrc||'(なし)'}`);
-    showTapImage('play失敗');
+    ssrPromoteDebugLog(`⚠️ 音声ありのplay()失敗: ${err.name} ${err.message} → ミュートで再試行`);
+    // 音声ありの自動再生がブラウザにブロックされた場合(iOS Safari等でよくある)、
+    // 映像だけでも見せるためミュートで再試行する
+    video.muted = true;
+    video.play().then(()=>{
+      ssrPromoteDebugLog(`▶️ play()成功(ミュート再試行) currentSrc=${video.currentSrc}`);
+    }).catch((err2)=>{
+      ssrPromoteDebugLog(`❌ ミュート再試行も失敗: ${err2.name} ${err2.message} currentSrc=${video.currentSrc||'(なし)'}`);
+      showTapImage('play失敗');
+    });
   });
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
