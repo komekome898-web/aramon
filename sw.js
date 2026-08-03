@@ -1,7 +1,7 @@
 // ファイルを更新するたびに、このバージョン番号を必ず上げてください。
 // (例: v2 -> v3 -> v4 ...) 番号を上げないと、ユーザーの端末に古いキャッシュが
 // 残り続け、更新した内容が反映されません。
-const CACHE_NAME = 'aramon-cache-v395';
+const CACHE_NAME = 'aramon-cache-v396';
 // 画像と音は「別のキャッシュ」に入れ、バージョンを上げても消さない。
 // コード(html/js/css)だけが毎回入れ替わり、11MBの画像と5.7MBの音は貯めたまま使える。
 const MEDIA_CACHE = 'aramon-media';
@@ -11,7 +11,7 @@ const CORE_ASSETS = [
   './manifest.json',
 ];
 // 中身が変わらない素材。ここに当たるものはキャッシュを即返し、裏で最新に入れ替える
-const MEDIA_RE = /\.(png|jpg|jpeg|webp|gif|mp3|ogg|wav|woff2?)$/i;
+const MEDIA_RE = /\.(png|jpg|jpeg|webp|gif|mp4|webm|mp3|ogg|wav|woff2?)$/i;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -36,7 +36,10 @@ self.addEventListener('activate', (event) => {
 function mediaResponse(request) {
   return caches.open(MEDIA_CACHE).then((cache) =>
     cache.match(request).then((cached) => {
-      const network = fetch(request).then((res) => {
+      // cache:'no-store' でブラウザのHTTPキャッシュ層も無視する。
+      // (新しく追加した素材が、追加前に返った404をHTTPキャッシュとして
+      //  引きずってしまい、いつまでも読み込めなくなる事故を防ぐため)
+      const network = fetch(request, { cache: 'no-store' }).then((res) => {
         if (res && res.ok) cache.put(request, res.clone());
         return res;
       }).catch(() => cached);
