@@ -1554,7 +1554,7 @@ function mutatorSpawnMult(){ const m = mutatorToday(); return (m && m.spawn) ? 1
 const MUTATOR_LEGEND = [
   { key:'tier',   label:'技強化',     desc:'全員技tier2スタート(技強化チケット使用済みならtier3)' },
   { key:'spawn',  label:'アイテムUP', desc:'スポーンアイテム数1.5倍' },
-  { key:'reward', label:'報酬UP',     desc:'試合報酬(ゴールド・ダイヤ)2倍' },
+  { key:'reward', label:'報酬UP',     desc:'試合報酬(ゴールド・ダイヤ・経験値)2倍' },
 ];
 function mutatorBadgeLabels(m){
   if(!m) return [];

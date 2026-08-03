@@ -4352,10 +4352,12 @@ function handleMastermonPostMatch(isWin){
     const mm = data[game.selectedMastermonKey];
     if(mm){
       const killExpBonus = Math.round(player.mastermonKillExpBonus||0);
+      // ミューテーター「報酬2倍」(非公開中は常に1)。ゴールド/ダイヤと同様EXPにも反映
+      const mutRewardMultExp = (typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1;
       const result = awardMastermonExp(mm, {
         kills: player.kills, damage: Math.round(player.damageDealt),
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
-        xpMult: netState.mode==='multi' ? 5 : 1, // マルチプレイは獲得経験値5倍
+        xpMult: (netState.mode==='multi' ? 5 : 1) * mutRewardMultExp, // マルチプレイは獲得経験値5倍
         bonusExp: killExpBonus, // マスモン撃破ボーナス(相手レベル×係数の積み立て)
       });
       saveMastermons(data);
@@ -4387,7 +4389,7 @@ function handleMastermonPostMatch(isWin){
       pendingRegisterMatchStats = {
         kills: player.kills, damage: Math.round(player.damageDealt),
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
-        xpMult: netState.mode==='multi' ? 5 : 1,
+        xpMult: (netState.mode==='multi' ? 5 : 1) * ((typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1),
         bonusExp: Math.round(player.mastermonKillExpBonus||0),
       };
     }
