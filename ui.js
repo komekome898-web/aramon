@@ -2035,6 +2035,10 @@ function runSsrPromotionSequence(skinId, onContinue){
   // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック(またはmedia.bgmOnReveal)へ切り替える
   if(typeof bgmSetTrack==='function' && typeof bgmDesiredTrack==='function'){
     ssrPromoteBgmResumeTrack = media.bgmOnReveal || bgmDesiredTrack();
+    // 轟金剛の専用BGM(bgm_gokongo_*.mp3)は試合開始時にしか先読みされないため、
+    // ここで切替前(動画再生中の約22秒)に読み込みを始めておく。先読みなしだと
+    // バッファが無い状態でstart()が無視され、リビール時に無音のままになる
+    if(ssrPromoteBgmResumeTrack && ssrPromoteBgmResumeTrack.indexOf('gokongo')===0 && typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
     bgmSetTrack(null);
   }
   // 動画ファイル自体は音無し(音声はWeb Audio側のSEを別途同時再生する)。
