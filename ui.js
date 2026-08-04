@@ -1157,7 +1157,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1262,6 +1262,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       pushToast(`ようこそ、${name}！`);
       promoOryouResetIfNeeded(name);
       maybeShowSkinGachaPromo();
+      maybeShowRockSsrPromo();
     } else if(String(acc.pass) === pass){
       // ログイン: サーバーのデータを取り込む
       accountState.loggedIn = true; accountState.name = acc.name; accountState.key = key; accountState.pass = pass;
@@ -1273,6 +1274,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       pushToast(`おかえりなさい、${acc.name}！`);
       promoOryouResetIfNeeded(acc.name);
       maybeShowSkinGachaPromo();
+      maybeShowRockSsrPromo();
     } else {
       // 名前の重複検知: 別人のアカウントが存在する
       accountShowMsg('この名前は既に使われています。別の名前に変えるか、心当たりがあれば正しいパスコードを入力してください');
@@ -1312,6 +1314,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
         updateAccountBar();
         promoOryouResetIfNeeded(acc.name);
         maybeShowSkinGachaPromo();   // ログイン中アカウントに記念ダイヤ+ポップアップ(一度だけ)
+        maybeShowRockSsrPromo();  // SSR轟金剛実装記念ダイヤ+ポップアップ(一度だけ)
       } else if(acc && String(acc.pass) !== String(creds.pass)){
         // パスコードが変更された等でサーバーと不一致→ログイン解除
         accountState.loggedIn = false; accountState.key = null; accountState.pass = null;
@@ -1774,6 +1777,41 @@ document.getElementById('skinPromoGachaBtn').addEventListener('click', ()=>{
 });
 // SW自動リロード等で消えても、未確認(保留中)なら起動時に再表示する
 if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
+
+// ===== SSR轟金剛実装記念ポップアップ(スキンガチャ実装記念と同じ仕組み) =====
+// このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
+const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // 受け取り済み(アカウント同期)
+const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
+const ROCK_SSR_PROMO_DIA = 500;
+function showRockSsrPromoPopup(){
+  const el = document.getElementById('rockSsrPromoOverlay');
+  if(el) el.classList.remove('hidden');
+}
+function dismissRockSsrPromoPopup(){
+  try{ localStorage.removeItem(ROCK_SSR_PROMO_PENDING_KEY); }catch(e){}
+  const el = document.getElementById('rockSsrPromoOverlay');
+  if(el) el.classList.add('hidden');
+}
+function maybeShowRockSsrPromo(){
+  if(!accountState.loggedIn) return;                            // ログイン中のアカウントのみ
+  if(localStorage.getItem(ROCK_SSR_PROMO_KEY)==='1') return;     // 既に受け取り済みなら出さない
+  try{ localStorage.setItem(ROCK_SSR_PROMO_KEY,'1'); }catch(e){}
+  try{ localStorage.setItem(ROCK_SSR_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
+  addWallet(0, ROCK_SSR_PROMO_DIA);                              // ダイヤ500個付与(saveWalletがsync予約)
+  accountMarkDirty();                                            // フラグもサーバーへ同期
+  updateAccountBar();
+  showRockSsrPromoPopup();
+  pushToast(`SSR轟金剛実装記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
+}
+document.getElementById('rockSsrPromoCloseBtn').addEventListener('click', ()=>{
+  dismissRockSsrPromoPopup();
+});
+document.getElementById('rockSsrPromoGachaBtn').addEventListener('click', ()=>{
+  dismissRockSsrPromoPopup();
+  openGachaScreen();
+});
+// SW自動リロード等で消えても、未確認(保留中)なら起動時に再表示する
+if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1') showRockSsrPromoPopup();
 
 document.getElementById('openGachaBtn').addEventListener('click', openGachaScreen);
 document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
@@ -2251,7 +2289,7 @@ document.getElementById('gachaCatalogConfirmBtn').addEventListener('click', ()=>
   updateGachaCounterUI();
   if(meta.rarity==='SSR'){
     // SSRを選んだ時も虹色の獲得演出を出す(カタログは常に未取得スキンのみ選べるため昇格演出は100%)
-    runSsrPromotionSequence(()=> showSsrReveal(pickedId, ()=> pushToast(`${meta.name} を獲得！`)));
+    runSsrPromotionSequence(pickedId, ()=> showSsrReveal(pickedId, ()=> pushToast(`${meta.name} を獲得！`)));
   } else {
     playSe('pickup');
     pushToast(`${meta.name} を獲得！`);
@@ -3686,7 +3724,7 @@ function seasonClaim(t){
         if(gachaOv && !gachaWasOpen) gachaOv.classList.add('hidden');
         if(typeof pushToast==='function') pushToast(`${skinMeta(reward.skin).name} を獲得！`);
       };
-      if(ssrShouldPromote(rewardSkinAlreadyOwned)) runSsrPromotionSequence(()=> showSsrReveal(reward.skin, finishReveal));
+      if(ssrShouldPromote(rewardSkinAlreadyOwned)) runSsrPromotionSequence(reward.skin, ()=> showSsrReveal(reward.skin, finishReveal));
       else showSsrReveal(reward.skin, finishReveal);
     } else if(typeof pushToast==='function'){
       pushToast(`Tier ${t} 報酬 ${rewardText(reward)} を受け取った！`);
