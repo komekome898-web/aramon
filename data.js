@@ -140,6 +140,7 @@ const ELEMENTS = {
   god:     { label:'ガリ',       color:'#f5f0ff', dark:'#c3b3e0', accent:'#ffd23c', speed:196, hp:110, trait:'godrange' },
   zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:215, hp:95, trait:'poison' },
   pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble' },
+  dullahan:{ label:'デュラハン', color:'#7fb236', dark:'#4f6f1f', speed:160, hp:120, trait:'dullahan' }, /*@dullahan*/
   // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -296,6 +297,9 @@ const WALK_ANIM = {
   pixie: {
     base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
     ssr:  { skinId:'choco_ssr', front:_loadWalk('choco_ssr_walk_f'), back:_loadWalk('choco_ssr_walk_b') }, // SSRちょこ
+  },
+  dullahan:{ /*@dullahan*/
+    base: { front:_loadWalk('dullahan_walk_f'), back:_loadWalk('dullahan_walk_b') },
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -486,6 +490,11 @@ const SIGNATURE_MOVES = {
       range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮',
       blast:{ radius:330, dmg:60, color:'#14121c', expandTime:0.5 } },
   ],
+  dullahan:[ /*@dullahan*/
+    { name:'まっぷたつ', tier:1, color:'#7fb236', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🗡️' },
+    { name:'ダッシュ斬り', tier:2, color:'#7fb236', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🗡️' },
+    { name:'最終奥義', tier:3, color:'#7fb236', range:1850, dmg:58, cooldown:2, gutsCost:24, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' }
+  ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -516,6 +525,7 @@ const MONSTER_AURA = {
   mocchi:'red', suezo:'yellow', phoenix:'red', fire:'red', aqua:'blue', leaf:'green',
   spark:'blue', rock:'black', ark:'green', warm:'yellow', illumine:'black',
   fox:'white', god:'white', zan:'black', pixie:'red',
+  dullahan:'white', /*@dullahan*/
   // <<AUTO:MONSTER_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
@@ -535,6 +545,7 @@ const MOVE_AURA = {
   'ストレート':'white','ホーリーサンダー':'yellow','ゴッドライジング':'white',
   'ソニックナイフ':'black','フォルターブリッツ':'yellow','ダークホウスト':'black',
   'キッス':'red','ライトニング':'yellow','ビッグバン':'black',
+  'まっぷたつ':'white','ダッシュ斬り':'white','最終奥義':'white', /*@dullahan*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1013,6 +1024,7 @@ const APTITUDE = {
   zan:     { life:'C', power:'B', wisdom:'D', accuracy:'C', evasion:'A', vitality:'D' },
   // ピクシー: 高速・低耐久のグラスキャノン想定でevasion(速さ)を最高、life/vitality(HP・耐久)を最低に
   pixie:   { life:'E', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'E' },
+  dullahan:{ life:'C', power:'B', wisdom:'C', accuracy:'C', evasion:'E', vitality:'A' }, /*@dullahan*/
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
@@ -1742,6 +1754,7 @@ const SKIN_CONFIG = {
   god:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白いローブ部分
   zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:238, window:95} },   // メインのグレー(青みがかった)ボディ部分
   pixie:   { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:349, window:50} },   // 赤い部分
+  dullahan:{ colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:30, window:60} }, /*@dullahan*/
   // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)

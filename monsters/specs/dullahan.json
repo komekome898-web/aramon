@@ -1,0 +1,56 @@
+{
+  "key": "dullahan",
+  "label": "デュラハン",
+  "color": "#7fb236",
+  "dark": "#4f6f1f",
+  "speed": 160,
+  "hp": 120,
+  "trait": "dullahan",
+  "traitDesc": "被ダメ0.8倍、相手に近いほど技ダメが上がる",
+  "aura": "white",
+  "aptitude": {
+    "life": "C",
+    "power": "B",
+    "wisdom": "C",
+    "accuracy": "C",
+    "evasion": "E",
+    "vitality": "A"
+  },
+  "skin": {
+    "colors": [
+      "black",
+      "white",
+      "red",
+      "blue",
+      "yellow"
+    ],
+    "source": {
+      "type": "chroma",
+      "hue": 30,
+      "window": 60
+    }
+  },
+  "moves": [
+    {
+      "name": "まっぷたつ",
+      "icon": "🗡️"
+    },
+    {
+      "name": "ダッシュ斬り",
+      "icon": "🗡️"
+    },
+    {
+      "name": "最終奥義",
+      "template": "sword"
+    }
+  ],
+  "walk": {
+    "front": "assets/dullahan/front.mp4",
+    "back": "assets/dullahan/back.mp4",
+    "source": "video",
+    "mode": "blackopen"
+  },
+  "images": {
+    "icon": "assets/dullahan/icon.png"
+  }
+}

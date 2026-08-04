@@ -12,6 +12,7 @@ const TRAIT_DESC = {
   gutsbreak:  '与えたダメージの40%分 相手のガッツを削る',
   godrange:   '全ての技の射程が長い・技の消費ガッツ-12.5%',
   nimble:     '移動速度1.2倍',
+  dullahan:   '被ダメ0.8倍、相手に近いほど技ダメが上がる', /*@dullahan*/
   // <<AUTO:TRAIT_DESC>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 function stateTriggerText(sc){
