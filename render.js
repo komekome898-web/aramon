@@ -3530,17 +3530,18 @@ const KAGUNE_ARC_COL = '#b45cff';    // 帯びるビリビリの色(紫)
 function fx3dKagune(ae, curReach, fade, progress){
   const col = ae.auraTint || ae.color;
   const sh = auraShades(col);
+  const groove = _mixHex(sh.dark, '#000000', 0.6); // 硬い節目・輪郭の溝色(半透明にしない)
   const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
   const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
   const band = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
-  if(band) fx3dFill(band, sh.dark, 0.22*fade, 0);   // 足元の血だまり
+  if(band) fx3dFill(band, sh.dark, 0.22*fade, 0);   // 足元の血だまり(地面の飾りなのでここだけ半透明のまま)
   for(let k=0;k<KAGUNE_N;k++){
     const h1 = fxHash01(ae.id*5.3 + k*7.7), h2 = fxHash01(ae.id*9.1 + k*3.3);
     // 触手ごとに横位置と、うねりの速さ・向きを変える
     const lat0 = ((k+0.5)/KAGUNE_N*2-1) * ae.width*0.42;
     const wob  = 1.6 + h1*1.8, ph = h2*6.28, dirn = (k%2 ? 1 : -1);
     const reach = curReach*(0.72 + 0.28*h1);       // 先端の伸び方に差を付ける
-    const rBase = ae.width*0.085*(0.8+0.4*h2);
+    const rBase = ae.width*0.062*(0.8+0.4*h2);     // 従来より細身にする
     const pts=[], wid=[];
     for(let i=0;i<=KAGUNE_SEG;i++){
       const t = i/KAGUNE_SEG;
@@ -3550,102 +3551,98 @@ function fx3dKagune(ae, curReach, fade, progress){
       const sway = Math.sin(t*wob*Math.PI + ph + matchTime*3.4*dirn) * ae.width*0.16*t;
       const lat  = lat0*(1-t*0.45) + sway;
       const x = ae.x+fx*along+rx*lat, y = ae.y+fy*along+ry*lat;
-      // 足元(t=0)から立ち上がり、中ほどは持ち上がったまま、先端で地面へ潜る。
-      // 素直な sin だと途中で寝てしまうので、指数を掛けて上がりを早く・保ちを長くする
       const dz = KAGUNE_H*Math.pow(Math.sin(Math.PI*t), 0.65)*(0.55+0.45*h1);
       const p = fx3dPoint(x, y, dz);
       if(!p) continue;
       pts.push(p);
-      wid.push(rBase*(1-t*0.8)*Math.min(1, progress*3));
+      // 指数を強めて早めに絞り込み、刺さると痛そうな鋭い先細り形状にする
+      wid.push(rBase*Math.pow(Math.max(0,1-t), 1.6)*Math.min(1, progress*3));
     }
-    if(pts.length<2) continue;
-    // 背骨に沿って太さを持たせた帯にする(画面上の法線でふくらませる)。
-    // 法線は鱗を貼る向きにも使うので取っておく。
-    const left=[], right=[], normals=[];
+    if(pts.length<3) continue;
+    const normals=[];
     for(let i=0;i<pts.length;i++){
       const a = pts[Math.max(0,i-1)], b = pts[Math.min(pts.length-1,i+1)];
       let nx = -(b.y-a.y), ny = (b.x-a.x);
       const L = Math.hypot(nx,ny) || 1;
       nx/=L; ny/=L;
       normals.push({ nx, ny });
-      const w = wid[i]*(pts[i].scale||1);
-      left.push({ x:pts[i].x+nx*w, y:pts[i].y+ny*w });
-      right.push({ x:pts[i].x-nx*w, y:pts[i].y-ny*w });
     }
-    const poly = left.concat(right.reverse());
-    // 血肉のような不透明な実体(背景が透けないよう一度で塗り切る)
-    fx3dFill(poly, sh.dark, Math.min(1, 0.97*fade), 0);
-    // 縁取りで輪郭をはっきりさせる(半透明にせず実体として読めるようにする)
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, 0.9*fade);
-    ctx.strokeStyle = _hexA(sh.dark, 1);
-    ctx.lineWidth = Math.max(1, (wid[1]||wid[0]||2)*0.35);
-    ctx.lineJoin='round';
-    ctx.beginPath();
-    ctx.moveTo(poly[0].x, poly[0].y);
-    for(let i=1;i<poly.length;i++) ctx.lineTo(poly[i].x, poly[i].y);
-    ctx.closePath();
-    ctx.stroke();
-    ctx.restore();
-    // 表面の鱗(魚鱗状に重ねて描く。硬い鎧鱗のような質感にするため、
-    // 鱗同士の境目を黒に近い溝でくっきり分け、鱗本体はグラデーションで丸みのある照りを出す)。
-    if(!renderHeavyLoad){
-      const groove = _mixHex(sh.dark, '#000000', 0.55); // 鱗の継ぎ目(硬い輪郭)
-      for(let i=pts.length-1;i>=1;i--){
-        const w = wid[i]*(pts[i].scale||1);
-        if(w < 1.4) continue;
-        const nrm = normals[i];
-        const tx0 = pts[i].x-pts[i-1].x, ty0 = pts[i].y-pts[i-1].y;
-        const tl = Math.hypot(tx0,ty0) || 1;
-        const ang = Math.atan2(ty0/tl, tx0/tl);
-        for(let c=-1;c<=1;c++){
-          const h3 = fxHash01(ae.id*4.1 + k*11.3 + i*2.7 + c*1.9);
-          const off = c*w*0.58;
-          const cx = pts[i].x + nrm.nx*off, cy = pts[i].y + nrm.ny*off;
-          const rw = w*(0.52+0.1*h3), rh = w*(0.4+0.08*h3);
-          ctx.save();
-          ctx.globalAlpha = Math.min(1, 0.95*fade);
-          ctx.translate(cx, cy);
-          ctx.rotate(ang);
-          // 硬い輪郭(黒に近い溝)をひと回り大きく先に敷いて、鱗と鱗の境目をはっきりさせる
-          ctx.beginPath();
-          ctx.ellipse(0, 0, rw*1.16, rh*1.16, 0, 0, Math.PI*2);
-          ctx.fillStyle = _hexA(groove, 1);
-          ctx.fill();
-          // 鱗本体: 左上を明るく右下を暗くしたグラデーションで、硬く丸い甲殻の照りを表現
-          const grad = ctx.createRadialGradient(-rw*0.35, -rh*0.45, rw*0.1, 0, 0, rw*1.05);
-          grad.addColorStop(0, _hexA(sh.bright, 0.95));
-          grad.addColorStop(0.35, _hexA(((i+c)&1) ? sh.mid : sh.dark, 1));
-          grad.addColorStop(1, _hexA(groove, 1));
-          ctx.beginPath();
-          ctx.ellipse(0, 0, rw, rh, 0, 0, Math.PI*2);
-          ctx.fillStyle = grad;
-          ctx.fill();
-          // 小さな鋭いハイライト(ぬめりではなく硬い甲殻の反射に見せる点光)
-          ctx.beginPath();
-          ctx.ellipse(-rw*0.32, -rh*0.4, rw*0.22, rh*0.16, -0.4, 0, Math.PI*2);
-          ctx.fillStyle = _hexA('#ffffff', 0.55);
-          ctx.fill();
-          ctx.restore();
-        }
+    // 本体: 区間(輪切り)ごとに断面グラデーションを塗り、鱗を粒として置かず
+    // "表面"そのものに硬い甲殻の丸み・節目を表現する。全区間、完全不透明。
+    const ringGap = 2;
+    for(let i=1;i<pts.length;i++){
+      const w0 = wid[i-1]*(pts[i-1].scale||1), w1 = wid[i]*(pts[i].scale||1);
+      if(w1 < 0.6 && w0 < 0.6) continue;
+      const n0 = normals[i-1], n1 = normals[i];
+      const l0 = { x:pts[i-1].x+n0.nx*w0, y:pts[i-1].y+n0.ny*w0 };
+      const r0 = { x:pts[i-1].x-n0.nx*w0, y:pts[i-1].y-n0.ny*w0 };
+      const l1 = { x:pts[i].x+n1.nx*w1,   y:pts[i].y+n1.ny*w1 };
+      const r1 = { x:pts[i].x-n1.nx*w1,   y:pts[i].y-n1.ny*w1 };
+      const grad = ctx.createLinearGradient(l1.x, l1.y, r1.x, r1.y);
+      grad.addColorStop(0,    _hexA(groove, 1));
+      grad.addColorStop(0.28, _hexA(sh.bright, 1));
+      grad.addColorStop(0.55, _hexA(sh.mid, 1));
+      grad.addColorStop(1,    _hexA(groove, 1));
+      ctx.beginPath();
+      ctx.moveTo(l0.x,l0.y); ctx.lineTo(l1.x,l1.y); ctx.lineTo(r1.x,r1.y); ctx.lineTo(r0.x,r0.y);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+      // 硬い節目(粒鱗ではなく、輪切りの継ぎ目として本体表面に直接刻む)
+      if(i % ringGap === 0 && w1 > 1.2){
+        ctx.strokeStyle = _hexA(groove, 1);
+        ctx.lineWidth = Math.max(1, w1*0.24);
+        ctx.beginPath();
+        ctx.moveTo(l1.x, l1.y);
+        ctx.lineTo(r1.x, r1.y);
+        ctx.stroke();
       }
     }
-    // ぬめった照り返し(芯を細く明るく)
+    // 輪郭線(半透明にせず、太くはっきりした黒縁で硬さを強調)
     ctx.save();
-    ctx.globalAlpha = 0.5*fade;
-    ctx.strokeStyle = _hexA(sh.bright, 0.85);
-    ctx.lineWidth = Math.max(0.8, (wid[0]||2)*(pts[0].scale||1)*0.32);
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
+    ctx.strokeStyle = _hexA(groove, 1);
+    ctx.lineWidth = Math.max(1.4, (wid[1]||wid[0]||2)*0.4);
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    for(let i=1;i<pts.length;i++){
+      const w0 = wid[i-1]*(pts[i-1].scale||1), w1 = wid[i]*(pts[i].scale||1);
+      const n0 = normals[i-1], n1 = normals[i];
+      ctx.beginPath();
+      ctx.moveTo(pts[i-1].x+n0.nx*w0, pts[i-1].y+n0.ny*w0);
+      ctx.lineTo(pts[i].x+n1.nx*w1, pts[i].y+n1.ny*w1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pts[i-1].x-n0.nx*w0, pts[i-1].y-n0.ny*w0);
+      ctx.lineTo(pts[i].x-n1.nx*w1, pts[i].y-n1.ny*w1);
+      ctx.stroke();
+    }
     ctx.restore();
-    // 紫のビリビリ。触手に沿って何本か枝分かれさせる
+    // 先端: 刺さると痛そうな鋭い針状の切っ先を追加で伸ばす
+    const lastI = pts.length-1;
+    if(lastI>=1){
+      const tdx = pts[lastI].x-pts[lastI-1].x, tdy = pts[lastI].y-pts[lastI-1].y;
+      const tl = Math.hypot(tdx,tdy)||1;
+      const baseW = (wid[lastI]||wid[lastI-1]||2)*(pts[lastI].scale||1);
+      const tipLen = baseW*2.8 + 7;
+      const tipX = pts[lastI].x + (tdx/tl)*tipLen, tipY = pts[lastI].y + (tdy/tl)*tipLen;
+      const nrmTip = normals[lastI];
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pts[lastI].x+nrmTip.nx*baseW, pts[lastI].y+nrmTip.ny*baseW);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(pts[lastI].x-nrmTip.nx*baseW, pts[lastI].y-nrmTip.ny*baseW);
+      ctx.closePath();
+      ctx.fillStyle = _hexA(sh.bright, 1);
+      ctx.fill();
+      ctx.strokeStyle = _hexA(groove, 1);
+      ctx.lineWidth = Math.max(0.9, baseW*0.3);
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 紫のビリビリ。触手に沿って何本か枝分かれさせる(ぼかしはかけず、線のまま)
     if(!renderHeavyLoad){
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.75*fade;
       ctx.lineCap = 'round';
       for(let a=0;a<2;a++){
         const seed = Math.floor(matchTime*22) + k*13 + a*5;
@@ -3655,7 +3652,7 @@ function fx3dKagune(ae, curReach, fade, progress){
           const j = (fxHash01(seed + i*3.7)-0.5) * (wid[i]||2) * 4;
           ctx.lineTo(pts[i].x + j, pts[i].y + j*0.5);
         }
-        ctx.strokeStyle = _hexA(a ? '#ffffff' : KAGUNE_ARC_COL, a ? 0.5 : 0.95);
+        ctx.strokeStyle = _hexA(a ? '#ffffff' : KAGUNE_ARC_COL, a ? 0.6 : 1);
         ctx.lineWidth = a ? 1 : 2;
         ctx.stroke();
       }
