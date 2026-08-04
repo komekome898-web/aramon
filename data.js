@@ -411,7 +411,8 @@ const SIGNATURE_MOVES = {
   rock: [
     { name:'ロケットパンチ',       tier:1, color:'#a98a68', range:600,  dmg:28, cooldown:0.95, gutsCost:8, projSpeed:440, hitR:14, splash:78, icon:'👊🏿' },
     { name:'掌打',   tier:2, color:'#a98a68', range:1200, dmg:15, cooldown:1.3, gutsCost:16, projSpeed:380, hitR:9,  burst:3, burstGap:0.14, icon:'🤚🏿' },
-    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:62, cooldown:2.4, gutsCost:24, projSpeed:520, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true },
+    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:21, cooldown:2.4, gutsCost:24, projSpeed:520, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true,
+      burst:3, burstGap:0, burstSpread:0, burstSideStep:105 }, // 超番長ボーナスと同じ3本構成(色・エフェクトはそのまま)。1本あたりのdmgは合計が旧来の62相当になるよう調整
   ],
   phoenix: [
     { name:'火炎砲',     tier:1, color:'#e8432a', range:725,  dmg:25, cooldown:0.82, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🔥' },
@@ -714,6 +715,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-04', items:[
+    { t:'轟金剛tier3「超番長ボーナス」・ゴーレムtier3「竜巻アタック」の3本の竜巻について、根元の当たり判定が薄く抜けやすかった不具合を調整しました(竜巻アタックも超番長ボーナスと同じ3本構成になりました。合計威力は変更していません)', g:['balance'] },
     { t:'スキンガチャで轟金剛(SSR)ピックアップを実施中！ SSR排出率2%のうち轟金剛1%・他SSR合算1%(ノーマルは58%に調整)', g:['balance','general'] },
     { t:'SSR轟金剛の実装を記念して、ログインすると特別ポップアップとダイヤ500個をプレゼントします(お一人様1回)', g:['general'] },
     { t:'スキンカタログ・シーズンパス報酬から轟金剛(SSR)を初獲得したとき、専用の昇格演出が発生しない不具合を修正しました', g:['fix','av'] },

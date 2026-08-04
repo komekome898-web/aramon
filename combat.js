@@ -1128,7 +1128,8 @@ function updateProjectiles(dt){
     }
     if(p.growWithDistance){
       const growT = clamp(p.traveled/Math.max(p.maxRange,1), 0, 1);
-      p.hitR = p.baseHitR * (1 + growT*1.8); // 飛距離が伸びるほど最大で約2.8倍まで巨大化
+      // 根元(発射直後)から太さを確保しつつ、伸びきった先端は従来と同じ最大2.8倍になるようにする
+      p.hitR = p.baseHitR * (1.6 + growT*1.2);
     }
     let hit=false;
     if(p.traveled >= p.maxRange) hit=true;
