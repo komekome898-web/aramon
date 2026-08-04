@@ -1877,23 +1877,34 @@ function gachaAnimFrame(now){
     g.restore();
   };
   if(gachaAnim.phase==='idle'){
-    // 白く光る円盤石
-    const pulse = 0.4+0.3*Math.sin(now/380);
-    drawDisk(0, pulse, '#ffffff');
-    // 時計回りの回転矢印
-    g.save(); g.translate(cx,cy);
-    const ar = diskR*1.42, a0 = (now/600)%(Math.PI*2);
-    g.strokeStyle='rgba(255,230,150,0.9)'; g.lineWidth=5; g.lineCap='round';
-    g.beginPath(); g.arc(0,0,ar, a0, a0+Math.PI*1.4); g.stroke();
-    const ae=a0+Math.PI*1.4, ax=Math.cos(ae)*ar, ay=Math.sin(ae)*ar;
-    g.translate(ax,ay); g.rotate(ae+Math.PI/2);
-    g.fillStyle='rgba(255,230,150,0.95)'; g.beginPath(); g.moveTo(0,-11); g.lineTo(9,6); g.lineTo(-9,6); g.closePath(); g.fill();
-    g.restore();
-    // 「回せ！」
-    g.save(); g.textAlign='center'; g.font=`bold ${Math.round(Math.min(w,h)*0.09)}px 'Rajdhani',sans-serif`;
-    g.fillStyle='#fff'; g.shadowBlur=14; g.shadowColor='rgba(255,200,80,0.9)';
-    g.fillText('回せ！', cx, cy - diskR*1.9);
-    g.restore();
+    if(imgIsReady(gachaPickupPromoImg)){
+      // 轟金剛ピックアップ告知画像を背景として表示(下のボタン/ゲージ等はDOM側なので位置は変わらない)
+      const iw = gachaPickupPromoImg.naturalWidth || 1364, ih = gachaPickupPromoImg.naturalHeight || 768;
+      const pulse = 1 + 0.012*Math.sin(now/700);
+      const scale = Math.min((w*0.94)/iw, (h*0.78)/ih) * pulse;
+      const dw = iw*scale, dh = ih*scale;
+      g.save();
+      g.shadowBlur = 26 + 8*Math.sin(now/700); g.shadowColor = 'rgba(244,196,48,0.55)';
+      g.globalAlpha = 0.96;
+      g.drawImage(gachaPickupPromoImg, cx-dw/2, cy-dh/2, dw, dh);
+      g.restore();
+    } else {
+      // 画像未読込時の保険: 従来の白く光る円盤石+「回せ！」を出す
+      const pulse = 0.4+0.3*Math.sin(now/380);
+      drawDisk(0, pulse, '#ffffff');
+      g.save(); g.translate(cx,cy);
+      const ar = diskR*1.42, a0 = (now/600)%(Math.PI*2);
+      g.strokeStyle='rgba(255,230,150,0.9)'; g.lineWidth=5; g.lineCap='round';
+      g.beginPath(); g.arc(0,0,ar, a0, a0+Math.PI*1.4); g.stroke();
+      const ae=a0+Math.PI*1.4, ax=Math.cos(ae)*ar, ay=Math.sin(ae)*ar;
+      g.translate(ax,ay); g.rotate(ae+Math.PI/2);
+      g.fillStyle='rgba(255,230,150,0.95)'; g.beginPath(); g.moveTo(0,-11); g.lineTo(9,6); g.lineTo(-9,6); g.closePath(); g.fill();
+      g.restore();
+      g.save(); g.textAlign='center'; g.font=`bold ${Math.round(Math.min(w,h)*0.09)}px 'Rajdhani',sans-serif`;
+      g.fillStyle='#fff'; g.shadowBlur=14; g.shadowColor='rgba(255,200,80,0.9)';
+      g.fillText('回せ！', cx, cy - diskR*1.9);
+      g.restore();
+    }
   } else if(gachaAnim.phase==='spin'){
     // 加速回転しながらレアリティ色に光る(回転時間は従来の倍)
     const p = Math.min(1, elapsed/2.4);

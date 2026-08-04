@@ -678,6 +678,13 @@
   .gacha-screen{ position:absolute; inset:0; display:flex; flex-direction:column; padding:8px 14px 10px; }
   .gacha-top{ display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
   .gacha-title{ font-family:'Russo One',sans-serif; font-size:18px; color:var(--ink); }
+  /* ピックアップ表記だけ虹色に光らせて目立たせる(SSR演出と同じ虹グラデーション) */
+  .gacha-title-pickup{
+    margin-left:2px;
+    background:linear-gradient(90deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
+    background-size:200% 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent;
+    animation:resultRainbow 3s linear infinite;
+  }
   .gacha-top-right{ display:flex; align-items:center; gap:10px; }
   .gacha-dia{ font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--ink); }
   .gacha-rates-btn{ padding:6px 12px; border-radius:16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;

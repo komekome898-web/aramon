@@ -208,6 +208,12 @@ Object.keys(ELEMENTS).forEach(key=>{
 // 召喚演出のスポーン円盤石(画像)。ガチャ演出用に厚み(立体)を焼き込んだ版も持つ
 const summonDiskImg = loadMonsterImage('summon_disk');
 const summonDiskThickImg = loadMonsterImage('summon_disk_thick');
+// スキンガチャ画面のidle演出用(轟金剛ピックアップ告知画像。拡張子.jpegで配備されている)
+const gachaPickupPromoImg = new Image();
+gachaPickupPromoImg.loaded = false; gachaPickupPromoImg.failed = false; gachaPickupPromoImg.decoding = 'async';
+gachaPickupPromoImg.onload = ()=>{ gachaPickupPromoImg.loaded = true; };
+gachaPickupPromoImg.onerror = ()=>{ gachaPickupPromoImg.failed = true; };
+gachaPickupPromoImg.src = 'promo_rock_ssr.jpeg';
 // SSRスキンの手描き画像(アイコン=正面 / 試合用=後ろ姿)。
 // 実体は SSR_SKINS の宣言直後に自動生成する(この位置では SSR_SKINS がまだTDZなので中身は入れない)。
 const ssrSkinImages = {};
@@ -708,6 +714,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-04', items:[
+    { t:'スキンガチャで轟金剛(SSR)ピックアップを実施中！ SSR排出率2%のうち轟金剛1%・他SSR合算1%(ノーマルは58%に調整)', g:['balance','general'] },
     { t:'SSR轟金剛の実装を記念して、ログインすると特別ポップアップとダイヤ500個をプレゼントします(お一人様1回)', g:['general'] },
     { t:'スキンカタログ・シーズンパス報酬から轟金剛(SSR)を初獲得したとき、専用の昇格演出が発生しない不具合を修正しました', g:['fix','av'] },
     { t:'轟金剛を獲得したときの専用BGM(bgm_gokongo_lastbattle.mp3)が読み込み未完了で無音になっていた不具合を修正しました', g:['fix','av'] },
@@ -1677,10 +1684,10 @@ const GACHA_COST_DIA_TEN = 50;    // 10連ガチャ
    SSR スペシャルスーパーレア(虹) = 特別スキン(ヒノトリ「フェニックス」)
 ===================================================================== */
 const RARITIES = {
-  N:   { label:'N',   jp:'ノーマル',          color:'#b07a4f', rate:59 },
+  N:   { label:'N',   jp:'ノーマル',          color:'#b07a4f', rate:58 },
   R:   { label:'R',   jp:'レア',              color:'#c9ccd6', rate:30 },
   SR:  { label:'SR',  jp:'スーパーレア',       color:'#ffcf3f', rate:10 },
-  SSR: { label:'SSR', jp:'スペシャルスーパーレア', color:'rainbow', rate:1 },
+  SSR: { label:'SSR', jp:'スペシャルスーパーレア', color:'rainbow', rate:2 }, // 内訳: 轟金剛1% + 他SSR合算1%(pickGachaSsrSkinId)
 };
 // 10連ガチャの10連目(SR以上確定枠)の内訳
 const GUARANTEED_SLOT_RATES = { SR:90, SSR:10 };
@@ -1809,6 +1816,14 @@ function weightedPickRarity(guaranteedSRplus){
   for(const [k,w] of entries){ r-=w; if(r<0) return k; }
   return entries[0][0];
 }
+// SSR内の内訳抽選(ピックアップ): SSR全体2%のうち、轟金剛が1%・他SSR合算が1%になるよう
+// SSR枠に入った時点で五分五分に振り、外れた方は他SSRの中から均等に選ぶ
+const GACHA_PICKUP_SSR = 'rock_ssr';
+function pickGachaSsrSkinId(){
+  const others = gachaSsrSkinIds().filter(id=>id!==GACHA_PICKUP_SSR);
+  if(others.length===0) return GACHA_PICKUP_SSR; // 他SSRが無ければ常に轟金剛
+  return Math.random()<0.5 ? GACHA_PICKUP_SSR : pickRandom(others);
+}
 function pickRandom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 // 1回分の抽選結果を返す。{rarity, kind:'item'|'skin', key?, skinId?}
 function gachaRollOne(guaranteedSRplus){
@@ -1816,7 +1831,7 @@ function gachaRollOne(guaranteedSRplus){
   if(rarity==='N') return { rarity, kind:'item', key: pickRandom(GACHA_N_ITEMS) };
   if(rarity==='R') return { rarity, kind:'item', key: pickRandom(GACHA_R_ITEMS) };
   if(rarity==='SR') return { rarity, kind:'skin', skinId: pickRandom(allColorSkinIds()) };
-  return { rarity:'SSR', kind:'skin', skinId: pickRandom(gachaSsrSkinIds()) };
+  return { rarity:'SSR', kind:'skin', skinId: pickGachaSsrSkinId() };
 }
 // 提供割合表示用: レアリティ別 & アイテム別の割合(%)を算出
 function gachaRateTable(){
@@ -1824,7 +1839,11 @@ function gachaRateTable(){
   const perItem = (rarity, n)=> RARITIES[rarity].rate / n;
   // 高いレアリティ順(SSR→SR→R→N)で表示する(シーズン限定SSRはガチャに出ないので除外)
   const ssrIds = gachaSsrSkinIds();
-  rows.push({ rarity:'SSR', items: ssrIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SSR', ssrIds.length) })) });
+  const otherSsrIds = ssrIds.filter(id=>id!==GACHA_PICKUP_SSR);
+  rows.push({ rarity:'SSR', items: ssrIds.map(id=>({
+    label: skinMeta(id).name,
+    pct: id===GACHA_PICKUP_SSR ? RARITIES.SSR.rate/2 : (otherSsrIds.length ? RARITIES.SSR.rate/2/otherSsrIds.length : 0),
+  })) });
   const srIds = allColorSkinIds();
   rows.push({ rarity:'SR', items: srIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SR', srIds.length) })) });
   rows.push({ rarity:'R', items: GACHA_R_ITEMS.map(k=>({ label:`${PLAYER_ITEMS[k].icon} ${PLAYER_ITEMS[k].name}`, pct: perItem('R', GACHA_R_ITEMS.length) })) });
