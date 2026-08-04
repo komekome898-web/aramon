@@ -3587,9 +3587,10 @@ function fx3dKagune(ae, curReach, fade, progress){
     ctx.closePath();
     ctx.stroke();
     ctx.restore();
-    // 表面の鱗(魚鱗状に重ねて描く。ザラついた実体の質感を出す)。
-    // 先端側から描くことで、根元側の鱗が先端側の縁を覆う(実物の鱗の重なりと同じ)。
+    // 表面の鱗(魚鱗状に重ねて描く。硬い鎧鱗のような質感にするため、
+    // 鱗同士の境目を黒に近い溝でくっきり分け、鱗本体はグラデーションで丸みのある照りを出す)。
     if(!renderHeavyLoad){
+      const groove = _mixHex(sh.dark, '#000000', 0.55); // 鱗の継ぎ目(硬い輪郭)
       for(let i=pts.length-1;i>=1;i--){
         const w = wid[i]*(pts[i].scale||1);
         if(w < 1.4) continue;
@@ -3601,18 +3602,30 @@ function fx3dKagune(ae, curReach, fade, progress){
           const h3 = fxHash01(ae.id*4.1 + k*11.3 + i*2.7 + c*1.9);
           const off = c*w*0.58;
           const cx = pts[i].x + nrm.nx*off, cy = pts[i].y + nrm.ny*off;
-          const rw = w*(0.5+0.1*h3), rh = w*(0.36+0.08*h3);
+          const rw = w*(0.52+0.1*h3), rh = w*(0.4+0.08*h3);
           ctx.save();
-          ctx.globalAlpha = Math.min(1, 0.9*fade);
+          ctx.globalAlpha = Math.min(1, 0.95*fade);
           ctx.translate(cx, cy);
           ctx.rotate(ang);
+          // 硬い輪郭(黒に近い溝)をひと回り大きく先に敷いて、鱗と鱗の境目をはっきりさせる
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rw*1.16, rh*1.16, 0, 0, Math.PI*2);
+          ctx.fillStyle = _hexA(groove, 1);
+          ctx.fill();
+          // 鱗本体: 左上を明るく右下を暗くしたグラデーションで、硬く丸い甲殻の照りを表現
+          const grad = ctx.createRadialGradient(-rw*0.35, -rh*0.45, rw*0.1, 0, 0, rw*1.05);
+          grad.addColorStop(0, _hexA(sh.bright, 0.95));
+          grad.addColorStop(0.35, _hexA(((i+c)&1) ? sh.mid : sh.dark, 1));
+          grad.addColorStop(1, _hexA(groove, 1));
           ctx.beginPath();
           ctx.ellipse(0, 0, rw, rh, 0, 0, Math.PI*2);
-          ctx.fillStyle = _hexA(((i+c)&1) ? sh.mid : sh.dark, 1);
+          ctx.fillStyle = grad;
           ctx.fill();
-          ctx.lineWidth = Math.max(0.5, w*0.045);
-          ctx.strokeStyle = _hexA(sh.bright, 0.4);
-          ctx.stroke();
+          // 小さな鋭いハイライト(ぬめりではなく硬い甲殻の反射に見せる点光)
+          ctx.beginPath();
+          ctx.ellipse(-rw*0.32, -rh*0.4, rw*0.22, rh*0.16, -0.4, 0, Math.PI*2);
+          ctx.fillStyle = _hexA('#ffffff', 0.55);
+          ctx.fill();
           ctx.restore();
         }
       }
