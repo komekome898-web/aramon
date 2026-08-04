@@ -1722,6 +1722,14 @@ function incrementGachaCount(n){
   saveGachaCount(c);
   return granted;
 }
+// タイトル画面ではなくロビー(#startScreen)が表示されている時だけポップアップを出す。
+// 未表示ならここでは何もせず、pending扱いのままにしておく(enterLobby()等から呼び直される)。
+function maybeFlushPendingPromoPopups(){
+  const startScr = document.getElementById('startScreen');
+  if(!startScr || startScr.classList.contains('hidden')) return; // まだタイトル画面など→ロビーに来るまで待つ
+  if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
+  if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1') showRockSsrPromoPopup();
+}
 // ===== スキンガチャ実装記念ポップアップ =====
 // このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
 const SKIN_PROMO_KEY = 'aramon_promo_skingacha_v1';       // 受け取り済み(アカウント同期)
@@ -1765,7 +1773,7 @@ function maybeShowSkinGachaPromo(){
   addWallet(0, SKIN_PROMO_DIA);                             // ダイヤ500個付与(saveWalletがsync予約)
   accountMarkDirty();                                       // フラグもサーバーへ同期
   updateAccountBar();
-  showSkinPromoPopup();
+  maybeFlushPendingPromoPopups();
   pushToast(`スキンガチャ実装記念！ 💎+${SKIN_PROMO_DIA}`);
 }
 document.getElementById('skinPromoCloseBtn').addEventListener('click', ()=>{
@@ -1775,12 +1783,12 @@ document.getElementById('skinPromoGachaBtn').addEventListener('click', ()=>{
   dismissSkinPromoPopup();
   openGachaScreen();
 });
-// SW自動リロード等で消えても、未確認(保留中)なら起動時に再表示する
-if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
+// SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
+maybeFlushPendingPromoPopups();
 
-// ===== SSR轟金剛実装記念ポップアップ(スキンガチャ実装記念と同じ仕組み) =====
-// このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
-const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // 受け取り済み(アカウント同期)
+// ===== SSR轟金剛実装記念ポップアップ =====
+// ログインしてロビーに来るたび毎回ポップアップを表示する。ダイヤ500個の付与だけは1アカウント1回のみ。
+const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // ダイヤ受け取り済み(アカウント同期)
 const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
 const ROCK_SSR_PROMO_DIA = 500;
 function showRockSsrPromoPopup(){
@@ -1794,14 +1802,18 @@ function dismissRockSsrPromoPopup(){
 }
 function maybeShowRockSsrPromo(){
   if(!accountState.loggedIn) return;                            // ログイン中のアカウントのみ
-  if(localStorage.getItem(ROCK_SSR_PROMO_KEY)==='1') return;     // 既に受け取り済みなら出さない
-  try{ localStorage.setItem(ROCK_SSR_PROMO_KEY,'1'); }catch(e){}
+  const alreadyGranted = localStorage.getItem(ROCK_SSR_PROMO_KEY)==='1';
+  if(!alreadyGranted){
+    // ダイヤ付与は1回のみ
+    try{ localStorage.setItem(ROCK_SSR_PROMO_KEY,'1'); }catch(e){}
+    addWallet(0, ROCK_SSR_PROMO_DIA);                            // ダイヤ500個付与(saveWalletがsync予約)
+    accountMarkDirty();                                          // フラグもサーバーへ同期
+    updateAccountBar();
+    pushToast(`SSR轟金剛実装記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
+  }
+  // ポップアップ自体はログインのたび毎回表示する
   try{ localStorage.setItem(ROCK_SSR_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
-  addWallet(0, ROCK_SSR_PROMO_DIA);                              // ダイヤ500個付与(saveWalletがsync予約)
-  accountMarkDirty();                                            // フラグもサーバーへ同期
-  updateAccountBar();
-  showRockSsrPromoPopup();
-  pushToast(`SSR轟金剛実装記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
+  maybeFlushPendingPromoPopups();
 }
 document.getElementById('rockSsrPromoCloseBtn').addEventListener('click', ()=>{
   dismissRockSsrPromoPopup();
@@ -1810,8 +1822,7 @@ document.getElementById('rockSsrPromoGachaBtn').addEventListener('click', ()=>{
   dismissRockSsrPromoPopup();
   openGachaScreen();
 });
-// SW自動リロード等で消えても、未確認(保留中)なら起動時に再表示する
-if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1') showRockSsrPromoPopup();
+// SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
 
 document.getElementById('openGachaBtn').addEventListener('click', openGachaScreen);
 document.getElementById('closeGachaBtn').addEventListener('click', ()=>{
@@ -5485,6 +5496,7 @@ function initTitleScreen(){
     if(typeof bgmSetTrack==='function') bgmSetTrack('title');
     scr.classList.add('fading');
     document.getElementById('startScreen').classList.remove('hidden');
+    if(typeof maybeFlushPendingPromoPopups==='function') maybeFlushPendingPromoPopups();
     setTimeout(()=>{ scr.classList.add('hidden'); }, 480);
   }
   scr.addEventListener('click', enterLobby);
