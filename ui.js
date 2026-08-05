@@ -2076,6 +2076,14 @@ const SSR_PROMOTION_MEDIA = {
     safetyMs: 23000,        // 動画+音声とも約22秒あるため、セーフティは長めに取る
     bgmOnReveal: 'gokongoLastBattle', // リビール時、元のBGMへ戻さずこちらへ切り替える(以後は次のbgmSetTrackまで継続)
   },
+  aqua_ssr: {
+    videoWebm: 'aqua_promote.webm', videoMp4: 'aqua_promote.mp4',
+    se: (typeof seAquaPromote!=='undefined') ? seAquaPromote : null,
+    ensureSe: (typeof ensureAquaPromoteSeBuffer==='function') ? ensureAquaPromoteSeBuffer : null,
+    skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
+    safetyMs: 17000,        // 動画+音声とも約15.6秒のため、セーフティは長めに取る
+    bgmOnReveal: null,      // リビール後のBGMは元のトラックへ戻す(轟金剛と違い専用曲への固定切替はしない)
+  },
 };
 function ssrPromotionMediaFor(skinId){
   return SSR_PROMOTION_MEDIA[skinId] || {
@@ -2185,6 +2193,16 @@ async function checkRockPromoteAssets(){
   const [v, vw, a] = await checkAssetUrls(['rock_promote.mp4', 'rock_promote.webm', 'rock_promote_audio.mp3']);
   console.log('[rockPromote] asset check:', v, '|', vw, '|', a);
   return { video: v, videoWebm: vw, audio: a };
+}
+async function checkAquaPromoteAssets(){
+  const [v, vw, a] = await checkAssetUrls(['aqua_promote.mp4', 'aqua_promote.webm', 'aqua_promote_audio.mp3']);
+  console.log('[aquaPromote] asset check:', v, '|', vw, '|', a);
+  return { video: v, videoWebm: vw, audio: a };
+}
+async function checkAquaBattleBgmAssets(){
+  const [b, f, l] = await checkAssetUrls(['bgm_aqua_battle.mp3', 'bgm_aqua_final5.mp3', 'bgm_aqua_lastbattle.mp3']);
+  console.log('[aquaBattleBgm] asset check:', b, '|', f, '|', l);
+  return { battle: b, final5: f, lastBattle: l };
 }
 document.getElementById('ssrPromoteTapImg').addEventListener('load', ()=>{
   ssrPromoteDebugLog('✅ タップ待ち画像 読み込み成功');
@@ -5263,6 +5281,9 @@ const BGM_TEST_ITEMS = [
   { id:'gokongoBattle',    label:'🎵 轟金剛・残り30〜6人' },
   { id:'gokongoFinal5',    label:'🎵 轟金剛・残り5〜3人' },
   { id:'gokongoLastBattle',label:'🎵 轟金剛・残り2人' },
+  { id:'aquaBattle',       label:'🎵 大喰いの利世・残り6人以上' },
+  { id:'aquaFinal5',       label:'🎵 大喰いの利世・残り5人以下' },
+  { id:'aquaLastBattle',   label:'🎵 大喰いの利世・残り2人' },
   { id:'shop',   label:'🎵 ショップ(動画音源)' },
   { id:'lobby',  label:'🎵 ロビー(いちか・実音源)' },
   { id:'training',label:'🎵 トレーニング(実音源)' },
@@ -5293,6 +5314,11 @@ function adminPlayBgm(id){
   if(id==='gokongoBattle' || id==='gokongoFinal5' || id==='gokongoLastBattle'){
     // 装備スキンや試合中かどうかに関係なく、専用曲そのものを確認できるようにする
     if(typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
+    if(typeof bgmSetTrack==='function') bgmSetTrack(id);
+    return;
+  }
+  if(id==='aquaBattle' || id==='aquaFinal5' || id==='aquaLastBattle'){
+    if(typeof ensureAquaBgmBuffers==='function') ensureAquaBgmBuffers();
     if(typeof bgmSetTrack==='function') bgmSetTrack(id);
     return;
   }
@@ -5418,6 +5444,27 @@ document.getElementById('adminRockPromoteCheckBtn').addEventListener('click', as
   runSsrPromotionSequence('rock_ssr', ()=>{
     showSsrReveal('rock_ssr', ()=>{ pushToast('🎬 轟金剛 演出確認 完了(BGMがgokongoLastBattleに切り替わっているはず)'); ssrPromoteDebugMode = false; });
   });
+});
+// 大喰いの利世専用の昇格演出(動画+約15.6秒音声→直接リビール)を確認するボタン
+document.getElementById('adminAquaPromoteCheckBtn').addEventListener('click', async ()=>{
+  const { video, videoWebm, audio } = await checkAquaPromoteAssets();
+  ssrPromoteDebugMode = true;
+  ssrPromoteDebugLines = [];
+  ssrPromoteDebugLog('--- 大喰いの利世 素材読み込み診断(cache:no-store) ---');
+  ssrPromoteDebugLog(video);
+  ssrPromoteDebugLog(videoWebm);
+  ssrPromoteDebugLog(audio);
+  if(typeof ensureAquaPromoteSeBuffer==='function') ensureAquaPromoteSeBuffer();
+  document.getElementById('closeAdminBtn').click();
+  openGachaScreen();
+  runSsrPromotionSequence('aqua_ssr', ()=>{
+    showSsrReveal('aqua_ssr', ()=>{ pushToast('🎬 大喰いの利世 演出確認 完了'); ssrPromoteDebugMode = false; });
+  });
+});
+// 大喰いの利世専用の試合中BGM3曲の素材読み込みを確認するボタン(音自体はBGM確認グリッドから再生)
+document.getElementById('adminAquaBattleBgmCheckBtn').addEventListener('click', async ()=>{
+  const { battle, final5, lastBattle } = await checkAquaBattleBgmAssets();
+  alert(`大喰いの利世 バトルBGM素材診断\n${battle}\n${final5}\n${lastBattle}`);
 });
 // 管理者画面のタブ切替(プレイ状況 / 音声確認)
 function adminShowTab(tab){
