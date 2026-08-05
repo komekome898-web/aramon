@@ -552,26 +552,6 @@ function drawMonsterShape(e, color, dark){
     }
   }
 }
-function drawElementBadge(e){
-  const r=e.radius;
-  ctx.save(); ctx.translate(0,-r*1.05);
-  ctx.beginPath(); ctx.arc(0,0,r*0.32,0,Math.PI*2);
-  ctx.fillStyle='#0c1118'; ctx.fill();
-  ctx.strokeStyle=ELEMENTS[e.element].color; ctx.lineWidth=1.6; ctx.stroke();
-  ctx.fillStyle=ELEMENTS[e.element].color;
-  const s=r*0.16;
-  switch(e.element){
-    case 'fire': ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(s*0.8,s*0.7); ctx.lineTo(-s*0.8,s*0.7); ctx.closePath(); ctx.fill(); break;
-    case 'aqua': ctx.beginPath(); ctx.moveTo(0,-s); ctx.quadraticCurveTo(s*0.9,s*0.5,0,s); ctx.quadraticCurveTo(-s*0.9,s*0.5,0,-s); ctx.fill(); break;
-    case 'leaf': ctx.beginPath(); ctx.ellipse(0,0,s*0.95,s*0.45,0.6,0,Math.PI*2); ctx.fill(); break;
-    case 'spark': ctx.beginPath(); ctx.moveTo(-s*0.3,-s); ctx.lineTo(s*0.5,-s*0.1); ctx.lineTo(0,0); ctx.lineTo(s*0.4,s); ctx.lineTo(-s*0.5,s*0.1); ctx.lineTo(0,0); ctx.closePath(); ctx.fill(); break;
-    case 'rock': ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(s*0.8,0); ctx.lineTo(0,s); ctx.lineTo(-s*0.8,0); ctx.closePath(); ctx.fill(); break;
-    case 'phoenix':
-      ctx.beginPath(); ctx.moveTo(0,-s*1.1); ctx.lineTo(s*0.85,s*0.35); ctx.lineTo(s*0.15,s*0.15); ctx.lineTo(0,s*0.9); ctx.lineTo(-s*0.15,s*0.15); ctx.lineTo(-s*0.85,s*0.35); ctx.closePath(); ctx.fill();
-      break;
-  }
-  ctx.restore();
-}
 function drawMonster(e,p){
   const el = ELEMENTS[e.element];
   // 召喚演出中: せり上がりはせず、光が収束するにつれてその場で姿を現す
@@ -1523,7 +1503,7 @@ function fxStyleCrescent(pr, r){
 const fxSevenImg = new Image();
 let fxSevenReady = false;
 fxSevenImg.onload = ()=>{ fxSevenReady = true; };
-fxSevenImg.src = './fx_seven.png';
+fxSevenImg.src = './images/fx_seven.png';
 const _fxSevenTint = {};
 function fxSevenSprite(hex){
   if(!fxSevenReady) return null;
@@ -2516,75 +2496,6 @@ function drawCrystal(c,p){
   ctx.fill(); ctx.stroke();
   ctx.shadowBlur=0;
   ctx.restore();
-}
-function rampCorners(b){
-  const rw = (b.rampSide===0||b.rampSide===1) ? b.hw*0.9 : b.hd*0.9;
-  if(b.rampSide===0){
-    const nearY=b.cy+b.hd, farY=nearY+b.rampLen;
-    return { nearA:{x:b.cx-rw,y:nearY,z:b.wallH}, nearB:{x:b.cx+rw,y:nearY,z:b.wallH}, farA:{x:b.cx-rw,y:farY,z:0}, farB:{x:b.cx+rw,y:farY,z:0} };
-  }
-  if(b.rampSide===1){
-    const nearY=b.cy-b.hd, farY=nearY-b.rampLen;
-    return { nearA:{x:b.cx-rw,y:nearY,z:b.wallH}, nearB:{x:b.cx+rw,y:nearY,z:b.wallH}, farA:{x:b.cx-rw,y:farY,z:0}, farB:{x:b.cx+rw,y:farY,z:0} };
-  }
-  if(b.rampSide===2){
-    const nearX=b.cx+b.hw, farX=nearX+b.rampLen;
-    return { nearA:{x:nearX,y:b.cy-rw,z:b.wallH}, nearB:{x:nearX,y:b.cy+rw,z:b.wallH}, farA:{x:farX,y:b.cy-rw,z:0}, farB:{x:farX,y:b.cy+rw,z:0} };
-  }
-  const nearX=b.cx-b.hw, farX=nearX-b.rampLen;
-  return { nearA:{x:nearX,y:b.cy-rw,z:b.wallH}, nearB:{x:nearX,y:b.cy+rw,z:b.wallH}, farA:{x:farX,y:b.cy-rw,z:0}, farB:{x:farX,y:b.cy+rw,z:0} };
-}
-function drawRamp(b){
-  const c = rampCorners(b);
-  const pNA=project(c.nearA.x,c.nearA.y,c.nearA.z), pNB=project(c.nearB.x,c.nearB.y,c.nearB.z);
-  const pFA=project(c.farA.x,c.farA.y,c.farA.z), pFB=project(c.farB.x,c.farB.y,c.farB.z);
-  if(!pNA||!pNB||!pFA||!pFB) return;
-  ctx.beginPath();
-  ctx.moveTo(pFA.x,pFA.y); ctx.lineTo(pFB.x,pFB.y); ctx.lineTo(pNB.x,pNB.y); ctx.lineTo(pNA.x,pNA.y); ctx.closePath();
-  ctx.fillStyle='#7d8aa0'; ctx.fill();
-  ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1.5; ctx.stroke();
-  ctx.strokeStyle='rgba(0,0,0,0.18)'; ctx.lineWidth=1;
-  for(let i=1;i<5;i++){
-    const t=i/5;
-    const a={x:lerp(c.nearA.x,c.farA.x,t), y:lerp(c.nearA.y,c.farA.y,t), z:lerp(c.nearA.z,c.farA.z,t)};
-    const bb={x:lerp(c.nearB.x,c.farB.x,t), y:lerp(c.nearB.y,c.farB.y,t), z:lerp(c.nearB.z,c.farB.z,t)};
-    const pa=project(a.x,a.y,a.z), pb=project(bb.x,bb.y,bb.z);
-    if(pa&&pb){ ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke(); }
-  }
-}
-function drawBuilding(b){
-  const showEast = camPos.x > b.cx + b.hw*0.2;
-  const showWest = camPos.x < b.cx - b.hw*0.2;
-  const showSouth = camPos.y > b.cy + b.hd*0.2;
-  const showNorth = camPos.y < b.cy - b.hd*0.2;
-  const c = {
-    nw:{x:b.cx-b.hw,y:b.cy-b.hd}, ne:{x:b.cx+b.hw,y:b.cy-b.hd},
-    se:{x:b.cx+b.hw,y:b.cy+b.hd}, sw:{x:b.cx-b.hw,y:b.cy+b.hd},
-  };
-  function wallPoly(c1,c2,shade){
-    const p1t=project(c1.x,c1.y,b.wallH), p2t=project(c2.x,c2.y,b.wallH);
-    const p1b=projectGround(c1.x,c1.y), p2b=projectGround(c2.x,c2.y);
-    if(!p1t||!p2t||!p1b||!p2b) return;
-    ctx.beginPath();
-    ctx.moveTo(p1b.x,p1b.y); ctx.lineTo(p2b.x,p2b.y); ctx.lineTo(p2t.x,p2t.y); ctx.lineTo(p1t.x,p1t.y); ctx.closePath();
-    ctx.fillStyle=shade; ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.5; ctx.stroke();
-  }
-  if(showSouth) wallPoly(c.sw, c.se, '#4a5566');
-  if(showNorth) wallPoly(c.nw, c.ne, '#4a5566');
-  if(showEast)  wallPoly(c.ne, c.se, '#546073');
-  if(showWest)  wallPoly(c.nw, c.sw, '#546073');
-
-  const rp = [c.nw,c.ne,c.se,c.sw].map(pt=>project(pt.x,pt.y,b.wallH));
-  if(rp.every(pt=>pt)){
-    ctx.beginPath();
-    ctx.moveTo(rp[0].x,rp[0].y);
-    for(let i=1;i<rp.length;i++) ctx.lineTo(rp[i].x,rp[i].y);
-    ctx.closePath();
-    ctx.fillStyle='#6b7790'; ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1.5; ctx.stroke();
-  }
-  drawRamp(b);
 }
 // 地面に貼り付く円は、地形の高さに沿わせる。
 // groundZAt() はリアルマップ(テスト)以外では常に0を返すので、他マップの見た目は変わらない。
@@ -3917,9 +3828,6 @@ function areaEffectAnchor(ae){
   }
   return null;
 }
-function drawAreaEffects(){
-  for(const ae of areaEffects) drawSingleAreaEffect(ae);
-}
 function drawSingleAreaEffect(ae){
     const elapsed = matchTime - ae.spawnAt;
     if(elapsed > ae.life) return;
@@ -4214,18 +4122,6 @@ function drawLavaZones(){
     ctx.restore();
   }
 }
-function terraceColor(style, shade){
-  if(style==='snow'){
-    // 白〜薄い水色の雪山
-    return `rgb(${Math.round(190+50*shade)},${Math.round(205+45*shade)},${Math.round(220+30*shade)})`;
-  }
-  if(style==='forest'){
-    // 深緑〜明るい緑の森
-    return `rgb(${Math.round(20+40*shade)},${Math.round(60+90*shade)},${Math.round(25+35*shade)})`;
-  }
-  // volcano(デフォルト): 焦げた茶〜赤茶の山肌
-  return `rgb(${Math.round(70+90*shade)},${Math.round(46+58*shade)},${Math.round(30+38*shade)})`;
-}
 // 円錐(火山)の面ごとの色。light=0.35(影)〜1.0(日向)。世界固定の光で面を陰影付けする
 function coneFacetColor(style, light){
   if(style==='snow')   return `rgb(${Math.round(150+95*light)},${Math.round(175+75*light)},${Math.round(200+50*light)})`;
@@ -4391,13 +4287,6 @@ function prepareMountainOccluders(){
    岩・木・水晶は3Dモデルになったのでこの処理は要らない(奥行きで正しく隠れる)。 */
 const OBSTACLE_VIEW_DIST = 2300;   // これより遠い建物は描かない
 const OBSTACLE_FADE_DIST = 1750;   // ここから薄くしていく
-function obstacleFade(x, y){
-  if(!real3dActive) return 1;
-  const d = Math.hypot(x-camPos.x, y-camPos.y);
-  if(d <= OBSTACLE_FADE_DIST) return 1;
-  if(d >= OBSTACLE_VIEW_DIST) return 0;
-  return 1 - (d-OBSTACLE_FADE_DIST)/(OBSTACLE_VIEW_DIST-OBSTACLE_FADE_DIST);
-}
 /* ---- リアルマップの障害物(3Dで描く) ----
    岩・木・水晶などはreal3d.jsが3Dモデルで描く。2D側は「同じ輪郭を destination-out で
    くり抜く」だけにする。くり抜くと、その障害物より前(=奥)に描かれたものだけが消えて
@@ -4522,7 +4411,6 @@ function perfEnabled(on){
   const el = document.getElementById('perfOverlay');
   if(el) el.classList.toggle('hidden', !perfOn);
 }
-function perfIsOn(){ return perfOn; }
 function perfFrameStart(now){
   // フレーム時間だけは常に測る(動的解像度がこれを見るため。コストはほぼゼロ)
   perf.prevFrame = perf.t0 ? (now - perf.t0) : 0;
@@ -4658,15 +4546,8 @@ function render(){
   if(introState.active) drawSummonIntro();
 
   const drawables = [];
-  // 建物・岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
+  // 岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
   for(const ae of areaEffects){ const p = areaEffectAnchor(ae); if(p) drawables.push({kind:'ae', obj:ae, p}); }
-  for(const b of buildings){
-    const bFade = obstacleFade(b.cx, b.cy);
-    if(bFade <= 0) continue;
-    const bRad = Math.hypot(b.hw||0, b.hd||0) + (b.rampLen||0); // 建物の外接半径(ランプ含む)
-    const p = projectObstacle(b.cx,b.cy,b.wallH*0.5, bRad);
-    if(p) drawables.push({kind:'building', obj:b, p, fade:bFade});
-  }
   for(const r of rocks){
     const fade = obstacleVisible(r.x, r.y, (r.height||r.radius)*0.5);
     if(fade <= 0) continue;
@@ -4729,7 +4610,6 @@ function render(){
     // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
     else if(d.kind==='rock'){ if(real3dActive) eraseObstacle(d.obj,d.p); else drawRock(d.obj,d.p); }
     else if(d.kind==='crystal'){ if(real3dActive) eraseObstacle(d.obj,d.p,'crystal'); else drawCrystal(d.obj,d.p); }
-    else if(d.kind==='building') drawBuilding(d.obj);
     else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
     else drawParticle(d.obj,d.p);
     if(faded) ctx.globalAlpha = 1;

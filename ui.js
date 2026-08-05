@@ -2069,7 +2069,7 @@ function ssrPromoteDebugLog(line){
 // 文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)
 const SSR_PROMOTION_MEDIA = {
   rock_ssr: {
-    videoWebm: 'rock_promote.webm', videoMp4: 'rock_promote.mp4',
+    videoWebm: 'video/rock_promote.webm', videoMp4: 'video/rock_promote.mp4',
     se: (typeof seRockPromote!=='undefined') ? seRockPromote : null,
     ensureSe: (typeof ensureRockPromoteSeBuffer==='function') ? ensureRockPromoteSeBuffer : null,
     skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
@@ -2077,7 +2077,7 @@ const SSR_PROMOTION_MEDIA = {
     bgmOnReveal: 'gokongoLastBattle', // リビール時、元のBGMへ戻さずこちらへ切り替える(以後は次のbgmSetTrackまで継続)
   },
   aqua_ssr: {
-    videoWebm: 'aqua_promote.webm', videoMp4: 'aqua_promote.mp4',
+    videoWebm: 'video/aqua_promote.webm', videoMp4: 'video/aqua_promote.mp4',
     se: (typeof seAquaPromote!=='undefined') ? seAquaPromote : null,
     ensureSe: (typeof ensureAquaPromoteSeBuffer==='function') ? ensureAquaPromoteSeBuffer : null,
     skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
@@ -2087,7 +2087,7 @@ const SSR_PROMOTION_MEDIA = {
 };
 function ssrPromotionMediaFor(skinId){
   return SSR_PROMOTION_MEDIA[skinId] || {
-    videoWebm: 'ssr_promote.webm', videoMp4: 'ssr_promote.mp4',
+    videoWebm: 'video/ssr_promote.webm', videoMp4: 'video/ssr_promote.mp4',
     se: (typeof seSsrPromote!=='undefined') ? seSsrPromote : null,
     ensureSe: (typeof ensureSsrPromoteSeBuffer==='function') ? ensureSsrPromoteSeBuffer : null,
     skipTapImage: false, safetyMs: 4000, bgmOnReveal: null,
@@ -2185,22 +2185,22 @@ async function checkAssetUrls(urls){
   return Promise.all(urls.map(check));
 }
 async function checkSsrPromoteAssets(){
-  const [v, vw, i] = await checkAssetUrls(['ssr_promote.mp4', 'ssr_promote.webm', 'ssr_promote_tap.jpg']);
+  const [v, vw, i] = await checkAssetUrls(['video/ssr_promote.mp4', 'video/ssr_promote.webm', 'images/ssr_promote_tap.jpg']);
   console.log('[ssrPromote] asset check:', v, '|', vw, '|', i);
   return { video: v, videoWebm: vw, img: i };
 }
 async function checkRockPromoteAssets(){
-  const [v, vw, a] = await checkAssetUrls(['rock_promote.mp4', 'rock_promote.webm', 'rock_promote_audio.mp3']);
+  const [v, vw, a] = await checkAssetUrls(['video/rock_promote.mp4', 'video/rock_promote.webm', 'audio/rock_promote_audio.mp3']);
   console.log('[rockPromote] asset check:', v, '|', vw, '|', a);
   return { video: v, videoWebm: vw, audio: a };
 }
 async function checkAquaPromoteAssets(){
-  const [v, vw, a] = await checkAssetUrls(['aqua_promote.mp4', 'aqua_promote.webm', 'aqua_promote_audio.mp3']);
+  const [v, vw, a] = await checkAssetUrls(['video/aqua_promote.mp4', 'video/aqua_promote.webm', 'audio/aqua_promote_audio.mp3']);
   console.log('[aquaPromote] asset check:', v, '|', vw, '|', a);
   return { video: v, videoWebm: vw, audio: a };
 }
 async function checkAquaBattleBgmAssets(){
-  const [b, f, l] = await checkAssetUrls(['bgm_aqua_battle.mp3', 'bgm_aqua_final5.mp3', 'bgm_aqua_lastbattle.mp3']);
+  const [b, f, l] = await checkAssetUrls(['audio/bgm_aqua_battle.mp3', 'audio/bgm_aqua_final5.mp3', 'audio/bgm_aqua_lastbattle.mp3']);
   console.log('[aquaBattleBgm] asset check:', b, '|', f, '|', l);
   return { battle: b, final5: f, lastBattle: l };
 }
@@ -2208,7 +2208,7 @@ document.getElementById('ssrPromoteTapImg').addEventListener('load', ()=>{
   ssrPromoteDebugLog('✅ タップ待ち画像 読み込み成功');
 });
 document.getElementById('ssrPromoteTapImg').addEventListener('error', ()=>{
-  console.warn('[ssrPromote] ssr_promote_tap.jpg の読み込みに失敗しました(ファイルが配置されているか確認してください)。画面タップでは先へ進めます。');
+  console.warn('[ssrPromote] images/ssr_promote_tap.jpg の読み込みに失敗しました(ファイルが配置されているか確認してください)。画面タップでは先へ進めます。');
   ssrPromoteDebugLog('❌ タップ待ち画像 読み込み失敗(404等)。画面タップでは先へ進めます');
 });
 document.getElementById('ssrPromoteOverlay').addEventListener('click', ()=>{
@@ -2970,42 +2970,6 @@ async function joinSelectedRoom(roomId, lobbyKey){
   enterLobbyForRoom();
 }
 
-async function startMatchmaking(){
-  if(!window.__aramonFindOrCreateRoom){
-    pushToast('通信機能が利用できません。1人でプレイに切り替えます');
-    startGame();
-    return;
-  }
-  netState.cancelled = false;
-  matchBeginning = false;
-  document.getElementById('lobbyScreen').classList.remove('hidden');
-  document.getElementById('lobbyCountdown').textContent='';
-  document.getElementById('lobbySubText').textContent='部屋を検索中…';
-  document.getElementById('lobbyPlayerList').innerHTML='';
-
-  const rawName = (document.getElementById('playerNameInput').value||'').trim();
-  const displayName = rawName ? rawName.slice(0,12) : '名無しのモンスター';
-
-  let result;
-  try{
-    result = await window.__aramonFindOrCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
-  }catch(err){
-    console.error(err);
-    pushToast('マッチング失敗。1人でプレイに切り替えます');
-    document.getElementById('lobbyScreen').classList.add('hidden');
-    document.getElementById('startScreen').classList.remove('hidden');
-    startGame();
-    return;
-  }
-  if(netState.cancelled) return;
-
-  netState.roomId = result.roomId;
-  netState.isHost = result.isHost;
-  netState.myPlayerId = result.myPlayerId;
-  if(netState.isHost) netState.hostId = netState.myPlayerId;
-
-  enterLobbyForRoom();
-}
 
 document.getElementById('lobbyStartBtn').addEventListener('click', async ()=>{
   if(hostCountdownSnapshot) return; // カウント中の多重押下防止
@@ -5076,26 +5040,6 @@ function adminFilterByPeriod(logs, period){
 }
 // 汎用の自前ドロップダウン(マップ/モンスター選択用)。呼ばれるたびに選択肢を作り直すので、
 // トグル用のクリックリスナーだけdataset.boundで一度きり登録する。
-function renderAdminSelectFilter(wrapId, btnId, menuId, options, selectedValue, onSelect){
-  const wrap = document.getElementById(wrapId);
-  const btn = document.getElementById(btnId);
-  const menu = document.getElementById(menuId);
-  const selectedOpt = options.find(o=>o.value===selectedValue) || options[0];
-  btn.textContent = selectedOpt ? selectedOpt.label : '';
-  menu.innerHTML = options.map(o=>`<div class="custom-select-item${o.value===selectedValue?' active':''}" data-value="${o.value}">${o.label}</div>`).join('');
-  if(!wrap.dataset.bound){
-    wrap.dataset.bound = '1';
-    btn.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); });
-    document.addEventListener('click', (e)=>{ if(!wrap.contains(e.target)) menu.classList.add('hidden'); });
-  }
-  menu.querySelectorAll('.custom-select-item').forEach(item=>{
-    item.onclick = (e)=>{
-      e.stopPropagation();
-      menu.classList.add('hidden');
-      onSelect(item.dataset.value);
-    };
-  });
-}
 // 横棒グラフのHTMLを組む。entries=[{label,count}], 最大値基準で幅を割合表示
 function adminBarChartHtml(entries, color){
   if(!entries.length) return '<div class="rank-empty">記録がありません</div>';
@@ -5530,9 +5474,9 @@ function initTitleScreen(){
     : new Promise(res=>window.addEventListener('load', res, { once:true }));
   const tasks = [
     (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(),
-    waitImage('title_bg.jpg'),
-    waitImage('title_logo.png'),
-    waitImage('top_bg.jpg'),
+    waitImage('images/title_bg.jpg'),
+    waitImage('images/title_logo.png'),
+    waitImage('images/top_bg.jpg'),
     waitLoad(),
   ];
   // 進捗はタスクの完了数で出す(止まって見えないよう、待っている間も少しずつ進める)

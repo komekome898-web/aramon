@@ -3,391 +3,70 @@
 iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラJS + Firebase Realtime Database。ビルドステップなし。GitHub Pagesでホストし、mainマージで自動デプロイ。
 公開URL: https://komekome898-web.github.io/aramon/index.html
 
+**詳しい仕様は`.claude/skills/`のスキルに分けてある(一覧は`SKILLS.md`)。作業に入る前に該当スキルを読むこと。**
+
 ## 絶対に守るルール
 
-1. **コミットのたびに `sw.js` の `CACHE_NAME` を1つ上げる**(例 `aramon-cache-v335` → `v336`)。上げないと古いキャッシュが残る。例外: ドキュメントのみの変更。
+1. **コミットのたびに`sw.js`の`CACHE_NAME`を1つ上げる**(例 `aramon-cache-v427`→`v428`)。上げないと古いキャッシュが残る。例外: ドキュメントのみの変更。
 2. **本番公開まで自動で完了させる。** 作業ブランチへpush後、確認なしでmainへPR作成→マージ。GitHub Actions「pages build and deployment」の成功を確認してから完了報告する(発注者合意済み)。
 3. **ビルドツール・npm・フレームワークを導入しない。** 素のJS/CSS/HTMLを維持。
-   **例外(発注者判断・2026-07-28)**: 「リアルマップ」のみThree.jsを使う。`vendor/three.module.min.js`を同梱するだけで、package.jsonもnode_modulesもビルド手順も無い。**この例外を他機能へ広げない。**
+   **例外(発注者判断・2026-07-28)**: 「リアルマップ」のみThree.jsを使う(`vendor/three.module.min.js`を同梱するだけ)。**この例外を他機能へ広げない。**
 4. **モジュール分割構成を維持する。** 新機能も既存の担当ファイルに追記。1ファイルに戻さない。
 5. **動作する実用的な解を優先。** 指示のない大規模リファクタはしない。
-6. **プレイに関わる大きな変更をしたら `data.js` の `UPDATE_HISTORY` に1行追記する。** 形式は `{ t:'本文', g:['タグid',…] }`、タグは`CHANGELOG_TAGS`(全般/新要素/モンスター/バランス/ソロ/マルチ/不具合/演出・音)から必要なだけ。対象=新機能・仕様/バランス変更などプレイに影響するもの。対象外=レイアウト・見た目・軽微なバグ修正・内部リファクタ・ドキュメント。日付は降順、文言は技術用語を避けた簡潔な日本語。複数の大きな変更は複数行に分ける。
+6. **プレイに関わる大きな変更をしたら`data.js`の`UPDATE_HISTORY`に1行追記する。** 形式は`{ t:'本文', g:['タグid',…] }`、タグは`CHANGELOG_TAGS`(全般/新要素/モンスター/バランス/ソロ/マルチ/不具合/演出・音)から必要なだけ。対象=新機能・仕様/バランス変更などプレイに影響するもの。対象外=レイアウト・見た目・軽微なバグ修正・内部リファクタ・ドキュメント。日付は降順、文言は技術用語を避けた簡潔な日本語。複数の大きな変更は複数行に分ける。
 
 ## ファイル構成
 
-| ファイル | 担当 |
+コード類(js/html/css/json)はルート直下、素材は種類ごとのフォルダに置く。
+
+| 場所 | 担当 |
 |---|---|
 | `index.html` | 全画面のDOM。読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
 | `style.css` | 全スタイル。CSS変数は`:root` |
-| `data.js` | 定数・マスタ: WORLD/MAPS/ELEMENTS/SIGNATURE_MOVES、マスモン(育成/EXP/倍率)、試合内アイテム、アカウント系(通貨・バッグ・ガチャ・ショップ・報酬)、`UPDATE_HISTORY`、オーラ/SSRスキン、色スキン(`SKIN_CONFIG`/`recolorToCanvas`)、歩行アニメ(`WALK_ANIM`/`getDisplayImage`)、`real3dHeightAt` |
-| `audio.js` | BGM/SE。原則Web Audio合成、一部のみ実音源(下記「音」) |
-| `world.js` | ワールド生成、安全圏、地形判定、移動・衝突、強制横向き/リサイズ |
+| `data.js` | 定数・マスタ: WORLD/MAPS/ELEMENTS/SIGNATURE_MOVES、マスモン(育成/EXP/倍率)、試合内アイテム、アカウント系(通貨・バッグ・ガチャ・ショップ・報酬)、`UPDATE_HISTORY`、オーラ/SSRスキン、色スキン(`SKIN_CONFIG`/`recolorToCanvas`)、歩行アニメ(`WALK_ANIM`/`getDisplayImage`)、`real3dHeightAt`、`OBST_SHAPES` |
+| `audio.js` | BGM/SE。原則Web Audio合成、一部のみ実音源 |
+| `world.js` | ワールド生成、安全圏、地形判定、移動・衝突、視点設定、強制横向き/リサイズ |
 | `combat.js` | 攻撃・ダメージ・AoE・状態変化・Bot AI |
 | `render.js` | 3D風投影(`project`)、全描画、ミニマップ、touchmove制御 |
 | `input.js` | タッチ/キー入力、ジョイスティック、カメラ、文字入力ポップアップ |
 | `ui.js` | 画面遷移、リザルト、ランキング、マスモンUI、管理者画面、localStorage、アカウント、バッグ/ガチャ/ショップ、ロビー |
 | `network.js` | マルチ同期(ホスト権威型) |
 | `firebase.js` | Firebase初期化・API。`window.__aramon*`で公開(ESモジュールの橋渡し) |
-| `real3d.js` / `vendor/three.module.min.js` | リアルマップのWebGL描画(`window.__aramonReal3D`)/ Three.js r160(MIT) |
-| `sw.js` / `manifest.json` | SW(ネットワーク優先+キャッシュ) / PWAマニフェスト |
-| `monsters/*.png` | モンスター画像。静止画+歩行スプライト `<prefix>_walk_f1..8` / `_b1..8`(320px・256色透過) |
-| `tools/build_walk.py` | 歩行スプライト生成の開発用スクリプト(ゲームには読み込まない) |
-| `top_bg.jpg` / `title_bg.jpg` / `title_logo.png` | ロビー背景 / タイトル背景・ロゴ(ロビーのタイトルも同ロゴ) |
-| `bgm_*.mp3` | final5(残り5人)/ lastbattle(残り2人)/ shop / lobby(既定)/ training / gokongo_battle・gokongo_final5・gokongo_lastbattle(轟金剛装備時の専用3曲)。mono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11` |
-| `se_*.mp3` / `best_update.mp3` | 3秒級以上のSE実音源(短いSEは内蔵データURI) |
+| `real3d.js` | リアルマップのWebGL描画(`window.__aramonReal3D`) |
+| `sw.js` / `manifest.json` | SW(コード=ネットワーク優先 / 素材=stale-while-revalidate) / PWAマニフェスト |
+| `audio/` | `bgm_*.mp3`(final5 / lastbattle / shop / lobby / training / gokongo・aquaの専用3曲ずつ)、`se_*.mp3`、`best_update.mp3`、昇格演出の音声。mono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11` |
+| `images/` | タイトル/ロビー背景・ロゴ(`title_bg.jpg`/`title_logo.png`/`top_bg.jpg`)、`shopkeeper.png`、`promo_*`、`summon_disk*.png`、`fx_seven.png` |
+| `video/` | SSR昇格演出の動画(`*_promote.mp4`/`.webm`。音声は`audio/`側と同時再生) |
+| `monsters/*.png` | モンスター画像。静止画+歩行スプライト`<prefix>_walk_f1..8`/`_b1..8`(320px・256色透過)。仕様JSONは`monsters/specs/` |
+| `vendor/` | Three.js r160(MIT) |
+| `tools/` | モンスター追加ツール(開発用。ゲームには読み込まない) |
+| `guide/` | 遊び方ガイドの画像 |
 
-## 全画面に効く決まり
+## 全画面に効く決まり(詳細は aramon-layout)
 
-- **【メディアクエリ禁止】レイアウトに`@media`を使わない。** 強制横向きでは実viewportが縦のままなので基準が食い違う(詳細2列が1列に落ちる不具合が実際に出た)。幅で分岐したいときは`html.narrow-screen`(world.jsが実画面幅520px以下で付与)。
-- **【生のvw/vh禁止】サイズは`calc(N * var(--vh))`/`var(--vw)`で書く。** 生の`vh`は強制横向きで大きくなり上下が見切れる。`:root`の`--vw/--vh`定義だけが例外。
-- **画像は`height`固定でなく`max-height`+`flex:0 1 auto`+`object-fit:contain`。** 縦の狭い端末で縮んで収まる。
-- **【スクロールロック除外・必須】新しい画面/オーバーレイを足したらIDを3か所すべてに追加する:** `render.js`の`touchmove`、`input.js`の`touchend`と`dblclick`。漏れるとスクロールもタップも効かない(管理者/ランキング/観戦バー/文字入力で実際に踏んだ)。3リストは同じ内容に保つ。
-- **ポップアップ(`.mastermon-confirm-overlay`系)の定型**: 幅は複合セレクタ`.mastermon-confirm-box.xxx-box{ max-width:min(760px, calc(95 * var(--vw))); width:同 }`(単一クラスだと基底の340pxに負ける)/ `position:relative`必須(無いと`.overlay-close-btn`が画面隅へ飛ぶ)/ `max-height:calc(94 * var(--vh)); overflow-y:auto`(基底にも入っているが明示推奨。内側に別のスクロールを重ねない)。
-- プルダウンは`.custom-select`の自前実装を再利用。外枠はoverflow可視・中のリストだけ独立スクロール。
+- **【メディアクエリ禁止】レイアウトに`@media`を使わない。** 幅で分岐したいときは`html.narrow-screen`。
+- **【生のvw/vh禁止】サイズは`calc(N * var(--vh))`/`var(--vw)`で書く。**
+- **【スクロールロック除外・必須】新しい画面/オーバーレイを足したらIDを3か所すべてに追加する:** `render.js`の`touchmove`、`input.js`の`touchend`と`dblclick`。漏れるとスクロールもタップも効かない。
+- **文字入力はすべて共通ポップアップ(`#textInputOverlay`)。**
+- 画像は`height`固定でなく`max-height`+`flex:0 1 auto`+`object-fit:contain`。
 - 横長・低い画面が前提。新画面はスクロールなしで収まる縦幅にする。
-- **長押しの選択/メニュー抑止は全画面共通で入っている**(個別対応不要): style.cssの`*`に`user-select:none`+`-webkit-touch-callout:none`、直後の`input,textarea{user-select:text}`とセットで維持。input.jsが`contextmenu`/`selectstart`を`preventDefault`(入力欄は除外)。`-webkit-touch-callout`は計算値に出ないのでCSSテキストで確認する。
-- **文字入力はすべて共通ポップアップ(`#textInputOverlay`)。** iOSのキーボードは実画面下=強制横向きではアプリ右側を覆うため、どこに置いても隠れうる。アプリ全体をずらす方式は実機で破綻したので使わない(2026-07-27に試して差し戻し)。仕組み: `focusin`(capture)で元の`<input>`を`readOnly`+`blur()`し、ポップアップの欄に`focus()`(**タップと同じターンで呼ぶ**)。確定時に値を書き戻して`input`/`change`を発火。document委譲なので新しい入力欄への個別対応は不要。見出しは`data-kb-title`→直前要素のテキスト(20文字以内)→`placeholder`。位置は通常上端中央/強制横向き時は左寄せ。
 
-## 画面まわり
+## 横断する設計方針(スキルを読む前に知っておくこと)
 
-### タイトル
-- 起動 → `#titleScreen` → タップ → `#startScreen`(ロビー。HTMLで`.hidden`付き)。
-- ロゴの光沢は`background-position`だけ動かす。**要素をtransformで動かすとmaskごと動いて別位置にロゴ形が浮き出る。**
-- `initTitleScreen()`が`document.fonts.ready`/各画像/`window.load`を待ち、最低`TITLE_MIN_MS`(1.9秒)は表示。
-- **タップ時に`audioInit()`とタイトルBGMを開始**(iOSは操作なしに音を出せない)。タップSEは`titleStart`(未ロード時`jakiin`)。
+どのファイルを触るときも効く原則。詳細と実例は各スキルにある。
 
-### ロビー(トップ画面)
-- 1画面完結でスクロールしない。`#lobbyLayout`が左メニュー/中央/右の3カラム。
-- 左: シーズン/デイリー/ガチャ/ショップ/バッグ/ランキング + 最下部バナー(`LOBBY_BANNERS`に1件足すだけで増える)。
-- 中央: ロゴ → `#lobbyMonsterStage`(**これ自体が`<button>`。押すとモンスター選択オーバーレイ。`div`に戻さない**) → 名前 → タップ案内。歩行は`renderLobbyMonster()`が`monsterWalkFrameDataUrls()`のdataURLを差し替える。**マスモン選択中だけ装備スキンを反映。** 未ロードなら静止画のまま0.35秒×6回リトライ。
-- 右: マップ/プレイモードの値表示ボタン(押すとオーバーレイ。実体のDOMを移しただけなのでハンドラは不変。表示更新は`updateLobbyPickLabels()`)→ `バトル開始`(`#joinBtn`。光沢スイープは無効時に止める)。
-- ヘッダー: ⚙️設定 / 👤マイページ / 🆕更新履歴 / 🎵ロビーBGM切替。**元のボタンをDOMごと移動しただけ**でIDもハンドラも同じ。高さは`--top-header-h`(`#lobbyLayout`と右パネルの`top`も同じ変数。**数値を直書きしない**)。
-- **タイマーは`#startScreen`のclassをMutationObserverで見て、隠れたら停止**(歩行・バナー)。
-- **ロビーの初期化ブロックはui.js末尾に置く**(`netState`等を読むためTDZで落ちる)。
-- マルチのマッチング(`#lobbyScreen`)と部屋一覧(`#roomListScreen`)は**右側パネル**。背後のロビーを見せるため`#startScreen`を隠さず、`#startScreen.behind-matching`で`#lobbyLayout`/`#topHeader`を`pointer-events:none`にする(付け外しはui.js末尾のMutationObserver1か所)。
-
-### カードカルーセル(モンスター一覧 / マスモンで共用)
-- **エンジンは`createCardCarousel(cfg)`(ui.js)1つだけ。挙動の修正は必ずエンジン側で行う。**
-- 位置は全部JSがtransformで書く。`st.pos`(小数)が唯一の状態。**`.ml-card`にtransitionを付けない**(ドラッグが鈍る)。吸着は`startAnim()`のrAF。閉じるときは`stopAnim()`必須。
-- **無限ループは環状の最短距離`ringDelta(i,pos)`で成立。`pos`を0〜nに正規化すると境界でカードが飛ぶ。**
-- 見た目定数は`CARO_*`。カード寸法/間隔はCSSの`--ml-card-h/-w/--ml-step`が正で、JSはプローブ要素(`.caro-step-probe`)の`offsetWidth`で読む(`getComputedStyle`は未登録カスタムプロパティを`calc()`文字列で返す)。**JS側に間隔の数字を書かない。**
-- `#mlStage`幅は`calc(var(--ml-step) * 4.4)`+`overflow:hidden`で「少しだけ見切れる」ようにしてある(スワイプできると伝えるため)。
-- 1スワイプで2枚飛ばない: 離した位置の最寄りへ吸着し、フリック加算は`target === Math.round(dragStartPos)`のときだけ。
-- ドラッグ直後のclickは`st.suppressClick`で**1回だけ**無視する(フラグを残すと詳細が開かなくなる)。
-- **送りSE(`cardSwipe`)は`render()`の1か所だけ**で中央インデックス変化時に鳴らす(全経路をカバー)。`reset(key)`は`lastCenterIdx=null`で鳴らさない。送りボタンはaudio.jsの共通タップ音から`.ml-nav`/`.ml-card-nav`を除外して二重鳴り防止。
-- 強制横向き対応2か所: ドラッグ量は`toLogicalDelta()`、FLIP演出(`caroFlipCard`)は`isForcedLandscape()`で幅高さを入れ替え`toLogicalPoint()`で論理座標へ。
-- 詳細ビューは一覧カードの`cloneNode`。インラインのtransform等を`#mlDetailCardSlot .ml-card`側で`!important`で打ち消している。**`z-index:1 !important`を外すと`≪ ≫`ボタンが隠れる。**
-- 詳細のカードは「絵が余りを埋める/本文は必要な高さだけ」のフレックス。`≪ ≫`(`.ml-card-nav`)は背景・枠なしで記号のみ(視認性は`text-shadow`)。
-
-### モンスター一覧 / マスモン詳細
-- **モンスター一覧は「素の姿」を選ぶ画面なので装備スキンを一切見ない**: `defaultMonsterImgTag()` / `mlAuraOf()`(`MONSTER_AURA`直引き) / `buildMastermonMovesHtml(key,{ignoreSkin:true})`。ignoreSkinは擬似エンティティの`skinId`をnullにして関連関数をまとめて既定値にする。
-- **マスモンは「着せ替え済みの姿」なので逆に装備スキンを反映する**(`equippedIconImgTag` / `getMonsterAura`)。混同しない。
-- マスモンカードはLv・実効HP/速さ(`mmEffectiveStats`)・EXPバー・チケット数を出すぶん本文が長いので`.ml-card-art-mm`で絵を50%に下げている。
-- マスモン詳細: 左は「カード → 参戦 → 編集/一覧へ」の3ボタンのみ。右は`renderMastermonDetail(key)`が全幅ヘッダー→STATUS+内容を描く。**`mastermonDetailTab===null`が初期画面**で`詳細情報/トレーニング/着せ替え`の3ボタン(技一覧タブは詳細情報に統合済み)。着せ替えタブだけステータス列を出さない。
-- STATUSは両画面共用の`caroStatusSecHtml()`。バー下の短縮説明は`STAT_SHORT_DESC`(`MASTERMON_STATS.desc`は長すぎる)。
-- ヘッダーはスクロールさせず中身だけスクロール。右端には自前スライドバー`attachVisibleScrollbar()`(iOSのネイティブバーはスクロール中しか出ないため)。両画面共用なので修正はヘルパー側。ResizeObserverは`el._scrollbarRO`に持たせて同時使用でも壊れない。
-- `renderMastermonList()`は「カードを作り直す」処理。**登録数が変わったら`build()`、値だけなら`refreshCards()`。改名後はカード再生成も呼ぶ**(詳細カードはcloneなので古い名前が残る)。
-
-### 射撃訓練場
-- ロビー右上の「射撃訓練場へ」(`#openRangeBtn`。バトル開始と同じくモンスター未選択では押せない)から`startShootingRange()`。
-- **通常の試合と同じ初期化を通し、分岐は`game.trainingRange`1つだけ**にしてある(安置を止める/的の復活/アイテム再出現/勝敗なし)。触る場所は`update()`・`checkWin()`・`updateLootPickups()`・`drawZoneRings`系。
-- マップは`wild_real`固定・`applyWorldScale(RANGE_WORLD_SCALE)`で狭くする。**安置は`zoneState.radius`をワールドより大きくして無効化する**(圏外のアイテムは消えてしまうため)。
-- 的は`isTargetBot`。`updateTargetBotAI()`が2点間を往復させるだけで攻撃しない。倒すと`updateTrainingRange()`が数秒後に元の位置へ復活させる。射線上の岩は生成後に取り除く。
-- アイテムは`rangeRespawn:true`。拾っても消さず`respawnAt`まで隠すだけ(描画側も`respawnAt`を見る)。
-- モンスター切替はロビーと同じ`monsterPickOverlay`を開く。**選択画面を閉じたときの戻り先は`game.trainingRange`で分岐**(ロビーを出さずに訓練場へ戻り、`rangeApplyMonsterChange()`でその場で作り直す)。
-- HUDは`#hud.range-mode`で安置パネル(`#topRight`)を隠し、`#rangeBar`(モンスター/視点設定/退出)を出す。BGMは`training`。
-
-### 視点設定(視野角・左右/上下の感度)
-- 実体は`world.js`の`lookSettings`(既定値`LOOK_DEFAULTS`・範囲`LOOK_LIMITS`)。**変更したら必ず`applyLookSettings()`**(視野角→`FOV_V`→`recomputeFocal()`)。
-- **3D側は`window.__aramonLook`を毎フレーム読んでカメラのfovを合わせる。** 2Dの`project()`と視野角がずれると地面と2D描画が食い違う。
-- 保存はui.jsの`aramon_look_v1`(端末ごとの操作設定なのでアカウント同期に入れない)。UIは音量設定と同じスライダー部品を流用。
-
-### 更新履歴
-- 項目`{t,g}`、タグ定義は`CHANGELOG_TAGS`。見出し+タグ行は固定、`.changelog-list`だけスクロール(自前スライドバー共用)。
-- 絞り込みは`changelogFilterTag`。該当0件の日付は行ごと出さない。
-- **タグ色は`color-mix()`を使わずJSの`changelogTagVars()`でCSS変数として渡す**(古いiOS非対応)。
-- 未読バッジ: `changelogSignature()` = `最新日付#全項目数` を`aramon_changelog_seen_v1`と比較。`UPDATE_HISTORY`に足せば自動で出るのでバッジ側の作業は不要。**アカウント同期には入れない**(端末ごとの状態)。
-
-### 管理者画面
-- ロビー最下部「管理者用」→ 4桁パスワード(0008)。プレイヤー名「おりょう」は集計から除外。
-- 「プレイ状況」「音声確認」タブ。各ペインは`display:flex`の縦フレックス(blockのままだと内側がスクロール不能)。音声確認内は「SE」「BGM」サブタブで、SEは`SE_DEFS`から自動列挙。このペインでは共通タップSEを鳴らさない。
-- 「💎ダイヤ+500」(`#adminGrantDiaBtn`)は現在hidden(機能は残置)。
-
-## 描画(render.js)
-
-- `project(wx,wy,wz)`で3D風投影。`drawables`に集めてdepthソート後に描画。
-- **TPSカメラは`world.js`の`CAM_DIST_BEHIND`(145)と`CAM_HEIGHT`(90)の2つ。必ずセットで調整する。** distBehindを縮めると大きくなる代わりに画面下へ動き足元が隠れるので、heightで戻して「大きさだけ変える」。変更したら`project(player.x,player.y,0)`のyと遠景の地面Yを実測して確認。
-- カリングは`cullMarginFor`で見た目半径に応じた余白(固定余白だと巨大オブジェクトが近距離で消える)。`kind:'ae'`には`ae.range`ぶんの余白。
-- 障害物は影(接地点)と本体の底を接して描く。
-- **`areaEffects`も`drawables`に`kind:'ae'`として積む**(実描画は`drawSingleAreaEffect`)。地面直後の一括描画だと大岩・建物の裏に隠れる。
-- **地面に貼り付く円は画面上で楕円を決め打ちしない。** `groundCirclePoints()`でワールド円周をサンプルし1点ずつ投影して多角形で描く。**このカメラの地面円の扁平率は約0.165**で、`ry=rx*0.5`のような固定比だと3倍近く縦に伸びて浮いて見える。立体物の高さも`project(x,y,高さ)`で求める。
-- **地面に接する物は`projectGround(x,y)`で投影する**(`groundZAt()`は他マップで0を返すので見た目不変)。エンティティに紐づく地面描画(召喚円盤石・降下ビーム)は`e.z`を使う。
-
-## リアルマップ: WebGL地形(real3d.js)
-
-- **通常6マップそれぞれにリアル版がある**(`wild_real`等)。中身(岩・山・水・溶岩・アイテム)は通常版と同じで、違うのは地面が立体になることだけ。**`MAPS`の各マップから`data.js`末尾の`Object.keys(MAPS).forEach`が自動生成する**ので、マップを足せばリアル版も自動で増える。
-- 選択は「通常マップのキー(`game.selectedMap`)+ リアル切替(`game.realMapMode`)」。実キーは`mapKeyForMode()`が組み立て、ランダムは同じ側からだけ抽選する(`resolveMapKey()`)。**マップのキーをそのまま保存しない。**
-- **リアルマップは報酬2倍**(`REAL_MAP_REWARD_MULT`。`showResult`のゴールド/ダイヤに掛ける)。
-- 地形の形は`REAL3D_TERRAIN_SETS`からマップごとに選ぶ(`real3dTerrain`)。見た目(空・霞・地面の色・遠景の山・テクスチャの作り方)は`REAL3D_THEMES`(`real3dTheme`)。**色を足すときはreal3d.jsの`DEFAULT_THEME`にも足す。**
-- テーマの反映は`applyReal3DLayer()`が`window.__aramonRealTheme`に入れ、real3d.jsの`setActive()`→`applyTheme()`が空・霞・頂点色・テクスチャ・遠景の山を差し替える(地形メッシュは使い回し)。
-- **地面だけWebGLで描き、モンスター・弾・エフェクト・HUDは従来の2Dキャンバスが上に重なる**(`#glCanvas` z:0 / `#gameCanvas` z:1)。この分担なので既存描画を書き換えずに済んでいる。
-- **2Dの`project()`と3Dカメラを完全に一致させてある**(`FOV_V`=64° / `camPos` / `camState.yaw,pitch`)。**`FOV_V`や`CAM_*`を変えたらreal3d.js側も合わせる。** 丘による遮蔽は2D側に無い(割り切り)。
-- **高さは`data.js`の`real3dHeightAt(x,y)`。純関数なのでホスト/ゲストで自動一致**し、当たり判定(`world.js`の`getTerrainHeightAt`)も同じ関数を使う。
-- **各`REAL3D_TERRAIN_SETS`の最大傾斜は0.3程度まで**(`Σ(amp×freq)/2`)。 ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
-- **岩・水晶の「登っているからすり抜ける」判定は`baseTerrainHeightAt`基準**(絶対値`m.z>25`だと起伏だけですり抜ける)。
-- **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を地形セットに足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
-- 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。
-- **地面はPBR(`MeshStandardMaterial`)。** 色(`buildGroundTexture`)+ 法線・粗さ・AO(`buildDetailMaps`)の4枚組で、`groundMapsFor(style)`がスタイルごとに1回だけ作って使い回す。**4枚すべての`offset`をパッチ位置に合わせる**(1枚でも忘れると模様が地面の上を滑る)。凹凸の強さはテーマの`bump`→`normalScale`(`bump*3`)。金属ではないので`metalness`は0。
-- **色テクスチャだけ`colorSpace = SRGBColorSpace`。** 法線・粗さ・AOはデータなので`NoColorSpace`。取り違えると色が沈む/凹凸が壊れる。
-- **ライティングは「空から作った環境マップ(PMREM)+ DirectionalLight」。** HDRI画像は持たず、`applyEnvironment()`が同じ空シェーダーを`PMREMGenerator.fromScene()`に通す。テーマを変えたら必ず作り直す(空の色が変わるため)。**前の`envRT`は`dispose()`する。**
-- **仕上げはrenderer側で完結**(`toneMapping = ACESFilmic` / `outputColorSpace = SRGB` / `antialias:true`)。**ポストプロセス(EffectComposer)は入れない。** 挟むとMSAAが無効になり、フルスクリーンのバッファでiPhoneのメモリと帯域を大きく使う。SSAOは開けた地形では画素差0.4/255程度しか出ず割に合わない(計測済み)。
-- **`scene.environmentIntensity`はThree r160に無い**(r163から)。環境光の強さは`material.envMapIntensity`で指定する。
-- **空と遠景の山は`material.toneMapped = false`。** テーマで決め打ちした色なので、トーンマッピングを通すと意図した色でなくなる。
-- **テクスチャ生成は試合開始時に1回だけ走る同期処理。** オクターブ数やサイズを上げると実機の待ち時間に直結する(色512px/細部256pxが上限の目安)。法線・粗さ・AOは**同じ高さ場を1回だけ作って共有する**(3回計算すると初期化が3倍になる)。
-- 遠景の山は`RIDGE_LAYERS`(距離の違う3枚)を縦にも分割して高度で色を変える(麓=霞/中腹=岩/頂上=雪)。**奥の層から順に頂点を積む**(空も山も深度を書かないので、手前を後に描かないと消される)。描画順は`renderOrder`(空-2 / 山-1)で固定。
-- **`ridgeProfile()`の周波数は必ず整数にする。** 半端な値(4.3等)だと一周(2π)して戻った時に高さが一致せず、輪の閉じ目に縦の段差(背景の切れ目)が出る。
-- **山(火山/雪山/森/ピラミッド)と地面のしみ(溶岩/海/川/オアシス)は3Dで描く。** render.jsが`__aramonReal3D.render(rocks, {volcanoes,lava,sea,river,oasis})`で渡し、`updateWorldObjects()`が署名(件数+端の座標)の変化を見て作り直す。**`setActive()`で`worldSig`を空にする**(同じ配置でもマップが違えば地面の高さが変わるため)。
-- 山の寸法は2Dの`drawSolidCone`と同じ(高さ=`radius*(isMain?1.15:0.9)`)。裾は`MOUNT_SKIRT`ぶん地面へ埋めて隙間を防ぐ。**リアルマップでは`drawVolcanoComplex`を呼ばない**(山も山頂の演出もWebGL側が描く)。
-- **山の見た目は「形+頂点カラー」で作る。画面に貼る円で演出しない**(視点を変えると山からずれて浮いて見える)。火山の主峰は先を切った円錐+火口の円盤+赤熱した縁、色は`MOUNT_COLORS`の麓/中腹/頂上を高さで混ぜる。側面は**内向きにだけ**へこませる(外へ膨らませると当たり判定の外に山肌が出る)。
-- しみは`RingGeometry`の各頂点を`heightAt()`で地形に沿わせる。`ZONE_LIFT`で少し浮かせ、`polygonOffset`と併用してZファイティングを防ぐ。**水は`roughness`を下げすぎない**(空を映しすぎて白く飛び、水に見えなくなる)。
-- **海と川は円を並べない。** 海は海岸線の式`seaEdgeX(y)`の沖側に格子を張り(列uが0=沖/1=岸)、川は円の連なりを芯にしたリボンにする(`splitRivers`で本数に切り分け)。円のまま描くと輪郭が数珠つなぎに見える。
-- **海面の高さは行(y)ごとに決める。** 全体で1つの平均にすると地形の起伏(±130ほど)に負けて水面が地面に埋もれる。岸ぎわだけ地面へ寄せて水際の段差を消す。
-- **波と流れは頂点シェーダー(`onBeforeCompile`)で動かす。** 属性は`aShore`(0=沖/中央 1=岸)と`aFlow`(川の向き。海は0)。CPUは毎フレーム`uTime`を渡すだけ。**泡は岸ぎわの細い帯と海の寄せ波だけ**にする(広げると水面全体が白く飛ぶ)。
-- **手で組んだ水面は三角形の表裏が揃わない。** 材質は`DoubleSide`にし、法線は組み立て後に上向きへ揃える。
-- **しみのUVはワールド座標から作る**(`ZONE_UV_TILE`)。大きさの違うしみでも模様の細かさが揃い、テクスチャと材質を1組だけ作って共有できる。**共有材質は`userData.shared`を見て使い回す**(作り直しのときに`dispose()`すると次の試合で消える)。
-- 溶岩は「黒い地殻+割れ目だけ光る`emissiveMap`」。脈動は`lavaMats`の`emissiveIntensity`をまとめて動かす(火口・縁も同じ配列に入れる)。
-- **遠くの2D障害物(建物)は`obstacleFade()`で消す。** 3Dの山は奥行きを持つのに2Dの建物は距離に関係なく重なるため、遠くの建物が山の上に乗って見える。岩・木・水晶は3Dなのでこの処理は要らない。
-- **山を3Dにすると2Dのモンスター・弾・アイテムが必ず山より手前に描かれる。** render.jsの`occludedByMountain()`(カメラ→対象の線が円錐の内側を通るか)で描画を止め、従来の奥行きソートと同じ見え方に戻している。**自分だけは例外**(カメラが山にめり込むと自機が消えるため)。
-- **影の範囲はカメラ前方(`SHADOW_AHEAD`)を中心に`SHADOW_HALF`四方だけ**。ワールド全体を1枚で覆うと解像度が足りずガビガビになる。`SHADOW_MAP`(1024)を上げるとiPhoneで重くなる。
-- ESモジュールなので`window.__aramonReal3D`(`setActive`/`render`/`resize`)経由。WebGL初期化失敗時は`render()`がfalseを返し2D地面にフォールバックする。
-- **地面に立つ大きな物(火山・雪山・森・ピラミッド)の頂点は`groundZAt()+高さ`で投影する**(底面は`projectGround`)。通常マップでは`groundZAt`が0なので見た目は変わらない。
-
-### リアルマップの障害物(岩・木・水晶)
-- **3Dで描くが、モンスター・技との前後関係は従来の奥行きソートのまま。** 仕組みは「3Dで描く → 2D側は`drawables`の同じ位置で`eraseObstacle()`が`destination-out`で輪郭をくり抜く」。くり抜くと**それより先に描かれたもの(=奥)だけが消えて3Dの障害物が見え、後に描かれるもの(=手前)はそのまま上に乗る**。`occludedByMountain`のような全消し判定は使わない(小さな岩で全身が消えてしまうため)。
-- **形の定義は`data.js`の`OBST_SHAPES`1か所**(`h`モデルの全高 / `sink`地面へ埋める深さ / `sil`くり抜く形)。real3d.jsは`window.__aramonObstShapes`、render.jsは同名の定数として同じ表を読む。**3Dモデルの寸法を変えたら必ず表も直す**(ずれるとモンスターが障害物の縁に乗る/障害物より広い範囲が隠れる)。単位は当たり判定の半径=1。
-- **`sil`の座標はモデルの原点(=地面より`sink`だけ下)基準。** 種別は 0=楕円 / 1=箱(5番目で上端の太さ) / 2=三角(円錐)。幹や柱を楕円で消すと角が残り、横倒しの丸太を楕円で消すと両端が残る。
-- **隠れる範囲を実物と合わせるため、3D側の置き方を2Dでも完全に再現する**: ①`sink`を引いた位置がモデルの原点(外すと全体が上へずれ、障害物より高い所まで消える) ②高さの個体差`hk`は3Dと同じ式でseedから作る ③接地高さは3Dと同じ「足元4点のいちばん低い高さ」(`obstacleBaseZ`。岩は動かないので1回計算して覚える)。
-- **同じパスに入れる部分パスは回り方をそろえる。** `ctx.ellipse(0→2π)`と逆回りの多角形を混ぜると重なった所が非ゼロ規則で穴になり、そこだけ消し残る(幹と葉が重なる木で実際に出た)。多角形は右下→左下→左上→右上で回す。
-- **細い枝・葉・回転する張り出しは消さない/幹に寄せる。** 枯れ木の枝やヤシの葉先を楕円でまとめて消すと「枝の無い空間まで隠れる」。サボテンの腕のようにヨー回転で向きが変わる張り出しは、左右対称の箱では追従できないのでモデル側を幹に寄せる。
-- **高さは決め打ちで縮尺せず`project(x,y,原点+r*h*hk)`で実測する。** 背の高い木ほど遠近の差が出る。
-- **数が多いので種類ごとに`InstancedMesh`(形は3通り)。** 並べ直すのは`OBST_STEP`だけ動いたときで、近い順に`OBST_MAX`個まで。**上限で切ったときの実距離を`obstacleCullDist()`で2Dへ返す**(食い違うと、3Dに無い障害物をくり抜いて地面に穴が開く)。
-- **障害物の内訳はマップごとの`realObstacles`(リアルマップ専用)。** 通常マップは`rockFlavors`のままなので見た目は変わらない。種類を足す手順: ①`realObstacles`に追加 ②`OBST_SHAPES`に形 ③real3d.jsの`obstacleGeo()`にモデル ④`OBST_MATS`に材質 ⑤render.jsの`drawRock`のフォールバック分岐(WebGL失敗時)。
-- **既定の岩(`rock`)の色はテーマから作る**(`theme.steep`/`theme.gravel`)。荒野・火山・ジャングル・海岸に共通で出るので、色を決め打ちにするとどこかで浮く。
-- モデルは「当たり判定の半径=1・地面=y0」のローカル空間で作り、配置時に`radius`で拡大する。**足元4点のいちばん低い高さに合わせてから`sink`ぶん埋める**(坂で浮かないため)。
-- **影は本物のメッシュが落とす。** 以前あった影専用のダミー球(`updateShadowCasters`)は廃止した。
-- three本体に`mergeGeometries`は無いので、複数パーツのモデルは`mergeGeos()`(自前・非indexed化して連結)でまとめる。一度も描いていないジオメトリはGPU資源を持たないので`dispose()`不要。
-
-### リアルマップの弾道(上下のねらい)
-- **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も一切変わらない。
-- 弾は`vz = aimSlope × 水平弾速`で飛び、弾ごとの`grav`で落ちる。**水平速度と`traveled`は変えない**ので飛距離(`move.range`)は従来どおり。
-- **落下加速度は`projGravityFor(range, 弾速)`が技ごとに決める。** 「平らな地面で水平に撃つと、ちょうど射程距離の地点で銃口の高さぶん落ちて着地する」強さ。射程も弾速も技ごとに違うので固定値にしない。強さの調整は`PROJ_DROP_Z`1か所。
-- **打ち上げ角は`ballisticSlope(dz, 水平距離, 弾速, 重力)`が落下ぶんを見越して決める**ので、重力を変えても狙点はずれない。
-- プレイヤーの`aimSlope`は`cameraAimSlope()`= 画面中心から視線を伸ばして地形に当たる点を探し、銃口(`足元+AIM_MUZZLE_Z`)からそこへ向ける。botは`targetAimSlope()`で相手の胴をねらう。
-- **マルチではゲストのカメラをホストが知らないので、発射イベントに`slope`を載せて`ent.aimSlopeOverride`で渡す**(処理後にnullへ戻す)。弾の配信にも`vz`/`terrain3d`が要る。
-- 地形への着弾は`p.terrain3d && p.z <= getTerrainHeightAt()`。**ホスト(combat.js)とゲストの見た目ループ(network.js)の両方に入れる。**
-- **安全圏の円は投影できない点(カメラの後ろ)をnullのまま残し、`strokeProjectedRing`が線を切る。** 詰めて連結すると円の左右が1本の直線で結ばれ、遠くの安置線が目の前を横切って見える(高低差のあるリアルマップで顕著)。画面上で飛びすぎた区間も切る。
-- 視点の上下範囲は`camPitchMin()`(リアルマップだけ空側`-0.42`まで)、試合開始角度は`applyStartPitchForMap()`。**マップ確定の直後に呼ぶ**(startGame/beginMultiplayerMatchInner)。前のマップの角度が残らないよう`updateCamera()`でも毎フレームclampしている。
-
-### 技エフェクトの立体化(全マップ共通)
-- **描くのは2Dキャンバスのまま。** real3d.jsは触らない(地面=WebGL / 技=2Dの分担を維持)。立体感は`project(x, y, 地面の高さ+dz)`で点を1つずつ投影して出す。**画面上で楕円・矩形を決め打ちしない**(地面に貼る円と同じ理由)。
-- **WebGLに依存していないので通常マップでも同じエフェクトを出す**(`FX_SOLID_ALL_MAPS`)。違いは`groundZAt()`が通常マップでは常に0を返すこと=平らな地面に乗るだけ。**falseにすると通常マップだけ従来の平面エフェクトへ戻る**(従来の描画関数は残してある)。
-- **分岐は2か所だけ**: `drawSingleAreaEffect`先頭の`drawReal3dAreaEffect()`と、`drawProjectile`の絵文字/`projStyle`分岐。どちらも`real3dFx()`がfalseなら従来の2D描画がそのまま走る。**性能値(range/width/dmg/hitR/color/curReach)はマップによらず同じものを読む**ので、技を調整すれば全マップに同じに効く。
-- 共通部品: `fx3dFlame`(炎)/ `fx3dSpike`(結晶)/ `fx3dBoltDown`(空から落ちる雷)/ `fx3dBeamTube`(ビーム)/ `fx3dRingPts`(高さdzの輪)。段ごとに投影するので坂でも地面から生えて見える。
-- **高さの基準は`FX3D_MON_H`(モンスターの背丈≈`radius*1.85`)1か所。** 炎・結晶・念力の壁・爆風ドームの高さはすべてここから決める。**雷(`FX3D_BOLT_SKY`)だけは対象外**(空から落ちてこそ雷)。
-- **透け具合は`FX3D_AREA_ALPHA`(範囲技)と`FX3D_DOME_ALPHA`(爆風ドーム)の2つだけ。** `drawReal3dAreaEffect`が入口でfadeに掛けるので、個々の技をいじらずに濃さを変えられる。**ドームは「濃い輪を下から積む」**(薄くすると地面が透けて煙にしか見えない)。
-- **ビーム系(モッチ砲/ラガモッチ砲/天河天翔/熱視線/フラワービーム)は`fx3dBeamTube`だけで描き、違うのは色だけにする。** 断面は横=技の当たり幅の楕円で、**縦半径は横の半分(最低でも`FX3D_MON_H`の半分)**。塗る面積が半分になる一方、2:1までなら円筒に見える。**これ以上薄くすると正面から撃った時に地面へ貼り付いた板にしか見えなくなる**(2026-07-30に発生)。**芯の高さは筒の下端が必ず地面から浮くように取る**(地面の模様と一体化させない)。
-- **ビームの芯はワールド座標で「まっすぐな線分」にする。** 地形の高さを1点ずつ拾って芯を通すと、丘のでこぼこで芯がジグザグになり、区間ごとの法線が反転して**筒がぐちゃぐちゃにねじれる**(2026-07-31に発生)。始点と「最大射程の先」の地面の高さだけを見て直線で結ぶ(伸びている途中の先端で傾きを取ると、先端が凸凹を通るたびに筒全体が揺れる)。
-- **画面上の垂直方向は芯の全体の向きから1つだけ作る。** 芯がワールドで直線なら画面上でも直線になるので区間ごとに取り直す必要はなく、遠くで点が詰まったときに向きが暴れて輪郭が交差するのを防げる。
-- 断面は`uH`(横)と`uV`(縦)の2ベクトルを実際に投影して持ち、輪郭の膨らみは`hypot(n・uH, n・uV)`で厳密に出す。**断面の輪は`ctx.transform(uH,uV)`して単位円を描く**と投影された楕円がそのまま出る(線幅は`sqrt(|det|)`で割って画面上の太さを揃える)。**途中に輪を数本入れると「筒」だと分かる。** 手前の断面が画面幅の4割を超えるときは描かない(自分の足元から撃つと画面を覆うため)。
-- **炎は「くすんだ煙/技色/白熱の芯」の3枚を加算合成(`globalCompositeOperation='lighter'`)で重ね、下から上へのグラデーションと乱れた輪郭で描く。** 平らな色の三角形を重ねると安っぽくなる。色は`fx3dFireRamp(技の色)`から作るので青い炎・黒い炎にも自動で対応する。
-- 色は`auraShades(ae.auraTint || ae.color)`から3層(暗い/技色/明るい)を作る。**SSRスキンの色替えが自動で乗る**ので色を決め打ちしない。
-- kindごとの担当: fan=炎の扇 / rect=style別(crystal 結晶・lava 炎の壁・それ以外はビーム)/ beams=同じビーム3本 / zigzag=空からの落雷 / fanZigzag=弧を描く念力の壁 / circle=積み上げた輪のドーム。**予告(点線)は通常マップと同じく最大範囲で必ず出す。**
-- **`groundZAt()`は炎1つにつき1回だけ呼んで使い回す**(垂直なので根元の高さだけで足りる)。段ごとに呼ぶと地形サンプルが数倍になる。
-- 弾の絵文字置換は`REAL_ICON_FX`(絵文字→描画関数)。**キーは`fxIconKey()`で異体字セレクタと肌色modifierを落として引く**(👊🏻と👊🏿は同じ拳)。表に無い絵文字は`fxIconEnergy`(光の弾)にフォールバックする。**`projStyle`/`shape`を持つ技は対象外**(条件を2Dの絵文字分岐と同じにしてある)。
-- 長い弾(矢・刃・拳)の向きは`fxProjScreenAngle()`。`travelAngle - camState.yaw`では奥へ撃った時に横倒しに見える。
-- tier3の専用弾(`projStyle`)は`REAL_STYLE_FX`。球体は放射グラデーション+加算、輪は`fxDisc()`(=カメラの扁平率`fxFlatten()`に合わせた楕円)で描く。**画面上の真円で輪を描くと地面と傾きが合わず平面に見える。** 竜巻は`fxUp()`で地面まで下ろして本物の漏斗として立てる。
-- **範囲技の深度ソートの基準点は`areaEffectAnchor()`。** 発生地点(術者の足元)だけを見ていると、**前進しながら技を撃った時に発生地点がカメラの後ろへ回った瞬間にエフェクトごと消える**(2026-07-30に発生)。中ほど→先端の順に代わりの基準点を探す。
-
-## モンスター・スキン
-
-### 新モンスター追加チェックリスト(1つでも欠けると不具合)
-1. `ELEMENTS` 2. `TRAIT_DESC`(ui.js) 3. `SIGNATURE_MOVES` 4. `MOVE_AURA` 5. `MONSTER_AURA` 6. `SKIN_CONFIG`(`source.hue`は実画像からサンプリング) 7. `STATE_CHANGES` 8. `APTITUDE` 9. `WALK_ANIM`(歩行動画があれば) 10. `monsters/<key>.png`・`<key>_player.png`(正方形・被写体が高さの9割・足元が下端付近に正規化)
-- 既存にないギミックが要るときはcombat.js/render.jsに新しい`kind`を増やす形で拡張する。
-
-### SSR/色スキン
-- **画像は`SSR_SKINS`に書けば`ssrSkinImages`が自動生成される**(以前は手書き表で、追記漏れによりカタログ・バッグ・着せ替え・装備時の見た目がすべて素のモンスターに化けた)。**実体生成は`SSR_SKINS`の宣言直後に置く**(前半だとTDZ)。
-- **DOM表示は事前ロードに依存させない。** `skinnedIconDataUrl`等は未ロードでも`ssrSkinFileUrl()`でURLを返す。canvasへ描く`skinnedImage`だけはロード済みImageが必要。
-- 新SSRの登録先: `SSR_SKINS` / `SSR_SKIN_AURA` / `SSR_SKIN_TIER3`(専用技) / `SKIN_TIER3_SE`(専用SE) / `WALK_ANIM`の`ssr` / 画像2枚。ガチャ・カタログは`gachaSsrSkinIds()`が自動生成。
-- tier3のオーラ/エフェクト色はSSRもSR色スキンも変える。判定は`skinTier3Aura(skinId)`1か所に集約済みなので、combat.js/network.jsの`effColor`/`auraTint`は触らなくてよい。
-- **SSRだけの特典は「tier3の技名と威力」。** SRはオーラ・エフェクトのみ。この線引きを守る。
-- `SSR_SKIN_TIER3`は`dmgMult`(倍率だけ)か`move:{...}`(フィールド上書きで性能ごと専用技化。`blast`はマージ)。**`move`に`dmg`を書くときは`dmgMult`を併記しない**(二重適用)。
-- **`SSR_SKIN_TIER3`内で`auraColorHex()`を呼ばない。** `SKIN_COLORS`の宣言が後ろにありTDZでdata.js全体が落ちる。色はリテラルで書く。
-- **専用技の解決は`skinTier3Move(move, attacker)`で、呼ぶ場所は4か所**: combat.jsの`fireMove`先頭 / network.jsの`tryNonHostPlayerFireVisual` / render.jsのHUD技フィールド / ui.jsの`buildMastermonMovesHtml`。fireMove先頭で解決すれば威力・弾速・射程・爆風・ガッツ・SEはすべて解決後の値で流れる。
-- 色の例外フラグ: `keepBaseColor`=本体色は元のまま差し色だけオーラ色 / `keepArcColor`=本体はオーラ色でビリビリだけ既定の紫。ビリビリ2色は`arcColorsFor(tint)`に集約。**`spawnGroundBlast`には弾の`auraTint`を渡す**(渡さないとドームだけ既定色に戻る)。
-- スキン別SEは3表(combat.js): `SKIN_TIER3_SE` / `SKIN_SUMMON_SE` / `SKIN_HIT_SE`。`playSe(skinXxxSeName(entity) || '既定SE')`の形なので未定義は自動で既定。
-- スキンプレビューは歩行を再生する(`skinWalkFrameDataUrls` + `startSkinPreviewAnim`)。未ロードならnullで静止画のまま(0.35秒×6回リトライ)。閉じたら必ず`stopSkinPreviewAnim()`。
-
-### 歩行アニメーション
-- `monsters/<prefix>_walk_f1..8.png`(正面)/`_b1..8.png`(後ろ)。**有効化は`WALK_ANIM`への登録だけ。全15エレメント対応済み**(SSRはラガモッチー/ゼウス/タマモノマエ/フェニックス/イブリース/ちょこ/ペルセポネ)。
-- 入口は`getDisplayImage(entity)`→`entityWalkFrameImage(entity)`。`matchTime`でコマ送り、平滑化速度`_mwSpeed`が`WALK_MOVE_EPS`超で歩行中。進行方向とカメラyawの内積で正面/後ろを切替、停止中は静止(自分=後ろ/他=正面)。色スキンは各コマを`recolorToCanvas`して`_walkRecolor`にキャッシュ。**歩行コマ未提供のSSRは`null`を返して静止スキン画像にフォールバック**(新SSRで歩行を用意しない場合はここが働く)。
-- 生成は`tools/build_walk.py`(開発用。動画→60fps抽出→自己相関で1周期検出→8コマ→切り抜き→320px・256色透過PNG)。背景別モード: `white_alpha`(白背景・隅から連結する白のみ透過)/ `grabcut_alpha`(草・金背景。`gentle`は細い足を守る、`hard`は縁を確定背景に)/ `phoenixcut_alpha`(鳥。かぎ爪の足を明示追加し中央下部限定の縦closeで接続、トサカ復元)。黒背景素材は輝度キー(6→40のランプ)で抜く。
-- 落とし穴:
-  - **全体を`binary_fill_holes`しない**(渦・発光の輪の内側まで埋まって黒い板になる)。小さな閉じた暗部だけ埋める。
-  - **保存は`quantize(colors=256, method=Image.FASTOCTREE)`。** `convert('P')`+`transparency=255`は透過が正しく書かれない。
-  - 動画の透かしは「明るいのに全フレーム動かない画素」をマスクして抜く(矩形塗り潰しは被写体を削る)。数px膨張させる。
-  - 周期検出は下半身時系列からドリフトを引いた自己相関(生の自己相関はズームに埋もれる)。半周期の負相関×2が周期。
-  - **【検証必須】全16コマを目視し、突起(トサカ)・足の欠けと足元の背景残りが無いことを確認する。** 自動チェックだけで採用しない(鳥系で何度も手戻りした)。
-  - **JOBS/MOVに新規ジョブを足すときjob idの重複を必ず`grep`で確認する。** 後勝ちで上書きされ**既存モンスターのスプライトを破壊する**(2026-07-25に発生、復元が必要だった)。
-  - `W`/`OUTDIR`は環境変数`BUILD_WALK_WORK`/`BUILD_WALK_OUT`で上書き可。セッションごとに更新が要るのは`MOV{}`の動画パスだけ。
-
-## 戦闘・技のギミック
-
-- **`blast`(着弾ドームAoE)**: 弾に`blast:{radius,dmg,color,expandTime,(telegraphTime),(style),(se)}`を付けると着弾点で`spawnGroundBlast()`が`kind:'circle'`のareaEffectを出す。**直撃`mv.dmg`と爆風`mv.blast.dmg`は別々に入る。**
-- **`burstSpread`(連射の広がり。既定0.05rad)を読む場所は4か所**: combat.jsの`aoeShape`分岐と通常弾、network.jsのゲスト見た目の同2か所。
-- **長い弾(槍)は`travelAngle - camState.yaw`で回さない**(カメラ奥へ撃つと横倒しに見える)。進行方向へ進んだ点を`project()`し画面上の差分から角度を取る(`seaSpear`が実装例)。
-- **`aoeShape`技の`burst`**は即時生成なので2発目以降を`pendingAoeCasts`に積み`updatePendingAoeCasts()`で生成する。
-- **範囲エフェクトの描画半径は判定と同じ`curReach`にする**(見栄えで0.95倍などを掛けない)。
-- **`gutsDrainRatio`**(技単位のガッツ削り)は`gutsDrain`として弾・AoEに載せ`applyDamage`の`opts`で適用。属性単位のガッツ削り(プラント/アーク)とは別系統。
-- **新しいダメージ源のフィールドを増やしたら`buildMastermonMovesHtml`の威力表示にも足す**(`mv.dmg`ベースなので「威力0」表示になる)。特徴テキストは`describeMoveFeatureText`。
-
-## 安全圏
-
-- `ZONE_PHASES`でフェーズ定義。安定フェーズ開始時に`prepareNextZoneTarget()`が次の縮小先を決め、`toCenter/toRadius`を予測点線で表示。マルチではホストのzoneState(toCenter含む)を同期する。
-
-## マスモン(メタ進行)
-
-- localStorage永続化(`loadMastermons`/`saveMastermons`)。6ステータスの戦闘反映は`mastermonStatFactor(v,statKey)`(`MASTERMON_STAT_FACTOR_DIVISOR`が小さいほど効きが強い)。EXPは`awardMastermonExp`(`MASTERMON_EXP_GLOBAL_MULT`×`xpMult`)。
-- **適用は「エンティティ生成 → `applyMastermonStatsToEntity(ent, mm)`」の1本道**(ソロ=`startGame()`、マルチ=`beginMultiplayerMatchInner()`の人間ループ)。
-- **マルチでは育成ステータスを部屋の参加者情報で共有する。** `currentMastermonInfo()`が`{level,stats}`を返し`rooms/{id}/players/{pid}.mm`へ書く。**片側だけで掛けるとHPと移動速度が食い違い、ゲストの位置補正が暴れる。** 入室経路は3つ(`__aramonCreateRoom`/`__aramonJoinRoom`/`__aramonFindOrCreateRoom`)あり載せ忘れやすいので、書き込み4か所は必ず`mmEntryFields(mmInfo)`をスプレッドする。同期していないのは`speed`と各`mastermon*Mult`(maxHpはauthStateで上書きされる)。
-- **撃破EXPボーナスはbot・人間の区別なく与える。** ホストが`killEntity`で積み`hostForceFullNext=true`で最短配信、ゲストも`kill`イベント受信時に自前で積む(最後のキルで試合が終わると間に合わないため)。反映は`Math.max`(遅れて届いた古い値で減らさない)。
-- **技強化チケット(`nextMoveBoost`)はソロ専用**(マルチは`moveTierUnlocked`がホスト権威で、authStateは上げる方向にしか反映しないため)。
-
-## マルチプレイ(network.js)
-
-ホスト権威型。ワールド生成はシード付き乱数でホスト/ゲストが同一結果を得る。**ソロ用とシード付きの生成関数は対になっているので、変更するときは必ず両方直す**(例 `spawnLoot`/`seededSpawnLoot`)。
-
-### ゲストに「起きない・遅れる」を作らない
-ゲストは`update(dt)`を実行しない。**ホストのループの中でしか起きない処理は、ゲストには何も起きない。**
-- **単発通知(キルフィード等)は`onChildAdded`+キーで重複排除して配信する。`limitToLast(1)`+`onValue`は短時間に複数件出ると途中が消えるので使わない。** 受け口は`handleRoomEvent()`。
-- **ホストは全件配信する**(bot同士のキルも含む)。関与分だけに絞るとゲストのキルフィードがほぼ空になる。
-- **HP/ガッツはauthStateで伝わるが、SE・ダメージ数字・トーストは伝わらない。** ゲスト側で再現する。パターンは2つ: ①ホストが単発イベントを配信してゲストが同じ演出を出す ②同期済み情報からゲストが見た目だけ出す(`showGuestEnvironmentDamage`)。**足りないのはほぼ常に「演出」の側。**
-- **`AUTH_FULL_EVERY`で間引かれるコールドフィールド(maxHp・train係数等)は最大0.4秒遅れる。** 即座に見せたいときは`hostForceFullNext = true`。
-- **絶対時刻(matchTime基準)は残り秒数で送る**(ホストとゲストのmatchTimeはズレる)。現在: `fz`/`sl`/`sb`/`bn`/`po`/`stR`/`stcR`。新しい「〜Until」もこれに倣う。
-- **安全圏の`zoneState.timer`も同期する(`zone.tm`)。** 無いとゲストの残り秒数が進まない。
-- **`updatePendingAoeCasts()`はゲストのループでも呼ぶ**(連射範囲技の2発目以降が出ない)。**`pendingAoeCasts`は試合開始時に必ずクリア**(残ると次の試合で幻の範囲攻撃が出る)。
-- **自分が撃った弾のエコーはゲストで捨てられる**ため、着弾ドームのような派生エフェクトはゲストも自前で生成する(視覚専用弾にも`blast`を持たせる)。
-- **発射条件は3か所で一致させる**: `tryPlayerFire` / `tryNonHostPlayerFireVisual` / `processRemoteFireEvents`。
-- **ホストしか行わない取得判定はゲストが見た目だけ先読みする**(`predictLootPickupsAsGuest()`。確定が来なければ復活)。**先読みフラグは`!= null`で判定**(matchTime 0と区別できない)。
-
-### 位置・動き(ラバーバンド対策)
-- **補正のしきい値は移動速度に比例させる(`selfCorrectSpeedScale`)。** 固定距離だと速いほど通常の前進でも引き戻される。基準は`entityMoveSpeed(ent)`。
-- **マルチだけ移動速度と弾速を落とす**(`MULTI_MOVE_SPEED_MULT`/`MULTI_PROJ_SPEED_MULT`)。掛ける場所は`resolveMovement`の`effSpeed`と`effectiveProjSpeed`の各1か所だけなのでホスト/ゲストが自動一致する。**ダッシュ速度は`slowedSpeed`基準のままにして飛距離を変えない。**
-- **自分の位置は「同じ入力時点どうし」で突き合わせる。** 入力に`seq`を付け、ホストが`aseq`を返す。ゲストは`selfPredHistory`と比較し、`SELF_CORRECT_DEADZONE`超のぶんを`selfCorrX/Y`に溜めて少しずつ消費する。**現在位置とホストの遅れた位置を直接比べてはいけない**(遅延がそのまま誤差になり、低速地形では操作不能になった)。
-- **ダッシュは回数(`dashSeq`)を入力に載せてホストに再現させる**(フラグではなく回数にすると二重発動も取りこぼしも防げる)。開始処理は`startEntityDash()`に集約。**自分のダッシュのクールタイムはauthStateで上書きしない**(遅れた0が届いて連続ダッシュできる)。**ダッシュ中と直後は許容を広げる(`SELF_CORRECT_DEADZONE_DASH`)。**
-- **移動に影響する状態異常は必ず同期する**(残り秒数で)。
-- **他エンティティの補間はホストの試合時刻(`payload.t`)を時間軸にする。** 到着時刻基準だとジッタで速い相手が瞬間移動する。変換は`hostClockOffset`。
-- 試合開始時に`guestSnapBuf`/`hostClockOffset`/`selfPredHistory`/`selfCorrX/Y`/`selfInputSeq`をリセットする。
-
-### フリーズ対策
-- **`loop()`の中身は必ずtry/catchで囲む。** 例外を投げるとRAFが再登録されず描画も入力も完全に止まる(復帰不能)。捕まえてもRAFは継続する。
-- **`beginMultiplayerMatch()`は外枠のtry/catchでフラグを必ず戻す**(`matchBeginning`が立ったままだと以後試合を開始できない)。失敗時はトップ画面へ帰し部屋も離脱。
-- **ゲストの自分の座標は`sanitizeSelfPosition()`で毎フレーム点検**(一度NaNが入ると以後描画も操作もできない)。
-
-### 観戦(ホスト敗退後)
-- `spectateCandidates()`は**自分以外の生存者全員**(人間を先、botを後)。人間だけにすると残り1人のとき「次のプレイヤー」が効かない。終了判定(`checkWin`の`humanAlive`)は別なので影響しない。
-
-## 音(audio.js)
-
-- 原則Web Audio合成。初回タップ後に`audioInit()`。合成ヘルパーは`seTone`/`seNoise`/`seNoiseLfo`、定義は`SE_DEFS`。
-- `playSe(name, opts)`は**負荷対策で自分の操作モンスターに関わる音のみ**鳴らす。`SE_MIN_GAP`で連打間引き、`SE_VOL_BOOST`で技SEを増幅。tier3は`MOVE_SE_BY_STYLE`(combat.js)、技名個別は`move.seStyle`。
-- BGM: タイトル / 試合中(intensity 0〜2)/ 決戦(3)/ ラストバトル(4)/ ショップ / ロビー / トレーニング。`bgmSetTrack()`と`bgmUpdateBattleIntensity(aliveCount)`。全ノードは`bgmTrackGain`→`bgmGain`→出力。
-- **intensityを増やしたら`bgmStepDur()`のbpm配列も伸ばす**(配列外でBPMがNaNになる)。
-- **トラック/intensityを追加したら管理者画面の`BGM_TEST_ITEMS`にも足す。**
-- **実音源ループは「常に1曲だけ」を`updateBgmFileLoops()`が保証する。** `bgmFileLoopTarget()`が鳴らすべき1曲を返し、それ以外は`stop()`。**トラック名は明示で判定する**(「title/shop以外は試合中」としていたためトレーニング画面で決戦BGMが重なった)。新トラックは1行足すだけ。
-- **SSRスキン専用のBGM(轟金剛の3曲)は`gokongoBgmActive()`(`game.started && entitySkinId(player)==='rock_ssr'`)でだけ切り替わる。** `game.started`を見るのは、管理者画面のBGM確認(`final5`/`last2`ボタン)が試合を開始せずに`cur:'battle'`を使うため。ここを見ないと、開発者アカウントがたまたま轟金剛を装備していると確認ボタンが専用曲を鳴らしてしまい、通常曲を確認できなくなる。**専用曲が未ロードの区間だけ通常のfinal5/lastbattle/合成BGMへ自動フォールバックする**(3曲を個別にensureする、無音にしない)。管理者画面には`cur`にそのまま渡る専用のテストID(`gokongoBattle`等)を用意し、装備や試合中かどうかに関係なく単体で確認できるようにしてある。
-- `bgmSetTrack('title'|'shop'|'training')`はintensityを0に戻す(`null`は試合中の演出でも使うので触らない)。リザルト後にロビー曲へ戻す遅延処理は`bgmDesiredTrack()!==null`なら何もしない。
-
-### 実音源を使う例外
-「全合成」が原則だが、外部依存を増やさない範囲で実音を使う。
-- **長いBGMは`createBgmLoop(url, gain, keepPos)`**: `ensure()`(fetch+decode)/`start()`/`stop()`(0.6秒/0.4秒フェード)。合成との二重再生は`bgmFileLoopActive()`で防ぎ、**実音源が鳴っている間は合成ステップを一切呼ばない**。未ロード/失敗時のみ合成へフォールバック。試合中の2曲は`audioInit()`で先読み、ショップ曲は画面を開いたときに初回ロード。曲ごとの音量は`BGM_FILE_GAIN`。
-- **切替は等パワークロスフェード(`_equalPowerCurve`)。** 線形だと合計音量が一時的に1.4倍になる。上げ側`sin`/下げ側`cos`で、**下げ側は終点基準(`to + (from-to)*cos`)**。
-- **ロビーBGMだけ再生位置を記憶する**(`keepPos`。`stop()`で経過を足し`start()`で`src.start(t, offset)`)。「いちか(実音源)」と「オリジナル(合成)」の切替は`lobbyBgmMode`(localStorage `aramon_lobby_bgm_v1`)+ヘッダーの`#headerBgmBtn`。
-- **トレーニング画面は`bgmSetTrack('training')`。切替判断は`updateMetaBgm()`(ui.js)1か所**に集約(`mmOpenTab()`と`#mastermonScreen`のMutationObserverから呼ぶ)。試合中とショップ表示中は触らない。
-- **短い内蔵SEは`createSeOneShot(dataUrl|url, gain)`。** `play()`が未ロード/音量0でfalseを返すので`if(!seXxx.play()) SE_DEFS.既定SE(t,o)`と書けば必ず鳴る。`SE_DEFS`に足せば管理者画面のSE確認に自動で載る(表示名`SE_TEST_LABELS`、間引き`SE_MIN_GAP`)。
-- **「実音源のあとに合成SEをつなげる」ときは`play(when)`に開始時刻を渡す**(ヒノトリ`fireWave`)。長さは`.dur()`。
-- **提供音源の技SEは`move.seStyle`で指定する**(`MOVE_SE_BY_STYLE`はスタイル単位なので他モンスターまで巻き込む)。現在: `darkHoust`/`requiemEnd`/`mocchiBeam`/`monta`/`crystalRain`/`fireWave`。
-- 使い分け: 1.2秒程度まではデータURIインライン、3秒級のSEと長い曲は外部mp3+fetch。
-- **提供音源の前後の無音はmp3の側で切っておく**(再生時にずらす仕組みは持たない)。`silencedetect`で位置を測り、`-ss/-to`で切り直してからデータURIへ。
-- 実音の抽出(この環境): `pip install imageio-ffmpeg`で静的ffmpeg。**Chromium(OSSビルド)はAAC不可・mp3可**なので動画音声は一旦mp3化する。整音は`loudnorm`。
-
-## Firebase・アカウント
-
-- Realtime Database。パス: `scores` / `matchLogs` / `lobby` / `rooms` / `accounts`。
-- **新しいDBパスを追加したらFirebaseコンソールのセキュリティルールにも`.read`/`.write`が要る**(未定義パスはデフォルト拒否)。**発注者が手作業で貼るので、貼り付け用のJSONをそのまま渡す。**
-- ログインは名前+4桁パスコードで`accounts/{nameKey}`。認証情報は`aramon_account_v1`に保存し自動ログイン。**端末に認証情報がある時点で即ログイン扱いにし、通信失敗でもログイン状態を維持する。**
-- サーバー同期は`ACCOUNT_SYNC_KEYS`を`accountMarkDirty()`→3秒デバウンスで送信。ログイン時は`updatedAt`で新しい方を採用。**localStorageのsave関数に`accountMarkDirty()`を足し忘れない。**
-- 通貨は`loadWallet/saveWallet/addWallet`、試合報酬は`showResult`(定数`GOLD_*`/`DIA_*`)。
-- アイテムは`PLAYER_ITEMS`、バッグは`loadBag/saveBag/addBagItem`、ガチャ`GACHA_POOL`(10連10個目は`GACHA_TICKET_POOL`確定)、ショップ`SHOP_ITEMS`。
-- バッグUIは左=アイコングリッド+説明、右=対象マスモン一覧。「選択→使用」の2段階で、**アイテムを切り替えてもマスモンの選択は保持する**。ステータス上昇アイテムは999上限を考慮して変動値を出し、超える個数は選べない。
-
-## 強制横向き / タッチ
-
-- 縦画面ロック端末では`#appRoot`をCSS回転(`world.js`の`updateForceLandscapeMode`)。座標・移動量は`toLogicalPoint`/`toLogicalDelta`で補正。
-- **向きの判定は`matchMedia('(orientation: portrait)')`。** 実測pxは起動直後に確定しないことがあり、それで一度だけ判定すると縦持ち起動時に効かないまま固定される。`getRealViewportSize()`は`visualViewport`→`innerWidth/Height`→`clientWidth/Height`の順にフォールバック。
-- **起動直後は`resize()`を何度も呼び直す**(`DOMContentLoaded`/`load`/`pageshow` + 50〜2000msのタイマー + mqのchange)。iOSは`orientationchange`を取りこぼす。キャンバス処理はtry/catchで囲み、失敗しても向き判定は済ませる。
-- 縦画面ロック中はネイティブスクロールが効きにくいので、input.jsが回転補正した移動量で手動スクロールする(overflow:auto/scrollを付ければ拾われる)。
-
-## 性能(端末の負荷)
-
-- **管理者画面の「📊 パフォーマンス表示」で実測してから手を入れる。** 試合中に左上へ fps / frame / update / 2D / WebGL / 描画数 / 地形パッチの再計算量が出る(`aramon_perf_v1`。端末ごとの開発用設定なのでアカウント同期に入れない)。**OFFのときは`perfFrameStart()`が即returnするので通常プレイに負荷を足さない。**
-- **歩行スプライトは遅延ロード。** 352枚(6.8MB)あるので起動時には読まず、`_framesReady()`が最初に呼ばれた時に`img._start()`で読み始める。**未ロード中は静止画にフォールバックする仕組みが元からあるので、呼び出し側の対応は不要。** `entityWalkFrameImage`で`_framesReady(front)`と`(back)`を**短絡させない**(後ろ姿の読み込みが始まらなくなる)。
-- **Service Workerは2つのキャッシュを使い分ける。** コード(html/js/css)は従来どおりネットワーク優先で`CACHE_NAME`へ、画像と音は`MEDIA_CACHE`へ**stale-while-revalidate**(キャッシュを即返し、裏で更新)。**`MEDIA_CACHE`はバージョンを上げても消さない**ので11MBの画像を毎回取り直さずに済む。素材を差し替えた場合は次回の起動で自動的に新しくなる。
-- **リアルマップの地形パッチは「ずらして使い回す」。** パッチが動いても重なっている部分の高さ・色・法線は前回とまったく同じなので、`scratch*`へコピーしてから**新しく現れた帯だけ**計算する(移動中の再計算は全体の約3%)。スナップ幅は`PATCH_SNAP_CELLS`(2セル=100単位)。
-- **地形の傾きは`real3dHeightGrad()`の解析微分。** sin/cosの微分は同じ角度のcos/sinなので、隣の点を追加で評価して差分を取るより速く、法線もそこから直接作れる。**`computeVertexNormals()`(4万三角形の走査)は呼ばない。**
-- **実測(iPhone・リアルマップ27体):フレーム47.5msのうちJSは9.2ms(update 5.0 / 2D 3.8 / WebGL 0.4)だけ。** 残り38msはブラウザ側のラスタ化と合成。**重いときはまずJSではなく「描くピクセル数」と`shadowBlur`を疑う。**
-- **`shadowBlur`は必ず`if(!renderHeavyLoad)`で囲む。** Canvasで最も高い処理で、アイテム・モンスターのように数が多いものに掛けると一気に落ちる(アイテムの`shadowBlur`が無防備で、試合開始直後に数十個ぶん掛かっていた)。
-- **モンスター画像は`scaledSpriteFor()`の縮小版から描く。** 元画像は320〜1024pxだが画面上は40〜200px。歩行コマは1体16枚あり、27体だと200枚以上のテクスチャを端末が抱えることになる。64/128/256の3段階に1回だけ縮小して使い回す(必要な大きさが256pxを超えるときだけ元画像)。**白フラッシュのマスクも縮小版から作る。**
-- **遠くのアイテムは粒だけで描く**(`LOOT_SIMPLE_SCALE`=0.14)。試合開始直後はアイテムが数十個あり、1個ずつ楕円・矩形・文字を重ねると効く。**このしきい値を`renderHeavyLoad`に連動させない**(`gfxLevel`が上がると貼り付いたままになり、近くのアイテムまでずっと粒になる)。
-- **`RS_RECOVER_MS`は必ず16.7msより大きくする。** 60fpsのフレーム時間が16.7msなので、これ未満を「余裕あり」の条件にすると一生成立せず、一度下げた画質が戻らない。
-- **技のエフェクトは負荷が高くても簡略化しない**(発注者方針)。代わりに「同じ見た目のまま安くする」方向で詰める。**加算合成(`lighter`)への切り替えは端末側でレイヤの吐き出しを伴う**ため、炎24本×3層で切り替えを72回やると積み上がる。`fx3dFlameField()`が「外側を全部 → 内側2層を加算でまとめて」の2パスにして切り替えを2回に減らしている(見た目は変わらない)。
-- **アイテムは`LOOT_VIEW`(2400)より遠いものを描かない。** マルチでは420個ほど撒かれるので、全部描くと`drawables`が350を超え、地平線に粒が数珠つなぎに並んで浮いて見える。`LOOT_SIMPLE_DEPTH`(1450)より遠いものは粒だけにする。
-- **小さく映る弾は光る球1枚に落とす**(`PROJ_SIMPLE_PX`)。弾エフェクトは1発ごとにグラデーションを何枚も作り加算合成で重ねるので、数十発同時だと端末側の合成で効く。**tier3の専用弾(`projStyle`)は同時に数発しか出ないのでしきい値を上げない。** 弾が`PROJ_DETAIL_BUDGET`を超えたときだけ`PROJ_SIMPLE_PX_HEAVY`に切り替える。
-- **パーティクルは`PARTICLE_MAX`で上限を掛ける**(`trimParticles`)。ダメージ数字(`type==='text'`)は情報なので残し、火花から先に間引く。
-- **落とし方は控えめに、戻し方は素早く**(発注者方針)。範囲攻撃が重なって一瞬重くなるのは許容し、収まったら0.7秒で元の画質へ戻す。
-- **動的解像度と品質レベルは`updateRenderScale()`1か所。** フレーム時間を見て、まず`gfxLevel`を1に上げて影を切り、それでも足りなければ`setRenderScale()`で描画倍率を下げる(戻すときは逆順)。**上限`DPR_MAX`は変えない**ので余裕のある端末の見た目は今までと同じ。2DとWebGLは`window.__aramonRenderScale`で同じ倍率を使う。
-- **毎フレーム数万回呼ぶ関数の中で関数を作らない**(`macroPatch`が呼び出しごとにクロージャを1個作っており、1回の再計算で2万個生成していた)。
-
-## モンスター追加ツール(tools/)
-
-**新しいモンスターは手作業で表に書かず、ツールで追加する。** 詳細は`tools/README.md`。
-
-- **iPhone完結版(主役)**: `tools/studio_web.html` = GitHub Pagesに置いた静的HTML1枚(`.../aramon/tools/studio_web.html`)。**依存ゼロ・端末内で完結**し、動画→8コマ・静止画整形・9表への登録・**GitHubへの1コミット送信**まで行う。認証はfine-grained PAT(Contents: Read and write、対象リポジトリのみ)をlocalStorage(`aramon_gh_token`)に保存。**コミット先はmain直接**で`sw.js`の`CACHE_NAME`も自動で+1する。取り消しボタンは`/*@key*/`の行を消してコミットし直す(CLIの`--revert`相当)。
-  - **Python版と同じ行を出すことが前提。** `renderRows`/`buildMoves`/`jsMove`は`monster_code.py`/`monster_spec.py`の1:1移植なので、**片方を直したらもう片方も直す**(出力一致はnodeで文字列比較して確認できる)。
-  - 移植していないのは`grass`(GrabCut)と256色量子化だけ。難しい背景はMac版へ回す。
-  - **歩行は動画が無くても作れる**(iPhone版のみ)。2枚以上の画像はそのままコマとして並べ、1枚だけなら`synthWalkFrames()`が動かす。**足元(`CANVAS*FEET_Y`)を軸に変形する**ので接地位置がコマ間でずれない。上下は2歩で1往復(`cos(4πt)`)。
-  - **1枚の絵はパーツに切り分けて動かす。** `detectParts()`が「太い所=胴(距離変換でオープニング)/ はみ出した出っ張り=手足」で候補を出し、付け根の位置と向きで脚・腕・しっぽ・耳に分ける。**芯の縁にへばり付いているだけの欠片(角が丸まって出来る)は`reach`で落とす**(これが無いと四角い絵で偽の候補が4つ出る)。腕としっぽの区別は**全体ではなく芯(胴)の縦位置**で見る(全体だと脚や耳が混ざって基準がずれる)。
-  - **芯の太さは`PART_SCALES`の3段階で試し、重なった候補は細長い方を採る。** 1段階だと必ずどちらかで外す(芯を大きく取ると隣り合う脚が根元でつながって1個になり、小さく取ると太い手足が芯に飲まれて出ない)。ふるいは3つ: 細長さ`PART_MIN_ELONG`(丸いかたまりは1/π≒0.32なので手足と明確に分かれる)/ 太さ`thick > r0*0.8`は胴の一部(頭や首を落とす)/ 張り出し`reach`。
-  - **歩きは左右ではなく前後(奥行き)に振る。** 正面向きの絵なので、前後の振りは画面上で「付け根から先が短く見える(`fore=cosφ`)」「手前は大きく奥は小さい(`depthScale`)」「奥のものは本体より先に描いて隠し、暗くする(`depthDark`)」の3つになる。**この3つが揃わないと平面的に見える。** `rot`は0にして左右には振らない(しっぽ・耳と「揺れる」モードだけ横揺れ)。
-  - **`detectParts()`はDOMに触らない純関数にしてある**(nodeで棒人間のマスクを流して検証できる)。**canvasを使う処理を中に入れない。**
-  - パーツ層は付け根まわりを`RIG_GROW`だけ太らせ、土台は抜いた穴の縁を`RIG_PATCH`回だけ周囲の色で埋める。**どちらか片方を省くと回したとき継ぎ目が開く。**
-  - **パーツが0個のときは従来の全体モーションにそのまま落ちる**(定数も従来値のまま)。「揺れる/全体」も同じ経路なので、既存の見た目は変わらない。
-  - **SSRスキンの登録もできる**(iPhone版のみ)。入れるのは`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`と`WALK_ANIM`の素体の中の4か所。**`WALK_ANIM`だけは表の末尾ではなく素体ブロックの中に挿す**ので`applySsrWalk()`が専用に処理する(`reg.ssr`は1素体に1つだけなので、埋まっていたら静止画だけで登録し、ゲーム側の静止画フォールバックに任せる)。素体一覧はツールに書かず`data.js`の`ELEMENTS`から読む。`SKIN_TIER3_SE`は音源が要るので扱わない。
-  - **8コマの下にゲームと同じ速さ(`WALK_FRAME_DUR`=0.11秒)のアニメーションを出す。** この値はdata.jsと二重に持っているので、変えたら両方直す。
-  - **周期は「下半身の帯 → ドリフト除去 → 山があれば山 / 無ければ谷×2」で求める**(`detectPeriod` / `build_walk.py`の`detect_period`。**同じ手順・同じ定数なので片方を直したらもう片方も直す**)。全体の自己相関をそのまま使うと寄り・ズーム・明るさのゆっくりした変化に埋もれて右肩下がりの曲線にしかならず、**探索範囲の下限がそのまま返って1歩ぶんに足りない長さで切られる**(片足しか上がらない。2026-08-01に発生)。要点は4つ: ①脚が写る下の帯(`PERIOD_BAND`)だけ見る ②移動平均を引く ③**自己相関は`n`で割る**(`n-lag`で割ると後ろのlagほど値が大きくなり、周期ではなくその2倍・4倍が最大になる) ④`PERIOD_PEAK_MIN`以上の山があればそれ、無ければ「半周期で左右の脚が入れ替わっていちばん似ていない」谷(`PERIOD_DIP_MAX`以下)の2倍、どちらも無ければ従来の山の探索。
-  - **動画からは候補16コマ(`CAND_N`)を出し、その中から8コマ選ばせる。** 自動判定に失敗しても手で直せるようにするため。「切り出す長さ」(`#spanMul`)は周期の倍率で、半分で拾ってしまったときに2倍にすると1周期ぶん入る。
-  - **動画は「一瞬だけ再生してから」canvasへ描く。** iOSはメタデータだけ読めた動画を`drawImage`しても何も描かれず、その空の絵に背景透過をかけると「背景が1つも無い=全面が被写体」となり**真っ黒な8コマ**ができる(2026-08-01に発生)。`loadVideo`は`readyState>=2`まで待ち(動画要素は画面外に置いてDOMへ入れる。iOSは画面に無い動画を再生できないことがある)、`primeVideo()`が無音・インラインで一瞬再生してデコーダを起こし、`seekTo`は`afterSeekPaint()`でコマが描ける状態になるまで待つ。**この3つはセットで、1つ欠けると同じ症状に戻る。** 気づかず進まないよう、解析コマが一様(`gmax-gmin<3`)なら止め、被写体の枠がコマ全体(98%超)になったらも止める。
-  - **動画まわりの待ちにはすべて上限を付ける。** 1つでも返らないと「コマを作っています」のまま永久に固まる(2026-08-01に発生。`loadVideo`の保険が`readyState>=1`のときだけ解決する条件付きだった)。`loadVideo`は3秒で先へ進み12秒で必ずエラー、`primeVideo`は`play()`が返らなくても1.2秒、`seekTo`は0.6秒、`afterSeekPaint`は0.12秒。`canvasToBlobPng`/`blobToDataUrl`も失敗時にrejectする。**進捗は`walkStep()`で件数付きに出す**(黙って固まって見えないため)。
-  - **外周に枠線のある動画は「少し内側の輪」から背景を探す**(`BORDER_INSETS`)。外周1〜2pxが暗い枠線だと白い背景が画像の縁に触れず、`borderConnected`が背景を1つも見つけられない=全面が被写体になる(2026-08-01に発生)。**内側で見つけたときは枠ぶんを`fg`から切り離してから`keepLargest`する**(被写体に触れている枠線を残すと被写体の枠がコマ全体になる)。抜けなかったときは`cornerHint()`が四隅の色から試すべき抜き方を返す。
-  - **候補コマの時刻は秒で直接決める**(解析の目盛りに丸めない)。丸めると周期が短いときに同じコマが何組も候補に並ぶ。`ANALYZE_N`は多いほど遅く、48で0.75秒の周期まで見分けられる。
-  - **背景の抜き方は歩行と静止画で別々**(`walkSeg()` / `#pmode`)。静止画の既定は`auto`=透過済みならそのまま・それ以外は歩行と同じ設定。「色で抜く」の色は下絵をタップして拾い、`state.chroma`(歩行)/`state.chromaP`(静止画)に持つ。**色を拾っていないまま抜くと黒背景として処理されてしまうので`assertChroma()`で止める。**
-  - 書き込みは**Git Data API**(blobs→tree→commit→PATCH ref)。ファイル単位のPUTだと18コミットになる。読み込みは**Contents API**(Pages経由だとSWのキャッシュで古い内容を掴む)。
-- **GUI(Mac/PC)**: `python3 tools/monster_studio.py` → `http://127.0.0.1:8777`。背景の抜き方を切り替えながら8コマをその場でプレビューし、問題のあるコマを赤枠で理由付きに出す。`--lan`で同じWi-FiのiPhoneから画面だけ開ける。
-- **CLI**: `python3 tools/monster_add.py <key>`(`--dry-run` / `--revert` / `--only sprites|portraits|code|check`)。仕様は`monsters/specs/<key>.json`。
-- **検証**: `python3 tools/check_monsters.py`。`ELEMENTS`の全モンスターについて9表と画像の有無を機械的に見る。**上のチェックリストはこれで強制される**ので、追加作業の最後に必ず通す。
-- **表への挿入位置は各表末尾の`// <<AUTO:表名>>`の行。この行を消さない。** 追記した行には`/*@key*/`の目印が入り、`--revert`はこれを見て消す。
-- 技はテンプレートを選ぶだけでコードを書かずに済む。tier1/2は絵文字(`REAL_ICON_FX`から自動列挙)、tier3は`fan`/`wave`/`crystal`/`beam`/`river`/`beams3`/`thunder`/`psychic`/`orb`/`tornado`/`sword`/`shell`/`crescent`/`spear`から選ぶ。
-- **背景除去は`tools/build_walk.py`をそのまま呼んでいる**(モンスターごとに積み上げたモードの資産を捨てない)。`build_walk.py`は`import`しても`JOBS`が走らないようにしてあり、`build_frames()`が8コマを返し`process()`が保存する。
-- 素材は`assets/<key>/`(gitに入れない)。CLI・Mac版GUIは`sw.js`を触らないので**コミット前に`CACHE_NAME`を上げる**(iPhone版だけ自動)。
+- **分岐は1か所に寄せる。** 通常マップとリアルマップ、ソロとマルチ、2Dと3Dの違いは入口の判定関数1つに集約してあり、通常側の挙動が変わらないことが保証されている(`isReal3dMap()` / `real3dFx()` / `game.trainingRange` / `MULTI_*_MULT`)。**同じ判定を2か所目に書かない。**
+- **同じ意味の数字を2か所に書かない。** 寸法・間隔・高さの基準は片方が正で、もう片方は読むだけにする(CSS変数↔JS、`OBST_SHAPES`↔3Dモデル、`data.js`↔`tools/studio_web.html`)。**二重に持つと決めた箇所はコメントで明記し、直すときは必ず両方直す。**
+- **表に足せば自動で回るようにしてある。** モンスター・SSRスキン・リアルマップ・更新履歴・SE/BGMテストは、それぞれの定義表へ1行足せばUI・カタログ・ガチャまで生成される。**手書きの対応表を新しく作らない**(追記漏れで表示が化ける事故が実際に起きた)。
+- **画面上の見た目を決め打ちしない。** 地面に貼る円・立体物・エフェクトは`project()`で1点ずつ投影する。楕円の比や角度を固定するとカメラと合わず浮いて見える。
+- **ゲスト(マルチ)には「ホストのループの中でしか起きないこと」が何も起きない。** 足りないのはほぼ常に演出の側なので、ホストの処理を足したらゲスト側の見せ方もセットで考える。
+- **色は決め打ちしない。** スキンの色替え(`auraTint`)とマップテーマから作る。決め打ちするとどこかで浮く。
+- **重い処理はまず実測する**(管理者画面の「📊 パフォーマンス表示」)。**技のエフェクトは負荷が高くても簡略化しない**(発注者方針)。「同じ見た目のまま安くする」方向で詰める。
+- **落とし方は控えめに、戻し方は素早く。** 一瞬の重さは許容し、収まったらすぐ元の画質へ戻す。
+- **モンスター一覧は「素の姿」・マスモンは「着せ替え済みの姿」。** 装備スキンを見る/見ないが逆なので混同しない。
+- **SSRだけの特典は「tier3の技名と威力」、SRはオーラ・エフェクトのみ。** この線引きを守る。
+- **音は原則Web Audio合成。** 実音源mp3は「長いBGMと3秒級のSE」だけの例外で、未ロード時は必ず合成へフォールバックする。
+- **UIの落ちどころ(TDZ・初期化順)に注意。** ロビーの初期化はui.js末尾、`ssrSkinImages`の生成は`SSR_SKINS`の直後。前に置くと読み込み時に落ちる。
 
 ## 作業の進め方
 
@@ -409,7 +88,3 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **作業前に「これから何をするか」を一文だけ。** 途中の報告は重要な発見と方針変更のときだけ。
 - **終わったら結論から書く。** 最初の一文で「何をしたか/何が分かったか」に答える。
 - **書き出す文書(PR説明・コミットメッセージ)は必要な長さに収める。** 埋めるための章や繰り返しの要約を書かない。
-
-<tone_preference>
-出力は簡潔に。
-</tone_preference>

@@ -1,0 +1,44 @@
+---
+name: aramon-layout
+description: 荒野モン動のCSS・レイアウト・タッチ操作の共通規則。style.cssを触る / 新しい画面・オーバーレイ・ポップアップを足す / スクロールやタップが効かない / 強制横向き(縦画面ロック端末)の座標がずれる / 文字入力欄を足すときに読む。
+---
+
+# レイアウト・タッチ共通規則
+
+## 禁止事項
+
+- **レイアウトに`@media`を使わない。** 強制横向きでは実viewportが縦のままなので基準が食い違う(詳細2列が1列に落ちる不具合が実際に出た)。幅で分岐したいときは`html.narrow-screen`(world.jsが実画面幅520px以下で付与)。
+- **生の`vw`/`vh`を使わない。** サイズは`calc(N * var(--vh))` / `var(--vw)`で書く。生の`vh`は強制横向きで大きくなり上下が見切れる。`:root`の`--vw/--vh`定義だけが例外。
+
+## 基本
+
+- 横長・低い画面が前提。新画面はスクロールなしで収まる縦幅にする。
+- 画像は`height`固定でなく`max-height` + `flex:0 1 auto` + `object-fit:contain`(縦の狭い端末で縮んで収まる)。
+- プルダウンは`.custom-select`の自前実装を再利用。外枠はoverflow可視・中のリストだけ独立スクロール。
+- 高さの共通値は変数(例 `--top-header-h`)。**数値を直書きしない。**
+- 長押しの選択/メニュー抑止は全画面共通で入っている(個別対応不要): style.cssの`*`に`user-select:none` + `-webkit-touch-callout:none`、直後の`input,textarea{user-select:text}`とセットで維持。input.jsが`contextmenu`/`selectstart`を`preventDefault`(入力欄は除外)。`-webkit-touch-callout`は計算値に出ないのでCSSテキストで確認する。
+
+## スクロールロック除外(必須)
+
+新しい画面/オーバーレイを足したらIDを**3か所すべて**に追加する:
+`render.js`の`touchmove` / `input.js`の`touchend` / `input.js`の`dblclick`。
+漏れるとスクロールもタップも効かない(管理者・ランキング・観戦バー・文字入力で実際に踏んだ)。3リストは同じ内容に保つ。
+
+## ポップアップ(`.mastermon-confirm-overlay`系)の定型
+
+- 幅は複合セレクタ `.mastermon-confirm-box.xxx-box{ max-width:min(760px, calc(95 * var(--vw))); width:同 }`(単一クラスだと基底の340pxに負ける)
+- `position:relative`必須(無いと`.overlay-close-btn`が画面隅へ飛ぶ)
+- `max-height:calc(94 * var(--vh)); overflow-y:auto`(基底にもあるが明示推奨。内側に別のスクロールを重ねない)
+
+## 文字入力(共通ポップアップ `#textInputOverlay`)
+
+すべての文字入力はこれを通す。iOSのキーボードは実画面下=強制横向きではアプリ右側を覆うため、どこに置いても隠れうる。**アプリ全体をずらす方式は実機で破綻したので使わない**(2026-07-27に試して差し戻し)。
+
+仕組み: `focusin`(capture)で元の`<input>`を`readOnly`+`blur()`し、ポップアップの欄に`focus()`(**タップと同じターンで呼ぶ**)。確定時に値を書き戻して`input`/`change`を発火。document委譲なので新しい入力欄への個別対応は不要。見出しは`data-kb-title`→直前要素のテキスト(20文字以内)→`placeholder`。位置は通常上端中央/強制横向き時は左寄せ。
+
+## 強制横向き / タッチ
+
+- 縦画面ロック端末では`#appRoot`をCSS回転(`world.js`の`updateForceLandscapeMode`)。座標・移動量は`toLogicalPoint`/`toLogicalDelta`で補正。
+- **向きの判定は`matchMedia('(orientation: portrait)')`。** 実測pxは起動直後に確定しないことがあり、それで一度だけ判定すると縦持ち起動時に効かないまま固定される。`getRealViewportSize()`は`visualViewport`→`innerWidth/Height`→`clientWidth/Height`の順にフォールバック。
+- **起動直後は`resize()`を何度も呼び直す**(`DOMContentLoaded`/`load`/`pageshow` + 50〜2000msのタイマー + mqのchange)。iOSは`orientationchange`を取りこぼす。キャンバス処理はtry/catchで囲み、失敗しても向き判定は済ませる。
+- 縦画面ロック中はネイティブスクロールが効きにくいので、input.jsが回転補正した移動量で手動スクロールする(`overflow:auto/scroll`を付ければ拾われる)。

@@ -82,7 +82,7 @@
   }
   #titleScreen.fading{ opacity:0; pointer-events:none; }
   #titleBg{
-    position:absolute; inset:0; background:url("title_bg.jpg") center/cover no-repeat;
+    position:absolute; inset:0; background:url("images/title_bg.jpg") center/cover no-repeat;
     animation:titleBgDrift 18s ease-in-out infinite alternate;
   }
   /* ゆっくり寄っていく“生きている”感じの動き */
@@ -113,8 +113,8 @@
     position:absolute; inset:0; pointer-events:none;
     background:linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.9) 50%, transparent 60%);
     background-size:300% 100%; background-repeat:no-repeat;
-    -webkit-mask:url("title_logo.png") no-repeat center/100% 100%;
-    mask:url("title_logo.png") no-repeat center/100% 100%;
+    -webkit-mask:url("images/title_logo.png") no-repeat center/100% 100%;
+    mask:url("images/title_logo.png") no-repeat center/100% 100%;
     opacity:0;
     animation:titleShine 2.8s ease-in-out 1.3s infinite;
   }
@@ -181,7 +181,7 @@
   }
   #topBg{
     position:absolute; inset:0; pointer-events:none;
-    background:url("top_bg.jpg") center/cover no-repeat;
+    background:url("images/top_bg.jpg") center/cover no-repeat;
   }
   /* 文字が読めるように、背景の上に暗いグラデーションを重ねる */
   #topBg::after{
