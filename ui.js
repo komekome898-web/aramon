@@ -2481,9 +2481,11 @@ document.getElementById('closeShopBtn').addEventListener('click', ()=>{
   if(typeof bgmSetTrack==='function') bgmSetTrack('title'); // トップ画面のBGMに戻す
 });
 document.getElementById('shopGoBagBtn').addEventListener('click', ()=>{
+  document.getElementById('shopOverlay').classList.add('hidden'); // ショップは閉じてからバッグへ
   document.getElementById('openBagBtn').click(); // 既存のバッグを開く処理をそのまま使う
 });
 document.getElementById('shopGoMastermonBtn').addEventListener('click', ()=>{
+  document.getElementById('shopOverlay').classList.add('hidden'); // ショップは閉じてからマスモンへ
   openMastermonScreen(false); // false=ロビーへ戻る(結果画面からの遷移ではないため)
 });
 // 更新履歴の未読管理: まだ開いて確認していない項目があるとボタンに「new」を出す。
