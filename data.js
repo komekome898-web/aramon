@@ -140,7 +140,7 @@ const ELEMENTS = {
   god:     { label:'ガリ',       color:'#f5f0ff', dark:'#c3b3e0', accent:'#ffd23c', speed:196, hp:110, trait:'godrange' },
   zan:     { label:'ザン',       color:'#3d4157', dark:'#1a1c28', accent:'#e5473d', speed:215, hp:95, trait:'poison' },
   pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble' },
-  dullahan:{ label:'デュラハン', color:'#7fb236', dark:'#4f6f1f', speed:160, hp:120, trait:'dullahan' }, /*@dullahan*/
+  dullahan:{ label:'デュラハン', color:'#f2f4f8', dark:'#b7bcc8', speed:160, hp:120, trait:'dullahan' }, /*@dullahan*/
   // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -726,6 +726,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-05', items:[
+    { t:'デュラハンのテーマカラーを緑から白に変更しました', g:['balance','monster'] },
+    { t:'デュラハン最終奥義の移動が、竜巻が敵や地面・障害物に当たって消えた場所でぴったり止まるようになりました(以前は射程いっぱいまで進んでいました)', g:['fix','monster'] },
     { t:'デュラハンの技をさらに調整: tier1・tier3のエフェクトを白に統一、tier1はより細く高さ2倍、tier3は竜巻の根元を太くし、発動と同時に自分も竜巻と同じ速度で前進する移動技になりました', g:['monster','balance','av'] },
     { t:'SSRスキン「大喰いの利世」を獲得したとき、轟金剛と同様の専用昇格演出(動画+音声)が流れるようになりました。また装備して試合に出ると、残り人数に応じて専用BGMが3段階で切り替わります', g:['feature','monster'] },
     { t:'デュラハンの技を刷新しました。tier1「まっぷたつ」は細い範囲を斬撃が進む範囲技に、tier2は「風神剣」(白い斬撃を3連射)に、tier3「最終奥義」はオーラ色の竜巻を纏って突進する高威力・高速・やや短射程の技になりました。全技に共通で、命中距離が近いほど威力が上がる効果を追加しています', g:['monster','balance'] },

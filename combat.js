@@ -288,6 +288,7 @@ function fireMove(attacker, target, move){
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
       blast: move.blast||null, // ピクシー「ビッグバン」等: 着弾/最大射程到達で地面にドーム状AoEを発生させる
       closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
+      stopsSelfMove: move.selfMoveWithProjectile||false, // この弾が消えた地点で発射主の強制前進も止める(デュラハン最終奥義)
     });
   }
   if(move.selfMoveWithProjectile){
@@ -1241,6 +1242,11 @@ function updateProjectiles(dt){
           hit=true; break;
         }
       }
+    }
+    if(hit && p.stopsSelfMove){
+      // 竜巻(最終奥義)が敵や地面・障害物・射程切れで消えた地点で、自分の前進も止める
+      const owner = getEntity(p.ownerId);
+      if(owner) owner.moveWithMoveUntil = matchTime;
     }
     if(hit && p.blast) spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint); // ピクシー「ビッグバン」: 着弾/最大射程到達で地面にドームAoEを発生
     if(hit) projectiles.splice(i,1);
