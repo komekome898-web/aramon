@@ -2062,7 +2062,7 @@ function drawProjectile(pr,p){
     if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor=sh.bright; }
     for(let k=0;k<4;k++){
       const ky = -k*r*0.42;
-      const kw = r*(0.55 + k*0.3);
+      const kw = r*(0.95 + k*0.22);
       ctx.beginPath();
       ctx.ellipse(Math.sin(spin+k*1.3)*r*0.12, ky, kw, kw*0.34, 0, 0, Math.PI*2);
       ctx.fillStyle = k%2 ? sh.dark : sh.mid;
@@ -3579,7 +3579,7 @@ function fx3dZangetsu(ae, curReach, fade, progress){
   if(band) fx3dFill(band, sh.dark, 0.2*fade, 0);
   // 先端の刃
   const tipX = ae.x+fx*curReach, tipY = ae.y+fy*curReach;
-  fx3dSpike(tipX, tipY, groundZAt(tipX,tipY), FX3D_MON_H*1.2, ae.width*0.22, col, fade);
+  fx3dSpike(tipX, tipY, groundZAt(tipX,tipY), FX3D_MON_H*2.4, ae.width*0.22, col, fade);
   if(renderHeavyLoad) return;
   // 軌跡に残る刃の残像(奥ほど薄く・低く)
   const N = 5;
@@ -3587,7 +3587,7 @@ function fx3dZangetsu(ae, curReach, fade, progress){
     const t = (i+1)/(N+1);
     const along = curReach*t;
     const x = ae.x+fx*along, y = ae.y+fy*along;
-    fx3dSpike(x, y, groundZAt(x,y), FX3D_MON_H*(0.55+0.4*t), ae.width*0.14, col, fade*0.3*(0.5+0.5*t));
+    fx3dSpike(x, y, groundZAt(x,y), FX3D_MON_H*(1.1+0.8*t), ae.width*0.14, col, fade*0.3*(0.5+0.5*t));
   }
 }
 /* 鱗赫(大喰いの利世): 赤い触手が足元から生えて範囲を進んでいく。

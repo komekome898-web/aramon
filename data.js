@@ -491,9 +491,9 @@ const SIGNATURE_MOVES = {
       blast:{ radius:330, dmg:60, color:'#14121c', expandTime:0.5 } },
   ],
   dullahan:[ /*@dullahan*/
-    { name:'まっぷたつ', tier:1, color:'#7fb236', aoeShape:'rect', range:700, rectWidth:90, dmg:24, cooldown:0.85, gutsCost:8, aoeStyle:'zangetsu', closeBonusMax:1.5, icon:'🗡️' },
+    { name:'まっぷたつ', tier:1, color:'#f4f7ff', aoeShape:'rect', range:700, rectWidth:55, dmg:24, cooldown:0.85, gutsCost:8, aoeStyle:'zangetsu', closeBonusMax:1.5, icon:'🗡️' },
     { name:'風神剣', tier:2, color:'#f4f7ff', range:1300, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:760, hitR:18, burst:3, burstGap:0.09, projStyle:'crescentWhite', closeBonusMax:1.5, icon:'🗡️' },
-    { name:'最終奥義', tier:3, color:'#7fb236', range:1300, dmg:64, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, icon:'🌪️' }
+    { name:'最終奥義', tier:3, color:'#f4f7ff', range:1300, dmg:64, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, selfMoveWithProjectile:true, icon:'🌪️' }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -726,6 +726,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-05', items:[
+    { t:'デュラハンの技をさらに調整: tier1・tier3のエフェクトを白に統一、tier1はより細く高さ2倍、tier3は竜巻の根元を太くし、発動と同時に自分も竜巻と同じ速度で前進する移動技になりました', g:['monster','balance','av'] },
     { t:'SSRスキン「大喰いの利世」を獲得したとき、轟金剛と同様の専用昇格演出(動画+音声)が流れるようになりました。また装備して試合に出ると、残り人数に応じて専用BGMが3段階で切り替わります', g:['feature','monster'] },
     { t:'デュラハンの技を刷新しました。tier1「まっぷたつ」は細い範囲を斬撃が進む範囲技に、tier2は「風神剣」(白い斬撃を3連射)に、tier3「最終奥義」はオーラ色の竜巻を纏って突進する高威力・高速・やや短射程の技になりました。全技に共通で、命中距離が近いほど威力が上がる効果を追加しています', g:['monster','balance'] },
     { t:'新モンスター「デュラハン」が登場しました！', g:['feature','monster'] },

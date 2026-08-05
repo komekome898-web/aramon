@@ -290,6 +290,13 @@ function fireMove(attacker, target, move){
       closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
     });
   }
+  if(move.selfMoveWithProjectile){
+    // 竜巻(最終奥義)と同じ速度で自分も前進する「移動技」
+    attacker.moveWithMoveDirX = Math.cos(baseAng);
+    attacker.moveWithMoveDirY = Math.sin(baseAng);
+    attacker.moveWithMoveSpeed = effProjSpeed;
+    attacker.moveWithMoveUntil = matchTime + move.range/effProjSpeed;
+  }
   lockMoveFacing(attacker, baseAng, move.range/effProjSpeed + burstGap*Math.max(0, burstCount-1));
 }
 function angleDiff(a,b){ let d=a-b; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2; return d; }
@@ -799,6 +806,12 @@ function entityMoveSpeed(m){
 }
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
+  // 技と一緒に自分も前進する「移動技」用(デュラハン最終奥義など)。入力・AIより優先する
+  if(m.moveWithMoveUntil > matchTime){
+    tryMoveAxis(m, m.moveWithMoveDirX*m.moveWithMoveSpeed*dt, m.moveWithMoveDirY*m.moveWithMoveSpeed*dt);
+    m.lastMoveX = m.moveWithMoveDirX; m.lastMoveY = m.moveWithMoveDirY;
+    return;
+  }
   const slowedSpeed = entityMoveSpeed(m);
   // 海/川/オアシスの中では移動速度が落ちる(ダッシュの飛距離計算には影響させない)。
   // マルチ補正もここで掛ける(ダッシュ速度は slowedSpeed 基準なので飛距離は変わらない)
