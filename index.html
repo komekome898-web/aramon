@@ -510,6 +510,19 @@
   </div>
 </div>
 
+<!-- 決着演出(リザルトの手前に3秒だけ挟む。勝利=飛び跳ねる / 敗北=横に倒れる)
+     スクロールロック除外の3リスト(render.jsのtouchmove / input.jsのtouchendとdblclick)には
+     あえて入れていない。中に触れる要素が無く、除外に入れるとこの3秒間だけ
+     iOSのダブルタップ拡大が効いてしまい、直後のリザルト画面のレイアウトが崩れるため。 -->
+<div id="matchFinishOverlay" class="hidden">
+  <div id="matchFinishStage">
+    <div id="matchFinishRays"></div>
+    <div id="matchFinishShadow"></div>
+    <div id="matchFinishMonster"></div>
+  </div>
+  <div id="matchFinishText"></div>
+</div>
+
 <!-- RESULT -->
 <div id="resultScreen" class="resultScreen hidden">
   <div class="rank" id="resultRank">#1</div>

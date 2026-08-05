@@ -1,3 +1,7 @@
+// 自分のライフゲージの透け具合(0=見えない〜1=不透明)。
+// 画面中央に常に出て視界の邪魔になるので薄くしてある。他のモンスターの分は不透明のまま。
+const SELF_HP_BAR_ALPHA = 0.5;
+
 function project(wx, wy, wz){
   const tx = wx-camPos.x, ty = wy-camPos.y, tz=(wz||0)-camPos.z;
   const depthFlat = tx*Math.cos(camState.yaw) + ty*Math.sin(camState.yaw);
@@ -655,11 +659,19 @@ function drawMonster(e,p){
     ctx.restore();
   }
 
+  /* ライフゲージ。自分の分は画面中央に大きく出て視界の邪魔になるため、
+     モンスターの頭のすぐ上(画像の上端は原点から -radius)まで下げ、半透明にする。
+     他のモンスターは今までどおり離れた位置・不透明のまま(遠くからでも読めるように)。 */
   const barW = e.radius*2.1;
   const hpPct = clamp(e.hp/e.maxHp,0,1);
-  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, -e.radius*1.55-9, barW, 6);
+  const selfBar = !!e.isPlayer;
+  const barY = selfBar ? -e.radius*1.08-5 : -e.radius*1.55-9;
+  ctx.save();
+  if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
   ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
-  ctx.fillRect(-barW/2, -e.radius*1.55-9, barW*hpPct, 6);
+  ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
+  ctx.restore();
 
   if(e.stateUntil > matchTime){
     const sc = STATE_CHANGES[e.element];
@@ -673,7 +685,7 @@ function drawMonster(e,p){
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = 'rgba(255,70,70,0.95)';
       if(!renderHeavyLoad){ ctx.shadowBlur = flashing ? 7 : 3; ctx.shadowColor = 'rgba(255,0,0,0.75)'; }
-      ctx.fillText(flashing ? sc.name+'!' : sc.name, 0, -e.radius*1.55-13);
+      ctx.fillText(flashing ? sc.name+'!' : sc.name, 0, barY-4);   // 位置はライフゲージに追従させる
       ctx.restore();
     }
   }

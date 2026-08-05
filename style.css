@@ -1814,7 +1814,10 @@
   .look-settings-box .audio-slider-label{ width:56px; font-size:13px; }
 
   /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */
-  #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40;
+  /* 【必須】pointer-events:auto。#hudは pointer-events:none なので、これが無いと
+     「次のプレイヤー」ボタンのタップがバーを素通りしてキャンバス(視点ドラッグ)へ抜け、
+     ボタンが一切反応しない。#rangeBar と同じ扱いにしてある。                        */
+  #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40; pointer-events:auto;
     display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:12px;
     background:linear-gradient(180deg, rgba(20,16,8,0.92), rgba(8,6,3,0.92));
     border:1px solid rgba(244,196,48,0.55); box-shadow:0 4px 16px -4px rgba(0,0,0,0.7);
@@ -1826,6 +1829,99 @@
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:9px;
     padding:5px 12px; cursor:pointer; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); }
   #spectateBar #spectateNextBtn:active{ transform:translateY(1px); }
+
+  /* =====================================================================
+     決着演出(リザルトの手前に3秒だけ挟む)
+     ・勝利=使用モンスターがこちらを向いて飛び跳ねる
+     ・敗北=使用モンスターがこちらを向いて横に倒れる
+     画像は正面(アイコン)向きで、装備スキンがあればそれを出す(ui.jsが差し込む)。
+     全画面を覆い pointer-events:auto なので、この間の誤タップも吸収する。
+     ===================================================================== */
+  #matchFinishOverlay{
+    position:absolute; inset:0; z-index:50; pointer-events:auto;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:calc(2 * var(--vh));
+    overflow:hidden;
+  }
+  #matchFinishOverlay.hidden{ display:none; }
+  #matchFinishOverlay.mf-win{  background:radial-gradient(ellipse at 50% 58%, rgba(90,64,10,0.55), rgba(4,6,10,0.94) 62%); }
+  #matchFinishOverlay.mf-lose{ background:radial-gradient(ellipse at 50% 58%, rgba(70,12,12,0.5), rgba(3,4,7,0.96) 62%); }
+
+  #matchFinishStage{ position:relative; display:flex; align-items:flex-end; justify-content:center;
+    width:calc(60 * var(--vh)); max-width:calc(90 * var(--vw)); height:calc(56 * var(--vh)); }
+
+  /* 背後で回る光条(勝利のみ)。装飾なので敗北では出さない */
+  #matchFinishRays{ position:absolute; left:50%; top:52%; width:calc(78 * var(--vh)); height:calc(78 * var(--vh));
+    transform:translate(-50%,-50%); pointer-events:none; opacity:0;
+    background:repeating-conic-gradient(from 0deg, rgba(255,214,120,0.30) 0deg 7deg, rgba(255,214,120,0) 7deg 20deg); }
+  .mf-win #matchFinishRays{ opacity:1; animation:mfRays 3s linear both; }
+
+  /* 接地影。跳ねると小さく、倒れると横へ伸びる */
+  #matchFinishShadow{ position:absolute; left:50%; bottom:calc(3 * var(--vh));
+    width:calc(20 * var(--vh)); height:calc(3.4 * var(--vh)); transform:translateX(-50%);
+    border-radius:50%; background:rgba(0,0,0,0.5); filter:blur(3px); }
+  .mf-win  #matchFinishShadow{ animation:mfShadowJump 3s cubic-bezier(.3,0,.4,1) both; }
+  .mf-lose #matchFinishShadow{ animation:mfShadowFall 3s cubic-bezier(.5,0,.6,1) both; }
+
+  /* モンスター本体。足元(下端)を軸にして跳ねる・倒れる */
+  #matchFinishMonster{ position:relative; transform-origin:50% 100%; will-change:transform; }
+  #matchFinishMonster img{ display:block; max-height:calc(46 * var(--vh)); max-width:calc(74 * var(--vw));
+    width:auto; height:auto; object-fit:contain; }
+  .mf-win  #matchFinishMonster{ animation:mfJump 3s cubic-bezier(.3,0,.4,1) both; }
+  .mf-lose #matchFinishMonster{ animation:mfFall 3s cubic-bezier(.5,0,.6,1) both; }
+  .mf-win  #matchFinishMonster img{ filter:drop-shadow(0 0 calc(2 * var(--vh)) rgba(255,215,106,0.85)); }
+  .mf-lose #matchFinishMonster img{ animation:mfFallTint 3s ease-out both; }
+
+  #matchFinishText{ font-family:'Russo One',sans-serif; letter-spacing:3px; text-align:center;
+    font-size:calc(6.4 * var(--vh)); line-height:1.1; opacity:0; }
+  .mf-win  #matchFinishText{ color:#ffd76a; text-shadow:0 0 calc(2 * var(--vh)) rgba(255,183,3,0.9); animation:mfTextIn 3s ease-out both; }
+  .mf-lose #matchFinishText{ color:#ff8080; text-shadow:0 0 calc(1.4 * var(--vh)) rgba(255,64,64,0.6); animation:mfTextIn 3s ease-out both; }
+
+  /* 3秒で3回跳ねる(沈み込み→伸び上がり→着地でつぶれる、を繰り返す) */
+  @keyframes mfJump{
+    0%   { transform:translateY(0)    scale(1,1); }
+    6%   { transform:translateY(0)    scale(1.16,0.84); }
+    22%  { transform:translateY(-30%) scale(0.92,1.10); }
+    36%  { transform:translateY(0)    scale(1.14,0.86); }
+    52%  { transform:translateY(-26%) scale(0.94,1.08); }
+    66%  { transform:translateY(0)    scale(1.12,0.88); }
+    80%  { transform:translateY(-18%) scale(0.96,1.06); }
+    92%  { transform:translateY(0)    scale(1.08,0.92); }
+    100% { transform:translateY(0)    scale(1,1); }
+  }
+  @keyframes mfShadowJump{
+    0%,36%,66%,92%,100%{ transform:translateX(-50%) scale(1,1);       opacity:0.5; }
+    22%                { transform:translateX(-50%) scale(0.7,0.7);   opacity:0.3; }
+    52%                { transform:translateX(-50%) scale(0.76,0.76); opacity:0.34; }
+    80%                { transform:translateX(-50%) scale(0.84,0.84); opacity:0.4; }
+  }
+  /* よろけてから横倒しに。倒れきったあと少しだけ跳ね返って止まる */
+  @keyframes mfFall{
+    0%   { transform:rotate(0deg)   translateY(0); }
+    14%  { transform:rotate(-7deg)  translateY(0); }
+    62%  { transform:rotate(84deg)  translateY(6%); }
+    72%  { transform:rotate(76deg)  translateY(4%); }
+    100% { transform:rotate(82deg)  translateY(6%); }
+  }
+  @keyframes mfShadowFall{
+    0%   { transform:translateX(-50%) scale(1,1);      opacity:0.5; }
+    62%  { transform:translateX(-40%) scale(1.7,0.55); opacity:0.42; }
+    100% { transform:translateX(-38%) scale(1.8,0.5);  opacity:0.4; }
+  }
+  @keyframes mfFallTint{
+    0%   { filter:none; }
+    100% { filter:grayscale(0.55) brightness(0.62); }
+  }
+  @keyframes mfRays{
+    0%   { transform:translate(-50%,-50%) rotate(0deg)   scale(0.9); opacity:0; }
+    16%  { opacity:0.85; }
+    100% { transform:translate(-50%,-50%) rotate(120deg) scale(1.05); opacity:0.5; }
+  }
+  @keyframes mfTextIn{
+    0%   { opacity:0; transform:translateY(calc(2 * var(--vh))) scale(0.9); }
+    22%  { opacity:1; transform:translateY(0) scale(1.06); }
+    32%  { transform:translateY(0) scale(1); }
+    100% { opacity:1; transform:translateY(0) scale(1); }
+  }
 
   /* ===== 画面カスタマイズ(HUD配置編集)モード ===== */
   /* ヘッダーは廃止し、操作UIは画面中央に小さく固定(移動・サイズ変更不可) */

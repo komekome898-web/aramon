@@ -3281,7 +3281,53 @@ document.getElementById('roomListCancelBtn').addEventListener('click', ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
 });
 
+/* =====================================================================
+   決着演出(リザルト画面の手前に挟む3秒のアニメーション)
+   勝利=使用モンスターがこちらを向いて飛び跳ねる / 敗北=横に倒れる。
+
+   showResult() は「演出を出してから本来のリザルトへ進む」だけの薄いラッパーにしてある。
+   結果画面へ入る経路は5か所(自分の勝利・自分の敗退・ホスト観戦の終了・matchEnd受信)
+   あるので、ここ1か所に寄せておけばどの経路でも必ず同じ演出が入る。
+   ===================================================================== */
+const MATCH_FINISH_ANIM_MS = 3000;
+// 演出中は試合を止める。時刻で持つのは、万一 showResultNow まで進めなかった場合でも
+// 3秒後に必ず自動で解除され、操作不能のまま固まらないようにするため(保険)。
+let matchFinishFreezeUntil = 0;
+function matchFinishFreezeActive(){ return performance.now() < matchFinishFreezeUntil; }
+// 演出に出す「こちらを向いた姿」。装備スキン(SSR/色スキン)があればその見た目にする
+function matchFinishMonsterImgTag(){
+  const ent = (typeof player!=='undefined') ? player : null;
+  const skinId = (ent && typeof entitySkinId==='function') ? entitySkinId(ent) : null;
+  if(skinId && typeof skinnedIconDataUrl==='function'){
+    const url = skinnedIconDataUrl(skinId);
+    if(url) return `<img src="${url}" alt="">`;
+  }
+  const key = (ent && ent.element) || game.selectedElement;
+  if(!key || !ELEMENTS[key]) return '';
+  return equippedIconImgTag(key, ELEMENTS[key].label);
+}
 function showResult(isWin, placement){
+  if(game.over || matchFinishFreezeActive()) return;   // 二重起動を防ぐ
+  const ov = document.getElementById('matchFinishOverlay');
+  const host = document.getElementById('matchFinishMonster');
+  const label = document.getElementById('matchFinishText');
+  if(!ov || !host || !label){ showResultNow(isWin, placement); return; }
+  matchFinishFreezeUntil = performance.now() + MATCH_FINISH_ANIM_MS;
+  if(typeof setAutoRun==='function') setAutoRun(false);
+  const sb = document.getElementById('spectateBar'); if(sb) sb.classList.add('hidden');
+  host.innerHTML = matchFinishMonsterImgTag();
+  label.textContent = isWin ? 'WIN!' : 'DEFEAT';
+  ov.className = isWin ? 'mf-win' : 'mf-lose';   // hiddenを外しつつ勝敗クラスを付ける
+  // 前回のアニメーションが残っていると再生されないので、強制的に作り直す
+  void ov.offsetWidth;
+  setTimeout(()=>{
+    ov.className = 'hidden';
+    host.innerHTML = '';
+    matchFinishFreezeUntil = 0;
+    showResultNow(isWin, placement);
+  }, MATCH_FINISH_ANIM_MS);
+}
+function showResultNow(isWin, placement){
   if(game.over) return;
   game.over=true;
   game.started=false;
