@@ -1814,7 +1814,10 @@
   .look-settings-box .audio-slider-label{ width:56px; font-size:13px; }
 
   /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */
-  #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40;
+  /* 【必須】pointer-events:auto。#hudは pointer-events:none なので、これが無いと
+     「次のプレイヤー」ボタンのタップがバーを素通りしてキャンバス(視点ドラッグ)へ抜け、
+     ボタンが一切反応しない。#rangeBar と同じ扱いにしてある。                        */
+  #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40; pointer-events:auto;
     display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:12px;
     background:linear-gradient(180deg, rgba(20,16,8,0.92), rgba(8,6,3,0.92));
     border:1px solid rgba(244,196,48,0.55); box-shadow:0 4px 16px -4px rgba(0,0,0,0.7);
@@ -1826,6 +1829,99 @@
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:9px;
     padding:5px 12px; cursor:pointer; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); }
   #spectateBar #spectateNextBtn:active{ transform:translateY(1px); }
+
+  /* =====================================================================
+     決着演出(リザルトの手前に3秒だけ挟む)
+     ・勝利=使用モンスターがこちらを向いて飛び跳ねる
+     ・敗北=使用モンスターがこちらを向いて横に倒れる
+     画像は正面(アイコン)向きで、装備スキンがあればそれを出す(ui.jsが差し込む)。
+     全画面を覆い pointer-events:auto なので、この間の誤タップも吸収する。
+     ===================================================================== */
+  #matchFinishOverlay{
+    position:absolute; inset:0; z-index:50; pointer-events:auto;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:calc(2 * var(--vh));
+    overflow:hidden;
+  }
+  #matchFinishOverlay.hidden{ display:none; }
+  #matchFinishOverlay.mf-win{  background:radial-gradient(ellipse at 50% 58%, rgba(90,64,10,0.55), rgba(4,6,10,0.94) 62%); }
+  #matchFinishOverlay.mf-lose{ background:radial-gradient(ellipse at 50% 58%, rgba(70,12,12,0.5), rgba(3,4,7,0.96) 62%); }
+
+  #matchFinishStage{ position:relative; display:flex; align-items:flex-end; justify-content:center;
+    width:calc(60 * var(--vh)); max-width:calc(90 * var(--vw)); height:calc(56 * var(--vh)); }
+
+  /* 背後で回る光条(勝利のみ)。装飾なので敗北では出さない */
+  #matchFinishRays{ position:absolute; left:50%; top:52%; width:calc(78 * var(--vh)); height:calc(78 * var(--vh));
+    transform:translate(-50%,-50%); pointer-events:none; opacity:0;
+    background:repeating-conic-gradient(from 0deg, rgba(255,214,120,0.30) 0deg 7deg, rgba(255,214,120,0) 7deg 20deg); }
+  .mf-win #matchFinishRays{ opacity:1; animation:mfRays 3s linear both; }
+
+  /* 接地影。跳ねると小さく、倒れると横へ伸びる */
+  #matchFinishShadow{ position:absolute; left:50%; bottom:calc(3 * var(--vh));
+    width:calc(20 * var(--vh)); height:calc(3.4 * var(--vh)); transform:translateX(-50%);
+    border-radius:50%; background:rgba(0,0,0,0.5); filter:blur(3px); }
+  .mf-win  #matchFinishShadow{ animation:mfShadowJump 3s cubic-bezier(.3,0,.4,1) both; }
+  .mf-lose #matchFinishShadow{ animation:mfShadowFall 3s cubic-bezier(.5,0,.6,1) both; }
+
+  /* モンスター本体。足元(下端)を軸にして跳ねる・倒れる */
+  #matchFinishMonster{ position:relative; transform-origin:50% 100%; will-change:transform; }
+  #matchFinishMonster img{ display:block; max-height:calc(46 * var(--vh)); max-width:calc(74 * var(--vw));
+    width:auto; height:auto; object-fit:contain; }
+  .mf-win  #matchFinishMonster{ animation:mfJump 3s cubic-bezier(.3,0,.4,1) both; }
+  .mf-lose #matchFinishMonster{ animation:mfFall 3s cubic-bezier(.5,0,.6,1) both; }
+  .mf-win  #matchFinishMonster img{ filter:drop-shadow(0 0 calc(2 * var(--vh)) rgba(255,215,106,0.85)); }
+  .mf-lose #matchFinishMonster img{ animation:mfFallTint 3s ease-out both; }
+
+  #matchFinishText{ font-family:'Russo One',sans-serif; letter-spacing:3px; text-align:center;
+    font-size:calc(6.4 * var(--vh)); line-height:1.1; opacity:0; }
+  .mf-win  #matchFinishText{ color:#ffd76a; text-shadow:0 0 calc(2 * var(--vh)) rgba(255,183,3,0.9); animation:mfTextIn 3s ease-out both; }
+  .mf-lose #matchFinishText{ color:#ff8080; text-shadow:0 0 calc(1.4 * var(--vh)) rgba(255,64,64,0.6); animation:mfTextIn 3s ease-out both; }
+
+  /* 3秒で3回跳ねる(沈み込み→伸び上がり→着地でつぶれる、を繰り返す) */
+  @keyframes mfJump{
+    0%   { transform:translateY(0)    scale(1,1); }
+    6%   { transform:translateY(0)    scale(1.16,0.84); }
+    22%  { transform:translateY(-30%) scale(0.92,1.10); }
+    36%  { transform:translateY(0)    scale(1.14,0.86); }
+    52%  { transform:translateY(-26%) scale(0.94,1.08); }
+    66%  { transform:translateY(0)    scale(1.12,0.88); }
+    80%  { transform:translateY(-18%) scale(0.96,1.06); }
+    92%  { transform:translateY(0)    scale(1.08,0.92); }
+    100% { transform:translateY(0)    scale(1,1); }
+  }
+  @keyframes mfShadowJump{
+    0%,36%,66%,92%,100%{ transform:translateX(-50%) scale(1,1);       opacity:0.5; }
+    22%                { transform:translateX(-50%) scale(0.7,0.7);   opacity:0.3; }
+    52%                { transform:translateX(-50%) scale(0.76,0.76); opacity:0.34; }
+    80%                { transform:translateX(-50%) scale(0.84,0.84); opacity:0.4; }
+  }
+  /* よろけてから横倒しに。倒れきったあと少しだけ跳ね返って止まる */
+  @keyframes mfFall{
+    0%   { transform:rotate(0deg)   translateY(0); }
+    14%  { transform:rotate(-7deg)  translateY(0); }
+    62%  { transform:rotate(84deg)  translateY(6%); }
+    72%  { transform:rotate(76deg)  translateY(4%); }
+    100% { transform:rotate(82deg)  translateY(6%); }
+  }
+  @keyframes mfShadowFall{
+    0%   { transform:translateX(-50%) scale(1,1);      opacity:0.5; }
+    62%  { transform:translateX(-40%) scale(1.7,0.55); opacity:0.42; }
+    100% { transform:translateX(-38%) scale(1.8,0.5);  opacity:0.4; }
+  }
+  @keyframes mfFallTint{
+    0%   { filter:none; }
+    100% { filter:grayscale(0.55) brightness(0.62); }
+  }
+  @keyframes mfRays{
+    0%   { transform:translate(-50%,-50%) rotate(0deg)   scale(0.9); opacity:0; }
+    16%  { opacity:0.85; }
+    100% { transform:translate(-50%,-50%) rotate(120deg) scale(1.05); opacity:0.5; }
+  }
+  @keyframes mfTextIn{
+    0%   { opacity:0; transform:translateY(calc(2 * var(--vh))) scale(0.9); }
+    22%  { opacity:1; transform:translateY(0) scale(1.06); }
+    32%  { transform:translateY(0) scale(1); }
+    100% { opacity:1; transform:translateY(0) scale(1); }
+  }
 
   /* ===== 画面カスタマイズ(HUD配置編集)モード ===== */
   /* ヘッダーは廃止し、操作UIは画面中央に小さく固定(移動・サイズ変更不可) */
@@ -2154,6 +2250,11 @@
     display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
     margin-left:5px; border-radius:4px; font-size:9px; font-weight:800; color:#14090a; flex-shrink:0;
   }
+  /* 適正S は転生でしか手に入らないので、他の段階と違って虹色+発光で別格に見せる */
+  .mm-stat-apt-badge.apt-S{
+    background:linear-gradient(135deg,#ffe7a0,#ff9ad5 35%,#8fd3ff 68%,#b6ffcf);
+    color:#231206; box-shadow:0 0 6px rgba(255,215,120,0.85);
+  }
   .mm-stat-apt-badge.apt-A{ background:#ff5a5a; }
   .mm-stat-apt-badge.apt-B{ background:#ff8fd1; }
   .mm-stat-apt-badge.apt-C{ background:#6fe07a; }
@@ -2165,6 +2266,216 @@
   .mm-stat-delta.down{ color:#ff6b6b; }
   .mm-stat-track{ width:100%; height:7px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; }
   .mm-stat-fill{ height:100%; }
+
+  /* =====================================================================
+     転生
+     ①マスモンのメニューに並ぶ転生ボタン
+     ②確認画面(転生前/転生後を見比べて適正を3つ選ぶ)
+     ③実行アニメーション
+     ===================================================================== */
+  .mm-menu-btn-rebirth{
+    border-color:rgba(255,215,120,0.75);
+    background:linear-gradient(120deg, rgba(255,214,106,0.20), rgba(255,138,214,0.16) 45%, rgba(140,200,255,0.18));
+    box-shadow:0 0 12px -3px rgba(255,206,120,0.7);
+  }
+  .mm-menu-btn-rebirth .mm-menu-btn-label{ color:#ffe6a8; }
+  .mm-menu-btn-rebirth.is-locked{ opacity:0.55; box-shadow:none; }
+  .mm-rebirth-wip{ margin-left:6px; font-size:10px; font-weight:700; color:var(--ink-dim); letter-spacing:0; }
+  /* カード上の転生回数(虹色の★)。文字自体をグラデーションで塗る。
+     位置はLv表示(.ml-card-lv が top:6px/right:6px)の真下に置いて重ならないようにする */
+  .ml-card-rebirth{
+    position:absolute; right:6px; top:25px; z-index:4; font-size:11px; letter-spacing:-1px;
+    background:linear-gradient(90deg,#ffe7a0,#ff9ad5 35%,#8fd3ff 68%,#b6ffcf);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 3px rgba(255,215,120,0.9));
+  }
+
+  /* --- 確認画面 --- */
+  .mastermon-confirm-box.rebirth-box{
+    max-width:min(980px, calc(96 * var(--vw))); width:min(980px, calc(96 * var(--vw)));
+    max-height:calc(94 * var(--vh)); position:relative;
+    display:flex; flex-direction:column; gap:8px; overflow:hidden;
+  }
+  .rebirth-title{ font-family:'Russo One',sans-serif; font-size:16px; letter-spacing:2px; color:#ffe6a8;
+    text-shadow:0 0 10px rgba(255,183,3,0.6); flex-shrink:0; }
+  .rebirth-title-sub{ display:block; margin-top:3px; font-family:'Rajdhani',sans-serif; font-weight:600;
+    font-size:11px; letter-spacing:0.3px; color:var(--ink-dim); text-shadow:none; }
+  .rebirth-scroll-wrap{ position:relative; flex:1 1 auto; min-height:0; display:flex; }
+  .rebirth-scroll{ flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding-right:10px; text-align:left; }
+
+  .rb-picker{ border:1px solid var(--panel-line); border-radius:10px; padding:9px 10px; margin-bottom:9px;
+    background:rgba(255,255,255,0.04); }
+  .rb-picker-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12.5px; letter-spacing:1px;
+    color:#ffe6a8; margin-bottom:7px; }
+  .rb-picker-count{ margin-left:8px; font-family:'Share Tech Mono',monospace; color:var(--ink-dim); }
+  .rb-picker-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .rb-pick-btn{
+    display:flex; align-items:center; justify-content:space-between; gap:6px; cursor:pointer;
+    padding:7px 9px; border-radius:9px; color:var(--ink);
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+  }
+  .rb-pick-btn.is-on{ border-color:#ffd76a; background:rgba(244,196,48,0.18); box-shadow:0 0 10px -3px rgba(255,206,120,0.9); }
+  .rb-pick-btn.is-max{ opacity:0.45; cursor:default; }
+  .rb-pick-label{ white-space:nowrap; }
+  .rb-pick-grade{ display:flex; align-items:center; gap:2px; }
+  .rb-pick-arrow{ font-size:8px; color:var(--ink-dim); margin:0 1px; }
+
+  .rb-sbonus{ margin-top:8px; border-radius:9px; padding:8px 10px;
+    border:1px solid rgba(255,215,120,0.5);
+    background:linear-gradient(120deg, rgba(255,214,106,0.14), rgba(255,138,214,0.10) 50%, rgba(140,200,255,0.12)); }
+  .rb-sbonus-title{ font-family:'Russo One',sans-serif; font-size:12px; letter-spacing:1.5px; color:#ffe6a8; margin-bottom:3px; }
+  .rb-sbonus-text{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11.5px; line-height:1.5; color:var(--ink); }
+  .rb-sbonus-text b{ color:#ffd76a; }
+
+  .rb-compare{ display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:stretch; }
+  .rb-arrow{ align-self:center; font-size:20px; color:#ffd76a; text-shadow:0 0 8px rgba(255,183,3,0.7); }
+  .rb-side{ border:1px solid var(--panel-line); border-radius:10px; padding:8px; background:rgba(255,255,255,0.03); }
+  .rb-side-after{ border-color:rgba(255,215,120,0.6); background:rgba(255,214,106,0.07); }
+  .rb-side-title{ font-family:'Russo One',sans-serif; font-size:12px; letter-spacing:1.5px; color:var(--ink-dim); margin-bottom:6px; }
+  .rb-side-after .rb-side-title{ color:#ffd76a; }
+  .rb-side-body{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:8px; }
+
+  .rb-card{ position:relative; border:1px solid var(--panel-line); border-radius:9px; padding:7px;
+    background:rgba(6,10,18,0.55); display:flex; flex-direction:column; gap:5px; }
+  .rb-card-stars{ position:absolute; right:5px; top:4px; font-size:10px; letter-spacing:-1px;
+    background:linear-gradient(90deg,#ffe7a0,#ff9ad5 35%,#8fd3ff 68%,#b6ffcf);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 3px rgba(255,215,120,0.9)); }
+  .rb-card-art{ display:flex; align-items:center; justify-content:center; }
+  .rb-card-art img{ max-height:calc(13 * var(--vh)); max-width:100%; width:auto; height:auto; object-fit:contain; }
+  .rb-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12.5px; color:var(--ink);
+    display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
+  .rb-card-lv{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--amber); }
+  .rb-card-figs{ display:flex; gap:8px; }
+  .rb-card-fig{ display:flex; align-items:baseline; gap:4px; }
+  .rb-card-fig-k{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; color:var(--ink-dim); }
+  .rb-card-fig-v{ font-family:'Share Tech Mono',monospace; font-size:14px; color:#ffd76a; }
+  .rb-mult-list{ display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; }
+  .rb-mult-row{ display:flex; align-items:baseline; justify-content:space-between; gap:4px; }
+  .rb-mult-k{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:10px; color:var(--ink-dim); white-space:nowrap; }
+  .rb-mult-v{ font-family:'Share Tech Mono',monospace; font-size:10.5px; color:var(--ink); }
+  .rb-mult-row.is-changed .rb-mult-v{ color:#6fe07a; font-weight:700; }
+
+  .rb-stats{ display:flex; flex-direction:column; gap:3px; }
+  .rb-stats-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:10.5px; letter-spacing:1px; color:var(--ink-dim); }
+  .rb-stat-row{ display:grid; grid-template-columns:auto auto 1fr; gap:3px 5px; align-items:center; }
+  .rb-stat-k{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:var(--ink); white-space:nowrap; }
+  .rb-stat-apt{ margin-left:0; }
+  .rb-stat-apt.is-upgraded{ animation:rbAptPulse 1.4s ease-in-out infinite; }
+  .rb-stat-v{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); text-align:right; }
+  .rb-stat-cap{ font-size:9px; color:var(--ink-dim); }
+  .rb-stat-track{ grid-column:1 / -1; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .rb-stat-fill{ display:block; height:100%; }
+  .rb-tickets{ margin-top:4px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:var(--ink-dim); }
+
+  .rb-maxed{ margin-top:7px; border-top:1px dashed rgba(255,215,120,0.45); padding-top:6px; }
+  .rb-maxed-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:10.5px; letter-spacing:0.5px; color:#ffd76a; margin-bottom:4px; }
+  .rb-maxed-figs{ display:flex; gap:10px; margin-bottom:3px; }
+
+  .rb-warn{ margin-top:9px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:#ff9a5a; }
+  .rebirth-actions{ display:flex; gap:10px; justify-content:center; flex-shrink:0; }
+  .rebirth-cancel-btn{ padding:9px 20px; border-radius:9px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
+    color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
+  .rebirth-confirm-btn{ padding:9px 24px; border-radius:9px; cursor:pointer; border:1px solid #e0af1e;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 0 14px -3px rgba(255,206,120,0.9); }
+  .rebirth-confirm-btn:disabled{ opacity:0.45; box-shadow:none; cursor:default; }
+  @keyframes rbAptPulse{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.6); } }
+
+  /* --- 実行アニメーション --- */
+  #rebirthAnimOverlay{ position:absolute; inset:0; z-index:700; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; background:#020306; }
+  #rebirthAnimOverlay.hidden{ display:none; }
+  #rebirthAnimSky{ position:absolute; inset:0;
+    background:radial-gradient(ellipse at 50% 55%, rgba(90,60,150,0.55), rgba(2,3,6,0.98) 65%);
+    opacity:0; animation:rbSky 5.2s ease-out both; }
+  /* 足元に広がる魔法陣(円を3枚重ねて回す) */
+  #rebirthAnimCircle{ position:absolute; left:50%; top:62%; width:calc(60 * var(--vh)); height:calc(60 * var(--vh));
+    transform:translate(-50%,-50%) rotateX(74deg) scale(0.2); opacity:0;
+    border-radius:50%; border:2px solid rgba(190,150,255,0.9);
+    box-shadow:0 0 30px rgba(160,110,255,0.75), inset 0 0 40px rgba(120,80,220,0.6);
+    background:repeating-conic-gradient(from 0deg, rgba(190,150,255,0.30) 0deg 4deg, rgba(190,150,255,0) 4deg 16deg);
+    animation:rbCircle 5.2s cubic-bezier(.2,.7,.3,1) both; }
+  #rebirthAnimRays{ position:absolute; left:50%; top:50%; width:calc(120 * var(--vh)); height:calc(120 * var(--vh));
+    transform:translate(-50%,-50%); opacity:0; pointer-events:none;
+    background:repeating-conic-gradient(from 0deg, rgba(255,236,180,0.28) 0deg 5deg, rgba(255,236,180,0) 5deg 18deg);
+    animation:rbRays 5.2s linear both; }
+  /* 立ち上る光の粒。1枚の要素をグラデーションの繰り返しで代用して負荷を抑える */
+  #rebirthAnimMotes{ position:absolute; left:50%; bottom:0; width:calc(46 * var(--vh)); height:100%;
+    transform:translateX(-50%); opacity:0; pointer-events:none;
+    background:
+      radial-gradient(circle at 18% 90%, rgba(255,240,190,0.9) 0 2px, transparent 3px),
+      radial-gradient(circle at 42% 70%, rgba(200,170,255,0.9) 0 2px, transparent 3px),
+      radial-gradient(circle at 64% 86%, rgba(255,240,190,0.8) 0 2px, transparent 3px),
+      radial-gradient(circle at 82% 62%, rgba(180,220,255,0.9) 0 2px, transparent 3px),
+      radial-gradient(circle at 30% 46%, rgba(255,240,190,0.7) 0 2px, transparent 3px),
+      radial-gradient(circle at 72% 34%, rgba(220,180,255,0.8) 0 2px, transparent 3px);
+    animation:rbMotes 5.2s ease-out both; }
+  #rebirthAnimMonster{ position:relative; z-index:2; opacity:0; animation:rbMon 5.2s ease-out both; }
+  #rebirthAnimMonster img{ display:block; max-height:calc(42 * var(--vh)); max-width:calc(60 * var(--vw));
+    width:auto; height:auto; object-fit:contain; }
+  #rebirthAnimFlash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none;
+    animation:rbFlash 5.2s ease-out both; }
+  /* 恩恵の一覧。演出の後半でせり上がる */
+  #rebirthAnimResult{ position:absolute; left:50%; bottom:calc(4 * var(--vh)); transform:translateX(-50%);
+    z-index:3; width:min(760px, calc(92 * var(--vw))); max-height:calc(56 * var(--vh)); overflow-y:auto;
+    -webkit-overflow-scrolling:touch; text-align:center; opacity:0;
+    padding:10px 14px; border-radius:12px; border:1px solid rgba(255,215,120,0.55);
+    background:linear-gradient(180deg, rgba(24,18,8,0.94), rgba(8,6,3,0.94));
+    animation:rbResult 5.2s ease-out both; }
+  .rb-res-title{ font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:3px; color:#ffe6a8;
+    text-shadow:0 0 10px rgba(255,183,3,0.8); }
+  .rb-res-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; color:var(--ink); margin:2px 0 6px; }
+  .rb-res-stars{ margin-left:6px; letter-spacing:-1px;
+    background:linear-gradient(90deg,#ffe7a0,#ff9ad5 35%,#8fd3ff 68%,#b6ffcf);
+    -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .rb-res-list{ list-style:none; margin:0 0 8px; padding:0; display:flex; flex-direction:column; gap:3px; }
+  /* 出るタイミング(animation-delay)は、恩恵の行数に合わせてui.jsがインラインで入れる */
+  .rb-res-list li{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; color:var(--ink);
+    opacity:0; animation:rbLine 0.5s ease-out both; }
+  .rb-res-list li b{ color:#ffd76a; }
+
+  @keyframes rbSky{ 0%{ opacity:0; } 12%{ opacity:1; } 100%{ opacity:1; } }
+  @keyframes rbCircle{
+    0%   { opacity:0; transform:translate(-50%,-50%) rotateX(74deg) rotate(0deg)   scale(0.2); }
+    16%  { opacity:0.95; }
+    58%  { opacity:0.95; transform:translate(-50%,-50%) rotateX(74deg) rotate(180deg) scale(1.05); }
+    72%  { opacity:0.3; }
+    100% { opacity:0.18; transform:translate(-50%,-50%) rotateX(74deg) rotate(300deg) scale(1.1); }
+  }
+  @keyframes rbRays{
+    0%,52%{ opacity:0; transform:translate(-50%,-50%) rotate(0deg); }
+    62%   { opacity:0.75; }
+    100%  { opacity:0.35; transform:translate(-50%,-50%) rotate(90deg); }
+  }
+  @keyframes rbMotes{
+    0%   { opacity:0; transform:translateX(-50%) translateY(18%); }
+    20%  { opacity:0.9; }
+    56%  { opacity:0.9; transform:translateX(-50%) translateY(-30%); }
+    100% { opacity:0; transform:translateX(-50%) translateY(-52%); }
+  }
+  /* 沈黙→震え→閃光で消える→生まれ変わった姿がふわりと現れる */
+  @keyframes rbMon{
+    0%   { opacity:0; transform:translateY(6%) scale(0.9); filter:brightness(0.4); }
+    18%  { opacity:1; transform:translateY(0) scale(1); filter:brightness(0.7); }
+    40%  { transform:translateY(0) scale(1.02) translateX(-0.6%); filter:brightness(1.4); }
+    46%  { transform:translateY(0) scale(1.02) translateX(0.6%); filter:brightness(2.2); }
+    52%  { opacity:0.15; transform:translateY(0) scale(1.16); filter:brightness(6) saturate(0); }
+    58%  { opacity:1;   transform:translateY(0) scale(0.96); filter:brightness(1.5); }
+    70%  { transform:translateY(0) scale(1); filter:brightness(1.05) drop-shadow(0 0 18px rgba(255,215,120,0.9)); }
+    100% { opacity:1; transform:translateY(-6%) scale(0.94); filter:brightness(1) drop-shadow(0 0 14px rgba(255,215,120,0.75)); }
+  }
+  @keyframes rbFlash{ 0%,48%{ opacity:0; } 53%{ opacity:0.92; } 62%{ opacity:0; } 100%{ opacity:0; } }
+  @keyframes rbResult{
+    0%,62%{ opacity:0; transform:translateX(-50%) translateY(calc(4 * var(--vh))); }
+    74%   { opacity:1; transform:translateX(-50%) translateY(0); }
+    100%  { opacity:1; transform:translateX(-50%) translateY(0); }
+  }
+  @keyframes rbLine{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
+
   .mm-train-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:2px; }
   .mm-train-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
   .mm-train-btn{

@@ -1468,6 +1468,10 @@ function endSummonIntro(){
 }
 
 function update(dt){
+  // 決着演出(勝敗の3秒アニメーション)の間は試合を止める。
+  // 止めないと敵が動き続け、演出の裏で順位や撃破数が変わってしまう。
+  // 時刻で判定しているので、演出が何かの理由で終わらなくても3秒で自動的に再開する。
+  if(typeof matchFinishFreezeActive==='function' && matchFinishFreezeActive()) return;
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
