@@ -221,9 +221,6 @@ const ssrSkinImages = {};
 function imgIsReady(img){
   return img && img.loaded && !img.failed;
 }
-function monsterImageReady(key){
-  return imgIsReady(monsterImages[key]);
-}
 
 // ===== モンスターのバトル歩行アニメーション =====
 // 動画から1歩行ループを8コマに分割した透過スプライト(正面8/後ろ8)。

@@ -1,5 +1,4 @@
 let entities = [];
-let buildings = [];
 let rocks = [];
 let volcanoObstacles = [];
 let lavaZones = [];
@@ -323,40 +322,12 @@ function zoneCountdownSeconds(){
 /* =====================================================================
    ENTITY FACTORY
 ===================================================================== */
-function rampHeightAt(b, x, y){
-  if(b.rampSide===0){
-    const rw=b.hw*0.9, nearY=b.cy+b.hd, farY=nearY+b.rampLen;
-    if(Math.abs(x-b.cx)>rw || y<nearY || y>farY) return null;
-    return lerp(b.wallH,0,(y-nearY)/(farY-nearY));
-  }
-  if(b.rampSide===1){
-    const rw=b.hw*0.9, nearY=b.cy-b.hd, farY=nearY-b.rampLen;
-    if(Math.abs(x-b.cx)>rw || y>nearY || y<farY) return null;
-    return lerp(b.wallH,0,(nearY-y)/(nearY-farY));
-  }
-  if(b.rampSide===2){
-    const rw=b.hd*0.9, nearX=b.cx+b.hw, farX=nearX+b.rampLen;
-    if(Math.abs(y-b.cy)>rw || x<nearX || x>farX) return null;
-    return lerp(b.wallH,0,(x-nearX)/(farX-nearX));
-  }
-  const rw=b.hd*0.9, nearX=b.cx-b.hw, farX=nearX-b.rampLen;
-  if(Math.abs(y-b.cy)>rw || x>nearX || x<farX) return null;
-  return lerp(b.wallH,0,(nearX-x)/(nearX-farX));
-}
-function isInsideFootprint(b,x,y){
-  return Math.abs(x-b.cx)<=b.hw && Math.abs(y-b.cy)<=b.hd;
-}
-// 建物やランプを除いた「地面そのもの」の高さ。リアルマップ(テスト)では起伏を返す。
+// 「地面そのもの」の高さ。リアルマップでは起伏を返す。
 // 岩・水晶の当たり判定が「登っているか」を見るときの基準にもなる
 function baseTerrainHeightAt(x,y){
   return (currentMap && currentMap.real3d && typeof real3dHeightAt==='function') ? real3dHeightAt(x,y) : 0;
 }
 function getTerrainHeightAt(x,y){
-  for(const b of buildings){
-    const r = rampHeightAt(b,x,y);
-    if(r!==null) return r;
-    if(isInsideFootprint(b,x,y)) return b.wallH;
-  }
   return baseTerrainHeightAt(x,y);
 }
 function blockedByHeight(m,x,y){
@@ -491,7 +462,6 @@ function pickSpawnPoint(){
     // r=R*sqrt(u) にすることで円内に均等な密度で分布させる(単純なrand(0,R)は中心に偏る)
     const a = rand(0,Math.PI*2), r = R*Math.sqrt(rand(0,1));
     const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
-    if(buildingBlocks(x,y,30)) continue;
     if(isOnHazard(x,y,60)) continue;
     let onRock=false;
     for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
@@ -521,7 +491,6 @@ function pickSpawnPointsBatch(n){
       const a = baseAngle + rand(-angleStep*0.4, angleStep*0.4);
       const r = R*Math.sqrt(rand(0,1));
       const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
-      if(buildingBlocks(x,y,30)) continue;
       if(isOnHazard(x,y,60)) continue;
       let onRock=false;
       for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
@@ -587,17 +556,9 @@ function genTerrain(){
   while(terrainDecor.length<count && guard<guardMax){
     guard++;
     const x = rand(40,WORLD.w-40), y = rand(40,WORLD.h-40);
-    if(buildingBlocks(x,y,10)) continue;
     if(isOnHazard(x,y,70)) continue;
     terrainDecor.push({ x, y, r: rand(5,16), shade: Math.random()<0.5 ? 'dark':'light' });
   }
-}
-function buildingBlocks(x,y,margin){
-  for(const b of buildings){
-    const m = Math.max(b.hw,b.hd)+b.rampLen+margin+30;
-    if(Math.abs(x-b.cx)<m && Math.abs(y-b.cy)<m) return true;
-  }
-  return false;
 }
 // 火山ごとに一意なIDを振り、描画側でまとめて1つの塊として扱えるようにする
 function genVolcanoAndLava(){
@@ -631,28 +592,6 @@ function genVolcanoAndLava(){
     lavaZones.push({ x, y, radius: rand(160,260) });
   }
 }
-function genBuildings(){
-  buildings = [];
-  const count = 21;
-  let attempts=0;
-  while(buildings.length<count && attempts<900){
-    attempts++;
-    const hw = rand(70,110), hd = rand(70,110);
-    const cx = rand(hw+200, WORLD.w-hw-200);
-    const cy = rand(hd+200, WORLD.h-hd-200);
-    let tooClose=false;
-    for(const b of buildings){
-      if(Math.hypot(cx-b.cx,cy-b.cy) < (hw+hd+b.hw+b.hd)*0.65+260){ tooClose=true; break; }
-    }
-    if(tooClose) continue;
-    buildings.push({
-      id:nextId++, cx, cy, hw, hd,
-      wallH: rand(115,150),
-      rampLen: rand(110,150),
-      rampSide: randInt(0,3),
-    });
-  }
-}
 // マップごとの岩の見た目バリエーション(雪岩/木/貝殻/砂岩など)を重み付きで抽選する。
 // リアルマップは3Dモデルで描くので、そのマップに合った専用の内訳(realObstacles)を使う
 function rockFlavorTable(){
@@ -682,7 +621,6 @@ function genRocks(){
     const rr = Math.random();
     const radius = rr<0.5 ? rand(22,34) : (rr<0.85 ? rand(34,52) : rand(52,72));
     const x = rand(80,WORLD.w-80), y = rand(80,WORLD.h-80);
-    if(buildingBlocks(x,y,radius)) continue;
     if(isOnHazard(x,y,radius+220)) continue;
     rocks.push({ id:nextId++, x, y, radius, height:radius*1.3, seed:rand(0,10), flavor:pickRockFlavor() });
   }
@@ -1027,21 +965,6 @@ function applyWorldFromSync(d, cosmeticRng){
   const st = d.st || 'volcano';
   for(let i=0;i+4<(d.vo||[]).length;i+=5){ volcanoObstacles.push({ x:d.vo[i], y:d.vo[i+1], radius:d.vo[i+2], isMain:!!d.vo[i+3], complexId:d.vo[i+4], style:st }); }
   lavaZones = unflat(d.lv||[]); seaZones = unflat(d.se||[]); riverZones = unflat(d.ri||[]); oasisZones = unflat(d.oa||[]);
-}
-function seededPickSpawnPoint(rng){
-  const R = ZONE_PHASES[0].holdRadius*0.85;
-  for(let tries=0; tries<60; tries++){
-    // r=R*sqrt(u) にすることで円内に均等な密度で分布させる(単純なrand(0,R)は中心に偏る)
-    const a = seededRand(rng,0,Math.PI*2), r = R*Math.sqrt(seededRand(rng,0,1));
-    const x = ZONE_CENTER0.x+Math.cos(a)*r, y = ZONE_CENTER0.y+Math.sin(a)*r;
-    if(isOnHazard(x,y,60)) continue;
-    let onRock=false;
-    for(const rk of rocks){ if(Math.hypot(x-rk.x,y-rk.y) < rk.radius+40){ onRock=true; break; } }
-    if(onRock) continue;
-    return {x,y};
-  }
-  const a = seededRand(rng,0,Math.PI*2), r = R*Math.sqrt(seededRand(rng,0,1));
-  return {x: ZONE_CENTER0.x+Math.cos(a)*r, y: ZONE_CENTER0.y+Math.sin(a)*r};
 }
 // マルチプレイ用: n体分のスポーン地点を角度方向にできるだけ均等に割り振って生成する(シード付き)
 function seededPickSpawnPointsBatch(rng, n){

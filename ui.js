@@ -2970,42 +2970,6 @@ async function joinSelectedRoom(roomId, lobbyKey){
   enterLobbyForRoom();
 }
 
-async function startMatchmaking(){
-  if(!window.__aramonFindOrCreateRoom){
-    pushToast('通信機能が利用できません。1人でプレイに切り替えます');
-    startGame();
-    return;
-  }
-  netState.cancelled = false;
-  matchBeginning = false;
-  document.getElementById('lobbyScreen').classList.remove('hidden');
-  document.getElementById('lobbyCountdown').textContent='';
-  document.getElementById('lobbySubText').textContent='部屋を検索中…';
-  document.getElementById('lobbyPlayerList').innerHTML='';
-
-  const rawName = (document.getElementById('playerNameInput').value||'').trim();
-  const displayName = rawName ? rawName.slice(0,12) : '名無しのモンスター';
-
-  let result;
-  try{
-    result = await window.__aramonFindOrCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
-  }catch(err){
-    console.error(err);
-    pushToast('マッチング失敗。1人でプレイに切り替えます');
-    document.getElementById('lobbyScreen').classList.add('hidden');
-    document.getElementById('startScreen').classList.remove('hidden');
-    startGame();
-    return;
-  }
-  if(netState.cancelled) return;
-
-  netState.roomId = result.roomId;
-  netState.isHost = result.isHost;
-  netState.myPlayerId = result.myPlayerId;
-  if(netState.isHost) netState.hostId = netState.myPlayerId;
-
-  enterLobbyForRoom();
-}
 
 document.getElementById('lobbyStartBtn').addEventListener('click', async ()=>{
   if(hostCountdownSnapshot) return; // カウント中の多重押下防止
@@ -5076,26 +5040,6 @@ function adminFilterByPeriod(logs, period){
 }
 // 汎用の自前ドロップダウン(マップ/モンスター選択用)。呼ばれるたびに選択肢を作り直すので、
 // トグル用のクリックリスナーだけdataset.boundで一度きり登録する。
-function renderAdminSelectFilter(wrapId, btnId, menuId, options, selectedValue, onSelect){
-  const wrap = document.getElementById(wrapId);
-  const btn = document.getElementById(btnId);
-  const menu = document.getElementById(menuId);
-  const selectedOpt = options.find(o=>o.value===selectedValue) || options[0];
-  btn.textContent = selectedOpt ? selectedOpt.label : '';
-  menu.innerHTML = options.map(o=>`<div class="custom-select-item${o.value===selectedValue?' active':''}" data-value="${o.value}">${o.label}</div>`).join('');
-  if(!wrap.dataset.bound){
-    wrap.dataset.bound = '1';
-    btn.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); });
-    document.addEventListener('click', (e)=>{ if(!wrap.contains(e.target)) menu.classList.add('hidden'); });
-  }
-  menu.querySelectorAll('.custom-select-item').forEach(item=>{
-    item.onclick = (e)=>{
-      e.stopPropagation();
-      menu.classList.add('hidden');
-      onSelect(item.dataset.value);
-    };
-  });
-}
 // 横棒グラフのHTMLを組む。entries=[{label,count}], 最大値基準で幅を割合表示
 function adminBarChartHtml(entries, color){
   if(!entries.length) return '<div class="rank-empty">記録がありません</div>';
