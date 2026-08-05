@@ -727,6 +727,7 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-05', items:[
     { t:'新モンスター「デュラハン」が登場しました！', g:['feature','monster'] },
+    { t:'デュラハンの色スキンから「白」を廃止し、「緑」を追加しました', g:['balance','monster'] },
   ]},
   { date:'2026-08-04', items:[
     { t:'轟金剛tier3「超番長ボーナス」・ゴーレムtier3「竜巻アタック」の3本の竜巻について、根元の当たり判定が薄く抜けやすかった不具合を調整しました(竜巻アタックも超番長ボーナスと同じ3本構成になりました。合計威力は変更していません)', g:['balance'] },
@@ -1755,7 +1756,7 @@ const SKIN_CONFIG = {
   god:     { colors:['black','red','blue','yellow','green'],   source:{type:'light'} },                       // 白いローブ部分
   zan:     { colors:['white','red','blue','yellow','green'],   source:{type:'chroma', hue:238, window:95} },   // メインのグレー(青みがかった)ボディ部分
   pixie:   { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:349, window:50} },   // 赤い部分
-  dullahan:{ colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:30, window:60} }, /*@dullahan*/
+  dullahan:{ colors:['black','red','blue','yellow','green'], source:{type:'chroma', hue:30, window:60} }, /*@dullahan*/
   // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)
