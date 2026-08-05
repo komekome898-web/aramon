@@ -12,8 +12,8 @@ const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephon
 const SKIN_SUMMON_SE = { choco_ssr:'chocoSummon' };
 const SKIN_HIT_SE    = { choco_ssr:'chocoHit', aqua_ssr:'rizeHit' };
 // 同・撃破時/勝利時のSE(スキンID → SE名)。未登録なら従来の kill / fanfare が鳴る
-const SKIN_KILL_SE   = { rock_ssr:'gokongoKill', aqua_ssr:'rizeKill' };
-const SKIN_WIN_SE    = { rock_ssr:'gokongoWin' };
+const SKIN_KILL_SE   = { rock_ssr:'gokongoKill', aqua_ssr:'aquaKill' };
+const SKIN_WIN_SE    = { rock_ssr:'gokongoWin', aqua_ssr:'rizeKill' };
 // ウンディーネの特性「与えたダメージの一部を自分のHPへ」の基本割合。
 // 技側の lifestealMult で倍にできる(大喰いの利世の鱗赫)
 const AQUA_LIFESTEAL = 0.2;
