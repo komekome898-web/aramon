@@ -1523,7 +1523,7 @@ function fxStyleCrescent(pr, r){
 const fxSevenImg = new Image();
 let fxSevenReady = false;
 fxSevenImg.onload = ()=>{ fxSevenReady = true; };
-fxSevenImg.src = './fx_seven.png';
+fxSevenImg.src = './images/fx_seven.png';
 const _fxSevenTint = {};
 function fxSevenSprite(hex){
   if(!fxSevenReady) return null;

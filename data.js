@@ -207,14 +207,14 @@ Object.keys(ELEMENTS).forEach(key=>{
   playerMonsterImages[key] = loadMonsterImage(`monsters/${key}_player`);
 });
 // 召喚演出のスポーン円盤石(画像)。ガチャ演出用に厚み(立体)を焼き込んだ版も持つ
-const summonDiskImg = loadMonsterImage('summon_disk');
-const summonDiskThickImg = loadMonsterImage('summon_disk_thick');
+const summonDiskImg = loadMonsterImage('images/summon_disk');
+const summonDiskThickImg = loadMonsterImage('images/summon_disk_thick');
 // スキンガチャ画面のidle演出用(轟金剛ピックアップ告知画像。拡張子.jpegで配備されている)
 const gachaPickupPromoImg = new Image();
 gachaPickupPromoImg.loaded = false; gachaPickupPromoImg.failed = false; gachaPickupPromoImg.decoding = 'async';
 gachaPickupPromoImg.onload = ()=>{ gachaPickupPromoImg.loaded = true; };
 gachaPickupPromoImg.onerror = ()=>{ gachaPickupPromoImg.failed = true; };
-gachaPickupPromoImg.src = 'promo_rock_ssr.jpeg';
+gachaPickupPromoImg.src = 'images/promo_rock_ssr.jpeg';
 // SSRスキンの手描き画像(アイコン=正面 / 試合用=後ろ姿)。
 // 実体は SSR_SKINS の宣言直後に自動生成する(この位置では SSR_SKINS がまだTDZなので中身は入れない)。
 const ssrSkinImages = {};
