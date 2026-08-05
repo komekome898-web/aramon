@@ -701,6 +701,15 @@
   </div>
   <div id="adminToolsPane" class="hidden">
     <button id="adminPerfToggle" class="admin-grant-dia-btn">📊 パフォーマンス表示: OFF</button>
+    <!-- 転生の動作確認用。転生前の状態を端末に保存してあるので何度でも戻して試せる -->
+    <div class="admin-skin-grant">
+      <div class="admin-skin-title">転生ロールバック(動作確認用・この端末に保存した転生前の状態へ戻す)</div>
+      <div class="custom-select" id="adminRebirthWrap">
+        <button type="button" class="custom-select-btn" id="adminRebirthBtn">戻すマスモンを選ぶ</button>
+        <div class="custom-select-menu hidden" id="adminRebirthMenu"></div>
+      </div>
+      <button id="adminRebirthRollbackBtn" class="admin-grant-dia-btn" disabled>🔁 転生前に戻す</button>
+    </div>
     <button id="adminGrantDiaBtn" class="admin-grant-dia-btn">💎 ダイヤ+500(動作確認用・この端末のアカウントに付与)</button>
     <div class="admin-skin-grant">
       <div class="admin-skin-title">スキン付与(動作確認用・この端末のアカウント)</div>
@@ -1118,6 +1127,38 @@
       <button id="mastermonDeleteNoBtn">いいえ</button>
       <button id="mastermonDeleteYesBtn">はい</button>
     </div>
+  </div>
+</div>
+
+<!-- 転生: 確認画面(転生前と転生後を見比べて決める)。中身はui.jsが組み立てる -->
+<div id="rebirthOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box rebirth-box">
+    <button class="overlay-close-btn" id="rebirthCloseBtn">✕</button>
+    <div class="rebirth-title">✦ 転生 ✦<span class="rebirth-title-sub">レベル100に到達したマスモンを、1から鍛え直して生まれ変わらせる</span></div>
+    <div class="rebirth-scroll-wrap">
+      <div class="rebirth-scroll" id="rebirthScroll"></div>
+      <div class="mm-scrollbar hidden" id="rebirthScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+    </div>
+    <div class="rebirth-actions">
+      <button id="rebirthCancelBtn" class="rebirth-cancel-btn">やめる</button>
+      <button id="rebirthConfirmBtn" class="rebirth-confirm-btn" disabled>適正を3つ選んでください</button>
+    </div>
+  </div>
+</div>
+
+<!-- 転生: 実行アニメーション(神秘的な演出 → 恩恵の表示) -->
+<div id="rebirthAnimOverlay" class="hidden">
+  <div id="rebirthAnimSky"></div>
+  <div id="rebirthAnimCircle"></div>
+  <div id="rebirthAnimRays"></div>
+  <div id="rebirthAnimMotes"></div>
+  <div id="rebirthAnimMonster"></div>
+  <div id="rebirthAnimFlash"></div>
+  <div id="rebirthAnimResult">
+    <div class="rb-res-title">転生完了</div>
+    <div class="rb-res-name" id="rebirthAnimName"></div>
+    <ul class="rb-res-list" id="rebirthAnimBenefits"></ul>
+    <button id="rebirthAnimCloseBtn" class="rebirth-confirm-btn">とじる</button>
   </div>
 </div>
 

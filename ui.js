@@ -1545,7 +1545,7 @@ function bagStatUsableQty(itemKey, targetKey){
   const mm = loadMastermons()[targetKey];
   if(!mm) return null;
   const cur = mm.stats[it.stat] || 0;
-  return Math.max(0, Math.ceil((MASTERMON_STAT_CAP - cur) / STAT_SEED_GAIN));
+  return Math.max(0, Math.ceil((mastermonStatCap(mm) - cur) / STAT_SEED_GAIN));
 }
 // 個数ゲージの上限を「所持数」と「上限までに必要な個数」の小さい方に合わせる
 function syncBagQtyLimit(){
@@ -1615,7 +1615,7 @@ function renderBagTargetList(){
   pick.innerHTML = keys.map(k=>{
     const mm = data[k];
     const active = k===bagPicker.targetKey;
-    const statsBarHtml = buildMastermonStatsColHtml(mm, APTITUDE[k], preview);
+    const statsBarHtml = buildMastermonStatsColHtml(mm, mastermonApt(mm), preview);
     const extra =
       bagPicker.itemKey==='freeTrainTicket' ? `<div class="bt-extra">🎫 トレチケ ${mm.tickets||0}→${(mm.tickets||0)+qty}枚</div>` :
       bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+qty}</div>` : '';
@@ -1659,11 +1659,12 @@ function useBagItem(itemKey, mmKey, qty){
   if(it.stat){
     const before = mm.stats[it.stat];
     const label = MASTERMON_STATS.find(s=>s.key===it.stat).label;
-    // 上限(999)に必要な個数までに絞る。余分なアイテムは消費しない
-    const need = Math.max(0, Math.ceil((MASTERMON_STAT_CAP - before) / STAT_SEED_GAIN));
+    // 上限(通常999・転生済み1099)に必要な個数までに絞る。余分なアイテムは消費しない
+    const cap = mastermonStatCap(mm);
+    const need = Math.max(0, Math.ceil((cap - before) / STAT_SEED_GAIN));
     if(need<=0){ pushToast(`${mm.name}の${label}は既に上限です`); return; }
     qty = Math.min(qty, need);
-    for(let i=0;i<qty;i++) mm.stats[it.stat] = mastermonClampStat(mm.stats[it.stat] + STAT_SEED_GAIN);
+    for(let i=0;i<qty;i++) mm.stats[it.stat] = mastermonClampStat(mm.stats[it.stat] + STAT_SEED_GAIN, cap);
     const gained = mm.stats[it.stat] - before;
     resultText = `${mm.name}の${label}+${gained}`;
   } else if(itemKey==='freeTrainTicket'){
@@ -2867,7 +2868,13 @@ function currentMastermonInfo(){
   const src = mm.stats || {};
   const stats = {};
   MASTERMON_STATS.forEach(s=>{ stats[s.key] = Math.round(src[s.key]||0); });
-  return { level: mm.level||1, stats };
+  // 転生の情報も必ず載せる。適正S(倍率の伸びが良くなる)と基礎値加算を片側だけで
+  // 掛けるとホストとゲストでHP・移動速度が食い違い、ゲストの位置補正が暴れる。
+  // Firebaseはundefinedを受け付けないのでnullで送る。
+  const apt = {};
+  const srcApt = mastermonApt(mm);
+  MASTERMON_STATS.forEach(s=>{ apt[s.key] = srcApt[s.key] || 'C'; });
+  return { level: mm.level||1, stats, rebirth: mastermonRebirthCount(mm), apt };
 }
 // 今参戦するモンスターに装備中のスキンID(マルチプレイで相手にも見せるため送る)
 function currentEquippedSkinId(){
@@ -3887,12 +3894,15 @@ let mastermonOpenedFrom = 'title';
    ===================================================================== */
 function mmKeys(){ return Object.keys(loadMastermons()); }
 // 育成後の実効値(バトルで実際に使われる値)を出す
+// カード等に出す実効HP・速さ。applyMastermonStatsToEntity と同じ順番で計算する
+// (転生ぶんの基礎値加算 → 育成倍率)。式を片方だけ変えると表示と実戦力が食い違う。
 function mmEffectiveStats(mm){
   const el = ELEMENTS[mm.element];
   const mults = mastermonEffectMults(mm);
+  const rb = mastermonRebirthBaseBonus(mm);
   return {
-    hp: Math.round(el.hp * mults.lifeMult),
-    speed: Math.round(el.speed * (el.speedMod||1) * mults.speedMult),
+    hp: Math.round((el.hp + rb.hp) * mults.lifeMult),
+    speed: Math.round((el.speed * (el.speedMod||1) + rb.speed) * mults.speedMult),
   };
 }
 // マスモンカードのHP/速さが育つほど数値の色を目立たせる(200:オレンジ/300:金/400:虹)
@@ -3930,6 +3940,7 @@ function mmCardInnerHtml(key){
   return `
     ${picked}
     <div class="ml-card-lv">Lv.${mm.level}</div>
+    ${mmRebirthStarsHtml(mm)}
     <div class="ml-card-art ml-card-art-mm">${equippedIconImgTag(key, el.label)}</div>
     <div class="ml-card-shine"></div>
     <div class="ml-card-body ml-card-body-mm">
@@ -4105,17 +4116,379 @@ const MM_MENU_ITEMS = [
   { tab:'training', icon:'💪', label:'トレーニング', desc:'チケットを使ってステータスを上げる' },
   { tab:'dressup',  icon:'👕', label:'着せ替え',     desc:'スキンを変更し見た目とオーラを変える' },
 ];
-function buildMastermonMenuHtml(){
-  return `
-    <div class="mm-menu-list">${MM_MENU_ITEMS.map(m=>`
+function buildMastermonMenuHtml(mm){
+  const items = MM_MENU_ITEMS.map(m=>`
       <button class="mm-menu-btn" data-tab="${m.tab}">
         <span class="mm-menu-btn-icon">${m.icon}</span>
         <span class="mm-menu-btn-text">
           <span class="mm-menu-btn-label">${m.label}</span>
           <span class="mm-menu-btn-desc">${m.desc}</span>
         </span>
-      </button>`).join('')}</div>`;
+      </button>`);
+  // 転生ボタンはレベル100に到達したマスモンにだけ出す(着せ替えの下)。
+  // 公開前なので「(工事中)」表記で、動かせるのは開発アカウントだけ。
+  if(canRebirthMastermon(mm)){
+    const allowed = rebirthUiAllowed();
+    items.push(`
+      <button class="mm-menu-btn mm-menu-btn-rebirth${allowed?'':' is-locked'}" data-action="rebirth"${allowed?'':' data-locked="1"'}>
+        <span class="mm-menu-btn-icon">✦</span>
+        <span class="mm-menu-btn-text">
+          <span class="mm-menu-btn-label">転生<span class="mm-rebirth-wip">(工事中)</span></span>
+          <span class="mm-menu-btn-desc">${allowed
+            ? 'レベル1に戻る代わりに上限・基礎値・適正が上がる(取り消せません)'
+            : '準備中です。もうしばらくお待ちください'}</span>
+        </span>
+      </button>`);
+  }
+  return `<div class="mm-menu-list">${items.join('')}</div>`;
 }
+
+/* =====================================================================
+   転生(Lv100のマスモンを1から鍛え直して強化する不可逆システム)
+
+   ・確認画面で「転生前」と「転生後」を並べて見比べ、適正を3つ選んでから実行する
+   ・実行前のマスモンは REBIRTH_BACKUP_KEY に丸ごと保存し、管理者画面から
+     何度でも元に戻せるようにしてある(動作確認用。公開時に外す想定)
+   ・公開前なので rebirthUiAllowed() が true のアカウントでしか実行できない
+   ===================================================================== */
+const REBIRTH_BACKUP_KEY = 'aramon_rebirth_backup_v1';
+const REBIRTH_DEV_ACCOUNT = 'おりょう';   // 公開までこのアカウントだけが転生できる
+// 転生後に「各ステータス最大時」を見せるときの表示用ラベル
+const REBIRTH_MULT_ROWS = [
+  { key:'lifeMult',      label:'HP倍率',    hint:'高いほど良い' },
+  { key:'dmgDealtMult',  label:'与ダメージ', hint:'高いほど良い' },
+  { key:'dmgTakenMult',  label:'被ダメージ', hint:'低いほど良い' },
+  { key:'gutsRegenMult', label:'ガッツ回復', hint:'高いほど良い' },
+  { key:'cooldownMult',  label:'技の間隔',  hint:'低いほど良い' },
+  { key:'speedMult',     label:'移動速度',  hint:'高いほど良い' },
+];
+let rebirthKey = null;          // 確認画面で対象にしているマスモンのキー
+let rebirthPicks = [];          // 1段階上げる適正(ステータスキー)を最大3つ
+
+function rebirthUiAllowed(){
+  return !!(typeof accountState!=='undefined' && accountState.loggedIn && accountState.name===REBIRTH_DEV_ACCOUNT);
+}
+// カードに出す転生回数の虹色★
+function mmRebirthStarsHtml(mm){
+  const n = mastermonRebirthCount(mm);
+  if(n<=0) return '';
+  return `<div class="ml-card-rebirth" title="転生${n}回">${'★'.repeat(Math.min(n, 10))}</div>`;
+}
+// マスモンの名前はプレイヤーが自由に付けられるので、HTMLへ差し込む前に無害化する
+function rebirthEscape(t){
+  return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function rebirthMultValue(mults, key){ return mults[key].toFixed(2); }
+// 選ぶ適正の数。何度も転生して上げきると残りがSばかりになるので、
+// 上げられる適正が3つ未満のときはその数に合わせる(選べなくて転生できない状態を作らない)
+function rebirthPickTarget(mm){
+  const apt = mastermonApt(mm);
+  const upgradable = MASTERMON_STATS.filter(s=>apt[s.key]!=='S').length;
+  return Math.min(REBIRTH_APT_PICKS, upgradable);
+}
+// 「全ステータスが上限のとき」の姿。転生後の伸びしろを見せるために使う
+function rebirthMaxedClone(mm){
+  const cap = mastermonStatCap(mm);
+  const stats = {};
+  MASTERMON_STATS.forEach(s=>{ stats[s.key] = cap; });
+  return Object.assign({}, mm, { stats });
+}
+
+// 比較画面の片側(カード + ステータス/適正の列)を組み立てる
+function rebirthSideHtml(mm, opts){
+  const el = ELEMENTS[mm.element];
+  const eff = mmEffectiveStats(mm);
+  const mults = mastermonEffectMults(mm);
+  const apt = mastermonApt(mm);
+  const cap = mastermonStatCap(mm);
+  const beforeApt = opts.compareApt || null;   // 適正が変わった行を光らせるための比較元
+  const multRows = REBIRTH_MULT_ROWS.map(r=>{
+    const before = opts.compareMults ? opts.compareMults[r.key] : null;
+    const up = before!=null && Math.abs(mults[r.key]-before) > 0.0005;
+    return `<div class="rb-mult-row${up?' is-changed':''}">
+      <span class="rb-mult-k">${r.label}</span>
+      <span class="rb-mult-v">×${rebirthMultValue(mults, r.key)}</span>
+    </div>`;
+  }).join('');
+  const statRows = MASTERMON_STATS.map(s=>{
+    const v = mm.stats[s.key];
+    const g = apt[s.key];
+    const gChanged = beforeApt && beforeApt[s.key] !== g;
+    return `<div class="rb-stat-row">
+      <span class="rb-stat-k">${s.label}</span>
+      <span class="rb-stat-apt mm-stat-apt-badge apt-${g}${gChanged?' is-upgraded':''}">${g}</span>
+      <span class="rb-stat-v">${v}<span class="rb-stat-cap">/${cap}</span></span>
+      <span class="rb-stat-track"><span class="rb-stat-fill" style="width:${Math.round(v/cap*100)}%; background:${s.color};"></span></span>
+    </div>`;
+  }).join('');
+  const stars = mastermonRebirthCount(mm)>0
+    ? `<div class="rb-card-stars">${'★'.repeat(Math.min(mastermonRebirthCount(mm),10))}</div>` : '';
+  return `
+    <div class="rb-side ${opts.sideClass}">
+      <div class="rb-side-title">${opts.title}</div>
+      <div class="rb-side-body">
+        <div class="rb-card">
+          ${stars}
+          <div class="rb-card-art">${equippedIconImgTag(mm.element, el.label)}</div>
+          <div class="rb-card-name">${rebirthEscape(mm.name)}<span class="rb-card-lv">Lv.${mm.level}</span></div>
+          <div class="rb-card-figs">
+            <div class="rb-card-fig"><span class="rb-card-fig-k">HP</span><span class="rb-card-fig-v">${eff.hp}</span></div>
+            <div class="rb-card-fig"><span class="rb-card-fig-k">速さ</span><span class="rb-card-fig-v">${eff.speed}</span></div>
+          </div>
+          <div class="rb-mult-list">${multRows}</div>
+        </div>
+        <div class="rb-stats">
+          <div class="rb-stats-title">ステータス / 適正</div>
+          ${statRows}
+          <div class="rb-tickets">🎫 トレーニングチケット ${mm.tickets||0}枚</div>
+        </div>
+      </div>
+      ${opts.extraHtml||''}
+    </div>`;
+}
+
+// 「全ステータス最大時」のまとめ(転生後の側にだけ出す)
+function rebirthMaxedHtml(afterMm){
+  const maxed = rebirthMaxedClone(afterMm);
+  const eff = mmEffectiveStats(maxed);
+  const mults = mastermonEffectMults(maxed);
+  const rows = REBIRTH_MULT_ROWS.map(r=>`
+    <div class="rb-mult-row"><span class="rb-mult-k">${r.label}</span><span class="rb-mult-v">×${rebirthMultValue(mults, r.key)}</span></div>`).join('');
+  return `
+    <div class="rb-maxed">
+      <div class="rb-maxed-title">全ステータス最大(${mastermonStatCap(afterMm)})まで育てたとき</div>
+      <div class="rb-maxed-figs">
+        <div class="rb-card-fig"><span class="rb-card-fig-k">HP</span><span class="rb-card-fig-v">${eff.hp}</span></div>
+        <div class="rb-card-fig"><span class="rb-card-fig-k">速さ</span><span class="rb-card-fig-v">${eff.speed}</span></div>
+      </div>
+      <div class="rb-mult-list">${rows}</div>
+    </div>`;
+}
+
+// 適正を3つ選ぶピッカー(選んだぶんだけ1段階上がる)
+function rebirthPickerHtml(mm){
+  const apt = mastermonApt(mm);
+  const btns = MASTERMON_STATS.map(s=>{
+    const g = apt[s.key];
+    const next = aptitudeUpgrade(g);
+    const on = rebirthPicks.indexOf(s.key)>=0;
+    const maxed = g==='S';
+    return `<button class="rb-pick-btn${on?' is-on':''}${maxed?' is-max':''}" data-stat="${s.key}"${maxed?' disabled':''}>
+      <span class="rb-pick-label">${s.label}</span>
+      <span class="rb-pick-grade"><span class="mm-stat-apt-badge apt-${g}">${g}</span>${maxed?'':`<span class="rb-pick-arrow">▶</span><span class="mm-stat-apt-badge apt-${next}">${next}</span>`}</span>
+    </button>`;
+  }).join('');
+  const need = rebirthPickTarget(mm);
+  return `
+    <div class="rb-picker">
+      <div class="rb-picker-title">上げる適正を${need}つ選ぶ<span class="rb-picker-count">${rebirthPicks.length}/${need}</span></div>
+      <div class="rb-picker-grid">${btns}</div>
+      <div class="rb-sbonus">
+        <div class="rb-sbonus-title">✦ 適正Sボーナス</div>
+        <div class="rb-sbonus-text">適正Aの上に<b>S</b>が加わります。Sはトレーニングでの上がり幅が最も大きい(×${APTITUDE_TRAIN_MULT.S})うえに、
+        <b>同じステータス値でも倍率の伸びが良くなります</b>(効きが約${Math.round((1/APTITUDE_S_FACTOR_DIVISOR_MULT-1)*100)}%増)。
+        つまりSにしたステータスは「上がりやすく、上がったぶんがよく効く」二重の得になります。</div>
+      </div>
+    </div>`;
+}
+
+function rebirthBenefitLines(beforeMm, afterMm){
+  const apt0 = mastermonApt(beforeMm), apt1 = mastermonApt(afterMm);
+  const aptLines = MASTERMON_STATS.filter(s=>apt0[s.key]!==apt1[s.key])
+    .map(s=>`適正 ${s.label} ${apt0[s.key]} → <b>${apt1[s.key]}</b>`);
+  return [
+    `ステータス上限 ${mastermonStatCap(beforeMm)} → <b>${mastermonStatCap(afterMm)}</b>`,
+    `基礎HP <b>+${REBIRTH_BASE_HP_BONUS}</b> ／ 基礎移動速度 <b>+${REBIRTH_BASE_SPEED_BONUS}</b>`,
+    `トレーニングチケット <b>+${REBIRTH_TICKETS}枚</b>(${beforeMm.tickets||0} → ${afterMm.tickets||0}枚)`,
+  ].concat(aptLines).concat([
+    `レベル ${beforeMm.level} → <b>1</b>(ステータスは転生前の1/3から再スタート)`,
+    `転生回数 <b>★${mastermonRebirthCount(afterMm)}</b>`,
+  ]);
+}
+
+function renderRebirthOverlay(){
+  const data = loadMastermons();
+  const mm = data[rebirthKey];
+  const box = document.getElementById('rebirthScroll');
+  if(!mm || !box) return;
+  const after = rebirthMastermonResult(mm, rebirthPicks);
+  const beforeMults = mastermonEffectMults(mm);
+  box.innerHTML = `
+    ${rebirthPickerHtml(mm)}
+    <div class="rb-compare">
+      ${rebirthSideHtml(mm, { title:'転生前', sideClass:'rb-side-before' })}
+      <div class="rb-arrow">➡</div>
+      ${rebirthSideHtml(after, { title:'転生後', sideClass:'rb-side-after',
+        compareMults: beforeMults, compareApt: mastermonApt(mm), extraHtml: rebirthMaxedHtml(after) })}
+    </div>
+    <div class="rb-warn">⚠ 転生は取り消せません。レベルとステータスは戻りません。</div>`;
+  box.querySelectorAll('.rb-pick-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const k = b.dataset.stat;
+      const need = rebirthPickTarget(mm);
+      const i = rebirthPicks.indexOf(k);
+      if(i>=0) rebirthPicks.splice(i,1);
+      else if(rebirthPicks.length < need) rebirthPicks.push(k);
+      else { pushToast(`適正は${need}つまでです`); return; }
+      renderRebirthOverlay();
+    });
+  });
+  const ok = document.getElementById('rebirthConfirmBtn');
+  const need = rebirthPickTarget(mm);
+  const ready = rebirthPicks.length === need;
+  ok.disabled = !ready;
+  ok.textContent = ready ? '✦ 転生する' : `適正を${need}つ選んでください`;
+  attachVisibleScrollbar(box, document.getElementById('rebirthScrollbar'));
+}
+
+function openRebirthOverlay(key){
+  const mm = loadMastermons()[key];
+  if(!mm) return;
+  if(!canRebirthMastermon(mm)){ pushToast(`レベル${REBIRTH_LEVEL_REQ}になると転生できます`); return; }
+  if(!rebirthUiAllowed()){ pushToast('転生は準備中です'); return; }
+  rebirthKey = key;
+  rebirthPicks = [];
+  document.getElementById('rebirthOverlay').classList.remove('hidden');
+  renderRebirthOverlay();
+}
+function closeRebirthOverlay(){
+  document.getElementById('rebirthOverlay').classList.add('hidden');
+  rebirthKey = null;
+  rebirthPicks = [];
+}
+
+// 転生前の状態を丸ごと保存する(管理者画面から戻せるように)
+function saveRebirthBackup(key, mm){
+  try{
+    const all = JSON.parse(localStorage.getItem(REBIRTH_BACKUP_KEY)) || {};
+    all[key] = { savedAt: Date.now(), mm: JSON.parse(JSON.stringify(mm)) };
+    localStorage.setItem(REBIRTH_BACKUP_KEY, JSON.stringify(all));
+  }catch(err){}
+}
+function loadRebirthBackups(){
+  try{ return JSON.parse(localStorage.getItem(REBIRTH_BACKUP_KEY)) || {}; }catch(err){ return {}; }
+}
+
+function doRebirth(){
+  const key = rebirthKey;
+  const data = loadMastermons();
+  const mm = data[key];
+  if(!mm || !canRebirthMastermon(mm) || !rebirthUiAllowed()) return;
+  if(rebirthPicks.length !== rebirthPickTarget(mm)) return;
+  const before = JSON.parse(JSON.stringify(mm));
+  const after = rebirthMastermonResult(mm, rebirthPicks);
+  saveRebirthBackup(key, before);          // 動作確認用に転生前を保存(ロールバック用)
+  data[key] = after;
+  saveMastermons(data);
+  closeRebirthOverlay();
+  playRebirthAnim(key, before, after);
+}
+
+/* 転生アニメーション。おおまかな流れ(合計 REBIRTH_ANIM_MS):
+   ①暗転して魔法陣が広がる ②光の粒が立ち上る ③閃光 ④生まれ変わった姿が現れる
+   ⑤恩恵の一覧が1行ずつ出る。閉じるとマスモン画面へ戻る                            */
+const REBIRTH_ANIM_MS = 5200;
+function playRebirthAnim(key, before, after){
+  const ov = document.getElementById('rebirthAnimOverlay');
+  if(!ov){ afterRebirthRefresh(key); return; }
+  document.getElementById('rebirthAnimMonster').innerHTML = equippedIconImgTag(after.element, ELEMENTS[after.element].label);
+  document.getElementById('rebirthAnimName').innerHTML = `${rebirthEscape(after.name)}<span class="rb-res-stars">${'★'.repeat(Math.min(mastermonRebirthCount(after),10))}</span>`;
+  const list = document.getElementById('rebirthAnimBenefits');
+  const lines = rebirthBenefitLines(before, after);
+  // 恩恵は「パネルがせり上がったあと」に1行ずつ出す。パネルの出現はCSSのrbResultが
+  // 演出のおよそ3/4の時点なので、そこを基準にして行数ぶんの間隔を逆算する。
+  const base = Math.round(REBIRTH_ANIM_MS*0.75);
+  const step = Math.min(220, Math.max(90, Math.round(1400/Math.max(1,lines.length))));
+  list.innerHTML = lines.map((t,i)=>`<li style="animation-delay:${base + i*step}ms">${t}</li>`).join('');
+  ov.className = 'rb-anim-run';
+  void ov.offsetWidth;   // 再生し直すために強制的にレイアウトさせる
+  playSe('godRising');
+  afterRebirthRefresh(key);   // 裏で画面の中身を新しい状態にしておく
+}
+function closeRebirthAnim(){
+  const ov = document.getElementById('rebirthAnimOverlay');
+  if(ov){ ov.className = 'hidden'; document.getElementById('rebirthAnimMonster').innerHTML = ''; }
+}
+// 転生後にマスモン画面の表示を作り直す。
+// レベルが100→1に変わると並び順(レベル降順)も変わるので、カードは作り直しが必要。
+function afterRebirthRefresh(key){
+  mastermonDetailKey = key;
+  mastermonDetailTab = null;
+  mastermonSelectedTraining = null;
+  mmCarousel.build();
+  mmCarousel.reset(key);
+  renderMastermonCard(key, null);
+  renderMastermonDetail(key);
+  renderSelectorCards();
+}
+
+/* --- 管理者画面: 転生ロールバック(動作確認用) ---
+   転生は本来やり直せないが、確認のあいだは何度でも試せるように、転生前の状態を
+   端末に保存しておいて元に戻せるようにしてある。開くたびに一覧を作り直す。 */
+let adminRebirthPick = null;
+function buildAdminRebirthMenu(){
+  const wrap = document.getElementById('adminRebirthWrap');
+  const menu = document.getElementById('adminRebirthMenu');
+  const btn  = document.getElementById('adminRebirthBtn');
+  if(!wrap || !menu || !btn) return;
+  const backups = loadRebirthBackups();
+  const data = loadMastermons();
+  const keys = Object.keys(backups).filter(k=>data[k]);   // 削除済みのマスモンは対象外
+  menu.innerHTML = keys.length
+    ? keys.map(k=>{
+        const b = backups[k], mm = b.mm;
+        const d = new Date(b.savedAt||0);
+        const stamp = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        return `<div class="custom-select-item" data-key="${k}">${rebirthEscape(mm.name)}(${ELEMENTS[k]?ELEMENTS[k].label:k}) Lv.${mm.level} ／ ${stamp}</div>`;
+      }).join('')
+    : '<div class="custom-select-group">保存された転生前の状態はありません</div>';
+  // 一覧を作り直したので選択は解除する(消えた項目を選んだままにしない)
+  adminRebirthPick = null;
+  btn.textContent = '戻すマスモンを選ぶ';
+  updateAdminRebirthBtn();
+  if(wrap.dataset.built) return;
+  wrap.dataset.built = '1';
+  btn.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); });
+  menu.addEventListener('click', (e)=>{
+    const item = e.target.closest('.custom-select-item');
+    if(!item || !item.dataset.key) return;
+    e.stopPropagation();
+    menu.querySelectorAll('.custom-select-item').forEach(i=>i.classList.remove('active'));
+    item.classList.add('active');
+    adminRebirthPick = item.dataset.key;
+    btn.textContent = item.textContent;
+    menu.classList.add('hidden');
+    updateAdminRebirthBtn();
+  });
+}
+function updateAdminRebirthBtn(){
+  const b = document.getElementById('adminRebirthRollbackBtn');
+  if(!b) return;
+  b.disabled = !adminRebirthPick;
+  b.textContent = adminRebirthPick ? '🔁 このマスモンを転生前に戻す' : '🔁 転生前に戻す';
+}
+document.getElementById('adminRebirthRollbackBtn').addEventListener('click', ()=>{
+  if(!adminRebirthPick) return;
+  const backups = loadRebirthBackups();
+  const entry = backups[adminRebirthPick];
+  const data = loadMastermons();
+  if(!entry || !entry.mm || !data[adminRebirthPick]){ pushToast('戻せる状態が見つかりません'); buildAdminRebirthMenu(); return; }
+  const key = adminRebirthPick;
+  data[key] = JSON.parse(JSON.stringify(entry.mm));
+  saveMastermons(data);
+  // 何度でも転生を試せるよう、戻したあとも保存は消さない
+  pushToast(`${data[key].name} を転生前(Lv.${data[key].level})に戻しました`);
+  if(typeof renderSelectorCards==='function') renderSelectorCards();
+  // マスモンの詳細を開いている最中だけ画面を作り直す(閉じているなら次に開いたときに新しくなる)
+  const detail = document.getElementById('mmDetailView');
+  if(detail && !detail.classList.contains('hidden')) afterRebirthRefresh(key);
+  buildAdminRebirthMenu();
+});
+
+document.getElementById('rebirthCloseBtn').addEventListener('click', closeRebirthOverlay);
+document.getElementById('rebirthCancelBtn').addEventListener('click', closeRebirthOverlay);
+document.getElementById('rebirthConfirmBtn').addEventListener('click', doRebirth);
+document.getElementById('rebirthAnimCloseBtn').addEventListener('click', closeRebirthAnim);
 
 function openMastermonScreen(fromResult){
   const data = loadMastermons();
@@ -4192,7 +4565,7 @@ function renderMastermonDetail(key){
   const data = loadMastermons();
   const mm = data[key];
   const el = ELEMENTS[key];
-  const apt = APTITUDE[key];
+  const apt = mastermonApt(mm);   // 転生で上がった適正があればそちらを出す
   const panel = document.getElementById('mastermonDetailPanel');
   panel.classList.remove('hidden');
 
@@ -4228,7 +4601,7 @@ function renderMastermonDetail(key){
   else if(mastermonDetailTab==='edit') contentHtml = buildMastermonEditHtml(mm);
   else if(mastermonDetailTab==='dressup') contentHtml = buildMastermonSkinHtml(key);
   else if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
-  else contentHtml = buildMastermonMenuHtml();   // 初期はメニュー(3ボタン)
+  else contentHtml = buildMastermonMenuHtml(mm);  // 初期はメニュー(Lv100なら転生も並ぶ)
 
   // トレーニング画面では実行ボタンをヘッダー右に置く。ヘッダーはステータスの上まで
   // 全幅で伸ばす(モンスター一覧の画面と同じ形)。タブを開いているときだけ戻るボタンを出す
@@ -4263,7 +4636,14 @@ function renderMastermonDetail(key){
 
   if(!mastermonDetailTab){
     panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=> mmOpenTab(btn.dataset.tab));
+      btn.addEventListener('click', ()=>{
+        if(btn.dataset.action==='rebirth'){
+          if(btn.dataset.locked) pushToast('転生は準備中です');
+          else openRebirthOverlay(key);
+          return;
+        }
+        mmOpenTab(btn.dataset.tab);
+      });
     });
     return;
   }
@@ -4389,12 +4769,13 @@ function buildMastermonSkinHtml(key){
 
 // ステータス(ライフ・ちから等)バー: メニュー/詳細情報/技一覧/トレーニングの全画面で共通表示
 function buildMastermonStatsColHtml(mm, apt, preview){
+  const cap = mastermonStatCap(mm);   // 転生済みは1099までバーが伸びる
   const statsHtml = MASTERMON_STATS.map(s=>{
     const v = mm.stats[s.key];
     const delta = preview ? preview[s.key] : null;
-    const resultVal = delta ? mastermonClampStat(v + delta) : v;
-    const pct = Math.round(resultVal/MASTERMON_STAT_CAP*100);
-    // 表示する差分は上限(999)で頭打ちにした「実際に動く量」にする。
+    const resultVal = delta ? mastermonClampStat(v + delta, cap) : v;
+    const pct = Math.round(resultVal/cap*100);
+    // 表示する差分は上限で頭打ちにした「実際に動く量」にする。
     // 要求値をそのまま出すと、997に+25と書いてあるのに値は999、という食い違いになる
     const effDelta = resultVal - v;
     const deltaHtml = effDelta ? `<span class="mm-stat-delta ${effDelta>0?'up':'down'}">(${effDelta>0?'+':''}${effDelta})</span>` : '';
@@ -4476,7 +4857,7 @@ function buildMastermonInfoHtml(key, mm, el){
   //   技(2列分)
   return `
     <div class="ml-info-cols mm-info-grid">
-      ${caroStatusSecHtml(mm, APTITUDE[key], null, '育成後 / 適正')}
+      ${caroStatusSecHtml(mm, mastermonApt(mm), null, '育成後 / 適正')}
       <div class="ml-sec">
         <div class="ml-sec-title">ステータス倍率</div>
         ${statRows}
@@ -4591,9 +4972,11 @@ function buildMastermonTrainingHtml(mm){
 function applyMastermonStatsToEntity(ent, mm){
   if(!ent || !mm) return;
   const mults = mastermonEffectMults(mm);
-  ent.maxHp = Math.round(ent.maxHp * mults.lifeMult);
+  // 転生ぶんの基礎値加算は「倍率を掛ける前」に足す(育成の倍率がそのまま乗るように)
+  const rb = mastermonRebirthBaseBonus(mm);
+  ent.maxHp = Math.round((ent.maxHp + rb.hp) * mults.lifeMult);
   ent.hp = ent.maxHp;
-  ent.speed = ent.speed * mults.speedMult;
+  ent.speed = (ent.speed + rb.speed) * mults.speedMult;
   ent.mastermonDmgDealtMult = mults.dmgDealtMult;
   ent.mastermonDmgTakenMult = mults.dmgTakenMult;
   ent.mastermonGutsRegenMult = mults.gutsRegenMult;
@@ -5463,7 +5846,7 @@ function adminShowTab(tab){
   document.getElementById('adminStatsPane').classList.toggle('hidden', tab!=='stats');
   document.getElementById('adminSePane').classList.toggle('hidden', tab!=='se');
   document.getElementById('adminToolsPane').classList.toggle('hidden', tab!=='tools');
-  if(tab==='tools'){ buildAdminSkinMenu(); updateAdminSkinBtn(); }
+  if(tab==='tools'){ buildAdminSkinMenu(); updateAdminSkinBtn(); buildAdminRebirthMenu(); }
   if(tab!=='se' && typeof bgmSetTrack==='function') bgmSetTrack('title'); // 音声確認タブを離れたらテストBGMを止める
 }
 document.querySelectorAll('.admin-tab').forEach(t=> t.addEventListener('click', ()=>adminShowTab(t.dataset.tab)));

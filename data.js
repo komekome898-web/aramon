@@ -1037,8 +1037,19 @@ const APTITUDE = {
   dullahan:{ life:'C', power:'B', wisdom:'C', accuracy:'C', evasion:'E', vitality:'A' }, /*@dullahan*/
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
-const APTITUDE_INITIAL_VALUE = { A:150, B:130, C:110, D:90, E:70 };
-const APTITUDE_TRAIN_MULT   = { A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
+// 適正は E→D→C→B→A→S の6段階。Sは転生でしか手に入らない(種族の初期適正には出てこない)。
+const APTITUDE_ORDER = ['E','D','C','B','A','S'];
+const APTITUDE_INITIAL_VALUE = { S:170, A:150, B:130, C:110, D:90, E:70 };
+const APTITUDE_TRAIN_MULT   = { S:1.8,  A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
+// 適正Sだけの追加ボーナス: ステータス1ポイントあたりの倍率の伸びも良くなる。
+// mastermonStatFactor の除数に掛ける(除数が小さいほど1ポイントの効きが強い)。
+const APTITUDE_S_FACTOR_DIVISOR_MULT = 0.75;
+// 1段階上げる(Sが上限)。転生で選んだ適正に使う
+function aptitudeUpgrade(grade){
+  const i = APTITUDE_ORDER.indexOf(grade);
+  if(i < 0) return grade;
+  return APTITUDE_ORDER[Math.min(i+1, APTITUDE_ORDER.length-1)];
+}
 
 // トレーニングメニュー。upは適正に応じて上昇量が変動、downは適正に関係なく固定量で下降
 const TRAINING_MENU = [
@@ -1054,7 +1065,62 @@ const TRAINING_MENU = [
   { key:'pool',    label:'プール',    desc:'丈夫さ↑↑・ライフ↑／かしこさ↓', up:[{stat:'vitality',amount:28},{stat:'life',    amount:12}], down:[{stat:'wisdom',  amount:10}] },
 ];
 
-function mastermonClampStat(v){ return Math.max(1, Math.min(MASTERMON_STAT_CAP, Math.round(v))); }
+/* =====================================================================
+   転生(レベル100で1からやり直し、そのぶん強くなる不可逆システム)
+
+   マスモンに増えるフィールドは2つだけ:
+     mm.rebirth : 転生した回数(未転生は undefined/0)
+     mm.apt     : このマスモン固有の適正表(転生で1段階上げたもの)。
+                  無ければ種族の APTITUDE[element] を使う。
+   どちらも「無ければ従来どおり」で読めるので、既存のセーブデータをそのまま扱える。
+   ===================================================================== */
+const REBIRTH_LEVEL_REQ        = MASTERMON_LEVEL_CAP; // 転生できるレベル(=上限レベル)
+const REBIRTH_STAT_CAP         = 1099;  // 転生後のステータス上限
+const REBIRTH_BASE_HP_BONUS    = 10;    // 転生1回につき種族の基礎HPに加算
+const REBIRTH_BASE_SPEED_BONUS = 10;    // 転生1回につき種族の基礎速度に加算
+const REBIRTH_TICKETS          = 10;    // 転生時にもらえるトレーニングチケット
+const REBIRTH_STAT_KEEP_RATIO  = 1/3;   // 転生後に残るステータスの割合(999→333)
+const REBIRTH_APT_PICKS        = 3;     // 転生時に1段階上げる適正の数
+
+function mastermonRebirthCount(mm){ return Math.max(0, Math.round((mm && mm.rebirth) || 0)); }
+// このマスモンの適正表。転生で書き換わっていればそちら、無ければ種族の適正
+function mastermonApt(mm){
+  if(mm && mm.apt) return mm.apt;
+  const byElement = mm && APTITUDE[mm.element];
+  return byElement || APTITUDE.mocchi;
+}
+// このマスモンのステータス上限(転生していれば引き上がる)
+function mastermonStatCap(mm){ return mastermonRebirthCount(mm)>0 ? REBIRTH_STAT_CAP : MASTERMON_STAT_CAP; }
+// 転生による種族基礎値への加算(HP・移動速度)
+function mastermonRebirthBaseBonus(mm){
+  const n = mastermonRebirthCount(mm);
+  return { hp: n*REBIRTH_BASE_HP_BONUS, speed: n*REBIRTH_BASE_SPEED_BONUS };
+}
+function canRebirthMastermon(mm){ return !!mm && (mm.level||0) >= REBIRTH_LEVEL_REQ; }
+// 転生を実行した結果の新しいマスモンを返す(元のオブジェクトは書き換えない)。
+// aptPicks には1段階上げるステータスキーを REBIRTH_APT_PICKS 個渡す。
+function rebirthMastermonResult(mm, aptPicks){
+  const picks = (aptPicks||[]).slice(0, REBIRTH_APT_PICKS);
+  const nextRebirth = mastermonRebirthCount(mm) + 1;
+  const baseApt = mastermonApt(mm);
+  const apt = {};
+  MASTERMON_STATS.forEach(s=>{ apt[s.key] = baseApt[s.key]; });
+  picks.forEach(k=>{ if(apt[k]) apt[k] = aptitudeUpgrade(apt[k]); });
+  const stats = {};
+  // 転生後の上限で丸める(1/3にするので上限には当たらないが、計算の基準をそろえる)
+  MASTERMON_STATS.forEach(s=>{
+    stats[s.key] = mastermonClampStat((mm.stats[s.key]||0) * REBIRTH_STAT_KEEP_RATIO, REBIRTH_STAT_CAP);
+  });
+  return Object.assign({}, mm, {
+    level: 1, exp: 0,
+    tickets: (mm.tickets||0) + REBIRTH_TICKETS,
+    rebirth: nextRebirth,
+    apt, stats,
+  });
+}
+
+// 上限は既定で999。転生済みのマスモンを扱うときは cap に mastermonStatCap(mm) を渡す
+function mastermonClampStat(v, cap){ return Math.max(1, Math.min(cap||MASTERMON_STAT_CAP, Math.round(v))); }
 function mastermonInitialStats(elementKey){
   const apt = APTITUDE[elementKey];
   const stats = {};
@@ -1072,8 +1138,10 @@ const MASTERMON_STAT_FACTOR_DIVISOR = {
   evasion:  1300, // 増減幅ダウン
   vitality: 450,  // 増減幅アップ(さらに拡大)
 };
-function mastermonStatFactor(v, statKey){
-  const divisor = MASTERMON_STAT_FACTOR_DIVISOR[statKey] || 900;
+// grade に 'S' を渡すと除数が縮み、同じステータス値でも倍率の伸びが良くなる(適正Sボーナス)
+function mastermonStatFactor(v, statKey, grade){
+  let divisor = MASTERMON_STAT_FACTOR_DIVISOR[statKey] || 900;
+  if(grade==='S') divisor *= APTITUDE_S_FACTOR_DIVISOR_MULT;
   return 1 + (v-100)/divisor;
 }
 
@@ -1114,16 +1182,17 @@ function createMastermon(elementKey, name){
 function previewMastermonTraining(mm, trainingKey){
   const tpl = TRAINING_MENU.find(t=>t.key===trainingKey);
   if(!tpl) return null;
-  const apt = APTITUDE[mm.element];
+  const apt = mastermonApt(mm);      // 転生で上がった適正があればそちらが効く
+  const cap = mastermonStatCap(mm);  // 転生済みは上限1099まで伸ばせる
   const changes = {};
   tpl.up.forEach(u=>{
     const mult = APTITUDE_TRAIN_MULT[apt[u.stat]] || 1;
     const gain = Math.round(u.amount*mult);
-    const newVal = mastermonClampStat(mm.stats[u.stat]+gain);
+    const newVal = mastermonClampStat(mm.stats[u.stat]+gain, cap);
     changes[u.stat] = newVal - mm.stats[u.stat];
   });
   tpl.down.forEach(d=>{
-    const newVal = mastermonClampStat(mm.stats[d.stat]-d.amount);
+    const newVal = mastermonClampStat(mm.stats[d.stat]-d.amount, cap);
     changes[d.stat] = newVal - mm.stats[d.stat];
   });
   return changes;
@@ -1132,7 +1201,8 @@ function applyMastermonTraining(mm, trainingKey){
   if(mm.tickets<=0) return null;
   const changes = previewMastermonTraining(mm, trainingKey);
   if(!changes) return null;
-  Object.keys(changes).forEach(k=>{ mm.stats[k] = mastermonClampStat(mm.stats[k]+changes[k]); });
+  const cap = mastermonStatCap(mm);
+  Object.keys(changes).forEach(k=>{ mm.stats[k] = mastermonClampStat(mm.stats[k]+changes[k], cap); });
   mm.tickets -= 1;
   return changes;
 }
@@ -1181,16 +1251,19 @@ function syntheticMastermonForLevel(elementKey, level){
   });
   return { element:elementKey, level:lv, stats };
 }
-// マスモンのステータスから、バトル中に適用する各種倍率を算出
+// マスモンのステータスから、バトル中に適用する各種倍率を算出。
+// 適正Sのステータスは倍率の伸びも良くなる(mastermonStatFactorの第3引数)。
 function mastermonEffectMults(mm){
-  const s = mm.stats, f = mastermonStatFactor;
+  const s = mm.stats;
+  const apt = mastermonApt(mm);
+  const f = (key) => mastermonStatFactor(s[key], key, apt[key]);
   return {
-    lifeMult: f(s.life, 'life'),
-    dmgDealtMult: (f(s.power,'power')+f(s.wisdom,'wisdom'))/2,
-    dmgTakenMult: 1/((f(s.power,'power')+f(s.vitality,'vitality'))/2),
-    gutsRegenMult: f(s.wisdom,'wisdom'),
-    cooldownMult: 1/f(s.accuracy,'accuracy'),
-    speedMult: f(s.evasion,'evasion'),
+    lifeMult: f('life'),
+    dmgDealtMult: (f('power')+f('wisdom'))/2,
+    dmgTakenMult: 1/((f('power')+f('vitality'))/2),
+    gutsRegenMult: f('wisdom'),
+    cooldownMult: 1/f('accuracy'),
+    speedMult: f('evasion'),
   };
 }
 

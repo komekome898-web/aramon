@@ -162,7 +162,9 @@
   // mmLevel は旧クライアント互換のために残す(新クライアントは mm.level を見る)。
   function mmEntryFields(mmInfo){
     const lv = (mmInfo && mmInfo.level) || null;
-    return { mmLevel: lv, mm: (mmInfo && mmInfo.stats) ? { level: lv||1, stats: mmInfo.stats } : null };
+    return { mmLevel: lv, mm: (mmInfo && mmInfo.stats)
+      ? { level: lv||1, stats: mmInfo.stats, rebirth: mmInfo.rebirth||0, apt: mmInfo.apt||null }
+      : null };
   }
 
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
