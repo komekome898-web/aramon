@@ -2480,6 +2480,12 @@ document.getElementById('closeShopBtn').addEventListener('click', ()=>{
   document.getElementById('shopOverlay').classList.add('hidden');
   if(typeof bgmSetTrack==='function') bgmSetTrack('title'); // トップ画面のBGMに戻す
 });
+document.getElementById('shopGoBagBtn').addEventListener('click', ()=>{
+  document.getElementById('openBagBtn').click(); // 既存のバッグを開く処理をそのまま使う
+});
+document.getElementById('shopGoMastermonBtn').addEventListener('click', ()=>{
+  openMastermonScreen(false); // false=ロビーへ戻る(結果画面からの遷移ではないため)
+});
 // 更新履歴の未読管理: まだ開いて確認していない項目があるとボタンに「new」を出す。
 // 署名は「最新日付#全項目数」なので、同じ日付に項目を足した場合も未読扱いになる。
 // 端末ごとの既読状態なのでアカウント同期はしない(localStorageのみ)。

@@ -853,6 +853,11 @@
   /* ショップ: ヘッダー(タイトル＋所持ゴールド)を全幅で効かせ、その下に左右2カラム */
   .shop-header{ display:flex; align-items:center; justify-content:space-between; gap:12px;
     padding-bottom:8px; margin-bottom:10px; padding-right:42px; border-bottom:1px solid var(--panel-line); }
+  .shop-header-left{ display:flex; align-items:center; gap:12px; min-width:0; }
+  .shop-header-nav{ display:flex; gap:8px; flex-shrink:0; }
+  .shop-nav-btn{ padding:6px 12px; border-radius:16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+    color:var(--amber); background:rgba(244,196,48,0.10); border:1px solid rgba(244,196,48,0.5); cursor:pointer; white-space:nowrap; }
+  .shop-nav-btn:active{ filter:brightness(0.92); }
   .shop-header-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:16px; color:var(--ink); letter-spacing:0.5px; }
   .shop-header-gold{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:15px; color:var(--amber); white-space:nowrap; }
   /* 左=店主(ラガゼウスモチ)＋会話ウィンドウ / 右=商品リスト */
