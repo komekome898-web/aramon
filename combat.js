@@ -181,6 +181,7 @@ function fireMove(attacker, target, move){
         spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
         gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
         lifestealMult: move.lifestealMult||1, // この技だけHP回復を増やす(鱗赫)
+        closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
       };
       if(move.aoeShape==='beams'){
         const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -286,6 +287,7 @@ function fireMove(attacker, target, move){
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
       blast: move.blast||null, // ピクシー「ビッグバン」等: 着弾/最大射程到達で地面にドーム状AoEを発生させる
+      closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
     });
   }
   lockMoveFacing(attacker, baseAng, move.range/effProjSpeed + burstGap*Math.max(0, burstCount-1));
@@ -333,6 +335,13 @@ function hitTestRect(attacker, ent, aimAngle, length, halfWidth){
 }
 function isNetworkedHuman(ent){
   return netState.mode==='multi' && (ent.isPlayer || ent.isRemoteHuman);
+}
+// 命中距離が短いほど威力が増す技用の倍率(デュラハン全技)。
+// maxRangeで1.0倍、距離0でbonusMax倍になるよう線形補間する
+function closeRangeDmgMult(bonusMax, hitDist, maxRange){
+  if(!bonusMax || bonusMax<=1 || !maxRange) return 1;
+  const ratio = clamp(hitDist/maxRange, 0, 1);
+  return 1 + (1-ratio)*(bonusMax-1);
 }
 function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
@@ -1197,7 +1206,8 @@ function updateProjectiles(dt){
         }
         if(hitNow){
           // blast付き(ビッグバン等)も球体の直撃ダメージを与える。着弾後の爆風ダメージは別途spawnGroundBlastで判定
-          applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
+          const dmgMult = closeRangeDmgMult(p.closeBonusMax, p.traveled, p.maxRange); // 命中距離が短いほど威力アップ(デュラハン)
+          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit){
             const owner = getEntity(p.ownerId);
@@ -1578,7 +1588,8 @@ function updateAreaEffects(dt){
         }
         if(hit){
           ae.hitIds.add(ent.id);
-          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0,
+          const dmgMult = closeRangeDmgMult(ae.closeBonusMax, dist(origin, ent), ae.range); // 命中距離が短いほど威力アップ(デュラハン)
+          applyDamage(ent, ae.dmg*dmgMult, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0,
                                             lifestealMult: ae.lifestealMult||1 });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
         }

@@ -4479,6 +4479,7 @@ function describeMoveFeatureText(mv){
   if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);
   if(mv.gutsDrainRatio) parts.push(`与えたダメージの${Math.round(mv.gutsDrainRatio*100)}%ぶん相手のガッツを削る`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
+  if(mv.closeBonusMax && mv.closeBonusMax>1) parts.push(`命中距離が近いほど威力上昇(最大+${Math.round((mv.closeBonusMax-1)*100)}%)`);
   if(mv.selfSpeedBuffOnHit) parts.push(`命中時 自分の移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒間)`);
   if(mv.multiOrb) parts.push('赤青黄緑のオーラ球体を発射');
   if(!parts.length) parts.push('単体に直撃');

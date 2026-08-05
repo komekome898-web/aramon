@@ -2006,6 +2006,25 @@ function drawProjectile(pr,p){
     ctx.restore();
     return;
   }
+  if(pr.projStyle==='crescentWhite'){
+    // 風神剣(デュラハン): ダークホウストと同じ回転三日月斬撃を、白く輝く刃に変えたもの
+    const r = (pr.hitR||20)*1.6;
+    const spin = matchTime*15 + (pr.id||0);
+    if(!renderHeavyLoad){ ctx.shadowBlur=14; ctx.shadowColor='#eef3ff'; }
+    ctx.rotate(spin);
+    const R=r, R2=r*1.02, off=r*0.62;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, Math.PI*0.55, Math.PI*1.45, false);
+    ctx.arc(off, 0, R2, Math.PI*1.28, Math.PI*0.72, true);
+    ctx.closePath();
+    ctx.fillStyle='#f4f7ff'; ctx.fill();
+    ctx.strokeStyle='rgba(120,150,220,0.9)'; ctx.lineWidth=2; ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0,0,R*0.9, Math.PI*0.62, Math.PI*1.38, false);
+    ctx.strokeStyle='rgba(255,255,255,0.95)'; ctx.lineWidth=1.4; ctx.stroke();
+    ctx.restore();
+    return;
+  }
   if(pr.projStyle==='tornado'){
     // 竜巻アタック(ゴーレム): 回転する渦を段積みで描く(上ほど広い漏斗型)
     const r = (pr.hitR||14);
@@ -2031,6 +2050,35 @@ function drawProjectile(pr,p){
       ctx.beginPath();
       ctx.arc(Math.cos(a)*rr, -r*0.6 + Math.sin(a)*rr*0.3, 2.6, 0, Math.PI*2);
       ctx.fillStyle = '#e8dcc0'; ctx.globalAlpha = 0.9; ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+  if(pr.projStyle==='tornadoAura'){
+    // 最終奥義(デュラハン): オーラ色を纏った竜巻。装備オーラに応じて色が変わる(竜巻アタックの色替え版)
+    const sh = auraShades(pr.color||'#ffffff');
+    const r = (pr.hitR||14);
+    const spin = matchTime*11;
+    if(!renderHeavyLoad){ ctx.shadowBlur=18; ctx.shadowColor=sh.bright; }
+    for(let k=0;k<4;k++){
+      const ky = -k*r*0.42;
+      const kw = r*(0.55 + k*0.3);
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(spin+k*1.3)*r*0.12, ky, kw, kw*0.34, 0, 0, Math.PI*2);
+      ctx.fillStyle = k%2 ? sh.dark : sh.mid;
+      ctx.globalAlpha = 0.88;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(spin+k*1.3)*r*0.12, ky, kw, kw*0.34, 0, spin+k, spin+k+Math.PI*1.2);
+      ctx.stroke();
+    }
+    for(let d=0;d<4;d++){
+      const a = spin*1.4 + d*(Math.PI/2);
+      const rr = r*(0.7+0.3*Math.sin(spin+d));
+      ctx.beginPath();
+      ctx.arc(Math.cos(a)*rr, -r*0.6 + Math.sin(a)*rr*0.3, 2.6, 0, Math.PI*2);
+      ctx.fillStyle = sh.spark; ctx.globalAlpha = 0.9; ctx.fill();
     }
     ctx.restore();
     return;
@@ -3520,6 +3568,28 @@ function fx3dCrystalRain(ae, curReach, fade, progress){
     if(p) drawGroundSpark(p, 'diamond', sh.spark, fade*(0.4+0.6*phase), ae.id+i);
   }
 }
+/* まっぷたつ(デュラハン): 細い範囲を、縦長の斬撃(光の刃)が奥へ切り進んでいく。
+   先端に立てた刃(fx3dSpikeを縦長・細幅に流用)が伸び、通ってきた軌跡に薄い刃の残像を残す。 */
+function fx3dZangetsu(ae, curReach, fade, progress){
+  const col = ae.auraTint || ae.color;
+  const sh = auraShades(col);
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  // 通った帯にうっすら斬撃痕
+  const band = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
+  if(band) fx3dFill(band, sh.dark, 0.2*fade, 0);
+  // 先端の刃
+  const tipX = ae.x+fx*curReach, tipY = ae.y+fy*curReach;
+  fx3dSpike(tipX, tipY, groundZAt(tipX,tipY), FX3D_MON_H*1.2, ae.width*0.22, col, fade);
+  if(renderHeavyLoad) return;
+  // 軌跡に残る刃の残像(奥ほど薄く・低く)
+  const N = 5;
+  for(let i=0;i<N;i++){
+    const t = (i+1)/(N+1);
+    const along = curReach*t;
+    const x = ae.x+fx*along, y = ae.y+fy*along;
+    fx3dSpike(x, y, groundZAt(x,y), FX3D_MON_H*(0.55+0.4*t), ae.width*0.14, col, fade*0.3*(0.5+0.5*t));
+  }
+}
 /* 鱗赫(大喰いの利世): 赤い触手が足元から生えて範囲を進んでいく。
    触手は「地面に沿ってうねる背骨」を1本ずつ投影し、太さを先細りさせた帯として描く。
    画面上で決め打ちの楕円や矩形を使わないので、坂でも地面から生えて見える。      */
@@ -3826,6 +3896,7 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
     if(ae.style==='crystal')   fx3dCrystalRain(ae, curReach, fade, progress);
     else if(ae.style==='kagune') fx3dKagune(ae, curReach, fade, progress);
     else if(ae.style==='lava') fx3dFireWave(ae, curReach, fade);
+    else if(ae.style==='zangetsu') fx3dZangetsu(ae, curReach, fade, progress);
     else                       fx3dRectBeam(ae, curReach, fade);   // モッチ砲/天河天翔/熱視線
   } else return false;
   return true;

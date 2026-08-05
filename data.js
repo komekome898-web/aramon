@@ -491,9 +491,9 @@ const SIGNATURE_MOVES = {
       blast:{ radius:330, dmg:60, color:'#14121c', expandTime:0.5 } },
   ],
   dullahan:[ /*@dullahan*/
-    { name:'まっぷたつ', tier:1, color:'#7fb236', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🗡️' },
-    { name:'ダッシュ斬り', tier:2, color:'#7fb236', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🗡️' },
-    { name:'最終奥義', tier:3, color:'#7fb236', range:1850, dmg:58, cooldown:2, gutsCost:24, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' }
+    { name:'まっぷたつ', tier:1, color:'#7fb236', aoeShape:'rect', range:700, rectWidth:90, dmg:24, cooldown:0.85, gutsCost:8, aoeStyle:'zangetsu', closeBonusMax:1.5, icon:'🗡️' },
+    { name:'風神剣', tier:2, color:'#f4f7ff', range:1300, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:760, hitR:18, burst:3, burstGap:0.09, projStyle:'crescentWhite', closeBonusMax:1.5, icon:'🗡️' },
+    { name:'最終奥義', tier:3, color:'#7fb236', range:1300, dmg:64, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, icon:'🌪️' }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -545,7 +545,7 @@ const MOVE_AURA = {
   'ストレート':'white','ホーリーサンダー':'yellow','ゴッドライジング':'white',
   'ソニックナイフ':'black','フォルターブリッツ':'yellow','ダークホウスト':'black',
   'キッス':'red','ライトニング':'yellow','ビッグバン':'black',
-  'まっぷたつ':'white','ダッシュ斬り':'white','最終奥義':'white', /*@dullahan*/
+  'まっぷたつ':'white','風神剣':'white','最終奥義':'white', /*@dullahan*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -726,6 +726,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-05', items:[
+    { t:'デュラハンの技を刷新しました。tier1「まっぷたつ」は細い範囲を斬撃が進む範囲技に、tier2は「風神剣」(白い斬撃を3連射)に、tier3「最終奥義」はオーラ色の竜巻を纏って突進する高威力・高速・やや短射程の技になりました。全技に共通で、命中距離が近いほど威力が上がる効果を追加しています', g:['monster','balance'] },
     { t:'新モンスター「デュラハン」が登場しました！', g:['feature','monster'] },
     { t:'デュラハンの色スキンから「白」を廃止し、「緑」を追加しました', g:['balance','monster'] },
   ]},
