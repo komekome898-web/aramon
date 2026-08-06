@@ -2279,8 +2279,6 @@
     box-shadow:0 0 12px -3px rgba(255,206,120,0.7);
   }
   .mm-menu-btn-rebirth .mm-menu-btn-label{ color:#ffe6a8; }
-  .mm-menu-btn-rebirth.is-locked{ opacity:0.55; box-shadow:none; }
-  .mm-rebirth-wip{ margin-left:6px; font-size:10px; font-weight:700; color:var(--ink-dim); letter-spacing:0; }
   /* カード上の転生回数(虹色の★)。文字自体をグラデーションで塗る。
      位置はLv表示(.ml-card-lv が top:6px/right:6px)の真下に置いて重ならないようにする */
   .ml-card-rebirth{
@@ -2378,8 +2376,15 @@
   .rb-tickets{ margin-top:4px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:var(--ink-dim); }
 
   .rb-maxed{ margin-top:7px; border-top:1px dashed rgba(255,215,120,0.45); padding-top:6px; }
-  .rb-maxed-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:10.5px; letter-spacing:0.5px; color:#ffd76a; margin-bottom:4px; }
-  .rb-maxed-figs{ display:flex; gap:10px; margin-bottom:3px; flex-wrap:wrap; }
+  .rb-maxed-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px; letter-spacing:0.5px; color:#ffd76a; margin-bottom:5px; }
+  .rb-maxed-figs{ display:flex; gap:14px; margin-bottom:5px; flex-wrap:wrap; }
+  /* 伸びしろが一番の見どころなので、倍率もカードのHP・速さと同じ見た目(金・等幅)で大きく出す */
+  .rb-maxed .rb-mult-list{ gap:3px; }
+  .rb-maxed .rb-mult-k{ font-size:11px; color:var(--ink); font-weight:700; }
+  .rb-maxed .rb-mult-v{ font-family:'Share Tech Mono',monospace; font-size:14px; color:#ffd76a;
+    text-shadow:0 0 7px rgba(255,183,3,0.55); }
+  .rb-maxed .rb-card-fig-k{ font-size:11px; }
+  .rb-maxed .rb-card-fig-v{ font-size:17px; text-shadow:0 0 8px rgba(255,183,3,0.6); }
 
   .rb-warn{ margin-top:9px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:#ff9a5a; }
   .rebirth-actions{ display:flex; gap:10px; justify-content:center; flex-shrink:0; }
@@ -2440,14 +2445,15 @@
   /* 「転生完了」の判子。上から叩き付けて少しだけ揺り戻す */
   #rebirthAnimStamp{ position:absolute; left:50%; top:22%; transform:translate(-50%,-50%); z-index:6;
     opacity:0; pointer-events:none; animation:rbStamp 8.5s cubic-bezier(.2,1.5,.4,1) both; }
+  /* 判子は虹色。文字自体をグラデーションで塗り、縁取りと発光で読めるようにする */
   #rebirthAnimStamp span{ display:block; font-family:'Russo One',sans-serif; font-size:calc(9 * var(--vh));
     letter-spacing:4px; white-space:nowrap;
-    background:linear-gradient(180deg,#fff6cf,#ffd76a 45%,#e0a51e);
+    background:linear-gradient(100deg,#fff3c4,#ff9ad5 22%,#b78cff 42%,#6fd8ff 60%,#8affc0 78%,#ffe7a0);
     -webkit-background-clip:text; background-clip:text; color:transparent;
-    -webkit-text-stroke:2.4px rgba(60,32,4,0.9);
-    filter:drop-shadow(0 0 12px rgba(255,196,60,0.95)); }
+    -webkit-text-stroke:2.4px rgba(28,12,40,0.92);
+    filter:drop-shadow(0 0 14px rgba(255,255,255,0.85)) drop-shadow(0 0 26px rgba(180,120,255,0.8)); }
 
-  /* モンスターから飛び出す金文字。位置と出るタイミングはui.jsがインラインで入れる */
+  /* モンスターから飛び出す金文字。飛ぶ向きと出るタイミングはui.jsが1つずつ指定する */
   #rebirthAnimPops{ position:absolute; inset:0; z-index:5; pointer-events:none; }
   /* 飛び出す向きは1つずつ違うので、動かすのはui.js(Web Animations API)。
      CSSのキーフレームでvar()を使う書き方は他の52個の演出と揃えるため避けている。 */
