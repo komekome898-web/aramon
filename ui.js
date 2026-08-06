@@ -4230,7 +4230,7 @@ function rebirthSideHtml(mm, opts){
         <div class="rb-card">
           ${stars}
           <div class="rb-card-art">${equippedIconImgTag(mm.element, el.label)}</div>
-          <div class="rb-card-name">${rebirthEscape(mm.name)}<span class="rb-card-lv">Lv.${mm.level}</span></div>
+          <div class="rb-card-name"><span class="rb-card-nm">${rebirthEscape(mm.name)}</span><span class="rb-card-lv">Lv.${mm.level}</span></div>
           <div class="rb-card-figs">
             <div class="rb-card-fig"><span class="rb-card-fig-k">HP</span><span class="rb-card-fig-v">${eff.hp}</span></div>
             <div class="rb-card-fig"><span class="rb-card-fig-k">速さ</span><span class="rb-card-fig-v">${eff.speed}</span></div>
@@ -4285,9 +4285,7 @@ function rebirthPickerHtml(mm){
       <div class="rb-picker-grid">${btns}</div>
       <div class="rb-sbonus">
         <div class="rb-sbonus-title">✦ 適正Sボーナス</div>
-        <div class="rb-sbonus-text">適正Aの上に<b>S</b>が加わります。Sはトレーニングでの上がり幅が最も大きい(×${APTITUDE_TRAIN_MULT.S})うえに、
-        <b>同じステータス値でも倍率の伸びが良くなります</b>(効きが約${Math.round((1/APTITUDE_S_FACTOR_DIVISOR_MULT-1)*100)}%増)。
-        つまりSにしたステータスは「上がりやすく、上がったぶんがよく効く」二重の得になります。</div>
+        <div class="rb-sbonus-text">適正Aの上に<b>S</b>が加わります。トレーニングの上がり幅が最大(<b>×${APTITUDE_TRAIN_MULT.S}</b>)なうえ、同じ値でも<b>倍率の伸びが約${Math.round((1/APTITUDE_S_FACTOR_DIVISOR_MULT-1)*100)}%良くなります</b>。上がりやすく、上がったぶんもよく効く二重の得です。</div>
       </div>
     </div>`;
 }
@@ -4348,6 +4346,8 @@ function openRebirthOverlay(key){
   if(!rebirthUiAllowed()){ pushToast('転生は準備中です'); return; }
   rebirthKey = key;
   rebirthPicks = [];
+  // 転生を実行するころには読み終わっているよう、確認画面を開いた時点で音声を取りに行く
+  if(typeof ensureRebirthSeBuffer==='function') ensureRebirthSeBuffer();
   document.getElementById('rebirthOverlay').classList.remove('hidden');
   renderRebirthOverlay();
 }
@@ -4387,27 +4387,91 @@ function doRebirth(){
 /* 転生アニメーション。おおまかな流れ(合計 REBIRTH_ANIM_MS):
    ①暗転して魔法陣が広がる ②光の粒が立ち上る ③閃光 ④生まれ変わった姿が現れる
    ⑤恩恵の一覧が1行ずつ出る。閉じるとマスモン画面へ戻る                            */
-const REBIRTH_ANIM_MS = 5200;
+const REBIRTH_ANIM_MS = 8500;   // audio/rebirth_audio.mp3 と同じ尺。CSSのキーフレームも同じ
+const REBIRTH_POP_START_MS = 3400;  // 恩恵が飛び出し始める時刻(閃光と判子のあと)
+const REBIRTH_POP_STEP_MS  = 380;   // 次の恩恵が飛び出すまでの間隔
+// 恩恵が飛び出す向き(モンスターの中心から見た角度と距離)。画面下は
+// ダイアログがあるので使わず、左右と上へ広がるようにしてある。
+const REBIRTH_POP_SLOTS = [
+  { a:-110, d:1.00 }, { a: -70, d:1.00 }, { a:-150, d:0.92 }, { a: -30, d:0.92 },
+  { a:-172, d:0.78 }, { a:  -8, d:0.78 }, { a:-130, d:0.60 }, { a: -50, d:0.60 },
+  { a:-160, d:1.10 }, { a: -20, d:1.10 },
+];
+// 飛び出す金文字の中身(値+ラベル)。ダイアログの明細より短く、ひと目で分かるものだけ
+function rebirthPopItems(beforeMm, afterMm){
+  const apt0 = mastermonApt(beforeMm), apt1 = mastermonApt(afterMm);
+  const items = [
+    { v:'+'+(mastermonStatCap(afterMm)-mastermonStatCap(beforeMm)), k:'ステ上限' },
+    { v:'+'+REBIRTH_BASE_HP_BONUS,    k:'基礎HP' },
+    { v:'+'+REBIRTH_BASE_SPEED_BONUS, k:'基礎速さ' },
+    { v:'+'+REBIRTH_TICKETS,          k:'🎫チケット' },
+  ];
+  MASTERMON_STATS.forEach(st=>{
+    if(apt0[st.key]!==apt1[st.key]) items.push({ v:apt1[st.key], k:st.label+'適正' });
+  });
+  items.push({ v:'★'+mastermonRebirthCount(afterMm), k:'転生' });
+  return items;
+}
 function playRebirthAnim(key, before, after){
   const ov = document.getElementById('rebirthAnimOverlay');
   if(!ov){ afterRebirthRefresh(key); return; }
   document.getElementById('rebirthAnimMonster').innerHTML = equippedIconImgTag(after.element, ELEMENTS[after.element].label);
   document.getElementById('rebirthAnimName').innerHTML = `${rebirthEscape(after.name)}<span class="rb-res-stars">${'★'.repeat(Math.min(mastermonRebirthCount(after),10))}</span>`;
+
+  // モンスターから飛び出す金文字の中身を先に作っておく(位置はこのあと実寸から決める)
+  const popHost = document.getElementById('rebirthAnimPops');
+  popHost.innerHTML = rebirthPopItems(before, after).map(it=>
+    `<div class="rb-pop"><span class="rb-pop-v">${it.v}</span><span class="rb-pop-k">${it.k}↑</span></div>`).join('');
+
+  // 明細はダイアログがせり上がったあと(CSSのrbResultが46%地点)から1行ずつ出す
   const list = document.getElementById('rebirthAnimBenefits');
   const lines = rebirthBenefitLines(before, after);
-  // 恩恵は「パネルがせり上がったあと」に1行ずつ出す。パネルの出現はCSSのrbResultが
-  // 演出のおよそ3/4の時点なので、そこを基準にして行数ぶんの間隔を逆算する。
-  const base = Math.round(REBIRTH_ANIM_MS*0.75);
-  const step = Math.min(220, Math.max(90, Math.round(1400/Math.max(1,lines.length))));
+  const base = Math.round(REBIRTH_ANIM_MS*0.48);
+  const step = Math.min(320, Math.max(120, Math.round(1800/Math.max(1,lines.length))));
   list.innerHTML = lines.map((t,i)=>`<li style="animation-delay:${base + i*step}ms">${t}</li>`).join('');
-  ov.className = 'rb-anim-run';
-  void ov.offsetWidth;   // 再生し直すために強制的にレイアウトさせる
-  playSe('godRising');
+
+  ov.className = 'rb-anim-run';   // hiddenを外す。display切替でCSSアニメーションが頭から再生される
+  void ov.offsetWidth;
+  startRebirthPops(popHost);      // 表示してから実寸を測る(hiddenのままだと0になる)
+  // 専用の音声。未ロードなら合成SEで代用する(音が完全に無い状態は作らない)
+  if(typeof playRebirthSe!=='function' || !playRebirthSe()) playSe('godRising');
   afterRebirthRefresh(key);   // 裏で画面の中身を新しい状態にしておく
+}
+/* 金文字を1つずつ違う向きへ飛ばす。向きが個別なのでCSSのキーフレームではなく
+   Web Animations API で動かす(キーフレーム内で var() を使う書き方は、
+   このプロジェクトの他の52個の演出と揃えるため使っていない)。
+   飛距離はステージの実寸から出すので、画面比が変わっても破綻しない。          */
+function startRebirthPops(popHost){
+  const stage = document.getElementById('rebirthAnimStage');
+  const unit = Math.max(40, Math.min(stage.clientHeight || 0, stage.clientWidth || 0) * 0.42);
+  popHost.querySelectorAll('.rb-pop').forEach((el, i)=>{
+    const slot = REBIRTH_POP_SLOTS[i % REBIRTH_POP_SLOTS.length];
+    const rad = slot.a*Math.PI/180;
+    const dx = Math.cos(rad)*unit*slot.d, dy = Math.sin(rad)*unit*slot.d*0.82;
+    const delay = REBIRTH_POP_START_MS + i*REBIRTH_POP_STEP_MS;
+    const at = (fx, fy, sc, op) =>
+      ({ transform:`translate(calc(-50% + ${(dx*fx).toFixed(1)}px), calc(-50% + ${(dy*fy).toFixed(1)}px)) scale(${sc})`, opacity:op });
+    // element.animate が無い環境では、動かさずその場に出して消すだけにする(無表示にはしない)
+    if(typeof el.animate !== 'function'){
+      setTimeout(()=>{ el.style.opacity = '1'; }, delay);
+      setTimeout(()=>{ el.style.opacity = '0'; }, delay+1900);
+      return;
+    }
+    el.animate([
+      Object.assign(at(0,    0,    0.3,  0), { offset:0 }),
+      Object.assign(at(0.45, 0.45, 1.18, 1), { offset:0.18 }),
+      Object.assign(at(0.6,  0.6,  1,    1), { offset:0.30 }),
+      Object.assign(at(1,    1,    1,    1), { offset:0.72 }),
+      Object.assign(at(1.12, 1.22, 0.96, 0), { offset:1 }),
+    ], { duration:1900, delay, easing:'cubic-bezier(.15,1.3,.4,1)', fill:'both' });
+  });
 }
 function closeRebirthAnim(){
   const ov = document.getElementById('rebirthAnimOverlay');
-  if(ov){ ov.className = 'hidden'; document.getElementById('rebirthAnimMonster').innerHTML = ''; }
+  if(!ov) return;
+  ov.className = 'hidden';
+  document.getElementById('rebirthAnimMonster').innerHTML = '';
+  document.getElementById('rebirthAnimPops').innerHTML = '';
 }
 // 転生後にマスモン画面の表示を作り直す。
 // レベルが100→1に変わると並び順(レベル降順)も変わるので、カードは作り直しが必要。

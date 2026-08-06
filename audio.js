@@ -209,6 +209,11 @@ function ensureRockPromoteSeBuffer(){ seRockPromote.ensure(); }
 // 大喰いの利世 昇格演出専用の音声(約15.6秒・動画aqua_promote.mp4/webmと同時再生する。動画自体は音無し)
 const seAquaPromote = createSeOneShot('./audio/aqua_promote_audio.mp3', 1.0);
 function ensureAquaPromoteSeBuffer(){ seAquaPromote.ensure(); }
+// 転生演出専用の音声(約8.5秒)。演出のCSSアニメーションと尺を合わせてあるので、
+// 長さを変えるときは ui.js の REBIRTH_ANIM_MS と各キーフレームも一緒に直すこと。
+const seRebirth = createSeOneShot('./audio/rebirth_audio.mp3', 1.0);
+function ensureRebirthSeBuffer(){ seRebirth.ensure(); }
+function playRebirthSe(){ return seRebirth.play(); }
 const seGokongoWin    = createSeOneShot('./audio/se_gokongo_win.mp3', 1.2);
 const seGokongoKill   = createSeOneShot('./audio/se_gokongo_kill.mp3', 1.2);
 // 大喰いの利世(ウンディーネのSSR): tier3「鱗赫」・キル・被弾の専用音
