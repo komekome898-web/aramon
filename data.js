@@ -297,6 +297,7 @@ const WALK_ANIM = {
   },
   dullahan:{ /*@dullahan*/
     base: { front:_loadWalk('dullahan_walk_f'), back:_loadWalk('dullahan_walk_b') },
+    ssr:  { skinId:'guts_ssr', front:_loadWalk('guts_ssr_walk_f'), back:_loadWalk('guts_ssr_walk_b') }, /*@guts_ssr*/
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -515,6 +516,7 @@ const SSR_SKIN_AURA = {
   zeus_ssr:'yellow', choco_ssr:'red', persephone_ssr:'blue',
   rock_ssr:       'blue', /*@rock_ssr*/
   aqua_ssr:       'red', /*@aqua_ssr*/
+  guts_ssr:       'black', /*@guts_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -657,6 +659,7 @@ const SSR_SKIN_TIER3 = {
   aqua_ssr:       { name:'鱗赫', move:{ /*@aqua_ssr*/
     dmg:48, rectWidth:340, aoeStyle:'kagune', lifestealMult:2,
   }},
+  guts_ssr:       { name:'ドラゴンころし', dmgMult:1.15 }, /*@guts_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1570,11 +1573,12 @@ function raidBossMaxHp(playerCount){
    ここに載せたスキンを装備していると、レイドのボス戦でだけ倍率が掛かる。
    ツールでスキンを追加したあと1行足すだけで効く(判定は raidSkinBonus 1か所)。 */
 const RAID_EFFECT_SKINS = {
+  guts_ssr:       { dmgDealt:1.5, dmgTaken:0.75, name:'狂戦士ガッツ' }, /*@guts_ssr*/
   // <<AUTO:RAID_EFFECT_SKINS>> ここから上へ tools/studio_web.html がレイド特効スキンの行を追記する
 };
 function raidSkinBonus(skinId){ return (skinId && RAID_EFFECT_SKINS[skinId]) || null; }
 // レイドガチャのピックアップ(=レイド特効スキン)。ツールで追加したIDをここへ入れる
-const RAID_GACHA_PICKUP = 'dullahan_guts';
+const RAID_GACHA_PICKUP = 'guts_ssr';
 // レイド最終報酬(参加者全員へ配布)のスキン
 const RAID_CLEAR_SKIN = 'fire_zodd';
 
@@ -2033,6 +2037,7 @@ const SSR_SKINS = {
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
   rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr' }, /*@rock_ssr*/
   aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/
+  guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr' }, /*@guts_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
