@@ -21,7 +21,19 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 - **Python版と同じ行を出すことが前提。** `renderRows`/`buildMoves`/`jsMove`は`monster_code.py`/`monster_spec.py`の1:1移植なので、**片方を直したらもう片方も直す**(出力一致はnodeで文字列比較して確認できる)。移植していないのは`grass`(GrabCut)と256色量子化だけ(難しい背景はMac版へ回す)。
 - **歩行は動画が無くても作れる**(iPhone版のみ)。2枚以上の画像はそのままコマとして並べ、1枚だけなら`synthWalkFrames()`が動かす。**足元(`CANVAS*FEET_Y`)を軸に変形する**ので接地位置がコマ間でずれない。上下は2歩で1往復(`cos(4πt)`)。
 - **8コマの下にゲームと同じ速さ(`WALK_FRAME_DUR`=0.11秒)のアニメーションを出す。** この値はdata.jsと二重に持っているので変えたら両方直す。
-- **SSRスキンの登録もできる**(iPhone版のみ)。入れるのは`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`と`WALK_ANIM`の素体の中の4か所。**`WALK_ANIM`だけは表の末尾ではなく素体ブロックの中に挿す**ので`applySsrWalk()`が専用に処理する(`reg.ssr`は1素体に1つだけなので、埋まっていたら静止画だけで登録しゲーム側の静止画フォールバックに任せる)。素体一覧はツールに書かず`data.js`の`ELEMENTS`から読む。`SKIN_TIER3_SE`は音源が要るので扱わない。
+- **SSRスキンの登録もできる**(iPhone版のみ)。入れるのは`SSR_SKINS`/`SSR_SKIN_AURA`/`SSR_SKIN_TIER3`と`WALK_ANIM`の素体の中の4か所。**`WALK_ANIM`だけは表の末尾ではなく素体ブロックの中に挿す**ので`applySsrWalk()`が専用に処理する(`reg.ssr`は1素体に1つだけなので、埋まっていたら静止画だけで登録しゲーム側の静止画フォールバックに任せる)。素体一覧はツールに書かず`data.js`の`ELEMENTS`から読む。
+- **色は3つ(明るい色/暗い色/差し色)ともパレットから選べる。** 入れる場所を選んでから色をタップする方式で、`<input type="color">`と16進の入力欄は双方向に同期する。
+- **状態変化の選択肢は`data.js`の`STATE_CHANGES`をその場で読んで作る**(`parseStateChanges`)。`1/1.5`のような書き方も読めるように、数字と四則だけを通す`numExpr()`で評価している。**条件`SC_TRIGGERS`と効果`SC_EFFECTS`の一覧だけはツール側にも持っている**(data.jsの表の書式そのもの)。増やしたら両方直す。
+
+## SSRスキン専用メディア(「SSRスキン専用」の登録)
+
+- **行き先は`data.js`の`SKIN_MEDIA`1か所だけ。** 昇格演出(無音動画+音声)・試合中BGM3曲・専用SE4種・宣伝画像をここへ書けば、audio.js / combat.js / ui.js が表を読んで動く。**ゲーム側のコードは1行も足さない。**
+- **既存の設定は必ず「取得したdata.js」から読み直して土台にする**(`parseSkinMedia`)。添付した項目だけ差し替わり、触っていない項目は今のパスがそのまま残る。
+- **入れ替えは「消してから足す」。** `/*@id*/`の目印は他の表(`SSR_SKINS`など)にも付いているので、`removeSkinMediaEntry()`は**`SKIN_MEDIA`ブロックの中だけ**を消す(`revertRows`をそのまま使うとスキン登録ごと消える)。
+- **音声・無音動画はMediaRecorderで実時間に録り直す**(`captureFromVideo`)。音は`MediaElementSource → MediaStreamDestination`へ流すのでスピーカーからは鳴らず、映像は`video.captureStream()`の映像トラックだけを録るので音無しになる(`captureStream`が無い端末はcanvasへ描き写す)。**昇格演出は音と映像を1回の再生で同時に録る**(2回再生させない)。**音声ファイルを直接添付したときは録り直さずそのまま送る。**
+- 出来上がりの拡張子は端末が対応する形式(iPhoneなら`.m4a`/`.mp4`)。**`sw.js`の`MEDIA_RE`に`m4a|aac`を入れてある**(入れないとSWの素材キャッシュに載らない)。
+- **今入っている素材のプレビューは、Pages上の相対パス(`../audio/…`)をそのまま再生する。** ツールも本番も同じオリジンなのでCORSも認証も要らない。
+- ピックアップは表ではなく1行の定数の書き換え(`GACHA_PICKUP_SSR` / `RAID_GACHA_PICKUP`)。**タイトルの「(◯◯ピックアップ)」もガチャ画面・ロビーの記念ポップアップの画像も、この定数と`SKIN_MEDIA.promoImg`から作られる**ので、ツールが直すのは定数と表だけでよい。
 - 書き込みは**Git Data API**(blobs→tree→commit→PATCH ref)。ファイル単位のPUTだと18コミットになる。読み込みは**Contents API**(Pages経由だとSWのキャッシュで古い内容を掴む)。
 
 ## 1枚絵からの歩行合成(パーツ分割)

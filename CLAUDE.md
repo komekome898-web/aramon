@@ -23,7 +23,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 |---|---|
 | `index.html` | 全画面のDOM。読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
 | `style.css` | 全スタイル。CSS変数は`:root` |
-| `data.js` | 定数・マスタ: WORLD/MAPS/ELEMENTS/SIGNATURE_MOVES、マスモン(育成/EXP/倍率)、試合内アイテム、アカウント系(通貨・バッグ・ガチャ・ショップ・報酬)、`UPDATE_HISTORY`、オーラ/SSRスキン、色スキン(`SKIN_CONFIG`/`recolorToCanvas`)、歩行アニメ(`WALK_ANIM`/`getDisplayImage`)、`real3dHeightAt`、`OBST_SHAPES` |
+| `data.js` | 定数・マスタ: WORLD/MAPS/ELEMENTS/SIGNATURE_MOVES、マスモン(育成/EXP/倍率)、試合内アイテム、アカウント系(通貨・バッグ・ガチャ・ショップ・報酬)、`UPDATE_HISTORY`、オーラ/SSRスキン、SSRスキン専用メディア(`SKIN_MEDIA`=昇格演出・専用BGM/SE・宣伝画像)、色スキン(`SKIN_CONFIG`/`recolorToCanvas`)、歩行アニメ(`WALK_ANIM`/`getDisplayImage`)、`real3dHeightAt`、`OBST_SHAPES` |
 | `audio.js` | BGM/SE。原則Web Audio合成、一部のみ実音源 |
 | `world.js` | ワールド生成、安全圏、地形判定、移動・衝突、視点設定、強制横向き/リサイズ |
 | `combat.js` | 攻撃・ダメージ・AoE・状態変化・Bot AI |

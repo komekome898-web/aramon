@@ -14,6 +14,17 @@ const SKIN_HIT_SE    = { choco_ssr:'chocoHit', aqua_ssr:'rizeHit' };
 // 同・撃破時/勝利時のSE(スキンID → SE名)。未登録なら従来の kill / fanfare が鳴る
 const SKIN_KILL_SE   = { rock_ssr:'gokongoKill', aqua_ssr:'aquaKill' };
 const SKIN_WIN_SE    = { rock_ssr:'gokongoWin', aqua_ssr:'rizeKill' };
+/* data.js の SKIN_MEDIA に専用SEのmp3が登録されているスキンは、上の4つの表へ自動で入れる
+   (ツールから追加したスキンはコードを書かずに専用SEが鳴る)。上の表に手書きの指定が
+   あるスキンはそちらが優先される。 */
+Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).forEach(id=>{
+  const table = { tier3:SKIN_TIER3_SE, hit:SKIN_HIT_SE, kill:SKIN_KILL_SE, win:SKIN_WIN_SE };
+  Object.keys(table).forEach(slot=>{
+    if(table[slot][id]) return;
+    const name = (typeof skinMediaSeName==='function') ? skinMediaSeName(id, slot) : null;
+    if(name) table[slot][id] = name;
+  });
+});
 // ウンディーネの特性「与えたダメージの一部を自分のHPへ」の基本割合。
 // 技側の lifestealMult で倍にできる(大喰いの利世の鱗赫)
 const AQUA_LIFESTEAL = 0.2;
