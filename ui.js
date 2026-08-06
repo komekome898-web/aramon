@@ -3693,14 +3693,20 @@ function raidClaim(kind, idx){
   renderRaidOverlay();
   updateRaidEntryButton();
 }
-/* --- レイドランキング(総ダメージ / 参加回数) --- */
+/* --- レイドランキング(総ダメージ / 1回の最大ダメージ / 参加回数) ---
+   並べ替えの基準と値の出し方はこの表1か所で決める(タブを足すならここへ1行)。 */
+const RAID_RANK_KINDS = {
+  dmg:  { field:'dmg',  format: v=>Math.round(v).toLocaleString() },
+  best: { field:'best', format: v=>Math.round(v).toLocaleString() },
+  runs: { field:'runs', format: v=>`${v} 回` },
+};
 let raidRankTab = 'dmg';
-let raidRankRows = { dmg:null, runs:null };
+let raidRankRows = null;   // 取得した生の行(表示のたびにタブの基準で並べ替える)
 let raidRankError = null;
 async function openRaidRanking(){
   document.getElementById('raidRankOverlay').classList.remove('hidden');
   // 開くたびに取り直す(前回の結果を出したままにしない)
-  raidRankRows = { dmg:null, runs:null };
+  raidRankRows = null;
   raidRankError = null;
   renderRaidRanking();
   if(!window.__aramonFetchRaidRanking){
@@ -3709,14 +3715,12 @@ async function openRaidRanking(){
     return;
   }
   try{
-    const rows = await window.__aramonFetchRaidRanking(raidWeekId(), 50);
-    raidRankRows.dmg  = rows.slice().sort((a,b)=>b.dmg-a.dmg);
-    raidRankRows.runs = rows.slice().sort((a,b)=>(b.runs||0)-(a.runs||0));
+    raidRankRows = await window.__aramonFetchRaidRanking(raidWeekId(), 50);
   }catch(err){
     // 握りつぶすと「読み込み中…」のまま止まって原因が分からなくなる
     console.warn('[aramon] raid ranking fetch failed', err);
     raidRankError = (err && err.message) ? String(err.message).slice(0,80) : '読み込みに失敗しました';
-    raidRankRows = { dmg:[], runs:[] };
+    raidRankRows = [];
   }
   renderRaidRanking();
 }
@@ -3727,8 +3731,11 @@ function renderRaidRanking(){
   document.getElementById('raidRankSub').textContent =
     raidOpenNow() ? `今回の開催 残り ${Math.floor(left/86400)}日${Math.floor((left%86400)/3600)}時間` : '開催前';
   document.querySelectorAll('.raid-rank-tab').forEach(t=>t.classList.toggle('active', t.dataset.rk===raidRankTab));
-  const rows = raidRankRows[raidRankTab];
-  if(rows===null){ box.innerHTML = '<div class="rank-empty">読み込み中…</div>'; return; }
+  const kind = RAID_RANK_KINDS[raidRankTab] || RAID_RANK_KINDS.dmg;
+  if(raidRankRows===null){ box.innerHTML = '<div class="rank-empty">読み込み中…</div>'; return; }
+  // 記録が無い人(0)は載せない。同じ人が全タブに並ぶより、その基準で実績がある人だけ出す
+  const rows = raidRankRows.filter(r=>(r[kind.field]||0) > 0)
+                           .sort((a,b)=>(b[kind.field]||0) - (a[kind.field]||0));
   if(!rows.length){
     box.innerHTML = raidRankError
       ? `<div class="rank-empty">ランキングを読み込めませんでした<br><span class="rank-empty-detail">${rebirthEscape(raidRankError)}</span><br><button id="raidRankRetryBtn" class="raid-rank-retry">もう一度読み込む</button></div>`
@@ -3738,9 +3745,8 @@ function renderRaidRanking(){
     return;
   }
   const me = raidMyAccountName();
-  const isDmg = raidRankTab==='dmg';
   box.innerHTML = `<div class="raid-rank-list">${rows.map((r,i)=>{
-    const v = isDmg ? Math.round(r.dmg||0).toLocaleString() : `${r.runs||0} 回`;
+    const v = kind.format(r[kind.field]||0);
     const medal = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':`${i+1}`));
     return `<div class="raid-rank-row${r.name===me?' is-me':''}">
       <span class="raid-rank-no">${medal}</span>
@@ -4521,6 +4527,9 @@ function renderSeasonOverlay(){
     track.querySelectorAll('.season-skin-reward[data-skin]').forEach(el=>{
       el.addEventListener('click', ()=> showSkinPreview(el.dataset.skin));
     });
+    // 25段あるので、開いたときに今のTier付近が見えるよう横スクロール位置を寄せる
+    const focus = track.children[Math.max(0, Math.min(SEASON_MAX_TIER-1, tier))];
+    if(focus) track.scrollLeft = Math.max(0, focus.offsetLeft - track.clientWidth/2 + focus.offsetWidth/2);
   }
   // スケジュール(曜日ごとの変則ルール+レイド開催期間)も一緒に出す
   if(typeof renderSeasonSchedule==='function') renderSeasonSchedule();
@@ -6481,7 +6490,7 @@ document.querySelectorAll('.admin-subtab').forEach(t=> t.addEventListener('click
 
 /* =====================================================================
    シーズン1 準備プレビュー(管理者専用・非公開)
-   SEASON1_MUTATORS / SEASON1_REWARDS_PREVIEW(data.js)を表示するだけの確認画面。
+   SEASON1_MUTATORS / SEASON_REWARDS(data.js)を表示するだけの確認画面。
    ここでの表示・操作はゲームプレイに一切影響しない。
 ===================================================================== */
 // 開始日(SEASON1_START_DATE)の月を、日曜始まりの週グリッドに組み立てる
@@ -6556,8 +6565,8 @@ function renderSeasonSchedule(){
 }
 function renderSeason1Preview(){
   const track = document.getElementById('season1PreviewTrack');
-  if(track && typeof SEASON1_REWARDS_PREVIEW!=='undefined'){
-    track.innerHTML = SEASON1_REWARDS_PREVIEW.map((r,i)=>{
+  if(track && typeof SEASON_REWARDS!=='undefined'){
+    track.innerHTML = SEASON_REWARDS.map((r,i)=>{
       const t = i+1;
       const milestone = (t%5===0);
       const rewardMid = r.skin

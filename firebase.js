@@ -496,7 +496,8 @@
       await runTransaction(ref(fbDb, `raids/${weekId}/players/${key}`), (cur)=>{
         const prev = (cur && cur.dmg) || 0;
         const runs = ((cur && cur.runs) || 0) + 1;   // 参加回数ランキング用
-        return { name: String(playerName||'ゲスト').slice(0,24), dmg: prev + add, runs, at: Date.now() };
+        const best = Math.max((cur && cur.best) || 0, add); // 1回の最大ダメージランキング用
+        return { name: String(playerName||'ゲスト').slice(0,24), dmg: prev + add, runs, best, at: Date.now() };
       });
     }catch(err){ console.warn('raid damage report failed', err); }
   };
@@ -515,7 +516,7 @@
     const rows = [];
     snap.forEach(ch=>{
       const v = ch.val();
-      if(v) rows.push({ name:v.name||ch.key, dmg:Number(v.dmg)||0, runs:Number(v.runs)||0 });
+      if(v) rows.push({ name:v.name||ch.key, dmg:Number(v.dmg)||0, runs:Number(v.runs)||0, best:Number(v.best)||0 });
     });
     rows.sort((a,b)=>b.dmg-a.dmg);
     return rows.slice(0, topN||20);
