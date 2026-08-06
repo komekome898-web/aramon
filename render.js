@@ -662,18 +662,20 @@ function drawMonster(e,p){
   /* ライフゲージ。自分の分は画面中央に大きく出て視界の邪魔になるため、
      モンスターの頭のすぐ上(画像の上端は原点から -radius)まで下げ、半透明にする。
      他のモンスターは今までどおり離れた位置・不透明のまま(遠くからでも読めるように)。 */
-  // レイドのボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
-  if(!e.isRaidBoss){
-  const barW = e.radius*2.1;
-  const hpPct = clamp(e.hp/e.maxHp,0,1);
+  // barYはこの下の状態変化ラベルも参照するので、必ず関数のスコープに置く
+  // (レイドのボス判定のブロックに入れるとボス以外でも参照できず落ちる)
   const selfBar = !!e.isPlayer;
   const barY = selfBar ? -e.radius*1.08-5 : -e.radius*1.55-9;
-  ctx.save();
-  if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
-  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
-  ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
-  ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
-  ctx.restore();
+  // レイドのボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
+  if(!e.isRaidBoss){
+    const barW = e.radius*2.1;
+    const hpPct = clamp(e.hp/e.maxHp,0,1);
+    ctx.save();
+    if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
+    ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
+    ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
+    ctx.restore();
   }
 
   if(e.stateUntil > matchTime){
@@ -4573,6 +4575,31 @@ function trimParticles(){
   }
   if(particles.length > PARTICLE_MAX) particles.splice(0, particles.length - PARTICLE_MAX);
 }
+/* 描画中に1か所でも例外が出ると、そのフレームの残り(他のモンスター・弾・アイテム・
+   ミニマップなど)が丸ごと描かれず、「操作はできるが何も映らない」状態になる。
+   しかも毎フレーム同じ所で落ちるので画面は二度と戻らない。
+   1個の失敗をその1個だけで止めて、フレームの残りは必ず描き切る。            */
+let drawErrorCount = 0;
+function reportDrawError(err){
+  drawErrorCount++;
+  if(drawErrorCount<=5) console.error('[aramon] draw error', err);
+  if(drawErrorCount===1 && typeof pushToast==='function'){
+    // 中身も出す。文言だけだと実機からの報告で原因を追えない
+    const detail = (err && (err.message || err.name)) ? String(err.message || err.name).slice(0,90) : '';
+    pushToast('描画エラーが出ましたが続行します' + (detail ? '：' + detail : ''));
+  }
+  // 例外でsave/restoreの釣り合いが崩れているので既定へ戻す。
+  // 空のスタックへのrestoreは仕様上なにも起きないため、多めに呼んで構わない
+  for(let i=0;i<8;i++) ctx.restore();
+  ctx.setTransform(dpr,0,0,dpr,0,0);   // 基準変換はresize()と同じ(dpr倍)
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0; ctx.shadowColor = 'rgba(0,0,0,0)';
+  ctx.filter = 'none';
+  ctx.lineWidth = 1; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+}
+function safeDraw(fn){ try{ fn(); }catch(err){ reportDrawError(err); } }
 function render(){
   trimParticles();
   ctx.clearRect(0,0,viewW,viewH);
@@ -4599,11 +4626,11 @@ function render(){
     drawWaterZones();
     drawLavaZones();
   }
-  if(!gl3d) drawTerrainDecor();
-  drawZoneRings();
-  drawRaidTelegraph();
-  drawLandingMarkers();
-  if(introState.active) drawSummonIntro();
+  if(!gl3d) safeDraw(drawTerrainDecor);
+  safeDraw(drawZoneRings);
+  safeDraw(drawRaidTelegraph);
+  safeDraw(drawLandingMarkers);
+  if(introState.active) safeDraw(drawSummonIntro);
 
   const drawables = [];
   // 岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
@@ -4663,22 +4690,25 @@ function render(){
     if(d.p.x<-m||d.p.x>viewW+m||d.p.y<-m||d.p.y>viewH+m) continue;
     const faded = (d.fade != null && d.fade < 1);
     if(faded) ctx.globalAlpha = d.fade;
-    if(d.kind==='loot') drawLootItem(d.obj,d.p);
-    else if(d.kind==='proj') drawProjectile(d.obj,d.p);
-    else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
-    else if(d.kind==='mon') drawMonster(d.obj,d.p);
-    // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
-    else if(d.kind==='rock'){ if(real3dActive) eraseObstacle(d.obj,d.p); else drawRock(d.obj,d.p); }
-    else if(d.kind==='crystal'){ if(real3dActive) eraseObstacle(d.obj,d.p,'crystal'); else drawCrystal(d.obj,d.p); }
-    else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
-    else drawParticle(d.obj,d.p);
+    // 1個が落ちても残りは描き切る(ここで抜けると画面が丸ごと空になる)
+    try{
+      if(d.kind==='loot') drawLootItem(d.obj,d.p);
+      else if(d.kind==='proj') drawProjectile(d.obj,d.p);
+      else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
+      else if(d.kind==='mon') drawMonster(d.obj,d.p);
+      // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
+      else if(d.kind==='rock'){ if(real3dActive) eraseObstacle(d.obj,d.p); else drawRock(d.obj,d.p); }
+      else if(d.kind==='crystal'){ if(real3dActive) eraseObstacle(d.obj,d.p,'crystal'); else drawCrystal(d.obj,d.p); }
+      else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
+      else drawParticle(d.obj,d.p);
+    }catch(err){ reportDrawError(err); }
     if(faded) ctx.globalAlpha = 1;
   }
-  if(introState.active) drawSummonIntroFront();
-  drawDangerVignette();
-  drawZoneCompass();
-  if(introState.active) drawSummonCountdown();
-  renderMinimap();
+  if(introState.active) safeDraw(drawSummonIntroFront);
+  safeDraw(drawDangerVignette);
+  safeDraw(drawZoneCompass);
+  if(introState.active) safeDraw(drawSummonCountdown);
+  safeDraw(renderMinimap);
 }
 // 召喚演出の各フェーズ進行度(elapsed秒基準)
 function summonPhases(){
