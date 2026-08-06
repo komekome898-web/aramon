@@ -746,6 +746,8 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-07', items:[
     { t:'🎉 シーズン1が開幕しました！ 曜日ごとの変則ルールと、レイドバトル「不死のゾッド」が始まっています', g:['feature','general'] },
+    { t:'シーズンパスの最終報酬(Tier25)が限定SSRスキン「大喰いの利世」に確定しました。報酬はTier順に横スクロールで並び、開くと今のTier付近が表示されます', g:['feature'] },
+    { t:'【レイド】レイドランキングに「最大ダメージ」(1回の挑戦で出した最高記録)を追加しました', g:['feature','multi'] },
     { t:'SSRスキンの昇格演出で、動画は流れても音声が鳴らないことがあった不具合を修正しました(音声の読み込みを待ってから動画と同時に鳴らすようにしました)', g:['fix','av'] },
     { t:'【レイド】バトル中のBGMを「残り2人」の曲にしました。専用BGMを持つSSRスキンを装備していれば、そのスキンの曲が流れます', g:['av'] },
     { t:'【レイド】リザルトの報酬にマスモンの経験値とシーズンSPを追加しました。どちらも与えたダメージに応じて増えます', g:['balance'] },
@@ -1981,14 +1983,9 @@ function mutatorBadgeLabels(m){
   if(m.reward) out.push('報酬UP');
   return out;
 }
-// シーズン1 SPパス報酬(準備中プレースホルダー。最終報酬は大喰いの利世で確定)
-const SEASON1_REWARDS_PREVIEW = [
-  { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },
-  { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },
-  { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },
-  { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },
-  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'aqua_ssr' }, // 最終報酬=限定SSRスキン「大喰いの利世」
-];
+/* シーズン1のSPパス報酬は SEASON_REWARDS が正。準備中に使っていた
+   SEASON1_REWARDS_PREVIEW は同じ内容を二重に持っていたので廃止した
+   (管理者プレビューも SEASON_REWARDS を見る)。 */
 
 /* =====================================================================
    シーズンパス: 試合でシーズンポイント(SP)を貯めて段階報酬を受け取る(全て無料)
@@ -2004,7 +2001,7 @@ const SEASON_REWARDS = [
   { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },           // 6-10
   { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },           // 11-15
   { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },      // 16-20
-  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'mocchi_ssr' }, // 21-25(最終=限定SSRスキン「ラガモッチー」)
+  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'aqua_ssr' }, // 21-25(最終=限定SSRスキン「大喰いの利世」)
 ];
 // 1試合で得られるSP(SEASON_SP_GLOBAL_MULTで全体倍率を調整)
 const SEASON_SP_GLOBAL_MULT = 2;

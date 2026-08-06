@@ -1023,8 +1023,13 @@
   .season-prog{ height:8px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; margin:6px 0 3px; }
   .season-prog-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); border-radius:4px; }
   .season-next-text{ font-size:10px; color:var(--ink-dim); text-align:right; }
-  .season-track{ display:grid; grid-template-columns:repeat(auto-fill, minmax(96px,1fr)); gap:6px; width:100%; padding:2px; }
-  .season-tier{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px;
+  /* 報酬はTier順に横一列で並べて横スクロールさせる(段組みだと順番が読み取りにくい)。
+     縦に折り返さないので、下に続くスケジュールも画面内に収まる。 */
+  /* touch-actionは指定しない。指定すると縦方向のドラッグを奪って、
+     この上から始めた指ではシーズン画面全体を縦スクロールできなくなる */
+  .season-track{ display:flex; overflow-x:auto; gap:6px; width:100%; padding:2px 2px 8px;
+    -webkit-overflow-scrolling:touch; }
+  .season-tier{ flex:0 0 auto; width:96px; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
   .season-tier.milestone{ border-color:rgba(244,196,48,0.55); background:rgba(244,196,48,0.07); }
   .season-tier.ready{ border-color:var(--amber); box-shadow:0 0 8px rgba(244,196,48,0.3); }
@@ -2078,6 +2083,9 @@
   #viewRankingBtn, #viewMyStatsBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   .resultBtnRow{ display:flex; gap:10px; margin-top:26px; flex-wrap:nowrap; width:100%; max-width:640px; }
   .resultBtnRow button{ flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* レイドのリザルトに出るボタンだけ紫(レイド画面・レイドランキングと同じ色) */
+  #viewRaidRankBtn{ color:#efe2ff; border:1px solid rgba(190,130,255,0.85);
+    background:linear-gradient(180deg,#8b4fd8,#5f2ba8); box-shadow:0 0 14px -4px rgba(170,110,255,0.9); }
 
   #scoreSubmitStatus{ margin-top:14px; font-size:11px; letter-spacing:1px; color:var(--ink-dim); font-family:'Share Tech Mono',monospace; min-height:16px; }
 
