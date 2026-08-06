@@ -737,6 +737,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'デュラハンに状態変化「我慢」を追加しました(HP30%以下で30秒間、被ダメ半減・ガッツ回復2倍・技のクールタイム半分。120秒に1回発動)', g:['monster','balance'] },
     { t:'狂戦士ガッツtier3「ドラゴンころし」の発動SEを専用の音に変更しました', g:['monster'] },
     { t:'【レイド】プレイモードに「レイドバトル」を追加しました。専用画面からボスの残り体力・自分の累計ダメージ・レイドランキング(総ダメージ／参加回数)が見られます', g:['feature'] },
     { t:'【レイド】最大4人で同時に挑めるようになりました(ロビーのレイド→「みんなで挑む」)。空いた枠はマスモン・botが埋めます', g:['feature','multi'] },
@@ -1022,6 +1023,10 @@ const STATE_CHANGES = {
   pixie: {
     name:'暴走', duration:20, cooldown:90, trigger:'hpBelow', triggerValue:0.4,
     effects:{ speedMult:1.5, cooldownMult:1/1.5, dmgMult:1.15 },
+  },
+  dullahan: {
+    name:'我慢', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.3,
+    effects:{ dmgTakenMult:0.5, gutsRegenMult:2, cooldownMult:0.5 },
   },
   // <<AUTO:STATE_CHANGES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
