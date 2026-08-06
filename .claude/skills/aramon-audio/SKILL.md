@@ -13,7 +13,8 @@ description: 荒野モン動の音(audio.js)。BGMトラック/intensity・SE定
 - **intensityを増やしたら`bgmStepDur()`のbpm配列も伸ばす**(配列外でBPMがNaNになる)。
 - **トラック/intensityを追加したら管理者画面の`BGM_TEST_ITEMS`にも足す。**
 - **実音源ループは「常に1曲だけ」を`updateBgmFileLoops()`が保証する。** `bgmFileLoopTarget()`が鳴らすべき1曲を返し、それ以外は`stop()`。**トラック名は明示で判定する**(「title/shop以外は試合中」としていたためトレーニング画面で決戦BGMが重なった)。新トラックは1行足すだけ。
-- **SSRスキン専用BGM(轟金剛の3曲)は`gokongoBgmActive()`(`game.started && entitySkinId(player)==='rock_ssr'`)でだけ切り替わる。** `game.started`を見るのは、管理者画面のBGM確認(`final5`/`last2`ボタン)が試合を開始せずに`cur:'battle'`を使うため。ここを見ないと、開発者アカウントがたまたま轟金剛を装備していると確認ボタンが専用曲を鳴らしてしまう。**専用曲が未ロードの区間だけ通常のfinal5/lastbattle/合成BGMへ自動フォールバックする**(3曲を個別にensureする、無音にしない)。管理者画面には`cur`にそのまま渡る専用のテストID(`gokongoBattle`等)を用意してある。
+- **SSRスキン専用の音(BGM3曲・専用SE4種・昇格演出の音声)は`data.js`の`SKIN_MEDIA`だけが持つ。** audio.jsは表を1周してループ/ワンショットを作るだけなので、**スキンを足してもaudio.jsは1行も増えない**(`skinBgmLoops`/`skinMediaSeOneShots`/`skinPromoteSeOneShots`)。専用SEは`skinSe:<スキンid>:<tier3|hit|kill|win>`という名前で`SE_DEFS`へ入り、combat.jsの`SKIN_TIER3_SE`等へも自動で登録される(手書きの指定があるスキンはそちらが優先)。**未ロード・取得失敗のときは既存のSE(`SKIN_SE_FALLBACK`)へ落ちる。**
+- **専用BGMは`activeSkinBgmSet()`(`game.started && SKIN_MEDIA[装備スキン].bgm`)のときだけ切り替わる。** `game.started`を見るのは、管理者画面のBGM確認(`final5`/`last2`ボタン)が試合を開始せずに`cur:'battle'`を使うため。ここを見ないと、開発者アカウントがたまたま専用BGM持ちのスキンを装備していると確認ボタンが専用曲を鳴らしてしまう。**専用曲が未ロードの区間だけ通常のfinal5/lastbattle/合成BGMへ自動フォールバックする**(3曲を個別にensureする、無音にしない)。管理者画面のテストIDは`skinBgm:<スキンid>:<battle|final5|lastBattle>`で、`BGM_TEST_ITEMS`の行も`SKIN_MEDIA`から生成される。
 - `bgmSetTrack('title'|'shop'|'training')`はintensityを0に戻す(`null`は試合中の演出でも使うので触らない)。リザルト後にロビー曲へ戻す遅延処理は`bgmDesiredTrack()!==null`なら何もしない。
 
 ## 実音源を使う例外
@@ -31,3 +32,4 @@ description: 荒野モン動の音(audio.js)。BGMトラック/intensity・SE定
 - 使い分け: 1.2秒程度まではデータURIインライン、3秒級のSEと長い曲は外部mp3+fetch。
 - **提供音源の前後の無音はmp3の側で切っておく**(再生時にずらす仕組みは持たない)。`silencedetect`で位置を測り`-ss/-to`で切り直す。
 - 実音の抽出(この環境): `pip install imageio-ffmpeg`で静的ffmpeg。**Chromium(OSSビルド)はAAC不可・mp3可**なので動画音声は一旦mp3化する。整音は`loudnorm=I=-16:TP=-1.5:LRA=11`(mono 96k)。
+- **iPhoneだけで足すときは`tools/studio_web.html`の「SSRスキン専用」**。動画を実時間で再生しながらMediaRecorderで録り直すので、出てくるのは端末が対応する形式(iPhoneなら`.m4a`/`.mp4`)。ffmpegを通していないぶんラウドネスは揃わないので、**音量が浮くときはこちらでmp3に作り直して`SKIN_MEDIA`のパスを差し替える。**

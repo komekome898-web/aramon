@@ -72,12 +72,15 @@ def render_rows(spec, moves):
 
     st = spec.get('stateChange')
     if st:
+        # 撃破時など条件値を持たない状態変化は null と書く(studio_web.html の scTriggerValue と同じ)
+        tv = st.get('triggerValue', 0.4)
+        tv = 'null' if tv is None else tv
         eff = ', '.join(f'{a}:{js_value(b)}' for a, b in (st.get('effects') or {}).items())
         rows['STATE_CHANGES'] = [
             '  %s{ %s' % (_pad(k), mark),
             "    name:%s, duration:%s, cooldown:%s, trigger:%s, triggerValue:%s," % (
                 js_str(st.get('name', '覚醒')), st.get('duration', 20), st.get('cooldown', 90),
-                js_str(st.get('trigger', 'hpBelow')), st.get('triggerValue', 0.4)),
+                js_str(st.get('trigger', 'hpBelow')), tv),
             '    effects:{ %s },' % eff,
             '  },',
         ]

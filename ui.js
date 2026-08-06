@@ -1733,9 +1733,13 @@ function setGachaMode(mode){
   gachaMode = (mode==='raid') ? 'raid' : 'skin';
   document.querySelectorAll('.gacha-tab').forEach(t=>t.classList.toggle('active', t.dataset.gacha===gachaMode));
   const raid = gachaMode==='raid';
-  const pickupName = SSR_SKINS[RAID_GACHA_PICKUP] ? skinMeta(RAID_GACHA_PICKUP).name : 'レイド特効';
+  // タイトルの「(◯◯ピックアップ)」は両タブともピックアップの定数から作る
+  // (data.js の GACHA_PICKUP_SSR / RAID_GACHA_PICKUP を変えればここも追従する)
+  const pickupName = (id, alt)=> SSR_SKINS[id] ? skinMeta(id).name : alt;
   document.getElementById('gachaTitle').firstChild.textContent = raid ? '🐉 レイドガチャ' : '🎰 スキンガチャ';
-  document.getElementById('gachaTitlePickup').textContent = raid ? `(${pickupName}ピックアップ)` : '(轟金剛ピックアップ)';
+  document.getElementById('gachaTitlePickup').textContent = raid
+    ? `(${pickupName(RAID_GACHA_PICKUP, 'レイド特効')}ピックアップ)`
+    : `(${pickupName(GACHA_PICKUP_SSR, 'SSR')}ピックアップ)`;
   // 開催前は引けない。ボタンとゲージの上に「近日公開」を被せる
   const locked = raid && !raidGachaOpenNow();
   document.getElementById('gachaSoonMask').classList.toggle('hidden', !locked);
@@ -1830,14 +1834,26 @@ document.getElementById('skinPromoGachaBtn').addEventListener('click', ()=>{
 // SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
 maybeFlushPendingPromoPopups();
 
-// ===== SSR轟金剛実装記念ポップアップ =====
-// ログインしてロビーに来るたび毎回ポップアップを表示する。ダイヤ500個の付与だけは1アカウント1回のみ。
+/* ===== ピックアップSSR実装記念ポップアップ =====
+   ログインしてロビーに来るたび毎回ポップアップを表示する。ダイヤ500個の付与だけは1アカウント1回のみ。
+   出す画像・文言はスキンガチャのピックアップ(GACHA_PICKUP_SSR)から作るので、
+   ピックアップを差し替えるとポップアップの絵も自動で入れ替わる(IDは轟金剛のときのまま)。 */
 const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // ダイヤ受け取り済み(アカウント同期)
 const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
 const ROCK_SSR_PROMO_DIA = 500;
+function gachaPickupName(){
+  return (typeof SSR_SKINS!=='undefined' && SSR_SKINS[GACHA_PICKUP_SSR]) ? skinMeta(GACHA_PICKUP_SSR).name : 'SSR';
+}
 function showRockSsrPromoPopup(){
   const el = document.getElementById('rockSsrPromoOverlay');
-  if(el) el.classList.remove('hidden');
+  if(!el) return;
+  const img = document.getElementById('rockSsrPromoImg');
+  const url = (typeof skinPromoImgUrl==='function') ? skinPromoImgUrl(GACHA_PICKUP_SSR) : null;
+  if(img && url && img.getAttribute('src') !== url){
+    img.src = url;
+    img.alt = `SSR${gachaPickupName()}実装記念`;
+  }
+  el.classList.remove('hidden');
 }
 function dismissRockSsrPromoPopup(){
   try{ localStorage.removeItem(ROCK_SSR_PROMO_PENDING_KEY); }catch(e){}
@@ -1853,7 +1869,7 @@ function maybeShowRockSsrPromo(){
     addWallet(0, ROCK_SSR_PROMO_DIA);                            // ダイヤ500個付与(saveWalletがsync予約)
     accountMarkDirty();                                          // フラグもサーバーへ同期
     updateAccountBar();
-    pushToast(`SSR轟金剛実装記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
+    pushToast(`SSR${gachaPickupName()}実装記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
   }
   // ポップアップ自体はログインのたび毎回表示する
   try{ localStorage.setItem(ROCK_SSR_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
@@ -1921,16 +1937,18 @@ function gachaAnimFrame(now){
     g.restore();
   };
   if(gachaAnim.phase==='idle'){
-    if(imgIsReady(gachaPickupPromoImg)){
-      // 轟金剛ピックアップ告知画像を背景として表示(下のボタン/ゲージ等はDOM側なので位置は変わらない)
-      const iw = gachaPickupPromoImg.naturalWidth || 1364, ih = gachaPickupPromoImg.naturalHeight || 768;
+    // 表示中のタブ(スキン/レイド)のピックアップ告知画像を出す
+    const promoImg = (typeof gachaPromoImgFor==='function') ? gachaPromoImgFor(gachaMode) : gachaPickupPromoImg;
+    if(imgIsReady(promoImg)){
+      // ピックアップ告知画像を背景として表示(下のボタン/ゲージ等はDOM側なので位置は変わらない)
+      const iw = promoImg.naturalWidth || 1364, ih = promoImg.naturalHeight || 768;
       const pulse = 1 + 0.012*Math.sin(now/700);
       const scale = Math.min((w*0.94)/iw, (h*0.78)/ih) * pulse;
       const dw = iw*scale, dh = ih*scale;
       g.save();
       g.shadowBlur = 26 + 8*Math.sin(now/700); g.shadowColor = 'rgba(244,196,48,0.55)';
       g.globalAlpha = 0.96;
-      g.drawImage(gachaPickupPromoImg, cx-dw/2, cy-dh/2, dw, dh);
+      g.drawImage(promoImg, cx-dw/2, cy-dh/2, dw, dh);
       g.restore();
     } else {
       // 画像未読込時の保険: 従来の白く光る円盤石+「回せ！」を出す
@@ -2110,29 +2128,27 @@ function ssrPromoteDebugLog(line){
   el.classList.remove('hidden');
   el.textContent = ssrPromoteDebugLines.join('\n');
 }
-// スキンごとの昇格演出メディア設定。未指定のSSRは既定(ssr_promote.*)を使う
-// se/ensureSeはSE本体・先読み関数を直接参照する(audio.jsのconstはwindowのプロパティにならないため、
-// 文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)
-const SSR_PROMOTION_MEDIA = {
-  rock_ssr: {
-    videoWebm: 'video/rock_promote.webm', videoMp4: 'video/rock_promote.mp4',
-    se: (typeof seRockPromote!=='undefined') ? seRockPromote : null,
-    ensureSe: (typeof ensureRockPromoteSeBuffer==='function') ? ensureRockPromoteSeBuffer : null,
-    skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
-    safetyMs: 23000,        // 動画+音声とも約22秒あるため、セーフティは長めに取る
-    bgmOnReveal: 'gokongoLastBattle', // リビール時、元のBGMへ戻さずこちらへ切り替える(以後は次のbgmSetTrackまで継続)
-  },
-  aqua_ssr: {
-    videoWebm: 'video/aqua_promote.webm', videoMp4: 'video/aqua_promote.mp4',
-    se: (typeof seAquaPromote!=='undefined') ? seAquaPromote : null,
-    ensureSe: (typeof ensureAquaPromoteSeBuffer==='function') ? ensureAquaPromoteSeBuffer : null,
-    skipTapImage: true,     // タップ待ち画像を挟まず、動画+音声が終わったら直接リビールへ
-    safetyMs: 17000,        // 動画+音声とも約15.6秒のため、セーフティは長めに取る
-    bgmOnReveal: null,      // リビール後のBGMは元のトラックへ戻す(轟金剛と違い専用曲への固定切替はしない)
-  },
-};
+/* スキンごとの昇格演出メディアは data.js の SKIN_MEDIA[skinId].promote から作る。
+   専用の動画が無いSSRは既定(ssr_promote.*)を使う。
+   se/ensureSeはSE本体・先読み関数を直接参照する(audio.jsのconstはwindowのプロパティにならないため、
+   文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)。
+   bgmOnReveal は「自分の専用BGMのどの区分へ切り替えるか」(battle/final5/lastBattle)。
+   指定が無ければリビール後のBGMは元のトラックへ戻す。 */
 function ssrPromotionMediaFor(skinId){
-  return SSR_PROMOTION_MEDIA[skinId] || {
+  const p = (typeof skinMediaOf==='function' && skinMediaOf(skinId) || {}).promote;
+  if(p && p.video){
+    return {
+      videoWebm: p.video + '.webm', videoMp4: p.video + '.mp4',
+      se: (typeof skinPromoteSe==='function') ? skinPromoteSe(skinId) : null,
+      ensureSe: (typeof ensureSkinPromoteSe==='function') ? ()=>ensureSkinPromoteSe(skinId) : null,
+      // 専用動画があるスキンは音声も付いているので、タップ待ち画像を挟まず直接リビールへ進む
+      skipTapImage: p.skipTapImage !== false,
+      safetyMs: p.safetyMs || 20000,   // 動画+音声が終わらないときの保険(動画より長く取る)
+      bgmOnReveal: (p.bgmOnReveal && typeof skinBgmTrack==='function')
+        ? skinBgmTrack(skinId, p.bgmOnReveal) : null,
+    };
+  }
+  return {
     videoWebm: 'video/ssr_promote.webm', videoMp4: 'video/ssr_promote.mp4',
     se: (typeof seSsrPromote!=='undefined') ? seSsrPromote : null,
     ensureSe: (typeof ensureSsrPromoteSeBuffer==='function') ? ensureSsrPromoteSeBuffer : null,
@@ -2150,10 +2166,11 @@ function runSsrPromotionSequence(skinId, onContinue){
   // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック(またはmedia.bgmOnReveal)へ切り替える
   if(typeof bgmSetTrack==='function' && typeof bgmDesiredTrack==='function'){
     ssrPromoteBgmResumeTrack = media.bgmOnReveal || bgmDesiredTrack();
-    // 轟金剛の専用BGM(bgm_gokongo_*.mp3)は試合開始時にしか先読みされないため、
-    // ここで切替前(動画再生中の約22秒)に読み込みを始めておく。先読みなしだと
-    // バッファが無い状態でstart()が無視され、リビール時に無音のままになる
-    if(ssrPromoteBgmResumeTrack && ssrPromoteBgmResumeTrack.indexOf('gokongo')===0 && typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
+    // スキン専用BGM(bgm_*.mp3)は試合開始時にしか先読みされないため、ここで切替前
+    // (動画再生中の十数〜20秒)に読み込みを始めておく。先読みなしだとバッファが無い状態で
+    // start()が無視され、リビール時に無音のままになる
+    if(ssrPromoteBgmResumeTrack && ssrPromoteBgmResumeTrack.indexOf('skinBgm:')===0
+       && typeof ensureSkinBgmBuffers==='function') ensureSkinBgmBuffers(ssrPromoteBgmResumeTrack.split(':')[1]);
     bgmSetTrack(null);
   }
   // 動画ファイル自体は音無し(音声はWeb Audio側のSEを別途同時再生する)。
@@ -6174,11 +6191,22 @@ const SE_TEST_LABELS = {
   rize:'大喰いの利世 鱗赫', rizeKill:'大喰いの利世 勝利', rizeHit:'大喰いの利世 被弾', aquaKill:'大喰いの利世 キル',
   gutsTier3:'狂戦士ガッツ ドラゴンころし',
 };
+// SKIN_MEDIA から自動登録されたSE('skinSe:<id>:<区分>')の表示名はスキン名から作る
+function seTestLabel(name){
+  if(SE_TEST_LABELS[name]) return SE_TEST_LABELS[name];
+  if(name.indexOf('skinSe:')===0){
+    const [, id, slot] = name.split(':');
+    const jp = (typeof SKIN_SE_SLOTS!=='undefined' && SKIN_SE_SLOTS[slot]) || slot;
+    const label = (typeof skinMeta==='function' && SSR_SKINS[id]) ? skinMeta(id).name : id;
+    return `${label} ${jp}`;
+  }
+  return name;
+}
 function renderAdminSeGrid(){
   const grid = document.getElementById('adminSeGrid');
   if(!grid || typeof SE_DEFS==='undefined') return;
   const names = Object.keys(SE_DEFS);
-  grid.innerHTML = names.map(n=>`<button class="admin-se-btn" data-se="${n}">🔊 ${SE_TEST_LABELS[n]||n}</button>`).join('');
+  grid.innerHTML = names.map(n=>`<button class="admin-se-btn" data-se="${n}">🔊 ${seTestLabel(n)}</button>`).join('');
   grid.querySelectorAll('.admin-se-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const n = btn.dataset.se;
@@ -6196,12 +6224,13 @@ const BGM_TEST_ITEMS = [
   { id:'battle2',label:'🎵 試合中・終盤' },
   { id:'final5', label:'🎵 残り5人以下(決戦・動画音源)' },
   { id:'last2',  label:'🎵 残り2人(ラストバトル・動画音源)' },
-  { id:'gokongoBattle',    label:'🎵 轟金剛・残り30〜6人' },
-  { id:'gokongoFinal5',    label:'🎵 轟金剛・残り5〜3人' },
-  { id:'gokongoLastBattle',label:'🎵 轟金剛・残り2人' },
-  { id:'aquaBattle',       label:'🎵 大喰いの利世・残り6人以上' },
-  { id:'aquaFinal5',       label:'🎵 大喰いの利世・残り5人以下' },
-  { id:'aquaLastBattle',   label:'🎵 大喰いの利世・残り2人' },
+  // SSRスキン専用BGMの行は SKIN_MEDIA から作る(スキンを足してもここへの追記は要らない)
+  ...(typeof SKIN_MEDIA!=='undefined' ? Object.keys(SKIN_MEDIA) : []).flatMap(id=>{
+    const bgm = SKIN_MEDIA[id].bgm || {};
+    const name = (typeof skinMeta==='function' && SSR_SKINS[id]) ? skinMeta(id).name : id;
+    return Object.keys(SKIN_BGM_SLOTS).filter(slot=>bgm[slot])
+      .map(slot=>({ id:`skinBgm:${id}:${slot}`, label:`🎵 ${name}・${SKIN_BGM_SLOTS[slot]}` }));
+  }),
   { id:'shop',   label:'🎵 ショップ(動画音源)' },
   { id:'lobby',  label:'🎵 ロビー(いちか・実音源)' },
   { id:'training',label:'🎵 トレーニング(実音源)' },
@@ -6229,14 +6258,9 @@ function adminPlayBgm(id){
     if(typeof bgmSetTrack==='function') bgmSetTrack('shop');
     return;
   }
-  if(id==='gokongoBattle' || id==='gokongoFinal5' || id==='gokongoLastBattle'){
+  if(id.indexOf('skinBgm:')===0){
     // 装備スキンや試合中かどうかに関係なく、専用曲そのものを確認できるようにする
-    if(typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
-    if(typeof bgmSetTrack==='function') bgmSetTrack(id);
-    return;
-  }
-  if(id==='aquaBattle' || id==='aquaFinal5' || id==='aquaLastBattle'){
-    if(typeof ensureAquaBgmBuffers==='function') ensureAquaBgmBuffers();
+    if(typeof ensureSkinBgmBuffers==='function') ensureSkinBgmBuffers(id.split(':')[1]);
     if(typeof bgmSetTrack==='function') bgmSetTrack(id);
     return;
   }
@@ -6356,11 +6380,11 @@ document.getElementById('adminRockPromoteCheckBtn').addEventListener('click', as
   ssrPromoteDebugLog(video);
   ssrPromoteDebugLog(videoWebm);
   ssrPromoteDebugLog(audio);
-  if(typeof ensureRockPromoteSeBuffer==='function') ensureRockPromoteSeBuffer();
+  if(typeof ensureSkinPromoteSe==='function') ensureSkinPromoteSe('rock_ssr');
   document.getElementById('closeAdminBtn').click();
   openGachaScreen();
   runSsrPromotionSequence('rock_ssr', ()=>{
-    showSsrReveal('rock_ssr', ()=>{ pushToast('🎬 轟金剛 演出確認 完了(BGMがgokongoLastBattleに切り替わっているはず)'); ssrPromoteDebugMode = false; });
+    showSsrReveal('rock_ssr', ()=>{ pushToast('🎬 轟金剛 演出確認 完了(BGMが轟金剛・残り2人へ切り替わっているはず)'); ssrPromoteDebugMode = false; });
   });
 });
 // 大喰いの利世専用の昇格演出(動画+約15.6秒音声→直接リビール)を確認するボタン
@@ -6372,7 +6396,7 @@ document.getElementById('adminAquaPromoteCheckBtn').addEventListener('click', as
   ssrPromoteDebugLog(video);
   ssrPromoteDebugLog(videoWebm);
   ssrPromoteDebugLog(audio);
-  if(typeof ensureAquaPromoteSeBuffer==='function') ensureAquaPromoteSeBuffer();
+  if(typeof ensureSkinPromoteSe==='function') ensureSkinPromoteSe('aqua_ssr');
   document.getElementById('closeAdminBtn').click();
   openGachaScreen();
   runSsrPromotionSequence('aqua_ssr', ()=>{

@@ -72,6 +72,21 @@
     border-radius:50%; background:var(--amber); color:#1a1a1a; font-size:11px; font-weight:700;
     margin-right:6px; }
   progress{ width:100%; height:6px; margin-top:8px; }
+  .cpick{ display:flex; gap:6px; align-items:center; }
+  .cpick input[type=color]{ width:42px; height:38px; flex:0 0 auto; padding:2px; }
+  .swatches{ display:grid; grid-template-columns:repeat(9,1fr); gap:5px; margin-top:6px; }
+  .sw{ height:26px; border-radius:6px; border:1px solid var(--line); padding:0; }
+  .seg button.on{ border-color:var(--amber); color:var(--amber); }
+  .effrow{ display:grid; grid-template-columns:auto 1fr 84px; gap:8px; align-items:center;
+    margin-top:6px; font-size:12px; }
+  .effrow input[type=checkbox]{ width:auto; }
+  .effrow input[type=number]{ padding:6px 8px; }
+  .mediaitem{ border:1px solid var(--line); border-radius:9px; padding:9px; margin-top:9px; }
+  .mediaitem h3{ font-size:12px; margin:0 0 6px; color:var(--ink); letter-spacing:0.5px; }
+  .mediaitem audio,.mediaitem video,.mediaitem img{ width:100%; margin-top:6px; border-radius:6px;
+    display:block; background:#0b0f16; }
+  .mediaitem video,.mediaitem img{ max-height:190px; object-fit:contain; }
+  .now{ font-size:11px; color:var(--dim); margin-top:4px; word-break:break-all; }
 </style></head>
 <body>
 
@@ -107,6 +122,7 @@
   <select id="regKind">
     <option value="monster">新しいモンスターを追加する</option>
     <option value="ssr">既存モンスターのSSRスキンを追加する</option>
+    <option value="ssrmedia">SSRスキン専用(演出・BGM・SE・ガチャ)</option>
   </select>
   <div id="ssrForm" style="display:none">
     <div class="r2">
@@ -149,8 +165,37 @@
   <div class="hint" id="regHint"></div>
 </div>
 
+<!-- ======================================= 2.5 SSRスキン専用メディア -->
+<div class="panel" id="mediaPanel" style="display:none">
+  <h2><span class="step">M</span>SSRスキン専用メディア</h2>
+  <label>どのSSRスキンの設定か</label>
+  <select id="md_skin"><option value="">先にGitHubへ接続してください</option></select>
+  <div class="hint" id="md_cur">接続すると、今そのスキンに設定されているものが出ます。</div>
+  <div id="md_items"></div>
+
+  <div class="mediaitem">
+    <h3>ガチャ</h3>
+    <div class="r2">
+      <div><label>ガチャの種類</label>
+        <select id="md_gachaKind">
+          <option value="skin">スキンガチャ</option>
+          <option value="raid">レイドガチャ</option>
+        </select>
+      </div>
+      <div><label>ピックアップ</label>
+        <select id="md_pickup">
+          <option value="0">しない(今のままにする)</option>
+          <option value="1">する</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="md_pickupNote"></div>
+    <div id="md_pickupPrev"></div>
+  </div>
+</div>
+
 <!-- ============================================================ 3. 歩行 -->
-<div class="panel">
+<div class="panel" id="walkPanel">
   <h2><span class="step">3</span>歩行モーション</h2>
   <label>素材</label>
   <select id="walkSrc">
@@ -264,7 +309,7 @@
 </div>
 
 <!-- ============================================================ 4. 静止画 -->
-<div class="panel">
+<div class="panel" id="portraitPanel">
   <h2><span class="step">4</span>静止画</h2>
   <div class="r2">
     <div><label>アイコン用の画像</label><input id="imgIcon" type="file" accept="image/*"></div>
@@ -303,9 +348,23 @@
     <div><label>表示名</label><input id="f_label" placeholder="マイモン"></div>
   </div>
   <div class="r3">
-    <div><label>色</label><input id="f_color" value="#7fb236"></div>
-    <div><label>暗い色</label><input id="f_dark" value="#4f6f1f"></div>
-    <div><label>差し色</label><input id="f_accent" placeholder="任意"></div>
+    <div><label>明るい色</label>
+      <div class="cpick"><input id="f_colorSw" type="color" value="#7fb236"><input id="f_color" value="#7fb236"></div></div>
+    <div><label>暗い色</label>
+      <div class="cpick"><input id="f_darkSw" type="color" value="#4f6f1f"><input id="f_dark" value="#4f6f1f"></div></div>
+    <div><label>差し色</label>
+      <div class="cpick"><input id="f_accentSw" type="color" value="#ffffff"><input id="f_accent" placeholder="任意"></div></div>
+  </div>
+  <label>色パレット — 入れる場所を選んでから色をタップします</label>
+  <div class="btns seg" id="paletteTarget">
+    <button data-t="color" class="on">明るい色</button>
+    <button data-t="dark">暗い色</button>
+    <button data-t="accent">差し色</button>
+  </div>
+  <div class="swatches" id="paletteBox"></div>
+  <div class="btns">
+    <button onclick="deriveDark()">明るい色から暗い色を作る</button>
+    <button onclick="clearAccent()">差し色を空にする</button>
   </div>
   <div class="r3">
     <div><label>移動速度</label><input id="f_speed" type="number" value="190"></div>
@@ -315,6 +374,25 @@
   <label>特性id(既存と同じidなら説明は追加されません)</label>
   <input id="f_trait" placeholder="burn">
   <label>特性の説明</label><textarea id="f_traitDesc"></textarea>
+  <label>状態変化(試合中に条件を満たすと一定時間だけ強くなる)</label>
+  <select id="f_scPreset"><option value="">つけない</option></select>
+  <div id="scBox" style="display:none">
+    <div class="r2">
+      <div><label>名前</label><input id="f_scName" placeholder="覚醒"></div>
+      <div><label>発動条件</label><select id="f_scTrigger"></select></div>
+    </div>
+    <div class="r3">
+      <div><label id="f_scValLabel">しきい値</label><input id="f_scValue" type="number" step="0.05" value="0.4"></div>
+      <div><label>効果時間(秒)</label><input id="f_scDur" type="number" value="20"></div>
+      <div><label>再発動まで(秒)</label><input id="f_scCd" type="number" value="90"></div>
+    </div>
+    <label>効果 — 使うものだけチェックします</label>
+    <div id="scEffects"></div>
+  </div>
+  <div class="hint" id="scHint">
+    すでにいるモンスターと同じものを選ぶか、「自分で決める」で組み合わせられます。
+    倍率は1より大きいと強化、小さいと弱化です(クールタイムと消費ガッツと被ダメージは小さいほど有利)。
+  </div>
   <label>育成適性(S〜E)</label>
   <div class="r6" id="aptRow"></div>
   <label>色スキンの主役の色</label>
@@ -359,7 +437,7 @@
     <button class="primary" id="commitBtn" onclick="doCommit()" disabled>この内容でコミット</button>
   </div>
   <div class="btns">
-    <button class="danger" onclick="doRevert()">このモンスターの登録を取り消す</button>
+    <button class="danger" id="revertBtn" onclick="doRevert()">このモンスターの登録を取り消す</button>
   </div>
   <pre id="log">「差分を確認する」を押すと、送信されるファイルと data.js / ui.js への追記内容が出ます。</pre>
   <div class="hint">
@@ -387,7 +465,10 @@ const WALK_FRAME_DUR = 0.11;  // data.js と同じ。1コマの表示秒数(8コ
 const state = { walk:{f:null, b:null}, portraits:null, hue:null,
                 chroma:null, chromaP:null, files:null, elements:null,
                 rig:{f:null, b:null}, rigSide:'f',
-                cand:{f:null, b:null}, candSide:'f' };
+                cand:{f:null, b:null}, candSide:'f',
+                // SSRスキン専用メディア: cur=リポジトリの今の設定 / next=この画面で作ったもの
+                skins:null, media:{ cur:{}, next:{}, urls:{} },
+                scPresets:null, pickup:{ skin:null, raid:null } };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -1723,6 +1804,11 @@ function buildMoves(spec){
 
 /* ---------------------------------------------------------- 9表への行 */
 function pad(k, w){ w = w||9; const s = k + ':'; return s + ' '.repeat(Math.max(0, w - s.length)); }
+// 撃破時など条件値を持たない状態変化は null と書く(monster_code.py と同じ)
+function scTriggerValue(st){
+  if(!('triggerValue' in st)) return 0.4;
+  return st.triggerValue == null ? 'null' : st.triggerValue;
+}
 // monster_code.py の render_rows と同じ出力
 function renderRows(spec, moves, traitExists){
   const k = spec.key, mark = '/*@' + k + '*/';
@@ -1754,7 +1840,7 @@ function renderRows(spec, moves, traitExists){
     const eff = Object.keys(st.effects||{}).map(a=>`${a}:${jsValue(st.effects[a])}`).join(', ');
     rows.STATE_CHANGES = [
       `  ${pad(k)}{ ${mark}`,
-      `    name:${jsStr(st.name||'覚醒')}, duration:${st.duration||20}, cooldown:${st.cooldown||90}, trigger:${jsStr(st.trigger||'hpBelow')}, triggerValue:${st.triggerValue==null?0.4:st.triggerValue},`,
+      `    name:${jsStr(st.name||'覚醒')}, duration:${st.duration||20}, cooldown:${st.cooldown||90}, trigger:${jsStr(st.trigger||'hpBelow')}, triggerValue:${scTriggerValue(st)},`,
       `    effects:{ ${eff} },`,
       `  },`,
     ];
@@ -1779,7 +1865,7 @@ const TABLES = [['ELEMENTS','data.js'],['WALK_ANIM','data.js'],['SIGNATURE_MOVES
   ['MONSTER_AURA','data.js'],['MOVE_AURA','data.js'],['STATE_CHANGES','data.js'],
   ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js'],
   ['SSR_SKINS','data.js'],['SSR_SKIN_AURA','data.js'],['SSR_SKIN_TIER3','data.js'],
-  ['RAID_EFFECT_SKINS','data.js']];
+  ['RAID_EFFECT_SKINS','data.js'],['SKIN_MEDIA','data.js']];
 const TABLE_FILE = Object.fromEntries(TABLES);
 
 /* ---------------------------------------------------------- SSRスキンの行 */
@@ -1925,7 +2011,8 @@ function forgetToken(){
   $('authBadge').textContent = '未接続'; $('authBadge').className = 'badge';
   log('トークンを消しました。');
 }
-// SSRの「素体」一覧は data.js の ELEMENTS から読む(こちらに一覧を書き写さない)
+/* 素体・SSRスキン・状態変化・専用メディアの一覧は、すべて data.js から読む
+   (このツールの中に一覧を書き写さない。書き写すと追記漏れで表示が食い違う)。 */
 async function loadElementList(){
   try{
     const dataJs = await getFile('data.js');
@@ -1936,13 +2023,51 @@ async function loadElementList(){
     const rx = /^  ([a-z][a-z0-9_]*)\s*:\s*\{[^\n]*?label\s*:\s*'([^']*)'/gm;
     const out = []; let m;
     while((m = rx.exec(body))) out.push([m[1], m[2]]);
-    if(!out.length) return;
-    state.elements = out;
-    const cur = $('s_element').value;
-    $('s_element').innerHTML = out.map(([k,l])=>`<option value="${k}">${l}(${k})</option>`).join('');
-    if(cur && out.some(([k])=>k===cur)) $('s_element').value = cur;
-    onElementChange();
+    if(out.length){
+      state.elements = out;
+      const cur = $('s_element').value;
+      $('s_element').innerHTML = out.map(([k,l])=>`<option value="${k}">${l}(${k})</option>`).join('');
+      if(cur && out.some(([k])=>k===cur)) $('s_element').value = cur;
+      onElementChange();
+    }
+    loadSsrList(dataJs);
+    loadScPresets(dataJs);
   }catch(err){ /* 接続前は一覧が出ないだけ */ }
+}
+// SSRスキン一覧・今の専用メディア設定・今のピックアップ
+function loadSsrList(dataJs){
+  const s = dataJs.indexOf('const SSR_SKINS = {');
+  if(s < 0) return;
+  const e = dataJs.indexOf('// <<AUTO:SSR_SKINS>>', s);
+  const body = dataJs.slice(s, e > 0 ? e : s + 20000);
+  const rx = /^  ([a-z][a-z0-9_]*)\s*:\s*\{[^\n]*?name\s*:\s*'([^']*)'/gm;
+  const out = []; let m;
+  while((m = rx.exec(body))) out.push([m[1], m[2]]);
+  if(!out.length) return;
+  state.skins = out;
+  state.media.cur = parseSkinMedia(dataJs);
+  state.pickup.skin = (/^const GACHA_PICKUP_SSR = '([^']*)'/m.exec(dataJs) || [])[1] || null;
+  state.pickup.raid = (/^const RAID_GACHA_PICKUP = '([^']*)'/m.exec(dataJs) || [])[1] || null;
+  const cur = $('md_skin').value;
+  $('md_skin').innerHTML = out.map(([k,l])=>{
+    const has = state.media.cur[k] ? ' ●設定あり' : '';
+    return `<option value="${k}">${l}(${k})${has}</option>`;
+  }).join('');
+  if(cur && out.some(([k])=>k===cur)) $('md_skin').value = cur;
+  renderMediaCurrent();
+}
+// 状態変化のプリセット(=今いるモンスターの設定)
+function loadScPresets(dataJs){
+  const labels = {};
+  (state.elements || []).forEach(([k, l])=>{ labels[k] = l; });
+  const presets = parseStateChanges(dataJs, labels);
+  if(!presets.length) return;
+  state.scPresets = presets;
+  const cur = $('f_scPreset').value;
+  $('f_scPreset').innerHTML = '<option value="">つけない</option>' +
+    presets.map(p=>`<option value="${p.id}">${p.label}</option>`).join('') +
+    '<option value="custom">自分で決める</option>';
+  if(cur) $('f_scPreset').value = cur;
 }
 // 素体を選んだらスキンidの雛形を入れる(すでに入力済みなら触らない)
 function onElementChange(){
@@ -1979,10 +2104,17 @@ function collectSpec(){
   };
   const acc = $('f_accent').value.trim();
   if(acc) spec.accent = acc;
+  const sc = collectStateChange();
+  if(sc) spec.stateChange = sc;
   return spec;
 }
-function isSsr(){ return $('regKind').value === 'ssr'; }
-function activeKey(){ return (isSsr() ? $('s_id').value : $('f_key').value).trim(); }
+function regKind(){ return $('regKind').value; }
+function isSsr(){ return regKind() === 'ssr'; }
+function isSsrMedia(){ return regKind() === 'ssrmedia'; }
+function activeKey(){
+  if(isSsrMedia()) return $('md_skin').value;
+  return (isSsr() ? $('s_id').value : $('f_key').value).trim();
+}
 function collectSsr(){
   const id = $('s_id').value.trim();
   const base = id.replace(/_ssr$/, '');
@@ -2130,14 +2262,83 @@ async function planSsr(dataJs, swJs, lines){
   walkIssueLines(lines);
   return { texts, images, message: `SSRスキン「${ss.name}」を追加した(スタジオ)` };
 }
+/* SSRスキン専用メディア(演出・BGM・SE・宣伝画像・ガチャのピックアップ)
+   添付されたものだけ差し替え、触っていない項目は今の設定をそのまま残す。 */
+async function planSkinMedia(dataJs, swJs, lines){
+  const id = $('md_skin').value;
+  if(!id) throw new Error('スキンを選んでください(先にGitHubへ接続すると一覧が出ます)');
+  // 差分の土台は「取得したdata.jsの中身」。画面の表示より確実
+  const curAll = parseSkinMedia(dataJs);
+  const cfg = JSON.parse(JSON.stringify(curAll[id] || {}));
+  const next = state.media.next;
+  const images = [];
+  const changed = [];
+  for(const it of MEDIA_ITEMS){
+    const got = next[it.key];
+    if(!got) continue;
+    const path = mediaPath(it, id, got.ext);
+    images.push({ path, blob: got.blob });
+    if(it.kind === 'promote'){
+      cfg.promote = cfg.promote || {};
+      cfg.promote.video = path.replace(/\.[a-z0-9]+$/, '');   // 表には拡張子を書かない
+      const au = next['promote.audio'];
+      if(au){
+        const apath = `audio/${id}_promote_audio.${au.ext}`;
+        images.push({ path: apath, blob: au.blob });
+        cfg.promote.audio = apath;
+        changed.push('昇格演出の音声');
+      }
+      cfg.promote.safetyMs = got.dur ? Math.round(got.dur*1000) + 4000 : (cfg.promote.safetyMs || 20000);
+    }else{
+      cfgSet(cfg, it.key, path);
+    }
+    changed.push(it.jp);
+  }
+  // 専用BGMを入れたスキンは、獲得画面のBGMをそのスキンのラストバトルにする
+  if(cfg.bgm && cfg.bgm.lastBattle && cfg.promote && cfg.promote.video && !cfg.promote.bgmOnReveal)
+    cfg.promote.bgmOnReveal = 'lastBattle';
+  const pickupOn = $('md_pickup').value === '1';
+  if(!changed.length && !pickupOn)
+    throw new Error('差し替えるものがありません。素材を添付するか、ピックアップを「する」にしてください');
+  const rm = removeSkinMediaEntry(dataJs, id);
+  const rows = { SKIN_MEDIA: skinMediaLines(id, cfg) };
+  const texts = applyRows({ 'data.js': rm.text }, rows);
+  const notes = [];
+  if(pickupOn){
+    const raid = $('md_gachaKind').value === 'raid';
+    const cname = raid ? 'RAID_GACHA_PICKUP' : 'GACHA_PICKUP_SSR';
+    const rx = new RegExp('^const ' + cname + ' = .*$', 'm');
+    if(rx.test(texts['data.js'])){
+      texts['data.js'] = texts['data.js'].replace(rx, `const ${cname} = ${jsStr(id)};`);
+      notes.push(`${raid ? 'レイド' : 'スキン'}ガチャのピックアップに設定(タイトルとガチャ画面・ポップアップの画像が切り替わります)`);
+      if(!cfg.promoImg) notes.push('※ 宣伝画像が未設定なので、画像は今のものが出ます');
+    }else notes.push(`${cname} が見つかりません`);
+  }
+  texts['sw.js'] = bumpCache(swJs);
+
+  const nm = (state.skins && state.skins.find(s=>s[0] === id));
+  lines.push('■ 送信されるファイル');
+  if(images.length) images.forEach(f=> lines.push('  ' + f.path));
+  else lines.push('  (素材の差し替えなし)');
+  lines.push('  data.js  (SKIN_MEDIA を書き換え)');
+  lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(texts['sw.js'])||[])[1]} へ)`);
+  lines.push('');
+  lines.push('■ data.js への差し替え内容');
+  if(rm.removed) lines.push(`--- SKIN_MEDIA (data.js) 今の ${id} の設定を差し替えます`);
+  rowLines(rows, lines);
+  if(notes.length){ lines.push(''); notes.forEach(n=> lines.push('※ ' + n)); }
+  return { texts, images,
+           message: `SSRスキン「${nm ? nm[1] : id}」の専用メディアを更新した(スタジオ)` };
+}
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
     const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
     const lines = [];
-    const plan = isSsr() ? await planSsr(dataJs, swJs, lines)
-                         : await planMonster(dataJs, uiJs, swJs, lines);
+    const plan = isSsrMedia() ? await planSkinMedia(dataJs, swJs, lines)
+               : isSsr()      ? await planSsr(dataJs, swJs, lines)
+                              : await planMonster(dataJs, uiJs, swJs, lines);
     state.files = plan;
     $('commitBtn').disabled = false;
     log(lines.join('\n'), 'ok');
@@ -2188,8 +2389,9 @@ async function doCommit(){
     state.files = null;
     log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
         `数分後に本番へ反映されます(GitHub Actions の Pages デプロイ)。\n` +
-        (isSsr() ? '反映されたらガチャとSSRカタログに出ます(シーズン限定にした場合を除く)。'
-                 : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
+        (isSsrMedia() ? '反映されたら演出・BGM・SE・ガチャ画面に出ます(端末のキャッシュが入れ替わるまで少しかかります)。'
+         : isSsr()    ? '反映されたらガチャとSSRカタログに出ます(シーズン限定にした場合を除く)。'
+                      : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
   }catch(e){
     setProg(null); $('commitBtn').disabled = false;
     log('コミットに失敗しました:\n' + String(e.message||e), 'ng');
@@ -2199,13 +2401,25 @@ async function doCommit(){
 async function doRevert(){
   const key = activeKey();
   if(!key) return log(isSsr() ? 'スキンidを入れてください' : 'key を入れてください', 'ng');
-  if(!confirm(`${key} の登録行を data.js / ui.js から消してコミットします。よろしいですか?`)) return;
+  const media = isSsrMedia();
+  const what = media ? `${key} の専用メディア設定(SKIN_MEDIA)`
+                     : `${key} の登録行を data.js / ui.js から`;
+  if(!confirm(`${what}消してコミットします。よろしいですか?`)) return;
   try{
     const R = repo(), B = branch();
     const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
-    const { out, counts } = revertRows({ 'data.js': dataJs, 'ui.js': uiJs }, key);
-    const total = Object.values(counts).reduce((a,b)=>a+b, 0);
-    if(!total) return log(`${key} の登録行は見つかりませんでした`, 'ng');
+    let out, total;
+    if(media){
+      // 専用メディアだけを消す(スキンそのものの登録行は残す)
+      const rm = removeSkinMediaEntry(dataJs, key);
+      if(!rm.removed) return log(`${key} の専用メディア設定は見つかりませんでした`, 'ng');
+      out = { 'data.js': rm.text }; total = 1;
+    }else{
+      const r = revertRows({ 'data.js': dataJs, 'ui.js': uiJs }, key);
+      out = r.out;
+      total = Object.values(r.counts).reduce((a,b)=>a+b, 0);
+      if(!total) return log(`${key} の登録行は見つかりませんでした`, 'ng');
+    }
     out['sw.js'] = bumpCache(swJs);
     const tree = [];
     for(const path of Object.keys(out)){
@@ -2216,7 +2430,8 @@ async function doRevert(){
     const baseCommit = await gh(`/repos/${R}/git/commits/${ref.object.sha}`);
     const newTree = await ghPost(`/repos/${R}/git/trees`, { base_tree: baseCommit.tree.sha, tree });
     const commit = await ghPost(`/repos/${R}/git/commits`, {
-      message: `モンスター「${key}」の登録を取り消した(スタジオ)`,
+      message: media ? `SSRスキン「${key}」の専用メディア設定を取り消した(スタジオ)`
+                     : `モンスター「${key}」の登録を取り消した(スタジオ)`,
       tree: newTree.sha, parents: [ref.object.sha],
     });
     await gh(`/repos/${R}/git/refs/heads/${B}`, { method:'PATCH',
@@ -2224,8 +2439,507 @@ async function doRevert(){
       headers: { 'Authorization':'Bearer '+tok(), 'Accept':'application/vnd.github+json',
                  'Content-Type':'application/json' } });
     log(`取り消しました(${total}か所)。コミット: ${commit.sha.slice(0,7)}\n` +
-        `画像ファイルは残ります(参照されないので害はありません)。`, 'ok');
+        `素材ファイルは残ります(参照されないので害はありません)。`, 'ok');
   }catch(e){ log(String(e.message||e), 'ng'); }
+}
+
+/* =====================================================================
+   色パレット(明るい色 / 暗い色 / 差し色)
+   ===================================================================== */
+// 12色相 × 3明度 + 無彩色6。タップした色を「入れる場所」の欄へ入れる
+function paletteColors(){
+  const out = [];
+  for(const l of [0.68, 0.48, 0.30])
+    for(let i=0;i<12;i++) out.push(hslHex(i*30, 0.62, l));
+  ['#ffffff','#d8dde6','#9aa3b2','#5c6474','#2f3542','#111318'].forEach(c=>out.push(c));
+  return out;
+}
+function hslHex(h, s, l){
+  const c = (1-Math.abs(2*l-1))*s, x = c*(1-Math.abs((h/60)%2-1)), m = l-c/2;
+  const t = h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return '#' + t.map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('');
+}
+let paletteTarget = 'color';
+function setPaletteTarget(t){
+  paletteTarget = t;
+  document.querySelectorAll('#paletteTarget button').forEach(b=>
+    b.classList.toggle('on', b.dataset.t === t));
+}
+function setColorField(which, hex){
+  hex = String(hex||'').trim().toLowerCase();
+  if(!/^#[0-9a-f]{6}$/.test(hex)) return;
+  $('f_' + which).value = hex;
+  $('f_' + which + 'Sw').value = hex;
+}
+// 明るい色を暗くして「暗い色」を作る(だいたい6割の明るさ)
+function deriveDark(){
+  const m = /^#([0-9a-f]{6})$/i.exec($('f_color').value.trim());
+  if(!m) return log('明るい色を #rrggbb で入れてください', 'ng');
+  const n = parseInt(m[1], 16);
+  const mul = v => Math.max(0, Math.min(255, Math.round(v*0.6)));
+  const hex = '#' + [mul(n>>16), mul((n>>8)&255), mul(n&255)]
+    .map(v=>v.toString(16).padStart(2,'0')).join('');
+  setColorField('dark', hex);
+}
+function clearAccent(){ $('f_accent').value = ''; }
+
+/* =====================================================================
+   状態変化(data.js の STATE_CHANGES へ足す)
+   条件と効果の種類は data.js の STATE_CHANGES 冒頭のコメントと同じ並び。
+   【二重に持っている箇所】片方を増やしたらもう片方も直すこと。
+   実際の数値は「今いるモンスターの設定」をリポジトリから読んで選ばせる。
+   ===================================================================== */
+const SC_TRIGGERS = [
+  ['hpBelow',          'HPが割合以下になったとき',       'しきい値(HP割合 0〜1)'],
+  ['gutsBelow',        'ガッツが割合以下になったとき',   'しきい値(ガッツ割合 0〜1)'],
+  ['onHitChance',      '技を当てたとき確率で',           '確率(0〜1)'],
+  ['onHitTakenChance', '技を受けたとき確率で',           '確率(0〜1)'],
+  ['onKill',           '撃破したとき(必ず)',           '(条件値なし)'],
+];
+const SC_EFFECTS = [
+  ['dmgMult',       '与ダメージ倍率',                       1.2],
+  ['dmgTakenMult',  '被ダメージ倍率(小さいほど硬い)',     0.5],
+  ['gutsRegenMult', 'ガッツ回復倍率',                       2],
+  ['cooldownMult',  '技のクールタイム倍率(小さいほど速い)', 0.5],
+  ['gutsCostMult',  '消費ガッツ倍率(小さいほど撃てる)',   0.5],
+  ['speedMult',     '移動速度倍率',                         1.5],
+  ['lifestealPct',  '与ダメの何割を自分のHPへ',             0.5],
+];
+function renderScEffects(){
+  $('scEffects').innerHTML = SC_EFFECTS.map(([k, jp, def])=>
+    `<div class="effrow">
+       <input type="checkbox" id="sc_on_${k}">
+       <span>${jp}</span>
+       <input type="number" step="0.05" id="sc_v_${k}" value="${def}">
+     </div>`).join('');
+}
+function scSetTriggerLabel(){
+  const t = SC_TRIGGERS.find(x=>x[0] === $('f_scTrigger').value);
+  $('f_scValLabel').textContent = t ? t[2] : 'しきい値';
+  $('f_scValue').disabled = ($('f_scTrigger').value === 'onKill');
+}
+// プリセット(=今いるモンスターの状態変化)を選んだら各欄へ流し込む
+function applyScPreset(){
+  const v = $('f_scPreset').value;
+  $('scBox').style.display = v ? 'block' : 'none';
+  if(!v || v === 'custom') return;
+  const p = (state.scPresets || []).find(x=>x.id === v);
+  if(!p) return;
+  $('f_scName').value = p.name;
+  $('f_scTrigger').value = p.trigger;
+  $('f_scValue').value = p.triggerValue == null ? '' : p.triggerValue;
+  $('f_scDur').value = p.duration;
+  $('f_scCd').value = p.cooldown;
+  for(const [k] of SC_EFFECTS){
+    const on = p.effects[k] != null;
+    $('sc_on_' + k).checked = on;
+    if(on) $('sc_v_' + k).value = p.effects[k];
+  }
+  scSetTriggerLabel();
+}
+// 画面の入力から stateChange を作る(つけないなら null)
+function collectStateChange(){
+  if(!$('f_scPreset').value) return null;
+  const effects = {};
+  for(const [k] of SC_EFFECTS) if($('sc_on_' + k).checked) effects[k] = +$('sc_v_' + k).value;
+  if(!Object.keys(effects).length) return null;
+  const trigger = $('f_scTrigger').value;
+  return {
+    name: $('f_scName').value.trim() || '覚醒',
+    duration: +$('f_scDur').value || 20,
+    cooldown: +$('f_scCd').value || 90,
+    trigger,
+    triggerValue: trigger === 'onKill' ? null : (+$('f_scValue').value || 0),
+    effects,
+  };
+}
+
+/* =====================================================================
+   SSRスキン専用メディア(昇格演出・BGM・SE・宣伝画像・ガチャ)
+   data.js の SKIN_MEDIA 1か所へ書くので、ゲーム側のコードは触らなくてよい。
+   ===================================================================== */
+const MEDIA_ITEMS = [
+  { key:'promote',        jp:'ガチャ専用ムービー(昇格演出)', kind:'promote',
+    hint:'添付した動画から「音の無い動画」と「音声」を作って、両方を送ります。' },
+  { key:'bgm.battle',     jp:'専用BGM 残り6人以上', kind:'audio' },
+  { key:'bgm.final5',     jp:'専用BGM 残り5人以下', kind:'audio' },
+  { key:'bgm.lastBattle', jp:'専用BGM 残り2人',     kind:'audio' },
+  { key:'se.tier3',       jp:'専用SE tier3技',      kind:'audio' },
+  { key:'se.hit',         jp:'専用SE 被弾時',       kind:'audio' },
+  { key:'se.kill',        jp:'専用SE キル時',       kind:'audio' },
+  { key:'se.win',         jp:'専用SE 勝利時',       kind:'audio' },
+  { key:'promoImg',       jp:'宣伝・ガチャ画面画像', kind:'image',
+    hint:'ガチャ画面の待機中と、ロビーの記念ポップアップに出ます。' },
+];
+const MEDIA_FILE_SLOT = { battle:'battle', final5:'final5', lastBattle:'lastbattle' };
+const idsafe = k => k.replace(/\./g, '_');
+// このスキンの設定の中から key(例 'bgm.final5')の値を読む/書く
+function cfgGet(cfg, key){
+  const [a, b] = key.split('.');
+  return b ? ((cfg[a] || {})[b] || null) : (cfg[a] || null);
+}
+function cfgSet(cfg, key, val){
+  const [a, b] = key.split('.');
+  if(b){ cfg[a] = cfg[a] || {}; cfg[a][b] = val; }
+  else cfg[a] = val;
+}
+// 送り先のファイル名(拡張子は作られた形式で決まる)
+function mediaPath(item, skinId, ext){
+  const [a, b] = item.key.split('.');
+  if(a === 'promote') return `video/${skinId}_promote.${ext}`;
+  if(a === 'bgm')     return `audio/bgm_${skinId}_${MEDIA_FILE_SLOT[b]}.${ext}`;
+  if(a === 'se')      return `audio/se_${skinId}_${b}.${ext}`;
+  return `images/promo_${skinId}.${ext}`;
+}
+function renderMediaItems(){
+  $('md_items').innerHTML = MEDIA_ITEMS.map(it=>{
+    const k = idsafe(it.key);
+    const accept = it.kind === 'image' ? 'image/*'
+                 : it.kind === 'promote' ? 'video/*' : 'video/*,audio/*';
+    const btn = it.kind === 'image' ? ''
+      : `<div class="btns"><button onclick="runMedia('${it.key}')">${
+           it.kind === 'promote' ? '無音動画と音声に分ける' : '動画から音声を取り出す'}</button></div>`;
+    return `<div class="mediaitem">
+      <h3>${it.jp}</h3>
+      <div class="now" id="md_now_${k}">—</div>
+      <div id="md_cpv_${k}"></div>
+      <input id="md_f_${k}" type="file" accept="${accept}">
+      ${btn}
+      <div class="hint" id="md_st_${k}">${it.hint || ''}</div>
+      <div id="md_pv_${k}"></div>
+    </div>`;
+  }).join('');
+  for(const it of MEDIA_ITEMS){
+    const k = idsafe(it.key);
+    $('md_f_' + k).addEventListener('change', ()=>{
+      if(it.kind === 'image') useImageFile(it.key);
+      else mediaStatus(it.key, '「' + (it.kind === 'promote' ? '無音動画と音声に分ける' :
+        '動画から音声を取り出す') + '」を押してください(音声ファイルを選んだ場合はそのまま使います)。');
+    });
+  }
+}
+function mediaStatus(key, text, cls){
+  const el = $('md_st_' + idsafe(key));
+  if(el) el.innerHTML = cls ? `<span class="${cls}">${text}</span>` : text;
+}
+// 今リポジトリに入っている素材を、そのままの場所から出して見せる(Pages上の相対パス)
+function mediaPreviewHtml(kind, url){
+  if(kind === 'image') return `<img src="${url}">`;
+  if(kind === 'promote') return `<video src="${url}" controls playsinline muted></video>`;
+  return `<audio src="${url}" controls></audio>`;
+}
+function renderMediaCurrent(){
+  const id = $('md_skin').value;
+  const cfg = (state.media.cur && state.media.cur[id]) || {};
+  const stamp = '?v=' + Date.now();
+  for(const it of MEDIA_ITEMS){
+    const k = idsafe(it.key);
+    const now = $('md_now_' + k), pv = $('md_cpv_' + k);
+    if(!now) continue;
+    if(it.kind === 'promote'){
+      const p = cfg.promote || {};
+      now.textContent = p.video ? `今: ${p.video}.mp4 / ${p.audio || '(音声なし)'}` : '今: 未設定';
+      pv.innerHTML = p.video ? mediaPreviewHtml('promote', '../' + p.video + '.mp4' + stamp) : '';
+      if(p.audio) pv.innerHTML += mediaPreviewHtml('audio', '../' + p.audio + stamp);
+      continue;
+    }
+    const cur = cfgGet(cfg, it.key);
+    now.textContent = cur ? '今: ' + cur : '今: 未設定';
+    pv.innerHTML = cur ? mediaPreviewHtml(it.kind, '../' + cur + stamp) : '';
+  }
+  const nm = (state.skins && state.skins.find(s=>s[0] === id));
+  $('md_cur').innerHTML = id
+    ? `<b>${nm ? nm[1] : id}</b> の設定です。差し替えたい項目だけ添付すれば、他は今のまま残ります。`
+    : '接続すると、今そのスキンに設定されているものが出ます。';
+  updatePickupNote();
+}
+// 添付された画像はそのまま使う(作り直さない)
+async function useImageFile(key){
+  const f = $('md_f_' + idsafe(key)).files[0];
+  if(!f) return;
+  const ext = (f.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+  setMediaResult(key, f, ext, `画像を送ります(${Math.round(f.size/1024)}KB)`);
+  updatePickupNote();
+}
+function setMediaResult(key, blob, ext, note){
+  const k = idsafe(key);
+  const it = MEDIA_ITEMS.find(x=>x.key === key);
+  if(state.media.urls[key]) URL.revokeObjectURL(state.media.urls[key]);
+  const url = URL.createObjectURL(blob);
+  state.media.urls[key] = url;
+  state.media.next[key] = { blob, ext };
+  $('md_pv_' + k).innerHTML = mediaPreviewHtml(it.kind === 'promote' ? 'promote' : it.kind, url);
+  mediaStatus(key, note, 'ok');
+  state.files = null; $('commitBtn').disabled = true;
+}
+const AUDIO_MIMES = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/aac',
+                     'audio/webm;codecs=opus', 'audio/webm', 'audio/mpeg'];
+const VIDEO_MIMES = ['video/mp4;codecs=avc1.42E01E', 'video/mp4',
+                     'video/webm;codecs=vp9', 'video/webm'];
+function pickMime(list){
+  if(typeof MediaRecorder === 'undefined') return '';
+  if(!MediaRecorder.isTypeSupported) return list[0];
+  return list.find(m=>MediaRecorder.isTypeSupported(m)) || '';
+}
+function extOfMime(m){
+  if(/webm/.test(m)) return 'webm';
+  if(/mpeg/.test(m)) return 'mp3';
+  if(/mp4|aac|m4a/.test(m)) return m.indexOf('video') === 0 ? 'mp4' : 'm4a';
+  return m.indexOf('video') === 0 ? 'mp4' : 'm4a';
+}
+function isAudioFile(f){ return /^audio\//.test(f.type || '') || /\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name); }
+/* 動画を1回だけ実時間で再生しながら、音声と(必要なら)映像だけを録り直す。
+   ・音声は MediaElementSource → MediaStreamDestination へ流す。スピーカーへは繋がないので
+     録っている間、端末からは音が出ない。
+   ・映像は video.captureStream() の映像トラックだけを録る(=音の無い動画になる)。
+     captureStream が無い端末では canvas へ描き写して録る。
+   iOSは「画面に無い動画」を再生できないことがあるので、動画要素は loadVideo と同じく
+   画面外へ置いたままにする。 */
+async function captureFromVideo(file, want, onProg){
+  const v = await loadVideo(file);
+  let ac = null, raf = 0;
+  try{
+    v.muted = false; v.removeAttribute('muted'); v.volume = 1;
+    const dur = v.duration || 0;
+    if(!dur) throw new Error('動画の長さが取れませんでした');
+    if(typeof MediaRecorder === 'undefined')
+      throw new Error('この端末では音声・動画を作り直せません。音声ファイルを直接添付してください。');
+    const recs = [];
+    if(want.audio){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ac = new AC();
+      if(ac.state === 'suspended') await ac.resume();
+      const dest = ac.createMediaStreamDestination();
+      ac.createMediaElementSource(v).connect(dest);
+      const mime = pickMime(AUDIO_MIMES);
+      if(!mime) throw new Error('この端末では音声を取り出せません。音声ファイルを直接添付してください。');
+      recs.push({ what:'audio', mime, rec: new MediaRecorder(dest.stream, { mimeType:mime, audioBitsPerSecond:96000 }), chunks:[] });
+    }
+    if(want.video){
+      let vs = null;
+      const cap = v.captureStream || v.mozCaptureStream;
+      if(cap){
+        const st = cap.call(v);
+        if(st && st.getVideoTracks().length) vs = new MediaStream(st.getVideoTracks());
+      }
+      if(!vs){   // captureStream が使えない端末はcanvasへ描き写す
+        const c = document.createElement('canvas');
+        c.width = v.videoWidth || 720; c.height = v.videoHeight || 1280;
+        const cx = c.getContext('2d');
+        const draw = ()=>{ try{ cx.drawImage(v, 0, 0, c.width, c.height); }catch(e){}
+          raf = requestAnimationFrame(draw); };
+        draw();
+        vs = c.captureStream(30);
+      }
+      const mime = pickMime(VIDEO_MIMES);
+      if(!mime) throw new Error('この端末では無音の動画を作れません。');
+      recs.push({ what:'video', mime, rec: new MediaRecorder(vs, { mimeType:mime, videoBitsPerSecond:2500000 }), chunks:[] });
+    }
+    recs.forEach(r=>{
+      r.rec.ondataavailable = e=>{ if(e.data && e.data.size) r.chunks.push(e.data); };
+      r.done = new Promise(res=>{ r.rec.onstop = res; });
+    });
+    try{ v.currentTime = 0; }catch(e){}
+    recs.forEach(r=> r.rec.start(250));
+    try{ await v.play(); }
+    catch(e){
+      throw new Error('動画を再生できませんでした(端末が自動再生を止めています)。' +
+                      'もう一度ボタンを押すか、音声ファイルを直接添付してください。');
+    }
+    await new Promise(res=>{
+      const tick = setInterval(()=>{
+        if(onProg && dur) onProg(Math.min(99, Math.round(v.currentTime/dur*100)));
+      }, 250);
+      const fin = ()=>{ clearInterval(tick); clearTimeout(safety); res(); };
+      v.onended = fin;
+      // 終わりのイベントが来ない動画でも必ず止める(長さ+8秒で打ち切る)
+      const safety = setTimeout(fin, dur*1000 + 8000);
+    });
+    recs.forEach(r=>{ try{ r.rec.stop(); }catch(e){} });
+    await Promise.all(recs.map(r=>r.done));
+    const out = { dur };
+    recs.forEach(r=>{ out[r.what] = { blob: new Blob(r.chunks, { type:r.mime }), ext: extOfMime(r.mime) }; });
+    return out;
+  }finally{
+    if(raf) cancelAnimationFrame(raf);
+    if(ac){ try{ ac.close(); }catch(e){} }
+    releaseVideo(v);
+  }
+}
+async function runMedia(key){
+  const it = MEDIA_ITEMS.find(x=>x.key === key);
+  const f = $('md_f_' + idsafe(key)).files[0];
+  if(!f) return mediaStatus(key, '素材を選んでください', 'ng');
+  try{
+    // すでに音声ファイルなら取り出す必要はない(そのまま送る)
+    if(it.kind === 'audio' && isAudioFile(f)){
+      const ext = (f.name.split('.').pop() || 'm4a').toLowerCase().replace(/[^a-z0-9]/g, '') || 'm4a';
+      setMediaResult(key, f, ext, `音声ファイルをそのまま送ります(${Math.round(f.size/1024)}KB)`);
+      return;
+    }
+    mediaStatus(key, '動画を再生しながら取り出しています… 0%');
+    const want = it.kind === 'promote' ? { audio:true, video:true } : { audio:true };
+    const r = await captureFromVideo(f, want, p=> mediaStatus(key, `動画を再生しながら取り出しています… ${p}%`));
+    if(it.kind === 'promote'){
+      setMediaResult(key, r.video.blob, r.video.ext,
+        `無音の動画(${Math.round(r.video.blob.size/1024)}KB)と音声(${Math.round(r.audio.blob.size/1024)}KB)ができました`);
+      // 演出が終わらないときの保険は、実際の長さ+4秒にしておく
+      state.media.next[key].dur = r.dur;
+      // 音声は別ファイルとして送るので、専用の入れ物に持っておく
+      if(state.media.urls['promote.audio']) URL.revokeObjectURL(state.media.urls['promote.audio']);
+      const au = URL.createObjectURL(r.audio.blob);
+      state.media.urls['promote.audio'] = au;
+      state.media.next['promote.audio'] = { blob: r.audio.blob, ext: r.audio.ext };
+      $('md_pv_promote').innerHTML += mediaPreviewHtml('audio', au);
+    }else{
+      setMediaResult(key, r.audio.blob, r.audio.ext,
+        `音声を取り出しました(${Math.round(r.audio.blob.size/1024)}KB・約${r.dur.toFixed(1)}秒)`);
+    }
+  }catch(e){ mediaStatus(key, String(e.message || e), 'ng'); }
+}
+// ピックアップにしたときの見え方(タイトルと画像)を出す
+function updatePickupNote(){
+  const id = $('md_skin').value;
+  const on = $('md_pickup').value === '1';
+  const raid = $('md_gachaKind').value === 'raid';
+  const nm = (state.skins && state.skins.find(s=>s[0] === id));
+  const name = nm ? nm[1] : id;
+  const now = raid ? state.pickup.raid : state.pickup.skin;
+  const nowNm = (state.skins && state.skins.find(s=>s[0] === now));
+  if(!on){
+    $('md_pickupNote').innerHTML = `今のピックアップは <b>${nowNm ? nowNm[1] : (now || '未設定')}</b> です(変更しません)。`;
+    $('md_pickupPrev').innerHTML = '';
+    return;
+  }
+  const title = raid ? `🐉 レイドガチャ(${name}ピックアップ)` : `🎰 スキンガチャ(${name}ピックアップ)`;
+  const next = state.media.next['promoImg'];
+  const cur = cfgGet((state.media.cur && state.media.cur[id]) || {}, 'promoImg');
+  const url = next ? state.media.urls['promoImg'] : (cur ? '../' + cur + '?v=' + Date.now() : null);
+  $('md_pickupNote').innerHTML =
+    `タイトルは <b>${title}</b> になります(今は ${nowNm ? nowNm[1] : (now || '未設定')})。` +
+    (url ? 'ポップアップ・ガチャ画面の画像は下のものになります。'
+         : '<span class="ng">宣伝画像がまだありません。上の「宣伝・ガチャ画面画像」を添付してください</span>');
+  $('md_pickupPrev').innerHTML = url ? `<img src="${url}" style="width:100%;border-radius:8px;margin-top:6px">` : '';
+}
+
+/* --------------------------------- SKIN_MEDIA の行を作る / 差し替える */
+function skinMediaLines(id, cfg){
+  const mark = '/*@' + id + '*/';
+  const out = [`  ${id}: { ${mark}`];
+  const p = cfg.promote || {};
+  if(p.video){
+    const bits = [`video:${jsStr(p.video)}`];
+    if(p.audio) bits.push(`audio:${jsStr(p.audio)}`);
+    bits.push(`safetyMs:${p.safetyMs || 20000}`);
+    if(p.bgmOnReveal) bits.push(`bgmOnReveal:${jsStr(p.bgmOnReveal)}`);
+    out.push(`    promote: { ${bits.join(', ')} },`);
+  }
+  for(const [group, keys] of [['bgm', ['battle','final5','lastBattle']], ['se', ['tier3','hit','kill','win']]]){
+    const g = cfg[group] || {};
+    const bits = keys.filter(k=>g[k]).map(k=>`${k}:${jsStr(g[k])}`);
+    if(bits.length) out.push(`    ${group}: { ${bits.join(', ')} },`);
+  }
+  if(cfg.promoImg) out.push(`    promoImg: ${jsStr(cfg.promoImg)},`);
+  out.push('  },');
+  return out;
+}
+function skinMediaRange(dataJs){
+  const s = dataJs.indexOf('const SKIN_MEDIA = {');
+  if(s < 0) throw new Error('data.js に SKIN_MEDIA が見つかりません');
+  const e = dataJs.indexOf('// <<AUTO:SKIN_MEDIA>>', s);
+  if(e < 0) throw new Error('data.js に目印 <<AUTO:SKIN_MEDIA>> が見つかりません');
+  return { s, e };
+}
+// 同じ @id の目印は他の表にも付いているので、消すのは SKIN_MEDIA の中だけにする
+function removeSkinMediaEntry(dataJs, id){
+  const { s, e } = skinMediaRange(dataJs);
+  const block = dataJs.slice(s, e);
+  const m = new RegExp('^  ' + id + '\\s*:\\s*\\{[\\s\\S]*?\\n  \\},\\n', 'm').exec(block);
+  if(!m) return { text: dataJs, removed: false };
+  return { text: dataJs.slice(0, s + m.index) + dataJs.slice(s + m.index + m[0].length), removed: true };
+}
+/* --------------------------------- data.js から今の設定を読む(表示用) */
+function pickObjText(text, key){
+  const m = new RegExp(key + '\\s*:\\s*\\{').exec(text || '');
+  if(!m) return null;
+  const i = m.index + m[0].length - 1;
+  let depth = 0;
+  for(let j=i;j<text.length;j++){
+    if(text[j] === '{') depth++;
+    else if(text[j] === '}'){ depth--; if(!depth) return text.slice(i+1, j); }
+  }
+  return null;
+}
+function pickStr(text, key){
+  const m = new RegExp(key + "\\s*:\\s*'([^']*)'").exec(text || '');
+  return m ? m[1] : null;
+}
+function pickNum(text, key){
+  const m = new RegExp(key + '\\s*:\\s*([0-9.]+)').exec(text || '');
+  return m ? +m[1] : null;
+}
+// '1/1.5' のような書き方も読めるようにする(数字と四則だけ通す)
+function numExpr(s){
+  s = String(s || '').trim();
+  if(!/^[-+*/(). 0-9]+$/.test(s)) return null;
+  try{ const v = Function('return (' + s + ')')(); return typeof v === 'number' && isFinite(v) ? v : null; }
+  catch(e){ return null; }
+}
+function parseSkinMedia(dataJs){
+  const out = {};
+  let block;
+  try{ const { s, e } = skinMediaRange(dataJs); block = dataJs.slice(s, e); }
+  catch(err){ return out; }
+  const rx = /^  ([a-z][a-z0-9_]*)\s*:\s*\{([\s\S]*?)\n  \},/gm;
+  let m;
+  while((m = rx.exec(block))){
+    const id = m[1], body = m[2], cfg = {};
+    const p = pickObjText(body, 'promote');
+    if(p) cfg.promote = { video: pickStr(p, 'video'), audio: pickStr(p, 'audio'),
+                          safetyMs: pickNum(p, 'safetyMs'), bgmOnReveal: pickStr(p, 'bgmOnReveal') };
+    for(const g of ['bgm', 'se']){
+      const t = pickObjText(body, g);
+      if(!t) continue;
+      const o = {};
+      (t.match(/([a-zA-Z0-9]+)\s*:\s*'[^']*'/g) || []).forEach(pair=>{
+        const k = pair.split(':')[0].trim();
+        o[k] = pickStr(pair, k);
+      });
+      if(Object.keys(o).length) cfg[g] = o;
+    }
+    const img = pickStr(body, 'promoImg');
+    if(img) cfg.promoImg = img;
+    out[id] = cfg;
+  }
+  return out;
+}
+function parseStateChanges(dataJs, labels){
+  const s = dataJs.indexOf('const STATE_CHANGES = {');
+  if(s < 0) return [];
+  const e = dataJs.indexOf('// <<AUTO:STATE_CHANGES>>', s);
+  const block = dataJs.slice(s, e > 0 ? e : dataJs.length);
+  const rx = /^  ([a-z][a-z0-9_]*)\s*:\s*\{([\s\S]*?)\n  \},/gm;
+  const out = []; const seen = {};
+  let m;
+  while((m = rx.exec(block))){
+    const el = m[1], body = m[2];
+    const eff = {};
+    const et = pickObjText(body, 'effects') || '';
+    (et.match(/([a-zA-Z]+)\s*:\s*[^,}]+/g) || []).forEach(pair=>{
+      const k = pair.split(':')[0].trim();
+      const v = numExpr(pair.slice(pair.indexOf(':') + 1));
+      if(v != null) eff[k] = Math.round(v*1000)/1000;
+    });
+    const name = pickStr(body, 'name') || '覚醒';
+    const sig = name + '|' + JSON.stringify(eff);
+    if(seen[sig]) continue;
+    seen[sig] = 1;
+    out.push({ id: el, name, duration: pickNum(body, 'duration') || 20,
+      cooldown: pickNum(body, 'cooldown') || 90, trigger: pickStr(body, 'trigger') || 'hpBelow',
+      triggerValue: pickNum(body, 'triggerValue'), effects: eff,
+      label: `${name}(${(labels && labels[el]) || el}と同じ)` });
+  }
+  return out;
 }
 
 /* ---------------------------------------------------------- 起動 */
@@ -2239,6 +2953,38 @@ function boot(){
   $('aptRow').innerHTML = STATS.map(s=>
     `<div><label>${s.slice(0,4)}</label><select id="apt_${s}">${
       RANKS.map(r=>`<option${r==='C'?' selected':''}>${r}</option>`).join('')}</select></div>`).join('');
+  // 色パレット(明るい色 / 暗い色 / 差し色)
+  $('paletteBox').innerHTML = paletteColors().map(c=>
+    `<button class="sw" style="background:${c}" data-c="${c}"></button>`).join('');
+  $('paletteBox').addEventListener('click', e=>{
+    const b = e.target.closest('.sw');
+    if(b) setColorField(paletteTarget, b.dataset.c);
+  });
+  document.querySelectorAll('#paletteTarget button').forEach(b=>
+    b.addEventListener('click', ()=> setPaletteTarget(b.dataset.t)));
+  for(const w of ['color','dark','accent']){
+    $('f_' + w + 'Sw').addEventListener('input', ()=>{ $('f_' + w).value = $('f_' + w + 'Sw').value; });
+    $('f_' + w).addEventListener('change', ()=>{
+      const v = $('f_' + w).value.trim();
+      if(/^#[0-9a-fA-F]{6}$/.test(v)) $('f_' + w + 'Sw').value = v.toLowerCase();
+    });
+  }
+  // 状態変化
+  renderScEffects();
+  $('f_scTrigger').innerHTML = SC_TRIGGERS.map(([v, jp])=>`<option value="${v}">${jp}</option>`).join('');
+  $('f_scTrigger').onchange = scSetTriggerLabel;
+  $('f_scPreset').onchange = applyScPreset;
+  scSetTriggerLabel();
+  // SSRスキン専用メディア
+  renderMediaItems();
+  $('md_skin').onchange = ()=>{
+    state.media.next = {}; state.media.urls = {};
+    MEDIA_ITEMS.forEach(it=>{ $('md_pv_' + idsafe(it.key)).innerHTML = ''; });
+    renderMediaCurrent();
+    state.files = null; $('commitBtn').disabled = true;
+  };
+  $('md_gachaKind').onchange = updatePickupNote;
+  $('md_pickup').onchange = updatePickupNote;
   const defTh = m => m === 'white' ? 20 : (m === 'chroma' ? 60 : 14);
   $('th').oninput = ()=> $('thVal').textContent = $('th').value;
   $('mode').onchange = ()=>{
@@ -2288,15 +3034,24 @@ function boot(){
   $('s_element').innerHTML = '<option value="">先にGitHubへ接続してください</option>';
   $('s_element').onchange = onElementChange;
   $('regKind').onchange = ()=>{
-    const ssr = isSsr();
+    const ssr = isSsr(), media = isSsrMedia();
     $('ssrForm').style.display = ssr ? 'block' : 'none';
-    $('specPanel').style.display = ssr ? 'none' : 'block';
-    $('movePanel').style.display = ssr ? 'none' : 'block';
-    $('regHint').textContent = ssr
+    $('mediaPanel').style.display = media ? 'block' : 'none';
+    // 専用メディアの登録では歩行・静止画・仕様・技は使わない
+    $('walkPanel').style.display = media ? 'none' : 'block';
+    $('portraitPanel').style.display = media ? 'none' : 'block';
+    $('specPanel').style.display = (ssr || media) ? 'none' : 'block';
+    $('movePanel').style.display = (ssr || media) ? 'none' : 'block';
+    $('regHint').textContent = media
+      ? 'すでにいるSSRスキンに、昇格演出・専用BGM・専用SE・宣伝画像・ガチャのピックアップを設定します。'
+      : ssr
       ? 'SSRスキンは「素体の見た目替え+tier3の技名と威力」です。技・特性・適性は素体のものを使います。'
       : '新しいモンスターとして9つの表すべてに登録します。';
+    $('revertBtn').textContent = media ? 'このスキンの専用メディア設定を取り消す'
+                                : ssr   ? 'このSSRスキンの登録を取り消す'
+                                        : 'このモンスターの登録を取り消す';
     state.files = null; $('commitBtn').disabled = true;
-    if(ssr && !state.elements) loadElementList();
+    if((ssr || media) && !state.elements) loadElementList();
   };
   $('regKind').onchange();
   const t = localStorage.getItem('aramon_gh_token');

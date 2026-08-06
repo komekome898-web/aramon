@@ -209,12 +209,20 @@ Object.keys(ELEMENTS).forEach(key=>{
 // 召喚演出のスポーン円盤石(画像)。ガチャ演出用に厚み(立体)を焼き込んだ版も持つ
 const summonDiskImg = loadMonsterImage('images/summon_disk');
 const summonDiskThickImg = loadMonsterImage('images/summon_disk_thick');
-// スキンガチャ画面のidle演出用(轟金剛ピックアップ告知画像。拡張子.jpegで配備されている)
+// ガチャ画面のidle演出用(ピックアップ告知画像)。実際のURLは SKIN_MEDIA から決まるので、
+// ピックアップの定数(GACHA_PICKUP_SSR / RAID_GACHA_PICKUP)を読める位置まで src の代入は遅らせる。
+function loadPromoImage(url){
+  const img = new Image();
+  img.loaded = false; img.failed = false; img.decoding = 'async';
+  img.onload = ()=>{ img.loaded = true; };
+  img.onerror = ()=>{ img.failed = true; };
+  if(url) img.src = url; else img.failed = true;
+  return img;
+}
 const gachaPickupPromoImg = new Image();
 gachaPickupPromoImg.loaded = false; gachaPickupPromoImg.failed = false; gachaPickupPromoImg.decoding = 'async';
 gachaPickupPromoImg.onload = ()=>{ gachaPickupPromoImg.loaded = true; };
 gachaPickupPromoImg.onerror = ()=>{ gachaPickupPromoImg.failed = true; };
-gachaPickupPromoImg.src = 'images/promo_rock_ssr.jpeg';
 // SSRスキンの手描き画像(アイコン=正面 / 試合用=後ろ姿)。
 // 実体は SSR_SKINS の宣言直後に自動生成する(この位置では SSR_SKINS がまだTDZなので中身は入れない)。
 const ssrSkinImages = {};
@@ -2098,6 +2106,38 @@ const SSR_SKINS = {
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
+/* ===== SSRスキン専用メディア(昇格演出・試合中BGM・専用SE・宣伝画像) =====
+   スキン1体ぶんの「音と映像」をこの表だけで持つ。ここに1行足せば
+     ・ガチャの昇格演出(無音の動画 + 別ファイルの音声)
+     ・そのスキンを装備している試合中のBGM3曲(残り6人以上 / 5人以下 / 2人)
+     ・専用SE4種(tier3技 / 被弾 / キル / 勝利)
+     ・ガチャ画面とロビーのポップアップに出す宣伝画像
+   がすべて有効になる(audio.js / combat.js / ui.js はこの表しか見ない)。
+   モンスター作成スタジオの「SSRスキン専用」から追記・差し替えされる。
+
+   promote.video は拡張子を書かない(.mp4 と .webm の両方を試す)。動画は音無しで、
+   音声は promote.audio を Web Audio 側で同時再生する(音付き動画はiOSで自動再生が
+   止められることがあるため)。bgmOnReveal は獲得画面で流す自分のBGM区分。   */
+const SKIN_MEDIA = {
+  rock_ssr: { /*@rock_ssr*/
+    promote: { video:'video/rock_promote', audio:'audio/rock_promote_audio.mp3',
+               safetyMs:23000, bgmOnReveal:'lastBattle' },
+    bgm: { battle:'audio/bgm_gokongo_battle.mp3', final5:'audio/bgm_gokongo_final5.mp3',
+           lastBattle:'audio/bgm_gokongo_lastbattle.mp3' },
+    promoImg: 'images/promo_rock_ssr.jpeg',
+  },
+  aqua_ssr: { /*@aqua_ssr*/
+    promote: { video:'video/aqua_promote', audio:'audio/aqua_promote_audio.mp3', safetyMs:17000 },
+    bgm: { battle:'audio/bgm_aqua_battle.mp3', final5:'audio/bgm_aqua_final5.mp3',
+           lastBattle:'audio/bgm_aqua_lastbattle.mp3' },
+  },
+  // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
+};
+// 専用SEの区分と、そのスキンに専用SEが無いときに鳴る既存のSE名
+const SKIN_SE_SLOTS = { tier3:'技(tier3)', hit:'被弾', kill:'キル', win:'勝利' };
+const SKIN_BGM_SLOTS = { battle:'残り6人以上', final5:'残り5人以下', lastBattle:'残り2人' };
+function skinMediaOf(skinId){ return (skinId && SKIN_MEDIA[skinId]) || null; }
+
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
 // SSRスキンの画像を SSR_SKINS から自動で読み込む。
 // 【重要】以前はスキンIDを手書きで並べた表だったため、新しいSSRを足したときにここへの
@@ -2151,6 +2191,20 @@ function pickGachaSsrSkinId(){
   return Math.random()<0.5 ? GACHA_PICKUP_SSR : pickRandom(others);
 }
 function pickRandom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+/* ガチャ画面の告知画像。スキンガチャ・レイドガチャそれぞれのピックアップスキンの
+   SKIN_MEDIA.promoImg を使う(未登録なら轟金剛の画像のまま)。タイトルの
+  「(◯◯ピックアップ)」も同じ定数から作るので、差し替えはこの2つの定数だけで済む。 */
+function skinPromoImgUrl(skinId){
+  const m = skinMediaOf(skinId);
+  return (m && m.promoImg) || null;
+}
+gachaPickupPromoImg.src = skinPromoImgUrl(GACHA_PICKUP_SSR) || 'images/promo_rock_ssr.jpeg';
+const raidGachaPickupPromoImg = loadPromoImage(skinPromoImgUrl(RAID_GACHA_PICKUP));
+// ガチャのタブ(スキン/レイド)に応じた告知画像を返す
+function gachaPromoImgFor(mode){
+  const img = (mode==='raid') ? raidGachaPickupPromoImg : gachaPickupPromoImg;
+  return (img && img.loaded && !img.failed) ? img : gachaPickupPromoImg;
+}
 // 1回分の抽選結果を返す。{rarity, kind:'item'|'skin', key?, skinId?}
 function gachaRollOne(guaranteedSRplus){
   const rarity = weightedPickRarity(guaranteedSRplus);

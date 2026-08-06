@@ -41,7 +41,7 @@ function audioInit(){
   ensureChocoSeBuffers();
   ensureTitleStartSeBuffer();
   ensureSsrPromoteSeBuffer();
-  ensureRockPromoteSeBuffer();
+  ensureSkinPromoteSe(typeof GACHA_PICKUP_SSR!=='undefined' ? GACHA_PICKUP_SSR : null); // ピックアップは出る確率が高いので先読みする
   ensureProvidedSeBuffers();
   ensureBgmLobbyBuffer();
 }
@@ -203,12 +203,19 @@ const seAmphiBlast    = createSeOneShot('./audio/se_amphitrite_blast.mp3', 1.2);
 const SE_VENOM_DATAURL = 'data:audio/mpeg;base64,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qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqEFaoV7CeTEZPxGR7VGlXDkTjRQGQDo922W3Gf5UttOzPG5snGmij0NxliHi+/Xi//+1j5r/umUQhKWOtB5odCCGBAPNizRYaQl1Fr+sSgjCpRaJf8dW0paxMX/9M9dMpRIwaREssSxIhCQ81lZSho1AxZKUDFitNRu+ga3D/+3TE7AAQnbbswyDXyg81mhgAGADmehRmYLKGS78nGDGGe+KUadilJlsuTUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+3TExAPPDaKYQJkVCG4CQAG++AxVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+3TEegPAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+3TEegPAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+3TEegPAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
 // 轟金剛(ゴーレムのSSR): tier3「超番長ボーナス」・勝利・キルの専用音
 const seGokongo       = createSeOneShot('./audio/se_gokongo.mp3', 1.25);
-// 轟金剛 昇格演出専用の音声(約22秒・動画rock_promote.mp4/webmと同時再生する。動画自体は音無し)
-const seRockPromote = createSeOneShot('./audio/rock_promote_audio.mp3', 1.0);
-function ensureRockPromoteSeBuffer(){ seRockPromote.ensure(); }
-// 大喰いの利世 昇格演出専用の音声(約15.6秒・動画aqua_promote.mp4/webmと同時再生する。動画自体は音無し)
-const seAquaPromote = createSeOneShot('./audio/aqua_promote_audio.mp3', 1.0);
-function ensureAquaPromoteSeBuffer(){ seAquaPromote.ensure(); }
+/* SSRスキンの昇格演出の音声(動画は音無しで、こちらを同時に鳴らす)。
+   どのスキンにどの音源を使うかは data.js の SKIN_MEDIA が持っているので、
+   ここでは表を1周してワンショットを作るだけにする(スキンを足してもこの行は増えない)。 */
+const skinPromoteSeOneShots = {};
+Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).forEach(id=>{
+  const p = SKIN_MEDIA[id].promote;
+  if(p && p.audio) skinPromoteSeOneShots[id] = createSeOneShot('./' + p.audio, 1.0);
+});
+function skinPromoteSe(skinId){ return skinPromoteSeOneShots[skinId] || null; }
+function ensureSkinPromoteSe(skinId){
+  const s = skinPromoteSeOneShots[skinId];
+  if(s) s.ensure();
+}
 // 転生演出専用の音声(約8.5秒)。演出のCSSアニメーションと尺を合わせてあるので、
 // 長さを変えるときは ui.js の REBIRTH_ANIM_MS と各キーフレームも一緒に直すこと。
 const seRebirth = createSeOneShot('./audio/rebirth_audio.mp3', 1.0);
@@ -631,6 +638,34 @@ const SE_DEFS = {
     }
   },
 };
+/* ===== SSRスキン専用SE(data.js の SKIN_MEDIA から自動登録) =====
+   SE名は 'skinSe:<スキンid>:<区分>'。SE_DEFS へ入れるので、管理者画面のSE確認にも
+   自動で並ぶ。音源が未ロード・取得失敗のときは既存のSEへ落ちるので無音にはならない。 */
+const SKIN_SE_FALLBACK = { tier3:'fire', hit:'hitTaken', kill:'kill', win:'fanfare' };
+const SKIN_SE_GAP      = { tier3:0.6,    hit:0.3,        kill:0.4,    win:1.5 };
+const skinMediaSeOneShots = {};   // SE名 -> ワンショット
+function skinMediaSeName(skinId, slot){
+  const name = `skinSe:${skinId}:${slot}`;
+  return skinMediaSeOneShots[name] ? name : null;
+}
+function ensureSkinMediaSeBuffers(skinId){
+  Object.keys(SKIN_SE_FALLBACK).forEach(slot=>{
+    const one = skinMediaSeOneShots[`skinSe:${skinId}:${slot}`];
+    if(one) one.ensure();
+  });
+}
+Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).forEach(id=>{
+  const se = SKIN_MEDIA[id].se;
+  if(!se) return;
+  Object.keys(se).forEach(slot=>{
+    if(!se[slot] || !SKIN_SE_FALLBACK[slot]) return;
+    const name = `skinSe:${id}:${slot}`;
+    const one = createSeOneShot('./' + se[slot], 1.2);
+    skinMediaSeOneShots[name] = one;
+    SE_MIN_GAP[name] = SKIN_SE_GAP[slot];
+    SE_DEFS[name] = (t, o)=>{ if(!one.play(t)) SE_DEFS[SKIN_SE_FALLBACK[slot]](t, o); };
+  });
+});
 // メニュー系の<button>タップで共通の「ポン」を鳴らす
 document.addEventListener('click', (e)=>{
   if(!e.target || !e.target.closest) return;
@@ -654,12 +689,12 @@ function bgmSetTrack(name){
   // 試合以外の画面へ移るときはintensityを持ち越さない(前の試合の決戦BGMが後を引かないように)。
   // nullは試合中の演出でも使うのでここでは触らない。
   if(name==='title' || name==='shop' || name==='training') bgmState.intensity = 0;
-  // 轟金剛(ゴーレムのSSR)・大喰いの利世(ウンディーネのSSR)装備中なら、試合開始と同時に
-  // 専用BGM3曲の読み込みを始めておく(残り人数がその区間に入ってから取りに行くと間に合わないため)
+  // 専用BGMを持つSSRスキンを装備中なら、試合開始と同時にその3曲の読み込みを始めておく
+  // (残り人数がその区間に入ってから取りに行くと間に合わないため)。専用SEも同じ理由で先読みする
   if(name==='battle' && typeof player!=='undefined' && player && typeof entitySkinId==='function'){
     const skinId = entitySkinId(player);
-    if(skinId==='rock_ssr' && typeof ensureGokongoBgmBuffers==='function') ensureGokongoBgmBuffers();
-    if(skinId==='aqua_ssr' && typeof ensureAquaBgmBuffers==='function') ensureAquaBgmBuffers();
+    ensureSkinBgmBuffers(skinId);
+    ensureSkinMediaSeBuffers(skinId);
   }
   if(actx && bgmTrackGain){
     // 切替時は短くフェードアウト→インして繋ぎ目を柔らかく
@@ -684,9 +719,7 @@ function bgmSetIntensity(n){ bgmState.intensity = n|0; }
 // 実測値(短時間LUFSの中央値): final5 -16.57 / lastbattle -16.81 / shop -16.22
 // → 差は0.35LU以内(ほぼ可聴外)だが、決戦BGM基準にきっちり揃えてある。
 // 体感でまだ差があれば、この数値だけを増減すれば調整できる(1.0=そのまま)。
-const BGM_FILE_GAIN = { final5: 1.00, lastBattle: 1.03, shop: 0.96, lobby: 1.00, training: 1.00,
-  gokongoBattle: 1.00, gokongoFinal5: 1.00, gokongoLastBattle: 1.00,
-  aquaBattle: 1.00, aquaFinal5: 1.00, aquaLastBattle: 1.00 };
+const BGM_FILE_GAIN = { final5: 1.00, lastBattle: 1.03, shop: 0.96, lobby: 1.00, training: 1.00 };
 // 曲の切替は「等パワークロスフェード」で行う。単純な線形フェードで前の曲と重ねると
 // 2曲の合計音量が一時的に1.5倍近くまで上がり、切替の瞬間だけ音が大きくなる
 // (決戦→ラストバトルの切替で実際に起きていた)。sin/cosカーブなら合計パワーが一定になる。
@@ -755,24 +788,35 @@ const bgmLastBattle = createBgmLoop('./audio/bgm_lastbattle.mp3', BGM_FILE_GAIN.
 const bgmShop       = createBgmLoop('./audio/bgm_shop.mp3',       BGM_FILE_GAIN.shop);       // ショップ画面
 const bgmLobby      = createBgmLoop('./audio/bgm_lobby.mp3',     BGM_FILE_GAIN.lobby, true);// ロビー(既定)。位置を記憶する
 const bgmTraining   = createBgmLoop('./audio/bgm_training.mp3',  BGM_FILE_GAIN.training);   // マスモンのトレーニング画面
-// 轟金剛(ゴーレムのSSR)装備時だけ使う試合中BGM3曲。通常のfinal5/lastbattleと同じ枠組みで
-// 曲だけ差し替える(bgmFileLoopTarget が game.started かつ装備スキンがrock_ssrのときだけ選ぶ)。
-// スキンを装備していないプレイヤーの起動時ロードを増やさないよう、試合開始時にだけ読み込む。
-const bgmGokongoBattle     = createBgmLoop('./audio/bgm_gokongo_battle.mp3',     BGM_FILE_GAIN.gokongoBattle);     // 残り30〜6人
-const bgmGokongoFinal5     = createBgmLoop('./audio/bgm_gokongo_final5.mp3',     BGM_FILE_GAIN.gokongoFinal5);     // 残り5〜3人(決戦)
-const bgmGokongoLastBattle = createBgmLoop('./audio/bgm_gokongo_lastbattle.mp3', BGM_FILE_GAIN.gokongoLastBattle); // 残り2人(ラストバトル)
-// 大喰いの利世(ウンディーネのSSR)装備時だけ使う試合中BGM3曲。轟金剛と全く同じ枠組みを使う。
-const bgmAquaBattle     = createBgmLoop('./audio/bgm_aqua_battle.mp3',     BGM_FILE_GAIN.aquaBattle);     // 残り6人以上
-const bgmAquaFinal5     = createBgmLoop('./audio/bgm_aqua_final5.mp3',     BGM_FILE_GAIN.aquaFinal5);     // 残り5人以下
-const bgmAquaLastBattle = createBgmLoop('./audio/bgm_aqua_lastbattle.mp3', BGM_FILE_GAIN.aquaLastBattle); // 残り2人
+/* SSRスキン装備時だけ使う試合中BGM3曲(残り6人以上 / 5人以下 / 2人)。
+   通常のfinal5/lastbattleと同じ枠組みで曲だけ差し替える。どのスキンにどの曲を使うかは
+   data.js の SKIN_MEDIA だけが持つので、スキンを足してもこの下の行は増えない。
+   スキンを装備していないプレイヤーの起動時ロードを増やさないよう、試合開始時にだけ読み込む。 */
+const skinBgmLoops = {};      // skinId -> { battle, final5, lastBattle }(登録されている区分だけ)
+Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).forEach(id=>{
+  const b = SKIN_MEDIA[id].bgm;
+  if(!b) return;
+  const set = {};
+  Object.keys(b).forEach(slot=>{ if(b[slot]) set[slot] = createBgmLoop('./' + b[slot], 1.00); });
+  if(Object.keys(set).length) skinBgmLoops[id] = set;
+});
+// 管理者画面のBGM確認や昇格演出のbgmOnRevealで使うトラック名。'skinBgm:<スキンid>:<区分>'
+function skinBgmTrack(skinId, slot){ return `skinBgm:${skinId}:${slot}`; }
+function skinBgmLoopOfTrack(name){
+  if(typeof name!=='string' || name.indexOf('skinBgm:')!==0) return null;
+  const [, id, slot] = name.split(':');
+  return (skinBgmLoops[id] && skinBgmLoops[id][slot]) || null;
+}
+function ensureSkinBgmBuffers(skinId){
+  const set = skinBgmLoops[skinId];
+  if(set) Object.keys(set).forEach(slot=> set[slot].ensure());
+}
 // 試合中に必要な2曲は先読みする(その場でのfetch+decode待ちで無音になるのを防ぐ)。
 // ショップ/トレーニング曲は画面を開いたときに読み込む。ロビー曲は起動直後に必要なのでaudioInitで読む。
 function ensureBgmFileBuffers(){ bgmFinal5.ensure(); bgmLastBattle.ensure(); }
 function ensureBgmShopBuffer(){ bgmShop.ensure(); }
 function ensureBgmLobbyBuffer(){ bgmLobby.ensure(); }
 function ensureBgmTrainingBuffer(){ bgmTraining.ensure(); }
-function ensureGokongoBgmBuffers(){ bgmGokongoBattle.ensure(); bgmGokongoFinal5.ensure(); bgmGokongoLastBattle.ensure(); }
-function ensureAquaBgmBuffers(){ bgmAquaBattle.ensure(); bgmAquaFinal5.ensure(); bgmAquaLastBattle.ensure(); }
 
 // ロビーBGMは提供音源(いちか)と従来の合成BGM(オリジナル)を切り替えられる。選択は端末に保存する
 const LOBBY_BGM_KEY = 'aramon_lobby_bgm_v1';
@@ -788,22 +832,18 @@ function setLobbyBgmMode(mode){
 }
 function toggleLobbyBgmMode(){ setLobbyBgmMode(lobbyBgmMode==='ichika' ? 'original' : 'ichika'); }
 // 実音源ループの一覧。重複再生の防御はこの配列を使った「1曲だけ」の保証で行う
-const BGM_FILE_LOOPS = [bgmFinal5, bgmLastBattle, bgmShop, bgmLobby, bgmTraining,
-  bgmGokongoBattle, bgmGokongoFinal5, bgmGokongoLastBattle,
-  bgmAquaBattle, bgmAquaFinal5, bgmAquaLastBattle];
-// 実際の試合中(game.started)に、自分のモンスターへ轟金剛(rock_ssr)を装備しているかどうか。
-// 管理者画面のBGM確認は試合を開始しないので、game.started で確認専用の final5/last2 ボタンと
-// 混線しない(装備スキンに関係なく通常曲を聴ける)。
-function gokongoBgmActive(){
-  return typeof game!=='undefined' && game.started
-      && typeof player!=='undefined' && player
-      && typeof entitySkinId==='function' && entitySkinId(player)==='rock_ssr';
-}
-// 大喰いの利世(aqua_ssr)装備時かどうか。判定方法は轟金剛と全く同じ
-function aquaBgmActive(){
-  return typeof game!=='undefined' && game.started
-      && typeof player!=='undefined' && player
-      && typeof entitySkinId==='function' && entitySkinId(player)==='aqua_ssr';
+const BGM_FILE_LOOPS = [bgmFinal5, bgmLastBattle, bgmShop, bgmLobby, bgmTraining];
+Object.keys(skinBgmLoops).forEach(id=>{
+  const set = skinBgmLoops[id];
+  Object.keys(set).forEach(slot=> BGM_FILE_LOOPS.push(set[slot]));
+});
+/* 実際の試合中(game.started)に、自分のモンスターへ専用BGMを持つSSRスキンを装備しているか。
+   管理者画面のBGM確認は試合を開始しないので、game.started で確認専用の final5/last2 ボタンと
+   混線しない(装備スキンに関係なく通常曲を聴ける)。 */
+function activeSkinBgmSet(){
+  if(!(typeof game!=='undefined' && game.started)) return null;
+  if(!(typeof player!=='undefined' && player && typeof entitySkinId==='function')) return null;
+  return skinBgmLoops[entitySkinId(player)] || null;
 }
 // いま鳴らすべき実音源ループを1つだけ返す(なければnull=合成BGMの担当)。
 // 【重要】トラック名は必ず明示で判定する。以前は「title/shop以外はすべて試合中」としていたため、
@@ -814,25 +854,18 @@ function bgmFileLoopTarget(){
   if(cur==='shop') return bgmShop;
   if(cur==='training') return bgmTraining;
   if(cur==='title') return lobbyBgmMode==='ichika' ? bgmLobby : null;
-  // 管理者画面の音声確認から直接指定されたときだけ通る名前(実際の試合では使わない)
-  if(cur==='gokongoBattle') return bgmGokongoBattle;
-  if(cur==='gokongoFinal5') return bgmGokongoFinal5;
-  if(cur==='gokongoLastBattle') return bgmGokongoLastBattle;
-  if(cur==='aquaBattle') return bgmAquaBattle;
-  if(cur==='aquaFinal5') return bgmAquaFinal5;
-  if(cur==='aquaLastBattle') return bgmAquaLastBattle;
+  // 管理者画面の音声確認・昇格演出から直接指定されたときだけ通る名前(実際の試合では使わない)
+  const direct = skinBgmLoopOfTrack(cur);
+  if(direct) return direct;
   if(cur==='battle'){
-    if(gokongoBgmActive()){
-      if(bgmState.intensity>=4 && bgmGokongoLastBattle.buffer) return bgmGokongoLastBattle;
-      if(bgmState.intensity>=3 && bgmGokongoFinal5.buffer) return bgmGokongoFinal5;
-      if(bgmState.intensity<3 && bgmGokongoBattle.buffer) return bgmGokongoBattle;
-      // 読み込みが間に合っていなければここを素通りし、下の通常曲にフォールバックする
-    }
-    if(aquaBgmActive()){
-      // 残り2人 / 残り5人以下(3〜4人含む) / 残り6人以上、の3区分は轟金剛と同じ考え方
-      if(bgmState.intensity>=4 && bgmAquaLastBattle.buffer) return bgmAquaLastBattle;
-      if(bgmState.intensity>=3 && bgmAquaFinal5.buffer) return bgmAquaFinal5;
-      if(bgmState.intensity<3 && bgmAquaBattle.buffer) return bgmAquaBattle;
+    // 専用BGMを持つスキンを装備しているなら、残り2人 / 残り5人以下(3〜4人含む) /
+    // 残り6人以上 の3区分でそのスキンの曲を選ぶ。読み込みが間に合っていなければ
+    // ここを素通りして下の通常曲にフォールバックする
+    const set = activeSkinBgmSet();
+    if(set){
+      if(bgmState.intensity>=4 && set.lastBattle && set.lastBattle.buffer) return set.lastBattle;
+      if(bgmState.intensity>=3 && set.final5 && set.final5.buffer) return set.final5;
+      if(bgmState.intensity<3 && set.battle && set.battle.buffer) return set.battle;
     }
     // ラストバトル音源が使えるならそちら、無ければ決戦BGMのまま(合成に落ちるより自然)
     if(bgmState.intensity>=4 && bgmLastBattle.buffer) return bgmLastBattle;
@@ -880,10 +913,12 @@ function bgmScheduler(){
     else if(bgmState.current==='title') bgmTitleStep(bgmState.step, bgmState.nextTime);
     else if(bgmState.current==='shop') bgmTitleStep(bgmState.step, bgmState.nextTime); // ショップ音源未ロード時はタイトル曲で代替
     else if(bgmState.current==='training') bgmTitleStep(bgmState.step, bgmState.nextTime); // トレーニング音源未ロード時も同様
-    else if(bgmState.current==='gokongoBattle' || bgmState.current==='aquaBattle') bgmBattleStep(bgmState.step, bgmState.nextTime, 0); // 管理者確認・未ロード時の代替
-    else if(bgmState.current==='gokongoFinal5' || bgmState.current==='gokongoLastBattle'
-         || bgmState.current==='aquaFinal5' || bgmState.current==='aquaLastBattle')
-      bgmEpicStep(bgmState.step, bgmState.nextTime);                                   // 同上
+    // スキン専用BGMを直接指定したとき(管理者確認)の未ロード時の代替。残り6人以上は通常の
+    // 試合曲、決戦・ラストバトルは決戦曲で鳴らす
+    else if(typeof bgmState.current==='string' && bgmState.current.indexOf('skinBgm:')===0){
+      if(bgmState.current.endsWith(':battle')) bgmBattleStep(bgmState.step, bgmState.nextTime, 0);
+      else bgmEpicStep(bgmState.step, bgmState.nextTime);
+    }
     else if(bgmState.intensity>=3) bgmEpicStep(bgmState.step, bgmState.nextTime);      // 決戦/ラストバトル音源が未ロードのとき
     else bgmBattleStep(bgmState.step, bgmState.nextTime, bgmState.intensity);
     bgmState.step++;
