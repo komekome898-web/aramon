@@ -3634,16 +3634,20 @@ function renderRaidOverlay(){
   const skinBonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
   const preview = raidRecordsDisabled();
   box.innerHTML = `
-    <div class="raid-key"><img src="images/raid_key.jpg" alt="${RAID_BOSS.name}"></div>
-    <div class="raid-lead">
-      不死身の巨竜<b>ゾッド</b>が火口に降り立った。ひとりでは到底届かない相手だ。
-      最大4人で挑み、<b>与えたダメージは全プレイヤーぶんが累計</b>される。倒しきれなくても、
-      刻んだダメージはすべて残る。
-    </div>
-    <div class="raid-rules">
-      <span>⏱ 制限時間 ${RAID_TIME_LIMIT}秒</span><span>👥 最大${RAID_CAPACITY}人</span>
-      <span>⚔ 技は最初から全解放</span><span>🛡 味方の攻撃は当たらない</span>
-      <span>⚠ 技の前に必ず予告が出る</span><span>🔥 時間が経つほど激しくなる</span>
+    <div class="raid-head-cols">
+      <div class="raid-key"><img src="images/raid_key.jpg" alt="${RAID_BOSS.name}"></div>
+      <div class="raid-head-text">
+        <div class="raid-lead">
+          不死身の巨竜<b>ゾッド</b>が火口に降り立った。ひとりでは到底届かない相手だ。
+          最大4人で挑み、<b>与えたダメージは全プレイヤーぶんが累計</b>される。倒しきれなくても、
+          刻んだダメージはすべて残る。
+        </div>
+        <div class="raid-rules">
+          <span>⏱ 制限時間 ${RAID_TIME_LIMIT}秒</span><span>👥 最大${RAID_CAPACITY}人</span>
+          <span>⚔ 技は最初から全解放</span><span>🛡 味方の攻撃は当たらない</span>
+          <span>⚠ 技の前に必ず予告が出る</span><span>🔥 時間が経つほど激しくなる</span>
+        </div>
+      </div>
     </div>
     ${preview ? '<div class="raid-preview-note">🚧 準備中: バトルが終わっても記録・報酬は残りません</div>' : ''}
     <div class="raid-sec">
@@ -3653,23 +3657,27 @@ function renderRaidOverlay(){
         <span class="raid-my-sub">（挑戦${r.runs}回 / 自己ベスト ${Math.round(r.best).toLocaleString()}）</span></div>
       <button id="raidRankOpenBtn" class="raid-rank-open-btn">🏆 レイドランキングを見る</button>
     </div>
-    <div class="raid-sec">
-      <div class="raid-sec-title">みんなの累計で全員がもらえる報酬</div>
-      <div class="raid-tier-list">${raidTierRowsHtml(RAID_TOTAL_TIERS, total, r.claimedTotal, 'total')}</div>
+    <div class="raid-cols">
+      <div class="raid-sec">
+        <div class="raid-sec-title">みんなの累計で全員がもらえる報酬</div>
+        <div class="raid-tier-list">${raidTierRowsHtml(RAID_TOTAL_TIERS, total, r.claimedTotal, 'total')}</div>
+      </div>
+      <div class="raid-sec">
+        <div class="raid-sec-title">あなたの累計でもらえる報酬</div>
+        <div class="raid-tier-list">${raidTierRowsHtml(RAID_PERSONAL_TIERS, r.dmg, r.claimedPersonal, 'personal')}</div>
+      </div>
     </div>
-    <div class="raid-sec">
-      <div class="raid-sec-title">あなたの累計でもらえる報酬</div>
-      <div class="raid-tier-list">${raidTierRowsHtml(RAID_PERSONAL_TIERS, r.dmg, r.claimedPersonal, 'personal')}</div>
-    </div>
-    ${skinBonus ? `<div class="raid-sec raid-sec-bonus">
-      <div class="raid-sec-title">✦ レイド特効スキン</div>
-      <div class="raid-bonus-text">「${skinBonus.name}」を装備してレイドに挑むと、
-      ボスへの<b>与ダメージ×${skinBonus.dmgDealt}</b>・ボスからの<b>被ダメージ×${skinBonus.dmgTaken}</b>。レイドガチャで手に入ります。</div>
-    </div>` : ''}
-    <div class="raid-sec raid-sec-bonus">
-      <div class="raid-sec-title">✦ レイドでしか手に入らないアイテム</div>
-      ${raidBaseItemLinesHtml()}
-      <div class="raid-bonus-note">基礎値は上限が無く、育成の倍率が乗る前に足されます。育てたマスモンほど1個の効きが大きくなります。</div>
+    <div class="raid-cols">
+      ${skinBonus ? `<div class="raid-sec raid-sec-bonus">
+        <div class="raid-sec-title">✦ レイド特効スキン</div>
+        <div class="raid-bonus-text">「${skinBonus.name}」を装備してレイドに挑むと、
+        ボスへの<b>与ダメージ×${skinBonus.dmgDealt}</b>・ボスからの<b>被ダメージ×${skinBonus.dmgTaken}</b>。レイドガチャで手に入ります。</div>
+      </div>` : ''}
+      <div class="raid-sec raid-sec-bonus">
+        <div class="raid-sec-title">✦ レイドでしか手に入らないアイテム</div>
+        ${raidBaseItemLinesHtml()}
+        <div class="raid-bonus-note">基礎値は上限が無く、育成の倍率が乗る前に足されます。育てたマスモンほど1個の効きが大きくなります。</div>
+      </div>
     </div>`;
   const rankBtn = document.getElementById('raidRankOpenBtn');
   if(rankBtn) rankBtn.addEventListener('click', openRaidRanking);

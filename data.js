@@ -1710,11 +1710,11 @@ const RAID_TOTAL_TIERS = [
 ];
 // 個人の累計与ダメによる報酬(上から順に、達成した一番上のものまで全部もらえる)
 const RAID_PERSONAL_TIERS = [
-  { at:   2000, gold:500,  dia:5 },
-  { at:   8000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
-  { at:  25000, gold:2500, dia:20, item:'moveTicket', n:1 },
-  { at:  60000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-  { at: 150000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+  { at:   4000, gold:500,  dia:5 },
+  { at:  16000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
+  { at:  50000, gold:2500, dia:20, item:'moveTicket', n:1 },
+  { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+  { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
 ];
 /* 1回の挑戦で得られるゴールド/ダイヤ。
    通常の試合と同じ「参加ぶん + 成果ぶん(+ 討伐ボーナス)」の形にして、
