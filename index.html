@@ -1146,16 +1146,21 @@
   </div>
 </div>
 
-<!-- 転生: 実行アニメーション(神秘的な演出 → 恩恵の表示) -->
+<!-- 転生: 実行アニメーション
+     上半分=モンスターと演出(金の繭に包まれる→閃光→「転生完了」の判子→恩恵が金文字で飛び出す)
+     下半分=ダイアログ(恩恵の明細)。上下に分けてあるのでダイアログがモンスターに被らない。 -->
 <div id="rebirthAnimOverlay" class="hidden">
   <div id="rebirthAnimSky"></div>
-  <div id="rebirthAnimCircle"></div>
-  <div id="rebirthAnimRays"></div>
-  <div id="rebirthAnimMotes"></div>
-  <div id="rebirthAnimMonster"></div>
+  <div id="rebirthAnimStage">
+    <div id="rebirthAnimRays"></div>
+    <div id="rebirthAnimDome"></div>
+    <div id="rebirthAnimMotes"></div>
+    <div id="rebirthAnimMonster"></div>
+    <div id="rebirthAnimPops"></div>
+    <div id="rebirthAnimStamp"><span>転生完了</span></div>
+  </div>
   <div id="rebirthAnimFlash"></div>
   <div id="rebirthAnimResult">
-    <div class="rb-res-title">転生完了</div>
     <div class="rb-res-name" id="rebirthAnimName"></div>
     <ul class="rb-res-list" id="rebirthAnimBenefits"></ul>
     <button id="rebirthAnimCloseBtn" class="rebirth-confirm-btn">とじる</button>

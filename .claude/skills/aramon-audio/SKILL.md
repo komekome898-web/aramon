@@ -27,6 +27,7 @@ description: 荒野モン動の音(audio.js)。BGMトラック/intensity・SE定
 - **短い内蔵SEは`createSeOneShot(dataUrl|url, gain)`。** `play()`が未ロード/音量0でfalseを返すので`if(!seXxx.play()) SE_DEFS.既定SE(t,o)`と書けば必ず鳴る。`SE_DEFS`に足せば管理者画面のSE確認に自動で載る(表示名`SE_TEST_LABELS`、間引き`SE_MIN_GAP`)。
 - **「実音源のあとに合成SEをつなげる」ときは`play(when)`に開始時刻を渡す**(ヒノトリ`fireWave`)。長さは`.dur()`。
 - **提供音源の技SEは`move.seStyle`で指定する**(`MOVE_SE_BY_STYLE`はスタイル単位なので他モンスターまで巻き込む)。現在: `darkHoust`/`requiemEnd`/`mocchiBeam`/`monta`/`crystalRain`/`fireWave`。
+- **転生演出の音声(`audio/rebirth_audio.mp3`・約8.5秒)は `seRebirth`。** 演出のCSSキーフレームと尺を合わせてあるので、**長さを変えるときは ui.js の `REBIRTH_ANIM_MS` とキーフレームも一緒に直す。** 転生の確認画面を開いた時点で `ensureRebirthSeBuffer()` が読み始める。
 - 使い分け: 1.2秒程度まではデータURIインライン、3秒級のSEと長い曲は外部mp3+fetch。
 - **提供音源の前後の無音はmp3の側で切っておく**(再生時にずらす仕組みは持たない)。`silencedetect`で位置を測り`-ss/-to`で切り直す。
 - 実音の抽出(この環境): `pip install imageio-ffmpeg`で静的ffmpeg。**Chromium(OSSビルド)はAAC不可・mp3可**なので動画音声は一旦mp3化する。整音は`loudnorm=I=-16:TP=-1.5:LRA=11`(mono 96k)。

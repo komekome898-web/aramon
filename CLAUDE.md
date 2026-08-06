@@ -34,7 +34,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 | `firebase.js` | Firebase初期化・API。`window.__aramon*`で公開(ESモジュールの橋渡し) |
 | `real3d.js` | リアルマップのWebGL描画(`window.__aramonReal3D`) |
 | `sw.js` / `manifest.json` | SW(コード=ネットワーク優先 / 素材=stale-while-revalidate) / PWAマニフェスト |
-| `audio/` | `bgm_*.mp3`(final5 / lastbattle / shop / lobby / training / gokongo・aquaの専用3曲ずつ)、`se_*.mp3`、`best_update.mp3`、昇格演出の音声。mono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11` |
+| `audio/` | `bgm_*.mp3`(final5 / lastbattle / shop / lobby / training / gokongo・aquaの専用3曲ずつ)、`se_*.mp3`、`best_update.mp3`、昇格演出・転生演出の音声。mono 96k・`loudnorm=I=-16:TP=-1.5:LRA=11` |
 | `images/` | タイトル/ロビー背景・ロゴ(`title_bg.jpg`/`title_logo.png`/`top_bg.jpg`)、`shopkeeper.png`、`promo_*`、`summon_disk*.png`、`fx_seven.png` |
 | `video/` | SSR昇格演出の動画(`*_promote.mp4`/`.webm`。音声は`audio/`側と同時再生) |
 | `monsters/*.png` | モンスター画像。静止画+歩行スプライト`<prefix>_walk_f1..8`/`_b1..8`(320px・256色透過)。仕様JSONは`monsters/specs/` |
