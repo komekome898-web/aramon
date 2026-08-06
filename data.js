@@ -744,6 +744,10 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-07', items:[
+    { t:'🎉 シーズン1が開幕しました！ 曜日ごとの変則ルールと、レイドバトル「不死のゾッド」が始まっています', g:['feature','general'] },
+    { t:'ロビーの「シーズン1」から、曜日ごとの変則ルールとレイドバトルの開催期間をカレンダーで確認できるようになりました', g:['feature'] },
+  ]},
   { date:'2026-08-06', items:[
     { t:'🎉 シーズン1がいよいよ8/7に開幕します！ 曜日ごとの変則ルール(日替わりミューテーター)が始まり、月・木は全員が技tier2スタート、火・金は試合報酬2倍、水はスポーンアイテム1.5倍。土日はその全部が同時に発動します', g:['feature','general'] },
     { t:'🐉 8/7の開幕と同時に、レイドバトル「不死のゾッド」が全プレイヤーに開放されます。期間は1週間、最大4人で挑めます', g:['feature','multi'] },
@@ -2441,6 +2445,8 @@ function raidGachaRateTable(){
      raidSsr : レイドガチャ100連の報酬。レイドガチャに出るSSR(狂戦士ガッツを含む)+ 全SRスキン */
 const CATALOG_STORAGE_KEY = 'aramon_catalogs_v1';
 const CATALOG_KINDS = ['sr', 'ssr', 'raidSsr'];
+// 画面に出す名前。ボタン・節目の説明・獲得メッセージで同じ言葉を使う
+const CATALOG_LABEL = { sr:'SRスキンカタログ', ssr:'SSRスキンカタログ', raidSsr:'SSRレイドカタログ' };
 function loadCatalogs(){
   try{
     const c=JSON.parse(localStorage.getItem(CATALOG_STORAGE_KEY))||{};
@@ -2455,7 +2461,7 @@ function catalogSkinIds(kind){
   return allColorSkinIds();
 }
 function catalogTitle(kind){
-  if(kind==='raidSsr') return 'レイドSSR/SRスキンを選ぶ';
+  if(kind==='raidSsr') return 'SSR/SRスキンを選ぶ(レイド)';
   if(kind==='ssr')     return 'SSR/SRスキンを選ぶ';
   return 'SRスキン(色違い)を選ぶ';
 }

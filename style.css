@@ -689,20 +689,24 @@
   #gachaOverlay{ position:fixed; inset:0; z-index:620; background:radial-gradient(ellipse at 50% 30%, #141a29, #070a12 70%); }
   #gachaOverlay.hidden{ display:none !important; }
   .gacha-screen{ position:absolute; inset:0; display:flex; flex-direction:column; padding:8px 14px 10px; }
-  .gacha-top{ display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-  .gacha-title{ font-family:'Russo One',sans-serif; font-size:18px; color:var(--ink); }
+  .gacha-top{ display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:10px; }
+  /* タイトルは2行(名前 / ピックアップ)。1行に伸ばすとタブとボタンを押し出して
+     切替タブが2行に折り返してしまうので、ここで縮ませて右側を守る */
+  .gacha-title{ font-family:'Russo One',sans-serif; font-size:17px; color:var(--ink);
+    min-width:0; flex:0 1 auto; line-height:1.15; }
   /* ピックアップ表記だけ虹色に光らせて目立たせる(SSR演出と同じ虹グラデーション) */
   .gacha-title-pickup{
-    margin-left:2px;
+    display:block; font-size:12.5px;
     background:linear-gradient(90deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
     background-size:200% 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent;
     animation:resultRainbow 3s linear infinite;
   }
-  .gacha-top-right{ display:flex; align-items:center; gap:10px; }
+  .gacha-top-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; white-space:nowrap; }
   .gacha-dia{ font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--ink); }
   .gacha-rates-btn{ padding:6px 12px; border-radius:16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
+    white-space:nowrap; flex-shrink:0;
     color:var(--amber); background:rgba(244,196,48,0.10); border:1px solid rgba(244,196,48,0.5); cursor:pointer; }
-  .gacha-close-btn{ width:37px; height:37px; border-radius:50%; font-size:17px; font-weight:700; color:#1a1306;
+  .gacha-close-btn{ flex-shrink:0; width:37px; height:37px; border-radius:50%; font-size:17px; font-weight:700; color:#1a1306;
     background:linear-gradient(180deg,#ffd76a,#f4c430); border:1px solid #e0af1e; cursor:pointer; display:flex; align-items:center; justify-content:center; }
   .gacha-close-btn:active{ filter:brightness(0.92); }
   .gacha-field{ position:relative; flex:1 1 auto; min-height:0; margin:6px 0; display:flex; align-items:center; justify-content:center; }
@@ -1067,6 +1071,19 @@
   .s1prev-cal-badges{ display:flex; flex-direction:column; gap:2px; }
   .s1prev-badge{ font-size:8.5px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
     border-radius:4px; padding:1px 4px; text-align:center; white-space:nowrap; }
+  /* レイド開催期間の紫バー。セルの左右へはみ出させて、隣の日と1本に繋がって見せる
+     (はみ出し量 = セルの内側余白3px + 枠線1px + セル間4pxの半分2px = 6px)。
+     期間の端と行の端では伸ばさない。 */
+  .s1prev-cal-raid{ height:13px; margin:0 -6px; padding:0 3px; overflow:hidden;
+    display:flex; align-items:center; white-space:nowrap;
+    font-size:8.5px; font-weight:800; color:#fff;
+    background:linear-gradient(180deg,#b06bff,#7b3fd4); }
+  .s1prev-cal-raid.is-first{ margin-left:0; border-radius:4px 0 0 4px; }
+  .s1prev-cal-raid.is-last{ margin-right:0; border-radius:0 4px 4px 0; }
+  .s1prev-cal-raid.is-first.is-last{ border-radius:4px; }
+  .s1prev-cal-raid.is-rowstart{ margin-left:0; }
+  .s1prev-cal-raid.is-rowend{ margin-right:0; }
+  .s1prev-badge-raid{ color:#fff; background:linear-gradient(180deg,#b06bff,#7b3fd4); }
   .s1prev-legend{ display:flex; flex-direction:column; gap:6px; width:100%; }
   .s1prev-legend-item{ display:flex; align-items:center; gap:8px; padding:6px 9px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
@@ -2446,8 +2463,9 @@
     background:linear-gradient(180deg,#ff8a5a,#e0431d); box-shadow:0 0 14px -3px rgba(255,110,60,0.9); }
 
   /* --- ガチャの切替タブ / 近日公開 --- */
-  .gacha-tabs{ display:flex; gap:5px; }
-  .gacha-tab{ padding:4px 12px; border-radius:8px 8px 0 0; cursor:pointer;
+  /* タブと右側のボタンはタイトルの長さに関係なく1行を保つ(縮ませない・折り返さない) */
+  .gacha-tabs{ display:flex; gap:5px; flex:0 0 auto; }
+  .gacha-tab{ padding:4px 12px; border-radius:8px 8px 0 0; cursor:pointer; white-space:nowrap;
     font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-bottom:none; }
   .gacha-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); border-color:#e0af1e; }
