@@ -3411,7 +3411,9 @@ function raidStart(multi, demo){
   document.getElementById('hud').classList.add('raid-mode');
   if(typeof applyHudLayout==='function') applyHudLayout();
   game.started = true;
-  bgmSetTrack(null);
+  // レイドは召喚演出を挟まないので、通常の試合(endSummonIntro)の代わりにここで戦闘BGMを鳴らす。
+  // 盛り上がりは常に「残り2人」相当(bgmUpdateBattleIntensityがレイドを固定する)。
+  bgmSetTrack('battle');
   bgmUpdateBattleIntensity(2);
   pushToast(demo ? '🐉 デモプレイ:記録は残りません' : '🐉 レイド開始！ 竜に総力戦を挑め');
 }
@@ -3837,12 +3839,23 @@ function raidShowResult(defeated, dmg, prevBest){
       ? '記録は残りません' : `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
     updateAccountBar();
   }
-  // マスモンの経験値も通常の試合と同じ経路で入れる(与ダメと生存時間から算出される)
-  if(!noRecord && typeof handleMastermonPostMatch==='function') handleMastermonPostMatch(isWin);
-  else { document.getElementById('mastermonResultInfo').classList.add('hidden');
-         document.getElementById('mastermonRegisterPrompt').classList.add('hidden'); }
-
-  document.getElementById('resultBadges').classList.add('hidden');
+  /* マスモンの経験値とシーズンSPも通常の試合と同じ式で入れる。
+     レイドの与ダメージは桁が違うので RAID_PROGRESS_DAMAGE_SCALE で釣り合わせた値を渡す
+     (ゴールド/ダイヤはレイド専用の係数で上に別計算しているのでここでは使わない)。 */
+  const progressDmg = Math.round(d * RAID_PROGRESS_DAMAGE_SCALE);
+  let seasonSp = 0;
+  if(!noRecord){
+    if(typeof handleMastermonPostMatch==='function') handleMastermonPostMatch(isWin, { damage: progressDmg });
+    if(typeof seasonOnMatchEnd==='function'){
+      seasonSp = seasonOnMatchEnd({ kills: player ? player.kills : 0, damage: progressDmg, isWin: !!isWin });
+    }
+  } else {
+    document.getElementById('mastermonResultInfo').classList.add('hidden');
+    document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
+  }
+  // レイドの自己ベストは上の見出しで出しているので、バッジはSPだけ出す
+  renderResultBadges({ kills:0, damage:0, prevBestKills:0, prevBestDamage:0,
+                       newTitles:[], elemNewTitles:[], seasonSp });
   document.getElementById('scoreSubmitStatus').textContent = '';
   setResultMonsterIcon(player ? player.element : game.selectedElement);
   setResultButtonsForRaid(true);
@@ -5729,7 +5742,10 @@ function applyMastermonToPlayer(){
 }
 
 // 試合終了後：マスモン使用時はEXP付与、未登録の種族でチャンピオンを取った場合は登録を促す
-function handleMastermonPostMatch(isWin){
+/* overrides.damage を渡すと、経験値の計算だけその値を使う。
+   レイドは与ダメージの桁が通常の試合と違うので、釣り合わせた値を渡すために使う。 */
+function handleMastermonPostMatch(isWin, overrides){
+  const dmgForExp = (overrides && overrides.damage!=null) ? Math.round(overrides.damage) : Math.round(player.damageDealt);
   const infoEl = document.getElementById('mastermonResultInfo');
   const registerEl = document.getElementById('mastermonRegisterPrompt');
   infoEl.classList.add('hidden');
@@ -5743,7 +5759,7 @@ function handleMastermonPostMatch(isWin){
       // ミューテーター「報酬2倍」(非公開中は常に1)。ゴールド/ダイヤと同様EXPにも反映
       const mutRewardMultExp = (typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1;
       const result = awardMastermonExp(mm, {
-        kills: player.kills, damage: Math.round(player.damageDealt),
+        kills: player.kills, damage: dmgForExp,
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
         xpMult: (netState.mode==='multi' ? 5 : 1) * mutRewardMultExp, // マルチプレイは獲得経験値5倍
         bonusExp: killExpBonus, // マスモン撃破ボーナス(相手レベル×係数の積み立て)
@@ -5775,7 +5791,7 @@ function handleMastermonPostMatch(isWin){
       // 登録した瞬間にこの試合の経験値を付与できるよう、成績を控えておく。
       // これをしないと「新規モンスターで試合→登録」した試合の経験値が消えてしまう。
       pendingRegisterMatchStats = {
-        kills: player.kills, damage: Math.round(player.damageDealt),
+        kills: player.kills, damage: dmgForExp,
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
         xpMult: (netState.mode==='multi' ? 5 : 1) * ((typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1),
         bonusExp: Math.round(player.mastermonKillExpBonus||0),
