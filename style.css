@@ -2268,6 +2268,96 @@
   .mm-stat-fill{ height:100%; }
 
   /* =====================================================================
+     週替わりレイド
+     ①試合中のHUD(ボス体力・残り時間・与ダメ) ②入口画面 ③ガチャの切替タブ
+     ===================================================================== */
+  /* 【必須】pointer-events は付けない。#hud の中だが触る要素が無いので素通しでよい */
+  #raidHud{ position:absolute; left:50%; top:8px; transform:translateX(-50%); z-index:24;
+    width:min(560px, calc(78 * var(--vw))); padding:5px 10px; border-radius:12px;
+    background:linear-gradient(180deg, rgba(26,10,6,0.92), rgba(8,4,3,0.92));
+    border:1px solid rgba(255,90,50,0.6); box-shadow:0 4px 18px -6px rgba(0,0,0,0.8);
+    font-family:'Rajdhani',sans-serif; }
+  #raidHud.hidden{ display:none; }
+  .raid-hud-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .raid-hud-name{ font-weight:800; font-size:12px; color:#ffb08a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .raid-hud-time{ font-family:'Share Tech Mono',monospace; font-size:13px; color:#ffd76a; flex-shrink:0; }
+  .raid-hud-bar{ height:9px; margin:3px 0 2px; border-radius:5px; overflow:hidden;
+    background:rgba(255,255,255,0.10); border:1px solid rgba(255,120,80,0.35); }
+  .raid-hud-fill{ height:100%; width:100%; transition:width .18s linear;
+    background:linear-gradient(90deg,#ff2e63,#ff6b35 55%,#ffb703); }
+  .raid-hud-bottom{ display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+    font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); }
+  #raidMyDmg{ color:#ffd76a; }
+  .raid-hud-rage{ color:#ff8a5a; }
+  .raid-hud-rage.is-max{ color:#ff3b3b; animation:raidRagePulse 0.9s ease-in-out infinite; }
+  @keyframes raidRagePulse{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.8); } }
+
+  /* --- 入口画面 --- */
+  .mastermon-confirm-box.raid-box{
+    max-width:min(900px, calc(96 * var(--vw))); width:min(900px, calc(96 * var(--vw)));
+    max-height:calc(94 * var(--vh)); position:relative;
+    display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+  .raid-title{ font-family:'Russo One',sans-serif; font-size:16px; letter-spacing:2px; color:#ffb08a;
+    text-shadow:0 0 10px rgba(255,90,50,0.6); flex-shrink:0; }
+  .raid-title-sub{ display:block; margin-top:3px; font-family:'Rajdhani',sans-serif; font-weight:600;
+    font-size:11px; letter-spacing:0.3px; color:var(--ink-dim); text-shadow:none; }
+  .raid-scroll-wrap{ position:relative; flex:1 1 auto; min-height:0; display:flex; }
+  .raid-scroll{ flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding-right:10px; text-align:left; }
+  .raid-boss-card{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px; align-items:center;
+    border:1px solid rgba(255,120,80,0.5); border-radius:10px; padding:8px;
+    background:linear-gradient(120deg, rgba(255,90,50,0.12), rgba(255,183,3,0.08)); margin-bottom:9px; }
+  .raid-boss-art img{ display:block; max-height:calc(16 * var(--vh)); max-width:calc(26 * var(--vw));
+    width:auto; height:auto; object-fit:contain; filter:drop-shadow(0 0 10px rgba(255,120,60,0.8)); }
+  .raid-boss-name{ font-family:'Russo One',sans-serif; font-size:14px; color:#ffb08a; margin-bottom:3px; }
+  .raid-boss-desc{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45; color:var(--ink);
+    -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  .raid-boss-tips{ margin-top:4px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:#ffd76a; }
+  .raid-sec{ border:1px solid var(--panel-line); border-radius:10px; padding:8px 10px; margin-bottom:8px;
+    background:rgba(255,255,255,0.04); }
+  .raid-sec-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:1px;
+    color:#ffd76a; margin-bottom:5px; display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .raid-sec-note{ font-family:'Share Tech Mono',monospace; font-size:10.5px; color:var(--ink-dim); font-weight:400; letter-spacing:0; }
+  .raid-gauge{ height:11px; border-radius:6px; overflow:hidden; margin-bottom:6px;
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,120,80,0.35); }
+  .raid-gauge-fill{ height:100%; background:linear-gradient(90deg,#ff6b35,#ffb703 70%,#ffe7a0); }
+  .raid-tier-list{ display:flex; flex-direction:column; gap:3px; }
+  .raid-tier-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:8px; align-items:center;
+    padding:4px 6px; border-radius:7px; background:rgba(255,255,255,0.03); opacity:0.55; }
+  .raid-tier-row.is-reached{ opacity:1; background:rgba(255,183,3,0.12); }
+  .raid-tier-row.is-got{ opacity:0.7; }
+  .raid-tier-at{ font-family:'Share Tech Mono',monospace; font-size:11px; color:#ffd76a; white-space:nowrap; }
+  .raid-tier-reward{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .raid-claim-btn{ padding:3px 10px; border-radius:7px; cursor:pointer; border:1px solid #e0af1e;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); white-space:nowrap; }
+  .raid-claim-state{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; color:var(--ink-dim); white-space:nowrap; }
+  .raid-sec-bonus{ border-color:rgba(255,215,120,0.55);
+    background:linear-gradient(120deg, rgba(255,214,106,0.14), rgba(255,90,50,0.10)); }
+  .raid-bonus-text{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45; color:var(--ink);
+    -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  .raid-bonus-text b{ color:#ffd76a; }
+  .raid-actions{ display:flex; gap:10px; justify-content:center; flex-shrink:0; }
+  .raid-go-btn{ padding:9px 20px; border-radius:9px; cursor:pointer; border:1px solid #e0af1e;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 0 14px -3px rgba(255,206,120,0.9); }
+  .raid-go-btn.raid-go-multi{ color:#fff; border-color:#c9401f;
+    background:linear-gradient(180deg,#ff8a5a,#e0431d); box-shadow:0 0 14px -3px rgba(255,110,60,0.9); }
+
+  /* --- ガチャの切替タブ / 近日公開 --- */
+  .gacha-tabs{ display:flex; gap:5px; }
+  .gacha-tab{ padding:4px 12px; border-radius:8px 8px 0 0; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-bottom:none; }
+  .gacha-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); border-color:#e0af1e; }
+  .gacha-soon{ margin-top:6px; padding:7px 10px; border-radius:9px; text-align:center;
+    border:1px solid rgba(255,120,80,0.6); background:rgba(40,14,8,0.9);
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11.5px; color:var(--ink); }
+  .gacha-soon b{ display:inline-block; margin:0 6px; color:#ffb08a; font-size:13px; }
+  .gacha-soon.hidden{ display:none; }
+
+  /* =====================================================================
      転生
      ①マスモンのメニューに並ぶ転生ボタン
      ②確認画面(転生前/転生後を見比べて適正を3つ選ぶ)

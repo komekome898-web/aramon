@@ -662,6 +662,8 @@ function drawMonster(e,p){
   /* ライフゲージ。自分の分は画面中央に大きく出て視界の邪魔になるため、
      モンスターの頭のすぐ上(画像の上端は原点から -radius)まで下げ、半透明にする。
      他のモンスターは今までどおり離れた位置・不透明のまま(遠くからでも読めるように)。 */
+  // レイドのボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
+  if(!e.isRaidBoss){
   const barW = e.radius*2.1;
   const hpPct = clamp(e.hp/e.maxHp,0,1);
   const selfBar = !!e.isPlayer;
@@ -672,6 +674,7 @@ function drawMonster(e,p){
   ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
   ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
   ctx.restore();
+  }
 
   if(e.stateUntil > matchTime){
     const sc = STATE_CHANGES[e.element];
@@ -3980,6 +3983,49 @@ function drawSingleAreaEffect(ae){
 }
 // 地面(z=0)の円周をワールド座標でサンプルして投影する。画面上の楕円を決め打ちせず
 // 実際のカメラ投影に従わせることで、円がきちんと地面に貼り付いて見える。
+/* レイドのボスの予告標的。範囲攻撃が出る前に、当たる場所を点滅する輪で見せる。
+   地面に貼る円は必ず1点ずつ投影する(画面上の楕円を決め打ちすると地面から浮く)。
+   扇は中心から両端へ伸ばした2本の線と、外周の弧で「どこまで届くか」を示す。      */
+function drawRaidTelegraph(){
+  if(!game.raid || typeof raidState==='undefined' || !raidState.pending) return;
+  const p = raidState.pending;
+  const left = Math.max(0, p.fireAt - matchTime);
+  // 発動が近いほど速く点滅させて「そろそろ来る」と分かるようにする
+  const blink = 0.45 + 0.45*Math.abs(Math.sin(matchTime*(left<0.6?18:9)));
+  const col = p.move.color || '#ff5d5d';
+  ctx.save();
+  ctx.globalAlpha = blink;
+  for(const m of p.marks){
+    if(m.fanDeg!=null){
+      const half = (m.fanDeg*Math.PI/180)/2;
+      const arc = [];
+      const SEG = 26;
+      for(let i=0;i<=SEG;i++){
+        const a = m.angle - half + (i/SEG)*half*2;
+        const wx = m.x+Math.cos(a)*m.r, wy = m.y+Math.sin(a)*m.r;
+        const pt = project(wx, wy, groundZAt(wx,wy));
+        arc.push(pt || null);
+      }
+      const c = project(m.x, m.y, groundZAt(m.x,m.y));
+      if(c){
+        for(const side of [arc[0], arc[arc.length-1]]){
+          if(!side) continue;
+          ctx.beginPath(); ctx.moveTo(c.x,c.y); ctx.lineTo(side.x,side.y);
+          ctx.strokeStyle=col; ctx.lineWidth=3; ctx.setLineDash([10,8]); ctx.stroke();
+        }
+      }
+      strokeProjectedRing(arc, col, 4, [12,9], renderHeavyLoad?null:{blur:14, color:col});
+    } else {
+      const pts = groundCirclePoints(m.x, m.y, m.r, 40);
+      if(pts) strokeProjectedRing(pts, col, 4, [12,9], renderHeavyLoad?null:{blur:14, color:col});
+      // 中心にも小さい輪を出して「ここに落ちる」と分かるようにする
+      const inner = groundCirclePoints(m.x, m.y, m.r*0.35, 26);
+      if(inner) strokeProjectedRing(inner, col, 2, [7,7], null);
+    }
+  }
+  ctx.restore();
+  ctx.setLineDash([]);
+}
 function groundCirclePoints(cx, cy, radius, segs){
   const pts = [];
   for(let i=0;i<segs;i++){
@@ -4554,6 +4600,7 @@ function render(){
   }
   if(!gl3d) drawTerrainDecor();
   drawZoneRings();
+  drawRaidTelegraph();
   drawLandingMarkers();
   if(introState.active) drawSummonIntro();
 
@@ -4883,6 +4930,7 @@ function updateHUD(){
   const playerAura = (typeof getMonsterAura==='function') ? getMonsterAura(player) : null;
   const accentColor = (playerAura && typeof auraColorHex==='function') ? auraColorHex(playerAura) : el.color;
   document.documentElement.style.setProperty('--accent', accentColor);
+  if(typeof updateRaidHud==='function') updateRaidHud();   // レイド中だけボスHP・残り時間・与ダメを更新
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
   document.getElementById('hpFill').style.width = hpPct+'%';
   document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');
@@ -4980,7 +5028,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });

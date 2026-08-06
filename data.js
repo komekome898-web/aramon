@@ -723,6 +723,9 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'【レイド】週替わりレイドバトルが登場します！ 巨大な竜に挑み、与えたダメージを全プレイヤーで累計します。累計の到達で全員が報酬をもらえ、自分の累計でも報酬が増えます(シーズン1開始と同時に開幕・1週間)', g:['feature'] },
+    { t:'【レイド】ボスは技を撃つ前に必ず予告が出ます。時間が経つほど攻撃が激しくなり、安全圏も狭くなります。味方の攻撃は当たらず、技は最初から全解放です', g:['feature'] },
+    { t:'【レイド】レイドガチャを追加しました(ガチャ画面のタブで切り替え)。レイド特効スキンがピックアップで、100回引くとレイド特効スキンを含むSSRスキンカタログがもらえます。シーズン1開始まで近日公開です', g:['feature'] },
     { t:'【転生】レベル100のマスモンを「転生」させられるようになりました。レベル1に戻る代わりに、ステータス上限が1099へ、HPと移動速度の基礎値が上がり、トレーニングチケットを10枚もらえます。ステータスは転生前の1/3から再スタートです', g:['feature'] },
     { t:'【転生】転生のとき、好きな適正を3つ選んで1段階ずつ上げられます。適正はAの上に「S」が加わり、Sはトレーニングでの上がり幅が最大なうえ、同じステータス値でも倍率の伸びが良くなります', g:['feature','balance'] },
     { t:'【転生】転生した回数はマスモンのカードに虹色の星で表示されます', g:['feature'] },
@@ -1452,7 +1455,166 @@ Object.keys(MAPS).forEach(key=>{
     desc: '【上級者向け・報酬2倍】'+(base.desc||'')+' 地面に丘と谷があり、技は視線の向きへ飛ぶ。',
   };
 });
+/* レイド専用マップ。カウレア火山のリアル版を流用した、狭い円形の闘技場。
+   ・real3d:true を直に付けてあるので、上のリアル版の自動生成には拾われない
+   ・raidOnly:true で通常のマップ選択・ランダム抽選から外す
+   ・火山は1つだけ。ボスの真後ろに置く(位置は world.js の genVolcanoAndLava が
+     game.raid のときだけ RAID_VOLCANO_SITE を使う)                                */
+MAPS.raid = {
+  key:'raid', label:'竜の火口', rockCount:120, decorCount:0, hasVolcano:true,
+  mountainStyle:'volcano', groundColor:'#241708',
+  previewIcon:'🐉', previewColors:['#5a2a12','#1a0c05'],
+  desc:'火口を背に巨竜が待ち構える円形の闘技場。逃げ場は狭い。',
+  real3d:true, realOf:'kaurea', real3dTerrain:'crags', real3dTheme:'kaurea',
+  raidOnly:true,
+  volcanoSites:[], lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
+  realObstacles:[{ type:'rock', w:0.55 }, { type:'basalt', w:0.45 }],
+};
 const UPWARD_BLOCK_THRESHOLD = 35;
+
+/* =====================================================================
+   週替わりレイドバトル
+
+   ・週ごとに巨大ボス1体。ソロでもマルチでも挑め、与えたダメージは全プレイヤーで
+     累計する(Firebaseの raids/{weekId})。累計の到達で全員報酬、加えて個人ランキング報酬。
+   ・ボスは既存のエンティティ+areaEffect(範囲攻撃)の仕組みだけで作ってある。
+     新しい攻撃の仕組みは足していないので、通常の試合の挙動には一切影響しない。
+   ・開催前・終了後は RAID_ACTIVE / raidOpenNow() が false になり、入口も出ない。
+   ===================================================================== */
+const RAID_ACTIVE = true;                 // レイド機能そのものの有効/無効
+const RAID_START_DATE = '2026-08-07';     // シーズン1と同時開幕
+const RAID_DURATION_DAYS = 7;             // 開催期間(1週間)
+const RAID_CAPACITY = 4;                  // 同時に挑める人数(余りはマスモン・botで補充)
+const RAID_TIME_LIMIT = 180;              // 1回の挑戦の制限時間(秒)
+const RAID_WORLD_SCALE = 0.30;            // 通常の試合に対するワールドの広さ(狭い円形闘技場)
+const RAID_ARENA_MARGIN = 260;            // 闘技場の縁と安置の外周の間隔
+
+// 開催期間。開始日00:00から RAID_DURATION_DAYS 日間
+function raidStartAt(){ return new Date(RAID_START_DATE+'T00:00:00'); }
+function raidEndAt(){ return new Date(raidStartAt().getTime() + RAID_DURATION_DAYS*86400000); }
+function raidOpenNow(){
+  if(!RAID_ACTIVE) return false;
+  const now = Date.now();
+  return now >= raidStartAt().getTime() && now < raidEndAt().getTime();
+}
+function raidSecondsLeft(){ return Math.max(0, Math.floor((raidEndAt().getTime()-Date.now())/1000)); }
+// 累計ダメージを貯める単位。開催ごとに変わるIDにしておけば、次回開催で自動的に別枠になる
+function raidWeekId(){ return 'r_'+RAID_START_DATE.replace(/-/g,''); }
+
+/* --- ボス --- */
+// 火口の位置(ワールド比率)。ボスはこの手前に立つので、見上げると必ず背後に火山が入る
+const RAID_VOLCANO_SITE = { xr:0.5, yr:0.16, radius:1500, peakBumps:7 };
+const RAID_BOSS = {
+  element:'fire',            // 見た目・オーラはドラゴンを流用する
+  name:'獄炎竜 ヴォルガノス',
+  radius: 96,                // 通常のモンスター(22前後)の4倍以上。遠くからでも分かる巨体
+  baseHp: 240000,            // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp)
+  hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
+  speed: 26,                 // ほとんど動かない(通常のドラゴンは182)
+  repositionEvery: 14,       // この秒数ごとに少しだけ位置を変える
+  repositionDist: 300,
+};
+// ボスの攻撃。すべて areaEffect(範囲攻撃)なので、当たり判定も描画も既存の仕組みに乗る。
+//   tier      : 1=通常 2=強力 3=大技。時間が経つほど上のtierが出やすくなる
+//   shape     : 'fan'(扇) / 'circle'(自分中心の円) / 'meteor'(狙った足元に落ちる円)
+//   telegraph : 予告の長さ(秒)。この間は当たらず、点線の予告と標的だけが出る
+//   warn      : 予告トーストの文言
+const RAID_BOSS_MOVES = [
+  { key:'breath',  tier:1, name:'灼熱のブレス', shape:'fan',    range:1150, fanAngleDeg:62, dmg:26, telegraph:1.30, color:'#ff6b35',
+    warn:'⚠ 灼熱のブレス — 正面から離れろ！' },
+  { key:'tail',    tier:1, name:'尾薙ぎ',       shape:'circle', range:520,  dmg:22, telegraph:1.10, color:'#ff9a5a', selfCentered:true,
+    warn:'⚠ 尾薙ぎ — 竜から離れろ！' },
+  { key:'meteor',  tier:2, name:'落炎',         shape:'meteor', range:330,  dmg:34, telegraph:1.55, color:'#ff4d2a', count:3,
+    warn:'⚠ 落炎 — 足元の輪から逃げろ！' },
+  { key:'pillar',  tier:2, name:'劫火の柱',     shape:'meteor', range:250,  dmg:30, telegraph:1.35, color:'#ffb703', count:5,
+    warn:'⚠ 劫火の柱 — 柱が5本立つ！' },
+  { key:'nova',    tier:3, name:'終焉の吐息',   shape:'fan',    range:1800, fanAngleDeg:150, dmg:48, telegraph:2.10, color:'#ff2e63',
+    warn:'☠ 終焉の吐息 — 竜の背後へ回り込め！' },
+  { key:'ring',    tier:3, name:'業火の輪',     shape:'circle', range:1250, dmg:44, telegraph:2.00, color:'#ff5d5d', selfCentered:true,
+    warn:'☠ 業火の輪 — 全力で外周へ！' },
+];
+// 攻撃の間隔。時間が経つほど短くなる(=攻撃頻度が上がる)
+const RAID_ATTACK_GAP_START = 4.6;
+const RAID_ATTACK_GAP_END   = 1.7;
+const RAID_ESCALATE_SECONDS = 150;  // この秒数かけて開幕→最高潮まで上がりきる
+// 各tierの出やすさ。開幕(from)から最高潮(to)へ徐々に移る
+const RAID_TIER_WEIGHTS = {
+  from: { 1:82, 2:16, 3:2 },
+  to:   { 1:34, 2:40, 3:26 },
+};
+// 経過時間0〜1(0=開幕 1=最高潮)。攻撃頻度・tier配分・HUDの「怒り」表示に使う
+function raidEscalation(elapsed){ return clamp((elapsed||0)/RAID_ESCALATE_SECONDS, 0, 1); }
+function raidAttackGap(elapsed){
+  return lerp(RAID_ATTACK_GAP_START, RAID_ATTACK_GAP_END, raidEscalation(elapsed));
+}
+// 経過時間に応じてtierを抽選する
+function raidPickMoveTier(elapsed){
+  const t = raidEscalation(elapsed);
+  const w = [1,2,3].map(k=> lerp(RAID_TIER_WEIGHTS.from[k], RAID_TIER_WEIGHTS.to[k], t));
+  let r = Math.random()*(w[0]+w[1]+w[2]);
+  for(let i=0;i<3;i++){ r -= w[i]; if(r<0) return i+1; }
+  return 1;
+}
+function raidPickMove(elapsed){
+  const tier = raidPickMoveTier(elapsed);
+  const pool = RAID_BOSS_MOVES.filter(m=>m.tier===tier);
+  return pool.length ? pickRandom(pool) : RAID_BOSS_MOVES[0];
+}
+// 挑戦人数に応じたボスのHP。1人でも削り切れないが、削ったぶんが累計に乗る作り
+function raidBossMaxHp(playerCount){
+  const n = Math.max(1, playerCount||1);
+  return Math.round(RAID_BOSS.baseHp * (1 + (n-1)*RAID_BOSS.hpPerExtraPlayer));
+}
+
+/* --- レイド特効スキン ---
+   ここに載せたスキンを装備していると、レイドのボス戦でだけ倍率が掛かる。
+   ツールでスキンを追加したあと1行足すだけで効く(判定は raidSkinBonus 1か所)。 */
+const RAID_EFFECT_SKINS = {
+  // <<AUTO:RAID_EFFECT_SKINS>> ここから上へ tools/studio_web.html がレイド特効スキンの行を追記する
+};
+function raidSkinBonus(skinId){ return (skinId && RAID_EFFECT_SKINS[skinId]) || null; }
+// レイドガチャのピックアップ(=レイド特効スキン)。ツールで追加したIDをここへ入れる
+const RAID_GACHA_PICKUP = 'dullahan_guts';
+// レイド最終報酬(参加者全員へ配布)のスキン
+const RAID_CLEAR_SKIN = 'fire_zodd';
+
+/* --- 報酬 ---
+   累計ダメージの到達報酬(全員共通)と、個人の与ダメ順位に応じた報酬。 */
+const RAID_TOTAL_TIERS = [
+  { at:  5000000, gold:1500, dia:20 },
+  { at: 20000000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
+  { at: 50000000, gold:5000, dia:60, item:'moveTicket', n:3 },
+  { at:120000000, gold:8000, dia:100, item:'seed_power', n:5 },
+  { at:250000000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
+];
+// 個人の累計与ダメによる報酬(上から順に、達成した一番上のものまで全部もらえる)
+const RAID_PERSONAL_TIERS = [
+  { at:   200000, gold:500,  dia:5 },
+  { at:   800000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
+  { at:  2500000, gold:2500, dia:20, item:'moveTicket', n:1 },
+  { at:  6000000, gold:4000, dia:35, item:'seed_life', n:3 },
+  { at: 15000000, gold:7000, dia:60, item:'seed_power', n:5 },
+];
+// 1回の挑戦で得られるゴールド/ダイヤ(与ダメに応じる。上限つき)
+const RAID_RUN_GOLD_PER_DMG = 1/900;
+const RAID_RUN_DIA_PER_DMG  = 1/60000;
+const RAID_RUN_GOLD_MAX = 1200;
+const RAID_RUN_DIA_MAX  = 25;
+
+/* --- 進捗の保存(端末+アカウント同期) --- */
+const RAID_STORAGE_KEY = 'aramon_raid_v1';
+function loadRaidProgress(){
+  try{
+    const r = JSON.parse(localStorage.getItem(RAID_STORAGE_KEY)) || {};
+    if(r.weekId !== raidWeekId()) return { weekId:raidWeekId(), dmg:0, runs:0, best:0, claimedTotal:{}, claimedPersonal:{} };
+    return { weekId:r.weekId, dmg:Math.max(0,r.dmg||0), runs:r.runs||0, best:Math.max(0,r.best||0),
+             claimedTotal:r.claimedTotal||{}, claimedPersonal:r.claimedPersonal||{} };
+  }catch(err){ return { weekId:raidWeekId(), dmg:0, runs:0, best:0, claimedTotal:{}, claimedPersonal:{} }; }
+}
+function saveRaidProgress(r){
+  try{ localStorage.setItem(RAID_STORAGE_KEY, JSON.stringify(r)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
 
 /* =====================================================================
    UTIL
@@ -1999,6 +2161,52 @@ function loadGachaCount(){
 function saveGachaCount(c){
   try{ localStorage.setItem(GACHA_COUNT_KEY, JSON.stringify(c)); }catch(err){}
   if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+
+/* =====================================================================
+   レイドガチャ(スキンガチャと同じ画面で切り替えて引く)
+
+   通常のスキンガチャとの違いは3つだけ。抽選そのものは gachaRollOne を共用し、
+   SSR枠に入ったときの中身と、カタログの節目だけを差し替えている。
+     ・レイド開催まで引けない(近日公開)
+     ・SSR枠はレイド特効スキンのピックアップ(全体2%のうち1%)
+     ・累計100連でレイド特効スキンを含むSSRカタログを1枚。100連以降は数えない
+   ===================================================================== */
+const RAID_GACHA_CATALOG_AT = 100;
+const RAID_GACHA_COUNT_KEY = 'aramon_raidgachacount_v1';
+// 引けるようになるのはレイド開催と同時(終了後も引けるようにしておく)
+function raidGachaOpenNow(){ return RAID_ACTIVE && Date.now() >= raidStartAt().getTime(); }
+function loadRaidGachaCount(){
+  try{ const c=JSON.parse(localStorage.getItem(RAID_GACHA_COUNT_KEY))||{}; return { count:c.count||0, done:!!c.done }; }
+  catch(err){ return { count:0, done:false }; }
+}
+function saveRaidGachaCount(c){
+  try{ localStorage.setItem(RAID_GACHA_COUNT_KEY, JSON.stringify(c)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+// レイドガチャのSSR枠。ピックアップ(レイド特効)が半分、残りは通常SSRから均等
+function pickRaidGachaSsrSkinId(){
+  const pickup = SSR_SKINS[RAID_GACHA_PICKUP] ? RAID_GACHA_PICKUP : null;
+  const others = gachaSsrSkinIds().filter(id=>id!==RAID_GACHA_PICKUP);
+  if(!pickup) return others.length ? pickRandom(others) : gachaSsrSkinIds()[0];
+  if(!others.length) return pickup;
+  return Math.random()<0.5 ? pickup : pickRandom(others);
+}
+// 提供割合表(レイドガチャ版)。SSRの内訳だけ差し替えて、他は通常ガチャと同じ
+function raidGachaRateTable(){
+  const rows = gachaRateTable();
+  const ssrRow = rows.find(r=>r.rarity==='SSR');
+  if(ssrRow){
+    const ids = gachaSsrSkinIds();
+    const others = ids.filter(id=>id!==RAID_GACHA_PICKUP);
+    const hasPickup = !!SSR_SKINS[RAID_GACHA_PICKUP];
+    const list = hasPickup && ids.indexOf(RAID_GACHA_PICKUP)<0 ? [RAID_GACHA_PICKUP, ...ids] : ids;
+    ssrRow.items = list.map(id=>({
+      label: skinMeta(id).name + (id===RAID_GACHA_PICKUP ? '(ピックアップ)' : ''),
+      pct: id===RAID_GACHA_PICKUP ? RARITIES.SSR.rate/2 : (others.length ? RARITIES.SSR.rate/2/others.length : 0),
+    }));
+  }
+  return rows;
 }
 
 // --- スキンカタログ(選んで貰える引換券) ---

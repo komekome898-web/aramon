@@ -353,6 +353,9 @@ function closeRangeDmgMult(bonusMax, hitDist, maxRange){
 }
 function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
+  // レイドでは味方どうしの攻撃は当たらない(ボスが絡む攻撃だけが通る)。
+  // ここ1か所で止めれば、弾・範囲攻撃・爆風のすべてに効く。
+  if(raidFriendlyFireBlocked(target, source)) return;
   if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
   const involvesHuman = isNetworkedHuman(target) || (source && isNetworkedHuman(source));
   const isAuthoritative = (opts && opts.authoritative) || (netState.mode==='multi' && netState.isHost);
@@ -388,7 +391,11 @@ function applyDamage(target, dmg, source, opts){
     const srcEl = ELEMENTS[source.element];
     if(srcEl.dmgDealtMod){ finalDmg *= srcEl.dmgDealtMod; }
     if(source.mastermonDmgDealtMult){ finalDmg *= source.mastermonDmgDealtMult; }
+    // レイド特効スキン: ボスへ与えるダメージだけ増える
+    if(game.raid && target.isRaidBoss) finalDmg *= raidSkinMult(source, 'dealt');
   }
+  // レイド特効スキン: ボスから受けるダメージだけ減る
+  if(game.raid && source && source.isRaidBoss) finalDmg *= raidSkinMult(target, 'taken');
   // オーラ相性: 有利技×不利モンスター=AURA_ADV_MULT倍 / 不利技×有利モンスター=AURA_DIS_MULT倍 / 技オーラ=使用者オーラ=AURA_MATCH_MULT倍(一致)
   // matchAuraは「一致」判定専用(未指定ならmoveAuraと同じ)。ゴッドライジングの光球のように
   // 有利不利の判定だけ個別色にして、一致判定は技本来のオーラ(白)のまま保ちたいケースで分離指定する。
@@ -419,6 +426,8 @@ function applyDamage(target, dmg, source, opts){
 
   if(source && source.alive && source.id!==target.id){
     source.damageDealt += finalDmg;
+    // レイド: ボスへ与えたぶんだけを貢献度として別に数える(味方への誤射は元から通らない)
+    if(game.raid && target.isRaidBoss) source.raidDamage = (source.raidDamage||0) + finalDmg;
     if(source.element==='aqua'){
       // 技によってはHP回復を増やす(大喰いの利世の鱗赫は2倍)
       const lsMult = (opts && opts.lifestealMult) || 1;
@@ -557,6 +566,7 @@ function killEntity(victim, killer){
 }
 function checkWin(){
   if(game.trainingRange) return; // 射撃訓練場は勝敗なし(的は倒しても復活する)
+  if(game.raid){ checkRaidEnd(); return; }  // レイドは「ボス撃破 or 時間切れ」で決着する
   if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
   if(game.over) return;
   const aliveList = entities.filter(e=>e.alive);
@@ -594,6 +604,9 @@ function checkWin(){
    AI
 ===================================================================== */
 function findNearestAliveEnemy(self, range){
+  // レイド中はボス以外を狙わない。射程に関係なく必ずボスを返すので、
+  // botもマスモンも一斉にボスへ向かう(味方を追いかけて散らばらない)。
+  if(game.raid && !self.isRaidBoss) return raidBossEntity();
   let best=null, bestD=range;
   for(const e of entities){
     if(e===self || !e.alive) continue;
@@ -667,6 +680,7 @@ function updateBotAI(b, dt){
   if(b.aiTimer>0) return;
   b.aiTimer = rand(0.22,0.4);
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
+  if(b.isRaidBoss){ updateRaidBossAI(b); return; }
 
   // ===== スタック検知＆迂回 =====
   // 攻撃射程内で待機している場合(=意図的に止まっている)はスタック扱いしない。
@@ -918,6 +932,136 @@ function computePlayerInput(){
   player.inputMoveY = my;
   player.facingAngle = yaw;
 }
+/* =====================================================================
+   レイドバトル
+
+   ボスは既存のエンティティ+areaEffect(範囲攻撃)だけで作ってある。新しい攻撃の
+   仕組みは足していないので、通常の試合の挙動には一切影響しない。分岐はすべて
+   game.raid の1つに寄せてある。
+   ===================================================================== */
+// レイドの進行状態。試合ごとに startRaid() が作り直す
+let raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0 };
+function raidBossEntity(){
+  if(!game.raid || raidState.bossId==null) return null;
+  const b = getEntity(raidState.bossId);
+  return (b && b.alive) ? b : null;
+}
+// レイドでは味方どうしの攻撃を通さない(ボスが撃った/ボスに当たる攻撃だけが通る)
+function raidFriendlyFireBlocked(target, source){
+  if(!game.raid || !source || source===target) return false;
+  return !target.isRaidBoss && !source.isRaidBoss;
+}
+// 装備スキンによるレイド特効(与ダメ・被ダメ)。ボスが絡む攻撃にだけ掛ける
+function raidSkinMult(entity, kind){
+  if(!game.raid || !entity) return 1;
+  const bonus = (typeof raidSkinBonus==='function') ? raidSkinBonus(entitySkinId(entity)) : null;
+  if(!bonus) return 1;
+  return (kind==='dealt' ? bonus.dmgDealt : bonus.dmgTaken) || 1;
+}
+
+/* --- ボスAI ---
+   ①予告(トースト+標的の輪)を出す ②予告時間が過ぎたら実際の範囲攻撃を出す
+   の2段構え。攻撃の間隔は時間が経つほど短くなり、高tierの技も出やすくなる。   */
+function updateRaidBossAI(b){
+  b.attackTargetId = null;
+  b.destination = null;
+  const elapsed = matchTime;
+  // ほとんど動かないが、たまに少しだけ位置を変えて棒立ちに見えないようにする
+  if(matchTime >= raidState.repositionAt){
+    raidState.repositionAt = matchTime + RAID_BOSS.repositionEvery;
+    const a = rand(0, Math.PI*2), d = rand(0, RAID_BOSS.repositionDist);
+    b.aiTargetPoint = {
+      x: clamp(b.raidHomeX + Math.cos(a)*d, 200, WORLD.w-200),
+      y: clamp(b.raidHomeY + Math.sin(a)*d, 200, WORLD.h-200),
+    };
+  }
+  if(b.aiTargetPoint && dist(b, b.aiTargetPoint) < 40) b.aiTargetPoint = null;
+
+  if(raidState.pending) return;                  // 予告中は次の攻撃を積まない
+  if(matchTime < raidState.nextAttackAt) return;
+  const move = raidPickMove(elapsed);
+  raidBeginBossAttack(b, move, elapsed);
+}
+// 予告を出す。標的(marks)は描画側が点滅する輪として描く
+function raidBeginBossAttack(b, move, elapsed){
+  const targets = entities.filter(e=>e.alive && !e.isRaidBoss);
+  const focus = targets.length ? targets[randInt(0, targets.length-1)] : null;
+  const marks = [];
+  if(move.shape==='meteor'){
+    const n = move.count || 1;
+    for(let i=0;i<n;i++){
+      // 1発目は誰かの足元、それ以降は闘技場のどこかへばらまく
+      const t = (i===0 && focus) ? focus : (targets.length ? targets[randInt(0,targets.length-1)] : null);
+      const jitter = i===0 ? 60 : 220;
+      const x = t ? t.x + rand(-jitter,jitter) : rand(300, WORLD.w-300);
+      const y = t ? t.y + rand(-jitter,jitter) : rand(300, WORLD.h-300);
+      marks.push({ x, y, r:move.range });
+    }
+  } else if(move.selfCentered){
+    marks.push({ x:b.x, y:b.y, r:move.range });
+  } else {
+    // 扇はボスの正面。予告のあいだにボスの向きが変わらないよう、ここで角度を固定する
+    const ang = focus ? angTo(b, focus) : b.facingAngle;
+    b.facingAngle = ang;
+    marks.push({ x:b.x, y:b.y, r:move.range, angle:ang, fanDeg:move.fanAngleDeg });
+  }
+  raidState.pending = { move, marks, fireAt: matchTime + move.telegraph, angle: b.facingAngle };
+  raidState.marks = marks;
+  if(typeof pushToast==='function') pushToast(move.warn);
+  playSe(move.tier>=3 ? 'godRising' : 'fireRoar');
+}
+// 予告が明けたら実際の範囲攻撃(areaEffect)を出す。当たり判定も描画も既存の仕組みに乗る
+function raidFireBossAttack(b){
+  const p = raidState.pending;
+  if(!p) return;
+  const move = p.move;
+  const mk = (x, y, kind, angle)=>{
+    const range = move.range;
+    const ae = {
+      id:nextId++, ownerId:b.id, kind, x, y, z:0, angle: angle||0,
+      dmg: move.dmg, color: move.color, range, width:0,
+      fanAngleDeg: move.fanAngleDeg||45, beamCount:0, beamSpreadDeg:0,
+      fillSpeed: Math.max(700, range/0.55), telegraphTime:0,
+      spawnAt: matchTime, hitIds:new Set(), resolved:false, style:null,
+      moveAura:'red', auraTint: move.color, raidBossAttack:true,
+    };
+    ae.life = range/ae.fillSpeed + 0.35;
+    areaEffects.push(ae);
+  };
+  if(move.shape==='meteor'){
+    for(const m of p.marks) mk(m.x, m.y, 'circle');
+  } else if(move.shape==='circle'){
+    mk(b.x, b.y, 'circle');
+  } else {
+    mk(b.x, b.y, 'fan', p.angle);
+  }
+  playSe(move.tier>=3 ? 'beam' : 'fire');
+  raidState.pending = null;
+  raidState.marks = [];
+  raidState.nextAttackAt = matchTime + raidAttackGap(matchTime);
+}
+// 毎フレームの進行(予告の消化と、ボスのガッツを常に空にしておく処理)
+function updateRaid(dt){
+  if(!game.raid) return;
+  const b = raidBossEntity();
+  if(b){
+    b.guts = 0;              // ボスはガッツを持たない(技はガッツを使わず専用AIで撃つ)
+    b.maxGuts = 0;
+  }
+  if(raidState.pending && matchTime >= raidState.pending.fireAt){
+    if(b) raidFireBossAttack(b);
+    else { raidState.pending = null; raidState.marks = []; }
+  }
+}
+// レイドの決着判定。ボス撃破か時間切れで終わる(勝敗は「ボスを倒せたか」)
+function checkRaidEnd(){
+  if(!game.raid || game.over) return;
+  const b = raidBossEntity();
+  if(!b){ finishRaid(true); return; }
+  if(matchTime >= raidState.endsAt) finishRaid(false);
+  else if(!entities.some(e=>e.alive && e.isPlayer)) finishRaid(false); // 全滅
+}
+
 // ===== 観戦(ホスト敗退後) =====
 let spectateTargetId = null;
 // 観戦対象候補: 自分以外の生存者。人間プレイヤーを先に並べ、その後にbotを並べる。
@@ -1475,7 +1619,9 @@ function update(dt){
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
+  else if(game.raid) updateRaidZone(dt);          // レイドは制限時間に合わせて線形に縮める
   else updateZone(dt);
+  if(game.raid) updateRaid(dt);                   // ボスの予告→発動と、決着の判定
   updateCameraSnap(dt);
   computePlayerInput();
 

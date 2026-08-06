@@ -17,7 +17,7 @@ let nextId = 1;
 let player = null;
 let matchTime = 0;
 let zoneState = null;
-let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false };
+let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false };
 
 /* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
    バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが
@@ -213,6 +213,24 @@ resize();
 /* =====================================================================
    ZONE
 ===================================================================== */
+/* レイドの安置。闘技場そのものが狭いので、外周ぎりぎりから始めて制限時間いっぱいで
+   中心近くまでゆっくり縮める。逃げ場が減っていくぶん、後半ほど被弾しやすくなる。 */
+function initRaidZone(){
+  const cx = WORLD.w/2, cy = WORLD.h/2;
+  const r0 = Math.min(WORLD.w, WORLD.h)/2 - RAID_ARENA_MARGIN;
+  zoneState = {
+    phaseIndex:0, timer:0, shrinking:true, hasNext:false,
+    center:{x:cx,y:cy}, radius:r0,
+    fromCenter:{x:cx,y:cy}, fromRadius:r0,
+    toCenter:{x:cx,y:cy}, toRadius:r0*0.42,
+  };
+}
+// レイドの安置の進み具合。時間に対して線形に縮めるだけ(フェーズを持たない)
+function updateRaidZone(dt){
+  zoneState.timer += dt;
+  const t = clamp(matchTime/RAID_TIME_LIMIT, 0, 1);
+  zoneState.radius = lerp(zoneState.fromRadius, zoneState.toRadius, t);
+}
 function initZone(){
   zoneState = {
     phaseIndex:0, timer:0, shrinking:false, hasNext:false,
@@ -566,8 +584,10 @@ function genVolcanoAndLava(){
   lavaZones = [];
   if(!currentMap.hasVolcano) return;
   const style = currentMap.mountainStyle||'volcano';
+  // レイドは火口を1つだけ、ボスの真後ろに置く(見上げると必ず背後に火山が入る)
+  const sites = game.raid ? [RAID_VOLCANO_SITE] : currentMap.volcanoSites;
   let complexId = 0;
-  for(const site of currentMap.volcanoSites){
+  for(const site of sites){
     complexId++;
     const cx = WORLD.w*site.xr, cy = WORLD.h*site.yr;
     const radius = site.radius;
