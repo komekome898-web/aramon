@@ -381,7 +381,8 @@ async function beginMultiplayerMatchInner(){
     boss.facingAngle = Math.PI/2;
     entities.push(boss);
     raidState = { bossId: boss.id, nextAttackAt: 3.0, pending:null, marks:[],
-                  repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT };
+                  repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT,
+                  nextLootAt: RAID_LOOT_REFILL_EVERY };
     // アイテムは火山と反対側にまとめて撒く(ソロと同じ配置。シード付きで全員一致する)
     seededSpawnLoot(lootRng, RAID_LOOT_COUNT, { x:cx, y:WORLD.h*RAID_LOOT_YR }, Math.min(WORLD.w, WORLD.h)*RAID_LOOT_SPREAD);
     document.getElementById('raidHud').classList.remove('hidden');
