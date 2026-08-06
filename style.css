@@ -2317,7 +2317,7 @@
   /* キービジュアル。横幅いっぱいに敷いて、下端を暗く落として本文へつなぐ */
   .raid-key{ position:relative; border-radius:10px; overflow:hidden; margin-bottom:8px;
     border:1px solid rgba(180,120,255,0.45); box-shadow:0 0 18px -6px rgba(150,60,240,0.8); }
-  .raid-key img{ display:block; width:100%; height:auto; max-height:calc(34 * var(--vh)); object-fit:cover; }
+  .raid-key img{ display:block; width:100%; height:auto; }
   .raid-key::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:38%;
     background:linear-gradient(180deg, rgba(8,6,12,0), rgba(8,6,12,0.85)); pointer-events:none; }
   .raid-lead{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11.5px; line-height:1.55;
