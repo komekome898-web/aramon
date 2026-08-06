@@ -492,7 +492,8 @@
       const key = String(playerName||'ゲスト').replace(/[.#$/\[\]]/g,'_').slice(0,24) || 'ゲスト';
       await runTransaction(ref(fbDb, `raids/${weekId}/players/${key}`), (cur)=>{
         const prev = (cur && cur.dmg) || 0;
-        return { name: String(playerName||'ゲスト').slice(0,24), dmg: prev + add, at: Date.now() };
+        const runs = ((cur && cur.runs) || 0) + 1;   // 参加回数ランキング用
+        return { name: String(playerName||'ゲスト').slice(0,24), dmg: prev + add, runs, at: Date.now() };
       });
     }catch(err){ console.warn('raid damage report failed', err); }
   };
@@ -506,7 +507,7 @@
     try{
       const snap = await get(query(ref(fbDb, `raids/${weekId}/players`), orderByChild('dmg'), limitToLast(topN||20)));
       const rows = [];
-      snap.forEach(ch=>{ const v = ch.val(); if(v) rows.push({ name:v.name||ch.key, dmg:v.dmg||0 }); });
+      snap.forEach(ch=>{ const v = ch.val(); if(v) rows.push({ name:v.name||ch.key, dmg:v.dmg||0, runs:v.runs||0 }); });
       return rows.sort((a,b)=>b.dmg-a.dmg);
     }catch(err){ return []; }
   };

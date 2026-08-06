@@ -2299,6 +2299,70 @@
     display:flex; flex-direction:column; gap:8px; overflow:hidden; }
   .raid-title{ font-family:'Russo One',sans-serif; font-size:16px; letter-spacing:2px; color:#ffb08a;
     text-shadow:0 0 10px rgba(255,90,50,0.6); flex-shrink:0; }
+  /* 「レイドバトル〜不死のゾッド〜」。荒々しく光る紫文字。
+     Russo One は角ばって重いので、傾け+多重グローで禍々しさを出す。 */
+  .raid-title-main{
+    font-size:21px; letter-spacing:4px; color:#e8c4ff;
+    transform:skewX(-7deg); transform-origin:left center;
+    text-shadow:
+      0 0 6px  rgba(200,120,255,0.95),
+      0 0 16px rgba(150,60,240,0.85),
+      0 0 34px rgba(110,30,200,0.7),
+      2px 2px 0 rgba(38,10,60,0.9);
+    animation:raidTitleGlow 2.6s ease-in-out infinite;
+  }
+  .raid-title-dash{ margin-left:6px; font-size:15px; letter-spacing:2px; color:#c79bff; }
+  @keyframes raidTitleGlow{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.35); } }
+
+  /* キービジュアル。横幅いっぱいに敷いて、下端を暗く落として本文へつなぐ */
+  .raid-key{ position:relative; border-radius:10px; overflow:hidden; margin-bottom:8px;
+    border:1px solid rgba(180,120,255,0.45); box-shadow:0 0 18px -6px rgba(150,60,240,0.8); }
+  .raid-key img{ display:block; width:100%; height:auto; max-height:calc(34 * var(--vh)); object-fit:cover; }
+  .raid-key::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:38%;
+    background:linear-gradient(180deg, rgba(8,6,12,0), rgba(8,6,12,0.85)); pointer-events:none; }
+  .raid-lead{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11.5px; line-height:1.55;
+    color:var(--ink); margin-bottom:7px; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  .raid-lead b{ color:#e8c4ff; }
+  .raid-rules{ display:flex; flex-wrap:wrap; gap:4px 6px; margin-bottom:9px; }
+  .raid-rules span{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:var(--ink);
+    padding:2px 7px; border-radius:7px; background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); }
+  .raid-preview-note{ margin-bottom:9px; padding:6px 9px; border-radius:8px;
+    border:1px solid rgba(255,183,3,0.55); background:rgba(255,183,3,0.10);
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:#ffd76a; }
+  .raid-gauge-boss .raid-gauge-fill{ background:linear-gradient(90deg,#8a3bd8,#c86bff 60%,#e8c4ff); }
+  .raid-my-dmg{ margin-top:6px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11.5px; color:var(--ink); }
+  .raid-my-dmg b{ font-family:'Share Tech Mono',monospace; font-size:15px; color:#ffd76a; }
+  .raid-my-sub{ font-size:10px; color:var(--ink-dim); font-weight:600; }
+  .raid-rank-open-btn{ margin-top:7px; width:100%; padding:7px 12px; border-radius:9px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:1px;
+    color:#efe2ff; background:linear-gradient(180deg, rgba(150,60,240,0.35), rgba(90,30,160,0.35));
+    border:1px solid rgba(190,130,255,0.7); }
+
+  /* --- ランキング --- */
+  .raid-rank-tabs{ display:flex; gap:6px; flex-shrink:0; }
+  .raid-rank-tab{ flex:1 1 0; padding:6px 10px; border-radius:9px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); }
+  .raid-rank-tab.active{ color:#efe2ff; border-color:rgba(190,130,255,0.8);
+    background:linear-gradient(180deg, rgba(150,60,240,0.4), rgba(90,30,160,0.4)); }
+  .raid-rank-list{ display:flex; flex-direction:column; gap:3px; }
+  .raid-rank-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:8px; align-items:center;
+    padding:5px 8px; border-radius:8px; background:rgba(255,255,255,0.04); }
+  .raid-rank-row.is-me{ border:1px solid rgba(255,215,120,0.7); background:rgba(255,183,3,0.12); }
+  .raid-rank-no{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink-dim); min-width:22px; text-align:center; }
+  .raid-rank-name{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .raid-rank-val{ font-family:'Share Tech Mono',monospace; font-size:13px; color:#ffd76a; white-space:nowrap; }
+
+  /* プレイモードのレイド欄 */
+  .mode-tab-raid.active{ color:#efe2ff; border-color:rgba(190,130,255,0.9);
+    background:linear-gradient(180deg, rgba(150,60,240,0.5), rgba(90,30,160,0.5)); }
+  .raid-soon-pop{ position:absolute; right:-6px; top:-9px; padding:1px 6px; border-radius:7px;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:9px; letter-spacing:0.5px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 1px 4px rgba(0,0,0,0.5); }
+  .raid-soon-pop.hidden{ display:none; }
+  .raid-mode-note{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45;
+    color:var(--ink-dim); -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   .raid-title-sub{ display:block; margin-top:3px; font-family:'Rajdhani',sans-serif; font-weight:600;
     font-size:11px; letter-spacing:0.3px; color:var(--ink-dim); text-shadow:none; }
   .raid-scroll-wrap{ position:relative; flex:1 1 auto; min-height:0; display:flex; }

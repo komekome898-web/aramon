@@ -255,6 +255,16 @@
           <button class="mode-tab" data-mode="multi">みんなと対戦</button>
           <span class="multi-xp-pop">経験値<br>5倍！</span>
         </div>
+        <div class="mode-tab-wrap">
+          <button class="mode-tab mode-tab-raid" data-mode="raid">レイドバトル</button>
+          <span class="raid-soon-pop" id="raidModePop">準備中</span>
+        </div>
+      </div>
+      <!-- レイドを選んだときだけ出す案内(準備中は開発アカウント以外は入れない) -->
+      <div id="raidModeOptions" class="hidden">
+        <div class="pick-label" style="margin-top:10px;">週替わりの巨大ボスに挑む協力バトル(最大4人)</div>
+        <div id="raidModeNote" class="raid-mode-note"></div>
+        <button id="raidModeOpenBtn" class="raid-go-btn" style="margin-top:8px;">🐉 レイドバトルへ</button>
       </div>
       <div id="multiOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBot・マスモンで補完)</div>
@@ -1159,7 +1169,7 @@
 <div id="raidOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box raid-box">
     <button class="overlay-close-btn" id="raidCloseBtn">✕</button>
-    <div class="raid-title">🐉 週替わりレイド<span class="raid-title-sub" id="raidTitleSub"></span></div>
+    <div class="raid-title raid-title-main">レイドバトル<span class="raid-title-dash">〜不死のゾッド〜</span><span class="raid-title-sub" id="raidTitleSub"></span></div>
     <div class="raid-scroll-wrap">
       <div class="raid-scroll" id="raidScroll"></div>
       <div class="mm-scrollbar hidden" id="raidScrollbar"><div class="mm-scrollbar-thumb"></div></div>
@@ -1167,6 +1177,22 @@
     <div class="raid-actions">
       <button id="raidSoloBtn" class="raid-go-btn">⚔ 1人で挑む</button>
       <button id="raidMultiBtn" class="raid-go-btn raid-go-multi">👥 みんなで挑む(最大4人)</button>
+    </div>
+  </div>
+</div>
+
+<!-- レイド: ランキング(総ダメージ / 参加回数) -->
+<div id="raidRankOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box raid-box">
+    <button class="overlay-close-btn" id="raidRankCloseBtn">✕</button>
+    <div class="raid-title raid-title-main">レイドランキング<span class="raid-title-sub" id="raidRankSub"></span></div>
+    <div id="raidRankTabs" class="raid-rank-tabs">
+      <button class="raid-rank-tab active" data-rk="dmg">総ダメージ</button>
+      <button class="raid-rank-tab" data-rk="runs">参加回数</button>
+    </div>
+    <div class="raid-scroll-wrap">
+      <div class="raid-scroll" id="raidRankScroll"></div>
+      <div class="mm-scrollbar hidden" id="raidRankScrollbar"><div class="mm-scrollbar-thumb"></div></div>
     </div>
   </div>
 </div>

@@ -737,6 +737,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'【レイド】プレイモードに「レイドバトル」を追加しました。専用画面からボスの残り体力・自分の累計ダメージ・レイドランキング(総ダメージ／参加回数)が見られます', g:['feature'] },
     { t:'【レイド】最大4人で同時に挑めるようになりました(ロビーのレイド→「みんなで挑む」)。空いた枠はマスモン・botが埋めます', g:['feature','multi'] },
     { t:'【レイド】ボスの攻撃の威力と範囲を大幅に強化しました。予告は今までどおり出るので、見てから逃げてください', g:['balance'] },
     { t:'【レイド】レイド中のボスは白オーラになりました', g:['av'] },
@@ -1501,6 +1502,11 @@ const UPWARD_BLOCK_THRESHOLD = 35;
      新しい攻撃の仕組みは足していないので、通常の試合の挙動には一切影響しない。
    ・開催前・終了後は RAID_ACTIVE / raidOpenNow() が false になり、入口も出ない。
    ===================================================================== */
+/* 公開前は「準備中」。RAID_PREVIEW_ACCOUNTS のアカウントだけが入れて、
+   バトルが終わっても記録も報酬も一切残さない(公開時に全員が同じ位置から始められるように)。
+   公開するときは RAID_PREVIEW を false にするだけでよい。                        */
+const RAID_PREVIEW = true;
+const RAID_PREVIEW_ACCOUNTS = ['おりょう', 'さびょう'];
 const RAID_ACTIVE = true;                 // レイド機能そのものの有効/無効
 const RAID_START_DATE = '2026-08-07';     // シーズン1と同時開幕
 const RAID_DURATION_DAYS = 7;             // 開催期間(1週間)
@@ -1517,6 +1523,14 @@ function raidOpenNow(){
   const now = Date.now();
   return now >= raidStartAt().getTime() && now < raidEndAt().getTime();
 }
+// 今このアカウントがレイドに入れるか。準備中は開発アカウントだけ
+function raidPlayable(accountName){
+  if(!RAID_ACTIVE) return false;
+  if(!RAID_PREVIEW) return raidOpenNow();
+  return RAID_PREVIEW_ACCOUNTS.indexOf(accountName||'') >= 0;
+}
+// 準備中は記録も報酬も残さない(デモプレイと同じ扱い)
+function raidRecordsDisabled(){ return RAID_PREVIEW; }
 function raidSecondsLeft(){ return Math.max(0, Math.floor((raidEndAt().getTime()-Date.now())/1000)); }
 // 累計ダメージを貯める単位。開催ごとに変わるIDにしておけば、次回開催で自動的に別枠になる
 function raidWeekId(){ return 'r_'+RAID_START_DATE.replace(/-/g,''); }
