@@ -745,6 +745,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'【レイド】レイド報酬に新アイテム「生命の果実」(ライフの基礎値+5)と「加速剤」(移動速度の基礎値+5)を追加しました。基礎値には上限が無く、育成の倍率が乗る前に足されるので、育てたマスモンほど1個の効きが大きくなります', g:['feature','balance'] },
+    { t:'【レイド】これまでレイド報酬だったステータスの実を、生命の果実×1・加速剤×1に変更しました', g:['balance'] },
     { t:'バトル中に突然エラーが出て操作できなくなる/モンスターもアイテムも何も映らなくなる不具合を修正しました(「我慢」などの状態変化が出ているモンスターを描くところで落ちていました)', g:['fix'] },
     { t:'描画のどこかで問題が起きても、その1個だけを飛ばして残りは描き続けるようにしました(画面が丸ごと真っさらになるのを防ぎます)', g:['fix'] },
     { t:'【レイド】レイドバトルを選んだあとロビーのプレイモードが「みんなで対戦」と表示されていた不具合を修正しました', g:['fix'] },
@@ -1137,10 +1139,22 @@ function mastermonApt(mm){
 }
 // このマスモンのステータス上限(転生していれば引き上がる)
 function mastermonStatCap(mm){ return mastermonRebirthCount(mm)>0 ? REBIRTH_STAT_CAP : MASTERMON_STAT_CAP; }
-// 転生による種族基礎値への加算(HP・移動速度)
-function mastermonRebirthBaseBonus(mm){
+/* 種族の基礎値(HP・移動速度)への加算。内訳は2つ:
+     ・転生の回数ぶん(REBIRTH_BASE_*_BONUS)
+     ・基礎値アイテム(生命の果実・加速剤)を使ったぶん(mm.baseHp / mm.baseSpd)
+   どちらも「無ければ0」で読めるので、既存のセーブデータをそのまま扱える。
+   ここ1か所を通せば表示(mmEffectiveStats)も実戦力(applyMastermonStatsToEntity)も揃う。 */
+function mastermonBaseBonus(mm){
   const n = mastermonRebirthCount(mm);
-  return { hp: n*REBIRTH_BASE_HP_BONUS, speed: n*REBIRTH_BASE_SPEED_BONUS };
+  const itemHp    = safeBaseAmount(mm && mm.baseHp);
+  const itemSpeed = safeBaseAmount(mm && mm.baseSpd);
+  return { hp: n*REBIRTH_BASE_HP_BONUS + itemHp, speed: n*REBIRTH_BASE_SPEED_BONUS + itemSpeed };
+}
+// 壊れたセーブや相手から届いた変な値でNaNにならないようにする。
+// NaNのままだとHPが数値でなくなり、ダメージ計算もゲージも壊れて試合が続けられなくなる。
+function safeBaseAmount(v){
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
 function canRebirthMastermon(mm){ return !!mm && (mm.level||0) >= REBIRTH_LEVEL_REQ; }
 // 転生を実行した結果の新しいマスモンを返す(元のオブジェクトは書き換えない)。
@@ -1654,7 +1668,8 @@ const RAID_TOTAL_TIERS = [
   { at:  5000000, gold:1500, dia:20 },
   { at: 20000000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
   { at: 50000000, gold:5000, dia:60, item:'moveTicket', n:3 },
-  { at:120000000, gold:8000, dia:100, item:'seed_power', n:5 },
+  // レイドでしか手に入らない基礎値アイテム(生命の果実・加速剤)を目玉にする
+  { at:120000000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
   { at:250000000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
 ];
 // 個人の累計与ダメによる報酬(上から順に、達成した一番上のものまで全部もらえる)
@@ -1662,8 +1677,8 @@ const RAID_PERSONAL_TIERS = [
   { at:   200000, gold:500,  dia:5 },
   { at:   800000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
   { at:  2500000, gold:2500, dia:20, item:'moveTicket', n:1 },
-  { at:  6000000, gold:4000, dia:35, item:'seed_life', n:3 },
-  { at: 15000000, gold:7000, dia:60, item:'seed_power', n:5 },
+  { at:  6000000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+  { at: 15000000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
 ];
 // 1回の挑戦で得られるゴールド/ダイヤ(与ダメに応じる。上限つき)
 const RAID_RUN_GOLD_PER_DMG = 1/900;
@@ -1862,15 +1877,23 @@ function rewardText(r){
   const parts = [];
   if(r.gold) parts.push(`🪙${r.gold}`);
   if(r.dia)  parts.push(`💎${r.dia}`);
-  if(r.item){ const it = PLAYER_ITEMS[r.item]; parts.push(`${it?it.icon:'🎁'}×${r.n||1}`); }
+  for(const x of rewardItemList(r)) parts.push(playerItemTextLabel(x.key, x.n));
   if(r.skin){ const m = (typeof skinMeta==='function') ? skinMeta(r.skin) : null; parts.push(`✨${m?m.name:'スキン'}`); }
   return parts.join(' ');
 }
 // 報酬を実際に付与
+// 報酬のアイテムを {key,n} の配列にそろえる。1個だけなら item/n、複数なら items:[{key,n}...]
+function rewardItemList(r){
+  if(!r) return [];
+  const out = [];
+  if(r.item) out.push({ key:r.item, n:r.n||1 });
+  if(Array.isArray(r.items)) for(const x of r.items){ if(x && x.key) out.push({ key:x.key, n:x.n||1 }); }
+  return out.filter(x=>PLAYER_ITEMS[x.key]);
+}
 function grantReward(r){
   if(!r) return;
   if(r.gold || r.dia) addWallet(r.gold||0, r.dia||0);
-  if(r.item) addBagItem(r.item, r.n||1);
+  for(const x of rewardItemList(r)) addBagItem(x.key, x.n);
   if(r.skin && typeof ownSkin==='function') ownSkin(r.skin);
 }
 
@@ -1984,9 +2007,42 @@ const GOLD_MULTI_MULT = 2;       // マルチプレイはゴールド2倍
 const DIA_MATCH_BASE = 5;        // 参加報酬(従来の5倍)
 const DIA_CHAMPION_BONUS = 10;   // チャンピオンボーナス(従来の5倍)
 
+/* レイド限定アイテムのアイコン(SVG)。
+   絵文字だと「実」と見分けが付かず、貴重さも伝わらないので専用の絵にする。
+   複数個が同時に画面へ出る(バッグの一覧・説明・ガチャ・報酬行)ので、
+   defs/gradientのidが衝突しないよう、塗りは重ね塗りだけで作りidを一切使わない。 */
+const ITEM_ICON_FRUIT_LIFE = `<svg class="pi-svg" viewBox="0 0 40 40" aria-hidden="true">
+  <circle cx="20" cy="23.5" r="13" fill="#7d1220"/>
+  <ellipse cx="15.5" cy="19.5" rx="6" ry="7" fill="#c2263a" opacity=".85"/>
+  <ellipse cx="20" cy="24" rx="6.2" ry="5.4" fill="#ff8a6a" opacity=".45"/>
+  <ellipse cx="20" cy="24" rx="3.4" ry="3" fill="#ffe9a8" opacity=".9"/>
+  <ellipse cx="14.6" cy="18" rx="2.6" ry="3.4" fill="#ffd7c8" opacity=".6"/>
+  <circle cx="20" cy="23.5" r="13" fill="none" stroke="#ffd76a" stroke-width="2"/>
+  <path d="M20 11.5q0-4.5 3-6.5" stroke="#c98a3a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M21.5 8.5q6-3.5 8.5 1q-5.5 3.5-8.5-1z" fill="#5fe07c"/>
+  <path d="M33 7l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#ffe9a8"/>
+  <path d="M6.5 13l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4L3.2 16.3l2.4-.9z" fill="#ffd76a" opacity=".9"/>
+</svg>`;
+const ITEM_ICON_ACCEL = `<svg class="pi-svg" viewBox="0 0 40 40" aria-hidden="true">
+  <path d="M16.5 9.5h7v5l5.6 12.2A4.8 4.8 0 0 1 24.7 33.5h-9.4a4.8 4.8 0 0 1-4.4-6.8L16.5 14.5z" fill="#10131a" opacity=".5"/>
+  <path d="M13 23.5h14l2.4 5.2a4 4 0 0 1-3.6 5.6H14.2a4 4 0 0 1-3.6-5.6z" fill="#3fd8ff"/>
+  <ellipse cx="20" cy="27" rx="5.8" ry="1.9" fill="#c8f6ff" opacity=".7"/>
+  <circle cx="16.4" cy="30.2" r="1.5" fill="#eafcff" opacity=".8"/>
+  <circle cx="23.2" cy="30.8" r="1" fill="#eafcff" opacity=".7"/>
+  <path d="M16.5 9.5h7v5l5.6 12.2A4.8 4.8 0 0 1 24.7 33.5h-9.4a4.8 4.8 0 0 1-4.4-6.8L16.5 14.5z" fill="none" stroke="#ffd76a" stroke-width="2"/>
+  <rect x="14.6" y="4.2" width="10.8" height="5" rx="1.8" fill="#ffd76a"/>
+  <rect x="16.4" y="1.8" width="7.2" height="3" rx="1.5" fill="#ffe9a8"/>
+  <path d="M31.5 14h5.5M30 18.5h4.5" stroke="#8fe6ff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M5.5 11l.9 2.5 2.5.9-2.5.9-.9 2.5-.9-2.5-2.5-.9 2.5-.9z" fill="#ffe9a8"/>
+</svg>`;
+
 // プレイヤーアイテム(主にマスモンに使う)
 const STAT_SEED_GAIN = 5; // 「実」1個で上がるステータス量
+const BASE_ITEM_GAIN = 5; // 基礎値アイテム1個で上がる種族基礎値(上限なし)
 const PLAYER_ITEMS = {
+  // レイド限定。育成のステータスではなく「種族の基礎値」そのものを底上げする(上限なし)
+  fruit_life:     { name:'生命の果実', icon:ITEM_ICON_FRUIT_LIFE, base:'hp',    rarity:'SSR' },
+  accel_elixir:   { name:'加速剤',     icon:ITEM_ICON_ACCEL,      base:'speed', rarity:'SSR' },
   seed_life:      { name:'ライフの実',   icon:'🍎', stat:'life' },
   seed_power:     { name:'ちからの実',   icon:'💪', stat:'power' },
   seed_wisdom:    { name:'かしこさの実', icon:'🧠', stat:'wisdom' },
@@ -1996,6 +2052,8 @@ const PLAYER_ITEMS = {
   freeTrainTicket:{ name:'フリートレーニングチケット', icon:'🎟️', desc:'マスモンのトレーニングチケット+1' },
   moveTicket:     { name:'技強化チケット', icon:'⚔️', desc:'次の試合を技tier2解放状態で開始' },
 };
+// 基礎値アイテムが上げるもののラベル(説明文と効果表示で同じ言葉を使う)
+const BASE_ITEM_LABEL = { hp:'ライフの基礎値', speed:'移動速度の基礎値' };
 function playerItemDesc(key){
   const it = PLAYER_ITEMS[key];
   if(!it) return '';
@@ -2003,7 +2061,24 @@ function playerItemDesc(key){
     const s = MASTERMON_STATS.find(x=>x.key===it.stat);
     return `マスモンの${s.label}+${STAT_SEED_GAIN}`;
   }
+  // 基礎値は上限が無く、育成の倍率が乗る前に足されるので伸びるほど効く
+  if(it.base) return `マスモンの${BASE_ITEM_LABEL[it.base]}+${BASE_ITEM_GAIN}(上限なし)`;
   return it.desc;
+}
+// アイコンはSVGのこともあるのでHTMLとして扱う(textContentに入れると生タグが出る)
+function playerItemIconHtml(key){
+  const it = PLAYER_ITEMS[key];
+  return it ? it.icon : '';
+}
+function playerItemIconIsSvg(key){
+  const it = PLAYER_ITEMS[key];
+  return !!it && typeof it.icon==='string' && it.icon.charAt(0)==='<';
+}
+// トーストやtextContentなど「文字しか置けない場所」用。SVGアイコンのアイテムは名前で代用する
+function playerItemTextLabel(key, n){
+  const it = PLAYER_ITEMS[key];
+  if(!it) return '';
+  return playerItemIconIsSvg(key) ? `${it.name}×${n||1}` : `${it.icon}×${n||1}`;
 }
 
 // ガチャ(ダイヤ専用)

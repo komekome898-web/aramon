@@ -163,7 +163,9 @@
   function mmEntryFields(mmInfo){
     const lv = (mmInfo && mmInfo.level) || null;
     return { mmLevel: lv, mm: (mmInfo && mmInfo.stats)
-      ? { level: lv||1, stats: mmInfo.stats, rebirth: mmInfo.rebirth||0, apt: mmInfo.apt||null }
+      ? { level: lv||1, stats: mmInfo.stats, rebirth: mmInfo.rebirth||0, apt: mmInfo.apt||null,
+          // 基礎値アイテム(生命の果実・加速剤)ぶん。これが欠けるとホストとゲストでHP・速度がずれる
+          baseHp: mmInfo.baseHp||0, baseSpd: mmInfo.baseSpd||0 }
       : null };
   }
 

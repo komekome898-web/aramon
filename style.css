@@ -593,7 +593,18 @@
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:10px;
   }
   .bag-icon-cell.active{ border-color:var(--amber); background:rgba(244,196,48,0.14); box-shadow:0 0 0 1px var(--amber) inset; }
+  /* SSRアイテム(レイド限定の基礎値アイテム)は一目で貴重と分かるよう虹枠+金の光を出す */
+  .bag-icon-cell.is-ssr{
+    border-color:transparent; background:rgba(255,255,255,0.06);
+    background-image:linear-gradient(rgba(20,16,10,0.85), rgba(20,16,10,0.85)),
+      linear-gradient(120deg,#ff6b6b,#ffd76a,#5fe07c,#6fa8ff,#c98bff,#ff6b6b);
+    background-origin:border-box; background-clip:padding-box, border-box;
+    border:1.6px solid transparent; box-shadow:0 0 8px rgba(255,215,120,0.35);
+  }
+  .bag-icon-cell.is-ssr.active{ box-shadow:0 0 12px rgba(255,215,120,0.7); }
   .bag-icon-emoji{ font-size:22px; line-height:1; }
+  /* SVGアイコンは絵文字と同じ枠に収まるよう、親のfont-sizeを基準にする */
+  .pi-svg{ width:1em; height:1em; display:block; }
   .bag-icon-count{
     position:absolute; right:3px; bottom:2px; font-family:'Share Tech Mono',monospace; font-size:10px; font-weight:700;
     color:var(--ink); background:rgba(0,0,0,0.55); border-radius:5px; padding:0 4px;
@@ -610,6 +621,8 @@
   .bag-desc-head .bag-use-btn:disabled{ opacity:0.45; cursor:not-allowed; }
   .bag-desc-icon{ font-size:24px; }
   .bag-desc-name{ font-size:14px; font-weight:700; color:var(--ink); }
+  /* SSRアイテムは名前を金色にして、実(N)との区別を説明欄でも付ける */
+  .bag-desc-name.is-ssr{ color:#ffd76a; text-shadow:0 0 8px rgba(255,215,120,0.55); }
   .bag-desc-text{ font-size:11px; color:var(--ink-dim); margin:6px 0 8px; line-height:1.5; }
   .bag-use-btn{
     flex-shrink:0; padding:9px 20px; border-radius:6px; cursor:pointer;
@@ -2398,8 +2411,11 @@
   .raid-tier-row.is-reached{ opacity:1; background:rgba(255,183,3,0.12); }
   .raid-tier-row.is-got{ opacity:0.7; }
   .raid-tier-at{ font-family:'Share Tech Mono',monospace; font-size:11px; color:#ffd76a; white-space:nowrap; }
+  /* 報酬は1行に2種類のアイテムが並ぶことがあるので、切らずに折り返す */
   .raid-tier-reward{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink);
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    min-width:0; overflow:hidden; line-height:1.35; }
+  /* 報酬行に混じるSVGアイコンは文字と同じ高さに揃える */
+  .raid-tier-reward .pi-svg{ display:inline-block; vertical-align:-0.15em; }
   .raid-claim-btn{ padding:3px 10px; border-radius:7px; cursor:pointer; border:1px solid #e0af1e;
     font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px;
     color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); white-space:nowrap; }
@@ -2409,6 +2425,19 @@
   .raid-bonus-text{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45; color:var(--ink);
     -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   .raid-bonus-text b{ color:#ffd76a; }
+  /* レイド限定アイテムの効果(特効スキンの説明の下に並べる) */
+  .raid-item-line{ display:flex; align-items:center; gap:9px; padding:4px 0; }
+  .raid-item-line + .raid-item-line{ border-top:1px solid rgba(255,215,120,0.18); }
+  .raid-item-icon{ flex:0 0 auto; font-size:26px; line-height:1;
+    filter:drop-shadow(0 0 5px rgba(255,215,120,0.55)); }
+  .raid-item-body{ display:flex; flex-direction:column; min-width:0;
+    font-family:'Rajdhani',sans-serif; line-height:1.35;
+    -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  .raid-item-body b{ font-size:12.5px; font-weight:800; color:#ffd76a; }
+  .raid-item-body span{ font-size:11px; font-weight:600; color:var(--ink); }
+  .raid-bonus-note{ margin-top:5px; font-family:'Rajdhani',sans-serif; font-weight:600;
+    font-size:10.5px; line-height:1.4; color:var(--ink-dim);
+    -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   .raid-actions{ display:flex; gap:10px; justify-content:center; flex-shrink:0; }
   .raid-go-btn{ padding:9px 20px; border-radius:9px; cursor:pointer; border:1px solid #e0af1e;
     font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
