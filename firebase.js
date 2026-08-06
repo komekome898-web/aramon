@@ -234,7 +234,10 @@
   };
 
   // 旧方式(自動マッチング)は互換のため残置
-  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId){
+  // mode は 'br'(バトルロイヤル)か 'raid'。募集一覧で混ざらないよう分けて数える。
+  // 旧クライアントの募集には mode が無いので 'br' とみなす。
+  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode){
+    const wantMode = mode==='raid' ? 'raid' : 'br';
     const lobbyRef = ref(fbDb, 'lobby');
     const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
     let joinedRoomId = null;
@@ -245,7 +248,7 @@
       const candidates = [];
       snap.forEach(ch=>{
         const v = ch.val();
-        if(v && v.status==='waiting' && v.capacity===capacity && v.count < v.capacity){
+        if(v && v.status==='waiting' && v.capacity===capacity && v.count < v.capacity && (v.mode||'br')===wantMode){
           candidates.push({ lobbyKey: ch.key, roomId: v.roomId, count: v.count });
         }
       });
@@ -274,10 +277,10 @@
       const roomId = genId();
       const roomRef = ref(fbDb, `rooms/${roomId}`);
       await set(roomRef, {
-        meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now() },
+        meta: { hostId: myPlayerId, capacity, status:'waiting', mode:wantMode, createdAt: Date.now() },
         players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
       });
-      const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now() });
+      const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', mode:wantMode, createdAt: Date.now() });
       onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
       onDisconnect(lobbyEntryRef).remove();
       window.__aramonLobbyEntryId = lobbyEntryRef.key;
@@ -470,6 +473,38 @@
     const cb = (snap)=>{ callback(snap.val()||null); };
     onValue(r, cb);
     roomListeners.push({r,cb});
+  };
+
+  /* --- 週替わりレイド ---
+     raids/{weekId}/total      … 全プレイヤーの与ダメ累計(トランザクションで加算)
+     raids/{weekId}/players/{名前キー} … 個人の累計(ランキング用)
+     ※ 新しいパスなので、Firebaseコンソールのセキュリティルールに raids の
+        .read / .write を足す必要がある(未定義パスは既定で拒否される)。       */
+  window.__aramonAddRaidDamage = async function(weekId, dmg, playerName){
+    const add = Math.max(0, Math.round(dmg||0));
+    if(!weekId || add<=0) return;
+    try{
+      await runTransaction(ref(fbDb, `raids/${weekId}/total`), (cur)=> (cur||0) + add);
+      const key = String(playerName||'ゲスト').replace(/[.#$/\[\]]/g,'_').slice(0,24) || 'ゲスト';
+      await runTransaction(ref(fbDb, `raids/${weekId}/players/${key}`), (cur)=>{
+        const prev = (cur && cur.dmg) || 0;
+        return { name: String(playerName||'ゲスト').slice(0,24), dmg: prev + add, at: Date.now() };
+      });
+    }catch(err){ console.warn('raid damage report failed', err); }
+  };
+  window.__aramonFetchRaidTotal = async function(weekId){
+    try{
+      const snap = await get(ref(fbDb, `raids/${weekId}/total`));
+      return snap.val() || 0;
+    }catch(err){ return 0; }
+  };
+  window.__aramonFetchRaidRanking = async function(weekId, topN){
+    try{
+      const snap = await get(query(ref(fbDb, `raids/${weekId}/players`), orderByChild('dmg'), limitToLast(topN||20)));
+      const rows = [];
+      snap.forEach(ch=>{ const v = ch.val(); if(v) rows.push({ name:v.name||ch.key, dmg:v.dmg||0 }); });
+      return rows.sort((a,b)=>b.dmg-a.dmg);
+    }catch(err){ return []; }
   };
 
   window.__aramonCleanupLobbyEntry = async function(){

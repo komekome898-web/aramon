@@ -63,6 +63,7 @@ function equippedIconImgTag(element, altLabel){
   return `<img src="${imgSrcFor(`monsters/${element}`)}" data-ext-idx="0" alt="${altLabel||''}" onerror="handleMonsterImgError(this, 'monsters/${element}')">`;
 }
 function renderSelectorCards(){
+  if(typeof updateRaidEntryButton==='function') updateRaidEntryButton(); // レイド開催中だけ入口を出す
   if(typeof renderLobbyMonster==='function') renderLobbyMonster();   // 中央の歩行モーションも更新
   if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   const mmCard = document.getElementById('mastermonSelectCard');
@@ -1158,7 +1159,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1696,12 +1697,22 @@ function rarityCssColor(rarity, now){
 }
 // --- ガチャカウンター(ゲージ・カタログ) ---
 function updateGachaCounterUI(){
-  const c = loadGachaCount();
-  document.getElementById('gachaCountNum').textContent = `${c.count} / ${GACHA_SSR_CATALOG_AT}`;
-  document.getElementById('gachaGaugeFill').style.width = `${Math.min(100, c.count/GACHA_SSR_CATALOG_AT*100)}%`;
+  const raid = (typeof gachaMode!=='undefined') && gachaMode==='raid';
+  const max = raid ? RAID_GACHA_CATALOG_AT : GACHA_SSR_CATALOG_AT;
+  const cnt = raid ? Math.min(RAID_GACHA_CATALOG_AT, loadRaidGachaCount().count) : loadGachaCount().count;
+  document.getElementById('gachaCountNum').textContent = `${cnt} / ${max}`;
+  document.getElementById('gachaGaugeFill').style.width = `${Math.min(100, cnt/max*100)}%`;
+  // 節目はモードで中身が変わる(レイドは100連の1つだけ)
+  const ms1 = document.getElementById('gachaMs1'), ms2 = document.getElementById('gachaMs2');
+  ms1.dataset.at = raid ? RAID_GACHA_CATALOG_AT : GACHA_SR_CATALOG_AT;
+  ms1.querySelector('.gacha-ms-label').innerHTML = raid ? `${RAID_GACHA_CATALOG_AT}<br>SSR` : `${GACHA_SR_CATALOG_AT}<br>SR`;
+  ms2.classList.toggle('hidden', raid);
+  document.getElementById('gachaMsNote').innerHTML = raid
+    ? `${RAID_GACHA_CATALOG_AT}回でレイド特効スキンを含む<b class="rar-SSR">SSRスキンカタログ</b>を付与！(1回限り)`
+    : `100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！`;
   document.querySelectorAll('.gacha-milestone').forEach(m=>{
     const at = +m.dataset.at;
-    m.classList.toggle('reached', c.count>=at);
+    m.classList.toggle('reached', cnt>=at);
   });
   const cats = loadCatalogs();
   const row = document.getElementById('gachaCatalogRow');
@@ -1712,6 +1723,35 @@ function updateGachaCounterUI(){
   row.querySelectorAll('.gacha-catalog-btn').forEach(btn=>{
     btn.addEventListener('click', ()=> openCatalogModal(btn.dataset.cat));
   });
+}
+/* --- レイドガチャ ---
+   スキンガチャと同じ画面をタブで切り替える。抽選そのものは共用で、違うのは
+   「SSR枠の中身」と「カタログの節目(100連で1枚だけ・以降は数えない)」の2つだけ。 */
+let gachaMode = 'skin';   // 'skin' | 'raid'
+function setGachaMode(mode){
+  gachaMode = (mode==='raid') ? 'raid' : 'skin';
+  document.querySelectorAll('.gacha-tab').forEach(t=>t.classList.toggle('active', t.dataset.gacha===gachaMode));
+  const raid = gachaMode==='raid';
+  const pickupName = SSR_SKINS[RAID_GACHA_PICKUP] ? skinMeta(RAID_GACHA_PICKUP).name : 'レイド特効';
+  document.getElementById('gachaTitle').firstChild.textContent = raid ? '🐉 レイドガチャ' : '🎰 スキンガチャ';
+  document.getElementById('gachaTitlePickup').textContent = raid ? `(${pickupName}ピックアップ)` : '(轟金剛ピックアップ)';
+  // 開催前は引けない。ボタンとゲージの上に「近日公開」を被せる
+  const locked = raid && !raidGachaOpenNow();
+  document.getElementById('gachaSoonMask').classList.toggle('hidden', !locked);
+  document.getElementById('gachaSingleBtn').disabled = locked;
+  document.getElementById('gachaTenBtn').disabled = locked;
+  updateGachaCounterUI();
+}
+// レイドガチャのカウンター。100連で1回だけカタログを付与し、以降は数えない
+function incrementRaidGachaCount(n){
+  const c = loadRaidGachaCount(); const granted=[];
+  for(let i=0;i<n;i++){
+    if(c.done) break;
+    c.count++;
+    if(c.count>=RAID_GACHA_CATALOG_AT){ c.done=true; addCatalog('ssr',1); granted.push('ssr'); }
+  }
+  saveRaidGachaCount(c);
+  return granted;
 }
 // カウンターを進め、100/200到達でカタログ付与。200で1周してリセット
 function incrementGachaCount(n){
@@ -1756,6 +1796,7 @@ function promoOryouResetIfNeeded(name){
   }catch(e){}
 }
 function openGachaScreen(){
+  setGachaMode('skin');   // 開いたときは必ずスキンガチャから
   updateGachaWallet();
   document.getElementById('gachaSingleCost').textContent = `💎 ${GACHA_COST_DIA_SINGLE}`;
   document.getElementById('gachaTenCost').textContent = `💎 ${GACHA_COST_DIA_TEN}`;
@@ -1982,6 +2023,7 @@ function ssrShouldPromote(alreadyOwned){
 }
 function doGacha(count){
   if(gachaAnim.phase!=='idle') return; // 演出中は無効
+  if(gachaMode==='raid' && !raidGachaOpenNow()){ pushToast('レイドガチャは近日公開です'); return; }
   const cost = count===10 ? GACHA_COST_DIA_TEN : GACHA_COST_DIA_SINGLE;
   const w = loadWallet();
   if(w.dia < cost){ pushToast('ダイヤが足りません'); return; }
@@ -1991,6 +2033,8 @@ function doGacha(count){
   for(let i=0;i<count;i++){
     const guaranteed = (count===10 && i===count-1); // 10連の10個目はSR以上確定
     const roll = gachaRollOne(guaranteed);
+    // レイドガチャのSSR枠はレイド特効スキンのピックアップに差し替える(全体2%のうち1%)
+    if(gachaMode==='raid' && roll.kind==='skin' && roll.rarity==='SSR') roll.skinId = pickRaidGachaSsrSkinId();
     let dup = false, diaGain = 0;
     if(roll.kind==='item'){
       addBagItem(roll.key,1);
@@ -2000,7 +2044,7 @@ function doGacha(count){
     }
     results.push({ ...roll, dup, diaGain, promoted: (roll.kind==='skin' && roll.rarity==='SSR') ? ssrShouldPromote(dup) : false });
   }
-  const granted = incrementGachaCount(count);
+  const granted = gachaMode==='raid' ? incrementRaidGachaCount(count) : incrementGachaCount(count);
   gachaAnim.results = results; gachaAnim.count = count;
   // 演出開始
   document.getElementById('gachaButtons').style.visibility='hidden';
@@ -2266,12 +2310,15 @@ function showGachaResults(results, granted){
     gachaAnimStart('idle');
   };
 }
+document.querySelectorAll('.gacha-tab').forEach(t=>{
+  t.addEventListener('click', ()=> setGachaMode(t.dataset.gacha));
+});
 document.getElementById('gachaSingleBtn').addEventListener('click', ()=>doGacha(1));
 document.getElementById('gachaTenBtn').addEventListener('click', ()=>doGacha(10));
 
 // --- 提供割合モーダル ---
 document.getElementById('gachaRatesBtn').addEventListener('click', ()=>{
-  const rows = gachaRateTable();
+  const rows = (typeof gachaMode!=='undefined' && gachaMode==='raid') ? raidGachaRateTable() : gachaRateTable();
   const fmt = p=>{ const r=Math.round(p); if(Math.abs(p-r)<0.005) return r+'%'; return (p>=1? p.toFixed(1): p.toFixed(2))+'%'; };
   const html = rows.map(row=>{
     const R = RARITIES[row.rarity];
@@ -3201,6 +3248,299 @@ function startShootingRange(){
   bgmSetTrack('training');
   pushToast('🎯 射撃訓練場：技は全解放・的は復活します');
 }
+/* =====================================================================
+   週替わりレイドバトル(ソロ / 最大4人)
+
+   ・試合の初期化は射撃訓練場と同じ骨組みを流用し、分岐は game.raid の1つに寄せてある
+   ・与えたダメージは端末に貯め、Firebase の raids/{weekId} へ全プレイヤーぶんを累計する
+   ・累計の到達で全員報酬、自分の累計で個人報酬
+   ===================================================================== */
+let raidRunDemo = false;      // 管理者画面からのデモプレイ(記録・報酬を残さない)
+let raidTotalCache = { total:0, at:0 };
+
+// 参戦するモンスター(選択中のマスモンがあればそれ)。ロビーと同じ判定を使う
+function raidStart(multi, demo){
+  raidRunDemo = !!demo;
+  entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
+  netState.mode='solo';
+  introState.active=false;
+  camState.yaw = 0; camSnap.active = false;
+  monsterScreenPos.clear();
+  Object.keys(keys).forEach(k=>keys[k]=false);
+  fireBtnHeld=false; joystick.active=false; joystick.nx=0; joystick.ny=0;
+  if(typeof setAutoRun==='function') setAutoRun(false);
+  joyKnobEl.style.transform='translate(0,0)';
+
+  game.trainingRange = false;
+  game.raid = true;
+  game.activeMapKey = 'raid';
+  currentMap = MAPS.raid;
+  applyStartPitchForMap();
+  applyReal3DLayer();
+  applyWorldScale(RAID_WORLD_SCALE);
+  initRaidZone();
+  genVolcanoAndLava(); genWater(); genOasisZones(); genRocks(); genCrystals(); genTerrain();
+
+  const cx = WORLD.w/2, cy = WORLD.h/2;
+  // ボスは火口の手前(中央より奥)、挑戦者は手前側に並ぶ
+  const bossY = WORLD.h*0.34;
+  // ボスの足元に岩があると弾が吸われるので、周りの岩は取り除く
+  rocks = rocks.filter(r=> Math.hypot(r.x-cx, r.y-bossY) > RAID_BOSS.radius*4);
+
+  player = createMonster(game.selectedElement, true, getDisplayNameFromInput()||'あなた', { spawnPoint:{x:cx, y:cy+WORLD.h*0.18} });
+  applyMastermonToPlayer();
+  player.moveTierUnlocked = 3;      // レイドは最初から全技を使える(ボスに火力を出すため)
+  player.moveTierSelected = 1;
+  player.raidDamage = 0;
+  entities.push(player);
+
+  // 残りの枠はマスモン・botで埋める(ソロでもにぎやかに、みんなでボスを削る絵にする)
+  const allies = Math.max(0, RAID_CAPACITY - 1);
+  const mmData = loadMastermons();
+  const mmKeysAll = Object.keys(mmData).filter(k=>k!==game.selectedMastermonKey);
+  const elems = shuffle(Object.keys(ELEMENTS));
+  for(let i=0;i<allies;i++){
+    const a = (i/allies)*Math.PI*2;
+    const sp = { x: cx+Math.cos(a)*WORLD.w*0.12, y: cy+WORLD.h*0.16+Math.sin(a)*WORLD.h*0.06 };
+    const mmKey = mmKeysAll[i];
+    const el = mmKey || elems[i % elems.length];
+    const ally = createMonster(el, false, mmKey ? mmData[mmKey].name : BOT_NAMES[i % BOT_NAMES.length], { spawnPoint: sp });
+    if(mmKey){ applyMastermonStatsToEntity(ally, mmData[mmKey]); ally.isMastermonBot = true; ally.mastermonLevel = mmData[mmKey].level||1; }
+    ally.moveTierUnlocked = 3;
+    entities.push(ally);
+  }
+
+  // ボス本体。見た目はドラゴンだが、半径・HP・速さだけレイド用に差し替える
+  const boss = createMonster(RAID_BOSS.element, false, RAID_BOSS.name, { spawnPoint:{x:cx, y:bossY} });
+  boss.isRaidBoss = true;
+  boss.radius = RAID_BOSS.radius;
+  boss.speed = RAID_BOSS.speed;
+  boss.maxHp = raidBossMaxHp(RAID_CAPACITY);
+  boss.hp = boss.maxHp;
+  boss.guts = 0; boss.maxGuts = 0;
+  boss.raidHomeX = cx; boss.raidHomeY = bossY;
+  boss.facingAngle = Math.PI/2;
+  entities.push(boss);
+
+  raidState = { bossId: boss.id, nextAttackAt: 3.0, pending:null, marks:[],
+                repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT };
+  updateCamera();
+
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('resultScreen').classList.add('hidden');
+  document.getElementById('raidOverlay').classList.add('hidden');
+  document.getElementById('raidHud').classList.remove('hidden');
+  if(typeof applyHudLayout==='function') applyHudLayout();
+  game.started = true;
+  bgmSetTrack(null);
+  bgmUpdateBattleIntensity(2);
+  pushToast(demo ? '🐉 デモプレイ:記録は残りません' : '🐉 レイド開始！ 竜に総力戦を挑め');
+}
+
+// レイドHUDの更新(毎フレーム。render側のHUD更新から呼ぶ)
+function updateRaidHud(){
+  const hud = document.getElementById('raidHud');
+  if(!hud) return;
+  if(!game.raid){ hud.classList.add('hidden'); return; }
+  hud.classList.remove('hidden');
+  const b = (typeof raidBossEntity==='function') ? raidBossEntity() : null;
+  const pct = b ? Math.max(0, b.hp/b.maxHp) : 0;
+  document.getElementById('raidBossName').textContent = '🐉 '+RAID_BOSS.name;
+  document.getElementById('raidBossFill').style.width = (pct*100).toFixed(1)+'%';
+  document.getElementById('raidBossHpText').textContent = b ? `${Math.max(0,Math.round(b.hp)).toLocaleString()} / ${b.maxHp.toLocaleString()}` : '討伐！';
+  document.getElementById('raidTimeLeft').textContent = fmtTime(Math.max(0, RAID_TIME_LIMIT - matchTime));
+  document.getElementById('raidMyDmg').textContent = '与ダメ '+Math.round(player&&player.raidDamage||0).toLocaleString();
+  const rage = Math.round(raidEscalation(matchTime)*100);
+  const rageEl = document.getElementById('raidRage');
+  rageEl.textContent = '怒り '+rage+'%';
+  rageEl.classList.toggle('is-max', rage>=100);
+}
+
+// 決着。与ダメを記録して結果画面へ
+function finishRaid(defeated){
+  if(game.over) return;
+  const dmg = Math.round((player && player.raidDamage) || 0);
+  if(!raidRunDemo) raidRecordRun(dmg);
+  raidShowResult(defeated, dmg);
+}
+// 与ダメを端末とサーバーの累計へ反映する
+function raidRecordRun(dmg){
+  const r = loadRaidProgress();
+  r.dmg += dmg; r.runs += 1; r.best = Math.max(r.best||0, dmg);
+  saveRaidProgress(r);
+  // サーバー側の全体累計と個人ランキングへ(失敗しても端末側の記録は残る)
+  if(window.__aramonAddRaidDamage){
+    window.__aramonAddRaidDamage(raidWeekId(), dmg, (typeof accountState!=='undefined' && accountState.name) || getDisplayNameFromInput() || 'ゲスト')
+      .catch(()=>{});
+  }
+}
+function raidExit(){
+  game.started = false; game.raid = false; game.over = false;
+  raidRunDemo = false;
+  joinInProgress = false;
+  if(typeof setAutoRun==='function') setAutoRun(false);
+  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  document.getElementById('raidHud').classList.add('hidden');
+  document.getElementById('resultScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+  bgmSetTrack('title');
+  if(typeof renderSelectorCards==='function') renderSelectorCards();
+  if(typeof updateRaidEntryButton==='function') updateRaidEntryButton();
+}
+
+/* --- レイド入口画面 --- */
+// ロビーの入口ボタンは開催中だけ出す
+function updateRaidEntryButton(){
+  const btn = document.getElementById('openRaidBtn');
+  if(!btn) return;
+  btn.classList.toggle('hidden', !raidOpenNow());
+  // 未受け取りの報酬があるときだけ通知の点を出す
+  const dot = document.getElementById('raidDot');
+  if(dot) dot.classList.toggle('hidden', !raidHasClaimable());
+}
+function raidHasClaimable(){
+  if(!raidOpenNow()) return false;
+  const r = loadRaidProgress();
+  const total = raidTotalCache.total;
+  for(let i=0;i<RAID_TOTAL_TIERS.length;i++) if(total>=RAID_TOTAL_TIERS[i].at && !r.claimedTotal[i]) return true;
+  for(let i=0;i<RAID_PERSONAL_TIERS.length;i++) if(r.dmg>=RAID_PERSONAL_TIERS[i].at && !r.claimedPersonal[i]) return true;
+  return false;
+}
+function raidRewardLabel(t){
+  const parts = [];
+  if(t.gold) parts.push(`🪙${t.gold.toLocaleString()}`);
+  if(t.dia) parts.push(`💎${t.dia}`);
+  if(t.item && PLAYER_ITEMS[t.item]) parts.push(`${PLAYER_ITEMS[t.item].icon}${PLAYER_ITEMS[t.item].name}×${t.n||1}`);
+  if(t.skin) parts.push(`✨${skinMeta(t.skin).name}`);
+  return parts.join(' / ');
+}
+function raidTierRowsHtml(tiers, reached, claimed, kind){
+  return tiers.map((t,i)=>{
+    const ok = reached >= t.at;
+    const got = !!claimed[i];
+    const btn = ok && !got
+      ? `<button class="raid-claim-btn" data-kind="${kind}" data-idx="${i}">受け取る</button>`
+      : `<span class="raid-claim-state">${got?'受取済':'未達成'}</span>`;
+    return `<div class="raid-tier-row${ok?' is-reached':''}${got?' is-got':''}">
+      <span class="raid-tier-at">${t.at.toLocaleString()}</span>
+      <span class="raid-tier-reward">${raidRewardLabel(t)}</span>
+      ${btn}
+    </div>`;
+  }).join('');
+}
+function renderRaidOverlay(){
+  const box = document.getElementById('raidScroll');
+  if(!box) return;
+  const r = loadRaidProgress();
+  const total = raidTotalCache.total;
+  const last = RAID_TOTAL_TIERS[RAID_TOTAL_TIERS.length-1].at;
+  const pct = Math.min(100, total/last*100);
+  const left = raidSecondsLeft();
+  const days = Math.floor(left/86400), hours = Math.floor((left%86400)/3600);
+  document.getElementById('raidTitleSub').textContent = raidOpenNow()
+    ? `残り ${days}日${hours}時間 ／ ${RAID_BOSS.name}` : '開催前';
+  const skinBonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
+  box.innerHTML = `
+    <div class="raid-boss-card">
+      <div class="raid-boss-art">${defaultMonsterImgTag(RAID_BOSS.element, RAID_BOSS.name)}</div>
+      <div class="raid-boss-info">
+        <div class="raid-boss-name">${RAID_BOSS.name}</div>
+        <div class="raid-boss-desc">火口を背に構える巨竜。技を撃つ前に必ず予告が出る。
+        時間が経つほど攻撃が激しくなり、安全圏も狭まっていく。制限時間は${RAID_TIME_LIMIT}秒。</div>
+        <div class="raid-boss-tips">・味方の攻撃は当たらない ・技は最初から全解放 ・倒しきれなくても与えたダメージは全部累計に入る</div>
+      </div>
+    </div>
+    <div class="raid-sec">
+      <div class="raid-sec-title">みんなの累計ダメージ<span class="raid-sec-note">${Math.round(total).toLocaleString()} / ${last.toLocaleString()}</span></div>
+      <div class="raid-gauge"><div class="raid-gauge-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="raid-tier-list">${raidTierRowsHtml(RAID_TOTAL_TIERS, total, r.claimedTotal, 'total')}</div>
+    </div>
+    <div class="raid-sec">
+      <div class="raid-sec-title">あなたの累計ダメージ<span class="raid-sec-note">${Math.round(r.dmg).toLocaleString()}（挑戦${r.runs}回 / 自己ベスト${Math.round(r.best).toLocaleString()}）</span></div>
+      <div class="raid-tier-list">${raidTierRowsHtml(RAID_PERSONAL_TIERS, r.dmg, r.claimedPersonal, 'personal')}</div>
+    </div>
+    ${skinBonus ? `<div class="raid-sec raid-sec-bonus">
+      <div class="raid-sec-title">✦ レイド特効スキン</div>
+      <div class="raid-bonus-text">「${skinBonus.name}」を装備してレイドに挑むと、
+      ボスへの<b>与ダメージ×${skinBonus.dmgDealt}</b>・ボスからの<b>被ダメージ×${skinBonus.dmgTaken}</b>。レイドガチャで手に入ります。</div>
+    </div>` : ''}`;
+  box.querySelectorAll('.raid-claim-btn').forEach(b=>{
+    b.addEventListener('click', ()=> raidClaim(b.dataset.kind, Number(b.dataset.idx)));
+  });
+  attachVisibleScrollbar(box, document.getElementById('raidScrollbar'));
+}
+function raidClaim(kind, idx){
+  const r = loadRaidProgress();
+  const tiers = kind==='total' ? RAID_TOTAL_TIERS : RAID_PERSONAL_TIERS;
+  const claimed = kind==='total' ? r.claimedTotal : r.claimedPersonal;
+  const reached = kind==='total' ? raidTotalCache.total : r.dmg;
+  const t = tiers[idx];
+  if(!t || claimed[idx] || reached < t.at) return;
+  claimed[idx] = true;
+  saveRaidProgress(r);
+  grantReward(t);                  // ゴールド/ダイヤ/アイテム/スキンの付与はシーズンパスと同じ処理を使う
+  playSe('buy');
+  pushToast('報酬を受け取りました: '+raidRewardLabel(t));
+  renderRaidOverlay();
+  updateRaidEntryButton();
+}
+async function openRaidOverlay(){
+  document.getElementById('raidOverlay').classList.remove('hidden');
+  renderRaidOverlay();
+  // 全体の累計はサーバーから取り直す(取れなければ直前の値のまま表示する)
+  if(window.__aramonFetchRaidTotal){
+    try{
+      const v = await window.__aramonFetchRaidTotal(raidWeekId());
+      raidTotalCache = { total: v||0, at: Date.now() };
+      renderRaidOverlay();
+      updateRaidEntryButton();
+    }catch(err){}
+  }
+}
+document.getElementById('openRaidBtn').addEventListener('click', openRaidOverlay);
+// 管理者画面のデモプレイ。開催前でも入れて、記録も報酬も残さない
+document.getElementById('adminRaidDemoBtn').addEventListener('click', ()=>{
+  if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
+  document.getElementById('adminScreen').classList.add('hidden');
+  raidStart(false, true);
+});
+document.getElementById('raidCloseBtn').addEventListener('click', ()=> document.getElementById('raidOverlay').classList.add('hidden'));
+document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
+  if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
+  raidStart(false, false);
+});
+// 4人同時プレイは、ボスの状態(体力・予告・範囲攻撃)をホスト権威で同期する作りが要る。
+// 募集の枠分け(lobbyのmode)まで用意済みで、同期本体はこれから。
+document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
+  pushToast('みんなで挑むモードは準備中です');
+});
+
+/* --- レイドのリザルト --- */
+function raidShowResult(defeated, dmg){
+  game.over = true;
+  game.started = false;
+  const gold = Math.min(RAID_RUN_GOLD_MAX, Math.round(dmg*RAID_RUN_GOLD_PER_DMG));
+  const dia  = Math.min(RAID_RUN_DIA_MAX,  Math.round(dmg*RAID_RUN_DIA_PER_DMG));
+  if(!raidRunDemo && (gold||dia)) addWallet(gold, dia);
+  bgmSetTrack(null);
+  playSe(defeated ? 'fanfare' : 'sad');
+  setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, defeated ? 3800 : 3000);
+  const scr = document.getElementById('resultScreen');
+  scr.className = 'resultScreen ' + (defeated?'win':'lose');
+  document.getElementById('resultRank').textContent = defeated ? '🐉 討伐成功' : '⏱ 時間切れ';
+  document.getElementById('resultSub').textContent = raidRunDemo
+    ? 'デモプレイ（記録は残りません）'
+    : `与えたダメージ ${Math.round(dmg).toLocaleString()}`;
+  document.getElementById('statKills').textContent = player ? player.kills : 0;
+  document.getElementById('statDamage').textContent = Math.round(dmg).toLocaleString();
+  document.getElementById('statTime').textContent = fmtTime(matchTime);
+  scr.classList.remove('hidden');
+  if(!raidRunDemo && (gold||dia)) pushToast(`🪙${gold} 💎${dia} を獲得`);
+  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  document.getElementById('raidHud').classList.add('hidden');
+}
+
 function exitShootingRange(){
   game.started = false;
   game.trainingRange = false;
@@ -5158,6 +5498,9 @@ document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()
   document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
 });
 function onPlayerDown(){
+  // レイドは checkRaidEnd() が「全滅 or 時間切れ or 討伐」で決着させるので、
+  // 通常のリザルト処理へは進めない(倒れても仲間が戦っている間は続く)
+  if(game.raid) return;
   if(netState.mode==='multi' && netState.isHost){
     hostSpectating = true;
     pushToast('あなたは敗退しました。生き残っているプレイヤーを観戦します');
@@ -5194,6 +5537,8 @@ document.getElementById('spectateNextBtn').addEventListener('click', (e)=>{
 function onPlayerWin(){ showResult(true, 1); }
 
 document.getElementById('replayBtn').addEventListener('click', async ()=>{
+  // レイドは専用の後始末(game.raidを下ろしてロビーへ戻す)
+  if(game.raid){ raidExit(); return; }
   document.getElementById('resultScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
   document.getElementById('killFeed').innerHTML='';

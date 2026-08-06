@@ -124,6 +124,20 @@
     <label style="display:flex;align-items:center;gap:7px;margin-top:10px">
       <input id="s_season" type="checkbox" style="width:auto"> シーズンパス限定にする(ガチャ・カタログに出さない)
     </label>
+    <!-- レイド関連。特効にするとレイド中だけ倍率が掛かり、ピックアップにするとレイドガチャのSSR枠に入る -->
+    <label style="display:flex;align-items:center;gap:7px;margin-top:8px">
+      <input id="s_raidEffect" type="checkbox" style="width:auto"> レイド特効スキンにする(レイドのボス戦だけ倍率が掛かる)
+    </label>
+    <div class="r2" id="s_raidRow" style="display:none">
+      <div><label>ボスへの与ダメージ倍率</label><input id="s_raidDealt" type="number" step="0.05" value="1.5"></div>
+      <div><label>ボスからの被ダメージ倍率</label><input id="s_raidTaken" type="number" step="0.05" value="0.75"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:8px" id="s_raidPickupWrap">
+      <input id="s_raidPickup" type="checkbox" style="width:auto"> レイドガチャのピックアップにする(SSR枠の半分=全体1%)
+    </label>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:8px">
+      <input id="s_raidClear" type="checkbox" style="width:auto"> レイドの討伐達成報酬(参加者全員に配布)にする
+    </label>
     <div class="hint">
       画像名はスキンidから決まります(<code>mymon_ssr</code> → アイコン <code>mymon_ssr.png</code> /
       試合用 <code>mymon_player_ssr.png</code> / 歩行 <code>mymon_ssr_walk_f1..8</code>)。
@@ -1764,7 +1778,8 @@ function renderRows(spec, moves, traitExists){
 const TABLES = [['ELEMENTS','data.js'],['WALK_ANIM','data.js'],['SIGNATURE_MOVES','data.js'],
   ['MONSTER_AURA','data.js'],['MOVE_AURA','data.js'],['STATE_CHANGES','data.js'],
   ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js'],
-  ['SSR_SKINS','data.js'],['SSR_SKIN_AURA','data.js'],['SSR_SKIN_TIER3','data.js']];
+  ['SSR_SKINS','data.js'],['SSR_SKIN_AURA','data.js'],['SSR_SKIN_TIER3','data.js'],
+  ['RAID_EFFECT_SKINS','data.js']];
 const TABLE_FILE = Object.fromEntries(TABLES);
 
 /* ---------------------------------------------------------- SSRスキンの行 */
@@ -1780,7 +1795,25 @@ function renderSsrRows(ss){
   rows.SSR_SKIN_AURA = [`  ${pad(ss.id,16)}${jsStr(ss.aura)}, ${mark}`];
   if(ss.t3name)
     rows.SSR_SKIN_TIER3 = [`  ${pad(ss.id,16)}{ name:${jsStr(ss.t3name)}, dmgMult:${ss.t3mult} }, ${mark}`];
+  // レイド特効: レイドのボス戦のときだけ掛かる倍率(判定は raidSkinBonus 1か所)
+  if(ss.raidEffect)
+    rows.RAID_EFFECT_SKINS = [`  ${pad(ss.id,16)}{ dmgDealt:${ss.raidDealt}, dmgTaken:${ss.raidTaken}, name:${jsStr(ss.name)} }, ${mark}`];
   return rows;
+}
+// レイドガチャのピックアップ/討伐報酬は「表への追記」ではなく1行の定数の書き換えなので、別扱いにする
+function applyRaidConsts(dataJs, ss){
+  let text = dataJs, notes = [];
+  if(ss.raidPickup){
+    const rx = /^const RAID_GACHA_PICKUP = .*$/m;
+    if(rx.test(text)){ text = text.replace(rx, `const RAID_GACHA_PICKUP = ${jsStr(ss.id)};`); notes.push('レイドガチャのピックアップに設定'); }
+    else notes.push('RAID_GACHA_PICKUP が見つかりません');
+  }
+  if(ss.raidClear){
+    const rx = /^const RAID_CLEAR_SKIN = .*$/m;
+    if(rx.test(text)){ text = text.replace(rx, `const RAID_CLEAR_SKIN = ${jsStr(ss.id)};`); notes.push('レイドの討伐達成報酬に設定'); }
+    else notes.push('RAID_CLEAR_SKIN が見つかりません');
+  }
+  return { text, notes };
 }
 // WALK_ANIM は表の末尾ではなく「素体の中」に入れるので、目印方式ではなく素体ブロックを探して挿す。
 // 1素体に ssr は1つしか持てない(entityWalkFrameImage が reg.ssr を1つだけ見る)。
@@ -1959,8 +1992,18 @@ function collectSsr(){
     iconImg: `${base}_ssr`, playerImg: `${base}_player_ssr`,
     walkPrefix: `${base}_ssr_walk_`,
     t3name: $('s_t3name').value.trim(), t3mult: (+$('s_t3mult').value) || 1.15,
+    // レイド関連
+    raidEffect: $('s_raidEffect').checked,
+    raidDealt: (+$('s_raidDealt').value) || 1.5,
+    raidTaken: (+$('s_raidTaken').value) || 0.75,
+    raidPickup: $('s_raidPickup').checked,
+    raidClear: $('s_raidClear').checked,
   };
 }
+// 「レイド特効にする」を押した時だけ倍率の入力欄を出す
+$('s_raidEffect').addEventListener('change', ()=>{
+  $('s_raidRow').style.display = $('s_raidEffect').checked ? '' : 'none';
+});
 function validateSsr(ss){
   if(!/^[a-z][a-z0-9_]*_ssr$/.test(ss.id)) return 'スキンidは英小文字で始まり _ssr で終える形にしてください';
   if(!ss.element) return '素体を選んでください(先にGitHubへ接続すると一覧が出ます)';
@@ -2039,6 +2082,10 @@ async function planSsr(dataJs, swJs, lines){
     throw new Error(`${ss.id} はすでに登録済みです。やり直すなら「登録を取り消す」を先に押してください。`);
   const rows = renderSsrRows(ss);
   const texts = applyRows({ 'data.js': dataJs }, rows);
+  // レイドガチャのピックアップ / 討伐報酬は定数の書き換えなので、表への追記とは別に処理する
+  const rc = applyRaidConsts(texts['data.js'], ss);
+  texts['data.js'] = rc.text;
+  for(const n of rc.notes) lines.push('  ' + n);
   // 歩行コマは素体に1つだけ。両面そろっていて枠が空いているときだけ登録する
   const haveWalk = !!(state.walk.f && state.walk.b);
   let walkNote = '歩行コマは登録しません(正面・後ろの両方をプレビューすると登録できます)';

@@ -72,6 +72,10 @@
        <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">デイリー</span>
        <span id="dailyDot" class="notif-dot hidden"></span>
      </button>
+     <button id="openRaidBtn" class="lobby-side-btn has-dot hidden">
+       <span class="lobby-side-icon">🐉</span><span class="lobby-side-label">レイド</span>
+       <span id="raidDot" class="notif-dot hidden"></span>
+     </button>
      <button id="openGachaBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
      </button>
@@ -468,6 +472,19 @@
   </div>
   <div id="rangeHint" class="hidden">的は倒しても復活します／アイテムは何度でも拾えます</div>
 
+  <!-- レイド中だけ出すHUD。ボスの体力・残り時間・自分の与ダメージ -->
+  <div id="raidHud" class="hidden">
+    <div class="raid-hud-top">
+      <span class="raid-hud-name" id="raidBossName">🐉</span>
+      <span class="raid-hud-time" id="raidTimeLeft">03:00</span>
+    </div>
+    <div class="raid-hud-bar"><div class="raid-hud-fill" id="raidBossFill"></div></div>
+    <div class="raid-hud-bottom">
+      <span id="raidBossHpText">-</span>
+      <span id="raidMyDmg">与ダメ 0</span>
+      <span class="raid-hud-rage" id="raidRage">怒り 0%</span>
+    </div>
+  </div>
   <div id="autoRunLabel" class="hidden">🏃 オートラン中</div>
   <div id="spectateBar" class="hidden">
     <span class="spectate-eye">👁 観戦中</span>
@@ -719,6 +736,7 @@
       </div>
       <button id="adminGrantSkinBtn" class="admin-grant-dia-btn" disabled>✨ スキンを選んでください</button>
     </div>
+    <button id="adminRaidDemoBtn" class="admin-grant-dia-btn">🐉 レイドをデモプレイ(開催前でも入れる・記録は残らない)</button>
     <button id="adminSeason1Btn" class="admin-grant-dia-btn">🗓️ シーズン1(準備プレビュー・非公開)</button>
     <button id="adminSsrPromoteCheckBtn" class="admin-grant-dia-btn">🎬 ガチャ昇格演出確認</button>
     <button id="adminRockPromoteCheckBtn" class="admin-grant-dia-btn">⛰️ 轟金剛 昇格演出確認</button>
@@ -967,7 +985,12 @@
 <div id="gachaOverlay" class="hidden">
   <div class="gacha-screen">
     <div class="gacha-top">
-      <div class="gacha-title">🎰 スキンガチャ<span class="gacha-title-pickup">(轟金剛ピックアップ)</span></div>
+      <div class="gacha-title" id="gachaTitle">🎰 スキンガチャ<span class="gacha-title-pickup" id="gachaTitlePickup">(轟金剛ピックアップ)</span></div>
+      <!-- スキンガチャとレイドガチャの切替 -->
+      <div class="gacha-tabs">
+        <button class="gacha-tab active" data-gacha="skin">スキン</button>
+        <button class="gacha-tab" data-gacha="raid">レイド</button>
+      </div>
       <div class="gacha-top-right">
         <span id="gachaDia" class="gacha-dia">💎 0</span>
         <button id="gachaRatesBtn" class="gacha-rates-btn">提供割合</button>
@@ -988,10 +1011,12 @@
       <div class="gacha-counter-labels"><span>ガチャカウンター</span><span id="gachaCountNum">0 / 200</span></div>
       <div class="gacha-gauge">
         <div id="gachaGaugeFill" class="gacha-gauge-fill"></div>
-        <div class="gacha-milestone" data-at="100"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">100<br>SR</span></div>
-        <div class="gacha-milestone" data-at="200"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">200<br>SSR</span></div>
+        <div class="gacha-milestone" id="gachaMs1" data-at="100"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">100<br>SR</span></div>
+        <div class="gacha-milestone" id="gachaMs2" data-at="200"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">200<br>SSR</span></div>
       </div>
-      <div class="gacha-milestone-note">100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！</div>
+      <div class="gacha-milestone-note" id="gachaMsNote">100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！</div>
+      <!-- レイドガチャが開催前のときに被せる「近日公開」 -->
+      <div id="gachaSoonMask" class="gacha-soon hidden"><span>🐉 レイドガチャ<b>近日公開</b>シーズン1開始と同時に引けるようになります</span></div>
       <div id="gachaCatalogRow" class="gacha-catalog-row"></div>
     </div>
   </div>
@@ -1126,6 +1151,22 @@
     <div class="mastermon-confirm-btnrow">
       <button id="mastermonDeleteNoBtn">いいえ</button>
       <button id="mastermonDeleteYesBtn">はい</button>
+    </div>
+  </div>
+</div>
+
+<!-- レイド: 入口画面(累計ゲージ・報酬・挑戦ボタン)。中身はui.jsが組み立てる -->
+<div id="raidOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box raid-box">
+    <button class="overlay-close-btn" id="raidCloseBtn">✕</button>
+    <div class="raid-title">🐉 週替わりレイド<span class="raid-title-sub" id="raidTitleSub"></span></div>
+    <div class="raid-scroll-wrap">
+      <div class="raid-scroll" id="raidScroll"></div>
+      <div class="mm-scrollbar hidden" id="raidScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+    </div>
+    <div class="raid-actions">
+      <button id="raidSoloBtn" class="raid-go-btn">⚔ 1人で挑む</button>
+      <button id="raidMultiBtn" class="raid-go-btn raid-go-multi" disabled>👥 みんなで挑む(最大4人・準備中)</button>
     </div>
   </div>
 </div>
