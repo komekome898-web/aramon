@@ -1735,19 +1735,19 @@ function updateGachaCounterUI(){
   ms1.querySelector('.gacha-ms-label').innerHTML = raid ? `${RAID_GACHA_CATALOG_AT}<br>SSR` : `${GACHA_SR_CATALOG_AT}<br>SR`;
   ms2.classList.toggle('hidden', raid);
   document.getElementById('gachaMsNote').innerHTML = raid
-    ? `${RAID_GACHA_CATALOG_AT}回でレイド特効スキンを含む<b class="rar-SSR">SSRスキンカタログ</b>を付与！(1回限り)`
-    : `100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！`;
+    ? `${RAID_GACHA_CATALOG_AT}回でレイド特効スキンを含む<b class="rar-SSR">${CATALOG_LABEL.raidSsr}</b>を付与！(1回限り)`
+    : `100回で<b class="rar-SR">${CATALOG_LABEL.sr}</b>、200回で<b class="rar-SSR">${CATALOG_LABEL.ssr}</b>を付与！`;
   document.querySelectorAll('.gacha-milestone').forEach(m=>{
     const at = +m.dataset.at;
     m.classList.toggle('reached', cnt>=at);
   });
+  // 表示するカタログはタブごとに分ける(レイドタブに通常カタログを混ぜない)
   const cats = loadCatalogs();
+  const shown = raid ? ['raidSsr'] : ['sr', 'ssr'];
   const row = document.getElementById('gachaCatalogRow');
-  let html='';
-  if(cats.sr>0) html += `<button class="gacha-catalog-btn sr" data-cat="sr">🎫 SRスキンカタログ ×${cats.sr}</button>`;
-  if(cats.ssr>0) html += `<button class="gacha-catalog-btn ssr" data-cat="ssr">🎫 SSRスキンカタログ ×${cats.ssr}</button>`;
-  if(cats.raidSsr>0) html += `<button class="gacha-catalog-btn ssr" data-cat="raidSsr">🎫 レイドSSRスキンカタログ ×${cats.raidSsr}</button>`;
-  row.innerHTML = html;
+  row.innerHTML = shown.filter(k=>cats[k]>0).map(k=>
+    `<button class="gacha-catalog-btn ${k==='sr'?'sr':'ssr'}" data-cat="${k}">🎫 ${CATALOG_LABEL[k]} ×${cats[k]}</button>`
+  ).join('');
   row.querySelectorAll('.gacha-catalog-btn').forEach(btn=>{
     btn.addEventListener('click', ()=> openCatalogModal(btn.dataset.cat));
   });
@@ -2337,9 +2337,10 @@ function showGachaResults(results, granted){
   }).join('');
   const cols = results.length>1 ? 5 : 1;
   let grantMsg='';
-  if(granted.includes('sr')) grantMsg += `<div class="rar-SR" style="font-weight:700;">SRスキンカタログを獲得！</div>`;
-  if(granted.includes('ssr')) grantMsg += `<div class="rar-SSR" style="font-weight:700;">SSRスキンカタログを獲得！</div>`;
-  if(granted.includes('raidSsr')) grantMsg += `<div class="rar-SSR" style="font-weight:700;">レイドSSRスキンカタログを獲得！</div>`;
+  for(const k of CATALOG_KINDS){
+    if(!granted.includes(k)) continue;
+    grantMsg += `<div class="rar-${k==='sr'?'SR':'SSR'}" style="font-weight:700;">${CATALOG_LABEL[k]}を獲得！</div>`;
+  }
   const res = document.getElementById('gachaResult');
   res.innerHTML = `<div class="gacha-result-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
     ${grantMsg}<div class="gacha-result-tap">タップで閉じる</div>`;
@@ -4415,6 +4416,8 @@ function renderSeasonOverlay(){
       el.addEventListener('click', ()=> showSkinPreview(el.dataset.skin));
     });
   }
+  // スケジュール(曜日ごとの変則ルール+レイド開催期間)も一緒に出す
+  if(typeof renderSeasonSchedule==='function') renderSeasonSchedule();
 }
 document.getElementById('openSeasonBtn').addEventListener('click', ()=>{
   renderSeasonOverlay();
@@ -6384,6 +6387,62 @@ function buildSeason1CalendarWeeks(){
   for(let i=0;i<cells.length;i+=7) weeks.push(cells.slice(i,i+7));
   return { weeks, start };
 }
+/* シーズン1のスケジュール(カレンダー)と説明。プレイヤーのシーズン画面と
+   管理者のプレビュー画面で同じものを出すので、組み立てはここ1か所にまとめる。
+   レイド開催期間は紫のバーで示す(週をまたぐぶんは各日のセルに帯を出して繋げる)。 */
+function season1CalendarHtml(){
+  if(typeof SEASON1_MUTATORS==='undefined') return '';
+  const { weeks, start } = buildSeason1CalendarWeeks();
+  const dow = ['日','月','火','水','木','金','土'];
+  const raidFrom = (typeof raidStartAt==='function') ? raidStartAt().getTime() : null;
+  const raidTo   = (typeof raidEndAt==='function')   ? raidEndAt().getTime()   : null;
+  // その日がレイド期間内か / 期間の初日・最終日か(バーの角丸を付ける位置)
+  const raidInfo = (date)=>{
+    if(raidFrom==null || !RAID_ACTIVE) return null;
+    const t = date.getTime();
+    if(t < raidFrom || t >= raidTo) return null;
+    return { first: t===raidFrom, last: t+86400000>=raidTo };
+  };
+  let html = `<div class="s1prev-cal-month">${start.getFullYear()}年${start.getMonth()+1}月〜(シーズン1開始 ${start.getMonth()+1}/${start.getDate()}・以降は同じ曜日パターンで毎週繰り返し)</div>`;
+  html += `<div class="s1prev-cal-grid s1prev-cal-head">${dow.map(d=>`<div class="s1prev-cal-dow">${d}</div>`).join('')}</div>`;
+  weeks.forEach(week=>{
+    html += `<div class="s1prev-cal-grid">` + week.map(date=>{
+      if(!date) return `<div class="s1prev-cal-cell empty"></div>`;
+      const before = date < start;
+      const m = SEASON1_MUTATORS.find(mm=>mm.day===date.getDay());
+      const badges = before ? [] : mutatorBadgeLabels(m);
+      const raid = raidInfo(date);
+      // 週をまたぐぶんは、行の端では横に伸ばさない(カレンダーの外にはみ出さないように)
+      const raidBar = raid
+        ? `<div class="s1prev-cal-raid${raid.first?' is-first':''}${raid.last?' is-last':''}`
+          + `${date.getDay()===0?' is-rowstart':''}${date.getDay()===6?' is-rowend':''}">`
+          + `${raid.first?'🐉レイド':''}</div>`
+        : '';
+      return `<div class="s1prev-cal-cell ${before?'before-start':''}">
+        <div class="s1prev-cal-date">${date.getDate()}</div>
+        ${raidBar}
+        <div class="s1prev-cal-badges">${badges.map(b=>`<span class="s1prev-badge">${b}</span>`).join('')}</div>
+      </div>`;
+    }).join('') + `</div>`;
+  });
+  return html;
+}
+function season1LegendHtml(){
+  if(typeof MUTATOR_LEGEND==='undefined') return '';
+  const rows = MUTATOR_LEGEND.map(l=>
+    `<div class="s1prev-legend-item"><span class="s1prev-badge">${l.label}</span><span class="s1prev-legend-desc">${l.desc}</span></div>`).join('');
+  const raidRow = RAID_ACTIVE
+    ? `<div class="s1prev-legend-item"><span class="s1prev-badge s1prev-badge-raid">レイド</span><span class="s1prev-legend-desc">レイドバトル「${RAID_BOSS.name}」の開催期間(${RAID_DURATION_DAYS}日間)</span></div>`
+    : '';
+  return rows + raidRow;
+}
+// プレイヤーのシーズン画面に出すスケジュールと説明
+function renderSeasonSchedule(){
+  const cal = document.getElementById('seasonCalendar');
+  if(cal) cal.innerHTML = season1CalendarHtml();
+  const legend = document.getElementById('seasonLegend');
+  if(legend) legend.innerHTML = season1LegendHtml();
+}
 function renderSeason1Preview(){
   const track = document.getElementById('season1PreviewTrack');
   if(track && typeof SEASON1_REWARDS_PREVIEW!=='undefined'){
@@ -6399,30 +6458,11 @@ function renderSeason1Preview(){
       </div>`;
     }).join('');
   }
+  // カレンダーと説明はプレイヤー画面と同じものを使う(2か所に書かない)
   const cal = document.getElementById('season1PreviewCalendar');
-  if(cal && typeof SEASON1_MUTATORS!=='undefined'){
-    const { weeks, start } = buildSeason1CalendarWeeks();
-    const dow = ['日','月','火','水','木','金','土'];
-    let html = `<div class="s1prev-cal-month">${start.getFullYear()}年${start.getMonth()+1}月〜(シーズン1開始 ${start.getMonth()+1}/${start.getDate()}・以降は同じ曜日パターンで毎週繰り返し)</div>`;
-    html += `<div class="s1prev-cal-grid s1prev-cal-head">${dow.map(d=>`<div class="s1prev-cal-dow">${d}</div>`).join('')}</div>`;
-    weeks.forEach(week=>{
-      html += `<div class="s1prev-cal-grid">` + week.map(date=>{
-        if(!date) return `<div class="s1prev-cal-cell empty"></div>`;
-        const before = date < start;
-        const m = SEASON1_MUTATORS.find(mm=>mm.day===date.getDay());
-        const badges = before ? [] : mutatorBadgeLabels(m);
-        return `<div class="s1prev-cal-cell ${before?'before-start':''}">
-          <div class="s1prev-cal-date">${date.getDate()}</div>
-          <div class="s1prev-cal-badges">${badges.map(b=>`<span class="s1prev-badge">${b}</span>`).join('')}</div>
-        </div>`;
-      }).join('') + `</div>`;
-    });
-    cal.innerHTML = html;
-  }
+  if(cal) cal.innerHTML = season1CalendarHtml();
   const legend = document.getElementById('season1PreviewLegend');
-  if(legend && typeof MUTATOR_LEGEND!=='undefined'){
-    legend.innerHTML = MUTATOR_LEGEND.map(l=>`<div class="s1prev-legend-item"><span class="s1prev-badge">${l.label}</span><span class="s1prev-legend-desc">${l.desc}</span></div>`).join('');
-  }
+  if(legend) legend.innerHTML = season1LegendHtml();
 }
 document.getElementById('adminSeason1Btn').addEventListener('click', ()=>{
   renderSeason1Preview();
