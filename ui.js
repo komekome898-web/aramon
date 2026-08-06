@@ -4125,18 +4125,14 @@ function buildMastermonMenuHtml(mm){
           <span class="mm-menu-btn-desc">${m.desc}</span>
         </span>
       </button>`);
-  // 転生ボタンはレベル100に到達したマスモンにだけ出す(着せ替えの下)。
-  // 公開前なので「(工事中)」表記で、動かせるのは開発アカウントだけ。
+  // 転生ボタンはレベル100に到達したマスモンにだけ出す(着せ替えの下)
   if(canRebirthMastermon(mm)){
-    const allowed = rebirthUiAllowed();
     items.push(`
-      <button class="mm-menu-btn mm-menu-btn-rebirth${allowed?'':' is-locked'}" data-action="rebirth"${allowed?'':' data-locked="1"'}>
+      <button class="mm-menu-btn mm-menu-btn-rebirth" data-action="rebirth">
         <span class="mm-menu-btn-icon">✦</span>
         <span class="mm-menu-btn-text">
-          <span class="mm-menu-btn-label">転生<span class="mm-rebirth-wip">(工事中)</span></span>
-          <span class="mm-menu-btn-desc">${allowed
-            ? 'レベル1に戻る代わりに上限・基礎値・適正が上がる(取り消せません)'
-            : '準備中です。もうしばらくお待ちください'}</span>
+          <span class="mm-menu-btn-label">転生</span>
+          <span class="mm-menu-btn-desc">レベル1に戻る代わりに上限・基礎値・適正が上がる(取り消せません)</span>
         </span>
       </button>`);
   }
@@ -4148,11 +4144,9 @@ function buildMastermonMenuHtml(mm){
 
    ・確認画面で「転生前」と「転生後」を並べて見比べ、適正を3つ選んでから実行する
    ・実行前のマスモンは REBIRTH_BACKUP_KEY に丸ごと保存し、管理者画面から
-     何度でも元に戻せるようにしてある(動作確認用。公開時に外す想定)
-   ・公開前なので rebirthUiAllowed() が true のアカウントでしか実行できない
+     元に戻せるようにしてある(動作確認用。プレイヤーからは触れない)
    ===================================================================== */
 const REBIRTH_BACKUP_KEY = 'aramon_rebirth_backup_v1';
-const REBIRTH_DEV_ACCOUNT = 'おりょう';   // 公開までこのアカウントだけが転生できる
 // 転生後に「各ステータス最大時」を見せるときの表示用ラベル
 const REBIRTH_MULT_ROWS = [
   { key:'lifeMult',      label:'HP倍率',    hint:'高いほど良い' },
@@ -4165,9 +4159,6 @@ const REBIRTH_MULT_ROWS = [
 let rebirthKey = null;          // 確認画面で対象にしているマスモンのキー
 let rebirthPicks = [];          // 1段階上げる適正(ステータスキー)を最大3つ
 
-function rebirthUiAllowed(){
-  return !!(typeof accountState!=='undefined' && accountState.loggedIn && accountState.name===REBIRTH_DEV_ACCOUNT);
-}
 // カードに出す転生回数の虹色★
 function mmRebirthStarsHtml(mm){
   const n = mastermonRebirthCount(mm);
@@ -4343,7 +4334,6 @@ function openRebirthOverlay(key){
   const mm = loadMastermons()[key];
   if(!mm) return;
   if(!canRebirthMastermon(mm)){ pushToast(`レベル${REBIRTH_LEVEL_REQ}になると転生できます`); return; }
-  if(!rebirthUiAllowed()){ pushToast('転生は準備中です'); return; }
   rebirthKey = key;
   rebirthPicks = [];
   // 転生を実行するころには読み終わっているよう、確認画面を開いた時点で音声を取りに行く
@@ -4373,7 +4363,7 @@ function doRebirth(){
   const key = rebirthKey;
   const data = loadMastermons();
   const mm = data[key];
-  if(!mm || !canRebirthMastermon(mm) || !rebirthUiAllowed()) return;
+  if(!mm || !canRebirthMastermon(mm)) return;
   if(rebirthPicks.length !== rebirthPickTarget(mm)) return;
   const before = JSON.parse(JSON.stringify(mm));
   const after = rebirthMastermonResult(mm, rebirthPicks);
@@ -4390,12 +4380,16 @@ function doRebirth(){
 const REBIRTH_ANIM_MS = 8500;   // audio/rebirth_audio.mp3 と同じ尺。CSSのキーフレームも同じ
 const REBIRTH_POP_START_MS = 3400;  // 恩恵が飛び出し始める時刻(閃光と判子のあと)
 const REBIRTH_POP_STEP_MS  = 380;   // 次の恩恵が飛び出すまでの間隔
-// 恩恵が飛び出す向き(モンスターの中心から見た角度と距離)。画面下は
-// ダイアログがあるので使わず、左右と上へ広がるようにしてある。
+// 恩恵が飛び出す向き(モンスターの中心から見た角度と距離)。画面下はダイアログが
+// あるので使わず、左右へ大きく振って横幅いっぱいに散らす。左右を交互に出すと
+// 続けて出たときに重なりにくく、画面全体が使われて見える。
 const REBIRTH_POP_SLOTS = [
-  { a:-110, d:1.00 }, { a: -70, d:1.00 }, { a:-150, d:0.92 }, { a: -30, d:0.92 },
-  { a:-172, d:0.78 }, { a:  -8, d:0.78 }, { a:-130, d:0.60 }, { a: -50, d:0.60 },
-  { a:-160, d:1.10 }, { a: -20, d:1.10 },
+  { a:-160, d:1.00 }, { a: -20, d:1.00 },
+  { a:-136, d:0.86 }, { a: -44, d:0.86 },
+  { a:-175, d:0.92 }, { a:  -5, d:0.92 },
+  { a:-112, d:0.70 }, { a: -68, d:0.70 },
+  { a:-148, d:1.05 }, { a: -32, d:1.05 },
+  { a:-168, d:0.62 }, { a: -12, d:0.62 },
 ];
 // 飛び出す金文字の中身(値+ラベル)。ダイアログの明細より短く、ひと目で分かるものだけ
 function rebirthPopItems(beforeMm, afterMm){
@@ -4443,11 +4437,14 @@ function playRebirthAnim(key, before, after){
    飛距離はステージの実寸から出すので、画面比が変わっても破綻しない。          */
 function startRebirthPops(popHost){
   const stage = document.getElementById('rebirthAnimStage');
-  const unit = Math.max(40, Math.min(stage.clientHeight || 0, stage.clientWidth || 0) * 0.42);
+  // 横と縦で別々の基準にする。横長の画面なので、まとめて短い方(=高さ)に合わせると
+  // 中央にかたまって窮屈に見える。横は画面幅いっぱいまで使って大きく散らす。
+  const unitX = Math.max(60, (stage.clientWidth  || 0) * 0.40);
+  const unitY = Math.max(40, (stage.clientHeight || 0) * 0.34);
   popHost.querySelectorAll('.rb-pop').forEach((el, i)=>{
     const slot = REBIRTH_POP_SLOTS[i % REBIRTH_POP_SLOTS.length];
     const rad = slot.a*Math.PI/180;
-    const dx = Math.cos(rad)*unit*slot.d, dy = Math.sin(rad)*unit*slot.d*0.82;
+    const dx = Math.cos(rad)*unitX*slot.d, dy = Math.sin(rad)*unitY*slot.d;
     const delay = REBIRTH_POP_START_MS + i*REBIRTH_POP_STEP_MS;
     const at = (fx, fy, sc, op) =>
       ({ transform:`translate(calc(-50% + ${(dx*fx).toFixed(1)}px), calc(-50% + ${(dy*fy).toFixed(1)}px)) scale(${sc})`, opacity:op });
@@ -4701,11 +4698,7 @@ function renderMastermonDetail(key){
   if(!mastermonDetailTab){
     panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
-        if(btn.dataset.action==='rebirth'){
-          if(btn.dataset.locked) pushToast('転生は準備中です');
-          else openRebirthOverlay(key);
-          return;
-        }
+        if(btn.dataset.action==='rebirth'){ openRebirthOverlay(key); return; }
         mmOpenTab(btn.dataset.tab);
       });
     });
