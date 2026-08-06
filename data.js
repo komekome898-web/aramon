@@ -2136,7 +2136,8 @@ const SKIN_MEDIA = {
   guts_ssr: { /*@guts_ssr*/
     promote: { video:'video/guts_ssr_promote', audio:'audio/guts_ssr_promote_audio.m4a', safetyMs:25397, bgmOnReveal:'lastBattle' },
     bgm: { battle:'audio/bgm_guts_ssr_battle.m4a', final5:'audio/bgm_guts_ssr_final5.m4a', lastBattle:'audio/bgm_guts_ssr_lastbattle.m4a' },
-    se: { tier3:'audio/se_guts_ssr_tier3.m4a' },
+    se: { tier3:'audio/se_guts_ssr_tier3.m4a', hit:'audio/se_guts_ssr_hit.m4a', kill:'audio/se_guts_ssr_kill.m4a', win:'audio/se_guts_ssr_win.m4a' },
+    promoImg: 'images/promo_guts_ssr.png',
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
