@@ -1737,8 +1737,11 @@ function updateGachaCounterUI(){
   document.getElementById('gachaMsNote').innerHTML = raid
     ? `${RAID_GACHA_CATALOG_AT}回でレイド特効スキンを含む<b class="rar-SSR">${CATALOG_LABEL.raidSsr}</b>を付与！(1回限り)`
     : `100回で<b class="rar-SR">${CATALOG_LABEL.sr}</b>、200回で<b class="rar-SSR">${CATALOG_LABEL.ssr}</b>を付与！`;
+  // 節目の位置はゲージの最大値に対する割合で置く。
+  // レイドは100連が最大なので、同じ「100」でも右端に来る(スキンガチャでは真ん中)
   document.querySelectorAll('.gacha-milestone').forEach(m=>{
     const at = +m.dataset.at;
+    m.style.left = `${Math.max(0, Math.min(100, at/max*100))}%`;
     m.classList.toggle('reached', cnt>=at);
   });
   // 表示するカタログはタブごとに分ける(レイドタブに通常カタログを混ぜない)
@@ -2250,17 +2253,32 @@ function runSsrPromotionSequence(skinId, onContinue){
   // 万一どちらのイベントも発火しない場合の保険(動画の長さに応じてmedia.safetyMsを使う)
   const safetyTimer = setTimeout(()=>onMediaEnd('セーフティタイムアウト'), media.safetyMs);
   try{ video.currentTime = 0; }catch(err){ ssrPromoteDebugLog(`⚠️ currentTime設定失敗: ${err.message}`); }
-  video.play().then(()=>{
-    ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
-    // 動画と同じタイミングでWeb Audio側の音声を鳴らす(動画ファイル自体は音無し)
-    if(media.ensureSe) media.ensureSe(); // 万一まだ先読みされていない場合の保険
-    if(media.se && !media.se.play()){
-      ssrPromoteDebugLog('⚠️ 音声未ロードのため今回は無音(次回以降は鳴る)');
-    }
-  }).catch((err)=>{
-    ssrPromoteDebugLog(`❌ play()失敗: ${err.name} ${err.message} currentSrc=${video.currentSrc||'(なし)'}`);
-    onMediaEnd('play失敗');
-  });
+  /* 動画ファイル自体は音無しで、音声はWeb Audio側から同時に鳴らす。
+     音声の読み込みが間に合っていないと無音のまま演出が流れてしまうので、
+     再生を始める前にデコードの完了を待つ(待てなければ映像だけで進める)。
+     待ってから両方を始めるので、映像と音声がずれることもない。 */
+  const startPlayback = ()=>{
+    video.play().then(()=>{
+      ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
+      if(media.se && !media.se.play()){
+        ssrPromoteDebugLog('⚠️ 音声を鳴らせなかった(SE音量0、または読み込み失敗)');
+      }
+    }).catch((err)=>{
+      ssrPromoteDebugLog(`❌ play()失敗: ${err.name} ${err.message} currentSrc=${video.currentSrc||'(なし)'}`);
+      onMediaEnd('play失敗');
+    });
+  };
+  if(media.se && typeof media.se.ready==='function'){
+    if(media.ensureSe) media.ensureSe();
+    // 待ち時間はセーフティより十分短くする(待っている間に演出が打ち切られないように)
+    media.se.ready(Math.min(6000, Math.max(1500, media.safetyMs/3))).then((ok)=>{
+      ssrPromoteDebugLog(ok ? '✅ 音声の読み込み完了。動画と同時に鳴らす' : '⚠️ 音声の読み込みが間に合わないので映像だけで進める');
+      startPlayback();
+    });
+  } else {
+    if(media.ensureSe) media.ensureSe();
+    startPlayback();
+  }
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
     clearTimeout(safetyTimer);
@@ -2287,16 +2305,7 @@ async function checkSsrPromoteAssets(){
   console.log('[ssrPromote] asset check:', v, '|', vw, '|', i);
   return { video: v, videoWebm: vw, img: i };
 }
-async function checkRockPromoteAssets(){
-  const [v, vw, a] = await checkAssetUrls(['video/rock_promote.mp4', 'video/rock_promote.webm', 'audio/rock_promote_audio.mp3']);
-  console.log('[rockPromote] asset check:', v, '|', vw, '|', a);
-  return { video: v, videoWebm: vw, audio: a };
-}
-async function checkAquaPromoteAssets(){
-  const [v, vw, a] = await checkAssetUrls(['video/aqua_promote.mp4', 'video/aqua_promote.webm', 'audio/aqua_promote_audio.mp3']);
-  console.log('[aquaPromote] asset check:', v, '|', vw, '|', a);
-  return { video: v, videoWebm: vw, audio: a };
-}
+// スキンごとの昇格演出の素材確認は adminRunPromoteCheck が SKIN_MEDIA から直接URLを作る
 async function checkAquaBattleBgmAssets(){
   const [b, f, l] = await checkAssetUrls(['audio/bgm_aqua_battle.mp3', 'audio/bgm_aqua_final5.mp3', 'audio/bgm_aqua_lastbattle.mp3']);
   console.log('[aquaBattleBgm] asset check:', b, '|', f, '|', l);
@@ -6593,38 +6602,31 @@ document.getElementById('adminSsrPromoteCheckBtn').addEventListener('click', asy
     showSsrReveal(sampleSkin, ()=>{ pushToast('🎬 演出確認 完了'); ssrPromoteDebugMode = false; });
   });
 });
-// 轟金剛専用の昇格演出(動画+22秒音声→直接リビール→BGM切替)を確認するボタン
-document.getElementById('adminRockPromoteCheckBtn').addEventListener('click', async ()=>{
-  const { video, videoWebm, audio } = await checkRockPromoteAssets();
+/* 管理者確認用: 指定したSSRスキンの専用昇格演出を、素材の読み込み診断つきで通しで再生する。
+   確認するURLは SKIN_MEDIA.promote から作るので、スキンを足してもこの関数は変えなくてよい
+   (増えるのはボタン1行と、その下の1行だけ)。 */
+async function adminRunPromoteCheck(skinId){
+  const p = ((typeof skinMediaOf==='function' && skinMediaOf(skinId)) || {}).promote;
+  if(!p || !p.video){ alert('このスキンには専用の昇格演出がありません'); return; }
+  const name = (typeof skinMeta==='function') ? skinMeta(skinId).name : skinId;
+  const urls = [p.video + '.mp4', p.video + '.webm'];
+  if(p.audio) urls.push(p.audio);
+  const lines = await checkAssetUrls(urls);
   ssrPromoteDebugMode = true;
   ssrPromoteDebugLines = [];
-  ssrPromoteDebugLog('--- 轟金剛 素材読み込み診断(cache:no-store) ---');
-  ssrPromoteDebugLog(video);
-  ssrPromoteDebugLog(videoWebm);
-  ssrPromoteDebugLog(audio);
-  if(typeof ensureSkinPromoteSe==='function') ensureSkinPromoteSe('rock_ssr');
-  document.getElementById('closeAdminBtn').click();
-  openGachaScreen();
-  runSsrPromotionSequence('rock_ssr', ()=>{
-    showSsrReveal('rock_ssr', ()=>{ pushToast('🎬 轟金剛 演出確認 完了(BGMが轟金剛・残り2人へ切り替わっているはず)'); ssrPromoteDebugMode = false; });
+  // 診断は演出パネル(黒画面)へ直接書く。演出に隠れる別要素には出さない
+  ssrPromoteDebugLog(`--- ${name} 素材読み込み診断(cache:no-store) ---`);
+  lines.forEach(l=>ssrPromoteDebugLog(l));
+  if(typeof ensureSkinPromoteSe==='function') ensureSkinPromoteSe(skinId);
+  document.getElementById('closeAdminBtn').click();  // 演出を隠さないよう正規の手順で閉じる
+  openGachaScreen();  // 演出のオーバーレイはガチャ画面の子要素なので開いておく
+  runSsrPromotionSequence(skinId, ()=>{
+    showSsrReveal(skinId, ()=>{ pushToast(`🎬 ${name} 演出確認 完了`); ssrPromoteDebugMode = false; });
   });
-});
-// 大喰いの利世専用の昇格演出(動画+約15.6秒音声→直接リビール)を確認するボタン
-document.getElementById('adminAquaPromoteCheckBtn').addEventListener('click', async ()=>{
-  const { video, videoWebm, audio } = await checkAquaPromoteAssets();
-  ssrPromoteDebugMode = true;
-  ssrPromoteDebugLines = [];
-  ssrPromoteDebugLog('--- 大喰いの利世 素材読み込み診断(cache:no-store) ---');
-  ssrPromoteDebugLog(video);
-  ssrPromoteDebugLog(videoWebm);
-  ssrPromoteDebugLog(audio);
-  if(typeof ensureSkinPromoteSe==='function') ensureSkinPromoteSe('aqua_ssr');
-  document.getElementById('closeAdminBtn').click();
-  openGachaScreen();
-  runSsrPromotionSequence('aqua_ssr', ()=>{
-    showSsrReveal('aqua_ssr', ()=>{ pushToast('🎬 大喰いの利世 演出確認 完了'); ssrPromoteDebugMode = false; });
-  });
-});
+}
+document.getElementById('adminRockPromoteCheckBtn').addEventListener('click', ()=>adminRunPromoteCheck('rock_ssr'));
+document.getElementById('adminAquaPromoteCheckBtn').addEventListener('click', ()=>adminRunPromoteCheck('aqua_ssr'));
+document.getElementById('adminGutsPromoteCheckBtn').addEventListener('click', ()=>adminRunPromoteCheck('guts_ssr'));
 // 大喰いの利世専用の試合中BGM3曲の素材読み込みを確認するボタン(音自体はBGM確認グリッドから再生)
 document.getElementById('adminAquaBattleBgmCheckBtn').addEventListener('click', async ()=>{
   const { battle, final5, lastBattle } = await checkAquaBattleBgmAssets();

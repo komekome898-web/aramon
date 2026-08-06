@@ -744,8 +744,9 @@
   .gacha-gauge{ position:relative; height:12px; border-radius:6px; background:rgba(255,255,255,0.10); margin:5px 0 20px; overflow:visible; }
   .gacha-gauge-fill{ height:100%; border-radius:6px; width:0%;
     background:linear-gradient(90deg,#ffcf3f,#ff9de0); transition:width 0.4s ease; }
-  .gacha-milestone{ position:absolute; top:-3px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; }
-  .gacha-milestone[data-at="100"]{ left:50%; } .gacha-milestone[data-at="200"]{ left:100%; }
+  /* 節目の位置(left)は updateGachaCounterUI がゲージの最大値から計算して入れる。
+     タブによって最大値が違う(スキン=200 / レイド=100)ので、CSSに数字を持たせない。 */
+  .gacha-milestone{ position:absolute; top:-3px; left:0; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; }
   .gacha-ms-dot{ width:18px; height:18px; border-radius:50%; background:#1a2130; border:2px solid var(--panel-line); }
   .gacha-milestone.reached .gacha-ms-dot{ background:var(--amber); border-color:#fff; }
   .gacha-ms-label{ font-size:8px; font-weight:700; color:var(--ink-dim); text-align:center; line-height:1.05; margin-top:1px; }
