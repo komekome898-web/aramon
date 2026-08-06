@@ -2346,16 +2346,23 @@
   @keyframes raidRagePulse{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.8); } }
 
   /* --- 入口画面 --- */
+  /* 情報量が多い画面なので、枠と余白を切り詰めて表示領域を最大にする
+     (ヘッダー=タイトル と フッター=挑戦ボタン が画面の上下端に来る) */
   .mastermon-confirm-box.raid-box{
-    max-width:min(900px, calc(96 * var(--vw))); width:min(900px, calc(96 * var(--vw)));
-    max-height:calc(94 * var(--vh)); position:relative;
-    display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+    max-width:min(1100px, calc(99 * var(--vw))); width:min(1100px, calc(99 * var(--vw)));
+    max-height:calc(99 * var(--vh)); height:calc(99 * var(--vh)); position:relative;
+    padding:8px 10px; border-radius:10px;
+    display:flex; flex-direction:column; gap:5px; overflow:hidden; }
+  /* オーバーレイ側の余白も消して、枠を画面いっぱいまで広げる */
+  #raidOverlay{ padding:0; }
   .raid-title{ font-family:'Russo One',sans-serif; font-size:16px; letter-spacing:2px; color:#ffb08a;
     text-shadow:0 0 10px rgba(255,90,50,0.6); flex-shrink:0; }
   /* 「レイドバトル〜不死のゾッド〜」。荒々しく光る紫文字。
      Russo One は角ばって重いので、傾け+多重グローで禍々しさを出す。 */
+  /* タイトルは閉じるボタン(右上37px)に重ならないよう右側を空けておく */
+  .raid-box .raid-title-main{ padding-right:44px; }
   .raid-title-main{
-    font-size:21px; letter-spacing:4px; color:#e8c4ff;
+    font-size:19px; letter-spacing:3px; color:#e8c4ff;
     transform:skewX(-7deg); transform-origin:left center;
     text-shadow:
       0 0 6px  rgba(200,120,255,0.95),
@@ -2367,18 +2374,25 @@
   .raid-title-dash{ margin-left:6px; font-size:15px; letter-spacing:2px; color:#c79bff; }
   @keyframes raidTitleGlow{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.35); } }
 
-  /* キービジュアル。横幅いっぱいに敷いて、下端を暗く落として本文へつなぐ */
-  .raid-key{ position:relative; border-radius:10px; overflow:hidden; margin-bottom:8px;
+  /* キービジュアル。高さで上限をかけて場所を取りすぎないようにする。
+     幅ではなく高さで抑え、枠を絵の実寸に合わせる(width:fit-content)ことで、
+     縦横比を変えずに絵全体が見えたまま小さくなる。 */
+  .raid-key{ position:relative; border-radius:10px; overflow:hidden; margin:0;
+    width:fit-content; max-width:100%; flex-shrink:0;
     border:1px solid rgba(180,120,255,0.45); box-shadow:0 0 18px -6px rgba(150,60,240,0.8); }
-  .raid-key img{ display:block; width:100%; height:auto; }
+  .raid-key img{ display:block; width:auto; height:auto; max-width:100%; max-height:calc(26 * var(--vh)); }
+  /* キービジュアルは縦長寄りなので、横に説明とルールを並べて縦の場所を節約する。
+     絵の幅は実寸なり(auto)、テキスト側が残りを埋める(minmax(0,1fr)で縮めるようにする) */
+  .raid-head-cols{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:9px; align-items:start; margin-bottom:6px; }
+  .raid-head-text{ min-width:0; }
   .raid-key::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:38%;
     background:linear-gradient(180deg, rgba(8,6,12,0), rgba(8,6,12,0.85)); pointer-events:none; }
-  .raid-lead{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11.5px; line-height:1.55;
-    color:var(--ink); margin-bottom:7px; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  .raid-lead{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45;
+    color:var(--ink); margin-bottom:5px; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   .raid-lead b{ color:#e8c4ff; }
-  .raid-rules{ display:flex; flex-wrap:wrap; gap:4px 6px; margin-bottom:9px; }
-  .raid-rules span{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:var(--ink);
-    padding:2px 7px; border-radius:7px; background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); }
+  .raid-rules{ display:flex; flex-wrap:wrap; gap:3px 5px; margin-bottom:6px; }
+  .raid-rules span{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; color:var(--ink);
+    padding:2px 6px; border-radius:7px; background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); }
   .raid-preview-note{ margin-bottom:9px; padding:6px 9px; border-radius:8px;
     border:1px solid rgba(255,183,3,0.55); background:rgba(255,183,3,0.10);
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:#ffd76a; }
@@ -2436,29 +2450,34 @@
   .raid-boss-desc{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45; color:var(--ink);
     -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   .raid-boss-tips{ margin-top:4px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10.5px; color:#ffd76a; }
-  .raid-sec{ border:1px solid var(--panel-line); border-radius:10px; padding:8px 10px; margin-bottom:8px;
+  .raid-sec{ border:1px solid var(--panel-line); border-radius:10px; padding:7px 9px; margin-bottom:6px;
     background:rgba(255,255,255,0.04); }
-  .raid-sec-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:1px;
-    color:#ffd76a; margin-bottom:5px; display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  /* 報酬などの枠を2列に並べてスクロール量を減らす。
+     中身が縮めるよう min-width:0 を付ける(付けないと横にはみ出す) */
+  .raid-cols{ display:grid; grid-template-columns:1fr 1fr; gap:6px; align-items:start; }
+  .raid-cols > .raid-sec{ min-width:0; margin-bottom:6px; }
+  .raid-sec-title{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px; letter-spacing:0.5px;
+    color:#ffd76a; margin-bottom:5px; display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
   .raid-sec-note{ font-family:'Share Tech Mono',monospace; font-size:10.5px; color:var(--ink-dim); font-weight:400; letter-spacing:0; }
   .raid-gauge{ height:11px; border-radius:6px; overflow:hidden; margin-bottom:6px;
     background:rgba(255,255,255,0.08); border:1px solid rgba(255,120,80,0.35); }
   .raid-gauge-fill{ height:100%; background:linear-gradient(90deg,#ff6b35,#ffb703 70%,#ffe7a0); }
   .raid-tier-list{ display:flex; flex-direction:column; gap:3px; }
-  .raid-tier-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:8px; align-items:center;
-    padding:4px 6px; border-radius:7px; background:rgba(255,255,255,0.03); opacity:0.55; }
+  /* 2列になって幅が半分になるので、間隔と余白を詰めて文字が入るようにする */
+  .raid-tier-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:5px; align-items:center;
+    padding:3px 5px; border-radius:7px; background:rgba(255,255,255,0.03); opacity:0.55; }
   .raid-tier-row.is-reached{ opacity:1; background:rgba(255,183,3,0.12); }
   .raid-tier-row.is-got{ opacity:0.7; }
-  .raid-tier-at{ font-family:'Share Tech Mono',monospace; font-size:11px; color:#ffd76a; white-space:nowrap; }
+  .raid-tier-at{ font-family:'Share Tech Mono',monospace; font-size:10px; color:#ffd76a; white-space:nowrap; }
   /* 報酬は1行に2種類のアイテムが並ぶことがあるので、切らずに折り返す */
-  .raid-tier-reward{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink);
-    min-width:0; overflow:hidden; line-height:1.35; }
+  .raid-tier-reward{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; color:var(--ink);
+    min-width:0; overflow-wrap:anywhere; line-height:1.3; }
   /* 報酬行に混じるSVGアイコンは文字と同じ高さに揃える */
   .raid-tier-reward .pi-svg{ display:inline-block; vertical-align:-0.15em; }
-  .raid-claim-btn{ padding:3px 10px; border-radius:7px; cursor:pointer; border:1px solid #e0af1e;
-    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px;
+  .raid-claim-btn{ padding:3px 8px; border-radius:7px; cursor:pointer; border:1px solid #e0af1e;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:10px;
     color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); white-space:nowrap; }
-  .raid-claim-state{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; color:var(--ink-dim); white-space:nowrap; }
+  .raid-claim-state{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; color:var(--ink-dim); white-space:nowrap; }
   .raid-sec-bonus{ border-color:rgba(255,215,120,0.55);
     background:linear-gradient(120deg, rgba(255,214,106,0.14), rgba(255,90,50,0.10)); }
   .raid-bonus-text{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45; color:var(--ink);
@@ -2478,7 +2497,7 @@
     font-size:10.5px; line-height:1.4; color:var(--ink-dim);
     -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   .raid-actions{ display:flex; gap:10px; justify-content:center; flex-shrink:0; }
-  .raid-go-btn{ padding:9px 20px; border-radius:9px; cursor:pointer; border:1px solid #e0af1e;
+  .raid-go-btn{ padding:8px 20px; border-radius:9px; cursor:pointer; border:1px solid #e0af1e;
     font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 0 14px -3px rgba(255,206,120,0.9); }
   .raid-go-btn.raid-go-multi{ color:#fff; border-color:#c9401f;
