@@ -41,7 +41,9 @@ function audioInit(){
   ensureChocoSeBuffers();
   ensureTitleStartSeBuffer();
   ensureSsrPromoteSeBuffer();
-  ensureSkinPromoteSe(typeof GACHA_PICKUP_SSR!=='undefined' ? GACHA_PICKUP_SSR : null); // ピックアップは出る確率が高いので先読みする
+  // ピックアップは出る確率が高いので先読みする(スキンガチャ・レイドガチャの両方)
+  ensureSkinPromoteSe(typeof GACHA_PICKUP_SSR!=='undefined' ? GACHA_PICKUP_SSR : null);
+  ensureSkinPromoteSe(typeof RAID_GACHA_PICKUP!=='undefined' ? RAID_GACHA_PICKUP : null);
   ensureProvidedSeBuffers();
   ensureBgmLobbyBuffer();
 }
@@ -156,9 +158,20 @@ function createSeOneShot(dataUrl, gainVal){
   S.ensure = ()=>{
     if(S.buffer || S.decoding || !actx) return;
     S.decoding = true;
-    fetch(dataUrl).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a))
+    S._loading = fetch(dataUrl).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a))
       .then(buf=>{ S.buffer = buf; S.decoding = false; })
       .catch(()=>{ S.decoding = false; });
+  };
+  /* 読み込みが終わるまで待つ(最大 timeoutMs)。読めたら true。
+     昇格演出のように「動画と音声を必ず同時に鳴らしたい」場面で、
+     先読みが間に合っていなくても無音にしないために使う。 */
+  S.ready = (timeoutMs)=>{
+    if(S.buffer) return Promise.resolve(true);
+    if(!actx) return Promise.resolve(false);
+    S.ensure();
+    const waitLoad = (S._loading || Promise.resolve()).then(()=>!!S.buffer);
+    const timeout = new Promise(res=>setTimeout(()=>res(!!S.buffer), timeoutMs||6000));
+    return Promise.race([waitLoad, timeout]);
   };
   // when を渡すとその時刻から鳴らす(音源のあとに合成SEをつなげたいときに使う)
   S.play = (when)=>{
