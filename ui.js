@@ -2694,6 +2694,7 @@ document.getElementById('invertPitchToggle').addEventListener('click', ()=>{
 const netState = {
   mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null, hostId:null,
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
+  raid:false,   // レイドの部屋か(部屋のmodeと一致させる。試合の組み立てが変わる)
 };
 let hostSpectating = false;
 let matchBeginning = false; // beginMultiplayerMatchの多重起動防止フラグ
@@ -2788,6 +2789,7 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     netState.capacity = Number(tab.dataset.cap)||3;
+    netState.raid = false;   // 通常のマルチではレイドの部屋を作らない
     // 右カラムの「プレイモード」の表示にも人数を反映する(マップ側と同じ扱い)
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   });
@@ -2947,7 +2949,7 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br');
   }catch(err){
     console.error(err);
     pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
@@ -2980,7 +2982,7 @@ async function refreshRoomList(){
     subEl.textContent = '';
     return;
   }
-  const rooms = await window.__aramonListOpenRooms();
+  const rooms = await window.__aramonListOpenRooms(netState.raid?'raid':'br');
   if(!rooms.length){
     listEl.innerHTML = '<div class="rank-empty">現在募集中の部屋はありません</div>';
     subEl.textContent = '部屋が見つかりませんでした';
@@ -3018,6 +3020,7 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.isHost = false;
   netState.myPlayerId = result.myPlayerId;
   if(result.capacity){ netState.capacity = result.capacity; if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels(); }
+  netState.raid = (result.mode==='raid');   // 部屋のモードに合わせる(レイドの部屋ならレイドで始まる)
 
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
@@ -3264,6 +3267,7 @@ function raidStart(multi, demo){
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
   netState.mode='solo';
+  netState.raid = false;    // 1人で挑むときは部屋を使わない
   introState.active=false;
   camState.yaw = 0; camSnap.active = false;
   monsterScreenPos.clear();
@@ -3381,10 +3385,18 @@ function raidRecordRun(dmg){
       .catch(()=>{});
   }
 }
-function raidExit(){
+async function raidExit(){
   game.started = false; game.raid = false; game.over = false;
   raidRunDemo = false;
   joinInProgress = false;
+  // みんなで挑んだ場合は部屋から抜けて、次に普通のマルチへ行っても混ざらないようにする
+  if(netState.mode==='multi' && netState.roomId){
+    try{ await window.__aramonLeaveRoom(netState.roomId); }catch(err){}
+    netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
+    netState.matchStarting=false; matchBeginning=false;
+  }
+  netState.mode = 'solo';
+  netState.raid = false;
   if(typeof setAutoRun==='function') setAutoRun(false);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
@@ -3522,10 +3534,15 @@ document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
   if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
   raidStart(false, false);
 });
-// 4人同時プレイは、ボスの状態(体力・予告・範囲攻撃)をホスト権威で同期する作りが要る。
-// 募集の枠分け(lobbyのmode)まで用意済みで、同期本体はこれから。
+// みんなで挑む: 通常のマルチと同じ部屋の作成→ロビー→開始の流れに乗せる。
+// 違いは定員が4人固定で、部屋のモードが 'raid' になることだけ。
 document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
-  pushToast('みんなで挑むモードは準備中です');
+  if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
+  document.getElementById('raidOverlay').classList.add('hidden');
+  netState.mode = 'multi';
+  netState.raid = true;
+  netState.capacity = RAID_CAPACITY;
+  createRoomFlow();
 });
 
 /* --- レイドのリザルト --- */

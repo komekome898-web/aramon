@@ -169,14 +169,17 @@
 
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
   // 部屋を新規作成してホストになる
-  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId){
+  // mode は 'br'(バトルロイヤル)か 'raid'。部屋一覧で混ざらないよう分けて扱う。
+  // 旧クライアントの部屋には mode が無いので 'br' とみなす。
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode){
+    const roomMode = mode==='raid' ? 'raid' : 'br';
     const roomId = genId();
     const roomRef = ref(fbDb, `rooms/${roomId}`);
     await set(roomRef, {
-      meta: { hostId: myPlayerId, capacity, status:'waiting', createdAt: Date.now(), hostName: playerName },
+      meta: { hostId: myPlayerId, capacity, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName },
       players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
     });
-    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', createdAt: Date.now(), hostName: playerName });
+    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
     onDisconnect(lobbyEntryRef).remove();
     window.__aramonLobbyEntryId = lobbyEntryRef.key;
@@ -185,7 +188,8 @@
   };
 
   // 募集中の部屋一覧を取得する(部屋を探す画面用)
-  window.__aramonListOpenRooms = async function(){
+  window.__aramonListOpenRooms = async function(mode){
+    const wantMode = mode==='raid' ? 'raid' : 'br';
     try{
       const lobbyRef = ref(fbDb, 'lobby');
       const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
@@ -193,8 +197,8 @@
       const rooms = [];
       snap.forEach(ch=>{
         const v = ch.val();
-        if(v && v.status==='waiting' && v.count < v.capacity){
-          rooms.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0 });
+        if(v && v.status==='waiting' && v.count < v.capacity && (v.mode||'br')===wantMode){
+          rooms.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br') });
         }
       });
       rooms.sort((a,b)=> b.createdAt - a.createdAt);
@@ -226,7 +230,7 @@
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
-      return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity };
+      return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity, mode:(meta.mode||'br') };
     }catch(err){
       console.error('join room failed', err);
       return { ok:false, reason:'参加に失敗しました' };

@@ -127,6 +127,24 @@ function handleRoomEvent(evt, evtKey){
       playSe('jakiin');
     }
   }
+  // レイド: ボスの予告(表示専用)。ゲストはホストのループを回さないので、
+  // これを受けないと警告も標的も一切出ない
+  if(evt.kind==='raidTele' && game.raid && !netState.isHost){
+    const mv = RAID_BOSS_MOVES.find(m=>m.key===evt.mv) || RAID_BOSS_MOVES[0];
+    const marks = (evt.marks||[]).map(m=>({ x:m.x, y:m.y, r:m.r,
+      angle: m.a!=null ? m.a : undefined, fanDeg: m.f!=null ? m.f : undefined }));
+    raidState.pending = { move: mv, marks, fireAt: matchTime + (evt.tele||1.2), angle: marks[0] && marks[0].angle || 0 };
+    raidState.marks = marks;
+    pushToast(mv.warn);
+    playSe(mv.tier>=3 ? 'godRising' : 'fireRoar');
+    // 予告の時間が過ぎたら消す(実際の攻撃はホストがshotEventで見せる)
+    setTimeout(()=>{ if(raidState.pending && raidState.pending.move===mv){ raidState.pending=null; raidState.marks=[]; } },
+               Math.round((evt.tele||1.2)*1000));
+  }
+  // レイド: 決着はホストが判定する。ゲストはこれを受けて同じ結果画面へ進む
+  if(evt.kind==='raidEnd' && game.raid && !game.over){
+    finishRaid(!!evt.defeated);
+  }
   if(evt.kind==='matchEnd' && !game.over){
     if(player && player.netPlayerId===evt.winnerNetId && player.alive){
       onPlayerWin();
@@ -229,12 +247,16 @@ async function beginMultiplayerMatchInner(){
     }
   }
   netState.humanPlayers = fixedPlayers;
+  // レイドはマップ固定。ホストが配信したmapKeyもraidになるので、ゲストも自動的に合う
+  game.raid = !!netState.raid || mapKey==='raid';
+  if(game.raid) mapKey = 'raid';
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
   if(typeof applyStartPitchForMap==='function') applyStartPitchForMap(); // マップが決まってから視点の初期角度を決める
   if(typeof applyReal3DLayer==='function') applyReal3DLayer();  // リアルマップならWebGL地形を有効化
 
-  applyWorldScale(MULTI_MAP_SCALE); // マルチプレイは少人数想定のため、ソロより一回り狭いマップにする
+  // レイドは狭い円形の闘技場。通常のマルチは少人数想定でソロより一回り狭いマップにする
+  applyWorldScale(game.raid ? RAID_WORLD_SCALE : MULTI_MAP_SCALE);
 
   // サブシステムごとに独立した派生rngを使う。こうすることで、ある生成の消費数が
   // 環境差でズレても他(スポーン/アイテム/装飾)まで連鎖して崩れない。
@@ -245,7 +267,7 @@ async function beginMultiplayerMatchInner(){
   const spawnRng = deriveRng(0x53);     // スポーン地点
   const lootRng  = deriveRng(0x7C);     // アイテム
 
-  initZone();
+  if(game.raid) initRaidZone(); else initZone();
   if(sharedWorld){
     // ゲスト: ホストが生成・配信した障害物をそのまま反映(座標一致で見えない岩ハマりを防ぐ)
     applyWorldFromSync(sharedWorld, obRng);
@@ -325,11 +347,48 @@ async function beginMultiplayerMatchInner(){
     }
   }
 
-  // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
-  const mutSpawnMult = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; // ミューテーター「スポーン数1.5倍」
-  const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE * mutSpawnMult);
-  seededSpawnLoot(lootRng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
-  seededSpawnOasisBonusLoot(lootRng);
+  if(game.raid){
+    /* レイド: 全員(人間もbotも)がボスと戦う。ボスもシード付き生成の一部として
+       同じidで両側に作られるので、位置・HPは authState でそのまま同期される。
+       ホスト/ゲストで挙動が変わらないよう、生成はここ1か所にまとめてある。      */
+    const cx = WORLD.w/2;
+    const bossY = Math.max(WORLD.h*RAID_BOSS_YR, raidBossMinY());
+    const bossClear = RAID_BOSS.radius + RAID_BOSS.repositionDist + 160;
+    rocks = rocks.filter(r=> Math.hypot(r.x-cx, r.y-bossY) > bossClear);
+    // 挑戦者は手前に横並び。ボスから同じ距離に置いて開幕の有利不利を作らない
+    const line = entities.filter(e=>!e.isRaidBoss);
+    line.forEach((e,i)=>{
+      const t = line.length>1 ? (i/(line.length-1)-0.5) : 0;
+      e.x = clamp(cx + t*WORLD.w*0.22, 200, WORLD.w-200);
+      e.y = cy0RaidSpawnY();
+      e.z = baseTerrainHeightAt(e.x, e.y);
+      e.moveTierUnlocked = 3;      // レイドは最初から全技を使える
+      e.moveTierSelected = 1;
+      e.raidDamage = 0;
+    });
+    const boss = createMonster(RAID_BOSS.element, false, RAID_BOSS.name, { id: idCounter++, spawnPoint:{x:cx, y:bossY} });
+    boss.isRaidBoss = true;
+    boss.skinId = RAID_BOSS.skinId;
+    boss.radius = RAID_BOSS.radius;
+    boss.speed = RAID_BOSS.speed;
+    boss.maxHp = raidBossMaxHp(netState.capacity);
+    boss.hp = boss.maxHp;
+    boss.guts = 0; boss.maxGuts = 0;
+    boss.raidHomeX = cx; boss.raidHomeY = bossY;
+    boss.facingAngle = Math.PI/2;
+    entities.push(boss);
+    raidState = { bossId: boss.id, nextAttackAt: 3.0, pending:null, marks:[],
+                  repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT };
+    // アイテムは火山と反対側にまとめて撒く(ソロと同じ配置。シード付きで全員一致する)
+    seededSpawnLoot(lootRng, RAID_LOOT_COUNT, { x:cx, y:WORLD.h*RAID_LOOT_YR }, Math.min(WORLD.w, WORLD.h)*RAID_LOOT_SPREAD);
+    document.getElementById('raidHud').classList.remove('hidden');
+  } else {
+    // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
+    const mutSpawnMult = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; // ミューテーター「スポーン数1.5倍」
+    const multiLootCount = Math.round(420 * MULTI_MAP_SCALE * MULTI_MAP_SCALE * mutSpawnMult);
+    seededSpawnLoot(lootRng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+    seededSpawnOasisBonusLoot(lootRng);
+  }
   updateCamera();
 
   window.__aramonWatchInputs(netState.roomId, (players)=>{
@@ -804,6 +863,8 @@ function spawnVisualShotFromEvent(evt){
   }
 }
 
+// レイドの挑戦者が並ぶ位置(ソロ・マルチで同じ計算を使う)
+function cy0RaidSpawnY(){ return WORLD.h/2 + WORLD.h*0.18; }
 function buildAuthStatePayload(){
   authPublishSeq++;
   const seq = authPublishSeq;
@@ -834,6 +895,8 @@ function buildAuthStatePayload(){
     // 毎tick載せる「ホット」フィールド(位置・向き・速度・HP・ガッツ・生存・キル等)
     const o = {
       id: e.id,
+      // レイドの貢献度。ゲストは自分でダメージ計算をしないので、これが唯一の正
+      ...(game.raid ? { rd: Math.round(e.raidDamage||0) } : {}),
       x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.z||0),
       f: Math.round((e.facingAngle||0)*1000)/1000,
       vx: Math.round(vx*10)/10, vy: Math.round(vy*10)/10,
@@ -953,6 +1016,8 @@ function applyAuthState(authState){
     if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
     if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
+    // レイドの貢献度もホストの値をそのまま採用する(ゲストは自分では数えない)
+    if(typeof a.rd==='number') ent.raidDamage = a.rd;
     if(a.placement!=null) ent.placement = a.placement;
     // moveTierSelectedは「今どの技を使うか」というプレイヤー自身の選択なので、
     // 自分自身の分だけはホストの(1往復遅れた)値で上書きしない(タップしてもすぐ元に戻る

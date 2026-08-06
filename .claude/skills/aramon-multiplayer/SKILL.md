@@ -42,6 +42,15 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 
 `spectateCandidates()`は**自分以外の生存者全員**(人間を先、botを後)。人間だけにすると残り1人のとき「次のプレイヤー」が効かない。終了判定(`checkWin`の`humanAlive`)は別なので影響しない。
 
+## レイド(4人同時)
+
+- **部屋は`mode`で分ける**(`lobby`と`rooms/{id}/meta`の`mode`。`'br'`=バトルロイヤル / `'raid'`)。旧クライアントの部屋は`mode`が無いので`'br'`とみなす。**`netState.raid`は必ず部屋の`mode`と一致させる**(ずれるとホストとゲストで別の試合を組み立ててしまう)。
+- **試合の組み立ての分岐は`beginMultiplayerMatchInner`の`game.raid`1か所**。マップ・ワールドの広さ・安置・ボスの生成・アイテムの撒き方だけが変わる。シード共有・world同期・マスモン補正・スキンは通常のマルチと同じものがそのまま効く。
+- **ボスもシード付き生成の一部として同じidで両側に作る。** 位置とHPはauthStateでそのまま同期されるので、ボス専用の同期は要らない。
+- **ゲストへ足りないのは演出**: ①予告(`raidTele`イベント。表示専用で、予告時間が過ぎたらsetTimeoutで消す) ②発動した範囲攻撃(`shotEvent`の`type:'aoe'`。見た目専用) の2つ。**当たり判定はホストのまま。**
+- **貢献度(`raidDamage`)はauthStateの`rd`で配る。** ゲストは自分ではダメージを数えないので、これが唯一の正。
+- **決着はホストだけが確定させ`raidEnd`イベントで配る**(`checkRaidEnd`がゲストで早期returnする)。確定の直前にauthStateを即配信して、貢献度を取りこぼさないようにしている。
+
 ## マスモン育成値の共有
 
 **マルチでは育成ステータスを部屋の参加者情報で共有する。** `currentMastermonInfo()`が`{level,stats}`を返し`rooms/{id}/players/{pid}.mm`へ書く。**片側だけで掛けるとHPと移動速度が食い違い、ゲストの位置補正が暴れる。** 入室経路は3つ(`__aramonCreateRoom`/`__aramonJoinRoom`/`__aramonFindOrCreateRoom`)あり載せ忘れやすいので、書き込み4か所は必ず`mmEntryFields(mmInfo)`をスプレッドする。同期していないのは`speed`と各`mastermon*Mult`(maxHpはauthStateで上書きされる)。

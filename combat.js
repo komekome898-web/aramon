@@ -291,6 +291,15 @@ function fireMove(attacker, target, move){
       stopsSelfMove: move.selfMoveWithProjectile||false, // この弾が消えた地点で発射主の強制前進も止める(デュラハン最終奥義)
     });
   }
+  // selfBlast: 撃った瞬間に自分の足元でドーム状の爆風を起こす(デュラハン最終奥義)。
+  // 着弾ドーム(blast)と同じ spawnGroundBlast を使うので、当たり判定も描画も既存の仕組みに乗る。
+  if(move.selfBlast){
+    spawnGroundBlast(attacker.x, attacker.y, {
+      ...move.selfBlast,
+      color: move.selfBlast.color || effColor,
+      se: move.selfBlast.se || 'tornado',
+    }, attacker.id, moveAura, auraTint);
+  }
   if(move.selfMoveWithProjectile){
     // 竜巻(最終奥義)と同じ速度で自分も前進する「移動技」
     attacker.moveWithMoveDirX = Math.cos(baseAng);
@@ -1012,12 +1021,24 @@ function raidBeginBossAttack(b, move, elapsed){
   raidState.marks = marks;
   if(typeof pushToast==='function') pushToast(move.warn);
   playSe(move.tier>=3 ? 'godRising' : 'fireRoar');
+  // ゲストには「ホストのループの中でしか起きないこと」が何も起きないので、予告を配信する。
+  // 送るのは表示に必要なぶんだけ(技キー・標的・予告の長さ)。当たり判定はホストのまま。
+  if(netState.mode==='multi' && netState.isHost){
+    window.__aramonPushEvent(netState.roomId, {
+      kind:'raidTele', mv:move.key, tele:move.telegraph,
+      marks: marks.map(m=>({ x:Math.round(m.x), y:Math.round(m.y), r:Math.round(m.r),
+                             a: m.angle!=null ? Math.round(m.angle*1000)/1000 : null,
+                             f: m.fanDeg!=null ? m.fanDeg : null })),
+      ts: Date.now(),
+    });
+  }
 }
 // 予告が明けたら実際の範囲攻撃(areaEffect)を出す。当たり判定も描画も既存の仕組みに乗る
 function raidFireBossAttack(b){
   const p = raidState.pending;
   if(!p) return;
   const move = p.move;
+  const made = [];
   const mk = (x, y, kind, angle)=>{
     const range = move.range;
     const ae = {
@@ -1030,6 +1051,7 @@ function raidFireBossAttack(b){
     };
     ae.life = range/ae.fillSpeed + 0.35;
     areaEffects.push(ae);
+    made.push(ae);
   };
   if(move.shape==='meteor'){
     for(const m of p.marks) mk(m.x, m.y, 'circle');
@@ -1039,6 +1061,18 @@ function raidFireBossAttack(b){
     mk(b.x, b.y, 'fan', p.angle);
   }
   playSe(move.tier>=3 ? 'beam' : 'fire');
+  // ゲストにも同じ範囲攻撃を見せる(見た目専用。ダメージはホストが確定させる)
+  if(netState.mode==='multi' && netState.isHost){
+    for(const ae of made){
+      window.__aramonPushShotEvent(netState.roomId, {
+        type:'aoe', kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y),
+        angle:Math.round(ae.angle*1000)/1000, color:ae.color, range:Math.round(ae.range), width:0,
+        fanAngleDeg:ae.fanAngleDeg, beamCount:0, beamSpreadDeg:0,
+        life:Math.round(ae.life*100)/100, fillSpeed:Math.round(ae.fillSpeed),
+        telegraphTime:0, style:null, auraTint:ae.auraTint||null, moveAura:ae.moveAura||null,
+      });
+    }
+  }
   raidState.pending = null;
   raidState.marks = [];
   raidState.nextAttackAt = matchTime + raidAttackGap(matchTime);
@@ -1059,10 +1093,20 @@ function updateRaid(dt){
 // レイドの決着判定。ボス撃破か時間切れで終わる(勝敗は「ボスを倒せたか」)
 function checkRaidEnd(){
   if(!game.raid || game.over) return;
+  // マルチではホストだけが決着を確定させ、raidEndイベントで全員に伝える
+  if(netState.mode==='multi' && !netState.isHost) return;
   const b = raidBossEntity();
-  if(!b){ finishRaid(true); return; }
-  if(matchTime >= raidState.endsAt) finishRaid(false);
-  else if(!entities.some(e=>e.alive && e.isPlayer)) finishRaid(false); // 全滅
+  let done = null;
+  if(!b) done = true;                                        // 討伐
+  else if(matchTime >= raidState.endsAt) done = false;        // 時間切れ
+  else if(!entities.some(e=>e.alive && !e.isRaidBoss)) done = false;  // 挑戦者が全滅
+  if(done===null) return;
+  if(netState.mode==='multi' && netState.isHost){
+    // 決着した瞬間の全員の状態(貢献度を含む)を待たずに配信してから終わらせる
+    window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload()).catch(()=>{});
+    window.__aramonPushEvent(netState.roomId, { kind:'raidEnd', defeated:done, ts:Date.now() });
+  }
+  finishRaid(done);
 }
 
 // ===== 観戦(ホスト敗退後) =====

@@ -492,7 +492,9 @@ const SIGNATURE_MOVES = {
   dullahan:[ /*@dullahan*/
     { name:'まっぷたつ', tier:1, color:'#f4f7ff', aoeShape:'rect', range:700, rectWidth:55, dmg:24, cooldown:0.85, gutsCost:8, aoeStyle:'zangetsu', closeBonusMax:1.5, icon:'🗡️' },
     { name:'風神剣', tier:2, color:'#f4f7ff', range:1300, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:760, hitR:18, burst:3, burstGap:0.09, projStyle:'crescentWhite', closeBonusMax:1.5, icon:'🗡️' },
-    { name:'最終奥義', tier:3, color:'#f4f7ff', range:1300, dmg:64, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, selfMoveWithProjectile:true, icon:'🌪️' }
+    // selfBlast: 撃った瞬間に自分の足元でドーム状の爆風が広がる。そのあと竜巻と一緒に前進する
+    { name:'最終奥義', tier:3, color:'#f4f7ff', range:1300, dmg:64, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, selfMoveWithProjectile:true,
+      selfBlast:{ radius:420, dmg:46, expandTime:0.42 }, icon:'🌪️' }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -567,8 +569,14 @@ function entitySkinId(entity){
   return entity.skinId || null;
 }
 // モンスターのオーラ(スキン優先: SSR固定色 → 色スキンの色 → デフォルト)
+// レイド中のボスのオーラ。素体やスキンのオーラではなく必ずこれになる。
+// getMonsterAura から参照するので、レイドの節ではなくここに置いてある(TDZ回避)。
+const RAID_BOSS_AURA = 'white';
 function getMonsterAura(entity){
   if(!entity) return null;
+  // レイドのボスだけは白オーラで固定する(素体のドラゴンやスキンのオーラは使わない)。
+  // ここ1か所で返すので、技の色・カード・HUDの発光もまとめて白になる。
+  if(entity.isRaidBoss) return RAID_BOSS_AURA;
   const sid = entitySkinId(entity);
   if(sid){
     if(SSR_SKIN_AURA[sid]) return SSR_SKIN_AURA[sid];
@@ -729,6 +737,10 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'【レイド】最大4人で同時に挑めるようになりました(ロビーのレイド→「みんなで挑む」)。空いた枠はマスモン・botが埋めます', g:['feature','multi'] },
+    { t:'【レイド】ボスの攻撃の威力と範囲を大幅に強化しました。予告は今までどおり出るので、見てから逃げてください', g:['balance'] },
+    { t:'【レイド】レイド中のボスは白オーラになりました', g:['av'] },
+    { t:'デュラハンとSSR「狂戦士ガッツ」のtier3「最終奥義」を変更: 発動と同時に自分の周囲へドーム状の爆風が広がり、そのあと竜巻と一緒に前進するようになりました', g:['monster','balance'] },
     { t:'【レイド】レイドボスが「不死のゾッド」になりました。体がさらに大きくなり、少しずつ歩いて間合いを詰めてきます', g:['feature','balance'] },
     { t:'【レイド】闘技場に通常マップと同じアイテムが出るようになりました(火山と反対側にまとまって出ます。ボスは拾いません)。あわせて味方のガッツ回復速度が2倍になりました', g:['feature','balance'] },
     { t:'【レイド】週替わりレイドバトルが登場します！ 巨大な竜に挑み、与えたダメージを全プレイヤーで累計します。累計の到達で全員が報酬をもらえ、自分の累計でも報酬が増えます(シーズン1開始と同時に開幕・1週間)', g:['feature'] },
@@ -1544,17 +1556,17 @@ const RAID_ALLY_GUTS_REGEN_MULT = 2;
 //   telegraph : 予告の長さ(秒)。この間は当たらず、点線の予告と標的だけが出る
 //   warn      : 予告トーストの文言
 const RAID_BOSS_MOVES = [
-  { key:'breath',  tier:1, name:'灼熱のブレス', shape:'fan',    range:1150, fanAngleDeg:62, dmg:26, telegraph:1.30, color:'#ff6b35',
+  { key:'breath',  tier:1, name:'灼熱のブレス', shape:'fan',    range:1900, fanAngleDeg:78, dmg:64, telegraph:1.30, color:'#ff6b35',
     warn:'⚠ 灼熱のブレス — 正面から離れろ！' },
-  { key:'tail',    tier:1, name:'尾薙ぎ',       shape:'circle', range:520,  dmg:22, telegraph:1.10, color:'#ff9a5a', selfCentered:true,
+  { key:'tail',    tier:1, name:'尾薙ぎ',       shape:'circle', range:900,  dmg:56, telegraph:1.10, color:'#ff9a5a', selfCentered:true,
     warn:'⚠ 尾薙ぎ — 竜から離れろ！' },
-  { key:'meteor',  tier:2, name:'落炎',         shape:'meteor', range:330,  dmg:34, telegraph:1.55, color:'#ff4d2a', count:3,
+  { key:'meteor',  tier:2, name:'落炎',         shape:'meteor', range:560,  dmg:86, telegraph:1.55, color:'#ff4d2a', count:3,
     warn:'⚠ 落炎 — 足元の輪から逃げろ！' },
-  { key:'pillar',  tier:2, name:'劫火の柱',     shape:'meteor', range:250,  dmg:30, telegraph:1.35, color:'#ffb703', count:5,
+  { key:'pillar',  tier:2, name:'劫火の柱',     shape:'meteor', range:430,  dmg:74, telegraph:1.35, color:'#ffb703', count:5,
     warn:'⚠ 劫火の柱 — 柱が5本立つ！' },
-  { key:'nova',    tier:3, name:'終焉の吐息',   shape:'fan',    range:1800, fanAngleDeg:150, dmg:48, telegraph:2.10, color:'#ff2e63',
+  { key:'nova',    tier:3, name:'終焉の吐息',   shape:'fan',    range:2900, fanAngleDeg:170, dmg:130, telegraph:2.10, color:'#ff2e63',
     warn:'☠ 終焉の吐息 — 竜の背後へ回り込め！' },
-  { key:'ring',    tier:3, name:'業火の輪',     shape:'circle', range:1250, dmg:44, telegraph:2.00, color:'#ff5d5d', selfCentered:true,
+  { key:'ring',    tier:3, name:'業火の輪',     shape:'circle', range:2100, dmg:118, telegraph:2.00, color:'#ff5d5d', selfCentered:true,
     warn:'☠ 業火の輪 — 全力で外周へ！' },
 ];
 // 攻撃の間隔。時間が経つほど短くなる(=攻撃頻度が上がる)
