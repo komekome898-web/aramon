@@ -1523,7 +1523,7 @@ function renderBag(){
     const it = PLAYER_ITEMS[k];
     const active = k===bagSelectedItem;
     return `
-    <button class="bag-icon-cell ${active?'active':''}" data-key="${k}">
+    <button class="bag-icon-cell ${active?'active':''} ${it.rarity==='SSR'?'is-ssr':''}" data-key="${k}">
       <span class="bag-icon-emoji">${it.icon}</span>
       <span class="bag-icon-count">×${bag[k]}</span>
     </button>`;
@@ -1575,8 +1575,11 @@ function renderBagDesc(){
   const it = PLAYER_ITEMS[bagSelectedItem];
   empty.classList.add('hidden');
   content.classList.remove('hidden');
-  document.getElementById('bagDescIcon').textContent = it.icon;
-  document.getElementById('bagDescName').textContent = it.name;
+  // アイコンはSVGのことがあるのでHTMLとして入れる(textContentだと生タグが出る)
+  document.getElementById('bagDescIcon').innerHTML = it.icon;
+  const nameEl = document.getElementById('bagDescName');
+  nameEl.textContent = it.name;
+  nameEl.classList.toggle('is-ssr', it.rarity==='SSR');
   document.getElementById('bagDescText').textContent = playerItemDesc(bagSelectedItem);
   // 対象マスモンの選択はアイテムを切り替えても維持する(選び直しの手間を無くす)。
   // 消えたマスモンを選んだままにならないよう、存在チェックだけ行う
@@ -1601,6 +1604,19 @@ function setBagQty(v){
 document.getElementById('bagQtyMinus').addEventListener('click', ()=>setBagQty(bagUseQty-1));
 document.getElementById('bagQtyPlus').addEventListener('click', ()=>setBagQty(bagUseQty+1));
 document.getElementById('bagQtySlider').addEventListener('input', (e)=>setBagQty(+e.target.value));
+/* 基礎値アイテムのプレビュー。基礎値は育成倍率が乗る前に足されるので、
+   生の+5ではなく「実際にどれだけHP/速さが増えるか」で見せる。
+   計算は mmEffectiveStats に通す(表示と実戦力の式を分けないため)。 */
+function bagBaseItemPreviewHtml(mm, baseKey, qty){
+  const after = Object.assign({}, mm);
+  if(baseKey==='hp') after.baseHp = safeBaseAmount(mm.baseHp) + BASE_ITEM_GAIN*qty;
+  else after.baseSpd = safeBaseAmount(mm.baseSpd) + BASE_ITEM_GAIN*qty;
+  const a = mmEffectiveStats(mm), b = mmEffectiveStats(after);
+  const isHp = baseKey==='hp';
+  const label = isHp ? '❤️ HP' : '💨 速さ';
+  const from = isHp ? a.hp : a.speed, to = isHp ? b.hp : b.speed;
+  return `<div class="bt-extra bt-extra-base">${label} ${from}→<b>${to}</b>（+${to-from}）</div>`;
+}
 function renderBagTargetList(){
   const data = loadMastermons();
   const pick = document.getElementById('bagTargetList');
@@ -1620,7 +1636,8 @@ function renderBagTargetList(){
     const statsBarHtml = buildMastermonStatsColHtml(mm, mastermonApt(mm), preview);
     const extra =
       bagPicker.itemKey==='freeTrainTicket' ? `<div class="bt-extra">🎫 トレチケ ${mm.tickets||0}→${(mm.tickets||0)+qty}枚</div>` :
-      bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+qty}</div>` : '';
+      bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+qty}</div>` :
+      it.base ? bagBaseItemPreviewHtml(mm, it.base, qty) : '';
     return `
     <button class="bag-target-btn ${active?'active':''}" data-key="${k}">
       <span class="bt-head">
@@ -1669,6 +1686,15 @@ function useBagItem(itemKey, mmKey, qty){
     for(let i=0;i<qty;i++) mm.stats[it.stat] = mastermonClampStat(mm.stats[it.stat] + STAT_SEED_GAIN, cap);
     const gained = mm.stats[it.stat] - before;
     resultText = `${mm.name}の${label}+${gained}`;
+  } else if(it.base){
+    // 基礎値は上限が無い。実際にどれだけ強くなったかで結果を出す
+    const before = mmEffectiveStats(mm);
+    if(it.base==='hp') mm.baseHp = safeBaseAmount(mm.baseHp) + BASE_ITEM_GAIN*qty;
+    else mm.baseSpd = safeBaseAmount(mm.baseSpd) + BASE_ITEM_GAIN*qty;
+    const after = mmEffectiveStats(mm);
+    resultText = it.base==='hp'
+      ? `${mm.name}のライフの基礎値+${BASE_ITEM_GAIN*qty}(HP ${before.hp}→${after.hp})`
+      : `${mm.name}の移動速度の基礎値+${BASE_ITEM_GAIN*qty}(速さ ${before.speed}→${after.speed})`;
   } else if(itemKey==='freeTrainTicket'){
     mm.tickets = (mm.tickets||0) + qty;
     resultText = `${mm.name}のトレーニングチケット+${qty}(🎫${mm.tickets}枚)`;
@@ -2938,13 +2964,17 @@ function currentMastermonInfo(){
   const src = mm.stats || {};
   const stats = {};
   MASTERMON_STATS.forEach(s=>{ stats[s.key] = Math.round(src[s.key]||0); });
-  // 転生の情報も必ず載せる。適正S(倍率の伸びが良くなる)と基礎値加算を片側だけで
-  // 掛けるとホストとゲストでHP・移動速度が食い違い、ゲストの位置補正が暴れる。
+  // 転生と基礎値アイテムの情報も必ず載せる。適正S(倍率の伸びが良くなる)と基礎値加算を
+  // 片側だけで掛けるとホストとゲストでHP・移動速度が食い違い、ゲストの位置補正が暴れる。
   // Firebaseはundefinedを受け付けないのでnullで送る。
   const apt = {};
   const srcApt = mastermonApt(mm);
   MASTERMON_STATS.forEach(s=>{ apt[s.key] = srcApt[s.key] || 'C'; });
-  return { level: mm.level||1, stats, rebirth: mastermonRebirthCount(mm), apt };
+  // baseHp/baseSpd は「基礎値アイテムぶん」だけを素のまま送る。
+  // 受け側は mastermonBaseBonus() で rebirth から転生ぶんを足し直すので、
+  // ここで合計を送ると転生ぶんが二重に乗る。
+  return { level: mm.level||1, stats, rebirth: mastermonRebirthCount(mm), apt,
+    baseHp: safeBaseAmount(mm.baseHp), baseSpd: safeBaseAmount(mm.baseSpd) };
 }
 // 今参戦するモンスターに装備中のスキンID(マルチプレイで相手にも見せるため送る)
 function currentEquippedSkinId(){
@@ -3499,11 +3529,17 @@ function raidBossImgTag(){
   if(url) return `<img src="${url}" alt="${RAID_BOSS.name}">`;
   return defaultMonsterImgTag(RAID_BOSS.element, RAID_BOSS.name);
 }
-function raidRewardLabel(t){
+/* 報酬の並び。html=true は報酬行(innerHTML)用でSVGアイコンをそのまま出す。
+   html=false はトースト(textContent)用で、SVGアイコンは名前だけにする。 */
+function raidRewardLabel(t, html){
   const parts = [];
   if(t.gold) parts.push(`🪙${t.gold.toLocaleString()}`);
   if(t.dia) parts.push(`💎${t.dia}`);
-  if(t.item && PLAYER_ITEMS[t.item]) parts.push(`${PLAYER_ITEMS[t.item].icon}${PLAYER_ITEMS[t.item].name}×${t.n||1}`);
+  for(const x of rewardItemList(t)){
+    const it = PLAYER_ITEMS[x.key];
+    const icon = (html || !playerItemIconIsSvg(x.key)) ? it.icon : '';
+    parts.push(`${icon}${it.name}×${x.n}`);
+  }
   if(t.skin) parts.push(`✨${skinMeta(t.skin).name}`);
   return parts.join(' / ');
 }
@@ -3516,8 +3552,19 @@ function raidTierRowsHtml(tiers, reached, claimed, kind){
       : `<span class="raid-claim-state">${got?'受取済':'未達成'}</span>`;
     return `<div class="raid-tier-row${ok?' is-reached':''}${got?' is-got':''}">
       <span class="raid-tier-at">${t.at.toLocaleString()}</span>
-      <span class="raid-tier-reward">${raidRewardLabel(t)}</span>
+      <span class="raid-tier-reward">${raidRewardLabel(t, true)}</span>
       ${btn}
+    </div>`;
+  }).join('');
+}
+// レイド限定の基礎値アイテムの説明。効果の文言は playerItemDesc に寄せて二重管理を避ける
+const RAID_BASE_ITEM_KEYS = ['fruit_life', 'accel_elixir'];
+function raidBaseItemLinesHtml(){
+  return RAID_BASE_ITEM_KEYS.filter(k=>PLAYER_ITEMS[k]).map(k=>{
+    const it = PLAYER_ITEMS[k];
+    return `<div class="raid-item-line">
+      <span class="raid-item-icon">${it.icon}</span>
+      <span class="raid-item-body"><b>${it.name}</b><span>${playerItemDesc(k)}</span></span>
     </div>`;
   }).join('');
 }
@@ -3566,7 +3613,12 @@ function renderRaidOverlay(){
       <div class="raid-sec-title">✦ レイド特効スキン</div>
       <div class="raid-bonus-text">「${skinBonus.name}」を装備してレイドに挑むと、
       ボスへの<b>与ダメージ×${skinBonus.dmgDealt}</b>・ボスからの<b>被ダメージ×${skinBonus.dmgTaken}</b>。レイドガチャで手に入ります。</div>
-    </div>` : ''}`;
+    </div>` : ''}
+    <div class="raid-sec raid-sec-bonus">
+      <div class="raid-sec-title">✦ レイドでしか手に入らないアイテム</div>
+      ${raidBaseItemLinesHtml()}
+      <div class="raid-bonus-note">基礎値は上限が無く、育成の倍率が乗る前に足されます。育てたマスモンほど1個の効きが大きくなります。</div>
+    </div>`;
   const rankBtn = document.getElementById('raidRankOpenBtn');
   if(rankBtn) rankBtn.addEventListener('click', openRaidRanking);
   box.querySelectorAll('.raid-claim-btn').forEach(b=>{
@@ -4393,11 +4445,11 @@ let mastermonOpenedFrom = 'title';
 function mmKeys(){ return Object.keys(loadMastermons()); }
 // 育成後の実効値(バトルで実際に使われる値)を出す
 // カード等に出す実効HP・速さ。applyMastermonStatsToEntity と同じ順番で計算する
-// (転生ぶんの基礎値加算 → 育成倍率)。式を片方だけ変えると表示と実戦力が食い違う。
+// (基礎値の加算 → 育成倍率)。式を片方だけ変えると表示と実戦力が食い違う。
 function mmEffectiveStats(mm){
   const el = ELEMENTS[mm.element];
   const mults = mastermonEffectMults(mm);
-  const rb = mastermonRebirthBaseBonus(mm);
+  const rb = mastermonBaseBonus(mm);
   return {
     hp: Math.round((el.hp + rb.hp) * mults.lifeMult),
     speed: Math.round((el.speed * (el.speedMod||1) + rb.speed) * mults.speedMult),
@@ -5527,8 +5579,9 @@ function buildMastermonTrainingHtml(mm){
 function applyMastermonStatsToEntity(ent, mm){
   if(!ent || !mm) return;
   const mults = mastermonEffectMults(mm);
-  // 転生ぶんの基礎値加算は「倍率を掛ける前」に足す(育成の倍率がそのまま乗るように)
-  const rb = mastermonRebirthBaseBonus(mm);
+  // 基礎値の加算(転生ぶん+基礎値アイテムぶん)は「倍率を掛ける前」に足す
+  // (育成の倍率がそのまま乗るように)
+  const rb = mastermonBaseBonus(mm);
   ent.maxHp = Math.round((ent.maxHp + rb.hp) * mults.lifeMult);
   ent.hp = ent.maxHp;
   ent.speed = (ent.speed + rb.speed) * mults.speedMult;
