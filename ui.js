@@ -3439,9 +3439,11 @@ function updateRaidHud(){
 function finishRaid(defeated){
   if(game.over) return;
   const dmg = Math.round((player && player.raidDamage) || 0);
+  // 自己ベストの判定に使うので、記録を更新する前の値を控えておく
+  const prevBest = Math.round(loadRaidProgress().best || 0);
   // デモプレイ中と準備中は、記録も報酬も一切残さない(公開時に全員が同じ位置から始められるように)
   if(!raidRunDemo && !raidRecordsDisabled()) raidRecordRun(dmg);
-  raidShowResult(defeated, dmg);
+  raidShowResult(defeated, dmg, prevBest);
 }
 // 与ダメを端末とサーバーの累計へ反映する
 function raidRecordRun(dmg){
@@ -3784,27 +3786,67 @@ document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
 });
 
 /* --- レイドのリザルト --- */
-function raidShowResult(defeated, dmg){
+function raidShowResult(defeated, dmg, prevBest){
   game.over = true;
   game.started = false;
+  joinInProgress = false;
+  if(typeof setAutoRun==='function') setAutoRun(false);
   const noRecord = raidRunDemo || raidRecordsDisabled();
-  const gold = noRecord ? 0 : Math.min(RAID_RUN_GOLD_MAX, Math.round(dmg*RAID_RUN_GOLD_PER_DMG));
-  const dia  = noRecord ? 0 : Math.min(RAID_RUN_DIA_MAX,  Math.round(dmg*RAID_RUN_DIA_PER_DMG));
-  if(gold||dia) addWallet(gold, dia);
+  const d = Math.round(dmg);
+  // 倒しきれなくても、自己ベストを更新できたなら勝利あつかいにする
+  const newBest = RAID_BEST_IS_WIN && !noRecord && d > Math.round(prevBest||0);
+  const isWin = !!defeated || newBest;
+  const died = !!(player && !player.alive);   // 時間切れなのか、やられたのかを分ける
+
   bgmSetTrack(null);
-  playSe(defeated ? 'fanfare' : 'sad');
-  setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, defeated ? 3800 : 3000);
+  // 勝利SEはSSRスキンで差し替わる(通常の試合と同じ扱い)
+  playSe(isWin ? ((typeof skinWinSeName==='function' && skinWinSeName(player)) || 'fanfare') : 'sad');
+  setTimeout(()=>{
+    if(game.started) return;
+    if(typeof bgmDesiredTrack==='function' && bgmDesiredTrack()!==null) return;
+    bgmSetTrack('title');
+  }, isWin ? 3800 : 3000);
+
   const scr = document.getElementById('resultScreen');
-  scr.className = 'resultScreen ' + (defeated?'win':'lose');
-  document.getElementById('resultRank').textContent = defeated ? '🐉 討伐成功' : '⏱ 時間切れ';
-  document.getElementById('resultSub').textContent = noRecord
-    ? `与えたダメージ ${Math.round(dmg).toLocaleString()}（準備中のため記録は残りません）`
-    : `与えたダメージ ${Math.round(dmg).toLocaleString()}`;
+  // winクラスがアイコンの飛び跳ねアニメーションと金色の見た目を出す
+  scr.className = 'resultScreen ' + (isWin?'win':'lose');
+  document.getElementById('resultRank').textContent =
+    defeated ? '🐉 討伐成功' :
+    newBest  ? '🔥 自己ベスト更新' :
+    died     ? '💀 力尽きた' : '⏱ 時間切れ';
+  let sub = `与えたダメージ ${d.toLocaleString()}`;
+  if(newBest && prevBest>0) sub += `（これまでの最高 ${Math.round(prevBest).toLocaleString()}）`;
+  if(noRecord) sub += '（記録は残りません）';
+  document.getElementById('resultSub').textContent = sub;
   document.getElementById('statKills').textContent = player ? player.kills : 0;
-  document.getElementById('statDamage').textContent = Math.round(dmg).toLocaleString();
-  document.getElementById('statTime').textContent = fmtTime(matchTime);
+  document.getElementById('statDamage').textContent = d.toLocaleString();
+  document.getElementById('statTime').textContent = fmtTime(player && player.deathAt ? player.deathAt : matchTime);
+
+  // 報酬。通常の試合と同じ「参加ぶん + 成果ぶん(+討伐ボーナス)」で、成果ぶんを与ダメから出す
+  {
+    const isMultiMatch = netState.mode==='multi';
+    const mutRewardMult = (typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1;
+    const goldFromDmg = Math.min(RAID_RUN_GOLD_MAX, Math.round(d*RAID_RUN_GOLD_PER_DMG));
+    const diaFromDmg  = Math.min(RAID_RUN_DIA_MAX,  Math.round(d*RAID_RUN_DIA_PER_DMG));
+    const goldGain = noRecord ? 0 : Math.round(
+      (GOLD_MATCH_BASE + goldFromDmg + (defeated?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1) * mutRewardMult);
+    const diaGain = noRecord ? 0 : Math.round(
+      (DIA_MATCH_BASE + diaFromDmg + (defeated?DIA_CHAMPION_BONUS:0)) * mutRewardMult);
+    if(goldGain||diaGain) addWallet(goldGain, diaGain);
+    document.getElementById('resultCurrencyLine').textContent = noRecord
+      ? '記録は残りません' : `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
+    updateAccountBar();
+  }
+  // マスモンの経験値も通常の試合と同じ経路で入れる(与ダメと生存時間から算出される)
+  if(!noRecord && typeof handleMastermonPostMatch==='function') handleMastermonPostMatch(isWin);
+  else { document.getElementById('mastermonResultInfo').classList.add('hidden');
+         document.getElementById('mastermonRegisterPrompt').classList.add('hidden'); }
+
+  document.getElementById('resultBadges').classList.add('hidden');
+  document.getElementById('scoreSubmitStatus').textContent = '';
+  setResultMonsterIcon(player ? player.element : game.selectedElement);
+  setResultButtonsForRaid(true);
   scr.classList.remove('hidden');
-  if(gold||dia) pushToast(`🪙${gold} 💎${dia} を獲得`);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
 }
@@ -3942,6 +3984,34 @@ function showResult(isWin, placement){
     showResultNow(isWin, placement);
   }, MATCH_FINISH_ANIM_MS);
 }
+/* リザルトのモンスターアイコン。装備中スキンがあればそれを反映する。
+   通常の試合とレイドで同じものを使う(レイドで出ない不具合があったため1か所にまとめた)。 */
+function setResultMonsterIcon(elementKey){
+  const iconEl = document.getElementById('resultMonsterIcon');
+  if(!iconEl || !elementKey) return;
+  const el = ELEMENTS[elementKey];
+  iconEl.alt = el ? el.label : '';
+  iconEl.style.display = '';
+  const sk = (typeof getEquippedSkin==='function') ? getEquippedSkin(elementKey) : null;
+  const skUrl = sk && (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(sk) : null;
+  if(skUrl){
+    iconEl.dataset.variant = 'skin';
+    iconEl.src = skUrl;
+  } else {
+    iconEl.dataset.variant = 'normal';
+    iconEl.dataset.extIdx = '0';
+    iconEl.dataset.basePath = `monsters/${elementKey}`;
+    iconEl.src = imgSrcFor(iconEl.dataset.basePath);
+  }
+}
+/* リザルトのボタン列。レイドでは「ランキング/マイ記録」の代わりに
+   「レイドランキング」を出す(通常の順位ランキングはレイドに存在しないため)。 */
+function setResultButtonsForRaid(isRaid){
+  const set = (id, hidden)=>{ const b=document.getElementById(id); if(b) b.classList.toggle('hidden', hidden); };
+  set('viewRankingBtn', isRaid);
+  set('viewMyStatsBtn', isRaid);
+  set('viewRaidRankBtn', !isRaid);
+}
 function showResultNow(isWin, placement){
   if(game.over) return;
   game.over=true;
@@ -3980,24 +4050,8 @@ function showResultNow(isWin, placement){
     document.getElementById('resultCurrencyLine').textContent = `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
     updateAccountBar();
   }
-  const iconEl = document.getElementById('resultMonsterIcon');
-  if(iconEl){
-    const el = ELEMENTS[player.element];
-    iconEl.alt = el ? el.label : '';
-    iconEl.style.display = '';
-    // 装備中スキンがあればそのアイコンを反映する
-    const sk = (typeof getEquippedSkin==='function') ? getEquippedSkin(player.element) : null;
-    const skUrl = sk && (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(sk) : null;
-    if(skUrl){
-      iconEl.dataset.variant = 'skin';
-      iconEl.src = skUrl;
-    } else {
-      iconEl.dataset.variant = 'normal';
-      iconEl.dataset.extIdx = '0';
-      iconEl.dataset.basePath = `monsters/${player.element}`;
-      iconEl.src = imgSrcFor(iconEl.dataset.basePath);
-    }
-  }
+  setResultMonsterIcon(player.element);
+  setResultButtonsForRaid(false);
   document.getElementById('resultScreen').classList.remove('hidden');
   // 自己ベスト更新の検出用に、記録前のベストを控えておく(全体＋このモンスター毎)
   const _preCum = titlesCumulativeStats();
@@ -6051,6 +6105,8 @@ function renderMyStats(){
   byElEl.innerHTML = rows.join('');
 }
 document.getElementById('viewMyStatsBtn').addEventListener('click', ()=>openMyStatsScreen(false));
+// レイドのリザルトから直接レイドランキングへ
+document.getElementById('viewRaidRankBtn').addEventListener('click', ()=>openRaidRanking());
 document.getElementById('titleMyStatsBtn').addEventListener('click', ()=>openMyStatsScreen(true));
 document.getElementById('closeMyStatsBtn').addEventListener('click', ()=>{
   document.getElementById('myStatsScreen').classList.add('hidden');
