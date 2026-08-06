@@ -276,6 +276,7 @@ const WALK_ANIM = {
   },
   fire: {
     base: { front:_loadWalk('fire_walk_f'), back:_loadWalk('fire_walk_b') },              // ドラゴン(色スキン対応)
+    ssr:  { skinId:'zod_ssr', front:_loadWalk('zod_ssr_walk_f'), back:_loadWalk('zod_ssr_walk_b') }, /*@zod_ssr*/
   },
   leaf: {
     base: { front:_loadWalk('leaf_walk_f'), back:_loadWalk('leaf_walk_b') },              // プラント(色スキン対応)
@@ -517,6 +518,7 @@ const SSR_SKIN_AURA = {
   rock_ssr:       'blue', /*@rock_ssr*/
   aqua_ssr:       'red', /*@aqua_ssr*/
   guts_ssr:       'black', /*@guts_ssr*/
+  zod_ssr:        'black', /*@zod_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -660,6 +662,7 @@ const SSR_SKIN_TIER3 = {
     dmg:48, rectWidth:340, aoeStyle:'kagune', lifestealMult:2,
   }},
   guts_ssr:       { name:'ドラゴンころし', dmgMult:1.15 }, /*@guts_ssr*/
+  zod_ssr:        { name:'言葉は無粋', dmgMult:1.15 }, /*@zod_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1580,7 +1583,7 @@ function raidSkinBonus(skinId){ return (skinId && RAID_EFFECT_SKINS[skinId]) || 
 // レイドガチャのピックアップ(=レイド特効スキン)。ツールで追加したIDをここへ入れる
 const RAID_GACHA_PICKUP = 'guts_ssr';
 // レイド最終報酬(参加者全員へ配布)のスキン
-const RAID_CLEAR_SKIN = 'fire_zodd';
+const RAID_CLEAR_SKIN = 'zod_ssr';
 
 /* --- 報酬 ---
    累計ダメージの到達報酬(全員共通)と、個人の与ダメ順位に応じた報酬。 */
@@ -2038,6 +2041,7 @@ const SSR_SKINS = {
   rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr' }, /*@rock_ssr*/
   aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/
   guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr' }, /*@guts_ssr*/
+  zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr' }, /*@zod_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 

@@ -1,0 +1,17 @@
+{
+  "id": "zod_ssr",
+  "element": "fire",
+  "name": "不死のゾッド",
+  "aura": "black",
+  "seasonExclusive": false,
+  "iconImg": "zod_ssr",
+  "playerImg": "zod_player_ssr",
+  "walkPrefix": "zod_ssr_walk_",
+  "t3name": "言葉は無粋",
+  "t3mult": 1.15,
+  "raidEffect": false,
+  "raidDealt": 1.5,
+  "raidTaken": 0.75,
+  "raidPickup": false,
+  "raidClear": true
+}
