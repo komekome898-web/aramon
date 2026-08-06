@@ -659,18 +659,25 @@ function genRocks(){
     }
   }
 }
-function pickLootKindAndType(){
-  const r = Math.random();
-  if(r < 0.35){
-    const r2 = Math.random();
+/* 落ちているアイテムの中身を1個決める。乱数の出どころだけを差し替えられるようにして、
+   ソロ(Math.random)とマルチ(共有シードのrng)で同じ式を使う。
+   通常マップとレイドの違いは lootMix() の表だけで、ここは分岐しない。
+   ※マルチでは分岐によってrngを消費する回数が変わるため、ホストとゲストで lootMix() が
+     同じ表を返すこと(=撒く前に game.raid が両側で揃っていること)が前提。 */
+function pickLootFrom(rnd){
+  const m = lootMix();
+  const r = rnd();
+  if(r < m.heal){
+    const r2 = rnd();
     const type = r2<0.5 ? 'oilS' : (r2<0.85 ? 'oilM' : 'oilL');
     return { kind:'heal', type };
   }
-  if(r < 0.62) return { kind:'ticket', type:'ticket' };
-  if(r < 0.92) return { kind:'guts', type:'guts' };
-  const type = TRAINING_TYPES[Math.floor(Math.random()*TRAINING_TYPES.length)];
+  if(r < m.ticket) return { kind:'ticket', type:'ticket' };
+  if(r < m.guts) return { kind:'guts', type:'guts' };
+  const type = TRAINING_TYPES[Math.floor(rnd()*TRAINING_TYPES.length)];
   return { kind:'training', type };
 }
+function pickLootKindAndType(){ return pickLootFrom(Math.random); }
 function isNearRock(x, y, margin){
   for(const r of rocks){
     if(Math.hypot(x-r.x, y-r.y) < r.radius+margin) return true;
@@ -698,18 +705,7 @@ function spawnLoot(n, center, radius){
 }
 
 // ===== マルチプレイ用: シード付き決定論的初期化 =====
-function seededPickLootKindAndType(rng){
-  const r = rng();
-  if(r < 0.35){
-    const r2 = rng();
-    const type = r2<0.5 ? 'oilS' : (r2<0.85 ? 'oilM' : 'oilL');
-    return { kind:'heal', type };
-  }
-  if(r < 0.62) return { kind:'ticket', type:'ticket' };
-  if(r < 0.92) return { kind:'guts', type:'guts' };
-  const type = TRAINING_TYPES[Math.floor(rng()*TRAINING_TYPES.length)];
-  return { kind:'training', type };
-}
+function seededPickLootKindAndType(rng){ return pickLootFrom(rng); }
 function seededSpawnLoot(rng, n, center, radius){
   for(let i=0;i<n;i++){
     const pick = seededPickLootKindAndType(rng);

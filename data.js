@@ -747,6 +747,9 @@ const UPDATE_HISTORY = [
   { date:'2026-08-07', items:[
     { t:'🎉 シーズン1が開幕しました！ 曜日ごとの変則ルールと、レイドバトル「不死のゾッド」が始まっています', g:['feature','general'] },
     { t:'ロビーの「シーズン1」から、曜日ごとの変則ルールとレイドバトルの開催期間をカレンダーで確認できるようになりました', g:['feature'] },
+    { t:'【レイド】闘技場に落ちているアイテムを大幅に増やしました。とくにガッツ飴が多く出るようになり、さらに時間が経つと安全圏の中へ追加で補給されます', g:['balance'] },
+    { t:'【レイド】レイドランキングが表示されない不具合を修正しました', g:['fix','multi'] },
+    { t:'レイド開催中は、ガチャ画面を開くとレイドガチャから表示されるようになりました', g:['general'] },
   ]},
   { date:'2026-08-06', items:[
     { t:'🎉 シーズン1がいよいよ8/7に開幕します！ 曜日ごとの変則ルール(日替わりミューテーター)が始まり、月・木は全員が技tier2スタート、火・金は試合報酬2倍、水はスポーンアイテム1.5倍。土日はその全部が同時に発動します', g:['feature','general'] },
@@ -964,6 +967,12 @@ const UPDATE_HISTORY = [
 
 const TICKET_ITEM = { name:'修行チケット', color:'#9fd1ff', accent:'#ffffff' };
 const GUTS_ITEM = { name:'ガッツ飴', restore:32, maxBoost:15, color:'#ff7a96', accent:'#ffd9e3' };
+/* 落ちているアイテムの内訳(0〜1の累積しきい値。残りがトレーニング)。
+   レイドは技を撃ち続ける戦いなのでガッツ飴を厚くする。
+   通常マップとレイドの違いはこの表だけで、撒く処理そのものは共通(pickLootFrom)。 */
+const LOOT_MIX_NORMAL = { heal:0.35, ticket:0.62, guts:0.92 };
+const LOOT_MIX_RAID   = { heal:0.24, ticket:0.32, guts:0.95 };
+function lootMix(){ return (typeof game!=='undefined' && game && game.raid) ? LOOT_MIX_RAID : LOOT_MIX_NORMAL; }
 
 const HEAL_ITEMS = {
   oilS: { name:'小ガロエオイル', heal:20, color:'#9b6b2f', accent:'#e8c873', size:0.8  },
@@ -1592,8 +1601,12 @@ function raidBossMinY(){
   return WORLD.h*RAID_VOLCANO_SITE.yr + RAID_VOLCANO_SITE.radius + RAID_BOSS.radius + RAID_BOSS_VOLCANO_GAP;
 }
 const RAID_LOOT_YR  = 0.64;   // アイテムを撒く中心(火山と反対側=手前)。安置が縮んでも一部が残る位置
-const RAID_LOOT_COUNT = 26;   // 撒く数
+const RAID_LOOT_COUNT = 46;   // 開始時に撒く数
 const RAID_LOOT_SPREAD = 0.20; // 撒く範囲(ワールドの短辺に対する比率)
+/* レイドは3分間ずっと技を撃ち続ける戦いなので、開始時に撒くだけだと途中でガッツが尽きる。
+   一定間隔で追加を撒いて補給が途切れないようにする(マルチではホストが撒いて配信する)。 */
+const RAID_LOOT_REFILL_EVERY = 14;  // 追加を撒く間隔(秒)
+const RAID_LOOT_REFILL_COUNT = 12;  // 1回に撒く数
 const RAID_BOSS = {
   element:'fire',            // 素体はドラゴン
   skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る

@@ -960,14 +960,14 @@ function computePlayerInput(){
    game.raid の1つに寄せてある。
    ===================================================================== */
 // レイドの進行状態。試合ごとに startRaid() が作り直す
-let raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0 };
+let raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0, nextLootAt:0 };
 /* レイドの状態を初期値へ戻す。試合を始める全経路(ソロ/マルチ/訓練場)の冒頭で必ず呼ぶ。
    これを忘れると、レイドの次に始めた通常の試合で game.raid が立ったままになり、
    ボスAI・レイドの安置・レイドの決着判定が同時に走って試合が続行不能になる。      */
 function raidResetState(){
   game.raid = false;
   if(typeof netState!=='undefined') netState.raid = false;
-  raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0 };
+  raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0, nextLootAt:0 };
   const hud = document.getElementById('raidHud');
   if(hud) hud.classList.add('hidden');
   const el = document.getElementById('hud');
@@ -1112,6 +1112,25 @@ function updateRaid(dt){
   if(raidState.pending && matchTime >= raidState.pending.fireAt){
     if(b) raidFireBossAttack(b);
     else { raidState.pending = null; raidState.marks = []; }
+  }
+  raidRefillLoot();
+}
+/* 3分間ずっと技を撃ち続ける戦いなので、開始時に撒いたぶんだけでは途中でガッツが尽きる。
+   一定間隔で安置内へ追加を撒く。updateRaidはソロとホストでしか回らないので、
+   マルチではここで撒いたぶんをゲストへ明示的に配信する(安置縮小時と同じやり方)。 */
+function raidRefillLoot(){
+  if(matchTime < raidState.nextLootAt) return;
+  raidState.nextLootAt = matchTime + RAID_LOOT_REFILL_EVERY;
+  const before = lootItems.length;
+  // 今の安置の中に撒く(外に出ると取りに行けない)
+  spawnLoot(RAID_LOOT_REFILL_COUNT, zoneState.center, Math.max(120, zoneState.radius*0.8));
+  if(netState.mode==='multi' && netState.isHost && window.__aramonPushLootEvent){
+    for(let i=before;i<lootItems.length;i++){
+      const it = lootItems[i];
+      window.__aramonPushLootEvent(netState.roomId, {
+        evtType:'spawn', id:it.id, kind:it.kind, itemType:it.type, x:Math.round(it.x), y:Math.round(it.y), bob:it.bob,
+      });
+    }
   }
 }
 // レイドの決着判定。ボス撃破か時間切れで終わる(勝敗は「ボスを倒せたか」)

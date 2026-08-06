@@ -1096,6 +1096,13 @@
     box-shadow:0 2px 6px rgba(0,0,0,0.4); }
   @keyframes seasonPopFlow{ from{ background-position:0 0; } to{ background-position:200% 0; } }
   @keyframes seasonPopBob{ 0%,100%{ transform:rotate(-4deg) translateY(0); } 50%{ transform:rotate(-4deg) translateY(-2px); } }
+  /* トップ「ガチャ」ボタンのレイドガチャ告知ポップ(紫)。シーズンの虹ポップと同じ位置・動き */
+  .raid-gacha-pop{ position:absolute; top:-9px; right:-6px; font-size:8.5px; font-weight:800; letter-spacing:0.3px;
+    color:#fff; padding:1px 6px; border-radius:9px; white-space:nowrap; transform:rotate(-4deg);
+    background:linear-gradient(90deg,#7b3fd4,#b06bff,#e0b3ff,#b06bff,#7b3fd4);
+    background-size:200% 100%; animation:seasonPopFlow 3s linear infinite, seasonPopBob 1.6s ease-in-out infinite;
+    box-shadow:0 2px 6px rgba(0,0,0,0.45); }
+  .raid-gacha-pop.hidden{ display:none; }
   /* スキンプレビュー(正面/後ろ姿) */
   /* ガチャ全画面(z-index:620)から開くため、基底.mastermon-confirm-overlay(600)より上に置く。
      低いとガチャ画面の裏に隠れ「カタログをタップしても何も反応しない」ように見える不具合になる */
@@ -2382,6 +2389,12 @@
     color:var(--ink-dim); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); }
   .raid-rank-tab.active{ color:#efe2ff; border-color:rgba(190,130,255,0.8);
     background:linear-gradient(180deg, rgba(150,60,240,0.4), rgba(90,30,160,0.4)); }
+  /* 空・エラー時の表示(読み込めなかった理由とやり直しボタンを出す) */
+  #raidRankScroll .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px 10px; line-height:1.7; }
+  .rank-empty-detail{ font-family:'Share Tech Mono',monospace; font-size:10px; color:#ff9a8a; }
+  .raid-rank-retry{ margin-top:8px; padding:5px 14px; border-radius:8px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11.5px;
+    color:#efe2ff; background:rgba(140,80,220,0.25); border:1px solid rgba(190,130,255,0.7); }
   .raid-rank-list{ display:flex; flex-direction:column; gap:3px; }
   .raid-rank-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:8px; align-items:center;
     padding:5px 8px; border-radius:8px; background:rgba(255,255,255,0.04); }

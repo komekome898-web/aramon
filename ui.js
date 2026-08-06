@@ -1829,7 +1829,8 @@ function promoOryouResetIfNeeded(name){
   }catch(e){}
 }
 function openGachaScreen(){
-  setGachaMode('skin');   // 開いたときは必ずスキンガチャから
+  // レイド開催期間中はレイドガチャを最初に見せる(期間外は従来どおりスキンガチャ)
+  setGachaMode(raidOpenNow() ? 'raid' : 'skin');
   updateGachaWallet();
   document.getElementById('gachaSingleCost').textContent = `💎 ${GACHA_COST_DIA_SINGLE}`;
   document.getElementById('gachaTenCost').textContent = `💎 ${GACHA_COST_DIA_TEN}`;
@@ -1869,17 +1870,23 @@ maybeFlushPendingPromoPopups();
 const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // ダイヤ受け取り済み(アカウント同期)
 const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
 const ROCK_SSR_PROMO_DIA = 500;
+/* ポップアップに出すピックアップ。レイド開催期間中はレイドガチャのピックアップに
+   切り替える(画像は SKIN_MEDIA.promoImg から引くので、ツールで差し替えれば自動で入れ替わる)。 */
+function promoPickupSkinId(){
+  return (typeof raidOpenNow==='function' && raidOpenNow()) ? RAID_GACHA_PICKUP : GACHA_PICKUP_SSR;
+}
 function gachaPickupName(){
-  return (typeof SSR_SKINS!=='undefined' && SSR_SKINS[GACHA_PICKUP_SSR]) ? skinMeta(GACHA_PICKUP_SSR).name : 'SSR';
+  const id = promoPickupSkinId();
+  return (typeof SSR_SKINS!=='undefined' && SSR_SKINS[id]) ? skinMeta(id).name : 'SSR';
 }
 function showRockSsrPromoPopup(){
   const el = document.getElementById('rockSsrPromoOverlay');
   if(!el) return;
   const img = document.getElementById('rockSsrPromoImg');
-  const url = (typeof skinPromoImgUrl==='function') ? skinPromoImgUrl(GACHA_PICKUP_SSR) : null;
+  const url = (typeof skinPromoImgUrl==='function') ? skinPromoImgUrl(promoPickupSkinId()) : null;
   if(img && url && img.getAttribute('src') !== url){
     img.src = url;
-    img.alt = `SSR${gachaPickupName()}実装記念`;
+    img.alt = `SSR${gachaPickupName()}ピックアップ`;
   }
   el.classList.remove('hidden');
 }
@@ -3392,7 +3399,8 @@ function raidStart(multi, demo){
   entities.push(boss);
 
   raidState = { bossId: boss.id, nextAttackAt: 3.0, pending:null, marks:[],
-                repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT };
+                repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT,
+                nextLootAt: RAID_LOOT_REFILL_EVERY };
   updateCamera();
 
   document.getElementById('startScreen').classList.add('hidden');
@@ -3493,6 +3501,9 @@ function updateRaidEntryButton(){
   // 未受け取りの報酬があるときだけ通知の点を出す(準備中は記録が残らないので出さない)
   const dot = document.getElementById('raidDot');
   if(dot) dot.classList.toggle('hidden', raidRecordsDisabled() || !raidHasClaimable());
+  // ガチャボタンの「レイドガチャ開催中」ポップは開催期間中だけ出す
+  const gachaPop = document.getElementById('raidGachaPop');
+  if(gachaPop) gachaPop.classList.toggle('hidden', !raidOpenNow());
   // プレイモード側の案内も合わせて更新する
   if(typeof updateRaidModePanel==='function') updateRaidModePanel();
 }
@@ -3672,17 +3683,29 @@ function raidClaim(kind, idx){
 /* --- レイドランキング(総ダメージ / 参加回数) --- */
 let raidRankTab = 'dmg';
 let raidRankRows = { dmg:null, runs:null };
+let raidRankError = null;
 async function openRaidRanking(){
   document.getElementById('raidRankOverlay').classList.remove('hidden');
+  // 開くたびに取り直す(前回の結果を出したままにしない)
+  raidRankRows = { dmg:null, runs:null };
+  raidRankError = null;
   renderRaidRanking();
-  if(window.__aramonFetchRaidRanking){
-    try{
-      const rows = await window.__aramonFetchRaidRanking(raidWeekId(), 50);
-      raidRankRows.dmg  = rows.slice().sort((a,b)=>b.dmg-a.dmg);
-      raidRankRows.runs = rows.slice().sort((a,b)=>(b.runs||0)-(a.runs||0));
-      renderRaidRanking();
-    }catch(err){}
+  if(!window.__aramonFetchRaidRanking){
+    raidRankError = '通信機能が利用できません';
+    renderRaidRanking();
+    return;
   }
+  try{
+    const rows = await window.__aramonFetchRaidRanking(raidWeekId(), 50);
+    raidRankRows.dmg  = rows.slice().sort((a,b)=>b.dmg-a.dmg);
+    raidRankRows.runs = rows.slice().sort((a,b)=>(b.runs||0)-(a.runs||0));
+  }catch(err){
+    // 握りつぶすと「読み込み中…」のまま止まって原因が分からなくなる
+    console.warn('[aramon] raid ranking fetch failed', err);
+    raidRankError = (err && err.message) ? String(err.message).slice(0,80) : '読み込みに失敗しました';
+    raidRankRows = { dmg:[], runs:[] };
+  }
+  renderRaidRanking();
 }
 function renderRaidRanking(){
   const box = document.getElementById('raidRankScroll');
@@ -3693,7 +3716,14 @@ function renderRaidRanking(){
   document.querySelectorAll('.raid-rank-tab').forEach(t=>t.classList.toggle('active', t.dataset.rk===raidRankTab));
   const rows = raidRankRows[raidRankTab];
   if(rows===null){ box.innerHTML = '<div class="rank-empty">読み込み中…</div>'; return; }
-  if(!rows.length){ box.innerHTML = '<div class="rank-empty">まだ記録がありません</div>'; return; }
+  if(!rows.length){
+    box.innerHTML = raidRankError
+      ? `<div class="rank-empty">ランキングを読み込めませんでした<br><span class="rank-empty-detail">${rebirthEscape(raidRankError)}</span><br><button id="raidRankRetryBtn" class="raid-rank-retry">もう一度読み込む</button></div>`
+      : '<div class="rank-empty">まだ記録がありません</div>';
+    const retry = document.getElementById('raidRankRetryBtn');
+    if(retry) retry.addEventListener('click', openRaidRanking);
+    return;
+  }
   const me = raidMyAccountName();
   const isDmg = raidRankTab==='dmg';
   box.innerHTML = `<div class="raid-rank-list">${rows.map((r,i)=>{

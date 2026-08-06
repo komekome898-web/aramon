@@ -488,9 +488,10 @@
         .read / .write を足す必要がある(未定義パスは既定で拒否される)。       */
   window.__aramonAddRaidDamage = async function(weekId, dmg, playerName){
     const add = Math.max(0, Math.round(dmg||0));
-    if(!weekId || add<=0) return;
+    // ダメージ0でも挑戦回数は数える(参加回数ランキングに載らなくなるため)
+    if(!weekId) return;
     try{
-      await runTransaction(ref(fbDb, `raids/${weekId}/total`), (cur)=> (cur||0) + add);
+      if(add>0) await runTransaction(ref(fbDb, `raids/${weekId}/total`), (cur)=> (cur||0) + add);
       const key = String(playerName||'ゲスト').replace(/[.#$/\[\]]/g,'_').slice(0,24) || 'ゲスト';
       await runTransaction(ref(fbDb, `raids/${weekId}/players/${key}`), (cur)=>{
         const prev = (cur && cur.dmg) || 0;
@@ -505,13 +506,19 @@
       return snap.val() || 0;
     }catch(err){ return 0; }
   };
+  /* ランキングは players をそのまま読んで手元で並べ替える。
+     orderByChild('dmg') を使うとセキュリティルール側に .indexOn が要り、
+     無いと並べ替えが効かない/弾かれる。参加者はせいぜい数十人なので全件読んで問題ない。
+     失敗はここで握りつぶさず投げる(呼び出し側が「読み込めなかった」と出せるように)。 */
   window.__aramonFetchRaidRanking = async function(weekId, topN){
-    try{
-      const snap = await get(query(ref(fbDb, `raids/${weekId}/players`), orderByChild('dmg'), limitToLast(topN||20)));
-      const rows = [];
-      snap.forEach(ch=>{ const v = ch.val(); if(v) rows.push({ name:v.name||ch.key, dmg:v.dmg||0, runs:v.runs||0 }); });
-      return rows.sort((a,b)=>b.dmg-a.dmg);
-    }catch(err){ return []; }
+    const snap = await get(ref(fbDb, `raids/${weekId}/players`));
+    const rows = [];
+    snap.forEach(ch=>{
+      const v = ch.val();
+      if(v) rows.push({ name:v.name||ch.key, dmg:Number(v.dmg)||0, runs:Number(v.runs)||0 });
+    });
+    rows.sort((a,b)=>b.dmg-a.dmg);
+    return rows.slice(0, topN||20);
   };
 
   window.__aramonCleanupLobbyEntry = async function(){
