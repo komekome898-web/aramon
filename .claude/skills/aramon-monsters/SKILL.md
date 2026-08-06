@@ -16,7 +16,9 @@ description: 荒野モン動のモンスター追加チェックリスト・SSR/
 
 - **画像は`SSR_SKINS`に書けば`ssrSkinImages`が自動生成される**(以前は手書き表で、追記漏れによりカタログ・バッグ・着せ替え・装備時の見た目がすべて素のモンスターに化けた)。**実体生成は`SSR_SKINS`の宣言直後に置く**(前半だとTDZ)。
 - **DOM表示は事前ロードに依存させない。** `skinnedIconDataUrl`等は未ロードでも`ssrSkinFileUrl()`でURLを返す。canvasへ描く`skinnedImage`だけはロード済みImageが必要。
-- 新SSRの登録先: `SSR_SKINS` / `SSR_SKIN_AURA` / `SSR_SKIN_TIER3`(専用技) / `SKIN_TIER3_SE`(専用SE) / `WALK_ANIM`の`ssr` / 画像2枚。ガチャ・カタログは`gachaSsrSkinIds()`が自動生成。
+- 新SSRの登録先: `SSR_SKINS` / `SSR_SKIN_AURA` / `SSR_SKIN_TIER3`(専用技) / `SKIN_TIER3_SE`(専用SE) / `WALK_ANIM`の`ssr` / 画像2枚。ガチャ・カタログの一覧は自動生成される。
+- **SSRの入手経路は`SSR_SKINS`の印3つで決まる**(印が無ければどこでも出る)。`seasonExclusive`=シーズンパス報酬限定 / `raidClearOnly`=レイド討伐報酬限定(どこにも出さない) / `raidGachaOnly`=レイドガチャとレイドSSRカタログにだけ出す。
+- **一覧は`gachaSsrSkinIds()`(スキンガチャ・SSRカタログ)と`raidGachaSsrSkinIds()`(レイドガチャ・レイドSSRカタログ)の2つを通す。** 印を直接読む場所を増やさない。カタログの中身は`catalogSkinIds(kind)`1か所(`sr`/`ssr`/`raidSsr`)。
 - tier3のオーラ/エフェクト色はSSRもSR色スキンも変える。判定は`skinTier3Aura(skinId)`1か所に集約済みなので、combat.js/network.jsの`effColor`/`auraTint`は触らなくてよい。
 - **SSRだけの特典は「tier3の技名と威力」。** SRはオーラ・エフェクトのみ。この線引きを守る。
 - `SSR_SKIN_TIER3`は`dmgMult`(倍率だけ)か`move:{...}`(フィールド上書きで性能ごと専用技化。`blast`はマージ)。**`move`に`dmg`を書くときは`dmgMult`を併記しない**(二重適用)。

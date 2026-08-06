@@ -1746,6 +1746,7 @@ function updateGachaCounterUI(){
   let html='';
   if(cats.sr>0) html += `<button class="gacha-catalog-btn sr" data-cat="sr">🎫 SRスキンカタログ ×${cats.sr}</button>`;
   if(cats.ssr>0) html += `<button class="gacha-catalog-btn ssr" data-cat="ssr">🎫 SSRスキンカタログ ×${cats.ssr}</button>`;
+  if(cats.raidSsr>0) html += `<button class="gacha-catalog-btn ssr" data-cat="raidSsr">🎫 レイドSSRスキンカタログ ×${cats.raidSsr}</button>`;
   row.innerHTML = html;
   row.querySelectorAll('.gacha-catalog-btn').forEach(btn=>{
     btn.addEventListener('click', ()=> openCatalogModal(btn.dataset.cat));
@@ -1779,7 +1780,8 @@ function incrementRaidGachaCount(n){
   for(let i=0;i<n;i++){
     if(c.done) break;
     c.count++;
-    if(c.count>=RAID_GACHA_CATALOG_AT){ c.done=true; addCatalog('ssr',1); granted.push('ssr'); }
+    // 付与するのは専用の「レイドSSRスキンカタログ」(狂戦士ガッツを含む)
+    if(c.count>=RAID_GACHA_CATALOG_AT){ c.done=true; addCatalog('raidSsr',1); granted.push('raidSsr'); }
   }
   saveRaidGachaCount(c);
   return granted;
@@ -2337,6 +2339,7 @@ function showGachaResults(results, granted){
   let grantMsg='';
   if(granted.includes('sr')) grantMsg += `<div class="rar-SR" style="font-weight:700;">SRスキンカタログを獲得！</div>`;
   if(granted.includes('ssr')) grantMsg += `<div class="rar-SSR" style="font-weight:700;">SSRスキンカタログを獲得！</div>`;
+  if(granted.includes('raidSsr')) grantMsg += `<div class="rar-SSR" style="font-weight:700;">レイドSSRスキンカタログを獲得！</div>`;
   const res = document.getElementById('gachaResult');
   res.innerHTML = `<div class="gacha-result-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
     ${grantMsg}<div class="gacha-result-tap">タップで閉じる</div>`;
@@ -2381,9 +2384,9 @@ document.getElementById('gachaRatesCloseBtn').addEventListener('click', ()=>{
 let catalogPick = null, catalogKind = null;
 function openCatalogModal(kind){
   catalogKind = kind; catalogPick = null;
-  document.getElementById('gachaCatalogTitle').textContent = kind==='ssr' ? 'SSR/SRスキンを選ぶ' : 'SRスキン(色違い)を選ぶ';
-  // SSRカタログではSSRスキンに加えてSRスキン(色違い)も選べるようにする
-  const ids = kind==='ssr' ? [...gachaSsrSkinIds(), ...allColorSkinIds()] : allColorSkinIds();
+  document.getElementById('gachaCatalogTitle').textContent = catalogTitle(kind);
+  // 中身の決定は data.js の catalogSkinIds に寄せる(種類が増えてもここは変えない)
+  const ids = catalogSkinIds(kind);
   const grid = document.getElementById('gachaCatalogGrid');
   grid.innerHTML = ids.map(id=>{
     const m = skinMeta(id); const owned = isSkinOwned(id);
@@ -3470,10 +3473,21 @@ async function raidExit(){
 function raidMyAccountName(){
   return (typeof accountState!=='undefined' && accountState.loggedIn) ? accountState.name : null;
 }
+// レイドが今どういう状態かを1か所で判定する(文言をここから作る)
+function raidPhase(){
+  if(!RAID_ACTIVE) return 'off';
+  if(raidRecordsDisabled()) return 'preview';       // 準備中(RAID_PREVIEW)
+  if(Date.now() < raidStartAt().getTime()) return 'before';
+  return raidOpenNow() ? 'open' : 'ended';
+}
+function raidStartDateLabel(){
+  const d = raidStartAt();
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
 function updateRaidEntryButton(){
   const btn = document.getElementById('openRaidBtn');
   if(!btn) return;
-  // 準備中は開発アカウントだけ。公開後は開催中だけ出す
+  // 開催中だけ出す(準備中は開発アカウントだけ)
   btn.classList.toggle('hidden', !raidPlayable(raidMyAccountName()));
   // 未受け取りの報酬があるときだけ通知の点を出す(準備中は記録が残らないので出さない)
   const dot = document.getElementById('raidDot');
@@ -3481,31 +3495,44 @@ function updateRaidEntryButton(){
   // プレイモード側の案内も合わせて更新する
   if(typeof updateRaidModePanel==='function') updateRaidModePanel();
 }
-// プレイモードのレイド欄。準備中の案内と、入れるかどうかをここで出し分ける
+// プレイモードのレイド欄。今の状態に応じた案内と、入れるかどうかをここで出し分ける
 function updateRaidModePanel(){
   const note = document.getElementById('raidModeNote');
   const btn = document.getElementById('raidModeOpenBtn');
   const pop = document.getElementById('raidModePop');
   if(!note || !btn) return;
   const ok = raidPlayable(raidMyAccountName());
-  if(pop) pop.classList.toggle('hidden', !raidRecordsDisabled());
-  note.textContent = raidRecordsDisabled()
-    ? (ok ? '準備中のため、バトルが終わっても記録・報酬は残りません。'
-          : '準備中です。もうしばらくお待ちください。')
-    : (raidOpenNow() ? '開催中です。挑んだぶんだけ全プレイヤーの累計に加算されます。'
-                     : '現在は開催していません。');
+  const phase = raidPhase();
+  if(pop) pop.classList.toggle('hidden', phase!=='preview');
+  note.textContent =
+    phase==='preview' ? (ok ? '準備中のため、バトルが終わっても記録・報酬は残りません。'
+                            : '準備中です。もうしばらくお待ちください。') :
+    phase==='open'    ? '開催中です。挑んだぶんだけ全プレイヤーの累計に加算されます。' :
+    phase==='before'  ? `${raidStartDateLabel()}開幕。全プレイヤーで累計ダメージを稼いで巨竜を討伐しよう。` :
+                        '今回の開催は終了しました。次回をお待ちください。';
   btn.disabled = !ok;
-  btn.textContent = ok ? '🐉 レイドバトルへ' : '🐉 準備中';
+  btn.textContent =
+    ok                ? '🐉 レイドバトルへ' :
+    phase==='preview' ? '🐉 準備中' :
+    phase==='before'  ? `🐉 ${raidStartDateLabel()}開幕` :
+                        '🐉 開催前';
 }
 document.getElementById('raidModeOpenBtn').addEventListener('click', ()=>{
   if(!raidGuardReady()) return;
   document.getElementById('modePickOverlay').classList.add('hidden');
   openRaidOverlay();
 });
-/* レイドへ進む前の共通チェック。モンスター未選択・準備中はここで止めて、
+/* レイドへ進む前の共通チェック。モンスター未選択・開催期間外はここで止めて、
    必ずメッセージを出してロビーへ戻す(押しても何も起きない状態を作らない)。 */
 function raidGuardReady(){
-  if(!raidPlayable(raidMyAccountName())){ raidBackToLobby('レイドバトルは準備中です'); return false; }
+  if(!raidPlayable(raidMyAccountName())){
+    const phase = raidPhase();
+    raidBackToLobby(
+      phase==='preview' ? 'レイドバトルは準備中です' :
+      phase==='before'  ? `レイドバトルは${raidStartDateLabel()}開幕です` :
+                          'レイドバトルは現在開催していません');
+    return false;
+  }
   if(!game.selectedElement){ raidBackToLobby('先にモンスターを選んでください'); return false; }
   return true;
 }
