@@ -3283,10 +3283,15 @@ function raidStart(multi, demo){
   genVolcanoAndLava(); genWater(); genOasisZones(); genRocks(); genCrystals(); genTerrain();
 
   const cx = WORLD.w/2, cy = WORLD.h/2;
-  // ボスは火口の手前(中央より奥)、挑戦者は手前側に並ぶ
-  const bossY = WORLD.h*0.34;
-  // ボスの足元に岩があると弾が吸われるので、周りの岩は取り除く
-  rocks = rocks.filter(r=> Math.hypot(r.x-cx, r.y-bossY) > RAID_BOSS.radius*4);
+  // ボスは火口の手前、挑戦者はさらに手前に並ぶ
+  const bossY = Math.max(WORLD.h*RAID_BOSS_YR, raidBossMinY());
+  // ボスが動き回る範囲の岩は取り除く。巨体なので岩に引っかかると身動きが取れなくなり、
+  // 弾も岩に吸われて当たらなくなる
+  const bossClear = RAID_BOSS.radius + RAID_BOSS.repositionDist + 160;
+  rocks = rocks.filter(r=> Math.hypot(r.x-cx, r.y-bossY) > bossClear);
+  // 従来のマップと同じアイテムを、火山と反対側(手前)の安置内に撒く。
+  // ボスから離れた場所にあるので、拾いに行くか殴り続けるかの駆け引きになる。
+  spawnLoot(RAID_LOOT_COUNT, { x:cx, y:WORLD.h*RAID_LOOT_YR }, Math.min(WORLD.w, WORLD.h)*RAID_LOOT_SPREAD);
 
   player = createMonster(game.selectedElement, true, getDisplayNameFromInput()||'あなた', { spawnPoint:{x:cx, y:cy+WORLD.h*0.18} });
   applyMastermonToPlayer();
@@ -3311,9 +3316,10 @@ function raidStart(multi, demo){
     entities.push(ally);
   }
 
-  // ボス本体。見た目はドラゴンだが、半径・HP・速さだけレイド用に差し替える
+  // ボス本体。素体はドラゴンで、見た目(スキン)・半径・HP・速さだけレイド用に差し替える
   const boss = createMonster(RAID_BOSS.element, false, RAID_BOSS.name, { spawnPoint:{x:cx, y:bossY} });
   boss.isRaidBoss = true;
+  boss.skinId = RAID_BOSS.skinId;   // 「不死のゾッド」。歩行コマもこのスキンのものが使われる
   boss.radius = RAID_BOSS.radius;
   boss.speed = RAID_BOSS.speed;
   boss.maxHp = raidBossMaxHp(RAID_CAPACITY);
@@ -3407,6 +3413,12 @@ function raidHasClaimable(){
   for(let i=0;i<RAID_PERSONAL_TIERS.length;i++) if(r.dmg>=RAID_PERSONAL_TIERS[i].at && !r.claimedPersonal[i]) return true;
   return false;
 }
+// 入口画面に出すボスの姿。スキン(不死のゾッド)の画像を使う
+function raidBossImgTag(){
+  const url = (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(RAID_BOSS.skinId) : null;
+  if(url) return `<img src="${url}" alt="${RAID_BOSS.name}">`;
+  return defaultMonsterImgTag(RAID_BOSS.element, RAID_BOSS.name);
+}
 function raidRewardLabel(t){
   const parts = [];
   if(t.gold) parts.push(`🪙${t.gold.toLocaleString()}`);
@@ -3443,7 +3455,7 @@ function renderRaidOverlay(){
   const skinBonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
   box.innerHTML = `
     <div class="raid-boss-card">
-      <div class="raid-boss-art">${defaultMonsterImgTag(RAID_BOSS.element, RAID_BOSS.name)}</div>
+      <div class="raid-boss-art">${raidBossImgTag()}</div>
       <div class="raid-boss-info">
         <div class="raid-boss-name">${RAID_BOSS.name}</div>
         <div class="raid-boss-desc">火口を背に構える巨竜。技を撃つ前に必ず予告が出る。

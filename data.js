@@ -729,6 +729,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'【レイド】レイドボスが「不死のゾッド」になりました。体がさらに大きくなり、少しずつ歩いて間合いを詰めてきます', g:['feature','balance'] },
+    { t:'【レイド】闘技場に通常マップと同じアイテムが出るようになりました(火山と反対側にまとまって出ます。ボスは拾いません)。あわせて味方のガッツ回復速度が2倍になりました', g:['feature','balance'] },
     { t:'【レイド】週替わりレイドバトルが登場します！ 巨大な竜に挑み、与えたダメージを全プレイヤーで累計します。累計の到達で全員が報酬をもらえ、自分の累計でも報酬が増えます(シーズン1開始と同時に開幕・1週間)', g:['feature'] },
     { t:'【レイド】ボスは技を撃つ前に必ず予告が出ます。時間が経つほど攻撃が激しくなり、安全圏も狭くなります。味方の攻撃は当たらず、技は最初から全解放です', g:['feature'] },
     { t:'【レイド】レイドガチャを追加しました(ガチャ画面のタブで切り替え)。レイド特効スキンがピックアップで、100回引くとレイド特効スキンを含むSSRスキンカタログがもらえます。シーズン1開始まで近日公開です', g:['feature'] },
@@ -1508,18 +1510,34 @@ function raidSecondsLeft(){ return Math.max(0, Math.floor((raidEndAt().getTime()
 function raidWeekId(){ return 'r_'+RAID_START_DATE.replace(/-/g,''); }
 
 /* --- ボス --- */
-// 火口の位置(ワールド比率)。ボスはこの手前に立つので、見上げると必ず背後に火山が入る
-const RAID_VOLCANO_SITE = { xr:0.5, yr:0.16, radius:1500, peakBumps:7 };
+/* 火口の位置(ワールド比率)。ボスはこの手前に立つので、見上げると必ず背後に火山が入る。
+   ボスは巨体なので、火山の裾に埋まらないよう RAID_BOSS_YR まで手前へ下げてある。
+   アイテムは火山と反対側(手前)に撒くので、拾いに行くとボスから離れる形になる。      */
+const RAID_VOLCANO_SITE = { xr:0.5, yr:0.10, radius:1500, peakBumps:7 };
+const RAID_BOSS_YR  = 0.45;   // ボスの立ち位置(ワールド比率)。火山とはこのぶん離れる
+const RAID_BOSS_VOLCANO_GAP = 120;  // ボスの体と火山の裾のあいだに空ける余白
+// ボスがこれより上(火山側)へ行かないようにする境界。巨体なので、火山の半径+ボスの半径ぶん
+// 離しておかないと山の斜面に食い込んで見える。徘徊先もこの線でclampする。
+function raidBossMinY(){
+  return WORLD.h*RAID_VOLCANO_SITE.yr + RAID_VOLCANO_SITE.radius + RAID_BOSS.radius + RAID_BOSS_VOLCANO_GAP;
+}
+const RAID_LOOT_YR  = 0.64;   // アイテムを撒く中心(火山と反対側=手前)。安置が縮んでも一部が残る位置
+const RAID_LOOT_COUNT = 26;   // 撒く数
+const RAID_LOOT_SPREAD = 0.20; // 撒く範囲(ワールドの短辺に対する比率)
 const RAID_BOSS = {
-  element:'fire',            // 見た目・オーラはドラゴンを流用する
-  name:'獄炎竜 ヴォルガノス',
-  radius: 96,                // 通常のモンスター(22前後)の4倍以上。遠くからでも分かる巨体
+  element:'fire',            // 素体はドラゴン
+  skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
+  name:'不死のゾッド',
+  radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
   baseHp: 240000,            // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
-  speed: 26,                 // ほとんど動かない(通常のドラゴンは182)
-  repositionEvery: 14,       // この秒数ごとに少しだけ位置を変える
-  repositionDist: 300,
+  speed: 60,                 // 動きは鈍いが、じりじり間合いを詰めてくる(通常のドラゴンは182)
+  repositionEvery: 7,        // この秒数ごとに位置を変える(歩行モーションが見えるよう短め)
+  repositionDist: 420,
 };
+// レイドの味方(自分・bot・マスモン)のガッツ回復倍率。
+// ボスに技を撃ち続けられるよう、通常の試合より速く回復させる
+const RAID_ALLY_GUTS_REGEN_MULT = 2;
 // ボスの攻撃。すべて areaEffect(範囲攻撃)なので、当たり判定も描画も既存の仕組みに乗る。
 //   tier      : 1=通常 2=強力 3=大技。時間が経つほど上のtierが出やすくなる
 //   shape     : 'fan'(扇) / 'circle'(自分中心の円) / 'meteor'(狙った足元に落ちる円)

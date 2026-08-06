@@ -967,12 +967,15 @@ function updateRaidBossAI(b){
   b.destination = null;
   const elapsed = matchTime;
   // ほとんど動かないが、たまに少しだけ位置を変えて棒立ちに見えないようにする
+  // 定期的に少しだけ動く。歩行モーションが見えるよう、必ず今の位置から離れた点を選ぶ
   if(matchTime >= raidState.repositionAt){
     raidState.repositionAt = matchTime + RAID_BOSS.repositionEvery;
-    const a = rand(0, Math.PI*2), d = rand(0, RAID_BOSS.repositionDist);
+    const a = rand(0, Math.PI*2), d = rand(RAID_BOSS.repositionDist*0.5, RAID_BOSS.repositionDist);
+    const m = RAID_BOSS.radius + 120;   // 巨体なので壁から半径ぶん離す
     b.aiTargetPoint = {
-      x: clamp(b.raidHomeX + Math.cos(a)*d, 200, WORLD.w-200),
-      y: clamp(b.raidHomeY + Math.sin(a)*d, 200, WORLD.h-200),
+      x: clamp(b.raidHomeX + Math.cos(a)*d, m, WORLD.w-m),
+      // 上(火山側)へは行かせない。行かせると山の斜面に食い込んで見える
+      y: clamp(b.raidHomeY + Math.sin(a)*d, raidBossMinY(), WORLD.h-m),
     };
   }
   if(b.aiTargetPoint && dist(b, b.aiTargetPoint) < 40) b.aiTargetPoint = null;
@@ -1436,6 +1439,7 @@ function updateLootPickups(){
     pendingLootToast = null;
     for(const e of entities){
       if(!e.alive) continue;
+      if(e.isRaidBoss) continue;   // レイドのボスは拾わない(巨体なので通るだけで全部さらってしまう)
       if(dist(e,it) < e.radius+14){
         if(it.kind==='heal'){
           const hi = HEAL_ITEMS[it.type];
@@ -1636,7 +1640,9 @@ function update(dt){
     if(e.dashCooldown>0) e.dashCooldown -= dt;
     if(e.hitFlash>0) e.hitFlash -= dt;
     const stateEffForGuts = activeStateEffects(e);
-    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*(ELEMENTS[e.element].gutsRegenMod||1)*(e.mastermonGutsRegenMult||1)*(stateEffForGuts && stateEffForGuts.gutsRegenMult || 1));
+    // レイド中の味方だけガッツ回復を速める(ボスに技を撃ち続けられるように)
+    const raidGutsMult = (game.raid && !e.isRaidBoss) ? RAID_ALLY_GUTS_REGEN_MULT : 1;
+    if(e.guts<e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + 2*dt*raidGutsMult*(ELEMENTS[e.element].gutsRegenMod||1)*(e.mastermonGutsRegenMult||1)*(stateEffForGuts && stateEffForGuts.gutsRegenMult || 1));
     checkPassiveStateTriggers(e);
     if(e.poisonUntil > matchTime && matchTime >= e.poisonTickAt){
       e.poisonTickAt = matchTime + 1;
