@@ -746,6 +746,8 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-07', items:[
     { t:'🎉 シーズン1が開幕しました！ 曜日ごとの変則ルールと、レイドバトル「不死のゾッド」が始まっています', g:['feature','general'] },
+    { t:'シーズン1の開幕に合わせて、シーズンポイント(SP)と報酬の受け取り状況を全員リセットしました。ここからみんな同じスタートです。以降もシーズンが切り替わるたびにリセットされます', g:['general','balance'] },
+    { t:'【レイド】ボスの体力を大幅に下げました(1回の戦闘も、全体の討伐目標も1/100)。報酬に必要な累計ダメージも同じだけ下げているので、今までよりずっと早く報酬に届きます', g:['balance'] },
     { t:'シーズンパスの最終報酬(Tier25)が限定SSRスキン「大喰いの利世」に確定しました。報酬はTier順に横スクロールで並び、開くと今のTier付近が表示されます', g:['feature'] },
     { t:'【レイド】レイドランキングに「最大ダメージ」(1回の挑戦で出した最高記録)を追加しました', g:['feature','multi'] },
     { t:'SSRスキンの昇格演出で、動画は流れても音声が鳴らないことがあった不具合を修正しました(音声の読み込みを待ってから動画と同時に鳴らすようにしました)', g:['fix','av'] },
@@ -1620,7 +1622,7 @@ const RAID_BOSS = {
   skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
   name:'不死のゾッド',
   radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
-  baseHp: 240000,            // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp)
+  baseHp: 2400,              // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
   speed: 60,                 // 動きは鈍いが、じりじり間合いを詰めてくる(通常のドラゴンは182)
   repositionEvery: 7,        // この秒数ごとに位置を変える(歩行モーションが見えるよう短め)
@@ -1696,21 +1698,23 @@ const RAID_CLEAR_SKIN = 'zod_ssr';
 
 /* --- 報酬 ---
    累計ダメージの到達報酬(全員共通)と、個人の与ダメ順位に応じた報酬。 */
+/* 最後の段の at がレイド全体の「ボスの総HP」として表示される(raid画面の残り体力バー)。
+   1回の戦闘のボスHP(RAID_BOSS.baseHp)と同じ倍率で増減させること。 */
 const RAID_TOTAL_TIERS = [
-  { at:  5000000, gold:1500, dia:20 },
-  { at: 20000000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
-  { at: 50000000, gold:5000, dia:60, item:'moveTicket', n:3 },
+  { at:  50000, gold:1500, dia:20 },
+  { at: 200000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
+  { at: 500000, gold:5000, dia:60, item:'moveTicket', n:3 },
   // レイドでしか手に入らない基礎値アイテム(生命の果実・加速剤)を目玉にする
-  { at:120000000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-  { at:250000000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
+  { at:1200000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+  { at:2500000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
 ];
 // 個人の累計与ダメによる報酬(上から順に、達成した一番上のものまで全部もらえる)
 const RAID_PERSONAL_TIERS = [
-  { at:   200000, gold:500,  dia:5 },
-  { at:   800000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
-  { at:  2500000, gold:2500, dia:20, item:'moveTicket', n:1 },
-  { at:  6000000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-  { at: 15000000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+  { at:   2000, gold:500,  dia:5 },
+  { at:   8000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
+  { at:  25000, gold:2500, dia:20, item:'moveTicket', n:1 },
+  { at:  60000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+  { at: 150000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
 ];
 /* 1回の挑戦で得られるゴールド/ダイヤ。
    通常の試合と同じ「参加ぶん + 成果ぶん(+ 討伐ボーナス)」の形にして、
@@ -1991,7 +1995,13 @@ function mutatorBadgeLabels(m){
    シーズンパス: 試合でシーズンポイント(SP)を貯めて段階報酬を受け取る(全て無料)
 ===================================================================== */
 const SEASON_STORAGE_KEY = 'aramon_season_v1';
-const SEASON_ID = 's1';               // シーズン識別子(変えると全員リセット)
+const SEASON_ID = 's1';               // シーズン識別子
+/* SPと受取状況をリセットしたいときに1つ上げる(シーズンの途中でも効く)。
+   シーズンの切り替わり(SEASON_IDの変更)でも同じようにリセットされる。
+   判定は保存側の seasonId と seasonStateKey() の食い違いを見るだけなので、
+   どちらを変えても次にloadSeasonを通った時点でSP0・受取状況なしから始まる。 */
+const SEASON_RESET_EPOCH = 2;         // 2026-08-07 シーズン1公開に合わせて全員リセット
+function seasonStateKey(){ return SEASON_ID + '#' + SEASON_RESET_EPOCH; }
 const SEASON_SP_PER_TIER = 120;       // 1段階に必要なSP
 const SEASON_MAX_TIER = 25;
 // 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬。
@@ -2010,11 +2020,14 @@ function seasonSpForMatch(kills, damage, isWin){
 }
 function seasonTierForSp(sp){ return Math.max(0, Math.min(SEASON_MAX_TIER, Math.floor((sp||0)/SEASON_SP_PER_TIER))); }
 function loadSeason(){
+  const key = seasonStateKey();
+  const fresh = ()=>({ seasonId:key, sp:0, claimed:{} });
   try{
     const s = JSON.parse(localStorage.getItem(SEASON_STORAGE_KEY)) || {};
-    if(s.seasonId !== SEASON_ID) return { seasonId:SEASON_ID, sp:0, claimed:{} }; // 新シーズンはリセット
-    return { seasonId:SEASON_ID, sp:Math.max(0, s.sp||0), claimed:s.claimed||{} };
-  }catch(err){ return { seasonId:SEASON_ID, sp:0, claimed:{} }; }
+    // シーズンが切り替わった/リセットしたときはSPも受取状況も引き継がない
+    if(s.seasonId !== key) return fresh();
+    return { seasonId:key, sp:Math.max(0, s.sp||0), claimed:s.claimed||{} };
+  }catch(err){ return fresh(); }
 }
 function saveSeason(s){
   try{ localStorage.setItem(SEASON_STORAGE_KEY, JSON.stringify(s)); }catch(err){}
