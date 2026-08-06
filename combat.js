@@ -950,8 +950,20 @@ function computePlayerInput(){
    ===================================================================== */
 // レイドの進行状態。試合ごとに startRaid() が作り直す
 let raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0 };
+/* レイドの状態を初期値へ戻す。試合を始める全経路(ソロ/マルチ/訓練場)の冒頭で必ず呼ぶ。
+   これを忘れると、レイドの次に始めた通常の試合で game.raid が立ったままになり、
+   ボスAI・レイドの安置・レイドの決着判定が同時に走って試合が続行不能になる。      */
+function raidResetState(){
+  game.raid = false;
+  if(typeof netState!=='undefined') netState.raid = false;
+  raidState = { bossId:null, nextAttackAt:0, pending:null, marks:[], repositionAt:0, endsAt:0 };
+  const hud = document.getElementById('raidHud');
+  if(hud) hud.classList.add('hidden');
+  const el = document.getElementById('hud');
+  if(el) el.classList.remove('raid-mode');
+}
 function raidBossEntity(){
-  if(!game.raid || raidState.bossId==null) return null;
+  if(!game.raid || !raidState || raidState.bossId==null) return null;
   const b = getEntity(raidState.bossId);
   return (b && b.alive) ? b : null;
 }
@@ -972,6 +984,7 @@ function raidSkinMult(entity, kind){
    ①予告(トースト+標的の輪)を出す ②予告時間が過ぎたら実際の範囲攻撃を出す
    の2段構え。攻撃の間隔は時間が経つほど短くなり、高tierの技も出やすくなる。   */
 function updateRaidBossAI(b){
+  if(!raidState) return;
   b.attackTargetId = null;
   b.destination = null;
   const elapsed = matchTime;
@@ -1035,8 +1048,8 @@ function raidBeginBossAttack(b, move, elapsed){
 }
 // 予告が明けたら実際の範囲攻撃(areaEffect)を出す。当たり判定も描画も既存の仕組みに乗る
 function raidFireBossAttack(b){
-  const p = raidState.pending;
-  if(!p) return;
+  const p = raidState && raidState.pending;
+  if(!p || !p.move) return;
   const move = p.move;
   const made = [];
   const mk = (x, y, kind, angle)=>{
@@ -1079,7 +1092,7 @@ function raidFireBossAttack(b){
 }
 // 毎フレームの進行(予告の消化と、ボスのガッツを常に空にしておく処理)
 function updateRaid(dt){
-  if(!game.raid) return;
+  if(!game.raid || !raidState) return;
   const b = raidBossEntity();
   if(b){
     b.guts = 0;              // ボスはガッツを持たない(技はガッツを使わず専用AIで撃つ)
@@ -1092,7 +1105,7 @@ function updateRaid(dt){
 }
 // レイドの決着判定。ボス撃破か時間切れで終わる(勝敗は「ボスを倒せたか」)
 function checkRaidEnd(){
-  if(!game.raid || game.over) return;
+  if(!game.raid || game.over || !raidState) return;
   // マルチではホストだけが決着を確定させ、raidEndイベントで全員に伝える
   if(netState.mode==='multi' && !netState.isHost) return;
   const b = raidBossEntity();

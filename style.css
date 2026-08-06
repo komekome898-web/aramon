@@ -1794,6 +1794,13 @@
   /* ===== 射撃訓練場の操作バー(画面右上) ===== */
   /* 訓練場では安置が無いので、安置情報のパネルは出さない */
   #hud.range-mode #topRight{ display:none; }
+  /* レイド中はバトルロイヤル専用の表示を隠す。レイドHUD(#raidHud)が画面上部に
+     出るので、残り人数・安全圏の案内・Kill/Damageと重なって両方読めなくなる。
+     ミニマップとキルフィードは残したいので #topRight ごとは消さない。            */
+  #hud.raid-mode #counterPanel{ display:none; }
+  #hud.raid-mode #statsPanel{ display:none; }
+  /* レイドHUDのぶんだけミニマップを下げる */
+  #hud.raid-mode #topRight{ top:calc(6 * var(--vh)); }
   #rangeBar{ position:absolute; right:10px; top:8px; z-index:22; pointer-events:auto;
     display:flex; flex-direction:column; gap:6px; align-items:stretch; }
   #rangeBar button{

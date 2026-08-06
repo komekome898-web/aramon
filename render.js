@@ -3987,8 +3987,9 @@ function drawSingleAreaEffect(ae){
    地面に貼る円は必ず1点ずつ投影する(画面上の楕円を決め打ちすると地面から浮く)。
    扇は中心から両端へ伸ばした2本の線と、外周の弧で「どこまで届くか」を示す。      */
 function drawRaidTelegraph(){
-  if(!game.raid || typeof raidState==='undefined' || !raidState.pending) return;
+  if(!game.raid || typeof raidState==='undefined' || !raidState || !raidState.pending) return;
   const p = raidState.pending;
+  if(!p.move || !Array.isArray(p.marks)) return;
   const left = Math.max(0, p.fireAt - matchTime);
   // 発動が近いほど速く点滅させて「そろそろ来る」と分かるようにする
   const blink = 0.45 + 0.45*Math.abs(Math.sin(matchTime*(left<0.6?18:9)));
