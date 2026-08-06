@@ -745,6 +745,11 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-06', items:[
+    { t:'🎉 シーズン1がいよいよ8/7に開幕します！ 曜日ごとの変則ルール(日替わりミューテーター)が始まり、月・木は全員が技tier2スタート、火・金は試合報酬2倍、水はスポーンアイテム1.5倍。土日はその全部が同時に発動します', g:['feature','general'] },
+    { t:'🐉 8/7の開幕と同時に、レイドバトル「不死のゾッド」が全プレイヤーに開放されます。期間は1週間、最大4人で挑めます', g:['feature','multi'] },
+    { t:'8/7からレイドガチャが引けるようになります。100連で「レイドSSRスキンカタログ」を1回だけ付与し、好きなSSR/SRスキンを1つ選べます(レイド特効の「狂戦士ガッツ」もこの中から選べます)', g:['feature'] },
+    { t:'「狂戦士ガッツ」はレイドガチャ限定になりました。通常のスキンガチャとSSRスキンカタログには出ません', g:['balance'] },
+    { t:'「不死のゾッド」はレイド討伐達成の報酬限定です。どのガチャ・どのカタログからも出ません', g:['balance'] },
     { t:'【レイド】レイド報酬に新アイテム「生命の果実」(ライフの基礎値+5)と「加速剤」(移動速度の基礎値+5)を追加しました。基礎値には上限が無く、育成の倍率が乗る前に足されるので、育てたマスモンほど1個の効きが大きくなります', g:['feature','balance'] },
     { t:'【レイド】これまでレイド報酬だったステータスの実を、生命の果実×1・加速剤×1に変更しました', g:['balance'] },
     { t:'バトル中に突然エラーが出て操作できなくなる/モンスターもアイテムも何も映らなくなる不具合を修正しました(「我慢」などの状態変化が出ているモンスターを描くところで落ちていました)', g:['fix'] },
@@ -1537,8 +1542,10 @@ const UPWARD_BLOCK_THRESHOLD = 35;
    ===================================================================== */
 /* 公開前は「準備中」。RAID_PREVIEW_ACCOUNTS のアカウントだけが入れて、
    バトルが終わっても記録も報酬も一切残さない(公開時に全員が同じ位置から始められるように)。
-   公開するときは RAID_PREVIEW を false にするだけでよい。                        */
-const RAID_PREVIEW = true;
+   公開するときは RAID_PREVIEW を false にするだけでよい。
+   → シーズン1公開(2026-08-06)で false にした。以降は開催期間(RAID_START_DATE から
+     RAID_DURATION_DAYS 日間)であれば全プレイヤーが挑める。                     */
+const RAID_PREVIEW = false;
 const RAID_PREVIEW_ACCOUNTS = ['おりょう', 'さびょう'];
 const RAID_ACTIVE = true;                 // レイド機能そのものの有効/無効
 const RAID_START_DATE = '2026-08-07';     // シーズン1と同時開幕
@@ -1902,7 +1909,7 @@ function grantReward(r){
    SEASON1_ACTIVE を true にするまでゲームプレイに一切影響しない。
    公開時は true へ変更し、CLAUDE.mdのルールに従って UPDATE_HISTORY に告知を追記すること。
 ===================================================================== */
-const SEASON1_ACTIVE = false; // シーズン1公開日にtrueへ変更
+const SEASON1_ACTIVE = true;  // シーズン1公開済み(ミューテーターの発動は SEASON1_START_DATE から)
 const SEASON1_START_DATE = '2026-08-07'; // ミューテーター適用開始日(この日の前はSEASON1_ACTIVE=trueでも発動しない)
 
 // 曜日ごとのミューテーター設定(表示は月始まり。dayはDate.getDay()準拠 0=日〜6=土)
@@ -2178,8 +2185,10 @@ const SSR_SKINS = {
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
   rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr' }, /*@rock_ssr*/
   aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/
-  guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr' }, /*@guts_ssr*/
-  zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr' }, /*@zod_ssr*/
+  // 狂戦士ガッツ: レイドガチャ限定。スキンガチャとSSRカタログには出さない(レイドSSRカタログには出る)
+  guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr', raidGachaOnly:true }, /*@guts_ssr*/
+  // 不死のゾッド: レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
+  zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr', raidClearOnly:true }, /*@zod_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
@@ -2248,8 +2257,26 @@ function allColorSkinIds(){
   const out=[]; for(const el of Object.keys(ELEMENTS)) for(const c of monsterSkinColors(el)) out.push(colorSkinId(el,c)); return out;
 }
 function allSsrSkinIds(){ return Object.keys(SSR_SKINS); }
-// ガチャ・カタログで入手可能なSSR(シーズン限定を除く)
-function gachaSsrSkinIds(){ return Object.keys(SSR_SKINS).filter(id=>!SSR_SKINS[id].seasonExclusive); }
+/* SSRスキンの入手経路は3つの印で決まる(印が無ければ「どこでも出る」)。
+     seasonExclusive : シーズンパス報酬限定。ガチャにもカタログにも出さない
+     raidClearOnly   : レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
+     raidGachaOnly   : レイドガチャ限定。スキンガチャとSSRカタログには出さず、
+                       レイドガチャとレイドSSRカタログにだけ出す
+   一覧を作るときは必ず下の2つの関数を通す(印を直接読む場所を増やさない)。 */
+// スキンガチャ・SSRスキンカタログに出るSSR
+function gachaSsrSkinIds(){
+  return Object.keys(SSR_SKINS).filter(id=>{
+    const s = SSR_SKINS[id];
+    return !s.seasonExclusive && !s.raidClearOnly && !s.raidGachaOnly;
+  });
+}
+// レイドガチャ・レイドSSRスキンカタログに出るSSR(シーズンパス報酬と討伐報酬だけを除く)
+function raidGachaSsrSkinIds(){
+  return Object.keys(SSR_SKINS).filter(id=>{
+    const s = SSR_SKINS[id];
+    return !s.seasonExclusive && !s.raidClearOnly;
+  });
+}
 
 // ガチャのレアリティ別アイテム
 const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','seed_evasion','seed_vitality'];
@@ -2385,9 +2412,10 @@ function saveRaidGachaCount(c){
 }
 // レイドガチャのSSR枠。ピックアップ(レイド特効)が半分、残りは通常SSRから均等
 function pickRaidGachaSsrSkinId(){
-  const pickup = SSR_SKINS[RAID_GACHA_PICKUP] ? RAID_GACHA_PICKUP : null;
-  const others = gachaSsrSkinIds().filter(id=>id!==RAID_GACHA_PICKUP);
-  if(!pickup) return others.length ? pickRandom(others) : gachaSsrSkinIds()[0];
+  const ids = raidGachaSsrSkinIds();
+  const pickup = ids.indexOf(RAID_GACHA_PICKUP)>=0 ? RAID_GACHA_PICKUP : null;
+  const others = ids.filter(id=>id!==RAID_GACHA_PICKUP);
+  if(!pickup) return others.length ? pickRandom(others) : ids[0];
   if(!others.length) return pickup;
   return Math.random()<0.5 ? pickup : pickRandom(others);
 }
@@ -2396,11 +2424,9 @@ function raidGachaRateTable(){
   const rows = gachaRateTable();
   const ssrRow = rows.find(r=>r.rarity==='SSR');
   if(ssrRow){
-    const ids = gachaSsrSkinIds();
+    const ids = raidGachaSsrSkinIds();
     const others = ids.filter(id=>id!==RAID_GACHA_PICKUP);
-    const hasPickup = !!SSR_SKINS[RAID_GACHA_PICKUP];
-    const list = hasPickup && ids.indexOf(RAID_GACHA_PICKUP)<0 ? [RAID_GACHA_PICKUP, ...ids] : ids;
-    ssrRow.items = list.map(id=>({
+    ssrRow.items = ids.map(id=>({
       label: skinMeta(id).name + (id===RAID_GACHA_PICKUP ? '(ピックアップ)' : ''),
       pct: id===RAID_GACHA_PICKUP ? RARITIES.SSR.rate/2 : (others.length ? RARITIES.SSR.rate/2/others.length : 0),
     }));
@@ -2408,11 +2434,30 @@ function raidGachaRateTable(){
   return rows;
 }
 
-// --- スキンカタログ(選んで貰える引換券) ---
+/* --- スキンカタログ(選んで貰える引換券) ---
+   種類は3つ。中身は catalogSkinIds() 1か所で決める。
+     sr      : SRスキン(色違い)
+     ssr     : SSRスキン + SRスキン
+     raidSsr : レイドガチャ100連の報酬。レイドガチャに出るSSR(狂戦士ガッツを含む)+ 全SRスキン */
 const CATALOG_STORAGE_KEY = 'aramon_catalogs_v1';
+const CATALOG_KINDS = ['sr', 'ssr', 'raidSsr'];
 function loadCatalogs(){
-  try{ const c=JSON.parse(localStorage.getItem(CATALOG_STORAGE_KEY))||{}; return { sr:c.sr||0, ssr:c.ssr||0 }; }
-  catch(err){ return { sr:0, ssr:0 }; }
+  try{
+    const c=JSON.parse(localStorage.getItem(CATALOG_STORAGE_KEY))||{};
+    return { sr:c.sr||0, ssr:c.ssr||0, raidSsr:c.raidSsr||0 };
+  }
+  catch(err){ return { sr:0, ssr:0, raidSsr:0 }; }
+}
+// カタログで選べるスキンの一覧
+function catalogSkinIds(kind){
+  if(kind==='raidSsr') return [...raidGachaSsrSkinIds(), ...allColorSkinIds()];
+  if(kind==='ssr')     return [...gachaSsrSkinIds(), ...allColorSkinIds()];
+  return allColorSkinIds();
+}
+function catalogTitle(kind){
+  if(kind==='raidSsr') return 'レイドSSR/SRスキンを選ぶ';
+  if(kind==='ssr')     return 'SSR/SRスキンを選ぶ';
+  return 'SRスキン(色違い)を選ぶ';
 }
 function saveCatalogs(c){
   try{ localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(c)); }catch(err){}
