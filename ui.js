@@ -745,7 +745,8 @@ function updateLobbyPickLabels(){
   }
   const modeEl = document.getElementById('lobbyModeValue');
   if(modeEl){
-    modeEl.textContent = netState.mode==='multi' ? `みんなと対戦 (${netState.capacity}人)` : '1人でプレイ';
+    modeEl.textContent = netState.raid ? `レイドバトル (最大${RAID_CAPACITY}人)`
+      : (netState.mode==='multi' ? `みんなと対戦 (${netState.capacity}人)` : '1人でプレイ');
   }
 }
 
@@ -3091,6 +3092,7 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
 
 function startGame(){
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
+  raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
   document.getElementById('rangeBar').classList.add('hidden');
   document.getElementById('rangeHint').classList.add('hidden');
   document.getElementById('hud').classList.remove('range-mode');
@@ -3218,6 +3220,7 @@ function startShootingRange(){
   if(typeof setAutoRun==='function') setAutoRun(false);
   joyKnobEl.style.transform='translate(0,0)';
 
+  raidResetState();             // レイドの状態を持ち越さない
   game.trainingRange = true;
   game.activeMapKey = 'wild'+REAL_MAP_SUFFIX;      // 訓練場は荒野のリアル版で固定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
@@ -3279,6 +3282,7 @@ function raidStart(multi, demo){
   if(typeof setAutoRun==='function') setAutoRun(false);
   joyKnobEl.style.transform='translate(0,0)';
 
+  raidResetState();          // いったん初期化してから立て直す
   game.trainingRange = false;
   game.raid = true;
   game.activeMapKey = 'raid';
@@ -3344,6 +3348,8 @@ function raidStart(multi, demo){
   document.getElementById('resultScreen').classList.add('hidden');
   document.getElementById('raidOverlay').classList.add('hidden');
   document.getElementById('raidHud').classList.remove('hidden');
+  // レイドでは順位・安全圏の案内など、バトルロイヤル専用のHUDを隠す(重なって読めなくなる)
+  document.getElementById('hud').classList.add('raid-mode');
   if(typeof applyHudLayout==='function') applyHudLayout();
   game.started = true;
   bgmSetTrack(null);
@@ -3390,7 +3396,8 @@ function raidRecordRun(dmg){
   }
 }
 async function raidExit(){
-  game.started = false; game.raid = false; game.over = false;
+  game.started = false; game.over = false;
+  raidResetState();
   raidRunDemo = false;
   joinInProgress = false;
   // みんなで挑んだ場合は部屋から抜けて、次に普通のマルチへ行っても混ざらないようにする
@@ -3444,9 +3451,23 @@ function updateRaidModePanel(){
   btn.textContent = ok ? '🐉 レイドバトルへ' : '🐉 準備中';
 }
 document.getElementById('raidModeOpenBtn').addEventListener('click', ()=>{
+  if(!raidGuardReady()) return;
   document.getElementById('modePickOverlay').classList.add('hidden');
   openRaidOverlay();
 });
+/* レイドへ進む前の共通チェック。モンスター未選択・準備中はここで止めて、
+   必ずメッセージを出してロビーへ戻す(押しても何も起きない状態を作らない)。 */
+function raidGuardReady(){
+  if(!raidPlayable(raidMyAccountName())){ raidBackToLobby('レイドバトルは準備中です'); return false; }
+  if(!game.selectedElement){ raidBackToLobby('先にモンスターを選んでください'); return false; }
+  return true;
+}
+function raidBackToLobby(msg){
+  document.getElementById('raidOverlay').classList.add('hidden');
+  document.getElementById('modePickOverlay').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+  pushToast(msg);
+}
 function raidHasClaimable(){
   if(!raidOpenNow()) return false;
   const r = loadRaidProgress();
@@ -3609,7 +3630,10 @@ async function openRaidOverlay(){
     }catch(err){}
   }
 }
-document.getElementById('openRaidBtn').addEventListener('click', openRaidOverlay);
+document.getElementById('openRaidBtn').addEventListener('click', ()=>{
+  if(!raidGuardReady()) return;
+  openRaidOverlay();
+});
 // 管理者画面のデモプレイ。開催前でも入れて、記録も報酬も残さない
 document.getElementById('adminRaidDemoBtn').addEventListener('click', ()=>{
   if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
@@ -3618,15 +3642,13 @@ document.getElementById('adminRaidDemoBtn').addEventListener('click', ()=>{
 });
 document.getElementById('raidCloseBtn').addEventListener('click', ()=> document.getElementById('raidOverlay').classList.add('hidden'));
 document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
-  if(!raidPlayable(raidMyAccountName())){ pushToast('レイドバトルは準備中です'); return; }
-  if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
+  if(!raidGuardReady()) return;
   raidStart(false, false);
 });
 // みんなで挑む: 通常のマルチと同じ部屋の作成→ロビー→開始の流れに乗せる。
 // 違いは定員が4人固定で、部屋のモードが 'raid' になることだけ。
 document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
-  if(!raidPlayable(raidMyAccountName())){ pushToast('レイドバトルは準備中です'); return; }
-  if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
+  if(!raidGuardReady()) return;
   document.getElementById('raidOverlay').classList.add('hidden');
   netState.mode = 'multi';
   netState.raid = true;

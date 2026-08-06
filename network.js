@@ -248,7 +248,10 @@ async function beginMultiplayerMatchInner(){
   }
   netState.humanPlayers = fixedPlayers;
   // レイドはマップ固定。ホストが配信したmapKeyもraidになるので、ゲストも自動的に合う
-  game.raid = !!netState.raid || mapKey==='raid';
+  const wantRaid = !!netState.raid || mapKey==='raid';
+  raidResetState();          // 前の試合の持ち越しを断ってから立て直す
+  netState.raid = wantRaid;
+  game.raid = wantRaid;
   if(game.raid) mapKey = 'raid';
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
@@ -382,6 +385,8 @@ async function beginMultiplayerMatchInner(){
     // アイテムは火山と反対側にまとめて撒く(ソロと同じ配置。シード付きで全員一致する)
     seededSpawnLoot(lootRng, RAID_LOOT_COUNT, { x:cx, y:WORLD.h*RAID_LOOT_YR }, Math.min(WORLD.w, WORLD.h)*RAID_LOOT_SPREAD);
     document.getElementById('raidHud').classList.remove('hidden');
+    // バトルロイヤル専用のHUD(順位・安全圏の案内)は隠す。重なって読めなくなる
+    document.getElementById('hud').classList.add('raid-mode');
   } else {
     // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
     const mutSpawnMult = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; // ミューテーター「スポーン数1.5倍」
@@ -1251,7 +1256,11 @@ function loop(now){
   }catch(err){
     loopErrorCount++;
     if(loopErrorCount<=5) console.error("[aramon] loop error", err);
-    if(loopErrorCount===1 && typeof pushToast==="function") pushToast("内部エラーが発生しましたが復帰しました");
+    if(loopErrorCount===1 && typeof pushToast==="function"){
+      // 中身も出す。文言だけだと何が起きたのか分からず、実機からの報告で追えない
+      const detail = (err && (err.message || err.name)) ? String(err.message || err.name).slice(0,90) : '';
+      pushToast("内部エラーが発生しましたが復帰しました" + (detail ? "：" + detail : ""));
+    }
   }
   requestAnimationFrame(loop);
 }
