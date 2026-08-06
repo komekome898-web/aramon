@@ -2703,11 +2703,14 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
+    const isRaid = tab.dataset.mode==='raid';
     netState.mode = tab.dataset.mode==='multi' ? 'multi' : 'solo';
     // 人数などの細かい設定はプレイモードのオーバーレイ内、出撃ボタンは右カラムに出す
-    document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi');
-    document.getElementById('multiActionRow').classList.toggle('hidden', netState.mode!=='multi');
-    document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi');
+    document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi' || isRaid);
+    document.getElementById('multiActionRow').classList.toggle('hidden', netState.mode!=='multi' || isRaid);
+    document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi' || isRaid);
+    document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
+    if(isRaid) updateRaidModePanel();
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   });
 });
@@ -3371,7 +3374,8 @@ function updateRaidHud(){
 function finishRaid(defeated){
   if(game.over) return;
   const dmg = Math.round((player && player.raidDamage) || 0);
-  if(!raidRunDemo) raidRecordRun(dmg);
+  // デモプレイ中と準備中は、記録も報酬も一切残さない(公開時に全員が同じ位置から始められるように)
+  if(!raidRunDemo && !raidRecordsDisabled()) raidRecordRun(dmg);
   raidShowResult(defeated, dmg);
 }
 // 与ダメを端末とサーバーの累計へ反映する
@@ -3409,14 +3413,40 @@ async function raidExit(){
 
 /* --- レイド入口画面 --- */
 // ロビーの入口ボタンは開催中だけ出す
+function raidMyAccountName(){
+  return (typeof accountState!=='undefined' && accountState.loggedIn) ? accountState.name : null;
+}
 function updateRaidEntryButton(){
   const btn = document.getElementById('openRaidBtn');
   if(!btn) return;
-  btn.classList.toggle('hidden', !raidOpenNow());
-  // 未受け取りの報酬があるときだけ通知の点を出す
+  // 準備中は開発アカウントだけ。公開後は開催中だけ出す
+  btn.classList.toggle('hidden', !raidPlayable(raidMyAccountName()));
+  // 未受け取りの報酬があるときだけ通知の点を出す(準備中は記録が残らないので出さない)
   const dot = document.getElementById('raidDot');
-  if(dot) dot.classList.toggle('hidden', !raidHasClaimable());
+  if(dot) dot.classList.toggle('hidden', raidRecordsDisabled() || !raidHasClaimable());
+  // プレイモード側の案内も合わせて更新する
+  if(typeof updateRaidModePanel==='function') updateRaidModePanel();
 }
+// プレイモードのレイド欄。準備中の案内と、入れるかどうかをここで出し分ける
+function updateRaidModePanel(){
+  const note = document.getElementById('raidModeNote');
+  const btn = document.getElementById('raidModeOpenBtn');
+  const pop = document.getElementById('raidModePop');
+  if(!note || !btn) return;
+  const ok = raidPlayable(raidMyAccountName());
+  if(pop) pop.classList.toggle('hidden', !raidRecordsDisabled());
+  note.textContent = raidRecordsDisabled()
+    ? (ok ? '準備中のため、バトルが終わっても記録・報酬は残りません。'
+          : '準備中です。もうしばらくお待ちください。')
+    : (raidOpenNow() ? '開催中です。挑んだぶんだけ全プレイヤーの累計に加算されます。'
+                     : '現在は開催していません。');
+  btn.disabled = !ok;
+  btn.textContent = ok ? '🐉 レイドバトルへ' : '🐉 準備中';
+}
+document.getElementById('raidModeOpenBtn').addEventListener('click', ()=>{
+  document.getElementById('modePickOverlay').classList.add('hidden');
+  openRaidOverlay();
+});
 function raidHasClaimable(){
   if(!raidOpenNow()) return false;
   const r = loadRaidProgress();
@@ -3465,23 +3495,33 @@ function renderRaidOverlay(){
   document.getElementById('raidTitleSub').textContent = raidOpenNow()
     ? `残り ${days}日${hours}時間 ／ ${RAID_BOSS.name}` : '開催前';
   const skinBonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
+  const preview = raidRecordsDisabled();
   box.innerHTML = `
-    <div class="raid-boss-card">
-      <div class="raid-boss-art">${raidBossImgTag()}</div>
-      <div class="raid-boss-info">
-        <div class="raid-boss-name">${RAID_BOSS.name}</div>
-        <div class="raid-boss-desc">火口を背に構える巨竜。技を撃つ前に必ず予告が出る。
-        時間が経つほど攻撃が激しくなり、安全圏も狭まっていく。制限時間は${RAID_TIME_LIMIT}秒。</div>
-        <div class="raid-boss-tips">・味方の攻撃は当たらない ・技は最初から全解放 ・倒しきれなくても与えたダメージは全部累計に入る</div>
-      </div>
+    <div class="raid-key"><img src="images/raid_key.jpg" alt="${RAID_BOSS.name}"></div>
+    <div class="raid-lead">
+      不死身の巨竜<b>ゾッド</b>が火口に降り立った。ひとりでは到底届かない相手だ。
+      最大4人で挑み、<b>与えたダメージは全プレイヤーぶんが累計</b>される。倒しきれなくても、
+      刻んだダメージはすべて残る。
+    </div>
+    <div class="raid-rules">
+      <span>⏱ 制限時間 ${RAID_TIME_LIMIT}秒</span><span>👥 最大${RAID_CAPACITY}人</span>
+      <span>⚔ 技は最初から全解放</span><span>🛡 味方の攻撃は当たらない</span>
+      <span>⚠ 技の前に必ず予告が出る</span><span>🔥 時間が経つほど激しくなる</span>
+    </div>
+    ${preview ? '<div class="raid-preview-note">🚧 準備中: バトルが終わっても記録・報酬は残りません</div>' : ''}
+    <div class="raid-sec">
+      <div class="raid-sec-title">ボスの残り体力<span class="raid-sec-note">${Math.max(0, last-Math.round(total)).toLocaleString()} / ${last.toLocaleString()}</span></div>
+      <div class="raid-gauge raid-gauge-boss"><div class="raid-gauge-fill" style="width:${Math.max(0,100-pct).toFixed(1)}%"></div></div>
+      <div class="raid-my-dmg">あなたが与えた累計ダメージ <b>${Math.round(r.dmg).toLocaleString()}</b>
+        <span class="raid-my-sub">（挑戦${r.runs}回 / 自己ベスト ${Math.round(r.best).toLocaleString()}）</span></div>
+      <button id="raidRankOpenBtn" class="raid-rank-open-btn">🏆 レイドランキングを見る</button>
     </div>
     <div class="raid-sec">
-      <div class="raid-sec-title">みんなの累計ダメージ<span class="raid-sec-note">${Math.round(total).toLocaleString()} / ${last.toLocaleString()}</span></div>
-      <div class="raid-gauge"><div class="raid-gauge-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="raid-sec-title">みんなの累計で全員がもらえる報酬</div>
       <div class="raid-tier-list">${raidTierRowsHtml(RAID_TOTAL_TIERS, total, r.claimedTotal, 'total')}</div>
     </div>
     <div class="raid-sec">
-      <div class="raid-sec-title">あなたの累計ダメージ<span class="raid-sec-note">${Math.round(r.dmg).toLocaleString()}（挑戦${r.runs}回 / 自己ベスト${Math.round(r.best).toLocaleString()}）</span></div>
+      <div class="raid-sec-title">あなたの累計でもらえる報酬</div>
       <div class="raid-tier-list">${raidTierRowsHtml(RAID_PERSONAL_TIERS, r.dmg, r.claimedPersonal, 'personal')}</div>
     </div>
     ${skinBonus ? `<div class="raid-sec raid-sec-bonus">
@@ -3489,6 +3529,8 @@ function renderRaidOverlay(){
       <div class="raid-bonus-text">「${skinBonus.name}」を装備してレイドに挑むと、
       ボスへの<b>与ダメージ×${skinBonus.dmgDealt}</b>・ボスからの<b>被ダメージ×${skinBonus.dmgTaken}</b>。レイドガチャで手に入ります。</div>
     </div>` : ''}`;
+  const rankBtn = document.getElementById('raidRankOpenBtn');
+  if(rankBtn) rankBtn.addEventListener('click', openRaidRanking);
   box.querySelectorAll('.raid-claim-btn').forEach(b=>{
     b.addEventListener('click', ()=> raidClaim(b.dataset.kind, Number(b.dataset.idx)));
   });
@@ -3509,6 +3551,51 @@ function raidClaim(kind, idx){
   renderRaidOverlay();
   updateRaidEntryButton();
 }
+/* --- レイドランキング(総ダメージ / 参加回数) --- */
+let raidRankTab = 'dmg';
+let raidRankRows = { dmg:null, runs:null };
+async function openRaidRanking(){
+  document.getElementById('raidRankOverlay').classList.remove('hidden');
+  renderRaidRanking();
+  if(window.__aramonFetchRaidRanking){
+    try{
+      const rows = await window.__aramonFetchRaidRanking(raidWeekId(), 50);
+      raidRankRows.dmg  = rows.slice().sort((a,b)=>b.dmg-a.dmg);
+      raidRankRows.runs = rows.slice().sort((a,b)=>(b.runs||0)-(a.runs||0));
+      renderRaidRanking();
+    }catch(err){}
+  }
+}
+function renderRaidRanking(){
+  const box = document.getElementById('raidRankScroll');
+  if(!box) return;
+  const left = raidSecondsLeft();
+  document.getElementById('raidRankSub').textContent =
+    raidOpenNow() ? `今回の開催 残り ${Math.floor(left/86400)}日${Math.floor((left%86400)/3600)}時間` : '開催前';
+  document.querySelectorAll('.raid-rank-tab').forEach(t=>t.classList.toggle('active', t.dataset.rk===raidRankTab));
+  const rows = raidRankRows[raidRankTab];
+  if(rows===null){ box.innerHTML = '<div class="rank-empty">読み込み中…</div>'; return; }
+  if(!rows.length){ box.innerHTML = '<div class="rank-empty">まだ記録がありません</div>'; return; }
+  const me = raidMyAccountName();
+  const isDmg = raidRankTab==='dmg';
+  box.innerHTML = `<div class="raid-rank-list">${rows.map((r,i)=>{
+    const v = isDmg ? Math.round(r.dmg||0).toLocaleString() : `${r.runs||0} 回`;
+    const medal = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':`${i+1}`));
+    return `<div class="raid-rank-row${r.name===me?' is-me':''}">
+      <span class="raid-rank-no">${medal}</span>
+      <span class="raid-rank-name">${rebirthEscape(r.name||'ゲスト')}</span>
+      <span class="raid-rank-val">${v}</span>
+    </div>`;
+  }).join('')}</div>`;
+  attachVisibleScrollbar(box, document.getElementById('raidRankScrollbar'));
+}
+document.querySelectorAll('.raid-rank-tab').forEach(t=>{
+  t.addEventListener('click', ()=>{ raidRankTab = t.dataset.rk; renderRaidRanking(); });
+});
+document.getElementById('raidRankCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('raidRankOverlay').classList.add('hidden');
+});
+
 async function openRaidOverlay(){
   document.getElementById('raidOverlay').classList.remove('hidden');
   renderRaidOverlay();
@@ -3531,12 +3618,14 @@ document.getElementById('adminRaidDemoBtn').addEventListener('click', ()=>{
 });
 document.getElementById('raidCloseBtn').addEventListener('click', ()=> document.getElementById('raidOverlay').classList.add('hidden'));
 document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
+  if(!raidPlayable(raidMyAccountName())){ pushToast('レイドバトルは準備中です'); return; }
   if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
   raidStart(false, false);
 });
 // みんなで挑む: 通常のマルチと同じ部屋の作成→ロビー→開始の流れに乗せる。
 // 違いは定員が4人固定で、部屋のモードが 'raid' になることだけ。
 document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
+  if(!raidPlayable(raidMyAccountName())){ pushToast('レイドバトルは準備中です'); return; }
   if(!game.selectedElement){ pushToast('先にモンスターを選んでください'); return; }
   document.getElementById('raidOverlay').classList.add('hidden');
   netState.mode = 'multi';
@@ -3549,23 +3638,24 @@ document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
 function raidShowResult(defeated, dmg){
   game.over = true;
   game.started = false;
-  const gold = Math.min(RAID_RUN_GOLD_MAX, Math.round(dmg*RAID_RUN_GOLD_PER_DMG));
-  const dia  = Math.min(RAID_RUN_DIA_MAX,  Math.round(dmg*RAID_RUN_DIA_PER_DMG));
-  if(!raidRunDemo && (gold||dia)) addWallet(gold, dia);
+  const noRecord = raidRunDemo || raidRecordsDisabled();
+  const gold = noRecord ? 0 : Math.min(RAID_RUN_GOLD_MAX, Math.round(dmg*RAID_RUN_GOLD_PER_DMG));
+  const dia  = noRecord ? 0 : Math.min(RAID_RUN_DIA_MAX,  Math.round(dmg*RAID_RUN_DIA_PER_DMG));
+  if(gold||dia) addWallet(gold, dia);
   bgmSetTrack(null);
   playSe(defeated ? 'fanfare' : 'sad');
   setTimeout(()=>{ if(!game.started) bgmSetTrack('title'); }, defeated ? 3800 : 3000);
   const scr = document.getElementById('resultScreen');
   scr.className = 'resultScreen ' + (defeated?'win':'lose');
   document.getElementById('resultRank').textContent = defeated ? '🐉 討伐成功' : '⏱ 時間切れ';
-  document.getElementById('resultSub').textContent = raidRunDemo
-    ? 'デモプレイ（記録は残りません）'
+  document.getElementById('resultSub').textContent = noRecord
+    ? `与えたダメージ ${Math.round(dmg).toLocaleString()}（準備中のため記録は残りません）`
     : `与えたダメージ ${Math.round(dmg).toLocaleString()}`;
   document.getElementById('statKills').textContent = player ? player.kills : 0;
   document.getElementById('statDamage').textContent = Math.round(dmg).toLocaleString();
   document.getElementById('statTime').textContent = fmtTime(matchTime);
   scr.classList.remove('hidden');
-  if(!raidRunDemo && (gold||dia)) pushToast(`🪙${gold} 💎${dia} を獲得`);
+  if(gold||dia) pushToast(`🪙${gold} 💎${dia} を獲得`);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
 }
