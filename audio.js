@@ -221,13 +221,14 @@ const seRize          = createSeOneShot('./audio/se_rize.mp3', 1.25);
 const seRizeKill      = createSeOneShot('./audio/se_rize_kill.mp3', 1.2); // 現在は勝利SEに転用(SKIN_WIN_SE参照)
 const seRizeHit       = createSeOneShot('./audio/se_rize_hit.mp3', 1.15);
 const seAquaKill      = createSeOneShot('./audio/se_aqua_kill.mp3', 1.2); // 新しいキルSE(SKIN_KILL_SE参照)
+const seGutsTier3     = createSeOneShot('./audio/se_guts_tier3.mp3', 1.2); // 狂戦士ガッツ tier3「ドラゴンころし」の発動音
 const seVenomEdge     = createSeOneShot(SE_VENOM_DATAURL, 1.25);            // イルミネ tier1「ヴェノムエッジ」(tier2は同じ音の3連射)
 const seRequiemBlast  = createSeOneShot('./audio/se_requiem_blast.mp3', 1.2);     // イルミネ tier3「レクイエムエンド」の着弾ドーム
 function ensureProvidedSeBuffers(){
   [seChoice, seBuy, seMonta, seRequiemEnd, seBard, seDarkHoust, seMocchiBeam, seCrystalRain,
    seAmphiShot, seAmphiBlast, seVenomEdge, seRequiemBlast,
    seGokongo, seGokongoWin, seGokongoKill,
-   seRize, seRizeKill, seRizeHit, seAquaKill].forEach(s=>s.ensure());
+   seRize, seRizeKill, seRizeHit, seAquaKill, seGutsTier3].forEach(s=>s.ensure());
 }
 
 // ===== SE =====
@@ -605,6 +606,7 @@ const SE_DEFS = {
   rize(t, o){ if(!seRize.play(t)) SE_DEFS.whoosh(t, o); },
   rizeKill(t, o){ if(!seRizeKill.play(t)) SE_DEFS.kill(t, o); },
   aquaKill(t, o){ if(!seAquaKill.play(t)) SE_DEFS.kill(t, o); },
+  gutsTier3(t, o){ if(!seGutsTier3.play(t)) SE_DEFS.whoosh(t, o); },
   rizeHit(t, o){ if(!seRizeHit.play(t)) SE_DEFS.hitTaken(t, o); },
   // イルミネ tier1「ヴェノムエッジ」
   venomEdge(t, o){ if(!seVenomEdge.play(t)) SE_DEFS.fire(t, o); },
