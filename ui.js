@@ -3885,6 +3885,9 @@ function raidShowResult(defeated, dmg, prevBest){
   scr.classList.remove('hidden');
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
+  if(!noRecord){
+    logRaidMatchForAdmin(d, defeated ? 'defeated' : (newBest ? 'best' : (died ? 'died' : 'timeup')));
+  }
 }
 
 function exitShootingRange(){
@@ -4163,6 +4166,26 @@ function logMatchForAdmin(){
     element: elementKey,
     elementLabel: el ? el.label : elementKey,
     mode: netState.mode==='multi' ? 'multi' : 'solo',
+    ts: Date.now(),
+  });
+}
+// レイド版のlogMatchForAdmin。管理者画面の各項目(プレイ回数/プレイヤー情報/直近プレイ)に
+// レイドの参加が出るように、通常の試合と同じmatchLogsへ記録する(raid系フィールドを追加で持たせる)。
+function logRaidMatchForAdmin(dmg, result){
+  if(!window.__aramonLogMatch) return;
+  const name = getDisplayNameFromInput();
+  const elementKey = (player && player.element) || game.selectedElement;
+  const el = ELEMENTS[elementKey];
+  window.__aramonLogMatch({
+    name,
+    map: 'raid',
+    mapLabel: MAPS.raid.label,
+    element: elementKey,
+    elementLabel: el ? el.label : elementKey,
+    mode: netState.mode==='multi' ? 'multi' : 'solo',
+    raid: true,
+    raidDamage: Math.round(dmg),
+    raidResult: result, // 'defeated' | 'best' | 'died' | 'timeup'
     ts: Date.now(),
   });
 }
@@ -6164,6 +6187,8 @@ document.getElementById('closeMyStatsBtn').addEventListener('click', ()=>{
 ===================================================================== */
 const ADMIN_PASSWORD = '0008';
 const ADMIN_EXCLUDE_NAME = 'おりょう';
+// レイドの試合ログ(raidResult)の表示名。raidShowResultで付ける値と1対1
+const ADMIN_RAID_RESULT_LABEL = { defeated:'討伐成功', best:'自己ベスト更新', died:'力尽きた', timeup:'時間切れ' };
 let adminPassInput = '';
 let adminMatchLogsCache = null;
 let adminSelectedPeriod = 'all';
@@ -6266,6 +6291,8 @@ function adminFmtDate(ts){ if(!ts) return '—'; const d=new Date(ts); return `$
 function adminFmtDateTime(ts){ if(!ts) return '—'; const d=new Date(ts); return `${adminFmtDate(ts)} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function adminMapLabel(r){ return MAPS[r.map] ? MAPS[r.map].label : (r.mapLabel || r.map || '?'); }
 function adminMonLabel(r){ return ELEMENTS[r.element] ? ELEMENTS[r.element].label : (r.elementLabel || r.element || '?'); }
+// モード表示。レイドはnetState.mode(solo/multi)に関係なく別枠なので、他より先に見る
+function adminModeLabel(r){ return r.raid ? 'レイド' : (r.mode==='multi' ? 'マルチ' : 'ソロ'); }
 
 function renderAdminData(){
   const totalEl = document.getElementById('adminTotalMatches');
@@ -6274,6 +6301,7 @@ function renderAdminData(){
     totalEl.classList.add('admin-total-line-error');
     document.getElementById('adminMapChart').innerHTML = '';
     document.getElementById('adminMonsterChart').innerHTML = '';
+    document.getElementById('adminRaidChart').innerHTML = '';
     document.getElementById('adminPlayerList').innerHTML = '<div class="rank-empty">読み込みエラーのため表示できません</div>';
     return;
   }
@@ -6282,7 +6310,8 @@ function renderAdminData(){
   // --- プレイ回数タブ(月フィルタあり) ---
   renderAdminMonthFilter(logs);
   const filtered = adminFilterByPeriod(logs, adminSelectedPeriod);
-  totalEl.textContent = `合計プレイ回数　${filtered.length}回`;
+  const raidFiltered = filtered.filter(r=>r.raid);
+  totalEl.textContent = `合計プレイ回数　${filtered.length}回（レイド ${raidFiltered.length}回）`;
   const mapEntries = Object.keys(MAPS)
     .map(k=>({ label:MAPS[k].label, count: filtered.filter(r=>r.map===k).length }))
     .sort((a,b)=> b.count-a.count);
@@ -6291,6 +6320,12 @@ function renderAdminData(){
     .map(k=>({ label:ELEMENTS[k].label, count: filtered.filter(r=>r.element===k).length }))
     .sort((a,b)=> b.count-a.count);
   document.getElementById('adminMonsterChart').innerHTML = adminBarChartHtml(monEntries, '#f4c430');
+  // レイド結果別(討伐成功/自己ベスト更新/力尽きた/時間切れ)
+  const raidResultEntries = Object.entries(ADMIN_RAID_RESULT_LABEL)
+    .map(([k,label])=>({ label, count: raidFiltered.filter(r=>r.raidResult===k).length }))
+    .sort((a,b)=> b.count-a.count);
+  document.getElementById('adminRaidChart').innerHTML = raidFiltered.length
+    ? adminBarChartHtml(raidResultEntries, '#a24bff') : '<div class="rank-empty">記録がありません</div>';
   // --- プレイヤー情報タブ(全期間) ---
   renderAdminPlayerTab();
   // --- 直近プレイタブ(全期間・日時降順) ---
@@ -6320,8 +6355,13 @@ function renderAdminPlayerDetail(name){
   detail.classList.remove('hidden');
   const logs = (adminMatchLogsCache||[]).filter(r=> (r.name||'名無しのモンスター')===name);
   const total = logs.length;
-  const solo = logs.filter(r=> r.mode!=='multi').length;
-  const multi = logs.filter(r=> r.mode==='multi').length;
+  const raidLogs = logs.filter(r=> r.raid);
+  const nonRaidLogs = logs.filter(r=> !r.raid);
+  const solo = nonRaidLogs.filter(r=> r.mode!=='multi').length;
+  const multi = nonRaidLogs.filter(r=> r.mode==='multi').length;
+  const raidRuns = raidLogs.length;
+  const raidBestDmg = raidLogs.length ? Math.max(...raidLogs.map(r=> r.raidDamage||0)) : 0;
+  const raidDefeats = raidLogs.filter(r=> r.raidResult==='defeated').length;
   const tsList = logs.map(r=> r.ts||0).filter(Boolean);
   const first = tsList.length ? Math.min(...tsList) : 0;
   const last  = tsList.length ? Math.max(...tsList) : 0;
@@ -6340,6 +6380,9 @@ function renderAdminPlayerDetail(name){
     <div class="admin-detail-grid">
       <div><span class="admin-dk">合計プレイ</span><span class="admin-dv">${total}回</span></div>
       <div><span class="admin-dk">ソロ / マルチ</span><span class="admin-dv">${solo} / ${multi}</span></div>
+      <div><span class="admin-dk">レイド参加</span><span class="admin-dv">${raidRuns}回</span></div>
+      <div><span class="admin-dk">レイド討伐</span><span class="admin-dv">${raidDefeats}回</span></div>
+      <div><span class="admin-dk">レイド最高与ダメ</span><span class="admin-dv">${raidBestDmg.toLocaleString()}</span></div>
       <div><span class="admin-dk">初プレイ</span><span class="admin-dv">${adminFmtDate(first)}</span></div>
       <div><span class="admin-dk">最終プレイ</span><span class="admin-dv">${adminFmtDate(last)}</span></div>
       <div><span class="admin-dk">最多モンスター</span><span class="admin-dv">${favMon}</span></div>
@@ -6353,7 +6396,7 @@ function renderAdminPlayerDetail(name){
     <div class="admin-bar-chart">${adminBarChartHtml(mapEntries,'#5aa6ff')}</div>
     <div class="admin-col-title" style="margin-top:14px;">直近の試合(最大12件)</div>
     <div class="admin-recent-list">${recent.map(r=>
-      `<div class="admin-recent-row"><span class="ar-dt">${adminFmtDateTime(r.ts)}</span><span class="ar-map">${adminMapLabel(r)}</span><span class="ar-mon">${adminMonLabel(r)}</span><span class="ar-mode">${r.mode==='multi'?'マルチ':'ソロ'}</span></div>`
+      `<div class="admin-recent-row"><span class="ar-dt">${adminFmtDateTime(r.ts)}</span><span class="ar-map">${adminMapLabel(r)}</span><span class="ar-mon">${adminMonLabel(r)}</span><span class="ar-mode">${adminModeLabel(r)}</span></div>`
     ).join('')}</div>
   `;
   document.getElementById('adminPlayerBackBtn').onclick = ()=>{ adminSelectedPlayer = null; renderAdminPlayerTab(); };
@@ -6379,7 +6422,7 @@ function renderAdminRecentTab(){
       <span class="ar-name">${r.name || '名無しのモンスター'}</span>
       <span class="ar-map">${adminMapLabel(r)}</span>
       <span class="ar-mon">${adminMonLabel(r)}</span>
-      <span class="ar-mode">${r.mode==='multi'?'マルチ':'ソロ'}</span>
+      <span class="ar-mode">${adminModeLabel(r)}</span>
     </div>`
   ).join('') : '<div class="rank-empty">記録がありません</div>';
 }
