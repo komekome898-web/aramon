@@ -6513,6 +6513,9 @@ function buildSeason1CalendarWeeks(){
   while(cells.length % 7 !== 0) cells.push(null);
   const weeks = [];
   for(let i=0;i<cells.length;i+=7) weeks.push(cells.slice(i,i+7));
+  // 開始前しか入っていない先頭の週は落とす。その週には出す情報が何も無いのに
+  // 1行ぶん(数十px)場所を取り、そのぶん下が見えなくなるため。
+  while(weeks.length > 1 && weeks[0].every(d=>!d || d < start)) weeks.shift();
   return { weeks, start };
 }
 /* シーズン1のスケジュール(カレンダー)と説明。プレイヤーのシーズン画面と
