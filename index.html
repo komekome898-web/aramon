@@ -458,7 +458,6 @@
     <div id="killFeed"></div>
   </div>
 
-  <div id="toast"></div>
   <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／Spaceでダッシュ／スティックを上に2回弾くとオートラン</div>
   <div id="crosshair"></div>
 
@@ -1242,6 +1241,9 @@
     <button id="rebirthAnimCloseBtn" class="rebirth-confirm-btn">とじる</button>
   </div>
 </div>
+
+<!-- トースト。#appRootの最後に直接置く(#hudの中だとz-indexがロビー等より低く隠れて見えない) -->
+<div id="toast"></div>
 
 </div>
 <!-- appRoot end -->

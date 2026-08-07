@@ -6525,6 +6525,8 @@ function season1CalendarHtml(){
   if(typeof SEASON1_MUTATORS==='undefined') return '';
   const { weeks, start } = buildSeason1CalendarWeeks();
   const dow = ['日','月','火','水','木','金','土'];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isToday = (date)=> date.getFullYear()===today.getFullYear() && date.getMonth()===today.getMonth() && date.getDate()===today.getDate();
   const raidFrom = (typeof raidStartAt==='function') ? raidStartAt().getTime() : null;
   const raidTo   = (typeof raidEndAt==='function')   ? raidEndAt().getTime()   : null;
   // その日がレイド期間内か / 期間の初日・最終日か(バーの角丸を付ける位置)
@@ -6549,8 +6551,8 @@ function season1CalendarHtml(){
           + `${date.getDay()===0?' is-rowstart':''}${date.getDay()===6?' is-rowend':''}">`
           + `${raid.first?'🐉レイド':''}</div>`
         : '';
-      return `<div class="s1prev-cal-cell ${before?'before-start':''}">
-        <div class="s1prev-cal-date">${date.getDate()}</div>
+      return `<div class="s1prev-cal-cell ${before?'before-start':''} ${isToday(date)?'is-today':''}">
+        <div class="s1prev-cal-date">${date.getDate()}${isToday(date)?'<span class="s1prev-cal-today-tag">本日</span>':''}</div>
         ${raidBar}
         <div class="s1prev-cal-badges">${badges.map(b=>`<span class="s1prev-badge">${b}</span>`).join('')}</div>
       </div>`;

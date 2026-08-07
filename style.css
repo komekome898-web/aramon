@@ -1093,7 +1093,11 @@
     border-radius:6px; display:flex; flex-direction:column; gap:2px; }
   .s1prev-cal-cell.empty{ background:transparent; border-color:transparent; }
   .s1prev-cal-cell.before-start{ opacity:0.35; }
-  .s1prev-cal-date{ font-size:9.5px; color:var(--ink-dim); line-height:1.1; }
+  .s1prev-cal-cell.is-today{ border-color:var(--amber); background:rgba(244,196,48,0.16); }
+  .s1prev-cal-date{ font-size:9.5px; color:var(--ink-dim); line-height:1.1;
+    display:flex; align-items:center; gap:3px; }
+  .s1prev-cal-today-tag{ font-size:7.5px; font-weight:800; color:#1a1306; background:var(--amber);
+    border-radius:3px; padding:0 3px; line-height:1.4; }
   .s1prev-cal-badges{ display:flex; flex-direction:column; gap:1px; }
   .s1prev-badge{ font-size:8px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
     border-radius:4px; padding:0 3px; text-align:center; white-space:nowrap; line-height:1.5; }
@@ -1801,7 +1805,10 @@
   .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.72); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateX(8px); animation:kfIn .25s forwards; max-width:100%; }
   @keyframes kfIn{ to{opacity:1; transform:translateX(0);} }
 
-  #toast{ position:absolute; left:50%; top:16%; transform:translateX(-50%); font-size:13px; letter-spacing:1px; padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px; opacity:0; transition:opacity .2s; white-space:nowrap;}
+  /* #appRootの最後(#hudの外)に置いてあるので、z-indexは他の全画面(#startScreen:30含む)より
+     大きくして必ず最前面に出す。pointer-events:noneは#hudから継承していたため明示が必要。 */
+  #toast{ position:absolute; left:50%; top:16%; transform:translateX(-50%); z-index:950; pointer-events:none;
+    font-size:13px; letter-spacing:1px; padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px; opacity:0; transition:opacity .2s; white-space:nowrap;}
 
   #movePanel{
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
