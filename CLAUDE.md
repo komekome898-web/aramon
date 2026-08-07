@@ -39,7 +39,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 | `video/` | SSR昇格演出の動画(`*_promote.mp4`/`.webm`。音声は`audio/`側と同時再生) |
 | `monsters/*.png` | モンスター画像。静止画+歩行スプライト`<prefix>_walk_f1..8`/`_b1..8`(320px・256色透過)。仕様JSONは`monsters/specs/` |
 | `vendor/` | Three.js r160(MIT) |
-| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定)。開発用でゲームには読み込まない |
+| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定・持ち方での文字サイズ差)。開発用でゲームには読み込まない |
 | `guide/` | 遊び方ガイドの画像 |
 
 ## 全画面に効く決まり(詳細は aramon-layout)
@@ -47,6 +47,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 - **【メディアクエリ禁止】レイアウトに`@media`を使わない。** 幅で分岐したいときは`html.narrow-screen`。
 - **【生のvw/vh禁止】サイズは`calc(N * var(--vh))`/`var(--vw)`で書く。**
 - **【スクロールロック除外・必須】新しい画面/オーバーレイを足したらIDを3か所すべてに追加する:** `render.js`の`touchmove`、`input.js`の`touchend`と`dblclick`。漏れるとスクロールもタップも効かない。
+- **【持ち方で文字サイズを変えない】`html.narrow-screen`で`font-size`を分けない**(実画面の幅で付くので縦持ちだけ変わる)。iOSの自動拡大は`*`の`text-size-adjust:100%`で全画面停止済み。**個別クラスに書き足さない/この指定を消さない。**
 - **文字入力はすべて共通ポップアップ(`#textInputOverlay`)。**
 - 画像は`height`固定でなく`max-height`+`flex:0 1 auto`+`object-fit:contain`。
 - 横長・低い画面が前提。新画面はスクロールなしで収まる縦幅にする。
@@ -72,7 +73,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 
 - 数値バランスは発注者が実機で反復調整するので、名前付き定数にまとめる。
 - 変更したファイルだけをコミットする。コミットメッセージは日本語。
-- **遊びの動作確認はiPhone実機(PWA)で発注者が行う。ヘッドレスブラウザでゲームを動かして確かめない。** こちらは`node --check <file>`の構文チェックまで。**例外は寸法の実測だけ**(`tools/measure_layout.mjs`。スクロール量・見切れを数字で出す用途に限る)。
+- **遊びの動作確認はiPhone実機(PWA)で発注者が行う。ヘッドレスブラウザでゲームを動かして確かめない。** こちらは`node --check <file>`の構文チェックまで。**画面の実測はヘッドレスで行う**(`tools/measure_layout.mjs`。スクロール量・見切れ・持ち方での文字サイズ差を数字で出す。レイアウトを触ったら前後で測って報告する)。
 - **PRはsquashマージ運用。** 次のPR前に `git fetch origin main && git rebase --onto origin/main <前回のブランチ先端> <作業ブランチ>` で既マージ分を落として`push --force-with-lease`する(毎回実施)。
 - GitHub Actionsの`actions_list`はレスポンスが巨大なので、保存ファイルを `jq -r '.workflow_runs[:N][] | [.head_sha[0:7], .status, .conclusion] | @tsv'` で読む。対象SHAのrunが`completed/success`なら成功。
 - **デプロイが失敗しても「再実行」しない。** 再実行のrunはキャンセルもできない状態で居座り、Pagesのデプロイ枠を塞いで後続を全部止める(2026-08-06に6時間停止)。**やり直したいときは新しいコミットを1つ積む**(`sw.js`の`CACHE_NAME`を上げるだけでよい)。失敗の中身が`Service Unavailable`やタイムアウトならGitHub側の不調で、コードは無関係。
