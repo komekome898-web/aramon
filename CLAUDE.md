@@ -39,7 +39,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 | `video/` | SSR昇格演出の動画(`*_promote.mp4`/`.webm`。音声は`audio/`側と同時再生) |
 | `monsters/*.png` | モンスター画像。静止画+歩行スプライト`<prefix>_walk_f1..8`/`_b1..8`(320px・256色透過)。仕様JSONは`monsters/specs/` |
 | `vendor/` | Three.js r160(MIT) |
-| `tools/` | モンスター追加ツール(開発用。ゲームには読み込まない) |
+| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定)。開発用でゲームには読み込まない |
 | `guide/` | 遊び方ガイドの画像 |
 
 ## 全画面に効く決まり(詳細は aramon-layout)
@@ -72,9 +72,10 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + バニラ
 
 - 数値バランスは発注者が実機で反復調整するので、名前付き定数にまとめる。
 - 変更したファイルだけをコミットする。コミットメッセージは日本語。
-- **動作確認はiPhone実機(PWA)で発注者が行う。ヘッドレスブラウザは使わない。** こちらは`node --check <file>`の構文チェックまでで、検証用スクリプトを新規に書かない。
+- **遊びの動作確認はiPhone実機(PWA)で発注者が行う。ヘッドレスブラウザでゲームを動かして確かめない。** こちらは`node --check <file>`の構文チェックまで。**例外は寸法の実測だけ**(`tools/measure_layout.mjs`。スクロール量・見切れを数字で出す用途に限る)。
 - **PRはsquashマージ運用。** 次のPR前に `git fetch origin main && git rebase --onto origin/main <前回のブランチ先端> <作業ブランチ>` で既マージ分を落として`push --force-with-lease`する(毎回実施)。
 - GitHub Actionsの`actions_list`はレスポンスが巨大なので、保存ファイルを `jq -r '.workflow_runs[:N][] | [.head_sha[0:7], .status, .conclusion] | @tsv'` で読む。対象SHAのrunが`completed/success`なら成功。
+- **デプロイが失敗しても「再実行」しない。** 再実行のrunはキャンセルもできない状態で居座り、Pagesのデプロイ枠を塞いで後続を全部止める(2026-08-06に6時間停止)。**やり直したいときは新しいコミットを1つ積む**(`sw.js`の`CACHE_NAME`を上げるだけでよい)。失敗の中身が`Service Unavailable`やタイムアウトならGitHub側の不調で、コードは無関係。
 
 ## 用語(発注者の言い回し)
 
