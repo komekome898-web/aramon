@@ -768,6 +768,8 @@ const UPDATE_HISTORY = [
     { t:'専用の昇格演出を持つSSRスキンは、共通の昇格演出が流れてから専用ムービーへ切り替わるようになりました', g:['av'] },
     { t:'ロビーの「レイド」と「プレイモード」に、募集中の部屋で待っている人数が出るようになりました。誰かが部屋を立てているとすぐ分かります', g:['feature','multi'] },
     { t:'【レイド】最後の報酬を受け取ったあとも報酬が増え続けるようになりました。あなたの累計10万ごとに🪙1,000💎20🎟️1、みんなの累計100万ごとに🪙5,000💎50🎟️5。レイド画面を開いた時点で自動で受け取れます（すでに超えているぶんもまとめて入ります）', g:['balance','feature'] },
+    { t:'【転生】2回目以降も伸び続けるようになりました。適正はSの上に S+ → SS → SS+ → M（虹色・最上位）が加わり、ステータス上限は転生1回につき+100（999→1099→1199…）になります', g:['feature','balance'] },
+    { t:'【転生】ソロプレイの敵も、使っているマスモンの転生回数に応じて強くなります。転生しても歯ごたえが変わらないようにするためです', g:['balance','solo'] },
   ]},
   { date:'2026-08-06', items:[
     { t:'🎉 シーズン1がいよいよ8/7に開幕します！ 曜日ごとの変則ルール(日替わりミューテーター)が始まり、月・木は全員が技tier2スタート、火・金は試合報酬2倍、水はスポーンアイテム1.5倍。土日はその全部が同時に発動します', g:['feature','general'] },
@@ -1122,13 +1124,21 @@ const APTITUDE = {
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 適正は E→D→C→B→A→S の6段階。Sは転生でしか手に入らない(種族の初期適正には出てこない)。
-const APTITUDE_ORDER = ['E','D','C','B','A','S'];
-const APTITUDE_INITIAL_VALUE = { S:170, A:150, B:130, C:110, D:90, E:70 };
-const APTITUDE_TRAIN_MULT   = { S:1.8,  A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
-// 適正Sだけの追加ボーナス: ステータス1ポイントあたりの倍率の伸びも良くなる。
-// mastermonStatFactor の除数に掛ける(除数が小さいほど1ポイントの効きが強い)。
-const APTITUDE_S_FACTOR_DIVISOR_MULT = 0.75;
-// 1段階上げる(Sが上限)。転生で選んだ適正に使う
+/* 適正の段階。**種族の適正はSまで**で、S より上は転生でしか到達できない。
+   転生を重ねるほど上へ伸びるように S+ / SS / SS+ / M(最上位・虹色)を用意してある。
+   段階を足すときは ORDER と下の3つの表を必ずセットで増やす(表に無い段階は倍率1扱いになる)。 */
+const APTITUDE_ORDER = ['E','D','C','B','A','S','S+','SS','SS+','M'];
+const APTITUDE_INITIAL_VALUE = { M:210, 'SS+':200, SS:190, 'S+':180, S:170, A:150, B:130, C:110, D:90, E:70 };
+const APTITUDE_TRAIN_MULT   = { M:2.7,  'SS+':2.4, SS:2.2, 'S+':2.0, S:1.8, A:1.5, B:1.25, C:1.0, D:0.8, E:0.6 };
+/* S以上だけの追加ボーナス: ステータス1ポイントあたりの倍率の伸びも良くなる。
+   mastermonStatFactor の除数に掛ける(除数が小さいほど1ポイントの効きが強い)。
+   表に無い段階(A以下)は 1 = 補正なし。 */
+const APTITUDE_FACTOR_DIVISOR_MULT = { S:0.75, 'S+':0.70, SS:0.65, 'SS+':0.60, M:0.52 };
+// CSSのクラス名に使える形にする('S+' はそのままだとセレクタに書けない)
+function aptitudeCssKey(grade){ return String(grade||'').replace(/\+/g, 'p'); }
+// これ以上は上がらない段階か
+function aptitudeIsMax(grade){ return grade === APTITUDE_ORDER[APTITUDE_ORDER.length-1]; }
+// 1段階上げる(Mが上限)。転生で選んだ適正に使う
 function aptitudeUpgrade(grade){
   const i = APTITUDE_ORDER.indexOf(grade);
   if(i < 0) return grade;
@@ -1159,7 +1169,7 @@ const TRAINING_MENU = [
    どちらも「無ければ従来どおり」で読めるので、既存のセーブデータをそのまま扱える。
    ===================================================================== */
 const REBIRTH_LEVEL_REQ        = MASTERMON_LEVEL_CAP; // 転生できるレベル(=上限レベル)
-const REBIRTH_STAT_CAP         = 1099;  // 転生後のステータス上限
+const REBIRTH_STAT_CAP_STEP    = 100;   // 転生1回につきステータス上限に加算(1回目1099・2回目1199…)
 const REBIRTH_BASE_HP_BONUS    = 10;    // 転生1回につき種族の基礎HPに加算
 const REBIRTH_BASE_SPEED_BONUS = 10;    // 転生1回につき種族の基礎速度に加算
 const REBIRTH_TICKETS          = 10;    // 転生時にもらえるトレーニングチケット
@@ -1173,8 +1183,8 @@ function mastermonApt(mm){
   const byElement = mm && APTITUDE[mm.element];
   return byElement || APTITUDE.mocchi;
 }
-// このマスモンのステータス上限(転生していれば引き上がる)
-function mastermonStatCap(mm){ return mastermonRebirthCount(mm)>0 ? REBIRTH_STAT_CAP : MASTERMON_STAT_CAP; }
+// このマスモンのステータス上限。**転生の回数ぶん積み上がる**(999 → 1099 → 1199 …)
+function mastermonStatCap(mm){ return MASTERMON_STAT_CAP + mastermonRebirthCount(mm)*REBIRTH_STAT_CAP_STEP; }
 /* 種族の基礎値(HP・移動速度)への加算。内訳は2つ:
      ・転生の回数ぶん(REBIRTH_BASE_*_BONUS)
      ・基礎値アイテム(生命の果実・加速剤)を使ったぶん(mm.baseHp / mm.baseSpd)
@@ -1203,9 +1213,10 @@ function rebirthMastermonResult(mm, aptPicks){
   MASTERMON_STATS.forEach(s=>{ apt[s.key] = baseApt[s.key]; });
   picks.forEach(k=>{ if(apt[k]) apt[k] = aptitudeUpgrade(apt[k]); });
   const stats = {};
-  // 転生後の上限で丸める(1/3にするので上限には当たらないが、計算の基準をそろえる)
+  // 転生「後」の上限で丸める(1/3にするので上限には当たらないが、計算の基準をそろえる)
+  const nextCap = mastermonStatCap({ rebirth: nextRebirth });
   MASTERMON_STATS.forEach(s=>{
-    stats[s.key] = mastermonClampStat((mm.stats[s.key]||0) * REBIRTH_STAT_KEEP_RATIO, REBIRTH_STAT_CAP);
+    stats[s.key] = mastermonClampStat((mm.stats[s.key]||0) * REBIRTH_STAT_KEEP_RATIO, nextCap);
   });
   return Object.assign({}, mm, {
     level: 1, exp: 0,
@@ -1234,10 +1245,10 @@ const MASTERMON_STAT_FACTOR_DIVISOR = {
   evasion:  1300, // 増減幅ダウン
   vitality: 450,  // 増減幅アップ(さらに拡大)
 };
-// grade に 'S' を渡すと除数が縮み、同じステータス値でも倍率の伸びが良くなる(適正Sボーナス)
+// grade が S 以上なら除数が縮み、同じステータス値でも倍率の伸びが良くなる(上の段階ほど強い)
 function mastermonStatFactor(v, statKey, grade){
   let divisor = MASTERMON_STAT_FACTOR_DIVISOR[statKey] || 900;
-  if(grade==='S') divisor *= APTITUDE_S_FACTOR_DIVISOR_MULT;
+  divisor *= (APTITUDE_FACTOR_DIVISOR_MULT[grade] || 1);   // S以上だけ効く(A以下は1)
   return 1 + (v-100)/divisor;
 }
 
@@ -1279,7 +1290,7 @@ function previewMastermonTraining(mm, trainingKey){
   const tpl = TRAINING_MENU.find(t=>t.key===trainingKey);
   if(!tpl) return null;
   const apt = mastermonApt(mm);      // 転生で上がった適正があればそちらが効く
-  const cap = mastermonStatCap(mm);  // 転生済みは上限1099まで伸ばせる
+  const cap = mastermonStatCap(mm);  // 転生の回数ぶん上限が上がる(999+100×回数)
   const changes = {};
   tpl.up.forEach(u=>{
     const mult = APTITUDE_TRAIN_MULT[apt[u.stat]] || 1;
@@ -1334,21 +1345,30 @@ function awardMastermonExp(mm, opts){
 // 指定レベル・種族の「それっぽいマスモン」を合成する(敵botのステータス生成用)。
 // レベル1=適正初期値。以降1レベルにつき訓練1回分(≈18pt)を、適正(A〜E)に応じた配分で
 // 各ステータスへ振り分ける(適正が高いステータスほど多く伸びる=適正に応じた育ち方)。
-function syntheticMastermonForLevel(elementKey, level){
+/* レベル(と転生回数)から、その強さ相当の「仮のマスモン」を作る。ソロの敵botに使う。
+   rebirth を渡すと、プレイヤーの転生に合わせて敵も強くする:
+     ・ステータス上限が上がる(mastermonStatCap)ぶん、ステータスも同じ比率で底上げする
+     ・基礎HP/移動速度の加算(mastermonBaseBonus)も rebirth を持たせるだけで効く
+   適正は種族のまま(上げるのは転生したプレイヤーだけの特権)。 */
+function syntheticMastermonForLevel(elementKey, level, rebirth){
   const apt = APTITUDE[elementKey] || APTITUDE.mocchi;
   const stats = mastermonInitialStats(elementKey);
   const lv = clamp(Math.round(level)||1, 1, MASTERMON_LEVEL_CAP);
+  const n = Math.max(0, Math.round(rebirth||0));
   const trainings = Math.max(0, lv-1);
   const totalPoints = trainings * 18; // 訓練1回≈18ポイント相当
   const mults = MASTERMON_STATS.map(s=>APTITUDE_TRAIN_MULT[apt[s.key]]||1);
   const sumMult = mults.reduce((a,b)=>a+b,0) || 1;
+  // 上限が上がったぶんだけステータスも伸ばす(999→1099なら×1.10)
+  const cap = mastermonStatCap({ rebirth:n });
+  const capMult = cap / MASTERMON_STAT_CAP;
   MASTERMON_STATS.forEach((s,i)=>{
-    stats[s.key] = mastermonClampStat(stats[s.key] + totalPoints*(mults[i]/sumMult));
+    stats[s.key] = mastermonClampStat((stats[s.key] + totalPoints*(mults[i]/sumMult)) * capMult, cap);
   });
-  return { element:elementKey, level:lv, stats };
+  return { element:elementKey, level:lv, stats, rebirth:n };
 }
 // マスモンのステータスから、バトル中に適用する各種倍率を算出。
-// 適正Sのステータスは倍率の伸びも良くなる(mastermonStatFactorの第3引数)。
+// 適正S以上のステータスは倍率の伸びも良くなる(mastermonStatFactorの第3引数)。
 function mastermonEffectMults(mm){
   const s = mm.stats;
   const apt = mastermonApt(mm);
