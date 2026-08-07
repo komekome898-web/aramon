@@ -2,7 +2,7 @@
    「スクロールが多い」「文字が切れている」という指摘に、勘ではなく数字で答えるためのもの。
 
    使い方:
-     node tools/measure_layout.mjs <断片HTML> [--box <セレクタ>] [--sizes 667x375,812x375] [--shot 出力.png] [--css style.cssの場所]
+     node tools/measure_layout.mjs <断片HTML> [--box <セレクタ>] [--sizes 667x375,812x375] [--orient] [--shot 出力.png] [--css style.cssの場所]
 
    断片HTMLは中身のマークアップだけでよい(style.cssはこのツールが読み込む)。
    style.cssの :root が --vw/--vh を 1vw/1vh で定義しているので、実機と同じ値で測れる。
@@ -14,6 +14,12 @@
      ・枠直下の子要素ごとの高さ(どこが場所を食っているか)
      ・見切れている要素の数(scrollWidth > clientWidth)
      ・横方向へのはみ出しの有無
+
+   --orient を付けると「横持ち」と「縦持ち(強制横向き)」を両方描いて、
+   要素ごとの文字サイズを突き合わせる。持ち方で文字の大きさが変わるのは不具合なので、
+   差が出たら直す(原因はたいてい html.narrow-screen で font-size を分けていること)。
+   ※iOSの文字自動拡大(text-size-adjust)はChromiumでは再現されないため、
+     こちらは style.css の `*` に text-size-adjust:100% があるかの静的チェックで見る。
 
    playwrightが要る。無ければ入れてから実行する:
      npm i playwright   (このリポジトリには入れない。作業用の別ディレクトリで)
@@ -34,7 +40,14 @@ if(!fixture){
 
 let chromium;
 try{ ({ chromium } = await import('playwright')); }
-catch{
+catch{ /* リポジトリ側には入れないので、実行したディレクトリのnode_modulesも見る */
+  try{
+    const { createRequire } = await import('module');
+    const req = createRequire(path.join(process.cwd(), 'x.js'));
+    ({ chromium } = req('playwright'));
+  }catch{}
+}
+if(!chromium){
   console.error('playwrightが見つかりません。作業用ディレクトリで `npm i playwright` してから実行してください。');
   console.error('(このリポジトリにはnode_modulesを置かないこと)');
   process.exit(1);
@@ -48,6 +61,7 @@ const body = fs.readFileSync(fixture, 'utf8');
 const sizes = opt('sizes', '667x375,812x375').split(',').map(s => s.split('x').map(Number));
 const boxSel = opt('box', null);
 const shot = opt('shot', null);
+const orient = args.includes('--orient');
 
 // 実機と同じ条件になるよう style.css をそのまま当てる。
 // html,body が position:fixed なので、枠の外側にラッパーは挟まない。
@@ -60,6 +74,62 @@ fs.writeFileSync(tmp, page);
 const exe = opt('exe', process.env.CHROMIUM_PATH
   || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : null));
 const browser = await chromium.launch(exe ? { executablePath: exe } : {});
+
+/* 横持ちと縦持ち(強制横向き)で文字サイズが変わっていないか調べる。
+   縦持ちのときworld.jsがやることを同じ手順で再現する:
+   実viewportは縦のまま / --vw・--vhは回転後の論理サイズ / html に force-landscape と
+   (実画面幅が狭いので) narrow-screen を付ける。 */
+async function checkOrientation(){
+  const [lw, lh] = sizes[0];                      // 論理サイズ(横持ちの見え方)
+  const cases = [
+    { name: '横持ち',            vw: lw, vh: lh, forced: false },
+    { name: '縦持ち(強制横向き)', vw: lh, vh: lw, forced: true  },
+  ];
+  const shots = [];
+  for(const c of cases){
+    const p = await browser.newPage({ viewport: { width: c.vw, height: c.vh }, deviceScaleFactor: 2 });
+    await p.goto('file://' + tmp);
+    await p.evaluate(({ lw, lh, forced, realW }) => {
+      document.documentElement.style.setProperty('--vw', (lw / 100) + 'px');
+      document.documentElement.style.setProperty('--vh', (lh / 100) + 'px');
+      document.documentElement.classList.toggle('force-landscape', forced);
+      document.documentElement.classList.toggle('narrow-screen', realW <= 520);
+      const r = document.getElementById('appRoot');
+      if(r && forced){ r.style.width = lw + 'px'; r.style.height = lh + 'px'; r.style.left = realW + 'px'; r.style.top = '0px'; }
+    }, { lw, lh, forced: c.forced, realW: c.vw });
+    await p.waitForTimeout(250);
+    shots.push(await p.evaluate(() => {
+      const out = {};
+      let i = 0;
+      for(const el of document.querySelectorAll('*')){
+        const txt = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join('');
+        if(!txt) continue;
+        // 同じクラスが並ぶので通し番号で対応付ける
+        out['#' + (i++) + ' ' + ((el.className || el.tagName) + '').split(' ')[0]] =
+          { fs: getComputedStyle(el).fontSize, txt: txt.slice(0, 16) };
+      }
+      return out;
+    }));
+    await p.close();
+  }
+  const [a, b] = shots;
+  const diff = Object.keys(a).filter(k => b[k] && a[k].fs !== b[k].fs);
+  console.log('\n■ 持ち方で文字サイズが変わらないか');
+  if(diff.length){
+    console.log(`  ⚠ ${diff.length}件ちがう(小さい方に合わせる)`);
+    for(const k of diff.slice(0, 12)){
+      console.log(`    ${k.replace(/^#\d+ /, '').padEnd(24)} 横${a[k].fs} → 縦${b[k].fs}  ${a[k].txt}`);
+    }
+  } else {
+    console.log('  差なし');
+  }
+  // iOSの文字自動拡大はChromiumでは起きないので、指定があるかだけを見る
+  const guarded = /\*\s*\{[^}]*text-size-adjust\s*:\s*100%/.test(css);
+  console.log(guarded
+    ? '  text-size-adjust:100% あり(iOSの自動拡大は止まっている)'
+    : '  ⚠ style.cssの `*` に text-size-adjust:100% がない。iOSが縦持ちのときだけ文字を拡大する');
+}
+
 try{
   for(const [w, h] of sizes){
     const p = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
@@ -115,6 +185,7 @@ try{
     if(shot && w === sizes[0][0]) await p.screenshot({ path: shot });
     await p.close();
   }
+  if(orient) await checkOrientation();
 } finally {
   await browser.close();
   fs.unlinkSync(tmp);
