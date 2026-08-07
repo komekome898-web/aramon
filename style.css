@@ -660,7 +660,7 @@
   }
   .bag-target-btn .mm-stats-wrap{ gap:5px; }
   .bag-target-btn .mm-stat-toprow{ font-size:9.5px; }
-  .bag-target-btn .mm-stat-apt-badge{ width:12px; height:12px; font-size:8px; margin-left:4px; }
+  .bag-target-btn .mm-stat-apt-badge{ min-width:12px; height:12px; font-size:8px; margin-left:4px; padding:0 2px; }
   .bag-target-btn .mm-stat-delta{ font-size:9px; }
   .bag-target-btn .mm-stat-track{ height:5px; }
   .bt-extra{ font-size:10px; color:var(--amber); font-weight:700; }
@@ -1678,7 +1678,7 @@
   .ml-sec-status .mm-stats-wrap{ gap:6px; }
   .ml-sec-status .mm-stat-toprow{ font-size:10px; }
   .ml-sec-status .mm-stat-track{ height:6px; }
-  .ml-sec-status .mm-stat-apt-badge{ width:13px; height:13px; font-size:8px; margin-left:4px; }
+  .ml-sec-status .mm-stat-apt-badge{ min-width:13px; height:13px; font-size:8px; margin-left:4px; padding:0 2px; }
   /* 3行2列。grid-auto-flow:column なので MASTERMON_STATS の並び順のまま
      左列=ライフ/ちから/かしこさ、右列=命中/回避/丈夫さ になる */
   .ml-stat-desc{
@@ -2342,13 +2342,35 @@
   .mm-stat-toprow{ display:flex; align-items:baseline; justify-content:space-between; gap:6px; font-size:11px; color:var(--ink); flex-wrap:nowrap; }
   .mm-stat-name{ font-weight:600; white-space:nowrap; flex-shrink:0; display:inline-flex; align-items:center; }
   .mm-stat-apt-badge{
-    display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
-    margin-left:5px; border-radius:4px; font-size:9px; font-weight:800; color:#14090a; flex-shrink:0;
+    display:inline-flex; align-items:center; justify-content:center; min-width:15px; height:15px;
+    padding:0 3px; margin-left:5px; border-radius:4px; font-size:9px; font-weight:800; color:#14090a; flex-shrink:0;
+    /* S+ / SS+ のような複数文字の段階でも詰まらないよう、幅は下限だけ決めて伸ばす */
   }
-  /* 適正S は転生でしか手に入らないので、他の段階と違って金色+発光で別格に見せる */
+  /* S以上は転生でしか手に入らないので、他の段階と違って発光させて別格に見せる。
+     段階が上がるほど強く光り、最上位のMだけ虹色。クラス名の`+`は使えないので
+     ui.jsの aptitudeCssKey が S+→Sp / SS+→SSp に置き換えている */
   .mm-stat-apt-badge.apt-S{
     background:linear-gradient(160deg,#fff3c4,#ffd76a 45%,#e0a51e);
     color:#3a2405; box-shadow:0 0 6px rgba(255,205,90,0.9);
+  }
+  .mm-stat-apt-badge.apt-Sp{
+    background:linear-gradient(160deg,#fff7d6,#ffc93f 45%,#d98a10);
+    color:#3a2405; box-shadow:0 0 8px rgba(255,190,60,0.95);
+  }
+  .mm-stat-apt-badge.apt-SS{
+    background:linear-gradient(160deg,#ffe9fb,#ff9de0 45%,#c93fb0);
+    color:#3a0530; box-shadow:0 0 9px rgba(255,140,225,0.95);
+  }
+  .mm-stat-apt-badge.apt-SSp{
+    background:linear-gradient(160deg,#e6f0ff,#7fb0ff 45%,#2f5fd8);
+    color:#04122e; box-shadow:0 0 10px rgba(120,170,255,0.95);
+  }
+  /* 最上位M: 虹色。シーズンパス最終報酬のカードと同じ流れる虹を使う */
+  .mm-stat-apt-badge.apt-M{
+    color:#1a0a24; font-weight:900;
+    background:linear-gradient(135deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
+    background-size:220% 220%; animation:seasonFinalRainbow 3s linear infinite;
+    box-shadow:0 0 11px rgba(255,255,255,0.85);
   }
   .mm-stat-apt-badge.apt-A{ background:#ff5a5a; }
   .mm-stat-apt-badge.apt-B{ background:#ff8fd1; }

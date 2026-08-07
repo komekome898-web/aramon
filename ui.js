@@ -1717,7 +1717,7 @@ function useBagItem(itemKey, mmKey, qty){
   if(it.stat){
     const before = mm.stats[it.stat];
     const label = MASTERMON_STATS.find(s=>s.key===it.stat).label;
-    // 上限(通常999・転生済み1099)に必要な個数までに絞る。余分なアイテムは消費しない
+    // 上限(通常999・転生済みは999+100×転生回数)に必要な個数までに絞る。余分なアイテムは消費しない
     const cap = mastermonStatCap(mm);
     const need = Math.max(0, Math.ceil((cap - before) / STAT_SEED_GAIN));
     if(need<=0){ pushToast(`${mm.name}の${label}は既に上限です`); return; }
@@ -3059,7 +3059,7 @@ function currentMastermonInfo(){
   const src = mm.stats || {};
   const stats = {};
   MASTERMON_STATS.forEach(s=>{ stats[s.key] = Math.round(src[s.key]||0); });
-  // 転生と基礎値アイテムの情報も必ず載せる。適正S(倍率の伸びが良くなる)と基礎値加算を
+  // 転生と基礎値アイテムの情報も必ず載せる。適正S以上(倍率の伸びが良くなる)と基礎値加算を
   // 片側だけで掛けるとホストとゲストでHP・移動速度が食い違い、ゲストの位置補正が暴れる。
   // Firebaseはundefinedを受け付けないのでnullで送る。
   const apt = {};
@@ -3274,16 +3274,18 @@ function startGame(){
   entities.push(player);
   const names = shuffle(BOT_NAMES);
   const botElements = shuffle(Object.keys(ELEMENTS));
-  // 敵botのステータスは、プレイヤーのマスモンレベル±10程度(適正に応じた育ち方)に合わせる。
-  // マスモン未選択時はベースのまま(既存挙動を維持)。
-  const playerMmLevel = (game.selectedMastermonKey && loadMastermons()[game.selectedMastermonKey])
-    ? loadMastermons()[game.selectedMastermonKey].level : null;
+  /* 敵botのステータスは、プレイヤーのマスモンレベル±10程度(適正に応じた育ち方)に合わせる。
+     **転生していれば、その回数ぶん敵も強くなる**(ステータス上限と基礎値の上昇を敵にも掛ける)。
+     転生で自分だけ強くなると手応えが無くなるため。マスモン未選択時はベースのまま。 */
+  const playerMm = (game.selectedMastermonKey && loadMastermons()[game.selectedMastermonKey]) || null;
+  const playerMmLevel = playerMm ? playerMm.level : null;
+  const playerRebirth = mastermonRebirthCount(playerMm);
   for(let i=0;i<29;i++){
     const elKey = botElements[i % botElements.length];
     const bot = createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':''), { spawnPoint: spawnPoints[i+1] });
     if(playerMmLevel){
       const botLevel = clamp(playerMmLevel + randInt(-10, 10), 1, MASTERMON_LEVEL_CAP);
-      applyMastermonStatsToEntity(bot, syntheticMastermonForLevel(elKey, botLevel));
+      applyMastermonStatsToEntity(bot, syntheticMastermonForLevel(elKey, botLevel, playerRebirth));
     }
     entities.push(bot);
   }
@@ -5051,7 +5053,7 @@ function rebirthMultValue(mults, key){ return mults[key].toFixed(2); }
 // 上げられる適正が3つ未満のときはその数に合わせる(選べなくて転生できない状態を作らない)
 function rebirthPickTarget(mm){
   const apt = mastermonApt(mm);
-  const upgradable = MASTERMON_STATS.filter(s=>apt[s.key]!=='S').length;
+  const upgradable = MASTERMON_STATS.filter(s=>!aptitudeIsMax(apt[s.key])).length;
   return Math.min(REBIRTH_APT_PICKS, upgradable);
 }
 // 「全ステータスが上限のとき」の姿。転生後の伸びしろを見せるために使う
@@ -5084,7 +5086,7 @@ function rebirthSideHtml(mm, opts){
     const gChanged = beforeApt && beforeApt[s.key] !== g;
     return `<div class="rb-stat-row">
       <span class="rb-stat-k">${s.label}</span>
-      <span class="rb-stat-apt mm-stat-apt-badge apt-${g}${gChanged?' is-upgraded':''}">${g}</span>
+      <span class="rb-stat-apt mm-stat-apt-badge apt-${aptitudeCssKey(g)}${gChanged?' is-upgraded':''}">${g}</span>
       <span class="rb-stat-v">${v}<span class="rb-stat-cap">/${cap}</span></span>
       <span class="rb-stat-track"><span class="rb-stat-fill" style="width:${Math.round(v/cap*100)}%; background:${s.color};"></span></span>
     </div>`;
@@ -5140,10 +5142,10 @@ function rebirthPickerHtml(mm){
     const g = apt[s.key];
     const next = aptitudeUpgrade(g);
     const on = rebirthPicks.indexOf(s.key)>=0;
-    const maxed = g==='S';
+    const maxed = aptitudeIsMax(g);   // 最上位(M)まで行ったらもう上げられない
     return `<button class="rb-pick-btn${on?' is-on':''}${maxed?' is-max':''}" data-stat="${s.key}"${maxed?' disabled':''}>
       <span class="rb-pick-label">${s.label}</span>
-      <span class="rb-pick-grade"><span class="mm-stat-apt-badge apt-${g}">${g}</span>${maxed?'':`<span class="rb-pick-arrow">▶</span><span class="mm-stat-apt-badge apt-${next}">${next}</span>`}</span>
+      <span class="rb-pick-grade"><span class="mm-stat-apt-badge apt-${aptitudeCssKey(g)}">${g}</span>${maxed?'':`<span class="rb-pick-arrow">▶</span><span class="mm-stat-apt-badge apt-${aptitudeCssKey(next)}">${next}</span>`}</span>
     </button>`;
   }).join('');
   const need = rebirthPickTarget(mm);
@@ -5152,8 +5154,12 @@ function rebirthPickerHtml(mm){
       <div class="rb-picker-title">上げる適正を${need}つ選ぶ<span class="rb-picker-count">${rebirthPicks.length}/${need}</span></div>
       <div class="rb-picker-grid">${btns}</div>
       <div class="rb-sbonus">
-        <div class="rb-sbonus-title">✦ 適正Sボーナス</div>
-        <div class="rb-sbonus-text">適正Aの上に<b>S</b>が加わります。トレーニングの上がり幅が最大(<b>×${APTITUDE_TRAIN_MULT.S}</b>)なうえ、同じ値でも<b>倍率の伸びが約${Math.round((1/APTITUDE_S_FACTOR_DIVISOR_MULT-1)*100)}%良くなります</b>。上がりやすく、上がったぶんもよく効く二重の得です。</div>
+        <div class="rb-sbonus-title">✦ S以上の適正ボーナス</div>
+        <div class="rb-sbonus-text">適正Aの上は<b>${APTITUDE_ORDER.slice(5).join(' → ')}</b>と伸び、
+        <b>${APTITUDE_ORDER[APTITUDE_ORDER.length-1]}</b>が最上位です。上の段階ほどトレーニングの上がり幅が大きく
+        (S ×${APTITUDE_TRAIN_MULT.S} → M ×${APTITUDE_TRAIN_MULT.M})、同じ値でも<b>倍率の伸びが良くなります</b>
+        (S 約${Math.round((1/APTITUDE_FACTOR_DIVISOR_MULT.S-1)*100)}% → M 約${Math.round((1/APTITUDE_FACTOR_DIVISOR_MULT.M-1)*100)}%)。
+        上がりやすく、上がったぶんもよく効く二重の得です。</div>
       </div>
     </div>`;
 }
@@ -5703,7 +5709,7 @@ function buildMastermonSkinHtml(key){
 
 // ステータス(ライフ・ちから等)バー: メニュー/詳細情報/技一覧/トレーニングの全画面で共通表示
 function buildMastermonStatsColHtml(mm, apt, preview){
-  const cap = mastermonStatCap(mm);   // 転生済みは1099までバーが伸びる
+  const cap = mastermonStatCap(mm);   // 転生の回数ぶん上限が上がり、バーもそこまで伸びる
   const statsHtml = MASTERMON_STATS.map(s=>{
     const v = mm.stats[s.key];
     const delta = preview ? preview[s.key] : null;
@@ -5717,7 +5723,7 @@ function buildMastermonStatsColHtml(mm, apt, preview){
     return `
       <div class="mm-stat-row">
         <div class="mm-stat-toprow">
-          <span class="mm-stat-name">${s.label}<span class="mm-stat-apt-badge apt-${aptGrade}">${aptGrade}</span></span>
+          <span class="mm-stat-name">${s.label}<span class="mm-stat-apt-badge apt-${aptitudeCssKey(aptGrade)}">${aptGrade}</span></span>
           <span class="mm-stat-val">${resultVal}${deltaHtml}</span>
         </div>
         <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
