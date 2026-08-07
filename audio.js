@@ -134,6 +134,7 @@ function playZeusTier3Once(){
   const src = actx.createBufferSource(); src.buffer = zeusTier3Buffer;
   const g = actx.createGain(); g.gain.value = 1.3;
   src.connect(g); g.connect(seGain); src.start();
+  regBattleSeNode(g, src);
   return true;
 }
 
@@ -180,6 +181,7 @@ function createSeOneShot(dataUrl, gainVal){
     const src = actx.createBufferSource(); src.buffer = S.buffer;
     const g = actx.createGain(); g.gain.value = (gainVal!=null ? gainVal : 1.2);
     src.connect(g); g.connect(seGain); src.start(when!=null ? when : actx.currentTime);
+    regBattleSeNode(g, src);
     return true;
   };
   S.dur = ()=> S.buffer ? S.buffer.duration : 0;
@@ -264,6 +266,29 @@ const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
 const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35, godRising:1.35, zashu:1.35, ssrJackpot:1.4 };
 let seCurrentBoost = 1;
+/* バトル中はSEを1音に絞る: 次のSEが鳴った瞬間、前のSEをすぐに止める
+   (長いSE=提供音源の技SEや持続ノイズが、直後のヒット音等と重なって濁るのを防ぐ)。
+   seTone/seNoise/seNoiseLfo/createSeOneShotの.play/playZeusTier3Onceが作った音源は
+   regBattleSeNode()でここに登録し、次のplaySe()の頭で一括停止する。
+   バトル外(メニュー操作音等)では録音自体を行わないので、互いに止め合わない。 */
+let seActiveBattleNodes = [];
+let seRecording = null;
+function seBattleInterruptOn(){ return typeof game!=='undefined' && !!game.started; }
+function regBattleSeNode(gainNode, srcNode){
+  if(!seRecording) return;
+  seRecording.push((atTime)=>{
+    try{
+      gainNode.gain.cancelScheduledValues(atTime);
+      gainNode.gain.setValueAtTime(gainNode.gain.value, atTime);
+      gainNode.gain.linearRampToValueAtTime(0.0001, atTime+0.012);
+    }catch(e){}
+    try{ srcNode.stop(atTime+0.014); }catch(e){}
+  });
+}
+function stopActiveBattleSe(atTime){
+  for(const stop of seActiveBattleNodes) stop(atTime);
+  seActiveBattleNodes = [];
+}
 function playSe(name, opts){
   if(!actx || audioSettings.se<=0.005) return;
   const now = actx.currentTime;
@@ -271,8 +296,13 @@ function playSe(name, opts){
   seLastAt[name] = now;
   const fn = SE_DEFS[name];
   if(fn){
+    const interrupt = seBattleInterruptOn();
+    if(interrupt) stopActiveBattleSe(now);
     seCurrentBoost = SE_VOL_BOOST[name] || 1;
+    seRecording = interrupt ? [] : null;
     fn(now, opts||{});
+    seActiveBattleNodes = seRecording || [];
+    seRecording = null;
     seCurrentBoost = 1;
   }
 }
@@ -287,6 +317,7 @@ function seTone(t, o){
   g.gain.exponentialRampToValueAtTime(0.001, t+dur);
   osc.connect(g); g.connect(seGain);
   osc.start(t); osc.stop(t+dur+0.05);
+  regBattleSeNode(g, osc);
 }
 function seNoise(t, o){
   const dur = o.dur||0.2;
@@ -304,6 +335,7 @@ function seNoise(t, o){
   g.gain.exponentialRampToValueAtTime(0.001, t+dur);
   src.connect(f); f.connect(g); g.connect(seGain);
   src.start(t); src.stop(t+dur+0.05);
+  regBattleSeNode(g, src);
 }
 // ループノイズ+音量LFO(揺らぎ)付きのノイズ再生。炎や竜巻など長い持続音に使う
 function seNoiseLfo(t, o){
@@ -333,6 +365,7 @@ function seNoiseLfo(t, o){
   }
   src.connect(f); f.connect(g); g.connect(seGain);
   src.start(t); src.stop(t+dur+0.05);
+  regBattleSeNode(g, src);
 }
 const SE_DEFS = {
   // 通常のボタンタップ。提供音源(choice)を鳴らし、未ロード時だけ合成の「ポン」に落とす
