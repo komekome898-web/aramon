@@ -6,6 +6,7 @@ description: 荒野モン動の戦闘ロジック(combat.js)・技のギミッ�
 # 戦闘・技のギミック(combat.js)
 
 - **`blast`(着弾ドームAoE)**: 弾に`blast:{radius,dmg,color,expandTime,(telegraphTime),(style),(se)}`を付けると着弾点で`spawnGroundBlast()`が`kind:'circle'`のareaEffectを出す。**直撃`mv.dmg`と爆風`mv.blast.dmg`は別々に入る。**
+- **`endBlast`(扇/帯の技の先端に出す仕上げドーム)**: `aoeShape`技に`endBlast:{count,radius,dmg,expandTime,color,(se)}`を付けると、扇/帯が届いた先端(`ae.range`)に半分ずつ重ねてN個横並びに`spawnGroundBlast()`する(`updateAreaEffects`が`curReach>=ae.range`になった瞬間に1回だけ`spawnAoeEndBlast()`を呼ぶ)。**`ae.range`は`raycastObstacleDistance`で遮蔽物に応じて既に短くなっているので、技が途中で遮られてもその位置で爆発する**(追加のコードは不要)。SSR tier3の威力アップ(`dmgMult`)は本体と同じ比率で`endBlast.dmg`にも掛かる(`fireMove`の`endBlastDmgMult`)。新しいダメージ源なので`describeMoveFeatureText`/`buildMastermonMovesHtml`の威力表示にも追加済み。
 - **`burstSpread`(連射の広がり。既定0.05rad)を読む場所は4か所**: combat.jsの`aoeShape`分岐と通常弾、network.jsのゲスト見た目の同2か所。
 - **長い弾(槍)は`travelAngle - camState.yaw`で回さない**(カメラ奥へ撃つと横倒しに見える)。進行方向へ進んだ点を`project()`し画面上の差分から角度を取る(`seaSpear`が実装例)。
 - **`aoeShape`技の`burst`**は即時生成なので2発目以降を`pendingAoeCasts`に積み`updatePendingAoeCasts()`で生成する。
