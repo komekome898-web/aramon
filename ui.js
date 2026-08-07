@@ -864,6 +864,44 @@ function startLobbyBannerLoop(){
 }
 function stopLobbyBannerLoop(){ if(lobbyBannerTimer){ clearInterval(lobbyBannerTimer); lobbyBannerTimer = null; } }
 
+/* ===== 募集中の部屋の「待っている人がいる」バッジ =====
+   マルチもレイドも、部屋を立てても相手が気づかなければ成立しない。ロビーを開いている間だけ
+   lobby を見に行き、ボタンへ待機人数を出す。**ロビーが隠れたら必ず止める**(試合中に通信しない)。
+   数えるのは __aramonListOpenRooms が返す募集中の部屋の人数合計で、
+   'br'(通常マルチ)と 'raid' は別のボタンに出す。自分が立てた部屋も入るが、
+   自分がロビーに戻っている＝その部屋はもう無い(onDisconnectで消える)ので実害はない。 */
+const LOBBY_ROOM_POLL_MS = 15000;
+let lobbyRoomPollTimer = null;
+function setWaitBadge(id, people){
+  const el = document.getElementById(id);
+  if(!el) return;
+  // 文言は短く固定する(左メニューのボタン幅は最小104pxしかないため)
+  el.textContent = people>0 ? `${people}人` : '';
+  el.classList.toggle('hidden', people<=0);
+}
+async function updateLobbyRoomBadges(){
+  if(!window.__aramonListOpenRooms) return;
+  try{
+    const [br, raid] = await Promise.all([
+      window.__aramonListOpenRooms('br'), window.__aramonListOpenRooms('raid'),
+    ]);
+    const sum = (rooms)=> (rooms||[]).reduce((a,r)=> a + (r.count||0), 0);
+    setWaitBadge('multiWaitBadge', sum(br));
+    // レイドのバッジは、そもそもレイドボタンが出ている(=開催中)ときだけ意味がある
+    const raidBtn = document.getElementById('openRaidBtn');
+    const raidVisible = raidBtn && !raidBtn.classList.contains('hidden');
+    setWaitBadge('raidWaitBadge', raidVisible ? sum(raid) : 0);
+  }catch(err){ /* 取得できない時はバッジを触らない(前の値のまま) */ }
+}
+function startLobbyRoomPoll(){
+  if(lobbyRoomPollTimer) return;
+  updateLobbyRoomBadges();
+  lobbyRoomPollTimer = setInterval(updateLobbyRoomBadges, LOBBY_ROOM_POLL_MS);
+}
+function stopLobbyRoomPoll(){
+  if(lobbyRoomPollTimer){ clearInterval(lobbyRoomPollTimer); lobbyRoomPollTimer = null; }
+}
+
 // トップ画面を表示/非表示にするたびに、歩行アニメとバナーのタイマーを合わせて動かす。
 // 画面が隠れている間にタイマーを回し続けないため、MutationObserverで .hidden を監視する。
 // ヘッダーのロビーBGMチップの表示を今の選択に合わせる
@@ -877,6 +915,7 @@ function refreshLobby(){
   updateLobbyBgmLabel();
   renderLobbyMonster();
   startLobbyBannerLoop();
+  startLobbyRoomPoll();
 }
 
 
@@ -4159,7 +4198,7 @@ function showResultNow(isWin, placement){
   });
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
-  logMatchForAdmin();
+  logMatchForAdmin(isWin, placement);
 }
 // リザルトの自己ベスト更新バッジ＆獲得称号バッジを描画する
 function renderResultBadges(o){
@@ -4200,7 +4239,17 @@ function renderResultBadges(o){
     setTimeout(()=>{ if(typeof playSsrJackpotOnce==='function') playSsrJackpotOnce(); }, 700);
   }
 }
-function logMatchForAdmin(){
+/* 1試合ぶんの成績。通常戦とレイドで同じ形にしておく(集計側で分岐を増やさないため)。
+   **記録は後から遡れない**ので、増やすならプレイ前に入れる。 */
+function matchOutcomeFields(){
+  return {
+    sec: Math.round(player && player.deathAt ? player.deathAt : matchTime), // 1試合の長さ(秒)
+    kills: player ? player.kills : 0,
+    dmg: player ? Math.round(player.damageDealt) : 0,
+    skin: (typeof currentEquippedSkinId==='function') ? (currentEquippedSkinId() || null) : null,
+  };
+}
+function logMatchForAdmin(isWin, placement){
   if(!window.__aramonLogMatch){ console.warn('logMatchForAdmin: __aramonLogMatch not ready, skipped'); return; }
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
@@ -4215,6 +4264,9 @@ function logMatchForAdmin(){
     element: elementKey,
     elementLabel: el ? el.label : elementKey,
     mode: netState.mode==='multi' ? 'multi' : 'solo',
+    win: !!isWin,
+    place: placement || 0,
+    ...matchOutcomeFields(),
     ts: Date.now(),
   });
 }
@@ -4231,10 +4283,13 @@ function logRaidMatchForAdmin(dmg, result){
     mapLabel: MAPS.raid.label,
     element: elementKey,
     elementLabel: el ? el.label : elementKey,
+    // レイドもソロ/マルチを分けて残す(表示側は adminModeLabel が「レイド(ソロ)」等に組み立てる)
     mode: netState.mode==='multi' ? 'multi' : 'solo',
     raid: true,
     raidDamage: Math.round(dmg),
     raidResult: result, // 'defeated' | 'best' | 'died' | 'timeup'
+    win: result==='defeated' || result==='best',
+    ...matchOutcomeFields(),
     ts: Date.now(),
   });
 }
@@ -6343,8 +6398,18 @@ function adminFmtDate(ts){ if(!ts) return '—'; const d=new Date(ts); return `$
 function adminFmtDateTime(ts){ if(!ts) return '—'; const d=new Date(ts); return `${adminFmtDate(ts)} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function adminMapLabel(r){ return MAPS[r.map] ? MAPS[r.map].label : (r.mapLabel || r.map || '?'); }
 function adminMonLabel(r){ return ELEMENTS[r.element] ? ELEMENTS[r.element].label : (r.elementLabel || r.element || '?'); }
-// モード表示。レイドはnetState.mode(solo/multi)に関係なく別枠なので、他より先に見る
-function adminModeLabel(r){ return r.raid ? 'レイド' : (r.mode==='multi' ? 'マルチ' : 'ソロ'); }
+// モード表示。レイドは別枠だが、ソロ/マルチも記録してあるので括弧で添える
+function adminModeLabel(r){
+  const co = r.mode==='multi' ? 'マルチ' : 'ソロ';
+  return r.raid ? `レイド(${co})` : co;
+}
+// 1試合の長さ。古いログにはsecが無いので「—」にする(0と区別する)
+function adminSecLabel(r){
+  if(typeof r.sec!=='number' || r.sec<=0) return '—';
+  return `${Math.floor(r.sec/60)}:${String(r.sec%60).padStart(2,'0')}`;
+}
+// 勝敗。winを持たない古いログは空欄(負けと決めつけない)
+function adminWinLabel(r){ return typeof r.win!=='boolean' ? '' : (r.win ? '勝' : '負'); }
 
 function renderAdminData(){
   const totalEl = document.getElementById('adminTotalMatches');
@@ -6354,6 +6419,7 @@ function renderAdminData(){
     document.getElementById('adminMapChart').innerHTML = '';
     document.getElementById('adminMonsterChart').innerHTML = '';
     document.getElementById('adminRaidChart').innerHTML = '';
+    document.getElementById('adminHourChart').innerHTML = '';
     document.getElementById('adminPlayerList').innerHTML = '<div class="rank-empty">読み込みエラーのため表示できません</div>';
     return;
   }
@@ -6378,6 +6444,14 @@ function renderAdminData(){
     .sort((a,b)=> b.count-a.count);
   document.getElementById('adminRaidChart').innerHTML = raidFiltered.length
     ? adminBarChartHtml(raidResultEntries, '#a24bff') : '<div class="rank-empty">記録がありません</div>';
+  /* 時間帯別。tsは最初から記録しているので、過去のログもそのまま集計できる。
+     0件の時間は行ごと出さない(24行は縦を食うだけで読み取れることが増えない) */
+  const byHour = {};
+  filtered.forEach(r=>{ const h = new Date(r.ts||0).getHours(); byHour[h] = (byHour[h]||0)+1; });
+  const hourEntries = Object.keys(byHour).map(Number).sort((a,b)=>a-b)
+    .map(h=>({ label:`${String(h).padStart(2,'0')}時台`, count:byHour[h] }));
+  document.getElementById('adminHourChart').innerHTML = hourEntries.length
+    ? adminBarChartHtml(hourEntries, '#6bff8e') : '<div class="rank-empty">記録がありません</div>';
   // --- プレイヤー情報タブ(全期間) ---
   renderAdminPlayerTab();
   // --- 直近プレイタブ(全期間・日時降順) ---
@@ -6414,6 +6488,14 @@ function renderAdminPlayerDetail(name){
   const raidRuns = raidLogs.length;
   const raidBestDmg = raidLogs.length ? Math.max(...raidLogs.map(r=> r.raidDamage||0)) : 0;
   const raidDefeats = raidLogs.filter(r=> r.raidResult==='defeated').length;
+  // 勝率とプレイ時間は新しい項目なので、持っているログだけで割る(母数も併記して誤読を防ぐ)
+  const rated = logs.filter(r=> typeof r.win==='boolean');
+  const wins = rated.filter(r=> r.win).length;
+  const winText = rated.length ? `${Math.round(wins/rated.length*100)}%（${wins}/${rated.length}）` : '—';
+  const timed = logs.filter(r=> typeof r.sec==='number' && r.sec>0);
+  const totalSec = timed.reduce((a,r)=>a+r.sec, 0);
+  const avgSec = timed.length ? Math.round(totalSec/timed.length) : 0;
+  const fmtMin = (s)=> s>=3600 ? `${Math.floor(s/3600)}時間${Math.round(s%3600/60)}分` : `${Math.floor(s/60)}分${s%60}秒`;
   const tsList = logs.map(r=> r.ts||0).filter(Boolean);
   const first = tsList.length ? Math.min(...tsList) : 0;
   const last  = tsList.length ? Math.max(...tsList) : 0;
@@ -6432,6 +6514,9 @@ function renderAdminPlayerDetail(name){
     <div class="admin-detail-grid">
       <div><span class="admin-dk">合計プレイ</span><span class="admin-dv">${total}回</span></div>
       <div><span class="admin-dk">ソロ / マルチ</span><span class="admin-dv">${solo} / ${multi}</span></div>
+      <div><span class="admin-dk">勝率</span><span class="admin-dv">${winText}</span></div>
+      <div><span class="admin-dk">総プレイ時間</span><span class="admin-dv">${timed.length?fmtMin(totalSec):'—'}</span></div>
+      <div><span class="admin-dk">1試合の平均</span><span class="admin-dv">${timed.length?fmtMin(avgSec):'—'}</span></div>
       <div><span class="admin-dk">レイド参加</span><span class="admin-dv">${raidRuns}回</span></div>
       <div><span class="admin-dk">レイド討伐</span><span class="admin-dv">${raidDefeats}回</span></div>
       <div><span class="admin-dk">レイド最高与ダメ</span><span class="admin-dv">${raidBestDmg.toLocaleString()}</span></div>
@@ -6448,7 +6533,7 @@ function renderAdminPlayerDetail(name){
     <div class="admin-bar-chart">${adminBarChartHtml(mapEntries,'#5aa6ff')}</div>
     <div class="admin-col-title" style="margin-top:14px;">直近の試合(最大12件)</div>
     <div class="admin-recent-list">${recent.map(r=>
-      `<div class="admin-recent-row"><span class="ar-dt">${adminFmtDateTime(r.ts)}</span><span class="ar-map">${adminMapLabel(r)}</span><span class="ar-mon">${adminMonLabel(r)}</span><span class="ar-mode">${adminModeLabel(r)}</span></div>`
+      `<div class="admin-recent-row"><span class="ar-dt">${adminFmtDateTime(r.ts)}</span><span class="ar-map">${adminMapLabel(r)}</span><span class="ar-mon">${adminMonLabel(r)}</span><span class="ar-mode">${adminModeLabel(r)}</span><span class="ar-sec">${adminSecLabel(r)}</span><span class="ar-win ${r.win?'is-win':''}">${adminWinLabel(r)}</span></div>`
     ).join('')}</div>
   `;
   document.getElementById('adminPlayerBackBtn').onclick = ()=>{ adminSelectedPlayer = null; renderAdminPlayerTab(); };
@@ -6475,6 +6560,8 @@ function renderAdminRecentTab(){
       <span class="ar-map">${adminMapLabel(r)}</span>
       <span class="ar-mon">${adminMonLabel(r)}</span>
       <span class="ar-mode">${adminModeLabel(r)}</span>
+      <span class="ar-sec">${adminSecLabel(r)}</span>
+      <span class="ar-win ${r.win?'is-win':''}">${adminWinLabel(r)}</span>
     </div>`
   ).join('') : '<div class="rank-empty">記録がありません</div>';
 }
@@ -6877,8 +6964,8 @@ function initTitleScreen(){
 {
   const scr = document.getElementById('startScreen');
   const sync = ()=>{
-    // 画面が隠れている間はタイマーを回さない(歩行アニメ・バナー切り替え)
-    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); stopLobbyBannerLoop(); }
+    // 画面が隠れている間はタイマーを回さない(歩行アニメ・バナー切り替え・部屋の監視)
+    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); stopLobbyBannerLoop(); stopLobbyRoomPoll(); }
     else refreshLobby();
   };
   new MutationObserver(sync).observe(scr, { attributes:true, attributeFilter:['class'] });

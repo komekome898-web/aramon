@@ -111,10 +111,14 @@
   /* =====================================================================
      MATCH LOG (管理者画面用の試合履歴)
      matchLogs/{autoId} : { name, map, mapLabel, element, elementLabel, mode, ts,
+                             win, place?, sec, kills, dmg, skin,
                              raid?, raidDamage?, raidResult? }
      試合が終わるたびに1件ずつ追記していく単純なログ。ランキング用のscoresとは別物で、
      こちらは「誰が・いつ・どのマップ・どのモンスターで遊んだか」を集計するためだけに使う。
      raid以降はレイドバトルのときだけ付く追加情報(ui.jsのraidShowResultから記録)。
+     **記録は後から遡れない**ので、集計に使いたい値は増やすなら早いほどよい。
+     win / sec / kills / dmg / skin は後から足したフィールドなので、
+     **古いログには入っていない**。集計側は必ず「持っているログだけで割る」こと。
   ===================================================================== */
   window.__aramonLogMatch = async function(entry){
     try{
