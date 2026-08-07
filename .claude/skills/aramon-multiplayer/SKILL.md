@@ -50,6 +50,7 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 - **ゲストへ足りないのは演出**: ①予告(`raidTele`イベント。表示専用で、予告時間が過ぎたらsetTimeoutで消す) ②発動した範囲攻撃(`shotEvent`の`type:'aoe'`。見た目専用) の2つ。**当たり判定はホストのまま。**
 - **貢献度(`raidDamage`)はauthStateの`rd`で配る。** ゲストは自分ではダメージを数えないので、これが唯一の正。
 - **決着はホストだけが確定させ`raidEnd`イベントで配る**(`checkRaidEnd`がゲストで早期returnする)。確定の直前にauthStateを即配信して、貢献度を取りこぼさないようにしている。
+- **試合を始めるときは必ず`raidResetState()`を通す**(`startGame`/`raidStart`/`startShootingRange`/`raidExit`/`beginMultiplayerMatchInner`)。落とし忘れると、レイドの後の通常戦で居ないボスを指したままボスAI・レイド安置・終了判定が走り続ける。**モードをまたぐ状態は「入口で必ず消す」**。
 
 ## マスモン育成値の共有
 

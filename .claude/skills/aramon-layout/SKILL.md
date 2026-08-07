@@ -18,6 +18,25 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 - 高さの共通値は変数(例 `--top-header-h`)。**数値を直書きしない。**
 - 長押しの選択/メニュー抑止は全画面共通で入っている(個別対応不要): style.cssの`*`に`user-select:none` + `-webkit-touch-callout:none`、直後の`input,textarea{user-select:text}`とセットで維持。input.jsが`contextmenu`/`selectstart`を`preventDefault`(入力欄は除外)。`-webkit-touch-callout`は計算値に出ないのでCSSテキストで確認する。
 
+## スクロール量を減らす(「スクロールが多い」と言われたとき)
+
+**まず測る。** `node tools/measure_layout.mjs <断片HTML> --box <枠のセレクタ>` が、
+画面数・**高さの内訳(大きい順)**・見切れ・横はみ出しを出す。断片HTMLはマークアップだけでよい
+(style.cssはツールが当てる)。どこが場所を食っているか分かってから直す。前後で同じ測り方をして
+「◯画面ぶん→◯画面ぶん」で報告する。
+
+効く順:
+
+1. **横一列(`display:flex`)のカードは、いちばん背の高い1枚に全部が引き伸ばされる。**
+   画像を1枚だけ持つカードがあると全カードがその高さになる(シーズンパスで121px→89px)
+2. **縦長でない絵は横に何か並べる。** 絵は`max-height`で抑え、枠を`width:fit-content`にすると
+   縦横比を変えずに全体が見えたまま小さくなる。空いた横に説明を置く(レイド画面で1画面ぶん節約)
+3. **同じ粒度の枠は2列にする。** `grid-template-columns:1fr 1fr` + 中身に`min-width:0`。
+   幅が半分になるので文字サイズと余白も一緒に詰め、長い文言は`overflow-wrap:anywhere`で折り返す
+4. **情報が何も無い行は出さない**(開始前だけの週など)。**情報そのものは減らさない**
+5. 枠を画面いっぱいに: `.xxx-box{ padding:8px 10px; width/max-height:calc(99 * var(--vh|--vw)) }`
+   \+ `#xxxOverlay{ padding:0 }`。**閉じるボタン(右上37px)に重ならないよう見出しに`padding-right:44px`**
+
 ## スクロールロック除外(必須)
 
 新しい画面/オーバーレイを足したらIDを**3か所すべて**に追加する:

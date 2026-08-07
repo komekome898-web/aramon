@@ -12,6 +12,7 @@ Claude Codeは必要になったスキルだけを自動で読み込むので、
 | `aramon-multiplayer` | ホスト権威型の同期、ゲスト側の演出漏れ対策、ラバーバンド対策、フリーズ対策、観戦、Firebase・アカウント | `network.js` `firebase.js` |
 | `aramon-audio` | BGMトラック/intensity、SE定義、Web Audio合成、実音源mp3のループとクロスフェード、スキン専用BGM/SE | `audio.js` `audio/` |
 | `aramon-combat` | 技のギミック(blast/burst/aoeShape/ガッツ削り)、安全圏、マスモン、通貨・バッグ・ガチャ・ショップ | `combat.js` `data.js` `ui.js` |
+| `aramon-season-raid` | シーズンの開始/切替/SPリセット、シーズンパス報酬、日替わりミューテーター、レイドの公開とボスHP・報酬の調整、レイドガチャ/カタログ、SSRの入手経路 | `data.js` `ui.js` |
 | `aramon-monsters` | 新モンスター追加チェックリスト、SSR/色スキン、歩行アニメーション、歩行スプライト生成 | `data.js` `monsters/` |
 | `aramon-monster-tools` | モンスター追加ツール(studio_web.html / monster_studio.py / monster_add.py / check_monsters.py)の仕組みと落とし穴 | `tools/` |
 | `aramon-performance` | 描画量・shadowBlur・動的解像度・遅延ロード・縮小スプライト・地形パッチ・Service Worker | 全般 |
