@@ -9,7 +9,6 @@ description: 荒野モン動の音(audio.js)。BGMトラック/intensity・SE定
 
 - 原則Web Audio合成。初回タップ後に`audioInit()`。合成ヘルパーは`seTone`/`seNoise`/`seNoiseLfo`、定義は`SE_DEFS`。
 - `playSe(name, opts)`は**負荷対策で自分の操作モンスターに関わる音のみ**鳴らす。`SE_MIN_GAP`で連打間引き、`SE_VOL_BOOST`で技SEを増幅。tier3は`MOVE_SE_BY_STYLE`(combat.js)、技名個別は`move.seStyle`。
-- **バトル中(`game.started`)はSEを1音に絞る。** 次の`playSe()`が呼ばれた瞬間、前のSEを`regBattleSeNode()`経由で強制停止する(長い技SEが後続のヒット音等と重なって濁るのを防ぐ)。`seTone`/`seNoise`/`seNoiseLfo`/`createSeOneShot`の`.play`/`playZeusTier3Once`という**音を実際に鳴らす関数の最後で1回ずつ`regBattleSeNode(gainNode, srcNode)`を呼べば自動で対象になる**(新しい合成/実音源ヘルパーを足すときはここに登録を忘れない)。バトル外(メニュー操作音等)では録音自体を行わないので、通常のタップ音などは互いに止め合わない。
 - BGM: タイトル / 試合中(intensity 0〜2)/ 決戦(3)/ ラストバトル(4)/ ショップ / ロビー / トレーニング。`bgmSetTrack()`と`bgmUpdateBattleIntensity(aliveCount)`。全ノードは`bgmTrackGain`→`bgmGain`→出力。
 - **intensityを増やしたら`bgmStepDur()`のbpm配列も伸ばす**(配列外でBPMがNaNになる)。
 - **トラック/intensityを追加したら管理者画面の`BGM_TEST_ITEMS`にも足す。**
