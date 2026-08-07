@@ -87,6 +87,8 @@
     display:block; background:#0b0f16; }
   .mediaitem video,.mediaitem img{ max-height:190px; object-fit:contain; }
   .now{ font-size:11px; color:var(--dim); margin-top:4px; word-break:break-all; }
+  /* 昇格演出のプレビューは「共通 → 専用」の2本を並べるので、どちらか分かる見出しを付ける */
+  .promote-stage{ font-size:11px; color:var(--dim); margin-top:8px; }
 </style></head>
 <body>
 
@@ -2304,6 +2306,10 @@ async function planSkinMedia(dataJs, swJs, lines){
   const rows = { SKIN_MEDIA: skinMediaLines(id, cfg) };
   const texts = applyRows({ 'data.js': rm.text }, rows);
   const notes = [];
+  if(cfg.promote && cfg.promote.video){
+    notes.push('昇格演出は「共通(ssr_promote)→ この専用ムービー」の順で流れます');
+    notes.push('管理者画面の「機能」タブに、この演出を確認するボタンが自動で増えます(SKIN_MEDIAから生成)');
+  }
   if(pickupOn){
     const raid = $('md_gachaKind').value === 'raid';
     const cname = raid ? 'RAID_GACHA_PICKUP' : 'GACHA_PICKUP_SSR';
@@ -2560,7 +2566,8 @@ function collectStateChange(){
    ===================================================================== */
 const MEDIA_ITEMS = [
   { key:'promote',        jp:'ガチャ専用ムービー(昇格演出)', kind:'promote',
-    hint:'添付した動画から「音の無い動画」と「音声」を作って、両方を送ります。' },
+    hint:'添付した動画から「音の無い動画」と「音声」を作って、両方を送ります。'
+       + '本番では共通の昇格演出(ssr_promote)が先に流れてから、この動画に切り替わります。' },
   { key:'bgm.battle',     jp:'専用BGM 残り6人以上', kind:'audio' },
   { key:'bgm.final5',     jp:'専用BGM 残り5人以下', kind:'audio' },
   { key:'bgm.lastBattle', jp:'専用BGM 残り2人',     kind:'audio' },
@@ -2628,6 +2635,15 @@ function mediaPreviewHtml(kind, url){
   if(kind === 'promote') return `<video src="${url}" controls playsinline muted></video>`;
   return `<audio src="${url}" controls></audio>`;
 }
+/* 昇格演出のプレビューは本番と同じ順番(共通 → 専用)で並べる。
+   本番(ui.jsのssrPromotionStages)は専用動画を持つスキンだと共通ssr_promoteを
+   先に流すので、ここで専用だけを見ていると実際の見え方と食い違う。 */
+function promotePreviewHtml(skinVideoUrl){
+  return `<div class="promote-stage">① 共通(ssr_promote・全SSR共通の前振り)</div>`
+       + mediaPreviewHtml('promote', '../video/ssr_promote.mp4')
+       + `<div class="promote-stage">② このスキンの専用ムービー</div>`
+       + mediaPreviewHtml('promote', skinVideoUrl);
+}
 function renderMediaCurrent(){
   const id = $('md_skin').value;
   const cfg = (state.media.cur && state.media.cur[id]) || {};
@@ -2639,7 +2655,8 @@ function renderMediaCurrent(){
     if(it.kind === 'promote'){
       const p = cfg.promote || {};
       now.textContent = p.video ? `今: ${p.video}.mp4 / ${p.audio || '(音声なし)'}` : '今: 未設定';
-      pv.innerHTML = p.video ? mediaPreviewHtml('promote', '../' + p.video + '.mp4' + stamp) : '';
+      // 本番と同じ順番(共通 → 専用)で見せる
+      pv.innerHTML = p.video ? promotePreviewHtml('../' + p.video + '.mp4' + stamp) : '';
       if(p.audio) pv.innerHTML += mediaPreviewHtml('audio', '../' + p.audio + stamp);
       continue;
     }
@@ -2668,7 +2685,9 @@ function setMediaResult(key, blob, ext, note){
   const url = URL.createObjectURL(blob);
   state.media.urls[key] = url;
   state.media.next[key] = { blob, ext };
-  $('md_pv_' + k).innerHTML = mediaPreviewHtml(it.kind === 'promote' ? 'promote' : it.kind, url);
+  // 昇格演出は本番と同じ順番(共通 → 今作った専用)で確認できるようにする
+  $('md_pv_' + k).innerHTML = it.kind === 'promote'
+    ? promotePreviewHtml(url) : mediaPreviewHtml(it.kind, url);
   mediaStatus(key, note, 'ok');
   state.files = null; $('commitBtn').disabled = true;
 }
