@@ -1013,9 +1013,15 @@
   #loginBonusOkBtn{ padding:9px 30px; border-radius:8px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:14px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
   .result-badge.season{ color:#1a1306; background:linear-gradient(180deg,#8fd0ff,#4aa8f0); border-color:transparent; }
-  /* シーズンパス(ショップ/バッグと同じ広い幅・全体スクロール・×ボタンは枠内) */
-  .mastermon-confirm-box.season-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
-    max-height:calc(94 * var(--vh)); overflow-y:auto; }
+  /* シーズンパス(全体スクロール・×ボタンは枠内)。
+     情報量が多いので、レイド画面と同じく枠と余白を切り詰めて表示領域を稼ぐ */
+  .mastermon-confirm-box.season-box{ position:relative;
+    max-width:min(1100px, calc(99 * var(--vw))); width:min(1100px, calc(99 * var(--vw)));
+    max-height:calc(99 * var(--vh)); padding:8px 10px; border-radius:10px;
+    overflow-y:auto; }
+  #seasonOverlay{ padding:0; }
+  /* タイトルが閉じるボタン(右上37px)に重ならないよう右側を空ける */
+  .season-box > .mastermon-confirm-text{ padding-right:44px; }
   .season-head{ width:100%; margin-bottom:8px; }
   .season-head-row{ display:flex; justify-content:space-between; align-items:baseline; }
   .season-tier-text{ font-size:14px; font-weight:700; color:var(--amber); }
@@ -1029,12 +1035,14 @@
      この上から始めた指ではシーズン画面全体を縦スクロールできなくなる */
   .season-track{ display:flex; overflow-x:auto; gap:6px; width:100%; padding:2px 2px 8px;
     -webkit-overflow-scrolling:touch; }
-  .season-tier{ flex:0 0 auto; width:96px; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px;
+  /* カードは横一列なので、いちばん背の高いカード(最終報酬のスキン画像)に
+     全部が引き伸ばされる。中身に対して余白が余らないよう小さめに保つこと。 */
+  .season-tier{ flex:0 0 auto; width:88px; display:flex; flex-direction:column; align-items:center; gap:2px; padding:5px 4px;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
   .season-tier.milestone{ border-color:rgba(244,196,48,0.55); background:rgba(244,196,48,0.07); }
   .season-tier.ready{ border-color:var(--amber); box-shadow:0 0 8px rgba(244,196,48,0.3); }
   .season-tier-num{ font-family:'Russo One',sans-serif; font-size:12px; color:var(--amber); }
-  .season-tier-reward{ font-size:11px; color:var(--ink); text-align:center; line-height:1.2; min-height:26px; display:flex; align-items:center; }
+  .season-tier-reward{ font-size:10.5px; color:var(--ink); text-align:center; line-height:1.2; min-height:20px; display:flex; align-items:center; }
   .season-claim-btn{ padding:4px 10px; border-radius:6px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:11px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
   .season-claim-btn:active{ filter:brightness(0.92); }
@@ -1046,11 +1054,12 @@
     background:linear-gradient(135deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
     background-size:200% 200%; animation:seasonFinalRainbow 4s linear infinite; }
   @keyframes seasonFinalRainbow{ from{ background-position:0 0; } to{ background-position:200% 200%; } }
-  .season-skin-reward{ display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; min-height:26px;
-    justify-content:center; padding:2px 0; }
-  .season-skin-img{ width:52px; height:52px; object-fit:contain; border-radius:8px; background:rgba(0,0,0,0.25);
+  /* 最終報酬のカードだけ画像を持つ。ここが高いと全カードが引き伸ばされるので小さく保つ */
+  .season-skin-reward{ display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; min-height:20px;
+    justify-content:center; padding:0; }
+  .season-skin-img{ width:34px; height:34px; object-fit:contain; border-radius:6px; background:rgba(0,0,0,0.25);
     box-shadow:0 2px 8px rgba(0,0,0,0.4); }
-  .season-skin-name{ font-size:9.5px; font-weight:800; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.7); }
+  .season-skin-name{ font-size:9px; font-weight:800; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.7); line-height:1.15; }
   /* シーズン1準備プレビュー(管理者専用・非公開) */
   .mastermon-confirm-box.s1prev-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
     max-height:calc(94 * var(--vh)); overflow-y:auto; }
@@ -1066,21 +1075,23 @@
     background-size:200% 200%; animation:seasonFinalRainbow 4s linear infinite; }
   .s1prev-card-skin{ width:40px; height:40px; object-fit:contain; border-radius:6px; background:rgba(0,0,0,0.25); }
   .s1prev-calendar{ display:flex; flex-direction:column; width:100%; }
-  .s1prev-cal-month{ font-size:10.5px; color:var(--ink-dim); margin-bottom:6px; line-height:1.4; }
-  .s1prev-cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:4px; }
-  .s1prev-cal-head .s1prev-cal-dow{ text-align:center; font-size:10px; color:var(--ink-dim); font-weight:700; }
-  .s1prev-cal-cell{ min-height:52px; padding:4px 3px; background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
-    border-radius:7px; display:flex; flex-direction:column; gap:3px; }
+  .s1prev-cal-month{ font-size:10px; color:var(--ink-dim); margin-bottom:4px; line-height:1.35; }
+  .s1prev-cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-bottom:3px; }
+  .s1prev-cal-head .s1prev-cal-dow{ text-align:center; font-size:9.5px; color:var(--ink-dim); font-weight:700; }
+  /* 1マスの中身は「日付 / レイドの帯 / バッジ最大3枚」。5〜6週ぶん縦に積むので、
+     ここの数pxがそのまま画面数に効く。詰めすぎて読めなくならない範囲で小さく保つ。 */
+  .s1prev-cal-cell{ min-height:40px; padding:3px 2px; background:rgba(255,255,255,0.04); border:1px solid var(--panel-line);
+    border-radius:6px; display:flex; flex-direction:column; gap:2px; }
   .s1prev-cal-cell.empty{ background:transparent; border-color:transparent; }
   .s1prev-cal-cell.before-start{ opacity:0.35; }
-  .s1prev-cal-date{ font-size:10px; color:var(--ink-dim); }
-  .s1prev-cal-badges{ display:flex; flex-direction:column; gap:2px; }
-  .s1prev-badge{ font-size:8.5px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
-    border-radius:4px; padding:1px 4px; text-align:center; white-space:nowrap; }
+  .s1prev-cal-date{ font-size:9.5px; color:var(--ink-dim); line-height:1.1; }
+  .s1prev-cal-badges{ display:flex; flex-direction:column; gap:1px; }
+  .s1prev-badge{ font-size:8px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430);
+    border-radius:4px; padding:0 3px; text-align:center; white-space:nowrap; line-height:1.5; }
   /* レイド開催期間の紫バー。セルの左右へはみ出させて、隣の日と1本に繋がって見せる
-     (はみ出し量 = セルの内側余白3px + 枠線1px + セル間4pxの半分2px = 6px)。
+     (はみ出し量 = セルの内側余白2px + 枠線1px + セル間3pxの半分1.5px ≒ 4.5px)。
      期間の端と行の端では伸ばさない。 */
-  .s1prev-cal-raid{ height:13px; margin:0 -6px; padding:0 3px; overflow:hidden;
+  .s1prev-cal-raid{ height:11px; margin:0 -4.5px; padding:0 3px; overflow:hidden;
     display:flex; align-items:center; white-space:nowrap;
     font-size:8.5px; font-weight:800; color:#fff;
     background:linear-gradient(180deg,#b06bff,#7b3fd4); }
@@ -1090,10 +1101,12 @@
   .s1prev-cal-raid.is-rowstart{ margin-left:0; }
   .s1prev-cal-raid.is-rowend{ margin-right:0; }
   .s1prev-badge-raid{ color:#fff; background:linear-gradient(180deg,#b06bff,#7b3fd4); }
-  .s1prev-legend{ display:flex; flex-direction:column; gap:6px; width:100%; }
-  .s1prev-legend-item{ display:flex; align-items:center; gap:8px; padding:6px 9px;
+  /* 説明は4項目とも短いので2列に並べて縦を詰める(1列だと画面1つぶん近く使う) */
+  .s1prev-legend{ display:grid; grid-template-columns:1fr 1fr; gap:4px; width:100%; align-items:start; }
+  .s1prev-legend-item{ display:flex; align-items:center; gap:6px; padding:4px 7px; min-width:0;
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; }
-  .s1prev-legend-desc{ font-size:11px; color:var(--ink); line-height:1.35; }
+  .s1prev-legend-item .s1prev-badge{ flex-shrink:0; }
+  .s1prev-legend-desc{ font-size:10px; color:var(--ink); line-height:1.3; min-width:0; }
   /* トップ「シーズン」ボタンの限定SSR告知ポップ */
   .season-ssr-pop{ position:absolute; top:-9px; right:-6px; font-size:8.5px; font-weight:800; letter-spacing:0.3px;
     color:#1a1306; padding:1px 6px; border-radius:9px; white-space:nowrap; transform:rotate(-4deg);
