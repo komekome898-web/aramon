@@ -399,7 +399,10 @@ const SIGNATURE_MOVES = {
     { name:'ファイア',   tier:1, color:'#ff6b35', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
     { name:'ファイアブレス',   tier:2, color:'#ff6b35', range:1400, dmg:13, cooldown:1.1, gutsCost:16, projSpeed:480, hitR:7,  burst:3, burstGap:0.12, icon:'🔥' },
     { name:'インフェルノ',   tier:3, color:'#ff3b1a', dmg:55, cooldown:2.1, gutsCost:24,
-      aoeShape:'fan', range:800, fanAngleDeg:45, aoeStyle:'inferno' },
+      aoeShape:'fan', range:800, fanAngleDeg:45, aoeStyle:'inferno',
+      // 扇の先端に、半分ずつ重ねた3つの爆風ドームを横並びで出す(不死のゾッドのtier3も継承)。
+      // 遮蔽物で扇が途中で途切れた場合はその位置で爆発する(combat.jsのspawnAoeEndBlast)
+      endBlast:{ count:3, radius:140, dmg:16, expandTime:0.35, color:'#ff6a2e' } },
   ],
   aqua: [
     { name:'水風船',     tier:1, color:'#3dccc7', range:750,  dmg:23, cooldown:0.8,  gutsCost:8, projSpeed:560, hitR:11, splash:68, icon:'💧' },
@@ -760,6 +763,8 @@ const UPDATE_HISTORY = [
     { t:'【レイド】闘技場に落ちているアイテムを大幅に増やしました。とくにガッツ飴が多く出るようになり、さらに時間が経つと安全圏の中へ追加で補給されます', g:['balance'] },
     { t:'【レイド】レイドランキングが表示されない不具合を修正しました', g:['fix','multi'] },
     { t:'レイド開催中は、ガチャ画面を開くとレイドガチャから表示されるようになりました', g:['general'] },
+    { t:'ドラゴンのtier3「インフェルノ」(不死のゾッド装備時は「言葉は無粋」)の最後に、爆風ドームが3つ横並びで発生するようになりました。技が途中で遮られた場合もその位置で爆発します', g:['monster','balance'] },
+    { t:'SSRスキン「不死のゾッド」に専用BGM(狂戦士ガッツと同じ曲)とtier3技の専用SEを追加しました', g:['monster','av'] },
   ]},
   { date:'2026-08-06', items:[
     { t:'🎉 シーズン1がいよいよ8/7に開幕します！ 曜日ごとの変則ルール(日替わりミューテーター)が始まり、月・木は全員が技tier2スタート、火・金は試合報酬2倍、水はスポーンアイテム1.5倍。土日はその全部が同時に発動します', g:['feature','general'] },
@@ -2267,6 +2272,11 @@ const SKIN_MEDIA = {
     bgm: { battle:'audio/bgm_guts_ssr_battle.m4a', final5:'audio/bgm_guts_ssr_final5.m4a', lastBattle:'audio/bgm_guts_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_guts_ssr_tier3.m4a', hit:'audio/se_guts_ssr_hit.m4a', kill:'audio/se_guts_ssr_kill.m4a', win:'audio/se_guts_ssr_win.m4a' },
     promoImg: 'images/promo_guts_ssr.png',
+  },
+  // 専用BGMは狂戦士ガッツと同じ曲をそのまま指定(音源を複製せず、同じファイルを指す)
+  zod_ssr: { /*@zod_ssr*/
+    bgm: { battle:'audio/bgm_guts_ssr_battle.m4a', final5:'audio/bgm_guts_ssr_final5.m4a', lastBattle:'audio/bgm_guts_ssr_lastbattle.m4a' },
+    se: { tier3:'audio/se_zod_ssr_tier3.mp3' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };

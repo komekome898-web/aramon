@@ -183,6 +183,9 @@ function fireMove(attacker, target, move){
     const width = (move.rectWidth||move.beamWidth||move.zigzagWidth||0) * hbMult;
     const burstCount = move.burst || 1;
     const burstGap = move.burstGap || 0;
+    // 技本体と同じ倍率(訓練・状態異常・SSR tier3威力アップ)を先端の爆風にも掛ける。
+    // SSRスキン装備時は本体もこちらも一緒に強くなる(dmgMultをここだけ素通しにしない)
+    const endBlastDmgMult = (move.endBlast && move.dmg) ? effDmg/move.dmg : 1;
     const buildAe = (aimAngle)=>{
       const ae = {
         id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
@@ -193,6 +196,9 @@ function fireMove(attacker, target, move){
         gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
         lifestealMult: move.lifestealMult||1, // この技だけHP回復を増やす(鱗赫)
         closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
+        // 扇/帯の技が届いた先端に出す仕上げの爆風ドーム(インフェルノ等)。
+        // ae.rangeは遮蔽物で短くなった実際の到達距離なので、途中で途切れてもそこで爆発する
+        endBlast: move.endBlast ? Object.assign({}, move.endBlast, { dmg: move.endBlast.dmg*endBlastDmgMult }) : null,
       };
       if(move.aoeShape==='beams'){
         const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -1856,8 +1862,28 @@ function updateAreaEffects(dt){
           spawnHit(ent.x, ent.y, ent.z, ae.color);
         }
       }
-      if(curReach >= ae.range) ae.resolved = true;
+      if(curReach >= ae.range){
+        // 届いた先端で仕上げの爆風ドームを出す(1回だけ。まだ未resolvedのこのフレームで発火)
+        if(!ae.resolved && ae.endBlast) spawnAoeEndBlast(ae);
+        ae.resolved = true;
+      }
     }
+  }
+}
+// 扇/帯の範囲技が届いた先端に、半分ずつ重ねた3つの爆風ドームを横並びで出す(インフェルノ等)。
+// ae.angleに直交する方向へ並べる。ae.rangeを使うので、遮蔽物で途中で途切れても
+// その短くなった位置で爆発する(raycastObstacleDistanceで既に短くなっている)。
+function spawnAoeEndBlast(ae){
+  const b = ae.endBlast;
+  const count = Math.max(1, b.count||3);
+  const radius = b.radius||130;
+  const ex = ae.x + Math.cos(ae.angle)*ae.range, ey = ae.y + Math.sin(ae.angle)*ae.range;
+  const px = -Math.sin(ae.angle), py = Math.cos(ae.angle); // 先端で横方向(並べる軸)
+  for(let i=0;i<count;i++){
+    const off = (i - (count-1)/2) * radius; // 中心間の距離=半径ぶん→隣とちょうど半分重なる
+    spawnGroundBlast(ex+px*off, ey+py*off, {
+      radius, dmg:b.dmg||0, color:b.color||ae.color, expandTime:b.expandTime||0.35, se:b.se,
+    }, ae.ownerId, ae.moveAura, ae.auraTint);
   }
 }
 

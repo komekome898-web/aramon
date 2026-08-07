@@ -5688,6 +5688,7 @@ function describeMoveFeatureText(mv){
   if(mv.burst) parts.push(`${mv.burst}連射`);
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);
+  if(mv.endBlast) parts.push(`技の先端に半径${mv.endBlast.radius}の爆風ドーム×${mv.endBlast.count||3}(各${mv.endBlast.dmg})`);
   if(mv.gutsDrainRatio) parts.push(`与えたダメージの${Math.round(mv.gutsDrainRatio*100)}%ぶん相手のガッツを削る`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
   if(mv.closeBonusMax && mv.closeBonusMax>1) parts.push(`命中距離が近いほど威力上昇(最大+${Math.round((mv.closeBonusMax-1)*100)}%)`);
@@ -5730,8 +5731,10 @@ function buildMastermonMovesHtml(key, opts){
     // tier3は装備SSRスキンで技名・威力が変わる(該当スキン装備時のみ)
     const pseudo = pseudoForMove;
     const dispName = (typeof getMoveName==='function') ? getMoveName(mv, pseudo) : mv.name;
-    // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)
-    const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0);
+    // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)。
+    // endBlastは重なった3つのドーム全部に当たった場合の合計(インフェルノ等)
+    const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0)
+      + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0);
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
     return `
     <div class="mm-move-card">
