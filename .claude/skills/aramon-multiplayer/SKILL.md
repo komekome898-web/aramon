@@ -45,6 +45,7 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 ## レイド(4人同時)
 
 - **部屋は`mode`で分ける**(`lobby`と`rooms/{id}/meta`の`mode`。`'br'`=バトルロイヤル / `'raid'`)。旧クライアントの部屋は`mode`が無いので`'br'`とみなす。**`netState.raid`は必ず部屋の`mode`と一致させる**(ずれるとホストとゲストで別の試合を組み立ててしまう)。
+- **部屋を作る/探すはどちらも`netState.raid`を見て`mode`を出し分ける1本の経路**(`createRoomFlow`/`openFindRoomScreen`→`refreshRoomList`→`__aramonListOpenRooms(netState.raid?'raid':'br')`)。レイド側の入口は`#raidOverlay`の3ボタン(1人で挑む/部屋を作る/部屋を探す。`raidMultiBtn`/`raidFindRoomBtn`)で、通常マルチと同じ`#roomListScreen`/`#lobbyScreen`をそのまま使う。**`joinSelectedRoom`は入った部屋の実際の`mode`で`netState.raid`を上書きする**(呼び出し元の状態を信用しない安全弁)。**`netState.raid`が中途半端に残らないよう、プレイモードの`.mode-tab`切替では毎回`isRaid`で確定させる**(レイドの部屋探しから抜けた直後に通常マルチへ切り替えても混ざらないように)。
 - **試合の組み立ての分岐は`beginMultiplayerMatchInner`の`game.raid`1か所**。マップ・ワールドの広さ・安置・ボスの生成・アイテムの撒き方だけが変わる。シード共有・world同期・マスモン補正・スキンは通常のマルチと同じものがそのまま効く。
 - **ボスもシード付き生成の一部として同じidで両側に作る。** 位置とHPはauthStateでそのまま同期されるので、ボス専用の同期は要らない。
 - **ゲストへ足りないのは演出**: ①予告(`raidTele`イベント。表示専用で、予告時間が過ぎたらsetTimeoutで消す) ②発動した範囲攻撃(`shotEvent`の`type:'aoe'`。見た目専用) の2つ。**当たり判定はホストのまま。**
