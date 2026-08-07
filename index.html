@@ -872,6 +872,8 @@
       </div>
       <div id="bagTargetWrap" class="bag-col-right hidden">
         <div id="bagTargetList" class="bag-target-list"></div>
+        <!-- トレーニングチケットを使った直後だけ出る。そのマスモンのトレーニング画面へ直行する -->
+        <button id="bagGoTrainBtn" class="bag-go-train-btn hidden"></button>
       </div>
     </div>
     </div>
@@ -1110,6 +1112,16 @@
       <button id="rockSsrPromoCloseBtn" class="skin-promo-close">閉じる</button>
       <button id="rockSsrPromoGachaBtn" class="skin-promo-gacha">今すぐガチャ</button>
     </div>
+  </div>
+</div>
+
+<!-- ロビーBGM選択(ヘッダーの🎵チップから開く)。並ぶ曲は audio.js の lobbyBgmChoices() が作る -->
+<div id="lobbyBgmOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box lobby-wide-box">
+    <button id="closeLobbyBgmBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">🎵 ロビーBGM</div>
+    <div class="lobby-bgm-note">ロビーで流れる曲を選べます。ショップやトレーニングなど他の画面の曲はこれまで通りです</div>
+    <div id="lobbyBgmList" class="lobby-bgm-list"></div>
   </div>
 </div>
 

@@ -701,7 +701,7 @@ function bgmSetTrack(name){
   bgmState.desired = name;
   // 試合以外の画面へ移るときはintensityを持ち越さない(前の試合の決戦BGMが後を引かないように)。
   // nullは試合中の演出でも使うのでここでは触らない。
-  if(name==='title' || name==='shop' || name==='training') bgmState.intensity = 0;
+  if(name==='title' || name==='shop' || name==='training' || name==='lobbyFile') bgmState.intensity = 0;
   // 専用BGMを持つSSRスキンを装備中なら、試合開始と同時にその3曲の読み込みを始めておく
   // (残り人数がその区間に入ってから取りに行くと間に合わないため)。専用SEも同じ理由で先読みする
   if(name==='battle' && typeof player!=='undefined' && player && typeof entitySkinId==='function'){
@@ -833,22 +833,63 @@ function ensureSkinBgmBuffers(skinId){
 // ショップ/トレーニング曲は画面を開いたときに読み込む。ロビー曲は起動直後に必要なのでaudioInitで読む。
 function ensureBgmFileBuffers(){ bgmFinal5.ensure(); bgmLastBattle.ensure(); }
 function ensureBgmShopBuffer(){ bgmShop.ensure(); }
-function ensureBgmLobbyBuffer(){ bgmLobby.ensure(); }
+// 選択中のロビーBGMを読み込む(既定のいちか以外を選んでいてもその曲を先読みする)
+function ensureBgmLobbyBuffer(){ const L = lobbyBgmLoop(); if(L) L.ensure(); }
 function ensureBgmTrainingBuffer(){ bgmTraining.ensure(); }
 
-// ロビーBGMは提供音源(いちか)と従来の合成BGM(オリジナル)を切り替えられる。選択は端末に保存する
+/* ロビー(タイトル画面)で流す曲は一覧から選べる。選択は端末に保存する。
+   ショップ・トレーニング・試合中の切り替えはこの選択と無関係で、これまで通り画面ごとに決まる。
+   【表に足せば自動で回る】ここへ1行足せば選択画面の並びも増える。SSRスキン専用曲は
+   skinBgmLoops から自動で足すので、スキンを追加してもこの表への追記は要らない。 */
 const LOBBY_BGM_KEY = 'aramon_lobby_bgm_v1';
-const LOBBY_BGM_LABELS = { ichika:'いちか', original:'オリジナル' };
+/* 一覧に出す区分の短縮名。SKIN_BGM_SLOTS(残り6人以上/5人以下/2人)をそのまま出すと
+   曲名と並ばず省略されてしまうので、この画面でだけ短く言い換える。意味はSKIN_BGM_SLOTSが正。 */
+const LOBBY_BGM_SLOT_SHORT = { battle:'序盤', final5:'決戦', lastBattle:'ラスト' };
+const LOBBY_BGM_BASE = [
+  { id:'ichika',     label:'いちか',         note:'ロビー既定',     loop:()=>bgmLobby },
+  { id:'original',   label:'オリジナル',     note:'合成BGM',        loop:()=>null },
+  { id:'final5',     label:'決戦',           note:'残り5人以下',    loop:()=>bgmFinal5 },
+  { id:'lastBattle', label:'ラストバトル',   note:'残り2人',        loop:()=>bgmLastBattle },
+  { id:'shop',       label:'ショップ',       note:'',               loop:()=>bgmShop },
+  { id:'training',   label:'トレーニング',   note:'',               loop:()=>bgmTraining },
+];
+// 選べる曲の一覧。SSRスキン専用曲は「そのスキンを所持しているとき」だけ並ぶ
+function lobbyBgmChoices(){
+  const out = LOBBY_BGM_BASE.slice();
+  let owned = {};
+  try{ owned = (typeof loadSkins==='function' ? loadSkins().owned : {}) || {}; }catch(e){}
+  Object.keys(skinBgmLoops).forEach(skinId=>{
+    if(!owned[skinId]) return;
+    const name = (typeof skinMeta==='function' && typeof SSR_SKINS!=='undefined' && SSR_SKINS[skinId])
+      ? skinMeta(skinId).name : skinId;
+    Object.keys(skinBgmLoops[skinId]).forEach(slot=>{
+      out.push({ id:skinBgmTrack(skinId, slot), label:name, note:(LOBBY_BGM_SLOT_SHORT[slot]||slot), ssr:true,
+                 loop:()=>skinBgmLoops[skinId][slot] });
+    });
+  });
+  return out;
+}
+function lobbyBgmEntry(id){ return lobbyBgmChoices().find(c=>c.id===id) || null; }
 let lobbyBgmMode = 'ichika';
-try{ const v = localStorage.getItem(LOBBY_BGM_KEY); if(LOBBY_BGM_LABELS[v]) lobbyBgmMode = v; }catch(e){}
+try{ const v = localStorage.getItem(LOBBY_BGM_KEY); if(v) lobbyBgmMode = v; }catch(e){}
 function getLobbyBgmMode(){ return lobbyBgmMode; }
+// ヘッダーのチップや選択画面に出す曲名(スキンを外すなど選択が無効になっていたら既定名)
+function getLobbyBgmLabel(){ const e = lobbyBgmEntry(lobbyBgmMode); return e ? e.label : LOBBY_BGM_BASE[0].label; }
+/* いま選ばれているロビー曲の実音源ループ(合成BGM担当のときはnull)。
+   毎tick呼ばれるので、所持判定(localStorage読み)を挟まずidだけで引く。
+   所持していない曲は選択画面に並ばないので、ここで弾く必要はない。 */
+function lobbyBgmLoop(){
+  const base = LOBBY_BGM_BASE.find(c=>c.id===lobbyBgmMode);
+  if(base) return base.loop();
+  return skinBgmLoopOfTrack(lobbyBgmMode) || bgmLobby;   // 未知のidは既定(いちか)へ落とす
+}
 function setLobbyBgmMode(mode){
-  if(!LOBBY_BGM_LABELS[mode]) return;
+  if(!lobbyBgmEntry(mode)) return;
   lobbyBgmMode = mode;
   try{ localStorage.setItem(LOBBY_BGM_KEY, mode); }catch(e){}
-  if(actx) updateBgmFileLoops();   // ロビーを開いたまま押しても即切り替わる
+  ensureBgmLobbyBuffer();          // 選んだ曲がまだ未ロードなら取りに行く
+  if(actx) updateBgmFileLoops();   // ロビーを開いたまま選んでも即切り替わる
 }
-function toggleLobbyBgmMode(){ setLobbyBgmMode(lobbyBgmMode==='ichika' ? 'original' : 'ichika'); }
 // 実音源ループの一覧。重複再生の防御はこの配列を使った「1曲だけ」の保証で行う
 const BGM_FILE_LOOPS = [bgmFinal5, bgmLastBattle, bgmShop, bgmLobby, bgmTraining];
 Object.keys(skinBgmLoops).forEach(id=>{
@@ -871,7 +912,13 @@ function bgmFileLoopTarget(){
   const cur = bgmState.current;
   if(cur==='shop') return bgmShop;
   if(cur==='training') return bgmTraining;
-  if(cur==='title') return lobbyBgmMode==='ichika' ? bgmLobby : null;
+  // 管理者画面のBGM確認用。ロビーの選択を書き換えずに既定のロビー曲そのものを鳴らす
+  if(cur==='lobbyFile') return bgmLobby;
+  if(cur==='title'){
+    const L = lobbyBgmLoop();
+    if(L && !L.buffer) L.ensure();   // 選択直後で未ロードなら取りに行く(揃った次のtickから鳴る)
+    return L;
+  }
   // 管理者画面の音声確認・昇格演出から直接指定されたときだけ通る名前(実際の試合では使わない)
   const direct = skinBgmLoopOfTrack(cur);
   if(direct) return direct;
@@ -909,7 +956,7 @@ function startBgmScheduler(){
   bgmState.timerId = setInterval(bgmScheduler, 90);
 }
 function bgmStepDur(){
-  if(bgmState.current==='title' || bgmState.current==='shop' || bgmState.current==='training') return 60/92/4;
+  if(bgmState.current==='title' || bgmState.current==='shop' || bgmState.current==='training' || bgmState.current==='lobbyFile') return 60/92/4;
   const bpm = [116,126,138,126,132][bgmState.intensity] || 126;
   return 60/bpm/4;
 }
@@ -931,6 +978,7 @@ function bgmScheduler(){
     else if(bgmState.current==='title') bgmTitleStep(bgmState.step, bgmState.nextTime);
     else if(bgmState.current==='shop') bgmTitleStep(bgmState.step, bgmState.nextTime); // ショップ音源未ロード時はタイトル曲で代替
     else if(bgmState.current==='training') bgmTitleStep(bgmState.step, bgmState.nextTime); // トレーニング音源未ロード時も同様
+    else if(bgmState.current==='lobbyFile') bgmTitleStep(bgmState.step, bgmState.nextTime); // 管理者確認のロビー曲(未ロード時)
     // スキン専用BGMを直接指定したとき(管理者確認)の未ロード時の代替。残り6人以上は通常の
     // 試合曲、決戦・ラストバトルは決戦曲で鳴らす
     else if(typeof bgmState.current==='string' && bgmState.current.indexOf('skinBgm:')===0){
