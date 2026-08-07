@@ -32,7 +32,8 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 - **入れ替えは「消してから足す」。** `/*@id*/`の目印は他の表(`SSR_SKINS`など)にも付いているので、`removeSkinMediaEntry()`は**`SKIN_MEDIA`ブロックの中だけ**を消す(`revertRows`をそのまま使うとスキン登録ごと消える)。
 - **音声・無音動画はMediaRecorderで実時間に録り直す**(`captureFromVideo`)。音は`MediaElementSource → MediaStreamDestination`へ流すのでスピーカーからは鳴らず、映像は`video.captureStream()`の映像トラックだけを録るので音無しになる(`captureStream`が無い端末はcanvasへ描き写す)。**昇格演出は音と映像を1回の再生で同時に録る**(2回再生させない)。**音声ファイルを直接添付したときは録り直さずそのまま送る。**
 - 出来上がりの拡張子は端末が対応する形式(iPhoneなら`.m4a`/`.mp4`)。**`sw.js`の`MEDIA_RE`に`m4a|aac`を入れてある**(入れないとSWの素材キャッシュに載らない)。
-- **今入っている素材のプレビューは、Pages上の相対パス(`../audio/…`)をそのまま再生する。** ツールも本番も同じオリジンなのでCORSも認証も要らない。
+- **今入っている素材のプレビューは、Pages上の相対パス(`../audio/…`)をそのまま再生する。** ツールも本番も同じオリジンなのでCORSも認証も要らない。昇格演出だけは**本番と同じ「共通(ssr_promote)→ 専用」の2本**を並べて出す(`promotePreviewHtml`)。専用だけ見ていると実際の見え方と食い違うため。
+- **昇格演出を足すと、管理者画面「機能」タブの確認ボタンも自動で増える。** ui.jsの`renderAdminPromoteCheckBtns()`が`SKIN_MEDIA`から`promote.video`を持つスキンを列挙して作るので、**index.htmlにもui.jsにもボタンを書き足さない。**
 - ピックアップは表ではなく1行の定数の書き換え(`GACHA_PICKUP_SSR` / `RAID_GACHA_PICKUP`)。**タイトルの「(◯◯ピックアップ)」もガチャ画面・ロビーの記念ポップアップの画像も、この定数と`SKIN_MEDIA.promoImg`から作られる**ので、ツールが直すのは定数と表だけでよい。
 - 書き込みは**Git Data API**(blobs→tree→commit→PATCH ref)。ファイル単位のPUTだと18コミットになる。読み込みは**Contents API**(Pages経由だとSWのキャッシュで古い内容を掴む)。
 

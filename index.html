@@ -751,9 +751,10 @@
     <button id="adminRaidDemoBtn" class="admin-grant-dia-btn">🐉 レイドをデモプレイ(開催前でも入れる・記録は残らない)</button>
     <button id="adminSeason1Btn" class="admin-grant-dia-btn">🗓️ シーズン1(準備プレビュー・非公開)</button>
     <button id="adminSsrPromoteCheckBtn" class="admin-grant-dia-btn">🎬 ガチャ昇格演出確認</button>
-    <button id="adminRockPromoteCheckBtn" class="admin-grant-dia-btn">⛰️ 轟金剛 昇格演出確認</button>
-    <button id="adminAquaPromoteCheckBtn" class="admin-grant-dia-btn">🐙 大喰いの利世 昇格演出確認</button>
-    <button id="adminGutsPromoteCheckBtn" class="admin-grant-dia-btn">⚔️ 狂戦士ガッツ 昇格演出確認</button>
+    <!-- 専用の昇格演出を持つSSRスキンのボタンは data.js の SKIN_MEDIA から自動生成する
+         (ui.js の renderAdminPromoteCheckBtns)。モンスター作成スタジオで昇格演出を
+         足すと SKIN_MEDIA に promote が増えるので、ここへの追記は不要 -->
+    <div id="adminPromoteCheckBtns"></div>
     <button id="adminAquaBattleBgmCheckBtn" class="admin-grant-dia-btn">🎵 大喰いの利世 バトルBGM素材確認</button>
   </div>
   <div id="adminStatsPane">

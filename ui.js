@@ -2166,44 +2166,55 @@ function ssrPromoteDebugLog(line){
   el.classList.remove('hidden');
   el.textContent = ssrPromoteDebugLines.join('\n');
 }
-/* スキンごとの昇格演出メディアは data.js の SKIN_MEDIA[skinId].promote から作る。
-   専用の動画が無いSSRは既定(ssr_promote.*)を使う。
+/* 昇格演出は「共通(ssr_promote.*)」と「スキン専用(SKIN_MEDIA[skinId].promote)」の2種類の素材があり、
+   下の3つの関数で1本ずつの素材(media)と、その再生順(stages)を組み立てる。
    se/ensureSeはSE本体・先読み関数を直接参照する(audio.jsのconstはwindowのプロパティにならないため、
    文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)。
    bgmOnReveal は「自分の専用BGMのどの区分へ切り替えるか」(battle/final5/lastBattle)。
    指定が無ければリビール後のBGMは元のトラックへ戻す。 */
-function ssrPromotionMediaFor(skinId){
-  const p = (typeof skinMediaOf==='function' && skinMediaOf(skinId) || {}).promote;
-  if(p && p.video){
-    return {
-      videoWebm: p.video + '.webm', videoMp4: p.video + '.mp4',
-      se: (typeof skinPromoteSe==='function') ? skinPromoteSe(skinId) : null,
-      ensureSe: (typeof ensureSkinPromoteSe==='function') ? ()=>ensureSkinPromoteSe(skinId) : null,
-      // 専用動画があるスキンは音声も付いているので、タップ待ち画像を挟まず直接リビールへ進む
-      skipTapImage: p.skipTapImage !== false,
-      safetyMs: p.safetyMs || 20000,   // 動画+音声が終わらないときの保険(動画より長く取る)
-      bgmOnReveal: (p.bgmOnReveal && typeof skinBgmTrack==='function')
-        ? skinBgmTrack(skinId, p.bgmOnReveal) : null,
-    };
-  }
+function ssrPromotionDefaultMedia(){
   return {
+    label: '共通',
     videoWebm: 'video/ssr_promote.webm', videoMp4: 'video/ssr_promote.mp4',
     se: (typeof seSsrPromote!=='undefined') ? seSsrPromote : null,
     ensureSe: (typeof ensureSsrPromoteSeBuffer==='function') ? ensureSsrPromoteSeBuffer : null,
     skipTapImage: false, safetyMs: 4000, bgmOnReveal: null,
   };
 }
+function ssrPromotionSkinMedia(skinId){
+  const p = (typeof skinMediaOf==='function' && skinMediaOf(skinId) || {}).promote;
+  if(!(p && p.video)) return null;
+  return {
+    label: '専用',
+    videoWebm: p.video + '.webm', videoMp4: p.video + '.mp4',
+    se: (typeof skinPromoteSe==='function') ? skinPromoteSe(skinId) : null,
+    ensureSe: (typeof ensureSkinPromoteSe==='function') ? ()=>ensureSkinPromoteSe(skinId) : null,
+    // 専用動画があるスキンは音声も付いているので、タップ待ち画像を挟まず直接リビールへ進む
+    skipTapImage: p.skipTapImage !== false,
+    safetyMs: p.safetyMs || 20000,   // 動画+音声が終わらないときの保険(動画より長く取る)
+    bgmOnReveal: (p.bgmOnReveal && typeof skinBgmTrack==='function')
+      ? skinBgmTrack(skinId, p.bgmOnReveal) : null,
+  };
+}
+/* 再生する順番。**専用の昇格演出を持つスキンは、共通(ssr_promote)を前に挟んでから専用へ進む。**
+   専用を持たないSSRは共通1本だけで、従来とまったく同じ動き(タップ待ち画像→リビール)。
+   段を増やしたいときはこの配列に足すだけでよい(再生側はstagesを順番に回すだけ)。 */
+function ssrPromotionStages(skinId){
+  const skin = ssrPromotionSkinMedia(skinId);
+  return skin ? [ssrPromotionDefaultMedia(), skin] : [ssrPromotionDefaultMedia()];
+}
+/* 昇格演出の全体。BGMの停止/復帰とオーバーレイの開閉は「通し」で1回ずつ行い、
+   動画1本ぶんの再生は runSsrPromotionStage に任せる(段が何本でも同じ流れになる)。 */
 function runSsrPromotionSequence(skinId, onContinue){
-  const media = ssrPromotionMediaFor(skinId);
+  const stages = ssrPromotionStages(skinId);
   const ov = document.getElementById('ssrPromoteOverlay');
-  const video = document.getElementById('ssrPromoteVideo');
-  const tapImg = document.getElementById('ssrPromoteTapImg');
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
-  video.classList.remove('hidden'); tapImg.classList.add('hidden');
-  // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック(またはmedia.bgmOnReveal)へ切り替える
+  // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック
+  // (または最後の段の bgmOnReveal)へ切り替える
   if(typeof bgmSetTrack==='function' && typeof bgmDesiredTrack==='function'){
-    ssrPromoteBgmResumeTrack = media.bgmOnReveal || bgmDesiredTrack();
+    const last = stages[stages.length-1];
+    ssrPromoteBgmResumeTrack = last.bgmOnReveal || bgmDesiredTrack();
     // スキン専用BGM(bgm_*.mp3)は試合開始時にしか先読みされないため、ここで切替前
     // (動画再生中の十数〜20秒)に読み込みを始めておく。先読みなしだとバッファが無い状態で
     // start()が無視され、リビール時に無音のままになる
@@ -2211,6 +2222,27 @@ function runSsrPromotionSequence(skinId, onContinue){
        && typeof ensureSkinBgmBuffers==='function') ensureSkinBgmBuffers(ssrPromoteBgmResumeTrack.split(':')[1]);
     bgmSetTrack(null);
   }
+  ov.classList.remove('hidden');
+  let idx = 0;
+  const runNext = ()=>{
+    if(idx >= stages.length){
+      ssrPromoteContinue = null;
+      ov.classList.add('hidden');
+      if(onContinue) onContinue();
+      return;
+    }
+    const media = stages[idx++];
+    ssrPromoteDebugLog(`--- ${idx}/${stages.length} ${media.label}の昇格演出 ---`);
+    runSsrPromotionStage(media, skinId, runNext);
+  };
+  runNext();
+}
+// 昇格演出の1段(動画1本+同時に鳴らす音声)。終わったら onStageEnd を呼ぶ。
+// オーバーレイの開閉とBGMは呼び出し元(runSsrPromotionSequence)が持つ。
+function runSsrPromotionStage(media, skinId, onStageEnd){
+  const video = document.getElementById('ssrPromoteVideo');
+  const tapImg = document.getElementById('ssrPromoteTapImg');
+  video.classList.remove('hidden'); tapImg.classList.add('hidden');
   // 動画ファイル自体は音無し(音声はWeb Audio側のSEを別途同時再生する)。
   // ミュートにしておくと自動再生がブロックされにくく、映像の頭切れも防げる。
   video.muted = true;
@@ -2221,15 +2253,14 @@ function runSsrPromotionSequence(skinId, onContinue){
   if(sourceMp4) sourceMp4.src = media.videoMp4;
   if(sourceWebm) sourceWebm.src = media.videoWebm;
   video.load();
-  ov.classList.remove('hidden');
   ssrPromoteDebugLog(`skinId=${skinId} 動画src(webm)=${media.videoWebm} 動画src(mp4)=${media.videoMp4}`);
   let advanced = false;
   const finish = (reason)=>{
     if(advanced) return; advanced = true;
-    ssrPromoteDebugLog(`→ 演出終了・次へ (${reason})`);
+    ssrPromoteDebugLog(`→ この段の演出終了・次へ (${reason})`);
     clearTimeout(safetyTimer);
     video.classList.add('hidden'); video.pause();
-    if(ssrPromoteContinue) ssrPromoteContinue(); // ov非表示・後片付けも含めてここで実行される
+    if(ssrPromoteContinue) ssrPromoteContinue(); // 後片付けも含めてここで実行される
   };
   const showTapImage = (reason)=>{
     if(advanced) return; advanced = true;
@@ -2279,12 +2310,13 @@ function runSsrPromotionSequence(skinId, onContinue){
     if(media.ensureSe) media.ensureSe();
     startPlayback();
   }
+  // タップ待ち画像のタップ(ssrPromoteOverlayのclick)からもここへ来る。
+  // 次の段があればそれを始め、無ければ通し全体の後始末へ進む(onStageEnd = runNext)
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
     clearTimeout(safetyTimer);
     video.onended = null; video.onerror = null; video.onplaying = null; video.onstalled = null; video.onwaiting = null;
-    ov.classList.add('hidden');
-    if(onContinue) onContinue();
+    if(onStageEnd) onStageEnd();
   };
 }
 // 開発・管理者確認用: 3つの素材(動画mp4/動画webm/画像)が実際に読み込めるかをHTTPステータスで確認する。
@@ -6709,9 +6741,22 @@ async function adminRunPromoteCheck(skinId){
     showSsrReveal(skinId, ()=>{ pushToast(`🎬 ${name} 演出確認 完了`); ssrPromoteDebugMode = false; });
   });
 }
-document.getElementById('adminRockPromoteCheckBtn').addEventListener('click', ()=>adminRunPromoteCheck('rock_ssr'));
-document.getElementById('adminAquaPromoteCheckBtn').addEventListener('click', ()=>adminRunPromoteCheck('aqua_ssr'));
-document.getElementById('adminGutsPromoteCheckBtn').addEventListener('click', ()=>adminRunPromoteCheck('guts_ssr'));
+/* 専用の昇格演出を持つSSRスキンの確認ボタンを SKIN_MEDIA から自動生成する。
+   モンスター作成スタジオでSSR昇格演出を追加すると SKIN_MEDIA に promote の行が増えるので、
+   index.html もこの関数も触らずにボタンが1つ増える(**手書きの対応表を新しく作らない**)。
+   絵文字はスキンごとに持たず🎬で統一する(表を増やすと追記漏れで化けるため)。 */
+function renderAdminPromoteCheckBtns(){
+  const wrap = document.getElementById('adminPromoteCheckBtns');
+  if(!wrap || typeof SKIN_MEDIA==='undefined') return;
+  const ids = Object.keys(SKIN_MEDIA).filter(id=> SKIN_MEDIA[id].promote && SKIN_MEDIA[id].promote.video);
+  wrap.innerHTML = ids.map(id=>{
+    const name = (typeof skinMeta==='function' && SSR_SKINS[id]) ? skinMeta(id).name : id;
+    return `<button class="admin-grant-dia-btn" data-promote-skin="${id}">🎬 ${name} 昇格演出確認</button>`;
+  }).join('');
+  wrap.querySelectorAll('[data-promote-skin]').forEach(b=>
+    b.addEventListener('click', ()=>adminRunPromoteCheck(b.dataset.promoteSkin)));
+}
+renderAdminPromoteCheckBtns();
 // 大喰いの利世専用の試合中BGM3曲の素材読み込みを確認するボタン(音自体はBGM確認グリッドから再生)
 document.getElementById('adminAquaBattleBgmCheckBtn').addEventListener('click', async ()=>{
   const { battle, final5, lastBattle } = await checkAquaBattleBgmAssets();

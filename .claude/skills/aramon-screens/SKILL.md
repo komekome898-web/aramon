@@ -84,4 +84,5 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - 「プレイ状況」「音声確認」タブ。各ペインは`display:flex`の縦フレックス(blockのままだと内側がスクロール不能)。音声確認内は「SE」「BGM」サブタブで、SEは`SE_DEFS`から自動列挙。このペインでは共通タップSEを鳴らさない。
 - **プレイ状況は`matchLogs`(Firebase)の一件ずつのログが元データ。** 通常の試合は`logMatchForAdmin()`、レイドは`logRaidMatchForAdmin()`(`raidShowResult`内、`noRecord`=準備中/デモは記録しない)。**レイド分は`raid:true`と`raidDamage`/`raidResult`を追加で持つだけで、`map:'raid'`(`MAPS.raid`)は通常の地形と同じ扱い**なので地形別チャートは変更不要。モード表示(ソロ/マルチ/レイド)は`adminModeLabel(r)`1か所に集約。新しいモード・ログ項目を足すときはここを起点にする。
 - 「💎ダイヤ+500」(`#adminGrantDiaBtn`)は現在hidden(機能は残置)。
+- **「機能」タブのSSR昇格演出の確認ボタンは`SKIN_MEDIA`から自動生成**(`renderAdminPromoteCheckBtns()` → `#adminPromoteCheckBtns`)。`promote.video`を持つスキンのぶんだけ並ぶので、スキンを足してもHTMLもJSも触らなくてよい。**包んでいるdivは親と同じ縦フレックスにしておく**(divで包むと1つのフレックス項目になり、中のボタンが横に流れる)。
 - 「📊 パフォーマンス表示」は aramon-performance を参照。

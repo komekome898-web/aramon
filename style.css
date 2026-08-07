@@ -3075,6 +3075,10 @@
      (block のままだと内側の flex 高さ制約が効かず、はみ出した内容が見えなくなる/閉じるボタンが中央に浮く) */
   #adminStatsPane, #adminSePane, #adminToolsPane{ display:flex; flex-direction:column; align-items:center; width:100%; flex:1 1 auto; min-height:0; }
   #adminToolsPane{ margin-top:18px; gap:10px; overflow-y:auto; min-height:0; width:100%; padding-bottom:16px; }
+  /* 昇格演出の確認ボタンはSKIN_MEDIAから自動生成するのでdivで包んでいる。
+     包むと1つのフレックス項目になってボタンが横に流れてしまうため、
+     中も親と同じ縦フレックスにして「直接ボタンを並べたとき」と同じ見た目に保つ */
+  #adminPromoteCheckBtns{ display:flex; flex-direction:column; align-items:center; gap:10px; width:100%; }
   #adminToolsPane::-webkit-scrollbar{ width:10px; }
   #adminToolsPane::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
   #adminToolsPane::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
