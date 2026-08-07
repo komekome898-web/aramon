@@ -60,6 +60,16 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 `render.js`の`touchmove` / `input.js`の`touchend` / `input.js`の`dblclick`。
 漏れるとスクロールもタップも効かない(管理者・ランキング・観戦バー・文字入力で実際に踏んだ)。3リストは同じ内容に保つ。
 
+## タップの手応え(押した場所を見せる)
+
+2つセットで担当が分かれている。**どちらもレイアウトを動かさない**(`transform`と`opacity`だけ)。
+
+- **ボタンの押し込み**: `button:active{ transform:scale(0.96) }`(style.css末尾)。低い詳細度なので、独自の`:active`を持つボタン(`#mlEntryBtn`など)はそちらが勝つ。
+- **波紋**: `input.js`の`spawnTapRipple()`が`pointerdown`(capture・passive)で`.tap-ripple`を1枚出し、0.45秒で自分を消す。
+  - **`#appRoot`は縦持ちで90度回転しているので、波紋は回転の外(`document.body`直下)に置き、`clientX/clientY`をそのまま使う。** 中に入れると持ち方で指の位置とズレる。
+  - **`#hud`内と`#gameCanvas`では出さない。** 試合中は指が出しっぱなしになり、ジョイスティック/FIRE/視点操作の邪魔になる。
+  - `pointer-events:none`+自分で消えるので、**スクロールロック除外リストへの追加は不要**(`#perfOverlay`と同じ扱い)。
+
 ## ポップアップ(`.mastermon-confirm-overlay`系)の定型
 
 - 幅は複合セレクタ `.mastermon-confirm-box.xxx-box{ max-width:min(760px, calc(95 * var(--vw))); width:同 }`(単一クラスだと基底の340pxに負ける)

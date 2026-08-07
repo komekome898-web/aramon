@@ -42,7 +42,7 @@ description: 荒野モン動の戦闘ロジック(combat.js)・技のギミッ�
 
 - 通貨は`loadWallet/saveWallet/addWallet`、試合報酬は`showResult`(定数`GOLD_*`/`DIA_*`)。
 - アイテムは`PLAYER_ITEMS`、バッグは`loadBag/saveBag/addBagItem`、ガチャ`GACHA_POOL`(10連10個目は`GACHA_TICKET_POOL`確定)、ショップ`SHOP_ITEMS`。
-- バッグUIは左=アイコングリッド+説明、右=対象マスモン一覧。「選択→使用」の2段階で、**アイテムを切り替えてもマスモンの選択は保持する**。ステータス上昇アイテムは上限(`mastermonStatCap`。通常999・転生済みは999+100×転生回数)を考慮して変動値を出し、超える個数は選べない。
+- バッグUIは左=アイコングリッド+説明、右=対象マスモン一覧。「選択→使用」の2段階で、**アイテムを切り替えてもマスモンの選択は保持する**。マスモン一覧は`innerHTML`で作り直すので、**`renderBagTargetList()`は前後で`scrollTop`を持ち越す**(入れないと選ぶたびに先頭へ飛ぶ)。フリートレーニングチケットを使ったときだけ`#bagGoTrainBtn`(そのマスモンのトレーニング画面へ直行)を出す。`showBagGoTrainBtn()`は`renderBag()`の**あと**に呼ぶこと(先に呼ぶと再描画で消える)。ステータス上昇アイテムは上限(`mastermonStatCap`。通常999・転生済みは999+100×転生回数)を考慮して変動値を出し、超える個数は選べない。
 - **種族の基礎値(HP・移動速度)への加算は `mastermonBaseBonus(mm)` 1か所にまとまっている。** 内訳は転生回数ぶん(`REBIRTH_BASE_*_BONUS`)と基礎値アイテムぶん(`mm.baseHp` / `mm.baseSpd`)。**直接 `mm.baseHp` を足し込まない。**
 - **基礎値アイテム**(レイド報酬限定・`PLAYER_ITEMS` の `base:'hp'|'speed'`)は「生命の果実」「加速剤」で、1個あたり `BASE_ITEM_GAIN`。**上限が無く、育成倍率が乗る前に足される**ので育ったマスモンほど効く。使用時の値は必ず `safeBaseAmount()` を通す(壊れた値でHPがNaNになると試合が続けられなくなる)。
 - **マルチへ送るのは「アイテムぶんだけ」**(`baseHp`/`baseSpd`)。受け側が `rebirth` から転生ぶんを足し直すので、**合計を送ると転生ぶんが二重に乗る。**

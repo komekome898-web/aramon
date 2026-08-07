@@ -24,7 +24,10 @@ description: 荒野モン動の音(audio.js)。BGMトラック/intensity・SE定
 
 - **長いBGMは`createBgmLoop(url, gain, keepPos)`**: `ensure()`(fetch+decode)/`start()`/`stop()`(0.6秒/0.4秒フェード)。合成との二重再生は`bgmFileLoopActive()`で防ぎ、**実音源が鳴っている間は合成ステップを一切呼ばない**。未ロード/失敗時のみ合成へフォールバック。試合中の2曲は`audioInit()`で先読み、ショップ曲は画面を開いたときに初回ロード。曲ごとの音量は`BGM_FILE_GAIN`。
 - **切替は等パワークロスフェード(`_equalPowerCurve`)。** 線形だと合計音量が一時的に1.4倍になる。上げ側`sin`/下げ側`cos`で、**下げ側は終点基準(`to + (from-to)*cos`)**。
-- **ロビーBGMだけ再生位置を記憶する**(`keepPos`。`stop()`で経過を足し`start()`で`src.start(t, offset)`)。「いちか(実音源)」と「オリジナル(合成)」の切替は`lobbyBgmMode`(localStorage `aramon_lobby_bgm_v1`)+ヘッダーの`#headerBgmBtn`。
+- **ロビーBGMだけ再生位置を記憶する**(`keepPos`。`stop()`で経過を足し`start()`で`src.start(t, offset)`)。
+- **ロビーで流す曲はプレイヤーが一覧から選ぶ。** 選択は`lobbyBgmMode`(localStorage `aramon_lobby_bgm_v1`)、画面は`#lobbyBgmOverlay`(ヘッダーの`#headerBgmBtn`から開く)。並ぶ曲は`lobbyBgmChoices()`が`LOBBY_BGM_BASE`+**所持しているSSRスキンの専用曲**(`loadSkins().owned`で絞る)から作るので、**曲やスキンを足しても画面側への追記は要らない**。曲の解決は`lobbyBgmLoop()`(idだけで引く。毎tick呼ばれるので所持判定=localStorage読みを挟まない)。**`'original'`は実音源なしの合成BGM担当なので`loop()`が`null`を返す。**保存値が未知(スキンを消した/古い値)なら既定の「いちか」へ落ちる。
+  - 一覧に出す区分名は`LOBBY_BGM_SLOT_SHORT`(序盤/決戦/ラスト)。**意味の正は`SKIN_BGM_SLOTS`**で、こちらは1行に収めるための言い換え。
+  - 管理者画面のロビー曲確認は専用トラック`'lobbyFile'`。**プレイヤーの選択を書き換えない**(以前は一時的に`setLobbyBgmMode('ichika')`していた)。トラック名を足したら`bgmFileLoopTarget`/`bgmStepDur`/`bgmSetTrack`のintensityリセット/合成フォールバックの4か所に同じ名前を通すこと。
 - **トレーニング画面は`bgmSetTrack('training')`。切替判断は`updateMetaBgm()`(ui.js)1か所**に集約(`mmOpenTab()`と`#mastermonScreen`のMutationObserverから呼ぶ)。試合中とショップ表示中は触らない。
 - **短い内蔵SEは`createSeOneShot(dataUrl|url, gain)`。** `play()`が未ロード/音量0でfalseを返すので`if(!seXxx.play()) SE_DEFS.既定SE(t,o)`と書けば必ず鳴る。`SE_DEFS`に足せば管理者画面のSE確認に自動で載る(表示名`SE_TEST_LABELS`、間引き`SE_MIN_GAP`)。
 - **「実音源のあとに合成SEをつなげる」ときは`play(when)`に開始時刻を渡す**(ヒノトリ`fireWave`)。長さは`.dur()`。

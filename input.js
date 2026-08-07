@@ -7,15 +7,39 @@ document.addEventListener('selectstart', (e)=>{ if(!isTextEntry(e.target)) e.pre
 
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
 }, {passive:false});
 document.addEventListener('dblclick', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay')) return;
   e.preventDefault();
 });
+
+/* ===== タップの視覚フィードバック(波紋) =====
+   どこを押したのか分かるように、指を置いた位置へ小さな波紋を1つ出して消す。
+   ・試合中の操作(#hudのジョイスティック/FIRE/DASH と、視点を動かす#gameCanvas)では出さない。
+     指が出しっぱなしになるうえ、操作の邪魔になるため。
+     ボタンの押し込み(縮む)はCSSの button:active 側が担当する。
+   ・#appRootは縦持ちのとき90度回転しているので、波紋は回転の外(body直下)へ置き、
+     画面座標(clientX/clientY)をそのまま使う。こうすれば持ち方に関係なく指の下に出る。
+   ・pointer-events:none・アニメ終了で自分を消す ので、他のタップ判定には一切触れない。 */
+const TAP_RIPPLE_MS = 450;
+function spawnTapRipple(x, y){
+  const d = document.createElement('div');
+  d.className = 'tap-ripple';
+  d.style.left = x + 'px';
+  d.style.top  = y + 'px';
+  document.body.appendChild(d);
+  setTimeout(()=>{ if(d.parentNode) d.parentNode.removeChild(d); }, TAP_RIPPLE_MS);
+}
+document.addEventListener('pointerdown', (e)=>{
+  if(e.pointerType==='mouse' && e.button!==0) return;
+  const t = e.target;
+  if(t && t.closest && (t.closest('#hud') || t.id==='gameCanvas')) return;
+  spawnTapRipple(e.clientX, e.clientY);
+}, { passive:true, capture:true });
 
 // ===== 文字入力は共通ポップアップで行う =====
 // iOSのソフトキーボードは実画面の下側を覆う。強制横向き(#appRootを90度回転)では

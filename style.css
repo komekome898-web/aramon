@@ -355,6 +355,26 @@
   .lobby-menu-title{ font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:1px; color:var(--ink);
     margin-bottom:10px; padding-right:46px; }
   .lobby-menu-list{ display:flex; flex-direction:column; gap:7px; }
+  /* ロビーBGM選択。曲数はスキン所持で増えるので、横に並べて折り返す */
+  .lobby-bgm-note{ font-size:11px; line-height:1.4; color:var(--ink-dim); margin-bottom:9px; }
+  .lobby-bgm-list{ display:flex; flex-wrap:wrap; gap:5px; }
+  .lobby-bgm-item{
+    flex:1 1 calc(33.333% - 5px); min-width:130px; display:flex; align-items:center; gap:6px;
+    padding:8px 9px; border-radius:10px; cursor:pointer; text-align:left; color:var(--ink);
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+  }
+  .lobby-bgm-item:active{ border-color:var(--amber); background:rgba(244,196,48,0.12); }
+  .lobby-bgm-item.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:#f4c430; }
+  .lobby-bgm-mark{ flex-shrink:0; font-size:13px; }
+  /* 曲名と説明は1行に収める(2行になると全曲ぶんでスクロールが出る) */
+  .lobby-bgm-text{ min-width:0; flex:1 1 auto; display:flex; align-items:baseline; gap:5px; }
+  .lobby-bgm-name{ flex:0 1 auto; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:0.5px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lobby-bgm-sub{ flex:0 1 auto; font-size:9px; color:var(--ink-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lobby-bgm-item.active .lobby-bgm-sub{ color:rgba(26,19,6,0.7); }
+  .lobby-bgm-item.ssr .lobby-bgm-name::after{ content:' SSR'; font-size:9px; color:#ffd76a; }
+  .lobby-bgm-item.ssr.active .lobby-bgm-name::after{ color:#7a5a00; }
   .lobby-menu-btn{
     display:flex; align-items:center; gap:10px; width:100%; cursor:pointer; text-align:left;
     padding:10px 12px; border-radius:10px; color:var(--ink);
@@ -555,15 +575,16 @@
   }
   #topHeader .header-right{ justify-self:end; gap:10px; }
   #topHeader .header-wallet{ justify-self:end; display:flex; gap:12px; flex-shrink:0; }
-  /* ロビーBGMの切替チップ。押すたびに提供音源/オリジナルが入れ替わる */
+  /* ロビーBGMのチップ。押すと曲の選択画面が開く。曲名は長くなるので幅を制限して省略する */
   .header-bgm-btn{
     display:flex; align-items:center; gap:4px; flex-shrink:0; cursor:pointer;
-    height:26px; padding:0 10px; border-radius:13px;
+    height:26px; padding:0 10px; border-radius:13px; max-width:120px;
     color:var(--ink); background:rgba(255,255,255,0.07); border:1px solid var(--panel-line);
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.5px; line-height:1;
   }
   .header-bgm-btn:active{ background:rgba(244,196,48,0.22); }
-  .header-bgm-btn .header-bgm-icon{ font-size:10px; }
+  .header-bgm-btn .header-bgm-icon{ font-size:10px; flex-shrink:0; }
+  .header-bgm-btn #headerBgmName{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #topHeader .header-wallet span{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink); }
   .account-box{ max-width:min(480px, calc(92 * var(--vw))); }
   .account-note{ font-size:11px; color:var(--ink-dim); line-height:1.6; margin-bottom:10px; text-align:left; }
@@ -644,6 +665,13 @@
     margin-top:8px; flex:1 1 auto; min-height:0; max-height:calc(66 * var(--vh));
     overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:8px;
+  }
+  /* トレーニングチケットを使った直後だけ出る導線。一覧の下に固定で置く(スクロールさせない) */
+  .bag-go-train-btn{
+    flex:0 0 auto; margin-top:8px; padding:8px 12px; border-radius:8px; cursor:pointer; width:100%;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:0.5px;
+    color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); border:1px solid #e0af1e;
+    box-shadow:0 0 12px -3px rgba(255,206,120,0.9);
   }
   .bag-target-btn{
     display:flex; flex-direction:column; gap:6px;
@@ -982,6 +1010,15 @@
   @keyframes winPulse{ 0%,100%{ transform:scale(1); text-shadow:0 0 30px rgba(244,196,48,0.6); }
     50%{ transform:scale(1.05); text-shadow:0 0 48px rgba(244,196,48,0.95); } }
   /* 通知ドット(デイリーの受取可能サイン) */
+  /* 【必須】飾りのポップ・バッジ・通知ドットはタップを一切拾わせない。
+     これらはボタンの角から外へはみ出して置いてあるので、判定が残っていると
+     ①その下/上にあるボタンを押せない ②ボタンの外にあるポップ(.mode-tab-wrap直下の
+     .raid-soon-pop / .multi-xp-pop)を踏むとボタン自体が反応しない、という誤タップになる。
+     実際に「プレイモードでレイドを選んでも切り替わらない」不具合の原因がこれだった。
+     **飾りを新しく足したら必ずここへ追加する。** */
+  .notif-dot, .season-ssr-pop, .raid-gacha-pop, .raid-soon-pop, .multi-xp-pop, .lobby-wait-badge{
+    pointer-events:none;
+  }
   .has-dot{ position:relative; }
   .notif-dot{ position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
     background:var(--danger); border:2px solid #04060a; box-shadow:0 0 6px rgba(255,64,64,0.8); }
@@ -3243,3 +3280,21 @@
 }
 #perfOverlay.warn{ color:#ffd27a; border-color:rgba(255,210,122,0.45); }
 #perfOverlay.bad{ color:#ff9a8a; border-color:rgba(255,154,138,0.5); }
+
+/* ===== タップの視覚フィードバック =====
+   「押したことが分かる」ための2つ。位置やレイアウトは動かさない(transform/opacityだけ)。
+   1) ボタンの押し込み: すべての<button>を押している間だけ少し縮める。
+      個別に :active を持つボタン(#mlEntryBtn など)はそちらの指定が優先される。
+   2) 波紋: 指を置いた位置に出す(生成はinput.jsのspawnTapRipple)。
+      #appRootの外(body直下)に置くので、縦持ちの強制横向き回転の影響を受けない。 */
+button:active{ transform:scale(0.96); }
+.tap-ripple{
+  position:fixed; left:0; top:0; z-index:9999; pointer-events:none;
+  width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%;
+  border:2px solid rgba(244,196,48,0.85); background:rgba(244,196,48,0.18);
+  animation: tapRipple 0.45s ease-out forwards;
+}
+@keyframes tapRipple{
+  0%{   transform:scale(0.35); opacity:0.9; }
+  100%{ transform:scale(1.15); opacity:0; }
+}

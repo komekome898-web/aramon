@@ -572,6 +572,7 @@ function mlConfirmEntry(){
   renderSelectorCards();
   mlCarousel.refreshCards();
   if(game.trainingRange) rangeApplyMonsterChange(); // 訓練場では即その場で乗り換える
+  saveLobbyPrefs();
   if(typeof pushToast==='function') pushToast(`${ELEMENTS[key].label} で参戦します`);
 }
 
@@ -750,6 +751,56 @@ function updateLobbyPickLabels(){
   }
 }
 
+/* ===== 前回の選択(マップ / プレイモード / 参戦するモンスター)を憶えておく =====
+   毎回選び直す手間を無くすため、選ぶたびに保存して起動時に復元する。
+   **端末ごとの操作の好みなのでアカウント同期には入れない**(視点設定と同じ扱い)。
+   値は復元時に必ず存在チェックする(消したマスモン・古いマップキーが残っていても壊れないように)。 */
+const LOBBY_PREFS_KEY = 'aramon_lobby_prefs_v1';
+function saveLobbyPrefs(){
+  try{
+    localStorage.setItem(LOBBY_PREFS_KEY, JSON.stringify({
+      map: game.selectedMap, real: !!game.realMapMode,
+      mode: netState.raid ? 'raid' : netState.mode,
+      cap: netState.capacity,
+      mmKey: game.selectedMastermonKey || null,
+      element: game.selectedElement || null,
+    }));
+  }catch(err){}
+}
+function restoreLobbyPrefs(){
+  let p = null;
+  try{ p = JSON.parse(localStorage.getItem(LOBBY_PREFS_KEY)); }catch(err){}
+  if(!p) return;
+  // --- 参戦するモンスター(マスモン優先。消えていればモンスター単体で復元) ---
+  const mms = (typeof loadMastermons==='function') ? loadMastermons() : {};
+  if(p.mmKey && mms[p.mmKey]){
+    game.selectedElement = p.mmKey;
+    game.selectedMastermonKey = p.mmKey;
+  } else if(p.element && ELEMENTS[p.element]){
+    game.selectedElement = p.element;
+    game.selectedMastermonKey = null;
+  }
+  // --- マップ(通常/リアルの切替も) ---
+  if(p.map === 'random' || MAPS[p.map]){
+    game.selectedMap = p.map;
+    document.querySelectorAll('.map-tab').forEach(t=> t.classList.toggle('active', t.dataset.map===p.map));
+  }
+  setRealMapMode(!!p.real);
+  // --- 人数(プレイモードより先に。selectModeTabが表示を作り直すため) ---
+  if(typeof p.cap==='number' && p.cap>=2){
+    netState.capacity = p.cap;
+    document.querySelectorAll('.cap-tab').forEach(t=> t.classList.toggle('active', Number(t.dataset.cap)===p.cap));
+  }
+  // --- プレイモード。レイドは開催が終わっていることがあるのでソロへ落とす ---
+  let mode = p.mode==='raid' || p.mode==='multi' ? p.mode : 'solo';
+  if(mode==='raid' && !(typeof raidPlayable==='function' && raidPlayable(raidMyAccountName()))) mode = 'solo';
+  const tab = document.querySelector(`.mode-tab[data-mode="${mode}"]`);
+  if(tab) selectModeTab(tab);
+  updatePlayButtonsEnabled();
+  if(typeof renderSelectorCards==='function') renderSelectorCards();
+  updateLobbyPickLabels();
+}
+
 // ---- 中央: 選択中モンスターの正面歩行モーション ----
 // 選択中が「マスモン」なら装備スキン込みの姿、「モンスター一覧」なら素の姿を出す。
 // 歩行コマが未対応/未ロードなら静止画にフォールバックする。
@@ -907,8 +958,33 @@ function stopLobbyRoomPoll(){
 // ヘッダーのロビーBGMチップの表示を今の選択に合わせる
 function updateLobbyBgmLabel(){
   const el = document.getElementById('headerBgmName');
-  if(!el || typeof getLobbyBgmMode!=='function') return;
-  el.textContent = getLobbyBgmMode()==='ichika' ? 'いちか' : 'オリジナル';
+  if(!el || typeof getLobbyBgmLabel!=='function') return;
+  el.textContent = getLobbyBgmLabel();
+}
+/* ロビーBGM選択。並ぶ曲は audio.js の lobbyBgmChoices() が作るので、
+   曲やSSRスキンを足してもここへの追記は要らない(手書きの対応表を作らない) */
+function renderLobbyBgmList(){
+  const list = document.getElementById('lobbyBgmList');
+  if(!list || typeof lobbyBgmChoices!=='function') return;
+  const cur = getLobbyBgmMode();
+  list.innerHTML = lobbyBgmChoices().map(c=>{
+    const on = c.id===cur;
+    return `<button class="lobby-bgm-item${on?' active':''}${c.ssr?' ssr':''}" data-bgm="${c.id}">
+      <span class="lobby-bgm-mark">${on?'▶':'🎵'}</span>
+      <span class="lobby-bgm-text"><span class="lobby-bgm-name">${c.label}</span>
+      <span class="lobby-bgm-sub">${c.note||''}</span></span></button>`;
+  }).join('');
+}
+function openLobbyBgmOverlay(){
+  if(typeof audioInit==='function') audioInit();   // タップ直後なのでここで音を起こしておく
+  renderLobbyBgmList();
+  document.getElementById('lobbyBgmOverlay').classList.remove('hidden');
+}
+function closeLobbyBgmOverlay(){ document.getElementById('lobbyBgmOverlay').classList.add('hidden'); }
+function pickLobbyBgm(id){
+  if(typeof setLobbyBgmMode==='function') setLobbyBgmMode(id);
+  updateLobbyBgmLabel();
+  renderLobbyBgmList();   // 選択中の印を付け替える(画面は開いたままで聴き比べられる)
 }
 function refreshLobby(){
   updateLobbyPickLabels();
@@ -1374,6 +1450,7 @@ document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagSelectedItem = null;   // renderBagで先頭アイテムを自動選択→一覧+ゲージが最初から表示
   bagPicker.targetKey = null; // 開き直したときは対象マスモン未選択から(アイテム切替では維持する)
   renderBag();
+  showBagGoTrainBtn(null);  // 前回のジャンプボタンを持ち越さない
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
 });
@@ -1659,6 +1736,9 @@ function bagBaseItemPreviewHtml(mm, baseKey, qty){
 function renderBagTargetList(){
   const data = loadMastermons();
   const pick = document.getElementById('bagTargetList');
+  // innerHTMLで作り直すとスクロール位置が先頭へ戻る。マスモンを選ぶ/アイテムを切り替える
+  // たびに一覧が飛んで見えるので、書き換えの前後で位置を持ち越す
+  const keepScroll = pick.scrollTop;
   const keys = Object.keys(data);
   if(keys.length===0){
     pick.innerHTML = '<div class="bag-empty">マスモンがいません。先にマスモン登録しよう！</div>';
@@ -1687,6 +1767,7 @@ function renderBagTargetList(){
       ${extra}
     </button>`;
   }).join('');
+  pick.scrollTop = keepScroll;   // 書き換えで先頭へ戻ったぶんを戻す
   pick.querySelectorAll('.bag-target-btn').forEach(b=>{
     b.addEventListener('click', ()=>{
       bagPicker.targetKey = (bagPicker.targetKey===b.dataset.key) ? null : b.dataset.key;
@@ -1749,6 +1830,27 @@ function useBagItem(itemKey, mmKey, qty){
   pushToast(resultText);
   renderBag(); // 消費後に再描画(残っていれば一覧+ゲージを再表示、0なら別アイテムへ)
   renderSelectorCards();
+  // トレーニングチケットは「使ったらすぐ使いたい」ので、その場から training タブへ飛べるようにする
+  showBagGoTrainBtn(itemKey==='freeTrainTicket' ? mmKey : null);
+}
+/* バッグ→トレーニングへのジャンプボタン。mmKeyがnullなら隠す。
+   renderBag()のあとに呼ぶこと(先に呼ぶと再描画で消える)。 */
+function showBagGoTrainBtn(mmKey){
+  const btn = document.getElementById('bagGoTrainBtn');
+  if(!btn) return;
+  const mm = mmKey && loadMastermons()[mmKey];
+  btn.classList.toggle('hidden', !mm);
+  if(!mm) return;
+  btn.textContent = `🎫 ${mm.name} のトレーニングへ`;
+  btn.onclick = ()=>{
+    btn.classList.add('hidden');
+    lobbyCloseOverlay('bagOverlay');
+    // マスモン画面を開いてから、そのマスモンの詳細→トレーニングタブまで一気に進める
+    mastermonDetailKey = mmKey;
+    openMastermonScreen(false);
+    openMastermonDetail(mmKey, null);
+    mmOpenTab('training');
+  };
 }
 
 // ===== ガチャ(スキンガチャ・全画面) =====
@@ -2834,8 +2936,17 @@ const netState = {
 let hostSpectating = false;
 let matchBeginning = false; // beginMultiplayerMatchの多重起動防止フラグ
 
-document.querySelectorAll('.mode-tab').forEach(tab=>{
-  tab.addEventListener('click', ()=>{
+/* タブの選択は #modeTabs への委譲で受ける。
+   「みんなと対戦」「レイドバトル」はポップを乗せるために .mode-tab-wrap で包んであり、
+   **ボタンの外側(ラッパーの余白やポップの上)を踏むと何も起きなかった**。
+   ラッパーごと拾って中のボタンへ解決することで、見えている範囲のどこを触っても選べる
+   (これが「レイドを選んでもロビーの表示が切り替わらない」不具合の原因だった)。 */
+document.getElementById('modeTabs').addEventListener('click', (e)=>{
+  const wrap = e.target.closest('.mode-tab-wrap');
+  const tab = e.target.closest('.mode-tab') || (wrap && wrap.querySelector('.mode-tab'));
+  if(tab) selectModeTab(tab);
+});
+function selectModeTab(tab){
     document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     const isRaid = tab.dataset.mode==='raid';
@@ -2851,8 +2962,8 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
     if(isRaid) updateRaidModePanel();
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
-  });
-});
+    if(typeof saveLobbyPrefs==='function') saveLobbyPrefs();
+}
 // game.selectedMap が 'random' の場合は実在マップからランダムに1つ選ぶ
 // リアルマップ(テスト)ならWebGLの地形レイヤーを有効化する。
 // 初期化に失敗した端末では自動的に従来の2D地面に戻る(render.js側で判定)
@@ -2911,6 +3022,7 @@ function setRealMapMode(on){
     : '従来のマップ。地面は平らです';
   updateMapPreview();
   if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+  if(typeof saveLobbyPrefs==='function') saveLobbyPrefs();
 }
 document.querySelectorAll('#mapModeToggle .map-mode-btn').forEach(btn=>{
   btn.addEventListener('click', ()=> setRealMapMode(btn.dataset.mode==='real'));
@@ -2923,6 +3035,7 @@ document.querySelectorAll('.map-tab').forEach(tab=>{
     game.selectedMap = (key==='random' || MAPS[key]) ? key : 'wild';   // 通常マップのキーで保持し、リアルかどうかはトグルで決める
     updateMapPreview();
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+    saveLobbyPrefs();
   });
 });
 setRealMapMode(false);   // 起動時は通常マップ
@@ -2934,6 +3047,7 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
     netState.raid = false;   // 通常のマルチではレイドの部屋を作らない
     // 右カラムの「プレイモード」の表示にも人数を反映する(マップ側と同じ扱い)
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+    saveLobbyPrefs();
   });
 });
 
@@ -5517,6 +5631,7 @@ function renderMastermonDetail(key){
   document.getElementById('mastermonUseBtn').onclick = ()=>{
     game.selectedElement = key;
     game.selectedMastermonKey = key;
+    saveLobbyPrefs();
     updatePlayButtonsEnabled();
     mmCarousel.stopAnim();
     document.getElementById('mastermonScreen').classList.add('hidden');
@@ -6687,11 +6802,9 @@ function adminPlayBgm(id){
   if(id==='stop'){ if(typeof bgmSetTrack==='function') bgmSetTrack(null); return; }
   if(id==='title'){ if(typeof bgmSetTrack==='function') bgmSetTrack('title'); return; }
   if(id==='lobby'){
-    // ロビー曲の確認。切替モードに関係なく鳴らしたいので一時的に「いちか」にしてタイトルへ
-    if(typeof setLobbyBgmMode==='function') setLobbyBgmMode('ichika');
-    if(typeof updateLobbyBgmLabel==='function') updateLobbyBgmLabel();
-    if(typeof ensureBgmLobbyBuffer==='function') ensureBgmLobbyBuffer();
-    if(typeof bgmSetTrack==='function') bgmSetTrack('title');
+    // ロビー曲(いちか)の確認。プレイヤーが選んでいるロビーBGMは書き換えず、専用トラックで鳴らす
+    if(typeof bgmLobby!=='undefined') bgmLobby.ensure();
+    if(typeof bgmSetTrack==='function') bgmSetTrack('lobbyFile');
     return;
   }
   if(id==='training'){
@@ -7038,11 +7151,19 @@ function initTitleScreen(){
   const mmScr = document.getElementById('mastermonScreen');
   if(mmScr) new MutationObserver(()=>updateMetaBgm()).observe(mmScr, { attributes:true, attributeFilter:['class'] });
 
-  // ヘッダーのロビーBGM切替
+  // 前回のマップ/プレイモード/参戦モンスターを復元する。
+  // 起動時に走る setRealMapMode(false) などの初期値より後で上書きしたいので、ここで呼ぶ
+  restoreLobbyPrefs();
+
+  // ヘッダーのロビーBGMチップ → 曲の選択画面
   const bgmBtn = document.getElementById('headerBgmBtn');
-  if(bgmBtn) bgmBtn.addEventListener('click', ()=>{
-    if(typeof toggleLobbyBgmMode==='function') toggleLobbyBgmMode();
-    updateLobbyBgmLabel();
+  if(bgmBtn) bgmBtn.addEventListener('click', openLobbyBgmOverlay);
+  const closeBgmBtn = document.getElementById('closeLobbyBgmBtn');
+  if(closeBgmBtn) closeBgmBtn.addEventListener('click', closeLobbyBgmOverlay);
+  const bgmList = document.getElementById('lobbyBgmList');
+  if(bgmList) bgmList.addEventListener('click', (e)=>{
+    const item = e.target.closest('.lobby-bgm-item');
+    if(item) pickLobbyBgm(item.dataset.bgm);
   });
   updateLobbyBgmLabel();
 
