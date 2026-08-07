@@ -2521,6 +2521,13 @@
   .raid-claim-state{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; color:var(--ink-dim); white-space:nowrap; }
   .raid-sec-bonus{ border-color:rgba(255,215,120,0.55);
     background:linear-gradient(120deg, rgba(255,214,106,0.14), rgba(255,90,50,0.10)); }
+  /* 「倒しても続く」= 最終段のあとの繰り返し報酬。報酬2枠の直後に全幅で置く */
+  .raid-sec-repeat{ border-color:rgba(255,120,60,0.6);
+    background:linear-gradient(120deg, rgba(255,90,50,0.16), rgba(255,214,106,0.08)); }
+  .raid-repeat-list{ display:flex; flex-direction:column; gap:3px; margin-top:5px; }
+  .raid-repeat-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:6px; align-items:center;
+    padding:3px 6px; border-radius:7px; background:rgba(255,255,255,0.05); }
+  .raid-repeat-cond{ font-family:'Share Tech Mono',monospace; font-size:10px; color:#ffb08a; white-space:nowrap; }
   .raid-bonus-text{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45; color:var(--ink); }
   .raid-bonus-text b{ color:#ffd76a; }
   /* レイド限定アイテムの効果(特効スキンの説明の下に並べる) */

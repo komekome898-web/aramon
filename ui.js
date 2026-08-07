@@ -3686,6 +3686,24 @@ function raidTierRowsHtml(tiers, reached, claimed, kind){
     </div>`;
   }).join('');
 }
+/* 最終段のあとも走り続けられることの説明。しきい値と報酬は RAID_REPEAT_* から作るので、
+   数字を変えてもここは直さなくてよい(文言とデータを二重に持たない)。 */
+function raidRepeatSectionHtml(r){
+  const row = (label, rep, tiers, got)=>`
+    <div class="raid-repeat-row">
+      <span class="raid-repeat-cond">${label} ${rep.step.toLocaleString()} ごと</span>
+      <span class="raid-tier-reward">${raidRewardLabel(rep, true)}</span>
+      <span class="raid-claim-state">受取${got}回 / 次 ${raidRepeatNextAt(tiers, rep, got).toLocaleString()}</span>
+    </div>`;
+  return `<div class="raid-sec raid-sec-repeat">
+    <div class="raid-sec-title">🔥 倒してもレイドバトルは続く！<span class="raid-sec-note">刻んだぶんだけ報酬が増え続ける</span></div>
+    <div class="raid-repeat-list">
+      ${row('あなたの累計', RAID_REPEAT_PERSONAL, RAID_PERSONAL_TIERS, r.repeatPersonal||0)}
+      ${row('みんなの累計', RAID_REPEAT_TOTAL, RAID_TOTAL_TIERS, r.repeatTotal||0)}
+    </div>
+    <div class="raid-bonus-note">条件を満たすと<b>次にこの画面を開いた時点で自動で受け取れます</b>(受け取りボタンは要りません)。</div>
+  </div>`;
+}
 // レイド限定の基礎値アイテムの説明。効果の文言は playerItemDesc に寄せて二重管理を避ける
 const RAID_BASE_ITEM_KEYS = ['fruit_life', 'accel_elixir'];
 function raidBaseItemLinesHtml(){
@@ -3744,6 +3762,7 @@ function renderRaidOverlay(){
         <div class="raid-tier-list">${raidTierRowsHtml(RAID_PERSONAL_TIERS, r.dmg, r.claimedPersonal, 'personal')}</div>
       </div>
     </div>
+    ${preview ? '' : raidRepeatSectionHtml(r)}
     <div class="raid-cols">
       ${skinBonus ? `<div class="raid-sec raid-sec-bonus">
         <div class="raid-sec-title">✦ レイド特効スキン</div>
@@ -3762,6 +3781,32 @@ function renderRaidOverlay(){
     b.addEventListener('click', ()=> raidClaim(b.dataset.kind, Number(b.dataset.idx)));
   });
   attachVisibleScrollbar(box, document.getElementById('raidScrollbar'));
+}
+/* 繰り返し報酬の未付与ぶんをまとめて渡す。**レイド画面を開くたびに呼ぶ。**
+   受け取りボタンを出さない自動付与にしてあるので、実装前に既に走り込んでいた人にも
+   開いた時点で差分が必ず届く。付与済み回数を保存しているので何度呼んでも二重に渡らない。 */
+function raidGrantRepeatRewards(){
+  if(raidRecordsDisabled()) return;   // 準備中は記録も報酬も残さない
+  const r = loadRaidProgress();
+  const granted = [];
+  const run = (key, reached, tiers, rep, label)=>{
+    const earned = raidRepeatCount(reached, tiers, rep);
+    const got = r[key] || 0;
+    if(earned <= got) return;
+    const times = earned - got;
+    r[key] = earned;
+    // まとめて渡すので、回数ぶん掛けた1件の報酬にする(付与処理はシーズンパスと同じ)
+    const reward = { gold:rep.gold*times, dia:rep.dia*times, item:rep.item, n:rep.n*times };
+    grantReward(reward);
+    granted.push(`${label}${times>1?`×${times}`:''} ${raidRewardLabel(reward)}`);
+  };
+  run('repeatPersonal', r.dmg, RAID_PERSONAL_TIERS, RAID_REPEAT_PERSONAL, '個人の繰り返し報酬');
+  run('repeatTotal', raidTotalCache.total, RAID_TOTAL_TIERS, RAID_REPEAT_TOTAL, '全体の繰り返し報酬');
+  if(!granted.length) return;
+  saveRaidProgress(r);
+  playSe('buy');
+  pushToast('🐉 ' + granted.join(' ／ '));
+  updateAccountBar();
 }
 function raidClaim(kind, idx){
   const r = loadRaidProgress();
@@ -3850,12 +3895,14 @@ document.getElementById('raidRankCloseBtn').addEventListener('click', ()=>{
 
 async function openRaidOverlay(){
   document.getElementById('raidOverlay').classList.remove('hidden');
+  raidGrantRepeatRewards();   // 個人ぶんは端末の記録だけで判定できるので先に渡す
   renderRaidOverlay();
   // 全体の累計はサーバーから取り直す(取れなければ直前の値のまま表示する)
   if(window.__aramonFetchRaidTotal){
     try{
       const v = await window.__aramonFetchRaidTotal(raidWeekId());
       raidTotalCache = { total: v||0, at: Date.now() };
+      raidGrantRepeatRewards();   // 全体ぶんは最新の累計が来てから(呼び直しても二重に渡らない)
       renderRaidOverlay();
       updateRaidEntryButton();
     }catch(err){}

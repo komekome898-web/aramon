@@ -767,6 +767,7 @@ const UPDATE_HISTORY = [
     { t:'SSRスキン「不死のゾッド」に専用BGM(狂戦士ガッツと同じ曲)とtier3技の専用SEを追加しました', g:['monster','av'] },
     { t:'専用の昇格演出を持つSSRスキンは、共通の昇格演出が流れてから専用ムービーへ切り替わるようになりました', g:['av'] },
     { t:'ロビーの「レイド」と「プレイモード」に、募集中の部屋で待っている人数が出るようになりました。誰かが部屋を立てているとすぐ分かります', g:['feature','multi'] },
+    { t:'【レイド】最後の報酬を受け取ったあとも報酬が増え続けるようになりました。あなたの累計10万ごとに🪙1,000💎20🎟️1、みんなの累計100万ごとに🪙5,000💎50🎟️5。レイド画面を開いた時点で自動で受け取れます（すでに超えているぶんもまとめて入ります）', g:['balance','feature'] },
   ]},
   { date:'2026-08-06', items:[
     { t:'🎉 シーズン1がいよいよ8/7に開幕します！ 曜日ごとの変則ルール(日替わりミューテーター)が始まり、月・木は全員が技tier2スタート、火・金は試合報酬2倍、水はスポーンアイテム1.5倍。土日はその全部が同時に発動します', g:['feature','general'] },
@@ -1723,6 +1724,22 @@ const RAID_PERSONAL_TIERS = [
   { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
   { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
 ];
+/* 最終段のあとも走り続けられるようにする繰り返し報酬。
+   最終段の`at`を超えてから`step`ごとに1回もらえる(個人は300,000の次が400,000)。
+   **受け取りボタンは出さず、レイド画面を開いたときに未付与ぶんをまとめて渡す。**
+   ボタン方式だと、既に走り込んだ人へ後から差分を届けられないため。 */
+const RAID_REPEAT_PERSONAL = { step:  100000, gold:1000, dia:20, item:'freeTrainTicket', n:1 };
+const RAID_REPEAT_TOTAL    = { step: 1000000, gold:5000, dia:50, item:'freeTrainTicket', n:5 };
+// 到達量から「繰り返し報酬を何回ぶん獲得しているか」を出す(付与済み回数との差が未付与ぶん)
+function raidRepeatCount(reached, tiers, rep){
+  const last = tiers[tiers.length-1].at;
+  if(!(reached > last) || !rep.step) return 0;
+  return Math.floor((reached - last) / rep.step);
+}
+// 次に繰り返し報酬がもらえる到達量
+function raidRepeatNextAt(tiers, rep, gotTimes){
+  return tiers[tiers.length-1].at + ((gotTimes||0) + 1) * rep.step;
+}
 /* 1回の挑戦で得られるゴールド/ダイヤ。
    通常の試合と同じ「参加ぶん + 成果ぶん(+ 討伐ボーナス)」の形にして、
    成果ぶんを撃破数ではなく与ダメージから出す。倍率(マルチ・ミューテーター)も通常と同じ。
@@ -1746,10 +1763,12 @@ const RAID_STORAGE_KEY = 'aramon_raid_v1';
 function loadRaidProgress(){
   try{
     const r = JSON.parse(localStorage.getItem(RAID_STORAGE_KEY)) || {};
-    if(r.weekId !== raidWeekId()) return { weekId:raidWeekId(), dmg:0, runs:0, best:0, claimedTotal:{}, claimedPersonal:{} };
+    // repeatTotal/repeatPersonal は繰り返し報酬を何回ぶん渡したか(古い保存には無いので0扱い)
+    if(r.weekId !== raidWeekId()) return { weekId:raidWeekId(), dmg:0, runs:0, best:0, claimedTotal:{}, claimedPersonal:{}, repeatTotal:0, repeatPersonal:0 };
     return { weekId:r.weekId, dmg:Math.max(0,r.dmg||0), runs:r.runs||0, best:Math.max(0,r.best||0),
-             claimedTotal:r.claimedTotal||{}, claimedPersonal:r.claimedPersonal||{} };
-  }catch(err){ return { weekId:raidWeekId(), dmg:0, runs:0, best:0, claimedTotal:{}, claimedPersonal:{} }; }
+             claimedTotal:r.claimedTotal||{}, claimedPersonal:r.claimedPersonal||{},
+             repeatTotal:Math.max(0,r.repeatTotal||0), repeatPersonal:Math.max(0,r.repeatPersonal||0) };
+  }catch(err){ return { weekId:raidWeekId(), dmg:0, runs:0, best:0, claimedTotal:{}, claimedPersonal:{}, repeatTotal:0, repeatPersonal:0 }; }
 }
 function saveRaidProgress(r){
   try{ localStorage.setItem(RAID_STORAGE_KEY, JSON.stringify(r)); }catch(err){}
