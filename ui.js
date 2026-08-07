@@ -767,7 +767,12 @@ function saveLobbyPrefs(){
     }));
   }catch(err){}
 }
+/* 復元は「あれば嬉しい」機能なので、中で何が起きても起動は止めない。
+   丸ごとtry-catchで包み、失敗したら初期値のままロビーを開く。 */
 function restoreLobbyPrefs(){
+  try{ restoreLobbyPrefsInner(); }catch(err){ console.warn('前回の選択の復元に失敗', err); }
+}
+function restoreLobbyPrefsInner(){
   let p = null;
   try{ p = JSON.parse(localStorage.getItem(LOBBY_PREFS_KEY)); }catch(err){}
   if(!p) return;
@@ -7151,10 +7156,6 @@ function initTitleScreen(){
   const mmScr = document.getElementById('mastermonScreen');
   if(mmScr) new MutationObserver(()=>updateMetaBgm()).observe(mmScr, { attributes:true, attributeFilter:['class'] });
 
-  // 前回のマップ/プレイモード/参戦モンスターを復元する。
-  // 起動時に走る setRealMapMode(false) などの初期値より後で上書きしたいので、ここで呼ぶ
-  restoreLobbyPrefs();
-
   // ヘッダーのロビーBGMチップ → 曲の選択画面
   const bgmBtn = document.getElementById('headerBgmBtn');
   if(bgmBtn) bgmBtn.addEventListener('click', openLobbyBgmOverlay);
@@ -7169,6 +7170,12 @@ function initTitleScreen(){
 
   buildLobbyBanner();
   buildMonsterGrid();
+  /* 前回のマップ/プレイモード/参戦モンスターを復元する。
+     【順番が重要】起動時の初期値(top-levelの setRealMapMode(false) など)より後で、
+     かつ **buildMonsterGrid() より後** に呼ぶこと。復元の最後に renderSelectorCards() が
+     走るので、先に呼ぶと #mastermonSelectCard がまだ無くて例外→初期化が止まり、
+     「読み込み中」から進まなくなる(実際に起きた)。 */
+  restoreLobbyPrefs();
   buildHowtoLists();
   sync();
   initTitleScreen();

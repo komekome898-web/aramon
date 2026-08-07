@@ -20,10 +20,10 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - 右: マップ/プレイモードの値表示ボタン(押すとオーバーレイ。実体のDOMを移しただけなのでハンドラは不変。表示更新は`updateLobbyPickLabels()`)→ `バトル開始`(`#joinBtn`。光沢スイープは無効時に止める)。
 - ヘッダー: ⚙️設定 / 👤マイページ / 🆕更新履歴 / 🎵ロビーBGM。**元のボタンをDOMごと移動しただけ**でIDもハンドラも同じ。高さは`--top-header-h`(`#lobbyLayout`と右パネルの`top`も同じ変数)。🎵は曲名を出すチップで、押すと`#lobbyBgmOverlay`(曲の一覧)。**曲名は長いので`max-width`+`text-overflow:ellipsis`で止める**(詳細は aramon-audio)。
 - **ポップ・バッジ・通知ドットには`pointer-events:none`を付ける。** `.mode-tab-wrap`のポップはボタンの**外側**にあるため、付けないとポップの上を押しても何も起きない(「レイドを選んだのに表示が変わらない」の正体)。あわせて**タブの選択は`#modeTabs`への委譲で受け、`.mode-tab-wrap`から中のボタンへ解決する**(`selectModeTab()`)。新しいポップを足したら`style.css`の`pointer-events:none`のセレクタ一覧にも足す。
-- **前回の選択(マップ/リアル切替/プレイモード/人数/参戦モンスター)は`aramon_lobby_prefs_v1`に保存し、起動時に`restoreLobbyPrefs()`で戻す。** 端末ごとの操作の好みなので**アカウント同期には入れない**(視点設定と同じ)。**選ぶ場所を足したら`saveLobbyPrefs()`の呼び出しも足す。** 復元は必ず存在チェック付き(消したマスモン→素のモンスター、終わったレイド→ソロ、壊れた値→何もしない)。`setRealMapMode(false)`など起動時の初期化より**後**に呼ぶこと(ui.js末尾の初期化ブロック内)。
+- **前回の選択(マップ/リアル切替/プレイモード/人数/参戦モンスター)は`aramon_lobby_prefs_v1`に保存し、起動時に`restoreLobbyPrefs()`で戻す。** 端末ごとの操作の好みなので**アカウント同期には入れない**(視点設定と同じ)。**選ぶ場所を足したら`saveLobbyPrefs()`の呼び出しも足す。** 復元は必ず存在チェック付き(消したマスモン→素のモンスター、終わったレイド→ソロ、壊れた値→何もしない)。`setRealMapMode(false)`など起動時の初期値より**後**、かつ**`buildMonsterGrid()`より後**に呼ぶこと。復元の最後に`renderSelectorCards()`が走るので、先に呼ぶと`#mastermonSelectCard`がまだ無くて例外になる。復元自体はtry-catchで包んであるが、**初期化ブロックで例外が出るとタイトルが「読み込み中」から進まなくなる**(`initTitleScreen()`まで到達しないため)。v472で実際に本番を止めた。
 - **タイマーは`#startScreen`のclassをMutationObserverで見て、隠れたら停止**(歩行・バナー・部屋の監視)。**新しい定期処理を足したら`refreshLobby()`で開始・隠れた側で停止の両方に足す**(試合中に通信を続けないため)。
 - **募集中の部屋の待機人数バッジ**(`updateLobbyRoomBadges` → `#raidWaitBadge`/`#multiWaitBadge`)は`__aramonListOpenRooms('br'|'raid')`を15秒ごとに見るだけ。**バッジを絶対配置でボタンの外へ出さない**(はみ出す/中の文字を覆う。実測で両方発生)。左メニューは幅が固定(最小104px)なので中身に入れると溢れる→**文字の右の空きへ`position:absolute`で重ねる**。プレイモードは縦並びなので値の下に普通に置く。
-- **ロビーの初期化ブロックはui.js末尾に置く**(`netState`等を読むためTDZで落ちる)。
+- **ロビーの初期化ブロックはui.js末尾に置く**(`netState`等を読むためTDZで落ちる)。**このブロックで例外が出るとタイトル画面が「読み込み中」で固まる**(末尾の`initTitleScreen()`が呼ばれない)。DOMを触る初期化を足すときは、そのDOMを作る`buildXxx()`より後に置き、外部要因で失敗しうる処理はtry-catchで包む。
 - マルチのマッチング(`#lobbyScreen`)と部屋一覧(`#roomListScreen`)は**右側パネル**。背後のロビーを見せるため`#startScreen`を隠さず、`#startScreen.behind-matching`で`#lobbyLayout`/`#topHeader`を`pointer-events:none`にする(付け外しはui.js末尾のMutationObserver1か所)。
 
 ## カードカルーセル(モンスター一覧 / マスモンで共用)
