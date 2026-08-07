@@ -19,7 +19,8 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - 中央: ロゴ → `#lobbyMonsterStage`(**これ自体が`<button>`。押すとモンスター選択オーバーレイ。`div`に戻さない**) → 名前 → タップ案内。歩行は`renderLobbyMonster()`が`monsterWalkFrameDataUrls()`のdataURLを差し替える。**マスモン選択中だけ装備スキンを反映。** 未ロードなら静止画のまま0.35秒×6回リトライ。
 - 右: マップ/プレイモードの値表示ボタン(押すとオーバーレイ。実体のDOMを移しただけなのでハンドラは不変。表示更新は`updateLobbyPickLabels()`)→ `バトル開始`(`#joinBtn`。光沢スイープは無効時に止める)。
 - ヘッダー: ⚙️設定 / 👤マイページ / 🆕更新履歴 / 🎵ロビーBGM切替。**元のボタンをDOMごと移動しただけ**でIDもハンドラも同じ。高さは`--top-header-h`(`#lobbyLayout`と右パネルの`top`も同じ変数)。
-- **タイマーは`#startScreen`のclassをMutationObserverで見て、隠れたら停止**(歩行・バナー)。
+- **タイマーは`#startScreen`のclassをMutationObserverで見て、隠れたら停止**(歩行・バナー・部屋の監視)。**新しい定期処理を足したら`refreshLobby()`で開始・隠れた側で停止の両方に足す**(試合中に通信を続けないため)。
+- **募集中の部屋の待機人数バッジ**(`updateLobbyRoomBadges` → `#raidWaitBadge`/`#multiWaitBadge`)は`__aramonListOpenRooms('br'|'raid')`を15秒ごとに見るだけ。**バッジを絶対配置でボタンの外へ出さない**(はみ出す/中の文字を覆う。実測で両方発生)。左メニューは幅が固定(最小104px)なので中身に入れると溢れる→**文字の右の空きへ`position:absolute`で重ねる**。プレイモードは縦並びなので値の下に普通に置く。
 - **ロビーの初期化ブロックはui.js末尾に置く**(`netState`等を読むためTDZで落ちる)。
 - マルチのマッチング(`#lobbyScreen`)と部屋一覧(`#roomListScreen`)は**右側パネル**。背後のロビーを見せるため`#startScreen`を隠さず、`#startScreen.behind-matching`で`#lobbyLayout`/`#topHeader`を`pointer-events:none`にする(付け外しはui.js末尾のMutationObserver1か所)。
 
@@ -83,6 +84,9 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - ロビー最下部「管理者用」→ 4桁パスワード(0008)。プレイヤー名「おりょう」は集計から除外。
 - 「プレイ状況」「音声確認」タブ。各ペインは`display:flex`の縦フレックス(blockのままだと内側がスクロール不能)。音声確認内は「SE」「BGM」サブタブで、SEは`SE_DEFS`から自動列挙。このペインでは共通タップSEを鳴らさない。
 - **プレイ状況は`matchLogs`(Firebase)の一件ずつのログが元データ。** 通常の試合は`logMatchForAdmin()`、レイドは`logRaidMatchForAdmin()`(`raidShowResult`内、`noRecord`=準備中/デモは記録しない)。**レイド分は`raid:true`と`raidDamage`/`raidResult`を追加で持つだけで、`map:'raid'`(`MAPS.raid`)は通常の地形と同じ扱い**なので地形別チャートは変更不要。モード表示(ソロ/マルチ/レイド)は`adminModeLabel(r)`1か所に集約。新しいモード・ログ項目を足すときはここを起点にする。
+- **1試合の成績(`sec`/`kills`/`dmg`/`skin`)は`matchOutcomeFields()`1か所**で作り、通常戦とレイドで同じ形にする。**記録は後から遡れないので、集計に使いたい値は早めに足す。**
+- **後から足したフィールドは古いログに入っていない。** 勝率・プレイ時間は必ず**「持っているログだけで割る」**(`typeof r.win==='boolean'`等で母数を絞り、母数も画面に併記する)。0除算と「古い記録＝負け」の誤集計を両方防ぐ。表示は`adminSecLabel`/`adminWinLabel`が`—`/空欄に落とす。
+- 時間帯別グラフは`ts`だけで出せるので**過去のログもそのまま集計できる**。0件の時間は行ごと出さない(24行は縦を食うだけ)。
 - 「💎ダイヤ+500」(`#adminGrantDiaBtn`)は現在hidden(機能は残置)。
 - **「機能」タブのSSR昇格演出の確認ボタンは`SKIN_MEDIA`から自動生成**(`renderAdminPromoteCheckBtns()` → `#adminPromoteCheckBtns`)。`promote.video`を持つスキンのぶんだけ並ぶので、スキンを足してもHTMLもJSも触らなくてよい。**包んでいるdivは親と同じ縦フレックスにしておく**(divで包むと1つのフレックス項目になり、中のボタンが横に流れる)。
 - 「📊 パフォーマンス表示」は aramon-performance を参照。

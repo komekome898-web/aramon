@@ -985,6 +985,19 @@
   .has-dot{ position:relative; }
   .notif-dot{ position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
     background:var(--danger); border:2px solid #04060a; box-shadow:0 0 6px rgba(255,64,64,0.8); }
+  /* 「今この部屋で人が待っている」バッジ。**絶対配置にしない**
+     (ボタンの外へはみ出す/中の文字を覆う。実測で両方とも起きた)。
+     ボタンの中に普通の要素として置き、点滅で「今まさに居る」ことを伝える */
+  .lobby-wait-badge{ flex:0 0 auto; padding:0 3px; border-radius:8px;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:9px; line-height:1.6; white-space:nowrap;
+    color:#04060a; background:linear-gradient(180deg,#8fe3a0,#3fbf6a);
+    box-shadow:0 0 8px rgba(80,230,130,0.75); animation:waitBadgePulse 1.6s ease-in-out infinite; }
+  /* 左メニューのボタンは幅が固定(最小104px)で中身を入れると溢れるので、
+     文字の右の空きへ重ねる。右上の通知ドット(notif-dot)とは位置が違うので衝突しない */
+  .lobby-side-btn .lobby-wait-badge{ position:absolute; right:4px; top:50%; transform:translateY(-50%); }
+  /* プレイモードは縦並びなので、値の下に普通に置く(文字を覆わない) */
+  .lobby-pick-btn .lobby-wait-badge{ align-self:flex-start; }
+  @keyframes waitBadgePulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.5; } }
   /* デイリー画面(ショップ/バッグと同じ広い幅・全体スクロール・×ボタンは枠内) */
   .mastermon-confirm-box.daily-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
     max-height:calc(94 * var(--vh)); overflow-y:auto; }
@@ -3181,6 +3194,11 @@
   .admin-recent-row .ar-map{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .admin-recent-row .ar-mon{ flex:0 0 auto; }
   .admin-recent-row .ar-mode{ flex:0 0 auto; color:var(--amber); }
+  /* 1試合の長さと勝敗。古いログは値を持たないので「—」/空欄になる(幅は固定して列を揃える) */
+  .admin-recent-row .ar-sec{ flex:0 0 auto; width:34px; text-align:right;
+    color:var(--ink-dim); font-family:'Share Tech Mono',monospace; }
+  .admin-recent-row .ar-win{ flex:0 0 auto; width:14px; text-align:center; font-weight:800; color:var(--ink-dim); }
+  .admin-recent-row .ar-win.is-win{ color:var(--amber); }
 
 /* ===== パフォーマンス計測オーバーレイ(管理者画面から表示を切り替える) =====
    タップを一切拾わないので、スクロールロック除外リストへの追加は不要 */

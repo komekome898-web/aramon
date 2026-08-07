@@ -75,6 +75,8 @@
      <button id="openRaidBtn" class="lobby-side-btn has-dot hidden">
        <span class="lobby-side-icon">🐉</span><span class="lobby-side-label">レイド</span>
        <span id="raidDot" class="notif-dot hidden"></span>
+       <!-- 募集中の部屋で待っている人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
+       <span id="raidWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
      <button id="openGachaBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
@@ -122,9 +124,11 @@
        <span class="lobby-pick-label">マップ</span>
        <span class="lobby-pick-value" id="lobbyMapValue">🎲 ランダム</span>
      </button>
-     <button id="openModePickBtn" class="lobby-pick-btn">
+     <button id="openModePickBtn" class="lobby-pick-btn has-dot">
        <span class="lobby-pick-label">プレイモード</span>
        <span class="lobby-pick-value" id="lobbyModeValue">1人でプレイ</span>
+       <!-- 通常マルチで募集中の部屋の待機人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
+       <span id="multiWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
      <button id="joinBtn" disabled><span class="join-label">バトル開始</span></button>
      <div id="multiActionRow" class="hidden">
@@ -774,6 +778,8 @@
         <div id="adminMapChart" class="admin-bar-chart"></div>
         <div class="admin-col-title" style="margin-top:16px;">レイド結果別</div>
         <div id="adminRaidChart" class="admin-bar-chart"></div>
+        <div class="admin-col-title" style="margin-top:16px;">時間帯別プレイ回数</div>
+        <div id="adminHourChart" class="admin-bar-chart"></div>
       </div>
     </div>
     <!-- サブタブ: プレイヤー情報 -->
