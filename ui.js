@@ -2769,6 +2769,10 @@ document.querySelectorAll('.mode-tab').forEach(tab=>{
     tab.classList.add('active');
     const isRaid = tab.dataset.mode==='raid';
     netState.mode = tab.dataset.mode==='multi' ? 'multi' : 'solo';
+    // レイドの部屋探し(#raidFindRoomBtn)から戻ってきた場合など、netState.raidが
+    // 立ったまま残ることがあるので、タブを切り替えたら必ずここで確定させる
+    // (通常マルチの部屋がレイドの部屋一覧に混ざる/その逆の事故を防ぐ)
+    netState.raid = isRaid;
     // 人数などの細かい設定はプレイモードのオーバーレイ内、出撃ボタンは右カラムに出す
     document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi' || isRaid);
     document.getElementById('multiActionRow').classList.toggle('hidden', netState.mode!=='multi' || isRaid);
@@ -3041,6 +3045,8 @@ async function createRoomFlow(){
 
 async function openFindRoomScreen(){
   document.getElementById('roomListScreen').classList.remove('hidden');
+  // レイド経由(netState.raid)ならタイトルを変えて、どちらの部屋を探しているか分かるようにする
+  document.getElementById('roomListTitle').textContent = netState.raid ? '🐉 レイドの部屋を探す' : '部屋を探す';
   await refreshRoomList();
 }
 async function refreshRoomList(){
@@ -3808,6 +3814,17 @@ document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
   netState.raid = true;
   netState.capacity = RAID_CAPACITY;
   createRoomFlow();
+});
+// レイドの「部屋を探す」。通常マルチと同じ#roomListScreenを使うが、netState.raidを立てて
+// おくことで__aramonListOpenRooms(netState.raid?'raid':'br')がレイドの部屋だけを検索する
+// (部屋のmode('br'/'raid')で一覧が分かれているので、通常マルチの部屋は混ざらない)。
+document.getElementById('raidFindRoomBtn').addEventListener('click', ()=>{
+  if(!raidGuardReady()) return;
+  document.getElementById('raidOverlay').classList.add('hidden');
+  netState.mode = 'multi';
+  netState.raid = true;
+  netState.capacity = RAID_CAPACITY;
+  openFindRoomScreen();
 });
 
 /* --- レイドのリザルト --- */

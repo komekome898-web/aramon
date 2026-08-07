@@ -2527,6 +2527,9 @@
     color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 0 14px -3px rgba(255,206,120,0.9); }
   .raid-go-btn.raid-go-multi{ color:#fff; border-color:#c9401f;
     background:linear-gradient(180deg,#ff8a5a,#e0431d); box-shadow:0 0 14px -3px rgba(255,110,60,0.9); }
+  /* 部屋を探すだけ紫(レイド画面・レイドランキングと同じ色)にして「作る」と見分ける */
+  .raid-go-btn.raid-go-find{ color:#efe2ff; border-color:rgba(190,130,255,0.85);
+    background:linear-gradient(180deg,#8b4fd8,#5f2ba8); box-shadow:0 0 14px -4px rgba(170,110,255,0.9); }
 
   /* --- ガチャの切替タブ / 近日公開 --- */
   /* タブと右側のボタンはタイトルの長さに関係なく1行を保つ(縮ませない・折り返さない) */
