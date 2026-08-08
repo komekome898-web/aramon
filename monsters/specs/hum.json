@@ -67,7 +67,7 @@
     }
   },
   "traitEffects": {
-    "rangeMult": 0.74,
-    "projSpeedMult": 1.55
+    "rangeMult": 0.5,
+    "projSpeedMult": 2.0
   }
 }
