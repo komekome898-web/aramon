@@ -1120,6 +1120,11 @@ function updateRaid(dt){
     else { raidState.pending = null; raidState.marks = []; }
   }
   raidRefillLoot();
+  /* 【必須】決着はここで毎フレーム見る。
+     以前は「誰かが倒れたとき(checkWin)」しか見ていなかったので、
+     **残り時間が0になっても誰も倒れなければ試合が終わらなかった**
+     (味方botがボスを削り切るまで延々と続く、という報告が実際にあった)。 */
+  checkRaidEnd();
 }
 /* 3分間ずっと技を撃ち続ける戦いなので、開始時に撒いたぶんだけでは途中でガッツが尽きる。
    一定間隔で安置内へ追加を撒く。updateRaidはソロとホストでしか回らないので、
@@ -1164,9 +1169,18 @@ let spectateTargetId = null;
 // 以前は人間プレイヤーだけを候補にしていたため、生き残りが1人しかいない場面
 // (2人対戦でbotが残っている等)では「次のプレイヤー」を押しても切り替わらなかった。
 function spectateCandidates(){
-  const humans = entities.filter(e=>e.alive && e.netPlayerId && e!==player);
-  const bots   = entities.filter(e=>e.alive && !e.netPlayerId && e!==player);
+  // レイドのボスは「味方」ではないので観戦対象に入れない
+  const list   = entities.filter(e=>e.alive && e!==player && !e.isRaidBoss);
+  const humans = list.filter(e=>e.netPlayerId);
+  const bots   = list.filter(e=>!e.netPlayerId);
   return humans.concat(bots);
+}
+/* いま観戦中か。**この判定は1か所だけに書く**(視点・観戦バーの両方がこれを見る)。
+   ・通常マルチ: ホストが敗退したとき
+   ・レイド: 自分が倒れて味方が残っているとき(ソロ・マルチとも。倒れても試合は続くため) */
+function spectatingNow(){
+  if(!hostSpectating) return false;
+  return game.raid || netState.mode==='multi';
 }
 // 現在の観戦対象を返す(不在なら先頭へ差し替え)。観戦していなければnull
 function ensureSpectateTarget(){
@@ -1188,7 +1202,7 @@ function spectateNext(){
 }
 // カメラ・描画の視点主体(観戦中は生存プレイヤー、通常は自分)
 function currentViewEntity(){
-  if(netState.mode==='multi' && hostSpectating){
+  if(spectatingNow()){
     const t = ensureSpectateTarget();
     if(t) return t;
   }

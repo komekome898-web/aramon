@@ -2426,8 +2426,15 @@
      ①試合中のHUD(ボス体力・残り時間・与ダメ) ②入口画面 ③ガチャの切替タブ
      ===================================================================== */
   /* 【必須】pointer-events は付けない。#hud の中だが触る要素が無いので素通しでよい */
-  #raidHud{ position:absolute; left:50%; top:8px; transform:translateX(-50%); z-index:24;
-    width:min(560px, calc(78 * var(--vw))); padding:5px 10px; border-radius:12px;
+  /* 左のステータス欄と右のミニマップの「間」に置く。以前は画面幅の78%まで伸びていて、
+     両方に重なって読めなくなっていた。左右に空ける幅は各パネルの実寸から出しているので、
+     **#hpPanel や #minimapWrap の幅を変えたらここも直す**(片方だけ直すと再び重なる)。
+       左 = #topLeft left:14 + #hpPanel 210 + すきま8
+       右 = #topRight right:14 + #minimapWrap 120 + すきま8                            */
+  #raidHud{ --raid-hud-left:232px; --raid-hud-right:142px;
+    position:absolute; top:8px; z-index:24;
+    left:var(--raid-hud-left); right:var(--raid-hud-right); margin:0 auto;
+    width:auto; max-width:560px; padding:5px 10px; border-radius:12px;
     background:linear-gradient(180deg, rgba(26,10,6,0.92), rgba(8,4,3,0.92));
     border:1px solid rgba(255,90,50,0.6); box-shadow:0 4px 18px -6px rgba(0,0,0,0.8);
     font-family:'Rajdhani',sans-serif; }
@@ -3108,6 +3115,8 @@
   html.narrow-screen #hpPanel{ width:180px; }
   html.narrow-screen #killFeed{ width:170px; top:148px;}
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
+  /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */
+  html.narrow-screen #raidHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
   html.narrow-screen #movePanel{ gap:8px; padding:8px 12px;}
   html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
