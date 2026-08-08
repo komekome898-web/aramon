@@ -512,14 +512,16 @@ const SIGNATURE_MOVES = {
       selfBlast:{ radius:420, dmg:46, expandTime:0.42 }, icon:'🌪️' }
   ],
   /* ハムの特性は「技の弾速が速く、射程が短い」。**その通りに全技へ効かせてある**
-     (射程は他のモンスターより約25%短く、弾速は約1.5倍)。ガリの godrange とは逆向きの、
-     技側に数字を焼き込むタイプの特性なので、数字を触るときは3つとも同じ向きに動かす。 */
+     (雛形の値に対して射程は0.5倍、弾速は2倍)。ガリの godrange とは逆向きの、
+     技側に数字を焼き込むタイプの特性なので、数字を触るときは3つとも同じ向きに動かす。
+     雛形: 正拳 700/520・ワンツー 1400/500・暗けい 1500/640(range/projSpeed)。 */
   hum:     [ /*@hum*/
-    { name:'正拳', tier:1, color:'#e0ad7b', range:520, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:800, hitR:12, splash:70, icon:'👊🏿' },
-    { name:'ワンツー', tier:2, color:'#e0ad7b', range:1000, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:820, hitR:7, burst:2, burstGap:0.1, icon:'👊🏿' },
+    { name:'正拳', tier:1, color:'#e0ad7b', range:350, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:1040, hitR:12, splash:70, icon:'👊🏿' },
+    // dmg 19.5 は端数ではなく意図した値。**3連射だった頃の合計(13×3=39)を2連射で保つ**ためのもの
+    { name:'ワンツー', tier:2, color:'#e0ad7b', range:700, dmg:19.5, cooldown:1.05, gutsCost:16, projSpeed:1000, hitR:7, burst:2, burstGap:0.1, icon:'👊🏿' },
     // 手のひらを相手へ向けて飛ばす。iconは 🖐(手のひら) なので REAL_ICON_FX の fxIconPalm が
     // 進行方向へ向けて描く。**projStyleを付けるとその分岐に入らない**ので付けない
-    { name:'暗けい', tier:3, color:'#d9b391', range:1100, dmg:20, cooldown:2.3, gutsCost:24, projSpeed:980, hitR:28, splash:0, icon:'🖐🏻', blast:{ radius:330, dmg:60, expandTime:0.5, color:'#d9b391' } }
+    { name:'暗けい', tier:3, color:'#d9b391', range:750, dmg:20, cooldown:2.3, gutsCost:24, projSpeed:1280, hitR:28, splash:0, icon:'🖐🏻', blast:{ radius:330, dmg:60, expandTime:0.5, color:'#d9b391' } }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
