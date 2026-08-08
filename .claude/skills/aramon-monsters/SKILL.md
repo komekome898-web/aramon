@@ -9,6 +9,27 @@ description: 荒野モン動のモンスター追加チェックリスト・SSR/
 
 1. `ELEMENTS` 2. `TRAIT_DESC`(ui.js) 3. `SIGNATURE_MOVES` 4. `MOVE_AURA` 5. `MONSTER_AURA` 6. `SKIN_CONFIG`(`source.hue`は実画像からサンプリング) 7. `STATE_CHANGES` 8. `APTITUDE` 9. `WALK_ANIM`(歩行動画があれば) 10. `monsters/<key>.png`・`<key>_player.png`(正方形・被写体が高さの9割・足元が下端付近に正規化)
 
+## 特性は「文言」と「効果」の2つで1組
+
+`TRAIT_DESC`(ui.js)は**説明文だけ**で、効果は別のところに入れる。3通りある。
+
+- **常時かかる倍率** → `ELEMENTS` の行に書く(`dmgTakenMod` / `dmgDealtMod` / `cooldownMod` /
+  `gutsRegenMod` / `speedMod` / `hitboxMult`)。エンジンが元から読んでいるので追加実装は要らない。
+- **射程・弾速・消費ガッツの増減** → `SIGNATURE_MOVES` の数字そのものへ焼き込む。
+  ガリの`godrange`(射程が長い)とハムの`hum`(弾速が速く射程が短い)がこの形。**エンジンに分岐を足さない。**
+- **技を当てたときに相手へ起きること** → `data.js` の `TRAIT_ON_HIT` に1行。
+  判定は`combat.js`の`applyTraitOnHit()`1か所だけ。
+  **既存モンスターぶんはこの表に載っていない**(combat.jsに`element`で直接書いてあり、挙動を変えたくないため)。
+  同じ特性idを既存モンスターと共有するときは**この表に足さない**(相手の挙動まで変わる)。
+
+**説明文だけ書いて効果を入れ忘れるのが定番の事故。** 書いたとおりに動くかを必ず1つずつ確かめる。
+
+## 色スキンの5色はオーラ色以外
+
+`SKIN_CONFIG.<key>.colors` は `SKIN_COLOR_ORDER` の6色から**そのモンスターのオーラ色を除いた5色**。
+オーラと同じ色を入れると着せ替えでオーラと見分けがつかなくなるので、全モンスターでこの決まりにそろえる
+(スタジオは`MONSTER_AURA`から自動で外すので手で選ばない)。
+
 既存にないギミックが要るときはcombat.js/render.jsに新しい`kind`を増やす形で拡張する。
 **追加作業の最後に必ず`python3 tools/check_monsters.py`を通す**(上のチェックリストを機械的に強制する)。
 
