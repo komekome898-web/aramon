@@ -4751,30 +4751,40 @@ function buildMastermonShare(key){
   const mm = loadMastermons()[key];
   if(!mm) return null;
   const el = ELEMENTS[key];
+  const species = el ? el.label : key;
   const apt = mastermonApt(mm);
   const rb = mastermonRebirthCount(mm);
-  // 高いステータスから3つ。何が自慢なのかが一目で伝わる
-  const top3 = MASTERMON_STATS.slice()
-    .sort((a,b)=>((mm.stats&&mm.stats[b.key])||0) - ((mm.stats&&mm.stats[a.key])||0))
-    .slice(0, 3);
-  const aptText = MASTERMON_STATS.map(s=>apt[s.key]).join(' ');
+  const cap = mastermonStatCap(mm);   // 転生の回数ぶん上限が上がる。バーもそこまで伸びる
+  const skinId = (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
+  const skinName = (skinId && typeof skinMeta==='function') ? skinMeta(skinId).name : null;
+  /* マスモン詳細の STATUS 欄と同じ形(名前＋適正バッジ＋数値＋バー)を6項目そのまま出す。
+     どこを伸ばしたマスモンなのかは、上位3つの数字だけでは伝わらない。 */
+  const bars = MASTERMON_STATS.map(s=>({
+    label: s.label, rank: apt[s.key], color: s.color,
+    value: Math.round((mm.stats && mm.stats[s.key]) || 0), max: cap,
+  }));
   const chips = [];
   if(rb > 0) chips.push(`★ 転生${rb}`);
-  chips.push(el ? el.label : key);
+  chips.push(species);
   const spec = {
     ...SHARE_ACCENT.mm,
     player: sharePlayerName(),
     headline: mm.name,
-    sub: `Lv.${mm.level} ／ 適正 ${aptText}`,
-    image: shareArtImage(key, (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null),
-    imageLabel: el ? el.label : key,
-    rows: top3.map(s=>({ label:s.label, value:String(Math.round((mm.stats&&mm.stats[s.key])||0)) })),
+    sub: `Lv.${mm.level}${skinName ? ` ／ ${skinName}` : ''}`,
+    image: shareArtImage(key, skinId),
+    // 絵は着せ替え後の姿なので、ラベルもスキン名にそろえる(未装備なら種族名)
+    imageLabel: skinName || species,
+    bars,
     chips,
   };
+  const top3 = MASTERMON_STATS.slice()
+    .sort((a,b)=>((mm.stats&&mm.stats[b.key])||0) - ((mm.stats&&mm.stats[a.key])||0))
+    .slice(0, 3);
   const text = buildShareText([
     `マスモン「${mm.name}」Lv.${mm.level}${rb>0?` ★転生${rb}`:''}`,
+    skinName ? `${species} ／ スキン「${skinName}」` : species,
     top3.map(s=>`${s.label} ${Math.round((mm.stats&&mm.stats[s.key])||0)}`).join(' ／ '),
-    `適正 ${aptText}`,
+    `適正 ${MASTERMON_STATS.map(s=>apt[s.key]).join(' ')}`,
   ], ['#マスモン']);
   return { spec, text };
 }
