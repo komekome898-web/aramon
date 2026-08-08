@@ -4593,9 +4593,13 @@ function shareTextUnits(s){
 function buildShareText(lines, tags){
   const body = (lines||[]).filter(Boolean).map(String);
   const tagLine = [SHARE_TAG].concat(tags||[]).join(' ');
-  const fixed = shareTextUnits(tagLine) + 23 + 4;      // タグ行 + URL(一律23) + 改行ぶん
+  /* 末尾は【空行 → タグ → PWAの案内 → URL】で全カード共通。**この並びを画面ごとに変えない。**
+     URLは必ず最後の行に単独で置く(Xのプレビューが安定する)。 */
+  const tail = ['', tagLine, SHARE_PWA_HINT, SHARE_URL];
+  // URLはXが一律23文字で数えるので、実文字ぶんは足さず23として見積もる
+  const fixed = shareTextUnits(tail.slice(0, -1).join('\n')) + 23 + 2;
   while(body.length > 1 && shareTextUnits(body.join('\n')) + fixed > SHARE_TEXT_MAX_UNITS) body.pop();
-  return body.concat([tagLine, SHARE_URL]).join('\n');
+  return body.concat(tail).join('\n');
 }
 // シェアに出すプレイヤー名。ランキング登録名をそのまま使う
 function sharePlayerName(){
@@ -4777,14 +4781,11 @@ function buildMastermonShare(key){
     bars,
     chips,
   };
-  const top3 = MASTERMON_STATS.slice()
-    .sort((a,b)=>((mm.stats&&mm.stats[b.key])||0) - ((mm.stats&&mm.stats[a.key])||0))
-    .slice(0, 3);
+  // ステータスと適正は画像側のバーで見せているので、文面では繰り返さない
   const text = buildShareText([
     `マスモン「${mm.name}」Lv.${mm.level}${rb>0?` ★転生${rb}`:''}`,
     skinName ? `${species} ／ スキン「${skinName}」` : species,
-    top3.map(s=>`${s.label} ${Math.round((mm.stats&&mm.stats[s.key])||0)}`).join(' ／ '),
-    `適正 ${MASTERMON_STATS.map(s=>apt[s.key]).join(' ')}`,
+    '自慢のマスモンステータスを見て！',
   ], ['#マスモン']);
   return { spec, text };
 }
