@@ -734,6 +734,12 @@ const LOBBY_BANNERS = [
 ];
 const LOBBY_BANNER_MS = 3000;
 
+/* Xへのシェア。**URLとタグはここだけに書く**(文面を作る場所が増えても二重に持たない)。
+   Xは本文をURL=23・日本語=2・ASCII=1で数えて上限280。 */
+const SHARE_URL = 'https://komekome898-web.github.io/aramon/index.html';
+const SHARE_TAG = '#荒野モン動';
+const SHARE_TEXT_MAX_UNITS = 250;   // 上限280に対する余裕ぶん
+
 // 更新履歴のタグ(トップ画面「更新履歴」でタイトル横に並び、選ぶと絞り込める)
 const CHANGELOG_TAGS = [
   { id:'general', label:'全般',     color:'#b9c4d4' },
@@ -747,6 +753,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-09', items:[
+    { t:'🎉 X（旧Twitter）へのシェア機能を追加しました！ 成績やマスモンを1枚の画像にして投稿できます。リザルト・マスモン詳細・ランキング・レイドランキング・ガチャ結果・SSR獲得画面の6か所に「𝕏 でシェア」ボタンがあります', g:['feature','general'] },
+  ]},
   { date:'2026-08-08', items:[
     { t:'【レイド】残り時間が0になっても試合が終わらないことがある不具合を修正しました。全てのモードで、時間切れ・全滅・討伐のいずれかで必ず終わります', g:['fix'] },
     { t:'【レイド】自分が力尽きても、残っている味方の視点で観戦できるようになりました（ソロ・マルチとも）。「次のプレイヤー」で見る相手を切り替えられます', g:['feature'] },

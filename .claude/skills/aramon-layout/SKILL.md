@@ -60,6 +60,12 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 `render.js`の`touchmove` / `input.js`の`touchend` / `input.js`の`dblclick`。
 漏れるとスクロールもタップも効かない(管理者・ランキング・観戦バー・文字入力で実際に踏んだ)。3リストは同じ内容に保つ。
 
+**画像を長押しで保存させたいときは、これとは別に4か所目がある。**
+`input.js`の`contextmenu`/`selectstart`が全画面で`preventDefault()`しており、
+`style.css`の`*{-webkit-touch-callout:none}`と合わせて保存メニューが出ない。
+シェア画像(`#sharePreviewImg`)は`isSharePreview()`で除外し、CSS側でも
+`-webkit-touch-callout:default` / `user-select:auto`を打ち消してある。**同じことをする要素を足すときは両方セットで。**
+
 ## 試合HUDの居場所(重ならせない)
 
 画面上部は**左=ステータス欄(`#hpPanel`) / 右=ミニマップ(`#minimapWrap`)** が先客。

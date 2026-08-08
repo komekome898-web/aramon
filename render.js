@@ -228,6 +228,211 @@ function skinnedImageForEntity(entity){
   return null;
 }
 
+/* =====================================================================
+   Xへのシェア画像(1枚のカードをオフスクリーンcanvasに描いてPNGにする)
+
+   **描画側はカード定義オブジェクト(spec)の形しか知らない。**
+   リザルト・マスモン・ランキング・ガチャ・SSR獲得のどこから来ても同じ絵柄になる。
+   新しい入口を足すときは、ui.js側でspecを作る関数を1つ書くだけでよい
+   (ここに画面ごとの分岐を足さない)。
+
+   spec = {
+     accent, accent2 : 基調色(勝敗・属性・レアリティで変える)
+     player          : プレイヤー名(1行目に小さく出す)
+     headline        : 大見出し(必須)
+     sub             : 見出しの下の1行
+     image           : Image|Canvas|null … 主役の絵(スキン反映済み。無ければプレースホルダ)
+     imageLabel      : 絵の下のラベル
+     rows            : [{label,value}] 2〜4個。valueは桁区切り済みの**文字列**で渡す
+     chips           : [文字列] 0〜3個
+   }
+
+   【注意】monsters/*.png は同一オリジンなのでcanvasが汚染されずtoBlobできる。
+   **将来これらを外部CDNへ出すと、crossOriginが付かない限りシェアが即死する。**
+   ===================================================================== */
+const SHARE_CARD_W = 1200, SHARE_CARD_H = 675;   // 16:9。Xのタイムラインで切られない比率
+// 数字・英字はゲームと同じ書体、日本語は自動で次のファミリへ落ちる(新規Webフォントは足さない)
+const SHARE_FONT_STACK = "'Rajdhani','Share Tech Mono','Hiragino Sans','Noto Sans JP',sans-serif";
+const SHARE_INK = '#eef2f8', SHARE_DIM = '#9aa7b8';
+
+function _shareFont(px, weight){ return `${weight||600} ${px}px ${SHARE_FONT_STACK}`; }
+function _shareRoundRect(cx, x, y, w, h, r){
+  const rr = Math.min(r, w/2, h/2);
+  cx.beginPath();
+  cx.moveTo(x+rr, y);
+  cx.arcTo(x+w, y,   x+w, y+h, rr);
+  cx.arcTo(x+w, y+h, x,   y+h, rr);
+  cx.arcTo(x,   y+h, x,   y,   rr);
+  cx.arcTo(x,   y,   x+w, y,   rr);
+  cx.closePath();
+}
+/* 枠に収まるまでフォントを落とし、最小サイズでも入らなければ末尾を「…」にする。
+   **カードの文字はすべてこれを通す**(プレイヤー名もマスモン名も長さが読めないため)。
+   実際に描いたフォントサイズを返す。 */
+function _shareFitText(cx, text, x, y, maxW, basePx, minPx, weight){
+  let px = basePx, s = String(text==null ? '' : text);
+  while(px > minPx){
+    cx.font = _shareFont(px, weight);
+    if(cx.measureText(s).width <= maxW) break;
+    px -= 2;
+  }
+  cx.font = _shareFont(px, weight);
+  if(cx.measureText(s).width > maxW){
+    while(s.length > 1 && cx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+    s += '…';
+  }
+  cx.fillText(s, x, y);
+  return px;
+}
+// object-fit:contain 相当。枠の中央に、はみ出さないよう収める
+function _shareDrawContain(cx, img, x, y, w, h){
+  const iw = _imgW(img), ih = _imgH(img);
+  if(!iw || !ih) return;
+  const k = Math.min(w/iw, h/ih);
+  const dw = iw*k, dh = ih*k;
+  cx.drawImage(img, x + (w-dw)/2, y + (h-dh)/2, dw, dh);
+}
+/* 主役の絵。**画像が無くても例外を投げない**(未ロードやスキン生成待ちで普通に起きる)。
+   その場合は基調色の円とラベルの1文字目でごまかす。 */
+function _shareDrawArt(cx, spec, x, y, w, h){
+  if(spec.image && _imgW(spec.image)){ _shareDrawContain(cx, spec.image, x, y, w, h); return; }
+  const cxx = x + w/2, cyy = y + h/2, r = Math.min(w, h)*0.34;
+  cx.save();
+  cx.fillStyle = spec.accent2 || '#233047';
+  cx.beginPath(); cx.arc(cxx, cyy, r, 0, Math.PI*2); cx.fill();
+  cx.strokeStyle = spec.accent || '#f4c430'; cx.lineWidth = 4; cx.stroke();
+  cx.fillStyle = spec.accent || '#f4c430';
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.font = _shareFont(Math.round(r), 700);
+  cx.fillText(String(spec.imageLabel || '？').slice(0, 1), cxx, cyy + 2);
+  cx.restore();
+}
+function _shareDrawChips(cx, chips, x, y, maxW){
+  let cur = x;
+  for(const raw of (chips || []).slice(0, 3)){
+    const t = String(raw || ''); if(!t) continue;
+    cx.font = _shareFont(19, 600);
+    const w = cx.measureText(t).width + 26;
+    if(cur + w > x + maxW) break;
+    cx.fillStyle = 'rgba(255,255,255,0.09)';
+    _shareRoundRect(cx, cur, y, w, 32, 16); cx.fill();
+    cx.strokeStyle = 'rgba(255,255,255,0.22)'; cx.lineWidth = 1; cx.stroke();
+    cx.fillStyle = SHARE_INK;
+    cx.textAlign = 'left'; cx.textBaseline = 'middle';
+    cx.fillText(t, cur + 13, y + 17);
+    cur += w + 10;
+  }
+}
+// 数値行。2〜4個を等幅に割り、値だけ大きく出す
+function _shareDrawRows(cx, rows, x, y, maxW, accent){
+  const list = (rows || []).slice(0, 4);
+  if(!list.length) return;
+  const colW = maxW / list.length;
+  list.forEach((r, i)=>{
+    const cxx = x + colW*i;
+    cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+    cx.fillStyle = SHARE_DIM;
+    _shareFitText(cx, r.label, cxx, y, colW - 24, 20, 13, 600);
+    cx.fillStyle = accent;
+    _shareFitText(cx, r.value, cxx, y + 50, colW - 24, 46, 26, 700);
+  });
+}
+
+/* カードを描いてcanvasを返す(同期)。
+   **シェアがゲームを壊すことは許さない**ので、途中で落ちても文字だけのカードを返す。 */
+function shareCardCanvas(spec){
+  const c = document.createElement('canvas');
+  c.width = SHARE_CARD_W; c.height = SHARE_CARD_H;
+  const cx = c.getContext('2d');
+  try{ _shareDrawCard(cx, spec || {}); }
+  catch(err){
+    console.warn('シェア画像の描画に失敗したので簡易版にしました', err);
+    try{ _shareDrawFallback(cx, spec || {}); }catch(err2){}
+  }
+  return c;
+}
+function _shareDrawCard(cx, spec){
+  const accent  = spec.accent  || '#f4c430';
+  const accent2 = spec.accent2 || '#1b2740';
+  // 背景(基調色→暗い地の縦グラデ + 対角の薄いストライプ)
+  const g = cx.createLinearGradient(0, 0, SHARE_CARD_W*0.35, SHARE_CARD_H);
+  g.addColorStop(0, accent2); g.addColorStop(0.55, '#0a1120'); g.addColorStop(1, '#06090f');
+  cx.fillStyle = g; cx.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
+  cx.save();
+  cx.globalAlpha = 0.05; cx.fillStyle = '#ffffff';
+  for(let i = -SHARE_CARD_H; i < SHARE_CARD_W; i += 56){
+    cx.beginPath(); cx.moveTo(i, SHARE_CARD_H); cx.lineTo(i + SHARE_CARD_H*0.6, 0);
+    cx.lineTo(i + SHARE_CARD_H*0.6 + 16, 0); cx.lineTo(i + 16, SHARE_CARD_H); cx.fill();
+  }
+  cx.restore();
+  // 基調色の光(左の絵の後ろ)
+  const glow = cx.createRadialGradient(264, 320, 20, 264, 320, 300);
+  glow.addColorStop(0, accent); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  cx.save(); cx.globalAlpha = 0.22; cx.fillStyle = glow;
+  cx.fillRect(0, 0, 620, SHARE_CARD_H); cx.restore();
+  // 内枠
+  cx.strokeStyle = accent; cx.lineWidth = 2; cx.globalAlpha = 0.65;
+  _shareRoundRect(cx, 24, 24, SHARE_CARD_W-48, SHARE_CARD_H-48, 22); cx.stroke();
+  cx.globalAlpha = 1;
+
+  // 左: 主役の絵と台座
+  cx.save();
+  cx.globalAlpha = 0.3; cx.fillStyle = accent;
+  cx.beginPath(); cx.ellipse(264, 512, 150, 26, 0, 0, Math.PI*2); cx.fill();
+  cx.restore();
+  _shareDrawArt(cx, { ...spec, accent, accent2 }, 84, 118, 360, 380);
+  if(spec.imageLabel){
+    cx.fillStyle = SHARE_INK; cx.textAlign = 'center'; cx.textBaseline = 'alphabetic';
+    _shareFitText(cx, spec.imageLabel, 264, 576, 340, 28, 16, 700);
+  }
+
+  // 右: 文字組み
+  const RX = 508, RW = SHARE_CARD_W - 508 - 64;
+  cx.textAlign = 'left';
+  cx.fillStyle = SHARE_DIM;
+  if(spec.player) _shareFitText(cx, spec.player, RX, 132, RW, 24, 15, 600);
+  cx.fillStyle = accent;
+  const hlPx = _shareFitText(cx, spec.headline || '', RX, 216, RW, 72, 40, 700);
+  cx.fillStyle = SHARE_INK;
+  if(spec.sub) _shareFitText(cx, spec.sub, RX, 216 + Math.round(hlPx*0.62), RW, 30, 18, 600);
+  _shareDrawChips(cx, spec.chips, RX, 300, RW);
+  _shareDrawRows(cx, spec.rows, RX, 400, RW, accent);
+
+  // 下: 出典
+  cx.fillStyle = SHARE_DIM; cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+  cx.font = _shareFont(24, 700); cx.fillText('荒野モン動', 64, SHARE_CARD_H - 44);
+  cx.font = _shareFont(18, 600); cx.fillStyle = 'rgba(154,167,184,0.75)';
+  cx.fillText('WILD BATTLE ROYALE', 190, SHARE_CARD_H - 44);
+  cx.textAlign = 'right';
+  cx.fillText(typeof SHARE_URL!=='undefined' ? SHARE_URL.replace(/^https?:\/\//, '') : '', SHARE_CARD_W - 64, SHARE_CARD_H - 44);
+}
+// 描画が落ちたときの最後の砦。見出しだけでも読める1枚にする
+function _shareDrawFallback(cx, spec){
+  cx.fillStyle = '#06090f'; cx.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
+  cx.fillStyle = spec.accent || '#f4c430';
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  _shareFitText(cx, spec.headline || '荒野モン動', SHARE_CARD_W/2, SHARE_CARD_H/2 - 20, SHARE_CARD_W - 120, 64, 28, 700);
+  cx.fillStyle = SHARE_DIM;
+  _shareFitText(cx, spec.sub || '', SHARE_CARD_W/2, SHARE_CARD_H/2 + 48, SHARE_CARD_W - 120, 30, 18, 600);
+}
+/* PNGのBlobにする。mimeを引数にしてあるのは、重すぎたときに
+   image/jpeg 0.9 へ落とせるようにするため(透過を使っていないので見た目は変わらない)。 */
+function shareCardBlob(spec, canvas, mime){
+  const c = canvas || shareCardCanvas(spec);
+  return new Promise(resolve=>{
+    try{ c.toBlob(b=>resolve(b), mime || 'image/png'); }
+    catch(err){ console.warn('シェア画像のBlob化に失敗', err); resolve(null); }
+  });
+}
+// 共有シートに渡すFile。File未対応の環境ではnull(呼び側が自動でフォールバックする)
+async function shareCardFile(spec, filename, canvas){
+  if(typeof File!=='function') return null;
+  const blob = await shareCardBlob(spec, canvas);
+  if(!blob) return null;
+  try{ return new File([blob], filename || 'aramon.png', { type: blob.type || 'image/png' }); }
+  catch(err){ console.warn('シェア画像のFile化に失敗', err); return null; }
+}
+
 /* 縮小版スプライトのキャッシュ
    モンスター画像は320〜1024pxあるが、画面上では40〜200px程度にしか出ない。
    大きいまま毎フレームdrawImageすると、端末のGPUが抱えるテクスチャが膨れ上がる
@@ -5059,7 +5264,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#dailyOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#seasonOverlay') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });
