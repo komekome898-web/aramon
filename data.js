@@ -270,6 +270,7 @@ const WALK_ANIM = {
   },
   spark: {
     base: { front:_loadWalk('spark_walk_f'), back:_loadWalk('spark_walk_b') },            // ライガー(色スキン対応)
+    ssr:  { skinId:'garurumon_ssr', front:_loadWalk('garurumon_ssr_walk_f'), back:_loadWalk('garurumon_ssr_walk_b') }, /*@garurumon_ssr*/
   },
   phoenix: {
     base: { front:_loadWalk('phoenix_walk_f'),     back:_loadWalk('phoenix_walk_b') },     // ヒノトリ(色スキン対応)
@@ -548,6 +549,7 @@ const SSR_SKIN_AURA = {
   aqua_ssr:       'red', /*@aqua_ssr*/
   guts_ssr:       'black', /*@guts_ssr*/
   zod_ssr:        'black', /*@zod_ssr*/
+  garurumon_ssr:  'blue', /*@garurumon_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -700,6 +702,7 @@ const SSR_SKIN_TIER3 = {
   }},
   guts_ssr:       { name:'ドラゴンころし', dmgMult:1.15 }, /*@guts_ssr*/
   zod_ssr:        { name:'言葉は無粋', dmgMult:1.15 }, /*@zod_ssr*/
+  garurumon_ssr:  { name:'フォックスファイアー', dmgMult:1.15 }, /*@garurumon_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -774,6 +777,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-09', items:[
+    { t:'✨ SSRスキン「ガルルモン」が登場しました！', g:['feature','monster'] },
     { t:'【レイド】ボスの攻撃予告を少し長くし、実際に当たる範囲を輪の中まで光らせて分かりやすくしました。予告中はボスも動かなくなるので、見せた範囲より大きい攻撃が来ることはありません', g:['fix','balance'] },
     { t:'🐹 新モンスター「ハム」が登場しました！ 技の弾速がとても速いかわりに射程が短い、近づいて戦うタイプです。tier3「暗けい」は手のひらを飛ばして炸裂させます', g:['feature','monster'] },
     { t:'🎉 SNSへのシェア機能を追加しました！ 成績やマスモンを1枚の画像にして投稿できます。リザルト・マスモン詳細・ランキング・レイドランキング・ガチャ結果・SSR獲得画面の6か所に「SNSでシェア」ボタンがあります', g:['feature','general'] },
@@ -2352,6 +2356,7 @@ const SSR_SKINS = {
   guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr', raidGachaOnly:true }, /*@guts_ssr*/
   // 不死のゾッド: レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
   zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr', raidClearOnly:true }, /*@zod_ssr*/
+  garurumon_ssr:  { element:'spark', name:'ガルルモン', iconImg:'garurumon_ssr', playerImg:'garurumon_player_ssr' }, /*@garurumon_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
