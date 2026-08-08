@@ -2549,7 +2549,7 @@ function showGachaResults(results, granted){
   const brag = results.find(r=>r.kind==='skin' && r.rarity==='SSR' && !r.dup)
             || results.find(r=>r.kind==='skin' && r.rarity==='SR'  && !r.dup);
   if(brag) setLastSkinShare(brag.skinId);
-  const shareBtn = brag ? '<button id="shareGachaBtn" class="gacha-share-btn">𝕏 でシェア</button>' : '';
+  const shareBtn = brag ? '<button id="shareGachaBtn" class="gacha-share-btn"><span class="share-ico"></span> SNSでシェア</button>' : '';
   const res = document.getElementById('gachaResult');
   res.innerHTML = `<div class="gacha-result-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
     ${grantMsg}${shareBtn}<div class="gacha-result-tap">タップで閉じる</div>`;
@@ -4493,10 +4493,10 @@ function shareFilesSupported(f){
 }
 const SHARE_HINTS = {
   ready:       'ボタンを押すと共有メニューが開きます。そこで X を選んでください',
-  unsupported: 'この端末では画像を直接渡せません。画像を長押しして保存 →「𝕏 を開く」→ 投稿画面で添付してください',
+  unsupported: 'この端末では画像を直接渡せません。画像を長押しして保存 →「投稿画面を開く」→ 投稿画面で添付してください',
   sharing:     '共有メニューを開いています…',
   done:        '共有メニューを開きました。投稿画面の本文が空のときは貼り付けてください（コピー済みです）',
-  error:       '共有できませんでした。画像を長押しして保存し、「𝕏 を開く」から投稿してください',
+  error:       '共有できませんでした。画像を長押しして保存し、「投稿画面を開く」から投稿してください',
   building:    '',
 };
 function setShareState(state){
@@ -5536,7 +5536,7 @@ const MM_MENU_ITEMS = [
   { tab:'training', icon:'💪', label:'トレーニング', desc:'チケットを使ってステータスを上げる' },
   { tab:'dressup',  icon:'👕', label:'着せ替え',     desc:'スキンを変更し見た目とオーラを変える' },
   // タブを開かずその場でシェア画面を出すので、tabではなくactionで区別する(転生ボタンと同じ形)
-  { action:'share', icon:'𝕏', label:'Xでシェア',    desc:'このマスモンの育ち具合を画像にしてXへ投稿する' },
+  { action:'share', icon:'<span class="share-ico"></span>', label:'SNSでシェア', desc:'このマスモンの育ち具合を画像にしてSNSへ投稿する' },
 ];
 function buildMastermonMenuHtml(mm){
   const items = MM_MENU_ITEMS.map(m=>`
