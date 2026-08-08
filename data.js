@@ -774,6 +774,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-09', items:[
+    { t:'【レイド】ボスの攻撃予告を少し長くし、実際に当たる範囲を輪の中まで光らせて分かりやすくしました。予告中はボスも動かなくなるので、見せた範囲より大きい攻撃が来ることはありません', g:['fix','balance'] },
     { t:'🐹 新モンスター「ハム」が登場しました！ 技の弾速がとても速いかわりに射程が短い、近づいて戦うタイプです。tier3「暗けい」は手のひらを飛ばして炸裂させます', g:['feature','monster'] },
     { t:'🎉 SNSへのシェア機能を追加しました！ 成績やマスモンを1枚の画像にして投稿できます。リザルト・マスモン詳細・ランキング・レイドランキング・ガチャ結果・SSR獲得画面の6か所に「SNSでシェア」ボタンがあります', g:['feature','general'] },
   ]},
@@ -1729,8 +1730,11 @@ const RAID_ALLY_GUTS_REGEN_MULT = 2;
 // ボスの攻撃。すべて areaEffect(範囲攻撃)なので、当たり判定も描画も既存の仕組みに乗る。
 //   tier      : 1=通常 2=強力 3=大技。時間が経つほど上のtierが出やすくなる
 //   shape     : 'fan'(扇) / 'circle'(自分中心の円) / 'meteor'(狙った足元に落ちる円)
-//   telegraph : 予告の長さ(秒)。この間は当たらず、点線の予告と標的だけが出る
+//   telegraph : 予告の長さ(秒)。この間は当たらず、点線+塗りの予告と標的だけが出る
 //   warn      : 予告トーストの文言
+// 予告から発動までを、各技のtelegraphより少し長くする(「見えたのに間に合わなかった」を減らす)
+const RAID_TELEGRAPH_EXTRA = 0.4;
+function raidTelegraphTime(move){ return (move && move.telegraph || 0) + RAID_TELEGRAPH_EXTRA; }
 const RAID_BOSS_MOVES = [
   { key:'breath',  tier:1, name:'灼熱のブレス', shape:'fan',    range:1900, fanAngleDeg:78, dmg:64, telegraph:1.30, color:'#ff6b35',
     warn:'⚠ 灼熱のブレス — 正面から離れろ！' },

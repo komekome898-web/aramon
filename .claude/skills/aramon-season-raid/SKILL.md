@@ -58,6 +58,9 @@ description: 荒野モン動のシーズン運用とレイドバトルの手順�
 - 自己ベスト更新は勝利あつかい(`RAID_BEST_IS_WIN`)。リザルトの見出しは討伐/自己ベスト/力尽きた/時間切れの4通り。
 - **決着(`checkRaidEnd()`)は`updateRaid()`から毎フレーム呼ぶ。** 「誰かが倒れたとき(`checkWin`)」だけに任せると、**残り時間が0になっても誰も倒れなければ試合が終わらない**(味方botがボスを削り切るまで続いた、という報告が実際にあった)。終了条件は討伐 / 時間切れ(`raidState.endsAt`) / 挑戦者の全滅の3つで、マルチではホストだけが確定させて`raidEnd`イベントで配る。
 - **レイドは自分が倒れても試合が続くので、倒れたら残っている味方を観戦する**(`onPlayerDown()`→`startSpectating()`。ソロ・マルチとも、味方botしか残っていなくても観戦する)。観戦中かの判定は`spectatingNow()`1か所で、通常マルチのホスト敗退と共用。**観戦候補(`spectateCandidates()`)からボスを除くこと**(`isRaidBoss`)。観戦状態(`hostSpectating`/`spectateTargetId`)は各試合の開始時に必ず落とし、リザルトでバーを隠す。
+- **予告(点線の輪)は`raidTelegraphTime(move)`の長さだけ出す。** 各技の`telegraph`に`RAID_TELEGRAPH_EXTRA`(0.4秒)を足した値で、host/guestとも必ずこの関数を通す(`raidBeginBossAttack`が計算してネットワークにも`tele`として配る。`network.js`側は受け取った値をそのまま使うので直さなくてよい)。
+  **`resolveMovement()`はレイドボスが予告中(`raidState.pending`)のあいだ丸ごと移動を止める。** 動けると、予告の輪を出した瞬間の位置から実際の攻撃が発動時にズレて「予告より大きい/ズレた範囲に攻撃が来る」ように見える(実際に報告があった)。**発動(`raidFireBossAttack`)も予告時に記録した`marks[0].x/y`から撃つ**(その場のボスの座標=`b.x/b.y`を読まない)。ボスの通常の位置調整(`repositionEvery`)は予告中も裏で目標地点を更新して構わない(発動が終わればすぐ動き出せる)が、実際に動く処理だけ止めている。
+  **予告の点線(`drawRaidTelegraph()`in render.js)は輪の中も塗って光らせる。** 塗る半径・角度は当たり判定(`hitTestFan`/circleの`dist`)に使う値そのもの(`move.range`/`fanAngleDeg`)で、見た目だけ広い/狭いにしない。発動が近づくほど(`fireAt`まで0.6秒未満)明るく・速く点滅させる。
 - **最終段のあとは繰り返し報酬**(`RAID_REPEAT_PERSONAL` / `RAID_REPEAT_TOTAL`)。最終段の`at`を超えてから`step`ごとに1回で、**受け取りボタンは出さず`raidGrantRepeatRewards()`がレイド画面を開くたびに未付与ぶんをまとめて渡す**(付与済み回数を`repeatPersonal`/`repeatTotal`に保存するので二重に渡らない)。**しきい値を後から変えると付与済み回数の意味が変わる**ので、開催途中では動かさない。
 
 ### 【次回開催前の宿題】前回の実績で数字を見直す
