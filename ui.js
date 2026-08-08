@@ -3361,6 +3361,7 @@ function startGame(){
   document.getElementById('hud').classList.remove('range-mode');
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=7; lastGutsWarnAt=-Infinity;
+  hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
   monsterScreenPos.clear();
@@ -3475,6 +3476,7 @@ function rangePlayerName(){
 function startShootingRange(){
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
+  hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
   netState.mode='solo';           // 訓練場は常にローカル(マルチの後でも確実にソロ扱いにする)
   introState.active=false;        // 召喚演出は挟まない
   camState.yaw = 0;
@@ -3537,6 +3539,7 @@ function raidStart(multi, demo){
   raidRunDemo = !!demo;
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
+  hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
   netState.mode='solo';
   netState.raid = false;    // 1人で挑むときは部屋を使わない
   introState.active=false;
@@ -4072,6 +4075,8 @@ function raidShowResult(defeated, dmg, prevBest){
   game.started = false;
   joinInProgress = false;
   if(typeof setAutoRun==='function') setAutoRun(false);
+  hostSpectating = false;   // 観戦を終える(バーも消す)
+  { const sb = document.getElementById('spectateBar'); if(sb) sb.classList.add('hidden'); }
   const noRecord = raidRunDemo || raidRecordsDisabled();
   const d = Math.round(dmg);
   // 倒しきれなくても、自己ベストを更新できたなら勝利あつかいにする
@@ -6168,27 +6173,36 @@ document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()
   document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
 });
 function onPlayerDown(){
-  // レイドは checkRaidEnd() が「全滅 or 時間切れ or 討伐」で決着させるので、
-  // 通常のリザルト処理へは進めない(倒れても仲間が戦っている間は続く)
-  if(game.raid) return;
+  /* レイドは checkRaidEnd() が「全滅 or 時間切れ or 討伐」で決着させるので、
+     通常のリザルト処理へは進めない(倒れても仲間が戦っている間は続く)。
+     そのぶん自分の視点が置き去りになるので、残っている味方を観戦する。
+     ソロ・マルチどちらも同じ扱い(味方botしか残っていなくても観戦する)。 */
+  if(game.raid){ startSpectating('力尽きました。残っている味方を観戦します'); return; }
   if(netState.mode==='multi' && netState.isHost){
-    hostSpectating = true;
-    pushToast('あなたは敗退しました。生き残っているプレイヤーを観戦します');
-    // 生存プレイヤーへ視点を移し、観戦バーを表示する
-    if(typeof ensureSpectateTarget==='function'){
-      const t = ensureSpectateTarget();
-      if(t && typeof startCameraSnap==='function') startCameraSnap(t);
-    }
-    updateSpectateBar();
+    startSpectating('あなたは敗退しました。生き残っているプレイヤーを観戦します');
     return;
   }
   showResult(false, player.placement||entities.filter(e=>e.alive).length+1);
 }
-// 観戦バーの表示更新(ホスト敗退中のみ表示。対象名を反映)
+/* 観戦を始める(自分が倒れて試合が続く場面)。視点を味方へ移して観戦バーを出すところまで。
+   通常マルチのホスト敗退時とレイドで共用する。残っている味方が居なければ何もしない
+   (レイドなら全滅として checkRaidEnd() が試合を終わらせる)。 */
+function startSpectating(toastText){
+  hostSpectating = true;
+  if(typeof ensureSpectateTarget!=='function'){ updateSpectateBar(); return; }
+  const t = ensureSpectateTarget();
+  if(t){
+    if(toastText) pushToast(toastText);
+    if(typeof startCameraSnap==='function') startCameraSnap(t);
+  }
+  updateSpectateBar();
+}
+// 観戦バーの表示更新(観戦中のみ表示。対象名を反映)
 function updateSpectateBar(){
   const bar = document.getElementById('spectateBar');
   if(!bar) return;
-  const spectating = netState.mode==='multi' && hostSpectating && typeof spectateTargetId!=='undefined' && spectateTargetId!=null;
+  const spectating = (typeof spectatingNow==='function' ? spectatingNow() : false)
+    && typeof spectateTargetId!=='undefined' && spectateTargetId!=null;
   if(spectating){
     const t = getEntity(spectateTargetId);
     if(t){
