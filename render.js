@@ -244,6 +244,8 @@ function skinnedImageForEntity(entity){
      image           : Image|Canvas|null … 主役の絵(スキン反映済み。無ければプレースホルダ)
      imageLabel      : 絵の下のラベル
      rows            : [{label,value}] 2〜4個。valueは桁区切り済みの**文字列**で渡す
+     bars            : [{label,rank,value,max,color}] … rowsの代わりに縦並びのバーで見せる
+                       (マスモンは6項目すべてを適正バッジ付きのバーで出す)
      chips           : [文字列] 0〜3個
    }
 
@@ -323,6 +325,57 @@ function _shareDrawChips(cx, chips, x, y, maxW){
     cur += w + 10;
   }
 }
+/* 適正バッジ(ステータス名の右に付く小さな角丸)。**マスモン詳細の見た目に合わせてある。**
+   色は data.js の APTITUDE_BADGE_COLOR(style.cssと同じ値を二重に持っている)。
+   描いた幅を返すので、呼び側は続きをその右から描ける。 */
+function _shareDrawAptBadge(cx, grade, x, y, h){
+  const g = String(grade || '');
+  if(!g) return 0;
+  cx.font = _shareFont(Math.round(h*0.62), 800);
+  const w = Math.max(h + 6, cx.measureText(g).width + 14);
+  const col = (typeof APTITUDE_BADGE_COLOR!=='undefined') ? APTITUDE_BADGE_COLOR[g] : null;
+  if(Array.isArray(col)){                       // M(最上位)だけ虹色
+    const lg = cx.createLinearGradient(x, y, x + w, y + h);
+    col.forEach((c, i)=> lg.addColorStop(i/(col.length-1), c));
+    cx.fillStyle = lg;
+  } else {
+    cx.fillStyle = col || '#8a97a8';
+  }
+  _shareRoundRect(cx, x, y, w, h, 5); cx.fill();
+  cx.fillStyle = '#1a0f06';                     // バッジの地は明るいので文字は濃い色で固定
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.fillText(g, x + w/2, y + h/2 + 1);
+  cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+  return w;
+}
+/* ステータスバー(マスモン用)。名前＋適正バッジ＋数値＋伸びるバーを縦に並べる。
+   bars = [{label, rank, value, max, color}] */
+function _shareDrawBars(cx, bars, x, y, w, pitch){
+  (bars || []).forEach((b, i)=>{
+    const ty = y + pitch*i;
+    cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+    cx.fillStyle = SHARE_INK;
+    cx.font = _shareFont(23, 700);
+    const nameW = Math.min(cx.measureText(b.label).width, w*0.4);
+    _shareFitText(cx, b.label, x, ty, w*0.4, 23, 14, 700);
+    _shareDrawAptBadge(cx, b.rank, x + nameW + 9, ty - 16, 21);
+    // 数値は右端ぞろえ。桁がそろって「どこが伸びているか」が読める
+    cx.textAlign = 'right';
+    cx.fillStyle = b.color || SHARE_INK;
+    cx.font = _shareFont(25, 700);
+    cx.fillText(String(b.value), x + w, ty);
+    cx.textAlign = 'left';
+    // バー本体
+    const bh = 10, by = ty + 10;
+    cx.fillStyle = 'rgba(255,255,255,0.13)';
+    _shareRoundRect(cx, x, by, w, bh, bh/2); cx.fill();
+    const pct = Math.max(0, Math.min(1, (b.value||0) / (b.max || 1)));
+    if(pct > 0){
+      cx.fillStyle = b.color || '#f4c430';
+      _shareRoundRect(cx, x, by, Math.max(bh, w*pct), bh, bh/2); cx.fill();
+    }
+  });
+}
 // 数値行。2〜4個を等幅に割り、値だけ大きく出す
 function _shareDrawRows(cx, rows, x, y, maxW, accent){
   const list = (rows || []).slice(0, 4);
@@ -392,11 +445,16 @@ function _shareDrawCard(cx, spec){
   cx.fillStyle = SHARE_DIM;
   if(spec.player) _shareFitText(cx, spec.player, RX, 132, RW, 24, 15, 600);
   cx.fillStyle = accent;
-  const hlPx = _shareFitText(cx, spec.headline || '', RX, 216, RW, 72, 40, 700);
+  _shareFitText(cx, spec.headline || '', RX, 216, RW, 72, 40, 700);
   cx.fillStyle = SHARE_INK;
-  if(spec.sub) _shareFitText(cx, spec.sub, RX, 216 + Math.round(hlPx*0.62), RW, 30, 18, 600);
+  /* サブの位置は**固定**。見出しの実サイズに連動させると、見出しが縮んだときに
+     サブがせり上がって重なる(レイドの「🐉 レイドボスを討伐！」で実際に起きた)。 */
+  if(spec.sub) _shareFitText(cx, spec.sub, RX, 266, RW, 30, 18, 600);
   _shareDrawChips(cx, spec.chips, RX, 300, RW);
-  _shareDrawRows(cx, spec.rows, RX, 400, RW, accent);
+  /* 数値の見せ方は2通り。**barsがあればそちらを優先**する(マスモンは6項目すべてを
+     バーと適正で見せたいので、3つだけの数値行では足りない)。 */
+  if(spec.bars && spec.bars.length) _shareDrawBars(cx, spec.bars, RX, 364, RW, 44);
+  else _shareDrawRows(cx, spec.rows, RX, 400, RW, accent);
 
   // 下: 出典
   cx.fillStyle = SHARE_DIM; cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';

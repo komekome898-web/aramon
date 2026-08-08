@@ -1154,6 +1154,14 @@ const APTITUDE_TRAIN_MULT   = { M:2.7,  'SS+':2.4, SS:2.2, 'S+':2.0, S:1.8, A:1.
    mastermonStatFactor の除数に掛ける(除数が小さいほど1ポイントの効きが強い)。
    表に無い段階(A以下)は 1 = 補正なし。 */
 const APTITUDE_FACTOR_DIVISOR_MULT = { S:0.75, 'S+':0.70, SS:0.65, 'SS+':0.60, M:0.52 };
+/* 適正バッジの色。**style.css の .mm-stat-apt-badge.apt-* と同じ色を二重に持っている。**
+   canvasはCSSクラスを読めないので、シェア画像を描くためにここにも必要になった。
+   **色を変えるときは必ず両方直すこと。** Mだけは虹色なので配列(グラデーションの色止め)で持つ。 */
+const APTITUDE_BADGE_COLOR = {
+  M:    ['#ff004c','#ff8a00','#ffe600','#00e15a','#00b3ff','#a24bff'],
+  'SS+':'#7fb0ff', SS:'#ff9de0', 'S+':'#ffc93f', S:'#ffd76a',
+  A:'#ff5a5a', B:'#ff8fd1', C:'#6fe07a', D:'#5fd4e8', E:'#b98fe8',
+};
 // CSSのクラス名に使える形にする('S+' はそのままだとセレクタに書けない)
 function aptitudeCssKey(grade){ return String(grade||'').replace(/\+/g, 'p'); }
 // これ以上は上がらない段階か

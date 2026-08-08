@@ -60,3 +60,9 @@ description: 荒野モン動の描画(render.js)。3D風投影project()・カメ
 - **`monsters/*.png`が同一オリジンだからcanvasが汚染されず`toBlob`できる。**
   将来これらを外部CDNへ出すと`crossOrigin`が付かない限りシェアが即死する。
 - `shareCardBlob(spec, canvas, mime)`のmimeは引数。重すぎたら`image/jpeg` 0.9へ落とせる(透過を使っていない)。
+- 数値の見せ方は2通り。`rows`(3つ並べる数値行)と`bars`(適正バッジ付きの縦バー)で、**barsがあればそちらが勝つ**。
+  マスモンは6項目すべてをマスモン詳細のSTATUS欄と同じ形で出したいのでbarsを使う。
+- **適正バッジの色は`data.js`の`APTITUDE_BADGE_COLOR`。`style.css`の`.mm-stat-apt-badge.apt-*`と同じ色を二重に持っている**
+  (canvasはCSSクラスを読めない)。**色を変えるときは必ず両方直す。** Mだけ虹色なので配列で持つ。
+- **サブ見出しのyは固定にする。** 見出しの実サイズに連動させると、見出しが縮んだときにサブがせり上がって重なる
+  (レイドの「🐉 レイドボスを討伐！」で実際に起きた)。
