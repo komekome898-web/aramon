@@ -3338,9 +3338,13 @@ button:active{ transform:scale(0.96); }
 }
 .share-text-box{
   font-size:11px; line-height:1.6; color:var(--ink-dim); text-align:left; white-space:pre-wrap;
-  /* 投稿文は全部見せたいので縮ませない。あふれるぶんはプレビュー画像側が縮む
-     (枠全体は .mastermon-confirm-box の max-height:94vh で頭打ちになっている) */
-  flex:0 0 auto; word-break:break-all; max-height:calc(28 * var(--vh)); overflow-y:auto;
+  /* 投稿文は7行あって横長・低い画面には収まりきらないので、**枠内でスクロールさせる**。
+     下端をぼかして「まだ続きがある」ことを見せる(切れているのか終わりなのか分からない状態にしない)。
+     全文はコピー済みなので、ここで全部読ませる必要はない。 */
+  flex:0 1 auto; min-height:0; word-break:break-all;
+  max-height:calc(28 * var(--vh)); overflow-y:auto;
+  -webkit-mask:linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+          mask:linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
   background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:6px; padding:7px 9px;
 }
 .share-hint{ font-size:10px; line-height:1.5; color:var(--ink-dim); min-height:14px; }
@@ -3390,3 +3394,18 @@ html.narrow-screen .resultBtnRow .share-icon-btn{ width:40px; }
   font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
   color:#0b0d12; background:#fff; border:none;
 }
+
+/* 共有マーク(YouTubeなどで一般的な、右へ飛ぶ矢印)。
+   **定義はここ1か所だけ。** 使う側は <span class="share-ico"></span> と書く。
+   maskで抜いて背景をcurrentColorにしてあるので、ボタンの文字色にそのまま追従する。 */
+.share-ico{
+  display:inline-block; width:1em; height:1em; vertical-align:-0.13em; flex:0 0 auto;
+  background:currentColor;
+  -webkit-mask:var(--share-ico-svg) center/contain no-repeat;
+          mask:var(--share-ico-svg) center/contain no-repeat;
+}
+:root{
+  --share-ico-svg:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14 4.5v3.9C7.9 8.9 4.6 12.8 3.4 19.5c2.6-3.8 6.1-5.6 10.6-5.6v3.9l6.6-6.6L14 4.5z'/%3E%3C/svg%3E");
+}
+/* アイコンだけのボタンでは文字より少し大きく見せる */
+.share-icon-btn .share-ico{ width:19px; height:19px; vertical-align:-0.2em; }

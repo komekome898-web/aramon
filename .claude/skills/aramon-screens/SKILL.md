@@ -96,7 +96,11 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 ## Xへのシェア(`#shareOverlay`)
 
 - **Xのツイート用URLには画像を添付できない。** 画像付き投稿の唯一の道が`navigator.share({files})`(Web Share API Level 2)で、
-  OSの共有シートを経由してXアプリへ渡す。非対応端末は「画像を長押し保存 →`<a target="_blank">`でXを開く → 手で添付」へ落とす。
+  OSの共有シートを経由してXアプリへ渡す。非対応端末は「画像を長押し保存 →`<a target="_blank">`で投稿画面を開く → 手で添付」へ落とす。
+- **画面に出す文言は「SNS」で統一する。**(共有シートはX以外にも送れるため)。X固定なのは
+  非対応端末の逃げ道(`x.com/intent/post`)だけで、そのボタンも「投稿画面を開く」と名乗る。
+  ボタンの絵は共有マーク(右へ飛ぶ矢印)。**SVGは`style.css`の`--share-ico-svg`1か所だけ**にあり、
+  使う側は`<span class="share-ico"></span>`と書く(`currentColor`に追従する)。
 - **`share()`はタップのハンドラから同期で呼ぶ。** `onShareBtnTap()`に`await`を足すとユーザー操作の資格が切れ、
   iOSが`NotAllowedError`で撥ねる。**画像(File)は`openShareOverlay()`で作り終えてある。**
 - 呼ぶ順序は **`navigator.share()`が先、`clipboard.writeText()`が後**。
