@@ -377,6 +377,37 @@ function closeRangeDmgMult(bonusMax, hitDist, maxRange){
   const ratio = clamp(hitDist/maxRange, 0, 1);
   return 1 + (1-ratio)*(bonusMax-1);
 }
+/* 特性の命中時効果(data.js の TRAIT_ON_HIT)を1か所で適用する。
+   表に無い特性(=既存モンスター)は何もしないので、今までの挙動は変わらない。 */
+function applyTraitOnHit(source, target, finalDmg){
+  if(typeof TRAIT_ON_HIT === 'undefined') return;
+  const el = ELEMENTS[source.element];
+  const tr = el && TRAIT_ON_HIT[el.trait];
+  if(!tr) return;
+  if(tr.burnSec)   target.burnUntil   = matchTime + tr.burnSec;
+  if(tr.slowSec)   target.slowUntil   = matchTime + tr.slowSec;
+  if(tr.freezeSec) target.freezeUntil = matchTime + tr.freezeSec;
+  if(tr.poisonSec){
+    // すでにどく中なら次のダメージ時刻は据え置き(重ねがけで連打にならないよう既存と同じ形にする)
+    if(!(target.poisonUntil > matchTime)) target.poisonTickAt = matchTime + 1;
+    target.poisonUntil = matchTime + tr.poisonSec;
+    target.poisonSourceId = source.id;
+  }
+  if(tr.gutsDrain){
+    const drained = Math.min(finalDmg*tr.gutsDrain, target.guts);
+    if(drained > 0){
+      target.guts = Math.max(0, target.guts - drained);
+      spawnDmgText(target.x, target.y, target.z, '-'+Math.round(drained)+'GT', '#ff7a96');
+    }
+  }
+  if(tr.lifesteal){
+    const healed = Math.min(finalDmg*tr.lifesteal, source.maxHp - source.hp);
+    if(healed > 0){
+      source.hp += healed;
+      spawnDmgText(source.x, source.y, source.z, '+'+Math.round(healed), '#7fffa0');
+    }
+  }
+}
 function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
   // レイドでは味方どうしの攻撃は当たらない(ボスが絡む攻撃だけが通る)。
@@ -508,6 +539,10 @@ function applyDamage(target, dmg, source, opts){
       target.poisonUntil = matchTime + 10;
       target.poisonSourceId = source.id;
     }
+    /* スタジオから足した特性の命中時効果。**上の既存モンスターぶんはこの表に載っていない**
+       (挙動を変えないため element で直接書いたまま)。新しい特性は data.js の
+       TRAIT_ON_HIT に1行足すだけで効く。判定はここ1か所だけにする。 */
+    applyTraitOnHit(source, target, finalDmg);
 
     // 状態変化「必死」(プラント): 与えたダメージの一部を自分のHPに還元
     const srcStateEff = activeStateEffects(source);

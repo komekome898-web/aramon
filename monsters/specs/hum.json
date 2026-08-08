@@ -22,7 +22,7 @@
       "white",
       "red",
       "blue",
-      "yellow"
+      "green"
     ],
     "source": {
       "type": "chroma",
@@ -65,5 +65,9 @@
       "gutsRegenMult": 2,
       "speedMult": 1.5
     }
+  },
+  "traitEffects": {
+    "rangeMult": 0.74,
+    "projSpeedMult": 1.55
   }
 }

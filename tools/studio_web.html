@@ -376,6 +376,32 @@
   <label>特性id(既存と同じidなら説明は追加されません)</label>
   <input id="f_trait" placeholder="burn">
   <label>特性の説明</label><textarea id="f_traitDesc"></textarea>
+  <label>特性の効果 — 書いた説明のとおりに実際に効かせます(空欄＝効果なし)</label>
+  <div class="hint">
+    倍率は1より大きいと強化、小さいと弱化です(<b>被ダメージとクールタイムは小さいほど有利</b>)。
+    射程と弾速は技そのものの数字に掛けて焼き込みます。
+  </div>
+  <div class="r6">
+    <div><label>被ダメ倍率</label><input id="f_efDmgTaken" type="number" step="0.05" placeholder="1"></div>
+    <div><label>与ダメ倍率</label><input id="f_efDmgDealt" type="number" step="0.05" placeholder="1"></div>
+    <div><label>クールタイム倍率</label><input id="f_efCooldown" type="number" step="0.05" placeholder="1"></div>
+    <div><label>ガッツ回復倍率</label><input id="f_efGutsRegen" type="number" step="0.05" placeholder="1"></div>
+    <div><label>移動速度倍率</label><input id="f_efSpeed" type="number" step="0.05" placeholder="1"></div>
+    <div><label>当たり判定倍率</label><input id="f_efHitbox" type="number" step="0.05" placeholder="1"></div>
+  </div>
+  <div class="r6">
+    <div><label>射程倍率</label><input id="f_efRange" type="number" step="0.05" placeholder="1"></div>
+    <div><label>弾速倍率</label><input id="f_efProjSpeed" type="number" step="0.05" placeholder="1"></div>
+    <div><label>消費ガッツ倍率</label><input id="f_efGutsCost" type="number" step="0.05" placeholder="1"></div>
+    <div><label>やけど(秒)</label><input id="f_efBurn" type="number" step="1" placeholder="0"></div>
+    <div><label>どく(秒)</label><input id="f_efPoison" type="number" step="1" placeholder="0"></div>
+    <div><label>おそい(秒)</label><input id="f_efSlow" type="number" step="0.5" placeholder="0"></div>
+  </div>
+  <div class="r3">
+    <div><label>こおり(秒)</label><input id="f_efFreeze" type="number" step="0.5" placeholder="0"></div>
+    <div><label>ガッツ削り(与ダメ比)</label><input id="f_efGutsDrain" type="number" step="0.05" placeholder="0"></div>
+    <div><label>HP吸収(与ダメ比)</label><input id="f_efLifesteal" type="number" step="0.05" placeholder="0"></div>
+  </div>
   <label>状態変化(試合中に条件を満たすと一定時間だけ強くなる)</label>
   <select id="f_scPreset"><option value="">つけない</option></select>
   <div id="scBox" style="display:none">
@@ -397,13 +423,9 @@
   </div>
   <label>育成適性(S〜E)</label>
   <div class="r6" id="aptRow"></div>
-  <label>色スキンの主役の色</label>
-  <div class="r2">
-    <div><select id="f_srcType">
-      <option value="chroma">色で拾う(chroma)</option>
-      <option value="light">白っぽい部分(light)</option>
-    </select></div>
-    <div><input id="f_hue" placeholder="色相(空欄なら静止画から自動)"></div>
+  <div class="hint">
+    色スキンは<b>オーラの色以外の5色</b>を自動でつけます。塗り替える部分(主役の色)も
+    アイコン画像から自動で決めるので、入力するところはありません。
   </div>
 </div>
 
@@ -1717,9 +1739,8 @@ async function buildPortraits(){
     const pf = $('imgPlayer').files[0];
     const player = pf ? await makePortrait(pf) : icon;
     state.portraits = { icon: icon.blob, player: player.blob };
+    // 塗り替える部分(主役の色)はここで自動判定する。入力欄は無い
     state.hue = sampleHue(icon.imageData, 60);
-    if(state.hue != null && !$('f_hue').value) $('f_hue').value = state.hue;
-    if(state.hue == null) $('f_srcType').value = 'light';
     const urls = await Promise.all([blobToDataUrl(icon.blob), blobToDataUrl(player.blob)]);
     $('portraitStrip').innerHTML = urls.map((u,i)=>
       `<div class="cell"><img src="${u}"><span class="n">${i?'試合用':'アイコン'}</span></div>`).join('');
@@ -1760,6 +1781,10 @@ const TPL_HINT = {
 };
 const ICONS = ['🔥','💧','🍃','⚡️','👊🏿','🤚🏿','🖐🏻','🗡️','🏹','☠️','🌸','💋','🌱'];
 const AURAS = ['red','blue','yellow','green','white','black'];
+/* 色スキンの6色。**data.js の SKIN_COLOR_ORDER と同じものを二重に持っている**
+   (このツールは data.js を読み込まずに単体で動くため)。**片方を変えたら必ず両方直すこと。**
+   モンスターが持てるのはこのうちオーラ色を除いた5色。 */
+const SKIN_COLOR_ORDER = ['black','white','red','blue','yellow','green'];
 const RANKS = ['S','A','B','C','D','E'];
 const STATS = ['life','power','wisdom','accuracy','evasion','vitality'];
 
@@ -1801,6 +1826,15 @@ function buildMoves(spec){
     return base;
   });
   out[0].tier = 1; out[1].tier = 2; out[2].tier = 3;
+  /* 特性の「射程が短い」「弾速が速い」を**技の数字そのものへ焼き込む**。
+     ガリの godrange・ハムの hum と同じやり方で、エンジン側に分岐を足さない。
+     範囲技(aoeShape)には projSpeed が無いので、あるものだけ掛ける。 */
+  const ef = spec.traitEffects || {};
+  for(const mv of out){
+    if(ef.rangeMult     && mv.range)     mv.range     = Math.round(mv.range * ef.rangeMult);
+    if(ef.projSpeedMult && mv.projSpeed) mv.projSpeed = Math.round(mv.projSpeed * ef.projSpeedMult);
+    if(ef.gutsCostMult  && mv.gutsCost)  mv.gutsCost  = Math.round(mv.gutsCost * ef.gutsCostMult);
+  }
   return out;
 }
 
@@ -1860,12 +1894,19 @@ function renderRows(spec, moves, traitExists){
   if(!traitExists){
     const t = spec.trait + ':';
     rows.TRAIT_DESC = [`  ${t}${' '.repeat(Math.max(0, 12 - t.length))}${jsStr(spec.traitDesc)}, ${mark}`];
+    /* 命中時の効果は data.js の TRAIT_ON_HIT へ。**すでにある特性idのときは書かない**
+       (同じ特性を持つ既存モンスターの挙動まで変わってしまうため)。 */
+    const oh = traitOnHitOf(spec.traitEffects || {});
+    if(oh){
+      const body = Object.keys(oh).map(a=>`${a}:${jsValue(oh[a])}`).join(', ');
+      rows.TRAIT_ON_HIT = [`  ${t}${' '.repeat(Math.max(0, 12 - t.length))}{ ${body} }, ${mark}`];
+    }
   }
   return rows;
 }
 const TABLES = [['ELEMENTS','data.js'],['WALK_ANIM','data.js'],['SIGNATURE_MOVES','data.js'],
   ['MONSTER_AURA','data.js'],['MOVE_AURA','data.js'],['STATE_CHANGES','data.js'],
-  ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js'],
+  ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js'],['TRAIT_ON_HIT','data.js'],
   ['SSR_SKINS','data.js'],['SSR_SKIN_AURA','data.js'],['SSR_SKIN_TIER3','data.js'],
   ['RAID_EFFECT_SKINS','data.js'],['SKIN_MEDIA','data.js']];
 const TABLE_FILE = Object.fromEntries(TABLES);
@@ -1969,6 +2010,34 @@ function traitExistsIn(uiText, trait){
 function bumpCache(swText){
   return swText.replace(/const CACHE_NAME = 'aramon-cache-v(\d+)';/,
     (_s, n) => `const CACHE_NAME = 'aramon-cache-v${+n + 1}';`);
+}
+
+/* ---------------------------------------------------------- 更新履歴
+   data.js の UPDATE_HISTORY へ1行足す。日付は降順で、今日のかたまりが
+   あればその先頭へ、無ければ新しいかたまりを一番上に作る。
+   **プレイヤーに見える文章なので、技術用語を避けた短い日本語で書くこと。**   */
+function todayYmd(){
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function addUpdateHistory(dataJs, text, tags){
+  const g = (tags && tags.length ? tags : ['feature']).map(jsStr).join(',');
+  const item = `    { t:${jsStr(text)}, g:[${g}] },`;
+  const ymd = todayYmd();
+  const head = /^const UPDATE_HISTORY = \[[ \t]*$/m.exec(dataJs);
+  if(!head) return { text: dataJs, note: 'UPDATE_HISTORY が見つからないので更新履歴は追記しません' };
+  // 今日のかたまりがあれば、その items の先頭へ差し込む
+  const sameDay = new RegExp(`^  \\{ date:'${ymd}', items:\\[[ \\t]*$`, 'm').exec(dataJs);
+  if(sameDay){
+    const at = sameDay.index + sameDay[0].length + 1;
+    return { text: dataJs.slice(0, at) + item + '\n' + dataJs.slice(at),
+             note: `更新履歴(${ymd})へ1行追記` };
+  }
+  const at = head.index + head[0].length + 1;
+  const block = `  { date:'${ymd}', items:[\n${item}\n  ]},\n`;
+  return { text: dataJs.slice(0, at) + block + dataJs.slice(at),
+           note: `更新履歴に ${ymd} のかたまりを作って追記` };
 }
 
 /* ---------------------------------------------------------- GitHub */
@@ -2084,18 +2153,55 @@ async function getFile(path){
 }
 
 /* ---------------------------------------------------------- 仕様の収集 */
+// 空欄は「効果なし」。数値のときだけ拾う(0や1も意味があるのでそのまま返す)
+function numOrNull(id){
+  const v = $(id) ? $(id).value.trim() : '';
+  if(v === '') return null;
+  const n = +v;
+  return isFinite(n) ? n : null;
+}
+/* 特性の効果を集める。**書いた説明のとおりに実際に効かせる**ための入口はここ1か所。
+   ・常時の倍率 → ELEMENTS の行へ(エンジンが元から読んでいるフィールド)
+   ・射程/弾速/消費ガッツ → 技の数字そのものへ焼き込む(ガリの godrange と同じやり方)
+   ・命中時の効果 → data.js の TRAIT_ON_HIT へ1行 */
+function collectTraitEffects(){
+  const ef = {};
+  const put = (k, id)=>{ const n = numOrNull(id); if(n != null) ef[k] = n; };
+  put('dmgTakenMod','f_efDmgTaken');   put('dmgDealtMod','f_efDmgDealt');
+  put('cooldownMod','f_efCooldown');   put('gutsRegenMod','f_efGutsRegen');
+  put('speedMod','f_efSpeed');         put('hitboxMult','f_efHitbox');
+  put('rangeMult','f_efRange');        put('projSpeedMult','f_efProjSpeed');
+  put('gutsCostMult','f_efGutsCost');
+  put('burnSec','f_efBurn');           put('poisonSec','f_efPoison');
+  put('slowSec','f_efSlow');           put('freezeSec','f_efFreeze');
+  put('gutsDrain','f_efGutsDrain');    put('lifesteal','f_efLifesteal');
+  return ef;
+}
+// 命中時の効果だけを取り出す(TRAIT_ON_HIT に書くぶん)
+const TRAIT_ON_HIT_KEYS = ['burnSec','poisonSec','slowSec','freezeSec','gutsDrain','lifesteal'];
+function traitOnHitOf(ef){
+  const o = {};
+  for(const k of TRAIT_ON_HIT_KEYS) if(ef[k]) o[k] = ef[k];
+  return Object.keys(o).length ? o : null;
+}
 function collectSpec(){
   const apt = {}; STATS.forEach(s=> apt[s] = $('apt_'+s).value);
-  const hue = $('f_hue').value.trim();
+  const ef = collectTraitEffects();
+  const aura = $('f_aura').value;
+  /* 色スキンはオーラの色以外の5色。**手で選ばせない**(オーラ色と同じ色を入れると
+     着せ替えでオーラと見分けがつかなくなるので、全モンスターでこの決まりにそろえる)。
+     塗り替える部分はアイコン画像から拾った色相(state.hue)で決める。 */
+  const colors = SKIN_COLOR_ORDER.filter(c => c !== aura);
   const spec = {
     key: $('f_key').value.trim(), label: $('f_label').value.trim(),
     color: $('f_color').value.trim(), dark: $('f_dark').value.trim(),
     speed: +$('f_speed').value, hp: +$('f_hp').value,
     trait: $('f_trait').value.trim(), traitDesc: $('f_traitDesc').value.trim(),
-    aura: $('f_aura').value, aptitude: apt,
-    skin: { colors: ['black','white','red','blue','yellow'],
-            source: $('f_srcType').value === 'light' ? { type:'light' }
-                  : { type:'chroma', hue: hue==='' ? (state.hue||0) : +hue, window:60 } },
+    traitEffects: ef,
+    aura, aptitude: apt,
+    skin: { colors,
+            source: state.hue == null ? { type:'light' }
+                  : { type:'chroma', hue: state.hue, window:60 } },
     moves: [ { name: $('m0_name').value.trim(), icon: $('m0_icon').value },
              { name: $('m1_name').value.trim(), icon: $('m1_icon').value },
              { name: $('m2_name').value.trim(), template: $('m2_tpl').value } ],
@@ -2104,6 +2210,9 @@ function collectSpec(){
             source: $('walkSrc').value, mode: $('mode').value },
     images: { icon: `assets/${$('f_key').value.trim()}/icon.png` },
   };
+  // ELEMENTSの行に出す常時の倍率は spec 直下へ(renderRows がここから拾う)
+  for(const k of ['speedMod','cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
+    if(ef[k] != null) spec[k] = ef[k];
   const acc = $('f_accent').value.trim();
   if(acc) spec.accent = acc;
   const sc = collectStateChange();
@@ -2194,6 +2303,11 @@ async function planMonster(dataJs, uiJs, swJs, lines){
   images.push({ path:`monsters/${spec.key}_player.png`, blob: state.portraits.player });
   texts['sw.js'] = newSw;
   texts[`monsters/specs/${spec.key}.json`] = JSON.stringify(spec, null, 2);
+  // 更新履歴。プレイヤーにはここでしか新モンスターの登場が伝わらない
+  const uh = addUpdateHistory(texts['data.js'],
+    `🆕 新モンスター「${spec.label}」が登場しました！ ${spec.traitDesc || ''}`.trim(),
+    ['feature','monster']);
+  texts['data.js'] = uh.text;
 
   lines.push('■ 送信されるファイル');
   lines.push(`  monsters/${spec.key}_walk_f1..8.png / _b1..8.png  (16枚)`);
@@ -2201,6 +2315,8 @@ async function planMonster(dataJs, uiJs, swJs, lines){
   lines.push(`  monsters/specs/${spec.key}.json`);
   lines.push('  data.js / ui.js  (9表へ追記)');
   lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(newSw)||[])[1]} へ)`);
+  lines.push('');
+  lines.push('  ' + uh.note);
   lines.push('');
   lines.push('■ data.js / ui.js への追記');
   rowLines(rows, lines);
@@ -2242,6 +2358,10 @@ async function planSsr(dataJs, swJs, lines){
   images.push({ path:`monsters/${ss.playerImg}.png`, blob: state.portraits.player });
   texts['sw.js'] = newSw;
   texts[`monsters/specs/${ss.id}.json`] = JSON.stringify(ss, null, 2);
+  // 更新履歴。新しいスキンが引けるようになったことはここでしか伝わらない
+  const uh = addUpdateHistory(texts['data.js'],
+    `✨ SSRスキン「${ss.name}」が登場しました！`, ['feature','monster']);
+  texts['data.js'] = uh.text;
 
   lines.push('■ 送信されるファイル');
   if(!walkNote) lines.push(`  monsters/${ss.walkPrefix}f1..8.png / ${ss.walkPrefix}b1..8.png  (16枚)`);
@@ -2249,6 +2369,7 @@ async function planSsr(dataJs, swJs, lines){
   lines.push(`  monsters/specs/${ss.id}.json`);
   lines.push('  data.js  (SSRの表へ追記)');
   lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(newSw)||[])[1]} へ)`);
+  lines.push('  ' + uh.note);
   lines.push('');
   lines.push('■ data.js への追記');
   rowLines(rows, lines);
