@@ -756,7 +756,13 @@ function updateLobbyPickLabels(){
    **端末ごとの操作の好みなのでアカウント同期には入れない**(視点設定と同じ扱い)。
    値は復元時に必ず存在チェックする(消したマスモン・古いマップキーが残っていても壊れないように)。 */
 const LOBBY_PREFS_KEY = 'aramon_lobby_prefs_v1';
+/* 【必須】復元が済むまでは保存しない。
+   起動時のトップレベルで `setRealMapMode(false)` などの初期化が走り、その中から
+   saveLobbyPrefs() が呼ばれる。復元より先なので、**前回の選択が既定値で上書きされて
+   消えていた**(記憶しているのに毎回ランダム・ソロで始まる、という不具合の原因)。 */
+let lobbyPrefsReady = false;
 function saveLobbyPrefs(){
+  if(!lobbyPrefsReady) return;
   try{
     localStorage.setItem(LOBBY_PREFS_KEY, JSON.stringify({
       map: game.selectedMap, real: !!game.realMapMode,
@@ -770,7 +776,9 @@ function saveLobbyPrefs(){
 /* 復元は「あれば嬉しい」機能なので、中で何が起きても起動は止めない。
    丸ごとtry-catchで包み、失敗したら初期値のままロビーを開く。 */
 function restoreLobbyPrefs(){
-  try{ restoreLobbyPrefsInner(); }catch(err){ console.warn('前回の選択の復元に失敗', err); }
+  try{ restoreLobbyPrefsInner(); }
+  catch(err){ console.warn('前回の選択の復元に失敗', err); }
+  finally{ lobbyPrefsReady = true; }   // ここから先の選択は保存する
 }
 function restoreLobbyPrefsInner(){
   let p = null;
