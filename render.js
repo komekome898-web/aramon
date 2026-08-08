@@ -4251,13 +4251,19 @@ function drawSingleAreaEffect(ae){
 /* レイドのボスの予告標的。範囲攻撃が出る前に、当たる場所を点滅する輪で見せる。
    地面に貼る円は必ず1点ずつ投影する(画面上の楕円を決め打ちすると地面から浮く)。
    扇は中心から両端へ伸ばした2本の線と、外周の弧で「どこまで届くか」を示す。      */
+/* レイドボスの攻撃予告。
+   **塗る形は当たり判定(hitTestFan/hitTestRect/circleのdist)と同じ半径・同じ角度**にする
+   (見た目だけ広い/狭いにしない)。ボスは予告中は動かない(resolveMovement)ので、
+   ここで使う m.x/m.y/m.angle は実際に撃たれる位置とズレない。 */
 function drawRaidTelegraph(){
   if(!game.raid || typeof raidState==='undefined' || !raidState || !raidState.pending) return;
   const p = raidState.pending;
   if(!p.move || !Array.isArray(p.marks)) return;
   const left = Math.max(0, p.fireAt - matchTime);
-  // 発動が近いほど速く点滅させて「そろそろ来る」と分かるようにする
-  const blink = 0.45 + 0.45*Math.abs(Math.sin(matchTime*(left<0.6?18:9)));
+  const soon = left < 0.6;
+  // 発動が近いほど速く点滅・強く光らせて「そろそろ来る」と分かるようにする
+  const blink = 0.45 + 0.45*Math.abs(Math.sin(matchTime*(soon?18:9)));
+  const fillAlpha = blink * (soon ? 0.42 : 0.24);
   const col = p.move.color || '#ff5d5d';
   ctx.save();
   ctx.globalAlpha = blink;
@@ -4273,6 +4279,9 @@ function drawRaidTelegraph(){
         arc.push(pt || null);
       }
       const c = project(m.x, m.y, groundZAt(m.x,m.y));
+      // 扇の内側を塗って光らせる(中心→弧→中心の扇形。nullは投影の裏側などで稀に出る)
+      const arcValid = arc.filter(Boolean);
+      if(c && arcValid.length>=2) fillShape([c, ...arcValid], col, fillAlpha);
       if(c){
         for(const side of [arc[0], arc[arc.length-1]]){
           if(!side) continue;
@@ -4283,6 +4292,8 @@ function drawRaidTelegraph(){
       strokeProjectedRing(arc, col, 4, [12,9], renderHeavyLoad?null:{blur:14, color:col});
     } else {
       const pts = groundCirclePoints(m.x, m.y, m.r, 40);
+      // 円の内側を塗って光らせる
+      if(pts) fillShape(pts, col, fillAlpha);
       if(pts) strokeProjectedRing(pts, col, 4, [12,9], renderHeavyLoad?null:{blur:14, color:col});
       // 中心にも小さい輪を出して「ここに落ちる」と分かるようにする
       const inner = groundCirclePoints(m.x, m.y, m.r*0.35, 26);

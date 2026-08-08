@@ -882,6 +882,10 @@ function entityMoveSpeed(m){
 }
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
+  /* レイドボスは技を溜めている間(予告中)は歩かない。
+     【重要】ここで動けると、予告で見せた輪の位置から実際の攻撃がズレて、
+     「予告範囲より大きい攻撃が来る」ように見える不具合になる(実際に報告があった)。 */
+  if(m.isRaidBoss && typeof raidState!=='undefined' && raidState && raidState.pending) return;
   // 技と一緒に自分も前進する「移動技」用(デュラハン最終奥義など)。入力・AIより優先する
   if(m.moveWithMoveUntil > matchTime){
     tryMoveAxis(m, m.moveWithMoveDirX*m.moveWithMoveSpeed*dt, m.moveWithMoveDirY*m.moveWithMoveSpeed*dt);
@@ -1082,7 +1086,8 @@ function raidBeginBossAttack(b, move, elapsed){
     b.facingAngle = ang;
     marks.push({ x:b.x, y:b.y, r:move.range, angle:ang, fanDeg:move.fanAngleDeg });
   }
-  raidState.pending = { move, marks, fireAt: matchTime + move.telegraph, angle: b.facingAngle };
+  const tele = raidTelegraphTime(move);
+  raidState.pending = { move, marks, fireAt: matchTime + tele, angle: b.facingAngle };
   raidState.marks = marks;
   if(typeof pushToast==='function') pushToast(move.warn);
   playSe(move.tier>=3 ? 'godRising' : 'fireRoar');
@@ -1090,7 +1095,7 @@ function raidBeginBossAttack(b, move, elapsed){
   // 送るのは表示に必要なぶんだけ(技キー・標的・予告の長さ)。当たり判定はホストのまま。
   if(netState.mode==='multi' && netState.isHost){
     window.__aramonPushEvent(netState.roomId, {
-      kind:'raidTele', mv:move.key, tele:move.telegraph,
+      kind:'raidTele', mv:move.key, tele,
       marks: marks.map(m=>({ x:Math.round(m.x), y:Math.round(m.y), r:Math.round(m.r),
                              a: m.angle!=null ? Math.round(m.angle*1000)/1000 : null,
                              f: m.fanDeg!=null ? m.fanDeg : null })),
@@ -1118,12 +1123,16 @@ function raidFireBossAttack(b){
     areaEffects.push(ae);
     made.push(ae);
   };
+  // 予告(p.marks)に記録した位置から撃つ。**b.x/b.yを直接読まない**
+  // (ボスは予告中は動かないが、記録済みの位置を使えば万一動いても予告とズレない)
   if(move.shape==='meteor'){
     for(const m of p.marks) mk(m.x, m.y, 'circle');
   } else if(move.shape==='circle'){
-    mk(b.x, b.y, 'circle');
+    const m0 = p.marks[0];
+    mk(m0.x, m0.y, 'circle');
   } else {
-    mk(b.x, b.y, 'fan', p.angle);
+    const m0 = p.marks[0];
+    mk(m0.x, m0.y, 'fan', p.angle);
   }
   playSe(move.tier>=3 ? 'beam' : 'fire');
   // ゲストにも同じ範囲攻撃を見せる(見た目専用。ダメージはホストが確定させる)
