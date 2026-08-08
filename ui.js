@@ -2283,6 +2283,7 @@ function showSsrReveal(skinId, onContinue){
   }
   document.getElementById('ssrRevealIcon').src = url || '';
   document.getElementById('ssrRevealText').textContent = `SSR ${m.name} 獲得！`;
+  setLastSkinShare(skinId);   // 画面内のシェアボタンとガチャ結果の両方がこれを見る
   ov.classList.remove('hidden');
   ov.classList.remove('play'); void ov.offsetWidth; ov.classList.add('play'); // ループアニメーションを再スタート
   // 内蔵の大当たり音声をスキップまでループ再生
@@ -2543,15 +2544,27 @@ function showGachaResults(results, granted){
     if(!granted.includes(k)) continue;
     grantMsg += `<div class="rar-${k==='sr'?'SR':'SSR'}" style="font-weight:700;">${CATALOG_LABEL[k]}を獲得！</div>`;
   }
+  /* シェアは「一番いいものが出たとき」だけ出す。SSR > SR の順で1つ選ぶ
+     (すべての行にボタンを付けると10連の結果が読めなくなる) */
+  const brag = results.find(r=>r.kind==='skin' && r.rarity==='SSR' && !r.dup)
+            || results.find(r=>r.kind==='skin' && r.rarity==='SR'  && !r.dup);
+  if(brag) setLastSkinShare(brag.skinId);
+  const shareBtn = brag ? '<button id="shareGachaBtn" class="gacha-share-btn">𝕏 でシェア</button>' : '';
   const res = document.getElementById('gachaResult');
   res.innerHTML = `<div class="gacha-result-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
-    ${grantMsg}<div class="gacha-result-tap">タップで閉じる</div>`;
+    ${grantMsg}${shareBtn}<div class="gacha-result-tap">タップで閉じる</div>`;
   res.classList.remove('hidden');
   playSe('jakiin');
   updateGachaWallet(); updateAccountBar(); updateGachaCounterUI();
   // スキンのセルをタップしたら正面/後ろ姿のプレビューを開く(結果を閉じない)
   res.querySelectorAll('.gacha-cell[data-skin]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{ e.stopPropagation(); showSkinPreview(cell.dataset.skin); });
+  });
+  // 結果はどこを触っても閉じるので、シェアだけは伝播を止める
+  const gShare = document.getElementById('shareGachaBtn');
+  if(gShare) gShare.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(_lastSkinShare) openShareOverlay(_lastSkinShare.spec, _lastSkinShare.text);
   });
   res.onclick = ()=>{
     res.classList.add('hidden'); res.onclick=null;
@@ -3958,9 +3971,9 @@ function raidClaim(kind, idx){
 /* --- レイドランキング(総ダメージ / 1回の最大ダメージ / 参加回数) ---
    並べ替えの基準と値の出し方はこの表1か所で決める(タブを足すならここへ1行)。 */
 const RAID_RANK_KINDS = {
-  dmg:  { field:'dmg',  format: v=>Math.round(v).toLocaleString() },
-  best: { field:'best', format: v=>Math.round(v).toLocaleString() },
-  runs: { field:'runs', format: v=>`${v} 回` },
+  dmg:  { field:'dmg',  label:'総ダメージ',  format: v=>Math.round(v).toLocaleString() },
+  best: { field:'best', label:'最大ダメージ', format: v=>Math.round(v).toLocaleString() },
+  runs: { field:'runs', label:'参加回数',    format: v=>`${v} 回` },
 };
 let raidRankTab = 'dmg';
 let raidRankRows = null;   // 取得した生の行(表示のたびにタブの基準で並べ替える)
@@ -3994,6 +4007,7 @@ function renderRaidRanking(){
     raidOpenNow() ? `今回の開催 残り ${Math.floor(left/86400)}日${Math.floor((left%86400)/3600)}時間` : '開催前';
   document.querySelectorAll('.raid-rank-tab').forEach(t=>t.classList.toggle('active', t.dataset.rk===raidRankTab));
   const kind = RAID_RANK_KINDS[raidRankTab] || RAID_RANK_KINDS.dmg;
+  setRankShareTarget(true, null);   // 自分の行が見つかるまではシェアできない
   if(raidRankRows===null){ box.innerHTML = '<div class="rank-empty">読み込み中…</div>'; return; }
   // 記録が無い人(0)は載せない。同じ人が全タブに並ぶより、その基準で実績がある人だけ出す
   const rows = raidRankRows.filter(r=>(r[kind.field]||0) > 0)
@@ -4007,15 +4021,26 @@ function renderRaidRanking(){
     return;
   }
   const me = raidMyAccountName();
+  let mine = null;
   box.innerHTML = `<div class="raid-rank-list">${rows.map((r,i)=>{
     const v = kind.format(r[kind.field]||0);
     const medal = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':`${i+1}`));
+    if(r.name===me && !mine) mine = { rank:i+1, val:v };   // シェア用に自分の行を控える
     return `<div class="raid-rank-row${r.name===me?' is-me':''}">
       <span class="raid-rank-no">${medal}</span>
       <span class="raid-rank-name">${rebirthEscape(r.name||'ゲスト')}</span>
       <span class="raid-rank-val">${v}</span>
     </div>`;
   }).join('')}</div>`;
+  setRankShareTarget(true, mine && {
+    rank: mine.rank,
+    title: `レイドの${kind.label}ランキング`,
+    valueLabel: kind.label, valueText: mine.val,
+    element: game.selectedElement,
+    skinId: (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null,
+    monsterLabel: ELEMENTS[game.selectedElement] ? ELEMENTS[game.selectedElement].label : '',
+    chips: ['レイドバトル'],
+  });
   attachVisibleScrollbar(box, document.getElementById('raidRankScrollbar'));
 }
 document.querySelectorAll('.raid-rank-tab').forEach(t=>{
@@ -4156,6 +4181,17 @@ function raidShowResult(defeated, dmg, prevBest){
   document.getElementById('raidHud').classList.add('hidden');
   if(!noRecord){
     logRaidMatchForAdmin(d, defeated ? 'defeated' : (newBest ? 'best' : (died ? 'died' : 'timeup')));
+  }
+  // シェア用の控え(通常の試合と同じ理由でここで作る)
+  {
+    const key = player ? player.element : game.selectedElement;
+    _lastResultShare = buildRaidShare({
+      defeated: !!defeated, newBest: !!newBest, died,
+      element: key,
+      skinId: (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null,
+      dmg: d, kills: player ? player.kills : 0,
+      timeText: fmtTime(player && player.deathAt ? player.deathAt : matchTime),
+    });
   }
 }
 
@@ -4380,6 +4416,17 @@ function showResultNow(isWin, placement){
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
   logMatchForAdmin(isWin, placement);
+  /* シェア用の控え。**ここで作らないと後から復元できない**
+     (playerは次の試合開始で作り直され、報酬額もこの関数のローカル変数のため) */
+  _lastResultShare = buildResultShare({
+    isWin: !!isWin, placement,
+    element: player.element,
+    skinId: (typeof getEquippedSkin==='function') ? getEquippedSkin(player.element) : null,
+    kills: player.kills, dmg: _dmg,
+    timeText: fmtTime(player.deathAt||matchTime),
+    mapLabel: shareMapLabel(),
+    best: (player.kills>0 && player.kills>_prevBestKills) || (_dmg>0 && _dmg>_prevBestDamage),
+  });
 }
 // リザルトの自己ベスト更新バッジ＆獲得称号バッジを描画する
 function renderResultBadges(o){
@@ -4430,6 +4477,357 @@ function matchOutcomeFields(){
     skin: (typeof currentEquippedSkinId==='function') ? (currentEquippedSkinId() || null) : null,
   };
 }
+/* =====================================================================
+   Xへのシェア(共有シート → Xアプリ)
+
+   ・**Xのツイート用URLには画像を添付できない。** 画像付きで投稿する唯一の道が
+     Web Share API Level 2(navigator.share({files})) で、OSの共有シートを経由する。
+   ・share() は**ユーザー操作のハンドラから同期的に**呼ばないとiOSに撥ねられる。
+     そのため画像(File)はこの画面を開いた時点で作り終え、タップでは share() を呼ぶだけにする。
+   ・画像の絵柄は render.js の shareCardCanvas(spec) が描く。**画面ごとの違いはspecの作り方だけ**で、
+     入口を足すときは buildXxxShare() を1つ書いて openShareOverlay() へ渡せばよい。
+   ===================================================================== */
+let _shareState = { file:null, text:'', seq:0 };
+function shareFilesSupported(f){
+  return !!(navigator.canShare && navigator.share && f && navigator.canShare({ files:[f] }));
+}
+const SHARE_HINTS = {
+  ready:       'ボタンを押すと共有メニューが開きます。そこで X を選んでください',
+  unsupported: 'この端末では画像を直接渡せません。画像を長押しして保存 →「𝕏 を開く」→ 投稿画面で添付してください',
+  sharing:     '共有メニューを開いています…',
+  done:        '共有メニューを開きました。投稿画面の本文が空のときは貼り付けてください（コピー済みです）',
+  error:       '共有できませんでした。画像を長押しして保存し、「𝕏 を開く」から投稿してください',
+  building:    '',
+};
+function setShareState(state){
+  const ov = document.getElementById('shareOverlay');
+  if(!ov) return;
+  ov.dataset.state = state;
+  const hint = document.getElementById('shareHint');
+  if(hint) hint.textContent = SHARE_HINTS[state] || '';
+}
+/* spec(絵柄の設計図)と text(投稿文)を受け取って画面を開き、Fileまで作る。
+   **await を挟むのはこちら側だけ**(タップのハンドラでは挟まない)。 */
+async function openShareOverlay(spec, text){
+  const ov = document.getElementById('shareOverlay');
+  if(!ov || typeof shareCardCanvas!=='function'){ pushToast('シェア機能を読み込めませんでした'); return; }
+  const seq = ++_shareState.seq;              // 連打・開き直しで古い生成結果を捨てる
+  _shareState.file = null;
+  _shareState.text = text || '';
+  document.getElementById('shareTextBox').textContent = _shareState.text;
+  document.getElementById('shareOpenXBtn').href = 'https://x.com/intent/post?text=' + encodeURIComponent(_shareState.text);
+  document.getElementById('sharePreviewImg').src = '';
+  setShareState('building');
+  ov.classList.remove('hidden');
+  try{
+    // フォント未解決のまま描くと文字幅が変わるので待つ。来なくても描けるよう握りつぶす
+    if(document.fonts && document.fonts.ready) await document.fonts.ready;
+  }catch(err){}
+  if(seq !== _shareState.seq) return;
+  let canvas = null;
+  try{ canvas = shareCardCanvas(spec); }
+  catch(err){ console.warn('シェア画像を作れませんでした', err); }
+  if(seq !== _shareState.seq) return;
+  if(!canvas){ setShareState('error'); return; }
+  document.getElementById('sharePreviewImg').src = canvas.toDataURL('image/png');
+  const file = await shareCardFile(spec, 'aramon.png', canvas);
+  if(seq !== _shareState.seq) return;
+  _shareState.file = file;
+  if(shareFilesSupported(file)){ setShareState('ready'); }
+  else { setShareState('unsupported'); copyShareText(true); }   // 貼り付けだけで済むようにしておく
+}
+function closeShareOverlay(){
+  _shareState.seq++;                          // 進行中の生成を無効化する
+  _shareState.file = null;
+  const ov = document.getElementById('shareOverlay');
+  if(ov) ov.classList.add('hidden');
+  const img = document.getElementById('sharePreviewImg');
+  if(img) img.src = '';                       // 1MB級のdataURLを抱えたままにしない
+}
+/* 【重要】この関数に await を絶対に足さないこと。
+   navigator.share はタップ直後に同期で呼ぶ必要があり、await を挟むと
+   ユーザー操作の資格が切れて iOS が NotAllowedError で撥ねる。 */
+function onShareBtnTap(){
+  const f = _shareState.file;
+  if(!shareFilesSupported(f)){ setShareState('unsupported'); copyShareText(); return; }
+  setShareState('sharing');
+  const p = navigator.share({ files:[f], text:_shareState.text });   // ← 先にこれ
+  // Xのアプリが画像だけ受け取って本文を捨てることがあるので、同じタップの中でコピーもしておく
+  copyShareText(true);                                              // ← 順序を逆にしない
+  p.then(()=>{ setShareState('done'); })
+   .catch(err=>{
+     // 共有メニューを閉じただけ(AbortError)は失敗ではない。黙って元へ戻す
+     if(err && err.name === 'AbortError'){ setShareState('ready'); return; }
+     console.warn('シェアに失敗', err);
+     setShareState('error');
+   });
+}
+function copyShareText(silent){
+  const t = _shareState.text || '';
+  const ok = ()=>{ if(!silent) pushToast('投稿する文をコピーしました'); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(ok).catch(()=>{ if(shareLegacyCopy(t)) ok(); });
+    return;
+  }
+  if(shareLegacyCopy(t)) ok();
+}
+// clipboard APIが無い/拒否された端末向けの保険。*のuser-select:noneを避けるためtextareaを使う
+function shareLegacyCopy(t){
+  const ta = document.createElement('textarea');
+  ta.value = t;
+  ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0, t.length);
+  let ok = false;
+  try{ ok = document.execCommand('copy'); }catch(err){}
+  ta.remove();
+  return ok;
+}
+/* 投稿文の組み立て。**URLは必ず最後の行に単独で置く**(Xのプレビューが安定する)。
+   Xは URL=23 / 日本語=2 / ASCII=1 で数えて上限280。溢れたら数値行から削る。 */
+function shareTextUnits(s){
+  let n = 0;
+  for(const ch of String(s||'')) n += (ch.charCodeAt(0) < 0x80) ? 1 : 2;
+  return n;
+}
+function buildShareText(lines, tags){
+  const body = (lines||[]).filter(Boolean).map(String);
+  const tagLine = [SHARE_TAG].concat(tags||[]).join(' ');
+  const fixed = shareTextUnits(tagLine) + 23 + 4;      // タグ行 + URL(一律23) + 改行ぶん
+  while(body.length > 1 && shareTextUnits(body.join('\n')) + fixed > SHARE_TEXT_MAX_UNITS) body.pop();
+  return body.concat([tagLine, SHARE_URL]).join('\n');
+}
+// シェアに出すプレイヤー名。ランキング登録名をそのまま使う
+function sharePlayerName(){
+  const el = document.getElementById('playerNameInput');
+  const raw = el ? (el.value||'').trim() : '';
+  return raw ? raw.slice(0, 12) : '名無しのモンスター';
+}
+/* モンスターの絵。装備スキンがあればそれを反映する。
+   **未ロードなら null**(カード側がプレースホルダに切り替える)。 */
+function shareArtImage(elementKey, skinId){
+  if(typeof skinnedImage==='function' && skinId){
+    const s = skinnedImage(skinId, 'icon');
+    if(s && (typeof imgIsReady!=='function' || s instanceof HTMLCanvasElement || imgIsReady(s))) return s;
+  }
+  const base = (typeof monsterImages!=='undefined') ? monsterImages[elementKey] : null;
+  if(base && (typeof imgIsReady!=='function' || imgIsReady(base))) return base;
+  return null;
+}
+function shareBindUi(){
+  const on = (id, fn, stop)=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('click', (e)=>{ if(stop) e.stopPropagation(); fn(e); });
+  };
+  on('closeShareBtn', closeShareOverlay);
+  on('shareDoBtn', onShareBtnTap);
+  on('shareCopyBtn', ()=>copyShareText(false));
+  // 背景をタップしたら閉じる(枠の中は閉じない)
+  const ov = document.getElementById('shareOverlay');
+  if(ov) ov.addEventListener('click', (e)=>{ if(e.target === ov) closeShareOverlay(); });
+
+  // --- 各画面の入口 ---
+  on('shareResultBtn', ()=>{
+    if(!_lastResultShare){ pushToast('シェアできる記録がありません'); return; }
+    openShareOverlay(_lastResultShare.spec, _lastResultShare.text);
+  });
+  on('shareRankBtn',     ()=>openRankShare(false));
+  on('shareRaidRankBtn', ()=>openRankShare(true));
+  /* SSR獲得画面は**どこを触っても次へ進む**ので、スキップボタンと同じく伝播を止める。
+     シェア画面を閉じると獲得画面が残り、そのままタップで次へ進める。 */
+  on('ssrRevealShareBtn', ()=>{
+    const s = _lastSkinShare;
+    if(s) openShareOverlay(s.spec, s.text);
+  }, true);
+}
+// 直前に獲得したスキン(SSR獲得画面・ガチャ結果の両方が参照する)
+let _lastSkinShare = null;
+function setLastSkinShare(skinId){ _lastSkinShare = buildSkinShare(skinId); }
+
+/* ---- 各画面のカード(spec)と投稿文 --------------------------------------
+   入口を足すときはここに1つ関数を書き、{spec, text} を返して openShareOverlay へ渡す。
+   render.js 側には手を入れない。                                            */
+const SHARE_ACCENT = {
+  win:  { accent:'#f4c430', accent2:'#5a3a12' },
+  lose: { accent:'#6fa8ff', accent2:'#16294a' },
+  raid: { accent:'#c07bff', accent2:'#39185e' },
+  mm:   { accent:'#7fd4a0', accent2:'#14402c' },
+  ssr:  { accent:'#ff8fd1', accent2:'#4a1030' },
+};
+// リザルトは表示のその場で作って持っておく(playerも報酬も後から読み直せない)
+let _lastResultShare = null;
+// ランキングのタブ名。シェアの見出しと投稿文の両方で使う
+const RANKING_MODE_LABEL = { kills:'キル数', damage:'ダメージ数', mastermonLevel:'マスモンLv' };
+/* ランキングをシェアできるのは「自分が一覧に載っているとき」だけ。
+   載っていないときはボタンごと消す(押しても出せない順位を見せない)。
+   一覧を描くたびに setRankShareTarget() で更新する。 */
+let _rankShareInfo = null, _raidRankShareInfo = null;
+function setRankShareTarget(raid, info){
+  if(raid) _raidRankShareInfo = info || null;
+  else     _rankShareInfo = info || null;
+  const btn = document.getElementById(raid ? 'shareRaidRankBtn' : 'shareRankBtn');
+  if(btn) btn.classList.toggle('hidden', !info);
+}
+function openRankShare(raid){
+  const info = raid ? _raidRankShareInfo : _rankShareInfo;
+  if(!info){ pushToast('ランキングに自分の記録がありません'); return; }
+  const s = buildRankShare({ ...info, raid });
+  openShareOverlay(s.spec, s.text);
+}
+function shareMapLabel(){
+  const key = (game.activeMapKey && MAPS[game.activeMapKey]) ? game.activeMapKey
+            : (MAPS[game.selectedMap] ? game.selectedMap : 'wild');
+  return (MAPS[key] || MAPS.wild).label;
+}
+function shareModeLabel(){ return netState.mode==='multi' ? 'みんなと対戦' : 'ソロ'; }
+// 参戦しているマスモンの名前(登録していなければモンスター名)
+function shareMonsterName(elementKey){
+  const el = ELEMENTS[elementKey];
+  const base = el ? el.label : String(elementKey||'');
+  try{
+    const mm = loadMastermons()[elementKey];
+    if(mm && mm.name) return mm.name;
+  }catch(err){}
+  return base;
+}
+function buildResultShare(o){
+  const el = ELEMENTS[o.element];
+  const label = el ? el.label : o.element;
+  const monName = shareMonsterName(o.element);
+  const chips = [];
+  if(o.best) chips.push('🏆 自己ベスト');
+  chips.push(shareModeLabel());
+  const spec = {
+    ...(o.isWin ? SHARE_ACCENT.win : SHARE_ACCENT.lose),
+    player: sharePlayerName(),
+    headline: o.isWin ? '👑 WINNER' : ('#' + o.placement),
+    sub: `${o.mapLabel} ／ ${shareModeLabel()}`,
+    image: shareArtImage(o.element, o.skinId),
+    imageLabel: monName === label ? label : `${monName}（${label}）`,
+    rows: [
+      { label:'撃破数',   value: String(o.kills) },
+      { label:'与ダメージ', value: Number(o.dmg).toLocaleString() },
+      { label:'生存時間',  value: o.timeText },
+    ],
+    chips,
+  };
+  const head = o.isWin ? '👑 荒野モン動で優勝！' : `荒野モン動で ${o.placement} 位でした`;
+  const text = buildShareText([
+    head + (o.best ? '　🏆自己ベスト更新！' : ''),
+    `${monName} ／ ${o.mapLabel}・${shareModeLabel()}`,
+    `撃破 ${o.kills} ・ 与ダメ ${Number(o.dmg).toLocaleString()} ・ 生存 ${o.timeText}`,
+  ]);
+  return { spec, text };
+}
+function buildRaidShare(o){
+  const el = ELEMENTS[o.element];
+  const label = el ? el.label : o.element;
+  const monName = shareMonsterName(o.element);
+  const head = o.defeated ? '🐉 レイドボスを討伐！'
+             : o.newBest  ? '🔥 レイドで自己ベスト更新！'
+             : o.died     ? '💀 レイドで力尽きた…'
+                          : '⏱ レイド時間切れ…';
+  const spec = {
+    ...SHARE_ACCENT.raid,
+    player: sharePlayerName(),
+    headline: head,
+    sub: (typeof RAID_BOSS!=='undefined' ? RAID_BOSS.name : 'レイドボス'),
+    image: shareArtImage(o.element, o.skinId),
+    imageLabel: monName === label ? label : `${monName}（${label}）`,
+    rows: [
+      { label:'与ダメージ', value: Number(o.dmg).toLocaleString() },
+      { label:'撃破数',    value: String(o.kills) },
+      { label:'生存時間',   value: o.timeText },
+    ],
+    chips: ['レイドバトル', shareModeLabel()],
+  };
+  const text = buildShareText([
+    head,
+    `${monName} で 与ダメージ ${Number(o.dmg).toLocaleString()}`,
+  ], ['#レイドバトル']);
+  return { spec, text };
+}
+function buildMastermonShare(key){
+  const mm = loadMastermons()[key];
+  if(!mm) return null;
+  const el = ELEMENTS[key];
+  const apt = mastermonApt(mm);
+  const rb = mastermonRebirthCount(mm);
+  // 高いステータスから3つ。何が自慢なのかが一目で伝わる
+  const top3 = MASTERMON_STATS.slice()
+    .sort((a,b)=>((mm.stats&&mm.stats[b.key])||0) - ((mm.stats&&mm.stats[a.key])||0))
+    .slice(0, 3);
+  const aptText = MASTERMON_STATS.map(s=>apt[s.key]).join(' ');
+  const chips = [];
+  if(rb > 0) chips.push(`★ 転生${rb}`);
+  chips.push(el ? el.label : key);
+  const spec = {
+    ...SHARE_ACCENT.mm,
+    player: sharePlayerName(),
+    headline: mm.name,
+    sub: `Lv.${mm.level} ／ 適正 ${aptText}`,
+    image: shareArtImage(key, (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null),
+    imageLabel: el ? el.label : key,
+    rows: top3.map(s=>({ label:s.label, value:String(Math.round((mm.stats&&mm.stats[s.key])||0)) })),
+    chips,
+  };
+  const text = buildShareText([
+    `マスモン「${mm.name}」Lv.${mm.level}${rb>0?` ★転生${rb}`:''}`,
+    top3.map(s=>`${s.label} ${Math.round((mm.stats&&mm.stats[s.key])||0)}`).join(' ／ '),
+    `適正 ${aptText}`,
+  ], ['#マスモン']);
+  return { spec, text };
+}
+/* スキン獲得(SSR獲得画面・ガチャ結果の両方から使う)。
+   絵はスキンそのもの。素の姿ではなく**着せ替え後の姿**を出す。 */
+function buildSkinShare(skinId){
+  const m = (typeof skinMeta==='function') ? skinMeta(skinId) : null;
+  if(!m) return null;
+  const el = ELEMENTS[m.element];
+  const rar = m.rarity;   // skinMeta が 'SSR' / 'SR' を必ず入れてくる
+  const img = (typeof skinnedImage==='function') ? skinnedImage(skinId, 'icon') : null;
+  const spec = {
+    ...SHARE_ACCENT.ssr,
+    player: sharePlayerName(),
+    headline: `${rar} ${m.name} 獲得！`,
+    sub: el ? `${el.label} のスキン` : 'スキン',
+    image: img || shareArtImage(m.element, null),
+    imageLabel: m.name,
+    rows: [
+      { label:'レアリティ', value: rar },
+      { label:'モンスター', value: el ? el.label : m.element },
+    ],
+    chips: ['スキンガチャ'],
+  };
+  const text = buildShareText([
+    `ガチャで「${m.name}」（${rar}）を引いた！`,
+    el ? `${el.label} の新しい姿` : '',
+  ], ['#ガチャ']);
+  return { spec, text };
+}
+/* ランキングのシェア。**自分が一覧に載っているときだけ**呼ばれる。
+   通常/レイドで見出しだけ変えて中身は共通にする。 */
+function buildRankShare(o){
+  const spec = {
+    ...(o.raid ? SHARE_ACCENT.raid : SHARE_ACCENT.win),
+    player: sharePlayerName(),
+    headline: `${o.rank} 位`,
+    sub: o.title,
+    image: shareArtImage(o.element || game.selectedElement, o.skinId),
+    imageLabel: o.monsterLabel || '',
+    rows: [
+      { label:o.valueLabel, value:o.valueText },
+      { label:'順位', value:`#${o.rank}` },
+    ],
+    chips: o.chips || [],
+  };
+  const text = buildShareText([
+    `${o.title} で ${o.rank} 位！`,
+    `${o.valueLabel} ${o.valueText}`,
+  ], o.raid ? ['#レイドバトル'] : []);
+  return { spec, text };
+}
+
 function logMatchForAdmin(isWin, placement){
   if(!window.__aramonLogMatch){ console.warn('logMatchForAdmin: __aramonLogMatch not ready, skipped'); return; }
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
@@ -5126,10 +5524,12 @@ const MM_MENU_ITEMS = [
   { tab:'info',     icon:'📊', label:'詳細情報',     desc:'ステ倍率・特性・状態変化・技の詳しいデータを見る' },
   { tab:'training', icon:'💪', label:'トレーニング', desc:'チケットを使ってステータスを上げる' },
   { tab:'dressup',  icon:'👕', label:'着せ替え',     desc:'スキンを変更し見た目とオーラを変える' },
+  // タブを開かずその場でシェア画面を出すので、tabではなくactionで区別する(転生ボタンと同じ形)
+  { action:'share', icon:'𝕏', label:'Xでシェア',    desc:'このマスモンの育ち具合を画像にしてXへ投稿する' },
 ];
 function buildMastermonMenuHtml(mm){
   const items = MM_MENU_ITEMS.map(m=>`
-      <button class="mm-menu-btn" data-tab="${m.tab}">
+      <button class="mm-menu-btn" ${m.tab ? `data-tab="${m.tab}"` : `data-action="${m.action}"`}>
         <span class="mm-menu-btn-icon">${m.icon}</span>
         <span class="mm-menu-btn-text">
           <span class="mm-menu-btn-label">${m.label}</span>
@@ -5715,6 +6115,11 @@ function renderMastermonDetail(key){
     panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         if(btn.dataset.action==='rebirth'){ openRebirthOverlay(key); return; }
+        if(btn.dataset.action==='share'){
+          const s = buildMastermonShare(key);
+          if(s) openShareOverlay(s.spec, s.text); else pushToast('このマスモンをシェアできませんでした');
+          return;
+        }
         mmOpenTab(btn.dataset.tab);
       });
     });
@@ -6333,6 +6738,7 @@ function rankMastermonHtml(name){
 async function loadRankingList(mode){
   const listEl = document.getElementById('rankingList');
   listEl.innerHTML = '<div class="rank-empty">読み込み中…</div>';
+  setRankShareTarget(false, null);   // 読み直しの間はシェアできない
   if(!window.__aramonFetchRanking){
     listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
     return;
@@ -6362,6 +6768,8 @@ async function loadRankingList(mode){
     return;
   }
   let prevScore = null, prevRank = 0;
+  const me = sharePlayerName();   // 自分の行が一覧にあればシェアできる
+  let mine = null;
   listEl.innerHTML = top.map((r,i)=>{
     const score = scoreOf(r);
     const val = mode==='mastermonLevel' ? `Lv.${r.mastermonLevel||0}` : score;
@@ -6380,8 +6788,18 @@ async function loadRankingList(mode){
     }
     const mmHtml = rankMastermonHtml(r.mastermonName);
     const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r, currentRankingMapType) : '';
+    if(nm === me && !mine) mine = { r, rank, val };   // シェア用に自分の行を控える
     return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
   }).join('');
+  setRankShareTarget(false, mine && {
+    rank: mine.rank,
+    title: `${RANKING_MODE_LABEL[mode] || mode}ランキング（${currentRankingMapType==='real' ? 'リアルマップ' : '通常マップ'}）`,
+    valueLabel: RANKING_MODE_LABEL[mode] || mode,
+    valueText: String(mine.val),
+    element: mine.r.element, skinId: mine.r.skin || null,
+    monsterLabel: mine.r.mastermonName || (ELEMENTS[mine.r.element] ? ELEMENTS[mine.r.element].label : ''),
+    chips: [currentRankingMapType==='real' ? 'リアルマップ' : '通常マップ'],
+  });
 }
 document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRankingScreen(false));
 document.getElementById('titleRankingBtn').addEventListener('click', ()=>openRankingScreen(true));
@@ -7199,6 +7617,7 @@ function initTitleScreen(){
      「読み込み中」から進まなくなる(実際に起きた)。 */
   restoreLobbyPrefs();
   buildHowtoLists();
+  shareBindUi();     // Xへのシェア(常設ボタンの結線。中身は開いたときに作る)
   sync();
   initTitleScreen();
 }

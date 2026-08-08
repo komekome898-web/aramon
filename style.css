@@ -3307,3 +3307,86 @@ button:active{ transform:scale(0.96); }
   0%{   transform:scale(0.35); opacity:0.9; }
   100%{ transform:scale(1.15); opacity:0; }
 }
+
+/* ===== Xへのシェア =====
+   ・#shareOverlay は SSR獲得画面(.ssr-reveal, z-index:700)の上に出す必要があるので
+     .mastermon-confirm-overlay の z-index:600 を上書きする。
+   ・見た目の出し分けは data-state 属性だけで行う(JS側でクラスを付け替えない)。
+     building=生成中 / ready=共有シートが使える / unsupported=使えない /
+     sharing=呼び出し中 / done=完了 / error=失敗                                  */
+#shareOverlay{ z-index:760; }
+.share-box{
+  max-width:calc(78 * var(--vw)); width:100%;
+  display:flex; flex-direction:column; align-items:stretch; gap:6px;
+  padding:14px 18px; text-align:center;
+}
+.share-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; letter-spacing:2px; color:var(--ink); }
+.share-preview-wrap{
+  position:relative; display:flex; align-items:center; justify-content:center;
+  min-height:0; flex:0 1 auto;
+}
+.share-preview-img{
+  display:block; width:auto; max-width:100%; max-height:calc(28 * var(--vh));
+  flex:0 1 auto; object-fit:contain; border-radius:8px; border:1px solid var(--panel-line);
+  /* 共有シートが使えない端末では長押し保存が唯一の手段。* の指定をここだけ打ち消す
+     (input.js の contextmenu/selectstart 抑止にも同じ例外を入れてある) */
+  -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto;
+}
+.share-building{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(6,9,15,0.85); border-radius:8px;
+}
+.share-text-box{
+  font-size:11px; line-height:1.6; color:var(--ink-dim); text-align:left; white-space:pre-wrap;
+  /* 投稿文は全部見せたいので縮ませない。あふれるぶんはプレビュー画像側が縮む
+     (枠全体は .mastermon-confirm-box の max-height:94vh で頭打ちになっている) */
+  flex:0 0 auto; word-break:break-all; max-height:calc(28 * var(--vh)); overflow-y:auto;
+  background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:6px; padding:7px 9px;
+}
+.share-hint{ font-size:10px; line-height:1.5; color:var(--ink-dim); min-height:14px; }
+.share-btnrow{ display:flex; gap:8px; }
+.share-btnrow > *{
+  flex:1 1 0; min-width:0; padding:9px 0; border-radius:6px; cursor:pointer; text-align:center;
+  font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none; line-height:1.4;
+}
+.share-do-btn{ background:#fff; color:#0b0d12; border:none; }
+.share-openx-btn{ background:#fff; color:#0b0d12; border:none; }
+.share-copy-btn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+/* 状態ごとの出し分け */
+#shareOverlay[data-state="building"] .share-do-btn,
+#shareOverlay[data-state="sharing"]  .share-do-btn{ opacity:0.45; pointer-events:none; }
+#shareOverlay[data-state="sharing"]  .share-copy-btn{ opacity:0.45; pointer-events:none; }
+#shareOverlay[data-state="building"] .share-openx-btn,
+#shareOverlay[data-state="ready"]    .share-openx-btn,
+#shareOverlay[data-state="sharing"]  .share-openx-btn,
+#shareOverlay[data-state="done"]     .share-openx-btn{ display:none; }
+#shareOverlay[data-state="unsupported"] .share-do-btn,
+#shareOverlay[data-state="error"]       .share-do-btn{ display:none; }
+#shareOverlay:not([data-state="building"]) .share-building{ display:none; }
+#shareOverlay[data-state="error"] .share-hint{ color:#ff9a8a; }
+
+/* 各画面に置くシェアボタン。等分にすると隣のボタンの文字が切れるので固定幅にする。
+   リザルトは `.resultBtnRow button{flex:1 1 0}` の方が詳細度が高いので、
+   同じ詳細度以上のセレクタで上書きする(ここを弱めると5等分に戻る) */
+.share-icon-btn, .resultBtnRow .share-icon-btn{
+  flex:0 0 auto; width:46px; padding-left:0; padding-right:0;
+  font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
+  color:#0b0d12; background:#fff; border:none; border-radius:6px; cursor:pointer;
+}
+html.narrow-screen .share-icon-btn,
+html.narrow-screen .resultBtnRow .share-icon-btn{ width:40px; }
+/* SSR獲得画面のシェア。獲得したスキン名の下に置く。
+   .ssr-reveal-inner は overflow:hidden の縦フレックスなので、flexを指定しないと
+   高さ0まで潰されて押せなくなる(縮むのは flex:0 1 auto のスキン画像側でよい) */
+.ssr-reveal-share{
+  flex:0 0 auto; margin-top:4px; padding:8px 20px; border-radius:20px; cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
+  color:#0b0d12; background:#fff; border:none;
+}
+/* ガチャ結果の中のシェア。結果はどこを触っても閉じるので、JS側でstopPropagationしている */
+.gacha-share-btn{
+  margin-top:8px; padding:8px 22px; border-radius:20px; cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
+  color:#0b0d12; background:#fff; border:none;
+}

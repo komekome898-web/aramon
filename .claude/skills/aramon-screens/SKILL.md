@@ -92,3 +92,22 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - 「💎ダイヤ+500」(`#adminGrantDiaBtn`)は現在hidden(機能は残置)。
 - **「機能」タブのSSR昇格演出の確認ボタンは`SKIN_MEDIA`から自動生成**(`renderAdminPromoteCheckBtns()` → `#adminPromoteCheckBtns`)。`promote.video`を持つスキンのぶんだけ並ぶので、スキンを足してもHTMLもJSも触らなくてよい。**包んでいるdivは親と同じ縦フレックスにしておく**(divで包むと1つのフレックス項目になり、中のボタンが横に流れる)。
 - 「📊 パフォーマンス表示」は aramon-performance を参照。
+
+## Xへのシェア(`#shareOverlay`)
+
+- **Xのツイート用URLには画像を添付できない。** 画像付き投稿の唯一の道が`navigator.share({files})`(Web Share API Level 2)で、
+  OSの共有シートを経由してXアプリへ渡す。非対応端末は「画像を長押し保存 →`<a target="_blank">`でXを開く → 手で添付」へ落とす。
+- **`share()`はタップのハンドラから同期で呼ぶ。** `onShareBtnTap()`に`await`を足すとユーザー操作の資格が切れ、
+  iOSが`NotAllowedError`で撥ねる。**画像(File)は`openShareOverlay()`で作り終えてある。**
+- 呼ぶ順序は **`navigator.share()`が先、`clipboard.writeText()`が後**。
+  Xのアプリが画像だけ受け取って本文を捨てることがあるので、同じタップの中で必ずコピーもしておく。
+- **`AbortError`(共有シートを閉じただけ)は失敗ではない。** 黙って`ready`へ戻す。エラー表示を出すと壊れて見える。
+- 見た目の出し分けは`data-state`属性1つ(building/ready/unsupported/sharing/done/error)。**JS側でクラスを付け替えない。**
+- **`#shareOverlay`は`z-index:760`。** SSR獲得画面を包む`#gachaOverlay`(620)より上に出す必要がある
+  (`.mastermon-confirm-overlay`の既定600のままだと獲得画面の裏に隠れる)。
+- 連打・開き直しは`_shareState.seq`で捨てる。`await`明けにseqが一致しなければ何もしない。
+- 入口は6か所。**リザルトだけは表示のその場で`_lastResultShare`に控える**
+  (`player`は次の試合で作り直され、報酬はブロック内のローカル変数なので後から読めない)。
+  ランキング系は一覧を描くたびに`setRankShareTarget()`を呼び、**自分が載っているときだけボタンを出す**。
+  ガチャ結果とSSR獲得画面は**どこを触っても閉じる/進むので`e.stopPropagation()`が必須**。
+- マスモン詳細の入口は`MM_MENU_ITEMS`に1行足すだけ(`tab`ではなく`action:'share'`。転生ボタンと同じ形)。

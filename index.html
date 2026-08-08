@@ -584,6 +584,9 @@
     <!-- レイドのリザルトでは上2つの代わりにこれを出す(setResultButtonsForRaid) -->
     <button id="viewRaidRankBtn" class="hidden">レイドランキング</button>
     <button id="viewMastermonBtn">マスモン</button>
+    <!-- シェアだけはアイコンの固定幅。等分にすると「トップ画面へ」が切れ、
+         2行に折り返すと横長・低い画面でリザルトがはみ出す -->
+    <button id="shareResultBtn" class="share-icon-btn" aria-label="Xでシェア">𝕏</button>
     <button id="replayBtn">トップ画面へ</button>
   </div>
 </div>
@@ -701,6 +704,8 @@
       <button type="button" class="custom-select-btn" id="rankingMonsterFilterBtn">総合(全モンスター)</button>
       <div class="custom-select-menu hidden" id="rankingMonsterFilterMenu"></div>
     </div>
+    <!-- 自分が一覧に載っているときだけ出す(載っていない順位は自慢しようがない) -->
+    <button id="shareRankBtn" class="share-icon-btn hidden" aria-label="Xでシェア">𝕏</button>
   </div>
   <div id="rankingList"></div>
   <button id="closeRankingBtn">閉じる</button>
@@ -1057,6 +1062,8 @@
       <div class="ssr-reveal-badge">SSR</div>
       <img id="ssrRevealIcon" class="ssr-reveal-icon" alt="">
       <div id="ssrRevealText" class="ssr-reveal-text"></div>
+      <!-- 画面のどこを触っても次へ進むので、この2つは stopPropagation してある -->
+      <button id="ssrRevealShareBtn" class="ssr-reveal-share">𝕏 でシェア</button>
     </div>
     <button id="ssrRevealSkip" class="ssr-reveal-skip">スキップ ▶</button>
   </div>
@@ -1111,6 +1118,28 @@
     <div class="skin-promo-btnrow">
       <button id="rockSsrPromoCloseBtn" class="skin-promo-close">閉じる</button>
       <button id="rockSsrPromoGachaBtn" class="skin-promo-gacha">今すぐガチャ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Xへのシェア。画像は render.js の shareCardCanvas() が描き、開いた時点でFileまで作り終える。
+     見た目の出し分けは data-state 属性1つに寄せてあるので、JS側でクラスを付け替えない -->
+<div id="shareOverlay" class="mastermon-confirm-overlay hidden" data-state="building">
+  <div class="mastermon-confirm-box share-box">
+    <button id="closeShareBtn" class="overlay-close-btn">✕</button>
+    <div class="share-title">𝕏 でシェア</div>
+    <div class="share-preview-wrap">
+      <!-- 長押しで保存できるよう、input.js と style.css でこの画像だけ例外にしてある -->
+      <img id="sharePreviewImg" class="share-preview-img" alt="シェア画像">
+      <div id="shareBuilding" class="share-building">画像を作っています…</div>
+    </div>
+    <div id="shareTextBox" class="share-text-box"></div>
+    <div id="shareHint" class="share-hint"></div>
+    <div class="share-btnrow">
+      <button id="shareDoBtn" class="share-do-btn">𝕏 でシェア</button>
+      <button id="shareCopyBtn" class="share-copy-btn">文をコピー</button>
+      <!-- PWAでは window.open が塞がれることがあるので、素の<a>で外へ出す -->
+      <a id="shareOpenXBtn" class="share-openx-btn" target="_blank" rel="noopener">𝕏 を開く</a>
     </div>
   </div>
 </div>
@@ -1219,6 +1248,8 @@
       <button class="raid-rank-tab active" data-rk="dmg">総ダメージ</button>
       <button class="raid-rank-tab" data-rk="best">最大ダメージ</button>
       <button class="raid-rank-tab" data-rk="runs">参加回数</button>
+      <!-- 自分が一覧に載っているときだけ出す -->
+      <button id="shareRaidRankBtn" class="share-icon-btn hidden" aria-label="Xでシェア">𝕏</button>
     </div>
     <div class="raid-scroll-wrap">
       <div class="raid-scroll" id="raidRankScroll"></div>
