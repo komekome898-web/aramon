@@ -738,6 +738,8 @@ const LOBBY_BANNER_MS = 3000;
    Xは本文をURL=23・日本語=2・ASCII=1で数えて上限280。 */
 const SHARE_URL = 'https://komekome898-web.github.io/aramon/index.html';
 const SHARE_TAG = '#荒野モン動';
+// 投稿文の末尾、URLの直前に必ず入れる案内。PWAとして入れてもらうのが狙い
+const SHARE_PWA_HINT = 'ブラウザから開き共有からホーム画面に追加でいつでも遊べる！';
 const SHARE_TEXT_MAX_UNITS = 250;   // 上限280に対する余裕ぶん
 
 // 更新履歴のタグ(トップ画面「更新履歴」でタイトル横に並び、選ぶと絞り込める)
