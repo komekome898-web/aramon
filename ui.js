@@ -747,8 +747,9 @@ function updateLobbyPickLabels(){
   }
   const modeEl = document.getElementById('lobbyModeValue');
   if(modeEl){
-    modeEl.textContent = netState.raid ? `レイドバトル (最大${RAID_CAPACITY}人)`
-      : (netState.mode==='multi' ? `みんなと対戦 (${netState.capacity}人)` : '1人でプレイ');
+    // 表示は「ロビーで選んだもの(lobbyMode)」が正。試合中の netState を見ない
+    modeEl.textContent = lobbyMode==='raid' ? `レイドバトル (最大${RAID_CAPACITY}人)`
+      : (lobbyMode==='multi' ? `みんなと対戦 (${netState.capacity}人)` : '1人でプレイ');
   }
 }
 
@@ -767,7 +768,9 @@ function saveLobbyPrefs(){
   try{
     localStorage.setItem(LOBBY_PREFS_KEY, JSON.stringify({
       map: game.selectedMap, real: !!game.realMapMode,
-      mode: netState.raid ? 'raid' : netState.mode,
+      // 保存するのは「ロビーで選んだもの」。試合中に変わる netState を見ない
+      // (レイドを1回遊ぶと以降ずっと raid で保存される、という不具合の原因だった)
+      mode: lobbyMode,
       cap: netState.capacity,
       mmKey: game.selectedMastermonKey || null,
       element: game.selectedElement || null,
@@ -808,8 +811,7 @@ function restoreLobbyPrefsInner(){
   // --- プレイモード。レイドは開催が終わっていることがあるのでソロへ落とす ---
   let mode = p.mode==='raid' || p.mode==='multi' ? p.mode : 'solo';
   if(mode==='raid' && !(typeof raidPlayable==='function' && raidPlayable(raidMyAccountName()))) mode = 'solo';
-  const tab = document.querySelector(`.mode-tab[data-mode="${mode}"]`);
-  if(tab) selectModeTab(tab);
+  setLobbyMode(mode, { save:false });   // 復元中は保存し返さない
   updatePlayButtonsEnabled();
   if(typeof renderSelectorCards==='function') renderSelectorCards();
   updateLobbyPickLabels();
@@ -2960,6 +2962,49 @@ const netState = {
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
   raid:false,   // レイドの部屋か(部屋のmodeと一致させる。試合の組み立てが変わる)
 };
+
+/* =====================================================================
+   プレイモードの持ち方(ここを崩すと「通常マルチのつもりがレイドになる」類の事故が起きる)
+
+   **役割の違う2つを混ぜない。**
+     lobbyMode      … ロビーでプレイヤーが選んだもの('solo'/'multi'/'raid')。
+                      タブの見た目・ロビーの表示・保存(前回の選択)の**唯一の正**。
+     netState.mode  … いま組み立てている「部屋/試合」がマルチかどうか
+     netState.raid  … いま組み立てている「部屋/試合」がレイドかどうか
+
+   以前は netState.raid 1つで両方を表していたため、レイドを1回遊ぶと立ったまま残り、
+   次に通常マルチの「部屋を作る」を押すとレイドの部屋ができてしまっていた(逆も同様)。
+
+   決まり:
+     ・**lobbyMode を変えるのは setLobbyMode() だけ。** タブ・レイド入口・復元のすべてが通る。
+     ・**試合/部屋を作り始める直前に必ず syncNetStateToLobbyMode() を呼ぶ**(startGame /
+       createRoomFlow / openFindRoomScreen)。ロビーの選択が実際の部屋の種類になる。
+     ・**他人の部屋に入るときだけは部屋の側が正**(joinRoom で部屋のmodeを netState と
+       lobbyMode の両方へ反映する)。
+     ・**試合から戻ったら必ず syncNetStateToLobbyMode() で作り直す**(前の試合の持ち越しを断つ)。
+   ===================================================================== */
+let lobbyMode = 'solo';
+// lobbyMode から netState を作り直す。これ以外の場所で netState.raid を書かない
+function syncNetStateToLobbyMode(){
+  netState.mode = (lobbyMode==='solo') ? 'solo' : 'multi';
+  netState.raid = (lobbyMode==='raid');
+}
+/* ロビーの選択を変える唯一の入口。タブの見た目・パネルの出し分け・ラベル・保存まで面倒を見る。
+   opts.save=false のときだけ保存しない(復元中に上書きし返さないため)。 */
+function setLobbyMode(mode, opts){
+  lobbyMode = (mode==='multi' || mode==='raid') ? mode : 'solo';
+  syncNetStateToLobbyMode();
+  const isRaid = lobbyMode==='raid';
+  document.querySelectorAll('.mode-tab').forEach(t=> t.classList.toggle('active', t.dataset.mode===lobbyMode));
+  // 人数などの細かい設定はプレイモードのオーバーレイ内、出撃ボタンは右カラムに出す
+  document.getElementById('multiOptions').classList.toggle('hidden', lobbyMode!=='multi');
+  document.getElementById('multiActionRow').classList.toggle('hidden', lobbyMode!=='multi');
+  document.getElementById('joinBtn').classList.toggle('hidden', lobbyMode!=='solo');
+  document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
+  if(isRaid && typeof updateRaidModePanel==='function') updateRaidModePanel();
+  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+  if(!(opts && opts.save===false) && typeof saveLobbyPrefs==='function') saveLobbyPrefs();
+}
 let hostSpectating = false;
 let matchBeginning = false; // beginMultiplayerMatchの多重起動防止フラグ
 
@@ -2973,24 +3018,8 @@ document.getElementById('modeTabs').addEventListener('click', (e)=>{
   const tab = e.target.closest('.mode-tab') || (wrap && wrap.querySelector('.mode-tab'));
   if(tab) selectModeTab(tab);
 });
-function selectModeTab(tab){
-    document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
-    tab.classList.add('active');
-    const isRaid = tab.dataset.mode==='raid';
-    netState.mode = tab.dataset.mode==='multi' ? 'multi' : 'solo';
-    // レイドの部屋探し(#raidFindRoomBtn)から戻ってきた場合など、netState.raidが
-    // 立ったまま残ることがあるので、タブを切り替えたら必ずここで確定させる
-    // (通常マルチの部屋がレイドの部屋一覧に混ざる/その逆の事故を防ぐ)
-    netState.raid = isRaid;
-    // 人数などの細かい設定はプレイモードのオーバーレイ内、出撃ボタンは右カラムに出す
-    document.getElementById('multiOptions').classList.toggle('hidden', netState.mode!=='multi' || isRaid);
-    document.getElementById('multiActionRow').classList.toggle('hidden', netState.mode!=='multi' || isRaid);
-    document.getElementById('joinBtn').classList.toggle('hidden', netState.mode==='multi' || isRaid);
-    document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
-    if(isRaid) updateRaidModePanel();
-    if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
-    if(typeof saveLobbyPrefs==='function') saveLobbyPrefs();
-}
+// タブのクリックはすべて setLobbyMode() へ流す(モードを変える処理を2か所に書かない)
+function selectModeTab(tab){ setLobbyMode(tab.dataset.mode); }
 // game.selectedMap が 'random' の場合は実在マップからランダムに1つ選ぶ
 // リアルマップ(テスト)ならWebGLの地形レイヤーを有効化する。
 // 初期化に失敗した端末では自動的に従来の2D地面に戻る(render.js側で判定)
@@ -3071,7 +3100,10 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     netState.capacity = Number(tab.dataset.cap)||3;
-    netState.raid = false;   // 通常のマルチではレイドの部屋を作らない
+    /* 【触らない】ここで netState.raid を下ろさないこと。
+       この人数タブは通常マルチのときしか出ないが、以前ここで raid を false にしていたため、
+       レイドの状態のまま人数を触ると**レイドの部屋なのに通常戦が始まる**事故になっていた。
+       モードを決めるのは setLobbyMode() だけ。 */
     // 右カラムの「プレイモード」の表示にも人数を反映する(マップ側と同じ扱い)
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
     saveLobbyPrefs();
@@ -3223,6 +3255,10 @@ async function createRoomFlow(){
     startGame();
     return;
   }
+  /* 【必須】部屋を作る直前に、ロビーの選択から netState を作り直す。
+     こうしないと前の試合で立った netState.raid が残り、通常マルチのつもりで
+     レイドの部屋ができる(逆も同様)。部屋のmodeは下で netState.raid から決まる。 */
+  syncNetStateToLobbyMode();
   netState.cancelled = false;
   matchBeginning = false;
   document.getElementById('lobbySubText').textContent='部屋を作成中…';
@@ -3256,6 +3292,8 @@ async function createRoomFlow(){
 }
 
 async function openFindRoomScreen(){
+  // 探す部屋の種類もロビーの選択から決める(一覧は netState.raid で 'raid'/'br' に分かれる)
+  syncNetStateToLobbyMode();
   document.getElementById('roomListScreen').classList.remove('hidden');
   // レイド経由(netState.raid)ならタイトルを変えて、どちらの部屋を探しているか分かるようにする
   document.getElementById('roomListTitle').textContent = netState.raid ? '🐉 レイドの部屋を探す' : '部屋を探す';
@@ -3309,7 +3347,9 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.isHost = false;
   netState.myPlayerId = result.myPlayerId;
   if(result.capacity){ netState.capacity = result.capacity; if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels(); }
-  netState.raid = (result.mode==='raid');   // 部屋のモードに合わせる(レイドの部屋ならレイドで始まる)
+  /* 【ここだけは部屋が正】他人の部屋に入るときは、部屋のmodeが実際に始まる試合を決める。
+     ロビーの表示もそれに合わせて動かし、「レイドの部屋に入ったのに表示はみんなと対戦」を無くす。 */
+  setLobbyMode(result.mode==='raid' ? 'raid' : 'multi');
 
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
@@ -3378,6 +3418,8 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
 function startGame(){
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
+  // ロビーの選択から netState を作り直す(1人でプレイなので solo に確定する)
+  syncNetStateToLobbyMode();
   document.getElementById('rangeBar').classList.add('hidden');
   document.getElementById('rangeHint').classList.add('hidden');
   document.getElementById('hud').classList.remove('range-mode');
@@ -3562,8 +3604,11 @@ function raidStart(multi, demo){
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
   matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
   hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
+  /* 1人で挑むレイドは部屋を使わないので netState はソロ扱いにする。
+     **レイドかどうかは game.raid が正**(この関数の下で true にする)。
+     lobbyMode は 'raid' のままなので、終わってロビーへ戻れば選択はレイドに残る。 */
   netState.mode='solo';
-  netState.raid = false;    // 1人で挑むときは部屋を使わない
+  netState.raid = false;
   introState.active=false;
   camState.yaw = 0; camSnap.active = false;
   monsterScreenPos.clear();
@@ -3701,8 +3746,10 @@ async function raidExit(){
     netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
     netState.matchStarting=false; matchBeginning=false;
   }
-  netState.mode = 'solo';
-  netState.raid = false;
+  /* ロビーへ戻るときは、ロビーの選択から netState を作り直す。
+     以前はここで solo に固定していたが、タブの表示は「レイド」のままだったので
+     戻ったあとの表示と実際のモードが食い違っていた。 */
+  syncNetStateToLobbyMode();
   if(typeof setAutoRun==='function') setAutoRun(false);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
@@ -4077,8 +4124,12 @@ document.getElementById('adminRaidDemoBtn').addEventListener('click', ()=>{
   raidStart(false, true);
 });
 document.getElementById('raidCloseBtn').addEventListener('click', ()=> document.getElementById('raidOverlay').classList.add('hidden'));
+/* レイド入口の3つのボタンは、押した時点で**ロビーの選択もレイドへ揃える**。
+   こうしないとタブが「みんなと対戦」のままレイドが始まり、戻ってきたときに
+   表示と実際のモードが食い違う(それが「つもりと違うモードで始まる」の原因だった)。 */
 document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
   if(!raidGuardReady()) return;
+  setLobbyMode('raid');
   raidStart(false, false);
 });
 // みんなで挑む: 通常のマルチと同じ部屋の作成→ロビー→開始の流れに乗せる。
@@ -4086,9 +4137,8 @@ document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
 document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
   if(!raidGuardReady()) return;
   document.getElementById('raidOverlay').classList.add('hidden');
-  netState.mode = 'multi';
-  netState.raid = true;
   netState.capacity = RAID_CAPACITY;
+  setLobbyMode('raid');     // netState.mode/raid はここから導出される
   createRoomFlow();
 });
 // レイドの「部屋を探す」。通常マルチと同じ#roomListScreenを使うが、netState.raidを立てて
@@ -4097,9 +4147,8 @@ document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
 document.getElementById('raidFindRoomBtn').addEventListener('click', ()=>{
   if(!raidGuardReady()) return;
   document.getElementById('raidOverlay').classList.add('hidden');
-  netState.mode = 'multi';
-  netState.raid = true;
   netState.capacity = RAID_CAPACITY;
+  setLobbyMode('raid');     // netState.mode/raid はここから導出される
   openFindRoomScreen();
 });
 
@@ -4201,6 +4250,8 @@ function exitShootingRange(){
   game.trainingRange = false;
   game.over = false;
   joinInProgress = false;
+  // 訓練場は常にソロ扱いで netState を潰しているので、戻るときにロビーの選択へ戻す
+  syncNetStateToLobbyMode();
   if(typeof setAutoRun==='function') setAutoRun(false);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   document.getElementById('rangeBar').classList.add('hidden');
@@ -6664,6 +6715,10 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
     if(typeof spectateTargetId!=='undefined') spectateTargetId=null;
     updateSpectateBar();
   }
+  /* 【必須】試合の名残を断ってロビーの選択へ戻す。
+     これが無いと、直前の試合で立った netState.raid が残ったままロビーに戻り、
+     そのまま出撃すると前と違うモードで始まる(実際に報告があった)。 */
+  syncNetStateToLobbyMode();
 });
 
 let currentRankingMode = 'kills';
