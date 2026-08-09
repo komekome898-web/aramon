@@ -3963,7 +3963,15 @@ function renderRaidOverlay(){
   const r = loadRaidProgress();
   const total = raidTotalCache.total;
   const last = RAID_TOTAL_TIERS[RAID_TOTAL_TIERS.length-1].at;
-  const pct = Math.min(100, total/last*100);
+  /* 討伐しきい値(last=2,500,000)に届いたあとも「倒してもレイドバトルは続く」ので、
+     ゲージの右端(=次にみんなの繰り返し報酬がもらえる値)は RAID_REPEAT_TOTAL.step(1,000,000)ごとに
+     2,500,000→3,500,000→4,500,000…と伸びていく。gotTimes は下の「倒してもレイドバトルは続く！」欄
+     (raidRepeatSectionHtml)と同じ r.repeatTotal を使う(二重に数え直さない)。 */
+  const reachedLast = total >= last;
+  const gotTimes = r.repeatTotal||0;
+  const rightEnd = reachedLast ? raidRepeatNextAt(RAID_TOTAL_TIERS, RAID_REPEAT_TOTAL, gotTimes) : last;
+  const rangeStart = reachedLast ? last + gotTimes*RAID_REPEAT_TOTAL.step : 0;
+  const pct = Math.min(100, (total-rangeStart)/(rightEnd-rangeStart)*100);
   const left = raidSecondsLeft();
   const days = Math.floor(left/86400), hours = Math.floor((left%86400)/3600);
   document.getElementById('raidTitleSub').textContent = raidOpenNow()
@@ -3988,7 +3996,9 @@ function renderRaidOverlay(){
     </div>
     ${preview ? '<div class="raid-preview-note">🚧 準備中: バトルが終わっても記録・報酬は残りません</div>' : ''}
     <div class="raid-sec">
-      <div class="raid-sec-title">ボスの残り体力<span class="raid-sec-note">${Math.max(0, last-Math.round(total)).toLocaleString()} / ${last.toLocaleString()}</span></div>
+      <div class="raid-sec-title">ボスの残り体力<span class="raid-sec-note">${reachedLast
+        ? `累計ダメージ ${Math.round(total).toLocaleString()} / ${rightEnd.toLocaleString()}`
+        : `${Math.max(0, last-Math.round(total)).toLocaleString()} / ${last.toLocaleString()}`}</span></div>
       <div class="raid-gauge raid-gauge-boss"><div class="raid-gauge-fill" style="width:${Math.max(0,100-pct).toFixed(1)}%"></div></div>
       <div class="raid-my-dmg">あなたが与えた累計ダメージ <b>${Math.round(r.dmg).toLocaleString()}</b>
         <span class="raid-my-sub">（挑戦${r.runs}回 / 自己ベスト ${Math.round(r.best).toLocaleString()}）</span></div>
