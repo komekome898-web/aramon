@@ -719,6 +719,10 @@
   .skin-promo-gacha{ padding:11px 40px; border-radius:12px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
     color:#1a1306; background:linear-gradient(180deg,#ffe08a,#f4c430); border:none; box-shadow:0 6px 18px -6px rgba(244,196,48,0.6); }
   .skin-promo-gacha:active{ filter:brightness(1.08); }
+  /* キャプション付き(メタルグレイモン・ガルルモン記念)は画像を少し低くして3行ぶんの余白を作る */
+  .skin-promo-img-caption{ max-height:calc(58 * var(--vh)); }
+  .skin-promo-caption{ display:flex; flex-direction:column; align-items:center; gap:3px; text-align:center; }
+  .skin-promo-caption div{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:0.5px; color:var(--amber); }
 
   /* ===== ガチャ(全画面) ===== */
   #gachaOverlay{ position:fixed; inset:0; z-index:620; background:radial-gradient(ellipse at 50% 30%, #141a29, #070a12 70%); }

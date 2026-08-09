@@ -1967,6 +1967,7 @@ function maybeFlushPendingPromoPopups(){
   if(!startScr || startScr.classList.contains('hidden')) return; // まだタイトル画面など→ロビーに来るまで待つ
   if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
   if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1') showRockSsrPromoPopup();
+  if(localStorage.getItem(METAG_GARURU_PROMO_PENDING_KEY)==='1') showMetagGaruruPromoPopup();
 }
 // ===== スキンガチャ実装記念ポップアップ =====
 // このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
@@ -2057,6 +2058,7 @@ function dismissRockSsrPromoPopup(){
   try{ localStorage.removeItem(ROCK_SSR_PROMO_PENDING_KEY); }catch(e){}
   const el = document.getElementById('rockSsrPromoOverlay');
   if(el) el.classList.add('hidden');
+  maybeShowMetagGaruruPromo();   // このポップアップを閉じた直後に、メタルグレイモン・ガルルモンの告知を続けて出す
 }
 function maybeShowRockSsrPromo(){
   if(!accountState.loggedIn) return;                            // ログイン中のアカウントのみ
@@ -2078,6 +2080,36 @@ document.getElementById('rockSsrPromoCloseBtn').addEventListener('click', ()=>{
 });
 document.getElementById('rockSsrPromoGachaBtn').addEventListener('click', ()=>{
   dismissRockSsrPromoPopup();
+  openGachaScreen();
+});
+// SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
+
+/* ===== SSRメタルグレイモン・ガルルモン実装記念ポップアップ =====
+   上のレイドガチャ記念ポップアップ(dismissRockSsrPromoPopup)を閉じた直後に1回だけ出す。
+   ダイヤ等の付与は無い告知だけなので、他の2つと違って「受け取り済み」判定は不要
+   (「表示済み」フラグ1つだけで足りる)。 */
+const METAG_GARURU_PROMO_KEY = 'aramon_promo_metaggaruru_v1';                 // 表示済み(端末ローカル。1回だけ)
+const METAG_GARURU_PROMO_PENDING_KEY = 'aramon_promo_metaggaruru_pending_v1'; // 未確認=表示中
+function showMetagGaruruPromoPopup(){
+  const el = document.getElementById('metagGaruruPromoOverlay');
+  if(el) el.classList.remove('hidden');
+}
+function dismissMetagGaruruPromoPopup(){
+  try{ localStorage.removeItem(METAG_GARURU_PROMO_PENDING_KEY); }catch(e){}
+  const el = document.getElementById('metagGaruruPromoOverlay');
+  if(el) el.classList.add('hidden');
+}
+function maybeShowMetagGaruruPromo(){
+  if(localStorage.getItem(METAG_GARURU_PROMO_KEY)==='1') return;   // 既に一度見せた
+  try{ localStorage.setItem(METAG_GARURU_PROMO_KEY,'1'); }catch(e){}
+  try{ localStorage.setItem(METAG_GARURU_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
+  maybeFlushPendingPromoPopups();
+}
+document.getElementById('metagGaruruPromoCloseBtn').addEventListener('click', ()=>{
+  dismissMetagGaruruPromoPopup();
+});
+document.getElementById('metagGaruruPromoGachaBtn').addEventListener('click', ()=>{
+  dismissMetagGaruruPromoPopup();
   openGachaScreen();
 });
 // SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
