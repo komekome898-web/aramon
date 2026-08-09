@@ -247,12 +247,20 @@ async function beginMultiplayerMatchInner(){
     }
   }
   netState.humanPlayers = fixedPlayers;
-  // レイドはマップ固定。ホストが配信したmapKeyもraidになるので、ゲストも自動的に合う
+  /* この試合がレイドかどうかは**部屋のモード(netState.raid)が正**。
+     ゲストは部屋に入った時点で部屋のmodeを netState.raid に入れてある。
+     `mapKey==='raid'` はゲスト側の保険としてだけ残す:
+     resolveMapKey() がレイド専用マップを絶対に返さないので、ホストが配信した
+     mapKeyがraidなら「本当にレイドを走らせている」ときだけ成り立つ。
+     **この保険を効かせるには resolveMapKey() 側の除外が必須**で、そこが抜けていたため
+     「ランダム+リアルマップ」で竜の火口が当たると通常マルチがレイドに化けていた。 */
   const wantRaid = !!netState.raid || mapKey==='raid';
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
   netState.raid = wantRaid;
   game.raid = wantRaid;
   if(game.raid) mapKey = 'raid';
+  // 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す
+  else if(MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
   if(typeof applyStartPitchForMap==='function') applyStartPitchForMap(); // マップが決まってから視点の初期角度を決める

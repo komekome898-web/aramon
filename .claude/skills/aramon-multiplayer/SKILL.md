@@ -62,6 +62,8 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 - **試合/部屋を作り始める直前に必ず`syncNetStateToLobbyMode()`**(`startGame`/`createRoomFlow`/`openFindRoomScreen`)。**試合から戻ったときも必ず呼ぶ**(`replayBtn`/`raidExit`/`exitShootingRange`)。これが無いと前の試合で立った`netState.raid`が残り、次に通常マルチの「部屋を作る」を押すとレイドの部屋ができる(実際に報告があった)。
 - **`netState.raid`を「ついでに」下ろさない。** 人数タブのハンドラで`netState.raid=false`していたため、レイドの状態で人数を触ると**レイドの部屋なのに通常戦が始まって**いた。モードを決めるのは`setLobbyMode()`だけ。
 - **他人の部屋に入るときだけは部屋の側が正。** `joinSelectedRoom`は入った部屋の実際の`mode`で`setLobbyMode()`を呼び、`netState`とロビーの表示の両方を部屋に合わせる(呼び出し元の状態を信用しない安全弁)。
+- **通常の試合のマップにレイド専用マップを絶対に混ぜない。** `MAPS.raid`(竜の火口)は`raidOnly:true`だが、**この印を実際に読むのは`isSelectableMap()`だけ**。ランダム抽選(`resolveMapKey`)がそれを見ずに`testOnly`だけで絞っていたため、**「マップ=ランダム+リアルマップON」で約1/7の確率で竜の火口が当たり、通常マルチがレイドバトルとして始まっていた**(実機で発生。`testOnly`はどのマップにも付いておらず、そのフィルタは実質何も除外していなかった)。マップを出す・抽選する場所を足すときは必ず`isSelectableMap()`を通す。
+- **試合がレイドかは部屋のモードで決める。マップ名から推測しない。** `beginMultiplayerMatchInner`の`mapKey==='raid'`はゲスト側の保険としてだけ残してあり、これが成り立つのは`resolveMapKey()`がレイド専用マップを返さないことが前提。逆向きに、レイドでない試合へレイド専用マップが来たら`wild`へ落とす保険も入れてある。
 - **ソロレイドと射撃訓練場は`netState`を意図的にソロへ潰す**(部屋を使わないため)。`lobbyMode`はそのまま残るので、戻れば選択が復活する。**この2つの最中だけ`lobbyMode`と`netState`が一致しないのは正常。**
 - **試合の組み立ての分岐は`beginMultiplayerMatchInner`の`game.raid`1か所**。マップ・ワールドの広さ・安置・ボスの生成・アイテムの撒き方だけが変わる。シード共有・world同期・マスモン補正・スキンは通常のマルチと同じものがそのまま効く。
 - **ボスもシード付き生成の一部として同じidで両側に作る。** 位置とHPはauthStateでそのまま同期されるので、ボス専用の同期は要らない。
