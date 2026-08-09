@@ -798,7 +798,10 @@ function restoreLobbyPrefsInner(){
     game.selectedMastermonKey = null;
   }
   // --- マップ(通常/リアルの切替も) ---
-  if(p.map === 'random' || MAPS[p.map]){
+  /* 保存されているのは「通常マップのキー」か 'random' だけ。リアルかどうかは p.real が持つ。
+     レイド専用マップやリアル版のキーが混ざっていたら受け付けない
+     (受け付けるとマップタブのどれとも一致せず、選択と表示が食い違う)。 */
+  if(p.map === 'random' || (isSelectableMap(p.map) && !MAPS[p.map].real3d)){
     game.selectedMap = p.map;
     document.querySelectorAll('.map-tab').forEach(t=> t.classList.toggle('active', t.dataset.map===p.map));
   }
@@ -3036,11 +3039,19 @@ function mapKeyForMode(baseKey){
   const k = game.realMapMode ? baseKey+REAL_MAP_SUFFIX : baseKey;
   return MAPS[k] ? k : (MAPS[baseKey] ? baseKey : 'wild');
 }
+/* 通常の試合で使うマップキーを決める。
+   **レイド専用マップ(竜の火口)を絶対に返さない**こと。返してしまうと、試合の
+   組み立て側が「マップがraid=レイドの試合」とみなして、通常マルチのつもりが
+   レイドバトルとして始まる(実機で発生。原因はランダム抽選が raidOnly を
+   見ていなかったこと)。出してよいマップの判定は data.js の isSelectableMap() 1か所。 */
 function resolveMapKey(){
-  if(game.selectedMap && game.selectedMap!=='random') return mapKeyForMode(game.selectedMap);
+  if(game.selectedMap && game.selectedMap!=='random'){
+    const k = mapKeyForMode(game.selectedMap);
+    return isSelectableMap(k) ? k : 'wild';   // 壊れた保存値でレイド用マップが来ても弾く
+  }
   // ランダムは、いま選んでいる側(通常/リアル)の中から選ぶ
   const wantReal = !!game.realMapMode;
-  const keys = Object.keys(MAPS).filter(k=>!MAPS[k].testOnly && !!MAPS[k].real3d===wantReal);
+  const keys = Object.keys(MAPS).filter(k=> isSelectableMap(k) && !!MAPS[k].real3d===wantReal);
   if(!keys.length) return 'wild';
   return keys[Math.floor(Math.random()*keys.length)];
 }
