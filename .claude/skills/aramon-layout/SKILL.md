@@ -97,6 +97,8 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 
 仕組み: `focusin`(capture)で元の`<input>`を`readOnly`+`blur()`し、ポップアップの欄に`focus()`(**タップと同じターンで呼ぶ**)。確定時に値を書き戻して`input`/`change`を発火。document委譲なので新しい入力欄への個別対応は不要。見出しは`data-kb-title`→直前要素のテキスト(20文字以内)→`placeholder`。位置は通常上端中央/強制横向き時は左寄せ。
 
+**ポップアップが開いている間は`resize()`(world.js)を素通りさせる。** `getRealViewportSize()`は`visualViewport.width/height`を正としており、iOSはソフトキーボードが出ると`visualViewport`だけ縮む(レイアウトの実際の幅は変わらない)。これをそのまま`--vh`/`--vw`へ反映すると、キーボードを出しただけで画面全体が縮んで見える不具合になる(マスモン編集で名前を変えると画面が崩れる、として実際に報告があった)。**`resize()`の先頭で`#textInputOverlay`が開いていないか見て、開いていれば何もしない**(ポップアップ自体が画面を覆うので凍結して問題ない)。**閉じた瞬間(`closeTextInputPopup`)に必ず`resize()`を呼び直す**(OS側の`visualViewport.resize`がキーボードを閉じても来ないことがあるため、それに頼らず自分で復元する)。
+
 ## 強制横向き / タッチ
 
 - 縦画面ロック端末では`#appRoot`をCSS回転(`world.js`の`updateForceLandscapeMode`)。座標・移動量は`toLogicalPoint`/`toLogicalDelta`で補正。

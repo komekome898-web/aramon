@@ -174,6 +174,15 @@ function getViewportSize(){
   return real;
 }
 function resize(){
+  /* 文字入力ポップアップ(#textInputOverlay)を開いている間はレイアウトを作り直さない。
+     iOSはソフトキーボードの開閉でvisualViewportが縮む/戻るたびにresizeイベントが飛び、
+     特に横向きでは縮み幅が大きいため、そのままレイアウトへ反映すると画面全体が縮んで
+     見える不具合になる(マスモン編集で名前を変えると画面が崩れる、として報告があった)。
+     ポップアップはどのみち画面を覆うので、開いている間は前の寸法のまま固定してよい。
+     閉じた瞬間(input.jsのcloseTextInputPopup)に必ずresize()を呼び直して復元する
+     ("キーボードを閉じたのにvisualViewport.resizeが来ない"iOSの取りこぼしにも頼らない)。 */
+  const kbOverlay = document.getElementById('textInputOverlay');
+  if(kbOverlay && !kbOverlay.classList.contains('hidden')) return;
   const vp = getViewportSize();   // ここで向きの判定と html.force-landscape の付け外しも行われる
   viewW = vp.w; viewH = vp.h;
   // キャンバス側で失敗しても、向きの判定だけは必ず済んでいる状態にする
