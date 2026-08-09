@@ -98,6 +98,9 @@ function closeTextInputPopup(commit){
   }
   field.blur();
   ov.classList.add('hidden');
+  // 開いている間はresize()を素通りさせていた(world.js)ので、閉じた直後に必ず作り直す。
+  // OS側のvisualViewport.resizeイベントの発火に頼らない(閉じても来ないことがある)
+  if(typeof resize==='function') resize();
 }
 // 入力欄にフォーカスが来たら、その場では編集させずポップアップへ回す
 document.addEventListener('focusin', (e)=>{
