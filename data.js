@@ -2397,6 +2397,7 @@ const SKIN_MEDIA = {
     se: { tier3:'audio/se_zod_ssr_tier3.mp3' },
   },
   garurumon_ssr: { /*@garurumon_ssr*/
+    promote: { video:'video/garurumon_ssr_promote', audio:'audio/garurumon_ssr_promote_audio.m4a', safetyMs:34558, bgmOnReveal:'lastBattle' },
     bgm: { battle:'audio/bgm_garurumon_ssr_battle.m4a', final5:'audio/bgm_garurumon_ssr_final5.m4a', lastBattle:'audio/bgm_garurumon_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_garurumon_ssr_tier3.m4a' },
   },
