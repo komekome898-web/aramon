@@ -822,6 +822,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-09', items:[
+    { t:'ランキングに「マスモン」タブを追加しました。マスモンLv・転生回数・ステータス合計の3種類が見られます。マスモンLvは通常マップ・リアルマップのタブからは無くなり、このタブに移りました', g:['feature','general'] },
     { t:'✨ SSRスキン「メタルグレイモン」が登場しました！ tier3技「ギガデストロイヤー」は黒い核弾頭を2発発射し、着弾で大きなドーム状の爆風を起こす技です', g:['feature','monster'] },
     { t:'マップで「ランダム」＋「リアルマップ」を選んでいると、通常の対戦のつもりがレイドバトルとして始まってしまう不具合を修正しました。ランダムの抽選にレイド専用の「竜の火口」が混ざっていたのが原因です', g:['fix','multi','solo'] },
     { t:'選んだプレイモードと実際に始まる試合が食い違う不具合を修正しました。「みんなと対戦」のつもりがレイドで始まる／レイドのつもりが通常の対戦になる／試合のあとロビーから続けて始めると前と違うモードになる、のすべてが直っています', g:['fix','multi'] },
@@ -1297,6 +1298,10 @@ const REBIRTH_STAT_KEEP_RATIO  = 1/3;   // 転生後に残るステータスの�
 const REBIRTH_APT_PICKS        = 3;     // 転生時に1段階上げる適正の数
 
 function mastermonRebirthCount(mm){ return Math.max(0, Math.round((mm && mm.rebirth) || 0)); }
+// ランキング「ステ合計」用。育成で振った6ステータスの合計(適正・転生ボーナスは含まない生値)
+function mastermonStatTotal(mm){
+  return MASTERMON_STATS.reduce((sum,s)=>sum + Math.round((mm && mm.stats && mm.stats[s.key]) || 0), 0);
+}
 // このマスモンの適正表。転生で書き換わっていればそちら、無ければ種族の適正
 function mastermonApt(mm){
   if(mm && mm.apt) return mm.apt;
