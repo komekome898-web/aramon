@@ -6441,6 +6441,7 @@ function describeMoveFeatureText(mv){
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);
   if(mv.endBlast) parts.push(`技の先端に半径${mv.endBlast.radius}の爆風ドーム×${mv.endBlast.count||3}(各${mv.endBlast.dmg})`);
+  if(mv.warheads) parts.push(`黒い核弾頭${mv.warheads.count||1}発を発射し、直撃${mv.warheads.dmg}+着弾点から半径${mv.warheads.blast.radius}へドーム状の爆風${mv.warheads.blast.dmg}`);
   if(mv.gutsDrainRatio) parts.push(`与えたダメージの${Math.round(mv.gutsDrainRatio*100)}%ぶん相手のガッツを削る`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
   if(mv.closeBonusMax && mv.closeBonusMax>1) parts.push(`命中距離が近いほど威力上昇(最大+${Math.round((mv.closeBonusMax-1)*100)}%)`);
@@ -6484,9 +6485,11 @@ function buildMastermonMovesHtml(key, opts){
     const pseudo = pseudoForMove;
     const dispName = (typeof getMoveName==='function') ? getMoveName(mv, pseudo) : mv.name;
     // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)。
-    // endBlastは重なった3つのドーム全部に当たった場合の合計(インフェルノ等)
+    // endBlastは重なった3つのドーム全部に当たった場合の合計(インフェルノ等)。
+    // warheadsは核弾頭N発ぶんの「直撃+着弾ドーム」合計(ギガデストロイヤー)
     const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0)
-      + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0);
+      + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0)
+      + (mv.warheads ? ((mv.warheads.dmg||0) + (mv.warheads.blast ? mv.warheads.blast.dmg||0 : 0)) * (mv.warheads.count||1) : 0);
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
     return `
     <div class="mm-move-card">
