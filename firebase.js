@@ -55,6 +55,8 @@
             skin: entry.skin || null,            // 装備スキン(ランキングアイコンに反映)
             mastermonName: entry.mastermonName || null,
             mastermonLevel: entry.mastermonLevel || null,
+            mastermonRebirth: entry.mastermonRebirth || null,
+            mastermonStatTotal: entry.mastermonStatTotal || null,
             // 通常マップ/リアルマップでキル数・ダメージ数を別々に集計する
             killsNormal: 0, damageNormal: 0, killsReal: 0, damageReal: 0,
             placement: entry.placement, isWin: entry.isWin,
@@ -74,6 +76,8 @@
           skin: entry.skin || cur.skin || null,  // 直近の装備スキンを優先(未装備なら従来値を維持)
           mastermonName: entry.mastermonName || cur.mastermonName || null,
           mastermonLevel: Math.max(cur.mastermonLevel||0, entry.mastermonLevel||0) || null,
+          mastermonRebirth: Math.max(cur.mastermonRebirth||0, entry.mastermonRebirth||0) || null,
+          mastermonStatTotal: Math.max(cur.mastermonStatTotal||0, entry.mastermonStatTotal||0) || null,
           killsNormal: isReal ? killsNormal : Math.max(killsNormal, entry.kills||0),
           damageNormal: isReal ? damageNormal : Math.max(damageNormal, entry.damage||0),
           killsReal: isReal ? Math.max(killsReal, entry.kills||0) : killsReal,

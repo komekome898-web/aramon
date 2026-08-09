@@ -73,6 +73,13 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **タグ色は`color-mix()`を使わずJSの`changelogTagVars()`でCSS変数として渡す**(古いiOS非対応)。
 - 未読バッジ: `changelogSignature()` = `最新日付#全項目数` を`aramon_changelog_seen_v1`と比較。`UPDATE_HISTORY`に足せば自動で出るのでバッジ側の作業は不要。**アカウント同期には入れない**(端末ごとの状態)。
 
+## ランキング(`#rankingScreen`)
+
+- **2段のタブ**: 上段(`.rank-map-tab`/`#rankingMapTabs`)が「通常マップ／リアルマップ／マスモン」、下段(`.rank-tab`/`#rankingTabs`)がカテゴリごとの内訳。下段の中身は`RANKING_TABS_BY_CATEGORY`(ui.js)**1か所の表**から`renderRankingModeTabs()`が組み立てる。**種類を増やすときはここへ1行足すだけでよい**(HTMLに書かない。下段クリックは`#rankingTabs`への委譲で受けるので、要素を張り直しても handler は増設不要)。
+- 通常マップ/リアルマップ = `kills`/`damage`(`killsNormal`等、地形別にFirebase側で別カウンタ)。マスモン = `mastermonLevel`/`mastermonRebirth`/`mastermonStatTotal`(**マスモン自身の記録なので地形の区別が無い**。フィールド名をそのまま索引に使う)。
+- **マスモン系の値は試合終了時の`submitScoreToRanking()`から`scores/{name}__{element}`へ一緒に送る**(専用の集計経路を新設しない)。`mastermonStatTotal`は`mastermonStatTotal(mm)`(data.js、`MASTERMON_STATS`6項目の生値合計)。値は既存の`mastermonLevel`と同じく**Math.maxで積み上げ**(`firebase.js`の`__aramonSubmitScore`)、`mastermonName`が無い記録はランキングから除外する。
+- 称号バッジ(`recordTitleBadgesHtml`)はkills/damageの実績を見るので、マスモンタブでも**通常マップの実績として**表示する(地形の指定が無いため)。
+
 ## レイドバトル(数字と公開手順は aramon-season-raid)
 
 - **入口は2つ**: ロビー左メニューの「🐉レイド」と、プレイモードの「レイドバトル」タブ。**どちらの経路でも`setLobbyMode('raid')`を通してタブと表示をレイドへ揃える**(詳細は aramon-multiplayer の「プレイモードの持ち方」)。**どちらも`raidPlayable(アカウント名)`で出し分け**、文言は`raidPhase()`で作る。進む前の門番は`raidGuardReady()`1か所(モンスター未選択・期間外はトーストを出してロビーへ戻す。**押しても何も起きない状態を作らない**)。

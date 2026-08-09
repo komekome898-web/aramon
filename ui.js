@@ -4733,7 +4733,8 @@ const SHARE_ACCENT = {
 // リザルトは表示のその場で作って持っておく(playerも報酬も後から読み直せない)
 let _lastResultShare = null;
 // ランキングのタブ名。シェアの見出しと投稿文の両方で使う
-const RANKING_MODE_LABEL = { kills:'キル数', damage:'ダメージ数', mastermonLevel:'マスモンLv' };
+const RANKING_MODE_LABEL = { kills:'キル数', damage:'ダメージ数',
+  mastermonLevel:'マスモンLv', mastermonRebirth:'転生回数', mastermonStatTotal:'ステ合計' };
 /* ランキングをシェアできるのは「自分が一覧に載っているとき」だけ。
    載っていないときはボタンごと消す(押しても出せない順位を見せない)。
    一覧を描くたびに setRankShareTarget() で更新する。 */
@@ -5346,9 +5347,15 @@ function submitScoreToRanking(isWin, placement){
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';
   let mastermonName = null;
   let mastermonLevel = null;
+  let mastermonRebirth = null;
+  let mastermonStatTotalVal = null;
   if(game.selectedMastermonKey){
     const mm = loadMastermons()[game.selectedMastermonKey];
-    if(mm){ mastermonName = mm.name; mastermonLevel = mm.level; }
+    if(mm){
+      mastermonName = mm.name; mastermonLevel = mm.level;
+      mastermonRebirth = mastermonRebirthCount(mm);
+      mastermonStatTotalVal = mastermonStatTotal(mm);
+    }
   }
   statusEl.textContent = 'ランキングに送信中…';
   const equippedSkin = (typeof getEquippedSkin==='function') ? (getEquippedSkin(player.element) || null) : null;
@@ -5360,6 +5367,8 @@ function submitScoreToRanking(isWin, placement){
     skin: equippedSkin,               // その試合で装備していたスキン(ランキングアイコンに反映)
     mastermonName,
     mastermonLevel,
+    mastermonRebirth,
+    mastermonStatTotal: mastermonStatTotalVal,
     kills: player.kills,
     damage: Math.round(player.damageDealt),
     placement: isWin ? 1 : placement,
@@ -6746,7 +6755,25 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
 
 let currentRankingMode = 'kills';
 let currentRankingMonster = 'all';
-let currentRankingMapType = 'normal'; // 通常マップ / リアルマップでランキングを分けて集計
+let currentRankingMapType = 'normal'; // 通常マップ / リアルマップ / マスモン(タブの名前を流用しているだけで地形ではない)
+// マスモン自身の記録(通常/リアルのどちらで遊んでも同じ値)。フィールド名がFirebase側の記録名そのもの。
+const MASTERMON_RANK_MODES = ['mastermonLevel', 'mastermonRebirth', 'mastermonStatTotal'];
+// カテゴリ(#rankingMapTabsのタブ)ごとに出すサブタブ。1か所にまとめてあるので、
+// 種類を増やすときはここへ1行足すだけでよい(表に足せば自動で回る)。
+const RANKING_TABS_BY_CATEGORY = {
+  normal: [['kills','キル数'], ['damage','ダメージ数']],
+  real:   [['kills','キル数'], ['damage','ダメージ数']],
+  mastermon: [['mastermonLevel','マスモンLv'], ['mastermonRebirth','転生回数'], ['mastermonStatTotal','ステ合計']],
+};
+// カテゴリを切り替えるたびにサブタブを組み直す。今のモードが新カテゴリに無ければ先頭へ落とす。
+function renderRankingModeTabs(){
+  const wrap = document.getElementById('rankingTabs');
+  if(!wrap) return;
+  const list = RANKING_TABS_BY_CATEGORY[currentRankingMapType] || RANKING_TABS_BY_CATEGORY.normal;
+  if(!list.some(([m])=>m===currentRankingMode)) currentRankingMode = list[0][0];
+  wrap.innerHTML = list.map(([m,label])=>
+    `<button class="rank-tab${m===currentRankingMode?' active':''}" data-mode="${m}">${label}</button>`).join('');
+}
 let rankingOpenedFrom = 'result';
 function populateRankingMonsterFilter(){
   const wrap = document.getElementById('rankingMonsterFilterWrap');
@@ -6780,6 +6807,7 @@ function populateRankingMonsterFilter(){
 async function openRankingScreen(fromTitle){
   rankingOpenedFrom = fromTitle ? 'title' : 'result';
   populateRankingMonsterFilter();
+  renderRankingModeTabs();
   document.getElementById('rankingScreen').classList.remove('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.add('hidden');
@@ -6834,8 +6862,9 @@ async function loadRankingList(mode){
     return;
   }
   // kills/damageは通常マップ/リアルマップで別カウンタ(killsNormal等)に集計しているので、
-  // モードとマップ種別タブから実際に索引する項目名を組み立てる。mastermonLevelはマップ別に分けない。
-  const field = mode==='mastermonLevel' ? 'mastermonLevel' : (mode + (currentRankingMapType==='real' ? 'Real' : 'Normal'));
+  // モードとマップ種別タブから実際に索引する項目名を組み立てる。マスモン自身の記録はマップ別に分けない。
+  const isMastermonMode = MASTERMON_RANK_MODES.includes(mode);
+  const field = isMastermonMode ? mode : (mode + (currentRankingMapType==='real' ? 'Real' : 'Normal'));
   const fetchCount = currentRankingMonster==='all' ? 50 : 300;
   const rows = await window.__aramonFetchRanking(field, fetchCount);
   if(!rows){
@@ -6844,9 +6873,10 @@ async function loadRankingList(mode){
   }
   let filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
   // 同じスコアは同じ順位にする(次の順位は人数ぶん飛ぶ = 一般的な競技順位)
-  const scoreOf = (r)=> mode==='mastermonLevel' ? (r.mastermonLevel||0) : mmMapStat(r, mode, currentRankingMapType);
-  if(mode==='mastermonLevel'){
-    filtered = filtered.filter(r=>r.mastermonName).sort((a,b)=>(b.mastermonLevel||0)-(a.mastermonLevel||0));
+  const scoreOf = (r)=> isMastermonMode ? (r[mode]||0) : mmMapStat(r, mode, currentRankingMapType);
+  if(isMastermonMode){
+    // マスモンを選んでいない記録(mastermonName無し)は除外してから並べる
+    filtered = filtered.filter(r=>r.mastermonName).sort((a,b)=>scoreOf(b)-scoreOf(a));
   } else {
     // Firebase側の索引(killsNormal等)は旧データに存在せず並び順に反映されないため、
     // 読み取り時のフォールバック込みの値で改めて並べ直す
@@ -6862,7 +6892,7 @@ async function loadRankingList(mode){
   let mine = null;
   listEl.innerHTML = top.map((r,i)=>{
     const score = scoreOf(r);
-    const val = mode==='mastermonLevel' ? `Lv.${r.mastermonLevel||0}` : score;
+    const val = mode==='mastermonLevel' ? `Lv.${score}` : mode==='mastermonRebirth' ? `★${score}` : score;
     const nm = (r.name||'名無しのモンスター');
     const rank = (prevScore!==null && score===prevScore) ? prevRank : i+1;
     prevScore = score; prevRank = rank;
@@ -6877,18 +6907,20 @@ async function loadRankingList(mode){
         : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
     }
     const mmHtml = rankMastermonHtml(r.mastermonName);
-    const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r, currentRankingMapType) : '';
+    // マスモン自身の記録タブは地形の区別が無いので、称号バッジは通常マップ扱いで見る
+    const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r, isMastermonMode ? 'normal' : currentRankingMapType) : '';
     if(nm === me && !mine) mine = { r, rank, val };   // シェア用に自分の行を控える
     return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
   }).join('');
+  const scopeLabel = isMastermonMode ? 'マスモン' : (currentRankingMapType==='real' ? 'リアルマップ' : '通常マップ');
   setRankShareTarget(false, mine && {
     rank: mine.rank,
-    title: `${RANKING_MODE_LABEL[mode] || mode}ランキング（${currentRankingMapType==='real' ? 'リアルマップ' : '通常マップ'}）`,
+    title: `${RANKING_MODE_LABEL[mode] || mode}ランキング（${scopeLabel}）`,
     valueLabel: RANKING_MODE_LABEL[mode] || mode,
     valueText: String(mine.val),
     element: mine.r.element, skinId: mine.r.skin || null,
     monsterLabel: mine.r.mastermonName || (ELEMENTS[mine.r.element] ? ELEMENTS[mine.r.element].label : ''),
-    chips: [currentRankingMapType==='real' ? 'リアルマップ' : '通常マップ'],
+    chips: [scopeLabel],
   });
 }
 document.getElementById('viewRankingBtn').addEventListener('click', ()=>openRankingScreen(false));
@@ -6903,20 +6935,23 @@ document.getElementById('closeRankingBtn').addEventListener('click', ()=>{
     document.getElementById('resultScreen').classList.remove('hidden');
   }
 });
-document.querySelectorAll('.rank-tab').forEach(tab=>{
-  tab.addEventListener('click', ()=>{
-    document.querySelectorAll('.rank-tab').forEach(t=>t.classList.remove('active'));
-    tab.classList.add('active');
-    const m = tab.dataset.mode;
-    currentRankingMode = (m==='damage' || m==='mastermonLevel') ? m : 'kills';
-    loadRankingList(currentRankingMode);
-  });
+// サブタブはカテゴリ切替のたびに renderRankingModeTabs() が中身を作り直すので、
+// クリックは親要素(#rankingTabs)への委譲で受ける(要素ごとの張り直しが要らない)。
+document.getElementById('rankingTabs').addEventListener('click', (e)=>{
+  const tab = e.target.closest('.rank-tab');
+  if(!tab) return;
+  document.querySelectorAll('.rank-tab').forEach(t=>t.classList.remove('active'));
+  tab.classList.add('active');
+  currentRankingMode = tab.dataset.mode;
+  loadRankingList(currentRankingMode);
 });
 document.querySelectorAll('.rank-map-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.rank-map-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
-    currentRankingMapType = tab.dataset.maptype==='real' ? 'real' : 'normal';
+    const t = tab.dataset.maptype;
+    currentRankingMapType = (t==='real' || t==='mastermon') ? t : 'normal';
+    renderRankingModeTabs();   // サブタブの中身をカテゴリに合わせて作り直す
     loadRankingList(currentRankingMode);
   });
 });

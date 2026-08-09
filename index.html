@@ -692,14 +692,12 @@
     <div id="rankingMapTabs">
       <button class="rank-map-tab active" data-maptype="normal">通常マップ</button>
       <button class="rank-map-tab" data-maptype="real">リアルマップ</button>
+      <button class="rank-map-tab" data-maptype="mastermon">マスモン</button>
     </div>
   </div>
   <div id="rankingControls">
-    <div id="rankingTabs">
-      <button class="rank-tab active" data-mode="kills">キル数</button>
-      <button class="rank-tab" data-mode="damage">ダメージ数</button>
-      <button class="rank-tab" data-mode="mastermonLevel">マスモンLv</button>
-    </div>
+    <!-- サブタブはカテゴリごとに内容が違うので、renderRankingModeTabs() がJSで組み立てる -->
+    <div id="rankingTabs"></div>
     <div class="custom-select" id="rankingMonsterFilterWrap">
       <button type="button" class="custom-select-btn" id="rankingMonsterFilterBtn">総合(全モンスター)</button>
       <div class="custom-select-menu hidden" id="rankingMonsterFilterMenu"></div>
