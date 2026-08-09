@@ -710,7 +710,15 @@ const SSR_SKIN_TIER3 = {
   garurumon_ssr:  { name:'フォックスファイアー', dmgMult:1.15, move:{ /*@garurumon_ssr*/
     aoeShape:'fan', fanAngleDeg:30, aoeStyle:'inferno', projSpeed:1500, zigzagWidth:0,
   }},
-  metag_ssr:      { name:'ギガデストロイヤー', dmgMult:1.15 }, /*@metag_ssr*/
+  // メタルグレイモン(ドラゴン): 素体の「インフェルノ」(fan/inferno)の炎ブレスはそのまま活かし、
+  // 先端の3連ドーム(endBlast)だけ削って、横並びの黒い核弾頭2発+着弾の大きいドーム爆風に差し替える。
+  // warheads は fireMove の aoeShape 分岐でだけ読む専用フィールド(この技専用)。
+  metag_ssr:      { name:'ギガデストロイヤー', dmgMult:1.15, move:{ /*@metag_ssr*/
+    endBlast:null,
+    warheads:{ count:2, sideStep:80, projSpeed:620, range:900, dmg:18, hitR:30,
+               color:'#14121c', projStyle:'voidOrb',
+               blast:{ radius:260, dmg:42, expandTime:0.5, color:'#ff6a2e' } },
+  }},
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -785,7 +793,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-09', items:[
-    { t:'✨ SSRスキン「メタルグレイモン」が登場しました！', g:['feature','monster'] },
+    { t:'✨ SSRスキン「メタルグレイモン」が登場しました！ tier3技「ギガデストロイヤー」は黒い核弾頭を2発発射し、着弾で大きなドーム状の爆風を起こす技です', g:['feature','monster'] },
     { t:'マップで「ランダム」＋「リアルマップ」を選んでいると、通常の対戦のつもりがレイドバトルとして始まってしまう不具合を修正しました。ランダムの抽選にレイド専用の「竜の火口」が混ざっていたのが原因です', g:['fix','multi','solo'] },
     { t:'選んだプレイモードと実際に始まる試合が食い違う不具合を修正しました。「みんなと対戦」のつもりがレイドで始まる／レイドのつもりが通常の対戦になる／試合のあとロビーから続けて始めると前と違うモードになる、のすべてが直っています', g:['fix','multi'] },
     { t:'✨ SSRスキン「ガルルモン」が登場しました！ tier3技「フォックスファイアー」は青い炎を30度の扇状に吐くブレス技です', g:['feature','monster'] },
@@ -2425,8 +2433,12 @@ const SKIN_MEDIA = {
     bgm: { battle:'audio/bgm_garurumon_ssr_battle.m4a', final5:'audio/bgm_garurumon_ssr_final5.m4a', lastBattle:'audio/bgm_garurumon_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_garurumon_ssr_tier3.m4a' },
   },
+  // 専用BGMは残り6人以上・残り5人以下をガルルモンと同じ曲にする(音源を複製せず、同じファイルパスを直接指す)。
+  // 残り2人だけ専用曲(audio/bgm_metag_ssr_lastbattle.mp3)
   metag_ssr: { /*@metag_ssr*/
     promote: { video:'video/metag_ssr_promote', audio:'audio/metag_ssr_promote_audio.m4a', safetyMs:34648 },
+    bgm: { battle:'audio/bgm_garurumon_ssr_battle.m4a', final5:'audio/bgm_garurumon_ssr_final5.m4a',
+           lastBattle:'audio/bgm_metag_ssr_lastbattle.mp3' },
     se: { tier3:'audio/se_metag_ssr_tier3.m4a' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する

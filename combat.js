@@ -228,6 +228,27 @@ function fireMove(attacker, target, move){
         pendingAoeCasts.push({ at: matchTime + i*burstGap, attackerId:attacker.id, aimAngle, build: buildAe });
       }
     }
+    // メタルグレイモン「ギガデストロイヤー」: 扇の炎ブレスとは別に、黒い核弾頭を横並びで実体の弾として飛ばし、
+    // 着弾/最大射程到達で大きいドームAoEを起こす(spawnGroundBlastはprojectiles側のblast処理を流用)
+    if(move.warheads){
+      const wh = move.warheads;
+      const whCount = wh.count || 1;
+      const whDmgMult = move.dmg ? effDmg/move.dmg : 1; // 本体と同じ倍率(訓練・SSR tier3威力アップ)を核弾頭にも掛ける
+      const sideX = -Math.sin(aimAngleBase), sideY = Math.cos(aimAngleBase);
+      for(let i=0;i<whCount;i++){
+        const sideOff = (whCount>1 ? (i-(whCount-1)/2) : 0) * (wh.sideStep||0);
+        projectiles.push({
+          id:nextId++, ownerId:attacker.id,
+          x:attacker.x + sideX*sideOff, y:attacker.y + sideY*sideOff, z:muzzleZ,
+          vx:Math.cos(aimAngleBase)*wh.projSpeed, vy:Math.sin(aimAngleBase)*wh.projSpeed, vz:aimSlope*wh.projSpeed,
+          terrain3d:onReal3d, grav:projGrav,
+          dmg: wh.dmg*whDmgMult, color: wh.color||'#14121c', hitR:(wh.hitR||28)*hbMult, splash:0,
+          traveled:0, maxRange: wh.range||move.range, delay: i*(wh.gap||0),
+          projStyle: wh.projStyle||'voidOrb', moveAura, auraTint,
+          blast: wh.blast ? Object.assign({}, wh.blast, { dmg: wh.blast.dmg*whDmgMult }) : null,
+        });
+      }
+    }
     const totalLife = firstAe.life + (burstCount-1)*burstGap;
     lockMoveFacing(attacker, aimAngleBase, totalLife);
     if(attacker.isPlayer){
