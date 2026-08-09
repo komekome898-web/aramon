@@ -1120,6 +1120,23 @@
   </div>
 </div>
 
+<!-- SSRメタルグレイモン・ガルルモン実装記念ポップアップ。上のレイドガチャ記念ポップアップを
+     閉じた直後に1回だけ出す(端末ごと。ダイヤ等の付与は無い、告知のみ) -->
+<div id="metagGaruruPromoOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="skin-promo-box">
+    <img class="skin-promo-img skin-promo-img-caption" src="images/promo_metag_garurumon.png" alt="SSRメタルグレイモン・ガルルモン実装記念">
+    <div class="skin-promo-caption">
+      <div>専用技&amp;ボイス搭載！</div>
+      <div>獲得時に懐かしの進化ムービーが！？</div>
+      <div>バトルであの名曲が聴けるかも！？</div>
+    </div>
+    <div class="skin-promo-btnrow">
+      <button id="metagGaruruPromoCloseBtn" class="skin-promo-close">閉じる</button>
+      <button id="metagGaruruPromoGachaBtn" class="skin-promo-gacha">今すぐガチャ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Xへのシェア。画像は render.js の shareCardCanvas() が描き、開いた時点でFileまで作り終える。
      見た目の出し分けは data-state 属性1つに寄せてあるので、JS側でクラスを付け替えない -->
 <div id="shareOverlay" class="mastermon-confirm-overlay hidden" data-state="building">
