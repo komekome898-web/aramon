@@ -249,14 +249,20 @@ function _framesReady(arr){
   }
   return ok;
 }
+/* ssr は配列。1つの素体に何体でもSSRの歩行コマを持てる(装備中のskinIdで選ぶ)。
+   ここに歩行コマが無いSSRスキンは静止画で表示される(ゲーム側が自動で切り替える)。 */
 const WALK_ANIM = {
   mocchi: {
     base: { front:_loadWalk('mocchi_walk_f'),     back:_loadWalk('mocchi_walk_b') },     // 素モッチー(色スキン対応)
-    ssr:  { skinId:'mocchi_ssr', front:_loadWalk('mocchi_ssr_walk_f'), back:_loadWalk('mocchi_ssr_walk_b') }, // ラガモッチー
+    ssr: [
+      { skinId:'mocchi_ssr', front:_loadWalk('mocchi_ssr_walk_f'), back:_loadWalk('mocchi_ssr_walk_b') }, // ラガモッチー
+    ],
   },
   god: {
     base: { front:_loadWalk('god_walk_f'), back:_loadWalk('god_walk_b') },               // ガリ(色スキン対応)
-    ssr:  { skinId:'zeus_ssr', front:_loadWalk('zeus_ssr_walk_f'), back:_loadWalk('zeus_ssr_walk_b') }, // SSRゼウス
+    ssr: [
+      { skinId:'zeus_ssr', front:_loadWalk('zeus_ssr_walk_f'), back:_loadWalk('zeus_ssr_walk_b') }, // SSRゼウス
+    ],
   },
   suezo: {
     base: { front:_loadWalk('suezo_walk_f'), back:_loadWalk('suezo_walk_b') },            // スエゾー(色スキン対応)
@@ -266,49 +272,69 @@ const WALK_ANIM = {
   },
   fox: {
     base: { front:_loadWalk('fox_walk_f'), back:_loadWalk('fox_walk_b') },                // キュービ(色スキン対応)
-    ssr:  { skinId:'tamamo_ssr', front:_loadWalk('tamamo_ssr_walk_f'), back:_loadWalk('tamamo_ssr_walk_b') }, // SSRタマモノマエ
+    ssr: [
+      { skinId:'tamamo_ssr', front:_loadWalk('tamamo_ssr_walk_f'), back:_loadWalk('tamamo_ssr_walk_b') }, // SSRタマモノマエ
+    ],
   },
   spark: {
     base: { front:_loadWalk('spark_walk_f'), back:_loadWalk('spark_walk_b') },            // ライガー(色スキン対応)
-    ssr:  { skinId:'garurumon_ssr', front:_loadWalk('garurumon_ssr_walk_f'), back:_loadWalk('garurumon_ssr_walk_b') }, /*@garurumon_ssr*/
+    ssr: [
+      { skinId:'garurumon_ssr', front:_loadWalk('garurumon_ssr_walk_f'), back:_loadWalk('garurumon_ssr_walk_b') }, /*@garurumon_ssr*/
+    ],
   },
   phoenix: {
     base: { front:_loadWalk('phoenix_walk_f'),     back:_loadWalk('phoenix_walk_b') },     // ヒノトリ(色スキン対応)
-    ssr:  { skinId:'phoenix_ssr', front:_loadWalk('phoenix_ssr_walk_f'), back:_loadWalk('phoenix_ssr_walk_b') }, // SSRフェニックス
+    ssr: [
+      { skinId:'phoenix_ssr', front:_loadWalk('phoenix_ssr_walk_f'), back:_loadWalk('phoenix_ssr_walk_b') }, // SSRフェニックス
+    ],
   },
   ark: {
     base: { front:_loadWalk('ark_walk_f'), back:_loadWalk('ark_walk_b') },                // アーク(色スキン対応)
-    ssr:  { skinId:'iblees_ssr', front:_loadWalk('iblees_ssr_walk_f'), back:_loadWalk('iblees_ssr_walk_b') }, // SSRイブリース
+    ssr: [
+      { skinId:'iblees_ssr', front:_loadWalk('iblees_ssr_walk_f'), back:_loadWalk('iblees_ssr_walk_b') }, // SSRイブリース
+    ],
   },
   aqua: {
     base: { front:_loadWalk('aqua_walk_f'), back:_loadWalk('aqua_walk_b') },              // ウンディーネ(色スキン対応)
-    ssr:  { skinId:'aqua_ssr', front:_loadWalk('aqua_ssr_walk_f'), back:_loadWalk('aqua_ssr_walk_b') }, /*@aqua_ssr*/
+    ssr: [
+      { skinId:'aqua_ssr', front:_loadWalk('aqua_ssr_walk_f'), back:_loadWalk('aqua_ssr_walk_b') }, /*@aqua_ssr*/
+    ],
   },
   fire: {
     base: { front:_loadWalk('fire_walk_f'), back:_loadWalk('fire_walk_b') },              // ドラゴン(色スキン対応)
-    ssr:  { skinId:'zod_ssr', front:_loadWalk('zod_ssr_walk_f'), back:_loadWalk('zod_ssr_walk_b') }, /*@zod_ssr*/
+    ssr: [
+      { skinId:'zod_ssr', front:_loadWalk('zod_ssr_walk_f'), back:_loadWalk('zod_ssr_walk_b') }, /*@zod_ssr*/
+    ],
   },
   leaf: {
     base: { front:_loadWalk('leaf_walk_f'), back:_loadWalk('leaf_walk_b') },              // プラント(色スキン対応)
   },
   rock: {
     base: { front:_loadWalk('rock_walk_f'), back:_loadWalk('rock_walk_b') },              // ゴーレム(色スキン対応)
-    ssr:  { skinId:'rock_ssr', front:_loadWalk('rock_ssr_walk_f'), back:_loadWalk('rock_ssr_walk_b') }, /*@rock_ssr*/
+    ssr: [
+      { skinId:'rock_ssr', front:_loadWalk('rock_ssr_walk_f'), back:_loadWalk('rock_ssr_walk_b') }, /*@rock_ssr*/
+    ],
   },
   illumine: {
     base: { front:_loadWalk('illumine_walk_f'), back:_loadWalk('illumine_walk_b') },      // イルミネ(色スキン対応)
-    ssr:  { skinId:'persephone_ssr', front:_loadWalk('persephone_ssr_walk_f'), back:_loadWalk('persephone_ssr_walk_b') }, // SSRペルセポネ
+    ssr: [
+      { skinId:'persephone_ssr', front:_loadWalk('persephone_ssr_walk_f'), back:_loadWalk('persephone_ssr_walk_b') }, // SSRペルセポネ
+    ],
   },
   warm: {
     base: { front:_loadWalk('warm_walk_f'), back:_loadWalk('warm_walk_b') },              // ワーム(色スキン対応)
   },
   pixie: {
     base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
-    ssr:  { skinId:'choco_ssr', front:_loadWalk('choco_ssr_walk_f'), back:_loadWalk('choco_ssr_walk_b') }, // SSRちょこ
+    ssr: [
+      { skinId:'choco_ssr', front:_loadWalk('choco_ssr_walk_f'), back:_loadWalk('choco_ssr_walk_b') }, // SSRちょこ
+    ],
   },
   dullahan:{ /*@dullahan*/
     base: { front:_loadWalk('dullahan_walk_f'), back:_loadWalk('dullahan_walk_b') },
-    ssr:  { skinId:'guts_ssr', front:_loadWalk('guts_ssr_walk_f'), back:_loadWalk('guts_ssr_walk_b') }, /*@guts_ssr*/
+    ssr: [
+      { skinId:'guts_ssr', front:_loadWalk('guts_ssr_walk_f'), back:_loadWalk('guts_ssr_walk_b') }, /*@guts_ssr*/
+    ],
   },
   hum:     { /*@hum*/
     base: { front:_loadWalk('hum_walk_f'), back:_loadWalk('hum_walk_b') },
@@ -330,10 +356,12 @@ function entityWalkFrameImage(e){
   const reg = WALK_ANIM[e.element];
   if(!reg) return null;
   const skin = _entityDisplaySkinId(e);
-  const useSsr = !!(reg.ssr && skin===reg.ssr.skinId);
+  // 装備中のSSRスキン専用の歩行コマを探す(1素体に何体でも持てる)
+  const ssrSet = skin ? (reg.ssr||[]).find(s=>s.skinId===skin) : null;
+  const useSsr = !!ssrSet;
   // 歩行コマが用意されていないSSRスキン(例:ガリのゼウス)装備時は静止スキン画像を優先する
   if(skin && skin.indexOf(':')<0 && !useSsr) return null;
-  const set = useSsr ? reg.ssr : reg.base;
+  const set = useSsr ? ssrSet : reg.base;
   if(!set) return null;
   // 短絡させると後ろ姿のコマの読み込みが始まらないので、必ず両方を呼ぶ
   const frontOk = _framesReady(set.front), backOk = _framesReady(set.back);

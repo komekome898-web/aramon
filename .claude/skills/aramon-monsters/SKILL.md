@@ -52,6 +52,7 @@ description: 荒野モン動のモンスター追加チェックリスト・SSR/
 ## 歩行アニメーション
 
 - `monsters/<prefix>_walk_f1..8.png`(正面)/`_b1..8.png`(後ろ)。**有効化は`WALK_ANIM`への登録だけ。全15エレメント対応済み**(SSRはラガモッチー/ゼウス/タマモノマエ/フェニックス/イブリース/ちょこ/ペルセポネ)。
+- **`WALK_ANIM[element].ssr`は配列。1素体に何体でもSSRの歩行コマを持てる**(装備中の`skinId`で選ぶ)。以前は1つだけの枠で、2体目のSSRは登録できずスタジオが歩行16枚を黙って落としていた(メタルグレイモンで発生)。**画像を足すだけでは動かない。この配列への登録が要る。**
 - 入口は`getDisplayImage(entity)`→`entityWalkFrameImage(entity)`。`matchTime`でコマ送り、平滑化速度`_mwSpeed`が`WALK_MOVE_EPS`超で歩行中。進行方向とカメラyawの内積で正面/後ろを切替、停止中は静止(自分=後ろ/他=正面)。色スキンは各コマを`recolorToCanvas`して`_walkRecolor`にキャッシュ。**歩行コマ未提供のSSRは`null`を返して静止スキン画像にフォールバック。**
 - コマの表示時間`WALK_FRAME_DUR`(0.11秒)はdata.jsと`tools/studio_web.html`に二重に持っているので、**変えたら両方直す。**
 

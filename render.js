@@ -194,9 +194,10 @@ function skinWalkFrameDataUrls(skinId, view){
   if(!m) return null;
   const reg = WALK_ANIM[m.element];
   if(!reg) return null;
-  const useSsr = !!(reg.ssr && reg.ssr.skinId===skinId);
+  const ssrSet = (reg.ssr||[]).find(s=>s.skinId===skinId);   // 1素体に何体でも持てる
+  const useSsr = !!ssrSet;
   if(m.kind==='ssr' && !useSsr) return null; // 歩行コマ未提供のSSRスキンは静止画のまま
-  const set = useSsr ? reg.ssr : reg.base;
+  const set = useSsr ? ssrSet : reg.base;
   const frames = (view==='back') ? (set && set.back) : (set && set.front);
   if(!frames || !_framesReady(frames)) return null;
   const key = `W:${skinId}:${view}`;
