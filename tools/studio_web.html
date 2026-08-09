@@ -125,7 +125,13 @@
     <option value="monster">新しいモンスターを追加する</option>
     <option value="ssr">既存モンスターのSSRスキンを追加する</option>
     <option value="ssrmedia">SSRスキン専用(演出・BGM・SE・ガチャ)</option>
+    <option value="assets">既存の素材を差し替える(歩行・静止画)</option>
   </select>
+  <div id="assetsForm" style="display:none">
+    <label>どれの素材を差し替えるか</label>
+    <select id="a_target"><option value="">先にGitHubへ接続してください</option></select>
+    <div class="hint" id="a_cur">接続すると、モンスターの素体とSSRスキンが一覧に出ます。</div>
+  </div>
   <div id="ssrForm" style="display:none">
     <div class="r2">
       <div><label>素体(どのモンスターのスキンか)</label><select id="s_element"></select></div>
@@ -160,8 +166,8 @@
       画像名はスキンidから決まります(<code>mymon_ssr</code> → アイコン <code>mymon_ssr.png</code> /
       試合用 <code>mymon_player_ssr.png</code> / 歩行 <code>mymon_ssr_walk_f1..8</code>)。
       SSRだけの特典は<b>tier3の技名と威力</b>です。素体の技・特性・適性は変わりません。
-      歩行コマは<b>1素体に1つ</b>しか持てないので、その素体にすでにSSRの歩行があるときは
-      静止画だけで登録します(ゲーム側が自動で静止画に切り替わります)。
+      歩行コマは<b>1素体に何体ぶんでも</b>持てます。正面・後ろの両方をプレビューしていれば
+      このスキン専用の歩行として登録します(用意しなければ静止画のままになります)。
     </div>
   </div>
   <div class="hint" id="regHint"></div>
@@ -1945,7 +1951,8 @@ function applyRaidConsts(dataJs, ss){
   return { text, notes };
 }
 // WALK_ANIM は表の末尾ではなく「素体の中」に入れるので、目印方式ではなく素体ブロックを探して挿す。
-// 1素体に ssr は1つしか持てない(entityWalkFrameImage が reg.ssr を1つだけ見る)。
+// ssr は配列なので、1素体に何体でも歩行コマを持てる(entityWalkFrameImage が skinId で選ぶ)。
+// すでに同じ skinId の行があるときは added:false / exists:true を返す(素材だけ差し替えればよい)。
 function applySsrWalk(dataJs, ss){
   const start = dataJs.indexOf('const WALK_ANIM = {');
   if(start < 0) throw new Error('data.js に WALK_ANIM が見つかりません');
@@ -1958,12 +1965,23 @@ function applySsrWalk(dataJs, ss){
   const rest = block.slice(from);
   const c = /^  \},?[ \t]*$/m.exec(rest);
   const bodyEnd = from + (c ? c.index : rest.length);
-  if(/\bssr\s*:/.test(block.slice(from, bodyEnd)))
-    return { text:dataJs, added:false, reason:`素体「${ss.element}」にはすでにSSRの歩行コマがあります` };
-  const line = `    ssr:  { skinId:${jsStr(ss.id)}, front:_loadWalk(${jsStr(ss.walkPrefix+'f')}),` +
-               ` back:_loadWalk(${jsStr(ss.walkPrefix+'b')}) }, /*@${ss.id}*/\n`;
+  const body = block.slice(from, bodyEnd);
+  if(new RegExp('skinId\\s*:\\s*[\'"]' + ss.id + '[\'"]').test(body))
+    return { text:dataJs, added:false, exists:true,
+             reason:`${ss.id} の歩行コマはすでに登録されています(素材だけ差し替えます)` };
+  const entry = `      { skinId:${jsStr(ss.id)}, front:_loadWalk(${jsStr(ss.walkPrefix+'f')}),` +
+                ` back:_loadWalk(${jsStr(ss.walkPrefix+'b')}) }, /*@${ss.id}*/\n`;
+  // すでに ssr: [ … ] があれば末尾へ足す。無ければ配列ごと作る。
+  const arr = /^    ssr:\s*\[[ \t]*$/m.exec(body);
+  if(arr){
+    const close = /^    \][ \t]*,?[ \t]*$/m.exec(body.slice(arr.index));
+    if(!close) return { text:dataJs, added:false, reason:`素体「${ss.element}」の ssr 配列の終わりが読み取れません` };
+    const at = start + from + arr.index + close.index;
+    return { text: dataJs.slice(0, at) + entry + dataJs.slice(at), added:true };
+  }
   const at = start + bodyEnd;
-  return { text: dataJs.slice(0, at) + line + dataJs.slice(at), added:true };
+  const block2 = `    ssr: [\n${entry}    ],\n`;
+  return { text: dataJs.slice(0, at) + block2 + dataJs.slice(at), added:true };
 }
 // apply_rows の移植: 目印の直前へ挿入
 function applyRows(texts, rows){
@@ -2116,6 +2134,12 @@ function loadSsrList(dataJs){
   while((m = rx.exec(body))) out.push([m[1], m[2]]);
   if(!out.length) return;
   state.skins = out;
+  // 素体(element)は素材の差し替えで歩行コマの入れ先を決めるのに要る
+  state.ssrMeta = {};
+  const rxe = /^  ([a-z][a-z0-9_]*)\s*:\s*\{[^\n]*?element\s*:\s*'([^']*)'/gm;
+  while((m = rxe.exec(body))) state.ssrMeta[m[1]] = { element: m[2] };
+  state.ssrWalk = parseSsrWalkIds(dataJs);
+  renderAssetTargets();
   state.media.cur = parseSkinMedia(dataJs);
   state.pickup.skin = (/^const GACHA_PICKUP_SSR = '([^']*)'/m.exec(dataJs) || [])[1] || null;
   state.pickup.raid = (/^const RAID_GACHA_PICKUP = '([^']*)'/m.exec(dataJs) || [])[1] || null;
@@ -2126,6 +2150,46 @@ function loadSsrList(dataJs){
   }).join('');
   if(cur && out.some(([k])=>k===cur)) $('md_skin').value = cur;
   renderMediaCurrent();
+}
+/* WALK_ANIM に歩行コマが登録済みのSSRスキンidを集める(差し替え画面で「今の状態」を出すため)。
+   実体は skinId:'xxx' の行なので、素体ごとに分けずidだけを見ればよい。 */
+function parseSsrWalkIds(dataJs){
+  const s = dataJs.indexOf('const WALK_ANIM = {');
+  if(s < 0) return {};
+  const e = dataJs.indexOf('// <<AUTO:WALK_ANIM>>', s);
+  const body = dataJs.slice(s, e > 0 ? e : s + 20000);
+  const out = {}; let m;
+  const rx = /skinId\s*:\s*'([^']*)'/g;
+  while((m = rx.exec(body))) out[m[1]] = true;
+  return out;
+}
+// 「既存の素材を差し替える」の対象一覧。素体(ELEMENTS)とSSRスキン(SSR_SKINS)を1つの選択肢に並べる
+function renderAssetTargets(){
+  const el = $('a_target');
+  if(!el) return;
+  const opts = [];
+  (state.elements || []).forEach(([k, l])=> opts.push([`base:${k}`, `素体 ${l}(${k})`]));
+  (state.skins || []).forEach(([k, l])=>{
+    const w = (state.ssrWalk || {})[k] ? '' : ' ※歩行コマなし';
+    opts.push([`ssr:${k}`, `SSR ${l}(${k})${w}`]);
+  });
+  if(!opts.length) return;
+  const cur = el.value;
+  el.innerHTML = opts.map(([v, l])=>`<option value="${v}">${l}</option>`).join('');
+  if(cur && opts.some(([v])=>v===cur)) el.value = cur;
+  renderAssetCurrent();
+}
+function renderAssetCurrent(){
+  const t = assetsTarget();
+  const el = $('a_cur');
+  if(!el) return;
+  if(!t){ el.textContent = '接続すると、モンスターの素体とSSRスキンが一覧に出ます。'; return; }
+  const hasWalk = t.kind === 'ssr' ? !!(state.ssrWalk || {})[t.key] : true;
+  el.innerHTML = `差し替え先の画像名: <code>monsters/${t.iconImg}.png</code> / `
+    + `<code>monsters/${t.playerImg}.png</code> / <code>monsters/${t.walkPrefix}f1..8・b1..8.png</code><br>`
+    + (hasWalk ? '歩行コマは登録済みです。用意したものだけ差し替えます。'
+               : '<b>歩行コマがまだ登録されていません。</b>正面・後ろの両方をプレビューすると、'
+                 + '画像の送信と同時に WALK_ANIM への登録も行います。');
 }
 // 状態変化のプリセット(=今いるモンスターの設定)
 function loadScPresets(dataJs){
@@ -2222,9 +2286,29 @@ function collectSpec(){
 function regKind(){ return $('regKind').value; }
 function isSsr(){ return regKind() === 'ssr'; }
 function isSsrMedia(){ return regKind() === 'ssrmedia'; }
+function isAssets(){ return regKind() === 'assets'; }
 function activeKey(){
   if(isSsrMedia()) return $('md_skin').value;
+  if(isAssets()) return $('a_target').value;
   return (isSsr() ? $('s_id').value : $('f_key').value).trim();
+}
+/* 差し替え先。値は "base:<素体key>"(素のモンスター)か "ssr:<スキンid>"(SSRスキン)。
+   画像名の決め方は登録時とまったく同じ規則にする(別々に持つと片方だけ直して食い違う)。 */
+function assetsTarget(){
+  const v = $('a_target').value || '';
+  const [kind, key] = v.split(':');
+  if(!kind || !key) return null;
+  if(kind === 'ssr'){
+    const base = key.replace(/_ssr$/, '');
+    const meta = (state.ssrMeta || {})[key] || {};
+    const name = (state.skins && (state.skins.find(s=>s[0]===key)||[])[1]) || key;
+    return { kind, key, name, element: meta.element || '',
+             iconImg: `${base}_ssr`, playerImg: `${base}_player_ssr`,
+             walkPrefix: `${base}_ssr_walk_` };
+  }
+  const name = (state.elements && (state.elements.find(e=>e[0]===key)||[])[1]) || key;
+  return { kind, key, name, element: key,
+           iconImg: key, playerImg: `${key}_player`, walkPrefix: `${key}_walk_` };
 }
 function collectSsr(){
   const id = $('s_id').value.trim();
@@ -2336,15 +2420,17 @@ async function planSsr(dataJs, swJs, lines){
   const rc = applyRaidConsts(texts['data.js'], ss);
   texts['data.js'] = rc.text;
   for(const n of rc.notes) lines.push('  ' + n);
-  // 歩行コマは素体に1つだけ。両面そろっていて枠が空いているときだけ登録する
+  // 歩行コマは両面そろっていれば登録する(1素体に何体でも持てる)
   const haveWalk = !!(state.walk.f && state.walk.b);
   let walkNote = '歩行コマは登録しません(正面・後ろの両方をプレビューすると登録できます)';
+  let walkSent = false, walkAdded = false;
   const images = [];
   if(haveWalk){
     const r = applySsrWalk(texts['data.js'], ss);
-    if(r.added){
+    if(r.added || r.exists){
       texts['data.js'] = r.text;
-      walkNote = null;
+      walkSent = true; walkAdded = !!r.added;
+      walkNote = r.exists ? r.reason : null;
       for(let k=0;k<8;k++){
         images.push({ path:`monsters/${ss.walkPrefix}f${k+1}.png`, blob: state.walk.f.frames[k] });
         images.push({ path:`monsters/${ss.walkPrefix}b${k+1}.png`, blob: state.walk.b.frames[k] });
@@ -2364,7 +2450,7 @@ async function planSsr(dataJs, swJs, lines){
   texts['data.js'] = uh.text;
 
   lines.push('■ 送信されるファイル');
-  if(!walkNote) lines.push(`  monsters/${ss.walkPrefix}f1..8.png / ${ss.walkPrefix}b1..8.png  (16枚)`);
+  if(walkSent) lines.push(`  monsters/${ss.walkPrefix}f1..8.png / ${ss.walkPrefix}b1..8.png  (16枚)`);
   lines.push(`  monsters/${ss.iconImg}.png / ${ss.playerImg}.png`);
   lines.push(`  monsters/specs/${ss.id}.json`);
   lines.push('  data.js  (SSRの表へ追記)');
@@ -2373,9 +2459,9 @@ async function planSsr(dataJs, swJs, lines){
   lines.push('');
   lines.push('■ data.js への追記');
   rowLines(rows, lines);
-  if(!walkNote){
-    lines.push(`--- WALK_ANIM.${ss.element} (data.js)`);
-    lines.push(`+    ssr:  { skinId:'${ss.id}', front:_loadWalk('${ss.walkPrefix}f'), back:_loadWalk('${ss.walkPrefix}b') },`);
+  if(walkAdded){
+    lines.push(`--- WALK_ANIM.${ss.element}.ssr (data.js)`);
+    lines.push(`+      { skinId:'${ss.id}', front:_loadWalk('${ss.walkPrefix}f'), back:_loadWalk('${ss.walkPrefix}b') },`);
   }
   if(!ss.t3name){
     lines.push('');
@@ -2457,6 +2543,59 @@ async function planSkinMedia(dataJs, swJs, lines){
   return { texts, images,
            message: `SSRスキン「${nm ? nm[1] : id}」の専用メディアを更新した(スタジオ)` };
 }
+
+/* 既存の素材(歩行コマ・アイコン・試合用)の差し替え。
+   用意したものだけを送るので、歩行だけ・静止画だけの差し替えもできる。
+   歩行コマが未登録のSSRスキンは、画像の送信と同時に WALK_ANIM への登録も行う
+   (これが無いと画像を送っても静止画のままになる。メタルグレイモンで実際に起きた)。
+   見た目の入れ替えなので UPDATE_HISTORY には足さない(CLAUDE.mdの対象外)。 */
+async function planAssets(dataJs, swJs, lines){
+  const t = assetsTarget();
+  if(!t) throw new Error('差し替える対象を選んでください');
+  const haveWalk = !!(state.walk.f && state.walk.b);
+  const havePortraits = !!state.portraits;
+  if(!haveWalk && !havePortraits)
+    throw new Error('差し替えるものがありません。歩行モーションか静止画のどちらかをプレビューしてください');
+  const texts = { 'data.js': dataJs };
+  const images = [];
+  const notes = [];
+  let walkAdded = false;
+  if(haveWalk){
+    // SSRで歩行コマが未登録なら WALK_ANIM に足す(素体はもともと登録済みなので触らない)
+    if(t.kind === 'ssr' && !(state.ssrWalk || {})[t.key]){
+      if(!t.element) throw new Error(`${t.key} の素体(element)が読み取れませんでした`);
+      const r = applySsrWalk(texts['data.js'], { id:t.key, element:t.element, walkPrefix:t.walkPrefix });
+      if(r.added){ texts['data.js'] = r.text; walkAdded = true; }
+      else if(!r.exists) throw new Error(r.reason);
+    }
+    for(let k=0;k<8;k++){
+      images.push({ path:`monsters/${t.walkPrefix}f${k+1}.png`, blob: state.walk.f.frames[k] });
+      images.push({ path:`monsters/${t.walkPrefix}b${k+1}.png`, blob: state.walk.b.frames[k] });
+    }
+  }else notes.push('歩行コマは差し替えません(正面・後ろの両方をプレビューすると差し替えます)');
+  if(havePortraits){
+    images.push({ path:`monsters/${t.iconImg}.png`, blob: state.portraits.icon });
+    images.push({ path:`monsters/${t.playerImg}.png`, blob: state.portraits.player });
+  }else notes.push('静止画は差し替えません(「背景を抜いて整える」を押すと差し替えます)');
+  texts['sw.js'] = bumpCache(swJs);
+  // data.js を書き換えないときは送らない(不要なコミットを増やさない)
+  if(!walkAdded) delete texts['data.js'];
+
+  lines.push('■ 送信されるファイル');
+  images.forEach(f=> lines.push('  ' + f.path));
+  if(walkAdded) lines.push('  data.js  (WALK_ANIM へ歩行コマを登録)');
+  lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(texts['sw.js'])||[])[1]} へ)`);
+  if(walkAdded){
+    lines.push('');
+    lines.push('■ data.js への追記');
+    lines.push(`--- WALK_ANIM.${t.element}.ssr (data.js)`);
+    lines.push(`+      { skinId:'${t.key}', front:_loadWalk('${t.walkPrefix}f'), back:_loadWalk('${t.walkPrefix}b') },`);
+    notes.push('歩行コマが未登録だったので WALK_ANIM にも登録します(これで動くようになります)');
+  }
+  if(notes.length){ lines.push(''); notes.forEach(n=> lines.push('※ ' + n)); }
+  walkIssueLines(lines);
+  return { texts, images, message: `「${t.name}」の素材を差し替えた(スタジオ)` };
+}
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
@@ -2464,6 +2603,7 @@ async function preflight(){
     const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
     const lines = [];
     const plan = isSsrMedia() ? await planSkinMedia(dataJs, swJs, lines)
+               : isAssets()   ? await planAssets(dataJs, swJs, lines)
                : isSsr()      ? await planSsr(dataJs, swJs, lines)
                               : await planMonster(dataJs, uiJs, swJs, lines);
     state.files = plan;
@@ -2517,6 +2657,7 @@ async function doCommit(){
     log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
         `数分後に本番へ反映されます(GitHub Actions の Pages デプロイ)。\n` +
         (isSsrMedia() ? '反映されたら演出・BGM・SE・ガチャ画面に出ます(端末のキャッシュが入れ替わるまで少しかかります)。'
+         : isAssets() ? '反映されたら新しい絵に入れ替わります(端末のキャッシュが入れ替わるまで少しかかります)。'
          : isSsr()    ? '反映されたらガチャとSSRカタログに出ます(シーズン限定にした場合を除く)。'
                       : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
   }catch(e){
@@ -3174,25 +3315,32 @@ function boot(){
   $('s_element').innerHTML = '<option value="">先にGitHubへ接続してください</option>';
   $('s_element').onchange = onElementChange;
   $('regKind').onchange = ()=>{
-    const ssr = isSsr(), media = isSsrMedia();
+    const ssr = isSsr(), media = isSsrMedia(), assets = isAssets();
     $('ssrForm').style.display = ssr ? 'block' : 'none';
+    $('assetsForm').style.display = assets ? 'block' : 'none';
     $('mediaPanel').style.display = media ? 'block' : 'none';
     // 専用メディアの登録では歩行・静止画・仕様・技は使わない
     $('walkPanel').style.display = media ? 'none' : 'block';
     $('portraitPanel').style.display = media ? 'none' : 'block';
-    $('specPanel').style.display = (ssr || media) ? 'none' : 'block';
-    $('movePanel').style.display = (ssr || media) ? 'none' : 'block';
+    $('specPanel').style.display = (ssr || media || assets) ? 'none' : 'block';
+    $('movePanel').style.display = (ssr || media || assets) ? 'none' : 'block';
     $('regHint').textContent = media
       ? 'すでにいるSSRスキンに、昇格演出・専用BGM・専用SE・宣伝画像・ガチャのピックアップを設定します。'
+      : assets
+      ? 'すでにいるモンスター・SSRスキンの絵だけを作り直して差し替えます。'
+        + '用意したものだけ送るので、歩行だけ・静止画だけの差し替えもできます。'
       : ssr
       ? 'SSRスキンは「素体の見た目替え+tier3の技名と威力」です。技・特性・適性は素体のものを使います。'
       : '新しいモンスターとして9つの表すべてに登録します。';
+    // 素材の差し替えは登録行を触らないので「取り消す」対象が無い
+    $('revertBtn').style.display = assets ? 'none' : '';
     $('revertBtn').textContent = media ? 'このスキンの専用メディア設定を取り消す'
                                 : ssr   ? 'このSSRスキンの登録を取り消す'
                                         : 'このモンスターの登録を取り消す';
     state.files = null; $('commitBtn').disabled = true;
-    if((ssr || media) && !state.elements) loadElementList();
+    if((ssr || media || assets) && !state.elements) loadElementList();
   };
+  $('a_target').onchange = ()=>{ renderAssetCurrent(); state.files = null; $('commitBtn').disabled = true; };
   $('regKind').onchange();
   const t = localStorage.getItem('aramon_gh_token');
   if(t){ $('tok').value = t; saveToken(); }
