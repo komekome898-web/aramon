@@ -702,7 +702,13 @@ const SSR_SKIN_TIER3 = {
   }},
   guts_ssr:       { name:'ドラゴンころし', dmgMult:1.15 }, /*@guts_ssr*/
   zod_ssr:        { name:'言葉は無粋', dmgMult:1.15 }, /*@zod_ssr*/
-  garurumon_ssr:  { name:'フォックスファイアー', dmgMult:1.15 }, /*@garurumon_ssr*/
+  // ガルルモン(ライガー): 素体の「超雷撃」(zigzag/電撃)を、青い炎を吐く扇状のブレスに置き換える。
+  // 色は決め打ちしない。tier3は装備スキンのオーラ色(このスキンはblue)へ自動で乗る(getMoveEffectColor)。
+  // projSpeedは範囲拡大速度(fillSpeed)そのもの。他の範囲技は指定が無く既定900のままなので、
+  // 明確に速くするため1500にする。zigzagWidthは扇では読まれないが、値が残ると紛らしいので0にする。
+  garurumon_ssr:  { name:'フォックスファイアー', dmgMult:1.15, move:{ /*@garurumon_ssr*/
+    aoeShape:'fan', fanAngleDeg:30, aoeStyle:'inferno', projSpeed:1500, zigzagWidth:0,
+  }},
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -777,7 +783,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-09', items:[
-    { t:'✨ SSRスキン「ガルルモン」が登場しました！', g:['feature','monster'] },
+    { t:'✨ SSRスキン「ガルルモン」が登場しました！ tier3技「フォックスファイアー」は青い炎を30度の扇状に吐くブレス技です', g:['feature','monster'] },
     { t:'【レイド】ボスの攻撃予告を少し長くし、実際に当たる範囲を輪の中まで光らせて分かりやすくしました。予告中はボスも動かなくなるので、見せた範囲より大きい攻撃が来ることはありません', g:['fix','balance'] },
     { t:'🐹 新モンスター「ハム」が登場しました！ 技の弾速がとても速いかわりに射程が短い、近づいて戦うタイプです。tier3「暗けい」は手のひらを飛ばして炸裂させます', g:['feature','monster'] },
     { t:'🎉 SNSへのシェア機能を追加しました！ 成績やマスモンを1枚の画像にして投稿できます。リザルト・マスモン詳細・ランキング・レイドランキング・ガチャ結果・SSR獲得画面の6か所に「SNSでシェア」ボタンがあります', g:['feature','general'] },
