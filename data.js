@@ -2425,6 +2425,10 @@ const SKIN_MEDIA = {
     bgm: { battle:'audio/bgm_garurumon_ssr_battle.m4a', final5:'audio/bgm_garurumon_ssr_final5.m4a', lastBattle:'audio/bgm_garurumon_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_garurumon_ssr_tier3.m4a' },
   },
+  metag_ssr: { /*@metag_ssr*/
+    promote: { video:'video/metag_ssr_promote', audio:'audio/metag_ssr_promote_audio.m4a', safetyMs:34648 },
+    se: { tier3:'audio/se_metag_ssr_tier3.m4a' },
+  },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
 // 専用SEの区分と、そのスキンに専用SEが無いときに鳴る既存のSE名
