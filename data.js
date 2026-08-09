@@ -2403,7 +2403,9 @@ const SSR_SKINS = {
 
    promote.video は拡張子を書かない(.mp4 と .webm の両方を試す)。動画は音無しで、
    音声は promote.audio を Web Audio 側で同時再生する(音付き動画はiOSで自動再生が
-   止められることがあるため)。bgmOnReveal は獲得画面で流す自分のBGM区分。   */
+   止められることがあるため)。bgmOnReveal は獲得画面で流す自分のBGM区分の明示指定で、
+   省略しても bgm.lastBattle があればui.jsのssrRevealBgmTrackが自動でそれを使う
+   (書き忘れても前に流れていた別SSRのBGMへ戻ってしまう事故にならない)。   */
 const SKIN_MEDIA = {
   rock_ssr: { /*@rock_ssr*/
     promote: { video:'video/rock_promote', audio:'audio/rock_promote_audio.mp3',

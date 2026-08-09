@@ -2328,18 +2328,16 @@ function ssrPromoteDebugLog(line){
   el.textContent = ssrPromoteDebugLines.join('\n');
 }
 /* 昇格演出は「共通(ssr_promote.*)」と「スキン専用(SKIN_MEDIA[skinId].promote)」の2種類の素材があり、
-   下の3つの関数で1本ずつの素材(media)と、その再生順(stages)を組み立てる。
+   下の関数群で1本ずつの素材(media)と、その再生順(stages)を組み立てる。
    se/ensureSeはSE本体・先読み関数を直接参照する(audio.jsのconstはwindowのプロパティにならないため、
-   文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)。
-   bgmOnReveal は「自分の専用BGMのどの区分へ切り替えるか」(battle/final5/lastBattle)。
-   指定が無ければリビール後のBGMは元のトラックへ戻す。 */
+   文字列キー+window[...]でのルックアップは常にundefinedになり無音になってしまう。直接参照で回避する)。 */
 function ssrPromotionDefaultMedia(){
   return {
     label: '共通',
     videoWebm: 'video/ssr_promote.webm', videoMp4: 'video/ssr_promote.mp4',
     se: (typeof seSsrPromote!=='undefined') ? seSsrPromote : null,
     ensureSe: (typeof ensureSsrPromoteSeBuffer==='function') ? ensureSsrPromoteSeBuffer : null,
-    skipTapImage: false, safetyMs: 4000, bgmOnReveal: null,
+    skipTapImage: false, safetyMs: 4000,
   };
 }
 function ssrPromotionSkinMedia(skinId){
@@ -2353,9 +2351,21 @@ function ssrPromotionSkinMedia(skinId){
     // 専用動画があるスキンは音声も付いているので、タップ待ち画像を挟まず直接リビールへ進む
     skipTapImage: p.skipTapImage !== false,
     safetyMs: p.safetyMs || 20000,   // 動画+音声が終わらないときの保険(動画より長く取る)
-    bgmOnReveal: (p.bgmOnReveal && typeof skinBgmTrack==='function')
-      ? skinBgmTrack(skinId, p.bgmOnReveal) : null,
   };
+}
+/* リビール画面(showSsrReveal)で流すBGM区分をここ1か所だけで決める。
+   SKIN_MEDIA[skinId].promote.bgmOnReveal で明示指定があればそれを使うが、
+   指定が無くても「自分専用のlastBattle曲を持っているならそれを使う」を既定にする
+   (専用動画の有無やSKIN_MEDIAの書き方に関わらず必ずここを通るので、
+   新しいSSRを追記した際にbgmOnRevealを書き忘れても、前に流れていた別SSRのBGMが
+   鳴り続けたままになる事故が起きない。実際にメタルグレイモンでこの書き忘れが起きた)。
+   専用BGMを何も持たないSSRはnullを返し、呼び出し元がリビール前のトラックへ戻す。 */
+function ssrRevealBgmTrack(skinId){
+  const media = (typeof skinMediaOf==='function' && skinMediaOf(skinId)) || null;
+  if(!media || typeof skinBgmTrack!=='function') return null;
+  const p = media.promote || {};
+  const slot = p.bgmOnReveal || (media.bgm && media.bgm.lastBattle ? 'lastBattle' : null);
+  return slot ? skinBgmTrack(skinId, slot) : null;
 }
 /* 再生する順番。**専用の昇格演出を持つスキンは、共通(ssr_promote)を前に挟んでから専用へ進む。**
    専用を持たないSSRは共通1本だけで、従来とまったく同じ動き(タップ待ち画像→リビール)。
@@ -2372,10 +2382,9 @@ function runSsrPromotionSequence(skinId, onContinue){
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック
-  // (または最後の段の bgmOnReveal)へ切り替える
+  // (またはssrRevealBgmTrackが決めるそのSSR専用トラック)へ切り替える
   if(typeof bgmSetTrack==='function' && typeof bgmDesiredTrack==='function'){
-    const last = stages[stages.length-1];
-    ssrPromoteBgmResumeTrack = last.bgmOnReveal || bgmDesiredTrack();
+    ssrPromoteBgmResumeTrack = ssrRevealBgmTrack(skinId) || bgmDesiredTrack();
     // スキン専用BGM(bgm_*.mp3)は試合開始時にしか先読みされないため、ここで切替前
     // (動画再生中の十数〜20秒)に読み込みを始めておく。先読みなしだとバッファが無い状態で
     // start()が無視され、リビール時に無音のままになる
