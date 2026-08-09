@@ -304,6 +304,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('fire_walk_f'), back:_loadWalk('fire_walk_b') },              // ドラゴン(色スキン対応)
     ssr: [
       { skinId:'zod_ssr', front:_loadWalk('zod_ssr_walk_f'), back:_loadWalk('zod_ssr_walk_b') }, /*@zod_ssr*/
+      { skinId:'metag_ssr', front:_loadWalk('metag_ssr_walk_f'), back:_loadWalk('metag_ssr_walk_b') }, /*@metag_ssr*/
     ],
   },
   leaf: {
