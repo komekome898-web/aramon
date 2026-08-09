@@ -550,6 +550,7 @@ const SSR_SKIN_AURA = {
   guts_ssr:       'black', /*@guts_ssr*/
   zod_ssr:        'black', /*@zod_ssr*/
   garurumon_ssr:  'blue', /*@garurumon_ssr*/
+  metag_ssr:      'yellow', /*@metag_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -709,6 +710,7 @@ const SSR_SKIN_TIER3 = {
   garurumon_ssr:  { name:'フォックスファイアー', dmgMult:1.15, move:{ /*@garurumon_ssr*/
     aoeShape:'fan', fanAngleDeg:30, aoeStyle:'inferno', projSpeed:1500, zigzagWidth:0,
   }},
+  metag_ssr:      { name:'ギガデストロイヤー', dmgMult:1.15 }, /*@metag_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -783,6 +785,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-09', items:[
+    { t:'✨ SSRスキン「メタルグレイモン」が登場しました！', g:['feature','monster'] },
     { t:'マップで「ランダム」＋「リアルマップ」を選んでいると、通常の対戦のつもりがレイドバトルとして始まってしまう不具合を修正しました。ランダムの抽選にレイド専用の「竜の火口」が混ざっていたのが原因です', g:['fix','multi','solo'] },
     { t:'選んだプレイモードと実際に始まる試合が食い違う不具合を修正しました。「みんなと対戦」のつもりがレイドで始まる／レイドのつもりが通常の対戦になる／試合のあとロビーから続けて始めると前と違うモードになる、のすべてが直っています', g:['fix','multi'] },
     { t:'✨ SSRスキン「ガルルモン」が登場しました！ tier3技「フォックスファイアー」は青い炎を30度の扇状に吐くブレス技です', g:['feature','monster'] },
@@ -2377,6 +2380,7 @@ const SSR_SKINS = {
   // 不死のゾッド: レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
   zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr', raidClearOnly:true }, /*@zod_ssr*/
   garurumon_ssr:  { element:'spark', name:'ガルルモン', iconImg:'garurumon_ssr', playerImg:'garurumon_player_ssr' }, /*@garurumon_ssr*/
+  metag_ssr:      { element:'fire', name:'メタルグレイモン', iconImg:'metag_ssr', playerImg:'metag_player_ssr' }, /*@metag_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
