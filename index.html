@@ -769,6 +769,7 @@
       <button class="admin-substat active" data-substat="count">プレイ回数</button>
       <button class="admin-substat" data-substat="player">プレイヤー情報</button>
       <button class="admin-substat" data-substat="recent">直近プレイ</button>
+      <button class="admin-substat" data-substat="raid">レイド分析</button>
     </div>
     <!-- サブタブ: プレイ回数 -->
     <div id="adminStatCountPane" class="admin-sub-pane">
@@ -799,6 +800,10 @@
         <div class="admin-col-title">直近のプレイ履歴(日時降順・最大100件)</div>
         <div id="adminRecentPlayList" class="admin-recent-list"></div>
       </div>
+    </div>
+    <!-- サブタブ: レイド分析。開催の振り返りと次回の推奨値をログから自動で出す -->
+    <div id="adminStatRaidPane" class="admin-sub-pane hidden">
+      <div id="adminRaidAnalysis" class="admin-chart-scroll"></div>
     </div>
   </div>
   <div id="adminSePane" class="hidden">
