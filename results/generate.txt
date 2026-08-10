@@ -1,0 +1,8 @@
+--- pollinations_txt2img.png
+https://image.pollinations.ai/prompt/full%20body%20character%2C%20awakened%20dark%20armored%20form%2C%20standing%20front%20view%2C%20solid%20pure%20green%20background?width=768&height=1024&nologo=true&safe=false
+  -> 200 image/jpeg 29968
+  results/pollinations_txt2img.png: JPEG image data, Exif standard: [TIFF image data, little-endian, direntries=8, manufacturer=sana, orientation=upper-left, xresolution=110, yresolution=118, resolutionunit=2], baseline, precision 8, 665x886, components 3
+--- pollinations_img2img.png
+https://image.pollinations.ai/prompt/full%20body%20character%2C%20awakened%20dark%20armored%20form%2C%20standing%20front%20view%2C%20solid%20pure%20green%20background?model=kontext&image=https%3A%2F%2Fraw.githubusercontent.com%2Fkomekome898-web%2Faramon%2Fmain%2Fmonsters%2Fguts_ssr.png&width=768&height=1024&nologo=true
+  -> 500 application/json 693
+  results/pollinations_img2img.png: JSON text data

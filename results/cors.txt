@@ -1,0 +1,26 @@
+=== https://image.pollinations.ai/prompt/test
+HTTP/2 204 
+access-control-allow-origin: *
+access-control-allow-headers: *
+access-control-allow-methods: GET,POST,DELETE,OPTIONS
+
+=== https://router.huggingface.co/v1/images/generations
+HTTP/2 200 
+access-control-allow-origin: *
+access-control-allow-headers: content-type,authorization
+
+=== https://api.cloudflare.com/client/v4/accounts/x/ai/run/@cf/black-forest-labs/flux-1-schnell
+HTTP/2 405 
+
+=== https://aihorde.net/api/v2/generate/async
+HTTP/2 200 
+access-control-allow-headers: Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, apikey, Client-Agent, X-Fields, X-Forwarded-For, Proxied-For, Proxy-Authorization
+access-control-allow-methods: POST, GET, OPTIONS, PUT, DELETE, PATCH
+access-control-allow-origin: *
+
+=== https://api.openai.com/v1/images/edits
+HTTP/2 200 
+access-control-allow-origin: *
+access-control-allow-headers: content-type,authorization
+access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT
+
