@@ -406,6 +406,46 @@ function entityWalkFrameImage(e){
   return baseImg;
 }
 
+/* ===== エモート(よろこぶ・しょんぼり等) =====
+   **新しい画像を1枚も使わない。** 今表示している絵をそのまま transform で動かすだけなので、
+   モンスターを増やしてもSSRスキンを増やしても自動で付く(素材の用意が要らない)。
+
+   motion(t) は t=0〜1 の1周期で、絵に掛ける値を返す:
+     y  … 上下の移動(絵の高さに対する比。マイナスが上)
+     sx / sy … 横・縦の拡縮(1が等倍)
+     rot … 回転(度)
+   **レイアウトを動かす値は返さない**(transformだけで表現する)。画面がガタつかないようにするため。
+   増やすときはこの表に1行足すだけでよい(呼び出し側は EMOTES を舐めてボタンを作る)。   */
+const EMOTES = {
+  joy:  { label:'よろこぶ',   icon:'😊', dur:0.55, loop:2, fx:'✨',
+          // 跳ねる+着地で潰れる+わずかに傾く
+          motion:(t)=>({ y:-Math.abs(Math.sin(Math.PI*t))*0.13,
+                         sx:1+0.06*Math.sin(2*Math.PI*t), sy:1-0.06*Math.sin(2*Math.PI*t),
+                         rot: 5*Math.sin(2*Math.PI*t) }) },
+  sad:  { label:'しょんぼり', icon:'😢', dur:1.60, loop:1, fx:'💧',
+          // ゆっくり沈んで縮む(戻さずに終わるので、最後に元へ戻す処理は再生側が持つ)
+          motion:(t)=>{ const k = Math.sin(Math.PI*t);
+                        return { y: 0.05*k, sx:1-0.03*k, sy:1-0.05*k, rot:-4*k }; } },
+  angry:{ label:'おこる',     icon:'💢', dur:0.70, loop:1, fx:'💢',
+          // 小刻みに震えて収まる
+          motion:(t)=>({ y:0, sx:1, sy:1, rot: 7*Math.sin(12*Math.PI*t)*(1-t) }) },
+};
+const EMOTE_ORDER = ['joy','sad','angry'];   // ボタンに並べる順(表示の順序だけをここで決める)
+/* モンスター/スキンごとの専用コマ(任意)。**ここに無ければ上の共通モーションで動く。**
+   「共通を基本にして、特別なものだけ後から差し替える」ための受け皿で、
+   ここに1行足したものだけがコマ送りに切り替わる(他は何も変わらない)。
+   { prefix, n } は monsters/<prefix>1..n.png。スキンIDの指定が素体より優先される。 */
+const EMOTE_FRAMES = {
+  // 例: guts_ssr: { joy:{ prefix:'guts_ssr_emote_joy', n:6 } },
+};
+function emoteFramesFor(element, skinId, key){
+  const bySkin = skinId && EMOTE_FRAMES[skinId];
+  if(bySkin && bySkin[key]) return bySkin[key];
+  const byElem = element && EMOTE_FRAMES[element];
+  if(byElem && byElem[key]) return byElem[key];
+  return null;
+}
+
 function getDisplayImage(entity){
   // 歩行アニメがあれば最優先(進行方向で前後・停止で静止)
   const wf = entityWalkFrameImage(entity);
@@ -821,6 +861,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-10', items:[
+    { t:'😊 エモートを追加しました！ ロビーのモンスターの下のボタンで「よろこぶ・しょんぼり・おこる」の反応が出せます。試合の結果画面でも勝ち負けに合わせて自動で反応し、マスモン詳細ではカードをタップすると反応します', g:['feature','general'] },
+  ]},
   { date:'2026-08-09', items:[
     { t:'【レイド】ボスの残り体力を討伐(累計2,500,000ダメージ)まで削りきったあとは、累計ダメージと次の繰り返し報酬(3,500,000→4,500,000…と100万ずつ増えていきます)の表示に切り替わるようにしました', g:['feature','multi'] },
     { t:'ランキングに「マスモン」タブを追加しました。マスモンLv・転生回数・ステータス合計の3種類が見られます。マスモンLvは通常マップ・リアルマップのタブからは無くなり、このタブに移りました', g:['feature','general'] },

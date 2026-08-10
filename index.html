@@ -111,6 +111,10 @@
        <img id="lobbyMonsterImg" alt="">
        <div id="lobbyMonsterEmpty">モンスターを選択してください</div>
      </button>
+     <!-- エモート。ステージ(#lobbyMonsterStage)は flex:1 1 auto で余白を吸収するので、
+          この行を足すとステージが少し縮むだけで**スクロールは出ない**。
+          ボタンの入れ子は不正なのでステージの中には入れず兄弟に置く。中身は EMOTES から自動生成 -->
+     <div id="lobbyEmoteRow" class="hidden"></div>
      <div id="lobbyMonsterName"></div>
      <div id="lobbyMonsterTapHint" class="hidden">タップしてモンスター変更</div>
      <div id="pickMonsterNotice">中央をタップしてマスモンかモンスターを選択してください</div>
