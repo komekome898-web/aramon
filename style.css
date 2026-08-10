@@ -2717,6 +2717,31 @@
   .rb-pick-grade{ display:flex; align-items:center; gap:2px; }
   .rb-pick-arrow{ font-size:8px; color:var(--ink-dim); margin:0 1px; }
 
+  /* 覚醒。確認画面は転生(rb-*)の作りをそのまま流用し、強化の選択だけ専用にする */
+  .mm-menu-btn-awaken{
+    border-color:rgba(150,210,255,0.75);
+    background:linear-gradient(120deg, rgba(120,200,255,0.20), rgba(200,150,255,0.16) 50%, rgba(255,230,140,0.16));
+    box-shadow:0 0 12px -3px rgba(140,200,255,0.7);
+  }
+  .mm-menu-btn-awaken .mm-menu-btn-label{ color:#cfe8ff; }
+  .mm-menu-btn-awaken[disabled]{ opacity:0.55; cursor:default; box-shadow:none; }
+  .mm-menu-btn-awaken.is-done{ opacity:0.8; }
+  /* 今の姿と覚醒後の姿は必ず横に並べる(縦に積むと選択欄が画面の外へ出る) */
+  .rb-sides{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:9px; }
+  .rb-sides .rb-card-art img{ max-height:calc(15 * var(--vh)); }
+  .awaken-pick-list{ display:flex; flex-direction:column; gap:6px; }
+  .rb-picker-btn.awaken-pick{
+    display:grid; grid-template-columns:auto 1fr; column-gap:8px; row-gap:1px; align-items:center;
+    text-align:left; cursor:pointer; padding:7px 10px; border-radius:9px; color:var(--ink);
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+  }
+  .rb-picker-btn.awaken-pick.on{
+    border-color:#8fd0ff; background:rgba(120,200,255,0.18); box-shadow:0 0 10px -3px rgba(140,200,255,0.9);
+  }
+  .awaken-pick-icon{ grid-row:1 / span 2; font-size:17px; line-height:1; }
+  .awaken-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12.5px; letter-spacing:1px; }
+  .awaken-pick-desc{ font-size:10px; color:var(--ink-dim); overflow-wrap:anywhere; }
+
   .rb-sbonus{ margin-top:8px; border-radius:9px; padding:8px 10px;
     border:1px solid rgba(255,215,120,0.5);
     background:linear-gradient(120deg, rgba(255,214,106,0.14), rgba(255,138,214,0.10) 50%, rgba(140,200,255,0.12)); }

@@ -3417,8 +3417,13 @@ function currentMastermonInfo(){
   // baseHp/baseSpd は「基礎値アイテムぶん」だけを素のまま送る。
   // 受け側は mastermonBaseBonus() で rebirth から転生ぶんを足し直すので、
   // ここで合計を送ると転生ぶんが二重に乗る。
+  /* 覚醒の強化は**解決済みの1語**にして送る(受け側は覚醒の記録を持っていないため)。
+     どのスキンを着ているかで決まるので、ここで装備スキンと突き合わせて確定させる。 */
+  const awakenBoost = (typeof awakenBoostForSkin==='function')
+    ? awakenBoostForSkin(mm, currentEquippedSkinId()) : null;
   return { level: mm.level||1, stats, rebirth: mastermonRebirthCount(mm), apt,
-    baseHp: safeBaseAmount(mm.baseHp), baseSpd: safeBaseAmount(mm.baseSpd) };
+    baseHp: safeBaseAmount(mm.baseHp), baseSpd: safeBaseAmount(mm.baseSpd),
+    awakenBoost: awakenBoost || null };
 }
 // 今参戦するモンスターに装備中のスキンID(マルチプレイで相手にも見せるため送る)
 function currentEquippedSkinId(){
@@ -5820,7 +5825,45 @@ function buildMastermonMenuHtml(mm){
         </span>
       </button>`);
   }
+  items.push(awakenMenuBtnHtml(mm));
   return `<div class="mm-menu-list">${items.join('')}</div>`;
+}
+/* 覚醒ボタン。**条件を満たしていなくても隠さず、「あと何が要るか」を出す。**
+   長期の目標として一番効くのがこの表示なので、押せないときも進捗が見えるようにしている。
+   覚醒後の姿が用意されていないスキン(まだ作っていない)のときだけボタンごと出さない。 */
+function awakenMenuBtnHtml(mm){
+  if(!mm) return '';
+  const skinId = getEquippedSkin(mm.element) || null;
+  // 覚醒スキンを着ているなら、その元スキンの覚醒はもう済んでいる
+  const baseId = (skinId && isAwakenedSkinId(skinId)) ? SSR_SKINS[skinId].awakenOf : skinId;
+  if(!baseId || !awakenedSkinIdOf(baseId)) return '';   // この素体にはまだ覚醒後の姿が無い
+  const done = !!mastermonAwakenBoost(mm, baseId);
+  if(done){
+    const b = AWAKEN_BOOSTS[mastermonAwakenBoost(mm, baseId)];
+    return `
+      <button class="mm-menu-btn mm-menu-btn-awaken is-done" data-action="awaken" disabled>
+        <span class="mm-menu-btn-icon">✵</span>
+        <span class="mm-menu-btn-text">
+          <span class="mm-menu-btn-label">覚醒済み</span>
+          <span class="mm-menu-btn-desc">強化: ${b?b.label:'—'}／着せ替えで元の姿にも戻せます</span>
+        </span>
+      </button>`;
+  }
+  const missing = awakenRequirements(mm, baseId);
+  const canDo = missing.length === 0;
+  const rest = missing.map(m=> m.kind==='rebirth' ? `転生あと${m.need-m.now}回`
+                            : m.kind==='stat'    ? `${m.label} あと${m.need-m.now}`
+                            : m.label).join('・');
+  return `
+    <button class="mm-menu-btn mm-menu-btn-awaken" data-action="awaken"${canDo?'':' disabled'}>
+      <span class="mm-menu-btn-icon">✵</span>
+      <span class="mm-menu-btn-text">
+        <span class="mm-menu-btn-label">覚醒${canDo?'':'（条件未達）'}</span>
+        <span class="mm-menu-btn-desc">${canDo
+          ? '姿が変わり、tier3の技を1つ強化できます(取り消せません)'
+          : `あと ${rest}`}</span>
+      </span>
+    </button>`;
 }
 
 /* =====================================================================
@@ -6017,6 +6060,123 @@ function renderRebirthOverlay(){
   ok.textContent = ready ? '✦ 転生する' : `適正を${need}つ選んでください`;
   attachVisibleScrollbar(box, document.getElementById('rebirthScrollbar'));
 }
+
+/* =====================================================================
+   スキン覚醒の確認画面
+
+   ・元の姿と覚醒後の姿を並べ、tier3の技を強化する項目を1つ選んでから実行する
+   ・**選べる項目はその技に効くものだけ**(awakenBoostKeysFor)。弾を撃つ技に
+     「範囲拡大速度」は出ないなど、押しても何も変わらない選択肢を見せない
+   ・実行すると mm.awaken に「元スキンID → 選んだ強化」を1つ記録するだけ。
+     覚醒スキンは ownedSkinsForElement が自動で着せ替え一覧へ足す
+   ===================================================================== */
+let awakenKey = null;    // 確認画面で対象にしているマスモンのキー
+let awakenPick = null;   // 選んだ強化の種類
+// この画面が対象にしている「元のスキン」。覚醒スキンを着ていてもその元をたどる
+function awakenBaseSkinOf(mm){
+  const skinId = mm ? (getEquippedSkin(mm.element) || null) : null;
+  if(!skinId) return null;
+  return isAwakenedSkinId(skinId) ? SSR_SKINS[skinId].awakenOf : skinId;
+}
+function awakenTier3MoveOf(mm){
+  const list = SIGNATURE_MOVES[mm.element] || [];
+  const base = list.find(m=>m.tier===3);
+  if(!base) return null;
+  // スキンで技を差し替えている場合は差し替え後を見る(効く強化の判定を実物に合わせる)
+  return skinTier3Move(base, { isPlayer:false, element:mm.element, skinId: awakenBaseSkinOf(mm) });
+}
+function renderAwakenOverlay(){
+  const mm = loadMastermons()[awakenKey];
+  const box = document.getElementById('awakenScroll');
+  if(!mm || !box) return;
+  const baseId = awakenBaseSkinOf(mm);
+  const awId = awakenedSkinIdOf(baseId);
+  const move = awakenTier3MoveOf(mm);
+  const keys = move ? awakenBoostKeysFor(move) : [];
+  // 絵は .rb-card-art で高さを抑える(転生画面と同じ制約に乗せる)
+  const side = (id, title, cls)=>`
+    <div class="rb-side ${cls}">
+      <div class="rb-side-title">${title}</div>
+      <div class="rb-card">
+        <div class="rb-card-art">${skinPreviewImgTag(mm.element, id)}</div>
+        <div class="rb-card-name"><span class="rb-card-nm">${rebirthEscape(skinMeta(id).name)}</span></div>
+      </div>
+    </div>`;
+  const picker = keys.map(k=>{
+    const b = AWAKEN_BOOSTS[k];
+    const on = awakenPick === k;
+    return `<button class="rb-picker-btn awaken-pick${on?' on':''}" data-boost="${k}">
+      <span class="awaken-pick-icon">${b.icon}</span>
+      <span class="awaken-pick-label">${b.label}</span>
+      <span class="awaken-pick-desc">${b.desc}</span>
+    </button>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="rb-sides">
+      ${side(baseId, '今の姿', 'rb-side-before')}
+      ${side(awId, '覚醒後', 'rb-side-after')}
+    </div>
+    <div class="rb-picker">
+      <div class="rb-picker-title">強化する項目を1つ選ぶ
+        <span class="rb-picker-count">${awakenPick?1:0}/1</span></div>
+      <div class="awaken-pick-list">${picker}</div>
+      <div class="rb-picker-note">技「${rebirthEscape(move ? getMoveName(move, { isPlayer:false, element:mm.element, skinId:baseId }) : '—')}」に効くものだけを出しています。
+        <b>あとから選び直せません。</b></div>
+    </div>`;
+  box.querySelectorAll('.awaken-pick').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      awakenPick = (awakenPick === btn.dataset.boost) ? null : btn.dataset.boost;
+      renderAwakenOverlay();
+    });
+  });
+  const ok = document.getElementById('awakenConfirmBtn');
+  ok.disabled = !awakenPick;
+  ok.textContent = awakenPick ? '✵ 覚醒する' : '強化する項目を選んでください';
+  attachVisibleScrollbar(box, document.getElementById('awakenScrollbar'));
+}
+function openAwakenOverlay(key){
+  const mm = loadMastermons()[key];
+  if(!mm) return;
+  const baseId = awakenBaseSkinOf(mm);
+  if(!canAwakenMastermon(mm, baseId)){ pushToast('覚醒の条件を満たしていません'); return; }
+  awakenKey = key;
+  awakenPick = null;
+  document.getElementById('awakenOverlay').classList.remove('hidden');
+  renderAwakenOverlay();
+}
+function closeAwakenOverlay(){
+  document.getElementById('awakenOverlay').classList.add('hidden');
+  awakenKey = null;
+  awakenPick = null;
+}
+function doAwaken(){
+  const data = loadMastermons();
+  const mm = data[awakenKey];
+  if(!mm || !awakenPick) return;
+  const baseId = awakenBaseSkinOf(mm);
+  // 押している間に条件が変わっていないかを最後にもう一度見る(判定はcanAwakenMastermon1か所)
+  if(!canAwakenMastermon(mm, baseId)){ pushToast('覚醒の条件を満たしていません'); closeAwakenOverlay(); return; }
+  const awId = awakenedSkinIdOf(baseId);
+  mm.awaken = Object.assign({}, mm.awaken, { [baseId]: awakenPick });
+  saveMastermons(data);
+  // 覚醒後の姿をそのまま着せる(着せ替えで元へ戻せる)
+  setEquippedSkin(mm.element, awId);
+  const key = awakenKey;
+  closeAwakenOverlay();
+  // 昇格演出の仕組みをそのまま使う。専用の動画が無ければ共通の演出だけが流れる
+  const after = ()=>{
+    pushToast(`✵ ${skinMeta(awId).name} に覚醒しました！`);
+    mastermonPreviewSkin = null;
+    renderMastermonList();
+    renderMastermonDetail(key);
+  };
+  if(typeof runSsrPromotionSequence==='function' && typeof showSsrReveal==='function')
+    runSsrPromotionSequence(awId, ()=> showSsrReveal(awId, after));
+  else after();
+}
+document.getElementById('awakenCloseBtn').addEventListener('click', closeAwakenOverlay);
+document.getElementById('awakenCancelBtn').addEventListener('click', closeAwakenOverlay);
+document.getElementById('awakenConfirmBtn').addEventListener('click', doAwaken);
 
 function openRebirthOverlay(key){
   const mm = loadMastermons()[key];
@@ -6388,6 +6548,7 @@ function renderMastermonDetail(key){
     panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         if(btn.dataset.action==='rebirth'){ openRebirthOverlay(key); return; }
+        if(btn.dataset.action==='awaken'){ openAwakenOverlay(key); return; }
         if(btn.dataset.action==='share'){
           const s = buildMastermonShare(key);
           if(s) openShareOverlay(s.spec, s.text); else pushToast('このマスモンをシェアできませんでした');
@@ -6739,6 +6900,14 @@ function applyMastermonStatsToEntity(ent, mm){
   ent.mastermonDmgTakenMult = mults.dmgTakenMult;
   ent.mastermonGutsRegenMult = mults.gutsRegenMult;
   ent.mastermonCooldownMult = mults.cooldownMult;
+  /* 覚醒の強化。**マスモンをエンティティへ適用するこの1か所で載せる**ので、
+     自分・味方bot・マルチの相手のどれも同じ経路で乗る(載せ忘れる場所を作らない)。
+     ・マルチで届いた情報には解決済みの awakenBoost が入っている(currentMastermonInfo が付ける)
+     ・手元のマスモン(ソロ・味方bot)は awaken の記録から、着ているスキンで解決する */
+  ent.awakenBoost = (mm.awakenBoost !== undefined)
+    ? (mm.awakenBoost || null)
+    : ((typeof awakenBoostForSkin==='function')
+        ? awakenBoostForSkin(mm, (typeof entitySkinId==='function') ? entitySkinId(ent) : null) : null);
 }
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){

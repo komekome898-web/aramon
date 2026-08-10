@@ -126,11 +126,68 @@
     <option value="ssr">既存モンスターのSSRスキンを追加する</option>
     <option value="ssrmedia">SSRスキン専用(演出・BGM・SE・ガチャ)</option>
     <option value="assets">既存の素材を差し替える(歩行・静止画)</option>
+    <option value="awaken">覚醒スキンを作る(育て込んだマスモン用)</option>
   </select>
   <div id="assetsForm" style="display:none">
     <label>どれの素材を差し替えるか</label>
     <select id="a_target"><option value="">先にGitHubへ接続してください</option></select>
     <div class="hint" id="a_cur">接続すると、モンスターの素体とSSRスキンが一覧に出ます。</div>
+  </div>
+  <div id="awakenForm" style="display:none">
+    <div class="r2">
+      <div><label>元にするSSRスキン</label>
+        <select id="aw_base"><option value="">先にGitHubへ接続してください</option></select></div>
+      <div><label>作り方</label>
+        <select id="aw_mode">
+          <option value="fx">エフェクト合成(描き直し不要・おすすめ)</option>
+          <option value="draw">描き下ろし(覚醒後の絵を1枚渡す)</option>
+        </select></div>
+    </div>
+    <div class="hint" id="aw_cur">接続すると、元にできるSSRスキンが一覧に出ます。</div>
+    <div class="r2">
+      <div><label>覚醒後の表示名</label><input id="aw_name" placeholder="(自動で「【覚醒】」を付けます)"></div>
+      <div><label>オーラ</label><select id="aw_aura"></select></div>
+    </div>
+    <div class="r2">
+      <div><label>tier3の技名(空なら元スキンのまま)</label><input id="aw_t3name"></div>
+      <div><label>威力倍率</label><input id="aw_t3mult" type="number" step="0.05" value="1.15"></div>
+    </div>
+    <!-- エフェクト合成の設定。元スキンの18枚すべてに同じ加工を掛ける -->
+    <div id="aw_fxWrap">
+      <div class="r3">
+        <div><label>光の色(リム/グロー)</label><input id="aw_rim" type="color" value="#8fd0ff"></div>
+        <div><label>グローの太さ <span id="aw_glowV">16</span></label>
+          <input id="aw_glow" type="range" min="0" max="40" value="16"></div>
+        <div><label>ふち取り <span id="aw_rimV">3</span></label>
+          <input id="aw_rimPx" type="range" min="0" max="10" value="3"></div>
+      </div>
+      <div class="r3">
+        <div><label>色相 <span id="aw_hueV">0</span>°</label>
+          <input id="aw_hue" type="range" min="-180" max="180" value="0"></div>
+        <div><label>鮮やかさ <span id="aw_satV">1.15</span></label>
+          <input id="aw_sat" type="range" min="50" max="250" value="115"></div>
+        <div><label>明るさ <span id="aw_briV">1.05</span></label>
+          <input id="aw_bri" type="range" min="50" max="200" value="105"></div>
+      </div>
+      <label>重ねる素材(省略可。炎・オーラなどの透過PNG)</label>
+      <input id="aw_material" type="file" accept="image/*">
+      <div class="r2">
+        <div><label>素材の濃さ <span id="aw_matOpV">0.75</span></label>
+          <input id="aw_matOp" type="range" min="0" max="100" value="75"></div>
+        <div><label>素材の大きさ <span id="aw_matScV">1.15</span></label>
+          <input id="aw_matSc" type="range" min="50" max="200" value="115"></div>
+      </div>
+      <div class="btns"><button onclick="awakenPreview()">合成して確認する</button></div>
+      <div class="strip" id="aw_preview" style="grid-template-columns:repeat(4,1fr)"></div>
+      <div class="hint" id="aw_hint">
+        元スキンの<b>アイコン・試合用・歩行16コマ</b>をリポジトリから取ってきて、同じ加工をまとめて掛けます。
+        絵を描き直す必要はありません。上の設定を変えて「合成して確認する」を押し直すと作り直します。
+      </div>
+    </div>
+    <div id="aw_drawHint" class="hint" style="display:none">
+      <b>描き下ろしのときは、下の「歩行モーション」と「静止画」で覚醒後の絵を用意してください。</b>
+      歩行16コマは1枚の絵からパーツ判別で自動生成できます(新しいSSRを足すときと同じ手順)。
+    </div>
   </div>
   <div id="ssrForm" style="display:none">
     <div class="r2">
@@ -1447,6 +1504,93 @@ async function blobToBase64(b){
   return u.slice(u.indexOf(',')+1);
 }
 
+/* ==========================================================================
+   覚醒スキンの合成
+
+   元のSSRスキンの絵(アイコン/試合用/歩行16コマ)に、同じ加工をまとめて掛けて
+   「覚醒後の姿」を作る。**絵を描き直さずに覚醒感を出す**のが狙いで、中心は次の3つ:
+     1. リムライト+外側グロー … 透過PNGのアルファから輪郭を取って光らせる。
+        シルエットに沿うので、どんな絵でも破綻せず「力を纏った」印象になる
+     2. 色調シフト … 全体の色相/彩度/明度をずらして別物に見せる
+     3. 素材の重ね … 渡された素材(炎・オーラ等)を被写体の位置に合わせて重ねる
+   ========================================================================== */
+const AWAKEN_FX_DEFAULT = { rim:'#8fd0ff', rimPx:3, glowPx:16, glow:0.85, hue:0, sat:1.15, bri:1.05, matOpacity:0.75, matScale:1.15 };
+// 透過画像のアルファから輪郭(リム)を作る。dilate してから元を抜いた差分が縁になる
+function awakenRimCanvas(img, w, h, px, color){
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d');
+  // 8方向へずらして描いた合成がシルエットの膨張になる
+  const r = Math.max(1, px|0);
+  for(let a=0;a<16;a++){
+    const th = a/16*Math.PI*2;
+    cx.drawImage(img, Math.cos(th)*r, Math.sin(th)*r, w, h);
+  }
+  cx.globalCompositeOperation = 'destination-out';   // 元のシルエットを抜く=縁だけ残る
+  cx.drawImage(img, 0, 0, w, h);
+  cx.globalCompositeOperation = 'source-in';         // 残った縁を指定色で塗る
+  cx.fillStyle = color; cx.fillRect(0,0,w,h);
+  return c;
+}
+/* 1枚ぶんの合成。元画像は正方形に整形済み(CANVAS×CANVAS)なので、
+   素材は中央に被写体比で重ねるだけでコマ間のブレが出ない。 */
+function awakenComposeOne(img, material, fx){
+  const w = CANVAS, h = CANVAS;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  // ① 外側のグロー(ぼかした太いリムを下に敷く)
+  if(fx.glowPx > 0 && fx.glow > 0){
+    cx.save();
+    cx.globalAlpha = fx.glow;
+    cx.filter = `blur(${fx.glowPx/2}px)`;
+    cx.drawImage(awakenRimCanvas(img, w, h, fx.glowPx, fx.rim), 0, 0);
+    cx.restore();
+  }
+  // ② 本体(色調シフト)
+  cx.save();
+  cx.filter = `hue-rotate(${fx.hue}deg) saturate(${fx.sat}) brightness(${fx.bri})`;
+  cx.drawImage(img, 0, 0, w, h);
+  cx.restore();
+  // ③ 素材を重ねる(加算合成で光らせる。被写体の中心にそろえる)
+  if(material){
+    const mw = w*fx.matScale, mh = h*fx.matScale;
+    cx.save();
+    cx.globalAlpha = fx.matOpacity;
+    cx.globalCompositeOperation = 'lighter';
+    cx.drawImage(material, (w-mw)/2, (h-mh)/2, mw, mh);
+    cx.restore();
+  }
+  // ④ 内側のリム(輪郭のふち取り。最後に乗せて形をはっきりさせる)
+  if(fx.rimPx > 0) cx.drawImage(awakenRimCanvas(img, w, h, fx.rimPx, fx.rim), 0, 0);
+  return c;
+}
+/* 元スキンの18枚をまとめて合成する。戻り値は { path, blob } の配列で、
+   そのまま doCommit の送信リストに渡せる(送信の仕組みは既存のものを使う)。 */
+async function awakenComposeAll(baseSs, newSs, material, fx, onProgress){
+  const jobs = [
+    { from:`monsters/${baseSs.iconImg}.png`,   to:`monsters/${newSs.iconImg}.png` },
+    { from:`monsters/${baseSs.playerImg}.png`, to:`monsters/${newSs.playerImg}.png` },
+  ];
+  for(let i=1;i<=8;i++){
+    jobs.push({ from:`monsters/${baseSs.walkPrefix}f${i}.png`, to:`monsters/${newSs.walkPrefix}f${i}.png`, walk:true });
+    jobs.push({ from:`monsters/${baseSs.walkPrefix}b${i}.png`, to:`monsters/${newSs.walkPrefix}b${i}.png`, walk:true });
+  }
+  const out = [];
+  for(let i=0;i<jobs.length;i++){
+    const j = jobs[i];
+    if(onProgress) onProgress(i+1, jobs.length, j.from);
+    let img;
+    try{ img = await getRepoImage(j.from); }
+    catch(e){
+      // 歩行コマが無いスキンもある。静止画は必須、歩行は無ければ飛ばす
+      if(j.walk) continue;
+      throw new Error(`${j.from} を取得できません(元スキンの画像が見つかりません)`);
+    }
+    const c = awakenComposeOne(img, material, fx);
+    out.push({ path:j.to, blob: await canvasToBlobPng(c) });
+  }
+  return out;
+}
+
 /* ---------------------------------------------------------- 異常検出 */
 async function inspectFrames(blobs){
   const areas=[], tops=[], foots=[], edges=[];
@@ -2138,8 +2282,14 @@ function loadSsrList(dataJs){
   state.ssrMeta = {};
   const rxe = /^  ([a-z][a-z0-9_]*)\s*:\s*\{[^\n]*?element\s*:\s*'([^']*)'/gm;
   while((m = rxe.exec(body))) state.ssrMeta[m[1]] = { element: m[2] };
+  /* 覚醒スキンは awakenOf で親を宣言している行。**この1つの印だけ**で
+     「覚醒の元にできない(自分が覚醒後)」と「もう覚醒後がある」の両方が分かる。 */
+  state.awakenOf = {};   // 覚醒後id -> 元id
+  const rxa = /^  ([a-z][a-z0-9_]*)\s*:\s*\{[^\n]*?awakenOf\s*:\s*'([^']*)'/gm;
+  while((m = rxa.exec(body))) state.awakenOf[m[1]] = m[2];
   state.ssrWalk = parseSsrWalkIds(dataJs);
   renderAssetTargets();
+  renderAwakenBaseOptions();
   state.media.cur = parseSkinMedia(dataJs);
   state.pickup.skin = (/^const GACHA_PICKUP_SSR = '([^']*)'/m.exec(dataJs) || [])[1] || null;
   state.pickup.raid = (/^const RAID_GACHA_PICKUP = '([^']*)'/m.exec(dataJs) || [])[1] || null;
@@ -2179,6 +2329,38 @@ function renderAssetTargets(){
   if(cur && opts.some(([v])=>v===cur)) el.value = cur;
   renderAssetCurrent();
 }
+/* 覚醒の「元にするSSRスキン」一覧。覚醒後のスキン(awakenOf付き)は元にできないので出さない。
+   既に覚醒後がある元スキンは印を付けるだけで残す(作り直したいことがあるため)。 */
+function renderAwakenBaseOptions(){
+  const el = $('aw_base');
+  if(!el) return;
+  const done = {};
+  Object.keys(state.awakenOf || {}).forEach(id=> done[state.awakenOf[id]] = true);
+  const opts = (state.skins || [])
+    .filter(([k])=> !(state.awakenOf || {})[k])
+    .map(([k, l])=>{
+      const w = (state.ssrWalk || {})[k] ? '' : ' ※歩行コマなし';
+      return [k, `${l}(${k})${done[k] ? ' ●覚醒済み' : ''}${w}`];
+    });
+  if(!opts.length) return;
+  const cur = el.value;
+  el.innerHTML = opts.map(([v, l])=>`<option value="${v}">${l}</option>`).join('');
+  if(cur && opts.some(([v])=>v===cur)) el.value = cur;
+  renderAwakenCurrent();
+}
+function renderAwakenCurrent(){
+  const el = $('aw_cur');
+  if(!el) return;
+  const t = awakenTarget();
+  if(!t){ el.textContent = '接続すると、元にできるSSRスキンが一覧に出ます。'; return; }
+  const hasWalk = !!(state.ssrWalk || {})[t.baseId];
+  const done = Object.keys(state.awakenOf || {}).some(id=> state.awakenOf[id] === t.baseId);
+  el.innerHTML = `作るスキンid: <code>${t.id}</code> / 画像名: <code>monsters/${t.iconImg}.png</code>・`
+    + `<code>monsters/${t.playerImg}.png</code>・<code>monsters/${t.walkPrefix}f1..8・b1..8.png</code><br>`
+    + (hasWalk ? '元スキンの歩行16コマも一緒に加工します。'
+               : '<b>元スキンに歩行コマがありません。</b>アイコンと試合用の2枚だけを加工します。')
+    + (done ? '<br><b>この元スキンには既に覚醒後があります。</b>同じidへ上書きになります。' : '');
+}
 function renderAssetCurrent(){
   const t = assetsTarget();
   const el = $('a_cur');
@@ -2208,12 +2390,26 @@ function loadScPresets(dataJs){
 function onElementChange(){
   if(!$('s_id').value.trim()) $('s_id').placeholder = `${$('s_element').value}_ssr`;
 }
-async function getFile(path){
+async function getFileBytes(path){
   const j = await gh(`/repos/${repo()}/contents/${path}?ref=${branch()}`);
   const bin = atob(j.content.replace(/\n/g,''));
   const bytes = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-  return new TextDecoder('utf-8').decode(bytes);
+  return bytes;
+}
+async function getFile(path){
+  return new TextDecoder('utf-8').decode(await getFileBytes(path));
+}
+// リポジトリにある画像を <img> として読む(覚醒スキンの合成で元の絵を取りに行くのに使う)
+async function getRepoImage(path){
+  const bytes = await getFileBytes(path);
+  const url = URL.createObjectURL(new Blob([bytes], { type:'image/png' }));
+  try{
+    const img = new Image();
+    await new Promise((res, rej)=>{ img.onload = res; img.onerror = ()=>rej(new Error(path+' を画像として読めません')); img.src = url; });
+    // Blob URL は同一オリジン扱いなので canvas は汚れない(getImageData が使える)
+    return img;
+  } finally { setTimeout(()=>URL.revokeObjectURL(url), 30000); }
 }
 
 /* ---------------------------------------------------------- 仕様の収集 */
@@ -2287,9 +2483,66 @@ function regKind(){ return $('regKind').value; }
 function isSsr(){ return regKind() === 'ssr'; }
 function isSsrMedia(){ return regKind() === 'ssrmedia'; }
 function isAssets(){ return regKind() === 'assets'; }
+function isAwaken(){ return regKind() === 'awaken'; }
+function awakenIsFxMode(){ return $('aw_mode').value === 'fx'; }
+/* 覚醒スキンの作成対象。**画像名は元スキンのIDから機械的に決める**ので、
+   入れ先を間違えることがない(元 guts_ssr → guts_ssr_awake / guts_player_ssr_awake)。 */
+function awakenTarget(){
+  const baseId = $('aw_base').value;
+  if(!baseId) return null;
+  const meta = (state.skins || []).find(s=>s[0]===baseId);
+  const baseName = meta ? meta[1] : baseId;
+  const el = (state.ssrMeta && state.ssrMeta[baseId] && state.ssrMeta[baseId].element) || '';
+  const basePrefix = baseId.replace(/_ssr$/, '');
+  const id = `${baseId}_awake`;
+  const nameIn = $('aw_name').value.trim();
+  return {
+    baseId, baseName, element: el, id,
+    name: nameIn || `${baseName}【覚醒】`,
+    aura: $('aw_aura').value,
+    t3name: $('aw_t3name').value.trim(),
+    t3mult: (+$('aw_t3mult').value) || 1.15,
+    iconImg: `${basePrefix}_ssr_awake`,
+    playerImg: `${basePrefix}_player_ssr_awake`,
+    walkPrefix: `${basePrefix}_ssr_awake_walk_`,
+    base: { iconImg: `${basePrefix}_ssr`, playerImg: `${basePrefix}_player_ssr`,
+            walkPrefix: `${basePrefix}_ssr_walk_` },
+  };
+}
+function awakenFxSettings(){
+  return {
+    rim: $('aw_rim').value, rimPx: +$('aw_rimPx').value, glowPx: +$('aw_glow').value,
+    glow: 0.85, hue: +$('aw_hue').value, sat: (+$('aw_sat').value)/100, bri: (+$('aw_bri').value)/100,
+    matOpacity: (+$('aw_matOp').value)/100, matScale: (+$('aw_matSc').value)/100,
+  };
+}
+// 素材の画像(省略可)
+async function awakenMaterialImage(){
+  const f = $('aw_material').files[0];
+  if(!f) return null;
+  return await createImageBitmap(f);
+}
+/* 合成の確認。**送信と同じ関数(awakenComposeAll)で作る**ので、
+   ここで見えたものがそのまま本番に入る(確認用と本番で作り方を分けない)。 */
+async function awakenPreview(){
+  const t = awakenTarget();
+  if(!t) return log('元にするSSRスキンを選んでください', 'ng');
+  try{
+    log('元スキンの画像を取得して合成しています…');
+    const mat = await awakenMaterialImage();
+    const files = await awakenComposeAll(t.base, t, mat, awakenFxSettings(),
+      (i,n,from)=> log(`合成中… ${i}/${n}  ${from}`));
+    state.awaken = { files, at: Date.now() };
+    const urls = await Promise.all(files.slice(0,8).map(f=>blobToDataUrl(f.blob)));
+    $('aw_preview').innerHTML = urls.map((u,i)=>
+      `<div class="cell"><img src="${u}"><span class="n">${files[i].path.split('/').pop()}</span></div>`).join('');
+    log(`合成しました(${files.length}枚)。よければ下の「差分を確認する」へ進んでください。`, 'ok');
+  }catch(e){ log(String(e.message||e), 'ng'); }
+}
 function activeKey(){
   if(isSsrMedia()) return $('md_skin').value;
   if(isAssets()) return $('a_target').value;
+  if(isAwaken()){ const t = awakenTarget(); return t ? t.id : ''; }
   return (isSsr() ? $('s_id').value : $('f_key').value).trim();
 }
 /* 差し替え先。値は "base:<素体key>"(素のモンスター)か "ssr:<スキンid>"(SSRスキン)。
@@ -2596,6 +2849,78 @@ async function planAssets(dataJs, swJs, lines){
   walkIssueLines(lines);
   return { texts, images, message: `「${t.name}」の素材を差し替えた(スタジオ)` };
 }
+/* 覚醒スキンの登録。**入れるのはSSRを1体足すときと同じ表だけ**で、
+   `awakenOf` を付ける点だけが違う(ゲーム側はこの印でガチャ・カタログから外し、
+   覚醒したマスモンの着せ替え一覧にだけ出す)。 */
+async function planAwaken(dataJs, swJs, lines){
+  const t = awakenTarget();
+  if(!t) throw new Error('元にするSSRスキンを選んでください');
+  if(!t.element) throw new Error(`${t.baseId} の素体が読み取れませんでした`);
+  if(dataJs.includes('/*@' + t.id + '*/'))
+    throw new Error(`${t.id} はすでに登録済みです。やり直すなら「登録を取り消す」を先に押してください。`);
+
+  // 画像: 合成モードは awakenPreview で作ったもの、描き下ろしは歩行/静止画パネルのもの
+  let images = [];
+  if(awakenIsFxMode()){
+    if(!state.awaken || !state.awaken.files || !state.awaken.files.length)
+      throw new Error('先に「合成して確認する」を押してください');
+    images = state.awaken.files.slice();
+  }else{
+    if(!state.portraits) throw new Error('静止画を整えてください');
+    images.push({ path:`monsters/${t.iconImg}.png`, blob: state.portraits.icon });
+    images.push({ path:`monsters/${t.playerImg}.png`, blob: state.portraits.player });
+    if(state.walk.f && state.walk.b){
+      for(let k=0;k<8;k++){
+        images.push({ path:`monsters/${t.walkPrefix}f${k+1}.png`, blob: state.walk.f.frames[k] });
+        images.push({ path:`monsters/${t.walkPrefix}b${k+1}.png`, blob: state.walk.b.frames[k] });
+      }
+    }
+  }
+  const hasWalk = images.some(f=>f.path.includes(t.walkPrefix));
+
+  const mark = '/*@' + t.id + '*/';
+  const rows = {};
+  rows.SSR_SKINS = [`  ${pad(t.id,16)}{ element:${jsStr(t.element)}, name:${jsStr(t.name)}, `
+    + `iconImg:${jsStr(t.iconImg)}, playerImg:${jsStr(t.playerImg)}, awakenOf:${jsStr(t.baseId)} }, ${mark}`];
+  rows.SSR_SKIN_AURA = [`  ${pad(t.id,16)}${jsStr(t.aura)}, ${mark}`];
+  if(t.t3name)
+    rows.SSR_SKIN_TIER3 = [`  ${pad(t.id,16)}{ name:${jsStr(t.t3name)}, dmgMult:${t.t3mult} }, ${mark}`];
+  const texts = applyRows({ 'data.js': dataJs }, rows);
+  // 歩行コマは素体の中の ssr 配列へ(既存のSSR追加とまったく同じ経路)
+  let walkAdded = false;
+  if(hasWalk){
+    const r = applySsrWalk(texts['data.js'], { id:t.id, element:t.element, walkPrefix:t.walkPrefix });
+    if(r.added){ texts['data.js'] = r.text; walkAdded = true; }
+    else if(!r.exists) throw new Error(r.reason);
+  }
+  texts['sw.js'] = bumpCache(swJs);
+  // 条件の数字は data.js の定数から読む(ツール側に書き写すと本体を変えたときにずれる)
+  const needRb  = (/^const AWAKEN_REBIRTH_REQ\s*=\s*(\d+)/m.exec(dataJs) || [,'2'])[1];
+  const needSt  = (/^const AWAKEN_STAT_MIN\s*=\s*(\d+)/m.exec(dataJs) || [,'800'])[1];
+  const uh = addUpdateHistory(texts['data.js'],
+    `✵ 「${t.baseName}」に覚醒の姿が追加されました！ 転生${needRb}回以上・全ステータス${needSt}以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます`,
+    ['feature','monster']);
+  texts['data.js'] = uh.text;
+
+  lines.push('■ 送信されるファイル');
+  images.forEach(f=> lines.push('  ' + f.path));
+  lines.push('  data.js  (SSRの表へ追記)');
+  lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(texts['sw.js'])||[])[1]} へ)`);
+  lines.push('  ' + uh.note);
+  lines.push('');
+  lines.push('■ data.js への追記');
+  rowLines(rows, lines);
+  if(walkAdded){
+    lines.push(`--- WALK_ANIM.${t.element}.ssr (data.js)`);
+    lines.push(`+      { skinId:'${t.id}', front:_loadWalk('${t.walkPrefix}f'), back:_loadWalk('${t.walkPrefix}b') },`);
+  }
+  lines.push('');
+  lines.push(`※ この姿は**ガチャにもカタログにも出ません**(awakenOf付き)。`);
+  lines.push(`   「${t.baseName}」を装備した、転生2回・全ステータス800以上のマスモンだけが覚醒して手に入れます。`);
+  if(!hasWalk) lines.push('※ 歩行コマがありません。試合中は静止画で表示されます。');
+  if(!t.t3name) lines.push('※ tier3の技名が空なので SSR_SKIN_TIER3 には入れません(技名・威力は元スキンのままです)。');
+  return { texts, images, message: `覚醒スキン「${t.name}」を追加した(スタジオ)` };
+}
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
@@ -2604,6 +2929,7 @@ async function preflight(){
     const lines = [];
     const plan = isSsrMedia() ? await planSkinMedia(dataJs, swJs, lines)
                : isAssets()   ? await planAssets(dataJs, swJs, lines)
+               : isAwaken()   ? await planAwaken(dataJs, swJs, lines)
                : isSsr()      ? await planSsr(dataJs, swJs, lines)
                               : await planMonster(dataJs, uiJs, swJs, lines);
     state.files = plan;
@@ -3315,32 +3641,53 @@ function boot(){
   $('s_element').innerHTML = '<option value="">先にGitHubへ接続してください</option>';
   $('s_element').onchange = onElementChange;
   $('regKind').onchange = ()=>{
-    const ssr = isSsr(), media = isSsrMedia(), assets = isAssets();
+    const ssr = isSsr(), media = isSsrMedia(), assets = isAssets(), awaken = isAwaken();
+    // 覚醒の「エフェクト合成」は元の絵から作るので、歩行・静止画のパネルは要らない
+    const awakenFx = awaken && awakenIsFxMode();
     $('ssrForm').style.display = ssr ? 'block' : 'none';
     $('assetsForm').style.display = assets ? 'block' : 'none';
+    $('awakenForm').style.display = awaken ? 'block' : 'none';
     $('mediaPanel').style.display = media ? 'block' : 'none';
     // 専用メディアの登録では歩行・静止画・仕様・技は使わない
-    $('walkPanel').style.display = media ? 'none' : 'block';
-    $('portraitPanel').style.display = media ? 'none' : 'block';
-    $('specPanel').style.display = (ssr || media || assets) ? 'none' : 'block';
-    $('movePanel').style.display = (ssr || media || assets) ? 'none' : 'block';
+    $('walkPanel').style.display = (media || awakenFx) ? 'none' : 'block';
+    $('portraitPanel').style.display = (media || awakenFx) ? 'none' : 'block';
+    $('specPanel').style.display = (ssr || media || assets || awaken) ? 'none' : 'block';
+    $('movePanel').style.display = (ssr || media || assets || awaken) ? 'none' : 'block';
     $('regHint').textContent = media
       ? 'すでにいるSSRスキンに、昇格演出・専用BGM・専用SE・宣伝画像・ガチャのピックアップを設定します。'
       : assets
       ? 'すでにいるモンスター・SSRスキンの絵だけを作り直して差し替えます。'
         + '用意したものだけ送るので、歩行だけ・静止画だけの差し替えもできます。'
+      : awaken
+      ? '育て込んだマスモンだけが到達する「覚醒後の姿」を作ります。ガチャにもカタログにも出ず、'
+        + '条件(転生2回以上・全ステータス800以上)を満たしたマスモンが元のスキンを着ているときだけ手に入ります。'
       : ssr
       ? 'SSRスキンは「素体の見た目替え+tier3の技名と威力」です。技・特性・適性は素体のものを使います。'
       : '新しいモンスターとして9つの表すべてに登録します。';
     // 素材の差し替えは登録行を触らないので「取り消す」対象が無い
     $('revertBtn').style.display = assets ? 'none' : '';
     $('revertBtn').textContent = media ? 'このスキンの専用メディア設定を取り消す'
+                                : awaken ? 'この覚醒スキンの登録を取り消す'
                                 : ssr   ? 'このSSRスキンの登録を取り消す'
                                         : 'このモンスターの登録を取り消す';
     state.files = null; $('commitBtn').disabled = true;
-    if((ssr || media || assets) && !state.elements) loadElementList();
+    if((ssr || media || assets || awaken) && !state.elements) loadElementList();
+    if(awaken) renderAwakenCurrent();
   };
   $('a_target').onchange = ()=>{ renderAssetCurrent(); state.files = null; $('commitBtn').disabled = true; };
+  // 覚醒: 作り方を変えると使うパネルが変わるので出し分けをやり直す
+  $('aw_mode').onchange = ()=>{ $('regKind').onchange(); };
+  $('aw_base').onchange = ()=>{ state.awaken = null; state.files = null; $('commitBtn').disabled = true;
+                                $('aw_preview').innerHTML = ''; renderAwakenCurrent(); };
+  opts($('aw_aura'), AURAS);
+  // スライダーの数値表示。**値の持ち方は awakenFxSettings 1か所**で、ここは見せるだけ
+  const awSliders = [['aw_glow','aw_glowV',1],['aw_rimPx','aw_rimV',1],['aw_hue','aw_hueV',1],
+                     ['aw_sat','aw_satV',100],['aw_bri','aw_briV',100],
+                     ['aw_matOp','aw_matOpV',100],['aw_matSc','aw_matScV',100]];
+  awSliders.forEach(([id, out, div])=>{
+    const sync = ()=>{ $(out).textContent = div===1 ? $(id).value : (+$(id).value/div).toFixed(2); };
+    $(id).addEventListener('input', sync); sync();
+  });
   $('regKind').onchange();
   const t = localStorage.getItem('aramon_gh_token');
   if(t){ $('tok').value = t; saveToken(); }
