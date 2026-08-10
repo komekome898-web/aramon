@@ -48,3 +48,4 @@ description: 荒野モン動の戦闘ロジック(combat.js)・技のギミッ�
 - **マルチへ送るのは「アイテムぶんだけ」**(`baseHp`/`baseSpd`)。受け側が `rebirth` から転生ぶんを足し直すので、**合計を送ると転生ぶんが二重に乗る。**
 - アイテムのアイコンは絵文字とSVGが混在する。**HTMLに入れる場所は `it.icon` をそのまま、`textContent`/トーストへ出す場所は `playerItemTextLabel()`** を使う(SVGを textContent に入れると生タグが出る)。
 - 報酬(`grantReward`/`rewardText`/`raidRewardLabel`)は1件の `item`/`n` と複数件の `items:[{key,n}]` の両方を扱う。**列挙は必ず `rewardItemList(r)` を通す。**
+- **遠征**(`EXPEDITIONS`・`loadExpeditions`/`saveExpeditions`)はマスモンを数時間送り出して育成アイテム・EXP・当たり枠を持ち帰らせる。**素のゴールドと基礎値アイテム(生命の果実・加速剤)は出さない**(前者は試合報酬と役割が被り放置が得になる、後者はレイド討伐限定の希少性を壊す)。EXPだけ`grantReward`に無いので`awardMastermonExp(mm,{bonusExp})`を直接呼び、**Lv上限のときの`goldGain`は自分で`addWallet`する**。画面と拘束の決まりは aramon-screens。

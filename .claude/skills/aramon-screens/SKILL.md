@@ -94,6 +94,19 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **`renderLobbyMonster()`は、出しているモンスターが同じままならエモート中に描き直さない**(`img.dataset.lobbySubject`で判定)。歩行コマの読み込み待ちリトライがこの関数を最大6回呼ぶので、素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。
 - ロビーのエモート行(`#lobbyEmoteRow`)は`#lobbyMonsterStage`の**兄弟**に置く(ボタンの入れ子は不正)。ステージが`flex:1 1 auto`で余白を吸収するので、行を足してもステージが少し縮むだけで**スクロールは出ない**(667/812/568の3サイズで実測済み)。
 
+## 遠征(`#expeditionOverlay` / `#expeditionPickOverlay`)
+
+- **マスモン(`mm`)には何も保存しない。** 状態を持つのは`aramon_expedition_v1`(data.jsの`loadExpeditions`/`saveExpeditions`)だけ。`mm`の形を変えないでおくため(あとから足す機能が`mm`を丸ごと写す)。
+- **拘束の判定は`expeditionIsBusy()`/`expeditionBusyKeys()`1か所。** 見ているのは4か所+1: 参戦ボタン(`mastermonUseBtn`)/ トレーニング実行 / バッグの対象一覧と`useBagItem` / 削除ボタン / 保険として`applyMastermonToPlayer()`。**新しく「マスモンを選ぶ場所」を足したらここも通す。**
+- **枠は所持マスモン数で解放**(`EXPEDITION_SLOT_UNLOCKS`。1体=1枠/3体=2枠/6体=3枠)。判定は`expeditionSlotCount()`。
+- **報酬は行き先の`stat`との相性で 0.6〜1.7倍**(`EXPEDITION_AFFINITY`)。見込みと実際は同じ`expeditionRewardPreview()`を通すのでズレない。当たり枠とランダムの実だけ`expeditionRollResult()`が引く。
+- **受け取りは先に枠を空けて保存してから渡す**(`expeditionClaim`)。二度押し・再読み込みでも二重に受け取れない。
+- **状態の判定は純関数**(`expeditionSlotState`)。`loadMastermons()`は多くの画面から呼ばれるので、**読むたびに書き戻さない。**
+- 残り時間は1秒ごとに**文字だけ**書き換える(`expeditionTickOnce`)。作り直すのは受け取り待ちへ変わったときだけ。**画面が閉じたら自分で止まり、`#startScreen`が隠れたときも止める。**
+- 成果は**新しいオーバーレイを作らず**`#expeditionMain`と`#expeditionResult`を入れ替えて出す。
+- **時短アイテム(📯帰還のホラ貝)はバッグから使えない。** 対象がマスモンではなく遠征の枠なので、`renderBagDesc`が`it.expedition`のときだけ個数ゲージ・使用ボタン・対象一覧を隠す。**ガチャのR枠には入れない**(既存のトレチケ・技強化チケットの当たる割合が薄まるため)。
+- **ロビー左メニューは8個で埋まっている。** 増やすときは必ず実寸を測ること(`scratchpad`の測定スクリプトと同じ方法で、バナー下端が`#appRoot`の下端を越えないか)。8個に合わせて`#lobbyLeft`の`gap`とボタンの上下`padding`、アイコンの最小サイズを詰めてある。
+
 ## 更新履歴
 
 - 項目`{t,g}`、タグ定義は`CHANGELOG_TAGS`。見出し+タグ行は固定、`.changelog-list`だけスクロール(自前スライドバー共用)。

@@ -78,6 +78,10 @@
        <!-- 募集中の部屋で待っている人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
        <span id="raidWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
+     <button id="openExpeditionBtn" class="lobby-side-btn has-dot">
+       <span class="lobby-side-icon">🧭</span><span class="lobby-side-label">遠征</span>
+       <span id="expeditionDot" class="notif-dot hidden"></span>
+     </button>
      <button id="openGachaBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
        <span id="raidGachaPop" class="raid-gacha-pop hidden">🐉レイドガチャ開催中</span>
@@ -908,6 +912,42 @@
     <div id="dailyLoginTrack" class="daily-login-track"></div>
     <div class="daily-section-title">📋 今日のミッション（毎日リセット）</div>
     <div id="dailyMissionList" class="daily-mission-list"></div>
+  </div>
+</div>
+
+<!-- 遠征 (マスモンを送り出して、遊んでいない時間に報酬を持ち帰らせる) -->
+<div id="expeditionOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box expedition-box">
+    <button id="closeExpeditionBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text exp-title">🧭 遠征</div>
+    <!-- 枠一覧。受け取り結果を出すときだけ隠して #expeditionResult を出す -->
+    <div id="expeditionMain">
+      <div class="exp-note">マスモンを送り出すと、時間が経ってから育成アイテム・EXP・当たり枠を持ち帰ります。<b>遠征中の子はバトルに出せません。</b></div>
+      <div id="expeditionSlots" class="exp-slots"></div>
+      <div id="expeditionHint" class="exp-hint"></div>
+    </div>
+    <div id="expeditionResult" class="exp-result hidden">
+      <div id="expeditionResultBody" class="exp-result-body"></div>
+      <button id="expeditionResultOkBtn" class="rebirth-confirm-btn">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- 遠征の行き先とマスモンを選ぶ -->
+<div id="expeditionPickOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box expedition-pick-box">
+    <button id="closeExpeditionPickBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text exp-title">🧭 どこへ送り出す？</div>
+    <div class="exp-pick-main">
+      <div class="exp-pick-left">
+        <div id="expeditionDestList" class="exp-dest-list"></div>
+      </div>
+      <div class="exp-pick-right">
+        <div id="expeditionMmList" class="exp-mm-list"></div>
+        <div id="expeditionPreview" class="exp-preview"></div>
+        <button id="expeditionGoBtn" class="rebirth-confirm-btn" disabled>出発する</button>
+      </div>
+    </div>
   </div>
 </div>
 

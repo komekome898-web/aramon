@@ -993,6 +993,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-10', items:[
+    { t:'🧭 遠征を追加しました！ ロビー左の「遠征」からマスモンを送り出すと、数時間後に育成アイテム・EXP・当たり枠を持ち帰ります。行き先ごとに相性のよいステータスがあり、★が高いほど成果が増えます。遠征中の子はバトル・トレーニング・アイテムに使えません', g:['feature','general'] },
+    { t:'遠征の枠はマスモンの所持数で増えます（1体で1枠・3体で2枠・6体で3枠）。「📯帰還のホラ貝」を使うと残り時間0ですぐ帰らせられます（ショップ・ガチャ・遠征の当たり枠で手に入ります）', g:['feature','general'] },
     { t:'😊 エモートを追加しました！ ロビーのモンスターの下のボタンで「よろこぶ・しょんぼり・おこる」の反応が出せます。試合の結果画面でも勝ち負けに合わせて自動で反応し、マスモン詳細ではカードをタップすると反応します', g:['feature','general'] },
     { t:'❤️ エモートに「だいすき」が増え、4種類すべての動きを作り直しました。しっかり跳ねて、着地でつぶれて、反動で伸びる動きになり、エモートごとの効果音とエフェクト(舞い上がる・落ちる・弾ける)が付きます', g:['feature','av'] },
     { t:'縦持ちのときにエモートのエフェクトが横を向いてしまう不具合を修正しました', g:['fix','av'] },
@@ -2449,6 +2451,165 @@ function grantReward(r){
 }
 
 /* =====================================================================
+   遠征: マスモンを送り出して、遊んでいない時間に報酬を持ち帰らせる
+
+   ・**マスモン(mm)には何も保存しない。** 出撃中かどうかはこのストアだけが持つ
+     (mmの形を変えないでおく。ゴーストなど後の機能がmmを丸ごと写すため)。
+   ・時刻は端末の Date.now()。レイド・デイリーと同じ土俵にそろえる。
+     時計を戻されたときだけ壊れないように startAt を今へ丸める(loadで読むときに丸めるだけ)。
+   ・報酬は「育成アイテム / マスモンEXP / レアな当たり枠」の3種だけ。
+     素のゴールドは出さない(試合報酬と役割が被り、放置が試合より得になる)。
+     基礎値アイテム(生命の果実・加速剤)も出さない(レイド討伐限定の希少性を壊す)。
+   ・**どの子をどこへ出すか**が判断になるよう、行き先ごとに「相性のステータス」を持たせ、
+     出したマスモンのその実値で報酬が 0.6〜1.7 倍に変わる。★は出発前に見せる。
+===================================================================== */
+const EXPEDITION_STORAGE_KEY = 'aramon_expedition_v1';
+/* 同時に出せる枠は**所持マスモン数**で解放する(2体目を育てる理由を作る)。
+   [必要な所持数, そのときの枠数] を小さい順に並べる。ここに1行足せば増える。 */
+const EXPEDITION_SLOT_UNLOCKS = [ { own:1, slots:1 }, { own:3, slots:2 }, { own:6, slots:3 } ];
+const EXPEDITION_MAX_SLOTS = 3;
+/* 相性。行き先の stat の実値 → ★と倍率。**上から順に max 以下で判定する。** */
+const EXPEDITION_AFFINITY = [
+  { max:199,      star:1, mult:0.6 },
+  { max:399,      star:2, mult:0.8 },
+  { max:599,      star:3, mult:1.0 },
+  { max:799,      star:4, mult:1.3 },
+  { max:Infinity, star:5, mult:1.7 },
+];
+const EXPEDITION_EXP_LEVEL_DIVISOR = 50;   // EXPは (1 + Lv/50) 倍。育った子ほどEXPが要るため
+const EXPEDITION_RARE_CHANCE_MAX = 0.40;   // 当たり枠の確率の上限
+/* 行き先。**ここに1行足すだけで画面・相性・抽選まで回る。**
+   reward.items は固定のアイテム、reward.randomSeeds はステータスの実からランダムでN個。
+   長いほど時間あたりの取り分を良くしてある(2h=30EXP/h → 12h=42EXP/h)。 */
+const EXPEDITIONS = [
+  { id:'quarry',  name:'石切り場',       icon:'⛏️', hours:2,  stat:'vitality',
+    reward:{ items:[{ key:'seed_vitality', n:1 }] }, exp:60,
+    rare:{ chance:0.08, reward:{ item:'freeTrainTicket', n:1 } },
+    desc:'固い岩を運び出す。丈夫な子ほど多く持ち帰る' },
+  { id:'ridge',   name:'風鳴りの丘',     icon:'🌬️', hours:2,  stat:'evasion',
+    reward:{ items:[{ key:'seed_evasion', n:1 }] }, exp:60,
+    rare:{ chance:0.08, reward:{ item:'expeditionRecall', n:1 } },
+    desc:'吹き上がる風の中を駆け抜ける。身のこなしがものを言う' },
+  { id:'library', name:'忘れられた書庫', icon:'📚', hours:6,  stat:'wisdom',
+    reward:{ items:[{ key:'seed_wisdom', n:2 }] }, exp:220,
+    rare:{ chance:0.14, reward:{ dia:15 } },
+    desc:'古い書物を読み解く。かしこい子ほど成果が大きい' },
+  { id:'crater',  name:'火口の縁',       icon:'🌋', hours:6,  stat:'power',
+    reward:{ items:[{ key:'seed_power', n:2 }] }, exp:220,
+    rare:{ chance:0.14, reward:{ item:'moveTicket', n:1 } },
+    desc:'熱気の中で岩を砕く。力自慢の子に向く' },
+  { id:'trail',   name:'巡礼の道',       icon:'🧭', hours:12, stat:'life',
+    reward:{ randomSeeds:3 }, exp:500,
+    rare:{ chance:0.22, reward:{ dia:40 } },
+    desc:'丸一日かけて歩き通す。体力のある子ほど遠くまで行ける' },
+  { id:'abyss',   name:'深淵の裂け目',   icon:'🕳️', hours:12, stat:'accuracy',
+    reward:{ items:[{ key:'seed_accuracy', n:2 }], randomSeeds:1 }, exp:500,
+    rare:{ chance:0.22, reward:{ item:'freeTrainTicket', n:3 } },
+    desc:'足場の悪い裂け目を進む。狙いの正確な子ほど深く潜れる' },
+];
+function expeditionDest(id){ return EXPEDITIONS.find(e=>e.id===id) || null; }
+// ステータスの実の一覧。**表(PLAYER_ITEMS)から作る**ので実を足せば自動で候補に入る
+function expeditionSeedItemKeys(){
+  return Object.keys(PLAYER_ITEMS).filter(k=>PLAYER_ITEMS[k].stat);
+}
+// この行き先に対するこのマスモンの相性(★と倍率)
+function expeditionAffinity(dest, mm){
+  const v = Math.round((mm && mm.stats && dest && mm.stats[dest.stat]) || 0);
+  return EXPEDITION_AFFINITY.find(a=>v<=a.max) || EXPEDITION_AFFINITY[EXPEDITION_AFFINITY.length-1];
+}
+/* 出発前に見せる成果の見込み。**受け取り時もこの関数を通す**ので、
+   「見せた内容」と「実際にもらえる内容」がずれない(当たり枠だけ確率で上乗せ)。 */
+function expeditionRewardPreview(dest, mm){
+  const af = expeditionAffinity(dest, mm);
+  const src = (dest && dest.reward) || {};
+  const items = (src.items||[]).map(x=>({ key:x.key, n:Math.max(1, Math.round(x.n*af.mult)) }));
+  const randomSeeds = src.randomSeeds ? Math.max(1, Math.round(src.randomSeeds*af.mult)) : 0;
+  const dia = src.dia ? Math.max(1, Math.round(src.dia*af.mult)) : 0;
+  const lv = Math.max(1, Math.round((mm && mm.level) || 1));
+  const exp = Math.round((dest.exp||0) * af.mult * (1 + lv/EXPEDITION_EXP_LEVEL_DIVISOR));
+  const rareChance = Math.min(EXPEDITION_RARE_CHANCE_MAX, (dest.rare ? dest.rare.chance : 0) * af.mult);
+  return { star:af.star, mult:af.mult, items, randomSeeds, dia, exp, rareChance,
+           rare:(dest.rare ? dest.rare.reward : null) };
+}
+/* 受け取りの中身を確定させる(ランダムの実と当たり枠をここで引く)。
+   **呼ぶのは受け取りの1回だけ。** 引き直しは枠を空にすることで防ぐ。 */
+function expeditionRollResult(dest, mm){
+  const p = expeditionRewardPreview(dest, mm);
+  const items = p.items.map(x=>({ key:x.key, n:x.n }));
+  const seeds = expeditionSeedItemKeys();
+  for(let i=0;i<p.randomSeeds && seeds.length;i++){
+    const k = seeds[Math.floor(Math.random()*seeds.length)];
+    const hit = items.find(x=>x.key===k);
+    if(hit) hit.n += 1; else items.push({ key:k, n:1 });
+  }
+  const rare = (p.rare && Math.random() < p.rareChance) ? p.rare : null;
+  return { star:p.star, exp:p.exp, reward:{ dia:p.dia||0, items }, rare };
+}
+// 1枠ぶんの保存値を安全な形にそろえる。**未来の時刻は今へ丸める**(時計を戻されても壊れない)
+function sanitizeExpeditionSlot(s){
+  if(!s || !expeditionDest(s.dest) || !s.mmKey) return null;
+  const start = Math.min(Date.now(), Math.max(0, Math.round(s.startAt)||0));
+  return { dest:s.dest, mmKey:String(s.mmKey), startAt:start, done:!!s.done };
+}
+function loadExpeditions(){
+  try{
+    const d = JSON.parse(localStorage.getItem(EXPEDITION_STORAGE_KEY)) || {};
+    const slots = Array.isArray(d.slots) ? d.slots : [];
+    return { slots: slots.slice(0, EXPEDITION_MAX_SLOTS).map(sanitizeExpeditionSlot) };
+  }catch(err){ return { slots:[] }; }
+}
+function saveExpeditions(d){
+  const out = { slots: (d && Array.isArray(d.slots) ? d.slots : []).slice(0, EXPEDITION_MAX_SLOTS)
+                        .map(s=>s ? sanitizeExpeditionSlot(s) : null) };
+  try{ localStorage.setItem(EXPEDITION_STORAGE_KEY, JSON.stringify(out)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+// 今使える枠の数(所持マスモン数で決まる)
+function expeditionSlotCount(){
+  const own = (typeof loadMastermons==='function') ? Object.keys(loadMastermons()).length : 0;
+  let n = 0;
+  for(const u of EXPEDITION_SLOT_UNLOCKS){ if(own >= u.own) n = Math.max(n, u.slots); }
+  return Math.min(EXPEDITION_MAX_SLOTS, n);
+}
+// あと何体育てれば次の枠が開くか(0なら次は無い)
+function expeditionNextUnlock(){
+  const own = (typeof loadMastermons==='function') ? Object.keys(loadMastermons()).length : 0;
+  const next = EXPEDITION_SLOT_UNLOCKS.find(u=>own < u.own);
+  return next ? { need:next.own - own, slots:next.slots } : null;
+}
+function expeditionEndAt(slot){
+  const d = slot && expeditionDest(slot.dest);
+  return d ? slot.startAt + d.hours*3600000 : 0;
+}
+// 'empty'(空き) / 'running'(遠征中) / 'ready'(受け取り待ち)。**読むだけ。書き戻さない**
+function expeditionSlotState(slot, now){
+  if(!slot || !slot.dest) return 'empty';
+  if(slot.done) return 'ready';
+  return (now||Date.now()) >= expeditionEndAt(slot) ? 'ready' : 'running';
+}
+function expeditionSecondsLeft(slot, now){
+  return Math.max(0, Math.ceil((expeditionEndAt(slot) - (now||Date.now()))/1000));
+}
+// 今どのマスモンが出撃中か。**拘束の判定はここ1か所**
+function expeditionBusyKeys(){
+  const set = new Set();
+  for(const s of loadExpeditions().slots){ if(s && s.dest && s.mmKey) set.add(s.mmKey); }
+  return set;
+}
+function expeditionIsBusy(mmKey){ return !!mmKey && expeditionBusyKeys().has(mmKey); }
+// 受け取り待ちが1つでもあるか(通知ドット用)
+function expeditionHasReady(){
+  const now = Date.now();
+  return loadExpeditions().slots.some(s=>expeditionSlotState(s, now)==='ready');
+}
+// 残り時間の表示("1:59:03" / "12:00:00")
+function expeditionTimeLabel(sec){
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+
+/* =====================================================================
    シーズン1 準備(非公開・管理者プレビューのみ): ミューテーター(日替わり変則ルール)
    SEASON1_ACTIVE を true にするまでゲームプレイに一切影響しない。
    公開時は true へ変更し、CLAUDE.mdのルールに従って UPDATE_HISTORY に告知を追記すること。
@@ -2606,6 +2767,8 @@ const PLAYER_ITEMS = {
   seed_vitality:  { name:'丈夫さの実',   icon:'🛡️', stat:'vitality' },
   freeTrainTicket:{ name:'フリートレーニングチケット', icon:'🎟️', desc:'マスモンのトレーニングチケット+1' },
   moveTicket:     { name:'技強化チケット', icon:'⚔️', desc:'次の試合を技tier2解放状態で開始' },
+  // 遠征の時短。**バッグでは使えず、遠征画面の枠から使う**(対象がマスモンではなく遠征枠のため)
+  expeditionRecall:{ name:'帰還のホラ貝', icon:'📯', expedition:'finish' },
 };
 // 基礎値アイテムが上げるもののラベル(説明文と効果表示で同じ言葉を使う)
 const BASE_ITEM_LABEL = { hp:'ライフの基礎値', speed:'移動速度の基礎値' };
@@ -2618,6 +2781,7 @@ function playerItemDesc(key){
   }
   // 基礎値は上限が無く、育成の倍率が乗る前に足されるので伸びるほど効く
   if(it.base) return `マスモンの${BASE_ITEM_LABEL[it.base]}+${BASE_ITEM_GAIN}(上限なし)`;
+  if(it.expedition==='finish') return '遠征の残り時間を0にする（🧭遠征の画面から使います）';
   return it.desc;
 }
 // アイコンはSVGのこともあるのでHTMLとして扱う(textContentに入れると生タグが出る)
@@ -2864,6 +3028,9 @@ function isAwakenedSkinId(skinId){ return !!(SSR_SKINS[skinId] && SSR_SKINS[skin
 
 // ガチャのレアリティ別アイテム
 const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','seed_evasion','seed_vitality'];
+/* ガチャのR枠。**帰還のホラ貝はここに入れない。**
+   1枠増やすと既存のトレチケ・技強化チケットの当たる割合が 1/2 → 1/3 に下がり、
+   遠征とは関係のない既存のバランスを弱めてしまうため。入手はショップと遠征の当たり枠。 */
 const GACHA_R_ITEMS = ['freeTrainTicket','moveTicket'];
 const DUP_SKIN_DIA = 5;     // 既に持っているSRスキンが出た時に貰えるダイヤ
 const DUP_SSR_DIA = 50;     // 既に持っているSSRスキンが出た時に貰えるダイヤ
@@ -3070,7 +3237,7 @@ function addCatalog(kind, n){ const c=loadCatalogs(); c[kind]=(c[kind]||0)+(n||1
 // ショップ(ゴールドでアイテム購入): [アイテムキー, 価格] ※スキンはショップには追加しない
 const SHOP_ITEMS = [
   ['seed_life',300],['seed_power',300],['seed_wisdom',300],['seed_accuracy',300],['seed_evasion',300],['seed_vitality',300],
-  ['freeTrainTicket',1000],['moveTicket',1000],
+  ['freeTrainTicket',1000],['moveTicket',1000],['expeditionRecall',800],
 ];
 
 /* =====================================================================
