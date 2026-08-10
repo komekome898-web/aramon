@@ -1,1 +1,6 @@
-投げられませんでした: HTTP Error 403: Forbidden
+txt2img だめ: 403
+  応答本文: error code: 1010
+
+img2img だめ: 403
+  応答本文: error code: 1010
+
