@@ -65,6 +65,7 @@ function equippedIconImgTag(element, altLabel){
 }
 function renderSelectorCards(){
   if(typeof updateRaidEntryButton==='function') updateRaidEntryButton(); // レイド開催中だけ入口を出す
+  if(typeof updateExpeditionBadge==='function') updateExpeditionBadge(); // 遠征の受け取り待ち
   if(typeof renderLobbyMonster==='function') renderLobbyMonster();   // 中央の歩行モーションも更新
   if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   const mmCard = document.getElementById('mastermonSelectCard');
@@ -1460,7 +1461,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1','aramon_expedition_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1882,6 +1883,12 @@ function renderBagDesc(){
   nameEl.textContent = it.name;
   nameEl.classList.toggle('is-ssr', it.rarity==='SSR');
   document.getElementById('bagDescText').textContent = playerItemDesc(bagSelectedItem);
+  /* 遠征の時短アイテムは対象が「マスモン」ではなく「遠征の枠」なので、バッグからは使わせない。
+     説明だけ出して、個数ゲージ・使用ボタン・マスモン一覧をまとめて隠す。 */
+  const isExpeditionItem = !!it.expedition;
+  document.getElementById('bagQtyRow').classList.toggle('hidden', isExpeditionItem);
+  document.getElementById('bagUseConfirmBtn').classList.toggle('hidden', isExpeditionItem);
+  if(isExpeditionItem){ wrap.classList.add('hidden'); return; }
   // 対象マスモンの選択はアイテムを切り替えても維持する(選び直しの手間を無くす)。
   // 消えたマスモンを選んだままにならないよう、存在チェックだけ行う
   const keep = bagPicker.targetKey && loadMastermons()[bagPicker.targetKey] ? bagPicker.targetKey : null;
@@ -1934,19 +1941,21 @@ function renderBagTargetList(){
   const qty = bagUseQty || 1;
   // ステータスの実は対象ステータスのプレビュー差分(個数分)を作り、マスモン画面と同じステータスバーで表示
   const preview = it.stat ? { [it.stat]: STAT_SEED_GAIN * qty } : null;
+  const busyKeys = (typeof expeditionBusyKeys==='function') ? expeditionBusyKeys() : new Set();
   pick.innerHTML = keys.map(k=>{
     const mm = data[k];
-    const active = k===bagPicker.targetKey;
+    const away = busyKeys.has(k);
+    const active = !away && k===bagPicker.targetKey;
     const statsBarHtml = buildMastermonStatsColHtml(mm, mastermonApt(mm), preview);
     const extra =
       bagPicker.itemKey==='freeTrainTicket' ? `<div class="bt-extra">🎫 トレチケ ${mm.tickets||0}→${(mm.tickets||0)+qty}枚</div>` :
       bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+qty}</div>` :
       it.base ? bagBaseItemPreviewHtml(mm, it.base, qty) : '';
     return `
-    <button class="bag-target-btn ${active?'active':''}" data-key="${k}">
+    <button class="bag-target-btn ${active?'active':''} ${away?'away':''}" data-key="${k}" ${away?'disabled':''}>
       <span class="bt-head">
         ${equippedIconImgTag(k, ELEMENTS[k].label)}
-        ${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}
+        ${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}${away?'<span class="bt-away">🧭遠征中</span>':''}
       </span>
       ${statsBarHtml}
       ${extra}
@@ -1955,11 +1964,14 @@ function renderBagTargetList(){
   pick.scrollTop = keepScroll;   // 書き換えで先頭へ戻ったぶんを戻す
   pick.querySelectorAll('.bag-target-btn').forEach(b=>{
     b.addEventListener('click', ()=>{
+      if(b.disabled) return;   // 遠征中の子は選べない
       bagPicker.targetKey = (bagPicker.targetKey===b.dataset.key) ? null : b.dataset.key;
       syncBagQtyLimit();      // 対象が変わると残り伸びしろも変わるので個数上限を引き直す
       renderBagTargetList();
     });
   });
+  // 遠征中の子を選んだまま画面を開き直しても使えないようにする
+  if(bagPicker.targetKey && busyKeys.has(bagPicker.targetKey)) bagPicker.targetKey = null;
   // ステータスが既に上限のマスモンには使わせない(アイテムの無駄使いを防ぐ)
   const need = bagStatUsableQty(bagPicker.itemKey, bagPicker.targetKey);
   const capped = need===0;
@@ -1979,6 +1991,10 @@ function useBagItem(itemKey, mmKey, qty){
   const mm = data[mmKey];
   const it = PLAYER_ITEMS[itemKey];
   if(!mm || !it) return;
+  if(typeof expeditionIsBusy==='function' && expeditionIsBusy(mmKey)){
+    pushToast(`${mm.name}は遠征中です。帰ってくるまでアイテムを使えません`);
+    return;
+  }
   let resultText;
   if(it.stat){
     const before = mm.stats[it.stat];
@@ -5462,6 +5478,260 @@ document.getElementById('loginBonusOkBtn').addEventListener('click', ()=>{
 });
 
 /* =====================================================================
+   遠征(ロビー左メニュー 🧭)
+
+   ・状態を持つのは data.js の loadExpeditions/saveExpeditions だけ。**マスモンには何も足さない。**
+   ・拘束の判定は expeditionIsBusy()/expeditionBusyKeys() 1か所で、
+     参戦ボタン・トレーニング実行・バッグの対象一覧・applyMastermonToPlayer が同じものを見る。
+   ・受け取りは「受け取る」ボタン。**押した時点で先に枠を空けて保存する**ので二重に渡らない。
+===================================================================== */
+let expeditionTick = null;
+let expeditionPickState = { slot:-1, destId:null, mmKey:null };
+
+function updateExpeditionBadge(){
+  const dot = document.getElementById('expeditionDot');
+  if(!dot || typeof expeditionHasReady!=='function') return;
+  dot.classList.toggle('hidden', !expeditionHasReady());
+}
+function startExpeditionTick(){
+  stopExpeditionTick();
+  expeditionTick = setInterval(expeditionTickOnce, 1000);
+}
+function stopExpeditionTick(){ if(expeditionTick){ clearInterval(expeditionTick); expeditionTick = null; } }
+/* 1秒ごとに残り時間の文字だけ書き換える(毎秒作り直すと画面がちらつく)。
+   受け取り待ちへ変わった枠があるときだけ作り直す。画面が閉じていれば自分で止まる。 */
+function expeditionTickOnce(){
+  const ov = document.getElementById('expeditionOverlay');
+  if(!ov || ov.classList.contains('hidden')){ stopExpeditionTick(); return; }
+  const now = Date.now();
+  const st = loadExpeditions();
+  let flipped = false;
+  ov.querySelectorAll('.exp-time').forEach(el=>{
+    const slot = st.slots[+el.dataset.i];
+    if(expeditionSlotState(slot, now)!=='running'){ flipped = true; return; }
+    el.textContent = expeditionTimeLabel(expeditionSecondsLeft(slot, now));
+  });
+  if(flipped){ renderExpedition(); updateExpeditionBadge(); }
+}
+function expeditionMmChipHtml(mmKey){
+  const mm = loadMastermons()[mmKey];
+  if(!mm) return '<span class="exp-mm-chip">（いなくなったマスモン）</span>';
+  return `<span class="exp-mm-chip">${equippedIconImgTag(mmKey, ELEMENTS[mmKey].label)}<b>${mm.name}</b> Lv.${mm.level}</span>`;
+}
+function expeditionStarsHtml(star){ return `<span class="exp-star">${'★'.repeat(star)}${'☆'.repeat(5-star)}</span>`; }
+function renderExpedition(){
+  const wrap = document.getElementById('expeditionSlots');
+  if(!wrap) return;
+  document.getElementById('expeditionMain').classList.remove('hidden');
+  document.getElementById('expeditionResult').classList.add('hidden');
+  const st = loadExpeditions();
+  const open = expeditionSlotCount();
+  const now = Date.now();
+  const recall = loadBag().expeditionRecall || 0;
+  const cells = [];
+  for(let i=0;i<EXPEDITION_MAX_SLOTS;i++){
+    if(i >= open){
+      const need = EXPEDITION_SLOT_UNLOCKS[i];
+      cells.push(`<div class="exp-slot locked"><div class="exp-slot-lock">🔒</div>
+        <div class="exp-slot-lockmsg">マスモンが${need?need.own:'?'}体になると開きます</div></div>`);
+      continue;
+    }
+    const slot = st.slots[i];
+    const state = expeditionSlotState(slot, now);
+    if(state==='empty'){
+      cells.push(`<div class="exp-slot empty"><button class="exp-go-btn" data-slot="${i}">＋<br>送り出す</button></div>`);
+      continue;
+    }
+    const dest = expeditionDest(slot.dest);
+    const head = `<div class="exp-slot-dest"><span class="exp-dest-ico">${dest.icon}</span>${dest.name}</div>
+                  <div class="exp-slot-mm">${expeditionMmChipHtml(slot.mmKey)}</div>`;
+    if(state==='running'){
+      cells.push(`<div class="exp-slot running">${head}
+        <div class="exp-time" data-i="${i}">${expeditionTimeLabel(expeditionSecondsLeft(slot, now))}</div>
+        <button class="exp-recall-btn" data-slot="${i}" ${recall>0?'':'disabled'}>📯 すぐ帰す（×${recall}）</button>
+      </div>`);
+    } else {
+      cells.push(`<div class="exp-slot ready">${head}
+        <div class="exp-ready-label">帰ってきた！</div>
+        <button class="exp-claim-btn" data-slot="${i}">受け取る</button>
+      </div>`);
+    }
+  }
+  wrap.innerHTML = cells.join('');
+  wrap.querySelectorAll('.exp-go-btn').forEach(b=>b.addEventListener('click', ()=>openExpeditionPick(+b.dataset.slot)));
+  wrap.querySelectorAll('.exp-recall-btn').forEach(b=>b.addEventListener('click', ()=>expeditionUseRecall(+b.dataset.slot)));
+  wrap.querySelectorAll('.exp-claim-btn').forEach(b=>b.addEventListener('click', ()=>expeditionClaim(+b.dataset.slot)));
+  const next = expeditionNextUnlock();
+  document.getElementById('expeditionHint').textContent = next
+    ? `マスモンをあと${next.need}体そろえると遠征枠が${next.slots}つに増えます`
+    : '遠征枠はすべて開放されています';
+}
+function openExpeditionPick(slotIndex){
+  expeditionPickState = { slot:slotIndex, destId:null, mmKey:null };
+  renderExpeditionPick();
+  lobbyOpenOverlay('expeditionPickOverlay');
+}
+function renderExpeditionPick(){
+  const p = expeditionPickState;
+  const dest = expeditionDest(p.destId);
+  const destEl = document.getElementById('expeditionDestList');
+  destEl.innerHTML = EXPEDITIONS.map(d=>{
+    const st = MASTERMON_STATS.find(s=>s.key===d.stat);
+    return `<button class="exp-dest ${p.destId===d.id?'active':''}" data-dest="${d.id}">
+      <div class="exp-dest-head"><span class="exp-dest-ico">${d.icon}</span><b>${d.name}</b><span class="exp-dest-h">${d.hours}時間</span></div>
+      <div class="exp-dest-desc">${d.desc}</div>
+      <div class="exp-dest-stat">相性: ${st?st.label:d.stat}</div>
+    </button>`;
+  }).join('');
+  destEl.querySelectorAll('.exp-dest').forEach(b=>b.addEventListener('click', ()=>{
+    expeditionPickState.destId = b.dataset.dest;
+    renderExpeditionPick();
+  }));
+
+  const mmEl = document.getElementById('expeditionMmList');
+  const data = loadMastermons();
+  const keys = Object.keys(data);
+  const busy = expeditionBusyKeys();
+  if(keys.length===0){
+    mmEl.innerHTML = '<div class="bag-empty">マスモンがいません。先にマスモンを登録しよう！</div>';
+  } else {
+    mmEl.innerHTML = keys.map(k=>{
+      const mm = data[k];
+      const away = busy.has(k);
+      const stars = dest ? expeditionStarsHtml(expeditionAffinity(dest, mm).star) : '';
+      return `<button class="exp-mm ${p.mmKey===k?'active':''} ${away?'away':''}" data-key="${k}" ${away?'disabled':''}>
+        ${equippedIconImgTag(k, ELEMENTS[k].label)}
+        <span class="exp-mm-name">${mm.name}</span><span class="exp-mm-lv">Lv.${mm.level}</span>
+        ${away ? '<span class="exp-mm-away">🧭遠征中</span>' : stars}
+      </button>`;
+    }).join('');
+    mmEl.querySelectorAll('.exp-mm').forEach(b=>b.addEventListener('click', ()=>{
+      if(b.disabled) return;
+      expeditionPickState.mmKey = b.dataset.key;
+      renderExpeditionPick();
+    }));
+  }
+  const prevEl = document.getElementById('expeditionPreview');
+  const mm = p.mmKey ? data[p.mmKey] : null;
+  if(dest && mm){
+    const v = expeditionRewardPreview(dest, mm);
+    const items = v.items.map(x=>playerItemTextLabel(x.key, x.n));
+    if(v.randomSeeds) items.push(`ステータスの実×${v.randomSeeds}（ランダム）`);
+    if(v.dia) items.push(`💎${v.dia}`);
+    prevEl.innerHTML = `
+      <div class="exp-prev-row"><span>相性</span>${expeditionStarsHtml(v.star)}<b>×${v.mult}</b></div>
+      <div class="exp-prev-row"><span>持ち帰る</span><b>${items.join(' / ')||'—'}</b></div>
+      <div class="exp-prev-row"><span>EXP</span><b>${v.exp}</b></div>
+      <div class="exp-prev-row"><span>当たり枠</span><b>${Math.round(v.rareChance*100)}%</b> ${rewardText(v.rare)}</div>
+      <div class="exp-prev-note">${dest.hours}時間かかります。そのあいだ ${mm.name} はバトル・トレーニング・アイテムに使えません。</div>`;
+  } else {
+    prevEl.innerHTML = '<div class="exp-prev-empty">行き先とマスモンを選ぶと、持ち帰るものが出ます</div>';
+  }
+  document.getElementById('expeditionGoBtn').disabled = !(dest && mm);
+}
+function expeditionDepart(){
+  const p = expeditionPickState;
+  const dest = expeditionDest(p.destId);
+  const data = loadMastermons();
+  const mm = p.mmKey ? data[p.mmKey] : null;
+  if(!dest || !mm || p.slot < 0) return;
+  if(expeditionIsBusy(p.mmKey)){ pushToast('そのマスモンは既に遠征中です'); return; }
+  const st = loadExpeditions();
+  while(st.slots.length < EXPEDITION_MAX_SLOTS) st.slots.push(null);
+  if(p.slot >= expeditionSlotCount() || expeditionSlotState(st.slots[p.slot], Date.now())!=='empty'){
+    pushToast('その枠はいま使えません'); return;
+  }
+  st.slots[p.slot] = { dest:dest.id, mmKey:p.mmKey, startAt:Date.now(), done:false };
+  saveExpeditions(st);
+  // 参戦中の子を送り出したら選択を外す(遠征中はバトルに出せないため)
+  const wasSelected = (game.selectedMastermonKey === p.mmKey);
+  if(wasSelected){
+    game.selectedMastermonKey = null;
+    if(typeof saveLobbyPrefs==='function') saveLobbyPrefs();
+    if(typeof updatePlayButtonsEnabled==='function') updatePlayButtonsEnabled();
+  }
+  renderSelectorCards();
+  playSe('pickup');
+  pushToast(wasSelected ? `${mm.name}が${dest.name}へ出発。参戦の選択を外しました`
+                        : `${mm.name}が${dest.name}へ出発した！`);
+  lobbyCloseOverlay('expeditionPickOverlay');
+  renderExpedition();
+  updateExpeditionBadge();
+}
+function expeditionUseRecall(i){
+  const bag = loadBag();
+  if(!(bag.expeditionRecall > 0)){ pushToast('📯 帰還のホラ貝がありません（ショップで買えます）'); return; }
+  const st = loadExpeditions();
+  const slot = st.slots[i];
+  if(expeditionSlotState(slot, Date.now())!=='running') return;
+  bag.expeditionRecall -= 1;
+  if(bag.expeditionRecall <= 0) delete bag.expeditionRecall;
+  saveBag(bag);
+  slot.done = true;   // 残り時間を0にする(=受け取り待ちへ)
+  saveExpeditions(st);
+  playSe('pickup');
+  pushToast(`📯 ${PLAYER_ITEMS.expeditionRecall.name}をつかった！`);
+  renderExpedition();
+  updateExpeditionBadge();
+}
+function expeditionClaim(i){
+  const st = loadExpeditions();
+  const slot = st.slots[i];
+  if(expeditionSlotState(slot, Date.now())!=='ready') return;
+  const dest = expeditionDest(slot.dest);
+  const data = loadMastermons();
+  const mm = data[slot.mmKey] || null;   // 消されていても報酬は渡す(EXPだけ飛ばす)
+  const res = expeditionRollResult(dest, mm || { level:1, stats:{} });
+  // **先に枠を空けて保存する。** 二度押しや再読み込みでも二重に受け取れない
+  st.slots[i] = null;
+  saveExpeditions(st);
+  grantReward(res.reward);
+  if(res.rare) grantReward(res.rare);
+  let expText = '';
+  if(mm && res.exp > 0){
+    const r = awardMastermonExp(mm, { bonusExp: res.exp });
+    saveMastermons(data);
+    if(r.goldGain > 0){
+      addWallet(r.goldGain, 0);   // Lv上限のマスモンはEXPがゴールドに変わる(既存の仕様)
+      expText = `EXP ${res.exp}（Lv上限のため 🪙${r.goldGain} に変換）`;
+    } else {
+      expText = `${mm.name} の EXP +${r.expGain}` + (r.levelsGained>0 ? `（Lv.${mm.level} に上がった！）` : '');
+    }
+  }
+  playSe('train');
+  showExpeditionResult(dest, mm, res, expText);
+  updateExpeditionBadge();
+  updateAccountBar();
+  if(typeof renderMastermonList==='function') renderMastermonList();
+  renderSelectorCards();
+}
+function showExpeditionResult(dest, mm, res, expText){
+  const items = res.reward.items.map(x=>playerItemTextLabel(x.key, x.n));
+  if(res.reward.dia) items.push(`💎${res.reward.dia}`);
+  document.getElementById('expeditionResultBody').innerHTML = `
+    <div class="exp-res-head">${dest.icon} ${dest.name} から帰ってきた！</div>
+    ${mm ? `<div class="exp-res-mm">${expeditionMmChipHtml(mm.element)}</div>` : ''}
+    <div class="exp-res-star">${expeditionStarsHtml(res.star)}</div>
+    <div class="exp-res-row">🎁 ${items.join(' / ') || 'なし'}</div>
+    ${expText ? `<div class="exp-res-row">✨ ${expText}</div>` : ''}
+    ${res.rare ? `<div class="exp-res-rare">🌟 当たり！ ${rewardText(res.rare)}</div>` : ''}`;
+  document.getElementById('expeditionMain').classList.add('hidden');
+  document.getElementById('expeditionResult').classList.remove('hidden');
+}
+document.getElementById('openExpeditionBtn').addEventListener('click', ()=>{
+  renderExpedition();
+  lobbyOpenOverlay('expeditionOverlay');
+  startExpeditionTick();
+});
+document.getElementById('closeExpeditionBtn').addEventListener('click', ()=>{
+  lobbyCloseOverlay('expeditionOverlay');
+  stopExpeditionTick();
+});
+document.getElementById('closeExpeditionPickBtn').addEventListener('click', ()=>lobbyCloseOverlay('expeditionPickOverlay'));
+document.getElementById('expeditionGoBtn').addEventListener('click', expeditionDepart);
+document.getElementById('expeditionResultOkBtn').addEventListener('click', ()=>renderExpedition());
+
+/* =====================================================================
    シーズンパス
 ===================================================================== */
 // 試合終了時に呼ぶ: SP加算。加算量を返す(リザルト表示用)
@@ -5663,7 +5933,10 @@ function mmCardInnerHtml(key){
   const expNeed = mastermonExpToNext(mm.level);
   const maxed = mm.level >= MASTERMON_LEVEL_CAP;
   const expPct = maxed ? 100 : Math.round(mm.exp/expNeed*100);
-  const picked = (game.selectedMastermonKey===key) ? '<div class="ml-card-picked">選択中</div>' : '';
+  // 遠征中は「選択中」より優先して出す(バトル・トレーニング・アイテムのどれにも使えないため)
+  const busy = (typeof expeditionIsBusy==='function') && expeditionIsBusy(key);
+  const picked = busy ? '<div class="ml-card-picked ml-card-away">🧭 遠征中</div>'
+                      : ((game.selectedMastermonKey===key) ? '<div class="ml-card-picked">選択中</div>' : '');
   return `
     ${picked}
     <div class="ml-card-lv">Lv.${mm.level}</div>
@@ -6520,6 +6793,11 @@ function renderMastermonDetail(key){
 
   // フッターの参戦ボタンは常設なので、選択中のマスモンに応じてハンドラを差し替える
   document.getElementById('mastermonUseBtn').onclick = ()=>{
+    // 遠征中の子は連れて行けない(拘束の判定は expeditionIsBusy 1か所)
+    if(typeof expeditionIsBusy==='function' && expeditionIsBusy(key)){
+      pushToast(`${mm.name}は遠征中です。🧭遠征から呼び戻すと参戦できます`);
+      return;
+    }
     game.selectedElement = key;
     game.selectedMastermonKey = key;
     saveLobbyPrefs();
@@ -6621,6 +6899,12 @@ function renderMastermonDetail(key){
       pushToast('名前を変更しました');
     });
     document.getElementById('mastermonEditDeleteBtn').addEventListener('click', ()=>{
+      /* 遠征中の子は消させない。消すと遠征の枠が「いなくなったマスモン」を指したまま残り、
+         同じ種族を作り直したときに新しい子まで遠征中あつかいになってしまう。 */
+      if(typeof expeditionIsBusy==='function' && expeditionIsBusy(key)){
+        pushToast(`${mm.name}は遠征中です。帰ってくるまで削除できません`);
+        return;
+      }
       mastermonPendingDeleteKey = key;
       document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
       document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
@@ -6636,6 +6920,10 @@ function renderMastermonDetail(key){
     });
     document.getElementById('mastermonExecuteTrainBtn').addEventListener('click', ()=>{
       if(!mastermonSelectedTraining) return;
+      if(typeof expeditionIsBusy==='function' && expeditionIsBusy(key)){
+        pushToast(`${mm.name}は遠征中です。帰ってくるまでトレーニングできません`);
+        return;
+      }
       const changes = applyMastermonTraining(mm, mastermonSelectedTraining);
       if(!changes) return;
       data[key] = mm;
@@ -6952,6 +7240,13 @@ function applyMastermonStatsToEntity(ent, mm){
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){
   if(!game.selectedMastermonKey) return;
+  /* 保険: 遠征中の子は連れて行かない(素のモンスターとして戦う)。
+     入口(参戦ボタン)で弾いているが、遠征に出した瞬間に選択を外し損ねても
+     ここで必ず止まるようにしておく。 */
+  if(typeof expeditionIsBusy==='function' && expeditionIsBusy(game.selectedMastermonKey)){
+    game.selectedMastermonKey = null;
+    return;
+  }
   const data = loadMastermons();
   const mm = data[game.selectedMastermonKey];
   applyMastermonStatsToEntity(player, mm);
@@ -8278,7 +8573,7 @@ function initTitleScreen(){
   const scr = document.getElementById('startScreen');
   const sync = ()=>{
     // 画面が隠れている間はタイマーを回さない(歩行アニメ・バナー切り替え・部屋の監視)
-    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); stopLobbyBannerLoop(); stopLobbyRoomPoll(); }
+    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); stopLobbyBannerLoop(); stopLobbyRoomPoll(); stopExpeditionTick(); }
     else refreshLobby();
   };
   new MutationObserver(sync).observe(scr, { attributes:true, attributeFilter:['class'] });
