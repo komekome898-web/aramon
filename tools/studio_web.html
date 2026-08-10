@@ -2592,11 +2592,15 @@ const IMAGE_PROVIDERS = {
                             { headers:{ 'x-goog-api-key': key } });
       const j = await r.json();
       if(!r.ok) throw new Error(imgApiError(r.status, j));
-      return (j.models||[])
+      /* **新しい順ではなく「使える見込みの高い順」に並べる。**
+         いちばん新しい preview / exp のモデルは枠が用意されていないことがあり
+         (実際に1回目から429で弾かれた)、名前だけで選ぶと必ず失敗する。
+         安定版を先に、preview系を後ろに置き、その中では新しい方を先にする。 */
+      const names = (j.models||[])
         .filter(m=> /image/i.test(m.name) && (m.supportedGenerationMethods||[]).includes('generateContent'))
-        .map(m=> m.name.replace(/^models\//, ''))
-        .sort()          // 名前は世代が上がるほど後ろへ並ぶので、末尾がいちばん新しい
-        .reverse();
+        .map(m=> m.name.replace(/^models\//, ''));
+      const rank = (n)=> /(preview|exp|experimental)/i.test(n) ? 1 : 0;
+      return names.sort((a,b)=> rank(a)-rank(b) || (a < b ? 1 : a > b ? -1 : 0));
     },
     /* prompt(文字列) と images([{mime,b64}]) から本文を作る */
     async generate(key, model, prompt, images){
@@ -2610,7 +2614,11 @@ const IMAGE_PROVIDERS = {
         { method:'POST', headers:{ 'content-type':'application/json', 'x-goog-api-key': key },
           body: JSON.stringify(body) });
       const j = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(imgApiError(r.status, j));
+      if(!r.ok){
+        const e = new Error(imgApiError(r.status, j));
+        e.status = r.status;          // 呼び出し側が「別のモデルで試す」判断に使う
+        throw e;
+      }
       const cand = (j.candidates||[])[0] || {};
       const part = ((cand.content||{}).parts || []).find(p=> p.inlineData && p.inlineData.data);
       if(!part){
@@ -2621,16 +2629,28 @@ const IMAGE_PROVIDERS = {
     },
   },
 };
-// 何をすればよいかが分かる日本語にする(番号だけ出しても直せない)
+/* 何をすればよいかが分かる日本語にする(番号だけ出しても直せない)。
+   **提供元からの本文は必ず添える。** 429は「速すぎる」と「そのモデルに枠が無い」で
+   意味が正反対なのに同じ番号で返ってくるため、本文が無いと切り分けられない
+   (実際、1回目から429になった件がこれだった)。 */
 function imgApiError(status, j){
   const msg = ((j||{}).error||{}).message || '';
-  if(status === 400) return `送った内容が受け付けられませんでした。${msg}`;
+  const tail = msg ? `\n提供元からの説明: ${msg}` : '';
+  if(status === 400) return `送った内容が受け付けられませんでした。${tail}`;
   if(status === 401 || status === 403)
-    return `APIキーが使えません。キーを作り直して貼り直してください。${msg}`;
-  if(status === 429)
-    return '無料枠の上限に達したか、呼び出しが速すぎます。少し待ってからもう一度押してください。';
-  if(status >= 500) return '提供元が一時的に応答していません。少し待ってからもう一度押してください。';
-  return `画像生成に失敗しました(${status})。${msg}`;
+    return `APIキーが使えません。キーを作り直して貼り直してください。${tail}`;
+  if(status === 404)
+    return `このモデルは使えません。上の「モデル」から別のものを選んでください。${tail}`;
+  if(status === 429){
+    // 「枠が0」= 待っても直らない。課金を有効にするか、別のモデル・提供元にする
+    const zero = /limit:?\s*0|quota.*0|free[_ ]tier/i.test(msg);
+    return zero
+      ? 'このモデルは、今の契約では画像を作る枠が用意されていません(待っても直りません)。'
+        + '別のモデルを選ぶか、Google側で従量課金を有効にしてください。' + tail
+      : '呼び出しが速すぎるか、上限に達しました。少し待ってからもう一度押してください。' + tail;
+  }
+  if(status >= 500) return `提供元が一時的に応答していません。少し待ってからもう一度押してください。${tail}`;
+  return `画像生成に失敗しました(${status})。${tail}`;
 }
 function imgProvider(){ return IMAGE_PROVIDERS[$('aw_provider').value] || IMAGE_PROVIDERS.gemini; }
 function imgKey(){ return localStorage.getItem('aramon_img_key') || $('aw_key').value.trim(); }
@@ -2658,8 +2678,9 @@ async function loadImgModels(){
     const cur = $('aw_model').value;
     $('aw_model').innerHTML = list.map(m=>`<option value="${m}">${m}</option>`).join('');
     if(cur && list.includes(cur)) $('aw_model').value = cur;
-    $('aw_genMeta').innerHTML = `<span class="ok">${list.length}個のモデルが使えます。`
-      + `いちばん新しい ${list[0]} を選びました。</span>`;
+    $('aw_genMeta').innerHTML = `<span class="ok">${list.length}個のモデルが見つかりました。`
+      + `${list[0]} を選びました。</span>`
+      + '枠が無いと言われたら、ツールが自動で他のモデルも試します。';
   }catch(e){ $('aw_genMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`; }
 }
 /* 送る文面を組み立てる。**相の表と自由記入と向きから作るだけ**で、
@@ -2691,6 +2712,30 @@ async function repoImagePart(path){
   for(let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
   return { mime:'image/png', b64: btoa(s) };
 }
+/* 選ばれたモデルで作り、**そのモデルに枠が無い(429)ときは次のモデルへ回す。**
+   契約によって使えるモデルが違い、しかも429は「速すぎる」と「枠が無い」の
+   どちらでも返るので、1つ試して諦めると使えるモデルがあっても失敗して終わる。
+   うまくいったモデルは選択に残して、次からそれを最初に使う。 */
+async function generateWithFallback(key, prompt, images, label){
+  const picked = $('aw_model').value;
+  const all = [...$('aw_model').options].map(o=>o.value).filter(Boolean);
+  const order = [picked].concat(all.filter(m=> m !== picked));
+  let last = null;
+  for(let i=0;i<order.length;i++){
+    const m = order[i];
+    if(i) $('aw_genMeta').textContent = `${label}を作っています… ${m} で試しています(${i+1}/${order.length})`;
+    try{
+      const r = await imgProvider().generate(key, m, prompt, images);
+      if(m !== picked) $('aw_model').value = m;      // 通ったモデルを次から先に使う
+      return r;
+    }catch(e){
+      last = e;
+      // 枠やモデルの問題なら次を試す。それ以外(鍵が違う等)は回しても無駄なので止める
+      if(e.status !== 429 && e.status !== 404) throw e;
+    }
+  }
+  throw last || new Error('画像を作れるモデルがありませんでした');
+}
 /* 覚醒の姿を正面・背面の2枚作り、そのまま下の「18枚作る」の入力欄へ入れる。 */
 async function awakenGenerate(){
   const key = imgKey();
@@ -2716,8 +2761,8 @@ async function awakenGenerate(){
       let base;
       try{ base = await repoImagePart(path); }
       catch(e){ base = await repoImagePart(`monsters/${t.base.iconImg}.png`); }
-      const r = await imgProvider().generate(key, model, awakenPrompt(side, refs.length),
-                                             [base].concat(refs));
+      const r = await generateWithFallback(key, awakenPrompt(side, refs.length),
+                                           [base].concat(refs), label);
       out[side] = r;
       setProg(i*50 + 50);
     }
