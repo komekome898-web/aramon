@@ -2615,9 +2615,15 @@ const IMAGE_PROVIDERS = {
     async generate(key, model, prompt, images, onWait){
       const H = { 'apikey': key || this.anonKey, 'Content-Type':'application/json',
                   'Client-Agent':'aramon-studio:1.0:github.com/komekome898-web/aramon' };
+      /* **匿名(鍵なし)は 576x576 まで・50ステップまで**という制限がある。
+         これを超えると「kudos が要る」と断られる(実機で発生)。
+         幅も高さも64の倍数でなければならないので、匿名では 512x576 を使う。
+         自分の鍵を入れている人は縦を伸ばせる。 */
+      const anon = !key;
       const body = {
         prompt: prompt.replace(/\n/g, ' '),
-        params: { width:512, height:768, steps:28, n:1, cfg_scale:7,
+        params: { width:512, height: anon ? 576 : 768, steps: anon ? 25 : 30,
+                  n:1, cfg_scale:7,
                   sampler_name:'k_euler_a', denoising_strength: hordeDenoise() },
         nsfw:false, models: model ? [model] : undefined,
         source_image: images[0] ? images[0].b64 : undefined,
@@ -2751,6 +2757,11 @@ function imgApiError(status, j){
   const msg = [...new Set(raw.split(/\s*\*\s+/))].join(' / ').slice(0, 220);
   const tail = msg ? `\n提供元からの説明: ${msg}` : '';
   if(status === 400) return `送った内容が受け付けられませんでした。${tail}`;
+  /* 403は「鍵が悪い」とは限らない。**送った内容(大きさ・手数)が許されていない**
+     ことがあり、実機ではAI Hordeの大きさ制限をこちらが鍵の問題と誤って伝えていた。 */
+  if(status === 403 && /kudos|steps|resolution|\d{3}x\d{3}/i.test(msg))
+    return `送った絵の大きさか手数が、この使い方では許されていません。`
+         + `ツール側の設定の問題なので、直せば通ります。${tail}`;
   if(status === 401 || status === 403)
     return `APIキーが使えません。キーを作り直して貼り直してください。${tail}`;
   if(status === 404)
