@@ -2634,7 +2634,10 @@ const IMAGE_PROVIDERS = {
    意味が正反対なのに同じ番号で返ってくるため、本文が無いと切り分けられない
    (実際、1回目から429になった件がこれだった)。 */
 function imgApiError(status, j){
-  const msg = ((j||{}).error||{}).message || '';
+  /* 提供元の説明は同じ文が何度も並ぶことがあるので、**重複を畳んでから短く切る**。
+     画面が説明文で埋まると、肝心の「何をすればよいか」が読まれない(実機で発生)。 */
+  const raw = String(((j||{}).error||{}).message || '').replace(/\s+/g, ' ').trim();
+  const msg = [...new Set(raw.split(/\s*\*\s+/))].join(' / ').slice(0, 220);
   const tail = msg ? `\n提供元からの説明: ${msg}` : '';
   if(status === 400) return `送った内容が受け付けられませんでした。${tail}`;
   if(status === 401 || status === 403)
@@ -2720,7 +2723,7 @@ async function generateWithFallback(key, prompt, images, label){
   const picked = $('aw_model').value;
   const all = [...$('aw_model').options].map(o=>o.value).filter(Boolean);
   const order = [picked].concat(all.filter(m=> m !== picked));
-  let last = null;
+  const tried = [];
   for(let i=0;i<order.length;i++){
     const m = order[i];
     if(i) $('aw_genMeta').textContent = `${label}を作っています… ${m} で試しています(${i+1}/${order.length})`;
@@ -2729,12 +2732,28 @@ async function generateWithFallback(key, prompt, images, label){
       if(m !== picked) $('aw_model').value = m;      // 通ったモデルを次から先に使う
       return r;
     }catch(e){
-      last = e;
+      tried.push([m, e]);
       // 枠やモデルの問題なら次を試す。それ以外(鍵が違う等)は回しても無駄なので止める
       if(e.status !== 429 && e.status !== 404) throw e;
     }
   }
-  throw last || new Error('画像を作れるモデルがありませんでした');
+  /* **全部だめだったときは「どのモデルが何と言ったか」を並べる。**
+     最後の1つの長文だけ出しても、鍵の問題なのか特定のモデルの問題なのか分からない。 */
+  const allZero = tried.length && tried.every(([, e])=> e.status === 429 && /limit:?\s*0/i.test(e.message));
+  const err = new Error(
+    (allZero
+      ? `この鍵では、画像を作れるモデルが1つもありません(${tried.length}個すべて枠が0)。`
+        + 'Google側で従量課金を有効にすると使えるようになります。'
+      : '画像を作れるモデルがありませんでした。')
+    + '\n' + tried.map(([m, e])=> `・${m}: ${shortErr(e.message)}`).join('\n'));
+  err.status = tried.length ? tried[tried.length-1][1].status : 0;
+  throw err;
+}
+// 提供元の長い説明を、画面で読める長さに詰める(原文の要点だけ残す)
+function shortErr(msg){
+  const s = String(msg).replace(/\s+/g, ' ');
+  const q = /limit:?\s*0/i.test(s) ? '枠が0' : /quota|exceeded/i.test(s) ? '上限' : '';
+  return (q ? q + ' / ' : '') + s.slice(0, 90) + (s.length > 90 ? '…' : '');
 }
 /* 覚醒の姿を正面・背面の2枚作り、そのまま下の「18枚作る」の入力欄へ入れる。 */
 async function awakenGenerate(){
