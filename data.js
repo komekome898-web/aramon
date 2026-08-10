@@ -1737,8 +1737,86 @@ const UPWARD_BLOCK_THRESHOLD = 35;
 const RAID_PREVIEW = false;
 const RAID_PREVIEW_ACCOUNTS = ['おりょう', 'さびょう'];
 const RAID_ACTIVE = true;                 // レイド機能そのものの有効/無効
-const RAID_START_DATE = '2026-08-07';     // シーズン1と同時開幕
-const RAID_DURATION_DAYS = 7;             // 開催期間(1週間)
+/* レイド最終報酬(参加者全員へ配布)のスキン。**版の報酬表から参照するのでここで先に定義する。**
+   (モンスター作成スタジオはこの行を行頭一致で書き換えるので、位置が変わっても差し支えない) */
+const RAID_CLEAR_SKIN = 'zod_ssr';
+
+/* ===== 開催ごとの「版(edition)」 =====
+   開催のたびに動かす数字だけをここへ집め、**RAID_EDITION の1行を変えるだけで次回開催へ切り替わる**。
+   期間・ボスHP・報酬しきい値は互いに噛み合っているので(aramon-season-raid 参照)、
+   別々の場所に置くと片方だけ直して食い違う。版ごとに1組で持つ。
+
+   【厳守】**開催中の版の数字は書き換えないこと。**
+   しきい値を動かすと「付与済み回数」の意味が変わり、繰り返し報酬が二重付与/未付与になる。
+   次回ぶんは新しい版を足して、開催が終わってから RAID_EDITION を切り替える。
+
+   数字の決め方は管理者画面「プレイ状況 → レイド分析」が実測から推奨値を出すので、
+   次の版を確定させる前に必ずそれを見る(勘で決めない)。                        */
+const RAID_EDITION = 'r1';
+const RAID_EDITIONS = {
+  /* 第1回(2026-08-07〜)。**開催済み/開催中なので数字を動かさない。** */
+  r1: {
+    label: '第1回',
+    startDate: '2026-08-07',   // シーズン1と同時開幕
+    durationDays: 7,           // 開催期間(1週間)
+    baseHp: 24000,             // 1人あたりの基準HP(人数ぶん増える。4人で63,600)
+    totalTiers: [
+      { at:  50000, gold:1500, dia:20 },
+      { at: 200000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
+      { at: 500000, gold:5000, dia:60, item:'moveTicket', n:3 },
+      // レイドでしか手に入らない基礎値アイテム(生命の果実・加速剤)を目玉にする
+      { at:1200000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at:2500000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
+    ],
+    personalTiers: [
+      { at:   4000, gold:500,  dia:5 },
+      { at:  16000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
+      { at:  50000, gold:2500, dia:20, item:'moveTicket', n:1 },
+      { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+    ],
+    repeatPersonal: { step:  100000, gold:1000, dia:20, item:'freeTrainTicket', n:1 },
+    repeatTotal:    { step: 1000000, gold:5000, dia:50, item:'freeTrainTicket', n:5 },
+    moveDmg: {},               // ボスの技の威力は既定値のまま
+  },
+  /* 第2回。**まだ有効にしていない**(RAID_EDITION を 'r2' にした時点で切り替わる)。
+     第1回からの変更点と理由:
+     ・ボスの大技(tier3)の威力を下げた。素のHPは70〜200で、旧値130は12/17体を
+       育成なしで即死させていた。105なら即死するのはピクシー(70)/スエゾー(76)/
+       ライガー(78)/ウンディーネ(88)/ハム(90)/ザン(95)だけになり、
+       「マスモンを育てていないと参加できない」状態を緩める。
+     ・全体/個人のしきい値は**開催後に実測から確定させる**。下の値は第1回の進行が
+       想定より速かった(繰り返し報酬を後付けする対応が要った)ことを踏まえた暫定値で、
+       管理者画面「レイド分析」の推奨値で必ず上書きすること。                     */
+  r2: {
+    label: '第2回',
+    startDate: '2026-08-21',
+    durationDays: 7,
+    baseHp: 24000,
+    totalTiers: [
+      { at:  80000, gold:1500, dia:20 },
+      { at: 300000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
+      { at: 800000, gold:5000, dia:60, item:'moveTicket', n:3 },
+      { at:1800000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at:3500000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },
+    ],
+    personalTiers: [
+      { at:   4000, gold:500,  dia:5 },
+      { at:  16000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
+      { at:  50000, gold:2500, dia:20, item:'moveTicket', n:1 },
+      { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+    ],
+    repeatPersonal: { step:  100000, gold:1000, dia:20, item:'freeTrainTicket', n:1 },
+    repeatTotal:    { step: 1000000, gold:5000, dia:50, item:'freeTrainTicket', n:5 },
+    // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す)
+    moveDmg: { nova:105, ring:98, meteor:78 },
+  },
+};
+const RAID_ED = RAID_EDITIONS[RAID_EDITION] || RAID_EDITIONS.r1;
+
+const RAID_START_DATE = RAID_ED.startDate;
+const RAID_DURATION_DAYS = RAID_ED.durationDays;
 const RAID_CAPACITY = 4;                  // 同時に挑める人数(余りはマスモン・botで補充)
 const RAID_TIME_LIMIT = 180;              // 1回の挑戦の制限時間(秒)
 const RAID_WORLD_SCALE = 0.30;            // 通常の試合に対するワールドの広さ(狭い円形闘技場)
@@ -1788,7 +1866,7 @@ const RAID_BOSS = {
   skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
   name:'不死のゾッド',
   radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
-  baseHp: 24000,             // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。4人で63,600)
+  baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。4人で63,600)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
   speed: 60,                 // 動きは鈍いが、じりじり間合いを詰めてくる(通常のドラゴンは182)
   repositionEvery: 7,        // この秒数ごとに位置を変える(歩行モーションが見えるよう短め)
@@ -1819,6 +1897,13 @@ const RAID_BOSS_MOVES = [
   { key:'ring',    tier:3, name:'業火の輪',     shape:'circle', range:2100, dmg:118, telegraph:2.00, color:'#ff5d5d', selfCentered:true,
     warn:'☠ 業火の輪 — 全力で外周へ！' },
 ];
+/* 版ごとの威力の上書き(RAID_EDITIONS[].moveDmg)。表そのものを版ごとに複製すると
+   範囲・予告・文言まで二重管理になるので、**変える数字(dmg)だけを差し替える**。
+   指定の無い技は上の既定値のまま。 */
+Object.keys(RAID_ED.moveDmg || {}).forEach(key=>{
+  const mv = RAID_BOSS_MOVES.find(m=>m.key===key);
+  if(mv) mv.dmg = RAID_ED.moveDmg[key];
+});
 // 攻撃の間隔。時間が経つほど短くなる(=攻撃頻度が上がる)
 const RAID_ATTACK_GAP_START = 4.6;
 const RAID_ATTACK_GAP_END   = 1.7;
@@ -1862,35 +1947,23 @@ const RAID_EFFECT_SKINS = {
 function raidSkinBonus(skinId){ return (skinId && RAID_EFFECT_SKINS[skinId]) || null; }
 // レイドガチャのピックアップ(=レイド特効スキン)。ツールで追加したIDをここへ入れる
 const RAID_GACHA_PICKUP = 'guts_ssr';
-// レイド最終報酬(参加者全員へ配布)のスキン
-const RAID_CLEAR_SKIN = 'zod_ssr';
+// ※ RAID_CLEAR_SKIN は版の報酬表から参照するため、このファイルの前の方で定義してある
 
 /* --- 報酬 ---
-   累計ダメージの到達報酬(全員共通)と、個人の与ダメ順位に応じた報酬。 */
+   累計ダメージの到達報酬(全員共通)と、個人の与ダメ順位に応じた報酬。
+   **中身は開催ごとの版(RAID_EDITIONS)が持つ。** ここは選ばれている版を指すだけで、
+   数字を直接書かない(期間・ボスHPと噛み合わせるため1か所にまとめてある)。 */
 /* 最後の段の at がレイド全体の「ボスの総HP」として表示される(raid画面の残り体力バー)。
    1回の戦闘のボスHP(RAID_BOSS.baseHp)と同じ倍率で増減させること。 */
-const RAID_TOTAL_TIERS = [
-  { at:  50000, gold:1500, dia:20 },
-  { at: 200000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
-  { at: 500000, gold:5000, dia:60, item:'moveTicket', n:3 },
-  // レイドでしか手に入らない基礎値アイテム(生命の果実・加速剤)を目玉にする
-  { at:1200000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-  { at:2500000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
-];
+const RAID_TOTAL_TIERS = RAID_ED.totalTiers;
 // 個人の累計与ダメによる報酬(上から順に、達成した一番上のものまで全部もらえる)
-const RAID_PERSONAL_TIERS = [
-  { at:   4000, gold:500,  dia:5 },
-  { at:  16000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
-  { at:  50000, gold:2500, dia:20, item:'moveTicket', n:1 },
-  { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-  { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-];
+const RAID_PERSONAL_TIERS = RAID_ED.personalTiers;
 /* 最終段のあとも走り続けられるようにする繰り返し報酬。
    最終段の`at`を超えてから`step`ごとに1回もらえる(個人は300,000の次が400,000)。
    **受け取りボタンは出さず、レイド画面を開いたときに未付与ぶんをまとめて渡す。**
    ボタン方式だと、既に走り込んだ人へ後から差分を届けられないため。 */
-const RAID_REPEAT_PERSONAL = { step:  100000, gold:1000, dia:20, item:'freeTrainTicket', n:1 };
-const RAID_REPEAT_TOTAL    = { step: 1000000, gold:5000, dia:50, item:'freeTrainTicket', n:5 };
+const RAID_REPEAT_PERSONAL = RAID_ED.repeatPersonal;
+const RAID_REPEAT_TOTAL    = RAID_ED.repeatTotal;
 // 到達量から「繰り返し報酬を何回ぶん獲得しているか」を出す(付与済み回数との差が未付与ぶん)
 function raidRepeatCount(reached, tiers, rep){
   const last = tiers[tiers.length-1].at;

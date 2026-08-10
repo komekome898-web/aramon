@@ -7315,15 +7315,17 @@ function renderAdminPlayerDetail(name){
   `;
   document.getElementById('adminPlayerBackBtn').onclick = ()=>{ adminSelectedPlayer = null; renderAdminPlayerTab(); };
 }
-// プレイ状況タブ内のサブタブ切替(プレイ回数 / プレイヤー情報 / 直近プレイ)
+// プレイ状況タブ内のサブタブ切替(プレイ回数 / プレイヤー情報 / 直近プレイ / レイド分析)
 function adminShowStatSubtab(sub){
   adminStatSubtab = sub;
   document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=>t.classList.toggle('active', t.dataset.substat===sub));
   document.getElementById('adminStatCountPane').classList.toggle('hidden', sub!=='count');
   document.getElementById('adminStatPlayerPane').classList.toggle('hidden', sub!=='player');
   document.getElementById('adminStatRecentPane').classList.toggle('hidden', sub!=='recent');
+  document.getElementById('adminStatRaidPane').classList.toggle('hidden', sub!=='raid');
   if(sub==='player'){ adminSelectedPlayer = null; renderAdminPlayerTab(); }
   if(sub==='recent'){ renderAdminRecentTab(); }
+  if(sub==='raid'){ renderAdminRaidAnalysis(); }
 }
 // 直近プレイ: 全プレイヤーの試合履歴を日時降順で最大100件表示(日時/プレイヤー名/マップ/モンスター/ソロ・マルチ)
 function renderAdminRecentTab(){
@@ -7343,6 +7345,189 @@ function renderAdminRecentTab(){
   ).join('') : '<div class="rank-empty">記録がありません</div>';
 }
 document.querySelectorAll('#adminStatSubtabs .admin-substat').forEach(t=> t.addEventListener('click', ()=>adminShowStatSubtab(t.dataset.substat)));
+
+/* =====================================================================
+   レイド分析(管理者画面 → プレイ状況 → レイド分析)
+
+   開催の振り返りと、**次回の版(RAID_EDITIONS)へ入れる推奨値**を matchLogs から自動で出す。
+   数字を勘で決めないための画面なので、次の版を確定させる前に必ずここを見る。
+
+   元データは matchLogs のレイド分(raid:true)だけ。使う項目は
+   raidDamage / raidResult / mode / skin / name / ts で、どれも記録開始時から入っている。
+   **記録は後から遡れないので、母数が取れない項目は「—」に落として件数を併記する。**
+===================================================================== */
+function adminMedian(nums){
+  if(!nums.length) return 0;
+  const a = nums.slice().sort((x,y)=>x-y);
+  const m = a.length>>1;
+  return a.length%2 ? a[m] : Math.round((a[m-1]+a[m])/2);
+}
+function adminPct(n, d){ return d>0 ? Math.round(n/d*100) : 0; }
+const adminNum = (n)=> Math.round(n||0).toLocaleString();
+// 所見の1行。level: ok(緑) / warn(黄) / bad(赤)
+function adminFindingHtml(level, text){
+  return `<div class="admin-finding is-${level}">${text}</div>`;
+}
+// 「項目 / 値」の2列を並べる
+function adminStatRowsHtml(rows){
+  return `<div class="admin-stat-rows">${rows.map(([k,v,sub])=>
+    `<div class="admin-stat-row"><span class="asr-k">${k}</span><span class="asr-v">${v}${
+      sub ? `<span class="asr-sub">${sub}</span>` : ''}</span></div>`).join('')}</div>`;
+}
+function renderAdminRaidAnalysis(){
+  const el = document.getElementById('adminRaidAnalysis');
+  if(!el) return;
+  const all = adminMatchLogsCache || [];
+  // 版の開催期間で切る(過去の開催と混ざらないように)
+  const from = raidStartAt().getTime(), to = raidEndAt().getTime();
+  const logs = all.filter(r=> r.raid && (r.ts||0) >= from && (r.ts||0) < to);
+  const edLabel = `${RAID_ED.label}（${RAID_START_DATE} から${RAID_DURATION_DAYS}日間）`;
+  if(!logs.length){
+    el.innerHTML = `<div class="admin-col-title">レイド分析 — ${edLabel}</div>
+      <div class="rank-empty">この開催のレイド記録がまだありません</div>`;
+    return;
+  }
+  const dmgs = logs.filter(r=> typeof r.raidDamage==='number').map(r=> r.raidDamage);
+  const avg = dmgs.length ? Math.round(dmgs.reduce((a,b)=>a+b,0)/dmgs.length) : 0;
+  const med = adminMedian(dmgs);
+  const max = dmgs.length ? Math.max(...dmgs) : 0;
+  const sum = dmgs.reduce((a,b)=>a+b,0);
+  const names = [...new Set(logs.map(r=> r.name||'名無しのモンスター'))];
+  const soloRuns = logs.filter(r=> r.mode!=='multi').length;
+  const multiRuns = logs.length - soloRuns;
+  const soloHp = raidBossMaxHp(1);
+  // 経過日数(開催開始から今 or 終了まで)。日次ペースの分母
+  const elapsedMs = Math.max(1, Math.min(Date.now(), to) - from);
+  const elapsedDays = Math.max(0.5, elapsedMs/86400000);
+  const perDay = sum/elapsedDays;
+  const projected = perDay * RAID_DURATION_DAYS;   // 同じペースが続いた場合の期間終了時の総ダメージ
+
+  // --- ① プレイ回数 ---
+  const byDay = {};
+  logs.forEach(r=>{ const d = new Date(r.ts||0); byDay[`${d.getMonth()+1}/${d.getDate()}`] = (byDay[`${d.getMonth()+1}/${d.getDate()}`]||0)+1; });
+  const dayEntries = Object.entries(byDay).map(([label,count])=>({label,count}));
+
+  // --- ② 結果の内訳(ボスの強さ) ---
+  const resultCount = (k)=> logs.filter(r=> r.raidResult===k).length;
+  const defeated = resultCount('defeated'), died = resultCount('died');
+  const resultEntries = Object.entries(ADMIN_RAID_RESULT_LABEL)
+    .map(([k,label])=>({ label, count: resultCount(k) })).sort((a,b)=>b.count-a.count);
+
+  // --- ③ 特効スキン(装備率と、実測の与ダメージ倍率) ---
+  const bonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
+  const withSkin = logs.filter(r=> r.skin===RAID_GACHA_PICKUP && typeof r.raidDamage==='number');
+  const withoutSkin = logs.filter(r=> r.skin!==RAID_GACHA_PICKUP && typeof r.raidDamage==='number');
+  const avgWith = withSkin.length ? Math.round(withSkin.reduce((a,r)=>a+r.raidDamage,0)/withSkin.length) : 0;
+  const avgWithout = withoutSkin.length ? Math.round(withoutSkin.reduce((a,r)=>a+r.raidDamage,0)/withoutSkin.length) : 0;
+  // 実測倍率は「両方に十分な件数がある」ときだけ意味を持つ(片方1件では比べられない)
+  const skinRatioOk = withSkin.length>=5 && withoutSkin.length>=5 && avgWithout>0;
+  const skinRatio = skinRatioOk ? (avgWith/avgWithout) : null;
+
+  // --- ④ 報酬(1回あたりの実入りと、到達に要る挑戦回数) ---
+  const runGold = Math.min(RAID_RUN_GOLD_MAX, Math.round(avg*RAID_RUN_GOLD_PER_DMG));
+  const runDia  = Math.min(RAID_RUN_DIA_MAX,  Math.round(avg*RAID_RUN_DIA_PER_DMG));
+  const lastPersonal = RAID_PERSONAL_TIERS[RAID_PERSONAL_TIERS.length-1].at;
+  const lastTotal = RAID_TOTAL_TIERS[RAID_TOTAL_TIERS.length-1].at;
+  const runsForPersonal = avg>0 ? Math.ceil(lastPersonal/avg) : 0;
+
+  // --- ⑤ 次回への推奨値 ---
+  // 全体目標: 実測ペースで期間いっぱい走った量の9割(=終盤に到達する量)
+  const recTotal = Math.max(100000, Math.round(projected*0.9/100000)*100000);
+  // 個人目標: 参加者1人あたりの与ダメージ中央値を期間換算して9割
+  const perPlayer = {};
+  logs.forEach(r=>{ const nm=r.name||'名無し'; perPlayer[nm] = (perPlayer[nm]||0) + (r.raidDamage||0); });
+  const playerTotals = Object.values(perPlayer);
+  const medPlayer = adminMedian(playerTotals);
+  const recPersonal = Math.max(10000, Math.round(medPlayer/elapsedDays*RAID_DURATION_DAYS*0.9/10000)*10000);
+  // ボスHP: 1回で削れた割合から。7〜9割削れているのが手応えの目安
+  const clearRatio = soloHp>0 ? avg/soloHp : 0;
+  let recHp = RAID_BOSS.baseHp;
+  if(clearRatio > 0.95) recHp = Math.round(RAID_BOSS.baseHp*1.3/1000)*1000;
+  else if(clearRatio < 0.35) recHp = Math.round(RAID_BOSS.baseHp*0.75/1000)*1000;
+
+  // --- 所見 ---
+  const findings = [];
+  if(clearRatio > 0.95) findings.push(['bad', `1回の平均与ダメージ(${adminNum(avg)})がソロのボスHP(${adminNum(soloHp)})にほぼ届いています。<b>ボスHPが低すぎ</b>ます。`]);
+  else if(clearRatio < 0.35) findings.push(['warn', `1回の平均与ダメージがソロのボスHPの${Math.round(clearRatio*100)}%しかありません。<b>ボスHPが高すぎる</b>か、味方が早く倒れています。`]);
+  else findings.push(['ok', `1回でソロのボスHPの${Math.round(clearRatio*100)}%を削れています(手応えの目安 35〜95%の範囲)。`]);
+
+  const diedPct = adminPct(died, logs.length);
+  if(diedPct >= 50) findings.push(['bad', `「力尽きた」が${diedPct}%です。<b>ボスが強すぎ</b>ます。大技の威力か攻撃頻度を下げてください。`]);
+  else if(diedPct >= 30) findings.push(['warn', `「力尽きた」が${diedPct}%あります。育成が進んでいない人には厳しい可能性があります。`]);
+  else findings.push(['ok', `「力尽きた」は${diedPct}%で、生存できる難易度に収まっています。`]);
+
+  if(projected > lastTotal*1.5) findings.push(['warn', `このペースだと期間終了時に${adminNum(projected)}(全体目標の${Math.round(projected/lastTotal*100)}%)まで伸びます。<b>全体目標が低すぎ</b>ます。`]);
+  else if(projected < lastTotal*0.6) findings.push(['warn', `このペースでは期間終了時でも${adminNum(projected)}(全体目標の${Math.round(projected/lastTotal*100)}%)止まりです。<b>全体目標が高すぎ</b>ます。`]);
+  else findings.push(['ok', `全体目標は期間終了あたりで到達する見込みです(予測 ${adminNum(projected)} / 目標 ${adminNum(lastTotal)})。`]);
+
+  if(skinRatioOk){
+    const lv = Math.abs(skinRatio - bonus.dmgDealt) <= 0.35 ? 'ok' : 'warn';
+    findings.push([lv, `特効スキンの実測倍率は<b>×${skinRatio.toFixed(2)}</b>(設定 ×${bonus.dmgDealt})。装備率は${adminPct(withSkin.length, logs.length)}%です。`]);
+  } else {
+    findings.push(['warn', `特効スキンの実測倍率は母数不足で出せません(装備${withSkin.length}件 / 非装備${withoutSkin.length}件。各5件以上必要)。`]);
+  }
+
+  el.innerHTML = `
+    <div class="admin-col-title">レイド分析 — ${edLabel}</div>
+    <div class="admin-analysis-note">下の推奨値は実測から自動で出しています。次の版(<code>RAID_EDITIONS</code>)へ入れる前にここを確認してください。</div>
+
+    <div class="admin-col-title" style="margin-top:14px;">所見</div>
+    ${findings.map(([lv,t])=>adminFindingHtml(lv,t)).join('')}
+
+    <div class="admin-col-title" style="margin-top:16px;">① プレイ回数</div>
+    ${adminStatRowsHtml([
+      ['総挑戦回数', `${adminNum(logs.length)}回`],
+      ['参加人数', `${names.length}人`],
+      ['1人あたり', `${(logs.length/Math.max(1,names.length)).toFixed(1)}回`],
+      ['ソロ / マルチ', `${adminNum(soloRuns)} / ${adminNum(multiRuns)}回`, `マルチ${adminPct(multiRuns, logs.length)}%`],
+      ['経過日数', `${elapsedDays.toFixed(1)}日 / ${RAID_DURATION_DAYS}日`],
+    ])}
+    <div class="admin-col-title" style="margin-top:12px;">日別の挑戦回数</div>
+    <div class="admin-bar-chart">${adminBarChartHtml(dayEntries, '#a24bff')}</div>
+
+    <div class="admin-col-title" style="margin-top:16px;">② 与ダメージとボスHPの妥当性</div>
+    ${adminStatRowsHtml([
+      ['1回あたり 平均', adminNum(avg), `ソロHPの${Math.round(clearRatio*100)}%`],
+      ['1回あたり 中央値', adminNum(med)],
+      ['1回あたり 最大', adminNum(max)],
+      ['総ダメージ', adminNum(sum), `1日あたり ${adminNum(perDay)}`],
+      ['ボスHP(ソロ/4人)', `${adminNum(soloHp)} / ${adminNum(raidBossMaxHp(4))}`],
+    ])}
+
+    <div class="admin-col-title" style="margin-top:16px;">③ ボスの強さ(結果の内訳)</div>
+    ${adminStatRowsHtml([
+      ['討伐成功', `${adminNum(defeated)}回`, `${adminPct(defeated, logs.length)}%`],
+      ['力尽きた', `${adminNum(died)}回`, `${diedPct}%`],
+    ])}
+    <div class="admin-bar-chart">${adminBarChartHtml(resultEntries, '#ff6b6b')}</div>
+
+    <div class="admin-col-title" style="margin-top:16px;">④ 報酬の評価(1回あたりの実入り)</div>
+    ${adminStatRowsHtml([
+      ['平均与ダメージでの報酬', `🪙${adminNum(runGold)} / 💎${adminNum(runDia)}`, '成果ぶんのみ(参加ぶん・倍率は別)'],
+      ['個人の最終段', adminNum(lastPersonal), `平均ペースで約${runsForPersonal}回`],
+      ['全体の最終段', adminNum(lastTotal), `到達 ${adminPct(sum, lastTotal)}%`],
+      ['成果ぶんの上限', `🪙${adminNum(RAID_RUN_GOLD_MAX)} / 💎${adminNum(RAID_RUN_DIA_MAX)}`,
+        max*RAID_RUN_GOLD_PER_DMG < RAID_RUN_GOLD_MAX ? '最大記録でも上限に届いていない(実質無効)' : '上限に掛かっている'],
+    ])}
+
+    <div class="admin-col-title" style="margin-top:16px;">⑤ 特効スキン「${bonus ? bonus.name : '—'}」の評価</div>
+    ${adminStatRowsHtml([
+      ['装備率', `${adminPct(withSkin.length, logs.length)}%`, `${withSkin.length} / ${logs.length}回`],
+      ['装備時の平均与ダメージ', withSkin.length ? adminNum(avgWith) : '—'],
+      ['非装備の平均与ダメージ', withoutSkin.length ? adminNum(avgWithout) : '—'],
+      ['実測倍率', skinRatioOk ? `×${skinRatio.toFixed(2)}` : '—', `設定 ×${bonus ? bonus.dmgDealt : '—'}`],
+    ])}
+
+    <div class="admin-col-title" style="margin-top:16px;">⑥ 次回の版への推奨値</div>
+    ${adminStatRowsHtml([
+      ['ボスHP(baseHp)', adminNum(recHp), `今 ${adminNum(RAID_BOSS.baseHp)}`],
+      ['全体の最終段', adminNum(recTotal), `今 ${adminNum(lastTotal)}`],
+      ['個人の最終段', adminNum(recPersonal), `今 ${adminNum(lastPersonal)}`],
+    ])}
+    <div class="admin-analysis-note">全体の最終段は「今のペースで期間いっぱい走った量(${adminNum(projected)})の9割」、
+      個人の最終段は「参加者の与ダメージ中央値(${adminNum(medPlayer)})を期間換算した量の9割」から出しています。
+      期間の序盤ほど予測はぶれるので、<b>終盤に見た数字を採用してください。</b></div>`;
+}
 // 管理者画面: SE確認グリッド(全SEをタップで再生)
 const SE_TEST_LABELS = {
   tap:'ボタン ポン', cardSwipe:'カード送り シュッ', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
