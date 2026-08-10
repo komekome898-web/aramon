@@ -798,18 +798,51 @@ function skinTier3Move(move, attacker){
   if(!move || move.tier!==3) return move;
   const sid = entitySkinId(attacker);
   const def = sid ? SSR_SKIN_TIER3[sid] : null;
-  if(!def) return move;
-  const ck = `${sid}:${move.name}`;
+  const boost = entityAwakenBoost(attacker);
+  if(!def && !boost) return move;
+  // 覚醒の強化は「選んだ種類」で結果が変わるのでキャッシュキーに混ぜる
+  const ck = `${sid}:${move.name}:${boost||''}`;
   if(_skinTier3MoveCache[ck]) return _skinTier3MoveCache[ck];
-  const out = Object.assign({}, move);
-  if(def.name) out.name = def.name;
-  if(def.move){
-    for(const k of Object.keys(def.move)){ if(k!=='blast') out[k] = def.move[k]; }
-    if(def.move.blast) out.blast = Object.assign({}, move.blast||{}, def.move.blast);
+  let out = Object.assign({}, move);
+  if(def){
+    if(def.name) out.name = def.name;
+    if(def.move){
+      for(const k of Object.keys(def.move)){ if(k!=='blast') out[k] = def.move[k]; }
+      if(def.move.blast) out.blast = Object.assign({}, move.blast||{}, def.move.blast);
+    }
   }
+  out = applyAwakenBoostToMove(out, boost);
   _skinTier3MoveCache[ck] = out;
   return out;
 }
+/* 覚醒で選んだ強化を技へ掛ける。**スキンの上書き(SSR_SKIN_TIER3)を当てたあとに掛ける**ので、
+   スキンで技を差し替えていても、差し替え後の値に対して効く。
+   威力(dmgMult)はここでは触らない(従来どおり effectiveMoveDmg 側の ssrTier3DmgMult が掛ける)。 */
+function applyAwakenBoostToMove(move, boostKey){
+  const b = boostKey && AWAKEN_BOOSTS[boostKey];
+  if(!b || !move) return move;
+  const out = Object.assign({}, move);
+  if(b.mult){
+    for(const k of Object.keys(b.mult)){
+      // 指定の無いフィールドは既定値(base)から伸ばす。範囲技のfillSpeedは未指定なら900
+      const cur = (out[k]!=null) ? out[k] : (b.base && b.base[k]);
+      if(cur!=null) out[k] = Math.round(cur * b.mult[k]);
+    }
+  }
+  // 爆風ドームは expandTime が小さいほど速く広がる
+  if(b.blastExpandMult){
+    ['blast','endBlast','selfBlast'].forEach(k=>{
+      if(!out[k]) return;
+      const cur = out[k].expandTime || 0.45;
+      out[k] = Object.assign({}, out[k], { expandTime: Math.round(cur*b.blastExpandMult*1000)/1000 });
+    });
+  }
+  return out;
+}
+/* このエンティティに効いている覚醒の強化。**試合が始まる時にエンティティへ載せてある**ので、
+   自分・味方bot・マルチの相手のどれでも同じように読める(ここで localStorage を見ない。
+   マルチの相手のマスモンは手元に無いため)。 */
+function entityAwakenBoost(entity){ return (entity && entity.awakenBoost) || null; }
 // 技の表示名(SSR装備時はtier3を専用名に上書き)
 function getMoveName(move, attacker){
   if(move && move.tier===3){
@@ -818,11 +851,14 @@ function getMoveName(move, attacker){
   }
   return move ? move.name : '';
 }
-// SSR装備時のtier3威力倍率(非装備/非tier3は1)
+// SSR装備時のtier3威力倍率(非装備/非tier3は1)。覚醒で「威力」を選んでいればさらに掛かる
 function ssrTier3DmgMult(move, attacker){
   if(move && move.tier===3){
     const sid = entitySkinId(attacker);
-    if(sid && SSR_SKIN_TIER3[sid]) return SSR_SKIN_TIER3[sid].dmgMult || 1;
+    let mult = (sid && SSR_SKIN_TIER3[sid]) ? (SSR_SKIN_TIER3[sid].dmgMult || 1) : 1;
+    const b = AWAKEN_BOOSTS[entityAwakenBoost(attacker)];
+    if(b && b.dmgMult) mult *= b.dmgMult;
+    return mult;
   }
   return 1;
 }
@@ -1346,6 +1382,73 @@ function mastermonRebirthCount(mm){ return Math.max(0, Math.round((mm && mm.rebi
 function mastermonStatTotal(mm){
   return MASTERMON_STATS.reduce((sum,s)=>sum + Math.round((mm && mm.stats && mm.stats[s.key]) || 0), 0);
 }
+
+/* =====================================================================
+   スキン覚醒
+   育て込んだマスモンだけが到達できる最終形態。**見た目(覚醒スキン)と tier3技の強化**が付く。
+
+   ・覚醒後の姿は SSR_SKINS に `awakenOf:'元のスキンID'` を付けた**ただのSSRスキン**として登録する。
+     そうすればオーラ・専用技名・歩行コマ・BGM/SEまで既存の表がそのまま効く(新しい分岐が要らない)。
+   ・覚醒したことはマスモンに持つ: mm.awaken = { '元のスキンID': '強化の種類' }
+     **スキンの所持(loadSkins().owned)には入れない。** 「育てたこの子だけの姿」にするため。
+   ・着せ替えで元の姿へ戻せる(覚醒スキンを一覧に足すだけなので、装備の仕組みは既存のまま)。
+
+   マスモンに増えるフィールドは mm.awaken の1つだけで、無ければ従来どおり読める。
+   ===================================================================== */
+const AWAKEN_REBIRTH_REQ = 2;    // 必要な転生回数
+const AWAKEN_STAT_MIN    = 800;  // 6ステータス「すべて」がこの値以上であること
+
+/* 覚醒時に1つ選ぶ tier3技の強化。
+   **「弾速」と「範囲拡大速度」は同じフィールド(projSpeed)で、技が弾を撃つ技か範囲技かで
+   意味が変わる**(範囲技では fillSpeed = 範囲の広がる速さになる。combat.js の fireMove 参照)。
+   そのため両方を並べず、`applies(move)` でその技に効くものだけを出す。
+   増やすときはこの表に1行足すだけでよい(選択ボタンも効果の適用も自動で回る)。 */
+const AWAKEN_BOOSTS = {
+  power:  { label:'威力',         icon:'💥', desc:'技のダメージが上がる',
+            dmgMult:1.30, applies:()=>true },
+  range:  { label:'射程',         icon:'🎯', desc:'技の届く距離が伸びる',
+            mult:{ range:1.30 }, applies:(m)=>!!(m && m.range) },
+  // 弾を撃つ技(aoeShapeが無い)だけ。projSpeed は弾の速さ
+  projSpeed:{ label:'弾速',       icon:'⚡', desc:'弾が速く飛ぶ',
+            mult:{ projSpeed:1.50 }, applies:(m)=>!!(m && !m.aoeShape && m.projSpeed) },
+  // 範囲技だけ。projSpeed は範囲の広がる速さ(fillSpeed)。未指定の技は既定900から伸ばす
+  fillSpeed:{ label:'範囲拡大速度', icon:'🌀', desc:'範囲が広がる速さが上がる',
+            mult:{ projSpeed:1.50 }, base:{ projSpeed:900 }, applies:(m)=>!!(m && m.aoeShape) },
+  // 爆風ドームを持つ技だけ。expandTime は小さいほど速く広がる
+  blastSpeed:{ label:'爆風の広がり', icon:'💠', desc:'着弾の爆風が速く広がる',
+            blastExpandMult:1/1.4, applies:(m)=>!!(m && (m.blast || m.endBlast || m.selfBlast)) },
+};
+// その技で実際に選べる強化の一覧(効かないものは出さない)
+function awakenBoostKeysFor(move){
+  return Object.keys(AWAKEN_BOOSTS).filter(k=>AWAKEN_BOOSTS[k].applies(move));
+}
+// このマスモンが覚醒済みのスキンに対して選んだ強化(未覚醒なら null)
+function mastermonAwakenBoost(mm, baseSkinId){
+  const a = mm && mm.awaken;
+  return (a && baseSkinId && a[baseSkinId]) || null;
+}
+/* 今着ているスキンに対して効く強化。**覚醒スキンを着ているときだけ乗る。**
+   元の姿に戻せば強化も戻る(着せ替えで見た目と性能がいつも一致する)。 */
+function awakenBoostForSkin(mm, skinId){
+  if(!mm || !skinId || !isAwakenedSkinId(skinId)) return null;
+  return mastermonAwakenBoost(mm, SSR_SKINS[skinId].awakenOf);
+}
+/* 覚醒の条件。**判定はここ1か所だけ。** 足りないものを配列で返すので、
+   画面はこれをそのまま「あと何が要るか」の表示に使える(条件と表示を二重に持たない)。 */
+function awakenRequirements(mm, skinId){
+  const missing = [];
+  const rb = mastermonRebirthCount(mm);
+  if(rb < AWAKEN_REBIRTH_REQ) missing.push({ kind:'rebirth', label:'転生', now:rb, need:AWAKEN_REBIRTH_REQ });
+  MASTERMON_STATS.forEach(s=>{
+    const v = Math.round((mm && mm.stats && mm.stats[s.key]) || 0);
+    if(v < AWAKEN_STAT_MIN) missing.push({ kind:'stat', key:s.key, label:s.label, now:v, need:AWAKEN_STAT_MIN });
+  });
+  if(!skinId || !SSR_SKINS[skinId]) missing.push({ kind:'skin', label:'SSRスキンを装備' });
+  else if(!awakenedSkinIdOf(skinId)) missing.push({ kind:'skin', label:'このスキンには覚醒後の姿がまだありません' });
+  else if(mastermonAwakenBoost(mm, skinId)) missing.push({ kind:'done', label:'このスキンは覚醒済み' });
+  return missing;
+}
+function canAwakenMastermon(mm, skinId){ return awakenRequirements(mm, skinId).length === 0; }
 // このマスモンの適正表。転生で書き換わっていればそちら、無ければ種族の適正
 function mastermonApt(mm){
   if(mm && mm.apt) return mm.apt;
@@ -2628,26 +2731,39 @@ function allColorSkinIds(){
   const out=[]; for(const el of Object.keys(ELEMENTS)) for(const c of monsterSkinColors(el)) out.push(colorSkinId(el,c)); return out;
 }
 function allSsrSkinIds(){ return Object.keys(SSR_SKINS); }
-/* SSRスキンの入手経路は3つの印で決まる(印が無ければ「どこでも出る」)。
+/* SSRスキンの入手経路は4つの印で決まる(印が無ければ「どこでも出る」)。
      seasonExclusive : シーズンパス報酬限定。ガチャにもカタログにも出さない
      raidClearOnly   : レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
      raidGachaOnly   : レイドガチャ限定。スキンガチャとSSRカタログには出さず、
                        レイドガチャとレイドSSRカタログにだけ出す
+     awakenOf        : 覚醒後の姿。元のスキンを装備したマスモンが覚醒したときだけ手に入るので、
+                       どのガチャ・どのカタログにも出さない
    一覧を作るときは必ず下の2つの関数を通す(印を直接読む場所を増やさない)。 */
 // スキンガチャ・SSRスキンカタログに出るSSR
 function gachaSsrSkinIds(){
   return Object.keys(SSR_SKINS).filter(id=>{
     const s = SSR_SKINS[id];
-    return !s.seasonExclusive && !s.raidClearOnly && !s.raidGachaOnly;
+    return !s.seasonExclusive && !s.raidClearOnly && !s.raidGachaOnly && !s.awakenOf;
   });
 }
 // レイドガチャ・レイドSSRスキンカタログに出るSSR(シーズンパス報酬と討伐報酬だけを除く)
 function raidGachaSsrSkinIds(){
   return Object.keys(SSR_SKINS).filter(id=>{
     const s = SSR_SKINS[id];
-    return !s.seasonExclusive && !s.raidClearOnly;
+    return !s.seasonExclusive && !s.raidClearOnly && !s.awakenOf;
   });
 }
+/* 覚醒スキンの対応表。**SSR_SKINS の awakenOf から自動で作る**ので、
+   スキンを足しても書き足すところは無い(手書きの対応表を新しく作らない)。 */
+const _awakenedSkinByBase = {};
+Object.keys(SSR_SKINS).forEach(id=>{
+  const base = SSR_SKINS[id].awakenOf;
+  if(base) _awakenedSkinByBase[base] = id;
+});
+// 元のスキンID → 覚醒後のスキンID(用意されていなければ null)
+function awakenedSkinIdOf(baseSkinId){ return _awakenedSkinByBase[baseSkinId] || null; }
+// 覚醒スキンかどうか
+function isAwakenedSkinId(skinId){ return !!(SSR_SKINS[skinId] && SSR_SKINS[skinId].awakenOf); }
 
 // ガチャのレアリティ別アイテム
 const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','seed_evasion','seed_vitality'];
@@ -2738,12 +2854,28 @@ function setEquippedSkin(element, skinId){
   if(skinId) s.equipped[element]=skinId; else delete s.equipped[element];
   saveSkins(s);
 }
-// あるモンスターが所持している全スキン(色スキン+SSR)のskinId一覧
+/* あるモンスターが選べる全スキン(色スキン+SSR+覚醒)のskinId一覧。
+   **覚醒スキンはスキンの所持(owned)ではなく、そのマスモンが覚醒したかで決まる。**
+   ここへ足しておけば、着せ替え画面の一覧・プレビュー・装備は既存のまま動く
+   (覚醒の分岐を画面側へ増やさないための1か所)。 */
 function ownedSkinsForElement(element){
   const owned = loadSkins().owned;
   const out = [];
   for(const c of monsterSkinColors(element)){ const id=colorSkinId(element,c); if(owned[id]) out.push(id); }
-  for(const id of allSsrSkinIds()){ if(SSR_SKINS[id].element===element && owned[id]) out.push(id); }
+  for(const id of allSsrSkinIds()){
+    const s = SSR_SKINS[id];
+    if(s.element!==element || s.awakenOf) continue;   // 覚醒スキンは下でまとめて足す
+    if(owned[id]) out.push(id);
+  }
+  // マスモンのキーは要素名なので、この要素のマスモンをそのまま引ける
+  const mm = (typeof loadMastermons==='function') ? loadMastermons()[element] : null;
+  if(mm && mm.awaken){
+    for(const baseId of Object.keys(mm.awaken)){
+      const awId = awakenedSkinIdOf(baseId);
+      // 覚醒後の姿が消された/元スキンを手放した場合に備えて存在を確かめる
+      if(awId && SSR_SKINS[awId] && SSR_SKINS[awId].element===element && owned[baseId]) out.push(awId);
+    }
+  }
   return out;
 }
 

@@ -1298,6 +1298,23 @@
   </div>
 </div>
 
+<!-- スキン覚醒: 元の姿と覚醒後の姿を並べ、強化する項目を1つ選んでから実行する。
+     見た目は転生の確認画面と同じ作りにそろえてある(rebirth-* のスタイルを流用) -->
+<div id="awakenOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box rebirth-box">
+    <button class="overlay-close-btn" id="awakenCloseBtn">✕</button>
+    <div class="rebirth-title">✵ 覚醒 ✵<span class="rebirth-title-sub">育て込んだマスモンだけが到達する姿。tier3の技を1つ強化できる</span></div>
+    <div class="rebirth-scroll-wrap">
+      <div class="rebirth-scroll" id="awakenScroll"></div>
+      <div class="mm-scrollbar hidden" id="awakenScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+    </div>
+    <div class="rebirth-actions">
+      <button id="awakenCancelBtn" class="rebirth-cancel-btn">やめる</button>
+      <button id="awakenConfirmBtn" class="rebirth-confirm-btn" disabled>強化する項目を選んでください</button>
+    </div>
+  </div>
+</div>
+
 <!-- 転生: 実行アニメーション
      上半分=モンスターと演出(金の繭に包まれる→閃光→「転生完了」の判子→恩恵が金文字で飛び出す)
      下半分=ダイアログ(恩恵の明細)。上下に分けてあるのでダイアログがモンスターに被らない。 -->

@@ -226,7 +226,10 @@ async function beginMultiplayerMatchInner(){
     hostMastermonBots = shuffledCandidates.map(k=>{
       const mm = ownMastermons[k];
       const skin = (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null;
-      return { key:k, name:mm.name, element:mm.element, stats:mm.stats, level:mm.level||1, skin: skin||null };
+      // 覚醒の強化も解決済みで載せる(ゲストはホストのマスモンの覚醒記録を持っていない)
+      const awakenBoost = (typeof awakenBoostForSkin==='function') ? awakenBoostForSkin(mm, skin) : null;
+      return { key:k, name:mm.name, element:mm.element, stats:mm.stats, level:mm.level||1,
+               skin: skin||null, awakenBoost: awakenBoost||null };
     });
   } else {
     console.log('[aramon] NON-HOST: waiting for seed+world...');
