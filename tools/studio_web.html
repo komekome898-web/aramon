@@ -2599,6 +2599,7 @@ const IMAGE_PROVIDERS = {
   horde: {
     label: 'AI Horde(無料・待ち時間あり)',
     keyHint: 'aihorde.net で無料発行。空欄なら匿名で使う',
+    keyOptional: true,          // 鍵が無くても匿名で動く
     anonKey: '0000000000',
     async listModels(key){
       const r = await fetch('https://aihorde.net/api/v2/status/models?type=image');
@@ -2771,24 +2772,33 @@ function hordeDenoise(){ return (+($('aw_denoise')||{value:55}).value)/100; }
 /* 透過で返る提供元では、緑背景で出させて抜く手間が要らない。
    **どちらでも同じ経路で18枚まで通るように、ここで一度だけ見分ける。** */
 function imgProviderTransparent(){ return !!imgProvider().transparent; }
-function imgKey(){ return localStorage.getItem('aramon_img_key') || $('aw_key').value.trim(); }
+/* 鍵は**提供元ごとに別々に覚える。** 1か所に入れていたので、Googleの鍵を覚えたまま
+   AI Horde へ切り替えるとGoogleの鍵が送られて弾かれていた(実機で発覚)。 */
+function imgKeyStore(){ return 'aramon_img_key_' + $('aw_provider').value; }
+function imgKey(){ return localStorage.getItem(imgKeyStore()) || $('aw_key').value.trim(); }
+// 鍵が要らない提供元(AI Hordeの匿名利用)では、空欄のまま進めてよい
+function imgKeyOptional(){ return !!imgProvider().keyOptional; }
 function saveImgKey(){
   const k = $('aw_key').value.trim();
-  if(!k) return log('APIキーを貼り付けてください', 'ng');
-  localStorage.setItem('aramon_img_key', k);
+  if(!k && !imgKeyOptional()) return log('APIキーを貼り付けてください', 'ng');
+  if(k) localStorage.setItem(imgKeyStore(), k);
   localStorage.setItem('aramon_img_provider', $('aw_provider').value);
-  log('APIキーをこの端末に保存しました。リポジトリには入りません。', 'ok');
+  log(k ? 'APIキーをこの端末に保存しました。リポジトリには入りません。'
+        : '鍵なし(匿名)で使います。', 'ok');
   loadImgModels();
 }
 function forgetImgKey(){
-  localStorage.removeItem('aramon_img_key');
+  localStorage.removeItem(imgKeyStore());
   $('aw_key').value = '';
   $('aw_model').innerHTML = '<option value="">鍵を入れると一覧が出ます</option>';
   log('APIキーを消しました。');
 }
-async function loadImgModels(){
+/* quiet=true のときは失敗しても画面に赤字を出さない。
+   起動時にモデル一覧を取りに行くので、圏外やブロック中に開いただけで
+   エラーが出ていると「何か壊れた」と誤解させるため。 */
+async function loadImgModels(quiet){
   const key = imgKey();
-  if(!key) return;
+  if(!key && !imgKeyOptional()) return;
   try{
     $('aw_genMeta').textContent = '使えるモデルを調べています…';
     const list = await imgProvider().listModels(key);
@@ -2799,7 +2809,9 @@ async function loadImgModels(){
     $('aw_genMeta').innerHTML = `<span class="ok">${list.length}個のモデルが見つかりました。`
       + `${list[0]} を選びました。</span>`
       + '枠が無いと言われたら、ツールが自動で他のモデルも試します。';
-  }catch(e){ $('aw_genMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`; }
+  }catch(e){
+    if(!quiet) $('aw_genMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`;
+  }
 }
 /* 送る文面を組み立てる。**相の表と自由記入と向きから作るだけ**で、
    ここに個別のスキンの話は書かない(スキンが増えても触らなくてよい)。 */
@@ -2876,7 +2888,9 @@ function shortErr(msg){
 /* 覚醒の姿を正面・背面の2枚作り、そのまま下の「18枚作る」の入力欄へ入れる。 */
 async function awakenGenerate(){
   const key = imgKey();
-  if(!key) return log('先にAPIキーを貼って「覚える」を押してください', 'ng');
+  // 鍵が要らない提供元では、空欄のまま進める(ここで止めていたのが「鍵なしで動かない」の原因)
+  if(!key && !imgKeyOptional())
+    return log('先にAPIキーを貼って「覚える」を押してください', 'ng');
   const model = $('aw_model').value;
   if(!model) return log('モデルが選ばれていません。「覚える」を押し直してください', 'ng');
   const t = awakenTarget();
@@ -4337,6 +4351,9 @@ function boot(){
     // 提供元によって意味のある設定だけ出す(要らない設定を触らせない)
     $('aw_denoiseWrap').style.display = ($('aw_provider').value === 'horde') ? 'block' : 'none';
     $('aw_bg').parentElement.style.display = p.transparent ? 'none' : '';
+    // **鍵は提供元ごとに別々**なので、切り替えたらその提供元の鍵に入れ替える
+    $('aw_key').value = localStorage.getItem(imgKeyStore()) || '';
+    $('aw_key').placeholder = p.keyOptional ? '空欄のままでも使えます' : '貼り付けて「覚える」';
   };
   $('aw_denoise').addEventListener('input',
     ()=> $('aw_denoiseV').textContent = $('aw_denoise').value);
@@ -4344,8 +4361,14 @@ function boot(){
   const savedProvider = localStorage.getItem('aramon_img_provider');
   if(savedProvider && IMAGE_PROVIDERS[savedProvider]) $('aw_provider').value = savedProvider;
   syncProvider();
-  const ik = localStorage.getItem('aramon_img_key');
-  if(ik){ $('aw_key').value = ik; loadImgModels(); }
+  // 前に入れていた「1か所だけの鍵」は、今の提供元の鍵として引き継ぐ(入れ直させない)
+  const oldKey = localStorage.getItem('aramon_img_key');
+  if(oldKey && !localStorage.getItem(imgKeyStore())){
+    localStorage.setItem(imgKeyStore(), oldKey);
+    localStorage.removeItem('aramon_img_key');
+    $('aw_key').value = oldKey;
+  }
+  if(imgKey() || imgKeyOptional()) loadImgModels(true);   // 起動時は静かに試すだけ
   opts($('aw_aura'), AURAS);
   // スライダーの数値表示。**値の持ち方は awakenFxSettings 1か所**で、ここは見せるだけ
   const awSliders = [['aw_glow','aw_glowV',1],['aw_rimPx','aw_rimV',1],['aw_hue','aw_hueV',1],
