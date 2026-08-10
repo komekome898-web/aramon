@@ -51,6 +51,9 @@
     max-height:300px; overflow:auto; font-size:11px; white-space:pre-wrap;
     word-break:break-all; margin:10px 0 0; }
   .hint{ font-size:11.5px; color:var(--dim); margin-top:5px; line-height:1.55; }
+  /* 画像生成のまとまり。「ここから上は絵を作る / 下は絵を素材にする」の区切りを見せる */
+  .genbox{ border:1px solid var(--line); border-radius:8px; padding:10px;
+    margin-bottom:12px; background:#0e131c; }
   canvas.pick{ width:100%; display:block; border:1px solid var(--line); border-radius:8px;
     margin-top:6px; background:#0b0f16; }
   .strip.cand{ grid-template-columns:repeat(4,1fr); }
@@ -139,7 +142,7 @@
         <select id="aw_base"><option value="">先にGitHubへ接続してください</option></select></div>
       <div><label>作り方</label>
         <select id="aw_mode">
-          <option value="draw">覚醒の絵から作る(正面・背面の2枚でおまかせ)</option>
+          <option value="draw">覚醒の姿を作る(生成 or 用意した絵から)</option>
           <option value="fx">元の絵に光と素材を重ねる(絵を用意しない)</option>
         </select></div>
     </div>
@@ -193,6 +196,37 @@
     </div>
     <!-- 覚醒の絵から作る。**触るのはこの2つの入力とボタンだけ**で18枚すべてを作る -->
     <div id="aw_drawWrap" style="display:none">
+      <!-- ① 覚醒の姿を生成する。元の絵はリポジトリから自動で取るので指定は要らない -->
+      <div class="genbox">
+        <div class="r2">
+          <div><label>画像生成の提供元</label><select id="aw_provider"></select></div>
+          <div><label>モデル</label><select id="aw_model">
+            <option value="">鍵を入れると一覧が出ます</option></select></div>
+        </div>
+        <label>APIキー(<span id="aw_keyHint"></span>)</label>
+        <div class="r3">
+          <input id="aw_key" type="password" placeholder="貼り付けて「覚える」">
+          <button onclick="saveImgKey()">覚える</button>
+          <button onclick="forgetImgKey()">忘れる</button>
+        </div>
+        <div class="r2">
+          <div><label>覚醒の相</label><select id="aw_look"></select></div>
+          <div><label>背景の色(あとで抜きます)</label><select id="aw_bg">
+            <option value="#00FF00">純緑</option>
+            <option value="#FF00FF">マゼンタ</option>
+            <option value="#0000FF">青</option>
+          </select></div>
+        </div>
+        <label>足したい指定(省略可)</label>
+        <input id="aw_lookNote" placeholder="例: 角ばった装甲にして、目だけが赤く光る">
+        <label>参考画像(省略可・3枚まで)</label>
+        <input id="aw_ref" type="file" accept="image/*" multiple>
+        <div class="btns"><button onclick="awakenGenerate()">覚醒の姿を作る(正面・背面)</button></div>
+        <div class="hint" id="aw_genMeta">相を選んで押すと、元スキンの絵をもとに覚醒後の姿を
+          正面・背面の2枚作り、下の欄へ自動で入れます。気に入らなければもう一度押せば作り直します。</div>
+        <div class="strip" id="aw_genStrip" style="grid-template-columns:repeat(2,1fr)"></div>
+      </div>
+      <!-- ② 生成した(または自分で用意した)2枚から18枚を作る -->
       <div class="r2">
         <div><label>覚醒後の絵・正面</label><input id="aw_front" type="file" accept="image/*"></div>
         <div><label>覚醒後の絵・背面</label><input id="aw_back" type="file" accept="image/*"></div>
@@ -209,6 +243,7 @@
           <input id="aw_sway" type="range" min="30" max="160" value="100"></div>
       </div>
       <div class="btns"><button onclick="awakenAutoBuild()">この2枚から18枚作る</button>
+        <button onclick="awakenCutPreview()">抜き具合を見る</button>
         <button onclick="toggleWalkAnim()">歩きを再生 / 止める</button></div>
       <div class="hint" id="aw_autoMeta">正面と背面の絵を選んで押すと、背景を抜いて
         <b>アイコン・試合用・歩行16コマ</b>まで一度に作ります。</div>
@@ -959,12 +994,21 @@ function cropCanvas(cut){
   tc.putImageData(crop, 0, 0);
   return t;
 }
+/* 高さで倍率を決めたあと、**幅がコマからはみ出すなら縮める**。
+   武器を横に構えた絵は縦横比が横長になるので、高さだけで決めると左右が欠ける。
+   **静止画(makePortrait)・歩行の合成(composeStrip)・1枚からの生成(synthWalkFrames)の
+   3か所で同じ規則にする。** はみ出さない絵では倍率が変わらないので出力は今までどおり。 */
+function fitScale(scale, cw, limit){
+  const nw = cw*scale;
+  return nw > limit ? scale*limit/nw : scale;
+}
 // 高さの中央値でスケールを決め、320x320 に足元合わせで並べる(build_walk.py と同じ)
 async function composeStrip(cuts){
   const hs = cuts.filter(c=>c.box).map(c=>c.box.y1-c.box.y0).sort((a,b)=>a-b);
   if(!hs.length) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
   const medh = hs.length%2 ? hs[(hs.length-1)/2] : (hs[hs.length/2-1]+hs[hs.length/2])/2;
-  const scale = TARGET_H/medh;
+  const widest = Math.max(...cuts.filter(c=>c.box).map(c=>c.box.x1-c.box.x0+1));
+  const scale = fitScale(TARGET_H/medh, widest, CANVAS);
   const oc = document.createElement('canvas'); oc.width=CANVAS; oc.height=CANVAS;
   const octx = oc.getContext('2d', { willReadFrequently:true });
   const out = [];
@@ -1142,16 +1186,25 @@ function autoSegFor(img){
     for(let i=0;i<w*h;i++) if(Math.max(d[i*4], d[i*4+1], d[i*4+2]) < 60) dark++;
     return { mode: dark > w*h*0.5 ? 'black' : 'blackopen', th:40, chroma:null };
   }
+  /* 四隅が「ばらつきの無い高彩度の単色」= こちらが背景色を指定して作らせた絵。
+     被写体がその色そのものになることはまずないので、しきい値を広めに取って確実に抜く。 */
+  const cs = cornerRgbs(img);
+  const spread = Math.max(...[0,1,2].map(k=> Math.max(...cs.map(v=>v[k])) - Math.min(...cs.map(v=>v[k]))));
+  const sat = Math.max(...c) - Math.min(...c);
+  if(spread <= 12 && sat >= 90) return { mode:'chroma', th:70, chroma:c, flat:true };
   return { mode:'chroma', th:40, chroma:c };               // それ以外は四隅の色を拾って抜く
 }
-function cornerRgb(img){
+// 四隅それぞれの色。ばらつきを見れば「単色」か「グラデーション」かが分かる
+function cornerRgbs(img){
   const w = img.width, h = img.height, d = img.data;
   const k = Math.max(3, Math.round(Math.min(w, h)*0.03));
-  let r=0, g=0, b=0;
-  for(const [x,y] of [[k,k],[w-1-k,k],[k,h-1-k],[w-1-k,h-1-k]]){
-    const i = (y*w+x)*4; r += d[i]; g += d[i+1]; b += d[i+2];
-  }
-  return [Math.round(r/4), Math.round(g/4), Math.round(b/4)];
+  return [[k,k],[w-1-k,k],[k,h-1-k],[w-1-k,h-1-k]].map(([x,y])=>{
+    const i = (y*w+x)*4; return [d[i], d[i+1], d[i+2]];
+  });
+}
+function cornerRgb(img){
+  const cs = cornerRgbs(img);
+  return [0,1,2].map(k=> Math.round(cs.reduce((s,v)=>s+v[k], 0)/cs.length));
 }
 // 抜けなかったとき、四隅の色から「どの抜き方を試すとよいか」を伝える
 function cornerHint(img){
@@ -1485,7 +1538,12 @@ async function synthWalkFrames(cut, rig){
   const wholeSway = (kind === 'sway' && $('swayTarget').value === 'whole');
   const step = (+$('step').value)/100 * MOT.step;
   const tmp = cropCanvas(cut), cw = tmp.width, ch = tmp.height;
-  const scale = TARGET_H/ch;
+  /* 幅がはみ出すなら縮める(3か所で同じ規則)。ただしここは**動くコマ**なので、
+     つぶれ(squash)で横に伸び、swayXで左右へ振れ、leanで傾くぶんの余白を残す。
+     余白を見ないと、止まった1コマ目は収まっているのに動いたコマだけ端が欠ける。 */
+  const grow = 1 + MOT.squash*s*0.6;
+  const shift = TARGET_H*(MOT.swayX + MOT.lean)*s;
+  const scale = fitScale(TARGET_H/ch, cw, Math.max(32, CANVAS/grow - 2*shift));
   const nw = Math.max(1, Math.round(cw*scale)), nh = Math.max(1, Math.round(ch*scale));
   const active = (rig && !wholeSway) ? rig.parts.filter(p=>p.role !== 'none') : [];
   const hasLimb = active.some(p=>p.role==='leg' || p.role==='arm');
@@ -1926,9 +1984,8 @@ async function makePortrait(file){
   }
   tctx.putImageData(crop, 0, 0);
   const S = PORTRAIT_SIZE;
-  let k = (S*PORTRAIT_H)/ch;
-  let nw = Math.max(1, Math.round(cw*k)), nh = Math.max(1, Math.round(ch*k));
-  if(nw > S){ k *= S/nw; nw = Math.max(1, Math.round(cw*k)); nh = Math.max(1, Math.round(ch*k)); }
+  const k = fitScale((S*PORTRAIT_H)/ch, cw, S);   // 幅がはみ出すなら縮める(3か所で同じ規則)
+  const nw = Math.max(1, Math.round(cw*k)), nh = Math.max(1, Math.round(ch*k));
   const oc = document.createElement('canvas'); oc.width=S; oc.height=S;
   const octx = oc.getContext('2d', { willReadFrequently:true });
   octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
@@ -2500,6 +2557,203 @@ async function getRepoImage(path){
   } finally { setTimeout(()=>URL.revokeObjectURL(url), 30000); }
 }
 
+/* ==========================================================================
+   覚醒の姿を「作る」(画像生成)
+
+   ・**覚醒は鎧とは限らない。** どんな変化でも作れるよう、相を表にしてある。
+     増やすときは AWAKEN_LOOKS へ1行足すだけでセレクトも文面も増える。
+   ・**提供元も表にしてある。** ブラウザから直接叩けること(CORS)を実測できたのは
+     Google の Gemini で、画像生成を含む無料枠がある。別の提供元が使えると分かったら
+     IMAGE_PROVIDERS へ1行足すだけで選べるようになる。
+   ・**モデル名はツールに書き固定しない。** 実行時に一覧を取って、画像を出せるものから
+     いちばん新しいものを選ぶ(モデルは改名・更新されるため)。
+   ・出てくる絵は透過ではないので、**背景色をこちらから指定して**単色で出させ、
+     既存の「色で抜く」に渡す。これがいちばん確実に抜ける。
+   ========================================================================== */
+const AWAKEN_LOOKS = {
+  free:   { label:'自由に指定(下の欄に書く)', p:'' },
+  armor:  { label:'鎧をまとう',   p:'重厚な装甲と兜をまとわせる。金属の質感と継ぎ目をはっきり描く' },
+  flame:  { label:'炎をまとう',   p:'全身に燃え上がる炎をまとわせる。灼けた質感と、熱で歪む空気' },
+  dark:   { label:'闇に堕ちる',   p:'黒く染め、影と瘴気をまとわせる。目だけが強く光る' },
+  holy:   { label:'神々しくなる', p:'白金の輝きと光輪をまとわせ、羽根が舞う' },
+  machine:{ label:'機械化する',   p:'金属の外装と発光するラインを持つ機械の体にする。駆動部が見える' },
+  beast:  { label:'獣化する',     p:'体毛・牙・角が伸び、姿勢が低く野性的になる' },
+  ice:    { label:'氷結する',     p:'氷の結晶が体を覆い、冷気が立ちのぼる' },
+  thunder:{ label:'雷をまとう',   p:'放電する電光が全身を走り、帯電した髪や布が逆立つ' },
+  crystal:{ label:'結晶化する',   p:'透明な結晶が体から生え、内側から光る' },
+};
+const IMAGE_PROVIDERS = {
+  gemini: {
+    label: 'Google Gemini(無料枠あり・クレカ不要)',
+    keyHint: 'Google AI Studio で発行',
+    /* 画像を出せるモデルだけを新しい順に返す。名前で決め打ちしない */
+    async listModels(key){
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
+                            { headers:{ 'x-goog-api-key': key } });
+      const j = await r.json();
+      if(!r.ok) throw new Error(imgApiError(r.status, j));
+      return (j.models||[])
+        .filter(m=> /image/i.test(m.name) && (m.supportedGenerationMethods||[]).includes('generateContent'))
+        .map(m=> m.name.replace(/^models\//, ''))
+        .sort()          // 名前は世代が上がるほど後ろへ並ぶので、末尾がいちばん新しい
+        .reverse();
+    },
+    /* prompt(文字列) と images([{mime,b64}]) から本文を作る */
+    async generate(key, model, prompt, images){
+      const parts = [{ text: prompt }].concat(
+        images.map(im=>({ inlineData:{ mimeType: im.mime, data: im.b64 } })));
+      const body = { contents:[{ role:'user', parts }],
+                     generationConfig:{ responseModalities:['IMAGE'],
+                                        imageConfig:{ aspectRatio:'3:4', imageSize:'1K' } } };
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        { method:'POST', headers:{ 'content-type':'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify(body) });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(imgApiError(r.status, j));
+      const cand = (j.candidates||[])[0] || {};
+      const part = ((cand.content||{}).parts || []).find(p=> p.inlineData && p.inlineData.data);
+      if(!part){
+        const why = cand.finishReason ? `(${cand.finishReason})` : '';
+        throw new Error(`画像が返りませんでした${why}。相や指定の言い回しを変えて、もう一度押してください。`);
+      }
+      return { b64: part.inlineData.data, mime: part.inlineData.mimeType || 'image/png' };
+    },
+  },
+};
+// 何をすればよいかが分かる日本語にする(番号だけ出しても直せない)
+function imgApiError(status, j){
+  const msg = ((j||{}).error||{}).message || '';
+  if(status === 400) return `送った内容が受け付けられませんでした。${msg}`;
+  if(status === 401 || status === 403)
+    return `APIキーが使えません。キーを作り直して貼り直してください。${msg}`;
+  if(status === 429)
+    return '無料枠の上限に達したか、呼び出しが速すぎます。少し待ってからもう一度押してください。';
+  if(status >= 500) return '提供元が一時的に応答していません。少し待ってからもう一度押してください。';
+  return `画像生成に失敗しました(${status})。${msg}`;
+}
+function imgProvider(){ return IMAGE_PROVIDERS[$('aw_provider').value] || IMAGE_PROVIDERS.gemini; }
+function imgKey(){ return localStorage.getItem('aramon_img_key') || $('aw_key').value.trim(); }
+function saveImgKey(){
+  const k = $('aw_key').value.trim();
+  if(!k) return log('APIキーを貼り付けてください', 'ng');
+  localStorage.setItem('aramon_img_key', k);
+  localStorage.setItem('aramon_img_provider', $('aw_provider').value);
+  log('APIキーをこの端末に保存しました。リポジトリには入りません。', 'ok');
+  loadImgModels();
+}
+function forgetImgKey(){
+  localStorage.removeItem('aramon_img_key');
+  $('aw_key').value = '';
+  $('aw_model').innerHTML = '<option value="">鍵を入れると一覧が出ます</option>';
+  log('APIキーを消しました。');
+}
+async function loadImgModels(){
+  const key = imgKey();
+  if(!key) return;
+  try{
+    $('aw_genMeta').textContent = '使えるモデルを調べています…';
+    const list = await imgProvider().listModels(key);
+    if(!list.length) throw new Error('画像を作れるモデルが見つかりませんでした');
+    const cur = $('aw_model').value;
+    $('aw_model').innerHTML = list.map(m=>`<option value="${m}">${m}</option>`).join('');
+    if(cur && list.includes(cur)) $('aw_model').value = cur;
+    $('aw_genMeta').innerHTML = `<span class="ok">${list.length}個のモデルが使えます。`
+      + `いちばん新しい ${list[0]} を選びました。</span>`;
+  }catch(e){ $('aw_genMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`; }
+}
+/* 送る文面を組み立てる。**相の表と自由記入と向きから作るだけ**で、
+   ここに個別のスキンの話は書かない(スキンが増えても触らなくてよい)。 */
+function awakenPrompt(side, hasRef){
+  const look = AWAKEN_LOOKS[$('aw_look').value] || AWAKEN_LOOKS.free;
+  const note = $('aw_lookNote').value.trim();
+  const bg = $('aw_bg').value;
+  const dir = side === 'f' ? '正面(こちらを向いている)' : '背面(後ろ姿)';
+  const lines = [
+    `1枚目の画像のキャラクターを「覚醒した姿」に描き変えてください。`,
+    `・ポーズ・体格・身長・カメラの位置・全身の入り方は1枚目のままにする`,
+    `・向きは${dir}`,
+    look.p ? `・見た目の変化: ${look.p}` : '',
+    hasRef ? `・2枚目以降は見た目の参考です。その意匠・配色を取り入れてください` : '',
+    note ? `・追加の指定: ${note}` : '',
+    `・全身が収まるように描き、手足や武器を画面の外で切らない`,
+    `・背景は ${bg} の単色で塗りつぶす。影も模様もグラデーションも入れない`,
+    `・キャラクターの縁がはっきり分かるように描く`,
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+async function fileToPart(file){
+  return { mime: file.type || 'image/png', b64: await blobToBase64(file) };
+}
+async function repoImagePart(path){
+  const bytes = await getFileBytes(path);
+  let s = '';
+  for(let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+  return { mime:'image/png', b64: btoa(s) };
+}
+/* 覚醒の姿を正面・背面の2枚作り、そのまま下の「18枚作る」の入力欄へ入れる。 */
+async function awakenGenerate(){
+  const key = imgKey();
+  if(!key) return log('先にAPIキーを貼って「覚える」を押してください', 'ng');
+  const model = $('aw_model').value;
+  if(!model) return log('モデルが選ばれていません。「覚える」を押し直してください', 'ng');
+  const t = awakenTarget();
+  if(!t) return log('元にするSSRスキンを選んでください', 'ng');
+  try{
+    setProg(0);
+    // 参考画像(任意・3枚まで)
+    const refs = [];
+    for(const f of Array.from($('aw_ref').files).slice(0,3)) refs.push(await fileToPart(f));
+    const out = {};
+    const sides = [['f', `monsters/${t.base.iconImg}.png`],
+                   ['b', `monsters/${t.base.walkPrefix}b1.png`]];
+    for(let i=0;i<sides.length;i++){
+      const [side, path] = sides[i];
+      const label = side === 'f' ? '正面' : '背面';
+      $('aw_genMeta').textContent = `${label}を作っています…(20秒ほどかかります)`;
+      setProg(i*50 + 10);
+      // 元の絵はリポジトリから取る。背面が無いスキンは正面で代用する
+      let base;
+      try{ base = await repoImagePart(path); }
+      catch(e){ base = await repoImagePart(`monsters/${t.base.iconImg}.png`); }
+      const r = await imgProvider().generate(key, model, awakenPrompt(side, refs.length),
+                                             [base].concat(refs));
+      out[side] = r;
+      setProg(i*50 + 50);
+    }
+    // 生成結果をファイル入力へ入れる(以降は既存の「18枚作る」がそのまま使える)
+    for(const side of ['f','b'])
+      setFileInput(side === 'f' ? 'aw_front' : 'aw_back',
+                   b64ToBlob(out[side].b64, out[side].mime), `awaken_${side}.png`);
+    const urls = ['f','b'].map(s=> `data:${out[s].mime};base64,${out[s].b64}`);
+    $('aw_genStrip').innerHTML = urls.map((u,i)=>
+      `<div class="cell"><img src="${u}"><span class="n">${i?'背面':'正面'}</span></div>`).join('');
+    setProg(null);
+    $('aw_genMeta').innerHTML = '<span class="ok">2枚できました。</span>'
+      + 'よければ下の「この2枚から18枚作る」へ進んでください。'
+      + '気に入らなければ、相や指定を変えてもう一度押すと作り直します。';
+    log('覚醒の姿を作りました。', 'ok');
+  }catch(e){
+    setProg(null);
+    $('aw_genMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`;
+    log(String(e.message||e), 'ng');
+  }
+}
+function b64ToBlob(b64, mime){
+  const bin = atob(b64);
+  const a = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) a[i] = bin.charCodeAt(i);
+  return new Blob([a], { type: mime || 'image/png' });
+}
+// 生成した画像を <input type=file> へ入れる(以降の経路を分けないため)
+function setFileInput(id, blob, name){
+  const dt = new DataTransfer();
+  dt.items.add(new File([blob], name, { type: blob.type }));
+  const el = $(id);
+  el.files = dt.files;
+  el.dispatchEvent(new Event('change', { bubbles:true }));
+}
+
 /* ---------------------------------------------------------- 仕様の収集 */
 // 空欄は「効果なし」。数値のときだけ拾う(0や1も意味があるのでそのまま返す)
 function numOrNull(id){
@@ -2636,6 +2890,43 @@ async function awakenPreview(){
      異常の検出   … inspectFrames(useFrames の中で走る)
    ここを1本にしておく理由は、発注者が触るものを「2つの入力とボタン1つ」に減らすため。
    うまくいかないときは下の歩行・静止画パネルで今までどおり手で直せる(同じ state を使う)。 */
+/* 抜き具合をその場で見せる。**16コマ作る前に、抜けたかどうかが目で分かるようにする。**
+   市松模様は .cell が元から持っているので、抜いた絵を置くだけで透けた所が分かる。 */
+async function awakenCutPreview(){
+  const cells = [], notes = [];
+  try{
+    for(const side of ['f','b']){
+      const files = imageFilesFor(side);
+      if(!files.length) continue;
+      const label = side==='f' ? '正面' : '背面';
+      const img = await fileToImageData(files[0]);
+      const seg = autoSegFor(img);
+      const alpha = seg ? segment(img, seg.mode, seg.th, seg.chroma)
+                        : (()=>{ const a=new Uint8Array(img.width*img.height);
+                                 for(let i=0;i<a.length;i++) a[i]=img.data[i*4+3]; return a; })();
+      const box = bboxOf(alpha, img.width, img.height);
+      if(!box){ notes.push(`${label}: 被写体が見つかりません`); continue; }
+      const cut = cropCanvas({ img, alpha, box });
+      const url = await blobToDataUrl(await canvasToBlobPng(cut));
+      // 残った面積が枠に対して極端なら抜き方が合っていない
+      let on = 0;
+      for(let i=0;i<alpha.length;i++) if(alpha[i] > 40) on++;
+      const ratio = on / (img.width*img.height);
+      const how = seg ? (seg.flat ? '単色の背景を色で抜き' : SEG_JP[seg.mode]) : '透過済み';
+      const bad = ratio > 0.75 ? '(ほとんど抜けていません)' : ratio < 0.02 ? '(抜きすぎです)' : '';
+      notes.push(`${label}: ${how} / 残った面積 ${(ratio*100).toFixed(0)}% ${bad}`);
+      cells.push([url, `${label}${bad?' ⚠':''}`]);
+    }
+    $('aw_autoStrip').innerHTML = cells.map(([u,n])=>
+      `<div class="cell"><img src="${u}"><span class="n">${n}</span></div>`).join('');
+    // 1枚も抜けなかったときこそ理由を出す(黙って戻ると何が悪いか分からない)
+    if(!notes.length) return log('先に覚醒の絵を選ぶか、生成してください', 'ng');
+    $('aw_autoMeta').innerHTML = notes.join('<br>')
+      + (cells.length ? '<br>市松模様が見えている所が透明です。よければ「この2枚から18枚作る」へ。'
+                      : '<br><b>抜けていません。</b>背景が単色の絵を使うか、'
+                        + '下の「歩行モーション」で抜き方を選び直してください。');
+  }catch(e){ $('aw_autoMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`; }
+}
 async function awakenAutoBuild(){
   const ff = $('aw_front').files[0];
   if(!ff) return log('覚醒後の絵(正面)を選んでください', 'ng');
@@ -3853,6 +4144,18 @@ function boot(){
   $('aw_base').onchange = ()=>{ state.awaken = null; state.files = null; $('commitBtn').disabled = true;
                                 $('aw_preview').innerHTML = ''; renderAwakenCurrent(); };
   $('aw_sway').addEventListener('input', ()=> $('aw_swayV').textContent = $('aw_sway').value);
+  /* 画像生成: 相も提供元も**表から作る**ので、増やしてもここは触らない */
+  $('aw_look').innerHTML = Object.keys(AWAKEN_LOOKS)
+    .map(k=>`<option value="${k}">${AWAKEN_LOOKS[k].label}</option>`).join('');
+  $('aw_provider').innerHTML = Object.keys(IMAGE_PROVIDERS)
+    .map(k=>`<option value="${k}">${IMAGE_PROVIDERS[k].label}</option>`).join('');
+  const syncProvider = ()=>{ $('aw_keyHint').textContent = imgProvider().keyHint; };
+  $('aw_provider').onchange = ()=>{ syncProvider(); loadImgModels(); };
+  const savedProvider = localStorage.getItem('aramon_img_provider');
+  if(savedProvider && IMAGE_PROVIDERS[savedProvider]) $('aw_provider').value = savedProvider;
+  syncProvider();
+  const ik = localStorage.getItem('aramon_img_key');
+  if(ik){ $('aw_key').value = ik; loadImgModels(); }
   opts($('aw_aura'), AURAS);
   // スライダーの数値表示。**値の持ち方は awakenFxSettings 1か所**で、ここは見せるだけ
   const awSliders = [['aw_glow','aw_glowV',1],['aw_rimPx','aw_rimV',1],['aw_hue','aw_hueV',1],
