@@ -292,20 +292,38 @@
   /* エモートの粒(✨💧💢)。**body直下に置いて実画面座標で重ねる**(.tap-ripple と同じ理由)。
      pointer-events:none で自分から消えるので、スクロールロックの除外リストへの追加は不要 */
   .emote-fx{ position:fixed; width:0; height:0; pointer-events:none; overflow:visible; z-index:900; }
+  /* 縦持ち(#appRootを90度回転)では、回転の外にある粒だけが素の向きのままになり
+     絵文字が横倒しになる。**同じだけ回して向きを揃える**(実機で発覚した不具合) */
+  html.force-landscape .emote-fx{ transform:rotate(90deg); }
   .emote-fx span{
-    position:absolute; left:0; top:0; font-size:16px; line-height:1;
-    opacity:0; animation:emoteFxRise 0.9s ease-out forwards;
-    animation-delay:calc(var(--i) * 0.09s);
-    transform:translate(-50%,0);
+    position:absolute; left:0; top:0; line-height:1;
+    font-size:calc(17px * var(--sc, 1));
+    opacity:0; animation-duration:0.95s; animation-fill-mode:forwards;
+    animation-delay:calc(var(--i) * 0.07s);
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,0.7));
   }
-  .emote-fx span:nth-child(1){ margin-left:-26px; }
-  .emote-fx span:nth-child(2){ margin-left:  8px; }
-  .emote-fx span:nth-child(3){ margin-left:-10px; }
-  .emote-fx span:nth-child(4){ margin-left: 24px; }
+  /* 舞い上がる(よろこぶ・だいすき): ポンと出て、外へ広がりながら上へ抜ける */
+  .emote-fx-rise span{ animation-name:emoteFxRise; animation-timing-function:cubic-bezier(0.2,0.7,0.3,1); }
   @keyframes emoteFxRise{
-    0%{ opacity:0; transform:translate(-50%, 6px) scale(0.6); }
-    25%{ opacity:1; }
-    100%{ opacity:0; transform:translate(-50%, -34px) scale(1.1); }
+    0%  { opacity:0; transform:translate(-50%,-50%) translate(0, 8px) scale(0.15) rotate(0deg); }
+    18% { opacity:1; transform:translate(-50%,-50%) translate(calc(var(--dx) * 0.35), -14px) scale(1.3) rotate(calc(var(--rot) * 0.4)); }
+    38% { opacity:1; transform:translate(-50%,-50%) translate(calc(var(--dx) * 0.7), -28px) scale(1.0) rotate(calc(var(--rot) * 0.7)); }
+    100%{ opacity:0; transform:translate(-50%,-50%) translate(var(--dx), -58px) scale(0.5) rotate(var(--rot)); }
+  }
+  /* 落ちる(しょんぼり): 目もとから出て、加速しながら下へ落ちる */
+  .emote-fx-fall span{ animation-name:emoteFxFall; animation-timing-function:cubic-bezier(0.5,0,0.85,0.4); }
+  @keyframes emoteFxFall{
+    0%  { opacity:0; transform:translate(-50%,-50%) translate(var(--dx), -4px) scale(0.3); }
+    20% { opacity:1; transform:translate(-50%,-50%) translate(var(--dx), 2px) scale(1.05); }
+    100%{ opacity:0; transform:translate(-50%,-50%) translate(calc(var(--dx) * 1.2), 46px) scale(0.75); }
+  }
+  /* 頭上で弾ける(おこる): 大きく出て縮み、少しだけ浮いて消える */
+  .emote-fx-pop span{ animation-name:emoteFxPop; animation-timing-function:ease-out; animation-duration:0.7s; }
+  @keyframes emoteFxPop{
+    0%  { opacity:0; transform:translate(-50%,-50%) translate(var(--dx), 4px) scale(0.2) rotate(var(--rot)); }
+    22% { opacity:1; transform:translate(-50%,-50%) translate(var(--dx), -2px) scale(1.45) rotate(calc(var(--rot) * 0.5)); }
+    40% { opacity:1; transform:translate(-50%,-50%) translate(var(--dx), -4px) scale(1.0) rotate(0deg); }
+    100%{ opacity:0; transform:translate(-50%,-50%) translate(var(--dx), -16px) scale(1.15) rotate(calc(var(--rot) * -0.4)); }
   }
   #lobbyMonsterName{
     font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.8 * var(--vh)), 19px); letter-spacing:1px;

@@ -259,7 +259,8 @@ const SE_MIN_GAP = { tap:0.05, cardSwipe:0.07, jakiin:0.25, train:0.3, pickup:0.
   buy:0.2, darkHoust:0.6, requiemEnd:0.3, mocchiBeam:0.5, monta:0.2, crystalRain:0.5, fireWave:0.5,
   amphitrite:0.8, amphitriteBlast:0.06, venomEdge:0.2, assaultArrow:0.5, requiemBlast:0.06,
   gokongo:0.8, gokongoWin:1.5, gokongoKill:0.4,
-  rize:0.8, rizeKill:0.4, rizeHit:0.3 };
+  rize:0.8, rizeKill:0.4, rizeHit:0.3,
+  emoteJoy:0.5, emoteSad:0.5, emoteAngry:0.5, emoteLove:0.5 };
 const seLastAt = {};
 // 技SEは他のSEより一回り大きく鳴らす(名前ごとの音量倍率)
 const SE_VOL_BOOST = { fire:1.35, fireRoar:1.35, iceCrack:1.35, tornado:1.35, spin:1.35, beam:1.35, whoosh:1.35, bell:1.35, godRising:1.35, zashu:1.35, ssrJackpot:1.4 };
@@ -649,6 +650,44 @@ const SE_DEFS = {
       seNoise(tt+0.025, {dur:0.16, vol:0.32, filterType:'lowpass', filterFreq:1400, filterEnd:240}); // 肉を裂く「ブシュッ」
       seTone(tt+0.025,  {freq:170, freqEnd:60, dur:0.14, type:'sine', vol:0.3}); // 血の重い芯
     }
+  },
+  /* ===== エモートの声にならない声 =====
+     動きだけだと「絵が揺れている」で終わってしまうので、短い音を必ず添える。
+     どれも合成で、**跳ねる動きの拍と頭を揃える**(音と動きがずれると急に安っぽくなる)。 */
+  // よろこぶ「ぴょこんっ」: 跳ねるたびに上がる3音+きらめき
+  emoteJoy(t){
+    const hop = (dt, f, v)=>{
+      seTone(t+dt,      {freq:f,     freqEnd:f*1.5, dur:0.10, type:'triangle', vol:v,      attack:0.004});
+      seTone(t+dt+0.01, {freq:f*3.0,               dur:0.07, type:'sine',     vol:v*0.28, attack:0.004}); // 倍音で可愛く
+    };
+    hop(0,    784, 0.30);   // ソ
+    hop(0.62, 988, 0.24);   // シ
+    hop(1.24, 1175, 0.18);  // レ
+    for(let i=0;i<3;i++)    // きらめきの粒
+      seTone(t+0.12+i*0.06, {freq:2093+i*523, dur:0.06, type:'sine', vol:0.06, attack:0.004});
+  },
+  // しょんぼり「しゅん…」: ゆっくり下がる2音+ため息のような細いノイズ
+  emoteSad(t){
+    seTone(t,      {freq:622, freqEnd:466, dur:0.34, type:'sine', vol:0.24, attack:0.03});
+    seTone(t+0.30, {freq:466, freqEnd:311, dur:0.50, type:'sine', vol:0.20, attack:0.04});
+    seNoise(t+0.30,{dur:0.45, vol:0.045, filterType:'lowpass', filterFreq:900, filterEnd:300});
+  },
+  // おこる「ぷんっ、ぷんっ」: 短い低音を2つ。踏みつけの拍に合わせる
+  emoteAngry(t){
+    const puff = (dt, v)=>{
+      seTone(t+dt,  {freq:196, freqEnd:110, dur:0.09, type:'square', vol:v,      attack:0.003});
+      seNoise(t+dt, {dur:0.07, vol:v*0.5, filterType:'bandpass', filterFreq:800, filterEnd:300});
+    };
+    puff(0,    0.22);
+    puff(0.28, 0.18);
+    seTone(t+0.40, {freq:330, freqEnd:262, dur:0.12, type:'triangle', vol:0.10, attack:0.006}); // ふてくされた余韻
+  },
+  // だいすき「ふわ〜」: 柔らかい和音がゆっくり上がる
+  emoteLove(t){
+    [523, 659, 784].forEach((f, i)=>{
+      seTone(t+i*0.07, {freq:f, freqEnd:f*1.12, dur:0.55, type:'sine', vol:0.16-i*0.03, attack:0.05});
+    });
+    seTone(t+0.55, {freq:1047, freqEnd:1319, dur:0.35, type:'triangle', vol:0.11, attack:0.04});
   },
 };
 /* ===== SSRスキン専用SE(data.js の SKIN_MEDIA から自動登録) =====

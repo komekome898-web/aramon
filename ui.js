@@ -833,8 +833,11 @@ function stopEmote(el){
   const st = el._emote;
   cancelAnimationFrame(st.raf);
   el.style.transform = st.baseTransform;
+  el.style.transformOrigin = st.baseOrigin;
+  el.style.transition = st.baseTransition;
   if(st.baseSrc!=null && el.getAttribute('src')!==st.baseSrc) el.src = st.baseSrc;  // コマ送りから戻す
-  if(st.fxEl && st.fxEl.parentNode) st.fxEl.parentNode.removeChild(st.fxEl);
+  st.fxEls.forEach(w=>{ if(w && w.parentNode) w.parentNode.removeChild(w); });
+  st.fxTimers.forEach(clearTimeout);
   el._emote = null;
 }
 function playEmote(el, key, opts){
@@ -845,18 +848,35 @@ function playEmote(el, key, opts){
   // 専用コマがあればコマ送り、無ければ共通モーション。**判定はここ1か所だけ。**
   const frames = (typeof emoteFramesFor==='function')
     ? emoteFramesFor(o.element, o.skinId, key) : null;
-  // 元の transform / src を控えて、終わったら必ずここへ戻す(別の指定があっても壊さない)
-  const baseTransform = el.style.transform || '';
-  const total = def.dur * (def.loop || 1);
+  // 元の transform / 軸 / src を控えて、終わったら必ずここへ戻す(別の指定があっても壊さない)
+  const st = { raf:0, fxEls:[], fxTimers:[], loopIdx:-1,
+               baseTransform: el.style.transform || '',
+               baseOrigin: el.style.transformOrigin || '',
+               baseTransition: el.style.transition || '',
+               baseSrc: frames ? el.getAttribute('src') : null };
+  const loops = def.loop || 1;
+  const total = def.dur * loops;
   const t0 = performance.now();
-  const st = { raf:0, baseTransform, baseSrc: frames ? el.getAttribute('src') : null, fxEl:null };
   el._emote = st;
-  if(def.fx) st.fxEl = spawnEmoteFx(el, def.fx);
+  if(!o.fxOnly && !frames){
+    /* 拡縮・回転は**足元を軸に**掛ける(中心だと宙に浮いて見える)。
+       さらに transition を切る — #lobbyMonsterImg には 0.12s の transition が付いていて、
+       毎フレーム書き換える動きが全部なまってしまう(これが「動きが安っぽい」原因だった)。 */
+    el.style.transformOrigin = '50% 100%';
+    el.style.transition = 'none';
+  }
+  if(def.se && !o.silent && typeof playSe==='function') playSe(def.se);
   const step = ()=>{
     if(el._emote !== st) return;                 // 別の再生に差し替わった
     if(!el.isConnected){ stopEmote(el); return; } // 画面から消えた
     const elapsed = (performance.now() - t0)/1000;
     if(elapsed >= total){ stopEmote(el); if(o.onDone) o.onDone(); return; }
+    const li = Math.min(loops-1, Math.floor(elapsed / def.dur));
+    // 粒は「1周ごと」に出し直す(everyが無ければ最初の1回だけ)。出続けるほうが生きて見える
+    if(li !== st.loopIdx){
+      if(def.fx && (li === 0 || def.fx.every)) spawnEmoteFx(el, def.fx, st);
+      st.loopIdx = li;
+    }
     const t = (elapsed % def.dur) / def.dur;
     if(o.fxOnly){
       /* 粒だけ出して絵は動かさない。CSSアニメーションが transform を持っている要素
@@ -867,35 +887,54 @@ function playEmote(el, key, opts){
       const src = imgSrcFor(`monsters/${frames.prefix}${i+1}`);
       if(el.getAttribute('src')!==src) el.src = src;
     }else{
-      const m = def.motion(t) || {};
+      const m = emoteMotionAt(def, t, li);
       // yは「絵の高さに対する比」。px に直してから transform に載せる
       const h = el.offsetHeight || 100;
-      el.style.transform = `${baseTransform} translateY(${(m.y||0)*h}px) `
-        + `rotate(${m.rot||0}deg) scale(${m.sx==null?1:m.sx}, ${m.sy==null?1:m.sy})`;
+      el.style.transform = `${st.baseTransform} translateY(${(m.y*h).toFixed(2)}px) `
+        + `rotate(${m.rot.toFixed(2)}deg) scale(${m.sx.toFixed(3)}, ${m.sy.toFixed(3)})`;
     }
     st.raf = requestAnimationFrame(step);
   };
   st.raf = requestAnimationFrame(step);
 }
-/* エモートの粒(✨💧💢)。**波紋(.tap-ripple)と同じく document.body 直下へ置き、
+/* エモートの粒(✨❤️💧💢)。**波紋(.tap-ripple)と同じく document.body 直下へ置き、
    実画面座標(getBoundingClientRect)で重ねる。** 理由は2つ:
      ・ロビーの絵の親は<button>で、その中にdivを入れるとHTMLとして不正になる
      ・#appRootは縦持ちで90度回転しているので、回転の外に置いて実座標を使うとズレない
+   **ただし回転の外に置くと絵文字が横倒しになる**ので、縦持ちのときは粒の側も同じだけ
+   回す(style.css の html.force-landscape .emote-fx)。回さないと文字の向きも飛ぶ向きも
+   90度ずれる(実機で発覚)。
+   粒は1つずつ散らばり方・大きさ・傾きを変える。全部同じだと貼り付けたように見える。
    pointer-events:none で自分から消えるので、スクロールロックの除外リストへの追加は不要。 */
-function spawnEmoteFx(el, ch){
+function spawnEmoteFx(el, fx, st){
   const r = el.getBoundingClientRect();
   if(!r.width && !r.height) return null;
   const wrap = document.createElement('div');
-  wrap.className = 'emote-fx';
+  wrap.className = `emote-fx emote-fx-${fx.mode||'rise'}`;
   wrap.style.left = `${r.left + r.width/2}px`;
-  wrap.style.top  = `${r.top + r.height*0.3}px`;
-  for(let i=0;i<4;i++){
+  wrap.style.top  = `${r.top + r.height*(fx.at==null?0.3:fx.at)}px`;
+  const w = r.width * (fx.spread==null?1:fx.spread);
+  const n = fx.n || 4;
+  for(let i=0;i<n;i++){
     const s = document.createElement('span');
-    s.textContent = ch;
+    s.textContent = fx.ch;
+    // 左右に均等に散らしてから少しだけ乱す(等間隔のままだと並んで見える)
+    const base = n===1 ? 0 : (i/(n-1) - 0.5) * w;
     s.style.setProperty('--i', i);
+    s.style.setProperty('--dx', `${(base + (Math.random()-0.5)*w*0.22).toFixed(1)}px`);
+    s.style.setProperty('--sc', (0.78 + Math.random()*0.5).toFixed(2));
+    s.style.setProperty('--rot', `${((Math.random()-0.5)*46).toFixed(0)}deg`);
     wrap.appendChild(s);
   }
   document.body.appendChild(wrap);
+  if(st){
+    st.fxEls.push(wrap);
+    // 出し切ったら自分で消える(再生が続いていても粒だけ先に片付ける)
+    st.fxTimers.push(setTimeout(()=>{
+      if(wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      const k = st.fxEls.indexOf(wrap); if(k>=0) st.fxEls.splice(k,1);
+    }, 1400));
+  }
   return wrap;
 }
 // 今ロビーに出ているモンスター(素体キーと装備スキン)でエモートを再生する。
@@ -906,7 +945,7 @@ function playLobbyEmote(key){
   const element = game.selectedElement, skinId = lobbySelectedSkinId();
   const useFrames = (typeof emoteFramesFor==='function') && !!emoteFramesFor(element, skinId, key);
   if(useFrames) stopLobbyWalkAnim();
-  if(typeof playSe==='function') playSe('tap');
+  // 効果音はエモートごとの専用音(playEmoteが EMOTES[key].se を鳴らす)
   playEmote(img, key, { element, skinId, onDone: useFrames ? renderLobbyMonster : null });
 }
 /* マスモン詳細のカードをタップしたら、その子がエモートで反応する(愛着のフック)。
@@ -918,7 +957,7 @@ document.addEventListener('click', (e)=>{
   const img = t.closest('#mmDetailCardSlot .ml-card-art img');
   if(!img || !mastermonDetailKey) return;
   const skinId = (typeof getEquippedSkin==='function') ? getEquippedSkin(mastermonDetailKey) : null;
-  playEmote(img, pickRandom(EMOTE_ORDER), { element: mastermonDetailKey, skinId });
+  playEmote(img, pickEmoteForTap(), { element: mastermonDetailKey, skinId });
 });
 /* ロビーのエモートボタン。**中身は EMOTES から作るので、エモートを増やしてもここは触らない。**
    一度だけ組み立てて、モンスターの選択状態に合わせて出し入れする。 */
@@ -4600,8 +4639,9 @@ function setResultMonsterIcon(elementKey, opts){
   if(opts && typeof opts.win==='boolean' && typeof playEmote==='function'){
     setTimeout(()=>{
       if(document.getElementById('resultScreen').classList.contains('hidden')) return;
+      // 効果音は鳴らさない(勝利ファンファーレ・敗北音と重なるため)
       playEmote(iconEl, opts.win ? 'joy' : 'sad',
-                { element:elementKey, skinId:sk, fxOnly: !!opts.win });
+                { element:elementKey, skinId:sk, fxOnly: !!opts.win, silent:true });
     }, RESULT_EMOTE_DELAY_MS);
   }
 }
@@ -7856,6 +7896,8 @@ const SE_TEST_LABELS = {
   gokongo:'轟金剛 超番長ボーナス', gokongoWin:'轟金剛 勝利', gokongoKill:'轟金剛 キル',
   rize:'大喰いの利世 鱗赫', rizeKill:'大喰いの利世 勝利', rizeHit:'大喰いの利世 被弾', aquaKill:'大喰いの利世 キル',
   gutsTier3:'狂戦士ガッツ ドラゴンころし',
+  emoteJoy:'エモート よろこぶ', emoteSad:'エモート しょんぼり',
+  emoteAngry:'エモート おこる', emoteLove:'エモート だいすき',
 };
 // SKIN_MEDIA から自動登録されたSE('skinSe:<id>:<区分>')の表示名はスキン名から作る
 function seTestLabel(name){
