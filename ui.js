@@ -820,6 +820,122 @@ function restoreLobbyPrefsInner(){
   updateLobbyPickLabels();
 }
 
+/* ===== エモートの再生 =====
+   渡された<img>を EMOTES[key].motion に沿って transform で動かすだけ。**画像を差し替えないので、
+   どのモンスター・どのスキンでもそのまま動く**(専用コマがある場合だけ EMOTE_FRAMES を使う)。
+
+   ・transform だけを書き、レイアウトを動かす値は触らない(周りの要素がガタつかないようにする)
+   ・再生中の要素にもう一度呼ばれたら**前の再生を止めてから**やり直す(二重に動かさない)
+   ・要素が画面から消えても止まるよう、毎フレーム isConnected を見る(rAFの止め忘れ防止)
+   ・終わったら必ず transform を元へ戻す(途中で止めた場合も同じ後始末を通す)              */
+function stopEmote(el){
+  if(!el || !el._emote) return;
+  const st = el._emote;
+  cancelAnimationFrame(st.raf);
+  el.style.transform = st.baseTransform;
+  if(st.baseSrc!=null && el.getAttribute('src')!==st.baseSrc) el.src = st.baseSrc;  // コマ送りから戻す
+  if(st.fxEl && st.fxEl.parentNode) st.fxEl.parentNode.removeChild(st.fxEl);
+  el._emote = null;
+}
+function playEmote(el, key, opts){
+  const def = (typeof EMOTES!=='undefined') && EMOTES[key];
+  if(!el || !def) return;
+  stopEmote(el);
+  const o = opts || {};
+  // 専用コマがあればコマ送り、無ければ共通モーション。**判定はここ1か所だけ。**
+  const frames = (typeof emoteFramesFor==='function')
+    ? emoteFramesFor(o.element, o.skinId, key) : null;
+  // 元の transform / src を控えて、終わったら必ずここへ戻す(別の指定があっても壊さない)
+  const baseTransform = el.style.transform || '';
+  const total = def.dur * (def.loop || 1);
+  const t0 = performance.now();
+  const st = { raf:0, baseTransform, baseSrc: frames ? el.getAttribute('src') : null, fxEl:null };
+  el._emote = st;
+  if(def.fx) st.fxEl = spawnEmoteFx(el, def.fx);
+  const step = ()=>{
+    if(el._emote !== st) return;                 // 別の再生に差し替わった
+    if(!el.isConnected){ stopEmote(el); return; } // 画面から消えた
+    const elapsed = (performance.now() - t0)/1000;
+    if(elapsed >= total){ stopEmote(el); if(o.onDone) o.onDone(); return; }
+    const t = (elapsed % def.dur) / def.dur;
+    if(o.fxOnly){
+      /* 粒だけ出して絵は動かさない。CSSアニメーションが transform を持っている要素
+         (リザルトの勝利アイコン)では、インラインの transform はCSSアニメーションに
+         負けて効かないため、そこでは動きを既存の演出に任せる。 */
+    }else if(frames){
+      const i = Math.min(frames.n-1, Math.floor(t*frames.n));
+      const src = imgSrcFor(`monsters/${frames.prefix}${i+1}`);
+      if(el.getAttribute('src')!==src) el.src = src;
+    }else{
+      const m = def.motion(t) || {};
+      // yは「絵の高さに対する比」。px に直してから transform に載せる
+      const h = el.offsetHeight || 100;
+      el.style.transform = `${baseTransform} translateY(${(m.y||0)*h}px) `
+        + `rotate(${m.rot||0}deg) scale(${m.sx==null?1:m.sx}, ${m.sy==null?1:m.sy})`;
+    }
+    st.raf = requestAnimationFrame(step);
+  };
+  st.raf = requestAnimationFrame(step);
+}
+/* エモートの粒(✨💧💢)。**波紋(.tap-ripple)と同じく document.body 直下へ置き、
+   実画面座標(getBoundingClientRect)で重ねる。** 理由は2つ:
+     ・ロビーの絵の親は<button>で、その中にdivを入れるとHTMLとして不正になる
+     ・#appRootは縦持ちで90度回転しているので、回転の外に置いて実座標を使うとズレない
+   pointer-events:none で自分から消えるので、スクロールロックの除外リストへの追加は不要。 */
+function spawnEmoteFx(el, ch){
+  const r = el.getBoundingClientRect();
+  if(!r.width && !r.height) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'emote-fx';
+  wrap.style.left = `${r.left + r.width/2}px`;
+  wrap.style.top  = `${r.top + r.height*0.3}px`;
+  for(let i=0;i<4;i++){
+    const s = document.createElement('span');
+    s.textContent = ch;
+    s.style.setProperty('--i', i);
+    wrap.appendChild(s);
+  }
+  document.body.appendChild(wrap);
+  return wrap;
+}
+// 今ロビーに出ているモンスター(素体キーと装備スキン)でエモートを再生する。
+// 歩行のコマ送りと同時に走ると絵が奪い合いになるので、専用コマのときだけ歩行を止める。
+function playLobbyEmote(key){
+  const img = document.getElementById('lobbyMonsterImg');
+  if(!img || img.classList.contains('hidden')) return;
+  const element = game.selectedElement, skinId = lobbySelectedSkinId();
+  const useFrames = (typeof emoteFramesFor==='function') && !!emoteFramesFor(element, skinId, key);
+  if(useFrames) stopLobbyWalkAnim();
+  if(typeof playSe==='function') playSe('tap');
+  playEmote(img, key, { element, skinId, onDone: useFrames ? renderLobbyMonster : null });
+}
+/* マスモン詳細のカードをタップしたら、その子がエモートで反応する(愛着のフック)。
+   カードは開くたびに作り直される複製なので、**document への委譲で受ける**。
+   動かすのはカードの中の絵だけ(カード自体はFLIP演出が transform を !important で持っている)。 */
+document.addEventListener('click', (e)=>{
+  const t = e.target;
+  if(!t || !t.closest) return;
+  const img = t.closest('#mmDetailCardSlot .ml-card-art img');
+  if(!img || !mastermonDetailKey) return;
+  const skinId = (typeof getEquippedSkin==='function') ? getEquippedSkin(mastermonDetailKey) : null;
+  playEmote(img, pickRandom(EMOTE_ORDER), { element: mastermonDetailKey, skinId });
+});
+/* ロビーのエモートボタン。**中身は EMOTES から作るので、エモートを増やしてもここは触らない。**
+   一度だけ組み立てて、モンスターの選択状態に合わせて出し入れする。 */
+function buildLobbyEmoteRow(){
+  const row = document.getElementById('lobbyEmoteRow');
+  if(!row || row.dataset.built) return;
+  row.dataset.built = '1';
+  row.innerHTML = EMOTE_ORDER.filter(k=>EMOTES[k]).map(k=>
+    `<button type="button" class="lobby-emote-btn" data-emote="${k}" aria-label="${EMOTES[k].label}">${EMOTES[k].icon}</button>`).join('');
+  row.querySelectorAll('.lobby-emote-btn').forEach(b=>{
+    b.addEventListener('click', (e)=>{
+      e.stopPropagation();          // 背後のモンスター選択ボタンへ伝えない
+      playLobbyEmote(b.dataset.emote);
+    });
+  });
+}
+
 // ---- 中央: 選択中モンスターの正面歩行モーション ----
 // 選択中が「マスモン」なら装備スキン込みの姿、「モンスター一覧」なら素の姿を出す。
 // 歩行コマが未対応/未ロードなら静止画にフォールバックする。
@@ -837,18 +953,29 @@ function renderLobbyMonster(){
   const nameEl = document.getElementById('lobbyMonsterName');
   const hint = document.getElementById('lobbyMonsterTapHint');
   if(!img) return;
+  /* 出しているモンスターが同じままなら、**エモート中は描き直さない。**
+     歩行コマの読み込み待ちリトライ(下の setTimeout)がこの関数を何度も呼ぶので、
+     素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。 */
+  const subject = `${game.selectedElement||''}|${game.selectedMastermonKey||''}|${lobbySelectedSkinId()||''}`;
+  if(img._emote && img.dataset.lobbySubject === subject) return;
+  img.dataset.lobbySubject = subject;
   stopLobbyWalkAnim();
+  stopEmote(img);                       // 別のモンスターへ描き直すので再生中のエモートは止める
+  buildLobbyEmoteRow();
+  const emoteRow = document.getElementById('lobbyEmoteRow');
   const key = game.selectedElement;
   if(!key || !ELEMENTS[key]){
     img.classList.add('hidden');
     empty.classList.remove('hidden');
     if(hint) hint.classList.add('hidden');
+    if(emoteRow) emoteRow.classList.add('hidden');   // 未選択のときは出さない
     nameEl.textContent = '';
     return;
   }
   empty.classList.add('hidden');
   img.classList.remove('hidden');
   if(hint) hint.classList.remove('hidden');
+  if(emoteRow) emoteRow.classList.remove('hidden');
 
   // 名前(マスモンなら「マスモン名(種族)Lv.n」)
   const el = ELEMENTS[key];
@@ -4283,7 +4410,8 @@ function raidShowResult(defeated, dmg, prevBest){
   renderResultBadges({ kills:0, damage:0, prevBestKills:0, prevBestDamage:0,
                        newTitles:[], elemNewTitles:[], seasonSp });
   document.getElementById('scoreSubmitStatus').textContent = '';
-  setResultMonsterIcon(player ? player.element : game.selectedElement);
+  // レイドは討伐・自己ベスト更新を「勝ち」あつかいにする(リザルトの見出しと同じ判定)
+  setResultMonsterIcon(player ? player.element : game.selectedElement, { win: !!(defeated || newBest) });
   setResultButtonsForRaid(true);
   scr.classList.remove('hidden');
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
@@ -4440,13 +4568,15 @@ function showResult(isWin, placement){
   }, MATCH_FINISH_ANIM_MS);
 }
 /* リザルトのモンスターアイコン。装備中スキンがあればそれを反映する。
-   通常の試合とレイドで同じものを使う(レイドで出ない不具合があったため1か所にまとめた)。 */
-function setResultMonsterIcon(elementKey){
+   通常の試合とレイドで同じものを使う(レイドで出ない不具合があったため1か所にまとめた)。
+   opts.win を渡すと、勝敗に合わせてエモートを自動再生する(通常戦・レイドの両方でここを通る)。 */
+function setResultMonsterIcon(elementKey, opts){
   const iconEl = document.getElementById('resultMonsterIcon');
   if(!iconEl || !elementKey) return;
   const el = ELEMENTS[elementKey];
   iconEl.alt = el ? el.label : '';
   iconEl.style.display = '';
+  if(typeof stopEmote==='function') stopEmote(iconEl);   // 前の試合の再生が残っていたら止める
   const sk = (typeof getEquippedSkin==='function') ? getEquippedSkin(elementKey) : null;
   const skUrl = sk && (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(sk) : null;
   if(skUrl){
@@ -4458,7 +4588,19 @@ function setResultMonsterIcon(elementKey){
     iconEl.dataset.basePath = `monsters/${elementKey}`;
     iconEl.src = imgSrcFor(iconEl.dataset.basePath);
   }
+  /* 画面が出てから少し置いて再生する(切り替わりと同時だと動きが見えない)。
+     勝ちのときは `.resultScreen.win .result-monster-icon` のCSSアニメーションが既に
+     跳ねているので、**動きは足さず粒(✨)だけ重ねる**(CSSアニメーションはインラインの
+     transform より強く、両方書くとこちらが無視されるため)。 */
+  if(opts && typeof opts.win==='boolean' && typeof playEmote==='function'){
+    setTimeout(()=>{
+      if(document.getElementById('resultScreen').classList.contains('hidden')) return;
+      playEmote(iconEl, opts.win ? 'joy' : 'sad',
+                { element:elementKey, skinId:sk, fxOnly: !!opts.win });
+    }, RESULT_EMOTE_DELAY_MS);
+  }
 }
+const RESULT_EMOTE_DELAY_MS = 320;   // リザルトが出てからエモートを始めるまで
 /* リザルトのボタン列。レイドでは「ランキング/マイ記録」の代わりに
    「レイドランキング」を出す(通常の順位ランキングはレイドに存在しないため)。 */
 function setResultButtonsForRaid(isRaid){
@@ -4505,7 +4647,7 @@ function showResultNow(isWin, placement){
     document.getElementById('resultCurrencyLine').textContent = `報酬　🪙 +${goldGain}　💎 +${diaGain}`;
     updateAccountBar();
   }
-  setResultMonsterIcon(player.element);
+  setResultMonsterIcon(player.element, { win: !!isWin });
   setResultButtonsForRaid(false);
   document.getElementById('resultScreen').classList.remove('hidden');
   // 自己ベスト更新の検出用に、記録前のベストを控えておく(全体＋このモンスター毎)

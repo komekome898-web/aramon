@@ -66,6 +66,16 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **3D側は`window.__aramonLook`を毎フレーム読んでカメラのfovを合わせる。** 2Dの`project()`と視野角がずれると地面と2D描画が食い違う。
 - 保存はui.jsの`aramon_look_v1`(端末ごとの操作設定なのでアカウント同期に入れない)。UIは音量設定と同じスライダー部品を流用。
 
+## エモート(よろこぶ・しょんぼり・おこる)
+
+- **新しい画像を1枚も使わない。** 今出ている絵を`transform`で動かすだけなので、モンスターもスキンも増やし放題。定義は`data.js`の`EMOTES`(`motion(t)`が`y`/`sx`/`sy`/`rot`を返す)+ 並び順は`EMOTE_ORDER`。**増やすときはこの表に1行足すだけ**でロビーのボタンまで自動で増える。
+- 再生は`playEmote(el, key, opts)`1か所。**transformだけを書き、レイアウトを動かす値は触らない。** 二重再生の防止・要素がDOMから外れたときの停止・終了時の後始末(transformとsrcを元へ戻す)を全部ここが持つ。止めるのは`stopEmote(el)`。
+- **専用コマ(`EMOTE_FRAMES`)を入れたものだけコマ送りに切り替わる。** 値は`{prefix,n}`で`monsters/<prefix>1..n.png`。スキンIDの指定が素体より優先。無ければ共通モーション。
+- 粒(✨💧💢)は**`document.body`直下に`position:fixed`で置き、`getBoundingClientRect()`の実座標で重ねる**(`.tap-ripple`と同じ理由。ロビーの絵の親が`<button>`でdivを入れられない/縦持ちで`#appRoot`が回転している)。`pointer-events:none`で自分から消えるのでスクロールロック除外リストへの追加は不要。
+- **リザルトの勝ちだけは絵を動かさず粒だけ出す**(`fxOnly`)。`.resultScreen.win .result-monster-icon`のCSSアニメーションが`transform`を持っており、**CSSアニメーションはインラインの`transform`より強い**ので、両方書くとこちらが無視されるため。
+- **`renderLobbyMonster()`は、出しているモンスターが同じままならエモート中に描き直さない**(`img.dataset.lobbySubject`で判定)。歩行コマの読み込み待ちリトライがこの関数を最大6回呼ぶので、素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。
+- ロビーのエモート行(`#lobbyEmoteRow`)は`#lobbyMonsterStage`の**兄弟**に置く(ボタンの入れ子は不正)。ステージが`flex:1 1 auto`で余白を吸収するので、行を足してもステージが少し縮むだけで**スクロールは出ない**(667/812/568の3サイズで実測済み)。
+
 ## 更新履歴
 
 - 項目`{t,g}`、タグ定義は`CHANGELOG_TAGS`。見出し+タグ行は固定、`.changelog-list`だけスクロール(自前スライドバー共用)。

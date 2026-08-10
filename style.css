@@ -277,6 +277,36 @@
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:clamp(9px, calc(2.5 * var(--vh)), 12px);
     letter-spacing:1px; color:var(--ink-dim); opacity:0.9;
   }
+  /* エモートボタン。ステージが余白を吸収するので、この行を足しても画面には収まったまま */
+  #lobbyEmoteRow{ flex:0 0 auto; display:flex; gap:calc(1.2 * var(--vw)); }
+  #lobbyEmoteRow.hidden{ display:none !important; }
+  .lobby-emote-btn{
+    width:calc(4.6 * var(--vh)); height:calc(4.6 * var(--vh));
+    min-width:26px; min-height:26px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:clamp(12px, calc(2.8 * var(--vh)), 17px); line-height:1;
+    border-radius:50%; cursor:pointer;
+    color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line);
+  }
+  .lobby-emote-btn:active{ background:rgba(244,196,48,0.24); border-color:var(--amber); }
+  /* エモートの粒(✨💧💢)。**body直下に置いて実画面座標で重ねる**(.tap-ripple と同じ理由)。
+     pointer-events:none で自分から消えるので、スクロールロックの除外リストへの追加は不要 */
+  .emote-fx{ position:fixed; width:0; height:0; pointer-events:none; overflow:visible; z-index:900; }
+  .emote-fx span{
+    position:absolute; left:0; top:0; font-size:16px; line-height:1;
+    opacity:0; animation:emoteFxRise 0.9s ease-out forwards;
+    animation-delay:calc(var(--i) * 0.09s);
+    transform:translate(-50%,0);
+  }
+  .emote-fx span:nth-child(1){ margin-left:-26px; }
+  .emote-fx span:nth-child(2){ margin-left:  8px; }
+  .emote-fx span:nth-child(3){ margin-left:-10px; }
+  .emote-fx span:nth-child(4){ margin-left: 24px; }
+  @keyframes emoteFxRise{
+    0%{ opacity:0; transform:translate(-50%, 6px) scale(0.6); }
+    25%{ opacity:1; }
+    100%{ opacity:0; transform:translate(-50%, -34px) scale(1.1); }
+  }
   #lobbyMonsterName{
     font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.8 * var(--vh)), 19px); letter-spacing:1px;
     color:var(--ink); text-shadow:0 2px 6px rgba(0,0,0,0.9); display:flex; align-items:center; gap:6px;
