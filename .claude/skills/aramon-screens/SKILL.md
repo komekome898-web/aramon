@@ -66,6 +66,15 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **3D側は`window.__aramonLook`を毎フレーム読んでカメラのfovを合わせる。** 2Dの`project()`と視野角がずれると地面と2D描画が食い違う。
 - 保存はui.jsの`aramon_look_v1`(端末ごとの操作設定なのでアカウント同期に入れない)。UIは音量設定と同じスライダー部品を流用。
 
+## スキン覚醒(育て込んだマスモンの最終形態)
+
+- **覚醒スキンは「ただのSSRスキン」。** `SSR_SKINS`に`awakenOf:'<元のid>'`付きで1行足すだけで、オーラ・tier3の技名と威力・歩行アニメ・アイコン・専用BGM/SEまで既存の表がそのまま効く(表示の入口が`entitySkinId()`→`getEquippedSkin()`の1本だから)。**ゲーム側に新しい分岐を作らない。**
+- `awakenOf`付きは**4つ目の入手経路の印**で、`gachaSsrSkinIds()`/`raidGachaSsrSkinIds()`から除外される。全体の所持(`loadSkins().owned`)にも入れず、`ownedSkinsForElement()`が**そのマスモンの`mm.awaken`を見て一覧の末尾に足す**。だから「育てたこの子だけの姿」になり、**着せ替えで元の姿に戻せる**(戻せば強化も外れる)。
+- 条件は`AWAKEN_REBIRTH_REQ`(転生回数)と`AWAKEN_STAT_MIN`(6ステータス**すべて**)の2定数だけ。判定は`awakenRequirements()`が「足りないものの一覧」を返し、`canAwakenMastermon()`はそれが空かを見るだけ。**満たしていなくてもボタンは隠さず`disabled`+残り(「転生あと1回・ちから あと100」)を出す** — 長期目標として一番効く。
+- **強化は覚醒時に1つ選ぶ**(`AWAKEN_BOOSTS`)。威力/射程/弾速/範囲拡大速度/爆風の広がりのうち、**その子のtier3に効くものだけ**を`applies(move)`で絞って出す。**弾速と範囲拡大速度は同じ`projSpeed`**(AoE技では`fillSpeed`として使われる)なので、片方しか出ない。選んだ結果は`mm.awaken[元のid]='power'`のように残り、`awakenBoostForSkin()`→`ent.awakenBoost`→`skinTier3Move()`/`ssrTier3DmgMult()`へ流れる。マルチではホストが`awakenBoost`をボットの積み荷に載せる。
+- 演出は既存の昇格演出に丸ごと乗せる(`runSsrPromotionSequence()`→`showSsrReveal()`)。`SKIN_MEDIA[覚醒ID].promote`に動画を入れれば専用演出になり、入れなければ共通演出だけが流れる。
+- 覚醒スキンの**素材はスタジオの「覚醒スキンを作る」で作る**(元スキンの18枚に同じ加工を掛ける。詳細は aramon-monster-tools)。
+
 ## エモート(よろこぶ・しょんぼり・おこる)
 
 - **新しい画像を1枚も使わない。** 今出ている絵を`transform`で動かすだけなので、モンスターもスキンも増やし放題。定義は`data.js`の`EMOTES`(`motion(t)`が`y`/`sx`/`sy`/`rot`を返す)+ 並び順は`EMOTE_ORDER`。**増やすときはこの表に1行足すだけ**でロビーのボタンまで自動で増える。
