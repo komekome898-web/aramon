@@ -75,12 +75,21 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - 演出は既存の昇格演出に丸ごと乗せる(`runSsrPromotionSequence()`→`showSsrReveal()`)。`SKIN_MEDIA[覚醒ID].promote`に動画を入れれば専用演出になり、入れなければ共通演出だけが流れる。
 - 覚醒スキンの**素材はスタジオの「覚醒スキンを作る」で作る**(元スキンの18枚に同じ加工を掛ける。詳細は aramon-monster-tools)。
 
-## エモート(よろこぶ・しょんぼり・おこる)
+## エモート(よろこぶ・だいすき・しょんぼり・おこる)
 
-- **新しい画像を1枚も使わない。** 今出ている絵を`transform`で動かすだけなので、モンスターもスキンも増やし放題。定義は`data.js`の`EMOTES`(`motion(t)`が`y`/`sx`/`sy`/`rot`を返す)+ 並び順は`EMOTE_ORDER`。**増やすときはこの表に1行足すだけ**でロビーのボタンまで自動で増える。
-- 再生は`playEmote(el, key, opts)`1か所。**transformだけを書き、レイアウトを動かす値は触らない。** 二重再生の防止・要素がDOMから外れたときの停止・終了時の後始末(transformとsrcを元へ戻す)を全部ここが持つ。止めるのは`stopEmote(el)`。
+- **新しい画像を1枚も使わない。** 今出ている絵を`transform`で動かすだけなので、モンスターもスキンも増やし放題。定義は`data.js`の`EMOTES` + 並び順は`EMOTE_ORDER`。**増やすときはこの表に1行足すだけ**でロビーのボタンも管理者画面のSE確認も自動で増える。
+- 動きは**キーフレームの表**(`keys:[[時刻,{y,sx,sy,rot},補間],…]`)で、`emoteTrack()`が補間する。補間は`s`(既定)/`out`(上昇)/`in`(落下)/`lin`/`back`(行き過ぎて戻る)。数字を触るだけで手触りを変えられる。
+- **可愛く見せるための決めごとが3つある。守らないと「ただ揺れている」だけになる**(最初の実装がそれで実機で却下された):
+  1. **足元を軸にする** — 再生中だけ`transform-origin:50% 100%`。中心を軸にすると宙に浮いて見える。
+  2. **transitionを切る** — `#lobbyMonsterImg`には`transition:transform 0.12s`が付いており、毎フレーム書き換える動きが全部なまる。再生中だけ`transition:none`にして終わったら戻す。
+  3. **つぶす→伸びる→行き過ぎる** — 跳ぶ前に必ずしゃがみ、着地で必ずつぶし、戻りは少し行き過ぎてから収める。左右対称の正弦波は使わない。
+  繰り返すエモートは`decay`で1回ごとに小さくする(`emoteMotionAt(def,t,loopIdx)`)。
+- 再生は`playEmote(el, key, opts)`1か所。**transformだけを書き、レイアウトを動かす値は触らない。** 二重再生の防止・DOMから外れたときの停止・終了時の後始末(transform/軸/transition/srcを元へ戻す)を全部ここが持つ。止めるのは`stopEmote(el)`。`opts.silent`で効果音だけ止める(リザルトはファンファーレと重なるため使う)。
+- **効果音はエモートごと**(`EMOTES[k].se` → `SE_DEFS`の`emoteJoy`/`emoteSad`/`emoteAngry`/`emoteLove`。全部Web Audio合成)。**音の拍と動きの拍を揃える**(よろこぶは跳ねる周期0.62秒に合わせて3音)。
 - **専用コマ(`EMOTE_FRAMES`)を入れたものだけコマ送りに切り替わる。** 値は`{prefix,n}`で`monsters/<prefix>1..n.png`。スキンIDの指定が素体より優先。無ければ共通モーション。
-- 粒(✨💧💢)は**`document.body`直下に`position:fixed`で置き、`getBoundingClientRect()`の実座標で重ねる**(`.tap-ripple`と同じ理由。ロビーの絵の親が`<button>`でdivを入れられない/縦持ちで`#appRoot`が回転している)。`pointer-events:none`で自分から消えるのでスクロールロック除外リストへの追加は不要。
+- 粒は`fx:{ch,n,mode,at,spread,every}`。`mode`は`rise`(舞い上がる)/`fall`(落ちる)/`pop`(頭上で弾ける)でCSSアニメーションが変わる。**1粒ずつ位置・大きさ・傾きを乱す**(`--dx`/`--sc`/`--rot`)。`every:true`なら1周ごとに出し直す。
+- 粒は**`document.body`直下に`position:fixed`で置き、`getBoundingClientRect()`の実座標で重ねる**(`.tap-ripple`と同じ理由。ロビーの絵の親が`<button>`でdivを入れられない)。**ただし`#appRoot`は縦持ちで90度回っているので、`html.force-landscape .emote-fx`で粒も同じだけ回す** — 回さないと絵文字が横倒しになり、飛ぶ向きも90度ずれる(実機で発覚)。`pointer-events:none`で自分から消えるのでスクロールロック除外リストへの追加は不要。
+- 絵のタップは`pickEmoteForTap()`で**嬉しい側(`tap`の重み)を出やすくする**。可愛がって毎回すねられると愛着の逆になる。
 - **リザルトの勝ちだけは絵を動かさず粒だけ出す**(`fxOnly`)。`.resultScreen.win .result-monster-icon`のCSSアニメーションが`transform`を持っており、**CSSアニメーションはインラインの`transform`より強い**ので、両方書くとこちらが無視されるため。
 - **`renderLobbyMonster()`は、出しているモンスターが同じままならエモート中に描き直さない**(`img.dataset.lobbySubject`で判定)。歩行コマの読み込み待ちリトライがこの関数を最大6回呼ぶので、素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。
 - ロビーのエモート行(`#lobbyEmoteRow`)は`#lobbyMonsterStage`の**兄弟**に置く(ボタンの入れ子は不正)。ステージが`flex:1 1 auto`で余白を吸収するので、行を足してもステージが少し縮むだけで**スクロールは出ない**(667/812/568の3サイズで実測済み)。
