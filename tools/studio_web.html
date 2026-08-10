@@ -217,6 +217,12 @@
             <option value="#0000FF">青</option>
           </select></div>
         </div>
+        <!-- AI Horde のときだけ意味がある。元の絵をどれだけ残すか -->
+        <div id="aw_denoiseWrap" style="display:none">
+          <label>元の絵を残す度合い <span id="aw_denoiseV">45</span>%
+            (低いほど元のまま / 高いほど大きく変わる)</label>
+          <input id="aw_denoise" type="range" min="20" max="85" value="55">
+        </div>
         <label>足したい指定(省略可)</label>
         <input id="aw_lookNote" placeholder="例: 角ばった装甲にして、目だけが赤く光る">
         <label>参考画像(省略可・3枚まで)</label>
@@ -2583,8 +2589,112 @@ const AWAKEN_LOOKS = {
   crystal:{ label:'結晶化する',   p:'透明な結晶が体から生え、内側から光る' },
 };
 const IMAGE_PROVIDERS = {
+  /* AI Horde: **完全無料**(有志が提供するGPUを共有する仕組み)。鍵は匿名の
+     0000000000 でも動くが、自分の無料アカウントの鍵を入れると順番が早くなる。
+     CORSは開いていることを実測済み。ただし**混み具合で数分待つ**ことがあり、
+     元の絵をどれだけ残すかは「元の絵を残す度合い」で決める。
+     ※こちらの検証環境からは Cloudflare にデータセンターIPを弾かれて実呼び出しが
+       できていない(error 1010)。実機のブラウザからは通る見込みだが、**動くか
+       どうかの最終確認は実機で行う。** */
+  horde: {
+    label: 'AI Horde(無料・待ち時間あり)',
+    keyHint: 'aihorde.net で無料発行。空欄なら匿名で使う',
+    anonKey: '0000000000',
+    async listModels(key){
+      const r = await fetch('https://aihorde.net/api/v2/status/models?type=image');
+      const j = await r.json();
+      if(!r.ok) throw new Error(imgApiError(r.status, j));
+      // 動いているワーカーが多いモデルほど早く返る。多い順に並べる
+      return (Array.isArray(j) ? j : [])
+        .filter(m=> (m.count||0) > 0)
+        .sort((a,b)=> (b.count||0) - (a.count||0))
+        .slice(0, 25)
+        .map(m=> m.name);
+    },
+    async generate(key, model, prompt, images, onWait){
+      const H = { 'apikey': key || this.anonKey, 'Content-Type':'application/json',
+                  'Client-Agent':'aramon-studio:1.0:github.com/komekome898-web/aramon' };
+      const body = {
+        prompt: prompt.replace(/\n/g, ' '),
+        params: { width:512, height:768, steps:28, n:1, cfg_scale:7,
+                  sampler_name:'k_euler_a', denoising_strength: hordeDenoise() },
+        nsfw:false, models: model ? [model] : undefined,
+        source_image: images[0] ? images[0].b64 : undefined,
+        source_processing: images[0] ? 'img2img' : undefined,
+      };
+      const post = await fetch('https://aihorde.net/api/v2/generate/async',
+        { method:'POST', headers:H, body: JSON.stringify(body) });
+      const pj = await post.json().catch(()=>({}));
+      if(!post.ok){
+        const e = new Error(imgApiError(post.status, { error:{ message: pj.message || '' } }));
+        e.status = post.status; throw e;
+      }
+      const id = pj.id;
+      // 空いていれば数十秒、混んでいると数分。**待ち時間を画面に出し続ける**
+      for(let i=0;i<90;i++){
+        await new Promise(r=> setTimeout(r, 4000));
+        const st = await (await fetch(`https://aihorde.net/api/v2/generate/status/${id}`,
+                                      { headers:H })).json();
+        if(onWait) onWait(st.done ? '仕上げています…'
+          : `順番待ち ${st.queue_position ?? '-'}人目 / あと ${st.wait_time ?? '-'}秒`);
+        if(st.done){
+          const g = (st.generations||[])[0];
+          if(!g) throw new Error('画像が返りませんでした。もう一度押してください。');
+          if(/^https?:/.test(g.img)){
+            const blob = await (await fetch(g.img)).blob();
+            return { b64: await blobToBase64(blob), mime: blob.type || 'image/webp' };
+          }
+          return { b64: g.img, mime:'image/webp' };
+        }
+        if(st.faulted) throw new Error('作れませんでした(提供元の不調)。もう一度押してください。');
+      }
+      throw new Error('待ち時間が長すぎます。空いている時間にもう一度お試しください。');
+    },
+  },
+  /* OpenAI: **ブラウザから直接叩けることを実測で確認した**
+     (/v1/images/edits のプリフライトが access-control-allow-origin: * と
+      authorization ヘッダー許可を返す)。以前「CORSで叩けない」と書いたのは誤り。
+     **透過PNGを直接出せる唯一の提供元**なので、緑背景で出させて抜く手間が要らない。 */
+  openai: {
+    label: 'OpenAI(透過PNGをそのまま出せる)',
+    keyHint: 'platform.openai.com で発行',
+    transparent: true,
+    async listModels(key){
+      const r = await fetch('https://api.openai.com/v1/models',
+                            { headers:{ 'Authorization':'Bearer '+key } });
+      const j = await r.json();
+      if(!r.ok) throw new Error(imgApiError(r.status, j));
+      const names = (j.data||[]).map(m=>m.id).filter(id=> /^gpt-image/.test(id));
+      // 画像の編集(参照画像あり)ができるのは gpt-image 系。mini は品質が落ちるので後ろへ
+      const rank = (n)=> /mini/.test(n) ? 1 : 0;
+      return names.sort((a,b)=> rank(a)-rank(b) || (a < b ? 1 : a > b ? -1 : 0));
+    },
+    async generate(key, model, prompt, images){
+      /* /v1/images/edits は multipart。**image[] に何枚でも入れられる**ので、
+         1枚目に元の絵、2枚目以降に参考画像を渡す(Geminiと同じ渡し方)。 */
+      const fd = new FormData();
+      fd.append('model', model);
+      fd.append('prompt', prompt);
+      fd.append('background', 'transparent');   // 本物の透過で返る
+      fd.append('output_format', 'png');
+      fd.append('size', '1024x1536');
+      images.forEach((im, i)=> fd.append('image[]',
+        b64ToBlob(im.b64, im.mime), `src${i}.png`));
+      const r = await fetch('https://api.openai.com/v1/images/edits',
+        { method:'POST', headers:{ 'Authorization':'Bearer '+key }, body: fd });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok){
+        const e = new Error(imgApiError(r.status, j));
+        e.status = r.status;
+        throw e;
+      }
+      const b64 = ((j.data||[])[0]||{}).b64_json;
+      if(!b64) throw new Error('画像が返りませんでした。指定の言い回しを変えて、もう一度押してください。');
+      return { b64, mime:'image/png' };
+    },
+  },
   gemini: {
-    label: 'Google Gemini(無料枠あり・クレカ不要)',
+    label: 'Google Gemini(要・従量課金。無料枠では画像を作れません)',
     keyHint: 'Google AI Studio で発行',
     /* 画像を出せるモデルだけを新しい順に返す。名前で決め打ちしない */
     async listModels(key){
@@ -2655,7 +2765,12 @@ function imgApiError(status, j){
   if(status >= 500) return `提供元が一時的に応答していません。少し待ってからもう一度押してください。${tail}`;
   return `画像生成に失敗しました(${status})。${tail}`;
 }
-function imgProvider(){ return IMAGE_PROVIDERS[$('aw_provider').value] || IMAGE_PROVIDERS.gemini; }
+function imgProvider(){ return IMAGE_PROVIDERS[$('aw_provider').value] || IMAGE_PROVIDERS.horde; }
+// 「元の絵を残す度合い」はAI Hordeのimg2imgでだけ効く。0.2〜0.85
+function hordeDenoise(){ return (+($('aw_denoise')||{value:55}).value)/100; }
+/* 透過で返る提供元では、緑背景で出させて抜く手間が要らない。
+   **どちらでも同じ経路で18枚まで通るように、ここで一度だけ見分ける。** */
+function imgProviderTransparent(){ return !!imgProvider().transparent; }
 function imgKey(){ return localStorage.getItem('aramon_img_key') || $('aw_key').value.trim(); }
 function saveImgKey(){
   const k = $('aw_key').value.trim();
@@ -2701,7 +2816,9 @@ function awakenPrompt(side, hasRef){
     hasRef ? `・2枚目以降は見た目の参考です。その意匠・配色を取り入れてください` : '',
     note ? `・追加の指定: ${note}` : '',
     `・全身が収まるように描き、手足や武器を画面の外で切らない`,
-    `・背景は ${bg} の単色で塗りつぶす。影も模様もグラデーションも入れない`,
+    // 透過で返せる提供元には緑背景を頼まない(そのまま透過で受け取る)
+    imgProviderTransparent() ? `・背景は完全な透明にする`
+                             : `・背景は ${bg} の単色で塗りつぶす。影も模様もグラデーションも入れない`,
     `・キャラクターの縁がはっきり分かるように描く`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -2728,7 +2845,8 @@ async function generateWithFallback(key, prompt, images, label){
     const m = order[i];
     if(i) $('aw_genMeta').textContent = `${label}を作っています… ${m} で試しています(${i+1}/${order.length})`;
     try{
-      const r = await imgProvider().generate(key, m, prompt, images);
+      const r = await imgProvider().generate(key, m, prompt, images,
+        (msg)=> $('aw_genMeta').textContent = `${label}を作っています… ${msg}`);
       if(m !== picked) $('aw_model').value = m;      // 通ったモデルを次から先に使う
       return r;
     }catch(e){
@@ -4213,7 +4331,15 @@ function boot(){
     .map(k=>`<option value="${k}">${AWAKEN_LOOKS[k].label}</option>`).join('');
   $('aw_provider').innerHTML = Object.keys(IMAGE_PROVIDERS)
     .map(k=>`<option value="${k}">${IMAGE_PROVIDERS[k].label}</option>`).join('');
-  const syncProvider = ()=>{ $('aw_keyHint').textContent = imgProvider().keyHint; };
+  const syncProvider = ()=>{
+    const p = imgProvider();
+    $('aw_keyHint').textContent = p.keyHint;
+    // 提供元によって意味のある設定だけ出す(要らない設定を触らせない)
+    $('aw_denoiseWrap').style.display = ($('aw_provider').value === 'horde') ? 'block' : 'none';
+    $('aw_bg').parentElement.style.display = p.transparent ? 'none' : '';
+  };
+  $('aw_denoise').addEventListener('input',
+    ()=> $('aw_denoiseV').textContent = $('aw_denoise').value);
   $('aw_provider').onchange = ()=>{ syncProvider(); loadImgModels(); };
   const savedProvider = localStorage.getItem('aramon_img_provider');
   if(savedProvider && IMAGE_PROVIDERS[savedProvider]) $('aw_provider').value = savedProvider;
