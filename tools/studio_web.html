@@ -139,8 +139,8 @@
         <select id="aw_base"><option value="">先にGitHubへ接続してください</option></select></div>
       <div><label>作り方</label>
         <select id="aw_mode">
-          <option value="fx">エフェクト合成(描き直し不要・おすすめ)</option>
-          <option value="draw">描き下ろし(覚醒後の絵を1枚渡す)</option>
+          <option value="draw">覚醒の絵から作る(正面・背面の2枚でおまかせ)</option>
+          <option value="fx">元の絵に光と素材を重ねる(絵を用意しない)</option>
         </select></div>
     </div>
     <div class="hint" id="aw_cur">接続すると、元にできるSSRスキンが一覧に出ます。</div>
@@ -171,11 +171,18 @@
       </div>
       <label>重ねる素材(省略可。炎・オーラなどの透過PNG)</label>
       <input id="aw_material" type="file" accept="image/*">
-      <div class="r2">
+      <div class="r3">
         <div><label>素材の濃さ <span id="aw_matOpV">0.75</span></label>
           <input id="aw_matOp" type="range" min="0" max="100" value="75"></div>
         <div><label>素材の大きさ <span id="aw_matScV">1.15</span></label>
           <input id="aw_matSc" type="range" min="50" max="200" value="115"></div>
+        <div><label>合わせる位置</label>
+          <select id="aw_matAnchor">
+            <option value="0.5">体の中心</option>
+            <option value="0.18">頭のあたり</option>
+            <option value="0.38">胸のあたり</option>
+            <option value="0.85">足もと</option>
+          </select></div>
       </div>
       <div class="btns"><button onclick="awakenPreview()">合成して確認する</button></div>
       <div class="strip" id="aw_preview" style="grid-template-columns:repeat(4,1fr)"></div>
@@ -184,9 +191,34 @@
         絵を描き直す必要はありません。上の設定を変えて「合成して確認する」を押し直すと作り直します。
       </div>
     </div>
-    <div id="aw_drawHint" class="hint" style="display:none">
-      <b>描き下ろしのときは、下の「歩行モーション」と「静止画」で覚醒後の絵を用意してください。</b>
-      歩行16コマは1枚の絵からパーツ判別で自動生成できます(新しいSSRを足すときと同じ手順)。
+    <!-- 覚醒の絵から作る。**触るのはこの2つの入力とボタンだけ**で18枚すべてを作る -->
+    <div id="aw_drawWrap" style="display:none">
+      <div class="r2">
+        <div><label>覚醒後の絵・正面</label><input id="aw_front" type="file" accept="image/*"></div>
+        <div><label>覚醒後の絵・背面</label><input id="aw_back" type="file" accept="image/*"></div>
+      </div>
+      <!-- 歩行の作り方。**既定は「歩く」**(歩行コマなので当然だが、歩行パネルの既定は
+           「揺れる」なので、ここで明示しないと揺れるだけのコマになる) -->
+      <div class="r2">
+        <div><label>動き</label>
+          <select id="aw_motion">
+            <option value="walk">歩く(手足を前後に振る)</option>
+            <option value="sway">揺れる(浮いている・脚が無いモンスター)</option>
+          </select></div>
+        <div><label>動きの大きさ <span id="aw_swayV">100</span>%</label>
+          <input id="aw_sway" type="range" min="30" max="160" value="100"></div>
+      </div>
+      <div class="btns"><button onclick="awakenAutoBuild()">この2枚から18枚作る</button>
+        <button onclick="toggleWalkAnim()">歩きを再生 / 止める</button></div>
+      <div class="hint" id="aw_autoMeta">正面と背面の絵を選んで押すと、背景を抜いて
+        <b>アイコン・試合用・歩行16コマ</b>まで一度に作ります。</div>
+      <div class="strip" id="aw_autoStrip" style="grid-template-columns:repeat(4,1fr)"></div>
+      <div class="hint">
+        <b>元スキンと同じ「立ちポーズ・正面/背面」で用意するほど、歩きがきれいに出ます。</b>
+        手足が体から離れて見えているほどパーツ判別が当たるためです。背景は白でも黒でも構いません
+        (四隅の色から自動で判定します)。うまく抜けないときだけ、下の「歩行モーション」で抜き方を
+        変えてから押し直してください。
+      </div>
     </div>
   </div>
   <div id="ssrForm" style="display:none">
@@ -1097,6 +1129,30 @@ function detectPeriod(grays, n){
 
 // 動画 -> 8コマの RGBA ImageData(320x320)
 const walkStep = (t)=>{ const e = $('walkMeta'); if(e) e.textContent = t; };
+/* 四隅の色から抜き方を決める。**判定の中身は cornerHint と同じものを1か所に寄せてある**
+   ので、伝える文言と実際に選ぶ設定が食い違わない。透過済みの画像は抜く必要がないので null。 */
+function autoSegFor(img){
+  const w = img.width, h = img.height, d = img.data;
+  for(let i=0;i<w*h;i++) if(d[i*4+3] < 250) return null;   // すでに透過している
+  const c = cornerRgb(img);
+  if(Math.min(...c) > 200) return { mode:'white', th:14, chroma:null };
+  // 黒背景は「本体に黒がある/ない」で挙動が変わる。暗い画素が多い絵は black 側が安全
+  if(Math.max(...c) < 60){
+    let dark = 0;
+    for(let i=0;i<w*h;i++) if(Math.max(d[i*4], d[i*4+1], d[i*4+2]) < 60) dark++;
+    return { mode: dark > w*h*0.5 ? 'black' : 'blackopen', th:40, chroma:null };
+  }
+  return { mode:'chroma', th:40, chroma:c };               // それ以外は四隅の色を拾って抜く
+}
+function cornerRgb(img){
+  const w = img.width, h = img.height, d = img.data;
+  const k = Math.max(3, Math.round(Math.min(w, h)*0.03));
+  let r=0, g=0, b=0;
+  for(const [x,y] of [[k,k],[w-1-k,k],[k,h-1-k],[w-1-k,h-1-k]]){
+    const i = (y*w+x)*4; r += d[i]; g += d[i+1]; b += d[i+2];
+  }
+  return [Math.round(r/4), Math.round(g/4), Math.round(b/4)];
+}
 // 抜けなかったとき、四隅の色から「どの抜き方を試すとよいか」を伝える
 function cornerHint(img){
   const w = img.width, h = img.height, d = img.data;
@@ -1189,12 +1245,22 @@ async function buildWalkFrames(file, onProgress){
 
 /* ------------------------------------------------------ パーツ一覧のUI */
 // 後ろの画像を選んでいなければ、後ろも正面のリグを使う(コマ生成の falls back と同じ)
+/* 歩行に使う画像の入口。**覚醒(絵から作る)のときだけ覚醒パネルの入力を見る。**
+   分岐をここ1か所に寄せてあるので、歩行の生成側(buildWalkFromImages / analyzeRigFromCut)は
+   どのモードから呼ばれても同じ道を通る。背面が無ければ正面で代用する規則も共通。 */
+function awakenWalkInput(side){
+  if(!(typeof isAwaken==='function' && isAwaken() && !awakenIsFxMode())) return null;
+  return $(side === 'f' ? 'aw_front' : 'aw_back');
+}
+function walkInputFor(side){
+  return awakenWalkInput(side) || $(side === 'f' ? 'imgF' : 'imgB');
+}
 function rigSideFor(side){
-  return (side === 'b' && !$('imgB').files.length) ? 'f' : side;
+  return (side === 'b' && !walkInputFor('b').files.length) ? 'f' : side;
 }
 function imageFilesFor(side){
-  const fs = Array.from((side === 'f' ? $('imgF') : $('imgB')).files);
-  return (side === 'b' && !fs.length) ? Array.from($('imgF').files) : fs;
+  const fs = Array.from(walkInputFor(side).files);
+  return (side === 'b' && !fs.length) ? Array.from(walkInputFor('f').files) : fs;
 }
 async function cutForSide(side){
   const fs = imageFilesFor(side);
@@ -1514,7 +1580,8 @@ async function blobToBase64(b){
      2. 色調シフト … 全体の色相/彩度/明度をずらして別物に見せる
      3. 素材の重ね … 渡された素材(炎・オーラ等)を被写体の位置に合わせて重ねる
    ========================================================================== */
-const AWAKEN_FX_DEFAULT = { rim:'#8fd0ff', rimPx:3, glowPx:16, glow:0.85, hue:0, sat:1.15, bri:1.05, matOpacity:0.75, matScale:1.15 };
+const AWAKEN_FX_DEFAULT = { rim:'#8fd0ff', rimPx:3, glowPx:16, glow:0.85, hue:0, sat:1.15, bri:1.05,
+                            matOpacity:0.75, matScale:1.15, matAnchor:0.5 };
 // 透過画像のアルファから輪郭(リム)を作る。dilate してから元を抜いた差分が縁になる
 function awakenRimCanvas(img, w, h, px, color){
   const c = document.createElement('canvas'); c.width=w; c.height=h;
@@ -1531,9 +1598,22 @@ function awakenRimCanvas(img, w, h, px, color){
   cx.fillStyle = color; cx.fillRect(0,0,w,h);
   return c;
 }
-/* 1枚ぶんの合成。元画像は正方形に整形済み(CANVAS×CANVAS)なので、
-   素材は中央に被写体比で重ねるだけでコマ間のブレが出ない。 */
-function awakenComposeOne(img, material, fx){
+/* そのコマの被写体の枠(bbox)を取る。**素材をこの枠に合わせて置く**ためのもの。
+   歩行コマは上下動・傾き・つぶれで体の位置が毎コマ変わるので、キャンバス中央に
+   固定で置くと素材だけが取り残されて貼り付いて見える(最初の実装がそうだった)。 */
+function awakenBodyBox(img){
+  const c = document.createElement('canvas'); c.width=CANVAS; c.height=CANVAS;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  cx.drawImage(img, 0, 0, CANVAS, CANVAS);
+  const d = cx.getImageData(0, 0, CANVAS, CANVAS).data;
+  const a = new Uint8Array(CANVAS*CANVAS);
+  for(let i=0;i<CANVAS*CANVAS;i++) a[i] = d[i*4+3];
+  const b = bboxOf(a, CANVAS, CANVAS, 24);
+  return b || { x0:0, x1:CANVAS-1, y0:0, y1:CANVAS-1 };
+}
+/* 1枚ぶんの合成。元画像は正方形に整形済み(CANVAS×CANVAS)。
+   素材は「被写体の枠」を基準に置くので、コマごとに体へ付いていく。 */
+function awakenComposeOne(img, material, fx, box){
   const w = CANVAS, h = CANVAS;
   const c = document.createElement('canvas'); c.width=w; c.height=h;
   const cx = c.getContext('2d', { willReadFrequently:true });
@@ -1550,13 +1630,20 @@ function awakenComposeOne(img, material, fx){
   cx.filter = `hue-rotate(${fx.hue}deg) saturate(${fx.sat}) brightness(${fx.bri})`;
   cx.drawImage(img, 0, 0, w, h);
   cx.restore();
-  // ③ 素材を重ねる(加算合成で光らせる。被写体の中心にそろえる)
+  /* ③ 素材を重ねる(加算合成で光らせる)。**置く場所は被写体の枠から決める。**
+     大きさは枠の幅、横は枠の中心、縦は枠の高さの matAnchor の位置。
+     こうすると体が跳ねても傾いてもズレない。 */
   if(material){
-    const mw = w*fx.matScale, mh = h*fx.matScale;
+    const b = box || { x0:0, x1:w-1, y0:0, y1:h-1 };
+    const bw = b.x1-b.x0+1, bh = b.y1-b.y0+1;
+    const mw = bw*fx.matScale;
+    const mh = mw * (material.height||1) / (material.width||1);   // 素材の縦横比は崩さない
+    const cxp = b.x0 + bw/2;
+    const cyp = b.y0 + bh*(fx.matAnchor==null ? 0.5 : fx.matAnchor);
     cx.save();
     cx.globalAlpha = fx.matOpacity;
     cx.globalCompositeOperation = 'lighter';
-    cx.drawImage(material, (w-mw)/2, (h-mh)/2, mw, mh);
+    cx.drawImage(material, cxp-mw/2, cyp-mh/2, mw, mh);
     cx.restore();
   }
   // ④ 内側のリム(輪郭のふち取り。最後に乗せて形をはっきりさせる)
@@ -1585,7 +1672,8 @@ async function awakenComposeAll(baseSs, newSs, material, fx, onProgress){
       if(j.walk) continue;
       throw new Error(`${j.from} を取得できません(元スキンの画像が見つかりません)`);
     }
-    const c = awakenComposeOne(img, material, fx);
+    // 被写体の枠はコマごとに取り直す(素材を体へ付いていかせるため)
+    const c = awakenComposeOne(img, material, fx, material ? awakenBodyBox(img) : null);
     out.push({ path:j.to, blob: await canvasToBlobPng(c) });
   }
   return out;
@@ -2514,6 +2602,7 @@ function awakenFxSettings(){
     rim: $('aw_rim').value, rimPx: +$('aw_rimPx').value, glowPx: +$('aw_glow').value,
     glow: 0.85, hue: +$('aw_hue').value, sat: (+$('aw_sat').value)/100, bri: (+$('aw_bri').value)/100,
     matOpacity: (+$('aw_matOp').value)/100, matScale: (+$('aw_matSc').value)/100,
+    matAnchor: +$('aw_matAnchor').value,
   };
 }
 // 素材の画像(省略可)
@@ -2538,6 +2627,87 @@ async function awakenPreview(){
       `<div class="cell"><img src="${u}"><span class="n">${files[i].path.split('/').pop()}</span></div>`).join('');
     log(`合成しました(${files.length}枚)。よければ下の「差分を確認する」へ進んでください。`, 'ok');
   }catch(e){ log(String(e.message||e), 'ng'); }
+}
+/* 覚醒の絵(正面・背面)から18枚すべてを一度に作る。
+   **新しい画像処理は1つも書いていない。** 既にある関数を順に呼ぶだけの手順書で、
+     背景を抜く   … autoSegFor(四隅の色で判定)→ 既存の segment
+     歩行16コマ   … buildWalkFromImages → analyzeRigFromCut → synthWalkFrames
+     静止画2枚    … makePortrait
+     異常の検出   … inspectFrames(useFrames の中で走る)
+   ここを1本にしておく理由は、発注者が触るものを「2つの入力とボタン1つ」に減らすため。
+   うまくいかないときは下の歩行・静止画パネルで今までどおり手で直せる(同じ state を使う)。 */
+async function awakenAutoBuild(){
+  const ff = $('aw_front').files[0];
+  if(!ff) return log('覚醒後の絵(正面)を選んでください', 'ng');
+  const bf = $('aw_back').files[0];
+  try{
+    stopWalkAnim();
+    setProg(0);
+    const notes = [];
+    /* 歩行パネルの既定は「揺れる・全体」なので、**ここで歩きの設定を入れてから作る**。
+       入れないと手足を振らないコマ(ただ揺れるだけ)になる。値の持ち場は歩行パネル側の
+       入力1か所のままにして、覚醒パネルの選択をそこへ写す(二重に持たない)。 */
+    $('motionKind').value = $('aw_motion').value;
+    $('swayTarget').value = 'parts';
+    $('sway').value = $('aw_sway').value; $('swayVal').textContent = $('aw_sway').value;
+    $('motionKind').onchange();
+    state.rig = { f:null, b:null };             // 絵が変わったのでリグは作り直す(両面ぶん1回だけ)
+    for(const side of ['f','b']){
+      const files = imageFilesFor(side);
+      if(!files.length) continue;
+      const label = side==='f' ? '正面' : '後ろ';
+      // 抜き方はこの絵に合わせて自動で決める(手で変えたものは、押し直すまで上書きしない)
+      const img = await fileToImageData(files[0]);
+      const seg = autoSegFor(img);
+      if(seg){
+        $('mode').value = seg.mode; $('th').value = seg.th; $('thVal').textContent = seg.th;
+        state.chroma = seg.chroma;
+        $('chromaWrap').style.display = seg.mode==='chroma' ? 'block' : 'none';
+        $('thWrap').style.display = seg.mode==='chroma' ? 'block' : ($('mode').value==='white'?'none':'block');
+      }
+      notes.push(`${label}=${seg ? SEG_JP[seg.mode] : '透過済み'}`);
+      $('aw_autoMeta').textContent = `${label}の歩行8コマを作っています…`;
+      const r = await buildWalkFromImages(files, (p)=> setProg(side==='f' ? p*0.4 : 40+p*0.4), side);
+      await useFrames(side, r.frames, r.note);
+    }
+    if(!state.walk.b) state.walk.b = state.walk.f;   // 背面が無ければ正面で代用(警告は下に出す)
+    // 静止画2枚。歩行と同じ抜き方で正面の絵から作る
+    $('aw_autoMeta').textContent = '静止画を整えています…';
+    setProg(85);
+    const fseg = autoSegFor(await fileToImageData(ff));
+    $('pmode').value = fseg ? fseg.mode : 'keep';
+    state.chromaP = fseg ? fseg.chroma : null;
+    $('pth').value = fseg ? fseg.th : 14;
+    const icon = await makePortrait(ff);
+    state.portraits = { icon: icon.blob, player: icon.blob };
+    state.hue = sampleHue(icon.imageData, 60);
+    setProg(95);
+    await renderAwakenAutoStrip(icon.blob);
+    startWalkAnim();
+    setProg(null);
+    const bad = ['f','b'].reduce((n,s)=> n + ((state.walk[s] && state.walk[s].issues) || []).filter(Boolean).length, 0);
+    $('aw_autoMeta').innerHTML =
+      `<span class="${bad?'ng':'ok'}">18枚できました(${notes.join(' / ')})。</span>` +
+      (bad ? ` ${bad}コマに問題がありそうです。下の「歩行モーション」で赤枠のコマを見て、`
+           + '抜き方やしきい値を変えてから押し直してください。' : '')
+      + (bf ? '' : ' <b>背面の絵が無いので、後ろ姿にも正面の絵を使っています。</b>')
+      + ' このまま下の「差分を確認する」へ進めます。';
+    log('覚醒の18枚を作りました。下の「差分を確認する」へ進んでください。', 'ok');
+  }catch(e){ setProg(null); $('aw_autoMeta').innerHTML = `<span class="ng">${String(e.message||e)}</span>`;
+             log(String(e.message||e), 'ng'); }
+}
+const SEG_JP = { white:'白背景', black:'黒背景', blackopen:'黒背景', chroma:'背景の色で抜く' };
+// できあがった18枚をその場に並べる(下までスクロールしなくても結果が分かるように)
+async function renderAwakenAutoStrip(iconBlob){
+  const cells = [];
+  cells.push([await blobToDataUrl(iconBlob), 'アイコン/試合用']);
+  for(const side of ['f','b']){
+    const w = state.walk[side];
+    if(!w) continue;
+    w.urls.forEach((u,i)=> cells.push([u, `${side==='f'?'正面':'後ろ'}${i+1}`]));
+  }
+  $('aw_autoStrip').innerHTML = cells.map(([u,n])=>
+    `<div class="cell"><img src="${u}"><span class="n">${n}</span></div>`).join('');
 }
 function activeKey(){
   if(isSsrMedia()) return $('md_skin').value;
@@ -3631,7 +3801,7 @@ function boot(){
   // 素材を選び直したら色拾いの下絵も入れ替え、パーツも作り直す
   for(const id of ['vidF','vidB','imgF','imgB'])
     $(id).addEventListener('change', ()=>{ if($('mode').value === 'chroma') fillPicker('w'); });
-  for(const id of ['imgF','imgB']) $(id).addEventListener('change', invalidateRig);
+  for(const id of ['imgF','imgB','aw_front','aw_back']) $(id).addEventListener('change', invalidateRig);
   for(const id of ['mode','th']) $(id).addEventListener('change', invalidateRig);
   for(const id of ['imgIcon','imgPlayer'])
     $(id).addEventListener('change', ()=>{ if($('pmode').value === 'chroma') fillPicker('p'); });
@@ -3648,6 +3818,9 @@ function boot(){
     $('assetsForm').style.display = assets ? 'block' : 'none';
     $('awakenForm').style.display = awaken ? 'block' : 'none';
     $('mediaPanel').style.display = media ? 'block' : 'none';
+    // 覚醒の2つの作り方で、使う入力が入れ替わる
+    $('aw_fxWrap').style.display = awakenFx ? 'block' : 'none';
+    $('aw_drawWrap').style.display = (awaken && !awakenFx) ? 'block' : 'none';
     // 専用メディアの登録では歩行・静止画・仕様・技は使わない
     $('walkPanel').style.display = (media || awakenFx) ? 'none' : 'block';
     $('portraitPanel').style.display = (media || awakenFx) ? 'none' : 'block';
@@ -3679,6 +3852,7 @@ function boot(){
   $('aw_mode').onchange = ()=>{ $('regKind').onchange(); };
   $('aw_base').onchange = ()=>{ state.awaken = null; state.files = null; $('commitBtn').disabled = true;
                                 $('aw_preview').innerHTML = ''; renderAwakenCurrent(); };
+  $('aw_sway').addEventListener('input', ()=> $('aw_swayV').textContent = $('aw_sway').value);
   opts($('aw_aura'), AURAS);
   // スライダーの数値表示。**値の持ち方は awakenFxSettings 1か所**で、ここは見せるだけ
   const awSliders = [['aw_glow','aw_glowV',1],['aw_rimPx','aw_rimV',1],['aw_hue','aw_hueV',1],
