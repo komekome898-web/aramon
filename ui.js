@@ -14,6 +14,7 @@ const TRAIT_DESC = {
   nimble:     '移動速度1.2倍',
   dullahan:   '被ダメ0.8倍、相手に近いほど技ダメが上がる', /*@dullahan*/
   hum:        '技の弾速が速く、射程が短い', /*@hum*/
+  ogre:       '与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', /*@ogre*/
   // <<AUTO:TRAIT_DESC>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 function stateTriggerText(sc){

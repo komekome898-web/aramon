@@ -142,6 +142,7 @@ const ELEMENTS = {
   pixie:   { label:'ピクシー',   color:'#f04060', dark:'#9c2c48', accent:'#905080', speed:200, speedMod:1.2, hp:70, trait:'nimble' },
   dullahan:{ label:'デュラハン', color:'#f2f4f8', dark:'#b7bcc8', speed:160, hp:120, trait:'dullahan' }, /*@dullahan*/
   hum:     { label:'ハム', color:'#e0ad7b', dark:'#86684a', accent:'#e07be0', speed:210, hp:90, trait:'hum' }, /*@hum*/
+  ogre:    { label:'キジン', color:'#e0ad7b', dark:'#86684a', speed:185, hp:130, trait:'ogre', dmgDealtMod:1.2 }, /*@ogre*/
   // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -340,6 +341,9 @@ const WALK_ANIM = {
   },
   hum:     { /*@hum*/
     base: { front:_loadWalk('hum_walk_f'), back:_loadWalk('hum_walk_b') },
+  },
+  ogre:    { /*@ogre*/
+    base: { front:_loadWalk('ogre_walk_f'), back:_loadWalk('ogre_walk_b') },
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -689,6 +693,11 @@ const SIGNATURE_MOVES = {
     // 進行方向へ向けて描く。**projStyleを付けるとその分岐に入らない**ので付けない
     { name:'暗けい', tier:3, color:'#d9b391', range:750, dmg:20, cooldown:2.3, gutsCost:24, projSpeed:1280, hitR:28, splash:0, icon:'🖐🏻', blast:{ radius:330, dmg:60, expandTime:0.5, color:'#d9b391' } }
   ],
+  ogre:    [ /*@ogre*/
+    { name:'殴打', tier:1, color:'#e0ad7b', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'👊🏿' },
+    { name:'阿修羅', tier:2, color:'#e0ad7b', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'👊🏿' },
+    { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:47, cooldown:2, gutsCost:24, aoeShape:'rect', aoeStyle:'lava', rectWidth:220 }
+  ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -726,6 +735,7 @@ const MONSTER_AURA = {
   fox:'white', god:'white', zan:'black', pixie:'red',
   dullahan:'white', /*@dullahan*/
   hum:     'yellow', /*@hum*/
+  ogre:    'yellow', /*@ogre*/
   // <<AUTO:MONSTER_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
@@ -747,6 +757,7 @@ const MOVE_AURA = {
   'キッス':'red','ライトニング':'yellow','ビッグバン':'black',
   'まっぷたつ':'white','風神剣':'white','最終奥義':'white', /*@dullahan*/
   '正拳':'yellow','ワンツー':'yellow','暗けい':'yellow', /*@hum*/
+  '殴打':'yellow','阿修羅':'yellow','羅生門':'yellow', /*@ogre*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1005,6 +1016,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-12', items:[
+    { t:'🆕 新モンスター「キジン」が登場しました！ 与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', g:['feature','monster'] },
+  ]},
   { date:'2026-08-11', items:[
     { t:'✵ 「狂戦士ガッツ」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },
     { t:'✵ 覚醒に専用の演出を追加しました。元の姿が光に包まれ、閃光とともに覚醒後の姿へ入れ替わります。最後に「何を強化したか」も出ます', g:['feature','av'] },
@@ -1400,6 +1414,10 @@ const STATE_CHANGES = {
     name:'余裕', duration:20, cooldown:120, trigger:'hpBelow', triggerValue:0.5,
     effects:{ dmgTakenMult:1.5, gutsRegenMult:2, speedMult:1.5 },
   },
+  ogre:    { /*@ogre*/
+    name:'闘魂', duration:20, cooldown:120, trigger:'gutsBelow', triggerValue:0.5,
+    effects:{ gutsRegenMult:2, cooldownMult:0.667 },
+  },
   // <<AUTO:STATE_CHANGES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -1441,6 +1459,7 @@ const APTITUDE = {
   pixie:   { life:'E', power:'D', wisdom:'A', accuracy:'B', evasion:'B', vitality:'E' },
   dullahan:{ life:'C', power:'B', wisdom:'C', accuracy:'C', evasion:'E', vitality:'A' }, /*@dullahan*/
   hum:     { life:'C', power:'A', wisdom:'E', accuracy:'C', evasion:'A', vitality:'E' }, /*@hum*/
+  ogre:    { life:'C', power:'A', wisdom:'D', accuracy:'C', evasion:'B', vitality:'B' }, /*@ogre*/
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 /* 特性の「技を当てたときに相手へ起きること」。
@@ -1454,6 +1473,7 @@ const APTITUDE = {
 
    例: { burnSec:10, gutsDrain:0.3 } = 命中で10秒やけど + 与ダメの30%ぶん相手のガッツを削る */
 const TRAIT_ON_HIT = {
+  ogre:       { burnSec:10 }, /*@ogre*/
   // <<AUTO:TRAIT_ON_HIT>> ここから上へ tools のスタジオが新しい特性の行を追記する
 };
 // 適正は E→D→C→B→A→S の6段階。Sは転生でしか手に入らない(種族の初期適正には出てこない)。
@@ -3228,6 +3248,7 @@ const SKIN_CONFIG = {
   pixie:   { colors:['black','white','blue','yellow','green'], source:{type:'chroma', hue:349, window:50} },   // 赤い部分
   dullahan:{ colors:['black','red','blue','yellow','green'], source:{type:'chroma', hue:30, window:60} }, /*@dullahan*/
   hum:     { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:15, window:60} }, /*@hum*/
+  ogre:    { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:30, window:60} }, /*@ogre*/
   // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)

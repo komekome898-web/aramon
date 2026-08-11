@@ -1,0 +1,72 @@
+{
+  "key": "ogre",
+  "label": "キジン",
+  "color": "#e0ad7b",
+  "dark": "#86684a",
+  "speed": 185,
+  "hp": 130,
+  "trait": "ogre",
+  "traitDesc": "与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする",
+  "traitEffects": {
+    "dmgDealtMod": 1.2,
+    "burnSec": 10
+  },
+  "aura": "yellow",
+  "aptitude": {
+    "life": "C",
+    "power": "A",
+    "wisdom": "D",
+    "accuracy": "C",
+    "evasion": "B",
+    "vitality": "B"
+  },
+  "skin": {
+    "colors": [
+      "black",
+      "white",
+      "red",
+      "blue",
+      "green"
+    ],
+    "source": {
+      "type": "chroma",
+      "hue": 30,
+      "window": 60
+    }
+  },
+  "moves": [
+    {
+      "name": "殴打",
+      "icon": "👊🏿"
+    },
+    {
+      "name": "阿修羅",
+      "icon": "👊🏿"
+    },
+    {
+      "name": "羅生門",
+      "template": "wave"
+    }
+  ],
+  "walk": {
+    "front": "assets/ogre/front.mp4",
+    "back": "assets/ogre/back.mp4",
+    "source": "video",
+    "mode": "chroma"
+  },
+  "images": {
+    "icon": "assets/ogre/icon.png"
+  },
+  "dmgDealtMod": 1.2,
+  "stateChange": {
+    "name": "闘魂",
+    "duration": 20,
+    "cooldown": 120,
+    "trigger": "gutsBelow",
+    "triggerValue": 0.5,
+    "effects": {
+      "gutsRegenMult": 2,
+      "cooldownMult": 0.667
+    }
+  }
+}
