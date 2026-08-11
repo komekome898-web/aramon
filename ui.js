@@ -1178,6 +1178,7 @@ function refreshLobby(){
   renderLobbyMonster();
   startLobbyBannerLoop();
   startLobbyRoomPoll();
+  refreshGhosts();   // 他の人が育てたマスモン(ソロの敵に混ぜる)を間隔を空けて取り直す
 }
 
 
@@ -3460,25 +3461,11 @@ function currentMastermonInfo(){
   if(!game.selectedMastermonKey) return null;
   const mm = loadMastermons()[game.selectedMastermonKey];
   if(!mm) return null;
-  const src = mm.stats || {};
-  const stats = {};
-  MASTERMON_STATS.forEach(s=>{ stats[s.key] = Math.round(src[s.key]||0); });
-  // 転生と基礎値アイテムの情報も必ず載せる。適正S以上(倍率の伸びが良くなる)と基礎値加算を
-  // 片側だけで掛けるとホストとゲストでHP・移動速度が食い違い、ゲストの位置補正が暴れる。
-  // Firebaseはundefinedを受け付けないのでnullで送る。
-  const apt = {};
-  const srcApt = mastermonApt(mm);
-  MASTERMON_STATS.forEach(s=>{ apt[s.key] = srcApt[s.key] || 'C'; });
-  // baseHp/baseSpd は「基礎値アイテムぶん」だけを素のまま送る。
-  // 受け側は mastermonBaseBonus() で rebirth から転生ぶんを足し直すので、
-  // ここで合計を送ると転生ぶんが二重に乗る。
-  /* 覚醒の強化は**解決済みの1語**にして送る(受け側は覚醒の記録を持っていないため)。
-     どのスキンを着ているかで決まるので、ここで装備スキンと突き合わせて確定させる。 */
-  const awakenBoost = (typeof awakenBoostForSkin==='function')
-    ? awakenBoostForSkin(mm, currentEquippedSkinId()) : null;
-  return { level: mm.level||1, stats, rebirth: mastermonRebirthCount(mm), apt,
-    baseHp: safeBaseAmount(mm.baseHp), baseSpd: safeBaseAmount(mm.baseSpd),
-    awakenBoost: awakenBoost || null };
+  // 写しの形は mastermonSnapshot 1つ(ゴースト・マスモンbotと同じ)
+  const s = mastermonSnapshot(mm, currentEquippedSkinId());
+  // 部屋へ送るのは戦力に要るぶんだけ(名前と見た目は別のフィールドで送っている)
+  return { level:s.level, stats:s.stats, rebirth:s.rebirth, apt:s.apt,
+           baseHp:s.baseHp, baseSpd:s.baseSpd, awakenBoost:s.awakenBoost };
 }
 // 今参戦するモンスターに装備中のスキンID(マルチプレイで相手にも見せるため送る)
 function currentEquippedSkinId(){
@@ -3701,10 +3688,21 @@ function startGame(){
   const playerMm = (game.selectedMastermonKey && loadMastermons()[game.selectedMastermonKey]) || null;
   const playerMmLevel = playerMm ? playerMm.level : null;
   const playerRebirth = mastermonRebirthCount(playerMm);
+  // 他の人が育てたマスモンの写し(ゴースト)を何体か混ぜる。取れなければ空配列で従来どおり
+  const ghosts = pickGhostsForMatch(playerMmLevel, playerRebirth);
   for(let i=0;i<29;i++){
-    const elKey = botElements[i % botElements.length];
-    const bot = createMonster(elKey, false, names[i % names.length]+ (i>=names.length?'Ⅱ':''), { spawnPoint: spawnPoints[i+1] });
-    if(playerMmLevel){
+    const g = ghosts[i] || null;
+    const elKey = g ? g.element : botElements[i % botElements.length];
+    const botName = g ? g.name : (names[i % names.length] + (i>=names.length?'Ⅱ':''));
+    const bot = createMonster(elKey, false, botName, { spawnPoint: spawnPoints[i+1] });
+    if(g){
+      // 差し込み方はマルチのマスモンbot(network.js)と同じ形
+      applyMastermonStatsToEntity(bot, g);
+      bot.isMastermonBot = true;
+      bot.mastermonLevel = g.level || 1;
+      if(g.skin) bot.skinId = g.skin;
+      bot.ghostOwner = g.owner || null;
+    } else if(playerMmLevel){
       const botLevel = clamp(playerMmLevel + randInt(-10, 10), 1, MASTERMON_LEVEL_CAP);
       applyMastermonStatsToEntity(bot, syntheticMastermonForLevel(elKey, botLevel, playerRebirth));
     }
@@ -4732,6 +4730,7 @@ function showResultNow(isWin, placement){
   });
   handleMastermonPostMatch(isWin);
   submitScoreToRanking(isWin, placement);
+  publishMyGhosts();   // 自分のマスモンを他の人のソロに出せるよう置いてくる(ログイン中だけ)
   logMatchForAdmin(isWin, placement);
   /* シェア用の控え。**ここで作らないと後から復元できない**
      (playerは次の試合開始で作り直され、報酬額もこの関数のローカル変数のため) */
@@ -7383,6 +7382,61 @@ function resolveTrainCardForSelf(key, auto){
 }
 // 試合の入口で必ず呼ぶ(前の試合のカードや待ち行列を持ち越さない)
 function resetTrainCards(){ hideTrainCards(); trainCardQueue.length = 0; }
+
+/* ===== ゴーストマスモン(他の人が育てたマスモンをソロの敵として出す) =====
+   ・**ソロ専用。** マルチは部屋のシードで両側が同じ世界を作る前提なので混ぜない
+   ・写しの形は mastermonSnapshot 1つ。差し込み方もマルチのマスモンbotと同じ
+   ・取れなくても従来どおりの合成botになるだけで、遊べなくならない */
+const GHOST_BOT_MAX = 8;            // 1試合に混ぜる上限(敵29体中)
+const GHOST_LEVEL_RANGE = 15;       // 自分のマスモンLvとの差の上限。強すぎる相手を弾く
+const GHOST_FETCH_LIMIT = 50;       // 取ってくる人数
+const GHOST_CACHE_MS = 5*60*1000;   // 取り直す間隔(毎回引きに行かない)
+let ghostCache = { at:0, list:[] };
+
+// ロビーを開いたときに、間隔が空いていれば取り直す。失敗しても前の内容を残す
+async function refreshGhosts(){
+  if(!window.__aramonFetchGhosts) return;
+  if(Date.now() - ghostCache.at < GHOST_CACHE_MS) return;
+  ghostCache.at = Date.now();      // 失敗しても連打しない
+  try{ ghostCache.list = (await window.__aramonFetchGhosts(GHOST_FETCH_LIMIT)) || []; }
+  catch(err){ /* 取れなければ従来どおりの合成botで普通に遊べる */ }
+}
+// 試合が終わったら自分のマスモンを置いてくる(ログイン中だけ)
+async function publishMyGhosts(){
+  if(!accountState.loggedIn || !accountState.key || !window.__aramonPutGhost) return;
+  const data = loadMastermons();
+  const keys = Object.keys(data);
+  if(!keys.length) return;
+  const list = keys.map(k=>mastermonSnapshot(data[k],
+    (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null));
+  try{
+    await window.__aramonPutGhost(accountState.key,
+      { owner: getDisplayNameFromInput(), at: Date.now(), list });
+  }catch(err){}
+}
+/* この試合に出すゴーストを選ぶ。
+   ・自分は除く / レベル差が離れすぎているものは使わない
+   ・**同じ人からは1体まで**(同じ名前が並ぶと嘘くさい)
+   ・**転生回数は自分の回数で頭打ち**(上限+100/回がそのまま乗ると差が付きすぎる)
+   ・マスモン未選択のときは出さない(比べる基準が無く、強さが釣り合わないため) */
+function pickGhostsForMatch(playerMmLevel, playerRebirth){
+  if(!playerMmLevel || !ghostCache.list.length) return [];
+  const myKey = accountState.loggedIn ? accountState.key : null;
+  const out = [];
+  for(const g of shuffle(ghostCache.list.slice())){
+    if(myKey && g.key === myKey) continue;
+    const usable = (g.list||[]).filter(m=>m && m.element && ELEMENTS[m.element] && m.stats &&
+      Math.abs((m.level||1) - playerMmLevel) <= GHOST_LEVEL_RANGE);
+    if(!usable.length) continue;
+    const m = usable[Math.floor(Math.random()*usable.length)];
+    out.push(Object.assign({}, m, {
+      owner: g.owner || '',
+      rebirth: Math.min(Math.round(m.rebirth||0), playerRebirth),
+    }));
+    if(out.length >= GHOST_BOT_MAX) break;
+  }
+  return out;
+}
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){
   if(!game.selectedMastermonKey) return;

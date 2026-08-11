@@ -87,7 +87,7 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 
 ## Firebase・アカウント
 
-- Realtime Database。パス: `scores` / `matchLogs` / `lobby` / `rooms` / `accounts`。
+- Realtime Database。パス: `scores` / `matchLogs` / `lobby` / `rooms` / `accounts` / `raids` / `ghosts`。
 - **新しいDBパスを追加したらFirebaseコンソールのセキュリティルールにも`.read`/`.write`が要る**(未定義パスはデフォルト拒否)。**発注者が手作業で貼るので、貼り付け用のJSONをそのまま渡す。**
 - ログインは名前+4桁パスコードで`accounts/{nameKey}`。認証情報は`aramon_account_v1`に保存し自動ログイン。**端末に認証情報がある時点で即ログイン扱いにし、通信失敗でもログイン状態を維持する。**
 - サーバー同期は`ACCOUNT_SYNC_KEYS`を`accountMarkDirty()`→3秒デバウンスで送信。ログイン時は`updatedAt`で新しい方を採用。**localStorageのsave関数に`accountMarkDirty()`を足し忘れない。**

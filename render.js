@@ -965,6 +965,11 @@ function drawMonster(e,p){
     ctx.textAlign='center';
     if(e.isMastermonBot && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor='#ffb703'; }
     ctx.fillText((e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
+    // ゴースト(他の人が育てたマスモン)は、誰の子かを小さく添える
+    if(e.ghostOwner){
+      ctx.font="9px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(255,215,106,0.75)';
+      ctx.fillText(e.ghostOwner+' の', 0, -e.radius*1.55-24);
+    }
   }
   ctx.restore();
 }

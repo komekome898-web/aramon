@@ -993,6 +993,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-10', items:[
+    { t:'👻 ソロの敵に「他のプレイヤーが育てたマスモンの写し」が混ざるようになりました。名前の上に持ち主が出て、★が付いた金色の名前で分かります。倒すと経験値が多めにもらえます（自分のマスモンのレベル±15の相手だけが出るので、いきなり強すぎる相手は来ません）', g:['feature','solo'] },
+    { t:'マルチで出るホストのマスモンbotに、転生の回数と適正・基礎値アイテムが反映されていなかったのを直しました。育てたぶんがそのまま強さに出ます', g:['fix','multi'] },
     { t:'🏋️ トレーニングアイテムを拾うと、その場で「トレーニングを3つから1つ選ぶ」ようになりました。中身はマスモンのトレーニングとまったく同じ10種類で、上がり幅は試合中でもはっきり分かる大きさです。適正の高いステータスほど大きく伸びるので、育てた個性が試合中の選択に出ます', g:['feature','balance','solo','multi'] },
     { t:'これまでのトレーニングアイテムの固定効果（技ダメージ+16%など）は、上のカード選択に置き換わりました。落ちている数は今までと同じです。カードは8秒で自動的に決まるので、戦いながらでも困りません', g:['balance'] },
     { t:'🧭 遠征を追加しました！ ロビー左の「遠征」からマスモンを送り出すと、数時間後に育成アイテム・EXP・当たり枠を持ち帰ります。行き先ごとに相性のよいステータスがあり、★が高いほど成果が増えます。遠征中の子はバトル・トレーニング・アイテムに使えません', g:['feature','general'] },
@@ -1653,6 +1655,37 @@ function mastermonInitialStats(elementKey){
   const stats = {};
   MASTERMON_STATS.forEach(s=>{ stats[s.key] = APTITUDE_INITIAL_VALUE[apt[s.key]]; });
   return stats;
+}
+/* マスモン1体の「写し」。**マスモンを他所へ渡す形はこれ1つだけ。**
+   使うのは3か所とも:
+     ・マルチの部屋へ送る自分の育成値(currentMastermonInfo)
+     ・マルチでホストのマスモンをbotにするときの積み荷(hostMastermonBots)
+     ・ゴースト(他の人が育てたマスモンをソロの敵として出す)
+   受け側は applyMastermonStatsToEntity にそのまま渡せる。
+   ・baseHp/baseSpd は**基礎値アイテムぶんだけ**。受け側が rebirth から転生ぶんを足し直すので、
+     合計を入れると転生ぶんが二重に乗る。
+   ・awakenBoost は**解決済みの1語**。受け側は覚醒の記録を持っていないため。
+   ・Firebaseは undefined を受け付けないので、無いものは null にする。 */
+function mastermonSnapshot(mm, skinId){
+  const src = (mm && mm.stats) || {};
+  const stats = {}, apt = {};
+  const srcApt = mastermonApt(mm);
+  MASTERMON_STATS.forEach(s=>{
+    stats[s.key] = Math.round(src[s.key] || 0);
+    apt[s.key] = srcApt[s.key] || 'C';
+  });
+  const awakenBoost = (typeof awakenBoostForSkin==='function') ? awakenBoostForSkin(mm, skinId||null) : null;
+  return {
+    name: (mm && mm.name) || '',
+    element: (mm && mm.element) || null,
+    level: (mm && mm.level) || 1,
+    stats, apt,
+    rebirth: mastermonRebirthCount(mm),
+    baseHp: safeBaseAmount(mm && mm.baseHp),
+    baseSpd: safeBaseAmount(mm && mm.baseSpd),
+    skin: skinId || null,
+    awakenBoost: awakenBoost || null,
+  };
 }
 function mastermonExpToNext(level){ return 80 + level*15; }
 // ステータス100を基準(倍率1.0)に、ステータスごとの係数(小さいほど効果の増減幅が大きい)で倍率を算出。
