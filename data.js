@@ -993,6 +993,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-10', items:[
+    { t:'🏅 段位を追加しました！ 試合の順位と撃破数でランクポイント(RP)が増え、見習い→石→銅→銀→金→白金→ダイヤ→覇王 と上がっていきます。ソロ・マルチ・レイドのすべてで動きます(ソロはbotが相手なので半分)。**一度上がった段位からは落ちません。** ロビー上部とマイページ、ランキングの「段位」タブで確認できます', g:['feature','general'] },
     { t:'👻 ソロの敵に「他のプレイヤーが育てたマスモンの写し」が混ざるようになりました。名前の上に持ち主が出て、★が付いた金色の名前で分かります。倒すと経験値が多めにもらえます（自分のマスモンのレベル±15の相手だけが出るので、いきなり強すぎる相手は来ません）', g:['feature','solo'] },
     { t:'マルチで出るホストのマスモンbotに、転生の回数と適正・基礎値アイテムが反映されていなかったのを直しました。育てたぶんがそのまま強さに出ます', g:['fix','multi'] },
     { t:'🏋️ トレーニングアイテムを拾うと、その場で「トレーニングを3つから1つ選ぶ」ようになりました。中身はマスモンのトレーニングとまったく同じ10種類で、上がり幅は試合中でもはっきり分かる大きさです。適正の高いステータスほど大きく伸びるので、育てた個性が試合中の選択に出ます', g:['feature','balance','solo','multi'] },
@@ -2778,6 +2779,106 @@ function loadSeason(){
 function saveSeason(s){
   try{ localStorage.setItem(SEASON_STORAGE_KEY, JSON.stringify(s)); }catch(err){}
   if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+
+/* =====================================================================
+   段位(ランクポイント)
+
+   ・**シーズンと同じ鍵(seasonStateKey)で自動リセット**する。新しい期間の概念を作らない。
+   ・**降格はその段位の下限で止まる。** 一度上がった段位からは落ちない(長く遊ぶ動機を折らない)。
+   ・順位は「上位何%か」で引く。**30人固定の表にしない**(人数の少ないマルチでも成立させるため)。
+   ・**ソロも含めて全モードで動く**(発注者決定)。ソロはbotが相手なので倍率を下げる。
+===================================================================== */
+const RANK_STORAGE_KEY = 'aramon_rank_v1';
+// 下から順に。判定は rankOf(rp) 1か所
+const RANKS = [
+  { id:'novice', name:'見習い', icon:'🌱', color:'#9fb4c8', rp:0 },
+  { id:'stone',  name:'石',     icon:'🪨', color:'#b0a89a', rp:100 },
+  { id:'bronze', name:'銅',     icon:'🥉', color:'#c98a4b', rp:300 },
+  { id:'silver', name:'銀',     icon:'🥈', color:'#cfd6e0', rp:600 },
+  { id:'gold',   name:'金',     icon:'🥇', color:'#f4c430', rp:1000 },
+  // 💎はダイヤ(通貨)と紛らわしいので使わない。ヘッダーで所持金の隣に並ぶため
+  { id:'plat',   name:'白金',   icon:'🏵️', color:'#7fe3d4', rp:1500 },
+  { id:'dia',    name:'ダイヤ', icon:'🔷', color:'#9fd1ff', rp:2100 },
+  { id:'king',   name:'覇王',   icon:'👑', color:'#ff9a5a', rp:3000 },
+];
+/* 順位のぶん。上から順に「上位◯以内なら」で判定する(ratio=順位÷参加数)。
+   1位だけは人数に関係なく別枠。 */
+const RANK_RP_PLACE = [
+  { top:0.10, rp: 35 },   // 上位1割
+  { top:0.34, rp: 20 },   // 上位1/3(30人なら10位まで。0.33だと10/30が入らない)
+  { top:0.67, rp:  5 },   // 上位2/3(30人なら20位まで)
+  { top:1.00, rp:-15 },   // 下位1/3だけが減る
+];
+const RANK_RP_WIN = 50;          // 1位
+const RANK_RP_PER_KILL = 3;
+const RANK_RP_KILL_MAX = 30;
+// モードごとの倍率。レイドは順位が無いので RANK_RP_RAID を使う
+const RANK_RP_MULT = { solo:0.5, multi:1.0 };
+const RANK_RP_RAID = { clear:30, best:15, other:0 };
+
+function rankOf(rp){
+  const v = Math.max(0, Math.round(rp||0));
+  let cur = RANKS[0];
+  for(const r of RANKS){ if(v >= r.rp) cur = r; }
+  return cur;
+}
+// 次の段位と、そこまでの進み具合(0〜1)。最上位なら next=null
+function rankProgress(rp){
+  const v = Math.max(0, Math.round(rp||0));
+  const cur = rankOf(v);
+  const next = RANKS[RANKS.indexOf(cur) + 1] || null;
+  const pct = next ? Math.max(0, Math.min(1, (v - cur.rp) / (next.rp - cur.rp))) : 1;
+  return { cur, next, pct };
+}
+/* 1試合ぶんの増減。**計算はここ1か所。**
+   placement=順位(1始まり) / total=参加数 / kills=撃破数 / mode='solo'|'multi'|'raid' */
+function rankRpForMatch(o){
+  o = o || {};
+  if(o.mode === 'raid'){
+    if(o.raidClear) return RANK_RP_RAID.clear;
+    if(o.raidBest)  return RANK_RP_RAID.best;
+    return RANK_RP_RAID.other;
+  }
+  const total = Math.max(1, Math.round(o.total || 0));
+  const place = Math.max(1, Math.min(total, Math.round(o.placement || total)));
+  let base;
+  if(place === 1) base = RANK_RP_WIN;
+  else {
+    const ratio = place / total;
+    base = (RANK_RP_PLACE.find(p=>ratio <= p.top) || RANK_RP_PLACE[RANK_RP_PLACE.length-1]).rp;
+  }
+  const killRp = Math.min(RANK_RP_KILL_MAX, Math.max(0, Math.round(o.kills||0)) * RANK_RP_PER_KILL);
+  const mult = RANK_RP_MULT[o.mode] != null ? RANK_RP_MULT[o.mode] : RANK_RP_MULT.multi;
+  return Math.round((base + killRp) * mult);
+}
+function loadRank(){
+  const key = seasonStateKey();
+  const fresh = ()=>({ seasonId:key, rp:0, best:RANKS[0].id });
+  try{
+    const r = JSON.parse(localStorage.getItem(RANK_STORAGE_KEY)) || {};
+    // 到達した最高段位だけはシーズンをまたいで残す(努力が消えた感じにしない)
+    if(r.seasonId !== key) return { seasonId:key, rp:0, best:r.best || RANKS[0].id };
+    return { seasonId:key, rp:Math.max(0, Math.round(r.rp||0)), best:r.best || RANKS[0].id };
+  }catch(err){ return fresh(); }
+}
+function saveRank(r){
+  try{ localStorage.setItem(RANK_STORAGE_KEY, JSON.stringify(r)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+/* RPを足して保存する。**下がるのは今の段位の下限まで**(段位そのものは落ちない)。
+   戻り値は表示用の { delta, rp, before, after, promoted } 。 */
+function addRankRp(delta){
+  const r = loadRank();
+  const prev = r.rp;
+  const before = rankOf(prev);
+  r.rp = Math.max(before.rp, prev + Math.round(delta||0));   // 今の段位の下限で止める
+  const after = rankOf(r.rp);
+  // 到達した最高段位の更新(シーズンをまたいで残る)
+  const bestIdx = RANKS.findIndex(x=>x.id===r.best);
+  if(RANKS.indexOf(after) > (bestIdx < 0 ? 0 : bestIdx)) r.best = after.id;
+  saveRank(r);
+  return { delta: r.rp - prev, rp: r.rp, before, after, promoted: after !== before };
 }
 
 const TITLES_STORAGE_KEY = 'aramon_titles_v1';
