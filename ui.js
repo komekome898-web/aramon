@@ -907,14 +907,25 @@ function playEmote(el, key, opts){
    90度ずれる(実機で発覚)。
    粒は1つずつ散らばり方・大きさ・傾きを変える。全部同じだと貼り付けたように見える。
    pointer-events:none で自分から消えるので、スクロールロックの除外リストへの追加は不要。 */
+/* 粒は **#appRoot の中に置く**。縦持ちでは #appRoot ごと90度回っているので、
+   中に入れれば向きも飛ぶ方向も自動で揃う(外に置いて自分で回すと、絵の位置が
+   実画面の縦横で入れ替わってズレる。実機で発覚)。
+   ・位置は「実画面の中心 → toLogicalPoint で論理座標へ」で出す。中心は回転しても動かない
+   ・上下の寄せ(fx.at)と広がり(fx.spread)は **offsetWidth/offsetHeight(論理サイズ)** で計算する
+     (getBoundingClientRect は回転後の外接箱なので、縦持ちだと幅と高さが入れ替わる) */
 function spawnEmoteFx(el, fx, st){
   const r = el.getBoundingClientRect();
   if(!r.width && !r.height) return null;
+  const host = document.getElementById('appRoot') || document.body;
+  const c = (typeof toLogicalPoint==='function')
+    ? toLogicalPoint(r.left + r.width/2, r.top + r.height/2)
+    : { x: r.left + r.width/2, y: r.top + r.height/2 };
+  const lw = el.offsetWidth || r.width, lh = el.offsetHeight || r.height;
   const wrap = document.createElement('div');
   wrap.className = `emote-fx emote-fx-${fx.mode||'rise'}`;
-  wrap.style.left = `${r.left + r.width/2}px`;
-  wrap.style.top  = `${r.top + r.height*(fx.at==null?0.3:fx.at)}px`;
-  const w = r.width * (fx.spread==null?1:fx.spread);
+  wrap.style.left = `${c.x}px`;
+  wrap.style.top  = `${c.y + ((fx.at==null?0.3:fx.at) - 0.5) * lh}px`;
+  const w = lw * (fx.spread==null?1:fx.spread);
   const n = fx.n || 4;
   for(let i=0;i<n;i++){
     const s = document.createElement('span');
@@ -927,7 +938,7 @@ function spawnEmoteFx(el, fx, st){
     s.style.setProperty('--rot', `${((Math.random()-0.5)*46).toFixed(0)}deg`);
     wrap.appendChild(s);
   }
-  document.body.appendChild(wrap);
+  host.appendChild(wrap);
   if(st){
     st.fxEls.push(wrap);
     // 出し切ったら自分で消える(再生が続いていても粒だけ先に片付ける)
@@ -1353,6 +1364,7 @@ function enterHudCustomize(){
   if(game.started) return; // バトル中は不可(トップ画面から入る)
   hudEditDraft = JSON.parse(JSON.stringify(loadHudLayout()));
   applyHudLayout();
+  showTrainCardSample(true);   // 普段は隠れているカードを見本として出す(大きさ・位置を決めるため)
   document.getElementById('startScreen').classList.add('hidden');
   document.documentElement.classList.add('hud-editing');
   document.getElementById('hudCustomizeBar').classList.remove('hidden');
@@ -1368,6 +1380,7 @@ function enterHudCustomize(){
 }
 function exitHudCustomize(save){
   if(save && hudEditDraft) saveHudLayout(hudEditDraft);
+  showTrainCardSample(false);
   hudEditDraft = null; hudDrag = null;
   document.documentElement.classList.remove('hud-editing');
   document.getElementById('hudCustomizeBar').classList.add('hidden');
@@ -5680,16 +5693,19 @@ function expeditionDepart(){
   }
   st.slots[p.slot] = { dest:dest.id, mmKey:p.mmKey, startAt:Date.now(), done:false };
   saveExpeditions(st);
-  // 参戦中の子を送り出したら選択を外す(遠征中はバトルに出せないため)
+  /* 参戦中の子を送り出したら**完全に未選択へ戻す**。
+     マスモンだけ外して種族(selectedElement)を残すと、素のモンスターが選ばれたままに
+     見えてしまう。マスモンを消したとき(mastermonDeleteYesBtn)と同じ扱いにする。 */
   const wasSelected = (game.selectedMastermonKey === p.mmKey);
   if(wasSelected){
     game.selectedMastermonKey = null;
+    game.selectedElement = null;
     if(typeof saveLobbyPrefs==='function') saveLobbyPrefs();
     if(typeof updatePlayButtonsEnabled==='function') updatePlayButtonsEnabled();
   }
   renderSelectorCards();
   playSe('pickup');
-  pushToast(wasSelected ? `${mm.name}が${dest.name}へ出発。参戦の選択を外しました`
+  pushToast(wasSelected ? `${mm.name}が${dest.name}へ出発。参戦するモンスターを選び直してください`
                         : `${mm.name}が${dest.name}へ出発した！`);
   lobbyCloseOverlay('expeditionPickOverlay');
   renderExpedition();
@@ -7365,10 +7381,10 @@ function showTrainCards(keys){
     `<div class="tc-timer-track"><div class="tc-timer-fill" id="trainCardTimer"></div></div>
      <div class="tc-cards">${keys.map(k=>{
        const t = trainCardMenu(k);
-       // 説明文(ちから↑↑…)と実際の増減は同じことなので、**数字だけ**を出して縦を詰める
+       // 説明文(ちから↑↑…)と実際の増減は同じことなので、**数字だけ**を出して場所を詰める
        return `<button class="tc-card" data-key="${k}">
          <span class="tc-card-name">${t.label}</span>
-         ${trainCardDeltaRows(mm, k)}
+         <span class="tc-card-deltas">${trainCardDeltaRows(mm, k)}</span>
        </button>`; }).join('')}</div>`;
   bar.classList.remove('hidden');
   bar.querySelectorAll('.tc-card').forEach(b=>b.addEventListener('click', (e)=>{
@@ -7418,6 +7434,27 @@ function resolveTrainCardForSelf(key, auto){
 }
 // 試合の入口で必ず呼ぶ(前の試合のカードや待ち行列を持ち越さない)
 function resetTrainCards(){ hideTrainCards(); trainCardQueue.length = 0; }
+/* 操作画面カスタマイズのあいだだけ、カードの見本を出す。
+   普段は隠れている要素なので、出しておかないと大きさも位置も決められない。
+   **見本は選べない**(タップはドラッグに使うため data-hud-drag 側が拾う)。 */
+function showTrainCardSample(on){
+  const bar = document.getElementById('trainCardBar');
+  if(!bar) return;
+  if(!on){ if(bar.dataset.sample){ delete bar.dataset.sample; hideTrainCards(); } return; }
+  if(trainCardState) return;             // 何か出ているならそのまま使う
+  bar.dataset.sample = '1';
+  const mm = (typeof player!=='undefined' && player) ? player.matchMm : null;
+  const keys = TRAINING_MENU.slice(0, TRAIN_CARD_COUNT).map(t=>t.key);
+  bar.innerHTML =
+    `<div class="tc-timer-track"><div class="tc-timer-fill" style="width:70%"></div></div>
+     <div class="tc-cards">${keys.map(k=>{
+       const t = trainCardMenu(k);
+       return `<button class="tc-card" data-key="${k}">
+         <span class="tc-card-name">${t.label}</span>
+         <span class="tc-card-deltas">${trainCardDeltaRows(mm, k) || '<span class="tc-card-delta up">ステータス上昇</span>'}</span>
+       </button>`; }).join('')}</div>`;
+  bar.classList.remove('hidden');
+}
 
 /* ===== ゴーストマスモン(他の人が育てたマスモンをソロの敵として出す) =====
    ・**ソロ専用。** マルチは部屋のシードで両側が同じ世界を作る前提なので混ぜない

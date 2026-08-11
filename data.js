@@ -993,6 +993,9 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-10', items:[
+    { t:'🏋️ トレーニングの選択が、撃破/ダメージ表示のすぐ下に横長で出るようになりました。位置と大きさは設定の「操作画面カスタマイズ」で変えられます', g:['feature','av'] },
+    { t:'縦画面ロックのときにエモートのエフェクトが出る位置がズレる不具合を修正しました', g:['fix','av'] },
+    { t:'参戦中のマスモンを遠征に出したとき、参戦の選択が中途半端に残る不具合を修正しました', g:['fix'] },
     { t:'🏅 段位を追加しました！ 試合の順位と撃破数でランクポイント(RP)が増え、見習い→石→銅→銀→金→白金→ダイヤ→覇王 と上がっていきます。ソロ・マルチ・レイドのすべてで動きます(ソロはbotが相手なので半分)。**一度上がった段位からは落ちません。** ロビー上部とマイページ、ランキングの「段位」タブで確認できます', g:['feature','general'] },
     { t:'👻 ソロの敵に「他のプレイヤーが育てたマスモンの写し」が混ざるようになりました。名前の上に持ち主が出て、★が付いた金色の名前で分かります。倒すと経験値が多めにもらえます（自分のマスモンのレベル±15の相手だけが出るので、いきなり強すぎる相手は来ません）', g:['feature','solo'] },
     { t:'マルチで出るホストのマスモンbotに、転生の回数と適正・基礎値アイテムが反映されていなかったのを直しました。育てたぶんがそのまま強さに出ます', g:['fix','multi'] },
@@ -2408,6 +2411,8 @@ const HUD_DRAGGABLE = {
   joystickBase:'移動', fireBtn:'攻撃', dashBtn:'回避',
   turnLeftBtn:'左回転', turnRightBtn:'右回転', movePanel:'技',
   topLeft:'HP/ガッツ', statsPanel:'撃破/ダメ', topRight:'情報/地図',
+  // 普段は隠れているので、編集モードのあいだだけ見本を出して動かせるようにしてある
+  trainCardBar:'トレーニング',
 };
 const HUD_DRAGGABLE_IDS = Object.keys(HUD_DRAGGABLE);
 function loadHudLayout(){ try{ return JSON.parse(localStorage.getItem(HUD_LAYOUT_KEY)) || {}; }catch(e){ return {}; } }

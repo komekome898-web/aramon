@@ -88,7 +88,11 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **効果音はエモートごと**(`EMOTES[k].se` → `SE_DEFS`の`emoteJoy`/`emoteSad`/`emoteAngry`/`emoteLove`。全部Web Audio合成)。**音の拍と動きの拍を揃える**(よろこぶは跳ねる周期0.62秒に合わせて3音)。
 - **専用コマ(`EMOTE_FRAMES`)を入れたものだけコマ送りに切り替わる。** 値は`{prefix,n}`で`monsters/<prefix>1..n.png`。スキンIDの指定が素体より優先。無ければ共通モーション。
 - 粒は`fx:{ch,n,mode,at,spread,every}`。`mode`は`rise`(舞い上がる)/`fall`(落ちる)/`pop`(頭上で弾ける)でCSSアニメーションが変わる。**1粒ずつ位置・大きさ・傾きを乱す**(`--dx`/`--sc`/`--rot`)。`every:true`なら1周ごとに出し直す。
-- 粒は**`document.body`直下に`position:fixed`で置き、`getBoundingClientRect()`の実座標で重ねる**(`.tap-ripple`と同じ理由。ロビーの絵の親が`<button>`でdivを入れられない)。**ただし`#appRoot`は縦持ちで90度回っているので、`html.force-landscape .emote-fx`で粒も同じだけ回す** — 回さないと絵文字が横倒しになり、飛ぶ向きも90度ずれる(実機で発覚)。`pointer-events:none`で自分から消えるのでスクロールロック除外リストへの追加は不要。
+- 粒は**`#appRoot`の中に`position:absolute`で置く。** 縦持ちでは`#appRoot`ごと90度回っているので、中に入れれば**向きも飛ぶ方向も自動で揃う**。
+  - 位置は「実画面の中心 → `toLogicalPoint()`で論理座標へ」で出す(中心は回転しても動かない)。
+  - **上下の寄せ(`fx.at`)と広がり(`fx.spread`)は`offsetWidth`/`offsetHeight`で計算する。** `getBoundingClientRect()`は回転後の外接箱なので、縦持ちだと幅と高さが入れ替わってズレる。
+  - 以前はbody直下に置いて`html.force-landscape .emote-fx{transform:rotate(90deg)}`で自分で回していた。向きは直るが**位置がズレる**(実機で2回とも発覚)。**この方式へ戻さない。**
+  - `pointer-events:none`で自分から消えるのでスクロールロック除外リストへの追加は不要。
 - 絵のタップは`pickEmoteForTap()`で**嬉しい側(`tap`の重み)を出やすくする**。可愛がって毎回すねられると愛着の逆になる。
 - **リザルトの勝ちだけは絵を動かさず粒だけ出す**(`fxOnly`)。`.resultScreen.win .result-monster-icon`のCSSアニメーションが`transform`を持っており、**CSSアニメーションはインラインの`transform`より強い**ので、両方書くとこちらが無視されるため。
 - **`renderLobbyMonster()`は、出しているモンスターが同じままならエモート中に描き直さない**(`img.dataset.lobbySubject`で判定)。歩行コマの読み込み待ちリトライがこの関数を最大6回呼ぶので、素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。
@@ -99,13 +103,17 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **試合を止めない。** マルチはホスト権威で原理的に止められず、ソロだけ止めると挙動が2通りになる。`TRAIN_CARD_PICK_SEC`(8秒)で自動的に決まる。残り時間は**数字ではなく細いバー**(縦を使わないため)。
 - **1組ずつ。** 出ている最中に拾ったら`trainCardQueue`へ積む。**試合の入口で必ず`resetTrainCards()`**(`entities=[]`と同じ行に置いてある4か所)。
 - **botは選択UIを出さず即ランダム。** 分岐は`offerTrainCards()`の中だけで、`updateLootPickups`のループには足さない。
-- **居場所は「ステータス欄の下端(142px)〜ダッシュボタンの上端(222px)」の帯。** 320px高の端末ではここが80pxしかないので、見出しを置かず文字を詰めて69pxに収めてある。**行や文字を増やすときは4サイズで実寸を測り直すこと**(`#hpPanel`/`#topRight`/`#movePanel`/`#joystickBase`/`#fireBtn`/`#dashBtn`と重ならないか)。
+- **居場所は撃破/ダメージ欄(`#statsPanel`)のすぐ下**(発注者指定)。**横長の帯**にして視界を塞がない(1枚を「名前 → 増減」の横並びにして背を低くしてある)。iPhone横持ち(812x375 / 844x390)では先客と1pxも重ならないことを実測済み。**667x375・568x320は上の帯そのものが狭く指定位置では収まらない**ので、位置と大きさは「操作画面カスタマイズ」で動かしてもらう。
+- **`HUD_DRAGGABLE`に入れてあるので位置と大きさを変えられる。** 普段は隠れている要素なので、編集モードのあいだだけ`showTrainCardSample(true)`が見本を出す(`enterHudCustomize`の`hudFlattenElement`より前に呼ぶこと。隠れたままでは位置を測れない)。
+- **既定の中央寄せは`translateX(-50%)`のままでよい**(`hudFlattenElement`がleft/topへ畳み込み、`hudApplyPosScale`が`transform`をscaleだけに置き換える)。**出るときのアニメーションは透明度だけにする**(transformを動かすとカスタマイズした位置とぶつかる)。
+- 行や文字を増やすときは4サイズで実寸を測り直すこと(`#hpPanel`/`#statsPanel`/`#topRight`/`#movePanel`/`#joystickBase`/`#fireBtn`/`#dashBtn`と重ならないか)。
 - 3か所のスクロールロック除外リストに`#trainCardBar`を入れてある。
 
 ## 遠征(`#expeditionOverlay` / `#expeditionPickOverlay`)
 
 - **マスモン(`mm`)には何も保存しない。** 状態を持つのは`aramon_expedition_v1`(data.jsの`loadExpeditions`/`saveExpeditions`)だけ。`mm`の形を変えないでおくため(あとから足す機能が`mm`を丸ごと写す)。
 - **拘束の判定は`expeditionIsBusy()`/`expeditionBusyKeys()`1か所。** 見ているのは4か所+1: 参戦ボタン(`mastermonUseBtn`)/ トレーニング実行 / バッグの対象一覧と`useBagItem` / 削除ボタン / 保険として`applyMastermonToPlayer()`。**新しく「マスモンを選ぶ場所」を足したらここも通す。**
+- **参戦中のマスモンを送り出したら、完全な未選択へ戻す**(`selectedMastermonKey`だけでなく`selectedElement`も落とす)。マスモンだけ外すと素のモンスターが選ばれたままに見える。マスモンを削除したときと同じ扱い。
 - **枠は所持マスモン数で解放**(`EXPEDITION_SLOT_UNLOCKS`。1体=1枠/3体=2枠/6体=3枠)。判定は`expeditionSlotCount()`。
 - **報酬は行き先の`stat`との相性で 0.6〜1.7倍**(`EXPEDITION_AFFINITY`)。見込みと実際は同じ`expeditionRewardPreview()`を通すのでズレない。当たり枠とランダムの実だけ`expeditionRollResult()`が引く。
 - **受け取りは先に枠を空けて保存してから渡す**(`expeditionClaim`)。二度押し・再読み込みでも二重に受け取れない。
