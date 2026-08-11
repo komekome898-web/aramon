@@ -993,6 +993,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-11', items:[
+    { t:'🏋️ トレーニングで変わった数値が、試合中ずっと左上のプレイヤー欄にまとめて出るようになりました。カードで取ったぶんも拾ったアイテムのぶんも合計して「最大HP +39%」のように表示します', g:['feature','general'] },
     { t:'🏅 ランキングの「段位」タブがキル数ランキングのままになっていた不具合を修正しました。プレイヤー名を主役に、今の段位とRPが並ぶようになりました', g:['fix','general'] },
     { t:'🏅 ランキングの「段位」に、モンスターの種類ごとにどれだけRPを稼いだかの集計が出るようになりました。「モンスター別RP」タブでは、どの子でRPを伸ばしたかを競えます', g:['feature','general'] },
   ]},
@@ -1530,26 +1531,42 @@ function trainCardChanges(mm, cardKey){
    ・被ダメだけは小さいほど良いので、マイナスを「良い」として扱う
    ・連射はクールタイムの逆数(短いほど速い)
    戻り値: [{ label, pct, good }] 変わらない項目は入らない。 */
+/* 2つのマスモン(前・後)の差を「変わる数値」の一覧にする。**並び順もここが正**で、
+   カードの1枚ぶんも試合中の合計も同じ順・同じ言葉で出る。 */
+const MATCH_EFFECT_LABELS = ['最大HP','技ダメ','被ダメ','連射','ガッツ','速さ'];
+// 数値が小さいほど良い項目(表示の色と符号の扱いが逆になる)
+const MATCH_EFFECT_LOWER_BETTER = ['被ダメ'];
+function effectDiffRows(beforeMm, afterMm){
+  const a = mastermonEffectMults(beforeMm), b = mastermonEffectMults(afterMm);
+  const out = [];
+  const add = (label, before, next)=>{
+    if(!before) return;
+    const pct = Math.round((next/before - 1) * 100);
+    if(pct === 0) return;
+    const lower = MATCH_EFFECT_LOWER_BETTER.includes(label);
+    out.push({ label, pct, good: lower ? (pct < 0) : (pct > 0) });
+  };
+  add('最大HP', a.lifeMult,       b.lifeMult);
+  add('技ダメ', a.dmgDealtMult,   b.dmgDealtMult);
+  add('被ダメ', a.dmgTakenMult,   b.dmgTakenMult);
+  add('連射',   1/a.cooldownMult, 1/b.cooldownMult);
+  add('ガッツ', a.gutsRegenMult,  b.gutsRegenMult);
+  add('速さ',   a.speedMult,      b.speedMult);
+  return out;
+}
 function trainCardEffects(mm, cardKey){
   const ch = trainCardChanges(mm, cardKey);
   if(!mm || !mm.stats || !ch) return [];
   const after = Object.assign({}, mm, { stats: Object.assign({}, mm.stats) });
   Object.keys(ch).forEach(k=>{ after.stats[k] = mm.stats[k] + ch[k]; });
-  const a = mastermonEffectMults(mm), b = mastermonEffectMults(after);
-  const out = [];
-  const add = (label, before, next, higherIsBetter)=>{
-    if(!before) return;
-    const pct = Math.round((next/before - 1) * 100);
-    if(pct === 0) return;
-    out.push({ label, pct, good: higherIsBetter ? (pct > 0) : (pct < 0) });
-  };
-  add('最大HP', a.lifeMult,      b.lifeMult,      true);
-  add('技ダメ', a.dmgDealtMult,  b.dmgDealtMult,  true);
-  add('被ダメ', a.dmgTakenMult,  b.dmgTakenMult,  false);
-  add('連射',   1/a.cooldownMult, 1/b.cooldownMult, true);
-  add('ガッツ', a.gutsRegenMult, b.gutsRegenMult, true);
-  add('速さ',   a.speedMult,     b.speedMult,     true);
-  return out;
+  return effectDiffRows(mm, after);
+}
+/* 試合中に取ったカードの**合計**。基準は試合開始時のステータス(matchMmBaseStats)。
+   1枚ぶんの効き目と同じ言葉・同じ順で出るので、拾ったときの表示と足し算が合う。 */
+function matchTrainTotalEffects(mm, baseStats){
+  if(!mm || !mm.stats || !baseStats) return [];
+  const before = Object.assign({}, mm, { stats: Object.assign({}, baseStats) });
+  return effectDiffRows(before, mm);
 }
 
 /* =====================================================================

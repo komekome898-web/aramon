@@ -5225,17 +5225,19 @@ function updateHUD(){
   // ランキング表示名(名前入力欄)をそのままHUDに表示する
   document.getElementById('hudName').textContent =
     (typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー');
-  // トレーニングアイテムで得たバフの累積(初期値から変化したものだけを列挙)
+  /* トレーニングで変わった数値を**全部**プレイヤー欄に出す(発注者指示)。
+     一覧の作りは matchTrainBoardRows(ui.js)が1か所で持っている ―― カードぶんと
+     拾ったアイテムぶんを同じ「元から何%」に揃えて混ぜる。ここは並べるだけ。
+     **毎フレームinnerHTMLを書き換えない。** 中身が変わったときだけ作り直す。 */
   {
-    const tb = [];
-    if(player.trainDmgMult && Math.abs(player.trainDmgMult-1)>0.001) tb.push(`技ダメ×${player.trainDmgMult.toFixed(2)}`);
-    if(player.trainDmgTakenMult && Math.abs(player.trainDmgTakenMult-1)>0.001) tb.push(`被ダメ×${player.trainDmgTakenMult.toFixed(2)}`);
-    if(player.trainSpeedMult && Math.abs(player.trainSpeedMult-1)>0.001) tb.push(`移動×${player.trainSpeedMult.toFixed(2)}`);
-    if(player.trainCooldownMult && Math.abs(player.trainCooldownMult-1)>0.001) tb.push(`連射×${(1/player.trainCooldownMult).toFixed(2)}`);
-    if(player.trainProjSpeedMult && Math.abs(player.trainProjSpeedMult-1)>0.001) tb.push(`弾速×${player.trainProjSpeedMult.toFixed(2)}`);
-    if(player.trainGutsCostReduction) tb.push(`消費ガッツ-${player.trainGutsCostReduction}`);
-    if(player.trainMaxHpBonus) tb.push(`最大HP+${player.trainMaxHpBonus}`);
-    document.getElementById('trainBuffsLine').textContent = tb.join('・');
+    const line = document.getElementById('trainBuffsLine');
+    const rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(player) : [];
+    const sig = rows.map(r=>r.label+r.text).join('|');
+    if(line._tbSig !== sig){
+      line._tbSig = sig;
+      line.innerHTML = rows.map(r=>
+        `<span class="tb-chip ${r.good?'up':'down'}">${r.label}<b>${r.text}</b></span>`).join('');
+    }
   }
   document.getElementById('hudElTag').textContent = el.label;
   // HUD左上バーの色はモンスター本来の色ではなくオーラ色(スキンによる変化を考慮)
