@@ -5560,7 +5560,11 @@ document.getElementById('loginBonusOkBtn').addEventListener('click', ()=>{
    ・受け取りは「受け取る」ボタン。**押した時点で先に枠を空けて保存する**ので二重に渡らない。
 ===================================================================== */
 let expeditionTick = null;
+let expeditionWalkTimer = null;
 let expeditionPickState = { slot:-1, destId:null, mmKey:null };
+const EXPEDITION_MOTE_COUNT = 6;    // 情景に舞う粒の数(位置と間はstyle.css側でずらしている)
+const EXPEDITION_WALK_LEFT = 12;    // 出発直後の立ち位置(情景の幅に対する%)
+const EXPEDITION_WALK_RIGHT = 76;   // 到着直前の立ち位置
 
 function updateExpeditionBadge(){
   const dot = document.getElementById('expeditionDot');
@@ -5571,21 +5575,80 @@ function startExpeditionTick(){
   stopExpeditionTick();
   expeditionTick = setInterval(expeditionTickOnce, 1000);
 }
-function stopExpeditionTick(){ if(expeditionTick){ clearInterval(expeditionTick); expeditionTick = null; } }
-/* 1秒ごとに残り時間の文字だけ書き換える(毎秒作り直すと画面がちらつく)。
+function stopExpeditionTick(){
+  if(expeditionTick){ clearInterval(expeditionTick); expeditionTick = null; }
+  stopExpeditionWalkAnim();
+}
+/* 1秒ごとに「動いている中身」だけ書き換える(毎秒作り直すと画面がちらつき、
+   歩行コマと粒のアニメが毎秒最初に戻ってしまう)。
    受け取り待ちへ変わった枠があるときだけ作り直す。画面が閉じていれば自分で止まる。 */
 function expeditionTickOnce(){
   const ov = document.getElementById('expeditionOverlay');
   if(!ov || ov.classList.contains('hidden')){ stopExpeditionTick(); return; }
   const now = Date.now();
   const st = loadExpeditions();
+  const mms = loadMastermons();
   let flipped = false;
-  ov.querySelectorAll('.exp-time').forEach(el=>{
-    const slot = st.slots[+el.dataset.i];
+  ov.querySelectorAll('.exp-slot.running').forEach(cell=>{
+    const slot = st.slots[+cell.dataset.i];
     if(expeditionSlotState(slot, now)!=='running'){ flipped = true; return; }
-    el.textContent = expeditionTimeLabel(expeditionSecondsLeft(slot, now));
+    expeditionUpdateLive(cell, slot, mms[slot.mmKey] || null, now);
   });
+  /* 歩行コマは重いので実際に見せようとした時から読み込みが始まる(data.jsの_framesReady)。
+     **取りに行くのはここ(1秒に1回)だけ。** コマ送り側は掴んだ配列を使うだけにする。 */
+  ov.querySelectorAll('.exp-walker').forEach(img=>{ if(!img._expFrames) expeditionWalkFrames(img); });
   if(flipped){ renderExpedition(); updateExpeditionBadge(); }
+}
+/* この枠の「今」を書き換える。**要素の作り直しはしない**(既にある中身の値だけ差し替える) */
+function expeditionUpdateLive(cell, slot, mm, now){
+  const dest = expeditionDest(slot.dest);
+  const p = expeditionProgress(slot, now);
+  const t = cell.querySelector('.exp-time');
+  if(t) t.textContent = expeditionTimeLabel(expeditionSecondsLeft(slot, now));
+  const fill = cell.querySelector('.exp-route-fill');
+  if(fill) fill.style.width = (p*100).toFixed(2) + '%';
+  const pct = cell.querySelector('.exp-pct');
+  if(pct) pct.textContent = Math.floor(p*100) + '%';
+  const wrap = cell.querySelector('.exp-walker-wrap');
+  if(wrap) wrap.style.left = expeditionWalkerLeft(p);
+  const log = cell.querySelector('.exp-log');
+  const line = expeditionLogLine(slot, now);
+  if(log && log.textContent !== line){
+    log.textContent = line;
+    log.classList.remove('flash'); void log.offsetWidth; log.classList.add('flash');  // 差し替えを目で追えるように光らせ直す
+  }
+  const pack = cell.querySelector('.exp-pack');
+  if(pack) expeditionPaintPack(pack, p);
+}
+function expeditionWalkerLeft(p){
+  return (EXPEDITION_WALK_LEFT + (EXPEDITION_WALK_RIGHT - EXPEDITION_WALK_LEFT)*Math.max(0, Math.min(1, p))).toFixed(1) + '%';
+}
+// 進み具合ぶんだけ袋の中身を灯す。**クラスの付け外しだけ**にして中身は作り直さない
+function expeditionPaintPack(el, p){
+  const kids = el.querySelectorAll('.exp-pack-i');
+  const n = kids.length;
+  kids.forEach((k, i)=>{ k.classList.toggle('on', p >= (i+1)/(n+1)); });
+}
+/* 歩行コマ送り。**タイマーは1本だけ**にして、その中で出ている全員のコマを進める。
+   コマが未ロード/未対応のモンスターは静止画のまま(何もしない)。 */
+function stopExpeditionWalkAnim(){ if(expeditionWalkTimer){ clearInterval(expeditionWalkTimer); expeditionWalkTimer = null; } }
+function expeditionWalkFrames(img){
+  if(img._expFrames) return img._expFrames;
+  if(typeof monsterWalkFrameDataUrls!=='function') return null;
+  const frames = monsterWalkFrameDataUrls(img.dataset.el, img.dataset.skin || null, 'front');
+  if(frames && frames.length) img._expFrames = frames;
+  return frames;
+}
+function startExpeditionWalkAnim(){
+  stopExpeditionWalkAnim();
+  const dur = (typeof WALK_FRAME_DUR==='number' ? WALK_FRAME_DUR : 0.11) * 1000;
+  let f = 0;
+  expeditionWalkTimer = setInterval(()=>{
+    const imgs = document.querySelectorAll('#expeditionSlots .exp-walker');
+    if(!imgs.length){ stopExpeditionWalkAnim(); return; }
+    f++;
+    imgs.forEach(img=>{ const fr = img._expFrames; if(fr && fr.length) img.src = fr[f % fr.length]; });
+  }, dur);
 }
 function expeditionMmChipHtml(mmKey){
   const mm = loadMastermons()[mmKey];
@@ -5593,6 +5656,45 @@ function expeditionMmChipHtml(mmKey){
   return `<span class="exp-mm-chip">${equippedIconImgTag(mmKey, ELEMENTS[mmKey].label)}<b>${mm.name}</b> Lv.${mm.level}</span>`;
 }
 function expeditionStarsHtml(star){ return `<span class="exp-star">${'★'.repeat(star)}${'☆'.repeat(5-star)}</span>`; }
+// 情景の中を歩く本人。歩行コマが揃うまでは静止画(装備スキンがあればそのアイコン)
+function expeditionWalkerImgTag(mmKey){
+  const label = (ELEMENTS[mmKey] && ELEMENTS[mmKey].label) || '';
+  const skinId = (typeof getEquippedSkin==='function') ? (getEquippedSkin(mmKey) || '') : '';
+  const still = (skinId && typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(skinId) : '';
+  if(still) return `<img class="exp-walker" src="${still}" data-el="${mmKey}" data-skin="${skinId}" alt="${label}">`;
+  return `<img class="exp-walker" src="${imgSrcFor(`monsters/${mmKey}`)}" data-el="${mmKey}" data-skin="" data-ext-idx="0" alt="${label}" onerror="handleMonsterImgError(this, 'monsters/${mmKey}')">`;
+}
+/* 遠征中の枠に出すミニ情景。**色も粒も実況も行き先の表(EXPEDITIONS.scene)から作る。**
+   ここで作るのは「形」だけで、動く値(残り時間・進み具合・実況)は
+   expeditionUpdateLive() が毎秒書き換える。 */
+function expeditionSceneHtml(dest, slot, mm, now, arrived){
+  const sc = expeditionScene(dest) || {};
+  const mote = sc.mote || { ch:'･', color:'#ffffff', dir:'up' };
+  const p = arrived ? 1 : expeditionProgress(slot, now);
+  const motes = `<i>${mote.ch}</i>`.repeat(EXPEDITION_MOTE_COUNT);
+  const far = `<span>${sc.far || dest.icon}</span>`.repeat(3);
+  const name = mm ? `${mm.name}<b>Lv.${mm.level}</b>` : '（いなくなったマスモン）';
+  const caption = arrived ? '🎁 おみやげを持って帰ってきた！' : expeditionLogLine(slot, now);
+  return `<div class="exp-scene${arrived?' arrived':''}" style="--exp-sky:${sc.sky||'#2b3040'};--exp-sky2:${sc.sky2||'#59617a'};--exp-ground:${sc.ground||'#3a3f4d'}">
+    <div class="exp-scene-far">${far}</div>
+    <div class="exp-fx exp-fx-${mote.dir}" style="color:${mote.color}">${motes}</div>
+    <div class="exp-walker-wrap" style="left:${expeditionWalkerLeft(p)}">${expeditionWalkerImgTag(slot.mmKey)}</div>
+    <div class="exp-scene-top">
+      ${arrived ? '' : `<div class="exp-time">${expeditionTimeLabel(expeditionSecondsLeft(slot, now))}</div>`}
+      <div class="exp-scene-name">${name}</div>
+    </div>
+    <div class="exp-log flash">${caption}</div>
+  </div>`;
+}
+// 背中の袋。**持ち帰る物そのもの**を並べ、進んだぶんだけ手前から灯る(中身は expeditionPackIcons が正)
+function expeditionPackHtml(dest, mm, p){
+  const icons = expeditionPackIcons(dest, mm);
+  const shown = icons.slice(0, EXPEDITION_PACK_MAX);
+  const rest = icons.length - shown.length;
+  const html = shown.map((x, i)=>
+    `<span class="exp-pack-i${p >= (i+1)/(shown.length+1) ? ' on' : ''}${x.unknown?' unknown':''}">${x.html}</span>`).join('');
+  return `<span class="exp-pack">🎒${html}${rest>0?`<span class="exp-pack-rest">+${rest}</span>`:''}</span>`;
+}
 function renderExpedition(){
   const wrap = document.getElementById('expeditionSlots');
   if(!wrap) return;
@@ -5602,6 +5704,7 @@ function renderExpedition(){
   const open = expeditionSlotCount();
   const now = Date.now();
   const recall = loadBag().expeditionRecall || 0;
+  const mms = loadMastermons();
   const cells = [];
   for(let i=0;i<EXPEDITION_MAX_SLOTS;i++){
     if(i >= open){
@@ -5617,21 +5720,25 @@ function renderExpedition(){
       continue;
     }
     const dest = expeditionDest(slot.dest);
-    const head = `<div class="exp-slot-dest"><span class="exp-dest-ico">${dest.icon}</span>${dest.name}</div>
-                  <div class="exp-slot-mm">${expeditionMmChipHtml(slot.mmKey)}</div>`;
+    const mm = mms[slot.mmKey] || null;
+    const head = `<div class="exp-slot-dest"><span class="exp-dest-ico">${dest.icon}</span>${dest.name}</div>`;
     if(state==='running'){
-      cells.push(`<div class="exp-slot running">${head}
-        <div class="exp-time" data-i="${i}">${expeditionTimeLabel(expeditionSecondsLeft(slot, now))}</div>
+      const p = expeditionProgress(slot, now);
+      cells.push(`<div class="exp-slot running" data-i="${i}">${head}
+        ${expeditionSceneHtml(dest, slot, mm, now, false)}
+        <div class="exp-route-bar"><div class="exp-route-fill" style="width:${(p*100).toFixed(2)}%"></div></div>
+        <div class="exp-under">${expeditionPackHtml(dest, mm, p)}<span class="exp-pct">${Math.floor(p*100)}%</span></div>
         <button class="exp-recall-btn" data-slot="${i}" ${recall>0?'':'disabled'}>📯 すぐ帰す（×${recall}）</button>
       </div>`);
     } else {
-      cells.push(`<div class="exp-slot ready">${head}
-        <div class="exp-ready-label">帰ってきた！</div>
+      cells.push(`<div class="exp-slot ready" data-i="${i}">${head}
+        ${expeditionSceneHtml(dest, slot, mm, now, true)}
         <button class="exp-claim-btn" data-slot="${i}">受け取る</button>
       </div>`);
     }
   }
   wrap.innerHTML = cells.join('');
+  startExpeditionWalkAnim();   // 情景を作り直したので歩行コマ送りも掛け直す
   wrap.querySelectorAll('.exp-go-btn').forEach(b=>b.addEventListener('click', ()=>openExpeditionPick(+b.dataset.slot)));
   wrap.querySelectorAll('.exp-recall-btn').forEach(b=>b.addEventListener('click', ()=>expeditionUseRecall(+b.dataset.slot)));
   wrap.querySelectorAll('.exp-claim-btn').forEach(b=>b.addEventListener('click', ()=>expeditionClaim(+b.dataset.slot)));
@@ -5794,6 +5901,7 @@ function showExpeditionResult(dest, mm, res, expText){
     ${res.rare ? `<div class="exp-res-rare">🌟 当たり！ ${rewardText(res.rare)}</div>` : ''}`;
   document.getElementById('expeditionMain').classList.add('hidden');
   document.getElementById('expeditionResult').classList.remove('hidden');
+  stopExpeditionWalkAnim();   // 枠一覧が隠れている間は見えない情景のコマ送りを止める(OKで作り直される)
 }
 document.getElementById('openExpeditionBtn').addEventListener('click', ()=>{
   renderExpedition();

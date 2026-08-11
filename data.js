@@ -993,6 +993,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-11', items:[
+    { t:'🧭 遠征中の画面で、送り出した子が向こうで頑張っている様子を見られるようになりました。行き先ごとの景色の中を歩き、いま何をしているかが流れ、進み具合にあわせて背中の袋の中身が増えていきます', g:['av','general'] },
     { t:'🏅 ロビーの右上に段位パネルを追加しました。今の段位・RP・次の段位まであと何RPかが一目で分かります', g:['feature','general'] },
     { t:'ロビー左のメニューを2列にしました。ボタンが縦に潰れて押しづらかったのを、アイコンと名前を縦に並べた大きめのボタンに変えています', g:['general'] },
     { t:'🏋️ トレーニングで変わった数値が、試合中ずっと左上のプレイヤー欄にまとめて出るようになりました。カードで取ったぶんも拾ったアイテムのぶんも合計して「最大HP +39%」のように表示します', g:['feature','general'] },
@@ -2623,34 +2624,68 @@ const EXPEDITION_AFFINITY = [
 ];
 const EXPEDITION_EXP_LEVEL_DIVISOR = 50;   // EXPは (1 + Lv/50) 倍。育った子ほどEXPが要るため
 const EXPEDITION_RARE_CHANCE_MAX = 0.40;   // 当たり枠の確率の上限
-/* 行き先。**ここに1行足すだけで画面・相性・抽選まで回る。**
+/* 遠征中の枠に出す「今その子がやっていること」。**行き先の表の中に置く**ので、
+   行き先を1行足せば情景も実況もそのまま付いてくる(別に対応表を作らない)。
+   ・実況の文は EXPEDITION_LOG_INTERVAL_SEC ごとに logs を順ぐりで送る。
+     **乱数を使わない**ので、画面を開き直しても閉じても同じ時刻には同じ文が出る。
+   ・残りが EXPEDITION_HOMEWARD_AT を超えたら、行き先によらず帰り道の文に変わる。 */
+const EXPEDITION_LOG_INTERVAL_SEC = 20;
+const EXPEDITION_HOMEWARD_AT = 0.9;
+const EXPEDITION_HOMEWARD_LOG = '🏠 帰り道に入った。もうすぐ！';
+/* 情景の色と舞う粒。sky/sky2=空のグラデーション、ground=地面、
+   mote={ ch:粒の文字, color:色, dir:'up'|'side'|'down' } → style.cssの .exp-fx-<dir> が動かす。 */
+/* 行き先。**ここに1行足すだけで画面・相性・抽選・遠征中の情景まで回る。**
    reward.items は固定のアイテム、reward.randomSeeds はステータスの実からランダムでN個。
    長いほど時間あたりの取り分を良くしてある(2h=30EXP/h → 12h=42EXP/h)。 */
 const EXPEDITIONS = [
   { id:'quarry',  name:'石切り場',       icon:'⛏️', hours:2,  stat:'vitality',
     reward:{ items:[{ key:'seed_vitality', n:1 }] }, exp:60,
     rare:{ chance:0.08, reward:{ item:'freeTrainTicket', n:1 } },
-    desc:'固い岩を運び出す。丈夫な子ほど多く持ち帰る' },
+    desc:'固い岩を運び出す。丈夫な子ほど多く持ち帰る',
+    scene:{ sky:'#3b352c', sky2:'#7a6647', ground:'#4a3a28', far:'⛰️',
+      mote:{ ch:'✦', color:'#e6cd9c', dir:'up' },
+      logs:['岩肌に道具を打ち込んでいる', 'ずっしりした石を担ぎ上げた', '砕けたかけらを選り分け中',
+            '足場を組み直して奥へ進む', '大きな岩がびくともしない…', 'ひと息ついて、また掘る'] } },
   { id:'ridge',   name:'風鳴りの丘',     icon:'🌬️', hours:2,  stat:'evasion',
     reward:{ items:[{ key:'seed_evasion', n:1 }] }, exp:60,
     rare:{ chance:0.08, reward:{ item:'expeditionRecall', n:1 } },
-    desc:'吹き上がる風の中を駆け抜ける。身のこなしがものを言う' },
+    desc:'吹き上がる風の中を駆け抜ける。身のこなしがものを言う',
+    scene:{ sky:'#2b4a63', sky2:'#9fc9dd', ground:'#4c6b4f', far:'🌾',
+      mote:{ ch:'〜', color:'#e6f4ff', dir:'side' },
+      logs:['吹き上がる風に乗って駆ける', '足元の砂利をひらりとかわす', '突風が来た！ 体を低くする',
+            '尾根づたいに軽やかに走る', '風の音にまじって何かが光った', '崖っぷちをするりと抜けた'] } },
   { id:'library', name:'忘れられた書庫', icon:'📚', hours:6,  stat:'wisdom',
     reward:{ items:[{ key:'seed_wisdom', n:2 }] }, exp:220,
     rare:{ chance:0.14, reward:{ dia:15 } },
-    desc:'古い書物を読み解く。かしこい子ほど成果が大きい' },
+    desc:'古い書物を読み解く。かしこい子ほど成果が大きい',
+    scene:{ sky:'#241f31', sky2:'#5b4a6d', ground:'#3a2f44', far:'📕',
+      mote:{ ch:'✧', color:'#f0dfae', dir:'up' },
+      logs:['古い本を棚から出してめくる', '読めない文字とにらめっこ中', 'ほこりだらけの巻物を見つけた',
+            'ろうそくの明かりで書き写す', '本の山がくずれた！ 積み直す', '一冊だけ光っている本がある'] } },
   { id:'crater',  name:'火口の縁',       icon:'🌋', hours:6,  stat:'power',
     reward:{ items:[{ key:'seed_power', n:2 }] }, exp:220,
     rare:{ chance:0.14, reward:{ item:'moveTicket', n:1 } },
-    desc:'熱気の中で岩を砕く。力自慢の子に向く' },
+    desc:'熱気の中で岩を砕く。力自慢の子に向く',
+    scene:{ sky:'#3a1a12', sky2:'#93401a', ground:'#4a2317', far:'🌋',
+      mote:{ ch:'●', color:'#ffab5c', dir:'up' },
+      logs:['熱気にあおられながら岩を砕く', '火の粉をはらって前へ進む', '真っ赤な石を手早く運び出す',
+            '足場の岩がぐらついている…', '大きく振りかぶって、一撃！', '汗をぬぐってもうひと踏ん張り'] } },
   { id:'trail',   name:'巡礼の道',       icon:'🧭', hours:12, stat:'life',
     reward:{ randomSeeds:3 }, exp:500,
     rare:{ chance:0.22, reward:{ dia:40 } },
-    desc:'丸一日かけて歩き通す。体力のある子ほど遠くまで行ける' },
+    desc:'丸一日かけて歩き通す。体力のある子ほど遠くまで行ける',
+    scene:{ sky:'#2f3f5c', sky2:'#e0a66d', ground:'#5b4a33', far:'🏔️',
+      mote:{ ch:'·', color:'#f3e2b8', dir:'side' },
+      logs:['長い一本道をひたすら歩く', '道ばたの実をひとつ摘んだ', '日が傾いた。歩みは止めない',
+            '旅の人とすれちがって手をふる', '小さな橋をわたっている', '足を止めて空を見上げた'] } },
   { id:'abyss',   name:'深淵の裂け目',   icon:'🕳️', hours:12, stat:'accuracy',
     reward:{ items:[{ key:'seed_accuracy', n:2 }], randomSeeds:1 }, exp:500,
     rare:{ chance:0.22, reward:{ item:'freeTrainTicket', n:3 } },
-    desc:'足場の悪い裂け目を進む。狙いの正確な子ほど深く潜れる' },
+    desc:'足場の悪い裂け目を進む。狙いの正確な子ほど深く潜れる',
+    scene:{ sky:'#10141f', sky2:'#2c3653', ground:'#191f2e', far:'🕳️',
+      mote:{ ch:'◦', color:'#9fd8ff', dir:'down' },
+      logs:['足場を確かめながら降りていく', '暗がりの奥で何かが動いた…', '細いすき間をすり抜けた',
+            'ランプで底をのぞきこむ', '落ちてきた小石をよけた', '手ざわりだけを頼りに進む'] } },
 ];
 function expeditionDest(id){ return EXPEDITIONS.find(e=>e.id===id) || null; }
 // ステータスの実の一覧。**表(PLAYER_ITEMS)から作る**ので実を足せば自動で候補に入る
@@ -2734,6 +2769,40 @@ function expeditionSlotState(slot, now){
 }
 function expeditionSecondsLeft(slot, now){
   return Math.max(0, Math.ceil((expeditionEndAt(slot) - (now||Date.now()))/1000));
+}
+/* ここから下は「遠征中の様子」を出すための読み取り専用の計算。**保存には一切触らない。**
+   同じ時刻を渡せば必ず同じ結果になるので、画面を作り直しても表示が飛ばない。 */
+// 0(出発)〜1(到着)。時短アイテムで done になった枠は1
+function expeditionProgress(slot, now){
+  const d = slot && expeditionDest(slot.dest);
+  if(!d) return 0;
+  if(slot.done) return 1;
+  const total = d.hours*3600000;
+  if(!(total > 0)) return 1;
+  return Math.max(0, Math.min(1, ((now||Date.now()) - slot.startAt)/total));
+}
+function expeditionScene(dest){ return (dest && dest.scene) || null; }
+// 今この瞬間の実況。EXPEDITION_LOG_INTERVAL_SEC ごとに送り、終盤は帰り道の文になる
+function expeditionLogLine(slot, now){
+  const d = slot && expeditionDest(slot.dest);
+  const sc = expeditionScene(d);
+  if(!sc || !sc.logs || !sc.logs.length) return '';
+  if(expeditionProgress(slot, now) >= EXPEDITION_HOMEWARD_AT) return EXPEDITION_HOMEWARD_LOG;
+  const elapsed = Math.max(0, (now||Date.now()) - slot.startAt);
+  const i = Math.floor(elapsed/1000/EXPEDITION_LOG_INTERVAL_SEC) % sc.logs.length;
+  return sc.logs[i];
+}
+/* 背中の袋の中身。**expeditionRewardPreview と同じ値から作る**ので、
+   ここに出た物は必ずそのまま持ち帰る(ランダムの実だけ ❓、当たり枠はここに出さない)。
+   1つずつのアイコンに開いて返し、進み具合に応じて手前から灯していく。 */
+const EXPEDITION_PACK_MAX = 6;   // 枠が小さいのでこれ以上は出さない(あふれたぶんは「+n」)
+function expeditionPackIcons(dest, mm){
+  const v = expeditionRewardPreview(dest, mm || { level:1, stats:{} });
+  const out = [];
+  for(const it of v.items){ for(let i=0;i<it.n;i++) out.push({ html:playerItemIconHtml(it.key), unknown:false }); }
+  for(let i=0;i<(v.randomSeeds||0);i++) out.push({ html:'❓', unknown:true });
+  if(v.dia) out.push({ html:'💎', unknown:false });
+  return out;
 }
 // 今どのマスモンが出撃中か。**拘束の判定はここ1か所**
 function expeditionBusyKeys(){
