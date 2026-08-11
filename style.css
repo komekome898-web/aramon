@@ -291,12 +291,12 @@
     color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line);
   }
   .lobby-emote-btn:active{ background:rgba(244,196,48,0.24); border-color:var(--amber); }
-  /* エモートの粒(✨💧💢)。**body直下に置いて実画面座標で重ねる**(.tap-ripple と同じ理由)。
+  /* エモートの粒(✨💧💢)。**#appRootの中に絶対配置で置く**(縦持ちでは #appRoot ごと
+     90度回っているので、中に入れれば向きも飛ぶ方向も自動で揃う)。
+     以前は body 直下に置いて自分で90度回していたが、絵の位置が実画面の縦横で
+     入れ替わってズレた(実機で発覚)。座標の出し方は ui.js の spawnEmoteFx を参照。
      pointer-events:none で自分から消えるので、スクロールロックの除外リストへの追加は不要 */
-  .emote-fx{ position:fixed; width:0; height:0; pointer-events:none; overflow:visible; z-index:900; }
-  /* 縦持ち(#appRootを90度回転)では、回転の外にある粒だけが素の向きのままになり
-     絵文字が横倒しになる。**同じだけ回して向きを揃える**(実機で発覚した不具合) */
-  html.force-landscape .emote-fx{ transform:rotate(90deg); }
+  .emote-fx{ position:absolute; width:0; height:0; pointer-events:none; overflow:visible; z-index:900; }
   .emote-fx span{
     position:absolute; left:0; top:0; line-height:1;
     font-size:calc(17px * var(--sc, 1));
@@ -2075,35 +2075,38 @@
   #hud.raid-mode #statsPanel{ display:none; }
   /* レイドHUDのぶんだけミニマップを下げる */
   #hud.raid-mode #topRight{ top:calc(6 * var(--vh)); }
-  /* ---- 試合中のトレーニングカード ----
-     **試合は止まらない**ので、ジョイスティック(左下)・FIRE/ダッシュ(右下)・技切替(下中央)・
-     ステータス欄(左上)・ミニマップ(右上)のどれにも重ならない帯に置く。位置は実寸で確認すること。 */
-  /* 置き場所: ステータス欄(左上・下端142px)より下、技切替パネル(下中央)とダッシュ(右下)より上。
-     縦の狭い端末(320px)ではこの帯が80pxしかないので、**見出しを置かず**残り時間は細いバーで見せる。 */
+  /* ---- 試合中のトレーニングカード(**試合は止まらない**) ----
+  /* 置き場所: **撃破/ダメージ欄(#statsPanel)のすぐ下**。横長の帯にして視界を塞がない。
+     位置と大きさは「操作画面カスタマイズ」で動かせる(HUD_DRAGGABLEに入れてある)ので、
+     既定の中央寄せは translateX(-50%) のままでよい(カスタマイズ時は hudFlattenElement が
+     left/top へ畳み込み、hudApplyPosScale が transform を scale だけに置き換えるため)。
+     **出るときのアニメーションは透明度だけにする**(transformを動かすと位置とぶつかる)。 */
   #trainCardBar{
-    position:absolute; left:50%; transform:translateX(-50%); top:150px;
+    position:absolute; left:50%; top:58px; transform:translateX(-50%);
     z-index:26; pointer-events:auto; display:flex; flex-direction:column; align-items:stretch; gap:3px;
     padding:4px 6px; border-radius:11px;
-    background:linear-gradient(180deg, rgba(14,20,32,0.93), rgba(8,12,20,0.93));
+    background:linear-gradient(180deg, rgba(14,20,32,0.9), rgba(8,12,20,0.9));
     border:1px solid rgba(159,209,255,0.55); box-shadow:0 6px 20px -6px rgba(0,0,0,0.8);
     animation:tcIn 0.18s ease-out;
   }
-  @keyframes tcIn{ from{ opacity:0; transform:translateX(-50%) translateY(-6px); } to{ opacity:1; transform:translateX(-50%) translateY(0); } }
+  @keyframes tcIn{ from{ opacity:0; } to{ opacity:1; } }
   .tc-timer-track{ height:3px; border-radius:2px; background:rgba(255,255,255,0.12); overflow:hidden; }
   .tc-timer-fill{ height:100%; width:100%; background:linear-gradient(90deg,#9fd1ff,#f4c430); }
-  .tc-cards{ display:flex; gap:5px; }
-  /* 高さは 320px の端末で「ステータス欄の下(142px)〜ダッシュの上(222px)」の80pxに収める。
-     文字を詰めてあるので、行を増やすときは実寸を測り直すこと。 */
+  /* 横に並びきらない狭い端末では折り返す(画面外へはみ出させないための保険)。
+     iPhone横持ち(812/844)では1行に収まる。 */
+  .tc-cards{ display:flex; flex-wrap:wrap; justify-content:center; gap:4px; max-width:calc(62 * var(--vw)); }
+  /* 1枚を「名前 → 増減」の横並びにして背を低くする(視界を塞がない横長の帯にするため)。 */
   .tc-card{
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    width:clamp(74px, calc(11 * var(--vw)), 112px); padding:4px; border-radius:9px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:4px;
+    padding:4px 5px; border-radius:9px; cursor:pointer; white-space:nowrap;
     background:linear-gradient(180deg, rgba(159,209,255,0.16), rgba(255,255,255,0.05));
-    border:1px solid rgba(159,209,255,0.5); color:var(--ink); text-align:center;
+    border:1px solid rgba(159,209,255,0.5); color:var(--ink); text-align:left;
   }
   .tc-card:active{ filter:brightness(1.25); }
-  .tc-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11.5px; line-height:1.15; white-space:nowrap; }
+  .tc-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px; line-height:1.15; }
+  .tc-card-deltas{ display:flex; flex-direction:column; }
   /* 増減は1ステータス1行。上げは青・下げは赤で、選ぶ判断がひと目で付くようにする */
-  .tc-card-delta{ font-family:'Share Tech Mono',monospace; font-size:8.5px; line-height:1.15; white-space:nowrap; }
+  .tc-card-delta{ font-family:'Share Tech Mono',monospace; font-size:8px; line-height:1.12; }
   .tc-card-delta.up{ color:#9fd1ff; }
   .tc-card-delta.down{ color:#ff9a8a; }
 
