@@ -2424,6 +2424,38 @@
   .rank-titles{ display:inline-flex; gap:1px; flex-shrink:0; margin:0 5px; }
   .rank-title-chip{ font-size:13px; }
   .rank-row .rv{ font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--ink); flex-shrink:0; }
+  .rank-row .rv em{ font-style:normal; font-size:9px; color:var(--ink-dim); margin-left:2px; }
+  .rank-row .rv.up{ color:#7fe3a8; }
+  .rank-row .rv.dn{ color:#ff9a9a; }
+  /* --- 段位ランキング(ユーザー名が主役) ---
+     クラス名は rankrp- で始める。`.rank-*` は既存のモンスター中心の行が使っている。
+     一覧の幅は420px固定なので、**名前+段位+内訳3件+RP を 392px に収める**のが要件
+     (実測: 既定の gap:10px のままだと 447px になり一覧が横スクロールした)。 */
+  .rank-row.rankrp-row{ gap:5px; padding:6px 10px; }
+  .rankrp-mark{
+    display:inline-flex; align-items:center; gap:2px; flex-shrink:0;
+    font-size:13px; color:var(--rank-color,var(--amber));
+    border:1px solid var(--rank-color,var(--panel-line)); border-radius:999px;
+    padding:1px 6px; background:rgba(255,255,255,0.05);
+  }
+  .rankrp-mark i{ font-style:normal; font-size:10px; letter-spacing:-0.02em; }
+  /* 名前が主役なので、他のタブの .rn より一段大きく・太く */
+  /* min-width は「名前が主役」を守るための床。これが小さいと内訳チップに押されて
+     4文字の名前まで「くろ…」と切れる(実測)。先に削るのは内訳の側。 */
+  .rankrp-user{ flex:1 1 auto; min-width:84px; text-align:left; font-size:15px; font-weight:700;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rankrp-elem{ flex:0 1 auto; min-width:0; font-size:10px; color:var(--ink-dim);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* 内訳は縮めない(縮むと数字が途中で切れて読めない)。幅が足りないときは
+     名前の側が min-width まで詰まって「…」になる。overflow は最後の保険。 */
+  .rankrp-chips{ display:inline-flex; align-items:center; gap:3px; flex:0 0 auto; overflow:hidden; }
+  .rankrp-chip{ display:inline-flex; align-items:center; gap:2px; flex-shrink:0;
+    background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:999px; padding:1px 4px 1px 2px; }
+  .rankrp-ico{ width:15px; height:15px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
+  .rankrp-chip b{ font-family:'Share Tech Mono',monospace; font-size:10px; font-weight:400; }
+  .rankrp-chip b.up{ color:#7fe3a8; }
+  .rankrp-chip b.dn{ color:#ff9a9a; }
+  .rankrp-more{ font-size:9px; color:var(--ink-dim); }
   #rankingList .rank-empty, #myStatsByElement .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
   #myStatsScreen{

@@ -4483,7 +4483,8 @@ function raidShowResult(defeated, dmg, prevBest){
     document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
   }
   // 段位もレイドで動く(順位が無いので討伐/自己ベストで固定値。発注者決定=全モード)
-  const raidRank = noRecord ? null : rankOnMatchEnd({ mode:'raid', raidClear:!!defeated, raidBest:!!newBest });
+  const raidRank = noRecord ? null : rankOnMatchEnd({ mode:'raid', raidClear:!!defeated, raidBest:!!newBest,
+                                                      element: player ? player.element : game.selectedElement });
   // レイドの自己ベストは上の見出しで出しているので、バッジはSPと段位だけ出す
   renderResultBadges({ kills:0, damage:0, prevBestKills:0, prevBestDamage:0,
                        newTitles:[], elemNewTitles:[], seasonSp, rank:raidRank });
@@ -4741,7 +4742,8 @@ function showResultNow(isWin, placement){
   const _seasonSp = (typeof seasonOnMatchEnd==='function') ? seasonOnMatchEnd({ kills: player.kills, damage: _dmg, isWin: !!isWin }) : 0;
   // 段位。**シーズンSPと同じ「試合終了フック」の並びに置く**(game.overガードで1試合1回)
   const _rank = rankOnMatchEnd({ placement, total: entities.length, kills: player.kills,
-                                 mode: netState.mode==='multi' ? 'multi' : 'solo' });
+                                 mode: netState.mode==='multi' ? 'multi' : 'solo',
+                                 element: player.element });
   renderResultBadges({
     kills: player.kills, damage: _dmg, rank: _rank,
     prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles, seasonSp: _seasonSp,
@@ -4770,7 +4772,8 @@ function showResultNow(isWin, placement){
 function rankOnMatchEnd(o){
   if(game.trainingRange) return null;      // 射撃訓練場は勝敗が無い
   if(typeof addRankRp!=='function') return null;
-  const res = addRankRp(rankRpForMatch(o));
+  // 第2引数=そのモンスターの取り分。ランキングの「モンスター別RP」はこの集計を送っている
+  const res = addRankRp(rankRpForMatch(o), o && o.element);
   updateAccountBar();
   return res;
 }
@@ -5027,7 +5030,8 @@ const SHARE_ACCENT = {
 let _lastResultShare = null;
 // ランキングのタブ名。シェアの見出しと投稿文の両方で使う
 const RANKING_MODE_LABEL = { kills:'キル数', damage:'ダメージ数',
-  mastermonLevel:'マスモンLv', mastermonRebirth:'転生回数', mastermonStatTotal:'ステ合計' };
+  mastermonLevel:'マスモンLv', mastermonRebirth:'転生回数', mastermonStatTotal:'ステ合計',
+  rankPoint:'段位', rankRpSum:'モンスター別RP' };
 /* ランキングをシェアできるのは「自分が一覧に載っているとき」だけ。
    載っていないときはボタンごと消す(押しても出せない順位を見せない)。
    一覧を描くたびに setRankShareTarget() で更新する。 */
@@ -5922,6 +5926,8 @@ function submitScoreToRanking(isWin, placement){
     mastermonRebirth,
     mastermonStatTotal: mastermonStatTotalVal,
     rankPoint: (typeof loadRank==='function') ? loadRank().rp : 0,   // 段位(地形で分けない)
+    // このモンスターで稼いだRPの合計。**送るのは端末側の集計そのもの**(サーバで足し込まない)
+    rankRpSum: (typeof rankElemRp==='function') ? rankElemRp(player.element) : 0,
     kills: player.kills,
     damage: Math.round(player.damageDealt),
     placement: isWin ? 1 : placement,
@@ -7722,14 +7728,17 @@ let currentRankingMapType = 'normal'; // 通常マップ / リアルマップ / 
 // マスモン自身の記録(通常/リアルのどちらで遊んでも同じ値)。フィールド名がFirebase側の記録名そのもの。
 /* 地形で分けない項目(フィールド名をそのまま索引に使う)。
    マスモン自身の記録と、アカウントの段位がここに入る。 */
-const MASTERMON_RANK_MODES = ['mastermonLevel', 'mastermonRebirth', 'mastermonStatTotal', 'rankPoint'];
+const MASTERMON_RANK_MODES = ['mastermonLevel', 'mastermonRebirth', 'mastermonStatTotal', 'rankPoint', 'rankRpSum'];
+/* 段位カテゴリのタブ。**行の作り方が他と違う**(モンスターではなくユーザーが主役)ので、
+   loadRankingList はこの一覧で描画を振り分ける。 */
+const RANK_TAB_MODES = ['rankPoint', 'rankRpSum'];
 // カテゴリ(#rankingMapTabsのタブ)ごとに出すサブタブ。1か所にまとめてあるので、
 // 種類を増やすときはここへ1行足すだけでよい(表に足せば自動で回る)。
 const RANKING_TABS_BY_CATEGORY = {
   normal: [['kills','キル数'], ['damage','ダメージ数']],
   real:   [['kills','キル数'], ['damage','ダメージ数']],
   mastermon: [['mastermonLevel','マスモンLv'], ['mastermonRebirth','転生回数'], ['mastermonStatTotal','ステ合計']],
-  rank:      [['rankPoint','段位ポイント']],
+  rank:      [['rankPoint','段位'], ['rankRpSum','モンスター別RP']],
 };
 // カテゴリを切り替えるたびにサブタブを組み直す。今のモードが新カテゴリに無ければ先頭へ落とす。
 function renderRankingModeTabs(){
@@ -7819,6 +7828,121 @@ function rankMastermonHtml(name){
   const size = Math.max(7, Math.min(10, Math.floor(RANK_MM_MAX_PX / chars)));
   return `<span class="rank-mastermon" style="font-size:${size}px">『${safe}』</span>`;
 }
+/* =====================================================================
+   段位ランキング
+
+   scores は「ユーザー名 × モンスター」で1件なので、そのまま並べると
+   同じ人が何行も出るうえ主役がモンスターになる。段位はアカウントの記録なので、
+   **ユーザー名でまとめ直してから**並べる。
+   モンスター別の取り分(rankRpSum)は端末側の集計(loadRank().elem)がそのまま入っている。
+===================================================================== */
+function rankEscape(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// scoresの全行 → ユーザー1人1行 { name, rp, elems:[{element,rp}] }
+function aggregateRankRows(rows){
+  const byUser = new Map();
+  for(const r of rows||[]){
+    const nm = r.name || '名無しのモンスター';
+    let u = byUser.get(nm);
+    if(!u){ u = { name:nm, rp:0, elems:[] }; byUser.set(nm, u); }
+    // 段位ポイントはアカウントの値なので、どの行にも同じ値が入る(念のため最大を採る)
+    u.rp = Math.max(u.rp, r.rankPoint||0);
+    if(r.element && r.rankRpSum) u.elems.push({ element:r.element, rp:Math.round(r.rankRpSum) });
+  }
+  for(const u of byUser.values()){
+    // 稼ぎの大きい順。マイナスは末尾に来る
+    u.elems.sort((a,b)=>b.rp-a.rp);
+  }
+  return [...byUser.values()];
+}
+/* 1行に出すモンスター別RPの数。一覧の幅は420px固定で、名前を主役の大きさで残すと
+   きれいに置けるのはここまで(3件にすると3つ目が途中で切れる)。
+   全部の内訳は「モンスター別RP」タブで見せる。 */
+const RANK_ELEM_CHIP_MAX = 2;
+function rankElemChipsHtml(elems){
+  if(!elems || !elems.length) return '';
+  const html = elems.slice(0, RANK_ELEM_CHIP_MAX).map(e=>{
+    const label = ELEMENTS[e.element] ? ELEMENTS[e.element].label : e.element;
+    const sign = e.rp > 0 ? '+' : '';
+    return `<span class="rankrp-chip" title="${rankEscape(label)} ${sign}${e.rp} RP">` +
+      `<img class="rankrp-ico" src="${imgSrcFor(`monsters/${e.element}`)}" data-ext-idx="0" alt=""` +
+      ` onerror="handleMonsterImgError(this, 'monsters/${e.element}')">` +
+      `<b class="${e.rp<0?'dn':'up'}">${sign}${e.rp}</b></span>`;
+  }).join('');
+  const rest = elems.length - RANK_ELEM_CHIP_MAX;
+  return `<span class="rankrp-chips">${html}${rest>0?`<span class="rankrp-more">+${rest}</span>`:''}</span>`;
+}
+// 順位の見出し(同点は同順位・次は人数ぶん飛ぶ)を付けながら行を組む。
+// `rankrp-row` は段位用の詰めた並び(名前と内訳を1行に入れるため間隔を狭くしてある)。
+function rankRowsHtml(items, valueOf, bodyOf){
+  let prevScore = null, prevRank = 0;
+  return items.map((it,i)=>{
+    const score = valueOf(it);
+    const rank = (prevScore!==null && score===prevScore) ? prevRank : i+1;
+    prevScore = score; prevRank = rank;
+    const crown = RANK_CROWN[rank];
+    const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
+    return { rank, html:`<div class="rank-row rankrp-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${bodyOf(it, rank)}</div>` };
+  });
+}
+/* 段位タブの描画。**行の主役はユーザー名。** モンスターのアイコンは
+   「モンスター別RP」の内訳チップの中だけに出す(誰の記録かを先に読ませる)。 */
+function renderRankRankingList(listEl, mode, rows){
+  const me = sharePlayerName();
+  let mine = null, built;
+  if(mode === 'rankPoint'){
+    let users = aggregateRankRows(rows).filter(u=>u.rp > 0);
+    if(currentRankingMonster !== 'all'){
+      users = users.filter(u=>u.elems.some(e=>e.element===currentRankingMonster));
+    }
+    users.sort((a,b)=>b.rp-a.rp);
+    built = rankRowsHtml(users.slice(0,50), u=>u.rp, (u,rank)=>{
+      const p = rankProgress(u.rp);
+      if(u.name===me && !mine) mine = { rank, val:u.rp, rankName:`${p.cur.icon} ${p.cur.name}`,
+        element: u.elems[0] ? u.elems[0].element : null,      // シェア画像に出す絵は一番稼いだ子
+        monsterLabel: u.elems[0] && ELEMENTS[u.elems[0].element] ? ELEMENTS[u.elems[0].element].label : '' };
+      return `<span class="rankrp-mark" style="--rank-color:${p.cur.color}">${p.cur.icon}<i>${p.cur.name}</i></span>` +
+             `<span class="rankrp-user">${rankEscape(u.name)}</span>` +
+             rankElemChipsHtml(u.elems) +
+             `<span class="rv">${u.rp}<em>RP</em></span>`;
+    });
+  } else {
+    // モンスター別RP: 「ユーザー名 × モンスター」の取り分そのままを並べる
+    let recs = (rows||[]).filter(r=>r.element && r.rankRpSum);
+    if(currentRankingMonster !== 'all') recs = recs.filter(r=>r.element===currentRankingMonster);
+    recs = recs.slice().sort((a,b)=>(b.rankRpSum||0)-(a.rankRpSum||0));
+    built = rankRowsHtml(recs.slice(0,50), r=>Math.round(r.rankRpSum||0), (r,rank)=>{
+      const v = Math.round(r.rankRpSum||0);
+      const nm = r.name || '名無しのモンスター';
+      const label = ELEMENTS[r.element] ? ELEMENTS[r.element].label : r.element;
+      const skinUrl = r.skin && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(r.skin) : null;
+      const icon = skinUrl
+        ? `<img class="rank-icon" src="${skinUrl}" alt="">`
+        : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
+      if(nm===me && !mine) mine = { rank, val:v, element:r.element, skinId:r.skin||null, monsterLabel:label };
+      return `${icon}<span class="rankrp-user">${rankEscape(nm)}</span>` +
+             `<span class="rankrp-elem">${rankEscape(label)}</span>` +
+             `<span class="rv ${v<0?'dn':'up'}">${v>0?'+':''}${v}<em>RP</em></span>`;
+    });
+  }
+  if(!built.length){
+    listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
+    setRankShareTarget(false, null);
+    return;
+  }
+  listEl.innerHTML = built.map(b=>b.html).join('');
+  setRankShareTarget(false, mine && {
+    rank: mine.rank,
+    title: `${RANKING_MODE_LABEL[mode] || mode}ランキング`,
+    valueLabel: mode==='rankPoint' ? '段位ポイント' : '獲得RP',
+    valueText: `${mode!=='rankPoint' && mine.val>0 ? '+' : ''}${mine.val} RP`,
+    element: mine.element || null, skinId: mine.skinId || null,
+    monsterLabel: mine.monsterLabel || '',
+    chips: [mine.rankName || '段位'],
+  });
+}
 async function loadRankingList(mode){
   const listEl = document.getElementById('rankingList');
   listEl.innerHTML = '<div class="rank-empty">読み込み中…</div>';
@@ -7837,6 +7961,8 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">読み込みに失敗しました</div>';
     return;
   }
+  // 段位タブは行の作り方がまるごと違う(主役がユーザー名・1人1行)ので専用の描画へ回す
+  if(RANK_TAB_MODES.includes(mode)){ renderRankRankingList(listEl, mode, rows); return; }
   let filtered = currentRankingMonster==='all' ? rows : rows.filter(r=>r.element===currentRankingMonster);
   // 同じスコアは同じ順位にする(次の順位は人数ぶん飛ぶ = 一般的な競技順位)
   const scoreOf = (r)=> isMastermonMode ? (r[mode]||0) : mmMapStat(r, mode, currentRankingMapType);
@@ -7916,7 +8042,10 @@ document.querySelectorAll('.rank-map-tab').forEach(tab=>{
     document.querySelectorAll('.rank-map-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     const t = tab.dataset.maptype;
-    currentRankingMapType = (t==='real' || t==='mastermon') ? t : 'normal';
+    /* **カテゴリ名は RANKING_TABS_BY_CATEGORY の鍵がそのまま正。**
+       ここに種類を列挙していたため、後から足した `rank` が 'normal' に落ちて
+       段位タブでキル数ランキングが出ていた(実機で報告あり)。表を見るだけにする。 */
+    currentRankingMapType = RANKING_TABS_BY_CATEGORY[t] ? t : 'normal';
     renderRankingModeTabs();   // サブタブの中身をカテゴリに合わせて作り直す
     loadRankingList(currentRankingMode);
   });
