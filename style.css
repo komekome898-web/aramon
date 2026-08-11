@@ -3156,6 +3156,145 @@
         32%  閃光(音源の山と同じ位置)
        33%〜  「転生完了」の判子が叩き付けられ、生まれ変わった姿が現れる
        40%〜  恩恵が金文字でモンスターから次々飛び出す + 下のダイアログが埋まる     */
+
+  /* 覚醒できるようになったマスモンの印(カード / メニューのボタン / 技一覧の強調) */
+  .ml-card-awaken{ position:absolute; left:6px; bottom:6px; z-index:4;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:9px; letter-spacing:0.3px;
+    padding:1px 6px; border-radius:999px; white-space:nowrap; color:#fff;
+    background:linear-gradient(90deg, rgba(120,70,220,0.95), rgba(60,140,220,0.95));
+    border:1px solid rgba(200,170,255,0.85);
+    box-shadow:0 0 8px rgba(160,110,255,0.75); animation:awReadyPulse 1.8s ease-in-out infinite; }
+  .mm-menu-btn-awaken.is-ready{
+    border-color:rgba(200,170,255,0.9);
+    background:linear-gradient(90deg, rgba(120,70,220,0.34), rgba(12,18,30,0.55));
+    box-shadow:0 0 12px -2px rgba(160,110,255,0.8);
+    animation:awReadyPulse 1.8s ease-in-out infinite; }
+  .mm-menu-ready{ margin-left:6px; padding:0 6px; border-radius:999px; font-size:10px;
+    color:#1a1030; background:linear-gradient(90deg,#e6d8ff,#b28cff); font-weight:800; }
+  @keyframes awReadyPulse{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.35); } }
+  /* 技一覧: 覚醒で上がった項目を「前 → 後」で見せる */
+  .mm-move-card.is-awakened{ border-color:rgba(178,140,255,0.7);
+    box-shadow:inset 0 0 0 1px rgba(178,140,255,0.25); }
+  .mm-move-awaken{ display:inline-flex; align-items:center; gap:2px; margin:2px 0 3px;
+    padding:1px 7px; border-radius:999px; font-family:'Rajdhani',sans-serif; font-weight:800;
+    font-size:10.5px; color:#e6d8ff; white-space:nowrap;
+    background:linear-gradient(90deg, rgba(120,70,220,0.42), rgba(60,140,220,0.42));
+    border:1px solid rgba(178,140,255,0.7); }
+  .mm-move-awaken b{ color:#ffe07a; margin-left:3px; }
+  .mm-move-stats span.mm-move-up, .mm-move-feature.mm-move-up{ color:#e6d8ff; font-weight:800; }
+  .mm-move-was{ color:var(--ink-dim); font-weight:400; text-decoration:line-through; }
+  .mm-move-arrow{ color:#b28cff; margin:0 2px; font-weight:400; }
+  .mm-move-now{ color:#ffe07a; }
+
+  /* ===== 覚醒アニメーション(#awakenAnimOverlay) =====
+     素材を1つも足さずに作る。おおまかな流れ(合計 AWAKEN_ANIM_MS = 5200ms):
+       0〜18%   暗転。元の姿が浮かび、光の輪が締まっていく
+       18〜46%  光の筋が回り、粒子が集まって姿が白く飛ぶ
+       46%      閃光。ここで姿が覚醒後に入れ替わる
+       46%〜    「覚 醒」の判子 → 名前と強化した項目がせり上がる
+     **色は段位や転生の金ではなく紫〜水色**にして、転生と見分けが付くようにしてある。 */
+  #awakenAnimOverlay{ position:absolute; inset:0; z-index:700; overflow:hidden;
+    display:flex; flex-direction:column; align-items:center; background:#03030a; }
+  #awakenAnimOverlay.hidden{ display:none; }
+  #awakenAnimSky{ position:absolute; inset:0;
+    background:radial-gradient(ellipse at 50% 42%, rgba(120,70,220,0.55), rgba(3,3,10,0.98) 66%);
+    opacity:0; animation:awSky 5.2s ease-out both; }
+  #awakenAnimStage{ position:relative; flex:0 0 auto; width:100%; height:calc(62 * var(--vh));
+    display:flex; align-items:center; justify-content:center; }
+  #awakenAnimRays{ position:absolute; left:50%; top:50%;
+    width:calc(150 * var(--vh)); height:calc(150 * var(--vh));
+    transform:translate(-50%,-50%); opacity:0; pointer-events:none;
+    background:repeating-conic-gradient(from 0deg, rgba(190,160,255,0.30) 0deg 4deg, rgba(190,160,255,0) 4deg 16deg);
+    animation:awRays 5.2s linear both; }
+  /* 締まっていく2本の輪。時間差で回り、閃光と同時にはじける */
+  .aw-ring{ position:absolute; left:50%; top:50%; border-radius:50%; pointer-events:none;
+    transform:translate(-50%,-50%); opacity:0; }
+  #awakenAnimRing1{ width:calc(52 * var(--vh)); height:calc(52 * var(--vh));
+    border:calc(0.7 * var(--vh)) solid rgba(178,140,255,0.9);
+    box-shadow:0 0 calc(4 * var(--vh)) rgba(160,110,255,0.8);
+    animation:awRing 5.2s cubic-bezier(.5,0,.3,1) both; }
+  #awakenAnimRing2{ width:calc(52 * var(--vh)); height:calc(52 * var(--vh));
+    border:calc(0.45 * var(--vh)) dashed rgba(140,220,255,0.85);
+    animation:awRing 5.2s cubic-bezier(.5,0,.3,1) both, awSpin 2.6s linear infinite; }
+  #awakenAnimMotes{ position:absolute; left:50%; top:50%;
+    width:calc(70 * var(--vh)); height:calc(70 * var(--vh)); transform:translate(-50%,-50%);
+    pointer-events:none; opacity:0;
+    background:
+      radial-gradient(circle at 18% 30%, rgba(200,170,255,0.95) 0 2px, rgba(0,0,0,0) 3px),
+      radial-gradient(circle at 74% 22%, rgba(150,220,255,0.95) 0 2px, rgba(0,0,0,0) 3px),
+      radial-gradient(circle at 30% 76%, rgba(200,170,255,0.9) 0 2px, rgba(0,0,0,0) 3px),
+      radial-gradient(circle at 84% 68%, rgba(150,220,255,0.9) 0 2px, rgba(0,0,0,0) 3px),
+      radial-gradient(circle at 52% 12%, rgba(230,210,255,0.9) 0 2px, rgba(0,0,0,0) 3px),
+      radial-gradient(circle at 12% 56%, rgba(150,220,255,0.85) 0 2px, rgba(0,0,0,0) 3px);
+    animation:awMotes 5.2s ease-in both; }
+  /* 姿。2枚を重ねて置き、閃光の瞬間に入れ替える */
+  .aw-figure{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:calc(34 * var(--vh)); height:calc(34 * var(--vh));
+    display:flex; align-items:center; justify-content:center; }
+  .aw-figure img{ max-width:100%; max-height:100%; object-fit:contain; }
+  #awakenAnimBefore{ animation:awBefore 5.2s ease-in both; }
+  #awakenAnimAfter{ opacity:0; animation:awAfter 5.2s cubic-bezier(.15,1.4,.4,1) both;
+    filter:drop-shadow(0 0 calc(2 * var(--vh)) rgba(178,140,255,0.9)); }
+  #awakenAnimStamp{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    opacity:0; animation:awStamp 5.2s cubic-bezier(.2,1.6,.35,1) both; pointer-events:none; }
+  #awakenAnimStamp span{ font-family:'Russo One',sans-serif; letter-spacing:calc(1.2 * var(--vh));
+    font-size:calc(11 * var(--vh)); color:#e6d8ff;
+    text-shadow:0 0 calc(2 * var(--vh)) rgba(160,110,255,0.95), 0 0 calc(5 * var(--vh)) rgba(120,70,220,0.8); }
+  #awakenAnimFlash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none;
+    animation:awFlash 5.2s linear both; }
+  #awakenAnimResult{ position:relative; flex:1 1 auto; width:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:calc(1.2 * var(--vh)); opacity:0; animation:awResult 5.2s ease-out both; }
+  .aw-res-name{ font-family:'Rajdhani',sans-serif; font-weight:800;
+    font-size:calc(5.4 * var(--vh)); color:#e6d8ff; letter-spacing:1px; text-align:center;
+    max-width:86%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* 強化した項目。**ここが一番見せたい情報**なので大きく・虹ではなく紫の枠で締める */
+  .aw-res-boost{ display:inline-flex; align-items:center; gap:calc(1 * var(--vh));
+    padding:calc(0.7 * var(--vh)) calc(2 * var(--vh)); border-radius:999px;
+    background:linear-gradient(90deg, rgba(120,70,220,0.35), rgba(60,140,220,0.35));
+    border:1px solid rgba(178,140,255,0.75); color:#fff;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:calc(4 * var(--vh));
+    white-space:nowrap; max-width:92%; overflow:hidden; text-overflow:ellipsis; }
+  .aw-res-boost b{ color:#ffe07a; font-size:calc(4.6 * var(--vh)); }
+  @keyframes awSky{ 0%{ opacity:0; } 12%{ opacity:1; } 100%{ opacity:1; } }
+  @keyframes awRays{ 0%{ opacity:0; transform:translate(-50%,-50%) rotate(0deg); }
+    16%{ opacity:0.5; } 44%{ opacity:0.9; } 50%{ opacity:0; }
+    100%{ opacity:0; transform:translate(-50%,-50%) rotate(200deg); } }
+  @keyframes awSpin{ from{ transform:translate(-50%,-50%) rotate(0deg); } to{ transform:translate(-50%,-50%) rotate(360deg); } }
+  @keyframes awRing{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(2.2); }
+    14%{ opacity:1; }
+    44%{ opacity:1; transform:translate(-50%,-50%) scale(0.72); }
+    47%{ opacity:0; transform:translate(-50%,-50%) scale(1.5); }
+    100%{ opacity:0; transform:translate(-50%,-50%) scale(1.5); } }
+  @keyframes awMotes{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(1.25) rotate(0deg); }
+    20%{ opacity:0.9; }
+    44%{ opacity:1; transform:translate(-50%,-50%) scale(0.35) rotate(120deg); }
+    48%{ opacity:0; } 100%{ opacity:0; } }
+  @keyframes awBefore{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.9); filter:brightness(0.6); }
+    14%{ opacity:1; transform:translate(-50%,-50%) scale(1); filter:brightness(0.8); }
+    42%{ opacity:1; filter:brightness(2.6) saturate(0.2); }
+    46%{ opacity:0; filter:brightness(6) saturate(0); }
+    100%{ opacity:0; } }
+  @keyframes awAfter{
+    0%,45%{ opacity:0; transform:translate(-50%,-50%) scale(0.72); }
+    52%{ opacity:1; transform:translate(-50%,-50%) scale(1.12); }
+    60%{ transform:translate(-50%,-50%) scale(1); }
+    100%{ opacity:1; transform:translate(-50%,-50%) scale(1); } }
+  @keyframes awStamp{
+    0%,44%{ opacity:0; transform:translate(-50%,-50%) scale(2.6); }
+    50%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    62%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    72%{ opacity:0; transform:translate(-50%,-50%) scale(1.1); }
+    100%{ opacity:0; } }
+  @keyframes awFlash{ 0%,44%{ opacity:0; } 46%{ opacity:0.98; } 54%{ opacity:0; } 100%{ opacity:0; } }
+  @keyframes awResult{
+    0%,58%{ opacity:0; transform:translateY(calc(4 * var(--vh))); }
+    72%{ opacity:1; transform:translateY(0); }
+    100%{ opacity:1; transform:translateY(0); } }
+
   #rebirthAnimOverlay{ position:absolute; inset:0; z-index:700; overflow:hidden;
     display:flex; flex-direction:column; align-items:center; background:#020306; }
   #rebirthAnimOverlay.hidden{ display:none; }

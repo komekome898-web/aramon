@@ -6125,8 +6125,11 @@ function mmCardInnerHtml(key){
   const busy = (typeof expeditionIsBusy==='function') && expeditionIsBusy(key);
   const picked = busy ? '<div class="ml-card-picked ml-card-away">🧭 遠征中</div>'
                       : ((game.selectedMastermonKey===key) ? '<div class="ml-card-picked">選択中</div>' : '');
+  // 覚醒できるようになったら、カードにも印を出す(詳細を開かないと気づけない状態にしない)
+  const awReady = (typeof awakenReadyFor==='function') && awakenReadyFor(mm)
+    ? '<div class="ml-card-awaken">✵ 覚醒できます</div>' : '';
   return `
-    ${picked}
+    ${picked}${awReady}
     <div class="ml-card-lv">Lv.${mm.level}</div>
     ${mmRebirthStarsHtml(mm)}
     <div class="ml-card-art ml-card-art-mm">${equippedIconImgTag(key, el.label)}</div>
@@ -6326,12 +6329,26 @@ function buildMastermonMenuHtml(mm){
         </span>
       </button>`);
   }
-  items.push(awakenMenuBtnHtml(mm));
+  /* 覚醒ボタン。**条件を満たしていれば一番上**に出す(下に埋もれて見つけられない、
+     と指摘があった・2026-08-11)。まだ条件が足りないうちは今までどおり一番下で、
+     「あと何が要るか」の目標として置いておく。 */
+  const aw = awakenMenuBtnHtml(mm);
+  if(aw) (awakenReadyFor(mm) ? items.unshift(aw) : items.push(aw));
   return `<div class="mm-menu-list">${items.join('')}</div>`;
 }
 /* 覚醒ボタン。**条件を満たしていなくても隠さず、「あと何が要るか」を出す。**
    長期の目標として一番効くのがこの表示なので、押せないときも進捗が見えるようにしている。
    覚醒後の姿が用意されていないスキン(まだ作っていない)のときだけボタンごと出さない。 */
+/* 「いま覚醒できる」か。**判定はここ1か所**(ボタンの位置・光り方・カードの印が
+   同じ答えを見るようにするため)。 */
+function awakenReadyFor(mm){
+  if(!mm || typeof getEquippedSkin!=='function') return false;
+  const skinId = getEquippedSkin(mm.element) || null;
+  const baseId = (skinId && isAwakenedSkinId(skinId)) ? SSR_SKINS[skinId].awakenOf : skinId;
+  if(!baseId || !awakenedSkinIdOf(baseId)) return false;
+  if(mastermonAwakenBoost(mm, baseId)) return false;      // もう覚醒済み
+  return awakenRequirements(mm, baseId).length === 0;
+}
 function awakenMenuBtnHtml(mm){
   if(!mm) return '';
   const skinId = getEquippedSkin(mm.element) || null;
@@ -6356,10 +6373,10 @@ function awakenMenuBtnHtml(mm){
                             : m.kind==='stat'    ? `${m.label} あと${m.need-m.now}`
                             : m.label).join('・');
   return `
-    <button class="mm-menu-btn mm-menu-btn-awaken" data-action="awaken"${canDo?'':' disabled'}>
+    <button class="mm-menu-btn mm-menu-btn-awaken${canDo?' is-ready':''}" data-action="awaken"${canDo?'':' disabled'}>
       <span class="mm-menu-btn-icon">✵</span>
       <span class="mm-menu-btn-text">
-        <span class="mm-menu-btn-label">覚醒${canDo?'':'（条件未達）'}</span>
+        <span class="mm-menu-btn-label">覚醒${canDo?'<span class="mm-menu-ready">できます！</span>':'（条件未達）'}</span>
         <span class="mm-menu-btn-desc">${canDo
           ? '姿が変わり、tier3の技を1つ強化できます(取り消せません)'
           : `あと ${rest}`}</span>
@@ -6662,19 +6679,58 @@ function doAwaken(){
   saveMastermons(data);
   // 覚醒後の姿をそのまま着せる(着せ替えで元へ戻せる)
   setEquippedSkin(mm.element, awId);
-  const key = awakenKey;
+  // **控えてから閉じる。** closeAwakenOverlay が awakenKey/awakenPick を null に戻すので、
+  // 先に閉じると演出に「何を強化したか」が渡らず、空の帯が出る
+  const key = awakenKey, pick = awakenPick;
   closeAwakenOverlay();
-  // 昇格演出の仕組みをそのまま使う。専用の動画が無ければ共通の演出だけが流れる
-  const after = ()=>{
-    pushToast(`✵ ${skinMeta(awId).name} に覚醒しました！`);
-    mastermonPreviewSkin = null;
-    renderMastermonList();
-    renderMastermonDetail(key);
-  };
-  if(typeof runSsrPromotionSequence==='function' && typeof showSsrReveal==='function')
-    runSsrPromotionSequence(awId, ()=> showSsrReveal(awId, after));
-  else after();
+  playAwakenAnim(key, baseId, awId, pick);
 }
+/* 覚醒アニメーション。**素材を1つも足さずに作る**(専用動画が無いと音だけになり、
+   「豪華さがない」と指摘された。転生の演出と同じ作りで、色だけ紫〜水色にして見分ける)。
+   合計 AWAKEN_ANIM_MS。CSSのキーフレームも同じ尺。 */
+const AWAKEN_ANIM_MS = 5200;
+function playAwakenAnim(key, baseId, awId, boostKey){
+  const ov = document.getElementById('awakenAnimOverlay');
+  const mm = loadMastermons()[key];
+  const el = mm ? mm.element : null;
+  if(!ov || !el){ afterAwakenRefresh(key, awId); return; }
+  const imgTag = (sid)=>{
+    const url = (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(sid) : null;
+    return url ? `<img src="${url}" alt="">`
+               : `<img src="${imgSrcFor(`monsters/${el}`)}" onerror="handleMonsterImgError(this,'monsters/${el}')" alt="">`;
+  };
+  document.getElementById('awakenAnimBefore').innerHTML = imgTag(baseId);
+  document.getElementById('awakenAnimAfter').innerHTML  = imgTag(awId);
+  document.getElementById('awakenAnimName').textContent = skinMeta(awId).name;
+  const b = AWAKEN_BOOSTS[boostKey];
+  document.getElementById('awakenAnimBoost').innerHTML = b
+    ? `${b.icon} ${b.label} <b>${awakenBoostAmountText(boostKey)}</b>` : '';
+  ov.className = 'aw-anim-run';   // hiddenを外す。display切替でCSSアニメーションが頭から再生される
+  void ov.offsetWidth;
+  // 音。専用の大当たり音声があれば使い、無ければ合成SEで代用する(無音にはしない)
+  if(typeof playSe==='function') playSe('godRising');
+  setTimeout(()=>{ if(typeof playSe==='function') playSe('pickup'); }, Math.round(AWAKEN_ANIM_MS*0.46));
+  afterAwakenRefresh(key, awId);  // 裏で画面の中身を新しい状態にしておく
+}
+function closeAwakenAnim(){
+  const ov = document.getElementById('awakenAnimOverlay');
+  if(!ov) return;
+  ov.className = 'hidden';
+  document.getElementById('awakenAnimBefore').innerHTML = '';
+  document.getElementById('awakenAnimAfter').innerHTML = '';
+}
+/* 覚醒したあとに画面を作り直す。**着せ替えと同じ4か所を全部やる。**
+   ここが2か所だけだったため、詳細の大きいカードとロビーのカードに新しい姿が
+   すぐ出てこなかった(実機で報告・2026-08-11)。 */
+function afterAwakenRefresh(key, awId){
+  mastermonPreviewSkin = null;
+  renderMastermonList();       // 一覧のカード
+  renderMastermonCard(key);    // 詳細の大きいカード ←これが抜けていた
+  renderSelectorCards();       // ロビーのカード    ←これも抜けていた
+  renderMastermonDetail(key);
+  if(awId) pushToast(`✵ ${skinMeta(awId).name} に覚醒しました！`);
+}
+document.getElementById('awakenAnimCloseBtn').addEventListener('click', closeAwakenAnim);
 document.getElementById('awakenCloseBtn').addEventListener('click', closeAwakenOverlay);
 document.getElementById('awakenCancelBtn').addEventListener('click', closeAwakenOverlay);
 document.getElementById('awakenConfirmBtn').addEventListener('click', doAwaken);
@@ -7342,12 +7398,25 @@ function buildMastermonMovesHtml(key, opts){
   const moves = SIGNATURE_MOVES[key] || [];
   const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
   const ignoreSkin = !!(opts && opts.ignoreSkin);
+  /* 覚醒の強化は「エンティティに載っているもの」を読む決まりなので、
+     ここでも仮のエンティティに載せる。**載せないと技一覧だけ強化前の数字**になり、
+     何が上がったのか分からなかった(実機で報告・2026-08-11)。 */
+  const mmForMoves = (!ignoreSkin && typeof loadMastermons==='function') ? loadMastermons()[key] : null;
+  const equippedForMoves = (!ignoreSkin && typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
+  const awBoost = (mmForMoves && equippedForMoves && typeof awakenBoostForSkin==='function')
+    ? awakenBoostForSkin(mmForMoves, equippedForMoves) : null;
+  const awDef = awBoost ? AWAKEN_BOOSTS[awBoost] : null;
   const movesHtml = moves.map(baseMv=>{
     // 装備スキンでtier3が専用技(ちょこの「ヴァニッシュ」等)に変わる場合は解決後の性能を表示する。
     // ignoreSkin時は isPlayer:false + skinId:null にすることで entitySkinId() が null を返し、
     // getMoveAura / skinTier3Move / getMoveName / ssrTier3DmgMult がすべて既定値になる
-    const pseudoForMove = ignoreSkin ? { element:key, isPlayer:false, skinId:null } : { element:key, isPlayer:true };
+    const pseudoForMove = ignoreSkin ? { element:key, isPlayer:false, skinId:null }
+                                     : { element:key, isPlayer:true, awakenBoost:awBoost };
     const mv = (typeof skinTier3Move==='function') ? skinTier3Move(baseMv, pseudoForMove) : baseMv;
+    // 強化前の同じ技(強化ぶんだけを外したもの)。「いくつから いくつへ」を出すために使う
+    const pseudoNoBoost = { element:key, isPlayer:true, awakenBoost:null };
+    const mvPlain = (awDef && baseMv.tier===3 && typeof skinTier3Move==='function')
+      ? skinTier3Move(baseMv, pseudoNoBoost) : null;
     const icon = mv.icon || fallbackIcon;
     // 技アイコンは該当オーラのアイコンを表示(tier3は装備SSRスキンで一致技に変わる)
     const dispAura = (typeof getMoveAura==='function') ? getMoveAura(mv, pseudoForMove) : mv.aura;
@@ -7367,19 +7436,37 @@ function buildMastermonMovesHtml(key, opts){
       + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0)
       + (mv.warheads ? ((mv.warheads.dmg||0) + (mv.warheads.blast ? mv.warheads.blast.dmg||0 : 0)) * (mv.warheads.count||1) : 0);
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
+    /* 覚醒で上がった数字は「前 → 後」で出し、その1項目だけ光らせる。
+       どの数字が動くかは AWAKEN_BOOSTS[].stat が持っている(画面側で対応表を作らない)。 */
+    const upStat = (awDef && mv.tier===3) ? awDef.stat : null;
+    const plainDmg = mvPlain ? Math.round(
+      (mvPlain.dmg + (mvPlain.blast ? (mvPlain.blast.dmg||0) : 0)
+       + (mvPlain.endBlast ? (mvPlain.endBlast.dmg||0)*(mvPlain.endBlast.count||1) : 0)
+       + (mvPlain.warheads ? ((mvPlain.warheads.dmg||0) + (mvPlain.warheads.blast ? mvPlain.warheads.blast.dmg||0 : 0)) * (mvPlain.warheads.count||1) : 0))
+      * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mvPlain, pseudoNoBoost) : 1)) : null;
+    const plainSpeed = mvPlain ? (isAoe ? Math.max(200, mvPlain.projSpeed||900) : mvPlain.projSpeed) : null;
+    // 「前 → 後」。値が同じなら普通に出す(動いていないのに矢印を出さない)
+    const upTxt = (stat, before, after)=> (upStat===stat && before!=null && before!==after)
+      ? `<b class="mm-move-was">${before}</b><b class="mm-move-arrow">→</b><b class="mm-move-now">${after}</b>`
+      : `${after}`;
+    const cls = (stat)=> upStat===stat ? ' class="mm-move-up"' : '';
+    const awakenLine = awDef && mv.tier===3
+      ? `<div class="mm-move-awaken">✵ 覚醒強化　${awDef.icon} ${awDef.label} <b>${awakenBoostAmountText(awBoost)}</b></div>`
+      : '';
     return `
-    <div class="mm-move-card">
+    <div class="mm-move-card${awDef && mv.tier===3 ? ' is-awakened' : ''}">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
       <div class="mm-move-info">
         <div class="mm-move-name">${dispName}<span class="mm-move-icon">${auraIcon}</span></div>
+        ${awakenLine}
         <div class="mm-move-stats">
-          <span>威力 ${dispDmg}</span>
+          <span${cls('dmg')}>威力 ${upTxt('dmg', plainDmg, dispDmg)}</span>
           <span>消費ガッツ ${mv.gutsCost}</span>
           <span>CT ${mv.cooldown}秒</span>
-          <span>${speedText}</span>
-          <span>射程 ${mv.range}</span>
+          <span${cls('speed')}>${isAoe?'範囲拡大速度':'弾速'} ${upTxt('speed', plainSpeed, speedVal)}</span>
+          <span${cls('range')}>射程 ${upTxt('range', mvPlain?mvPlain.range:null, mv.range)}</span>
         </div>
-        <div class="mm-move-feature">${describeMoveFeatureText(mv)}</div>
+        <div class="mm-move-feature${upStat==='feature'?' mm-move-up':''}">${describeMoveFeatureText(mv)}</div>
       </div>
     </div>`;
   }).join('');

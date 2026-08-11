@@ -890,11 +890,22 @@ const SSR_SKIN_TIER3 = {
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
 // 対象外はそのまま元の技を返す。結果はスキンID+技名でキャッシュし毎フレームの生成を避ける。
 // 威力倍率(dmgMult)は従来どおり effectiveMoveDmg 側の ssrTier3DmgMult が掛けるので、ここでは触らない。
+/* スキンIDから tier3 の専用技の定義を引く。**覚醒スキンは元のスキンのものを受け継ぐ。**
+   覚醒後の姿には専用技の行が無い(ツールが作るのは見た目だけ)ため、そのまま引くと
+   技名が通常の名前に戻り、SSRの威力倍率まで失われていた(実機で報告・2026-08-11)。
+   **SSR_SKIN_TIER3 を直接引く場所を 増やさない。必ずこの関数を通す。** */
+function skinTier3Def(skinId){
+  if(!skinId) return null;
+  if(SSR_SKIN_TIER3[skinId]) return SSR_SKIN_TIER3[skinId];
+  if(typeof isAwakenedSkinId === 'function' && isAwakenedSkinId(skinId))
+    return SSR_SKIN_TIER3[SSR_SKINS[skinId].awakenOf] || null;
+  return null;
+}
 const _skinTier3MoveCache = {};
 function skinTier3Move(move, attacker){
   if(!move || move.tier!==3) return move;
   const sid = entitySkinId(attacker);
-  const def = sid ? SSR_SKIN_TIER3[sid] : null;
+  const def = skinTier3Def(sid);
   const boost = entityAwakenBoost(attacker);
   if(!def && !boost) return move;
   // 覚醒の強化は「選んだ種類」で結果が変わるのでキャッシュキーに混ぜる
@@ -943,16 +954,16 @@ function entityAwakenBoost(entity){ return (entity && entity.awakenBoost) || nul
 // 技の表示名(SSR装備時はtier3を専用名に上書き)
 function getMoveName(move, attacker){
   if(move && move.tier===3){
-    const sid = entitySkinId(attacker);
-    if(sid && SSR_SKIN_TIER3[sid]) return SSR_SKIN_TIER3[sid].name;
+    const def = skinTier3Def(entitySkinId(attacker));
+    if(def && def.name) return def.name;
   }
   return move ? move.name : '';
 }
 // SSR装備時のtier3威力倍率(非装備/非tier3は1)。覚醒で「威力」を選んでいればさらに掛かる
 function ssrTier3DmgMult(move, attacker){
   if(move && move.tier===3){
-    const sid = entitySkinId(attacker);
-    let mult = (sid && SSR_SKIN_TIER3[sid]) ? (SSR_SKIN_TIER3[sid].dmgMult || 1) : 1;
+    const def = skinTier3Def(entitySkinId(attacker));
+    let mult = def ? (def.dmgMult || 1) : 1;
     const b = AWAKEN_BOOSTS[entityAwakenBoost(attacker)];
     if(b && b.dmgMult) mult *= b.dmgMult;
     return mult;
@@ -996,6 +1007,11 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-11', items:[
     { t:'✵ 「狂戦士ガッツ」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },
+    { t:'✵ 覚醒に専用の演出を追加しました。元の姿が光に包まれ、閃光とともに覚醒後の姿へ入れ替わります。最後に「何を強化したか」も出ます', g:['feature','av'] },
+    { t:'✵ 覚醒したあと、技の名前が通常の名前に戻ってしまう不具合を修正しました。SSRスキンの専用技名と威力アップも覚醒後の姿に引き継がれます', g:['fix','balance'] },
+    { t:'✵ 覚醒したあと、マスモンのカードとロビーのカードに新しい姿がすぐ反映されない不具合を修正しました', g:['fix'] },
+    { t:'✵ 覚醒できるようになると、マスモンのカードに印が出て、メニューの一番上に覚醒ボタンが出るようになりました', g:['general'] },
+    { t:'✵ 技一覧で、覚醒の強化によって何がどれだけ上がったのかを「54 → 70」のように出すようにしました', g:['general'] },
     { t:'🧭 遠征中の画面で、送り出した子が向こうで頑張っている様子を見られるようになりました。行き先ごとの景色の中を歩き、いま何をしているかが流れ、進み具合にあわせて背中の袋の中身が増えていきます', g:['av','general'] },
     { t:'🏅 ロビーの右上に段位パネルを追加しました。今の段位・RP・次の段位まであと何RPかが一目で分かります', g:['feature','general'] },
     { t:'ロビー左のメニューを2列にしました。ボタンが縦に潰れて押しづらかったのを、アイコンと名前を縦に並べた大きめのボタンに変えています', g:['general'] },
@@ -1618,21 +1634,34 @@ const AWAKEN_STAT_MIN    = 800;  // 6ステータス「すべて」がこの値�
    意味が変わる**(範囲技では fillSpeed = 範囲の広がる速さになる。combat.js の fireMove 参照)。
    そのため両方を並べず、`applies(move)` でその技に効くものだけを出す。
    増やすときはこの表に1行足すだけでよい(選択ボタンも効果の適用も自動で回る)。 */
+/* `stat` は技一覧のどの数字が動くか。**強調表示はこの印だけを見る**ので、
+   強化を足すときにここへ1つ書けば画面側は何も足さなくてよい。 */
 const AWAKEN_BOOSTS = {
-  power:  { label:'威力',         icon:'💥', desc:'技のダメージが上がる',
+  power:  { label:'威力',         icon:'💥', desc:'技のダメージが上がる', stat:'dmg',
             dmgMult:1.30, applies:()=>true },
-  range:  { label:'射程',         icon:'🎯', desc:'技の届く距離が伸びる',
+  range:  { label:'射程',         icon:'🎯', desc:'技の届く距離が伸びる', stat:'range',
             mult:{ range:1.30 }, applies:(m)=>!!(m && m.range) },
   // 弾を撃つ技(aoeShapeが無い)だけ。projSpeed は弾の速さ
-  projSpeed:{ label:'弾速',       icon:'⚡', desc:'弾が速く飛ぶ',
+  projSpeed:{ label:'弾速',       icon:'⚡', desc:'弾が速く飛ぶ', stat:'speed',
             mult:{ projSpeed:1.50 }, applies:(m)=>!!(m && !m.aoeShape && m.projSpeed) },
   // 範囲技だけ。projSpeed は範囲の広がる速さ(fillSpeed)。未指定の技は既定900から伸ばす
-  fillSpeed:{ label:'範囲拡大速度', icon:'🌀', desc:'範囲が広がる速さが上がる',
+  fillSpeed:{ label:'範囲拡大速度', icon:'🌀', desc:'範囲が広がる速さが上がる', stat:'speed',
             mult:{ projSpeed:1.50 }, base:{ projSpeed:900 }, applies:(m)=>!!(m && m.aoeShape) },
   // 爆風ドームを持つ技だけ。expandTime は小さいほど速く広がる
-  blastSpeed:{ label:'爆風の広がり', icon:'💠', desc:'着弾の爆風が速く広がる',
+  blastSpeed:{ label:'爆風の広がり', icon:'💠', desc:'着弾の爆風が速く広がる', stat:'feature',
             blastExpandMult:1/1.4, applies:(m)=>!!(m && (m.blast || m.endBlast || m.selfBlast)) },
 };
+/* 強化の効き目を「+何%」の文字にする。**表の数字から作る**ので二重に持たない。
+   爆風だけは expandTime(小さいほど速い)なので逆数で見る。 */
+function awakenBoostAmountText(key){
+  const b = AWAKEN_BOOSTS[key];
+  if(!b) return '';
+  const pct = (v)=> `+${Math.round((v-1)*100)}%`;
+  if(b.dmgMult) return pct(b.dmgMult);
+  if(b.mult){ const k = Object.keys(b.mult)[0]; return pct(b.mult[k]); }
+  if(b.blastExpandMult) return pct(1/b.blastExpandMult);
+  return '';
+}
 // その技で実際に選べる強化の一覧(効かないものは出さない)
 function awakenBoostKeysFor(move){
   return Object.keys(AWAKEN_BOOSTS).filter(k=>AWAKEN_BOOSTS[k].applies(move));
