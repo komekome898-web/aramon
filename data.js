@@ -335,6 +335,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('dullahan_walk_f'), back:_loadWalk('dullahan_walk_b') },
     ssr: [
       { skinId:'guts_ssr', front:_loadWalk('guts_ssr_walk_f'), back:_loadWalk('guts_ssr_walk_b') }, /*@guts_ssr*/
+      { skinId:'guts_ssr_awake', front:_loadWalk('guts_ssr_awake_walk_f'), back:_loadWalk('guts_ssr_awake_walk_b') }, /*@guts_ssr_awake*/
     ],
   },
   hum:     { /*@hum*/
@@ -715,6 +716,7 @@ const SSR_SKIN_AURA = {
   zod_ssr:        'black', /*@zod_ssr*/
   garurumon_ssr:  'blue', /*@garurumon_ssr*/
   metag_ssr:      'yellow', /*@metag_ssr*/
+  guts_ssr_awake: 'black', /*@guts_ssr_awake*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -993,6 +995,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-11', items:[
+    { t:'✵ 「狂戦士ガッツ」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },
     { t:'🧭 遠征中の画面で、送り出した子が向こうで頑張っている様子を見られるようになりました。行き先ごとの景色の中を歩き、いま何をしているかが流れ、進み具合にあわせて背中の袋の中身が増えていきます', g:['av','general'] },
     { t:'🏅 ロビーの右上に段位パネルを追加しました。今の段位・RP・次の段位まであと何RPかが一目で分かります', g:['feature','general'] },
     { t:'ロビー左のメニューを2列にしました。ボタンが縦に潰れて押しづらかったのを、アイコンと名前を縦に並べた大きめのボタンに変えています', g:['general'] },
@@ -3232,6 +3235,7 @@ const SSR_SKINS = {
   zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr', raidClearOnly:true }, /*@zod_ssr*/
   garurumon_ssr:  { element:'spark', name:'ガルルモン', iconImg:'garurumon_ssr', playerImg:'garurumon_player_ssr' }, /*@garurumon_ssr*/
   metag_ssr:      { element:'fire', name:'メタルグレイモン', iconImg:'metag_ssr', playerImg:'metag_player_ssr' }, /*@metag_ssr*/
+  guts_ssr_awake: { element:'dullahan', name:'狂戦士ガッツ【覚醒】', iconImg:'guts_ssr_awake', playerImg:'guts_player_ssr_awake', awakenOf:'guts_ssr' }, /*@guts_ssr_awake*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
