@@ -16,3 +16,4 @@ Claude Codeは必要になったスキルだけを自動で読み込むので、
 | `aramon-monsters` | 新モンスター追加チェックリスト、SSR/色スキン、歩行アニメーション、歩行スプライト生成 | `data.js` `monsters/` |
 | `aramon-monster-tools` | モンスター追加ツール(studio_web.html / monster_studio.py / monster_add.py / check_monsters.py)の仕組みと落とし穴 | `tools/` |
 | `aramon-performance` | 描画量・shadowBlur・動的解像度・遅延ロード・縮小スプライト・地形パッチ・Service Worker | 全般 |
+| `aramon-push-notifications` | プッシュ通知(遠征の帰還・部屋が立った)の調査結果と実装手順。**発注者判断で現段階では未実装。** 再検討するときに読む | (未実装) |
