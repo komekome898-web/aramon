@@ -84,15 +84,17 @@
        <span class="lobby-side-icon">🧭</span><span class="lobby-side-label">遠征</span>
        <span id="expeditionDot" class="notif-dot hidden"></span>
      </button>
-     <button id="openGachaBtn" class="lobby-side-btn">
-       <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
-       <span id="raidGachaPop" class="raid-gacha-pop hidden">🐉レイドガチャ開催中</span>
+     <!-- バッグとショップは中身が地続きなので**必ず横に並べる**(DOMの順=2列gridの並び順)。
+          ガチャはそのぶん次の行の左へ回す -->
+     <button id="openBagBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🎒</span><span class="lobby-side-label">バッグ</span>
      </button>
      <button id="openShopBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🛒</span><span class="lobby-side-label">ショップ</span>
      </button>
-     <button id="openBagBtn" class="lobby-side-btn">
-       <span class="lobby-side-icon">🎒</span><span class="lobby-side-label">バッグ</span>
+     <button id="openGachaBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
+       <span id="raidGachaPop" class="raid-gacha-pop hidden">🐉レイドガチャ開催中</span>
      </button>
      <button id="titleRankingBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🏆</span><span class="lobby-side-label">ランキング</span>
