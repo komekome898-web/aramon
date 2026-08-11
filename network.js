@@ -230,13 +230,12 @@ async function beginMultiplayerMatchInner(){
     const ownMastermons = loadMastermons();
     const candidateKeys = Object.keys(ownMastermons).filter(k=>k!==game.selectedMastermonKey);
     const shuffledCandidates = shuffle(candidateKeys);
+    /* 積み荷は mastermonSnapshot 1つで作る(部屋へ送る自分の育成値・ゴーストと同じ形)。
+       以前はここだけ転生回数・適正・基礎値アイテムを載せておらず、ホストのマスモンbotに
+       育成の一部が反映されていなかった。 */
     hostMastermonBots = shuffledCandidates.map(k=>{
-      const mm = ownMastermons[k];
       const skin = (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null;
-      // 覚醒の強化も解決済みで載せる(ゲストはホストのマスモンの覚醒記録を持っていない)
-      const awakenBoost = (typeof awakenBoostForSkin==='function') ? awakenBoostForSkin(mm, skin) : null;
-      return { key:k, name:mm.name, element:mm.element, stats:mm.stats, level:mm.level||1,
-               skin: skin||null, awakenBoost: awakenBoost||null };
+      return Object.assign({ key:k }, mastermonSnapshot(ownMastermons[k], skin));
     });
   } else {
     console.log('[aramon] NON-HOST: waiting for seed+world...');

@@ -491,6 +491,26 @@
     roomListeners.push({r,cb});
   };
 
+  /* --- ゴーストマスモン ---
+     ghosts/{accountKey} … { owner:表示名, at:更新時刻, list:[mastermonSnapshot…] }
+     他の人が育てたマスモンの写しを、ソロの敵botとして出すために置く。
+     ※ 新しいパスなので、Firebaseコンソールのセキュリティルールに ghosts の
+        .read / .write を足す必要がある(未定義パスは既定で拒否される)。
+     ※ accounts を直接読む案は採らない(同じオブジェクトに4桁パスコードが入っているため)。 */
+  window.__aramonPutGhost = async function(accountKey, obj){
+    await set(ref(fbDb, `ghosts/${accountKey}`), obj);
+    return true;
+  };
+  /* 新しい方から limit 人ぶん取る。**全件取得にしない**(scores が全件取得で肥大した前例がある)。
+     limitToLast はキー順の末尾なので索引(.indexOn)は要らない。 */
+  window.__aramonFetchGhosts = async function(limit){
+    const n = Math.max(1, Math.min(200, Math.round(limit||50)));
+    const snap = await get(query(ref(fbDb, 'ghosts'), limitToLast(n)));
+    const out = [];
+    snap.forEach(ch=>{ const v = ch.val(); if(v && Array.isArray(v.list)) out.push({ key:ch.key, owner:v.owner||'', at:v.at||0, list:v.list }); });
+    return out;
+  };
+
   /* --- 週替わりレイド ---
      raids/{weekId}/total      … 全プレイヤーの与ダメ累計(トランザクションで加算)
      raids/{weekId}/players/{名前キー} … 個人の累計(ランキング用)
