@@ -993,6 +993,9 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-10', items:[
+    { t:'🏋️ トレーニングカードの効果が、ステータスの上限（999など）に関係なく上がるようになりました。育てきったマスモンでもカードが無駄になりません（試合が終われば必ず元に戻ります）', g:['balance','fix'] },
+    { t:'🏋️ トレーニングカードの表示を「ライフ+108」ではなく「最大HP +24%」のように、実際にどれだけ強くなるかで出すようにしました', g:['general','av'] },
+    { t:'移動しながら（スティックを握ったまま）でもトレーニングカードを選べるようにしました', g:['fix'] },
     { t:'🏋️ トレーニングの選択が、撃破/ダメージ表示のすぐ下に横長で出るようになりました。位置と大きさは設定の「操作画面カスタマイズ」で変えられます', g:['feature','av'] },
     { t:'縦画面ロックのときにエモートのエフェクトが出る位置がズレる不具合を修正しました', g:['fix','av'] },
     { t:'参戦中のマスモンを遠征に出したとき、参戦の選択が中途半端に残る不具合を修正しました', g:['fix'] },
@@ -1496,22 +1499,53 @@ function pickTrainCardKeys(itemType, rnd){
   for(let i=keys.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [keys[i],keys[j]]=[keys[j],keys[i]]; }
   return keys;
 }
-/* このマスモンがこのカードを取ったときのステータス変動(クランプ後の差分)。
+/* 試合中のステータスの丸め。**上限(mastermonStatCap)を見ない。**
+   育てきったマスモン(999)でカードが何も効かなくなるのを避けるため。
+   試合中の値は ent.matchMm(保存データの複製)にしか入らず、試合ごとに作り直されるので
+   育成データへは残らない。下限だけは1で止める(0以下だと倍率が壊れて移動が逆を向く)。 */
+function matchStatClamp(v){ return Math.max(1, Math.round(v)); }
+/* このマスモンがこのカードを取ったときのステータス変動。
    ロビーの previewMastermonTraining と同じ計算に MATCH_TRAIN_CARD_MULT を掛けただけ。 */
 function trainCardChanges(mm, cardKey){
   const tpl = trainCardMenu(cardKey);
   if(!tpl || !mm || !mm.stats) return null;
-  const apt = mastermonApt(mm), cap = mastermonStatCap(mm);
+  const apt = mastermonApt(mm);
   const changes = {};
   tpl.up.forEach(u=>{
     const gain = Math.round(u.amount * (APTITUDE_TRAIN_MULT[apt[u.stat]] || 1) * MATCH_TRAIN_CARD_MULT);
-    changes[u.stat] = mastermonClampStat(mm.stats[u.stat] + gain, cap) - mm.stats[u.stat];
+    changes[u.stat] = matchStatClamp(mm.stats[u.stat] + gain) - mm.stats[u.stat];
   });
   tpl.down.forEach(d=>{
     const loss = Math.round(d.amount * MATCH_TRAIN_CARD_MULT);
-    changes[d.stat] = mastermonClampStat(mm.stats[d.stat] - loss, cap) - mm.stats[d.stat];
+    changes[d.stat] = matchStatClamp(mm.stats[d.stat] - loss) - mm.stats[d.stat];
   });
   return changes;
+}
+/* カードの効き目を「ステータスの数字」ではなく **その結果どれだけ強くなるか** で返す。
+   ライフ+108 と言われても分からないので、最大HP+24% のように実際に変わる値で見せる。
+   ・被ダメだけは小さいほど良いので、マイナスを「良い」として扱う
+   ・連射はクールタイムの逆数(短いほど速い)
+   戻り値: [{ label, pct, good }] 変わらない項目は入らない。 */
+function trainCardEffects(mm, cardKey){
+  const ch = trainCardChanges(mm, cardKey);
+  if(!mm || !mm.stats || !ch) return [];
+  const after = Object.assign({}, mm, { stats: Object.assign({}, mm.stats) });
+  Object.keys(ch).forEach(k=>{ after.stats[k] = mm.stats[k] + ch[k]; });
+  const a = mastermonEffectMults(mm), b = mastermonEffectMults(after);
+  const out = [];
+  const add = (label, before, next, higherIsBetter)=>{
+    if(!before) return;
+    const pct = Math.round((next/before - 1) * 100);
+    if(pct === 0) return;
+    out.push({ label, pct, good: higherIsBetter ? (pct > 0) : (pct < 0) });
+  };
+  add('最大HP', a.lifeMult,      b.lifeMult,      true);
+  add('技ダメ', a.dmgDealtMult,  b.dmgDealtMult,  true);
+  add('被ダメ', a.dmgTakenMult,  b.dmgTakenMult,  false);
+  add('連射',   1/a.cooldownMult, 1/b.cooldownMult, true);
+  add('ガッツ', a.gutsRegenMult, b.gutsRegenMult, true);
+  add('速さ',   a.speedMult,     b.speedMult,     true);
+  return out;
 }
 
 /* =====================================================================
