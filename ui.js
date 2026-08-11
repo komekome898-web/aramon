@@ -7351,8 +7351,8 @@ function applyTrainCardToEntity(ent, cardKey){
   const mm = ensureMatchMm(ent);
   const changes = (typeof trainCardChanges==='function') ? trainCardChanges(mm, cardKey) : null;
   if(!mm || !changes) return null;
-  const cap = mastermonStatCap(mm);
-  Object.keys(changes).forEach(k=>{ mm.stats[k] = mastermonClampStat(mm.stats[k] + changes[k], cap); });
+  // **上限(mastermonStatCap)を見ない。** 育てきったマスモンでカードが無駄にならないように
+  Object.keys(changes).forEach(k=>{ mm.stats[k] = matchStatClamp(mm.stats[k] + changes[k]); });
   refreshMatchMmEffects(ent);
   return changes;
 }
@@ -7364,15 +7364,14 @@ function applyTrainCardToEntity(ent, cardKey){
    ・ゲスト(マルチ)は選んだ結果をホストへ送るだけ。効かせるのはホスト */
 let trainCardState = null;          // { keys, endAt, raf }
 const trainCardQueue = [];
-// 増減を1ステータス1行で出す(横に並べると縦の狭い端末で折り返して背が伸びる)
+/* 効き目は**ステータスの数字ではなく、それによって変わる各数値**で出す
+   (ライフ+108 では強さが分からない。最大HP+24% と出す)。
+   1項目1行。良い変化は青、悪い変化は赤。 */
 function trainCardDeltaRows(mm, key){
-  const ch = mm ? trainCardChanges(mm, key) : null;
-  if(!ch) return '';
-  return Object.keys(ch).filter(k=>ch[k]!==0).map(k=>{
-    const s = MASTERMON_STATS.find(x=>x.key===k);
-    const up = ch[k] > 0;
-    return `<span class="tc-card-delta ${up?'up':'down'}">${s?s.label:k} ${up?'+':''}${ch[k]}</span>`;
-  }).join('');
+  const eff = mm ? trainCardEffects(mm, key) : [];
+  if(!eff.length) return '';
+  return eff.map(e=>
+    `<span class="tc-card-delta ${e.good?'up':'down'}">${e.label} ${e.pct>0?'+':''}${e.pct}%</span>`).join('');
 }
 function showTrainCards(keys){
   const bar = document.getElementById('trainCardBar');
@@ -7390,8 +7389,11 @@ function showTrainCards(keys){
          <span class="tc-card-deltas">${trainCardDeltaRows(mm, k)}</span>
        </button>`; }).join('')}</div>`;
   bar.classList.remove('hidden');
-  bar.querySelectorAll('.tc-card').forEach(b=>b.addEventListener('click', (e)=>{
-    e.stopPropagation();
+  /* **click ではなく pointerdown で拾う。** ジョイスティックを握ったままだと
+     2本目の指の click が来ないことがある(iOS)。試合中の他のボタン
+     (FIRE・ダッシュ・技切替)も同じく pointerdown で処理している。 */
+  bar.querySelectorAll('.tc-card').forEach(b=>b.addEventListener('pointerdown', (e)=>{
+    e.preventDefault(); e.stopPropagation();
     pickTrainCard(b.dataset.key, false);
   }));
   const tick = ()=>{
