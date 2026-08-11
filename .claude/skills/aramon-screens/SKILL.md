@@ -72,7 +72,11 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - `awakenOf`付きは**4つ目の入手経路の印**で、`gachaSsrSkinIds()`/`raidGachaSsrSkinIds()`から除外される。全体の所持(`loadSkins().owned`)にも入れず、`ownedSkinsForElement()`が**そのマスモンの`mm.awaken`を見て一覧の末尾に足す**。だから「育てたこの子だけの姿」になり、**着せ替えで元の姿に戻せる**(戻せば強化も外れる)。
 - 条件は`AWAKEN_REBIRTH_REQ`(転生回数)と`AWAKEN_STAT_MIN`(6ステータス**すべて**)の2定数だけ。判定は`awakenRequirements()`が「足りないものの一覧」を返し、`canAwakenMastermon()`はそれが空かを見るだけ。**満たしていなくてもボタンは隠さず`disabled`+残り(「転生あと1回・ちから あと100」)を出す** — 長期目標として一番効く。
 - **強化は覚醒時に1つ選ぶ**(`AWAKEN_BOOSTS`)。威力/射程/弾速/範囲拡大速度/爆風の広がりのうち、**その子のtier3に効くものだけ**を`applies(move)`で絞って出す。**弾速と範囲拡大速度は同じ`projSpeed`**(AoE技では`fillSpeed`として使われる)なので、片方しか出ない。選んだ結果は`mm.awaken[元のid]='power'`のように残り、`awakenBoostForSkin()`→`ent.awakenBoost`→`skinTier3Move()`/`ssrTier3DmgMult()`へ流れる。マルチではホストが`awakenBoost`をボットの積み荷に載せる。
-- 演出は既存の昇格演出に丸ごと乗せる(`runSsrPromotionSequence()`→`showSsrReveal()`)。`SKIN_MEDIA[覚醒ID].promote`に動画を入れれば専用演出になり、入れなければ共通演出だけが流れる。
+- **演出は専用の`#awakenAnimOverlay`**(素材を1つも使わないCSSアニメーション。転生の`#rebirthAnimOverlay`と同じ作りで、色だけ紫〜水色にして見分ける)。昇格演出(`runSsrPromotionSequence`)に相乗りしていたが、専用動画が無いと**音だけで何も起きない**ため作り直した(実機で報告・2026-08-11)。尺は`AWAKEN_ANIM_MS`とCSSのキーフレームで同じ値を持つ。**新しいオーバーレイなのでスクロールロック除外3か所へ追加済み。**
+- **覚醒したら着せ替えと同じ4か所を全部作り直す**(`afterAwakenRefresh`)。`renderMastermonList` / **`renderMastermonCard`** / **`renderSelectorCards`** / `renderMastermonDetail`。後ろ2つが抜けていて、詳細の大きいカードとロビーのカードに新しい姿がすぐ出なかった。
+- **`closeAwakenOverlay()`は`awakenKey`/`awakenPick`をnullに戻す。** 演出へ渡す値は**閉じる前に控える**(先に閉じると「何を強化したか」が空になる)。
+- **覚醒できるようになったら見つけやすくする**: メニューの**一番上**へ出して光らせ(`awakenReadyFor()`が判定・`is-ready`)、マスモンのカードにも`✵ 覚醒できます`の印を出す。条件が足りないうちは今までどおり一番下で「あと何が要るか」を出す。
+- **技一覧では「前 → 後」で見せる**(`buildMastermonMovesHtml`)。仮のエンティティに`awakenBoost`を載せないと**技一覧だけ強化前の数字**になる。どの数字が動くかは`AWAKEN_BOOSTS[].stat`が持つので、画面側に対応表を作らない。
 - 覚醒スキンの**素材はスタジオの「覚醒スキンを作る」で作る**(元スキンの18枚に同じ加工を掛ける。詳細は aramon-monster-tools)。
 
 ## エモート(よろこぶ・だいすき・しょんぼり・おこる)

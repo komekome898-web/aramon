@@ -1373,6 +1373,27 @@
 <!-- 転生: 実行アニメーション
      上半分=モンスターと演出(金の繭に包まれる→閃光→「転生完了」の判子→恩恵が金文字で飛び出す)
      下半分=ダイアログ(恩恵の明細)。上下に分けてあるのでダイアログがモンスターに被らない。 -->
+<!-- 覚醒アニメーション。転生(#rebirthAnimOverlay)と同じ作りで、
+     素材を1つも足さずに「元の姿 → 光に包まれる → 覚醒後の姿」を見せる -->
+<div id="awakenAnimOverlay" class="hidden">
+  <div id="awakenAnimSky"></div>
+  <div id="awakenAnimStage">
+    <div id="awakenAnimRays"></div>
+    <div id="awakenAnimRing1" class="aw-ring"></div>
+    <div id="awakenAnimRing2" class="aw-ring"></div>
+    <div id="awakenAnimMotes"></div>
+    <div id="awakenAnimBefore" class="aw-figure"></div>
+    <div id="awakenAnimAfter" class="aw-figure"></div>
+    <div id="awakenAnimStamp"><span>覚 醒</span></div>
+  </div>
+  <div id="awakenAnimFlash"></div>
+  <div id="awakenAnimResult">
+    <div class="aw-res-name" id="awakenAnimName"></div>
+    <div class="aw-res-boost" id="awakenAnimBoost"></div>
+    <button id="awakenAnimCloseBtn" class="rebirth-confirm-btn">とじる</button>
+  </div>
+</div>
+
 <div id="rebirthAnimOverlay" class="hidden">
   <div id="rebirthAnimSky"></div>
   <div id="rebirthAnimStage">
