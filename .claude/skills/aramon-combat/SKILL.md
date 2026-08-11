@@ -36,6 +36,14 @@ description: 荒野モン動の戦闘ロジック(combat.js)・技のギミッ�
 - **出現率(`LOOT_MIX_NORMAL`)は変えない。** 他のアイテムより明らかにレアだから探す楽しさがある、という発注者の判断(2026-08-10)。**1枚の効き目を大きくする方向で調整する。**
 - 画面と同期の決まりは aramon-screens / aramon-multiplayer。
 
+## 試合中に変わった数値の表示(HUDのプレイヤー欄)
+
+- **変わった数値は全部`#hpPanel`の中に出す**(発注者指示 2026-08-11)。一覧を作るのは`matchTrainBoardRows(ent)`(ui.js)1か所で、render.jsの`updateHUD`は並べるだけ。
+- 変え方は2系統ある —— **カード**(`ent.matchMm.stats`を書き換える)と**拾ったアイテム**(`ent.train*Mult`/`trainMaxHpBonus`など直接の倍率・加算)。**どちらも「試合開始時から何%変わったか」に揃えて1つの表にする。** 同じ項目に両方が効いたら**掛け合わせる**(倍率どうしなので足さない)。
+- カードぶんの基準は`ent.matchMmBaseStats`(`applyMastermonStatsToEntity`と`ensureMatchMm`が控える)。**基準を控える場所を増やさない。**
+- 言葉と並び順の正は`MATCH_EFFECT_LABELS`(data.js)。カード1枚の表示(`trainCardEffects`)も合計(`matchTrainTotalEffects`)も同じ`effectDiffRows()`から出るので、**拾ったときの表示と足し算が必ず合う。**
+- **毎フレームinnerHTMLを書き換えない。** 中身の署名が変わったときだけ作り直す(`line._tbSig`)。
+
 # 安全圏
 
 `ZONE_PHASES`でフェーズ定義。安定フェーズ開始時に`prepareNextZoneTarget()`が次の縮小先を決め、`toCenter/toRadius`を予測点線で表示。マルチではホストのzoneState(toCenter含む)を同期する。

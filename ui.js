@@ -7294,6 +7294,8 @@ function applyMastermonStatsToEntity(ent, mm){
   ent.mmSpeedBase = ent.speed;
   // 試合中に書き換える写し。**保存されているマスモンには影響させない**ので複製する
   ent.matchMm = cloneMatchMm(mm);
+  // 試合開始時のステータス。HUDに出す「カードで変わったぶんの合計」の基準になる
+  ent.matchMmBaseStats = Object.assign({}, ent.matchMm.stats);
   ent.mastermonDmgDealtMult = mults.dmgDealtMult;
   ent.mastermonDmgTakenMult = mults.dmgTakenMult;
   ent.mastermonGutsRegenMult = mults.gutsRegenMult;
@@ -7324,6 +7326,7 @@ function ensureMatchMm(ent){
   const mults = mastermonEffectMults(mm);
   const rb = mastermonBaseBonus(mm);
   ent.matchMm = mm;
+  ent.matchMmBaseStats = Object.assign({}, mm.stats);
   ent.mmRawMaxHp = ent.maxHp;
   ent.mmRawSpeed = ent.speed;
   ent.mmMaxHpBase = Math.round((ent.mmRawMaxHp + rb.hp) * mults.lifeMult);
@@ -7361,6 +7364,48 @@ function applyTrainCardToEntity(ent, cardKey){
   Object.keys(changes).forEach(k=>{ mm.stats[k] = matchStatClamp(mm.stats[k] + changes[k]); });
   refreshMatchMmEffects(ent);
   return changes;
+}
+
+/* 試合中にトレーニングで変わった数値を**全部**まとめて返す(HUDのプレイヤー欄用)。
+
+   変え方が2系統ある:
+     ・カード      → ent.matchMm.stats を書き換える(基準は matchMmBaseStats)
+     ・拾ったアイテム → ent.train*Mult / trainMaxHpBonus など直接の倍率・加算
+   **どちらも「元から何%変わったか」に揃えて1つの表にする。** 同じ項目に両方が効いた
+   ときは掛け合わせる(倍率どうしなので足し算にしない)。
+   戻り値: [{ label, text, good }] 変わっていない項目は入らない。 */
+const MATCH_BUFF_EXTRA_ORDER = ['弾速'];   // マスモンの倍率には無い、アイテムだけの項目
+function matchTrainBoardRows(ent){
+  if(!ent) return [];
+  const ratio = new Map();
+  const mul = (label, r)=>{
+    if(!r || !isFinite(r) || Math.abs(r-1) < 0.001) return;
+    ratio.set(label, (ratio.get(label) || 1) * r);
+  };
+  // カードぶん(合計)
+  if(typeof matchTrainTotalEffects==='function'){
+    for(const e of matchTrainTotalEffects(ent.matchMm, ent.matchMmBaseStats)) mul(e.label, 1 + e.pct/100);
+  }
+  // 拾ったアイテムぶん
+  mul('技ダメ', ent.trainDmgMult);
+  mul('被ダメ', ent.trainDmgTakenMult);
+  mul('速さ',   ent.trainSpeedMult);
+  mul('連射',   ent.trainCooldownMult ? 1/ent.trainCooldownMult : 1);
+  mul('弾速',   ent.trainProjSpeedMult);
+  // 最大HPの加算だけは倍率でないので、そのときの基準HPに対する割合へ直してから混ぜる
+  if(ent.trainMaxHpBonus && ent.mmMaxHpBase) mul('最大HP', 1 + ent.trainMaxHpBonus/ent.mmMaxHpBase);
+  const order = (typeof MATCH_EFFECT_LABELS!=='undefined' ? MATCH_EFFECT_LABELS : []).concat(MATCH_BUFF_EXTRA_ORDER);
+  const lower = (typeof MATCH_EFFECT_LOWER_BETTER!=='undefined') ? MATCH_EFFECT_LOWER_BETTER : [];
+  const rows = [];
+  for(const label of order){
+    if(!ratio.has(label)) continue;
+    const pct = Math.round((ratio.get(label) - 1) * 100);
+    if(pct === 0) continue;
+    rows.push({ label, text:`${pct>0?'+':''}${pct}%`, good: lower.includes(label) ? (pct < 0) : (pct > 0) });
+  }
+  // 割合で表せないもの(消費ガッツの軽減)は実数のまま最後に付ける
+  if(ent.trainGutsCostReduction) rows.push({ label:'消費ガッツ', text:`-${ent.trainGutsCostReduction}`, good:true });
+  return rows;
 }
 
 /* ===== 試合中のトレーニングカード(画面) =====
