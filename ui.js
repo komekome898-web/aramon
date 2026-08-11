@@ -3173,6 +3173,10 @@ document.getElementById('closeChangelogBtn').addEventListener('click', ()=>{
   document.getElementById('changelogOverlay').classList.add('hidden');
 });
 updateAccountBar();
+// ログインボーナスは付与済みでもポップアップはロビー画面が出てから出す(dailyCheckLogin/flushPendingLoginBonusPopup参照)。
+// dailyCheckLogin()呼び出しより前に置くこと(varのhoistingは宣言のみで初期化式はここで実行されるため、
+// 後ろに置くと「起動時に付与→popupへ控える」の値をnullで上書きしてしまう)。
+var pendingLoginBonusPopup = null;
 if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
 if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
 updateChangelogBadge(); // 更新履歴の未読「new」バッジ
@@ -5433,7 +5437,10 @@ function dailyEnsureMissions(d){
   DAILY_MISSIONS.forEach(m=>{ if(!d.missions[m.id]) d.missions[m.id] = { progress:0, claimed:false }; });
   return false;
 }
-// 起動時: 新しい日ならログインボーナス付与＆ミッション更新
+// 起動時: 新しい日ならログインボーナス付与＆ミッション更新。
+// 付与はここで済ませるが、ポップアップ表示だけはロビー画面が出てから
+// (flushPendingLoginBonusPopup)行う。タイトル画面の上に出さないため。
+// pendingLoginBonusPopup 変数の宣言はファイル前方(dailyCheckLogin()の初回呼び出しより前)にある。
 function dailyCheckLogin(){
   if(typeof loadDaily!=='function') return;
   const d = loadDaily();
@@ -5448,9 +5455,16 @@ function dailyCheckLogin(){
   }
   dailyEnsureMissions(d);
   saveDaily(d);
-  if(granted) showLoginBonusPopup(granted);
+  if(granted) pendingLoginBonusPopup = granted;
   updateDailyBadge();
   updateAccountBar();
+}
+// ロビー画面が表示されたときに呼ぶ。タイトル画面ではなくロビーでポップアップを出すための入口。
+function flushPendingLoginBonusPopup(){
+  if(!pendingLoginBonusPopup) return;
+  const g = pendingLoginBonusPopup;
+  pendingLoginBonusPopup = null;
+  showLoginBonusPopup(g);
 }
 // 試合終了時に呼ぶ: ミッション進捗を加算
 function dailyOnMatchEnd(ctx){
@@ -7642,6 +7656,8 @@ function showTrainCards(keys){
   if(trainCardState){ trainCardQueue.push(keys); return; }
   const mm = (typeof player!=='undefined' && player) ? ensureMatchMm(player) : null;
   trainCardState = { keys, endAt: performance.now() + TRAIN_CARD_PICK_SEC*1000, raf:0 };
+  // 選択肢が出ている間はトーストが被らないよう下へ逃がす(hideTrainCardsで解除)
+  document.getElementById('toast')?.classList.add('tc-active');
   bar.innerHTML =
     `<div class="tc-timer-track"><div class="tc-timer-fill" id="trainCardTimer"></div></div>
      <div class="tc-cards">${keys.map(k=>{
@@ -7677,6 +7693,7 @@ function hideTrainCards(){
   trainCardState = null;
   const bar = document.getElementById('trainCardBar');
   if(bar){ bar.classList.add('hidden'); bar.innerHTML = ''; }
+  document.getElementById('toast')?.classList.remove('tc-active');
 }
 function pickTrainCard(key, auto){
   if(!trainCardState || trainCardState.keys.indexOf(key) < 0) return;
@@ -9239,6 +9256,7 @@ function initTitleScreen(){
     scr.classList.add('fading');
     document.getElementById('startScreen').classList.remove('hidden');
     if(typeof maybeFlushPendingPromoPopups==='function') maybeFlushPendingPromoPopups();
+    if(typeof flushPendingLoginBonusPopup==='function') flushPendingLoginBonusPopup(); // ログインボーナスはロビーで出す(タイトルには出さない)
     setTimeout(()=>{ scr.classList.add('hidden'); }, 480);
   }
   scr.addEventListener('click', enterLobby);
