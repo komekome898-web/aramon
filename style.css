@@ -204,31 +204,44 @@
   }
 
   /* ---- 左端の縦メニュー ---- */
-  /* 左メニューの吹き出し(限定SSRスキンGET)はボタンの右上に小さく載せる */
-  #lobbyLeft .season-ssr-pop{
-    position:absolute; left:auto; right:-2px; top:-7px; bottom:auto; transform:none; margin:0;
-    font-size:7.5px; padding:1px 5px; white-space:nowrap; z-index:3;
+  /* 左メニューの吹き出し(限定SSRスキンGET / レイドガチャ開催中)。
+     **2列になってボタンが約90pxしかないので、左右を0で留めてボタン幅ぴったりにする。**
+     right:-6px のままだと隣の列と上の段のボタンへはみ出す(実測)。
+     入りきらない文言は「…」で切る ―― はみ出させない方を優先する。 */
+  #lobbyLeft .season-ssr-pop, #lobbyLeft .raid-gacha-pop{
+    position:absolute; left:0; right:0; top:-8px; bottom:auto; margin:0; z-index:3;
+    font-size:7px; padding:1px 2px; text-align:center;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #lobbyLeft .season-ssr-pop::after{ display:none; }
-  /* ボタンが8個(シーズン/デイリー/レイド/遠征/ガチャ/ショップ/バッグ/ランキング)入るので、
-     間隔と上下の余白を詰めてある。**増やすときは必ず実寸を測る**(はみ出すと下のバナーが切れる)。 */
-  #lobbyLeft{ display:flex; flex-direction:column; gap:calc(0.55 * var(--vh)); height:100%; justify-content:center; padding-top:9px; }
+  /* ボタンが8個(シーズン/デイリー/レイド/遠征/ガチャ/ショップ/バッグ/ランキング)入る。
+     **2列に並べる。** 1列の縦積みだと1つが縦20px台まで潰れて押しづらかった(発注者指摘)。
+     レイドは非開催時に display:none になるので、7個でも8個でも grid が勝手に詰める。
+     バナーは最後の行で2列ぶんをまたぐ。**増やすときは必ず実寸を測る。** */
+  #lobbyLeft{
+    display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:calc(0.5 * var(--vh)) 5px; align-content:center; height:100%; padding-top:9px;
+    width:clamp(140px, calc(25 * var(--vw)), 196px);
+  }
+  /* 縦並び(アイコン→名前)。中身が中央に揃うので、アクセント線は左ではなく上に置く */
   .lobby-side-btn{
-    position:relative; display:flex; align-items:center; gap:8px; cursor:pointer; text-align:left;
-    padding:calc(0.5 * var(--vh)) 12px calc(0.5 * var(--vh)) 8px; border-radius:10px;
-    width:clamp(104px, calc(19 * var(--vw)), 148px);
-    color:var(--ink); background:linear-gradient(90deg, rgba(12,18,30,0.88), rgba(12,18,30,0.42));
-    border:1px solid var(--panel-line); border-left:3px solid var(--amber);
+    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; cursor:pointer; text-align:center;
+    padding:calc(0.5 * var(--vh)) 4px; border-radius:10px; min-width:0;
+    color:var(--ink); background:linear-gradient(180deg, rgba(12,18,30,0.88), rgba(12,18,30,0.42));
+    border:1px solid var(--panel-line); border-top:3px solid var(--amber);
     font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:0.5px;
     backdrop-filter:blur(2px);
   }
-  .lobby-side-btn:active{ background:linear-gradient(90deg, rgba(244,196,48,0.28), rgba(12,18,30,0.5)); }
+  .lobby-side-btn:active{ background:linear-gradient(180deg, rgba(244,196,48,0.28), rgba(12,18,30,0.5)); }
   .lobby-side-icon{
-    flex-shrink:0; width:clamp(24px, calc(6 * var(--vh)), 34px); height:clamp(24px, calc(6 * var(--vh)), 34px);
+    flex-shrink:0; width:clamp(22px, calc(5.4 * var(--vh)), 30px); height:clamp(22px, calc(5.4 * var(--vh)), 30px);
     border-radius:8px; background:rgba(255,255,255,0.08);
-    display:flex; align-items:center; justify-content:center; font-size:clamp(14px, calc(3.6 * var(--vh)), 19px);
+    display:flex; align-items:center; justify-content:center; font-size:clamp(13px, calc(3.4 * var(--vh)), 18px);
   }
-  .lobby-side-label{ font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; }
+  /* 名前は折り返さない。枠に収まらない長さは「…」にする(2列で幅が半分になったため) */
+  .lobby-side-label{ font-size:clamp(10px, calc(2.7 * var(--vh)), 13px); white-space:nowrap;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 
   /* ---- 中央: タイトル + 選択中モンスター ---- */
   #lobbyCenter{
@@ -335,6 +348,25 @@
   /* ---- 右: マップ / モード / 出撃 ---- */
   #lobbyRight{ display:flex; flex-direction:column; gap:calc(1.1 * var(--vh)); align-items:stretch;
     width:clamp(126px, calc(23 * var(--vw)), 186px); }
+  /* 段位パネル(右列の上の空き)。今のRPと次の段位までの残りを出す */
+  .lobby-rank-panel{
+    padding:calc(0.6 * var(--vh)) 9px; border-radius:9px;
+    background:linear-gradient(90deg, rgba(12,18,30,0.42), rgba(12,18,30,0.88));
+    border:1px solid var(--panel-line); border-top:2px solid var(--rank-color, var(--amber));
+    backdrop-filter:blur(2px);
+  }
+  .lrp-top{ display:flex; align-items:baseline; gap:4px; }
+  .lrp-icon{ font-size:clamp(12px, calc(3.2 * var(--vh)), 15px); }
+  .lrp-name{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
+    font-size:clamp(11px, calc(3 * var(--vh)), 14px); color:var(--rank-color, var(--amber));
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lrp-rp{ margin-left:auto; font-family:'Share Tech Mono',monospace;
+    font-size:clamp(11px, calc(3 * var(--vh)), 14px); color:var(--ink); white-space:nowrap; }
+  .lrp-rp em{ font-style:normal; font-size:8px; color:var(--ink-dim); margin-left:1px; }
+  .lrp-track{ height:4px; margin:3px 0 2px; border-radius:3px; overflow:hidden;
+    background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.12); }
+  .lrp-fill{ height:100%; width:0; border-radius:3px; background:var(--rank-color, var(--amber)); transition:width .3s; }
+  .lrp-next{ font-size:8.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lobby-pick-btn{
     display:flex; flex-direction:column; align-items:flex-start; gap:2px; cursor:pointer; text-align:left;
     padding:calc(0.8 * var(--vh)) 11px; border-radius:9px;
@@ -366,7 +398,8 @@
     font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 
   /* ---- 左下のバナー(3秒ごとに切り替え) ---- */
-  #lobbyBanner{ margin-top:auto; width:100%; }
+  /* #lobbyLeft は2列の grid なので、バナーは最後の行で2列ぶんをまたぐ */
+  #lobbyBanner{ grid-column:1 / -1; width:100%; margin-top:calc(0.4 * var(--vh)); }
   #lobbyBannerTrack{ position:relative; height:calc(13 * var(--vh)); min-height:52px; }
   .lobby-banner-card{
     position:absolute; inset:0; border-radius:12px; overflow:hidden; cursor:pointer;
@@ -1088,7 +1121,8 @@
     box-shadow:0 0 8px rgba(80,230,130,0.75); animation:waitBadgePulse 1.6s ease-in-out infinite; }
   /* 左メニューのボタンは幅が固定(最小104px)で中身を入れると溢れるので、
      文字の右の空きへ重ねる。右上の通知ドット(notif-dot)とは位置が違うので衝突しない */
-  .lobby-side-btn .lobby-wait-badge{ position:absolute; right:4px; top:50%; transform:translateY(-50%); }
+  /* 縦並びのボタンでは右上の角に置く(中央は アイコン→名前 で埋まっている) */
+  .lobby-side-btn .lobby-wait-badge{ position:absolute; right:3px; top:2px; }
   /* プレイモードは縦並びなので、値の下に普通に置く(文字を覆わない) */
   .lobby-pick-btn .lobby-wait-badge{ align-self:flex-start; }
   @keyframes waitBadgePulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.5; } }
