@@ -858,48 +858,140 @@ function erode2(fg, w, h){
   return out;
 }
 
-/* ---------------------------------------------------------- 背景透過 */
-// ImageData -> alpha(Uint8Array)。mode/th は画面の設定
+// 2px ふくらませる(背景に接している「縁の帯」を作る)
+function dilate2(m, w, h){
+  const t = new Uint8Array(w*h), out = new Uint8Array(w*h);
+  const pass = (src, dst)=>{
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      let v = 0;
+      for(let dy=-1;dy<=1 && !v;dy++) for(let dx=-1;dx<=1 && !v;dx++){
+        const nx=x+dx, ny=y+dy;
+        if(nx<0||ny<0||nx>=w||ny>=h) continue;
+        if(src[ny*w+nx]) v = 1;
+      }
+      dst[y*w+x] = v;
+    }
+  };
+  pass(m, t); pass(t, out);
+  return out;
+}
+// 3x3 の最小値(縁を1px締めるのに使う)
+function min3(a, w, h){
+  const out = new Uint8Array(w*h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    let m = 255;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const nx=x+dx, ny=y+dy;
+      if(nx<0||ny<0||nx>=w||ny>=h) continue;
+      const v = a[ny*w+nx]; if(v < m) m = v;
+    }
+    out[y*w+x] = m;
+  }
+  return out;
+}
+/* ---------------------------------------------------------- 背景透過
+
+   **背景かどうかは「背景色にどれだけ近いか」だけで決める。**
+   以前は「画像の外周につながっている背景」だけを抜いていたため、
+   腕・剣・頭に囲まれた背景が島として残った(実機で報告・2026-08-11)。
+   緑や白のような**はっきりした背景色**では、囲まれていようと背景は背景。
+   黒背景(black)だけは本体に黒が含まれうるので、従来どおり外周つながりも見る。
+
+   縁は0/255の二値にせず、しきい値の SEG_SOFT 倍までを半透明にする。
+   さらに背景色そのものを縁から抜く(デスピル)ので、緑背景で出ていた
+   「まわりに緑の線が残る」が消える。 */
+const SEG_SOFT = 2.2;          // 縁のやわらかさ(しきい値の何倍までを半透明にするか)
+const SEG_SPECK = 0.00002;     // これより小さい背景の粒は圧縮ノイズとみなす(画素数の割合)
+// 背景色からの距離。**「何をもって背景か」はここ1か所。**
+function keyDistance(r, g, b, mode, chroma){
+  if(mode === 'chroma' && chroma){
+    const dr=r-chroma[0], dg=g-chroma[1], db=b-chroma[2];
+    return Math.sqrt(dr*dr+dg*dg+db*db);
+  }
+  if(mode === 'white'){
+    const mn = Math.min(r,g,b), mx = Math.max(r,g,b);
+    return Math.max(255-mn, (mx-mn)*2);   // 暗さ と 色づき の大きいほう
+  }
+  return Math.max(r,g,b);                 // 黒背景は明るさそのもの
+}
+// 画面の「しきい値」を、上の距離と同じ単位へ直す(スライダーの意味を変えないため)
+function segLowThreshold(mode, th){
+  if(mode === 'chroma') return th*1.7320508;   // 従来の d2 < th*th*3 と同じ境目
+  if(mode === 'white')  return Math.max(12, th*1.4);
+  return th;                                   // 黒背景は従来どおり明るさのしきい値
+}
+/* 縁に残った背景色を抜く(デスピル)。背景でいちばん強い成分を、
+   他の2成分の最大値まで下げる。**残さない**(15%でも残すと緑の線が見える)。 */
+function despillInPlace(img, mode, chroma, alpha){
+  if(mode !== 'chroma' || !chroma) return;
+  const ch = (chroma[0]>=chroma[1] && chroma[0]>=chroma[2]) ? 0 : (chroma[1]>=chroma[2] ? 1 : 2);
+  const o1 = (ch+1)%3, o2 = (ch+2)%3;
+  const d = img.data, N = img.width*img.height;
+  for(let i=0;i<N;i++){
+    if(!alpha[i]) continue;
+    const p = i*4, lim = Math.max(d[p+o1], d[p+o2]);
+    if(d[p+ch] > lim) d[p+ch] = lim;
+  }
+}
+/* ImageData -> alpha(Uint8Array)。**img.data の色も書き換える**(デスピル)。
+   呼び出し側はどこも「img と 戻り値の alpha」をすぐ一緒に使うので、
+   色を直してから渡すのがいちばん漏れがない。 */
 function segment(img, mode, th, chroma){
   const w = img.width, h = img.height, d = img.data, N = w*h;
-  const mask = new Uint8Array(N);       // 背景候補
-  if(mode === 'white'){
-    for(let i=0,p=0;i<N;i++,p+=4){
-      const r=d[p], g=d[p+1], b=d[p+2];
-      const mn = Math.min(r,g,b), mx = Math.max(r,g,b);
-      mask[i] = (mn > 236 && (mx-mn) < 20) ? 1 : 0;
-    }
-  } else if(mode === 'chroma' && chroma){
-    const [cr,cg,cb] = chroma;
-    const t2 = th*th;
-    for(let i=0,p=0;i<N;i++,p+=4){
-      const dr=d[p]-cr, dg=d[p+1]-cg, db=d[p+2]-cb;
-      mask[i] = (dr*dr+dg*dg+db*db) < t2*3 ? 1 : 0;
-    }
-  } else {  // black / blackopen
-    for(let i=0,p=0;i<N;i++,p+=4){
-      mask[i] = Math.max(d[p],d[p+1],d[p+2]) < th ? 1 : 0;
-    }
+  if(mode === 'chroma' && !chroma) mode = 'blackopen';   // 色未指定なら従来の既定へ
+  const lo = segLowThreshold(mode, th), hi = lo*SEG_SOFT;
+  const dist = new Float32Array(N);
+  const mask = new Uint8Array(N);       // 背景の芯
+  for(let i=0,p=0;i<N;i++,p+=4){
+    const v = keyDistance(d[p], d[p+1], d[p+2], mode, chroma);
+    dist[i] = v;
+    mask[i] = v <= lo ? 1 : 0;
   }
-  // blackopen(本体に黒が無い)は囲まれた背景も抜く。それ以外は外周連結のみ
-  const keepEnclosed = (mode !== 'blackopen');
-  const bc = keepEnclosed ? borderConnected(mask, w, h) : { out:mask, inset:0 };
-  const bg = bc.out;
+  /* 「囲まれた背景も抜くか」の分かれ道はここだけ。
+     black(本体に黒がある)以外は、背景色に近ければ囲まれていても背景。 */
+  const borderOnly = (mode === 'black');
+  const bc = borderOnly ? borderConnected(mask, w, h) : { out:mask, inset:0 };
+  let bg = bc.out;
+  // 背景の中の極小の粒(圧縮ノイズ)は背景から外す。**本当の隙間は残す**
+  if(!borderOnly) bg = dropSpecks(bg, w, h, Math.max(8, SEG_SPECK*w*h));
   let fg = new Uint8Array(N);
   for(let i=0;i<N;i++) fg[i] = bg[i] ? 0 : 1;
   // 内側の輪で背景が見つかった=外周に枠線がある。枠ぶんは切り離してから最大成分を取る
-  // (被写体に触れている枠線を残すと、被写体の枠がコマ全体になってしまう)
   if(bc.inset > 0){
     const k = bc.inset;
     for(let y=0;y<h;y++) for(let x=0;x<w;x++)
       if(x < k || y < k || x >= w-k || y >= h-k) fg[y*w+x] = 0;
   }
   fg = keepLargest(fg, w, h);
-  if(keepEnclosed) fg = fillSmallHoles(fg, w, h);
-  if(mode === 'white') fg = erode2(fg, w, h);
-  const a = new Uint8Array(N);
-  for(let i=0;i<N;i++) a[i] = fg[i] ? 255 : 0;
-  return blur3(a, w, h);
+  if(borderOnly) fg = fillSmallHoles(fg, w, h);
+  /* やわらかい縁。芯(lo)から hi までを 0→255 で渡す。
+     **かけるのは背景に接している帯だけ。** 全面にかけると、black(本体に黒がある)で
+     「囲まれているから被写体」と決めた黒い所まで透けてしまう。 */
+  const band = dilate2(bg, w, h);
+  let a = new Uint8Array(N);
+  const span = Math.max(1e-6, hi-lo);
+  for(let i=0;i<N;i++){
+    if(!fg[i]){ a[i] = 0; continue; }
+    a[i] = band[i] ? Math.max(0, Math.min(255, Math.round((dist[i]-lo)/span*255))) : 255;
+  }
+  // 縁を1pxぶん締める(背景色の線が残るのを防ぐ)
+  const mn = min3(a, w, h);
+  for(let i=0;i<N;i++) a[i] = Math.round(a[i]*0.65 + mn[i]*0.35);
+  a = blur3(a, w, h);
+  for(let i=0;i<N;i++) if(!fg[i]) a[i] = 0;
+  despillInPlace(img, mode, chroma, a);
+  return a;
+}
+// 背景の中の小さすぎる塊を背景から外す(圧縮ノイズ対策)
+function dropSpecks(bg, w, h, minArea){
+  const N = w*h;
+  const { lbl, n } = label4(bg, w, h);
+  if(n < 1) return bg;
+  const size = new Int32Array(n+1);
+  for(let i=0;i<N;i++) if(lbl[i]) size[lbl[i]]++;
+  const out = new Uint8Array(N);
+  for(let i=0;i<N;i++) out[i] = (lbl[i] && size[lbl[i]] >= minArea) ? 1 : 0;
+  return out;
 }
 function bboxOf(alpha, w, h, thr){
   thr = thr==null ? 40 : thr;
@@ -1045,6 +1137,48 @@ function seekTo(v, t){
     setTimeout(fin, 600);   // シークが返らない端末向けの保険
   });
 }
+/* コマの取り出しは**シークではなく再生で行う。**
+   iOSは画面に出ていない<video>を currentTime で飛ばしても表示コマが更新されない
+   ことがあり、16コマ全部が同じ絵になる(実機で発生・2026-08-11。周期を変えても
+   結果が変わらないのがこの症状の見分け方)。再生しながら1コマずつ拾えば、
+   「今まさに描かれている絵」を確実に取れる。
+
+   onFrame(t) は「今の絵をcanvasへ描いてよい」タイミングで呼ばれる。
+   requestVideoFrameCallback があれば実際のコマ単位、無ければ画面更新ごと。 */
+function playThrough(v, from, to, onFrame){
+  return new Promise(res=>{
+    let done = false, last = -1;
+    const fin = ()=>{ if(done) return; done = true; v.onended = null;
+                      try{ v.pause(); }catch(e){} res(); };
+    const step = (now, meta)=>{
+      if(done) return;
+      const t = (meta && typeof meta.mediaTime === 'number') ? meta.mediaTime : v.currentTime;
+      if(t + 1e-4 >= from && t > last){ last = t; try{ onFrame(t); }catch(e){} }
+      if(t >= to || v.ended){ fin(); return; }
+      next();
+    };
+    const next = ()=>{
+      if(done) return;
+      if(v.requestVideoFrameCallback){ try{ v.requestVideoFrameCallback(step); return; }catch(e){} }
+      requestAnimationFrame(()=> step(0, null));
+    };
+    v.onended = fin;
+    // 再生できない端末でも「コマを作っています」で固まらないよう上限を付ける
+    setTimeout(fin, Math.max(4000, (to - from + 1.5)*1000*1.8));
+    try{ v.currentTime = 0; }catch(e){}
+    const p = v.play();
+    if(p && p.catch) p.catch(()=>{});   // 自動再生できなくても step は回す
+    next();
+  });
+}
+// 2つのグレー画像の平均のちがい(0〜255)。コマが本当に動いているかの判定に使う
+function grayDiff(a, b){
+  let s = 0;
+  for(let i=0;i<a.length;i++) s += Math.abs(a[i]-b[i]);
+  return s/a.length;
+}
+const MOVE_MIN_DIFF = 1.2;   // これ未満なら「コマがまったく変わっていない」
+const DUP_MAX_DIFF  = 0.6;   // これ未満なら「元動画で同じコマが続いている」(飛ばす)
 /* 周期の見つけ方。素朴に「全体の自己相関のいちばん高い所」を取ると、
    寄り・ズーム・明るさのゆっくりした変化に埋もれて**右肩下がりの曲線にしかならず**、
    探索範囲の下限がそのまま返る(=1歩ぶんに足りない長さで切られ、片足しか上がらない。
@@ -1144,10 +1278,11 @@ function cornerHint(img){
 }
 async function buildWalkFrames(file, onProgress){
   walkStep('動画を読み込んでいます…');
-  const v = await loadVideo(file);
+  /* **1周ごとに動画を読み直す。** 巻き戻し(currentTime=0)が効かない端末があり、
+     効かないと2周目が1周目の続きから始まって、まったく別の場所のコマが並ぶ。
+     読み直した直後は必ず先頭なので、この作りなら端末に依存しない。 */
+  let v = await loadVideo(file);
   try{
-    walkStep('動画を用意しています…');
-    await primeVideo(v);
     const dur = v.duration || 0;
     if(!dur) throw new Error('動画の長さが取れませんでした');
     const vw = v.videoWidth, vh = v.videoHeight;
@@ -1160,50 +1295,105 @@ async function buildWalkFrames(file, onProgress){
     const gv = document.createElement('canvas'); gv.width=48; gv.height=48;
     const gc = gv.getContext('2d', { willReadFrequently:true });
 
-    // ---- 1パス目: 解析用のグレースケール(48x48)
+    // ---- 1パス目: 再生しながら解析用のグレースケール(48x48)を集める
     const span = Math.min(dur*0.96, 4.0);          // 長い動画は先頭4秒だけ見る
     const t0 = dur*0.02;
-    const grays = [];
-    for(let i=0;i<ANALYZE_N;i++){
-      await seekTo(v, t0 + span*i/(ANALYZE_N-1));
+    const raw = [], rawT = [];
+    walkStep('歩き方を調べています…');
+    await playThrough(v, t0, t0+span, (t)=>{
       gc.drawImage(v, 0, 0, 48, 48);
       const g = gc.getImageData(0,0,48,48).data;
       const arr = new Float32Array(48*48);
       for(let j=0,p=0;j<48*48;j++,p+=4) arr[j] = 0.299*g[p] + 0.587*g[p+1] + 0.114*g[p+2];
-      grays.push(arr);
-      if(onProgress) onProgress(Math.round(i/ANALYZE_N*55));
-      walkStep(`歩き方を調べています… ${i+1} / ${ANALYZE_N}`);
-    }
-    // コマがまったく描けていなければここで止める。
-    // 気づかずに進むと「背景が1つも無い=全面が被写体」となり真っ黒な8コマができる
+      raw.push(arr); rawT.push(t);
+      if(onProgress) onProgress(Math.round(Math.min(1,(t-t0)/span)*50));
+    });
+    if(raw.length < 4)
+      throw new Error('動画を再生できませんでした(端末がこの動画に対応していません)。' +
+                      '別の動画か「画像から作る」をお使いください。');
+    // コマがまったく描けていなければここで止める(真っ黒な8コマができるのを防ぐ)
     let gmin = 255, gmax = 0;
-    for(const g of grays) for(let j=0;j<g.length;j++){
+    for(const g of raw) for(let j=0;j<g.length;j++){
       if(g[j] < gmin) gmin = g[j];
       if(g[j] > gmax) gmax = g[j];
     }
     if(gmax - gmin < 3)
       throw new Error('動画のコマを読み取れませんでした(端末がこの動画を再生できていません)。' +
                       'もう一度お試しいただくか、別の動画か「画像から作る」をお使いください。');
+    /* **コマが本当に動いているかを必ず確かめる。**
+       ここを見ていなかったため、絵が1枚も変わっていないのに8コマを作り、
+       「同じ静止画が8枚」ができていた(実機で報告・2026-08-11)。 */
+    let moved = 0;
+    for(let i=1;i<raw.length;i++) moved = Math.max(moved, grayDiff(raw[i], raw[i-1]));
+    if(moved < MOVE_MIN_DIFF)
+      throw new Error('動画の中でコマが変わっていません(端末がこの動画を1コマも進められていません)。' +
+                      '別の形式の動画に変換するか、「画像から作る」をお使いください。');
+    // 解析は等間隔の目盛りで行う。実際に届いたコマから一番近いものを拾う
+    const grays = [];
+    for(let i=0;i<ANALYZE_N;i++){
+      const t = t0 + span*i/(ANALYZE_N-1);
+      let bi = 0, bd = 1e9;
+      for(let k=0;k<rawT.length;k++){ const dd = Math.abs(rawT[k]-t); if(dd < bd){ bd = dd; bi = k; } }
+      grays.push(raw[bi]);
+    }
     const period = detectPeriod(grays, ANALYZE_N);
     const dt = span/(ANALYZE_N-1);
+    // 実際のコマ間隔(動画のfps)。候補16コマがこれより細かいと同じ絵が並ぶ
+    const gaps = [];
+    for(let i=1;i<rawT.length;i++) gaps.push(rawT[i]-rawT[i-1]);
+    gaps.sort((a,b)=>a-b);
+    const frameDt = gaps.length ? gaps[gaps.length>>1] : 1/30;
 
     // ---- 2パス目: 候補の16コマを作業解像度で取り直して背景を抜く
     // 切り出す長さは「見つけた周期 × 倍率」。周期を半分で拾って片足しか上がらないときは
-    // 倍率2にすると1歩ぶんではなく2歩ぶん(=本当の1周期)が入る
-    // 時刻は秒で直接決める。解析の目盛りに丸めると、周期が短いときに
-    // 同じコマが何組も候補に並んでしまう
+    // 倍率2にすると1歩ぶんではなく2歩ぶん(=本当の1周期)が入る。
+    // **動画のコマ間隔×16 を下回らせない。** 下回ると同じ絵が候補に並ぶ
     const mul = +($('spanMul').value) || 1;
-    const cycle = Math.max(2*dt, Math.min(span, period*mul*dt));
+    const cycle = Math.min(span, Math.max(2*dt, CAND_N*frameDt, period*mul*dt));
     const seg = walkSeg();
+    /* 枠は前から順に「その時刻に達した最初のコマ」で埋める。
+       1回の呼び出しで1枠しか進めないので、**16枠は必ず別々のコマになる**
+       (時刻の近さで選ぶ形だと、同じコマが2枠に入って「同じ絵」ができる)。 */
+    const shots = new Array(CAND_N).fill(null);
+    const shotT = new Array(CAND_N).fill(0);
+    let slot = 0;
+    walkStep('コマを切り出しています…');
+    releaseVideo(v);                 // 2周目は必ず先頭から始めるため読み直す
+    v = await loadVideo(file);
+    /* **元動画に同じコマが2枚続いていたら飛ばす。** 編集ソフトが書き出した動画には
+       コマが重複していることがあり(発注者の素材で実在)、そのまま採ると
+       「隣り合う2コマが同じ絵」になる。動きのある次のコマまで待つ。 */
+    let prevGray = null;
+    await playThrough(v, t0, t0+cycle+frameDt*6, (t)=>{
+      if(slot >= CAND_N) return;
+      if(t + 1e-6 < t0 + cycle*slot/CAND_N) return;   // まだこの枠の時刻に達していない
+      gc.drawImage(v, 0, 0, 48, 48);
+      const gd = gc.getImageData(0,0,48,48).data;
+      const gray = new Float32Array(48*48);
+      for(let j=0,p=0;j<48*48;j++,p+=4) gray[j] = 0.299*gd[p] + 0.587*gd[p+1] + 0.114*gd[p+2];
+      if(prevGray && grayDiff(gray, prevGray) < DUP_MAX_DIFF) return;   // 前と同じ絵
+      prevGray = gray;
+      cx.drawImage(v, 0, 0, w, h);
+      shots[slot] = cx.getImageData(0,0,w,h);
+      shotT[slot] = t;
+      slot++;
+      if(onProgress) onProgress(50 + Math.round(slot/CAND_N*30));
+    });
+    // 取りこぼした枠は、いちばん近い取れたコマで埋める(黙って抜けを作らない)
+    for(let k=0;k<CAND_N;k++){
+      if(shots[k]) continue;
+      let bi = -1, bd = 1e9;
+      for(let j=0;j<CAND_N;j++) if(shots[j] && Math.abs(j-k) < bd){ bd = Math.abs(j-k); bi = j; }
+      if(bi < 0) throw new Error('動画からコマを取り出せませんでした。別の動画をお試しください。');
+      shots[k] = shots[bi];
+    }
     const cuts = [];
     for(let k=0;k<CAND_N;k++){
-      await seekTo(v, t0 + cycle*k/CAND_N);
-      cx.drawImage(v, 0, 0, w, h);
-      const img = cx.getImageData(0,0,w,h);
+      const img = shots[k];
       const a = segment(img, seg.mode, seg.th, seg.chroma);
       cuts.push({ img, alpha:a, box: bboxOf(a, w, h) });
-      if(onProgress) onProgress(55 + Math.round((k+1)/CAND_N*45));
-      walkStep(`コマを切り出しています… ${k+1} / ${CAND_N}`);
+      if(onProgress) onProgress(80 + Math.round((k+1)/CAND_N*20));
+      walkStep(`絵を抜いています… ${k+1} / ${CAND_N}`);
     }
     // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
     // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
@@ -1212,7 +1402,7 @@ async function buildWalkFrames(file, onProgress){
     if(full >= CAND_N*0.75)
       throw new Error('背景を見つけられませんでした。' + cornerHint(cuts[0].img));
     walkStep('絵を整えています…');
-    return { frames: await composeStrip(cuts), period,
+    return { frames: await composeStrip(cuts), period, shotT,
              note: `周期=${period}${mul!==1 ? ` ×${mul}` : ''}` };
   }finally{
     releaseVideo(v);   // 途中で失敗しても必ず片付ける
