@@ -1462,7 +1462,7 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1','aramon_expedition_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1','aramon_expedition_v1','aramon_rank_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1502,6 +1502,8 @@ function updateAccountBar(){
   const w = loadWallet();
   // 上部ヘッダー: アカウント名・ゴールド・ダイヤ
   document.getElementById('headerAccountName').textContent = accountState.loggedIn ? accountState.name : 'ゲスト';
+  const rankEl = document.getElementById('headerRank');
+  if(rankEl && typeof loadRank==='function') rankEl.innerHTML = rankChipHtml(loadRank().rp, { iconOnly:true });
   document.getElementById('headerGold').textContent = `🪙 ${w.gold}`;
   document.getElementById('headerDia').textContent = `💎 ${w.dia}`;
   // アカウントボタンはマイページの中に常設。文言だけログイン状態で切り替える
@@ -4467,9 +4469,11 @@ function raidShowResult(defeated, dmg, prevBest){
     document.getElementById('mastermonResultInfo').classList.add('hidden');
     document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
   }
-  // レイドの自己ベストは上の見出しで出しているので、バッジはSPだけ出す
+  // 段位もレイドで動く(順位が無いので討伐/自己ベストで固定値。発注者決定=全モード)
+  const raidRank = noRecord ? null : rankOnMatchEnd({ mode:'raid', raidClear:!!defeated, raidBest:!!newBest });
+  // レイドの自己ベストは上の見出しで出しているので、バッジはSPと段位だけ出す
   renderResultBadges({ kills:0, damage:0, prevBestKills:0, prevBestDamage:0,
-                       newTitles:[], elemNewTitles:[], seasonSp });
+                       newTitles:[], elemNewTitles:[], seasonSp, rank:raidRank });
   document.getElementById('scoreSubmitStatus').textContent = '';
   // レイドは討伐・自己ベスト更新を「勝ち」あつかいにする(リザルトの見出しと同じ判定)
   setResultMonsterIcon(player ? player.element : game.selectedElement, { win: !!(defeated || newBest) });
@@ -4722,8 +4726,11 @@ function showResultNow(isWin, placement){
   const _newTitles = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
   if(typeof dailyOnMatchEnd==='function') dailyOnMatchEnd({ kills: player.kills, isWin: !!isWin });
   const _seasonSp = (typeof seasonOnMatchEnd==='function') ? seasonOnMatchEnd({ kills: player.kills, damage: _dmg, isWin: !!isWin }) : 0;
+  // 段位。**シーズンSPと同じ「試合終了フック」の並びに置く**(game.overガードで1試合1回)
+  const _rank = rankOnMatchEnd({ placement, total: entities.length, kills: player.kills,
+                                 mode: netState.mode==='multi' ? 'multi' : 'solo' });
   renderResultBadges({
-    kills: player.kills, damage: _dmg,
+    kills: player.kills, damage: _dmg, rank: _rank,
     prevBestKills: _prevBestKills, prevBestDamage: _prevBestDamage, newTitles: _newTitles, seasonSp: _seasonSp,
     elementLabel: (ELEMENTS[player.element] ? ELEMENTS[player.element].label : player.element),
     prevElemBestKills: _preElem.bestKills, prevElemBestDamage: _preElem.bestDamage, elemNewTitles: _elemNewTitles,
@@ -4744,6 +4751,27 @@ function showResultNow(isWin, placement){
     best: (player.kills>0 && player.kills>_prevBestKills) || (_dmg>0 && _dmg>_prevBestDamage),
   });
 }
+/* ===== 段位(数字と表は data.js) =====
+   **RPを動かすのは rankOnMatchEnd だけ。** 呼ぶのは showResultNow と raidShowResult の
+   1回ずつで、どちらも game.over ガードの内側なので1試合1回が保証されている。 */
+function rankOnMatchEnd(o){
+  if(game.trainingRange) return null;      // 射撃訓練場は勝敗が無い
+  if(typeof addRankRp!=='function') return null;
+  const res = addRankRp(rankRpForMatch(o));
+  updateAccountBar();
+  return res;
+}
+/* 段位のチップ。**ヘッダーは絵だけ**にする。名前とRPまで出すと横幅が足りず、
+   568px幅の端末で所持金がはみ出した(実測 +30px)。名前とRPはマイページ・リザルト・
+   ランキングで見せているので、ここは今の段位が分かれば足りる。 */
+function rankChipHtml(rp, opts){
+  const p = rankProgress(rp);
+  if(opts && opts.iconOnly){
+    return `<span class="rank-chip icon-only" style="--rank-color:${p.cur.color}">${p.cur.icon}</span>`;
+  }
+  return `<span class="rank-chip" style="--rank-color:${p.cur.color}">${p.cur.icon} ${p.cur.name}` +
+         `<b>${Math.round(rp)}</b></span>`;
+}
 // リザルトの自己ベスト更新バッジ＆獲得称号バッジを描画する
 function renderResultBadges(o){
   const el = document.getElementById('resultBadges');
@@ -4751,6 +4779,11 @@ function renderResultBadges(o){
   const badges = [];
   let rainbow = false; // 自己ベスト更新 or 称号獲得(=虹色バッジ)が出たか
   if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
+  if(o.rank && o.rank.delta !== 0){
+    const sign = o.rank.delta > 0 ? '+' : '';
+    badges.push(`<span class="result-badge rank">${o.rank.after.icon} ${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
+  }
+  if(o.rank && o.rank.promoted){ badges.push(`<span class="result-badge best">🎉 段位アップ「${o.rank.after.icon} ${o.rank.after.name}」</span>`); rainbow = true; }
   const globalKillsBest = o.kills>0 && o.kills > o.prevBestKills;
   const globalDamageBest = o.damage>0 && o.damage > o.prevBestDamage;
   if(globalKillsBest){ badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`); rainbow = true; }
@@ -5017,6 +5050,8 @@ function buildResultShare(o){
   const monName = shareMonsterName(o.element);
   const chips = [];
   if(o.best) chips.push('🏆 自己ベスト');
+  // 段位はチップで出す(rowsは4本までなので、行を増やすより崩れにくい)
+  if(typeof loadRank==='function'){ const r = rankOf(loadRank().rp); chips.push(`${r.icon} ${r.name}`); }
   chips.push(shareModeLabel());
   const spec = {
     ...(o.isWin ? SHARE_ACCENT.win : SHARE_ACCENT.lose),
@@ -5867,6 +5902,7 @@ function submitScoreToRanking(isWin, placement){
     mastermonLevel,
     mastermonRebirth,
     mastermonStatTotal: mastermonStatTotalVal,
+    rankPoint: (typeof loadRank==='function') ? loadRank().rp : 0,   // 段位(地形で分けない)
     kills: player.kills,
     damage: Math.round(player.damageDealt),
     placement: isWin ? 1 : placement,
@@ -7642,13 +7678,16 @@ let currentRankingMode = 'kills';
 let currentRankingMonster = 'all';
 let currentRankingMapType = 'normal'; // 通常マップ / リアルマップ / マスモン(タブの名前を流用しているだけで地形ではない)
 // マスモン自身の記録(通常/リアルのどちらで遊んでも同じ値)。フィールド名がFirebase側の記録名そのもの。
-const MASTERMON_RANK_MODES = ['mastermonLevel', 'mastermonRebirth', 'mastermonStatTotal'];
+/* 地形で分けない項目(フィールド名をそのまま索引に使う)。
+   マスモン自身の記録と、アカウントの段位がここに入る。 */
+const MASTERMON_RANK_MODES = ['mastermonLevel', 'mastermonRebirth', 'mastermonStatTotal', 'rankPoint'];
 // カテゴリ(#rankingMapTabsのタブ)ごとに出すサブタブ。1か所にまとめてあるので、
 // 種類を増やすときはここへ1行足すだけでよい(表に足せば自動で回る)。
 const RANKING_TABS_BY_CATEGORY = {
   normal: [['kills','キル数'], ['damage','ダメージ数']],
   real:   [['kills','キル数'], ['damage','ダメージ数']],
   mastermon: [['mastermonLevel','マスモンLv'], ['mastermonRebirth','転生回数'], ['mastermonStatTotal','ステ合計']],
+  rank:      [['rankPoint','段位ポイント']],
 };
 // カテゴリを切り替えるたびにサブタブを組み直す。今のモードが新カテゴリに無ければ先頭へ落とす。
 function renderRankingModeTabs(){
@@ -7863,7 +7902,13 @@ function renderMyStats(){
   const stats = allStats[myStatsModeTab] || defaultModeStats();
   const derived = computeDerivedStats(stats);
   const overallEl = document.getElementById('myStatsOverall');
+  // 段位はモード(ソロ/マルチ)で分かれないアカウントの記録なので、両方のタブで同じものを出す
+  const rk = (typeof loadRank==='function') ? loadRank() : null;
+  const rkNow = rk ? rankProgress(rk.rp) : null;
+  const rkBest = rk ? (RANKS.find(x=>x.id===rk.best) || RANKS[0]) : null;
   overallEl.innerHTML = `
+    ${rkNow ? `<div class="mystat-box"><div class="ml">段位（今シーズン）</div><div class="mv" style="color:${rkNow.cur.color}">${rkNow.cur.icon} ${rkNow.cur.name}<span class="mystat-rank-rp">${rk.rp} RP${rkNow.next?`／次まで ${rkNow.next.rp - rk.rp}`:''}</span></div></div>` : ''}
+    ${rkBest ? `<div class="mystat-box"><div class="ml">到達した最高段位</div><div class="mv" style="color:${rkBest.color}">${rkBest.icon} ${rkBest.name}</div></div>` : ''}
     <div class="mystat-box"><div class="ml">通算マッチ数</div><div class="mv">${stats.totalMatches||0}</div></div>
     <div class="mystat-box"><div class="ml">通算勝利数</div><div class="mv">${stats.totalWins||0}</div></div>
     <div class="mystat-box"><div class="ml">最高キル数</div><div class="mv">${stats.bestKills||0} ${statTitleChip('matchKills', stats.bestKills||0)}</div></div>

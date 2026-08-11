@@ -55,6 +55,8 @@
    </span>
    <span id="headerCenter"><span id="headerAccountBtnSlot"></span><span id="headerAccountName">ゲスト</span><span id="headerTitleChip" class="header-title-chip hidden"></span></span>
    <span class="header-side header-right">
+     <!-- 段位。**所持金の隣に置かない**(絵が通貨と紛らわしくなるため) -->
+     <span id="headerRank" class="header-rank"></span>
      <!-- ロビーBGMの表示・切替(提供音源「いちか」/従来の合成BGM) -->
      <button id="headerBgmBtn" class="header-bgm-btn" aria-label="ロビーBGM"><span class="header-bgm-icon">🎵</span><span id="headerBgmName">いちか</span></button>
      <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
@@ -705,6 +707,7 @@
       <button class="rank-map-tab active" data-maptype="normal">通常マップ</button>
       <button class="rank-map-tab" data-maptype="real">リアルマップ</button>
       <button class="rank-map-tab" data-maptype="mastermon">マスモン</button>
+      <button class="rank-map-tab" data-maptype="rank">段位</button>
     </div>
   </div>
   <div id="rankingControls">
