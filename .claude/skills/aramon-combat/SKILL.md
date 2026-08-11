@@ -14,6 +14,17 @@ description: 荒野モン動の戦闘ロジック(combat.js)・技のギミッ�
 - **`gutsDrainRatio`**(技単位のガッツ削り)は`gutsDrain`として弾・AoEに載せ`applyDamage`の`opts`で適用。属性単位のガッツ削り(プラント/アーク)とは別系統。
 - **新しいダメージ源のフィールドを増やしたら`buildMastermonMovesHtml`の威力表示にも足す**(`mv.dmg`ベースなので「威力0」表示になる)。特徴テキストは`describeMoveFeatureText`。
 
+# トレーニングカード(試合中の強化)
+
+- **効果の正は`TRAINING_MENU`(data.js)1つ。** 試合中にトレーニングアイテムを拾うと、そこから3つ出て1つ選ぶ。ロビーの育成とまったく同じ言葉・同じ増減が効く。**同じ意味の表を2つ持たない**(以前は`TRAINING_ITEMS`側にベタ書きの固定効果があった)。
+- `TRAINING_ITEMS[].menu` が「必ず候補に入る1枚」。抽選は`pickTrainCardKeys(itemType)`、増減は`trainCardChanges(mm, key)`。**強さの調整は`MATCH_TRAIN_CARD_MULT`1か所**(既定6=18pt→108pt相当)。
+- **効かせ方は`applyTrainCardToEntity(ent, key)`1か所**(自分・bot・マルチの相手で共通)。中で`ent.matchMm`(試合中の仮マスモン)のステータスを動かし、`refreshMatchMmEffects()`が倍率を引き直す。
+- **`ent.matchMm`は保存データの複製**(`cloneMatchMm`)。そのまま持つと試合中の強化が育成データに焼き付く。
+- **HPと移動速度は差分だけ動かす。** 丸ごと入れ直すと回復アイテムのHP上限アップや修行チケットの加算が消える(`mmRawMaxHp`/`mmMaxHpBase`が基準)。
+- マスモンを連れていない人・素のbotには`ensureMatchMm()`が種族の初期値で仮マスモンを作る。**この関数は今の数値を1つも変えない**(基準を控えるだけ)。
+- **出現率(`LOOT_MIX_NORMAL`)は変えない。** 他のアイテムより明らかにレアだから探す楽しさがある、という発注者の判断(2026-08-10)。**1枚の効き目を大きくする方向で調整する。**
+- 画面と同期の決まりは aramon-screens / aramon-multiplayer。
+
 # 安全圏
 
 `ZONE_PHASES`でフェーズ定義。安定フェーズ開始時に`prepareNextZoneTarget()`が次の縮小先を決め、`toCenter/toRadius`を予測点線で表示。マルチではホストのzoneState(toCenter含む)を同期する。

@@ -24,6 +24,11 @@ const processedRoomEventKeys = new Set(); // events(キルフィード等)の重
 // 移動中はずっと後ろへ引っ張られていた(水中など低速だと前進できず操作不能になっていた)。
 let selfInputSeq = 0;
 let selfDashSeq = 0;                    // ダッシュした回数。入力に載せてホストへ伝える
+/* トレーニングカードの選択。ダッシュと同じく「回数」で伝えるので、
+   取りこぼしも二重適用も起きない(ホストは回数が増えたときだけ1回処理する)。 */
+let selfCardSeq = 0;
+let selfCardPick = null;
+function sendTrainCardPick(key){ selfCardPick = key; selfCardSeq++; }
 let selfPredHistory = [];               // [{seq,x,y}] 入力送信時点の自分の予測位置
 const SELF_HISTORY_CAP = 80;
 const SELF_CORRECT_DEADZONE = 14;       // これ以下の誤差は無視(予測を信頼する)
@@ -190,6 +195,7 @@ async function beginMultiplayerMatchInner(){
   document.getElementById('resultScreen').classList.add('hidden');
 
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  resetTrainCards();   // トレーニングカードの表示と待ち行列を必ず空にする(前の試合ぶんを持ち越さない)
   matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false; spectateTargetId=null; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
   camSnap.active = false;
@@ -206,6 +212,7 @@ async function beginMultiplayerMatchInner(){
   hostClockOffset = null; hostForceFullNext = false;
   // 自分の位置の突き合わせ状態をリセット(前の試合の履歴が残ると初回補正が暴れる)
   selfInputSeq = 0; selfDashSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
+  selfCardSeq = 0; selfCardPick = null; resetTrainOffers();
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -472,6 +479,11 @@ function applyRemoteInputsLocally(){
       // (ホストのクールタイムで弾くと、ゲストだけが動いてズレる原因になる)
       if(ent.alive && !(ent.dashTimer>0) && typeof startEntityDash==='function') startEntityDash(ent);
     }
+    // トレーニングカードの選択。ダッシュと同じく回数が増えたときだけ1回処理する
+    if(typeof inp.cardSeq==='number' && inp.cardSeq > (ent.netLastCardSeq||0)){
+      ent.netLastCardSeq = inp.cardSeq;
+      if(inp.cardPick && typeof resolveTrainOfferFor==='function') resolveTrainOfferFor(ent, inp.cardPick);
+    }
   }
 }
 // ホスト専用: 非ホストから届いた「1回発射しました」イベントを、届いた分だけ正確に処理する
@@ -543,6 +555,8 @@ function sendLocalInputIfMultiplayer(now){
       moveTierSelected: player? player.moveTierSelected:1,
       seq: selfInputSeq,
       dashSeq: selfDashSeq, // ダッシュは連続値ではなく回数で伝える(ホストは増えた分だけ実行する)
+      cardSeq: selfCardSeq, // トレーニングカードの選択も回数で伝える(取りこぼし・二重適用を防ぐ)
+      cardPick: selfCardPick,
     });
   }
 }
@@ -836,6 +850,8 @@ function applyLootEventLocally(evt){
     if(evt.by && evt.by===netState.myPlayerId){
       playSe(evt.kind==='training' ? 'train' : 'pickup');
       if(evt.msg) pushToast(evt.msg);
+      // トレーニングは候補3枚が届く。**抽選はホストなので、ゲストは出すだけ**
+      if(Array.isArray(evt.cards) && evt.cards.length && typeof showTrainCards==='function') showTrainCards(evt.cards);
     }
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
@@ -946,6 +962,11 @@ function buildAuthStatePayload(){
       o.trainCooldownMult = e.trainCooldownMult; o.trainGutsCostReduction = e.trainGutsCostReduction;
       o.trainProjSpeedMult = e.trainProjSpeedMult; o.trainDmgMult = e.trainDmgMult;
       o.trainDmgTakenMult = e.trainDmgTakenMult; o.trainSpeedMult = e.trainSpeedMult;
+      /* 育成の倍率と移動速度。**トレーニングカードでこれらが試合中に変わる**ので同期する。
+         カードが無かった頃は両側が試合開始時に同じ値を作っていたため送っていなかった。 */
+      o.mmDD = e.mastermonDmgDealtMult; o.mmDT = e.mastermonDmgTakenMult;
+      o.mmGR = e.mastermonGutsRegenMult; o.mmCD = e.mastermonCooldownMult;
+      o.spd = Math.round((e.speed||0)*100)/100;
       // 状態変化も「残り秒数」で送る(絶対時刻だとホストとゲストのmatchTimeのズレで
       // 効果時間が伸び縮みする)。0以下の場合は送らない=切れている扱い
       const stR = (e.stateUntil||0) - nowT;
@@ -1060,6 +1081,11 @@ function applyAuthState(authState){
     if(typeof a.trainDmgMult==='number') ent.trainDmgMult = a.trainDmgMult;
     if(typeof a.trainDmgTakenMult==='number') ent.trainDmgTakenMult = a.trainDmgTakenMult;
     if(typeof a.trainSpeedMult==='number') ent.trainSpeedMult = a.trainSpeedMult;
+    if(typeof a.mmDD==='number') ent.mastermonDmgDealtMult = a.mmDD;
+    if(typeof a.mmDT==='number') ent.mastermonDmgTakenMult = a.mmDT;
+    if(typeof a.mmGR==='number') ent.mastermonGutsRegenMult = a.mmGR;
+    if(typeof a.mmCD==='number') ent.mastermonCooldownMult = a.mmCD;
+    if(typeof a.spd==='number') ent.speed = a.spd;
     // 状態変化は残り秒数で届く(フル配信のときだけ載る)。届いた時だけ更新する
     if(isFull){
       ent.stateUntil = (typeof a.stR==='number') ? matchTime + a.stR : 0;

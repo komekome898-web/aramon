@@ -3660,6 +3660,7 @@ function startGame(){
   document.getElementById('rangeHint').classList.add('hidden');
   document.getElementById('hud').classList.remove('range-mode');
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  resetTrainCards();   // トレーニングカードの表示と待ち行列を必ず空にする(前の試合ぶんを持ち越さない)
   matchTime=0; game.over=false; game.tipTimer=7; lastGutsWarnAt=-Infinity;
   hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
   camState.yaw = 0; camState.pitch = 0.27;
@@ -3775,6 +3776,7 @@ function rangePlayerName(){
 }
 function startShootingRange(){
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  resetTrainCards();   // トレーニングカードの表示と待ち行列を必ず空にする(前の試合ぶんを持ち越さない)
   matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
   hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
   netState.mode='solo';           // 訓練場は常にローカル(マルチの後でも確実にソロ扱いにする)
@@ -3838,6 +3840,7 @@ let raidTotalCache = { total:0, at:0 };
 function raidStart(multi, demo){
   raidRunDemo = !!demo;
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  resetTrainCards();   // トレーニングカードの表示と待ち行列を必ず空にする(前の試合ぶんを持ち越さない)
   matchTime=0; game.over=false; game.tipTimer=0; lastGutsWarnAt=-Infinity;
   hostSpectating=false; spectateTargetId=null;   // 前の試合の観戦状態を持ち越さない
   /* 1人で挑むレイドは部屋を使わないので netState はソロ扱いにする。
@@ -7221,9 +7224,16 @@ function applyMastermonStatsToEntity(ent, mm){
   // 基礎値の加算(転生ぶん+基礎値アイテムぶん)は「倍率を掛ける前」に足す
   // (育成の倍率がそのまま乗るように)
   const rb = mastermonBaseBonus(mm);
+  // 倍率を掛ける前の素の値。試合中のトレーニングカードで倍率を引き直すときの基準になる
+  ent.mmRawMaxHp = ent.maxHp;
+  ent.mmRawSpeed = ent.speed;
   ent.maxHp = Math.round((ent.maxHp + rb.hp) * mults.lifeMult);
   ent.hp = ent.maxHp;
   ent.speed = (ent.speed + rb.speed) * mults.speedMult;
+  ent.mmMaxHpBase = ent.maxHp;    // 「マスモンぶんだけ」の値。差分の基準
+  ent.mmSpeedBase = ent.speed;
+  // 試合中に書き換える写し。**保存されているマスモンには影響させない**ので複製する
+  ent.matchMm = cloneMatchMm(mm);
   ent.mastermonDmgDealtMult = mults.dmgDealtMult;
   ent.mastermonDmgTakenMult = mults.dmgTakenMult;
   ent.mastermonGutsRegenMult = mults.gutsRegenMult;
@@ -7237,6 +7247,142 @@ function applyMastermonStatsToEntity(ent, mm){
     : ((typeof awakenBoostForSkin==='function')
         ? awakenBoostForSkin(mm, (typeof entitySkinId==='function') ? entitySkinId(ent) : null) : null);
 }
+/* 試合中だけの写し。保存されているマスモンのオブジェクトをそのまま持つと、
+   カードでステータスを書き換えたときに育成データまで変わってしまう。 */
+function cloneMatchMm(mm){
+  return { element:mm.element, level:mm.level||1, rebirth:mm.rebirth||0,
+           apt:mm.apt ? Object.assign({}, mm.apt) : undefined,
+           baseHp:mm.baseHp, baseSpd:mm.baseSpd,
+           stats:Object.assign({}, mm.stats) };
+}
+/* 試合中の「仮のマスモン」を用意する。**この関数は今の数値を1つも変えない**(基準を控えるだけ)。
+   マスモンを連れていない人・素のbotにもカードを効かせるため、種族の初期値で作る。 */
+function ensureMatchMm(ent){
+  if(!ent) return null;
+  if(ent.matchMm) return ent.matchMm;
+  const mm = { element:ent.element, level:1, rebirth:0, stats:mastermonInitialStats(ent.element) };
+  const mults = mastermonEffectMults(mm);
+  const rb = mastermonBaseBonus(mm);
+  ent.matchMm = mm;
+  ent.mmRawMaxHp = ent.maxHp;
+  ent.mmRawSpeed = ent.speed;
+  ent.mmMaxHpBase = Math.round((ent.mmRawMaxHp + rb.hp) * mults.lifeMult);
+  ent.mmSpeedBase = (ent.mmRawSpeed + rb.speed) * mults.speedMult;
+  return mm;
+}
+/* 仮のマスモンから倍率を引き直す。**HPと移動速度は差分だけ動かす。**
+   丸ごと入れ直すと、回復アイテムのHP上限アップや修行チケットの加算まで消えてしまう。 */
+function refreshMatchMmEffects(ent){
+  const mm = ent && ent.matchMm;
+  if(!mm) return;
+  const mults = mastermonEffectMults(mm);
+  const rb = mastermonBaseBonus(mm);
+  const maxHpBase = Math.round((ent.mmRawMaxHp + rb.hp) * mults.lifeMult);
+  const speedBase = (ent.mmRawSpeed + rb.speed) * mults.speedMult;
+  const dHp = maxHpBase - ent.mmMaxHpBase;
+  ent.maxHp = Math.max(1, ent.maxHp + dHp);
+  if(dHp > 0) ent.hp += dHp;                 // 上限が増えたぶんは今のHPにも足す(実質の回復)
+  ent.hp = Math.max(1, Math.min(ent.hp, ent.maxHp));
+  ent.speed = Math.max(1, ent.speed + (speedBase - ent.mmSpeedBase));
+  ent.mmMaxHpBase = maxHpBase;
+  ent.mmSpeedBase = speedBase;
+  ent.mastermonDmgDealtMult = mults.dmgDealtMult;
+  ent.mastermonDmgTakenMult = mults.dmgTakenMult;
+  ent.mastermonGutsRegenMult = mults.gutsRegenMult;
+  ent.mastermonCooldownMult = mults.cooldownMult;
+}
+/* トレーニングカードを1枚適用する。**効かせ方はここ1か所**(自分・bot・マルチの相手で共通)。
+   戻り値は実際に動いたステータスの差分(表示用)。 */
+function applyTrainCardToEntity(ent, cardKey){
+  const mm = ensureMatchMm(ent);
+  const changes = (typeof trainCardChanges==='function') ? trainCardChanges(mm, cardKey) : null;
+  if(!mm || !changes) return null;
+  const cap = mastermonStatCap(mm);
+  Object.keys(changes).forEach(k=>{ mm.stats[k] = mastermonClampStat(mm.stats[k] + changes[k], cap); });
+  refreshMatchMmEffects(ent);
+  return changes;
+}
+
+/* ===== 試合中のトレーニングカード(画面) =====
+   ・**試合は止めない。** 出ているあいだも動けるし撃てる。TRAIN_CARD_PICK_SEC 秒で自動的に決まる
+     (マルチはホスト権威で止められないので、ソロだけ止めると挙動が2通りになる)
+   ・**1組ずつ。** 出ている最中にもう1つ拾ったら待ち行列へ積む
+   ・ゲスト(マルチ)は選んだ結果をホストへ送るだけ。効かせるのはホスト */
+let trainCardState = null;          // { keys, endAt, raf }
+const trainCardQueue = [];
+// 増減を1ステータス1行で出す(横に並べると縦の狭い端末で折り返して背が伸びる)
+function trainCardDeltaRows(mm, key){
+  const ch = mm ? trainCardChanges(mm, key) : null;
+  if(!ch) return '';
+  return Object.keys(ch).filter(k=>ch[k]!==0).map(k=>{
+    const s = MASTERMON_STATS.find(x=>x.key===k);
+    const up = ch[k] > 0;
+    return `<span class="tc-card-delta ${up?'up':'down'}">${s?s.label:k} ${up?'+':''}${ch[k]}</span>`;
+  }).join('');
+}
+function showTrainCards(keys){
+  const bar = document.getElementById('trainCardBar');
+  if(!bar || !keys || !keys.length) return;
+  if(trainCardState){ trainCardQueue.push(keys); return; }
+  const mm = (typeof player!=='undefined' && player) ? ensureMatchMm(player) : null;
+  trainCardState = { keys, endAt: performance.now() + TRAIN_CARD_PICK_SEC*1000, raf:0 };
+  bar.innerHTML =
+    `<div class="tc-timer-track"><div class="tc-timer-fill" id="trainCardTimer"></div></div>
+     <div class="tc-cards">${keys.map(k=>{
+       const t = trainCardMenu(k);
+       // 説明文(ちから↑↑…)と実際の増減は同じことなので、**数字だけ**を出して縦を詰める
+       return `<button class="tc-card" data-key="${k}">
+         <span class="tc-card-name">${t.label}</span>
+         ${trainCardDeltaRows(mm, k)}
+       </button>`; }).join('')}</div>`;
+  bar.classList.remove('hidden');
+  bar.querySelectorAll('.tc-card').forEach(b=>b.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    pickTrainCard(b.dataset.key, false);
+  }));
+  const tick = ()=>{
+    if(!trainCardState) return;
+    const left = trainCardState.endAt - performance.now();
+    // 残り時間は数字ではなく細いバーで見せる(縦を使わない・読まなくても分かる)
+    const el = document.getElementById('trainCardTimer');
+    if(el) el.style.width = Math.max(0, Math.min(100, left/(TRAIN_CARD_PICK_SEC*10))) + '%';
+    // 試合が終わっていたら黙って消す(結果画面の上に残さない)
+    if(game.over || !game.started){ hideTrainCards(); return; }
+    if(left <= 0){ pickTrainCard(trainCardState.keys[Math.floor(Math.random()*trainCardState.keys.length)], true); return; }
+    trainCardState.raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function hideTrainCards(){
+  if(trainCardState && trainCardState.raf) cancelAnimationFrame(trainCardState.raf);
+  trainCardState = null;
+  const bar = document.getElementById('trainCardBar');
+  if(bar){ bar.classList.add('hidden'); bar.innerHTML = ''; }
+}
+function pickTrainCard(key, auto){
+  if(!trainCardState || trainCardState.keys.indexOf(key) < 0) return;
+  hideTrainCards();
+  resolveTrainCardForSelf(key, auto);
+  if(trainCardQueue.length) showTrainCards(trainCardQueue.shift());
+}
+/* 自分のぶんを確定させる。
+   ・ソロ / マルチのホスト → その場で効かせる(強化値は次のフル配信でゲストへ届く)
+   ・マルチのゲスト        → 選んだ結果を入力に載せて送るだけ */
+function resolveTrainCardForSelf(key, auto){
+  const t = trainCardMenu(key);
+  if(!t) return;
+  if(typeof netState!=='undefined' && netState.mode==='multi' && !netState.isHost){
+    if(typeof sendTrainCardPick==='function') sendTrainCardPick(key);
+  } else if(typeof player!=='undefined' && player){
+    applyTrainCardToEntity(player, key);
+    if(typeof spawnDmgText==='function') spawnDmgText(player.x, player.y, player.z, t.label, '#9fd1ff');
+    if(typeof netState!=='undefined' && netState.mode==='multi' && netState.isHost) hostForceFullNext = true;
+  }
+  playSe('train');
+  pushToast(`${auto?'⌛ ':''}${t.label}：${t.desc}`);
+}
+// 試合の入口で必ず呼ぶ(前の試合のカードや待ち行列を持ち越さない)
+function resetTrainCards(){ hideTrainCards(); trainCardQueue.length = 0; }
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){
   if(!game.selectedMastermonKey) return;

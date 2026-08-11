@@ -94,6 +94,14 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **`renderLobbyMonster()`は、出しているモンスターが同じままならエモート中に描き直さない**(`img.dataset.lobbySubject`で判定)。歩行コマの読み込み待ちリトライがこの関数を最大6回呼ぶので、素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。
 - ロビーのエモート行(`#lobbyEmoteRow`)は`#lobbyMonsterStage`の**兄弟**に置く(ボタンの入れ子は不正)。ステージが`flex:1 1 auto`で余白を吸収するので、行を足してもステージが少し縮むだけで**スクロールは出ない**(667/812/568の3サイズで実測済み)。
 
+## トレーニングカード(`#trainCardBar`。効果と数字は aramon-combat)
+
+- **試合を止めない。** マルチはホスト権威で原理的に止められず、ソロだけ止めると挙動が2通りになる。`TRAIN_CARD_PICK_SEC`(8秒)で自動的に決まる。残り時間は**数字ではなく細いバー**(縦を使わないため)。
+- **1組ずつ。** 出ている最中に拾ったら`trainCardQueue`へ積む。**試合の入口で必ず`resetTrainCards()`**(`entities=[]`と同じ行に置いてある4か所)。
+- **botは選択UIを出さず即ランダム。** 分岐は`offerTrainCards()`の中だけで、`updateLootPickups`のループには足さない。
+- **居場所は「ステータス欄の下端(142px)〜ダッシュボタンの上端(222px)」の帯。** 320px高の端末ではここが80pxしかないので、見出しを置かず文字を詰めて69pxに収めてある。**行や文字を増やすときは4サイズで実寸を測り直すこと**(`#hpPanel`/`#topRight`/`#movePanel`/`#joystickBase`/`#fireBtn`/`#dashBtn`と重ならないか)。
+- 3か所のスクロールロック除外リストに`#trainCardBar`を入れてある。
+
 ## 遠征(`#expeditionOverlay` / `#expeditionPickOverlay`)
 
 - **マスモン(`mm`)には何も保存しない。** 状態を持つのは`aramon_expedition_v1`(data.jsの`loadExpeditions`/`saveExpeditions`)だけ。`mm`の形を変えないでおくため(あとから足す機能が`mm`を丸ごと写す)。

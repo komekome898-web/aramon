@@ -993,6 +993,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-10', items:[
+    { t:'🏋️ トレーニングアイテムを拾うと、その場で「トレーニングを3つから1つ選ぶ」ようになりました。中身はマスモンのトレーニングとまったく同じ10種類で、上がり幅は試合中でもはっきり分かる大きさです。適正の高いステータスほど大きく伸びるので、育てた個性が試合中の選択に出ます', g:['feature','balance','solo','multi'] },
+    { t:'これまでのトレーニングアイテムの固定効果（技ダメージ+16%など）は、上のカード選択に置き換わりました。落ちている数は今までと同じです。カードは8秒で自動的に決まるので、戦いながらでも困りません', g:['balance'] },
     { t:'🧭 遠征を追加しました！ ロビー左の「遠征」からマスモンを送り出すと、数時間後に育成アイテム・EXP・当たり枠を持ち帰ります。行き先ごとに相性のよいステータスがあり、★が高いほど成果が増えます。遠征中の子はバトル・トレーニング・アイテムに使えません', g:['feature','general'] },
     { t:'遠征の枠はマスモンの所持数で増えます（1体で1枠・3体で2枠・6体で3枠）。「📯帰還のホラ貝」を使うと残り時間0ですぐ帰らせられます（ショップ・ガチャ・遠征の当たり枠で手に入ります）', g:['feature','general'] },
     { t:'😊 エモートを追加しました！ ロビーのモンスターの下のボタンで「よろこぶ・しょんぼり・おこる」の反応が出せます。試合の結果画面でも勝ち負けに合わせて自動で反応し、マスモン詳細ではカードをタップすると反応します', g:['feature','general'] },
@@ -1275,12 +1277,15 @@ const HEAL_ITEMS = {
 };
 const HEAL_TYPES = Object.keys(HEAL_ITEMS);
 
-// ===== トレーニングアイテム(出現率は低め・永続ステータス強化) =====
+/* ===== トレーニングアイテム(出現率は低め=たまに来るご褒美) =====
+   拾うと**トレーニングを3つ提示して1つ選ぶ**。効果の正は下の TRAINING_MENU 1つで、
+   ロビーの育成とまったく同じ言葉・同じ増減が試合中にも効く(同じ意味の表を2つ持たない)。
+   `menu` は「必ず候補に入る1枚」。アイテムの見た目と結果がつながるようにしてある。 */
 const TRAINING_ITEMS = {
-  weight:   { name:'重り引き', emoji:'🏋️', color:'#c97b3d', accent:'#ffd9a8', desc:'技ダメージ+16%・最大HP+30' },
-  meditate: { name:'めいそう', emoji:'🧘', color:'#7bd1c9', accent:'#d8fff8', desc:'技の消費ガッツ-2・技弾速+20%' },
-  pool:     { name:'プール',   emoji:'🏊', color:'#3d9fd1', accent:'#bfe9ff', desc:'最大HP+36・被ダメ-10%' },
-  floor:    { name:'変動ゆか', emoji:'💃', color:'#d13d9f', accent:'#ffbfe9', desc:'移動速度+12%・技の連射速度+16%' },
+  weight:   { name:'重り引き', emoji:'🏋️', color:'#c97b3d', accent:'#ffd9a8', menu:'weight', desc:'3つのトレーニングから1つ選ぶ' },
+  meditate: { name:'めいそう', emoji:'🧘', color:'#7bd1c9', accent:'#d8fff8', menu:'medit',  desc:'3つのトレーニングから1つ選ぶ' },
+  pool:     { name:'プール',   emoji:'🏊', color:'#3d9fd1', accent:'#bfe9ff', menu:'pool',   desc:'3つのトレーニングから1つ選ぶ' },
+  floor:    { name:'変動ゆか', emoji:'💃', color:'#d13d9f', accent:'#ffbfe9', menu:'floor',  desc:'3つのトレーニングから1つ選ぶ' },
 };
 const TRAINING_TYPES = Object.keys(TRAINING_ITEMS);
 
@@ -1458,6 +1463,50 @@ const TRAINING_MENU = [
   { key:'medit',   label:'めいそう',   desc:'かしこさ↑↑・命中↑／丈夫さ↓', up:[{stat:'wisdom',  amount:28},{stat:'accuracy',amount:12}], down:[{stat:'vitality',amount:10}] },
   { key:'pool',    label:'プール',    desc:'丈夫さ↑↑・ライフ↑／かしこさ↓', up:[{stat:'vitality',amount:28},{stat:'life',    amount:12}], down:[{stat:'wisdom',  amount:10}] },
 ];
+
+/* ===== 試合中のトレーニングカード =====
+   トレーニングアイテムを拾うと TRAINING_MENU から3つ出て1つ選ぶ。**表は増やさない。**
+   ロビーのトレーニング1回ぶんでは試合中に体感できないので、上がり幅をこの倍率で増やす。
+   **強さの調整はこの1か所**(効き目の目安は下のコメント)。 */
+const MATCH_TRAIN_CARD_MULT = 6;   // 18pt → 108pt 相当
+const TRAIN_CARD_COUNT = 3;        // 1回に出す枚数
+const TRAIN_CARD_PICK_SEC = 8;     // 選ばなかったときに自動で決まるまでの秒数
+/* 1枚あたりの効き目の目安(ステータス100・適正Cの子):
+     走り込み(ライフ+108)   → 最大HP +24%
+     丸太うけ(丈夫さ+108)   → 被ダメ −11%
+     しゃてき(命中+108)     → 連射  +14%
+     ドミノ倒し(ちから+108) → 技ダメ +6%
+   除数(MASTERMON_STAT_FACTOR_DIVISOR)の違いで威力系だけ伸びが小さい。 */
+function trainCardMenu(key){ return TRAINING_MENU.find(t=>t.key===key) || null; }
+/* 出す3枚。**拾ったアイテムに対応する1枚は必ず入る**(アイテムの見た目と結果をつなぐ)。
+   rnd を渡せる形にしてあるので、同じ乱数から同じ3枚を作れる。 */
+function pickTrainCardKeys(itemType, rnd){
+  const r = rnd || Math.random;
+  const must = (TRAINING_ITEMS[itemType] || {}).menu;
+  const rest = TRAINING_MENU.map(t=>t.key).filter(k=>k!==must);
+  for(let i=rest.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [rest[i],rest[j]]=[rest[j],rest[i]]; }
+  const keys = (must ? [must] : []).concat(rest).slice(0, TRAIN_CARD_COUNT);
+  // 並び順もばらす(必ず入る1枚がいつも左端だと選択が作業になる)
+  for(let i=keys.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [keys[i],keys[j]]=[keys[j],keys[i]]; }
+  return keys;
+}
+/* このマスモンがこのカードを取ったときのステータス変動(クランプ後の差分)。
+   ロビーの previewMastermonTraining と同じ計算に MATCH_TRAIN_CARD_MULT を掛けただけ。 */
+function trainCardChanges(mm, cardKey){
+  const tpl = trainCardMenu(cardKey);
+  if(!tpl || !mm || !mm.stats) return null;
+  const apt = mastermonApt(mm), cap = mastermonStatCap(mm);
+  const changes = {};
+  tpl.up.forEach(u=>{
+    const gain = Math.round(u.amount * (APTITUDE_TRAIN_MULT[apt[u.stat]] || 1) * MATCH_TRAIN_CARD_MULT);
+    changes[u.stat] = mastermonClampStat(mm.stats[u.stat] + gain, cap) - mm.stats[u.stat];
+  });
+  tpl.down.forEach(d=>{
+    const loss = Math.round(d.amount * MATCH_TRAIN_CARD_MULT);
+    changes[d.stat] = mastermonClampStat(mm.stats[d.stat] - loss, cap) - mm.stats[d.stat];
+  });
+  return changes;
+}
 
 /* =====================================================================
    転生(レベル100で1からやり直し、そのぶん強くなる不可逆システム)
