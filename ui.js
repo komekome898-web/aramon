@@ -4794,7 +4794,10 @@ function renderResultBadges(o){
   if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
   if(o.rank && o.rank.delta !== 0){
     const sign = o.rank.delta > 0 ? '+' : '';
-    badges.push(`<span class="result-badge rank">${o.rank.after.icon} ${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
+    /* クラス名に `rank` を使わないこと。リザルト画面には順位表示用の
+       `.resultScreen .rank{ font-size:clamp(40px,12vw,80px) }` があり、
+       `result-badge rank` にすると巨大な文字になる(実機で発生・実測46px)。 */
+    badges.push(`<span class="result-badge rankrp">${o.rank.after.icon} ${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
   }
   if(o.rank && o.rank.promoted){ badges.push(`<span class="result-badge best">🎉 段位アップ「${o.rank.after.icon} ${o.rank.after.name}」</span>`); rainbow = true; }
   const globalKillsBest = o.kills>0 && o.kills > o.prevBestKills;

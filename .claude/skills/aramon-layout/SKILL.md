@@ -34,6 +34,16 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 - 高さの共通値は変数(例 `--top-header-h`)。**数値を直書きしない。**
 - 長押しの選択/メニュー抑止は全画面共通で入っている(個別対応不要): style.cssの`*`に`user-select:none` + `-webkit-touch-callout:none`、直後の`input,textarea{user-select:text}`とセットで維持。input.jsが`contextmenu`/`selectstart`を`preventDefault`(入力欄は除外)。`-webkit-touch-callout`は計算値に出ないのでCSSテキストで確認する。
 
+## 公開前に必ず測る(縦持ち・実画面)
+
+**横持ちのビューポートだけで測って公開し、リザルトの巨大バッジとヘッダーのはみ出しを実機へ出した(2026-08-10)。**
+
+- 測るのは **375x667 / 375x812 / 414x896 の縦持ち**(=強制横向きが効く条件)。この条件でしか出ない不具合がある。
+- **その要素が実際に出る画面を開いて測る。** リザルトのバッジならリザルト画面を出す。ロビーだけ見ても分からない。
+- 見るのは3つ: ①文字サイズが跳ねていないか ②`#appRoot`の外へ出ていないか ③親(ヘッダー等)が`scrollWidth > clientWidth`になっていないか。
+- **新しいクラス名は既存と衝突していないか確かめる。** `class="result-badge rank"`がリザルトの順位表示`.resultScreen .rank{font-size:clamp(40px,12vw,80px)}`を拾って46pxになった。**画面固有の短い名前(`rank`/`title`/`best`)を単独で足さない。**
+- **ヘッダー(`#topHeader`)は`auto minmax(0,1fr) auto`。** 中央(名前・称号・段位)だけが縮んで「…」になり、左右のボタンと所持金は押し出されない。`1fr auto 1fr`に戻すと中央の中身が長いときに所持金が画面外へ出る。
+
 ## スクロール量を減らす(「スクロールが多い」と言われたとき)
 
 **まず測る。** `node tools/measure_layout.mjs <断片HTML> --box <枠のセレクタ>` が、
