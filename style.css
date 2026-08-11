@@ -2159,6 +2159,10 @@
      大きくして必ず最前面に出す。pointer-events:noneは#hudから継承していたため明示が必要。 */
   #toast{ position:absolute; left:50%; top:16%; transform:translateX(-50%); z-index:950; pointer-events:none;
     font-size:13px; letter-spacing:1px; padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px; opacity:0; transition:opacity .2s; white-space:nowrap;}
+  /* トレーニングカードの選択肢(#trainCardBar)が出ている間だけ下へ逃がす(showTrainCards/hideTrainCardsで付け外し)。
+     #trainCardBarはtop:58px固定・折り返しても高さは最大 ~129px(568x320実測)なので、
+     画面の高さに関わらずここまで下げれば既定位置では確実に被らない。 */
+  #toast.tc-active{ top:138px; }
 
   #movePanel{
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
