@@ -128,6 +128,12 @@
 
    <!-- 右: マップ選択 / プレイモード / バトル開始 -->
    <div id="lobbyRight">
+     <!-- 段位。右列の上に空きがあるのでここへ置く(中身はui.jsのupdateLobbyRankPanel) -->
+     <div id="lobbyRankPanel" class="lobby-rank-panel">
+       <div class="lrp-top"><span id="lobbyRankIcon" class="lrp-icon">🌱</span><span id="lobbyRankName" class="lrp-name">見習い</span><span id="lobbyRankRp" class="lrp-rp">0<em>RP</em></span></div>
+       <div class="lrp-track"><div id="lobbyRankFill" class="lrp-fill"></div></div>
+       <div id="lobbyRankNext" class="lrp-next">次の段位まで あと100</div>
+     </div>
      <button id="openHelpFromLobbyBtn" class="lobby-help-btn">🔰 はじめての方へ</button>
      <button id="openRangeBtn" class="lobby-range-btn" disabled>🎯 射撃訓練場へ</button>
      <button id="openMapPickBtn" class="lobby-pick-btn">

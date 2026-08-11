@@ -1528,6 +1528,23 @@ function updateAccountBar(){
   document.getElementById('playerNameLabel').classList.toggle('hidden', accountState.loggedIn);
   document.getElementById('playerNameInput').classList.toggle('hidden', accountState.loggedIn);
   if(typeof updateHeaderTitle==='function') updateHeaderTitle();
+  updateLobbyRankPanel();
+}
+/* ロビー右上の段位パネル。**RPが動く経路は updateAccountBar しかない**
+   (rankOnMatchEnd が必ず呼ぶ)ので、ここへぶら下げれば更新漏れが起きない。 */
+function updateLobbyRankPanel(){
+  const panel = document.getElementById('lobbyRankPanel');
+  if(!panel || typeof rankProgress!=='function') return;
+  const rp = loadRank().rp;
+  const p = rankProgress(rp);
+  panel.style.setProperty('--rank-color', p.cur.color);
+  document.getElementById('lobbyRankIcon').textContent = p.cur.icon;
+  document.getElementById('lobbyRankName').textContent = p.cur.name;
+  document.getElementById('lobbyRankRp').innerHTML = `${Math.round(rp)}<em>RP</em>`;
+  document.getElementById('lobbyRankFill').style.width = `${Math.round(p.pct*100)}%`;
+  document.getElementById('lobbyRankNext').textContent = p.next
+    ? `${p.next.icon} ${p.next.name} まで あと ${Math.max(0, p.next.rp - Math.round(rp))} RP`
+    : '最高段位に到達しています';
 }
 // アカウント名をランキング表示名として反映する(入力欄は非表示でも値は参照される)
 function applyAccountNameAsDisplayName(name){
@@ -8181,7 +8198,13 @@ const ADMIN_EXCLUDE_NAME = 'おりょう';
 // レイドの試合ログ(raidResult)の表示名。raidShowResultで付ける値と1対1
 const ADMIN_RAID_RESULT_LABEL = { defeated:'討伐成功', best:'自己ベスト更新', died:'力尽きた', timeup:'時間切れ' };
 let adminPassInput = '';
+/* 試合ログの控えは**2つ持つ**。
+   ・adminMatchLogsCache = 管理者(おりょう)を除いたもの。「何人が遊んでいるか」を見る
+     プレイ状況の集計はこちら(管理者の動作確認まで人数に混ざると実態が見えない)。
+   ・adminMatchLogsAll   = 全部。**レイド分析はこちら**(発注者指示 2026-08-11)。
+     レイドは管理者も本気で遊ぶコンテンツなので、除くと母数が減って推奨値の質が落ちる。 */
 let adminMatchLogsCache = null;
+let adminMatchLogsAll = null;
 let adminSelectedPeriod = 'all';
 let adminSelectedMap = null;
 let adminSelectedMonster = null;
@@ -8234,16 +8257,18 @@ let adminFetchFailed = false;
 async function fetchAdminMatchLogs(force){
   if(adminMatchLogsCache && !force) return adminMatchLogsCache;
   adminFetchFailed = false;
-  if(!window.__aramonFetchMatchLogs){ adminMatchLogsCache = []; return adminMatchLogsCache; }
+  if(!window.__aramonFetchMatchLogs){ adminMatchLogsAll = []; adminMatchLogsCache = []; return adminMatchLogsCache; }
   const rows = await window.__aramonFetchMatchLogs();
   if(rows===null){
     // nullは「本当にデータが0件」ではなく「取得自体に失敗した」ことを示す
     // (Firebaseの読み取り権限がmatchLogsパスに無い場合など)。0件と混同しないよう区別する。
     adminFetchFailed = true;
+    adminMatchLogsAll = [];
     adminMatchLogsCache = [];
     return adminMatchLogsCache;
   }
-  adminMatchLogsCache = rows.filter(r=> r && r.name !== ADMIN_EXCLUDE_NAME);
+  adminMatchLogsAll = rows.filter(r=> !!r);
+  adminMatchLogsCache = adminMatchLogsAll.filter(r=> r.name !== ADMIN_EXCLUDE_NAME);
   return adminMatchLogsCache;
 }
 function adminMonthKeyOf(ts){
@@ -8484,7 +8509,9 @@ function adminStatRowsHtml(rows){
 function renderAdminRaidAnalysis(){
   const el = document.getElementById('adminRaidAnalysis');
   if(!el) return;
-  const all = adminMatchLogsCache || [];
+  // **管理者(おりょう)のぶんも入れる。** レイドは管理者も遊ぶコンテンツで、
+  // 除くと母数が減って推奨値の質が落ちる(発注者指示 2026-08-11)
+  const all = adminMatchLogsAll || [];
   // 版の開催期間で切る(過去の開催と混ざらないように)
   const from = raidStartAt().getTime(), to = raidEndAt().getTime();
   const logs = all.filter(r=> r.raid && (r.ts||0) >= from && (r.ts||0) < to);
@@ -8576,7 +8603,7 @@ function renderAdminRaidAnalysis(){
 
   el.innerHTML = `
     <div class="admin-col-title">レイド分析 — ${edLabel}</div>
-    <div class="admin-analysis-note">下の推奨値は実測から自動で出しています。次の版(<code>RAID_EDITIONS</code>)へ入れる前にここを確認してください。</div>
+    <div class="admin-analysis-note">下の推奨値は実測から自動で出しています。次の版(<code>RAID_EDITIONS</code>)へ入れる前にここを確認してください。<br>この画面は<b>${ADMIN_EXCLUDE_NAME}のプレイも含めた全件</b>で集計しています(プレイ状況タブは除外したまま)。</div>
 
     <div class="admin-col-title" style="margin-top:14px;">所見</div>
     ${findings.map(([lv,t])=>adminFindingHtml(lv,t)).join('')}
