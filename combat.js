@@ -1595,6 +1595,47 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
 // pickupイベントに載せて本人へ届ける(ゲストは取得判定自体を行わないため、
 // これをしないとゲスト側に効果のメッセージが一切出ない)。
 let pendingLootToast = null;
+let pendingLootCards = null;   // ゲストが拾ったトレーニングの候補3枚(取得イベントに載せる)
+
+/* ===== トレーニングカードの配布(抽選はホスト=ソロは自分だけが行う) =====
+   ・自分         → 画面にカードを出す(選ぶまで / TRAIN_CARD_PICK_SEC 秒で自動)
+   ・bot          → その場でランダムに1枚。**選択UIは出さない**(拾得のループに分岐を足さない)
+   ・ゲスト(人間) → 候補を配って返事を待つ。来なければホストが決める */
+const trainOffers = [];   // ホストがゲストの返事を待っている一覧 {id, keys, deadline}
+function offerTrainCards(e, itemType){
+  const keys = pickTrainCardKeys(itemType);
+  if(e.isPlayer){ if(typeof showTrainCards==='function') showTrainCards(keys); return keys; }
+  if(netState.mode==='multi' && netState.isHost && e.netPlayerId){
+    trainOffers.push({ id:e.id, keys, deadline: matchTime + TRAIN_CARD_PICK_SEC });
+    return keys;
+  }
+  applyTrainCardToEntity(e, keys[Math.floor(Math.random()*keys.length)]);
+  return keys;
+}
+// 返事が来なかったぶん・倒れたぶんをホストが片付ける。update()から毎フレーム呼ぶ
+function updateTrainOffers(){
+  for(let i=trainOffers.length-1;i>=0;i--){
+    const o = trainOffers[i];
+    const ent = getEntity(o.id);
+    if(ent && ent.alive && matchTime < o.deadline) continue;
+    trainOffers.splice(i,1);
+    if(ent && ent.alive){
+      applyTrainCardToEntity(ent, o.keys[Math.floor(Math.random()*o.keys.length)]);
+      hostForceFullNext = true;
+    }
+  }
+}
+// ゲストから届いた選択を反映する(ホスト専用)。候補に無いものは1枚目に丸める
+function resolveTrainOfferFor(ent, cardKey){
+  const idx = trainOffers.findIndex(o=>o.id===ent.id);
+  if(idx < 0) return false;
+  const o = trainOffers[idx];
+  trainOffers.splice(idx,1);
+  applyTrainCardToEntity(ent, (o.keys.indexOf(cardKey) >= 0) ? cardKey : o.keys[0]);
+  hostForceFullNext = true;
+  return true;
+}
+function resetTrainOffers(){ trainOffers.length = 0; }
 function lootToast(e, msg){
   if(e.isPlayer) pushToast(msg);
   else if(netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootToast = msg;
@@ -1608,7 +1649,7 @@ function updateLootPickups(){
       continue;
     }
     let consumed = false, consumedBy = null, consumedKind = null;
-    pendingLootToast = null;
+    pendingLootToast = null; pendingLootCards = null;
     for(const e of entities){
       if(!e.alive) continue;
       if(e.isRaidBoss) continue;   // レイドのボスは拾わない(巨体なので通るだけで全部さらってしまう)
@@ -1662,21 +1703,12 @@ function updateLootPickups(){
           }
         } else if(it.kind==='training'){
           const ti = TRAINING_ITEMS[it.type];
-          if(it.type==='weight'){
-            e.trainDmgMult *= 1.16;
-            e.maxHp += 30; e.hp += 30; e.trainMaxHpBonus = (e.trainMaxHpBonus||0)+30;
-          } else if(it.type==='meditate'){
-            e.trainGutsCostReduction += 2;
-            e.trainProjSpeedMult *= 1.20;
-          } else if(it.type==='pool'){
-            e.maxHp += 36; e.hp += 36; e.trainMaxHpBonus = (e.trainMaxHpBonus||0)+36;
-            e.trainDmgTakenMult *= 0.90;
-          } else if(it.type==='floor'){
-            e.trainSpeedMult *= 1.12;
-            e.trainCooldownMult *= 0.86;
-          }
-          spawnDmgText(e.x, e.y, e.z, ti.emoji+' 強化', ti.accent);
-          lootToast(e, `${ti.emoji} ${ti.name}：${ti.desc}`);
+          // トレーニングを3つ出して1つ選ばせる(効果の正は TRAINING_MENU 1つ)
+          const cards = offerTrainCards(e, it.type);
+          // ゲスト(マルチ)が拾ったぶんは、候補を取得イベントに載せて本人へ届ける
+          // (抽選はホストのループの中でしか起きないため)
+          if(!e.isPlayer && netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootCards = cards;
+          spawnDmgText(e.x, e.y, e.z, ti.emoji+' トレーニング', ti.accent);
           consumed = true;
         }
       }
@@ -1697,6 +1729,7 @@ function updateLootPickups(){
         window.__aramonPushLootEvent(netState.roomId, {
           evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null,
           msg: pendingLootToast||null, // 拾った本人(ゲスト)に出す効果メッセージ
+          cards: pendingLootCards||null, // トレーニングの候補3枚(本人にカードを出させる)
         });
         // 強化値(maxHp/train係数)は普段8回に1回のフル配信でしか送っていないため、
         // そのままだと効果の反映が最大0.4秒遅れる。取得直後は次の配信を強制的にフルにする
@@ -1834,6 +1867,7 @@ function update(dt){
   }
   updateProjectiles(dt);
   updateLootPickups();
+  updateTrainOffers();   // 返事の来ないトレーニングカードをホストが決める
 
   const dps = currentDps();
   if(dps>0){

@@ -2062,6 +2062,38 @@
   #hud.raid-mode #statsPanel{ display:none; }
   /* レイドHUDのぶんだけミニマップを下げる */
   #hud.raid-mode #topRight{ top:calc(6 * var(--vh)); }
+  /* ---- 試合中のトレーニングカード ----
+     **試合は止まらない**ので、ジョイスティック(左下)・FIRE/ダッシュ(右下)・技切替(下中央)・
+     ステータス欄(左上)・ミニマップ(右上)のどれにも重ならない帯に置く。位置は実寸で確認すること。 */
+  /* 置き場所: ステータス欄(左上・下端142px)より下、技切替パネル(下中央)とダッシュ(右下)より上。
+     縦の狭い端末(320px)ではこの帯が80pxしかないので、**見出しを置かず**残り時間は細いバーで見せる。 */
+  #trainCardBar{
+    position:absolute; left:50%; transform:translateX(-50%); top:150px;
+    z-index:26; pointer-events:auto; display:flex; flex-direction:column; align-items:stretch; gap:3px;
+    padding:4px 6px; border-radius:11px;
+    background:linear-gradient(180deg, rgba(14,20,32,0.93), rgba(8,12,20,0.93));
+    border:1px solid rgba(159,209,255,0.55); box-shadow:0 6px 20px -6px rgba(0,0,0,0.8);
+    animation:tcIn 0.18s ease-out;
+  }
+  @keyframes tcIn{ from{ opacity:0; transform:translateX(-50%) translateY(-6px); } to{ opacity:1; transform:translateX(-50%) translateY(0); } }
+  .tc-timer-track{ height:3px; border-radius:2px; background:rgba(255,255,255,0.12); overflow:hidden; }
+  .tc-timer-fill{ height:100%; width:100%; background:linear-gradient(90deg,#9fd1ff,#f4c430); }
+  .tc-cards{ display:flex; gap:5px; }
+  /* 高さは 320px の端末で「ステータス欄の下(142px)〜ダッシュの上(222px)」の80pxに収める。
+     文字を詰めてあるので、行を増やすときは実寸を測り直すこと。 */
+  .tc-card{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    width:clamp(74px, calc(11 * var(--vw)), 112px); padding:4px; border-radius:9px; cursor:pointer;
+    background:linear-gradient(180deg, rgba(159,209,255,0.16), rgba(255,255,255,0.05));
+    border:1px solid rgba(159,209,255,0.5); color:var(--ink); text-align:center;
+  }
+  .tc-card:active{ filter:brightness(1.25); }
+  .tc-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11.5px; line-height:1.15; white-space:nowrap; }
+  /* 増減は1ステータス1行。上げは青・下げは赤で、選ぶ判断がひと目で付くようにする */
+  .tc-card-delta{ font-family:'Share Tech Mono',monospace; font-size:8.5px; line-height:1.15; white-space:nowrap; }
+  .tc-card-delta.up{ color:#9fd1ff; }
+  .tc-card-delta.down{ color:#ff9a8a; }
+
   #rangeBar{ position:absolute; right:10px; top:8px; z-index:22; pointer-events:auto;
     display:flex; flex-direction:column; gap:6px; align-items:stretch; }
   #rangeBar button{

@@ -22,6 +22,13 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 - **発射条件は3か所で一致させる**: `tryPlayerFire` / `tryNonHostPlayerFireVisual` / `processRemoteFireEvents`。
 - **ホストしか行わない取得判定はゲストが見た目だけ先読みする**(`predictLootPickupsAsGuest()`。確定が来なければ復活)。**先読みフラグは`!= null`で判定**(matchTime 0と区別できない)。
 
+## トレーニングカード(ゲストの選択をホストへ返す形の実例)
+
+- **抽選はホスト。** 候補3枚は取得イベント(`__aramonPushLootEvent`の`cards`)で本人へ届け、ゲストは**出すだけ**(`showTrainCards`)。
+- **ゲストの選択は`__aramonSendInput`に`cardSeq`/`cardPick`を足して返す。** `dashSeq`と同じ「回数が増えたときだけ1回処理する」形なので、取りこぼしも二重適用もしない。**新しいDBパスを作っていないのでセキュリティルールの追加も不要。**
+- ホストは`trainOffers`で返事を待ち、`TRAIN_CARD_PICK_SEC`を過ぎたら自分で決める(`updateTrainOffers()`を`update()`から毎フレーム)。**ゲストの通信が切れても止まらない。**
+- **`mastermon*Mult`と`speed`をauthStateのフル配信に追加した**(`mmDD`/`mmDT`/`mmGR`/`mmCD`/`spd`)。カードが無かった頃は両側が試合開始時に同じ値を作っていたので送っていなかったが、試合中に変わるようになったため同期が要る。適用後は`hostForceFullNext = true`。
+
 ## 位置・動き(ラバーバンド対策)
 
 - **補正のしきい値は移動速度に比例させる(`selfCorrectSpeedScale`)。** 固定距離だと速いほど通常の前進でも引き戻される。基準は`entityMoveSpeed(ent)`。
