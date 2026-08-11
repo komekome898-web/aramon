@@ -992,6 +992,10 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-11', items:[
+    { t:'🏅 ランキングの「段位」タブがキル数ランキングのままになっていた不具合を修正しました。プレイヤー名を主役に、今の段位とRPが並ぶようになりました', g:['fix','general'] },
+    { t:'🏅 ランキングの「段位」に、モンスターの種類ごとにどれだけRPを稼いだかの集計が出るようになりました。「モンスター別RP」タブでは、どの子でRPを伸ばしたかを競えます', g:['feature','general'] },
+  ]},
   { date:'2026-08-10', items:[
     { t:'🏋️ トレーニングカードの効果が、ステータスの上限（999など）に関係なく上がるようになりました。育てきったマスモンでもカードが無駄になりません（試合が終われば必ず元に戻ります）', g:['balance','fix'] },
     { t:'🏋️ トレーニングカードの表示を「ライフ+108」ではなく「最大HP +24%」のように、実際にどれだけ強くなるかで出すようにしました', g:['general','av'] },
@@ -2893,12 +2897,13 @@ function rankRpForMatch(o){
 }
 function loadRank(){
   const key = seasonStateKey();
-  const fresh = ()=>({ seasonId:key, rp:0, best:RANKS[0].id });
+  const fresh = ()=>({ seasonId:key, rp:0, best:RANKS[0].id, elem:{} });
   try{
     const r = JSON.parse(localStorage.getItem(RANK_STORAGE_KEY)) || {};
     // 到達した最高段位だけはシーズンをまたいで残す(努力が消えた感じにしない)
-    if(r.seasonId !== key) return { seasonId:key, rp:0, best:r.best || RANKS[0].id };
-    return { seasonId:key, rp:Math.max(0, Math.round(r.rp||0)), best:r.best || RANKS[0].id };
+    if(r.seasonId !== key) return { seasonId:key, rp:0, best:r.best || RANKS[0].id, elem:{} };
+    return { seasonId:key, rp:Math.max(0, Math.round(r.rp||0)), best:r.best || RANKS[0].id,
+             elem: (r.elem && typeof r.elem==='object') ? r.elem : {} };
   }catch(err){ return fresh(); }
 }
 function saveRank(r){
@@ -2906,8 +2911,11 @@ function saveRank(r){
   if(typeof accountMarkDirty==='function') accountMarkDirty();
 }
 /* RPを足して保存する。**下がるのは今の段位の下限まで**(段位そのものは落ちない)。
-   戻り値は表示用の { delta, rp, before, after, promoted } 。 */
-function addRankRp(delta){
+   戻り値は表示用の { delta, rp, before, after, promoted } 。
+   element を渡すと、そのモンスターで稼いだぶんを r.elem に足す。
+   **足すのは「実際に動いた量」**(下限で止まったぶんは含めない)。
+   こうしておくと `Σ r.elem = r.rp` が常に成り立ち、ランキングの内訳と総量がズレない。 */
+function addRankRp(delta, element){
   const r = loadRank();
   const prev = r.rp;
   const before = rankOf(prev);
@@ -2916,8 +2924,18 @@ function addRankRp(delta){
   // 到達した最高段位の更新(シーズンをまたいで残る)
   const bestIdx = RANKS.findIndex(x=>x.id===r.best);
   if(RANKS.indexOf(after) > (bestIdx < 0 ? 0 : bestIdx)) r.best = after.id;
+  const gained = r.rp - prev;
+  if(element){
+    if(!r.elem || typeof r.elem!=='object') r.elem = {};
+    r.elem[element] = Math.round((r.elem[element]||0) + gained);
+  }
   saveRank(r);
-  return { delta: r.rp - prev, rp: r.rp, before, after, promoted: after !== before };
+  return { delta: gained, rp: r.rp, before, after, promoted: after !== before };
+}
+// そのモンスターで稼いだRPの合計(ランキングへ送る値)
+function rankElemRp(element){
+  const e = loadRank().elem || {};
+  return Math.round(e[element] || 0);
 }
 
 const TITLES_STORAGE_KEY = 'aramon_titles_v1';

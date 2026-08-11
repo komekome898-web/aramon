@@ -58,6 +58,10 @@
             mastermonRebirth: entry.mastermonRebirth || null,
             mastermonStatTotal: entry.mastermonStatTotal || null,
             rankPoint: entry.rankPoint || null,   // 段位ポイント(地形で分けない)
+            /* このモンスターで稼いだRPの合計。**負にもなるので Math.max で混ぜない。**
+               集計は端末側(loadRank().elem)が正で、ここは最新値を上書きするだけ。
+               `|| null` も使わない(0 と 未記録 を区別する必要がないうえ、負の値が消える)。 */
+            rankRpSum: entry.rankRpSum != null ? entry.rankRpSum : 0,
             // 通常マップ/リアルマップでキル数・ダメージ数を別々に集計する
             killsNormal: 0, damageNormal: 0, killsReal: 0, damageReal: 0,
             placement: entry.placement, isWin: entry.isWin,
@@ -80,6 +84,7 @@
           mastermonRebirth: Math.max(cur.mastermonRebirth||0, entry.mastermonRebirth||0) || null,
           mastermonStatTotal: Math.max(cur.mastermonStatTotal||0, entry.mastermonStatTotal||0) || null,
           rankPoint: Math.max(cur.rankPoint||0, entry.rankPoint||0) || null,
+          rankRpSum: entry.rankRpSum != null ? entry.rankRpSum : (cur.rankRpSum||0),
           killsNormal: isReal ? killsNormal : Math.max(killsNormal, entry.kills||0),
           damageNormal: isReal ? damageNormal : Math.max(damageNormal, entry.damage||0),
           killsReal: isReal ? Math.max(killsReal, entry.kills||0) : killsReal,
