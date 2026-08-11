@@ -591,7 +591,10 @@
        (通常時=ビューポート基準 / 強制横向き時=transformした#appRoot基準。
         どちらでもアプリ上端に固定され#startScreenのスクロールに追従しない) */
     position:fixed; top:0; left:0; right:0; height:var(--top-header-h); z-index:31;
-    display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; padding:0 14px;
+    /* 左右は中身なりの幅、**中央だけが縮む**(minmax(0,1fr))。
+       `1fr auto 1fr` だと中央の中身(名前・称号・段位)が長いときに左右を押し出し、
+       所持金が画面の外へ出る(iPhone8の縦持ちで16pxはみ出した)。 */
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:10px; padding:0 14px;
     background:linear-gradient(180deg, rgba(6,9,17,0.96), rgba(6,9,17,0.82));
     border-bottom:1px solid var(--panel-line);
   }
@@ -1212,9 +1215,13 @@
     font-size:14px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
   .result-badge.season{ color:#1a1306; background:linear-gradient(180deg,#8fd0ff,#4aa8f0); border-color:transparent; }
   /* ===== 段位 ===== */
-  .result-badge.rank{ color:var(--ink); background:rgba(255,255,255,0.07); border-color:var(--panel-line); }
-  /* ヘッダーのチップ。所持金の左に置くので、幅を食わないよう1行で詰める */
-  #topHeader .header-rank{ flex-shrink:0; display:flex; align-items:center; }
+  /* クラス名は `rank` にしない(リザルトの順位表示 .resultScreen .rank と衝突して巨大になる) */
+  .result-badge.rankrp{ color:var(--ink); background:rgba(255,255,255,0.07); border-color:var(--panel-line); }
+  /* ヘッダーのチップ。名前・称号と同じ中央のまとまりに置く(右へ足すと所持金が押し出される) */
+  #topHeader .header-rank{ flex-shrink:0; display:inline-flex; align-items:center; margin-left:6px; vertical-align:middle; }
+  /* 名前・称号・段位が長くても両端を押し出さない。入りきらない側を「…」で省略する */
+  #topHeader #headerCenter{ justify-self:center; min-width:0; max-width:100%;
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .rank-chip{
     display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
     height:22px; padding:0 7px; border-radius:11px; font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px;
