@@ -1042,6 +1042,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-12', items:[
+    { t:'SSRスキン「ラガモッチー」がガチャで入手できるようになりました', g:['feature'] },
     { t:'🆕 ロビーに「ギャラリー」を追加しました。獲得したスキンの鑑賞・着せ替えへのジャンプ、SSRスキンの専用ムービー・BGM・SEを見聞きできる「ミュージアム」が使えます', g:['feature'] },
     { t:'SSRスキン「北大路さつキジン」にキル時・勝利時の専用SEを追加しました', g:['monster','av'] },
     { t:'✨ SSRスキン「北大路さつキジン」が登場しました！', g:['feature','monster'] },
@@ -2908,23 +2909,65 @@ function expeditionTimeLabel(sec){
 }
 
 /* =====================================================================
+   シーズンは「版」で持つ(レイドの RAID_EDITIONS/RAID_EDITION と同じ形)。
+   開催期間・ミューテーター・報酬表は互いに噛み合っているので、次のシーズンは
+   別々の場所を直すのではなく新しい版を1つ足すだけにする。
+   読む側(ミューテーター判定・カレンダー表示・シーズンパス画面)は今まで通り
+   SEASON1_MUTATORS/SEASON1_START_DATE/SEASON_ID/SEASON_REWARDS を読むだけでよい
+   (このすぐ下で選ばれている版から作る、参照の張り方を変えただけ)。
+
+   ★シーズン切り替えパッチの手順(まとめて1回でやること。この順で進める)★
+   1. 次の版を下の SEASON_EDITIONS へ追記する: id / startDate(ミューテーター発動日) /
+      mutators(曜日ごとの変則ルール) / rewards(25段のシーズンパス報酬) /
+      prevFinalSkin(★前の版の rewards 最終段が指していたスキンid。ここに書いておけば
+      切替時に「どのスキンをガチャへ解放するか」を探さずに済む)
+   2. 前の版の prevFinalSkin が指す SSR_SKINS のエントリから seasonExclusive:true を外し、
+      ガチャ・SSRカタログへ解放する(2026-08-12、ラガモッチーで実施した対応と同じ)。
+      次回はこのシーズン(s1)の最終報酬 aqua_ssr が対象になる
+   3. LOBBY_BANNERS を見直す(解放したスキンを「新登場・ガチャ」枠へ足すか検討)
+   4. SEASON_EDITION を新しい版の id へ切り替える(SEASON_RESET_EPOCH は変更不要。
+      SEASON_ID が変われば seasonStateKey() が自動で変わり、SP・受取状況は全員リセットされる。
+      段位のRPも同じ鍵を使っているので一緒にリセットされる)
+   5. UPDATE_HISTORY に告知を1行、sw.js の CACHE_NAME を上げる
+===================================================================== */
+const SEASON_EDITIONS = {
+  s1: {
+    id:'s1',
+    startDate:'2026-08-07', // ミューテーター適用開始日(この日の前はSEASON1_ACTIVE=trueでも発動しない)
+    // 曜日ごとのミューテーター設定(表示は月始まり。dayはDate.getDay()準拠 0=日〜6=土)
+    mutators:[
+      { day:1, label:'月曜日', tier:true,  reward:false, spawn:false },
+      { day:2, label:'火曜日', tier:false, reward:true,  spawn:false },
+      { day:3, label:'水曜日', tier:false, reward:false, spawn:true  },
+      { day:4, label:'木曜日', tier:true,  reward:false, spawn:false },
+      { day:5, label:'金曜日', tier:false, reward:true,  spawn:false },
+      { day:6, label:'土曜日', tier:true,  reward:true,  spawn:true  },
+      { day:0, label:'日曜日', tier:true,  reward:true,  spawn:true  },
+    ],
+    // 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬。
+    // ゴールドは100から始めて100単位で上がっていき、最後のゴールド報酬(24段階目)が1000になる。
+    rewards:[
+      { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },      // 1-5
+      { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },           // 6-10
+      { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },           // 11-15
+      { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },      // 16-20
+      { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'aqua_ssr' }, // 21-25(最終=限定SSRスキン「大喰いの利世」)
+    ],
+    // 前シーズン(このシーズンより前)の最終報酬。すでにガチャへ解放済み(2026-08-12)
+    prevFinalSkin:'mocchi_ssr',
+  },
+  // s2: 次のシーズンはここへ追記(内容が決まるまでは s1 のまま)
+};
+const SEASON_EDITION = 's1'; // 開催中の版を切り替える1行
+
+/* =====================================================================
    シーズン1 準備(非公開・管理者プレビューのみ): ミューテーター(日替わり変則ルール)
    SEASON1_ACTIVE を true にするまでゲームプレイに一切影響しない。
    公開時は true へ変更し、CLAUDE.mdのルールに従って UPDATE_HISTORY に告知を追記すること。
 ===================================================================== */
 const SEASON1_ACTIVE = true;  // シーズン1公開済み(ミューテーターの発動は SEASON1_START_DATE から)
-const SEASON1_START_DATE = '2026-08-07'; // ミューテーター適用開始日(この日の前はSEASON1_ACTIVE=trueでも発動しない)
-
-// 曜日ごとのミューテーター設定(表示は月始まり。dayはDate.getDay()準拠 0=日〜6=土)
-const SEASON1_MUTATORS = [
-  { day:1, label:'月曜日', tier:true,  reward:false, spawn:false },
-  { day:2, label:'火曜日', tier:false, reward:true,  spawn:false },
-  { day:3, label:'水曜日', tier:false, reward:false, spawn:true  },
-  { day:4, label:'木曜日', tier:true,  reward:false, spawn:false },
-  { day:5, label:'金曜日', tier:false, reward:true,  spawn:false },
-  { day:6, label:'土曜日', tier:true,  reward:true,  spawn:true  },
-  { day:0, label:'日曜日', tier:true,  reward:true,  spawn:true  },
-];
+const SEASON1_START_DATE = SEASON_EDITIONS[SEASON_EDITION].startDate;
+const SEASON1_MUTATORS = SEASON_EDITIONS[SEASON_EDITION].mutators;
 // 今日のミューテーター設定(非公開中、またはSEASON1_START_DATE未到達ならnull)
 function mutatorToday(){
   if(!SEASON1_ACTIVE) return null;
@@ -2957,7 +3000,7 @@ function mutatorBadgeLabels(m){
    シーズンパス: 試合でシーズンポイント(SP)を貯めて段階報酬を受け取る(全て無料)
 ===================================================================== */
 const SEASON_STORAGE_KEY = 'aramon_season_v1';
-const SEASON_ID = 's1';               // シーズン識別子
+const SEASON_ID = SEASON_EDITIONS[SEASON_EDITION].id;   // シーズン識別子
 /* SPと受取状況をリセットしたいときに1つ上げる(シーズンの途中でも効く)。
    シーズンの切り替わり(SEASON_IDの変更)でも同じようにリセットされる。
    判定は保存側の seasonId と seasonStateKey() の食い違いを見るだけなので、
@@ -2966,15 +3009,8 @@ const SEASON_RESET_EPOCH = 2;         // 2026-08-07 シーズン1公開に合わ
 function seasonStateKey(){ return SEASON_ID + '#' + SEASON_RESET_EPOCH; }
 const SEASON_SP_PER_TIER = 120;       // 1段階に必要なSP
 const SEASON_MAX_TIER = 25;
-// 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬。
-// ゴールドは100から始めて100単位で上がっていき、最後のゴールド報酬(24段階目)が1000になる。
-const SEASON_REWARDS = [
-  { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },      // 1-5
-  { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },           // 6-10
-  { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },           // 11-15
-  { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },      // 16-20
-  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'aqua_ssr' }, // 21-25(最終=限定SSRスキン「大喰いの利世」)
-];
+// 各段階の報酬(1段階目=index0)。中身は選ばれている版(SEASON_EDITIONS[SEASON_EDITION])が正
+const SEASON_REWARDS = SEASON_EDITIONS[SEASON_EDITION].rewards;
 // 1試合で得られるSP(SEASON_SP_GLOBAL_MULTで全体倍率を調整)
 const SEASON_SP_GLOBAL_MULT = 2;
 function seasonSpForMatch(kills, damage, isWin){
@@ -3301,8 +3337,9 @@ const SSR_SKINS = {
   phoenix_ssr: { element:'phoenix', name:'フェニックス', iconImg:'phoenix_ssr', playerImg:'phoenix_player_ssr' },
   tamamo_ssr:  { element:'fox', name:'タマモノマエ', iconImg:'tamamo_ssr', playerImg:'tamamo_player_ssr' },
   iblees_ssr:  { element:'ark', name:'イブリース', iconImg:'iblees_ssr', playerImg:'iblees_player_ssr' },
-  // ラガモッチー: シーズンパス最終報酬限定のオリジナルSSR(ガチャ・カタログには出さない)
-  mocchi_ssr:  { element:'mocchi', name:'ラガモッチー', iconImg:'mocchi_ssr', playerImg:'mocchi_player_ssr', seasonExclusive:true },
+  // ラガモッチー: 前シーズンの最終報酬だったオリジナルSSR。シーズン切り替え時の運用(下のSEASON_EDITIONS参照)
+  // に沿ってseasonExclusiveを外し、ガチャ・SSRカタログへ解放済み(2026-08-12)
+  mocchi_ssr:  { element:'mocchi', name:'ラガモッチー', iconImg:'mocchi_ssr', playerImg:'mocchi_player_ssr' },
   // ゼウス: ガリのオリジナルSSR。ガチャ・SSRカタログにも出る(seasonExclusiveは付けない)
   zeus_ssr:    { element:'god', name:'ゼウス', iconImg:'zeus_ssr', playerImg:'zeus_player_ssr' },
   // ちょこ: ピクシーのオリジナルSSR。ガチャ・SSRカタログにも出る

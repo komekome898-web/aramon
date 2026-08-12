@@ -9,11 +9,28 @@ description: 荒野モン動のシーズン運用とレイドバトルの手順�
 
 ## シーズンを切り替える / SPをリセットする
 
+**シーズンは「版」で持つ**(レイドの`RAID_EDITIONS`/`RAID_EDITION`と同じ形、2026-08-12導入)。
+`SEASON_EDITIONS`が版ごとに`{id, startDate, mutators, rewards, prevFinalSkin}`を1組で持ち、
+`SEASON_EDITION`のポインタ1行で選ぶ。`SEASON_ID`/`SEASON_REWARDS`/`SEASON1_MUTATORS`/
+`SEASON1_START_DATE`は選ばれている版から作る**参照だけの1行**なので、読む側のコード
+(ミューテーター判定・カレンダー表示・シーズンパス画面)は今まで通りでよい。
+
 判定は`seasonStateKey()`(`SEASON_ID` + `SEASON_RESET_EPOCH`)1か所。保存側と食い違えば
 `loadSeason()`がSP0・受取状況なしで返す。**どちらか一方を変えるだけでリセットされる。**
 
-- 次シーズンへ → `SEASON_ID`を変える(`s1`→`s2`)。あわせて`SEASON_REWARDS` / `SEASON1_MUTATORS` / `SEASON1_START_DATE`を新シーズンの内容へ
-- シーズン途中でリセットしたい → `SEASON_RESET_EPOCH`を1つ上げる
+**次シーズンへ切り替える手順(`SEASON_EDITIONS`のコメントにも同じ手順を書いてある)**:
+1. 新しい版を`SEASON_EDITIONS`へ追記(`id`/`startDate`/`mutators`/`rewards`/`prevFinalSkin`)。
+   `prevFinalSkin`には**前の版の`rewards`最終段が指していたスキンid**を書く(切替時にどれを
+   解放すればいいか探さずに済む)
+2. **前の版の`prevFinalSkin`が指す`SSR_SKINS`のエントリから`seasonExclusive:true`を外し、
+   ガチャ・SSRカタログへ解放する**(2026-08-12にラガモッチー`mocchi_ssr`で実施済み。次回はs1の
+   最終報酬`aqua_ssr`が対象)。**シーズン最終報酬はシーズンが変わったら毎回このタイミングで解放する運用。**
+3. `LOBBY_BANNERS`を見直す(解放したスキンを「新登場・ガチャ」枠へ足すか検討)
+4. `SEASON_EDITION`を新しい版のidへ切り替える(`SEASON_RESET_EPOCH`は変更不要。`SEASON_ID`が
+   変われば`seasonStateKey()`が自動で変わり、SP・受取状況・段位RPが全員リセットされる)
+5. `UPDATE_HISTORY`に告知、`sw.js`の`CACHE_NAME`を上げる
+
+- シーズン途中でリセットしたい(版は変えない) → `SEASON_RESET_EPOCH`を1つ上げる
 - **受取状況(`claimed`)も消える。** 最終報酬を配り直したいときはこれで足りる
 
 ## 段位(ランクポイント)
