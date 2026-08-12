@@ -3770,7 +3770,6 @@ const OGRE_GATE_BASE_H_R  = 0.22;   // 柱の根元に置く石積みの土台�
 // 大屋根(発注者から送られた羅生門の参考画像に合わせる。2026-08-12)。
 // 入母屋風の四注屋根を1枚、隅を外側・上へ反らせて（軒先の反り）載せる。
 const OGRE_ROOF_HALF_D_R    = 0.62;  // 屋根の奥行き(横幅に対する比率)
-const OGRE_ROOF_RIDGE_H_R   = 0.5;   // 棟の高さ(柱の高さ基準)
 const OGRE_ROOF_FLARE       = 1.22;  // 軒先が外へ張り出す量
 const OGRE_ROOF_CORNER_LIFT_R = 0.24; // 隅が上へ反り上がる量(柱の高さ基準)
 // ハート門(北大路さつキジンtier3専用)の色。色は決め打ちしない原則の例外(発注者指定・2026-08-12)
@@ -3917,36 +3916,33 @@ function fx3dGateBasePlinth(dx, dy, gz, fx, fy, rx, ry, side, sh, fade){
   const topBack  = fx3dPoint(dx+backOx, dy+backOy, h, gz);
   if(base && top && topBack && baseBack) fx3dFill([base,top,topBack,baseBack], _mixHex(sh.dark,'#000000',0.4), 0.85*fade, 0);
 }
-/* 大屋根。四注(寄棟)屋根を、頂点1点(ピラミッド型)ではなく棟(ridge)を結ぶ2点で構成する。
-   1点に集約するピラミッド型だと、通路の真上から棟先端への線が戸口の中央に「柱が1本立っている」
-   ように見えてしまうため(発注者指摘2026-08-19「真ん中の柱を削除」)、実在の寄棟屋根と同じく
-   棟をrx=0の線分にして、戸口の開口部には何も突き出さないようにする。 */
+/* 大屋根。発注者からのスクリーンショット指摘(2026-08-19「赤で囲んだ中にある柱が不要」)を受けて、
+   棟(ridge)をやめてフラットな一枚屋根にする。棟線は通路の奥行き方向(fx軸)に沿って画面中央
+   (rx=0)を通るため、通路の正面から見るカメラでは遠近感でその線が中央に立つ「柱」のように
+   見えてしまっていた。中心を通る線・点を一切置かない構成にすることで再発を防ぐ。 */
 function fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, roofBaseH, halfW, pillarH, sh, fade){
   const halfD = halfW*OGRE_ROOF_HALF_D_R;
-  const ridgeH = roofBaseH + pillarH*OGRE_ROOF_RIDGE_H_R;
   const lift = pillarH*OGRE_ROOF_CORNER_LIFT_R;
-  const ridgeHalfD = halfD*0.35;
   const combos = [[-1,-1],[-1,1],[1,1],[1,-1]]; // 反時計回り: 手前左→奥左→奥右→手前右
   const corners = combos.map(([side,dir])=>{
     const ox = rx*halfW*OGRE_ROOF_FLARE*side + fx*halfD*OGRE_ROOF_FLARE*dir;
     const oy = ry*halfW*OGRE_ROOF_FLARE*side + fy*halfD*OGRE_ROOF_FLARE*dir;
     return fx3dPoint(dx+ox, dy+oy, roofBaseH+lift, gz);
   });
-  const ridgeFront = fx3dPoint(dx - fx*ridgeHalfD, dy - fy*ridgeHalfD, ridgeH, gz);
-  const ridgeBack  = fx3dPoint(dx + fx*ridgeHalfD, dy + fy*ridgeHalfD, ridgeH, gz);
-  if(!ridgeFront || !ridgeBack || corners.some(c=>!c)) return;
+  if(corners.some(c=>!c)) return;
   const [FL, BL, BR, FR] = corners;
-  const roofDark  = _mixHex(sh.dark, '#000000', 0.6);
-  const roofLight = _mixHex(sh.dark, '#000000', 0.42);
-  const roofHip   = _mixHex(roofLight, roofDark, 0.5);
-  fx3dFill([FL, ridgeFront, ridgeBack, BL], roofLight, 0.95*fade, 0);   // 左側の流れ
-  fx3dFill([FR, ridgeFront, ridgeBack, BR], roofDark,  0.95*fade, 0);   // 右側の流れ
-  fx3dFill([FL, FR, ridgeFront], roofHip, 0.95*fade, 0);                // 手前の破風(妻)
-  fx3dFill([BL, BR, ridgeBack],  roofHip, 0.95*fade, 0);                // 奥の破風(妻)
-  fx3dStroke([ridgeFront, ridgeBack], '#000000', 1.6, 0.5*fade, 0);     // 棟線
-  // 軒先の縁を結んでシルエットをはっきりさせる(隅の反りが伝わるように太めの線で)
-  fx3dStroke([corners[0],corners[1],corners[2],corners[3],corners[0]], '#000000', 2.0, 0.55*fade, 0);
+  const roofCol = _mixHex(sh.dark, '#000000', 0.55);
+  fx3dFill([FL,BL,BR,FR], roofCol, 0.95*fade, 0);                       // 屋根の上面
+  fx3dStroke([FL,BL,BR,FR,FL], '#000000', 2.0, 0.55*fade, 0);           // 軒先の縁
+  // 手前側(dir=-1)の軒だけ厚み(ファシア板)を足して、板1枚に見えないようにする。
+  // 中心(rx=0)を通らない、外側の縁だけを使うので中央に線は出ない。
+  const FLlow = fx3dPoint(dx+rx*halfW*OGRE_ROOF_FLARE*(-1)+fx*halfD*OGRE_ROOF_FLARE*(-1),
+                           dy+ry*halfW*OGRE_ROOF_FLARE*(-1)+fy*halfD*OGRE_ROOF_FLARE*(-1), roofBaseH, gz);
+  const FRlow = fx3dPoint(dx+rx*halfW*OGRE_ROOF_FLARE*( 1)+fx*halfD*OGRE_ROOF_FLARE*(-1),
+                           dy+ry*halfW*OGRE_ROOF_FLARE*( 1)+fy*halfD*OGRE_ROOF_FLARE*(-1), roofBaseH, gz);
+  if(FLlow && FRlow) fx3dFill([FLlow, FL, FR, FRlow], _mixHex(roofCol,'#000000',0.3), 0.9*fade, 0);
 }
+
 
 // ハート門(北大路さつキジンtier3)。柱2本+梁の代わりに、門の中央へピンクのハートを立てる。
 // 発注者依頼(2026-08-12): 少し小さく・加算合成で透けさせ、奥にいる敵が見えるようにする。
