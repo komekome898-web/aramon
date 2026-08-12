@@ -73,9 +73,10 @@ function renderSelectorCards(){
   const mmData = game.selectedMastermonKey ? loadMastermons()[game.selectedMastermonKey] : null;
   if(mmData){
     const el = ELEMENTS[mmData.element];
-    const mults = mastermonEffectMults(mmData);
-    const effHp = Math.round(el.hp*mults.lifeMult);
-    const effSpeed = Math.round(el.speed*(el.speedMod||1)*mults.speedMult);
+    // 実戦力(mmEffectiveStats)と同じ式を使う。ここだけ基礎値アイテムの加算(rb)を忘れると
+    // マスモンカルーセルの表示より低いHP/速さが出てしまう(実際に食い違っていた)
+    const eff = mmEffectiveStats(mmData);
+    const effHp = eff.hp, effSpeed = eff.speed;
     mmCard.classList.add('selected');
     mmCard.style.setProperty('--accent', el.accent || el.color);
     mmCard.innerHTML = `
@@ -979,13 +980,25 @@ function buildLobbyEmoteRow(){
   if(!row || row.dataset.built) return;
   row.dataset.built = '1';
   row.innerHTML = EMOTE_ORDER.filter(k=>EMOTES[k]).map(k=>
-    `<button type="button" class="lobby-emote-btn" data-emote="${k}" aria-label="${EMOTES[k].label}">${EMOTES[k].icon}</button>`).join('');
-  row.querySelectorAll('.lobby-emote-btn').forEach(b=>{
+    `<button type="button" class="lobby-emote-btn" data-emote="${k}" aria-label="${EMOTES[k].label}">${EMOTES[k].icon}</button>`).join('')
+    // 一番右: 正面/後ろ姿の切り替え(エモートではないので data-emote は付けない)
+    + `<button type="button" id="lobbyFacingToggleBtn" class="lobby-emote-btn lobby-facing-toggle-btn" aria-label="向きを切り替え">🔄</button>`;
+  row.querySelectorAll('.lobby-emote-btn[data-emote]').forEach(b=>{
     b.addEventListener('click', (e)=>{
       e.stopPropagation();          // 背後のモンスター選択ボタンへ伝えない
       playLobbyEmote(b.dataset.emote);
     });
   });
+  document.getElementById('lobbyFacingToggleBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    toggleLobbyMonsterFacing();
+  });
+}
+// ロビー中央のモンスターを正面/後ろ姿のどちらで見せるか(端末内だけの一時的な表示切り替え。保存はしない)
+let lobbyMonsterFacing = 'front';
+function toggleLobbyMonsterFacing(){
+  lobbyMonsterFacing = (lobbyMonsterFacing==='front') ? 'back' : 'front';
+  renderLobbyMonster();
 }
 
 // ---- 中央: 選択中モンスターの正面歩行モーション ----
@@ -1008,7 +1021,7 @@ function renderLobbyMonster(){
   /* 出しているモンスターが同じままなら、**エモート中は描き直さない。**
      歩行コマの読み込み待ちリトライ(下の setTimeout)がこの関数を何度も呼ぶので、
      素通しにするとエモートが毎回打ち消されて動かない(実際に踏んだ)。 */
-  const subject = `${game.selectedElement||''}|${game.selectedMastermonKey||''}|${lobbySelectedSkinId()||''}`;
+  const subject = `${game.selectedElement||''}|${game.selectedMastermonKey||''}|${lobbySelectedSkinId()||''}|${lobbyMonsterFacing}`;
   if(img._emote && img.dataset.lobbySubject === subject) return;
   img.dataset.lobbySubject = subject;
   stopLobbyWalkAnim();
@@ -1046,7 +1059,7 @@ function renderLobbyMonster(){
   img.src = still || imgSrcFor(`monsters/${key}`);
 
   const frames = (typeof monsterWalkFrameDataUrls==='function')
-    ? monsterWalkFrameDataUrls(key, skinId, 'front') : null;
+    ? monsterWalkFrameDataUrls(key, skinId, lobbyMonsterFacing) : null;
   if(!frames || !frames.length){
     // 画像の読み込み待ちのことがあるので少しリトライする
     if(lobbyWalkRetry < 6){
@@ -1090,6 +1103,7 @@ function buildLobbyBanner(){
       if(to==='gacha') document.getElementById('openGachaBtn').click();
       else if(to==='season') document.getElementById('openSeasonBtn').click();
       else if(to==='shop') document.getElementById('openShopBtn').click();
+      else if(to==='raid') document.getElementById('openRaidBtn').click();
     });
   });
   lobbyBannerIdx = 0;
@@ -7313,8 +7327,10 @@ function mmFmtMult(v){ return `×${(Math.round(v*100)/100).toFixed(2)}`; }
 // 「詳細情報」画面: ステータス倍率・特性・状態変化を縦一列に表示
 function buildMastermonInfoHtml(key, mm, el){
   const mults = mastermonEffectMults(mm);
-  const effHp = Math.round(el.hp*mults.lifeMult);
-  const effSpeed = Math.round(el.speed*(el.speedMod||1)*mults.speedMult);
+  // mmEffectiveStats()と同じ式(基礎値アイテムの加算(rb)込み)で出す。ここだけ別式だと
+  // マスモンカルーセルの表示と食い違う(実際に食い違っていた)
+  const eff = mmEffectiveStats(mm);
+  const effHp = eff.hp, effSpeed = eff.speed;
   const fireRateMult = 1/mults.cooldownMult;
   const dashDistance = Math.round((DASH_REF_SPEED*DASH_REF_SPEED*DASH_SPEED_MULT/Math.max(effSpeed,1))*DASH_DURATION);
   const sc = STATE_CHANGES[key];

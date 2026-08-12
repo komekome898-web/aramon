@@ -2308,7 +2308,7 @@ const TABLES = [['ELEMENTS','data.js'],['WALK_ANIM','data.js'],['SIGNATURE_MOVES
   ['MONSTER_AURA','data.js'],['MOVE_AURA','data.js'],['STATE_CHANGES','data.js'],
   ['APTITUDE','data.js'],['SKIN_CONFIG','data.js'],['TRAIT_DESC','ui.js'],['TRAIT_ON_HIT','data.js'],
   ['SSR_SKINS','data.js'],['SSR_SKIN_AURA','data.js'],['SSR_SKIN_TIER3','data.js'],
-  ['RAID_EFFECT_SKINS','data.js'],['SKIN_MEDIA','data.js']];
+  ['RAID_EFFECT_SKINS','data.js'],['SKIN_MEDIA','data.js'],['LOBBY_BANNERS','data.js']];
 const TABLE_FILE = Object.fromEntries(TABLES);
 
 /* ---------------------------------------------------------- SSRスキンの行 */
@@ -2327,7 +2327,27 @@ function renderSsrRows(ss){
   // レイド特効: レイドのボス戦のときだけ掛かる倍率(判定は raidSkinBonus 1か所)
   if(ss.raidEffect)
     rows.RAID_EFFECT_SKINS = [`  ${pad(ss.id,16)}{ dmgDealt:${ss.raidDealt}, dmgTaken:${ss.raidTaken}, name:${jsStr(ss.name)} }, ${mark}`];
+  // ロビー左下バナーへ自動で1件追加(先頭=新しい順。data.js側で最大5件に切り詰める)。
+  // 入手経路は登録時のチェック欄から推測する(この画面ではraidGachaOnly/raidClearOnlyの印そのものは
+  // 扱っていないため、raidPickup/raidClearのチェックを同じ意味として使う)
+  const bannerTag = ss.raidClear ? 'レイド討伐限定' : ss.raidPickup ? 'レイドガチャ限定'
+                    : ss.seasonExclusive ? 'シーズンパス' : '新登場・ガチャ';
+  const bannerOpen = (ss.raidClear || ss.raidPickup) ? 'raid' : ss.seasonExclusive ? 'season' : 'gacha';
+  rows.LOBBY_BANNERS = [`  { rar:'SSR', name:${jsStr(ss.name)}, tag:${jsStr(bannerTag)}, img:${jsStr('monsters/'+ss.iconImg+'.png')}, size:'150%', pos:'50% 20%', open:${jsStr(bannerOpen)} }, ${mark}`];
   return rows;
+}
+// バナーは最大 max 件。新しい1件を先頭へ挿したあと、超えたぶんを末尾(古い方)から落とす
+function capLobbyBanners(dataJs, max){
+  const s = dataJs.indexOf('const LOBBY_BANNERS = [');
+  if(s < 0) return dataJs;
+  const e = dataJs.indexOf('\n];', s);
+  if(e < 0) return dataJs;
+  const lines = dataJs.slice(s, e).split('\n');
+  const idx = lines.map((l,i)=> /^\s*\{ rar:/.test(l) ? i : -1).filter(i=>i>=0);
+  if(idx.length <= max) return dataJs;
+  const dropAt = new Set(idx.slice(max));
+  const kept = lines.filter((_,i)=> !dropAt.has(i));
+  return dataJs.slice(0, s) + kept.join('\n') + dataJs.slice(e);
 }
 // レイドガチャのピックアップ/討伐報酬は「表への追記」ではなく1行の定数の書き換えなので、別扱いにする
 function applyRaidConsts(dataJs, ss){
@@ -2924,6 +2944,8 @@ async function planSsr(dataJs, swJs, lines){
   const rc = applyRaidConsts(texts['data.js'], ss);
   texts['data.js'] = rc.text;
   for(const n of rc.notes) lines.push('  ' + n);
+  // ロビーバナーは最大5件(このスキンを先頭に挿した直後に古い順から切り詰める)
+  texts['data.js'] = capLobbyBanners(texts['data.js'], 5);
   // 歩行コマは両面そろっていれば登録する(1素体に何体でも持てる)
   const haveWalk = !!(state.walk.f && state.walk.b);
   let walkNote = '歩行コマは登録しません(正面・後ろの両方をプレビューすると登録できます)';
