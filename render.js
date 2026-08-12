@@ -3756,12 +3756,17 @@ function fx3dFireWave(ae, curReach, fade){
   fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
 }
 const OGRE_GATE_PILLAR_W = 52;      // 門の柱の太さ(半幅)。発注者依頼(2026-08-12「棒に見える」対策)で22→52に増量
-const OGRE_GATE_H_MULT   = 2.0;     // 門の柱の高さ(FX3D_MON_H基準)。上に大屋根が乗るぶん柱は少し低めにする
+const OGRE_GATE_H_MULT   = 4.6;     // 門の柱の高さ(FX3D_MON_H基準)。発注者依頼(2026-08-12)で楼門らしい大きさに引き上げ
 const OGRE_GATE_ROCK_SEG = 5;       // 柱を積む岩塊の段数
 const OGRE_GATE_ROCK_JUT = 0.35;    // 段ごとの出っ張り量(柱の太さに対する比率)
 const OGRE_GATE_DEPTH_R  = 0.6;     // 柱・梁の奥行き(太さに対する比率)。側面を持たせて棒状に見えないようにする
 const OGRE_GATE_BEAM_OVERHANG = 1.45; // 梁(笠木)の張り出し。柱の外側まで大きくはみ出させて「門」の輪郭にする
 const OGRE_GATE_BEAM_H   = OGRE_GATE_PILLAR_W*0.85; // 梁の高さ
+// 側壁・上部の壁(発注者依頼2026-08-12「門らしい囲いを作って」対策)。
+// 柱2本+屋根だけだと骨組みが宙に浮いて見えるため、通路の外側と柱の上側を壁で塞いで
+// 「建物として囲まれた門」に見せる。通路(halfSpan)の内側だけは敵が通れるよう空けたままにする。
+const OGRE_GATE_SILL_R    = 0.62;   // 通路の開口部の高さ(柱の高さ基準)。これより下は壁を塞がない
+const OGRE_GATE_BASE_H_R  = 0.22;   // 柱の根元に置く石積みの土台の高さ(柱の太さ基準)
 // 大屋根(発注者から送られた羅生門の参考画像に合わせる。2026-08-12)。
 // 入母屋風の四注屋根を1枚、隅を外側・上へ反らせて（軒先の反り）載せる。
 const OGRE_ROOF_HALF_D_R    = 0.62;  // 屋根の奥行き(横幅に対する比率)
@@ -3859,6 +3864,59 @@ function fx3dGateBeam(dx, dy, gz, fx, fy, rx, ry, beamSpan, gateH, sh, fade){
   const l1tb= fx3dPoint(dx+rx*beamSpan+bfx, dy+ry*beamSpan+bfy, gateH+beamH, gz);
   if(l1&&l1t&&l1tb&&l1b) fx3dFill([l1,l1t,l1tb,l1b], _mixHex(col,'#000000',0.35), 0.88*fade, 0);
 }
+/* 側壁。柱の外側(halfSpan)から屋根の軒先(outerSpan)まで、地面から梁の下端まで塞ぐ壁。
+   これを両側に置くことで「柱が2本浮いているだけ」ではなく「壁に囲まれた建物に開いた門」に見せる。
+   通路の内側(halfSpanより内側)は絶対に塞がない = 敵の通行・視認性に影響しない。 */
+function fx3dGateSideWall(dx, dy, gz, fx, fy, rx, ry, side, innerSpan, outerSpan, wallH, sh, fade){
+  const depth = OGRE_GATE_PILLAR_W*OGRE_GATE_DEPTH_R*1.4;
+  const iBase = fx3dPoint(dx+rx*innerSpan*side, dy+ry*innerSpan*side, 0,     gz);
+  const iTop  = fx3dPoint(dx+rx*innerSpan*side, dy+ry*innerSpan*side, wallH, gz);
+  const oTop  = fx3dPoint(dx+rx*outerSpan*side, dy+ry*outerSpan*side, wallH, gz);
+  const oBase = fx3dPoint(dx+rx*outerSpan*side, dy+ry*outerSpan*side, 0,     gz);
+  if(!iBase || !iTop || !oTop || !oBase) return;
+  const col = _mixHex(sh.dark, '#000000', 0.3);
+  fx3dFill([iBase, iTop, oTop, oBase], col, 0.9*fade, 0);          // 正面
+  fx3dStroke([iBase, iTop], '#000000', 1.4, 0.4*fade, 0);          // 通路側の縁をはっきりさせる
+  // 奥行きの側面(壁にも厚みを持たせる)
+  const bfx = -fx*depth, bfy = -fy*depth;
+  const oBaseB = fx3dPoint(dx+rx*outerSpan*side+bfx, dy+ry*outerSpan*side+bfy, 0,     gz);
+  const oTopB  = fx3dPoint(dx+rx*outerSpan*side+bfx, dy+ry*outerSpan*side+bfy, wallH, gz);
+  if(oBaseB && oTopB) fx3dFill([oBase, oTop, oTopB, oBaseB], _mixHex(col,'#000000',0.3), 0.85*fade, 0);
+}
+/* 通路上部の壁(欄間)。柱と柱の間、頭上より高い位置だけを塞いで「壁に開いた戸口」に見せる。
+   sillHより下は必ず素通しにし、敵の通行・被視認性を邪魔しない。 */
+function fx3dGateUpperInfill(dx, dy, gz, rx, ry, halfSpan, sillH, topH, sh, fade){
+  const L0 = fx3dPoint(dx-rx*halfSpan, dy-ry*halfSpan, sillH, gz);
+  const L1 = fx3dPoint(dx-rx*halfSpan, dy-ry*halfSpan, topH,  gz);
+  const R1 = fx3dPoint(dx+rx*halfSpan, dy+ry*halfSpan, topH,  gz);
+  const R0 = fx3dPoint(dx+rx*halfSpan, dy+ry*halfSpan, sillH, gz);
+  if(!L0 || !L1 || !R1 || !R0) return;
+  fx3dFill([L0,L1,R1,R0], _mixHex(sh.dark, '#000000', 0.65), 0.85*fade, 0);
+  // 格子(欄間らしい横桟を2本入れる)
+  for(const t of [0.35, 0.68]){
+    const yH = sillH + (topH-sillH)*t;
+    const a = fx3dPoint(dx-rx*halfSpan, dy-ry*halfSpan, yH, gz);
+    const b = fx3dPoint(dx+rx*halfSpan, dy+ry*halfSpan, yH, gz);
+    if(a && b) fx3dStroke([a,b], '#000000', 1.6, 0.5*fade, 0);
+  }
+  fx3dStroke([L0,L1,R1,R0,L0], '#000000', 1.6, 0.45*fade, 0);
+}
+/* 柱の根元の石積みの土台。柱がそのまま地面に刺さっているだけだと軽く見えるので、
+   一回り太い低い塊を足元に置いて「建物の礎石」らしさを出す。 */
+function fx3dGateBasePlinth(dx, dy, gz, fx, fy, rx, ry, side, sh, fade){
+  const w = OGRE_GATE_PILLAR_W*1.35, h = OGRE_GATE_PILLAR_W*OGRE_GATE_BASE_H_R, depth = w*0.9;
+  const ox = rx*w*side, oy = ry*w*side;
+  const base = fx3dPoint(dx+ox, dy+oy, 0, gz);
+  const top  = fx3dPoint(dx+ox, dy+oy, h, gz);
+  const inW = -side*w, ix = rx*inW, iy = ry*inW;
+  const topIn = fx3dPoint(dx+ox+ix, dy+oy+iy, h, gz);
+  const baseIn= fx3dPoint(dx+ox+ix, dy+oy+iy, 0, gz);
+  if(base && top && topIn && baseIn) fx3dFill([base,top,topIn,baseIn], _mixHex(sh.dark,'#000000',0.15), 0.9*fade, 0);
+  const backOx = ox - fx*depth, backOy = oy - fy*depth;
+  const baseBack = fx3dPoint(dx+backOx, dy+backOy, 0, gz);
+  const topBack  = fx3dPoint(dx+backOx, dy+backOy, h, gz);
+  if(base && top && topBack && baseBack) fx3dFill([base,top,topBack,baseBack], _mixHex(sh.dark,'#000000',0.4), 0.85*fade, 0);
+}
 /* 大屋根。四隅を外側・上へ反らせた四注屋根を1枚、棟(頂点)へ向けて4枚の三角面で葺く。
    発注者から送られた羅生門の参考画像(2026-08-12)に合わせて、太い柱+大きく反った屋根で
    「棒」ではなく実在の楼門らしいシルエットにする。屋根瓦は柱・梁より暗い色調にして塗り分ける。 */
@@ -3921,11 +3979,19 @@ function fx3dGate(ae, fillDist, fade, inTelegraph){
   if(ae.style==='heart'){
     fx3dHeartGate(dx, dy, gz, halfSpan, gateH, fade);
   } else {
-    for(const side of [-1,1]) fx3dGatePillarRocky(dx, dy, gz, fx, fy, rx, ry, side, gateH, sh, ramp, fade, ae.id + side*97);
+    const outerSpan = halfSpan*OGRE_GATE_BEAM_OVERHANG;
+    for(const side of [-1,1]){
+      fx3dGateBasePlinth(dx, dy, gz, fx, fy, rx, ry, side, sh, fade);
+      fx3dGatePillarRocky(dx, dy, gz, fx, fy, rx, ry, side, gateH, sh, ramp, fade, ae.id + side*97);
+      // 側壁。柱の外側から屋根の軒先まで塞ぎ、「建物に開いた門」に見せる(通路の内側は塞がない)
+      fx3dGateSideWall(dx, dy, gz, fx, fy, rx, ry, side, halfSpan, outerSpan, gateH+OGRE_GATE_BEAM_H, sh, fade);
+    }
+    // 通路の頭上(sillより上)を欄間で塞ぐ。sillより下は敵の通行のため必ず素通しのまま
+    fx3dGateUpperInfill(dx, dy, gz, rx, ry, halfSpan, gateH*OGRE_GATE_SILL_R, gateH, sh, fade);
     // 梁(笠木)。柱の外側まで大きく張り出させ、厚みも持たせる
-    fx3dGateBeam(dx, dy, gz, fx, fy, rx, ry, halfSpan*OGRE_GATE_BEAM_OVERHANG, gateH, sh, fade);
+    fx3dGateBeam(dx, dy, gz, fx, fy, rx, ry, outerSpan, gateH, sh, fade);
     // 大屋根。参考画像(2026-08-12)の楼門らしい反った大屋根を梁の上に載せる
-    fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, gateH+OGRE_GATE_BEAM_H, halfSpan*OGRE_GATE_BEAM_OVERHANG, gateH, sh, fade);
+    fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, gateH+OGRE_GATE_BEAM_H, outerSpan, gateH, sh, fade);
   }
 
   if(inTelegraph) return;
