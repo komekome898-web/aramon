@@ -334,6 +334,9 @@
     color:var(--ink); background:rgba(255,255,255,0.08); border:1px solid var(--panel-line);
   }
   .lobby-emote-btn:active{ background:rgba(244,196,48,0.24); border-color:var(--amber); }
+  /* 正面/後ろ切り替えはエモートではないので、左にわずかな余白で区切るだけ(新しい絵は使わない) */
+  .lobby-facing-toggle-btn{ margin-left:calc(0.8 * var(--vw)); }
+  .lobby-facing-toggle-btn:active{ background:rgba(111,168,255,0.24); border-color:#6fa8ff; }
   /* エモートの粒(✨💧💢)。**#appRootの中に絶対配置で置く**(縦持ちでは #appRoot ごと
      90度回っているので、中に入れれば向きも飛ぶ方向も自動で揃う)。
      以前は body 直下に置いて自分で90度回していたが、絵の位置が実画面の縦横で

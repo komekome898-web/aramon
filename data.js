@@ -1005,14 +1005,18 @@ function ssrTier3DmgMult(move, attacker){
 
 // 更新履歴(プレイに関わる大きな機能の追加・変更・調整のみ。日付降順で表示する)。
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
-// トップ画面左下のバナー。3秒ごとに切り替わってループする。増やすときはここに1件足すだけ。
-// open は押したときに開く画面('gacha' / 'season' / 'shop')
+// トップ画面左下のバナー。3秒ごとに切り替わってループする。最大5件(古いものから落ちる)。
+// open は押したときに開く画面('gacha' / 'season' / 'shop')。
+// 【自動更新】tools/studio_web.html のSSRスキン追加(<<AUTO:LOBBY_BANNERS>>)が新しい1件を
+// 先頭へ足し、5件を超えたら末尾を落とす。手動で増やすときもこの形式に合わせること。
 const LOBBY_BANNERS = [
-  // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)
-  { rar:'SSR', name:'ペルセポネ',   tag:'新登場・ガチャ', img:'monsters/persephone_ssr.png', size:'150%', pos:'50% 15%', open:'gacha' },
-  { rar:'SSR', name:'ラガモッチー', tag:'シーズンパス', img:'monsters/mocchi_ssr.png',  size:'165%', pos:'50% 18%', open:'season' },
-  { rar:'SSR', name:'ゼウス',       tag:'ガチャ',       img:'monsters/zeus_banner.png', size:'cover', pos:'50% 42%', open:'gacha' },
-  { rar:'SSR', name:'ちょこ',       tag:'ガチャ',       img:'monsters/choco_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
+  // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)。新しい順。
+  // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
+  { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ',   img:'monsters/satsuki_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
+  { rar:'SSR', name:'メタルグレイモン', tag:'新登場・ガチャ',   img:'monsters/metag_ssr.png',     size:'150%', pos:'50% 20%', open:'gacha' },
+  { rar:'SSR', name:'ガルルモン',       tag:'新登場・ガチャ',   img:'monsters/garurumon_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' },
+  { rar:'SSR', name:'ラガモッチー',     tag:'新登場・ガチャ',   img:'monsters/mocchi_ssr.png',    size:'165%', pos:'50% 18%', open:'gacha' },
+  { rar:'SSR', name:'不死のゾッド',     tag:'レイド討伐限定',   img:'monsters/zod_ssr.png',       size:'150%', pos:'50% 20%', open:'raid' },
 ];
 const LOBBY_BANNER_MS = 3000;
 
@@ -1044,6 +1048,7 @@ const UPDATE_HISTORY = [
     { t:'キジンのtier2技「阿修羅」のオーラが赤に変わり、6連射になりました', g:['monster','balance'] },
     { t:'キジンのtier3技「羅生門」が一新されました。目の前に門が現れ、奥から迫る炎が範囲内の敵を門の前まで引き寄せ、炎が門に届くと爆風でダメージを与えます', g:['monster','balance','av'] },
     { t:'キジンのtier3技「羅生門」を調整しました。迫る炎に触れた瞬間にもダメージが入るようになり、門の位置が少し自分の近くになりました', g:['monster','balance'] },
+    { t:'ロビーのモンスター表示に、正面と後ろ姿を切り替えられるボタンを追加しました', g:['feature','av'] },
   ]},
   { date:'2026-08-11', items:[
     { t:'✵ 「狂戦士ガッツ」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },
