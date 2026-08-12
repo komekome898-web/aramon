@@ -3367,7 +3367,8 @@ const SKIN_MEDIA = {
     se: { tier3:'audio/se_metag_ssr_tier3.m4a' },
   },
   satsuki_ssr: { /*@satsuki_ssr*/
-    promote: { video:'video/satsuki_ssr_promote', audio:'audio/satsuki_ssr_promote_audio.m4a', safetyMs:9475 },
+    promote: { video:'video/satsuki_ssr_promote', audio:'audio/satsuki_ssr_promote_audio.m4a', safetyMs:9475, bgmOnReveal:'lastBattle' },
+    bgm: { final5:'audio/bgm_satsuki_ssr_final5.m4a', lastBattle:'audio/bgm_satsuki_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_satsuki_ssr_tier3.m4a' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
