@@ -1159,9 +1159,7 @@
   /* プレイモードは縦並びなので、値の下に普通に置く(文字を覆わない) */
   .lobby-pick-btn .lobby-wait-badge{ align-self:flex-start; }
   @keyframes waitBadgePulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.5; } }
-  /* デイリー画面(ショップ/バッグと同じ広い幅・全体スクロール・×ボタンは枠内) */
-  .mastermon-confirm-box.daily-box{ position:relative; max-width:min(760px, calc(95 * var(--vw))); width:min(760px, calc(95 * var(--vw)));
-    max-height:calc(94 * var(--vh)); overflow-y:auto; }
+  /* デイリーの中身(#missionOverlay .mission-box に統合済み) */
   .daily-section-title{ font-size:12px; font-weight:700; color:var(--amber); letter-spacing:0.5px; margin:10px 0 6px; align-self:flex-start; }
   .daily-login-track{ display:grid; grid-template-columns:repeat(7,1fr); gap:5px; width:100%; }
   .daily-day{ position:relative; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 2px 6px;
@@ -1188,6 +1186,19 @@
   .daily-claim-btn:active{ filter:brightness(0.92); }
   .daily-claimed{ font-size:11px; color:var(--ink-dim); }
   .daily-progress-num{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); }
+  /* ミッション(デイリー+シーズン1をタブで統合)。中身がシーズントラックを含むぶん、
+     season-boxと同じ広い幅を使う */
+  .mastermon-confirm-box.mission-box{ position:relative;
+    max-width:min(1100px, calc(99 * var(--vw))); width:min(1100px, calc(99 * var(--vw)));
+    max-height:calc(99 * var(--vh)); padding:8px 10px; border-radius:10px;
+    overflow-y:auto; }
+  #missionOverlay{ padding:0; }
+  .mission-box > .mastermon-confirm-text{ padding-right:44px; }
+  .mission-tabs{ display:flex; gap:8px; justify-content:center; margin-bottom:8px; }
+  .mission-tab{ position:relative; padding:7px 22px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
+    color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
+  .mission-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
+  .mission-pane{ width:100%; display:flex; flex-direction:column; align-items:center; }
 
   /* ===== 遠征 =====
      枠は横並び(最大3)。1画面に収める前提なので縦に積まない。 */
@@ -1368,15 +1379,8 @@
   .rank-chip b{ font-family:'Share Tech Mono',monospace; font-size:10.5px; color:var(--ink-dim); font-weight:400; }
   .rank-chip.icon-only{ padding:0 6px; font-size:13px; }
   .mystat-rank-rp{ display:block; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); }
-  /* シーズンパス(全体スクロール・×ボタンは枠内)。
-     情報量が多いので、レイド画面と同じく枠と余白を切り詰めて表示領域を稼ぐ */
-  .mastermon-confirm-box.season-box{ position:relative;
-    max-width:min(1100px, calc(99 * var(--vw))); width:min(1100px, calc(99 * var(--vw)));
-    max-height:calc(99 * var(--vh)); padding:8px 10px; border-radius:10px;
-    overflow-y:auto; }
-  #seasonOverlay{ padding:0; }
-  /* タイトルが閉じるボタン(右上37px)に重ならないよう右側を空ける */
-  .season-box > .mastermon-confirm-text{ padding-right:44px; }
+  /* シーズンパスの中身(#missionOverlay .mission-box に統合済み。情報量が多いので、
+     レイド画面と同じく枠と余白を切り詰めて表示領域を稼ぐ) */
   .season-head{ width:100%; margin-bottom:8px; }
   .season-head-row{ display:flex; justify-content:space-between; align-items:baseline; }
   .season-tier-text{ font-size:14px; font-weight:700; color:var(--amber); }

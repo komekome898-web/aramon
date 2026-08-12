@@ -1101,7 +1101,7 @@ function buildLobbyBanner(){
     card.addEventListener('click', ()=>{
       const to = card.dataset.open;
       if(to==='gacha') document.getElementById('openGachaBtn').click();
-      else if(to==='season') document.getElementById('openSeasonBtn').click();
+      else if(to==='season'){ document.getElementById('openMissionBtn').click(); missionShowTab('season'); }
       else if(to==='shop') document.getElementById('openShopBtn').click();
       else if(to==='raid') document.getElementById('openRaidBtn').click();
     });
@@ -5506,12 +5506,13 @@ function showLoginBonusPopup(g){
   pop.classList.remove('hidden');
 }
 function updateDailyBadge(){
-  const dot = document.getElementById('dailyDot');
+  const dot = document.getElementById('missionTabDailyDot');
   if(!dot || typeof loadDaily!=='function') return;
   const d = loadDaily();
   dailyEnsureMissions(d);
   const claimable = DAILY_MISSIONS.some(m=>{ const st=d.missions[m.id]; return st && st.progress>=m.target && !st.claimed; });
   dot.classList.toggle('hidden', !claimable);
+  updateMissionBadge();
 }
 function renderDailyLoginTrack(){
   const el = document.getElementById('dailyLoginTrack');
@@ -5567,13 +5568,23 @@ function renderDailyMissions(){
     });
   });
 }
-document.getElementById('openDailyBtn').addEventListener('click', ()=>{
-  renderDailyLoginTrack();
-  renderDailyMissions();
-  document.getElementById('dailyOverlay').classList.remove('hidden');
+// ミッション: デイリー/シーズン1のタブ切替(バッグの.bag-tabと同じパターン)
+function missionShowTab(tab){
+  document.querySelectorAll('.mission-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.getElementById('missionDailyPane').classList.toggle('hidden', tab!=='daily');
+  document.getElementById('missionSeasonPane').classList.toggle('hidden', tab!=='season');
+  if(tab==='daily'){ renderDailyLoginTrack(); renderDailyMissions(); }
+  else if(tab==='season'){ renderSeasonOverlay(); }
+}
+document.querySelectorAll('.mission-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=> missionShowTab(tab.dataset.tab));
 });
-document.getElementById('closeDailyBtn').addEventListener('click', ()=>{
-  document.getElementById('dailyOverlay').classList.add('hidden');
+document.getElementById('openMissionBtn').addEventListener('click', ()=>{
+  missionShowTab('daily'); // 開くたびデイリータブから
+  document.getElementById('missionOverlay').classList.remove('hidden');
+});
+document.getElementById('closeMissionBtn').addEventListener('click', ()=>{
+  document.getElementById('missionOverlay').classList.add('hidden');
 });
 document.getElementById('loginBonusOkBtn').addEventListener('click', ()=>{
   document.getElementById('loginBonusPopup').classList.add('hidden');
@@ -5959,12 +5970,22 @@ function seasonOnMatchEnd(ctx){
   return gain;
 }
 function updateSeasonBadge(){
-  const dot = document.getElementById('seasonDot');
+  const dot = document.getElementById('missionTabSeasonDot');
   if(!dot || typeof loadSeason!=='function') return;
   const s = loadSeason();
   const tier = seasonTierForSp(s.sp);
   let claimable = false;
   for(let t=1;t<=tier;t++){ if(!s.claimed[t]){ claimable = true; break; } }
+  dot.classList.toggle('hidden', !claimable);
+  updateMissionBadge();
+}
+// デイリー・シーズンどちらかに未受取があれば、ロビーの「ミッション」ボタン側のドットを点ける
+function updateMissionBadge(){
+  const dot = document.getElementById('missionDot');
+  if(!dot) return;
+  const dailyDot = document.getElementById('missionTabDailyDot');
+  const seasonDot = document.getElementById('missionTabSeasonDot');
+  const claimable = (dailyDot && !dailyDot.classList.contains('hidden')) || (seasonDot && !seasonDot.classList.contains('hidden'));
   dot.classList.toggle('hidden', !claimable);
 }
 function seasonClaim(t){
@@ -6042,13 +6063,7 @@ function renderSeasonOverlay(){
   // スケジュール(曜日ごとの変則ルール+レイド開催期間)も一緒に出す
   if(typeof renderSeasonSchedule==='function') renderSeasonSchedule();
 }
-document.getElementById('openSeasonBtn').addEventListener('click', ()=>{
-  renderSeasonOverlay();
-  document.getElementById('seasonOverlay').classList.remove('hidden');
-});
-document.getElementById('closeSeasonBtn').addEventListener('click', ()=>{
-  document.getElementById('seasonOverlay').classList.add('hidden');
-});
+// シーズン単独の開閉ボタンは廃止(デイリーと統合した #openMissionBtn/missionShowTab('season') から開く)
 
 function submitScoreToRanking(isWin, placement){
   const statusEl = document.getElementById('scoreSubmitStatus');
