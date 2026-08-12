@@ -1688,14 +1688,12 @@ document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
 });
-// バッグのタブ切替(アイテム / スキン / 称号)
+// バッグのタブ切替(アイテム / 称号。スキンはギャラリーへ移設済み)
 function bagShowTab(tab){
   document.querySelectorAll('.bag-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.getElementById('bagItemPane').classList.toggle('hidden', tab!=='item');
-  document.getElementById('bagSkinPane').classList.toggle('hidden', tab!=='skin');
   document.getElementById('bagTitlePane').classList.toggle('hidden', tab!=='title');
-  if(tab==='skin') renderBagSkins();
-  else if(tab==='title') renderBagTitles();
+  if(tab==='title') renderBagTitles();
 }
 // 称号一覧(獲得済みを上に、未獲得は解放条件を表示。タップで装着トグル)
 function renderBagTitles(){
@@ -1805,7 +1803,11 @@ function showSkinPreview(skinId, opts){
   document.getElementById('skinPreviewFront').src = skinPreviewSrc(skinId, 'front');
   document.getElementById('skinPreviewBack').src = skinPreviewSrc(skinId, 'back');
   const selBtn = document.getElementById('skinPreviewSelectBtn');
-  if(opts.selectable){ selBtn.classList.remove('hidden'); skinPreviewSelect = opts.onSelect || null; }
+  if(opts.selectable){
+    selBtn.classList.remove('hidden');
+    selBtn.textContent = opts.selectLabel || 'このスキンを選ぶ'; // 未指定なら従来通り
+    skinPreviewSelect = opts.onSelect || null;
+  }
   else { selBtn.classList.add('hidden'); skinPreviewSelect = null; }
   document.getElementById('skinPreviewOverlay').classList.remove('hidden');
   startSkinPreviewAnim(skinId, 0);
@@ -1821,9 +1823,9 @@ document.getElementById('skinPreviewSelectBtn').addEventListener('click', ()=>{
   if(fn) fn();
 });
 
-// 所持スキン一覧(レアリティ順)
-function renderBagSkins(){
-  const grid = document.getElementById('bagSkinGrid');
+// 所持スキン一覧(レアリティ順)。ギャラリー「スキン」タブ(旧バッグのスキンタブを移設)
+function renderGallerySkins(){
+  const grid = document.getElementById('gallerySkinGrid');
   const owned = loadSkins().owned;
   const ids = Object.keys(owned).filter(id=>owned[id] && skinMeta(id));
   if(ids.length===0){
@@ -1848,12 +1850,150 @@ function renderBagSkins(){
     return `<div class="bag-skin-cell" data-skin="${id}">${img}<span class="bag-skin-rar rar-${m.rarity}">${m.rarity}</span><span class="bag-skin-name">${m.name}</span></div>`;
   }).join('');
   grid.querySelectorAll('.bag-skin-cell').forEach(cell=>{
-    cell.addEventListener('click', ()=> showSkinPreview(cell.dataset.skin));
+    cell.addEventListener('click', ()=>{
+      const id = cell.dataset.skin;
+      const m = skinMeta(id);
+      showSkinPreview(id, { selectable:true, selectLabel:'着せ替え画面へ', onSelect:()=> jumpToDressup(m.element) });
+    });
   });
+}
+// ギャラリーのスキンプレビューから「着せ替え画面へ」。その種族のマスモンが未作成なら
+// 着せ替え自体ができないので、遷移せずトーストだけ出す
+function jumpToDressup(element){
+  if(!loadMastermons()[element]){
+    if(typeof pushToast==='function') pushToast(`${ELEMENTS[element].label}のマスモンを育成すると着せ替えできます`);
+    return;
+  }
+  document.getElementById('galleryOverlay').classList.add('hidden');
+  openMastermonScreen();
+  openMastermonDetail(element);
+  mmOpenTab('dressup');
 }
 document.getElementById('closeBagBtn').addEventListener('click', ()=>{
   document.getElementById('bagOverlay').classList.add('hidden');
 });
+
+/* =====================================================================
+   ギャラリー: スキンタブ(上のrenderGallerySkins/jumpToDressup) + ミュージアムタブ
+   ・ミュージアムは所持SSRのうちSKIN_MEDIAに専用素材があるものだけを一覧し、
+     ムービー(runSsrPromotionStageを共通再生に相乗り)・BGM・SEを鳴らせる
+   ・「ロビーBGMにする」はsetLobbyBgmMode()を呼ぶだけ(lobbyBgmChoices()が所持スキンから
+     自動で同じidを列挙しているので、ここで鳴らせる組み合わせは必ず選択肢としても有効)
+   ===================================================================== */
+document.getElementById('openGalleryBtn').addEventListener('click', ()=>{
+  galleryShowTab('skin'); // 開くたびスキンタブから
+  document.getElementById('galleryOverlay').classList.remove('hidden');
+});
+document.getElementById('closeGalleryBtn').addEventListener('click', ()=>{
+  document.getElementById('galleryOverlay').classList.add('hidden');
+  if(typeof updateMetaBgm==='function') updateMetaBgm(); // ミュージアムで止めていたBGMをロビーへ戻す
+});
+document.querySelectorAll('.gallery-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=> galleryShowTab(tab.dataset.tab));
+});
+function galleryShowTab(tab){
+  document.querySelectorAll('.gallery-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.getElementById('gallerySkinPane').classList.toggle('hidden', tab!=='skin');
+  document.getElementById('galleryMuseumPane').classList.toggle('hidden', tab!=='museum');
+  if(tab==='skin'){
+    renderGallerySkins();
+    if(typeof updateMetaBgm==='function') updateMetaBgm(); // ミュージアムから戻ってきたらBGMを戻す
+  } else if(tab==='museum'){
+    galleryMuseumSkinId = null; galleryMuseumPlayingSlot = null;
+    renderGalleryMuseumList();
+    renderGalleryMuseumDetail();
+    if(typeof bgmSetTrack==='function') bgmSetTrack(null); // ミュージアムに入るとBGMが止まる
+  }
+}
+// 所持していて、かつSKIN_MEDIAに専用素材(ムービー/BGM/SEのいずれか)を持つSSRだけ
+function galleryMuseumSkinIds(){
+  const owned = loadSkins().owned;
+  return Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).filter(id=> owned[id] && skinMeta(id));
+}
+let galleryMuseumSkinId = null;     // ミュージアムで選択中のSSR
+let galleryMuseumPlayingSlot = null; // 直近に再生したBGMスロット。「ロビーBGMにする」の対象
+function renderGalleryMuseumList(){
+  const list = document.getElementById('galleryMuseumList');
+  const ids = galleryMuseumSkinIds();
+  if(ids.length===0){
+    list.innerHTML = '<div class="bag-skin-empty">所持しているSSRスキンに専用メディアはまだありません</div>';
+    return;
+  }
+  list.innerHTML = ids.map(id=>{
+    const m = skinMeta(id);
+    const url = skinnedIconDataUrl(id);
+    const img = url ? `<img src="${url}" alt="">` : `<span class="gacha-cell-emoji">✨</span>`;
+    return `<div class="bag-skin-cell gallery-museum-cell ${id===galleryMuseumSkinId?'selected':''}" data-skin="${id}">${img}<span class="bag-skin-name">${m.name}</span></div>`;
+  }).join('');
+  list.querySelectorAll('.gallery-museum-cell').forEach(cell=>{
+    cell.addEventListener('click', ()=>{
+      galleryMuseumSkinId = cell.dataset.skin;
+      galleryMuseumPlayingSlot = null;
+      renderGalleryMuseumList();
+      renderGalleryMuseumDetail();
+    });
+  });
+}
+function renderGalleryMuseumDetail(){
+  const el = document.getElementById('galleryMuseumDetail');
+  const id = galleryMuseumSkinId;
+  if(!id || !SKIN_MEDIA[id]){
+    el.innerHTML = '<div class="gallery-museum-empty">🎬 所持しているSSRスキンを選ぶと、専用のムービー・BGM・SEを見聞きできます</div>';
+    return;
+  }
+  const m = skinMeta(id);
+  const media = SKIN_MEDIA[id];
+  const movieBtnHtml = media.promote ? `<button id="galleryMuseumMovieBtn" class="gallery-museum-play-btn">▶️ ムービーを見る</button>` : '';
+  const bgmBtns = Object.keys(SKIN_BGM_SLOTS).filter(slot=>media.bgm && media.bgm[slot]).map(slot=>
+    `<button class="gallery-museum-media-btn ${galleryMuseumPlayingSlot===slot?'playing':''}" data-kind="bgm" data-slot="${slot}">🎵 ${SKIN_BGM_SLOTS[slot]}</button>`).join('');
+  const seBtns = Object.keys(SKIN_SE_SLOTS).filter(slot=>media.se && media.se[slot]).map(slot=>
+    `<button class="gallery-museum-media-btn" data-kind="se" data-slot="${slot}">🔊 ${SKIN_SE_SLOTS[slot]}</button>`).join('');
+  el.innerHTML = `
+    <div class="gallery-museum-name">${m.name}</div>
+    ${movieBtnHtml}
+    <div class="gallery-museum-sec-title">BGM</div>
+    <div class="gallery-museum-btn-row">${bgmBtns || '<span class="gallery-museum-none">専用BGMはありません</span>'}</div>
+    <div class="gallery-museum-sec-title">SE</div>
+    <div class="gallery-museum-btn-row">${seBtns || '<span class="gallery-museum-none">専用SEはありません</span>'}</div>
+    <button id="galleryMuseumLobbyBgmBtn" class="gallery-museum-lobby-btn ${galleryMuseumPlayingSlot?'':'hidden'}">🏠 このBGMをロビーBGMにする</button>
+  `;
+  const movieBtnEl = document.getElementById('galleryMuseumMovieBtn');
+  if(movieBtnEl) movieBtnEl.addEventListener('click', ()=> galleryPlayMovie(id));
+  el.querySelectorAll('.gallery-museum-media-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      if(btn.dataset.kind==='bgm') galleryPlayBgm(id, btn.dataset.slot);
+      else galleryPlaySe(id, btn.dataset.slot);
+    });
+  });
+  const lobbyBtn = document.getElementById('galleryMuseumLobbyBgmBtn');
+  if(lobbyBtn) lobbyBtn.addEventListener('click', ()=>{
+    if(!galleryMuseumPlayingSlot || typeof setLobbyBgmMode!=='function') return;
+    setLobbyBgmMode(skinBgmTrack(id, galleryMuseumPlayingSlot));
+    if(typeof pushToast==='function') pushToast('ロビーBGMにしました');
+  });
+}
+// 専用ムービーは共通の昇格演出オーバーレイに相乗りする(素材の差し替え・SE同期・
+// タップ待ち・セーフティタイムアウトをすべて再利用する。共通段は挟まず専用段のみ単独再生)
+function galleryPlayMovie(skinId){
+  const media = (typeof ssrPromotionSkinMedia==='function') ? ssrPromotionSkinMedia(skinId) : null;
+  if(!media) return;
+  const ov = document.getElementById('ssrPromoteOverlay');
+  ov.classList.remove('hidden');
+  runSsrPromotionStage(media, skinId, ()=> ov.classList.add('hidden'));
+}
+function galleryPlayBgm(skinId, slot){
+  if(typeof audioInit==='function') audioInit();
+  if(typeof ensureSkinBgmBuffers==='function') ensureSkinBgmBuffers(skinId);
+  if(typeof bgmSetTrack==='function') bgmSetTrack(skinBgmTrack(skinId, slot));
+  galleryMuseumPlayingSlot = slot;
+  renderGalleryMuseumDetail();
+}
+function galleryPlaySe(skinId, slot){
+  if(typeof audioInit==='function') audioInit();
+  if(typeof ensureSkinMediaSeBuffers==='function') ensureSkinMediaSeBuffers(skinId);
+  if(typeof playSe==='function') playSe(`skinSe:${skinId}:${slot}`);
+}
+
 let bagUseQty = 1;
 let bagPicker = { itemKey:null, targetKey:null };
 function renderBag(){

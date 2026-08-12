@@ -15,7 +15,7 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 ## ロビー(トップ画面)
 
 - 1画面完結でスクロールしない。`#lobbyLayout`が左メニュー/中央/右の3カラム。
-- 左: ミッション(デイリー+シーズン1をタブで統合。`#missionOverlay`)/ガチャ/ショップ/バッグ/ランキング + 最下部バナー(`LOBBY_BANNERS`に1件足すだけで増える。新SSR追加時は`tools/studio_web.html`が自動で1件先頭に追記し5件を超えたら末尾を落とす)。
+- 左: ミッション(デイリー+シーズン1をタブで統合。`#missionOverlay`)/ガチャ/ショップ/バッグ/ランキング/ギャラリー(`#galleryOverlay`。スキン鑑賞+着せ替え導線・SSR専用メディア再生。後述) + 最下部バナー(`LOBBY_BANNERS`に1件足すだけで増える。新SSR追加時は`tools/studio_web.html`が自動で1件先頭に追記し5件を超えたら末尾を落とす)。
 - 中央: ロゴ → `#lobbyMonsterStage`(**これ自体が`<button>`。押すとモンスター選択オーバーレイ。`div`に戻さない**) → 名前 → タップ案内。歩行は`renderLobbyMonster()`が`monsterWalkFrameDataUrls()`のdataURLを差し替える。**マスモン選択中だけ装備スキンを反映。** 未ロードなら静止画のまま0.35秒×6回リトライ。
 - 右: マップ/プレイモードの値表示ボタン(押すとオーバーレイ。実体のDOMを移しただけなのでハンドラは不変。表示更新は`updateLobbyPickLabels()`)→ `バトル開始`(`#joinBtn`。光沢スイープは無効時に止める)。
 - ヘッダー: ⚙️設定 / 👤マイページ / 🆕更新履歴 / 🎵ロビーBGM。**元のボタンをDOMごと移動しただけ**でIDもハンドラも同じ。高さは`--top-header-h`(`#lobbyLayout`と右パネルの`top`も同じ変数)。🎵は曲名を出すチップで、押すと`#lobbyBgmOverlay`(曲の一覧)。**曲名は長いので`max-width`+`text-overflow:ellipsis`で止める**(詳細は aramon-audio)。
@@ -79,6 +79,20 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **技一覧では「前 → 後」で見せる**(`buildMastermonMovesHtml`)。仮のエンティティに`awakenBoost`を載せないと**技一覧だけ強化前の数字**になる。どの数字が動くかは`AWAKEN_BOOSTS[].stat`が持つので、画面側に対応表を作らない。
 - 覚醒スキンの**素材はスタジオの「覚醒スキンを作る」で作る**(元スキンの18枚に同じ加工を掛ける。詳細は aramon-monster-tools)。
 
+## ギャラリー(`#galleryOverlay`。スキン / ミュージアムの2タブ)
+
+- **所持スキン一覧はここが正**(旧バッグの「スキン」タブから移設。バッグは`アイテム`/`称号`の2タブに戻った)。`renderGallerySkins()`は旧`renderBagSkins()`をそのまま移しただけで、一覧はモンスターごとの見出しなしのフラットグリッド(レアリティ→種族→色の順)。
+- **タップすると`showSkinPreview(id, {selectable:true, selectLabel:'着せ替え画面へ', onSelect:...})`。** `showSkinPreview`の`opts.selectLabel`で下部ボタンの文言を上書きできる(未指定なら従来通り「このスキンを選ぶ」)。**新しい選択ボタンの用途を足すときはここへ`selectLabel`を追加するだけでよい**(ボタン自体・開閉・アニメは共通のまま)。
+- **着せ替えへの導線は`jumpToDressup(element)`1つ**: `openMastermonScreen()`→`openMastermonDetail(element)`→`mmOpenTab('dressup')`の3呼び出し。**そのマスモンが未作成なら遷移せずトーストのみ**(着せ替えタブ自体がマスモン前提のため)。マスモンは`loadMastermons()[element]`で**種族名がそのままキー**(1種族1体)なので、スキンの`element`をそのままキーに使える。
+- **ミュージアムは「所持していて`SKIN_MEDIA`に何か持っているSSR」だけを列挙**(`galleryMuseumSkinIds()`)。動画・BGM・SEはスキンごとに任意なので、無い項目のボタンは出さない(`zod_ssr`はムービー無し、等)。
+- **既存のSSR専用メディア再生の仕組みをそのまま流用し、新しい配線を作らない**:
+  - ムービー = `runSsrPromotionStage(ssrPromotionSkinMedia(id), id, onEnd)`を**共通演出を挟まず単独**で呼ぶ。再生先は共通の`#ssrPromoteOverlay`(z-index 701 > ギャラリーの600なので上に出る)。
+  - BGM = `ensureSkinBgmBuffers(id)` → `bgmSetTrack('skinBgm:'+id+':'+slot)`(管理者画面の`adminPlayBgm`と同じ呼び方)。
+  - SE = `ensureSkinMediaSeBuffers(id)` → `playSe('skinSe:'+id+':'+slot)`。
+  - **「ロビーBGMにする」は`setLobbyBgmMode('skinBgm:'+id+':'+slot)`を呼ぶだけ。** `lobbyBgmChoices()`が所持スキンから同じidを自動で列挙しているので、ミュージアムで鳴らせる組み合わせは必ずロビーBGM選択肢としても有効(新しいデータ配線は不要)。
+- **ミュージアムタブに入ったら`bgmSetTrack(null)`でBGMを止める。** タブを抜けた・ギャラリーを閉じたら`updateMetaBgm()`を呼んでロビー曲へ戻す(試合中でないときだけ効く既存の共通処理)。
+- ロビー左メニューは**ミッション統合で1枠空けてからギャラリーを最後尾へ追加**(バッグ/ショップの隣接ペアは崩さない)。
+
 ## エモート(よろこぶ・だいすき・しょんぼり・おこる)
 
 - **新しい画像を1枚も使わない。** 今出ている絵を`transform`で動かすだけなので、モンスターもスキンも増やし放題。定義は`data.js`の`EMOTES` + 並び順は`EMOTE_ORDER`。**増やすときはこの表に1行足すだけ**でロビーのボタンも管理者画面のSE確認も自動で増える。
@@ -126,7 +140,7 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - 成果は**新しいオーバーレイを作らず**`#expeditionMain`と`#expeditionResult`を入れ替えて出す。
 - **時短アイテム(📯帰還のホラ貝)はバッグから使えない。** 対象がマスモンではなく遠征の枠なので、`renderBagDesc`が`it.expedition`のときだけ個数ゲージ・使用ボタン・対象一覧を隠す。**ガチャのR枠には入れない**(既存のトレチケ・技強化チケットの当たる割合が薄まるため)。
 - **ロビー左メニューは2列×4行のgrid。** 8個(レイド非開催なら7個)が入る。1列の縦積みだと1つ46px→20px台まで潰れて押しづらかったので2列にした(発注者指摘 2026-08-11)。ボタンの中身は**アイコン→名前の縦並び**で、アクセント線は左ではなく上。バナーは`grid-column:1 / -1`で最後の行をまたぐ。**増やすときは必ず実寸を測ること**(2列なので9個目からは5行になり、バナーが切れる)。
-- **並び順はDOMの順がそのままgridの並び順。** 今は ミッション → レイド/遠征 → **バッグ/ショップ(中身が地続きなので必ず横に並べる)** → ガチャ/ランキング。順番を触るときはこの組を崩さない。
+- **並び順はDOMの順がそのままgridの並び順。** 今は ミッション → レイド/遠征 → **バッグ/ショップ(中身が地続きなので必ず横に並べる)** → ガチャ/ランキング → ギャラリー。順番を触るときはこの組を崩さない。
 - **色の役割**: 上の帯は既定が琥珀、**レイドだけ紫(`#a24bff`)**。**ガチャは虹色の枠と光沢**(枠=「中身をpadding-box / 虹をborder-box」の2枚重ねで塗り`background-position`を流す。中身側を半透明にしてあるので虹が透けて光沢になる)。光沢の`::before`は**ボタンに`overflow:hidden`を付けずに**擬似要素の中で背景位置だけ動かす(付けると吹き出し`#raidGachaPop`が切れる)。`:active`の背景も上書きが要る(基底の`:active`が1枚背景に戻してしまう)。
 - **左メニューの吹き出し(限定SSRスキンGET / レイドガチャ開催中)は`left:0;right:0`でボタン幅ぴったりに留める。** `right:-6px`のままだと2列では隣の列と上の段へはみ出す。入りきらない文言は`text-overflow:ellipsis`で切る ―― はみ出させない方を優先する。
 - **ロビー右上には段位パネル(`#lobbyRankPanel`)。** 今の段位・RP・次の段位までの残り・ゲージ。更新は`updateLobbyRankPanel()`で、**`updateAccountBar()`からだけ呼ぶ**(RPが動く経路は`rankOnMatchEnd`→`updateAccountBar`しかないので、ここにぶら下げれば更新漏れが起きない)。
