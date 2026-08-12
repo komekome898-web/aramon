@@ -1,0 +1,17 @@
+{
+  "id": "satsuki_ssr",
+  "element": "ogre",
+  "name": "北大路さつキジン",
+  "aura": "yellow",
+  "seasonExclusive": false,
+  "iconImg": "satsuki_ssr",
+  "playerImg": "satsuki_player_ssr",
+  "walkPrefix": "satsuki_ssr_walk_",
+  "t3name": "2人でもっと熱くなろ",
+  "t3mult": 1.15,
+  "raidEffect": false,
+  "raidDealt": 1.5,
+  "raidTaken": 0.75,
+  "raidPickup": false,
+  "raidClear": false
+}

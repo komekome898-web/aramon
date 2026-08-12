@@ -344,6 +344,9 @@ const WALK_ANIM = {
   },
   ogre:    { /*@ogre*/
     base: { front:_loadWalk('ogre_walk_f'), back:_loadWalk('ogre_walk_b') },
+    ssr: [
+      { skinId:'satsuki_ssr', front:_loadWalk('satsuki_ssr_walk_f'), back:_loadWalk('satsuki_ssr_walk_b') }, /*@satsuki_ssr*/
+    ],
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -734,6 +737,7 @@ const SSR_SKIN_AURA = {
   garurumon_ssr:  'blue', /*@garurumon_ssr*/
   metag_ssr:      'yellow', /*@metag_ssr*/
   guts_ssr_awake: 'black', /*@guts_ssr_awake*/
+  satsuki_ssr:    'yellow', /*@satsuki_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -904,6 +908,7 @@ const SSR_SKIN_TIER3 = {
                color:'#14121c', projStyle:'voidOrb',
                blast:{ radius:260, dmg:42, expandTime:0.5, color:'#ff6a2e' } },
   }},
+  satsuki_ssr:    { name:'2人でもっと熱くなろ', dmgMult:1.15 }, /*@satsuki_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1025,6 +1030,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-12', items:[
+    { t:'✨ SSRスキン「北大路さつキジン」が登場しました！', g:['feature','monster'] },
     { t:'🆕 新モンスター「キジン」が登場しました！ 与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', g:['feature','monster'] },
     { t:'キジンのtier2技「阿修羅」のオーラが赤に変わり、6連射になりました', g:['monster','balance'] },
     { t:'キジンのtier3技「羅生門」が一新されました。目の前に門が現れ、奥から迫る炎が範囲内の敵を門の前まで引き寄せ、炎が門に届くと爆風でダメージを与えます', g:['monster','balance','av'] },
@@ -3296,6 +3302,7 @@ const SSR_SKINS = {
   garurumon_ssr:  { element:'spark', name:'ガルルモン', iconImg:'garurumon_ssr', playerImg:'garurumon_player_ssr' }, /*@garurumon_ssr*/
   metag_ssr:      { element:'fire', name:'メタルグレイモン', iconImg:'metag_ssr', playerImg:'metag_player_ssr' }, /*@metag_ssr*/
   guts_ssr_awake: { element:'dullahan', name:'狂戦士ガッツ【覚醒】', iconImg:'guts_ssr_awake', playerImg:'guts_player_ssr_awake', awakenOf:'guts_ssr' }, /*@guts_ssr_awake*/
+  satsuki_ssr:    { element:'ogre', name:'北大路さつキジン', iconImg:'satsuki_ssr', playerImg:'satsuki_player_ssr' }, /*@satsuki_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
