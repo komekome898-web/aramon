@@ -2981,6 +2981,21 @@ function rectOutlinePoints(x,y,angle,range,halfWidth){
   const pts = corners.map(c=>projectGround(c.x,c.y)).filter(Boolean);
   return pts.length>=3 ? pts : null;
 }
+// rectOutlinePointsの一般化(近い端がnearD)。羅生門の「最遠から門への逆走の帯」のように
+// 原点(0)から始まらない帯を描くときに使う。**rectOutlinePointsは変更しない**(近い端=0の別実装として残す)
+function rectBandOutlinePoints(x,y,angle,nearD,farD,halfWidth){
+  const fx=Math.cos(angle), fy=Math.sin(angle);
+  const rx=-Math.sin(angle), ry=Math.cos(angle);
+  const nx=x+fx*nearD, ny=y+fy*nearD, span=farD-nearD;
+  const corners = [
+    {x:nx+rx*halfWidth, y:ny+ry*halfWidth},
+    {x:nx-rx*halfWidth, y:ny-ry*halfWidth},
+    {x:nx-rx*halfWidth+fx*span, y:ny-ry*halfWidth+fy*span},
+    {x:nx+rx*halfWidth+fx*span, y:ny+ry*halfWidth+fy*span},
+  ];
+  const pts = corners.map(c=>projectGround(c.x,c.y)).filter(Boolean);
+  return pts.length>=3 ? pts : null;
+}
 function strokeDashedShape(pts, color, alpha){
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -3740,6 +3755,72 @@ function fx3dFireWave(ae, curReach, fade){
   for(const c of cols) fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
   fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
 }
+const OGRE_GATE_PILLAR_W = 22;      // 門の柱の太さ(半幅)
+const OGRE_GATE_H_MULT   = 2.4;     // 門の柱の高さ(FX3D_MON_H基準)
+/* 羅生門(キジンtier3)。門(柱2本+梁)は予告の瞬間から発生し続け、
+   炎はfx3dFireWaveの逆走版(最遠から門へ迫る)として描く。
+   ・判定(combat.jsのae.doorDist/frontDist)と同じ式をそのまま使う(見た目だけ広げない)。
+   ・門の位置は`Math.min(move.gateDist, ae.range)`で既に遮蔽物ぶん短くなっているので、
+     そのまま`ae.doorDist`を読むだけでよい(ここで再計算しない)。 */
+function fx3dGate(ae, fillDist, fade, inTelegraph){
+  const col = ae.auraTint || ae.color;
+  const ramp = fx3dFireRamp(col);
+  const sh = auraShades(col);
+  const doorDist = ae.doorDist||0;
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  // 予告は他の技と同じ、通路全体(0〜range)の点線で出す
+  const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, ae.width/2);
+  if(outline) strokeDashedShape(outline, sh.outline, 0.5*fade);
+
+  const dx = ae.x+fx*doorDist, dy = ae.y+fy*doorDist;
+  const gz = groundZAt(dx, dy);
+  const gateH = FX3D_MON_H*OGRE_GATE_H_MULT;
+  const halfSpan = (ae.width||220)/2;
+  for(const side of [-1,1]){
+    const ox = rx*halfSpan*side, oy = ry*halfSpan*side;
+    const ix = -rx*OGRE_GATE_PILLAR_W*side, iy = -ry*OGRE_GATE_PILLAR_W*side; // 柱の厚み方向(内側)
+    const base   = fx3dPoint(dx+ox,    dy+oy,    0, gz);
+    const top    = fx3dPoint(dx+ox,    dy+oy,    gateH, gz);
+    const topIn  = fx3dPoint(dx+ox+ix, dy+oy+iy, gateH, gz);
+    const baseIn = fx3dPoint(dx+ox+ix, dy+oy+iy, 0, gz);
+    if(base && top && topIn && baseIn) fx3dFill([base,top,topIn,baseIn], sh.dark, 0.9*fade, 0);
+    fx3dFireGlow(dx+ox, dy+oy, gz, 90, ramp.hot, fade*0.55);
+  }
+  // 上部の梁(2本の柱の頭をつなぐ横木)
+  const beamSpan = halfSpan*1.15;
+  const l1 = fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH,       gz);
+  const l2 = fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH,       gz);
+  const l1b= fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH*1.08,  gz);
+  const l2b= fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH*1.08,  gz);
+  if(l1&&l2&&l2b&&l1b) fx3dFill([l1,l2,l2b,l1b], sh.dark, 0.9*fade, 0);
+
+  if(inTelegraph) return;
+  // 逆走する炎: 最遠(ae.range)から門(doorDist)へ向かって迫る帯
+  const frontDist = clamp(ae.range - fillDist, doorDist, ae.range);
+  if(ae.range - frontDist <= 2) return; // まだ炎が発生していない
+  const band = rectBandOutlinePoints(ae.x, ae.y, ae.angle, frontDist, ae.range, ae.width/2);
+  if(band) fx3dFill(band, ramp.smoke, 0.42*fade, 0);
+  const cols = [];
+  const push=(along, lateral, h, seed)=>{
+    const x = ae.x+fx*along+rx*lateral, y = ae.y+fy*along+ry*lateral;
+    const p = fx3dPoint(x, y, 0);
+    cols.push({ x, y, gz:groundZAt(x,y), h, seed, depth:p?p.depth:0 });
+  };
+  const wallN = 7;
+  for(let i=0;i<wallN;i++){                        // 先端(門に近づく側)の炎の壁
+    const lat = (i/(wallN-1)-0.5)*ae.width*0.92;
+    push(frontDist + ae.width*0.12, lat, FX3D_FLAME_H*(1.0+0.25*fxHash01(ae.id+i*3.7)), ae.id+i);
+  }
+  for(let i=0;i<FX3D_FLAME_N;i++){                  // 燃え広がった後方(遠い側)の残り火
+    const h1 = fxHash01(ae.id*5.1+i*7.3), h2 = fxHash01(ae.id*2.7+i*11.9);
+    push(frontDist + (ae.range-frontDist)*(0.05+0.8*h1), (h2*2-1)*ae.width*0.42,
+         FX3D_FLAME_H*(0.4+0.4*h2), ae.id+i*3);
+  }
+  cols.sort((a,b)=>b.depth-a.depth);
+  for(const c of cols) fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
+  fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
+}
 // 帯(クリスタルレイン): 空から結晶が降り、地面から結晶の柱がせり上がる
 function fx3dCrystalRain(ae, curReach, fade, progress){
   const col = ae.auraTint || ae.color;
@@ -4067,6 +4148,11 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const fade = fadeAlpha * (ae.kind==='circle' ? FX3D_DOME_ALPHA : FX3D_AREA_ALPHA);
   if(ae.kind==='beams'){
     fx3dFlowerBeams(ae, fillDist, fade, inTelegraph);
+    return true;
+  }
+  // 羅生門(キジンtier3)。門と逆走の炎を専用に描く(予告の出し方も含めて完全に独自)
+  if(ae.kind==='gate'){
+    fx3dGate(ae, fillDist, fade, inTelegraph);
     return true;
   }
   // 予告(最大範囲)は通常マップと同じ点線。判定範囲がどこかを必ず見せる

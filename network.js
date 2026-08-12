@@ -781,6 +781,7 @@ function broadcastNewShotsAsHost(){
       range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
       beamRanges:ae.beamRanges||null, style:ae.style||null, auraTint:ae.auraTint||null, moveAura:ae.moveAura||null,
+      doorDist:ae.doorDist||0, // 羅生門(kind:'gate')の門の位置。ゲストは自分で遮蔽物の再計算をしないのでそのまま渡す
     });
   }
   lastBroadcastAeIds = curAeIds;
@@ -891,6 +892,7 @@ function spawnVisualShotFromEvent(evt){
       beamSpreadDeg:evt.beamSpreadDeg, spawnAt:matchTime, life:evt.life,
       fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
       style:evt.style||null, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
+      doorDist:evt.doorDist||0, // 羅生門の見た目(fx3dGate)が門の位置を読む。hitIdsは付けないので判定はしない(見た目のみ)
     });
   }
 }
