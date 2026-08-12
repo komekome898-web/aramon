@@ -3756,11 +3756,18 @@ function fx3dFireWave(ae, curReach, fade){
   fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
 }
 const OGRE_GATE_PILLAR_W = 52;      // 門の柱の太さ(半幅)。発注者依頼(2026-08-12「棒に見える」対策)で22→52に増量
-const OGRE_GATE_H_MULT   = 2.5;     // 門の柱の高さ(FX3D_MON_H基準)
+const OGRE_GATE_H_MULT   = 2.0;     // 門の柱の高さ(FX3D_MON_H基準)。上に大屋根が乗るぶん柱は少し低めにする
 const OGRE_GATE_ROCK_SEG = 5;       // 柱を積む岩塊の段数
 const OGRE_GATE_ROCK_JUT = 0.35;    // 段ごとの出っ張り量(柱の太さに対する比率)
 const OGRE_GATE_DEPTH_R  = 0.6;     // 柱・梁の奥行き(太さに対する比率)。側面を持たせて棒状に見えないようにする
 const OGRE_GATE_BEAM_OVERHANG = 1.45; // 梁(笠木)の張り出し。柱の外側まで大きくはみ出させて「門」の輪郭にする
+const OGRE_GATE_BEAM_H   = OGRE_GATE_PILLAR_W*0.85; // 梁の高さ
+// 大屋根(発注者から送られた羅生門の参考画像に合わせる。2026-08-12)。
+// 入母屋風の四注屋根を1枚、隅を外側・上へ反らせて（軒先の反り）載せる。
+const OGRE_ROOF_HALF_D_R    = 0.62;  // 屋根の奥行き(横幅に対する比率)
+const OGRE_ROOF_RIDGE_H_R   = 0.5;   // 棟の高さ(柱の高さ基準)
+const OGRE_ROOF_FLARE       = 1.22;  // 軒先が外へ張り出す量
+const OGRE_ROOF_CORNER_LIFT_R = 0.24; // 隅が上へ反り上がる量(柱の高さ基準)
 // ハート門(北大路さつキジンtier3専用)の色。色は決め打ちしない原則の例外(発注者指定・2026-08-12)
 const SATSUKI_HEART_COLOR   = '#ff4fa3';
 const SATSUKI_HEART_GLOW    = '#ffd6ea';
@@ -3837,7 +3844,7 @@ function fx3dGatePillarRocky(dx, dy, gz, fx, fy, rx, ry, side, gateH, sh, ramp, 
 /* 上部の梁(笠木)。柱の外側まで大きく張り出させ、厚みも持たせることで、
    遠目にも「2本の棒」ではなく「門」のシルエットとして読めるようにする。 */
 function fx3dGateBeam(dx, dy, gz, fx, fy, rx, ry, beamSpan, gateH, sh, fade){
-  const beamH = OGRE_GATE_PILLAR_W*0.85;
+  const beamH = OGRE_GATE_BEAM_H;
   const depth = OGRE_GATE_PILLAR_W*OGRE_GATE_DEPTH_R;
   const l1 = fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH,        gz);
   const l2 = fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH,        gz);
@@ -3852,6 +3859,32 @@ function fx3dGateBeam(dx, dy, gz, fx, fy, rx, ry, beamSpan, gateH, sh, fade){
   const l1tb= fx3dPoint(dx+rx*beamSpan+bfx, dy+ry*beamSpan+bfy, gateH+beamH, gz);
   if(l1&&l1t&&l1tb&&l1b) fx3dFill([l1,l1t,l1tb,l1b], _mixHex(col,'#000000',0.35), 0.88*fade, 0);
 }
+/* 大屋根。四隅を外側・上へ反らせた四注屋根を1枚、棟(頂点)へ向けて4枚の三角面で葺く。
+   発注者から送られた羅生門の参考画像(2026-08-12)に合わせて、太い柱+大きく反った屋根で
+   「棒」ではなく実在の楼門らしいシルエットにする。屋根瓦は柱・梁より暗い色調にして塗り分ける。 */
+function fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, roofBaseH, halfW, pillarH, sh, fade){
+  const halfD = halfW*OGRE_ROOF_HALF_D_R;
+  const ridgeH = roofBaseH + pillarH*OGRE_ROOF_RIDGE_H_R;
+  const lift = pillarH*OGRE_ROOF_CORNER_LIFT_R;
+  const combos = [[-1,-1],[-1,1],[1,1],[1,-1]]; // 反時計回り: 手前左→奥左→奥右→手前右
+  const corners = combos.map(([side,dir])=>{
+    const ox = rx*halfW*OGRE_ROOF_FLARE*side + fx*halfD*OGRE_ROOF_FLARE*dir;
+    const oy = ry*halfW*OGRE_ROOF_FLARE*side + fy*halfD*OGRE_ROOF_FLARE*dir;
+    return fx3dPoint(dx+ox, dy+oy, roofBaseH+lift, gz);
+  });
+  const apex = fx3dPoint(dx, dy, ridgeH, gz);
+  if(!apex || corners.some(c=>!c)) return;
+  const roofDark  = _mixHex(sh.dark, '#000000', 0.6);
+  const roofLight = _mixHex(sh.dark, '#000000', 0.42);
+  for(let i=0;i<4;i++){
+    const a = corners[i], b = corners[(i+1)%4];
+    fx3dFill([a,b,apex], (i%2===0) ? roofLight : roofDark, 0.95*fade, 0); // 面ごとに明暗を振って立体に見せる
+    fx3dStroke([a,apex], '#000000', 1.2, 0.4*fade, 0);
+  }
+  // 軒先の縁を結んでシルエットをはっきりさせる(隅の反りが伝わるように太めの線で)
+  fx3dStroke([corners[0],corners[1],corners[2],corners[3],corners[0]], '#000000', 2.0, 0.55*fade, 0);
+}
+
 // ハート門(北大路さつキジンtier3)。柱2本+梁の代わりに、門の中央へピンクのハートを立てる。
 // 発注者依頼(2026-08-12): 少し小さく・加算合成で透けさせ、奥にいる敵が見えるようにする。
 function fx3dHeartGate(dx, dy, gz, halfSpan, gateH, fade){
@@ -3891,6 +3924,8 @@ function fx3dGate(ae, fillDist, fade, inTelegraph){
     for(const side of [-1,1]) fx3dGatePillarRocky(dx, dy, gz, fx, fy, rx, ry, side, gateH, sh, ramp, fade, ae.id + side*97);
     // 梁(笠木)。柱の外側まで大きく張り出させ、厚みも持たせる
     fx3dGateBeam(dx, dy, gz, fx, fy, rx, ry, halfSpan*OGRE_GATE_BEAM_OVERHANG, gateH, sh, fade);
+    // 大屋根。参考画像(2026-08-12)の楼門らしい反った大屋根を梁の上に載せる
+    fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, gateH+OGRE_GATE_BEAM_H, halfSpan*OGRE_GATE_BEAM_OVERHANG, gateH, sh, fade);
   }
 
   if(inTelegraph) return;
