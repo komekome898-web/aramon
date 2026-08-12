@@ -3756,7 +3756,7 @@ function fx3dFireWave(ae, curReach, fade){
   fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
 }
 const OGRE_GATE_PILLAR_W = 52;      // 門の柱の太さ(半幅)。発注者依頼(2026-08-12「棒に見える」対策)で22→52に増量
-const OGRE_GATE_H_MULT   = 4.6;     // 門の柱の高さ(FX3D_MON_H基準)。発注者依頼(2026-08-12)で楼門らしい大きさに引き上げ
+const OGRE_GATE_H_MULT   = 1.52;    // 門の柱の高さ(FX3D_MON_H基準)。発注者依頼(2026-08-12「デカすぎる」)で4.6→33%に縮小
 const OGRE_GATE_ROCK_SEG = 5;       // 柱を積む岩塊の段数
 const OGRE_GATE_ROCK_JUT = 0.35;    // 段ごとの出っ張り量(柱の太さに対する比率)
 const OGRE_GATE_DEPTH_R  = 0.6;     // 柱・梁の奥行き(太さに対する比率)。側面を持たせて棒状に見えないようにする
@@ -3917,28 +3917,33 @@ function fx3dGateBasePlinth(dx, dy, gz, fx, fy, rx, ry, side, sh, fade){
   const topBack  = fx3dPoint(dx+backOx, dy+backOy, h, gz);
   if(base && top && topBack && baseBack) fx3dFill([base,top,topBack,baseBack], _mixHex(sh.dark,'#000000',0.4), 0.85*fade, 0);
 }
-/* 大屋根。四隅を外側・上へ反らせた四注屋根を1枚、棟(頂点)へ向けて4枚の三角面で葺く。
-   発注者から送られた羅生門の参考画像(2026-08-12)に合わせて、太い柱+大きく反った屋根で
-   「棒」ではなく実在の楼門らしいシルエットにする。屋根瓦は柱・梁より暗い色調にして塗り分ける。 */
+/* 大屋根。四注(寄棟)屋根を、頂点1点(ピラミッド型)ではなく棟(ridge)を結ぶ2点で構成する。
+   1点に集約するピラミッド型だと、通路の真上から棟先端への線が戸口の中央に「柱が1本立っている」
+   ように見えてしまうため(発注者指摘2026-08-19「真ん中の柱を削除」)、実在の寄棟屋根と同じく
+   棟をrx=0の線分にして、戸口の開口部には何も突き出さないようにする。 */
 function fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, roofBaseH, halfW, pillarH, sh, fade){
   const halfD = halfW*OGRE_ROOF_HALF_D_R;
   const ridgeH = roofBaseH + pillarH*OGRE_ROOF_RIDGE_H_R;
   const lift = pillarH*OGRE_ROOF_CORNER_LIFT_R;
+  const ridgeHalfD = halfD*0.35;
   const combos = [[-1,-1],[-1,1],[1,1],[1,-1]]; // 反時計回り: 手前左→奥左→奥右→手前右
   const corners = combos.map(([side,dir])=>{
     const ox = rx*halfW*OGRE_ROOF_FLARE*side + fx*halfD*OGRE_ROOF_FLARE*dir;
     const oy = ry*halfW*OGRE_ROOF_FLARE*side + fy*halfD*OGRE_ROOF_FLARE*dir;
     return fx3dPoint(dx+ox, dy+oy, roofBaseH+lift, gz);
   });
-  const apex = fx3dPoint(dx, dy, ridgeH, gz);
-  if(!apex || corners.some(c=>!c)) return;
+  const ridgeFront = fx3dPoint(dx - fx*ridgeHalfD, dy - fy*ridgeHalfD, ridgeH, gz);
+  const ridgeBack  = fx3dPoint(dx + fx*ridgeHalfD, dy + fy*ridgeHalfD, ridgeH, gz);
+  if(!ridgeFront || !ridgeBack || corners.some(c=>!c)) return;
+  const [FL, BL, BR, FR] = corners;
   const roofDark  = _mixHex(sh.dark, '#000000', 0.6);
   const roofLight = _mixHex(sh.dark, '#000000', 0.42);
-  for(let i=0;i<4;i++){
-    const a = corners[i], b = corners[(i+1)%4];
-    fx3dFill([a,b,apex], (i%2===0) ? roofLight : roofDark, 0.95*fade, 0); // 面ごとに明暗を振って立体に見せる
-    fx3dStroke([a,apex], '#000000', 1.2, 0.4*fade, 0);
-  }
+  const roofHip   = _mixHex(roofLight, roofDark, 0.5);
+  fx3dFill([FL, ridgeFront, ridgeBack, BL], roofLight, 0.95*fade, 0);   // 左側の流れ
+  fx3dFill([FR, ridgeFront, ridgeBack, BR], roofDark,  0.95*fade, 0);   // 右側の流れ
+  fx3dFill([FL, FR, ridgeFront], roofHip, 0.95*fade, 0);                // 手前の破風(妻)
+  fx3dFill([BL, BR, ridgeBack],  roofHip, 0.95*fade, 0);                // 奥の破風(妻)
+  fx3dStroke([ridgeFront, ridgeBack], '#000000', 1.6, 0.5*fade, 0);     // 棟線
   // 軒先の縁を結んでシルエットをはっきりさせる(隅の反りが伝わるように太めの線で)
   fx3dStroke([corners[0],corners[1],corners[2],corners[3],corners[0]], '#000000', 2.0, 0.55*fade, 0);
 }
