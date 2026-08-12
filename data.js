@@ -1038,6 +1038,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-12', items:[
+    { t:'SSRスキン「北大路さつキジン」にキル時・勝利時の専用SEを追加しました', g:['monster','av'] },
     { t:'✨ SSRスキン「北大路さつキジン」が登場しました！', g:['feature','monster'] },
     { t:'🆕 新モンスター「キジン」が登場しました！ 与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', g:['feature','monster'] },
     { t:'キジンのtier2技「阿修羅」のオーラが赤に変わり、6連射になりました', g:['monster','balance'] },
@@ -3369,7 +3370,7 @@ const SKIN_MEDIA = {
   satsuki_ssr: { /*@satsuki_ssr*/
     promote: { video:'video/satsuki_ssr_promote', audio:'audio/satsuki_ssr_promote_audio.m4a', safetyMs:9475, bgmOnReveal:'lastBattle' },
     bgm: { final5:'audio/bgm_satsuki_ssr_final5.m4a', lastBattle:'audio/bgm_satsuki_ssr_lastbattle.m4a' },
-    se: { tier3:'audio/se_satsuki_ssr_tier3.m4a' },
+    se: { tier3:'audio/se_satsuki_ssr_tier3.m4a', kill:'audio/se_satsuki_ssr_kill.m4a', win:'audio/se_satsuki_ssr_win.m4a' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
