@@ -66,13 +66,10 @@
  <div id="lobbyLayout">
    <!-- 左端: シーズン / デイリー / ガチャ / ショップ / バッグ -->
    <div id="lobbyLeft">
-     <button id="openSeasonBtn" class="lobby-side-btn has-dot">
-       <span class="lobby-side-icon">🎫</span><span class="lobby-side-label">シーズン1</span>
-       <span id="seasonDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span>
-     </button>
-     <button id="openDailyBtn" class="lobby-side-btn has-dot">
-       <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">デイリー</span>
-       <span id="dailyDot" class="notif-dot hidden"></span>
+     <!-- デイリーとシーズン1は「ミッション」1画面へ統合(タブで分岐、aramon-screens参照) -->
+     <button id="openMissionBtn" class="lobby-side-btn has-dot">
+       <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">ミッション</span>
+       <span id="missionDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span>
      </button>
      <button id="openRaidBtn" class="lobby-side-btn has-dot hidden">
        <span class="lobby-side-icon">🐉</span><span class="lobby-side-label">レイド</span>
@@ -919,14 +916,34 @@
 </div>
 
 <!-- DAILY (ログインボーナス＋ミッション) -->
-<div id="dailyOverlay" class="mastermon-confirm-overlay hidden">
-  <div class="mastermon-confirm-box daily-box">
-    <button id="closeDailyBtn" class="overlay-close-btn">✕</button>
-    <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎯 デイリー</div>
-    <div class="daily-section-title">🎁 ログインボーナス（毎日ログインで受け取り）</div>
-    <div id="dailyLoginTrack" class="daily-login-track"></div>
-    <div class="daily-section-title">📋 今日のミッション（毎日リセット）</div>
-    <div id="dailyMissionList" class="daily-mission-list"></div>
+<!-- ミッション(デイリー + シーズン1をタブで統合) -->
+<div id="missionOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box mission-box">
+    <button id="closeMissionBtn" class="overlay-close-btn">✕</button>
+    <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎯 ミッション</div>
+    <div class="mission-tabs">
+      <button class="mission-tab active" data-tab="daily">デイリー<span id="missionTabDailyDot" class="notif-dot hidden"></span></button>
+      <button class="mission-tab" data-tab="season">シーズン1<span id="missionTabSeasonDot" class="notif-dot hidden"></span></button>
+    </div>
+    <div id="missionDailyPane" class="mission-pane">
+      <div class="daily-section-title">🎁 ログインボーナス（毎日ログインで受け取り）</div>
+      <div id="dailyLoginTrack" class="daily-login-track"></div>
+      <div class="daily-section-title">📋 今日のミッション（毎日リセット）</div>
+      <div id="dailyMissionList" class="daily-mission-list"></div>
+    </div>
+    <div id="missionSeasonPane" class="mission-pane hidden">
+      <div class="season-note">試合で SP 獲得（参加20＋キル×10＋勝利60＋ダメージ100毎に2）。段階に届いたら報酬を受け取ろう。</div>
+      <div class="season-head">
+        <div class="season-head-row"><span id="seasonTierText" class="season-tier-text">Tier 0 / 25</span><span id="seasonSpText" class="season-sp-text">0 SP</span></div>
+        <div class="season-prog"><div id="seasonProgFill" class="season-prog-fill"></div></div>
+        <div id="seasonNextText" class="season-next-text"></div>
+      </div>
+      <div id="seasonTrack" class="season-track"></div>
+      <div class="s1prev-sub-title">📅 シーズン1スケジュール</div>
+      <div id="seasonCalendar" class="s1prev-calendar"></div>
+      <div class="s1prev-sub-title">ℹ️ 曜日ごとの変則ルール</div>
+      <div id="seasonLegend" class="s1prev-legend"></div>
+    </div>
   </div>
 </div>
 
@@ -963,25 +980,6 @@
         <button id="expeditionGoBtn" class="rebirth-confirm-btn" disabled>出発する</button>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- SEASON PASS (シーズンパス) -->
-<div id="seasonOverlay" class="mastermon-confirm-overlay hidden">
-  <div class="mastermon-confirm-box season-box">
-    <button id="closeSeasonBtn" class="overlay-close-btn">✕</button>
-    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🎫 シーズン1</div>
-    <div class="season-note">試合で SP 獲得（参加20＋キル×10＋勝利60＋ダメージ100毎に2）。段階に届いたら報酬を受け取ろう。</div>
-    <div class="season-head">
-      <div class="season-head-row"><span id="seasonTierText" class="season-tier-text">Tier 0 / 25</span><span id="seasonSpText" class="season-sp-text">0 SP</span></div>
-      <div class="season-prog"><div id="seasonProgFill" class="season-prog-fill"></div></div>
-      <div id="seasonNextText" class="season-next-text"></div>
-    </div>
-    <div id="seasonTrack" class="season-track"></div>
-    <div class="s1prev-sub-title">📅 シーズン1スケジュール</div>
-    <div id="seasonCalendar" class="s1prev-calendar"></div>
-    <div class="s1prev-sub-title">ℹ️ 曜日ごとの変則ルール</div>
-    <div id="seasonLegend" class="s1prev-legend"></div>
   </div>
 </div>
 
