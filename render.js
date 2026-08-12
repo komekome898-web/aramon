@@ -3757,11 +3757,76 @@ function fx3dFireWave(ae, curReach, fade){
 }
 const OGRE_GATE_PILLAR_W = 22;      // 門の柱の太さ(半幅)
 const OGRE_GATE_H_MULT   = 2.4;     // 門の柱の高さ(FX3D_MON_H基準)
-/* 羅生門(キジンtier3)。門(柱2本+梁)は予告の瞬間から発生し続け、
+const OGRE_GATE_ROCK_SEG = 5;       // 発注者依頼(2026-08-12「ゴツゴツした質感に」): 柱を積む岩塊の段数
+const OGRE_GATE_ROCK_JUT = 0.6;     // 段ごとの出っ張り量(柱の太さに対する比率)
+// ハート門(北大路さつキジンtier3専用)の色。色は決め打ちしない原則の例外(発注者指定・2026-08-12)
+const SATSUKI_HEART_COLOR   = '#ff4fa3';
+const SATSUKI_HEART_GLOW    = '#ffd6ea';
+// スクリーン座標にハート形のパスを積む(中心cx,cyの少し下に頂点が来る向き)
+function _heartPathAt(cx, cy, size){
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + size*0.9);
+  ctx.bezierCurveTo(cx - size*1.35, cy - size*0.35, cx - size*0.65, cy - size*1.35, cx, cy - size*0.55);
+  ctx.bezierCurveTo(cx + size*0.65, cy - size*1.35, cx + size*1.35, cy - size*0.35, cx, cy + size*0.9);
+  ctx.closePath();
+}
+function fx3dFillHeartScreen(cx, cy, size, color, alpha, blur){
+  if(alpha<=0.01 || size<=0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
+  _heartPathAt(cx, cy, size);
+  ctx.fillStyle = color;
+  if(blur && !renderHeavyLoad){ ctx.shadowBlur = blur; ctx.shadowColor = color; }
+  ctx.fill();
+  ctx.restore();
+}
+/* 羅生門の柱1本ぶん(岩塊を積み上げたようなゴツゴツした質感)。
+   段ごとに太さ・出っ張り・明暗をランダムに振り、境目に暗い溝を入れることで
+   1枚の平らな板に見えないようにする。決め打ちの座標ではなくfx3dPointで毎段投影する。 */
+function fx3dGatePillarRocky(dx, dy, gz, rx, ry, side, gateH, sh, ramp, fade, seed){
+  const segH = gateH/OGRE_GATE_ROCK_SEG;
+  for(let s=0;s<OGRE_GATE_ROCK_SEG;s++){
+    const h0 = segH*s, h1 = segH*(s+1);
+    const jOut = (fxHash01(seed*3.1+s*7.7)-0.25) * OGRE_GATE_PILLAR_W*OGRE_GATE_ROCK_JUT;
+    const jIn  = (fxHash01(seed*5.9+s*2.3)-0.25) * OGRE_GATE_PILLAR_W*OGRE_GATE_ROCK_JUT;
+    const ox = rx*jOut*side, oy = ry*jOut*side;                 // 外へのはみ出し
+    const inW = -side*(OGRE_GATE_PILLAR_W + jIn);
+    const ix = rx*inW, iy = ry*inW;                              // 柱の厚み方向(内側)
+    const base   = fx3dPoint(dx+ox,    dy+oy,    h0, gz);
+    const top    = fx3dPoint(dx+ox,    dy+oy,    h1, gz);
+    const topIn  = fx3dPoint(dx+ox+ix, dy+oy+iy, h1, gz);
+    const baseIn = fx3dPoint(dx+ox+ix, dy+oy+iy, h0, gz);
+    if(!base || !top || !topIn || !baseIn) continue;
+    const shade = fxHash01(seed*13.3+s*6.1);
+    const stoneCol = _mixHex(sh.dark, shade>0.5 ? sh.mid : '#000000', shade>0.5 ? (shade-0.5)*0.7 : 0.3);
+    fx3dFill([base,top,topIn,baseIn], stoneCol, 0.9*fade, 0);
+    fx3dStroke([base,top], '#000000', 1.1, 0.35*fade, 0);        // 段の継ぎ目の溝
+    // 岩片の出っ張り(段の半分くらいの確率で外へ突き出す小さな塊)
+    if(fxHash01(seed*17.7+s*8.9) > 0.45){
+      const bump = OGRE_GATE_PILLAR_W*0.9;
+      const bx = rx*bump*side, by = ry*bump*side;
+      const bumpTip = fx3dPoint(dx+ox+bx, dy+oy+by, (h0+h1)*0.5, gz);
+      if(bumpTip) fx3dFill([base, bumpTip, top], _mixHex(stoneCol, sh.bright, 0.3), 0.85*fade, 0);
+    }
+    fx3dFireGlow(dx+ox, dy+oy, gz, 55, ramp.hot, fade*0.32);
+  }
+}
+// ハート門(北大路さつキジンtier3)。柱2本+梁の代わりに、門の中央へ大きなピンクのハートを立てる
+function fx3dHeartGate(dx, dy, gz, halfSpan, gateH, fade){
+  const center = fx3dPoint(dx, dy, gateH*0.58, gz);
+  if(!center) return;
+  const s = halfSpan*1.6*center.scale;
+  fx3dFillHeartScreen(center.x, center.y, s*1.15, SATSUKI_HEART_GLOW, 0.35*fade, 30); // 淡いグロー
+  fx3dFillHeartScreen(center.x, center.y, s, SATSUKI_HEART_COLOR, 0.92*fade, 16);      // 本体
+  fx3dFillHeartScreen(center.x - s*0.32, center.y - s*0.4, s*0.26, '#ffffff', 0.5*fade, 6); // ハイライト
+  fx3dFireGlow(dx, dy, gz, 100, SATSUKI_HEART_GLOW, fade*0.45);
+}
+/* 羅生門(キジンtier3)。門(柱2本+梁、SSRスキン装備時はハート)は予告の瞬間から発生し続け、
    炎はfx3dFireWaveの逆走版(最遠から門へ迫る)として描く。
    ・判定(combat.jsのae.doorDist/frontDist)と同じ式をそのまま使う(見た目だけ広げない)。
    ・門の位置は`Math.min(move.gateDist, ae.range)`で既に遮蔽物ぶん短くなっているので、
-     そのまま`ae.doorDist`を読むだけでよい(ここで再計算しない)。 */
+     そのまま`ae.doorDist`を読むだけでよい(ここで再計算しない)。
+   ・ae.style==='heart'(北大路さつキジン専用tier3)のときだけハート門に差し替える。 */
 function fx3dGate(ae, fillDist, fade, inTelegraph){
   const col = ae.auraTint || ae.color;
   const ramp = fx3dFireRamp(col);
@@ -3777,23 +3842,18 @@ function fx3dGate(ae, fillDist, fade, inTelegraph){
   const gz = groundZAt(dx, dy);
   const gateH = FX3D_MON_H*OGRE_GATE_H_MULT;
   const halfSpan = (ae.width||220)/2;
-  for(const side of [-1,1]){
-    const ox = rx*halfSpan*side, oy = ry*halfSpan*side;
-    const ix = -rx*OGRE_GATE_PILLAR_W*side, iy = -ry*OGRE_GATE_PILLAR_W*side; // 柱の厚み方向(内側)
-    const base   = fx3dPoint(dx+ox,    dy+oy,    0, gz);
-    const top    = fx3dPoint(dx+ox,    dy+oy,    gateH, gz);
-    const topIn  = fx3dPoint(dx+ox+ix, dy+oy+iy, gateH, gz);
-    const baseIn = fx3dPoint(dx+ox+ix, dy+oy+iy, 0, gz);
-    if(base && top && topIn && baseIn) fx3dFill([base,top,topIn,baseIn], sh.dark, 0.9*fade, 0);
-    fx3dFireGlow(dx+ox, dy+oy, gz, 90, ramp.hot, fade*0.55);
+  if(ae.style==='heart'){
+    fx3dHeartGate(dx, dy, gz, halfSpan, gateH, fade);
+  } else {
+    for(const side of [-1,1]) fx3dGatePillarRocky(dx, dy, gz, rx, ry, side, gateH, sh, ramp, fade, ae.id + side*97);
+    // 上部の梁(2本の柱の頭をつなぐ横木。岩の質感に合わせてやや暗めの中間色にする)
+    const beamSpan = halfSpan*1.15;
+    const l1 = fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH,       gz);
+    const l2 = fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH,       gz);
+    const l1b= fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH*1.1,   gz);
+    const l2b= fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH*1.08,  gz);
+    if(l1&&l2&&l2b&&l1b) fx3dFill([l1,l2,l2b,l1b], _mixHex(sh.dark, sh.mid, 0.3), 0.9*fade, 0);
   }
-  // 上部の梁(2本の柱の頭をつなぐ横木)
-  const beamSpan = halfSpan*1.15;
-  const l1 = fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH,       gz);
-  const l2 = fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH,       gz);
-  const l1b= fx3dPoint(dx+rx*beamSpan,  dy+ry*beamSpan,  gateH*1.08,  gz);
-  const l2b= fx3dPoint(dx-rx*beamSpan,  dy-ry*beamSpan,  gateH*1.08,  gz);
-  if(l1&&l2&&l2b&&l1b) fx3dFill([l1,l2,l2b,l1b], sh.dark, 0.9*fade, 0);
 
   if(inTelegraph) return;
   // 逆走する炎: 最遠(ae.range)から門(doorDist)へ向かって迫る帯
@@ -4142,6 +4202,24 @@ function fx3dDomeBurst(ae, curReach, fade){
     ctx.restore();
   }
 }
+// 爆風にハートを纏わせる(北大路さつキジンtier3の門の爆風=kind:'circle',style:'heartBlast'専用)。
+// ドーム本体(fx3dDomeBurst)の上に、外周から浮かび上がって消えるハートを重ねて描く。
+const HEART_BURST_N = 10;
+function fx3dHeartBurstFx(ae, curReach, fade){
+  if(renderHeavyLoad) return;
+  for(let i=0;i<HEART_BURST_N;i++){
+    const h1 = fxHash01(ae.id*4.3 + i*9.7), h2 = fxHash01(ae.id*8.1 + i*3.3), h3 = fxHash01(ae.id*6.7 + i*5.1);
+    const ang = h1*Math.PI*2;
+    const dist = curReach*(0.25+0.7*h2);
+    const phase = (matchTime*0.6 + h3) % 1;             // 0→1でふわっと浮き上がって消える
+    const x = ae.x + Math.cos(ang)*dist, y = ae.y + Math.sin(ang)*dist;
+    const z = FX3D_MON_H*(0.3 + 1.1*phase);
+    const p = fx3dPoint(x, y, z);
+    if(!p) continue;
+    const size = 16*p.scale*(1-phase*0.4);
+    fx3dFillHeartScreen(p.x, p.y, size, SATSUKI_HEART_COLOR, fade*(1-phase)*0.9, 10);
+  }
+}
 // リアルマップでの範囲技の描画。ここで描いたらtrueを返し、2Dの描画は行わない
 function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   // 爆風ドームだけは濃いまま、それ以外は半透明にして技以外を見やすくする
@@ -4175,7 +4253,10 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   if(ae.kind==='fan')            fx3dFlameFan(ae, curReach, fade);
   else if(ae.kind==='zigzag')    fx3dThunder(ae, curReach, fade);
   else if(ae.kind==='fanZigzag') fx3dPsychicWall(ae, curReach, fade);
-  else if(ae.kind==='circle')    fx3dDomeBurst(ae, curReach, fade);
+  else if(ae.kind==='circle'){
+    fx3dDomeBurst(ae, curReach, fade);
+    if(ae.style==='heartBlast') fx3dHeartBurstFx(ae, curReach, fade); // 発注者依頼(2026-08-12): 爆風にハートを纏わせる
+  }
   else if(ae.kind==='rect'){
     if(ae.style==='crystal')   fx3dCrystalRain(ae, curReach, fade, progress);
     else if(ae.style==='kagune') fx3dKagune(ae, curReach, fade, progress);

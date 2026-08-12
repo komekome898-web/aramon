@@ -700,13 +700,14 @@ const SIGNATURE_MOVES = {
     { name:'殴打', tier:1, color:'#e0ad7b', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'👊🏿' },
     { name:'阿修羅', tier:2, color:'#e0ad7b', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:6, burstGap:0.1, icon:'👊🏿' },
     /* 羅生門: 「吸い込み技」。予告範囲の最遠(range)から自分の前の門(gateDist)へ炎が逆走し、
-       触れた敵はその場で被弾せず門の前まで引き寄せられる(吸い込み)。炎が門に届いた瞬間に
-       endBlast のドームで実際のダメージが入る。**直撃は無い**ので mv.dmg は
-       「威力アップ・アウラ相性等の倍率をendBlast.dmgへ伝えるための基準値」だけの役割
+       触れた敵はダメージ(mv.dmg)を受けつつ門の前まで引き寄せられる(吸い込み)。炎が門に
+       届いた瞬間にendBlastのドームでさらにダメージが入る(炎の接触+門の爆風の2段構え)。
+       mv.dmgはendBlast.dmgへ「威力アップ・アウラ相性等の倍率」を伝える基準値も兼ねる
        (fireMoveのendBlastDmgMult=effDmg/move.dmgと同じ比率をそのまま使う。二重の表を作らない)。
-       kind='gate'の当たり判定・引き寄せ・爆発トリガーはcombat.jsのupdateAreaEffectsに実装。 */
+       kind='gate'の当たり判定・引き寄せ・炎ダメージ・爆発トリガーはcombat.jsのupdateAreaEffectsに実装。
+       gateDist: 発注者依頼(2026-08-12)で260→170に短縮し、門を自分の近くに出す。 */
     { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:47, cooldown:2, gutsCost:24,
-      aoeShape:'gate', gateDist:260, rectWidth:220,
+      aoeShape:'gate', gateDist:170, rectWidth:220,
       endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff6a2e', se:'tornado' } }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
@@ -908,7 +909,14 @@ const SSR_SKIN_TIER3 = {
                color:'#14121c', projStyle:'voidOrb',
                blast:{ radius:260, dmg:42, expandTime:0.5, color:'#ff6a2e' } },
   }},
-  satsuki_ssr:    { name:'2人でもっと熱くなろ', dmgMult:1.15 }, /*@satsuki_ssr*/
+  // 北大路さつキジン: 素体(キジン)の「羅生門」と数値は同じまま、門を大きなピンクのハート型に
+  // 差し替える専用演出。aoeStyle:'heart' はrender.jsのfx3dGateがハート型の門を描く目印、
+  // endBlast.style:'heartBlast' は爆風にハートのエフェクトを纏わせる目印(いずれも専用フィールド)。
+  // 色は決め打ちしない原則の例外(発注者指定のピンク固定・2026-08-12。rock_ssrのburstTintsと同様の扱い)。
+  satsuki_ssr:    { name:'2人でもっと熱くなろ', dmgMult:1.15, move:{
+    aoeStyle:'heart',
+    endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff5fa8', se:'tornado', style:'heartBlast' },
+  }}, /*@satsuki_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1034,6 +1042,7 @@ const UPDATE_HISTORY = [
     { t:'🆕 新モンスター「キジン」が登場しました！ 与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', g:['feature','monster'] },
     { t:'キジンのtier2技「阿修羅」のオーラが赤に変わり、6連射になりました', g:['monster','balance'] },
     { t:'キジンのtier3技「羅生門」が一新されました。目の前に門が現れ、奥から迫る炎が範囲内の敵を門の前まで引き寄せ、炎が門に届くと爆風でダメージを与えます', g:['monster','balance','av'] },
+    { t:'キジンのtier3技「羅生門」を調整しました。迫る炎に触れた瞬間にもダメージが入るようになり、門の位置が少し自分の近くになりました', g:['monster','balance'] },
   ]},
   { date:'2026-08-11', items:[
     { t:'✵ 「狂戦士ガッツ」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },

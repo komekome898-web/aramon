@@ -1952,8 +1952,8 @@ function updateAreaEffects(dt){
     const owner = getEntity(ae.ownerId);
 
     if(ae.kind==='gate'){
-      /* 羅生門: 最遠(ae.range)から門(ae.doorDist)へ炎が逆走する。触れた敵はその場で
-         被弾せず、門の前まで引き寄せられる(resolveMovementのpulledUntilが実際の移動を担当)。
+      /* 羅生門: 最遠(ae.range)から門(ae.doorDist)へ炎が逆走する。触れた敵はダメージ(ae.dmg)を
+         受けたうえで、門の前まで引き寄せられる(resolveMovementのpulledUntilが実際の移動を担当)。
          炎が門に届いた瞬間(frontDistが doorDist まで縮んだ瞬間)に1回だけ endBlast で爆発する。 */
       const doorDist = ae.doorDist||0;
       const frontDist = clamp(ae.range - fillDist, doorDist, ae.range);
@@ -1967,6 +1967,9 @@ function updateAreaEffects(dt){
         const notYetReached = hitTestRect(origin, ent, ae.angle, frontDist, ae.width/2);
         if(inCorridor && !notYetReached){
           ae.hitIds.add(ent.id);
+          // 発注者依頼(2026-08-12): 引き寄せだけでなく、炎に触れた瞬間にもダメージを入れる
+          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0,
+                                            lifestealMult: ae.lifestealMult||1 });
           ent.pulledUntil = ae.gateArriveAt;
           ent.pulledX = doorX; ent.pulledY = doorY;
           ent.pulledSpeed = ae.fillSpeed; // 炎と同じ速さで引き寄せる(門に炎が届くのとちょうど同時に到着する)
