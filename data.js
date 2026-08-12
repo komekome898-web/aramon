@@ -3357,6 +3357,10 @@ const SKIN_MEDIA = {
            lastBattle:'audio/bgm_metag_ssr_lastbattle.mp3' },
     se: { tier3:'audio/se_metag_ssr_tier3.m4a' },
   },
+  satsuki_ssr: { /*@satsuki_ssr*/
+    promote: { video:'video/satsuki_ssr_promote', audio:'audio/satsuki_ssr_promote_audio.m4a', safetyMs:9475 },
+    se: { tier3:'audio/se_satsuki_ssr_tier3.m4a' },
+  },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
 // 専用SEの区分と、そのスキンに専用SEが無いときに鳴る既存のSE名
