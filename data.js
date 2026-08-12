@@ -695,8 +695,16 @@ const SIGNATURE_MOVES = {
   ],
   ogre:    [ /*@ogre*/
     { name:'殴打', tier:1, color:'#e0ad7b', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'👊🏿' },
-    { name:'阿修羅', tier:2, color:'#e0ad7b', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'👊🏿' },
-    { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:47, cooldown:2, gutsCost:24, aoeShape:'rect', aoeStyle:'lava', rectWidth:220 }
+    { name:'阿修羅', tier:2, color:'#e0ad7b', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:6, burstGap:0.1, icon:'👊🏿' },
+    /* 羅生門: 「吸い込み技」。予告範囲の最遠(range)から自分の前の門(gateDist)へ炎が逆走し、
+       触れた敵はその場で被弾せず門の前まで引き寄せられる(吸い込み)。炎が門に届いた瞬間に
+       endBlast のドームで実際のダメージが入る。**直撃は無い**ので mv.dmg は
+       「威力アップ・アウラ相性等の倍率をendBlast.dmgへ伝えるための基準値」だけの役割
+       (fireMoveのendBlastDmgMult=effDmg/move.dmgと同じ比率をそのまま使う。二重の表を作らない)。
+       kind='gate'の当たり判定・引き寄せ・爆発トリガーはcombat.jsのupdateAreaEffectsに実装。 */
+    { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:47, cooldown:2, gutsCost:24,
+      aoeShape:'gate', gateDist:260, rectWidth:220,
+      endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff6a2e', se:'tornado' } }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -757,7 +765,7 @@ const MOVE_AURA = {
   'キッス':'red','ライトニング':'yellow','ビッグバン':'black',
   'まっぷたつ':'white','風神剣':'white','最終奥義':'white', /*@dullahan*/
   '正拳':'yellow','ワンツー':'yellow','暗けい':'yellow', /*@hum*/
-  '殴打':'yellow','阿修羅':'yellow','羅生門':'yellow', /*@ogre*/
+  '殴打':'yellow','阿修羅':'red','羅生門':'yellow', /*@ogre*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1018,6 +1026,8 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-12', items:[
     { t:'🆕 新モンスター「キジン」が登場しました！ 与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', g:['feature','monster'] },
+    { t:'キジンのtier2技「阿修羅」のオーラが赤に変わり、6連射になりました', g:['monster','balance'] },
+    { t:'キジンのtier3技「羅生門」が一新されました。目の前に門が現れ、奥から迫る炎が範囲内の敵を門の前まで引き寄せ、炎が門に届くと爆風でダメージを与えます', g:['monster','balance','av'] },
   ]},
   { date:'2026-08-11', items:[
     { t:'✵ 「狂戦士ガッツ」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },

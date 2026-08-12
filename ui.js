@@ -7384,10 +7384,14 @@ function describeMoveFeatureText(mv){
   else if(mv.aoeShape==='beams') parts.push(`${mv.beamCount}方向のビームで攻撃`);
   else if(mv.aoeShape==='zigzag') parts.push(`ジグザグ状(幅${mv.zigzagWidth})に攻撃`);
   else if(mv.aoeShape==='fanZigzag') parts.push('扇状かつジグザグに攻撃');
+  // 羅生門: 自分の前に門を出し、範囲最遠から自分へ炎が迫って敵を門の前まで吸い込む(直撃は無い)
+  else if(mv.aoeShape==='gate') parts.push(`自分の前に羅生門を出現させ、幅${mv.rectWidth}の範囲最遠から自分へ炎が迫る。触れた敵を門の前まで吸い込む`);
   if(mv.burst) parts.push(`${mv.burst}連射`);
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);
-  if(mv.endBlast) parts.push(`技の先端に半径${mv.endBlast.radius}の爆風ドーム×${mv.endBlast.count||3}(各${mv.endBlast.dmg})`);
+  // 羅生門は「先端」ではなく「門」に届いた瞬間の1回だけなので、通常のendBlast説明とは分ける
+  if(mv.aoeShape==='gate' && mv.endBlast) parts.push(`炎が門に届くと半径${mv.endBlast.radius}のドーム状の爆風${mv.endBlast.dmg}でダメージ`);
+  else if(mv.endBlast) parts.push(`技の先端に半径${mv.endBlast.radius}の爆風ドーム×${mv.endBlast.count||3}(各${mv.endBlast.dmg})`);
   if(mv.warheads) parts.push(`黒い核弾頭${mv.warheads.count||1}発を発射し、直撃${mv.warheads.dmg}+着弾点から半径${mv.warheads.blast.radius}へドーム状の爆風${mv.warheads.blast.dmg}`);
   if(mv.gutsDrainRatio) parts.push(`与えたダメージの${Math.round(mv.gutsDrainRatio*100)}%ぶん相手のガッツを削る`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
@@ -7446,8 +7450,10 @@ function buildMastermonMovesHtml(key, opts){
     const dispName = (typeof getMoveName==='function') ? getMoveName(mv, pseudo) : mv.name;
     // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)。
     // endBlastは重なった3つのドーム全部に当たった場合の合計(インフェルノ等)。
-    // warheadsは核弾頭N発ぶんの「直撃+着弾ドーム」合計(ギガデストロイヤー)
-    const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0)
+    // warheadsは核弾頭N発ぶんの「直撃+着弾ドーム」合計(ギガデストロイヤー)。
+    // **羅生門(aoeShape:'gate')は直撃が無く、endBlastのドームだけがダメージ源**なので
+    // mv.dmg(倍率の基準にだけ使う値)は加えない(二重計上を避ける)
+    const baseDmg = (mv.aoeShape==='gate' ? 0 : mv.dmg) + (mv.blast ? (mv.blast.dmg||0) : 0)
       + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0)
       + (mv.warheads ? ((mv.warheads.dmg||0) + (mv.warheads.blast ? mv.warheads.blast.dmg||0 : 0)) * (mv.warheads.count||1) : 0);
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));

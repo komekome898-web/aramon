@@ -212,6 +212,13 @@ function fireMove(attacker, target, move){
       } else {
         ae.range = raycastObstacleDistance(attacker.x, attacker.y, aimAngle, move.range);
         ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
+        if(move.aoeShape==='gate'){
+          // 遮蔽物で通路が短くなっても、門は必ず届く範囲の中に置く
+          ae.doorDist = Math.min(move.gateDist||0, ae.range);
+          // 「最遠(range)から門(doorDist)へ」の逆走がちょうど収まる尺にする
+          ae.life = ae.telegraphTime + (ae.range-ae.doorDist)/ae.fillSpeed + 0.25;
+          ae.gateArriveAt = matchTime + ae.telegraphTime + (ae.range-ae.doorDist)/ae.fillSpeed;
+        }
       }
       return ae;
     };
@@ -903,6 +910,18 @@ function entityMoveSpeed(m){
 }
 function resolveMovement(m, dt){
   if(m.freezeUntil > matchTime) return;
+  /* 「羅生門」(キジンtier3)に吸い込まれている間は、入力・AIより優先してこちらへ
+     強制的に引き寄せる。moveWithMoveUntilと同じ「早期return」の形にしておくと、
+     ダッシュ・通常入力・AIの判断が一切混ざらず素直に門へ向かう。 */
+  if(m.pulledUntil > matchTime){
+    const dx = m.pulledX - m.x, dy = m.pulledY - m.y;
+    const d = Math.hypot(dx, dy);
+    if(d > 4){
+      const spd = Math.min(m.pulledSpeed||900, d/Math.max(dt, 0.0001));
+      tryMoveAxis(m, dx/d*spd*dt, dy/d*spd*dt);
+    }
+    return;
+  }
   /* レイドボスは技を溜めている間(予告中)は歩かない。
      【重要】ここで動けると、予告で見せた輪の位置から実際の攻撃がズレて、
      「予告範囲より大きい攻撃が来る」ように見える不具合になる(実際に報告があった)。 */
@@ -1932,6 +1951,34 @@ function updateAreaEffects(dt){
     const origin = { x:ae.x, y:ae.y, radius:0, id:ae.ownerId };
     const owner = getEntity(ae.ownerId);
 
+    if(ae.kind==='gate'){
+      /* 羅生門: 最遠(ae.range)から門(ae.doorDist)へ炎が逆走する。触れた敵はその場で
+         被弾せず、門の前まで引き寄せられる(resolveMovementのpulledUntilが実際の移動を担当)。
+         炎が門に届いた瞬間(frontDistが doorDist まで縮んだ瞬間)に1回だけ endBlast で爆発する。 */
+      const doorDist = ae.doorDist||0;
+      const frontDist = clamp(ae.range - fillDist, doorDist, ae.range);
+      const doorX = ae.x + Math.cos(ae.angle)*doorDist, doorY = ae.y + Math.sin(ae.angle)*doorDist;
+      for(const ent of entities){
+        if(!ent.alive || ent.id===ae.ownerId || ent.isRaidBoss) continue; // 巨体は吸い込まない
+        if(ae.hitIds.has(ent.id)) continue;
+        // 通路全体(0〜range)には入っていて、まだ炎が来ていない範囲(0〜frontDist)には
+        // 入っていない = ちょうど炎が通過した、を hitTestRect の2回判定で表す
+        const inCorridor = hitTestRect(origin, ent, ae.angle, ae.range, ae.width/2);
+        const notYetReached = hitTestRect(origin, ent, ae.angle, frontDist, ae.width/2);
+        if(inCorridor && !notYetReached){
+          ae.hitIds.add(ent.id);
+          ent.pulledUntil = ae.gateArriveAt;
+          ent.pulledX = doorX; ent.pulledY = doorY;
+          ent.pulledSpeed = ae.fillSpeed; // 炎と同じ速さで引き寄せる(門に炎が届くのとちょうど同時に到着する)
+          spawnHit(ent.x, ent.y, ent.z, ae.color);
+        }
+      }
+      if(!ae.resolved && frontDist <= doorDist + 0.5){
+        ae.resolved = true;
+        if(ae.endBlast) spawnGroundBlast(doorX, doorY, ae.endBlast, ae.ownerId, ae.moveAura, ae.auraTint);
+      }
+      continue;
+    }
     if(ae.kind==='beams'){
       const count = ae.beamCount||3;
       const spread = (ae.beamSpreadDeg||40)*Math.PI/180;
