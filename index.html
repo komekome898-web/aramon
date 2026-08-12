@@ -96,6 +96,9 @@
      <button id="titleRankingBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🏆</span><span class="lobby-side-label">ランキング</span>
      </button>
+     <button id="openGalleryBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🖼️</span><span class="lobby-side-label">ギャラリー</span>
+     </button>
      <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え) -->
      <div id="lobbyBanner">
        <div id="lobbyBannerTrack"></div>
@@ -870,7 +873,6 @@
       <span class="mastermon-confirm-text bag-title">🎒 バッグ</span>
       <div class="bag-tabs">
         <button class="bag-tab active" data-tab="item">アイテム</button>
-        <button class="bag-tab" data-tab="skin">スキン</button>
         <button class="bag-tab" data-tab="title">称号</button>
       </div>
     </div>
@@ -905,12 +907,34 @@
       </div>
     </div>
     </div>
-    <div id="bagSkinPane" class="hidden">
-      <div id="bagSkinGrid" class="bag-skin-grid"></div>
-    </div>
     <div id="bagTitlePane" class="hidden">
       <div class="bag-title-hint" id="bagTitleHint">獲得した称号をタップで装着（もう一度で外す）。装着中の称号は名前の横に表示されます。</div>
       <div id="bagTitleGrid" class="bag-title-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ギャラリー(獲得したスキンの鑑賞・「スキン」タブ / SSR専用メディアの再生・「ミュージアム」タブ) -->
+<div id="galleryOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box gallery-box">
+    <button id="closeGalleryBtn" class="overlay-close-btn">✕</button>
+    <div class="bag-header">
+      <span class="mastermon-confirm-text bag-title">🖼️ ギャラリー</span>
+      <div class="bag-tabs">
+        <button class="gallery-tab active" data-tab="skin">スキン</button>
+        <button class="gallery-tab" data-tab="museum">ミュージアム</button>
+      </div>
+    </div>
+    <div id="gallerySkinPane">
+      <div id="gallerySkinGrid" class="bag-skin-grid"></div>
+    </div>
+    <div id="galleryMuseumPane" class="hidden">
+      <div class="gallery-museum-body">
+        <div id="galleryMuseumList" class="gallery-museum-list"></div>
+        <div id="galleryMuseumDetail" class="gallery-museum-detail">
+          <div class="gallery-museum-empty">🎬 所持しているSSRスキンを選ぶと、専用のムービー・BGM・SEを見聞きできます</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
