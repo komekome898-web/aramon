@@ -1946,15 +1946,20 @@ function renderGalleryMuseumDetail(){
   const movieBtnHtml = media.promote ? `<button id="galleryMuseumMovieBtn" class="gallery-museum-play-btn">▶️ ムービーを見る</button>` : '';
   const bgmBtns = Object.keys(SKIN_BGM_SLOTS).filter(slot=>media.bgm && media.bgm[slot]).map(slot=>
     `<button class="gallery-museum-media-btn ${galleryMuseumPlayingSlot===slot?'playing':''}" data-kind="bgm" data-slot="${slot}">🎵 ${SKIN_BGM_SLOTS[slot]}</button>`).join('');
-  const seBtns = Object.keys(SKIN_SE_SLOTS).filter(slot=>media.se && media.se[slot]).map(slot=>
-    `<button class="gallery-museum-media-btn" data-kind="se" data-slot="${slot}">🔊 ${SKIN_SE_SLOTS[slot]}</button>`).join('');
+  // SEは4種すべて常に出す。専用SEを持たないスロットは実際の試合と同じ共通SEを鳴らす
+  // (「専用SEはありません」で何も押せないと、専用が無いスキンだけSEが完全に聴けなくなるため)
+  const seBtns = Object.keys(SKIN_SE_SLOTS).map(slot=>{
+    const dedicated = !!(media.se && media.se[slot]);
+    const label = SKIN_SE_SLOTS[slot] + (dedicated ? '' : '(共通)');
+    return `<button class="gallery-museum-media-btn" data-kind="se" data-slot="${slot}" data-dedicated="${dedicated}">🔊 ${label}</button>`;
+  }).join('');
   el.innerHTML = `
     <div class="gallery-museum-name">${m.name}</div>
     ${movieBtnHtml}
     <div class="gallery-museum-sec-title">BGM</div>
     <div class="gallery-museum-btn-row">${bgmBtns || '<span class="gallery-museum-none">専用BGMはありません</span>'}</div>
     <div class="gallery-museum-sec-title">SE</div>
-    <div class="gallery-museum-btn-row">${seBtns || '<span class="gallery-museum-none">専用SEはありません</span>'}</div>
+    <div class="gallery-museum-btn-row">${seBtns}</div>
     <button id="galleryMuseumLobbyBgmBtn" class="gallery-museum-lobby-btn ${galleryMuseumPlayingSlot?'':'hidden'}">🏠 このBGMをロビーBGMにする</button>
   `;
   const movieBtnEl = document.getElementById('galleryMuseumMovieBtn');
@@ -1962,7 +1967,7 @@ function renderGalleryMuseumDetail(){
   el.querySelectorAll('.gallery-museum-media-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       if(btn.dataset.kind==='bgm') galleryPlayBgm(id, btn.dataset.slot);
-      else galleryPlaySe(id, btn.dataset.slot);
+      else galleryPlaySe(id, btn.dataset.slot, btn.dataset.dedicated==='true');
     });
   });
   const lobbyBtn = document.getElementById('galleryMuseumLobbyBgmBtn');
@@ -1988,10 +1993,17 @@ function galleryPlayBgm(skinId, slot){
   galleryMuseumPlayingSlot = slot;
   renderGalleryMuseumDetail();
 }
-function galleryPlaySe(skinId, slot){
+// dedicated=falseのときは専用SEを持たないスロットなので、実際の試合と同じ共通SE
+// (SKIN_SE_FALLBACK)をそのまま鳴らす。skinSe:id:slot は専用SEが登録されているときしか
+// SE_DEFSに存在しないため、無いスロットでこの名前のまま呼ぶと何も鳴らない
+function galleryPlaySe(skinId, slot, dedicated){
   if(typeof audioInit==='function') audioInit();
-  if(typeof ensureSkinMediaSeBuffers==='function') ensureSkinMediaSeBuffers(skinId);
-  if(typeof playSe==='function') playSe(`skinSe:${skinId}:${slot}`);
+  if(dedicated){
+    if(typeof ensureSkinMediaSeBuffers==='function') ensureSkinMediaSeBuffers(skinId);
+    if(typeof playSe==='function') playSe(`skinSe:${skinId}:${slot}`);
+  } else if(typeof playSe==='function' && typeof SKIN_SE_FALLBACK!=='undefined'){
+    playSe(SKIN_SE_FALLBACK[slot]);
+  }
 }
 
 let bagUseQty = 1;
