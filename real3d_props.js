@@ -1476,7 +1476,10 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
   const cell = Math.max(12, view * Math.sqrt(Math.PI / cells));
   const R = Math.ceil(view / cell);
   const view2 = view*view;
-  const hz = collectHazards(cx, cy, 0);
+  /* 【重要】草を撒く範囲(view)と同じ広さで水・溶岩を集めること。
+     ここに 0 を渡していたため、「カメラがその中に立っている水域」しか集まらず、
+     少し離れた川の上に草と石が生えていた(トーブル海岸で発生)。 */
+  const hz = collectHazards(cx, cy, view);
   const gx0 = Math.round(cx / cell), gy0 = Math.round(cy / cell);
   const hLo = conf.h[0], hSpan = conf.h[1] - conf.h[0];
   const patch = (conf.patch == null) ? 0.6 : conf.patch;
