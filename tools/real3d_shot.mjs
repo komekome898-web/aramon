@@ -88,15 +88,24 @@ const ORIGIN = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'],
 });
-const page = await browser.newPage({ viewport:{ width:W, height:H }, deviceScaleFactor:1 });
 const errors = [];
-page.on('pageerror', e=> errors.push(String(e)));
-page.on('console', m=>{ if(m.type()==='error') errors.push('console: '+m.text()); });
-
 const report = { seed:SEED, size:[W,H], shots:[], errors:[], bench:{} };
+
+/* マップごとにページを作り直す。1つのページを使い回すと、マップの数だけ
+   WebGLコンテキストが積み上がって上限に当たり、途中から真っ白/読み込み待ちで
+   止まる(植生を足して1シーンが重くなってから実際に起きた)。            */
+let page = null;
+async function freshPage(){
+  if(page) await page.close();
+  page = await browser.newPage({ viewport:{ width:W, height:H }, deviceScaleFactor:1 });
+  page.on('pageerror', e=> errors.push(String(e)));
+  page.on('console', m=>{ if(m.type()==='error') errors.push('console: '+m.text()); });
+  return page;
+}
 
 for(const base of maps){
   const mapKey = base + '_real';
+  await freshPage();
   await page.goto(`${ORIGIN}/tools/real3d_probe.html`, { waitUntil:'load' });
   await page.waitForFunction(()=> window.__probeModuleReady && window.__probe, null, { timeout:30000 });
   const setup = await page.evaluate(([k, w, h, seed])=> window.__probe.setup({ mapKey:k, w, h, seed }), [mapKey, W, H, SEED]);
