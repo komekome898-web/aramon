@@ -84,12 +84,7 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **所持スキン一覧はここが正**(旧バッグの「スキン」タブから移設。バッグは`アイテム`/`称号`の2タブに戻った)。`renderGallerySkins()`は旧`renderBagSkins()`をそのまま移しただけで、一覧はモンスターごとの見出しなしのフラットグリッド(レアリティ→種族→色の順)。
 - **タップすると`showSkinPreview(id, {selectable:true, selectLabel:'着せ替え画面へ', onSelect:...})`。** `showSkinPreview`の`opts.selectLabel`で下部ボタンの文言を上書きできる(未指定なら従来通り「このスキンを選ぶ」)。**新しい選択ボタンの用途を足すときはここへ`selectLabel`を追加するだけでよい**(ボタン自体・開閉・アニメは共通のまま)。
 - **着せ替えへの導線は`jumpToDressup(element)`1つ**: `openMastermonScreen()`→`openMastermonDetail(element)`→`mmOpenTab('dressup')`の3呼び出し。**そのマスモンが未作成なら遷移せずトーストのみ**(着せ替えタブ自体がマスモン前提のため)。マスモンは`loadMastermons()[element]`で**種族名がそのままキー**(1種族1体)なので、スキンの`element`をそのままキーに使える。
-- **ミュージアムは「所持していて`SKIN_MEDIA`に何か持っているSSR」だけを列挙**(`galleryMuseumSkinIds()`)。動画・BGMはスキンごとに任意で、無ければボタンごと出さない(`zod_ssr`はムービー無し、等)。
-  **SEだけは4スロット(tier3/hit/kill/win)を常に出す**(2026-08-13修正)。専用SEが無いスロットは
-  実際の試合と同じ共通SE(`SKIN_SE_FALLBACK`)をボタン名に「(共通)」と付けて鳴らす
-  (`galleryPlaySe(skinId, slot, dedicated)`)。**「専用SEが無い=何も聴けない」にしない。**
-  `skinSe:id:slot`はSKIN_MEDIAにその専用SEがあるときしかSE_DEFSに登録されないため、
-  専用が無いスロットをこの名前のまま呼ぶと無音になる(実際に起きた不具合)。
+- **ミュージアムは「所持していて`SKIN_MEDIA`に何か持っているSSR」だけを列挙**(`galleryMuseumSkinIds()`)。動画・BGM・SEはスキンごとに任意なので、無い項目のボタンは出さない(`zod_ssr`はムービー無し、等)。
 - **既存のSSR専用メディア再生の仕組みをそのまま流用し、新しい配線を作らない**:
   - ムービー = `runSsrPromotionStage(ssrPromotionSkinMedia(id), id, onEnd)`を**共通演出を挟まず単独**で呼ぶ。再生先は共通の`#ssrPromoteOverlay`(z-index 701 > ギャラリーの600なので上に出る)。
   - BGM = `ensureSkinBgmBuffers(id)` → `bgmSetTrack('skinBgm:'+id+':'+slot)`(管理者画面の`adminPlayBgm`と同じ呼び方)。
