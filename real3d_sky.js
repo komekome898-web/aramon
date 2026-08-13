@@ -206,6 +206,7 @@ const SKY_FRAG = `
   uniform vec2 uDiscCos;        // x=外側のcos, y=内側のcos(内へ行くほど明るい)
   uniform float uGain, uThr, uCover, uCirrusAmt, uStars, uGlow, uLowAmt;
   uniform sampler2D uCloud;
+  uniform vec2 uDrift;          // 雲の流れ(風向き×時間)。animateSky()が進める
   varying vec3 vDir;
 
   float h13(vec3 p){
@@ -226,13 +227,15 @@ const SKY_FRAG = `
   /* 雲の「板」に視線をぶつけた点。素直に d.xz/d.y にすると地平線で無限に発散し、
      ミップマップが一気に潰れて「雲の縁が円く切れる」。分母に下駄をはかせて
      伸びを頭打ちにする(遠近感は残しつつ、地平線ぎわでも模様が壊れない)。 */
-  vec2 cloudP(vec3 d, float k){
-    return d.xz * (k / (d.y * 0.90 + 0.20));
+  /* driftは層ごとの流れの速さ。低い(手前の)層ほど大きくして、風で流れる視差を出す。
+     uDriftは風向き×時間で、animateSky()が毎フレーム進める。                 */
+  vec2 cloudP(vec3 d, float k, float drift){
+    return d.xz * (k / (d.y * 0.90 + 0.20)) + uDrift * drift;
   }
 
   /* 雲を1層。少し高い板をもう1度引いて、その差を「上面」として光らせる = 厚みに見える。 */
-  vec4 cloudLayer(vec3 d, float k, vec4 mask, float thr, float det, float lit, float sunDot, float top){
-    vec2 p  = cloudP(d, k);
+  vec4 cloudLayer(vec3 d, float k, vec4 mask, float thr, float det, float lit, float sunDot, float top, float drift){
+    vec2 p  = cloudP(d, k, drift);
     vec4 tx = texture2D(uCloud, p);
     float dB = dot(tx, mask) + det;
     // top>0 のときだけ、少し高い板をもう1度引いて厚みを出す(1回ぶん節約できる)
@@ -288,21 +291,21 @@ const SKY_FRAG = `
     col = mix(col, uDisc, disc * smoothstep(-0.02, 0.06, el));
 
     // ---- 雲。高い層から順に重ねる(手前=低い層をあとに描く) ----
-    float det = (texture2D(uCloud, cloudP(d, 2.1)).r - 0.5) * 0.10;
+    float det = (texture2D(uCloud, cloudP(d, 2.1, 0.55)).r - 0.5) * 0.10;
     float vis = smoothstep(-0.005, 0.055, el);       // 地平線より下には出さない
     float far = smoothstep(0.42, 0.03, el);          // 地平に近い雲ほど霞に溶ける
 
     // 巻雲。しきい値で切らず、濃さをそのまま薄い膜として重ねる(筋に見せない)
-    float cir = dot(texture2D(uCloud, cloudP(d, 1.9)), vec4(0.0,0.0,1.0,0.0));
+    float cir = dot(texture2D(uCloud, cloudP(d, 1.9, 0.28)), vec4(0.0,0.0,1.0,0.0));
     cir = smoothstep(0.46, 1.02, cir);
     col = mix(col, uCirrus + uSunCol * pow(sd, 8.0) * 0.5, cir * uCirrusAmt * vis * (1.0 - far * 0.85));
 
     // 上の雲の段。下の段より小さく見えるので「層」として読める
-    vec4 hi = cloudLayer(d, 1.15, vec4(0.0,1.0,0.0,0.0), uThr + 0.05, det*0.8, 0.9, sd, 0.0);
+    vec4 hi = cloudLayer(d, 1.15, vec4(0.0,1.0,0.0,0.0), uThr + 0.05, det*0.8, 0.9, sd, 0.0, 0.62);
     col = mix(col, mix(hi.rgb, uHorizon, far*0.80), hi.a * uCover * 0.80 * vis);
 
     // 主役の段
-    vec4 lo = cloudLayer(d, 0.58, vec4(1.0,0.0,0.0,0.0), uThr, det, 1.0, sd, 1.0);
+    vec4 lo = cloudLayer(d, 0.58, vec4(1.0,0.0,0.0,0.0), uThr, det, 1.0, sd, 1.0, 1.00);
     col = mix(col, mix(lo.rgb, uHorizon, far*0.86), lo.a * uCover * uLowAmt * vis);
 
     // 縞(バンディング)止め。滑らかなグラデーションほど段が見えるので少しだけ散らす
@@ -353,6 +356,7 @@ export function buildSky(forEnv){
     uGain:{value:1}, uThr:{value:0.5}, uCover:{value:0.8}, uCirrusAmt:{value:0.3},
     uStars:{value:0}, uGlow:{value:1}, uLowAmt:{value:0.8},
     uCloud:{value:ensureCloudTex()},
+    uDrift:{value:new THREE.Vector2()},
   };
   setSkyUniforms(uniforms, forEnv);
   const mat = new THREE.ShaderMaterial({
@@ -364,7 +368,22 @@ export function buildSky(forEnv){
   mesh.userData.forEnv = !!forEnv;
   // 空の色はテーマで決め打ちした値なので、トーンマッピングを通さずそのまま出す
   mesh.material.toneMapped = !forEnv;
+  // 環境マップ用の複製は1回PMREMへ焼くだけなので、流す対象に入れない
+  if(!forEnv) skyDriftUniforms = uniforms;
   return mesh;
+}
+
+/* 雲を流す。real3d.js が毎フレーム呼ぶ(空は1つしか無いのでuniformを1組だけ持つ)。
+   風は斜めに固定。速さは層ごとの drift 係数(cloudPの引数)で変えている。
+   撮影ハーネスは performance.now() を固定するので、スクショの再現性は保たれる。 */
+let skyDriftUniforms = null;
+/* 1秒あたりに雲のUVが流れる量。**ここは上げすぎないこと。**
+   0.0135にしたら20秒で雲の柄が丸ごと入れ替わり、早送りに見えた(実測)。
+   試合は数分あるので、「見ていると確かに動いているが、急いでは見えない」速さにする。 */
+const WIND = [0.00135, 0.00068];
+export function animateSky(t){
+  if(!skyDriftUniforms) return;
+  skyDriftUniforms.uDrift.value.set(WIND[0]*t, WIND[1]*t);
 }
 
 /* 空の色をテーマに合わせて差し替える(メッシュは使い回す) */

@@ -21,7 +21,7 @@
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
 import { R3, DEFAULT_THEME, SUN_DIR, heightAt } from './real3d_common.js';
-import { buildSky, applySkyTheme, buildDistantRidge, buildEnvironment } from './real3d_sky.js';
+import { buildSky, applySkyTheme, buildDistantRidge, buildEnvironment, animateSky } from './real3d_sky.js';
 import { buildTerrain, updateTerrain, applyTerrainTheme, terrainStats, resetPatch } from './real3d_terrain.js';
 import { buildZoneMesh, zoneMaterial, buildSeaMesh, buildRiverMesh, splitRivers,
          animateWater, lavaMats, resetDynamicLists, ZONE_LIFT } from './real3d_water.js';
@@ -224,7 +224,9 @@ const api = {
     updateTerrain(cp.x, cp.y);
     updateWorldObjects(world);
     updateObstacles(scene, obstacles, world && world.crystals, cp.x, cp.y);
-    animateWater(performance.now()*0.001);
+    const tSec = performance.now()*0.001;
+    animateWater(tSec);
+    animateSky(tSec);   // 雲を風で流す(空のuniformを進めるだけ)
     // 空と遠景はカメラに追従させる。ワールドは18100単位あるので原点固定だと視界から外れる
     if(sky) sky.position.set(cp.x, 0, cp.y);
     if(ridge) ridge.position.set(cp.x, 0, cp.y);
