@@ -46,7 +46,7 @@ const MAPS = {
     groundColor:'#142433',
     previewIcon:'🪨', previewColors:['#2a3a4a','#0f1a24'],
     desc:'岩が点在するだけのシンプルな荒野。見通しが良く、初めてのバトルにもおすすめ。',
-    realObstacles:[{ type:'rock', w:0.74 }, { type:'deadtree', w:0.26 }],
+    realObstacles:[{ type:'rock', w:0.66 }, { type:'deadtree', w:0.22 }, { type:'ruinwall', w:0.12 }],
   },
   kaurea: {
     key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
@@ -62,7 +62,7 @@ const MAPS = {
     ],
     lavaRingPerVolcano: 4, lavaRingRadius: 2150, lavaPoolCount: 4,
     lavaDps: 22,
-    realObstacles:[{ type:'rock', w:0.58 }, { type:'basalt', w:0.42 }],
+    realObstacles:[{ type:'rock', w:0.52 }, { type:'basalt', w:0.38 }, { type:'ruinwall', w:0.10 }],
   },
   papas: {
     key:'papas', label:'パパス雪山', rockCount:540, decorCount:6200, hasVolcano:true,
@@ -77,7 +77,7 @@ const MAPS = {
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     hasCrystals:true, crystalCount:260,
     rockFlavors:[{ type:'snowrock', w:1 }],
-    realObstacles:[{ type:'snowrock', w:0.6 }, { type:'pine', w:0.4 }],
+    realObstacles:[{ type:'snowrock', w:0.54 }, { type:'pine', w:0.34 }, { type:'hut', w:0.12 }],
   },
   palepale: {
     key:'palepale', label:'パレパレジャングル', rockCount:520, decorCount:8200, hasVolcano:true,
@@ -94,7 +94,7 @@ const MAPS = {
     ],
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     rockFlavors:[{ type:'rock', w:0.55 }, { type:'tree', w:0.45 }],
-    realObstacles:[{ type:'tree', w:0.5 }, { type:'rock', w:0.28 }, { type:'log', w:0.22 }],
+    realObstacles:[{ type:'tree', w:0.44 }, { type:'rock', w:0.24 }, { type:'log', w:0.20 }, { type:'ruinpillar', w:0.12 }],
   },
   toble: {
     key:'toble', label:'トーブル海岸', rockCount:560, decorCount:6800, hasVolcano:false,
@@ -104,7 +104,7 @@ const MAPS = {
     hasSea:true, seaWidthRatio:0.14,
     hasRiver:true, riverCount:5, riverWidth:260,
     rockFlavors:[{ type:'rock', w:0.5 }, { type:'shell', w:0.5 }],
-    realObstacles:[{ type:'palm', w:0.36 }, { type:'rock', w:0.34 }, { type:'shell', w:0.30 }],
+    realObstacles:[{ type:'palm', w:0.32 }, { type:'rock', w:0.30 }, { type:'shell', w:0.26 }, { type:'container', w:0.12 }],
   },
   mandy: {
     key:'mandy', label:'マンディー砂漠', rockCount:480, decorCount:5200, hasVolcano:true,
@@ -120,7 +120,7 @@ const MAPS = {
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     hasOasis:true, oasisCount:6, oasisRadius:420,
     rockFlavors:[{ type:'sandrock', w:1 }],
-    realObstacles:[{ type:'sandrock', w:0.66 }, { type:'cactus', w:0.34 }],
+    realObstacles:[{ type:'sandrock', w:0.58 }, { type:'cactus', w:0.30 }, { type:'ruinpillar', w:0.12 }],
   },
 };
 
@@ -1041,6 +1041,13 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-13', items:[
+    { t:'🆕 リアルマップの見た目を全面的に作り直しました。空に太陽と流れる雲が入り、遠くの山並みに起伏と陰影が付きました', g:['feature','av'] },
+    { t:'リアルマップの地面に砂利・ひび割れ・風紋・落ち葉などの質感が入り、遠くの地面ものっぺりしなくなりました', g:['av'] },
+    { t:'リアルマップに草・低木・小石が生えるようになりました。風で揺れます(通り抜けられる飾りで、当たり判定はありません)', g:['feature','av'] },
+    { t:'リアルマップの水を作り直しました。深さで色が変わり、空を映し、岸で波が泡立ちます。溶岩も黒い地殻の割れ目が光る見た目になりました', g:['av'] },
+    { t:'リアルマップのマップごとの色合いを調整しました。特に密林は空まで緑だったのを、青い空と緑の地面に分けています', g:['av'] },
+  ]},
   { date:'2026-08-12', items:[
     { t:'SSRスキン「ラガモッチー」がガチャで入手できるようになりました', g:['feature'] },
     { t:'🆕 ロビーに「ギャラリー」を追加しました。獲得したスキンの鑑賞・着せ替えへのジャンプ、SSRスキンの専用ムービー・BGM・SEを見聞きできる「ミュージアム」が使えます', g:['feature'] },
@@ -2082,9 +2089,13 @@ function real3dHeightGrad(x, y){
 const REAL3D_THEMES = {
   wild: {
     tex:'dry', bump:0.30,
-    skyTop:0x1b2740, skyBot:0x6d7b8c, haze:0x8d9099,
-    low:0x4a5666, high:0x7d8798, steep:0x3a4351, gravel:0x5b6572, scrub:0x55603f,
-    ridgeRock:0x4a5260, ridgeFoot:0x5d6675, ridgeSnow:0xd2dbe6, snowLine:0.80,
+    // 夕暮れの荒野。前は全体が暗すぎて地面の作り込みが沈んでいたので、
+    // 「薄暗い」の性格は残したまま明度だけ持ち上げてある
+    // 地面は暖色(乾いた土)、空は寒色(夕暮れ)。明度を上げるだけで青灰色にすると
+    // 荒野ではなく寒々しいツンドラに見えたので、地面側は必ず暖色に寄せること
+    skyTop:0x24344f, skyBot:0x8b9aab, haze:0x9aa3ac,
+    low:0x6b6355, high:0x9c9179, steep:0x554e44, gravel:0x7d7466, scrub:0x6f6b48,
+    ridgeRock:0x5b6472, ridgeFoot:0x717c8c, ridgeSnow:0xd2dbe6, snowLine:0.80,
   },
   kaurea: {
     tex:'volcanic', bump:0.34,
@@ -2094,15 +2105,22 @@ const REAL3D_THEMES = {
   },
   papas: {
     tex:'snow', bump:0.18,
-    skyTop:0x2e4a72, skyBot:0xcfe0ef, haze:0xdbe8f2,
-    low:0xb9cad9, high:0xf4f9ff, steep:0x7f8ea0, gravel:0xc8d4e0, scrub:0xa9bccd,
+    // 雪原。空も地面も白いと全部が溶けて見えるので、天頂を濃い青にして
+    // 「青い空 対 白い雪」の対比を作る。雪の影側(low)も少し青を強くした
+    skyTop:0x24558f, skyBot:0xbcd7ec, haze:0xd2e4f2,
+    low:0xa8bccd, high:0xeef5ff, steep:0x6f8195, gravel:0xbccadb, scrub:0x9ab0c4,
     ridgeRock:0x7c8b9d, ridgeFoot:0xb7c6d6, ridgeSnow:0xffffff, snowLine:0.28,
   },
   palepale: {
     tex:'jungle', bump:0.30,
-    skyTop:0x1a3a2a, skyBot:0x93b58c, haze:0x9db98f,
-    low:0x24451f, high:0x4f7030, steep:0x3a3a24, gravel:0x3f4a2c, scrub:0x648020,
-    ridgeRock:0x3a4a34, ridgeFoot:0x4c6440, ridgeSnow:0xdfe8d8, snowLine:0.82,
+    /* 密林。**空まで緑にしない。** 前は空・霞・地面・草が全部同じ緑で、
+       画面全体が緑一色のスープになり、空が空に見えていなかった。
+       空は湿った熱帯の青、霞は白っぽい靄にして、緑は地面だけが持つ。
+       steep/gravel を茶色にしてあるのは、緑の中に土の色を出すため
+       (急斜面のむき出しの土と、落ち葉が溜まった地面)。               */
+    skyTop:0x2f6f9e, skyBot:0xa8cfd8, haze:0xbcd3c8,
+    low:0x2a4a22, high:0x5c7f38, steep:0x5a4a30, gravel:0x6b5a3c, scrub:0x6e8a28,
+    ridgeRock:0x4a5f45, ridgeFoot:0x6d8a68, ridgeSnow:0xdfe8d8, snowLine:0.82,
   },
   toble: {
     tex:'sand', bump:0.22,
@@ -2112,7 +2130,8 @@ const REAL3D_THEMES = {
   },
   mandy: {
     tex:'sand', bump:0.24,
-    skyTop:0x2a4a7a, skyBot:0xe0c98f, haze:0xe6d3a4,
+    // 天頂だけ青を強くして、砂と空が同じ金色で溶けるのを防ぐ
+    skyTop:0x2f5c93, skyBot:0xe0c98f, haze:0xe6d3a4,
     low:0xc9ab6f, high:0xf2e2ae, steep:0xa08a5c, gravel:0xd8c48c, scrub:0xc0b070,
     ridgeRock:0x8a7a5a, ridgeFoot:0xc8ae7e, ridgeSnow:0xf2ead8, snowLine:0.86,
   },
@@ -2143,6 +2162,14 @@ const OBST_SHAPES = {
   shell:    { h:0.56, sink:0.12, sil:[[0.00,1.05,0.56]] },
   cactus:   { h:2.45, sink:0.14, sil:[[1.20,0.40,1.25,1],[1.40,0.55,0.82,1]] },
   crystal:  { h:1.70, sink:0.18, sil:[[0.79,0.42,0.91,2],[0.58,0.60,0.70,1,0.22]] },
+  /* ---- 人工物(身を隠すための遮蔽物)。リアルマップだけに出る ----
+     当たり判定は他の障害物と同じ「半径の円」なので、**中には入れない**。
+     陰に隠れるための塊として、背は高め(半径の1.3〜2.4倍)にしてある。
+     中に入れる建物は別途あらためて設計する(発注者判断・2026-08-13)。        */
+  ruinwall:  { h:1.78, sink:0.16, sil:[[0.81,0.86,0.95,1]] },                     // 崩れた石壁
+  container: { h:1.36, sink:0.10, sil:[[0.63,0.96,0.68,1]] },                     // 打ち上げられた貨物コンテナ
+  ruinpillar:{ h:2.42, sink:0.18, sil:[[1.16,0.44,1.26,1,0.38],[0.28,0.88,0.34,1]] }, // 遺跡の石柱と土台
+  hut:       { h:1.58, sink:0.12, sil:[[0.72,0.94,0.82,1]] },                     // 崩れかけた小屋
 };
 window.__aramonObstShapes = OBST_SHAPES;   // ESモジュール(real3d.js)への橋渡し
 // 通常マップ → リアルマップの対応。地形の形だけマップごとに変える

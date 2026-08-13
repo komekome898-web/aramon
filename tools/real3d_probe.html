@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>real3d probe</title>
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden}
+  #glCanvas{display:block;position:absolute;left:0;top:0}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<!-- リアルマップ(real3d.js)だけをヘッドレスで描かせて撮影するための開発用ページ。
+     ゲーム本体からは読み込まない(tools/以下は本番に含めない)。
+     ・data.js / world.js を素のまま読み、試合開始と同じ手順でワールドを生成する
+       (地形・岩・山・水を probe 側で作り直さない = 実際の見た目と必ず一致する)
+     ・Math.random をシード付きに差し替えるので、何度撮っても同じ配置になる     -->
+<canvas id="glCanvas"></canvas>
+<!-- world.js が起動時に触るDOM。2D描画は使わないが、無いと読み込みで落ちる -->
+<div id="appRoot"><canvas id="gameCanvas" class="hidden"></canvas><canvas id="minimapCanvas" class="hidden"></canvas></div>
+<script src="../data.js"></script>
+<script src="../world.js"></script>
+<script>
+/* ---- 撮影用のセットアップ(classic script なので world.js の変数へ直接触れる) ---- */
+(function(){
+  // 決まった配置になるようシード付き乱数へ差し替える
+  function seedRandom(seed){
+    let s = seed >>> 0;
+    Math.random = function(){
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+  function setSize(w, h){
+    viewW = w; viewH = h;
+    window.viewW = w; window.viewH = h;
+    const gl = document.getElementById('glCanvas');
+    gl.style.width = w + 'px'; gl.style.height = h + 'px';
+    recomputeFocal();
+  }
+  // 試合開始(ui.js の startGame)とまったく同じ順序でワールドを作る
+  function buildWorld(mapKey, seed){
+    seedRandom(seed || 12345);
+    game.raid = false; game.trainingRange = false;
+    game.activeMapKey = mapKey;
+    currentMap = MAPS[mapKey] || MAPS.wild;
+    applyStartPitchForMap();
+    window.__aramonRealTheme = (currentMap && currentMap.real3dTheme && REAL3D_THEMES[currentMap.real3dTheme])
+      ? REAL3D_THEMES[currentMap.real3dTheme] : null;
+    if(typeof applyWorldScale === 'function') applyWorldScale(1);
+    initZone();
+    genVolcanoAndLava();
+    genWater();
+    genOasisZones();
+    genRocks();
+    genCrystals();
+    genTerrain();
+  }
+  // 見どころの座標。無いマップでは null を返す
+  function featurePoint(kind){
+    const first = (arr)=> (arr && arr.length) ? arr[0] : null;
+    if(kind === 'volcano') return first(volcanoObstacles);
+    if(kind === 'lava')    return first(lavaZones);
+    if(kind === 'sea')     return first(seaZones);
+    if(kind === 'river')   return first(riverZones);
+    if(kind === 'oasis')   return first(oasisZones);
+    if(kind === 'rock')    return first(rocks);
+    if(kind === 'crystal') return first(crystalObstacles);
+    return null;
+  }
+  /* 立ち位置が山の中に入っていたら外へ押し出す。
+     試合中はプレイヤーが山の中へ入れない(world.jsのblockedByVolcano)ので、
+     山の内側から撮った絵は「実際には出ない画」になる。
+     実際にパレパレで起きた: マップ中心(9050,9050)が半径900の森の山(9412,9412)の
+     内側に入り、全カットが緑一色になって色調の判断ができなかった。          */
+  function pushOutOfMountains(at){
+    let p = { x: at.x, y: at.y };
+    for(let pass=0; pass<8; pass++){
+      let moved = false;
+      for(const v of volcanoObstacles){
+        const dx = p.x - v.x, dy = p.y - v.y;
+        const d = Math.hypot(dx, dy);
+        const need = v.radius * 1.25 + 260;   // 裾の外へ、さらに少し離れて全体が入るように
+        if(d < need){
+          const a = (d > 1) ? Math.atan2(dy, dx) : 0.7;
+          p.x = v.x + Math.cos(a) * need;
+          p.y = v.y + Math.sin(a) * need;
+          moved = true;
+        }
+      }
+      if(!moved) break;
+    }
+    p.x = Math.max(200, Math.min(WORLD.w-200, p.x));
+    p.y = Math.max(200, Math.min(WORLD.h-200, p.y));
+    return p;
+  }
+  // カメラを置く。at=立ち位置 / look=向く先(省略時は yaw をそのまま使う)
+  function placeCamera(at, opt){
+    const px = at.x, py = at.y;
+    const pz = getTerrainHeightAt(px, py);
+    let yaw = opt.yaw || 0;
+    if(opt.look) yaw = Math.atan2(opt.look.y - py, opt.look.x - px);
+    camState.yaw = yaw;
+    camState.pitch = (opt.pitch == null) ? 0.15 : opt.pitch;
+    camPos.x = px - Math.cos(yaw) * camState.distBehind;
+    camPos.y = py - Math.sin(yaw) * camState.distBehind;
+    camPos.z = pz + camState.height;
+    return { px, py, pz, yaw, pitch: camState.pitch };
+  }
+  function drawFrame(){
+    return !!(window.__aramonReal3D && window.__aramonReal3D.render(rocks, {
+      volcanoes: volcanoObstacles, lava: lavaZones, sea: seaZones, river: riverZones, oasis: oasisZones,
+      crystals: crystalObstacles,
+      seaEdge: (currentMap && currentMap.hasSea) ? seaEdgeX : null,
+      bounds: { w: WORLD.w, h: WORLD.h },
+    }));
+  }
+  window.__probe = {
+    // マップを用意して WebGL レイヤーを有効化する
+    setup(opts){
+      setSize(opts.w || 1624, opts.h || 750);
+      buildWorld(opts.mapKey, opts.seed);
+      window.__aramonRenderScale = opts.pixelRatio || 1;
+      const ok = window.__aramonReal3D ? window.__aramonReal3D.setActive(true) : false;
+      if(window.__aramonReal3D) window.__aramonReal3D.resize();
+      return { ok, map: currentMap.name || opts.mapKey,
+               counts:{ rocks:rocks.length, volcanoes:volcanoObstacles.length, lava:lavaZones.length,
+                        sea:seaZones.length, river:riverZones.length, oasis:oasisZones.length,
+                        crystals:crystalObstacles.length } };
+    },
+    // 1カット撮る。pose = { at:{x,y} | feature:'volcano', offset:[dx,dy], yaw, pitch, look:'volcano' }
+    shoot(pose){
+      let at = pose.at;
+      let look = null;
+      if(pose.feature){
+        const f = featurePoint(pose.feature);
+        if(!f) return null;                       // そのマップに無い見どころは撮らない
+        const off = pose.offset || [-900, -900];
+        at = { x: f.x + off[0], y: f.y + off[1] };
+        look = { x: f.x, y: f.y };
+      }
+      if(!at) at = { x: WORLD.w*0.5, y: WORLD.h*0.5 };
+      at.x = Math.max(200, Math.min(WORLD.w-200, at.x));
+      at.y = Math.max(200, Math.min(WORLD.h-200, at.y));
+      at = pushOutOfMountains(at);
+      if(pose.look === false) look = null;
+      const info = placeCamera(at, { yaw: pose.yaw, pitch: pose.pitch, look });
+      /* 波と溶岩の脈動は performance.now() で進むので、そのまま撮ると毎回位相が変わり
+         版どうしを画素で比べられない。撮影の間だけ時刻を固定する。            */
+      const realNow = performance.now.bind(performance);
+      performance.now = ()=> (pose.time == null ? 1234.5 : pose.time);
+      // 地形パッチは差分更新なので、初回は数フレーム回してから撮る
+      let ok = false;
+      try { for(let i=0;i<3;i++) ok = drawFrame(); }
+      finally { performance.now = realNow; }
+      return { ok, ...info };
+    },
+    stats(){ return window.__aramonReal3D ? window.__aramonReal3D.stats() : null; },
+    // 連続描画したときの1フレームあたりの時間(ms)を測る
+    bench(frames){
+      const n = frames || 60;
+      const t0 = performance.now();
+      for(let i=0;i<n;i++){
+        camState.yaw += 0.004;
+        camPos.x += 3; camPos.y += 2;
+        drawFrame();
+      }
+      return (performance.now() - t0) / n;
+    },
+  };
+})();
+</script>
+<script type="module">
+import './../real3d.js';
+window.__probeModuleReady = true;
+</script>
+</body>
+</html>
