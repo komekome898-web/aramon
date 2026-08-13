@@ -4600,6 +4600,29 @@ function drawSingleAreaEffect(ae){
    **塗る形は当たり判定(hitTestFan/hitTestRect/circleのdist)と同じ半径・同じ角度**にする
    (見た目だけ広い/狭いにしない)。ボスは予告中は動かない(resolveMovement)ので、
    ここで使う m.x/m.y/m.angle は実際に撃たれる位置とズレない。 */
+/* レイドの着弾予告を3D側(real3d_zone.js)へ渡す形に変換する。
+   2Dの drawRaidTelegraph と同じ見え方になるよう、色・点滅・塗りの濃さを揃えてある。
+   **片方を直したらもう片方も直すこと。** */
+function raidTelegraphMarks(){
+  if(!game.raid || typeof raidState==='undefined' || !raidState || !raidState.pending) return null;
+  const p = raidState.pending;
+  if(!p.move || !Array.isArray(p.marks)) return null;
+  const left = Math.max(0, p.fireAt - matchTime);
+  const soon = left < 0.6;
+  const blink = 0.45 + 0.45*Math.abs(Math.sin(matchTime*(soon?18:9)));
+  const col = p.move.color || '#ff5d5d';
+  const out = [];
+  for(const m of p.marks){
+    const half = (m.fanDeg!=null) ? (m.fanDeg*Math.PI/180)/2 : 0;
+    out.push({
+      x:m.x, y:m.y, r:m.r, color:col, alpha:blink,
+      fillAlpha: blink * (soon ? 0.42 : 0.24),
+      arc: (m.fanDeg!=null) ? { from:m.angle-half, to:m.angle+half } : null,
+      inner: (m.fanDeg==null),
+    });
+  }
+  return out;
+}
 function drawRaidTelegraph(){
   if(!game.raid || typeof raidState==='undefined' || !raidState || !raidState.pending) return;
   const p = raidState.pending;
@@ -5235,6 +5258,15 @@ function render(){
     // 海は円の集合ではなく海岸線の式そのものから水面を張る(seaEdgeXはworld.jsの純関数)
     seaEdge: (currentMap && currentMap.hasSea) ? seaEdgeX : null,
     bounds: { w: WORLD.w, h: WORLD.h },
+    /* 安置線と技の地面円は3D側で描く。2Dで描くと3Dの上に重なって深度判定を受けず、
+       丘や大きな物の向こうにあっても手前に見えてしまうため(実機で報告された不具合)。 */
+    zone: game.trainingRange ? null : {
+      center: zoneState.center, radius: zoneState.radius,
+      toCenter: zoneState.toCenter, toRadius: zoneState.toRadius,
+      shrinking: zoneState.shrinking, hasNext: zoneState.hasNext,
+      snow: !!(currentMap && currentMap.mountainStyle === 'snow'),
+    },
+    marks: raidTelegraphMarks(),
   }));
   if(perfOn) perfGl(performance.now() - _glT0);
   real3dActive = gl3d;
@@ -5246,8 +5278,12 @@ function render(){
     drawLavaZones();
   }
   if(!gl3d) safeDraw(drawTerrainDecor);
-  safeDraw(drawZoneRings);
-  safeDraw(drawRaidTelegraph);
+  // 安置線と技の地面円は、リアルマップでは3D側(real3d_zone.js)が描く。
+  // 2Dで描くと深度判定を受けず、丘の向こうの線が透けて手前に見える
+  if(!gl3d){
+    safeDraw(drawZoneRings);
+    safeDraw(drawRaidTelegraph);
+  }
   safeDraw(drawLandingMarkers);
   if(introState.active) safeDraw(drawSummonIntro);
 

@@ -113,6 +113,14 @@
       crystals: crystalObstacles,
       seaEdge: (currentMap && currentMap.hasSea) ? seaEdgeX : null,
       bounds: { w: WORLD.w, h: WORLD.h },
+      // render.js と同じ形で安置線を渡す(3D側が描くので、ここを省くと撮影に写らない)
+      zone: (game.trainingRange || !zoneState || window.__probeZoneOff) ? null : {
+        center: zoneState.center, radius: zoneState.radius,
+        toCenter: zoneState.toCenter, toRadius: zoneState.toRadius,
+        shrinking: zoneState.shrinking, hasNext: zoneState.hasNext,
+        snow: !!(currentMap && currentMap.mountainStyle === 'snow'),
+      },
+      marks: null,
     }));
   }
   window.__probe = {
@@ -155,6 +163,20 @@
       finally { performance.now = realNow; }
       return { ok, ...info };
     },
+    /* 安置の輪を好きな位置・大きさに置く(検証用)。
+       「丘の向こうに輪がある」状況を作って、輪が丘に隠れるかを確かめるために使う。 */
+    setZone(z){
+      if(!zoneState) return null;
+      if(z.center) zoneState.center = { x:z.center.x, y:z.center.y };
+      if(z.radius != null) zoneState.radius = z.radius;
+      zoneState.toCenter = z.toCenter ? { x:z.toCenter.x, y:z.toCenter.y } : zoneState.center;
+      zoneState.toRadius = (z.toRadius != null) ? z.toRadius : zoneState.radius*0.6;
+      zoneState.shrinking = !!z.shrinking;
+      zoneState.hasNext = (z.hasNext !== false);
+      return { center:zoneState.center, radius:zoneState.radius };
+    },
+    // 地形の高さを直接引く(検証用。丘の位置を探すのに使う)
+    heightAt(x, y){ return getTerrainHeightAt(x, y); },
     stats(){ return window.__aramonReal3D ? window.__aramonReal3D.stats() : null; },
     // 連続描画したときの1フレームあたりの時間(ms)を測る
     bench(frames){
