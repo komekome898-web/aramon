@@ -14,8 +14,8 @@
    そのため形を作ったら最後に fitBounds() で枠へ合わせる。
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
-import { R3, DEFAULT_THEME, ENV_INTENSITY, heightAt, hash2, tileNoise, mergeGeos } from './real3d_common.js';
-import { getGroundMaps } from './real3d_terrain.js';
+import { R3, DEFAULT_THEME, ENV_INTENSITY, SUN_DIR, heightAt, hash2, tileNoise, mergeGeos } from './real3d_common.js';
+import { getGroundMaps, getTerrain } from './real3d_terrain.js';
 import { lavaMats } from './real3d_water.js';
 
 /* ---------------------------------------------------------------------
@@ -48,6 +48,16 @@ function barkColor(k){
 }
 // 針葉樹の葉も同じ考え方。雪原のテーマ色だけで作ると白い三角形にしかならない
 const NEEDLE_CORE = new THREE.Color(0x2f4a24);
+/* プロップ自身の「色の個性」の芯。テーマ色だけで作ると、砂漠のサボテンが
+   砂と同じ白ベージュの棒に、雪原の氷結晶がただの白い塊になり、
+   遮蔽物かどうかがプレイ中に読めなくなる。色は決め打ちにせず、
+   この芯へその場のテーマ色を混ぜて馴染ませる(混ぜ具合が k)。            */
+const CACTUS_CORE = new THREE.Color(0x4c8f36);   // サボテンの緑
+const ICE_CORE    = new THREE.Color(0x35b4d6);   // 氷・水晶の水色
+/* 人工物の色の芯。自然物と違って「人が塗った/組んだ物」に見せたいので、
+   テーマ色そのままではなく工業製品の色を芯にして、そこへ場の色を混ぜる。 */
+const CONTAINER_PAINT = new THREE.Color(0x3f6b74);   // 褪せた塗装(海運コンテナ)
+const RUST_CORE       = new THREE.Color(0x8a4a24);   // 錆
 
 /* 円周方向に継ぎ目の出ないノイズ。角度を spokes 個の格子へ写して tileNoise を回す。
    山の縦じわ(ガリー)や貝殻の筋など「ぐるっと1周する模様」に使う。 */
@@ -57,6 +67,196 @@ function angNoise(ang, v, spokes){
 }
 // 尾根状ノイズ(0付近に鋭い谷)。斜面の削れ(ガリー)を作るのに使う
 function angRidge(ang, v, spokes){ return 1 - Math.abs(angNoise(ang, v, spokes)*2 - 1); }
+
+/* 尾根状ノイズの多重フラクタル(1=尾根 0=谷)。
+   1-|2n-1| を重ねると稜線が鋭く谷が深い「山の形」になる。次のオクターブの重みを
+   その場の高さで決めるので、高い所だけがギザギザに、低い所はなだらかになる。
+   遠景の山(real3d_sky.js の ridgeProfile)と同じ考え方で、近景の山も同じ山脈に見せる。 */
+const RIDGE_OCT = 3;
+function ridgedFbm(ang, v, seed){
+  let sum = 0, amp = 1, tot = 0, w = 1, spokes = 9;
+  for(let o=0;o<RIDGE_OCT;o++){
+    let n = angNoise(ang + seed*(1 + o*0.63), v*(1 + o*1.5) + seed*(0.9 + o), spokes);
+    n = 1 - Math.abs(n*2 - 1);
+    n = n*n;                                  // 尖らせる。丸いと「うねる丘」にしかならない
+    sum += n*amp*w;
+    tot += amp;
+    w = 0.35 + 0.65*Math.min(1, n*1.7);       // 尾根の上にだけ次の細かい起伏を乗せる
+    amp *= 0.52;
+    spokes *= 2;
+  }
+  return sum/tot;
+}
+
+const clamp01 = (x)=> x < 0 ? 0 : (x > 1 ? 1 : x);
+const smoothBand = (a, b, x)=>{ const t = clamp01((x - a) / ((b - a) || 1e-6)); return t*t*(3 - 2*t); };
+
+/* ---- 「地面と見分けが付く色」を作るための道具 ----
+   色そのものは決め打ちにできない(マップごとにテーマ色が変わる)ので、
+   「地面の色との差」だけを保証する。差が足りないときだけ明るさと鮮やかさを押し広げる。 */
+function lumOf(c){ return c.r*0.30 + c.g*0.60 + c.b*0.10; }
+// 灰色成分から離して鮮やかにする(k>1で彩度アップ)。負の値へ落ちないよう押し戻す
+function saturate(c, k){
+  const g = lumOf(c);
+  c.setRGB(Math.max(0, g + (c.r-g)*k), Math.max(0, g + (c.g-g)*k), Math.max(0, g + (c.b-g)*k));
+  return c;
+}
+/* 地面(ref)との明度差を最低 minRatio 倍だけ確保する。
+   暗い側へ寄せられるなら暗く、地面が暗いマップでは明るい側へ逃がす。 */
+function contrastTo(c, ref, minRatio){
+  const lc = lumOf(c), lr = lumOf(ref);
+  if(lc <= 1e-6 || lr <= 1e-6) return c;
+  const ratio = lc / lr;
+  if(ratio >= minRatio || ratio <= 1/minRatio) return c;
+  // 地面が明るければ暗い側、暗ければ明るい側へ。行き先の遠いほうを選ぶ
+  const goDark = (ratio < 1) || (lr > 0.10);
+  return c.multiplyScalar(goDark ? (lr/minRatio)/lc : (lr*minRatio)/lc);
+}
+
+/* 地面の「見た目の色」。接地影の縁をこの色に合わせると、影の外周が地面へ溶けて
+   円盤の輪郭が見えなくなる。
+   【テーマ色から推測してはいけない】地面の色は「頂点カラー × 地面テクスチャ」で、
+   頂点カラーには砂利・低木・傾きの混ざりが乗っている。テーマ色だけで組み立てると
+   マップによって最大5倍もずれ、影が真っ黒の板や明るい輪になる(実測)。
+   いま実際に張られている地形パッチの頂点カラーを間引いて平均し、
+   テクスチャ側の平均輝度(real3d_terrain.js の midRef = 1/平均)を掛ける。   */
+/* 地面テクスチャの平均色。midRef は輝度の平均しか持っていないので、
+   色みまで合わせるためにキャンバスの画素から channel ごとの平均を取る
+   (テーマごとに1回。テクスチャは real3d_terrain.js が使い回す)。          */
+const _texAvg = new THREE.Color(1, 1, 1);
+let texAvgKey = null;
+const srgbLin = (v)=> v <= 0.04045 ? v/12.92 : Math.pow((v + 0.055)/1.055, 2.4);
+function groundTexAverage(){
+  const maps = getGroundMaps();
+  const key = (R3.theme || DEFAULT_THEME).tex || '';
+  if(texAvgKey === key) return _texAvg;
+  if(!maps || !maps.map || !maps.map.image) return _texAvg;
+  try{
+    const img = maps.map.image;
+    const g = img.getContext && img.getContext('2d');
+    if(!g) return _texAvg;
+    const d = g.getImageData(0, 0, img.width, img.height).data;
+    let r = 0, gg = 0, b = 0, n = 0;
+    for(let i=0;i<d.length;i+=16){          // 4画素に1つで十分(低周波のばらつきしかない)
+      r += srgbLin(d[i]/255); gg += srgbLin(d[i+1]/255); b += srgbLin(d[i+2]/255); n++;
+    }
+    if(n) _texAvg.setRGB(r/n, gg/n, b/n);
+    texAvgKey = key;
+  }catch(e){ /* 画素を読めない環境ではテクスチャを白として扱う */ }
+  return _texAvg;
+}
+
+function groundRefColor(gain){
+  const texAvg = groundTexAverage();
+  const c = mixColor(themeColor('low'), themeColor('high'), 0.50).lerp(themeColor('gravel'), 0.20);
+  const t = getTerrain();
+  const geo = t && t.geometry;
+  const ca = geo && geo.attributes.color, na = geo && geo.attributes.normal;
+  if(ca && na && ca.count > 64){
+    /* 【平らな所だけを見る】急斜面の頂点は岩肌色(steep)へ寄っていて、
+       パッチ全体を平均すると起伏の多いマップ(ジャングル・溶岩台地)で
+       実際の足元より何倍も暗い色になる。物が立っているのは平らな所なので、
+       法線がほぼ真上の頂点だけを数える。                                   */
+    let r = 0, g = 0, b = 0, n = 0;
+    const step = Math.max(1, Math.floor(ca.count/900));
+    for(let i=0;i<ca.count;i+=step){
+      if(na.getY(i) < 0.965) continue;
+      r += ca.getX(i); g += ca.getY(i); b += ca.getZ(i); n++;
+    }
+    if(n > 8 && r + g + b > 1e-4) c.setRGB(r/n, g/n, b/n);
+  }
+  c.setRGB(c.r*texAvg.r, c.g*texAvg.g, c.b*texAvg.b);
+  return c.multiplyScalar(gain == null ? 1 : gain);
+}
+
+/* プロップの色を「芯の色 + その場のテーマ色」から作り、地面との差を保証する。
+   core=そのプロップの個性の色 / k=テーマ色を混ぜる強さ / sat=鮮やかさ / diff=地面との明度比 */
+function plantColor(core, k, sat, diff){
+  const themed = mixColor(themeColor('scrub'), themeColor('low'), 0.40);
+  const c = liftColor(mixColor(core, themed, k), 0.075);
+  saturate(c, sat);
+  return contrastTo(c, groundRefColor(), diff);
+}
+// 氷・水晶。空の色をまとわせつつ、雪や砂の地面より必ず濃く出す
+function crystalColor(){
+  const c = mixColor(ICE_CORE, mixColor(themeColor('skyTop'), themeColor('skyBot'), 0.55), 0.42);
+  saturate(c, 1.45);
+  return contrastTo(liftColor(c, 0.060), groundRefColor(), 1.75);
+}
+/* 遮蔽になる大きな岩の色。散布した小石と違い「隠れられる物」として
+   一目で読める必要があるので、地面との明度差を最低 COVER_DIFF 倍だけ確保する。 */
+const COVER_DIFF = 1.42;
+function coverRock(c, k){
+  saturate(c, 1.12);
+  return contrastTo(c, groundRefColor(), COVER_DIFF).multiplyScalar(k == null ? 1 : k);
+}
+
+/* ---- 接地影(コンタクトシャドウ) ----
+   太陽高度が約38度と高いうえ影の解像度も限られるため、草・小石のような小さい物が
+   落とす影は画面上で数画素にしかならず、実質「影が無い」= 物が地面に浮いて見える。
+   そこでシャドウマップに頼らず、足元へ「下にあるものを暗くするだけの円盤」を敷く。
+
+   【なぜ乗算合成の専用メッシュなのか】
+   最初はモデル本体へ円盤を溶接して描画命令を1つも増やさない作りにした。しかし
+   その円盤は「地面と同じ色」で塗らないと外周が輪になって見える。ところが地面は
+   MeshStandard(空の環境マップ)、植生は MeshLambert(擬似アンビエント)で
+   受ける間接光がまるで違い、暗いマップでは地面のほうが3〜4.5倍明るく出る(実測)。
+   色を合わせること自体が不可能なので、「下にあるものを暗くするだけ」の乗算合成に
+   切り替えた。これなら地面が何色でも必ず溶ける。
+   メッシュは層ごとに1つだけ(草/低木/小石/障害物の計4つ)なので、
+   物がいくつ並んでも描画命令は増えない。                                       */
+const srgbToLin = (v)=> v <= 0.04045 ? v/12.92 : Math.pow((v + 0.055)/1.055, 2.4);
+
+/* 半径1・y=0の影の円盤。頂点カラーは色ではなく「画面の明るさの倍率」。
+   中心ほど暗く、縁はちょうど1(=何もしない)なので境目が出ない。
+   縁の半径をばらつかせて、決め打ちの円に見えないようにする。
+   rings=1 で三角形n枚の一番安い形、2 で内側に濃い部分を持つ形。
+   【要注意】innerR(濃い部分の広さ)は「物の足元の太さ」より広く取ること。
+   狭いと濃い所がまるごと物の下に隠れ、外へ出るのは薄い縁だけになって
+   影がほとんど見えなくなる(岩でこれを踏んだ)。                            */
+function shadowDiscGeo(segs, seed, core, mid, rings, innerR){
+  const n = segs || 8;
+  const pos = [], col = [];
+  const cc = srgbToLin(core), cm = srgbToLin(mid == null ? (core + 1)/2 : mid);
+  const rim = [];
+  for(let i=0;i<n;i++) rim.push({ a:(i/n)*Math.PI*2 + seed*0.7,
+                                  r: 0.80 + hash2(seed*3.1 + i*1.7, i*2.3)*0.40 });
+  const push = (x, z, v)=>{ pos.push(x, 0, z); col.push(v, v, v); };
+  const at = (p, k)=> [Math.cos(p.a)*p.r*k, Math.sin(p.a)*p.r*k];
+  for(let i=0;i<n;i++){
+    const p1 = rim[i], p2 = rim[(i+1)%n];
+    const b1 = at(p1, 1), b2 = at(p2, 1);
+    if(rings === 1){
+      push(0, 0, cc); push(b1[0], b1[1], 1); push(b2[0], b2[1], 1);
+      continue;
+    }
+    const a1 = at(p1, innerR == null ? 0.50 : innerR), a2 = at(p2, innerR == null ? 0.50 : innerR);
+    push(0, 0, cc);          push(a1[0], a1[1], cm); push(a2[0], a2[1], cm);
+    push(a1[0], a1[1], cm);  push(b1[0], b1[1], 1);  push(b2[0], b2[1], 1);
+    push(a1[0], a1[1], cm);  push(b2[0], b2[1], 1);  push(a2[0], a2[1], cm);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return geo;
+}
+
+/* 影の材質。「色」ではなく「倍率」を書き込むので、
+   ・トーンマッピングを通さない(通すと倍率が歪む)
+   ・フォグを掛けない(霞の色を混ぜると影が明るい板になる)。遠くは頂点シェーダーで縮めて消す
+   ・深度は書かない(重なっても乗算は順番に依存しないので並べ替えも要らない)        */
+function shadowMaterial(fadeNear, fadeFar){
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors:true, transparent:true, blending:THREE.MultiplyBlending,
+    depthWrite:false, fog:false, side:THREE.DoubleSide,
+  });
+  mat.toneMapped = false;
+  mat.polygonOffset = true;
+  mat.polygonOffsetFactor = -2;
+  mat.polygonOffsetUnits = -4;
+  applyWind(mat, 0, 0, fadeNear, fadeFar, null);
+  return mat;
+}
 
 /* 塊のでこぼこ用。3方向の値ノイズを混ぜて「立体のまだら」にする。
    引数の座標は半径1の球面(-1〜1)なので、f は「球1個ぶんに何山のせるか」に近い。
@@ -152,13 +352,21 @@ function leafGeo(len, wid, droop, segs, frill){
 const MOUNT_SKIRT = 120;      // 山の裾を地面へ埋める深さ(地形の凹みで隙間が出ないように)
 const CRATER_RATIO = 0.17;    // 火山の火口の広さ(山の半径に対する比)
 
-/* 山の色。高さ(0=麓 1=頂上)で麓・中腹・頂上の3色を混ぜる。
-   これが「山頂の丸い演出」の代わりで、視点を変えても山に沿ったまま崩れない。   */
+/* 山の色。高さ(0=麓 1=頂上)で麓・中腹・頂上の3色を混ぜたものが「表土」、
+   rock が「露出した岩」。どちらを見せるかは高さではなく面の傾きで決める
+   (急斜面=岩がむき出し / 緩斜面=雪・草・砂が乗る)。
+   relief=尾根と谷の彫りの深さ / rockK=露岩の濃さ
+   rockLo,rockHi=露岩の出る傾き(素の円錐の傾きからのずれ。小さいほど急な面だけ岩)
+   cover=緩斜面に表土(雪・草)が乗る強さ                                     */
 const MOUNT_COLORS = {
-  volcano: { foot:0x4e3320, mid:0x36251a, top:0x1d1512, rough:0.95, gully:1.15, bump:0.55 },
-  snow:    { foot:0x6d7d90, mid:0xb4c6da, top:0xf2f8ff, rough:0.55, gully:1.05, bump:0.45 },
-  forest:  { foot:0x36421f, mid:0x27461c, top:0x152e12, rough:0.92, gully:0.55, bump:1.35 },
-  pyramid: { foot:0x8a6f3f, mid:0xa88a54, top:0xc0a068, rough:0.80, gully:0.00, bump:0.00 },
+  volcano: { foot:0x4e3320, mid:0x36251a, top:0x1d1512, rock:0x241811,
+             rough:0.97, relief:1.15, rockK:1.00, rockLo:0.10, rockHi:-0.16, cover:0.30 },
+  snow:    { foot:0x6d7d90, mid:0xb4c6da, top:0xf2f8ff, rock:0x39414f,
+             rough:0.70, relief:1.05, rockK:1.00, rockLo:0.07, rockHi:-0.17, cover:0.55 },
+  forest:  { foot:0x3d4c22, mid:0x2b4f1d, top:0x1a3a15, rock:0x4a4436,
+             rough:0.94, relief:0.95, rockK:0.62, rockLo:-0.12, rockHi:-0.30, cover:0.85 },
+  pyramid: { foot:0x8a6f3f, mid:0xa88a54, top:0xc0a068, rock:0x6a5330,
+             rough:0.86, relief:0.00, rockK:0.85, rockLo:0.12, rockHi:-0.08, cover:0.00 },
 };
 
 /* 山の肌。地面用に作ったテクスチャを複製して貼り、のっぺりした面を防ぐ。
@@ -187,6 +395,73 @@ function mountainVertexColor(conf, t, mottle){
   return _mc;
 }
 
+/* 山肌の変位。ここが「完全な円錐」を「山」に変える一番の要。
+   ridged noise(1-|fbm|)で尾根と谷を彫る。外へ膨らませると当たり判定(半径)と
+   2Dの隠面(occludedByMountain)から山肌がはみ出すので、変位は必ず
+   【内向き(k<=1)と下向き(dy<=0)だけ】。高さと最大半径はそのまま保たれる。
+   頂上ほど変位を小さくして稜線を残す(頂上まで削ると団子になる)。            */
+function displaceMountain(geo, h, rise, seed, conf, capT){
+  const pos = geo.attributes.position;
+  const amp = 0.26 * conf.relief;       // 谷を内側へ削る最大量(半径比)
+  const vAmp = 0.13 * conf.relief;      // 谷を下へ掘る最大量(高さ比)
+  for(let i=0;i<pos.count;i++){
+    const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
+    const r = Math.hypot(px, pz);
+    if(r < 1e-4) continue;
+    const ang = Math.atan2(pz, px) + Math.PI;
+    const t = clamp01((py + h/2 - MOUNT_SKIRT) / rise);         // 0=麓 1=頂上
+    // 麓ほど大きく削れ、頂上へ向かって消える。火口のある山は縁も削らない
+    let fall = 0.10 + 0.90*Math.pow(1 - t, 1.30);
+    if(capT) fall *= clamp01((1 - t)/capT);
+    const carve = 1 - ridgedFbm(ang, t*2.4, seed);              // 1=谷 0=尾根
+    // 山体そのもののゆがみ(方角ごとに尾根の張り出しが違う)
+    const swell = angNoise(ang + seed*0.7, t*1.3 + seed, 7);
+    // 面の中の細かいザラつき。flatShadingと合わさって岩肌になる
+    const grit = angNoise(ang*1.0 + seed*2.3, t*9.0 + seed*3.1, 48);
+    const k = Math.max(0.42, Math.min(1,
+      1 - (amp*carve*carve + 0.11*swell*conf.relief + 0.030*grit*conf.relief) * fall));
+    pos.setXYZ(i, px*k, py - vAmp*carve*carve*fall*rise, pz*k);
+  }
+  return geo;
+}
+
+/* ピラミッド。四角錐のままだと「UIの三角形」にしか見えないので、
+   石を積んだ段(コース)を刻む。段は必ず内側へ引っ込めるので、寸法の枠は超えない。
+   断面は|x|+|z|=R の正方形として作るため、分割数を上げても四角いまま
+   (=面の上に風化の凹凸を乗せられる)。頂上の数段だけは滑らかな笠にする。   */
+function pyramidGeo(rad, h, seed){
+  const C = 20;                       // 段数
+  const SEG = 24;                     // 1周の分割(4の倍数にすると角がそろう)
+  const rows = C*2;
+  const geo = new THREE.CylinderGeometry(0, 1, h, SEG, rows, true);
+  const pos = geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
+    const tRaw = clamp01((py + h/2) / h);
+    const ri = Math.round(tRaw*rows);
+    const c = Math.floor(ri/2), phase = ri % 2;
+    let y, rr;
+    if(ri >= rows - 6){
+      // 上の3段ぶんは段を付けず滑らかな笠石にする(段と滑らかの境目はぴったり繋がる)
+      y = -h/2 + h*(ri/rows);
+      rr = 1 - ri/rows;
+    }else{
+      y = -h/2 + h*((c + phase)/C);
+      rr = 1 - c/C;
+    }
+    const ang = Math.atan2(px, pz);
+    // 正方形の断面(|x|+|z|=R)。角は phi=0,90,180,270 に来る
+    const sq = 1 / (Math.abs(Math.sin(ang)) + Math.abs(Math.cos(ang)));
+    // 風化。段の縁が欠け、面にも浅い凹みができる(内向きのみ)
+    const wear = angNoise(ang*1.0 + seed, ri*0.37 + seed*1.9, 12);
+    const chip = angRidge(ang*1.0 + seed*2.1, ri*0.11 + seed, 20);
+    const k = rad * rr * sq * (1 - 0.020*wear - 0.030*chip*chip*(1 - tRaw*0.5));
+    const len = Math.hypot(px, pz) || 1;
+    pos.setXYZ(i, px/len*k, y, pz/len*k);
+  }
+  return geo;
+}
+
 export function buildMountainMesh(v){
   const style = v.style || 'volcano';
   const conf = MOUNT_COLORS[style] || MOUNT_COLORS.volcano;
@@ -194,71 +469,69 @@ export function buildMountainMesh(v){
   const isPyramid = (style === 'pyramid');
   const hasCrater = (style === 'volcano' && v.isMain);
   const h = rise + MOUNT_SKIRT;
-  /* 分割数。稜線のギザギザと縦じわ(ガリー)を出すには周方向の分割が要る。
+  /* 分割数。稜線のギザギザと谷筋を出すには周方向にも縦方向にも分割が要る。
      山は1マップに数十個だが三角形は数千どまりなので、上げても負荷はほとんど増えない。 */
-  const seg = isPyramid ? 4 : (v.isMain ? 56 : 30);
-  const rows = isPyramid ? 3 : 9;
+  const seg = v.isMain ? 64 : 36;
+  const rows = v.isMain ? 15 : 9;
   const rad = isPyramid ? v.radius*0.82*Math.SQRT2 : v.radius;
-  // 火山は先を切った円錐にして、頂上に火口の穴を作る
-  const geo = hasCrater
-    ? new THREE.CylinderGeometry(rad*CRATER_RATIO, rad, h, seg, rows, true)
-    : new THREE.ConeGeometry(rad, h, seg, rows, true);
-  const pos = geo.attributes.position;
-  /* 側面を内側にだけへこませて、きれいすぎる円錐に見えないようにする。
-     外へ膨らませると当たり判定(半径)の外に山肌が出て、山にめり込んで見えるので
-     必ず内向き(k<=1)にする。ピラミッドは形が崩れるので凹ませない。
-
-     内訳は3つ:
-       ・大きなうねり  … 稜線がまっすぐな三角形に見えないようにする
-       ・縦のガリー    … 雨で削れた縦じわ。麓ほど深く、頂上へ向かって消える
-       ・細かいザラつき… 面の中の凹凸。flatShadingと合わさって岩肌になる          */
-  if(!isPyramid){
-    // 山ごとに違う形にするための種。volcanoObstaclesにseedは無いので位置から作る
-    const seed = hash2(v.x*0.013, v.y*0.017) * 10;
-    for(let i=0;i<pos.count;i++){
-      const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
-      const r = Math.hypot(px, pz);
-      if(r < 1) continue;
-      const ang = Math.atan2(pz, px) + Math.PI;
-      const t = Math.max(0, Math.min(1, (py + h/2 - MOUNT_SKIRT) / rise));   // 0=麓 1=頂上
-      const swell = angNoise(ang*1.0 + seed*0.7, t*3.2 + seed, 16);          // 大きなうねり
-      const gully = angRidge(ang + seed*1.9, t*1.6 + seed*0.4, 26);          // 縦の削れ
-      const grit  = angNoise(ang*1.0 + seed*2.3, t*11.0 + seed*3.1, 48);     // 細かいザラつき
-      // 麓ほど大きく削れ、頂上は尖らせる。頂上付近だけは削りを弱めて稜線を残す
-      const gullyK = conf.gully * (0.35 + 0.65*(1 - t)) * (t > 0.92 ? 0.3 : 1);
-      const k = 1
-        - 0.085*swell
-        - 0.075*gully*gullyK
-        - 0.030*conf.bump*(grit - 0.5)*2;
-      const kk = Math.max(0.55, Math.min(1, k));
-      pos.setXYZ(i, px*kk, py, pz*kk);
-    }
+  // 山ごとに違う形にするための種。volcanoObstaclesにseedは無いので位置から作る
+  const seed = hash2(v.x*0.013, v.y*0.017) * 10;
+  let geo;
+  if(isPyramid){
+    geo = pyramidGeo(rad, h, seed);
+  }else{
+    // 火山は先を切った円錐にして、頂上に火口の穴を作る
+    geo = hasCrater
+      ? new THREE.CylinderGeometry(rad*CRATER_RATIO, rad, h, seg, rows, true)
+      : new THREE.ConeGeometry(rad, h, seg, rows, true);
+    displaceMountain(geo, h, rise, seed, conf, hasCrater ? 0.14 : 0);
   }
-  // 頂点カラー(高さ + ワールド座標のまだら + 削れた所の岩肌)
+  /* 頂点カラーは【面ごと】に塗る。flatShadingで見えるのは面の法線なので、
+     色も面の傾きで分けないと陰影と模様がずれて「グラデーションを貼った図形」に見える。
+     ・急斜面 → 露出した岩(暗い)
+     ・緩斜面 → 雪・草・砂(高さで決まる表土の色)
+     ・谷筋   → さらに暗く沈める(空が見えない場所なので実際に暗い)          */
+  geo = geo.toNonIndexed();
+  geo.computeVertexNormals();          // 非indexなので面法線がそのまま入る
+  const pos = geo.attributes.position, nor = geo.attributes.normal;
   const col = new Float32Array(pos.count*3);
-  const steep = themeColor('steep');
-  for(let i=0;i<pos.count;i++){
-    const localY = pos.getY(i);
-    const t = Math.max(0, Math.min(1, (localY + h/2 - MOUNT_SKIRT) / rise));
-    const wx = v.x + pos.getX(i), wz = v.y + pos.getZ(i);
+  const rockC = mixColor(new THREE.Color(conf.rock), themeColor('steep'), 0.40);
+  // 素の円錐の傾き。これより急な面を「岩がむき出しの崖」とみなす
+  const baseNy = rad / Math.hypot(rise, rad);
+  const c = new THREE.Color();
+  for(let f=0; f<pos.count; f+=3){
+    let cx = 0, cy = 0, cz = 0;
+    for(let k=0;k<3;k++){ cx += pos.getX(f+k); cy += pos.getY(f+k); cz += pos.getZ(f+k); }
+    cx /= 3; cy /= 3; cz /= 3;
+    const t = clamp01((cy + h/2 - MOUNT_SKIRT) / rise);
+    const wx = v.x + cx, wz = v.y + cz;
     const mottle = tileNoise(wx/220, wz/220, 64)*0.65 + tileNoise(wx/58, wz/58, 64)*0.35;
-    const c = mountainVertexColor(conf, t, mottle);
-    // 削れて岩が出ている所(ガリーの底)はマップの岩肌色を混ぜる。一色の斜面に見えなくなる
-    if(!isPyramid){
-      const ang = Math.atan2(pos.getZ(i), pos.getX(i)) + Math.PI;
-      const gully = angRidge(ang, t*1.6, 26);
-      c.lerp(steep, Math.min(0.52, gully*gully*0.62*conf.gully));
+    c.copy(mountainVertexColor(conf, t, mottle));
+    // 面の傾き(1=水平 0=垂直)。素の円錐より急なら岩、緩ければ表土
+    const ny = Math.abs(nor.getY(f));
+    const steepK = smoothBand(baseNy + conf.rockLo, baseNy + conf.rockHi, ny) * conf.rockK;
+    c.lerp(rockC, steepK);
+    // 緩い棚には表土が厚く乗る(雪山なら雪、森なら緑、砂漠なら砂)
+    if(conf.cover > 0 && ny > baseNy + 0.06){
+      _mcTmp.setHex(conf.top);
+      c.lerp(_mcTmp, Math.min(0.65, (ny - baseNy - 0.06)*2.2)*conf.cover*(0.30 + 0.70*t));
     }
-    col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
+    // 谷筋の落ち込み。空が見えない場所なので暗い(手描きのアンビエントオクルージョン)
+    const ang = Math.atan2(cz, cx) + Math.PI;
+    const ridge = isPyramid ? 0.5 : ridgedFbm(ang, t*2.4, seed);
+    c.multiplyScalar(0.78 + 0.34*ridge);
+    for(let k=0;k<3;k++){ col[(f+k)*3] = c.r; col[(f+k)*3+1] = c.g; col[(f+k)*3+2] = c.b; }
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const tex = mountainTextures();
+  /* 【落とし穴】地面用の roughnessMap をそのまま貼ると、山肌の一部が
+     つやのある面になって空の色を映し込み、暗い岩の山まで白っぽく飛ぶ
+     (カウレアの黒い火山が砂色に見えていた原因)。山は一様に粗い面として扱う。 */
   const mat = new THREE.MeshStandardMaterial({
     vertexColors:true, roughness: conf.rough, metalness:0.0,
     normalMap: tex ? tex.normalMap : null,
-    roughnessMap: tex ? tex.roughnessMap : null,
     normalScale: new THREE.Vector2(0.7, 0.7),
-    flatShading:true, envMapIntensity:ENV_INTENSITY*0.8, side:THREE.DoubleSide,
+    flatShading:true, envMapIntensity:ENV_INTENSITY*0.55, side:THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(geo, mat);
   const base = heightAt(v.x, v.y) - MOUNT_SKIRT;
@@ -305,7 +578,7 @@ const OBST_STEP = 200;     // プレイヤーがこの距離だけ動いたら�
 const OBST_VARIANTS = 4;   // 同じ種類でも形を4通り作って「同じ岩の繰り返し」を防ぐ
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 const OBST_SHAPE_FB = { h:1.2, sink:0.2 };
-let obstGroup = null, obstKinds = null, obstSrc = null, obstSig = '';
+let obstGroup = null, obstKinds = null, obstSrc = null, obstSig = '', obstShadow = null;
 let obstCX = null, obstCY = null, obstCull = OBST_VIEW, obstDrawn = 0;
 
 export function obstacleCullDist(){ return obstCull; }
@@ -313,6 +586,8 @@ export function obstacleDrawn(){ return obstDrawn; }
 export function resetObstacles(){
   obstSig = '';
   obstCull = OBST_VIEW;
+  // 山と障害物の肌は地面のテクスチャの複製。マップが変わったら作り直す
+  mountTexCache.normalMap = null;
   vegTheme = null;   // 植生もテーマごとに作り直す(地面の高さも色も変わるため)
 }
 
@@ -534,9 +809,10 @@ function obstacleGeo(flavor, variant){
   switch(flavor){
     case 'sandrock': {
       /* 砂岩: 風で削れた水平の層。3通りの形(平たい塊 / 割れた台 / 重なった板)。
-         色はテーマの砂利・高地色から作る(砂漠以外に出しても浮かない)。 */
-      const lo = mixColor(themeColor('steep'), themeColor('gravel'), 0.35).multiplyScalar(0.85);
-      const hi = mixColor(themeColor('high'), themeColor('gravel'), 0.45).multiplyScalar(1.12);
+         色はテーマの砂利・高地色から作る(砂漠以外に出しても浮かない)が、
+         【遮蔽物として一目で分かること】が要るので地面との明暗差だけは必ず確保する。 */
+      const lo = coverRock(mixColor(themeColor('steep'), themeColor('gravel'), 0.35).multiplyScalar(0.85), 0.86);
+      const hi = coverRock(mixColor(themeColor('high'), themeColor('gravel'), 0.45).multiplyScalar(1.12), 1.00);
       let g;
       if(variant === 2){
         // 割れて2枚に分かれた台。上の板を少しずらして段差を作る
@@ -558,9 +834,10 @@ function obstacleGeo(flavor, variant){
       return g;
     }
     case 'snowrock': {
-      // 雪をかぶった岩。岩肌はテーマの岩色、雪はテーマの高地色(=雪面)から
-      const lo = liftColor(themeColor('steep').multiplyScalar(0.85), 0.016);
-      const hi = liftColor(mixColor(themeColor('steep'), themeColor('gravel'), 0.6).multiplyScalar(1.10), 0.050);
+      // 雪をかぶった岩。岩肌はテーマの岩色、雪はテーマの高地色(=雪面)から。
+      // 雪原では地面も岩も白くなるので、岩肌側は必ず地面より暗く落として輪郭を残す
+      const lo = coverRock(liftColor(themeColor('steep').multiplyScalar(0.85), 0.016), 0.72);
+      const hi = coverRock(liftColor(mixColor(themeColor('steep'), themeColor('gravel'), 0.6).multiplyScalar(1.10), 0.050), 0.92);
       const snow = themeColor('high').multiplyScalar(1.06);
       const g = (variant === 1)
         ? mergeGeos([ boulderGeo(s, 0.56, { detail:ROCK_DETAIL }), (()=>{ const b = boulderGeo(s+3.3, 0.5, { detail:2 }); b.scale(0.55,0.55,0.55); b.translate(0.42, 0.30, 0.24); return b; })() ])
@@ -607,7 +884,13 @@ function obstacleGeo(flavor, variant){
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 1.00, 0, sh.h);
-      paintGeo(geo, liftColor(themeColor('steep').multiplyScalar(0.70), 0.008), liftColor(themeColor('gravel').multiplyScalar(1.05), 0.028), 0, sh.h, 0.30);
+      /* 【落とし穴】玄武岩を「テーマの岩色をほぼ黒まで落とした色」で塗ると、
+         アルベドが小さすぎて空の映り込み(鏡面反射)のほうが勝ち、赤い世界の中で
+         1本だけ無彩色のグレーの柱に見える。黒い岩でも必ずその場の色を混ぜ、
+         明るさの下限を上げておく(材質側の env も下げてある)。               */
+      const lo = coverRock(liftColor(mixColor(themeColor('steep'), themeColor('scrub'), 0.22).multiplyScalar(0.72), 0.007), 0.78);
+      const hi = coverRock(liftColor(mixColor(themeColor('gravel'), themeColor('haze'), 0.12).multiplyScalar(0.95), 0.018), 0.86);
+      paintGeo(geo, lo, hi, 0, sh.h, 0.30);
       cavityShade(geo, 0.36, 0.26);
       return geo;
     }
@@ -859,9 +1142,12 @@ function obstacleGeo(flavor, variant){
         parts.push(a);
       }
       const geo = mergeGeos(parts);
-      const cacBase = liftColor(mixColor(themeColor('scrub'), themeColor('low'), 0.40), 0.085);
-      const lo = cacBase.clone().multiplyScalar(0.66);
-      const hi = cacBase.clone().multiplyScalar(1.22);
+      /* 色: テーマ色だけで作ると砂漠では「砂と同じ白ベージュの棒」になり、
+         遮蔽物かどうかが一目で分からなくなる。サボテンの緑という個性は芯として残し、
+         そこへその場の色を混ぜて馴染ませたうえで、地面との明暗差を確保する。 */
+      const cacBase = plantColor(CACTUS_CORE, 0.34, 1.30, 1.70);
+      const lo = cacBase.clone().multiplyScalar(0.62);
+      const hi = cacBase.clone().multiplyScalar(1.24);
       paintGeo(geo, lo, hi, 0, 2.45, 0.18);
       cavityShade(geo, 0.34, 0.22);
       return geo;
@@ -887,19 +1173,176 @@ function obstacleGeo(flavor, variant){
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 0.95, 0, sh.h);
-      // 氷・水晶はテーマの岩色→高地色。雪山なら青白く、他のマップでもその場の色になる
-      const lo = mixColor(themeColor('skyTop'), themeColor('steep'), 0.30).multiplyScalar(1.10);
-      const hi = mixColor(themeColor('skyBot'), themeColor('high'), 0.35).multiplyScalar(1.15);
+      /* 氷・水晶。テーマ色だけで作ると雪原では「ほぼ白」になって雪岩と見分けが付かない。
+         氷の水色を芯にしてその場の空色を混ぜ、雪面より必ず濃い色にする。         */
+      const ice = crystalColor();
+      const lo = mixColor(ice, themeColor('steep'), 0.22).multiplyScalar(0.80);
+      const hi = mixColor(ice, themeColor('high'), 0.20).multiplyScalar(1.35);
       paintGeo(geo, lo, hi, 0, sh.h, 0.10);
       cavityShade(geo, 0.26, 0.30);
+      return geo;
+    }
+    /* ---- 人工物(身を隠すための遮蔽物) ----
+       当たり判定は他の障害物と同じ「半径の円」なので中には入れない。陰に隠れる塊。
+       【寸法は data.js の OBST_SHAPES が正】。render.js の2Dくり抜きが同じ表を読むので、
+       ここを変えたら必ず表も直すこと。fitBounds で sh.h に合わせてある。
+       色は「人が作った物」に見せたいので自然物より彩度と明度の差を強く取り、
+       遮蔽物として一目で分かるようにする(coverRock と同じ考え方)。          */
+    case 'ruinwall': {
+      // 崩れた石壁。上端を欠けさせ、根元に崩れた瓦礫を寄せる
+      const parts = [];
+      const bw = 0.86, bh = 1.62, bt = 0.34;
+      // 壁本体を縦の石積みに割る。段ごとに少しずらすと「積んだ壁」に見える
+      const cols = 5;
+      for(let i=0;i<cols;i++){
+        const t = i/(cols-1) - 0.5;
+        // 端の石ほど低く欠けさせる(崩れた壁の輪郭)
+        const chip = 1 - Math.pow(Math.abs(t)*2, 2.1)*0.42*(0.6 + frac(s + i*0.37)*0.8);
+        const hh = bh*Math.max(0.30, chip);
+        const w = bw*2/cols*0.94;
+        const b = new THREE.BoxGeometry(w, hh, bt*(0.88 + frac(i*0.71 + s)*0.24));
+        b.translate(t*bw*2*0.98, hh/2, (frac(i*1.31 + s) - 0.5)*bt*0.30);
+        b.rotateY((frac(i*0.53 + s) - 0.5)*0.10);
+        parts.push(b);
+      }
+      // 根元の瓦礫
+      for(let i=0;i<4;i++){
+        const a = s*1.7 + i*1.9;
+        const g = boulderGeo(s + i*2.3, 0.62, { amp:1.05 });
+        g.scale(0.20, 0.16, 0.20);
+        g.translate(Math.cos(a)*bw*0.85, 0.07, Math.sin(a)*bt*1.5);
+        parts.push(g);
+      }
+      const geo = mergeGeos(parts);
+      fitBounds(geo, 1.00, 0, sh.h);
+      // 石壁。地面の岩肌色を芯にして、地面より明るく振って遮蔽物として目立たせる
+      const base = coverRock(mixColor(themeColor('steep'), themeColor('gravel'), 0.55), 1.06);
+      paintGeo(geo, base.clone().multiplyScalar(0.74), base.clone().multiplyScalar(1.24), 0, sh.h, 0.30);
+      cavityShade(geo, 0.40, 0.22);
+      // 目地と風化のしみ
+      patchTint(geo, base.clone().multiplyScalar(0.62), 0.34, s*3.7, 5.5);
+      patchTint(geo, mixColor(themeColor('scrub'), base, 0.5).multiplyScalar(0.95), 0.26, s*1.9, 2.4);
+      return geo;
+    }
+    case 'container': {
+      // 打ち上げられた貨物コンテナ。波板の凹凸と扉の枠で「人が作った物」に見せる
+      const parts = [];
+      const cw = 0.96, ch = 1.26, cd = 0.58;
+      const body = new THREE.BoxGeometry(cw*2, ch, cd*2, 12, 2, 2);
+      // 波板(コルゲート)。側面だけを細かく波打たせる
+      const bp = body.attributes.position;
+      for(let i=0;i<bp.count;i++){
+        const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
+        if(Math.abs(z) > cd*0.92) bp.setZ(i, z + Math.sin(x*11.0)*0.022);
+        if(Math.abs(x) > cw*0.92) bp.setX(i, x + Math.sin(z*11.0)*0.020);
+      }
+      body.translate(0, ch/2, 0);
+      parts.push(body);
+      // 上下の縁の桁
+      for(const yy of [0.03, ch-0.03]){
+        const rim = new THREE.BoxGeometry(cw*2.04, 0.075, cd*2.04);
+        rim.translate(0, yy, 0);
+        parts.push(rim);
+      }
+      // 扉側の縦枠2本
+      for(const sx of [-0.42, 0.42]){
+        const bar = new THREE.BoxGeometry(0.075, ch*0.94, 0.06);
+        bar.translate(sx, ch/2, cd*1.01);
+        parts.push(bar);
+      }
+      const geo = mergeGeos(parts);
+      fitBounds(geo, 1.00, 0, sh.h);
+      // 塗装が褪せた金属。テーマに馴染ませつつ、砂浜より必ず暗くして塊として読ませる
+      const paint = contrastTo(mixColor(CONTAINER_PAINT, themeColor('steep'), 0.34), groundRefColor(), 1.45);
+      paintGeo(geo, paint.clone().multiplyScalar(0.80), paint.clone().multiplyScalar(1.18), 0, sh.h, 0.16);
+      cavityShade(geo, 0.30, 0.24);
+      // 錆。上面と縁から垂れるように出す
+      patchTint(geo, RUST_CORE.clone().lerp(paint, 0.30), 0.52, s*4.3, 3.1);
+      return geo;
+    }
+    case 'ruinpillar': {
+      // 遺跡の石柱。折れた高さの違う柱を土台の上に立てる
+      const parts = [];
+      const baseH = 0.30;
+      const plinth = new THREE.BoxGeometry(1.76, baseH, 1.76);
+      plinth.translate(0, baseH/2, 0);
+      parts.push(plinth);
+      const hs = [2.12, 1.34, 0.86], rs = [0.30, 0.22, 0.18];
+      for(let i=0;i<3;i++){
+        const a = s*1.3 + i*2.3, d = i===0 ? 0.06 : 0.52;
+        const hh = hs[i]*(0.86 + frac(i*0.61 + s)*0.28);
+        // 柱は円柱を8角に割り、折れ口を斜めに削ぐ
+        const c = new THREE.CylinderGeometry(rs[i]*0.92, rs[i], hh, 8, 3);
+        const cp = c.attributes.position;
+        for(let k=0;k<cp.count;k++){
+          const y = cp.getY(k);
+          if(y > hh*0.5 - 0.02){
+            // 折れ口。斜めに落として「折れた柱」にする
+            cp.setY(k, y - (cp.getX(k)*0.5 + 0.18)*(0.5 + frac(i + s)*0.7));
+          }
+        }
+        c.translate(0, hh/2 + baseH, 0);
+        c.rotateY(a);
+        c.translate(Math.cos(a)*d, 0, Math.sin(a)*d);
+        parts.push(c);
+      }
+      const geo = mergeGeos(parts);
+      fitBounds(geo, 1.00, 0, sh.h);
+      const base = coverRock(mixColor(themeColor('gravel'), themeColor('high'), 0.42), 1.10);
+      paintGeo(geo, base.clone().multiplyScalar(0.76), base.clone().multiplyScalar(1.22), 0, sh.h, 0.22);
+      cavityShade(geo, 0.38, 0.26);
+      // 苔・風化。密林では緑、砂漠では砂が乗る
+      patchTint(geo, mixColor(themeColor('scrub'), base, 0.40).multiplyScalar(0.92), 0.40, s*2.9, 2.8);
+      return geo;
+    }
+    case 'hut': {
+      // 崩れかけた小屋。片流れの屋根が落ちかけた形にして「建物の残骸」に見せる
+      const parts = [];
+      const hw = 0.94, hh = 1.02, hd = 0.72;
+      // 壁は板を縦に並べる(隙間が空くと廃屋に見える)
+      const boards = 7;
+      for(let i=0;i<boards;i++){
+        const t = i/(boards-1) - 0.5;
+        const bh2 = hh*(0.72 + frac(i*0.43 + s)*0.34);
+        const b = new THREE.BoxGeometry(hw*2/boards*0.86, bh2, 0.09);
+        b.translate(t*hw*1.92, bh2/2, hd);
+        b.rotateY((frac(i*0.77 + s) - 0.5)*0.07);
+        parts.push(b);
+      }
+      // 側面の壁2枚
+      for(const sx of [-1, 1]){
+        const w = new THREE.BoxGeometry(0.09, hh*0.92, hd*1.9);
+        w.translate(sx*hw, hh*0.46, hd*0.05);
+        parts.push(w);
+      }
+      // 落ちかけた片流れの屋根
+      const roof = new THREE.BoxGeometry(hw*2.2, 0.10, hd*2.1);
+      roof.rotateX(0.26);
+      roof.translate(0, hh + 0.10, -0.04);
+      parts.push(roof);
+      // 支柱
+      for(const sx of [-0.86, 0.86]){
+        const p = new THREE.BoxGeometry(0.11, hh*1.16, 0.11);
+        p.translate(sx, hh*0.58, -hd*0.86);
+        parts.push(p);
+      }
+      const geo = mergeGeos(parts);
+      fitBounds(geo, 1.00, 0, sh.h);
+      // 風雪で灰色になった木材。雪原で埋もれないよう地面と明度差を取る
+      const wood = contrastTo(mixColor(WOOD_CORE, themeColor('steep'), 0.40), groundRefColor(), 1.55);
+      paintGeo(geo, wood.clone().multiplyScalar(0.72), wood.clone().multiplyScalar(1.20), 0, sh.h, 0.34);
+      cavityShade(geo, 0.42, 0.20);
+      patchTint(geo, wood.clone().multiplyScalar(0.58), 0.36, s*5.1, 4.2);
       return geo;
     }
     default: {
       /* 既定の岩。荒野・火山・ジャングル・海岸に出るので色を決め打ちにすると
          その場だけ浮く。地面と同じテーマ色(岩肌=steep / 砂利=gravel)から作る。
+         ただし【隠れられる物として一目で読める】ことがバトロワの要件なので、
+         散布した小石と違い、地面との明暗差だけは coverRock で必ず確保する。
          形は4通り: 丸い塊 / 角ばった塊 / 平たい岩床 / 重なった岩。 */
-      const lo = liftColor(themeColor('steep').multiplyScalar(0.85), 0.016);
-      const hi = liftColor(themeColor('gravel').multiplyScalar(1.30), 0.050);
+      const lo = coverRock(liftColor(themeColor('steep').multiplyScalar(0.85), 0.016), 0.80);
+      const hi = coverRock(liftColor(themeColor('gravel').multiplyScalar(1.30), 0.050), 1.05);
       let g;
       if(variant === 3){
         // 重なった岩(大小2つ)。1つの塊だけだと同じ形の繰り返しに見える
@@ -933,7 +1376,8 @@ const OBST_MATS = {
   rock:     { rough:0.97, tex:1.9, env:0.55 },
   sandrock: { rough:0.99, tex:1.7, env:0.50 },
   snowrock: { rough:0.80, tex:1.1, env:0.70 },
-  basalt:   { rough:0.92, tex:1.9, env:0.45 },
+  // 玄武岩は暗い岩。env を上げると空の映り込みだけが残って無彩色のグレーに見える
+  basalt:   { rough:0.96, tex:1.9, env:0.22 },
   deadtree: { rough:0.96, env:0.45 },
   pine:     { rough:0.94, env:0.55 },
   tree:     { rough:0.95, env:0.55 },
@@ -942,20 +1386,49 @@ const OBST_MATS = {
   shell:    { rough:0.34, env:1.10 },
   cactus:   { rough:0.82, env:0.55 },
   crystal:  { rough:0.26, env:0.95 },
+  // 人工物(遮蔽物)。石は肌テクスチャを貼り、金属だけ少しツヤを残す
+  ruinwall:  { rough:0.95, tex:1.6, env:0.40 },
+  container: { rough:0.72, tex:0.5, env:0.55 },
+  ruinpillar:{ rough:0.94, tex:1.4, env:0.40 },
+  hut:       { rough:0.96, tex:0.6, env:0.38 },
 };
 // 岩は少し傾けて置くと「置き物」に見えない(木・柱は立てたまま)
 const OBST_TILT = { rock:0.10, sandrock:0.08, snowrock:0.10, shell:0.16, log:0.05, crystal:0.06 };
+/* 接地影の広さ(当たり判定の半径=1に対する比)。
+   木は幹より樹冠のほうが日を遮るので、幹の太さではなく葉の広がりに合わせる。 */
+const OBST_CONTACT = {
+  deadtree:0.75, pine:1.15, tree:1.20, palm:0.85, cactus:0.75,
+  crystal:1.15, log:1.35, shell:1.30,
+  // 人工物は底面がそのまま地面に接する箱なので、影は本体の footprint に近い広さ
+  ruinwall:1.30, container:1.40, ruinpillar:1.35, hut:1.40,
+};
+const CONTACT_R_DEFAULT = 1.55;
+const OBST_SHADOW_FADE = [2300, 3050];   // 影を縮めて消す距離(霞で障害物が消えるより手前)
+// 影の濃さ(画面の明るさの倍率)。1で無変化、小さいほど濃い
+const OBST_SHADOW_CORE = 0.40, OBST_SHADOW_MID = 0.54;
+/* 影を落とす向き(太陽の反対側の水平成分)。真下に敷くだけだと「足元のしみ」に見えるので、
+   物の高さに応じてこの向きへずらす。太陽の向きは real3d_common.js の1か所だけが正。 */
+const SUN_FLAT = (()=>{ const L = Math.hypot(SUN_DIR.x, SUN_DIR.z) || 1;
+                        return { x:-SUN_DIR.x/L, z:-SUN_DIR.z/L }; })();
+const SHADOW_SLIP = 0.14;   // ずらす量(物の高さに対する比)
 
 function obstacleMaterial(flavor){
   const conf = OBST_MATS[flavor] || OBST_MATS.rock;
   const tex = conf.tex ? mountainTextures() : null;
-  return new THREE.MeshStandardMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     vertexColors:true, roughness:conf.rough, metalness:0.0,
     normalMap: tex ? tex.normalMap : null,
     normalScale: new THREE.Vector2(conf.tex||1, conf.tex||1),
     flatShading:true,
     envMapIntensity: (conf.env == null ? 1 : conf.env) * ENV_INTENSITY,
   });
+  /* 水晶だけはわずかに自ら光る。日陰へ入っても水色が残り、
+     「氷の結晶」だと分かる(色はテーマ由来なのでマップごとに変わる)。 */
+  if(flavor === 'crystal'){
+    mat.emissive = crystalColor().multiplyScalar(0.55);
+    mat.emissiveIntensity = 0.22;
+  }
+  return mat;
 }
 
 // 中身が変わったときだけ作り直すための署名(試合ごとに1回)
@@ -988,6 +1461,16 @@ function buildObstacles(scene, list){
     }
     obstKinds[f] = vars;
   }
+  /* 接地影は種類をまたいで1つのInstancedMeshにまとめる(描画命令は+1だけ)。
+     岩は傾けて置くが影は傾けない。地面の高さも岩の足元4点の最小ではなく
+     中心の高さを使うので、影だけは必ず地面に沿う。                          */
+  obstShadow = new THREE.InstancedMesh(
+    shadowDiscGeo(10, 1.7, OBST_SHADOW_CORE, OBST_SHADOW_MID, 2, 0.74),
+    shadowMaterial(OBST_SHADOW_FADE[0], OBST_SHADOW_FADE[1]), OBST_MAX);
+  obstShadow.frustumCulled = false;
+  obstShadow.count = 0;
+  obstShadow.renderOrder = 1;
+  obstGroup.add(obstShadow);
   scene.add(obstGroup);
   obstCX = obstCY = null;
 }
@@ -1010,6 +1493,7 @@ function updateObstacleInstances(cx, cy){
   obstCull = near.length > OBST_MAX ? Math.sqrt(near[OBST_MAX].d2) : OBST_VIEW;
   if(near.length > OBST_MAX) near.length = OBST_MAX;
   for(const f in obstKinds) for(const m of obstKinds[f]) m.count = 0;
+  if(obstShadow) obstShadow.count = 0;
   for(let i=0;i<near.length;i++){
     const o = near[i].o;
     const flavor = o.flavor || 'rock';
@@ -1047,11 +1531,23 @@ function updateObstacleInstances(cx, cy){
     _oc.setRGB(tint, tint*(0.99 + ((seed*13.1)%1)*0.03), tint*(0.97 + ((seed*17.9)%1)*0.05));
     mesh.setColorAt(idx, _oc);
     mesh.count = idx + 1;
+    // 接地影。傾きは付けず、中心の地面の高さに沿わせる
+    if(obstShadow && obstShadow.count < OBST_MAX){
+      const cr = ((OBST_CONTACT[flavor] == null) ? CONTACT_R_DEFAULT : OBST_CONTACT[flavor]) * r;
+      const slip = r*sh.h*hk*SHADOW_SLIP;
+      _ov.set(o.x + SUN_FLAT.x*slip, heightAt(o.x, o.y) + r*0.07, o.y + SUN_FLAT.z*slip);
+      _oq2.setFromAxisAngle(UP_AXIS, seed*2.31);
+      _os.set(cr*wx, 1, cr*wz);
+      _om.compose(_ov, _oq2, _os);
+      obstShadow.setMatrixAt(obstShadow.count, _om);
+      obstShadow.count++;
+    }
   }
   for(const f in obstKinds) for(const m of obstKinds[f]){
     m.instanceMatrix.needsUpdate = true;
     if(m.instanceColor) m.instanceColor.needsUpdate = true;
   }
+  if(obstShadow) obstShadow.instanceMatrix.needsUpdate = true;
   obstDrawn = near.length;
 }
 
@@ -1348,6 +1844,9 @@ const VEG_STYLES = {
 const VEG_VARIANTS = 4;
 const VEG_STEP = 110;        // プレイヤーがこの距離だけ動いたら生やし直す
 const VEG_FILL = 0.55;       // 格子のうち実際に生やす割合(粗密の平均)
+/* 地面へ沈める深さ(モデルの高さに対する比)。
+   接地影の板をここへ合わせるので、placeLayer の引数と必ず同じ値を使う。 */
+const VEG_SINK = { grass:0.06, shrub:0.08, stone:0.30 };
 
 let vegGroup = null, vegKinds = null, vegTheme = null, vegConf = null;
 let vegCX = null, vegCY = null;
@@ -1379,7 +1878,7 @@ function buildVegetation(scene){
   const col = vegColors();
   const isLump = (vegConf.shrub.kind === 'lump');
 
-  const add = (name, conf, geoFn, mat, shadow, recv)=>{
+  const add = (name, conf, geoFn, mat, shadow, recv, shR, core, mid)=>{
     const cap = Math.ceil(conf.n * 0.75) + 8;
     const vars = [];
     for(let v=0; v<VEG_VARIANTS; v++){
@@ -1391,7 +1890,16 @@ function buildVegetation(scene){
       vegGroup.add(m);
       vars.push(m);
     }
-    vegKinds[name] = { conf, vars, cap };
+    /* 接地影は形の4通りをまたいで1つのInstancedMeshにまとめる(層ごとに+1描画命令)。
+       消える距離は層ごとに違うので、層ごとに1つ持つ必要がある。               */
+    const sm = new THREE.InstancedMesh(
+      shadowDiscGeo(6, name.length*0.9 + 1.3, core, mid, 2, 0.60),
+      shadowMaterial(conf.view*0.72, conf.view), cap*VEG_VARIANTS);
+    sm.frustumCulled = false;
+    sm.count = 0;
+    sm.renderOrder = 1;
+    vegGroup.add(sm);
+    vegKinds[name] = { conf, vars, cap, shadow:sm, shR };
   };
 
   // 草: アルファ抜きの板。透過の並べ替えを避けるため alphaTest(透明扱いにしない)
@@ -1406,7 +1914,7 @@ function buildVegetation(scene){
     // -0.45 起点にして「根元だけ暗い」形にする(0起点だと株の半分が沈んで黒く見える)
     paintGeo(g, col.grassBase.clone().multiplyScalar(0.66), col.grassBase.clone().multiplyScalar(1.24), -0.55, 1, 0.26);
     return g;
-  }, grassMat, false, true);
+  }, grassMat, false, true, 0.62, 0.55, 0.72);
 
   // 低木・シダ: 立体の葉。風は草より弱く、遠くまで出す
   const shrubMat = applyWind(new THREE.MeshLambertMaterial({
@@ -1416,13 +1924,15 @@ function buildVegetation(scene){
   }), isLump ? 0 : 0.20, isLump ? 0 : 0.9, vegConf.shrub.view*0.80, vegConf.shrub.view, amb);
   const shrubBase = isLump ? col.lumpBase : col.shrubBase;
   add('shrub', vegConf.shrub, (v)=> shrubGeo(vegConf.shrub.kind, v,
-      shrubBase.clone().multiplyScalar(0.74), shrubBase.clone().multiplyScalar(1.26)), shrubMat, true, true);
+      shrubBase.clone().multiplyScalar(0.74), shrubBase.clone().multiplyScalar(1.26)),
+      shrubMat, true, true, isLump ? 0.95 : 0.85, 0.48, 0.66);
 
   // 小石: 風で動かないので、遠くで消すぶんだけシェーダーを差し込む
   const stoneMat = applyWind(new THREE.MeshLambertMaterial({
     vertexColors:true, flatShading:true,
   }), 0, 0, vegConf.stone.view*0.80, vegConf.stone.view, amb);
-  add('stone', vegConf.stone, (v)=> pebbleGeo(v, col.stoneBase.clone().multiplyScalar(0.95), col.stoneBase.clone().multiplyScalar(1.30)), stoneMat, false, false);
+  add('stone', vegConf.stone, (v)=> pebbleGeo(v, col.stoneBase.clone().multiplyScalar(0.95),
+      col.stoneBase.clone().multiplyScalar(1.30)), stoneMat, false, false, 0.95, 0.55, 0.72);
 
   scene.add(vegGroup);
   vegCX = vegCY = null;
@@ -1470,6 +1980,7 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
   const conf = layer.conf, vars = layer.vars;
   const view = conf.view, target = conf.n;
   for(const m of vars) m.count = 0;
+  if(layer.shadow) layer.shadow.count = 0;
   if(target <= 0) return;
   // 円の中に target/VEG_FILL 個の格子が入るようにマス目の大きさを決める
   const cells = target / VEG_FILL;
@@ -1511,7 +2022,8 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       const idx = mesh.count;
       if(idx >= layer.cap) continue;
       const sz = hLo + hSpan*hash2(gx*9.31 + seedOff, gy*4.19 - seedOff);
-      _vv.set(wx, heightAt(wx, wy) - sz*sinkRatio, wy);
+      const gh = heightAt(wx, wy);
+      _vv.set(wx, gh - sz*sinkRatio, wy);
       if(rotate) _vq.setFromAxisAngle(UP_AXIS, h2*6.2831);
       else _vq.identity();
       // 横幅にも個体差。同じ形の繰り返しに見せない
@@ -1524,12 +2036,25 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       _vc.setRGB(t*(0.94 + h2*0.16), t, t*(0.88 + h1*0.16));
       mesh.setColorAt(idx, _vc);
       mesh.count = idx + 1;
+      // 接地影。株を回さない層でも影だけは回して、同じ輪郭が並ばないようにする
+      const sm = layer.shadow;
+      if(sm && sm.count < sm.instanceMatrix.count){
+        const sr = sz*wk*layer.shR;
+        const slip = sz*SHADOW_SLIP;
+        _vv.set(wx + SUN_FLAT.x*slip, gh + sz*0.11, wy + SUN_FLAT.z*slip);
+        _vq.setFromAxisAngle(UP_AXIS, h1*6.2831);
+        _vs.set(sr, 1, sr);
+        _vm.compose(_vv, _vq, _vs);
+        sm.setMatrixAt(sm.count, _vm);
+        sm.count++;
+      }
     }
   }
   for(const m of vars){
     m.instanceMatrix.needsUpdate = true;
     if(m.instanceColor) m.instanceColor.needsUpdate = true;
   }
+  if(layer.shadow) layer.shadow.instanceMatrix.needsUpdate = true;
 }
 
 function updateVegetation(scene, cx, cy){
@@ -1541,9 +2066,9 @@ function updateVegetation(scene, cx, cy){
   windTime.value = performance.now()*0.001;
   if(vegCX != null && Math.abs(cx-vegCX) + Math.abs(cy-vegCY) < VEG_STEP) return;
   vegCX = cx; vegCY = cy;
-  placeLayer(vegKinds.grass, cx, cy, 1.7,  false, 0.06);
-  placeLayer(vegKinds.shrub, cx, cy, 5.3,  false, 0.08);
-  placeLayer(vegKinds.stone, cx, cy, 11.9, true,  0.30);
+  placeLayer(vegKinds.grass, cx, cy, 1.7,  false, VEG_SINK.grass);
+  placeLayer(vegKinds.shrub, cx, cy, 5.3,  false, VEG_SINK.shrub);
+  placeLayer(vegKinds.stone, cx, cy, 11.9, true,  VEG_SINK.stone);
 }
 
 export function updateObstacles(scene, rocks, crystals, cx, cy){
