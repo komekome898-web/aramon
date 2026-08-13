@@ -2082,9 +2082,13 @@ function real3dHeightGrad(x, y){
 const REAL3D_THEMES = {
   wild: {
     tex:'dry', bump:0.30,
-    skyTop:0x1b2740, skyBot:0x6d7b8c, haze:0x8d9099,
-    low:0x4a5666, high:0x7d8798, steep:0x3a4351, gravel:0x5b6572, scrub:0x55603f,
-    ridgeRock:0x4a5260, ridgeFoot:0x5d6675, ridgeSnow:0xd2dbe6, snowLine:0.80,
+    // 夕暮れの荒野。前は全体が暗すぎて地面の作り込みが沈んでいたので、
+    // 「薄暗い」の性格は残したまま明度だけ持ち上げてある
+    // 地面は暖色(乾いた土)、空は寒色(夕暮れ)。明度を上げるだけで青灰色にすると
+    // 荒野ではなく寒々しいツンドラに見えたので、地面側は必ず暖色に寄せること
+    skyTop:0x24344f, skyBot:0x8b9aab, haze:0x9aa3ac,
+    low:0x6b6355, high:0x9c9179, steep:0x554e44, gravel:0x7d7466, scrub:0x6f6b48,
+    ridgeRock:0x5b6472, ridgeFoot:0x717c8c, ridgeSnow:0xd2dbe6, snowLine:0.80,
   },
   kaurea: {
     tex:'volcanic', bump:0.34,
@@ -2094,15 +2098,22 @@ const REAL3D_THEMES = {
   },
   papas: {
     tex:'snow', bump:0.18,
-    skyTop:0x2e4a72, skyBot:0xcfe0ef, haze:0xdbe8f2,
-    low:0xb9cad9, high:0xf4f9ff, steep:0x7f8ea0, gravel:0xc8d4e0, scrub:0xa9bccd,
+    // 雪原。空も地面も白いと全部が溶けて見えるので、天頂を濃い青にして
+    // 「青い空 対 白い雪」の対比を作る。雪の影側(low)も少し青を強くした
+    skyTop:0x24558f, skyBot:0xbcd7ec, haze:0xd2e4f2,
+    low:0xa8bccd, high:0xeef5ff, steep:0x6f8195, gravel:0xbccadb, scrub:0x9ab0c4,
     ridgeRock:0x7c8b9d, ridgeFoot:0xb7c6d6, ridgeSnow:0xffffff, snowLine:0.28,
   },
   palepale: {
     tex:'jungle', bump:0.30,
-    skyTop:0x1a3a2a, skyBot:0x93b58c, haze:0x9db98f,
-    low:0x24451f, high:0x4f7030, steep:0x3a3a24, gravel:0x3f4a2c, scrub:0x648020,
-    ridgeRock:0x3a4a34, ridgeFoot:0x4c6440, ridgeSnow:0xdfe8d8, snowLine:0.82,
+    /* 密林。**空まで緑にしない。** 前は空・霞・地面・草が全部同じ緑で、
+       画面全体が緑一色のスープになり、空が空に見えていなかった。
+       空は湿った熱帯の青、霞は白っぽい靄にして、緑は地面だけが持つ。
+       steep/gravel を茶色にしてあるのは、緑の中に土の色を出すため
+       (急斜面のむき出しの土と、落ち葉が溜まった地面)。               */
+    skyTop:0x2f6f9e, skyBot:0xa8cfd8, haze:0xbcd3c8,
+    low:0x2a4a22, high:0x5c7f38, steep:0x5a4a30, gravel:0x6b5a3c, scrub:0x6e8a28,
+    ridgeRock:0x4a5f45, ridgeFoot:0x6d8a68, ridgeSnow:0xdfe8d8, snowLine:0.82,
   },
   toble: {
     tex:'sand', bump:0.22,
@@ -2112,7 +2123,8 @@ const REAL3D_THEMES = {
   },
   mandy: {
     tex:'sand', bump:0.24,
-    skyTop:0x2a4a7a, skyBot:0xe0c98f, haze:0xe6d3a4,
+    // 天頂だけ青を強くして、砂と空が同じ金色で溶けるのを防ぐ
+    skyTop:0x2f5c93, skyBot:0xe0c98f, haze:0xe6d3a4,
     low:0xc9ab6f, high:0xf2e2ae, steep:0xa08a5c, gravel:0xd8c48c, scrub:0xc0b070,
     ridgeRock:0x8a7a5a, ridgeFoot:0xc8ae7e, ridgeSnow:0xf2ead8, snowLine:0.86,
   },

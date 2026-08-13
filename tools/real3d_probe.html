@@ -68,6 +68,32 @@
     if(kind === 'crystal') return first(crystalObstacles);
     return null;
   }
+  /* 立ち位置が山の中に入っていたら外へ押し出す。
+     試合中はプレイヤーが山の中へ入れない(world.jsのblockedByVolcano)ので、
+     山の内側から撮った絵は「実際には出ない画」になる。
+     実際にパレパレで起きた: マップ中心(9050,9050)が半径900の森の山(9412,9412)の
+     内側に入り、全カットが緑一色になって色調の判断ができなかった。          */
+  function pushOutOfMountains(at){
+    let p = { x: at.x, y: at.y };
+    for(let pass=0; pass<8; pass++){
+      let moved = false;
+      for(const v of volcanoObstacles){
+        const dx = p.x - v.x, dy = p.y - v.y;
+        const d = Math.hypot(dx, dy);
+        const need = v.radius * 1.25 + 260;   // 裾の外へ、さらに少し離れて全体が入るように
+        if(d < need){
+          const a = (d > 1) ? Math.atan2(dy, dx) : 0.7;
+          p.x = v.x + Math.cos(a) * need;
+          p.y = v.y + Math.sin(a) * need;
+          moved = true;
+        }
+      }
+      if(!moved) break;
+    }
+    p.x = Math.max(200, Math.min(WORLD.w-200, p.x));
+    p.y = Math.max(200, Math.min(WORLD.h-200, p.y));
+    return p;
+  }
   // カメラを置く。at=立ち位置 / look=向く先(省略時は yaw をそのまま使う)
   function placeCamera(at, opt){
     const px = at.x, py = at.y;
@@ -116,6 +142,7 @@
       if(!at) at = { x: WORLD.w*0.5, y: WORLD.h*0.5 };
       at.x = Math.max(200, Math.min(WORLD.w-200, at.x));
       at.y = Math.max(200, Math.min(WORLD.h-200, at.y));
+      at = pushOutOfMountains(at);
       if(pose.look === false) look = null;
       const info = placeCamera(at, { yaw: pose.yaw, pitch: pose.pitch, look });
       /* 波と溶岩の脈動は performance.now() で進むので、そのまま撮ると毎回位相が変わり
