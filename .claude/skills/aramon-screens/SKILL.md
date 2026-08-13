@@ -84,11 +84,12 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 - **所持スキン一覧はここが正**(旧バッグの「スキン」タブから移設。バッグは`アイテム`/`称号`の2タブに戻った)。`renderGallerySkins()`は旧`renderBagSkins()`をそのまま移しただけで、一覧はモンスターごとの見出しなしのフラットグリッド(レアリティ→種族→色の順)。
 - **タップすると`showSkinPreview(id, {selectable:true, selectLabel:'着せ替え画面へ', onSelect:...})`。** `showSkinPreview`の`opts.selectLabel`で下部ボタンの文言を上書きできる(未指定なら従来通り「このスキンを選ぶ」)。**新しい選択ボタンの用途を足すときはここへ`selectLabel`を追加するだけでよい**(ボタン自体・開閉・アニメは共通のまま)。
 - **着せ替えへの導線は`jumpToDressup(element)`1つ**: `openMastermonScreen()`→`openMastermonDetail(element)`→`mmOpenTab('dressup')`の3呼び出し。**そのマスモンが未作成なら遷移せずトーストのみ**(着せ替えタブ自体がマスモン前提のため)。マスモンは`loadMastermons()[element]`で**種族名がそのままキー**(1種族1体)なので、スキンの`element`をそのままキーに使える。
-- **ミュージアムは「所持していて`SKIN_MEDIA`に何か持っているSSR」だけを列挙**(`galleryMuseumSkinIds()`)。動画・BGM・SEはスキンごとに任意なので、無い項目のボタンは出さない(`zod_ssr`はムービー無し、等)。
+- **ミュージアムの一覧対象は「所持していて`SKIN_MEDIA`か専用SE表のどちらかを持つSSR」**(`galleryMuseumSkinIds()`)。**SSRの専用SEは2系統ある**(轟金剛・大喰いの利世・ゼウス・ちょこ・ペルセポネのように`SKIN_MEDIA`導入より前から手書きで登録された古い方と、`SKIN_MEDIA.se`で登録する新しい方)。片方(`SKIN_MEDIA`だけ)しか見ないと、古いSSRの専用SEを「無い」と誤診断する(実際に起きた不具合。2026-08-13)。
+  動画・BGMは`SKIN_MEDIA`にしか無いので、無ければボタンごと出さない(`zod_ssr`はムービー無し、等)。
 - **既存のSSR専用メディア再生の仕組みをそのまま流用し、新しい配線を作らない**:
-  - ムービー = `runSsrPromotionStage(ssrPromotionSkinMedia(id), id, onEnd)`を**共通演出を挟まず単独**で呼ぶ。再生先は共通の`#ssrPromoteOverlay`(z-index 701 > ギャラリーの600なので上に出る)。
+  - ムービー = `runSsrPromotionStage(ssrPromotionSkinMedia(id), id, onEnd)`を**共通演出を挟まず単独**で呼ぶ。再生先は共通の`#ssrPromoteOverlay`(z-index 701 > ギャラリーの600なので上に出る。**`#gachaOverlay`の中に置かない**——中に置くと`#gachaOverlay`がhiddenの間は子である動画も描画サイズ0×0になり、音だけ鳴って映像が出ない不具合になる。実際に起きたので独立した最上位オーバーレイにしてある)。
   - BGM = `ensureSkinBgmBuffers(id)` → `bgmSetTrack('skinBgm:'+id+':'+slot)`(管理者画面の`adminPlayBgm`と同じ呼び方)。
-  - SE = `ensureSkinMediaSeBuffers(id)` → `playSe('skinSe:'+id+':'+slot)`。
+  - **SEは`gallerySkinSeName(id, slot)`で「実際に試合中に鳴る名前」を解決してから`playSe(name)`。** 解決先は`combat.js`の`SKIN_TIER3_SE`/`SKIN_HIT_SE`/`SKIN_KILL_SE`/`SKIN_WIN_SE`の4表(**この4表がSE専用SEの唯一の正**。`SKIN_MEDIA.se`はここへ自動マージされるだけで、`SKIN_MEDIA.se`を直接読んではいけない——古いSSRを見落とす)。`skinSe:id:slot`形式(`SKIN_MEDIA.se`由来)のときだけ`ensureSkinMediaSeBuffers(id)`で追加読み込みが要る。手書きの専用SE(`gokongo`/`rize`等)は`audioInit()`内の`ensureProvidedSeBuffers()`で起動時に読み込み済み。**専用SEが無いスロットは何も表示しない**(共通SEで埋めない。ミュージアムは専用を聴く場所なので、共通SEを鳴らすのは「勝手な仕様変更」として発注者に差し戻された。2026-08-13)。
   - **「ロビーBGMにする」は`setLobbyBgmMode('skinBgm:'+id+':'+slot)`を呼ぶだけ。** `lobbyBgmChoices()`が所持スキンから同じidを自動で列挙しているので、ミュージアムで鳴らせる組み合わせは必ずロビーBGM選択肢としても有効(新しいデータ配線は不要)。
 - **ミュージアムタブに入ったら`bgmSetTrack(null)`でBGMを止める。** タブを抜けた・ギャラリーを閉じたら`updateMetaBgm()`を呼んでロビー曲へ戻す(試合中でないときだけ効く既存の共通処理)。
 - ロビー左メニューは**ミッション統合で1枠空けてからギャラリーを最後尾へ追加**(バッグ/ショップの隣接ペアは崩さない)。

@@ -1905,10 +1905,19 @@ function galleryShowTab(tab){
     if(typeof bgmSetTrack==='function') bgmSetTrack(null); // ミュージアムに入るとBGMが止まる
   }
 }
-// 所持していて、かつSKIN_MEDIAに専用素材(ムービー/BGM/SEのいずれか)を持つSSRだけ
+// 所持していて、専用素材(ムービー/BGM/SKIN_MEDIA.se)か専用SE(下の4表。轟金剛・大喰いの利世
+// ・ゼウス・ちょこ・ペルセポネ等、SKIN_MEDIA導入より前から手書きで専用SEだけ持つスキンがいる)
+// のどちらかを持つSSRだけを一覧する
 function galleryMuseumSkinIds(){
   const owned = loadSkins().owned;
-  return Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).filter(id=> owned[id] && skinMeta(id));
+  const ids = new Set([
+    ...Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}),
+    ...Object.keys(typeof SKIN_TIER3_SE!=='undefined' ? SKIN_TIER3_SE : {}),
+    ...Object.keys(typeof SKIN_HIT_SE!=='undefined' ? SKIN_HIT_SE : {}),
+    ...Object.keys(typeof SKIN_KILL_SE!=='undefined' ? SKIN_KILL_SE : {}),
+    ...Object.keys(typeof SKIN_WIN_SE!=='undefined' ? SKIN_WIN_SE : {}),
+  ]);
+  return [...ids].filter(id=> owned[id] && skinMeta(id));
 }
 let galleryMuseumSkinId = null;     // ミュージアムで選択中のSSR
 let galleryMuseumPlayingSlot = null; // 直近に再生したBGMスロット。「ロビーBGMにする」の対象
@@ -1934,19 +1943,28 @@ function renderGalleryMuseumList(){
     });
   });
 }
+// SEスロット → 実際に鳴らす名前を持つ表(combat.js)。SKIN_MEDIA.seの専用SEもここへ
+// 自動マージされているので、この4表だけ見れば「専用SEが実際にあるか」が正しく分かる
+// (試合中に実際に鳴る名前と完全に同じものなので、ミュージアムと実戦で音がズレない)。
+// combat.jsのconstはwindowのプロパティにならないため、文字列キー経由ではなく直接参照する
+function gallerySkinSeName(skinId, slot){
+  const table = slot==='tier3' ? SKIN_TIER3_SE : slot==='hit' ? SKIN_HIT_SE
+              : slot==='kill' ? SKIN_KILL_SE : slot==='win' ? SKIN_WIN_SE : null;
+  return (table && table[skinId]) || null;
+}
 function renderGalleryMuseumDetail(){
   const el = document.getElementById('galleryMuseumDetail');
   const id = galleryMuseumSkinId;
-  if(!id || !SKIN_MEDIA[id]){
+  if(!id){
     el.innerHTML = '<div class="gallery-museum-empty">🎬 所持しているSSRスキンを選ぶと、専用のムービー・BGM・SEを見聞きできます</div>';
     return;
   }
   const m = skinMeta(id);
-  const media = SKIN_MEDIA[id];
+  const media = (typeof SKIN_MEDIA!=='undefined' && SKIN_MEDIA[id]) || {};
   const movieBtnHtml = media.promote ? `<button id="galleryMuseumMovieBtn" class="gallery-museum-play-btn">▶️ ムービーを見る</button>` : '';
   const bgmBtns = Object.keys(SKIN_BGM_SLOTS).filter(slot=>media.bgm && media.bgm[slot]).map(slot=>
     `<button class="gallery-museum-media-btn ${galleryMuseumPlayingSlot===slot?'playing':''}" data-kind="bgm" data-slot="${slot}">🎵 ${SKIN_BGM_SLOTS[slot]}</button>`).join('');
-  const seBtns = Object.keys(SKIN_SE_SLOTS).filter(slot=>media.se && media.se[slot]).map(slot=>
+  const seBtns = Object.keys(SKIN_SE_SLOTS).filter(slot=>gallerySkinSeName(id, slot)).map(slot=>
     `<button class="gallery-museum-media-btn" data-kind="se" data-slot="${slot}">🔊 ${SKIN_SE_SLOTS[slot]}</button>`).join('');
   el.innerHTML = `
     <div class="gallery-museum-name">${m.name}</div>
@@ -1988,10 +2006,17 @@ function galleryPlayBgm(skinId, slot){
   galleryMuseumPlayingSlot = slot;
   renderGalleryMuseumDetail();
 }
+// 実際に鳴る名前はgallerySkinSeName()が4表(combat.js)から解決したもの。
+// skinSe:id:slot形式(SKIN_MEDIA.se由来)だけ追加の読み込みが要る。手書きの専用SE
+// (gokongo/rize等)はaudioInit()のensureProvidedSeBuffers()で起動時に読み込み済み
 function galleryPlaySe(skinId, slot){
+  const seName = gallerySkinSeName(skinId, slot);
+  if(!seName) return;
   if(typeof audioInit==='function') audioInit();
-  if(typeof ensureSkinMediaSeBuffers==='function') ensureSkinMediaSeBuffers(skinId);
-  if(typeof playSe==='function') playSe(`skinSe:${skinId}:${slot}`);
+  if(seName.indexOf('skinSe:')===0 && typeof ensureSkinMediaSeBuffers==='function'){
+    ensureSkinMediaSeBuffers(skinId);
+  }
+  if(typeof playSe==='function') playSe(seName);
 }
 
 let bagUseQty = 1;
