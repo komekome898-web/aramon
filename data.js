@@ -46,7 +46,7 @@ const MAPS = {
     groundColor:'#142433',
     previewIcon:'🪨', previewColors:['#2a3a4a','#0f1a24'],
     desc:'岩が点在するだけのシンプルな荒野。見通しが良く、初めてのバトルにもおすすめ。',
-    realObstacles:[{ type:'rock', w:0.74 }, { type:'deadtree', w:0.26 }],
+    realObstacles:[{ type:'rock', w:0.66 }, { type:'deadtree', w:0.22 }, { type:'ruinwall', w:0.12 }],
   },
   kaurea: {
     key:'kaurea', label:'カウレア火山', rockCount:640, decorCount:7200, hasVolcano:true,
@@ -62,7 +62,7 @@ const MAPS = {
     ],
     lavaRingPerVolcano: 4, lavaRingRadius: 2150, lavaPoolCount: 4,
     lavaDps: 22,
-    realObstacles:[{ type:'rock', w:0.58 }, { type:'basalt', w:0.42 }],
+    realObstacles:[{ type:'rock', w:0.52 }, { type:'basalt', w:0.38 }, { type:'ruinwall', w:0.10 }],
   },
   papas: {
     key:'papas', label:'パパス雪山', rockCount:540, decorCount:6200, hasVolcano:true,
@@ -77,7 +77,7 @@ const MAPS = {
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     hasCrystals:true, crystalCount:260,
     rockFlavors:[{ type:'snowrock', w:1 }],
-    realObstacles:[{ type:'snowrock', w:0.6 }, { type:'pine', w:0.4 }],
+    realObstacles:[{ type:'snowrock', w:0.54 }, { type:'pine', w:0.34 }, { type:'hut', w:0.12 }],
   },
   palepale: {
     key:'palepale', label:'パレパレジャングル', rockCount:520, decorCount:8200, hasVolcano:true,
@@ -94,7 +94,7 @@ const MAPS = {
     ],
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     rockFlavors:[{ type:'rock', w:0.55 }, { type:'tree', w:0.45 }],
-    realObstacles:[{ type:'tree', w:0.5 }, { type:'rock', w:0.28 }, { type:'log', w:0.22 }],
+    realObstacles:[{ type:'tree', w:0.44 }, { type:'rock', w:0.24 }, { type:'log', w:0.20 }, { type:'ruinpillar', w:0.12 }],
   },
   toble: {
     key:'toble', label:'トーブル海岸', rockCount:560, decorCount:6800, hasVolcano:false,
@@ -104,7 +104,7 @@ const MAPS = {
     hasSea:true, seaWidthRatio:0.14,
     hasRiver:true, riverCount:5, riverWidth:260,
     rockFlavors:[{ type:'rock', w:0.5 }, { type:'shell', w:0.5 }],
-    realObstacles:[{ type:'palm', w:0.36 }, { type:'rock', w:0.34 }, { type:'shell', w:0.30 }],
+    realObstacles:[{ type:'palm', w:0.32 }, { type:'rock', w:0.30 }, { type:'shell', w:0.26 }, { type:'container', w:0.12 }],
   },
   mandy: {
     key:'mandy', label:'マンディー砂漠', rockCount:480, decorCount:5200, hasVolcano:true,
@@ -120,7 +120,7 @@ const MAPS = {
     lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
     hasOasis:true, oasisCount:6, oasisRadius:420,
     rockFlavors:[{ type:'sandrock', w:1 }],
-    realObstacles:[{ type:'sandrock', w:0.66 }, { type:'cactus', w:0.34 }],
+    realObstacles:[{ type:'sandrock', w:0.58 }, { type:'cactus', w:0.30 }, { type:'ruinpillar', w:0.12 }],
   },
 };
 
@@ -2162,6 +2162,14 @@ const OBST_SHAPES = {
   shell:    { h:0.56, sink:0.12, sil:[[0.00,1.05,0.56]] },
   cactus:   { h:2.45, sink:0.14, sil:[[1.20,0.40,1.25,1],[1.40,0.55,0.82,1]] },
   crystal:  { h:1.70, sink:0.18, sil:[[0.79,0.42,0.91,2],[0.58,0.60,0.70,1,0.22]] },
+  /* ---- 人工物(身を隠すための遮蔽物)。リアルマップだけに出る ----
+     当たり判定は他の障害物と同じ「半径の円」なので、**中には入れない**。
+     陰に隠れるための塊として、背は高め(半径の1.3〜2.4倍)にしてある。
+     中に入れる建物は別途あらためて設計する(発注者判断・2026-08-13)。        */
+  ruinwall:  { h:1.78, sink:0.16, sil:[[0.81,0.86,0.95,1]] },                     // 崩れた石壁
+  container: { h:1.36, sink:0.10, sil:[[0.63,0.96,0.68,1]] },                     // 打ち上げられた貨物コンテナ
+  ruinpillar:{ h:2.42, sink:0.18, sil:[[1.16,0.44,1.26,1,0.38],[0.28,0.88,0.34,1]] }, // 遺跡の石柱と土台
+  hut:       { h:1.58, sink:0.12, sil:[[0.72,0.94,0.82,1]] },                     // 崩れかけた小屋
 };
 window.__aramonObstShapes = OBST_SHAPES;   // ESモジュール(real3d.js)への橋渡し
 // 通常マップ → リアルマップの対応。地形の形だけマップごとに変える

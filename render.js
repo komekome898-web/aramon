@@ -2622,6 +2622,33 @@ function rockFlavorColors(flavor){
   if(flavor==='sandrock') return { fill:'#a68a5c', stroke:'#6b5636' };
   return { fill:'#5a6470', stroke:'#33394a' };
 }
+/* 人工物(遮蔽物)のWebGL失敗時フォールバック。
+   ふだんはreal3d_props.jsが3Dで描くので、ここへ来るのはWebGLが使えない端末だけ。
+   岩と同じ絵にすると「人が作った物」に見えないので、角のある塊として描く。
+   高さの比は data.js の OBST_SHAPES と合わせてある(食い違うと隠れ方がズレる)。 */
+const STRUCT_LOOK = {
+  ruinwall:  { h:1.78, w:0.86, fill:'#7a7368', top:'#948c7e', dark:'#4c4740' },
+  container: { h:1.36, w:0.96, fill:'#7d6a4a', top:'#96825e', dark:'#4a3f2c' },
+  ruinpillar:{ h:2.42, w:0.44, fill:'#8b8371', top:'#a49b86', dark:'#565044' },
+  hut:       { h:1.58, w:0.94, fill:'#6d5a42', top:'#856f52', dark:'#413526' },
+};
+function drawStructureObstacle(rock, flavor){
+  const r = rock.radius, c = STRUCT_LOOK[flavor] || STRUCT_LOOK.ruinwall;
+  // 接地の影
+  ctx.beginPath(); ctx.ellipse(0, r*0.14, r*c.w*1.05, r*0.3, 0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fill();
+  const w = r*c.w, h = r*c.h;
+  // 本体(正面の面)
+  ctx.fillStyle=c.fill;
+  ctx.fillRect(-w, -h + r*0.14, w*2, h);
+  // 上端の明るい面(厚みを感じさせる)
+  ctx.fillStyle=c.top;
+  ctx.fillRect(-w, -h + r*0.14, w*2, r*0.16);
+  // 崩れた縁。角を欠けさせて「廃墟」に見せる
+  ctx.fillStyle=c.dark;
+  ctx.fillRect(w*0.45, -h + r*0.14, w*0.55, r*0.34);
+  ctx.fillRect(-w, -h + r*0.42, w*0.34, r*0.22);
+}
 function drawTreeObstacle(rock){
   const r = rock.radius;
   ctx.beginPath(); ctx.ellipse(0, r*0.15, r*0.95, r*0.3, 0,0,Math.PI*2);
@@ -2736,6 +2763,10 @@ function drawRock(rock,p){
   // 木の仲間はまとめて木として描く(リアルマップ専用の種類はWebGL失敗時にここへ来る)
   if(flavor==='tree'||flavor==='pine'||flavor==='deadtree'||flavor==='palm'){ drawTreeObstacle(rock); ctx.restore(); return; }
   if(flavor==='shell'){ drawShellObstacle(rock); ctx.restore(); return; }
+  // 人工物(遮蔽物)は岩ではなく角のある塊として描く
+  if(flavor==='ruinwall'||flavor==='container'||flavor==='ruinpillar'||flavor==='hut'){
+    drawStructureObstacle(rock, flavor); ctx.restore(); return;
+  }
   if(currentMap && currentMap.real3d){ drawRealisticRock(rock, r, r*p.scale); ctx.restore(); return; }
   ctx.translate(0,-r*0.55);
   ctx.beginPath(); ctx.ellipse(0, r*0.6, r*1.1, r*0.32, 0,0,Math.PI*2);
