@@ -12,7 +12,12 @@ import * as THREE from './vendor/three.module.min.js';
 
 // 太陽の向き(空・遠景の山・影で共有する)
 export const SUN_DIR = new THREE.Vector3(-0.55, 0.62, -0.38).normalize();
-export const ENV_INTENSITY = 1.15;   // 空からの環境光の強さ(materialのenvMapIntensity)
+/* 空からの環境光の強さ(materialのenvMapIntensity)。
+   【重要】ここを上げすぎると影が消える。1.15だった頃は、影を完全に切っても
+   画の平均差が0.16/255しか出ない = 事実上影が無い状態だった(環境光が
+   影の中まで回り込んで、日向と日陰の差が無くなるため)。
+   太陽(SUN_INTENSITY)との比で「日向と日陰の差」が決まるので、対で調整すること。 */
+export const ENV_INTENSITY = 0.55;
 
 /* マップごとの見た目は data.js の REAL3D_THEMES から window.__aramonRealTheme 経由で受け取る。
    ここにあるのは受け取れなかった時の既定値(荒野相当)。色を足すときは両方に足すこと。 */

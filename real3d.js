@@ -35,7 +35,10 @@ const CAM_FAR  = 12000;
    環境光は「空をそのままPMREMに通した環境マップ」(=HDRIの代わり。画像ファイルは増やさない)。
    ポストプロセス(SSAO/Bloom)は入れない。フルスクリーンのバッファを何枚も持つと
    iPhoneではメモリと帯域を大きく使うわりに、開けた地形では見た目がほとんど変わらないため。 */
-const SUN_INTENSITY = 3.1;   // 太陽光。PBRなので従来のPhongより大きい値になる
+// 太陽光。PBRなので従来のPhongより大きい値になる。
+// 環境光(real3d_common.jsのENV_INTENSITY)を下げたぶんここで明るさを取り戻す。
+// この2つの比が「日向と日陰の差」そのものなので、必ず対で調整すること。
+const SUN_INTENSITY = 4.6;
 const EXPOSURE      = 1.15;  // ACESフィルミックトーンマッピングの露出
 const SHADOW_MAP    = 1024;  // 影の解像度。上げるとくっきりするがiPhoneでは重い
 const SHADOW_HALF   = 900;   // 影を計算する範囲(この四角の中だけ影が落ちる)
@@ -80,9 +83,13 @@ function ensureScene(){
     sun.shadow.camera.left = -SHADOW_HALF; sun.shadow.camera.right = SHADOW_HALF;
     sun.shadow.camera.top  =  SHADOW_HALF; sun.shadow.camera.bottom = -SHADOW_HALF;
     sun.shadow.camera.near = 1; sun.shadow.camera.far = 4200;
-    // 影のにじみ・自己影(縞)対策。normalBiasは地形のスケールに合わせて大きめ
+    /* 影のにじみ・自己影(縞)対策。
+       【重要】normalBias を大きくしすぎると影が「消える」。3 にしていた頃は
+       影を完全に切っても画の平均差が0.16/255しか出ない = 事実上影が無い状態だった
+       (地形は起伏が緩く自己影がほとんど出ないので、地形に合わせて大きく取る必要が無い)。
+       草や小石のような小さい物の接地影はこの値で決まるので、小さめにする。 */
     sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 3;
+    sun.shadow.normalBias = 0.6;
     scene.add(sun);
     scene.add(sun.target);
     return true;
