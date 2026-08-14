@@ -1,11 +1,11 @@
 /* =====================================================================
-   リアルマップ: 立体物(山 と 障害物)と 植生(草・低木・小石)
+   リアルマップ: 立体物(山 と 障害物)と 植生(草・低木)
 
    ・山(火山/雪山/森/ピラミッド)は2Dの drawSolidCone と同じ寸法の円錐。
      色は「形 + 頂点カラー」で作る。画面に貼る円で演出しない(視点を変えると浮く)
    ・障害物(岩・木・水晶)は種類ごとの InstancedMesh。形の定義(全高・埋める深さ・
      2Dでくり抜く輪郭)は data.js の OBST_SHAPES 1か所を両方が読む
-   ・植生(草・低木・小石)は当たり判定を持たない飾り。障害物と同じく InstancedMesh で、
+   ・植生(草・低木)は当たり判定を持たない飾り。障害物と同じく InstancedMesh で、
      プレイヤーのまわりだけに生やす。テーマ色から作るのでマップごとに勝手に変わる
 
    【当たり判定の寸法は動かせない】障害物の半径・全高(OBST_SHAPES)は render.js の
@@ -183,7 +183,7 @@ function crystalColor(){
   saturate(c, 1.45);
   return contrastTo(liftColor(c, 0.060), groundRefColor(), 1.75);
 }
-/* 遮蔽になる大きな岩の色。散布した小石と違い「隠れられる物」として
+/* 遮蔽になる大きな岩の色。**リアルマップに出る岩は全部これ**(飾りの小石は撒かない)。「隠れられる物」として
    一目で読める必要があるので、地面との明度差を最低 COVER_DIFF 倍だけ確保する。 */
 const COVER_DIFF = 1.42;
 function coverRock(c, k){
@@ -192,7 +192,7 @@ function coverRock(c, k){
 }
 
 /* ---- 接地影(コンタクトシャドウ) ----
-   太陽高度が約38度と高いうえ影の解像度も限られるため、草・小石のような小さい物が
+   太陽高度が約38度と高いうえ影の解像度も限られるため、草のような小さい物が
    落とす影は画面上で数画素にしかならず、実質「影が無い」= 物が地面に浮いて見える。
    そこでシャドウマップに頼らず、足元へ「下にあるものを暗くするだけの円盤」を敷く。
 
@@ -203,7 +203,7 @@ function coverRock(c, k){
    受ける間接光がまるで違い、暗いマップでは地面のほうが3〜4.5倍明るく出る(実測)。
    色を合わせること自体が不可能なので、「下にあるものを暗くするだけ」の乗算合成に
    切り替えた。これなら地面が何色でも必ず溶ける。
-   メッシュは層ごとに1つだけ(草/低木/小石/障害物の計4つ)なので、
+   メッシュは層ごとに1つだけ(草/低木/障害物の計3つ)なので、
    物がいくつ並んでも描画命令は増えない。                                       */
 const srgbToLin = (v)=> v <= 0.04045 ? v/12.92 : Math.pow((v + 0.055)/1.055, 2.4);
 
@@ -944,7 +944,7 @@ function patchTint(geo, color, strength, seed, scale){
    3 = 20×16 = 320枚、6 = 20×49 = 980枚。1マップに数百個あっても実際に画面へ出るのは
    近くの数十個(obstacleDrawn は 40〜80 程度)なので、岩本体は細かく作ってよい。
    3のままだと近くの岩で1面が15画素角になり、輪郭が六角形に見えていた。
-   草・小石・葉の塊は数が桁違いなので低いままにする。                        */
+   草・葉の塊は数が桁違いなので低いままにする。                              */
 const ROCK_DETAIL = 6;
 
 /* でこぼこの塊。半径1・底が y=0 に来るように作る(最後に fitBounds で枠へ収める)。
@@ -1796,7 +1796,7 @@ function obstacleGeo(flavor, variant){
       /* 既定の岩。荒野・火山・ジャングル・海岸に出るので色を決め打ちにすると
          その場だけ浮く。地面と同じテーマ色(岩肌=steep / 砂利=gravel)から作る。
          ただし【隠れられる物として一目で読める】ことがバトロワの要件なので、
-         散布した小石と違い、地面との明暗差だけは coverRock で必ず確保する。
+         地面との明暗差は coverRock で必ず確保する(岩は全部「隠れられる物」)。
          形は4通り: 丸い塊 / 稜の立った岩 / 割れた岩 / 平たい岩床(rockSilhouette)。 */
       const lo = coverRock(liftColor(themeColor('steep').multiplyScalar(0.85), 0.016), 0.80);
       const hi = coverRock(liftColor(themeColor('gravel').multiplyScalar(1.30), 0.050), 1.05);
@@ -2005,7 +2005,7 @@ function updateObstacleInstances(cx, cy){
 }
 
 /* =====================================================================
-   植生(草・低木・小石)
+   植生(草・低木)
 
    ・当たり判定を持たない飾り。プレイヤーはすり抜ける
    ・プレイヤーのまわりだけに生やす。位置はワールド座標から決まる純関数なので、
@@ -2268,37 +2268,25 @@ function shrubGeo(kind, variant, colLow, colHigh){
   return geo;
 }
 
-// 小石。草の生えない所でも地面が裸に見えないようにする
-function pebbleGeo(variant, colLow, colHigh){
-  /* 足元にいちばん近づく立体物。数は数百なので面は控えめ(detail:3=320枚)だが、
-     形は岩と同じ作り分けにして「同じ丸い石が並ぶ」のを避ける。
-     ただし4番目(2つ重ねた岩)は三角形が倍になるので小石では使わず、
-     稜の立った形を別の種で作る。                                    */
-  const g = rockSilhouette(variant === 3 ? 1 : variant, variant*4.3 + 0.7, { flat:0.42, detail:3 });
-  fitBounds(g, 1.0, 0, 1);
-  paintGeo(g, colLow, colHigh, 0, 1, 0.34);
-  cavityShade(g, 0.28, 0.26);
-  return g;
-}
+/* 【小石は撒かない】以前は「草の生えない所でも地面が裸に見えないように」と
+   飾りの小石を数百個撒いていたが、形も色も本物の岩と同じ作りだったため、
+   隠れられる岩と見分けが付かず「地面の模様なのに高さがあるように見える」と
+   実機で2度report された(2026-08-14)。**足元に岩に見える飾りを置かない。**
+   見えている岩は必ず隠れられる本物、という状態を保つこと。           */
 
 /* テーマ(地面テクスチャの種類)ごとの植生の内訳。
    n=出す数 view=出す半径 h=高さ(ワールド単位) patch=粗密の強さ           */
 const VEG_STYLES = {
   dry:      { grass:{ n:1250, view:900,  h:[16,32], patch:0.78, dry:0.55 },
-              shrub:{ n:110,  view:1500, h:[30,62], kind:'twig' },
-              stone:{ n:170,  view:700,  h:[6,14] } },
+              shrub:{ n:110,  view:1500, h:[30,62], kind:'twig' } },
   jungle:   { grass:{ n:950,  view:830,  h:[24,52], patch:0.62, dry:0.10 },
-              shrub:{ n:150,  view:1450, h:[32,66], kind:'fern' },
-              stone:{ n:95,   view:600,  h:[5,13] } },
+              shrub:{ n:150,  view:1450, h:[32,66], kind:'fern' } },
   sand:     { grass:{ n:430,  view:820,  h:[14,30], patch:0.90, dry:0.60 },
-              shrub:{ n:85,   view:1400, h:[22,42], kind:'blades' },
-              stone:{ n:200,  view:700,  h:[5,13] } },
+              shrub:{ n:85,   view:1400, h:[22,42], kind:'blades' } },
   snow:     { grass:{ n:130,  view:600,  h:[10,22], patch:0.95, dry:0.85 },
-              shrub:{ n:95,   view:1350, h:[16,34], kind:'lump' },
-              stone:{ n:105,  view:600,  h:[4,10] } },
+              shrub:{ n:95,   view:1350, h:[16,34], kind:'lump' } },
   volcanic: { grass:{ n:90,   view:600,  h:[10,24], patch:0.95, dry:0.80 },
-              shrub:{ n:115,  view:1300, h:[16,32], kind:'lump' },
-              stone:{ n:240,  view:720,  h:[6,15] } },
+              shrub:{ n:115,  view:1300, h:[16,32], kind:'lump' } },
 };
 
 const VEG_VARIANTS = 4;
@@ -2306,12 +2294,12 @@ const VEG_STEP = 110;        // プレイヤーがこの距離だけ動いたら
 const VEG_FILL = 0.55;       // 格子のうち実際に生やす割合(粗密の平均)
 /* 地面へ沈める深さ(モデルの高さに対する比)。
    接地影の板をここへ合わせるので、placeLayer の引数と必ず同じ値を使う。 */
-const VEG_SINK = { grass:0.06, shrub:0.08, stone:0.30 };
+const VEG_SINK = { grass:0.06, shrub:0.08 };
 
 let vegGroup = null, vegKinds = null, vegTheme = null, vegConf = null;
 let vegCX = null, vegCY = null;
 
-// 植生の色をテーマから作る。マップごとの草・低木・小石の色はここだけで決まる
+// 植生の色をテーマから作る。マップごとの草・低木の色はここだけで決まる
 function vegColors(){
   const scrub = themeColor('scrub'), low = themeColor('low'), high = themeColor('high');
   const gravel = themeColor('gravel'), steep = themeColor('steep');
@@ -2322,7 +2310,6 @@ function vegColors(){
     grassBase: liftColor(mixColor(mixColor(scrub, low, 0.42), high, 0.14 + dry*0.36), 0.040),
     shrubBase: liftColor(mixColor(scrub, low, 0.40), 0.044),
     lumpBase:  liftColor(mixColor(steep, gravel, 0.50), 0.045),
-    stoneBase: liftColor(mixColor(steep, gravel, 0.55), 0.040),
   };
 }
 
@@ -2383,7 +2370,7 @@ function buildVegetation(scene){
     alphaTest: isLump ? 0 : 0.42, transparent:false,
   }), isLump ? 0 : 0.20, isLump ? 0 : 0.9, vegConf.shrub.view*0.80, vegConf.shrub.view, amb);
   /* 雪・火山灰の塊は「立体の岩」なので、障害物と同じ表面ディテールを乗せる。
-     【ここを外すと世代が混ざる】足元にいちばん近い立体物はこの塊と小石で、
+     【ここを外すと世代が混ざる】足元にいちばん近い立体物はこの塊で、
      画面に占める面積は障害物より大きい。ここだけ単色のままだと、
      岩をいくら作り込んでも「のっぺりした塊」の印象が残る。            */
   if(isLump) applySurfaceDetail(shrubMat, { scale:7, bump:0.60, macro:90, stain:0.30, crack:0.10, rough:0.30 });
@@ -2391,14 +2378,6 @@ function buildVegetation(scene){
   add('shrub', vegConf.shrub, (v)=> shrubGeo(vegConf.shrub.kind, v,
       shrubBase.clone().multiplyScalar(0.74), shrubBase.clone().multiplyScalar(1.26)),
       shrubMat, true, true, isLump ? 0.95 : 0.85, 0.48, 0.66);
-
-  // 小石: 風で動かないので、遠くで消すぶんだけシェーダーを差し込む
-  const stoneMat = applyWind(new THREE.MeshLambertMaterial({
-    vertexColors:true, flatShading:true,
-  }), 0, 0, vegConf.stone.view*0.80, vegConf.stone.view, amb);
-  applySurfaceDetail(stoneMat, { scale:4.5, bump:0.55, macro:70, stain:0.34, crack:0.14, rough:0.28 });
-  add('stone', vegConf.stone, (v)=> pebbleGeo(v, col.stoneBase.clone().multiplyScalar(0.95),
-      col.stoneBase.clone().multiplyScalar(1.30)), stoneMat, false, false, 0.95, 0.55, 0.72);
 
   scene.add(vegGroup);
   vegCX = vegCY = null;
@@ -2534,7 +2513,6 @@ function updateVegetation(scene, cx, cy){
   vegCX = cx; vegCY = cy;
   placeLayer(vegKinds.grass, cx, cy, 1.7,  false, VEG_SINK.grass);
   placeLayer(vegKinds.shrub, cx, cy, 5.3,  false, VEG_SINK.shrub);
-  placeLayer(vegKinds.stone, cx, cy, 11.9, true,  VEG_SINK.stone);
 }
 
 export function updateObstacles(scene, rocks, crystals, cx, cy){
