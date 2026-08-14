@@ -2336,21 +2336,14 @@ function bushTexture(kind){
 }
 
 /* 低木の形。草と同じ「板を交差させた束」。板の向きは形へ焼き込む(風の向きを揃えるため)。
-   lump(雪・火山灰の塊)だけは絵ではなく立体で作る。                          */
+/* 【当たり判定の無い物を「隠れられそうな物」の形にしない】
+   以前は雪原と火山に kind:'lump'(雪・火山灰の塊)を撒いていた。地面が裸に
+   見えないようにという意図だったが、boulderGeo で作って障害物と同じ表面ディテールを
+   乗せていたので、見た目は岩そのものなのに隠れられない物が足元に100個並んでいた。
+   実機で「遮蔽物と誤認するような物を描くな」と report され廃止(2026-08-14)。
+   **飾りは草・枝・葉に限る。丸い塊・板・柱の形にしない。**
+   地面が寂しいときは草を増やすか地面テクスチャで埋める。              */
 function shrubGeo(kind, variant, colLow, colHigh){
-  if(kind === 'lump'){
-    /* 雪・火山灰の塊。植物が育たないマップでも地面が裸に見えないようにする。
-       【岩の作り分け(稜・割れ・板)は使わない】これは吹きだまりと灰の山なので、
-       割れた岩の形にすると地面に黒いシミが貼り付いたように見える(実測)。
-       丸い山のまま、つぶし具合と削り方だけ4通りに変える。
-       足元にいちばん近づく立体物なので面は少し細かくする(数は100前後)。 */
-    const g = boulderGeo(variant*3.1 + 2.2, 0.38 + variant*0.055,
-                         { detail:3, amp:1.30, cuts: 2 + (variant % 3) });
-    fitBounds(g, 0.95, 0, 1);
-    paintGeo(g, colLow, colHigh, 0, 1, 0.30);
-    cavityShade(g, 0.34, 0.24);
-    return g;
-  }
   const parts = [];
   const quads = 4;
   for(let i=0;i<quads;i++){
@@ -2381,6 +2374,13 @@ function shrubGeo(kind, variant, colLow, colHigh){
 
 /* テーマ(地面テクスチャの種類)ごとの植生の内訳。
    n=出す数 view=出す半径 h=高さ(ワールド単位) patch=粗密の強さ           */
+/* 【飾りは草・枝・葉だけ。丸い塊・板・柱の形にしない】
+   当たり判定を持たない飾りが「隠れられそうな物」に見えると、プレイヤーは
+   遮蔽物として使おうとして裏切られる。実機で2度 report され、
+   ・飾りの小石(rockSilhouette で作っていた。数百個)
+   ・雪・火山灰の塊(kind:'lump'。boulderGeo + 障害物と同じ表面ディテール)
+   の2つを廃止した(2026-08-14)。**kind に岩の形を足さないこと。**
+   地面が寂しいときは grass の数を増やすか、地面テクスチャで埋める。      */
 const VEG_STYLES = {
   dry:      { grass:{ n:1250, view:900,  h:[16,32], patch:0.78, dry:0.55 },
               shrub:{ n:110,  view:1500, h:[30,62], kind:'twig' } },
@@ -2389,9 +2389,9 @@ const VEG_STYLES = {
   sand:     { grass:{ n:430,  view:820,  h:[14,30], patch:0.90, dry:0.60 },
               shrub:{ n:85,   view:1400, h:[22,42], kind:'blades' } },
   snow:     { grass:{ n:130,  view:600,  h:[10,22], patch:0.95, dry:0.85 },
-              shrub:{ n:95,   view:1350, h:[16,34], kind:'lump' } },
+              shrub:{ n:120,  view:1350, h:[14,28], kind:'blades' } },
   volcanic: { grass:{ n:90,   view:600,  h:[10,24], patch:0.95, dry:0.80 },
-              shrub:{ n:115,  view:1300, h:[16,32], kind:'lump' } },
+              shrub:{ n:130,  view:1300, h:[14,30], kind:'twig' } },
 };
 
 const VEG_VARIANTS = 4;
@@ -2414,7 +2414,6 @@ function vegColors(){
     // 明暗の幅が開きすぎて、黒い株に蛍光色の穂が乗った作り物に見える
     grassBase: liftColor(mixColor(mixColor(scrub, low, 0.42), high, 0.14 + dry*0.36), 0.040),
     shrubBase: liftColor(mixColor(scrub, low, 0.40), 0.044),
-    lumpBase:  liftColor(mixColor(steep, gravel, 0.50), 0.045),
   };
 }
 
@@ -2428,7 +2427,6 @@ function buildVegetation(scene){
   const theme = R3.theme || DEFAULT_THEME;
   vegConf = VEG_STYLES[theme.tex] || VEG_STYLES.dry;
   const col = vegColors();
-  const isLump = (vegConf.shrub.kind === 'lump');
 
   const add = (name, conf, geoFn, mat, shadow, recv, shR, core, mid)=>{
     const cap = Math.ceil(conf.n * 0.75) + 8;
@@ -2470,19 +2468,14 @@ function buildVegetation(scene){
 
   // 低木・シダ: 立体の葉。風は草より弱く、遠くまで出す
   const shrubMat = applyWind(new THREE.MeshLambertMaterial({
-    vertexColors:true, flatShading:isLump,
-    map: isLump ? null : bushTexture(vegConf.shrub.kind),
-    alphaTest: isLump ? 0 : 0.42, transparent:false,
-  }), isLump ? 0 : 0.20, isLump ? 0 : 0.9, vegConf.shrub.view*0.80, vegConf.shrub.view, amb);
-  /* 雪・火山灰の塊は「立体の岩」なので、障害物と同じ表面ディテールを乗せる。
-     【ここを外すと世代が混ざる】足元にいちばん近い立体物はこの塊で、
-     画面に占める面積は障害物より大きい。ここだけ単色のままだと、
-     岩をいくら作り込んでも「のっぺりした塊」の印象が残る。            */
-  if(isLump) applySurfaceDetail(shrubMat, { scale:7, bump:0.60, macro:90, stain:0.30, crack:0.10, rough:0.30 });
-  const shrubBase = isLump ? col.lumpBase : col.shrubBase;
+    vertexColors:true,
+    map: bushTexture(vegConf.shrub.kind),
+    alphaTest: 0.42, transparent:false,
+  }), 0.20, 0.9, vegConf.shrub.view*0.80, vegConf.shrub.view, amb);
+  const shrubBase = col.shrubBase;
   add('shrub', vegConf.shrub, (v)=> shrubGeo(vegConf.shrub.kind, v,
       shrubBase.clone().multiplyScalar(0.74), shrubBase.clone().multiplyScalar(1.26)),
-      shrubMat, true, true, isLump ? 0.95 : 0.85, 0.48, 0.66);
+      shrubMat, true, true, 0.85, 0.48, 0.66);
 
   scene.add(vegGroup);
   vegCX = vegCY = null;
