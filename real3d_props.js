@@ -184,8 +184,11 @@ function crystalColor(){
   return contrastTo(liftColor(c, 0.060), groundRefColor(), 1.75);
 }
 /* 遮蔽になる大きな岩の色。**リアルマップに出る岩は全部これ**(飾りの小石は撒かない)。「隠れられる物」として
-   一目で読める必要があるので、地面との明度差を最低 COVER_DIFF 倍だけ確保する。 */
-const COVER_DIFF = 1.42;
+   一目で読める必要があるので、地面との明度差を最低 COVER_DIFF 倍だけ確保する。
+   【1.42では足りない】雪原(パパス)のように地面が真っ白なマップでは、1.42倍だと
+   岩が「白い地面の上の少し白い染み」にしかならず、平らな模様に見えると
+   実機で report された(2026-08-14)。明るい地面ほど差が要る。          */
+const COVER_DIFF = 1.85;
 function coverRock(c, k){
   saturate(c, 1.12);
   return contrastTo(c, groundRefColor(), COVER_DIFF).multiplyScalar(k == null ? 1 : k);
@@ -544,25 +547,113 @@ const MOUNT_CARVE_VERT = 0.30;    // 彫りのうち縦へ回す割合(段の高
    面では見た目の外なのに止められた(実測 ±21%)。角を丸めて円へ寄せ、
    PYRAMID_FIT で角と面が判定の円を等しくまたぐ大きさにする(実測 ±12%)。
    四角錐に見えたまま。**円の判定に四角錐を合わせる以上、ここは0にはできない。** */
+/* 山にだけ効かせる霞の範囲。シーンの霧(700〜3200)は山には近すぎる。
+   完全に切ると山だけ霞の中で浮くので、遠くではちゃんと溶かす。 */
+const MOUNT_FOG_NEAR = 2600, MOUNT_FOG_FAR = 11000;
 const PYRAMID_ROUND = 0.50;
 const PYRAMID_FIT   = 1 / Math.sqrt(1/Math.SQRT2 * (1 - PYRAMID_ROUND) + PYRAMID_ROUND);
+
+/* 塗り分け用の「尾根の背か谷か」(1=尾根の背 0=谷底)。
+
+   ここは山肌の見た目を決める要で、**2つの罠の間の細い道**を通す必要がある。
+   ・細かすぎると(面の刻み 周64/36・縦15/9 に近いと)隣り合う面で色が入れ替わり、
+     山肌が市松模様の迷彩柄になる。
+   ・粗すぎると値ノイズの格子(tileNoise は整数格子の補間)がそのまま出て、
+     今度は規則正しい菱形のパッチワークに見える。9スポーク1枚で試して実際にそうなった。
+   どちらも実機で report された(2026-08-14)。そこで
+   ・周波数の違う2オクターブ(5と7。互いに素なので格子が重ならない)
+   ・縦横で周期を変える(格子が正方形に見えない)
+   ・別のノイズで入力をずらす(ドメインワープ。格子の直線を崩す)
+   の3つで「面より粗く、しかし格子に見えない」場所へ収める。
+   **オクターブを増やして細かくしないこと。市松に戻る。**              */
+function mountainRib(ang, t, seed){
+  const w = angNoise(ang + seed*4.1, t*0.8 + seed*2.3, 3) - 0.5;   // 入力のずらし
+  const r1 = 1 - Math.abs(angNoise(ang + seed + w*0.9,     t*1.5 + seed*0.9, 5)*2 - 1);
+  const r2 = 1 - Math.abs(angNoise(ang + seed*2.7 - w*0.7, t*3.0 + seed*1.7, 7)*2 - 1);
+  return r1*0.62 + r2*0.38;
+}
+
+/* 山肌の「露岩」を画素ごとに出す。
+   【なぜ頂点カラーで塗り分けないか】山の面は主峰で1枚160単位もある。そこへ
+   「この面は岩・この面は雪」と塗ると色が面の形どおりのブロックになり、
+   山肌がブロック塀のようなパッチワーク(迷彩柄)に見える。実機で2度 report され、
+   面の法線・細かいノイズ・粗いノイズと原因を替えて何度も作り直したが、
+   **面ごとに色を決めている限り必ずブロックになる**というのが結論(2026-08-14)。
+
+   そこで分かれ目は2段構えにする:
+   ・どこが岩かの大きな分布 = 頂点属性 aCoat(尾根で大・谷で小)。頂点ごとなので
+     ラスタライザが面をまたいで滑らかにつなぐ。
+   ・境目のギザギザ = 法線マップのかたむき。岩肌の凹凸に沿って線が乱れる。
+   sdGrad / vSdN は applySurfaceDetail が用意する(**必ず先に呼ぶこと**)。   */
+function applyMountainCoat(mat, rockColor, lo, hi){
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  const key = 'aramonMC|' + lo + ',' + hi;
+  /* 【山だけ霞を弱める】シーンの霧は地形パッチ(半分3600)に合わせて 700〜3200 で
+     切ってある。ところが山は半径1500・高さ1900もあるので、隣に立っていても
+     山頂までの距離が2600を超え、山肌の8割が霞の色へ溶ける。カウレアの黒い火山が
+     砂色の山に見えていたのはこれ(材質でも露岩でもなく霧だった・2026-08-14)。
+     three の霧のuniformは毎フレーム renderer がシーンから書き戻すので、
+     uniform を差し替えても効かない。材質側の霧を切って自前で薄く掛ける。      */
+  mat.fog = false;
+  mat.onBeforeCompile = (sh, renderer)=>{
+    if(prev) prev(sh, renderer);
+    sh.uniforms.mcRock = { value: rockColor.clone() };
+    sh.uniforms.mcA = { value: new THREE.Vector2(lo, hi) };
+    sh.uniforms.mcHaze = { value: new THREE.Color(R3.theme ? R3.theme.haze : DEFAULT_THEME.haze) };
+    sh.uniforms.mcHazeR = { value: new THREE.Vector2(MOUNT_FOG_NEAR, MOUNT_FOG_FAR) };
+    sh.vertexShader = 'attribute float aCoat;\nvarying float vCoat;\n' + sh.vertexShader;
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  vCoat = aCoat;');
+    sh.fragmentShader = 'uniform vec3 mcRock;\nuniform vec2 mcA;\nuniform vec3 mcHaze;\n'
+                      + 'uniform vec2 mcHazeR;\nvarying float vCoat;\n' + sh.fragmentShader;
+    // 自前の霞。three と同じ「色空間変換のあと」に掛ける
+    sh.fragmentShader = sh.fragmentShader.replace('#include <colorspace_fragment>', [
+      '#include <colorspace_fragment>',
+      'gl_FragColor.rgb = mix(gl_FragColor.rgb, mcHaze,',
+      '  smoothstep(mcHazeR.x, mcHazeR.y, distance(vSdW, cameraPosition)) * 0.85);',
+    ].join('\n'));
+    sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', [
+      '#include <color_fragment>',
+      '{',
+      '  vec3 mcG = sdGrad - vSdN*dot(vSdN, sdGrad);',
+      '  float mcL = length(mcG);',
+      '  if(mcL > 0.55) mcG *= 0.55/mcL;',
+      '  vec3 mcN = normalize(vSdN - 0.55*mcG);',
+      // 法線マップで下向きに倒れたぶんだけ岩寄りにする。**これを主役にしないこと**
+      // (法線だけから決めた版は、山肌が黒い斑点だらけのダルメシアン柄になった)
+      '  float mcJ = (vSdN.y - mcN.y) * 0.45;',
+      '  float mcRockK = smoothstep(mcA.x, mcA.y, vCoat + mcJ);',
+      '  diffuseColor.rgb = mix(diffuseColor.rgb, mcRock, mcRockK);',
+      '}',
+    ].join('\n'));
+  };
+  mat.customProgramCacheKey = ()=> prevKey + key;
+  return mat;
+}
 
 /* 山の色。高さ(0=麓 1=頂上)で麓・中腹・頂上の3色を混ぜたものが「表土」、
    rock が「露出した岩」。どちらを見せるかは高さではなく面の傾きで決める
    (急斜面=岩がむき出し / 緩斜面=雪・草・砂が乗る)。
    relief=尾根と谷の彫りの深さ(陰影用の彫りに効く。形は判定の帯 MOUNT_CARVE_MAX で頭打ち)
    rockK=露岩の濃さ
-   rockLo,rockHi=露岩の出る傾き(素の円錐の傾きからのずれ。小さいほど急な面だけ岩)
-   cover=緩斜面に表土(雪・草)が乗る強さ                                     */
+   coatLo,coatHi=露岩と表土の分かれ目(頂点属性 aCoat の 0〜1。小さいほど岩が広い)
+   rockLo,rockHi,rockK=ピラミッド専用。露岩の出る面の傾き(素の四角錐の傾きからのずれ)
+   ao=谷筋をどれだけ暗く沈めるか
+
+   【雪山は「白が地」】foot/mid/top を岩色にして白を足す作りだと、雪の乗る面と
+   乗らない面が入れ替わって迷彩柄になる。雪山では3色とも雪の色にし、
+   **急な尾根の背にだけ rock を出す**(雪が積もれない所が黒い崖)。
+   露岩は太陽4.6+ACESでも沈むよう、はっきり暗い色にすること。          */
 const MOUNT_COLORS = {
-  volcano: { foot:0x4e3320, mid:0x36251a, top:0x1d1512, rock:0x241811,
-             rough:0.97, relief:1.15, rockK:1.00, rockLo:0.10, rockHi:-0.16, cover:0.30 },
-  snow:    { foot:0x6d7d90, mid:0xb4c6da, top:0xf2f8ff, rock:0x39414f,
-             rough:0.70, relief:1.05, rockK:1.00, rockLo:0.07, rockHi:-0.17, cover:0.55 },
-  forest:  { foot:0x3d4c22, mid:0x2b4f1d, top:0x1a3a15, rock:0x4a4436,
-             rough:0.94, relief:0.95, rockK:0.62, rockLo:-0.12, rockHi:-0.30, cover:0.85 },
+  volcano: { foot:0x4a3122, mid:0x33231a, top:0x1e1611, rock:0x201510,
+             rough:0.97, relief:1.15, coatLo:0.20, coatHi:0.46, ao:0.26 },
+  snow:    { foot:0xa9bdd0, mid:0xd4e2ef, top:0xf6fcff, rock:0x1b212c,
+             rough:0.70, relief:1.05, coatLo:0.42, coatHi:0.58, ao:0.18 },
+  forest:  { foot:0x3d4c22, mid:0x2b4f1d, top:0x1a3a15, rock:0x35301f,
+             rough:0.94, relief:0.95, coatLo:0.46, coatHi:0.64, ao:0.22 },
   pyramid: { foot:0x8a6f3f, mid:0xa88a54, top:0xc0a068, rock:0x6a5330,
-             rough:0.86, relief:0.00, rockK:0.85, rockLo:0.12, rockHi:-0.08, cover:0.00 },
+             rough:0.86, relief:0.00, rockK:0.85, rockLo:0.12, rockHi:-0.08, ao:0.10 },
 };
 
 
@@ -664,7 +755,10 @@ function displaceMountainShade(geo, h, rise, seed, conf, capT){
     if(capT) fall *= clamp01((1 - t)/capT);
     const carve = 1 - ridgedFbm(ang, t*2.4, seed);
     const swell = angNoise(ang + seed*0.7, t*1.3 + seed, 7);
-    const grit = angNoise(ang*1.0 + seed*2.3, t*9.0 + seed*3.1, 48);
+    /* 面の中の細かいザラつき。**分割数(周64/36・縦15/9)に近い周期にしないこと。**
+       48スポーク×縦9周期で振っていた頃は面の刻みと干渉して法線が1枚おきに振れ、
+       山肌が三角形の市松模様に見えた。細かい肌は applySurfaceDetail が担う。 */
+    const grit = angNoise(ang*1.0 + seed*2.3, t*2.6 + seed*3.1, 11);
     const k = Math.max(0.42, Math.min(1,
       1 - (amp*carve*carve + 0.11*swell*conf.relief + 0.030*grit*conf.relief) * fall));
     pos.setXYZ(i, px*k, py - vAmp*carve*carve*fall*rise, pz*k);
@@ -761,34 +855,40 @@ export function buildMountainMesh(v){
   }
   const pos = geo.attributes.position, nor = geo.attributes.normal;
   const col = new Float32Array(pos.count*3);
-  const rockC = mixColor(new THREE.Color(conf.rock), themeColor('steep'), 0.40);
-  // 素の円錐の傾き。これより急な面を「岩がむき出しの崖」とみなす
-  const baseNy = rad / Math.hypot(rise, rad);
+  const coat = new Float32Array(pos.count);
+  /* 露岩の色。**テーマ色を混ぜすぎないこと。** 0.40 混ぜていた頃は、雪山のテーマ色
+     (明るい青灰)に引かれて #546172 まで明るくなり、太陽4.6とACESを通すと
+     雪とほとんど同じ明るさになって「岩の見えない、のっぺりした白い円錐」になった。
+     マップに馴染ませるのは色みだけで十分なので、混ぜるのは少しにする。      */
+  const rockC = mixColor(new THREE.Color(conf.rock), themeColor('steep'), 0.15);
+  const baseNy = rad / Math.hypot(rise, rad);   // 素の円錐の傾き(ピラミッド用)
   const c = new THREE.Color();
-  for(let f=0; f<pos.count; f+=3){
-    let cx = 0, cy = 0, cz = 0;
-    for(let k=0;k<3;k++){ cx += pos.getX(f+k); cy += pos.getY(f+k); cz += pos.getZ(f+k); }
-    cx /= 3; cy /= 3; cz /= 3;
-    const t = clamp01((cy + h/2 - MOUNT_SKIRT) / rise);
-    const wx = v.x + cx, wz = v.y + cz;
-    const mottle = tileNoise(wx/220, wz/220, 64)*0.65 + tileNoise(wx/58, wz/58, 64)*0.35;
-    c.copy(mountainVertexColor(conf, t, mottle));
-    // 面の傾き(1=水平 0=垂直)。素の円錐より急なら岩、緩ければ表土
-    const ny = Math.abs(nor.getY(f));
-    const steepK = smoothBand(baseNy + conf.rockLo, baseNy + conf.rockHi, ny) * conf.rockK;
-    c.lerp(rockC, steepK);
-    // 緩い棚には表土が厚く乗る(雪山なら雪、森なら緑、砂漠なら砂)
-    if(conf.cover > 0 && ny > baseNy + 0.06){
-      _mcTmp.setHex(conf.top);
-      c.lerp(_mcTmp, Math.min(0.65, (ny - baseNy - 0.06)*2.2)*conf.cover*(0.30 + 0.70*t));
+  /* 【色もマスクも「面ごと」ではなく「頂点ごと」に置く】
+     面の重心で1つ決めて3頂点に同じ値を入れると、色が面の形どおりのブロックになり、
+     山肌がブロック塀のようなパッチワーク(迷彩柄)に見える。実機で2度 report され、
+     原因を替えて何度も作り直したが、**面ごとに色を決めている限り必ずブロックになる**
+     というのが結論(2026-08-14)。頂点ごとに置けば隣の面と角の値を共有するので、
+     ラスタライザが面をまたいで滑らかにつないでくれる。
+     陰影(明暗)は今までどおり面ごと(法線が面ごと)なので、低ポリの表情は残る。
+     **ここに面の大きさより細かいノイズを混ぜないこと**(まだらノイズも同じ罠だった)。 */
+  for(let i=0; i<pos.count; i++){
+    const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const t = clamp01((py + h/2 - MOUNT_SKIRT) / rise);
+    const ang = Math.atan2(pz, px) + Math.PI;
+    const rib = isPyramid ? 0.5 : mountainRib(ang, t, seed);
+    coat[i] = rib;
+    c.copy(mountainVertexColor(conf, t, 0.5));
+    if(isPyramid){
+      // ピラミッドは段の傾きそのものが形なので、面の法線で露岩を出してよい
+      c.lerp(rockC, smoothBand(baseNy + conf.rockLo, baseNy + conf.rockHi,
+                               Math.abs(nor.getY(i))) * conf.rockK);
     }
     // 谷筋の落ち込み。空が見えない場所なので暗い(手描きのアンビエントオクルージョン)
-    const ang = Math.atan2(cz, cx) + Math.PI;
-    const ridge = isPyramid ? 0.5 : ridgedFbm(ang, t*2.4, seed);
-    c.multiplyScalar(0.78 + 0.34*ridge);
-    for(let k=0;k<3;k++){ col[(f+k)*3] = c.r; col[(f+k)*3+1] = c.g; col[(f+k)*3+2] = c.b; }
+    c.multiplyScalar(1 - conf.ao*(1 - rib));
+    col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('aCoat', new THREE.BufferAttribute(coat, 1));
   /* 【落とし穴】地面用の roughnessMap をそのまま貼ると、山肌の一部が
      つやのある面になって空の色を映し込み、暗い岩の山まで白っぽく飛ぶ
      (カウレアの黒い火山が砂色に見えていた原因)。山は一様に粗い面として扱う。 */
@@ -806,6 +906,8 @@ export function buildMountainMesh(v){
   applySurfaceDetail(mat, isPyramid
     ? { scale:34,  bump:0.65, macro:520,  stain:0.36, crack:0.32, rough:0.30 }
     : { scale:110, bump:0.8, macro:1400, stain:0.40, crack:0.20, rough:0.28 });
+  // 露岩は画素ごと(applySurfaceDetail が用意する sdGrad / vSdN を使うので必ずこの順)
+  if(!isPyramid) applyMountainCoat(mat, rockC, conf.coatLo, conf.coatHi);
   const mesh = new THREE.Mesh(geo, mat);
   const base = heightAt(v.x, v.y) - MOUNT_SKIRT;
   mesh.position.set(v.x, base + h/2, v.y);
@@ -1192,9 +1294,12 @@ function obstacleGeo(flavor, variant){
       paintGeo(g, lo, hi, 0, sh.h, 0.40);
       cavityShade(g, 0.32, 0.20);
       patchTint(g, lo.clone().multiplyScalar(0.75), 0.40, s*4.7, 6.0);
-      // 雪は上面へ厚く積もる。吹きだまりのむらを noise で付ける
-      tintTop(g, snow, sh.h*0.66, sh.h*1.05, 0.95);
-      patchTint(g, snow, 0.40, s*2.3, 1.7);
+      /* 雪は上面へ積もる。**かぶせすぎないこと。**
+         0.66の高さから0.95の強さで乗せていた頃は、見下ろす角度だと岩が
+         「雪の白い塊」にしかならず、雪原の上では平らな模様に見えると
+         実機で report された(2026-08-14)。肩から下は岩肌を残す。      */
+      tintTop(g, snow, sh.h*0.80, sh.h*1.05, 0.72);
+      patchTint(g, snow, 0.26, s*2.3, 1.7);
       return g;
     }
     case 'basalt': {
