@@ -372,7 +372,7 @@ function raySegmentCircleDist(ox,oy,angle,cx,cy,cr){
 function raycastObstacleDistance(ox,oy,angle,maxRange){
   let closest = maxRange;
   for(const v of volcanoObstacles){
-    const d = raySegmentCircleDist(ox,oy,angle,v.x,v.y,v.radius);
+    const d = raySegmentCircleDist(ox,oy,angle,v.x,v.y,mountainGroundRadius(v));
     if(d!=null && d<closest) closest = d;
   }
   for(const r of rocks){
@@ -873,7 +873,7 @@ function computeVolcanoAvoidAngle(m, target, ang){
   const targetDist = dist(m, target);
   let strongestPush = 0, pushSign = m.avoidDirSign || 1;
   for(const v of volcanoObstacles){
-    const clearance = v.radius + m.radius + 70;
+    const clearance = mountainGroundRadius(v) + m.radius + 70;
     const obDist = dist(m, v);
     if(obDist > targetDist + clearance || obDist > 2600) continue;
     const toOb = angTo(m, v);
@@ -1529,7 +1529,11 @@ function updateProjectiles(dt){
     }
     if(!hit){
       for(const v of volcanoObstacles){
-        if(Math.hypot(p.x-v.x,p.y-v.y) < v.radius+p.hitR){
+        /* 山は円錐なので、弾の高さによって当たる半径が変わる。v.radius をそのまま
+           使うと、山肌のずっと外側・しかも山より高い所を飛ぶ弾まで止まってしまう
+           (実機で「技が遮断される」と報告された原因)。 */
+        const vTop = getTerrainHeightAt(v.x, v.y);
+        if(Math.hypot(p.x-v.x,p.y-v.y) < mountainRadiusAt(v, p.z - vTop)+p.hitR){
           spawnHit(p.x,p.y,p.z,p.color);
           if(p.splash>0){
             for(const o of entities){

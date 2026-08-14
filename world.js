@@ -271,7 +271,7 @@ function pickZoneTarget(prevCenter, prevRadius, nextRadius){
       let insideAny = false;
       for(const v of volcanoObstacles){
         if(!v.isMain) continue;
-        if(Math.hypot(x-v.x, y-v.y) < v.radius + nextRadius*0.5 + 300){ insideAny = true; break; }
+        if(Math.hypot(x-v.x, y-v.y) < mountainGroundRadius(v) + nextRadius*0.5 + 300){ insideAny = true; break; }
       }
       if(insideAny) continue;
     }
@@ -369,9 +369,11 @@ function blockedByRock(m,x,y){
   return false;
 }
 function blockedByVolcano(m,x,y){
-  // 火山(雪山/森/ピラミッド含む)は高さに関係なく(飛び越え不可)常にブロックする
+  /* 火山(雪山/森/ピラミッド含む)は高さに関係なく(飛び越え不可)常にブロックする。
+     広さは mountainGroundRadius() を使う。v.radius をそのまま使うと、裾を地面へ
+     埋めてあるぶん見えている山肌より外側で止まり「見えない壁」になる。 */
   for(const v of volcanoObstacles){
-    if(Math.hypot(x-v.x, y-v.y) < v.radius+m.radius) return true;
+    if(Math.hypot(x-v.x, y-v.y) < mountainGroundRadius(v)+m.radius) return true;
   }
   return false;
 }
@@ -391,7 +393,7 @@ function obstacleNormalAt(m,tx,ty){
   let nx=0, ny=0;
   const add=(cx,cy,r)=>{ if(Math.hypot(tx-cx,ty-cy) < r+m.radius){ const ox=m.x-cx, oy=m.y-cy; const d=Math.hypot(ox,oy)||0.0001; nx+=ox/d; ny+=oy/d; } };
   if(m.z<=25){ for(const rk of rocks) add(rk.x,rk.y,rk.radius); }
-  for(const v of volcanoObstacles) add(v.x,v.y,v.radius);
+  for(const v of volcanoObstacles) add(v.x,v.y,mountainGroundRadius(v));
   if(m.z<=25){ for(const c of crystalObstacles) add(c.x,c.y,c.radius); }
   const nl=Math.hypot(nx,ny);
   if(nl<0.0001) return null;
@@ -402,7 +404,7 @@ function depenetrateObstacles(m){
   let ox=0, oy=0, depth=0;
   const consider=(cx,cy,r)=>{ const ddx=m.x-cx, ddy=m.y-cy; const d=Math.hypot(ddx,ddy)||0.0001; const pen=(r+m.radius)-d; if(pen>depth){ depth=pen; ox=ddx/d; oy=ddy/d; } };
   if(m.z<=25){ for(const rk of rocks) consider(rk.x,rk.y,rk.radius); }
-  for(const v of volcanoObstacles) consider(v.x,v.y,v.radius);
+  for(const v of volcanoObstacles) consider(v.x,v.y,mountainGroundRadius(v));
   if(m.z<=25){ for(const c of crystalObstacles) consider(c.x,c.y,c.radius); }
   if(depth>0.5){
     const step = Math.min(depth, Math.max(6, m.radius)); // 一気にワープさせない
@@ -478,7 +480,7 @@ function terrainSpeedMult(x,y){
   return 1;
 }
 function isOnHazard(x,y,margin){
-  for(const v of volcanoObstacles){ if(Math.hypot(x-v.x,y-v.y) < v.radius+margin) return true; }
+  for(const v of volcanoObstacles){ if(Math.hypot(x-v.x,y-v.y) < mountainGroundRadius(v)+margin) return true; }
   for(const lz of lavaZones){ if(Math.hypot(x-lz.x,y-lz.y) < lz.radius+margin) return true; }
   if(isInWater(x,y,margin)) return true;
   return false;

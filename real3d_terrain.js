@@ -11,19 +11,26 @@
         4枚とも**同じ高さ場**から作るので、粒の色と凹凸と影が必ず一致する。
         大きな模様はわざと入れない(入れるとタイルの升目が見えるため)。
 
-   【最重要・凹凸に出っ張りを入れない】(2026-08-13の不具合対応)
+   【最重要・地面の模様を「物」に見せない】(2026-08-13 / 08-14の不具合対応)
      このゲームの岩(3Dモデル)は**すべて当たり判定のある遮蔽物**で、プレイヤーは
      「隠れられる岩」と「素通りできる地面の模様」を一目で見分けられなければならない。
-     地面テクスチャの小石をドーム状に陰影付けしたところ、本物の岩と区別が付かなくなった。
-     そこで凹凸(out[2])の決まりを次のようにする:
+     人間の目は次の3つのどれかが揃うと、平らな模様でも「そこに物がある」と読む。
+     地面テクスチャは**3つとも作らない**。
 
-       **out[2] に入れてよいのは「へこみ」だけ。出っ張る粒は色(out[0]/out[1])だけで描く。**
+       ①岩と同じくらいの大きさ  岩は直径44〜144単位(world.js genRocks の半径22〜72)。
+         地面の模様は LUMA_GRAIN(=明るさが変わってよい最大の大きさ)より大きくしない。
+       ②片側が明るく反対側が暗い  = 球の陰影。**大きい模様を明るさ(out[0])で描かない。**
+         大きい模様は色み(out[1])で描く。tintA/tintB は輝度が動かないよう自動で中和する
+         (neutralTint)ので、色みはいくら強くしても陰影には見えない。
+         明るさで描いてよいのは LUMA_GRAIN より細かい模様だけ(highPassLum が保証する)。
+       ③縁の立った閉じた形  丸い染みは上から見た小石に見える。中心からなだらかに
+         薄れる染み・一方向へ伸びた筋にする。**sstep で縁を作らない。**
 
+     out[2](凹凸)に入れてよいのは「へこみ」だけ。出っ張る粒は色だけで描く。
      ・ひび割れ・気泡の穴・風紋の谷・落ち葉の隙間 = へこみ → 凹凸に入れてよい
-     ・小石・砂利・葉の粒 = 出っ張り → **凹凸に入れない。** 平らな染み(色のムラ)として描く
-     情報量は色で保つ。粒ごとに明るさと色みを変えれば、立体でなくても地面は賑やかになる。
-     仕上げに RELIEF_PEAK で「平均より上」を機械的に潰すので、新しいスタイルを足しても
-     出っ張りが復活しない(スタイル側の書き忘れに対する保険)。
+     ・小石・砂利・葉の粒 = 出っ張り → **凹凸に入れない**
+     仕上げに機械的な保険を2つ掛けてあるので、新しいスタイルを足しても事故りにくい:
+     RELIEF_PEAK(平均より上の凹凸を潰す)と highPassLum(大きな明暗を削る)。
      ② 遠景マクロ(MACRO_TILE=数十メートル)
         地面全体の大きな濃淡・涸れ沢の筋。①の繰り返しを打ち消し、遠くの地面が
         一色に潰れるのを防ぐ。シェーダーで①に掛ける(下の MACRO_CHUNK)。
@@ -44,10 +51,16 @@ const MACRO_S     = 256;         // ②の画素数。中身が低周波なの�
 const NORMAL_GAIN = 3.0;         // 法線の強さ = theme.bump * これ
 const MACRO_AMT   = 0.85;        // ②の効き具合(0で無効)
 const MACRO_AMT2  = 0.55;        // ②をさらに3倍へ伸ばした層(地域差)の効き具合
-const MID_AMT     = 0.45;        // ①を4.7倍に伸ばして重ねる量(タイルの繰り返し消し)
+const MID_AMT     = 0.32;        // ①を4.7倍に伸ばして重ねる量(タイルの繰り返し消し・色みだけ)
 // 高さ場のうち「平均より上(=出っ張り)」を残す割合。1.0で従来どおり、0で完全に平ら。
 // 地面の模様が本物の岩に見えないよう、出っ張りだけを潰す(へこみは等倍で残す)。
 const RELIEF_PEAK = 0.42;
+// 明るさが変わってよい最大の大きさ(ワールド単位)。岩は直径44〜144単位なので、
+// その半分より小さくする。これより大きい明暗は highPassLum が LUMA_LOW_KEEP まで削る。
+// 大きな明暗を残すと、平らな模様でも「岩の陰影」に見えて隠れられる物と紛れる。
+const LUMA_GRAIN    = 11;
+const LUMA_LOW_KEEP = 0.16;
+const TINT_KNEE     = 0.18;      // 色みの頭打ち。0で頭打ちなし
 
 let terrain = null, terrainPos = null, terrainCol = null, terrainNrm = null;
 let groundMaps = null;           // { map, normalMap, roughnessMap, aoMap, macroMap }
@@ -149,52 +162,58 @@ function worley(px, py, pX, pY, tbl, out){
 
    ここへ1行足せば、そのマップの地面は自動でその見た目になる。
    ・field(u,v,px,py,out) 1画素ぶんの値を返す純関数
-       out[0] 明るさ(0.8前後が「テーマ色そのまま」)
-       out[1] 色み(+でtintA方向 / -でtintB方向。土の赤茶⇔苔の緑など)
-       out[2] 細かい高さ(0〜1目安)。法線・粗さ・AOはここから作る
+       out[0] 明るさ(0.8前後が「テーマ色そのまま」)。**小さい模様にだけ使う。**
+              大きな明暗は highPassLum が削るので、書いても消えるだけ
+       out[1] 色み(+でtintA方向 / -でtintB方向。土の赤茶⇔苔の緑など)。
+              輝度は動かないので大きな模様に使ってよい(色みは陰影に見えない)
+       out[2] 細かい高さ(0〜1目安)。法線・粗さ・AOはここから作る。へこみだけ
    ・relief 法線に焼く凹凸の強さ / rough 粗さの下限・上限
    ・tintA/tintB 色みのRGB方向 / macro 遠景マクロの強さ
    ・vert 頂点カラーの効き(砂利・低木・流れた跡・ざらつき)
    make() は表を1回だけ作ってから field を返す(画素ごとの表引きを避ける)。
+
+   【模様の大きさの目安】タイル1枚 = DETAIL_TILE(150)ワールド単位。
+   セル数 n の模様は 150/n 単位になる。岩は直径44〜144単位なので、
+   **セル数は必ず20以上**(= 7.5単位以下)にすること。20を下回ると岩に見え始める。
    ===================================================================== */
 const TAU = Math.PI*2;
+/* 中心からなだらかに薄れる染み。**縁を立てない**ための共通の形。
+   1 - sstep(r-w, r, d) のような「平らな円板+細い縁」は、どれだけ平らに塗っても
+   上から見た小石に見える(2026-08-14の不具合)。ここでは中心が1・半径で0で、
+   両端とも傾きが0になる落ち方にする(=どこにも縁が立たない染み)。            */
+function smudge(d, r){ const t = 1 - clamp01(d/r); return t*t*(3-2*t); }
 const TEX_STYLES = {
-  // 乾いた荒れ地: 砂利まじりの土に、細いひび割れが走る
+  // 乾いた荒れ地: 細かい砂利の色ムラに、細いひび割れが走る
+  // セル数を20台→30〜50台へ上げてある(模様1つが5単位以下 = 岩の1/9)
   dry: {
     relief:1.30, rough:[0.62,0.98],
     tintA:[ 0.16, 0.05,-0.14], tintB:[-0.10,-0.02, 0.10],
     macro:{ amp:0.76, ridge:0.44, tint:0.20 },
     vert:{ gravel:0.62, scrub:0.52, flow:0.36, jitter:0.06 },
     make(){
-      const tc = wtable(20,20, 3), tp = wtable(34,24, 11);
+      const tc = wtable(30,30, 3), tp = wtable(52,38, 11);
       const c = [0,0,0], p = [0,0,0];
       return (u,v,px,py,out)=>{
-        const wu = fbmT(u,v,8,8,2,71) - 0.5, wv = fbmT(u,v,8,8,2,73) - 0.5;
-        const soil = fbmT(u, v, 14, 14, 3, 5);
-        worley(u*20 + wu*1.6, v*20 + wv*1.6, 20, 20, tc, c);
-        // 砂利のセルは縦横で数を変えて細長くする。真円の染みは「上から見た小石」に
-        // 見えてしまうので、わざと歪ませる
-        worley(u*34 + wu*2.6, v*24 + wv*1.9, 34, 24, tp, p);
+        const wu = fbmT(u,v,12,12,2,71) - 0.5, wv = fbmT(u,v,12,12,2,73) - 0.5;
+        const soil = fbmT(u, v, 26, 20, 3, 5);            // 5.8 × 7.5単位の土質ムラ
+        worley(u*30 + wu*2.0, v*30 + wv*2.0, 30, 30, tc, c);
+        worley(u*52 + wu*3.4, v*38 + wv*2.5, 52, 38, tp, p);
         // ひび割れは細く、セルごとに濃さを変える。薄い割れ目は消えて多角形が繋がるので、
         // 大きさの揃った「蛇の皮」に見えなくなる
         const cid = ih(c[2]+13, 19);
-        const crack = (1 - sstep(0.0, 0.038 + cid*0.045, c[1]-c[0])) * (0.10 + soil*1.1) * cid;
+        const crack = (1 - sstep(0.0, 0.030 + cid*0.036, c[1]-c[0])) * (0.10 + soil*1.1) * cid;
         const pid = ih(p[2]+31, 9);
-        // 砂利は「立体の粒」ではなく「平らな染み」。セルの中を一様に塗り、縁は細くぼかすだけ。
-        // ドーム状に陰影を付けると本物の岩と見分けが付かない(2026-08-13の不具合)。
-        // 大きさ・明るさ・色みを1つずつ変えるので、平らでも水玉模様にはならない。
-        const on = pid > 0.40 ? 1 : 0;
-        const rad = 0.20 + pid*0.34;
-        const grit = (1 - sstep(rad-0.035, rad, p[0])) * on;
-        const gv = ih(p[2]+77, 41) - 0.5;         // その染めの明暗(セルごとに一定)
+        // 砂利は「色みだけの染み」。輪郭を作らず中心から薄れる(smudge)ので、
+        // 平らに塗っても縁が立たない = 上から見た小石にならない
+        const grit = smudge(p[0], 0.30 + pid*0.26) * (pid > 0.38 ? 1 : 0);
         const g = ih(px*3+1, py*7+2);
         // 数画素まとめた平らな斑点。細かい情報量を足すが、明るさではなく色みで出す
         const fl = ih((px>>1)*2+53, (py>>1)*2+29) - 0.5;
-        // 明暗の差は控えめに、色みの差は大きく取る。明暗を付けると「光が当たった球」に
-        // 見えてしまうが、色みだけなら鉱物の染みに見える
-        // ひび割れで区切られた板ごとに土の焼け方を変える(平らなまま情報量を足す)
-        out[0] = 0.80 + (soil-0.5)*0.24 + grit*gv*0.19 - crack*0.15 + (cid-0.5)*0.07 + (g-0.5)*0.12;
-        out[1] = (soil-0.5)*0.8 + grit*(pid-0.5)*2.1 + (cid-0.5)*0.55 + fl*0.30;
+        // 風に舐められた砂の筋(横へ長く伸ばす)。塊にならないよう縦横比を6倍取る
+        const streak = fbmT(u, v, 14, 74, 1, 97) - 0.5;
+        // 明るさは細かい模様にだけ使う(いちばん粗い soil でも5.8単位 = 岩の1/8)
+        out[0] = 0.80 + (soil-0.5)*0.20 - crack*0.16 + (g-0.5)*0.13 + grit*(pid-0.5)*0.10;
+        out[1] = (soil-0.5)*0.8 + grit*(pid-0.5)*1.9 + (cid-0.5)*0.55 + streak*0.55 + fl*0.30;
         // 凹凸はひび割れ(へこみ)と土のうねりだけ。砂利は一切入れない
         out[2] = soil*0.30 - crack*0.70 + g*0.16;
       };
@@ -207,21 +226,24 @@ const TEX_STYLES = {
     macro:{ amp:0.82, ridge:0.50, tint:0.24 },
     vert:{ gravel:0.66, scrub:0.34, flow:0.44, jitter:0.07 },
     make(){
-      const tc = wtable(13,13, 21), tv = wtable(46,46, 31);
+      // 板は13セル(11.5単位=小岩と同じ)だと1枚が転がった岩に見えた。26セル(5.8単位)へ
+      const tc = wtable(26,26, 21), tv = wtable(64,64, 31);
       const c = [0,0,0], p = [0,0,0];
       return (u,v,px,py,out)=>{
-        const wu = fbmT(u,v,8,8,2,71) - 0.5, wv = fbmT(u,v,8,8,2,73) - 0.5;
-        const ash = fbmT(u, v, 12, 12, 3, 17);
-        worley(u*13 + wu*1.8, v*13 + wv*1.8, 13, 13, tc, c);
-        worley(u*46 + wu*3.2, v*46 + wv*3.2, 46, 46, tv, p);
-        const crack = 1 - sstep(0.0, 0.10, c[1]-c[0]);   // 岩板の割れ目(太い)
+        const wu = fbmT(u,v,12,12,2,71) - 0.5, wv = fbmT(u,v,12,12,2,73) - 0.5;
+        const ash = fbmT(u, v, 24, 24, 3, 17);
+        worley(u*26 + wu*2.4, v*26 + wv*2.4, 26, 26, tc, c);
+        worley(u*64 + wu*4.0, v*64 + wv*4.0, 64, 64, tv, p);
+        const crack = 1 - sstep(0.0, 0.11, c[1]-c[0]);   // 岩板の割れ目(太い)
         const cid = ih(c[2]+5, 23);                      // 板ごとに焼け方を変える
         // 気泡の穴は「へこみ」なので凹凸に入れてよい。縁を立てない形にする
-        const pit = sstep(0.34, 0.06, p[0]) * (ih(p[2]+3, 29) > 0.30 ? 1 : 0);
+        const pit = smudge(p[0], 0.34) * (ih(p[2]+3, 29) > 0.30 ? 1 : 0);
         const g = ih(px*5+7, py*3+11);
-        // 板ごとの焼け方(cid)は色だけ。凹凸へ入れると板が持ち上がって「転がった岩」に見える
-        out[0] = 0.76 + (ash-0.5)*0.26 + (cid-0.5)*0.19 - crack*0.26 - pit*0.18 + (g-0.5)*0.15;
-        out[1] = (ash-0.5)*1.0 + (cid-0.5)*0.7 - crack*0.4;
+        // 溶けて流れた筋。板の並びを一方向へ引きずり、塊の集まりに見せない
+        const flow = fbmT(u, v, 16, 80, 1, 137) - 0.5;
+        // 板は5.8単位まで小さくしてあるので、板ごとの焼け方(cid)は明るさに出してよい
+        out[0] = 0.76 + (ash-0.5)*0.22 + (cid-0.5)*0.16 - crack*0.24 - pit*0.14 + (g-0.5)*0.16;
+        out[1] = (ash-0.5)*1.0 + (cid-0.5)*0.7 + flow*0.5 - crack*0.4;
         // 割れ目は彫るが、板が1枚ずつ浮いて見えない深さに留める
         out[2] = ash*0.30 - crack*0.55 - pit*0.40 + g*0.16;
       };
@@ -236,44 +258,53 @@ const TEX_STYLES = {
     macro:{ amp:0.62, ridge:0.34, tint:0.17 },
     vert:{ gravel:0.40, scrub:0.32, flow:0.24, jitter:0.05 },
     make(){
-      const tp = wtable(36,36, 41);
+      const tp = wtable(52,40, 41);
       const p = [0,0,0];
       return (u,v,px,py,out)=>{
-        const wu = fbmT(u,v,8,8,2,71) - 0.5, wv = fbmT(u,v,8,8,2,73) - 0.5;
-        // 風紋は風上がゆるく風下が急。sinをそのまま使わず、べき乗で非対称にする
-        const big = Math.sin((u*5 + v*2)*TAU + fbmT(u,v,4,4,2,23)*4.0)*0.5+0.5;
+        const wu = fbmT(u,v,12,12,2,71) - 0.5, wv = fbmT(u,v,12,12,2,73) - 0.5;
+        // 風紋のまとまり。波数5(=28単位)は小岩と同じ大きさだったので11(=13単位)へ
+        const big = Math.sin((u*11 + v*4)*TAU + fbmT(u,v,6,6,2,23)*4.0)*0.5+0.5;
         // 大きなうねりの風上側だけ風紋が濃く出る(全面を同じ縞で埋めない)
         const ripA = 0.35 + big*1.05;
-        const rip = Math.pow(Math.sin((u*32 + v*13)*TAU + fbmT(u,v,5,5,3,9)*9.0)*0.5+0.5, 1.7) * ripA;
-        worley(u*36 + wu*2.2, v*36 + wv*2.2, 36, 36, tp, p);
+        const rip = Math.pow(Math.sin((u*38 + v*15)*TAU + fbmT(u,v,7,7,3,9)*9.0)*0.5+0.5, 1.7) * ripA;
+        worley(u*52 + wu*3.2, v*40 + wv*2.6, 52, 40, tp, p);
         const pid = ih(p[2]+5, 13);
-        // 砂に混じる貝殻・小石も平らな染みにする(砂は本物の岩が最も見分けにくい地面)
-        const rad = 0.14 + pid*0.16;
-        const grit = (1 - sstep(rad-0.03, rad, p[0])) * (pid > 0.80 ? 1 : 0);
+        // 砂に混じる貝殻・小石も輪郭のない染みにする(砂は本物の岩が最も見分けにくい地面)
+        const grit = smudge(p[0], 0.20 + pid*0.16) * (pid > 0.72 ? 1 : 0);
         const g = ih(px*5+3, py*3+9);
-        out[0] = 0.86 + (rip-0.45)*0.13 + (big-0.5)*0.055 + (g-0.5)*0.08 + grit*0.07;
-        out[1] = (big-0.5)*0.7 + (rip-0.5)*0.35 + grit*0.8;
+        // 風紋は3.9単位・うねりは13単位。どちらも岩よりずっと小さいので明るさに出してよい
+        out[0] = 0.86 + (rip-0.45)*0.13 + (big-0.5)*0.055 + (g-0.5)*0.08 + grit*0.06;
+        out[1] = (big-0.5)*0.55 + (rip-0.5)*0.30 + grit*(0.6 + pid*0.5);
         // 風紋と大きなうねりだけ。粒は凹凸に入れない
         out[2] = rip*0.80 + big*0.28 + g*0.13;
       };
     },
   },
-  // 雪原: 風で伸びた吹きだまりとサスツルギ(硬い雪の筋)。ひび割れは絶対に作らない
+  /* 雪原: 風に流された細い筋だけで作る。ひび割れも塊も絶対に作らない。
+     【この地面が一番の要注意】雪は元の色が真っ白なので、少しでも暗い染みを置くと
+     そこだけが「雪をかぶった岩」に見える(実機で2回報告あり)。決まりは3つ:
+       ・模様は必ず一方向へ6倍以上伸ばす(塊を作らない)
+       ・明るさはほぼ動かさない。窪みは「暗く」ではなく「青く」する
+       ・段差(sstep)を作らない。縁が立つと氷の塊に見える                    */
   snow: {
-    relief:0.80, rough:[0.30,0.72],
-    tintA:[ 0.10, 0.04,-0.06], tintB:[-0.15,-0.05, 0.16],
+    relief:0.55, rough:[0.30,0.72],
+    // 暖色側(tintA)は雪が黄ばんで見えるので、ほぼ無色に近づけてある
+    tintA:[ 0.05, 0.03,-0.01], tintB:[-0.15,-0.05, 0.16],
     macro:{ amp:0.62, ridge:0.36, tint:0.26 },
     vert:{ gravel:0.62, scrub:0.46, flow:0.34, jitter:0.04 },
     make(){
       return (u,v,px,py,out)=>{
-        const drift = fbmT(u, v, 20, 5, 3, 3);                  // 風向きに伸びた吹きだまり
-        const sast = 1 - Math.abs(fbmT(u, v, 30, 8, 2, 19)*2 - 1);
-        const edge = sstep(0.58, 0.70, sast);                   // 風に削られた段差
+        // 風の筋。u方向2.5単位 × v方向15単位 = 縦横比6:1(前は7.5×30単位の「塊」だった)
+        const s1 = fbmT(u, v, 60, 10, 2, 3);
+        const s2 = fbmT(u, v, 128, 26, 2, 19);   // さらに細い吹き跡(1.2×5.8単位)
+        const groove = 1 - Math.abs(s1*2 - 1);   // 筋の谷。へこみなので凹凸に入れてよい
         const g = ih(px*7+5, py*11+3);
-        const spark = g > 0.9885 ? 1 : 0;                       // 雪面のきらめき
-        out[0] = 0.82 + (drift-0.5)*0.17 + sast*0.06 + edge*0.08 + spark*0.12 + (g-0.5)*0.04;
-        out[1] = -(drift-0.5)*1.3 - sast*0.35;                  // 窪みは青く沈む
-        out[2] = drift*0.80 + sast*0.35 + edge*0.25;
+        const spark = g > 0.9885 ? 1 : 0;        // 雪面のきらめき(1画素)
+        // 明るさに出してよいのは細い筋だけ。**雪は少しでも暗い染みが「岩」に見える**ので、
+        // 振幅は他のスタイルの半分に留め、残りは色み(青)で見せる
+        out[0] = 0.84 + (s1-0.5)*0.075 + (s2-0.5)*0.045 + spark*0.12 + (g-0.5)*0.05 - groove*0.03;
+        out[1] = -(s1-0.5)*1.25 - (s2-0.5)*0.5;   // 窪みは空を映して青く、稜は白く
+        out[2] = -groove*0.55 - (s2-0.5)*0.25;
       };
     },
   },
@@ -284,23 +315,24 @@ const TEX_STYLES = {
     macro:{ amp:0.74, ridge:0.38, tint:0.34 },
     vert:{ gravel:0.56, scrub:0.72, flow:0.32, jitter:0.06 },
     make(){
-      const tl = wtable(30,20, 51), tm = wtable(7,7, 61);
+      // 落ち葉のたまり場は7セル(21単位=小岩と同じ)だと茂みの塊に見えた。16セル(9.4単位)へ
+      const tl = wtable(44,30, 51), tm = wtable(16,16, 61);
       const l = [0,0,0], m = [0,0,0];
       return (u,v,px,py,out)=>{
-        const wu = fbmT(u,v,8,8,2,71) - 0.5, wv = fbmT(u,v,8,8,2,73) - 0.5;
-        const moss = fbmT(u, v, 12, 12, 3, 27);
+        const wu = fbmT(u,v,12,12,2,71) - 0.5, wv = fbmT(u,v,12,12,2,73) - 0.5;
+        const moss = fbmT(u, v, 22, 22, 3, 27);
         // 落ち葉は一面に散らさず「たまり場」を作る。空いた所は腐葉土と苔になる
-        worley(u*7 + wu*0.8, v*7 + wv*0.8, 7, 7, tm, m);
+        worley(u*16 + wu*1.4, v*16 + wv*1.4, 16, 16, tm, m);
         const pile = clamp01((ih(m[2]+41, 11) - 0.30)*1.7) * (1 - m[0]*0.55);
         // セルを縦横で違う数にすると細長くなる = 丸い水玉ではなく落ち葉に見える
-        worley(u*30 + wu*2.6, v*20 + wv*1.7, 30, 20, tl, l);
+        worley(u*44 + wu*3.4, v*30 + wv*2.3, 44, 30, tl, l);
         const lid = ih(l[2]+7, 3);
-        // 落ち葉は地面に伏せている。輪郭ははっきり出すが、盛り上げない(平らな染め)
-        const rad = 0.13 + lid*0.55;
-        const leaf = (1 - sstep(rad-0.04, rad, l[0])) * (lid > 1 - pile ? 1 : 0);
+        // 落ち葉は3.4×5単位。輪郭を立てず中心から薄れる染めにして、葉1枚が
+        // 「地面に置かれた物」に見えないようにする
+        const leaf = smudge(l[0], 0.26 + lid*0.58) * (lid > 1 - pile ? 1 : 0);
         const g = ih(px*3+13, py*5+1);
-        out[0] = 0.90 + (moss-0.5)*0.24 + leaf*(0.10 + lid*0.16) - (1-leaf)*0.08 + (g-0.5)*0.13;
-        out[1] = leaf*(0.35 + lid*1.2) - (1-leaf)*(0.45 + moss*0.55);
+        out[0] = 0.90 + (moss-0.5)*0.22 + leaf*(0.10 + lid*0.18) - (1-leaf)*0.08 + (g-0.5)*0.14;
+        out[1] = leaf*(0.50 + lid*1.6) - (1-leaf)*(0.45 + moss*0.55);
         // 葉の隙間(へこみ)と苔のうねりだけ。葉そのものは凹凸に入れない
         out[2] = moss*0.32 - (1-leaf)*0.16 + g*0.14;
       };
@@ -327,6 +359,65 @@ export function groundMapsFor(style){
     groundMapCache[style] = maps;
   }
   return groundMapCache[style];
+}
+
+/* 色みの向き(tintA/tintB)から輝度成分を抜く。
+   色みを強くしても明るさが動かなくなるので、「片側が明るく反対側が暗い=球」に
+   見える手がかりを作らずに、模様の情報量だけを増やせる。            */
+const LUMA_W = [0.2126, 0.7152, 0.0722];
+const neutralTintCache = new WeakMap();
+function neutralTint(t){
+  let n = neutralTintCache.get(t);
+  if(!n){
+    const l = LUMA_W[0]*t[0] + LUMA_W[1]*t[1] + LUMA_W[2]*t[2];
+    n = [t[0]-l, t[1]-l, t[2]-l];
+    neutralTintCache.set(t, n);
+  }
+  return n;
+}
+
+/* 巻き付き(タイル)のまま横→縦に走らせる箱ぼかし。走査和なので半径に依らず O(N)。
+   2回掛けて三角フィルタにする(1回だと四角い跡が残る)。                */
+function boxBlurWrap(src, dst, S, r){
+  const w = 1/(2*r+1);
+  for(let y=0;y<S;y++){                       // 横
+    const o = y*S;
+    let sum = 0;
+    for(let k=-r;k<=r;k++) sum += src[o + ((k%S)+S)%S];
+    for(let x=0;x<S;x++){
+      dst[o+x] = sum*w;
+      sum += src[o + ((x+r+1)%S)] - src[o + (((x-r)%S)+S)%S];
+    }
+  }
+  for(let x=0;x<S;x++){                       // 縦(dstを読んでdstへ書くので列を退避)
+    let sum = 0;
+    for(let k=-r;k<=r;k++) sum += dst[((((k%S)+S)%S))*S + x];
+    for(let y=0;y<S;y++){
+      blurCol[y] = sum*w;
+      sum += dst[((y+r+1)%S)*S + x] - dst[((((y-r)%S)+S)%S)*S + x];
+    }
+    for(let y=0;y<S;y++) dst[y*S+x] = blurCol[y];
+  }
+}
+let blurCol = null, scratchBlur = null, scratchBlur2 = null;
+/* 明るさの「大きなうねり」を削る(2026-08-14の不具合対応の保険)。
+   ぼかした版(=大きな模様だけ)を LUMA_LOW_KEEP まで縮め、細かい差はそのまま残す。
+   これで岩と同じ大きさの明暗がテクスチャに残らなくなる。スタイル側が明るさで
+   模様を描いてしまっても効く。大きな濃淡は②遠景マクロ(数百単位)が担当する。 */
+function highPassLum(lum, S){
+  const radPx = Math.round(LUMA_GRAIN / DETAIL_TILE * S);
+  if(radPx < 2 || radPx*2+1 >= S) return;
+  const N = S*S;
+  if(!scratchBlur){ scratchBlur = new Float32Array(N); scratchBlur2 = new Float32Array(N); blurCol = new Float32Array(S); }
+  boxBlurWrap(lum, scratchBlur, S, radPx);
+  boxBlurWrap(scratchBlur, scratchBlur2, S, radPx);
+  let mean = 0;
+  for(let i=0;i<N;i++) mean += lum[i];
+  mean /= N;
+  for(let i=0;i<N;i++){
+    const low = scratchBlur2[i];
+    lum[i] = mean + (low-mean)*LUMA_LOW_KEEP + (lum[i]-low);
+  }
 }
 
 /* 1回の走査で「明るさ・色み・高さ」を全画素ぶん求め、そこから4枚を作る。
@@ -363,12 +454,19 @@ function buildGroundMaps(st){
     for(let i=0;i<N;i++){ const h = hgt[i]; if(h > mean) hgt[i] = mean + (h-mean)*RELIEF_PEAK; }
   }
 
-  const A = st.tintA, B = st.tintB;
+  // 明るさから「岩と同じ大きさのうねり」を削る(保険。上の【最重要】を参照)
+  highPassLum(lum, S);
+
+  // 色みの向きは輝度中立にしてから使う。色みで模様を描いても陰影に見えない
+  const A = neutralTint(st.tintA), B = neutralTint(st.tintB);
   let midSum = 0;
   const map = makeTexture(S, (d)=>{
     for(let i=0;i<N;i++){
       const L = lum[i], w = warm[i];
-      const t = w > 0 ? A : B, aw = w > 0 ? w : -w;
+      const t = w > 0 ? A : B, a0 = w > 0 ? w : -w;
+      // 色みの効きは頭打ちさせる。小さい所は素通りで、強い所だけ緩やかに詰まる。
+      // 詰めないと channel が1.0に張り付き、色みのはずが「暗い染み」に化ける
+      const aw = a0/(1 + a0*TINT_KNEE);
       const r = clamp01(L*(1 + aw*t[0])), g = clamp01(L*(1 + aw*t[1])), b = clamp01(L*(1 + aw*t[2]));
       const j = i*4;
       d[j]   = Math.round(r*255);
@@ -444,8 +542,10 @@ function buildMacroMap(st){
         const u = x/S;
         const wu = u + (fbmT(u, v, 4, 4, 2, 307)-0.5)*0.20;
         const wv = v + (fbmT(u, v, 4, 4, 2, 401)-0.5)*0.20;
-        const n  = fbmT(wu, wv, 3, 3, 4, 101);
-        const rg = 1 - Math.abs(fbmT(wu, wv, 6, 6, 3, 211)*2 - 1);
+        // オクターブを増やしすぎない。3x3を4段回すと最後の段が100単位(=中くらいの岩と
+        // 同じ大きさ)の明暗になり、遠目に石が転がって見える。ここは「数百単位」だけ持つ
+        const n  = fbmT(wu, wv, 3, 3, 3, 101);
+        const rg = 1 - Math.abs(fbmT(wu, wv, 5, 5, 2, 211)*2 - 1);
         const L = 0.5 + (n-0.5)*m.amp + (rg-0.62)*m.ridge;
         const t = (fbmT(u, v, 2, 2, 2, 503)-0.5)*m.tint;
         const i = (y*S+x)*4;
@@ -476,7 +576,13 @@ uniform float uMidAmt;
 /* 近景タイル(①)を4.7倍に引き伸ばして、もう一度うっすら掛ける。
    150単位の模様に700単位の模様が重なるので、周期が両者の最小公倍数まで伸び、
    同じ絵の繰り返しが目に付かなくなる(タイル1枚を細かく作るより効く)。
-   uMidRef はそのテクスチャの平均輝度の逆数。掛けても全体の明るさが変わらない。 */
+
+   【この層は色みだけを掛ける】(2026-08-14の不具合対応)
+   前は輝度(dL)を掛けていたので、①の細かい模様が4.7倍(=35〜700単位)の
+   「明暗の塊」になって地面に散った。岩と同じ大きさの明暗なので、実機では
+   平らなはずの模様が岩と見分けられなくなった。
+   いまは輝度で割って色みだけを取り出す(=明るさは1のまま色だけ回る)。
+   繰り返し消しの効果は残り、塊状の陰影だけが消える。                        */
 const MACRO_CHUNK = `
 #ifdef USE_MAP
   vec2 mUv = vec2( vMapUv.x*0.7648 - vMapUv.y*0.6442, vMapUv.x*0.6442 + vMapUv.y*0.7648 ) * uMacroScale;
@@ -486,8 +592,9 @@ const MACRO_CHUNK = `
   vec2 m2Uv = vec2( vMapUv.x*0.4067 + vMapUv.y*0.9135, vMapUv.y*0.4067 - vMapUv.x*0.9135 ) * uMacroScale * 0.31;
   diffuseColor.rgb *= mix( vec3(1.0), texture2D( uMacroMap, m2Uv ).rgb * 2.0, uMacroAmt2 );
   vec2 dUv = vec2( vMapUv.x*0.9135 + vMapUv.y*0.4068, vMapUv.y*0.9135 - vMapUv.x*0.4068 ) * uMidScale;
-  float dL = dot( texture2D( map, dUv ).rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) * uMidRef;
-  diffuseColor.rgb *= mix( 1.0, dL, uMidAmt );
+  vec3 dC = texture2D( map, dUv ).rgb;
+  float dL = max( dot( dC, vec3( 0.2126, 0.7152, 0.0722 ) ), 1e-4 );
+  diffuseColor.rgb *= mix( vec3(1.0), dC / dL, uMidAmt );
 #endif
 `;
 // uniform の中身は使い回す(材質を作り直しても、テーマ差し替えで値を入れ直せる)

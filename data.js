@@ -1044,6 +1044,7 @@ const UPDATE_HISTORY = [
   { date:'2026-08-13', items:[
     { t:'リアルマップで、丘や大きな物の向こうにある安置線・技の予告円が透けて見えていたのを直しました。地面の起伏に隠れるようになります', g:['fix','av'] },
     { t:'リアルマップの地面の模様が立体的すぎて、隠れられる岩と見分けにくかったのを直しました。模様は平らに、隠れられる岩は陰影と足元の影ではっきり分かるようになります', g:['fix','av'] },
+    { t:'リアルマップの雪山・火山などの大きな山で、見えている山肌より手前で止められたり技が消えたりしていたのを直しました。山のふもとの当たり判定が見た目とぴったり一致します', g:['fix','av'] },
     { t:'🆕 リアルマップに身を隠せる人工物(崩れた石壁・貨物コンテナ・遺跡の石柱・小屋)が現れるようになりました', g:['feature','av'] },
     { t:'🆕 リアルマップの見た目を全面的に作り直しました。空に太陽と流れる雲が入り、遠くの山並みに起伏と陰影が付きました', g:['feature','av'] },
     { t:'リアルマップの地面に砂利・ひび割れ・風紋・落ち葉などの質感が入り、遠くの地面ものっぺりしなくなりました', g:['av'] },
@@ -2175,6 +2176,33 @@ const OBST_SHAPES = {
   hut:       { h:1.58, sink:0.12, sil:[[0.72,0.94,0.82,1]] },                     // 崩れかけた小屋
 };
 window.__aramonObstShapes = OBST_SHAPES;   // ESモジュール(real3d.js)への橋渡し
+
+/* =====================================================================
+   山(火山・雪山・森・ピラミッド)の広さ — **ここが唯一の正**
+
+   【なぜ要るか】山は円錐で、裾を MOUNT_SKIRT だけ地面へ埋めてある。
+   つまり **地面の高さでの実際の半径は v.radius より細い**。
+   なのに移動の当たり判定・弾の当たり・射線・描画の遮蔽がすべて v.radius を
+   そのまま使っていたため、見えている山肌よりかなり外側で止められ、技も遮られていた
+   (実機で報告された不具合・2026-08-13)。小さい山ほど差が大きく、
+   半径500の山では地面での実半径が約395 = 21%も細い。
+
+   使う側は必ずこの関数を通すこと。**v.radius を直接「山の広さ」として使わない。**
+   real3d_props.js もこの形で円錐を作る(window.__aramonMountProfile 経由)。
+   ===================================================================== */
+const MOUNT_SKIRT = 120;   // 山の裾を地面へ埋める深さ(real3d_props.js と同じ値)
+function mountainRiseOf(v){ return v.radius * (v.isMain ? 1.15 : 0.9); }
+/* 山の「地面からの高さ zUp」における実際の半径。
+   zUp=0 なら地面の高さでの半径。円錐なので上へ行くほど細くなる。 */
+function mountainRadiusAt(v, zUp){
+  const rise = mountainRiseOf(v);
+  const h = rise + MOUNT_SKIRT;                      // 円錐の全高(埋めたぶんを含む)
+  const s = MOUNT_SKIRT + Math.max(0, zUp || 0);     // 円錐の底からの高さ
+  return v.radius * Math.max(0, 1 - s / h);
+}
+// 地面の高さでの半径(移動の当たり判定・射線・ミニマップはこれを使う)
+function mountainGroundRadius(v){ return mountainRadiusAt(v, 0); }
+window.__aramonMountProfile = { skirt: MOUNT_SKIRT, riseOf: mountainRiseOf, radiusAt: mountainRadiusAt };
 // 通常マップ → リアルマップの対応。地形の形だけマップごとに変える
 const REAL3D_TERRAIN_OF ={ wild:'hills', kaurea:'crags', papas:'drift', palepale:'jungle', toble:'coast', mandy:'dunes' };
 const REAL_MAP_SUFFIX = '_real';
