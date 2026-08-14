@@ -121,7 +121,8 @@ async function startTeamMatch(page){
     for(const e of entities){ if(e!==player && e.alive && !sameTeam(player, e)){ e.x = player.x - 2000; e.y = player.y; } }
     player.facingAngle = 0;   // 前方(x+)には誰もいない
     const btn = document.getElementById('pingBtn');
-    for(let i=0;i<5;i++) btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));   // 連打
+    lastPingSentAt = -Infinity;   // 直前の敵ピンのクールタイムを解除(この検証は「連打上書き」を見る)
+    for(let i=0;i<5;i++){ btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); lastPingSentAt = -Infinity; }
     const pg = teamPings.get(player.id);
     return { size: teamPings.size, kind: pg && pg.kind,
       dx: pg && Math.round(pg.x - player.x), dy: pg && Math.round(pg.y - player.y),
@@ -145,7 +146,7 @@ async function startTeamMatch(page){
     // 敵ピンを打ち直し、対象を倒すと消えることを確認
     const enemy = entities.find(e=> e!==player && e.alive && !sameTeam(player, e));
     player.facingAngle = 0; enemy.x = player.x + 400; enemy.y = player.y;
-    sendPing();
+    lastPingSentAt = -Infinity; sendPing();   // 検証は機能単位なのでクールタイムを毎回解除
     const wasEnemy = teamPings.get(player.id) && teamPings.get(player.id).kind==='enemy';
     enemy.alive = false;
     prunePings();
@@ -195,7 +196,7 @@ async function startTeamMatch(page){
   await page.waitForTimeout(350);
   const r6 = await page.evaluate(()=>{
     const btn = document.getElementById('pingBtn');
-    sendPing();   // 個人戦では何も起きないはず
+    lastPingSentAt = -Infinity; sendPing();   // 検証は機能単位なのでクールタイムを毎回解除   // 個人戦では何も起きないはず
     for(const e of entities) e.kills = 0;   // botが稼いだ分をリセットして決定的にする
     const solo = entities.filter(e=> e!==player && e.alive);
     solo[0].kills = 2; updateKillLeader();

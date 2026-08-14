@@ -1283,7 +1283,8 @@ function updateTeamStates(dt){
    ・キルリーダーはauthStateで同期済みのkillsから毎フレーム全員が導出する(同期の追加なし)。 */
 let teamPings = new Map();     // 発信者のエンティティid -> ピン。1人が連打しても最新1個だけ(上書き)
 let killLeaderCurId = null;    // 現在のキルリーダーのエンティティid(2キル未満しかいなければnull)
-function pingResetState(){ teamPings = new Map(); killLeaderCurId = null; }
+function pingResetState(){
+  lastPingSentAt = -Infinity; teamPings = new Map(); killLeaderCurId = null; }
 
 // 照準方向の敵を探す(ロックオン表示と同じ「向いている先」基準。角度内で最も近い敵)
 function pingFindEnemy(){
@@ -1299,9 +1300,13 @@ function pingFindEnemy(){
   return best;
 }
 /* ピンを打つ(ボタン1押しで完結)。照準の先に敵がいれば敵ピン、いなければ移動ピン。 */
+let lastPingSentAt = -Infinity;
+const PING_COOLDOWN_SEC = 1.2;   // 連打スパム防止(フィードが同じ行で埋まる=批評指摘)
 function sendPing(){
   if(!game.started || game.over || !player || !player.alive) return;
   if(!isTeamMatch()) return;
+  if(matchTime - lastPingSentAt < PING_COOLDOWN_SEC) return;
+  lastPingSentAt = matchTime;
   const enemy = pingFindEnemy();
   let data;
   if(enemy){
