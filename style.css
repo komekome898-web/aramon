@@ -1604,7 +1604,7 @@
     font-size:11px; letter-spacing:0.5px; color:var(--ink-dim); }
   .mode-tab-wrap{ position:relative; display:inline-flex; }
   .multi-xp-pop{
-    position:absolute; top:-13px; right:-2px; z-index:2;   /* 隣のボタンに被らない位置 */
+    position:absolute; top:-11px; right:3px; z-index:2;   /* ボタンの内側右上へ完全収容(隣に触れない) */
     background:linear-gradient(180deg,#ff8a5b,#ff3b3b); color:#fff2c2;
     font-family:'Russo One',sans-serif; font-size:9px; line-height:1.15; text-align:center;
     padding:5px 4px 4px; border-radius:50%; width:34px; height:34px; box-sizing:border-box;
@@ -2218,8 +2218,8 @@
   #minimapCanvas{ width:100%; height:100%; display:block; }
 
   #killFeed{ position:absolute; top:165px; right:14px; width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
-  .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateX(8px); animation:kfIn .25s forwards; max-width:100%; }
-  @keyframes kfIn{ to{opacity:1; transform:translateX(0);} }
+  .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%; }
+  @keyframes kfIn{ to{opacity:1; transform:translateY(0);} }   /* 横スライドは右端で見切れて斜め欠けに見えた */
 
   /* #appRootの最後(#hudの外)に置いてあるので、z-indexは他の全画面(#startScreen:30含む)より
      大きくして必ず最前面に出す。pointer-events:noneは#hudから継承していたため明示が必要。 */
@@ -4048,3 +4048,6 @@ body.self-downed #fireBtn, body.self-downed #dashBtn, body.self-downed #movePane
 
 /* チーム編成の補足(1行・小さく)。何が変わるかを選ぶ前に伝える */
 .team-size-note{ font-size:10px; color:rgba(230,236,245,0.55); margin-top:5px; letter-spacing:0.3px; }
+
+/* リザルトのバッジ集約チップ(6件を超えたぶん) */
+.result-badge.more{ background:rgba(255,255,255,0.12); color:#cfd6de; }

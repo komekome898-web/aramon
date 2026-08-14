@@ -1289,6 +1289,17 @@ function teamNoteDeath(victim, killer){
   // チーム順位=残っているチーム数+1(全員に同じ順位。再帰しても同じ値になる冪等な代入)
   const place = countAliveTeams() + 1;
   for(const m of members){ m.placement = place; }
+  /* 小隊全滅はキルフィードでも伝える(誰かのダウン・キルの行だけでは
+     「あの小隊が消えた」という戦況の変化が読めない)。ゲストへはkillイベントと
+     同じ経路で配る(ホストのフィードは即時、ゲストはイベント受信で表示) */
+  {
+    const repName = displayNameFor(members[0]);
+    const text = `💀 ${repName} の小隊が全滅した`;
+    pushKillFeed(text);
+    if(netState.mode==='multi' && netState.isHost){
+      window.__aramonPushEvent(netState.roomId, { kind:'kill', text, ts:Date.now() });
+    }
+  }
   // ソロのチーム戦: 自分のチームが全滅した時点でリザルトへ(観戦はここで終わり)
   if(netState.mode!=='multi' && player && player.teamId===victim.teamId && !game.over && !player.alive){
     showResult(false, place);

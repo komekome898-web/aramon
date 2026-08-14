@@ -5100,7 +5100,13 @@ function renderResultBadges(o){
     if(globalNewIds.has(t.id)) continue;
     badges.push(`<span class="result-badge title">🎖️ ${elemLabel}で称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; titleGot = true;
   }
-  el.innerHTML = badges.join('');
+  /* 6件を超えたら残りを「+他N件」に畳む。称号ラッシュ時にバッジ列が画面下端から
+     はみ出して最下段が見切れていた(批評指摘)。称号自体はマイページで一覧できる */
+  const MAX_RESULT_BADGES = 6;
+  const shown = badges.length > MAX_RESULT_BADGES
+    ? badges.slice(0, MAX_RESULT_BADGES).concat(`<span class="result-badge more">+他${badges.length-MAX_RESULT_BADGES}件</span>`)
+    : badges;
+  el.innerHTML = shown.join('');
   el.classList.toggle('hidden', badges.length===0);
   // リザルトSE:
   //  ・全体の自己ベスト更新 → 専用SE(提供動画音声)を1回だけ。重複時はこれを優先(SSR獲得SEは鳴らさない)

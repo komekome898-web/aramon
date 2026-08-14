@@ -823,6 +823,11 @@ function drawMonsterShape(e, color, dark){
 /* 頭上ラベル(名前・▽・ダウン・蘇生ゲージ)の画面上の拡大上限。
    p.scaleのまま描くとカメラ至近で文字が画面の半分を覆う(縦持ち実測で発生)。 */
 const TEAM_LABEL_MAX_SCALE = 2.2;
+/* カメラ至近ではラベルごと消す(上限で止めても位置が画面中央へ来て操作UIへ被る)。
+   スケール2.0から薄れはじめ3.0で完全に消える。荒野行動の近距離マーカーと同じ挙動 */
+function teamLabelFade(){
+  return clamp((3.0 - _monDrawScale)/1.0, 0, 1);
+}
 function drawMonster(e,p){
   const el = ELEMENTS[e.element];
   // 召喚演出中: せり上がりはせず、光が収束するにつれてその場で姿を現す
@@ -942,12 +947,20 @@ function drawMonster(e,p){
   if(!e.isRaidBoss){
     const barW = e.radius*2.1;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
-    ctx.save();
-    if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
-    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
-    ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
-    ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
-    ctx.restore();
+    /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
+       巨大なバーが操作UIへ被っていた=批評指摘。敵は従来どおり=撃ち合いの的。
+       HPは小隊バーが常時見せているので、近くで消えても情報は失わない) */
+    const allyBarFade = (!selfBar && (typeof sameTeam==='function') && player && sameTeam(player, e))
+      ? teamLabelFade() : 1;
+    if(allyBarFade > 0.02){
+      ctx.save();
+      if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
+      else if(allyBarFade < 1) ctx.globalAlpha = allyBarFade;
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
+      ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
+      ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
+      ctx.restore();
+    }
   }
 
   /* チーム戦のダウン表現: 出血リング(赤の脈動・2重)+出血死までの残り秒。
@@ -968,30 +981,36 @@ function drawMonster(e,p){
        カメラ至近でも巨大化させない(TEAM_LABEL_MAX_SCALE)。 */
     if(!e.isPlayer){
       const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale));
-      const remainDown = Math.max(0, Math.ceil((e.downedUntil||0) - matchTime));
-      ctx.save();
-      ctx.scale(lblK,lblK);
-      ctx.textAlign='center';
-      ctx.font = "bold 11px 'Rajdhani', sans-serif";
-      ctx.fillStyle = '#ff9a8a'; ctx.globalAlpha = 0.9;
-      if(!renderHeavyLoad){ ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(255,40,40,0.7)'; }
-      ctx.fillText(`ダウン ${remainDown}`, 0, barY - 16);
-      if(e.reviveProgress > 0 && typeof TEAM_REVIVE_SEC!=='undefined'){
-        const ratio = clamp(e.reviveProgress/TEAM_REVIVE_SEC, 0, 1);
-        const gy = barY - 40;
-        // 太いリング+進捗%(細い線と「蘇生中」だけでは戦闘距離で読めない=批評指摘)
-        ctx.lineWidth = 5; ctx.lineCap='round';
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-        ctx.beginPath(); ctx.arc(0, gy, 13, 0, Math.PI*2); ctx.stroke();
-        ctx.strokeStyle = '#58e07e';
-        if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = '#58e07e'; }
-        ctx.beginPath(); ctx.arc(0, gy, 13, -Math.PI/2, -Math.PI/2 + ratio*Math.PI*2); ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.font = "bold 10px 'Rajdhani', sans-serif";
-        ctx.fillStyle='#baffd0'; ctx.globalAlpha=0.95;
-        ctx.fillText(`蘇生 ${Math.round(ratio*100)}%`, 0, gy + 24);
+      const fade = teamLabelFade();
+      if(fade > 0.02){
+        const remainDown = Math.max(0, Math.ceil((e.downedUntil||0) - matchTime));
+        ctx.save();
+        ctx.scale(lblK,lblK);
+        ctx.globalAlpha = fade;
+        ctx.textAlign='center';
+        ctx.font = "bold 11px 'Rajdhani', sans-serif";
+        ctx.fillStyle = '#ff9a8a';
+        if(!renderHeavyLoad){ ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(255,40,40,0.7)'; }
+        ctx.fillText(`ダウン ${remainDown}`, 0, barY - 16);
+        if(e.reviveProgress > 0 && typeof TEAM_REVIVE_SEC!=='undefined'){
+          const ratio = clamp(e.reviveProgress/TEAM_REVIVE_SEC, 0, 1);
+          const gy = barY - 44;
+          /* %はリングの中に描く(リングの下に書くと名前・HPバーと積み重なって
+             全部読めなくなる=批評2巡目の主犯)。名前・▽はダウン中は描かない
+             (誰かは小隊バーが伝える)ので、この縦積みだけで完結する */
+          ctx.lineWidth = 5; ctx.lineCap='round';
+          ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+          ctx.beginPath(); ctx.arc(0, gy, 14, 0, Math.PI*2); ctx.stroke();
+          ctx.strokeStyle = '#58e07e';
+          if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = '#58e07e'; }
+          ctx.beginPath(); ctx.arc(0, gy, 14, -Math.PI/2, -Math.PI/2 + ratio*Math.PI*2); ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.font = "bold 9px 'Rajdhani', sans-serif";
+          ctx.fillStyle='#eafff0';
+          ctx.fillText(`${Math.round(ratio*100)}%`, 0, gy + 3);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
   }
 
@@ -1015,10 +1034,14 @@ function drawMonster(e,p){
   /* チーム戦の味方は距離に関係なく名前を出し、緑の名前+頭上の▽で敵と即区別する。
      ▽は「味方だけの形」(色覚多様性のため色だけに頼らない。小隊バーのsq-markと同じ記号) */
   const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
-  if(!e.isPlayer && (isAllyOfPlayer || dist(e,player)<700)){
-    // 頭上の名前・▽もスケール上限(至近の味方で名前が画面幅まで膨らんでいた)
+  const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
+  if(!e.isPlayer && !entIsDowned && (isAllyOfPlayer || dist(e,player)<700)){
+    // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
     ctx.save();
     { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
+    const allyFade = isAllyOfPlayer ? teamLabelFade() : 1;
+    if(allyFade <= 0.02){ ctx.restore(); ctx.restore(); return; }
+    ctx.globalAlpha = allyFade;
     ctx.font="11px 'Rajdhani', sans-serif";
     ctx.fillStyle = isAllyOfPlayer ? '#7dffa8' : (e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)');
     ctx.textAlign='center';
@@ -1034,7 +1057,7 @@ function drawMonster(e,p){
       const my = -e.radius*1.55 - (e.ghostOwner ? 38 : 28);   // 名前(とゴースト表記)の上
       const bob = Math.sin(matchTime*3 + e.id)*1.5;           // ふわふわ上下して目に留まるように
       ctx.save();
-      ctx.globalAlpha = 0.95;
+      ctx.globalAlpha = 0.95*allyFade;   // 近距離フェードを▽にも効かせる(上書きしない)
       ctx.fillStyle = '#58e07e';
       ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1;
       ctx.beginPath();
@@ -2686,8 +2709,8 @@ function drawParticle(pt,p){
     } else if(pt.pred){
       /* ゲストの予測ダメージ(見た目専用)。確定の実数字より一段小さく・薄くして
          二重に見せない。ただし縁取りは付ける(縁なしの灰文字は戦闘距離で読めない=批評指摘) */
-      ctx.font="bold 13px 'Share Tech Mono', monospace";
-      ctx.globalAlpha = a*0.7;
+      ctx.font="bold 15px 'Share Tech Mono', monospace";
+      ctx.globalAlpha = a*0.8;
       ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else {
@@ -5722,15 +5745,25 @@ function renderMinimap(){
     if(!e.alive) continue;
     // チーム戦の味方は緑の点+白い縁取り(自分の白い点と同型の強調)で敵と即区別する
     const isAllyM = (typeof sameTeam==='function') && player && sameTeam(player, e);
-    miniCtx.beginPath();
-    miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:(isAllyM?3.0:2.2), 0, Math.PI*2);
     /* チーム戦は「敵か味方か自分か」の3値だけにする。元素色のままだと
-       多色の紙吹雪になり敵味方が判別できない(批評指摘)。個人戦は従来どおり元素色 */
+       多色の紙吹雪になり敵味方が判別できない(批評指摘)。個人戦は従来どおり元素色。
+       味方は緑+白縁の【三角】=色相だけでなく形でも区別する(赤緑色覚対応。
+       頭上の▽・小隊バーと同じ形言語)。敵・個人戦は従来の丸 */
     const teamMini = (typeof isTeamMatch==='function') && isTeamMatch();
-    miniCtx.fillStyle = e.isPlayer ? '#ffffff' : (isAllyM ? '#58e07e'
-      : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color)));
-    miniCtx.fill();
-    if(isAllyM){ miniCtx.strokeStyle='rgba(255,255,255,0.85)'; miniCtx.lineWidth=1; miniCtx.stroke(); }
+    if(isAllyM){
+      const mx=e.x*scale, my2=e.y*scale, r=4.2;
+      miniCtx.beginPath();
+      miniCtx.moveTo(mx, my2-r); miniCtx.lineTo(mx+r*0.9, my2+r*0.7); miniCtx.lineTo(mx-r*0.9, my2+r*0.7);
+      miniCtx.closePath();
+      miniCtx.fillStyle='#58e07e'; miniCtx.fill();
+      miniCtx.strokeStyle='rgba(255,255,255,0.9)'; miniCtx.lineWidth=1; miniCtx.stroke();
+    } else {
+      miniCtx.beginPath();
+      miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:2.2, 0, Math.PI*2);
+      miniCtx.fillStyle = e.isPlayer ? '#ffffff'
+        : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
+      miniCtx.fill();
+    }
   }
   const px=player.x*scale, py=player.y*scale, yaw=camState.yaw;
   miniCtx.beginPath();
@@ -5772,8 +5805,9 @@ function updateSquadPanel(){
     el.innerHTML = mates.map(m=>{
       const st = stateOf(m);
       const stLabel = st==='dead' ? '倒された' : (st==='down' ? 'ダウン中' : '');
+      const mark = st==='dead' ? '💀' : '▽';   // 死亡はドクロで一目で分かるように(ダウンとの区別)
       return `<div class="sq-row sq-${st}" data-ent="${m.id}">
-        <div class="sq-top"><span class="sq-mark">▽</span><span class="sq-name">${displayNameFor(m)}</span><span class="sq-hp-num"></span><span class="sq-state">${stLabel}</span></div>
+        <div class="sq-top"><span class="sq-mark">${mark}</span><span class="sq-name">${displayNameFor(m)}</span><span class="sq-hp-num"></span><span class="sq-state">${stLabel}</span></div>
         <div class="sq-hp-track"><div class="sq-hp-fill"></div></div>
       </div>`;
     }).join('');
