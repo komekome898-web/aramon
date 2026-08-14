@@ -764,7 +764,7 @@ function updateLobbyPickLabels(){
     // 表示は「ロビーで選んだもの(lobbyMode/lobbySubMode)」が正。試合中の netState を見ない
     modeEl.textContent =
       lobbyMode==='raid' ? `レイドバトル (${RAID_CAPACITY}人チーム)`
-      : lobbyMode==='team' ? (lobbySubMode==='arena' ? 'チーム戦・バトルアリーナ' : 'チーム戦・20チームバトロワ')
+      : lobbyMode==='team' ? (lobbySubMode==='arena' ? 'チーム戦・アリーナ' : 'チーム戦・20チームバトロワ')
       : (lobbySubMode==='pvp4' ? `シングル・マルチPvP (${netState.capacity}人)` : 'シングル・30人バトロワ');
   }
 }

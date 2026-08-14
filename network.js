@@ -966,7 +966,8 @@ function applyLootEventLocally(evt){
       // zは座標から一意に決まるので配信不要(real3dHeightAtは純関数)
       // keys/owner はデス円盤石だけが持つ(ゲストは見た目と持ち主名の表示にしか使わない。適用はホスト)
       lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, z:baseTerrainHeightAt(evt.x,evt.y), bob:evt.bob||0,
-                       keys:evt.keys||null, owner:evt.owner||null });
+                       keys:evt.keys||null, owner:evt.owner||null,
+                       ownerTeamId:(typeof evt.tid==='number')?evt.tid:null });   // 敵味方の色分け用
     }
   }
 }

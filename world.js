@@ -369,7 +369,8 @@ function currentDps(){
 function zoneLabel(){
   // アリーナはフェーズを持たないので、shrinking/hasNextだけで状態を言う
   // (どちらもマルチのauthStateで同期済みなのでゲストでも正しく出る)
-  if(game.arena) return zoneState.shrinking ? '安全圏：縮小中' : (zoneState.hasNext ? '安全圏：待機中' : '安全圏：安定');
+  // アリーナはBRの語彙を使わない(「安全圏:待機中」は1本勝負では冗長で誤解を生む=批評指摘)
+  if(game.arena) return zoneState.shrinking ? '決着圏へ縮小中' : (zoneState.hasNext ? '決着圏まで' : '決着圏');
   if(zoneState.phaseIndex===0) return '安全圏：待機中';
   return zoneState.shrinking ? '安全圏：縮小中' : '安全圏：安定';
 }
@@ -823,6 +824,7 @@ function spawnDeathDisc(victim){
   const it = {
     id: nextId++, kind:'deathDisc', type:null, keys,
     owner: (typeof displayNameFor==='function') ? displayNameFor(victim) : victim.name,
+    ownerTeamId: (victim.teamId!=null) ? victim.teamId : null,   // 敵味方の色分け用(見る側のチームと比較)
     x: victim.x, y: victim.y, z: baseTerrainHeightAt(victim.x, victim.y), bob: rand(0,Math.PI*2),
   };
   lootItems.push(it);
@@ -830,6 +832,7 @@ function spawnDeathDisc(victim){
     window.__aramonPushLootEvent(netState.roomId, {
       evtType:'spawn', id:it.id, kind:it.kind, itemType:null, x:Math.round(it.x), y:Math.round(it.y), bob:it.bob,
       keys: it.keys, owner: it.owner || null,   // Firebaseはundefined不可。中身と持ち主名はゲストの表示用
+      tid: (it.ownerTeamId!=null) ? it.ownerTeamId : null,   // 敵味方の色分け用
     });
   }
   return it;

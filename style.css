@@ -1606,7 +1606,7 @@
   /* ポップ(経験値5倍)を内側右上に乗せるサブタブは、文字がポップの下に潜らないよう右に余白を足す */
   .mode-tab-wrap .sub-tab{ padding-right:44px; }
   .multi-xp-pop{
-    position:absolute; top:-11px; right:3px; z-index:2;   /* ボタンの内側右上へ完全収容(隣に触れない) */
+    position:absolute; top:-7px; right:-4px; z-index:2;   /* サブタブの右上。隣のボタン・画面端に触れない(縦持ち実測で確認) */
     background:linear-gradient(180deg,#ff8a5b,#ff3b3b); color:#fff2c2;
     font-family:'Russo One',sans-serif; font-size:9px; line-height:1.15; text-align:center;
     padding:5px 4px 4px; border-radius:50%; width:34px; height:34px; box-sizing:border-box;
