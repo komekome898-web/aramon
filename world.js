@@ -1064,25 +1064,34 @@ function seededPickSpawnPointsBatch(rng, n){
 function addParticle(p){ particles.push(Object.assign({life:1,maxLife:1,vx:0,vy:0,size:4,z:0}, p)); }
 function spawnHit(x,y,z,color){ for(let i=0;i<5;i++){ const a=rand(0,Math.PI*2), sp=rand(40,140); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.35,maxLife:0.35,color,size:rand(2,4)}); } }
 function spawnDeath(x,y,z,color){ for(let i=0;i<14;i++){ const a=rand(0,Math.PI*2), sp=rand(60,220); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.6,maxLife:0.6,color,size:rand(3,6)}); } }
-/* 同じ場所に短時間で数字が続くと重なって全部読めない(批評指摘)ため、
-   直前のスポーン位置を覚えて近ければ横へ散らし縦をずらす。 */
-let _lastDmgText = { x:0, y:0, t:-9, n:0 };
-function spawnDmgText(x,y,z,val,color,big){
-  const now = matchTime;
-  if(now - _lastDmgText.t < 0.35 && Math.hypot(x-_lastDmgText.x, y-_lastDmgText.y) < 60){
-    _lastDmgText.n = Math.min(4, _lastDmgText.n + 1);
-  } else {
-    _lastDmgText.n = 0;
+/* 【数字の共有スタッカー】数字が近くに重なると全部読めなくなる(批評指摘)。
+   「直前の1点」を覚える方式では別の対象・別の種類(与ダメ/GT/回復)の数字と
+   衝突したままだったので、**生きている数字パーティクル全部**と突き合わせて、
+   重なる間は上へ積み・ときどき左右へ逃がす。種別・対象を問わず1か所で効く。
+   数字は多くても同時に数枚なので全走査でも安い。 */
+function dmgTextFreeSpot(x, y, z){
+  let ox = 0, oz = 0, tries = 0;
+  const clash = ()=> particles.some(pt=> pt.type==='text' && pt.life > 0.12
+    && Math.hypot(pt.x-(x+ox), pt.y-y) < 55 && Math.abs((pt.z||0)-(z+oz)) < 26);
+  while(tries < 6 && clash()){
+    tries++;
+    // 上と左右を交互に使う(上ばかりに積むと画面上端で見切れる)
+    if(tries % 2 === 1) ox = (ox <= 0 ? Math.abs(ox)+34 : -ox);
+    else oz += 26;
   }
-  _lastDmgText.x = x; _lastDmgText.y = y; _lastDmgText.t = now;
-  const k = _lastDmgText.n;
-  const ox = (k%2 ? 1 : -1) * k * 16;   // 左右交互に離す
-  addParticle({type:'text',x:x+ox,y,z:z+k*14,vx:rand(-10,10),vy:-50,
+  return { x: x+ox, z: z+oz };
+}
+function spawnDmgText(x,y,z,val,color,big){
+  const spot = dmgTextFreeSpot(x, y, z||0);
+  addParticle({type:'text',x:spot.x,y,z:spot.z,vx:rand(-10,10),vy:-50,
     life:big?0.85:0.7,maxLife:big?0.85:0.7,color:color||'#fff',text:String(val),big:!!big});
 }
 /* ゲストの予測ダメージ数字(見た目専用)。ホスト確定の実数字と見分けが付くよう
    小さく半透明で描かれる(render.jsのdrawParticleがpredを見る)。値は概算でよい */
-function spawnPredDmgText(x,y,z,val){ addParticle({type:'text',x,y,z,vx:rand(-8,8),vy:-42,life:0.5,maxLife:0.5,color:'#ffeec8',text:String(Math.round(val)),pred:true}); }
+function spawnPredDmgText(x,y,z,val){
+  const spot = dmgTextFreeSpot(x, y, z||0);   // 予測数字も同じスタッカーを通す
+  addParticle({type:'text',x:spot.x,y,z:spot.z,vx:rand(-8,8),vy:-42,life:0.5,maxLife:0.5,color:'#ffeec8',text:String(Math.round(val)),pred:true});
+}
 
 function displayNameFor(ent){
   if(!ent) return '';

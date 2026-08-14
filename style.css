@@ -2217,7 +2217,7 @@
   #minimapWrap{ width:120px; height:120px; flex-shrink:0; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:rgba(11,19,32,0.5); box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
   #minimapCanvas{ width:100%; height:100%; display:block; }
 
-  #killFeed{ position:absolute; top:165px; right:14px; width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
+  #killFeed{ position:absolute; top:140px; right:14px;   /* 操作ヒント帯と交差しない高さ */ width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
   .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%; }
   @keyframes kfIn{ to{opacity:1; transform:translateY(0);} }   /* 横スライドは右端で見切れて斜め欠けに見えた */
 
@@ -3727,7 +3727,7 @@
   html.narrow-screen #hpPanel{ width:180px; }
   /* 小隊バーの幅はHPパネルに追従させる(180に合わせる。#hpPanelを変えたらここも直す) */
   html.narrow-screen #squadPanel{ width:180px; }
-  html.narrow-screen #killFeed{ width:170px; top:148px;}
+  html.narrow-screen #killFeed{ width:170px; top:123px;}
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
   /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */
   html.narrow-screen #raidHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
