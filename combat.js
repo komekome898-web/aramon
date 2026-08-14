@@ -497,6 +497,8 @@ function applyDamage(target, dmg, source, opts){
   }
   if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= AURA_MATCH_MULT; // オーラ一致
   target.hp -= finalDmg; target.hitFlash = 0.18;
+  // 計測ハーネス用: ダメージ確定(HP減少)の時刻を記録(通常は__netProbe未定義で素通り)
+  if(window.__netProbe) __netProbe.mark('dmg', { id: target.id, src: source?source.id:null, dmg: Math.round(finalDmg), hp: Math.round(target.hp), ts: Date.now() });
   // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
   if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
   else if(auraResult==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#5aa6ff', true);
@@ -1062,6 +1064,14 @@ function separateEntities(){
   }
 }
 function computePlayerInput(){
+  // 計測ハーネス(tools/net_probe.html)からの外部駆動。通常プレイでは__netProbeInputは未定義で素通り
+  const np = window.__netProbeInput;
+  if(np){
+    player.inputMoveX = np.mx||0;
+    player.inputMoveY = np.my||0;
+    if(typeof np.facing==='number') player.facingAngle = np.facing;
+    return;
+  }
   let fwd = 0, strafe = 0;
   if(keys['w']||keys['arrowup']) fwd += 1;
   if(keys['s']||keys['arrowdown']) fwd -= 1;

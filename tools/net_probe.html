@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>net_probe — マルチプレイ計測ハーネス</title>
+<!--
+  ネットコード計測ハーネス(開発用。ゲームには読み込まない)。
+
+  ホストとゲストを同一ページ内の2つのiframe(../index.html?netprobe=1)として起動し、
+  firebase.jsの代わりに、この親ページが window.__aramon* のスタブ(ローカルバス)を注入する。
+  バスは片道遅延・ジッタ・欠落を注入でき、RTDB相当の通信条件を再現する。
+
+  使い方(単体): ローカルHTTPサーバーでリポジトリ直下を配信して
+    http://127.0.0.1:PORT/tools/net_probe.html?oneway=75&jitter=0.3&loss=0&seed=20260814
+  を開く。試合が自動で進み、終わると window.__probeResult に生データが入る。
+  通常は tools/net_sim.mjs から起動して数値を集計する。
+
+  URLパラメータ:
+    oneway  … 片道遅延ms(送信者→受信者の合計。既定75)
+    jitter  … 遅延のゆらぎ(±の比率。既定0.3=±30%)
+    loss    … 欠落率0〜1(最新値上書き型のチャンネル=input/authStateのみ落とす。
+               RTDBはTCPなので実際のパケット欠落は起きず、これは「更新が飛ばされて
+               次の値にまとめられる」= 配信の間引きの近似。既定0)
+    seed    … ワールド生成シード(固定して毎回同じマップ・スポーンにする)
+
+  バスのモデル:
+    ・サーバーを中間点に置いた想定。送信者→受信者の合計が oneway ms。
+    ・書き込みPromiseのack(RTDBのset/update解決)は oneway ms(クライアント→サーバー→クライアント)。
+      → ホストのauthState配信は「ackが返るまで次を出さない」実装なので、実質 max(50ms, oneway) 間隔になる
+        (これは実RTDBでも同じ性質)。
+    ・自分の書き込みは自分のリスナーへ即時反映(RTDBのローカルエコーと同じ)。
+    ・同一方向のメッセージは追い越さない(TCP相当。ジッタで順序が入れ替わらない)。
+    ・push系チャンネル(events/hits/fireEvents/shotEvents/lootEvents)は欠落させない
+      (RTDBのonChildAddedは取りこぼさないため)。
+-->
+<style>
+  body { margin:0; background:#101418; color:#cfd8e3; font:12px/1.6 monospace; }
+  #bar { padding:6px 10px; background:#1b2430; border-bottom:1px solid #2c3a4a; }
+  #frames { display:flex; gap:4px; padding:4px; }
+  iframe { width:620px; height:320px; border:1px solid #2c3a4a; background:#000; }
+  #log { padding:6px 10px; white-space:pre-wrap; max-height:200px; overflow:auto; }
+</style>
+</head>
+<body>
+<div id="bar">boot...</div>
+<div id="frames">
+  <iframe id="hostFrame"></iframe>
+  <iframe id="guestFrame"></iframe>
+</div>
+<div id="log"></div>
+<script>
+'use strict';
+
+/* ===== 設定(URLパラメータ) ===== */
+const qs = new URLSearchParams(location.search);
+const CFG = {
+  oneway: Number(qs.get('oneway') || 75),
+  jitter: Number(qs.get('jitter') || 0.3),
+  loss:   Number(qs.get('loss')   || 0),
+  rtc:    qs.get('rtc') === '1',   // 1=WebRTCシグナリング橋を有効化(rtc昇格の上限性能を測る)
+  seed:   Number(qs.get('seed')   || 20260814),
+  capacity: 2,          // 人間2人・bot0(決闘シナリオを乱さない)
+  duelDist: 520,        // 決闘フェーズの2人の距離(fire tier1の射程700未満)
+  keepRender: qs.get('render')==='1',  // 1=描画あり(目視デバッグ用)。既定は描画を空撃ちにしてRAFを実時間で回す
+  // シナリオの時刻(matchTime秒)。各iframeが自分のmatchTimeで判定する
+  tMoveStart: 1.0,      // 移動フェーズ開始(引き戻し・滑らかさの計測区間)
+  tMoveEnd:   11.0,     // 移動フェーズ終了→ホストが両者を対面位置へテレポート
+  tDuelStart: 13.0,     // 決闘開始(両者が同時に連続射撃。どちらかが倒れるまで)
+  tEnd:       34.0,     // 打ち切り
+};
+const ROOM_ID = 'proberoom', LOBBY_KEY = 'probelobby';
+
+const barEl = document.getElementById('bar');
+const logEl = document.getElementById('log');
+function setStatus(s){ window.__probeStatus = s; barEl.textContent = `[net_probe] ${s} (oneway=${CFG.oneway}ms jitter=${CFG.jitter} loss=${CFG.loss})`; }
+function log(s){ logEl.textContent += s + '\n'; logEl.scrollTop = logEl.scrollHeight; }
+const busErrors = [];
+function logErr(e){ busErrors.push(String(e && e.stack || e)); log('ERR ' + (e && e.message || e)); }
+
+/* ===== ローカルバス(RTDB相当のストア+遅延注入) ===== */
+const bus = {
+  store: { meta:null, players:{}, authState:null,
+           chans:{ events:[], hits:[], fireEvents:[], shotEvents:[], lootEvents:[] } },
+  watchers: { meta:[], players:[], authState:[],
+              events:[], hits:[], fireEvents:[], shotEvents:[], lootEvents:[] },
+  lastArrival: {},   // 'from>to' → 最終到着予定時刻(追い越し禁止=TCP相当)
+  keyN: 1,
+  stats: { delivered:0, dropped:0 },
+};
+function cp(v){ return (v==null) ? v : JSON.parse(JSON.stringify(v)); }
+function delayMs(){
+  const f = 1 + (Math.random()*2 - 1) * CFG.jitter;
+  return CFG.oneway * Math.max(0.05, f);
+}
+function ack(){ return new Promise(r => setTimeout(r, delayMs())); } // 書き込みPromiseの解決(1往復相当)
+function scheduleCross(fromRole, toRole, fn){
+  const now = performance.now();
+  let arr = now + delayMs();
+  const k = fromRole + '>' + toRole;
+  if(bus.lastArrival[k] && arr < bus.lastArrival[k]) arr = bus.lastArrival[k]; // 追い越し禁止
+  bus.lastArrival[k] = arr;
+  bus.stats.delivered++;
+  setTimeout(fn, Math.max(0, arr - now));
+}
+function valueOf(path){
+  return path==='meta' ? bus.store.meta : path==='players' ? bus.store.players : bus.store.authState;
+}
+// onValue相当。lossy=trueのチャンネル(input/authState)だけ、他フレームへの配信を確率で落とす
+function notifyValue(path, writerRole, lossy){
+  const snap = cp(valueOf(path));
+  for(const w of bus.watchers[path]){
+    if(w.role === writerRole){
+      setTimeout(()=>{ try{ w.cb(cp(snap)); }catch(e){ logErr(e); } }, 0); // ローカルエコー(即時)
+    } else if(lossy && Math.random() < CFG.loss){
+      bus.stats.dropped++;
+    } else {
+      scheduleCross(writerRole, w.role, ()=>{ try{ w.cb(cp(snap)); }catch(e){ logErr(e); } });
+    }
+  }
+}
+function watchValue(path, role, cb){
+  bus.watchers[path].push({ role, cb });
+  // RTDBのonValueは購読直後に現在値で1回発火する(nullでも)
+  const cur = cp(valueOf(path));
+  setTimeout(()=>{ try{ cb(cur); }catch(e){ logErr(e); } }, 0);
+}
+// onChildAdded相当。取りこぼし無し・順序保証。rev=trueは(val,key)順で呼ぶ(__aramonWatchEventsだけ逆順)
+function pushChild(chan, writerRole, val){
+  const key = 'k' + (bus.keyN++);
+  const item = { key, val: cp(val) };
+  bus.store.chans[chan].push(item);
+  for(const w of bus.watchers[chan]){
+    const call = ()=>{ try{ w.rev ? w.cb(cp(item.val), item.key) : w.cb(item.key, cp(item.val)); }catch(e){ logErr(e); } };
+    if(w.role === writerRole) setTimeout(call, 0);
+    else scheduleCross(writerRole, w.role, call);
+  }
+}
+function watchChild(chan, role, cb, rev){
+  bus.watchers[chan].push({ role, cb, rev });
+  // 既存分をリプレイ(RTDBと同じ)
+  for(const item of bus.store.chans[chan]){
+    const v = cp(item.val), k = item.key;
+    setTimeout(()=>{ try{ rev ? cb(v, k) : cb(k, v); }catch(e){ logErr(e); } }, 0);
+  }
+}
+
+/* ===== window.__aramon* スタブ(firebase.jsの代役)を各iframeへ注入 ===== */
+function installStubs(W, role){
+  const myId = role==='host' ? 'p_host' : 'p_guest';
+  const mmOf = (mmInfo)=> ({ mmLevel: (mmInfo && mmInfo.level) || null,
+    mm: (mmInfo && mmInfo.stats) ? cp(mmInfo) : null });
+  W.__aramonMyPlayerId = myId;
+  W.__aramonLobbyEntryId = LOBBY_KEY;
+  W.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode){
+    bus.store.meta = { hostId: myId, capacity, status:'waiting', mode: mode==='raid'?'raid':'br',
+                       createdAt: Date.now(), hostName: playerName };
+    bus.store.players[myId] = { name: playerName, element: elementKey, ...mmOf(mmInfo),
+                                skin: skinId||null, joinedAt: Date.now(), isHost: true, input:{} };
+    notifyValue('players', role, false);
+    notifyValue('meta', role, false);
+    await ack();
+    return { roomId: ROOM_ID, isHost: true, myPlayerId: myId };
+  };
+  W.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmInfo, skinId){
+    await ack();
+    if(!bus.store.meta || bus.store.meta.status !== 'waiting') return { ok:false, reason:'この部屋はもう開始しています' };
+    bus.store.players[myId] = { name: playerName, element: elementKey, ...mmOf(mmInfo),
+                                skin: skinId||null, joinedAt: Date.now(), isHost: false, input:{} };
+    notifyValue('players', role, false);
+    return { ok:true, roomId: ROOM_ID, isHost:false, myPlayerId: myId,
+             capacity: bus.store.meta.capacity, mode: bus.store.meta.mode || 'br' };
+  };
+  W.__aramonListOpenRooms = async function(){
+    await ack();
+    if(!bus.store.meta || bus.store.meta.status !== 'waiting') return [];
+    return [{ lobbyKey: LOBBY_KEY, roomId: ROOM_ID, capacity: bus.store.meta.capacity,
+              count: Object.keys(bus.store.players).length,
+              hostName: bus.store.meta.hostName || '', createdAt: bus.store.meta.createdAt,
+              mode: bus.store.meta.mode || 'br' }];
+  };
+  W.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode){
+    if(bus.store.meta) return W.__aramonJoinRoom(ROOM_ID, LOBBY_KEY, playerName, elementKey, mmInfo, skinId);
+    return W.__aramonCreateRoom(capacity, playerName, elementKey, mmInfo, skinId, mode);
+  };
+  W.__aramonLeaveRoom = async function(){ delete bus.store.players[myId]; notifyValue('players', role, false); };
+  W.__aramonDisbandRoom = async function(){ bus.store.meta = null; notifyValue('meta', role, false); };
+  W.__aramonCleanupLobbyEntry = async function(){};
+  /* WebRTCシグナリング橋(net_transport.js用)。ペアごとのonChildAddedチャンネル。
+     シグナリングだけバス遅延を通す。確立後のDataChannelは同一ページのiframe間
+     ループバック=転送遅延ほぼ0なので、測れるのは「rtc化の上限性能」。
+     実機のP2PはRTT20〜80ms程度が乗る(報告時に必ず注記すること)。
+     ?rtc=1 のときだけ有効(既定はシグナリング無し=全経路rtdbのベースライン)。 */
+  if(CFG.rtc){
+    const rtcChan = (from, to)=> 'rtc_' + from + '_' + to;
+    W.__aramonSendRtcSignal = async function(roomId, fromPid, toPid, msg){
+      const chan = rtcChan(fromPid, toPid);
+      if(!bus.store.chans[chan]){ bus.store.chans[chan] = []; bus.watchers[chan] = []; }
+      pushChild(chan, role, msg);
+    };
+    W.__aramonWatchRtcSignals = function(roomId, fromPid, toPid, callback){
+      const chan = rtcChan(fromPid, toPid);
+      if(!bus.store.chans[chan]){ bus.store.chans[chan] = []; bus.watchers[chan] = []; }
+      watchChild(chan, role, (key, val)=> callback(val));
+      return ()=>{};
+    };
+  }
+  W.__aramonWatchRoomPlayers = function(roomId, cb){ watchValue('players', role, cb); };
+  W.__aramonWatchInputs = function(roomId, cb){ watchValue('players', role, cb); };
+  W.__aramonFetchRoomPlayersOnce = async function(){ await ack(); return cp(bus.store.players); };
+  W.__aramonWatchRoomMeta = function(roomId, cb){ watchValue('meta', role, cb); };
+  W.__aramonSetRoomStatus = async function(roomId, status){
+    if(bus.store.meta) bus.store.meta.status = status;
+    notifyValue('meta', role, false); await ack();
+  };
+  W.__aramonSetRoomStarting = async function(roomId, startAt){
+    if(bus.store.meta){ bus.store.meta.status = 'starting'; bus.store.meta.startAt = startAt; }
+    notifyValue('meta', role, false); await ack();
+  };
+  W.__aramonCancelRoomStarting = async function(){
+    if(bus.store.meta){ bus.store.meta.status = 'waiting'; bus.store.meta.startAt = null; }
+    notifyValue('meta', role, false); await ack();
+  };
+  W.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData){
+    if(bus.store.meta) Object.assign(bus.store.meta, {
+      seed, fixedPlayers: cp(fixedPlayers)||null, mapKey: mapKey||'wild',
+      hostMastermonBots: cp(hostMastermonBots)||null, world: cp(worldData)||null });
+    notifyValue('meta', role, false); await ack();
+  };
+  W.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
+    return new Promise((resolve)=>{
+      let done = false;
+      watchValue('meta', role, (v)=>{
+        if(!done && v && v.seed!=null && v.fixedPlayers){
+          done = true;
+          resolve({ seed: v.seed, fixedPlayers: cp(v.fixedPlayers), mapKey: v.mapKey||'wild',
+                    hostMastermonBots: cp(v.hostMastermonBots)||[], world: cp(v.world)||null });
+        }
+      });
+      setTimeout(()=>{ if(!done){ done = true; resolve(null); } }, timeoutMs||4000);
+    });
+  };
+  W.__aramonSendInput = async function(roomId, input){
+    const p = bus.store.players[myId];
+    if(p){ p.input = cp(input); p.inputTs = Date.now(); notifyValue('players', role, true); }
+  };
+  W.__aramonSendRecon = async function(){};
+  W.__aramonPublishAuthState = async function(roomId, authState){
+    bus.store.authState = cp(authState);
+    notifyValue('authState', role, true);
+    await ack();
+  };
+  W.__aramonWatchAuthState = function(roomId, cb){ watchValue('authState', role, cb); };
+  W.__aramonPushEvent = async function(roomId, evt){ pushChild('events', role, evt); };
+  W.__aramonWatchEvents = function(roomId, cb){ watchChild('events', role, cb, true); }; // (val,key)の順
+  W.__aramonReportHit = async function(roomId, hit){ pushChild('hits', role, hit); };
+  W.__aramonWatchHitsAsHost = function(roomId, cb){ watchChild('hits', role, cb, false); };
+  W.__aramonSendFireEvent = async function(roomId, evt){ pushChild('fireEvents', role, evt); };
+  W.__aramonWatchFireEvents = function(roomId, cb){ watchChild('fireEvents', role, cb, false); };
+  W.__aramonPushShotEvent = async function(roomId, evt){ pushChild('shotEvents', role, evt); };
+  W.__aramonWatchShotEvents = function(roomId, cb){ watchChild('shotEvents', role, cb, false); };
+  W.__aramonPushLootEvent = async function(roomId, evt){ pushChild('lootEvents', role, evt); };
+  W.__aramonWatchLootEvents = function(roomId, cb){ watchChild('lootEvents', role, cb, false); };
+  W.__aramonWatchState = function(){};
+  W.__aramonPublishState = async function(){};
+  // アカウント/ランキング等は試合の計測に不要。無害な空実装(呼ばれても落ちない)
+  W.__aramonAccountKey = function(n){ return String(n||'anon'); };
+  W.__aramonGetAccount = async function(){ return null; };
+  W.__aramonSetAccount = async function(){ return true; };
+  W.__aramonUpdateAccountData = async function(){ return true; };
+  W.__aramonSubmitScore = async function(){ return true; };
+  W.__aramonFetchRanking = async function(){ return []; };
+  W.__aramonLogMatch = async function(){ return true; };
+  W.__aramonFetchMatchLogs = async function(){ return []; };
+  W.__aramonPutGhost = async function(){ return true; };
+  W.__aramonFetchGhosts = async function(){ return []; };
+  W.__aramonAddRaidDamage = async function(){};
+  W.__aramonFetchRaidTotal = async function(){ return 0; };
+  W.__aramonFetchRaidRanking = async function(){ return []; };
+  W.__aramonDedupeScores = async function(){ return null; };
+}
+
+/* ===== iframeの中で走るエージェント(計測の受け皿+決定的なスクリプト入力) =====
+   この関数は文字列化して各iframeのrealmでevalする。中で参照している
+   entities/player/matchTime/keys/rocks等は、そのiframeのゲーム本体のグローバル。 */
+function agentMain(cfg){
+  const A = { role: cfg.role, marks: [], smooth: [], deaths: [], phases: [], errors: [],
+              frames: 0, startedAt: null, hpLast: {}, done: false };
+  // 描画はネットコードに影響しないので既定では空撃ちにする。
+  // ヘッドレス(SwiftShader)ではrender()が支配的に重く、fpsが6前後まで落ちて
+  // dtの上限(0.05s)によりシミュレーションが実時間の1/3に遅くなり、遅延の実測値が歪むため。
+  if(!cfg.keepRender){
+    render = function(){};
+    const cv = document.getElementById('gameCanvas');
+    if(cv) cv.style.display = 'none';   // コンポジットの負荷も削る(描画なし時のみ)
+  }
+  // ゲーム本体の計測フック(network.js/combat.jsの __netProbe && ... が呼ぶ)
+  window.__netProbe = {
+    mark: function(type, data){
+      const m = Object.assign({ type: type }, data);
+      if(A.marks.length < 200000) A.marks.push(m);
+    },
+    hp: function(id, hp){
+      const prev = A.hpLast[id];
+      if(prev != null && hp < prev - 0.01){
+        A.marks.push({ type:'hpDrop', id: id, hp: hp, ts: Date.now(),
+                       mt: (typeof matchTime==='number') ? matchTime : 0 });
+      }
+      A.hpLast[id] = hp;
+    },
+  };
+  window.addEventListener('error', function(e){ A.errors.push(String(e.message||e)); });
+  window.__probeAgent = {
+    getResult: function(){
+      return JSON.parse(JSON.stringify({
+        role: A.role, marks: A.marks, smooth: A.smooth, deaths: A.deaths,
+        phases: A.phases, errors: A.errors, frames: A.frames,
+        myEntId: (typeof player!=='undefined' && player) ? player.id : null,
+        matchTime: (typeof matchTime==='number') ? matchTime : 0,
+        gameOver: (typeof game!=='undefined') ? !!game.over : false,
+        durMs: A.startedAt!=null ? Math.round(performance.now()-A.startedAt) : 0,
+      }));
+    },
+  };
+
+  const S = { introEnded:false, cleared:false, teleported:false, phase:null };
+  const lastPos = {};
+  let lastRt = null;
+  function phase(name){
+    if(S.phase !== name){ S.phase = name; A.phases.push({ name: name, mt: matchTime, ts: Date.now() }); }
+  }
+  function opponent(){
+    for(let i=0;i<entities.length;i++){ if(entities[i].isRemoteHuman) return entities[i]; }
+    return null;
+  }
+  function stopDriving(){
+    window.__netProbeInput = null;
+    keys['f'] = false; fireBtnHeld = false;
+  }
+  // 決定的なスクリプト入力(matchTime基準)。両iframeが自分のmatchTimeで同じ台本を再生する
+  function drive(){
+    const mt = matchTime;
+    let mx=0, my=0, facing=null, fire=false;
+    if(mt < cfg.tMoveStart){ phase('settle'); }
+    else if(mt < cfg.tMoveEnd){
+      phase('move');
+      // 2.5秒ごとに90度向きを変えて歩く(ホストとゲストで初期方位を変える)
+      const seg = Math.floor((mt - cfg.tMoveStart) / 2.5);
+      const base = (cfg.role==='host') ? 0 : Math.PI*0.75;
+      const a = base + seg * (Math.PI/2);
+      mx = Math.cos(a); my = Math.sin(a); facing = a;
+    }
+    else if(mt < cfg.tDuelStart){
+      phase('duelSetup');
+      // 対面撃ち合い用に、中央の回廊から障害物をどける(両iframeで同一条件なので結果も一致する)
+      if(!S.cleared){
+        S.cleared = true;
+        const cx = ZONE_CENTER0.x, cy = ZONE_CENTER0.y, D = cfg.duelDist;
+        const keep = function(r){ return !(Math.abs(r.y-cy) < 380 && Math.abs(r.x-cx) < D); };
+        rocks = rocks.filter(keep);
+        if(typeof crystalObstacles !== 'undefined') crystalObstacles = crystalObstacles.filter(keep);
+      }
+      // 位置はホストが権威なので、ホスト側だけ両者を対面へ置く(ゲスト自機はスナップ補正で追従)
+      if(cfg.role==='host' && !S.teleported){
+        S.teleported = true;
+        const cx = ZONE_CENTER0.x, cy = ZONE_CENTER0.y, half = cfg.duelDist/2;
+        const other = opponent();
+        player.x = cx - half; player.y = cy; player.z = baseTerrainHeightAt(player.x, player.y);
+        if(other){ other.x = cx + half; other.y = cy; other.z = baseTerrainHeightAt(other.x, other.y); }
+      }
+      const o = opponent();
+      if(o) facing = Math.atan2(o.y - player.y, o.x - player.x);
+    }
+    else if(mt < cfg.tEnd){
+      phase('duel');
+      const o = opponent();
+      if(o) facing = Math.atan2(o.y - player.y, o.x - player.x);
+      fire = true;                                  // 両者同時に、どちらかが倒れるまで撃ち続ける
+    }
+    else {
+      phase('done'); A.done = true; window.__probeDone = true; stopDriving(); return;
+    }
+    window.__netProbeInput = { mx: mx, my: my, facing: (facing==null ? player.facingAngle : facing) };
+    keys['f'] = fire;
+    fireBtnHeld = fire;
+  }
+  function tick(){
+    try{
+      if(typeof game !== 'undefined' && game.started){
+        if(introState.active){
+          // 召喚演出(5秒)は計測時間の無駄なので即終了させる
+          if(!S.introEnded){ S.introEnded = true; endSummonIntro(); }
+        } else if(!game.over && player && !A.done){
+          if(A.startedAt == null) A.startedAt = performance.now();
+          A.frames++;
+          drive();
+          // 遠隔エンティティの滑らかさ: フレーム間の移動距離と実効速度を毎フレーム記録
+          const rt = performance.now();
+          const dt = (lastRt != null) ? (rt - lastRt)/1000 : null;
+          for(let i=0;i<entities.length;i++){
+            const e = entities[i];
+            if(e === player) continue;
+            const lp = lastPos[e.id];
+            if(lp && lp.alive && !e.alive) A.deaths.push({ id: e.id, mt: matchTime, ts: Date.now() });
+            if(e.alive && lp && dt != null && dt > 0 && A.smooth.length < 60000){
+              const d = Math.hypot(e.x - lp.x, e.y - lp.y);
+              const spd = entityMoveSpeed(e) * multiMoveSpeedMult();
+              A.smooth.push({ id: e.id, d: Math.round(d*100)/100, dt: Math.round(dt*10000)/10000,
+                              spd: Math.round(spd), mt: Math.round(matchTime*1000)/1000 });
+            }
+            lastPos[e.id] = { x: e.x, y: e.y, alive: e.alive };
+          }
+          lastRt = rt;
+          // 自分の死亡(ゲスト自機はentitiesの自分側で検出)
+          if(!player.alive && !A.done){ /* 決着はgame.over側で拾う */ }
+        }
+        if(game.over && !A.done){
+          A.done = true; phase('done'); window.__probeDone = true; stopDriving();
+        }
+      }
+    }catch(err){ A.errors.push('agent: ' + String(err && err.message || err)); }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ===== 起動〜試合終了までの自動運転 ===== */
+function loadFrame(id){
+  // 'load'イベント(=画像等の全リソース完了)は待たない。スクリプトが揃った時点で先へ進む
+  // (描画は空撃ちにするので画像の完了を待つ意味がなく、待つと起動が20秒以上延びる)
+  return new Promise((resolve, reject)=>{
+    const f = document.getElementById(id);
+    f.src = '../index.html?netprobe=1';
+    const t0 = performance.now();
+    const iv = setInterval(()=>{
+      let ok = false;
+      try{
+        ok = f.contentWindow && f.contentWindow.eval(
+          "typeof netState!=='undefined' && typeof createRoomFlow==='function' && typeof beginMultiplayerMatch==='function' && typeof endSummonIntro==='function'");
+      }catch(e){}
+      if(ok){ clearInterval(iv); resolve(f.contentWindow); }
+      else if(performance.now() - t0 > 30000){ clearInterval(iv); reject(new Error(id + ' load timeout')); }
+    }, 50);
+  });
+}
+function waitFor(fn, timeoutMs, label){
+  return new Promise((resolve, reject)=>{
+    const t0 = performance.now();
+    const iv = setInterval(()=>{
+      let ok = false;
+      try{ ok = fn(); }catch(e){}
+      if(ok){ clearInterval(iv); resolve(); }
+      else if(performance.now() - t0 > timeoutMs){ clearInterval(iv); reject(new Error('timeout: ' + label)); }
+    }, 100);
+  });
+}
+async function boot(){
+  const t0 = Date.now();
+  const steps = {};
+  const step = (name)=>{ steps[name] = Date.now() - t0; };
+  setStatus('loading frames');
+  const [hostWin, guestWin] = await Promise.all([loadFrame('hostFrame'), loadFrame('guestFrame')]);
+  step('framesReady');
+  hostWin.addEventListener('error', e=>busErrors.push('host: '+(e.message||e)));
+  guestWin.addEventListener('error', e=>busErrors.push('guest: '+(e.message||e)));
+
+  installStubs(hostWin, 'host');
+  installStubs(guestWin, 'guest');
+  // エージェントを各iframeのrealmでevalする(グローバルのlet束縛へ触るため)
+  const agentSrc = '(' + agentMain.toString() + ')';
+  hostWin.eval(agentSrc + '(' + JSON.stringify({ role:'host', ...CFG }) + ')');
+  guestWin.eval(agentSrc + '(' + JSON.stringify({ role:'guest', ...CFG }) + ')');
+
+  // 試合条件を固定(モンスター=ドラゴン、マップ=荒野、シード固定、定員2)
+  hostWin.eval(`game.selectedElement='fire'; game.selectedMap='wild'; game.realMapMode=false;
+    setLobbyMode('multi'); netState.capacity=${CFG.capacity}; window.__netProbeSeed=${CFG.seed};
+    document.getElementById('playerNameInput').value='ホスト';`);
+  guestWin.eval(`game.selectedElement='fire'; game.selectedMap='wild'; game.realMapMode=false;
+    setLobbyMode('multi');
+    document.getElementById('playerNameInput').value='ゲスト';`);
+
+  setStatus('create room');
+  step('setupDone');
+  hostWin.eval('createRoomFlow()');
+  await waitFor(()=> hostWin.eval('netState.roomId') === ROOM_ID, 10000, 'host room created');
+  step('roomCreated');
+
+  setStatus('guest join');
+  guestWin.eval(`joinSelectedRoom('${ROOM_ID}','${LOBBY_KEY}')`);
+  await waitFor(()=> guestWin.eval('netState.roomId') === ROOM_ID, 10000, 'guest joined');
+  await waitFor(()=> hostWin.eval('Object.keys(netState.humanPlayers||{}).length') >= 2, 10000, 'host sees guest');
+  step('guestJoined');
+
+  setStatus('start match (3s countdown)');
+  const tLobbyDone = Date.now();
+  hostWin.document.getElementById('lobbyStartBtn').click();
+  await waitFor(()=> hostWin.eval('game.started') && guestWin.eval('game.started'), 25000, 'match started');
+  const tMatchStart = Date.now();
+  log(`match started: boot ${tLobbyDone - t0}ms, countdown+begin ${tMatchStart - tLobbyDone}ms`);
+
+  setStatus('match running');
+  await waitFor(()=>{
+    const hDone = hostWin.__probeDone || hostWin.eval('game.over');
+    const gDone = guestWin.__probeDone || guestWin.eval('game.over');
+    return hDone && gDone;
+  }, 90000, 'scenario finished');
+  // 終盤のイベント(遅延中の配信)を出し切らせる
+  await new Promise(r=>setTimeout(r, Math.max(600, CFG.oneway*3)));
+
+  setStatus('collecting');
+  const result = {
+    ok: true,
+    cfg: cp(CFG),
+    busStats: cp(bus.stats),
+    busErrors: busErrors.slice(0, 40),
+    timing: { bootMs: tLobbyDone - t0, matchStartMs: tMatchStart - tLobbyDone, totalMs: Date.now() - t0, steps },
+    host: hostWin.__probeAgent.getResult(),
+    guest: guestWin.__probeAgent.getResult(),
+  };
+  window.__probeResult = result;
+  setStatus('done');
+  log('done. host marks=' + result.host.marks.length + ' guest marks=' + result.guest.marks.length
+      + ' delivered=' + bus.stats.delivered + ' dropped=' + bus.stats.dropped);
+}
+
+boot().catch(err=>{
+  window.__probeResult = { ok:false, error: String(err && err.stack || err), busErrors };
+  setStatus('ERROR: ' + (err && err.message || err));
+  log(String(err && err.stack || err));
+});
+</script>
+</body>
+</html>

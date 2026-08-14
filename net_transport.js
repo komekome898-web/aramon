@@ -8,8 +8,8 @@
    ■ チャンネル表(どの便で・どちら向きに・何を運ぶか)
    | ch    | 方向          | DataChannel | rtc接続中のRTDB送信                     |
    |-------|---------------|-------------|-----------------------------------------|
-   | input | ゲスト→ホスト | fast        | 送らない(最新優先。届かなくても次で足りる) |
-   | auth  | ホスト→全員   | fast        | full配信時+0.5秒毎のキープアライブ+非rtcゲストがいれば毎回 |
+   | input | ゲスト→ホスト | fast        | **床として従来の22Hzで送り続ける**(DC便は40Hzの上乗せ) |
+   | auth  | ホスト→全員   | fast        | **床として従来の20Hzで書き続ける**(DC便は30Hzの上乗せ。ackで次便を待たせない) |
    | fire  | ゲスト→ホスト | reliable    | **常に送る**(信頼配送の土台はRTDBのまま)  |
    | hit   | ゲスト→ホスト | reliable    | 常に送る                                |
    | event | ホスト→全員   | reliable    | 常に送る                                |
@@ -55,7 +55,13 @@ const RTC_CONNECT_TIMEOUT_MS = 12000;   // offerからこの時間で確立し�
 const RTC_RETRY_DELAY_MS = 8000;        // 降格後に再接続を試みるまでの待ち(ゲスト側のみ)
 const RTC_MAX_CONNECT_ATTEMPTS = 3;     // 再接続を含めた接続試行の上限(超えたら試合中ずっとrtdb)
 const RTC_SIGNAL_STALE_MS = 30000;      // これより古いシグナリングは無視(部屋パスに残った古い便を拾わない)
-const AUTH_RTDB_KEEPALIVE_MS = 500;     // 全員rtcでもこの間隔でauthStateをRTDBへも書く(DataChannelが黙って死んだときの保険)
+/* 【RTDBは床・DCは上乗せ】rtc接続中もRTDBへは従来の間隔で書き続ける。
+   500msキープアライブへ間引く設計にしていたら、CPU逼迫や電波劣化で
+   unreliable DCが連続で落ちたとき、ゲストのauthが実質0.5秒間隔になって
+   補間が飢え、相手が止まって飛んだ(ハーネスで実測: 被弾表示300ms・p95ジャンプ25px)。
+   50ms=現行のRTDB配信間隔そのもの(quota現状維持。悪くなりようがない)。 */
+const AUTH_RTDB_KEEPALIVE_MS = 50;
+const INPUT_RTDB_FLOOR_MS = 45;         // 入力のRTDB床(現行の22Hz。DC便は40Hzで上乗せ)
 const RTT_EWMA_ALPHA = 0.2;             // RTTの指数移動平均の係数
 const AUTH_STAT_EWMA_ALPHA = 0.1;       // auth到着間隔・ジッタの指数移動平均の係数
 
@@ -420,7 +426,8 @@ function resetWrapperState(){
   st.authLastAt = 0;           // auth到着間隔・ジッタの実測(補間遅延の適応に使う)
   st.authAvgMs = 0;
   st.authJitMs = 0;
-  st.lastAuthRtdbAt = 0;       // ホスト: authをRTDBへ書いた最終時刻(キープアライブ判定)
+  st.lastAuthRtdbAt = 0;       // ホスト: authをRTDBへ書いた最終時刻(床の間引き判定)
+  st.lastInputRtdbAt = 0;      // ゲスト: inputをRTDBへ書いた最終時刻(床の間引き判定)
   st.rel = {};                 // 信頼配送チャンネルの重複排除 ch -> {rtcSeen:Set, rtdbSeen:Set}
   for(const ch in CHANNELS){
     if(CHANNELS[ch].dc==='reliable') st.rel[ch] = { rtcSeen:new Set(), rtdbSeen:new Set() };
@@ -501,6 +508,12 @@ function mergedPlayers(){
 
 /* DataChannel受信をチャンネルごとに合流点へ配線する(既定インスタンスに一度だけ) */
 dflt.onMessage('input', (key, d, fromPid)=>{
+  /* 【unordered DCは古い便が後から届く】入力は「最新だけが正」なので、
+     seqが進んだときだけ採用する。古い入力を通すとホストの netAckInputSeq が後退し、
+     ゲストの突き合わせが履歴を見つけられず「現在位置と遅れたホスト位置の直接比較」へ
+     落ちて、移動中ずっと引き戻される(ハーネスで実測: 補正1136px/試合→ガードで解消)。 */
+  const prev = st.dcInputs.get(fromPid);
+  if(prev && typeof prev.seq==='number' && typeof d.seq==='number' && d.seq <= prev.seq) return;
   st.dcInputs.set(fromPid, d);
   if(st.cbs.input) st.cbs.input(mergedPlayers());
 });
@@ -536,8 +549,18 @@ function sendReliableBoth(ch, rawName, roomId, evt){
 const WRAPPERS = {
   /* input: rtc接続中はDataChannelのみ(最新優先なのでRTDBへの二重書きは不要=quota節約)。
      未接続・降格中は従来どおりRTDB。ホスト自身の入力送信は相手がいないので常にRTDB */
+  /* input: DataChannelは「追加の高速便」で、RTDBへも従来の間隔で書き続ける(床)。
+     rtc中にDCだけへ絞る設計にしていたら、CPU逼迫や電波劣化でunreliable DCが
+     連続で落ちたときに入力がホストへ一切届かず、ホスト側の自分が棒立ちになって
+     ゲストが延々引き戻された(ハーネスで実測: 補正1127px/試合)。
+     RTDB側は自前で間引く(現行の22Hz=quota現状維持。DC便は40Hzで上乗せ)。 */
   __aramonSendInput(roomId, input){
-    if(transportReady(roomId) && dflt.isRtcActiveToHost() && dflt.send('input', input)) return Promise.resolve();
+    if(transportReady(roomId) && dflt.isRtcActiveToHost()){
+      dflt.send('input', input);
+      const now = Date.now();
+      if(now - st.lastInputRtdbAt < INPUT_RTDB_FLOOR_MS) return Promise.resolve();
+      st.lastInputRtdbAt = now;
+    }
     return RAW.__aramonSendInput(roomId, input);
   },
   /* auth: rtc接続中の相手へはDataChannelで毎回。RTDBへは
@@ -550,6 +573,14 @@ const WRAPPERS = {
         || (now - st.lastAuthRtdbAt >= AUTH_RTDB_KEEPALIVE_MS);
       if(!needRtdb) return Promise.resolve();
       st.lastAuthRtdbAt = now;
+      /* DataChannelで既に届けられた便のRTDB書き込みは「黙って死んだDC」への保険なので、
+         書き込みackで呼び出し側(authPublishInFlight)を待たせない。待たせると
+         フル配信のたびに30Hzの配信がack往復ぶん(遅い回線で150ms)止まり、
+         ゲストの補間が飢えて相手が飛ぶ(ハーネスで実測: 被弾表示461ms→修正後に解消)。 */
+      if(dcSent){
+        RAW.__aramonPublishAuthState(roomId, authState).catch(()=>{});
+        return Promise.resolve();
+      }
     }
     return RAW.__aramonPublishAuthState(roomId, authState);
   },

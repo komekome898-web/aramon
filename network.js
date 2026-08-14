@@ -254,6 +254,7 @@ async function beginMultiplayerMatchInner(){
   if(netState.isHost){
     matchTeamSize = Math.max(1, netState.teamSize||1);
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
+    if(window.__netProbeSeed!=null) seed = window.__netProbeSeed>>>0; // 計測ハーネス用のシード固定(通常は未定義で素通り)
     fixedPlayers = netState.humanPlayers || {};
     if(!fixedPlayers[netState.myPlayerId]){
       const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
@@ -595,6 +596,8 @@ function processRemoteFireEvents(){
       // 生成された飛び道具に遅延量を刻む。飛翔中の当たり判定を「一定遅延の敵位置」で行う(combat.js)
       for(let k=projBefore; k<projectiles.length; k++) projectiles[k].lagDelaySeq = lagDelaySeq;
     }
+    // 計測ハーネス用: ゲストの発射イベントが実弾になった時刻を記録(通常は素通り)
+    if(window.__netProbe) __netProbe.mark('remoteFireSpawn', { srcTs: evt.ts||0, now: Date.now(), n: projectiles.length - projBefore });
   }
 }
 
@@ -626,6 +629,8 @@ function sendLocalInputIfMultiplayer(now){
 // (ホストはこれを見て、非ホストの発射をシミュレーションに反映する)
 function sendFireEventIfMultiplayer(aimAngle, mv, aimSlope){
   if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
+  // 計測ハーネス用: 発射イベントの送信時刻を記録(通常は__netProbe未定義で素通り)
+  if(window.__netProbe) __netProbe.mark('fireSent', { ts: Date.now() });
   window.__aramonSendFireEvent(netState.roomId, {
     sourceNetId: netState.myPlayerId,
     facing: aimAngle,
@@ -1129,6 +1134,8 @@ function applyAuthState(authState){
     }
     // 位置以外の権威フィールドは受信時に即反映する(補間しない)
     ent.hp = a.hp; ent.guts = a.guts;
+    // 計測ハーネス用: HPが画面に反映された時刻を記録(通常は素通り)
+    if(window.__netProbe) __netProbe.hp(a.id, a.hp);
     if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
     if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
@@ -1294,6 +1301,8 @@ function loop(now){
             player.x += sx; player.y += sy;
             selfCorrX -= sx; selfCorrY -= sy;
             if(Math.hypot(selfCorrX, selfCorrY) < 0.5){ selfCorrX = 0; selfCorrY = 0; }
+            // 計測ハーネス用: このフレームで消費した補正量を記録(通常は素通り)
+            if(window.__netProbe) __netProbe.mark('selfCorr', { sx, sy, x: player.x, y: player.y, mx: player.inputMoveX, my: player.inputMoveY, mt: matchTime });
           }
           sanitizeSelfPosition(); // NaN等でハマったまま操作不能にならないよう点検
         }

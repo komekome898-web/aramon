@@ -17,7 +17,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script type="module" src="firebase.js"></script>
+<!-- 計測ハーネス(tools/net_probe.html)は ?netprobe=1 付きで開く。その時だけfirebase.jsを読み込まず、
+     親ページが注入する window.__aramon* スタブ(ローカルバス)が通信の橋を担う。通常時は従来どおり。 -->
+<script type="module">if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js');</script>
 </head>
 <body>
 
@@ -1475,7 +1477,8 @@
   }).catch(()=>{});
 </script>
 <script>
-  if('serviceWorker' in navigator){
+  // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
+  if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
     let refreshing = false;
     // 新しいService Workerが制御を奪った瞬間に、ページを1回だけ自動リロードして最新版へ切り替える
     navigator.serviceWorker.addEventListener('controllerchange', ()=>{

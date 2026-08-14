@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-08-14T12:11:52.124Z",
+  "seed": 20260814,
+  "jitter": 0.3,
+  "loss": 0,
+  "conditions": [
+    {
+      "oneway": 75,
+      "jitter": 0.3,
+      "loss": 0,
+      "seed": 20260814,
+      "boot": {
+        "ok": true,
+        "bootMs": 26169,
+        "matchStartMs": 3311,
+        "totalMs": 50306,
+        "steps": {
+          "framesReady": 25862,
+          "setupDone": 25864,
+          "roomCreated": 25967,
+          "guestJoined": 26169
+        }
+      },
+      "fps": {
+        "host": 47.3,
+        "guest": 47.5
+      },
+      "selfCorr": {
+        "frames": 0,
+        "totalPx": 0,
+        "movePhasePx": 0,
+        "movePhasePxPerSec": 0,
+        "pullbackEvents": 0,
+        "pullbackPx": 0,
+        "maxSinglePx": 0
+      },
+      "fireToProj": {
+        "count": 5,
+        "avg": 96.6,
+        "max": 129,
+        "min": 61,
+        "guestFireSent": 5,
+        "hostSpawned": 5
+      },
+      "dmgToDisplay": {
+        "count": 7,
+        "avg": 174,
+        "max": 267,
+        "min": 69,
+        "hostDmgEvents": 7,
+        "guestHpDrops": 7
+      },
+      "remoteSmooth": {
+        "samples": 502,
+        "p50px": 3.2,
+        "p95px": 5.4,
+        "maxPx": 13.5,
+        "p95ratio": 1.1,
+        "maxRatio": 11
+      },
+      "symmetry": {
+        "hostFirstHitMs": 1076,
+        "guestFirstHitMs": 1239,
+        "diffMs": 163,
+        "winner": "host",
+        "killAfterDuelMs": 3784,
+        "hostDmgDealtAtKill": 158,
+        "guestDmgDealtAtKill": 115
+      },
+      "bus": {
+        "delivered": 1568,
+        "dropped": 0
+      },
+      "errors": {
+        "host": [],
+        "guest": [],
+        "bus": []
+      },
+      "pageErrors": []
+    }
+  ]
+}
