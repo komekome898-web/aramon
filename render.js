@@ -820,6 +820,9 @@ function drawMonsterShape(e, color, dark){
     }
   }
 }
+/* 頭上ラベル(名前・▽・ダウン・蘇生ゲージ)の画面上の拡大上限。
+   p.scaleのまま描くとカメラ至近で文字が画面の半分を覆う(縦持ち実測で発生)。 */
+const TEAM_LABEL_MAX_SCALE = 2.2;
 function drawMonster(e,p){
   const el = ELEMENTS[e.element];
   // 召喚演出中: せり上がりはせず、光が収束するにつれてその場で姿を現す
@@ -960,28 +963,34 @@ function drawMonster(e,p){
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(0, e.radius*0.55, e.radius*1.7, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
-    const remainDown = Math.max(0, Math.ceil((e.downedUntil||0) - matchTime));
-    ctx.save();
-    ctx.textAlign='center';
-    ctx.font = "bold 11px 'Rajdhani', sans-serif";
-    ctx.fillStyle = '#ff9a8a'; ctx.globalAlpha = 0.9;
-    if(!renderHeavyLoad){ ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(255,40,40,0.7)'; }
-    ctx.fillText(`ダウン ${remainDown}`, 0, barY - 16);
-    ctx.restore();
-    if(e.reviveProgress > 0 && typeof TEAM_REVIVE_SEC!=='undefined'){
-      const ratio = clamp(e.reviveProgress/TEAM_REVIVE_SEC, 0, 1);
-      const gy = barY - 40;
+    /* ラベルとゲージは自分には出さない(自分のダウンは画面下の帯が唯一の表示。
+       二重に出すと重なって読めない=批評指摘)。頭上要素はスケール上限を掛けて
+       カメラ至近でも巨大化させない(TEAM_LABEL_MAX_SCALE)。 */
+    if(!e.isPlayer){
+      const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale));
+      const remainDown = Math.max(0, Math.ceil((e.downedUntil||0) - matchTime));
       ctx.save();
-      ctx.lineWidth = 3.5; ctx.lineCap='round';
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.beginPath(); ctx.arc(0, gy, 11, 0, Math.PI*2); ctx.stroke();
-      ctx.strokeStyle = '#58e07e';
-      if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = '#58e07e'; }
-      ctx.beginPath(); ctx.arc(0, gy, 11, -Math.PI/2, -Math.PI/2 + ratio*Math.PI*2); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.font = "bold 9px 'Rajdhani', sans-serif";
-      ctx.textAlign='center'; ctx.fillStyle='#baffd0'; ctx.globalAlpha=0.95;
-      ctx.fillText('蘇生中', 0, gy + 21);
+      ctx.scale(lblK,lblK);
+      ctx.textAlign='center';
+      ctx.font = "bold 11px 'Rajdhani', sans-serif";
+      ctx.fillStyle = '#ff9a8a'; ctx.globalAlpha = 0.9;
+      if(!renderHeavyLoad){ ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(255,40,40,0.7)'; }
+      ctx.fillText(`ダウン ${remainDown}`, 0, barY - 16);
+      if(e.reviveProgress > 0 && typeof TEAM_REVIVE_SEC!=='undefined'){
+        const ratio = clamp(e.reviveProgress/TEAM_REVIVE_SEC, 0, 1);
+        const gy = barY - 40;
+        // 太いリング+進捗%(細い線と「蘇生中」だけでは戦闘距離で読めない=批評指摘)
+        ctx.lineWidth = 5; ctx.lineCap='round';
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.beginPath(); ctx.arc(0, gy, 13, 0, Math.PI*2); ctx.stroke();
+        ctx.strokeStyle = '#58e07e';
+        if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = '#58e07e'; }
+        ctx.beginPath(); ctx.arc(0, gy, 13, -Math.PI/2, -Math.PI/2 + ratio*Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.font = "bold 10px 'Rajdhani', sans-serif";
+        ctx.fillStyle='#baffd0'; ctx.globalAlpha=0.95;
+        ctx.fillText(`蘇生 ${Math.round(ratio*100)}%`, 0, gy + 24);
+      }
       ctx.restore();
     }
   }
@@ -1007,6 +1016,9 @@ function drawMonster(e,p){
      ▽は「味方だけの形」(色覚多様性のため色だけに頼らない。小隊バーのsq-markと同じ記号) */
   const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
   if(!e.isPlayer && (isAllyOfPlayer || dist(e,player)<700)){
+    // 頭上の名前・▽もスケール上限(至近の味方で名前が画面幅まで膨らんでいた)
+    ctx.save();
+    { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
     ctx.font="11px 'Rajdhani', sans-serif";
     ctx.fillStyle = isAllyOfPlayer ? '#7dffa8' : (e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)');
     ctx.textAlign='center';
@@ -1030,6 +1042,7 @@ function drawMonster(e,p){
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
     }
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -2660,7 +2673,10 @@ function drawParticle(pt,p){
   ctx.save();
   ctx.translate(p.x,p.y);
   if(pt.type==='text'){
-    ctx.scale(p.scale,p.scale);
+    /* 文字は画面上の大きさに上限を付ける。カメラ至近(自分の被弾・出血)だと
+       p.scaleが5〜10になり、数字1つが画面の半分を覆っていた(縦持ち実測で発生) */
+    const ts = Math.min(p.scale, 2.0);
+    ctx.scale(ts,ts);
     ctx.textAlign='center'; ctx.globalAlpha=a;
     if(pt.big){
       // オーラ有利/不利の被弾ダメージは大きく縁取りして強調
@@ -2668,9 +2684,11 @@ function drawParticle(pt,p){
       ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else if(pt.pred){
-      // ゲストの予測ダメージ(見た目専用)。確定の実数字と二重に見えないよう小さく半透明
-      ctx.font="bold 11px 'Share Tech Mono', monospace";
-      ctx.globalAlpha = a*0.55;
+      /* ゲストの予測ダメージ(見た目専用)。確定の実数字より一段小さく・薄くして
+         二重に見せない。ただし縁取りは付ける(縁なしの灰文字は戦闘距離で読めない=批評指摘) */
+      ctx.font="bold 13px 'Share Tech Mono', monospace";
+      ctx.globalAlpha = a*0.7;
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else {
       ctx.font="bold 13px 'Share Tech Mono', monospace";
@@ -5706,7 +5724,11 @@ function renderMinimap(){
     const isAllyM = (typeof sameTeam==='function') && player && sameTeam(player, e);
     miniCtx.beginPath();
     miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:(isAllyM?3.0:2.2), 0, Math.PI*2);
-    miniCtx.fillStyle = e.isPlayer ? '#ffffff' : (isAllyM ? '#58e07e' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
+    /* チーム戦は「敵か味方か自分か」の3値だけにする。元素色のままだと
+       多色の紙吹雪になり敵味方が判別できない(批評指摘)。個人戦は従来どおり元素色 */
+    const teamMini = (typeof isTeamMatch==='function') && isTeamMatch();
+    miniCtx.fillStyle = e.isPlayer ? '#ffffff' : (isAllyM ? '#58e07e'
+      : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color)));
     miniCtx.fill();
     if(isAllyM){ miniCtx.strokeStyle='rgba(255,255,255,0.85)'; miniCtx.lineWidth=1; miniCtx.stroke(); }
   }
@@ -5739,6 +5761,7 @@ function updateSquadPanel(){
   const mates = teamMode ? teamMembers(player.teamId).filter(m=>m!==player) : [];
   if(!mates.length){
     if(!el.classList.contains('hidden')){ el.classList.add('hidden'); el.innerHTML=''; el._sqSig=null; }
+    document.body.classList.remove('self-downed');   // 前のチーム戦の印を持ち越さない
     return;
   }
   el.classList.remove('hidden');
@@ -5750,16 +5773,27 @@ function updateSquadPanel(){
       const st = stateOf(m);
       const stLabel = st==='dead' ? '倒された' : (st==='down' ? 'ダウン中' : '');
       return `<div class="sq-row sq-${st}" data-ent="${m.id}">
-        <div class="sq-top"><span class="sq-mark">▽</span><span class="sq-name">${displayNameFor(m)}</span><span class="sq-state">${stLabel}</span></div>
+        <div class="sq-top"><span class="sq-mark">▽</span><span class="sq-name">${displayNameFor(m)}</span><span class="sq-hp-num"></span><span class="sq-state">${stLabel}</span></div>
         <div class="sq-hp-track"><div class="sq-hp-fill"></div></div>
       </div>`;
     }).join('');
   }
+  /* 自分がダウン中はbodyへ印を付け、FIRE/DASH/技ボタンをCSSで無効に見せる
+     (実際の発射はホスト/ソロ側で既に弾いている。UIだけ生きていると
+      「押せるのに撃てない」に見える=批評指摘)。 */
+  document.body.classList.toggle('self-downed',
+    !!(game.started && !game.over && player && entityDowned(player)));
   for(const row of el.children){
     const m = mates.find(x=> x.id===Number(row.dataset.ent));
     if(!m) continue;
     const fill = row.querySelector('.sq-hp-fill');
     if(fill) fill.style.width = (m.alive ? clamp(m.hp/m.maxHp,0,1)*100 : 0)+'%';
+    // HP数値(バーの太さだけでは残量が読み取れない=批評指摘)
+    const hpEl = row.querySelector('.sq-hp-num');
+    if(hpEl){
+      const t = m.alive ? String(Math.max(0,Math.round(m.hp))) : '';
+      if(hpEl.textContent!==t) hpEl.textContent = t;
+    }
     if(entityDowned(m)){
       // ダウン中は「蘇生中」か出血死までの残り秒を出す(文字が変わったときだけ書く)
       const stEl = row.querySelector('.sq-state');

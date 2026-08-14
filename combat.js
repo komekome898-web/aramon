@@ -1230,7 +1230,8 @@ function tryEnterDowned(victim, killer){
     ? `${displayNameFor(killer)} が ${displayNameFor(victim)} をダウンさせた`
     : `${displayNameFor(victim)} はダウンした`;
   pushKillFeed(text);   // キルフィードは「ダウンさせた」と「とどめ(倒した)」を区別する
-  if(victim.isPlayer) pushToast('ダウンした！ 仲間の蘇生を待て');
+  // 自分のダウンは画面下の帯(drawSelfDownedOverlay)が唯一の表示。
+  // トーストも出すと帯と物理的に重なって両方読めない(批評指摘で削除)。
   // ゲストには「ホストのループの中でしか起きないこと」が何も起きないので、フィードを配信する
   if(netState.mode==='multi' && netState.isHost){
     window.__aramonPushEvent(netState.roomId, { kind:'down', text, victimId:victim.id, ts:Date.now() });
