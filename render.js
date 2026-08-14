@@ -4976,9 +4976,12 @@ function prepareMountainOccluders(){
   mountOccluders.length = 0;
   if(!real3dActive) return;
   for(const v of volcanoObstacles){
+    /* 遮蔽に使う円錐は「見えている山」と同じ形にする。r に v.radius を入れると
+       裾を埋めたぶんだけ実物より太い円錐で隠してしまい、山肌の外にいる相手や技まで
+       消える。r は地面の高さでの実半径、rise はそこから頂上までの高さ。 */
     mountOccluders.push({
-      x:v.x, y:v.y, r:v.radius,
-      rise: v.radius * (v.isMain ? 1.15 : 0.9),
+      x:v.x, y:v.y, r: mountainGroundRadius(v),
+      rise: mountainRiseOf(v),
       baseZ: groundZAt(v.x, v.y),
       camDist: Math.hypot(v.x-camPos.x, v.y-camPos.y),
     });
@@ -5552,7 +5555,8 @@ function renderMinimap(){
   for(const v of volcanoObstacles){
     const col = v.style==='snow' ? 'rgba(210,230,245,0.9)' : v.style==='forest' ? 'rgba(40,110,50,0.9)' : v.style==='pyramid' ? 'rgba(210,180,120,0.9)' : 'rgba(90,58,42,0.9)';
     miniCtx.beginPath();
-    miniCtx.arc(v.x*scale, v.y*scale, Math.max(2, v.radius*scale), 0, Math.PI*2);
+    // ミニマップも「通れない広さ」= 地面の高さでの実半径で描く(当たり判定と一致させる)
+    miniCtx.arc(v.x*scale, v.y*scale, Math.max(2, mountainGroundRadius(v)*scale), 0, Math.PI*2);
     miniCtx.fillStyle = col; miniCtx.fill();
   }
   for(const lz of lavaZones){
