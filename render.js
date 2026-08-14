@@ -1086,6 +1086,7 @@ function lootTintOf(it){
   if(it.kind==='ticket') return TICKET_ITEM.color;
   if(it.kind==='guts')   return GUTS_ITEM.color;
   if(it.kind==='training'){ const ti = TRAINING_ITEMS[it.type]; return ti ? ti.color : '#ffd23c'; }
+  if(it.kind==='deathDisc') return DEATH_DISC_ACCENT;
   return '#ffffff';
 }
 function drawLootItem(it,p){
@@ -1172,6 +1173,39 @@ function drawLootItem(it,p){
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=ti.accent; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
       // 効果は拾ったあとのカードで見せるので、地面では名前だけにする(長い説明は読ませない)
       ctx.fillText(ti.name, 0, -26);
+    }
+  } else if(it.kind==='deathDisc'){
+    /* デス円盤石: 横たわる石の円盤+うっすら金の光の柱。
+       他のアイテムと違い**浮かせない**(倒れた者の遺物として地面に置く)。
+       金の明滅(glow)だけで「拾える」ことを示す。 */
+    const glow = 0.6 + 0.3*Math.sin(matchTime*2.2 + it.bob);
+    // 金の光の柱(上へ淡く消える)
+    const grad = ctx.createLinearGradient(0, 0, 0, -92);
+    grad.addColorStop(0, `rgba(255,215,106,${0.30*glow})`);
+    grad.addColorStop(0.55, `rgba(255,215,106,${0.12*glow})`);
+    grad.addColorStop(1, 'rgba(255,215,106,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(-7, 0); ctx.lineTo(-4, -92); ctx.lineTo(4, -92); ctx.lineTo(7, 0);
+    ctx.closePath(); ctx.fill();
+    // 石の円盤(下に側面の暗い楕円を重ねて厚みを出す)
+    ctx.fillStyle = '#847e6f';
+    ctx.beginPath(); ctx.ellipse(0, 3, 16, 6.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = DEATH_DISC_COLOR;
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 6.5, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    // 円盤の紋様(同心の刻み)
+    ctx.strokeStyle = 'rgba(90,80,60,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(0, 0, 10.5, 4.2, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 1.8, 0, 0, Math.PI*2); ctx.stroke();
+    // 金の光のふち(明滅)
+    if(!renderHeavyLoad){ ctx.shadowBlur = 14*glow; ctx.shadowColor = DEATH_DISC_ACCENT; }
+    ctx.strokeStyle = `rgba(255,215,106,${0.75*glow})`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 6.5, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    if(dist(it,player)<200){
+      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=DEATH_DISC_ACCENT; ctx.textAlign='center';
+      ctx.fillText(`${it.owner ? it.owner+'の' : ''}円盤石`, 0, -22);
     }
   }
   ctx.restore();

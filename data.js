@@ -1605,6 +1605,15 @@ const TRAIN_CARD_PICK_SEC = 8;     // 選ばなかったときに自動で決ま
      しゃてき(命中+108)     → 連射  +14%
      ドミノ倒し(ちから+108) → 技ダメ +6%
    除数(MASTERMON_STAT_FACTOR_DIVISOR)の違いで威力系だけ伸びが小さい。 */
+/* ===== デス円盤石(倒された者が試合中の強化を石の円盤として落とす) =====
+   ・試合中に確定したトレーニングカードは ent.matchTrainLog に積まれ、
+     本当の死亡時(ダウンではない)にその新しい方から最大 DEATH_DISC_MAX_ITEMS 件が
+     kind:'deathDisc' の円盤石として落ちる。誰でも拾え、カード選択なしで即適用される。
+   ・拾った項目は拾った側の matchTrainLog にも積まれる(倒されたらまた落ちる=力の連鎖)。
+   ・レイドだけは出さない(ボス戦の文脈に合わない)。 */
+const DEATH_DISC_MAX_ITEMS = 3;      // 中身の上限(発注者が実機調整)
+const DEATH_DISC_COLOR     = '#b8b2a4';  // 石の円盤の色
+const DEATH_DISC_ACCENT    = '#ffd76a';  // 金の光(拾えることを示す)
 function trainCardMenu(key){ return TRAINING_MENU.find(t=>t.key===key) || null; }
 /* 出す3枚。**拾ったアイテムに対応する1枚は必ず入る**(アイテムの見た目と結果をつなぐ)。
    rnd を渡せる形にしてあるので、同じ乱数から同じ3枚を作れる。 */

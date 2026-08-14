@@ -613,6 +613,9 @@ function killEntity(victim, killer){
   const aliveCount = entities.filter(e=>e.alive).length + 1;
   if(!isTeamMatch()) victim.placement = aliveCount;   // チーム戦の順位はチーム単位(teamNoteDeathが付ける)
   spawnDeath(victim.x, victim.y, victim.z, ELEMENTS[victim.element].color);
+  // デス円盤石: 試合中に確定したトレーニング強化があれば、その場に石の円盤として残す
+  // (本当の死亡だけ=ダウンでは落とさない。上のtryEnterDownedを抜けた後なのでここでよい)
+  spawnDeathDisc(victim);
   if(killer && entities.includes(killer) && killer.id!==victim.id){
     killer.kills += 1;
     killer.hp = Math.min(killer.maxHp, killer.hp + 50);
@@ -2001,11 +2004,28 @@ function updateLootPickups(){
           if(!e.isPlayer && netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootCards = cards;
           spawnDmgText(e.x, e.y, e.z, ti.emoji+' トレーニング', ti.accent);
           consumed = true;
+        } else if(it.kind==='deathDisc'){
+          // デス円盤石: 中身のトレーニング項目を**カード選択なしで即適用**。
+          // 効かせ方は既存カードと同じ1本道(applyTrainCardToEntity)なので、
+          // 適正倍率・丸めがそのまま効き、受け継いだ項目は拾った側の履歴にも積まれる(連鎖)
+          const counts = new Map();
+          for(const k of (it.keys||[])){
+            const t = trainCardMenu(k);
+            if(!t || !applyTrainCardToEntity(e, k)) continue;
+            counts.set(t.label, (counts.get(t.label)||0) + 1);
+          }
+          if(counts.size){
+            const parts = Array.from(counts, ([label,n])=> n>1 ? `${label}×${n}` : label);
+            spawnDmgText(e.x, e.y, e.z, '💠 継承', DEATH_DISC_ACCENT);
+            lootToast(e, `${it.owner||'名も無きモンスター'} の力を受け継いだ！（${parts.join('・')}）`);
+          }
+          consumed = true;
         }
       }
       if(consumed){
-        // SE: 自分のアイテム取得のみ。トレーニングアイテムはトレ実行と同じ「ポワポワ」
-        if(e.isPlayer) playSe(it.kind==='training' ? 'train' : 'pickup');
+        // SE: 自分のアイテム取得のみ。トレーニングアイテムはトレ実行と同じ「ポワポワ」、
+        // デス円盤石は継承らしく光の柱の「チュピーン」(既存SEの流用)
+        if(e.isPlayer) playSe(it.kind==='deathDisc' ? 'chupiin' : (it.kind==='training' ? 'train' : 'pickup'));
         consumedBy = e.netPlayerId || null; // 誰が拾ったか(ゲストのSE用)
         consumedKind = it.kind;
         break;

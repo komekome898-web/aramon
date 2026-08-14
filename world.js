@@ -589,6 +589,7 @@ function createMonster(elementKey, isPlayer, name, overrides){
     burnUntil:0, slowUntil:0, graceUntil:0, freezeUntil:0, poisonUntil:0, poisonTickAt:0, poisonSourceId:null,
     pulledUntil:0, pulledX:0, pulledY:0, pulledSpeed:0, // 「羅生門」等に吸い込まれている間の強制移動先(combat.jsのresolveMovement)
     trainCooldownMult:1, trainGutsCostReduction:0, trainProjSpeedMult:1, trainDmgMult:1, trainDmgTakenMult:1, trainSpeedMult:1, trainMaxHpBonus:0,
+    matchTrainLog:[],   // デス円盤石: 試合中に確定したトレーニングカードの履歴(エンティティは試合ごとに作り直すのでここで必ず空になる)
     stateUntil:0, stateCooldownUntil: (STATE_CHANGES[elementKey] ? STATE_CHANGES[elementKey].cooldown/2 : 0),
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
     recentAttackers:{},
@@ -747,6 +748,30 @@ function spawnLoot(n, center, radius){
     } while((isNearRock(x,y,45) || isNearCrystal(x,y,45) || isOnHazard(x,y,45)) && guard<20);
     lootItems.push({ id: nextId++, kind: pick.kind, type: pick.type, x, y, z: baseTerrainHeightAt(x,y), bob: rand(0,Math.PI*2) });
   }
+}
+
+/* ===== デス円盤石(kind:'deathDisc') =====
+   倒された者が試合中に確定したトレーニング強化(matchTrainLog)を石の円盤として落とす。
+   **ソロもマルチのホストもこの1つを通る**(killEntityから呼ばれる。ゲストへの見た目は
+   ここから既存のlootEvent(spawn)で配信する)。動的生成のみなのでシード付きの対関数は無い。 */
+function spawnDeathDisc(victim){
+  if(game.raid || game.trainingRange) return null;   // レイド・射撃訓練場では出さない
+  const log = victim.matchTrainLog;
+  if(!log || !log.length) return null;
+  const keys = log.slice(-DEATH_DISC_MAX_ITEMS);     // 新しい方から最大 DEATH_DISC_MAX_ITEMS 件
+  const it = {
+    id: nextId++, kind:'deathDisc', type:null, keys,
+    owner: (typeof displayNameFor==='function') ? displayNameFor(victim) : victim.name,
+    x: victim.x, y: victim.y, z: baseTerrainHeightAt(victim.x, victim.y), bob: rand(0,Math.PI*2),
+  };
+  lootItems.push(it);
+  if(netState.mode==='multi' && netState.isHost && window.__aramonPushLootEvent){
+    window.__aramonPushLootEvent(netState.roomId, {
+      evtType:'spawn', id:it.id, kind:it.kind, itemType:null, x:Math.round(it.x), y:Math.round(it.y), bob:it.bob,
+      keys: it.keys, owner: it.owner || null,   // Firebaseはundefined不可。中身と持ち主名はゲストの表示用
+    });
+  }
+  return it;
 }
 
 // ===== マルチプレイ用: シード付き決定論的初期化 =====

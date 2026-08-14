@@ -7876,6 +7876,10 @@ function applyTrainCardToEntity(ent, cardKey){
   // **上限(mastermonStatCap)を見ない。** 育てきったマスモンでカードが無駄にならないように
   Object.keys(changes).forEach(k=>{ mm.stats[k] = matchStatClamp(mm.stats[k] + changes[k]); });
   refreshMatchMmEffects(ent);
+  // デス円盤石: 実際に効いた項目を履歴へ積む(倒されたとき新しい方から最大
+  // DEATH_DISC_MAX_ITEMS 件が円盤石の中身になる)。カードも円盤石の継承もここを通るので、
+  // 拾って受け継いだ力は自分の履歴にも入り、自分が倒されたらまた落ちる(力の連鎖)。
+  (ent.matchTrainLog || (ent.matchTrainLog = [])).push(cardKey);
   return changes;
 }
 

@@ -910,6 +910,7 @@ function showGuestEnvironmentDamage(dt){
   }
 }
 const GUEST_PICKUP_CONFIRM_WAIT = 2.5; // 確定待ちの上限(秒)
+// 種類で絞らないので、試合中に増える種類(デス円盤石=deathDisc含む)も自動で先読み対象になる
 function predictLootPickupsAsGuest(){
   if(!player || !player.alive) return;
   for(const it of lootItems){
@@ -931,7 +932,7 @@ function applyLootEventLocally(evt){
     // 自分(ゲスト)が拾った場合はSEと効果メッセージを出す
     // (ホスト側のupdateでは自分のSE/トーストは鳴らないため、ここで再現する)
     if(evt.by && evt.by===netState.myPlayerId){
-      playSe(evt.kind==='training' ? 'train' : 'pickup');
+      playSe(evt.kind==='deathDisc' ? 'chupiin' : (evt.kind==='training' ? 'train' : 'pickup'));
       if(evt.msg) pushToast(evt.msg);
       // トレーニングは候補3枚が届く。**抽選はホストなので、ゲストは出すだけ**
       if(Array.isArray(evt.cards) && evt.cards.length && typeof showTrainCards==='function') showTrainCards(evt.cards);
@@ -939,7 +940,9 @@ function applyLootEventLocally(evt){
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
       // zは座標から一意に決まるので配信不要(real3dHeightAtは純関数)
-      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, z:baseTerrainHeightAt(evt.x,evt.y), bob:evt.bob||0 });
+      // keys/owner はデス円盤石だけが持つ(ゲストは見た目と持ち主名の表示にしか使わない。適用はホスト)
+      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, z:baseTerrainHeightAt(evt.x,evt.y), bob:evt.bob||0,
+                       keys:evt.keys||null, owner:evt.owner||null });
     }
   }
 }
