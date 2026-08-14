@@ -511,13 +511,47 @@ function applySurfaceDetail(mat, opt){
   return mat;
 }
 
+/* 【当たり判定と同じ形にする】山の広さの唯一の正は data.js の mountainRadiusAt()。
+   移動・弾・射線・ミニマップが全部そこを見ているので、3Dの山肌もその円錐に一致させる。
+   MOUNT_SKIRT と rise の式(radius*(isMain?1.15:0.9))は data.js と対になっている。
+   **片方だけ変えると「見えている山肌の外なのに止められる」に戻る。必ず両方直すこと。** */
 const MOUNT_SKIRT = 120;      // 山の裾を地面へ埋める深さ(地形の凹みで隙間が出ないように)
 const CRATER_RATIO = 0.17;    // 火山の火口の広さ(山の半径に対する比)
+
+/* 判定と同じ円錐の半径。zUp = 地面(山の中心の地形高さ)からの高さ。
+   data.js の mountainRadiusAt() と同じ式。 */
+function mountProfileR(rad, h, zUp){
+  /* 【地面より下だけは円錐のまま広げる】判定は zUp<0 を 0 で止めるので、
+     ここも止めると裾が垂直な壁になる。地形がへこんだ所でその壁が地上に出て、
+     山の足元に「土台」が回っているように見えた(パレパレの森で発生)。
+     下へ広がるぶんは判定より太いが、太いぶんには見えない壁にならない。 */
+  return rad * Math.max(0, 1 - (MOUNT_SKIRT + zUp) / h);
+}
+
+/* 山肌を判定より内側へ彫ってよい量。ここが「見た目」と「当たり判定」の折り合い。
+   ・裾(地面の高さ)では彫らない → 【地面での山肌の半径が判定と完全に一致する】
+     プレイヤーが止められるのはこの1本の輪なので、ここが合っていれば見えない壁は出ない
+     (全マップ・全サイズで実測 0.0%)。深さを変えてもこの一致は崩れない。
+   ・外へは絶対に出さない(出すと今度は山にめり込んで見える)
+   彫りが効くのは中腹から上だけなので、深くしても損をするのは
+   「高く飛ぶ弾が谷の上で止まる」ぶんだけ。稜線の見た目を優先して深く取ってある。 */
+const MOUNT_CARVE_MAX  = 0.260;   // 判定より内側へ入ってよい最大量(v.radius 比)
+const MOUNT_CARVE_REL  = 0.30;    // その高さでの半径に対する上限(頂上が針にならないように)
+const MOUNT_CARVE_FOOT = 0.10;    // 裾で彫りを0へ戻す区間(t=0〜これ)
+const MOUNT_CARVE_VERT = 0.30;    // 彫りのうち縦へ回す割合(段の高さを不揃いにして稜線を出す)
+/* ピラミッドの断面。0=正方形 1=円。角と面の半径の比が 1.41 → 1.17 になる。
+   素の正方形だと角が判定の円から+16%外へ、面が-8%内へ出て、角にめり込めるうえ
+   面では見た目の外なのに止められた(実測 ±21%)。角を丸めて円へ寄せ、
+   PYRAMID_FIT で角と面が判定の円を等しくまたぐ大きさにする(実測 ±12%)。
+   四角錐に見えたまま。**円の判定に四角錐を合わせる以上、ここは0にはできない。** */
+const PYRAMID_ROUND = 0.50;
+const PYRAMID_FIT   = 1 / Math.sqrt(1/Math.SQRT2 * (1 - PYRAMID_ROUND) + PYRAMID_ROUND);
 
 /* 山の色。高さ(0=麓 1=頂上)で麓・中腹・頂上の3色を混ぜたものが「表土」、
    rock が「露出した岩」。どちらを見せるかは高さではなく面の傾きで決める
    (急斜面=岩がむき出し / 緩斜面=雪・草・砂が乗る)。
-   relief=尾根と谷の彫りの深さ / rockK=露岩の濃さ
+   relief=尾根と谷の彫りの深さ(陰影用の彫りに効く。形は判定の帯 MOUNT_CARVE_MAX で頭打ち)
+   rockK=露岩の濃さ
    rockLo,rockHi=露岩の出る傾き(素の円錐の傾きからのずれ。小さいほど急な面だけ岩)
    cover=緩斜面に表土(雪・草)が乗る強さ                                     */
 const MOUNT_COLORS = {
@@ -544,12 +578,79 @@ function mountainVertexColor(conf, t, mottle){
   return _mc;
 }
 
-/* 山肌の変位。ここが「完全な円錐」を「山」に変える一番の要。
-   ridged noise(1-|fbm|)で尾根と谷を彫る。外へ膨らませると当たり判定(半径)と
-   2Dの隠面(occludedByMountain)から山肌がはみ出すので、変位は必ず
-   【内向き(k<=1)と下向き(dy<=0)だけ】。高さと最大半径はそのまま保たれる。
-   頂上ほど変位を小さくして稜線を残す(頂上まで削ると団子になる)。            */
-function displaceMountain(geo, h, rise, seed, conf, capT){
+/* 円錐の頂点を「判定と同じ半径」へ置き直す。THREE の Cone/Cylinder が作る半径を
+   そのまま使うと判定とズレる:
+   ・地面より下(埋めた裾)は円錐のまま広がるので、地形がへこんだ所で
+     判定の外側へ山肌が出てしまう。判定と同じく zUp=0 の半径で止める(裾は垂直)。
+   ・火口のある山は上端が rad*CRATER_RATIO なので、全高にわたって判定より太い。
+     火口の太さを下回る高さから上だけを火口と同じ太さにして、
+     判定より外へ出る範囲を「頂上のごく近く(=誰も届かない高さ)」に閉じ込める。
+   横の段(リング)の高さも割り振り直す。THREE は全高 h を等分するので、
+   地面の高さ(zUp=0)はたいてい段と段の間に落ちる。そこは円錐が折れ曲がる線なので、
+   段がないと面が角を斜めに突っ切り、地面での半径が判定より細くなる
+   (小さい山ほどひどく、実測で 3.8% 細かった)。1段目をちょうど地面に置き、
+   残りの段を見えている部分だけに使う(埋まった裾に段を割かない)。            */
+function shapeToProfile(geo, rad, h, rows, craterR){
+  const pos = geo.attributes.position;
+  const rise = h - MOUNT_SKIRT;
+  for(let i=0;i<pos.count;i++){
+    const px = pos.getX(i), pz = pos.getZ(i);
+    const f = clamp01((pos.getY(i) + h/2) / h);            // 0=最下段 1=最上段
+    // 1段ぶんを埋めた裾に、残りを地面から頂上までに割り当てる
+    const zUp = (f <= 1/rows) ? (f*rows - 1)*MOUNT_SKIRT
+                              : (f - 1/rows)/(1 - 1/rows) * rise;
+    const py = zUp + MOUNT_SKIRT - h/2;
+    const len = Math.hypot(px, pz);
+    if(len < 1e-4){ pos.setY(i, py); continue; }
+    const want = Math.max(craterR, mountProfileR(rad, h, zUp));
+    pos.setXYZ(i, px/len*want, py, pz/len*want);
+  }
+  return geo;
+}
+
+/* 山肌の彫り。ここが「完全な円錐」を「山」に変える一番の要。
+   ridged noise(1-|fbm|)で尾根と谷を彫る。
+   【外へは絶対に出さない・内へも入れすぎない】素の円錐が当たり判定そのものなので、
+   外へ膨らませれば山にめり込んで見え、内へ削りすぎれば「山肌の外なのに止められる」。
+   そこで彫りは必ず「判定の内側 MOUNT_CARVE_MAX の帯の中」だけで行い、
+   裾では帯の幅を0へ落として判定とぴったり合わせる。
+   縦へ落とすぶんも、その高さでの半径のズレに換算して同じ帯から払う。       */
+function displaceMountain(geo, rad, h, rise, seed, conf, capT){
+  const pos = geo.attributes.position;
+  const rel = Math.min(1, conf.relief);      // 帯の外へ出さないので1で頭打ち
+  if(rel <= 0) return geo;
+  for(let i=0;i<pos.count;i++){
+    const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
+    const r = Math.hypot(px, pz);
+    if(r < 1e-4) continue;
+    const ang = Math.atan2(pz, px) + Math.PI;
+    const t = clamp01((py + h/2 - MOUNT_SKIRT) / rise);         // 0=麓 1=頂上
+    /* 彫ってよい深さ(ワールド単位)。裾では0、上へ行くほど帯を使い切れる。
+       上ほど「その高さの半径に対する割合」では深くなるので、稜線は頂上側で鋭く出る。 */
+    let room = Math.min(MOUNT_CARVE_MAX*rad, MOUNT_CARVE_REL*r) * rel
+             * smoothBand(0, MOUNT_CARVE_FOOT, t);
+    if(capT) room *= clamp01((1 - t)/capT);                     // 火口の縁は彫らない
+    const carve = 1 - ridgedFbm(ang, t*2.4, seed);              // 1=谷 0=尾根
+    // 山体そのもののゆがみ(方角ごとに尾根の張り出しが違う)
+    const swell = angNoise(ang + seed*0.7, t*1.3 + seed, 7);
+    // 面の中の細かいザラつき。面ごとの法線と合わさって岩肌になる
+    const grit = angNoise(ang*1.0 + seed*2.3, t*9.0 + seed*3.1, 48);
+    // 配分の合計が1を超えないようにしてある(=帯の外へは出ない)
+    const cut = room * Math.min(1, 0.62*carve*carve + 0.28*swell + 0.10*grit);
+    const k = Math.max(0, 1 - cut*(1 - MOUNT_CARVE_VERT)/r);
+    pos.setXYZ(i, px*k, py - cut*MOUNT_CARVE_VERT*(h/rad), pz*k);
+  }
+  return geo;
+}
+
+/* 陰影と色分けにだけ使う「深く彫った双子」。**判定を入れる前の彫り方をそのまま残したもの。**
+   帯の中の浅い形の面法線で塗ると、尾根も谷も露岩も雪原も消えて
+   「のっぺりした灰色の円錐」になる(雪山で実測: 明暗のばらつき 0.071→0.040)。
+   法線は当たり判定に一切関係しないので、形は帯の中・陰影はこの双子から借りる。
+   **式を上の displaceMountain へ寄せてはいけない。** 寄せた版を作ったところ、
+   面の傾きが深くなって「緩斜面に雪が乗る」判定(conf.cover)が働かず、
+   雪山から雪冠が丸ごと消えた。ここは見た目の基準なので昔の式が正。       */
+function displaceMountainShade(geo, h, rise, seed, conf, capT){
   const pos = geo.attributes.position;
   const amp = 0.26 * conf.relief;       // 谷を内側へ削る最大量(半径比)
   const vAmp = 0.13 * conf.relief;      // 谷を下へ掘る最大量(高さ比)
@@ -558,14 +659,11 @@ function displaceMountain(geo, h, rise, seed, conf, capT){
     const r = Math.hypot(px, pz);
     if(r < 1e-4) continue;
     const ang = Math.atan2(pz, px) + Math.PI;
-    const t = clamp01((py + h/2 - MOUNT_SKIRT) / rise);         // 0=麓 1=頂上
-    // 麓ほど大きく削れ、頂上へ向かって消える。火口のある山は縁も削らない
+    const t = clamp01((py + h/2 - MOUNT_SKIRT) / rise);
     let fall = 0.10 + 0.90*Math.pow(1 - t, 1.30);
     if(capT) fall *= clamp01((1 - t)/capT);
-    const carve = 1 - ridgedFbm(ang, t*2.4, seed);              // 1=谷 0=尾根
-    // 山体そのもののゆがみ(方角ごとに尾根の張り出しが違う)
+    const carve = 1 - ridgedFbm(ang, t*2.4, seed);
     const swell = angNoise(ang + seed*0.7, t*1.3 + seed, 7);
-    // 面の中の細かいザラつき。flatShadingと合わさって岩肌になる
     const grit = angNoise(ang*1.0 + seed*2.3, t*9.0 + seed*3.1, 48);
     const k = Math.max(0.42, Math.min(1,
       1 - (amp*carve*carve + 0.11*swell*conf.relief + 0.030*grit*conf.relief) * fall));
@@ -599,8 +697,11 @@ function pyramidGeo(rad, h, seed){
       rr = 1 - c/C;
     }
     const ang = Math.atan2(px, pz);
-    // 正方形の断面(|x|+|z|=R)。角は phi=0,90,180,270 に来る
-    const sq = 1 / (Math.abs(Math.sin(ang)) + Math.abs(Math.cos(ang)));
+    /* 断面。素の正方形(|x|+|z|=R)だと角が判定の円から+16%外へ、面が-8%内へ出る
+       (実測で角にめり込め、面では見た目の外なのに止められた)。角を少し丸めて
+       円へ寄せ、PYRAMID_FIT で全体を判定の円にまたがせる。四角錐には見えたまま。 */
+    const sq = (1 - PYRAMID_ROUND) / (Math.abs(Math.sin(ang)) + Math.abs(Math.cos(ang)))
+             + PYRAMID_ROUND;
     // 風化。段の縁が欠け、面にも浅い凹みができる(内向きのみ)
     const wear = angNoise(ang*1.0 + seed, ri*0.37 + seed*1.9, 12);
     const chip = angRidge(ang*1.0 + seed*2.1, ri*0.11 + seed, 20);
@@ -622,26 +723,42 @@ export function buildMountainMesh(v){
      山は1マップに数十個だが三角形は数千どまりなので、上げても負荷はほとんど増えない。 */
   const seg = v.isMain ? 64 : 36;
   const rows = v.isMain ? 15 : 9;
-  const rad = isPyramid ? v.radius*0.82*Math.SQRT2 : v.radius;
+  const rad = isPyramid ? v.radius*PYRAMID_FIT : v.radius;
   // 山ごとに違う形にするための種。volcanoObstaclesにseedは無いので位置から作る
   const seed = hash2(v.x*0.013, v.y*0.017) * 10;
-  let geo;
+  let geo, shadeGeo = null;
   if(isPyramid){
     geo = pyramidGeo(rad, h, seed);
   }else{
     // 火山は先を切った円錐にして、頂上に火口の穴を作る
+    const craterR = hasCrater ? rad*CRATER_RATIO : 0;
     geo = hasCrater
-      ? new THREE.CylinderGeometry(rad*CRATER_RATIO, rad, h, seg, rows, true)
+      ? new THREE.CylinderGeometry(craterR, rad, h, seg, rows, true)
       : new THREE.ConeGeometry(rad, h, seg, rows, true);
-    displaceMountain(geo, h, rise, seed, conf, hasCrater ? 0.14 : 0);
+    shapeToProfile(geo, rad, h, rows, craterR);   // 判定と同じ円錐へ合わせてから彫る
+    const capT = hasCrater ? 0.14 : 0;
+    // 陰影用の「深く彫った山」。同じ種・同じノイズなので尾根と谷の位置は形と一致する
+    shadeGeo = displaceMountainShade(geo.clone(), h, rise, seed, conf, capT);
+    displaceMountain(geo, rad, h, rise, seed, conf, capT);
   }
-  /* 頂点カラーは【面ごと】に塗る。flatShadingで見えるのは面の法線なので、
+  /* 頂点カラーは【面ごと】に塗る。見えているのは面の法線なので、
      色も面の傾きで分けないと陰影と模様がずれて「グラデーションを貼った図形」に見える。
      ・急斜面 → 露出した岩(暗い)
      ・緩斜面 → 雪・草・砂(高さで決まる表土の色)
      ・谷筋   → さらに暗く沈める(空が見えない場所なので実際に暗い)          */
   geo = geo.toNonIndexed();
-  geo.computeVertexNormals();          // 非indexなので面法線がそのまま入る
+  /* 法線は「深く彫った山」から借りる(形は帯の中の浅いほうのまま)。
+     面ごとに1つの法線を3頂点に入れるので、flatShading を切っても面は平らに見える。
+     ※ flatShading:true にすると three は画素の微分から法線を作り直し、
+       ここで入れた法線を丸ごと無視する。切ってあるのはそのため。            */
+  if(shadeGeo){
+    const sn = shadeGeo.toNonIndexed();
+    sn.computeVertexNormals();         // 非indexなので面法線がそのまま入る
+    geo.setAttribute('normal', sn.attributes.normal);
+    shadeGeo.dispose();                // sn は法線を geo へ渡したので dispose しない
+  }else{
+    geo.computeVertexNormals();
+  }
   const pos = geo.attributes.position, nor = geo.attributes.normal;
   const col = new Float32Array(pos.count*3);
   const rockC = mixColor(new THREE.Color(conf.rock), themeColor('steep'), 0.40);
@@ -675,9 +792,12 @@ export function buildMountainMesh(v){
   /* 【落とし穴】地面用の roughnessMap をそのまま貼ると、山肌の一部が
      つやのある面になって空の色を映し込み、暗い岩の山まで白っぽく飛ぶ
      (カウレアの黒い火山が砂色に見えていた原因)。山は一様に粗い面として扱う。 */
+  /* flatShading は「面ごとに1つの法線」を入れてある山では切る(上の説明のとおり、
+     入れておくと three が画素の微分から法線を作り直して深い彫りの陰影を捨ててしまう)。
+     ピラミッドは段そのものが形なので、これまでどおり flatShading で塗る。       */
   const mat = new THREE.MeshStandardMaterial({
     vertexColors:true, roughness: conf.rough, metalness:0.0,
-    flatShading:true, envMapIntensity:ENV_INTENSITY*0.55, side:THREE.DoubleSide,
+    flatShading:isPyramid, envMapIntensity:ENV_INTENSITY*0.55, side:THREE.DoubleSide,
   });
   /* 山肌のディテール。地面用の法線マップを円錐のUVへ貼っていたが、山の大きさが
      半径数百〜千単位あるのに対しUVは0〜1しかなく、粒が引き伸ばされて効いていなかった。
