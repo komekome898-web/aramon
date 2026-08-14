@@ -1827,7 +1827,11 @@ document.getElementById('skinPreviewSelectBtn').addEventListener('click', ()=>{
 function renderGallerySkins(){
   const grid = document.getElementById('gallerySkinGrid');
   const owned = loadSkins().owned;
-  const ids = Object.keys(owned).filter(id=>owned[id] && skinMeta(id));
+  // 覚醒スキンはowned(所持)ではなくマスモン側のmm.awakenで決まるので別途集めて合流する
+  const ids = [...new Set([
+    ...Object.keys(owned).filter(id=>owned[id] && skinMeta(id)),
+    ...ownedAwakenedSkinIds().filter(id=>skinMeta(id)),
+  ])];
   if(ids.length===0){
     grid.innerHTML = '<div class="bag-skin-empty">所持しているスキンはありません。ガチャで手に入れよう！</div>';
     return;
