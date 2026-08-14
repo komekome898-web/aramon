@@ -1552,6 +1552,17 @@
   .result-currency{ margin-top:4px; font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); letter-spacing:1px; }
   .result-currency:empty{ display:none; }
 
+  /* チーム戦のリザルト: 小隊メンバーの成績(名前・キル・状態)を1行ずつ。
+     行が3つ増えても縦にはみ出さないよう小さめに詰める(375x667縦持ちで実測済み) */
+  .result-squad-info{ margin-top:2px; display:flex; flex-direction:column; gap:1px; align-items:center; }
+  .result-squad-title{ font-size:10px; letter-spacing:2px; color:var(--ink-dim); }
+  .result-squad-row{ display:flex; align-items:baseline; gap:10px; font-size:12px; letter-spacing:0.5px; }
+  .result-squad-row .sq-mark{ font-size:9px; }
+  .result-squad-row.sq-me .result-squad-name{ color:var(--amber); }
+  .result-squad-name{ font-weight:700; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .result-squad-kills{ font-family:'Share Tech Mono',monospace; color:var(--ink-dim); }
+  .result-squad-state{ font-size:10px; color:var(--ink-dim); }
+
   /* リザルト画面: 報酬表示の追加で縦にはみ出さないよう全体を詰める */
   #resultScreen{ padding:10px 24px; }
   #resultScreen .rank{ font-size:clamp(28px,calc(7.5 * var(--vw)),46px); }
@@ -1575,7 +1586,7 @@
   }
   #playerNameInput:focus{ border-color:var(--amber); }
 
-  #modeTabs, #capacityTabs, #mapTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #modeTabs, #capacityTabs, #mapTabs, #teamSizeTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   /* 通常 / リアル の切替スイッチ(マップ選択の上) */
   #mapModeToggle{ display:flex; align-items:center; justify-content:center; gap:0; flex-wrap:wrap;
     margin-bottom:calc(1.4 * var(--vh)); }
@@ -1605,11 +1616,11 @@
     0%,100%{ transform:rotate(14deg) scale(1); }
     50%{ transform:rotate(14deg) scale(1.13); }
   }
-  .mode-tab, .cap-tab, .map-tab{
+  .mode-tab, .cap-tab, .map-tab, .team-tab{
     padding:9px 20px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
-  .mode-tab.active, .cap-tab.active, .map-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  .mode-tab.active, .cap-tab.active, .map-tab.active, .team-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #multiOptions{ margin-top:4px; }
 
   #invertPitchRow{
@@ -2166,6 +2177,27 @@
   .tb-chip b{ font-family:'Share Tech Mono',monospace; font-weight:400; }
   .tb-chip.up{ color:#8fdcff; }
   .tb-chip.down{ color:#ff9a9a; }
+  /* ===== チーム戦: 小隊バー(味方のHP/状態) =====
+     #topLeft(縦flex・gap8)の中=HPパネルの直下なので、位置の計算なしで構造上重ならない。
+     幅はHPパネルと同じ値にそろえる(#hpPanel 210 / narrow-screen 180。変えたら両方直す)。
+     タップは素通り(pointer-events:none)なのでスクロールロック除外リストへの追加は不要。 */
+  #squadPanel{ width:210px; padding:4px 12px 6px; pointer-events:none; border-top:2px solid #58d47e; }
+  .sq-row{ padding:2px 0 1px; }
+  .sq-row + .sq-row{ border-top:1px solid rgba(255,255,255,0.08); }
+  .sq-top{ display:flex; align-items:baseline; gap:5px; }
+  /* 味方の印は頭上マーカーと同じ「緑の▽」(色覚多様性のため色だけに頼らず形でそろえる) */
+  .sq-mark{ color:#58e07e; font-size:9px; flex-shrink:0; }
+  .sq-name{ font-weight:700; font-size:11px; letter-spacing:0.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .sq-state{ font-size:9px; margin-left:auto; flex-shrink:0; letter-spacing:0.5px; }
+  .sq-hp-track{ height:4px; background:rgba(0,0,0,0.5); border-radius:2px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); }
+  .sq-hp-fill{ height:100%; width:100%; background:linear-gradient(90deg,#6bff8e,#2fd35a); transition:width .15s; }
+  /* ダウン中=橙の点滅 / 死亡=灰色で沈める */
+  .sq-row.sq-down .sq-state{ color:#ffb020; animation:sqBlink 0.9s ease-in-out infinite; }
+  .sq-row.sq-down .sq-hp-fill{ background:linear-gradient(90deg,#ffc46b,#ff9420); animation:sqBlink 0.9s ease-in-out infinite; }
+  .sq-row.sq-dead{ opacity:0.5; }
+  .sq-row.sq-dead .sq-name, .sq-row.sq-dead .sq-state, .sq-row.sq-dead .sq-mark{ color:#9aa3ad; }
+  @keyframes sqBlink{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+
   /* 安置情報フィールドをミニマップの左に添える横並び配置 */
   #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:row; align-items:flex-start; gap:8px; }
   #counterPanel{ padding:7px 10px; text-align:right; white-space:nowrap; }
@@ -2237,6 +2269,16 @@
   #crosshair::before{ left:11px; top:0; width:4px; height:26px; }
   #crosshair::after{ left:0; top:11px; width:26px; height:4px; }
   #crosshair.lock::before, #crosshair.lock::after{ background:#ff5d5d; }
+
+  /* ゲストのヒットマーカー: 見た目命中の瞬間に照準へ×印を0.15秒重ねる(showHitMarker)。
+     普段は透明。hm-showが付いたときだけアニメーションで出て消える */
+  #hitMarker{ position:absolute; left:50%; top:50%; width:30px; height:30px; margin:-15px 0 0 -15px; pointer-events:none; opacity:0; }
+  #hitMarker::before, #hitMarker::after{ content:''; position:absolute; left:13px; top:0; width:4px; height:30px;
+    background:rgba(255,236,180,0.95); border-radius:2px; box-shadow:0 0 6px rgba(255,200,80,0.8); }
+  #hitMarker::before{ transform:rotate(45deg); }
+  #hitMarker::after{ transform:rotate(-45deg); }
+  #hitMarker.hm-show{ animation:hmPop 0.15s ease-out forwards; }
+  @keyframes hmPop{ 0%{ opacity:1; transform:scale(1.3); } 70%{ opacity:0.9; transform:scale(1); } 100%{ opacity:0; transform:scale(0.92); } }
 
   #joystickBase{
     position:absolute; left:22px; bottom:22px; width:124px; height:124px; border-radius:50%;
@@ -3680,6 +3722,8 @@
 
   /* 同上。バトルHUDも同じ条件で切り替える */
   html.narrow-screen #hpPanel{ width:180px; }
+  /* 小隊バーの幅はHPパネルに追従させる(180に合わせる。#hpPanelを変えたらここも直す) */
+  html.narrow-screen #squadPanel{ width:180px; }
   html.narrow-screen #killFeed{ width:170px; top:148px;}
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
   /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */

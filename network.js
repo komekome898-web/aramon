@@ -82,6 +82,9 @@ function updateInterpDelay(dt){
   interpDelayMs += (target - interpDelayMs) * Math.min(1, dt*INTERP_DELAY_ADAPT_RATE);
 }
 const EXTRAP_CAP_MS = 180;     // スナップショット欠落時に速度で外挿する上限
+/* ゲストがauthStateのHPの減りを「攻撃を受けた」とみなす下限(HP)。
+   安全圏・溶岩の環境ダメージは1配信(50ms)あたり数HPなので、それより大きい減りだけを拾う */
+const GUEST_HIT_FEEDBACK_MIN = 5;
 const AUTH_FULL_EVERY = 8;     // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
 const HOST_HISTORY_CAP = 60;   // ホストの位置履歴(ラグ補正の巻き戻し用)保持スナップショット数
 let guestSnapBuf = [];         // ゲスト: 補間用スナップショット {rt, ht, seq, ents:{id:{x,y,z,f,vx,vy,alive}}}
@@ -750,6 +753,8 @@ function tryNonHostPlayerFireVisual(dt){
         color:colors[i], hitR:(mv.hitR||24)*hbMult, hitW:0,
         traveled:0, maxRange:mv.range, delay:0, visualOnly:true,
         projStyle:'godorb', orbColor:colors[i], moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
+        // 見た目命中時の予測ダメージ(見た目専用。確定はホスト)
+        predDmg: Math.round(effectiveMoveDmg(player, mv)),
         ownerId: player.id,
       });
     }
@@ -779,6 +784,8 @@ function tryNonHostPlayerFireVisual(dt){
         // 爆風を出せないうえ、ホストからのエコーは「自分の弾」として弾かれるため
         // 自分で撃ったときだけ爆発が一切見えなくなる
         blast: mv.blast||null,
+        // 見た目命中時の予測ダメージ(見た目専用の概算。確定の実数字はホストのauthState側)
+        predDmg: Math.round(effectiveMoveDmg(player, mv)),
         ownerId: player.id,
       });
     }
@@ -1133,9 +1140,22 @@ function applyAuthState(authState){
       if(typeof ent.x!=='number' || typeof ent.y!=='number'){ ent.x=a.x; ent.y=a.y; ent.z=a.z; ent.facingAngle=a.f; }
     }
     // 位置以外の権威フィールドは受信時に即反映する(補間しない)
+    const prevHp = ent.hp;   // ゲストの被弾フィードバック用(下)
     ent.hp = a.hp; ent.guts = a.guts;
     // 計測ハーネス用: HPが画面に反映された時刻を記録(通常は素通り)
     if(window.__netProbe) __netProbe.hp(a.id, a.hp);
+    /* ゲストの戦闘フィードバック即時化: HPが下がった瞬間に「攻撃を受けた」合図を出す(確定値ベース)。
+       ホストではapplyDamageが担う演出(被弾SE・ヒットフラッシュ・ダメージ数字)で、
+       ゲストはHPだけが静かに減っていた。安全圏・溶岩の環境ダメージは1配信あたり数HPで
+       showGuestEnvironmentDamageが担当しているので、それより大きい減りだけを攻撃とみなす */
+    const hpDrop = prevHp - ent.hp;
+    if(game.started && ent.alive && hpDrop >= GUEST_HIT_FEEDBACK_MIN){
+      ent.hitFlash = 0.18;
+      // 自分の被弾はSEも鳴らす(ホストのapplyDamageと同じ)。数字は全エンティティに出す
+      // (ホスト画面では周囲の戦闘もダメージ数字で見えているので、ゲストも同じ絵にする)
+      if(ent.isPlayer) playSe(skinHitSeName(ent) || 'hitTaken');
+      spawnDmgText(ent.x, ent.y, ent.z, Math.round(hpDrop));
+    }
     if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
     if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
@@ -1354,7 +1374,17 @@ function loop(now){
               if(!e.alive || e.id===p.ownerId) continue;
               if(projTeamBlocked(p, e)) continue; // チーム戦: 味方の体は見た目も素通り(ホスト側と同じ)
               if(p.terrain3d && !projHeightHits(p,e)) continue; // 頭上/足元を大きく外れた弾は見た目も当てない
-              if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
+              if(dist(p,e) < e.radius+(p.hitR||0)){
+                visualHit=true; spawnHit(e.x,e.y,e.z,p.color);
+                /* ゲストの体感: 自分の弾が見た目命中した瞬間に、照準の×印と予測ダメージを出す。
+                   確定の実数字は従来どおりホストのauthState(HPの減り)から後で出るので、
+                   予測側は小さく半透明(spawnPredDmgText)にして二重に見えないようにする */
+                if(player && p.ownerId===player.id){
+                  if(typeof showHitMarker==='function') showHitMarker();
+                  if(p.predDmg && typeof spawnPredDmgText==='function') spawnPredDmgText(e.x, e.y, e.z, p.predDmg);
+                }
+                break;
+              }
             }
           }
           if(visualHit){

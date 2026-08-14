@@ -1065,6 +1065,9 @@ function addParticle(p){ particles.push(Object.assign({life:1,maxLife:1,vx:0,vy:
 function spawnHit(x,y,z,color){ for(let i=0;i<5;i++){ const a=rand(0,Math.PI*2), sp=rand(40,140); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.35,maxLife:0.35,color,size:rand(2,4)}); } }
 function spawnDeath(x,y,z,color){ for(let i=0;i<14;i++){ const a=rand(0,Math.PI*2), sp=rand(60,220); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.6,maxLife:0.6,color,size:rand(3,6)}); } }
 function spawnDmgText(x,y,z,val,color,big){ addParticle({type:'text',x,y,z,vx:rand(-10,10),vy:-50,life:big?0.85:0.7,maxLife:big?0.85:0.7,color:color||'#fff',text:String(val),big:!!big}); }
+/* ゲストの予測ダメージ数字(見た目専用)。ホスト確定の実数字と見分けが付くよう
+   小さく半透明で描かれる(render.jsのdrawParticleがpredを見る)。値は概算でよい */
+function spawnPredDmgText(x,y,z,val){ addParticle({type:'text',x,y,z,vx:rand(-8,8),vy:-42,life:0.5,maxLife:0.5,color:'#ffeec8',text:String(Math.round(val)),pred:true}); }
 
 function displayNameFor(ent){
   if(!ent) return '';
