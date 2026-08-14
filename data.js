@@ -3657,12 +3657,22 @@ function ownedSkinsForElement(element){
     if(s.element!==element || s.awakenOf) continue;   // 覚醒スキンは下でまとめて足す
     if(owned[id]) out.push(id);
   }
-  // マスモンのキーは要素名なので、この要素のマスモンをそのまま引ける
-  const mm = (typeof loadMastermons==='function') ? loadMastermons()[element] : null;
-  if(mm && mm.awaken){
+  // 覚醒スキンはこの要素のマスモンぶんだけ足す(集計はownedAwakenedSkinIds()に集約)
+  for(const awId of ownedAwakenedSkinIds()){ if(SSR_SKINS[awId].element===element) out.push(awId); }
+  return out;
+}
+/* 覚醒スキンだけを全マスモン横断で集める(ギャラリーの所持スキン一覧用)。
+   覚醒は所持(owned)ではなくマスモン側のmm.awakenで決まるので、loadSkins().owned
+   だけを見る一覧には出てこない。ここへ集約し、呼び出し側はownedのidと合わせるだけでよい。 */
+function ownedAwakenedSkinIds(){
+  const owned = loadSkins().owned;
+  const mms = loadMastermons();
+  const out = [];
+  for(const element of Object.keys(mms)){
+    const mm = mms[element];
+    if(!mm || !mm.awaken) continue;
     for(const baseId of Object.keys(mm.awaken)){
       const awId = awakenedSkinIdOf(baseId);
-      // 覚醒後の姿が消された/元スキンを手放した場合に備えて存在を確かめる
       if(awId && SSR_SKINS[awId] && SSR_SKINS[awId].element===element && owned[baseId]) out.push(awId);
     }
   }
