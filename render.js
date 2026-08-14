@@ -5945,7 +5945,11 @@ function updateHUD(){
 
   // 召喚演出中は操作説明を出さない(演出に被って勿体無いため)。
   // 演出中はupdate()が回らずtipTimerが減らないので、演出後にフル秒数だけ表示される。
-  document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0) ? '1':'0';
+  /* キルフィードが流れている間は操作ヒントを消す(フィード3行目とヒント帯が
+     重なって最新のキル行が読めなくなる=批評指摘。キルが起きている時点で
+     操作は分かっているので、ヒントを譲るのが正しい優先順位)。 */
+  const feedBusy = (()=>{ const kf = document.getElementById('killFeed'); return kf && kf.children.length > 0; })();
+  document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0 && !feedBusy) ? '1':'0';
 
   const fireMax = effectiveCooldown(player, mv);
   const fireProgress = fireMax>0 ? clamp(1 - player.fireCooldown/fireMax, 0, 1) : 1;
