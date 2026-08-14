@@ -1552,6 +1552,17 @@
   .result-currency{ margin-top:4px; font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); letter-spacing:1px; }
   .result-currency:empty{ display:none; }
 
+  /* チーム戦のリザルト: 小隊メンバーの成績(名前・キル・状態)を1行ずつ。
+     行が3つ増えても縦にはみ出さないよう小さめに詰める(375x667縦持ちで実測済み) */
+  .result-squad-info{ margin-top:2px; display:flex; flex-direction:column; gap:1px; align-items:center; }
+  .result-squad-title{ font-size:10px; letter-spacing:2px; color:var(--ink-dim); }
+  .result-squad-row{ display:flex; align-items:baseline; gap:10px; font-size:12px; letter-spacing:0.5px; }
+  .result-squad-row .sq-mark{ font-size:9px; }
+  .result-squad-row.sq-me .result-squad-name{ color:var(--amber); }
+  .result-squad-name{ font-weight:700; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .result-squad-kills{ font-family:'Share Tech Mono',monospace; color:var(--ink-dim); }
+  .result-squad-state{ font-size:10px; color:var(--ink-dim); }
+
   /* リザルト画面: 報酬表示の追加で縦にはみ出さないよう全体を詰める */
   #resultScreen{ padding:10px 24px; }
   #resultScreen .rank{ font-size:clamp(28px,calc(7.5 * var(--vw)),46px); }
@@ -1575,7 +1586,7 @@
   }
   #playerNameInput:focus{ border-color:var(--amber); }
 
-  #modeTabs, #capacityTabs, #mapTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #modeTabs, #capacityTabs, #mapTabs, #teamSizeTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   /* 通常 / リアル の切替スイッチ(マップ選択の上) */
   #mapModeToggle{ display:flex; align-items:center; justify-content:center; gap:0; flex-wrap:wrap;
     margin-bottom:calc(1.4 * var(--vh)); }
@@ -1593,7 +1604,7 @@
     font-size:11px; letter-spacing:0.5px; color:var(--ink-dim); }
   .mode-tab-wrap{ position:relative; display:inline-flex; }
   .multi-xp-pop{
-    position:absolute; top:-13px; right:-9px; z-index:2;
+    position:absolute; top:-11px; right:3px; z-index:2;   /* ボタンの内側右上へ完全収容(隣に触れない) */
     background:linear-gradient(180deg,#ff8a5b,#ff3b3b); color:#fff2c2;
     font-family:'Russo One',sans-serif; font-size:9px; line-height:1.15; text-align:center;
     padding:5px 4px 4px; border-radius:50%; width:34px; height:34px; box-sizing:border-box;
@@ -1605,11 +1616,11 @@
     0%,100%{ transform:rotate(14deg) scale(1); }
     50%{ transform:rotate(14deg) scale(1.13); }
   }
-  .mode-tab, .cap-tab, .map-tab{
+  .mode-tab, .cap-tab, .map-tab, .team-tab{
     padding:9px 20px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
-  .mode-tab.active, .cap-tab.active, .map-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  .mode-tab.active, .cap-tab.active, .map-tab.active, .team-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #multiOptions{ margin-top:4px; }
 
   #invertPitchRow{
@@ -2166,6 +2177,29 @@
   .tb-chip b{ font-family:'Share Tech Mono',monospace; font-weight:400; }
   .tb-chip.up{ color:#8fdcff; }
   .tb-chip.down{ color:#ff9a9a; }
+  /* ===== チーム戦: 小隊バー(味方のHP/状態) =====
+     #topLeft(縦flex・gap8)の中=HPパネルの直下なので、位置の計算なしで構造上重ならない。
+     幅はHPパネルと同じ値にそろえる(#hpPanel 210 / narrow-screen 180。変えたら両方直す)。
+     タップは素通り(pointer-events:none)なのでスクロールロック除外リストへの追加は不要。 */
+  #squadPanel{ width:210px; padding:4px 12px 6px; pointer-events:none; border-top:2px solid #58d47e; }
+  .sq-row{ padding:2px 0 1px; }
+  .sq-row + .sq-row{ border-top:1px solid rgba(255,255,255,0.08); }
+  .sq-top{ display:flex; align-items:baseline; gap:5px; }
+  /* 味方の印は頭上マーカーと同じ「緑の▽」(色覚多様性のため色だけに頼らず形でそろえる) */
+  .sq-mark{ color:#58e07e; font-size:9px; flex-shrink:0; }
+  .sq-name{ font-weight:700; font-size:11px; letter-spacing:0.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .sq-state{ font-size:9px; flex-shrink:0; letter-spacing:0.5px; }
+  .sq-hp-num{ font-size:10px; color:#cfe8d6; margin-left:auto; flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .sq-state{ margin-left:6px; }
+  .sq-hp-track{ height:7px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); }
+  .sq-hp-fill{ height:100%; width:100%; background:linear-gradient(90deg,#6bff8e,#2fd35a); transition:width .15s; }
+  /* ダウン中=橙の点滅 / 死亡=灰色で沈める */
+  .sq-row.sq-down .sq-state{ color:#ffb020; animation:sqBlink 0.9s ease-in-out infinite; }
+  .sq-row.sq-down .sq-hp-fill{ background:linear-gradient(90deg,#ffc46b,#ff9420); animation:sqBlink 0.9s ease-in-out infinite; }
+  .sq-row.sq-dead{ opacity:0.5; }
+  .sq-row.sq-dead .sq-name, .sq-row.sq-dead .sq-state, .sq-row.sq-dead .sq-mark{ color:#9aa3ad; }
+  @keyframes sqBlink{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+
   /* 安置情報フィールドをミニマップの左に添える横並び配置 */
   #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:row; align-items:flex-start; gap:8px; }
   #counterPanel{ padding:7px 10px; text-align:right; white-space:nowrap; }
@@ -2183,9 +2217,9 @@
   #minimapWrap{ width:120px; height:120px; flex-shrink:0; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:rgba(11,19,32,0.5); box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
   #minimapCanvas{ width:100%; height:100%; display:block; }
 
-  #killFeed{ position:absolute; top:165px; right:14px; width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
-  .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.72); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateX(8px); animation:kfIn .25s forwards; max-width:100%; }
-  @keyframes kfIn{ to{opacity:1; transform:translateX(0);} }
+  #killFeed{ position:absolute; top:140px; right:14px;   /* 操作ヒント帯と交差しない高さ */ width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
+  .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%; }
+  @keyframes kfIn{ to{opacity:1; transform:translateY(0);} }   /* 横スライドは右端で見切れて斜め欠けに見えた */
 
   /* #appRootの最後(#hudの外)に置いてあるので、z-indexは他の全画面(#startScreen:30含む)より
      大きくして必ず最前面に出す。pointer-events:noneは#hudから継承していたため明示が必要。 */
@@ -2237,6 +2271,16 @@
   #crosshair::before{ left:11px; top:0; width:4px; height:26px; }
   #crosshair::after{ left:0; top:11px; width:26px; height:4px; }
   #crosshair.lock::before, #crosshair.lock::after{ background:#ff5d5d; }
+
+  /* ゲストのヒットマーカー: 見た目命中の瞬間に照準へ×印を0.15秒重ねる(showHitMarker)。
+     普段は透明。hm-showが付いたときだけアニメーションで出て消える */
+  #hitMarker{ position:absolute; left:50%; top:50%; width:44px; height:44px; margin:-22px 0 0 -22px; pointer-events:none; opacity:0; }
+  #hitMarker::before, #hitMarker::after{ content:''; position:absolute; left:19px; top:0; width:6px; height:44px;
+    background:rgba(255,236,180,0.95); border-radius:2px; box-shadow:0 0 6px rgba(255,200,80,0.8); }
+  #hitMarker::before{ transform:rotate(45deg); }
+  #hitMarker::after{ transform:rotate(-45deg); }
+  #hitMarker.hm-show{ animation:hmPop 0.15s ease-out forwards; }
+  @keyframes hmPop{ 0%{ opacity:1; transform:scale(1.3); } 70%{ opacity:0.9; transform:scale(1); } 100%{ opacity:0; transform:scale(0.92); } }
 
   #joystickBase{
     position:absolute; left:22px; bottom:22px; width:124px; height:124px; border-radius:50%;
@@ -2499,8 +2543,9 @@
 
   /* ---------- RESULT SCREENS ---------- */
   .resultScreen{
-    position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    background:rgba(4,6,10,0.92); text-align:center; padding:24px;
+    position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; justify-content:safe center;   /* 溢れたら上を基準に(順位#Nの見切れ対策) */
+    background:rgba(3,5,9,0.97); text-align:center; padding:24px;
     overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y;
   }
   .resultScreen .rank{ font-family:'Russo One',sans-serif; font-size:clamp(40px,calc(12 * var(--vw)),80px); letter-spacing:2px; }
@@ -3680,7 +3725,9 @@
 
   /* 同上。バトルHUDも同じ条件で切り替える */
   html.narrow-screen #hpPanel{ width:180px; }
-  html.narrow-screen #killFeed{ width:170px; top:148px;}
+  /* 小隊バーの幅はHPパネルに追従させる(180に合わせる。#hpPanelを変えたらここも直す) */
+  html.narrow-screen #squadPanel{ width:180px; }
+  html.narrow-screen #killFeed{ width:170px; top:123px;}
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
   /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */
   html.narrow-screen #raidHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
@@ -3992,3 +4039,15 @@ html.narrow-screen .resultBtnRow .share-icon-btn{ width:40px; }
 }
 /* アイコンだけのボタンでは文字より少し大きく見せる */
 .share-icon-btn .share-ico{ width:19px; height:19px; vertical-align:-0.2em; }
+
+/* チーム戦: 自分がダウン中は攻撃UIを無効に見せる(発射自体はホスト/ソロ側で既に弾いている。
+   ボタンだけ生きていると「押せるのに撃てない」に見える)。render.jsのupdateSquadPanelが印を付ける */
+body.self-downed #fireBtn, body.self-downed #dashBtn, body.self-downed #movePanel{
+  opacity:0.35; pointer-events:none; filter:grayscale(0.8);
+}
+
+/* チーム編成の補足(1行・小さく)。何が変わるかを選ぶ前に伝える */
+.team-size-note{ font-size:10px; color:rgba(230,236,245,0.55); margin-top:5px; letter-spacing:0.3px; }
+
+/* リザルトのバッジ集約チップ(6件を超えたぶん) */
+.result-badge.more{ background:rgba(255,255,255,0.12); color:#cfd6de; }

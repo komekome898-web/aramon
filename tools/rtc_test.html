@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>net_transport.js 単体テスト(WebRTC直結)</title>
+<!-- 同一ページ内にホスト/ゲストのTransportを2つ作り、シグナリングをページ内スタブで
+     注入して直結させる。実Firebaseには一切つながない(tools/rtc_test.mjsから自動実行)。
+     確認項目: ①シグナリング往復→接続確立 ②fast/reliable両チャンネルの送受信(両方向)
+               ③片側closeでのフォールバック(降格)コールバック発火                    -->
+</head>
+<body>
+<pre id="log"></pre>
+<script src="../net_transport.js"></script>
+<script>
+(async function(){
+  const results = { tests:{}, errors:[], ok:false };
+  const logEl = document.getElementById('log');
+  const log = (m)=>{ logEl.textContent += m + '\n'; };
+  function waitFor(fn, ms, label){
+    return new Promise((resolve, reject)=>{
+      const t0 = Date.now();
+      (function poll(){
+        let v = false;
+        try{ v = fn(); }catch(err){}
+        if(v) return resolve(v);
+        if(Date.now()-t0 > ms) return reject(new Error('タイムアウト: ' + label));
+        setTimeout(poll, 50);
+      })();
+    });
+  }
+
+  // RTDBの代わりのページ内シグナリング(30ms遅延で往復を模す)。
+  // 本番のrooms/{id}/rtc/{from}_{to}と同じ「宛先別の一方通行の便」の形にしてある
+  const bus = new Map(); // 'from_to' -> [cb]
+  const SIGNAL_DELAY_MS = 30;
+  const signaling = {
+    send(from, to, msg){
+      setTimeout(()=>{
+        const cbs = bus.get(from + '_' + to) || [];
+        for(const cb of cbs) cb(JSON.parse(JSON.stringify(msg)));
+      }, SIGNAL_DELAY_MS);
+    },
+    watch(from, to, cb){
+      const k = from + '_' + to;
+      if(!bus.has(k)) bus.set(k, []);
+      bus.get(k).push(cb);
+      return ()=>{};
+    },
+  };
+
+  const T = NetTransport.Transport;
+  const host = new T();
+  const guest = new T();
+  const hostStates = [], guestStates = [];
+  host.onPeerState  = (pid, state, reason)=> hostStates.push({ pid, state, reason });
+  guest.onPeerState = (pid, state, reason)=> guestStates.push({ pid, state, reason });
+  // テストを速くするためping/沈黙検知を短縮(本番は1000/5000ms)
+  host.attach({ roomId:'testroom', myPid:'H', isHost:true,  hostPid:'H', peerPids:['G'],
+                signaling, pingIntervalMs:500, silenceTimeoutMs:2500 });
+  guest.attach({ roomId:'testroom', myPid:'G', isHost:false, hostPid:'H', peerPids:['H'],
+                 signaling, pingIntervalMs:500, silenceTimeoutMs:2500 });
+
+  try{
+    // ① シグナリング往復 → fast/reliable両チャンネルopen=接続確立
+    await waitFor(()=> host.isRtcActiveAllPeers() && guest.isRtcActiveToHost(), 10000, '接続確立');
+    results.tests.connect = true;
+    log('① シグナリング往復→接続確立 OK');
+
+    // ② 両チャンネル送受信(fast: input/auth、reliable: fire/shot。両方向を跨ぐ)
+    const got = { input:null, fire:null, auth:null, shot:null };
+    host.onMessage('input', (k, d)=>{ got.input = d; });
+    host.onMessage('fire',  (k, d)=>{ got.fire = { k, d }; });
+    guest.onMessage('auth', (k, d)=>{ got.auth = d; });
+    guest.onMessage('shot', (k, d)=>{ got.shot = { k, d }; });
+    if(!guest.send('input', { mx:1, my:0, seq:7 }))         throw new Error('input送信失敗(fast ゲスト→ホスト)');
+    if(!guest.send('fire',  { facing:1.5 }, 'G-key-1'))     throw new Error('fire送信失敗(reliable ゲスト→ホスト)');
+    if(!host.send('auth',   { seq:1, t:100 }))              throw new Error('auth送信失敗(fast ホスト→ゲスト)');
+    if(!host.send('shot',   { type:'proj', x:12 }, 'H-key-1')) throw new Error('shot送信失敗(reliable ホスト→ゲスト)');
+    await waitFor(()=> got.input && got.fire && got.auth && got.shot, 5000, 'メッセージ受信');
+    if(got.input.seq!==7)        throw new Error('inputペイロード不一致: ' + JSON.stringify(got.input));
+    if(got.fire.k!=='G-key-1' || got.fire.d.facing!==1.5) throw new Error('fireキー/ペイロード不一致: ' + JSON.stringify(got.fire));
+    if(got.auth.seq!==1)         throw new Error('authペイロード不一致: ' + JSON.stringify(got.auth));
+    if(got.shot.k!=='H-key-1' || got.shot.d.x!==12)       throw new Error('shotキー/ペイロード不一致: ' + JSON.stringify(got.shot));
+    // RTT計測(ping/pong)が動いているかも見る
+    await waitFor(()=>{
+      const p = Array.from(guest.peers.values())[0];
+      return p && p.rttMs!=null;
+    }, 3000, 'RTT計測');
+    results.tests.channels = true;
+    log('② fast/reliable両チャンネル送受信 OK');
+
+    // ③ 片側close → 両側でフォールバック(降格)コールバックが発火し、rtc非アクティブになる
+    guest.debugKillPeer('H'); // 突然の切断を模す(ゲスト側は即降格、ホスト側は沈黙検知)
+    await waitFor(()=> guestStates.some(s=> s.pid==='H' && s.state==='down'), 3000, 'ゲスト側の降格通知');
+    await waitFor(()=> hostStates.some(s=> s.pid==='G' && s.state==='down'), 7000, 'ホスト側の降格通知(close/沈黙検知)');
+    await waitFor(()=> !guest.isRtcActiveToHost() && !host.isRtcActiveAllPeers(), 1000, 'rtc非アクティブ化');
+    results.tests.fallback = true;
+    log('③ 片側closeでのフォールバック OK');
+
+    results.ok = true;
+    log('全項目パス');
+  }catch(err){
+    results.errors.push(String(err && err.message || err));
+    log('NG: ' + err);
+  }finally{
+    host.detach();
+    guest.detach();
+  }
+  window.__rtcTestResults = results;
+})();
+</script>
+</body>
+</html>

@@ -17,7 +17,8 @@ let nextId = 1;
 let player = null;
 let matchTime = 0;
 let zoneState = null;
-let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false };
+let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false,
+             teamSize:1 };   // 1=個人戦(従来どおり)。2以上でチーム戦。書くのは teamResetState()/assignTeams()(combat.js)だけ
 
 /* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
    バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが
@@ -538,6 +539,36 @@ function pickSpawnPointsBatch(n){
   }
   return points;
 }
+/* ===== チーム戦用スポーン =====
+   チームごとに1つのアンカーを従来のバッチ関数で均等配置し、同チームのメンバーを
+   アンカーの周りに隣接して並べる。返り値は「チーム0のメンバー…チーム1のメンバー…」の
+   平坦な配列(エンティティ生成順=チーム割当順と同じ並び)。
+   **ソロ用(pickTeamSpawnPointsBatch)とシード付き(seededPickTeamSpawnPointsBatch)は対。
+   直すときは必ず両方直す**(spawnLoot/seededSpawnLootと同じ決まり)。 */
+function teamPointsAroundAnchors(anchors, teamSize, rnd){
+  const points = [];
+  for(const an of anchors){
+    for(let j=0;j<teamSize;j++){
+      let placed = null;
+      for(let tries=0; tries<12 && !placed; tries++){
+        const a = (j/teamSize)*Math.PI*2 + rnd()*0.8;
+        const d = TEAM_SPAWN_SPREAD*(0.6+rnd()*0.8);
+        const x = an.x+Math.cos(a)*d, y = an.y+Math.sin(a)*d;
+        if(isOnHazard(x,y,40)) continue;
+        placed = {x,y};
+      }
+      // 置き場が見つからなければアンカーのすぐ横に妥協して置く(重なりはseparateEntitiesが直す)
+      points.push(placed || { x:an.x + j*30, y:an.y });
+    }
+  }
+  return points;
+}
+function pickTeamSpawnPointsBatch(teamCount, teamSize){
+  return teamPointsAroundAnchors(pickSpawnPointsBatch(teamCount), teamSize, Math.random);
+}
+function seededPickTeamSpawnPointsBatch(rng, teamCount, teamSize){
+  return teamPointsAroundAnchors(seededPickSpawnPointsBatch(rng, teamCount), teamSize, rng);
+}
 function createMonster(elementKey, isPlayer, name, overrides){
   const el = ELEMENTS[elementKey];
   const sp = (overrides && overrides.spawnPoint) ? overrides.spawnPoint : pickSpawnPoint();
@@ -561,6 +592,8 @@ function createMonster(elementKey, isPlayer, name, overrides){
     stateUntil:0, stateCooldownUntil: (STATE_CHANGES[elementKey] ? STATE_CHANGES[elementKey].cooldown/2 : 0),
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
     recentAttackers:{},
+    // チーム戦(combat.jsのassignTeamsが割り当てる)。null=個人戦=従来どおり
+    teamId:null, downed:false, downedUntil:0, reviveProgress:0,
   };
 }
 function activeMove(m){
@@ -1031,7 +1064,34 @@ function seededPickSpawnPointsBatch(rng, n){
 function addParticle(p){ particles.push(Object.assign({life:1,maxLife:1,vx:0,vy:0,size:4,z:0}, p)); }
 function spawnHit(x,y,z,color){ for(let i=0;i<5;i++){ const a=rand(0,Math.PI*2), sp=rand(40,140); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.35,maxLife:0.35,color,size:rand(2,4)}); } }
 function spawnDeath(x,y,z,color){ for(let i=0;i<14;i++){ const a=rand(0,Math.PI*2), sp=rand(60,220); addParticle({type:'spark',x,y,z,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.6,maxLife:0.6,color,size:rand(3,6)}); } }
-function spawnDmgText(x,y,z,val,color,big){ addParticle({type:'text',x,y,z,vx:rand(-10,10),vy:-50,life:big?0.85:0.7,maxLife:big?0.85:0.7,color:color||'#fff',text:String(val),big:!!big}); }
+/* 【数字の共有スタッカー】数字が近くに重なると全部読めなくなる(批評指摘)。
+   「直前の1点」を覚える方式では別の対象・別の種類(与ダメ/GT/回復)の数字と
+   衝突したままだったので、**生きている数字パーティクル全部**と突き合わせて、
+   重なる間は上へ積み・ときどき左右へ逃がす。種別・対象を問わず1か所で効く。
+   数字は多くても同時に数枚なので全走査でも安い。 */
+function dmgTextFreeSpot(x, y, z){
+  let ox = 0, oz = 0, tries = 0;
+  const clash = ()=> particles.some(pt=> pt.type==='text' && pt.life > 0.12
+    && Math.hypot(pt.x-(x+ox), pt.y-y) < 55 && Math.abs((pt.z||0)-(z+oz)) < 26);
+  while(tries < 6 && clash()){
+    tries++;
+    // 上と左右を交互に使う(上ばかりに積むと画面上端で見切れる)
+    if(tries % 2 === 1) ox = (ox <= 0 ? Math.abs(ox)+34 : -ox);
+    else oz += 26;
+  }
+  return { x: x+ox, z: z+oz };
+}
+function spawnDmgText(x,y,z,val,color,big){
+  const spot = dmgTextFreeSpot(x, y, z||0);
+  addParticle({type:'text',x:spot.x,y,z:spot.z,vx:rand(-10,10),vy:-50,
+    life:big?0.85:0.7,maxLife:big?0.85:0.7,color:color||'#fff',text:String(val),big:!!big});
+}
+/* ゲストの予測ダメージ数字(見た目専用)。ホスト確定の実数字と見分けが付くよう
+   小さく半透明で描かれる(render.jsのdrawParticleがpredを見る)。値は概算でよい */
+function spawnPredDmgText(x,y,z,val){
+  const spot = dmgTextFreeSpot(x, y, z||0);   // 予測数字も同じスタッカーを通す
+  addParticle({type:'text',x:spot.x,y,z:spot.z,vx:rand(-8,8),vy:-42,life:0.5,maxLife:0.5,color:'#ffeec8',text:String(Math.round(val)),pred:true});
+}
 
 function displayNameFor(ent){
   if(!ent) return '';
@@ -1049,7 +1109,9 @@ function pushKillFeed(text){
   const div = document.createElement('div');
   div.className='kf-item'; div.textContent=text;
   feed.appendChild(div);
-  while(feed.children.length>5) feed.removeChild(feed.firstChild);
+  /* 表示は3行まで。375px高の端末では4行目がFIREボタンに被る(批評指摘)。
+     古い行から落とす(荒野行動と同じく、フィードは「直近の戦況」だけを流す) */
+  while(feed.children.length>3) feed.removeChild(feed.firstChild);
   setTimeout(()=>{ div.style.transition='opacity .5s'; div.style.opacity='0'; setTimeout(()=>div.remove(),520); }, 4200);
 }
 let toastTimer=null;

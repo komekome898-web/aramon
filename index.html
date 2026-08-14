@@ -17,7 +17,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script type="module" src="firebase.js"></script>
+<!-- 計測ハーネス(tools/net_probe.html)は ?netprobe=1 付きで開く。その時だけfirebase.jsを読み込まず、
+     親ページが注入する window.__aramon* スタブ(ローカルバス)が通信の橋を担う。通常時は従来どおり。 -->
+<script type="module">
+// 読み込み失敗はcatchで握る(Firebaseへ届かない環境=オフライン/開発でも
+// 未処理拒否をコンソールへ出さずソロで遊べる。従来のstatic読み込みと同じ扱い)
+if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{});
+</script>
 </head>
 <body>
 
@@ -297,6 +303,16 @@
           <button class="cap-tab" data-cap="4">4人</button>
         </div>
       </div>
+      <!-- チーム編成(ソロ/マルチ共通。レイドでは出さない=setLobbyModeが隠す)。
+           選択は setLobbyTeamSize() だけが書く(前回の選択も記憶される) -->
+      <div id="teamSizeRow">
+        <div class="pick-label" style="margin-top:10px;">チーム編成</div>
+        <div id="teamSizeTabs">
+          <button class="team-tab active" data-team="1">シングル</button>
+          <button class="team-tab" data-team="3">スクワッド(3人1組)</button>
+        </div>
+        <div class="team-size-note">スクワッド＝3人1組のチーム戦。仲間はBot・マスモンが補完し、倒れても仲間が近くにいれば蘇生できます</div>
+      </div>
       <div id="invertPitchRow">
         <span id="invertPitchLabel">視点上下反転</span>
         <button id="invertPitchToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="invertPitchLabel">
@@ -461,6 +477,10 @@
       <div id="statusIcons"></div>
       <div id="trainBuffsLine"></div>
     </div>
+    <!-- チーム戦の小隊バー(味方のHP/状態)。#topLeftは縦flexなのでHPパネルの直下に並び、
+         位置計算なしで重ならない。中身は render.js の updateSquadPanel() が書く。
+         pointer-events:none(タップは素通り)なのでスクロールロック除外リストへの追加は不要 -->
+    <div class="hud-panel hidden" id="squadPanel"></div>
   </div>
 
   <div class="hud-panel" id="statsPanel">
@@ -482,6 +502,8 @@
 
   <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／Spaceでダッシュ／スティックを上に2回弾くとオートラン</div>
   <div id="crosshair"></div>
+  <!-- ゲストのヒットマーカー(見た目命中の瞬間に照準へ重ねる×印0.15秒。showHitMarker) -->
+  <div id="hitMarker"></div>
 
   <div class="hud-panel" id="movePanel">
     <div id="moveIcon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#f4c430"/></svg></div>
@@ -589,6 +611,8 @@
     </div>
   </div>
   <div id="scoreSubmitStatus"></div>
+  <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->
+  <div id="resultSquadInfo" class="result-squad-info hidden"></div>
   <div id="resultCurrencyLine" class="result-currency"></div>
   <div id="resultBadges" class="result-badges hidden"></div>
   <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
@@ -1460,6 +1484,10 @@
 <script src="ui.js"></script>
 <!-- リアルマップ(テスト)のWebGL描画。ESモジュールなので window.__aramonReal3D 経由で使う -->
 <script type="module" src="real3d.js"></script>
+<!-- トランスポート抽象化(rtdb/WebRTC)。network.jsが参照するのでその前に置く。
+     __aramon*のラップはDOMContentLoaded(=firebase.jsモジュール実行後)で行うため、
+     firebase.jsのタグ位置より後である必要はない -->
+<script src="net_transport.js"></script>
 <script src="network.js"></script>
 <script>
   // sw.js内のCACHE_NAMEを読み取り、タイトルのバージョン表記に反映する
@@ -1471,7 +1499,8 @@
   }).catch(()=>{});
 </script>
 <script>
-  if('serviceWorker' in navigator){
+  // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
+  if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
     let refreshing = false;
     // 新しいService Workerが制御を奪った瞬間に、ページを1回だけ自動リロードして最新版へ切り替える
     navigator.serviceWorker.addEventListener('controllerchange', ()=>{

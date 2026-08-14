@@ -820,6 +820,14 @@ function drawMonsterShape(e, color, dark){
     }
   }
 }
+/* 頭上ラベル(名前・▽・ダウン・蘇生ゲージ)の画面上の拡大上限。
+   p.scaleのまま描くとカメラ至近で文字が画面の半分を覆う(縦持ち実測で発生)。 */
+const TEAM_LABEL_MAX_SCALE = 2.2;
+/* カメラ至近ではラベルごと消す(上限で止めても位置が画面中央へ来て操作UIへ被る)。
+   スケール2.0から薄れはじめ3.0で完全に消える。荒野行動の近距離マーカーと同じ挙動 */
+function teamLabelFade(){
+  return clamp((3.0 - _monDrawScale)/1.0, 0, 1);
+}
 function drawMonster(e,p){
   const el = ELEMENTS[e.element];
   // 召喚演出中: せり上がりはせず、光が収束するにつれてその場で姿を現す
@@ -849,6 +857,10 @@ function drawMonster(e,p){
     ctx.restore();
   }
 
+  // チーム戦のダウン中は倒れ姿勢(横倒し)で最低限の見分けを付ける(詳しい演出は別担当)。
+  // スプライトだけ回し、この後の状態リング・HPゲージは回さない
+  const downedPose = (typeof entityDowned==='function') && entityDowned(e);
+  if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
   const displayImg = getDisplayImage(e);
   if(displayImg){
     drawMonsterPortrait(e, displayImg, e.hitFlash>0);
@@ -879,6 +891,7 @@ function drawMonster(e,p){
       [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*eyeOff+Math.cos(e.facingAngle)*2,-e.radius*0.05+Math.sin(e.facingAngle)*2,e.radius*0.07,0,Math.PI*2); ctx.fill(); });
     }
   }
+  if(downedPose) ctx.restore();   // 倒れ姿勢の回転はスプライトまで
 
   if(e.burnUntil > matchTime){
     ctx.save();
@@ -934,12 +947,71 @@ function drawMonster(e,p){
   if(!e.isRaidBoss){
     const barW = e.radius*2.1;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
+    /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
+       巨大なバーが操作UIへ被っていた=批評指摘。敵は従来どおり=撃ち合いの的。
+       HPは小隊バーが常時見せているので、近くで消えても情報は失わない) */
+    const allyBarFade = (!selfBar && (typeof sameTeam==='function') && player && sameTeam(player, e))
+      ? teamLabelFade() : 1;
+    if(allyBarFade > 0.02){
+      ctx.save();
+      if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
+      else if(allyBarFade < 1) ctx.globalAlpha = allyBarFade;
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
+      ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
+      ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
+      ctx.restore();
+    }
+  }
+
+  /* チーム戦のダウン表現: 出血リング(赤の脈動・2重)+出血死までの残り秒。
+     蘇生が進んでいる間は頭上に円形の進捗ゲージ(reviveProgress/TEAM_REVIVE_SEC)を重ねる。
+     ゲストにも downedUntil/reviveProgress は同期済み(authStateのdw/rv)なので同じ絵が出る */
+  if((typeof entityDowned==='function') && entityDowned(e)){
+    const pulse = 0.45 + 0.3*Math.sin(matchTime*6);
     ctx.save();
-    if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
-    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
-    ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
-    ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, e.radius*0.55, e.radius*1.35, 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = pulse*0.5;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, e.radius*0.55, e.radius*1.7, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
+    /* ラベルとゲージは自分には出さない(自分のダウンは画面下の帯が唯一の表示。
+       二重に出すと重なって読めない=批評指摘)。頭上要素はスケール上限を掛けて
+       カメラ至近でも巨大化させない(TEAM_LABEL_MAX_SCALE)。 */
+    if(!e.isPlayer){
+      const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale));
+      const fade = teamLabelFade();
+      if(fade > 0.02){
+        const remainDown = Math.max(0, Math.ceil((e.downedUntil||0) - matchTime));
+        ctx.save();
+        ctx.scale(lblK,lblK);
+        ctx.globalAlpha = fade;
+        ctx.textAlign='center';
+        ctx.font = "bold 11px 'Rajdhani', sans-serif";
+        ctx.fillStyle = '#ff9a8a';
+        if(!renderHeavyLoad){ ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(255,40,40,0.7)'; }
+        ctx.fillText(`ダウン ${remainDown}`, 0, barY - 16);
+        if(e.reviveProgress > 0 && typeof TEAM_REVIVE_SEC!=='undefined'){
+          const ratio = clamp(e.reviveProgress/TEAM_REVIVE_SEC, 0, 1);
+          const gy = barY - 44;
+          /* %はリングの中に描く(リングの下に書くと名前・HPバーと積み重なって
+             全部読めなくなる=批評2巡目の主犯)。名前・▽はダウン中は描かない
+             (誰かは小隊バーが伝える)ので、この縦積みだけで完結する */
+          ctx.lineWidth = 5; ctx.lineCap='round';
+          ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+          ctx.beginPath(); ctx.arc(0, gy, 14, 0, Math.PI*2); ctx.stroke();
+          ctx.strokeStyle = '#58e07e';
+          if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = '#58e07e'; }
+          ctx.beginPath(); ctx.arc(0, gy, 14, -Math.PI/2, -Math.PI/2 + ratio*Math.PI*2); ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.font = "bold 9px 'Rajdhani', sans-serif";
+          ctx.fillStyle='#eafff0';
+          ctx.fillText(`${Math.round(ratio*100)}%`, 0, gy + 3);
+        }
+        ctx.restore();
+      }
+    }
   }
 
   if(e.stateUntil > matchTime){
@@ -959,17 +1031,41 @@ function drawMonster(e,p){
     }
   }
 
-  if(!e.isPlayer && dist(e,player)<700){
+  /* チーム戦の味方は距離に関係なく名前を出し、緑の名前+頭上の▽で敵と即区別する。
+     ▽は「味方だけの形」(色覚多様性のため色だけに頼らない。小隊バーのsq-markと同じ記号) */
+  const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
+  const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
+  if(!e.isPlayer && !entIsDowned && (isAllyOfPlayer || dist(e,player)<700)){
+    // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
+    ctx.save();
+    { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
+    const allyFade = isAllyOfPlayer ? teamLabelFade() : 1;
+    if(allyFade <= 0.02){ ctx.restore(); ctx.restore(); return; }
+    ctx.globalAlpha = allyFade;
     ctx.font="11px 'Rajdhani', sans-serif";
-    ctx.fillStyle = e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)';
+    ctx.fillStyle = isAllyOfPlayer ? '#7dffa8' : (e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)');
     ctx.textAlign='center';
-    if(e.isMastermonBot && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor='#ffb703'; }
+    if((isAllyOfPlayer || e.isMastermonBot) && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor = isAllyOfPlayer ? '#2fd35a' : '#ffb703'; }
     ctx.fillText((e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
+    ctx.shadowBlur = 0;
     // ゴースト(他の人が育てたマスモン)は、誰の子かを小さく添える
     if(e.ghostOwner){
       ctx.font="9px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(255,215,106,0.75)';
       ctx.fillText(e.ghostOwner+' の', 0, -e.radius*1.55-24);
     }
+    if(isAllyOfPlayer){
+      const my = -e.radius*1.55 - (e.ghostOwner ? 38 : 28);   // 名前(とゴースト表記)の上
+      const bob = Math.sin(matchTime*3 + e.id)*1.5;           // ふわふわ上下して目に留まるように
+      ctx.save();
+      ctx.globalAlpha = 0.95*allyFade;   // 近距離フェードを▽にも効かせる(上書きしない)
+      ctx.fillStyle = '#58e07e';
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-6, my-9+bob); ctx.lineTo(6, my-9+bob); ctx.lineTo(0, my+bob);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -2600,12 +2696,22 @@ function drawParticle(pt,p){
   ctx.save();
   ctx.translate(p.x,p.y);
   if(pt.type==='text'){
-    ctx.scale(p.scale,p.scale);
+    /* 文字は画面上の大きさに上限を付ける。カメラ至近(自分の被弾・出血)だと
+       p.scaleが5〜10になり、数字1つが画面の半分を覆っていた(縦持ち実測で発生) */
+    const ts = Math.min(p.scale, 2.0);
+    ctx.scale(ts,ts);
     ctx.textAlign='center'; ctx.globalAlpha=a;
     if(pt.big){
       // オーラ有利/不利の被弾ダメージは大きく縁取りして強調
       ctx.font="bold 20px 'Share Tech Mono', monospace";
       ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.strokeText(pt.text, 0,0);
+      ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
+    } else if(pt.pred){
+      /* ゲストの予測ダメージ(見た目専用)。確定の実数字より一段小さく・薄くして
+         二重に見せない。ただし縁取りは付ける(縁なしの灰文字は戦闘距離で読めない=批評指摘) */
+      ctx.font="bold 15px 'Share Tech Mono', monospace";
+      ctx.globalAlpha = a*0.8;
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else {
       ctx.font="bold 13px 'Share Tech Mono', monospace";
@@ -2944,6 +3050,32 @@ function drawDangerVignette(){
       ctx.fillStyle = grad;
       ctx.fillRect(0,0,viewW,viewH);
     }
+  }
+  ctx.restore();
+}
+/* チーム戦: 自分がダウン中は画面全体に赤いビネット+「仲間の蘇生を待て (残りN秒)」。
+   蘇生が進んでいる間は文言を差し替え、進み(reviveProgress/TEAM_REVIVE_SEC)をバーで見せる。
+   ゲストにも downedUntil/reviveProgress は同期済み(authStateのdw/rv)なので同じ絵が出る */
+function drawDownedOverlay(){
+  if(!(typeof entityDowned==='function') || !player || !entityDowned(player)) return;
+  const pulse = 0.30 + 0.10*Math.sin(matchTime*2.5);
+  const grad = ctx.createRadialGradient(viewW/2,viewH/2, Math.min(viewW,viewH)*0.30, viewW/2,viewH/2, Math.max(viewW,viewH)*0.68);
+  grad.addColorStop(0,'rgba(140,0,0,0)');
+  grad.addColorStop(1,`rgba(150,10,10,${pulse})`);
+  ctx.save();
+  ctx.fillStyle = grad; ctx.fillRect(0,0,viewW,viewH);
+  const remain = Math.max(0, Math.ceil((player.downedUntil||0) - matchTime));
+  const reviving = player.reviveProgress > 0;
+  ctx.textAlign='center';
+  ctx.font = "bold 20px 'Rajdhani', sans-serif";
+  ctx.fillStyle = reviving ? 'rgba(150,255,180,0.95)' : 'rgba(255,120,110,0.95)';
+  if(!renderHeavyLoad){ ctx.shadowBlur = 12; ctx.shadowColor = reviving ? 'rgba(60,220,110,0.8)' : 'rgba(255,60,40,0.8)'; }
+  ctx.fillText(reviving ? '蘇生されている…！' : `仲間の蘇生を待て (残り${remain}秒)`, viewW/2, viewH*0.20);
+  if(reviving && typeof TEAM_REVIVE_SEC!=='undefined'){
+    const w = 180, h = 6, x = viewW/2 - w/2, y = viewH*0.20 + 12;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#58e07e'; ctx.fillRect(x, y, w*clamp(player.reviveProgress/TEAM_REVIVE_SEC,0,1), h);
   }
   ctx.restore();
 }
@@ -5222,6 +5354,16 @@ function perfFrameEnd(){
     `draw ${perf.drawables}${renderHeavyLoad ? '  [heavy]' : ''}`,
   ];
   if(st) lines.push(`地形 ${String(st.patchVerts).padStart(5)}頂点 ${st.patchMs.toFixed(1)}ms x${st.patchCount}  岩${st.obst}`);
+  // マルチ中は通信の状態も1行出す(net_transport.jsの実測。rtc/rtdbとRTT)
+  if(netState.mode==='multi' && typeof window.__aramonNetStats==='function'){
+    try{
+      const ns = window.__aramonNetStats();
+      const rtts = (ns.peers||[]).map(p=>p.rttMs).filter(v=>v!=null);
+      const rtt = rtts.length ? Math.round(rtts.reduce((s,v)=>s+v,0)/rtts.length)+'ms' : '--';
+      const mode = (ns.isHost ? ns.rtcAllPeers : ns.rtcToHost) ? 'rtc' : 'rtdb';
+      lines.push(`net ${mode}  rtt ${rtt}  配信 ${ns.authAvgIntervalMs}ms±${ns.authJitterMs}`);
+    }catch(err){}
+  }
   el.textContent = lines.join('\n');
   el.classList.toggle('warn', fps < 50 && fps >= 35);
   el.classList.toggle('bad', fps < 35);
@@ -5390,6 +5532,7 @@ function render(){
   }
   if(introState.active) safeDraw(drawSummonIntroFront);
   safeDraw(drawDangerVignette);
+  safeDraw(drawDownedOverlay);   // チーム戦: 自分がダウン中の赤いビネット+蘇生待ちの案内
   safeDraw(drawZoneCompass);
   if(introState.active) safeDraw(drawSummonCountdown);
   safeDraw(renderMinimap);
@@ -5600,10 +5743,27 @@ function renderMinimap(){
   }
   for(const e of entities){
     if(!e.alive) continue;
-    miniCtx.beginPath();
-    miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:2.2, 0, Math.PI*2);
-    miniCtx.fillStyle = e.isPlayer ? '#ffffff' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color);
-    miniCtx.fill();
+    // チーム戦の味方は緑の点+白い縁取り(自分の白い点と同型の強調)で敵と即区別する
+    const isAllyM = (typeof sameTeam==='function') && player && sameTeam(player, e);
+    /* チーム戦は「敵か味方か自分か」の3値だけにする。元素色のままだと
+       多色の紙吹雪になり敵味方が判別できない(批評指摘)。個人戦は従来どおり元素色。
+       味方は緑+白縁の【三角】=色相だけでなく形でも区別する(赤緑色覚対応。
+       頭上の▽・小隊バーと同じ形言語)。敵・個人戦は従来の丸 */
+    const teamMini = (typeof isTeamMatch==='function') && isTeamMatch();
+    if(isAllyM){
+      const mx=e.x*scale, my2=e.y*scale, r=4.2;
+      miniCtx.beginPath();
+      miniCtx.moveTo(mx, my2-r); miniCtx.lineTo(mx+r*0.9, my2+r*0.7); miniCtx.lineTo(mx-r*0.9, my2+r*0.7);
+      miniCtx.closePath();
+      miniCtx.fillStyle='#58e07e'; miniCtx.fill();
+      miniCtx.strokeStyle='rgba(255,255,255,0.9)'; miniCtx.lineWidth=1; miniCtx.stroke();
+    } else {
+      miniCtx.beginPath();
+      miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:2.2, 0, Math.PI*2);
+      miniCtx.fillStyle = e.isPlayer ? '#ffffff'
+        : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
+      miniCtx.fill();
+    }
   }
   const px=player.x*scale, py=player.y*scale, yaw=camState.yaw;
   miniCtx.beginPath();
@@ -5622,6 +5782,71 @@ function setCooldownRing(el, progress){
   const p = clamp(progress, 0, 1);
   el.style.strokeDasharray = `${CD_RING_CIRC}`;
   el.style.strokeDashoffset = `${CD_RING_CIRC * (1-p)}`;
+}
+/* ===== チーム戦: 小隊バー(味方2人の名前+HPバー+状態) =====
+   #topLeft(縦flex)の中=HPパネルの直下に置いてあるので位置の計算は不要。
+   行のDOMは「人数・名前・状態」が変わったときだけ作り直し、HPバーの幅と
+   ダウン残り秒は毎フレーム値だけ書く(innerHTMLを毎フレーム書かない)。 */
+function updateSquadPanel(){
+  const el = document.getElementById('squadPanel');
+  if(!el) return;
+  const teamMode = (typeof isTeamMatch==='function') && isTeamMatch() && player && player.teamId!=null;
+  const mates = teamMode ? teamMembers(player.teamId).filter(m=>m!==player) : [];
+  if(!mates.length){
+    if(!el.classList.contains('hidden')){ el.classList.add('hidden'); el.innerHTML=''; el._sqSig=null; }
+    document.body.classList.remove('self-downed');   // 前のチーム戦の印を持ち越さない
+    return;
+  }
+  el.classList.remove('hidden');
+  const stateOf = (m)=> !m.alive ? 'dead' : (entityDowned(m) ? 'down' : 'ok');
+  const sig = mates.map(m=> m.id+':'+displayNameFor(m)+':'+stateOf(m)).join('|');
+  if(el._sqSig !== sig){
+    el._sqSig = sig;
+    el.innerHTML = mates.map(m=>{
+      const st = stateOf(m);
+      const stLabel = st==='dead' ? '倒された' : (st==='down' ? 'ダウン中' : '');
+      const mark = st==='dead' ? '💀' : '▽';   // 死亡はドクロで一目で分かるように(ダウンとの区別)
+      return `<div class="sq-row sq-${st}" data-ent="${m.id}">
+        <div class="sq-top"><span class="sq-mark">${mark}</span><span class="sq-name">${displayNameFor(m)}</span><span class="sq-hp-num"></span><span class="sq-state">${stLabel}</span></div>
+        <div class="sq-hp-track"><div class="sq-hp-fill"></div></div>
+      </div>`;
+    }).join('');
+  }
+  /* 自分がダウン中はbodyへ印を付け、FIRE/DASH/技ボタンをCSSで無効に見せる
+     (実際の発射はホスト/ソロ側で既に弾いている。UIだけ生きていると
+      「押せるのに撃てない」に見える=批評指摘)。 */
+  document.body.classList.toggle('self-downed',
+    !!(game.started && !game.over && player && entityDowned(player)));
+  for(const row of el.children){
+    const m = mates.find(x=> x.id===Number(row.dataset.ent));
+    if(!m) continue;
+    const fill = row.querySelector('.sq-hp-fill');
+    if(fill) fill.style.width = (m.alive ? clamp(m.hp/m.maxHp,0,1)*100 : 0)+'%';
+    // HP数値(バーの太さだけでは残量が読み取れない=批評指摘)
+    const hpEl = row.querySelector('.sq-hp-num');
+    if(hpEl){
+      const t = m.alive ? String(Math.max(0,Math.round(m.hp))) : '';
+      if(hpEl.textContent!==t) hpEl.textContent = t;
+    }
+    if(entityDowned(m)){
+      // ダウン中は「蘇生中」か出血死までの残り秒を出す(文字が変わったときだけ書く)
+      const stEl = row.querySelector('.sq-state');
+      const txt = m.reviveProgress>0 ? '蘇生中' : `ダウン中 ${Math.max(0,Math.ceil((m.downedUntil||0)-matchTime))}s`;
+      if(stEl && stEl.textContent!==txt) stEl.textContent = txt;
+    }
+  }
+}
+/* ゲストのヒットマーカー: 自分の弾が見た目命中した瞬間、照準に×印を0.15秒重ねる。
+   ホストはapplyDamageの実ダメージ数字が即出るので呼ばない(network.jsのゲスト経路だけが呼ぶ) */
+let hitMarkerTimer = null;
+function showHitMarker(){
+  const el = document.getElementById('hitMarker');
+  if(!el) return;
+  el.classList.remove('hm-show');
+  void el.offsetWidth;   // アニメーションを毎回最初から再生する
+  el.classList.add('hm-show');
+  if(hitMarkerTimer) clearTimeout(hitMarkerTimer);
+  hitMarkerTimer = setTimeout(()=> el.classList.remove('hm-show'), 170);
 }
 function updateHUD(){
   if(!player) return;
@@ -5649,6 +5874,7 @@ function updateHUD(){
   const accentColor = (playerAura && typeof auraColorHex==='function') ? auraColorHex(playerAura) : el.color;
   document.documentElement.style.setProperty('--accent', accentColor);
   if(typeof updateRaidHud==='function') updateRaidHud();   // レイド中だけボスHP・残り時間・与ダメを更新
+  updateSquadPanel();   // チーム戦だけ小隊バー(個人戦では隠れたまま)
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
   document.getElementById('hpFill').style.width = hpPct+'%';
   document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');
@@ -5719,7 +5945,11 @@ function updateHUD(){
 
   // 召喚演出中は操作説明を出さない(演出に被って勿体無いため)。
   // 演出中はupdate()が回らずtipTimerが減らないので、演出後にフル秒数だけ表示される。
-  document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0) ? '1':'0';
+  /* キルフィードが流れている間は操作ヒントを消す(フィード3行目とヒント帯が
+     重なって最新のキル行が読めなくなる=批評指摘。キルが起きている時点で
+     操作は分かっているので、ヒントを譲るのが正しい優先順位)。 */
+  const feedBusy = (()=>{ const kf = document.getElementById('killFeed'); return kf && kf.children.length > 0; })();
+  document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0 && !feedBusy) ? '1':'0';
 
   const fireMax = effectiveCooldown(player, mv);
   const fireProgress = fireMax>0 ? clamp(1 - player.fireCooldown/fireMax, 0, 1) : 1;
@@ -5733,6 +5963,7 @@ function updateHUD(){
     const fx=Math.cos(player.facingAngle), fy=Math.sin(player.facingAngle);
     for(const e of entities){
       if(e===player||!e.alive) continue;
+      if(typeof sameTeam==='function' && sameTeam(player, e)) continue; // チーム戦: 味方にはロックオン表示を出さない(攻撃も当たらない)
       if(e.z - player.z > (typeof upwardBlockLimit==='function' ? upwardBlockLimit() : UPWARD_BLOCK_THRESHOLD)) continue;
       const d=dist(player,e); if(d>mv.range) continue;
       const dirx=(e.x-player.x)/Math.max(d,0.001), diry=(e.y-player.y)/Math.max(d,0.001);

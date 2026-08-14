@@ -324,6 +324,7 @@ fireBtnEl.addEventListener('pointerleave', ()=>{ fireBtnHeld=false; });
 // ダッシュを実際に開始する(向きの決め方をホスト/ゲストで完全に同じにするため関数に分けてある。
 // マルチではホストが applyRemoteInputsLocally からこれを呼んでゲストのダッシュを再現する)
 function startEntityDash(m){
+  if(typeof entityDowned==='function' && entityDowned(m)) return;   // ダウン中(チーム戦)はダッシュ不可
   let dx=m.lastMoveX, dy=m.lastMoveY;
   if(Math.hypot(dx,dy)<0.1){ dx=Math.cos(m.facingAngle); dy=Math.sin(m.facingAngle); }
   const len = Math.hypot(dx,dy)||1;

@@ -737,6 +737,12 @@ document.getElementById('closeHelpImageBtn').addEventListener('click', ()=>{
   lobbyOpenOverlay('helpOverlay');
 });
 
+/* チーム編成(1=シングル / 3=スクワッド3人1組)。ロビーで選んだものの唯一の正。
+   書くのは setLobbyTeamSize() だけ。netState.teamSize へは syncNetStateToLobbyMode() が写す。
+   【宣言はここ】updateLobbyPickLabels が起動時のトップレベル初期化から呼ばれるため、
+   netState(ui.js中盤)の近くに置くとTDZで落ちる。 */
+let lobbyTeamSize = 1;
+
 // ---- 右カラムの「マップ」「プレイモード」の表示値を更新 ----
 function updateLobbyPickLabels(){
   const mapEl = document.getElementById('lobbyMapValue');
@@ -751,8 +757,9 @@ function updateLobbyPickLabels(){
   const modeEl = document.getElementById('lobbyModeValue');
   if(modeEl){
     // 表示は「ロビーで選んだもの(lobbyMode)」が正。試合中の netState を見ない
+    const squadTag = (lobbyTeamSize>1 && lobbyMode!=='raid') ? '・スクワッド' : '';
     modeEl.textContent = lobbyMode==='raid' ? `レイドバトル (最大${RAID_CAPACITY}人)`
-      : (lobbyMode==='multi' ? `みんなと対戦 (${netState.capacity}人)` : '1人でプレイ');
+      : (lobbyMode==='multi' ? `みんなと対戦 (${netState.capacity}人)${squadTag}` : `1人でプレイ${squadTag}`);
   }
 }
 
@@ -775,6 +782,7 @@ function saveLobbyPrefs(){
       // (レイドを1回遊ぶと以降ずっと raid で保存される、という不具合の原因だった)
       mode: lobbyMode,
       cap: netState.capacity,
+      team: lobbyTeamSize,   // チーム編成(1=シングル / 3=スクワッド)
       mmKey: game.selectedMastermonKey || null,
       element: game.selectedElement || null,
     }));
@@ -813,6 +821,10 @@ function restoreLobbyPrefsInner(){
   if(typeof p.cap==='number' && p.cap>=2){
     netState.capacity = p.cap;
     document.querySelectorAll('.cap-tab').forEach(t=> t.classList.toggle('active', Number(t.dataset.cap)===p.cap));
+  }
+  // --- チーム編成(スクワッド)。タブに無い値は受け付けない ---
+  if((p.team===1 || p.team===3) && typeof setLobbyTeamSize==='function'){
+    setLobbyTeamSize(p.team, { save:false });
   }
   // --- プレイモード。レイドは開催が終わっていることがあるのでソロへ落とす ---
   let mode = p.mode==='raid' || p.mode==='multi' ? p.mode : 'solo';
@@ -3405,6 +3417,7 @@ const netState = {
   mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null, hostId:null,
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
   raid:false,   // レイドの部屋か(部屋のmodeと一致させる。試合の組み立てが変わる)
+  teamSize:1,   // 部屋のチーム人数(1=個人戦)。部屋UI側の配線は別担当。部屋に入るときは部屋のmetaが正
 };
 
 /* =====================================================================
@@ -3432,6 +3445,8 @@ let lobbyMode = 'solo';
 function syncNetStateToLobbyMode(){
   netState.mode = (lobbyMode==='solo') ? 'solo' : 'multi';
   netState.raid = (lobbyMode==='raid');
+  // 部屋のチーム人数もロビーの選択から作り直す(レイドとチーム戦は排他なのでレイドでは1)
+  netState.teamSize = (lobbyMode==='raid') ? 1 : lobbyTeamSize;
 }
 /* ロビーの選択を変える唯一の入口。タブの見た目・パネルの出し分け・ラベル・保存まで面倒を見る。
    opts.save=false のときだけ保存しない(復元中に上書きし返さないため)。 */
@@ -3445,6 +3460,9 @@ function setLobbyMode(mode, opts){
   document.getElementById('multiActionRow').classList.toggle('hidden', lobbyMode!=='multi');
   document.getElementById('joinBtn').classList.toggle('hidden', lobbyMode!=='solo');
   document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
+  // チーム編成タブはソロ/マルチ共通、レイドでは出さない(レイドとチーム戦は排他)
+  const teamRow = document.getElementById('teamSizeRow');
+  if(teamRow) teamRow.classList.toggle('hidden', isRaid);
   if(isRaid && typeof updateRaidModePanel==='function') updateRaidModePanel();
   if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   if(!(opts && opts.save===false) && typeof saveLobbyPrefs==='function') saveLobbyPrefs();
@@ -3560,6 +3578,18 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
     saveLobbyPrefs();
   });
+});
+/* チーム編成(シングル/スクワッド)を変える唯一の入口。タブの見た目・netStateへの反映・
+   ラベル・保存まで面倒を見る(setLobbyModeと同じ作法)。opts.save=false は復元中だけ。 */
+function setLobbyTeamSize(n, opts){
+  lobbyTeamSize = (n===3) ? 3 : 1;
+  syncNetStateToLobbyMode();   // netState.teamSize を作り直す(レイド中は1のまま)
+  document.querySelectorAll('.team-tab').forEach(t=> t.classList.toggle('active', Number(t.dataset.team)===lobbyTeamSize));
+  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+  if(!(opts && opts.save===false) && typeof saveLobbyPrefs==='function') saveLobbyPrefs();
+}
+document.querySelectorAll('.team-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=> setLobbyTeamSize(Number(tab.dataset.team)||1));
 });
 
 function renderLobbyPlayerList(){
@@ -3715,7 +3745,7 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br');
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br', netState.teamSize||1);
   }catch(err){
     console.error(err);
     pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
@@ -3763,7 +3793,7 @@ async function refreshRoomList(){
     <div class="room-row" data-room-id="${r.roomId}" data-lobby-key="${r.lobbyKey}">
       <div>
         <div class="rm-host">${r.hostName}の部屋</div>
-        <div class="rm-sub">定員 ${r.capacity}人</div>
+        <div class="rm-sub">定員 ${r.capacity}人${r.teamSize>1 ? `・スクワッド(${r.teamSize}人1組)` : ''}</div>
       </div>
       <div class="rm-count">${r.count} / ${r.capacity}</div>
     </div>
@@ -3793,6 +3823,10 @@ async function joinSelectedRoom(roomId, lobbyKey){
   /* 【ここだけは部屋が正】他人の部屋に入るときは、部屋のmodeが実際に始まる試合を決める。
      ロビーの表示もそれに合わせて動かし、「レイドの部屋に入ったのに表示はみんなと対戦」を無くす。 */
   setLobbyMode(result.mode==='raid' ? 'raid' : 'multi');
+  /* チーム編成も部屋が正。タブの見た目を部屋に合わせてから(setLobbyModeのsyncで
+     netState.teamSizeがロビー値で作られるので)、最後に部屋の実値で上書きする。 */
+  if(typeof setLobbyTeamSize==='function') setLobbyTeamSize((result.teamSize||1)>1 ? 3 : 1, { save:false });
+  netState.teamSize = result.teamSize || 1;
 
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
@@ -3858,9 +3892,15 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
 });
 
-function startGame(){
+/* opts.teamSize(2以上)を渡すとソロのチーム戦(自分+botの小隊 vs botチーム)になる。
+   opts.teamCount で対戦チーム数を変えられる(既定は総勢30体になる数)。
+   何も渡さなければ従来どおりの個人戦30体で、経路は1バイトも変わらない
+   (チーム戦の分岐は isTeamMatch() 1つ。game.trainingRange と同じ方式)。 */
+function startGame(opts){
+  const teamSize = Math.max(1, ((opts && opts.teamSize)|0) || 1);
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
+  teamResetState();             // チーム戦の状態も持ち越さない(必要ならこの後assignTeamsで立て直す)
   // ロビーの選択から netState を作り直す(1人でプレイなので solo に確定する)
   syncNetStateToLobbyMode();
   document.getElementById('rangeBar').classList.add('hidden');
@@ -3895,8 +3935,13 @@ function startGame(){
     const mmData = loadMastermons()[game.selectedMastermonKey];
     if(mmData) playerDisplayName = mmData.name;
   }
-  const totalEntityCount = 30;
-  const spawnPoints = pickSpawnPointsBatch(totalEntityCount);
+  // チーム戦は「チーム数×人数」、個人戦は従来どおり30体。
+  // 同チームは隣接スポーン(pickTeamSpawnPointsBatch。シード付きの対はseededPickTeamSpawnPointsBatch)
+  const teamMode = teamSize > 1;
+  const teamCount = teamMode ? Math.max(2, ((opts && opts.teamCount)|0) || Math.floor(30/teamSize)) : 0;
+  const totalEntityCount = teamMode ? teamSize*teamCount : 30;
+  const spawnPoints = teamMode ? pickTeamSpawnPointsBatch(teamCount, teamSize)
+                               : pickSpawnPointsBatch(totalEntityCount);
   player = createMonster(game.selectedElement, true, playerDisplayName, { spawnPoint: spawnPoints[0] });
   applyMastermonToPlayer();
   entities.push(player);
@@ -3910,7 +3955,7 @@ function startGame(){
   const playerRebirth = mastermonRebirthCount(playerMm);
   // 他の人が育てたマスモンの写し(ゴースト)を何体か混ぜる。取れなければ空配列で従来どおり
   const ghosts = pickGhostsForMatch(playerMmLevel, playerRebirth);
-  for(let i=0;i<29;i++){
+  for(let i=0;i<totalEntityCount-1;i++){
     const g = ghosts[i] || null;
     const elKey = g ? g.element : botElements[i % botElements.length];
     const botName = g ? g.name : (names[i % names.length] + (i>=names.length?'Ⅱ':''));
@@ -3928,6 +3973,8 @@ function startGame(){
     }
     entities.push(bot);
   }
+  // チーム戦: 生成順(自分が先頭=チーム0)をteamSizeずつ区切って割り当てる
+  if(teamMode) assignTeams(teamSize);
   // ミューテーター「スポーンアイテム数1.5倍」(非公開中は常に1)
   const mutSpawnMultSolo = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1;
   spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
@@ -4008,6 +4055,7 @@ function startShootingRange(){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();             // レイドの状態を持ち越さない
+  teamResetState();             // チーム戦の状態も持ち越さない
   game.trainingRange = true;
   game.activeMapKey = 'wild'+REAL_MAP_SUFFIX;      // 訓練場は荒野のリアル版で固定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
@@ -4075,6 +4123,7 @@ function raidStart(multi, demo){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();          // いったん初期化してから立て直す
+  teamResetState();          // レイドとチーム戦は排他(レイドでは常にteamSize=1)
   game.trainingRange = false;
   game.raid = true;
   game.activeMapKey = 'raid';
@@ -4646,6 +4695,8 @@ function raidShowResult(defeated, dmg, prevBest){
   const scr = document.getElementById('resultScreen');
   // winクラスがアイコンの飛び跳ねアニメーションと金色の見た目を出す
   scr.className = 'resultScreen ' + (isWin?'win':'lose');
+  // 前のチーム戦の小隊欄を持ち越さない(レイドはチーム戦と排他)
+  { const sq = document.getElementById('resultSquadInfo'); if(sq){ sq.classList.add('hidden'); sq.innerHTML=''; } }
   document.getElementById('resultRank').textContent =
     defeated ? '🐉 討伐成功' :
     newBest  ? '🔥 自己ベスト更新' :
@@ -4766,7 +4817,8 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   document.getElementById('joinBtn').disabled = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
-  startGame();
+  // ソロのスクワッド(3人1組)。teamCount省略で従来と同じ総勢30体(3人×10チーム)になる
+  startGame(lobbyTeamSize>1 ? { teamSize: lobbyTeamSize } : undefined);
 });
 document.getElementById('openRangeBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
@@ -4916,6 +4968,28 @@ function showResultNow(isWin, placement){
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? '👑 WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
+  /* チーム戦: 順位はチーム単位なので文言を「チーム順位」にし、小隊メンバー(名前・キル)を
+     1行ずつ出す。個人戦では小隊欄を必ず隠す(前の試合の中身を持ち越さない)。 */
+  {
+    const sqInfoEl = document.getElementById('resultSquadInfo');
+    const teamMatch = (typeof isTeamMatch==='function') && isTeamMatch() && player && player.teamId!=null;
+    if(sqInfoEl){ sqInfoEl.classList.toggle('hidden', !teamMatch); sqInfoEl.innerHTML=''; }
+    if(teamMatch){
+      const mates = teamMembers(player.teamId);
+      document.getElementById('resultSub').textContent = isWin
+        ? `小隊の勝利！ ${mates.map(m=>displayNameFor(m)).join('・')}`
+        : `チーム順位 #${placement}`;
+      if(sqInfoEl){
+        sqInfoEl.innerHTML = `<div class="result-squad-title">小隊メンバー</div>` + mates.map(m=>`
+          <div class="result-squad-row${m===player?' sq-me':''}">
+            <span class="sq-mark">▽</span>
+            <span class="result-squad-name">${displayNameFor(m)}${m===player?'(あなた)':''}</span>
+            <span class="result-squad-kills">撃破 ${m.kills}</span>
+            <span class="result-squad-state">${m.alive?'生存':'倒れた'}</span>
+          </div>`).join('');
+      }
+    }
+  }
   document.getElementById('statKills').textContent = player.kills;
   document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
@@ -5026,7 +5100,13 @@ function renderResultBadges(o){
     if(globalNewIds.has(t.id)) continue;
     badges.push(`<span class="result-badge title">🎖️ ${elemLabel}で称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; titleGot = true;
   }
-  el.innerHTML = badges.join('');
+  /* 6件を超えたら残りを「+他N件」に畳む。称号ラッシュ時にバッジ列が画面下端から
+     はみ出して最下段が見切れていた(批評指摘)。称号自体はマイページで一覧できる */
+  const MAX_RESULT_BADGES = 6;
+  const shown = badges.length > MAX_RESULT_BADGES
+    ? badges.slice(0, MAX_RESULT_BADGES).concat(`<span class="result-badge more">+他${badges.length-MAX_RESULT_BADGES}件</span>`)
+    : badges;
+  el.innerHTML = shown.join('');
   el.classList.toggle('hidden', badges.length===0);
   // リザルトSE:
   //  ・全体の自己ベスト更新 → 専用SE(提供動画音声)を1回だけ。重複時はこれを優先(SSR獲得SEは鳴らさない)
@@ -8136,6 +8216,13 @@ function onPlayerDown(){
      そのぶん自分の視点が置き去りになるので、残っている味方を観戦する。
      ソロ・マルチどちらも同じ扱い(味方botしか残っていなくても観戦する)。 */
   if(game.raid){ startSpectating('力尽きました。残っている味方を観戦します'); return; }
+  /* チーム戦: 味方(人間・bot問わず)が残っていれば試合は続くので観戦する。
+     チームが全滅したときのリザルトは teamNoteDeath / checkTeamWin(combat.js)が出す。 */
+  if(isTeamMatch() && player && player.teamId!=null &&
+     teamMembers(player.teamId).some(m=>m!==player && m.alive)){
+    startSpectating('倒れました。残っている仲間を観戦します');
+    return;
+  }
   if(netState.mode==='multi' && netState.isHost){
     startSpectating('あなたは敗退しました。生き残っているプレイヤーを観戦します');
     return;

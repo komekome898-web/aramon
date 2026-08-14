@@ -12,7 +12,14 @@ let lastT = performance.now();
      滑らかに追従表示するだけにする(自分でシミュレーションしない)
    - これにより非ホスト側での「同期ズレ」「ボットが止まって見える」を構造的に防ぐ
 ===================================================================== */
-const INPUT_SEND_INTERVAL = 0.045;  // 自分の入力を送る間隔(秒) 約22回/秒。ホストが自分の位置を早く反映できるようにする
+// 自分の入力を送る間隔(秒)。rtdb=約22回/秒(Firebaseのquota都合)。
+// WebRTC直結(net_transport.js)が確立している間だけ約40回/秒へ上げる
+const INPUT_SEND_INTERVAL_RTDB = 0.045;
+const INPUT_SEND_INTERVAL_RTC  = 0.025;
+function inputSendInterval(){
+  return (window.NetTransport && NetTransport.isRtcActiveToHost())
+    ? INPUT_SEND_INTERVAL_RTC : INPUT_SEND_INTERVAL_RTDB;
+}
 let lastInputSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected,seq}
 const processedRoomEventKeys = new Set(); // events(キルフィード等)の重複処理防止
@@ -58,8 +65,26 @@ function selfCorrectSpeedScale(ent){
 // 時間軸は「ホストの試合時刻(payload.t)」を使う。到着時刻を時間軸にすると、配信が
 // まとめて届いた(ジッタ)ときにスナップショット間隔が実際より短く見積もられ、
 // 速い相手が瞬間移動したように飛ぶ。ホスト時刻なら間隔が常に正しくなる。
-const INTERP_DELAY_MS = 120;   // 遠隔エンティティを一定遅延で描画(publish間隔+ジッタを吸収)
+const INTERP_DELAY_MS = 120;   // 遠隔エンティティの描画遅延(publish間隔+ジッタを吸収)。rtdb時の値=上限
+// WebRTC直結中は配信間隔が短くなるので、描画遅延も実測(ジッタ+2配信間隔)へ縮めて
+// 「相手の動きが新しく見える」ようにする。急変させるとその瞬間に相手が飛ぶので、
+// 目標値へゆっくり追従させる(降格でrtdbへ戻れば自然に120msへ戻る)
+const INTERP_DELAY_MIN_MS = 50;      // rtc時の下限
+const INTERP_DELAY_ADAPT_RATE = 0.8; // 目標へ寄せる速さ(1秒あたりの割合)
+let interpDelayMs = INTERP_DELAY_MS;
+function updateInterpDelay(dt){
+  let target = INTERP_DELAY_MS;
+  const t = window.NetTransport;
+  if(t && t.isRtcActiveToHost() && t.authStreamStats){
+    const s = t.authStreamStats();
+    if(s && s.avgMs > 0) target = clamp(s.jitterMs + s.avgMs*2, INTERP_DELAY_MIN_MS, INTERP_DELAY_MS);
+  }
+  interpDelayMs += (target - interpDelayMs) * Math.min(1, dt*INTERP_DELAY_ADAPT_RATE);
+}
 const EXTRAP_CAP_MS = 180;     // スナップショット欠落時に速度で外挿する上限
+/* ゲストがauthStateのHPの減りを「攻撃を受けた」とみなす下限(HP)。
+   安全圏・溶岩の環境ダメージは1配信(50ms)あたり数HPなので、それより大きい減りだけを拾う */
+const GUEST_HIT_FEEDBACK_MIN = 5;
 const AUTH_FULL_EVERY = 8;     // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
 const HOST_HISTORY_CAP = 60;   // ホストの位置履歴(ラグ補正の巻き戻し用)保持スナップショット数
 let guestSnapBuf = [];         // ゲスト: 補間用スナップショット {rt, ht, seq, ents:{id:{x,y,z,f,vx,vy,alive}}}
@@ -146,12 +171,23 @@ function handleRoomEvent(evt, evtKey){
     setTimeout(()=>{ if(raidState.pending && raidState.pending.move===mv){ raidState.pending=null; raidState.marks=[]; } },
                Math.round((evt.tele||1.2)*1000));
   }
+  // チーム戦: ダウン・蘇生の通知(ゲストはホストのループを回さないので、フィードと本人向けの合図を再現する)
+  if(evt.kind==='down' && !netState.isHost){
+    if(evt.text) pushKillFeed(evt.text);
+    if(player && evt.victimId===player.id) pushToast('ダウンした！ 仲間の蘇生を待て');
+  }
+  if(evt.kind==='revive' && !netState.isHost){
+    if(evt.text) pushKillFeed(evt.text);
+    if(player && evt.entId===player.id){ pushToast('蘇生された！'); playSe('pickup'); }
+  }
   // レイド: 決着はホストが判定する。ゲストはこれを受けて同じ結果画面へ進む
   if(evt.kind==='raidEnd' && game.raid && !game.over){
     finishRaid(!!evt.defeated);
   }
   if(evt.kind==='matchEnd' && !game.over){
-    if(player && player.netPlayerId===evt.winnerNetId && player.alive){
+    // チーム戦: 自分がダウン/死亡していても、自チームの勝ちなら勝利
+    const teamWin = (typeof evt.winnerTeam==='number') && player && player.teamId===evt.winnerTeam;
+    if(player && (teamWin || (player.netPlayerId===evt.winnerNetId && player.alive))){
       onPlayerWin();
     } else if(player && player.netPlayerId!==evt.winnerNetId){
       // 自分は勝者ではない側。通常はhostが即時配信するauthStateのhp/alive更新で
@@ -209,7 +245,7 @@ async function beginMultiplayerMatchInner(){
   processedLootEventKeys.clear(); processedRoomEventKeys.clear();
   // 補間/ラグ補正の状態をリセット
   guestSnapBuf = []; guestCurViewSeq = 0; hostPosHistory = []; authPublishSeq = 0; lastPubPos = {};
-  hostClockOffset = null; hostForceFullNext = false;
+  hostClockOffset = null; hostForceFullNext = false; interpDelayMs = INTERP_DELAY_MS;
   // 自分の位置の突き合わせ状態をリセット(前の試合の履歴が残ると初回補正が暴れる)
   selfInputSeq = 0; selfDashSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
   selfCardSeq = 0; selfCardPick = null; resetTrainOffers();
@@ -217,8 +253,11 @@ async function beginMultiplayerMatchInner(){
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
   let seed, fixedPlayers, mapKey, hostMastermonBots, sharedWorld = null;
+  let matchTeamSize = 1;   // この試合のチーム人数(1=個人戦)。ホストは部屋の設定、ゲストはシード配信の値が正
   if(netState.isHost){
+    matchTeamSize = Math.max(1, netState.teamSize||1);
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
+    if(window.__netProbeSeed!=null) seed = window.__netProbeSeed>>>0; // 計測ハーネス用のシード固定(通常は未定義で素通り)
     fixedPlayers = netState.humanPlayers || {};
     if(!fixedPlayers[netState.myPlayerId]){
       const mySkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(game.selectedElement) : null;
@@ -246,7 +285,9 @@ async function beginMultiplayerMatchInner(){
       mapKey = result.mapKey || 'wild';
       hostMastermonBots = result.hostMastermonBots || [];
       sharedWorld = result.world || null; // ホストが生成した障害物(あれば正として使う)
+      matchTeamSize = Math.max(1, result.teamSize||1); // チーム人数もホストの配信が正
     } else {
+      matchTeamSize = Math.max(1, netState.teamSize||1); // タイムアウト時は部屋参加時のmetaで代用
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
@@ -265,8 +306,10 @@ async function beginMultiplayerMatchInner(){
      「ランダム+リアルマップ」で竜の火口が当たると通常マルチがレイドに化けていた。 */
   const wantRaid = !!netState.raid || mapKey==='raid';
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
+  teamResetState();          // チーム戦の状態も入口で消す(必要ならこの後assignTeamsで立て直す)
   netState.raid = wantRaid;
   game.raid = wantRaid;
+  if(game.raid) matchTeamSize = 1;   // レイドとチーム戦は排他
   if(game.raid) mapKey = 'raid';
   // 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す
   else if(MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
@@ -305,7 +348,7 @@ async function beginMultiplayerMatchInner(){
   if(netState.isHost){
     const worldData = packWorldForSync();
     console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize);
   }
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
@@ -320,7 +363,11 @@ async function beginMultiplayerMatchInner(){
   const usedSlots = humanList.length;
   const botCount = Math.max(0, netState.capacity - usedSlots);
   const totalEntityCount = usedSlots + botCount;
-  const spawnPoints = seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
+  // チーム戦は同チームを隣接スポーンにする(ソロ用pickTeamSpawnPointsBatchと対のシード付き)。
+  // 返り値は「チーム0→チーム1→…」の平坦な並びで、下の生成順(人間→bot)=チーム割当順と一致する
+  const spawnPoints = (matchTeamSize>1)
+    ? seededPickTeamSpawnPointsBatch(spawnRng, Math.ceil(totalEntityCount/matchTeamSize), matchTeamSize)
+    : seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
 
   let idCounter = 1;
   let spawnIdx = 0;
@@ -366,6 +413,10 @@ async function beginMultiplayerMatchInner(){
       entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
     }
   }
+
+  // チーム戦: 生成順(人間がid文字列順で先・botが後)をteamSizeずつ区切って割り当てる。
+  // 並びはホスト/ゲストで完全に一致するので、チーム割当も必ず一致する(同チームは連番id)
+  if(matchTeamSize>1) assignTeams(matchTeamSize);
 
   if(game.raid){
     /* レイド: 全員(人間もbotも)がボスと戦う。ボスもシード付き生成の一部として
@@ -413,6 +464,19 @@ async function beginMultiplayerMatchInner(){
     seededSpawnOasisBonusLoot(lootRng);
   }
   updateCamera();
+
+  // トランスポート: 常にrtdbで開始し、WebRTC直結が確立した相手からrtcへ自動昇格する
+  // (切断・沈黙時は自動でrtdbへ戻る。rtcが使えない環境では何もせず従来どおり全てrtdb)。
+  // 以降の __aramonSend*/__aramonWatch* はnet_transport.jsのラッパを透過的に通る
+  if(window.NetTransport && NetTransport.attach){
+    NetTransport.attach({
+      roomId: netState.roomId,
+      myPid: netState.myPlayerId,
+      isHost: netState.isHost,
+      hostPid: netState.hostId,   // ゲストはここへofferを出す(未取得ならrtdbのまま)
+      peerPids: Object.keys(fixedPlayers||{}).filter(id=>id!==netState.myPlayerId),
+    });
+  }
 
   window.__aramonWatchInputs(netState.roomId, (players)=>{
     netState.humanPlayers = players||{};
@@ -494,6 +558,7 @@ function processRemoteFireEvents(){
     const ent = entities.find(e=>e.netPlayerId===evt.sourceNetId);
     if(!ent || !ent.alive) continue;
     if(ent.freezeUntil > matchTime) continue; // 凍結中は撃てない(ホスト自身と同じ条件)
+    if(entityDowned(ent)) continue;           // ダウン中も撃てない(tryPlayerFireと同じ条件)
     ent.facingAngle = evt.facing;
     if(typeof evt.moveTier==='number') ent.moveTierSelected = evt.moveTier;
     const mv = activeMove(ent);
@@ -511,6 +576,7 @@ function processRemoteFireEvents(){
       const dfx=Math.cos(ent.facingAngle), dfy=Math.sin(ent.facingAngle);
       for(const e2 of entities){
         if(e2===ent || !e2.alive) continue;
+        if(sameTeam(ent, e2)) continue;   // チーム戦: 近接技の相手にも味方を選ばない(tryPlayerFireと同じ)
         if(e2.z - ent.z > upwardBlockLimit()) continue;
         const rp = (hasLagComp && entityRewoundPos(e2.id, lagDelaySeq)) || e2; // 巻き戻し位置で判定
         const d = Math.hypot(rp.x-ent.x, rp.y-ent.y);
@@ -533,12 +599,14 @@ function processRemoteFireEvents(){
       // 生成された飛び道具に遅延量を刻む。飛翔中の当たり判定を「一定遅延の敵位置」で行う(combat.js)
       for(let k=projBefore; k<projectiles.length; k++) projectiles[k].lagDelaySeq = lagDelaySeq;
     }
+    // 計測ハーネス用: ゲストの発射イベントが実弾になった時刻を記録(通常は素通り)
+    if(window.__netProbe) __netProbe.mark('remoteFireSpawn', { srcTs: evt.ts||0, now: Date.now(), n: projectiles.length - projBefore });
   }
 }
 
 function sendLocalInputIfMultiplayer(now){
   if(netState.mode!=='multi' || !netState.roomId) return;
-  if(now-lastInputSendAt >= INPUT_SEND_INTERVAL*1000){
+  if(now-lastInputSendAt >= inputSendInterval()*1000){
     lastInputSendAt = now;
     selfInputSeq++;
     // この入力を送った時点の自分の予測位置を先に覚えておく。
@@ -564,6 +632,8 @@ function sendLocalInputIfMultiplayer(now){
 // (ホストはこれを見て、非ホストの発射をシミュレーションに反映する)
 function sendFireEventIfMultiplayer(aimAngle, mv, aimSlope){
   if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
+  // 計測ハーネス用: 発射イベントの送信時刻を記録(通常は__netProbe未定義で素通り)
+  if(window.__netProbe) __netProbe.mark('fireSent', { ts: Date.now() });
   window.__aramonSendFireEvent(netState.roomId, {
     sourceNetId: netState.myPlayerId,
     facing: aimAngle,
@@ -585,6 +655,7 @@ function tryNonHostPlayerFireVisual(dt){
   // ここを見ていないと、ゲストだけ凍結中に撃てる/撃ったのにホストが実行せず
   // 見た目だけの弾が飛ぶ、という食い違いになる
   if(player.freezeUntil > matchTime) return;
+  if(entityDowned(player)) return; // ダウン中は撃てない(tryPlayerFire/processRemoteFireEventsと同じ条件)
   if(!(fireBtnHeld || keys['f'])) return;
   // combat.jsのfireMoveと同じく、スキン装備でtier3が専用技に変わる場合は先に解決する
   let mv = activeMove(player);
@@ -682,6 +753,8 @@ function tryNonHostPlayerFireVisual(dt){
         color:colors[i], hitR:(mv.hitR||24)*hbMult, hitW:0,
         traveled:0, maxRange:mv.range, delay:0, visualOnly:true,
         projStyle:'godorb', orbColor:colors[i], moveAura: orbAuras[i] || moveAura, matchAura: moveAura,
+        // 見た目命中時の予測ダメージ(見た目専用。確定はホスト)
+        predDmg: Math.round(effectiveMoveDmg(player, mv)),
         ownerId: player.id,
       });
     }
@@ -711,6 +784,8 @@ function tryNonHostPlayerFireVisual(dt){
         // 爆風を出せないうえ、ホストからのエコーは「自分の弾」として弾かれるため
         // 自分で撃ったときだけ爆発が一切見えなくなる
         blast: mv.blast||null,
+        // 見た目命中時の予測ダメージ(見た目専用の概算。確定の実数字はホストのauthState側)
+        predDmg: Math.round(effectiveMoveDmg(player, mv)),
         ownerId: player.id,
       });
     }
@@ -729,7 +804,15 @@ function tryNonHostPlayerFireVisual(dt){
 const processedHitKeys = new Set();
 let authPublishTimer = 0;
 let authPublishInFlight = false;
-const AUTH_PUBLISH_INTERVAL = 0.05; // 約20回/秒。高頻度配信+クライアント側補間で滑らかさを両立する
+// authStateの配信間隔(秒)。rtdb=約20回/秒(quota都合)。高頻度配信+クライアント側補間で滑らかさを両立する。
+// 全ゲストとWebRTC直結できている間だけ約30回/秒へ上げる(1人でもrtdbのゲストが
+// いる間はRTDBへの書き込みが続くので現行レートを守る)
+const AUTH_PUBLISH_INTERVAL_RTDB = 0.05;
+const AUTH_PUBLISH_INTERVAL_RTC  = 0.033;
+function authPublishInterval(){
+  return (window.NetTransport && NetTransport.isRtcActiveAllPeers())
+    ? AUTH_PUBLISH_INTERVAL_RTC : AUTH_PUBLISH_INTERVAL_RTDB;
+}
 
 function processHitAsHost(hit){
   if(!hit) return;
@@ -954,6 +1037,12 @@ function buildAuthStatePayload(){
     if(bnR > 0) o.bn = Math.round(bnR*100)/100;
     const poR = (e.poisonUntil||0) - nowT;
     if(poR > 0) o.po = Math.round(poR*100)/100;
+    // チーム戦: ダウンの残り秒数(dw)と蘇生の進み(rv)。絶対時刻は送らない(残り秒数方式)。
+    // dwが載っていない=ダウンしていない、として受信側が判定する
+    if(e.downed && e.alive){
+      o.dw = Math.round(Math.max(0, (e.downedUntil||0) - nowT)*100)/100;
+      if(e.reviveProgress > 0) o.rv = Math.round(e.reviveProgress*100)/100;
+    }
     // 人間プレイヤーには「最後に適用した入力seq」を返す(ゲストの位置突き合わせ用)
     if(e.netPlayerId && typeof e.netAckInputSeq==='number') o.aseq = e.netAckInputSeq;
     // ④ フル配信の時だけ載せる「コールド」フィールド(ほぼ静的・低頻度で十分)
@@ -1051,7 +1140,22 @@ function applyAuthState(authState){
       if(typeof ent.x!=='number' || typeof ent.y!=='number'){ ent.x=a.x; ent.y=a.y; ent.z=a.z; ent.facingAngle=a.f; }
     }
     // 位置以外の権威フィールドは受信時に即反映する(補間しない)
+    const prevHp = ent.hp;   // ゲストの被弾フィードバック用(下)
     ent.hp = a.hp; ent.guts = a.guts;
+    // 計測ハーネス用: HPが画面に反映された時刻を記録(通常は素通り)
+    if(window.__netProbe) __netProbe.hp(a.id, a.hp);
+    /* ゲストの戦闘フィードバック即時化: HPが下がった瞬間に「攻撃を受けた」合図を出す(確定値ベース)。
+       ホストではapplyDamageが担う演出(被弾SE・ヒットフラッシュ・ダメージ数字)で、
+       ゲストはHPだけが静かに減っていた。安全圏・溶岩の環境ダメージは1配信あたり数HPで
+       showGuestEnvironmentDamageが担当しているので、それより大きい減りだけを攻撃とみなす */
+    const hpDrop = prevHp - ent.hp;
+    if(game.started && ent.alive && hpDrop >= GUEST_HIT_FEEDBACK_MIN){
+      ent.hitFlash = 0.18;
+      // 自分の被弾はSEも鳴らす(ホストのapplyDamageと同じ)。数字は全エンティティに出す
+      // (ホスト画面では周囲の戦闘もダメージ数字で見えているので、ゲストも同じ絵にする)
+      if(ent.isPlayer) playSe(skinHitSeName(ent) || 'hitTaken');
+      spawnDmgText(ent.x, ent.y, ent.z, Math.round(hpDrop));
+    }
     if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
     if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
@@ -1074,6 +1178,14 @@ function applyAuthState(authState){
     else ent.speedBuffUntil = 0;
     ent.burnUntil   = (typeof a.bn==='number') ? matchTime + a.bn : 0;
     ent.poisonUntil = (typeof a.po==='number') ? matchTime + a.po : 0;
+    // チーム戦のダウン状態。残り秒数(dw)で届く。無ければダウンしていない
+    if(typeof a.dw==='number'){
+      ent.downed = true;
+      ent.downedUntil = matchTime + a.dw;
+      ent.reviveProgress = (typeof a.rv==='number') ? a.rv : 0;
+    } else {
+      ent.downed = false; ent.downedUntil = 0; ent.reviveProgress = 0;
+    }
     if(typeof a.trainMaxHpBonus==='number') ent.trainMaxHpBonus = a.trainMaxHpBonus;
     if(typeof a.mmKillExp==='number') ent.mastermonKillExpBonus = Math.max(ent.mastermonKillExpBonus||0, a.mmKillExp);
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
@@ -1131,9 +1243,10 @@ function interpolateRemoteEntities(){
   // 届いても速い相手が飛ばずに等速で動いて見える。
   const useHostClock = (buf[buf.length-1].ht!==null && hostClockOffset!==null);
   const timeOf = (s)=> useHostClock ? s.ht : s.rt;
+  // 描画遅延はrtc接続中だけ実測に合わせて縮む(updateInterpDelay。rtdb時は120ms固定)
   const renderT = useHostClock
-    ? (performance.now() - hostClockOffset - INTERP_DELAY_MS)
-    : (performance.now() - INTERP_DELAY_MS);
+    ? (performance.now() - hostClockOffset - interpDelayMs)
+    : (performance.now() - interpDelayMs);
   let s0=null, s1=null;
   for(let i=buf.length-1;i>=0;i--){
     if(timeOf(buf[i]) <= renderT){ s0=buf[i]; s1=buf[i+1]||null; break; }
@@ -1184,7 +1297,7 @@ function loop(now){
         broadcastNewShotsAsHost();
         sendLocalInputIfMultiplayer(now);
         authPublishTimer += dt;
-        if(authPublishTimer >= AUTH_PUBLISH_INTERVAL && !authPublishInFlight){
+        if(authPublishTimer >= authPublishInterval() && !authPublishInFlight){
           authPublishTimer = 0;
           authPublishInFlight = true;
           window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload())
@@ -1208,6 +1321,8 @@ function loop(now){
             player.x += sx; player.y += sy;
             selfCorrX -= sx; selfCorrY -= sy;
             if(Math.hypot(selfCorrX, selfCorrY) < 0.5){ selfCorrX = 0; selfCorrY = 0; }
+            // 計測ハーネス用: このフレームで消費した補正量を記録(通常は素通り)
+            if(window.__netProbe) __netProbe.mark('selfCorr', { sx, sy, x: player.x, y: player.y, mx: player.inputMoveX, my: player.inputMoveY, mt: matchTime });
           }
           sanitizeSelfPosition(); // NaN等でハマったまま操作不能にならないよう点検
         }
@@ -1217,6 +1332,7 @@ function loop(now){
           if(e.dashCooldown>0) e.dashCooldown -= dt;
           if(e.hitFlash>0) e.hitFlash -= dt;
         }
+        updateInterpDelay(dt);       // rtc接続中は描画遅延を実測に合わせて縮める(急変させない)
         interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
         predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
         tryNonHostPlayerFireVisual(dt);
@@ -1256,8 +1372,19 @@ function loop(now){
             // 見た目専用の当たり「らしさ」判定だけをローカルで行う
             for(const e of entities){
               if(!e.alive || e.id===p.ownerId) continue;
+              if(projTeamBlocked(p, e)) continue; // チーム戦: 味方の体は見た目も素通り(ホスト側と同じ)
               if(p.terrain3d && !projHeightHits(p,e)) continue; // 頭上/足元を大きく外れた弾は見た目も当てない
-              if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
+              if(dist(p,e) < e.radius+(p.hitR||0)){
+                visualHit=true; spawnHit(e.x,e.y,e.z,p.color);
+                /* ゲストの体感: 自分の弾が見た目命中した瞬間に、照準の×印と予測ダメージを出す。
+                   確定の実数字は従来どおりホストのauthState(HPの減り)から後で出るので、
+                   予測側は小さく半透明(spawnPredDmgText)にして二重に見えないようにする */
+                if(player && p.ownerId===player.id){
+                  if(typeof showHitMarker==='function') showHitMarker();
+                  if(p.predDmg && typeof spawnPredDmgText==='function') spawnPredDmgText(e.x, e.y, e.z, p.predDmg);
+                }
+                break;
+              }
             }
           }
           if(visualHit){
