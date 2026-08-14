@@ -26,6 +26,7 @@ import { buildTerrain, updateTerrain, applyTerrainTheme, terrainStats, resetPatc
 import { buildZoneMesh, zoneMaterial, buildSeaMesh, buildRiverMesh, splitRivers,
          animateWater, lavaMats, resetDynamicLists, ZONE_LIFT } from './real3d_water.js';
 import { buildMountainMesh, updateObstacles, obstacleCullDist, obstacleDrawn, resetObstacles } from './real3d_props.js';
+import { buildZoneLayer, updateZoneLayer, resetZoneLayer } from './real3d_zone.js';
 
 // フォグはパッチの半分(3600)より手前で完全に霞ませる。こうしないとパッチの切れ目が見える
 const FOG_NEAR = 700;
@@ -75,6 +76,9 @@ function ensureScene(){
     ridge = buildDistantRidge(); ridge.renderOrder = -1; scene.add(ridge);
     terrain = buildTerrain();
     scene.add(terrain);
+    /* 安置線と技の地面円。2Dで描くと3Dの上に重なって深度判定を受けず、
+       丘や大きな物の向こうにあっても手前に見えてしまうため3Dで描く。 */
+    buildZoneLayer(scene);
     // 環境光は空そのもの(HDRIの代わり)。半球ライトは環境マップが担うので置かない
     applyEnvironment();
     sun = new THREE.DirectionalLight(0xfff1d6, SUN_INTENSITY);
@@ -204,6 +208,7 @@ const api = {
       resetPatch();      // 次のrenderで作り直す
       worldSig = '';     // 山としみも作り直す(マップが変わると地面の高さが変わるため)
       resetObstacles();  // 障害物も同じ理由で作り直す
+      resetZoneLayer();  // 安置線と技の地面円も作り直す
       applySize();
       active = true;
       return true;
@@ -231,6 +236,7 @@ const api = {
     updateTerrain(cp.x, cp.y);
     updateWorldObjects(world);
     updateObstacles(scene, obstacles, world && world.crystals, cp.x, cp.y);
+    updateZoneLayer(world && world.zone, world && world.marks, cp);
     const tSec = performance.now()*0.001;
     animateWater(tSec);
     animateSky(tSec);   // 雲を風で流す(空のuniformを進めるだけ)

@@ -14,7 +14,7 @@
    そのため形を作ったら最後に fitBounds() で枠へ合わせる。
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
-import { R3, DEFAULT_THEME, ENV_INTENSITY, SUN_DIR, heightAt, hash2, tileNoise, mergeGeos } from './real3d_common.js';
+import { R3, DEFAULT_THEME, ENV_INTENSITY, SUN_DIR, heightAt, hash2, tileNoise, fbmTile, makeTexture, mergeGeos } from './real3d_common.js';
 import { getGroundMaps, getTerrain } from './real3d_terrain.js';
 import { lavaMats } from './real3d_water.js';
 
@@ -349,6 +349,168 @@ function leafGeo(len, wid, droop, segs, frill){
   return g;
 }
 
+/* =====================================================================
+   立体物の表面ディテール(法線・粗さのムラ・汚し)
+
+   【なぜ要るのか】地面は色・法線・粗さの4枚を貼った物理ベース描画なのに、
+   その上に立つ岩・柱・壁は「面ごとに1色」だった。光が当たっても表面が何も
+   語らないので、同じ画面の中で地面だけ写実、立体物だけ低予算に見えていた。
+
+   【なぜ三平面(トライプラナー)なのか】立体物のUVは種類ごとにバラバラ
+   (球・円柱・箱・手組みの合成)で、1枚のテクスチャを貼っても継ぎ目と伸びが出る。
+   そこでUVを使わず【ワールド座標】から3方向に投影して混ぜる。利点は3つ:
+     ・どんな形にも同じ密度で乗る(UVを作らなくてよい)
+     ・粒の大きさがワールド基準なので、大きい岩も小さい岩も同じ肌になる
+     ・岩ごとに模様の当たる場所が変わる = 同じモデルの繰り返しが目立たない
+   【描画命令も三角形も増えない】材質へ差し込むだけなので InstancedMesh の構成は
+   元のまま。増えるのは1画素あたりのテクスチャ参照4回だけで、遠くはミップマップで
+   自然に平らへ戻る(=ちらつかない)。
+   ===================================================================== */
+const SD_TEX = 256;
+let sdTexCache = null;
+/* 「肌」のテクスチャ1枚に4つの情報を詰める(色ではなくデータなので srgb=false)。
+   RG=表面のかたむき(接線空間の法線xy) / B=広いムラ(色と粗さ用) / A=割れ目・目地
+
+   【落とし穴・実測】最初は高さを入れて「画面微分から法線をひねる」方式(threeの
+   bumpMapと同じ式)にした。画面微分は2×2画素ごとにしか求まらないため、凹凸を
+   効かせた瞬間に岩と壁が【2〜4画素角の黒いブロック】で埋まった。
+   かたむきをテクスチャ側へ焼いて素直に法線を傾ければ、1画素ごとに滑らかに出る。
+   高さ場を先に作り、そこから差分でかたむきを求める(周期境界で折り返す)。      */
+const SD_SLOPE = 5.0;         // かたむきを0〜255へ詰めるときの倍率
+const SD_CRACK_TH = 0.88;     // 割れ目として残す稜線の高さ(上げるほど線が細くなる)
+function surfaceDetailTexture(){
+  if(sdTexCache) return sdTexCache;
+  const S = SD_TEX;
+  const hgt = new Float32Array(S*S), crk = new Float32Array(S*S), mot = new Float32Array(S*S);
+  for(let y=0;y<S;y++){
+    for(let x=0;x<S;x++){
+      const u = x/S, v = y/S;
+      const grain = fbmTile(u, v, 4, 4);       // 粒(4→32周期)。ざらついた肌の芯
+      /* 割れ目: 尾根状ノイズ(1-|2n-1|)の稜線だけを残して「線」にする。
+         【落とし穴・実測】fbmTile の戻り値は 0〜1 ではなく 0〜0.75 に偏っているので、
+         正規化せずに 1-|2n-1| を取ると値がほぼ1に張り付き、pow で絞っても
+         【面の4割が割れ目】という巨大なまだらになった(=線に見えない)。
+         0〜1へ直してから、上端だけを smoothBand で切り出す。            */
+      const c = fbmTile(u, v, 9, 2)/0.75;
+      const cr = smoothBand(SD_CRACK_TH, 0.995, clamp01(1 - Math.abs(c*2 - 1)));
+      const i = y*S + x;
+      /* 割れ目のへこみは【浅く】する。深くすると線の縁でかたむきが振り切れ、
+         法線が横を向いて日陰になり、岩がジグソーパズルの黒い線で埋まる(実測)。
+         「深い溝」は色(A=暗く落とす)側で表現し、形は浅い段差にとどめる。   */
+      hgt[i] = grain - cr*0.15;
+      crk[i] = cr;
+      mot[i] = fbmTile(u, v, 2, 3);            // 広いムラ(汚れ・退色)
+    }
+  }
+  sdTexCache = makeTexture(S, (d)=>{
+    const at = (x, y)=> hgt[(((y%S)+S)%S)*S + (((x%S)+S)%S)];
+    for(let y=0;y<S;y++){
+      for(let x=0;x<S;x++){
+        const dx = (at(x+1, y) - at(x-1, y))*SD_SLOPE;
+        const dy = (at(x, y+1) - at(x, y-1))*SD_SLOPE;
+        const i = (y*S + x)*4;
+        d[i]   = Math.round(255*clamp01(0.5 + dx*0.5));
+        d[i+1] = Math.round(255*clamp01(0.5 + dy*0.5));
+        d[i+2] = Math.round(255*clamp01(mot[y*S + x]*1.15));
+        d[i+3] = Math.round(255*clamp01(crk[y*S + x]));
+      }
+    }
+  }, false);
+  sdTexCache.anisotropy = 4;
+  return sdTexCache;
+}
+
+/* 表面ディテールを材質へ差し込む。
+   scale=粒が1周する距離(ワールド単位。小さいほど細かい)
+   bump =凹凸の強さ(倍率。1.0で標準の岩肌。上げすぎると暗い材質が黒く潰れる)
+   macro=広いムラの大きさ / crack=割れ目の暗さ / stain=色ムラ / rough=粗さのムラ */
+const SD_DEFAULT = { scale:64, bump:0.4, macro:520, stain:0.26, crack:0.28, rough:0.34 };
+function applySurfaceDetail(mat, opt){
+  const o = Object.assign({}, SD_DEFAULT, opt || {});
+  const tex = surfaceDetailTexture();
+  const key = 'aramonSD|' + [o.scale, o.bump, o.macro, o.stain, o.crack, o.rough].join(',');
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  mat.onBeforeCompile = (sh, renderer)=>{
+    if(prev) prev(sh, renderer);      // 植生は風の頂点シェーダーが先に入っている
+    sh.uniforms.sdMap = { value: tex };
+    sh.uniforms.sdA = { value: new THREE.Vector4(1/o.scale, o.bump, 1/o.macro, o.stain) };
+    sh.uniforms.sdB = { value: new THREE.Vector2(o.crack, o.rough) };
+    /* --- 頂点: ワールドの座標と法線を渡す ---
+       法線は「どの向きから投影を貼るか」を決めるためだけに使う。インスタンスの
+       回転が入っているので、同じモデルでも置かれた向きで模様の乗り方が変わる。 */
+    sh.vertexShader = 'varying vec3 vSdW;\nvarying vec3 vSdN;\n' + sh.vertexShader;
+    sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', [
+      '#include <project_vertex>',
+      'vec4 sdWp = vec4(transformed, 1.0);',
+      'vec3 sdNo = objectNormal;',
+      '#ifdef USE_INSTANCING',
+      '  sdWp = instanceMatrix * sdWp;',
+      '  sdNo = mat3(instanceMatrix) * sdNo;',
+      '#endif',
+      'vSdW = (modelMatrix * sdWp).xyz;',
+      'vSdN = normalize(mat3(modelMatrix) * sdNo);',
+    ].join('\n'));
+    // --- 断片: 3方向から引いて混ぜる ---
+    sh.fragmentShader = [
+      'uniform sampler2D sdMap;',
+      'uniform vec4 sdA;',
+      'uniform vec2 sdB;',
+      'varying vec3 vSdW;',
+      'varying vec3 vSdN;',
+      'vec3 sdGrad; float sdMot; float sdCrk;',
+      '',
+    ].join('\n') + sh.fragmentShader;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <logdepthbuf_fragment>', [
+      '#include <logdepthbuf_fragment>',
+      '{',
+      '  vec3 sdN = normalize(vSdN);',
+      '  vec3 sdW3 = pow(abs(sdN), vec3(4.0));',   // 面の向きに近い投影ほど強く混ぜる
+      '  sdW3 /= max(1e-4, sdW3.x + sdW3.y + sdW3.z);',
+      '  vec3 sdP = vSdW * sdA.x;',
+      '  vec4 sdX = texture2D(sdMap, sdP.zy);',
+      '  vec4 sdY = texture2D(sdMap, sdP.xz);',
+      '  vec4 sdZ = texture2D(sdMap, sdP.xy);',
+      // 各投影のかたむきを、その投影が寝ている軸へ組み直してワールドの勾配にする
+      '  sdGrad = sdW3.x*vec3(0.0, sdX.g*2.0-1.0, sdX.r*2.0-1.0)',
+      '         + sdW3.y*vec3(sdY.r*2.0-1.0, 0.0, sdY.g*2.0-1.0)',
+      '         + sdW3.z*vec3(sdZ.r*2.0-1.0, sdZ.g*2.0-1.0, 0.0);',
+      '  sdCrk = sdX.a*sdW3.x + sdY.a*sdW3.y + sdZ.a*sdW3.z;',
+      // 広いムラは真上からの1枚だけ。縦の面では上下に伸びるが、それが雨だれの汚れに見える
+      '  float sdMacro = texture2D(sdMap, vSdW.xz * sdA.z).b;',
+      '  sdMot = (sdX.b*sdW3.x + sdY.b*sdW3.y + sdZ.b*sdW3.z)*0.60 + sdMacro*0.40;',
+      '}',
+    ].join('\n'));
+    // 色: 広いムラで明暗を付け、割れ目・目地を暗く落とす
+    sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', [
+      '#include <color_fragment>',
+      'diffuseColor.rgb *= 1.0 + (sdMot - 0.5)*sdA.w;',
+      'diffuseColor.rgb *= 1.0 - sdCrk*sdB.x;',
+    ].join('\n'));
+    // 粗さ: 出っぱりは磨かれて少しつやが出る(MeshLambertには無いので当たらないだけ)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', [
+      '#include <roughnessmap_fragment>',
+      'roughnessFactor = clamp(roughnessFactor*(1.0 - (sdMot - 0.5)*sdB.y), 0.05, 1.0);',
+    ].join('\n'));
+    /* 法線: ワールドの勾配を面に沿う成分だけ残し、視点座標系へ回してから傾ける。
+       この時点の normal は視点座標系なので viewMatrix で揃える。            */
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_maps>', [
+      '#include <normal_fragment_maps>',
+      '{',
+      '  vec3 sdG = sdGrad - vSdN*dot(vSdN, sdGrad);',
+      /* かたむきに上限を付ける。【これが無いと割れ目の縁で法線が振り切れ、
+         太陽の反対側を向いた画素が真っ黒になって、岩と壁が黒いススで
+         覆われたように見える】(上を向いた面は勾配が丸ごと残るので特にひどい)。 */
+      '  float sdL = length(sdG);',
+      '  if(sdL > 0.55) sdG *= 0.55/sdL;',
+      '  normal = normalize(normal - sdA.y*(viewMatrix * vec4(sdG, 0.0)).xyz);',
+      '}',
+    ].join('\n'));
+  };
+  mat.customProgramCacheKey = ()=> prevKey + key;
+  return mat;
+}
+
 const MOUNT_SKIRT = 120;      // 山の裾を地面へ埋める深さ(地形の凹みで隙間が出ないように)
 const CRATER_RATIO = 0.17;    // 火山の火口の広さ(山の半径に対する比)
 
@@ -369,19 +531,6 @@ const MOUNT_COLORS = {
              rough:0.86, relief:0.00, rockK:0.85, rockLo:0.12, rockHi:-0.08, cover:0.00 },
 };
 
-/* 山の肌。地面用に作ったテクスチャを複製して貼り、のっぺりした面を防ぐ。
-   複製は画像を共有するので生成コストはかからない(repeat/offsetだけ別に持てる)。 */
-const mountTexCache = {};
-export function mountainTextures(){
-  const groundMaps = getGroundMaps();
-  if(!groundMaps) return null;
-  if(!mountTexCache.normalMap){
-    const clone = (t, rep)=>{ const c = t.clone(); c.needsUpdate = true; c.repeat.set(rep, rep); c.offset.set(0,0); return c; };
-    mountTexCache.normalMap = clone(groundMaps.normalMap, 8);
-    mountTexCache.roughnessMap = clone(groundMaps.roughnessMap, 8);
-  }
-  return mountTexCache;
-}
 
 /* 山1つ。2Dの drawSolidCone と同じ寸法(半径 / 高さ = radius*(isMain?1.15:0.9))。
    火山の主峰だけ先端を切って火口にする。色は高さで麓→中腹→頂上を混ぜ、
@@ -523,16 +672,20 @@ export function buildMountainMesh(v){
     for(let k=0;k<3;k++){ col[(f+k)*3] = c.r; col[(f+k)*3+1] = c.g; col[(f+k)*3+2] = c.b; }
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const tex = mountainTextures();
   /* 【落とし穴】地面用の roughnessMap をそのまま貼ると、山肌の一部が
      つやのある面になって空の色を映し込み、暗い岩の山まで白っぽく飛ぶ
      (カウレアの黒い火山が砂色に見えていた原因)。山は一様に粗い面として扱う。 */
   const mat = new THREE.MeshStandardMaterial({
     vertexColors:true, roughness: conf.rough, metalness:0.0,
-    normalMap: tex ? tex.normalMap : null,
-    normalScale: new THREE.Vector2(0.7, 0.7),
     flatShading:true, envMapIntensity:ENV_INTENSITY*0.55, side:THREE.DoubleSide,
   });
+  /* 山肌のディテール。地面用の法線マップを円錐のUVへ貼っていたが、山の大きさが
+     半径数百〜千単位あるのに対しUVは0〜1しかなく、粒が引き伸ばされて効いていなかった。
+     ワールド座標から引く方式にすると、山も足元の岩も同じ密度の肌になる。
+     ピラミッドだけは石を積んだ人工物なので、粒を細かく・目地を濃くする。      */
+  applySurfaceDetail(mat, isPyramid
+    ? { scale:34,  bump:0.65, macro:520,  stain:0.36, crack:0.32, rough:0.30 }
+    : { scale:110, bump:0.8, macro:1400, stain:0.40, crack:0.20, rough:0.28 });
   const mesh = new THREE.Mesh(geo, mat);
   const base = heightAt(v.x, v.y) - MOUNT_SKIRT;
   mesh.position.set(v.x, base + h/2, v.y);
@@ -586,8 +739,6 @@ export function obstacleDrawn(){ return obstDrawn; }
 export function resetObstacles(){
   obstSig = '';
   obstCull = OBST_VIEW;
-  // 山と障害物の肌は地面のテクスチャの複製。マップが変わったら作り直す
-  mountTexCache.normalMap = null;
   vegTheme = null;   // 植生もテーマごとに作り直す(地面の高さも色も変わるため)
 }
 
@@ -669,10 +820,12 @@ function patchTint(geo, color, strength, seed, scale){
   return geo;
 }
 
-/* 岩の面の細かさ。1マップに数百個あっても、実際に画面へ出るのは近くの数十個
-   (obstacleDrawn は 40〜80 程度)なので、岩本体は細かく作ってよい。
-   草・小石・葉の塊は数が桁違いなので detail:1 のまま使う。                */
-const ROCK_DETAIL = 3;
+/* 岩の面の細かさ。IcosahedronGeometry の detail は「1面を(detail+1)²に割る」ので、
+   3 = 20×16 = 320枚、6 = 20×49 = 980枚。1マップに数百個あっても実際に画面へ出るのは
+   近くの数十個(obstacleDrawn は 40〜80 程度)なので、岩本体は細かく作ってよい。
+   3のままだと近くの岩で1面が15画素角になり、輪郭が六角形に見えていた。
+   草・小石・葉の塊は数が桁違いなので低いままにする。                        */
+const ROCK_DETAIL = 6;
 
 /* でこぼこの塊。半径1・底が y=0 に来るように作る(最後に fitBounds で枠へ収める)。
    3オクターブの変位で「大きなうねり → 面の割れ → 細かいザラつき」を重ね、
@@ -723,6 +876,91 @@ function boulderGeo(seed, flat, opt){
   if(flat !== 1) for(let i=0;i<pos.count;i++) pos.setY(i, pos.getY(i)*flat);
   geo.computeVertexNormals();
   return geo;
+}
+
+/* ---- シルエットを作り分けるための3つの操作 ----
+   同じ「でこぼこの塊」を色だけ変えて並べると、数を増やすほど作り物に見える。
+   丸い塊しか無いのが原因なので、稜(りょう)を立てる・割る・平たくする の3手を
+   足して、1つの種類の中に【違う種類の岩】が混ざるようにする。
+   どれも頂点を動かすだけなので三角形は1つも増えない。                        */
+
+/* 稜を立てる。ang の向きへ背骨を通し、直交方向を細めて屋根形にする。 */
+function crestGeo(geo, ang, narrow, rise){
+  const pos = geo.attributes.position;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const along = x*ca + z*sa;          // 背骨に沿う成分
+    const side  = -x*sa + z*ca;         // 背骨と直交する成分
+    const s2 = side*narrow;
+    const k = Math.max(0, 1 - Math.abs(side));   // 1=背骨の真上
+    const ny = y + rise*k*k*(y > 0 ? 1 : 0.15);
+    pos.setXYZ(i, ca*along - sa*s2, ny, sa*along + ca*s2);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* 割る。ang 向きの面に沿ってV字の裂け目を彫り、両側を少し押し広げる。
+   塊を2つ作らずに「割れた岩」に見せるので三角形は増えない。 */
+function cleaveGeo(geo, ang, width, depth, gap){
+  const pos = geo.attributes.position;
+  const nx = Math.cos(ang), nz = Math.sin(ang);
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const t = x*nx + z*nz;
+    const a = Math.abs(t);
+    if(a >= width) continue;
+    const k = 1 - a/width;
+    const sg = t >= 0 ? 1 : -1;
+    pos.setXYZ(i, x + nx*sg*gap*k, y - depth*k*k*Math.max(0, y), z + nz*sg*gap*k);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* 岩のシルエットを4通りに作り分ける。中身が「違う種類の岩」になるように分ける:
+   0=丸みのある塊 / 1=稜の立った岩 / 2=割れた岩 / 3=平たい岩床(小さい塊が乗る)
+   flat=全体のつぶし具合 / strat=水平の層(堆積岩)                             */
+function rockSilhouette(variant, s, opt){
+  const o = opt || {};
+  const flat = (o.flat == null) ? 0.60 : o.flat;
+  const strat = o.strat || 0;
+  const D = (o.detail == null) ? ROCK_DETAIL : o.detail;
+  if(variant === 1){
+    const g = boulderGeo(s, flat*1.12, { detail:D, amp:0.95, cuts:7, strat });
+    return crestGeo(g, s*1.7, 0.62, 0.34);
+  }
+  if(variant === 2){
+    const g = boulderGeo(s, flat*0.95, { detail:D, amp:1.12, cuts:5, strat });
+    return cleaveGeo(g, s*2.3, 0.52, 0.60, 0.09);
+  }
+  if(variant === 3){
+    const a = boulderGeo(s, flat*0.50, { detail:D, amp:1.18, cuts:4, strat: strat || 1.1 });
+    const b = boulderGeo(s + 5.7, 0.62, { detail:2, amp:1.20, cuts:3 });
+    b.scale(0.46, 0.44, 0.46);
+    b.translate(0.32, 0.50, -0.20);
+    return mergeGeos([a, b]);
+  }
+  return boulderGeo(s, flat, { detail:D, amp:0.90, cuts:4, strat });
+}
+
+/* 角を1つずつ削った箱。石積みの石・板材に使う。
+   まっすぐな箱を並べると「棒グラフ」に見えるが、角を不揃いにすると
+   手で割った石に見える。頂点を動かすだけなので三角形は12枚のまま。          */
+function chipBox(w, h, d, seed, amt){
+  const g = new THREE.BoxGeometry(w, h, d);
+  const pos = g.attributes.position;
+  const a = (amt == null) ? 0.15 : amt;
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // 同じ角の頂点(面ごとに複製されている)へ必ず同じずらしを与える
+    const k = seed + (x < 0 ? 0 : 1)*1.7 + (y < 0 ? 0 : 1)*3.1 + (z < 0 ? 0 : 1)*5.3;
+    const f = (u)=> (hash2(k*1.3 + u, k*2.7 - u) - 0.5)*2*a;
+    pos.setXYZ(i, x*(1 + f(1)), y*(1 + f(2)), z*(1 + f(3)));
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
 // 幹・柱。根元がy0、上へ伸ばす
@@ -813,18 +1051,8 @@ function obstacleGeo(flavor, variant){
          【遮蔽物として一目で分かること】が要るので地面との明暗差だけは必ず確保する。 */
       const lo = coverRock(mixColor(themeColor('steep'), themeColor('gravel'), 0.35).multiplyScalar(0.85), 0.86);
       const hi = coverRock(mixColor(themeColor('high'), themeColor('gravel'), 0.45).multiplyScalar(1.12), 1.00);
-      let g;
-      if(variant === 2){
-        // 割れて2枚に分かれた台。上の板を少しずらして段差を作る
-        const a = boulderGeo(s, 0.30, { strat:1.6, amp:0.85, detail:ROCK_DETAIL });
-        a.scale(1, 1, 1);
-        const b = boulderGeo(s+4.1, 0.24, { strat:1.9, amp:0.9, detail:1 });
-        b.scale(0.72, 1, 0.66);
-        b.translate(0.16, 0.52, -0.10);
-        g = mergeGeos([a, b]);
-      }else{
-        g = boulderGeo(s, variant ? 0.34 : 0.44, { strat: variant ? 2.1 : 1.4, detail:ROCK_DETAIL });
-      }
+      // 砂岩は全体に平たく、層(strat)を強く出す。4通りの作り分けは岩と同じ
+      const g = rockSilhouette(variant, s, { flat:0.40, strat:1.8 });
       fitBounds(g, 1.00, 0, sh.h);
       paintGeo(g, lo, hi, 0, sh.h, 0.42);
       cavityShade(g, 0.32, 0.24);
@@ -839,9 +1067,7 @@ function obstacleGeo(flavor, variant){
       const lo = coverRock(liftColor(themeColor('steep').multiplyScalar(0.85), 0.016), 0.72);
       const hi = coverRock(liftColor(mixColor(themeColor('steep'), themeColor('gravel'), 0.6).multiplyScalar(1.10), 0.050), 0.92);
       const snow = themeColor('high').multiplyScalar(1.06);
-      const g = (variant === 1)
-        ? mergeGeos([ boulderGeo(s, 0.56, { detail:ROCK_DETAIL }), (()=>{ const b = boulderGeo(s+3.3, 0.5, { detail:2 }); b.scale(0.55,0.55,0.55); b.translate(0.42, 0.30, 0.24); return b; })() ])
-        : boulderGeo(s, variant === 2 ? 0.46 : 0.60, { strat: variant*0.6, detail:ROCK_DETAIL });
+      const g = rockSilhouette(variant, s, { flat:0.66, strat:0.5 });
       fitBounds(g, 1.00, 0, sh.h);
       paintGeo(g, lo, hi, 0, sh.h, 0.40);
       cavityShade(g, 0.32, 0.20);
@@ -1115,18 +1341,22 @@ function obstacleGeo(flavor, variant){
     case 'cactus': {
       /* サボテン。畝を深くし、上下で太さを変え、刺座(白い点)の代わりに畝の稜線を
          明るくして質感を出す。腕は幹に寄せる(離すと2Dのくり抜きが広がりすぎる)。 */
-      const body = ribbed(new THREE.CylinderGeometry(0.30, 0.36, 2.2, 16, 6), 9, 0.13);
+      /* 【全高を表に合わせる】胴+笠の高さが 2.365 しかなく、OBST_SHAPES の 2.45 より
+         0.085 低かった(2Dのくり抜きだけが上へ0.085はみ出していた)。
+         笠だけ上げると胴との間に隙間ができるので、胴を伸ばして辻褄を合わせる。 */
+      const capR = 0.30, capH = capR*0.55, bodyH = sh.h - capH;   // 2.45 = 胴 + 笠
+      const body = ribbed(new THREE.CylinderGeometry(0.30, 0.36, bodyH, 16, 6), 9, 0.13);
       const bp = body.attributes.position;
       for(let i=0;i<bp.count;i++){
         const y = bp.getY(i);
-        const k = 1 - Math.pow(Math.max(0, (y+1.1)/2.2 - 0.80)/0.20, 2)*0.10;   // 先だけ細く
+        const k = 1 - Math.pow(Math.max(0, (y + bodyH/2)/bodyH - 0.80)/0.20, 2)*0.10;   // 先だけ細く
         bp.setXYZ(i, bp.getX(i)*k, y, bp.getZ(i)*k);
       }
       body.computeVertexNormals();
-      body.translate(0, 1.1, 0);
-      const cap = new THREE.SphereGeometry(0.30, 14, 5, 0, Math.PI*2, 0, Math.PI*0.5);
+      body.translate(0, bodyH/2, 0);
+      const cap = new THREE.SphereGeometry(capR, 14, 5, 0, Math.PI*2, 0, Math.PI*0.5);
       ribbed(cap, 9, 0.10);
-      cap.scale(1, 0.55, 1); cap.translate(0, 2.2, 0);
+      cap.scale(1, 0.55, 1); cap.translate(0, bodyH, 0);
       const parts = [body, cap];
       for(let i=0;i<2;i++){
         const sg = i ? -1 : 1;
@@ -1148,7 +1378,7 @@ function obstacleGeo(flavor, variant){
       const cacBase = plantColor(CACTUS_CORE, 0.34, 1.30, 1.70);
       const lo = cacBase.clone().multiplyScalar(0.62);
       const hi = cacBase.clone().multiplyScalar(1.24);
-      paintGeo(geo, lo, hi, 0, 2.45, 0.18);
+      paintGeo(geo, lo, hi, 0, sh.h, 0.18);
       cavityShade(geo, 0.34, 0.22);
       return geo;
     }
@@ -1189,29 +1419,40 @@ function obstacleGeo(flavor, variant){
        色は「人が作った物」に見せたいので自然物より彩度と明度の差を強く取り、
        遮蔽物として一目で分かるようにする(coverRock と同じ考え方)。          */
     case 'ruinwall': {
-      // 崩れた石壁。上端を欠けさせ、根元に崩れた瓦礫を寄せる
+      /* 崩れた石壁。前は「縦に5本の板」で棒グラフに見えていたので、
+         【石を1つずつ積む】形へ作り直した。段ごとに継ぎ目をずらし(=芋目地にしない)、
+         上の段・端ほど石が落ちて欠ける。石はひとつずつ角を削って不揃いにする。
+         箱1つは12枚しかないので、20個積んでも三角形は240枚で済む。         */
       const parts = [];
-      const bw = 0.86, bh = 1.62, bt = 0.34;
-      // 壁本体を縦の石積みに割る。段ごとに少しずらすと「積んだ壁」に見える
-      const cols = 5;
-      for(let i=0;i<cols;i++){
-        const t = i/(cols-1) - 0.5;
-        // 端の石ほど低く欠けさせる(崩れた壁の輪郭)
-        const chip = 1 - Math.pow(Math.abs(t)*2, 2.1)*0.42*(0.6 + frac(s + i*0.37)*0.8);
-        const hh = bh*Math.max(0.30, chip);
-        const w = bw*2/cols*0.94;
-        const b = new THREE.BoxGeometry(w, hh, bt*(0.88 + frac(i*0.71 + s)*0.24));
-        b.translate(t*bw*2*0.98, hh/2, (frac(i*1.31 + s) - 0.5)*bt*0.30);
-        b.rotateY((frac(i*0.53 + s) - 0.5)*0.10);
-        parts.push(b);
+      const bw = 0.94, bh = 1.58, bt = 0.30;
+      const courses = 5, perRow = 4;
+      const rowH = bh/courses;
+      for(let c=0;c<courses;c++){
+        const stagger = (c % 2) ? 0.5 : 0;            // 段ごとに半個ずらす
+        for(let i=-1;i<=perRow;i++){
+          const t = (i + stagger + 0.5)/perRow - 0.5;
+          if(Math.abs(t) > 0.5) continue;
+          // 上の段ほど、端ほど崩れて欠けている
+          /* 崩れ方。強くしすぎると石が飛び飛びになって「積んだ壁」に見えなくなる
+             (最初 0.55/0.55 で作ったら、ばらばらのサイコロが並んだだけになった)。
+             欠けるのは上の段と端だけ、下2段は必ず残す。                     */
+          const fall = Math.pow(Math.abs(t)*2, 2.2)*0.34 + Math.max(0, c - 1)/(courses-1)*0.46;
+          if(frac(s*1.9 + c*2.3 + i*0.71) < fall - 0.26) continue;
+          const w = (bw*2/perRow)*(0.94 + frac(c*1.3 + i*0.37 + s)*0.10);
+          const d = bt*(0.80 + frac(i*1.11 + c*0.53 + s)*0.36);
+          const b = chipBox(w, rowH*0.92, d, s + c*3.1 + i*1.7, 0.16);
+          b.rotateY((frac(i*0.53 + c*1.7 + s) - 0.5)*0.14);
+          b.translate(t*bw*2, rowH*(c + 0.5), (frac(i*1.31 + c*0.91 + s) - 0.5)*bt*0.34);
+          parts.push(b);
+        }
       }
-      // 根元の瓦礫
-      for(let i=0;i<4;i++){
+      // 崩れ落ちた石。壁のふもとに散らばると「崩れた」と読める
+      for(let i=0;i<5;i++){
         const a = s*1.7 + i*1.9;
-        const g = boulderGeo(s + i*2.3, 0.62, { amp:1.05 });
-        g.scale(0.20, 0.16, 0.20);
-        g.translate(Math.cos(a)*bw*0.85, 0.07, Math.sin(a)*bt*1.5);
-        parts.push(g);
+        const b = chipBox(0.30, 0.17, 0.24, s*2.7 + i*4.1, 0.26);
+        b.rotateY(a); b.rotateZ((frac(i*0.61 + s) - 0.5)*0.5);
+        b.translate(Math.cos(a)*bw*0.92, 0.09, Math.sin(a)*bt*1.9);
+        parts.push(b);
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 1.00, 0, sh.h);
@@ -1225,30 +1466,76 @@ function obstacleGeo(flavor, variant){
       return geo;
     }
     case 'container': {
-      // 打ち上げられた貨物コンテナ。波板の凹凸と扉の枠で「人が作った物」に見せる
+      /* 打ち上げられた貨物コンテナ。前は「箱の面をsinで軽く押した」だけで、
+         箱の分割数が粗く波板が1周期も入っていなかった(=ただの箱に見えていた)。
+         側面と屋根を【別の板として細かく分割し、台形の波板】に作り直す。
+         さらに ①四隅の隅金具 ②扉の縦枠と閂(かんぬき) ③ぶつけた凹み
+         を足して「工業製品が転がっている」ことが分かるようにする。          */
       const parts = [];
-      const cw = 0.96, ch = 1.26, cd = 0.58;
-      const body = new THREE.BoxGeometry(cw*2, ch, cd*2, 12, 2, 2);
-      // 波板(コルゲート)。側面だけを細かく波打たせる
-      const bp = body.attributes.position;
-      for(let i=0;i<bp.count;i++){
-        const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
-        if(Math.abs(z) > cd*0.92) bp.setZ(i, z + Math.sin(x*11.0)*0.022);
-        if(Math.abs(x) > cw*0.92) bp.setX(i, x + Math.sin(z*11.0)*0.020);
+      const cw = 0.96, ch = 1.24, cd = 0.56;
+      // 台形の波板の断面。sinより角が立って金属らしい
+      const corr = (u)=>{ const t = ((u % 1) + 1) % 1;
+        return (t < 0.5 ? (t < 0.25 ? t*4 : 2 - t*4) : (t < 0.75 ? -(t - 0.5)*4 : -(1 - t)*4)); };
+      const WAVE = 9, AMP = 0.030;
+      // 側面2枚(長手方向)。凹みは低い周波数のふくらみで作る
+      for(const sz of [-1, 1]){
+        const p = new THREE.PlaneGeometry(cw*2, ch, 22, 3);
+        const pp = p.attributes.position;
+        for(let i=0;i<pp.count;i++){
+          const x = pp.getX(i), y = pp.getY(i);
+          const dent = Math.exp(-Math.pow((x - (frac(s)*1.4 - 0.7))*2.2, 2))*0.055*(sz > 0 ? 1 : 0.4);
+          pp.setZ(i, corr((x/(cw*2) + 0.5)*WAVE)*AMP - dent);
+        }
+        p.computeVertexNormals();
+        p.rotateY(sz > 0 ? 0 : Math.PI);
+        p.translate(0, ch/2, sz*cd);
+        parts.push(p);
       }
-      body.translate(0, ch/2, 0);
-      parts.push(body);
-      // 上下の縁の桁
-      for(const yy of [0.03, ch-0.03]){
-        const rim = new THREE.BoxGeometry(cw*2.04, 0.075, cd*2.04);
-        rim.translate(0, yy, 0);
-        parts.push(rim);
+      // 妻面(短手)。扉のある側は縦枠と閂を付ける
+      for(const sx of [-1, 1]){
+        const p = new THREE.PlaneGeometry(cd*2, ch, 8, 2);
+        const pp = p.attributes.position;
+        for(let i=0;i<pp.count;i++) pp.setZ(i, corr((pp.getX(i)/(cd*2) + 0.5)*5)*AMP*0.7);
+        p.computeVertexNormals();
+        p.rotateY(sx > 0 ? Math.PI/2 : -Math.PI/2);
+        p.translate(sx*cw, ch/2, 0);
+        parts.push(p);
       }
-      // 扉側の縦枠2本
-      for(const sx of [-0.42, 0.42]){
-        const bar = new THREE.BoxGeometry(0.075, ch*0.94, 0.06);
-        bar.translate(sx, ch/2, cd*1.01);
+      // 屋根。波は長手方向に走る
+      const top = new THREE.PlaneGeometry(cw*2, cd*2, 20, 2);
+      const tp = top.attributes.position;
+      for(let i=0;i<tp.count;i++) tp.setZ(i, corr((tp.getX(i)/(cw*2) + 0.5)*WAVE)*AMP);
+      top.computeVertexNormals();
+      top.rotateX(-Math.PI/2);
+      top.translate(0, ch, 0);
+      parts.push(top);
+      // 上下の縁の桁(波板を挟む枠)
+      for(const yy of [0.045, ch - 0.045]){
+        for(const sz of [-1, 1]){
+          const rim = new THREE.BoxGeometry(cw*2.04, 0.09, 0.07);
+          rim.translate(0, yy, sz*cd);
+          parts.push(rim);
+        }
+        for(const sx of [-1, 1]){
+          const rim = new THREE.BoxGeometry(0.07, 0.09, cd*2);
+          rim.translate(sx*cw, yy, 0);
+          parts.push(rim);
+        }
+      }
+      // 四隅の隅金具(コンテナと言えばこれ)
+      for(const sx of [-1, 1]) for(const sz of [-1, 1]) for(const sy of [0, 1]){
+        const cn = new THREE.BoxGeometry(0.17, 0.13, 0.15);
+        cn.translate(sx*(cw - 0.05), sy ? ch - 0.065 : 0.065, sz*(cd - 0.04));
+        parts.push(cn);
+      }
+      // 扉の縦枠2本と閂(かんぬき)
+      for(const sx of [-0.44, 0.44]){
+        const bar = new THREE.BoxGeometry(0.055, ch*0.86, 0.05);
+        bar.translate(sx, ch/2, cd*1.02);
         parts.push(bar);
+        const lock = new THREE.BoxGeometry(0.13, 0.09, 0.05);
+        lock.translate(sx, ch*0.52, cd*1.04);
+        parts.push(lock);
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 1.00, 0, sh.h);
@@ -1261,30 +1548,49 @@ function obstacleGeo(flavor, variant){
       return geo;
     }
     case 'ruinpillar': {
-      // 遺跡の石柱。折れた高さの違う柱を土台の上に立てる
+      /* 遺跡の石柱。前は「つるつるの8角柱を3本」で、遠目には煙突に見えていた。
+         ①縦溝(フルーティング) ②柱を上下に積んだ継ぎ目(ドラム) ③欠けた角の土台
+         ④倒れて転がった柱の輪切り を足して、石を刻んで積んだ物に見せる。       */
       const parts = [];
-      const baseH = 0.30;
-      const plinth = new THREE.BoxGeometry(1.76, baseH, 1.76);
-      plinth.translate(0, baseH/2, 0);
-      parts.push(plinth);
-      const hs = [2.12, 1.34, 0.86], rs = [0.30, 0.22, 0.18];
+      const baseH = 0.34;
+      // 土台は2段。上段を少し小さくして「刻んだ石」の段差を作る
+      for(let k=0;k<2;k++){
+        const w = 1.80 - k*0.26;
+        const p = chipBox(w, baseH*0.5, w, s*1.7 + k*2.9, 0.05);
+        p.translate(0, baseH*(0.25 + k*0.5), 0);
+        parts.push(p);
+      }
+      const hs = [2.06, 1.30, 0.82], rs = [0.30, 0.22, 0.18];
       for(let i=0;i<3;i++){
         const a = s*1.3 + i*2.3, d = i===0 ? 0.06 : 0.52;
         const hh = hs[i]*(0.86 + frac(i*0.61 + s)*0.28);
-        // 柱は円柱を8角に割り、折れ口を斜めに削ぐ
-        const c = new THREE.CylinderGeometry(rs[i]*0.92, rs[i], hh, 8, 3);
+        // 12角柱に縦溝を彫る。溝があるだけで「加工した石」に見える
+        const c = ribbed(new THREE.CylinderGeometry(rs[i]*0.92, rs[i], hh, 12, 5), 12, 0.075);
         const cp = c.attributes.position;
         for(let k=0;k<cp.count;k++){
-          const y = cp.getY(k);
+          const y = cp.getY(k), t = (y + hh/2)/hh;
+          // ドラムの継ぎ目。3段に積んだ柱の境目をわずかにくびれさせる
+          const seam = 1 - Math.pow(Math.abs(Math.sin(t*Math.PI*3)), 12)*0.055;
+          cp.setXYZ(k, cp.getX(k)*seam, y, cp.getZ(k)*seam);
           if(y > hh*0.5 - 0.02){
             // 折れ口。斜めに落として「折れた柱」にする
             cp.setY(k, y - (cp.getX(k)*0.5 + 0.18)*(0.5 + frac(i + s)*0.7));
           }
         }
+        c.computeVertexNormals();
         c.translate(0, hh/2 + baseH, 0);
         c.rotateY(a);
         c.translate(Math.cos(a)*d, 0, Math.sin(a)*d);
         parts.push(c);
+      }
+      // 倒れて転がった輪切り2つ。足元に転がると「遺跡」になる
+      for(let i=0;i<2;i++){
+        const a = s*2.1 + i*2.7;
+        const dr = ribbed(new THREE.CylinderGeometry(0.24, 0.25, 0.30, 10, 1), 10, 0.06);
+        dr.rotateZ(Math.PI/2 + (frac(i*0.7 + s) - 0.5)*0.3);
+        dr.rotateY(a*1.3);
+        dr.translate(Math.cos(a)*0.78, baseH*0.5 + 0.10, Math.sin(a)*0.78);
+        parts.push(dr);
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 1.00, 0, sh.h);
@@ -1296,35 +1602,66 @@ function obstacleGeo(flavor, variant){
       return geo;
     }
     case 'hut': {
-      // 崩れかけた小屋。片流れの屋根が落ちかけた形にして「建物の残骸」に見せる
+      /* 崩れかけた小屋。前は「同じ板を7枚+平らな屋根板1枚」で、板の縁が全部
+         そろっていたため“作りかけの箱”に見えていた。板を1枚ずつ反らせ・欠けさせ、
+         屋根も1枚板をやめて【垂木の上に屋根板を並べる】形にし、抜けた板から
+         向こうが見えるようにする。木材なので角も削って割れ肌にする。         */
       const parts = [];
       const hw = 0.94, hh = 1.02, hd = 0.72;
-      // 壁は板を縦に並べる(隙間が空くと廃屋に見える)
-      const boards = 7;
+      // 正面の板壁。上端の高さをばらし、ところどころ抜けている
+      const boards = 9;
       for(let i=0;i<boards;i++){
         const t = i/(boards-1) - 0.5;
-        const bh2 = hh*(0.72 + frac(i*0.43 + s)*0.34);
-        const b = new THREE.BoxGeometry(hw*2/boards*0.86, bh2, 0.09);
+        if(frac(s*2.3 + i*0.83) < 0.16) continue;                 // 抜けた板
+        const bh2 = hh*(0.62 + frac(i*0.43 + s)*0.46);
+        const b = chipBox((hw*2/boards)*0.80, bh2, 0.085, s + i*1.9, 0.12);
+        b.rotateZ((frac(i*0.29 + s) - 0.5)*0.09);
         b.translate(t*hw*1.92, bh2/2, hd);
-        b.rotateY((frac(i*0.77 + s) - 0.5)*0.07);
+        b.rotateY((frac(i*0.77 + s) - 0.5)*0.09);
         parts.push(b);
       }
-      // 側面の壁2枚
+      // 側面の壁2枚。上端を斜めに落として片流れの屋根と合わせる
       for(const sx of [-1, 1]){
-        const w = new THREE.BoxGeometry(0.09, hh*0.92, hd*1.9);
-        w.translate(sx*hw, hh*0.46, hd*0.05);
-        parts.push(w);
+        for(let k=0;k<3;k++){
+          const zz = (k/2 - 0.5)*hd*1.7;
+          const bh2 = hh*(0.98 - k*0.10)*(0.90 + frac(k*0.7 + sx + s)*0.18);
+          const w = chipBox(0.085, bh2, hd*0.60, s*1.3 + k*2.7 + (sx > 0 ? 5 : 0), 0.10);
+          w.translate(sx*hw, bh2/2, zz + hd*0.05);
+          parts.push(w);
+        }
       }
-      // 落ちかけた片流れの屋根
-      const roof = new THREE.BoxGeometry(hw*2.2, 0.10, hd*2.1);
-      roof.rotateX(0.26);
-      roof.translate(0, hh + 0.10, -0.04);
-      parts.push(roof);
-      // 支柱
-      for(const sx of [-0.86, 0.86]){
-        const p = new THREE.BoxGeometry(0.11, hh*1.16, 0.11);
+      // 垂木(たるき)2本 + その上の屋根板。抜けた板の隙間から空が見える
+      for(const zz of [-hd*0.75, hd*0.75]){
+        const beam = chipBox(hw*2.15, 0.075, 0.075, s*3.1 + zz, 0.08);
+        beam.rotateX(0.26);
+        beam.translate(0, hh + 0.10 + zz*0.13, zz);
+        parts.push(beam);
+      }
+      const planks = 6;
+      for(let i=0;i<planks;i++){
+        if(frac(s*1.7 + i*1.31) < 0.20) continue;                 // 落ちた屋根板
+        const t = (i + 0.5)/planks - 0.5;
+        const pl = chipBox((hw*2.2/planks)*0.86, 0.065, hd*2.0, s*4.3 + i*2.1, 0.10);
+        pl.rotateX(0.26);
+        pl.rotateZ((frac(i*0.53 + s) - 0.5)*0.06);
+        pl.translate(t*hw*2.2, hh + 0.15, -0.04);
+        parts.push(pl);
+      }
+      // 支柱。片方は傾いて倒れかけている
+      for(let i=0;i<2;i++){
+        const sx = i ? 0.86 : -0.86;
+        const p = chipBox(0.10, hh*1.16, 0.10, s*5.7 + i*3.3, 0.09);
+        p.rotateZ(i ? 0.10 : -0.03);
         p.translate(sx, hh*0.58, -hd*0.86);
         parts.push(p);
+      }
+      // 落ちた板が足元に転がる
+      for(let i=0;i<3;i++){
+        const a = s*2.9 + i*2.2;
+        const pl = chipBox(0.62, 0.055, 0.14, s*6.1 + i*1.7, 0.14);
+        pl.rotateY(a);
+        pl.translate(Math.cos(a)*0.72, 0.035, Math.sin(a)*0.62 + hd*0.3);
+        parts.push(pl);
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 1.00, 0, sh.h);
@@ -1340,22 +1677,10 @@ function obstacleGeo(flavor, variant){
          その場だけ浮く。地面と同じテーマ色(岩肌=steep / 砂利=gravel)から作る。
          ただし【隠れられる物として一目で読める】ことがバトロワの要件なので、
          散布した小石と違い、地面との明暗差だけは coverRock で必ず確保する。
-         形は4通り: 丸い塊 / 角ばった塊 / 平たい岩床 / 重なった岩。 */
+         形は4通り: 丸い塊 / 稜の立った岩 / 割れた岩 / 平たい岩床(rockSilhouette)。 */
       const lo = coverRock(liftColor(themeColor('steep').multiplyScalar(0.85), 0.016), 0.80);
       const hi = coverRock(liftColor(themeColor('gravel').multiplyScalar(1.30), 0.050), 1.05);
-      let g;
-      if(variant === 3){
-        // 重なった岩(大小2つ)。1つの塊だけだと同じ形の繰り返しに見える
-        const a = boulderGeo(s, 0.52, { detail:ROCK_DETAIL });
-        const b = boulderGeo(s+5.7, 0.62, { detail:2 });
-        b.scale(0.52, 0.52, 0.52);
-        b.translate(0.34, 0.62, -0.20);
-        g = mergeGeos([a, b]);
-      }else if(variant === 2){
-        g = boulderGeo(s, 0.58, { strat:1.1, amp:1.20, detail:ROCK_DETAIL });    // 平たい岩床
-      }else{
-        g = boulderGeo(s, variant ? 0.70 : 0.56, { amp: variant ? 1.15 : 0.90, detail:ROCK_DETAIL });
-      }
+      const g = rockSilhouette(variant, s, { flat:0.62 });
       fitBounds(g, 1.00, 0, sh.h);
       paintGeo(g, lo, hi, 0, sh.h, 0.46);
       cavityShade(g, 0.34, 0.26);
@@ -1369,28 +1694,35 @@ function obstacleGeo(flavor, variant){
 }
 
 /* 材質は種類ごとに1つだけ作り、形の4通りで共有する。
-   tex は山と同じ肌テクスチャ(法線)の強さ。木や葉には貼らない(粒が浮くだけ)。
    env(環境光の反射)を下げるのが「プラスチックに見えない」ための要。
-   空の映り込みが強いと、どんなに粗くしても表面がツヤっぽくなる。            */
+   空の映り込みが強いと、どんなに粗くしても表面がツヤっぽくなる。
+   sd は表面ディテール(applySurfaceDetail)の設定。ここが「地面と同じ情報量」の中身で、
+   種類ごとに粒の細かさ・凹凸の深さ・割れ目の濃さを変える。
+   flat=面ごとの平らな陰影。結晶や柱状節理は面が立っているのが正しいので残し、
+   岩と人工物は平滑にして凹凸を sd 側に任せる(面が大きいと低ポリに見えるため)。 */
 const OBST_MATS = {
-  rock:     { rough:0.97, tex:1.9, env:0.55 },
-  sandrock: { rough:0.99, tex:1.7, env:0.50 },
-  snowrock: { rough:0.80, tex:1.1, env:0.70 },
+  /* 【scale の目安】障害物の半径は30〜80ワールド単位。粒の1周(scale)はその
+     1/3以下にしないと「模様が1個ぶんしか乗らない」= 何も無いのと同じになる
+     (最初 scale:58 で作って砂岩がのっぺりのままだった)。 */
+  rock:     { rough:0.97, env:0.55, flat:false, sd:{ scale:20, bump:0.85, macro:230, crack:0.30, stain:0.45, rough:0.38 } },
+  sandrock: { rough:0.99, env:0.50, flat:false, sd:{ scale:24, bump:0.75, macro:270, crack:0.20, stain:0.48, rough:0.30 } },
+  snowrock: { rough:0.80, env:0.70, flat:false, sd:{ scale:18, bump:0.7, macro:210, crack:0.18, stain:0.34, rough:0.42 } },
   // 玄武岩は暗い岩。env を上げると空の映り込みだけが残って無彩色のグレーに見える
-  basalt:   { rough:0.96, tex:1.9, env:0.22 },
-  deadtree: { rough:0.96, env:0.45 },
-  pine:     { rough:0.94, env:0.55 },
-  tree:     { rough:0.95, env:0.55 },
-  log:      { rough:0.97, tex:0.8, env:0.45 },
-  palm:     { rough:0.93, env:0.60 },
-  shell:    { rough:0.34, env:1.10 },
-  cactus:   { rough:0.82, env:0.55 },
-  crystal:  { rough:0.26, env:0.95 },
-  // 人工物(遮蔽物)。石は肌テクスチャを貼り、金属だけ少しツヤを残す
-  ruinwall:  { rough:0.95, tex:1.6, env:0.40 },
-  container: { rough:0.72, tex:0.5, env:0.55 },
-  ruinpillar:{ rough:0.94, tex:1.4, env:0.40 },
-  hut:       { rough:0.96, tex:0.6, env:0.38 },
+  basalt:   { rough:0.96, env:0.22, flat:true,  sd:{ scale:13, bump:0.62, macro:160, crack:0.30, stain:0.36, rough:0.34 } },
+  deadtree: { rough:0.96, env:0.45, flat:true,  sd:{ scale:9,  bump:0.45, macro:120, crack:0.20, stain:0.30, rough:0.26 } },
+  pine:     { rough:0.94, env:0.55, flat:true,  sd:{ scale:16, bump:0.35, macro:200, crack:0.08, stain:0.32, rough:0.20 } },
+  tree:     { rough:0.95, env:0.55, flat:true,  sd:{ scale:16, bump:0.4, macro:200, crack:0.10, stain:0.36, rough:0.20 } },
+  log:      { rough:0.97, env:0.45, flat:false, sd:{ scale:11, bump:0.55, macro:140, crack:0.20, stain:0.36, rough:0.26 } },
+  palm:     { rough:0.93, env:0.60, flat:true,  sd:{ scale:14, bump:0.35, macro:180, crack:0.10, stain:0.32, rough:0.20 } },
+  shell:    { rough:0.34, env:1.10, flat:false, sd:{ scale:8,  bump:0.25, macro:110, crack:0.06, stain:0.24, rough:0.30 } },
+  cactus:   { rough:0.82, env:0.55, flat:false, sd:{ scale:9,  bump:0.25, macro:120, crack:0.06, stain:0.26, rough:0.24 } },
+  crystal:  { rough:0.26, env:0.95, flat:true,  sd:{ scale:12, bump:0.25, macro:150, crack:0.05, stain:0.20, rough:0.30 } },
+  /* 人工物(遮蔽物)。石壁と柱は目地と欠けが要るので割れ目を強く、
+     コンテナは錆と凹みなので粒を細かく・粗さのムラを大きくする。 */
+  ruinwall:  { rough:0.95, env:0.40, flat:false, sd:{ scale:11, bump:0.68, macro:150, crack:0.34, stain:0.45, rough:0.34 } },
+  container: { rough:0.66, env:0.60, flat:false, sd:{ scale:9,  bump:0.4, macro:120, crack:0.16, stain:0.48, rough:0.55 } },
+  ruinpillar:{ rough:0.94, env:0.40, flat:false, sd:{ scale:10, bump:0.57, macro:140, crack:0.28, stain:0.40, rough:0.32 } },
+  hut:       { rough:0.96, env:0.38, flat:false, sd:{ scale:7,  bump:0.45, macro:110, crack:0.24, stain:0.44, rough:0.28 } },
 };
 // 岩は少し傾けて置くと「置き物」に見えない(木・柱は立てたまま)
 const OBST_TILT = { rock:0.10, sandrock:0.08, snowrock:0.10, shell:0.16, log:0.05, crystal:0.06 };
@@ -1414,14 +1746,15 @@ const SHADOW_SLIP = 0.14;   // ずらす量(物の高さに対する比)
 
 function obstacleMaterial(flavor){
   const conf = OBST_MATS[flavor] || OBST_MATS.rock;
-  const tex = conf.tex ? mountainTextures() : null;
   const mat = new THREE.MeshStandardMaterial({
     vertexColors:true, roughness:conf.rough, metalness:0.0,
-    normalMap: tex ? tex.normalMap : null,
-    normalScale: new THREE.Vector2(conf.tex||1, conf.tex||1),
-    flatShading:true,
+    flatShading: conf.flat !== false,
     envMapIntensity: (conf.env == null ? 1 : conf.env) * ENV_INTENSITY,
   });
+  /* 表面ディテール。地面用の法線マップを貼るのをやめてこちらへ替えた。
+     地面のUVをそのまま流用すると、球・円柱・箱でUVの縮尺がバラバラで
+     粒の大きさが物ごとに変わってしまう(貼っても効いていなかった)。 */
+  applySurfaceDetail(mat, conf.sd);
   /* 水晶だけはわずかに自ら光る。日陰へ入っても水色が残り、
      「氷の結晶」だと分かる(色はテーマ由来なのでマップごとに変わる)。 */
   if(flavor === 'crystal'){
@@ -1782,8 +2115,12 @@ function bushTexture(kind){
 function shrubGeo(kind, variant, colLow, colHigh){
   if(kind === 'lump'){
     /* 雪・火山灰の塊。植物が育たないマップでも地面が裸に見えないようにする。
-       足元にいちばん近づく立体物なので detail は上げる(数は100前後で軽い)。 */
-    const g = boulderGeo(variant*3.1 + 2.2, 0.40, { detail:2, amp:1.30, cuts:2 });
+       【岩の作り分け(稜・割れ・板)は使わない】これは吹きだまりと灰の山なので、
+       割れた岩の形にすると地面に黒いシミが貼り付いたように見える(実測)。
+       丸い山のまま、つぶし具合と削り方だけ4通りに変える。
+       足元にいちばん近づく立体物なので面は少し細かくする(数は100前後)。 */
+    const g = boulderGeo(variant*3.1 + 2.2, 0.38 + variant*0.055,
+                         { detail:3, amp:1.30, cuts: 2 + (variant % 3) });
     fitBounds(g, 0.95, 0, 1);
     paintGeo(g, colLow, colHigh, 0, 1, 0.30);
     cavityShade(g, 0.34, 0.24);
@@ -1813,8 +2150,11 @@ function shrubGeo(kind, variant, colLow, colHigh){
 
 // 小石。草の生えない所でも地面が裸に見えないようにする
 function pebbleGeo(variant, colLow, colHigh){
-  // 足元にいちばん近づく立体物なので detail:1 では粗すぎる(数は数百なので2で十分軽い)
-  const g = boulderGeo(variant*4.3 + 0.7, variant === 1 ? 0.34 : 0.55, { detail:2, amp:1.30, cuts:3 });
+  /* 足元にいちばん近づく立体物。数は数百なので面は控えめ(detail:3=320枚)だが、
+     形は岩と同じ作り分けにして「同じ丸い石が並ぶ」のを避ける。
+     ただし4番目(2つ重ねた岩)は三角形が倍になるので小石では使わず、
+     稜の立った形を別の種で作る。                                    */
+  const g = rockSilhouette(variant === 3 ? 1 : variant, variant*4.3 + 0.7, { flat:0.42, detail:3 });
   fitBounds(g, 1.0, 0, 1);
   paintGeo(g, colLow, colHigh, 0, 1, 0.34);
   cavityShade(g, 0.28, 0.26);
@@ -1922,6 +2262,11 @@ function buildVegetation(scene){
     map: isLump ? null : bushTexture(vegConf.shrub.kind),
     alphaTest: isLump ? 0 : 0.42, transparent:false,
   }), isLump ? 0 : 0.20, isLump ? 0 : 0.9, vegConf.shrub.view*0.80, vegConf.shrub.view, amb);
+  /* 雪・火山灰の塊は「立体の岩」なので、障害物と同じ表面ディテールを乗せる。
+     【ここを外すと世代が混ざる】足元にいちばん近い立体物はこの塊と小石で、
+     画面に占める面積は障害物より大きい。ここだけ単色のままだと、
+     岩をいくら作り込んでも「のっぺりした塊」の印象が残る。            */
+  if(isLump) applySurfaceDetail(shrubMat, { scale:7, bump:0.60, macro:90, stain:0.30, crack:0.10, rough:0.30 });
   const shrubBase = isLump ? col.lumpBase : col.shrubBase;
   add('shrub', vegConf.shrub, (v)=> shrubGeo(vegConf.shrub.kind, v,
       shrubBase.clone().multiplyScalar(0.74), shrubBase.clone().multiplyScalar(1.26)),
@@ -1931,6 +2276,7 @@ function buildVegetation(scene){
   const stoneMat = applyWind(new THREE.MeshLambertMaterial({
     vertexColors:true, flatShading:true,
   }), 0, 0, vegConf.stone.view*0.80, vegConf.stone.view, amb);
+  applySurfaceDetail(stoneMat, { scale:4.5, bump:0.55, macro:70, stain:0.34, crack:0.14, rough:0.28 });
   add('stone', vegConf.stone, (v)=> pebbleGeo(v, col.stoneBase.clone().multiplyScalar(0.95),
       col.stoneBase.clone().multiplyScalar(1.30)), stoneMat, false, false, 0.95, 0.55, 0.72);
 
@@ -2083,4 +2429,31 @@ export function updateObstacles(scene, rocks, crystals, cx, cy){
   }
   updateObstacleInstances(cx, cy);
   updateVegetation(scene, cx, cy);
+}
+
+// [一時デバッグ] 調査用。完了時に消すこと
+export function __sdDebug(){
+  const out = [];
+  if(!obstKinds) return out;
+  for(const f in obstKinds){
+    const vs = obstKinds[f];
+    const sh = shapeOf(f);
+    const bounds = vs.map(m=>{
+      const p = m.geometry.attributes.position;
+      let r = 0, lo = Infinity, hi = -Infinity;
+      for(let i=0;i<p.count;i++){
+        const rr = Math.hypot(p.getX(i), p.getZ(i));
+        if(rr > r) r = rr;
+        const y = p.getY(i);
+        if(y < lo) lo = y;
+        if(y > hi) hi = y;
+      }
+      return { r:+r.toFixed(3), y0:+lo.toFixed(3), h:+(hi-lo).toFixed(3), dh:+(hi-lo-sh.h).toFixed(3) };
+    });
+    out.push({ flavor:f, tableH:sh.h,
+      tris: vs.map(m=> m.geometry.attributes.position.count/3),
+      counts: vs.map(m=> m.count), bounds,
+      flat: vs[0].material.flatShading });
+  }
+  return out;
 }
