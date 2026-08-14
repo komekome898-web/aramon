@@ -346,6 +346,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('ogre_walk_f'), back:_loadWalk('ogre_walk_b') },
     ssr: [
       { skinId:'satsuki_ssr', front:_loadWalk('satsuki_ssr_walk_f'), back:_loadWalk('satsuki_ssr_walk_b') }, /*@satsuki_ssr*/
+      { skinId:'satsuki_ssr_awake', front:_loadWalk('satsuki_ssr_awake_walk_f'), back:_loadWalk('satsuki_ssr_awake_walk_b') }, /*@satsuki_ssr_awake*/
     ],
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
@@ -739,6 +740,7 @@ const SSR_SKIN_AURA = {
   metag_ssr:      'yellow', /*@metag_ssr*/
   guts_ssr_awake: 'black', /*@guts_ssr_awake*/
   satsuki_ssr:    'yellow', /*@satsuki_ssr*/
+  satsuki_ssr_awake:'yellow', /*@satsuki_ssr_awake*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1041,6 +1043,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-14', items:[
+    { t:'✵ 「北大路さつキジン」に覚醒の姿が追加されました！ 転生2回以上・全ステータス800以上のマスモンがこのスキンを装備していると覚醒でき、tier3の技を1つ選んで強化できます', g:['feature','monster'] },
+  ]},
   { date:'2026-08-13', items:[
     { t:'リアルマップで、丘や大きな物の向こうにある安置線・技の予告円が透けて見えていたのを直しました。地面の起伏に隠れるようになります', g:['fix','av'] },
     { t:'リアルマップの地面の模様が立体的すぎて、隠れられる岩と見分けにくかったのを直しました。模様は平らに、隠れられる岩は陰影と足元の影ではっきり分かるようになります', g:['fix','av'] },
@@ -3419,6 +3424,7 @@ const SSR_SKINS = {
   metag_ssr:      { element:'fire', name:'メタルグレイモン', iconImg:'metag_ssr', playerImg:'metag_player_ssr' }, /*@metag_ssr*/
   guts_ssr_awake: { element:'dullahan', name:'狂戦士ガッツ【覚醒】', iconImg:'guts_ssr_awake', playerImg:'guts_player_ssr_awake', awakenOf:'guts_ssr' }, /*@guts_ssr_awake*/
   satsuki_ssr:    { element:'ogre', name:'北大路さつキジン', iconImg:'satsuki_ssr', playerImg:'satsuki_player_ssr' }, /*@satsuki_ssr*/
+  satsuki_ssr_awake:{ element:'ogre', name:'北大路さつキジン【覚醒】', iconImg:'satsuki_ssr_awake', playerImg:'satsuki_player_ssr_awake', awakenOf:'satsuki_ssr' }, /*@satsuki_ssr_awake*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
