@@ -1046,7 +1046,8 @@ function drawMonster(e,p){
     ctx.fillStyle = isAllyOfPlayer ? '#7dffa8' : (e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)');
     ctx.textAlign='center';
     if((isAllyOfPlayer || e.isMastermonBot) && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor = isAllyOfPlayer ? '#2fd35a' : '#ffb703'; }
-    ctx.fillText((e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
+    // キルリーダーは名前の頭に👑(★マスモン印と同じ作法。スケール上限・近距離フェードも同じものが効く)
+    ctx.fillText(((typeof isKillLeader==='function' && isKillLeader(e))?'👑 ':'')+(e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
     ctx.shadowBlur = 0;
     // ゴースト(他の人が育てたマスモン)は、誰の子かを小さく添える
     if(e.ghostOwner){
@@ -1086,6 +1087,7 @@ function lootTintOf(it){
   if(it.kind==='ticket') return TICKET_ITEM.color;
   if(it.kind==='guts')   return GUTS_ITEM.color;
   if(it.kind==='training'){ const ti = TRAINING_ITEMS[it.type]; return ti ? ti.color : '#ffd23c'; }
+  if(it.kind==='deathDisc') return DEATH_DISC_ACCENT;
   return '#ffffff';
 }
 function drawLootItem(it,p){
@@ -1172,6 +1174,50 @@ function drawLootItem(it,p){
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=ti.accent; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
       // 効果は拾ったあとのカードで見せるので、地面では名前だけにする(長い説明は読ませない)
       ctx.fillText(ti.name, 0, -26);
+    }
+  } else if(it.kind==='deathDisc'){
+    /* デス円盤石: 横たわる石の円盤+うっすら金の光の柱。
+       他のアイテムと違い**浮かせない**(倒れた者の遺物として地面に置く)。
+       金の明滅(glow)だけで「拾える」ことを示す。 */
+    const glow = 0.6 + 0.3*Math.sin(matchTime*2.2 + it.bob);
+    /* 光の色で敵味方を伝える(チーム戦のみ): 敵の遺物=赤系/味方の遺物=緑系。
+       個人戦は従来の金(全部が「敵の落とし物」なので区別が要らない)。
+       ミニマップの3値・頭上▽と同じ「見る側から見た敵味方」の色言語 */
+    let pr=255, pg=215, pb=106;   // 既定=金
+    if((typeof isTeamMatch==='function') && isTeamMatch() && it.ownerTeamId!=null && player && player.teamId!=null){
+      if(it.ownerTeamId===player.teamId){ pr=110; pg=235; pb=140; }   // 味方の遺物=緑
+      else { pr=255; pg=110; pb=100; }                                 // 敵の遺物=赤
+    }
+    const col = (a)=> `rgba(${pr},${pg},${pb},${a})`;
+    // 光の柱(上へ淡く消える)
+    const grad = ctx.createLinearGradient(0, 0, 0, -92);
+    grad.addColorStop(0, col(0.30*glow));
+    grad.addColorStop(0.55, col(0.12*glow));
+    grad.addColorStop(1, col(0));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(-7, 0); ctx.lineTo(-4, -92); ctx.lineTo(4, -92); ctx.lineTo(7, 0);
+    ctx.closePath(); ctx.fill();
+    // 石の円盤(下に側面の暗い楕円を重ねて厚みを出す)
+    ctx.fillStyle = '#847e6f';
+    ctx.beginPath(); ctx.ellipse(0, 3, 16, 6.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = DEATH_DISC_COLOR;
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 6.5, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    // 円盤の紋様(同心の刻み)
+    ctx.strokeStyle = 'rgba(90,80,60,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(0, 0, 10.5, 4.2, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 1.8, 0, 0, Math.PI*2); ctx.stroke();
+    // 金の光のふち(明滅)
+    if(!renderHeavyLoad){ ctx.shadowBlur = 14*glow; ctx.shadowColor = col(1); }
+    ctx.strokeStyle = col(0.75*glow); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 6.5, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    if(dist(it,player)<200){
+      // 中身の個数も添える(拾う前に「何個入っているか」だけは分かるように=批評指摘)
+      const n = (it.keys && it.keys.length) || 0;
+      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=col(1); ctx.textAlign='center';
+      ctx.fillText(`${it.owner ? it.owner+'の' : ''}円盤石 ×${n}`, 0, -22);
     }
   }
   ctx.restore();
@@ -3120,6 +3166,71 @@ function drawZoneCompass(){
     ctx.fillText(`安置まで ${Math.round(distToEdge)}m`, cx, cy+r+15);
     ctx.restore();
   }
+}
+/* バトルアリーナ中だけ、安置コンパスの下に両チームの生存数(3-2形式)と残り時間を小さく出す。
+   DOMは足さずcanvasで完結させる(既存HUDのID構成を変えない)。エンティティのalive/teamIdと
+   matchTimeはマルチのゲストでも同期済みなので、そのまま数えるだけで両側で同じ表示になる。
+   位置はコンパス(cy=70,r=24)+圏外時の距離表示(〜y110)の直下で、既存要素と重ならない。 */
+function drawArenaScoreHud(){
+  if(!game.arena || !player || player.teamId==null) return;
+  let mine = 0, foe = 0;
+  for(const e of entities){
+    if(!e.alive || e.teamId==null) continue;
+    if(e.teamId===player.teamId) mine++; else foe++;
+  }
+  const left = Math.max(0, ARENA_TIME_LIMIT - matchTime);
+  const timeText = fmtTime(left);
+  /* 開始バナー: 最初の2.5秒だけ中央に大きく「3 vs 3」を出す(APEXのラウンド開始演出の
+     最小形。スコアピルが小さくて開幕の文脈が伝わらない=批評指摘への応答) */
+  if(matchTime < 2.5 && !introState.active){
+    const a = matchTime < 2.0 ? 1 : (2.5 - matchTime)/0.5;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.font = "bold 46px 'Russo One', sans-serif";
+    ctx.fillStyle = '#f4c430';
+    if(!renderHeavyLoad){ ctx.shadowBlur = 24; ctx.shadowColor = 'rgba(244,196,48,0.6)'; }
+    ctx.fillText(`${mine} vs ${foe}`, viewW/2, viewH*0.32);
+    ctx.shadowBlur = 0;
+    ctx.font = "bold 15px 'Rajdhani', sans-serif";
+    ctx.fillStyle = 'rgba(235,240,248,0.9)';
+    ctx.fillText('バトルアリーナ ― 相手チームを全滅させろ', viewW/2, viewH*0.32 + 26);
+    ctx.restore();
+    return;   // バナー表示中はスコアピルを出さない(同じ位置で重なる)
+  }
+  const cx = viewW/2, top = 112, h = 30, w = 210;
+  ctx.save();
+  // 背景はパネル類(rgba(11,19,32,…))と同じトーンの丸角ピル
+  ctx.beginPath();
+  const r = h/2, x0 = cx-w/2, y0 = top;
+  ctx.moveTo(x0+r, y0);
+  ctx.arcTo(x0+w, y0,   x0+w, y0+h, r);
+  ctx.arcTo(x0+w, y0+h, x0,   y0+h, r);
+  ctx.arcTo(x0,   y0+h, x0,   y0,   r);
+  ctx.arcTo(x0,   y0,   x0+w, y0,   r);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(11,19,32,0.66)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const cyText = y0 + h/2 + 1;
+  // 生存数: 自チーム=味方マーカーと同じ緑 / 敵チーム=被弾系の赤(既存HUDの配色に合わせる)
+  ctx.font = "bold 19px 'Russo One', sans-serif";
+  ctx.fillStyle = '#58e07e';
+  ctx.fillText(String(mine), cx-44, cyText);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = "bold 13px 'Rajdhani', sans-serif";
+  ctx.fillText('vs', cx-22, cyText);
+  ctx.font = "bold 19px 'Russo One', sans-serif";
+  ctx.fillStyle = '#ff6a6a';
+  ctx.fillText(String(foe), cx, cyText);
+  // 残り時間(上限を超えたら生存数の多い側の勝ち)。残り30秒からは琥珀色で促す
+  ctx.font = "14px 'Share Tech Mono', monospace";
+  ctx.fillStyle = left<=30 ? '#f4c430' : 'rgba(255,255,255,0.75)';
+  ctx.fillText(timeText, cx+50, cyText);
+  ctx.restore();
 }
 function fanOutlinePoints(x,y,angle,range,halfAngleRad,segs){
   const center = projectGround(x,y);
@@ -5533,7 +5644,9 @@ function render(){
   if(introState.active) safeDraw(drawSummonIntroFront);
   safeDraw(drawDangerVignette);
   safeDraw(drawDownedOverlay);   // チーム戦: 自分がダウン中の赤いビネット+蘇生待ちの案内
+  safeDraw(drawPingMarkers);     // チーム戦: 小隊のピン(旗マーカー)。案内表示なので最前面に出す
   safeDraw(drawZoneCompass);
+  safeDraw(drawArenaScoreHud);   // アリーナ: 両チームの生存数と残り時間(アリーナ以外では何も描かない)
   if(introState.active) safeDraw(drawSummonCountdown);
   safeDraw(renderMinimap);
 }
@@ -5685,6 +5798,53 @@ function drawSummonCountdown(){
   ctx.fillText(String(n), viewW/2, viewH*0.31);
   ctx.restore();
 }
+/* ===== チーム戦: ピンの旗マーカー(3D世界) =====
+   毎フレームproject()で1点ずつ投影する(画面上の位置・角度を決め打ちしない)。
+   敵ピン(赤)は対象の頭上に追従し、移動ピン(黄)は指した地面に立つ。
+   上下にふわふわ+自分からの距離mを添える。スケールは頭上ラベルと同じ上限
+   (TEAM_LABEL_MAX_SCALE)でカメラ至近でも巨大化しない。掃除はprunePings(combat.js)。 */
+function drawPingMarkers(){
+  if(typeof teamPings==='undefined' || !teamPings.size || !player) return;
+  for(const pg of teamPings.values()){
+    let wx, wy, wz;
+    if(pg.kind==='enemy'){
+      const t = getEntity(pg.targetId);
+      if(!t || !t.alive) continue;   // 消すのはprunePingsの仕事(描画では飛ばすだけ)
+      wx=t.x; wy=t.y; wz=(t.z||0) + t.radius*2.6;   // 頭上(名前ラベルのさらに上)
+    } else {
+      wx=pg.x; wy=pg.y; wz=groundZAt(wx, wy);
+    }
+    const p = project(wx, wy, wz);
+    if(!p) continue;
+    const col = pg.kind==='enemy' ? '#ff5a5a' : '#ffd23c';
+    // 出現0.15秒でなじませ、最後の0.5秒でふっと消える
+    const fade = clamp((pg.expireAt - matchTime)/0.5, 0, 1) * clamp((matchTime - pg.bornAt)/0.15 + 0.35, 0, 1);
+    if(fade <= 0.02) continue;
+    const k = Math.min(Math.max(p.scale, 0.55), TEAM_LABEL_MAX_SCALE);   // 遠くでも読め、至近で巨大化しない
+    const bob = Math.sin(matchTime*3 + pg.senderId)*4*k;                 // 上下にふわふわ(目に留まる)
+    ctx.save();
+    ctx.translate(p.x, p.y + bob);
+    ctx.scale(k, k);
+    ctx.globalAlpha = fade;
+    // 旗: ポール+旗布+根本の点(地点/対象の真上)
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+    ctx.fillStyle = col;
+    if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = col; }
+    ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(16, -21); ctx.lineTo(0, -16); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(0, 0, 2.4, 0, Math.PI*2); ctx.fill();
+    // 自分からの距離m(近づくほど減る=そのまま誘導になる)
+    const txt = Math.max(1, Math.round(dist(player, {x:wx, y:wy})/PING_UNITS_PER_M)) + 'm';
+    ctx.font = "bold 10px 'Rajdhani', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeText(txt, 0, -32);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(txt, 0, -32);
+    ctx.restore();
+  }
+}
 function renderMinimap(){
   const w = miniCanvas.width, h = miniCanvas.height;
   miniCtx.clearRect(0,0,w,h);
@@ -5763,6 +5923,26 @@ function renderMinimap(){
       miniCtx.fillStyle = e.isPlayer ? '#ffffff'
         : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
       miniCtx.fill();
+    }
+  }
+  // チーム戦: 小隊のピン(敵=赤/移動=黄)を点滅させて出す。3D世界の旗と同じ色言語
+  if(typeof teamPings!=='undefined' && teamPings.size){
+    const blink = 0.45 + 0.55*Math.abs(Math.sin(matchTime*5));
+    for(const pg of teamPings.values()){
+      let px2, py2;
+      if(pg.kind==='enemy'){
+        const t = getEntity(pg.targetId);
+        if(!t || !t.alive) continue;
+        px2=t.x; py2=t.y;
+      } else { px2=pg.x; py2=pg.y; }
+      miniCtx.save();
+      miniCtx.globalAlpha = blink;
+      miniCtx.beginPath();
+      miniCtx.arc(px2*scale, py2*scale, 3.6, 0, Math.PI*2);
+      miniCtx.fillStyle = pg.kind==='enemy' ? '#ff5a5a' : '#ffd23c';
+      miniCtx.fill();
+      miniCtx.strokeStyle='rgba(255,255,255,0.95)'; miniCtx.lineWidth=1.2; miniCtx.stroke();
+      miniCtx.restore();
     }
   }
   const px=player.x*scale, py=player.y*scale, yaw=camState.yaw;
@@ -5875,6 +6055,17 @@ function updateHUD(){
   document.documentElement.style.setProperty('--accent', accentColor);
   if(typeof updateRaidHud==='function') updateRaidHud();   // レイド中だけボスHP・残り時間・与ダメを更新
   updateSquadPanel();   // チーム戦だけ小隊バー(個人戦では隠れたまま)
+  if(typeof prunePings==='function') prunePings();             // ピンの寿命(ゲストのループでも回る)
+  if(typeof updateKillLeader==='function') updateKillLeader(); // 同期済みkillsから毎フレーム導出(同期追加なし)
+  // ピンボタンはチーム系モードの試合中だけ出す(個人戦・レイド・射撃訓練場では非表示)
+  {
+    const pingBtnEl = document.getElementById('pingBtn');
+    if(pingBtnEl){
+      const showPing = (typeof isTeamMatch==='function') && isTeamMatch() &&
+        game.started && !game.over && player.alive;
+      pingBtnEl.classList.toggle('hidden', !showPing);
+    }
+  }
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
   document.getElementById('hpFill').style.width = hpPct+'%';
   document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');
@@ -5913,7 +6104,17 @@ function updateHUD(){
   statusEl.innerHTML = statusHtml;
 
   const aliveCount = entities.filter(e=>e.alive).length;
-  document.getElementById('aliveNum').textContent = aliveCount;
+  if(game.arena && player && player.teamId!=null){
+    // アリーナはBRの「N体 生存中」ではなく「自3 vs 敵3」(1本勝負の語彙=批評指摘)
+    const own = entities.filter(e=>e.alive && e.teamId===player.teamId).length;
+    const foe = aliveCount - own;
+    document.getElementById('aliveNum').textContent = `${own}v${foe}`;
+    document.getElementById('aliveLabel').textContent = '自 vs 敵';
+  } else {
+    document.getElementById('aliveNum').textContent = aliveCount;
+    const al = document.getElementById('aliveLabel');
+    if(al.textContent!=='体 生存中') al.textContent = '体 生存中';   // アリーナ後の持ち越し防止
+  }
   bgmUpdateBattleIntensity(aliveCount); // 残り人数で試合BGMの盛り上がりを切替
   document.getElementById('zoneStatus').textContent = zoneLabel();
   const countdown = zoneCountdownSeconds();

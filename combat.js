@@ -613,6 +613,9 @@ function killEntity(victim, killer){
   const aliveCount = entities.filter(e=>e.alive).length + 1;
   if(!isTeamMatch()) victim.placement = aliveCount;   // チーム戦の順位はチーム単位(teamNoteDeathが付ける)
   spawnDeath(victim.x, victim.y, victim.z, ELEMENTS[victim.element].color);
+  // デス円盤石: 試合中に確定したトレーニング強化があれば、その場に石の円盤として残す
+  // (本当の死亡だけ=ダウンでは落とさない。上のtryEnterDownedを抜けた後なのでここでよい)
+  spawnDeathDisc(victim);
   if(killer && entities.includes(killer) && killer.id!==victim.id){
     killer.kills += 1;
     killer.hp = Math.min(killer.maxHp, killer.hp + 50);
@@ -1154,6 +1157,7 @@ function teamMembers(teamId){ return teamMembersById.get(teamId) || []; }
 function teamResetState(){
   game.teamSize = 1;
   teamMembersById = new Map();
+  pingResetState();   // ピンとキルリーダーも試合をまたいで持ち越さない(「入口で必ず消す」の決まり)
 }
 /* エンティティ生成順に teamSize ずつ区切ってチームを割り当てる。
    entities の並びだけから決まるので、同じ並びを作る2者(ホスト/ゲスト)で必ず一致する。 */
@@ -1272,6 +1276,109 @@ function updateTeamStates(dt){
     }
   }
 }
+/* ===== ピン(シグナル)とキルリーダー(APEX風のチーム体験) =====
+   ・ピンはチーム系モード(isTeamMatch)のみ。同期は「発信者→全員のイベント配信」(kind:'ping')で、
+     ホスト権威ではない(表示だけの機能なので誰が送ってもよい=ゲストも発信できる)。
+   ・botはピンに反応しない(表示のみ)。ソロ小隊でも味方botの行動は変わらない。
+   ・キルリーダーはauthStateで同期済みのkillsから毎フレーム全員が導出する(同期の追加なし)。 */
+let teamPings = new Map();     // 発信者のエンティティid -> ピン。1人が連打しても最新1個だけ(上書き)
+let killLeaderCurId = null;    // 現在のキルリーダーのエンティティid(2キル未満しかいなければnull)
+function pingResetState(){
+  lastPingSentAt = -Infinity; teamPings = new Map(); killLeaderCurId = null; }
+
+// 照準方向の敵を探す(ロックオン表示と同じ「向いている先」基準。角度内で最も近い敵)
+function pingFindEnemy(){
+  let best = null, bestD = PING_ENEMY_SEARCH_RANGE;
+  for(const e of entities){
+    if(e===player || !e.alive || e.isRaidBoss) continue;
+    if(sameTeam(player, e)) continue;
+    const d = dist(player, e);
+    if(d > bestD) continue;
+    if(Math.abs(angleDiff(angTo(player, e), player.facingAngle)) > PING_ENEMY_SEARCH_ANGLE) continue;
+    bestD = d; best = e;
+  }
+  return best;
+}
+/* ピンを打つ(ボタン1押しで完結)。照準の先に敵がいれば敵ピン、いなければ移動ピン。 */
+let lastPingSentAt = -Infinity;
+const PING_COOLDOWN_SEC = 1.2;   // 連打スパム防止(フィードが同じ行で埋まる=批評指摘)
+function sendPing(){
+  if(!game.started || game.over || !player || !player.alive) return;
+  if(!isTeamMatch()) return;
+  if(matchTime - lastPingSentAt < PING_COOLDOWN_SEC) return;
+  lastPingSentAt = matchTime;
+  const enemy = pingFindEnemy();
+  let data;
+  if(enemy){
+    data = { pk:'enemy', tId: enemy.id };
+  } else {
+    // 障害物(岩・山)を貫通した先を指さない(見えない場所へ旗が立つと迷う)
+    const d = raycastObstacleDistance(player.x, player.y, player.facingAngle, PING_RANGE);
+    data = { pk:'move',
+      x: Math.round(clamp(player.x + Math.cos(player.facingAngle)*d, 0, WORLD.w)),
+      y: Math.round(clamp(player.y + Math.sin(player.facingAngle)*d, 0, WORLD.h)) };
+  }
+  applyPing({ ...data, entId: player.id });  // 自分の画面には即時反映(往復を待たない)
+  if(netState.mode==='multi' && netState.roomId){
+    // 自分のエコーは受信側でpidで捨てる(上で適用済み)。teamは「同じ小隊だけ表示」の判定に使う
+    window.__aramonPushEvent(netState.roomId,
+      { kind:'ping', pid: netState.myPlayerId, team: player.teamId, entId: player.id, ...data, ts: Date.now() });
+  }
+}
+/* ピンを表示に反映する(発信者本人と、イベントを受け取った同じ小隊の両方が通る)。
+   エンティティidはホスト/ゲストで一致する(チーム戦の土台の決まり)ので、idの読み替えは不要。
+   期限は受信時の自分のmatchTime基準にする(ホストとゲストのmatchTimeはズレるため絶対時刻を使わない)。 */
+function applyPing(d){
+  const sender = getEntity(d.entId);
+  if(!sender) return;
+  teamPings.set(d.entId, { kind: d.pk, x: d.x, y: d.y, targetId: d.tId,
+    senderId: d.entId, bornAt: matchTime, expireAt: matchTime + PING_LIFETIME_SEC });
+  playSe('pickup');   // 軽い通知音(専用SEは作らず既存を流用)
+  pushKillFeed(d.pk==='enemy' ? `📍 ${displayNameFor(sender)}: 敵発見！` : `📍 ${displayNameFor(sender)}: ここへ！`);
+}
+/* 期限切れ・対象消滅のピンを掃除する(updateHUDから毎フレーム=ゲストのループでも回る)。 */
+function prunePings(){
+  if(!teamPings.size) return;
+  for(const [key, pg] of teamPings){
+    if(matchTime >= pg.expireAt){ teamPings.delete(key); continue; }
+    if(pg.kind==='enemy'){
+      const t = getEntity(pg.targetId);
+      if(!t || !t.alive) teamPings.delete(key);   // 倒された敵のピンは残さない
+    }
+  }
+}
+
+/* ===== キルリーダー(個人戦・チーム戦の両方で出す) =====
+   導出は決定的(kills最多・同数ならentitiesの並びで先)にして、ホストとゲストが
+   同期済みのkillsから必ず同じ答えを出すようにする(リーダーidそのものは同期しない)。 */
+function computeKillLeaderId(){
+  let best = null, bestK = KILL_LEADER_MIN_KILLS - 1;
+  for(const e of entities){
+    if(!e.alive || e.isRaidBoss) continue;
+    const k = e.kills || 0;
+    if(k > bestK){ bestK = k; best = e; }
+  }
+  return best ? best.id : null;
+}
+function isKillLeader(e){ return !!(e && killLeaderCurId!=null && e.id===killLeaderCurId); }
+/* 毎フレーム呼ぶ(updateHUD経由=ソロ・ホスト・ゲスト全員)。交代のフィード行は
+   ホスト/ソロだけが確定し、ゲストへは既存のkillイベント(textだけ)を流用して配る。 */
+function updateKillLeader(){
+  if(!game.started || game.over || game.raid || game.trainingRange){ killLeaderCurId = null; return; }
+  const id = computeKillLeaderId();
+  if(id === killLeaderCurId) return;
+  killLeaderCurId = id;
+  if(id==null) return;
+  if(netState.mode==='multi' && !netState.isHost) return;  // ゲストは導出だけ(フィードはイベントで届く)
+  const ent = getEntity(id);
+  if(!ent) return;
+  const text = `👑 ${displayNameFor(ent)} がキルリーダーになった`;
+  pushKillFeed(text);
+  if(netState.mode==='multi'){
+    window.__aramonPushEvent(netState.roomId, { kind:'kill', text, ts: Date.now() });
+  }
+}
+
 function countAliveTeams(){
   const s = new Set();
   for(const e of entities){ if(e.alive && e.teamId!=null) s.add(e.teamId); }
@@ -1331,6 +1438,66 @@ function checkTeamWin(){
   if(player && winnerTeamId!=null && player.teamId===winnerTeamId){
     onPlayerWin();   // 自分がダウン/死亡していてもチームが勝てば勝利
   } else if(!game.over){
+    showResult(false, (player && player.placement)||2);
+  }
+}
+
+/* =====================================================================
+   バトルアリーナ(1チームvs1チーム・3v3=6体・1本勝負)
+
+   ・分岐の入口は game.arena 1つ(game.raid / game.trainingRange と同じ方式)。
+     個人戦・通常のチーム戦ではどの関数も何もしないので既存の経路は変わらない。
+     **同じ判定を2か所目に書かない。**
+   ・チームの仕組み(ダウン/蘇生/全滅の決着=checkTeamWin/チームリザルト)は
+     チーム戦の土台をそのまま使う。アリーナ固有なのは「中央固定の小さい安置」
+     (world.jsのinitArenaZone/updateArenaZone)・「対面スポーン」・「時間切れの決着」だけ。
+   ===================================================================== */
+/* アリーナの状態を初期値へ戻す。試合を始める全経路(startGame / beginMultiplayerMatchInner /
+   raidStart / startShootingRange)の冒頭で必ず呼ぶ(raidResetStateと同じ「入口で消す」決まり)。 */
+function arenaResetState(){
+  game.arena = false;
+}
+/* 時間切れの決着。update()(=ソロとホストのループ)から毎フレーム見る。
+   レイドのcheckRaidEndと同じ理由で「誰かが倒れたとき」だけの判定にしない
+   (時間が来ても誰も倒れなければ試合が終わらなくなる)。
+   全滅による通常の決着は checkTeamWin がそのまま効くので、ここでは時間だけを見る。 */
+function updateArena(dt){
+  if(!game.arena || game.over) return;
+  if(netState.mode==='multi' && !netState.isHost) return;   // 決着はホストだけが確定させる
+  if(matchTime < ARENA_TIME_LIMIT) return;
+  /* 生存数が多いチームの勝ち。同数ならHP合計(ダウン中も蘇生の望みがあるので生存に数える)。
+     それでも並んだら先着チーム(teamIdが小さい方)。ホストだけが判定するので同着の裁定も1つに決まる。 */
+  const score = new Map();
+  for(const e of entities){
+    if(!e.alive || e.teamId==null) continue;
+    const s = score.get(e.teamId) || { alive:0, hp:0 };
+    s.alive++; s.hp += Math.max(0, e.hp);
+    score.set(e.teamId, s);
+  }
+  let winnerTeamId = null, best = null;
+  for(const [tid, s] of score){
+    if(!best || s.alive > best.alive || (s.alive===best.alive && s.hp > best.hp)
+       || (s.alive===best.alive && s.hp===best.hp && tid < winnerTeamId)){
+      winnerTeamId = tid; best = s;
+    }
+  }
+  // 決着の付け方・配信はcheckTeamWinの全滅決着と同じ形(勝ちチーム全員1位・残りは2位)
+  for(const e of entities){
+    if(e.teamId==null) continue;
+    e.placement = (e.teamId===winnerTeamId) ? 1 : 2;
+  }
+  if(netState.mode==='multi'){
+    window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload()).catch(()=>{});
+    const wm = winnerTeamId!=null ? teamMembers(winnerTeamId) : [];
+    window.__aramonPushEvent(netState.roomId, {
+      kind:'matchEnd', winnerTeam: winnerTeamId,
+      winnerNetId: (wm.find(m=>m.netPlayerId)||{}).netPlayerId || null,
+      winnerName: wm.map(m=>m.name).join('・'), ts:Date.now(),
+    });
+  }
+  if(player && winnerTeamId!=null && player.teamId===winnerTeamId){
+    onPlayerWin();   // 時間切れでも生存数で上回っていればチームの勝ち
+  } else {
     showResult(false, (player && player.placement)||2);
   }
 }
@@ -2001,11 +2168,28 @@ function updateLootPickups(){
           if(!e.isPlayer && netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootCards = cards;
           spawnDmgText(e.x, e.y, e.z, ti.emoji+' トレーニング', ti.accent);
           consumed = true;
+        } else if(it.kind==='deathDisc'){
+          // デス円盤石: 中身のトレーニング項目を**カード選択なしで即適用**。
+          // 効かせ方は既存カードと同じ1本道(applyTrainCardToEntity)なので、
+          // 適正倍率・丸めがそのまま効き、受け継いだ項目は拾った側の履歴にも積まれる(連鎖)
+          const counts = new Map();
+          for(const k of (it.keys||[])){
+            const t = trainCardMenu(k);
+            if(!t || !applyTrainCardToEntity(e, k)) continue;
+            counts.set(t.label, (counts.get(t.label)||0) + 1);
+          }
+          if(counts.size){
+            const parts = Array.from(counts, ([label,n])=> n>1 ? `${label}×${n}` : label);
+            spawnDmgText(e.x, e.y, e.z, '💠 継承', DEATH_DISC_ACCENT);
+            lootToast(e, `${it.owner||'名も無きモンスター'} の力を受け継いだ！（${parts.join('・')}）`);
+          }
+          consumed = true;
         }
       }
       if(consumed){
-        // SE: 自分のアイテム取得のみ。トレーニングアイテムはトレ実行と同じ「ポワポワ」
-        if(e.isPlayer) playSe(it.kind==='training' ? 'train' : 'pickup');
+        // SE: 自分のアイテム取得のみ。トレーニングアイテムはトレ実行と同じ「ポワポワ」、
+        // デス円盤石は継承らしく光の柱の「チュピーン」(既存SEの流用)
+        if(e.isPlayer) playSe(it.kind==='deathDisc' ? 'chupiin' : (it.kind==='training' ? 'train' : 'pickup'));
         consumedBy = e.netPlayerId || null; // 誰が拾ったか(ゲストのSE用)
         consumedKind = it.kind;
         break;
@@ -2120,8 +2304,10 @@ function update(dt){
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
   else if(game.raid) updateRaidZone(dt);          // レイドは制限時間に合わせて線形に縮める
+  else if(game.arena) updateArenaZone(dt);        // アリーナは中央固定の小さい安置を1段階だけ縮める
   else updateZone(dt);
   if(game.raid) updateRaid(dt);                   // ボスの予告→発動と、決着の判定
+  updateArena(dt);                                // アリーナ: 時間切れの決着(アリーナ以外では何もしない)
   updateTeamStates(dt);                           // チーム戦: 出血タイマーと蘇生の進行(個人戦では何もしない)
   updateCameraSnap(dt);
   computePlayerInput();

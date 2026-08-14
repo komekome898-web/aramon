@@ -150,7 +150,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      </button>
      <button id="openModePickBtn" class="lobby-pick-btn has-dot">
        <span class="lobby-pick-label">プレイモード</span>
-       <span class="lobby-pick-value" id="lobbyModeValue">1人でプレイ</span>
+       <span class="lobby-pick-value" id="lobbyModeValue">シングル・30人バトロワ</span>
        <!-- 通常マルチで募集中の部屋の待機人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
        <span id="multiWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
@@ -278,20 +278,39 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
   <div class="mastermon-confirm-box lobby-wide-box">
     <button id="closeModePickBtn" class="overlay-close-btn">✕</button>
     <div class="lobby-menu-title">🎮 プレイモード</div>
+      <!-- 最上位の3分岐(シングル / チーム戦 / レイド)。選択は setLobbyMode() だけが書く -->
       <div id="modeTabs">
-        <button class="mode-tab active" data-mode="solo">1人でプレイ</button>
-        <div class="mode-tab-wrap">
-          <button class="mode-tab" data-mode="multi">みんなと対戦</button>
-          <span class="multi-xp-pop">経験値<br>5倍！</span>
-        </div>
+        <button class="mode-tab active" data-mode="single">シングル</button>
+        <button class="mode-tab" data-mode="team">チーム戦</button>
         <div class="mode-tab-wrap">
           <button class="mode-tab mode-tab-raid" data-mode="raid">レイドバトル</button>
           <span class="raid-soon-pop" id="raidModePop">準備中</span>
         </div>
       </div>
+      <!-- サブ選択(モードごとの中身)。選択は setLobbySubMode() だけが書く。
+           出し分け・active・説明文は updateModePickPanels() が面倒を見る -->
+      <div id="singleSubRow">
+        <div class="pick-label" style="margin-top:10px;">遊び方</div>
+        <div id="singleSubTabs" class="sub-mode-tabs">
+          <button class="sub-tab active" data-sub="br30">30人バトロワ</button>
+          <div class="mode-tab-wrap">
+            <button class="sub-tab" data-sub="pvp4">マルチPvP(2〜4人)</button>
+            <span class="multi-xp-pop">経験値<br>5倍！</span>
+          </div>
+        </div>
+        <div class="team-size-note" id="singleSubNote">総勢30体のバトルロイヤル。1人ですぐに遊べます</div>
+      </div>
+      <div id="teamSubRow" class="hidden">
+        <div class="pick-label" style="margin-top:10px;">遊び方</div>
+        <div id="teamSubTabs" class="sub-mode-tabs">
+          <button class="sub-tab active" data-sub="br20">20チームバトロワ</button>
+          <button class="sub-tab" data-sub="arena">バトルアリーナ</button>
+        </div>
+        <div class="team-size-note" id="teamSubNote">3人1組×20チーム=総勢60体のバトルロイヤル。倒れても仲間が近くにいれば蘇生できます</div>
+      </div>
       <!-- レイドを選んだときだけ出す案内(準備中は開発アカウント以外は入れない) -->
       <div id="raidModeOptions" class="hidden">
-        <div class="pick-label" style="margin-top:10px;">週替わりの巨大ボスに挑む協力バトル(最大4人)</div>
+        <div class="pick-label" style="margin-top:10px;">週替わりの巨大ボスに挑む協力バトル(3人チーム)</div>
         <div id="raidModeNote" class="raid-mode-note"></div>
         <button id="raidModeOpenBtn" class="raid-go-btn" style="margin-top:8px;">🐉 レイドバトルへ</button>
       </div>
@@ -302,16 +321,6 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
           <button class="cap-tab active" data-cap="3">3人</button>
           <button class="cap-tab" data-cap="4">4人</button>
         </div>
-      </div>
-      <!-- チーム編成(ソロ/マルチ共通。レイドでは出さない=setLobbyModeが隠す)。
-           選択は setLobbyTeamSize() だけが書く(前回の選択も記憶される) -->
-      <div id="teamSizeRow">
-        <div class="pick-label" style="margin-top:10px;">チーム編成</div>
-        <div id="teamSizeTabs">
-          <button class="team-tab active" data-team="1">シングル</button>
-          <button class="team-tab" data-team="3">スクワッド(3人1組)</button>
-        </div>
-        <div class="team-size-note">スクワッド＝3人1組のチーム戦。仲間はBot・マスモンが補完し、倒れても仲間が近くにいれば蘇生できます</div>
       </div>
       <div id="invertPitchRow">
         <span id="invertPitchLabel">視点上下反転</span>
@@ -500,7 +509,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div id="killFeed"></div>
   </div>
 
-  <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／Spaceでダッシュ／スティックを上に2回弾くとオートラン</div>
+  <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／DASHでダッシュ／スティックを上に2回弾くとオートラン</div>
   <div id="crosshair"></div>
   <!-- ゲストのヒットマーカー(見た目命中の瞬間に照準へ重ねる×印0.15秒。showHitMarker) -->
   <div id="hitMarker"></div>
@@ -564,6 +573,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     </svg>
     <span class="btn-label">DASH</span>
   </div>
+  <!-- ピン(シグナル)。チーム系モードの試合中だけ表示(render.jsのupdateHUDが切替)。
+       FIRE/DASHと同じ「pointerdownで完結する押しボタン」なのでスクロールロック除外3か所には入れない -->
+  <div id="pingBtn" class="hidden"><span class="btn-label">🎯</span></div>
   <div id="turnLeftBtn">◀</div>
   <div id="turnRightBtn">▶</div>
 </div>

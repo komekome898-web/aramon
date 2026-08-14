@@ -180,6 +180,16 @@ function handleRoomEvent(evt, evtKey){
     if(evt.text) pushKillFeed(evt.text);
     if(player && evt.entId===player.id){ pushToast('蘇生された！'); playSe('pickup'); }
   }
+  // チーム戦: ピン(発信者→全員の配信。ホスト権威ではない=ゲストも発信できる)。
+  // 自分のエコーは捨て(送信時に適用済み)、同じ小隊のぶんだけ表示する。botは反応しない(表示のみ)
+  if(evt.kind==='ping'){
+    const ownEcho = evt.pid && evt.pid===netState.myPlayerId;
+    if(!ownEcho && typeof isTeamMatch==='function' && isTeamMatch() &&
+       player && player.teamId!=null && player.teamId===evt.team &&
+       typeof applyPing==='function'){
+      applyPing(evt);
+    }
+  }
   // レイド: 決着はホストが判定する。ゲストはこれを受けて同じ結果画面へ進む
   if(evt.kind==='raidEnd' && game.raid && !game.over){
     finishRaid(!!evt.defeated);
@@ -254,8 +264,10 @@ async function beginMultiplayerMatchInner(){
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
   let seed, fixedPlayers, mapKey, hostMastermonBots, sharedWorld = null;
   let matchTeamSize = 1;   // この試合のチーム人数(1=個人戦)。ホストは部屋の設定、ゲストはシード配信の値が正
+  let matchSub = null;     // この試合のサブモード('br20'/'arena'/null=従来型)。持ち方はteamSizeと同じ
   if(netState.isHost){
     matchTeamSize = Math.max(1, netState.teamSize||1);
+    matchSub = netState.sub || null;
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
     if(window.__netProbeSeed!=null) seed = window.__netProbeSeed>>>0; // 計測ハーネス用のシード固定(通常は未定義で素通り)
     fixedPlayers = netState.humanPlayers || {};
@@ -286,8 +298,10 @@ async function beginMultiplayerMatchInner(){
       hostMastermonBots = result.hostMastermonBots || [];
       sharedWorld = result.world || null; // ホストが生成した障害物(あれば正として使う)
       matchTeamSize = Math.max(1, result.teamSize||1); // チーム人数もホストの配信が正
+      matchSub = result.sub || null;                   // サブモードも同様
     } else {
       matchTeamSize = Math.max(1, netState.teamSize||1); // タイムアウト時は部屋参加時のmetaで代用
+      matchSub = netState.sub || null;
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
@@ -307,10 +321,18 @@ async function beginMultiplayerMatchInner(){
   const wantRaid = !!netState.raid || mapKey==='raid';
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
   teamResetState();          // チーム戦の状態も入口で消す(必要ならこの後assignTeamsで立て直す)
+  arenaResetState();         // アリーナの状態も入口で消す
   netState.raid = wantRaid;
   game.raid = wantRaid;
-  if(game.raid) matchTeamSize = 1;   // レイドとチーム戦は排他
+  if(game.raid){ matchTeamSize = 1; matchSub = null; }   // レイドとチーム戦は排他
+  netState.sub = matchSub;   // 確定したサブモードを部屋の状態にも反映(ホスト/ゲストで一致する)
   if(game.raid) mapKey = 'raid';
+  /* この試合がバトルアリーナかは**部屋のサブモード(netState.sub==='arena')が正**。
+     部屋metaへのsubの配線はモード再編側の担当で、ホスト・ゲストとも部屋に入った時点で
+     netState.subに入っている前提(未配線の旧部屋ではundefined=通常戦のまま)。
+     レイドとは排他。アリーナは常に3v3=6体で、余った枠はbotが埋める。 */
+  game.arena = !game.raid && netState.sub==='arena';
+  if(game.arena) matchTeamSize = ARENA_TEAM_SIZE;
   // 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す
   else if(MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
@@ -330,7 +352,7 @@ async function beginMultiplayerMatchInner(){
   const spawnRng = deriveRng(0x53);     // スポーン地点
   const lootRng  = deriveRng(0x7C);     // アイテム
 
-  if(game.raid) initRaidZone(); else initZone();
+  if(game.raid) initRaidZone(); else if(game.arena) initArenaZone(); else initZone();
   if(sharedWorld){
     // ゲスト: ホストが生成・配信した障害物をそのまま反映(座標一致で見えない岩ハマりを防ぐ)
     applyWorldFromSync(sharedWorld, obRng);
@@ -348,7 +370,7 @@ async function beginMultiplayerMatchInner(){
   if(netState.isHost){
     const worldData = packWorldForSync();
     console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize, matchSub);
   }
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
@@ -361,11 +383,20 @@ async function beginMultiplayerMatchInner(){
   humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
   const usedSlots = humanList.length;
-  const botCount = Math.max(0, netState.capacity - usedSlots);
+  /* 総エンティティ数。従来型(sub無し)は部屋の定員ぶん(人間+bot)。
+     チーム戦のサブモード: 20チームバトロワ=3人1組×20チーム=総勢60体(人間は1小隊・残りbot)。
+     バトルアリーナは部屋の定員に関係なく常に3v3=6体(ARENA_TEAM_SIZE)。
+     sub/teamSize はシード配信の値なので両側で必ず同じ頭数になる。 */
+  const wantTotal = matchSub==='br20' ? Math.max(1, matchTeamSize) * TEAM_BR_TEAM_COUNT
+                  : (game.arena || matchSub==='arena') ? ARENA_TEAM_SIZE*2
+                  : netState.capacity;
+  const botCount = Math.max(0, wantTotal - usedSlots);
   const totalEntityCount = usedSlots + botCount;
   // チーム戦は同チームを隣接スポーンにする(ソロ用pickTeamSpawnPointsBatchと対のシード付き)。
   // 返り値は「チーム0→チーム1→…」の平坦な並びで、下の生成順(人間→bot)=チーム割当順と一致する
-  const spawnPoints = (matchTeamSize>1)
+  const spawnPoints = game.arena
+    ? seededPickArenaSpawnPointsBatch(spawnRng, matchTeamSize)   // 対面配置(ソロ用pickArenaSpawnPointsBatchと対)
+    : (matchTeamSize>1)
     ? seededPickTeamSpawnPointsBatch(spawnRng, Math.ceil(totalEntityCount/matchTeamSize), matchTeamSize)
     : seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
 
@@ -456,6 +487,9 @@ async function beginMultiplayerMatchInner(){
     document.getElementById('raidHud').classList.remove('hidden');
     // バトルロイヤル専用のHUD(順位・安全圏の案内)は隠す。重なって読めなくなる
     document.getElementById('hud').classList.add('raid-mode');
+  } else if(game.arena){
+    // アリーナは少数を中央帯(安置内)だけに撒く(ソロ用spawnLoot側と対)
+    seededSpawnLoot(lootRng, ARENA_LOOT_COUNT, ZONE_CENTER0, ARENA_ZONE_RADIUS*ARENA_LOOT_SPREAD);
   } else {
     // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
     const mutSpawnMult = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; // ミューテーター「スポーン数1.5倍」
@@ -910,6 +944,7 @@ function showGuestEnvironmentDamage(dt){
   }
 }
 const GUEST_PICKUP_CONFIRM_WAIT = 2.5; // 確定待ちの上限(秒)
+// 種類で絞らないので、試合中に増える種類(デス円盤石=deathDisc含む)も自動で先読み対象になる
 function predictLootPickupsAsGuest(){
   if(!player || !player.alive) return;
   for(const it of lootItems){
@@ -931,7 +966,7 @@ function applyLootEventLocally(evt){
     // 自分(ゲスト)が拾った場合はSEと効果メッセージを出す
     // (ホスト側のupdateでは自分のSE/トーストは鳴らないため、ここで再現する)
     if(evt.by && evt.by===netState.myPlayerId){
-      playSe(evt.kind==='training' ? 'train' : 'pickup');
+      playSe(evt.kind==='deathDisc' ? 'chupiin' : (evt.kind==='training' ? 'train' : 'pickup'));
       if(evt.msg) pushToast(evt.msg);
       // トレーニングは候補3枚が届く。**抽選はホストなので、ゲストは出すだけ**
       if(Array.isArray(evt.cards) && evt.cards.length && typeof showTrainCards==='function') showTrainCards(evt.cards);
@@ -939,7 +974,10 @@ function applyLootEventLocally(evt){
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
       // zは座標から一意に決まるので配信不要(real3dHeightAtは純関数)
-      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, z:baseTerrainHeightAt(evt.x,evt.y), bob:evt.bob||0 });
+      // keys/owner はデス円盤石だけが持つ(ゲストは見た目と持ち主名の表示にしか使わない。適用はホスト)
+      lootItems.push({ id:evt.id, kind:evt.kind, type:evt.itemType, x:evt.x, y:evt.y, z:baseTerrainHeightAt(evt.x,evt.y), bob:evt.bob||0,
+                       keys:evt.keys||null, owner:evt.owner||null,
+                       ownerTeamId:(typeof evt.tid==='number')?evt.tid:null });   // 敵味方の色分け用
     }
   }
 }

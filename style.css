@@ -1586,7 +1586,7 @@
   }
   #playerNameInput:focus{ border-color:var(--amber); }
 
-  #modeTabs, #capacityTabs, #mapTabs, #teamSizeTabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #modeTabs, #capacityTabs, #mapTabs, .sub-mode-tabs{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   /* 通常 / リアル の切替スイッチ(マップ選択の上) */
   #mapModeToggle{ display:flex; align-items:center; justify-content:center; gap:0; flex-wrap:wrap;
     margin-bottom:calc(1.4 * var(--vh)); }
@@ -1603,8 +1603,10 @@
   #mapModeNote{ flex-basis:100%; text-align:center; margin-top:6px;
     font-size:11px; letter-spacing:0.5px; color:var(--ink-dim); }
   .mode-tab-wrap{ position:relative; display:inline-flex; }
+  /* ポップ(経験値5倍)を内側右上に乗せるサブタブは、文字がポップの下に潜らないよう右に余白を足す */
+  .mode-tab-wrap .sub-tab{ padding-right:44px; }
   .multi-xp-pop{
-    position:absolute; top:-11px; right:3px; z-index:2;   /* ボタンの内側右上へ完全収容(隣に触れない) */
+    position:absolute; top:-7px; right:-4px; z-index:2;   /* サブタブの右上。隣のボタン・画面端に触れない(縦持ち実測で確認) */
     background:linear-gradient(180deg,#ff8a5b,#ff3b3b); color:#fff2c2;
     font-family:'Russo One',sans-serif; font-size:9px; line-height:1.15; text-align:center;
     padding:5px 4px 4px; border-radius:50%; width:34px; height:34px; box-sizing:border-box;
@@ -1616,11 +1618,11 @@
     0%,100%{ transform:rotate(14deg) scale(1); }
     50%{ transform:rotate(14deg) scale(1.13); }
   }
-  .mode-tab, .cap-tab, .map-tab, .team-tab{
+  .mode-tab, .cap-tab, .map-tab, .sub-tab{
     padding:9px 20px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
-  .mode-tab.active, .cap-tab.active, .map-tab.active, .team-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
+  .mode-tab.active, .cap-tab.active, .map-tab.active, .sub-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #multiOptions{ margin-top:4px; }
 
   #invertPitchRow{
@@ -2521,6 +2523,18 @@
     letter-spacing:1px; pointer-events:auto; cursor:pointer; display:flex; align-items:center; justify-content:center;
     touch-action:none;
   }
+  /* ピンボタン(チーム系モードのみ表示。updateHUDがhiddenを切り替える)。
+     DASHの左隣・同じ高さ(FIRE/回転/技/キルフィードのどれとも重ならない位置。
+     DASHの真上はキルフィード3行目と重なった=横持ち812x375の実測で確認して移動)。
+     ダウン中も押せる(body.self-downedの無効化対象に入れない=倒れていても指示は出せる) */
+  #pingBtn{
+    position:absolute; right:190px; bottom:42px; width:48px; height:48px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(140,200,255,0.25), rgba(20,28,42,0.85));
+    border:2px solid rgba(255,255,255,0.2); font-size:19px;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:auto; cursor:pointer; touch-action:none;
+  }
+  #pingBtn:active{ filter:brightness(1.4); }
   .btn-label{ position:relative; z-index:1; }
   .cd-ring{ position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); pointer-events:none; }
   .cd-ring-bg{ fill:none; stroke:rgba(0,0,0,0.35); stroke-width:6; }
@@ -3734,6 +3748,7 @@
   html.narrow-screen #movePanel{ gap:8px; padding:8px 12px;}
   html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
+  html.narrow-screen #pingBtn{ right:162px; bottom:36px; width:44px; height:44px; }
   html.narrow-screen #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
   html.narrow-screen #autoRunLabel{ left:16px; bottom:134px; width:112px; }
   html.narrow-screen #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }

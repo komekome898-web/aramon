@@ -32,6 +32,34 @@ const TEAM_DOWN_DMG_TAKEN_MULT = 1.5;  // ダウン中の被ダメ倍率
 const TEAM_DOWN_HP_RATIO       = 0.3;  // ダウンした瞬間に残すHP(最大HP比。とどめ用の体力。0にしない=HPバーが空にならない)
 const TEAM_REVIVE_HP_RATIO     = 0.4;  // 蘇生で戻るHP(最大HP比)
 const TEAM_BOT_REVIVE_SEEK_RANGE = 1600; // botが蘇生に向かうダウン味方の探索距離
+
+/* チーム戦(20チームバトロワ)の編成。ロビーのサブ選択(ui.js)と試合の組み立て(ui.js/network.js)が
+   両方ここを読む(同じ意味の数字を2か所に書かない)。 */
+const TEAM_BR_SQUAD_SIZE = 3;   // 1チームの人数(3人1組。マルチ部屋の定員=人間1小隊もこの値)
+const TEAM_BR_TEAM_COUNT = 20;  // 20チームバトロワのチーム数(総勢 3×20=60体)
+
+/* ===== バトルアリーナ(1チームvs1チーム・3v3=6体・1本勝負)のバランス定数 =====
+   個人戦・通常のチーム戦では読まれない。判定の入口は game.arena 1つ(combat.js)。
+   数値は発注者が実機で反復調整する前提の名前付き定数。 */
+const ARENA_TEAM_SIZE       = 3;    // 1チームの人数(3v3)
+const ARENA_ZONE_RADIUS     = 1200; // 開始時の安置半径(既存マップの中央に固定)
+const ARENA_ZONE_END_RADIUS = 350;  // 1段階の縮小後の決着圏の半径
+const ARENA_ZONE_HOLD_SEC   = 20;   // 縮小を始めるまでの待機(秒)
+const ARENA_ZONE_SHRINK_SEC = 60;   // 縮小にかける時間(秒)。1段階だけゆっくり
+const ARENA_ZONE_DPS        = 10;   // 安置外ダメージ(通常の序盤より高め=逃げ回り防止)
+const ARENA_SPAWN_GAP       = 600;  // 両チームのスポーンアンカー間の距離(安置中心を挟んで対面)
+const ARENA_LOOT_COUNT      = 14;   // 開始時に撒くアイテム数(少数。探す時間より交戦を優先)
+const ARENA_LOOT_SPREAD     = 0.6;  // アイテムを撒く中央帯の広さ(安置半径に対する比)
+const ARENA_TIME_LIMIT      = 180;  // 試合時間の上限(秒)。超えたら生存数(同数ならHP合計)で勝敗
+const GOLD_ARENA_MULT       = 0.6;  // アリーナのゴールド報酬倍率(試合が短いぶん少なめ)
+
+/* ===== チーム戦: ピン(シグナル)とキルリーダー(APEX風のチーム体験)の定数 ===== */
+const PING_LIFETIME_SEC       = 6;    // ピンの表示時間(秒)。過ぎたら3D世界・ミニマップから消える
+const PING_RANGE              = 700;  // 移動ピンを置く距離(照準方向。途中に障害物があればその手前)
+const PING_ENEMY_SEARCH_ANGLE = 0.30; // 敵ピンの探索半角(rad≒17°。照準からこの角度以内の敵を対象にする)
+const PING_ENEMY_SEARCH_RANGE = 900;  // 敵ピンの探索距離(移動ピンよりやや遠くの敵も指せる)
+const PING_UNITS_PER_M        = 10;   // 距離表示の換算(ワールド10単位=1m。表示専用)
+const KILL_LEADER_MIN_KILLS   = 2;    // キルリーダーになる最少キル数(1キルで王冠は大げさ)
 let worldDensityScale = 1; // 岩・地形装飾の密度倍率(マップ面積縮小に応じてseededGen側で使用)
 
 // マップの規模(ワールドサイズ・安全圏半径)をスケールに応じて再計算する。
@@ -1058,6 +1086,10 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-14', items:[
+    { t:'🆕 プレイモードを「シングル/チーム戦/レイド」に整理しました。シングル=30人バトロワ・マルチPvP(2〜4人)、チーム戦=20チームバトロワ(3人1組×20の60体)・バトルアリーナ、レイドは3人チームになります', g:['feature'] },
+    { t:'🆕 バトルアリーナが登場! 3人1組の1チームvs1チーム。狭い決着圏で最初からぶつかり合う、3分以内の短期決戦モードです', g:['feature','multi'] },
+    { t:'🆕 デス円盤石: 倒されたモンスターが試合中のトレーニング強化を「円盤石」として落とします。誰でも拾えて即強化! 拾った力も自分が倒されればまた落ちる=力が試合の中を巡ります(光の色: 敵の遺物=赤/味方=緑)', g:['feature'] },
+    { t:'🆕 チーム戦にピン(合図)を追加。🎯ボタン1つで「敵発見!」や「ここへ!」を仲間に伝えられます(旗マーカー+ミニマップ)。キル数トップには👑が付きます', g:['feature','multi'] },
     { t:'🆕 スクワッド(3人1組のチーム戦)が遊べるようになりました。ソロでもマルチでもチーム編成から選べます。倒れても「ダウン」で踏みとどまり、仲間が近くにいてくれれば蘇生。チームの全滅で決着し、順位もチーム単位になります', g:['feature','multi'] },
     { t:'🆕 マルチプレイの通信を高速化しました。対応する環境では端末同士を直接つないで、撃った・当たったの反応が速くなります(つながらない場合も今までどおり遊べます)', g:['multi'] },
     { t:'マルチのゲスト側でも、命中の印(ヒットマーカー)やダメージの数字がすぐに表示されるようになりました', g:['multi','av'] },
@@ -1605,6 +1637,15 @@ const TRAIN_CARD_PICK_SEC = 8;     // 選ばなかったときに自動で決ま
      しゃてき(命中+108)     → 連射  +14%
      ドミノ倒し(ちから+108) → 技ダメ +6%
    除数(MASTERMON_STAT_FACTOR_DIVISOR)の違いで威力系だけ伸びが小さい。 */
+/* ===== デス円盤石(倒された者が試合中の強化を石の円盤として落とす) =====
+   ・試合中に確定したトレーニングカードは ent.matchTrainLog に積まれ、
+     本当の死亡時(ダウンではない)にその新しい方から最大 DEATH_DISC_MAX_ITEMS 件が
+     kind:'deathDisc' の円盤石として落ちる。誰でも拾え、カード選択なしで即適用される。
+   ・拾った項目は拾った側の matchTrainLog にも積まれる(倒されたらまた落ちる=力の連鎖)。
+   ・レイドだけは出さない(ボス戦の文脈に合わない)。 */
+const DEATH_DISC_MAX_ITEMS = 3;      // 中身の上限(発注者が実機調整)
+const DEATH_DISC_COLOR     = '#b8b2a4';  // 石の円盤の色
+const DEATH_DISC_ACCENT    = '#ffd76a';  // 金の光(拾えることを示す)
 function trainCardMenu(key){ return TRAINING_MENU.find(t=>t.key===key) || null; }
 /* 出す3枚。**拾ったアイテムに対応する1枚は必ず入る**(アイテムの見た目と結果をつなぐ)。
    rnd を渡せる形にしてあるので、同じ乱数から同じ3枚を作れる。 */
@@ -2319,7 +2360,7 @@ const RAID_EDITIONS = {
     label: '第1回',
     startDate: '2026-08-07',   // シーズン1と同時開幕
     durationDays: 7,           // 開催期間(1週間)
-    baseHp: 24000,             // 1人あたりの基準HP(人数ぶん増える。4人で63,600)
+    baseHp: 24000,             // 1人あたりの基準HP(人数ぶん増える。3人で50,400)
     totalTiers: [
       { at:  50000, gold:1500, dia:20 },
       { at: 200000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
@@ -2377,7 +2418,7 @@ const RAID_ED = RAID_EDITIONS[RAID_EDITION] || RAID_EDITIONS.r1;
 
 const RAID_START_DATE = RAID_ED.startDate;
 const RAID_DURATION_DAYS = RAID_ED.durationDays;
-const RAID_CAPACITY = 4;                  // 同時に挑める人数(余りはマスモン・botで補充)
+const RAID_CAPACITY = 3;                  // 同時に挑める人数=3人チーム固定(余りはマスモン・botで補充)
 const RAID_TIME_LIMIT = 180;              // 1回の挑戦の制限時間(秒)
 const RAID_WORLD_SCALE = 0.30;            // 通常の試合に対するワールドの広さ(狭い円形闘技場)
 const RAID_ARENA_MARGIN = 260;            // 闘技場の縁と安置の外周の間隔
@@ -2426,7 +2467,7 @@ const RAID_BOSS = {
   skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
   name:'不死のゾッド',
   radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
-  baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。4人で63,600)
+  baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。3人で50,400)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
   speed: 60,                 // 動きは鈍いが、じりじり間合いを詰めてくる(通常のドラゴンは182)
   repositionEvery: 7,        // この秒数ごとに位置を変える(歩行モーションが見えるよう短め)
