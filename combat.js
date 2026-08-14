@@ -441,6 +441,8 @@ function applyDamage(target, dmg, source, opts){
   // レイドでは味方どうしの攻撃は当たらない(ボスが絡む攻撃だけが通る)。
   // ここ1か所で止めれば、弾・範囲攻撃・爆風のすべてに効く。
   if(raidFriendlyFireBlocked(target, source)) return;
+  // チーム戦のフレンドリーファイア無しも同じ1か所で止める(状態異常・ガッツ削りも入口がここ)
+  if(teamFriendlyFireBlocked(target, source)) return;
   if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
   const involvesHuman = isNetworkedHuman(target) || (source && isNetworkedHuman(source));
   const isAuthoritative = (opts && opts.authoritative) || (netState.mode==='multi' && netState.isHost);
@@ -466,6 +468,7 @@ function applyDamage(target, dmg, source, opts){
 
   let finalDmg = dmg;
   if(ELEMENTS[target.element].dmgTakenMod){ finalDmg *= ELEMENTS[target.element].dmgTakenMod; }
+  if(entityDowned(target)){ finalDmg *= TEAM_DOWN_DMG_TAKEN_MULT; }  // ダウン中は被ダメ増(チーム戦のみ)
   if(target.element==='ark' && target.graceUntil > matchTime){ finalDmg *= 0.5; }
   if(target.burnUntil > matchTime){ finalDmg *= 1.5; }
   if(target.trainDmgTakenMult){ finalDmg *= target.trainDmgTakenMult; }
@@ -599,10 +602,14 @@ function killEntity(victim, killer){
       killer = lastAtk;
     }
   }
+  // チーム戦: 立っている味方がいればここで死亡せず「ダウン」で踏みとどまる。
+  // ダウン中にHP0(とどめ)・出血タイマー切れのときは通らず、本当の死亡へ進む。
+  if(tryEnterDowned(victim, killer)) return;
   victim.alive = false;
+  victim.downed = false; victim.downedUntil = 0; victim.reviveProgress = 0;
   victim.deathAt = matchTime;
   const aliveCount = entities.filter(e=>e.alive).length + 1;
-  victim.placement = aliveCount;
+  if(!isTeamMatch()) victim.placement = aliveCount;   // チーム戦の順位はチーム単位(teamNoteDeathが付ける)
   spawnDeath(victim.x, victim.y, victim.z, ELEMENTS[victim.element].color);
   if(killer && entities.includes(killer) && killer.id!==victim.id){
     killer.kills += 1;
@@ -650,6 +657,7 @@ function killEntity(victim, killer){
       window.__aramonPushEvent(netState.roomId, {kind:'kill', text:kfText, victimId:victim.id, ts:Date.now()});
     }
   }
+  teamNoteDeath(victim, killer);   // チーム戦: 全滅の確定とチーム順位付け(個人戦では何もしない)
   if(victim.isPlayer){ onPlayerDown(); }
   checkWin();
 }
@@ -658,6 +666,7 @@ function checkWin(){
   if(game.raid){ checkRaidEnd(); return; }  // レイドは「ボス撃破 or 時間切れ」で決着する
   if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
   if(game.over) return;
+  if(isTeamMatch()){ checkTeamWin(); return; }  // チーム戦は「自チーム以外の全チーム全滅」で決着
   const aliveList = entities.filter(e=>e.alive);
   if(netState.mode==='multi' && hostSpectating){
     // ホストは既に敗退し観戦中。残っているのが人間プレイヤーが誰もおらずbotだけになったら、
@@ -699,6 +708,7 @@ function findNearestAliveEnemy(self, range){
   let best=null, bestD=range;
   for(const e of entities){
     if(e===self || !e.alive) continue;
+    if(sameTeam(self, e)) continue;   // チーム戦: 味方は狙わない
     if(e.z - self.z > upwardBlockLimit()) continue;
     const d=dist(self,e); if(d<bestD){bestD=d; best=e;}
   }
@@ -771,6 +781,15 @@ function updateBotAI(b, dt){
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
   if(b.isRaidBoss){ updateRaidBossAI(b); return; }
 
+  // ===== チーム戦: ダウン中は戦えない。立っている味方の方へ這って寄る(蘇生されやすい位置へ) =====
+  if(isTeamMatch() && entityDowned(b)){
+    b.attackTargetId = null; b.destination = null;
+    const mate = teamNearestStandingMate(b);
+    if(mate) b.aiTargetPoint = { x:mate.x, y:mate.y };
+    b.aiState = 'DOWNED';
+    return;
+  }
+
   // ===== スタック検知＆迂回 =====
   // 攻撃射程内で待機している場合(=意図的に止まっている)はスタック扱いしない。
   // それ以外で長時間ほとんど動けていない場合は、反対方向を向いて迂回ルートへ切り替える。
@@ -806,6 +825,17 @@ function updateBotAI(b, dt){
     b.attackTargetId=null; b.destination=null;
     b.aiTargetPoint = {x:zoneState.center.x+rand(-30,30), y:zoneState.center.y+rand(-30,30)};
     b.aiState='RETREAT'; return;
+  }
+
+  // ===== チーム戦(小隊行動②): ダウンした味方の蘇生を最優先で向かう =====
+  // 蘇生半径(TEAM_REVIVE_RADIUS)内へ入れば、あとはupdateTeamStatesが進捗を進める
+  if(isTeamMatch()){
+    const dn = teamNearestDownedMate(b, TEAM_BOT_REVIVE_SEEK_RANGE);
+    if(dn){
+      b.attackTargetId=null; b.destination=null;
+      b.aiTargetPoint = { x:dn.x+rand(-30,30), y:dn.y+rand(-30,30) };
+      b.aiState='REVIVE'; return;
+    }
   }
 
   // ===== ガッツ枯渇: どの技も撃てないほどガッツが無ければ、ガッツ飴を探して移動 =====
@@ -850,6 +880,17 @@ function updateBotAI(b, dt){
 
   const enemy = findNearestAliveEnemy(b, 900);
   if(enemy){ b.attackTargetId = enemy.id; b.destination=null; b.aiState='FIGHT'; return; }
+
+  // ===== チーム戦(小隊行動①): 交戦相手がいなければリーダー(生存最古=id最小)へ緩く追従 =====
+  // リーダーの走査はチーム内(最大teamSize体)だけなので、60体でも全ペア距離計算にはならない
+  if(isTeamMatch()){
+    const leader = teamLeader(b.teamId);
+    if(leader && leader!==b && dist(b, leader) > TEAM_FOLLOW_DIST){
+      b.attackTargetId=null;
+      b.aiTargetPoint = { x:leader.x+rand(-90,90), y:leader.y+rand(-90,90) };
+      b.aiState='FOLLOW'; return;
+    }
+  }
 
   const loot = findNearestLoot(b, 750);
   if(loot){ b.attackTargetId=null; b.aiTargetPoint = {x:loot.x,y:loot.y}; b.aiState='LOOT'; return; }
@@ -905,7 +946,9 @@ function multiProjSpeedMult(){ return netState.mode==='multi' ? MULTI_PROJ_SPEED
 function entityMoveSpeed(m){
   const stateEff = activeStateEffects(m);
   const hitBuffMult = (m.speedBuffUntil > matchTime) ? (m.speedBuffMult||1) : 1; // 技命中バフ(ワームtier3等)
-  const base = m.speed * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1) * hitBuffMult;
+  // ダウン中(チーム戦)は這い移動。ここに掛けるとホストとゲストの予測(network.js)が自動で一致する
+  const downMult = entityDowned(m) ? TEAM_DOWN_SPEED_MULT : 1;
+  const base = m.speed * downMult * (m.trainSpeedMult||1) * (stateEff && stateEff.speedMult || 1) * hitBuffMult;
   return m.slowUntil > matchTime ? base*0.5 : base;
 }
 function resolveMovement(m, dt){
@@ -1074,6 +1117,200 @@ function raidSkinMult(entity, kind){
   const bonus = (typeof raidSkinBonus==='function') ? raidSkinBonus(entitySkinId(entity)) : null;
   if(!bonus) return 1;
   return (kind==='dealt' ? bonus.dmgDealt : bonus.dmgTaken) || 1;
+}
+
+/* =====================================================================
+   チーム戦の土台(3人1組×20チーム=60体まで拡張できる形)
+
+   ・分岐の入口は isTeamMatch() 1つ(game.trainingRange と同じ方式)。
+     個人戦(game.teamSize===1)では以下のどの関数も何もしないので、既存の経路は
+     1バイトも変わらない。**同じ判定を2か所目に書かない。**
+   ・チーム割当は「エンティティ生成順を teamSize ずつ区切る」だけの決定的な規則。
+     マルチでは人間(id文字列順)→botの順で生成されるので、
+     「人間を先に詰める・同チームは連番id」がホスト/ゲストで必ず一致する。
+   ・味方への攻撃は applyDamage の入口(teamFriendlyFireBlocked)1か所で止める。
+   ・ダウン→蘇生・全滅・チーム順位はホスト(=ソロでは自分)だけが確定し、
+     ゲストへは authState の dw(ダウン残り秒)/ rv(蘇生の進み)で伝わる。
+   ・レイドとは排他(レイドでは teamSize=1 のまま)。
+   ===================================================================== */
+let teamMembersById = new Map();   // teamId -> メンバー配列。assignTeams()が試合開始時に作る
+function isTeamMatch(){ return (game.teamSize||1) > 1; }
+function sameTeam(a,b){ return isTeamMatch() && a && b && a!==b && a.teamId!=null && a.teamId===b.teamId; }
+// ダウン中か(生存扱いのまま動けない状態)。判定はこの1関数だけに書く
+function entityDowned(e){ return !!(e && e.alive && e.downed); }
+function teamMembers(teamId){ return teamMembersById.get(teamId) || []; }
+/* チーム戦の状態を初期値へ戻す。試合を始める全経路(startGame / beginMultiplayerMatchInner /
+   raidStart / startShootingRange)の冒頭で必ず呼ぶ(raidResetStateと同じ「入口で消す」決まり)。 */
+function teamResetState(){
+  game.teamSize = 1;
+  teamMembersById = new Map();
+}
+/* エンティティ生成順に teamSize ずつ区切ってチームを割り当てる。
+   entities の並びだけから決まるので、同じ並びを作る2者(ホスト/ゲスト)で必ず一致する。 */
+function assignTeams(teamSize){
+  game.teamSize = teamSize;
+  teamMembersById = new Map();
+  let idx = 0;
+  for(const e of entities){
+    if(e.isRaidBoss) continue;
+    e.teamId = Math.floor(idx/teamSize); idx++;
+    e.downed = false; e.downedUntil = 0; e.reviveProgress = 0;
+    if(!teamMembersById.has(e.teamId)) teamMembersById.set(e.teamId, []);
+    teamMembersById.get(e.teamId).push(e);
+  }
+}
+// チーム戦では同チームへの攻撃を通さない(raidFriendlyFireBlockedと同じ形の1か所判定)
+function teamFriendlyFireBlocked(target, source){
+  return !!(source && source!==target && sameTeam(target, source));
+}
+/* 弾が同チームの体で消えないようにする(素通り)。ダメージ自体はapplyDamageで止まるが、
+   弾が味方の体に当たって消えると「味方が壁になる」ため、直撃判定の前にここで抜く。
+   ownerTeamIdは初回に1度だけ引いて弾へキャッシュする(60体でも毎フレームfindしない)。 */
+function projTeamBlocked(p, e){
+  if(!isTeamMatch() || e.teamId==null) return false;
+  if(p.ownerTeamId===undefined){
+    const o = p.ownerId!=null ? getEntity(p.ownerId) : null;
+    p.ownerTeamId = (o && o.teamId!=null) ? o.teamId : null;
+  }
+  return p.ownerTeamId!=null && p.ownerTeamId===e.teamId;
+}
+// 立っている(生存・非ダウン)味方が1体でもいるか
+function teamHasStandingMate(ent){
+  return teamMembers(ent.teamId).some(m=> m!==ent && m.alive && !entityDowned(m));
+}
+// リーダー=チームの生存最古(=idが最小の非ダウン生存者)。メンバーは最大でもteamSize体なので毎回走査してよい
+function teamLeader(teamId){
+  let best = null;
+  for(const m of teamMembers(teamId)){
+    if(!m.alive || entityDowned(m)) continue;
+    if(!best || m.id < best.id) best = m;
+  }
+  return best;
+}
+function teamNearestStandingMate(e){
+  let best=null, bestD=Infinity;
+  for(const m of teamMembers(e.teamId)){
+    if(m===e || !m.alive || entityDowned(m)) continue;
+    const d = dist(e,m); if(d<bestD){ bestD=d; best=m; }
+  }
+  return best;
+}
+function teamNearestDownedMate(e, range){
+  let best=null, bestD=range;
+  for(const m of teamMembers(e.teamId)){
+    if(m===e || !m.alive || !entityDowned(m)) continue;
+    const d = dist(e,m); if(d<bestD){ bestD=d; best=m; }
+  }
+  return best;
+}
+/* HP0になった仲間をダウンで踏みとどまらせる(killEntityの冒頭から呼ばれる)。
+   立っている味方がいなければ false(=そのまま死亡=チーム全滅の一角)。
+   すでにダウン中のHP0は「とどめ」なので false(本当の死亡へ進む)。 */
+function tryEnterDowned(victim, killer){
+  if(!isTeamMatch() || victim.teamId==null) return false;
+  if(entityDowned(victim)) return false;
+  if(!teamHasStandingMate(victim)) return false;
+  victim.hp = Math.max(1, Math.round(victim.maxHp*TEAM_DOWN_HP_RATIO)); // HPバーを0にしない(とどめ用の体力)
+  victim.downed = true;
+  victim.downedUntil = matchTime + TEAM_DOWN_BLEED_SEC;
+  victim.reviveProgress = 0;
+  victim.attackTargetId = null;
+  victim.dashTimer = 0;
+  const text = (killer && killer.id!==victim.id)
+    ? `${displayNameFor(killer)} が ${displayNameFor(victim)} をダウンさせた`
+    : `${displayNameFor(victim)} はダウンした`;
+  pushKillFeed(text);   // キルフィードは「ダウンさせた」と「とどめ(倒した)」を区別する
+  if(victim.isPlayer) pushToast('ダウンした！ 仲間の蘇生を待て');
+  // ゲストには「ホストのループの中でしか起きないこと」が何も起きないので、フィードを配信する
+  if(netState.mode==='multi' && netState.isHost){
+    window.__aramonPushEvent(netState.roomId, { kind:'down', text, victimId:victim.id, ts:Date.now() });
+  }
+  return true;
+}
+// 蘇生(味方が半径内に一定時間とどまると発動。進行はupdateTeamStatesが進める)
+function reviveEntity(e){
+  e.downed = false; e.downedUntil = 0; e.reviveProgress = 0;
+  e.hp = Math.max(1, Math.round(e.maxHp*TEAM_REVIVE_HP_RATIO));
+  const text = `${displayNameFor(e)} が蘇生した`;
+  pushKillFeed(text);
+  spawnDmgText(e.x, e.y, e.z, '蘇生', '#7fffa0');
+  if(e.isPlayer){ pushToast('蘇生された！'); playSe('pickup'); }
+  if(netState.mode==='multi' && netState.isHost){
+    window.__aramonPushEvent(netState.roomId, { kind:'revive', entId:e.id, text, ts:Date.now() });
+  }
+}
+/* 出血タイマーと蘇生の進行。update()(=ソロとホストのループ)から毎フレーム呼ぶ。
+   エンティティ全体を1周し、ダウン中の1体につき自チームの最大teamSize体だけを見るので、
+   60体でも全ペアの距離計算にはならない。 */
+function updateTeamStates(dt){
+  if(!isTeamMatch()) return;
+  for(const e of entities){
+    if(e.teamId==null || !e.alive) continue;
+    if(!e.downed){ e.reviveProgress = 0; continue; }
+    if(matchTime >= e.downedUntil){ killEntity(e, null); continue; }  // 出血死(downedのままなのでとどめ扱い)
+    let near = false;
+    for(const m of teamMembers(e.teamId)){
+      if(m===e || !m.alive || entityDowned(m)) continue;
+      if(dist(m,e) <= TEAM_REVIVE_RADIUS){ near = true; break; }
+    }
+    if(near){
+      e.reviveProgress = (e.reviveProgress||0) + dt;
+      if(e.reviveProgress >= TEAM_REVIVE_SEC) reviveEntity(e);
+    } else {
+      e.reviveProgress = 0;   // 離れたら最初から(進捗は持ち越さない)
+    }
+  }
+}
+function countAliveTeams(){
+  const s = new Set();
+  for(const e of entities){ if(e.alive && e.teamId!=null) s.add(e.teamId); }
+  return s.size;
+}
+/* 死亡のたびにチーム全滅を確認する(killEntityから呼ばれる)。
+   立っている味方が誰もいなくなったチームは全滅=ダウン中の残りも死亡確定し、
+   チーム順位(全員同順位)を付ける。 */
+function teamNoteDeath(victim, killer){
+  if(!isTeamMatch() || victim.teamId==null) return;
+  const members = teamMembers(victim.teamId);
+  if(members.some(m=> m.alive && !entityDowned(m))) return;   // まだ立っている味方がいる
+  // 全滅: ダウン中の味方も死亡確定(killEntity内のtryEnterDownedは既ダウンなので通らない)
+  for(const m of members){ if(m.alive) killEntity(m, killer||null); }
+  // チーム順位=残っているチーム数+1(全員に同じ順位。再帰しても同じ値になる冪等な代入)
+  const place = countAliveTeams() + 1;
+  for(const m of members){ m.placement = place; }
+  // ソロのチーム戦: 自分のチームが全滅した時点でリザルトへ(観戦はここで終わり)
+  if(netState.mode!=='multi' && player && player.teamId===victim.teamId && !game.over && !player.alive){
+    showResult(false, place);
+  }
+}
+/* チーム戦の決着=自チーム以外の全チーム全滅。checkWin()から分岐してくる(ホスト/ソロのみ)。 */
+function checkTeamWin(){
+  const aliveTeamIds = new Set();
+  for(const e of entities){ if(e.alive && e.teamId!=null) aliveTeamIds.add(e.teamId); }
+  if(netState.mode==='multi' && hostSpectating){
+    // ホスト敗退後、人間も自チームも残っていなければ決着(最後の1チーム)を待たずにリザルトへ
+    const humanAlive = entities.some(e=>e.alive && e.netPlayerId);
+    const myTeamAlive = player && player.teamId!=null && aliveTeamIds.has(player.teamId);
+    if(!humanAlive && !myTeamAlive){ showResult(false, player.placement||2); return; }
+  }
+  if(aliveTeamIds.size > 1) return;
+  const winnerTeamId = aliveTeamIds.size===1 ? aliveTeamIds.values().next().value : null;
+  if(winnerTeamId!=null){ for(const m of teamMembers(winnerTeamId)) m.placement = 1; }  // 勝ちチームは全員1位
+  if(netState.mode==='multi'){
+    // 個人戦のcheckWinと同じ理由で、決着した瞬間の最終状態を通常の配信タイマーを待たずに配る
+    window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload()).catch(()=>{});
+    const wm = winnerTeamId!=null ? teamMembers(winnerTeamId) : [];
+    window.__aramonPushEvent(netState.roomId, {
+      kind:'matchEnd', winnerTeam: winnerTeamId,
+      winnerNetId: (wm.find(m=>m.netPlayerId)||{}).netPlayerId || null,
+      winnerName: wm.map(m=>m.name).join('・'), ts:Date.now(),
+    });
+  }
+  if(player && winnerTeamId!=null && player.teamId===winnerTeamId){
+    onPlayerWin();   // 自分がダウン/死亡していてもチームが勝てば勝利
+  } else if(!game.over){
+    showResult(false, (player && player.placement)||2);
+  }
 }
 
 /* --- ボスAI ---
@@ -1255,16 +1492,20 @@ let spectateTargetId = null;
 function spectateCandidates(){
   // レイドのボスは「味方」ではないので観戦対象に入れない
   const list   = entities.filter(e=>e.alive && e!==player && !e.isRaidBoss);
-  const humans = list.filter(e=>e.netPlayerId);
-  const bots   = list.filter(e=>!e.netPlayerId);
-  return humans.concat(bots);
+  // チーム戦は味方を最優先(その後は従来どおり人間→bot)
+  const isMate = (e)=> isTeamMatch() && player && player.teamId!=null && e.teamId===player.teamId;
+  const mates  = list.filter(isMate);
+  const rest   = list.filter(e=>!isMate(e));
+  const humans = rest.filter(e=>e.netPlayerId);
+  const bots   = rest.filter(e=>!e.netPlayerId);
+  return mates.concat(humans, bots);
 }
 /* いま観戦中か。**この判定は1か所だけに書く**(視点・観戦バーの両方がこれを見る)。
    ・通常マルチ: ホストが敗退したとき
    ・レイド: 自分が倒れて味方が残っているとき(ソロ・マルチとも。倒れても試合は続くため) */
 function spectatingNow(){
   if(!hostSpectating) return false;
-  return game.raid || netState.mode==='multi';
+  return game.raid || netState.mode==='multi' || isTeamMatch(); // チーム戦は倒れても味方が戦う間は観戦
 }
 // 現在の観戦対象を返す(不在なら先頭へ差し替え)。観戦していなければnull
 function ensureSpectateTarget(){
@@ -1412,6 +1653,7 @@ function effectiveMoveDmg(m, mv){
 }
 function tryFire(m){
   if(m.freezeUntil > matchTime) return;
+  if(entityDowned(m)) return;   // ダウン中は攻撃不可(チーム戦のみ)
   if(m.fireCooldown>0) return;
   if(!m.attackTargetId) return;
   const t = getEntity(m.attackTargetId);
@@ -1428,6 +1670,7 @@ function tryFire(m){
 function tryPlayerFire(dt){
   if(!player.alive || player.fireCooldown>0) return;
   if(player.freezeUntil > matchTime) return;
+  if(entityDowned(player)) return;   // ダウン中は攻撃不可(発射条件はtryNonHostPlayerFireVisual/processRemoteFireEventsと一致させる)
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
   if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
@@ -1437,6 +1680,7 @@ function tryPlayerFire(dt){
     const fx=Math.cos(player.facingAngle), fy=Math.sin(player.facingAngle);
     for(const e of entities){
       if(e===player || !e.alive) continue;
+      if(sameTeam(player, e)) continue;   // チーム戦: 近接技の相手にも味方を選ばない
       if(e.z - player.z > upwardBlockLimit()) continue;
       const d = dist(player,e);
       if(d>mv.range) continue;
@@ -1549,6 +1793,7 @@ function updateProjectiles(dt){
     if(!hit){
       for(const e of entities){
         if(!e.alive || e.id===p.ownerId) continue;
+        if(projTeamBlocked(p, e)) continue;   // チーム戦: 味方の体は素通り(味方が壁にならない)
         if(!projHeightHits(p,e)) continue;
         // ③ ラグ補正弾(ゲスト発射)は、対象を「一定遅延だけ巻き戻した位置」で当たり判定する。
         //   ダメージ自体は本物のエンティティeに与える。通常弾はp.lagDelaySeq未設定でそのまま。
@@ -1676,6 +1921,7 @@ function updateLootPickups(){
     for(const e of entities){
       if(!e.alive) continue;
       if(e.isRaidBoss) continue;   // レイドのボスは拾わない(巨体なので通るだけで全部さらってしまう)
+      if(entityDowned(e)) continue; // ダウン中(チーム戦)はアイテムを拾えない
       if(dist(e,it) < e.radius+14){
         if(it.kind==='heal'){
           const hi = HEAL_ITEMS[it.type];
@@ -1854,6 +2100,7 @@ function update(dt){
   else if(game.raid) updateRaidZone(dt);          // レイドは制限時間に合わせて線形に縮める
   else updateZone(dt);
   if(game.raid) updateRaid(dt);                   // ボスの予告→発動と、決着の判定
+  updateTeamStates(dt);                           // チーム戦: 出血タイマーと蘇生の進行(個人戦では何もしない)
   updateCameraSnap(dt);
   computePlayerInput();
 
@@ -1964,6 +2211,7 @@ function updateAreaEffects(dt){
       const doorX = ae.x + Math.cos(ae.angle)*doorDist, doorY = ae.y + Math.sin(ae.angle)*doorDist;
       for(const ent of entities){
         if(!ent.alive || ent.id===ae.ownerId || ent.isRaidBoss) continue; // 巨体は吸い込まない
+        if(owner && sameTeam(owner, ent)) continue; // チーム戦: 味方は引き寄せもダメージも受けない
         if(ae.hitIds.has(ent.id)) continue;
         // 通路全体(0〜range)には入っていて、まだ炎が来ていない範囲(0〜frontDist)には
         // 入っていない = ちょうど炎が通過した、を hitTestRect の2回判定で表す
@@ -1997,6 +2245,7 @@ function updateAreaEffects(dt){
         const beamAngle = ae.angle + (count>1 ? (b/(count-1)-0.5)*spread : 0);
         for(const ent of entities){
           if(!ent.alive || ent.id===ae.ownerId) continue;
+          if(owner && sameTeam(owner, ent)) continue; // チーム戦: 味方にはヒット演出も出さない
           const key = ent.id+'_b'+b;
           if(ae.hitIds.has(key)) continue;
           if(hitTestRect(origin, ent, beamAngle, curReach, ae.width/2)){
@@ -2012,6 +2261,7 @@ function updateAreaEffects(dt){
       const curReach = Math.min(ae.range, fillDist);
       for(const ent of entities){
         if(!ent.alive || ent.id===ae.ownerId) continue;
+        if(owner && sameTeam(owner, ent)) continue; // チーム戦: 味方にはヒット演出も出さない
         if(ae.hitIds.has(ent.id)) continue;
         let hit = false;
         if(ae.kind==='fan' || ae.kind==='fanZigzag'){

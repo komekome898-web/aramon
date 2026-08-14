@@ -18,6 +18,20 @@ let ZONE_PHASES = ZONE_PHASES_BASE.map(p=>({...p}));
 
 // マルチプレイ(少人数想定)はソロより一回り狭いマップにする
 const MULTI_MAP_SCALE = 0.68;
+
+/* ===== チーム戦(将来の3人1組×20チーム=60体まで拡張できる土台)のバランス定数 =====
+   個人戦(game.teamSize===1)ではどれも読まれない。判定の入口は combat.js の isTeamMatch() 1つ。
+   数値は発注者が実機で反復調整する前提の名前付き定数。 */
+const TEAM_SPAWN_SPREAD        = 80;   // 同チームのスポーンをアンカーからどれだけ離すか(隣接スポーン)
+const TEAM_FOLLOW_DIST         = 200;  // botがリーダーへ寄り直す距離(これ以上離れたら追従)
+const TEAM_REVIVE_RADIUS       = 80;   // 蘇生できる距離(この半径内にとどまると進む)
+const TEAM_REVIVE_SEC          = 2.5;  // 蘇生に必要なとどまり時間(秒)
+const TEAM_DOWN_BLEED_SEC      = 30;   // ダウンから出血死までの時間(秒)
+const TEAM_DOWN_SPEED_MULT     = 0.3;  // ダウン中の移動速度倍率(這い移動)
+const TEAM_DOWN_DMG_TAKEN_MULT = 1.5;  // ダウン中の被ダメ倍率
+const TEAM_DOWN_HP_RATIO       = 0.3;  // ダウンした瞬間に残すHP(最大HP比。とどめ用の体力。0にしない=HPバーが空にならない)
+const TEAM_REVIVE_HP_RATIO     = 0.4;  // 蘇生で戻るHP(最大HP比)
+const TEAM_BOT_REVIVE_SEEK_RANGE = 1600; // botが蘇生に向かうダウン味方の探索距離
 let worldDensityScale = 1; // 岩・地形装飾の密度倍率(マップ面積縮小に応じてseededGen側で使用)
 
 // マップの規模(ワールドサイズ・安全圏半径)をスケールに応じて再計算する。

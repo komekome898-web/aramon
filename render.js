@@ -849,6 +849,10 @@ function drawMonster(e,p){
     ctx.restore();
   }
 
+  // チーム戦のダウン中は倒れ姿勢(横倒し)で最低限の見分けを付ける(詳しい演出は別担当)。
+  // スプライトだけ回し、この後の状態リング・HPゲージは回さない
+  const downedPose = (typeof entityDowned==='function') && entityDowned(e);
+  if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
   const displayImg = getDisplayImage(e);
   if(displayImg){
     drawMonsterPortrait(e, displayImg, e.hitFlash>0);
@@ -879,6 +883,7 @@ function drawMonster(e,p){
       [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*eyeOff+Math.cos(e.facingAngle)*2,-e.radius*0.05+Math.sin(e.facingAngle)*2,e.radius*0.07,0,Math.PI*2); ctx.fill(); });
     }
   }
+  if(downedPose) ctx.restore();   // 倒れ姿勢の回転はスプライトまで
 
   if(e.burnUntil > matchTime){
     ctx.save();

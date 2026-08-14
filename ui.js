@@ -3405,6 +3405,7 @@ const netState = {
   mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null, hostId:null,
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
   raid:false,   // レイドの部屋か(部屋のmodeと一致させる。試合の組み立てが変わる)
+  teamSize:1,   // 部屋のチーム人数(1=個人戦)。部屋UI側の配線は別担当。部屋に入るときは部屋のmetaが正
 };
 
 /* =====================================================================
@@ -3715,7 +3716,7 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br');
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br', netState.teamSize||1);
   }catch(err){
     console.error(err);
     pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
@@ -3790,6 +3791,7 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.isHost = false;
   netState.myPlayerId = result.myPlayerId;
   if(result.capacity){ netState.capacity = result.capacity; if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels(); }
+  netState.teamSize = result.teamSize || 1;   // 他人の部屋に入るときは部屋のteamSizeが正
   /* 【ここだけは部屋が正】他人の部屋に入るときは、部屋のmodeが実際に始まる試合を決める。
      ロビーの表示もそれに合わせて動かし、「レイドの部屋に入ったのに表示はみんなと対戦」を無くす。 */
   setLobbyMode(result.mode==='raid' ? 'raid' : 'multi');
@@ -3858,9 +3860,15 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
 });
 
-function startGame(){
+/* opts.teamSize(2以上)を渡すとソロのチーム戦(自分+botの小隊 vs botチーム)になる。
+   opts.teamCount で対戦チーム数を変えられる(既定は総勢30体になる数)。
+   何も渡さなければ従来どおりの個人戦30体で、経路は1バイトも変わらない
+   (チーム戦の分岐は isTeamMatch() 1つ。game.trainingRange と同じ方式)。 */
+function startGame(opts){
+  const teamSize = Math.max(1, ((opts && opts.teamSize)|0) || 1);
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
+  teamResetState();             // チーム戦の状態も持ち越さない(必要ならこの後assignTeamsで立て直す)
   // ロビーの選択から netState を作り直す(1人でプレイなので solo に確定する)
   syncNetStateToLobbyMode();
   document.getElementById('rangeBar').classList.add('hidden');
@@ -3895,8 +3903,13 @@ function startGame(){
     const mmData = loadMastermons()[game.selectedMastermonKey];
     if(mmData) playerDisplayName = mmData.name;
   }
-  const totalEntityCount = 30;
-  const spawnPoints = pickSpawnPointsBatch(totalEntityCount);
+  // チーム戦は「チーム数×人数」、個人戦は従来どおり30体。
+  // 同チームは隣接スポーン(pickTeamSpawnPointsBatch。シード付きの対はseededPickTeamSpawnPointsBatch)
+  const teamMode = teamSize > 1;
+  const teamCount = teamMode ? Math.max(2, ((opts && opts.teamCount)|0) || Math.floor(30/teamSize)) : 0;
+  const totalEntityCount = teamMode ? teamSize*teamCount : 30;
+  const spawnPoints = teamMode ? pickTeamSpawnPointsBatch(teamCount, teamSize)
+                               : pickSpawnPointsBatch(totalEntityCount);
   player = createMonster(game.selectedElement, true, playerDisplayName, { spawnPoint: spawnPoints[0] });
   applyMastermonToPlayer();
   entities.push(player);
@@ -3910,7 +3923,7 @@ function startGame(){
   const playerRebirth = mastermonRebirthCount(playerMm);
   // 他の人が育てたマスモンの写し(ゴースト)を何体か混ぜる。取れなければ空配列で従来どおり
   const ghosts = pickGhostsForMatch(playerMmLevel, playerRebirth);
-  for(let i=0;i<29;i++){
+  for(let i=0;i<totalEntityCount-1;i++){
     const g = ghosts[i] || null;
     const elKey = g ? g.element : botElements[i % botElements.length];
     const botName = g ? g.name : (names[i % names.length] + (i>=names.length?'Ⅱ':''));
@@ -3928,6 +3941,8 @@ function startGame(){
     }
     entities.push(bot);
   }
+  // チーム戦: 生成順(自分が先頭=チーム0)をteamSizeずつ区切って割り当てる
+  if(teamMode) assignTeams(teamSize);
   // ミューテーター「スポーンアイテム数1.5倍」(非公開中は常に1)
   const mutSpawnMultSolo = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1;
   spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
@@ -4008,6 +4023,7 @@ function startShootingRange(){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();             // レイドの状態を持ち越さない
+  teamResetState();             // チーム戦の状態も持ち越さない
   game.trainingRange = true;
   game.activeMapKey = 'wild'+REAL_MAP_SUFFIX;      // 訓練場は荒野のリアル版で固定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
@@ -4075,6 +4091,7 @@ function raidStart(multi, demo){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();          // いったん初期化してから立て直す
+  teamResetState();          // レイドとチーム戦は排他(レイドでは常にteamSize=1)
   game.trainingRange = false;
   game.raid = true;
   game.activeMapKey = 'raid';
@@ -8136,6 +8153,13 @@ function onPlayerDown(){
      そのぶん自分の視点が置き去りになるので、残っている味方を観戦する。
      ソロ・マルチどちらも同じ扱い(味方botしか残っていなくても観戦する)。 */
   if(game.raid){ startSpectating('力尽きました。残っている味方を観戦します'); return; }
+  /* チーム戦: 味方(人間・bot問わず)が残っていれば試合は続くので観戦する。
+     チームが全滅したときのリザルトは teamNoteDeath / checkTeamWin(combat.js)が出す。 */
+  if(isTeamMatch() && player && player.teamId!=null &&
+     teamMembers(player.teamId).some(m=>m!==player && m.alive)){
+    startSpectating('倒れました。残っている仲間を観戦します');
+    return;
+  }
   if(netState.mode==='multi' && netState.isHost){
     startSpectating('あなたは敗退しました。生き残っているプレイヤーを観戦します');
     return;

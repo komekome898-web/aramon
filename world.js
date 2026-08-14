@@ -17,7 +17,8 @@ let nextId = 1;
 let player = null;
 let matchTime = 0;
 let zoneState = null;
-let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false };
+let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false,
+             teamSize:1 };   // 1=個人戦(従来どおり)。2以上でチーム戦。書くのは teamResetState()/assignTeams()(combat.js)だけ
 
 /* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
    バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが
@@ -538,6 +539,36 @@ function pickSpawnPointsBatch(n){
   }
   return points;
 }
+/* ===== チーム戦用スポーン =====
+   チームごとに1つのアンカーを従来のバッチ関数で均等配置し、同チームのメンバーを
+   アンカーの周りに隣接して並べる。返り値は「チーム0のメンバー…チーム1のメンバー…」の
+   平坦な配列(エンティティ生成順=チーム割当順と同じ並び)。
+   **ソロ用(pickTeamSpawnPointsBatch)とシード付き(seededPickTeamSpawnPointsBatch)は対。
+   直すときは必ず両方直す**(spawnLoot/seededSpawnLootと同じ決まり)。 */
+function teamPointsAroundAnchors(anchors, teamSize, rnd){
+  const points = [];
+  for(const an of anchors){
+    for(let j=0;j<teamSize;j++){
+      let placed = null;
+      for(let tries=0; tries<12 && !placed; tries++){
+        const a = (j/teamSize)*Math.PI*2 + rnd()*0.8;
+        const d = TEAM_SPAWN_SPREAD*(0.6+rnd()*0.8);
+        const x = an.x+Math.cos(a)*d, y = an.y+Math.sin(a)*d;
+        if(isOnHazard(x,y,40)) continue;
+        placed = {x,y};
+      }
+      // 置き場が見つからなければアンカーのすぐ横に妥協して置く(重なりはseparateEntitiesが直す)
+      points.push(placed || { x:an.x + j*30, y:an.y });
+    }
+  }
+  return points;
+}
+function pickTeamSpawnPointsBatch(teamCount, teamSize){
+  return teamPointsAroundAnchors(pickSpawnPointsBatch(teamCount), teamSize, Math.random);
+}
+function seededPickTeamSpawnPointsBatch(rng, teamCount, teamSize){
+  return teamPointsAroundAnchors(seededPickSpawnPointsBatch(rng, teamCount), teamSize, rng);
+}
 function createMonster(elementKey, isPlayer, name, overrides){
   const el = ELEMENTS[elementKey];
   const sp = (overrides && overrides.spawnPoint) ? overrides.spawnPoint : pickSpawnPoint();
@@ -561,6 +592,8 @@ function createMonster(elementKey, isPlayer, name, overrides){
     stateUntil:0, stateCooldownUntil: (STATE_CHANGES[elementKey] ? STATE_CHANGES[elementKey].cooldown/2 : 0),
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,
     recentAttackers:{},
+    // チーム戦(combat.jsのassignTeamsが割り当てる)。null=個人戦=従来どおり
+    teamId:null, downed:false, downedUntil:0, reviveProgress:0,
   };
 }
 function activeMove(m){

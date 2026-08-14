@@ -168,12 +168,23 @@ function handleRoomEvent(evt, evtKey){
     setTimeout(()=>{ if(raidState.pending && raidState.pending.move===mv){ raidState.pending=null; raidState.marks=[]; } },
                Math.round((evt.tele||1.2)*1000));
   }
+  // チーム戦: ダウン・蘇生の通知(ゲストはホストのループを回さないので、フィードと本人向けの合図を再現する)
+  if(evt.kind==='down' && !netState.isHost){
+    if(evt.text) pushKillFeed(evt.text);
+    if(player && evt.victimId===player.id) pushToast('ダウンした！ 仲間の蘇生を待て');
+  }
+  if(evt.kind==='revive' && !netState.isHost){
+    if(evt.text) pushKillFeed(evt.text);
+    if(player && evt.entId===player.id){ pushToast('蘇生された！'); playSe('pickup'); }
+  }
   // レイド: 決着はホストが判定する。ゲストはこれを受けて同じ結果画面へ進む
   if(evt.kind==='raidEnd' && game.raid && !game.over){
     finishRaid(!!evt.defeated);
   }
   if(evt.kind==='matchEnd' && !game.over){
-    if(player && player.netPlayerId===evt.winnerNetId && player.alive){
+    // チーム戦: 自分がダウン/死亡していても、自チームの勝ちなら勝利
+    const teamWin = (typeof evt.winnerTeam==='number') && player && player.teamId===evt.winnerTeam;
+    if(player && (teamWin || (player.netPlayerId===evt.winnerNetId && player.alive))){
       onPlayerWin();
     } else if(player && player.netPlayerId!==evt.winnerNetId){
       // 自分は勝者ではない側。通常はhostが即時配信するauthStateのhp/alive更新で
@@ -239,7 +250,9 @@ async function beginMultiplayerMatchInner(){
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
   let seed, fixedPlayers, mapKey, hostMastermonBots, sharedWorld = null;
+  let matchTeamSize = 1;   // この試合のチーム人数(1=個人戦)。ホストは部屋の設定、ゲストはシード配信の値が正
   if(netState.isHost){
+    matchTeamSize = Math.max(1, netState.teamSize||1);
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
     fixedPlayers = netState.humanPlayers || {};
     if(!fixedPlayers[netState.myPlayerId]){
@@ -268,7 +281,9 @@ async function beginMultiplayerMatchInner(){
       mapKey = result.mapKey || 'wild';
       hostMastermonBots = result.hostMastermonBots || [];
       sharedWorld = result.world || null; // ホストが生成した障害物(あれば正として使う)
+      matchTeamSize = Math.max(1, result.teamSize||1); // チーム人数もホストの配信が正
     } else {
+      matchTeamSize = Math.max(1, netState.teamSize||1); // タイムアウト時は部屋参加時のmetaで代用
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
@@ -287,8 +302,10 @@ async function beginMultiplayerMatchInner(){
      「ランダム+リアルマップ」で竜の火口が当たると通常マルチがレイドに化けていた。 */
   const wantRaid = !!netState.raid || mapKey==='raid';
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
+  teamResetState();          // チーム戦の状態も入口で消す(必要ならこの後assignTeamsで立て直す)
   netState.raid = wantRaid;
   game.raid = wantRaid;
+  if(game.raid) matchTeamSize = 1;   // レイドとチーム戦は排他
   if(game.raid) mapKey = 'raid';
   // 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す
   else if(MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
@@ -327,7 +344,7 @@ async function beginMultiplayerMatchInner(){
   if(netState.isHost){
     const worldData = packWorldForSync();
     console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize);
   }
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
@@ -342,7 +359,11 @@ async function beginMultiplayerMatchInner(){
   const usedSlots = humanList.length;
   const botCount = Math.max(0, netState.capacity - usedSlots);
   const totalEntityCount = usedSlots + botCount;
-  const spawnPoints = seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
+  // チーム戦は同チームを隣接スポーンにする(ソロ用pickTeamSpawnPointsBatchと対のシード付き)。
+  // 返り値は「チーム0→チーム1→…」の平坦な並びで、下の生成順(人間→bot)=チーム割当順と一致する
+  const spawnPoints = (matchTeamSize>1)
+    ? seededPickTeamSpawnPointsBatch(spawnRng, Math.ceil(totalEntityCount/matchTeamSize), matchTeamSize)
+    : seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
 
   let idCounter = 1;
   let spawnIdx = 0;
@@ -388,6 +409,10 @@ async function beginMultiplayerMatchInner(){
       entities.push(createMonster(elKey, false, nm, { id: idCounter++, spawnPoint: sp }));
     }
   }
+
+  // チーム戦: 生成順(人間がid文字列順で先・botが後)をteamSizeずつ区切って割り当てる。
+  // 並びはホスト/ゲストで完全に一致するので、チーム割当も必ず一致する(同チームは連番id)
+  if(matchTeamSize>1) assignTeams(matchTeamSize);
 
   if(game.raid){
     /* レイド: 全員(人間もbotも)がボスと戦う。ボスもシード付き生成の一部として
@@ -529,6 +554,7 @@ function processRemoteFireEvents(){
     const ent = entities.find(e=>e.netPlayerId===evt.sourceNetId);
     if(!ent || !ent.alive) continue;
     if(ent.freezeUntil > matchTime) continue; // 凍結中は撃てない(ホスト自身と同じ条件)
+    if(entityDowned(ent)) continue;           // ダウン中も撃てない(tryPlayerFireと同じ条件)
     ent.facingAngle = evt.facing;
     if(typeof evt.moveTier==='number') ent.moveTierSelected = evt.moveTier;
     const mv = activeMove(ent);
@@ -546,6 +572,7 @@ function processRemoteFireEvents(){
       const dfx=Math.cos(ent.facingAngle), dfy=Math.sin(ent.facingAngle);
       for(const e2 of entities){
         if(e2===ent || !e2.alive) continue;
+        if(sameTeam(ent, e2)) continue;   // チーム戦: 近接技の相手にも味方を選ばない(tryPlayerFireと同じ)
         if(e2.z - ent.z > upwardBlockLimit()) continue;
         const rp = (hasLagComp && entityRewoundPos(e2.id, lagDelaySeq)) || e2; // 巻き戻し位置で判定
         const d = Math.hypot(rp.x-ent.x, rp.y-ent.y);
@@ -620,6 +647,7 @@ function tryNonHostPlayerFireVisual(dt){
   // ここを見ていないと、ゲストだけ凍結中に撃てる/撃ったのにホストが実行せず
   // 見た目だけの弾が飛ぶ、という食い違いになる
   if(player.freezeUntil > matchTime) return;
+  if(entityDowned(player)) return; // ダウン中は撃てない(tryPlayerFire/processRemoteFireEventsと同じ条件)
   if(!(fireBtnHeld || keys['f'])) return;
   // combat.jsのfireMoveと同じく、スキン装備でtier3が専用技に変わる場合は先に解決する
   let mv = activeMove(player);
@@ -997,6 +1025,12 @@ function buildAuthStatePayload(){
     if(bnR > 0) o.bn = Math.round(bnR*100)/100;
     const poR = (e.poisonUntil||0) - nowT;
     if(poR > 0) o.po = Math.round(poR*100)/100;
+    // チーム戦: ダウンの残り秒数(dw)と蘇生の進み(rv)。絶対時刻は送らない(残り秒数方式)。
+    // dwが載っていない=ダウンしていない、として受信側が判定する
+    if(e.downed && e.alive){
+      o.dw = Math.round(Math.max(0, (e.downedUntil||0) - nowT)*100)/100;
+      if(e.reviveProgress > 0) o.rv = Math.round(e.reviveProgress*100)/100;
+    }
     // 人間プレイヤーには「最後に適用した入力seq」を返す(ゲストの位置突き合わせ用)
     if(e.netPlayerId && typeof e.netAckInputSeq==='number') o.aseq = e.netAckInputSeq;
     // ④ フル配信の時だけ載せる「コールド」フィールド(ほぼ静的・低頻度で十分)
@@ -1117,6 +1151,14 @@ function applyAuthState(authState){
     else ent.speedBuffUntil = 0;
     ent.burnUntil   = (typeof a.bn==='number') ? matchTime + a.bn : 0;
     ent.poisonUntil = (typeof a.po==='number') ? matchTime + a.po : 0;
+    // チーム戦のダウン状態。残り秒数(dw)で届く。無ければダウンしていない
+    if(typeof a.dw==='number'){
+      ent.downed = true;
+      ent.downedUntil = matchTime + a.dw;
+      ent.reviveProgress = (typeof a.rv==='number') ? a.rv : 0;
+    } else {
+      ent.downed = false; ent.downedUntil = 0; ent.reviveProgress = 0;
+    }
     if(typeof a.trainMaxHpBonus==='number') ent.trainMaxHpBonus = a.trainMaxHpBonus;
     if(typeof a.mmKillExp==='number') ent.mastermonKillExpBonus = Math.max(ent.mastermonKillExpBonus||0, a.mmKillExp);
     if(typeof a.trainCooldownMult==='number') ent.trainCooldownMult = a.trainCooldownMult;
@@ -1301,6 +1343,7 @@ function loop(now){
             // 見た目専用の当たり「らしさ」判定だけをローカルで行う
             for(const e of entities){
               if(!e.alive || e.id===p.ownerId) continue;
+              if(projTeamBlocked(p, e)) continue; // チーム戦: 味方の体は見た目も素通り(ホスト側と同じ)
               if(p.terrain3d && !projHeightHits(p,e)) continue; // 頭上/足元を大きく外れた弾は見た目も当てない
               if(dist(p,e) < e.radius+(p.hitR||0)){ visualHit=true; spawnHit(e.x,e.y,e.z,p.color); break; }
             }

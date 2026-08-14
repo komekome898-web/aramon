@@ -190,15 +190,17 @@
   // 部屋を新規作成してホストになる
   // mode は 'br'(バトルロイヤル)か 'raid'。部屋一覧で混ざらないよう分けて扱う。
   // 旧クライアントの部屋には mode が無いので 'br' とみなす。
-  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode){
+  // teamSize はチーム戦の1チーム人数(1=個人戦)。capacity と同様に素通しで部屋metaへ載せるだけ
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize){
     const roomMode = mode==='raid' ? 'raid' : 'br';
+    const roomTeamSize = (teamSize|0) > 1 ? (teamSize|0) : 1;
     const roomId = genId();
     const roomRef = ref(fbDb, `rooms/${roomId}`);
     await set(roomRef, {
-      meta: { hostId: myPlayerId, capacity, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName },
+      meta: { hostId: myPlayerId, capacity, teamSize: roomTeamSize, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName },
       players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
     });
-    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName });
+    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, teamSize: roomTeamSize, count:1, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
     onDisconnect(lobbyEntryRef).remove();
     window.__aramonLobbyEntryId = lobbyEntryRef.key;
@@ -217,7 +219,7 @@
       snap.forEach(ch=>{
         const v = ch.val();
         if(v && v.status==='waiting' && v.count < v.capacity && (v.mode||'br')===wantMode){
-          rooms.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br') });
+          rooms.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, teamSize:(v.teamSize||1), count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br') });
         }
       });
       rooms.sort((a,b)=> b.createdAt - a.createdAt);
@@ -249,7 +251,7 @@
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
-      return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity, mode:(meta.mode||'br') };
+      return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity, teamSize:(meta.teamSize||1), mode:(meta.mode||'br') };
     }catch(err){
       console.error('join room failed', err);
       return { ok:false, reason:'参加に失敗しました' };
@@ -259,8 +261,9 @@
   // 旧方式(自動マッチング)は互換のため残置
   // mode は 'br'(バトルロイヤル)か 'raid'。募集一覧で混ざらないよう分けて数える。
   // 旧クライアントの募集には mode が無いので 'br' とみなす。
-  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode){
+  window.__aramonFindOrCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize){
     const wantMode = mode==='raid' ? 'raid' : 'br';
+    const wantTeamSize = (teamSize|0) > 1 ? (teamSize|0) : 1;   // チーム人数も一致する部屋だけに入る
     const lobbyRef = ref(fbDb, 'lobby');
     const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
     let joinedRoomId = null;
@@ -271,7 +274,7 @@
       const candidates = [];
       snap.forEach(ch=>{
         const v = ch.val();
-        if(v && v.status==='waiting' && v.capacity===capacity && v.count < v.capacity && (v.mode||'br')===wantMode){
+        if(v && v.status==='waiting' && v.capacity===capacity && v.count < v.capacity && (v.mode||'br')===wantMode && (v.teamSize||1)===wantTeamSize){
           candidates.push({ lobbyKey: ch.key, roomId: v.roomId, count: v.count });
         }
       });
@@ -300,10 +303,10 @@
       const roomId = genId();
       const roomRef = ref(fbDb, `rooms/${roomId}`);
       await set(roomRef, {
-        meta: { hostId: myPlayerId, capacity, status:'waiting', mode:wantMode, createdAt: Date.now() },
+        meta: { hostId: myPlayerId, capacity, teamSize: wantTeamSize, status:'waiting', mode:wantMode, createdAt: Date.now() },
         players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
       });
-      const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, count:1, status:'waiting', mode:wantMode, createdAt: Date.now() });
+      const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, teamSize: wantTeamSize, count:1, status:'waiting', mode:wantMode, createdAt: Date.now() });
       onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
       onDisconnect(lobbyEntryRef).remove();
       window.__aramonLobbyEntryId = lobbyEntryRef.key;
@@ -381,8 +384,9 @@
     }catch(err){}
   };
 
-  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData){
-    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null, world: worldData||null }); }catch(err){}
+  // teamSize はチーム戦の1チーム人数(1=個人戦)。素通しで載せ、ゲストは__aramonWaitForRoomSeedで受け取る
+  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, teamSize){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null, world: worldData||null, teamSize: (teamSize|0)>1 ? (teamSize|0) : 1 }); }catch(err){}
   };
 
   window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
@@ -392,7 +396,7 @@
       const cb = (snap)=>{
         const v = snap.val();
         if(v && v.seed!=null && v.fixedPlayers && !done){
-          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[], world:v.world||null });
+          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[], world:v.world||null, teamSize:(v.teamSize||1) });
         }
       };
       onValue(r, cb);
