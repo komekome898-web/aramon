@@ -4441,6 +4441,23 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
    発生地点(術者の足元)だけで見ていると、前進しながら技を撃った時に
    発生地点がカメラの後ろへ回った瞬間に投影できなくなり、まだ前方に伸びている
    エフェクトごと消えてしまう。中ほど→先端の順に代わりの基準点を探して防ぐ。   */
+/* 技のエフェクトが山の向こうにあるか。
+   【なぜ必要か】2Dキャンバスは3Dの地形より必ず後に描くので深度判定を受けない。
+   モンスター・弾・アイテムには occludedByMountain を通していたが、
+   技エフェクトとパーティクルだけ素通りで、山の裏の技が透けて見えていた
+   (実機で report・2026-08-14)。**2Dで世界に描く物を足したら必ずここを通すこと。**
+   技は発生点から range だけ伸びるので、根元・中間・先端の3点すべてが
+   山の中に入っているときだけ消す(山をまたぐ技が丸ごと消えないように)。   */
+function areaEffectOccluded(ae){
+  if(!mountOccluders.length) return false;
+  const reach = ae.range || 0;
+  const a = ae.angle || 0;
+  const z = (ae.z || 0) + 40;
+  for(const f of (reach > 0 ? [0, 0.5, 1] : [0])){
+    if(!occludedByMountain(ae.x + Math.cos(a)*reach*f, ae.y + Math.sin(a)*reach*f, z)) return false;
+  }
+  return true;
+}
 function areaEffectAnchor(ae){
   const p0 = projectGround(ae.x, ae.y);
   if(p0) return p0;
@@ -4768,6 +4785,8 @@ function drawLandingMarkers(){
   for(const p of projectiles){
     if(!p.lobbed) continue;
     const t = clamp(p.flightT / p.flightTime, 0, 1);
+    // 着弾点が山の裏なら描かない(2Dは深度判定を受けないので明示的に消す)
+    if(occludedByMountain(p.landX, p.landY, groundZAt(p.landX, p.landY))) continue;
     const proj = projectGround(p.landX, p.landY);
     if(!proj) continue;
     const fade = 0.25 + 0.35*t;
@@ -5292,7 +5311,10 @@ function render(){
 
   const drawables = [];
   // 岩等の大きな障害物と正しく前後関係が付くよう、他のdrawablesと同じ深度ソートに乗せる
-  for(const ae of areaEffects){ const p = areaEffectAnchor(ae); if(p) drawables.push({kind:'ae', obj:ae, p}); }
+  for(const ae of areaEffects){
+    if(areaEffectOccluded(ae)) continue;
+    const p = areaEffectAnchor(ae); if(p) drawables.push({kind:'ae', obj:ae, p});
+  }
   for(const r of rocks){
     const fade = obstacleVisible(r.x, r.y, (r.height||r.radius)*0.5);
     if(fade <= 0) continue;
@@ -5328,7 +5350,11 @@ function render(){
   for(const pr of projectiles){ if(occludedByMountain(pr.x, pr.y, pr.z+20)) continue; const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
     if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
-  for(const pt of particles){ const p = project(pt.x,pt.y, (pt.z||0)+(pt.type==='text'?42:16)); if(p) drawables.push({kind:'fx', obj:pt, p}); }
+  for(const pt of particles){
+    const pz = (pt.z||0)+(pt.type==='text'?42:16);
+    if(occludedByMountain(pt.x, pt.y, pz)) continue;
+    const p = project(pt.x,pt.y, pz); if(p) drawables.push({kind:'fx', obj:pt, p});
+  }
 
   if(perfOn) perf.drawables = drawables.length;
   drawables.sort((a,b)=>b.p.depth-a.p.depth);
