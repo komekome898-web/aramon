@@ -52,6 +52,14 @@ const ARENA_LOOT_COUNT      = 14;   // 開始時に撒くアイテム数(少数�
 const ARENA_LOOT_SPREAD     = 0.6;  // アイテムを撒く中央帯の広さ(安置半径に対する比)
 const ARENA_TIME_LIMIT      = 180;  // 試合時間の上限(秒)。超えたら生存数(同数ならHP合計)で勝敗
 const GOLD_ARENA_MULT       = 0.6;  // アリーナのゴールド報酬倍率(試合が短いぶん少なめ)
+
+/* ===== チーム戦: ピン(シグナル)とキルリーダー(APEX風のチーム体験)の定数 ===== */
+const PING_LIFETIME_SEC       = 6;    // ピンの表示時間(秒)。過ぎたら3D世界・ミニマップから消える
+const PING_RANGE              = 700;  // 移動ピンを置く距離(照準方向。途中に障害物があればその手前)
+const PING_ENEMY_SEARCH_ANGLE = 0.30; // 敵ピンの探索半角(rad≒17°。照準からこの角度以内の敵を対象にする)
+const PING_ENEMY_SEARCH_RANGE = 900;  // 敵ピンの探索距離(移動ピンよりやや遠くの敵も指せる)
+const PING_UNITS_PER_M        = 10;   // 距離表示の換算(ワールド10単位=1m。表示専用)
+const KILL_LEADER_MIN_KILLS   = 2;    // キルリーダーになる最少キル数(1キルで王冠は大げさ)
 let worldDensityScale = 1; // 岩・地形装飾の密度倍率(マップ面積縮小に応じてseededGen側で使用)
 
 // マップの規模(ワールドサイズ・安全圏半径)をスケールに応じて再計算する。

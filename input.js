@@ -343,6 +343,11 @@ document.getElementById('dashBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) tryDash(player);
 });
+// ピン(チーム系モードのみ表示): ボタン1押しで照準方向の敵/地点へピンを打つ(2タップ以内が絶対条件)
+document.getElementById('pingBtn').addEventListener('pointerdown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  if(game.started && !game.over && typeof sendPing==='function') sendPing();
+});
 document.getElementById('turnLeftBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) turnCameraByDegrees(-90);

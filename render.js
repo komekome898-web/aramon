@@ -1046,7 +1046,8 @@ function drawMonster(e,p){
     ctx.fillStyle = isAllyOfPlayer ? '#7dffa8' : (e.isMastermonBot ? '#ffd76a' : 'rgba(230,230,220,0.85)');
     ctx.textAlign='center';
     if((isAllyOfPlayer || e.isMastermonBot) && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor = isAllyOfPlayer ? '#2fd35a' : '#ffb703'; }
-    ctx.fillText((e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
+    // キルリーダーは名前の頭に👑(★マスモン印と同じ作法。スケール上限・近距離フェードも同じものが効く)
+    ctx.fillText(((typeof isKillLeader==='function' && isKillLeader(e))?'👑 ':'')+(e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
     ctx.shadowBlur = 0;
     // ゴースト(他の人が育てたマスモン)は、誰の子かを小さく添える
     if(e.ghostOwner){
@@ -5643,6 +5644,7 @@ function render(){
   if(introState.active) safeDraw(drawSummonIntroFront);
   safeDraw(drawDangerVignette);
   safeDraw(drawDownedOverlay);   // チーム戦: 自分がダウン中の赤いビネット+蘇生待ちの案内
+  safeDraw(drawPingMarkers);     // チーム戦: 小隊のピン(旗マーカー)。案内表示なので最前面に出す
   safeDraw(drawZoneCompass);
   safeDraw(drawArenaScoreHud);   // アリーナ: 両チームの生存数と残り時間(アリーナ以外では何も描かない)
   if(introState.active) safeDraw(drawSummonCountdown);
@@ -5796,6 +5798,53 @@ function drawSummonCountdown(){
   ctx.fillText(String(n), viewW/2, viewH*0.31);
   ctx.restore();
 }
+/* ===== チーム戦: ピンの旗マーカー(3D世界) =====
+   毎フレームproject()で1点ずつ投影する(画面上の位置・角度を決め打ちしない)。
+   敵ピン(赤)は対象の頭上に追従し、移動ピン(黄)は指した地面に立つ。
+   上下にふわふわ+自分からの距離mを添える。スケールは頭上ラベルと同じ上限
+   (TEAM_LABEL_MAX_SCALE)でカメラ至近でも巨大化しない。掃除はprunePings(combat.js)。 */
+function drawPingMarkers(){
+  if(typeof teamPings==='undefined' || !teamPings.size || !player) return;
+  for(const pg of teamPings.values()){
+    let wx, wy, wz;
+    if(pg.kind==='enemy'){
+      const t = getEntity(pg.targetId);
+      if(!t || !t.alive) continue;   // 消すのはprunePingsの仕事(描画では飛ばすだけ)
+      wx=t.x; wy=t.y; wz=(t.z||0) + t.radius*2.6;   // 頭上(名前ラベルのさらに上)
+    } else {
+      wx=pg.x; wy=pg.y; wz=groundZAt(wx, wy);
+    }
+    const p = project(wx, wy, wz);
+    if(!p) continue;
+    const col = pg.kind==='enemy' ? '#ff5a5a' : '#ffd23c';
+    // 出現0.15秒でなじませ、最後の0.5秒でふっと消える
+    const fade = clamp((pg.expireAt - matchTime)/0.5, 0, 1) * clamp((matchTime - pg.bornAt)/0.15 + 0.35, 0, 1);
+    if(fade <= 0.02) continue;
+    const k = Math.min(Math.max(p.scale, 0.55), TEAM_LABEL_MAX_SCALE);   // 遠くでも読め、至近で巨大化しない
+    const bob = Math.sin(matchTime*3 + pg.senderId)*4*k;                 // 上下にふわふわ(目に留まる)
+    ctx.save();
+    ctx.translate(p.x, p.y + bob);
+    ctx.scale(k, k);
+    ctx.globalAlpha = fade;
+    // 旗: ポール+旗布+根本の点(地点/対象の真上)
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+    ctx.fillStyle = col;
+    if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = col; }
+    ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(16, -21); ctx.lineTo(0, -16); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(0, 0, 2.4, 0, Math.PI*2); ctx.fill();
+    // 自分からの距離m(近づくほど減る=そのまま誘導になる)
+    const txt = Math.max(1, Math.round(dist(player, {x:wx, y:wy})/PING_UNITS_PER_M)) + 'm';
+    ctx.font = "bold 10px 'Rajdhani', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeText(txt, 0, -32);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(txt, 0, -32);
+    ctx.restore();
+  }
+}
 function renderMinimap(){
   const w = miniCanvas.width, h = miniCanvas.height;
   miniCtx.clearRect(0,0,w,h);
@@ -5874,6 +5923,26 @@ function renderMinimap(){
       miniCtx.fillStyle = e.isPlayer ? '#ffffff'
         : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
       miniCtx.fill();
+    }
+  }
+  // チーム戦: 小隊のピン(敵=赤/移動=黄)を点滅させて出す。3D世界の旗と同じ色言語
+  if(typeof teamPings!=='undefined' && teamPings.size){
+    const blink = 0.45 + 0.55*Math.abs(Math.sin(matchTime*5));
+    for(const pg of teamPings.values()){
+      let px2, py2;
+      if(pg.kind==='enemy'){
+        const t = getEntity(pg.targetId);
+        if(!t || !t.alive) continue;
+        px2=t.x; py2=t.y;
+      } else { px2=pg.x; py2=pg.y; }
+      miniCtx.save();
+      miniCtx.globalAlpha = blink;
+      miniCtx.beginPath();
+      miniCtx.arc(px2*scale, py2*scale, 3.6, 0, Math.PI*2);
+      miniCtx.fillStyle = pg.kind==='enemy' ? '#ff5a5a' : '#ffd23c';
+      miniCtx.fill();
+      miniCtx.strokeStyle='rgba(255,255,255,0.95)'; miniCtx.lineWidth=1.2; miniCtx.stroke();
+      miniCtx.restore();
     }
   }
   const px=player.x*scale, py=player.y*scale, yaw=camState.yaw;
@@ -5986,6 +6055,17 @@ function updateHUD(){
   document.documentElement.style.setProperty('--accent', accentColor);
   if(typeof updateRaidHud==='function') updateRaidHud();   // レイド中だけボスHP・残り時間・与ダメを更新
   updateSquadPanel();   // チーム戦だけ小隊バー(個人戦では隠れたまま)
+  if(typeof prunePings==='function') prunePings();             // ピンの寿命(ゲストのループでも回る)
+  if(typeof updateKillLeader==='function') updateKillLeader(); // 同期済みkillsから毎フレーム導出(同期追加なし)
+  // ピンボタンはチーム系モードの試合中だけ出す(個人戦・レイド・射撃訓練場では非表示)
+  {
+    const pingBtnEl = document.getElementById('pingBtn');
+    if(pingBtnEl){
+      const showPing = (typeof isTeamMatch==='function') && isTeamMatch() &&
+        game.started && !game.over && player.alive;
+      pingBtnEl.classList.toggle('hidden', !showPing);
+    }
+  }
   const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
   document.getElementById('hpFill').style.width = hpPct+'%';
   document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');

@@ -180,6 +180,16 @@ function handleRoomEvent(evt, evtKey){
     if(evt.text) pushKillFeed(evt.text);
     if(player && evt.entId===player.id){ pushToast('蘇生された！'); playSe('pickup'); }
   }
+  // チーム戦: ピン(発信者→全員の配信。ホスト権威ではない=ゲストも発信できる)。
+  // 自分のエコーは捨て(送信時に適用済み)、同じ小隊のぶんだけ表示する。botは反応しない(表示のみ)
+  if(evt.kind==='ping'){
+    const ownEcho = evt.pid && evt.pid===netState.myPlayerId;
+    if(!ownEcho && typeof isTeamMatch==='function' && isTeamMatch() &&
+       player && player.teamId!=null && player.teamId===evt.team &&
+       typeof applyPing==='function'){
+      applyPing(evt);
+    }
+  }
   // レイド: 決着はホストが判定する。ゲストはこれを受けて同じ結果画面へ進む
   if(evt.kind==='raidEnd' && game.raid && !game.over){
     finishRaid(!!evt.defeated);

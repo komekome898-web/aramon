@@ -2523,6 +2523,18 @@
     letter-spacing:1px; pointer-events:auto; cursor:pointer; display:flex; align-items:center; justify-content:center;
     touch-action:none;
   }
+  /* ピンボタン(チーム系モードのみ表示。updateHUDがhiddenを切り替える)。
+     DASHの左隣・同じ高さ(FIRE/回転/技/キルフィードのどれとも重ならない位置。
+     DASHの真上はキルフィード3行目と重なった=横持ち812x375の実測で確認して移動)。
+     ダウン中も押せる(body.self-downedの無効化対象に入れない=倒れていても指示は出せる) */
+  #pingBtn{
+    position:absolute; right:190px; bottom:42px; width:48px; height:48px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(140,200,255,0.25), rgba(20,28,42,0.85));
+    border:2px solid rgba(255,255,255,0.2); font-size:19px;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:auto; cursor:pointer; touch-action:none;
+  }
+  #pingBtn:active{ filter:brightness(1.4); }
   .btn-label{ position:relative; z-index:1; }
   .cd-ring{ position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); pointer-events:none; }
   .cd-ring-bg{ fill:none; stroke:rgba(0,0,0,0.35); stroke-width:6; }
@@ -3736,6 +3748,7 @@
   html.narrow-screen #movePanel{ gap:8px; padding:8px 12px;}
   html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
+  html.narrow-screen #pingBtn{ right:162px; bottom:36px; width:44px; height:44px; }
   html.narrow-screen #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
   html.narrow-screen #autoRunLabel{ left:16px; bottom:134px; width:112px; }
   html.narrow-screen #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }

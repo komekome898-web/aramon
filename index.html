@@ -573,6 +573,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     </svg>
     <span class="btn-label">DASH</span>
   </div>
+  <!-- ピン(シグナル)。チーム系モードの試合中だけ表示(render.jsのupdateHUDが切替)。
+       FIRE/DASHと同じ「pointerdownで完結する押しボタン」なのでスクロールロック除外3か所には入れない -->
+  <div id="pingBtn" class="hidden"><span class="btn-label">🎯</span></div>
   <div id="turnLeftBtn">◀</div>
   <div id="turnRightBtn">▶</div>
 </div>

@@ -1157,6 +1157,7 @@ function teamMembers(teamId){ return teamMembersById.get(teamId) || []; }
 function teamResetState(){
   game.teamSize = 1;
   teamMembersById = new Map();
+  pingResetState();   // ピンとキルリーダーも試合をまたいで持ち越さない(「入口で必ず消す」の決まり)
 }
 /* エンティティ生成順に teamSize ずつ区切ってチームを割り当てる。
    entities の並びだけから決まるので、同じ並びを作る2者(ホスト/ゲスト)で必ず一致する。 */
@@ -1275,6 +1276,104 @@ function updateTeamStates(dt){
     }
   }
 }
+/* ===== ピン(シグナル)とキルリーダー(APEX風のチーム体験) =====
+   ・ピンはチーム系モード(isTeamMatch)のみ。同期は「発信者→全員のイベント配信」(kind:'ping')で、
+     ホスト権威ではない(表示だけの機能なので誰が送ってもよい=ゲストも発信できる)。
+   ・botはピンに反応しない(表示のみ)。ソロ小隊でも味方botの行動は変わらない。
+   ・キルリーダーはauthStateで同期済みのkillsから毎フレーム全員が導出する(同期の追加なし)。 */
+let teamPings = new Map();     // 発信者のエンティティid -> ピン。1人が連打しても最新1個だけ(上書き)
+let killLeaderCurId = null;    // 現在のキルリーダーのエンティティid(2キル未満しかいなければnull)
+function pingResetState(){ teamPings = new Map(); killLeaderCurId = null; }
+
+// 照準方向の敵を探す(ロックオン表示と同じ「向いている先」基準。角度内で最も近い敵)
+function pingFindEnemy(){
+  let best = null, bestD = PING_ENEMY_SEARCH_RANGE;
+  for(const e of entities){
+    if(e===player || !e.alive || e.isRaidBoss) continue;
+    if(sameTeam(player, e)) continue;
+    const d = dist(player, e);
+    if(d > bestD) continue;
+    if(Math.abs(angleDiff(angTo(player, e), player.facingAngle)) > PING_ENEMY_SEARCH_ANGLE) continue;
+    bestD = d; best = e;
+  }
+  return best;
+}
+/* ピンを打つ(ボタン1押しで完結)。照準の先に敵がいれば敵ピン、いなければ移動ピン。 */
+function sendPing(){
+  if(!game.started || game.over || !player || !player.alive) return;
+  if(!isTeamMatch()) return;
+  const enemy = pingFindEnemy();
+  let data;
+  if(enemy){
+    data = { pk:'enemy', tId: enemy.id };
+  } else {
+    // 障害物(岩・山)を貫通した先を指さない(見えない場所へ旗が立つと迷う)
+    const d = raycastObstacleDistance(player.x, player.y, player.facingAngle, PING_RANGE);
+    data = { pk:'move',
+      x: Math.round(clamp(player.x + Math.cos(player.facingAngle)*d, 0, WORLD.w)),
+      y: Math.round(clamp(player.y + Math.sin(player.facingAngle)*d, 0, WORLD.h)) };
+  }
+  applyPing({ ...data, entId: player.id });  // 自分の画面には即時反映(往復を待たない)
+  if(netState.mode==='multi' && netState.roomId){
+    // 自分のエコーは受信側でpidで捨てる(上で適用済み)。teamは「同じ小隊だけ表示」の判定に使う
+    window.__aramonPushEvent(netState.roomId,
+      { kind:'ping', pid: netState.myPlayerId, team: player.teamId, entId: player.id, ...data, ts: Date.now() });
+  }
+}
+/* ピンを表示に反映する(発信者本人と、イベントを受け取った同じ小隊の両方が通る)。
+   エンティティidはホスト/ゲストで一致する(チーム戦の土台の決まり)ので、idの読み替えは不要。
+   期限は受信時の自分のmatchTime基準にする(ホストとゲストのmatchTimeはズレるため絶対時刻を使わない)。 */
+function applyPing(d){
+  const sender = getEntity(d.entId);
+  if(!sender) return;
+  teamPings.set(d.entId, { kind: d.pk, x: d.x, y: d.y, targetId: d.tId,
+    senderId: d.entId, bornAt: matchTime, expireAt: matchTime + PING_LIFETIME_SEC });
+  playSe('pickup');   // 軽い通知音(専用SEは作らず既存を流用)
+  pushKillFeed(d.pk==='enemy' ? `📍 ${displayNameFor(sender)}: 敵発見！` : `📍 ${displayNameFor(sender)}: ここへ！`);
+}
+/* 期限切れ・対象消滅のピンを掃除する(updateHUDから毎フレーム=ゲストのループでも回る)。 */
+function prunePings(){
+  if(!teamPings.size) return;
+  for(const [key, pg] of teamPings){
+    if(matchTime >= pg.expireAt){ teamPings.delete(key); continue; }
+    if(pg.kind==='enemy'){
+      const t = getEntity(pg.targetId);
+      if(!t || !t.alive) teamPings.delete(key);   // 倒された敵のピンは残さない
+    }
+  }
+}
+
+/* ===== キルリーダー(個人戦・チーム戦の両方で出す) =====
+   導出は決定的(kills最多・同数ならentitiesの並びで先)にして、ホストとゲストが
+   同期済みのkillsから必ず同じ答えを出すようにする(リーダーidそのものは同期しない)。 */
+function computeKillLeaderId(){
+  let best = null, bestK = KILL_LEADER_MIN_KILLS - 1;
+  for(const e of entities){
+    if(!e.alive || e.isRaidBoss) continue;
+    const k = e.kills || 0;
+    if(k > bestK){ bestK = k; best = e; }
+  }
+  return best ? best.id : null;
+}
+function isKillLeader(e){ return !!(e && killLeaderCurId!=null && e.id===killLeaderCurId); }
+/* 毎フレーム呼ぶ(updateHUD経由=ソロ・ホスト・ゲスト全員)。交代のフィード行は
+   ホスト/ソロだけが確定し、ゲストへは既存のkillイベント(textだけ)を流用して配る。 */
+function updateKillLeader(){
+  if(!game.started || game.over || game.raid || game.trainingRange){ killLeaderCurId = null; return; }
+  const id = computeKillLeaderId();
+  if(id === killLeaderCurId) return;
+  killLeaderCurId = id;
+  if(id==null) return;
+  if(netState.mode==='multi' && !netState.isHost) return;  // ゲストは導出だけ(フィードはイベントで届く)
+  const ent = getEntity(id);
+  if(!ent) return;
+  const text = `👑 ${displayNameFor(ent)} がキルリーダーになった`;
+  pushKillFeed(text);
+  if(netState.mode==='multi'){
+    window.__aramonPushEvent(netState.roomId, { kind:'kill', text, ts: Date.now() });
+  }
+}
+
 function countAliveTeams(){
   const s = new Set();
   for(const e of entities){ if(e.alive && e.teamId!=null) s.add(e.teamId); }
