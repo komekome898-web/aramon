@@ -18,7 +18,8 @@ let player = null;
 let matchTime = 0;
 let zoneState = null;
 let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false,
-             teamSize:1 };   // 1=個人戦(従来どおり)。2以上でチーム戦。書くのは teamResetState()/assignTeams()(combat.js)だけ
+             teamSize:1,     // 1=個人戦(従来どおり)。2以上でチーム戦。書くのは teamResetState()/assignTeams()(combat.js)だけ
+             arena:false };  // バトルアリーナ(3v3・1本勝負)中か。書くのは arenaResetState()(combat.js)と試合開始の各入口だけ
 
 /* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
    バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが
@@ -241,6 +242,34 @@ function updateRaidZone(dt){
   const t = clamp(matchTime/RAID_TIME_LIMIT, 0, 1);
   zoneState.radius = lerp(zoneState.fromRadius, zoneState.toRadius, t);
 }
+/* バトルアリーナの安置。既存マップの中央に最初から小さく固定し、
+   開始 ARENA_ZONE_HOLD_SEC 秒後から1段階だけゆっくり決着圏へ縮める。中心は動かさない。
+   縮小先(toCenter/toRadius)を最初から入れておくので、安置予測の点線が開始直後から出る。
+   マルチではホストのzoneStateがそのまま同期されるので、ゲスト側の追加処理は要らない。 */
+function initArenaZone(){
+  const c = { x: ZONE_CENTER0.x, y: ZONE_CENTER0.y };
+  zoneState = {
+    phaseIndex:0, timer:0, shrinking:false, hasNext:true,
+    center:{...c}, radius: ARENA_ZONE_RADIUS,
+    fromCenter:{...c}, fromRadius: ARENA_ZONE_RADIUS,
+    toCenter:{...c}, toRadius: ARENA_ZONE_END_RADIUS,
+  };
+}
+// アリーナの安置の進み具合。待機→1段階の縮小→安定(それ以降は動かない)
+function updateArenaZone(dt){
+  zoneState.timer += dt;
+  if(zoneState.shrinking){
+    const t = clamp(zoneState.timer/ARENA_ZONE_SHRINK_SEC, 0, 1);
+    const e = 1-Math.pow(1-t,2);
+    zoneState.radius = lerp(zoneState.fromRadius, zoneState.toRadius, e);
+    if(t>=1){ zoneState.shrinking=false; zoneState.hasNext=false; zoneState.timer=0; }
+  } else if(zoneState.hasNext && zoneState.timer >= ARENA_ZONE_HOLD_SEC){
+    zoneState.fromRadius = zoneState.radius;
+    zoneState.shrinking = true;
+    zoneState.timer = 0;
+    pushToast('安全圏が縮小を開始した！');
+  }
+}
 function initZone(){
   zoneState = {
     phaseIndex:0, timer:0, shrinking:false, hasNext:false,
@@ -332,13 +361,25 @@ function updateZone(dt){
     if(zoneState.timer >= ph.holdTime){ advanceZonePhase(); }
   }
 }
-function currentDps(){ return ZONE_PHASES[zoneState.phaseIndex].dps; }
+// アリーナはフェーズ表を使わず常に一定の圏外ダメージ(通常の序盤より高め=逃げ回り防止)
+function currentDps(){
+  if(game.arena) return ARENA_ZONE_DPS;
+  return ZONE_PHASES[zoneState.phaseIndex].dps;
+}
 function zoneLabel(){
+  // アリーナはフェーズを持たないので、shrinking/hasNextだけで状態を言う
+  // (どちらもマルチのauthStateで同期済みなのでゲストでも正しく出る)
+  if(game.arena) return zoneState.shrinking ? '安全圏：縮小中' : (zoneState.hasNext ? '安全圏：待機中' : '安全圏：安定');
   if(zoneState.phaseIndex===0) return '安全圏：待機中';
   return zoneState.shrinking ? '安全圏：縮小中' : '安全圏：安定';
 }
 // 次の収縮(または現在の収縮が終わるまで)の残り秒数。もう収縮しない最終フェーズでは null を返す
 function zoneCountdownSeconds(){
+  if(game.arena){
+    if(zoneState.shrinking) return Math.max(0, ARENA_ZONE_SHRINK_SEC - zoneState.timer);
+    if(zoneState.hasNext) return Math.max(0, ARENA_ZONE_HOLD_SEC - zoneState.timer);
+    return null;   // 縮小済み。以後は動かない
+  }
   const ph = ZONE_PHASES[zoneState.phaseIndex];
   if(zoneState.shrinking){
     return Math.max(0, ph.shrinkTime - zoneState.timer);
@@ -568,6 +609,26 @@ function pickTeamSpawnPointsBatch(teamCount, teamSize){
 }
 function seededPickTeamSpawnPointsBatch(rng, teamCount, teamSize){
   return teamPointsAroundAnchors(seededPickSpawnPointsBatch(rng, teamCount), teamSize, rng);
+}
+/* ===== バトルアリーナ用スポーン =====
+   2チームのアンカーを安置中心を挟んで対面(距離ARENA_SPAWN_GAP)に置き、チーム内は
+   既存のteamPointsAroundAnchorsで隣接させる。対面の軸は試合ごとにランダム
+   (シード付きなら両側で一致する)。返り値は「チーム0の3体→チーム1の3体」の平坦な配列。
+   **ソロ用(pickArenaSpawnPointsBatch)とシード付き(seededPickArenaSpawnPointsBatch)は対。
+   直すときは必ず両方直す**(pickTeamSpawnPointsBatchと同じ決まり)。 */
+function arenaTeamAnchors(rnd){
+  const a = rnd()*Math.PI*2;
+  const dx = Math.cos(a)*ARENA_SPAWN_GAP/2, dy = Math.sin(a)*ARENA_SPAWN_GAP/2;
+  return [
+    { x: ZONE_CENTER0.x+dx, y: ZONE_CENTER0.y+dy },
+    { x: ZONE_CENTER0.x-dx, y: ZONE_CENTER0.y-dy },
+  ];
+}
+function pickArenaSpawnPointsBatch(teamSize){
+  return teamPointsAroundAnchors(arenaTeamAnchors(Math.random), teamSize, Math.random);
+}
+function seededPickArenaSpawnPointsBatch(rng, teamSize){
+  return teamPointsAroundAnchors(arenaTeamAnchors(rng), teamSize, rng);
 }
 function createMonster(elementKey, isPlayer, name, overrides){
   const el = ELEMENTS[elementKey];

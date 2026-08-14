@@ -3418,6 +3418,7 @@ const netState = {
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
   raid:false,   // レイドの部屋か(部屋のmodeと一致させる。試合の組み立てが変わる)
   teamSize:1,   // 部屋のチーム人数(1=個人戦)。部屋UI側の配線は別担当。部屋に入るときは部屋のmetaが正
+  sub:null,     // 部屋のサブモード('arena'=バトルアリーナ)。部屋metaへの配線はモード再編側の担当。部屋に入るときは部屋のmetaが正
 };
 
 /* =====================================================================
@@ -3897,10 +3898,13 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
    何も渡さなければ従来どおりの個人戦30体で、経路は1バイトも変わらない
    (チーム戦の分岐は isTeamMatch() 1つ。game.trainingRange と同じ方式)。 */
 function startGame(opts){
-  const teamSize = Math.max(1, ((opts && opts.teamSize)|0) || 1);
+  const arenaMode = !!(opts && opts.arena);   // バトルアリーナ(3v3・1本勝負)。teamSizeは3固定
+  const teamSize = arenaMode ? ARENA_TEAM_SIZE : Math.max(1, ((opts && opts.teamSize)|0) || 1);
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
   teamResetState();             // チーム戦の状態も持ち越さない(必要ならこの後assignTeamsで立て直す)
+  arenaResetState();            // アリーナの状態も持ち越さない(入口で消してから立て直す)
+  game.arena = arenaMode;
   // ロビーの選択から netState を作り直す(1人でプレイなので solo に確定する)
   syncNetStateToLobbyMode();
   document.getElementById('rangeBar').classList.add('hidden');
@@ -3922,7 +3926,7 @@ function startGame(opts){
   applyStartPitchForMap();   // マップが決まってから視点の初期角度を決める
   applyReal3DLayer();
   applyWorldScale(1);
-  initZone();
+  if(game.arena) initArenaZone(); else initZone();   // アリーナは中央固定の小さい安置
   genVolcanoAndLava();
   genWater();
   genOasisZones();
@@ -3935,12 +3939,14 @@ function startGame(opts){
     const mmData = loadMastermons()[game.selectedMastermonKey];
     if(mmData) playerDisplayName = mmData.name;
   }
-  // チーム戦は「チーム数×人数」、個人戦は従来どおり30体。
+  // チーム戦は「チーム数×人数」、個人戦は従来どおり30体。アリーナは2チーム固定(3v3=6体)。
   // 同チームは隣接スポーン(pickTeamSpawnPointsBatch。シード付きの対はseededPickTeamSpawnPointsBatch)
   const teamMode = teamSize > 1;
-  const teamCount = teamMode ? Math.max(2, ((opts && opts.teamCount)|0) || Math.floor(30/teamSize)) : 0;
+  const teamCount = game.arena ? 2
+                  : teamMode ? Math.max(2, ((opts && opts.teamCount)|0) || Math.floor(30/teamSize)) : 0;
   const totalEntityCount = teamMode ? teamSize*teamCount : 30;
-  const spawnPoints = teamMode ? pickTeamSpawnPointsBatch(teamCount, teamSize)
+  const spawnPoints = game.arena ? pickArenaSpawnPointsBatch(teamSize)   // 対面配置(シード付きの対はseededPickArenaSpawnPointsBatch)
+                    : teamMode ? pickTeamSpawnPointsBatch(teamCount, teamSize)
                                : pickSpawnPointsBatch(totalEntityCount);
   player = createMonster(game.selectedElement, true, playerDisplayName, { spawnPoint: spawnPoints[0] });
   applyMastermonToPlayer();
@@ -3977,8 +3983,13 @@ function startGame(opts){
   if(teamMode) assignTeams(teamSize);
   // ミューテーター「スポーンアイテム数1.5倍」(非公開中は常に1)
   const mutSpawnMultSolo = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1;
-  spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
-  spawnOasisBonusLoot();
+  if(game.arena){
+    // アリーナは少数を中央帯(安置内)だけに撒く(シード付きの対はbeginMultiplayerMatchInner)
+    spawnLoot(ARENA_LOOT_COUNT, ZONE_CENTER0, ARENA_ZONE_RADIUS*ARENA_LOOT_SPREAD);
+  } else {
+    spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+    spawnOasisBonusLoot();
+  }
   updateCamera();
 
   document.getElementById('startScreen').classList.add('hidden');
@@ -4056,6 +4067,7 @@ function startShootingRange(){
 
   raidResetState();             // レイドの状態を持ち越さない
   teamResetState();             // チーム戦の状態も持ち越さない
+  arenaResetState();            // アリーナの状態も持ち越さない
   game.trainingRange = true;
   game.activeMapKey = 'wild'+REAL_MAP_SUFFIX;      // 訓練場は荒野のリアル版で固定
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
@@ -4124,6 +4136,7 @@ function raidStart(multi, demo){
 
   raidResetState();          // いったん初期化してから立て直す
   teamResetState();          // レイドとチーム戦は排他(レイドでは常にteamSize=1)
+  arenaResetState();         // アリーナの状態も持ち越さない(レイドとアリーナも排他)
   game.trainingRange = false;
   game.raid = true;
   game.activeMapKey = 'raid';
@@ -5000,7 +5013,9 @@ function showResultNow(isWin, placement){
     const realMult = (currentMap && currentMap.real3d) ? REAL_MAP_REWARD_MULT : 1;
     // ミューテーター「報酬2倍」(非公開中は常に1)
     const mutRewardMult = (typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1;
-    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1) * realMult * mutRewardMult);
+    // アリーナは1試合が短いぶんゴールドを少なめにする(倍率はGOLD_ARENA_MULT 1か所)
+    const arenaMult = game.arena ? GOLD_ARENA_MULT : 1;
+    const goldGain = Math.round((GOLD_MATCH_BASE + player.kills*GOLD_PER_KILL + (isWin?GOLD_CHAMPION_BONUS:0)) * (isMultiMatch?GOLD_MULTI_MULT:1) * realMult * mutRewardMult * arenaMult);
     const diaGain = Math.round((DIA_MATCH_BASE + (isWin?DIA_CHAMPION_BONUS:0)) * realMult * mutRewardMult);
     addWallet(goldGain, diaGain);
     document.getElementById('resultCurrencyLine').textContent = `報酬　🪙 +${goldGain}　💎 +${diaGain}`;

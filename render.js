@@ -3155,6 +3155,53 @@ function drawZoneCompass(){
     ctx.restore();
   }
 }
+/* バトルアリーナ中だけ、安置コンパスの下に両チームの生存数(3-2形式)と残り時間を小さく出す。
+   DOMは足さずcanvasで完結させる(既存HUDのID構成を変えない)。エンティティのalive/teamIdと
+   matchTimeはマルチのゲストでも同期済みなので、そのまま数えるだけで両側で同じ表示になる。
+   位置はコンパス(cy=70,r=24)+圏外時の距離表示(〜y110)の直下で、既存要素と重ならない。 */
+function drawArenaScoreHud(){
+  if(!game.arena || !player || player.teamId==null) return;
+  let mine = 0, foe = 0;
+  for(const e of entities){
+    if(!e.alive || e.teamId==null) continue;
+    if(e.teamId===player.teamId) mine++; else foe++;
+  }
+  const left = Math.max(0, ARENA_TIME_LIMIT - matchTime);
+  const timeText = fmtTime(left);
+  const cx = viewW/2, top = 116, h = 24, w = 158;
+  ctx.save();
+  // 背景はパネル類(rgba(11,19,32,…))と同じトーンの丸角ピル
+  ctx.beginPath();
+  const r = h/2, x0 = cx-w/2, y0 = top;
+  ctx.moveTo(x0+r, y0);
+  ctx.arcTo(x0+w, y0,   x0+w, y0+h, r);
+  ctx.arcTo(x0+w, y0+h, x0,   y0+h, r);
+  ctx.arcTo(x0,   y0+h, x0,   y0,   r);
+  ctx.arcTo(x0,   y0,   x0+w, y0,   r);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(11,19,32,0.66)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const cyText = y0 + h/2 + 1;
+  // 生存数: 自チーム=味方マーカーと同じ緑 / 敵チーム=被弾系の赤(既存HUDの配色に合わせる)
+  ctx.font = "bold 15px 'Russo One', sans-serif";
+  ctx.fillStyle = '#58e07e';
+  ctx.fillText(String(mine), cx-34, cyText);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = "bold 11px 'Rajdhani', sans-serif";
+  ctx.fillText('vs', cx-17, cyText);
+  ctx.font = "bold 15px 'Russo One', sans-serif";
+  ctx.fillStyle = '#ff6a6a';
+  ctx.fillText(String(foe), cx, cyText);
+  // 残り時間(上限を超えたら生存数の多い側の勝ち)。残り30秒からは琥珀色で促す
+  ctx.font = "12px 'Share Tech Mono', monospace";
+  ctx.fillStyle = left<=30 ? '#f4c430' : 'rgba(255,255,255,0.75)';
+  ctx.fillText(timeText, cx+38, cyText);
+  ctx.restore();
+}
 function fanOutlinePoints(x,y,angle,range,halfAngleRad,segs){
   const center = projectGround(x,y);
   if(!center) return null;
@@ -5568,6 +5615,7 @@ function render(){
   safeDraw(drawDangerVignette);
   safeDraw(drawDownedOverlay);   // チーム戦: 自分がダウン中の赤いビネット+蘇生待ちの案内
   safeDraw(drawZoneCompass);
+  safeDraw(drawArenaScoreHud);   // アリーナ: 両チームの生存数と残り時間(アリーナ以外では何も描かない)
   if(introState.active) safeDraw(drawSummonCountdown);
   safeDraw(renderMinimap);
 }

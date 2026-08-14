@@ -1338,6 +1338,66 @@ function checkTeamWin(){
   }
 }
 
+/* =====================================================================
+   バトルアリーナ(1チームvs1チーム・3v3=6体・1本勝負)
+
+   ・分岐の入口は game.arena 1つ(game.raid / game.trainingRange と同じ方式)。
+     個人戦・通常のチーム戦ではどの関数も何もしないので既存の経路は変わらない。
+     **同じ判定を2か所目に書かない。**
+   ・チームの仕組み(ダウン/蘇生/全滅の決着=checkTeamWin/チームリザルト)は
+     チーム戦の土台をそのまま使う。アリーナ固有なのは「中央固定の小さい安置」
+     (world.jsのinitArenaZone/updateArenaZone)・「対面スポーン」・「時間切れの決着」だけ。
+   ===================================================================== */
+/* アリーナの状態を初期値へ戻す。試合を始める全経路(startGame / beginMultiplayerMatchInner /
+   raidStart / startShootingRange)の冒頭で必ず呼ぶ(raidResetStateと同じ「入口で消す」決まり)。 */
+function arenaResetState(){
+  game.arena = false;
+}
+/* 時間切れの決着。update()(=ソロとホストのループ)から毎フレーム見る。
+   レイドのcheckRaidEndと同じ理由で「誰かが倒れたとき」だけの判定にしない
+   (時間が来ても誰も倒れなければ試合が終わらなくなる)。
+   全滅による通常の決着は checkTeamWin がそのまま効くので、ここでは時間だけを見る。 */
+function updateArena(dt){
+  if(!game.arena || game.over) return;
+  if(netState.mode==='multi' && !netState.isHost) return;   // 決着はホストだけが確定させる
+  if(matchTime < ARENA_TIME_LIMIT) return;
+  /* 生存数が多いチームの勝ち。同数ならHP合計(ダウン中も蘇生の望みがあるので生存に数える)。
+     それでも並んだら先着チーム(teamIdが小さい方)。ホストだけが判定するので同着の裁定も1つに決まる。 */
+  const score = new Map();
+  for(const e of entities){
+    if(!e.alive || e.teamId==null) continue;
+    const s = score.get(e.teamId) || { alive:0, hp:0 };
+    s.alive++; s.hp += Math.max(0, e.hp);
+    score.set(e.teamId, s);
+  }
+  let winnerTeamId = null, best = null;
+  for(const [tid, s] of score){
+    if(!best || s.alive > best.alive || (s.alive===best.alive && s.hp > best.hp)
+       || (s.alive===best.alive && s.hp===best.hp && tid < winnerTeamId)){
+      winnerTeamId = tid; best = s;
+    }
+  }
+  // 決着の付け方・配信はcheckTeamWinの全滅決着と同じ形(勝ちチーム全員1位・残りは2位)
+  for(const e of entities){
+    if(e.teamId==null) continue;
+    e.placement = (e.teamId===winnerTeamId) ? 1 : 2;
+  }
+  if(netState.mode==='multi'){
+    window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload()).catch(()=>{});
+    const wm = winnerTeamId!=null ? teamMembers(winnerTeamId) : [];
+    window.__aramonPushEvent(netState.roomId, {
+      kind:'matchEnd', winnerTeam: winnerTeamId,
+      winnerNetId: (wm.find(m=>m.netPlayerId)||{}).netPlayerId || null,
+      winnerName: wm.map(m=>m.name).join('・'), ts:Date.now(),
+    });
+  }
+  if(player && winnerTeamId!=null && player.teamId===winnerTeamId){
+    onPlayerWin();   // 時間切れでも生存数で上回っていればチームの勝ち
+  } else {
+    showResult(false, (player && player.placement)||2);
+  }
+}
+
 /* --- ボスAI ---
    ①予告(トースト+標的の輪)を出す ②予告時間が過ぎたら実際の範囲攻撃を出す
    の2段構え。攻撃の間隔は時間が経つほど短くなり、高tierの技も出やすくなる。   */
@@ -2140,8 +2200,10 @@ function update(dt){
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
   else if(game.raid) updateRaidZone(dt);          // レイドは制限時間に合わせて線形に縮める
+  else if(game.arena) updateArenaZone(dt);        // アリーナは中央固定の小さい安置を1段階だけ縮める
   else updateZone(dt);
   if(game.raid) updateRaid(dt);                   // ボスの予告→発動と、決着の判定
+  updateArena(dt);                                // アリーナ: 時間切れの決着(アリーナ以外では何もしない)
   updateTeamStates(dt);                           // チーム戦: 出血タイマーと蘇生の進行(個人戦では何もしない)
   updateCameraSnap(dt);
   computePlayerInput();

@@ -307,10 +307,17 @@ async function beginMultiplayerMatchInner(){
   const wantRaid = !!netState.raid || mapKey==='raid';
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
   teamResetState();          // チーム戦の状態も入口で消す(必要ならこの後assignTeamsで立て直す)
+  arenaResetState();         // アリーナの状態も入口で消す
   netState.raid = wantRaid;
   game.raid = wantRaid;
   if(game.raid) matchTeamSize = 1;   // レイドとチーム戦は排他
   if(game.raid) mapKey = 'raid';
+  /* この試合がバトルアリーナかは**部屋のサブモード(netState.sub==='arena')が正**。
+     部屋metaへのsubの配線はモード再編側の担当で、ホスト・ゲストとも部屋に入った時点で
+     netState.subに入っている前提(未配線の旧部屋ではundefined=通常戦のまま)。
+     レイドとは排他。アリーナは常に3v3=6体で、余った枠はbotが埋める。 */
+  game.arena = !game.raid && netState.sub==='arena';
+  if(game.arena) matchTeamSize = ARENA_TEAM_SIZE;
   // 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す
   else if(MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
@@ -330,7 +337,7 @@ async function beginMultiplayerMatchInner(){
   const spawnRng = deriveRng(0x53);     // スポーン地点
   const lootRng  = deriveRng(0x7C);     // アイテム
 
-  if(game.raid) initRaidZone(); else initZone();
+  if(game.raid) initRaidZone(); else if(game.arena) initArenaZone(); else initZone();
   if(sharedWorld){
     // ゲスト: ホストが生成・配信した障害物をそのまま反映(座標一致で見えない岩ハマりを防ぐ)
     applyWorldFromSync(sharedWorld, obRng);
@@ -361,11 +368,15 @@ async function beginMultiplayerMatchInner(){
   humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
   const usedSlots = humanList.length;
-  const botCount = Math.max(0, netState.capacity - usedSlots);
+  // アリーナは部屋の定員に関係なく常に3v3=6体(人間が足りない枠はbotが埋める)
+  const botCount = game.arena ? Math.max(0, ARENA_TEAM_SIZE*2 - usedSlots)
+                              : Math.max(0, netState.capacity - usedSlots);
   const totalEntityCount = usedSlots + botCount;
   // チーム戦は同チームを隣接スポーンにする(ソロ用pickTeamSpawnPointsBatchと対のシード付き)。
   // 返り値は「チーム0→チーム1→…」の平坦な並びで、下の生成順(人間→bot)=チーム割当順と一致する
-  const spawnPoints = (matchTeamSize>1)
+  const spawnPoints = game.arena
+    ? seededPickArenaSpawnPointsBatch(spawnRng, matchTeamSize)   // 対面配置(ソロ用pickArenaSpawnPointsBatchと対)
+    : (matchTeamSize>1)
     ? seededPickTeamSpawnPointsBatch(spawnRng, Math.ceil(totalEntityCount/matchTeamSize), matchTeamSize)
     : seededPickSpawnPointsBatch(spawnRng, totalEntityCount);
 
@@ -456,6 +467,9 @@ async function beginMultiplayerMatchInner(){
     document.getElementById('raidHud').classList.remove('hidden');
     // バトルロイヤル専用のHUD(順位・安全圏の案内)は隠す。重なって読めなくなる
     document.getElementById('hud').classList.add('raid-mode');
+  } else if(game.arena){
+    // アリーナは少数を中央帯(安置内)だけに撒く(ソロ用spawnLoot側と対)
+    seededSpawnLoot(lootRng, ARENA_LOOT_COUNT, ZONE_CENTER0, ARENA_ZONE_RADIUS*ARENA_LOOT_SPREAD);
   } else {
     // マップ面積が縮んだ分だけアイテムの湧き数も比例して減らす
     const mutSpawnMult = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; // ミューテーター「スポーン数1.5倍」

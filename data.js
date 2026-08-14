@@ -32,6 +32,21 @@ const TEAM_DOWN_DMG_TAKEN_MULT = 1.5;  // ダウン中の被ダメ倍率
 const TEAM_DOWN_HP_RATIO       = 0.3;  // ダウンした瞬間に残すHP(最大HP比。とどめ用の体力。0にしない=HPバーが空にならない)
 const TEAM_REVIVE_HP_RATIO     = 0.4;  // 蘇生で戻るHP(最大HP比)
 const TEAM_BOT_REVIVE_SEEK_RANGE = 1600; // botが蘇生に向かうダウン味方の探索距離
+
+/* ===== バトルアリーナ(1チームvs1チーム・3v3=6体・1本勝負)のバランス定数 =====
+   個人戦・通常のチーム戦では読まれない。判定の入口は game.arena 1つ(combat.js)。
+   数値は発注者が実機で反復調整する前提の名前付き定数。 */
+const ARENA_TEAM_SIZE       = 3;    // 1チームの人数(3v3)
+const ARENA_ZONE_RADIUS     = 1200; // 開始時の安置半径(既存マップの中央に固定)
+const ARENA_ZONE_END_RADIUS = 350;  // 1段階の縮小後の決着圏の半径
+const ARENA_ZONE_HOLD_SEC   = 20;   // 縮小を始めるまでの待機(秒)
+const ARENA_ZONE_SHRINK_SEC = 60;   // 縮小にかける時間(秒)。1段階だけゆっくり
+const ARENA_ZONE_DPS        = 10;   // 安置外ダメージ(通常の序盤より高め=逃げ回り防止)
+const ARENA_SPAWN_GAP       = 600;  // 両チームのスポーンアンカー間の距離(安置中心を挟んで対面)
+const ARENA_LOOT_COUNT      = 14;   // 開始時に撒くアイテム数(少数。探す時間より交戦を優先)
+const ARENA_LOOT_SPREAD     = 0.6;  // アイテムを撒く中央帯の広さ(安置半径に対する比)
+const ARENA_TIME_LIMIT      = 180;  // 試合時間の上限(秒)。超えたら生存数(同数ならHP合計)で勝敗
+const GOLD_ARENA_MULT       = 0.6;  // アリーナのゴールド報酬倍率(試合が短いぶん少なめ)
 let worldDensityScale = 1; // 岩・地形装飾の密度倍率(マップ面積縮小に応じてseededGen側で使用)
 
 // マップの規模(ワールドサイズ・安全圏半径)をスケールに応じて再計算する。
