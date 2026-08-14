@@ -737,11 +737,16 @@ document.getElementById('closeHelpImageBtn').addEventListener('click', ()=>{
   lobbyOpenOverlay('helpOverlay');
 });
 
-/* チーム編成(1=シングル / 3=スクワッド3人1組)。ロビーで選んだものの唯一の正。
-   書くのは setLobbyTeamSize() だけ。netState.teamSize へは syncNetStateToLobbyMode() が写す。
+/* プレイモードのサブ選択(モードごとの中身)。ロビーで選んだものの唯一の正。
+   書くのは setLobbySubMode() だけ。netState へは syncNetStateToLobbyMode() が写す。
+   モードごとに選べる値は LOBBY_SUB_MODES が正(レイドはサブ無し)。
    【宣言はここ】updateLobbyPickLabels が起動時のトップレベル初期化から呼ばれるため、
    netState(ui.js中盤)の近くに置くとTDZで落ちる。 */
-let lobbyTeamSize = 1;
+const LOBBY_SUB_MODES = { single:['br30','pvp4'], team:['br20','arena'], raid:[] };
+let lobbySubMode = 'br30';
+/* マルチPvP(2〜4人)の人数。書くのは人数タブと復元だけ。
+   netState.capacity へは syncNetStateToLobbyMode() が写す(部屋に入っている間は部屋の実値が正)。 */
+let lobbyCapacity = 3;
 
 // ---- 右カラムの「マップ」「プレイモード」の表示値を更新 ----
 function updateLobbyPickLabels(){
@@ -756,10 +761,11 @@ function updateLobbyPickLabels(){
   }
   const modeEl = document.getElementById('lobbyModeValue');
   if(modeEl){
-    // 表示は「ロビーで選んだもの(lobbyMode)」が正。試合中の netState を見ない
-    const squadTag = (lobbyTeamSize>1 && lobbyMode!=='raid') ? '・スクワッド' : '';
-    modeEl.textContent = lobbyMode==='raid' ? `レイドバトル (最大${RAID_CAPACITY}人)`
-      : (lobbyMode==='multi' ? `みんなと対戦 (${netState.capacity}人)${squadTag}` : `1人でプレイ${squadTag}`);
+    // 表示は「ロビーで選んだもの(lobbyMode/lobbySubMode)」が正。試合中の netState を見ない
+    modeEl.textContent =
+      lobbyMode==='raid' ? `レイドバトル (${RAID_CAPACITY}人チーム)`
+      : lobbyMode==='team' ? (lobbySubMode==='arena' ? 'チーム戦・バトルアリーナ' : 'チーム戦・20チームバトロワ')
+      : (lobbySubMode==='pvp4' ? `シングル・マルチPvP (${netState.capacity}人)` : 'シングル・30人バトロワ');
   }
 }
 
@@ -781,8 +787,8 @@ function saveLobbyPrefs(){
       // 保存するのは「ロビーで選んだもの」。試合中に変わる netState を見ない
       // (レイドを1回遊ぶと以降ずっと raid で保存される、という不具合の原因だった)
       mode: lobbyMode,
-      cap: netState.capacity,
-      team: lobbyTeamSize,   // チーム編成(1=シングル / 3=スクワッド)
+      sub: lobbySubMode,     // サブ選択(single='br30'/'pvp4'、team='br20'/'arena')
+      cap: lobbyCapacity,
       mmKey: game.selectedMastermonKey || null,
       element: game.selectedElement || null,
     }));
@@ -817,19 +823,22 @@ function restoreLobbyPrefsInner(){
     document.querySelectorAll('.map-tab').forEach(t=> t.classList.toggle('active', t.dataset.map===p.map));
   }
   setRealMapMode(!!p.real);
-  // --- 人数(プレイモードより先に。selectModeTabが表示を作り直すため) ---
-  if(typeof p.cap==='number' && p.cap>=2){
-    netState.capacity = p.cap;
+  // --- 人数(プレイモードより先に。setLobbyModeが表示を作り直すため) ---
+  if(typeof p.cap==='number' && p.cap>=2 && p.cap<=4){
+    lobbyCapacity = p.cap;
     document.querySelectorAll('.cap-tab').forEach(t=> t.classList.toggle('active', Number(t.dataset.cap)===p.cap));
   }
-  // --- チーム編成(スクワッド)。タブに無い値は受け付けない ---
-  if((p.team===1 || p.team===3) && typeof setLobbyTeamSize==='function'){
-    setLobbyTeamSize(p.team, { save:false });
-  }
-  // --- プレイモード。レイドは開催が終わっていることがあるのでソロへ落とす ---
-  let mode = p.mode==='raid' || p.mode==='multi' ? p.mode : 'solo';
-  if(mode==='raid' && !(typeof raidPlayable==='function' && raidPlayable(raidMyAccountName()))) mode = 'solo';
+  /* --- プレイモード+サブ選択 ---
+     後方互換: 旧保存値の 'solo'/'multi' は「シングル」の中のサブ選択へ統合された。
+     solo→シングル・30人バトロワ / multi→シングル・マルチPvP。旧'team'(スクワッド)は捨てる。 */
+  let mode = p.mode, sub = p.sub;
+  if(mode==='solo'){ mode = 'single'; sub = 'br30'; }
+  else if(mode==='multi'){ mode = 'single'; sub = 'pvp4'; }
+  if(mode!=='single' && mode!=='team' && mode!=='raid') mode = 'single';
+  // レイドは開催が終わっていることがあるのでシングルへ落とす
+  if(mode==='raid' && !(typeof raidPlayable==='function' && raidPlayable(raidMyAccountName()))) mode = 'single';
   setLobbyMode(mode, { save:false });   // 復元中は保存し返さない
+  setLobbySubMode(sub, { save:false }); // モードに無い値は setLobbySubMode が既定へ丸める
   updatePlayButtonsEnabled();
   if(typeof renderSelectorCards==='function') renderSelectorCards();
   updateLobbyPickLabels();
@@ -3417,16 +3426,17 @@ const netState = {
   mode:'solo', capacity:3, roomId:null, isHost:false, myPlayerId:null, hostId:null,
   humanPlayers:{}, lobbyPollTimer:null, matchStarting:false, cancelled:false,
   raid:false,   // レイドの部屋か(部屋のmodeと一致させる。試合の組み立てが変わる)
-  teamSize:1,   // 部屋のチーム人数(1=個人戦)。部屋UI側の配線は別担当。部屋に入るときは部屋のmetaが正
-  sub:null,     // 部屋のサブモード('arena'=バトルアリーナ)。部屋metaへの配線はモード再編側の担当。部屋に入るときは部屋のmetaが正
+  teamSize:1,   // 部屋のチーム人数(1=個人戦)。部屋に入るときは部屋のmetaが正
+  sub:null,     // 部屋のサブモード('br20'/'arena'/null=従来型)。部屋metaのsubへ素通しされる
 };
 
 /* =====================================================================
    プレイモードの持ち方(ここを崩すと「通常マルチのつもりがレイドになる」類の事故が起きる)
 
    **役割の違う2つを混ぜない。**
-     lobbyMode      … ロビーでプレイヤーが選んだもの('solo'/'multi'/'raid')。
-                      タブの見た目・ロビーの表示・保存(前回の選択)の**唯一の正**。
+     lobbyMode      … ロビーでプレイヤーが選んだ最上位('single'/'team'/'raid')。
+                      サブ選択は lobbySubMode(single='br30'/'pvp4'、team='br20'/'arena')。
+                      この2つがタブの見た目・ロビーの表示・保存(前回の選択)の**唯一の正**。
      netState.mode  … いま組み立てている「部屋/試合」がマルチかどうか
      netState.raid  … いま組み立てている「部屋/試合」がレイドかどうか
 
@@ -3434,45 +3444,85 @@ const netState = {
    次に通常マルチの「部屋を作る」を押すとレイドの部屋ができてしまっていた(逆も同様)。
 
    決まり:
-     ・**lobbyMode を変えるのは setLobbyMode() だけ。** タブ・レイド入口・復元のすべてが通る。
+     ・**lobbyMode を変えるのは setLobbyMode()、lobbySubMode を変えるのは setLobbySubMode() だけ。**
+       タブ・レイド入口・復元のすべてが通る。
      ・**試合/部屋を作り始める直前に必ず syncNetStateToLobbyMode() を呼ぶ**(startGame /
        createRoomFlow / openFindRoomScreen)。ロビーの選択が実際の部屋の種類になる。
-     ・**他人の部屋に入るときだけは部屋の側が正**(joinRoom で部屋のmodeを netState と
-       lobbyMode の両方へ反映する)。
+     ・**他人の部屋に入るときだけは部屋の側が正**(joinRoom で部屋のmode+subを netState と
+       lobbyMode/lobbySubMode の両方へ反映する)。
      ・**試合から戻ったら必ず syncNetStateToLobbyMode() で作り直す**(前の試合の持ち越しを断つ)。
    ===================================================================== */
-let lobbyMode = 'solo';
-// lobbyMode から netState を作り直す。これ以外の場所で netState.raid を書かない
+let lobbyMode = 'single';
+/* lobbyMode/lobbySubMode から netState を作り直す。これ以外の場所で netState.raid を書かない。
+   チーム戦とレイドは「部屋あり」を既定にし、部屋を使わない入口(startGame・ソロレイド・
+   射撃訓練場)が自分で netState.mode を 'solo' に潰す(ソロレイドと同じ扱い)。 */
 function syncNetStateToLobbyMode(){
-  netState.mode = (lobbyMode==='solo') ? 'solo' : 'multi';
+  netState.mode = (lobbyMode==='single' && lobbySubMode!=='pvp4') ? 'solo' : 'multi';
   netState.raid = (lobbyMode==='raid');
-  // 部屋のチーム人数もロビーの選択から作り直す(レイドとチーム戦は排他なのでレイドでは1)
-  netState.teamSize = (lobbyMode==='raid') ? 1 : lobbyTeamSize;
+  // 部屋のチーム人数もロビーの選択から作り直す(チーム戦は常に3人1組。レイドは小隊なし=1)
+  netState.teamSize = (lobbyMode==='team') ? TEAM_BR_SQUAD_SIZE : 1;
+  // 部屋のサブモード(部屋metaのsubへ素通しされる)。チーム戦だけが持つ
+  netState.sub = (lobbyMode==='team') ? lobbySubMode : null;
+  // 定員: マルチPvPだけ人数タブの選択(2〜4)。チーム戦は人間1小隊=3、レイドは3人チーム
+  netState.capacity = (lobbyMode==='raid') ? RAID_CAPACITY
+                    : (lobbyMode==='team') ? TEAM_BR_SQUAD_SIZE
+                    : lobbyCapacity;
 }
-/* ロビーの選択を変える唯一の入口。タブの見た目・パネルの出し分け・ラベル・保存まで面倒を見る。
-   opts.save=false のときだけ保存しない(復元中に上書きし返さないため)。 */
+/* ロビーの最上位の選択を変える唯一の入口。タブの見た目・パネルの出し分け・ラベル・保存まで
+   面倒を見る。opts.save=false のときだけ保存しない(復元中に上書きし返さないため)。 */
 function setLobbyMode(mode, opts){
-  lobbyMode = (mode==='multi' || mode==='raid') ? mode : 'solo';
+  lobbyMode = (mode==='team' || mode==='raid') ? mode : 'single';
+  // サブ選択はモードに属する。モードを変えたら、そのモードで有効な値へ丸める(既定=先頭)
+  const subs = LOBBY_SUB_MODES[lobbyMode] || [];
+  if(subs.length && !subs.includes(lobbySubMode)) lobbySubMode = subs[0];
   syncNetStateToLobbyMode();
-  const isRaid = lobbyMode==='raid';
-  document.querySelectorAll('.mode-tab').forEach(t=> t.classList.toggle('active', t.dataset.mode===lobbyMode));
-  // 人数などの細かい設定はプレイモードのオーバーレイ内、出撃ボタンは右カラムに出す
-  document.getElementById('multiOptions').classList.toggle('hidden', lobbyMode!=='multi');
-  document.getElementById('multiActionRow').classList.toggle('hidden', lobbyMode!=='multi');
-  document.getElementById('joinBtn').classList.toggle('hidden', lobbyMode!=='solo');
-  document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
-  // チーム編成タブはソロ/マルチ共通、レイドでは出さない(レイドとチーム戦は排他)
-  const teamRow = document.getElementById('teamSizeRow');
-  if(teamRow) teamRow.classList.toggle('hidden', isRaid);
-  if(isRaid && typeof updateRaidModePanel==='function') updateRaidModePanel();
+  updateModePickPanels();
+  if(lobbyMode==='raid' && typeof updateRaidModePanel==='function') updateRaidModePanel();
   if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
   if(!(opts && opts.save===false) && typeof saveLobbyPrefs==='function') saveLobbyPrefs();
+}
+/* サブ選択を変える唯一の入口(setLobbyModeと同じ作法)。モードに無い値は既定へ丸める。 */
+function setLobbySubMode(sub, opts){
+  const subs = LOBBY_SUB_MODES[lobbyMode] || [];
+  if(subs.length) lobbySubMode = subs.includes(sub) ? sub : subs[0];
+  syncNetStateToLobbyMode();
+  updateModePickPanels();
+  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
+  if(!(opts && opts.save===false) && typeof saveLobbyPrefs==='function') saveLobbyPrefs();
+}
+/* モード選択オーバーレイと右カラムのボタンの出し分けを1か所で行う(setLobbyMode/
+   setLobbySubMode の両方から呼ばれる。ここ以外でこれらの表示を切り替えない)。 */
+function updateModePickPanels(){
+  const isRaid = lobbyMode==='raid';
+  const isTeam = lobbyMode==='team';
+  const isPvp4 = lobbyMode==='single' && lobbySubMode==='pvp4';
+  document.querySelectorAll('.mode-tab').forEach(t=> t.classList.toggle('active', t.dataset.mode===lobbyMode));
+  document.querySelectorAll('#singleSubTabs .sub-tab').forEach(t=> t.classList.toggle('active', !isTeam && !isRaid && t.dataset.sub===lobbySubMode));
+  document.querySelectorAll('#teamSubTabs .sub-tab').forEach(t=> t.classList.toggle('active', isTeam && t.dataset.sub===lobbySubMode));
+  document.getElementById('singleSubRow').classList.toggle('hidden', isTeam || isRaid);
+  document.getElementById('teamSubRow').classList.toggle('hidden', !isTeam);
+  document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
+  // 人数タブ(2〜4人)はシングル>マルチPvPのときだけ
+  document.getElementById('multiOptions').classList.toggle('hidden', !isPvp4);
+  // 部屋のボタン: マルチPvPと、部屋でも遊べるチーム戦に出す
+  document.getElementById('multiActionRow').classList.toggle('hidden', !(isPvp4 || isTeam));
+  // バトル開始(部屋を使わない入口): 30人バトロワと、1人でも遊べるチーム戦に出す
+  document.getElementById('joinBtn').classList.toggle('hidden', !((lobbyMode==='single' && lobbySubMode==='br30') || isTeam));
+  // サブ選択の説明文(選んでいるものに合わせて差し替える)
+  const singleNote = document.getElementById('singleSubNote');
+  if(singleNote) singleNote.textContent = isPvp4
+    ? '2〜4人のプレイヤーで対戦。空いた枠はBot・マスモンが補完します'
+    : '総勢30体のバトルロイヤル。1人ですぐに遊べます';
+  const teamNote = document.getElementById('teamSubNote');
+  if(teamNote) teamNote.textContent = (isTeam && lobbySubMode==='arena')
+    ? '3人1組の1チームvs1チームで決着をつける少数決戦。仲間はBot・マスモンが補完します'
+    : '3人1組×20チーム=総勢60体のバトルロイヤル。倒れても仲間が近くにいれば蘇生できます';
 }
 let hostSpectating = false;
 let matchBeginning = false; // beginMultiplayerMatchの多重起動防止フラグ
 
 /* タブの選択は #modeTabs への委譲で受ける。
-   「みんなと対戦」「レイドバトル」はポップを乗せるために .mode-tab-wrap で包んであり、
+   「レイドバトル」などはポップを乗せるために .mode-tab-wrap で包んであり、
    **ボタンの外側(ラッパーの余白やポップの上)を踏むと何も起きなかった**。
    ラッパーごと拾って中のボタンへ解決することで、見えている範囲のどこを触っても選べる
    (これが「レイドを選んでもロビーの表示が切り替わらない」不具合の原因だった)。 */
@@ -3570,27 +3620,27 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.cap-tab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
-    netState.capacity = Number(tab.dataset.cap)||3;
+    lobbyCapacity = Number(tab.dataset.cap)||3;
     /* 【触らない】ここで netState.raid を下ろさないこと。
-       この人数タブは通常マルチのときしか出ないが、以前ここで raid を false にしていたため、
+       この人数タブはマルチPvPのときしか出ないが、以前ここで raid を false にしていたため、
        レイドの状態のまま人数を触ると**レイドの部屋なのに通常戦が始まる**事故になっていた。
-       モードを決めるのは setLobbyMode() だけ。 */
+       モードを決めるのは setLobbyMode()/setLobbySubMode() だけ。 */
+    syncNetStateToLobbyMode();   // netState.capacity へ写す(モードは触らない)
     // 右カラムの「プレイモード」の表示にも人数を反映する(マップ側と同じ扱い)
     if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
     saveLobbyPrefs();
   });
 });
-/* チーム編成(シングル/スクワッド)を変える唯一の入口。タブの見た目・netStateへの反映・
-   ラベル・保存まで面倒を見る(setLobbyModeと同じ作法)。opts.save=false は復元中だけ。 */
-function setLobbyTeamSize(n, opts){
-  lobbyTeamSize = (n===3) ? 3 : 1;
-  syncNetStateToLobbyMode();   // netState.teamSize を作り直す(レイド中は1のまま)
-  document.querySelectorAll('.team-tab').forEach(t=> t.classList.toggle('active', Number(t.dataset.team)===lobbyTeamSize));
-  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
-  if(!(opts && opts.save===false) && typeof saveLobbyPrefs==='function') saveLobbyPrefs();
-}
-document.querySelectorAll('.team-tab').forEach(tab=>{
-  tab.addEventListener('click', ()=> setLobbyTeamSize(Number(tab.dataset.team)||1));
+/* サブ選択タブ。モードタブと同じく、ポップを乗せる .mode-tab-wrap の余白を踏んでも
+   中のボタンへ解決する(見えている範囲のどこを触っても選べる)。 */
+['singleSubTabs','teamSubTabs'].forEach(id=>{
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('click', (e)=>{
+    const wrap = e.target.closest('.mode-tab-wrap');
+    const tab = e.target.closest('.sub-tab') || (wrap && wrap.querySelector('.sub-tab'));
+    if(tab) setLobbySubMode(tab.dataset.sub);
+  });
 });
 
 function renderLobbyPlayerList(){
@@ -3746,7 +3796,7 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br', netState.teamSize||1);
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br', netState.teamSize||1, netState.sub||null);
   }catch(err){
     console.error(err);
     pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
@@ -3790,11 +3840,15 @@ async function refreshRoomList(){
     return;
   }
   subEl.textContent = `${rooms.length}件の部屋が見つかりました`;
+  // 部屋の種類の表示。sub が無い部屋は旧クライアント(従来のマルチPvP/スクワッド)
+  const roomKindLabel = (r)=> r.sub==='br20' ? '・20チームバトロワ'
+    : r.sub==='arena' ? '・バトルアリーナ'
+    : r.teamSize>1 ? `・スクワッド(${r.teamSize}人1組)` : '';
   listEl.innerHTML = rooms.map(r=>`
     <div class="room-row" data-room-id="${r.roomId}" data-lobby-key="${r.lobbyKey}">
       <div>
         <div class="rm-host">${r.hostName}の部屋</div>
-        <div class="rm-sub">定員 ${r.capacity}人${r.teamSize>1 ? `・スクワッド(${r.teamSize}人1組)` : ''}</div>
+        <div class="rm-sub">定員 ${r.capacity}人${roomKindLabel(r)}</div>
       </div>
       <div class="rm-count">${r.count} / ${r.capacity}</div>
     </div>
@@ -3820,14 +3874,18 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.roomId = result.roomId;
   netState.isHost = false;
   netState.myPlayerId = result.myPlayerId;
-  if(result.capacity){ netState.capacity = result.capacity; if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels(); }
-  /* 【ここだけは部屋が正】他人の部屋に入るときは、部屋のmodeが実際に始まる試合を決める。
-     ロビーの表示もそれに合わせて動かし、「レイドの部屋に入ったのに表示はみんなと対戦」を無くす。 */
-  setLobbyMode(result.mode==='raid' ? 'raid' : 'multi');
-  /* チーム編成も部屋が正。タブの見た目を部屋に合わせてから(setLobbyModeのsyncで
-     netState.teamSizeがロビー値で作られるので)、最後に部屋の実値で上書きする。 */
-  if(typeof setLobbyTeamSize==='function') setLobbyTeamSize((result.teamSize||1)>1 ? 3 : 1, { save:false });
+  /* 【ここだけは部屋が正】他人の部屋に入るときは、部屋のmode+subが実際に始まる試合を決める。
+     ロビーの表示もそれに合わせて動かし、「レイドの部屋に入ったのに表示は別モード」を無くす。
+     sub の無い部屋は旧クライアントの従来型なので「シングル>マルチPvP」として扱う。 */
+  if(result.mode==='raid'){ setLobbyMode('raid'); }
+  else if(result.sub==='br20' || result.sub==='arena'){ setLobbyMode('team'); setLobbySubMode(result.sub); }
+  else { setLobbyMode('single'); setLobbySubMode('pvp4'); }
+  /* 定員・チーム人数・サブは部屋の実値で上書きする(setLobbyModeのsyncがロビー値で
+     作り直すので、必ずその後に)。試合の組み立てはシード配信の値が最終的な正。 */
+  if(result.capacity) netState.capacity = result.capacity;
   netState.teamSize = result.teamSize || 1;
+  netState.sub = result.sub || null;
+  if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
 
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
@@ -3895,6 +3953,8 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
 
 /* opts.teamSize(2以上)を渡すとソロのチーム戦(自分+botの小隊 vs botチーム)になる。
    opts.teamCount で対戦チーム数を変えられる(既定は総勢30体になる数)。
+   opts.arena はバトルアリーナ(1チームvs1チーム)の印。**試合の中身(狭い戦場・対面配置)は
+   別担当が実装する**ので、ここでは入口の呼び出しだけ配線してある。
    何も渡さなければ従来どおりの個人戦30体で、経路は1バイトも変わらない
    (チーム戦の分岐は isTeamMatch() 1つ。game.trainingRange と同じ方式)。 */
 function startGame(opts){
@@ -3905,8 +3965,11 @@ function startGame(opts){
   teamResetState();             // チーム戦の状態も持ち越さない(必要ならこの後assignTeamsで立て直す)
   arenaResetState();            // アリーナの状態も持ち越さない(入口で消してから立て直す)
   game.arena = arenaMode;
-  // ロビーの選択から netState を作り直す(1人でプレイなので solo に確定する)
+  // ロビーの選択から netState を作り直す(この後ソロへ潰す)
   syncNetStateToLobbyMode();
+  /* ここは部屋を使わない入口なので、netState は意図的にソロへ潰す(ソロレイド・射撃訓練場と
+     同じ扱い)。lobbyMode/lobbySubMode はそのまま残るので、戻ればロビーの選択が復活する。 */
+  netState.mode = 'solo';
   document.getElementById('rangeBar').classList.add('hidden');
   document.getElementById('rangeHint').classList.add('hidden');
   document.getElementById('hud').classList.remove('range-mode');
@@ -4105,7 +4168,7 @@ function startShootingRange(){
   pushToast('🎯 射撃訓練場：技は全解放・的は復活します');
 }
 /* =====================================================================
-   週替わりレイドバトル(ソロ / 最大4人)
+   週替わりレイドバトル(ソロ / 3人チーム)
 
    ・試合の初期化は射撃訓練場と同じ骨組みを流用し、分岐は game.raid の1つに寄せてある
    ・与えたダメージは端末に貯め、Firebase の raids/{weekId} へ全プレイヤーぶんを累計する
@@ -4454,11 +4517,11 @@ function renderRaidOverlay(){
       <div class="raid-head-text">
         <div class="raid-lead">
           不死身の巨竜<b>ゾッド</b>が火口に降り立った。ひとりでは到底届かない相手だ。
-          最大4人で挑み、<b>与えたダメージは全プレイヤーぶんが累計</b>される。倒しきれなくても、
+          3人チームで挑み、<b>与えたダメージは全プレイヤーぶんが累計</b>される。倒しきれなくても、
           刻んだダメージはすべて残る。
         </div>
         <div class="raid-rules">
-          <span>⏱ 制限時間 ${RAID_TIME_LIMIT}秒</span><span>👥 最大${RAID_CAPACITY}人</span>
+          <span>⏱ 制限時間 ${RAID_TIME_LIMIT}秒</span><span>👥 ${RAID_CAPACITY}人チーム</span>
           <span>⚔ 技は最初から全解放</span><span>🛡 味方の攻撃は当たらない</span>
           <span>⚠ 技の前に必ず予告が出る</span><span>🔥 時間が経つほど激しくなる</span>
         </div>
@@ -4662,12 +4725,12 @@ document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
   raidStart(false, false);
 });
 // みんなで挑む: 通常のマルチと同じ部屋の作成→ロビー→開始の流れに乗せる。
-// 違いは定員が4人固定で、部屋のモードが 'raid' になることだけ。
+// 違いは定員が3人チーム固定で、部屋のモードが 'raid' になることだけ。
+// (定員も setLobbyMode→sync が RAID_CAPACITY で作り直すので、ここでは何も書かない)
 document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
   if(!raidGuardReady()) return;
   document.getElementById('raidOverlay').classList.add('hidden');
-  netState.capacity = RAID_CAPACITY;
-  setLobbyMode('raid');     // netState.mode/raid はここから導出される
+  setLobbyMode('raid');     // netState.mode/raid/capacity はここから導出される
   createRoomFlow();
 });
 // レイドの「部屋を探す」。通常マルチと同じ#roomListScreenを使うが、netState.raidを立てて
@@ -4676,8 +4739,7 @@ document.getElementById('raidMultiBtn').addEventListener('click', ()=>{
 document.getElementById('raidFindRoomBtn').addEventListener('click', ()=>{
   if(!raidGuardReady()) return;
   document.getElementById('raidOverlay').classList.add('hidden');
-  netState.capacity = RAID_CAPACITY;
-  setLobbyMode('raid');     // netState.mode/raid はここから導出される
+  setLobbyMode('raid');     // netState.mode/raid/capacity はここから導出される
   openFindRoomScreen();
 });
 
@@ -4830,8 +4892,16 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   document.getElementById('joinBtn').disabled = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
-  // ソロのスクワッド(3人1組)。teamCount省略で従来と同じ総勢30体(3人×10チーム)になる
-  startGame(lobbyTeamSize>1 ? { teamSize: lobbyTeamSize } : undefined);
+  // バトル開始(部屋を使わない入口)。モードごとの構成はここで1回だけ決める
+  if(lobbyMode==='team' && lobbySubMode==='arena'){
+    // バトルアリーナ: 3人1組の1チームvs1チーム=6体(試合の中身の調整は別担当)
+    startGame({ arena:true, teamSize:TEAM_BR_SQUAD_SIZE, teamCount:2 });
+  } else if(lobbyMode==='team'){
+    // 20チームバトロワ: 3人1組×20チーム=総勢60体
+    startGame({ teamSize:TEAM_BR_SQUAD_SIZE, teamCount:TEAM_BR_TEAM_COUNT });
+  } else {
+    startGame();   // シングル>30人バトロワ(従来の個人戦30体)
+  }
 });
 document.getElementById('openRangeBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
@@ -5353,7 +5423,7 @@ function shareMapLabel(){
             : (MAPS[game.selectedMap] ? game.selectedMap : 'wild');
   return (MAPS[key] || MAPS.wild).label;
 }
-function shareModeLabel(){ return netState.mode==='multi' ? 'みんなと対戦' : 'ソロ'; }
+function shareModeLabel(){ return netState.mode==='multi' ? 'マルチプレイ' : 'ソロ'; }
 // 参戦しているマスモンの名前(登録していなければモンスター名)
 function shareMonsterName(elementKey){
   const el = ELEMENTS[elementKey];

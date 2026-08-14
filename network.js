@@ -254,8 +254,10 @@ async function beginMultiplayerMatchInner(){
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
   let seed, fixedPlayers, mapKey, hostMastermonBots, sharedWorld = null;
   let matchTeamSize = 1;   // この試合のチーム人数(1=個人戦)。ホストは部屋の設定、ゲストはシード配信の値が正
+  let matchSub = null;     // この試合のサブモード('br20'/'arena'/null=従来型)。持ち方はteamSizeと同じ
   if(netState.isHost){
     matchTeamSize = Math.max(1, netState.teamSize||1);
+    matchSub = netState.sub || null;
     seed = (Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0;
     if(window.__netProbeSeed!=null) seed = window.__netProbeSeed>>>0; // 計測ハーネス用のシード固定(通常は未定義で素通り)
     fixedPlayers = netState.humanPlayers || {};
@@ -286,8 +288,10 @@ async function beginMultiplayerMatchInner(){
       hostMastermonBots = result.hostMastermonBots || [];
       sharedWorld = result.world || null; // ホストが生成した障害物(あれば正として使う)
       matchTeamSize = Math.max(1, result.teamSize||1); // チーム人数もホストの配信が正
+      matchSub = result.sub || null;                   // サブモードも同様
     } else {
       matchTeamSize = Math.max(1, netState.teamSize||1); // タイムアウト時は部屋参加時のmetaで代用
+      matchSub = netState.sub || null;
       // タイムアウト時のみ、やむを得ずローカルの直近スナップショットで代用する
       seed = seedFromString(netState.roomId);
       fixedPlayers = netState.humanPlayers || {};
@@ -310,7 +314,8 @@ async function beginMultiplayerMatchInner(){
   arenaResetState();         // アリーナの状態も入口で消す
   netState.raid = wantRaid;
   game.raid = wantRaid;
-  if(game.raid) matchTeamSize = 1;   // レイドとチーム戦は排他
+  if(game.raid){ matchTeamSize = 1; matchSub = null; }   // レイドとチーム戦は排他
+  netState.sub = matchSub;   // 確定したサブモードを部屋の状態にも反映(ホスト/ゲストで一致する)
   if(game.raid) mapKey = 'raid';
   /* この試合がバトルアリーナかは**部屋のサブモード(netState.sub==='arena')が正**。
      部屋metaへのsubの配線はモード再編側の担当で、ホスト・ゲストとも部屋に入った時点で
@@ -355,7 +360,7 @@ async function beginMultiplayerMatchInner(){
   if(netState.isHost){
     const worldData = packWorldForSync();
     console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize, matchSub);
   }
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
@@ -368,9 +373,14 @@ async function beginMultiplayerMatchInner(){
   humanList.sort((a,b)=> a.id<b.id?-1:(a.id>b.id?1:0));
 
   const usedSlots = humanList.length;
-  // アリーナは部屋の定員に関係なく常に3v3=6体(人間が足りない枠はbotが埋める)
-  const botCount = game.arena ? Math.max(0, ARENA_TEAM_SIZE*2 - usedSlots)
-                              : Math.max(0, netState.capacity - usedSlots);
+  /* 総エンティティ数。従来型(sub無し)は部屋の定員ぶん(人間+bot)。
+     チーム戦のサブモード: 20チームバトロワ=3人1組×20チーム=総勢60体(人間は1小隊・残りbot)。
+     バトルアリーナは部屋の定員に関係なく常に3v3=6体(ARENA_TEAM_SIZE)。
+     sub/teamSize はシード配信の値なので両側で必ず同じ頭数になる。 */
+  const wantTotal = matchSub==='br20' ? Math.max(1, matchTeamSize) * TEAM_BR_TEAM_COUNT
+                  : (game.arena || matchSub==='arena') ? ARENA_TEAM_SIZE*2
+                  : netState.capacity;
+  const botCount = Math.max(0, wantTotal - usedSlots);
   const totalEntityCount = usedSlots + botCount;
   // チーム戦は同チームを隣接スポーンにする(ソロ用pickTeamSpawnPointsBatchと対のシード付き)。
   // 返り値は「チーム0→チーム1→…」の平坦な並びで、下の生成順(人間→bot)=チーム割当順と一致する

@@ -33,6 +33,11 @@ const TEAM_DOWN_HP_RATIO       = 0.3;  // ダウンした瞬間に残すHP(最�
 const TEAM_REVIVE_HP_RATIO     = 0.4;  // 蘇生で戻るHP(最大HP比)
 const TEAM_BOT_REVIVE_SEEK_RANGE = 1600; // botが蘇生に向かうダウン味方の探索距離
 
+/* チーム戦(20チームバトロワ)の編成。ロビーのサブ選択(ui.js)と試合の組み立て(ui.js/network.js)が
+   両方ここを読む(同じ意味の数字を2か所に書かない)。 */
+const TEAM_BR_SQUAD_SIZE = 3;   // 1チームの人数(3人1組。マルチ部屋の定員=人間1小隊もこの値)
+const TEAM_BR_TEAM_COUNT = 20;  // 20チームバトロワのチーム数(総勢 3×20=60体)
+
 /* ===== バトルアリーナ(1チームvs1チーム・3v3=6体・1本勝負)のバランス定数 =====
    個人戦・通常のチーム戦では読まれない。判定の入口は game.arena 1つ(combat.js)。
    数値は発注者が実機で反復調整する前提の名前付き定数。 */
@@ -2343,7 +2348,7 @@ const RAID_EDITIONS = {
     label: '第1回',
     startDate: '2026-08-07',   // シーズン1と同時開幕
     durationDays: 7,           // 開催期間(1週間)
-    baseHp: 24000,             // 1人あたりの基準HP(人数ぶん増える。4人で63,600)
+    baseHp: 24000,             // 1人あたりの基準HP(人数ぶん増える。3人で50,400)
     totalTiers: [
       { at:  50000, gold:1500, dia:20 },
       { at: 200000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
@@ -2401,7 +2406,7 @@ const RAID_ED = RAID_EDITIONS[RAID_EDITION] || RAID_EDITIONS.r1;
 
 const RAID_START_DATE = RAID_ED.startDate;
 const RAID_DURATION_DAYS = RAID_ED.durationDays;
-const RAID_CAPACITY = 4;                  // 同時に挑める人数(余りはマスモン・botで補充)
+const RAID_CAPACITY = 3;                  // 同時に挑める人数=3人チーム固定(余りはマスモン・botで補充)
 const RAID_TIME_LIMIT = 180;              // 1回の挑戦の制限時間(秒)
 const RAID_WORLD_SCALE = 0.30;            // 通常の試合に対するワールドの広さ(狭い円形闘技場)
 const RAID_ARENA_MARGIN = 260;            // 闘技場の縁と安置の外周の間隔
@@ -2450,7 +2455,7 @@ const RAID_BOSS = {
   skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
   name:'不死のゾッド',
   radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
-  baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。4人で63,600)
+  baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。3人で50,400)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
   speed: 60,                 // 動きは鈍いが、じりじり間合いを詰めてくる(通常のドラゴンは182)
   repositionEvery: 7,        // この秒数ごとに位置を変える(歩行モーションが見えるよう短め)
