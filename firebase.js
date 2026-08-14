@@ -488,6 +488,24 @@
     roomListeners.push({r,cb,isChildAdded:true});
   };
 
+  /* WebRTCシグナリング(net_transport.js用)
+     rooms/{roomId}/rtc/{fromPid}_{toPid} に offer/answer/ICE候補を1件ずつpushし、
+     受け手はonChildAddedで拾う(取りこぼし不可のためfireEventsと同じ方式)。
+     ※ rooms配下の新パス。rooms直下を丸ごと許可していないルールの場合は
+        セキュリティルールに rtc の .read/.write の追加が要る(未定義パスは既定で拒否)。
+        貼るまではシグナリングが書けないだけで、マルチは従来どおり全てrtdb経由で動く。 */
+  window.__aramonSendRtcSignal = async function(roomId, fromPid, toPid, msg){
+    try{ await push(ref(fbDb, `rooms/${roomId}/rtc/${fromPid}_${toPid}`), msg); }catch(err){}
+  };
+  window.__aramonWatchRtcSignals = function(roomId, fromPid, toPid, callback){
+    const r = ref(fbDb, `rooms/${roomId}/rtc/${fromPid}_${toPid}`);
+    const cb = (snap)=>{ callback(snap.val()); };
+    onChildAdded(r, cb);
+    roomListeners.push({r,cb,isChildAdded:true});
+    // net_transport.jsが試合をまたいで個別に購読を畳めるよう解除関数も返す
+    return ()=> off(r, 'child_added', cb);
+  };
+
   window.__aramonPublishAuthState = async function(roomId, authState){
     try{ await set(ref(fbDb, `rooms/${roomId}/authState`), authState); }catch(err){}
   };

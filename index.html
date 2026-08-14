@@ -1460,6 +1460,10 @@
 <script src="ui.js"></script>
 <!-- リアルマップ(テスト)のWebGL描画。ESモジュールなので window.__aramonReal3D 経由で使う -->
 <script type="module" src="real3d.js"></script>
+<!-- トランスポート抽象化(rtdb/WebRTC)。network.jsが参照するのでその前に置く。
+     __aramon*のラップはDOMContentLoaded(=firebase.jsモジュール実行後)で行うため、
+     firebase.jsのタグ位置より後である必要はない -->
+<script src="net_transport.js"></script>
 <script src="network.js"></script>
 <script>
   // sw.js内のCACHE_NAMEを読み取り、タイトルのバージョン表記に反映する

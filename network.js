@@ -12,7 +12,14 @@ let lastT = performance.now();
      滑らかに追従表示するだけにする(自分でシミュレーションしない)
    - これにより非ホスト側での「同期ズレ」「ボットが止まって見える」を構造的に防ぐ
 ===================================================================== */
-const INPUT_SEND_INTERVAL = 0.045;  // 自分の入力を送る間隔(秒) 約22回/秒。ホストが自分の位置を早く反映できるようにする
+// 自分の入力を送る間隔(秒)。rtdb=約22回/秒(Firebaseのquota都合)。
+// WebRTC直結(net_transport.js)が確立している間だけ約40回/秒へ上げる
+const INPUT_SEND_INTERVAL_RTDB = 0.045;
+const INPUT_SEND_INTERVAL_RTC  = 0.025;
+function inputSendInterval(){
+  return (window.NetTransport && NetTransport.isRtcActiveToHost())
+    ? INPUT_SEND_INTERVAL_RTC : INPUT_SEND_INTERVAL_RTDB;
+}
 let lastInputSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected,seq}
 const processedRoomEventKeys = new Set(); // events(キルフィード等)の重複処理防止
@@ -58,7 +65,22 @@ function selfCorrectSpeedScale(ent){
 // 時間軸は「ホストの試合時刻(payload.t)」を使う。到着時刻を時間軸にすると、配信が
 // まとめて届いた(ジッタ)ときにスナップショット間隔が実際より短く見積もられ、
 // 速い相手が瞬間移動したように飛ぶ。ホスト時刻なら間隔が常に正しくなる。
-const INTERP_DELAY_MS = 120;   // 遠隔エンティティを一定遅延で描画(publish間隔+ジッタを吸収)
+const INTERP_DELAY_MS = 120;   // 遠隔エンティティの描画遅延(publish間隔+ジッタを吸収)。rtdb時の値=上限
+// WebRTC直結中は配信間隔が短くなるので、描画遅延も実測(ジッタ+2配信間隔)へ縮めて
+// 「相手の動きが新しく見える」ようにする。急変させるとその瞬間に相手が飛ぶので、
+// 目標値へゆっくり追従させる(降格でrtdbへ戻れば自然に120msへ戻る)
+const INTERP_DELAY_MIN_MS = 50;      // rtc時の下限
+const INTERP_DELAY_ADAPT_RATE = 0.8; // 目標へ寄せる速さ(1秒あたりの割合)
+let interpDelayMs = INTERP_DELAY_MS;
+function updateInterpDelay(dt){
+  let target = INTERP_DELAY_MS;
+  const t = window.NetTransport;
+  if(t && t.isRtcActiveToHost() && t.authStreamStats){
+    const s = t.authStreamStats();
+    if(s && s.avgMs > 0) target = clamp(s.jitterMs + s.avgMs*2, INTERP_DELAY_MIN_MS, INTERP_DELAY_MS);
+  }
+  interpDelayMs += (target - interpDelayMs) * Math.min(1, dt*INTERP_DELAY_ADAPT_RATE);
+}
 const EXTRAP_CAP_MS = 180;     // スナップショット欠落時に速度で外挿する上限
 const AUTH_FULL_EVERY = 8;     // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
 const HOST_HISTORY_CAP = 60;   // ホストの位置履歴(ラグ補正の巻き戻し用)保持スナップショット数
@@ -209,7 +231,7 @@ async function beginMultiplayerMatchInner(){
   processedLootEventKeys.clear(); processedRoomEventKeys.clear();
   // 補間/ラグ補正の状態をリセット
   guestSnapBuf = []; guestCurViewSeq = 0; hostPosHistory = []; authPublishSeq = 0; lastPubPos = {};
-  hostClockOffset = null; hostForceFullNext = false;
+  hostClockOffset = null; hostForceFullNext = false; interpDelayMs = INTERP_DELAY_MS;
   // 自分の位置の突き合わせ状態をリセット(前の試合の履歴が残ると初回補正が暴れる)
   selfInputSeq = 0; selfDashSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
   selfCardSeq = 0; selfCardPick = null; resetTrainOffers();
@@ -414,6 +436,19 @@ async function beginMultiplayerMatchInner(){
   }
   updateCamera();
 
+  // トランスポート: 常にrtdbで開始し、WebRTC直結が確立した相手からrtcへ自動昇格する
+  // (切断・沈黙時は自動でrtdbへ戻る。rtcが使えない環境では何もせず従来どおり全てrtdb)。
+  // 以降の __aramonSend*/__aramonWatch* はnet_transport.jsのラッパを透過的に通る
+  if(window.NetTransport && NetTransport.attach){
+    NetTransport.attach({
+      roomId: netState.roomId,
+      myPid: netState.myPlayerId,
+      isHost: netState.isHost,
+      hostPid: netState.hostId,   // ゲストはここへofferを出す(未取得ならrtdbのまま)
+      peerPids: Object.keys(fixedPlayers||{}).filter(id=>id!==netState.myPlayerId),
+    });
+  }
+
   window.__aramonWatchInputs(netState.roomId, (players)=>{
     netState.humanPlayers = players||{};
     for(const id in players){
@@ -538,7 +573,7 @@ function processRemoteFireEvents(){
 
 function sendLocalInputIfMultiplayer(now){
   if(netState.mode!=='multi' || !netState.roomId) return;
-  if(now-lastInputSendAt >= INPUT_SEND_INTERVAL*1000){
+  if(now-lastInputSendAt >= inputSendInterval()*1000){
     lastInputSendAt = now;
     selfInputSeq++;
     // この入力を送った時点の自分の予測位置を先に覚えておく。
@@ -729,7 +764,15 @@ function tryNonHostPlayerFireVisual(dt){
 const processedHitKeys = new Set();
 let authPublishTimer = 0;
 let authPublishInFlight = false;
-const AUTH_PUBLISH_INTERVAL = 0.05; // 約20回/秒。高頻度配信+クライアント側補間で滑らかさを両立する
+// authStateの配信間隔(秒)。rtdb=約20回/秒(quota都合)。高頻度配信+クライアント側補間で滑らかさを両立する。
+// 全ゲストとWebRTC直結できている間だけ約30回/秒へ上げる(1人でもrtdbのゲストが
+// いる間はRTDBへの書き込みが続くので現行レートを守る)
+const AUTH_PUBLISH_INTERVAL_RTDB = 0.05;
+const AUTH_PUBLISH_INTERVAL_RTC  = 0.033;
+function authPublishInterval(){
+  return (window.NetTransport && NetTransport.isRtcActiveAllPeers())
+    ? AUTH_PUBLISH_INTERVAL_RTC : AUTH_PUBLISH_INTERVAL_RTDB;
+}
 
 function processHitAsHost(hit){
   if(!hit) return;
@@ -1131,9 +1174,10 @@ function interpolateRemoteEntities(){
   // 届いても速い相手が飛ばずに等速で動いて見える。
   const useHostClock = (buf[buf.length-1].ht!==null && hostClockOffset!==null);
   const timeOf = (s)=> useHostClock ? s.ht : s.rt;
+  // 描画遅延はrtc接続中だけ実測に合わせて縮む(updateInterpDelay。rtdb時は120ms固定)
   const renderT = useHostClock
-    ? (performance.now() - hostClockOffset - INTERP_DELAY_MS)
-    : (performance.now() - INTERP_DELAY_MS);
+    ? (performance.now() - hostClockOffset - interpDelayMs)
+    : (performance.now() - interpDelayMs);
   let s0=null, s1=null;
   for(let i=buf.length-1;i>=0;i--){
     if(timeOf(buf[i]) <= renderT){ s0=buf[i]; s1=buf[i+1]||null; break; }
@@ -1184,7 +1228,7 @@ function loop(now){
         broadcastNewShotsAsHost();
         sendLocalInputIfMultiplayer(now);
         authPublishTimer += dt;
-        if(authPublishTimer >= AUTH_PUBLISH_INTERVAL && !authPublishInFlight){
+        if(authPublishTimer >= authPublishInterval() && !authPublishInFlight){
           authPublishTimer = 0;
           authPublishInFlight = true;
           window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload())
@@ -1217,6 +1261,7 @@ function loop(now){
           if(e.dashCooldown>0) e.dashCooldown -= dt;
           if(e.hitFlash>0) e.hitFlash -= dt;
         }
+        updateInterpDelay(dt);       // rtc接続中は描画遅延を実測に合わせて縮める(急変させない)
         interpolateRemoteEntities(); // ①② 自分以外は補間バッファから描画時刻の位置を再構成
         predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
         tryNonHostPlayerFireVisual(dt);
