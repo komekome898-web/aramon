@@ -6926,7 +6926,7 @@ function buildMastermonMenuHtml(mm){
       </button>`);
   }
   /* 秘伝の書。**持っているときだけ出す**(交換所で手に入れる前から並べても押せないだけ)。
-     すでに付いていれば今の強化をボタンに出して、付け替えだと分かるようにする。 */
+     すでに付いていれば今の強化をボタンに出して、**書を1冊使って付け替えることになる**と分かるようにする。 */
   const hidenN = (loadBag() || {}).hidenScroll || 0;
   if(hidenN > 0){
     const curSkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(mm.element) : null;
@@ -6938,7 +6938,7 @@ function buildMastermonMenuHtml(mm){
         <span class="mm-menu-btn-text">
           <span class="mm-menu-btn-label">秘伝の書(${hidenN})</span>
           <span class="mm-menu-btn-desc">${cd
-            ? `いま ${cd.icon} ${cd.label} ${moveBoostAmountText(curB,'hiden')}。選び直すと前の強化は消えます`
+            ? `いま ${cd.icon} ${cd.label} ${moveBoostAmountText(curB,'hiden')}。選び直すと前の強化は消え、書を1冊使います`
             : '今の姿のtier3技に強化を1つ付ける(覚醒と重ねられる)'}</span>
         </span>
       </button>`);
@@ -7309,8 +7309,9 @@ function doAwaken(){
 
    ・対象は**今着ているスキンのtier3技**。覚醒と重ねられるが、効き目は覚醒より控えめ。
    ・**選べる項目はその技に効くものだけ**(moveBoostKeysFor)。覚醒の選択と同じ絞り込み。
-   ・覚醒と違って**あとから付け替えられる**(新しい書を使うと前の強化は消える)。
-     選び間違いが行き止まりにならないので、書に繰り返し使う価値が出る。
+   ・覚醒と違って**あとから付け替えられる。ただし付け替えるたびに書を1冊使う**
+     (ただで選び直せるわけではない)。選び間違いが行き止まりにならないので
+     救済にはなるが、無料ではないことを画面の文言でも必ず伝える。
    ・記録は mm.moveBoost に「スキンID → 選んだ強化」を1つ。mm.awaken とは別に持つ
      (混ぜると覚醒扱いになって姿・オーラ・専用BGMまで変わってしまう)。
    ===================================================================== */
@@ -7353,7 +7354,7 @@ function renderHidenOverlay(){
     ? `<div class="rb-picker-note">覚醒の <b>${AWAKEN_BOOSTS[aw].label} ${awakenBoostAmountText(aw)}</b> と重なります。</div>` : '';
   const curNote = cur
     ? `<div class="rb-warn">⚠ いまは <b>${HIDEN_BOOSTS[cur].icon} ${HIDEN_BOOSTS[cur].label}</b> が付いています。
-        新しく選ぶと<b>前の強化は消えます</b>(書は1つ使います)。</div>` : '';
+        新しく選ぶと<b>前の強化は消え、秘伝の書を1冊使います</b>。</div>` : '';
   box.innerHTML = `
     <div class="rb-picker">
       <div class="rb-picker-title">強化する項目を1つ選ぶ
