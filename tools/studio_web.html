@@ -3190,6 +3190,10 @@ async function planAwaken(dataJs, swJs, lines){
   lines.push('');
   lines.push(`※ この姿は**ガチャにもカタログにも出ません**(awakenOf付き)。`);
   lines.push(`   「${t.baseName}」を装備した、転生2回・全ステータス800以上のマスモンだけが覚醒して手に入れます。`);
+  /* 専用BGM/SEは data.js 側が awakenOf から自動で継ぐので、ここでは何も書き足さない。
+     以前は覚醒スキンに音が無く「元は専用曲が鳴るのに覚醒すると通常曲」になっていた。 */
+  lines.push(`※ 専用BGM・専用SEは「${t.baseName}」と同じものが**自動で鳴ります**(SKIN_MEDIA への追記は不要)。`);
+  lines.push(`   覚醒だけの曲へ差し替えたくなったら、data.js の SKIN_MEDIA に ${t.id} の行を足せばそちらが優先されます。`);
   if(!hasWalk) lines.push('※ 歩行コマがありません。試合中は静止画で表示されます。');
   if(!t.t3name) lines.push('※ tier3の技名が空なので SSR_SKIN_TIER3 には入れません(技名・威力は元スキンのままです)。');
   return { texts, images, message: `覚醒スキン「${t.name}」を追加した(スタジオ)` };

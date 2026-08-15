@@ -48,6 +48,7 @@
       const key = makeScoreKey(entry.name, entry.element);
       const scoreRef = ref(fbDb, `scores/${key}`);
       const isReal = entry.mapType === 'real';
+      const isTeam = entry.mapType === 'team';   // チーム戦はマップを問わず専用の集計先へ
       await runTransaction(scoreRef, (cur)=>{
         if(!cur){
           const base = {
@@ -62,12 +63,17 @@
                集計は端末側(loadRank().elem)が正で、ここは最新値を上書きするだけ。
                `|| null` も使わない(0 と 未記録 を区別する必要がないうえ、負の値が消える)。 */
             rankRpSum: entry.rankRpSum != null ? entry.rankRpSum : 0,
-            // 通常マップ/リアルマップでキル数・ダメージ数を別々に集計する
+            /* キル数・ダメージ数の集計先。**シングルとチーム戦を混ぜない。**
+               シングルは通常マップ/リアルマップで分け、チーム戦(スクワッド・20チームBR・
+               アリーナ)はマップを問わずTeamへ入れる。1人で戦う記録とチームで積んだ記録は
+               意味が違うので、同じ表で競わせない(発注者判断・2026-08-14)。 */
             killsNormal: 0, damageNormal: 0, killsReal: 0, damageReal: 0,
+            killsTeam: 0, damageTeam: 0,
             placement: entry.placement, isWin: entry.isWin,
             time: entry.time, ts: entry.ts,
           };
-          if(isReal){ base.killsReal = entry.kills||0; base.damageReal = entry.damage||0; }
+          if(isTeam){ base.killsTeam = entry.kills||0; base.damageTeam = entry.damage||0; }
+          else if(isReal){ base.killsReal = entry.kills||0; base.damageReal = entry.damage||0; }
           else { base.killsNormal = entry.kills||0; base.damageNormal = entry.damage||0; }
           return base;
         }
@@ -76,6 +82,8 @@
         const damageNormal = cur.damageNormal!=null ? cur.damageNormal : (cur.damage||0);
         const killsReal = cur.killsReal||0;
         const damageReal = cur.damageReal||0;
+        const killsTeam = cur.killsTeam||0;
+        const damageTeam = cur.damageTeam||0;
         return {
           name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
           skin: entry.skin || cur.skin || null,  // 直近の装備スキンを優先(未装備なら従来値を維持)
@@ -85,10 +93,12 @@
           mastermonStatTotal: Math.max(cur.mastermonStatTotal||0, entry.mastermonStatTotal||0) || null,
           rankPoint: Math.max(cur.rankPoint||0, entry.rankPoint||0) || null,
           rankRpSum: entry.rankRpSum != null ? entry.rankRpSum : (cur.rankRpSum||0),
-          killsNormal: isReal ? killsNormal : Math.max(killsNormal, entry.kills||0),
-          damageNormal: isReal ? damageNormal : Math.max(damageNormal, entry.damage||0),
+          killsNormal: (isReal||isTeam) ? killsNormal : Math.max(killsNormal, entry.kills||0),
+          damageNormal: (isReal||isTeam) ? damageNormal : Math.max(damageNormal, entry.damage||0),
           killsReal: isReal ? Math.max(killsReal, entry.kills||0) : killsReal,
           damageReal: isReal ? Math.max(damageReal, entry.damage||0) : damageReal,
+          killsTeam: isTeam ? Math.max(killsTeam, entry.kills||0) : killsTeam,
+          damageTeam: isTeam ? Math.max(damageTeam, entry.damage||0) : damageTeam,
           placement: Math.min(cur.placement||99, entry.placement||99),
           isWin: !!(cur.isWin || entry.isWin),
           time: Math.max(cur.time||0, entry.time||0),

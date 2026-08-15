@@ -10,7 +10,9 @@
         チーム戦のダウンでは落ちず、とどめ(本当の死亡)で落ちる
      3. 拾う → 強化が実際に反映される(拾う前後の maxHp / mastermonDmgTakenMult を実測)+
         拾った項目が自分の matchTrainLog にも積まれ、自分が死んだらまた落ちる(連鎖)
-     4. 既存回帰: tools/team_test.mjs の全チェックOK維持(このファイルの最後に子プロセスで実行) */
+     4. チーム戦の山分け: 生きている小隊全員に等分され、拾った本人の伸びは個人戦の総取りより
+        小さく、3人ぶんの合計は総取りとほぼ同じ(力の総量は減らない)
+     5. 既存回帰: tools/team_test.mjs の全チェックOK維持(このファイルの最後に子プロセスで実行) */
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -195,6 +197,47 @@ results.pickup = await page.evaluate(()=>{
   };
 });
 
+/* ===== 4. チーム戦: 拾った力を小隊で3等分する(拾った1人の総取りにしない) =====
+   同じ中身の円盤石を「個人戦で1人が拾う」「チーム戦で3人小隊の1人が拾う」で拾い比べ、
+   ・拾った本人の伸びが個人戦よりはっきり小さい
+   ・拾っていない味方2人も同じだけ伸びている
+   ・3人ぶんを足すと個人戦の総取りに近い(力の総量は減っていない)
+   を確かめる。倒れている味方には配らない(取りこぼしを作らない)ことも見る。 */
+results.teamShare = await page.evaluate(()=>{
+  const KEYS = ['run','run','run'];   // 走り込み×3(ライフだけが動くので差が測りやすい)
+  window.__setupSolo({ teamSize:3, teamCount:4 });
+  const mates = teamMembers(player.teamId);
+  const victim = entities.find(e=>e.teamId!==player.teamId && e.alive);
+  for(const k of KEYS) applyTrainCardToEntity(victim, k);
+  victim.x = zoneState.center.x; victim.y = zoneState.center.y;
+  killEntity(victim, player); killEntity(victim, player);   // ダウン→とどめ
+  const disc = __discs()[0];
+  // 拾うのは自分だけ。敵は遠ざけ、味方も拾えない位置へ置く(それでも小隊なので配られる)
+  for(const e of entities){ if(e!==player && e.alive) { e.x = 300; e.y = 300; } }
+  /* 山分けの正しさは「最大HPの伸び」では測れない。**同じライフ+1でも種族と適正で
+     最大HPの増え方が違う**ため(それが狙いでもある)。ライフの素の値で測る。 */
+  const before = mates.map(m=>({ life: ensureMatchMm(m).stats.life, hp: m.maxHp,
+                                 // その子が総取りしたら動くはずの量(純関数なので副作用なし)
+                                 full: KEYS.reduce((s,k)=> s + (trainCardChanges(ensureMatchMm(m), k).life||0), 0) }));
+  player.x = disc.x; player.y = disc.y;
+  updateLootPickups();
+  const rows = mates.map((m,i)=>({
+    name: displayNameFor(m), full: before[i].full,
+    got: m.matchMm.stats.life - before[i].life,
+    hpGain: m.maxHp - before[i].hp,
+    logGrew: m.matchTrainLog.slice(-3).join(',')==='run,run,run',
+  }));
+  return {
+    teamSize: mates.length, rows,
+    everyoneGained: rows.every(r=>r.got>0 && r.hpGain>0),
+    // 受け取ったのは総取りの1/3(切り上げ・切り捨ての誤差3まで許す)
+    thirdEach: rows.every(r=> Math.abs(r.got - r.full/3) <= 3),
+    everyoneLogged: rows.every(r=>r.logGrew),
+    shareNoteInToast: !!window.__toasts.find(t=>t.includes('3人で山分け')),
+    mateToasts: window.__toasts.filter(t=>t.includes('山分けしてくれた')).length,
+  };
+});
+
 results.jsErrors = jsErrors;
 console.log(JSON.stringify(results, null, 2));
 
@@ -213,6 +256,9 @@ const ok = results.record.emptyAtStart && results.record.logOk && results.record
   && results.downNotDrop.wasDowned && results.downNotDrop.noDropOnDown && results.downNotDrop.dropOnFinish
   && results.pickup.discGone && results.pickup.maxHpGrew && results.pickup.dmgTakenReduced
   && results.pickup.logInherited && results.pickup.toastOk && results.pickup.chainKeysOk
+  && results.teamShare.everyoneGained && results.teamShare.thirdEach
+  && results.teamShare.everyoneLogged && results.teamShare.shareNoteInToast
+  && results.teamShare.mateToasts===0   // ソロ操作の味方はbot=トーストは出ない(出るのは人間だけ)
   && jsErrors.length===0
   && regOk;
 console.log(ok ? '\n== 全チェックOK ==' : '\n== 失敗あり ==');
