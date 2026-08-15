@@ -1616,6 +1616,13 @@ function updateAccountBar(){
   if(rankEl && typeof loadRank==='function') rankEl.innerHTML = rankChipHtml(loadRank().rp, { iconOnly:true });
   document.getElementById('headerGold').textContent = `🪙 ${w.gold}`;
   document.getElementById('headerDia').textContent = `💎 ${w.dia}`;
+  /* モン晶。**0個のうちは出さない。** ヘッダーは横幅が決まっていて、
+     まだ1個も持っていない人にまで3つ目を並べると名前と段位が押し出される。 */
+  const shardEl = document.getElementById('headerShard');
+  if(shardEl){
+    shardEl.textContent = `${SHARD_ICON} ${w.shard}`;
+    shardEl.classList.toggle('hidden', w.shard <= 0);
+  }
   // アカウントボタンはマイページの中に常設。文言だけログイン状態で切り替える
   const btn = document.getElementById('accountLoginBtn');
   const label = btn.querySelector('.lobby-menu-text b');
@@ -2762,14 +2769,15 @@ function doGacha(count){
     const roll = gachaRollOne(guaranteed);
     // レイドガチャのSSR枠はレイド特効スキンのピックアップに差し替える(全体2%のうち1%)
     if(gachaMode==='raid' && roll.kind==='skin' && roll.rarity==='SSR') roll.skinId = pickRaidGachaSsrSkinId();
-    let dup = false, diaGain = 0;
+    let dup = false, shardGain = 0;
     if(roll.kind==='item'){
       addBagItem(roll.key,1);
     } else {
-      if(isSkinOwned(roll.skinId)){ dup=true; diaGain=(roll.rarity==='SSR'?DUP_SSR_DIA:DUP_SKIN_DIA); addWallet(0, diaGain); }
+      // 被りはダイヤではなくモン晶(交換所でプレミアムなアイテムに換える)
+      if(isSkinOwned(roll.skinId)){ dup=true; shardGain=(roll.rarity==='SSR'?DUP_SSR_SHARD:DUP_SKIN_SHARD); addShards(shardGain); }
       else ownSkin(roll.skinId);
     }
-    results.push({ ...roll, dup, diaGain, promoted: (roll.kind==='skin' && roll.rarity==='SSR') ? ssrShouldPromote(dup) : false });
+    results.push({ ...roll, dup, shardGain, promoted: (roll.kind==='skin' && roll.rarity==='SSR') ? ssrShouldPromote(dup) : false });
   }
   const granted = gachaMode==='raid' ? incrementRaidGachaCount(count) : incrementGachaCount(count);
   gachaAnim.results = results; gachaAnim.count = count;
@@ -3056,7 +3064,7 @@ function showGachaResults(results, granted){
       const m=skinMeta(r.skinId);
       inner=skinCellInner(r.skinId);
       rarCls=r.rarity.toLowerCase(); name=m.name;
-      if(r.dup) dup=`<span class="gacha-dup-dia">💎${r.diaGain}</span>`;
+      if(r.dup) dup=`<span class="gacha-dup-dia">${SHARD_ICON}${r.shardGain}</span>`;
     }
     const skinAttr = r.kind==='skin' ? ` data-skin="${r.skinId}"` : '';
     return `<div class="gacha-cell ${rarCls}"${skinAttr}>
@@ -3184,10 +3192,17 @@ function shopNpcBuyLine(count){
   return '上手く使うが良い';
 }
 function setShopDialogue(text){ const el=document.getElementById('shopNpcText'); if(el) el.textContent = text; }
+// ショップで開いているタブ('gold' = ゴールドの棚 / 'shard' = モン晶の交換所)
+let shopTab = 'gold';
 function renderShop(){
   const w = loadWallet();
-  document.getElementById('shopGold').textContent = `🪙 ${w.gold}`;
+  // 所持は両方いつも出す(交換所にいるときもゴールドが見えていてよい)
+  document.getElementById('shopGold').textContent = `🪙 ${w.gold}　${SHARD_ICON} ${w.shard}`;
   const bag = loadBag();
+  document.querySelectorAll('.shop-tab').forEach(t=>t.classList.toggle('active', t.dataset.shoptab===shopTab));
+  document.getElementById('shopList').classList.toggle('hidden', shopTab!=='gold');
+  document.getElementById('shopShardList').classList.toggle('hidden', shopTab!=='shard');
+  renderShardExchange(w, bag);
   const listEl = document.getElementById('shopList');
   listEl.innerHTML = SHOP_ITEMS.map(([k, price])=>{
     const it = PLAYER_ITEMS[k];
@@ -3208,6 +3223,42 @@ function renderShop(){
   listEl.querySelectorAll('.shop-buy-btn').forEach(b=>{
     b.addEventListener('click', ()=>buyShopItem(b.dataset.key, +b.dataset.price));
   });
+}
+/* モン晶の交換所。**品揃えは SHARD_EXCHANGE の表から作る**(画面側に一覧を持たない)。
+   受け取りは grantReward() 1本なので、品を1行足すだけで付与まで通る。 */
+function renderShardExchange(w, bag){
+  const el = document.getElementById('shopShardList');
+  if(!el) return;
+  el.innerHTML = SHARD_EXCHANGE.map((e,i)=>{
+    const owned = e.reward.item ? (bag[e.reward.item] || 0) : null;
+    const short = w.shard < e.cost;
+    return `
+    <div class="bag-item">
+      <div class="shop-item-top">
+        <span class="bag-item-icon">${e.reward.item ? PLAYER_ITEMS[e.reward.item].icon : '🎫'}</span>
+        <span class="bag-item-text">
+          <span class="bag-item-name">${shardExchangeLabel(e)}</span>
+          <span class="bag-item-desc">${e.note}</span>
+          ${owned!=null ? `<span class="shop-item-owned">所持数 ${owned}</span>` : ''}
+        </span>
+      </div>
+      <button class="bag-use-btn shop-buy-btn shard-buy-btn" data-idx="${i}" ${short?'disabled':''}>${SHARD_ICON}${e.cost}</button>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.shard-buy-btn').forEach(b=>{
+    b.addEventListener('click', ()=>exchangeShard(+b.dataset.idx));
+  });
+}
+function exchangeShard(idx){
+  const e = SHARD_EXCHANGE[idx];
+  if(!e) return;
+  // **払えたときだけ渡す。** spendShards は足りなければ何も引かずに false を返す
+  if(!spendShards(e.cost)){ pushToast(`${SHARD_NAME}が足りません`); return; }
+  grantReward(e.reward);
+  playSe('pickup');
+  pushToast(`${shardExchangeLabel(e)} を受け取りました`);
+  renderShop();
+  if(typeof updateAccountBar==='function') updateAccountBar();
 }
 function buyShopItem(itemKey, price){
   const w = loadWallet();
@@ -3321,8 +3372,12 @@ document.getElementById('adminGrantSkinBtn').addEventListener('click', ()=>{
   updateAdminSkinBtn();
   adminSkinMarkOwned();
 });
+document.querySelectorAll('.shop-tab').forEach(t=>{
+  t.addEventListener('click', ()=>{ shopTab = t.dataset.shoptab; renderShop(); });
+});
 document.getElementById('openShopBtn').addEventListener('click', ()=>{
   shopBuysThisOpen = 0;               // 開く度に購入回数をリセット
+  shopTab = 'gold';                   // 開き直したらいつもゴールドの棚から
   renderShop();
   setShopDialogue(SHOP_NPC_DEFAULT);  // 開いた直後はデフォルトセリフ
   document.getElementById('shopOverlay').classList.remove('hidden');
@@ -3827,7 +3882,8 @@ function currentMastermonInfo(){
   const s = mastermonSnapshot(mm, currentEquippedSkinId());
   // 部屋へ送るのは戦力に要るぶんだけ(名前と見た目は別のフィールドで送っている)
   return { level:s.level, stats:s.stats, rebirth:s.rebirth, apt:s.apt,
-           baseHp:s.baseHp, baseSpd:s.baseSpd, awakenBoost:s.awakenBoost };
+           baseHp:s.baseHp, baseSpd:s.baseSpd,
+           awakenBoost:s.awakenBoost, moveBoosts:s.moveBoosts };
 }
 // 今参戦するモンスターに装備中のスキンID(マルチプレイで相手にも見せるため送る)
 function currentEquippedSkinId(){
@@ -6310,14 +6366,12 @@ function expeditionDepart(){
   updateExpeditionBadge();
 }
 function expeditionUseRecall(i){
-  const bag = loadBag();
-  if(!(bag.expeditionRecall > 0)){ pushToast('📯 帰還のホラ貝がありません（ショップで買えます）'); return; }
+  if(!(loadBag().expeditionRecall > 0)){ pushToast('📯 帰還のホラ貝がありません（ショップで買えます）'); return; }
   const st = loadExpeditions();
   const slot = st.slots[i];
+  // **消費は「使うことが確定してから」。** 先に減らすと、この return で1個消える
   if(expeditionSlotState(slot, Date.now())!=='running') return;
-  bag.expeditionRecall -= 1;
-  if(bag.expeditionRecall <= 0) delete bag.expeditionRecall;
-  saveBag(bag);
+  if(!consumeBagItem('expeditionRecall', 1)){ pushToast('📯 帰還のホラ貝がありません'); return; }
   slot.done = true;   // 残り時間を0にする(=受け取り待ちへ)
   saveExpeditions(st);
   playSe('pickup');
@@ -6815,6 +6869,24 @@ function buildMastermonMenuHtml(mm){
         </span>
       </button>`);
   }
+  /* 秘伝の書。**持っているときだけ出す**(交換所で手に入れる前から並べても押せないだけ)。
+     すでに付いていれば今の強化をボタンに出して、付け替えだと分かるようにする。 */
+  const hidenN = (loadBag() || {}).hidenScroll || 0;
+  if(hidenN > 0){
+    const curSkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(mm.element) : null;
+    const curB = (typeof hidenBoostForSkin==='function') ? hidenBoostForSkin(mm, curSkin) : null;
+    const cd = curB ? HIDEN_BOOSTS[curB] : null;
+    items.push(`
+      <button class="mm-menu-btn mm-menu-btn-hiden" data-action="hiden">
+        <span class="mm-menu-btn-icon">📖</span>
+        <span class="mm-menu-btn-text">
+          <span class="mm-menu-btn-label">秘伝の書(${hidenN})</span>
+          <span class="mm-menu-btn-desc">${cd
+            ? `いま ${cd.icon} ${cd.label} ${moveBoostAmountText(curB,'hiden')}。選び直すと前の強化は消えます`
+            : '今の姿のtier3技に強化を1つ付ける(覚醒と重ねられる)'}</span>
+        </span>
+      </button>`);
+  }
   /* 覚醒ボタン。**条件を満たしていれば一番上**に出す(下に埋もれて見つけられない、
      と指摘があった・2026-08-11)。まだ条件が足りないうちは今までどおり一番下で、
      「あと何が要るか」の目標として置いておく。 */
@@ -7176,6 +7248,116 @@ function doAwaken(){
   closeAwakenOverlay();
   playAwakenAnim(key, baseId, awId, pick);
 }
+/* =====================================================================
+   秘伝の書(モン晶の交換所で手に入る技強化アイテム)
+
+   ・対象は**今着ているスキンのtier3技**。覚醒と重ねられるが、効き目は覚醒より控えめ。
+   ・**選べる項目はその技に効くものだけ**(moveBoostKeysFor)。覚醒の選択と同じ絞り込み。
+   ・覚醒と違って**あとから付け替えられる**(新しい書を使うと前の強化は消える)。
+     選び間違いが行き止まりにならないので、書に繰り返し使う価値が出る。
+   ・記録は mm.moveBoost に「スキンID → 選んだ強化」を1つ。mm.awaken とは別に持つ
+     (混ぜると覚醒扱いになって姿・オーラ・専用BGMまで変わってしまう)。
+   ===================================================================== */
+let hidenKey = null;    // 確認画面で対象にしているマスモンのキー
+let hidenPick = null;   // 選んだ強化の種類
+// 書を付ける相手のスキン。**覚醒スキンを着ていてもその姿のIDで持つ**
+// (読むときは hidenBoostForSkin が元IDもたどるので、あとから覚醒しても消えない)
+function hidenTargetSkinOf(mm){
+  return mm ? (getEquippedSkin(mm.element) || null) : null;
+}
+function hidenTier3MoveOf(mm){
+  const list = SIGNATURE_MOVES[mm.element] || [];
+  const base = list.find(m=>m.tier===3);
+  if(!base) return null;
+  // スキンで技を差し替えている場合は差し替え後を見る(効く強化の判定を実物に合わせる)
+  return skinTier3Move(base, { isPlayer:false, element:mm.element, skinId: hidenTargetSkinOf(mm) });
+}
+function hidenScrollCount(){ return (loadBag() || {}).hidenScroll || 0; }
+function renderHidenOverlay(){
+  const mm = loadMastermons()[hidenKey];
+  const box = document.getElementById('hidenScroll');
+  if(!mm || !box) return;
+  const skinId = hidenTargetSkinOf(mm);
+  const move = hidenTier3MoveOf(mm);
+  const keys = move ? moveBoostKeysFor(move) : [];
+  const cur = hidenBoostForSkin(mm, skinId);
+  const aw  = awakenBoostForSkin(mm, skinId);
+  const picker = keys.map(k=>{
+    const b = HIDEN_BOOSTS[k];
+    const on = hidenPick === k;
+    const isCur = cur === k;
+    return `<button class="rb-picker-btn awaken-pick${on?' on':''}" data-boost="${k}">
+      <span class="awaken-pick-icon">${b.icon}</span>
+      <span class="awaken-pick-label">${b.label} <b>${moveBoostAmountText(k,'hiden')}</b>${isCur?'(今これ)':''}</span>
+      <span class="awaken-pick-desc">${b.desc}</span>
+    </button>`;
+  }).join('');
+  // 覚醒と重なっているときは合計も見せる(何倍になるのかを押す前に出す)
+  const stackNote = (aw && hidenPick && aw === hidenPick)
+    ? `<div class="rb-picker-note">覚醒の <b>${AWAKEN_BOOSTS[aw].label} ${awakenBoostAmountText(aw)}</b> と重なります。</div>` : '';
+  const curNote = cur
+    ? `<div class="rb-warn">⚠ いまは <b>${HIDEN_BOOSTS[cur].icon} ${HIDEN_BOOSTS[cur].label}</b> が付いています。
+        新しく選ぶと<b>前の強化は消えます</b>(書は1つ使います)。</div>` : '';
+  box.innerHTML = `
+    <div class="rb-picker">
+      <div class="rb-picker-title">強化する項目を1つ選ぶ
+        <span class="rb-picker-count">${hidenPick?1:0}/1</span></div>
+      <div class="awaken-pick-list">${picker}</div>
+      <div class="rb-picker-note">技「${rebirthEscape(move ? getMoveName(move, { isPlayer:false, element:mm.element, skinId }) : '—')}」に効くものだけを出しています。
+        スキン「${rebirthEscape(skinId ? skinMeta(skinId).name : '—')}」に付きます。</div>
+      ${stackNote}
+      ${curNote}
+      <div class="rb-picker-note">手持ちの秘伝の書: <b>📖 ${hidenScrollCount()}</b></div>
+    </div>`;
+  box.querySelectorAll('.awaken-pick').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      hidenPick = (hidenPick === btn.dataset.boost) ? null : btn.dataset.boost;
+      renderHidenOverlay();
+    });
+  });
+  const ok = document.getElementById('hidenConfirmBtn');
+  ok.disabled = !hidenPick;
+  ok.textContent = hidenPick ? '📖 秘伝の書を使う' : '強化する項目を選んでください';
+  attachVisibleScrollbar(box, document.getElementById('hidenScrollbar'));
+}
+function openHidenOverlay(key){
+  const mm = loadMastermons()[key];
+  if(!mm) return;
+  if(hidenScrollCount() <= 0){ pushToast(`秘伝の書がありません(ショップの${SHARD_ICON}交換で手に入ります)`); return; }
+  const skinId = hidenTargetSkinOf(mm);
+  if(!skinId){ pushToast('スキンを着せてから使ってください'); return; }
+  if(!hidenTier3MoveOf(mm)){ pushToast('このモンスターにはtier3の技がありません'); return; }
+  hidenKey = key;
+  hidenPick = null;
+  document.getElementById('hidenOverlay').classList.remove('hidden');
+  renderHidenOverlay();
+}
+function closeHidenOverlay(){
+  document.getElementById('hidenOverlay').classList.add('hidden');
+  hidenKey = null;
+  hidenPick = null;
+}
+function doHiden(){
+  const data = loadMastermons();
+  const mm = data[hidenKey];
+  if(!mm || !hidenPick) return;
+  const skinId = hidenTargetSkinOf(mm);
+  if(!skinId){ closeHidenOverlay(); return; }
+  // 押している間に在庫が変わっていないかを最後にもう一度見る(二重消費を防ぐ)
+  if(hidenScrollCount() <= 0){ pushToast('秘伝の書がありません'); closeHidenOverlay(); return; }
+  if(!consumeBagItem('hidenScroll', 1)){ pushToast('秘伝の書がありません'); closeHidenOverlay(); return; }
+  mm.moveBoost = Object.assign({}, mm.moveBoost, { [skinId]: hidenPick });
+  saveMastermons(data);
+  const b = HIDEN_BOOSTS[hidenPick];
+  const key = hidenKey;
+  closeHidenOverlay();
+  if(typeof playSe==='function') playSe('pickup');
+  pushToast(`📖 ${b.icon} ${b.label} ${moveBoostAmountText(hidenPick,'hiden')} を付けました`);
+  // 技一覧・カードの数字を新しい状態にする
+  if(typeof openMastermonDetail==='function') openMastermonDetail(key);
+  if(typeof updateAccountBar==='function') updateAccountBar();
+}
+
 /* 覚醒アニメーション。**素材を1つも足さずに作る**(専用動画が無いと音だけになり、
    「豪華さがない」と指摘された。転生の演出と同じ作りで、色だけ紫〜水色にして見分ける)。
    合計 AWAKEN_ANIM_MS。CSSのキーフレームも同じ尺。 */
@@ -7225,6 +7407,9 @@ document.getElementById('awakenAnimCloseBtn').addEventListener('click', closeAwa
 document.getElementById('awakenCloseBtn').addEventListener('click', closeAwakenOverlay);
 document.getElementById('awakenCancelBtn').addEventListener('click', closeAwakenOverlay);
 document.getElementById('awakenConfirmBtn').addEventListener('click', doAwaken);
+document.getElementById('hidenCloseBtn').addEventListener('click', closeHidenOverlay);
+document.getElementById('hidenCancelBtn').addEventListener('click', closeHidenOverlay);
+document.getElementById('hidenConfirmBtn').addEventListener('click', doHiden);
 
 function openRebirthOverlay(key){
   const mm = loadMastermons()[key];
@@ -7604,6 +7789,7 @@ function renderMastermonDetail(key){
         if(btn.dataset.action==='rebirth'){ openRebirthOverlay(key); return; }
         if(btn.dataset.action==='rebirth-max'){ pushToast(`転生は${REBIRTH_MAX}回までです。これ以上は転生できません`); return; }
         if(btn.dataset.action==='awaken'){ openAwakenOverlay(key); return; }
+        if(btn.dataset.action==='hiden'){ openHidenOverlay(key); return; }
         if(btn.dataset.action==='share'){
           const s = buildMastermonShare(key);
           if(s) openShareOverlay(s.spec, s.text); else pushToast('このマスモンをシェアできませんでした');
@@ -7904,24 +8090,29 @@ function buildMastermonMovesHtml(key, opts){
   const moves = SIGNATURE_MOVES[key] || [];
   const fallbackIcon = (moves.find(m=>m.icon) || {}).icon || '✨';
   const ignoreSkin = !!(opts && opts.ignoreSkin);
-  /* 覚醒の強化は「エンティティに載っているもの」を読む決まりなので、
+  /* 技の強化(覚醒 + 秘伝の書)は「エンティティに載っているもの」を読む決まりなので、
      ここでも仮のエンティティに載せる。**載せないと技一覧だけ強化前の数字**になり、
-     何が上がったのか分からなかった(実機で報告・2026-08-11)。 */
+     何が上がったのか分からなかった(実機で報告・2026-08-11)。
+     **一覧で持つ**ので、覚醒と秘伝の書が同時に付いていても両方が数字に乗る。 */
   const mmForMoves = (!ignoreSkin && typeof loadMastermons==='function') ? loadMastermons()[key] : null;
   const equippedForMoves = (!ignoreSkin && typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
-  const awBoost = (mmForMoves && equippedForMoves && typeof awakenBoostForSkin==='function')
-    ? awakenBoostForSkin(mmForMoves, equippedForMoves) : null;
-  const awDef = awBoost ? AWAKEN_BOOSTS[awBoost] : null;
+  const boosts = (mmForMoves && equippedForMoves && typeof mastermonMoveBoosts==='function')
+    ? mastermonMoveBoosts(mmForMoves, equippedForMoves) : [];
+  // どの数字が動くか。**種類の表(stat)だけを見る**ので画面側に対応表を作らない
+  const upStats = new Set(boosts.map(b=>MOVE_BOOST_KINDS[b.kind] && MOVE_BOOST_KINDS[b.kind].stat).filter(Boolean));
+  const hasBoost = boosts.length > 0;
+  const srcLabel = { awaken:'✵ 覚醒強化', hiden:'📖 秘伝の書' };
   const movesHtml = moves.map(baseMv=>{
     // 装備スキンでtier3が専用技(ちょこの「ヴァニッシュ」等)に変わる場合は解決後の性能を表示する。
     // ignoreSkin時は isPlayer:false + skinId:null にすることで entitySkinId() が null を返し、
     // getMoveAura / skinTier3Move / getMoveName / ssrTier3DmgMult がすべて既定値になる
     const pseudoForMove = ignoreSkin ? { element:key, isPlayer:false, skinId:null }
-                                     : { element:key, isPlayer:true, awakenBoost:awBoost };
+                                     : { element:key, isPlayer:true, moveBoosts:boosts };
     const mv = (typeof skinTier3Move==='function') ? skinTier3Move(baseMv, pseudoForMove) : baseMv;
-    // 強化前の同じ技(強化ぶんだけを外したもの)。「いくつから いくつへ」を出すために使う
-    const pseudoNoBoost = { element:key, isPlayer:true, awakenBoost:null };
-    const mvPlain = (awDef && baseMv.tier===3 && typeof skinTier3Move==='function')
+    /* 強化前の同じ技(強化を**1つも**載せないもの)。「いくつから いくつへ」を出すために使う。
+       覚醒と秘伝の書が両方付いていても、合計で「1200 → 1747」と出したいのでここは空にする。 */
+    const pseudoNoBoost = { element:key, isPlayer:true, moveBoosts:[] };
+    const mvPlain = (hasBoost && baseMv.tier===3 && typeof skinTier3Move==='function')
       ? skinTier3Move(baseMv, pseudoNoBoost) : null;
     const icon = mv.icon || fallbackIcon;
     // 技アイコンは該当オーラのアイコンを表示(tier3は装備SSRスキンで一致技に変わる)
@@ -7946,7 +8137,8 @@ function buildMastermonMovesHtml(key, opts){
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
     /* 覚醒で上がった数字は「前 → 後」で出し、その1項目だけ光らせる。
        どの数字が動くかは AWAKEN_BOOSTS[].stat が持っている(画面側で対応表を作らない)。 */
-    const upStat = (awDef && mv.tier===3) ? awDef.stat : null;
+    const isBoosted = hasBoost && mv.tier===3;
+    const isUp = (stat)=> isBoosted && upStats.has(stat);
     const plainDmg = mvPlain ? Math.round(
       (mvPlain.dmg + (mvPlain.blast ? (mvPlain.blast.dmg||0) : 0)
        + (mvPlain.endBlast ? (mvPlain.endBlast.dmg||0)*(mvPlain.endBlast.count||1) : 0)
@@ -7954,19 +8146,25 @@ function buildMastermonMovesHtml(key, opts){
       * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mvPlain, pseudoNoBoost) : 1)) : null;
     const plainSpeed = mvPlain ? (isAoe ? Math.max(200, mvPlain.projSpeed||900) : mvPlain.projSpeed) : null;
     // 「前 → 後」。値が同じなら普通に出す(動いていないのに矢印を出さない)
-    const upTxt = (stat, before, after)=> (upStat===stat && before!=null && before!==after)
+    const upTxt = (stat, before, after)=> (isUp(stat) && before!=null && before!==after)
       ? `<b class="mm-move-was">${before}</b><b class="mm-move-arrow">→</b><b class="mm-move-now">${after}</b>`
       : `${after}`;
-    const cls = (stat)=> upStat===stat ? ' class="mm-move-up"' : '';
-    const awakenLine = awDef && mv.tier===3
-      ? `<div class="mm-move-awaken">✵ 覚醒強化　${awDef.icon} ${awDef.label} <b>${awakenBoostAmountText(awBoost)}</b></div>`
+    const cls = (stat)=> isUp(stat) ? ' class="mm-move-up"' : '';
+    /* 強化の帯は**付いている数だけ**出す(覚醒と秘伝の書で2行になることがある)。
+       効き目の%は段ごとの表から作るので、ここに数字を書かない。 */
+    const boostLines = isBoosted ? boosts.map(b=>{
+      const d = MOVE_BOOST_KINDS[b.kind];
+      return `<div class="mm-move-awaken mm-move-boost-${b.src}">${srcLabel[b.src]||''}　${d.icon} ${d.label} <b>${moveBoostAmountText(b.kind, b.src)}</b></div>`;
+    }).join('') : '';
+    const cardCls = isBoosted
+      ? (boosts.some(b=>b.src==='awaken') ? ' is-awakened' : '') + (boosts.some(b=>b.src==='hiden') ? ' is-hiden' : '')
       : '';
     return `
-    <div class="mm-move-card${awDef && mv.tier===3 ? ' is-awakened' : ''}">
+    <div class="mm-move-card${cardCls}">
       <div class="mm-move-tier-badge">TIER<br>${mv.tier}</div>
       <div class="mm-move-info">
         <div class="mm-move-name">${dispName}<span class="mm-move-icon">${auraIcon}</span></div>
-        ${awakenLine}
+        ${boostLines}
         <div class="mm-move-stats">
           <span${cls('dmg')}>威力 ${upTxt('dmg', plainDmg, dispDmg)}</span>
           <span>消費ガッツ ${mv.gutsCost}</span>
@@ -7974,7 +8172,7 @@ function buildMastermonMovesHtml(key, opts){
           <span${cls('speed')}>${isAoe?'範囲拡大速度':'弾速'} ${upTxt('speed', plainSpeed, speedVal)}</span>
           <span${cls('range')}>射程 ${upTxt('range', mvPlain?mvPlain.range:null, mv.range)}</span>
         </div>
-        <div class="mm-move-feature${upStat==='feature'?' mm-move-up':''}">${describeMoveFeatureText(mv)}</div>
+        <div class="mm-move-feature${isUp('feature')?' mm-move-up':''}">${describeMoveFeatureText(mv)}</div>
       </div>
     </div>`;
   }).join('');
@@ -8020,14 +8218,18 @@ function applyMastermonStatsToEntity(ent, mm){
   ent.mastermonDmgTakenMult = mults.dmgTakenMult;
   ent.mastermonGutsRegenMult = mults.gutsRegenMult;
   ent.mastermonCooldownMult = mults.cooldownMult;
-  /* 覚醒の強化。**マスモンをエンティティへ適用するこの1か所で載せる**ので、
+  /* 技の強化(覚醒 + 秘伝の書)。**マスモンをエンティティへ適用するこの1か所で載せる**ので、
      自分・味方bot・マルチの相手のどれも同じ経路で乗る(載せ忘れる場所を作らない)。
-     ・マルチで届いた情報には解決済みの awakenBoost が入っている(currentMastermonInfo が付ける)
-     ・手元のマスモン(ソロ・味方bot)は awaken の記録から、着ているスキンで解決する */
-  ent.awakenBoost = (mm.awakenBoost !== undefined)
-    ? (mm.awakenBoost || null)
-    : ((typeof awakenBoostForSkin==='function')
-        ? awakenBoostForSkin(mm, (typeof entitySkinId==='function') ? entitySkinId(ent) : null) : null);
+     ・マルチ/ゴーストで届いた写しには解決済みの moveBoosts が入っている(mastermonSnapshot)
+     ・古いバージョンから届いた写しには awakenBoost しか無いので、そのときはそれを使う
+     ・手元のマスモン(ソロ・味方bot)は記録から、着ているスキンで解決する */
+  const entSkin = (typeof entitySkinId==='function') ? entitySkinId(ent) : null;
+  if(Array.isArray(mm.moveBoosts))      ent.moveBoosts = mm.moveBoosts;
+  else if(mm.awakenBoost !== undefined) ent.moveBoosts = mm.awakenBoost ? [{ src:'awaken', kind:mm.awakenBoost }] : [];
+  else ent.moveBoosts = (typeof mastermonMoveBoosts==='function') ? mastermonMoveBoosts(mm, entSkin) : [];
+  // 古い読み手(1語で読む所)のために覚醒ぶんだけ残す。**正は moveBoosts。**
+  const awOnly = ent.moveBoosts.find(b=>b && b.src==='awaken');
+  ent.awakenBoost = awOnly ? awOnly.kind : null;
 }
 /* 試合中だけの写し。保存されているマスモンのオブジェクトをそのまま持つと、
    カードでステータスを書き換えたときに育成データまで変わってしまう。 */

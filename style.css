@@ -1198,7 +1198,12 @@
      文字サイズをここで分けると持ち方で大きさが変わってしまうので、狭いほうに合わせた
      11pxで固定する(向きで変えてよいのは配分などのレイアウトだけ) */
   .shop-npc-text{ font-size:11px; color:var(--ink); white-space:pre-line; line-height:1.4; }
-  .shop-main{ flex:1 1 auto; min-width:0; }
+  /* 【タブぶんは箱から引く】上にタブ行を足したので、リストの高さをそのぶん減らす。
+     減らさないと タブ + 62vh になって箱からあふれる。引く量はタブの実寸から作る
+     (--tap-pick が変わっても勝手に追従する。同じ数字を2か所に書かない)。 */
+  .shop-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; min-height:0; }
+  .shop-main .bag-list{ flex:1 1 auto; min-height:0;
+    max-height:calc(62 * var(--vh) - var(--tap-pick) - 7px); }
   /* 論理幅が狭いときの調整。@media(max-width)は強制横向きで「実画面(縦向き)の幅」に
      反応してしまうため、world.jsが論理幅で付ける html.narrow-screen を使う */
   html.narrow-screen .shop-npc{ flex-basis:30%; }
@@ -1208,9 +1213,14 @@
     display:flex; flex-direction:column; gap:8px; text-align:left;
   }
   /* ショップは2列表示 */
-  .bag-list.shop-list-2col{ display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start; }
+  /* 【1fr ではなく minmax(0,1fr)】`1fr` は下限が min-content なので、
+     商品名や説明の長い行があると列がその幅まで広がり、枠の外へはみ出す
+     (縦持ちのショップで実際に起きていた。2026-08-15に実測して判明)。
+     0を下限にすると列は必ず枠に収まり、あふれる側は各文字要素が自分で「…」に切る。 */
+  .bag-list.shop-list-2col{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:8px; align-content:start; }
   .bag-item{
-    display:flex; flex-direction:column; gap:8px; padding:8px 10px;
+    display:flex; flex-direction:column; gap:8px; padding:8px 10px; min-width:0;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px;
   }
   /* ショップ商品: 上段(アイコン+説明/所持数)、下段に購入ボタン */
@@ -1227,6 +1237,10 @@
   .bag-header .bag-title{ margin:0; }
   /* バッグのアイテム/スキン タブ */
   .bag-tabs{ display:flex; gap:8px; justify-content:center; }
+  /* ショップのタブ(ゴールドの棚 / モン晶の交換所)。**縮まないようにする**
+     (flexの中で潰れると文字が消える。ロビーの出撃ボタンで実際に起きた) */
+  .shop-tabs{ flex-shrink:0; margin-bottom:7px; }
+  .shop-tab{ min-height:var(--tap-pick); flex-shrink:0; padding:5px 16px; }
   /* 個数選択ゲージ(音量設定のゲージを流用)。−+ボタンを小さめにしてスライダーを長く */
   .bag-qty-row{ margin:8px 0 0; gap:8px; }
   .bag-qty-row .bag-qty-step{ width:32px; height:32px; font-size:18px; }
@@ -3496,6 +3510,24 @@
     background:linear-gradient(90deg, rgba(120,70,220,0.42), rgba(60,140,220,0.42));
     border:1px solid rgba(178,140,255,0.7); }
   .mm-move-awaken b{ color:#ffe07a; margin-left:3px; }
+  /* 秘伝の書。覚醒(紫)と並ぶことがあるので、色で出どころを見分けられるようにする(こちらは琥珀)。
+     **帯は複数並ぶ**ので、横に流さず1行ずつ積む(幅の狭い端末で押し出されないように)。 */
+  .mm-move-awaken{ margin-right:4px; }
+  .mm-move-boost-hiden{ color:#ffe9c2;
+    background:linear-gradient(90deg, rgba(190,120,40,0.42), rgba(220,170,60,0.34));
+    border-color:rgba(255,196,96,0.7); }
+  .mm-move-card.is-hiden{ border-color:rgba(255,196,96,0.7);
+    box-shadow:inset 0 0 0 1px rgba(255,196,96,0.22); }
+  /* 両方付いている個体。枠は覚醒の紫を残しつつ、内側の光に琥珀を足して2つ付いていると分かるようにする */
+  .mm-move-card.is-awakened.is-hiden{ border-color:rgba(210,160,255,0.8);
+    box-shadow:inset 0 0 0 1px rgba(255,196,96,0.3), 0 0 10px -4px rgba(255,196,96,0.5); }
+  /* マスモンのメニューに並ぶ秘伝の書ボタン */
+  .mm-menu-btn-hiden{
+    border-color:rgba(255,196,96,0.7);
+    background:linear-gradient(120deg, rgba(255,196,96,0.18), rgba(190,120,40,0.14));
+    box-shadow:0 0 12px -4px rgba(255,196,96,0.6);
+  }
+  .mm-menu-btn-hiden .mm-menu-btn-label{ color:#ffe9c2; }
   .mm-move-stats span.mm-move-up, .mm-move-feature.mm-move-up{ color:#e6d8ff; font-weight:800; }
   .mm-move-was{ color:var(--ink-dim); font-weight:400; text-decoration:line-through; }
   .mm-move-arrow{ color:#b28cff; margin:0 2px; font-weight:400; }
