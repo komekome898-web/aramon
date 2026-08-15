@@ -5655,7 +5655,91 @@ function render(){
   safeDraw(drawZoneCompass);
   safeDraw(drawArenaScoreHud);   // アリーナ: 両チームの生存数と残り時間(アリーナ以外では何も描かない)
   if(introState.active) safeDraw(drawSummonCountdown);
+  /* 技エフェクトのWebGL層(fx_gl.js)。2Dの技の芯を描き終えたあとに、粒・軌跡・
+     地面の輪を加算で重ねる。**2Dの上・ミニマップとHUDの下**。
+     この層が無くても技は成立する(芯は2D側が描いている)ので、
+     初期化に失敗しても何も足さないだけで済む。                         */
+  safeDraw(renderFxGlLayer);
   safeDraw(renderMinimap);
+}
+/* WebGL VFX層を1フレーム進めて描く。時間は実時間(前フレームからの経過)で進める:
+   試合が止まっている間もエフェクトは自然に減衰してほしいため。       */
+let _fxGlPrevMs = 0;
+function renderFxGlLayer(){
+  const fx = window.__aramonFxGl;
+  if(!fx) return;
+  /* fx_gl.js はESモジュールなので、試合開始(applyFxGlLayer)より後に読み込みが
+     終わることがある。その場合ここで有効化する。**この保険が無いと、通信が遅い
+     端末でだけ技のエフェクトが出ない**という再現しにくい不具合になる。      */
+  if(!fx.isActive() && !fx.setActive(true)) return;
+  const now = performance.now();
+  const dt = _fxGlPrevMs ? (now - _fxGlPrevMs)/1000 : 0.016;
+  _fxGlPrevMs = now;
+  fx.begin(dt);
+  fxGlFeed(fx, dt);
+  fx.render();
+}
+
+/* =====================================================================
+   WebGL VFX層への発注(全技共通の土台)
+   ・技ごとの作り込みはこの下の FX_GL_STYLE で分ける。**表に1行足せば効く**
+     ようにしてあるので、技ごとに if を増やさない。
+   ・色は技の色(auraTintを優先)から作る。**決め打ちしない。**
+   ・ここが無くても技は成立する(芯は2Dが描いている)。この層は足すだけ。
+===================================================================== */
+// '#rrggbb' → [0..1, 0..1, 0..1]。技の色はすべてこの形で持っている
+function fxGlColor(hex){
+  const h = (typeof hex === 'string' && hex[0] === '#') ? hex : '#ffffff';
+  return [parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255, parseInt(h.slice(5,7),16)/255];
+}
+// 弾・範囲技の色。SSRスキンの色替え(auraTint)が乗っていればそちらを優先する
+function fxGlTint(o){ return fxGlColor(o.auraTint || o.color); }
+
+const _fxSeenAe = new Set();     // 発生時に1回だけ出すもの(輪・初弾のバースト)の既出判定
+let _fxEmberAcc = 0;             // 火の粉の発生を実時間で間引くための積算
+
+function fxGlFeed(fx, dt){
+  // ---- 飛んでいる弾: リボンの軌跡 + 尾を引く火の粉(採点表3・4・10) ----
+  for(const p of projectiles){
+    const c = fxGlTint(p);
+    const z = (p.z || 0) + 14;
+    fx.trail('p'+p.id, p.x, p.y, z, { color:c, width: Math.max(10, (p.hitR||10)*1.7), bright:1.15 });
+  }
+  _fxEmberAcc += dt;
+  if(_fxEmberAcc >= 1/45){       // 秒45回まで。端末が遅いフレームでは自動的に減る
+    _fxEmberAcc = 0;
+    for(const p of projectiles){
+      const c = fxGlTint(p);
+      fx.emit({
+        x:p.x, y:p.y, z:(p.z||0)+14,
+        vx:-(p.vx||0)*0.12 + (Math.random()-0.5)*40,
+        vy:-(p.vy||0)*0.12 + (Math.random()-0.5)*40,
+        vz: 20 + Math.random()*50,
+        az: -40,
+        r:c[0], g:c[1], b:c[2], bright:1.0,
+        life: 0.28 + Math.random()*0.22,
+        size0: Math.max(5, (p.hitR||10)*0.55), size1: 0.5,
+        turb: 9, turbFreq: 1.6, spin: 3,
+      });
+    }
+  }
+  // ---- 範囲技: 発生の瞬間に地面の輪と立ち上がりのバースト(採点表4・5) ----
+  for(const ae of areaEffects){
+    if(_fxSeenAe.has(ae.id)) continue;
+    _fxSeenAe.add(ae.id);
+    const c = fxGlTint(ae);
+    const reach = ae.range || 200;
+    fx.ring({ x:ae.x, y:ae.y, r0: 12, r1: Math.min(reach, 420), life: 0.55,
+              color:c, width: 26, bright: 1.25 });
+    fx.burst({ x:ae.x, y:ae.y, z: 8, count: 26, speed: 210, jitter: 26, jitterZ: 30,
+               elev: 0.55, elevSpread: 0.9, r:c[0], g:c[1], b:c[2], bright:1.2,
+               life: 0.5, size0: 16, size1: 1, az:-180, turb: 16, turbFreq: 1.2, spin: 4 });
+  }
+  // 消えた範囲技のidは捨てる(Setが試合中ずっと膨らむのを防ぐ)
+  if(_fxSeenAe.size > 256){
+    const alive = new Set(areaEffects.map(a=>a.id));
+    for(const id of _fxSeenAe) if(!alive.has(id)) _fxSeenAe.delete(id);
+  }
 }
 // 召喚演出の各フェーズ進行度(elapsed秒基準)
 function summonPhases(){

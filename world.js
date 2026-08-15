@@ -196,6 +196,7 @@ function resize(){
     // ESモジュール(real3d.js)からはトップレベルのletが見えないのでwindowに出す
     window.viewW = viewW; window.viewH = viewH;
     if(window.__aramonReal3D) window.__aramonReal3D.resize();
+    if(window.__aramonFxGl) window.__aramonFxGl.resize();
     // HUD配置(割合保存)を新しいサイズへ再反映。ただし編集中は触らない。
     if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
     // リザルトを開いたまま向きが変わると縦幅が変わるので、収まり具合を測り直す

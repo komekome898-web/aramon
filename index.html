@@ -31,6 +31,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <!-- リアルマップ(テスト)専用のWebGLキャンバス。2Dキャンバスの下に敷き、地面だけを立体で描く -->
 <canvas id="glCanvas" class="hidden"></canvas>
 <canvas id="gameCanvas"></canvas>
+<!-- 技エフェクトのWebGL層(fx_gl.js)。2Dキャンバスの「上」に重ね、粒・軌跡・地面の輪を
+     加算で足す。2D側の技の芯は残るので、この層が動かない端末でも技は消えない -->
+<canvas id="fxCanvas" class="hidden"></canvas>
 
 <!-- START SCREEN -->
 <!-- TITLE SCREEN(起動直後。読み込みが終わるとTAP STARTでロビーへ) -->
@@ -1571,6 +1574,8 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <script src="ui.js"></script>
 <!-- リアルマップ(テスト)のWebGL描画。ESモジュールなので window.__aramonReal3D 経由で使う -->
 <script type="module" src="real3d.js"></script>
+<!-- 技エフェクトのWebGL層。全マップで動く(real3d.jsと違いリアルマップ限定ではない) -->
+<script type="module" src="fx_gl.js"></script>
 <!-- トランスポート抽象化(rtdb/WebRTC)。network.jsが参照するのでその前に置く。
      __aramon*のラップはDOMContentLoaded(=firebase.jsモジュール実行後)で行うため、
      firebase.jsのタグ位置より後である必要はない -->
