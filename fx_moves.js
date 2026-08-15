@@ -91,9 +91,20 @@ const FX_MOVES = {
                  life:1.1, size0:30, size1:8, az:-90, turb:26, turbFreq:0.7, spin:1.5 });
     },
     fly(fx, p, c, dt){
-      const hot = fxHot(c, 0.5);
+      /* 帯は**技の色そのもの**を渡す。白へ寄せると加算の重なりで飽和して
+         炎に見えなくなる(白いサーチライトになった)。白熱は whiten を
+         小さく取って先端だけに残す。 */
       fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-               { color:hot, width: Math.max(14, (p.hitR||10)*2.2), bright:1.4 });
+               { color:c, width: Math.max(12, (p.hitR||10)*1.8), bright:1.1, whiten:0.3 });
+      // 尾を引く火の粉。帯だけだと「棒」に見えるので、必ず粒を混ぜて輪郭を崩す
+      const n = Math.min(dt||0, 0.05) * 40;
+      for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
+        fx.emit({ x:p.x+(Math.random()-0.5)*16, y:p.y+(Math.random()-0.5)*16, z:(p.z||0)+14+(Math.random()-0.5)*16,
+                  vx:-(p.vx||0)*0.14, vy:-(p.vy||0)*0.14, vz:30+Math.random()*70,
+                  az:20, r:c[0], g:c[1], b:c[2], bright:1.05,
+                  life:0.35+Math.random()*0.3, size0:7+Math.random()*7, size1:1,
+                  turb:18, turbFreq:1.5, spin:3 });
+      }
     },
     impact(fx, p, c){
       const hot = fxHot(c, 0.7), soot = fxDim(c, 0.3);

@@ -63,6 +63,8 @@ const CROP = (()=>{
 
 /* 撮る技。element:tier の並び。省略時は全属性の全tier。 */
 const MOVES = opt('moves', '');
+/* --view front|side。side は弾道と直角から撮る。軌跡と弾速の判定に要る */
+const VIEW = opt('view', 'front');
 
 fs.mkdirSync(OUT, { recursive:true });
 
@@ -110,6 +112,13 @@ const DRIVER = `(function(){
   /* 試合を1つ立ち上げ、撮影に邪魔な要素(他のbot・安置ダメージ・HUD)を外す。
      プレイヤーと的1体だけの、毎回同じ舞台を作る。                        */
   api.setup = function(o){
+    /* 【最重要】ゲーム自身のフレームループを止める。
+       network.js の loop() が requestAnimationFrame で回り続けており、
+       こちらが step()/draw() で作った状態を**次のフレームが即座に上書きする**。
+       これを止めないと、指定した時刻のコマも、置き直したカメラも撮れない
+       (真横からの撮影が効かず、正面のままだったのはこれが原因)。
+       rAF を無効化すると loop() が自分を再登録できなくなり、次のフレームで止まる。 */
+    window.requestAnimationFrame = function(){ return 0; };
     seedRandom(o.seed);
     muteAudio();
     game.selectedElement = o.element || 'fire';
@@ -143,15 +152,31 @@ const DRIVER = `(function(){
     }
     lootItems.length = 0; projectiles.length = 0; areaEffects.length = 0; particles.length = 0;
     matchTime = 0;
-    // カメラを技が正面に見える位置へ固定する
-    camState.yaw = 0;
+    /* カメラの向き。
+       front = 弾を追う向き(実際の遊びの見え方)。
+       side  = 弾道と直角(**軌跡・尾・弾速はこれでしか判定できない**。
+               正面から撮ると帯が奥行きに潰れて、太さの違いしか見えない)。
+       撃つ向き(facingAngle)は常に +x のまま。カメラだけを回す。            */
+    camState.yaw = (o.view === 'side') ? Math.PI/2 : 0;
     camState.pitch = (o.pitch==null) ? 0.16 : o.pitch;
     if(typeof updateCamera === 'function') updateCamera();
     camPos.x = me.x - Math.cos(camState.yaw)*camState.distBehind;
     camPos.y = me.y - Math.sin(camState.yaw)*camState.distBehind;
     camPos.z = me.z + camState.height;
+    // 真横から撮るときは、弾道の中ほどが画面の中央に来るよう後ろへ下げる
+    if(o.view === 'side'){
+      const back = (o.targetDist||760)*0.9;
+      camPos.x = me.x + (o.targetDist||760)*0.45;
+      camPos.y = me.y - back;
+      camPos.z = me.z + camState.height + 60;
+      api._sideCam = { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
+    } else {
+      api._sideCam = null;
+    }
     api._me = me; api._tgt = tgt;
-    return { ok:true, x:me.x, y:me.y, map:game.activeMapKey, el:me.element };
+    return { ok:true, x:me.x, y:me.y, map:game.activeMapKey, el:me.element,
+             view:o.view||'front', yaw:camState.yaw,
+             cam:{ x:Math.round(camPos.x), y:Math.round(camPos.y), z:Math.round(camPos.z) } };
   };
   /* 指定tierの技を1発撃つ。撃つのは「プレイヤー本人が撃つ」経路そのもの。 */
   api.fire = function(tier){
@@ -175,7 +200,17 @@ const DRIVER = `(function(){
     }
     return matchTime;
   };
-  api.draw = function(){ render(); return { proj: projectiles.length, ae: areaEffects.length, part: particles.length }; };
+  api.draw = function(){
+    // update() の updateCamera() がカメラをプレイヤーの後ろへ戻すので、
+    // 真横から撮るときは描く直前に置き直す(そうしないと1コマ目以外が正面になる)
+    const sc = api._sideCam;
+    if(sc){ camPos.x=sc.x; camPos.y=sc.y; camPos.z=sc.z; camState.yaw=sc.yaw; camState.pitch=sc.pitch; }
+    render();
+    const pp = (typeof project==='function') ? project(player.x, player.y, player.z||0) : null;
+    return { proj: projectiles.length, ae: areaEffects.length, part: particles.length,
+             yaw:+camState.yaw.toFixed(3), side: !!sc,
+             playerPx: pp ? [Math.round(pp.x), Math.round(pp.y)] : null,
+             cam:[Math.round(camPos.x), Math.round(camPos.y)], vw:viewW, vh:viewH }; };
   /* 1フレームの描画にかかる時間を測る。**エフェクトが一番濃い瞬間で測る**
      (何も出ていない時間を混ぜると平均が下がって実態を隠す)。         */
   api.bench = function(n, fxOff){
@@ -271,16 +306,25 @@ for(const [el, tiers] of byElement){
   for(const tier of tiers){
     try {
       await freshPage();
-      const setup = await page.evaluate(([e,m,s])=> window.__fx.setup({ element:e, mapKey:m, seed:s }), [el, MAP, SEED]);
+      const setup = await page.evaluate(([e,m,s,v])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v }),
+                                        [el, MAP, SEED, VIEW]);
       if(!setup || !setup.ok){ errors.push(`${el}:t${tier} setup失敗`); continue; }
+      report.setups = report.setups || {};
+      report.setups[`${el}_t${tier}`] = setup;
       await page.evaluate(()=> window.__fx.hideHud());
       if(flag('nofx')) await page.evaluate(()=> window.__fx.setFx(false));
+      /* 撃つ前に少しだけ回す。試合が始まった直後は画面が暗い(開始のフェード)ので、
+         そのまま撮ると最初のコマだけ暗くなり、技の明るさを比べられない。 */
+      await page.evaluate(()=> window.__fx.step(0.35));
       const info = await page.evaluate((t)=> window.__fx.fire(t), tier);
       let prev = 0;
       for(const at of FRAMES){
         await page.evaluate(([dtSec])=> window.__fx.step(dtSec), [Math.max(0, at - prev)]);
         prev = at;
         const counts = await page.evaluate(()=> window.__fx.draw());
+        /* 描いた内容が画面へ出るのを待つ。ゲームのrAFループを止めてあるので、
+           待たないと**1コマ目だけ真っ黒**になる(合成が間に合わない)。 */
+        await page.waitForTimeout(40);
         const file = path.join(OUT, `${el}_t${tier}_${String(at).replace('.','p')}.png`);
         const clip = CROP
           ? { x: Math.max(0, (W-CROP.w)/2|0), y: Math.max(0, (H-CROP.h)/2|0),

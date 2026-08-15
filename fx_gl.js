@@ -49,7 +49,7 @@ function additiveBlend(mat){
 
 /* ---- 上限。1ドローコールに収める数。iPhoneでの実測に合わせて動かす ---- */
 const MAX_PARTICLES = 4096;   // 同時に生きられる粒
-const MAX_RIBBONS   = 24;     // 同時に引ける軌跡
+const MAX_RIBBONS   = 48;     // 同時に引ける軌跡(24では4色の球+乱戦で奪い合った)
 const RIBBON_SEGS   = 20;     // 軌跡1本の節の数(太→細)
 const MAX_DECALS    = 32;     // 地面に貼る輪
 
@@ -208,7 +208,9 @@ function emitOne(o){
   a.aAcc.array[i3]    = o.ax||0; a.aAcc.array[i3+1] = o.ay||0; a.aAcc.array[i3+2] = (o.az==null? -260 : o.az);
   a.aColor.array[i4]  = o.r;   a.aColor.array[i4+1] = o.g;   a.aColor.array[i4+2] = o.b;
   a.aColor.array[i4+3]= (o.bright==null ? 1 : o.bright);
-  a.aTime.array[i4]   = clock0;
+  // delay を足すと「その秒数だけ待ってから生まれる」。シェーダは age<0 の粒を描かないので、
+  // 吸い込んでから弾ける、落ちてから砕ける、のような時間差を1回の呼び出しで書ける
+  a.aTime.array[i4]   = clock0 + (o.delay || 0);
   a.aTime.array[i4+1] = o.life || 0.6;
   a.aTime.array[i4+2] = o.size0 || 8;
   a.aTime.array[i4+3] = (o.size1==null ? (o.size0||8)*0.25 : o.size1);
@@ -265,6 +267,11 @@ function trailPoint(key, x, y, z, o){
   lane.color = o.color || [1,1,1];
   lane.width = o.width || 12;
   lane.bright = o.bright==null ? 1 : o.bright;
+  /* 先端をどれだけ白へ寄せるか。0で色そのまま、1で真っ白。
+     【なぜ指定させるか】ここを 0.8 固定にしていたため、**どんな色を渡しても
+     軌跡の先端3割が白くなり、全属性の弾が「白い棒」に見えていた。**
+     属性側は色の粒を余計に撒いて相殺していた(粒の無駄遣い)。 */
+  lane.whiten = o.whiten==null ? 0.55 : o.whiten;
   lane.pts.push(x, y, z);
   if(lane.pts.length > RIBBON_SEGS*3) lane.pts.splice(0, lane.pts.length - RIBBON_SEGS*3);
 }
@@ -298,16 +305,20 @@ function updateRibbonGeometry(camWorld){
       pos[v+6]=_tmpB.x + side.x*w1; pos[v+7]=_tmpB.y + side.y*w1; pos[v+8]=_tmpB.z + side.z*w1;
       pos[v+9]=_tmpB.x - side.x*w1; pos[v+10]=_tmpB.y - side.y*w1; pos[v+11]=_tmpB.z - side.z*w1;
       const c = q*4*4;
-      const a0 = lane.bright * (s/(n-1)) * 0.55;
-      const a1 = lane.bright * ((s+1)/(n-1)) * 0.55;
+      /* 濃さ。**0.55は濃すぎた。** 帯は節が重なって加算されるので、1枚を濃くすると
+         先端が必ず白へ飽和し、どんな色を渡しても「白いサーチライト」になる
+         (実際に fire_t1 でそうなった)。1枚を薄くして、重なりで濃さを出す。 */
+      const a0 = lane.bright * (s/(n-1)) * 0.30;
+      const a1 = lane.bright * ((s+1)/(n-1)) * 0.30;
       // 先端(新しい節)ほど白熱へ寄せる = 芯が明るく見える
       const hot0 = Math.pow(s/(n-1), 3), hot1 = Math.pow((s+1)/(n-1), 3);
+      const wh = lane.whiten;
       for(let k=0;k<4;k++){
         const hot = (k===0||k===1) ? hot0 : hot1;
         const a   = (k===0||k===1) ? a0   : a1;
-        col[c+k*4+0] = (lane.color[0] + (1-lane.color[0])*hot*0.8) * a;
-        col[c+k*4+1] = (lane.color[1] + (1-lane.color[1])*hot*0.8) * a;
-        col[c+k*4+2] = (lane.color[2] + (1-lane.color[2])*hot*0.8) * a;
+        col[c+k*4+0] = (lane.color[0] + (1-lane.color[0])*hot*wh) * a;
+        col[c+k*4+1] = (lane.color[1] + (1-lane.color[1])*hot*wh) * a;
+        col[c+k*4+2] = (lane.color[2] + (1-lane.color[2])*hot*wh) * a;
         col[c+k*4+3] = 0;   // ページ側で加算合成(冒頭の説明を参照)
       }
     }
@@ -485,11 +496,17 @@ const api = {
         life:(o.life||0.6)*(0.6+Math.random()*0.8),
         size0:(o.size0||10)*(0.7+Math.random()*0.6), size1:o.size1,
         turb:o.turb||0, turbFreq:o.turbFreq||1, spin:o.spin||0,
+        delay:o.delay||0,
       });
     }
   },
   trail: trailPoint,
   ring: addRing,
+  /* 画面側の演出。実体は render.js(カメラそのものを揺らすので2Dの芯とWebGL層が
+     必ず一緒に動く)。ここは技側から呼べる窓口を出すだけ。
+     amount は 0..1、x,y を渡すとプレイヤーからの距離で自動的に弱まる。 */
+  shake(amount, x, y){ if(typeof window.fxPunch === 'function') window.fxPunch(amount, x, y); },
+  flash(amount){ if(typeof window.fxFlashAdd === 'function') window.fxFlashAdd(amount); },
 
   /* 2Dの描画が終わったあとに1回。カメラは2Dの project() と同じ値から作る。 */
   render(){

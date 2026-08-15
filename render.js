@@ -5713,6 +5713,8 @@ function fxPunch(amount, x, y){
   _fxPunchT = FX_PUNCH_MAX_SEC;
   _fxFlash  = Math.max(_fxFlash, a*0.35);
 }
+// 技側(fx_moves.js)から fx.flash() で呼ぶ。揺らさずに明るさだけ返したいとき用
+function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(1, amount))*0.35); }
 // 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
 function fxPunchApply(dt){
   if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*4); return; }
@@ -5785,7 +5787,10 @@ function fxGlFeed(fx, dt){
     const st = fxGlStyleFor(p); if(!st) break;
     const c = fxGlTint(p);
     st.fly(fx, p, c, dt);
-    _fxProjSeen.set(p.id, { x:p.x, y:p.y, z:p.z||0, c, splash:p.splash, hitR:p.hitR, ownerId:p.ownerId });
+    /* 着弾で使うぶんを控える。**進行方向と projStyle も渡す**:
+       無いと「弾の来た向きへ飛び散る破片」と tier別の作り分けができない(属性班の指摘)。 */
+    _fxProjSeen.set(p.id, { x:p.x, y:p.y, z:p.z||0, c, splash:p.splash, hitR:p.hitR,
+                            ownerId:p.ownerId, vx:p.vx||0, vy:p.vy||0, projStyle:p.projStyle||null });
   }
   // ---- 消えた弾 = 着弾。combat.js を触らずに「最後に見えた位置」で1回出す ----
   if(_fxProjSeen.size){
