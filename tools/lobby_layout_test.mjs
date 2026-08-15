@@ -9,11 +9,14 @@
    確かめること(発注者が出した3条件と1対1):
      1. 見切れない  … ロビーの要素が1つも #appRoot の外へ出ない
      2. 押しやすい  … 操作できる物はすべて --tap-* の下限以上の実寸で描かれる
-     2b.文字が切れない… ボタンの中身がボタンの箱からはみ出していない(縁で切られていない)
+     2b.文字が読める … 画面の中の文字が1つも「縦に切れる/横に切れる/小さすぎる」に
+                       なっていない(ボタン単位ではなく文字を持つ要素すべてを見る)
      3. 重ならない  … 同じ列の中で操作できる物どうしが重ならない
      4. 端末と持ち方… 縦持ち(強制横向き)/実横持ち/タブレットの計7通り
-     5. **将来ボタンが増えても壊れない** … 左メニューへ9個を注入した「増えた後」でも
-        1〜3 が成り立つ(縦には伸びず、列が横へ増えるのが正しい姿)。
+     5. **これから起きうることを実際に起こす** … ボタンを9個足した状態と、
+        画面の文字をすべて長くした状態でも 1〜3 が成り立つ。
+        箱の大きさが中身で決まっていたらここで必ず壊れるので、
+        「箱が先・中身は箱から」の作りになっていることの証明になる。
         ロビーはスクロールさせないので、**どの枠もスクロールが出ていないこと**も見る。 */
 import fs from 'fs';
 import http from 'http';
@@ -73,6 +76,7 @@ const MODES = [
 
 const failures = [];
 const notes = [];
+const STRESS_N = 3;   // 素の状態 / ボタン+9個 / 文字を長く
 
 for(const dev of DEVICES){
   const page = await browser.newPage({
@@ -133,28 +137,66 @@ for(const dev of DEVICES){
         const short = Math.min(r.width, r.height);
         if(short + 0.5 < floor) tooSmall.push({ id: el.id || el.className.toString().slice(0,40), got: Math.round(short*10)/10, floor });
       }
-      /* 2b. ボタンの中で文字が切れていないか。
-            ボタンは中身がはみ出すと縁で切る。**外へ出ていないのに読めない**状態は
-            1(見切れ)でも2(大きさ)でも捕まらず、実機で「ミッション」「ガチャ」の
-            文字が半分消えた状態を出してしまった(2026-08-15)。ここで塞ぐ。
-
-            見るのは「並の要素として流れている中身」だけ。角の通知ドットや「NEW」の
-            吹き出しは**わざと枠の外へ出している飾り**なので数えない(position:absolute)。
-            横は各ラベルが「…」で切る作りなので、縦のはみ出しとラベルの位置で見る。 */
+      /* 2b. **画面の中の文字が1つでも読めなくなっていないか。**
+            ボタン単位の当て物ではなく、ロビーの中で「自分で文字を持っている要素」を
+            すべて見る。読めなくなり方は次の3つしかない:
+              ・縦に切れる  … 箱より中身が高い(overflow:hidden で上下が消える)
+              ・横に切れる  … 「…」を出さない作りなのに幅が足りない
+              ・小さすぎる  … 実寸の字が読める大きさを割っている
+            この3つは実機で起きた不具合(ラベルが半分消える/吹き出しが潰れる)を
+            そのまま言い表したもので、どこに何を足しても同じ基準で効く。 */
       const clipped = [];
-      for(const el of controls){
-        /* scrollHeight は使わない。飾りの擬似要素(#joinBtn::after の光沢は
-           bottom:-10% ではみ出す)まで数えてしまい、文字は無事なのに引っかかる。
-           **実体のある中身(並の要素)の位置だけを見る。** */
-        const flowKids = [...el.children].filter(c=> vis(c) && getComputedStyle(c).position!=='absolute');
-        const br = el.getBoundingClientRect();
-        let hit = null;
-        for(const t of flowKids){
-          const tr = t.getBoundingClientRect();
-          const out = Math.max(br.top-tr.top, tr.bottom-br.bottom, br.left-tr.left, tr.right-br.right);
-          if(out > 1.5){ hit = { id:(el.id||'?')+' > '+(t.className.toString().slice(0,22)||t.tagName), out:Math.round(out) }; break; }
+      const MIN_FONT = 6.5;   // これ未満は読めない
+      const hasOwnText = (el)=> [...el.childNodes].some(n=> n.nodeType===3 && n.textContent.trim());
+      /* 測るのは**文字そのもの**(Range で実際の文字の矩形を取る)。
+         scrollWidth/scrollHeight は絶対配置の飾り(角のNEWバッジ等)や擬似要素まで
+         数えてしまい、文字は無事なのに引っかかる/その逆も起きるので使わない。 */
+      const textRectOf = (el)=>{
+        let box = null;
+        for(const n of el.childNodes){
+          if(n.nodeType!==3 || !n.textContent.trim()) continue;
+          const rg = document.createRange(); rg.selectNodeContents(n);
+          const r = rg.getBoundingClientRect();
+          if(!(r.width>0 && r.height>0)) continue;
+          box = box ? { top:Math.min(box.top,r.top), left:Math.min(box.left,r.left),
+                        bottom:Math.max(box.bottom,r.bottom), right:Math.max(box.right,r.right) } : r;
         }
-        if(hit) clipped.push(hit);
+        return box;
+      };
+      for(const el of screenEl.querySelectorAll('*')){
+        if(!vis(el) || !hasOwnText(el)) continue;
+        const s2 = getComputedStyle(el);
+        const id = el.id || el.className.toString().trim().split(/\s+/)[0] || el.tagName;
+        const fs2 = parseFloat(s2.fontSize) || 0;
+        if(fs2 < MIN_FONT){ clipped.push({ id, why:`字が${fs2.toFixed(1)}pxで小さすぎる` }); continue; }
+        const t = textRectOf(el);
+        if(!t) continue;
+        // 文字を切る箱(overflow が visible でない祖先)まで遡って、その中に収まっているか見る
+        let box = el;
+        while(box && box!==screenEl){
+          const bs = getComputedStyle(box);
+          if(bs.overflowY!=='visible' || bs.overflowX!=='visible') break;
+          box = box.parentElement;
+        }
+        if(!box || box===screenEl) continue;   // どこにも切る箱が無いなら切れようがない
+        const bs = getComputedStyle(box);
+        const br2 = box.getBoundingClientRect();
+        const cut = {
+          top:    br2.top    + parseFloat(bs.borderTopWidth)    - t.top,
+          bottom: t.bottom - (br2.bottom - parseFloat(bs.borderBottomWidth)),
+          left:   br2.left   + parseFloat(bs.borderLeftWidth)   - t.left,
+          right:  t.right  - (br2.right  - parseFloat(bs.borderRightWidth)),
+        };
+        // 「…」を出す作りなら横のあふれは想定内(切れても読める形で終わる)
+        const ellipsis = s2.textOverflow==='ellipsis' && s2.whiteSpace==='nowrap';
+        /* 【強制横向きでは画面の縦横が入れ替わる】#appRoot が90度回っているので、
+           画面座標の上下は**文字にとっての左右**になる。ここを取り違えると、
+           「…」で切るつもりの横のあふれを「縦に切れている」と誤って報告する。 */
+        const rot = document.documentElement.classList.contains('force-landscape');
+        const dy = rot ? Math.max(cut.left, cut.right) : Math.max(cut.top, cut.bottom);
+        const dx = rot ? Math.max(cut.top, cut.bottom) : Math.max(cut.left, cut.right);
+        if(dy > 1.5) clipped.push({ id, why:`縦に${dy.toFixed(1)}px切れる` });
+        else if(!ellipsis && dx > 1.5) clipped.push({ id, why:`横に${dx.toFixed(1)}px切れる` });
       }
       /* 3. 同じ親の中で押せる物どうしが重なっていないか */
       const byParent = new Map();
@@ -204,44 +246,62 @@ for(const dev of DEVICES){
       }
       return { outside, tooSmall, clipped, overlap, scrolls, menuCols: cols, order };
     };
-    /* 5. 「将来ボタンが増えたら」を実際に作る。左メニューへ9個を注入する
-          (右列は増やさないのが決まりなので注入しない)。 */
-    window.__injectFuture = ()=>{
-      const grid = document.getElementById('lobbyMenuGrid');
-      for(let i=0;i<9;i++){
-        const b = document.createElement('button');
-        b.className = 'lobby-side-btn'; b.dataset.future = '1';
-        b.innerHTML = `<span class="lobby-side-icon">🆕</span><span class="lobby-side-label">新機能${i+1}</span>`;
-        grid.appendChild(b);
+    /* 5. 「これから起きうること」を実際に起こして、それでも壊れないかを見る。
+          ・増やす … 左メニューへ9個(右列は増やさないのが決まりなので注入しない)
+          ・伸ばす … 画面の文字をすべて長くする。**箱の大きさが中身で決まっていたら
+                     ここで必ず壊れる**ので、直したはずの向き(箱→中身)の証明になる。 */
+    const LONG = 'とてもながいなまえのこうもく';
+    window.__injectStress = (kind)=>{
+      if(kind==='future'){
+        const grid = document.getElementById('lobbyMenuGrid');
+        for(let i=0;i<9;i++){
+          const b = document.createElement('button');
+          b.className = 'lobby-side-btn'; b.dataset.stress = '1';
+          b.innerHTML = `<span class="lobby-side-icon">🆕</span><span class="lobby-side-label">新機能${i+1}</span>`;
+          grid.appendChild(b);
+        }
+      } else if(kind==='long'){
+        for(const sel of ['.lobby-side-label','.lobby-pick-value','.lobby-pick-label',
+                          '.season-ssr-pop','.raid-gacha-pop','#lobbyMonsterName','#lobbyMonsterTapHint',
+                          '#pickMonsterNotice','.lobby-banner-name','.lrp-name','.lrp-next','.join-label']){
+          document.querySelectorAll(sel).forEach(el=>{
+            if(el.dataset.orig==null) el.dataset.orig = el.textContent;
+            el.textContent = LONG + LONG;
+          });
+        }
       }
     };
-    window.__removeFuture = ()=> document.querySelectorAll('[data-future]').forEach(e=>e.remove());
+    window.__clearStress = ()=>{
+      document.querySelectorAll('[data-stress]').forEach(e=>e.remove());
+      document.querySelectorAll('[data-orig]').forEach(e=>{ e.textContent = e.dataset.orig; delete e.dataset.orig; });
+    };
   });
 
+  const STRESS = [ {k:null, t:''}, {k:'future', t:' / 将来+9個'}, {k:'long', t:' / 文字を長く'} ];
   for(const m of MODES){
     for(const withMonster of [false, true]){
-      for(const future of [false, true]){
-        const label = `${dev.name} / ${m.name} / ${withMonster?'モンスター選択済':'未選択'}${future?' / 将来+9個':''}`;
+      for(const st of STRESS){
+        const label = `${dev.name} / ${m.name} / ${withMonster?'モンスター選択済':'未選択'}${st.t}`;
         const r = await page.evaluate(async (o)=>{
-          window.__removeFuture();
+          window.__clearStress();
           game.selectedElement = o.withMonster ? 'dullahan' : null;
           game.selectedMastermonKey = null;
           setLobbyMode(o.mode, { save:false });
           if(o.sub) setLobbySubMode(o.sub, { save:false });
           updatePlayButtonsEnabled();
           refreshLobby();
-          if(o.future){ window.__injectFuture(); updateLobbyMenuRows(); }
+          if(o.stress){ window.__injectStress(o.stress); updateLobbyMenuRows(); }
           await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
           return window.__auditLobby();
-        }, { mode:m.mode, sub:m.sub, withMonster, future });
+        }, { mode:m.mode, sub:m.sub, withMonster, stress: st.k });
 
         if(r.outside.length) failures.push(`[見切れ] ${label} — ${r.outside.slice(0,4).map(x=>`${x.id}が${x.over}px外`).join(' / ')}`);
         if(r.tooSmall.length) failures.push(`[小さすぎ] ${label} — ${r.tooSmall.slice(0,4).map(x=>`${x.id} ${x.got}px < ${x.floor}px`).join(' / ')}`);
-        if(r.clipped.length) failures.push(`[文字が切れる] ${label} — ${r.clipped.slice(0,4).map(x=>`${x.id}${` が${x.out}px外`}`).join(' / ')}`);
+        if(r.clipped.length) failures.push(`[文字が切れる] ${label} — ${r.clipped.slice(0,4).map(x=>`${x.id}${`(${x.why})`}`).join(' / ')}`);
         if(r.overlap.length) failures.push(`[重なり] ${label} — ${r.overlap.slice(0,3).map(x=>`${x.a}×${x.b} ${x.px}px`).join(' / ')}`);
         if(r.order && r.order.length) failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
         if(r.scrolls.length) failures.push(`[スクロール発生] ${label} — ${r.scrolls.map(x=>`${x.id}が+${x.d}px`).join(' / ')}`);
-        if(future) notes.push(`${label}: メニューは${r.menuCols}列に増えて縦は伸びず`);
+        if(st.k) notes.push(`${label}: メニュー${r.menuCols}列・縦は伸びず・切れ0`);
       }
     }
   }
@@ -252,7 +312,7 @@ for(const dev of DEVICES){
 await browser.close();
 server.close();
 
-console.log(`検査: ${DEVICES.length}端末 × ${MODES.length}モード × 選択有無2 × 将来2 = ${DEVICES.length*MODES.length*4}通り`);
+console.log(`検査: ${DEVICES.length}端末 × ${MODES.length}モード × 選択有無2 × 負荷${STRESS_N}種 = ${DEVICES.length*MODES.length*2*STRESS_N}通り`);
 if(notes.length){
   console.log('\n--- 「増えても壊れない」の確認(スクロールへ逃げた例) ---');
   for(const n of notes.slice(0,4)) console.log('  ' + n);
