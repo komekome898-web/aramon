@@ -1131,8 +1131,8 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div class="shop-main">
         <!-- ゴールドの棚とモン晶の交換所をタブで分ける(通貨が混ざると値段を読み違える) -->
         <div class="bag-tabs shop-tabs">
-          <button class="bag-tab shop-tab active" data-shoptab="gold">🪙 ショップ</button>
-          <button class="bag-tab shop-tab" data-shoptab="shard">💠 モン晶こうかん</button>
+          <button class="bag-tab shop-tab active" data-shoptab="gold">🪙 コインショップ</button>
+          <button class="bag-tab shop-tab" data-shoptab="shard">💠 モン晶交換</button>
         </div>
         <div id="shopList" class="bag-list shop-list-2col"></div>
         <div id="shopShardList" class="bag-list shop-list-2col hidden"></div>
@@ -1190,6 +1190,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       </div>
       <div class="gacha-top-right">
         <span id="gachaDia" class="gacha-dia">💎 0</span>
+        <span id="gachaShard" class="gacha-dia">💠 0</span>
         <button id="gachaRatesBtn" class="gacha-rates-btn">提供割合</button>
         <button id="closeGachaBtn" class="gacha-close-btn">✕</button>
       </div>

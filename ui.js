@@ -2365,6 +2365,13 @@ const RARITY_RANK = { N:0, R:1, SR:2, SSR:3 };
 function updateGachaWallet(){
   const w = loadWallet();
   document.getElementById('gachaDia').textContent = `💎 ${w.dia}`;
+  /* モン晶。**ロビーのヘッダーと違って0個でも出す。**
+     ロビーで隠しているのは「まだ関係ない人にまで3つ目を並べると名前と段位が押し出される」から。
+     ガチャは被りでモン晶が手に入るまさにその画面なので、0から増える瞬間が見えたほうがよい
+     (何も無いところへいきなり湧いて出るより分かる)。
+     この関数は開いたときと引いたあとの両方で呼ばれるので、増えた直後にその場で数字が動く。 */
+  const shardEl = document.getElementById('gachaShard');
+  if(shardEl) shardEl.textContent = `${SHARD_ICON} ${w.shard}`;
 }
 function rarityCssColor(rarity, now){
   if(rarity==='SSR'){ const h=((now||0)*0.12)%360; return `hsl(${h},90%,63%)`; }
