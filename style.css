@@ -3318,6 +3318,12 @@
     box-shadow:0 0 12px -3px rgba(255,206,120,0.7);
   }
   .mm-menu-btn-rebirth .mm-menu-btn-label{ color:#ffe6a8; }
+  /* 転生を上限まで使い切った個体。もう押せないので誘わない色にしつつ、
+     到達したことは分かるように金の縁だけ残す(覚醒ボタンの「条件不足」と同じ考え方) */
+  .mm-menu-btn-rebirth-max{
+    background:linear-gradient(120deg, rgba(255,214,106,0.10), rgba(255,255,255,0.04));
+    box-shadow:none; opacity:0.9;
+  }
   /* カード上の転生回数(虹色の★)。文字自体をグラデーションで塗る。
      位置はLv表示(.ml-card-lv が top:6px/right:6px)の真下に置いて重ならないようにする */
   .ml-card-rebirth{
@@ -3684,6 +3690,17 @@
   .rb-res-stars{ margin-left:6px; letter-spacing:-1px;
     background:linear-gradient(90deg,#fff3c4,#ffd76a 50%,#e0a51e);
     -webkit-background-clip:text; background-clip:text; color:transparent; }
+  /* 転生上限(👑)の印。★の並びを出す4か所(カード・転生前後カード・演出の名前・
+     飛び出す金文字)が共通で付ける。
+     【文字グラデーションを必ず外す】★は「文字の形で背景を切り抜く」(background-clip:text
+     + color:transparent)で虹色にしているが、👑は色付きの絵なので同じ仕掛けにかけると
+     環境によって消える・色が飛ぶ。**この規則は上の4つより後に置いて上書きする。**
+     字間の詰め(letter-spacing:-1px)も、1文字しか無い👑では右が欠けるので戻す。 */
+  .rb-mark-crown{
+    background:none; -webkit-background-clip:border-box; background-clip:border-box;
+    color:#ffd873; -webkit-text-stroke:0; letter-spacing:0;
+    filter:drop-shadow(0 0 4px rgba(255,205,80,0.95));
+  }
   .rb-res-list{ list-style:none; margin:0; padding:0 4px; flex:1 1 auto; min-height:0;
     overflow-y:auto; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:2px; }

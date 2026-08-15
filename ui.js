@@ -6793,13 +6793,24 @@ function buildMastermonMenuHtml(mm){
           <span class="mm-menu-btn-desc">${m.desc}</span>
         </span>
       </button>`);
-  // 転生ボタンはレベル100に到達したマスモンにだけ出す(着せ替えの下)
-  if(canRebirthMastermon(mm)){
+  /* 転生ボタンはレベル100に到達したマスモンにだけ出す(着せ替えの下)。
+     上限まで回した個体は**ボタンを消さずに到達を出す**(覚醒ボタンと同じ考え方。
+     黙って消えると「押せたはずのものが無くなった」と読めてしまう)。 */
+  if(rebirthMaxedOut(mm)){
+    items.push(`
+      <button class="mm-menu-btn mm-menu-btn-rebirth mm-menu-btn-rebirth-max" data-action="rebirth-max">
+        <span class="mm-menu-btn-icon">👑</span>
+        <span class="mm-menu-btn-text">
+          <span class="mm-menu-btn-label">転生 ${REBIRTH_MAX}回 達成</span>
+          <span class="mm-menu-btn-desc">転生できる回数(${REBIRTH_MAX}回)をすべて使い切った、これ以上ない個体です</span>
+        </span>
+      </button>`);
+  } else if(canRebirthMastermon(mm)){
     items.push(`
       <button class="mm-menu-btn mm-menu-btn-rebirth" data-action="rebirth">
         <span class="mm-menu-btn-icon">✦</span>
         <span class="mm-menu-btn-text">
-          <span class="mm-menu-btn-label">転生</span>
+          <span class="mm-menu-btn-label">転生(あと${REBIRTH_MAX-mastermonRebirthCount(mm)}回)</span>
           <span class="mm-menu-btn-desc">レベル1に戻る代わりに上限・基礎値・適正が上がる(取り消せません)</span>
         </span>
       </button>`);
@@ -6883,7 +6894,7 @@ let rebirthPicks = [];          // 1段階上げる適正(ステータスキー)
 function mmRebirthStarsHtml(mm){
   const n = mastermonRebirthCount(mm);
   if(n<=0) return '';
-  return `<div class="ml-card-rebirth" title="転生${n}回">${'★'.repeat(Math.min(n, 10))}</div>`;
+  return `<div class="ml-card-rebirth${rebirthMaxedOut(mm)?' rb-mark-crown':''}" title="転生${n}回${rebirthMaxedOut(mm)?'(上限)':''}">${rebirthMarkText(mm)}</div>`;
 }
 // マスモンの名前はプレイヤーが自由に付けられるので、HTMLへ差し込む前に無害化する
 function rebirthEscape(t){
@@ -6933,7 +6944,7 @@ function rebirthSideHtml(mm, opts){
     </div>`;
   }).join('');
   const stars = mastermonRebirthCount(mm)>0
-    ? `<div class="rb-card-stars">${'★'.repeat(Math.min(mastermonRebirthCount(mm),10))}</div>` : '';
+    ? `<div class="rb-card-stars${rebirthMaxedOut(mm)?' rb-mark-crown':''}">${rebirthMarkText(mm)}</div>` : '';
   return `
     <div class="rb-side ${opts.sideClass}">
       <div class="rb-side-title">${opts.title}</div>
@@ -7011,11 +7022,11 @@ function rebirthBenefitLines(beforeMm, afterMm){
     .map(s=>`適正 ${s.label} ${apt0[s.key]} → <b>${apt1[s.key]}</b>`);
   return [
     `ステータス上限 ${mastermonStatCap(beforeMm)} → <b>${mastermonStatCap(afterMm)}</b>`,
-    `基礎HP <b>+${REBIRTH_BASE_HP_BONUS}</b> ／ 基礎移動速度 <b>+${REBIRTH_BASE_SPEED_BONUS}</b>`,
+    `基礎HP <b>+${rebirthBaseBonusStep(mastermonRebirthCount(afterMm))}</b> ／ 基礎移動速度 <b>+${rebirthBaseBonusStep(mastermonRebirthCount(afterMm))}</b>`,
     `トレーニングチケット <b>+${REBIRTH_TICKETS}枚</b>(${beforeMm.tickets||0} → ${afterMm.tickets||0}枚)`,
   ].concat(aptLines).concat([
     `レベル ${beforeMm.level} → <b>1</b>(ステータスは転生前の1/3から再スタート)`,
-    `転生回数 <b>★${mastermonRebirthCount(afterMm)}</b>`,
+    `転生回数 <b>${rebirthMarkText(afterMm)}</b>${rebirthMaxedOut(afterMm) ? '(これが最後の転生です)' : ` ／ 残り<b>${REBIRTH_MAX-mastermonRebirthCount(afterMm)}回</b>`}`,
     // 損になる変化も隠さず出す(押す前に分かるように)
     `レベルアップに必要なEXP ×${mastermonExpMult(beforeMm).toFixed(1)} → <b>×${mastermonExpMult(afterMm).toFixed(1)}</b>`,
   ]);
@@ -7037,7 +7048,9 @@ function renderRebirthOverlay(){
         compareMults: beforeMults, compareApt: mastermonApt(mm), extraHtml: rebirthMaxedHtml(after) })}
     </div>
     <div class="rb-warn">⚠ 転生は取り消せません。レベルとステータスは戻りません。
-      転生するほどレベルアップに必要なEXPが増えます(次は×${mastermonExpMult(after).toFixed(1)})。</div>`;
+      転生するほどレベルアップに必要なEXPが増え(次は×${mastermonExpMult(after).toFixed(1)})、
+      基礎値の上がり幅は小さくなります(次は+${rebirthBaseBonusStep(mastermonRebirthCount(after))})。
+      転生できるのは<b>${REBIRTH_MAX}回まで</b>です。</div>`;
   box.querySelectorAll('.rb-pick-btn').forEach(b=>{
     b.addEventListener('click', ()=>{
       const k = b.dataset.stat;
@@ -7216,6 +7229,7 @@ document.getElementById('awakenConfirmBtn').addEventListener('click', doAwaken);
 function openRebirthOverlay(key){
   const mm = loadMastermons()[key];
   if(!mm) return;
+  if(rebirthMaxedOut(mm)){ pushToast(`転生は${REBIRTH_MAX}回までです。これ以上は転生できません`); return; }
   if(!canRebirthMastermon(mm)){ pushToast(`レベル${REBIRTH_LEVEL_REQ}になると転生できます`); return; }
   rebirthKey = key;
   rebirthPicks = [];
@@ -7279,26 +7293,26 @@ function rebirthPopItems(beforeMm, afterMm){
   const apt0 = mastermonApt(beforeMm), apt1 = mastermonApt(afterMm);
   const items = [
     { v:'+'+(mastermonStatCap(afterMm)-mastermonStatCap(beforeMm)), k:'ステ上限' },
-    { v:'+'+REBIRTH_BASE_HP_BONUS,    k:'基礎HP' },
-    { v:'+'+REBIRTH_BASE_SPEED_BONUS, k:'基礎速さ' },
+    { v:'+'+rebirthBaseBonusStep(mastermonRebirthCount(afterMm)), k:'基礎HP' },
+    { v:'+'+rebirthBaseBonusStep(mastermonRebirthCount(afterMm)), k:'基礎速さ' },
     { v:'+'+REBIRTH_TICKETS,          k:'🎫チケット' },
   ];
   MASTERMON_STATS.forEach(st=>{
     if(apt0[st.key]!==apt1[st.key]) items.push({ v:apt1[st.key], k:st.label+'適正' });
   });
-  items.push({ v:'★'+mastermonRebirthCount(afterMm), k:'転生' });
+  items.push({ v:rebirthMarkText(afterMm), k:'転生', crown:rebirthMaxedOut(afterMm) });
   return items;
 }
 function playRebirthAnim(key, before, after){
   const ov = document.getElementById('rebirthAnimOverlay');
   if(!ov){ afterRebirthRefresh(key); return; }
   document.getElementById('rebirthAnimMonster').innerHTML = equippedIconImgTag(after.element, ELEMENTS[after.element].label);
-  document.getElementById('rebirthAnimName').innerHTML = `${rebirthEscape(after.name)}<span class="rb-res-stars">${'★'.repeat(Math.min(mastermonRebirthCount(after),10))}</span>`;
+  document.getElementById('rebirthAnimName').innerHTML = `${rebirthEscape(after.name)}<span class="rb-res-stars${rebirthMaxedOut(after)?' rb-mark-crown':''}">${rebirthMarkText(after)}</span>`;
 
   // モンスターから飛び出す金文字の中身を先に作っておく(位置はこのあと実寸から決める)
   const popHost = document.getElementById('rebirthAnimPops');
   popHost.innerHTML = rebirthPopItems(before, after).map(it=>
-    `<div class="rb-pop"><span class="rb-pop-v">${it.v}</span><span class="rb-pop-k">${it.k}↑</span></div>`).join('');
+    `<div class="rb-pop"><span class="rb-pop-v${it.crown?' rb-mark-crown':''}">${it.v}</span><span class="rb-pop-k">${it.k}↑</span></div>`).join('');
 
   // 明細はダイアログがせり上がったあと(CSSのrbResultが46%地点)から1行ずつ出す
   const list = document.getElementById('rebirthAnimBenefits');
@@ -7588,6 +7602,7 @@ function renderMastermonDetail(key){
     panel.querySelectorAll('.mm-menu-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         if(btn.dataset.action==='rebirth'){ openRebirthOverlay(key); return; }
+        if(btn.dataset.action==='rebirth-max'){ pushToast(`転生は${REBIRTH_MAX}回までです。これ以上は転生できません`); return; }
         if(btn.dataset.action==='awaken'){ openAwakenOverlay(key); return; }
         if(btn.dataset.action==='share'){
           const s = buildMastermonShare(key);
@@ -7802,10 +7817,11 @@ function buildMastermonInfoHtml(key, mm, el){
     { label:'連射速度倍率', val: mmFmtMult(fireRateMult), cls: mmMultColorClass(fireRateMult, false) },
     { label:'ガッツ回復速度倍率', val: mmFmtMult(mults.gutsRegenMult), cls: mmMultColorClass(mults.gutsRegenMult, false) },
   ].concat(
-    /* 転生した子だけ、レベルアップに要るEXPの倍率も出す(転生の代償が見えるように)。
-       0回の子には出さない(全員が×1.0で意味が無い行になる)。 */
+    /* 転生した子だけ、転生で積み上げた基礎値と、レベルアップに要るEXPの倍率を出す
+       (得と代償の両方が見えるように)。0回の子には出さない(全員が同じ値で意味が無い行になる)。 */
     mastermonRebirthCount(mm) > 0
-      ? [{ label:'必要EXP倍率', val: mmFmtMult(mastermonExpMult(mm)), cls:'mm-info-val-down' }]
+      ? [{ label:'転生ボーナス', val: `HP・速さ +${rebirthBaseBonusTotal(mastermonRebirthCount(mm))}`, cls:'mm-info-val-up' },
+         { label:'必要EXP倍率', val: mmFmtMult(mastermonExpMult(mm)), cls:'mm-info-val-down' }]
       : []
   ).map(r=>`
     <div class="mm-info-row">
