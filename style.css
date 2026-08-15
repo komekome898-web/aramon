@@ -220,19 +220,71 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #lobbyLeft .season-ssr-pop::after{ display:none; }
-  /* ボタンが8個(シーズン/デイリー/レイド/遠征/ガチャ/ショップ/バッグ/ランキング)入る。
-     **2列に並べる。** 1列の縦積みだと1つが縦20px台まで潰れて押しづらかった(発注者指摘)。
-     レイドは非開催時に display:none になるので、7個でも8個でも grid が勝手に詰める。
-     バナーは最後の行で2列ぶんをまたぐ。**増やすときは必ず実寸を測る。** */
-  #lobbyLeft{
-    display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
-    gap:calc(0.5 * var(--vh)) 5px; align-content:center; height:100%; padding-top:9px;
-    width:clamp(140px, calc(25 * var(--vw)), 196px);
+  /* =====================================================================
+     ロビーのレイアウトの決まり(3列すべてに効く)
+
+     【なぜこの形か】ボタンを1つ足すたびに縦が足りなくなり、はみ出すか潰れるかしていた。
+     2026-08-15には出撃ボタンが20pxまで潰れて文字が消えた(実機報告)。
+     数字の詰め直しでは次に何か足せばまた起きるので、**構造で止める**。
+     ロビーはスクロールさせない(発注者指定)ので、逃がし先は「横」しかない:
+
+       1. 押せる物には必ず最小の高さ(--tap-*)を与え、flex-shrink:0 で縮ませない。
+          → 潰れることが構造上ありえない。
+       2. 増える物(メニュー)は**縦に積まず、入る数だけ縦に並べて残りは次の列へ流す**
+          (#lobbyMenuGrid の grid-auto-flow:column + auto-fill)。
+          → 何個足しても列の高さは画面の高さのままで、はみ出さない。
+       3. 右列は幅が決まっていて横へ逃がせない。だから**出撃に要る物だけ**を置き、
+          項目を増やさない。増やすものは左のメニューへ。
+       4. 中央はステージ(#lobbyMonsterStage)だけが伸び縮みして余りを吸う。
+
+     **新しいメニュー項目は #lobbyMenuGrid の中へ足す。** それ以外の場所に足すと
+     1〜4のどれも効かず、増えたぶんがそのまま画面外へ出る。
+     守れているかは `node tools/lobby_layout_test.mjs` が7端末×5モードで毎回確かめる。
+     ===================================================================== */
+  :root{
+    /* 押しやすさの下限。Appleの指針(44pt)を基準に、主役と一般の2段で持つ。
+       **画面が低くてもここから下げない。** 下げると押せないボタンになる。 */
+    --tap-main: 46px;   /* バトル開始・部屋を作る/探す */
+    --tap-pick: 44px;   /* 左メニューのタイル・マップ/プレイモード */
+    /* メニュー1列の幅。列が増えるときはこの幅ぶんだけ左列が広がる(中央が細くなる) */
+    --menu-col-w: clamp(72px, calc(12 * var(--vw)), 96px);
   }
+  #lobbyLeft{
+    display:flex; flex-direction:column; gap:calc(0.5 * var(--vh));
+    height:100%; min-height:0; min-width:0;
+  }
+  /* 【ここがロビーの生命線】
+     行数(--menu-rows)は**画面に入る数だけ**。入りきらない項目は
+     grid-auto-flow:column が**次の列**へ送るので、何個足しても縦には伸びない=見切れない。
+     1fr で行は等分に広がるので、項目が少ないときはボタンが大きくなって押しやすい。
+
+     --menu-rows は ui.js の updateLobbyMenuRows() が実測して入れる。
+     CSSの repeat(auto-fill,…) は**flexの中だと高さが確定せず当てにならない**
+     (実測で2行に落ち、9個が5列へ化けて中央の幅が0になった)。数字はJS側が正。
+     flex:1 1 0 にしてあるのは、枠の高さを中身から独立させるため(高さの計算が循環しない)。
+
+     **DOMの並び順は「上から下、そして次の列」**(以前の左右→次の行ではない)。 */
+  #lobbyMenuGrid{
+    flex:1 1 0; min-height:0;
+    display:grid;
+    /* 行の高さは中身なり(最低 --tap-pick)。1fr で引き伸ばすと端数の丸めで
+       1〜3px はみ出し、スクロールが出てしまう(実測)。 */
+    grid-template-rows:repeat(var(--menu-rows, 4), minmax(var(--tap-pick), auto));
+    grid-auto-flow:column;
+    grid-auto-columns:var(--menu-col-w);
+    gap:calc(0.5 * var(--vh)) 5px; align-content:center; justify-content:start; padding-top:9px;
+  }
+  /* バナーはメニューの幅に合わせる。ただし列が増えても2列ぶんで頭打ち
+     (横に長い帯になると絵が間延びし、中央の幅も食う) */
+  /* margin は整数にする。--vh から作った端数(1.5px等)で位置が小数になると、
+     ブラウザの整数丸めで「1〜2pxスクロールできる」状態が生まれ、測定が濁る。 */
+  #lobbyBanner{ flex:0 0 auto; margin-top:0; max-width:calc(var(--menu-col-w) * 2 + 5px); }
   /* 縦並び(アイコン→名前)。中身が中央に揃うので、アクセント線は左ではなく上に置く */
   .lobby-side-btn{
     position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:2px; cursor:pointer; text-align:center;
+    /* 押しやすさの下限。**この2行を消さない**(縮んで潰れる事故の再発防止) */
+    min-height:var(--tap-pick); flex-shrink:0;
     padding:calc(0.5 * var(--vh)) 4px; border-radius:10px; min-width:0;
     color:var(--ink); background:linear-gradient(180deg, rgba(12,18,30,0.88), rgba(12,18,30,0.42));
     border:1px solid var(--panel-line); border-top:3px solid var(--amber);
@@ -284,7 +336,19 @@
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:calc(0.6 * var(--vh)); min-width:0; height:100%; overflow:hidden; padding-bottom:6px;
   }
-  #lobbyCenter .title-block{ flex:0 0 auto; }
+  /* 中央はステージ(#lobbyMonsterStage)だけが伸び縮みする。
+     文字や絵文字の行は flex:0 0 auto で固定し、**縮んで潰れないようにする**。
+     行を足すときもこの指定を付けること(ステージがそのぶん縮んで吸収する)。 */
+  #lobbyCenter > *:not(#lobbyMonsterStage){ flex:0 0 auto; }
+  /* 【中央の文字は縦に伸ばさない】中央は左右の列に押されて細くなることがあり、
+     折り返しを許すと1行の文字が何行にもなって画面外へ出る
+     (実測: 案内文が幅11pxまで押されて高さ378pxになった)。
+     細いときは「…」で切って、**高さは常に1行分**に保つ。 */
+  #lobbyCenter .title-sub, #lobbyCenter .lobby-count,
+  #lobbyMonsterName, #lobbyMonsterTapHint, #pickMonsterNotice{
+    max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #lobbyCenter .title-block{ flex:0 0 auto; max-width:100%; }
   /* ロビーのタイトルはタイトル画面と同じロゴ画像を使う */
   #lobbyCenter .title-main{ line-height:0; text-shadow:none; }
   #lobbyTitleLogo{
@@ -333,7 +397,8 @@
   #lobbyEmoteRow.hidden{ display:none !important; }
   .lobby-emote-btn{
     width:calc(4.6 * var(--vh)); height:calc(4.6 * var(--vh));
-    min-width:26px; min-height:26px;
+    /* 26pxは指には小さい。34pxまで上げても中央はステージが余りを吸うので縦は増えない */
+    min-width:34px; min-height:34px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center;
     font-size:clamp(12px, calc(2.8 * var(--vh)), 17px); line-height:1;
     border-radius:50%; cursor:pointer;
@@ -385,15 +450,24 @@
   }
   #lobbyMonsterName .lobby-mon-sub{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink-dim); }
   /* ---- 右: マップ / モード / 出撃 ---- */
-  /* height:100% で行の高さ(=画面の高さ)に釘付けにする。**固定の余白で下へ押さない。**
-     出撃ボタンの上の空きは margin-top:auto で「余った分だけ」にしてあるので、
-     背の低い画面では0まで詰まり、はみ出さない(下の #lobbyRight #joinBtn を参照)。 */
-  #lobbyRight{ display:flex; flex-direction:column; gap:calc(1.1 * var(--vh)); align-items:stretch;
-    /* 23vw だと375x667の縦持ちでプレイモードの文字(「チーム戦・20チームバトロワ」=151px)が
-       22px切れていた。中央は minmax(0,1fr) なので、ここを広げたぶん中央が細くなるだけ。 */
-    height:100%; min-height:0; width:clamp(126px, calc(27 * var(--vw)), 224px); }
+  /* 上下2枚構成: #lobbyRightTop(いまの状態と出撃の設定)と
+     #lobbyActionArea(出撃の操作・常に下端)。**この2枚を崩さない。**
+     右列は幅が決まっていて横へ逃がせないので、**項目を増やさない**のが決まり
+     (増やすものは左のメニューへ。上の「ロビーのレイアウトの決まり」3番)。 */
+  #lobbyRight{ display:flex; flex-direction:column; gap:calc(0.9 * var(--vh)); align-items:stretch;
+    /* 幅はプレイモードの一番長い文言(「チーム戦・20チームバトロワ」)が切れない値。
+       23vwでは375x667の縦持ちで22px、27vwではタブレット縦持ちで10px切れた(実測)。
+       中央は minmax(0,1fr) なので、ここを広げたぶん中央が細くなるだけ。 */
+    height:100%; min-height:0; width:clamp(126px, calc(30 * var(--vw)), 260px); }
+  /* 余りはここが吸う(flex:1)。だから出撃の操作は常に画面の下端に来る */
+  #lobbyRightTop{
+    flex:1 1 auto; min-height:0;
+    display:flex; flex-direction:column; justify-content:center; gap:calc(0.9 * var(--vh));
+  }
+  #lobbyActionArea{ flex:0 0 auto; display:flex; flex-direction:column; gap:calc(0.7 * var(--vh)); }
   /* 段位パネル(右列の上の空き)。今のRPと次の段位までの残りを出す */
   .lobby-rank-panel{
+    flex-shrink:0;   /* 情報パネルも縮ませない(中の帯とRPが重なるため) */
     padding:calc(0.6 * var(--vh)) 9px; border-radius:9px;
     background:linear-gradient(90deg, rgba(12,18,30,0.42), rgba(12,18,30,0.88));
     border:1px solid var(--panel-line); border-top:2px solid var(--rank-color, var(--amber));
@@ -412,39 +486,29 @@
   .lrp-fill{ height:100%; width:0; border-radius:3px; background:var(--rank-color, var(--amber)); transition:width .3s; }
   .lrp-next{ font-size:8.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lobby-pick-btn{
-    display:flex; flex-direction:column; align-items:flex-start; gap:2px; cursor:pointer; text-align:left;
+    display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:2px;
+    cursor:pointer; text-align:left;
+    min-height:var(--tap-pick); flex-shrink:0;   /* 押しやすさの下限。消さない */
     padding:calc(0.8 * var(--vh)) 11px; border-radius:9px;
     color:var(--ink); background:linear-gradient(90deg, rgba(12,18,30,0.42), rgba(12,18,30,0.88));
     border:1px solid var(--panel-line); backdrop-filter:blur(2px);
   }
   .lobby-pick-btn:active{ border-color:var(--amber); background:rgba(244,196,48,0.16); }
-  /* 射撃訓練場へ(マップ選択の上)。バトル開始と同じくモンスター未選択では押せない */
-  .lobby-range-btn{
-    padding:calc(0.9 * var(--vh)) 10px; border-radius:9px; cursor:pointer; width:100%;
-    font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:1px;
-    font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap;
-    color:#cfe9ff; background:linear-gradient(90deg, rgba(18,40,64,0.55), rgba(18,40,64,0.9));
-    border:1px solid rgba(120,190,255,0.42);
-  }
-  .lobby-range-btn:active{ border-color:#8fd0ff; background:rgba(80,160,255,0.22); }
-  .lobby-range-btn:disabled{ opacity:0.4; }
-  /* はじめての方へ(射撃訓練場への上)。タップでヘルプ画面を開く */
-  .lobby-help-btn{
-    padding:calc(0.9 * var(--vh)) 10px; border-radius:9px; cursor:pointer; width:100%;
-    font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:1px;
-    font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap;
-    color:#1a1306; background:linear-gradient(90deg, #f4c430, #ffdd78);
-    border:1px solid rgba(244,196,48,0.65);
-  }
-  .lobby-help-btn:active{ background:linear-gradient(90deg, #ffdd78, #f4c430); }
+  /* 「はじめて」と「訓練場」は左メニューのタイル(.lobby-side-btn)。
+     役割が分かるよう上の帯の色だけ変える(大きさ・形は他のタイルと同じ=並びが崩れない)。 */
+  .side-btn-help{ border-top-color:#ffd76a; }
+  .side-btn-help .lobby-side-icon{ background:rgba(244,196,48,0.22); }
+  .side-btn-range{ border-top-color:#6fc3ff; }
+  .side-btn-range .lobby-side-icon{ background:rgba(110,190,255,0.22); }
+  .side-btn-range:disabled{ opacity:0.45; }
   .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; letter-spacing:1px; color:var(--ink-dim); }
   .lobby-pick-value{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
     /* 最小を10pxまで下げる。11pxだと375x667の縦持ちで「シングル・30人バトロワ」が4px切れていた */
     font-size:clamp(10px, calc(2.9 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 
   /* ---- 左下のバナー(3秒ごとに切り替え) ---- */
-  /* #lobbyLeft は2列の grid なので、バナーは最後の行で2列ぶんをまたぐ */
-  #lobbyBanner{ grid-column:1 / -1; width:100%; margin-top:calc(0.4 * var(--vh)); }
+  /* バナーはメニューのスクロール枠の外に固定する(流れて消えないように) */
+  #lobbyBanner{ width:100%; }
   #lobbyBannerTrack{ position:relative; height:calc(13 * var(--vh)); min-height:52px; }
   .lobby-banner-card{
     position:absolute; inset:0; border-radius:12px; overflow:hidden; cursor:pointer;
@@ -1731,13 +1795,17 @@
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
 
-  /* ロビーの右列だけ縦積み。**固定の margin-top(14px)を打ち消す。**
-     出撃ボタンの下に14px積むと、背の低い画面で「部屋を探す」が画面外へ出た。 */
-  #lobbyRight #multiActionRow{ flex-direction:column; gap:7px; margin-top:0; }
-  /* 出撃ボタンの上の空きは**余った分だけ**。固定値(4.5vh)だと縦が足りない画面で
-     そのぶん下がはみ出す。auto なら背の低い画面では0まで詰まり、
-     広い画面では今までどおりマップ/モードから離れて下に置かれる。 */
-  #lobbyRight #joinBtn{ margin-top:auto; }
+  /* ロビーの右列は**横並び**。縦に積むと最小の高さ(--tap-main)×2で90px超になり、
+     低い画面では出撃ボタンと合わせて入らない。文字は幅に合わせて縮める。 */
+  #lobbyRight #multiActionRow{ flex-direction:row; gap:7px; margin-top:0; }
+  #lobbyRight #createRoomBtn, #lobbyRight #findRoomBtn{
+    flex:1 1 0; min-width:0; min-height:var(--tap-main); flex-shrink:0;
+    padding:calc(1.2 * var(--vh)) 4px; white-space:nowrap;
+    font-size:clamp(10px, calc(2.9 * var(--vh)), 13px);
+  }
+  /* 出撃ボタンの上の空きは #lobbyRightScroll が余りを吸うので不要。
+     固定値(4.5vh)を残すと、その分だけ下の操作が押し出される。 */
+  #lobbyRight #joinBtn{ margin-top:0; }
   #multiActionRow{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
   #createRoomBtn, #findRoomBtn{
     padding:11px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
@@ -2118,6 +2186,9 @@
   /* 出撃ボタン。ロビーの主役なので大きめ・光沢のスイープ付き・マップ/モードから離して下に置く */
   #joinBtn{
     position:relative; overflow:hidden;
+    /* 押しやすさの下限。**この2行を消さない。**
+       2026-08-15に実機で20pxまで潰れて文字が消えた(flexの縮みを止めていなかった)。 */
+    min-height:var(--tap-main); flex-shrink:0;
     margin-top:calc(4.5 * var(--vh)); padding:calc(2.4 * var(--vh)) 10px;
     font-family:'Russo One',sans-serif; font-size:clamp(16px, calc(5 * var(--vh)), 24px);
     letter-spacing:2.5px; color:#1a1306;

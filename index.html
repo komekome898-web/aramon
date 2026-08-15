@@ -72,6 +72,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
  <div id="lobbyLayout">
    <!-- 左端: シーズン / デイリー / ガチャ / ショップ / バッグ -->
    <div id="lobbyLeft">
+    <!-- 【メニューのボタンは必ずこの #lobbyMenuGrid の中へ足す】
+         ここは「縦は画面に入る数まで・あふれたら横へ列が増える」枠。
+         直下(#lobbyLeft)に足すとその仕組みから外れ、増えたぶんが画面外へ出る。 -->
+    <div id="lobbyMenuGrid">
      <!-- デイリーとシーズン1は「ミッション」1画面へ統合(タブで分岐、aramon-screens参照) -->
      <button id="openMissionBtn" class="lobby-side-btn has-dot">
        <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">ミッション</span>
@@ -87,8 +91,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
        <span class="lobby-side-icon">🧭</span><span class="lobby-side-label">遠征</span>
        <span id="expeditionDot" class="notif-dot hidden"></span>
      </button>
-     <!-- バッグとショップは中身が地続きなので**必ず横に並べる**(DOMの順=2列gridの並び順)。
-          ガチャはそのぶん次の行の左へ回す -->
+     <!-- バッグとショップは中身が地続きなのでDOMで隣どうしにする。
+          **並びは「上から下、いっぱいになったら次の列」**(CSSの grid-auto-flow:column)なので、
+          隣に置きたいものはDOMで続けて書けばよい。 -->
      <button id="openBagBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🎒</span><span class="lobby-side-label">バッグ</span>
      </button>
@@ -105,7 +110,16 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      <button id="openGalleryBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🖼️</span><span class="lobby-side-label">ギャラリー</span>
      </button>
-     <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え) -->
+     <!-- 「はじめての方へ」と「射撃訓練場」は右列から移した。右列は出撃に要る物だけにして、
+          増えるものは横へ列が伸びるこのメニューで受ける(下のCSSの決まりを参照) -->
+     <button id="openHelpFromLobbyBtn" class="lobby-side-btn side-btn-help">
+       <span class="lobby-side-icon">🔰</span><span class="lobby-side-label">はじめて</span>
+     </button>
+     <button id="openRangeBtn" class="lobby-side-btn side-btn-range" disabled>
+       <span class="lobby-side-icon">🏹</span><span class="lobby-side-label">訓練場</span>
+     </button>
+    </div>
+     <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え)。メニューの枠の外に固定する -->
      <div id="lobbyBanner">
        <div id="lobbyBannerTrack"></div>
        <div id="lobbyBannerDots"></div>
@@ -136,14 +150,17 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 
    <!-- 右: マップ選択 / プレイモード / バトル開始 -->
    <div id="lobbyRight">
+    <!-- 【右列は「出撃に要る物」だけ。ここにメニューを足さない】
+         上=いまの状態と出撃の設定 / 下=出撃の操作(常に下端)。
+         **項目を増やすときは左のメニュー(#lobbyMenuGrid)へ。** 右列は幅が決まっていて
+         横へ逃がせないので、増やすと縦が足りなくなる唯一の場所になる。 -->
+    <div id="lobbyRightTop">
      <!-- 段位。右列の上に空きがあるのでここへ置く(中身はui.jsのupdateLobbyRankPanel) -->
      <div id="lobbyRankPanel" class="lobby-rank-panel">
        <div class="lrp-top"><span id="lobbyRankIcon" class="lrp-icon">🌱</span><span id="lobbyRankName" class="lrp-name">見習い</span><span id="lobbyRankRp" class="lrp-rp">0<em>RP</em></span></div>
        <div class="lrp-track"><div id="lobbyRankFill" class="lrp-fill"></div></div>
        <div id="lobbyRankNext" class="lrp-next">次の段位まで あと100</div>
      </div>
-     <button id="openHelpFromLobbyBtn" class="lobby-help-btn">🔰 はじめての方へ</button>
-     <button id="openRangeBtn" class="lobby-range-btn" disabled>🎯 射撃訓練場へ</button>
      <button id="openMapPickBtn" class="lobby-pick-btn">
        <span class="lobby-pick-label">マップ</span>
        <span class="lobby-pick-value" id="lobbyMapValue">🎲 ランダム</span>
@@ -154,11 +171,14 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
        <!-- 通常マルチで募集中の部屋の待機人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
        <span id="multiWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
+    </div>
+    <div id="lobbyActionArea">
      <button id="joinBtn" disabled><span class="join-label">バトル開始</span></button>
      <div id="multiActionRow" class="hidden">
        <button id="createRoomBtn" disabled>部屋を作る</button>
        <button id="findRoomBtn" disabled>部屋を探す</button>
      </div>
+    </div>
    </div>
  </div>
 </div>

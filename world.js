@@ -200,6 +200,8 @@ function resize(){
     if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
     // リザルトを開いたまま向きが変わると縦幅が変わるので、収まり具合を測り直す
     if(typeof fitResultScreen==='function') fitResultScreen();
+    // ロビーの左メニューは「画面に入る行数」で組んでいるので、高さが変わったら組み直す
+    if(typeof updateLobbyMenuRows==='function') updateLobbyMenuRows();
   }catch(err){ console.error('[aramon] resize失敗', err); }
 }
 window.addEventListener('resize', resize);

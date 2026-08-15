@@ -1220,12 +1220,39 @@ function pickLobbyBgm(id){
   renderLobbyBgmList();   // 選択中の印を付け替える(画面は開いたままで聴き比べられる)
 }
 function refreshLobby(){
+  updateLobbyMenuRows();
   updateLobbyPickLabels();
   updateLobbyBgmLabel();
   renderLobbyMonster();
   startLobbyBannerLoop();
   startLobbyRoomPoll();
   refreshGhosts();   // 他の人が育てたマスモン(ソロの敵に混ぜる)を間隔を空けて取り直す
+}
+/* 左メニューの行数を「画面に入る数」に合わせる。**ロビーが縦に伸びない仕組みの要。**
+
+   入りきらない項目は grid-auto-flow:column が次の列へ送るので、行数さえ
+   画面に収まる数にしておけば、メニューが何個になっても縦にはみ出さない。
+
+   CSSだけで済ませようと repeat(auto-fill, …) を使ったが、**flexの中では
+   高さが確定せず当てにならない**(実測で2行に落ち、9個が5列へ化けて中央の幅が0になった)。
+   そこでここで実測して CSS変数へ渡す。行の高さ・すき間の値はCSS側が正で、
+   ここは読むだけにしてある(同じ数字を2か所に書かない)。 */
+const LOBBY_MENU_COLS = 2;   // ふだんの列数。これで足りなくなったら勝手に3列・4列へ増える
+function updateLobbyMenuRows(){
+  const grid = document.getElementById('lobbyMenuGrid');
+  if(!grid) return;
+  const cs = getComputedStyle(grid);
+  // padding を除いた「実際に行が置ける高さ」で数える(clientHeight は padding 込み)
+  const h = grid.clientHeight - (parseFloat(cs.paddingTop)||0) - (parseFloat(cs.paddingBottom)||0);
+  if(!(h > 0)) return;   // 画面が隠れている間は測れないので何もしない(次の表示時に効く)
+  const gap = parseFloat(cs.rowGap) || 0;
+  const tap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tap-pick')) || 44;
+  const count = [...grid.children].filter(c=> getComputedStyle(c).display!=='none').length;
+  const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));   // 画面に入る行数
+  // ふだんは2列に見えるように行数を決め、それが入らない画面では入る数まで減らす
+  // (減った行数のぶんは grid-auto-flow:column が横へ流すので、縦には決してはみ出さない)
+  const rows = Math.max(1, Math.min(fit, Math.ceil(count / LOBBY_MENU_COLS) || 1));
+  grid.style.setProperty('--menu-rows', rows);
 }
 
 

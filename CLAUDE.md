@@ -39,7 +39,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + JS + Fire
 | `video/` | SSR昇格演出の動画(`*_promote.mp4`/`.webm`。音声は`audio/`側と同時再生) |
 | `monsters/*.png` | モンスター画像。静止画+歩行スプライト`<prefix>_walk_f1..8`/`_b1..8`(320px・256色透過)。仕様JSONは`monsters/specs/` |
 | `vendor/` | Three.js r160(MIT) |
-| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定・持ち方での文字サイズ差)。開発用でゲームには読み込まない |
+| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定・持ち方での文字サイズ差)、`lobby_layout_test.mjs`(ロビーの見切れ/押しやすさ/重なりを7端末×5モードで検査)。開発用でゲームには読み込まない |
 | `guide/` | 遊び方ガイドの画像 |
 
 ## 全画面に効く決まり(詳細は aramon-layout)
@@ -51,6 +51,8 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + JS + Fire
 - **文字入力はすべて共通ポップアップ(`#textInputOverlay`)。**
 - 画像は`height`固定でなく`max-height`+`flex:0 1 auto`+`object-fit:contain`。
 - 横長・低い画面が前提。新画面はスクロールなしで収まる縦幅にする。
+- **【押せる物には最小の高さ】ボタンには`min-height`(`--tap-main`/`--tap-pick`)と`flex-shrink:0`を必ず付ける。** 付け忘れるとflexが縮めて潰す(2026-08-15に出撃ボタンが20pxになり文字が消えた)。
+- **【ロビーにボタンを足すときは`#lobbyMenuGrid`の中へ】ロビーはスクロールさせない。** 縦は画面に入る行数までで、あふれた項目は横の列へ流れる仕組みになっている(行数は`updateLobbyMenuRows()`が実測して決める)。**右列(`#lobbyRight`)は幅が決まっていて横へ逃がせないので項目を増やさない。** 触ったら`node tools/lobby_layout_test.mjs`(7端末×5モード×140通りで見切れ/小ささ/重なり/スクロールを検査)を通す。
 
 ## 横断する設計方針(スキルを読む前に知っておくこと)
 
