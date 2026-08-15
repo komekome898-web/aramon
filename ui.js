@@ -6593,7 +6593,7 @@ function mmCardInnerHtml(key){
   if(!mm) return '';
   const el = ELEMENTS[key];
   const eff = mmEffectiveStats(mm);
-  const expNeed = mastermonExpToNext(mm.level);
+  const expNeed = mastermonExpToNext(mm);
   const maxed = mm.level >= MASTERMON_LEVEL_CAP;
   const expPct = maxed ? 100 : Math.round(mm.exp/expNeed*100);
   // 遠征中は「選択中」より優先して出す(バトル・トレーニング・アイテムのどれにも使えないため)
@@ -7016,6 +7016,8 @@ function rebirthBenefitLines(beforeMm, afterMm){
   ].concat(aptLines).concat([
     `レベル ${beforeMm.level} → <b>1</b>(ステータスは転生前の1/3から再スタート)`,
     `転生回数 <b>★${mastermonRebirthCount(afterMm)}</b>`,
+    // 損になる変化も隠さず出す(押す前に分かるように)
+    `レベルアップに必要なEXP ×${mastermonExpMult(beforeMm).toFixed(1)} → <b>×${mastermonExpMult(afterMm).toFixed(1)}</b>`,
   ]);
 }
 
@@ -7034,7 +7036,8 @@ function renderRebirthOverlay(){
       ${rebirthSideHtml(after, { title:'転生後', sideClass:'rb-side-after',
         compareMults: beforeMults, compareApt: mastermonApt(mm), extraHtml: rebirthMaxedHtml(after) })}
     </div>
-    <div class="rb-warn">⚠ 転生は取り消せません。レベルとステータスは戻りません。</div>`;
+    <div class="rb-warn">⚠ 転生は取り消せません。レベルとステータスは戻りません。
+      転生するほどレベルアップに必要なEXPが増えます(次は×${mastermonExpMult(after).toFixed(1)})。</div>`;
   box.querySelectorAll('.rb-pick-btn').forEach(b=>{
     b.addEventListener('click', ()=>{
       const k = b.dataset.stat;
@@ -7798,7 +7801,13 @@ function buildMastermonInfoHtml(key, mm, el){
     { label:'被ダメ倍率', val: mmFmtMult(mults.dmgTakenMult), cls: mmMultColorClass(mults.dmgTakenMult, true) },
     { label:'連射速度倍率', val: mmFmtMult(fireRateMult), cls: mmMultColorClass(fireRateMult, false) },
     { label:'ガッツ回復速度倍率', val: mmFmtMult(mults.gutsRegenMult), cls: mmMultColorClass(mults.gutsRegenMult, false) },
-  ].map(r=>`
+  ].concat(
+    /* 転生した子だけ、レベルアップに要るEXPの倍率も出す(転生の代償が見えるように)。
+       0回の子には出さない(全員が×1.0で意味が無い行になる)。 */
+    mastermonRebirthCount(mm) > 0
+      ? [{ label:'必要EXP倍率', val: mmFmtMult(mastermonExpMult(mm)), cls:'mm-info-val-down' }]
+      : []
+  ).map(r=>`
     <div class="mm-info-row">
       <span class="mm-info-label">${r.label}</span>
       <span class="mm-info-val ${r.cls}">${r.val}</span>

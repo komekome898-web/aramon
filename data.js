@@ -1091,6 +1091,7 @@ const UPDATE_HISTORY = [
     { t:'デス円盤石の見た目を、ガチャ・召喚演出と同じ円盤石の絵に変えました', g:['av'] },
     { t:'チーム戦のヘッダーに「残り部隊数」と「残り人数」を出すようにしました', g:['multi'] },
     { t:'ダウン中の移動速度を通常の10%にしました(以前は30%)。這って逃げ切るのが難しくなり、仲間の蘇生がより大事になります', g:['balance','multi'] },
+    { t:'転生を重ねるほどレベルアップに必要なEXPが増えるようになりました(転生1回ごとに1.5倍→2倍→2.5倍…)。転生回数はマスモン詳細の「必要EXP倍率」で確認できます', g:['balance'] },
     { t:'覚醒スキンでも元のSSRスキンの専用BGM・専用SEが鳴るようになりました(「北大路さつキジン」「狂戦士ガッツ」の覚醒で確認)', g:['fix','av'] },
     { t:'リザルト画面で「トップ画面へ」などのボタンが画面の外へ出て押せなくなることがあったのを直しました。中身が増えても必ず1画面に収まります', g:['fix'] },
   ]},
@@ -1760,6 +1761,12 @@ const REBIRTH_BASE_SPEED_BONUS = 10;    // 転生1回につき種族の基礎速
 const REBIRTH_TICKETS          = 10;    // 転生時にもらえるトレーニングチケット
 const REBIRTH_STAT_KEEP_RATIO  = 1/3;   // 転生後に残るステータスの割合(999→333)
 const REBIRTH_APT_PICKS        = 3;     // 転生時に1段階上げる適正の数
+/* レベルアップに要るEXPが転生1回につき増える割合(等差)。
+   0回=1.0倍 / 1回=1.5倍 / 2回=2.0倍 …(mastermonExpToNext)。
+   転生は「1からやり直して上限を上げる」仕組みなので、回数を重ねても同じ手間で
+   カンストできると周回が作業になる。回るほど重くして、1周の価値を上げる。
+   **数値は発注者が実機で調整する。ここ1か所だけを直せば全体に効く。** */
+const REBIRTH_EXP_MULT_STEP    = 0.5;
 
 function mastermonRebirthCount(mm){ return Math.max(0, Math.round((mm && mm.rebirth) || 0)); }
 // ランキング「ステ合計」用。育成で振った6ステータスの合計(適正・転生ボーナスは含まない生値)
@@ -1934,7 +1941,17 @@ function mastermonSnapshot(mm, skinId){
     awakenBoost: awakenBoost || null,
   };
 }
-function mastermonExpToNext(level){ return 80 + level*15; }
+/* 次のレベルに要るEXP。**転生を重ねるほど増える**(REBIRTH_EXP_MULT_STEP)。
+
+   引数は**マスモンを丸ごと**受ける。レベルだけ渡す形にすると、転生回数を足し忘れた
+   呼び出しが混ざって「画面に出ている必要EXP」と「実際にレベルが上がる量」が食い違う
+   (同じ取り違えが mmEffectiveStats で実際に起きている)。渡す物を1つにして防ぐ。 */
+function mastermonExpToNext(mm){
+  const level = Math.max(1, Math.round((mm && mm.level) || 1));
+  return Math.round((80 + level*15) * mastermonExpMult(mm));
+}
+// 転生回数による必要EXPの倍率。表示(マスモン詳細)と計算で同じ物を見るためここが正
+function mastermonExpMult(mm){ return 1 + mastermonRebirthCount(mm) * REBIRTH_EXP_MULT_STEP; }
 // ステータス100を基準(倍率1.0)に、ステータスごとの係数(小さいほど効果の増減幅が大きい)で倍率を算出。
 // ライフ・命中・丈夫さは増減幅を拡大、回避は増減幅を縮小するためデフォルト(900)から変更。
 const MASTERMON_STAT_FACTOR_DIVISOR = {
@@ -2033,8 +2050,8 @@ function awardMastermonExp(mm, opts){
   const expGain = rawExp;
   mm.exp += expGain;
   let levelsGained = 0;
-  while(mm.level<MASTERMON_LEVEL_CAP && mm.exp>=mastermonExpToNext(mm.level)){
-    mm.exp -= mastermonExpToNext(mm.level);
+  while(mm.level<MASTERMON_LEVEL_CAP && mm.exp>=mastermonExpToNext(mm)){
+    mm.exp -= mastermonExpToNext(mm);
     mm.level += 1;
     mm.tickets += 1;
     levelsGained += 1;
