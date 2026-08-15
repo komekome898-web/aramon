@@ -1061,7 +1061,10 @@ function separateEntities(){
         const push = (minD-d)/2;
         const ang = angTo(b,a);
         const px=Math.cos(ang)*push, py=Math.sin(ang)*push;
+        // 障害物を見ずに座標を直接動かすので、押した相手は必ずめり込みの点検へ回す
+        // (チーム戦は味方どうしが固まって動くため、押し合いで岩の中へ入りやすい)
         a.x+=px; a.y+=py; b.x-=px; b.y-=py;
+        a.needsDepenetrate = true; b.needsDepenetrate = true;
       }
     }
   }
@@ -2354,8 +2357,11 @@ function update(dt){
   computePlayerInput();
 
   for(const e of entities){ if(e.alive && !e.isPlayer && !e.isRemoteHuman) updateBotAI(e, dt); }
-  for(const e of entities){ if(e.alive) resolveMovement(e, dt); }
+  // needsDepenetrate を立ててから動かす。tryMoveAxis を通った者は自分で下ろすので、
+  // 立ったまま残るのは「今フレーム一度も動こうとしなかった者」だけになる
+  for(const e of entities){ if(e.alive){ e.needsDepenetrate = true; resolveMovement(e, dt); } }
   separateEntities();
+  depenetrateStuckEntities();   // 押し合い・非移動で障害物へ埋まった者を必ず外へ出す
   updateCamera();
 
   for(const e of entities){
