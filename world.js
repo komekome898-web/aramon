@@ -459,9 +459,29 @@ function depenetrateObstacles(m){
     m.y = clamp(m.y + oy*step, m.radius, WORLD.h-m.radius);
   }
 }
+/* 【最後の安全弁】このフレームで「めり込みの解消をまだ通していない」エンティティを押し出す。
+   めり込みを直しているのは tryMoveAxis の冒頭1か所だけなので、**動かなかった者は永久に
+   埋まったまま**になる。実際に起きていたのは次の2つ:
+     ・botは射程内の相手を撃っている間 mustMove=false で tryMoveAxis を呼ばない
+       (岩の中に立ったまま撃ち続ける=「障害物の中で動かない敵」)
+     ・separateEntities() は座標を直接足し引きするので、押し合いで岩の中へ入れてしまう
+   毎フレーム全員を走査すると岩(最大800個)の総当たりが1回増えるので、
+   **必要な者だけ**(tryMoveAxisを通らなかった/押し合いで動かされた)に絞る。
+   レイドボスは除く: 予告中に動くと予告の輪と実際の攻撃位置がずれる。 */
+function depenetrateStuckEntities(){
+  for(const e of entities){
+    if(!e.alive || !e.needsDepenetrate) continue;
+    e.needsDepenetrate = false;
+    if(e.isRaidBoss) continue;
+    const px = e.x, py = e.y;
+    depenetrateObstacles(e);
+    if(e.x!==px || e.y!==py) e.z = getTerrainHeightAt(e.x, e.y);
+  }
+}
 function tryMoveAxis(m, dx, dy){
   // まず現在位置のめり込みを解消(高さブロックには影響しない)
   depenetrateObstacles(m);
+  m.needsDepenetrate = false;   // ここを通った者は解消済み(depenetrateStuckEntitiesが二度手間をしない)
   const fullX = clamp(m.x+dx, m.radius, WORLD.w-m.radius);
   const fullY = clamp(m.y+dy, m.radius, WORLD.h-m.radius);
   if(!blockedAt(m,fullX,fullY)){
@@ -596,11 +616,14 @@ function teamPointsAroundAnchors(anchors, teamSize, rnd){
   for(const an of anchors){
     for(let j=0;j<teamSize;j++){
       let placed = null;
-      for(let tries=0; tries<12 && !placed; tries++){
+      for(let tries=0; tries<24 && !placed; tries++){
         const a = (j/teamSize)*Math.PI*2 + rnd()*0.8;
         const d = TEAM_SPAWN_SPREAD*(0.6+rnd()*0.8);
         const x = an.x+Math.cos(a)*d, y = an.y+Math.sin(a)*d;
-        if(isOnHazard(x,y,40)) continue;
+        // **岩・水晶も必ず見る。** isOnHazard が見るのは火山・溶岩・水だけなので、
+        // ここだけ抜けていて**チーム戦のメンバーが岩の中に湧いていた**(個人戦の
+        // pickSpawnPoint / pickSpawnPointsBatch は同じ +40 の余白で岩を避けている)
+        if(isOnHazard(x,y,40) || isNearRock(x,y,40) || isNearCrystal(x,y,40)) continue;
         placed = {x,y};
       }
       // 置き場が見つからなければアンカーのすぐ横に妥協して置く(重なりはseparateEntitiesが直す)
@@ -622,12 +645,24 @@ function seededPickTeamSpawnPointsBatch(rng, teamCount, teamSize){
    **ソロ用(pickArenaSpawnPointsBatch)とシード付き(seededPickArenaSpawnPointsBatch)は対。
    直すときは必ず両方直す**(pickTeamSpawnPointsBatchと同じ決まり)。 */
 function arenaTeamAnchors(rnd){
-  const a = rnd()*Math.PI*2;
-  const dx = Math.cos(a)*ARENA_SPAWN_GAP/2, dy = Math.sin(a)*ARENA_SPAWN_GAP/2;
-  return [
-    { x: ZONE_CENTER0.x+dx, y: ZONE_CENTER0.y+dy },
-    { x: ZONE_CENTER0.x-dx, y: ZONE_CENTER0.y-dy },
-  ];
+  /* 対面の軸を選ぶ。**両側とも障害物から離れている軸を選ぶ**まで振り直す
+     (アンカーそのものが岩や火山の中だと、その周りに並べる3体が丸ごと埋まる)。
+     余白はメンバーの散らばり(TEAM_SPAWN_SPREAD)ぶんを見込んで広めに取る。 */
+  const clearance = TEAM_SPAWN_SPREAD + 60;
+  const anchorsAt = (a)=>{
+    const dx = Math.cos(a)*ARENA_SPAWN_GAP/2, dy = Math.sin(a)*ARENA_SPAWN_GAP/2;
+    return [
+      { x: ZONE_CENTER0.x+dx, y: ZONE_CENTER0.y+dy },
+      { x: ZONE_CENTER0.x-dx, y: ZONE_CENTER0.y-dy },
+    ];
+  };
+  const clear = (p)=> !isOnHazard(p.x,p.y,clearance) && !isNearRock(p.x,p.y,clearance) && !isNearCrystal(p.x,p.y,clearance);
+  let last = null;
+  for(let tries=0; tries<24; tries++){
+    last = anchorsAt(rnd()*Math.PI*2);
+    if(last.every(clear)) return last;
+  }
+  return last;   // どこも空いていなければ最後の候補で妥協する(埋まりはdepenetrateStuckEntitiesが外す)
 }
 function pickArenaSpawnPointsBatch(teamSize){
   return teamPointsAroundAnchors(arenaTeamAnchors(Math.random), teamSize, Math.random);
@@ -667,6 +702,7 @@ function createMonster(elementKey, isPlayer, name, overrides){
     recentAttackers:{},
     // チーム戦(combat.jsのassignTeamsが割り当てる)。null=個人戦=従来どおり
     teamId:null, downed:false, downedUntil:0, reviveProgress:0,
+    needsDepenetrate:false,   // このフレームにめり込みの点検が要るか(depenetrateStuckEntities)
   };
 }
 function activeMove(m){
