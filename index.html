@@ -75,7 +75,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      <!-- デイリーとシーズン1は「ミッション」1画面へ統合(タブで分岐、aramon-screens参照) -->
      <button id="openMissionBtn" class="lobby-side-btn has-dot">
        <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">ミッション</span>
-       <span id="missionDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキンGET</span>
+       <span id="missionDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキン</span>
      </button>
      <button id="openRaidBtn" class="lobby-side-btn has-dot hidden">
        <span class="lobby-side-icon">🐉</span><span class="lobby-side-label">レイド</span>
@@ -612,6 +612,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 
 <!-- RESULT -->
 <div id="resultScreen" class="resultScreen hidden">
+ <!-- 【#resultInner を外さない】中身が縦に収まらないときは fitResultScreen() がこの箱ごと
+      縮小して必ず1画面に収める。直下に要素を足すと縮小の対象から外れて見切れる。
+      新しい帯はこの中に足すこと。 -->
+ <div id="resultInner">
   <div class="rank" id="resultRank">#1</div>
   <div class="sub" id="resultSub">勝利</div>
   <div class="resultStatsRow">
@@ -647,6 +651,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <button id="shareResultBtn" class="share-icon-btn" aria-label="SNSでシェア"><span class="share-ico"></span></button>
     <button id="replayBtn">トップ画面へ</button>
   </div>
+ </div>
 </div>
 
 <!-- MASTERMON -->
@@ -750,6 +755,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div id="rankingMapTabs">
       <button class="rank-map-tab active" data-maptype="normal">通常マップ</button>
       <button class="rank-map-tab" data-maptype="real">リアルマップ</button>
+      <button class="rank-map-tab" data-maptype="team">チーム戦</button>
       <button class="rank-map-tab" data-maptype="mastermon">マスモン</button>
       <button class="rank-map-tab" data-maptype="rank">段位</button>
     </div>

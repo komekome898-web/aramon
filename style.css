@@ -428,7 +428,8 @@
   .lobby-help-btn:active{ background:linear-gradient(90deg, #ffdd78, #f4c430); }
   .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; letter-spacing:1px; color:var(--ink-dim); }
   .lobby-pick-value{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
-    font-size:clamp(11px, calc(3 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    /* 最小を10pxまで下げる。11pxだと375x667の縦持ちで「シングル・30人バトロワ」が4px切れていた */
+    font-size:clamp(10px, calc(2.9 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 
   /* ---- 左下のバナー(3秒ごとに切り替え) ---- */
   /* #lobbyLeft は2列の grid なので、バナーは最後の行で2列ぶんをまたぐ */
@@ -453,8 +454,12 @@
   .lobby-banner-foot{ position:absolute; left:7px; right:7px; bottom:5px; display:flex; align-items:center; gap:6px; }
   .lobby-banner-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; color:#ffe08a;
     text-shadow:0 1px 4px rgba(0,0,0,0.9); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lobby-banner-tag{ flex-shrink:0; font-size:9px; font-weight:700; color:#1a1306;
-    background:linear-gradient(180deg,#ffd76a,#f4c430); border-radius:7px; padding:1px 7px; white-space:nowrap; }
+  /* 入手印は**右上へ逃がす**。名前と同じ行に置くと、375x667の縦持ち(=論理667x375)で
+     カードが約170pxしかなく、スキン名が30px切れていた(2026-08-14 実測)。
+     名前に足の幅を丸ごと渡すことで、長い名前でも「…」にならない。 */
+  .lobby-banner-tag{ position:absolute; right:0; top:0; font-size:9px; font-weight:700; color:#1a1306;
+    background:linear-gradient(180deg,#ffd76a,#f4c430); border-bottom-left-radius:8px;
+    padding:1px 7px; white-space:nowrap; z-index:3; }
   #lobbyBannerDots{ display:flex; gap:4px; justify-content:center; margin-top:5px; }
   #lobbyBannerDots .ml-dot{ width:5px; height:5px; }
 
@@ -1565,6 +1570,14 @@
 
   /* リザルト画面: 報酬表示の追加で縦にはみ出さないよう全体を詰める */
   #resultScreen{ padding:10px 24px; }
+  /* 詰めてもなお入らないときは fitResultScreen() が #resultInner を縮小する。
+     transform は場所を取らないので、縮めたあとは上詰めにして余白を下へ寄せる。 */
+  #resultInner{ display:flex; flex-direction:column; align-items:center; width:100%;
+    transform-origin:top center; }
+  /* 縮小後はもう全部見えているので、スクロールは切る。transform は場所を取らず
+     縮める前の高さのまま残るため、切らないと「空白を上下に振れるだけ」の無駄な
+     スクロールが残る(中身は動いて見えるのに読める量は増えない)。 */
+  #resultScreen.result-fitted{ justify-content:flex-start; overflow-y:hidden; }
   #resultScreen .rank{ font-size:clamp(28px,calc(7.5 * var(--vw)),46px); }
   #resultScreen .sub{ margin-top:1px; font-size:12px; }
   #resultScreen .resultStatsRow{ margin-top:8px; gap:16px; }

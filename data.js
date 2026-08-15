@@ -27,7 +27,7 @@ const TEAM_FOLLOW_DIST         = 200;  // botがリーダーへ寄り直す距�
 const TEAM_REVIVE_RADIUS       = 80;   // 蘇生できる距離(この半径内にとどまると進む)
 const TEAM_REVIVE_SEC          = 2.5;  // 蘇生に必要なとどまり時間(秒)
 const TEAM_DOWN_BLEED_SEC      = 30;   // ダウンから出血死までの時間(秒)
-const TEAM_DOWN_SPEED_MULT     = 0.3;  // ダウン中の移動速度倍率(這い移動)
+const TEAM_DOWN_SPEED_MULT     = 0.1;  // ダウン中の移動速度倍率(這い移動。通常の10%・発注者決定 2026-08-14)
 const TEAM_DOWN_DMG_TAKEN_MULT = 1.5;  // ダウン中の被ダメ倍率
 const TEAM_DOWN_HP_RATIO       = 0.3;  // ダウンした瞬間に残すHP(最大HP比。とどめ用の体力。0にしない=HPバーが空にならない)
 const TEAM_REVIVE_HP_RATIO     = 0.4;  // 蘇生で戻るHP(最大HP比)
@@ -1085,6 +1085,15 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-15', items:[
+    { t:'🏆 ランキングに「チーム戦」タブが増えました。チーム戦の撃破数・ダメージはシングルとは別に集計されます(仲間と分け合う試合の記録を1人で戦う記録と同じ表で競わせないため)', g:['feature','multi'] },
+    { t:'デス円盤石の力を、拾った1人の総取りではなく生きている小隊全員で山分けするようになりました(3人そろっていれば3等分)。拾いに行く価値がチーム全体のものになります', g:['balance','multi'] },
+    { t:'デス円盤石の見た目を、ガチャ・召喚演出と同じ円盤石の絵に変えました', g:['av'] },
+    { t:'チーム戦のヘッダーに「残り部隊数」と「残り人数」を出すようにしました', g:['multi'] },
+    { t:'ダウン中の移動速度を通常の10%にしました(以前は30%)。這って逃げ切るのが難しくなり、仲間の蘇生がより大事になります', g:['balance','multi'] },
+    { t:'覚醒スキンでも元のSSRスキンの専用BGM・専用SEが鳴るようになりました(「北大路さつキジン」「狂戦士ガッツ」の覚醒で確認)', g:['fix','av'] },
+    { t:'リザルト画面で「トップ画面へ」などのボタンが画面の外へ出て押せなくなることがあったのを直しました。中身が増えても必ず1画面に収まります', g:['fix'] },
+  ]},
   { date:'2026-08-14', items:[
     { t:'🆕 プレイモードを「シングル/チーム戦/レイド」に整理しました。シングル=30人バトロワ・マルチPvP(2〜4人)、チーム戦=20チームバトロワ(3人1組×20の60体)・バトルアリーナ、レイドは3人チームになります', g:['feature'] },
     { t:'🆕 バトルアリーナが登場! 3人1組の1チームvs1チーム。狭い決着圏で最初からぶつかり合う、3分以内の短期決戦モードです', g:['feature','multi'] },
@@ -1644,8 +1653,19 @@ const TRAIN_CARD_PICK_SEC = 8;     // 選ばなかったときに自動で決ま
    ・拾った項目は拾った側の matchTrainLog にも積まれる(倒されたらまた落ちる=力の連鎖)。
    ・レイドだけは出さない(ボス戦の文脈に合わない)。 */
 const DEATH_DISC_MAX_ITEMS = 3;      // 中身の上限(発注者が実機調整)
-const DEATH_DISC_COLOR     = '#b8b2a4';  // 石の円盤の色
+const DEATH_DISC_COLOR     = '#b8b2a4';  // 石の円盤の色(画像が未ロードのときの手描き用)
 const DEATH_DISC_ACCENT    = '#ffd76a';  // 金の光(拾えることを示す)
+/* 見た目はガチャ・召喚演出と同じ円盤石の画像(images/summon_disk_thick.png)を使う。
+   R=画面上の顔(上面)の横半径。光のふち・光の柱もこの1つの基準からサイズを取る。
+   下の3つは**画像の実測から出した値**なので、絵を差し替えたら測り直すこと
+   (600x600 の中で顔は x66〜541 / y152〜430、画像中心は 300,300):
+     THICK_SCALE  顔の直径がちょうど R*2 になる全体倍率 = 600/475
+     FACE_RATIO   顔の縦横比 = 278/475(光のふちをこの比で描くと絵の縁に重なる)
+     FACE_DY      顔の中心は画像中心より 9px 上 → 描く位置を下へずらして 0 に合わせる */
+const DEATH_DISC_R           = 17;
+const DEATH_DISC_THICK_SCALE = 2.53;
+const DEATH_DISC_FACE_RATIO  = 0.585;
+const DEATH_DISC_FACE_DY     = 0.038;   // R に対する比
 function trainCardMenu(key){ return TRAINING_MENU.find(t=>t.key===key) || null; }
 /* 出す3枚。**拾ったアイテムに対応する1枚は必ず入る**(アイテムの見た目と結果をつなぐ)。
    rnd を渡せる形にしてあるので、同じ乱数から同じ3枚を作れる。 */
@@ -3545,6 +3565,25 @@ const SKIN_MEDIA = {
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
+/* 【覚醒スキンは元のSSRの専用BGM・専用SEをそのまま受け継ぐ】
+   覚醒後の姿(awakenOf付き)は「同じモンスターの強化形態」なので、音は元と同じであるべき。
+   ここで SKIN_MEDIA へ実体を継ぎ足しておくと、audio.js が SKIN_MEDIA のキーを1周して
+   作る BGMループ・SEワンショットにも、ui.js のミュージアム・管理者の音声確認にも
+   自動で載る(それぞれが SKIN_MEDIA を直接見ているので、参照時の解決では足りない)。
+   **これで tools/studio_web.html は覚醒スキンのメディア行を書かなくてよい**
+   (SSR_SKINS へ awakenOf 付きで1行足せば音まで自動でそろう)。
+   ・promote(昇格ムービー)と promoImg は継がない。覚醒スキンはガチャに出ないので
+     昇格演出を持たず、ミュージアムに元と同じ動画が二重に並ぶだけになるため。
+   ・覚醒スキン自身の行が既にある場合はそちらが優先(将来の専用曲への差し替え口)。 */
+Object.keys(SSR_SKINS).forEach(id=>{
+  const base = SSR_SKINS[id].awakenOf;
+  if(!base || !SKIN_MEDIA[base]) return;
+  const inherited = {};
+  if(SKIN_MEDIA[base].bgm) inherited.bgm = SKIN_MEDIA[base].bgm;
+  if(SKIN_MEDIA[base].se)  inherited.se  = SKIN_MEDIA[base].se;
+  if(!Object.keys(inherited).length) return;
+  SKIN_MEDIA[id] = Object.assign(inherited, SKIN_MEDIA[id] || {});
+});
 // 専用SEの区分と、そのスキンに専用SEが無いときに鳴る既存のSE名
 const SKIN_SE_SLOTS = { tier3:'技(tier3)', hit:'被弾', kill:'キル', win:'勝利' };
 const SKIN_BGM_SLOTS = { battle:'残り6人以上', final5:'残り5人以下', lastBattle:'残り2人' };

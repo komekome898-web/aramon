@@ -971,6 +971,14 @@ function applyLootEventLocally(evt){
       // トレーニングは候補3枚が届く。**抽選はホストなので、ゲストは出すだけ**
       if(Array.isArray(evt.cards) && evt.cards.length && typeof showTrainCards==='function') showTrainCards(evt.cards);
     }
+    /* デス円盤石の山分け: **拾っていない味方**にも効くので、by とは別に受け取り手が届く。
+       ステータスの実体は authState のフル配信で来るが、それだけでは
+       「何が起きたのか」が分からないので、ここで音と文言を出す。 */
+    else if(Array.isArray(evt.mates) && netState.myPlayerId && evt.mates.includes(netState.myPlayerId)){
+      playSe('chupiin');
+      if(evt.mateMsg) pushToast(evt.mateMsg);
+      if(player) spawnDmgText(player.x, player.y, player.z, '💠 継承', DEATH_DISC_ACCENT);
+    }
   } else if(evt.evtType==='spawn'){
     if(!lootItems.find(it=>it.id===evt.id)){
       // zは座標から一意に決まるので配信不要(real3dHeightAtは純関数)

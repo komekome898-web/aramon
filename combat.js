@@ -2053,6 +2053,11 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
 // これをしないとゲスト側に効果のメッセージが一切出ない)。
 let pendingLootToast = null;
 let pendingLootCards = null;   // ゲストが拾ったトレーニングの候補3枚(取得イベントに載せる)
+/* デス円盤石の山分けで**拾っていないのに強くなった味方**(ゲスト)へ届けるぶん。
+   ホストのループの中でしか山分けは起きないので、届けないとゲスト側は
+   数値だけ黙って増える(何が起きたのか分からない)。 */
+let pendingLootMates = null;   // 山分けを受けた味方のnetPlayerId配列
+let pendingLootMateMsg = null; // その味方に出す文言
 
 /* ===== トレーニングカードの配布(抽選はホスト=ソロは自分だけが行う) =====
    ・自分         → 画面にカードを出す(選ぶまで / TRAIN_CARD_PICK_SEC 秒で自動)
@@ -2107,6 +2112,7 @@ function updateLootPickups(){
     }
     let consumed = false, consumedBy = null, consumedKind = null;
     pendingLootToast = null; pendingLootCards = null;
+    pendingLootMates = null; pendingLootMateMsg = null;
     for(const e of entities){
       if(!e.alive) continue;
       if(e.isRaidBoss) continue;   // レイドのボスは拾わない(巨体なので通るだけで全部さらってしまう)
@@ -2169,19 +2175,45 @@ function updateLootPickups(){
           spawnDmgText(e.x, e.y, e.z, ti.emoji+' トレーニング', ti.accent);
           consumed = true;
         } else if(it.kind==='deathDisc'){
-          // デス円盤石: 中身のトレーニング項目を**カード選択なしで即適用**。
-          // 効かせ方は既存カードと同じ1本道(applyTrainCardToEntity)なので、
-          // 適正倍率・丸めがそのまま効き、受け継いだ項目は拾った側の履歴にも積まれる(連鎖)
+          /* デス円盤石: 中身のトレーニング項目を**カード選択なしで即適用**。
+             効かせ方は既存カードと同じ1本道(applyTrainCardToEntity)なので、
+             適正倍率・丸めがそのまま効き、受け継いだ項目は拾った側の履歴にも積まれる(連鎖)。
+
+             【チーム戦は分け合う】倒した相手の力は拾った1体の総取りにせず、
+             **生きているチーム全員へ等分**する(3人そろっていれば3等分・発注者決定 2026-08-14)。
+             倒れた仲間の取り分は作らない(分けた力が消えると拾い得が無くなるため)。
+             ダウン中の味方は生存扱いなので受け取る=拾って助け起こす動きに意味が出る。 */
+          const takers = (isTeamMatch() && e.teamId!=null)
+            ? teamMembers(e.teamId).filter(m=> m.alive)
+            : [e];
+          if(!takers.includes(e)) takers.push(e);   // 念のため拾った本人は必ず受け取る
+          const share = 1 / takers.length;
           const counts = new Map();
           for(const k of (it.keys||[])){
             const t = trainCardMenu(k);
-            if(!t || !applyTrainCardToEntity(e, k)) continue;
-            counts.set(t.label, (counts.get(t.label)||0) + 1);
+            if(!t) continue;
+            let applied = false;
+            for(const m of takers){ if(applyTrainCardToEntity(m, k, share)) applied = true; }
+            if(applied) counts.set(t.label, (counts.get(t.label)||0) + 1);
           }
           if(counts.size){
             const parts = Array.from(counts, ([label,n])=> n>1 ? `${label}×${n}` : label);
+            const owner = it.owner || '名も無きモンスター';
+            const shareNote = takers.length > 1 ? `／${takers.length}人で山分け` : '';
             spawnDmgText(e.x, e.y, e.z, '💠 継承', DEATH_DISC_ACCENT);
-            lootToast(e, `${it.owner||'名も無きモンスター'} の力を受け継いだ！（${parts.join('・')}）`);
+            lootToast(e, `${owner} の力を受け継いだ！（${parts.join('・')}${shareNote}）`);
+            if(takers.length > 1){
+              // 山分けは自分が拾っていなくても効くので、味方一人ひとりの頭上にも印を出す
+              const mateMsg = `味方が ${owner} の力を山分けしてくれた！（${parts.join('・')}）`;
+              const mateIds = [];
+              for(const m of takers){
+                if(m===e) continue;
+                spawnDmgText(m.x, m.y, m.z, '💠 継承', DEATH_DISC_ACCENT);
+                if(m.isPlayer) pushToast(mateMsg);
+                else if(netState.mode==='multi' && netState.isHost && m.netPlayerId) mateIds.push(m.netPlayerId);
+              }
+              if(mateIds.length){ pendingLootMates = mateIds; pendingLootMateMsg = mateMsg; }
+            }
           }
           consumed = true;
         }
@@ -2205,6 +2237,8 @@ function updateLootPickups(){
           evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null,
           msg: pendingLootToast||null, // 拾った本人(ゲスト)に出す効果メッセージ
           cards: pendingLootCards||null, // トレーニングの候補3枚(本人にカードを出させる)
+          mates: pendingLootMates||null, // デス円盤石の山分けを受けた味方(拾っていないので by では届かない)
+          mateMsg: pendingLootMateMsg||null,
         });
         // 強化値(maxHp/train係数)は普段8回に1回のフル配信でしか送っていないため、
         // そのままだと効果の反映が最大0.4秒遅れる。取得直後は次の配信を強制的にフルにする

@@ -198,6 +198,8 @@ function resize(){
     if(window.__aramonReal3D) window.__aramonReal3D.resize();
     // HUD配置(割合保存)を新しいサイズへ再反映。ただし編集中は触らない。
     if(typeof applyHudLayout==='function' && !document.documentElement.classList.contains('hud-editing')) applyHudLayout();
+    // リザルトを開いたまま向きが変わると縦幅が変わるので、収まり具合を測り直す
+    if(typeof fitResultScreen==='function') fitResultScreen();
   }catch(err){ console.error('[aramon] resize失敗', err); }
 }
 window.addEventListener('resize', resize);

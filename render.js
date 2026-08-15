@@ -1196,28 +1196,35 @@ function drawLootItem(it,p){
     grad.addColorStop(1, col(0));
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(-7, 0); ctx.lineTo(-4, -92); ctx.lineTo(4, -92); ctx.lineTo(7, 0);
+    ctx.moveTo(-DEATH_DISC_R*0.42, 0); ctx.lineTo(-4, -92); ctx.lineTo(4, -92); ctx.lineTo(DEATH_DISC_R*0.42, 0);
     ctx.closePath(); ctx.fill();
-    // 石の円盤(下に側面の暗い楕円を重ねて厚みを出す)
-    ctx.fillStyle = '#847e6f';
-    ctx.beginPath(); ctx.ellipse(0, 3, 16, 6.5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = DEATH_DISC_COLOR;
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.ellipse(0, 0, 16, 6.5, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-    // 円盤の紋様(同心の刻み)
-    ctx.strokeStyle = 'rgba(90,80,60,0.55)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.ellipse(0, 0, 10.5, 4.2, 0, 0, Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 1.8, 0, 0, Math.PI*2); ctx.stroke();
-    // 金の光のふち(明滅)
+    /* 石の円盤は**ガチャ・召喚演出と同じ画像**を使う(手描きの楕円で似せない)。
+       同じ「円盤石」が場面ごとに違う絵だと別物に見えるため(発注者決定 2026-08-14)。
+       ガチャと同じ厚み付き→平ら→手描き の順に落とす(画像が未ロードでも必ず何か出す)。
+       DEATH_DISC_R は光のふち・柱と画像の大きさをそろえるための1つの基準。 */
+    const R = DEATH_DISC_R, RY = R*DEATH_DISC_FACE_RATIO;
+    if(imgIsReady(summonDiskThickImg)){
+      const S = R * DEATH_DISC_THICK_SCALE;   // 顔の直径が R*2 相当になるよう全体を拡縮
+      ctx.drawImage(summonDiskThickImg, -S/2, -S/2 + R*DEATH_DISC_FACE_DY, S, S);
+    } else if(imgIsReady(summonDiskImg)){
+      ctx.drawImage(summonDiskImg, -R, -RY, R*2, RY*2);
+    } else {
+      ctx.fillStyle = '#847e6f';
+      ctx.beginPath(); ctx.ellipse(0, 3, R, RY, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = DEATH_DISC_COLOR;
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(0, 0, R, RY, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+    // 金の光のふち(明滅)。敵味方の色分けはこの輪だけが担う(画像は塗り替えない)
     if(!renderHeavyLoad){ ctx.shadowBlur = 14*glow; ctx.shadowColor = col(1); }
     ctx.strokeStyle = col(0.75*glow); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(0, 0, 16, 6.5, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, R, RY, 0, 0, Math.PI*2); ctx.stroke();
     ctx.shadowBlur = 0;
     if(dist(it,player)<200){
       // 中身の個数も添える(拾う前に「何個入っているか」だけは分かるように=批評指摘)
       const n = (it.keys && it.keys.length) || 0;
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=col(1); ctx.textAlign='center';
-      ctx.fillText(`${it.owner ? it.owner+'の' : ''}円盤石 ×${n}`, 0, -22);
+      ctx.fillText(`${it.owner ? it.owner+'の' : ''}円盤石 ×${n}`, 0, -DEATH_DISC_R*1.55);
     }
   }
   ctx.restore();
@@ -6104,16 +6111,27 @@ function updateHUD(){
   statusEl.innerHTML = statusHtml;
 
   const aliveCount = entities.filter(e=>e.alive).length;
-  if(game.arena && player && player.teamId!=null){
-    // アリーナはBRの「N体 生存中」ではなく「自3 vs 敵3」(1本勝負の語彙=批評指摘)
-    const own = entities.filter(e=>e.alive && e.teamId===player.teamId).length;
-    const foe = aliveCount - own;
-    document.getElementById('aliveNum').textContent = `${own}v${foe}`;
-    document.getElementById('aliveLabel').textContent = '自 vs 敵';
-  } else {
-    document.getElementById('aliveNum').textContent = aliveCount;
-    const al = document.getElementById('aliveLabel');
-    if(al.textContent!=='体 生存中') al.textContent = '体 生存中';   // アリーナ後の持ち越し防止
+  {
+    /* 生存カウンタの言葉はモードで3通り。**どれも同じ2要素(#aliveNum/#aliveLabel)へ書く**ので、
+       前のモードの文言が残らないよう毎フレーム両方を確定させる。
+         アリーナ  : 自3 v 敵3      (1本勝負なので部隊数に意味が無い)
+         チーム戦BR: 12部隊 / 残り34人 (APEXと同じ「部隊数と残り人数」・発注者要望 2026-08-14)
+         個人戦    : 20 体 生存中 */
+    let num, label;
+    if(game.arena && player && player.teamId!=null){
+      const own = entities.filter(e=>e.alive && e.teamId===player.teamId).length;
+      num = `${own}v${aliveCount-own}`; label = '自 vs 敵';
+    } else if((typeof isTeamMatch==='function') && isTeamMatch()){
+      // ダウン中も alive のまま=部隊はまだ生きている(全員が本当に倒れて初めて1部隊減る)
+      const squads = new Set();
+      for(const e of entities){ if(e.alive && e.teamId!=null) squads.add(e.teamId); }
+      num = `${squads.size}部隊`; label = `残り${aliveCount}人`;
+    } else {
+      num = String(aliveCount); label = '体 生存中';
+    }
+    const an = document.getElementById('aliveNum'), al = document.getElementById('aliveLabel');
+    if(an.textContent!==num) an.textContent = num;
+    if(al.textContent!==label) al.textContent = label;
   }
   bgmUpdateBattleIntensity(aliveCount); // 残り人数で試合BGMの盛り上がりを切替
   document.getElementById('zoneStatus').textContent = zoneLabel();

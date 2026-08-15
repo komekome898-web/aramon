@@ -1111,9 +1111,9 @@ function buildLobbyBanner(){
       <div class="lobby-banner-face" style="background-image:url('${b.img}');background-size:${b.size||'cover'};background-position:${b.pos||'50% 40%'}"></div>
       <div class="lobby-banner-shade"></div>
       <div class="lobby-banner-rar">${b.rar||'SSR'}</div>
+      <span class="lobby-banner-tag">${b.tag}</span>
       <div class="lobby-banner-foot">
         <span class="lobby-banner-name">${b.name}</span>
-        <span class="lobby-banner-tag">${b.tag}</span>
       </div>
     </div>`).join('');
   dots.innerHTML = LOBBY_BANNERS.map((_,i)=>`<div class="ml-dot ${i===0?'active':''}"></div>`).join('');
@@ -4840,6 +4840,7 @@ function raidShowResult(defeated, dmg, prevBest){
       timeText: fmtTime(player && player.deathAt ? player.deathAt : matchTime),
     });
   }
+  fitResultScreen();   // レイドのリザルトも通常と同じ枠なので、収まり具合を測って必要なら縮める
 }
 
 function exitShootingRange(){
@@ -5129,6 +5130,37 @@ function showResultNow(isWin, placement){
     mapLabel: shareMapLabel(),
     best: (player.kills>0 && player.kills>_prevBestKills) || (_dmg>0 && _dmg>_prevBestDamage),
   });
+  fitResultScreen();
+}
+/* =====================================================================
+   リザルトを必ず1画面に収める
+
+   リザルトは中身が増え続ける画面(報酬→自己ベスト→称号→シーズンSP→段位RP→小隊成績…)で、
+   足すたびに縦がはみ出して**下端のボタン列ごと画面外へ出ていた**
+   (2026-08-14 実測: 375x667の縦持ち=論理667x375で、内容514px / 表示375px。
+    「トップ画面へ」が129px下にあり、押せない)。CSSの数字を毎回詰め直しても
+   次に何か足せばまた同じことが起きるので、**入らなければ縮める**の1か所で断つ。
+
+   ・縮小は #resultInner ごと transform:scale。文字も余白も同じ比率で小さくなる。
+   ・transform は場所を取らないので、縮めたときだけ上詰め(.result-fitted)にする。
+   ・下限 FIT_MIN は設けない(読めない小ささになる前に中身を減らすべきだが、
+     「押せない」よりは「小さい」ほうがましなので、まず必ず収める)。
+   呼ぶ場所: showResultNow の最後 / 中身が変わる handleMastermonPostMatch / resize。
+===================================================================== */
+function fitResultScreen(){
+  const scr = document.getElementById('resultScreen');
+  const inner = document.getElementById('resultInner');
+  if(!scr || !inner || scr.classList.contains('hidden')) return;
+  inner.style.transform = '';
+  scr.classList.remove('result-fitted');
+  const cs = getComputedStyle(scr);
+  // clientHeight は padding を含むので、実際に置ける高さは上下paddingを引いた残り
+  const avail = scr.clientHeight - parseFloat(cs.paddingTop||0) - parseFloat(cs.paddingBottom||0);
+  const need = inner.offsetHeight;
+  if(!(avail > 0) || !(need > 0) || need <= avail) return;
+  const k = avail / need;
+  inner.style.transform = `scale(${k.toFixed(4)})`;
+  scr.classList.add('result-fitted');
 }
 /* ===== 段位(数字と表は data.js) =====
    **RPを動かすのは rankOnMatchEnd だけ。** 呼ぶのは showResultNow と raidShowResult の
@@ -6422,7 +6454,11 @@ function submitScoreToRanking(isWin, placement){
     name,
     element: player.element,
     elementLabel: ELEMENTS[player.element].label,
-    mapType: (currentMap && currentMap.real3d) ? 'real' : 'normal', // 通常/リアルマップでランキングを分ける
+    /* 【集計先の振り分け】チーム戦(20チームBR・バトルアリーナ)は**マップを問わず**チーム戦の記録へ。
+       仲間と分け合う試合のキル数をシングルと同じ土俵で並べると比べ物にならないため(発注者決定 2026-08-14)。
+       レイドは teamSize=1 のままなので、ここでは従来どおり通常/リアルへ入る。 */
+    mapType: (typeof isTeamMatch==='function' && isTeamMatch()) ? 'team'
+           : (currentMap && currentMap.real3d) ? 'real' : 'normal',
     skin: equippedSkin,               // その試合で装備していたスキン(ランキングアイコンに反映)
     mastermonName,
     mastermonLevel,
@@ -7953,11 +7989,23 @@ function refreshMatchMmEffects(ent){
   ent.mastermonCooldownMult = mults.cooldownMult;
 }
 /* トレーニングカードを1枚適用する。**効かせ方はここ1か所**(自分・bot・マルチの相手で共通)。
+   strength は効き目の割り前(既定1=まるごと)。デス円盤石をチームで分け合うときだけ
+   1/人数 を渡す。**上げ下げどちらも同じ割合で薄める**(上がりだけ薄めると得な話になる)。
+   割り前が小さくても0にはしない(1未満は符号ぶんの1に丸める)=「分けたら何も起きない」を防ぐ。
    戻り値は実際に動いたステータスの差分(表示用)。 */
-function applyTrainCardToEntity(ent, cardKey){
+function applyTrainCardToEntity(ent, cardKey, strength){
   const mm = ensureMatchMm(ent);
-  const changes = (typeof trainCardChanges==='function') ? trainCardChanges(mm, cardKey) : null;
+  let changes = (typeof trainCardChanges==='function') ? trainCardChanges(mm, cardKey) : null;
   if(!mm || !changes) return null;
+  const s = (strength==null) ? 1 : strength;
+  if(s !== 1){
+    const shared = {};
+    Object.keys(changes).forEach(k=>{
+      const v = changes[k] * s;
+      shared[k] = (v===0) ? 0 : (Math.round(v) || Math.sign(v));
+    });
+    changes = shared;
+  }
   // **上限(mastermonStatCap)を見ない。** 育てきったマスモンでカードが無駄にならないように
   Object.keys(changes).forEach(k=>{ mm.stats[k] = matchStatClamp(mm.stats[k] + changes[k]); });
   refreshMatchMmEffects(ent);
@@ -8293,11 +8341,13 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
   mastermonDetailKey = elementKey;
   registerEl.classList.add('hidden');
   renderSelectorCards();
+  fitResultScreen();   // 登録の帯が消えEXP欄が出る＝縦が変わるので測り直す
   pushToast('マスモンに登録しました！' + toastExpText);
 });
 document.getElementById('mastermonRegisterSkipBtn').addEventListener('click', ()=>{
   pendingRegisterMatchStats = null;
   document.getElementById('mastermonRegisterPrompt').classList.add('hidden');
+  fitResultScreen();   // 帯が1つ減ったぶん縮小をやめて元の大きさに戻す
 });
 function onPlayerDown(){
   /* レイドは checkRaidEnd() が「全滅 or 時間切れ or 討伐」で決着させるので、
@@ -8381,7 +8431,7 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
 
 let currentRankingMode = 'kills';
 let currentRankingMonster = 'all';
-let currentRankingMapType = 'normal'; // 通常マップ / リアルマップ / マスモン(タブの名前を流用しているだけで地形ではない)
+let currentRankingMapType = 'normal'; // 通常マップ / リアルマップ / チーム戦 / マスモン / 段位(タブの名前を流用しているだけで地形ではない)
 // マスモン自身の記録(通常/リアルのどちらで遊んでも同じ値)。フィールド名がFirebase側の記録名そのもの。
 /* 地形で分けない項目(フィールド名をそのまま索引に使う)。
    マスモン自身の記録と、アカウントの段位がここに入る。 */
@@ -8394,9 +8444,17 @@ const RANK_TAB_MODES = ['rankPoint', 'rankRpSum'];
 const RANKING_TABS_BY_CATEGORY = {
   normal: [['kills','キル数'], ['damage','ダメージ数']],
   real:   [['kills','キル数'], ['damage','ダメージ数']],
+  team:   [['kills','キル数'], ['damage','ダメージ数']],
   mastermon: [['mastermonLevel','マスモンLv'], ['mastermonRebirth','転生回数'], ['mastermonStatTotal','ステ合計']],
   rank:      [['rankPoint','段位'], ['rankRpSum','モンスター別RP']],
 };
+/* 【集計先の名前はここが正】カテゴリ → Firebase側のフィールド接尾辞。
+   `kills` なら killsNormal / killsReal / killsTeam の3本に分かれて溜まる。
+   **チーム戦はマップを問わず Team へ入る**(シングルの記録と混ぜない・発注者決定 2026-08-14)。
+   送る側(firebase.js の __aramonSubmitScore)と読む側(ここ)で名前が食い違うと
+   記録が消えたように見えるので、増やすときは両方に足す。 */
+const RANKING_MAP_SUFFIX = { normal:'Normal', real:'Real', team:'Team' };
+const RANKING_SCOPE_LABEL = { normal:'通常マップ', real:'リアルマップ', team:'チーム戦' };
 // カテゴリを切り替えるたびにサブタブを組み直す。今のモードが新カテゴリに無ければ先頭へ落とす。
 function renderRankingModeTabs(){
   const wrap = document.getElementById('rankingTabs');
@@ -8446,11 +8504,11 @@ async function openRankingScreen(fromTitle){
   await loadRankingList(currentRankingMode);
 }
 const RANK_CROWN = { 1:{ color:'#ffd700', glow:'rgba(255,215,0,0.7)' }, 2:{ color:'#dfe6ee', glow:'rgba(223,230,238,0.6)' }, 3:{ color:'#cd7f32', glow:'rgba(205,127,50,0.6)' } };
-// scoresの1レコードからkills/damageを通常/リアル別に取り出す。
+// scoresの1レコードからkills/damageを通常/リアル/チーム戦別に取り出す。
 // killsNormal等はこの機能を追加した後に試合を送信したレコードにしか無いので、
-// 未移行の旧データ(kills/damageのみ)は読み取り時にも通常マップの実績として引き継ぐ(リアルは0扱い)。
+// 未移行の旧データ(kills/damageのみ)は読み取り時にも通常マップの実績として引き継ぐ(リアル・チーム戦は0扱い)。
 function mmMapStat(r, statName, mapType){
-  const field = statName + (mapType==='real' ? 'Real' : 'Normal');
+  const field = statName + (RANKING_MAP_SUFFIX[mapType] || RANKING_MAP_SUFFIX.normal);
   if(r[field]!=null) return r[field]||0;
   return mapType==='normal' ? (r[statName]||0) : 0;
 }
@@ -8608,10 +8666,10 @@ async function loadRankingList(mode){
     listEl.innerHTML = '<div class="rank-empty">ランキング機能が利用できません</div>';
     return;
   }
-  // kills/damageは通常マップ/リアルマップで別カウンタ(killsNormal等)に集計しているので、
-  // モードとマップ種別タブから実際に索引する項目名を組み立てる。マスモン自身の記録はマップ別に分けない。
+  // kills/damageは通常マップ/リアルマップ/チーム戦で別カウンタ(killsNormal等)に集計しているので、
+  // モードとカテゴリタブから実際に索引する項目名を組み立てる。マスモン自身の記録はカテゴリ別に分けない。
   const isMastermonMode = MASTERMON_RANK_MODES.includes(mode);
-  const field = isMastermonMode ? mode : (mode + (currentRankingMapType==='real' ? 'Real' : 'Normal'));
+  const field = isMastermonMode ? mode : (mode + (RANKING_MAP_SUFFIX[currentRankingMapType] || RANKING_MAP_SUFFIX.normal));
   const fetchCount = currentRankingMonster==='all' ? 50 : 300;
   const rows = await window.__aramonFetchRanking(field, fetchCount);
   if(!rows){
@@ -8661,7 +8719,7 @@ async function loadRankingList(mode){
     if(nm === me && !mine) mine = { r, rank, val };   // シェア用に自分の行を控える
     return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
   }).join('');
-  const scopeLabel = isMastermonMode ? 'マスモン' : (currentRankingMapType==='real' ? 'リアルマップ' : '通常マップ');
+  const scopeLabel = isMastermonMode ? 'マスモン' : (RANKING_SCOPE_LABEL[currentRankingMapType] || RANKING_SCOPE_LABEL.normal);
   setRankShareTarget(false, mine && {
     rank: mine.rank,
     title: `${RANKING_MODE_LABEL[mode] || mode}ランキング（${scopeLabel}）`,
