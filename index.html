@@ -850,6 +850,16 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
          足すと SKIN_MEDIA に promote が増えるので、ここへの追記は不要 -->
     <div id="adminPromoteCheckBtns"></div>
     <button id="adminAquaBattleBgmCheckBtn" class="admin-grant-dia-btn">🎵 大喰いの利世 バトルBGM素材確認</button>
+    <!-- テストプレイ等で紛れ込んだランキング記録を消す。名前で検索→項目単位/レコード単位で削除。
+         取り消せないので2回タップ制(1回目で赤くなり、もう一度タップで実行)。 -->
+    <div class="admin-skin-grant">
+      <div class="admin-skin-title">ランキング記録の削除(名前で検索・取り消せません)</div>
+      <div id="adminScoreSearchRow" class="admin-score-search-row">
+        <input type="text" id="adminScoreSearchInput" maxlength="12" placeholder="プレイヤー名(完全一致)" data-kb-title="プレイヤー名">
+        <button id="adminScoreSearchBtn" class="admin-grant-dia-btn">検索</button>
+      </div>
+      <div id="adminScoreResults" class="admin-score-results"></div>
+    </div>
   </div>
   <div id="adminStatsPane">
     <div class="admin-subtabs" id="adminStatSubtabs">

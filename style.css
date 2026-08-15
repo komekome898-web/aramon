@@ -1683,6 +1683,44 @@
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;
     color:var(--ink-dim); margin-bottom:8px;
   }
+  /* 管理者「機能」タブ: ランキング記録の削除 */
+  .admin-score-search-row{ display:flex; gap:8px; align-items:center; }
+  #adminScoreSearchInput{
+    width:150px; padding:8px 12px; font-family:'Rajdhani',sans-serif; font-size:13px;
+    color:var(--ink); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line);
+    border-radius:6px; text-align:center; outline:none;
+  }
+  #adminScoreSearchInput:focus{ border-color:var(--amber); }
+  .admin-score-search-row .admin-grant-dia-btn{ margin-top:0; }
+  .admin-score-results{ width:100%; max-width:420px; margin-top:10px; display:flex; flex-direction:column; gap:10px; }
+  .admin-score-empty{ font-size:11px; color:var(--ink-dim); text-align:center; margin-top:8px; }
+  .admin-score-card{
+    padding:10px 12px; border-radius:8px; background:rgba(255,255,255,0.04);
+    border:1px solid var(--panel-line); text-align:left;
+  }
+  .admin-score-card-head{ display:flex; align-items:baseline; gap:6px; margin-bottom:6px; }
+  .admin-score-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; color:var(--amber); }
+  .admin-score-card-elem{ font-size:11px; color:var(--ink-dim); }
+  .admin-score-field-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:4px 0; border-top:1px solid rgba(255,255,255,0.06);
+  }
+  .admin-score-field-label{ font-size:11px; color:var(--ink); }
+  .admin-score-field-val{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); margin-right:auto; margin-left:6px; }
+  /* 危険操作は赤系。1回目のタップで武装(armed)状態になり、文言と色で「もう一度押すと実行」を示す */
+  .admin-danger-btn{
+    flex-shrink:0; padding:4px 10px; border-radius:5px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
+  }
+  .admin-danger-btn.armed{ color:#fff; background:var(--danger); border-color:var(--danger); }
+  .admin-score-card-delete{
+    margin-top:8px; width:100%; padding:8px 0; border-radius:6px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px;
+    color:var(--danger); background:rgba(255,93,93,0.08); border:1px solid rgba(255,93,93,0.45);
+  }
+  .admin-score-card-delete.armed{ color:#fff; background:var(--danger); }
+
   .custom-select-group{
     padding:6px 12px 3px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px;
     letter-spacing:1px; color:var(--amber); opacity:0.75;
