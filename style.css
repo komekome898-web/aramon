@@ -328,7 +328,13 @@
     position:relative; cursor:pointer; text-align:center;
     /* 高さは先に決まる。--tile-h が未設定でも押しやすさの下限は割らない */
     height:var(--tile-h, var(--tap-pick)); min-height:var(--tap-pick); flex-shrink:0;
-    display:grid; justify-items:center; min-width:0; overflow:hidden;
+    /* 【overflow:hidden を付けない】通知ドットのように**わざと角の外へ出す飾り**が
+       切られて見えなくなる(2026-08-15に遠征の赤丸で発生)。
+       それ以前に、ここで隠すと「中身が入っていない」ことが目に見えなくなり、
+       ラベルが黙って消える事故(同日)の温床になる。中身が入る保証は
+       上の割合(合計82%)と、各文字要素が自分で「…」に切ることで取ってある。
+       守れているかは tools/lobby_layout_test.mjs が毎回確かめる。 */
+    display:grid; justify-items:center; min-width:0;
     /* 帯 / アイコン / ラベル。割合で決めつつ、**読める下限(px)を割らない**ように max() を挟む。
        小さい方のタイル(=下限の44px)でも 11 + 12 + アイコン15 + 枠4 = 42 で必ず収まる。 */
     grid-template-rows:
@@ -1307,8 +1313,18 @@
     pointer-events:none;
   }
   .has-dot{ position:relative; }
-  .notif-dot{ position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
-    background:var(--danger); border:2px solid #04060a; box-shadow:0 0 6px rgba(255,64,64,0.8); }
+  /* 「受け取れるものがある」の赤丸。**見落とされたら意味が無い**ので、
+     角からしっかり出して大きめに描き、脈打たせて目を引く。
+     枠の外へ出るぶん、親に overflow:hidden を付けると切れる(.lobby-side-btn の注意書き参照)。 */
+  .notif-dot{ position:absolute; top:-5px; right:-5px; width:14px; height:14px; border-radius:50%;
+    background:var(--danger); border:2px solid #04060a; z-index:4;
+    box-shadow:0 0 0 rgba(255,64,64,0.75), 0 1px 3px rgba(0,0,0,0.6);
+    animation:notifDotPulse 1.5s ease-out infinite; }
+  @keyframes notifDotPulse{
+    0%   { box-shadow:0 0 0 0 rgba(255,64,64,0.75), 0 1px 3px rgba(0,0,0,0.6); }
+    70%  { box-shadow:0 0 0 7px rgba(255,64,64,0), 0 1px 3px rgba(0,0,0,0.6); }
+    100% { box-shadow:0 0 0 0 rgba(255,64,64,0), 0 1px 3px rgba(0,0,0,0.6); }
+  }
   /* 「今この部屋で人が待っている」バッジ。**絶対配置にしない**
      (ボタンの外へはみ出す/中の文字を覆う。実測で両方とも起きた)。
      ボタンの中に普通の要素として置き、点滅で「今まさに居る」ことを伝える */
