@@ -1092,6 +1092,8 @@ const UPDATE_HISTORY = [
     { t:'チーム戦のヘッダーに「残り部隊数」と「残り人数」を出すようにしました', g:['multi'] },
     { t:'ダウン中の移動速度を通常の10%にしました(以前は30%)。這って逃げ切るのが難しくなり、仲間の蘇生がより大事になります', g:['balance','multi'] },
     { t:'転生を重ねるほどレベルアップに必要なEXPが増えるようになりました(転生1回ごとに1.5倍→2倍→2.5倍…)。転生回数はマスモン詳細の「必要EXP倍率」で確認できます', g:['balance'] },
+    { t:'転生でもらえる基礎HP・基礎移動速度の上がり幅が、回を追うごとに小さくなりました(+10→+8→+6→+4→+2)。すでに転生済みのマスモンにも適用されます。合計はマスモン詳細の「転生ボーナス」で確認できます', g:['balance'] },
+    { t:'転生できる回数を5回までにしました。5回まで転生したマスモンは、★の代わりに👑が付きます', g:['balance','feature'] },
     { t:'覚醒スキンでも元のSSRスキンの専用BGM・専用SEが鳴るようになりました(「北大路さつキジン」「狂戦士ガッツ」の覚醒で確認)', g:['fix','av'] },
     { t:'リザルト画面で「トップ画面へ」などのボタンが画面の外へ出て押せなくなることがあったのを直しました。中身が増えても必ず1画面に収まります', g:['fix'] },
   ]},
@@ -1755,9 +1757,14 @@ function matchTrainTotalEffects(mm, baseStats){
    どちらも「無ければ従来どおり」で読めるので、既存のセーブデータをそのまま扱える。
    ===================================================================== */
 const REBIRTH_LEVEL_REQ        = MASTERMON_LEVEL_CAP; // 転生できるレベル(=上限レベル)
+const REBIRTH_MAX              = 5;     // 転生できる回数の上限(到達したら印が★から👑になる)
 const REBIRTH_STAT_CAP_STEP    = 100;   // 転生1回につきステータス上限に加算(1回目1099・2回目1199…)
-const REBIRTH_BASE_HP_BONUS    = 10;    // 転生1回につき種族の基礎HPに加算
-const REBIRTH_BASE_SPEED_BONUS = 10;    // 転生1回につき種族の基礎速度に加算
+/* 転生1回ごとに種族の基礎HP・基礎移動速度へ加算する量(1回目→5回目)。**HPと速度で共通**。
+   後ろほど小さくして、回すほど1周の重みが増えるのに見返りは減る形にしている
+   (必要EXPは REBIRTH_EXP_MULT_STEP で増える)。合計は 10/18/24/28/30。
+   **合計は mastermonBaseBonus が毎回この表から数え直す**ので、
+   すでに転生済みのマスモンにもこの表を直しただけで反映される(保存側には持たない)。 */
+const REBIRTH_BASE_BONUS_STEPS = [10, 8, 6, 4, 2];
 const REBIRTH_TICKETS          = 10;    // 転生時にもらえるトレーニングチケット
 const REBIRTH_STAT_KEEP_RATIO  = 1/3;   // 転生後に残るステータスの割合(999→333)
 const REBIRTH_APT_PICKS        = 3;     // 転生時に1段階上げる適正の数
@@ -1769,6 +1776,21 @@ const REBIRTH_APT_PICKS        = 3;     // 転生時に1段階上げる適正の
 const REBIRTH_EXP_MULT_STEP    = 0.5;
 
 function mastermonRebirthCount(mm){ return Math.max(0, Math.round((mm && mm.rebirth) || 0)); }
+// n回目(1始まり)の転生でもらえる基礎値の加算。表の外(上限を超えた回)は0
+function rebirthBaseBonusStep(n){ return REBIRTH_BASE_BONUS_STEPS[Math.round(n)-1] || 0; }
+// 転生をn回した個体の基礎値加算の合計。**保存せず毎回数え直す**(表を直せば既存の個体にも効く)
+function rebirthBaseBonusTotal(n){
+  let sum = 0;
+  for(let i=1; i<=Math.max(0, Math.round(n)); i++) sum += rebirthBaseBonusStep(i);
+  return sum;
+}
+/* 転生回数の印。**上限まで行ったら★の並びではなく王冠1つ**にする。
+   ★が5つ並ぶより「これ以上ない個体」だとひと目で分かる。
+   ここ1か所を全部の表示(カード・転生画面・演出)が呼ぶ。 */
+function rebirthMarkText(mm){
+  const n = mastermonRebirthCount(mm);
+  return n >= REBIRTH_MAX ? '👑' : '★'.repeat(n);
+}
 // ランキング「ステ合計」用。育成で振った6ステータスの合計(適正・転生ボーナスは含まない生値)
 function mastermonStatTotal(mm){
   return MASTERMON_STATS.reduce((sum,s)=>sum + Math.round((mm && mm.stats && mm.stats[s.key]) || 0), 0);
@@ -1870,7 +1892,8 @@ function mastermonBaseBonus(mm){
   const n = mastermonRebirthCount(mm);
   const itemHp    = safeBaseAmount(mm && mm.baseHp);
   const itemSpeed = safeBaseAmount(mm && mm.baseSpd);
-  return { hp: n*REBIRTH_BASE_HP_BONUS + itemHp, speed: n*REBIRTH_BASE_SPEED_BONUS + itemSpeed };
+  const rbBonus = rebirthBaseBonusTotal(n);
+  return { hp: rbBonus + itemHp, speed: rbBonus + itemSpeed };
 }
 // 壊れたセーブや相手から届いた変な値でNaNにならないようにする。
 // NaNのままだとHPが数値でなくなり、ダメージ計算もゲージも壊れて試合が続けられなくなる。
@@ -1878,7 +1901,11 @@ function safeBaseAmount(v){
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
-function canRebirthMastermon(mm){ return !!mm && (mm.level||0) >= REBIRTH_LEVEL_REQ; }
+// もう転生できないところまで回した個体か(ボタンの出し方と印を分ける判定はここ1か所)
+function rebirthMaxedOut(mm){ return mastermonRebirthCount(mm) >= REBIRTH_MAX; }
+function canRebirthMastermon(mm){
+  return !!mm && (mm.level||0) >= REBIRTH_LEVEL_REQ && !rebirthMaxedOut(mm);
+}
 // 転生を実行した結果の新しいマスモンを返す(元のオブジェクトは書き換えない)。
 // aptPicks には1段階上げるステータスキーを REBIRTH_APT_PICKS 個渡す。
 function rebirthMastermonResult(mm, aptPicks){
