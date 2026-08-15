@@ -1647,19 +1647,11 @@
   /* ===== 段位 ===== */
   /* クラス名は `rank` にしない(リザルトの順位表示 .resultScreen .rank と衝突して巨大になる) */
   .result-badge.rankrp{ color:var(--ink); background:rgba(255,255,255,0.07); border-color:var(--panel-line); }
-  /* ヘッダーのチップ。名前・称号と同じ中央のまとまりに置く(右へ足すと所持金が押し出される) */
-  #topHeader .header-rank{ flex-shrink:0; display:inline-flex; align-items:center; margin-left:6px; vertical-align:middle; }
-  /* 名前・称号・段位が長くても両端を押し出さない。入りきらない側を「…」で省略する */
+  /* 名前・称号が長くても両端を押し出さない。入りきらない側を「…」で省略する */
   #topHeader #headerCenter{ justify-self:center; min-width:0; max-width:100%;
     overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-  .rank-chip{
-    display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
-    height:22px; padding:0 7px; border-radius:11px; font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px;
-    color:var(--rank-color,#fff); background:rgba(255,255,255,0.07);
-    border:1px solid var(--panel-line);   /* color-mix()は古いiOSで効かないので使わない */
-  }
-  .rank-chip b{ font-family:'Share Tech Mono',monospace; font-size:10.5px; color:var(--ink-dim); font-weight:400; }
-  .rank-chip.icon-only{ padding:0 6px; font-size:13px; }
+  /* .rank-chip はヘッダーの段位チップ専用だったので、段位をヘッダーから外したときに消した
+     (2026-08-15)。段位の見た目はロビーの .lobby-rank-panel が自前で持っている。 */
   .mystat-rank-rp{ display:block; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); }
   /* シーズンパスの中身(#missionOverlay .mission-box に統合済み。情報量が多いので、
      レイド画面と同じく枠と余白を切り詰めて表示領域を稼ぐ) */

@@ -1610,19 +1610,15 @@ async function accountSyncNow(){
 }
 function updateAccountBar(){
   const w = loadWallet();
-  // 上部ヘッダー: アカウント名・ゴールド・ダイヤ
+  /* 上部ヘッダー: アカウント名・ゴールド・ダイヤ。
+     【ここに項目を増やさない】横幅が決まっているので、増やすと名前が「お…」のように
+     省略される(モン晶と段位を並べて実機で発生・2026-08-15)。
+     ・段位 → ロビーの #lobbyRankPanel に大きく出ている
+     ・モン晶 → ショップの💠交換タブとガチャ画面のヘッダーで見せる
+     どちらも他に置き場があるので、ヘッダーでは持たない。 */
   document.getElementById('headerAccountName').textContent = accountState.loggedIn ? accountState.name : 'ゲスト';
-  const rankEl = document.getElementById('headerRank');
-  if(rankEl && typeof loadRank==='function') rankEl.innerHTML = rankChipHtml(loadRank().rp, { iconOnly:true });
   document.getElementById('headerGold').textContent = `🪙 ${w.gold}`;
   document.getElementById('headerDia').textContent = `💎 ${w.dia}`;
-  /* モン晶。**0個のうちは出さない。** ヘッダーは横幅が決まっていて、
-     まだ1個も持っていない人にまで3つ目を並べると名前と段位が押し出される。 */
-  const shardEl = document.getElementById('headerShard');
-  if(shardEl){
-    shardEl.textContent = `${SHARD_ICON} ${w.shard}`;
-    shardEl.classList.toggle('hidden', w.shard <= 0);
-  }
   // アカウントボタンはマイページの中に常設。文言だけログイン状態で切り替える
   const btn = document.getElementById('accountLoginBtn');
   const label = btn.querySelector('.lobby-menu-text b');
@@ -5346,17 +5342,9 @@ function rankOnMatchEnd(o){
   updateAccountBar();
   return res;
 }
-/* 段位のチップ。**ヘッダーは絵だけ**にする。名前とRPまで出すと横幅が足りず、
-   568px幅の端末で所持金がはみ出した(実測 +30px)。名前とRPはマイページ・リザルト・
-   ランキングで見せているので、ここは今の段位が分かれば足りる。 */
-function rankChipHtml(rp, opts){
-  const p = rankProgress(rp);
-  if(opts && opts.iconOnly){
-    return `<span class="rank-chip icon-only" style="--rank-color:${p.cur.color}">${p.cur.icon}</span>`;
-  }
-  return `<span class="rank-chip" style="--rank-color:${p.cur.color}">${p.cur.icon} ${p.cur.name}` +
-         `<b>${Math.round(rp)}</b></span>`;
-}
+/* 段位のチップを作る関数はここにあったが、**ヘッダーから段位を外したので消した**
+   (2026-08-15。ヘッダーが詰まって名前が省略されるため)。
+   段位はロビーの #lobbyRankPanel が自前の作りで大きく出している。 */
 // リザルトの自己ベスト更新バッジ＆獲得称号バッジを描画する
 function renderResultBadges(o){
   const el = document.getElementById('resultBadges');
