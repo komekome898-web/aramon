@@ -197,9 +197,15 @@
       linear-gradient(90deg, rgba(4,6,10,0.92) 0%, rgba(4,6,10,0.45) 26%, rgba(4,6,10,0.28) 50%, rgba(4,6,10,0.5) 74%, rgba(4,6,10,0.92) 100%),
       linear-gradient(180deg, rgba(4,6,10,0.86) 0%, rgba(4,6,10,0.15) 34%, rgba(4,6,10,0.55) 100%);
   }
+  /* 【grid-template-rows を外さない】行を1つ・minmax(0,1fr) で明示するのが要。
+     省略すると行は「いちばん背の高い列の中身」まで伸び、画面の高さを超えたぶんが
+     そのまま下へはみ出す(2026-08-15 実測: 375x667の縦持ちで行354px / 入る高さ339px。
+     エモート行と「部屋を作る/部屋を探す」が画面外へ出て押せなかった)。
+     行の高さが決まって初めて #lobbyCenter の height:100% が効き、
+     ステージ(#lobbyMonsterStage)の flex:1 1 auto が本来の狙いどおり余りを吸って縮む。 */
   #lobbyLayout{
     position:absolute; left:0; right:0; top:var(--top-header-h); bottom:0; z-index:1;
-    display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; grid-template-rows:minmax(0,1fr);
     align-items:center; gap:calc(2 * var(--vw)); padding:calc(1 * var(--vh)) calc(2 * var(--vw)) calc(1.6 * var(--vh));
   }
 
@@ -379,8 +385,13 @@
   }
   #lobbyMonsterName .lobby-mon-sub{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink-dim); }
   /* ---- 右: マップ / モード / 出撃 ---- */
+  /* height:100% で行の高さ(=画面の高さ)に釘付けにする。**固定の余白で下へ押さない。**
+     出撃ボタンの上の空きは margin-top:auto で「余った分だけ」にしてあるので、
+     背の低い画面では0まで詰まり、はみ出さない(下の #lobbyRight #joinBtn を参照)。 */
   #lobbyRight{ display:flex; flex-direction:column; gap:calc(1.1 * var(--vh)); align-items:stretch;
-    width:clamp(126px, calc(23 * var(--vw)), 186px); }
+    /* 23vw だと375x667の縦持ちでプレイモードの文字(「チーム戦・20チームバトロワ」=151px)が
+       22px切れていた。中央は minmax(0,1fr) なので、ここを広げたぶん中央が細くなるだけ。 */
+    height:100%; min-height:0; width:clamp(126px, calc(27 * var(--vw)), 224px); }
   /* 段位パネル(右列の上の空き)。今のRPと次の段位までの残りを出す */
   .lobby-rank-panel{
     padding:calc(0.6 * var(--vh)) 9px; border-radius:9px;
@@ -1720,7 +1731,13 @@
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
   }
 
-  #lobbyRight #multiActionRow{ flex-direction:column; gap:7px; }
+  /* ロビーの右列だけ縦積み。**固定の margin-top(14px)を打ち消す。**
+     出撃ボタンの下に14px積むと、背の低い画面で「部屋を探す」が画面外へ出た。 */
+  #lobbyRight #multiActionRow{ flex-direction:column; gap:7px; margin-top:0; }
+  /* 出撃ボタンの上の空きは**余った分だけ**。固定値(4.5vh)だと縦が足りない画面で
+     そのぶん下がはみ出す。auto なら背の低い画面では0まで詰まり、
+     広い画面では今までどおりマップ/モードから離れて下に置かれる。 */
+  #lobbyRight #joinBtn{ margin-top:auto; }
   #multiActionRow{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
   #createRoomBtn, #findRoomBtn{
     padding:11px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
