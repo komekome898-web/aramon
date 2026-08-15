@@ -162,7 +162,23 @@ for(const dev of DEVICES){
       }
       const cols = (()=>{ const g=document.getElementById('lobbyMenuGrid');
         return g ? getComputedStyle(g).gridTemplateColumns.split(' ').filter(Boolean).length : 0; })();
-      return { outside, tooSmall, overlap, scrolls, menuCols: cols };
+      /* 並び順: DOMの並び(画面で読む順)どおりに、2個ずつ同じ行の左右へ入っているか。
+         入りきらない組が右のブロックへ回るのは正しい姿なので、ブロック内で見る。 */
+      const grid = document.getElementById('lobbyMenuGrid');
+      const order = [];
+      if(grid){
+        const vis2 = [...grid.children].filter(vis);
+        const rows = parseInt(getComputedStyle(grid).getPropertyValue('--menu-rows')) || 0;
+        vis2.forEach((el,i)=>{
+          const pair = Math.floor(i/2), inPair = i%2, block = Math.floor(pair/rows||0);
+          const want = { row: (pair % (rows||1)) + 1, col: block*2 + inPair + 1 };
+          const got = { row: parseInt(el.style.gridRow), col: parseInt(el.style.gridColumn) };
+          if(got.row!==want.row || got.col!==want.col){
+            order.push({ id: el.id, want:`${want.row},${want.col}`, got:`${got.row},${got.col}` });
+          }
+        });
+      }
+      return { outside, tooSmall, overlap, scrolls, menuCols: cols, order };
     };
     /* 5. 「将来ボタンが増えたら」を実際に作る。左メニューへ9個を注入する
           (右列は増やさないのが決まりなので注入しない)。 */
@@ -190,7 +206,7 @@ for(const dev of DEVICES){
           if(o.sub) setLobbySubMode(o.sub, { save:false });
           updatePlayButtonsEnabled();
           refreshLobby();
-          if(o.future) window.__injectFuture();
+          if(o.future){ window.__injectFuture(); updateLobbyMenuRows(); }
           await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
           return window.__auditLobby();
         }, { mode:m.mode, sub:m.sub, withMonster, future });
@@ -198,6 +214,7 @@ for(const dev of DEVICES){
         if(r.outside.length) failures.push(`[見切れ] ${label} — ${r.outside.slice(0,4).map(x=>`${x.id}が${x.over}px外`).join(' / ')}`);
         if(r.tooSmall.length) failures.push(`[小さすぎ] ${label} — ${r.tooSmall.slice(0,4).map(x=>`${x.id} ${x.got}px < ${x.floor}px`).join(' / ')}`);
         if(r.overlap.length) failures.push(`[重なり] ${label} — ${r.overlap.slice(0,3).map(x=>`${x.a}×${x.b} ${x.px}px`).join(' / ')}`);
+        if(r.order && r.order.length) failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
         if(r.scrolls.length) failures.push(`[スクロール発生] ${label} — ${r.scrolls.map(x=>`${x.id}が+${x.d}px`).join(' / ')}`);
         if(future) notes.push(`${label}: メニューは${r.menuCols}列に増えて縦は伸びず`);
       }

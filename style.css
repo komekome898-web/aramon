@@ -214,11 +214,16 @@
      **2列になってボタンが約90pxしかないので、左右を0で留めてボタン幅ぴったりにする。**
      right:-6px のままだと隣の列と上の段のボタンへはみ出す(実測)。
      入りきらない文言は「…」で切る ―― はみ出させない方を優先する。 */
+  /* 吹き出しは**タイルの中の上端**に置く。外(top:-8px)へ出すと、段の間が2pxしかないので
+     1つ上の段のボタンに重なる(並びを変えてミッションが2段目に来たときに発生)。
+     ぶら下げるぶんの高さは、吹き出しを持つタイルにだけ padding-top で確保する。 */
   #lobbyLeft .season-ssr-pop, #lobbyLeft .raid-gacha-pop{
-    position:absolute; left:0; right:0; top:-8px; bottom:auto; margin:0; z-index:3;
-    font-size:7px; padding:1px 2px; text-align:center;
+    position:absolute; left:0; right:0; top:0; bottom:auto; margin:0; z-index:3;
+    font-size:7px; padding:1px 2px; text-align:center; line-height:1.4;
+    border-radius:10px 10px 0 0;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  #openMissionBtn, #openGachaBtn{ padding-top:calc(0.5 * var(--vh) + 11px); }
   #lobbyLeft .season-ssr-pop::after{ display:none; }
   /* =====================================================================
      ロビーのレイアウトの決まり(3列すべてに効く)
@@ -254,25 +259,25 @@
     height:100%; min-height:0; min-width:0;
   }
   /* 【ここがロビーの生命線】
-     行数(--menu-rows)は**画面に入る数だけ**。入りきらない項目は
-     grid-auto-flow:column が**次の列**へ送るので、何個足しても縦には伸びない=見切れない。
-     1fr で行は等分に広がるので、項目が少ないときはボタンが大きくなって押しやすい。
+     行数(--menu-rows)は**画面に入る数だけ**。入りきらない組は右となりの2列へ回るので、
+     何個足しても縦には伸びない=見切れない。
 
-     --menu-rows は ui.js の updateLobbyMenuRows() が実測して入れる。
-     CSSの repeat(auto-fill,…) は**flexの中だと高さが確定せず当てにならない**
-     (実測で2行に落ち、9個が5列へ化けて中央の幅が0になった)。数字はJS側が正。
-     flex:1 1 0 にしてあるのは、枠の高さを中身から独立させるため(高さの計算が循環しない)。
-
-     **DOMの並び順は「上から下、そして次の列」**(以前の左右→次の行ではない)。 */
+     --menu-rows と各ボタンの升目(grid-row/grid-column)は
+     ui.js の updateLobbyMenuRows() が実測して入れる。**DOMは画面で読む順のまま。**
+     CSSの自動配置(grid-auto-flow:column)に任せると列ごとに縦へ読む順でDOMを
+     書く必要があり、並べ替えのたびに間違える。repeat(auto-fill,…) も
+     **flexの中だと高さが確定せず当てにならない**(実測で2行に落ち、9個が5列へ化けて
+     中央の幅が0になった)。数字はJS側が正。
+     flex:1 1 0 にしてあるのは、枠の高さを中身から独立させるため(高さの計算が循環しない)。 */
   #lobbyMenuGrid{
     flex:1 1 0; min-height:0;
     display:grid;
     /* 行の高さは中身なり(最低 --tap-pick)。1fr で引き伸ばすと端数の丸めで
        1〜3px はみ出し、スクロールが出てしまう(実測)。 */
     grid-template-rows:repeat(var(--menu-rows, 4), minmax(var(--tap-pick), auto));
-    grid-auto-flow:column;
     grid-auto-columns:var(--menu-col-w);
-    gap:calc(0.5 * var(--vh)) 5px; align-content:center; justify-content:start; padding-top:9px;
+    /* 段の間は指が隣を押さない程度に空ける(1.9pxだとボタンがほぼ接していた) */
+    gap:calc(0.9 * var(--vh)) 5px; align-content:center; justify-content:start; padding-top:9px;
   }
   /* バナーはメニューの幅に合わせる。ただし列が増えても2列ぶんで頭打ち
      (横に長い帯になると絵が間延びし、中央の幅も食う) */

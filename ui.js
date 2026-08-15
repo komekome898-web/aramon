@@ -1237,7 +1237,7 @@ function refreshLobby(){
    高さが確定せず当てにならない**(実測で2行に落ち、9個が5列へ化けて中央の幅が0になった)。
    そこでここで実測して CSS変数へ渡す。行の高さ・すき間の値はCSS側が正で、
    ここは読むだけにしてある(同じ数字を2か所に書かない)。 */
-const LOBBY_MENU_COLS = 2;   // ふだんの列数。これで足りなくなったら勝手に3列・4列へ増える
+const LOBBY_MENU_COLS = 2;   // 1組の横並び数。組が入りきらなくなると右へ2列ずつ増える
 function updateLobbyMenuRows(){
   const grid = document.getElementById('lobbyMenuGrid');
   if(!grid) return;
@@ -1247,12 +1247,24 @@ function updateLobbyMenuRows(){
   if(!(h > 0)) return;   // 画面が隠れている間は測れないので何もしない(次の表示時に効く)
   const gap = parseFloat(cs.rowGap) || 0;
   const tap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tap-pick')) || 44;
-  const count = [...grid.children].filter(c=> getComputedStyle(c).display!=='none').length;
-  const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));   // 画面に入る行数
-  // ふだんは2列に見えるように行数を決め、それが入らない画面では入る数まで減らす
-  // (減った行数のぶんは grid-auto-flow:column が横へ流すので、縦には決してはみ出さない)
-  const rows = Math.max(1, Math.min(fit, Math.ceil(count / LOBBY_MENU_COLS) || 1));
+  const vis = [...grid.children].filter(c=> getComputedStyle(c).display!=='none');
+  const pairs = Math.ceil(vis.length / LOBBY_MENU_COLS) || 1;   // 横並び1組=1行
+  const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));  // 画面に入る行数
+  const rows = Math.max(1, Math.min(fit, pairs));
   grid.style.setProperty('--menu-rows', rows);
+  /* 升目を1つずつ指定する。**DOMの並び順は画面で読む順(左→右、次の行)のまま**にして、
+     入る行数を超えた組は右となりの2列へ回す。こうすると
+       ・縦には決して伸びない(=見切れない。ロビーはスクロールさせない決まり)
+       ・並べ替えたいときはDOMを読む順に書き換えるだけでよい
+     の両方が成り立つ。CSSの自動配置(grid-auto-flow)に任せると、
+     列ごとに縦へ読む順でDOMを書く必要があり、次の並べ替えで必ず間違える。 */
+  vis.forEach((el, i)=>{
+    const pair = Math.floor(i / LOBBY_MENU_COLS);      // 何組目か
+    const inPair = i % LOBBY_MENU_COLS;                // 組の中の左右
+    const block = Math.floor(pair / rows);             // 何ブロック目(2列ずつ右へ)
+    el.style.gridRow = String((pair % rows) + 1);
+    el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
+  });
 }
 
 
