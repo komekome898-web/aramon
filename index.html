@@ -1204,6 +1204,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
            ヘッダーはタブと所持数で埋まっていて、間に入れると名前が「…」で切れてしまう
            (轟金剛が「轟金…」になった)。ここなら横幅をたっぷり使える。 -->
       <div class="gacha-pickup"><span class="gacha-pickup-tag">PICK UP</span><span class="gacha-pickup-name" id="gachaTitlePickup">—</span></div>
+      <!-- 持っているスキンカタログ。**演出の場の右上へ縦に積む。**
+           下の帯に置くとカウンターを圧迫していた(枚数で高さが変わるのも良くない)。
+           引くボタンと同じタイミングで隠す(setGachaIdleUiVisible)。 -->
+      <div id="gachaCatalogRow" class="gacha-catalog-row"></div>
       <div id="gachaResult" class="gacha-result hidden"></div>
       <div id="gachaButtons" class="gacha-btn-row">
         <button id="gachaSingleBtn" class="gacha-btn"><span class="gacha-btn-label">1回ガチャ</span><span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
@@ -1221,7 +1225,6 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div class="gacha-milestone-note" id="gachaMsNote">100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！</div>
       <!-- レイドガチャが開催前のときに被せる「近日公開」 -->
       <div id="gachaSoonMask" class="gacha-soon hidden"><span>🐉 レイドガチャ<b>近日公開</b>シーズン1開始と同時に引けるようになります</span></div>
-      <div id="gachaCatalogRow" class="gacha-catalog-row"></div>
     </div>
   </div>
 
