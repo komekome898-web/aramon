@@ -2843,13 +2843,15 @@ function runSsrRevealsThen(ssrResults, done){
   const step=()=>{
     if(i>=ssrResults.length){ done(); return; }
     const r = ssrResults[i++];
-    if(r.promoted) runSsrPromotionSequence(r.skinId, ()=> showSsrReveal(r.skinId, step));
+    if(r.promoted) runSsrPromotionSequence(r.skinId, ()=> showSsrReveal(r.skinId, step), { skippable: r.dup });
     else showSsrReveal(r.skinId, step);
   };
   step();
 }
 // ===== SSR昇格演出(SRだと思わせておいて、動画→タップ待ち画像を経てSSRリビールへ繋ぐ) =====
 let ssrPromoteContinue = null;
+// 昇格演出を最後まで飛ばす関数(スキップボタンから呼ぶ)。演出中だけ入っている
+let ssrPromoteSkipAll = null;
 // 昇格演出中はBGMを止め、SSR獲得画面(showSsrReveal)の表示と同時に元のトラックへ戻す
 let ssrPromoteBgmResumeTrack = null;
 // 管理者確認ボタンで true にすると、演出中の状態を画面内の診断パネルに逐次表示する
@@ -2913,9 +2915,15 @@ function ssrPromotionStages(skinId){
 }
 /* 昇格演出の全体。BGMの停止/復帰とオーバーレイの開閉は「通し」で1回ずつ行い、
    動画1本ぶんの再生は runSsrPromotionStage に任せる(段が何本でも同じ流れになる)。 */
-function runSsrPromotionSequence(skinId, onContinue){
+/* opts.skippable=true で右下にスキップを出す。**すでに持っているスキンのときだけ**渡すこと
+   (初めて手に入れたSSRの演出は飛ばせない。そこが一番の見せ場なので)。
+   持っているかどうかは呼ぶ側からもらう: 演出が始まる時点では ownSkin() 済みで
+   isSkinOwned() が必ず true になっており、ここでは見分けられないため。 */
+function runSsrPromotionSequence(skinId, onContinue, opts){
   const stages = ssrPromotionStages(skinId);
   const ov = document.getElementById('ssrPromoteOverlay');
+  const skipBtn = document.getElementById('ssrPromoteSkip');
+  skipBtn.classList.toggle('hidden', !(opts && opts.skippable));
   const debugEl = document.getElementById('ssrPromoteDebug');
   if(ssrPromoteDebugMode) debugEl.classList.remove('hidden'); else debugEl.classList.add('hidden');
   // 昇格演出中はBGMを止める。SSR獲得画面(showSsrReveal)表示時に元のトラック
@@ -2934,6 +2942,8 @@ function runSsrPromotionSequence(skinId, onContinue){
   const runNext = ()=>{
     if(idx >= stages.length){
       ssrPromoteContinue = null;
+      ssrPromoteSkipAll = null;
+      skipBtn.classList.add('hidden');
       ov.classList.add('hidden');
       if(onContinue) onContinue();
       return;
@@ -2941,6 +2951,20 @@ function runSsrPromotionSequence(skinId, onContinue){
     const media = stages[idx++];
     ssrPromoteDebugLog(`--- ${idx}/${stages.length} ${media.label}の昇格演出 ---`);
     runSsrPromotionStage(media, skinId, runNext);
+  };
+  /* スキップ。**残りの段をまとめて飛ばす**(共通→専用の2本立てのとき、
+     1本目だけ飛ばしても続きが始まって「飛ばせていない」と感じるため)。
+     idx を終端まで進めてから、段ごとの後片付け(ssrPromoteContinue)へ渡す。
+     こうすると終了の処理が runNext 1か所のままで、片付け漏れが起きない。 */
+  ssrPromoteSkipAll = ()=>{
+    ssrPromoteDebugLog('→ スキップが押された(残りの段をまとめて終了)');
+    idx = stages.length;
+    stages.forEach(m=>{ if(m.se && m.se.stop) m.se.stop(); });  // 鳴っている音も止める
+    const video = document.getElementById('ssrPromoteVideo');
+    video.pause(); video.classList.add('hidden');
+    document.getElementById('ssrPromoteTapImg').classList.add('hidden');
+    if(ssrPromoteContinue) ssrPromoteContinue();
+    else runNext();     // まだ段が始まっていない(ありえないが)ときの保険
   };
   runNext();
 }
@@ -2996,6 +3020,10 @@ function runSsrPromotionStage(media, skinId, onStageEnd){
      再生を始める前にデコードの完了を待つ(待てなければ映像だけで進める)。
      待ってから両方を始めるので、映像と音声がずれることもない。 */
   const startPlayback = ()=>{
+    /* 【もう終わっているなら再生を始めない】音声の読み込み待ちのあいだにスキップされると、
+       あとから play() が走って「消したはずの動画が裏で再生される」状態になる。
+       (実際に、スキップ直後は video.paused が false のままだった) */
+    if(advanced){ ssrPromoteDebugLog('→ すでに終了しているので再生しない'); return; }
     video.play().then(()=>{
       ssrPromoteDebugLog(`▶️ play()成功 currentSrc=${video.currentSrc}`);
       if(media.se && !media.se.play()){
@@ -3021,8 +3049,11 @@ function runSsrPromotionStage(media, skinId, onStageEnd){
   // 次の段があればそれを始め、無ければ通し全体の後始末へ進む(onStageEnd = runNext)
   ssrPromoteContinue = ()=>{
     ssrPromoteContinue = null;
+    // この段はもう終わり。**待ち合わせ中の startPlayback を動かさないための印でもある**
+    advanced = true;
     clearTimeout(safetyTimer);
     video.onended = null; video.onerror = null; video.onplaying = null; video.onstalled = null; video.onwaiting = null;
+    video.pause(); video.classList.add('hidden');
     if(onStageEnd) onStageEnd();
   };
 }
@@ -3063,6 +3094,12 @@ document.getElementById('ssrPromoteOverlay').addEventListener('click', ()=>{
   const video = document.getElementById('ssrPromoteVideo');
   if(!video.classList.contains('hidden')) return;
   if(ssrPromoteContinue) ssrPromoteContinue();
+});
+/* 昇格演出のスキップ。オーバーレイ自身のクリック(タップで先へ)より先に止める。
+   止めないと「スキップ→さらにタップ扱い」で2段ぶん進んでしまう。 */
+document.getElementById('ssrPromoteSkip').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  if(ssrPromoteSkipAll) ssrPromoteSkipAll();
 });
 document.getElementById('ssrRevealSkip').addEventListener('click', (e)=>{ e.stopPropagation(); if(ssrRevealContinue) ssrRevealContinue(); });
 document.getElementById('ssrRevealOverlay').addEventListener('click', ()=>{ if(ssrRevealContinue) ssrRevealContinue(); });
@@ -6509,7 +6546,7 @@ function seasonClaim(t){
         if(gachaOv && !gachaWasOpen) gachaOv.classList.add('hidden');
         if(typeof pushToast==='function') pushToast(`${skinMeta(reward.skin).name} を獲得！`);
       };
-      if(ssrShouldPromote(rewardSkinAlreadyOwned)) runSsrPromotionSequence(reward.skin, ()=> showSsrReveal(reward.skin, finishReveal));
+      if(ssrShouldPromote(rewardSkinAlreadyOwned)) runSsrPromotionSequence(reward.skin, ()=> showSsrReveal(reward.skin, finishReveal), { skippable: rewardSkinAlreadyOwned });
       else showSsrReveal(reward.skin, finishReveal);
     } else if(typeof pushToast==='function'){
       pushToast(`Tier ${t} 報酬 ${rewardText(reward)} を受け取った！`);
@@ -9858,9 +9895,10 @@ document.getElementById('adminSsrPromoteCheckBtn').addEventListener('click', asy
   ssrPromoteDebugLog(img);
   document.getElementById('closeAdminBtn').click(); // 演出を隠さないよう管理者画面を正規の手順で閉じておく
   openGachaScreen(); // ssrPromoteOverlay/ssrRevealOverlayはガチャ画面の子要素なので、開いておかないと表示されない
+  // 管理者の確認は何度も見るのでスキップを出す
   runSsrPromotionSequence(sampleSkin, ()=>{
     showSsrReveal(sampleSkin, ()=>{ pushToast('🎬 演出確認 完了'); ssrPromoteDebugMode = false; });
-  });
+  }, { skippable:true });
 });
 /* 管理者確認用: 指定したSSRスキンの専用昇格演出を、素材の読み込み診断つきで通しで再生する。
    確認するURLは SKIN_MEDIA.promote から作るので、スキンを足してもこの関数は変えなくてよい
@@ -9880,9 +9918,10 @@ async function adminRunPromoteCheck(skinId){
   if(typeof ensureSkinPromoteSe==='function') ensureSkinPromoteSe(skinId);
   document.getElementById('closeAdminBtn').click();  // 演出を隠さないよう正規の手順で閉じる
   openGachaScreen();  // 演出のオーバーレイはガチャ画面の子要素なので開いておく
+  // 管理者の確認は何度も見るのでスキップを出す
   runSsrPromotionSequence(skinId, ()=>{
     showSsrReveal(skinId, ()=>{ pushToast(`🎬 ${name} 演出確認 完了`); ssrPromoteDebugMode = false; });
-  });
+  }, { skippable:true });
 }
 /* 専用の昇格演出を持つSSRスキンの確認ボタンを SKIN_MEDIA から自動生成する。
    モンスター作成スタジオでSSR昇格演出を追加すると SKIN_MEDIA に promote の行が増えるので、

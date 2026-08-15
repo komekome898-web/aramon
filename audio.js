@@ -180,7 +180,18 @@ function createSeOneShot(dataUrl, gainVal){
     const src = actx.createBufferSource(); src.buffer = S.buffer;
     const g = actx.createGain(); g.gain.value = (gainVal!=null ? gainVal : 1.2);
     src.connect(g); g.connect(seGain); src.start(when!=null ? when : actx.currentTime);
+    /* 最後に鳴らした音を控えておく(stopで止めるため)。
+       演出を途中でスキップしたときに音だけ鳴り続けないようにする。
+       鳴り終わったら自分で参照を外すので、止める必要のない普通のSEには何の影響もない。 */
+    S._last = src;
+    src.onended = ()=>{ if(S._last===src) S._last = null; };
     return true;
+  };
+  // 鳴っている途中で止める(スキップ用)。鳴っていなければ何もしない
+  S.stop = ()=>{
+    if(!S._last) return;
+    try{ S._last.stop(); }catch(err){}
+    S._last = null;
   };
   S.dur = ()=> S.buffer ? S.buffer.duration : 0;
   return S;

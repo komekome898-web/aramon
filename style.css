@@ -1183,6 +1183,14 @@
   .ssr-reveal-skip{ position:absolute; right:18px; bottom:18px; z-index:3; padding:10px 22px; border-radius:22px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; letter-spacing:1px; color:#fff;
     background:rgba(255,255,255,0.15); border:1.5px solid rgba(255,255,255,0.55); }
+  /* 昇格演出のスキップ。**すでに持っているスキンのときだけ出す。**
+     動画の上に出すので、押せる大きさ(--tap-pick)を確保しつつ暗めにして演出を邪魔しない。 */
+  .ssr-promote-skip{ position:absolute; right:16px; bottom:16px; z-index:4;
+    display:flex; align-items:center; min-height:var(--tap-pick); padding:0 20px; border-radius:999px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; letter-spacing:1px; color:#fff;
+    background:rgba(0,0,0,0.55); border:1.5px solid rgba(255,255,255,0.5); }
+  .ssr-promote-skip:active{ filter:brightness(1.2); }
+  .ssr-promote-skip.hidden{ display:none !important; }
   /* ===== SSR昇格演出(SRだと思わせた後、動画→タップ待ち画像を経てSSRリビールへ) ===== */
   .ssr-promote{ position:absolute; inset:0; z-index:701; display:flex; align-items:center; justify-content:center;
     background:#000; cursor:pointer; }
