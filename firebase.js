@@ -180,6 +180,51 @@
   let activeRoomId = null;
   let roomListeners = [];
 
+  /* 【必ず通す】RTDBへ書く値から undefined を落とす。
+     Realtime Database の set/push/update は、値のどこかに undefined が1つでもあると
+     **書き込み全体を例外で拒否する**。ここは try/catch で握り潰しているので、
+     ゲームからは「その便だけが静かに届かない」ようにしか見えない。
+     実害の例(2026-08-15に修正): マスモンを連れていないbotは mastermon*Mult を持たない
+     ため、authStateの**フル配信だけが毎回失敗**していた。ゲストには位置・HP等の
+     ホットフィールドだけが届き、moveTierUnlocked(修行チケットの技解放)・speed・
+     train*Mult といったコールドフィールドが**試合中ずっと届かなかった**。
+     送り側1か所ずつの `||1` に頼ると同じ事故が別のフィールドで再発するので、
+     RTDBへ出ていく境界のここで必ず落とす。
+     **健全なときは何もコピーしない**(authStateは60体ぶんを毎秒20〜30回書くので、
+     毎回作り直すとゴミが出る)。まず走査だけして、見つかったときにだけ作り直す。
+     NaN/Infinity も同じく書き込み全体を拒否させるので、一緒に落とす。 */
+  function isBadValue(v){ return v === undefined || typeof v === 'function' || (typeof v === 'number' && !Number.isFinite(v)); }
+  function hasBadValue(v){
+    if(isBadValue(v)) return true;
+    if(v === null || typeof v !== 'object') return false;
+    if(Array.isArray(v)){
+      for(let i=0;i<v.length;i++){ if(hasBadValue(v[i])) return true; }
+      return false;
+    }
+    for(const k in v){ if(hasBadValue(v[k])) return true; }
+    return false;
+  }
+  function stripUndefinedDeep(v){
+    if(isBadValue(v)) return null;
+    if(v === null || typeof v !== 'object') return v;
+    if(Array.isArray(v)) return v.map(stripUndefinedDeep);
+    const out = {};
+    for(const k in v){
+      if(isBadValue(v[k])) continue;   // キーごと落とす(受け側は「無い」で判定している)
+      out[k] = stripUndefinedDeep(v[k]);
+    }
+    return out;
+  }
+  function stripUndefined(v){ return hasBadValue(v) ? stripUndefinedDeep(v) : v; }
+  /* 部屋への書き込み失敗は握り潰すが、**最初の1回だけは必ず知らせる**。
+     黙って落ちる作りにしたせいでフル配信の全滅に長く気づけなかった。 */
+  const warnedRoomWrites = new Set();
+  function warnRoomWrite(label, err){
+    if(warnedRoomWrites.has(label)) return;
+    warnedRoomWrites.add(label);
+    console.warn(`[aramon] room write failed (${label})`, err);
+  }
+
   function clearRoomListeners(){
     roomListeners.forEach(({r,cb,isChildAdded})=>off(r, isChildAdded?'child_added':'value', cb));
     roomListeners = [];
@@ -388,14 +433,14 @@
 
   window.__aramonSendInput = async function(roomId, input){
     try{
-      await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { input, inputTs: Date.now() });
-    }catch(err){}
+      await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { input: stripUndefined(input), inputTs: Date.now() });
+    }catch(err){ warnRoomWrite('input', err); }
   };
 
   window.__aramonSendRecon = async function(roomId, recon){
     try{
-      await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { recon, reconTs: Date.now() });
-    }catch(err){}
+      await update(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`), { recon: stripUndefined(recon), reconTs: Date.now() });
+    }catch(err){ warnRoomWrite('recon', err); }
   };
 
   // teamSize はチーム戦の1チーム人数(1=個人戦)、sub はチーム戦のサブモード('br20'/'arena'/null)。
@@ -430,8 +475,8 @@
 
   window.__aramonPublishState = async function(roomId, stateObj){
     try{
-      await set(ref(fbDb, `rooms/${roomId}/state`), stateObj);
-    }catch(err){}
+      await set(ref(fbDb, `rooms/${roomId}/state`), stripUndefined(stateObj));
+    }catch(err){ warnRoomWrite('state', err); }
   };
 
   window.__aramonWatchInputs = function(roomId, callback){
@@ -442,7 +487,7 @@
   };
 
   window.__aramonPushEvent = async function(roomId, evt){
-    try{ await push(ref(fbDb, `rooms/${roomId}/events`), evt); }catch(err){}
+    try{ await push(ref(fbDb, `rooms/${roomId}/events`), stripUndefined(evt)); }catch(err){ warnRoomWrite('event', err); }
   };
 
   // キルフィード等の単発イベント。limitToLast(1)+onValueだと短時間に複数件発生したとき
@@ -458,7 +503,7 @@
 
   // 命中報告: 誰かが人間に当てた攻撃を報告し、ホストだけが確定計算する
   window.__aramonReportHit = async function(roomId, hit){
-    try{ await push(ref(fbDb, `rooms/${roomId}/hits`), hit); }catch(err){}
+    try{ await push(ref(fbDb, `rooms/${roomId}/hits`), stripUndefined(hit)); }catch(err){ warnRoomWrite('hit', err); }
   };
 
   window.__aramonWatchHitsAsHost = function(roomId, callback){
@@ -472,7 +517,7 @@
   // (連射中かどうかの状態送信ではなく、1回の発射ごとに1件のイベントとして扱うことで
   //  見た目の連射・非連射のズレを構造的に無くす)
   window.__aramonSendFireEvent = async function(roomId, fireEvt){
-    try{ await push(ref(fbDb, `rooms/${roomId}/fireEvents`), fireEvt); }catch(err){}
+    try{ await push(ref(fbDb, `rooms/${roomId}/fireEvents`), stripUndefined(fireEvt)); }catch(err){ warnRoomWrite('fire', err); }
   };
   window.__aramonWatchFireEvents = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/fireEvents`);
@@ -486,7 +531,7 @@
   // authStateのような「最新状態の上書き配信」と違い、1件も取りこぼさず全員に届ける必要があるため
   // fireEventsと同じonChildAdded方式を使う(取りこぼすと「相手の弾が見えない」原因になる)
   window.__aramonPushShotEvent = async function(roomId, evt){
-    try{ await push(ref(fbDb, `rooms/${roomId}/shotEvents`), evt); }catch(err){}
+    try{ await push(ref(fbDb, `rooms/${roomId}/shotEvents`), stripUndefined(evt)); }catch(err){ warnRoomWrite('shot', err); }
   };
   window.__aramonWatchShotEvents = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/shotEvents`);
@@ -498,7 +543,7 @@
   // アイテムの出現/取得を都度配信する(ホストのlootItems配列は非ホストに自動同期されないため、
   // 拾われて消えた/新たに湧いたという「変化」だけを個別イベントとして届ける)
   window.__aramonPushLootEvent = async function(roomId, evt){
-    try{ await push(ref(fbDb, `rooms/${roomId}/lootEvents`), evt); }catch(err){}
+    try{ await push(ref(fbDb, `rooms/${roomId}/lootEvents`), stripUndefined(evt)); }catch(err){ warnRoomWrite('loot', err); }
   };
   window.__aramonWatchLootEvents = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/lootEvents`);
@@ -526,7 +571,7 @@
   };
 
   window.__aramonPublishAuthState = async function(roomId, authState){
-    try{ await set(ref(fbDb, `rooms/${roomId}/authState`), authState); }catch(err){}
+    try{ await set(ref(fbDb, `rooms/${roomId}/authState`), stripUndefined(authState)); }catch(err){ warnRoomWrite('authState', err); }
   };
   window.__aramonWatchAuthState = function(roomId, callback){
     const r = ref(fbDb, `rooms/${roomId}/authState`);
