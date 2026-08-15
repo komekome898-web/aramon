@@ -214,16 +214,20 @@
      **2列になってボタンが約90pxしかないので、左右を0で留めてボタン幅ぴったりにする。**
      right:-6px のままだと隣の列と上の段のボタンへはみ出す(実測)。
      入りきらない文言は「…」で切る ―― はみ出させない方を優先する。 */
-  /* 吹き出しは**タイルの中の上端**に置く。外(top:-8px)へ出すと、段の間が2pxしかないので
-     1つ上の段のボタンに重なる(並びを変えてミッションが2段目に来たときに発生)。
-     ぶら下げるぶんの高さは、吹き出しを持つタイルにだけ padding-top で確保する。 */
+  /* 吹き出し(限定SSRスキン / レイドガチャ開催中)は**タイルの中身として上に積む**。
+     ・外(position:absolute + top:-8px)に出すと、段の間が数pxしかないので上の段へ重なる
+     ・中で絶対配置し padding で場所を空けると、その分だけ中身が下へ押し出されて
+       ラベルがタイルからはみ出し、ボタンの縁で切れる(2026-08-15 実機で発生)
+     並の要素として置けば、タイルの高さがそのぶん自動で伸び、**何も重ならず何も切れない**。
+     order:-1 でアイコンより上へ、負のmarginでタイルの左右いっぱいまで広げて帯にする。 */
   #lobbyLeft .season-ssr-pop, #lobbyLeft .raid-gacha-pop{
-    position:absolute; left:0; right:0; top:0; bottom:auto; margin:0; z-index:3;
-    font-size:7px; padding:1px 2px; text-align:center; line-height:1.4;
-    border-radius:10px 10px 0 0;
+    /* 負のmarginでタイルの縁まで広げない。**わずかでも枠の外へ出ると縁で切られる。**
+       内側に収める(角丸のチップに見える)。 */
+    position:static; order:-1; align-self:stretch; margin:0 0 1px; z-index:3;
+    font-size:7px; line-height:1.6; padding:0 2px; text-align:center;
+    border-radius:6px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  #openMissionBtn, #openGachaBtn{ padding-top:calc(0.5 * var(--vh) + 11px); }
   #lobbyLeft .season-ssr-pop::after{ display:none; }
   /* =====================================================================
      ロビーのレイアウトの決まり(3列すべてに効く)

@@ -1249,22 +1249,31 @@ function updateLobbyMenuRows(){
   const tap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tap-pick')) || 44;
   const vis = [...grid.children].filter(c=> getComputedStyle(c).display!=='none');
   const pairs = Math.ceil(vis.length / LOBBY_MENU_COLS) || 1;   // 横並び1組=1行
-  const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));  // 画面に入る行数
-  const rows = Math.max(1, Math.min(fit, pairs));
-  grid.style.setProperty('--menu-rows', rows);
+  const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));  // 下限の高さで入る行数
   /* 升目を1つずつ指定する。**DOMの並び順は画面で読む順(左→右、次の行)のまま**にして、
      入る行数を超えた組は右となりの2列へ回す。こうすると
        ・縦には決して伸びない(=見切れない。ロビーはスクロールさせない決まり)
        ・並べ替えたいときはDOMを読む順に書き換えるだけでよい
      の両方が成り立つ。CSSの自動配置(grid-auto-flow)に任せると、
      列ごとに縦へ読む順でDOMを書く必要があり、次の並べ替えで必ず間違える。 */
-  vis.forEach((el, i)=>{
-    const pair = Math.floor(i / LOBBY_MENU_COLS);      // 何組目か
-    const inPair = i % LOBBY_MENU_COLS;                // 組の中の左右
-    const block = Math.floor(pair / rows);             // 何ブロック目(2列ずつ右へ)
-    el.style.gridRow = String((pair % rows) + 1);
-    el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
-  });
+  const place = (rows)=>{
+    grid.style.setProperty('--menu-rows', rows);
+    vis.forEach((el, i)=>{
+      const pair = Math.floor(i / LOBBY_MENU_COLS);    // 何組目か
+      const inPair = i % LOBBY_MENU_COLS;              // 組の中の左右
+      const block = Math.floor(pair / rows);           // 何ブロック目(2列ずつ右へ)
+      el.style.gridRow = String((pair % rows) + 1);
+      el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
+    });
+  };
+  /* 置いてみて、はみ出したら行を1つ減らして置き直す。**計算で当てにいかない。**
+     タイルの高さは中身しだい(吹き出しが付けばその分だけ伸びる)で、下限の44pxから
+     何px増えるかは事前に分からない。実際に置いた結果を見て決めれば、
+     中身が何であろうと縦にはみ出さないことを保証できる。 */
+  for(let rows = Math.max(1, Math.min(fit, pairs)); ; rows--){
+    place(rows);
+    if(rows <= 1 || grid.scrollHeight <= grid.clientHeight) break;
+  }
 }
 
 
