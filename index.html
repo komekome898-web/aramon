@@ -1181,16 +1181,18 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <!-- GACHA (全画面) -->
 <div id="gachaOverlay" class="hidden">
   <div class="gacha-screen">
+    <!-- ヘッダー: 左=タブ / 中=ピックアップ / 右=所持と操作。
+         **「🎰 スキンガチャ」の見出しは置かない。** タブが同じことを言っていて、
+         論理375pxしかない縦持ちでは見出しのぶんだけ他が潰れるため(タブに絵文字を付けて役割を持たせた)。 -->
     <div class="gacha-top">
-      <div class="gacha-title" id="gachaTitle">🎰 スキンガチャ<span class="gacha-title-pickup" id="gachaTitlePickup">(轟金剛ピックアップ)</span></div>
       <!-- スキンガチャとレイドガチャの切替 -->
       <div class="gacha-tabs">
-        <button class="gacha-tab active" data-gacha="skin">スキン</button>
-        <button class="gacha-tab" data-gacha="raid">レイド</button>
+        <button class="gacha-tab active" data-gacha="skin"><span class="gacha-tab-ico">🎰</span>スキン</button>
+        <button class="gacha-tab" data-gacha="raid"><span class="gacha-tab-ico">🐉</span>レイド</button>
       </div>
       <div class="gacha-top-right">
-        <span id="gachaDia" class="gacha-dia">💎 0</span>
-        <span id="gachaShard" class="gacha-dia">💠 0</span>
+        <span id="gachaDia" class="gacha-chip">💎 0</span>
+        <span id="gachaShard" class="gacha-chip">💠 0</span>
         <button id="gachaRatesBtn" class="gacha-rates-btn">提供割合</button>
         <button id="closeGachaBtn" class="gacha-close-btn">✕</button>
       </div>
@@ -1198,15 +1200,19 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 
     <div id="gachaField" class="gacha-field">
       <canvas id="gachaCanvas" class="gacha-canvas"></canvas>
+      <!-- ピックアップ告知。**ヘッダーではなく演出の場の上に置く。**
+           ヘッダーはタブと所持数で埋まっていて、間に入れると名前が「…」で切れてしまう
+           (轟金剛が「轟金…」になった)。ここなら横幅をたっぷり使える。 -->
+      <div class="gacha-pickup"><span class="gacha-pickup-tag">PICK UP</span><span class="gacha-pickup-name" id="gachaTitlePickup">—</span></div>
       <div id="gachaResult" class="gacha-result hidden"></div>
       <div id="gachaButtons" class="gacha-btn-row">
-        <button id="gachaSingleBtn" class="gacha-btn premium">1回ガチャ<span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
-        <button id="gachaTenBtn" class="gacha-btn premium">10連ガチャ<span class="gacha-cost" id="gachaTenCost">💎 50</span></button>
+        <button id="gachaSingleBtn" class="gacha-btn"><span class="gacha-btn-label">1回ガチャ</span><span class="gacha-cost" id="gachaSingleCost">💎 5</span></button>
+        <button id="gachaTenBtn" class="gacha-btn premium"><span class="gacha-btn-label">10連ガチャ</span><span class="gacha-cost" id="gachaTenCost">💎 50</span></button>
       </div>
     </div>
 
     <div class="gacha-bottom">
-      <div class="gacha-counter-labels"><span>ガチャカウンター</span><span id="gachaCountNum">0 / 200</span></div>
+      <div class="gacha-counter-labels"><span>ガチャカウンター</span><span id="gachaCountNum" class="gacha-count-num">0 / 200</span></div>
       <div class="gacha-gauge">
         <div id="gachaGaugeFill" class="gacha-gauge-fill"></div>
         <div class="gacha-milestone" id="gachaMs1" data-at="100"><span class="gacha-ms-dot"></span><span class="gacha-ms-label">100<br>SR</span></div>

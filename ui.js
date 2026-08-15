@@ -2418,13 +2418,14 @@ function setGachaMode(mode){
   gachaMode = (mode==='raid') ? 'raid' : 'skin';
   document.querySelectorAll('.gacha-tab').forEach(t=>t.classList.toggle('active', t.dataset.gacha===gachaMode));
   const raid = gachaMode==='raid';
-  // タイトルの「(◯◯ピックアップ)」は両タブともピックアップの定数から作る
-  // (data.js の GACHA_PICKUP_SSR / RAID_GACHA_PICKUP を変えればここも追従する)
+  /* ピックアップの名前は両タブともピックアップの定数から作る
+     (data.js の GACHA_PICKUP_SSR / RAID_GACHA_PICKUP を変えればここも追従する)。
+     **入れるのは名前だけ。** 「PICK UP」の札はHTML側に固定で置いてあるので、
+     ここで飾りの文字を混ぜない(名前が長いときに札ごと切れてしまう)。 */
   const pickupName = (id, alt)=> SSR_SKINS[id] ? skinMeta(id).name : alt;
-  document.getElementById('gachaTitle').firstChild.textContent = raid ? '🐉 レイドガチャ' : '🎰 スキンガチャ';
   document.getElementById('gachaTitlePickup').textContent = raid
-    ? `(${pickupName(RAID_GACHA_PICKUP, 'レイド特効')}ピックアップ)`
-    : `(${pickupName(GACHA_PICKUP_SSR, 'SSR')}ピックアップ)`;
+    ? pickupName(RAID_GACHA_PICKUP, 'レイド特効')
+    : pickupName(GACHA_PICKUP_SSR, 'SSR');
   // 開催前は引けない。ボタンとゲージの上に「近日公開」を被せる
   const locked = raid && !raidGachaOpenNow();
   document.getElementById('gachaSoonMask').classList.toggle('hidden', !locked);
