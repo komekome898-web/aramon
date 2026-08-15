@@ -51,8 +51,19 @@ let selfCorrX = 0, selfCorrY = 0;       // 未適用の補正量(毎フレーム
 // 1フレーム/1往復ぶんの移動量が大きくなり、通常の前進でも許容を超えて引き戻され、
 // スナップ距離にも届いて瞬間移動して見える(=飛び飛びになる)。
 // 実効移動速度に比例して許容と収束速度を広げ、速いモンスターでも滑らかに追従させる。
+/* 【上限は「起こりうる速度」に合わせる】許容の元になる誤差は「ホストが1回ぶん古い入力で
+   進めてしまう距離」=速度×入力送信間隔(45ms)なので、速度に素直に比例させるのが正しい。
+   上限2.4(速度720相当)は**実際に出る速度に届いていなかった**: 移動速度の基礎値は
+   転生(+30まで)に加えて加速剤が**上限なし**で積め、そこへ回避の倍率(最大約3倍)と
+   試合中のトレーニングカードが乗るので、1000を超える個体が普通に出る。
+   届いていない上限のままだと、速い個体ほど「まっすぐ走っているだけ」で許容を超えて
+   引き戻され、行ったり来たりして見えた(2026-08-15の報告)。 */
 const SELF_CORRECT_REF_SPEED = 300;        // この速度のとき倍率1.0(既定のモンスター相当)
-const SELF_CORRECT_SPEED_SCALE_MAX = 2.4;  // 上限(いくら速くてもここまで)
+const SELF_CORRECT_SPEED_SCALE_MAX = 6;    // 許容と収束速度の上限(速度1800相当。実際に出る速度を覆う)
+/* スナップ(即座に位置を合わせる)距離だけは別の上限にする。こちらの役目は壁抜け等の
+   「本当にあり得ないズレ」の救済なので、速度に合わせて青天井に広げると
+   ズレたまま戻らなくなる。従来どおりの2.4(=576px)で止める。 */
+const SELF_CORRECT_SNAP_SCALE_MAX = 2.4;
 function selfCorrectSpeedScale(ent){
   if(!ent || typeof entityMoveSpeed!=='function') return 1;
   const spd = entityMoveSpeed(ent) * (typeof multiMoveSpeedMult==='function' ? multiMoveSpeedMult() : 1);
@@ -970,6 +981,13 @@ function applyLootEventLocally(evt){
       if(evt.msg) pushToast(evt.msg);
       // トレーニングは候補3枚が届く。**抽選はホストなので、ゲストは出すだけ**
       if(Array.isArray(evt.cards) && evt.cards.length && typeof showTrainCards==='function') showTrainCards(evt.cards);
+      /* 修行チケットの技解放。authStateのフル配信でも同じ値が届くが、こちらは取りこぼしの
+         無い信頼配送なので、これを正として即座に解放する(遅れて届くフル配信は
+         `a.moveTierUnlocked > ent.moveTierUnlocked` の条件で素通りする)。 */
+      if(typeof evt.tier==='number' && player && evt.tier > player.moveTierUnlocked){
+        player.moveTierUnlocked = Math.min(3, evt.tier);
+        player.moveTierSelected = player.moveTierUnlocked;
+      }
     }
     /* デス円盤石の山分け: **拾っていない味方**にも効くので、by とは別に受け取り手が届く。
        ステータスの実体は authState のフル配信で来るが、それだけでは
@@ -1173,7 +1191,7 @@ function applyAuthState(authState){
       // 速いモンスターほど許容を広げる(固定距離だと前進中ずっと補正が掛かって飛ぶ)
       const scale = selfCorrectSpeedScale(ent);
       const deadzone = (dashing ? SELF_CORRECT_DEADZONE_DASH : SELF_CORRECT_DEADZONE) * scale;
-      if(err > SELF_CORRECT_SNAP * scale){
+      if(err > SELF_CORRECT_SNAP * Math.min(scale, SELF_CORRECT_SNAP_SCALE_MAX)){
         ent.x = a.x; ent.y = a.y; selfCorrX = 0; selfCorrY = 0; // 壁抜け等は即座に合わせる
       } else if(err > deadzone){
         selfCorrX = errX; selfCorrY = errY; // 毎フレーム少しずつ消費して滑らかに寄せる

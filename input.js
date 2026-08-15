@@ -200,7 +200,7 @@ function requestOrientationLockSafe(){
 
 const keys = {};
 let fireBtnHeld = false;
-let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46, peakUpNy:0, scale:1 };
+let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46, peakUpNy:0, scale:1, downAt:0 };
 let lookDrag = { active:false, pointerId:null, lastX:0, lastY:0 };
 
 window.addEventListener('keydown', (e)=>{
@@ -276,6 +276,7 @@ joyBaseEl.addEventListener('pointerdown', (e)=>{
   if(!game.started || game.over) return;
   if(game.autoRun) setAutoRun(false); // 再度ジョイスティックに触れたらオートラン解除
   joystick.active = true; joystick.pointerId = e.pointerId; joystick.peakUpNy = 0;
+  joystick.downAt = performance.now();   // オートランの「弾く」判定に使う(長く倒していたら弾きではない)
   const rect = joyBaseEl.getBoundingClientRect();
   joystick.baseX = rect.left+rect.width/2; joystick.baseY = rect.top+rect.height/2;
   joystick.scale = rect.width / (joyBaseEl.offsetWidth || rect.width); // 拡縮率(正方形なので幅で算出)
@@ -289,6 +290,10 @@ window.addEventListener('pointermove', (e)=>{
 // peakUpNy(=最も上に到達した値)基準。しきい値-0.45は真上から±約63°の広いコーンを許容する。
 const AUTORUN_FLICK_NY = -0.45;   // ドラッグ中の最上到達がこれより上なら「上フリック」とみなす(広め)
 const AUTORUN_FLICK_WINDOW = 750; // 1回目→2回目までの許容ms(少し長めで押しやすく)
+/* 【触っていた時間の上限】「弾く」は素早い操作なので、触れてから離すまでがこれより長い
+   ドラッグは弾きとして数えない。これが無いと**前へ歩いて離す**だけで1回ぶんに数えられ、
+   すぐまた前へ歩いた瞬間にオートランが点いてしまう(意図しない発動として報告あり)。 */
+const AUTORUN_FLICK_MAX_HOLD = 300;
 let autoRunFlickTime = 0;
 function setAutoRun(on){
   game.autoRun = !!on;
@@ -302,11 +307,12 @@ function setAutoRun(on){
 function releaseJoystick(e){
   if(joystick.active && e.pointerId===joystick.pointerId){
     const peakUp = joystick.peakUpNy; // ドラッグ中に到達した最も上の値(離す直前の戻りに影響されない)
-    joystick.active=false; joystick.nx=0; joystick.ny=0; joystick.peakUpNy=0;
+    const now = performance.now();
+    const flicked = (now - joystick.downAt) <= AUTORUN_FLICK_MAX_HOLD; // 長く倒していた=移動操作なので数えない
+    joystick.active=false; joystick.nx=0; joystick.ny=0; joystick.peakUpNy=0; joystick.downAt=0;
     joyKnobEl.style.transform = 'translate(0,0)';
     // オートランOFF時のみ、上フリック2回連続で発動
-    if(!game.autoRun && game.started && !game.over && peakUp < AUTORUN_FLICK_NY){
-      const now = performance.now();
+    if(!game.autoRun && game.started && !game.over && flicked && peakUp < AUTORUN_FLICK_NY){
       if(now - autoRunFlickTime < AUTORUN_FLICK_WINDOW){ setAutoRun(true); }
       else autoRunFlickTime = now;
     }

@@ -88,6 +88,7 @@ description: 荒野モン動のマルチプレイ同期(network.js・ホスト�
 ## Firebase・アカウント
 
 - Realtime Database。パス: `scores` / `matchLogs` / `lobby` / `rooms` / `accounts` / `raids` / `ghosts`。
+- **値に`undefined`(や`NaN`)が1つでもあると、RTDBはその書き込みを丸ごと拒否する。** firebase.js側は例外を握り潰すので、**そのチャンネルだけが静かに届かなくなる**。実例(2026-08-15): マスモンを連れていないbotが`mastermon*Mult`を持たず、**authStateのフル配信だけが毎回失敗**していた。ゲストには位置・HPは届くのにコールドフィールド(`moveTierUnlocked`=修行チケットの技解放・`spd`・`train*Mult`・状態変化)が試合中ずっと届かず、「チケットを取っても技が変わらない」「速いモンスターで行ったり来たりする」として出た。**WebRTC経由(JSON.stringify)は`undefined`を勝手に落とすので、rtc未確立の人だけに起きる**=再現しにくい。対策は firebase.js の書き込み境界の`stripUndefined()`(健全なときはコピーしない)と、**エンティティのフィールドは`createMonster`で必ず初期化する**こと。書き込み失敗は`warnRoomWrite()`が最初の1回だけconsoleに出す。
 - **新しいDBパスを追加したらFirebaseコンソールのセキュリティルールにも`.read`/`.write`が要る**(未定義パスはデフォルト拒否)。**発注者が手作業で貼るので、貼り付け用のJSONをそのまま渡す。**
 - ログインは名前+4桁パスコードで`accounts/{nameKey}`。認証情報は`aramon_account_v1`に保存し自動ログイン。**端末に認証情報がある時点で即ログイン扱いにし、通信失敗でもログイン状態を維持する。**
 - サーバー同期は`ACCOUNT_SYNC_KEYS`を`accountMarkDirty()`→3秒デバウンスで送信。ログイン時は`updatedAt`で新しい方を採用。**localStorageのsave関数に`accountMarkDirty()`を足し忘れない。**

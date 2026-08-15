@@ -655,6 +655,12 @@ function createMonster(elementKey, isPlayer, name, overrides){
     burnUntil:0, slowUntil:0, graceUntil:0, freezeUntil:0, poisonUntil:0, poisonTickAt:0, poisonSourceId:null,
     pulledUntil:0, pulledX:0, pulledY:0, pulledSpeed:0, // 「羅生門」等に吸い込まれている間の強制移動先(combat.jsのresolveMovement)
     trainCooldownMult:1, trainGutsCostReduction:0, trainProjSpeedMult:1, trainDmgMult:1, trainDmgTakenMult:1, trainSpeedMult:1, trainMaxHpBonus:0,
+    /* マスモンの倍率。**マスモンを連れていないbotでも必ず持たせる。**
+       未定義のまま authState のフル配信に載ると、Realtime Database が
+       undefined を理由に**配信まるごと**を拒否していた(2026-08-15に修正)。
+       値の意味は applyMastermonStatsToEntity が入れ直す倍率と同じで、1=補正なし。 */
+    mastermonDmgDealtMult:1, mastermonDmgTakenMult:1, mastermonGutsRegenMult:1, mastermonCooldownMult:1,
+    mastermonKillExpBonus:0,
     matchTrainLog:[],   // デス円盤石: 試合中に確定したトレーニングカードの履歴(エンティティは試合ごとに作り直すのでここで必ず空になる)
     stateUntil:0, stateCooldownUntil: (STATE_CHANGES[elementKey] ? STATE_CHANGES[elementKey].cooldown/2 : 0),
     stuckCheckPos:{x:sp.x,y:sp.y}, stuckTimer:0, stuckLevel:0, avoidDirSign:1,

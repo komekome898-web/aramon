@@ -2053,6 +2053,10 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
 // これをしないとゲスト側に効果のメッセージが一切出ない)。
 let pendingLootToast = null;
 let pendingLootCards = null;   // ゲストが拾ったトレーニングの候補3枚(取得イベントに載せる)
+/* 修行チケットで解放された技のtier。authStateのフル配信でも届くが、届くのは早くても
+   次の配信(最大0.4秒後)で、フル配信が何かの理由で落ちると**その試合ずっと**
+   ゲストの技が解放されないままになる。取得イベントに載せて即座に確定させる。 */
+let pendingLootTier = null;
 /* デス円盤石の山分けで**拾っていないのに強くなった味方**(ゲスト)へ届けるぶん。
    ホストのループの中でしか山分けは起きないので、届けないとゲスト側は
    数値だけ黙って増える(何が起きたのか分からない)。 */
@@ -2111,7 +2115,7 @@ function updateLootPickups(){
       continue;
     }
     let consumed = false, consumedBy = null, consumedKind = null;
-    pendingLootToast = null; pendingLootCards = null;
+    pendingLootToast = null; pendingLootCards = null; pendingLootTier = null;
     pendingLootMates = null; pendingLootMateMsg = null;
     for(const e of entities){
       if(!e.alive) continue;
@@ -2161,6 +2165,8 @@ function updateLootPickups(){
           } else {
             e.moveTierUnlocked = Math.min(3, e.moveTierUnlocked+1);
             e.moveTierSelected = e.moveTierUnlocked;
+            // ゲストが拾ったぶんは解放後のtierも取得イベントに載せる(本人がその場で持ち替えられる)
+            if(!e.isPlayer && netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootTier = e.moveTierUnlocked;
             const newMove = SIGNATURE_MOVES[e.element][e.moveTierUnlocked-1];
             lootToast(e, `${TICKET_ITEM.name}！「${newMove.name}」が使えるようになった`);
             consumed = true;
@@ -2237,6 +2243,7 @@ function updateLootPickups(){
           evtType:'pickup', id: it.id, by: consumedBy||null, kind: consumedKind||null,
           msg: pendingLootToast||null, // 拾った本人(ゲスト)に出す効果メッセージ
           cards: pendingLootCards||null, // トレーニングの候補3枚(本人にカードを出させる)
+          tier: pendingLootTier||null,   // 修行チケットで解放された技のtier(本人が即座に持ち替えられるように)
           mates: pendingLootMates||null, // デス円盤石の山分けを受けた味方(拾っていないので by では届かない)
           mateMsg: pendingLootMateMsg||null,
         });
