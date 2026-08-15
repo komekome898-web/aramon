@@ -5673,6 +5673,8 @@ let _fxGlPrevMs = 0;
 function renderFxGlLayer(){
   const fx = window.__aramonFxGl;
   if(!fx) return;
+  // 撮影ハーネスの --nofx。改修前と後を同じ条件で撮るためだけの逃げ道
+  if(window.__fxForceOff) return;
   /* fx_gl.js はESモジュールなので、試合開始(applyFxGlLayer)より後に読み込みが
      終わることがある。その場合ここで有効化する。**この保険が無いと、通信が遅い
      端末でだけ技のエフェクトが出ない**という再現しにくい不具合になる。      */

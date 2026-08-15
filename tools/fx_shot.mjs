@@ -197,6 +197,14 @@ const DRIVER = `(function(){
   };
   /* 画面を「試合中」だけにする。タイトル画面は起動演出のあいだ全面を覆っており、
      タップで消える作りなので startGame() を呼んでも自動では消えない。   */
+  /* --nofx: WebGL層を止めて撮る。**改修前の絵をまったく同じ条件で撮る**ためのもの。
+     昔のコミットへ戻して撮り直すと、シード・カメラ・地形が微妙に変わって
+     比較にならない(実際に一度そうなった)。                             */
+  api.setFx = function(on){
+    const gl = window.__aramonFxGl;
+    if(gl) gl.setActive(!!on);
+    window.__fxForceOff = !on;
+  };
   api.hideHud = function(){
     for(const id of ['titleScreen','startScreen','resultScreen','lobbyScreen','roomListScreen',
                      'howToPlayScreen','mastermonScreen','monsterListScreen','myStatsScreen',
@@ -266,6 +274,7 @@ for(const [el, tiers] of byElement){
       const setup = await page.evaluate(([e,m,s])=> window.__fx.setup({ element:e, mapKey:m, seed:s }), [el, MAP, SEED]);
       if(!setup || !setup.ok){ errors.push(`${el}:t${tier} setup失敗`); continue; }
       await page.evaluate(()=> window.__fx.hideHud());
+      if(flag('nofx')) await page.evaluate(()=> window.__fx.setFx(false));
       const info = await page.evaluate((t)=> window.__fx.fire(t), tier);
       let prev = 0;
       for(const at of FRAMES){
