@@ -2378,6 +2378,17 @@ function rarityCssColor(rarity, now){
   return RARITIES[rarity].color;
 }
 // --- ガチャカウンター(ゲージ・カタログ) ---
+/* 待機中だけ出す物の出し入れ。**引くボタンとカタログは同じタイミングで消える**
+   (演出中と結果表示中は隠す)。増やすたびに3か所へ足す作りにしないよう、ここ1か所にまとめる。
+   display ではなく visibility を使うのは、消えた瞬間に場所が詰まって
+   演出の中心がずれるのを避けるため。 */
+function setGachaIdleUiVisible(on){
+  const v = on ? 'visible' : 'hidden';
+  ['gachaButtons','gachaCatalogRow'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.style.visibility = v;
+  });
+}
 function updateGachaCounterUI(){
   const raid = (typeof gachaMode!=='undefined') && gachaMode==='raid';
   const max = raid ? RAID_GACHA_CATALOG_AT : GACHA_SSR_CATALOG_AT;
@@ -2497,7 +2508,7 @@ function openGachaScreen(){
   document.getElementById('gachaResult').classList.add('hidden');
   document.getElementById('gachaRatesModal').classList.add('hidden');
   document.getElementById('gachaCatalogModal').classList.add('hidden');
-  document.getElementById('gachaButtons').style.visibility='visible';
+  setGachaIdleUiVisible(true);
   updateGachaCounterUI();
   document.getElementById('gachaOverlay').classList.remove('hidden');
   gachaAnimStart('idle');
@@ -2790,7 +2801,7 @@ function doGacha(count){
   const granted = gachaMode==='raid' ? incrementRaidGachaCount(count) : incrementGachaCount(count);
   gachaAnim.results = results; gachaAnim.count = count;
   // 演出開始
-  document.getElementById('gachaButtons').style.visibility='hidden';
+  setGachaIdleUiVisible(false);
   document.getElementById('gachaResult').classList.add('hidden');
   playSe('chupiin');
   setTimeout(()=>playSe('shuwaa'), 2400); // 円盤石の回転(2.4秒)後、光の柱が降り始めるタイミング
@@ -3109,7 +3120,7 @@ function showGachaResults(results, granted){
   });
   res.onclick = ()=>{
     res.classList.add('hidden'); res.onclick=null;
-    document.getElementById('gachaButtons').style.visibility='visible';
+    setGachaIdleUiVisible(true);
     gachaAnim.results=[]; gachaAnim.orbs=[];
     gachaAnimStart('idle');
   };
