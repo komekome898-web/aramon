@@ -176,6 +176,25 @@ const DRIVER = `(function(){
     return matchTime;
   };
   api.draw = function(){ render(); return { proj: projectiles.length, ae: areaEffects.length, part: particles.length }; };
+  /* 1フレームの描画にかかる時間を測る。**エフェクトが一番濃い瞬間で測る**
+     (何も出ていない時間を混ぜると平均が下がって実態を隠す)。         */
+  api.bench = function(n, fxOff){
+    const gl0 = window.__aramonFxGl;
+    if(gl0 && fxOff) gl0.setActive(false);
+    const N = n || 40;
+    // 初回のシェーダ確定とJITの立ち上がりぶんは測らない。
+    // ここを1回だけにすると、先に測ったほうが不利になって「層を足したら速くなった」
+    // という嘘の数字が出る(実際に出た)。
+    for(let i=0;i<12;i++) render();
+    const t0 = performance.now();
+    for(let i=0;i<N;i++) render();
+    const ms = (performance.now()-t0)/N;
+    const gl = window.__aramonFxGl;
+    if(gl && fxOff) gl.setActive(true);
+    return { ms:+ms.toFixed(2), fps:+(1000/ms).toFixed(1),
+             fx: gl && gl.isActive() ? gl.stats() : null,
+             proj: projectiles.length, ae: areaEffects.length, part: particles.length };
+  };
   /* 画面を「試合中」だけにする。タイトル画面は起動演出のあいだ全面を覆っており、
      タップで消える作りなので startGame() を呼んでも自動では消えない。   */
   api.hideHud = function(){
@@ -209,7 +228,7 @@ function parseMoves(spec, known){
   return out;
 }
 
-const report = { seed:SEED, map:MAP, size:[W,H], frames:FRAMES, shots:[], errors:[] };
+const report = { seed:SEED, map:MAP, size:[W,H], frames:FRAMES, shots:[], bench:{}, errors:[] };
 const errors = [];
 
 let page = null;
@@ -261,6 +280,13 @@ for(const [el, tiers] of byElement){
         await page.screenshot({ path:file, clip });
         report.shots.push({ el, tier, at, move:info.name, style:info.style, counts,
                             file: path.relative(ROOT, file) });
+      }
+      if(flag('bench')){
+        // WebGL層あり/なしの両方を測る。差がこの層の追加ぶん
+        const bOff = await page.evaluate(()=> window.__fx.bench(40, true));
+        const b    = await page.evaluate(()=> window.__fx.bench(40));
+        report.bench[`${el}_t${tier}`] = { on:b, off:bOff, addedMs:+(b.ms-bOff.ms).toFixed(2) };
+        process.stdout.write(`  負荷 ${el} t${tier}: ${bOff.ms}ms → ${b.ms}ms (+${(b.ms-bOff.ms).toFixed(2)}ms)\n`);
       }
       process.stdout.write(`撮影 ${el} t${tier} ${info.name}\n`);
     } catch(e){

@@ -5527,6 +5527,9 @@ function safeDraw(fn){ try{ fn(); }catch(err){ reportDrawError(err); } }
 function render(){
   trimParticles();
   ctx.clearRect(0,0,viewW,viewH);
+  /* 当たった衝撃でカメラをずらす。2DのprojectもWebGL層も同じcamPosを読むので、
+     ここで1回ずらせば両方の層が一緒に揺れる。**必ず fxPunchRestore() で戻す。** */
+  fxPunchApply(_fxGlPrevMs ? Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000) : 0.016);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = gfxLevel >= 1 || (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
@@ -5660,6 +5663,8 @@ function render(){
      この層が無くても技は成立する(芯は2D側が描いている)ので、
      初期化に失敗しても何も足さないだけで済む。                         */
   safeDraw(renderFxGlLayer);
+  fxPunchRestore();
+  safeDraw(drawFxFlash);
   safeDraw(renderMinimap);
 }
 /* WebGL VFX層を1フレーム進めて描く。時間は実時間(前フレームからの経過)で進める:
@@ -5678,6 +5683,62 @@ function renderFxGlLayer(){
   fx.begin(dt);
   fxGlFeed(fx, dt);
   fx.render();
+}
+
+/* =====================================================================
+   当たった感触を画面側にも出す(採点表8)
+   ・**カメラそのものを揺らす。** 2Dのproject()もWebGL層も同じcamPosを読むので、
+     こうすれば2つの層が必ず一緒に揺れる(片方だけ動くと二重像になる)。
+   ・揺れは短く小さく。CLAUDE.mdの決まりどおり **0.12秒以下・画面高の1%以下**。
+     長い揺れは酔うので、強さではなく「立ち上がりの速さ」で効かせる。
+   ・遠くの爆発では揺れない(距離で減衰させる)。
+===================================================================== */
+const FX_PUNCH_MAX_SEC = 0.12;    // これ以上は伸ばさない
+const FX_PUNCH_MAX_AMP = 0.01;    // 画面高に対する最大振幅
+const FX_PUNCH_FALLOFF = 900;     // これより遠い出来事では揺れない
+let _fxPunch = 0, _fxPunchT = 0, _fxFlash = 0;
+let _fxPunchSaved = null;
+
+// amount: 0..1。dist を渡すとプレイヤーからの距離で自動的に弱める
+function fxPunch(amount, x, y){
+  let a = Math.max(0, Math.min(1, amount));
+  if(x != null && player){
+    const d = Math.hypot(x - player.x, y - player.y);
+    a *= Math.max(0, 1 - d / FX_PUNCH_FALLOFF);
+  }
+  if(a <= 0.01) return;
+  _fxPunch  = Math.max(_fxPunch, a);       // 重ねがけで暴れないよう最大値を採る
+  _fxPunchT = FX_PUNCH_MAX_SEC;
+  _fxFlash  = Math.max(_fxFlash, a*0.35);
+}
+// 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
+function fxPunchApply(dt){
+  if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*4); return; }
+  _fxPunchT -= dt;
+  const t = Math.max(0, _fxPunchT / FX_PUNCH_MAX_SEC);
+  const amp = _fxPunch * t * t * (viewH * FX_PUNCH_MAX_AMP);
+  // 画面のピクセルではなくワールドでずらす。奥行きが変わらないよう横と縦だけ動かす
+  const ph = matchTime * 90;
+  const ox = Math.sin(ph) * amp, oz = Math.cos(ph*1.7) * amp;
+  _fxPunchSaved = { x:camPos.x, y:camPos.y, z:camPos.z };
+  camPos.x += -Math.sin(camState.yaw) * ox;
+  camPos.y +=  Math.cos(camState.yaw) * ox;
+  camPos.z += oz;
+  _fxFlash = Math.max(0, _fxFlash - dt*4);
+}
+function fxPunchRestore(){
+  if(!_fxPunchSaved) return;
+  camPos.x = _fxPunchSaved.x; camPos.y = _fxPunchSaved.y; camPos.z = _fxPunchSaved.z;
+  _fxPunchSaved = null;
+}
+// 着弾の一瞬だけ画面全体をわずかに持ち上げる(白飛びではなく「明るくなる」程度)
+function drawFxFlash(){
+  if(_fxFlash <= 0.01) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = `rgba(255,244,225,${Math.min(0.18, _fxFlash)})`;
+  ctx.fillRect(0,0,viewW,viewH);
+  ctx.restore();
 }
 
 /* =====================================================================
@@ -5732,6 +5793,8 @@ function fxGlFeed(fx, dt){
       _fxProjSeen.delete(id);
       const st = fxGlStyleFor(last); if(!st) continue;
       st.impact(fx, last, last.c);
+      // 当たりの重さは弾の当たり判定の大きさで測る(威力は表示用の値と混ざるため)
+      fxPunch(Math.min(0.9, (last.hitR||10)/34), last.x, last.y);
     }
   }
   // ---- 範囲技: 発生の瞬間(cast)と、出ている間(sustain) ----
@@ -5741,6 +5804,7 @@ function fxGlFeed(fx, dt){
     if(!_fxSeenAe.has(ae.id)){
       _fxSeenAe.add(ae.id);
       st.cast(fx, ae, c);
+      fxPunch(Math.min(1, (ae.range||200)/900), ae.x, ae.y);
     }
     if(st.sustain) st.sustain(fx, ae, c, dt);
   }
