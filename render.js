@@ -5695,45 +5695,54 @@ function fxGlColor(hex){
 // 弾・範囲技の色。SSRスキンの色替え(auraTint)が乗っていればそちらを優先する
 function fxGlTint(o){ return fxGlColor(o.auraTint || o.color); }
 
-const _fxSeenAe = new Set();     // 発生時に1回だけ出すもの(輪・初弾のバースト)の既出判定
-let _fxEmberAcc = 0;             // 火の粉の発生を実時間で間引くための積算
+const _fxSeenAe   = new Set();   // 発生時に1回だけ出すもの(cast)の既出判定
+const _fxProjSeen = new Map();   // 弾id → 最後に見えた位置。消えた瞬間に impact を出す
+
+/* 属性ごとの作り込み(fx_moves.js の表)を引く。無い属性は既定の見え方。
+   **ここが分岐の1か所。** 技ごとの if をこの外に増やさない。 */
+function fxGlStyleFor(o){
+  const table = window.__aramonFxMoves;
+  const def   = window.__aramonFxDefault;
+  if(!table || !def) return null;
+  const owner = (o.ownerId != null && typeof getEntity === 'function') ? getEntity(o.ownerId) : null;
+  const el = (owner && owner.element) || o.element || null;
+  const st = (el && table[el]) || null;
+  // 属性の表に無い出番は既定で埋める(4段のうち1つだけ書いた表も成立させる)
+  return {
+    cast:    (st && st.cast)    || def.cast,
+    fly:     (st && st.fly)     || def.fly,
+    impact:  (st && st.impact)  || def.impact,
+    sustain: (st && st.sustain) || null,
+  };
+}
 
 function fxGlFeed(fx, dt){
-  // ---- 飛んでいる弾: リボンの軌跡 + 尾を引く火の粉(採点表3・4・10) ----
+  // ---- 飛んでいる弾 ----
   for(const p of projectiles){
+    const st = fxGlStyleFor(p); if(!st) break;
     const c = fxGlTint(p);
-    const z = (p.z || 0) + 14;
-    fx.trail('p'+p.id, p.x, p.y, z, { color:c, width: Math.max(10, (p.hitR||10)*1.7), bright:1.15 });
+    st.fly(fx, p, c, dt);
+    _fxProjSeen.set(p.id, { x:p.x, y:p.y, z:p.z||0, c, splash:p.splash, hitR:p.hitR, ownerId:p.ownerId });
   }
-  _fxEmberAcc += dt;
-  if(_fxEmberAcc >= 1/45){       // 秒45回まで。端末が遅いフレームでは自動的に減る
-    _fxEmberAcc = 0;
-    for(const p of projectiles){
-      const c = fxGlTint(p);
-      fx.emit({
-        x:p.x, y:p.y, z:(p.z||0)+14,
-        vx:-(p.vx||0)*0.12 + (Math.random()-0.5)*40,
-        vy:-(p.vy||0)*0.12 + (Math.random()-0.5)*40,
-        vz: 20 + Math.random()*50,
-        az: -40,
-        r:c[0], g:c[1], b:c[2], bright:1.0,
-        life: 0.28 + Math.random()*0.22,
-        size0: Math.max(5, (p.hitR||10)*0.55), size1: 0.5,
-        turb: 9, turbFreq: 1.6, spin: 3,
-      });
+  // ---- 消えた弾 = 着弾。combat.js を触らずに「最後に見えた位置」で1回出す ----
+  if(_fxProjSeen.size){
+    const alive = new Set(projectiles.map(p=>p.id));
+    for(const [id, last] of _fxProjSeen){
+      if(alive.has(id)) continue;
+      _fxProjSeen.delete(id);
+      const st = fxGlStyleFor(last); if(!st) continue;
+      st.impact(fx, last, last.c);
     }
   }
-  // ---- 範囲技: 発生の瞬間に地面の輪と立ち上がりのバースト(採点表4・5) ----
+  // ---- 範囲技: 発生の瞬間(cast)と、出ている間(sustain) ----
   for(const ae of areaEffects){
-    if(_fxSeenAe.has(ae.id)) continue;
-    _fxSeenAe.add(ae.id);
+    const st = fxGlStyleFor(ae); if(!st) break;
     const c = fxGlTint(ae);
-    const reach = ae.range || 200;
-    fx.ring({ x:ae.x, y:ae.y, r0: 12, r1: Math.min(reach, 420), life: 0.55,
-              color:c, width: 26, bright: 1.25 });
-    fx.burst({ x:ae.x, y:ae.y, z: 8, count: 26, speed: 210, jitter: 26, jitterZ: 30,
-               elev: 0.55, elevSpread: 0.9, r:c[0], g:c[1], b:c[2], bright:1.2,
-               life: 0.5, size0: 16, size1: 1, az:-180, turb: 16, turbFreq: 1.2, spin: 4 });
+    if(!_fxSeenAe.has(ae.id)){
+      _fxSeenAe.add(ae.id);
+      st.cast(fx, ae, c);
+    }
+    if(st.sustain) st.sustain(fx, ae, c, dt);
   }
   // 消えた範囲技のidは捨てる(Setが試合中ずっと膨らむのを防ぐ)
   if(_fxSeenAe.size > 256){
