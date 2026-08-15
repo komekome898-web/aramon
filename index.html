@@ -1274,6 +1274,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <source src="video/ssr_promote.webm" type="video/webm">
   </video>
   <img id="ssrPromoteTapImg" class="ssr-promote-tap hidden" src="images/ssr_promote_tap.jpg" alt="画面をタップしてください">
+  <!-- すでに持っているスキンの昇格演出のときだけ出すスキップ。
+       初めて手に入れたときは出さない(1回目は見せたい演出なので飛ばせない)。 -->
+  <button id="ssrPromoteSkip" class="ssr-promote-skip hidden">スキップ ▶</button>
   <div id="ssrPromoteDebug" class="ssr-promote-debug hidden"></div>
 </div>
 
