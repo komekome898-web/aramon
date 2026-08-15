@@ -65,7 +65,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
    <span class="header-side header-right">
      <!-- ロビーBGMの表示・切替(提供音源「いちか」/従来の合成BGM) -->
      <button id="headerBgmBtn" class="header-bgm-btn" aria-label="ロビーBGM"><span class="header-bgm-icon">🎵</span><span id="headerBgmName">いちか</span></button>
-     <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
+     <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span><span id="headerShard">💠 0</span></span>
    </span>
  </div>
 
@@ -1129,7 +1129,13 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
         </div>
       </div>
       <div class="shop-main">
+        <!-- ゴールドの棚とモン晶の交換所をタブで分ける(通貨が混ざると値段を読み違える) -->
+        <div class="bag-tabs shop-tabs">
+          <button class="bag-tab shop-tab active" data-shoptab="gold">🪙 ショップ</button>
+          <button class="bag-tab shop-tab" data-shoptab="shard">💠 モン晶こうかん</button>
+        </div>
         <div id="shopList" class="bag-list shop-list-2col"></div>
+        <div id="shopShardList" class="bag-list shop-list-2col hidden"></div>
       </div>
     </div>
   </div>
@@ -1465,6 +1471,23 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div class="rebirth-actions">
       <button id="awakenCancelBtn" class="rebirth-cancel-btn">やめる</button>
       <button id="awakenConfirmBtn" class="rebirth-confirm-btn" disabled>強化する項目を選んでください</button>
+    </div>
+  </div>
+</div>
+
+<!-- 秘伝の書: 今着ているスキンのtier3技に強化を1つ付ける(覚醒と重ねられる)。
+     覚醒の選択画面と同じ作りに乗せているのでCSSは rb-picker / awaken-pick を共用する。 -->
+<div id="hidenOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box rebirth-box">
+    <button class="overlay-close-btn" id="hidenCloseBtn">✕</button>
+    <div class="rebirth-title">📖 秘伝の書 📖<span class="rebirth-title-sub">今着ているスキンのtier3技に強化を1つ付ける。何度でも付け替えられる</span></div>
+    <div class="rebirth-scroll-wrap">
+      <div class="rebirth-scroll" id="hidenScroll"></div>
+      <div class="mm-scrollbar hidden" id="hidenScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+    </div>
+    <div class="rebirth-actions">
+      <button id="hidenCancelBtn" class="rebirth-cancel-btn">やめる</button>
+      <button id="hidenConfirmBtn" class="rebirth-confirm-btn" disabled>強化する項目を選んでください</button>
     </div>
   </div>
 </div>

@@ -982,10 +982,12 @@ function skinTier3Move(move, attacker){
   if(!move || move.tier!==3) return move;
   const sid = entitySkinId(attacker);
   const def = skinTier3Def(sid);
-  const boost = entityAwakenBoost(attacker);
-  if(!def && !boost) return move;
-  // 覚醒の強化は「選んだ種類」で結果が変わるのでキャッシュキーに混ぜる
-  const ck = `${sid}:${move.name}:${boost||''}`;
+  const boosts = entityMoveBoosts(attacker);
+  if(!def && !boosts.length) return move;
+  /* 強化は「どの段のどの種類か」で結果が変わるのでキャッシュキーに混ぜる。
+     **強化を1つでも足したらここに必ず入れる。** 混ぜ忘れると同じスキンの同じ技で
+     古い結果が使い回され、強化を付けても数字が変わらない(再読込まで直らない)。 */
+  const ck = `${sid}:${move.name}:${moveBoostCacheKey(boosts)}`;
   if(_skinTier3MoveCache[ck]) return _skinTier3MoveCache[ck];
   let out = Object.assign({}, move);
   if(def){
@@ -995,15 +997,16 @@ function skinTier3Move(move, attacker){
       if(def.move.blast) out.blast = Object.assign({}, move.blast||{}, def.move.blast);
     }
   }
-  out = applyAwakenBoostToMove(out, boost);
+  // 載っている強化を**すべて**順に掛ける(覚醒と秘伝の書は重ねられる)
+  boosts.forEach(b=>{ out = applyMoveBoostToMove(out, b); });
   _skinTier3MoveCache[ck] = out;
   return out;
 }
-/* 覚醒で選んだ強化を技へ掛ける。**スキンの上書き(SSR_SKIN_TIER3)を当てたあとに掛ける**ので、
+/* 強化を技へ掛ける。**スキンの上書き(SSR_SKIN_TIER3)を当てたあとに掛ける**ので、
    スキンで技を差し替えていても、差し替え後の値に対して効く。
    威力(dmgMult)はここでは触らない(従来どおり effectiveMoveDmg 側の ssrTier3DmgMult が掛ける)。 */
-function applyAwakenBoostToMove(move, boostKey){
-  const b = boostKey && AWAKEN_BOOSTS[boostKey];
+function applyMoveBoostToMove(move, boost){
+  const b = moveBoostEffect(boost);
   if(!b || !move) return move;
   const out = Object.assign({}, move);
   if(b.mult){
@@ -1023,10 +1026,54 @@ function applyAwakenBoostToMove(move, boostKey){
   }
   return out;
 }
-/* このエンティティに効いている覚醒の強化。**試合が始まる時にエンティティへ載せてある**ので、
+// 旧名。覚醒だけを掛ける呼び出しが残っていても動くように残す
+function applyAwakenBoostToMove(move, boostKey){
+  return boostKey ? applyMoveBoostToMove(move, { src:'awaken', kind:boostKey }) : move;
+}
+/* このエンティティに効いている技強化の一覧。**試合が始まる時にエンティティへ載せてある**ので、
    自分・味方bot・マルチの相手のどれでも同じように読める(ここで localStorage を見ない。
-   マルチの相手のマスモンは手元に無いため)。 */
-function entityAwakenBoost(entity){ return (entity && entity.awakenBoost) || null; }
+   マルチの相手のマスモンは手元に無いため)。
+
+   形は [{src:'awaken'|'hiden', kind:'power'|…}, …]。
+   **昔の写しは awakenBoost に文字列1つで入っている**ので、それも1要素として受ける
+   (マルチの相手・保存済みのゴーストが古い形で届く)。 */
+function entityMoveBoosts(entity){
+  if(!entity) return [];
+  /* 【moveBoosts があればそれだけを見る】awakenBoost は古い受け側のために
+     写しへ残してあるので、両方読むと覚醒が二重に掛かる(威力なら1.30が1.69になる)。
+     moveBoosts は覚醒ぶんも含んだ完全な一覧なので、あるときはこちらが正。 */
+  const src = Array.isArray(entity.moveBoosts) ? entity.moveBoosts
+            : (entity.awakenBoost != null ? [entity.awakenBoost] : []);
+  const out = [], seen = {};
+  src.forEach(b=>{
+    const n = normalizeMoveBoost(b);
+    if(!n) return;
+    const k = `${n.src}.${n.kind}`;
+    if(seen[k]) return;              // 同じ段の同じ種類は1回だけ
+    seen[k] = 1;
+    out.push(n);
+  });
+  return out;
+}
+// 文字列(昔の形=覚醒)でも {src,kind} でも受ける。効かない種類は落とす
+function normalizeMoveBoost(b){
+  if(typeof b === 'string') return b ? { src:'awaken', kind:b } : null;
+  if(b && b.kind && MOVE_BOOST_KINDS[b.kind]) return { src: b.src || 'awaken', kind: b.kind };
+  return null;
+}
+function moveBoostEffect(boost){
+  const n = normalizeMoveBoost(boost);
+  const grade = n && MOVE_BOOST_GRADES[n.src];
+  return (grade && grade[n.kind]) || null;
+}
+function moveBoostCacheKey(boosts){
+  return (boosts||[]).map(b=>`${b.src}.${b.kind}`).join('+');
+}
+// 旧名。1語で読む呼び出しが残っていても動くように残す(覚醒ぶんだけを返す)
+function entityAwakenBoost(entity){
+  const b = entityMoveBoosts(entity).find(x=>x.src==='awaken');
+  return b ? b.kind : null;
+}
 // 技の表示名(SSR装備時はtier3を専用名に上書き)
 function getMoveName(move, attacker){
   if(move && move.tier===3){
@@ -1035,13 +1082,17 @@ function getMoveName(move, attacker){
   }
   return move ? move.name : '';
 }
-// SSR装備時のtier3威力倍率(非装備/非tier3は1)。覚醒で「威力」を選んでいればさらに掛かる
+/* SSR装備時のtier3威力倍率(非装備/非tier3は1)。「威力」の強化を選んでいればさらに掛かる。
+   **載っている強化を全部掛ける。** 1つしか見ないと、技一覧の表示だけ上がって
+   実戦のダメージが上がらない(表示と実戦力の食い違い)。 */
 function ssrTier3DmgMult(move, attacker){
   if(move && move.tier===3){
     const def = skinTier3Def(entitySkinId(attacker));
     let mult = def ? (def.dmgMult || 1) : 1;
-    const b = AWAKEN_BOOSTS[entityAwakenBoost(attacker)];
-    if(b && b.dmgMult) mult *= b.dmgMult;
+    entityMoveBoosts(attacker).forEach(b=>{
+      const e = moveBoostEffect(b);
+      if(e && e.dmgMult) mult *= e.dmgMult;
+    });
     return mult;
   }
   return 1;
@@ -1086,6 +1137,10 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-15', items:[
+    { t:'🆕 モン晶(💠)が登場! ガチャで持っているスキンが出たときのダイヤの代わりに、SRで1個・SSRで5個もらえます。ショップの「💠モン晶こうかん」タブでプレミアムなアイテムと交換できます', g:['feature'] },
+    { t:'🆕 秘伝の書: モン晶100個で交換できる技強化アイテム。今着ているスキンのtier3技に「威力+12%」「射程+12%」「弾速+20%」などの強化を1つ付けられます。覚醒と重ねがけでき、何度でも付け替えられます', g:['feature','balance'] },
+    { t:'💠交換所には他にスキンカタログ(300個)・フリートレーニングチケット5枚(20個)・帰還のホラ貝3個(15個)を並べました', g:['feature'] },
+    { t:'ダイヤの入手量を全体的に増やしました(試合の参加報酬 5→8、チャンピオン 10→15、ログインボーナス、デイリー、遠征の当たり枠、レイドの周回報酬)。被りでダイヤがもらえなくなったぶんの埋め合わせです', g:['balance'] },
     { t:'🏆 ランキングに「チーム戦」タブが増えました。チーム戦の撃破数・ダメージはシングルとは別に集計されます(仲間と分け合う試合の記録を1人で戦う記録と同じ表で競わせないため)', g:['feature','multi'] },
     { t:'デス円盤石の力を、拾った1人の総取りではなく生きている小隊全員で山分けするようになりました(3人そろっていれば3等分)。拾いに行く価値がチーム全体のものになります', g:['balance','multi'] },
     { t:'デス円盤石の見た目を、ガチャ・召喚演出と同じ円盤石の絵に変えました', g:['av'] },
@@ -1822,25 +1877,65 @@ const AWAKEN_STAT_MIN    = 800;  // 6ステータス「すべて」がこの値�
    増やすときはこの表に1行足すだけでよい(選択ボタンも効果の適用も自動で回る)。 */
 /* `stat` は技一覧のどの数字が動くか。**強調表示はこの印だけを見る**ので、
    強化を足すときにここへ1つ書けば画面側は何も足さなくてよい。 */
-const AWAKEN_BOOSTS = {
+/* 【表は2つに割ってある】
+   ・MOVE_BOOST_KINDS = **何が上がるか**(ラベル・アイコン・どの数字が動くか・どの技に効くか)
+   ・MOVE_BOOST_GRADES = **どれだけ上がるか**を出どころ別に持つ(awaken=覚醒 / hiden=秘伝の書)
+   覚醒と秘伝の書は「上がるもの」がまったく同じで「効き目」だけが違う。
+   1つの表に混ぜると、種類を足したときに片方だけ直す事故が必ず起きるので分けてある。
+   **種類を増やすときは KINDS に1行 + GRADES の各段に1行**(両方に入れる。片方だけだと無効)。 */
+const MOVE_BOOST_KINDS = {
   power:  { label:'威力',         icon:'💥', desc:'技のダメージが上がる', stat:'dmg',
-            dmgMult:1.30, applies:()=>true },
+            applies:()=>true },
   range:  { label:'射程',         icon:'🎯', desc:'技の届く距離が伸びる', stat:'range',
-            mult:{ range:1.30 }, applies:(m)=>!!(m && m.range) },
+            applies:(m)=>!!(m && m.range) },
   // 弾を撃つ技(aoeShapeが無い)だけ。projSpeed は弾の速さ
   projSpeed:{ label:'弾速',       icon:'⚡', desc:'弾が速く飛ぶ', stat:'speed',
-            mult:{ projSpeed:1.50 }, applies:(m)=>!!(m && !m.aoeShape && m.projSpeed) },
+            applies:(m)=>!!(m && !m.aoeShape && m.projSpeed) },
   // 範囲技だけ。projSpeed は範囲の広がる速さ(fillSpeed)。未指定の技は既定900から伸ばす
   fillSpeed:{ label:'範囲拡大速度', icon:'🌀', desc:'範囲が広がる速さが上がる', stat:'speed',
-            mult:{ projSpeed:1.50 }, base:{ projSpeed:900 }, applies:(m)=>!!(m && m.aoeShape) },
+            applies:(m)=>!!(m && m.aoeShape) },
   // 爆風ドームを持つ技だけ。expandTime は小さいほど速く広がる
   blastSpeed:{ label:'爆風の広がり', icon:'💠', desc:'着弾の爆風が速く広がる', stat:'feature',
-            blastExpandMult:1/1.4, applies:(m)=>!!(m && (m.blast || m.endBlast || m.selfBlast)) },
+            applies:(m)=>!!(m && (m.blast || m.endBlast || m.selfBlast)) },
 };
+/* 効き目の段。**awaken の数字は覚醒システム公開時のまま。ここを動かすと既存の覚醒個体が変わる。**
+   hiden(秘伝の書)は覚醒の約4割。覚醒は転生2回+全ステ800以上という長い道のりの報酬なので、
+   モン晶100個で買える書が並ぶと覚醒の価値が消える。**重ねられる**ので、
+   両方そろえた個体が一番強い(威力なら 1.30×1.12 = +45.6%)。
+   **数値は発注者が実機で調整する。ここ1か所だけを直せば全体に効く。** */
+const MOVE_BOOST_GRADES = {
+  awaken: {
+    power:     { dmgMult:1.30 },
+    range:     { mult:{ range:1.30 } },
+    projSpeed: { mult:{ projSpeed:1.50 } },
+    fillSpeed: { mult:{ projSpeed:1.50 }, base:{ projSpeed:900 } },
+    blastSpeed:{ blastExpandMult:1/1.4 },
+  },
+  hiden: {
+    power:     { dmgMult:1.12 },
+    range:     { mult:{ range:1.12 } },
+    projSpeed: { mult:{ projSpeed:1.20 } },
+    fillSpeed: { mult:{ projSpeed:1.20 }, base:{ projSpeed:900 } },
+    blastSpeed:{ blastExpandMult:1/1.15 },
+  },
+};
+/* 覚醒の強化表。**KINDSとGRADESから組み立てた読むだけの表**なので、
+   既存の呼び出し(awakenBoostKeysFor / awakenBoostAmountText / 画面側)は今までどおり使える。 */
+const AWAKEN_BOOSTS = Object.keys(MOVE_BOOST_KINDS).reduce((acc,k)=>{
+  acc[k] = Object.assign({}, MOVE_BOOST_KINDS[k], MOVE_BOOST_GRADES.awaken[k]);
+  return acc;
+}, {});
+// 秘伝の書の強化表(同じ作り方。段が違うだけ)
+const HIDEN_BOOSTS = Object.keys(MOVE_BOOST_KINDS).reduce((acc,k)=>{
+  acc[k] = Object.assign({}, MOVE_BOOST_KINDS[k], MOVE_BOOST_GRADES.hiden[k]);
+  return acc;
+}, {});
+function moveBoostTable(src){ return src==='hiden' ? HIDEN_BOOSTS : AWAKEN_BOOSTS; }
 /* 強化の効き目を「+何%」の文字にする。**表の数字から作る**ので二重に持たない。
-   爆風だけは expandTime(小さいほど速い)なので逆数で見る。 */
-function awakenBoostAmountText(key){
-  const b = AWAKEN_BOOSTS[key];
+   爆風だけは expandTime(小さいほど速い)なので逆数で見る。
+   src を省くと覚醒の段(従来の呼び出しがそのまま動く)。 */
+function moveBoostAmountText(key, src){
+  const b = moveBoostTable(src)[key];
   if(!b) return '';
   const pct = (v)=> `+${Math.round((v-1)*100)}%`;
   if(b.dmgMult) return pct(b.dmgMult);
@@ -1848,10 +1943,13 @@ function awakenBoostAmountText(key){
   if(b.blastExpandMult) return pct(1/b.blastExpandMult);
   return '';
 }
-// その技で実際に選べる強化の一覧(効かないものは出さない)
-function awakenBoostKeysFor(move){
-  return Object.keys(AWAKEN_BOOSTS).filter(k=>AWAKEN_BOOSTS[k].applies(move));
+function awakenBoostAmountText(key){ return moveBoostAmountText(key, 'awaken'); }
+/* その技で実際に選べる強化の一覧(効かないものは出さない)。
+   **効く／効かないは種類だけで決まる**(段によらない)ので覚醒も秘伝の書も同じ答えになる。 */
+function moveBoostKeysFor(move){
+  return Object.keys(MOVE_BOOST_KINDS).filter(k=>MOVE_BOOST_KINDS[k].applies(move));
 }
+function awakenBoostKeysFor(move){ return moveBoostKeysFor(move); }
 // このマスモンが覚醒済みのスキンに対して選んだ強化(未覚醒なら null)
 function mastermonAwakenBoost(mm, baseSkinId){
   const a = mm && mm.awaken;
@@ -1862,6 +1960,42 @@ function mastermonAwakenBoost(mm, baseSkinId){
 function awakenBoostForSkin(mm, skinId){
   if(!mm || !skinId || !isAwakenedSkinId(skinId)) return null;
   return mastermonAwakenBoost(mm, SSR_SKINS[skinId].awakenOf);
+}
+
+/* =====================================================================
+   秘伝の書(モン晶100個で交換する技強化アイテム)
+
+   マスモンに増えるフィールドは mm.moveBoost の1つだけ。無ければ従来どおり読める。
+     mm.moveBoost = { 'スキンID': '強化の種類' }
+   **mm.awaken とは別に持つ。** 混ぜると「覚醒していないのに覚醒扱い」になり、
+   姿・オーラ・専用BGMまで巻き込む(覚醒スキンは SSR_SKINS の別スキンなので副作用が大きい)。
+   ===================================================================== */
+const HIDEN_MAX_PER_MASTERMON = 1;   // 1体に付けられる秘伝の書は1つ(上書きで付け替える)
+
+function mastermonHidenBoost(mm, skinId){
+  const h = mm && mm.moveBoost;
+  return (h && skinId && h[skinId]) || null;
+}
+/* 今着ているスキンに対して効く秘伝の書。
+   **覚醒すると装備スキンIDが変わる**(元のSSR → 覚醒スキン)ので、
+   覚醒スキンを着ているときは元のIDでも引く。こうしないと、書を付けたあとに覚醒した人の
+   書が消えたように見える。 */
+function hidenBoostForSkin(mm, skinId){
+  if(!mm || !skinId) return null;
+  const direct = mastermonHidenBoost(mm, skinId);
+  if(direct) return direct;
+  if(isAwakenedSkinId(skinId)) return mastermonHidenBoost(mm, SSR_SKINS[skinId].awakenOf);
+  return null;
+}
+/* このマスモン+装備スキンに効いている強化の一覧([{src,kind},…])。
+   **エンティティへ載せる形を作るのはここ1か所。** 覚醒と秘伝の書の両方を見る。 */
+function mastermonMoveBoosts(mm, skinId){
+  const out = [];
+  const aw = (typeof awakenBoostForSkin==='function') ? awakenBoostForSkin(mm, skinId) : null;
+  if(aw) out.push({ src:'awaken', kind:aw });
+  const hd = hidenBoostForSkin(mm, skinId);
+  if(hd) out.push({ src:'hiden', kind:hd });
+  return out;
 }
 /* 覚醒の条件。**判定はここ1か所だけ。** 足りないものを配列で返すので、
    画面はこれをそのまま「あと何が要るか」の表示に使える(条件と表示を二重に持たない)。 */
@@ -1949,8 +2083,11 @@ function mastermonInitialStats(elementKey){
    受け側は applyMastermonStatsToEntity にそのまま渡せる。
    ・baseHp/baseSpd は**基礎値アイテムぶんだけ**。受け側が rebirth から転生ぶんを足し直すので、
      合計を入れると転生ぶんが二重に乗る。
-   ・awakenBoost は**解決済みの1語**。受け側は覚醒の記録を持っていないため。
-   ・Firebaseは undefined を受け付けないので、無いものは null にする。 */
+   ・moveBoosts は**解決済みの一覧**([{src,kind},…])。受け側は覚醒や秘伝の書の記録を
+     持っていないため、ここで着ているスキンに対して引き当てた結果だけを渡す。
+   ・awakenBoost も**古い受け側のために1語で残す**(バージョン違いの相手と繋がったとき、
+     せめて覚醒ぶんは効くように)。新しい受け側は moveBoosts を読む。
+   ・Firebaseは undefined を受け付けないので、無いものは null / [] にする。 */
 function mastermonSnapshot(mm, skinId){
   const src = (mm && mm.stats) || {};
   const stats = {}, apt = {};
@@ -1960,6 +2097,7 @@ function mastermonSnapshot(mm, skinId){
     apt[s.key] = srcApt[s.key] || 'C';
   });
   const awakenBoost = (typeof awakenBoostForSkin==='function') ? awakenBoostForSkin(mm, skinId||null) : null;
+  const moveBoosts = (typeof mastermonMoveBoosts==='function') ? mastermonMoveBoosts(mm, skinId||null) : [];
   return {
     name: (mm && mm.name) || '',
     element: (mm && mm.element) || null,
@@ -1970,6 +2108,7 @@ function mastermonSnapshot(mm, skinId){
     baseSpd: safeBaseAmount(mm && mm.baseSpd),
     skin: skinId || null,
     awakenBoost: awakenBoost || null,
+    moveBoosts,
   };
 }
 /* 次のレベルに要るEXP。**転生を重ねるほど増える**(REBIRTH_EXP_MULT_STEP)。
@@ -2444,8 +2583,8 @@ const RAID_EDITIONS = {
       { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
       { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
     ],
-    repeatPersonal: { step:  100000, gold:1000, dia:20, item:'freeTrainTicket', n:1 },
-    repeatTotal:    { step: 1000000, gold:5000, dia:50, item:'freeTrainTicket', n:5 },
+    repeatPersonal: { step:  100000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
+    repeatTotal:    { step: 1000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
     moveDmg: {},               // ボスの技の威力は既定値のまま
   },
   /* 第2回。**まだ有効にしていない**(RAID_EDITION を 'r2' にした時点で切り替わる)。
@@ -2476,8 +2615,8 @@ const RAID_EDITIONS = {
       { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
       { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
     ],
-    repeatPersonal: { step:  100000, gold:1000, dia:20, item:'freeTrainTicket', n:1 },
-    repeatTotal:    { step: 1000000, gold:5000, dia:50, item:'freeTrainTicket', n:5 },
+    repeatPersonal: { step:  100000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
+    repeatTotal:    { step: 1000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
     // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す)
     moveDmg: { nova:105, ring:98, meteor:78 },
   },
@@ -2713,21 +2852,36 @@ function seededShuffle(rng, arr){
 ===================================================================== */
 const WALLET_STORAGE_KEY = 'aramon_wallet_v1';
 const BAG_STORAGE_KEY = 'aramon_bag_v1';
+/* 財布。**モン晶(shard)もここに入れる。**
+   別の保存キーにすると ACCOUNT_SYNC_KEYS への追加と移行が要るが、財布へ足せば
+   同期も「無ければ0」も既存のまま効く(古いセーブは shard が無いので自然に0になる)。 */
 function loadWallet(){
   try{
     const w = JSON.parse(localStorage.getItem(WALLET_STORAGE_KEY)) || {};
-    return { gold: Math.max(0, Math.round(w.gold||0)), dia: Math.max(0, Math.round(w.dia||0)) };
-  }catch(err){ return { gold:0, dia:0 }; }
+    return { gold: Math.max(0, Math.round(w.gold||0)), dia: Math.max(0, Math.round(w.dia||0)),
+             shard: Math.max(0, Math.round(w.shard||0)) };
+  }catch(err){ return { gold:0, dia:0, shard:0 }; }
 }
 function saveWallet(w){
   try{ localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(w)); }catch(err){}
   if(typeof accountMarkDirty==='function') accountMarkDirty();
 }
-function addWallet(gold, dia){
+function addWallet(gold, dia, shard){
   const w = loadWallet();
-  w.gold += Math.round(gold||0); w.dia += Math.round(dia||0);
+  w.gold += Math.round(gold||0); w.dia += Math.round(dia||0); w.shard += Math.round(shard||0);
   saveWallet(w);
   return w;
+}
+function addShards(n){ return addWallet(0, 0, n||0); }
+function shardCount(){ return loadWallet().shard; }
+// 足りるか。足りなければ false(呼ぶ側でトーストを出す)
+function spendShards(n){
+  const need = Math.max(0, Math.round(n||0));
+  const w = loadWallet();
+  if(w.shard < need) return false;
+  w.shard -= need;
+  saveWallet(w);
+  return true;
 }
 function loadBag(){
   try{ return JSON.parse(localStorage.getItem(BAG_STORAGE_KEY)) || {}; }catch(err){ return {}; }
@@ -2740,6 +2894,22 @@ function addBagItem(key, n){
   const b = loadBag();
   b[key] = (b[key]||0) + (n||1);
   saveBag(b);
+}
+/* アイテムを1つ減らす。足りなければ**何もせず false**(呼ぶ側でトーストを出す)。
+   **名前を useBagItem にしない。** ui.js に「アイテムをマスモンに使う」別物の
+   useBagItem(itemKey, mmKey, qty) があり、あとから読み込まれるこちらが勝つため、
+   同じ名前にすると黙って別の関数が呼ばれる(実際に一度やった)。
+   0になったキーは消す(バッグの一覧が「0個」の行で埋まらないように)。
+   **消費はここ1か所を通す。** 数を直接引くコードを増やすと、二重消費や
+   マイナス在庫が入り込む余地ができる。 */
+function consumeBagItem(key, n){
+  const need = Math.max(1, Math.round(n||1));
+  const b = loadBag();
+  if((b[key]||0) < need) return false;
+  b[key] -= need;
+  if(b[key] <= 0) delete b[key];
+  saveBag(b);
+  return true;
 }
 
 // ===== バトル操作画面カスタマイズ(端末ごとにHUD配置を保存。アカウント同期はしない) =====
@@ -2826,17 +2996,20 @@ const LOGIN_BONUS = [
   null,                              // index0未使用
   { gold:100 },                      // Day1
   { gold:200 },                      // Day2
-  { dia:5 },                         // Day3
+  /* 【2026-08-15】ガチャ被りのダイヤ還元をやめたぶん、ダイヤの総量が減らないように
+     ここを引き上げてある(5/10/20 → 10/15/30)。**ダイヤの総量は据え置きが方針。** */
+  { dia:10 },                        // Day3
   { gold:300 },                      // Day4
   { item:'freeTrainTicket', n:1 },   // Day5
-  { dia:10 },                        // Day6
-  { gold:500, dia:20 },              // Day7(大)
+  { dia:15 },                        // Day6
+  { gold:500, dia:30 },              // Day7(大)
 ];
 // 毎日リセットされるミッション(固定3種)。ゴールドは100単位
 const DAILY_MISSIONS = [
   { id:'play', name:'試合に3回参加する', target:3, reward:{ gold:100 }, track:'play' },
   { id:'kill', name:'合計5キルする',     target:5, reward:{ gold:200 }, track:'kill' },
-  { id:'win',  name:'1回勝利する',       target:1, reward:{ dia:5 },    track:'win'  },
+  // 被り還元の廃止ぶんの埋め合わせで 5 → 10(2026-08-15)
+  { id:'win',  name:'1回勝利する',       target:1, reward:{ dia:10 },   track:'win'  },
 ];
 function dailyTodayStr(){ const d=new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
 function loadDaily(){
@@ -2871,9 +3044,11 @@ function rewardItemList(r){
 }
 function grantReward(r){
   if(!r) return;
-  if(r.gold || r.dia) addWallet(r.gold||0, r.dia||0);
+  if(r.gold || r.dia || r.shard) addWallet(r.gold||0, r.dia||0, r.shard||0);
   for(const x of rewardItemList(r)) addBagItem(x.key, x.n);
   if(r.skin && typeof ownSkin==='function') ownSkin(r.skin);
+  // スキンカタログ(あとで好きな1着を選べる引換券)。モン晶の交換所が使う
+  if(r.catalog && typeof addCatalog==='function') addCatalog(r.catalog, r.n || 1);
 }
 
 /* =====================================================================
@@ -2936,7 +3111,7 @@ const EXPEDITIONS = [
             '尾根づたいに軽やかに走る', '風の音にまじって何かが光った', '崖っぷちをするりと抜けた'] } },
   { id:'library', name:'忘れられた書庫', icon:'📚', hours:6,  stat:'wisdom',
     reward:{ items:[{ key:'seed_wisdom', n:2 }] }, exp:220,
-    rare:{ chance:0.14, reward:{ dia:15 } },
+    rare:{ chance:0.14, reward:{ dia:20 } },
     desc:'古い書物を読み解く。かしこい子ほど成果が大きい',
     scene:{ sky:'#241f31', sky2:'#5b4a6d', ground:'#3a2f44', far:'📕',
       mote:{ ch:'✧', color:'#f0dfae', dir:'up' },
@@ -2952,7 +3127,7 @@ const EXPEDITIONS = [
             '足場の岩がぐらついている…', '大きく振りかぶって、一撃！', '汗をぬぐってもうひと踏ん張り'] } },
   { id:'trail',   name:'巡礼の道',       icon:'🧭', hours:12, stat:'life',
     reward:{ randomSeeds:3 }, exp:500,
-    rare:{ chance:0.22, reward:{ dia:40 } },
+    rare:{ chance:0.22, reward:{ dia:50 } },
     desc:'丸一日かけて歩き通す。体力のある子ほど遠くまで行ける',
     scene:{ sky:'#2f3f5c', sky2:'#e0a66d', ground:'#5b4a33', far:'🏔️',
       mote:{ ch:'·', color:'#f3e2b8', dir:'side' },
@@ -3363,8 +3538,13 @@ const GOLD_MATCH_BASE = 20;      // 参加報酬
 const GOLD_PER_KILL = 10;        // キルごと
 const GOLD_CHAMPION_BONUS = 50;  // チャンピオンボーナス
 const GOLD_MULTI_MULT = 2;       // マルチプレイはゴールド2倍
-const DIA_MATCH_BASE = 5;        // 参加報酬(従来の5倍)
-const DIA_CHAMPION_BONUS = 10;   // チャンピオンボーナス(従来の5倍)
+/* 【2026-08-15】ガチャ被りのダイヤ還元をやめたぶんの埋め合わせで引き上げた(5→8 / 10→15)。
+   還元は10連あたり22.9💎(コストの46%)戻っていて、よく遊ぶ人で1日約71💎ぶんあった。
+   ログボ・デイリー・遠征・レイドの引き上げが+21💎/日なので、残りをここで埋めている。
+   **試合はダイヤの最大の蛇口**(1日約70💎)なので、ここを動かすのが一番効く。
+   **数値は発注者が実機で調整する。** */
+const DIA_MATCH_BASE = 8;        // 参加報酬
+const DIA_CHAMPION_BONUS = 15;   // チャンピオンボーナス
 
 /* レイド限定アイテムのアイコン(SVG)。
    絵文字だと「実」と見分けが付かず、貴重さも伝わらないので専用の絵にする。
@@ -3412,6 +3592,11 @@ const PLAYER_ITEMS = {
   moveTicket:     { name:'技強化チケット', icon:'⚔️', desc:'次の試合を技tier2解放状態で開始' },
   // 遠征の時短。**バッグでは使えず、遠征画面の枠から使う**(対象がマスモンではなく遠征枠のため)
   expeditionRecall:{ name:'帰還のホラ貝', icon:'📯', expedition:'finish' },
+  /* モン晶の交換所で手に入る技強化。**バッグでは使えず、マスモン詳細から使う**
+     (対象がマスモンだけでなく「今着ているスキンのtier3技」なので、
+     バッグの「アイテム→対象マスモン」の2段UIでは選びきれない。帰還のホラ貝と同じ判断)。 */
+  hidenScroll:{ name:'秘伝の書', icon:'📖', hiden:true,
+                desc:'今着ているスキンのtier3技に強化を1つ付ける(マスモン詳細から使用)' },
 };
 // 基礎値アイテムが上げるもののラベル(説明文と効果表示で同じ言葉を使う)
 const BASE_ITEM_LABEL = { hp:'ライフの基礎値', speed:'移動速度の基礎値' };
@@ -3704,8 +3889,15 @@ const GACHA_N_ITEMS = ['seed_life','seed_power','seed_wisdom','seed_accuracy','s
    1枠増やすと既存のトレチケ・技強化チケットの当たる割合が 1/2 → 1/3 に下がり、
    遠征とは関係のない既存のバランスを弱めてしまうため。入手はショップと遠征の当たり枠。 */
 const GACHA_R_ITEMS = ['freeTrainTicket','moveTicket'];
-const DUP_SKIN_DIA = 5;     // 既に持っているSRスキンが出た時に貰えるダイヤ
-const DUP_SSR_DIA = 50;     // 既に持っているSSRスキンが出た時に貰えるダイヤ
+/* 【被りはダイヤではなくモン晶になる(2026-08-15)】
+   持っているスキンが出たときのダイヤ還元をやめ、モン晶を配るようにした。
+   還元は「集めた人ほどガチャが安くなる」仕組みで、全部そろった人は10連50💎に対して
+   平均23💎(46%)が戻っていた。モン晶に替えて、被りを新しい進行(交換所)につなげる。
+   ※ ダイヤの総量は変えない方針なので、還元をやめたぶんはログボ・デイリー・遠征・レイドで戻す。 */
+const DUP_SKIN_SHARD = 1;   // 既に持っているSRスキンが出た時に貰えるモン晶
+const DUP_SSR_SHARD  = 5;   // 既に持っているSSRスキンが出た時に貰えるモン晶
+const SHARD_NAME = 'モン晶';
+const SHARD_ICON = '💠';
 
 function weightedPickRarity(guaranteedSRplus){
   const entries = guaranteedSRplus ? [['SR',GUARANTEED_SLOT_RATES.SR],['SSR',GUARANTEED_SLOT_RATES.SSR]]
@@ -3921,6 +4113,32 @@ const SHOP_ITEMS = [
   ['seed_life',300],['seed_power',300],['seed_wisdom',300],['seed_accuracy',300],['seed_evasion',300],['seed_vitality',300],
   ['freeTrainTicket',1000],['moveTicket',1000],['expeditionRecall',800],
 ];
+
+/* モン晶の交換所。**1行足せば品が増える**(画面もこの表から作る。手書きの一覧を作らない)。
+   reward は grantReward() がそのまま受け取る形なので、新しい付与経路は要らない。
+   ・目玉は秘伝の書100個(被り約31回ぶんの10連)。長期の目標として置く。
+   ・生命の果実・加速剤は**入れない**(レイド討伐限定の希少性を壊す)。
+   ・小口(20/15)を混ぜて、100に届く前でも使い道があるようにしている。 */
+const SHARD_EXCHANGE = [
+  { id:'hiden',    cost:100, reward:{ item:'hidenScroll', n:1 },
+    note:'tier3技に強化を1つ付ける。覚醒と重ねられる' },
+  { id:'catalog',  cost:300, reward:{ catalog:'ssr', n:1 },
+    note:'欲しいSSR/SRスキンを1着えらんで受け取る' },
+  { id:'freeTrain',cost: 20, reward:{ item:'freeTrainTicket', n:5 },
+    note:'トレーニングチケット5枚ぶん' },
+  { id:'recall',   cost: 15, reward:{ item:'expeditionRecall', n:3 },
+    note:'遠征をすぐ帰らせる' },
+];
+function shardExchangeLabel(e){
+  if(!e) return '';
+  if(e.reward.item){
+    const it = PLAYER_ITEMS[e.reward.item];
+    const n = e.reward.n || 1;
+    return `${it.icon} ${it.name}${n>1 ? ` ×${n}` : ''}`;
+  }
+  if(e.reward.catalog) return `🎫 ${catalogTitle(e.reward.catalog)}`;
+  return '';
+}
 
 /* =====================================================================
    GAME STATE
