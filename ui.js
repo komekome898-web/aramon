@@ -9659,6 +9659,85 @@ document.getElementById('adminAquaBattleBgmCheckBtn').addEventListener('click', 
   const { battle, final5, lastBattle } = await checkAquaBattleBgmAssets();
   alert(`大喰いの利世 バトルBGM素材診断\n${battle}\n${final5}\n${lastBattle}`);
 });
+
+/* ===== 管理者: ランキング記録の削除 =====
+   テストプレイ等で紛れ込んだ記録(例: チーム全員の検証で1位に残った記録)を
+   発注者が名前検索→項目単位/レコード単位で消せるようにする。
+   scoresは1レコード=名前×モンスターなので、同じ名前でも複数モンスターぶん出ることがある。
+   削除する項目名はランキング側(RANKING_MAP_SUFFIX等)と同じ実体を指す。 */
+const ADMIN_SCORE_FIELDS = [
+  ['killsNormal','キル(通常マップ)'], ['damageNormal','ダメージ(通常マップ)'],
+  ['killsReal','キル(リアルマップ)'], ['damageReal','ダメージ(リアルマップ)'],
+  ['killsTeam','キル(チーム戦)'], ['damageTeam','ダメージ(チーム戦)'],
+  ['kills','キル(旧形式)'], ['damage','ダメージ(旧形式)'],
+  ['mastermonLevel','マスモンLv'], ['mastermonRebirth','転生回数'], ['mastermonStatTotal','ステ合計'],
+  ['rankPoint','段位ポイント'], ['rankRpSum','モンスター別RP'],
+];
+/* 取り消せない操作の2回タップ確認。1回目は赤く武装するだけ、もう一度押すと実行。
+   3秒たつと自動で武装解除する(押しっぱなしで席を離れて誤爆するのを防ぐ)。 */
+function armAdminDangerBtn(btn, idleText, armedText, onConfirm){
+  let timer = null;
+  const disarm = ()=>{ btn.classList.remove('armed'); btn.textContent = idleText; clearTimeout(timer); timer=null; };
+  btn.textContent = idleText;
+  btn.onclick = ()=>{
+    if(btn.classList.contains('armed')){ disarm(); onConfirm(); return; }
+    btn.classList.add('armed'); btn.textContent = armedText;
+    timer = setTimeout(disarm, 3000);
+  };
+}
+async function adminRunScoreSearch(){
+  const input = document.getElementById('adminScoreSearchInput');
+  const wrap = document.getElementById('adminScoreResults');
+  const name = (input.value||'').trim();
+  if(!name){ wrap.innerHTML = '<div class="admin-score-empty">プレイヤー名を入力してください</div>'; return; }
+  if(!window.__aramonAdminFindScores){ wrap.innerHTML = '<div class="admin-score-empty">ランキング機能が利用できません</div>'; return; }
+  wrap.innerHTML = '<div class="admin-score-empty">検索中…</div>';
+  const rows = await window.__aramonAdminFindScores(name);
+  if(rows==null){ wrap.innerHTML = '<div class="admin-score-empty">検索に失敗しました</div>'; return; }
+  if(!rows.length){ wrap.innerHTML = '<div class="admin-score-empty">該当する記録がありません</div>'; return; }
+  wrap.innerHTML = rows.map((r,i)=>{
+    const fieldRows = ADMIN_SCORE_FIELDS.filter(([k])=> r[k]!=null && r[k]!==0).map(([k,label])=>
+      `<div class="admin-score-field-row">
+        <span class="admin-score-field-label">${label}</span>
+        <span class="admin-score-field-val">${r[k]}</span>
+        <button class="admin-danger-btn" data-row="${i}" data-field="${k}">この項目を消す</button>
+      </div>`).join('');
+    const elemLabel = r.elementLabel || (typeof ELEMENTS!=='undefined' && ELEMENTS[r.element] ? ELEMENTS[r.element].label : r.element);
+    return `<div class="admin-score-card" data-row="${i}">
+      <div class="admin-score-card-head">
+        <span class="admin-score-card-name">${rankEscape(r.name)}</span>
+        <span class="admin-score-card-elem">${rankEscape(elemLabel)}${r.mastermonName?'・『'+rankEscape(r.mastermonName)+'』':''}</span>
+      </div>
+      ${fieldRows || '<div class="admin-score-empty">数値の記録がありません</div>'}
+      <button class="admin-score-card-delete" data-row="${i}">🗑 このレコードを丸ごと削除(全項目)</button>
+    </div>`;
+  }).join('');
+  /* armAdminDangerBtn は btn.onclick を1本だけ差し替える方式なので、
+     失敗時に btn.disabled を戻すだけで再武装できる(ハンドラは元のまま生きている)。 */
+  wrap.querySelectorAll('.admin-danger-btn[data-field]').forEach(btn=>{
+    const r = rows[Number(btn.dataset.row)];
+    const label = ADMIN_SCORE_FIELDS.find(([k])=>k===btn.dataset.field)[1];
+    armAdminDangerBtn(btn, 'この項目を消す', 'もう一度で削除', async ()=>{
+      btn.disabled = true;
+      const ok = await window.__aramonAdminDeleteScoreField(r.name, r.element, btn.dataset.field);
+      if(ok){ pushToast(`${r.name}の「${label}」を削除しました`); adminRunScoreSearch(); }
+      else{ pushToast('削除に失敗しました'); btn.disabled = false; }
+    });
+  });
+  wrap.querySelectorAll('.admin-score-card-delete').forEach(btn=>{
+    const r = rows[Number(btn.dataset.row)];
+    armAdminDangerBtn(btn, '🗑 このレコードを丸ごと削除(全項目)', '本当に削除しますか？もう一度タップ', async ()=>{
+      btn.disabled = true;
+      const ok = await window.__aramonAdminDeleteScoreRecord(r.name, r.element);
+      if(ok){ pushToast(`${r.name}のレコードを削除しました`); adminRunScoreSearch(); }
+      else{ pushToast('削除に失敗しました'); btn.disabled = false; }
+    });
+  });
+}
+document.getElementById('adminScoreSearchBtn').addEventListener('click', adminRunScoreSearch);
+document.getElementById('adminScoreSearchInput').addEventListener('keydown', (e)=>{
+  if(e.key==='Enter') adminRunScoreSearch();
+});
 // 管理者画面のタブ切替(プレイ状況 / 音声確認)
 function adminShowTab(tab){
   document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));

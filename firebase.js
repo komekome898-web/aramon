@@ -658,3 +658,37 @@
       return null;
     }
   };
+
+  /* =====================================================================
+     管理者: ランキング記録の検索・削除
+     テストプレイ等で紛れ込んだ記録(例: チーム全員で試した記録が1位に残る)を
+     発注者が管理者画面から直接消せるようにする。scoresは1レコード=名前×モンスターで、
+     索引(.indexOn)を持たないため全件取得してJS側で絞り込む(__aramonFetchRankingと同じ方針)。
+  ===================================================================== */
+  window.__aramonAdminFindScores = async function(name){
+    try{
+      const target = String(name||'').trim();
+      if(!target) return [];
+      const snap = await get(ref(fbDb, 'scores'));
+      const rows = [];
+      snap.forEach(ch=>{ const v = ch.val(); if(v && v.name===target) rows.push(v); });
+      return rows;
+    }catch(err){
+      console.error('admin score search failed', err);
+      return null;
+    }
+  };
+  // レコードの中の1項目(killsReal等)だけを消す。他の項目(段位・別地形の記録)は残る
+  window.__aramonAdminDeleteScoreField = async function(name, element, field){
+    try{
+      await remove(ref(fbDb, `scores/${makeScoreKey(name, element)}/${field}`));
+      return true;
+    }catch(err){ console.error('admin score field delete failed', err); return false; }
+  };
+  // レコード(名前×モンスター)を丸ごと消す
+  window.__aramonAdminDeleteScoreRecord = async function(name, element){
+    try{
+      await remove(ref(fbDb, `scores/${makeScoreKey(name, element)}`));
+      return true;
+    }catch(err){ console.error('admin score record delete failed', err); return false; }
+  };
