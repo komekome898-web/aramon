@@ -76,33 +76,31 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
          ここは「縦は画面に入る数まで・あふれたら横へ列が増える」枠。
          直下(#lobbyLeft)に足すとその仕組みから外れ、増えたぶんが画面外へ出る。 -->
     <div id="lobbyMenuGrid">
+     <!-- 【並び順】ここは**画面で読む順(左→右、次の行)のまま**書く。
+          実際の升目は ui.js の updateLobbyMenuRows() が割り当てる:
+          2個ずつを1組にして上から並べ、入る行数を超えた組は**右となりの2列**へ回る。
+          だから縦には伸びず、DOMは読む順のままでいい(並べ替えの暗算が要らない)。 -->
+     <button id="openHelpFromLobbyBtn" class="lobby-side-btn side-btn-help">
+       <span class="lobby-side-icon">🔰</span><span class="lobby-side-label">はじめて</span>
+     </button>
+     <button id="openRangeBtn" class="lobby-side-btn side-btn-range" disabled>
+       <span class="lobby-side-icon">🏹</span><span class="lobby-side-label">訓練場</span>
+     </button>
      <!-- デイリーとシーズン1は「ミッション」1画面へ統合(タブで分岐、aramon-screens参照) -->
      <button id="openMissionBtn" class="lobby-side-btn has-dot">
        <span class="lobby-side-icon">🎯</span><span class="lobby-side-label">ミッション</span>
        <span id="missionDot" class="notif-dot hidden"></span><span class="season-ssr-pop">✨限定SSRスキン</span>
      </button>
-     <button id="openRaidBtn" class="lobby-side-btn has-dot hidden">
-       <span class="lobby-side-icon">🐉</span><span class="lobby-side-label">レイド</span>
-       <span id="raidDot" class="notif-dot hidden"></span>
-       <!-- 募集中の部屋で待っている人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
-       <span id="raidWaitBadge" class="lobby-wait-badge hidden"></span>
-     </button>
      <button id="openExpeditionBtn" class="lobby-side-btn has-dot">
        <span class="lobby-side-icon">🧭</span><span class="lobby-side-label">遠征</span>
        <span id="expeditionDot" class="notif-dot hidden"></span>
      </button>
-     <!-- バッグとショップは中身が地続きなのでDOMで隣どうしにする。
-          **並びは「上から下、いっぱいになったら次の列」**(CSSの grid-auto-flow:column)なので、
-          隣に置きたいものはDOMで続けて書けばよい。 -->
+     <!-- バッグとショップは中身が地続きなので同じ行に並べる -->
      <button id="openBagBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🎒</span><span class="lobby-side-label">バッグ</span>
      </button>
      <button id="openShopBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🛒</span><span class="lobby-side-label">ショップ</span>
-     </button>
-     <button id="openGachaBtn" class="lobby-side-btn">
-       <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
-       <span id="raidGachaPop" class="raid-gacha-pop hidden">🐉レイドガチャ開催中</span>
      </button>
      <button id="titleRankingBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🏆</span><span class="lobby-side-label">ランキング</span>
@@ -110,13 +108,17 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      <button id="openGalleryBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🖼️</span><span class="lobby-side-label">ギャラリー</span>
      </button>
-     <!-- 「はじめての方へ」と「射撃訓練場」は右列から移した。右列は出撃に要る物だけにして、
-          増えるものは横へ列が伸びるこのメニューで受ける(下のCSSの決まりを参照) -->
-     <button id="openHelpFromLobbyBtn" class="lobby-side-btn side-btn-help">
-       <span class="lobby-side-icon">🔰</span><span class="lobby-side-label">はじめて</span>
+     <!-- ガチャとレイドで最後の行。レイドは非開催中 display:none で、
+          そのときガチャが行の左に1つだけ残る(組の数は見えているものだけで数える) -->
+     <button id="openGachaBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🎰</span><span class="lobby-side-label">ガチャ</span>
+       <span id="raidGachaPop" class="raid-gacha-pop hidden">🐉レイドガチャ開催中</span>
      </button>
-     <button id="openRangeBtn" class="lobby-side-btn side-btn-range" disabled>
-       <span class="lobby-side-icon">🏹</span><span class="lobby-side-label">訓練場</span>
+     <button id="openRaidBtn" class="lobby-side-btn has-dot hidden">
+       <span class="lobby-side-icon">🐉</span><span class="lobby-side-label">レイド</span>
+       <span id="raidDot" class="notif-dot hidden"></span>
+       <!-- 募集中の部屋で待っている人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
+       <span id="raidWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
     </div>
      <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え)。メニューの枠の外に固定する -->
