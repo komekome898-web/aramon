@@ -1250,6 +1250,26 @@ function updateLobbyMenuRows(){
   const vis = [...grid.children].filter(c=> getComputedStyle(c).display!=='none');
   const pairs = Math.ceil(vis.length / LOBBY_MENU_COLS) || 1;   // 横並び1組=1行
   const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));  // 下限の高さで入る行数
+  const rows = Math.max(1, Math.min(fit, pairs));
+  const cols = Math.max(1, Math.ceil(pairs / rows));
+  const css = getComputedStyle(document.documentElement);
+  const num = (name, def)=>{ const v = parseFloat(css.getPropertyValue(name)); return isFinite(v) ? v : def; };
+  /* タイル1枚の高さ。**中身とは無関係に、使える高さを行数で割るだけ**で決まる。
+     この値からタイルの中の帯・アイコン・文字の大きさがすべて決まる(style.css参照)ので、
+     文字が長かろうが吹き出しが付こうがフォントが遅れて来ようが、はみ出しようがない。
+     rows は「下限の高さで入る数」なので tileH >= --tap-pick が必ず成り立つ。
+     上限も設ける(縦が余る画面でタイルだけ間延びして字が巨大になるのを防ぐ)。 */
+  const tileH = Math.min((h - (rows - 1) * gap) / rows, num('--tile-h-max', 64));
+  grid.style.setProperty('--tile-h', tileH.toFixed(2) + 'px');
+  /* 1列の幅。**左メニューが広がってよい上限**を決めておき、列が増えたら幅を詰める。
+     こうしないと、項目が増えたぶんだけ左が太り、中央が幅0まで潰れて中の文字が壊れる
+     (2026-08-15 実測: 中央が0pxになり案内文が高さ378pxに化けた)。 */
+  const colGap = parseFloat(cs.columnGap) || 0;
+  const layoutW = (document.getElementById('lobbyLayout') || grid).clientWidth;
+  const ideal = Math.min(Math.max(layoutW * num('--menu-col-w-share', 0.12), num('--menu-col-w-min', 72)),
+                         num('--menu-col-w-max', 96));
+  const roomy = (layoutW * num('--menu-w-share', 0.38) - (cols - 1) * colGap) / cols;
+  grid.style.setProperty('--menu-col-w', Math.max(28, Math.min(ideal, roomy)).toFixed(2) + 'px');
   /* 升目を1つずつ指定する。**DOMの並び順は画面で読む順(左→右、次の行)のまま**にして、
      入る行数を超えた組は右となりの2列へ回す。こうすると
        ・縦には決して伸びない(=見切れない。ロビーはスクロールさせない決まり)
@@ -1266,14 +1286,7 @@ function updateLobbyMenuRows(){
       el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
     });
   };
-  /* 置いてみて、はみ出したら行を1つ減らして置き直す。**計算で当てにいかない。**
-     タイルの高さは中身しだい(吹き出しが付けばその分だけ伸びる)で、下限の44pxから
-     何px増えるかは事前に分からない。実際に置いた結果を見て決めれば、
-     中身が何であろうと縦にはみ出さないことを保証できる。 */
-  for(let rows = Math.max(1, Math.min(fit, pairs)); ; rows--){
-    place(rows);
-    if(rows <= 1 || grid.scrollHeight <= grid.clientHeight) break;
-  }
+  place(rows);
 }
 
 

@@ -220,13 +220,23 @@
        ラベルがタイルからはみ出し、ボタンの縁で切れる(2026-08-15 実機で発生)
      並の要素として置けば、タイルの高さがそのぶん自動で伸び、**何も重ならず何も切れない**。
      order:-1 でアイコンより上へ、負のmarginでタイルの左右いっぱいまで広げて帯にする。 */
+  /* 吹き出しはタイルの1段目に置く。**この段は吹き出しが無くても常にある**ので、
+     出ても消えても他の中身は1pxも動かない(=付けたせいで潰れる事故が起きない)。
+     字の大きさも段の高さの割合なので、どんな高さのタイルでも段からはみ出さない。 */
   #lobbyLeft .season-ssr-pop, #lobbyLeft .raid-gacha-pop{
-    /* 負のmarginでタイルの縁まで広げない。**わずかでも枠の外へ出ると縁で切られる。**
-       内側に収める(角丸のチップに見える)。 */
-    position:static; order:-1; align-self:stretch; margin:0 0 1px; z-index:3;
-    font-size:7px; line-height:1.6; padding:0 2px; text-align:center;
-    border-radius:6px;
+    position:static; grid-row:1; align-self:center; justify-self:stretch; margin:0; z-index:3;
+    /* 帯(タイルの20%)に対して字は12%。絵文字は字より背が高く描かれるので、
+       行の高さを帯いっぱいに取ったうえで字を十分小さくし、余裕を持たせる。 */
+    font-size:max(calc(var(--tile-h, var(--tap-pick)) * 0.12), 7px);
+    line-height:max(calc(var(--tile-h, var(--tap-pick)) * 0.20), 11px);
+    height:max(calc(var(--tile-h, var(--tap-pick)) * 0.20), 11px);
+    padding:0 2px; text-align:center; border-radius:6px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    /* 元は角に貼るシールなので傾き(rotate)と上下の揺れが付いている。
+       タイルの中の決まった帯に置く今の形では、傾いたぶん角が枠に当たって切れ、
+       寸法も揺れて読めなくなる。**中に置くものは傾けない・動かさない。**
+       色の流れ(seasonPopFlow)だけ残す。 */
+    transform:none; animation:seasonPopFlow 3s linear infinite;
   }
   #lobbyLeft .season-ssr-pop::after{ display:none; }
   /* =====================================================================
@@ -255,8 +265,15 @@
        **画面が低くてもここから下げない。** 下げると押せないボタンになる。 */
     --tap-main: 46px;   /* バトル開始・部屋を作る/探す */
     --tap-pick: 44px;   /* 左メニューのタイル・マップ/プレイモード */
-    /* メニュー1列の幅。列が増えるときはこの幅ぶんだけ左列が広がる(中央が細くなる) */
-    --menu-col-w: clamp(72px, calc(12 * var(--vw)), 96px);
+    /* 【ロビーの寸法の調整つまみ】ここは**素の数値だけ**にする。
+       calc()やclamp()を書くと ui.js 側が読めない(カスタムプロパティは
+       未解決の文字列で返るため parseFloat が NaN になり、黙って既定値へ落ちる)。
+       実際の px はすべて ui.js の updateLobbyMenuRows() が計算して入れる。 */
+    --menu-col-w-min: 72px;    /* メニュー1列の幅の下限 */
+    --menu-col-w-max: 96px;    /* 同・上限 */
+    --menu-col-w-share: 0.12;  /* 同・ふだんはロビー横幅のこの割合 */
+    --menu-w-share: 0.38;      /* 左メニュー全体が広がってよい横幅の割合(中央を残すため) */
+    --tile-h-max: 64px;        /* タイル1枚の高さの上限(縦が余る画面で間延びさせない) */
   }
   #lobbyLeft{
     display:flex; flex-direction:column; gap:calc(0.5 * var(--vh));
@@ -276,10 +293,10 @@
   #lobbyMenuGrid{
     flex:1 1 0; min-height:0;
     display:grid;
-    /* 行の高さは中身なり(最低 --tap-pick)。1fr で引き伸ばすと端数の丸めで
-       1〜3px はみ出し、スクロールが出てしまう(実測)。 */
-    grid-template-rows:repeat(var(--menu-rows, 4), minmax(var(--tap-pick), auto));
-    grid-auto-columns:var(--menu-col-w);
+    /* 行の高さは --tile-h(= 使える高さ ÷ 行数)。**中身では決まらない。**
+       auto にすると中身の合計で決まり、文字や吹き出しが増えたぶんだけはみ出す。 */
+    grid-template-rows:repeat(var(--menu-rows, 4), var(--tile-h, var(--tap-pick)));
+    grid-auto-columns:var(--menu-col-w, var(--menu-col-w-max));
     /* 段の間は指が隣を押さない程度に空ける(1.9pxだとボタンがほぼ接していた) */
     gap:calc(0.9 * var(--vh)) 5px; align-content:center; justify-content:start; padding-top:9px;
   }
@@ -287,28 +304,59 @@
      (横に長い帯になると絵が間延びし、中央の幅も食う) */
   /* margin は整数にする。--vh から作った端数(1.5px等)で位置が小数になると、
      ブラウザの整数丸めで「1〜2pxスクロールできる」状態が生まれ、測定が濁る。 */
-  #lobbyBanner{ flex:0 0 auto; margin-top:0; max-width:calc(var(--menu-col-w) * 2 + 5px); }
+  #lobbyBanner{ flex:0 0 auto; margin-top:0;
+    max-width:calc(var(--menu-col-w, var(--menu-col-w-max)) * 2 + 5px); }
   /* 縦並び(アイコン→名前)。中身が中央に揃うので、アクセント線は左ではなく上に置く */
+  /* =====================================================================
+     タイルの中身は**タイルの高さ(--tile-h)から決める**。逆向きにしない。
+
+     これまでは「中身の高さの合計」でタイルの高さが決まっていたため、
+     文字の長さ・フォントの読み込み・吹き出しの有無で高さが変わり、
+     入らなくなるたびに潰れる/切れる/はみ出すのどれかが起きていた。
+     数字を詰め直しても、次に中身が変われば必ず再発する。
+
+     向きを反対にして、**先に決まるのは箱**にした:
+       --tile-h  = (列の高さ - すき間) ÷ 行数   … 中身とは無関係に決まる
+       帯・アイコン・ラベルはすべて --tile-h の割合(合計 < 1)
+       文字は1行 + 「…」なので、長さが変わっても高さは変わらない
+     これで**どんな中身でも必ず収まる**。測って調整する必要が構造上なくなる。
+
+     割合の合計: 帯20% + ラベル28% = 48%。残り52%がアイコンの枠(アイコンは38%)。
+     吹き出しの帯は**常に確保する**(付いても消えても配置が1pxも動かないように)。
+     ===================================================================== */
   .lobby-side-btn{
-    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:2px; cursor:pointer; text-align:center;
-    /* 押しやすさの下限。**この2行を消さない**(縮んで潰れる事故の再発防止) */
-    min-height:var(--tap-pick); flex-shrink:0;
-    padding:calc(0.5 * var(--vh)) 4px; border-radius:10px; min-width:0;
+    position:relative; cursor:pointer; text-align:center;
+    /* 高さは先に決まる。--tile-h が未設定でも押しやすさの下限は割らない */
+    height:var(--tile-h, var(--tap-pick)); min-height:var(--tap-pick); flex-shrink:0;
+    display:grid; justify-items:center; min-width:0; overflow:hidden;
+    /* 帯 / アイコン / ラベル。割合で決めつつ、**読める下限(px)を割らない**ように max() を挟む。
+       小さい方のタイル(=下限の44px)でも 11 + 12 + アイコン15 + 枠4 = 42 で必ず収まる。 */
+    grid-template-rows:
+      max(calc(var(--tile-h, var(--tap-pick)) * 0.20), 11px)
+      1fr
+      max(calc(var(--tile-h, var(--tap-pick)) * 0.28), 12px);
+    padding:0 4px; border-radius:10px;
     color:var(--ink); background:linear-gradient(180deg, rgba(12,18,30,0.88), rgba(12,18,30,0.42));
     border:1px solid var(--panel-line); border-top:3px solid var(--amber);
     font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:0.5px;
     backdrop-filter:blur(2px);
   }
   .lobby-side-btn:active{ background:linear-gradient(180deg, rgba(244,196,48,0.28), rgba(12,18,30,0.5)); }
+  /* アイコンは2段目の枠の中央。大きさも字も --tile-h の割合(枠より小さいので必ず入る) */
   .lobby-side-icon{
-    flex-shrink:0; width:clamp(22px, calc(5.4 * var(--vh)), 30px); height:clamp(22px, calc(5.4 * var(--vh)), 30px);
+    grid-row:2; align-self:center;
+    width:calc(var(--tile-h, var(--tap-pick)) * 0.34); height:calc(var(--tile-h, var(--tap-pick)) * 0.34);
+    max-width:100%; max-height:100%;
     border-radius:8px; background:rgba(255,255,255,0.08);
-    display:flex; align-items:center; justify-content:center; font-size:clamp(13px, calc(3.4 * var(--vh)), 18px);
+    display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--tile-h, var(--tap-pick)) * 0.23); line-height:1;
   }
-  /* 名前は折り返さない。枠に収まらない長さは「…」にする(2列で幅が半分になったため) */
-  .lobby-side-label{ font-size:clamp(10px, calc(2.7 * var(--vh)), 13px); white-space:nowrap;
-    max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+  /* 名前は**必ず1行**。長ければ「…」で切る。1行なので高さは文字の長さで変わらない */
+  .lobby-side-label{
+    grid-row:3; align-self:center;
+    font-size:max(calc(var(--tile-h, var(--tap-pick)) * 0.215), 9px); line-height:1.2;
+    white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis;
+  }
   /* レイドは紫。上の帯だけ色を変えて、開催中のコンテンツだと一目で分かるようにする */
   #openRaidBtn{ border-top-color:#a24bff; }
   /* ガチャは虹色の枠と光沢で強調する。
@@ -401,8 +449,10 @@
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:clamp(9px, calc(2.5 * var(--vh)), 12px);
     letter-spacing:1px; color:var(--ink-dim); opacity:0.9;
   }
-  /* エモートボタン。ステージが余白を吸収するので、この行を足しても画面には収まったまま */
-  #lobbyEmoteRow{ flex:0 0 auto; display:flex; gap:calc(1.2 * var(--vw)); }
+  /* エモートボタン。中央が細いときは**折り返す**(ボタンを縮めない・切らない)。
+     増えた高さはステージ(#lobbyMonsterStage)が縮んで吸収するので、画面には収まったまま。 */
+  #lobbyEmoteRow{ flex:0 0 auto; display:flex; flex-wrap:wrap; justify-content:center;
+    max-width:100%; gap:calc(1.2 * var(--vw)); }
   #lobbyEmoteRow.hidden{ display:none !important; }
   .lobby-emote-btn{
     width:calc(4.6 * var(--vh)); height:calc(4.6 * var(--vh));
