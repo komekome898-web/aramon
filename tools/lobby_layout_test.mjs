@@ -9,6 +9,7 @@
    確かめること(発注者が出した3条件と1対1):
      1. 見切れない  … ロビーの要素が1つも #appRoot の外へ出ない
      2. 押しやすい  … 操作できる物はすべて --tap-* の下限以上の実寸で描かれる
+     2b.文字が切れない… ボタンの中身がボタンの箱からはみ出していない(縁で切られていない)
      3. 重ならない  … 同じ列の中で操作できる物どうしが重ならない
      4. 端末と持ち方… 縦持ち(強制横向き)/実横持ち/タブレットの計7通り
      5. **将来ボタンが増えても壊れない** … 左メニューへ9個を注入した「増えた後」でも
@@ -132,6 +133,29 @@ for(const dev of DEVICES){
         const short = Math.min(r.width, r.height);
         if(short + 0.5 < floor) tooSmall.push({ id: el.id || el.className.toString().slice(0,40), got: Math.round(short*10)/10, floor });
       }
+      /* 2b. ボタンの中で文字が切れていないか。
+            ボタンは中身がはみ出すと縁で切る。**外へ出ていないのに読めない**状態は
+            1(見切れ)でも2(大きさ)でも捕まらず、実機で「ミッション」「ガチャ」の
+            文字が半分消えた状態を出してしまった(2026-08-15)。ここで塞ぐ。
+
+            見るのは「並の要素として流れている中身」だけ。角の通知ドットや「NEW」の
+            吹き出しは**わざと枠の外へ出している飾り**なので数えない(position:absolute)。
+            横は各ラベルが「…」で切る作りなので、縦のはみ出しとラベルの位置で見る。 */
+      const clipped = [];
+      for(const el of controls){
+        /* scrollHeight は使わない。飾りの擬似要素(#joinBtn::after の光沢は
+           bottom:-10% ではみ出す)まで数えてしまい、文字は無事なのに引っかかる。
+           **実体のある中身(並の要素)の位置だけを見る。** */
+        const flowKids = [...el.children].filter(c=> vis(c) && getComputedStyle(c).position!=='absolute');
+        const br = el.getBoundingClientRect();
+        let hit = null;
+        for(const t of flowKids){
+          const tr = t.getBoundingClientRect();
+          const out = Math.max(br.top-tr.top, tr.bottom-br.bottom, br.left-tr.left, tr.right-br.right);
+          if(out > 1.5){ hit = { id:(el.id||'?')+' > '+(t.className.toString().slice(0,22)||t.tagName), out:Math.round(out) }; break; }
+        }
+        if(hit) clipped.push(hit);
+      }
       /* 3. 同じ親の中で押せる物どうしが重なっていないか */
       const byParent = new Map();
       for(const el of controls){
@@ -178,7 +202,7 @@ for(const dev of DEVICES){
           }
         });
       }
-      return { outside, tooSmall, overlap, scrolls, menuCols: cols, order };
+      return { outside, tooSmall, clipped, overlap, scrolls, menuCols: cols, order };
     };
     /* 5. 「将来ボタンが増えたら」を実際に作る。左メニューへ9個を注入する
           (右列は増やさないのが決まりなので注入しない)。 */
@@ -213,6 +237,7 @@ for(const dev of DEVICES){
 
         if(r.outside.length) failures.push(`[見切れ] ${label} — ${r.outside.slice(0,4).map(x=>`${x.id}が${x.over}px外`).join(' / ')}`);
         if(r.tooSmall.length) failures.push(`[小さすぎ] ${label} — ${r.tooSmall.slice(0,4).map(x=>`${x.id} ${x.got}px < ${x.floor}px`).join(' / ')}`);
+        if(r.clipped.length) failures.push(`[文字が切れる] ${label} — ${r.clipped.slice(0,4).map(x=>`${x.id}${` が${x.out}px外`}`).join(' / ')}`);
         if(r.overlap.length) failures.push(`[重なり] ${label} — ${r.overlap.slice(0,3).map(x=>`${x.a}×${x.b} ${x.px}px`).join(' / ')}`);
         if(r.order && r.order.length) failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
         if(r.scrolls.length) failures.push(`[スクロール発生] ${label} — ${r.scrolls.map(x=>`${x.id}が+${x.d}px`).join(' / ')}`);
