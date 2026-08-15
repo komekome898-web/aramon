@@ -11,6 +11,9 @@
      2. 押しやすい  … 操作できる物はすべて --tap-* の下限以上の実寸で描かれる
      2b.文字が読める … 画面の中の文字が1つも「縦に切れる/横に切れる/小さすぎる」に
                        なっていない(ボタン単位ではなく文字を持つ要素すべてを見る)
+     2c.はみ出さない … ボタンの中身がボタンの箱の中に収まっている。タイルは
+                       overflow:hidden を外してある(角の通知ドットが切れるため)ので、
+                       隠さない代わりにここで確かめる
      3. 重ならない  … 同じ列の中で操作できる物どうしが重ならない
      4. 端末と持ち方… 縦持ち(強制横向き)/実横持ち/タブレットの計7通り
      5. **これから起きうることを実際に起こす** … ボタンを9個足した状態と、
@@ -198,6 +201,27 @@ for(const dev of DEVICES){
         if(dy > 1.5) clipped.push({ id, why:`縦に${dy.toFixed(1)}px切れる` });
         else if(!ellipsis && dx > 1.5) clipped.push({ id, why:`横に${dx.toFixed(1)}px切れる` });
       }
+      /* 2c. ボタンの中身がボタンの箱に収まっているか。
+            タイルは overflow:hidden を**わざと外している**(付けると角の通知ドットが
+            切れるうえ、入っていないことが目に見えなくなる)。隠さない代わりに、
+            はみ出していないことをここで確かめる。
+            角の通知ドット・待機バッジは**わざと外へ出す飾り**なので数えない。 */
+      const spill = [];
+      const DECOR = ['notif-dot','lobby-wait-badge','raid-soon-pop','multi-xp-pop'];
+      for(const el of controls){
+        const br3 = el.getBoundingClientRect();
+        for(const t of el.children){
+          if(!vis(t)) continue;
+          if(getComputedStyle(t).position==='absolute') continue;
+          if(DECOR.some(c=> t.classList.contains(c))) continue;
+          const tr = t.getBoundingClientRect();
+          const out = Math.max(br3.top-tr.top, tr.bottom-br3.bottom, br3.left-tr.left, tr.right-br3.right);
+          if(out > 1.5){
+            spill.push({ id:(el.id||'?')+' > '+(t.className.toString().slice(0,22)||t.tagName), out:Math.round(out) });
+            break;
+          }
+        }
+      }
       /* 3. 同じ親の中で押せる物どうしが重なっていないか */
       const byParent = new Map();
       for(const el of controls){
@@ -244,7 +268,7 @@ for(const dev of DEVICES){
           }
         });
       }
-      return { outside, tooSmall, clipped, overlap, scrolls, menuCols: cols, order };
+      return { outside, tooSmall, clipped, spill, overlap, scrolls, menuCols: cols, order };
     };
     /* 5. 「これから起きうること」を実際に起こして、それでも壊れないかを見る。
           ・増やす … 左メニューへ9個(右列は増やさないのが決まりなので注入しない)
@@ -297,6 +321,7 @@ for(const dev of DEVICES){
 
         if(r.outside.length) failures.push(`[見切れ] ${label} — ${r.outside.slice(0,4).map(x=>`${x.id}が${x.over}px外`).join(' / ')}`);
         if(r.tooSmall.length) failures.push(`[小さすぎ] ${label} — ${r.tooSmall.slice(0,4).map(x=>`${x.id} ${x.got}px < ${x.floor}px`).join(' / ')}`);
+        if(r.spill.length) failures.push(`[中身がはみ出す] ${label} — ${r.spill.slice(0,4).map(x=>`${x.id} が${x.out}px外`).join(' / ')}`);
         if(r.clipped.length) failures.push(`[文字が切れる] ${label} — ${r.clipped.slice(0,4).map(x=>`${x.id}${`(${x.why})`}`).join(' / ')}`);
         if(r.overlap.length) failures.push(`[重なり] ${label} — ${r.overlap.slice(0,3).map(x=>`${x.a}×${x.b} ${x.px}px`).join(' / ')}`);
         if(r.order && r.order.length) failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
