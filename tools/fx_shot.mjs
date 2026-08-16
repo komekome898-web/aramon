@@ -181,10 +181,31 @@ const DRIVER = `(function(){
       me.x = cx; me.y = cy;   // 見つからなければ従来どおり中央
     })();
     me.z = (typeof groundZAt==='function') ? groundZAt(me.x, me.y) : 0;
-    me.facingAngle = 0; me.hp = me.maxHp; me.guts = me.maxGuts;
+    /* 撃つ向きも選ぶ。**上り坂へ撃つと弾が途中で地面に刺さる。**
+       実測: ギガデストロイヤーの核弾頭は、前方310で地面が15上がってくるため
+       射程900の1/3で着弾していた(弾道の不具合ではなく撮影地点の地形)。
+       技そのものを見たいので、900先まででいちばん登らない向きを選ぶ。
+       **技の性能は何も変えない。** 立ち位置と向きだけの話。 */
+    (function pickFacing(){
+      const gz = (typeof groundZAt==='function') ? groundZAt : ()=>0;
+      const z0 = gz(me.x, me.y);
+      let best = 0, bestRise = Infinity;
+      for(let k=0;k<12;k++){
+        const a2 = (k/12)*Math.PI*2;
+        let rise = 0;
+        for(let d=150; d<=900; d+=150){
+          rise = Math.max(rise, gz(me.x+Math.cos(a2)*d, me.y+Math.sin(a2)*d) - z0);
+        }
+        if(rise < bestRise){ bestRise = rise; best = a2; }
+      }
+      me.facingAngle = best;
+    })();
+    me.hp = me.maxHp; me.guts = me.maxGuts;
     me.alive = true; me.fireCooldown = 0;
-    const tgt = createMonster('rock', false, 'まと', { spawnPoint:{ x: me.x + (o.targetDist||760), y: me.y } });
-    tgt.x = me.x + (o.targetDist||760); tgt.y = me.y;
+    const _td = o.targetDist||760;
+    const _tx = me.x + Math.cos(me.facingAngle)*_td, _ty = me.y + Math.sin(me.facingAngle)*_td;
+    const tgt = createMonster('rock', false, 'まと', { spawnPoint:{ x:_tx, y:_ty } });
+    tgt.x = _tx; tgt.y = _ty;
     tgt.z = (typeof groundZAt==='function') ? groundZAt(tgt.x, tgt.y) : 0;
     tgt.hp = 99999; tgt.maxHp = 99999; tgt.alive = true;
     tgt.fireCooldown = 9999;          // 的は撃ち返さない
