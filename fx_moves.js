@@ -36,8 +36,9 @@ function fxDim(c, t){ return [c[0]*t, c[1]*t, c[2]*t]; }
    「何も出ない」を作らないための下限であって、目標ではない。 */
 const FX_DEFAULT = {
   fly(fx, p, c, dt){
+    fxMuzzle(fx, p, c, {});
     fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-             { color:c, width: Math.max(10, (p.hitR||10)*1.7), bright:1.15 });
+             { color:c, width: Math.max(8, (p.hitR||10)*1.3), bright:0.9, whiten:0.2 });
   },
   impact(fx, p, c){
     const h = fxHot(c, 0.55);
@@ -45,16 +46,51 @@ const FX_DEFAULT = {
                r:h[0], g:h[1], b:h[2], bright:1.3, life:0.34, size0:12, size1:0.5,
                az:-300, turb:10, turbFreq:1.6, spin:5 });
     fx.ring({ x:p.x, y:p.y, r0:6, r1:Math.max(60, (p.splash||60)), life:0.32,
-              color:c, width:14, bright:1.1 });
+              color:c, width:11, bright:0.9 });
+    fx.shake(Math.min(0.7, (p.hitR||10)/26), p.x, p.y);
+    fx.flash(0.15);
   },
   cast(fx, ae, c){
-    fx.ring({ x:ae.x, y:ae.y, r0:12, r1:Math.min(ae.range||200, 420), life:0.55,
-              color:c, width:26, bright:1.25 });
+    /* 【最重要】**術者の足元の輪は半径90前後まで。**
+       カメラは術者の145後ろ・90上に居るので、半径420の輪はカメラの真横を通り抜け、
+       広がりきる前の一瞬は**術者を丸ごと覆う白いドーム**になる。
+       実測で8技(dullahan_t1・fox_t3・ogre_t3・mocchi_t3・suezo_t2/t3・pixie_t2・
+       dullahan_t3)の0.1sのコマが白飛びしていた。ここ1か所で全部が直る。
+       個別に作り込んだ属性(ark/god/illumine)は同じ罠を踏んで既に60まで落としてある。 */
+    fx.ring({ x:ae.x, y:ae.y, r0:12, r1:Math.min(ae.range||200, 90), life:0.55,
+              color:c, width:10, bright:0.6 });
     fx.burst({ x:ae.x, y:ae.y, z:8, count:26, speed:210, jitter:26, jitterZ:30,
                elev:0.55, elevSpread:0.9, r:c[0], g:c[1], b:c[2], bright:1.2,
                life:0.5, size0:16, size1:1, az:-180, turb:16, turbFreq:1.2, spin:4 });
   },
 };
+
+
+/* 弾の発射の瞬間に1回だけ出す「銃口」。
+   render.js は弾に cast を呼ばない(範囲技だけ)ので、fly の初回で撃つ。
+   これが無いと採点表4「サブエミッタ4段」の1段目が構造的に作れない
+   (実際、5属性すべての発射コマが改修前とまったく同じ絵だった)。 */
+/* 連射(burst)の弾は本数ぶん帯が重なる。1本あたりを細くしないと、
+   3〜6本が束になって**1枚の白い面**になる(ogre_t2で6本が扇状に融合していた)。
+   幅は当たり半径から作り、上限だけを掛ける。性能値は読むだけで書き換えない。 */
+function fxTrailWidth(p, mult, min){
+  const w = Math.max(min || 6, (p.hitR || 10) * (mult || 1.3));
+  return p.burstIndex != null || (p.hitR || 10) < 8 ? w * 0.7 : w;
+}
+function fxMuzzle(fx, p, c, o){
+  if(!fxOnce(p)) return;
+  const hot = fxHot(c, (o && o.hot!=null) ? o.hot : 0.6);
+  const h = fxHeadingOf(p) || [1,0];
+  fx.burst({ x:p.x, y:p.y, z:(p.z||0)+14, count:(o&&o.count)||14, speed:(o&&o.speed)||250,
+             jitter:5, jitterZ:8, angle:Math.atan2(h[1],h[0]), spread:1.0, elev:0.1, elevSpread:0.5,
+             r:hot[0], g:hot[1], b:hot[2], bright:(o&&o.bright)||1.5,
+             life:0.18, size0:(o&&o.size0)||14, size1:0.5, az:-160, turb:6, turbFreq:2.2, spin:5,
+             hot:(o&&o.particleHot) });
+  /* 足元の輪は**半径60前後まで**。カメラは術者の145後ろに居るので、
+     それ以上はカメラの脇を抜けて画面を横切る弧になる。 */
+  fx.ring({ x:p.x, y:p.y, r0:6, r1:(o&&o.ringR)||52, life:0.3,
+            color:(o&&o.ringColor)||c, width:(o&&o.ringW)||6, bright:(o&&o.ringBright)||0.5 });
+}
 
 /* =====================================================================
    属性ごとの作り込み
@@ -76,8 +112,8 @@ const FX_MOVES = {
          加算合成なので、白に寄せた太い輪は画面を横切る白い帯になって
          「地面の痕」に見えなくなる(実際に一度そうなった)。
          広がりも技の射程いっぱいではなく、足元の衝撃が届く範囲に留める。 */
-      fx.ring({ x:ae.x, y:ae.y, r0:14, r1:Math.min(ae.range||300, 240), life:0.6,
-                color:c, width:16, bright:0.85 });
+      fx.ring({ x:ae.x, y:ae.y, r0:14, r1:Math.min(ae.range||300, 110), life:0.6,
+                color:c, width:9, bright:0.55 });
       // 放出の頭。白熱を先に、色を後に出すと「点火」に見える
       fx.burst({ x:ae.x, y:ae.y, z:10, count:22, speed:280, jitter:20, jitterZ:24,
                  elev:0.35, elevSpread:0.7, r:hot[0], g:hot[1], b:hot[2], bright:1.6,
@@ -89,13 +125,16 @@ const FX_MOVES = {
       fx.burst({ x:ae.x, y:ae.y, z:18, count:14, speed:120, jitter:40, jitterZ:50,
                  elev:0.8, elevSpread:0.8, r:soot[0], g:soot[1], b:soot[2], bright:0.8, hot:0.1,
                  life:1.1, size0:30, size1:8, az:-90, turb:26, turbFreq:0.7, spin:1.5 });
+      fx.shake(0.45, ae.x, ae.y);
+      fx.flash(0.28);
     },
     fly(fx, p, c, dt){
+      fxMuzzle(fx, p, c, { count:14, speed:260, bright:1.5, ringR:52 });
       /* 帯は**技の色そのもの**を渡す。白へ寄せると加算の重なりで飽和して
          炎に見えなくなる(白いサーチライトになった)。白熱は whiten を
          小さく取って先端だけに残す。 */
       fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-               { color:c, width: Math.max(12, (p.hitR||10)*1.8), bright:1.1, whiten:0.3 });
+               { color:c, width: fxTrailWidth(p, 1.3, 7), bright:0.9, whiten:0.25 });
       // 尾を引く火の粉。帯だけだと「棒」に見えるので、必ず粒を混ぜて輪郭を崩す
       const n = Math.min(dt||0, 0.05) * 40;
       for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
@@ -115,7 +154,9 @@ const FX_MOVES = {
                  elev:0.9, elevSpread:0.6, r:soot[0], g:soot[1], b:soot[2], bright:0.9, hot:0.1,
                  life:0.8, size0:22, size1:6, az:20, turb:24, turbFreq:0.8, spin:1 });
       fx.ring({ x:p.x, y:p.y, r0:5, r1:Math.max(70, (p.splash||70)*1.2), life:0.3,
-                color:hot, width:16, bright:1.4 });
+                color:hot, width:12, bright:1.1 });
+      fx.shake(Math.min(0.6, (p.hitR||10)/22), p.x, p.y);
+      fx.flash(0.2);
     },
     // 扇・壁が出ている間、縁から火の粉を上げ続ける(消えるまで生きて見せる)
     sustain(fx, ae, c, dt){
@@ -299,13 +340,17 @@ FX_MOVES.ark = {
     }
 
     // ---- 2段目: 飛翔中。細い白の芯 + 太く薄い金の外套の2本立て ----
+    /* **白熱は whiten に一本化する。** ここで fxHot(c,0.8) を渡したうえに
+       帯の既定 whiten が乗ると二重に白へ寄り、金の身が消えて灰色の棒になる。 */
     fx.trail('p'+p.id, p.x, p.y, z,
-             { color:hot, width: Math.max(10, (p.hitR||10)*1.5), bright:1.5 });
+             { color:gold, width: Math.max(9, (p.hitR||10)*1.2), bright:1.2, whiten:0.28 });
     /* 2本目は projStyle(tier3の専用弾)だけ。帯は24本しか無いので、
        雑魚弾まで2本使うと乱戦で誰の帯も出なくなる。見せ場の弾だけ厚くする。 */
     if(p.projStyle){
+      /* 2本目は太さで層を作るが、**2Dの矢じり(画面上70px級)を覆ってはいけない。**
+         hitR30 × 4.2 = 126 では矢じりの下半分が白い菱形に消えていた。 */
       fx.trail('pw'+p.id, p.x, p.y, z,
-               { color:halo, width: Math.max(26, (p.hitR||10)*4.2), bright:0.75 });
+               { color:halo, width: Math.max(18, (p.hitR||10)*2.0), bright:0.45, whiten:0.1 });
     }
     // 尾から剥がれてゆっくり落ちる羽根。az が弱いので後ろへ長く残る(採点表10)
     const w = (p.hitR||10)*1.6;
@@ -341,7 +386,7 @@ FX_MOVES.ark = {
       fx.emit({ x:p.x+(Math.random()-0.5)*colR, y:p.y+(Math.random()-0.5)*colR, z:g+Math.random()*16,
                 vx:(Math.random()-0.5)*22, vy:(Math.random()-0.5)*22, vz:420+Math.random()*340,
                 az:-300,                                  // 上がりきって止まる = 柱の先がほどける
-                r:hot[0], g:hot[1], b:hot[2], bright:1.6,
+                r:gold[0], g:gold[1], b:gold[2], bright:1.35,
                 life:0.5+Math.random()*0.35, size0:11+Math.random()*9, size1:1,
                 turb:5, turbFreq:2, spin:0 });
     }
@@ -429,11 +474,12 @@ FX_MOVES.illumine = {
     }
 
     // ---- 2段目: 飛翔中。細い芯 + 太く薄い暗縁の2本立て ----
+    /* 闇で白い帯は属性と真逆。**whiten を明示して紫を残す。** */
     fx.trail('p'+p.id, p.x, p.y, z,
-             { color:core, width: Math.max(9, (p.hitR||10)*1.35), bright:1.25 });
+             { color:core, width: Math.max(9, (p.hitR||10)*1.35), bright:1.2, whiten:0.18 });
     if(p.projStyle){
       fx.trail('pw'+p.id, p.x, p.y, z,
-               { color:rim, width: Math.max(30, (p.hitR||10)*5), bright:0.5 });
+               { color:rim, width: Math.max(20, (p.hitR||10)*2.4), bright:0.4, whiten:0.06 });
     }
     /* 弾のまわりの紫が**内へ吸われる**。進行方向に垂直な輪の上に置いて、
        中心(弾が居た所)へ引き戻す。弾は前へ進み続けるので、後ろに
@@ -561,14 +607,16 @@ FX_MOVES.god = {
     }
 
     // ---- 2段目: 飛翔中。**球ごとに独立した帯**(キーが p.id なので必ず分かれる) ----
+    /* **4色を守るには whiten を明示するしかない。** 既定の0.55が
+       上の fxHot(viv,0.22) の意図(色を守る)を上書きし、4球が白い塊に融けていた。 */
     fx.trail('p'+p.id, p.x, p.y, z,
-             { color:core, width: Math.max(11, (p.hitR||10)*1.4), bright:1.15 });
+             { color:core, width: Math.max(9, (p.hitR||10)*1.1), bright:1.0, whiten:0.15 });
     /* 神は色が白に近い(#f5f0ff)ので、彩度では層を作れない。**太さで層を作る。**
        だから2本目は tier3 だけでなく全弾に付ける。同時に飛ぶのは tier1 が1発・
        tier3 が4発なので、帯(24本)を食い潰さない。 */
     fx.trail('pw'+p.id, p.x, p.y, z,
-             { color:deep, width: Math.max(p.projStyle?24:18, (p.hitR||10)*3.4),
-               bright: p.projStyle ? 0.85 : 0.7 });
+             { color:deep, width: Math.max(p.projStyle?14:12, (p.hitR||10)*1.8),
+               bright: p.projStyle ? 0.5 : 0.45, whiten:0.08 });
     /* 螺旋の火花。位相は弾そのものに持たせるので、4つの球がそれぞれ違う所を回る。
        速度は**後ろ向き**にして、球から剥がれて流れていくように見せる(速度が読める)。 */
     p.__fxSpin = (p.__fxSpin==null ? Math.random()*6.283 : p.__fxSpin) + Math.min(dt||0, 0.05)*13;
@@ -641,7 +689,9 @@ FX_MOVES.god = {
       /* 焦げの輪を2枚。**内側は明るく細く、外側は色を濃く広く。**
          2周目は1枚だけ・半径 amp*1.5 で、遠くのコマでは点にしか見えなかった。 */
       fx.ring({ x, y, r0:3, r1:amp*1.2, life:0.24, color:hot,  width:7,  bright:1.1 });
-      fx.ring({ x, y, r0:6, r1:amp*3.0, life:0.5,  color:deep, width:11, bright:0.95 });
+      /* **半径に上限を掛ける。** cast 側は60まで落としてあるのに、落雷の輪だけ
+         対策が抜けており、amp*3.0=165 が画面幅の半分を横切る弧になっていた。 */
+      fx.ring({ x, y, r0:6, r1:Math.min(amp*3.0, 90), life:0.5, color:deep, width:9, bright:0.7 });
     }
     // 走った跡で弾け続ける小さな電気(残り火)
     for(let i=fxSpawnN(dt, 34); i>0; i--){
@@ -760,8 +810,9 @@ FX_MOVES.aqua = {
     dt = Math.min(dt || 0, AQUA_DT_MAX);
     /* 軌跡。色は c のまま(先端の白熱は fx_gl.js が付ける)。
        太さは当たり判定から作る。**hitR を見た目のために読み替えない。** */
+    fxMuzzle(fx, p, c, { hot:0.45, count:12, speed:220, bright:1.1, ringR:48, ringW:6, ringBright:0.45 });
     fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-             { color:c, width: Math.max(13, (p.hitR||10)*2.4), bright:1.15 });
+             { color:c, width: fxTrailWidth(p, 1.5, 8), bright:0.9, whiten:0.2 });
     /* 【色の鞘】リボンは fx_gl.js が先端を白へ寄せるので、**そのままだと白い棒**にしか
        見えない(既定の見え方も1〜2周目のこれも同じ問題だった)。
        弾とほぼ同じ速度で流れる大きく淡い粒を毎フレーム置き、白いリボンの周りに
@@ -962,8 +1013,9 @@ FX_MOVES.leaf = {
   fly(fx, p, c, dt){
     dt = Math.min(dt || 0, LEAF_DT_MAX);
     /* 軌跡。種は硬く小さいので水より細くする(太さの差で属性が読み分けられる)。 */
+    fxMuzzle(fx, p, c, { hot:0.35, count:12, speed:200, bright:0.9, particleHot:0.6, ringR:46, ringW:6, ringBright:0.4 });
     fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-             { color:c, width: Math.max(11, (p.hitR||10)*2.0), bright:1.05 });
+             { color:c, width: fxTrailWidth(p, 1.1, 6), bright:0.8, whiten:0.12 });
     /* 【色の鞘】狙いは水と同じ(白いリボンの周りに技色の層を作る)。
        ただし種は小さく硬いので、水より**細く・短く**して芯を強調する。 */
     const hitR = p.hitR || 10;
@@ -1134,10 +1186,11 @@ FX_MOVES.spark = {
   },
   fly(fx, p, c, dt){
     const hot = fxHot(c, 0.6);
-    /* 帯は短くていい(節が少ないほうが鋭く見える)。whiten は高めに取る:
-       雷は白さで強さが決まるので、ここだけは白へ寄せてよい。 */
+    fxMuzzle(fx, p, c, { hot:0.8, count:12, speed:300, bright:1.6, ringR:44, ringW:5 });
+    /* 帯は**細く**。太くすると2D側が描いている稲妻の折れ線を白い円錐で塗り潰し、
+       雷の唯一の識別記号(角)が消える(実測でBEFOREの折れ線が真っ白になっていた)。 */
     fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-             { color:hot, width: Math.max(8, (p.hitR||10)*1.3), bright:1.35, whiten:0.75 });
+             { color:c, width: Math.max(3, (p.hitR||10)*0.5), bright:0.5, whiten:0.18 });
     // 弾のまわりで上下に跳ねる帯電。重力を切ってあるので落ちずにチカチカする
     const n = Math.min(dt||0, SPARK_DT_MAX) * 55;
     for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
@@ -1226,17 +1279,24 @@ FX_MOVES.rock = {
   },
   fly(fx, p, c, dt){
     const dust = fxDim(c, 0.6);
-    /* 帯は**細く暗く**。岩の弾は光の尾を引かない。
-       whiten はほぼ0(白熱させると鉄や光の弾に見える)。 */
-    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
-             { color:dust, width: Math.max(10, (p.hitR||10)*1.5), bright:0.8, whiten:0.05 });
+    fxMuzzle(fx, p, c, { hot:0.2, count:10, speed:180, bright:0.8, particleHot:0.15,
+                         ringColor:fxDim(c,0.5), ringR:46, ringW:10, ringBright:0.45 });
+    /* 竜巻(projStyle:'tornado')には帯を張らない。竜巻は動く「面」なので、
+       帯を張ると根元から灰色の板が突き出る(実測で250x110pxの面になっていた)。 */
+    if(p.projStyle !== 'tornado'){
+      fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+               { color:dust, width: Math.max(5, (p.hitR||10)*0.8), bright:0.3, whiten:0.03 });
+    }
     // 通ったあとに残る砂ぼこり。ゆっくり広がって消える
-    const n = Math.min(dt||0, ROCK_DT_MAX) * 26;
+    /* 土ぼこりは**明るくするのではなく、大きく・多く・薄く**して見せる。
+       加算合成では暗い色がほとんど描かれないので、1粒を明るくすると
+       たちまち「光る砂」になる。重なった所だけが濃くなるようにする。 */
+    const n = Math.min(dt||0, ROCK_DT_MAX) * 45;
     for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
       fx.emit({ x:p.x+(Math.random()-0.5)*22, y:p.y+(Math.random()-0.5)*22, z:(p.z||0)+12,
                 vx:(Math.random()-0.5)*30, vy:(Math.random()-0.5)*30, vz:5+Math.random()*20,
-                az:ROCK_DUST_G, r:dust[0], g:dust[1], b:dust[2], bright:0.7, hot:0,
-                life:0.8+Math.random()*0.6, size0:14+Math.random()*10, size1:30,
+                az:ROCK_DUST_G, r:dust[0], g:dust[1], b:dust[2], bright:0.5, hot:0,
+                life:0.8+Math.random()*0.6, size0:26+Math.random()*16, size1:60,
                 turb:20, turbFreq:0.45, spin:0.6 });
     }
   },

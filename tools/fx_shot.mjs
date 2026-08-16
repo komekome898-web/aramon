@@ -50,7 +50,7 @@ const H     = parseInt(opt('h', '600'), 10);
 const SEED  = parseInt(opt('seed', '20260815'), 10);
 const MAP   = opt('map', 'wild');
 const EXEC  = opt('chromium', process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium');
-const FRAMES = (opt('frames', '0.05,0.18,0.38,0.7')).split(',').map(Number).filter(n=>!isNaN(n));
+const FRAMES = (opt('frames', '0.1,0.28,0.5,0.85,1.15')).split(',').map(Number).filter(n=>!isNaN(n));
 /* --crop 720x420 : 画面中央のこの大きさだけを切り出す。
    技は画面の中央付近で起きるので、切り出したほうが批評家が形を判定できる
    (全景のままだと技が数十pxにしかならず、「良いか悪いか」を見られない)。 */
@@ -323,9 +323,13 @@ for(const [el, tiers] of byElement){
       /* 撃つ前に1.2秒回す。試合開始直後は画面が暗転から明けていく途中で、
          0.35秒では足りず最初のコマが真っ黒になった(god_t3で発生)。 */
       await page.evaluate(()=> window.__fx.step(1.2));
-      /* 捨てコマを1枚描く。**ページを開いてから最初の render() は2Dが真っ黒になる**
-         (初回だけ用意される描画資源があるらしい)。撮る前に1回描いて捨てる。 */
+      /* 捨てコマを描く。**ページを開いてから最初の render() は2Dが真っ黒になる**
+         (初回だけ用意される描画資源があるらしい)。1枚では足りない属性があったので
+         合成の間を空けて2枚捨てる。ここをけちると立ち上がりのコマが撮れない。 */
       await page.evaluate(()=> window.__fx.draw());
+      await page.waitForTimeout(120);
+      await page.evaluate(()=> window.__fx.draw());
+      await page.waitForTimeout(60);
       const info = await page.evaluate((t)=> window.__fx.fire(t), tier);
       let prev = 0;
       for(const at of FRAMES){

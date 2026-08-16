@@ -5714,7 +5714,7 @@ function fxPunch(amount, x, y){
   _fxFlash  = Math.max(_fxFlash, a*0.35);
 }
 // 技側(fx_moves.js)から fx.flash() で呼ぶ。揺らさずに明るさだけ返したいとき用
-function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(1, amount))*0.35); }
+function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(1, amount))*0.09); }
 // 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
 function fxPunchApply(dt){
   if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*7); return; }
@@ -5760,7 +5760,16 @@ function fxGlColor(hex){
   return [parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255, parseInt(h.slice(5,7),16)/255];
 }
 // 弾・範囲技の色。SSRスキンの色替え(auraTint)が乗っていればそちらを優先する
-function fxGlTint(o){ return fxGlColor(o.auraTint || o.color); }
+function fxGlTint(o){
+  /* projStyle 付きの弾は「2Dが実際に描いている色」が PROJ_TRAIL_COLORS にある。
+     【なぜ必要か】レクイエムエンドは data.js の color が金(#e6c35c)なのに
+     2D側は紫で描いており、色が2か所で別々に持たれている。
+     こちらを見ないと、紫の技の中に金の輪と金の粒が出る(実測で確認)。
+     **決め打ちではなく、既にある表を読む**ので色替え(auraTint)は今までどおり優先。 */
+  if(!o.auraTint && o.projStyle && typeof PROJ_TRAIL_COLORS === 'object'
+     && PROJ_TRAIL_COLORS[o.projStyle]) return fxGlColor(PROJ_TRAIL_COLORS[o.projStyle]);
+  return fxGlColor(o.auraTint || o.color);
+}
 
 const _fxSeenAe   = new Set();   // 発生時に1回だけ出すもの(cast)の既出判定
 const _fxProjSeen = new Map();   // 弾id → 最後に見えた位置。消えた瞬間に impact を出す

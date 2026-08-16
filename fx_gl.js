@@ -300,7 +300,10 @@ function trailPoint(key, x, y, z, o){
      【なぜ指定させるか】ここを 0.8 固定にしていたため、**どんな色を渡しても
      軌跡の先端3割が白くなり、全属性の弾が「白い棒」に見えていた。**
      属性側は色の粒を余計に撒いて相殺していた(粒の無駄遣い)。 */
-  lane.whiten = o.whiten==null ? 0.55 : o.whiten;
+  /* 既定は控えめにする。0.55にしていたため、属性側が `fxHot()` で作った色を渡すと
+     **二重に白へ寄って属性の色が帯から消えていた**(神の4色が白い塊に融合した)。
+     白熱させたい技は明示して上げる。 */
+  lane.whiten = o.whiten==null ? 0.22 : o.whiten;
   lane.pts.push(x, y, z);
   if(lane.pts.length > RIBBON_SEGS*3) lane.pts.splice(0, lane.pts.length - RIBBON_SEGS*3);
 }
@@ -452,9 +455,14 @@ function ensureScene(){
                                          premultipliedAlpha:true });
     renderer.setClearColor(0x000000, 0);
     renderer.autoClear = true;
-    // トーンマッピングは掛けない。この層は「光の足し算」なので、
-    // 掛けると芯の白飛び(採点表2)が潰れて、光っているように見えなくなる
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    /* トーンマッピングもsRGBの書き出しも掛けない。
+       【なぜ LinearSRGBColorSpace か】この層は2Dキャンバス(素のsRGB値)の上へ
+       加算で重ねるので、**書いた値がそのまま出る**必要がある。
+       SRGBColorSpace にすると Three が出力を pow(x, 1/2.2) で持ち上げるため、
+       薄い加算(0.15程度)が0.44まで跳ね上がり、**色の比が潰れて灰色のもやになる**。
+       実測: 岩の帯が (123,127,127) = 彩度3%、炎の帯が彩度18%。
+       fx_moves.js 側で bright や whiten をいくら下げても効かなかったのはこれが原因。 */
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(64, 1, 8, 14000);
     scene.add(buildParticles());
