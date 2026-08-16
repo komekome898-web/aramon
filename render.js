@@ -4041,32 +4041,37 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
       const t0=i/GSEG, t1=(i+1)/GSEG;
       const a0=gpt(t0,-1), a1=gpt(t0,1), b1=gpt(t1,1), b0=gpt(t1,-1);
       if(!a0||!a1||!b1||!b0) continue;
-      ctx.globalAlpha = fade * (0.62 - 0.42*t0);    // 手前が濃く、先へ行くほど薄い
+      ctx.globalAlpha = fade * (0.40 - 0.30*t0);    // 手前が濃く、先へ行くほど薄い
       ctx.fillStyle = _hexA(sh.bright, 1);
       ctx.beginPath();
       ctx.moveTo(a0.x,a0.y); ctx.lineTo(a1.x,a1.y); ctx.lineTo(b1.x,b1.y); ctx.lineTo(b0.x,b0.y);
       ctx.closePath(); ctx.fill();
     }
-    // 帯の左右の縁 = **当たり判定の縁そのもの**。ここを描くと避ける線が読めるようになる
-    ctx.lineCap='round'; ctx.lineJoin='round';
+    /* 帯の左右の縁 = **当たり判定の縁そのもの**。
+       ただし**通しの実線で引かない。** 3本束ねる技(フラワービーム)では3枚の帯の縁が
+       交差して**術者を囲むガラスの箱(温室)**に見えた(実測の指摘)。単発の技でも
+       「滑走路の白線」と言われた。区間ごとに引いて奥へ行くほど消し、線を溶かす。 */
+    ctx.lineCap='butt'; ctx.lineJoin='round';
     for(const s of [-1, 1]){
-      ctx.globalAlpha = fade*0.8; ctx.strokeStyle = _hexA(shell, 1); ctx.lineWidth = 3;
-      ctx.beginPath();
-      for(let i=0;i<=GSEG;i++){
-        const c = gpt(i/GSEG, s); if(!c) continue;
-        if(i===0) ctx.moveTo(c.x,c.y); else ctx.lineTo(c.x,c.y);
+      ctx.strokeStyle = _hexA(shell, 1);
+      for(let i=0;i<GSEG;i++){
+        const c0 = gpt(i/GSEG, s), c1 = gpt((i+1)/GSEG, s);
+        if(!c0||!c1) continue;
+        const t0 = i/GSEG;
+        ctx.globalAlpha = fade * 0.34 * (1 - t0)*(1 - t0);
+        ctx.lineWidth = Math.max(1, 2.6*(1 - t0));
+        ctx.beginPath(); ctx.moveTo(c0.x,c0.y); ctx.lineTo(c1.x,c1.y); ctx.stroke();
       }
-      ctx.stroke();
     }
-    // 帯の真ん中に白い筋。地面の上を光が走っているように見せる
-    ctx.globalAlpha = fade*0.9;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4.5;
-    ctx.beginPath();
-    for(let i=0;i<=GSEG;i++){
-      const c = gpt(i/GSEG, 0); if(!c) continue;
-      if(i===0) ctx.moveTo(c.x,c.y); else ctx.lineTo(c.x,c.y);
+    // 帯の真ん中に白い筋。地面の上を光が走っているように見せる(こちらは芯なので強く)
+    for(let i=0;i<GSEG;i++){
+      const c0 = gpt(i/GSEG, 0), c1 = gpt((i+1)/GSEG, 0);
+      if(!c0||!c1) continue;
+      const t0 = i/GSEG;
+      ctx.globalAlpha = fade * (0.85 - 0.6*t0);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.2, 4.5*(1 - t0*0.7));
+      ctx.beginPath(); ctx.moveTo(c0.x,c0.y); ctx.lineTo(c1.x,c1.y); ctx.stroke();
     }
-    ctx.stroke();
     ctx.globalAlpha = fade;
   }
   let _prev = 0;               // 最後に四角形を張った節。潰れた区間はここから先へ繋ぐ
@@ -4162,7 +4167,11 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
        大きい断面ほど薄くして、形は必ず残す。 */
     const _hr = Math.hypot(h.x, h.y);
     const _big = _hr / Math.max(1, viewW*0.14);
-    const ringA = (_big <= 1 ? 1 : Math.max(0.12, 1/(_big*_big))) * (nearK[i] != null ? nearK[i] : 1);
+    /* 正面撃ちでは口を**光のにじみ**にする。以前は外周を `shell` の0.9αで締めていたので、
+       画面上440pxの**つやのあるシャボン玉**になり、判定(幅140px)の3倍の物体が
+       浮いて見えた。縁を0で終わらせて溶かし、濃さも落とす。 */
+    const ringA = (_big <= 1 ? 1 : Math.max(0.12, 1/(_big*_big)))
+                * (nearK[i] != null ? nearK[i] : 1) * (_headOn ? 0.4 : 1);
     ctx.save();
     ctx.globalAlpha = ringA;
     ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
@@ -4171,8 +4180,8 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
       const g = ctx.createRadialGradient(0,0,0, 0,0,1);
       g.addColorStop(0, 'rgba(255,255,255,0.98)');
       g.addColorStop(0.4, _hexA(sh.bright, 0.55));
-      g.addColorStop(0.82, _hexA(col, 0.35));
-      g.addColorStop(1, _hexA(shell, 0.9));
+      g.addColorStop(0.82, _hexA(col, _headOn ? 0.16 : 0.35));
+      g.addColorStop(1, _headOn ? _hexA(col, 0) : _hexA(shell, 0.9));
       ctx.fillStyle = g; ctx.fill();
     } else {
       // 線幅は変換前の空間で指定するので、拡大率で割って画面上の太さを揃える
