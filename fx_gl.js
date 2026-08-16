@@ -31,19 +31,27 @@
 import * as THREE from './vendor/three.module.min.js';
 
 
-/* 加算合成の指定。
+/* 合成の指定。**出すアルファで「光」と「煤」を1つのマテリアルで切り替える。**
+
    【重要】THREE.AdditiveBlending は src*srcAlpha + dst なので、
    このファイルのように**アルファ0で色だけ出す**作りでは全部0になって何も出ない。
-   RGBは One/One の素の加算、アルファは Zero/One で0のまま据え置く
-   (キャンバスのアルファを0に保つことで、ページ側でも加算合成になる。冒頭の説明を参照)。 */
+
+   One / OneMinusSrcAlpha にしておくと:
+     ・アルファ0で出す粒 → dst*(1-0)=dst なので `src + dst` = **これまでどおりの素の加算**
+       (既存の粒・帯・輪は1ピクセルも変わらない)
+     ・アルファ>0で暗い色を出す粒 → `src + dst*(1-a)` = **下を暗くする** = 煤・影
+   加算層には原理的に黒が置けず、黒オーラのSSR(終焉に救いを・ドラゴンころし)が
+   素と1ピクセルも変わらなかった。ここを開けないと黒は永久に出せない。
+   ページ側の合成も同じ式(premultipliedAlpha:true)なので、キャンバスへ書いた
+   アルファがそのまま2Dキャンバスを暗くする。                                */
 function additiveBlend(mat){
   mat.blending        = THREE.CustomBlending;
   mat.blendEquation   = THREE.AddEquation;
   mat.blendSrc        = THREE.OneFactor;
-  mat.blendDst        = THREE.OneFactor;
+  mat.blendDst        = THREE.OneMinusSrcAlphaFactor;
   mat.blendEquationAlpha = THREE.AddEquation;
-  mat.blendSrcAlpha   = THREE.ZeroFactor;
-  mat.blendDstAlpha   = THREE.OneFactor;
+  mat.blendSrcAlpha   = THREE.OneFactor;
+  mat.blendDstAlpha   = THREE.OneMinusSrcAlphaFactor;
   return mat;
 }
 
@@ -98,12 +106,14 @@ attribute vec4  aTime;      // x=発生時刻 y=寿命 z=開始サイズ w=終�
 attribute vec4  aTurb;      // x=乱流の強さ y=乱流の周期 z=個体シード w=回転速度
 attribute float aHot;       // 芯の白熱量 0..1。0=白く光らない(煙・土ぼこり)
 attribute float aStretch;   // 速度方向への伸び。0=丸いまま、1以上=尾を引く筋になる
+attribute float aSoot;      // 1=煤(下を暗くする)。0=光(加算)。冒頭の additiveBlend を参照
 uniform float uTime;
 uniform vec2  uViewport;
 varying vec4  vColor;
 varying vec2  vUv;
 varying float vAge;
 varying float vHot;
+varying float vSoot;
 
 /* 乱流。curlノイズの代わりに、位置と個体シードから作った三角関数の渦を使う。
    本物のcurlより安いうえ、粒ごとに違う軌道を描くので「二次運動」に十分見える。 */
@@ -129,6 +139,7 @@ void main(){
     vColor = vec4(0.0);
     vUv = vec2(0.0);
     vHot = 0.0;
+    vSoot = 0.0;
     return;
   }
   vec3 pos = aPos0 + aVel*age + 0.5*aAcc*age*age;
@@ -166,6 +177,7 @@ void main(){
   float fall = 1.0 - smoothstep(0.25, 1.0, t01);
   vColor = vec4(aColor.rgb, aColor.a * rise * fall);
   vHot = aHot;
+  vSoot = aSoot;
   vUv = position.xy + 0.5;
 }
 `;
@@ -176,6 +188,7 @@ varying vec4 vColor;
 varying vec2 vUv;
 varying float vAge;
 varying float vHot;
+varying float vSoot;
 void main(){
   vec2 d = vUv - 0.5;
   float r2 = dot(d, d) * 4.0;          // 中心0 → 縁1
@@ -193,7 +206,14 @@ void main(){
      光り物は vHot=1、煙や土は vHot=0 で使う。 */
   vec3 col = vColor.rgb * (body*0.9 + edge*0.25) + vec3(1.0) * core * 0.85 * vHot;
   float a = vColor.a * (body + core*0.6*vHot + body*0.3*(1.0-vHot));
-  // アルファは0のまま出す(ページ側で加算合成される。ファイル冒頭の説明を参照)
+  if(vSoot > 0.5){
+    /* 煤: **アルファを出して下を暗くする。** 縁をぼかすため中心ほど濃い。
+       色はほぼ黒に寄せた技の色(完全な黒にすると穴が開いて見える)。 */
+    float sa = clamp(a, 0.0, 0.55);   // 0.85では下が消えて穴が開いて見える。煙として読める濃さに留める
+    gl_FragColor = vec4(vColor.rgb * 0.18 * sa, sa);
+    return;
+  }
+  // 光: アルファは0のまま出す(ページ側で加算合成される。ファイル冒頭の説明を参照)
   gl_FragColor = vec4(col * a, 0.0);
 }
 `;
@@ -213,7 +233,7 @@ function buildParticles(){
     return a;
   };
   mk('aPos0', 3); mk('aVel', 3); mk('aAcc', 3);
-  mk('aColor', 4); mk('aTime', 4); mk('aTurb', 4); mk('aHot', 1); mk('aStretch', 1);
+  mk('aColor', 4); mk('aTime', 4); mk('aTurb', 4); mk('aHot', 1); mk('aStretch', 1); mk('aSoot', 1);
   // 全部「寿命切れ」の状態から始める(発生時刻を大きく負にする)
   const t = P.attr.aTime.array;
   for(let i=0;i<MAX_PARTICLES;i++){ t[i*4] = -1e9; t[i*4+1] = 0.001; }
@@ -258,6 +278,7 @@ function emitOne(o){
   // 既定は光る。煙・土ぼこりを出すときだけ hot:0 を渡す
   a.aHot.array[i] = (o.hot == null ? 1 : o.hot);
   a.aStretch.array[i] = o.stretch || 0;
+  a.aSoot.array[i]    = o.soot ? 1 : 0;
   /* 書き込んだリング位置の範囲を覚えておく。**全4096個を毎フレーム転送しない。**
      粒は発生の瞬間だけCPUが書き、あとはシェーダが時間から位置を出すので、
      転送が要るのは「このフレームで新しく生まれたぶん」だけ。           */
@@ -588,7 +609,7 @@ const api = {
            【なぜ要るか】全部を同時に出すと、動き出す前の最初の0.1秒は粒が同じ場所に
            重なって**1枚の塗り潰した円盤**になる(雷の発動が術者の足元の黄色い皿に
            見えていた)。ばらせば形は同じまま、立ち上がりが「湧く」動きになる。 */
-        delay:(o.delay||0) + Math.random()*(o.delaySpread||0), hot:o.hot, stretch:o.stretch,
+        delay:(o.delay||0) + Math.random()*(o.delaySpread||0), hot:o.hot, stretch:o.stretch, soot:o.soot,
       });
     }
   },

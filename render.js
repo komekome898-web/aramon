@@ -5757,7 +5757,10 @@ let _fxPunchSaved = null;
    四隅の輝度が84.6〜89.3に収まり、フラッシュの痕跡ゼロ)。採点表8の「0.12秒以下」に収まる
    範囲で寿命を伸ばす。上限0.14・減衰 dt*1.4 で 0.14→0.01 が約93ms。
    **使う前に宣言する**(下の関数より後ろに置くとTDZの読み違えを誘う)。 */
-const FX_FLASH_MAX = 0.14, FX_FLASH_DECAY = 1.4;
+/* 上限は 0.10 まで。0.14 では画面の平均輝度が+13持ち上がり、
+   「画面が洗われた」と指摘された以前の失敗(空が+14.5)とほぼ同じ強さになった。
+   見えなかった原因は強さではなく**寿命**(33ms)だったので、伸ばすのは寿命だけにする。 */
+const FX_FLASH_MAX = 0.10, FX_FLASH_DECAY = 1.4;
 // amount: 0..1。dist を渡すとプレイヤーからの距離で自動的に弱める
 function fxPunch(amount, x, y){
   let a = Math.max(0, Math.min(1, amount));
@@ -5862,39 +5865,65 @@ function fxGlAccent(fx, o, c, phase, dt){
   const acc = o && o.auraAccent;
   if(!acc || !fx) return;
   const white = acc === 'white';
-  const z = (o.z || 0) + 14;
-  // 大きさの基準は技の当たり判定。**見た目が判定より大きくならない**ようにする
-  const rad = (o.kind || o.aoeShape)
-    ? Math.max(40, Math.min((o.range || 200) * 0.35, (o.width || o.rectWidth || 220) * 0.5))
-    : (typeof fxHitRadius === 'function' ? fxHitRadius(o) : Math.max(40, (o.hitR || 12) * 3));
+  /* 【自分で入れたバグの修正】撒く場所を等方の円盤で決めていたため、
+     45度の扇の技(言葉は無粋)では差し色の87%が扇の外、矩形の技(天衣無縫)でも
+     30%が判定の外へ出ていた。**判定の形はここで計算し直さない。**
+     fx_moves.js の fxAeHalfWidth / fxAeLateral / fxHitRadius を必ず通す
+     (同じ判定を2か所目に書かない、の原則。あちらのコメントに同じ事故の記録がある)。 */
+  const isArea = !!(o.kind || o.aoeShape);
+  /* 黒は**加算では出せない**。fxDeep は最大成分を保つ彩度上げの関数なので、
+     明るい技(終焉に救いを #ffe9a8 / ドラゴンころし #f4f7ff)では金や白になり、
+     素と1ピクセルも変わらなかった。fx_gl.js に足した煤レーン(soot:true)へ回す。
+     煤はアルファを出して**下を暗くする**ので、白い技ほど効く。 */
   const col = white ? [1, 0.97, 0.9]
-                    : (typeof fxDeep === 'function' ? fxDeep(c, 3.2) : [c[0]*0.5, c[1]*0.5, c[2]*0.5]);
+                    : (typeof fxDim === 'function' ? fxDim(c, 0.55) : [c[0]*0.55, c[1]*0.55, c[2]*0.55]);
+  // 判定の内側に1点取る。範囲技は「前方の along と、その距離での横幅」から作る
+  const pick = ()=>{
+    if(!isArea){
+      const R = (typeof fxHitRadius === 'function') ? fxHitRadius(o) : Math.max(40, (o.hitR||12)*3);
+      const a = Math.random()*Math.PI*2, r = Math.sqrt(Math.random())*R;
+      return { x:o.x + Math.cos(a)*r, y:o.y + Math.sin(a)*r, r:R };
+    }
+    if(o.kind === 'circle'){                       // 爆風は円そのものが判定
+      const R = o.range || 200;
+      const a = Math.random()*Math.PI*2, r = Math.sqrt(Math.random())*R;
+      return { x:o.x + Math.cos(a)*r, y:o.y + Math.sin(a)*r, r:R };
+    }
+    const fwx = Math.cos(o.angle||0), fwy = Math.sin(o.angle||0);
+    const rgx = -fwy, rgy = fwx;
+    const along = Math.random() * (o.range || 200);
+    const lat = (typeof fxAeLateral === 'function') ? fxAeLateral(o, along)
+                                                    : (Math.random()*2-1)*60;
+    const hw = (typeof fxAeHalfWidth === 'function') ? fxAeHalfWidth(o, along) : 60;
+    return { x:o.x + fwx*along + rgx*lat, y:o.y + fwy*along + rgy*lat, r:hw };
+  };
   const spawn = (n, o2)=>{
     for(let i=0;i<n;i++){
-      const a = Math.random()*Math.PI*2, r = Math.sqrt(Math.random())*rad;
+      const q = pick();
       fx.emit(Object.assign({
-        x:o.x + Math.cos(a)*r, y:o.y + Math.sin(a)*r, z: z + Math.random()*rad*0.5,
+        x:q.x, y:q.y, z:(o.z||0) + 14 + Math.random()*Math.min(90, q.r*0.5),
         r:col[0], g:col[1], b:col[2],
         turb: white ? 1.5 : 0.7, turbFreq: white ? 0.8 : 0.4, seed:Math.random(),
       }, o2));
     }
   };
+  /* 白は「羽根」なので**速度方向へ伸ばす**(stretch)。丸いボケを12個散らしただけでは
+     素との差が全画素の0.13%にしかならず、離れて見ると区別が付かなかった。 */
   if(phase === 'cast' || phase === 'impact'){
-    // 白=軽い羽根が舞い上がる / 黒=重い煤が地を這って残る
-    if(white) spawn(14, { vz: 40+Math.random()*70, az:-40, life:1.1+Math.random()*0.5,
-                          size0:7, size1:1.5, bright:0.85, hot:1 });
-    else      spawn(12, { vz: 10+Math.random()*30, az:-90, life:1.3+Math.random()*0.5,
-                          size0:26, size1:44, bright:0.5, hot:0 });
+    if(white) spawn(26, { vz: 50+Math.random()*90, az:-40, life:1.1+Math.random()*0.5,
+                          size0:9, size1:1.5, bright:1.15, hot:1, stretch:1.1 });
+    else      spawn(16, { vz: 10+Math.random()*30, az:-90, life:1.3+Math.random()*0.5,
+                          size0:26, size1:46, bright:0.8, hot:0, soot:true });
   } else if(phase === 'fly'){
-    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 22 : 14) : 0;
-    if(white) spawn(n, { vz: 20+Math.random()*40, az:-30, life:0.9, size0:5, size1:1,
-                         bright:0.8, hot:1 });
-    else      spawn(n, { vz: 5, az:-60, life:1.0, size0:18, size1:32, bright:0.45, hot:0 });
+    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 34 : 14) : 0;
+    if(white) spawn(n, { vz: 25+Math.random()*45, az:-30, life:0.9, size0:6, size1:1,
+                         bright:1.0, hot:1, stretch:1.0 });
+    else      spawn(n, { vz: 5, az:-60, life:1.0, size0:18, size1:34, bright:0.7, hot:0, soot:true });
   } else if(phase === 'sustain'){
-    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 16 : 10) : 0;
-    if(white) spawn(n, { vz: 30+Math.random()*50, az:-35, life:1.0, size0:6, size1:1.2,
-                         bright:0.7, hot:1 });
-    else      spawn(n, { vz: 8, az:-70, life:1.1, size0:22, size1:38, bright:0.4, hot:0 });
+    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 26 : 10) : 0;
+    if(white) spawn(n, { vz: 35+Math.random()*55, az:-35, life:1.0, size0:7, size1:1.2,
+                         bright:0.9, hot:1, stretch:1.0 });
+    else      spawn(n, { vz: 8, az:-70, life:1.1, size0:22, size1:40, bright:0.65, hot:0, soot:true });
   }
 }
 

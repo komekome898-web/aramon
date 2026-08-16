@@ -149,7 +149,32 @@ const DRIVER = `(function(){
     const me = player;
     entities.length = 0;
     entities.push(me);
-    me.x = WORLD.w*0.5; me.y = WORLD.h*0.5;
+    /* 撃つ位置は**障害物から離れた所**にする。
+       【なぜ必要か】ワールド中央に固定していたため、そこに岩があるマップでは
+       横へずらして撃つ弾(轟金剛の3連射・ギガデストロイヤーの核弾頭)が
+       **発射の1tick目で岩に当たって消えていた**(実測: 3発中1発しか写らず、
+       burstTintsの赤が一度も出ない)。技の不具合に見えるが、原因は撮影位置。
+       中央から渦巻き状に探して、岩・山から十分離れた地点を選ぶ。 */
+    (function pickClearSpot(){
+      const clear = (x, y)=>{
+        if(x<600 || y<600 || x>WORLD.w-600 || y>WORLD.h-600) return false;
+        for(const r of (typeof rocks!=='undefined' ? rocks : []))
+          if(Math.hypot(x-r.x, y-r.y) < r.radius + 420) return false;
+        for(const v of (typeof volcanoObstacles!=='undefined' ? volcanoObstacles : []))
+          if(Math.hypot(x-v.x, y-v.y) < (v.radius||0) + 700) return false;
+        return true;
+      };
+      const cx = WORLD.w*0.5, cy = WORLD.h*0.5;
+      if(clear(cx, cy)){ me.x = cx; me.y = cy; return; }
+      for(let ring=1; ring<=14; ring++){
+        for(let k=0; k<12; k++){
+          const a2 = (k/12)*Math.PI*2, d = ring*220;
+          const x = cx + Math.cos(a2)*d, y = cy + Math.sin(a2)*d;
+          if(clear(x, y)){ me.x = x; me.y = y; return; }
+        }
+      }
+      me.x = cx; me.y = cy;   // 見つからなければ従来どおり中央
+    })();
     me.z = (typeof groundZAt==='function') ? groundZAt(me.x, me.y) : 0;
     me.facingAngle = 0; me.hp = me.maxHp; me.guts = me.maxGuts;
     me.alive = true; me.fireCooldown = 0;
@@ -210,6 +235,11 @@ const DRIVER = `(function(){
        出た弾/範囲技から拾い直す(スキンが効いているかの確認になる)。 */
     const shown = (projectiles[projectiles.length-1] || areaEffects[areaEffects.length-1] || {});
     return { name: mv.name, tier: mv.tier, aoe: mv.aoeShape||null,
+             /* 撃った直後の本数。**表(data.js)の burst / warheads.count と突き合わせる**ための値。
+                コマの counts.proj は「その時刻に生きている数」なので、初めから出ていないのか
+                途中で消えたのかを、これが無いと区別できない。 */
+             spawned: projectiles.length, spawnedAe: areaEffects.length,
+             wantBurst: mv.burst || 1, wantWarheads: (mv.warheads && mv.warheads.count) || 0,
              style: shown.projStyle || shown.style || mv.aoeStyle || mv.projStyle || null,
              skinName: (typeof skinTier3Move==='function' ? (skinTier3Move(mv, me)||{}).name : null) };
   };
@@ -398,6 +428,7 @@ for(const [el, tiers] of byElement){
           : { x:0, y:0, width:W, height:H };
         await page.screenshot({ path:file, clip });
         report.shots.push({ el, tier, at, move:info.name, skinName:info.skinName||null,
+                            spawned:info.spawned, wantBurst:info.wantBurst, wantWarheads:info.wantWarheads,
                             skin:SKIN||null, style:info.style, counts,
                             file: path.relative(ROOT, file) });
       }
