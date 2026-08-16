@@ -565,10 +565,17 @@ const api = {
   benchSelf(n){
     if(!active || !scene) return null;
     const N = n || 40;
+    /* **GPUの終わりまで待ってから時計を止める。**
+       renderer.render() は命令を積むだけで戻るので、待たずに測ると
+       どの解像度でも同じ 0.3ms しか出ず、塗りつぶしの重さが一切見えない
+       (実際にそうなった)。1画素だけ読み戻すとGPUの完了まで同期する。 */
+    const gl = renderer.getContext();
+    const px = new Uint8Array(4);
     const t = [];
     for(let i=0;i<N+8;i++){
       const t0 = performance.now();
       api.render();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
       if(i >= 8) t.push(performance.now() - t0);   // 最初の8回は暖機ぶんで捨てる
     }
     t.sort((a,b)=>a-b);
