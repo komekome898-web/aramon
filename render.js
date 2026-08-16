@@ -3715,6 +3715,28 @@ function fx3dFill(pts, color, alpha, blur){
   ctx.fill();
   ctx.restore();
 }
+/* 白熱の芯だけを**加算**で置く。
+   【なぜ別の関数が要るか】fx3dFill は通常合成(source-over)で、しかも呼び出し側は
+   `fade × FX3D_AREA_ALPHA(0.58)` を掛けて渡す。そのため `rgba(255,255,255,0.95)` と
+   書いても**画面では最大238程度にしかならず、250を超えられない**(実測: 結晶の頂点227・
+   念力の壁238・モッチ砲の筒195)。「芯を白飛びさせた」つもりの修正が効かなかった原因。
+   加算で、しかも fade を掛けずに置けば確実に飽和する
+   (fx3dDomeBurst の天辺だけが飽和していたのは、そこだけこの書き方だったため)。
+   **面全体には使わない。** 芯=小さい範囲だけに使うこと(全面に使うと画が白く洗われる)。 */
+function fx3dCore(pts, color, alpha, blur){
+  if(!pts || pts.length<3 || alpha<=0.01) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  if(blur && !renderHeavyLoad){ ctx.shadowBlur = blur; ctx.shadowColor = color; }
+  ctx.fill();
+  ctx.restore();
+}
 function fx3dStroke(pts, color, width, alpha, blur, closed){
   if(!pts || pts.length<2 || alpha<=0.01) return;
   ctx.save();
@@ -3954,10 +3976,19 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     const c = pts[i], h = uH[i], v = uV[i];
     const det = h.x*v.y - h.y*v.x;
     if(Math.abs(det) < 1) return;          // 真横から見て潰れているときは描かない
-    /* 自分の足元から撃つと手前の断面が画面いっぱいに広がるので、大きすぎる断面は出さない。
-       閾値が画面幅の0.4倍(512px)では緩すぎて何も止めていなかった(実測: 366pxの断面が素通り)。 */
-    if(Math.hypot(h.x, h.y) > viewW*0.14) return;
+    /* 手前の断面は画面上で巨大になるので薄くする。**ただし消さない。**
+       【なぜ変えたか】以前はここで `return` して**筒の口だけを捨て、胴体の帯は残していた。**
+       これが一番悪い組み合わせで、
+         ・真正面へ撃つと軸が画面上でほぼ点になり、胴体が**横796pxの羽**に潰れる(天河天翔)
+         ・口が無いので筒が術者から30px切れて浮く(モッチ砲)
+         ・3本の口が重なって白い団子になる(フラワービーム)
+       という3技の不合格が、すべてこの1行から出ていた。
+       大きい断面ほど薄くして、形は必ず残す。 */
+    const _hr = Math.hypot(h.x, h.y);
+    const _big = _hr / Math.max(1, viewW*0.14);
+    const ringA = _big <= 1 ? 1 : Math.max(0.12, 1/(_big*_big));
     ctx.save();
+    ctx.globalAlpha = ringA;
     ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
     ctx.beginPath(); ctx.arc(0,0,1,0,Math.PI*2);
     if(filled){
@@ -4013,8 +4044,8 @@ function fx3dSpike(x, y, gz, h, rBase, col, fade){
   tg.addColorStop(0, 'rgba(255,255,255,0.95)');
   tg.addColorStop(0.5, _hexA(sh.spark, 0.55));
   tg.addColorStop(1, _hexA(col, 0));
-  fx3dFill([{x:apex.x-tipR,y:apex.y-tipR},{x:apex.x+tipR,y:apex.y-tipR},
-            {x:apex.x+tipR,y:apex.y+tipR},{x:apex.x-tipR,y:apex.y+tipR}], tg, fade, 12);
+  fx3dCore([{x:apex.x-tipR,y:apex.y-tipR},{x:apex.x+tipR,y:apex.y-tipR},
+            {x:apex.x+tipR,y:apex.y+tipR},{x:apex.x-tipR,y:apex.y+tipR}], tg, 0.9, 12);
   fx3dStroke([{x:base.x-r,y:base.y},apex,{x:base.x+r,y:base.y}], sh.outline, 1.4, 0.6*fade, 8);
 }
 // 空から地面へ落ちる稲妻。上ほど大きく振れる折れ線を3層で描く
@@ -4651,17 +4682,28 @@ function fx3dPsychicWall(ae, curReach, fade){
      (薄くすると地面の色が透けて煙にしか見えない)                          */
 function fx3dDomeBurst(ae, curReach, fade){
   const R = curReach;
+  /* **カメラがドームの中に入っているときは胴体を塗らない。**
+     半径420を術者の足元に出す技(デュラハン最終奥義)は、カメラが術者の145後ろに居るので
+     必ずこうなる。塗ると画面全体が白い霧になり、技も術者も地形も見えなくなる
+     (実測: 四隅の輝度が背景比 +54.9。他技は最大 +6.1)。
+     判定は一切変えない。**輪郭と地面の輪だけ**にして、どこまでが範囲かは残す。 */
+  const camIn = (typeof camPos !== 'undefined' && camPos)
+    && Math.hypot(camPos.x - ae.x, camPos.y - ae.y) < R*0.98;
   const H = Math.max(FX3D_DOME_H_MIN, R*FX3D_DOME_H_RATIO);
   const col = ae.auraTint || ae.color || '#ffffff';
   const sh = auraShades(col);
   const rings = 6;
   // 下から上へ、輪を重ねて塊にする。上の輪ほど明るくして丸みを出す
-  for(let k=0;k<=rings;k++){
+  for(let k=0;k<=rings && !camIn;k++){
     const th = (k/rings)*(Math.PI/2);
     const ring = fx3dRingPts(ae.x, ae.y, R*Math.cos(th), 2 + H*Math.sin(th));
     if(!ring) continue;
     const t = k/rings;
-    fx3dFill(ring, _mixHex(col, sh.bright, t*0.55), (0.34 - t*0.1)*fade, 0);
+    /* 胴体が α0.34〜0.24 の通常合成で、地面がほぼ素通しだった。半径330・威力60の爆風が
+       「白い輪1本」にしか見えない原因(実測: 暗けいの0.85sで飽和画素158)。濃くする。
+       最下段は暗く沈めて接地を作り、上へ行くほど属性色→明るい側へ寄せる。 */
+    fx3dFill(ring, _mixHex(t < 0.18 ? sh.dark : col, sh.bright, t*0.55),
+             (0.62 - t*0.22)*fade, 0);
   }
   /* 縁と稜線(ドームの形をはっきりさせる)。
      **広がっていく縁だけは必ず白飛びさせる。** sh.bright は技色を55%白へ寄せた色なので、
@@ -4690,7 +4732,8 @@ function fx3dDomeBurst(ae, curReach, fade){
     ctx.save();
     ctx.globalAlpha = Math.min(1, 0.8*fade);
     ctx.globalCompositeOperation = 'lighter';
-    const rr = Math.max(4, 26*apex.scale);
+    // 天辺の芯が半径330の爆風に対して小さすぎた(26px固定)。半径に比例させる
+    const rr = Math.max(6, Math.min(R*0.25, 120)*apex.scale);
     const g = ctx.createRadialGradient(apex.x, apex.y, 0, apex.x, apex.y, rr);
     g.addColorStop(0, 'rgba(255,255,255,0.95)');   // 天辺の芯。暗い技でもここは白く抜く
     g.addColorStop(0.45, _hexA(sh.spark, 0.7));
@@ -4812,7 +4855,13 @@ function drawSingleAreaEffect(ae){
        「速く立ち上がり、ゆっくり減衰する」の逆の形。
        伸びている間は全開のまま(そこは技が育つ時間なので変えない)。 */
     const reachTime = telegraphTime + (ae.range||0)/Math.max(1, fillSpeed);
-    const tailStart = Math.min(ae.life - 0.2, Math.max(telegraphTime, reachTime));
+    /* 減衰の開始。**reachTime だけを見ると射程の長い技で最後まで全開のまま**になる。
+       reachTime = telegraph + range/fillSpeed なので、射程900以上の6技
+       (クリスタルレイン1.18s / フラワービーム1.51s / 超雷撃1.73s / 天河天翔1.63s /
+        サイコキネシス1.62s / ファイアウェーブ1.29s)では減衰が寿命のほぼ終端に来て、
+       画が最後まで変わらなかった。寿命の45%を過ぎたらどのみち落とし始める。 */
+    const tailStart = Math.min(ae.life - 0.2, Math.max(telegraphTime,
+                               Math.min(reachTime, ae.life*0.45)));
     const tailLen   = Math.max(0.2, ae.life - tailStart);
     const fadeAlpha = elapsed>tailStart
       ? clamp(1 - Math.pow((elapsed-tailStart)/tailLen, 1.6), 0, 1) : 1;
