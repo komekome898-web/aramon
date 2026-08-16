@@ -87,7 +87,7 @@ const FX_MOVES = {
                  life:0.75, size0:26, size1:3, az:60, turb:22, turbFreq:1.1, spin:3 });
       // 煤。暗い色で重力に従って落ち、余韻を作る
       fx.burst({ x:ae.x, y:ae.y, z:18, count:14, speed:120, jitter:40, jitterZ:50,
-                 elev:0.8, elevSpread:0.8, r:soot[0], g:soot[1], b:soot[2], bright:0.8,
+                 elev:0.8, elevSpread:0.8, r:soot[0], g:soot[1], b:soot[2], bright:0.8, hot:0.1,
                  life:1.1, size0:30, size1:8, az:-90, turb:26, turbFreq:0.7, spin:1.5 });
     },
     fly(fx, p, c, dt){
@@ -112,7 +112,7 @@ const FX_MOVES = {
                  r:hot[0], g:hot[1], b:hot[2], bright:1.8, life:0.22, size0:16, size1:0.5,
                  az:-260, turb:6, turbFreq:2.4, spin:7 });
       fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:12, speed:120, jitter:14,
-                 elev:0.9, elevSpread:0.6, r:soot[0], g:soot[1], b:soot[2], bright:0.9,
+                 elev:0.9, elevSpread:0.6, r:soot[0], g:soot[1], b:soot[2], bright:0.9, hot:0.1,
                  life:0.8, size0:22, size1:6, az:20, turb:24, turbFreq:0.8, spin:1 });
       fx.ring({ x:p.x, y:p.y, r0:5, r1:Math.max(70, (p.splash||70)*1.2), life:0.3,
                 color:hot, width:16, bright:1.4 });
@@ -1085,6 +1085,195 @@ FX_MOVES.leaf = {
 };
 /* <</FX:leaf>> */
 
+
+
+/* <<FX:spark>> */
+/* ---- 雷(ライガー) ----
+   狙い: **立ち上がりが極端に速く、余韻はごく短い。** 採点表7は「速い立ち上がり・
+   遅い減衰」だが、雷だけは例外で「遅い減衰」を作ると締まらない。代わりに
+   **消えたあとに帯電した粒だけを残す**ことで、余韻の役目をそちらへ移す。
+   ・帯電した粒は重力をほぼ切る(az を小さく)。落ちずに上下へ跳ねると電気に見える
+   ・spin を速く取る。粒が細かく回るとチカチカして放電の感じが出る
+   ・芯はほぼ白。雷は色より「白さ」で強さが決まる                              */
+const SPARK_ARC_G   = -60;    // 帯電した粒の重力。ほぼ切る(落ちると火の粉になる)
+const SPARK_LIFE    = 0.22;   // 主役の粒の寿命。短く切るのが雷らしさ
+const SPARK_DT_MAX  = 0.1;    // dtの頭打ち。fx_gl.js の begin() と同じ値
+
+// 地面を這う枝分かれ。中心から外へ、折れながら伸びる線を粒で描く
+function sparkBranch(fx, x, y, c, len, n){
+  const hot = fxHot(c, 0.75);
+  for(let b=0; b<n; b++){
+    let a = Math.random()*Math.PI*2;
+    let px = x, py = y;
+    const steps = 4 + (Math.random()*3|0);
+    for(let i=0;i<steps;i++){
+      a += (Math.random()-0.5)*1.5;              // 折れ曲がる。まっすぐだと放電に見えない
+      const d = len/steps;
+      px += Math.cos(a)*d; py += Math.sin(a)*d;
+      fx.emit({ x:px, y:py, z:fxGroundZ(px,py)+3+Math.random()*6,
+                vx:0, vy:0, vz:0, az:0,
+                r:hot[0], g:hot[1], b:hot[2], bright:1.5,
+                // 根元から先へ順に光る。同時に出すと「散らばった点」にしか見えない
+                delay: i*0.012 + b*0.004,
+                life: 0.10 + Math.random()*0.08,
+                size0: 9 - i*0.9, size1: 1, turb:0, spin:0 });
+    }
+  }
+}
+
+FX_MOVES.spark = {
+  /* 超雷撃(zigzag)。稲妻の柱そのものは2D側が描くので、ここは
+     **落雷の着地**(閃光・枝分かれ・焦げの輪)だけを足す。 */
+  cast(fx, ae, c){
+    const hot = fxHot(c, 0.8);
+    fx.ring({ x:ae.x, y:ae.y, r0:8, r1:70, life:0.22, color:c, width:8, bright:0.9 });
+    fx.burst({ x:ae.x, y:ae.y, z:10, count:18, speed:260, jitter:10, jitterZ:14,
+               elev:1.0, elevSpread:0.6, r:hot[0], g:hot[1], b:hot[2], bright:1.9,
+               life:SPARK_LIFE, size0:14, size1:0.5, az:SPARK_ARC_G, turb:6, turbFreq:3, spin:8 });
+    fx.shake(0.35, ae.x, ae.y);
+  },
+  fly(fx, p, c, dt){
+    const hot = fxHot(c, 0.6);
+    /* 帯は短くていい(節が少ないほうが鋭く見える)。whiten は高めに取る:
+       雷は白さで強さが決まるので、ここだけは白へ寄せてよい。 */
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:hot, width: Math.max(8, (p.hitR||10)*1.3), bright:1.35, whiten:0.75 });
+    // 弾のまわりで上下に跳ねる帯電。重力を切ってあるので落ちずにチカチカする
+    const n = Math.min(dt||0, SPARK_DT_MAX) * 55;
+    for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
+      const a = Math.random()*Math.PI*2, rr = 10 + (p.hitR||10)*1.2;
+      fx.emit({ x:p.x+Math.cos(a)*rr, y:p.y+Math.sin(a)*rr, z:(p.z||0)+14+Math.sin(a*2)*rr,
+                vx:(Math.random()-0.5)*130, vy:(Math.random()-0.5)*130, vz:(Math.random()-0.5)*160,
+                az:SPARK_ARC_G, r:hot[0], g:hot[1], b:hot[2], bright:1.3,
+                life:SPARK_LIFE*(0.7+Math.random()*0.8), size0:5+Math.random()*5, size1:0.5,
+                turb:8, turbFreq:3.2, spin:9 });
+    }
+  },
+  impact(fx, p, c){
+    const hot = fxHot(c, 0.85);
+    const R = Math.max(50, (p.splash||0) || (p.hitR||10)*3);
+    // 閃光。**量ではなく明るさと短さ**で雷にする
+    fx.burst({ x:p.x, y:p.y, z:(p.z||0)+10, count:12, speed:330, jitter:4,
+               r:hot[0], g:hot[1], b:hot[2], bright:2.2,
+               life:0.11, size0:20, size1:0.5, az:SPARK_ARC_G, turb:3, turbFreq:3, spin:9 });
+    // 地面を這う枝分かれ。雷だけの見せ場
+    sparkBranch(fx, p.x, p.y, c, R*0.9, 5);
+    fx.ring({ x:p.x, y:p.y, r0:3, r1:R*1.6, life:0.2, color:hot, width:7, bright:1.3 });
+    // 残る帯電。**尾を引かず、その場でチカチカして消える**
+    for(let i=0;i<14;i++){
+      const a = Math.random()*Math.PI*2, rr = R*Math.random();
+      const x = p.x+Math.cos(a)*rr, y = p.y+Math.sin(a)*rr;
+      fx.emit({ x, y, z:fxGroundZ(x,y)+4+Math.random()*22,
+                vx:0, vy:0, vz:(Math.random()-0.5)*90, az:SPARK_ARC_G,
+                r:hot[0], g:hot[1], b:hot[2], bright:1.15,
+                delay: Math.random()*0.35,       // ばらばらに遅れて光る = 放電が続いて見える
+                life:0.10+Math.random()*0.10, size0:6+Math.random()*6, size1:0.5,
+                turb:6, turbFreq:3.4, spin:10 });
+    }
+    fx.shake(Math.min(0.5, (p.hitR||10)/26), p.x, p.y);
+  },
+  // 稲妻が伸びている間、通った跡に落雷の着地を等間隔で落とす
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    if(reach <= 2) return;
+    const hot = fxHot(c, 0.8);
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    const rgx = -fwy, rgy = fwx;
+    const amp = (ae.zigzagWidth || ae.width || 110)*0.5;
+    // **時間ではなく距離で刻む。** フレームレートが変わっても落ちる本数が変わらない
+    const step = Math.max(80, amp*1.5);
+    ae.__fxStrike = ae.__fxStrike || 0;
+    while(reach - ae.__fxStrike > step){
+      ae.__fxStrike += step;
+      const lat = (Math.random()*2-1)*amp;
+      const x = ae.x + fwx*ae.__fxStrike + rgx*lat;
+      const y = ae.y + fwy*ae.__fxStrike + rgy*lat;
+      fx.burst({ x, y, z:fxGroundZ(x,y)+4, count:12, speed:230, jitter:6, jitterZ:6,
+                 elev:1.1, elevSpread:0.5, r:hot[0], g:hot[1], b:hot[2], bright:1.9,
+                 life:0.13, size0:12, size1:0.5, az:SPARK_ARC_G*4, turb:5, turbFreq:3, spin:8 });
+      sparkBranch(fx, x, y, c, amp*1.6, 3);
+      fx.ring({ x, y, r0:2, r1:amp*1.8, life:0.18, color:hot, width:6, bright:1.2 });
+    }
+  },
+};
+/* <</FX:spark>> */
+
+/* <<FX:rock>> */
+/* ---- 岩(ゴーレム) ----
+   狙い: **光らない。** 岩は加算合成と相性が悪い(明るくすると砂が発光して見える)。
+   だから
+     ・色は白へ寄せない。fxDim で落とした土色を主役にする
+     ・破片は強い重力で落として跳ねる(az を大きな負に)
+     ・土煙は暗く・大きく・遅く。寿命を長く取り、size1 > size0 で消えながら広がる
+   これで「重い」が出る。**明るさで殴らないのが岩の作り方。**                   */
+const ROCK_G      = -900;   // 破片の重力。既定(-260)の3倍以上=すぐ落ちて跳ねる
+const ROCK_DUST_G = -40;    // 土煙はほとんど落ちずに漂う
+const ROCK_DT_MAX = 0.1;
+
+FX_MOVES.rock = {
+  cast(fx, ae, c){
+    const dust = fxDim(c, 0.55);
+    fx.ring({ x:ae.x, y:ae.y, r0:12, r1:Math.min(ae.range||200, 200), life:0.7,
+              color:dust, width:20, bright:0.7 });
+    // 足元から吹き上がる土煙
+    fx.burst({ x:ae.x, y:ae.y, z:8, count:20, speed:130, jitter:30, jitterZ:20,
+               elev:0.7, elevSpread:0.8, r:dust[0], g:dust[1], b:dust[2], bright:0.85, hot:0,
+               life:1.3, size0:26, size1:52, az:ROCK_DUST_G, turb:24, turbFreq:0.5, spin:0.8 });
+    // 跳ね上がる小石
+    fx.burst({ x:ae.x, y:ae.y, z:6, count:14, speed:240, jitter:20, jitterZ:10,
+               elev:0.8, elevSpread:0.6, r:c[0], g:c[1], b:c[2], bright:1.0, hot:0.15,
+               life:0.9, size0:9, size1:5, az:ROCK_G, turb:4, turbFreq:0.8, spin:6 });
+  },
+  fly(fx, p, c, dt){
+    const dust = fxDim(c, 0.6);
+    /* 帯は**細く暗く**。岩の弾は光の尾を引かない。
+       whiten はほぼ0(白熱させると鉄や光の弾に見える)。 */
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:dust, width: Math.max(10, (p.hitR||10)*1.5), bright:0.8, whiten:0.05 });
+    // 通ったあとに残る砂ぼこり。ゆっくり広がって消える
+    const n = Math.min(dt||0, ROCK_DT_MAX) * 26;
+    for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
+      fx.emit({ x:p.x+(Math.random()-0.5)*22, y:p.y+(Math.random()-0.5)*22, z:(p.z||0)+12,
+                vx:(Math.random()-0.5)*30, vy:(Math.random()-0.5)*30, vz:5+Math.random()*20,
+                az:ROCK_DUST_G, r:dust[0], g:dust[1], b:dust[2], bright:0.7, hot:0,
+                life:0.8+Math.random()*0.6, size0:14+Math.random()*10, size1:30,
+                turb:20, turbFreq:0.45, spin:0.6 });
+    }
+  },
+  impact(fx, p, c){
+    const dust = fxDim(c, 0.5), chip = fxDim(c, 0.85);
+    const R = Math.max(70, (p.splash||0) || (p.hitR||12)*3);
+    // 破片。**強い重力で落として跳ねる。** ここが「重さ」の正体
+    fx.burst({ x:p.x, y:p.y, z:(p.z||0)+10, count:22, speed:330, jitter:8, jitterZ:8,
+               elev:0.5, elevSpread:0.9, r:chip[0], g:chip[1], b:chip[2], bright:1.0, hot:0.15,
+               life:1.0, size0:11, size1:6, az:ROCK_G, turb:3, turbFreq:0.7, spin:7 });
+    // 土煙。暗く大きく遅く。消えながら広がる(size1 > size0)
+    fx.burst({ x:p.x, y:p.y, z:(p.z||0)+8, count:18, speed:110, jitter:16, jitterZ:14,
+               elev:0.35, elevSpread:0.8, r:dust[0], g:dust[1], b:dust[2], bright:0.8, hot:0,
+               life:1.5, size0:24, size1:56, az:ROCK_DUST_G, turb:26, turbFreq:0.4, spin:0.5 });
+    fx.ring({ x:p.x, y:p.y, r0:5, r1:R*2.0, life:0.55, color:dust, width:18, bright:0.75 });
+    fx.shake(Math.min(0.9, (p.hitR||12)/26), p.x, p.y);
+  },
+  // 竜巻(projStyle:'tornado')は弾なので sustain の出番は無いが、
+  // 将来 rock に範囲技が増えたときに土煙が出るようにしておく
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    if(reach <= 2) return;
+    const dust = fxDim(c, 0.5);
+    const n = Math.min(dt||0, ROCK_DT_MAX) * 18;
+    for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
+      const a = (ae.angle||0) + (Math.random()-0.5)*((ae.fanAngleDeg||60)*Math.PI/180);
+      const d = reach*(0.2+Math.random()*0.8);
+      const x = ae.x+Math.cos(a)*d, y = ae.y+Math.sin(a)*d;
+      fx.emit({ x, y, z:fxGroundZ(x,y)+6+Math.random()*16,
+                vx:(Math.random()-0.5)*40, vy:(Math.random()-0.5)*40, vz:20+Math.random()*40,
+                az:ROCK_DUST_G, r:dust[0], g:dust[1], b:dust[2], bright:0.75, hot:0,
+                life:1.1+Math.random()*0.7, size0:18+Math.random()*12, size1:40,
+                turb:24, turbFreq:0.4, spin:0.5 });
+    }
+  },
+};
+/* <</FX:rock>> */
 
 window.__aramonFxMoves  = FX_MOVES;
 window.__aramonFxDefault = FX_DEFAULT;

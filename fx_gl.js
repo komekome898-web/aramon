@@ -83,11 +83,13 @@ attribute vec3  aAcc;       // 加速度(重力・上昇気流)
 attribute vec4  aColor;     // rgb=色 / a=最大の明るさ
 attribute vec4  aTime;      // x=発生時刻 y=寿命 z=開始サイズ w=終了サイズ
 attribute vec4  aTurb;      // x=乱流の強さ y=乱流の周期 z=個体シード w=回転速度
+attribute float aHot;       // 芯の白熱量 0..1。0=白く光らない(煙・土ぼこり)
 uniform float uTime;
 uniform vec2  uViewport;
 varying vec4  vColor;
 varying vec2  vUv;
 varying float vAge;
+varying float vHot;
 
 /* 乱流。curlノイズの代わりに、位置と個体シードから作った三角関数の渦を使う。
    本物のcurlより安いうえ、粒ごとに違う軌道を描くので「二次運動」に十分見える。 */
@@ -112,6 +114,7 @@ void main(){
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     vColor = vec4(0.0);
     vUv = vec2(0.0);
+    vHot = 0.0;
     return;
   }
   vec3 pos = aPos0 + aVel*age + 0.5*aAcc*age*age;
@@ -134,6 +137,7 @@ void main(){
   float rise = smoothstep(0.0, 0.08, t01);
   float fall = 1.0 - smoothstep(0.25, 1.0, t01);
   vColor = vec4(aColor.rgb, aColor.a * rise * fall);
+  vHot = aHot;
   vUv = position.xy + 0.5;
 }
 `;
@@ -143,6 +147,7 @@ precision highp float;
 varying vec4 vColor;
 varying vec2 vUv;
 varying float vAge;
+varying float vHot;
 void main(){
   vec2 d = vUv - 0.5;
   float r2 = dot(d, d) * 4.0;          // 中心0 → 縁1
@@ -154,8 +159,12 @@ void main(){
   float core  = pow(1.0 - r, 6.0);
   float body  = pow(1.0 - r, 2.0);
   float edge  = (1.0 - r);
-  vec3 col = vColor.rgb * (body*0.9 + edge*0.25) + vec3(1.0) * core * 0.85;
-  float a = vColor.a * (body + core*0.6);
+  /* 芯の白熱は vHot で切れるようにする。
+     【なぜ必要か】ここを常時 0.85 にしていたため、**どんな色の粒も中心が白く光り、
+     土ぼこり・煙・岩の破片まで発光して見えていた**(岩が雪に見えた)。
+     光り物は vHot=1、煙や土は vHot=0 で使う。 */
+  vec3 col = vColor.rgb * (body*0.9 + edge*0.25) + vec3(1.0) * core * 0.85 * vHot;
+  float a = vColor.a * (body + core*0.6*vHot + body*0.3*(1.0-vHot));
   // アルファは0のまま出す(ページ側で加算合成される。ファイル冒頭の説明を参照)
   gl_FragColor = vec4(col * a, 0.0);
 }
@@ -176,7 +185,7 @@ function buildParticles(){
     return a;
   };
   mk('aPos0', 3); mk('aVel', 3); mk('aAcc', 3);
-  mk('aColor', 4); mk('aTime', 4); mk('aTurb', 4);
+  mk('aColor', 4); mk('aTime', 4); mk('aTurb', 4); mk('aHot', 1);
   // 全部「寿命切れ」の状態から始める(発生時刻を大きく負にする)
   const t = P.attr.aTime.array;
   for(let i=0;i<MAX_PARTICLES;i++){ t[i*4] = -1e9; t[i*4+1] = 0.001; }
@@ -218,6 +227,8 @@ function emitOne(o){
   a.aTurb.array[i4+1] = o.turbFreq || 1;
   a.aTurb.array[i4+2] = o.seed==null ? Math.random() : o.seed;
   a.aTurb.array[i4+3] = o.spin || 0;
+  // 既定は光る。煙・土ぼこりを出すときだけ hot:0 を渡す
+  a.aHot.array[i] = (o.hot == null ? 1 : o.hot);
   P.dirty = true;
 }
 
@@ -496,7 +507,7 @@ const api = {
         life:(o.life||0.6)*(0.6+Math.random()*0.8),
         size0:(o.size0||10)*(0.7+Math.random()*0.6), size1:o.size1,
         turb:o.turb||0, turbFreq:o.turbFreq||1, spin:o.spin||0,
-        delay:o.delay||0,
+        delay:o.delay||0, hot:o.hot,
       });
     }
   },
