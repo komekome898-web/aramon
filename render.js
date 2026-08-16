@@ -3896,7 +3896,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   const gz0 = groundZAt(ox, oy) + dz;
   const gzEnd = groundZAt(ox+fx*refLen, oy+fy*refLen) + dz;
   const slope = refLen > 1 ? (gzEnd - gz0)/refLen : 0;
-  const pts = [], uH = [], uV = [], alongs = [];
+  const pts = [], uH = [], uV = [], alongs = [], nearK = [];
   /* 【重要】節を等間隔に置かない。**手前ほど詰めて置く。**
      筒は「投影した節の間を直線の四角形で結ぶ」ので、遠近の変化が速い区間では
      直線の辺が本当の輪郭より外へふくらむ。カメラは術者の145後ろに居るため
@@ -3915,15 +3915,20 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     const f = (i/segs)*(i/segs), along = reach*f;
     const z = gz0 + slope*along;
     const x = ox+fx*along, y = oy+fy*along;
-    if(_cam && Math.hypot(x - _cam.x, y - _cam.y) < TUBE_NEAR) continue;
     const c = project(x, y, z);
     if(!c) continue;
+    /* **捨てない。手前ほど細くする。**
+       `continue` で捨てたら、スキル文書に自分で書いた「口を捨てて胴体を残す」を
+       距離基準でやり直しただけになり、筒が術者から切れて浮いた。さらに伸び始めの
+       コマ(節が全部 TUBE_NEAR 以内)では**技がまるごと消えた**(王狐炎衝の0.28s)。
+       カメラに近いほど半径を0へ絞れば、巨大な断面だけが消えて筒は繋がったまま残る。 */
+    const _nk = _cam ? Math.min(1, Math.hypot(x - _cam.x, y - _cam.y) / TUBE_NEAR) : 1;
     const h = project(x + px*radius, y + py*radius, z);
     const v = project(x, y, z + halfH);
     if(!h || !v) continue;
-    pts.push(c); alongs.push(along);
-    uH.push({ x:h.x-c.x, y:h.y-c.y });
-    uV.push({ x:v.x-c.x, y:v.y-c.y });
+    pts.push(c); alongs.push(along); nearK.push(_nk*_nk);
+    uH.push({ x:(h.x-c.x)*_nk, y:(h.y-c.y)*_nk });
+    uV.push({ x:(v.x-c.x)*_nk, y:(v.y-c.y)*_nk });
   }
   if(pts.length<2) return;
   /* 画面上の垂直方向は「芯の全体の向き」から1つだけ作る。
@@ -4029,7 +4034,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
        大きい断面ほど薄くして、形は必ず残す。 */
     const _hr = Math.hypot(h.x, h.y);
     const _big = _hr / Math.max(1, viewW*0.14);
-    const ringA = _big <= 1 ? 1 : Math.max(0.12, 1/(_big*_big));
+    const ringA = (_big <= 1 ? 1 : Math.max(0.12, 1/(_big*_big))) * (nearK[i] != null ? nearK[i] : 1);
     ctx.save();
     ctx.globalAlpha = ringA;
     ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
