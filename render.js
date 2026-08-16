@@ -5808,7 +5808,11 @@ function fxGlStyleFor(o){
     cast:    (st && st.cast)    || def.cast,
     fly:     (st && st.fly)     || def.fly,
     impact:  (st && st.impact)  || def.impact,
-    sustain: (st && st.sustain) || null,
+    /* 【自分で入れたバグ】ここだけ `|| null` にしていたため、**属性の表は持つが
+       sustain を書いていない属性(ピクシー・デュラハン・ワーム・ザン・ハム)には
+       既定の sustain が一切届かず、範囲技が発生の一瞬だけになっていた。**
+       他の3つと同じく既定へ落とす。 */
+    sustain: (st && st.sustain) || def.sustain || null,
   };
 }
 

@@ -214,12 +214,22 @@ const DRIVER = `(function(){
              skinName: (typeof skinTier3Move==='function' ? (skinTier3Move(mv, me)||{}).name : null) };
   };
   /* 固定dtで時間を進める。撃ち返し・再発射は止めてあるので毎回同じ絵になる。 */
+  /* 【最重要】**1コマ進めるごとに render() も呼ぶ。**
+     fly / sustain の粒は render.js の fxGlFeed() の中でしか湧かない。
+     update() だけを回して撮る瞬間に1回だけ描いていたので、1.15秒の技に対して
+     sustain が**5回しか呼ばれていなかった**(実機は60fpsで約70回)。
+     結果、羅生門の吸い込み・モッチ砲の花びら・サイコキネシスの芯は
+     **実装されていても画に出ず、批評家が採点できなかった**。
+     fx層の時計も実時間で進むので、描かないとエフェクトの時間も進まない。 */
   api.step = function(seconds, dt){
     const d = dt || (1/60);
     let n = Math.max(0, Math.round(seconds/d));
+    const sc = api._pinCam;
     for(let i=0;i<n;i++){
       api._me.guts = api._me.maxGuts;
       update(d);
+      if(sc){ camPos.x=sc.x; camPos.y=sc.y; camPos.z=sc.z; camState.yaw=sc.yaw; camState.pitch=sc.pitch; }
+      render();
     }
     return matchTime;
   };

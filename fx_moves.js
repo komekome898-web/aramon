@@ -64,6 +64,26 @@ function fxHitRadius(p){
   return Math.max(40, (p && p.hitR ? p.hitR : 12) * 3);
 }
 
+
+/* 範囲技の「その距離での横の広がり」(片側・ワールド単位)。
+   【なぜ要るか】どの sustain も `fanAngleDeg||50` の扇で撒いていたため、
+   **矩形の技(モッチ砲・天衣無縫・鱗赫)でも粒が扇状に飛び、判定の外へ大きくはみ出していた**
+   (判定±110の技で先端±500)。形ごとに正しい半幅を返す。
+   ・rect  … rectWidth/2(距離によらず一定)
+   ・fan   … along*tan(θ/2)(先へ行くほど広がる。**定数にすると近くで大きく外れる**)
+   ・その他 … width/zigzagWidth の半分 */
+function fxAeHalfWidth(ae, along){
+  if(!ae) return 60;
+  if(ae.aoeShape === 'rect')  return (ae.rectWidth || 200) * 0.5;
+  if(ae.aoeShape === 'fan' || ae.aoeShape === 'fanZigzag'){
+    const th = ((ae.fanAngleDeg || 45) * Math.PI/180) / 2;
+    return Math.max(20, (along || 0) * Math.tan(th));
+  }
+  return ((ae.zigzagWidth ?? ae.width ?? 120)) * 0.5;
+}
+/* 上の半幅から、中心線に対する横のずれを1つ引く(-1..+1 の一様乱数) */
+function fxAeLateral(ae, along){ return (Math.random()*2 - 1) * fxAeHalfWidth(ae, along); }
+
 /* 色を白へ寄せる(白熱の芯を作る)。t=0で技の色、t=1で白 */
 function fxHot(c, t){ return [c[0]+(1-c[0])*t, c[1]+(1-c[1])*t, c[2]+(1-c[2])*t]; }
 /* 色を暗く落とす(煙・縁を作る) */
@@ -101,9 +121,12 @@ const FX_DEFAULT = {
     if(reach <= 2) return;
     const n = Math.min(dt||0, 0.05) * 22 * fxCountScale(ae);
     for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
-      const a = (ae.angle||0) + (Math.random()-0.5)*(((ae.fanAngleDeg||50))*Math.PI/180);
+      /* **形に合わせて撒く。** 扇で決め打ちすると矩形の技で判定の外へ大きく出る。 */
       const d = reach * (0.25 + Math.random()*0.75);
-      const x = ae.x + Math.cos(a)*d, y = ae.y + Math.sin(a)*d;
+      const ang = ae.angle || 0;
+      const lat = fxAeLateral(ae, d);
+      const x = ae.x + Math.cos(ang)*d - Math.sin(ang)*lat;
+      const y = ae.y + Math.sin(ang)*d + Math.cos(ang)*lat;
       fx.emit({ x, y, z: fxGroundZ(x,y) + 6 + Math.random()*22,
                 vx:(Math.random()-0.5)*36, vy:(Math.random()-0.5)*36, vz: 60+Math.random()*80,
                 az:-90, r:c[0], g:c[1], b:c[2], bright:1.0,
@@ -188,8 +211,10 @@ const FX_MOVES = {
          加算合成なので、白に寄せた太い輪は画面を横切る白い帯になって
          「地面の痕」に見えなくなる(実際に一度そうなった)。
          広がりも技の射程いっぱいではなく、足元の衝撃が届く範囲に留める。 */
-      fx.ring({ x:ae.x, y:ae.y, r0:14, r1:Math.min(ae.range||300, 110), life:0.6,
-                color:c, width:9, bright:0.55*k });
+      /* **60まで。** 110では投影で幅926px=切り出し幅を超える赤い帯になり、
+         前方だけの扇の判定と形が食い違う(このファイル自身が禁じていた)。 */
+      fx.ring({ x:ae.x, y:ae.y, r0:14, r1:Math.min(ae.range||300, 60), life:0.6,
+                color:c, width:8, bright:0.55*k });
       // 放出の頭。白熱を先に、色を後に出すと「点火」に見える
       fx.burst({ x:ae.x, y:ae.y, z:10, count:22, speed:280, jitter:20, jitterZ:24,
                  elev:0.35, elevSpread:0.7, r:hot[0], g:hot[1], b:hot[2], bright:1.6*k,
@@ -220,7 +245,7 @@ const FX_MOVES = {
       for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
         fx.emit({ x:p.x+(Math.random()-0.5)*16, y:p.y+(Math.random()-0.5)*16, z:(p.z||0)+14+(Math.random()-0.5)*16,
                   vx:-(p.vx||0)*0.14, vy:-(p.vy||0)*0.14, vz:30+Math.random()*70,
-                  az:20, r:c[0], g:c[1], b:c[2], bright:1.05,
+                  az:-35, r:c[0], g:c[1], b:c[2], bright:1.05,   // 正だと空に取り残される
                   life:0.35+Math.random()*0.3, size0:7+Math.random()*7, size1:1,
                   turb:18, turbFreq:1.5, spin:3 });
       }
@@ -232,7 +257,7 @@ const FX_MOVES = {
                  az:-260, turb:6, turbFreq:2.4, spin:7, stretch:0.9 });
       fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:12, speed:120, jitter:14,
                  elev:0.9, elevSpread:0.6, r:soot[0], g:soot[1], b:soot[2], bright:0.9, hot:0.1,
-                 life:0.8, size0:22, size1:6, az:20, turb:24, turbFreq:0.8, spin:1 });
+                 life:0.8, size0:22, size1:6, az:-35, turb:24, turbFreq:0.8, spin:1 });
       fx.ring({ x:p.x, y:p.y, r0:5, r1:fxHitRadius(p), life:0.3,
                 color:hot, width:12, bright:1.1 });
       fx.shake(Math.min(0.6, (p.hitR||10)/22), p.x, p.y);
@@ -244,9 +269,11 @@ const FX_MOVES = {
          同じ密度で撒くと壁の形が消える**(ファイアウェーブで白飛びが1.5倍になった)。 */
       const k = fxScaleForSize(ae);
       if(Math.random() > dt*26*k) return;    // 秒26個ぶん。フレーム落ちしても密度が変わらない
-      const a = (ae.angle||0) + (Math.random()-0.5)*((ae.fanAngleDeg||60)*Math.PI/180);
       const d = (ae.range||300) * (0.25 + Math.random()*0.75);
-      fx.emit({ x: ae.x+Math.cos(a)*d, y: ae.y+Math.sin(a)*d, z: 6+Math.random()*20,
+      const ang = ae.angle || 0, lat = fxAeLateral(ae, d);
+      const px = ae.x + Math.cos(ang)*d - Math.sin(ang)*lat;
+      const py = ae.y + Math.sin(ang)*d + Math.cos(ang)*lat;
+      fx.emit({ x: px, y: py, z: 6+Math.random()*20,
                 vx:(Math.random()-0.5)*40, vy:(Math.random()-0.5)*40, vz: 90+Math.random()*110,
                 az: -30, r:c[0], g:c[1], b:c[2], bright:1.1*k,
                 life:0.4+Math.random()*0.3, size0:12+Math.random()*10, size1:1,
@@ -767,7 +794,9 @@ FX_MOVES.god = {
     ae.__fxStrike = ae.__fxStrike || 0;
     while(reach - ae.__fxStrike > step){
       ae.__fxStrike += step;
-      const lat = (Math.random()*2-1)*amp;
+      /* **横ずれは距離に比例させる。** 定数にすると、扇では近い落雷ほど
+         扇の外へ落ちる(実測で扇の半幅75の所へ±188=2.5倍外に落ちていた)。 */
+      const lat = (Math.random()*2-1) * fxAeHalfWidth(ae, ae.__fxStrike);
       const x = ae.x + fwx*ae.__fxStrike + rgx*lat;
       const y = ae.y + fwy*ae.__fxStrike + rgy*lat;
       const g = fxGroundZ(x, y);
@@ -1059,7 +1088,8 @@ FX_MOVES.aqua = {
 const LEAF_DT_MAX = 0.1;
 
 const LEAF_G     = -70;    // 葉の重力。既定(-260)の1/4以下。ゆっくり舞い落ちる
-const LEAF_UP    = 25;     // 胞子だけは正の加速度。ふわりと上がり続ける
+/* **正にすると寿命のあいだ昇り続けて空に取り残される。** 同じ失敗を炎でもした。 */
+const LEAF_UP = -20;     // 胞子だけは正の加速度。ふわりと上がり続ける
 const LEAF_TURB  = 38;     // 乱流。大きく曲がるほど「風に舞う葉」に見える
 
 /* aquaReach と同じ。属性ごとのブロックは別々に統合されるので共有関数にしない
@@ -1346,7 +1376,9 @@ FX_MOVES.spark = {
     ae.__fxStrike = ae.__fxStrike || 0;
     while(reach - ae.__fxStrike > step){
       ae.__fxStrike += step;
-      const lat = (Math.random()*2-1)*amp;
+      /* **横ずれは距離に比例させる。** 定数にすると、扇では近い落雷ほど
+         扇の外へ落ちる(実測で扇の半幅75の所へ±188=2.5倍外に落ちていた)。 */
+      const lat = (Math.random()*2-1) * fxAeHalfWidth(ae, ae.__fxStrike);
       const x = ae.x + fwx*ae.__fxStrike + rgx*lat;
       const y = ae.y + fwy*ae.__fxStrike + rgy*lat;
       fx.burst({ x, y, z:fxGroundZ(x,y)+4, count:12, speed:230, jitter:6, jitterZ:6,
@@ -1586,14 +1618,20 @@ FX_MOVES.zan = {
    1.15sの爆発が一番暗い)。爆風に面積を与え、球は黒のまま吸い込ませる。 */
 FX_MOVES.pixie = {
   cast(fx, ae, c){
+    /* **爆風(kind:'circle')専用の枝。** これを確かめないと、同じ属性の
+       tier2の範囲技(zigzag等)でも通ってしまい、足元に射程ぶんの巨大な輪と
+       とんでもない初速の粒が出る(ピクシーのライトニングで実際に起きる)。 */
+    if(ae.kind !== 'circle') return FX_DEFAULT.cast(fx, ae, c);
     // 爆風(kind:'circle')。判定の実半径そのもので輪を2枚張る
     const R = ae.range || 330;
     const viv = fxVivid(c), deep = fxDeep(viv, 1.8);
     fx.ring({ x:ae.x, y:ae.y, r0:R*0.1, r1:R,      life:0.55, color:viv,  width:20, bright:0.95 });
     fx.ring({ x:ae.x, y:ae.y, r0:R*0.3, r1:R*0.98, life:0.85, color:deep, width:34, bright:0.5 });
     fx.burst({ x:ae.x, y:ae.y, z:10, count:26, speed:R/0.45, jitter:14, jitterZ:20,
-               elev:0.35, elevSpread:0.7, r:viv[0], g:viv[1], b:viv[2], bright:1.1, hot:0.3,
-               life:0.5, size0:20, size1:36, az:-260, turb:20, turbFreq:1, spin:2 });
+               /* **hot:0。** 0.3でも #14121c は加算でほとんど描かれず、
+                  白い核だけが残って「黒い技に白い紙吹雪」が復活していた。 */
+               elev:0.12, elevSpread:0.35, r:deep[0], g:deep[1], b:deep[2], bright:1.0, hot:0,
+               life:0.5, size0:26, size1:44, az:-260, turb:20, turbFreq:1, spin:2 });
     fx.shake(0.7, ae.x, ae.y);
   },
   fly(fx, p, c, dt){
@@ -1639,10 +1677,15 @@ FX_MOVES.dullahan = {
    ので、進行方向の衝撃で前へ押している感じを作る。 */
 FX_MOVES.hum = {
   cast(fx, ae, c){
+    /* **爆風(kind:'circle')専用の枝。** これを確かめないと、同じ属性の
+       tier2の範囲技(zigzag等)でも通ってしまい、足元に射程ぶんの巨大な輪と
+       とんでもない初速の粒が出る(ピクシーのライトニングで実際に起きる)。 */
+    if(ae.kind !== 'circle') return FX_DEFAULT.cast(fx, ae, c);
     const R = ae.range || 330;      // 爆風の実半径
     fx.ring({ x:ae.x, y:ae.y, r0:R*0.1, r1:R, life:0.5, color:c, width:20, bright:0.9 });
-    fx.burst({ x:ae.x, y:ae.y, z:10, count:24, speed:R/0.5, jitter:12, jitterZ:16,
-               elev:0.3, elevSpread:0.7, r:c[0], g:c[1], b:c[2], bright:1.15,
+    fx.burst({ x:ae.x, y:ae.y, z:10, count:24, speed:R/0.9, jitter:12, jitterZ:16,
+               /* 上へ強く撒くと爆風の上に白い点の群れが浮く。横へ広げる。 */
+               elev:0.1, elevSpread:0.35, r:c[0], g:c[1], b:c[2], bright:1.1, hot:0.25,
                life:0.5, size0:18, size1:30, az:-240, turb:18, turbFreq:1, spin:2 });
     fx.shake(0.7, ae.x, ae.y);
   },
