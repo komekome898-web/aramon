@@ -185,6 +185,7 @@ const ELEMENTS = {
   dullahan:{ label:'デュラハン', color:'#f2f4f8', dark:'#b7bcc8', speed:160, hp:120, trait:'dullahan' }, /*@dullahan*/
   hum:     { label:'ハム', color:'#e0ad7b', dark:'#86684a', accent:'#e07be0', speed:210, hp:90, trait:'hum' }, /*@hum*/
   ogre:    { label:'キジン', color:'#e0ad7b', dark:'#86684a', speed:185, hp:130, trait:'ogre', dmgDealtMod:1.2 }, /*@ogre*/
+  centaur: { label:'ケンタウロス', color:'#7fb236', dark:'#4f6f1f', speed:190, hp:110, trait:'cent' }, /*@centaur*/
   // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -390,6 +391,9 @@ const WALK_ANIM = {
       { skinId:'satsuki_ssr', front:_loadWalk('satsuki_ssr_walk_f'), back:_loadWalk('satsuki_ssr_walk_b') }, /*@satsuki_ssr*/
       { skinId:'satsuki_ssr_awake', front:_loadWalk('satsuki_ssr_awake_walk_f'), back:_loadWalk('satsuki_ssr_awake_walk_b') }, /*@satsuki_ssr_awake*/
     ],
+  },
+  centaur: { /*@centaur*/
+    base: { front:_loadWalk('centaur_walk_f'), back:_loadWalk('centaur_walk_b') },
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -753,6 +757,11 @@ const SIGNATURE_MOVES = {
       aoeShape:'gate', gateDist:170, rectWidth:220,
       endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff6a2e', se:'tornado' } }
   ],
+  centaur: [ /*@centaur*/
+    { name:'スロウランサー', tier:1, color:'#7fb236', range:840, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:624, hitR:12, splash:70, icon:'🏹' },
+    { name:'マインドフレア', tier:2, color:'#7fb236', range:1680, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
+    { name:'メテオドライブ', tier:3, color:'#7fb236', range:1620, dmg:22, cooldown:2.2, gutsCost:24, projSpeed:1380, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5, color:'#7fb236' } }
+  ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -793,6 +802,7 @@ const MONSTER_AURA = {
   dullahan:'white', /*@dullahan*/
   hum:     'yellow', /*@hum*/
   ogre:    'yellow', /*@ogre*/
+  centaur: 'green', /*@centaur*/
   // <<AUTO:MONSTER_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
@@ -815,6 +825,7 @@ const MOVE_AURA = {
   'まっぷたつ':'white','風神剣':'white','最終奥義':'white', /*@dullahan*/
   '正拳':'yellow','ワンツー':'yellow','暗けい':'yellow', /*@hum*/
   '殴打':'yellow','阿修羅':'red','羅生門':'yellow', /*@ogre*/
+  'スロウランサー':'green','マインドフレア':'green','メテオドライブ':'green', /*@centaur*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1136,6 +1147,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-16', items:[
+    { t:'🆕 新モンスター「ケンタウロス」が登場しました！ 技の射程が長く、弾速が速い', g:['feature','monster'] },
+  ]},
   { date:'2026-08-15', items:[
     { t:'🆕 モン晶(💠)が登場! ガチャで持っているスキンが出たときのダイヤの代わりに、SRで1個・SSRで5個もらえます。ショップの「💠モン晶こうかん」タブでプレミアムなアイテムと交換できます', g:['feature'] },
     { t:'🆕 秘伝の書: モン晶100個で交換できる技強化アイテム。今着ているスキンのtier3技に「威力+12%」「射程+12%」「弾速+20%」などの強化を1つ付けられます。覚醒と重ねがけできます。強化先を変えるときは新しい秘伝の書が1冊必要です', g:['feature','balance'] },
@@ -1593,6 +1607,10 @@ const STATE_CHANGES = {
     name:'闘魂', duration:20, cooldown:120, trigger:'gutsBelow', triggerValue:0.5,
     effects:{ gutsRegenMult:2, cooldownMult:0.667 },
   },
+  centaur: { /*@centaur*/
+    name:'憤怒', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.5,
+    effects:{ dmgMult:1.2, gutsRegenMult:2, cooldownMult:0.667, speedMult:1.5 },
+  },
   // <<AUTO:STATE_CHANGES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -1635,6 +1653,7 @@ const APTITUDE = {
   dullahan:{ life:'C', power:'B', wisdom:'C', accuracy:'C', evasion:'E', vitality:'A' }, /*@dullahan*/
   hum:     { life:'C', power:'A', wisdom:'E', accuracy:'C', evasion:'A', vitality:'E' }, /*@hum*/
   ogre:    { life:'C', power:'A', wisdom:'D', accuracy:'C', evasion:'B', vitality:'B' }, /*@ogre*/
+  centaur: { life:'C', power:'C', wisdom:'B', accuracy:'A', evasion:'D', vitality:'D' }, /*@centaur*/
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 /* 特性の「技を当てたときに相手へ起きること」。
@@ -3697,6 +3716,7 @@ const SKIN_CONFIG = {
   dullahan:{ colors:['black','red','blue','yellow','green'], source:{type:'chroma', hue:30, window:60} }, /*@dullahan*/
   hum:     { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:15, window:60} }, /*@hum*/
   ogre:    { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:30, window:60} }, /*@ogre*/
+  centaur: { colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:190, window:60} }, /*@centaur*/
   // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)
