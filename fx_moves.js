@@ -36,6 +36,7 @@ function fxDim(c, t){ return [c[0]*t, c[1]*t, c[2]*t]; }
    「何も出ない」を作らないための下限であって、目標ではない。 */
 const FX_DEFAULT = {
   fly(fx, p, c, dt){
+    if(p.delay > 0) return;   // 連射の待機中。まだ銃口に居るので何も出さない
     fxMuzzle(fx, p, c, {});
     fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
              { color:c, width: Math.max(8, (p.hitR||10)*1.3), bright:0.9, whiten:0.2 });
@@ -81,15 +82,18 @@ function fxMuzzle(fx, p, c, o){
   if(!fxOnce(p)) return;
   const hot = fxHot(c, (o && o.hot!=null) ? o.hot : 0.6);
   const h = fxHeadingOf(p) || [1,0];
+  // 連射は同じ場所で何度も出るので、1回ぶんを薄くする(重なって白飛びするのを防ぐ)
+  const rep = (p.burst || 1) > 1 ? 0.55 : 1;
   fx.burst({ x:p.x, y:p.y, z:(p.z||0)+14, count:(o&&o.count)||14, speed:(o&&o.speed)||250,
              jitter:5, jitterZ:8, angle:Math.atan2(h[1],h[0]), spread:1.0, elev:0.1, elevSpread:0.5,
-             r:hot[0], g:hot[1], b:hot[2], bright:(o&&o.bright)||1.5,
+             r:hot[0], g:hot[1], b:hot[2], bright:(((o&&o.bright)||1.5) * rep),
              life:0.18, size0:(o&&o.size0)||14, size1:0.5, az:-160, turb:6, turbFreq:2.2, spin:5,
              hot:(o&&o.particleHot) });
   /* 足元の輪は**半径60前後まで**。カメラは術者の145後ろに居るので、
      それ以上はカメラの脇を抜けて画面を横切る弧になる。 */
   fx.ring({ x:p.x, y:p.y, r0:6, r1:(o&&o.ringR)||52, life:0.3,
-            color:(o&&o.ringColor)||c, width:(o&&o.ringW)||6, bright:(o&&o.ringBright)||0.5 });
+            color:(o&&o.ringColor)||c, width:(o&&o.ringW)||6,
+            bright:(((o&&o.ringBright)||0.5) * rep) });
 }
 
 /* =====================================================================
@@ -129,6 +133,7 @@ const FX_MOVES = {
       fx.flash(0.28);
     },
     fly(fx, p, c, dt){
+    if(p.delay > 0) return;   // 連射の待機中。まだ銃口に居るので何も出さない
       fxMuzzle(fx, p, c, { count:14, speed:260, bright:1.5, ringR:52 });
       /* 帯は**技の色そのもの**を渡す。白へ寄せると加算の重なりで飽和して
          炎に見えなくなる(白いサーチライトになった)。白熱は whiten を
@@ -807,6 +812,7 @@ FX_MOVES.aqua = {
   },
 
   fly(fx, p, c, dt){
+    if(p.delay > 0) return;   // 連射の待機中。まだ銃口に居るので何も出さない
     dt = Math.min(dt || 0, AQUA_DT_MAX);
     /* 軌跡。色は c のまま(先端の白熱は fx_gl.js が付ける)。
        太さは当たり判定から作る。**hitR を見た目のために読み替えない。** */
@@ -1011,6 +1017,7 @@ FX_MOVES.leaf = {
   },
 
   fly(fx, p, c, dt){
+    if(p.delay > 0) return;   // 連射の待機中。まだ銃口に居るので何も出さない
     dt = Math.min(dt || 0, LEAF_DT_MAX);
     /* 軌跡。種は硬く小さいので水より細くする(太さの差で属性が読み分けられる)。 */
     fxMuzzle(fx, p, c, { hot:0.35, count:12, speed:200, bright:0.9, particleHot:0.6, ringR:46, ringW:6, ringBright:0.4 });
@@ -1185,6 +1192,7 @@ FX_MOVES.spark = {
     fx.shake(0.35, ae.x, ae.y);
   },
   fly(fx, p, c, dt){
+    if(p.delay > 0) return;   // 連射の待機中。まだ銃口に居るので何も出さない
     const hot = fxHot(c, 0.6);
     fxMuzzle(fx, p, c, { hot:0.8, count:12, speed:300, bright:1.6, ringR:44, ringW:5 });
     /* 帯は**細く**。太くすると2D側が描いている稲妻の折れ線を白い円錐で塗り潰し、
@@ -1280,6 +1288,7 @@ FX_MOVES.rock = {
                life:0.9, size0:9, size1:5, az:ROCK_G, turb:4, turbFreq:0.8, spin:6 });
   },
   fly(fx, p, c, dt){
+    if(p.delay > 0) return;   // 連射の待機中。まだ銃口に居るので何も出さない
     const dust = fxDim(c, 0.6);
     fxMuzzle(fx, p, c, { hot:0.2, count:10, speed:180, bright:0.8, particleHot:0.15,
                          ringColor:fxDim(c,0.5), ringR:46, ringW:10, ringBright:0.45 });
@@ -1293,11 +1302,13 @@ FX_MOVES.rock = {
     /* 土ぼこりは**明るくするのではなく、大きく・多く・薄く**して見せる。
        加算合成では暗い色がほとんど描かれないので、1粒を明るくすると
        たちまち「光る砂」になる。重なった所だけが濃くなるようにする。 */
+    /* 連射は3発ぶんが同じ道を通るので、1発ぶんの明るさで撒くと**重なって白く飽和する**
+       (掌打で術者が白く光った)。数は増やしたぶん、1粒はさらに薄くする。 */
     const n = Math.min(dt||0, ROCK_DT_MAX) * 45;
     for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
       fx.emit({ x:p.x+(Math.random()-0.5)*22, y:p.y+(Math.random()-0.5)*22, z:(p.z||0)+12,
                 vx:(Math.random()-0.5)*30, vy:(Math.random()-0.5)*30, vz:5+Math.random()*20,
-                az:ROCK_DUST_G, r:dust[0], g:dust[1], b:dust[2], bright:0.5, hot:0,
+                az:ROCK_DUST_G, r:dust[0], g:dust[1], b:dust[2], bright:0.18, hot:0,
                 life:0.8+Math.random()*0.6, size0:26+Math.random()*16, size1:60,
                 turb:20, turbFreq:0.45, spin:0.6 });
     }
