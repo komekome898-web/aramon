@@ -27,6 +27,17 @@
      ・技の性能値(range/dmg/hitR)を見た目のために読み替えない
 ===================================================================== */
 
+
+/* 技が大きいほど、この層が足す量を減らす係数(1.0〜0.35)。
+   【なぜ必要か】2D側の芯は技が大きいほど画面を覆う(爆風ドーム・ビーム・扇)。
+   そこへ同じ量の加算を重ねると白く飽和して、芯の形まで消える。
+   実測: 最終奥義(ドーム)は改修前から白飛び2127画素、そこへ足して9407になった。
+   **大きい技は既に十分見えているので、この層は控えめでよい。** */
+function fxScaleForSize(ae){
+  const r = (ae && ae.range) || 200;
+  return Math.max(0.35, Math.min(1, 1 - (r - 200) / 700));
+}
+
 /* 色を白へ寄せる(白熱の芯を作る)。t=0で技の色、t=1で白 */
 function fxHot(c, t){ return [c[0]+(1-c[0])*t, c[1]+(1-c[1])*t, c[2]+(1-c[2])*t]; }
 /* 色を暗く落とす(煙・縁を作る) */
@@ -52,16 +63,21 @@ const FX_DEFAULT = {
     fx.flash(0.15);
   },
   cast(fx, ae, c){
+    const k = fxScaleForSize(ae);
     /* 【最重要】**術者の足元の輪は半径90前後まで。**
        カメラは術者の145後ろ・90上に居るので、半径420の輪はカメラの真横を通り抜け、
        広がりきる前の一瞬は**術者を丸ごと覆う白いドーム**になる。
        実測で8技(dullahan_t1・fox_t3・ogre_t3・mocchi_t3・suezo_t2/t3・pixie_t2・
        dullahan_t3)の0.1sのコマが白飛びしていた。ここ1か所で全部が直る。
        個別に作り込んだ属性(ark/god/illumine)は同じ罠を踏んで既に60まで落としてある。 */
-    fx.ring({ x:ae.x, y:ae.y, r0:12, r1:Math.min(ae.range||200, 90), life:0.55,
-              color:c, width:10, bright:0.6 });
-    fx.burst({ x:ae.x, y:ae.y, z:8, count:26, speed:210, jitter:26, jitterZ:30,
-               elev:0.55, elevSpread:0.9, r:c[0], g:c[1], b:c[2], bright:1.2,
+    /* 実測で、足元の輪が「明るくなった画素」の96%を占めていた(最終奥義 0.28s)。
+       半径90でもカメラが145後ろだと画面下部を広く覆う。60・細く・暗くする。 */
+    fx.ring({ x:ae.x, y:ae.y, r0:10, r1:Math.min(ae.range||200, 60), life:0.5,
+              color:c, width:7, bright:0.35*k });
+    /* ドーム(kind:'circle' = 爆風)は2D側が面で覆うので、粒は輪郭付近だけに少しでよい。 */
+    const dome = ae.kind === 'circle' ? 0.5 : 1;
+    fx.burst({ x:ae.x, y:ae.y, z:8, count:Math.round(26*k*dome), speed:210, jitter:26, jitterZ:30,
+               elev:0.55, elevSpread:0.9, r:c[0], g:c[1], b:c[2], bright:1.2*k*dome,
                life:0.5, size0:16, size1:1, az:-180, turb:16, turbFreq:1.2, spin:4 });
   },
 };
@@ -112,18 +128,19 @@ const FX_MOVES = {
   fire: {
     cast(fx, ae, c){
       const hot = fxHot(c, 0.6), soot = fxDim(c, 0.35);
+      const k = fxScaleForSize(ae);   // 大きい扇ほど控えめに(2Dの炎が既に画面を覆う)
       /* 地面の焦げの輪。**白へ寄せない・太くしない。**
          加算合成なので、白に寄せた太い輪は画面を横切る白い帯になって
          「地面の痕」に見えなくなる(実際に一度そうなった)。
          広がりも技の射程いっぱいではなく、足元の衝撃が届く範囲に留める。 */
       fx.ring({ x:ae.x, y:ae.y, r0:14, r1:Math.min(ae.range||300, 110), life:0.6,
-                color:c, width:9, bright:0.55 });
+                color:c, width:9, bright:0.55*k });
       // 放出の頭。白熱を先に、色を後に出すと「点火」に見える
       fx.burst({ x:ae.x, y:ae.y, z:10, count:22, speed:280, jitter:20, jitterZ:24,
-                 elev:0.35, elevSpread:0.7, r:hot[0], g:hot[1], b:hot[2], bright:1.6,
+                 elev:0.35, elevSpread:0.7, r:hot[0], g:hot[1], b:hot[2], bright:1.6*k,
                  life:0.3, size0:22, size1:2, az:-120, turb:8, turbFreq:2.2, spin:6 });
       fx.burst({ x:ae.x, y:ae.y, z:14, count:30, speed:170, jitter:34, jitterZ:40,
-                 elev:0.7, elevSpread:1.0, r:c[0], g:c[1], b:c[2], bright:1.25,
+                 elev:0.7, elevSpread:1.0, r:c[0], g:c[1], b:c[2], bright:1.25*k,
                  life:0.75, size0:26, size1:3, az:60, turb:22, turbFreq:1.1, spin:3 });
       // 煤。暗い色で重力に従って落ち、余韻を作る
       fx.burst({ x:ae.x, y:ae.y, z:18, count:14, speed:120, jitter:40, jitterZ:50,
@@ -165,12 +182,15 @@ const FX_MOVES = {
     },
     // 扇・壁が出ている間、縁から火の粉を上げ続ける(消えるまで生きて見せる)
     sustain(fx, ae, c, dt){
-      if(Math.random() > dt*26) return;      // 秒26個ぶん。フレーム落ちしても密度が変わらない
+      /* 出し続ける火の粉も技の大きさで薄める。**2Dの炎の壁が既に白いので、
+         同じ密度で撒くと壁の形が消える**(ファイアウェーブで白飛びが1.5倍になった)。 */
+      const k = fxScaleForSize(ae);
+      if(Math.random() > dt*26*k) return;    // 秒26個ぶん。フレーム落ちしても密度が変わらない
       const a = (ae.angle||0) + (Math.random()-0.5)*((ae.fanAngleDeg||60)*Math.PI/180);
       const d = (ae.range||300) * (0.25 + Math.random()*0.75);
       fx.emit({ x: ae.x+Math.cos(a)*d, y: ae.y+Math.sin(a)*d, z: 6+Math.random()*20,
                 vx:(Math.random()-0.5)*40, vy:(Math.random()-0.5)*40, vz: 90+Math.random()*110,
-                az: 30, r:c[0], g:c[1], b:c[2], bright:1.1,
+                az: 30, r:c[0], g:c[1], b:c[2], bright:1.1*k,
                 life:0.6+Math.random()*0.5, size0:12+Math.random()*10, size1:1,
                 turb:20, turbFreq:1.3, spin:2.5 });
     },
