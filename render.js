@@ -3873,6 +3873,10 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
      求めるので、坂の下へ撃っても真上から見ても正しく傾く。
    ・輪郭の膨らみは「その向きへの楕円の張り出し」= hypot(n・uH, n・uV) で厳密に出る。
    ・加算合成なので重なるほど明るくなり、光の筒に見える                         */
+/* 筒をカメラから何ユニット先から描き始めるか。
+   カメラは術者の145後ろなので、260にすると術者の115先から筒が始まる。
+   射程800〜2200の技では見え方はほぼ変わらず、足元の巨大な断面だけが消える。 */
+const TUBE_NEAR = 260;
 function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   const segs = 16;
   // 縦半径は横の半分。これより薄くすると、正面から撃った時に地面へ貼り付いた
@@ -3900,10 +3904,18 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
      (実測: モッチ砲は判定140pxの所を378px=2.7倍に塗り、天河天翔は約3倍)。
      f=(i/segs)^2 にすると最初の区間が射程の0.4%まで縮み、辺が輪郭に張り付く。
      **技の長さも太さも変えない**(節の置き方だけを変える)ので、性能とは無関係。 */
+  /* 【重要】カメラに近すぎる区間は**ワールド距離で捨てる。**
+     画面上の大きさで判定していたが、真正面へ撃つとその判定では救えない
+     (芯が画面上で点になり、口の塗りつぶしが804x402pxの巨大な楕円として残る。
+      天河天翔は当たり幅160なのに画面幅810pxまで覆っていた)。
+     カメラから TUBE_NEAR より手前の節は最初から作らない。射程の長い技では
+     見え方はほとんど変わらない(術者はカメラの145先なので、切れるのは足元だけ)。 */
+  const _cam = (typeof camPos !== 'undefined' && camPos) ? camPos : null;
   for(let i=0;i<=segs;i++){
     const f = (i/segs)*(i/segs), along = reach*f;
     const z = gz0 + slope*along;
     const x = ox+fx*along, y = oy+fy*along;
+    if(_cam && Math.hypot(x - _cam.x, y - _cam.y) < TUBE_NEAR) continue;
     const c = project(x, y, z);
     if(!c) continue;
     const h = project(x + px*radius, y + py*radius, z);
@@ -4711,6 +4723,7 @@ function fx3dPsychicWall(ae, curReach, fade){
    ・横の広さは判定と同じ curReach、高さはモンスターの背丈ぶんに抑える
    ・中身の詰まった球に見せるため、上へ積む輪を「濃いまま」重ねる
      (薄くすると地面の色が透けて煙にしか見えない)                          */
+const FX3D_DOME_NEAR = 200;   // カメラがこの距離まで近ければ胴体を塗らない(輪郭と地面の輪は残す)
 function fx3dDomeBurst(ae, curReach, fade){
   const R = curReach;
   /* **カメラがドームの中に入っているときは胴体を塗らない。**
@@ -4718,8 +4731,13 @@ function fx3dDomeBurst(ae, curReach, fade){
      必ずこうなる。塗ると画面全体が白い霧になり、技も術者も地形も見えなくなる
      (実測: 四隅の輝度が背景比 +54.9。他技は最大 +6.1)。
      判定は一切変えない。**輪郭と地面の輪だけ**にして、どこまでが範囲かは残す。 */
+  /* 「カメラが輪の内側か」だけでは**膨らむ前のコマを取りこぼす。**
+     実測: デュラハン最終奥義の0.1sは半径がまだ約100でカメラは145後ろ=外側なので
+     胴体が描かれ、しかも濃くした変更が効いて**いちばん近いコマだけが明るくなった**
+     (輝度240超が5.7%→7.8%)。カメラが縁に近いだけでも画面を埋めるので、
+     半径に余裕を足して判定する。遠くの爆風はこの条件に掛からない。 */
   const camIn = (typeof camPos !== 'undefined' && camPos)
-    && Math.hypot(camPos.x - ae.x, camPos.y - ae.y) < R*0.98;
+    && Math.hypot(camPos.x - ae.x, camPos.y - ae.y) < R + FX3D_DOME_NEAR;
   const H = Math.max(FX3D_DOME_H_MIN, R*FX3D_DOME_H_RATIO);
   const col = ae.auraTint || ae.color || '#ffffff';
   const sh = auraShades(col);
@@ -6122,8 +6140,16 @@ function fxGlFeed(fx, dt){
     if(st.sustain) st.sustain(fx, ae, c, dt);
     /* 伸びていく前縁の帯。**1か所でまとめて出す**ので、属性ごとの sustain に
        書き足す必要がない(書き忘れた属性だけ帯が無い、が起きない)。 */
-    if(typeof fxAeFrontRibbon === 'function' && typeof fxAeReach === 'function')
-      fxAeFrontRibbon(fx, ae, c, ae.__fxT != null ? fxAeReach(ae, 0) : 0);
+    /* 【自分で入れたバグ】`ae.__fxT` は fxAeReach() を呼ぶ属性でしか立たない。
+       ogre / pixie / dullahan / aqua / leaf / warm / zan / hum は呼んでいないので
+       **reach=0 が渡り、帯が1本も出ていなかった**(gl.ribbons が全コマ0)。
+       判定側(drawSingleAreaEffect)とまったく同じ値から自分で出す。 */
+    if(typeof fxAeFrontRibbon === 'function'){
+      const tg = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
+      const fs = ae.fillSpeed || 900;
+      const reach = Math.min(ae.range || 0, Math.max(0, (matchTime - ae.spawnAt) - tg) * fs);
+      fxAeFrontRibbon(fx, ae, c, reach);
+    }
     fxGlAccent(fx, ae, c, 'sustain', dt);
   }
   // 消えた範囲技のidは捨てる(Setが試合中ずっと膨らむのを防ぐ)
