@@ -5709,6 +5709,10 @@ function fxPunch(amount, x, y){
     a *= Math.max(0, 1 - d / FX_PUNCH_FALLOFF);
   }
   if(a <= 0.01) return;
+  /* 弱い(=遠い)出来事ではフラッシュを出さない。
+     距離減衰で揺れはほぼ0になるのに、フラッシュだけ残ると
+     **画面に光る物が無いのに全体が明るくなる**(原因の見えない明滅になる)。 */
+  if(a < 0.15){ _fxPunch = Math.max(_fxPunch, a); _fxPunchT = FX_PUNCH_MAX_SEC; return; }
   _fxPunch  = Math.max(_fxPunch, a);       // 重ねがけで暴れないよう最大値を採る
   _fxPunchT = FX_PUNCH_MAX_SEC;
   _fxFlash  = Math.max(_fxFlash, a*0.35);

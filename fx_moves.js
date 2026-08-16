@@ -37,6 +37,13 @@ function fxScaleForSize(ae){
   const r = (ae && ae.range) || 200;
   return Math.max(0.35, Math.min(1, 1 - (r - 200) / 700));
 }
+/* 粒の数に掛ける係数。**輪と同じ係数を粒にも掛けると二重に痩せる。**
+   射程2000級の技では輪の係数が下限0.35に張り付き、実効の明るさが0.12まで落ちて
+   黒・白のオーラでは加算で消えていた。粒は下限を高く取る。 */
+function fxCountScale(ae){
+  const r = (ae && ae.range) || 200;
+  return Math.max(0.7, Math.min(1, 1 - (r - 400) / 2200));
+}
 
 
 /* 着弾の地面の輪が広がってよい上限(ワールド単位)。
@@ -73,6 +80,25 @@ const FX_DEFAULT = {
     fx.shake(Math.min(0.7, (p.hitR||10)/26), p.x, p.y);
     fx.flash(0.15);
   },
+  /* 範囲技が出ている間、伸びた先から粒を上げ続ける。
+     【なぜ必要か】これが無いと**発生の一瞬だけで、技が出ている間は何も足されない**。
+     作り込みの無い属性(キュービ・モッチー・ピクシー・デュラハン・キジン)の
+     範囲技が「改修前とまったく同じ絵」になっていた原因。 */
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    if(reach <= 2) return;
+    const n = Math.min(dt||0, 0.05) * 22 * fxCountScale(ae);
+    for(let i = Math.floor(n) + (Math.random() < (n%1) ? 1 : 0); i>0; i--){
+      const a = (ae.angle||0) + (Math.random()-0.5)*(((ae.fanAngleDeg||50))*Math.PI/180);
+      const d = reach * (0.25 + Math.random()*0.75);
+      const x = ae.x + Math.cos(a)*d, y = ae.y + Math.sin(a)*d;
+      fx.emit({ x, y, z: fxGroundZ(x,y) + 6 + Math.random()*22,
+                vx:(Math.random()-0.5)*36, vy:(Math.random()-0.5)*36, vz: 60+Math.random()*80,
+                az:-90, r:c[0], g:c[1], b:c[2], bright:1.0,
+                life:0.5+Math.random()*0.4, size0:11+Math.random()*9, size1:2,
+                turb:18, turbFreq:1.1, spin:2 });
+    }
+  },
   cast(fx, ae, c){
     const k = fxScaleForSize(ae);
     /* 【最重要】**術者の足元の輪は半径90前後まで。**
@@ -87,7 +113,7 @@ const FX_DEFAULT = {
               color:c, width:7, bright:0.35*k });
     /* ドーム(kind:'circle' = 爆風)は2D側が面で覆うので、粒は輪郭付近だけに少しでよい。 */
     const dome = ae.kind === 'circle' ? 0.5 : 1;
-    fx.burst({ x:ae.x, y:ae.y, z:8, count:Math.round(26*k*dome), speed:210, jitter:26, jitterZ:30,
+    fx.burst({ x:ae.x, y:ae.y, z:8, count:Math.round(26*fxCountScale(ae)*dome), speed:210, jitter:26, jitterZ:30,
                elev:0.55, elevSpread:0.9, r:c[0], g:c[1], b:c[2], bright:1.2*k*dome,
                life:0.5, size0:16, size1:1, az:-180, turb:16, turbFreq:1.2, spin:4 });
   },
@@ -152,7 +178,10 @@ const FX_MOVES = {
                  life:0.3, size0:22, size1:2, az:-120, turb:8, turbFreq:2.2, spin:6 });
       fx.burst({ x:ae.x, y:ae.y, z:14, count:30, speed:170, jitter:34, jitterZ:40,
                  elev:0.7, elevSpread:1.0, r:c[0], g:c[1], b:c[2], bright:1.25*k,
-                 life:0.75, size0:26, size1:3, az:60, turb:22, turbFreq:1.1, spin:3 });
+                 /* az を正にすると**寿命のあいだ昇り続けて空に取り残される**
+                    (0.85s以降、技と切り離れた大粒が地平線の上に浮いていた)。
+                    初速で上げて、途中から落とす。 */
+                 life:0.75, size0:26, size1:3, az:-40, turb:22, turbFreq:1.1, spin:3 });
       // 煤。暗い色で重力に従って落ち、余韻を作る
       fx.burst({ x:ae.x, y:ae.y, z:18, count:14, speed:120, jitter:40, jitterZ:50,
                  elev:0.8, elevSpread:0.8, r:soot[0], g:soot[1], b:soot[2], bright:0.8, hot:0.1,
@@ -201,8 +230,8 @@ const FX_MOVES = {
       const d = (ae.range||300) * (0.25 + Math.random()*0.75);
       fx.emit({ x: ae.x+Math.cos(a)*d, y: ae.y+Math.sin(a)*d, z: 6+Math.random()*20,
                 vx:(Math.random()-0.5)*40, vy:(Math.random()-0.5)*40, vz: 90+Math.random()*110,
-                az: 30, r:c[0], g:c[1], b:c[2], bright:1.1*k,
-                life:0.6+Math.random()*0.5, size0:12+Math.random()*10, size1:1,
+                az: -30, r:c[0], g:c[1], b:c[2], bright:1.1*k,
+                life:0.4+Math.random()*0.3, size0:12+Math.random()*10, size1:1,
                 turb:20, turbFreq:1.3, spin:2.5 });
     },
   },
@@ -232,7 +261,11 @@ FX_MOVES.phoenix = FX_MOVES.fire;
 function fxVivid(c){
   const m = Math.max(c[0], c[1], c[2]);
   if(m < 0.02) return c;              // 完全な黒。持ち上げようがないのでそのまま返す
-  return [c[0]/m, c[1]/m, c[2]/m];
+  /* 持ち上げに上限を掛ける。**1/m のままだと黒(#2b2b30)が (0.90,0.90,1.00)= ほぼ白**
+     になり、黒がウリのSSR(終焉に救いを・ラガモッチ砲・ドラゴンころし・言葉は無粋)に
+     白い火花が乗る。2.2倍止まりなら「暗い鉛色」が残る。 */
+  const k = Math.min(1/m, 2.2);
+  return [c[0]*k, c[1]*k, c[2]*k];
 }
 
 /* 色を「白から遠ざける」。fxVivid が明るさを上げるのに対し、こちらは**彩度**を上げる。
@@ -476,16 +509,19 @@ FX_MOVES.illumine = {
     const exp = ae.fillSpeed ? R/ae.fillSpeed : 0.45;    // 広がりきるまでの秒(判定と同じ速さ)
     // 縁の輪2枚。**中は埋めない**(2D側がドームの面を描いているので芯を隠さない)
     fx.ring({ x:ae.x, y:ae.y, r0:8, r1:R,      life:exp+0.25, color:viv, width:16, bright:0.95 });
-    fx.ring({ x:ae.x, y:ae.y, r0:8, r1:R*1.35, life:exp+0.55, color:rim, width:26, bright:0.55 });
+    /* **判定(R)の外へ広げない。** 余韻は太さと寿命で作る。 */
+    fx.ring({ x:ae.x, y:ae.y, r0:8, r1:R, life:exp+0.55, color:rim, width:26, bright:0.55 });
     // ドームの殻。上半球だけへ撒くので「半球」に見える
     for(let i=0;i<34;i++){
       const a  = Math.random()*Math.PI*2;
       const el = Math.random()*Math.PI*0.5;
-      const sp = (R/Math.max(exp,0.05)) * (0.7+Math.random()*0.4);
+      /* 殻はドームと**同時に止まる**速さにする。以前は 0.7〜1.1 倍で撒いていたので
+         ドームが325で止まったあとも粒だけが400以上まで飛び、空へ抜けていた。 */
+      const sp = (R/Math.max(exp,0.05)) * (0.4+Math.random()*0.3);
       fx.emit({ x:ae.x, y:ae.y, z:(ae.z||0)+6,
                 vx:Math.cos(a)*Math.cos(el)*sp, vy:Math.sin(a)*Math.cos(el)*sp, vz:Math.sin(el)*sp,
                 az:-140, r:viv[0], g:viv[1], b:viv[2], bright:1.0,
-                life:exp*(1.1+Math.random()*0.6), size0:16+Math.random()*14, size1:34,
+                life:exp*(0.75+Math.random()*0.25), size0:16+Math.random()*14, size1:34,
                 turb:20, turbFreq:0.9, spin:1.5 });
     }
     // 中心で潰れた1点だけを白く飛ばす。周りが暗いので、点1つで十分眩しくなる
@@ -829,7 +865,9 @@ FX_MOVES.aqua = {
     /* 足元の輪。**射程いっぱいに広げない・白へ寄せない・太くしない。**
        加算合成なので、太い白い輪は画面を横切る帯になって地面の痕に見えなくなる
        (既定の見え方が r1=420/width=26 でまさにそうなっている)。 */
-    fx.ring({ x:ae.x, y:ae.y, r0:12, r1:Math.min(ae.range || 300, 150), life:0.5,
+    /* 半径150では**術者の背後まで回り込み、画面下1/3を横切っていた**
+       (鱗赫の判定は前方の矩形だけで、背後は無判定)。90まで落とす。 */
+    fx.ring({ x:ae.x, y:ae.y, r0:12, r1:Math.min(ae.range || 300, 90), life:0.5,
               color:c, width:9, bright:0.48 });
     // 放出の頭。技の向きへ扇状に吹き出す水。重力で前方へ落ちる弧を描く
     fx.burst({ x:ae.x, y:ae.y, z:14, count:16, speed:320, jitter:14, jitterZ:18,
@@ -1276,7 +1314,15 @@ FX_MOVES.spark = {
     const hot = fxHot(c, 0.8);
     const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
     const rgx = -fwy, rgy = fwx;
-    const amp = (ae.zigzagWidth || ae.width || 110)*0.5;
+    /* 落雷を落とす横幅。
+       【落とし穴】`ae.zigzagWidth || ae.width || 110` は **0 を falsy として飛ばす**ので、
+       扇に置き換わったSSR(フォックスファイアー)では zigzagWidth:0 が無視されて
+       amp=55 になり、扇とまったく関係ない中心線の上に落雷が並んでいた。
+       扇のときは扇の広がりから幅を出し、それ以外は ?? で 0 も尊重する。 */
+    const amp = (ae.aoeShape === 'fan')
+      ? (ae.range||800) * Math.tan(((ae.fanAngleDeg||30)*Math.PI/180)/2) * 0.5
+      : ((ae.zigzagWidth ?? ae.width ?? 110) * 0.5);
+    if(amp <= 1) return;               // 幅が無い技では落雷を落とさない
     // **時間ではなく距離で刻む。** フレームレートが変わっても落ちる本数が変わらない
     const step = Math.max(80, amp*1.5);
     ae.__fxStrike = ae.__fxStrike || 0;
