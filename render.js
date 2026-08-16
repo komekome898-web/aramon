@@ -5742,11 +5742,27 @@ function fxPunchRestore(){
 // 着弾の一瞬だけ画面全体をわずかに持ち上げる(白飛びではなく「明るくなる」程度)
 function drawFxFlash(){
   if(_fxFlash <= 0.01) return;
+  const a = Math.min(0.09, _fxFlash);
   ctx.save();
+  /* 【平らに塗らない】`fillRect` で全面を持ち上げると、遠景の山も雲も空も同じだけ
+     明るくなり「画面が洗われた」ようにしか見えない(実測で空が+14.5)。
+     採点表8が求めているのは**周辺減光**なので、中心を少し持ち上げ、
+     縁は逆にわずかに沈める。面積あたりの効果は同じでも、画は締まる。 */
+  const cx = viewW/2, cy = viewH*0.56;
+  const R = Math.max(viewW, viewH)*0.75;
+  const g = ctx.createRadialGradient(cx, cy, R*0.1, cx, cy, R);
+  g.addColorStop(0,    `rgba(255,244,225,${a})`);
+  g.addColorStop(0.45, `rgba(255,244,225,${a*0.35})`);
+  g.addColorStop(1,    'rgba(255,244,225,0)');
   ctx.globalCompositeOperation = 'lighter';
-  /* 上限は薄く。0.18にしていたら、tier3の4発同時着弾で**空まで灰色に染まった**。
-     フラッシュは「一瞬明るくなった」と感じる程度でよく、画面を洗ってはいけない。 */
-  ctx.fillStyle = `rgba(255,244,225,${Math.min(0.09, _fxFlash)})`;
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,viewW,viewH);
+  // 縁を沈めて中心へ目を寄せる(白足しの総量を増やさずに締める)
+  ctx.globalCompositeOperation = 'source-over';
+  const v = ctx.createRadialGradient(cx, cy, R*0.45, cx, cy, R);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, `rgba(0,0,0,${a*1.6})`);
+  ctx.fillStyle = v;
   ctx.fillRect(0,0,viewW,viewH);
   ctx.restore();
 }
@@ -5826,7 +5842,14 @@ function fxGlFeed(fx, dt){
     if(!_fxSeenAe.has(ae.id)){
       _fxSeenAe.add(ae.id);
       st.cast(fx, ae, c);
-      fxPunch(Math.min(1, (ae.range||200)/900), ae.x, ae.y);
+      /* 揺れの強さは**射程ではなく「その場の破壊力」**で決める。
+         `range/900` は tier3(射程750〜2200)が全部上限1.0に張り付き、
+         どの技でも同じ最大の揺れが出ていた。しかも発動=術者の足元なので
+         距離減衰も効かない。爆風は半径、それ以外は当たり幅を基準にする。 */
+      const power = ae.kind === 'circle'
+        ? Math.min(0.8, (ae.range||200)/700)
+        : Math.min(0.5, (ae.width || ae.rectWidth || 120)/400);
+      fxPunch(power, ae.x, ae.y);
     }
     if(st.sustain) st.sustain(fx, ae, c, dt);
   }

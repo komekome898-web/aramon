@@ -35,7 +35,12 @@
    **大きい技は既に十分見えているので、この層は控えめでよい。** */
 function fxScaleForSize(ae){
   const r = (ae && ae.range) || 200;
-  return Math.max(0.35, Math.min(1, 1 - (r - 200) / 700));
+  /* 【重大な失敗だった】下限0.35は「大きい技では控えめに」のつもりだったが、
+     tier3の射程は750〜2200なので**例外なく全部が下限に張り付いた**。
+     結果、輪の実効の明るさが0.12まで落ち、明るい砂地の上では完全に消えた
+     (実測: インフェルノの0.10sで追加された画素が**0個**)。
+     暗くするのではなく、**面積(太さ・半径)で抑える**のが正しい。 */
+  return Math.max(0.75, Math.min(1, 1 - (r - 200) / 2600));
 }
 /* 粒の数に掛ける係数。**輪と同じ係数を粒にも掛けると二重に痩せる。**
    射程2000級の技では輪の係数が下限0.35に張り付き、実効の明るさが0.12まで落ちて
@@ -51,8 +56,11 @@ function fxCountScale(ae){
    当たらないと思って被弾する。** 使い勝手が変わるので、見栄えより優先する。
    splash があるならそれ、無ければ hitR の3倍まで。ここを通さない輪を新しく足さない。 */
 function fxHitRadius(p){
-  const sp = p && p.splash;
-  if(sp && sp > 0) return sp;
+  const sp = p ? p.splash : undefined;
+  /* **`splash:0` は「splashが無い」ではなく「splashはゼロ」。**
+     `sp && sp>0` だと 0 が falsy で hitR*3 へ落ち、splashを持たないと明示している
+     ゴッドライジングが**判定の3.7倍**の輪をもらっていた。 */
+  if(sp != null) return sp > 0 ? sp : (p.hitR || 12) * 1.2;
   return Math.max(40, (p && p.hitR ? p.hitR : 12) * 3);
 }
 
@@ -71,7 +79,11 @@ const FX_DEFAULT = {
              { color:c, width: Math.max(8, (p.hitR||10)*1.3), bright:0.9, whiten:0.2 });
   },
   impact(fx, p, c){
-    const h = fxHot(c, 0.55);
+    /* **暗い技の色を白へ寄せない。** `fxHot(c,0.55)` は #2a2d40(ダークホウスト)や
+       #14121c(ビッグバン)をほぼ白にしてしまい、黒い三日月・黒い球の中に
+       白い紙吹雪が湧いていた。暗い色は彩度を立てるだけに留める。 */
+    const lum = 0.3*c[0] + 0.6*c[1] + 0.1*c[2];
+    const h = lum < 0.25 ? fxVivid(c) : fxHot(c, 0.55);
     fx.burst({ x:p.x, y:p.y, z:(p.z||0)+10, count:14, speed:200, jitter:8,
                r:h[0], g:h[1], b:h[2], bright:1.3, life:0.34, size0:12, size1:0.5,
                az:-300, turb:10, turbFreq:1.6, spin:5 });
@@ -107,10 +119,16 @@ const FX_DEFAULT = {
        実測で8技(dullahan_t1・fox_t3・ogre_t3・mocchi_t3・suezo_t2/t3・pixie_t2・
        dullahan_t3)の0.1sのコマが白飛びしていた。ここ1か所で全部が直る。
        個別に作り込んだ属性(ark/god/illumine)は同じ罠を踏んで既に60まで落としてある。 */
-    /* 実測で、足元の輪が「明るくなった画素」の96%を占めていた(最終奥義 0.28s)。
-       半径90でもカメラが145後ろだと画面下部を広く覆う。60・細く・暗くする。 */
-    fx.ring({ x:ae.x, y:ae.y, r0:10, r1:Math.min(ae.range||200, 60), life:0.5,
-              color:c, width:7, bright:0.35*k });
+    /* 輪の半径の決め方は2つに分かれる。**混ぜると必ずどちらかが嘘になる。**
+       ・爆風(kind:'circle'): 判定そのものが円なので**実半径を使う**。
+         上限60を掛けていたため、半径420の最終奥義に半径60の輪という
+         7倍の食い違いが出ていた(暗けい330・ビッグバン330も同様)。
+       ・扇/矩形/ビーム: 判定は前方にあり、足元の輪は「発動の合図」でしかない。
+         カメラが145後ろなので**60まで**(それ以上は画面を横切る帯になる)。 */
+    const isBlast = ae.kind === 'circle';
+    const ringR = isBlast ? (ae.range || 200) : Math.min(ae.range || 200, 60);
+    fx.ring({ x:ae.x, y:ae.y, r0: isBlast ? ringR*0.15 : 10, r1: ringR, life:0.5,
+              color:c, width: isBlast ? 20 : 7, bright: isBlast ? 0.75 : 0.45 });
     /* ドーム(kind:'circle' = 爆風)は2D側が面で覆うので、粒は輪郭付近だけに少しでよい。 */
     const dome = ae.kind === 'circle' ? 0.5 : 1;
     fx.burst({ x:ae.x, y:ae.y, z:8, count:Math.round(26*fxCountScale(ae)*dome), speed:210, jitter:26, jitterZ:30,
