@@ -724,6 +724,8 @@ function tryNonHostPlayerFireVisual(dt){
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : (mv.aura||null);
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(mv, player) : mv.color;
   const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(mv, player) : null;
+  // 白黒オーラのSSR tier3だけに付く差し色の向き(combat.js と同じ。詳細は data.js の getMoveAuraAccent)
+  const auraAccent = (typeof getMoveAuraAccent==='function') ? getMoveAuraAccent(mv, player) : null;
 
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
@@ -747,7 +749,7 @@ function tryNonHostPlayerFireVisual(dt){
         fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
         beamRanges, fillSpeed, telegraphTime:0.18,
         spawnAt:matchTime, life: 0.18 + reach/fillSpeed + 0.25,
-        style:mv.aoeStyle||null, moveAura, auraTint,
+        style:mv.aoeStyle||null, moveAura, auraTint, auraAccent,
       };
     };
     let firstLife = 0;
@@ -824,6 +826,7 @@ function tryNonHostPlayerFireVisual(dt){
         projStyle:mv.projStyle||null, projVariant: mv.projVariant||null, moveAura,
         // burstTints があれば連射の何発目かで色を変える(ホスト側の fireMove と同じ式)
         auraTint: (mv.burstTints && mv.burstTints[i % mv.burstTints.length]) || auraTint,
+        auraAccent,
         growWithDistance: mv.growWithDistance||false, baseHitR: mv.hitR*hbMult, burstIndex:i,
         // 着弾ドーム(ビッグバン/ヴァニッシュ)。これを持たせないと、着弾時にゲスト側で
         // 爆風を出せないうえ、ホストからのエコーは「自分の弾」として弾かれるため
@@ -891,7 +894,7 @@ function broadcastNewShotsAsHost(){
       vx:p.vx||0, vy:p.vy||0, vz:p.vz||0, grav:p.grav||0, terrain3d:!!p.terrain3d, color:p.color, hitR:p.hitR, hitW:p.hitW||0,
       maxRange:p.maxRange||0, icon:p.icon||null, shape:p.shape||null,
       projStyle:p.projStyle||null, projVariant:p.projVariant||null,
-      orbColor:p.orbColor||null, auraTint:p.auraTint||null, moveAura:p.moveAura||null,
+      orbColor:p.orbColor||null, auraTint:p.auraTint||null, auraAccent:p.auraAccent||null, moveAura:p.moveAura||null,
       lobbed:!!p.lobbed, landX:p.landX||0, landY:p.landY||0, landZ:p.landZ||0, arcHeight:p.arcHeight||0, flightTime:p.flightTime||0,
     });
   }
@@ -905,10 +908,14 @@ function broadcastNewShotsAsHost(){
     const owner = ae.ownerId!=null ? entities.find(e=>e.id===ae.ownerId) : null;
     window.__aramonPushShotEvent(netState.roomId, {
       type:'aoe', sourceNetId: (owner && owner.netPlayerId) || null,
+      /* 撃った本人のid。**これが無いとゲスト側で属性が分からず、技のエフェクトが
+         既定の見た目に落ちる**(弾には元から付いていたので弾だけ正しく出ていた)。
+         fx_moves.js の作り分けは属性で引くので、ここを落とすとマルチだけ画が痩せる。 */
+      ownerId: ae.ownerId!=null ? ae.ownerId : null,
       kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y), angle:ae.angle, color:ae.color,
       range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
-      beamRanges:ae.beamRanges||null, style:ae.style||null, auraTint:ae.auraTint||null, moveAura:ae.moveAura||null,
+      beamRanges:ae.beamRanges||null, style:ae.style||null, auraTint:ae.auraTint||null, auraAccent:ae.auraAccent||null, moveAura:ae.moveAura||null,
       doorDist:ae.doorDist||0, // 羅生門(kind:'gate')の門の位置。ゲストは自分で遮蔽物の再計算をしないのでそのまま渡す
     });
   }
@@ -1028,17 +1035,17 @@ function spawnVisualShotFromEvent(evt){
         color:evt.color, hitR:evt.hitR, hitW:evt.hitW||0,
         traveled:0, maxRange:evt.maxRange||2000, delay:0, visualOnly:true, icon:evt.icon||undefined, shape:evt.shape||undefined,
         projStyle:evt.projStyle||null, projVariant:evt.projVariant||null,
-        orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
+        orbColor:evt.orbColor||undefined, auraTint:evt.auraTint||null, auraAccent:evt.auraAccent||null, moveAura:evt.moveAura||null,
         ownerId: evt.ownerId!=null ? evt.ownerId : null,
       });
     }
   } else if(evt.type==='aoe'){
     areaEffects.push({
-      hostId:null, kind:evt.kind, x:evt.x, y:evt.y, angle:evt.angle, color:evt.color,
+      hostId:null, ownerId: evt.ownerId!=null ? evt.ownerId : null, kind:evt.kind, x:evt.x, y:evt.y, angle:evt.angle, color:evt.color,
       range:evt.range, width:evt.width, fanAngleDeg:evt.fanAngleDeg, beamCount:evt.beamCount,
       beamSpreadDeg:evt.beamSpreadDeg, spawnAt:matchTime, life:evt.life,
       fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
-      style:evt.style||null, auraTint:evt.auraTint||null, moveAura:evt.moveAura||null,
+      style:evt.style||null, auraTint:evt.auraTint||null, auraAccent:evt.auraAccent||null, moveAura:evt.moveAura||null,
       doorDist:evt.doorDist||0, // 羅生門の見た目(fx3dGate)が門の位置を読む。hitIdsは付けないので判定はしない(見た目のみ)
     });
   }
@@ -1456,7 +1463,7 @@ function loop(now){
             // ダメージ判定はホストが確定するが、ゲスト側でこれを出さないと
             // 自分で撃ったときだけ爆発が見えない(ホストのエコーは自分の弾として弾かれる)
             if(p.blast && typeof spawnGroundBlast==='function'){
-              spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint);
+              spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint, p.auraAccent);
             }
             projectiles.splice(i,1);
           }

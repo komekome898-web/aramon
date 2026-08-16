@@ -878,25 +878,45 @@ function getMoveAura(move, attacker){
   }
   return move.aura || null;
 }
+/* 白と黒のオーラは「色相」ではなく明度なので、tier3の本体色をこれで塗り替えると
+   技そのものが無彩色になる。実測(2026-08-16): 天衣無縫=真っ白な紙の山、
+   ラガモッチ砲=灰色のガラス管。**素のtier3より見劣りする**。
+   そこで白黒だけは本体色を素の技のまま残し、縁とアクセント(getMoveAuraAccent)
+   だけで効かせる。対象は phoenix_ssr / iblees_ssr / mocchi_ssr / guts_ssr / zod_ssr。
+   有彩色(赤・青・黄…)は従来どおり本体色ごと乗る。 */
+const ACHROMATIC_AURAS = { white:1, black:1 };
 // 技のエフェクト色(スキン装備時はtier3を装備オーラの色基調に上書き。SSR/SR色スキンどちらも対象)。
 // keepBaseColor が付いた技は本体色を変えない(ちょこの「ヴァニッシュ」= 球体とドームは黒のまま、
 // 赤オーラはビリビリ電撃だけに乗せる)。その場合の差し色は getMoveAuraTint が担当する。
 function getMoveEffectColor(move, attacker){
   if(move && move.tier===3 && !move.keepBaseColor){
     const a = skinTier3Aura(entitySkinId(attacker));
-    if(a) return auraColorHex(a);
+    if(a && !ACHROMATIC_AURAS[a]) return auraColorHex(a);
   }
   return move ? move.color : '#ffffff';
 }
 // tier3エフェクトの差し色(ビリビリ電撃等のアクセント)。装備スキンのオーラ色を返す。
 // keepBaseColorの有無に関わらず返すので、本体色を黒に保ったまま差し色だけ変えられる。
+// 白黒のオーラはここでも返さない(render.js の `auraTint || color` が全部白/黒に
+// なってしまうため)。白黒は getMoveAuraAccent が縁とアクセントだけを担当する。
 function getMoveAuraTint(move, attacker){
   if(!move || move.tier!==3) return null;
   // keepArcColor: 本体はオーラ色にしつつ、ビリビリ電撃だけ既定色(紫)のままにする
   // (ペルセポネの「アムピトリテ」= 青い槍と青いドームに紫の電撃)
   if(move.keepArcColor) return null;
   const a = skinTier3Aura(entitySkinId(attacker));
-  return a ? auraColorHex(a) : null;
+  if(!a || ACHROMATIC_AURAS[a]) return null;
+  return auraColorHex(a);
+}
+/* 白黒オーラ専用の差し色。'white' / 'black' の文字列をそのまま返す(色ではなく「向き」)。
+   受け取る側(render.js の fxGlAccent)が
+     white → 芯を白熱させて外へ白い羽根を散らす
+     black → 外周に黒い煤の殻をまとわせる
+   に読み替える。**本体色には触らない。** */
+function getMoveAuraAccent(move, attacker){
+  if(!move || move.tier!==3) return null;
+  const a = skinTier3Aura(entitySkinId(attacker));
+  return (a && ACHROMATIC_AURAS[a]) ? a : null;
 }
 // SSRスキン装備時のtier3の専用技名と威力倍率(少し上げる)。元の技の効果(オーラ・エフェクト・
 // アーク=イブリースの被ダメ0.5倍など)は変えず、名前と威力だけ上書きする。
@@ -1149,6 +1169,9 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-16', items:[
     { t:'🆕 新モンスター「ケンタウロス」が登場しました！ 技の射程が長く、弾速が速い', g:['feature','monster'] },
+    { t:'✨ 技のエフェクトを刷新しました。技の粒・尾・地面に残る痕をGPUで描く層を足し、炎は舞い上がる火の粉と落ちる煤、水は波紋と砕ける結晶、草は舞う葉と胞子、雷は地面を這う枝分かれ、岩は落ちて跳ねる破片と土煙、光は降る羽根、闇は吸い込まれる紫、神は4色の球がそれぞれの色で咲く、というように属性ごとに作り分けています', g:['av'] },
+    { t:'技が当たったとき、画面が短く揺れて一瞬明るくなるようになりました(酔わないよう0.12秒以内・揺れ幅は画面の1%以内で、遠くの爆発では揺れません)', g:['av'] },
+    { t:'必殺技(tier3)の見た目を当たる範囲に合わせました。前へ撃つ技は当たる範囲がそのまま地面に光の帯として出るので、どこまで届くか・どこに立つと当たるかが目で分かります。技の威力・射程・弾速・範囲はこれまでと同じです', g:['av','balance'] },
   ]},
   { date:'2026-08-15', items:[
     { t:'🆕 モン晶(💠)が登場! ガチャで持っているスキンが出たときのダイヤの代わりに、SRで1個・SSRで5個もらえます。ショップの「💠モン晶こうかん」タブでプレミアムなアイテムと交換できます', g:['feature'] },

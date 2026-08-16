@@ -46,6 +46,9 @@
   /* リアルマップ(テスト)のWebGL層。2Dキャンバスの下に敷く(2D側は地面を描かずに透ける) */
   #glCanvas{position:absolute; top:0; left:0; display:block; touch-action:none; z-index:0;}
   #gameCanvas{position:absolute; top:0; left:0; display:block; touch-action:none; cursor:grab; z-index:1;}
+  /* 技エフェクトのWebGL層。2Dの上・HUD(z-index:10)の下。
+     指の操作は下の#gameCanvasが受けるので、ここはイベントを一切拾わない */
+  #fxCanvas{position:absolute; top:0; left:0; display:block; pointer-events:none; z-index:2;}
 
   /* ---- 文字入力の共通ポップアップ ----
      ソフトキーボードは実画面の下側に出る。回転していないときはアプリの下側なので上端寄せに、

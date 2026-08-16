@@ -3712,6 +3712,13 @@ function applyReal3DLayer(){
     ? REAL3D_THEMES[currentMap.real3dTheme] : null;
   window.__aramonReal3D.setActive(!!(currentMap && currentMap.real3d));
 }
+/* 技エフェクトのWebGL層(fx_gl.js)。**マップによらず全部の試合で有効にする**
+   (real3d.jsと違い、リアルマップ限定ではない)。初期化に失敗した端末では
+   何も足さないだけで、技の芯は2D側がそのまま描く。                     */
+function applyFxGlLayer(on){
+  if(!window.__aramonFxGl) return;
+  window.__aramonFxGl.setActive(!!on);
+}
 /* マップ選択は「通常マップのキー」+「リアル切替(game.realMapMode)」で持つ。
    実際に使うマップキーはここで組み立てる(リアル版は <キー>_real)。 */
 function mapKeyForMode(baseKey){
@@ -4158,6 +4165,7 @@ function startGame(opts){
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
   applyStartPitchForMap();   // マップが決まってから視点の初期角度を決める
   applyReal3DLayer();
+  applyFxGlLayer(true);
   applyWorldScale(1);
   if(game.arena) initArenaZone(); else initZone();   // アリーナは中央固定の小さい安置
   genVolcanoAndLava();
@@ -4306,6 +4314,7 @@ function startShootingRange(){
   currentMap = MAPS[game.activeMapKey] || MAPS.wild;
   applyStartPitchForMap();
   applyReal3DLayer();
+  applyFxGlLayer(true);
   applyWorldScale(RANGE_WORLD_SCALE);
   initZone();
   // 安置は縮小させないうえ、ワールド全体を圏内にする(圏外のアイテムは消えてしまうため)
@@ -4376,6 +4385,7 @@ function raidStart(multi, demo){
   currentMap = MAPS.raid;
   applyStartPitchForMap();
   applyReal3DLayer();
+  applyFxGlLayer(true);
   applyWorldScale(RAID_WORLD_SCALE);
   initRaidZone();
   genVolcanoAndLava(); genWater(); genOasisZones(); genRocks(); genCrystals(); genTerrain();
@@ -4504,6 +4514,7 @@ async function raidExit(){
   syncNetStateToLobbyMode();
   if(typeof setAutoRun==='function') setAutoRun(false);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  if(window.__aramonFxGl) window.__aramonFxGl.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
   document.getElementById('resultScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
@@ -4995,6 +5006,7 @@ function raidShowResult(defeated, dmg, prevBest){
   setResultButtonsForRaid(true);
   scr.classList.remove('hidden');
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  if(window.__aramonFxGl) window.__aramonFxGl.setActive(false);
   document.getElementById('raidHud').classList.add('hidden');
   if(!noRecord){
     logRaidMatchForAdmin(d, defeated ? 'defeated' : (newBest ? 'best' : (died ? 'died' : 'timeup')));
@@ -5022,6 +5034,7 @@ function exitShootingRange(){
   syncNetStateToLobbyMode();
   if(typeof setAutoRun==='function') setAutoRun(false);
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  if(window.__aramonFxGl) window.__aramonFxGl.setActive(false);
   document.getElementById('rangeBar').classList.add('hidden');
   document.getElementById('rangeHint').classList.add('hidden');
   document.getElementById('hud').classList.remove('range-mode');
@@ -5206,7 +5219,8 @@ function showResultNow(isWin, placement){
   game.started=false;
   joinInProgress = false;
   if(typeof setAutoRun==='function') setAutoRun(false); // 試合終了でオートラン解除
-  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false); // WebGL地形を止めてロビーへ戻す
+  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  if(window.__aramonFxGl) window.__aramonFxGl.setActive(false); // WebGL地形を止めてロビーへ戻す
   if(typeof updateSpectateBar==='function'){ const sb=document.getElementById('spectateBar'); if(sb) sb.classList.add('hidden'); }
   // リザルトSE(勝利=ファンファーレ/それ以外=悲しげ)を鳴らし、鳴り終わってから通常BGMへ
   bgmSetTrack(null);
