@@ -47,6 +47,19 @@ function additiveBlend(mat){
   return mat;
 }
 
+
+/* 属性バッファのうち「今フレームで書いた範囲」だけを転送する指定。
+   【three r160の落とし穴】`attr.updateRange = {...}` は**読み取り専用**になっており、
+   代入すると TypeError で落ちる。r160では clearUpdateRanges()/addUpdateRange() を使う。
+   範囲を何も足さなければ全体が転送されるので、古い版でも安全に動く。 */
+function setUpdateRange(attr, offset, count){
+  attr.needsUpdate = true;
+  if(typeof attr.clearUpdateRanges === 'function' && typeof attr.addUpdateRange === 'function'){
+    attr.clearUpdateRanges();
+    if(count > 0) attr.addUpdateRange(offset, count);
+  }
+}
+
 /* ---- 上限。1ドローコールに収める数。iPhoneでの実測に合わせて動かす ---- */
 const MAX_PARTICLES = 4096;   // 同時に生きられる粒
 const MAX_RIBBONS   = 48;     // 同時に引ける軌跡(24では4色の球+乱戦で奪い合った)
@@ -229,6 +242,11 @@ function emitOne(o){
   a.aTurb.array[i4+3] = o.spin || 0;
   // 既定は光る。煙・土ぼこりを出すときだけ hot:0 を渡す
   a.aHot.array[i] = (o.hot == null ? 1 : o.hot);
+  /* 書き込んだリング位置の範囲を覚えておく。**全4096個を毎フレーム転送しない。**
+     粒は発生の瞬間だけCPUが書き、あとはシェーダが時間から位置を出すので、
+     転送が要るのは「このフレームで新しく生まれたぶん」だけ。           */
+  if(P.lo == null || i < P.lo) P.lo = i;
+  if(P.hi == null || i > P.hi) P.hi = i;
   P.dirty = true;
 }
 
@@ -334,15 +352,13 @@ function updateRibbonGeometry(camWorld){
       }
     }
   }
-  // 使わなかったクアッドは潰す
-  for(; q<maxQ; q++){
-    const v = q*4*3;
-    for(let k=0;k<12;k++) pos[v+k] = 0;
-    const c = q*4*4;
-    for(let k=0;k<16;k++) col[c+k] = 0;
-  }
-  R.geo.attributes.position.needsUpdate = true;
-  R.geo.attributes.color.needsUpdate = true;
+  /* **使った範囲だけを描き、使った範囲だけを転送する。**
+     以前は毎フレーム全クアッド(48本×19節)をゼロで埋めて丸ごと転送していた。
+     生きている帯が2〜3本でも同じ量を送るので、実戦(帯18本)で数十msを
+     ここで使っていた。描画範囲を絞れば潰す必要も無くなる。            */
+  R.geo.setDrawRange(0, q*6);
+  setUpdateRange(R.geo.attributes.position, 0, q*4*3);
+  setUpdateRange(R.geo.attributes.color,    0, q*4*4);
 }
 
 /* =====================================================================
@@ -418,13 +434,10 @@ function updateDecalGeometry(){
       }
     }
   }
-  for(; q<maxQ; q++){
-    const v=q*4*3, cc=q*4*4;
-    for(let k=0;k<12;k++) pos[v+k]=0;
-    for(let k=0;k<16;k++) col[cc+k]=0;
-  }
-  D.geo.attributes.position.needsUpdate = true;
-  D.geo.attributes.color.needsUpdate = true;
+  // 輪も同じ。生きている輪のぶんだけ描いて、そのぶんだけ転送する
+  D.geo.setDrawRange(0, q*6);
+  setUpdateRange(D.geo.attributes.position, 0, q*4*3);
+  setUpdateRange(D.geo.attributes.color,    0, q*4*4);
 }
 
 /* =====================================================================
@@ -548,8 +561,15 @@ const api = {
     _camWorld.set(cp.x, cp.z, cp.y);
     P.mat.uniforms.uTime.value = clock0;
     if(P.dirty){
-      for(const k in P.attr) P.attr[k].needsUpdate = true;
-      P.dirty = false;
+      /* リングバッファなので、書いた範囲が末尾から先頭へ回り込むことがある。
+         その回だけは全部送る(回り込みは4096個に1回しか起きない)。 */
+      const wrapped = (P.lo === 0 && P.hi === MAX_PARTICLES-1);
+      for(const k in P.attr){
+        const at = P.attr[k];
+        if(wrapped) setUpdateRange(at, 0, 0);            // 範囲を足さない=全体を送る
+        else        setUpdateRange(at, P.lo*at.itemSize, (P.hi - P.lo + 1)*at.itemSize);
+      }
+      P.dirty = false; P.lo = null; P.hi = null;
     }
     updateRibbonGeometry(_camWorld);
     updateDecalGeometry();
