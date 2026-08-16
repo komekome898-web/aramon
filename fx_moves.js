@@ -1447,5 +1447,316 @@ FX_MOVES.rock = {
 };
 /* <</FX:rock>> */
 
+
+/* <<FX:tier3-rest>> */
+/* =====================================================================
+   残る9属性のtier3。**既定のままだと「改修前とまったく同じ絵」**になっていた
+   (批評家の実測で、追加された光の画素が0〜1600px = 画面の0.1%以下)。
+   ここは tier3 だけを狙って作る。tier1/tier2 は既定のままでよい(発注者方針)。
+
+   共通の決まり:
+   ・**当たり判定の内側で見せる。** 輪は splash / blast.radius / rectWidth を超えない
+   ・暗い技(ダークホウスト・ビッグバン)は**白へ寄せない**。彩度だけ立てる
+   ・空へ抜ける粒を作らない(az は必ず負)
+===================================================================== */
+
+/* 進行方向に垂直な「衝撃の輪」を弾の位置へ置く。
+   ビーム・掌打のように「前へ押す」技は、地面の輪より这のほうが向きが読める。 */
+function fxForwardRing(fx, p, c, o){
+  const h = fxHeadingOf(p) || [1,0];
+  const n = (o && o.count) || 10;
+  const r = (o && o.r) || 30;
+  for(let i=0;i<n;i++){
+    const a = (i/n)*Math.PI*2;
+    const ox = -h[1]*Math.cos(a)*r, oy = h[0]*Math.cos(a)*r, oz = Math.sin(a)*r;
+    fx.emit({ x:p.x+ox, y:p.y+oy, z:(p.z||0)+14+oz,
+              vx:-h[0]*60, vy:-h[1]*60, vz:0, az:-40,
+              r:c[0], g:c[1], b:c[2], bright:(o&&o.bright)||1.1,
+              life:0.22, size0:(o&&o.size0)||9, size1:1, turb:4, turbFreq:2, spin:3 });
+  }
+}
+
+/* ---- ワーム(毒): シェルアタック ----
+   splash58 の直撃。**命中で自分に移動速度バフが乗る**技なので、
+   当たった手応えと「自分が速くなった」の両方を絵にする。 */
+FX_MOVES.warm = {
+  fly(fx, p, c, dt){
+    if(p.delay > 0) return;
+    const viv = fxVivid(c);
+    fxMuzzle(fx, p, c, { hot:0.4, count:12, speed:220, bright:1.2, ringR:46 });
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:viv, width: fxTrailWidth(p, 1.1, 8), bright:1.0, whiten:0.15 });
+    // 殻のまわりを回る毒の霧。ゆっくり落ちて後ろへ残る
+    for(let i=fxSpawnN(dt, 26); i>0; i--){
+      const a = Math.random()*Math.PI*2, rr = (p.hitR||34)*0.9;
+      fx.emit({ x:p.x+Math.cos(a)*rr, y:p.y+Math.sin(a)*rr, z:(p.z||0)+14+Math.sin(a)*rr,
+                vx:-(p.vx||0)*0.1, vy:-(p.vy||0)*0.1, vz:8+Math.random()*22,
+                az:-60, r:viv[0], g:viv[1], b:viv[2], bright:0.85,
+                life:0.7+Math.random()*0.5, size0:14+Math.random()*10, size1:26,
+                turb:24, turbFreq:0.6, spin:1 });
+    }
+  },
+  impact(fx, p, c){
+    const viv = fxVivid(c), hot = fxHot(viv, 0.5);
+    const HR = fxHitRadius(p);            // splash 58
+    fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:22, speed:290, jitter:8,
+               r:hot[0], g:hot[1], b:hot[2], bright:1.6, life:0.26, size0:15, size1:0.5,
+               az:-280, turb:8, turbFreq:2.2, spin:6, stretch:0.8 });
+    fx.ring({ x:p.x, y:p.y, r0:5, r1:HR, life:0.42, color:viv, width:12, bright:1.0 });
+    /* 命中で乗る移動速度バフを絵にする。**効果が発動したことが画面から分からない**
+       という指摘への対処。撃った本人の足元から前へ抜ける筋を出す。 */
+    const me = (typeof getEntity==='function' && p.ownerId!=null) ? getEntity(p.ownerId) : null;
+    if(me && me.alive){
+      fx.burst({ x:me.x, y:me.y, z:(me.z||0)+16, count:12, speed:210, jitter:10, jitterZ:14,
+                 elev:0.15, elevSpread:0.5, r:viv[0], g:viv[1], b:viv[2], bright:1.2,
+                 life:0.35, size0:11, size1:1, az:-120, turb:6, turbFreq:2, spin:3, stretch:1.0 });
+    }
+    fx.shake(0.4, p.x, p.y);
+  },
+};
+
+/* ---- キュービ(光): 天河天翔 ----
+   rect 2200x160 の「銀河の回廊」。2D側が画面いっぱいの白いドームを描くので、
+   **回廊がどこにあるか読めない**のが最大の問題(批評家: シルエット2点)。
+   帯の中心線に芯を1本通して、川筋を作る。 */
+FX_MOVES.fox = {
+  cast(fx, ae, c){
+    fx.ring({ x:ae.x, y:ae.y, r0:10, r1:60, life:0.45, color:c, width:7, bright:0.5 });
+  },
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    if(reach <= 2) return;
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    const rgx = -fwy, rgy = fwx;
+    const halfW = (ae.rectWidth || 160)*0.5;
+    /* 中心線の芯。**白いドームの中で唯一「線」になる要素**なので、
+       ここだけは白く強く出す(回廊の向きが読めるようになる)。 */
+    fx.trail('foxCore'+ae.id, ae.x + fwx*reach, ae.y + fwy*reach, fxGroundZ(ae.x+fwx*reach, ae.y+fwy*reach)+40,
+             { color:c, width: halfW*0.5, bright:1.6, whiten:0.6 });
+    // 回廊の中で流れる星屑。**帯の外へ出さない**(判定は幅160の矩形)
+    for(let i=fxSpawnN(dt, 60); i>0; i--){
+      const along = reach*(0.15+Math.random()*0.85);
+      const lat = (Math.random()*2-1)*halfW*0.9;
+      const x = ae.x + fwx*along + rgx*lat, y = ae.y + fwy*along + rgy*lat;
+      fx.emit({ x, y, z: fxGroundZ(x,y) + 10 + Math.random()*70,
+                vx: fwx*(90+Math.random()*120), vy: fwy*(90+Math.random()*120), vz: 6+Math.random()*18,
+                az:-50, r:c[0], g:c[1], b:c[2], bright:1.3,
+                life:0.5+Math.random()*0.4, size0:6+Math.random()*7, size1:1,
+                turb:10, turbFreq:1.4, spin:4, stretch:0.9 });
+    }
+  },
+};
+
+/* ---- ザン(闇): ダークホウスト ----
+   黒い三日月5連。**黒を黒のまま見せる**のが要。加算合成では暗い色が描かれないので、
+   「暗い塊」ではなく**輪郭だけ薄く光らせて中を暗いままにする**。 */
+FX_MOVES.zan = {
+  fly(fx, p, c, dt){
+    if(p.delay > 0) return;
+    const viv = fxVivid(c);                       // 上限2.2倍。白まで飛ばない
+    const edge = fxDeep(viv, 1.6);
+    fxMuzzle(fx, p, c, { hot:0.15, count:10, speed:240, bright:0.8, particleHot:0.2,
+                         ringColor:edge, ringR:44, ringW:5, ringBright:0.4 });
+    // 三日月の刃に沿った細い縁。**中は塗らない**(黒が黒く見える唯一のやり方)
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:edge, width: fxTrailWidth(p, 0.7, 4), bright:0.55, whiten:0.06 });
+    for(let i=fxSpawnN(dt, 20); i>0; i--){
+      const a = Math.random()*Math.PI*2, rr = (p.hitR||22)*1.1;
+      fx.emit({ x:p.x+Math.cos(a)*rr, y:p.y+Math.sin(a)*rr, z:(p.z||0)+14+Math.sin(a)*rr*0.5,
+                vx:-(p.vx||0)*0.12, vy:-(p.vy||0)*0.12, vz:0, az:-30,
+                r:edge[0], g:edge[1], b:edge[2], bright:0.6, hot:0.1,
+                life:0.55+Math.random()*0.4, size0:12+Math.random()*10, size1:22,
+                turb:16, turbFreq:0.7, spin:1 });
+    }
+  },
+  impact(fx, p, c){
+    const viv = fxVivid(c), edge = fxDeep(viv, 1.6);
+    const HR = fxHitRadius(p);
+    // 斬撃痕。**判定(hitR22)の内側**に細く置く
+    fx.ring({ x:p.x, y:p.y, r0:4, r1:HR, life:0.5, color:edge, width:7, bright:0.7 });
+    fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:16, speed:300, jitter:6,
+               r:edge[0], g:edge[1], b:edge[2], bright:0.9, hot:0.25,
+               life:0.3, size0:11, size1:1, az:-260, turb:8, turbFreq:2, spin:5, stretch:1.1 });
+    fx.shake(0.3, p.x, p.y);
+  },
+};
+
+/* ---- ピクシー(闇): ビッグバン ----
+   黒い球 → 半径330の爆風。**クライマックスが一番地味**だった(0.10sの球が一番派手で、
+   1.15sの爆発が一番暗い)。爆風に面積を与え、球は黒のまま吸い込ませる。 */
+FX_MOVES.pixie = {
+  cast(fx, ae, c){
+    // 爆風(kind:'circle')。判定の実半径そのもので輪を2枚張る
+    const R = ae.range || 330;
+    const viv = fxVivid(c), deep = fxDeep(viv, 1.8);
+    fx.ring({ x:ae.x, y:ae.y, r0:R*0.1, r1:R,      life:0.55, color:viv,  width:20, bright:0.95 });
+    fx.ring({ x:ae.x, y:ae.y, r0:R*0.3, r1:R*0.98, life:0.85, color:deep, width:34, bright:0.5 });
+    fx.burst({ x:ae.x, y:ae.y, z:10, count:26, speed:R/0.45, jitter:14, jitterZ:20,
+               elev:0.35, elevSpread:0.7, r:viv[0], g:viv[1], b:viv[2], bright:1.1, hot:0.3,
+               life:0.5, size0:20, size1:36, az:-260, turb:20, turbFreq:1, spin:2 });
+    fx.shake(0.7, ae.x, ae.y);
+  },
+  fly(fx, p, c, dt){
+    if(p.delay > 0) return;
+    const viv = fxVivid(c);
+    /* 球は**黒のまま**。周りの空間を内へ吸い込ませて「虚空」を作る。
+       白い粒を球の面に乗せない(乗せると黒い球でなくなる)。 */
+    fxImplode(fx, { x:p.x, y:p.y, z:(p.z||0)+14, r:(p.hitR||28)*2.6,
+                    count: fxSpawnN(dt, 40), color:viv, bright:0.9, life:0.3,
+                    size0:12, size1:2, turb:12, turbFreq:1.8, spin:3 });
+  },
+};
+
+/* ---- デュラハン(斬): 最終奥義 ----
+   projSpeed1500 の最速の弾で、術者ごと突っ込む。**速さが絵に出ていない**のが問題。 */
+FX_MOVES.dullahan = {
+  fly(fx, p, c, dt){
+    if(p.delay > 0) return;
+    fxMuzzle(fx, p, c, { hot:0.5, count:12, speed:300, bright:1.0, ringR:48 });
+    // 最速の弾なので帯を必ず張る(速度が読めるようになる)
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:c, width: fxTrailWidth(p, 1.2, 8), bright:1.1, whiten:0.3 });
+    for(let i=fxSpawnN(dt, 34); i>0; i--){
+      fx.emit({ x:p.x+(Math.random()-0.5)*30, y:p.y+(Math.random()-0.5)*30, z:(p.z||0)+14,
+                vx:-(p.vx||0)*0.16, vy:-(p.vy||0)*0.16, vz:10+Math.random()*30,
+                az:-70, r:c[0], g:c[1], b:c[2], bright:1.0,
+                life:0.32+Math.random()*0.22, size0:8+Math.random()*7, size1:1,
+                turb:14, turbFreq:1.6, spin:4, stretch:1.0 });
+    }
+  },
+  impact(fx, p, c){
+    const HR = fxHitRadius(p);
+    fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:24, speed:340, jitter:6,
+               r:c[0], g:c[1], b:c[2], bright:1.5, life:0.24, size0:14, size1:0.5,
+               az:-300, turb:6, turbFreq:2.4, spin:7, stretch:1.2 });
+    fx.ring({ x:p.x, y:p.y, r0:5, r1:HR, life:0.38, color:c, width:11, bright:1.0 });
+    fx.shake(0.75, p.x, p.y);
+  },
+};
+
+/* ---- ハム(拳): 暗けい ----
+   掌が飛び、着弾で半径330の爆風。**掌が回転も傾きもせず「置いてある」ように見える**
+   ので、進行方向の衝撃で前へ押している感じを作る。 */
+FX_MOVES.hum = {
+  cast(fx, ae, c){
+    const R = ae.range || 330;      // 爆風の実半径
+    fx.ring({ x:ae.x, y:ae.y, r0:R*0.1, r1:R, life:0.5, color:c, width:20, bright:0.9 });
+    fx.burst({ x:ae.x, y:ae.y, z:10, count:24, speed:R/0.5, jitter:12, jitterZ:16,
+               elev:0.3, elevSpread:0.7, r:c[0], g:c[1], b:c[2], bright:1.15,
+               life:0.5, size0:18, size1:30, az:-240, turb:18, turbFreq:1, spin:2 });
+    fx.shake(0.7, ae.x, ae.y);
+  },
+  fly(fx, p, c, dt){
+    if(p.delay > 0) return;
+    fxMuzzle(fx, p, c, { hot:0.35, count:10, speed:200, bright:1.0, ringR:44 });
+    // 掌の前に衝撃の輪。**進行方向が読める**ようになる
+    if(Math.random() < Math.min(dt||0,0.05)*14) fxForwardRing(fx, p, c, { count:10, r:(p.hitR||28)*1.2, bright:1.0, size0:9 });
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:c, width: fxTrailWidth(p, 1.0, 7), bright:0.85, whiten:0.2 });
+  },
+};
+
+/* ---- キジン(炎): 羅生門 ----
+   門が立ち、range側から門へ炎が**逆走**する。吸い込みの向きが絵に出ていなかった。 */
+FX_MOVES.ogre = {
+  cast(fx, ae, c){
+    fx.ring({ x:ae.x, y:ae.y, r0:10, r1:60, life:0.45, color:c, width:7, bright:0.5 });
+  },
+  sustain(fx, ae, c, dt){
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    const rgx = -fwy, rgy = fwx;
+    const halfW = (ae.rectWidth || 220)*0.5;
+    const gate = ae.gateDist || 170;
+    const far = ae.range || 1000;
+    const hot = fxHot(c, 0.45);
+    /* **奥から門へ向かって流れる**火の粉。速度を門の向き(-fw)にすることで
+       「吸い込まれている」が速度として読める。ここがこの技の性格そのもの。 */
+    for(let i=fxSpawnN(dt, 55); i>0; i--){
+      const along = gate + Math.random()*(far-gate);
+      const lat = (Math.random()*2-1)*halfW*0.85;
+      const x = ae.x + fwx*along + rgx*lat, y = ae.y + fwy*along + rgy*lat;
+      const sp = 150 + Math.random()*220;
+      fx.emit({ x, y, z: fxGroundZ(x,y) + 8 + Math.random()*46,
+                vx:-fwx*sp, vy:-fwy*sp, vz: 10+Math.random()*26,
+                az:-60, r:hot[0], g:hot[1], b:hot[2], bright:1.15,
+                life:0.5+Math.random()*0.4, size0:10+Math.random()*10, size1:2,
+                turb:18, turbFreq:1.2, spin:3, stretch:0.8 });
+    }
+    // 門の柱を光らせる(門がどこにあるか画面から分からなかった)
+    if(Math.random() < Math.min(dt||0,0.05)*22){
+      for(const sgn of [-1, 1]){
+        const x = ae.x + fwx*gate + rgx*halfW*sgn, y = ae.y + fwy*gate + rgy*halfW*sgn;
+        fx.emit({ x, y, z: fxGroundZ(x,y) + 10 + Math.random()*70,
+                  vx:0, vy:0, vz:30, az:-40, r:c[0], g:c[1], b:c[2], bright:1.3,
+                  life:0.4, size0:14, size1:4, turb:5, turbFreq:1, spin:1 });
+      }
+    }
+  },
+};
+
+/* ---- モッチー(桃): モッチ砲 ----
+   rect 1000x120 のビーム。桜がウリなのに**花びらが1枚も出ていなかった**。 */
+FX_MOVES.mocchi = {
+  cast(fx, ae, c){
+    fx.ring({ x:ae.x, y:ae.y, r0:10, r1:60, life:0.45, color:c, width:7, bright:0.5 });
+  },
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    if(reach <= 2) return;
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    const rgx = -fwy, rgy = fwx;
+    const halfW = (ae.rectWidth || 120)*0.5;
+    // ビームの芯(判定の幅の内側)
+    fx.trail('mocchiCore'+ae.id, ae.x + fwx*reach, ae.y + fwy*reach,
+             fxGroundZ(ae.x+fwx*reach, ae.y+fwy*reach)+34,
+             { color:c, width: halfW*0.9, bright:1.5, whiten:0.45 });
+    /* 花びら。**回りながらゆっくり落ちる**のが桜。size1>size0 で面を残し、
+       spin を速く、az を弱くする。ここは二次運動の題材として一番おいしい。 */
+    for(let i=fxSpawnN(dt, 44); i>0; i--){
+      const along = reach*(0.1+Math.random()*0.9);
+      const lat = (Math.random()*2-1)*halfW*1.5;      // 花びらは判定の外へ舞ってよい
+      const x = ae.x + fwx*along + rgx*lat, y = ae.y + fwy*along + rgy*lat;
+      fx.emit({ x, y, z: fxGroundZ(x,y) + 20 + Math.random()*70,
+                vx:(Math.random()-0.5)*50, vy:(Math.random()-0.5)*50, vz: 10+Math.random()*30,
+                az:-45, r:c[0], g:c[1], b:c[2], bright:1.0, hot:0.35,
+                life:1.1+Math.random()*0.8, size0:9+Math.random()*8, size1:14,
+                turb:30, turbFreq:0.5, spin:5 });
+    }
+  },
+};
+
+/* ---- スエゾー(念): サイコキネシス ----
+   fanZigzag 1300/30°。**全5コマで飽和画素が0個**=芯がどこにも無かった。
+   まず芯を作る。 */
+FX_MOVES.suezo = {
+  cast(fx, ae, c){
+    fx.ring({ x:ae.x, y:ae.y, r0:10, r1:60, life:0.45, color:c, width:7, bright:0.5 });
+  },
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    if(reach <= 2) return;
+    const half = ((ae.fanAngleDeg||30)*Math.PI/180)/2;
+    const hot = fxHot(c, 0.75);
+    // 中心線を進む白熱の芯。**飽和画素0はこの1点で直る**
+    const cx = ae.x + Math.cos(ae.angle||0)*reach, cy = ae.y + Math.sin(ae.angle||0)*reach;
+    fx.burst({ x:cx, y:cy, z: fxGroundZ(cx,cy)+30, count:5, speed:70, jitter:16, jitterZ:14,
+               r:hot[0], g:hot[1], b:hot[2], bright:2.0,
+               life:0.16, size0:20, size1:2, az:-60, turb:4, turbFreq:2, spin:2 });
+    // 扇の内側で曲がりながら外へ流れる念(判定の角度の内側に留める)
+    for(let i=fxSpawnN(dt, 50); i>0; i--){
+      const a = (ae.angle||0) + (Math.random()*2-1)*half*0.95;
+      const d = reach*(0.2+Math.random()*0.8);
+      const x = ae.x + Math.cos(a)*d, y = ae.y + Math.sin(a)*d;
+      fx.emit({ x, y, z: fxGroundZ(x,y) + 8 + Math.random()*54,
+                vx:Math.cos(a)*(60+Math.random()*90), vy:Math.sin(a)*(60+Math.random()*90),
+                vz: 14+Math.random()*30, az:-70,
+                r:c[0], g:c[1], b:c[2], bright:1.2,
+                life:0.5+Math.random()*0.4, size0:9+Math.random()*9, size1:2,
+                turb:30, turbFreq:0.8, spin:5 });
+    }
+  },
+};
+/* <</FX:tier3-rest>> */
+
 window.__aramonFxMoves  = FX_MOVES;
 window.__aramonFxDefault = FX_DEFAULT;
