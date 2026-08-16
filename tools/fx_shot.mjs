@@ -313,9 +313,9 @@ for(const [el, tiers] of byElement){
       report.setups[`${el}_t${tier}`] = setup;
       await page.evaluate(()=> window.__fx.hideHud());
       if(flag('nofx')) await page.evaluate(()=> window.__fx.setFx(false));
-      /* 撃つ前に少しだけ回す。試合が始まった直後は画面が暗い(開始のフェード)ので、
-         そのまま撮ると最初のコマだけ暗くなり、技の明るさを比べられない。 */
-      await page.evaluate(()=> window.__fx.step(0.35));
+      /* 撃つ前に1.2秒回す。試合開始直後は画面が暗転から明けていく途中で、
+         0.35秒では足りず最初のコマが真っ黒になった(god_t3で発生)。 */
+      await page.evaluate(()=> window.__fx.step(1.2));
       const info = await page.evaluate((t)=> window.__fx.fire(t), tier);
       let prev = 0;
       for(const at of FRAMES){

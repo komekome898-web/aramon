@@ -5717,7 +5717,7 @@ function fxPunch(amount, x, y){
 function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(1, amount))*0.35); }
 // 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
 function fxPunchApply(dt){
-  if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*4); return; }
+  if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*7); return; }
   _fxPunchT -= dt;
   const t = Math.max(0, _fxPunchT / FX_PUNCH_MAX_SEC);
   const amp = _fxPunch * t * t * (viewH * FX_PUNCH_MAX_AMP);
@@ -5728,7 +5728,7 @@ function fxPunchApply(dt){
   camPos.x += -Math.sin(camState.yaw) * ox;
   camPos.y +=  Math.cos(camState.yaw) * ox;
   camPos.z += oz;
-  _fxFlash = Math.max(0, _fxFlash - dt*4);
+  _fxFlash = Math.max(0, _fxFlash - dt*7);
 }
 function fxPunchRestore(){
   if(!_fxPunchSaved) return;
@@ -5740,7 +5740,9 @@ function drawFxFlash(){
   if(_fxFlash <= 0.01) return;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = `rgba(255,244,225,${Math.min(0.18, _fxFlash)})`;
+  /* 上限は薄く。0.18にしていたら、tier3の4発同時着弾で**空まで灰色に染まった**。
+     フラッシュは「一瞬明るくなった」と感じる程度でよく、画面を洗ってはいけない。 */
+  ctx.fillStyle = `rgba(255,244,225,${Math.min(0.09, _fxFlash)})`;
   ctx.fillRect(0,0,viewW,viewH);
   ctx.restore();
 }
