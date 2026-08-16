@@ -1307,9 +1307,13 @@ FX_MOVES.spark = {
   cast(fx, ae, c){
     const hot = fxHot(c, 0.8);
     fx.ring({ x:ae.x, y:ae.y, r0:8, r1:70, life:0.22, color:c, width:8, bright:0.9 });
-    fx.burst({ x:ae.x, y:ae.y, z:10, count:18, speed:260, jitter:10, jitterZ:14,
-               elev:1.0, elevSpread:0.6, r:hot[0], g:hot[1], b:hot[2], bright:1.9,
-               life:SPARK_LIFE, size0:14, size1:0.5, az:SPARK_ARC_G, turb:6, turbFreq:3, spin:8 });
+    /* 【直した点】速度260・jitter10・同時発生だったため、0.10sのコマでは18粒が
+       まだ足元に重なったままで**塗り潰した黄色い円盤**になっていた。
+       速度を上げ、発生時刻をばらし、1粒を小さく暗くする。形と量は変えない。 */
+    fx.burst({ x:ae.x, y:ae.y, z:10, count:18, speed:540, jitter:30, jitterZ:26,
+               elev:1.0, elevSpread:0.6, r:hot[0], g:hot[1], b:hot[2], bright:1.25,
+               life:SPARK_LIFE, size0:9, size1:0.5, az:SPARK_ARC_G, turb:6, turbFreq:3, spin:8,
+               delaySpread:0.09, stretch:0.9 });
     fx.shake(0.35, ae.x, ae.y);
   },
   fly(fx, p, c, dt){
@@ -1617,6 +1621,7 @@ FX_MOVES.zan = {
    黒い球 → 半径330の爆風。**クライマックスが一番地味**だった(0.10sの球が一番派手で、
    1.15sの爆発が一番暗い)。爆風に面積を与え、球は黒のまま吸い込ませる。 */
 FX_MOVES.pixie = {
+  blastAware:true,   // 技そのものが爆風なので円は自分で描く(render.js の fxGlStyleFor を参照)
   cast(fx, ae, c){
     /* **爆風(kind:'circle')専用の枝。** これを確かめないと、同じ属性の
        tier2の範囲技(zigzag等)でも通ってしまい、足元に射程ぶんの巨大な輪と
@@ -1676,6 +1681,7 @@ FX_MOVES.dullahan = {
    掌が飛び、着弾で半径330の爆風。**掌が回転も傾きもせず「置いてある」ように見える**
    ので、進行方向の衝撃で前へ押している感じを作る。 */
 FX_MOVES.hum = {
+  blastAware:true,   // 同上(暗けい=着弾で半径330の爆風)
   cast(fx, ae, c){
     /* **爆風(kind:'circle')専用の枝。** これを確かめないと、同じ属性の
        tier2の範囲技(zigzag等)でも通ってしまい、足元に射程ぶんの巨大な輪と

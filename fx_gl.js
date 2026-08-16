@@ -432,7 +432,21 @@ function addRing(o){
   });
 }
 
-function updateDecalGeometry(){
+/* 輪がカメラの脇を通り抜けるときのフェード。
+   【なぜ要るか】半径420の爆風(デュラハン最終奥義・ハムの暗けい)は術者の足元に出るが、
+   カメラは術者の145後ろに居るので、**輪がカメラを通り抜けて背後まで広がる**。
+   カメラのすぐ横を通る地面のクアッドは画面上で巨大になり、画面を横切る白い弧になる
+   (実測: 白飛び画素 4660 → 22246。改修で最悪の悪化だった)。
+   半径そのものは当たり判定なので**縮めない**。カメラより手前(前方成分が小さい)ぶん
+   だけを消す。手前60まででゼロへ落とすので、前方にある輪は一切変わらない。 */
+const DECAL_NEAR_FADE = 60;
+function decalNearFade(gx, gy, cam, fwx, fwy){
+  const fwd = (gx - cam.x)*fwx + (gy - cam.z)*fwy;   // camはThree座標(x, 高さ, y)
+  if(fwd >= DECAL_NEAR_FADE) return 1;
+  if(fwd <= 0) return 0;
+  return fwd / DECAL_NEAR_FADE;
+}
+function updateDecalGeometry(cam, fwx, fwy){
   const pos=D.pos, col=D.col;
   const groundZ = (typeof window.groundZAt === 'function') ? window.groundZAt : ()=>0;
   let q=0;
@@ -461,7 +475,7 @@ function updateDecalGeometry(){
         // 地面の高さを1点ずつ拾う。ここを定数にすると坂で輪が地面から浮く
         pos[v+k*3+0]=gx; pos[v+k*3+1]=groundZ(gx,gy)+2; pos[v+k*3+2]=gy;
         const inner = (k===0||k===3);
-        const ka = a * (inner ? 0.5 : 1.0);
+        const ka = a * (inner ? 0.5 : 1.0) * decalNearFade(gx, gy, cam, fwx, fwy);
         col[cc+k*4+0]=d.color[0]*ka; col[cc+k*4+1]=d.color[1]*ka; col[cc+k*4+2]=d.color[2]*ka;
         col[cc+k*4+3]=0;
       }
@@ -570,7 +584,11 @@ const api = {
         life:(o.life||0.6)*(0.6+Math.random()*0.8),
         size0:(o.size0||10)*(0.7+Math.random()*0.6), size1:o.size1,
         turb:o.turb||0, turbFreq:o.turbFreq||1, spin:o.spin||0,
-        delay:o.delay||0, hot:o.hot, stretch:o.stretch,
+        /* delaySpread: 1回の burst の中で発生時刻をばらす。
+           【なぜ要るか】全部を同時に出すと、動き出す前の最初の0.1秒は粒が同じ場所に
+           重なって**1枚の塗り潰した円盤**になる(雷の発動が術者の足元の黄色い皿に
+           見えていた)。ばらせば形は同じまま、立ち上がりが「湧く」動きになる。 */
+        delay:(o.delay||0) + Math.random()*(o.delaySpread||0), hot:o.hot, stretch:o.stretch,
       });
     }
   },
@@ -610,7 +628,7 @@ const api = {
       P.dirty = false; P.lo = null; P.hi = null;
     }
     updateRibbonGeometry(_camWorld);
-    updateDecalGeometry();
+    updateDecalGeometry(_camWorld, Math.cos(cs.yaw)*cosP, Math.sin(cs.yaw)*cosP);
     renderer.render(scene, camera);
     return true;
   },

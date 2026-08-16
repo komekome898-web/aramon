@@ -3332,10 +3332,15 @@ function drawLavaWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
   // 世界座標でうねる帯状ポリゴンを作る(各頂点を個別に地面(z=0)へ投影するため、遠近感が正しく付く)
   function buildBandPoints(halfWidthFrac){
     const top=[], bot=[];
+    const hw = ae.width*halfWidthFrac*0.5;
+    /* うねりを**当たり判定の外へ出さない**。以前は振幅が幅の0.32倍あり、
+       いちばん外の層(半幅0.475倍)と足すと**判定の1.59倍の幅**まで膨らんでいた。
+       当たると思って避ける/当たらないと思って被弾する原因になる(採点表の最優先条件)。
+       帯の半幅を引いた残りぶんだけ揺らす(2つの正弦の係数の和を1にして超えないようにする)。 */
+    const room = Math.max(0, ae.width*0.5 - hw);
     for(let i=0;i<=segs;i++){
       const along = curReach*(i/segs);
-      const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
-      const hw = ae.width*halfWidthFrac*0.5;
+      const wobble = (Math.sin(along*0.018+t)*0.69 + Math.sin(along*0.05-t*1.7)*0.31) * room;
       const cx = ae.x+fx*along+rx*wobble, cy = ae.y+fy*along+ry*wobble;
       const tp = projectGround(cx+rx*hw, cy+ry*hw);
       const bp = projectGround(cx-rx*hw, cy-ry*hw);
@@ -3436,10 +3441,15 @@ function drawStyledWaveEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const t = matchTime*2.6;
   function buildBandPoints(halfWidthFrac){
     const top=[], bot=[];
+    const hw = ae.width*halfWidthFrac*0.5;
+    /* うねりを**当たり判定の外へ出さない**。以前は振幅が幅の0.32倍あり、
+       いちばん外の層(半幅0.475倍)と足すと**判定の1.59倍の幅**まで膨らんでいた。
+       当たると思って避ける/当たらないと思って被弾する原因になる(採点表の最優先条件)。
+       帯の半幅を引いた残りぶんだけ揺らす(2つの正弦の係数の和を1にして超えないようにする)。 */
+    const room = Math.max(0, ae.width*0.5 - hw);
     for(let i=0;i<=segs;i++){
       const along = curReach*(i/segs);
-      const wobble = Math.sin(along*0.018+t)*ae.width*0.22 + Math.sin(along*0.05-t*1.7)*ae.width*0.1;
-      const hw = ae.width*halfWidthFrac*0.5;
+      const wobble = (Math.sin(along*0.018+t)*0.69 + Math.sin(along*0.05-t*1.7)*0.31) * room;
       const cx = ae.x+fx*along+rx*wobble, cy = ae.y+fy*along+ry*wobble;
       const tp = projectGround(cx+rx*hw, cy+ry*hw);
       const bp = projectGround(cx-rx*hw, cy-ry*hw);
@@ -3474,7 +3484,8 @@ function drawInfernoFanEffect(ae, fillDist, fadeAlpha, inTelegraph){
     for(let i=0;i<=steps;i++){
       const a = ae.angle - half + (2*half)*(i/steps);
       const wob = 1 + wobAmp*Math.sin(i*1.9 + t) + wobAmp*0.6*Math.sin(i*3.7 - t*1.6);
-      const r = curReach*frac*wob;
+      // 炎のゆらぎで**到達距離の外へ出さない**(いちばん外の層で射程の1.08倍まで伸びていた)
+      const r = Math.min(curReach, curReach*frac*wob);
       const p = projectGround(ae.x+Math.cos(a)*r, ae.y+Math.sin(a)*r);
       if(p) arr.push(p);
     }
@@ -5853,9 +5864,17 @@ function fxGlStyleFor(o){
   const owner = (o.ownerId != null && typeof getEntity === 'function') ? getEntity(o.ownerId) : null;
   const el = (owner && owner.element) || o.element || null;
   const st = (el && table[el]) || null;
+  /* 【1か所で直す】爆風(kind:'circle')は spawnGroundBlast が作る**別物の範囲技**で、
+     angle も range も「扇の向き・射程」ではなく「円の半径」の意味になる。
+     属性ごとの cast は前方へ向けた技のつもりで書いてあるので、そのまま呼ぶと
+     羅生門の先端の爆風(半径240)に足元用の半径60の輪が出る、といった食い違いが起きる。
+     **既定の cast は爆風の枝を持っている**ので、円のときはそちらへ渡す。
+     自分で円を描き分ける属性(ピクシー・ハム=技そのものが爆風)は blastAware:true を
+     立てておく。属性ごとの if をここから外へ増やさない。 */
+  const castOwn = (o.kind === 'circle' && st && !st.blastAware) ? null : (st && st.cast);
   // 属性の表に無い出番は既定で埋める(4段のうち1つだけ書いた表も成立させる)
   return {
-    cast:    (st && st.cast)    || def.cast,
+    cast:    castOwn            || def.cast,
     fly:     (st && st.fly)     || def.fly,
     impact:  (st && st.impact)  || def.impact,
     /* 【自分で入れたバグ】ここだけ `|| null` にしていたため、**属性の表は持つが

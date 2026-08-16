@@ -1,0 +1,166 @@
+{
+  "seed": 20260815,
+  "map": "wild_real",
+  "size": [
+    1280,
+    600
+  ],
+  "frames": [
+    0.1,
+    0.28,
+    0.5,
+    0.85,
+    1.15
+  ],
+  "shots": [
+    {
+      "el": "god",
+      "tier": 3,
+      "at": 0.1,
+      "move": "ゴッドライジング",
+      "style": "godorb",
+      "counts": {
+        "proj": 4,
+        "ae": 0,
+        "part": 7,
+        "yaw": 0,
+        "pinned": true,
+        "playerPx": [
+          640,
+          500
+        ],
+        "cam": [
+          8905,
+          9050
+        ],
+        "vw": 1280,
+        "vh": 600
+      },
+      "file": "shots/fx_ssr3/zeus_ssr/god_t3_0p1.png"
+    },
+    {
+      "el": "god",
+      "tier": 3,
+      "at": 0.28,
+      "move": "ゴッドライジング",
+      "style": "godorb",
+      "counts": {
+        "proj": 4,
+        "ae": 0,
+        "part": 20,
+        "yaw": 0,
+        "pinned": true,
+        "playerPx": [
+          640,
+          500
+        ],
+        "cam": [
+          8905,
+          9050
+        ],
+        "vw": 1280,
+        "vh": 600
+      },
+      "file": "shots/fx_ssr3/zeus_ssr/god_t3_0p28.png"
+    },
+    {
+      "el": "god",
+      "tier": 3,
+      "at": 0.5,
+      "move": "ゴッドライジング",
+      "style": "godorb",
+      "counts": {
+        "proj": 4,
+        "ae": 0,
+        "part": 27,
+        "yaw": 0,
+        "pinned": true,
+        "playerPx": [
+          640,
+          500
+        ],
+        "cam": [
+          8905,
+          9050
+        ],
+        "vw": 1280,
+        "vh": 600
+      },
+      "file": "shots/fx_ssr3/zeus_ssr/god_t3_0p5.png"
+    },
+    {
+      "el": "god",
+      "tier": 3,
+      "at": 0.85,
+      "move": "ゴッドライジング",
+      "style": "godorb",
+      "counts": {
+        "proj": 0,
+        "ae": 0,
+        "part": 52,
+        "yaw": 0,
+        "pinned": true,
+        "playerPx": [
+          640,
+          500
+        ],
+        "cam": [
+          8905,
+          9050
+        ],
+        "vw": 1280,
+        "vh": 600
+      },
+      "file": "shots/fx_ssr3/zeus_ssr/god_t3_0p85.png"
+    },
+    {
+      "el": "god",
+      "tier": 3,
+      "at": 1.15,
+      "move": "ゴッドライジング",
+      "style": "godorb",
+      "counts": {
+        "proj": 0,
+        "ae": 0,
+        "part": 8,
+        "yaw": 0,
+        "pinned": true,
+        "playerPx": [
+          640,
+          500
+        ],
+        "cam": [
+          8905,
+          9050
+        ],
+        "vw": 1280,
+        "vh": 600
+      },
+      "file": "shots/fx_ssr3/zeus_ssr/god_t3_1p15.png"
+    }
+  ],
+  "bench": {},
+  "errors": [
+    "CONSOLE Failed to load resource: net::ERR_FAILED",
+    "CONSOLE Failed to load resource: net::ERR_FAILED",
+    "CONSOLE Failed to load resource: net::ERR_FAILED"
+  ],
+  "setups": {
+    "god_t3": {
+      "ok": true,
+      "x": 9050,
+      "y": 9050,
+      "map": "wild_real",
+      "el": "god",
+      "view": "front",
+      "yaw": 0,
+      "skin": "zeus_ssr",
+      "move": "ストレート",
+      "cam": {
+        "x": 8905,
+        "y": 9050,
+        "z": -75
+      }
+    }
+  }
+}
