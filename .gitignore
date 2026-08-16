@@ -3,3 +3,6 @@ assets/
 tools/out/
 __pycache__/
 *.pyc
+
+# 技エフェクトの撮影結果(tools/fx_shot.mjs の出力)。撮り直せる派生物なので追跡しない
+shots/

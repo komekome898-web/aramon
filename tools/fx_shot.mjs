@@ -323,6 +323,9 @@ async function freshPage(){
   const ctx = await browser.newContext({ viewport:{ width:W, height:H }, deviceScaleFactor:1,
                                          serviceWorkers:'block' });
   page = await ctx.newPage();
+  /* ソフトウェアGPUでは1枚の screenshot に30秒以上かかることがある(実際に0.85sの
+     コマで TimeoutError が出て、その技の残りのコマが丸ごと欠けた)。長めに取る。 */
+  page.setDefaultTimeout(90000);
   page.on('pageerror', e=> errors.push('PAGEERR '+String(e).split('\n')[0]));
   page.on('console', m=>{ if(m.type()==='error') errors.push('CONSOLE '+m.text().slice(0,160)); });
   // 外部(フォント・Firebase)はヘッドレスでは繋がらない。待ち時間を作らないよう即座に切る
@@ -394,7 +397,8 @@ for(const [el, tiers] of byElement){
               width: Math.min(W, CROP.w), height: Math.min(H, CROP.h) }
           : { x:0, y:0, width:W, height:H };
         await page.screenshot({ path:file, clip });
-        report.shots.push({ el, tier, at, move:info.name, style:info.style, counts,
+        report.shots.push({ el, tier, at, move:info.name, skinName:info.skinName||null,
+                            skin:SKIN||null, style:info.style, counts,
                             file: path.relative(ROOT, file) });
       }
       if(flag('bench')){
