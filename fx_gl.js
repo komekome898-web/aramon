@@ -382,8 +382,11 @@ function updateRibbonGeometry(camWorld){
       // 末端ほど細くする(先細り)。s0=0が一番古い節
       const halfW0 = lane.width * ((s0)   /(n-1)) * 0.5;
       const halfW1 = lane.width * ((s0+1) /(n-1)) * 0.5;
-      const a0 = lane.bright * (s0/(n-1))     * 0.30;
-      const a1 = lane.bright * ((s0+1)/(n-1)) * 0.30;
+      /* 帯の濃さ。0.30では**記録上は帯があるのに画に出ない**状態だった
+         (批評家が差分画像で「炎の領域に1画素も変化が無い」と実測)。
+         節が重なって白飛びしない範囲で上げる。 */
+      const a0 = lane.bright * (s0/(n-1))     * 0.55;
+      const a1 = lane.bright * ((s0+1)/(n-1)) * 0.55;
       // 先端(新しい節)ほど白熱へ寄せる = 芯が明るく見える
       const hot0 = Math.pow(s0/(n-1), 3) * wh, hot1 = Math.pow((s0+1)/(n-1), 3) * wh;
       for(let cIdx=0; cIdx<RIBBON_COLS && q<maxQ; cIdx++, q++){
