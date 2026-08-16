@@ -455,10 +455,20 @@ function ensureScene(){
   }
 }
 
+/* この層の描画解像度を2D側より落とす倍率。
+   【なぜ効くか】この層が描くのは**光の足し算だけ**で、粒も軌跡もぼんやりした
+   低い周波数の絵しか持たない。輪郭の鋭さを担っているのは2D側の芯(炎の柱・ビームの筒)
+   なので、こちらを0.7倍で描いて引き伸ばしても**見た目はほとんど変わらない**。
+   一方で塗る画素は半分になる。加算合成の大きな粒は塗りつぶし律速なので、ここが一番効く。
+   **「負荷でエフェクトを削らない/同じ見た目のまま安くする」という方針そのもの。**
+   1にすると等倍。実機で粗く見えるようなら上げる。                              */
+let FX_RES_SCALE = 0.7;
+
 function applySize(){
   if(!renderer) return;
   const w = window.viewW || 1, h = window.viewH || 1;
-  renderer.setPixelRatio(window.__aramonRenderScale || Math.min(window.devicePixelRatio || 1, 2));
+  const base = window.__aramonRenderScale || Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(base * FX_RES_SCALE);
   renderer.setSize(w, h, true);
   camera.aspect = w/h;
   camera.updateProjectionMatrix();
@@ -482,6 +492,8 @@ const api = {
   },
   isActive(){ return active && !!scene; },
   resize(){ if(active) applySize(); },
+  // 計測用: 描画倍率を変えて比べる(本番から呼ぶものではない)
+  setResScale(v){ FX_RES_SCALE = Math.max(0.25, Math.min(2, v||0.7)); applySize(); },
 
   /* フレームの最初。dt は実時間(秒)。**matchTime ではない**:
      演出は試合の一時停止中でも自然に減衰してほしいため。 */
@@ -547,6 +559,22 @@ const api = {
 
   // 計測用
   stats(){ return { particles: MAX_PARTICLES, ribbons: R.lanes.filter(l=>l.key).length, decals: D.list.length }; },
+  /* **この層の描画だけ**にかかる時間(ms)。フレーム全体を測ると2Dの描画と混ざり、
+     他のプロセスの負荷でも数字が動いて「層を足したら速くなった」のような
+     嘘の差が出る(実際に出た)。中央値を返すので単発の外れ値に強い。 */
+  benchSelf(n){
+    if(!active || !scene) return null;
+    const N = n || 40;
+    const t = [];
+    for(let i=0;i<N+8;i++){
+      const t0 = performance.now();
+      api.render();
+      if(i >= 8) t.push(performance.now() - t0);   // 最初の8回は暖機ぶんで捨てる
+    }
+    t.sort((a,b)=>a-b);
+    return { ms:+t[t.length>>1].toFixed(2), min:+t[0].toFixed(2), max:+t[t.length-1].toFixed(2),
+             scale: FX_RES_SCALE, ...api.stats() };
+  },
 };
 
 window.__aramonFxGl = api;
