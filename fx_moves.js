@@ -149,7 +149,7 @@ const FX_MOVES = {
       const hot = fxHot(c, 0.7), soot = fxDim(c, 0.3);
       fx.burst({ x:p.x, y:p.y, z:(p.z||0)+10, count:18, speed:300, jitter:6,
                  r:hot[0], g:hot[1], b:hot[2], bright:1.8, life:0.22, size0:16, size1:0.5,
-                 az:-260, turb:6, turbFreq:2.4, spin:7 });
+                 az:-260, turb:6, turbFreq:2.4, spin:7, stretch:0.9 });
       fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:12, speed:120, jitter:14,
                  elev:0.9, elevSpread:0.6, r:soot[0], g:soot[1], b:soot[2], bright:0.9, hot:0.1,
                  life:0.8, size0:22, size1:6, az:20, turb:24, turbFreq:0.8, spin:1 });
@@ -1199,7 +1199,7 @@ FX_MOVES.spark = {
                 vx:(Math.random()-0.5)*130, vy:(Math.random()-0.5)*130, vz:(Math.random()-0.5)*160,
                 az:SPARK_ARC_G, r:hot[0], g:hot[1], b:hot[2], bright:1.3,
                 life:SPARK_LIFE*(0.7+Math.random()*0.8), size0:5+Math.random()*5, size1:0.5,
-                turb:8, turbFreq:3.2, spin:9 });
+                turb:8, turbFreq:3.2, spin:9, stretch:1.0 });
     }
   },
   impact(fx, p, c){
@@ -1208,7 +1208,8 @@ FX_MOVES.spark = {
     // 閃光。**量ではなく明るさと短さ**で雷にする
     fx.burst({ x:p.x, y:p.y, z:(p.z||0)+10, count:12, speed:330, jitter:4,
                r:hot[0], g:hot[1], b:hot[2], bright:2.2,
-               life:0.11, size0:20, size1:0.5, az:SPARK_ARC_G, turb:3, turbFreq:3, spin:9 });
+               life:0.11, size0:20, size1:0.5, az:SPARK_ARC_G, turb:3, turbFreq:3, spin:9,
+               stretch:1.2 });
     // 地面を這う枝分かれ。雷だけの見せ場
     sparkBranch(fx, p.x, p.y, c, R*0.9, 5);
     fx.ring({ x:p.x, y:p.y, r0:3, r1:R*1.6, life:0.2, color:hot, width:7, bright:1.3 });
@@ -1243,7 +1244,8 @@ FX_MOVES.spark = {
       const y = ae.y + fwy*ae.__fxStrike + rgy*lat;
       fx.burst({ x, y, z:fxGroundZ(x,y)+4, count:12, speed:230, jitter:6, jitterZ:6,
                  elev:1.1, elevSpread:0.5, r:hot[0], g:hot[1], b:hot[2], bright:1.9,
-                 life:0.13, size0:12, size1:0.5, az:SPARK_ARC_G*4, turb:5, turbFreq:3, spin:8 });
+                 life:0.13, size0:12, size1:0.5, az:SPARK_ARC_G*4, turb:5, turbFreq:3, spin:8,
+                 stretch:1.3 });
       sparkBranch(fx, x, y, c, amp*1.6, 3);
       fx.ring({ x, y, r0:2, r1:amp*1.8, life:0.18, color:hot, width:6, bright:1.2 });
     }

@@ -97,6 +97,7 @@ attribute vec4  aColor;     // rgb=色 / a=最大の明るさ
 attribute vec4  aTime;      // x=発生時刻 y=寿命 z=開始サイズ w=終了サイズ
 attribute vec4  aTurb;      // x=乱流の強さ y=乱流の周期 z=個体シード w=回転速度
 attribute float aHot;       // 芯の白熱量 0..1。0=白く光らない(煙・土ぼこり)
+attribute float aStretch;   // 速度方向への伸び。0=丸いまま、1以上=尾を引く筋になる
 uniform float uTime;
 uniform vec2  uViewport;
 varying vec4  vColor;
@@ -138,9 +139,23 @@ void main(){
 
   // ビルボード。クアッドの角(position.xy = ±0.5)をビュー空間で広げる
   float size = mix(aTime.z, aTime.w, t01);
-  float rot = aTurb.w * age + aTurb.z * 6.283;
-  float cr = cos(rot), sr = sin(rot);
-  vec2 corner = vec2(position.x*cr - position.y*sr, position.x*sr + position.y*cr);
+  vec2 corner;
+  if(aStretch > 0.01){
+    /* 速度の向きへ引き伸ばして「筋」にする。
+       【なぜ要るか】どの粒も同じ丸いボケだと、落雷の火花が雪に見える(批評家の指摘)。
+       速度を画面の向きへ落として、その軸だけ伸ばす。回転は掛けない
+       (伸びた粒が回ると軌跡の向きと合わなくなる)。                        */
+    vec3 vNow = aVel + aAcc*age;
+    vec3 vView = mat3(modelViewMatrix) * vec3(vNow.x, vNow.z, vNow.y);
+    vec2 dir = (length(vView.xy) > 0.001) ? normalize(vView.xy) : vec2(1.0, 0.0);
+    vec2 perp = vec2(-dir.y, dir.x);
+    float sp = clamp(length(vView.xy) / 260.0, 0.0, 1.0);       // 速いほど長く
+    corner = dir * (position.x * (1.0 + aStretch*2.6*sp)) + perp * position.y;
+  } else {
+    float rot = aTurb.w * age + aTurb.z * 6.283;
+    float cr = cos(rot), sr = sin(rot);
+    corner = vec2(position.x*cr - position.y*sr, position.x*sr + position.y*cr);
+  }
   mv.xy += corner * size;
 
   gl_Position = projectionMatrix * mv;
@@ -198,7 +213,7 @@ function buildParticles(){
     return a;
   };
   mk('aPos0', 3); mk('aVel', 3); mk('aAcc', 3);
-  mk('aColor', 4); mk('aTime', 4); mk('aTurb', 4); mk('aHot', 1);
+  mk('aColor', 4); mk('aTime', 4); mk('aTurb', 4); mk('aHot', 1); mk('aStretch', 1);
   // 全部「寿命切れ」の状態から始める(発生時刻を大きく負にする)
   const t = P.attr.aTime.array;
   for(let i=0;i<MAX_PARTICLES;i++){ t[i*4] = -1e9; t[i*4+1] = 0.001; }
@@ -242,6 +257,7 @@ function emitOne(o){
   a.aTurb.array[i4+3] = o.spin || 0;
   // 既定は光る。煙・土ぼこりを出すときだけ hot:0 を渡す
   a.aHot.array[i] = (o.hot == null ? 1 : o.hot);
+  a.aStretch.array[i] = o.stretch || 0;
   /* 書き込んだリング位置の範囲を覚えておく。**全4096個を毎フレーム転送しない。**
      粒は発生の瞬間だけCPUが書き、あとはシェーダが時間から位置を出すので、
      転送が要るのは「このフレームで新しく生まれたぶん」だけ。           */
@@ -257,9 +273,15 @@ function emitOne(o){
 ===================================================================== */
 const R = { mesh:null, geo:null, mat:null, lanes:[], pos:null, col:null };
 
+/* 帯を横に3列で張る(左の羽・芯・右の羽)。
+   【なぜ必要か】1列だと帯の左右の縁が**硬い直線**になり、どの属性も同じ
+   「多角形のくさび」に見える。批評家の実測では5属性のtier1が
+   形で区別できなかった。外側の2列はアルファ0で終わるので縁が溶ける。 */
+const RIBBON_COLS = 3;
+
 function buildRibbons(){
   const geo = new THREE.BufferGeometry();
-  const quads = MAX_RIBBONS * (RIBBON_SEGS-1);
+  const quads = MAX_RIBBONS * (RIBBON_SEGS-1) * RIBBON_COLS;
   const pos = new Float32Array(quads * 4 * 3);
   const col = new Float32Array(quads * 4 * 4);
   const idx = new Uint16Array(quads * 6);
@@ -314,51 +336,59 @@ const _tmpA = new THREE.Vector3(), _tmpB = new THREE.Vector3(), _tmpC = new THRE
 function updateRibbonGeometry(camWorld){
   const pos = R.pos, col = R.col;
   let q = 0;
-  const maxQ = MAX_RIBBONS * (RIBBON_SEGS-1);
+  const maxQ = MAX_RIBBONS * (RIBBON_SEGS-1) * RIBBON_COLS;
+  /* 横方向の割り当て。芯は濃く、両羽は外側でアルファ0まで落とす。
+     [内側の位置, 外側の位置, 内側の濃さ, 外側の濃さ] を幅の割合で持つ。 */
+  const COLS = [
+    [-1.0, -0.35, 0.0, 1.0],   // 左の羽: 外(0) → 芯寄り(1)
+    [-0.35, 0.35, 1.0, 1.0],   // 芯: 濃さ一定
+    [ 0.35, 1.0,  1.0, 0.0],   // 右の羽: 芯寄り(1) → 外(0)
+  ];
   for(const lane of R.lanes){
     if(!lane.key) continue;
     // 0.35秒使われなかった帯は消す(技が終わったのに残り続けるのを防ぐ)
     if(clock0 - lane.usedAt > 0.35){ lane.key = null; lane.pts.length = 0; continue; }
     const n = lane.pts.length/3;
     if(n < 2) continue;
-    for(let s=0; s<n-1 && q<maxQ; s++, q++){
-      const i0 = s*3, i1 = (s+1)*3;
+    const wh = lane.whiten;
+    for(let s0=0; s0<n-1 && q<maxQ; s0++){
+      const i0 = s0*3, i1 = (s0+1)*3;
       _tmpA.set(lane.pts[i0], lane.pts[i0+2], lane.pts[i0+1]);       // ワールド→Three
       _tmpB.set(lane.pts[i1], lane.pts[i1+2], lane.pts[i1+1]);
       _tmpC.subVectors(_tmpB, _tmpA);                                 // 進行方向
       const toCam = _tmpA.clone().sub(camWorld);
       const side = _tmpC.clone().cross(toCam).normalize();
-      // 末端ほど細くする(先細り)。s=0が一番古い節
-      const w0 = lane.width * ((s)   /(n-1)) * 0.5;
-      const w1 = lane.width * ((s+1) /(n-1)) * 0.5;
-      const v = q*4*3;
-      pos[v+0]=_tmpA.x - side.x*w0; pos[v+1]=_tmpA.y - side.y*w0; pos[v+2]=_tmpA.z - side.z*w0;
-      pos[v+3]=_tmpA.x + side.x*w0; pos[v+4]=_tmpA.y + side.y*w0; pos[v+5]=_tmpA.z + side.z*w0;
-      pos[v+6]=_tmpB.x + side.x*w1; pos[v+7]=_tmpB.y + side.y*w1; pos[v+8]=_tmpB.z + side.z*w1;
-      pos[v+9]=_tmpB.x - side.x*w1; pos[v+10]=_tmpB.y - side.y*w1; pos[v+11]=_tmpB.z - side.z*w1;
-      const c = q*4*4;
-      /* 濃さ。**0.55は濃すぎた。** 帯は節が重なって加算されるので、1枚を濃くすると
-         先端が必ず白へ飽和し、どんな色を渡しても「白いサーチライト」になる
-         (実際に fire_t1 でそうなった)。1枚を薄くして、重なりで濃さを出す。 */
-      const a0 = lane.bright * (s/(n-1)) * 0.30;
-      const a1 = lane.bright * ((s+1)/(n-1)) * 0.30;
+      // 末端ほど細くする(先細り)。s0=0が一番古い節
+      const halfW0 = lane.width * ((s0)   /(n-1)) * 0.5;
+      const halfW1 = lane.width * ((s0+1) /(n-1)) * 0.5;
+      const a0 = lane.bright * (s0/(n-1))     * 0.30;
+      const a1 = lane.bright * ((s0+1)/(n-1)) * 0.30;
       // 先端(新しい節)ほど白熱へ寄せる = 芯が明るく見える
-      const hot0 = Math.pow(s/(n-1), 3), hot1 = Math.pow((s+1)/(n-1), 3);
-      const wh = lane.whiten;
-      for(let k=0;k<4;k++){
-        const hot = (k===0||k===1) ? hot0 : hot1;
-        const a   = (k===0||k===1) ? a0   : a1;
-        col[c+k*4+0] = (lane.color[0] + (1-lane.color[0])*hot*wh) * a;
-        col[c+k*4+1] = (lane.color[1] + (1-lane.color[1])*hot*wh) * a;
-        col[c+k*4+2] = (lane.color[2] + (1-lane.color[2])*hot*wh) * a;
-        col[c+k*4+3] = 0;   // ページ側で加算合成(冒頭の説明を参照)
+      const hot0 = Math.pow(s0/(n-1), 3) * wh, hot1 = Math.pow((s0+1)/(n-1), 3) * wh;
+      for(let cIdx=0; cIdx<RIBBON_COLS && q<maxQ; cIdx++, q++){
+        const [uIn, uOut, fIn, fOut] = COLS[cIdx];
+        const v = q*4*3;
+        // 4隅: A側の内・A側の外・B側の外・B側の内
+        pos[v+0]=_tmpA.x + side.x*uIn *halfW0; pos[v+1]=_tmpA.y + side.y*uIn *halfW0; pos[v+2]=_tmpA.z + side.z*uIn *halfW0;
+        pos[v+3]=_tmpA.x + side.x*uOut*halfW0; pos[v+4]=_tmpA.y + side.y*uOut*halfW0; pos[v+5]=_tmpA.z + side.z*uOut*halfW0;
+        pos[v+6]=_tmpB.x + side.x*uOut*halfW1; pos[v+7]=_tmpB.y + side.y*uOut*halfW1; pos[v+8]=_tmpB.z + side.z*uOut*halfW1;
+        pos[v+9]=_tmpB.x + side.x*uIn *halfW1; pos[v+10]=_tmpB.y + side.y*uIn *halfW1; pos[v+11]=_tmpB.z + side.z*uIn *halfW1;
+        const c = q*4*4;
+        // 頂点ごとに「どの節か(a0/a1)」と「横のどこか(fIn/fOut)」を掛ける
+        const va = [a0*fIn, a0*fOut, a1*fOut, a1*fIn];
+        const vh = [hot0, hot0, hot1, hot1];
+        for(let k=0;k<4;k++){
+          const a = va[k], hot = vh[k];
+          col[c+k*4+0] = (lane.color[0] + (1-lane.color[0])*hot) * a;
+          col[c+k*4+1] = (lane.color[1] + (1-lane.color[1])*hot) * a;
+          col[c+k*4+2] = (lane.color[2] + (1-lane.color[2])*hot) * a;
+          col[c+k*4+3] = 0;   // ページ側で加算合成(冒頭の説明を参照)
+        }
       }
     }
   }
   /* **使った範囲だけを描き、使った範囲だけを転送する。**
-     以前は毎フレーム全クアッド(48本×19節)をゼロで埋めて丸ごと転送していた。
-     生きている帯が2〜3本でも同じ量を送るので、実戦(帯18本)で数十msを
-     ここで使っていた。描画範囲を絞れば潰す必要も無くなる。            */
+     以前は毎フレーム全クアッドをゼロで埋めて丸ごと転送していた。 */
   R.geo.setDrawRange(0, q*6);
   setUpdateRange(R.geo.attributes.position, 0, q*4*3);
   setUpdateRange(R.geo.attributes.color,    0, q*4*4);
@@ -540,7 +570,7 @@ const api = {
         life:(o.life||0.6)*(0.6+Math.random()*0.8),
         size0:(o.size0||10)*(0.7+Math.random()*0.6), size1:o.size1,
         turb:o.turb||0, turbFreq:o.turbFreq||1, spin:o.spin||0,
-        delay:o.delay||0, hot:o.hot,
+        delay:o.delay||0, hot:o.hot, stretch:o.stretch,
       });
     }
   },
