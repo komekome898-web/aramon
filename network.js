@@ -905,6 +905,10 @@ function broadcastNewShotsAsHost(){
     const owner = ae.ownerId!=null ? entities.find(e=>e.id===ae.ownerId) : null;
     window.__aramonPushShotEvent(netState.roomId, {
       type:'aoe', sourceNetId: (owner && owner.netPlayerId) || null,
+      /* 撃った本人のid。**これが無いとゲスト側で属性が分からず、技のエフェクトが
+         既定の見た目に落ちる**(弾には元から付いていたので弾だけ正しく出ていた)。
+         fx_moves.js の作り分けは属性で引くので、ここを落とすとマルチだけ画が痩せる。 */
+      ownerId: ae.ownerId!=null ? ae.ownerId : null,
       kind:ae.kind, x:Math.round(ae.x), y:Math.round(ae.y), angle:ae.angle, color:ae.color,
       range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
@@ -1034,7 +1038,7 @@ function spawnVisualShotFromEvent(evt){
     }
   } else if(evt.type==='aoe'){
     areaEffects.push({
-      hostId:null, kind:evt.kind, x:evt.x, y:evt.y, angle:evt.angle, color:evt.color,
+      hostId:null, ownerId: evt.ownerId!=null ? evt.ownerId : null, kind:evt.kind, x:evt.x, y:evt.y, angle:evt.angle, color:evt.color,
       range:evt.range, width:evt.width, fanAngleDeg:evt.fanAngleDeg, beamCount:evt.beamCount,
       beamSpreadDeg:evt.beamSpreadDeg, spawnAt:matchTime, life:evt.life,
       fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
