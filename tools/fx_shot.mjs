@@ -65,6 +65,10 @@ const CROP = (()=>{
 const MOVES = opt('moves', '');
 /* --view front|side。side は弾道と直角から撮る。軌跡と弾速の判定に要る */
 const VIEW = opt('view', 'front');
+/* --skin <id>: SSR専用tier3(ヴァニッシュ・アムピトリテ・鱗赫など)を撮るために
+   そのスキンを装備した状態にする。素の技とは見た目も性能も別物なので、
+   **SSR専用は必ずスキンを着せて撮る。** */
+const SKIN = opt('skin', '');
 
 fs.mkdirSync(OUT, { recursive:true });
 
@@ -123,6 +127,17 @@ const DRIVER = `(function(){
     muteAudio();
     game.selectedElement = o.element || 'fire';
     game.selectedMastermonKey = null;
+    /* スキンを装備させる。getEquippedSkin() が読む所に直接書く
+       (ロビーのUIを経由しないので、保存の形だけを合わせる)。 */
+    if(o.skin){
+      try{
+        if(typeof setEquippedSkin === 'function') setEquippedSkin(o.element, o.skin);
+        else if(typeof saveEquippedSkins === 'function'){
+          const cur = (typeof loadEquippedSkins==='function') ? loadEquippedSkins() : {};
+          cur[o.element] = o.skin; saveEquippedSkins(cur);
+        }
+      }catch(e){}
+    }
     game.selectedMap = (o.mapKey||'wild').replace(/_real$/,'');
     game.realMapMode = /_real$/.test(o.mapKey||'');
     startGame({});
@@ -176,7 +191,8 @@ const DRIVER = `(function(){
     api._pinCam = { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
     api._me = me; api._tgt = tgt;
     return { ok:true, x:me.x, y:me.y, map:game.activeMapKey, el:me.element,
-             view:o.view||'front', yaw:camState.yaw,
+             view:o.view||'front', yaw:camState.yaw, skin:o.skin||null,
+             move:(function(){ try{ const mv=activeMove(player); return mv&&mv.name; }catch(e){ return null; } })(),
              cam:{ x:Math.round(camPos.x), y:Math.round(camPos.y), z:Math.round(camPos.z) } };
   };
   /* 指定tierの技を1発撃つ。撃つのは「プレイヤー本人が撃つ」経路そのもの。 */
@@ -189,7 +205,13 @@ const DRIVER = `(function(){
               : { x: me.x + Math.cos(me.facingAngle)*2000, y: me.y + Math.sin(me.facingAngle)*2000 };
     fireMove(me, mv.melee ? api._tgt : aim, mv);
     me.fireCooldown = 9999;   // 連射させない(1発だけを見る)
-    return { name: mv.name, tier: mv.tier, aoe: mv.aoeShape||null, style: mv.aoeStyle||mv.projStyle||null };
+    /* 実際に出た技の名前は fireMove の中で skinTier3Move() を通ったあとの値。
+       activeMove() の戻りは素の技なので、**SSR専用tier3を撮っても素の名前が記録される**。
+       出た弾/範囲技から拾い直す(スキンが効いているかの確認になる)。 */
+    const shown = (projectiles[projectiles.length-1] || areaEffects[areaEffects.length-1] || {});
+    return { name: mv.name, tier: mv.tier, aoe: mv.aoeShape||null,
+             style: shown.projStyle || shown.style || mv.aoeStyle || mv.projStyle || null,
+             skinName: (typeof skinTier3Move==='function' ? (skinTier3Move(mv, me)||{}).name : null) };
   };
   /* 固定dtで時間を進める。撃ち返し・再発射は止めてあるので毎回同じ絵になる。 */
   api.step = function(seconds, dt){
@@ -313,8 +335,8 @@ for(const [el, tiers] of byElement){
   for(const tier of tiers){
     try {
       await freshPage();
-      const setup = await page.evaluate(([e,m,s,v])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v }),
-                                        [el, MAP, SEED, VIEW]);
+      const setup = await page.evaluate(([e,m,s,v,sk])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v, skin:sk }),
+                                        [el, MAP, SEED, VIEW, SKIN]);
       if(!setup || !setup.ok){ errors.push(`${el}:t${tier} setup失敗`); continue; }
       report.setups = report.setups || {};
       report.setups[`${el}_t${tier}`] = setup;

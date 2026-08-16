@@ -38,6 +38,17 @@ function fxScaleForSize(ae){
   return Math.max(0.35, Math.min(1, 1 - (r - 200) / 700));
 }
 
+
+/* 着弾の地面の輪が広がってよい上限(ワールド単位)。
+   【なぜ1か所にまとめるか】**見た目が当たり判定より大きいと、当たると思って避けた/
+   当たらないと思って被弾する。** 使い勝手が変わるので、見栄えより優先する。
+   splash があるならそれ、無ければ hitR の3倍まで。ここを通さない輪を新しく足さない。 */
+function fxHitRadius(p){
+  const sp = p && p.splash;
+  if(sp && sp > 0) return sp;
+  return Math.max(40, (p && p.hitR ? p.hitR : 12) * 3);
+}
+
 /* 色を白へ寄せる(白熱の芯を作る)。t=0で技の色、t=1で白 */
 function fxHot(c, t){ return [c[0]+(1-c[0])*t, c[1]+(1-c[1])*t, c[2]+(1-c[2])*t]; }
 /* 色を暗く落とす(煙・縁を作る) */
@@ -57,7 +68,7 @@ const FX_DEFAULT = {
     fx.burst({ x:p.x, y:p.y, z:(p.z||0)+10, count:14, speed:200, jitter:8,
                r:h[0], g:h[1], b:h[2], bright:1.3, life:0.34, size0:12, size1:0.5,
                az:-300, turb:10, turbFreq:1.6, spin:5 });
-    fx.ring({ x:p.x, y:p.y, r0:6, r1:Math.max(60, (p.splash||60)), life:0.32,
+    fx.ring({ x:p.x, y:p.y, r0:6, r1:fxHitRadius(p), life:0.32,
               color:c, width:11, bright:0.9 });
     fx.shake(Math.min(0.7, (p.hitR||10)/26), p.x, p.y);
     fx.flash(0.15);
@@ -175,7 +186,7 @@ const FX_MOVES = {
       fx.burst({ x:p.x, y:p.y, z:(p.z||0)+12, count:12, speed:120, jitter:14,
                  elev:0.9, elevSpread:0.6, r:soot[0], g:soot[1], b:soot[2], bright:0.9, hot:0.1,
                  life:0.8, size0:22, size1:6, az:20, turb:24, turbFreq:0.8, spin:1 });
-      fx.ring({ x:p.x, y:p.y, r0:5, r1:Math.max(70, (p.splash||70)*1.2), life:0.3,
+      fx.ring({ x:p.x, y:p.y, r0:5, r1:fxHitRadius(p), life:0.3,
                 color:hot, width:12, bright:1.1 });
       fx.shake(Math.min(0.6, (p.hitR||10)/22), p.x, p.y);
       fx.flash(0.2);
@@ -416,8 +427,10 @@ FX_MOVES.ark = {
                 turb:5, turbFreq:2, spin:0 });
     }
     // ---- 地面: 外へ広がる薄い輪 + 内側の短い輪。**白へ寄せない・太くしない** ----
-    fx.ring({ x:p.x, y:p.y, r0:R*0.25, r1:R*3.2, life:0.6,  color:gold, width:17, bright:1.0 });
-    fx.ring({ x:p.x, y:p.y, r0:4,      r1:R*1.1, life:0.26, color:hot,  width:9,  bright:1.15 });
+    /* **当たり判定の外へ広げない**(以前は3.2倍だった)。余韻は粒で作る。 */
+    const HR = fxHitRadius(p);
+    fx.ring({ x:p.x, y:p.y, r0:HR*0.25, r1:HR,      life:0.6,  color:gold, width:14, bright:0.9 });
+    fx.ring({ x:p.x, y:p.y, r0:4,       r1:HR*0.45, life:0.26, color:hot,  width:8,  bright:1.0 });
     // ---- 4段目: 残り羽根。2秒級の寿命で余韻を残す(採点表7)。**着弾より後に画が痩せない** ----
     fx.burst({ x:p.x, y:p.y, z:(p.z||0)+30, count:30, speed:120, jitter:R*0.5, jitterZ:70,
                elev:0.75, elevSpread:0.9, r:halo[0], g:halo[1], b:halo[2], bright:1.0,
@@ -547,8 +560,9 @@ FX_MOVES.illumine = {
                r:core[0], g:core[1], b:core[2], bright:2.1,
                life:0.14, size0:16, size1:0.5, az:-120, turb:0, spin:8 });
     // ---- 地面: 暗い縁の広い輪 + 芯の短い輪 ----
-    fx.ring({ x:p.x, y:p.y, r0:R*0.2, r1:R*3.0, life:0.6,  color:rim, width:16, bright:0.7 });
-    fx.ring({ x:p.x, y:p.y, r0:2,     r1:R*0.9, life:0.24, color:viv, width:8,  bright:1.0 });
+    const HR = fxHitRadius(p);   // 当たり判定の外へ広げない
+    fx.ring({ x:p.x, y:p.y, r0:HR*0.2, r1:HR,      life:0.6,  color:rim, width:14, bright:0.62 });
+    fx.ring({ x:p.x, y:p.y, r0:2,      r1:HR*0.4, life:0.24, color:viv, width:8,  bright:0.9 });
     /* ---- 4段目: 残滓。地面を這って1.6〜2.6秒かけてゆっくり消える ----
        外へ這う速さは20前後まで。速いと「散った粒」になって染みに見えない。
        粒は大きく・数を多く・重ねる。**1つ1つは薄い**ので、重なった所だけが濃くなる。 */
@@ -674,8 +688,9 @@ FX_MOVES.god = {
                life:0.55, size0:14, size1:1, az:-240, turb:16, turbFreq:1.8, spin:4 });
     /* ---- 地面: 色ごとの輪。**4つの弾がそれぞれ自分の色で輪を出す**ので、
        半径のずれた同心の輪が4色ぶん重なる = 干渉して見える(0.6sのコマで確認)。 ---- */
-    fx.ring({ x:p.x, y:p.y, r0:R*0.2, r1:R*2.8, life:0.55, color:deep, width:16, bright:1.05 });
-    fx.ring({ x:p.x, y:p.y, r0:2,     r1:R*1.0, life:0.22, color:hot,  width:8,  bright:1.15 });
+    const HR = fxHitRadius(p);   // 当たり判定の外へ広げない
+    fx.ring({ x:p.x, y:p.y, r0:HR*0.2, r1:HR,      life:0.55, color:deep, width:14, bright:0.95 });
+    fx.ring({ x:p.x, y:p.y, r0:2,      r1:HR*0.42, life:0.22, color:hot,  width:8,  bright:1.0 });
     // ---- 4段目: 残り火。上がってから落ちる色の粒。**1.8秒級で余韻を残す** ----
     fx.burst({ x:p.x, y:p.y, z:(p.z||0)+18, count:18, speed:110, jitter:R*0.4, jitterZ:40,
                elev:0.85, elevSpread:0.8, r:deep[0], g:deep[1], b:deep[2], bright:1.0,
@@ -1240,7 +1255,7 @@ FX_MOVES.spark = {
                stretch:1.2 });
     // 地面を這う枝分かれ。雷だけの見せ場
     sparkBranch(fx, p.x, p.y, c, R*0.9, 5);
-    fx.ring({ x:p.x, y:p.y, r0:3, r1:R*1.6, life:0.2, color:hot, width:7, bright:1.3 });
+    fx.ring({ x:p.x, y:p.y, r0:3, r1:fxHitRadius(p), life:0.2, color:hot, width:7, bright:1.1 });
     // 残る帯電。**尾を引かず、その場でチカチカして消える**
     for(let i=0;i<14;i++){
       const a = Math.random()*Math.PI*2, rr = R*Math.random();
@@ -1344,7 +1359,7 @@ FX_MOVES.rock = {
     fx.burst({ x:p.x, y:p.y, z:(p.z||0)+8, count:18, speed:110, jitter:16, jitterZ:14,
                elev:0.35, elevSpread:0.8, r:dust[0], g:dust[1], b:dust[2], bright:0.8, hot:0,
                life:1.5, size0:24, size1:56, az:ROCK_DUST_G, turb:26, turbFreq:0.4, spin:0.5 });
-    fx.ring({ x:p.x, y:p.y, r0:5, r1:R*2.0, life:0.55, color:dust, width:18, bright:0.75 });
+    fx.ring({ x:p.x, y:p.y, r0:5, r1:fxHitRadius(p), life:0.55, color:dust, width:16, bright:0.65 });
     fx.shake(Math.min(0.9, (p.hitR||12)/26), p.x, p.y);
   },
   // 竜巻(projStyle:'tornado')は弾なので sustain の出番は無いが、
