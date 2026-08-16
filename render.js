@@ -3991,13 +3991,27 @@ function fx3dSpike(x, y, gz, h, rBase, col, fade){
   if(!apex || !base) return;
   const sh = auraShades(col);
   const r = rBase*base.scale;
+  /* 根元=暗い煙 / 中間=属性色 / 頂点=白熱 の3層(採点表2)。
+     以前はいちばん明るい所が sh.bright の0.5αで、**白まで届いていなかった**。
+     実測: クリスタルレインの0.85sのコマで全チャンネル245超の画素が1個しか無く、
+     「光っている」ように見えなかった。頂点だけは必ず白飛びさせる。 */
   const g = ctx.createLinearGradient(base.x, base.y, apex.x, apex.y);
-  g.addColorStop(0, _hexA(sh.dark, 0.85));
-  g.addColorStop(0.55, _hexA(col, 0.7));
-  g.addColorStop(1, _hexA(sh.bright, 0.5));
+  g.addColorStop(0, _hexA(sh.dark, 0.9));
+  g.addColorStop(0.5, _hexA(col, 0.72));
+  g.addColorStop(0.86, _hexA(sh.spark, 0.8));
+  g.addColorStop(1, 'rgba(255,255,255,0.95)');
   fx3dFill([{x:base.x-r,y:base.y},{x:base.x+r,y:base.y},apex], g, fade, 0);
   // 光を受けている面(片側だけ明るくして立体に見せる)
   fx3dFill([{x:base.x-r*0.5,y:base.y},{x:base.x+r*0.15,y:base.y},apex], _hexA(sh.bright, 0.55), fade, 10);
+  /* 頂点の白熱。面のグラデーションだけだと投影で潰れて白が出ないことがあるので、
+     先端に小さな白の芯を1つ足して確実に飽和させる。 */
+  const tipR = Math.max(2, r*0.42);
+  const tg = ctx.createRadialGradient(apex.x, apex.y, 0, apex.x, apex.y, tipR);
+  tg.addColorStop(0, 'rgba(255,255,255,0.95)');
+  tg.addColorStop(0.5, _hexA(sh.spark, 0.55));
+  tg.addColorStop(1, _hexA(col, 0));
+  fx3dFill([{x:apex.x-tipR,y:apex.y-tipR},{x:apex.x+tipR,y:apex.y-tipR},
+            {x:apex.x+tipR,y:apex.y+tipR},{x:apex.x-tipR,y:apex.y+tipR}], tg, fade, 12);
   fx3dStroke([{x:base.x-r,y:base.y},apex,{x:base.x+r,y:base.y}], sh.outline, 1.4, 0.6*fade, 8);
 }
 // 空から地面へ落ちる稲妻。上ほど大きく振れる折れ線を3層で描く
@@ -4646,9 +4660,17 @@ function fx3dDomeBurst(ae, curReach, fade){
     const t = k/rings;
     fx3dFill(ring, _mixHex(col, sh.bright, t*0.55), (0.34 - t*0.1)*fade, 0);
   }
-  // 縁と稜線(ドームの形をはっきりさせる)
+  /* 縁と稜線(ドームの形をはっきりさせる)。
+     **広がっていく縁だけは必ず白飛びさせる。** sh.bright は技色を55%白へ寄せた色なので、
+     黒い技(ビッグバン #14121c)では暗い灰色にしかならず、
+     半径330・威力60の爆風なのに**飽和した画素が1つも無い**線画になっていた(実測)。
+     色の決め打ちではなく、採点表2の「芯は必ず白飛びさせる」に当たる扱い。
+     属性の色は本体(輪の積み重ね)が持っているので、identity は失わない。 */
   const rim = fx3dRingPts(ae.x, ae.y, R, 2);
-  if(rim) fx3dStroke(rim, sh.bright, 3.5, 0.9*fade, 20, true);
+  if(rim){
+    fx3dStroke(rim, sh.bright, 3.5, 0.9*fade, 20, true);
+    fx3dStroke(rim, '#ffffff', 1.6, 0.85*fade, 21, true);
+  }
   for(let m=0;m<8;m++){
     const a = (m/8)*Math.PI*2;
     const arc=[];
@@ -4667,7 +4689,8 @@ function fx3dDomeBurst(ae, curReach, fade){
     ctx.globalCompositeOperation = 'lighter';
     const rr = Math.max(4, 26*apex.scale);
     const g = ctx.createRadialGradient(apex.x, apex.y, 0, apex.x, apex.y, rr);
-    g.addColorStop(0, _hexA(sh.spark, 0.9));
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');   // 天辺の芯。暗い技でもここは白く抜く
+    g.addColorStop(0.45, _hexA(sh.spark, 0.7));
     g.addColorStop(1, _hexA(col, 0));
     ctx.beginPath(); ctx.arc(apex.x, apex.y, rr, 0, Math.PI*2);
     ctx.fillStyle = g; ctx.fill();
@@ -4778,8 +4801,18 @@ function drawSingleAreaEffect(ae){
     const fillSpeed = ae.fillSpeed||900;
     const inTelegraph = elapsed <= telegraphTime;
     const fillDist = Math.max(0, elapsed - telegraphTime) * fillSpeed;
-    const fadeStart = ae.life - 0.2;
-    const fadeAlpha = elapsed>fadeStart ? clamp(1-((elapsed-fadeStart)/0.2), 0, 1) : 1;
+    /* 減衰。**先端が最大射程へ届いた時点から落とし始める。**
+       以前は `ae.life - 0.2` の最後の0.2秒だけだったので、寿命の長い技
+       (天河天翔は2.87秒・フラワービームは1.76秒)が**ほぼ全編を全開で持ち**、
+       0.28秒と1.15秒のコマがほとんど同じ絵になっていた
+       (実測: 白飛び画素が15269→9469で62%残る)。採点表7が求める
+       「速く立ち上がり、ゆっくり減衰する」の逆の形。
+       伸びている間は全開のまま(そこは技が育つ時間なので変えない)。 */
+    const reachTime = telegraphTime + (ae.range||0)/Math.max(1, fillSpeed);
+    const tailStart = Math.min(ae.life - 0.2, Math.max(telegraphTime, reachTime));
+    const tailLen   = Math.max(0.2, ae.life - tailStart);
+    const fadeAlpha = elapsed>tailStart
+      ? clamp(1 - Math.pow((elapsed-tailStart)/tailLen, 1.6), 0, 1) : 1;
 
     // 立体エフェクトに差し替える(判定・数値はマップによらず同じものを読む)
     if(real3dFx() && drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph)) return;

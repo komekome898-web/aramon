@@ -280,7 +280,11 @@ const DRIVER = `(function(){
     if(sc){ camPos.x=sc.x; camPos.y=sc.y; camPos.z=sc.z; camState.yaw=sc.yaw; camState.pitch=sc.pitch; }
     render();
     const pp = (typeof project==='function') ? project(player.x, player.y, player.z||0) : null;
+    /* part は**2Dの粒**(combat.js の particles)の数。WebGL層の粒は別勘定なので、
+       ここだけを見て「粒がゼロ」と判定すると必ず読み違える(批評家4名が実際に誤読した)。
+       WebGL層の生きている帯・輪の数を gl として併記する。 */
     return { proj: projectiles.length, ae: areaEffects.length, part: particles.length,
+             gl: (window.__aramonFxGl && window.__aramonFxGl.isActive()) ? window.__aramonFxGl.stats() : null,
              yaw:+camState.yaw.toFixed(3), pinned: !!sc,
              playerPx: pp ? [Math.round(pp.x), Math.round(pp.y)] : null,
              cam:[Math.round(camPos.x), Math.round(camPos.y)], vw:viewW, vh:viewH }; };
@@ -301,7 +305,8 @@ const DRIVER = `(function(){
     if(gl && fxOff) gl.setActive(true);
     return { ms:+ms.toFixed(2), fps:+(1000/ms).toFixed(1),
              fx: gl && gl.isActive() ? gl.stats() : null,
-             proj: projectiles.length, ae: areaEffects.length, part: particles.length };
+             proj: projectiles.length, ae: areaEffects.length, part: particles.length,
+             gl: (window.__aramonFxGl && window.__aramonFxGl.isActive()) ? window.__aramonFxGl.stats() : null };
   };
   /* 画面を「試合中」だけにする。タイトル画面は起動演出のあいだ全面を覆っており、
      タップで消える作りなので startGame() を呼んでも自動では消えない。   */
