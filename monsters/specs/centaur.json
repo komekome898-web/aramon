@@ -1,0 +1,73 @@
+{
+  "key": "centaur",
+  "label": "ケンタウロス",
+  "color": "#7fb236",
+  "dark": "#4f6f1f",
+  "speed": 190,
+  "hp": 110,
+  "trait": "cent",
+  "traitDesc": "技の射程が長く、弾速が速い",
+  "traitEffects": {
+    "rangeMult": 1.2,
+    "projSpeedMult": 1.2
+  },
+  "aura": "green",
+  "aptitude": {
+    "life": "C",
+    "power": "C",
+    "wisdom": "B",
+    "accuracy": "A",
+    "evasion": "D",
+    "vitality": "D"
+  },
+  "skin": {
+    "colors": [
+      "black",
+      "white",
+      "red",
+      "blue",
+      "yellow"
+    ],
+    "source": {
+      "type": "chroma",
+      "hue": 190,
+      "window": 60
+    }
+  },
+  "moves": [
+    {
+      "name": "スロウランサー",
+      "icon": "🏹"
+    },
+    {
+      "name": "マインドフレア",
+      "icon": "🔥"
+    },
+    {
+      "name": "メテオドライブ",
+      "template": "spear"
+    }
+  ],
+  "walk": {
+    "front": "assets/centaur/front.mp4",
+    "back": "assets/centaur/back.mp4",
+    "source": "video",
+    "mode": "chroma"
+  },
+  "images": {
+    "icon": "assets/centaur/icon.png"
+  },
+  "stateChange": {
+    "name": "憤怒",
+    "duration": 30,
+    "cooldown": 120,
+    "trigger": "hpBelow",
+    "triggerValue": 0.5,
+    "effects": {
+      "dmgMult": 1.2,
+      "gutsRegenMult": 2,
+      "cooldownMult": 0.667,
+      "speedMult": 1.5
+    }
+  }
+}
