@@ -221,15 +221,25 @@ const DRIVER = `(function(){
      結果、羅生門の吸い込み・モッチ砲の花びら・サイコキネシスの芯は
      **実装されていても画に出ず、批評家が採点できなかった**。
      fx層の時計も実時間で進むので、描かないとエフェクトの時間も進まない。 */
-  api.step = function(seconds, dt){
-    const d = dt || (1/60);
+  /* draw=true のときだけ1コマごとに描く。
+     【なぜ描く必要があるか】fly / sustain の粒は render.js の fxGlFeed() の中でしか
+     湧かない。撮る瞬間に1回だけ描いていたので、1.15秒の技に対して sustain が
+     5回しか呼ばれず(実機は60fpsで約70回)、**実装した作り込みが画に出なかった**。
+     【なぜ 1/30 か】ソフトウェアGPUでは1描画が重く、1/60で回すと1技90秒かかって
+     撮影が落ちた。粒の数は fxSpawnN(dt,…) が dt に比例し、dt の頭打ちが0.05なので、
+     1/30(=0.033)なら**60fpsと同じ密度**になる。飛翔の位置も同じ。
+     【なぜ発射前は描かないか】技が出ていない間は粒が湧かないので描く意味が無い。 */
+  api.step = function(seconds, dt, draw){
+    const d = dt || (draw ? 1/30 : 1/60);
     let n = Math.max(0, Math.round(seconds/d));
     const sc = api._pinCam;
     for(let i=0;i<n;i++){
       api._me.guts = api._me.maxGuts;
       update(d);
-      if(sc){ camPos.x=sc.x; camPos.y=sc.y; camPos.z=sc.z; camState.yaw=sc.yaw; camState.pitch=sc.pitch; }
-      render();
+      if(draw){
+        if(sc){ camPos.x=sc.x; camPos.y=sc.y; camPos.z=sc.z; camState.yaw=sc.yaw; camState.pitch=sc.pitch; }
+        render();
+      }
     }
     return matchTime;
   };
@@ -365,7 +375,14 @@ for(const [el, tiers] of byElement){
       const info = await page.evaluate((t)=> window.__fx.fire(t), tier);
       let prev = 0;
       for(const at of FRAMES){
-        await page.evaluate(([dtSec])=> window.__fx.step(dtSec), [Math.max(0, at - prev)]);
+        /* 1回の evaluate が長いと Playwright のタイムアウト(30秒)に当たるので、
+           0.15秒ずつに小分けして進める(ソフトウェアGPUでは1描画が重い)。 */
+        let remain = Math.max(0, at - prev);
+        while(remain > 0.0001){
+          const slice = Math.min(0.15, remain);
+          await page.evaluate(([dtSec])=> window.__fx.step(dtSec, null, true), [slice]);
+          remain -= slice;
+        }
         prev = at;
         const counts = await page.evaluate(()=> window.__fx.draw());
         /* 描いた内容が画面へ出るのを待つ。ゲームのrAFループを止めてあるので、
