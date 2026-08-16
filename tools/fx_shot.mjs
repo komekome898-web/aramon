@@ -169,10 +169,11 @@ const DRIVER = `(function(){
       camPos.x = me.x + (o.targetDist||760)*0.45;
       camPos.y = me.y - back;
       camPos.z = me.z + camState.height + 60;
-      api._sideCam = { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
-    } else {
-      api._sideCam = null;
     }
+    /* **カメラは常に固定する。** 撃った瞬間にゲームがカメラをスナップさせるので、
+       固定しないと技によって1コマ目が「空だけ」になり、立ち上がりを比べられない
+       (warm_t3で発生)。技の見え方以外の差を画に出さないのがこのハーネスの役目。 */
+    api._pinCam = { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
     api._me = me; api._tgt = tgt;
     return { ok:true, x:me.x, y:me.y, map:game.activeMapKey, el:me.element,
              view:o.view||'front', yaw:camState.yaw,
@@ -201,14 +202,14 @@ const DRIVER = `(function(){
     return matchTime;
   };
   api.draw = function(){
-    // update() の updateCamera() がカメラをプレイヤーの後ろへ戻すので、
-    // 真横から撮るときは描く直前に置き直す(そうしないと1コマ目以外が正面になる)
-    const sc = api._sideCam;
+    // update() の updateCamera() と発射時のカメラスナップがカメラを動かすので、
+    // 描く直前に必ず置き直す(置かないと技ごとに画角が変わって比較できない)
+    const sc = api._pinCam;
     if(sc){ camPos.x=sc.x; camPos.y=sc.y; camPos.z=sc.z; camState.yaw=sc.yaw; camState.pitch=sc.pitch; }
     render();
     const pp = (typeof project==='function') ? project(player.x, player.y, player.z||0) : null;
     return { proj: projectiles.length, ae: areaEffects.length, part: particles.length,
-             yaw:+camState.yaw.toFixed(3), side: !!sc,
+             yaw:+camState.yaw.toFixed(3), pinned: !!sc,
              playerPx: pp ? [Math.round(pp.x), Math.round(pp.y)] : null,
              cam:[Math.round(camPos.x), Math.round(camPos.y)], vw:viewW, vh:viewH }; };
   /* 1フレームの描画にかかる時間を測る。**エフェクトが一番濃い瞬間で測る**
@@ -294,7 +295,13 @@ async function freshPage(){
   return page;
 }
 
-const targets = parseMoves(MOVES, ALL_ELEMENTS);
+/* --sheetonly: 撮影はせず、既にある report.json からシートだけ作り直す。
+   撮影は1回18分かかるので、シートの作りを直すたびに撮り直さなくて済むようにする。 */
+if(flag('sheetonly')){
+  const prev = JSON.parse(fs.readFileSync(path.join(OUT,'report.json'),'utf8'));
+  report.shots = prev.shots || [];
+}
+const targets = flag('sheetonly') ? [] : parseMoves(MOVES, ALL_ELEMENTS);
 // 属性ごとにページを作り直す。1ページの使い回しはWebGLコンテキストが積み上がって落ちる
 const byElement = new Map();
 for(const t of targets){
@@ -381,7 +388,9 @@ if(flag('sheet') && report.shots.length){
       </style><div id="wrap"><h2>${key} — ${shots[0].move}${shots[0].style?' ('+shots[0].style+')':''}</h2>
       <div class="row">${cells}</div></div>`;
     await sheetPage.setContent(html);
-    await sheetPage.waitForFunction(()=>[...document.images].every(i=>i.complete), null, { timeout:15000 }).catch(()=>{});
+    /* decode() まで待つ。complete だけを見ると**貼る前に撮ってしまい、1コマ目が
+       真っ黒のシートができる**(PNG本体は正常なのに欠けて見えた)。 */
+    await sheetPage.evaluate(()=> Promise.all([...document.images].map(i=> i.decode().catch(()=>{}))));
     const el = await sheetPage.$('#wrap');
     await el.screenshot({ path: path.join(OUT, `sheet_${key}.png`) });
   }
