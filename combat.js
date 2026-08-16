@@ -245,13 +245,23 @@ function fireMove(attacker, target, move){
       const whCount = wh.count || 1;
       const whDmgMult = move.dmg ? effDmg/move.dmg : 1; // 本体と同じ倍率(訓練・SSR tier3威力アップ)を核弾頭にも掛ける
       const sideX = -Math.sin(aimAngleBase), sideY = Math.cos(aimAngleBase);
+      /* 核弾頭は**自分の射程と弾速で弾道を組む。**
+         【なぜ要るか】ここまでの projGrav / aimSlope は親の技(インフェルノ=扇・射程800・
+         弾速は既定)から作った値で、核弾頭(射程900・弾速620)には合わない。
+         実測: 核弾頭に重力86.1が乗っていた(自分の射程と弾速なら32.3)。2.7倍重いので
+         射程900のうち**約650で地面に落ちて**いた(リアルマップで実測。傾斜地ではもっと手前)。
+         data.js の range:900 が出せていない不具合であって、性能値の変更ではない。 */
+      const whSpeed = wh.projSpeed || effProjSpeed;
+      const whRange = wh.range || move.range;
+      const whGrav  = onReal3d ? projGravityFor(whRange, whSpeed) : 0;
+      const whSlope = fireAimSlope(attacker, target, whRange, whSpeed, whGrav);
       for(let i=0;i<whCount;i++){
         const sideOff = (whCount>1 ? (i-(whCount-1)/2) : 0) * (wh.sideStep||0);
         projectiles.push({
           id:nextId++, ownerId:attacker.id,
           x:attacker.x + sideX*sideOff, y:attacker.y + sideY*sideOff, z:muzzleZ,
-          vx:Math.cos(aimAngleBase)*wh.projSpeed, vy:Math.sin(aimAngleBase)*wh.projSpeed, vz:aimSlope*wh.projSpeed,
-          terrain3d:onReal3d, grav:projGrav,
+          vx:Math.cos(aimAngleBase)*whSpeed, vy:Math.sin(aimAngleBase)*whSpeed, vz:whSlope*whSpeed,
+          terrain3d:onReal3d, grav:whGrav,
           dmg: wh.dmg*whDmgMult, color: wh.color||'#14121c', hitR:(wh.hitR||28)*hbMult, splash:0,
           traveled:0, maxRange: wh.range||move.range, delay: i*(wh.gap||0),
           projStyle: wh.projStyle||'voidOrb', moveAura, auraTint, auraAccent,
