@@ -5791,6 +5791,56 @@ function fxGlTint(o){
   return fxGlColor(o.auraTint || o.color);
 }
 
+/* 白黒オーラのSSR専用tier3(天衣無縫 / 終焉に救いを / ラガモッチ砲 / ドラゴンころし /
+   言葉は無粋)の差し色。**本体色には一切触らない。**
+   【なぜこうしたか】以前は白黒のオーラで tier3 の本体色ごと塗り替えていたため、
+   白は「真っ白な紙の山」、黒は「無彩色の灰色のガラス管」になり、**素のtier3より
+   見劣りしていた**(2026-08-16の批評)。白黒は色相を持たないので、本体を素の技の色に
+   戻し(data.js の getMoveEffectColor)、ここが縁とアクセントだけを足す。
+     white … 芯の白熱を強め、外へ白い羽根がゆっくり舞う(重力を弱く・寿命を長く)
+     black … 加算層では「暗くする」ことができないので、**濃く沈めた同系色**
+             (fxDeep)の大粒をゆっくり流して煤の殻に見せる
+   呼ぶのは fxGlFeed の1か所だけ。技ごとの if をここから外へ増やさない。       */
+function fxGlAccent(fx, o, c, phase, dt){
+  const acc = o && o.auraAccent;
+  if(!acc || !fx) return;
+  const white = acc === 'white';
+  const z = (o.z || 0) + 14;
+  // 大きさの基準は技の当たり判定。**見た目が判定より大きくならない**ようにする
+  const rad = (o.kind || o.aoeShape)
+    ? Math.max(40, Math.min((o.range || 200) * 0.35, (o.width || o.rectWidth || 220) * 0.5))
+    : (typeof fxHitRadius === 'function' ? fxHitRadius(o) : Math.max(40, (o.hitR || 12) * 3));
+  const col = white ? [1, 0.97, 0.9]
+                    : (typeof fxDeep === 'function' ? fxDeep(c, 3.2) : [c[0]*0.5, c[1]*0.5, c[2]*0.5]);
+  const spawn = (n, o2)=>{
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2, r = Math.sqrt(Math.random())*rad;
+      fx.emit(Object.assign({
+        x:o.x + Math.cos(a)*r, y:o.y + Math.sin(a)*r, z: z + Math.random()*rad*0.5,
+        r:col[0], g:col[1], b:col[2],
+        turb: white ? 1.5 : 0.7, turbFreq: white ? 0.8 : 0.4, seed:Math.random(),
+      }, o2));
+    }
+  };
+  if(phase === 'cast' || phase === 'impact'){
+    // 白=軽い羽根が舞い上がる / 黒=重い煤が地を這って残る
+    if(white) spawn(14, { vz: 40+Math.random()*70, az:-40, life:1.1+Math.random()*0.5,
+                          size0:7, size1:1.5, bright:0.85, hot:1 });
+    else      spawn(12, { vz: 10+Math.random()*30, az:-90, life:1.3+Math.random()*0.5,
+                          size0:26, size1:44, bright:0.5, hot:0 });
+  } else if(phase === 'fly'){
+    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 22 : 14) : 0;
+    if(white) spawn(n, { vz: 20+Math.random()*40, az:-30, life:0.9, size0:5, size1:1,
+                         bright:0.8, hot:1 });
+    else      spawn(n, { vz: 5, az:-60, life:1.0, size0:18, size1:32, bright:0.45, hot:0 });
+  } else if(phase === 'sustain'){
+    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 16 : 10) : 0;
+    if(white) spawn(n, { vz: 30+Math.random()*50, az:-35, life:1.0, size0:6, size1:1.2,
+                         bright:0.7, hot:1 });
+    else      spawn(n, { vz: 8, az:-70, life:1.1, size0:22, size1:38, bright:0.4, hot:0 });
+  }
+}
+
 const _fxSeenAe   = new Set();   // 発生時に1回だけ出すもの(cast)の既出判定
 const _fxProjSeen = new Map();   // 弾id → 最後に見えた位置。消えた瞬間に impact を出す
 
@@ -5822,10 +5872,12 @@ function fxGlFeed(fx, dt){
     const st = fxGlStyleFor(p); if(!st) break;
     const c = fxGlTint(p);
     st.fly(fx, p, c, dt);
+    fxGlAccent(fx, p, c, 'fly', dt);   // 白黒オーラのSSRだけ縁の差し色を足す
     /* 着弾で使うぶんを控える。**進行方向と projStyle も渡す**:
        無いと「弾の来た向きへ飛び散る破片」と tier別の作り分けができない(属性班の指摘)。 */
     _fxProjSeen.set(p.id, { x:p.x, y:p.y, z:p.z||0, c, splash:p.splash, hitR:p.hitR,
-                            ownerId:p.ownerId, vx:p.vx||0, vy:p.vy||0, projStyle:p.projStyle||null });
+                            ownerId:p.ownerId, vx:p.vx||0, vy:p.vy||0, projStyle:p.projStyle||null,
+                            auraAccent:p.auraAccent||null });
   }
   // ---- 消えた弾 = 着弾。combat.js を触らずに「最後に見えた位置」で1回出す ----
   if(_fxProjSeen.size){
@@ -5835,6 +5887,7 @@ function fxGlFeed(fx, dt){
       _fxProjSeen.delete(id);
       const st = fxGlStyleFor(last); if(!st) continue;
       st.impact(fx, last, last.c);
+      fxGlAccent(fx, last, last.c, 'impact');
       // 当たりの重さは弾の当たり判定の大きさで測る(威力は表示用の値と混ざるため)
       fxPunch(Math.min(0.9, (last.hitR||10)/34), last.x, last.y);
     }
@@ -5846,6 +5899,7 @@ function fxGlFeed(fx, dt){
     if(!_fxSeenAe.has(ae.id)){
       _fxSeenAe.add(ae.id);
       st.cast(fx, ae, c);
+      fxGlAccent(fx, ae, c, 'cast');
       /* 揺れの強さは**射程ではなく「その場の破壊力」**で決める。
          `range/900` は tier3(射程750〜2200)が全部上限1.0に張り付き、
          どの技でも同じ最大の揺れが出ていた。しかも発動=術者の足元なので
@@ -5856,6 +5910,7 @@ function fxGlFeed(fx, dt){
       fxPunch(power, ae.x, ae.y);
     }
     if(st.sustain) st.sustain(fx, ae, c, dt);
+    fxGlAccent(fx, ae, c, 'sustain', dt);
   }
   // 消えた範囲技のidは捨てる(Setが試合中ずっと膨らむのを防ぐ)
   if(_fxSeenAe.size > 256){

@@ -164,6 +164,9 @@ function fireMove(attacker, target, move){
   const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // スキン装備tier3は装備オーラ色に
   // 差し色(ビリビリ電撃等のアクセント)。keepBaseColorの技は本体が黒のままここだけオーラ色になる
   const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null;
+  /* 白黒オーラ('white'/'black')のときだけ入る差し色の「向き」。本体色は素の技のまま残り、
+     WebGL層(fxGlAccent)が芯の白熱 / 外周の黒い煤だけを足す。詳細は data.js の getMoveAuraAccent。 */
+  const auraAccent = (typeof getMoveAuraAccent==='function') ? getMoveAuraAccent(move, attacker) : null;
   // リアルマップ以外では常に0(=水平に飛ぶ従来どおりの弾道)
   const onReal3d = isReal3dMap();
   const projGrav = onReal3d ? projGravityFor(move.range, effProjSpeed) : 0;
@@ -192,7 +195,7 @@ function fireMove(attacker, target, move){
         angle:aimAngle, dmg:effDmg, color:effColor, range:move.range, width,
         fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
         fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
-        spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint,
+        spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint, auraAccent,
         gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
         lifestealMult: move.lifestealMult||1, // この技だけHP回復を増やす(鱗赫)
         closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
@@ -251,7 +254,7 @@ function fireMove(attacker, target, move){
           terrain3d:onReal3d, grav:projGrav,
           dmg: wh.dmg*whDmgMult, color: wh.color||'#14121c', hitR:(wh.hitR||28)*hbMult, splash:0,
           traveled:0, maxRange: wh.range||move.range, delay: i*(wh.gap||0),
-          projStyle: wh.projStyle||'voidOrb', moveAura, auraTint,
+          projStyle: wh.projStyle||'voidOrb', moveAura, auraTint, auraAccent,
           blast: wh.blast ? Object.assign({}, wh.blast, { dmg: wh.blast.dmg*whDmgMult }) : null,
         });
       }
@@ -328,6 +331,7 @@ function fireMove(attacker, target, move){
       projStyle: move.projStyle||null, projVariant: move.projVariant||null, moveAura,
       // burstTints があれば連射の何発目かで色を変える(轟金剛の青→赤→青)
       auraTint: (move.burstTints && move.burstTints[i % move.burstTints.length]) || auraTint,
+      auraAccent,
       gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り(キッス等)
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
@@ -343,7 +347,7 @@ function fireMove(attacker, target, move){
       ...move.selfBlast,
       color: move.selfBlast.color || effColor,
       se: move.selfBlast.se || 'tornado',
-    }, attacker.id, moveAura, auraTint);
+    }, attacker.id, moveAura, auraTint, auraAccent);
   }
   if(move.selfMoveWithProjectile){
     // 竜巻(最終奥義)と同じ速度で自分も前進する「移動技」
@@ -1612,7 +1616,7 @@ function raidFireBossAttack(b){
         angle:Math.round(ae.angle*1000)/1000, color:ae.color, range:Math.round(ae.range), width:0,
         fanAngleDeg:ae.fanAngleDeg, beamCount:0, beamSpreadDeg:0,
         life:Math.round(ae.life*100)/100, fillSpeed:Math.round(ae.fillSpeed),
-        telegraphTime:0, style:null, auraTint:ae.auraTint||null, moveAura:ae.moveAura||null,
+        telegraphTime:0, style:null, auraTint:ae.auraTint||null, auraAccent:ae.auraAccent||null, moveAura:ae.moveAura||null,
       });
     }
   }
@@ -2027,12 +2031,12 @@ function updateProjectiles(dt){
       const owner = getEntity(p.ownerId);
       if(owner) owner.moveWithMoveUntil = matchTime;
     }
-    if(hit && p.blast) spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint); // ピクシー「ビッグバン」: 着弾/最大射程到達で地面にドームAoEを発生
+    if(hit && p.blast) spawnGroundBlast(p.x, p.y, p.blast, p.ownerId, p.moveAura, p.auraTint, p.auraAccent); // ピクシー「ビッグバン」: 着弾/最大射程到達で地面にドームAoEを発生
     if(hit) projectiles.splice(i,1);
   }
 }
 // 着弾/最大射程到達点に、円形に広がるドーム状のダメージAoEを発生させる(ビッグバン等)
-function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
+function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint, auraAccent){
   const radius = blast.radius||220;
   const expandTime = blast.expandTime||0.45;
   const telegraphTime = blast.telegraphTime!=null ? blast.telegraphTime : 0.05;
@@ -2041,7 +2045,7 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint){
     dmg: blast.dmg||0, color: blast.color||'#000000', range: radius, width:0,
     fanAngleDeg:0, beamCount:0, beamSpreadDeg:0,
     fillSpeed: radius/expandTime, telegraphTime,
-    spawnAt: matchTime, hitIds:new Set(), resolved:false, style: blast.style||null, moveAura, auraTint: auraTint||null,
+    spawnAt: matchTime, hitIds:new Set(), resolved:false, style: blast.style||null, moveAura, auraTint: auraTint||null, auraAccent: auraAccent||null,
   };
   ae.life = telegraphTime + expandTime + 0.25;
   areaEffects.push(ae);
@@ -2485,7 +2489,7 @@ function updateAreaEffects(dt){
       }
       if(!ae.resolved && frontDist <= doorDist + 0.5){
         ae.resolved = true;
-        if(ae.endBlast) spawnGroundBlast(doorX, doorY, ae.endBlast, ae.ownerId, ae.moveAura, ae.auraTint);
+        if(ae.endBlast) spawnGroundBlast(doorX, doorY, ae.endBlast, ae.ownerId, ae.moveAura, ae.auraTint, ae.auraAccent);
       }
       continue;
     }
@@ -2555,7 +2559,7 @@ function spawnAoeEndBlast(ae){
     const off = (i - (count-1)/2) * radius; // 中心間の距離=半径ぶん→隣とちょうど半分重なる
     spawnGroundBlast(ex+px*off, ey+py*off, {
       radius, dmg:b.dmg||0, color:b.color||ae.color, expandTime:b.expandTime||0.35, se:b.se,
-    }, ae.ownerId, ae.moveAura, ae.auraTint);
+    }, ae.ownerId, ae.moveAura, ae.auraTint, ae.auraAccent);
   }
 }
 
