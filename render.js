@@ -3936,6 +3936,16 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   ctx.globalAlpha = fade;
   for(let i=0;i<pts.length-1;i++){
     const a=pts[i], b=pts[i+1], na=nrm[i], nb=nrm[i+1];
+    /* **潰れた区間の胴体は描かない。**
+       真正面へ撃つと芯が画面上でほぼ点になるので、節と節の間隔(segLen)が
+       帯の半幅(bandW)よりずっと小さくなる。この四角形は「筒の横断面」ではなく
+       **画面を横切る羽**として塗られる(実測: 天河天翔で横795px。判定は幅240)。
+       前の修正で断面の輪だけ戻したが、羽の正体は胴体のほうだったので幅が変わらなかった。
+       間隔が半幅の35%を切ったら胴体をやめ、`ringAt` の楕円に任せる
+       (輪は下で必ず描かれるので、筒が消えることはない)。 */
+    const segLen = Math.hypot(b.x-a.x, b.y-a.y);
+    const bandW  = (na.r + nb.r) * 0.5;
+    if(segLen < bandW*0.35) continue;
     const q = [
       { x:a.x+na.x*na.r, y:a.y+na.y*na.r },
       { x:b.x+nb.x*nb.r, y:b.y+nb.y*nb.r },
@@ -4009,8 +4019,8 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   const last = pts.length-1;
   /* 途中の輪は**距離で選ぶ**。節が手前に詰まっているので添字で等分すると
      輪が3本とも術者の足元に固まる。 */
-  for(let k=1;k<4;k++){
-    const want = reach*k/4;
+  for(let k=1;k<8;k++){
+    const want = reach*k/8;
     let i = 0, best = Infinity;
     for(let j=1;j<last;j++){ const d = Math.abs(alongs[j]-want); if(d<best){ best=d; i=j; } }
     if(i>0 && i<last) ringAt(i, false);
