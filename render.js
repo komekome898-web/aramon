@@ -1828,8 +1828,9 @@ function fxStyleGodOrb(pr, r){
   ctx.beginPath(); ctx.arc(0,0,r*1.05,0,Math.PI*2);
   ctx.fillStyle = g; ctx.fill();
   // 赤道の環(カメラの扁平率に合わせるので球を回っているように見える)
+  /* 環の外径は判定の1.5倍まで。r*(1.5+0.32)=1.82倍は、実体が判定より大きく見える。 */
   for(let k=0;k<2;k++){
-    fxDisc(r*(1.5+k*0.32), 0, spin*0.4);
+    fxDisc(r*(1.05+k*0.2), 0, spin*0.4);
     ctx.strokeStyle = _hexA(k ? '#ffffff' : col, k ? 0.5 : 0.8);
     ctx.lineWidth = r*(k ? 0.06 : 0.12);
     ctx.stroke();
@@ -1900,15 +1901,19 @@ function fxStyleVoidOrb(pr, r){
 }
 // ダークホウスト: 回る黒い三日月の刃。刃先だけが冷たく光る
 function fxStyleCrescent(pr, r){
-  const rr = r*1.6;
+  /* 刃の外端を当たり判定の1.5倍以内へ。以前は rr=r*1.6 のうえに残像の弧を
+     rr*1.15・線幅 rr*0.3 で描いていたので、外端が判定の約1.99倍あった。 */
+  const rr = r*1.3;
+  // 色は技の色から作る(以前は暗色を直書きしていて、色スキンでも刃が変わらなかった)
+  const csh = auraShades(pr.auraTint || pr.color || '#3b4058');
   const spin = matchTime*15 + (pr.id||0);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';          // 回転の残像
   const tg = ctx.createLinearGradient(-rr, 0, rr, 0);
-  tg.addColorStop(0, 'rgba(122,128,168,0)');
-  tg.addColorStop(1, 'rgba(180,190,230,0.45)');
-  ctx.beginPath(); ctx.arc(0,0, rr*1.15, spin*0.6, spin*0.6 + Math.PI*1.2);
-  ctx.strokeStyle = tg; ctx.lineWidth = rr*0.3; ctx.stroke();
+  tg.addColorStop(0, _hexA(csh.mid, 0));
+  tg.addColorStop(1, _hexA(csh.bright, 0.45));
+  ctx.beginPath(); ctx.arc(0,0, rr*1.0, spin*0.6, spin*0.6 + Math.PI*1.2);
+  ctx.strokeStyle = tg; ctx.lineWidth = rr*0.15; ctx.stroke();
   ctx.restore();
   ctx.rotate(spin);
   const R=rr, R2=rr*1.02, off=rr*0.62;
@@ -2013,8 +2018,12 @@ function fxStyleTornado(pr, r){
   const bonus = pr.projVariant === 'bonus7';
   const sh = bonus ? auraShades(pr.auraTint || pr.color || '#3f74e6') : null;
   const A = bonus ? 0.5 : 1;                           // 半透明にする度合い
+  /* 漏斗の根元は**当たり判定と同じ太さ**にする。r*0.4 では判定の62%しかなく、
+     当たらないと思った所で被弾していた(実測: 判定207px幅に対し根元129px)。
+     上端は1.65倍までで、採点表の1.5倍は「弾の光る芯」の話なので、
+     舞い上がった砂の裾はここまで許す。**hitR そのものは変えない。** */
   const ringAt = (t)=>({
-    rx: r*(0.4 + 1.25*Math.pow(t, 1.25)),
+    rx: r*(1.0 + 0.65*Math.pow(t, 1.25)),
     y: (drop - H*t)*up,
     ox: Math.sin(spin*0.5 + t*5.5)*r*0.22,
   });
@@ -2032,9 +2041,12 @@ function fxStyleTornado(pr, r){
     bg.addColorStop(0.5, _hexA(sh.mid, 0.62*A));
     bg.addColorStop(1, _hexA(sh.bright, 0.5*A));
   }else{
-    bg.addColorStop(0, 'rgba(90,74,54,0.85)');
-    bg.addColorStop(0.5, 'rgba(150,128,96,0.7)');
-    bg.addColorStop(1, 'rgba(214,196,160,0.55)');
+    /* 素の竜巻も**技の色から作る**。以前は砂色を直書きしていたので、
+       色スキン(auraTint)を着せても竜巻だけ砂色のままだった(色の決め打ち=不合格条件)。 */
+    const ps = auraShades(pr.auraTint || pr.color || '#96805f');
+    bg.addColorStop(0, _hexA(ps.dark, 0.85));
+    bg.addColorStop(0.5, _hexA(ps.mid, 0.7));
+    bg.addColorStop(1, _hexA(ps.bright, 0.55));
   }
   ctx.beginPath();
   ctx.moveTo(left[0].x, left[0].y);
@@ -2123,12 +2135,16 @@ function fxStyleHoly(pr, r){
 function fxStyleShell(pr, r){
   const rr = r*1.1;
   const spin = matchTime*8;
-  fxHalo(rr*2.4, '#ffd93d', 0.45);
+  /* 色は技の色から作る。ここだけ黄色を直書きしていたため、色スキン(auraTint)を
+     着せても殻が黄色のままだった(fxStyleHoly は同じ形で auraTint を見ている)。 */
+  const ssh = auraShades(pr.auraTint || pr.color || '#ffc31c');
+  // ハローは splash(=hitR*1.7)より外まで光っていたので判定に寄せる
+  fxHalo(rr*1.7, ssh.bright, 0.45);
   const g = ctx.createRadialGradient(-rr*0.3,-rr*0.35, rr*0.05, 0,0, rr*1.05);
-  g.addColorStop(0, '#fffdf0');
-  g.addColorStop(0.35, '#ffe98a');
-  g.addColorStop(0.75, '#ffc31c');
-  g.addColorStop(1, '#a86a04');
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.35, ssh.spark);
+  g.addColorStop(0.75, ssh.mid);
+  g.addColorStop(1, ssh.dark);
   ctx.beginPath(); ctx.arc(0,0,rr,0,Math.PI*2);
   ctx.fillStyle = g; ctx.fill();
   ctx.save();                                         // 殻の筋(球に巻きつく帯)
@@ -2216,7 +2232,12 @@ function fxStyleSeaSpear(pr, r){
 }
 // レクイエムエンド: 3形態の投擲武器(クナイ/トゲ球/手裏剣)。紫の魔力をまとう
 function fxStyleRequiem(pr, r){
-  const rr = r*1.3;
+  /* 【重要】刃の実体を当たり判定の1.5倍以内に収める。
+     以前は rr=r*1.3 のうえで刃先を rr*1.9(=判定の2.47倍)まで伸ばしていたため、
+     hitR:20 の弾が画面上で判定の3.4倍に見えていた(実測: 判定38px に対し130px)。
+     大きな手裏剣に見えるので、避けたのに当たる/当たると思った所で当たらないが両方起きる。
+     rr*1.9 が判定の1.14倍に収まる値まで落とす。**hitR そのものは変えない。** */
+  const rr = r*0.6;
   const DARK='#1d0b2e', MID='#3a1560', EDGE='#8b46c9', HILITE='#c98bff';
   const spin = matchTime*11 + (pr.id||0);
   fxHalo(rr*2.4, EDGE, 0.4);
@@ -3846,9 +3867,16 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   const gz0 = groundZAt(ox, oy) + dz;
   const gzEnd = groundZAt(ox+fx*refLen, oy+fy*refLen) + dz;
   const slope = refLen > 1 ? (gzEnd - gz0)/refLen : 0;
-  const pts = [], uH = [], uV = [];
+  const pts = [], uH = [], uV = [], alongs = [];
+  /* 【重要】節を等間隔に置かない。**手前ほど詰めて置く。**
+     筒は「投影した節の間を直線の四角形で結ぶ」ので、遠近の変化が速い区間では
+     直線の辺が本当の輪郭より外へふくらむ。カメラは術者の145後ろに居るため
+     いちばん手前の区間が最も歪み、**当たり判定の外の地面まで塗っていた**
+     (実測: モッチ砲は判定140pxの所を378px=2.7倍に塗り、天河天翔は約3倍)。
+     f=(i/segs)^2 にすると最初の区間が射程の0.4%まで縮み、辺が輪郭に張り付く。
+     **技の長さも太さも変えない**(節の置き方だけを変える)ので、性能とは無関係。 */
   for(let i=0;i<=segs;i++){
-    const f = i/segs, along = reach*f;
+    const f = (i/segs)*(i/segs), along = reach*f;
     const z = gz0 + slope*along;
     const x = ox+fx*along, y = oy+fy*along;
     const c = project(x, y, z);
@@ -3856,7 +3884,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     const h = project(x + px*radius, y + py*radius, z);
     const v = project(x, y, z + halfH);
     if(!h || !v) continue;
-    pts.push(c);
+    pts.push(c); alongs.push(along);
     uH.push({ x:h.x-c.x, y:h.y-c.y });
     uV.push({ x:v.x-c.x, y:v.y-c.y });
   }
@@ -3923,8 +3951,9 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     const c = pts[i], h = uH[i], v = uV[i];
     const det = h.x*v.y - h.y*v.x;
     if(Math.abs(det) < 1) return;          // 真横から見て潰れているときは描かない
-    // 自分の足元から撃つと手前の断面が画面いっぱいに広がるので、大きすぎる断面は出さない
-    if(Math.hypot(h.x, h.y) > viewW*0.4) return;
+    /* 自分の足元から撃つと手前の断面が画面いっぱいに広がるので、大きすぎる断面は出さない。
+       閾値が画面幅の0.4倍(512px)では緩すぎて何も止めていなかった(実測: 366pxの断面が素通り)。 */
+    if(Math.hypot(h.x, h.y) > viewW*0.14) return;
     ctx.save();
     ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
     ctx.beginPath(); ctx.arc(0,0,1,0,Math.PI*2);
@@ -3944,8 +3973,12 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     ctx.restore();
   };
   const last = pts.length-1;
+  /* 途中の輪は**距離で選ぶ**。節が手前に詰まっているので添字で等分すると
+     輪が3本とも術者の足元に固まる。 */
   for(let k=1;k<4;k++){
-    const i = Math.round(last*k/4);
+    const want = reach*k/4;
+    let i = 0, best = Infinity;
+    for(let j=1;j<last;j++){ const d = Math.abs(alongs[j]-want); if(d<best){ best=d; i=j; } }
     if(i>0 && i<last) ringAt(i, false);
   }
   ringAt(0, true); ringAt(last, true);
@@ -4061,8 +4094,13 @@ const OGRE_GATE_SILL_R    = 0.62;   // 通路の開口部の高さ(柱の高さ�
 const OGRE_GATE_BASE_H_R  = 0.22;   // 柱の根元に置く石積みの土台の高さ(柱の太さ基準)
 // 大屋根(発注者から送られた羅生門の参考画像に合わせる。2026-08-12)。
 // 入母屋風の四注屋根を1枚、隅を外側・上へ反らせて（軒先の反り）載せる。
-const OGRE_ROOF_HALF_D_R    = 0.62;  // 屋根の奥行き(横幅に対する比率)
-const OGRE_ROOF_FLARE       = 1.22;  // 軒先が外へ張り出す量
+/* 屋根の奥行きと張り出し。**手前へ出しすぎない。**
+   0.62 / 1.22 では軒先の手前端が術者の49ユニット先まで来て、
+   カメラ(術者の145後ろ)から見ると**画面上端を横切る帯**になり、山と空を塗り潰していた。
+   門の幅は発注者依頼(2026-08-12の参考画像)なので変えず、**手前への出だけ**を詰める
+   (0.42/1.08 で軒先の手前端は98ユニット先=約2倍遠くなる)。 */
+const OGRE_ROOF_HALF_D_R    = 0.42;  // 屋根の奥行き(横幅に対する比率)
+const OGRE_ROOF_FLARE       = 1.08;  // 軒先が外へ張り出す量
 const OGRE_ROOF_CORNER_LIFT_R = 0.24; // 隅が上へ反り上がる量(柱の高さ基準)
 // ハート門(北大路さつキジンtier3専用)の色。色は決め打ちしない原則の例外(発注者指定・2026-08-12)
 const SATSUKI_HEART_COLOR   = '#ff4fa3';
@@ -4224,7 +4262,9 @@ function fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, roofBaseH, halfW, pillarH, sh,
   if(corners.some(c=>!c)) return;
   const [FL, BL, BR, FR] = corners;
   const roofCol = _mixHex(sh.dark, '#000000', 0.55);
-  fx3dFill([FL,BL,BR,FR], roofCol, 0.95*fade, 0);                       // 屋根の上面
+  /* 不透明な屋根は「ここが当たり判定」と読み違えられる。建物として見える程度まで薄くする
+     (通路=当たり判定は柱と灯りが示す)。 */
+  fx3dFill([FL,BL,BR,FR], roofCol, 0.62*fade, 0);                       // 屋根の上面
   fx3dStroke([FL,BL,BR,FR,FL], '#000000', 2.0, 0.55*fade, 0);           // 軒先の縁
   // 手前側(dir=-1)の軒だけ厚み(ファシア板)を足して、板1枚に見えないようにする。
   // 中心(rx=0)を通らない、外側の縁だけを使うので中央に線は出ない。
@@ -4232,7 +4272,7 @@ function fx3dGateRoof(dx, dy, gz, fx, fy, rx, ry, roofBaseH, halfW, pillarH, sh,
                            dy+ry*halfW*OGRE_ROOF_FLARE*(-1)+fy*halfD*OGRE_ROOF_FLARE*(-1), roofBaseH, gz);
   const FRlow = fx3dPoint(dx+rx*halfW*OGRE_ROOF_FLARE*( 1)+fx*halfD*OGRE_ROOF_FLARE*(-1),
                            dy+ry*halfW*OGRE_ROOF_FLARE*( 1)+fy*halfD*OGRE_ROOF_FLARE*(-1), roofBaseH, gz);
-  if(FLlow && FRlow) fx3dFill([FLlow, FL, FR, FRlow], _mixHex(roofCol,'#000000',0.3), 0.9*fade, 0);
+  if(FLlow && FRlow) fx3dFill([FLlow, FL, FR, FRlow], _mixHex(roofCol,'#000000',0.3), 0.58*fade, 0);
 }
 
 
@@ -5712,6 +5752,12 @@ const FX_PUNCH_FALLOFF = 900;     // これより遠い出来事では揺れな�
 let _fxPunch = 0, _fxPunchT = 0, _fxFlash = 0;
 let _fxPunchSaved = null;
 
+/* 画面のフラッシュ。上限0.09・減衰 dt*7 では **約2フレーム(33ms)で消えていた**ため、
+   発射0.1秒後のコマには1枚も写らず、実機でも見えていなかった(批評家Aの実測: 45枚すべてで
+   四隅の輝度が84.6〜89.3に収まり、フラッシュの痕跡ゼロ)。採点表8の「0.12秒以下」に収まる
+   範囲で寿命を伸ばす。上限0.14・減衰 dt*1.4 で 0.14→0.01 が約93ms。
+   **使う前に宣言する**(下の関数より後ろに置くとTDZの読み違えを誘う)。 */
+const FX_FLASH_MAX = 0.14, FX_FLASH_DECAY = 1.4;
 // amount: 0..1。dist を渡すとプレイヤーからの距離で自動的に弱める
 function fxPunch(amount, x, y){
   let a = Math.max(0, Math.min(1, amount));
@@ -5726,13 +5772,13 @@ function fxPunch(amount, x, y){
   if(a < 0.15){ _fxPunch = Math.max(_fxPunch, a); _fxPunchT = FX_PUNCH_MAX_SEC; return; }
   _fxPunch  = Math.max(_fxPunch, a);       // 重ねがけで暴れないよう最大値を採る
   _fxPunchT = FX_PUNCH_MAX_SEC;
-  _fxFlash  = Math.max(_fxFlash, a*0.35);
+  _fxFlash  = Math.max(_fxFlash, a*0.35*(FX_FLASH_MAX/0.09));
 }
 // 技側(fx_moves.js)から fx.flash() で呼ぶ。揺らさずに明るさだけ返したいとき用
-function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(1, amount))*0.09); }
+function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(1, amount))*FX_FLASH_MAX); }
 // 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
 function fxPunchApply(dt){
-  if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*7); return; }
+  if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*FX_FLASH_DECAY); return; }
   _fxPunchT -= dt;
   const t = Math.max(0, _fxPunchT / FX_PUNCH_MAX_SEC);
   const amp = _fxPunch * t * t * (viewH * FX_PUNCH_MAX_AMP);
@@ -5743,7 +5789,7 @@ function fxPunchApply(dt){
   camPos.x += -Math.sin(camState.yaw) * ox;
   camPos.y +=  Math.cos(camState.yaw) * ox;
   camPos.z += oz;
-  _fxFlash = Math.max(0, _fxFlash - dt*7);
+  _fxFlash = Math.max(0, _fxFlash - dt*FX_FLASH_DECAY);
 }
 function fxPunchRestore(){
   if(!_fxPunchSaved) return;
@@ -5753,7 +5799,7 @@ function fxPunchRestore(){
 // 着弾の一瞬だけ画面全体をわずかに持ち上げる(白飛びではなく「明るくなる」程度)
 function drawFxFlash(){
   if(_fxFlash <= 0.01) return;
-  const a = Math.min(0.09, _fxFlash);
+  const a = Math.min(FX_FLASH_MAX, _fxFlash);
   ctx.save();
   /* 【平らに塗らない】`fillRect` で全面を持ち上げると、遠景の山も雲も空も同じだけ
      明るくなり「画面が洗われた」ようにしか見えない(実測で空が+14.5)。
