@@ -326,6 +326,32 @@ function fxDeep(c, k){
   return [m*Math.pow(c[0]/m, e), m*Math.pow(c[1]/m, e), m*Math.pow(c[2]/m, e)];
 }
 
+/* 範囲技の「伸びていく前縁」に軌跡の帯を張る。
+   【なぜ要るか】fx.trail は弾(fly)からしか呼んでおらず、**扇・矩形・門の技には
+   帯が1本も無かった**(記録の gl.ribbons が全コマ0)。そのため充填がどちらへ
+   どれだけの速さで広がっているのかが止め絵から読めず、採点表3が軒並み2点だった。
+   前縁の中心に1本、幅のある技はさらに左右の縁に1本ずつ。
+   **判定の外へは出さない**(横位置は fxAeHalfWidth から取る)。
+   呼ぶのは render.js の fxGlFeed の1か所だけ。技ごとの if を増やさない。 */
+function fxAeFrontRibbon(fx, ae, c, reach){
+  if(!fx || !ae || !(reach > 8)) return;
+  if(ae.kind === 'circle') return;            // 爆風は前縁が無い(輪が広がるだけ)
+  const ang = ae.angle || 0;
+  const fwx = Math.cos(ang), fwy = Math.sin(ang);
+  const rgx = -fwy, rgy = fwx;
+  const hw  = fxAeHalfWidth(ae, reach);
+  const hot = fxHot(c, 0.35);
+  const put = (lat, key, w, br)=>{
+    const x = ae.x + fwx*reach + rgx*lat, y = ae.y + fwy*reach + rgy*lat;
+    fx.trail(key + ae.id, x, y, fxGroundZ(x, y) + 26,
+             { color:hot, width:w, bright:br, whiten:0.3 });
+  };
+  put(0, 'aeF', Math.max(10, hw*0.5), 1.0);
+  // 幅のある技は縁も引く。細い技で3本引くと束になって1枚の板に見える
+  if(hw > 60){ put(-hw*0.9, 'aeL', Math.max(7, hw*0.22), 0.7);
+               put( hw*0.9, 'aeR', Math.max(7, hw*0.22), 0.7); }
+}
+
 /* 弾の進行方向(ワールドの単位ベクトル)。止まっている弾は null。
    **画面上の角度ではない**ので、カメラを回しても粒の並びが破綻しない。 */
 function fxHeadingOf(p){

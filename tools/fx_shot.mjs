@@ -69,6 +69,11 @@ const VIEW = opt('view', 'front');
    そのスキンを装備した状態にする。素の技とは見た目も性能も別物なので、
    **SSR専用は必ずスキンを着せて撮る。** */
 const SKIN = opt('skin', '');
+/* --shake: カメラのピン留めを外して撮る。
+   通常はコマごとにカメラを固定して「技の見え方以外の差」を消しているが、
+   その副作用で**技が起こした画面揺れも必ず打ち消される**(採点表8が原理的に測れない)。
+   揺れを見たいときだけこれを付ける。技の比較には使わない。 */
+const NOPIN = flag('shake');
 
 fs.mkdirSync(OUT, { recursive:true });
 
@@ -213,7 +218,8 @@ const DRIVER = `(function(){
     /* **カメラは常に固定する。** 撃った瞬間にゲームがカメラをスナップさせるので、
        固定しないと技によって1コマ目が「空だけ」になり、立ち上がりを比べられない
        (warm_t3で発生)。技の見え方以外の差を画に出さないのがこのハーネスの役目。 */
-    api._pinCam = { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
+    api._pinCam = o.noPin ? null
+      : { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
     api._me = me; api._tgt = tgt;
     return { ok:true, x:me.x, y:me.y, map:game.activeMapKey, el:me.element,
              view:o.view||'front', yaw:camState.yaw, skin:o.skin||null,
@@ -233,13 +239,16 @@ const DRIVER = `(function(){
     /* 実際に出た技の名前は fireMove の中で skinTier3Move() を通ったあとの値。
        activeMove() の戻りは素の技なので、**SSR専用tier3を撮っても素の名前が記録される**。
        出た弾/範囲技から拾い直す(スキンが効いているかの確認になる)。 */
+    const rv = (typeof skinTier3Move==='function') ? (skinTier3Move(mv, me) || mv) : mv;
     const shown = (projectiles[projectiles.length-1] || areaEffects[areaEffects.length-1] || {});
     return { name: mv.name, tier: mv.tier, aoe: mv.aoeShape||null,
              /* 撃った直後の本数。**表(data.js)の burst / warheads.count と突き合わせる**ための値。
                 コマの counts.proj は「その時刻に生きている数」なので、初めから出ていないのか
                 途中で消えたのかを、これが無いと区別できない。 */
              spawned: projectiles.length, spawnedAe: areaEffects.length,
-             wantBurst: mv.burst || 1, wantWarheads: (mv.warheads && mv.warheads.count) || 0,
+             /* **SSRの上書きを当てたあとの技**から読む。素の技(mv)を見ていたため、
+                ギガデストロイヤーの核弾頭が wantWarheads:0 と記録されていた。 */
+             wantBurst: (rv.burst) || 1, wantWarheads: (rv.warheads && rv.warheads.count) || 0,
              style: shown.projStyle || shown.style || mv.aoeStyle || mv.projStyle || null,
              skinName: (typeof skinTier3Move==='function' ? (skinTier3Move(mv, me)||{}).name : null) };
   };
@@ -393,8 +402,8 @@ for(const [el, tiers] of byElement){
   for(const tier of tiers){
     try {
       await freshPage();
-      const setup = await page.evaluate(([e,m,s,v,sk])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v, skin:sk }),
-                                        [el, MAP, SEED, VIEW, SKIN]);
+      const setup = await page.evaluate(([e,m,s,v,sk,np])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v, skin:sk, noPin:np }),
+                                        [el, MAP, SEED, VIEW, SKIN, NOPIN]);
       if(!setup || !setup.ok){ errors.push(`${el}:t${tier} setup失敗`); continue; }
       report.setups = report.setups || {};
       report.setups[`${el}_t${tier}`] = setup;

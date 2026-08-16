@@ -1816,7 +1816,10 @@ function fxDisc(rx, dz, rot){
 function fxStyleGodOrb(pr, r){
   const col = pr.orbColor || pr.color || '#ffffff';
   const spin = matchTime*2.2 + (pr.id||0);
-  fxHalo(r*2.6, col, 0.5);
+  /* ハローは半径2.6倍・濃さ0.5だったが、この技は球を4つ同時に撃つので加算で重なり、
+     **白飛びの塊が判定(hitR30)の3.3倍**(実測293x164px)になっていた。
+     4つの色も塊に飲まれて見えない。広がりを抑え、薄くして球の形を残す。 */
+  fxHalo(r*1.7, col, 0.3);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   // 球体: 芯が白く、縁へ向かって技色に落ちる(光っている球の見え方)
@@ -6037,6 +6040,10 @@ function fxGlFeed(fx, dt){
       fxPunch(power, ae.x, ae.y);
     }
     if(st.sustain) st.sustain(fx, ae, c, dt);
+    /* 伸びていく前縁の帯。**1か所でまとめて出す**ので、属性ごとの sustain に
+       書き足す必要がない(書き忘れた属性だけ帯が無い、が起きない)。 */
+    if(typeof fxAeFrontRibbon === 'function' && typeof fxAeReach === 'function')
+      fxAeFrontRibbon(fx, ae, c, ae.__fxT != null ? fxAeReach(ae, 0) : 0);
     fxGlAccent(fx, ae, c, 'sustain', dt);
   }
   // 消えた範囲技のidは捨てる(Setが試合中ずっと膨らむのを防ぐ)
