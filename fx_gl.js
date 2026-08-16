@@ -655,7 +655,19 @@ const api = {
   },
 
   // 計測用
-  stats(){ return { particles: MAX_PARTICLES, ribbons: R.lanes.filter(l=>l.key).length, decals: D.list.length }; },
+  stats(){
+    /* live = **いま生きている粒の数**。particles は器の大きさ(定数4096)なので、
+       そちらを見ても「この技が粒を出したか」は分からない(批評家がここを読み違えた)。
+       発生時刻+寿命が現在時刻を越えているものを数える。診断用なので毎フレームは呼ばない。 */
+    let live = 0;
+    const t = P.attr.aTime && P.attr.aTime.array;
+    if(t) for(let i=0;i<MAX_PARTICLES;i++){
+      const born = t[i*4], life = t[i*4+1];
+      if(life > 0 && clock0 >= born && clock0 - born <= life) live++;
+    }
+    return { live, particles: MAX_PARTICLES,
+             ribbons: R.lanes.filter(l=>l.key).length, decals: D.list.length };
+  },
   /* **この層の描画だけ**にかかる時間(ms)。フレーム全体を測ると2Dの描画と混ざり、
      他のプロセスの負荷でも数字が動いて「層を足したら速くなった」のような
      嘘の差が出る(実際に出た)。中央値を返すので単発の外れ値に強い。 */
