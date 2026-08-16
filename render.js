@@ -3980,6 +3980,27 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   });
   fxStrokePath(inset(edgeA, 1), shell, rimW, 0.95*fade, 0);
   fxStrokePath(inset(edgeB, -1), shell, rimW, 0.95*fade, 0);
+  /* 芯の白熱を**加算で別に1本**引く。
+     胴体のグラデーションの中央に白を置いてあるが、fx3dFill は通常合成で
+     `fade × FX3D_AREA_ALPHA(0.58)` が掛かるため、**画面では195止まり**で
+     白飛びしない(モッチ砲の実測)。ここだけ lighter で、fade を掛けずに引く。
+     太さは帯の半幅の18%まで。太くすると筒の中身が白い棒に潰れる。 */
+  if(pts.length >= 2){
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for(let i=0;i<pts.length-1;i++){
+      const w = Math.max(1.2, Math.min((nrm[i].r + nrm[i+1].r)*0.5*0.18, 14));
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(pts[i].x, pts[i].y);
+      ctx.lineTo(pts[i+1].x, pts[i+1].y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   // 断面の輪。両端は塗りつぶし、途中は輪郭だけを等間隔に入れて「筒」だと分かるようにする。
   // uH/uV をそのまま基底にすれば、投影された楕円がそのまま描ける
   const ringAt = (i, filled)=>{
