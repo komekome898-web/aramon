@@ -2029,8 +2029,10 @@ function fxStyleTornado(pr, r){
      上端は1.65倍までで、採点表の1.5倍は「弾の光る芯」の話なので、
      舞い上がった砂の裾はここまで許す。**hitR そのものは変えない。** */
   const ringAt = (t)=>({
-    /* 根元=判定と同じ太さ、上端は1.3倍まで。上端1.65倍では漏斗全体が判定の2.1倍に見えていた。 */
-    rx: r*(1.0 + 0.30*Math.pow(t, 1.25)),
+    /* 根元=判定と同じ太さ。上端は1.45倍まで開いて**漏斗の形を保つ**
+       (0.30まで絞ったら円筒になり「バネを積んだ樽」に見えると指摘された)。
+       広がったぶんは上端の濃さを落として、判定を読み違えないようにする。 */
+    rx: r*(1.0 + 0.45*Math.pow(t, 1.25)),
     y: (drop - H*t)*up,
     ox: Math.sin(spin*0.5 + t*5.5)*r*0.22,
   });
@@ -2064,19 +2066,30 @@ function fxStyleTornado(pr, r){
   /* 渦の芯。竜巻は全コマで飽和画素0=「光っていない板」だった(実測)。
      漏斗の中心線に沿って加算の芯を1本立てる。fadeを掛けないので必ず白飛びする。 */
   {
-    const cw = Math.max(1.5, r*0.16);
+    /* 太さ一定・丸端の1本線にすると「白い麺が刺さっている」ように見える(実測の指摘)。
+       上へ行くほど細くなる筋を区間ごとに引く。ただし**細くするだけでは白飛びが消える**
+       (飽和6843→66画素に落とした)。にじみ(太い・薄い)と芯(細い・濃い)の2本立てにして、
+       形は絞ったまま根元は必ず飽和させる。 */
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.8;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineCap = 'round';
-    ctx.lineWidth = cw;
-    ctx.beginPath();
-    for(let i=0;i<=N;i++){
-      const k = ringAt(i/N);
-      if(i===0) ctx.moveTo(k.ox, k.y); else ctx.lineTo(k.ox, k.y);
+    ctx.lineCap = 'butt';
+    for(let i=0;i<N;i++){
+      const k0 = ringAt(i/N), k1 = ringAt((i+1)/N);
+      const taper = 1 - i/N;                    // 根元=1 上端=0
+      // にじみ: 太くて薄い。芯の周りを光らせる
+      ctx.globalAlpha = 0.10 + 0.28*taper;
+      ctx.lineWidth = Math.max(2, r*0.26*taper);
+      ctx.beginPath();
+      ctx.moveTo(k0.ox, k0.y); ctx.lineTo(k1.ox, k1.y);
+      ctx.stroke();
+      // 芯: 細くて濃い。根元は不透明なので加算で必ず飽和する
+      ctx.globalAlpha = 0.45 + 0.55*taper;
+      ctx.lineWidth = Math.max(1.5, r*0.055*taper);
+      ctx.beginPath();
+      ctx.moveTo(k0.ox, k0.y); ctx.lineTo(k1.ox, k1.y);
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.restore();
   }
   // 7は漏斗を塗ったあと・巻き上がる筋の前に描く(渦の中に入って見える)
@@ -3731,21 +3744,24 @@ function real3dFx(){ return FX_SOLID_ALL_MAPS || (typeof isReal3dMap==='function
    18技中12技がこの項目で3点以下だった。**最下層が構造として無いのが原因。**
    加算では暗くできないが、fx3dFill は通常合成なので**ここでなら暗い層を置ける。**
    面を重心から少し広げて暗色で塗り、その上に本来の面を重ねる = 縁が締まる。 */
-const FX3D_SHADE_GROW = 1.07;   // 暗い縁のはみ出し(1.07=7%)
+const FX3D_SHADE_W    = 4.5;    // 暗い縁の太さ(px)。面を広げて塗ると隣の面を汚すので線で引く
 const FX3D_SHADE_A    = 0.55;   // 暗い縁の濃さ(本体のalphaに掛ける)
 function fx3dShadeUnder(pts, color, alpha){
-  let cx=0, cy=0;
-  for(const p of pts){ cx+=p.x; cy+=p.y; }
-  cx/=pts.length; cy/=pts.length;
+  /* 【重要】面を広げて**塗る**と、深度順に重ねる技(炎・触手)で
+     **後から描く面の暗色が、先に描いた明るい面の上を横切る。**
+     実測で炎に茶色い帯、触手に真っ黒な楔(ポリゴン抜けに見える)が出た。
+     縁を**線で引く**だけなら、重なっても細い暗い輪郭にしかならず、
+     採点表2が求める「暗い縁」もそのまま満たせる。 */
   ctx.save();
   ctx.globalAlpha = Math.min(1, alpha*FX3D_SHADE_A);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.lineWidth = FX3D_SHADE_W;
+  ctx.strokeStyle = _mixHex(typeof color === 'string' && color[0]==='#' ? color : '#20202a', '#000000', 0.72);
   ctx.beginPath();
-  ctx.moveTo(cx+(pts[0].x-cx)*FX3D_SHADE_GROW, cy+(pts[0].y-cy)*FX3D_SHADE_GROW);
-  for(let i=1;i<pts.length;i++)
-    ctx.lineTo(cx+(pts[i].x-cx)*FX3D_SHADE_GROW, cy+(pts[i].y-cy)*FX3D_SHADE_GROW);
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.closePath();
-  ctx.fillStyle = _mixHex(typeof color === 'string' && color[0]==='#' ? color : '#20202a', '#000000', 0.72);
-  ctx.fill();
+  ctx.stroke();
   ctx.restore();
 }
 function fx3dFill(pts, color, alpha, blur, noShade){
@@ -3996,11 +4012,66 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   const sh = auraShades(col);
   const shell = _mixHex(col, '#ffffff', 0.25);   // 外殻の色(技色より少し明るい)
   const edgeA = [], edgeB = [];
+  /* 【真正面へ撃ったときは胴体を1枚も描かない。】
+     芯が画面上で潰れると、断面の向き(nx,ny)は既定の横向きになり、四角形は
+     「筒の胴体」ではなく**画面を横切る白い羽根**として塗られる(実測: 天河天翔で横795px、
+     モッチ砲は桃色の門に見えた)。区間を繋いでも、輪を減らしても、羽根は羽根のまま。
+     カメラの奥へ向いた筒は**本当に円盤にしか見えない**のが正しい見え方なので、
+     胴体と外殻線をやめ、口の断面・芯・**地面の光の帯**だけで見せる。
+     伸びは地面の帯が受け持つ(地面には遠近が効くので、伸びるほど帯も伸びる)。 */
+  const _headOn = len < nrm[0].r*1.2;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = fade;
-  for(let i=0;i<pts.length-1;i++){
-    const a=pts[i], b=pts[i+1], na=nrm[i], nb=nrm[i+1];
+  /* 【重要】**地面の光の帯を筒より先に敷く。**
+     カメラの奥へ撃つと筒は画面上で潰れ、口の楕円が重なった「シャボン玉」にしか
+     見えない(天河天翔・モッチ砲が同じ壊れ方で不合格)。芯の画面長は術者で239px・
+     射程2200の先で16pxしかないので、**筒そのものをどう描いても伸びは出せない。**
+     一方で地面は遠近が効くので、判定と同じ幅・同じ長さの帯を地面へ落とすと
+     「前方の遠くまで伸びている」が一目で読める。伸びるほど帯も伸びるので
+     採点表7(時間設計)も同時に埋まる。**幅は radius(=判定の半幅)そのもの。** */
+  {
+    const GSEG = 12;
+    const gpt = (t, s)=>{
+      const along = reach*t*t;                      // 手前を詰める(筒と同じ理由)
+      const x = ox+fx*along + px*radius*s, y = oy+fy*along + py*radius*s;
+      return project(x, y, groundZAt(x, y) + 2);
+    };
+    for(let i=0;i<GSEG;i++){
+      const t0=i/GSEG, t1=(i+1)/GSEG;
+      const a0=gpt(t0,-1), a1=gpt(t0,1), b1=gpt(t1,1), b0=gpt(t1,-1);
+      if(!a0||!a1||!b1||!b0) continue;
+      ctx.globalAlpha = fade * (0.62 - 0.42*t0);    // 手前が濃く、先へ行くほど薄い
+      ctx.fillStyle = _hexA(sh.bright, 1);
+      ctx.beginPath();
+      ctx.moveTo(a0.x,a0.y); ctx.lineTo(a1.x,a1.y); ctx.lineTo(b1.x,b1.y); ctx.lineTo(b0.x,b0.y);
+      ctx.closePath(); ctx.fill();
+    }
+    // 帯の左右の縁 = **当たり判定の縁そのもの**。ここを描くと避ける線が読めるようになる
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for(const s of [-1, 1]){
+      ctx.globalAlpha = fade*0.8; ctx.strokeStyle = _hexA(shell, 1); ctx.lineWidth = 3;
+      ctx.beginPath();
+      for(let i=0;i<=GSEG;i++){
+        const c = gpt(i/GSEG, s); if(!c) continue;
+        if(i===0) ctx.moveTo(c.x,c.y); else ctx.lineTo(c.x,c.y);
+      }
+      ctx.stroke();
+    }
+    // 帯の真ん中に白い筋。地面の上を光が走っているように見せる
+    ctx.globalAlpha = fade*0.9;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    for(let i=0;i<=GSEG;i++){
+      const c = gpt(i/GSEG, 0); if(!c) continue;
+      if(i===0) ctx.moveTo(c.x,c.y); else ctx.lineTo(c.x,c.y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = fade;
+  }
+  let _prev = 0;               // 最後に四角形を張った節。潰れた区間はここから先へ繋ぐ
+  for(let i=0;!_headOn && i<pts.length-1;i++){
+    const a=pts[_prev], b=pts[i+1], na=nrm[_prev], nb=nrm[i+1];
     /* **潰れた区間の胴体は描かない。**
        真正面へ撃つと芯が画面上でほぼ点になるので、節と節の間隔(segLen)が
        帯の半幅(bandW)よりずっと小さくなる。この四角形は「筒の横断面」ではなく
@@ -4010,7 +4081,13 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
        (輪は下で必ず描かれるので、筒が消えることはない)。 */
     const segLen = Math.hypot(b.x-a.x, b.y-a.y);
     const bandW  = (na.r + nb.r) * 0.5;
-    if(segLen < bandW*0.35) continue;
+    /* 【重要】潰れた区間を`continue`で捨てると、**カメラの奥へ撃ったときに
+       全区間が潰れて胴体が丸ごと消え、口の楕円だけが残る**(同心楕円=シャボン玉に見えた)。
+       芯の画面上の長さは、術者の位置で239px・射程2200の先で16pxしかないので、
+       正面へ撃つ=普通の撃ち方では必ずこうなる。
+       捨てるのではなく**筒を繋いだまま先の節まで飛ばす**。溜めた区間が十分な長さに
+       なったところで1枚の四角形にすれば、潰れた所だけが間引かれて筒は途切れない。 */
+    if(segLen < bandW*0.35 && i < pts.length-2){ continue; }
     const q = [
       { x:a.x+na.x*na.r, y:a.y+na.y*na.r },
       { x:b.x+nb.x*nb.r, y:b.y+nb.y*nb.r },
@@ -4035,6 +4112,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     ctx.closePath();
     ctx.fillStyle = g; ctx.fill();
     edgeA.push(q[0], q[1]); edgeB.push(q[3], q[2]);
+    _prev = i+1;
   }
   // 外殻の輪郭線。ここが無いと縁がぼやけて筒に見えない。
   // 線は輪郭の内側へ寄せて引く(中心に置くと線の太さの半分だけ当たり幅からはみ出す)
@@ -4043,8 +4121,10 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     const n = nrm[Math.min(nrm.length-1, i>>1)];
     return { x:q.x - n.x*sign*rimW*0.5, y:q.y - n.y*sign*rimW*0.5 };
   });
-  fxStrokePath(inset(edgeA, 1), shell, rimW, 0.95*fade, 0);
-  fxStrokePath(inset(edgeB, -1), shell, rimW, 0.95*fade, 0);
+  if(edgeA.length >= 2){
+    fxStrokePath(inset(edgeA, 1), shell, rimW, 0.95*fade, 0);
+    fxStrokePath(inset(edgeB, -1), shell, rimW, 0.95*fade, 0);
+  }
   /* 芯の白熱を**加算で別に1本**引く。
      胴体のグラデーションの中央に白を置いてあるが、fx3dFill は通常合成で
      `fade × FX3D_AREA_ALPHA(0.58)` が掛かるため、**画面では195止まり**で
@@ -4104,9 +4184,15 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   };
   const last = pts.length-1;
   /* 途中の輪は**距離で選ぶ**。節が手前に詰まっているので添字で等分すると
-     輪が3本とも術者の足元に固まる。 */
-  for(let k=1;k<8;k++){
-    const want = reach*k/8;
+     輪が3本とも術者の足元に固まる。
+     **正面へ撃ったときは輪を減らす。** 芯が画面上でほぼ点になるので、
+     輪を8本も入れると同心楕円の重なり=シャボン玉にしか見えない。 */
+  const _axisLen = Math.hypot(pts[last].x-pts[0].x, pts[last].y-pts[0].y);
+  /* 正面撃ちでは**途中の輪を1本も入れない**(2本でも同心楕円に見えると指摘された)。
+     伸びは上で敷いた地面の帯が受け持つので、輪は口と先端の2枚だけでよい。 */
+  const _rings = _axisLen < nrm[0].r*1.2 ? 1 : 8;
+  for(let k=1;k<_rings;k++){
+    const want = reach*k/_rings;
     let i = 0, best = Infinity;
     for(let j=1;j<last;j++){ const d = Math.abs(alongs[j]-want); if(d<best){ best=d; i=j; } }
     if(i>0 && i<last) ringAt(i, false);
@@ -4765,12 +4851,22 @@ function fx3dPsychicWall(ae, curReach, fade){
       if(lp && hp){ low.push(lp); high.push(hp); if(!base){ base=lp; topP=hp; } }
     }
     if(low.length<2 || !base) continue;
-    // 上へ向かって薄くなる壁(念力の膜)
-    const g = ctx.createLinearGradient(base.x, base.y, topP.x, topP.y);
-    g.addColorStop(0, _hexA(sh.bright, 0.95));
-    g.addColorStop(0.55, _hexA(col, 0.7));
-    g.addColorStop(1, _hexA(col, 0.12));
-    fx3dFill(low.concat(high.reverse()), g, wallFade*1.5, 0);
+    /* 【重要】壁を1枚の多角形で塗ると、**左右の辺が画面に対して垂直に切り立った
+       平らな長方形**になり、扇の弧がまったく読めない(「UIのパネルが出た」と
+       誤解されうる、と実測で指摘された)。
+       短冊に割って1枚ずつ塗ると、隣どうしの高さと明るさが弧に沿って変わるので、
+       左右の端が放射方向へ倒れて弧が見える。**判定(扇の角度と到達距離)は触らない。** */
+    const hiR = high.slice().reverse();
+    for(let k=0;k<low.length-1;k++){
+      const quad = [low[k], low[k+1], high[k+1], high[k]];
+      const f = k/(low.length-1);                       // 0=左端 1=右端
+      const edge = 1 - Math.abs(f*2 - 1);               // 中央ほど1、端ほど0
+      const g = ctx.createLinearGradient(low[k].x, low[k].y, high[k].x, high[k].y);
+      g.addColorStop(0, _hexA(sh.bright, 0.95));
+      g.addColorStop(0.55, _hexA(col, 0.7));
+      g.addColorStop(1, _hexA(col, 0.10));
+      fx3dFill(quad, g, wallFade*(0.75 + 0.75*edge), 0);
+    }
     fx3dStroke(high, '#ffffff', 3, 0.9*wallFade, 14);
     fx3dStroke(low, sh.bright, 3.4, 0.8*wallFade, 12);
   }
@@ -5223,9 +5319,14 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
   ctx.fill();
 
   // 2) ドーム本体: 地面円の上に乗る半球(上半分の球体)
+  /* 中心を白熱させる。以前は中心が `#3a3a44`(灰色)止まりで、この技の主役である
+     足元の爆風が「白い細線の弧2本と地面の輪」にしか見えなかった(採点表2=2点)。
+     暗い縁 / 属性色 / 白熱の芯 の3層を、他の技と同じ順で並べる。 */
   ctx.globalAlpha = 0.7*fadeAlpha;
+  const _dsh = auraShades(ae.color);
   const g = ctx.createRadialGradient(center.x, center.y-domeH*0.3, 0, center.x, center.y-domeH*0.1, Math.max(halfW,domeH)*1.05);
-  g.addColorStop(0, '#3a3a44');
+  g.addColorStop(0,    'rgba(255,255,255,0.95)');
+  g.addColorStop(0.18, _hexA(_dsh.bright, 0.85));
   g.addColorStop(0.55, ae.color);
   g.addColorStop(1, '#000000');
   ctx.fillStyle = g;
@@ -5233,6 +5334,20 @@ function drawDomeBurstEffect(ae, fillDist, fadeAlpha, inTelegraph){
   ctx.ellipse(center.x, center.y, halfW, domeH, 0, Math.PI, Math.PI*2, false);
   ctx.closePath();
   ctx.fill();
+  // 2b) 芯の白飛び。通常合成では 0.7α が掛かって255に届かないので加算で1枚重ねる
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = fadeAlpha;
+  const g2 = ctx.createRadialGradient(center.x, center.y-domeH*0.25, 0, center.x, center.y-domeH*0.25, Math.max(halfW,domeH)*0.42);
+  g2.addColorStop(0,   'rgba(255,255,255,0.9)');
+  g2.addColorStop(0.5, _hexA(_dsh.bright, 0.35));
+  g2.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = g2;
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y, halfW, domeH, 0, Math.PI, Math.PI*2, false);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 
   // 3) 地面との接地ライン(ダメージ判定円の輪郭そのもの)
   ctx.globalAlpha = 0.9*fadeAlpha;
@@ -6147,20 +6262,30 @@ function fxGlAccent(fx, o, c, phase, dt){
   };
   /* 白は「羽根」なので**速度方向へ伸ばす**(stretch)。丸いボケを12個散らしただけでは
      素との差が全画素の0.13%にしかならず、離れて見ると区別が付かなかった。 */
+  /* 【白が効かない理由】白い羽根を**明るい技の上へ加算**しても、下地がもう明るいので
+     画に出ない(実測: 天衣無縫で差が226画素=画面の0.048%)。羽根を大きく長寿命にした上で、
+     **同じ場所へ煤も少し撒いて下地を暗くする。** 暗い下地の上でだけ白は白く見える。
+     黒オーラは煤だけで既に効いている(素より輝度60以上暗い画素が2952〜4935)ので触らない。 */
+  const feather = (n, o2)=>{
+    spawn(n, o2);
+    spawn(Math.max(2, Math.round(n*0.5)), {
+      vz:4, az:-70, life:(o2.life||1)*1.15, size0:(o2.size0||8)*3.2, size1:(o2.size0||8)*5.0,
+      bright:0.7, hot:0, soot:true });
+  };
   if(phase === 'cast' || phase === 'impact'){
-    if(white) spawn(26, { vz: 50+Math.random()*90, az:-40, life:1.1+Math.random()*0.5,
-                          size0:9, size1:1.5, bright:1.15, hot:1, stretch:1.1 });
+    if(white) feather(34, { vz: 50+Math.random()*90, az:-40, life:1.3+Math.random()*0.5,
+                            size0:18, size1:3, bright:1.5, hot:1, stretch:1.3 });
     else      spawn(16, { vz: 10+Math.random()*30, az:-90, life:1.3+Math.random()*0.5,
                           size0:26, size1:46, bright:0.8, hot:0, soot:true });
   } else if(phase === 'fly'){
-    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 34 : 14) : 0;
-    if(white) spawn(n, { vz: 25+Math.random()*45, az:-30, life:0.9, size0:6, size1:1,
-                         bright:1.0, hot:1, stretch:1.0 });
+    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 40 : 14) : 0;
+    if(white) feather(n, { vz: 25+Math.random()*45, az:-30, life:1.0, size0:13, size1:2,
+                           bright:1.35, hot:1, stretch:1.2 });
     else      spawn(n, { vz: 5, az:-60, life:1.0, size0:18, size1:34, bright:0.7, hot:0, soot:true });
   } else if(phase === 'sustain'){
-    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 26 : 10) : 0;
-    if(white) spawn(n, { vz: 35+Math.random()*55, az:-35, life:1.0, size0:7, size1:1.2,
-                         bright:0.9, hot:1, stretch:1.0 });
+    const n = (typeof fxSpawnN === 'function') ? fxSpawnN(dt, white ? 32 : 10) : 0;
+    if(white) feather(n, { vz: 35+Math.random()*55, az:-35, life:1.1, size0:14, size1:2.4,
+                           bright:1.25, hot:1, stretch:1.2 });
     else      spawn(n, { vz: 8, az:-70, life:1.1, size0:22, size1:40, bright:0.65, hot:0, soot:true });
   }
 }

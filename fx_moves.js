@@ -1584,6 +1584,11 @@ FX_MOVES.warm = {
 FX_MOVES.fox = {
   cast(fx, ae, c){
     fx.ring({ x:ae.x, y:ae.y, r0:10, r1:60, life:0.45, color:c, width:7, bright:0.5 });
+    // 立ち上がりに粒が0個だった(0.1s=0 / 0.28s=2)。撃った瞬間に口から前へ星屑を撒く
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    fx.burst({ x:ae.x + fwx*80, y:ae.y + fwy*80, z:44, count:30, speed:280, jitter:20, jitterZ:18,
+               elev:0.15, elevSpread:0.4, r:c[0], g:c[1], b:c[2], bright:1.4,
+               life:0.55, size0:9, size1:1, az:-50, turb:12, turbFreq:1.4, spin:4, stretch:0.9 });
   },
   sustain(fx, ae, c, dt){
     const reach = fxAeReach(ae, dt);
@@ -1667,12 +1672,26 @@ FX_MOVES.pixie = {
   },
   fly(fx, p, c, dt){
     if(p.delay > 0) return;
-    const viv = fxVivid(c);
+    const viv = fxVivid(c), deep = fxDeep(viv, 1.8);
     /* 球は**黒のまま**。周りの空間を内へ吸い込ませて「虚空」を作る。
        白い粒を球の面に乗せない(乗せると黒い球でなくなる)。 */
     fxImplode(fx, { x:p.x, y:p.y, z:(p.z||0)+14, r:(p.hitR||28)*2.6,
                     count: fxSpawnN(dt, 40), color:viv, bright:0.9, life:0.3,
                     size0:12, size1:2, turb:12, turbFreq:1.8, spin:3 });
+    /* 640/秒で飛ぶのに**軌跡が全コマ0本**で、速さが読めなかった(採点表3=2点)。
+       白い帯を張ると黒い球でなくなるので、
+        ・帯は`deep`(暗い属性色)で `whiten:0` ── 先端も白くしない
+        ・後ろへ落とす粒は `soot` ── 加算層で唯一「暗くできる」種類
+       の2本立てにする。球そのものの見た目は変えない。 */
+    fx.trail('p'+p.id, p.x, p.y, (p.z||0)+14,
+             { color:deep, width: fxTrailWidth(p, 1.0, 8), bright:0.6, whiten:0 });
+    for(let i=fxSpawnN(dt, 22); i>0; i--){
+      fx.emit({ x:p.x+(Math.random()-0.5)*24, y:p.y+(Math.random()-0.5)*24, z:(p.z||0)+14,
+                vx:-(p.vx||0)*0.12, vy:-(p.vy||0)*0.12, vz:6+Math.random()*20,
+                az:-40, r:deep[0], g:deep[1], b:deep[2], bright:1.0, soot:true,
+                life:0.34+Math.random()*0.2, size0:16+Math.random()*10, size1:2,
+                turb:10, turbFreq:1.4, spin:2, stretch:0.9 });
+    }
   },
 };
 
@@ -1774,6 +1793,12 @@ FX_MOVES.ogre = {
 FX_MOVES.mocchi = {
   cast(fx, ae, c){
     fx.ring({ x:ae.x, y:ae.y, r0:10, r1:60, life:0.45, color:c, width:7, bright:0.5 });
+    /* 砲口の桜。sustain の花びらは毎秒44個なので、**発射から0.5秒は粒が0〜8個**しか
+       存在せず「無音の絵」になっていた(採点表10=2点)。撃った瞬間にまとめて撒く。 */
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    fx.burst({ x:ae.x + fwx*70, y:ae.y + fwy*70, z:40, count:34, speed:150, jitter:26, jitterZ:24,
+               elev:0.2, elevSpread:0.5, r:c[0], g:c[1], b:c[2], bright:1.2, hot:0.4,
+               life:1.0, size0:10, size1:16, az:-45, turb:30, turbFreq:0.5, spin:5 });
   },
   sustain(fx, ae, c, dt){
     const reach = fxAeReach(ae, dt);
