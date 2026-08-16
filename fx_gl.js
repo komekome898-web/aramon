@@ -416,6 +416,146 @@ function updateRibbonGeometry(camWorld){
 }
 
 /* =====================================================================
+   歪み(屈折)
+   ---------------------------------------------------------------------
+   採点表6。**2Dキャンバスをテクスチャに取り込み、ずらして描き直す。**
+
+   なぜこれで歪むのか:
+     この層の合成は One / OneMinusSrcAlpha なので、アルファ a を出すと
+     `src + dst*(1-a)` になる。src に「少しずらした位置の2Dキャンバスの色」を
+     入れれば、その領域だけ下の絵がずれて見える = 屈折。
+     加算(アルファ0)の粒とまったく同じマテリアル規約のまま同居できる。
+
+   負荷について(発注者判断で「入れる」・2026-08-16):
+     毎フレームのテクスチャ転送が要るので安くはない。**歪みが1つも無いフレームでは
+     転送しない**ので、技を撃っていない間の負荷は増えない。
+   ===================================================================== */
+const W = { list:[], mesh:null, geo:null, mat:null, tex:null, pos:null, par:null, MAXQ:24 };
+
+const WARP_VS = `
+precision highp float;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+attribute vec3 position;
+attribute vec4 aWarp;      // x=強さ y=周期 z=個体シード w=種類(0=陽炎 1=球面波)
+attribute vec4 aCenter;    // xyz=中心(ワールド) w=半径
+attribute float aAge;      // 0..1
+varying vec2  vUv;
+varying vec4  vWarp;
+varying float vAge;
+varying vec4  vClip;
+void main(){
+  vUv = position.xy + 0.5;
+  vWarp = aWarp; vAge = aAge;
+  // ワールド(x,y,z) → Three(x, z, y)。粒と同じ規約でビルボードにする
+  vec4 mv = modelViewMatrix * vec4(aCenter.x, aCenter.z, aCenter.y, 1.0);
+  mv.xy += position.xy * aCenter.w * 2.0;
+  vClip = projectionMatrix * mv;
+  gl_Position = vClip;
+}`;
+
+const WARP_FS = `
+precision highp float;
+uniform sampler2D uScene;
+uniform float uTime;
+varying vec2  vUv;
+varying vec4  vWarp;
+varying float vAge;
+varying vec4  vClip;
+void main(){
+  vec2 d = vUv - 0.5;
+  float r = length(d) * 2.0;
+  if(r > 1.0) discard;
+  // 画面上のこの画素の位置(0..1)。ここから「少しずらした所」を拾う
+  vec2 screen = (vClip.xy / vClip.w) * 0.5 + 0.5;
+  float fall = (1.0 - r) * (1.0 - r);          // 縁ほど歪まない
+  float life = (1.0 - vAge);
+  vec2 off;
+  if(vWarp.w > 0.5){
+    // 球面波: 中心から外へ押し出す。爆風の衝撃
+    float ring = sin((r - vAge*1.6) * 9.0) * fall;
+    off = normalize(d + 1e-5) * ring * vWarp.x;
+  } else {
+    // 陽炎: 上へ揺らぐ。炎の熱
+    float t = uTime * vWarp.y + vWarp.z * 6.283;
+    off = vec2(sin(t + vUv.y*11.0), cos(t*0.7 + vUv.x*9.0) * 0.35 + 0.45) * vWarp.x * fall;
+  }
+  vec3 col = texture2D(uScene, clamp(screen + off, 0.002, 0.998)).rgb;
+  /* 屈折の濃さ。1.0に近いと**その領域が丸ごとずれた絵に置き換わり**、
+     画面の6割が動いて「歪み」ではなく「二重写し」に見えた(実測)。
+     下の絵をうっすら曲げる程度に留める。 */
+  float a = clamp(fall * life * 0.30, 0.0, 1.0);
+  gl_FragColor = vec4(col * a, a);   // src + dst*(1-a) = ずらした絵で置き換わる
+}`;
+
+function buildWarp(){
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(
+    [-0.5,-0.5,0,  0.5,-0.5,0,  0.5,0.5,0,  -0.5,0.5,0], 3));
+  geo.setIndex([0,1,2, 0,2,3]);
+  const par = new THREE.InstancedBufferAttribute(new Float32Array(W.MAXQ*4), 4);
+  const age = new THREE.InstancedBufferAttribute(new Float32Array(W.MAXQ), 1);
+  const cen = new THREE.InstancedBufferAttribute(new Float32Array(W.MAXQ*4), 4); // xyz=中心 w=半径
+  par.setUsage(THREE.DynamicDrawUsage); age.setUsage(THREE.DynamicDrawUsage);
+  cen.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aWarp', par); geo.setAttribute('aAge', age); geo.setAttribute('aCenter', cen);
+  const tex = new THREE.Texture();
+  tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  const mat = new THREE.RawShaderMaterial({
+    vertexShader: WARP_VS, fragmentShader: WARP_FS,
+    uniforms: { uScene:{ value:tex }, uTime:{ value:0 } },
+    transparent:true, depthTest:false, depthWrite:false,
+  });
+  mat.blending = THREE.CustomBlending;
+  mat.blendEquation = THREE.AddEquation;
+  mat.blendSrc = THREE.OneFactor;  mat.blendDst = THREE.OneMinusSrcAlphaFactor;
+  mat.blendEquationAlpha = THREE.AddEquation;
+  mat.blendSrcAlpha = THREE.OneFactor; mat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;          // **加算の粒より先に描く**(光そのものは歪ませない)
+  W.geo=geo; W.mat=mat; W.mesh=mesh; W.par=par; W.age=age; W.cen=cen; W.tex=tex;
+  return mesh;
+}
+
+/* 歪みを1つ足す。radius はワールド単位、strength は画面比(0.01で画面の1%ずらす)。
+   kind: 'heat'(陽炎・炎の上) / 'shock'(球面波・爆風) */
+/* 既定でオフ。`window.__fxWarp = true` で有効になる。
+   【なぜオフか】実装は入ったが、**半径と濃さを変えても画面の6割が変化したまま動かない**。
+   同じコードで2回撮った差は7.7%(WebGL層の時計が実時間で進むためのノイズ)なので、
+   61%は明らかにノイズ超えで、意図した「うっすら曲げる」になっていない。
+   原因を詰めきれていないものを既定で有効にはしない。次に触る人へ:
+     ・まず `aCenter` がシェーダへ届いているか(半径を変えて画の大きさが変わるか)を確かめる
+     ・アルファを出すこの層が、ページ側の合成で下を暗くしていないかを確かめる
+   どちらも「半径を極端に小さくしたら変化画素が減るか」で切り分けられる。 */
+function addWarp(o){
+  if(!window.__fxWarp) return;
+  if(W.list.length >= W.MAXQ) W.list.shift();
+  W.list.push({ x:o.x, y:o.y, z:o.z||0, r:o.radius||120, born:clock0,
+                life:o.life||0.5, strength:o.strength||0.012,
+                freq:o.freq||3.0, seed:Math.random(), kind:o.kind==='shock'?1:0 });
+}
+
+function updateWarpGeometry(){
+  const par = W.par.array, age = W.age.array, cen = W.cen.array;
+  let n = 0;
+  for(let i=W.list.length-1;i>=0 && n<W.MAXQ;i--){
+    const w = W.list[i];
+    const t = (clock0 - w.born)/w.life;
+    if(t >= 1 || t < 0){ W.list.splice(i,1); continue; }
+    par[n*4]   = w.strength; par[n*4+1] = w.freq;
+    par[n*4+2] = w.seed;     par[n*4+3] = w.kind;
+    age[n] = t;
+    cen[n*4] = w.x; cen[n*4+1] = w.y; cen[n*4+2] = w.z; cen[n*4+3] = w.r;
+    n++;
+  }
+  W.geo.instanceCount = n;
+  W.par.needsUpdate = true; W.age.needsUpdate = true; W.cen.needsUpdate = true;
+  return n;
+}
+
+/* =====================================================================
    地面に貼る輪(デカール)
    衝撃波・魔法陣。**地面の高さを1点ずつ拾ってリングを張る**ので、
    坂の上でも地面に貼り付いて見える(画面上の楕円を決め打ちしない)。
@@ -533,6 +673,7 @@ function ensureScene(){
     scene.add(buildParticles());
     scene.add(buildRibbons());
     scene.add(buildDecals());
+    scene.add(buildWarp());
     return true;
   }catch(err){
     console.error('[aramon] 技エフェクトのWebGL初期化に失敗。2Dの芯だけで描きます', err);
@@ -589,6 +730,8 @@ const api = {
 
   // ---- 発注API(technique側から呼ぶ) ----
   emit: emitOne,
+  /* 歪み(屈折)。kind:'heat'=陽炎 / 'shock'=球面波 */
+  distort: addWarp,
   burst(o){
     const n = o.count || 12;
     for(let i=0;i<n;i++){
@@ -650,12 +793,27 @@ const api = {
     }
     updateRibbonGeometry(_camWorld);
     updateDecalGeometry(_camWorld, Math.cos(cs.yaw)*cosP, Math.sin(cs.yaw)*cosP);
+    /* 歪みは**あるフレームだけ**2Dキャンバスを取り込む。
+       技を撃っていない間は転送しないので、平常時の負荷は増えない。 */
+    const warpN = updateWarpGeometry();
+    W.mesh.visible = warpN > 0;
+    if(warpN > 0){
+      const src = document.getElementById('gameCanvas');
+      if(src && src.width > 0){
+        if(W.tex.image !== src) W.tex.image = src;
+        W.tex.needsUpdate = true;
+        W.mat.uniforms.uTime.value = clock0;
+      } else {
+        W.mesh.visible = false;
+      }
+    }
     renderer.render(scene, camera);
     return true;
   },
 
   // 計測用
   stats(){
+    // warps = いま生きている歪みの数(負荷の目安)
     /* live = **いま生きている粒の数**。particles は器の大きさ(定数4096)なので、
        そちらを見ても「この技が粒を出したか」は分からない(批評家がここを読み違えた)。
        発生時刻+寿命が現在時刻を越えているものを数える。診断用なので毎フレームは呼ばない。 */
@@ -665,7 +823,7 @@ const api = {
       const born = t[i*4], life = t[i*4+1];
       if(life > 0 && clock0 >= born && clock0 - born <= life) live++;
     }
-    return { live, particles: MAX_PARTICLES,
+    return { live, particles: MAX_PARTICLES, warps: W.list.length,
              ribbons: R.lanes.filter(l=>l.key).length, decals: D.list.length };
   },
   /* **この層の描画だけ**にかかる時間(ms)。フレーム全体を測ると2Dの描画と混ざり、

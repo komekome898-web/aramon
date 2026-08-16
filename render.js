@@ -6062,6 +6062,11 @@ function fxGlAccent(fx, o, c, phase, dt){
 }
 
 const _fxSeenAe   = new Set();   // 発生時に1回だけ出すもの(cast)の既出判定
+/* 歪みを出した時刻。**毎フレーム出すと重なって画が溶ける**ので0.16秒に1つへ間引く */
+const _fxWarpAt   = new Map();
+/* 歪みの半径の上限(ワールド)。判定が大きくてもここで止める。
+   半径330の爆風をそのまま歪ませると画面の6割が動き、屈折でなく二重写しに見えた。 */
+const WARP_R_MAX  = 110;
 const _fxProjSeen = new Map();   // 弾id → 最後に見えた位置。消えた瞬間に impact を出す
 
 /* 属性ごとの作り込み(fx_moves.js の表)を引く。無い属性は既定の見え方。
@@ -6116,6 +6121,11 @@ function fxGlFeed(fx, dt){
       const st = fxGlStyleFor(last); if(!st) continue;
       st.impact(fx, last, last.c);
       fxGlAccent(fx, last, last.c, 'impact');
+      // 着弾の球面波。半径は当たり判定(splash か hitR*3)まで
+      if(fx.distort && typeof fxHitRadius === 'function')
+        fx.distort({ x:last.x, y:last.y, z:(last.z||0)+20,
+                     radius:Math.max(60, Math.min(fxHitRadius(last), WARP_R_MAX)),
+                     life:0.35, strength:0.014, kind:'shock' });
       // 当たりの重さは弾の当たり判定の大きさで測る(威力は表示用の値と混ざるため)
       fxPunch(Math.min(0.9, (last.hitR||10)/34), last.x, last.y);
     }
@@ -6144,6 +6154,32 @@ function fxGlFeed(fx, dt){
        ogre / pixie / dullahan / aqua / leaf / warm / zan / hum は呼んでいないので
        **reach=0 が渡り、帯が1本も出ていなかった**(gl.ribbons が全コマ0)。
        判定側(drawSingleAreaEffect)とまったく同じ値から自分で出す。 */
+    /* 歪み(採点表6)。**1か所でまとめて出す**ので属性ごとに書き足さない。
+       炎系=上へ揺れる陽炎 / 爆風=外へ広がる球面波。
+       半径は当たり判定から取るので、歪みが判定より大きくならない。 */
+    if(fx.distort){
+      const tgw = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
+      if(!_fxWarpAt.has(ae.id) || (matchTime - _fxWarpAt.get(ae.id)) > 0.16){
+        _fxWarpAt.set(ae.id, matchTime);
+        const isBlast = ae.kind === 'circle';
+        const fsw = ae.fillSpeed || 900;
+        const rch = Math.min(ae.range || 0, Math.max(0, (matchTime - ae.spawnAt) - tgw) * fsw);
+        if(isBlast){
+          /* 半径は判定どおりでも、画面を覆うほど大きいと歪みが画面効果になってしまう。
+             見せたいのは「爆心の周りが揺れる」ことなので上限を掛ける。 */
+          if(rch > 20) fx.distort({ x:ae.x, y:ae.y, z:(ae.z||0)+30,
+                                    radius:Math.min(rch, ae.range||200, WARP_R_MAX),
+                                    life:0.45, strength:0.016, kind:'shock' });
+        } else if(rch > 40){
+          // 帯・扇の中ほどに陽炎を1つ。判定の半幅を超えない大きさにする
+          const hw = (typeof fxAeHalfWidth === 'function') ? fxAeHalfWidth(ae, rch*0.6) : 60;
+          const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+          fx.distort({ x:ae.x + fwx*rch*0.6, y:ae.y + fwy*rch*0.6, z:(ae.z||0)+40,
+                       radius:Math.max(50, Math.min(hw, WARP_R_MAX)), life:0.5, strength:0.010,
+                       freq:3.4, kind:'heat' });
+        }
+      }
+    }
     if(typeof fxAeFrontRibbon === 'function'){
       const tg = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
       const fs = ae.fillSpeed || 900;
