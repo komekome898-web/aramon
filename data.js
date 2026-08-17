@@ -1181,6 +1181,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
+    { t:'🎰 スキンガチャが「荒モン100%ダブルピックアップ」になりました！ ピックアップは「北大路さつキジン」と「西野ピかさ」の2体で、SSR全体2%のうちこの2体で合わせて1%(各0.5%)、他のSSRが合わせて1%です', g:['feature','general'] },
     { t:'✨ SSRスキン「西野ピかさ」が登場しました！ ピクシーのスキンです', g:['feature','monster'] },
     { t:'「西野ピかさ」がモッチーのスキンとして登録されていたのを、ピクシーのスキンに直しました。すでに持っている方はピクシーの着せ替えに並びます', g:['fix','monster'] },
     { t:'「西野ピかさ」のtier3「ずっとずっとキミのことが好き!!」の弾が赤いいちごになりました。電撃・輪・着弾のドームはこれまでどおりです。技の威力・射程・弾速・爆風の広さは変わりません', g:['av','monster'] },
@@ -3710,7 +3711,7 @@ const RARITIES = {
   N:   { label:'N',   jp:'ノーマル',          color:'#b07a4f', rate:58 },
   R:   { label:'R',   jp:'レア',              color:'#c9ccd6', rate:30 },
   SR:  { label:'SR',  jp:'スーパーレア',       color:'#ffcf3f', rate:10 },
-  SSR: { label:'SSR', jp:'スペシャルスーパーレア', color:'rainbow', rate:2 }, // 内訳: 轟金剛1% + 他SSR合算1%(pickGachaSsrSkinId)
+  SSR: { label:'SSR', jp:'スペシャルスーパーレア', color:'rainbow', rate:2 }, // 内訳: ピックアップ合計1% + 他SSR合算1%(pickGachaSsrSkinId)
 };
 // 10連ガチャの10連目(SR以上確定枠)の内訳
 const GUARANTEED_SLOT_RATES = { SR:90, SSR:10 };
@@ -3999,13 +4000,34 @@ function weightedPickRarity(guaranteedSRplus){
   for(const [k,w] of entries){ r-=w; if(r<0) return k; }
   return entries[0][0];
 }
-// SSR内の内訳抽選(ピックアップ): SSR全体2%のうち、轟金剛が1%・他SSR合算が1%になるよう
-// SSR枠に入った時点で五分五分に振り、外れた方は他SSRの中から均等に選ぶ
-const GACHA_PICKUP_SSR = 'rock_ssr';
+/* SSR内の内訳抽選(ピックアップ)。SSR全体2%のうち、**ピックアップ全体で1%**・
+   他SSR合算で1%になるよう、SSR枠に入った時点で五分五分に振る。
+   【複数体を並べられる】2026-08-17のダブルピックアップから配列にした。
+   ピックアップ側の1%は並べた体数で等分するので、2体なら各0.5%になる。
+   ここを1行変えるだけで、抽選・提供割合の表・ガチャ画面の札・記念ポップアップが
+   まとめて追従する(手書きの対応表を増やさない)。 */
+const GACHA_PICKUP_SSR_IDS = ['satsuki_ssr', 'tsukasa_ssr']; /*@pickup*/
+/* PICK UPの札に出す文字。**2体以上のときは名前を並べると札(画面の46%)で切れる**
+   ので、キャンペーンの短い名前を置く。null なら1体目のスキン名をそのまま出す。 */
+const GACHA_PICKUP_LABEL = '荒モン100%';
+/* ガチャ画面と記念ポップアップに出す告知画像。**キャンペーンの絵**を指す
+   (2体ぶんなので、どちらか一方の SKIN_MEDIA.promoImg にすると片方が出ない)。
+   null なら従来どおり1体目のスキンの promoImg を使う。 */
+const GACHA_PICKUP_PROMO_IMG = 'images/promo_aramon100.jpg';
+// 記念ポップアップで画像の下に出す宣伝文(発注者から支給・1行1要素)
+const GACHA_PICKUP_PROMO_LINES = [
+  '荒モン100%ダブルピックアップ！',
+  'セクシーvsプリティー　あなたはどっち派？',
+  '専用技&ボイス&BGM&ムービー搭載',
+];
+function isGachaPickupSsr(id){ return GACHA_PICKUP_SSR_IDS.indexOf(id) >= 0; }
 function pickGachaSsrSkinId(){
-  const others = gachaSsrSkinIds().filter(id=>id!==GACHA_PICKUP_SSR);
-  if(others.length===0) return GACHA_PICKUP_SSR; // 他SSRが無ければ常に轟金剛
-  return Math.random()<0.5 ? GACHA_PICKUP_SSR : pickRandom(others);
+  const ids    = gachaSsrSkinIds();
+  const pickup = ids.filter(isGachaPickupSsr);
+  const others = ids.filter(id=>!isGachaPickupSsr(id));
+  if(!pickup.length) return others.length ? pickRandom(others) : ids[0];
+  if(!others.length) return pickRandom(pickup);   // 他SSRが無ければ常にピックアップ
+  return Math.random()<0.5 ? pickRandom(pickup) : pickRandom(others);
 }
 function pickRandom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 /* ガチャ画面の告知画像。スキンガチャ・レイドガチャそれぞれのピックアップスキンの
@@ -4015,7 +4037,11 @@ function skinPromoImgUrl(skinId){
   const m = skinMediaOf(skinId);
   return (m && m.promoImg) || null;
 }
-gachaPickupPromoImg.src = skinPromoImgUrl(GACHA_PICKUP_SSR) || 'images/promo_rock_ssr.jpeg';
+// スキンガチャの告知画像のURL(キャンペーンの絵が無ければ1体目のスキンの promoImg)
+function gachaPickupPromoImgUrl(){
+  return GACHA_PICKUP_PROMO_IMG || skinPromoImgUrl(GACHA_PICKUP_SSR_IDS[0]) || 'images/promo_rock_ssr.jpeg';
+}
+gachaPickupPromoImg.src = gachaPickupPromoImgUrl();
 const raidGachaPickupPromoImg = loadPromoImage(skinPromoImgUrl(RAID_GACHA_PICKUP));
 // ガチャのタブ(スキン/レイド)に応じた告知画像を返す
 function gachaPromoImgFor(mode){
@@ -4036,10 +4062,13 @@ function gachaRateTable(){
   const perItem = (rarity, n)=> RARITIES[rarity].rate / n;
   // 高いレアリティ順(SSR→SR→R→N)で表示する(シーズン限定SSRはガチャに出ないので除外)
   const ssrIds = gachaSsrSkinIds();
-  const otherSsrIds = ssrIds.filter(id=>id!==GACHA_PICKUP_SSR);
+  // ピックアップ側で1%を等分(2体なら各0.5%)、他SSRで残り1%を等分
+  const pickupIds   = ssrIds.filter(isGachaPickupSsr);
+  const otherSsrIds = ssrIds.filter(id=>!isGachaPickupSsr(id));
   rows.push({ rarity:'SSR', items: ssrIds.map(id=>({
     label: skinMeta(id).name,
-    pct: id===GACHA_PICKUP_SSR ? RARITIES.SSR.rate/2 : (otherSsrIds.length ? RARITIES.SSR.rate/2/otherSsrIds.length : 0),
+    pct: isGachaPickupSsr(id) ? (pickupIds.length ? RARITIES.SSR.rate/2/pickupIds.length : 0)
+                              : (otherSsrIds.length ? RARITIES.SSR.rate/2/otherSsrIds.length : 0),
   })) });
   const srIds = allColorSkinIds();
   rows.push({ rarity:'SR', items: srIds.map(id=>({ label: skinMeta(id).name, pct: perItem('SR', srIds.length) })) });

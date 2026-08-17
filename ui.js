@@ -2427,13 +2427,16 @@ function setGachaMode(mode){
   document.querySelectorAll('.gacha-tab').forEach(t=>t.classList.toggle('active', t.dataset.gacha===gachaMode));
   const raid = gachaMode==='raid';
   /* ピックアップの名前は両タブともピックアップの定数から作る
-     (data.js の GACHA_PICKUP_SSR / RAID_GACHA_PICKUP を変えればここも追従する)。
+     (data.js の GACHA_PICKUP_SSR_IDS / GACHA_PICKUP_LABEL / RAID_GACHA_PICKUP を
+      変えればここも追従する)。
      **入れるのは名前だけ。** 「PICK UP」の札はHTML側に固定で置いてあるので、
-     ここで飾りの文字を混ぜない(名前が長いときに札ごと切れてしまう)。 */
+     ここで飾りの文字を混ぜない(名前が長いときに札ごと切れてしまう)。
+     スキンガチャは2体以上並ぶことがあり、名前を連結すると札の幅で切れるので、
+     キャンペーン名(GACHA_PICKUP_LABEL)があればそれを出す。 */
   const pickupName = (id, alt)=> SSR_SKINS[id] ? skinMeta(id).name : alt;
   document.getElementById('gachaTitlePickup').textContent = raid
     ? pickupName(RAID_GACHA_PICKUP, 'レイド特効')
-    : pickupName(GACHA_PICKUP_SSR, 'SSR');
+    : (GACHA_PICKUP_LABEL || pickupName(GACHA_PICKUP_SSR_IDS[0], 'SSR'));
   // 開催前は引けない。ボタンとゲージの上に「近日公開」を被せる
   const locked = raid && !raidGachaOpenNow();
   document.getElementById('gachaSoonMask').classList.toggle('hidden', !locked);
@@ -2533,29 +2536,52 @@ maybeFlushPendingPromoPopups();
 
 /* ===== ピックアップSSR実装記念ポップアップ =====
    ログインしてロビーに来るたび毎回ポップアップを表示する。ダイヤ500個の付与だけは1アカウント1回のみ。
-   出す画像・文言はスキンガチャのピックアップ(GACHA_PICKUP_SSR)から作るので、
-   ピックアップを差し替えるとポップアップの絵も自動で入れ替わる(IDは轟金剛のときのまま)。 */
+   出す画像・文言はスキンガチャのピックアップ(GACHA_PICKUP_SSR_IDS まわりの定数)から
+   作るので、ピックアップを差し替えるとポップアップの絵も宣伝文も自動で入れ替わる
+   (要素のIDは轟金剛のときのまま)。 */
 const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // ダイヤ受け取り済み(アカウント同期)
 const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
 const ROCK_SSR_PROMO_DIA = 500;
 /* ポップアップに出すピックアップ。レイド開催期間中はレイドガチャのピックアップに
    切り替える(画像は SKIN_MEDIA.promoImg から引くので、ツールで差し替えれば自動で入れ替わる)。 */
-function promoPickupSkinId(){
-  return (typeof raidOpenNow==='function' && raidOpenNow()) ? RAID_GACHA_PICKUP : GACHA_PICKUP_SSR;
+function promoIsRaidPickup(){ return typeof raidOpenNow==='function' && raidOpenNow(); }
+// ポップアップに出す絵。レイド期間中はそのスキンの宣伝画像、それ以外はキャンペーンの絵
+function promoPickupImgUrl(){
+  if(promoIsRaidPickup())
+    return (typeof skinPromoImgUrl==='function') ? skinPromoImgUrl(RAID_GACHA_PICKUP) : null;
+  return (typeof gachaPickupPromoImgUrl==='function') ? gachaPickupPromoImgUrl() : null;
+}
+// 画像の下に出す宣伝文。レイドのピックアップには無い(キャンペーンの文言なので)
+function promoPickupLines(){
+  if(promoIsRaidPickup()) return [];
+  return (typeof GACHA_PICKUP_PROMO_LINES!=='undefined' && GACHA_PICKUP_PROMO_LINES) || [];
 }
 function gachaPickupName(){
-  const id = promoPickupSkinId();
-  return (typeof SSR_SKINS!=='undefined' && SSR_SKINS[id]) ? skinMeta(id).name : 'SSR';
+  if(promoIsRaidPickup())
+    return (typeof SSR_SKINS!=='undefined' && SSR_SKINS[RAID_GACHA_PICKUP]) ? skinMeta(RAID_GACHA_PICKUP).name : 'SSR';
+  if(typeof GACHA_PICKUP_LABEL!=='undefined' && GACHA_PICKUP_LABEL) return GACHA_PICKUP_LABEL;
+  const id = (typeof GACHA_PICKUP_SSR_IDS!=='undefined') ? GACHA_PICKUP_SSR_IDS[0] : null;
+  return (typeof SSR_SKINS!=='undefined' && id && SSR_SKINS[id]) ? skinMeta(id).name : 'SSR';
 }
 function showRockSsrPromoPopup(){
   const el = document.getElementById('rockSsrPromoOverlay');
   if(!el) return;
   const img = document.getElementById('rockSsrPromoImg');
-  const url = (typeof skinPromoImgUrl==='function') ? skinPromoImgUrl(promoPickupSkinId()) : null;
+  const url = promoPickupImgUrl();
   if(img && url && img.getAttribute('src') !== url){
     img.src = url;
-    img.alt = `SSR${gachaPickupName()}ピックアップ`;
+    img.alt = `${gachaPickupName()}ピックアップ`;
   }
+  /* 宣伝文。**箱の高さは中身で決めない**ので、文が有るときだけ画像側に
+     キャプション用のクラスを付けて画像の上限を下げる(メタルグレイモンの告知と同じ作り)。 */
+  const cap = document.getElementById('rockSsrPromoCaption');
+  const lines = promoPickupLines();
+  if(cap){
+    cap.innerHTML = '';
+    lines.forEach(t=>{ const d=document.createElement('div'); d.textContent=t; cap.appendChild(d); });
+    cap.classList.toggle('hidden', !lines.length);
+  }
+  if(img) img.classList.toggle('skin-promo-img-caption', !!lines.length);
   el.classList.remove('hidden');
 }
 function dismissRockSsrPromoPopup(){
@@ -2573,7 +2599,8 @@ function maybeShowRockSsrPromo(){
     addWallet(0, ROCK_SSR_PROMO_DIA);                            // ダイヤ500個付与(saveWalletがsync予約)
     accountMarkDirty();                                          // フラグもサーバーへ同期
     updateAccountBar();
-    pushToast(`SSR${gachaPickupName()}実装記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
+    // ピックアップが2体のときは名前でなくキャンペーン名が入るので「SSR◯◯」とは書かない
+    pushToast(`${gachaPickupName()}ピックアップ記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
   }
   // ポップアップ自体はログインのたび毎回表示する
   try{ localStorage.setItem(ROCK_SSR_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持

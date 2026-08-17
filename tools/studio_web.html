@@ -2561,7 +2561,11 @@ function loadSsrList(dataJs){
   renderAssetTargets();
   renderAwakenBaseOptions();
   state.media.cur = parseSkinMedia(dataJs);
-  state.pickup.skin = (/^const GACHA_PICKUP_SSR = '([^']*)'/m.exec(dataJs) || [])[1] || null;
+  /* スキンガチャのピックアップは**配列**(複数体のダブルピックアップに対応)。
+     この画面は1体を選ぶ作りなので、表示には先頭を使う。 */
+  const _pk = (/^const GACHA_PICKUP_SSR_IDS = \[([^\]]*)\]/m.exec(dataJs) || [])[1] || '';
+  state.pickup.skin = (/'([^']+)'/.exec(_pk) || [])[1] || null;
+  state.pickup.skinCount = (_pk.match(/'[^']+'/g) || []).length;
   state.pickup.raid = (/^const RAID_GACHA_PICKUP = '([^']*)'/m.exec(dataJs) || [])[1] || null;
   const cur = $('md_skin').value;
   $('md_skin').innerHTML = out.map(([k,l])=>{
@@ -3045,13 +3049,30 @@ async function planSkinMedia(dataJs, swJs, lines){
   }
   if(pickupOn){
     const raid = $('md_gachaKind').value === 'raid';
-    const cname = raid ? 'RAID_GACHA_PICKUP' : 'GACHA_PICKUP_SSR';
-    const rx = new RegExp('^const ' + cname + ' = .*$', 'm');
-    if(rx.test(texts['data.js'])){
-      texts['data.js'] = texts['data.js'].replace(rx, `const ${cname} = ${jsStr(id)};`);
-      notes.push(`${raid ? 'レイド' : 'スキン'}ガチャのピックアップに設定(タイトルとガチャ画面・ポップアップの画像が切り替わります)`);
-      if(!cfg.promoImg) notes.push('※ 宣伝画像が未設定なので、画像は今のものが出ます');
-    }else notes.push(`${cname} が見つかりません`);
+    if(raid){
+      const rx = /^const RAID_GACHA_PICKUP = .*$/m;
+      if(rx.test(texts['data.js'])){
+        texts['data.js'] = texts['data.js'].replace(rx, `const RAID_GACHA_PICKUP = ${jsStr(id)};`);
+        notes.push('レイドガチャのピックアップに設定(タイトルとガチャ画面・ポップアップの画像が切り替わります)');
+        if(!cfg.promoImg) notes.push('※ 宣伝画像が未設定なので、画像は今のものが出ます');
+      }else notes.push('RAID_GACHA_PICKUP が見つかりません');
+    }else{
+      /* スキンガチャのピックアップは配列。この画面は1体を選ぶ作りなので、
+         **ダブルピックアップ中に設定するとこの1体だけになる。**
+         あわせてキャンペーンの札・絵・宣伝文も外す(2体ぶんの文言が残ると嘘になる)。 */
+      const rx = /^const GACHA_PICKUP_SSR_IDS = .*$/m;
+      if(rx.test(texts['data.js'])){
+        const was = state.pickup.skinCount || 1;
+        texts['data.js'] = texts['data.js']
+          .replace(rx, `const GACHA_PICKUP_SSR_IDS = [${jsStr(id)}]; /*@pickup*/`)
+          .replace(/^const GACHA_PICKUP_LABEL = .*$/m, 'const GACHA_PICKUP_LABEL = null;')
+          .replace(/^const GACHA_PICKUP_PROMO_IMG = .*$/m, 'const GACHA_PICKUP_PROMO_IMG = null;')
+          .replace(/^const GACHA_PICKUP_PROMO_LINES = \[[\s\S]*?\n\];$/m, 'const GACHA_PICKUP_PROMO_LINES = [];');
+        notes.push('スキンガチャのピックアップに設定(タイトルとガチャ画面・ポップアップの画像が切り替わります)');
+        if(was > 1) notes.push(`※ 今は${was}体のピックアップ中です。このスキン1体だけになり、キャンペーンの札・絵・宣伝文も外れます`);
+        if(!cfg.promoImg) notes.push('※ 宣伝画像が未設定なので、画像は今のものが出ます');
+      }else notes.push('GACHA_PICKUP_SSR_IDS が見つかりません');
+    }
   }
   texts['sw.js'] = bumpCache(swJs);
 
