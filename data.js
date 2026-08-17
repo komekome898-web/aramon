@@ -661,7 +661,11 @@ const SIGNATURE_MOVES = {
   ark: [
     { name:'しっぽふり',   tier:1, color:'#ffe9a8', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🌱' },
     { name:'熾天の剣', tier:2, color:'#ffe9a8', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🏹' },
-    { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:58, cooldown:2.0, gutsCost:24, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' },
+    /* blast: 着弾点に広がるドーム状の爆風(発注者依頼・2026-08-17)。直撃58+爆風24=82は
+       ビッグバン(20+60=80)と同じ帯。半径240はビッグバン330より小さくして、
+       射程1850の遠距離技が面まで最大にならないようにしてある。 */
+    { name:'天の慈悲', tier:3, color:'#ffe9a8', range:1850, dmg:58, cooldown:2.0, gutsCost:24, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy',
+      blast:{ radius:240, dmg:24, expandTime:0.45, color:'#ffe9a8' } },
   ],
   warm: [
     { name:'毒ガス',       tier:1, color:'#9b5fd1', range:700,  dmg:23, cooldown:0.85, gutsCost:8, projSpeed:500, hitR:12, splash:75, icon:'☠️' },
@@ -1171,6 +1175,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
+    { t:'アークの「天の慈悲」に、着弾点から広がるドーム状の爆風を追加しました(半径240・威力24)。直撃58と合わせて最大82になります', g:['balance','monster'] },
     { t:'スキンを着てもtier3の技がオーラの色にならないことがあったのを直しました。白・黒のオーラだけ技の色が変わらず、素の技と同じ見た目のままでした(「天衣無縫」「終焉に救いを」「ラガモッチ砲」「ドラゴンころし」「言葉は無粋」)', g:['fix','av','monster'] },
     { t:'キジンの「羅生門」で、吸い込む技なのに火の粉が前へ飛び出していたのを直しました。炎の壁が奥から門へ迫るのに合わせて、火の粉・地面の痕・光の帯も門へ向かって流れます', g:['fix','av'] },
     { t:'ビーム系の技(モッチ砲・天河天翔・フラワービーム・熱視線)が、正面へ撃つと細い1本の線にしか見えなかったのを直しました。当たる範囲と同じ太さの筒が、奥へ伸びる光のトンネルとして出ます', g:['fix','av'] },
