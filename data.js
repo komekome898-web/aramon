@@ -1187,6 +1187,8 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
     { t:'✨ SSRスキン「秦の怪鳥」が登場しました！', g:['feature','monster'] },
+    { t:'「秦の怪鳥」にバトル開始の召喚演出の専用SEを追加しました', g:['monster','av'] },
+    { t:'ギャラリーのミュージアムで、召喚演出の専用SEも聴けるようになりました(「ちょこ」「秦の怪鳥」)', g:['av','general'] },
     { t:'マスモンの名前を変えたあと、モンスターが小さくなったり選択のポップアップが途切れたりしていたのを直しました。キーボードを閉じたときの画面の大きさの測り方が原因でした', g:['fix','general'] },
     { t:'🎰 スキンガチャが「荒モン100%ダブルピックアップ」になりました！ ピックアップは「北大路さつキジン」と「西野ピかさ」の2体で、SSR全体2%のうちこの2体で合わせて1%(各0.5%)、他のSSRが合わせて1%です', g:['feature','general'] },
     { t:'✨ SSRスキン「西野ピかさ」が登場しました！ ピクシーのスキンです', g:['feature','monster'] },
@@ -3900,7 +3902,8 @@ const SKIN_MEDIA = {
   oki_ssr: { /*@oki_ssr*/
     promote: { video:'video/oki_ssr_promote', audio:'audio/oki_ssr_promote_audio.m4a', safetyMs:33688, bgmOnReveal:'lastBattle' },
     bgm: { battle:'audio/bgm_oki_ssr_battle.m4a', final5:'audio/bgm_oki_ssr_final5.m4a', lastBattle:'audio/bgm_oki_ssr_lastbattle.m4a' },
-    se: { tier3:'audio/se_oki_ssr_tier3.m4a', hit:'audio/se_oki_ssr_hit.m4a', kill:'audio/se_oki_ssr_kill.m4a', win:'audio/se_oki_ssr_win.m4a' },
+    se: { summon:'audio/se_oki_ssr_summon.mp3', tier3:'audio/se_oki_ssr_tier3.m4a',
+          hit:'audio/se_oki_ssr_hit.m4a', kill:'audio/se_oki_ssr_kill.m4a', win:'audio/se_oki_ssr_win.m4a' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
@@ -3923,8 +3926,10 @@ Object.keys(SSR_SKINS).forEach(id=>{
   if(!Object.keys(inherited).length) return;
   SKIN_MEDIA[id] = Object.assign(inherited, SKIN_MEDIA[id] || {});
 });
-// 専用SEの区分と、そのスキンに専用SEが無いときに鳴る既存のSE名
-const SKIN_SE_SLOTS = { tier3:'技(tier3)', hit:'被弾', kill:'キル', win:'勝利' };
+/* 専用SEの区分。並びは試合で鳴る順(ギャラリーのボタンの並びもこの順になる)。
+   **ここへ1行足せば、SKIN_MEDIA.se の受け取り・SE_DEFSへの登録・combat.jsの差し替え表・
+   ギャラリー・管理者画面のSE確認まで全部が回る。**(2026-08-17に summon を追加) */
+const SKIN_SE_SLOTS = { summon:'召喚演出', tier3:'技(tier3)', hit:'被弾', kill:'キル', win:'勝利' };
 const SKIN_BGM_SLOTS = { battle:'残り6人以上', final5:'残り5人以下', lastBattle:'残り2人' };
 function skinMediaOf(skinId){ return (skinId && SKIN_MEDIA[skinId]) || null; }
 

@@ -3457,6 +3457,8 @@ const MEDIA_ITEMS = [
   { key:'bgm.battle',     jp:'専用BGM 残り6人以上', kind:'audio' },
   { key:'bgm.final5',     jp:'専用BGM 残り5人以下', kind:'audio' },
   { key:'bgm.lastBattle', jp:'専用BGM 残り2人',     kind:'audio' },
+  { key:'se.summon',      jp:'専用SE 召喚演出',     kind:'audio',
+    hint:'バトル開始の召喚演出で鳴ります。所持していればギャラリーのミュージアムでも聴けます。' },
   { key:'se.tier3',       jp:'専用SE tier3技',      kind:'audio' },
   { key:'se.hit',         jp:'専用SE 被弾時',       kind:'audio' },
   { key:'se.kill',        jp:'専用SE キル時',       kind:'audio' },
@@ -3739,7 +3741,8 @@ function skinMediaLines(id, cfg){
     if(p.bgmOnReveal) bits.push(`bgmOnReveal:${jsStr(p.bgmOnReveal)}`);
     out.push(`    promote: { ${bits.join(', ')} },`);
   }
-  for(const [group, keys] of [['bgm', ['battle','final5','lastBattle']], ['se', ['tier3','hit','kill','win']]]){
+  // se の並びは data.js の SKIN_SE_SLOTS と同じ(試合で鳴る順)
+  for(const [group, keys] of [['bgm', ['battle','final5','lastBattle']], ['se', ['summon','tier3','hit','kill','win']]]){
     const g = cfg[group] || {};
     const bits = keys.filter(k=>g[k]).map(k=>`${k}:${jsStr(g[k])}`);
     if(bits.length) out.push(`    ${group}: { ${bits.join(', ')} },`);
