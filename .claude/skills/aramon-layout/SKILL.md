@@ -139,6 +139,24 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 5. 枠を画面いっぱいに: `.xxx-box{ padding:8px 10px; width/max-height:calc(99 * var(--vh|--vw)) }`
    \+ `#xxxOverlay{ padding:0 }`。**閉じるボタン(右上37px)に重ならないよう見出しに`padding-right:44px`**
 
+## スクロール枠に`position:relative`を足してはいけない(2026-08-17に本番へ出した事故)
+
+「スクロールできる欄へ自動でスクロールバーを差し込む」を入れ、`overflow-y:auto`の
+セレクタを集めて該当要素へ`.has-auto-scrollbar{ position:relative }`を付けた。
+**スクロール枠のうち3つは、すでに`position:absolute`で全画面を占めていた**
+(`.resultScreen` / `#lobbyScreen`,`#roomListScreen` / `.custom-select-menu`)。
+`relative`で上書きしたので画面が全画面でなくなり、裏が見え、**スクロール禁止の画面が
+スクロールできるようになった**。`#mastermonScreen`は`class="resultScreen"`なので同時に壊れた。
+バッグでは無限にスクロールできる状態になった。取り消して公開し直した(#358 / #359)。
+
+- **`position`は要素の見た目の土台。** バーやバッジを置きたいからと`relative`を足すと、
+  その要素が`absolute`/`fixed`で位置と大きさを取っていた場合に**寸法ごと壊れる**。
+  置き場所が要るなら**枠そのものではなく親か外側**に作る。
+- 全画面の画面は`.resultScreen`を共用している。`.resultScreen`に何か足すと
+  マスモン・モンスター一覧など**別画面も一緒に変わる**。
+- CSSのセレクタを機械的に集めて一括で当てるやり方は、**当たった要素の一覧を先に出して
+  目で確かめる**まで公開しない。「44件のセレクタに当てた」だけでは何が壊れるか分からない。
+
 ## スクロールロック除外(必須)
 
 新しい画面/オーバーレイを足したらIDを**3か所すべて**に追加する:
