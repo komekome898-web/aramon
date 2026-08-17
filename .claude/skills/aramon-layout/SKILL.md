@@ -182,7 +182,15 @@ description: 荒野モン動のCSS・レイアウト・タッチ操作の共通�
 
 仕組み: `focusin`(capture)で元の`<input>`を`readOnly`+`blur()`し、ポップアップの欄に`focus()`(**タップと同じターンで呼ぶ**)。確定時に値を書き戻して`input`/`change`を発火。document委譲なので新しい入力欄への個別対応は不要。見出しは`data-kb-title`→直前要素のテキスト(20文字以内)→`placeholder`。位置は通常上端中央/強制横向き時は左寄せ。
 
-**ポップアップが開いている間は`resize()`(world.js)を素通りさせる。** `getRealViewportSize()`は`visualViewport.width/height`を正としており、iOSはソフトキーボードが出ると`visualViewport`だけ縮む(レイアウトの実際の幅は変わらない)。これをそのまま`--vh`/`--vw`へ反映すると、キーボードを出しただけで画面全体が縮んで見える不具合になる(マスモン編集で名前を変えると画面が崩れる、として実際に報告があった)。**`resize()`の先頭で`#textInputOverlay`が開いていないか見て、開いていれば何もしない**(ポップアップ自体が画面を覆うので凍結して問題ない)。**閉じた瞬間(`closeTextInputPopup`)に必ず`resize()`を呼び直す**(OS側の`visualViewport.resize`がキーボードを閉じても来ないことがあるため、それに頼らず自分で復元する)。
+### キーボードで`--vh`が縮んだまま焼き付く不具合(**2度出た。3層で止めている**)
+
+iOSはソフトキーボードが出ると`visualViewport`だけ縮む(レイアウトviewport=`innerHeight`は変わらない)。`getRealViewportSize()`はそれを正としているので、この値が`--vh`/`--vw`へ入ると**画面全体が縮んで焼き付く**。症状は「マスモンの名前を変えたあとキャラが小さくなり、モンスター選択のポップアップが途切れる」。
+
+1. **`getRealViewportSize()`で縮んだ値を採らない**(2026-08-17に追加。ここが本命)。`visualViewport`の高さ/幅が`innerHeight/innerWidth`の`VV_KEYBOARD_RATIO`(0.75)を下回ったらキーボードとみなして`inner*`を使う。アドレスバーぶんの差は1割程度、キーボードは横向きで画面の4〜6割なので取り違えない。**いつ`resize()`が走っても縮んだ値が入らない**のが効きどころ。
+2. **ポップアップが開いている間は`resize()`(world.js)を素通りさせる。** 先頭で`#textInputOverlay`が開いていないか見る(ポップアップ自体が画面を覆うので凍結して問題ない)。
+3. **閉じたら`resize()`を1回でなく何度も呼び直す**(`closeTextInputPopup`で同期+60/250/500/900ms)。**同期の1回だけでは足りない**: iOSのキーボードは閉じ終わるまで0.3秒ほどかかり、その間`visualViewport`はまだ縮んでいるので、1回だけだと縮んだ寸法を焼き付ける。これが1度目の修正が再発した理由。OS側の`visualViewport.resize`は閉じても来ないことがあるので頼らない。
+
+再現の確かめ方: headlessではキーボードを出せないので`window.visualViewport`を高さ45%の偽物に差し替え、`openTextInputPopup`→`closeTextInputPopup`を通してから`--vh`を読む。修正前は3.75→1.69になり、`#lobbyMonsterImg`の`max-width`が172.5px→77.7px、`.lobby-menu-box`の`max-height`が345px→155pxまで落ちる(報告された症状そのもの)。
 
 ## 強制横向き / タッチ
 

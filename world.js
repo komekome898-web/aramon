@@ -103,11 +103,25 @@ const appRootEl = document.getElementById('appRoot');
 // 向きの判定はメディアクエリで行う。実測pxは起動直後に確定していないことがあり、
 // その値で判定すると「縦持ちで起動したのに強制横向きが効かない」状態のまま固定されてしまう。
 const _mqPortrait = window.matchMedia ? window.matchMedia('(orientation: portrait)') : null;
+/* ソフトキーボードで縮んだ visualViewport を「画面の大きさ」として採らないための下限。
+   iOSはキーボードを出すと visualViewport だけが縮み、レイアウトviewport(innerHeight)は
+   変わらない。アドレスバーぶんの差は1割程度、キーボードは横向きで画面の4〜6割を占めるので
+   3/4を境にすれば取り違えない。 */
+const VV_KEYBOARD_RATIO = 0.75;
 function getRealViewportSize(){
   const vv = window.visualViewport;
+  const iw = window.innerWidth || 0, ih = window.innerHeight || 0;
   let w = vv ? vv.width : 0, h = vv ? vv.height : 0;
+  /* 【キーボードで縮んだ値をレイアウトに使わない】これを採ると --vh が小さいまま
+     焼き付き、キーボードを閉じても戻らない(「マスモンの名前を変えたあとキャラが
+     小さくなり、モンスター選択のポップアップが途切れる」として2度報告された)。
+     ポップアップを開いている間 resize() を素通りさせる対策だけでは足りなかった:
+     閉じた瞬間に呼び直す resize() が、まだ閉じ切っていないキーボードの寸法を拾っていた。
+     **ここで採らないようにすれば、いつ resize() が走っても縮んだ値は入らない。** */
+  if(h > 0 && ih > 0 && h < ih*VV_KEYBOARD_RATIO) h = ih;
+  if(w > 0 && iw > 0 && w < iw*VV_KEYBOARD_RATIO) w = iw;
   // 起動直後は visualViewport が 0 や未確定値を返すことがあるので順にフォールバックする
-  if(!(w > 0) || !(h > 0)){ w = window.innerWidth; h = window.innerHeight; }
+  if(!(w > 0) || !(h > 0)){ w = iw; h = ih; }
   if(!(w > 0) || !(h > 0)){ w = document.documentElement.clientWidth; h = document.documentElement.clientHeight; }
   return { w: w || 1, h: h || 1 };
 }
