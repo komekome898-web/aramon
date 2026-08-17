@@ -300,6 +300,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('mocchi_walk_f'),     back:_loadWalk('mocchi_walk_b') },     // 素モッチー(色スキン対応)
     ssr: [
       { skinId:'mocchi_ssr', front:_loadWalk('mocchi_ssr_walk_f'), back:_loadWalk('mocchi_ssr_walk_b') }, // ラガモッチー
+      { skinId:'tsukasa_ssr', front:_loadWalk('tsukasa_ssr_walk_f'), back:_loadWalk('tsukasa_ssr_walk_b') }, /*@tsukasa_ssr*/
     ],
   },
   god: {
@@ -800,6 +801,7 @@ const SSR_SKIN_AURA = {
   guts_ssr_awake: 'black', /*@guts_ssr_awake*/
   satsuki_ssr:    'yellow', /*@satsuki_ssr*/
   satsuki_ssr_awake:'yellow', /*@satsuki_ssr_awake*/
+  tsukasa_ssr:    'yellow', /*@tsukasa_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -999,6 +1001,7 @@ const SSR_SKIN_TIER3 = {
     aoeStyle:'heart',
     endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff5fa8', se:'tornado', style:'heartBlast' },
   }}, /*@satsuki_ssr*/
+  tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15 }, /*@tsukasa_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1144,12 +1147,12 @@ function ssrTier3DmgMult(move, attacker){
 // 先頭へ足し、5件を超えたら末尾を落とす。手動で増やすときもこの形式に合わせること。
 const LOBBY_BANNERS = [
   // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)。新しい順。
+  { rar:'SSR', name:'西野ピかさ', tag:'新登場・ガチャ', img:'monsters/tsukasa_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@tsukasa_ssr*/
   // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
   { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ',   img:'monsters/satsuki_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
   { rar:'SSR', name:'メタルグレイモン', tag:'新登場・ガチャ',   img:'monsters/metag_ssr.png',     size:'150%', pos:'50% 20%', open:'gacha' },
   { rar:'SSR', name:'ガルルモン',       tag:'新登場・ガチャ',   img:'monsters/garurumon_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' },
   { rar:'SSR', name:'ラガモッチー',     tag:'新登場・ガチャ',   img:'monsters/mocchi_ssr.png',    size:'165%', pos:'50% 18%', open:'gacha' },
-  { rar:'SSR', name:'不死のゾッド',     tag:'レイド討伐限定',   img:'monsters/zod_ssr.png',       size:'150%', pos:'50% 20%', open:'raid' },
 ];
 const LOBBY_BANNER_MS = 3000;
 
@@ -1175,6 +1178,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
+    { t:'✨ SSRスキン「西野ピかさ」が登場しました！', g:['feature','monster'] },
     { t:'アークの「天の慈悲」に、着弾点から広がるドーム状の爆風を追加しました(半径240・威力24)。直撃58と合わせて最大82になります', g:['balance','monster'] },
     { t:'スキンを着てもtier3の技がオーラの色にならないことがあったのを直しました。白・黒のオーラだけ技の色が変わらず、素の技と同じ見た目のままでした(「天衣無縫」「終焉に救いを」「ラガモッチ砲」「ドラゴンころし」「言葉は無粋」)', g:['fix','av','monster'] },
     { t:'キジンの「羅生門」で、吸い込む技なのに火の粉が前へ飛び出していたのを直しました。炎の壁が奥から門へ迫るのに合わせて、火の粉・地面の痕・光の帯も門へ向かって流れます', g:['fix','av'] },
@@ -3794,6 +3798,7 @@ const SSR_SKINS = {
   guts_ssr_awake: { element:'dullahan', name:'狂戦士ガッツ【覚醒】', iconImg:'guts_ssr_awake', playerImg:'guts_player_ssr_awake', awakenOf:'guts_ssr' }, /*@guts_ssr_awake*/
   satsuki_ssr:    { element:'ogre', name:'北大路さつキジン', iconImg:'satsuki_ssr', playerImg:'satsuki_player_ssr' }, /*@satsuki_ssr*/
   satsuki_ssr_awake:{ element:'ogre', name:'北大路さつキジン【覚醒】', iconImg:'satsuki_ssr_awake', playerImg:'satsuki_player_ssr_awake', awakenOf:'satsuki_ssr' }, /*@satsuki_ssr_awake*/
+  tsukasa_ssr:    { element:'mocchi', name:'西野ピかさ', iconImg:'tsukasa_ssr', playerImg:'tsukasa_player_ssr' }, /*@tsukasa_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 

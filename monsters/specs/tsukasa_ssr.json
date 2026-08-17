@@ -1,0 +1,17 @@
+{
+  "id": "tsukasa_ssr",
+  "element": "mocchi",
+  "name": "西野ピかさ",
+  "aura": "yellow",
+  "seasonExclusive": false,
+  "iconImg": "tsukasa_ssr",
+  "playerImg": "tsukasa_player_ssr",
+  "walkPrefix": "tsukasa_ssr_walk_",
+  "t3name": "ずっとずっとキミのことが好き!!",
+  "t3mult": 1.15,
+  "raidEffect": false,
+  "raidDealt": 1.5,
+  "raidTaken": 0.75,
+  "raidPickup": false,
+  "raidClear": false
+}
