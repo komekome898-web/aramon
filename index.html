@@ -1295,10 +1295,12 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
   </div>
 </div>
 
-<!-- SSR轟金剛実装記念ポップアップ -->
+<!-- ピックアップSSR実装記念ポップアップ(IDは轟金剛のときのまま)。
+     画像と宣伝文は ui.js の showRockSsrPromoPopup がピックアップの定数から入れる -->
 <div id="rockSsrPromoOverlay" class="mastermon-confirm-overlay hidden">
   <div class="skin-promo-box">
-    <img id="rockSsrPromoImg" class="skin-promo-img" src="images/promo_rock_ssr.jpeg" alt="SSR轟金剛実装記念">
+    <img id="rockSsrPromoImg" class="skin-promo-img" src="images/promo_rock_ssr.jpeg" alt="SSRピックアップ">
+    <div id="rockSsrPromoCaption" class="skin-promo-caption hidden"></div>
     <div class="skin-promo-btnrow">
       <button id="rockSsrPromoCloseBtn" class="skin-promo-close">閉じる</button>
       <button id="rockSsrPromoGachaBtn" class="skin-promo-gacha">今すぐガチャ</button>
