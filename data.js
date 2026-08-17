@@ -3897,6 +3897,11 @@ const SKIN_MEDIA = {
     se: { tier3:'audio/se_tsukasa_ssr_tier3.m4a', kill:'audio/se_tsukasa_ssr_kill.mp3',
           win:'audio/se_tsukasa_ssr_win.mp3' },
   },
+  oki_ssr: { /*@oki_ssr*/
+    promote: { video:'video/oki_ssr_promote', audio:'audio/oki_ssr_promote_audio.m4a', safetyMs:33688, bgmOnReveal:'lastBattle' },
+    bgm: { battle:'audio/bgm_oki_ssr_battle.m4a', final5:'audio/bgm_oki_ssr_final5.m4a', lastBattle:'audio/bgm_oki_ssr_lastbattle.m4a' },
+    se: { tier3:'audio/se_oki_ssr_tier3.m4a', hit:'audio/se_oki_ssr_hit.m4a', kill:'audio/se_oki_ssr_kill.m4a', win:'audio/se_oki_ssr_win.m4a' },
+  },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
 /* 【覚醒スキンは元のSSRの専用BGM・専用SEをそのまま受け継ぐ】
