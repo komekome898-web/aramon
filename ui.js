@@ -2002,6 +2002,7 @@ function galleryMuseumSkinIds(){
   const owned = loadSkins().owned;
   const ids = new Set([
     ...Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}),
+    ...Object.keys(typeof SKIN_SUMMON_SE!=='undefined' ? SKIN_SUMMON_SE : {}),
     ...Object.keys(typeof SKIN_TIER3_SE!=='undefined' ? SKIN_TIER3_SE : {}),
     ...Object.keys(typeof SKIN_HIT_SE!=='undefined' ? SKIN_HIT_SE : {}),
     ...Object.keys(typeof SKIN_KILL_SE!=='undefined' ? SKIN_KILL_SE : {}),
@@ -2034,11 +2035,12 @@ function renderGalleryMuseumList(){
   });
 }
 // SEスロット → 実際に鳴らす名前を持つ表(combat.js)。SKIN_MEDIA.seの専用SEもここへ
-// 自動マージされているので、この4表だけ見れば「専用SEが実際にあるか」が正しく分かる
+// 自動マージされているので、この表だけ見れば「専用SEが実際にあるか」が正しく分かる
 // (試合中に実際に鳴る名前と完全に同じものなので、ミュージアムと実戦で音がズレない)。
 // combat.jsのconstはwindowのプロパティにならないため、文字列キー経由ではなく直接参照する
 function gallerySkinSeName(skinId, slot){
-  const table = slot==='tier3' ? SKIN_TIER3_SE : slot==='hit' ? SKIN_HIT_SE
+  const table = slot==='summon' ? SKIN_SUMMON_SE : slot==='tier3' ? SKIN_TIER3_SE
+              : slot==='hit' ? SKIN_HIT_SE
               : slot==='kill' ? SKIN_KILL_SE : slot==='win' ? SKIN_WIN_SE : null;
   return (table && table[skinId]) || null;
 }
