@@ -1766,6 +1766,14 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
 
 // ===== バッグ =====
 let bagSelectedItem = null; // 説明フィールドに表示中のアイテムキー
+/* バッグの3つの欄(アイテム・マスモン一覧・称号)に見えるスクロールバーを出す。
+   attachVisibleScrollbarは2度目以降は描き直すだけなので、中身を作り直したあと毎回呼べる。
+   開いた直後は幅も高さも0なので、表示にしてから呼ぶ。 */
+function bagAttachScrollbars(){
+  attachVisibleScrollbar(document.getElementById('bagIconGrid'),   document.getElementById('bagIconScrollbar'));
+  attachVisibleScrollbar(document.getElementById('bagTargetList'), document.getElementById('bagTargetScrollbar'));
+  attachVisibleScrollbar(document.getElementById('bagTitleGrid'),  document.getElementById('bagTitleScrollbar'));
+}
 document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagSelectedItem = null;   // renderBagで先頭アイテムを自動選択→一覧+ゲージが最初から表示
   bagPicker.targetKey = null; // 開き直したときは対象マスモン未選択から(アイテム切替では維持する)
@@ -1773,6 +1781,7 @@ document.getElementById('openBagBtn').addEventListener('click', ()=>{
   showBagJumpBtn(null, null);  // 前回のジャンプボタンを持ち越さない
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
+  bagAttachScrollbars();
 });
 // バッグのタブ切替(アイテム / 称号。スキンはギャラリーへ移設済み)
 function bagShowTab(tab){
@@ -1780,6 +1789,7 @@ function bagShowTab(tab){
   document.getElementById('bagItemPane').classList.toggle('hidden', tab!=='item');
   document.getElementById('bagTitlePane').classList.toggle('hidden', tab!=='title');
   if(tab==='title') renderBagTitles();
+  bagAttachScrollbars();
 }
 // 称号一覧(獲得済みを上に、未獲得は解放条件を表示。タップで装着トグル)
 function renderBagTitles(){
@@ -1822,6 +1832,7 @@ function renderBagTitles(){
       updateHeaderTitle();
     });
   });
+  bagAttachScrollbars();
 }
 // 装着中の称号(最大3つ)をトップヘッダーのプレイヤー名の横にアイコンのみで表示
 function updateHeaderTitle(){
@@ -2121,6 +2132,7 @@ function renderBag(){
     gridEl.innerHTML = '<div class="bag-empty">アイテムはありません。ガチャやショップで手に入れよう！</div>';
     bagSelectedItem = null;
     renderBagDesc();
+    bagAttachScrollbars();
     return;
   }
   // 表示中のアイテムが無くなったら選択解除。未選択なら先頭を自動選択(最初から選択済み表示)
@@ -2143,6 +2155,7 @@ function renderBag(){
     });
   });
   renderBagDesc();
+  bagAttachScrollbars();
 }
 // 選択中アイテムの説明+個数ゲージ+対象マスモン一覧を常に表示する
 // ステータスの実を選んでいるとき、選択中マスモンが上限(999)に達するまでに使える個数。
@@ -2280,6 +2293,7 @@ function renderBagTargetList(){
   if(keys.length===0){
     pick.innerHTML = '<div class="bag-empty">マスモンがいません。先にマスモン登録しよう！</div>';
     document.getElementById('bagUseConfirmBtn').disabled = true;
+    bagAttachScrollbars();
     return;
   }
   const it = PLAYER_ITEMS[bagPicker.itemKey];
@@ -2329,6 +2343,7 @@ function renderBagTargetList(){
   const btn = document.getElementById('bagUseConfirmBtn');
   btn.disabled = !bagPicker.targetKey || !!reason;
   btn.textContent = reason==='上限' ? '上限に到達' : '使用する';
+  bagAttachScrollbars();
 }
 document.getElementById('bagUseConfirmBtn').addEventListener('click', ()=>{
   if(!bagPicker.itemKey || !bagPicker.targetKey) return;
@@ -6935,6 +6950,9 @@ function mmSyncTabButtons(){
 // iOSのネイティブスクロールバーはスクロール中しか出ないため、自前で描いて掴んで動かせるようにする。
 function attachVisibleScrollbar(el, bar){
   if(!el || !bar) return;
+  // 同じ欄・同じバーで呼び直されたときは、リスナーを二重に付けずに描き直すだけ。
+  // (バッグのように中身を何度も作り直す欄から毎回呼べるようにするため)
+  if(el._scrollbarBar === bar && el._scrollbarUpdate){ el._scrollbarUpdate(); return; }
   const thumb = bar.querySelector('.mm-scrollbar-thumb');
   const MIN_THUMB = 26;
   function update(){
@@ -6948,6 +6966,8 @@ function attachVisibleScrollbar(el, bar){
     thumb.style.transform = `translateY(${top}px)`;
   }
   el.addEventListener('scroll', update);
+  el._scrollbarBar = bar;
+  el._scrollbarUpdate = update;   // 中身を作り直したあとに呼び直す用
   // 画像の読み込みや内容の切り替えで高さが変わるので、変化を監視して追従する
   if(el._scrollbarRO){ el._scrollbarRO.disconnect(); el._scrollbarRO = null; }
   if(typeof ResizeObserver === 'function'){
@@ -6960,16 +6980,21 @@ function attachVisibleScrollbar(el, bar){
   update();
 
   // つまみを掴んでスクロールできるようにする(強制横向きでは移動量を回転補正する)
-  let dragId = null, startY = 0, startTop = 0;
+  let dragId = null, startX = 0, startY = 0, startTop = 0;
   thumb.addEventListener('pointerdown', (e)=>{
-    dragId = e.pointerId; startY = e.clientY; startTop = el.scrollTop;
+    dragId = e.pointerId; startX = e.clientX; startY = e.clientY; startTop = el.scrollTop;
     thumb.classList.add('dragging');
     try{ thumb.setPointerCapture(e.pointerId); }catch(_){}
     e.stopPropagation();
   });
   thumb.addEventListener('pointermove', (e)=>{
     if(dragId !== e.pointerId) return;
-    const dy = (typeof toLogicalDelta==='function') ? toLogicalDelta(0, e.clientY - startY).y : (e.clientY - startY);
+    // **両方の軸を渡す。** 強制横向きの回転補正は y に -dx を返すので、
+    // dx を 0 で渡すと縦の移動量が必ず 0 になり、つまみを引いても動かない
+    const d = (typeof toLogicalDelta==='function')
+      ? toLogicalDelta(e.clientX - startX, e.clientY - startY)
+      : { x: e.clientX - startX, y: e.clientY - startY };
+    const dy = d.y;
     const h = el.clientHeight, sh = el.scrollHeight;
     const thumbH = thumb.offsetHeight, maxTop = h - thumbH;
     if(maxTop > 0) el.scrollTop = startTop + (dy / maxTop) * (sh - h);
