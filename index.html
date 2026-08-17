@@ -958,7 +958,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div class="bag-main">
       <div class="bag-col-left">
         <div class="bag-hint">アイテムとマスモンを選んで使用</div>
-        <div id="bagIconGrid" class="bag-icon-grid"></div>
+        <!-- 見えるスクロールバーは「枠の外側の入れ物」に置く。枠自身のpositionは触らない -->
+        <div class="mm-content-wrap bag-scroll-wrap bag-scroll-icons">
+          <div id="bagIconGrid" class="bag-icon-grid"></div>
+          <div class="mm-scrollbar hidden" id="bagIconScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+        </div>
         <div id="bagDescField" class="bag-desc-field">
           <div class="bag-desc-empty" id="bagDescEmpty">アイテムをタップすると説明が表示されます</div>
           <div id="bagDescContent" class="hidden">
@@ -979,7 +983,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
         </div>
       </div>
       <div id="bagTargetWrap" class="bag-col-right hidden">
-        <div id="bagTargetList" class="bag-target-list"></div>
+        <div class="mm-content-wrap bag-scroll-wrap">
+          <div id="bagTargetList" class="bag-target-list"></div>
+          <div class="mm-scrollbar hidden" id="bagTargetScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+        </div>
         <!-- トレーニングチケットを使った直後だけ出る。そのマスモンのトレーニング画面へ直行する -->
         <button id="bagGoTrainBtn" class="bag-go-train-btn hidden"></button>
       </div>
@@ -987,7 +994,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     </div>
     <div id="bagTitlePane" class="hidden">
       <div class="bag-title-hint" id="bagTitleHint">獲得した称号をタップで装着（もう一度で外す）。装着中の称号は名前の横に表示されます。</div>
-      <div id="bagTitleGrid" class="bag-title-grid"></div>
+      <div class="mm-content-wrap bag-scroll-wrap">
+        <div id="bagTitleGrid" class="bag-title-grid"></div>
+        <div class="mm-scrollbar hidden" id="bagTitleScrollbar"><div class="mm-scrollbar-thumb"></div></div>
+      </div>
     </div>
   </div>
 </div>
