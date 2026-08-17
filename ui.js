@@ -4307,6 +4307,8 @@ function startGame(opts){
   const playerMm = (game.selectedMastermonKey && loadMastermons()[game.selectedMastermonKey]) || null;
   const playerMmLevel = playerMm ? playerMm.level : null;
   const playerRebirth = mastermonRebirthCount(playerMm);
+  // 自分以外は自分のステータス合計を上回らせない(battleStatLimitOf / capMastermonToLimit)
+  const statLimit = battleStatLimitOf(playerMm, game.selectedElement);
   // 他の人が育てたマスモンの写し(ゴースト)を何体か混ぜる。取れなければ空配列で従来どおり
   const ghosts = pickGhostsForMatch(playerMmLevel, playerRebirth);
   for(let i=0;i<totalEntityCount-1;i++){
@@ -4316,14 +4318,14 @@ function startGame(opts){
     const bot = createMonster(elKey, false, botName, { spawnPoint: spawnPoints[i+1] });
     if(g){
       // 差し込み方はマルチのマスモンbot(network.js)と同じ形
-      applyMastermonStatsToEntity(bot, g);
+      applyMastermonStatsToEntity(bot, capMastermonToLimit(g, statLimit));
       bot.isMastermonBot = true;
       bot.mastermonLevel = g.level || 1;
       if(g.skin) bot.skinId = g.skin;
       bot.ghostOwner = g.owner || null;
     } else if(playerMmLevel){
       const botLevel = clamp(playerMmLevel + randInt(-10, 10), 1, MASTERMON_LEVEL_CAP);
-      applyMastermonStatsToEntity(bot, syntheticMastermonForLevel(elKey, botLevel, playerRebirth));
+      applyMastermonStatsToEntity(bot, capMastermonToLimit(syntheticMastermonForLevel(elKey, botLevel, playerRebirth), statLimit));
     }
     entities.push(bot);
   }
@@ -4520,13 +4522,15 @@ function raidStart(multi, demo){
   const mmData = loadMastermons();
   const mmKeysAll = Object.keys(mmData).filter(k=>k!==game.selectedMastermonKey);
   const elems = shuffle(Object.keys(ELEMENTS));
+  // 味方も「自分以外のモンスター」なので同じ上限を掛ける(自分のマスモンより強くならない)
+  const raidStatLimit = battleStatLimitOf(mmData[game.selectedMastermonKey] || null, game.selectedElement);
   for(let i=0;i<allies;i++){
     const a = (i/allies)*Math.PI*2;
     const sp = { x: cx+Math.cos(a)*WORLD.w*0.12, y: cy+WORLD.h*0.16+Math.sin(a)*WORLD.h*0.06 };
     const mmKey = mmKeysAll[i];
     const el = mmKey || elems[i % elems.length];
     const ally = createMonster(el, false, mmKey ? mmData[mmKey].name : BOT_NAMES[i % BOT_NAMES.length], { spawnPoint: sp });
-    if(mmKey){ applyMastermonStatsToEntity(ally, mmData[mmKey]); ally.isMastermonBot = true; ally.mastermonLevel = mmData[mmKey].level||1; }
+    if(mmKey){ applyMastermonStatsToEntity(ally, capMastermonToLimit(mmData[mmKey], raidStatLimit)); ally.isMastermonBot = true; ally.mastermonLevel = mmData[mmKey].level||1; }
     ally.moveTierUnlocked = 3;
     entities.push(ally);
   }
