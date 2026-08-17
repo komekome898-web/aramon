@@ -6937,8 +6937,12 @@ function attachVisibleScrollbar(el, bar){
   if(!el || !bar) return;
   const thumb = bar.querySelector('.mm-scrollbar-thumb');
   const MIN_THUMB = 26;
+  // バーが**スクロール欄の中**にあるとき(自動で付けたもの)は中身と一緒に流れてしまうので、
+  // 毎回 scrollTop ぶん置き直して欄の見えている範囲に貼り付ける
+  const inside = bar.parentElement === el;
   function update(){
     const h = el.clientHeight, sh = el.scrollHeight;
+    if(inside){ bar.style.top = el.scrollTop + 'px'; bar.style.height = h + 'px'; bar.style.bottom = 'auto'; }
     if(sh <= h + 1){ bar.classList.add('hidden'); return; }
     bar.classList.remove('hidden');
     const thumbH = Math.max(MIN_THUMB, Math.round(h * (h / sh)));
@@ -6947,6 +6951,7 @@ function attachVisibleScrollbar(el, bar){
     thumb.style.height = thumbH + 'px';
     thumb.style.transform = `translateY(${top}px)`;
   }
+  el._scrollbarUpdate = update;   // 中身を作り直したあとに外から呼び直せるようにする
   el.addEventListener('scroll', update);
   // 画像の読み込みや内容の切り替えで高さが変わるので、変化を監視して追従する
   if(el._scrollbarRO){ el._scrollbarRO.disconnect(); el._scrollbarRO = null; }
@@ -6960,16 +6965,22 @@ function attachVisibleScrollbar(el, bar){
   update();
 
   // つまみを掴んでスクロールできるようにする(強制横向きでは移動量を回転補正する)
-  let dragId = null, startY = 0, startTop = 0;
+  let dragId = null, startX = 0, startY = 0, startTop = 0;
   thumb.addEventListener('pointerdown', (e)=>{
-    dragId = e.pointerId; startY = e.clientY; startTop = el.scrollTop;
+    dragId = e.pointerId; startX = e.clientX; startY = e.clientY; startTop = el.scrollTop;
     thumb.classList.add('dragging');
     try{ thumb.setPointerCapture(e.pointerId); }catch(_){}
     e.stopPropagation();
   });
   thumb.addEventListener('pointermove', (e)=>{
     if(dragId !== e.pointerId) return;
-    const dy = (typeof toLogicalDelta==='function') ? toLogicalDelta(0, e.clientY - startY).y : (e.clientY - startY);
+    /* 【縦持ちで動かなかった不具合】強制横向きでは画面の「下」は実座標のx方向なので、
+       xの動きを渡さないと `toLogicalDelta(0, dy).y` は必ず0になり、つまみを掴んでも
+       1pxも動かなかった。**両方の軸を渡す。** */
+    const d = (typeof toLogicalDelta==='function')
+      ? toLogicalDelta(e.clientX - startX, e.clientY - startY)
+      : { x: e.clientX - startX, y: e.clientY - startY };
+    const dy = d.y;
     const h = el.clientHeight, sh = el.scrollHeight;
     const thumbH = thumb.offsetHeight, maxTop = h - thumbH;
     if(maxTop > 0) el.scrollTop = startTop + (dy / maxTop) * (sh - h);
@@ -6980,6 +6991,93 @@ function attachVisibleScrollbar(el, bar){
   thumb.addEventListener('pointerup', end);
   thumb.addEventListener('pointercancel', end);
 }
+
+/* =====================================================================
+   スクロールできる欄すべてに見えるスクロールバーを付ける
+   ・iOSのSafariは ::-webkit-scrollbar を描かないので、CSSでは常時表示のバーを作れない
+     (指で動かしている間だけ細い線が出て、離すと消える)。**自前のバーを付ける。**
+   ・仕組みは既にある attachVisibleScrollbar をそのまま使う。**新しい実装を作らない。**
+   ・**画面ごとの対応表を作らない。** どこがスクロール欄かは style.css で overflow を
+     auto/scroll にしているセレクタから起動時に集めるので、CSSに欄を1つ足せば
+     バーもついてくる(追記漏れが起きない)。
+===================================================================== */
+let _scrollAreaSelector = '';
+function scrollAreaSelector(){
+  /* **空の結果は覚えない。** 起動直後の1回目はCSSがまだ読み終わっていないことがあり、
+     そこで空を覚えてしまうと以降ずっとバーが付かない(実際にそうなった)。 */
+  if(_scrollAreaSelector) return _scrollAreaSelector;
+  const out = [];
+  const walk = (list)=>{
+    for(const r of list){
+      /* **`r.cssRules` があるからといって入れ子とは限らない。** CSSネスト対応の
+         ブラウザでは普通のスタイル規則にも空の cssRules が付く(truthyなので
+         「入れ子だから飛ばす」と書くと**全部飛ばして1件も拾えない**。実際にそうなった)。
+         規則の中身は中身として読み、子があれば加えて潜る。 */
+      if(r.style && r.selectorText){
+        const v = (r.style.overflowY || r.style.overflow || '').trim();
+        // querySelectorAllに渡せない形(擬似要素・ネストの&)は捨てる。1本混ざると全滅する
+        if((v === 'auto' || v === 'scroll') && r.selectorText.indexOf('::') < 0
+           && r.selectorText.indexOf('&') < 0) out.push(r.selectorText);
+      }
+      if(r.cssRules && r.cssRules.length) walk(r.cssRules);   // @media 等
+    }
+  };
+  for(const sheet of document.styleSheets){
+    try{ if(sheet.cssRules) walk(sheet.cssRules); }catch(e){}  // 別オリジンのCSSは読めない
+  }
+  _scrollAreaSelector = out.length ? out.join(',') : '';
+  return _scrollAreaSelector;
+}
+/* スクロール欄を総なめして、まだバーが無い欄に付ける。既に付いている欄は
+   高さを測り直すだけ(中身をinnerHTMLで作り直すとResizeObserverでは拾えないため)。 */
+function autoAttachScrollbars(){
+  const sel = scrollAreaSelector();
+  if(!sel) return;
+  let els = null;
+  try{ els = document.querySelectorAll(sel); }catch(e){ return; }
+  els.forEach(el=>{
+    if(el._autoScrollbar){
+      /* **中身をinnerHTMLで作り直すとバーごと消える。** 作り直すのではなく
+         同じ要素を戻す(新しく作るとスクロールの監視が二重に付く)。 */
+      if(el._autoScrollbar.parentElement !== el) el.appendChild(el._autoScrollbar);
+      if(el._scrollbarUpdate) el._scrollbarUpdate();
+      return;
+    }
+    /* 手で付けてある欄(マスモン詳細など)には二重に付けない。
+       **HTMLに置いてあるバーも見る。** 監視が付くのはその画面を組んだ時なので、
+       こちらのsweepが先に走ると「バー2本・スクロール監視2重」になる。 */
+    if(el._scrollbarUpdate){ el._scrollbarUpdate(); return; }
+    const own = el.parentElement && el.parentElement.querySelector(':scope > .mm-scrollbar');
+    if(own) return;
+    const bar = document.createElement('div');
+    bar.className = 'mm-scrollbar auto hidden';
+    bar.setAttribute('aria-hidden', 'true');
+    bar.innerHTML = '<div class="mm-scrollbar-thumb"></div>';
+    /* **欄の中へ入れる。** 絶対配置なので grid/flex の並びには参加しない
+       (外に足すには入れ物を1枚増やす必要があり、既存のレイアウトを崩す)。 */
+    el.appendChild(bar);
+    el.classList.add('has-auto-scrollbar');   // position:relative を足すためのクラス
+    el._autoScrollbar = bar;
+    attachVisibleScrollbar(el, bar);
+  });
+}
+// 1フレームに1回へまとめる(画面を開くたびのタップで何度も呼ばれる)
+let _scrollbarSweepQueued = false;
+function queueScrollbarSweep(){
+  if(_scrollbarSweepQueued) return;
+  _scrollbarSweepQueued = true;
+  requestAnimationFrame(()=>{ _scrollbarSweepQueued = false; autoAttachScrollbars(); });
+}
+/* 画面が切り替わるのは必ずタップのあと。**試合中は走らせない**(HUDしか無く、
+   スクロール欄が開いていないので測る意味がない)。 */
+document.addEventListener('click', ()=>{
+  if(typeof game !== 'undefined' && game && game.started
+     && !document.querySelector('.mastermon-confirm-overlay:not(.hidden)')) return;
+  queueScrollbarSweep();
+}, true);
+window.addEventListener('resize', queueScrollbarSweep);
+['DOMContentLoaded','load'].forEach(ev=> window.addEventListener(ev, queueScrollbarSweep));
+[0, 300, 1200].forEach(ms=> setTimeout(queueScrollbarSweep, ms));
 
 // メニュー(初期画面): ステータスの右に並べる3ボタン
 const MM_MENU_ITEMS = [
