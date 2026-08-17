@@ -4023,22 +4023,6 @@
   .mm-scrollbar-thumb.dragging{ cursor:grabbing; filter:brightness(1.1); }
   /* ネイティブ側も一応そろえておく(PC・一部ブラウザ用) */
   .mm-subview-content::-webkit-scrollbar{ width:0; }
-  /* ---- 自動で付けるスクロールバー(ui.jsのautoAttachScrollbars) ----
-     欄の中に入れる(絶対配置なのでgrid/flexの並びには参加しない)。位置は
-     ui.jsがscrollTopぶん置き直すので、中身と一緒に流れない。
-     手で付けたバー(上)より細く・控えめにして、中身に重なっても邪魔にならないようにする。 */
-  .has-auto-scrollbar{ position:relative; }
-  .has-auto-scrollbar::-webkit-scrollbar{ width:0; }   /* 二重に出さない(PC) */
-  /* **溝はタップを通す。** 6pxの帯でも、下のボタンの右端を押したときに
-     「押しても何も起きない」死んだ場所を作ってしまう。つまみだけが受ける。 */
-  .mm-scrollbar.auto{
-    width:6px; right:1px; top:0; bottom:auto; border-radius:4px; border:none;
-    background:rgba(255,255,255,0.10); pointer-events:none; touch-action:auto;
-  }
-  .mm-scrollbar.auto .mm-scrollbar-thumb{
-    left:0; right:0; border-radius:4px; box-shadow:none; pointer-events:auto; touch-action:none;
-    background:linear-gradient(180deg, rgba(255,215,106,0.95), rgba(244,196,48,0.95));
-  }
   .mm-info-row{
     display:flex; justify-content:space-between; align-items:baseline; gap:6px;
     padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:11px;
