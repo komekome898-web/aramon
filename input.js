@@ -98,9 +98,15 @@ function closeTextInputPopup(commit){
   }
   field.blur();
   ov.classList.add('hidden');
-  // 開いている間はresize()を素通りさせていた(world.js)ので、閉じた直後に必ず作り直す。
-  // OS側のvisualViewport.resizeイベントの発火に頼らない(閉じても来ないことがある)
-  if(typeof resize==='function') resize();
+  /* 開いている間はresize()を素通りさせていた(world.js)ので、閉じた直後に必ず作り直す。
+     OS側のvisualViewport.resizeイベントの発火に頼らない(閉じても来ないことがある)。
+     **同期の1回だけでは足りない。** iOSのキーボードは閉じ終わるまで0.3秒ほどかかり、
+     その間 visualViewport はまだ縮んでいるので、1回だけだと縮んだ寸法を焼き付けていた
+     (向きの変化と同じやり方で、落ち着くまで何度か呼び直す)。 */
+  if(typeof resize==='function'){
+    resize();
+    [60, 250, 500, 900].forEach(ms=> setTimeout(resize, ms));
+  }
 }
 // 入力欄にフォーカスが来たら、その場では編集させずポップアップへ回す
 document.addEventListener('focusin', (e)=>{
