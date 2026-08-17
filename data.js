@@ -1179,6 +1179,8 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
     { t:'✨ SSRスキン「西野ピかさ」が登場しました！', g:['feature','monster'] },
+    { t:'「西野ピかさ」に専用BGMを追加しました。残り6人以上・残り5人以下は「北大路さつキジン」と同じ曲で、残り2人だけ専用の曲になります', g:['av','monster'] },
+    { t:'「北大路さつキジン」の専用BGMを1段ずつずらしました。残り6人以上でこれまでの残り5人以下の曲、残り5人以下でこれまでの残り2人の曲が流れ、残り2人は新しい曲になります', g:['av','monster'] },
     { t:'アークの「天の慈悲」に、着弾点から広がるドーム状の爆風を追加しました(半径240・威力24)。直撃58と合わせて最大82になります', g:['balance','monster'] },
     { t:'スキンを着てもtier3の技がオーラの色にならないことがあったのを直しました。白・黒のオーラだけ技の色が変わらず、素の技と同じ見た目のままでした(「天衣無縫」「終焉に救いを」「ラガモッチ砲」「ドラゴンころし」「言葉は無粋」)', g:['fix','av','monster'] },
     { t:'キジンの「羅生門」で、吸い込む技なのに火の粉が前へ飛び出していたのを直しました。炎の壁が奥から門へ迫るのに合わせて、火の粉・地面の痕・光の帯も門へ向かって流れます', g:['fix','av'] },
@@ -3853,13 +3855,30 @@ const SKIN_MEDIA = {
            lastBattle:'audio/bgm_metag_ssr_lastbattle.mp3' },
     se: { tier3:'audio/se_metag_ssr_tier3.m4a' },
   },
+  /* 【重要・ファイル名と枠が1つずれている】発注者依頼(2026-08-17)で、さつキジンの
+     専用BGMを1段ずつ後ろへずらした。**音源は複製せず既にあるパスをそのまま指す**
+     (ゾッド・メタルグレイモンと同じやり方)ので、ファイル名は元の役割のまま残っている。
+       残り6人以上(battle)   … bgm_satsuki_ssr_final5.m4a     ← 元の「残り5人以下」
+       残り5人以下(final5)   … bgm_satsuki_ssr_lastbattle.m4a ← 元の「残り2人」
+       残り2人  (lastBattle) … bgm_satsuki_ssr_last2.mp3      ← 新規
+     **直すときは枠(左のキー)を見る。ファイル名(右)で判断しない。**
+     ファイル名を役割に合わせて改名しなかったのは、素材のキャッシュ(MEDIA_CACHE)が
+     stale-while-revalidate で**URLごとに古い中身を1回返す**ため、改名すると更新直後の
+     1試合だけ枠と曲が入れ替わって鳴るから。 */
   satsuki_ssr: { /*@satsuki_ssr*/
     promote: { video:'video/satsuki_ssr_promote', audio:'audio/satsuki_ssr_promote_audio.m4a', safetyMs:9475, bgmOnReveal:'lastBattle' },
-    bgm: { final5:'audio/bgm_satsuki_ssr_final5.m4a', lastBattle:'audio/bgm_satsuki_ssr_lastbattle.m4a' },
+    bgm: { battle:'audio/bgm_satsuki_ssr_final5.m4a',
+           final5:'audio/bgm_satsuki_ssr_lastbattle.m4a',
+           lastBattle:'audio/bgm_satsuki_ssr_last2.mp3' },
     se: { tier3:'audio/se_satsuki_ssr_tier3.m4a', kill:'audio/se_satsuki_ssr_kill.m4a', win:'audio/se_satsuki_ssr_win.m4a' },
   },
+  /* 西野ピかさ: **残り2人だけ専用曲**で、残り6人以上・残り5人以下は北大路さつキジンと
+     同じ曲を指す(上のコメントのとおり、こちらもファイル名と枠が1つずれている)。 */
   tsukasa_ssr: { /*@tsukasa_ssr*/
     promote: { video:'video/tsukasa_ssr_promote', audio:'audio/tsukasa_ssr_promote_audio.m4a', safetyMs:30413 },
+    bgm: { battle:'audio/bgm_satsuki_ssr_final5.m4a',
+           final5:'audio/bgm_satsuki_ssr_lastbattle.m4a',
+           lastBattle:'audio/bgm_tsukasa_ssr_last2.mp3' },
     se: { tier3:'audio/se_tsukasa_ssr_tier3.m4a' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
