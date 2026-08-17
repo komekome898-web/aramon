@@ -760,7 +760,11 @@ const SIGNATURE_MOVES = {
   centaur: [ /*@centaur*/
     { name:'スロウランサー', tier:1, color:'#7fb236', range:840, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:624, hitR:12, splash:70, icon:'🏹' },
     { name:'マインドフレア', tier:2, color:'#7fb236', range:1680, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
-    { name:'メテオドライブ', tier:3, color:'#7fb236', range:1620, dmg:22, cooldown:2.2, gutsCost:24, projSpeed:1380, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5, color:'#7fb236' } }
+    /* 見た目はピクシーの「ビッグバン」と同じにする(発注者指定・2026-08-17)。
+       projStyle:'voidOrb' が2D/3Dの弾の絵、FX_MOVES.centaur(=pixie)が粒と輪を受け持つ。
+       性能値(射程・弾速・3連射・当たり判定・爆風)はケンタウロスのまま。色も緑のまま
+       (オーラ相性が green なので黒にしない)。 */
+    { name:'メテオドライブ', tier:3, color:'#7fb236', range:1620, dmg:22, cooldown:2.2, gutsCost:24, projSpeed:1380, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'voidOrb', blast:{ radius:325, dmg:26, expandTime:0.5, color:'#7fb236' } }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -1169,6 +1173,8 @@ const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
     { t:'スキンを着てもtier3の技がオーラの色にならないことがあったのを直しました。白・黒のオーラだけ技の色が変わらず、素の技と同じ見た目のままでした(「天衣無縫」「終焉に救いを」「ラガモッチ砲」「ドラゴンころし」「言葉は無粋」)', g:['fix','av','monster'] },
     { t:'キジンの「羅生門」で、吸い込む技なのに火の粉が前へ飛び出していたのを直しました。炎の壁が奥から門へ迫るのに合わせて、火の粉・地面の痕・光の帯も門へ向かって流れます', g:['fix','av'] },
+    { t:'ビーム系の技(モッチ砲・天河天翔・フラワービーム・熱視線)が、正面へ撃つと細い1本の線にしか見えなかったのを直しました。当たる範囲と同じ太さの筒が、奥へ伸びる光のトンネルとして出ます', g:['fix','av'] },
+    { t:'ケンタウロスの「メテオドライブ」の見た目を、ピクシーの「ビッグバン」と同じ吸い込む球+ドームの爆風に変えました。威力・射程・弾速・3連射・爆風の広さはこれまでと同じです', g:['av','monster'] },
   ]},
   { date:'2026-08-16', items:[
     { t:'🆕 新モンスター「ケンタウロス」が登場しました！ 技の射程が長く、弾速が速い', g:['feature','monster'] },
