@@ -869,18 +869,36 @@
     color:#ff8a8a; background:rgba(224,71,63,0.08); border:1px solid rgba(224,71,63,0.4);
   }
   /* .mastermon-confirm-box より後段の同詳細度に負けないよう複合セレクタで指定 */
-  .mastermon-confirm-box.bag-box{ position:relative; max-width:min(720px, calc(94 * var(--vw))); width:100%; max-height:calc(94 * var(--vh)); overflow-y:auto; }
+  /* 【箱を先に決める】高さを先に決めて、中の欄がそれぞれスクロールする。
+     以前は箱ごとスクロールしていたため、アイテムが増えると**説明と使用ボタンが画面の下へ
+     押し出されて見えなくなっていた**(発注者指摘・2026-08-17)。箱は縦に伸びないので、
+     アイテム欄とマスモン一覧だけが伸び縮みして余りを吸う。 */
+  .mastermon-confirm-box.bag-box{
+    position:relative; max-width:min(720px, calc(94 * var(--vw))); width:100%;
+    height:calc(92 * var(--vh)); max-height:calc(94 * var(--vh));
+    display:flex; flex-direction:column; padding:18px 20px;
+  }
+  .bag-box .bag-header{ flex:0 0 auto; }
+  /* タブの中身が残りの高さを全部取る。称号タブはこの中でスクロールする */
+  .bag-box #bagItemPane{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+  .bag-box #bagTitlePane{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; }
+  .bag-box #bagTitlePane.hidden{ display:none !important; }
+  .bag-box .bag-title-hint{ flex:0 0 auto; }
   /* バッグ/ショップの右上×ボタン(ガチャと同じ見た目)。下の閉じるボタンは廃止 */
   .overlay-close-btn{ position:absolute; top:10px; right:12px; z-index:2; width:37px; height:37px; border-radius:50%;
     font-size:17px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:1px solid #e0af1e; cursor:pointer;
     display:flex; align-items:center; justify-content:center; }
   .overlay-close-btn:active{ filter:brightness(0.92); }
-  .bag-main{ display:flex; gap:12px; align-items:flex-start; text-align:left; }
+  /* align-items:stretch にして左右の列が箱の高さいっぱいまで伸びるようにする
+     (flex-start だと中身ぶんの高さで止まり、下の説明欄が浮いてしまう) */
+  .bag-main{ display:flex; gap:12px; align-items:stretch; text-align:left; flex:1 1 auto; min-height:0; }
   /* アイテムがアイコンのみのグリッド + 下部の説明フィールド */
   .bag-col-left{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px; }
+  /* **スクロールするのはここだけ。** 余りを吸って伸び縮みする */
   .bag-icon-grid{
     display:grid; grid-template-columns:repeat(auto-fill, minmax(48px,1fr)); gap:7px;
-    max-height:calc(44 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+    align-content:start; flex:1 1 auto; min-height:calc(12 * var(--vh));
+    overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   .bag-empty{ grid-column:1/-1; font-size:12px; color:var(--ink-dim); padding:16px 0; text-align:center; }
   .bag-icon-cell{
@@ -927,9 +945,10 @@
   /* 右側: 使用対象のマスモン一覧(ステータスバー付き) */
   .bag-col-right{ flex:0 0 clamp(200px, 42%, 300px); min-width:0; display:flex; flex-direction:column; }
   .bag-target-title{ font-size:12px; font-weight:700; color:var(--ink); flex-shrink:0; }
-  /* マスモン情報フィールドをできるだけ大きく取り、使用/やめるボタンを下げる */
+  /* マスモン情報フィールドをできるだけ大きく取り、使用/やめるボタンを下げる。
+     高さは箱から決まる(max-heightで別に決めると箱の高さと食い違う) */
   .bag-target-list{
-    margin-top:8px; flex:1 1 auto; min-height:0; max-height:calc(66 * var(--vh));
+    flex:1 1 auto; min-height:0;
     overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column; gap:8px;
   }
@@ -946,8 +965,19 @@
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
   }
-  .bag-target-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.12); box-shadow:0 0 0 1px var(--amber) inset; }
+  /* 選択中の1体は**一覧の先頭に貼り付ける**(スクロールしても・左のアイテムを
+     切り替えても位置が動かない)。貼り付く要素は下の行が透けないよう不透明にする。 */
+  .bag-target-btn.active{
+    position:sticky; top:0; z-index:1;
+    border-color:var(--amber); box-shadow:0 0 0 1px var(--amber) inset, 0 6px 14px -6px rgba(0,0,0,0.9);
+    background-color:#0c1119;
+    background-image:linear-gradient(rgba(244,196,48,0.12), rgba(244,196,48,0.12));
+  }
   .bt-head{ display:flex; align-items:center; gap:7px; font-size:11px; }
+  /* 名前は長くても1行に収める(伸びると右の印が押し出される) */
+  .bt-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* 折りたたみ中の1行サマリ(選ぶまではステータスバーを出さない) */
+  .bt-sum{ flex:0 0 auto; font-size:10px; color:var(--ink-dim); font-weight:700; }
   .bt-head img{ width:22px; height:22px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
   /* マスモン画面と同じステータスバーをバッグ内でも使う(150px固定・スクロール解除・一回り小さく) */
   .bag-target-btn .mastermon-detail-statscol{
@@ -1376,8 +1406,11 @@
   .gallery-museum-none{ font-size:11px; color:var(--ink-dim); }
   /* 称号タブ */
   .bag-title-hint{ font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.35; }
+  /* 高さは箱から決まる(#bagTitlePane が残りを渡す)。ここで max-height を別に決めると
+     箱の高さと食い違って、下に余白が出たり二重スクロールになる */
   .bag-title-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:8px;
-    max-height:calc(60 * var(--vh)); overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
+    align-content:start; flex:1 1 auto; min-height:0;
+    overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; padding:2px; }
   .bag-title-cell{ position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:8px 10px;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px; text-align:left; cursor:pointer; }
   .bag-title-cell.locked{ opacity:0.55; cursor:default; }

@@ -1770,7 +1770,7 @@ document.getElementById('openBagBtn').addEventListener('click', ()=>{
   bagSelectedItem = null;   // renderBagで先頭アイテムを自動選択→一覧+ゲージが最初から表示
   bagPicker.targetKey = null; // 開き直したときは対象マスモン未選択から(アイテム切替では維持する)
   renderBag();
-  showBagGoTrainBtn(null);  // 前回のジャンプボタンを持ち越さない
+  showBagJumpBtn(null, null);  // 前回のジャンプボタンを持ち越さない
   bagShowTab('item'); // 開くたびアイテムタブから
   document.getElementById('bagOverlay').classList.remove('hidden');
 });
@@ -2188,12 +2188,15 @@ function renderBagDesc(){
   nameEl.textContent = it.name;
   nameEl.classList.toggle('is-ssr', it.rarity==='SSR');
   document.getElementById('bagDescText').textContent = playerItemDesc(bagSelectedItem);
-  /* 遠征の時短アイテムは対象が「マスモン」ではなく「遠征の枠」なので、バッグからは使わせない。
-     説明だけ出して、個数ゲージ・使用ボタン・マスモン一覧をまとめて隠す。 */
-  const isExpeditionItem = !!it.expedition;
-  document.getElementById('bagQtyRow').classList.toggle('hidden', isExpeditionItem);
-  document.getElementById('bagUseConfirmBtn').classList.toggle('hidden', isExpeditionItem);
-  if(isExpeditionItem){ wrap.classList.add('hidden'); return; }
+  /* 秘伝の書は対象が「マスモンだけでなく今着ているスキンのtier3技」なので、
+     バッグの2段UI(アイテム→マスモン)では選びきれない。説明だけ出す。
+     **帰還のホラ貝はここから外した(2026-08-17)。** 対象は遠征に出ている本人なので、
+     マスモン一覧で選べる(遠征中の子だけが選べる状態にする)。 */
+  const noTarget = !!it.hiden;
+  document.getElementById('bagUseConfirmBtn').classList.toggle('hidden', noTarget);
+  // 個数ゲージは「1個ずつ使う」アイテムでは出さない(ホラ貝は1枠に1個)
+  document.getElementById('bagQtyRow').classList.toggle('hidden', noTarget || !!it.expedition);
+  if(noTarget){ wrap.classList.add('hidden'); return; }
   // 対象マスモンの選択はアイテムを切り替えても維持する(選び直しの手間を無くす)。
   // 消えたマスモンを選んだままにならないよう、存在チェックだけ行う
   const keep = bagPicker.targetKey && loadMastermons()[bagPicker.targetKey] ? bagPicker.targetKey : null;
@@ -2230,12 +2233,49 @@ function bagBaseItemPreviewHtml(mm, baseKey, qty){
   const from = isHp ? a.hp : a.speed, to = isHp ? b.hp : b.speed;
   return `<div class="bt-extra bt-extra-base">${label} ${from}→<b>${to}</b>（+${to-from}）</div>`;
 }
+/* 帰還のホラ貝の対象になる遠征枠の番号(まだ帰ってきていない枠だけ)。無ければ -1。
+   **枠の状態は遠征画面と同じ expeditionSlotState で判定する**(同じ判定を2か所目に書かない)。 */
+function bagRecallSlotOf(mmKey){
+  if(!mmKey || typeof loadExpeditions!=='function') return -1;
+  const now = Date.now();
+  return loadExpeditions().slots.findIndex(s=> s && s.mmKey===mmKey && expeditionSlotState(s, now)==='running');
+}
+/* このアイテムをこのマスモンに使えない理由(使えるなら null)。
+   **一覧の選択可否・使用ボタンの可否・押したときの拒否をこの1か所で決める。**
+   別々に書くと「一覧では選べるのに押すと断られる」がすぐ起きる。 */
+function bagTargetBlockReason(itemKey, mmKey){
+  const it = PLAYER_ITEMS[itemKey];
+  if(!it || !mmKey) return null;
+  // 帰還のホラ貝: 遠征に出ていて、まだ帰っていない子だけが対象
+  if(it.expedition) return bagRecallSlotOf(mmKey) >= 0 ? null : '遠征中のみ';
+  if(typeof expeditionIsBusy==='function' && expeditionIsBusy(mmKey)) return '🧭遠征中';
+  if(bagStatUsableQty(itemKey, mmKey) === 0) return '上限';
+  return null;
+}
+/* 折りたたみ中(未選択)の1行サマリ。ステータスバーの代わりに「そのアイテムで
+   いちばん知りたい数字」だけを出す。**選ぶまで閉じておくことで一度に見える体数を増やす。** */
+function bagTargetSummaryHtml(mm, mmKey, it){
+  if(it.expedition){
+    const i = bagRecallSlotOf(mmKey);
+    if(i < 0) return '';
+    const s = loadExpeditions().slots[i];
+    return `<span class="bt-sum">⏳ 残り ${expeditionTimeLabel(expeditionSecondsLeft(s))}</span>`;
+  }
+  if(it.stat){
+    const st = MASTERMON_STATS.find(s=>s.key===it.stat);
+    return `<span class="bt-sum">${st ? st.label : ''} ${mm.stats[it.stat]||0}/${mastermonStatCap(mm)}</span>`;
+  }
+  if(it.base){
+    const e = mmEffectiveStats(mm);
+    return `<span class="bt-sum">${it.base==='hp' ? `❤️ ${e.hp}` : `💨 ${e.speed}`}</span>`;
+  }
+  if(mmKey && it===PLAYER_ITEMS.freeTrainTicket) return `<span class="bt-sum">🎫 ${mm.tickets||0}枚</span>`;
+  if(mmKey && it===PLAYER_ITEMS.moveTicket) return `<span class="bt-sum">⚔️ ${mm.nextMoveBoost||0}</span>`;
+  return '';
+}
 function renderBagTargetList(){
   const data = loadMastermons();
   const pick = document.getElementById('bagTargetList');
-  // innerHTMLで作り直すとスクロール位置が先頭へ戻る。マスモンを選ぶ/アイテムを切り替える
-  // たびに一覧が飛んで見えるので、書き換えの前後で位置を持ち越す
-  const keepScroll = pick.scrollTop;
   const keys = Object.keys(data);
   if(keys.length===0){
     pick.innerHTML = '<div class="bag-empty">マスモンがいません。先にマスモン登録しよう！</div>';
@@ -2244,50 +2284,68 @@ function renderBagTargetList(){
   }
   const it = PLAYER_ITEMS[bagPicker.itemKey];
   const qty = bagUseQty || 1;
+  // 選んだままのマスモンがそのアイテムに使えないなら選択を外す(開き直し・アイテム切替の両方で効く)
+  if(bagPicker.targetKey && bagTargetBlockReason(bagPicker.itemKey, bagPicker.targetKey)) bagPicker.targetKey = null;
   // ステータスの実は対象ステータスのプレビュー差分(個数分)を作り、マスモン画面と同じステータスバーで表示
   const preview = it.stat ? { [it.stat]: STAT_SEED_GAIN * qty } : null;
-  const busyKeys = (typeof expeditionBusyKeys==='function') ? expeditionBusyKeys() : new Set();
-  pick.innerHTML = keys.map(k=>{
+  /* **選択中の子を先頭へ持ってくる。** CSSで先頭に貼り付く(sticky)ので、
+     左のアイテムを切り替えても一覧をスクロールしても位置が動かない
+     (以前は元の並びのままで、アイテムを変えるたびに探し直しになっていた)。
+     選択中以外の並びは元のまま(並べ替えると位置が飛んで選び直しになる)。 */
+  const order = bagPicker.targetKey ? [bagPicker.targetKey, ...keys.filter(k=>k!==bagPicker.targetKey)] : keys;
+  pick.innerHTML = order.map(k=>{
     const mm = data[k];
-    const away = busyKeys.has(k);
-    const active = !away && k===bagPicker.targetKey;
-    const statsBarHtml = buildMastermonStatsColHtml(mm, mastermonApt(mm), preview);
-    const extra =
-      bagPicker.itemKey==='freeTrainTicket' ? `<div class="bt-extra">🎫 トレチケ ${mm.tickets||0}→${(mm.tickets||0)+qty}枚</div>` :
-      bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+qty}</div>` :
-      it.base ? bagBaseItemPreviewHtml(mm, it.base, qty) : '';
+    const reason = bagTargetBlockReason(bagPicker.itemKey, k);
+    const active = !reason && k===bagPicker.targetKey;
+    // **開くのは選択中の1体だけ。** 全部開くと1画面に2体しか入らなかった
+    const body = active ? buildMastermonStatsColHtml(mm, mastermonApt(mm), preview) + (
+        bagPicker.itemKey==='freeTrainTicket' ? `<div class="bt-extra">🎫 トレチケ ${mm.tickets||0}→${(mm.tickets||0)+qty}枚</div>` :
+        bagPicker.itemKey==='moveTicket' ? `<div class="bt-extra">⚔️ 技強化ストック ${mm.nextMoveBoost||0}→${(mm.nextMoveBoost||0)+qty}</div>` :
+        it.base ? bagBaseItemPreviewHtml(mm, it.base, qty) : '')
+      : '';
+    // 折りたたみ中は**1行に収める**(見出しの右へ数字を置く)。行が低いほど一度に見える体数が増える
+    const sum = active ? '' : bagTargetSummaryHtml(mm, k, it);
     return `
-    <button class="bag-target-btn ${active?'active':''} ${away?'away':''}" data-key="${k}" ${away?'disabled':''}>
+    <button class="bag-target-btn ${active?'active':''} ${reason?'away':''}" data-key="${k}" ${reason?'disabled':''}>
       <span class="bt-head">
         ${equippedIconImgTag(k, ELEMENTS[k].label)}
-        ${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}${away?'<span class="bt-away">🧭遠征中</span>':''}
+        <span class="bt-name">${mm.name}(${ELEMENTS[k].label}) Lv.${mm.level}</span>
+        ${reason?`<span class="bt-away">${reason}</span>`:sum}
       </span>
-      ${statsBarHtml}
-      ${extra}
+      ${body}
     </button>`;
   }).join('');
-  pick.scrollTop = keepScroll;   // 書き換えで先頭へ戻ったぶんを戻す
+  // 選択中は先頭に貼り付いているので、切り替えのたびに先頭へ戻して迷子にしない
+  pick.scrollTop = 0;
   pick.querySelectorAll('.bag-target-btn').forEach(b=>{
     b.addEventListener('click', ()=>{
-      if(b.disabled) return;   // 遠征中の子は選べない
+      if(b.disabled) return;   // 使えない子は選べない
       bagPicker.targetKey = (bagPicker.targetKey===b.dataset.key) ? null : b.dataset.key;
       syncBagQtyLimit();      // 対象が変わると残り伸びしろも変わるので個数上限を引き直す
       renderBagTargetList();
     });
   });
-  // 遠征中の子を選んだまま画面を開き直しても使えないようにする
-  if(bagPicker.targetKey && busyKeys.has(bagPicker.targetKey)) bagPicker.targetKey = null;
-  // ステータスが既に上限のマスモンには使わせない(アイテムの無駄使いを防ぐ)
-  const need = bagStatUsableQty(bagPicker.itemKey, bagPicker.targetKey);
-  const capped = need===0;
+  const reason = bagTargetBlockReason(bagPicker.itemKey, bagPicker.targetKey);
   const btn = document.getElementById('bagUseConfirmBtn');
-  btn.disabled = !bagPicker.targetKey || capped;
-  btn.textContent = capped ? '上限に到達' : '使用する';
+  btn.disabled = !bagPicker.targetKey || !!reason;
+  btn.textContent = reason==='上限' ? '上限に到達' : '使用する';
 }
 document.getElementById('bagUseConfirmBtn').addEventListener('click', ()=>{
   if(!bagPicker.itemKey || !bagPicker.targetKey) return;
+  if(bagTargetBlockReason(bagPicker.itemKey, bagPicker.targetKey)) return;
+  const it = PLAYER_ITEMS[bagPicker.itemKey];
+  if(it && it.expedition){ bagUseRecall(bagPicker.targetKey); return; }
   useBagItem(bagPicker.itemKey, bagPicker.targetKey, bagUseQty);
 });
+/* 帰還のホラ貝をバッグから使う。**枠を終わらせる処理は遠征画面と同じ expeditionUseRecall。**
+   受け取りは遠征画面でしかできないので、使ったらそこへ飛ぶボタンを出す。 */
+function bagUseRecall(mmKey){
+  const i = bagRecallSlotOf(mmKey);
+  if(i < 0) return;
+  expeditionUseRecall(i);
+  renderBag();                       // 個数が減ったので一覧と説明を作り直す
+  showBagJumpBtn('expedition', mmKey);
+}
 function useBagItem(itemKey, mmKey, qty){
   const bag = loadBag();
   qty = Math.max(1, Math.min(Math.round(qty)||1, bag[itemKey]||0));
@@ -2337,20 +2395,25 @@ function useBagItem(itemKey, mmKey, qty){
   renderBag(); // 消費後に再描画(残っていれば一覧+ゲージを再表示、0なら別アイテムへ)
   renderSelectorCards();
   // トレーニングチケットは「使ったらすぐ使いたい」ので、その場から training タブへ飛べるようにする
-  showBagGoTrainBtn(itemKey==='freeTrainTicket' ? mmKey : null);
+  showBagJumpBtn(itemKey==='freeTrainTicket' ? 'training' : null, mmKey);
 }
-/* バッグ→トレーニングへのジャンプボタン。mmKeyがnullなら隠す。
-   renderBag()のあとに呼ぶこと(先に呼ぶと再描画で消える)。 */
-function showBagGoTrainBtn(mmKey){
+/* バッグから次の画面へのジャンプボタン。**使った直後だけ出る導線。**
+   kind が null なら隠す。renderBag()のあとに呼ぶこと(先に呼ぶと再描画で消える)。
+     'training'   … トレチケを使った子のトレーニング画面へ
+     'expedition' … ホラ貝で帰らせた子を受け取る遠征画面へ                     */
+function showBagJumpBtn(kind, mmKey){
   const btn = document.getElementById('bagGoTrainBtn');
   if(!btn) return;
   const mm = mmKey && loadMastermons()[mmKey];
-  btn.classList.toggle('hidden', !mm);
-  if(!mm) return;
-  btn.textContent = `🎫 ${mm.name} のトレーニングへ`;
+  btn.classList.toggle('hidden', !kind || !mm);
+  if(!kind || !mm) return;
+  btn.textContent = kind==='expedition' ? `🧭 遠征画面へ（${mm.name}を受け取る）`
+                                        : `🎫 ${mm.name} のトレーニングへ`;
   btn.onclick = ()=>{
     btn.classList.add('hidden');
     lobbyCloseOverlay('bagOverlay');
+    // 遠征画面は開くたびに renderExpedition + タイマー開始(ロビーのボタンと同じ手順)
+    if(kind==='expedition'){ renderExpedition(); lobbyOpenOverlay('expeditionOverlay'); startExpeditionTick(); return; }
     // マスモン画面を開いてから、そのマスモンの詳細→トレーニングタブまで一気に進める
     mastermonDetailKey = mmKey;
     openMastermonScreen(false);
