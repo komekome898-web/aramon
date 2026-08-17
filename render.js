@@ -6389,62 +6389,64 @@ function fxGlFeed(fx, dt){
       fxPunch(power, ae.x, ae.y);
     }
     if(st.sustain) st.sustain(fx, ae, c, dt);
-    /* 伸びていく前縁の帯。**1か所でまとめて出す**ので、属性ごとの sustain に
-       書き足す必要がない(書き忘れた属性だけ帯が無い、が起きない)。 */
-    /* 【自分で入れたバグ】`ae.__fxT` は fxAeReach() を呼ぶ属性でしか立たない。
+    /* 前縁の帯・粒・焦げ跡・陽炎は**1か所でまとめて出す**ので、属性ごとの sustain に
+       書き足す必要がない(書き忘れた属性だけ帯が無い、が起きない)。
+       【自分で入れたバグ】`ae.__fxT` は fxAeReach() を呼ぶ属性でしか立たない。
        ogre / pixie / dullahan / aqua / leaf / warm / zan / hum は呼んでいないので
        **reach=0 が渡り、帯が1本も出ていなかった**(gl.ribbons が全コマ0)。
        判定側(drawSingleAreaEffect)とまったく同じ値から自分で出す。 */
+    /* 充填の進み具合。**3か所で同じ式を書いていた**ので1つにまとめる。
+       _reach … 発生から充填が進んだ長さ
+       _front … その技の「いま前縁が居る距離」。羅生門(kind:'gate')だけは
+                最遠から門へ**縮む**吸い込み技なので、前へ進む距離とは別物になる。
+                前は _reach をそのまま前方の座標に使っていたため、**帯・粒・焦げ跡・陽炎が
+                吸い込みと逆の向きへ飛び出していた**(2026-08-17に発注者から指摘)。 */
+    const _tgw   = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
+    const _reach = Math.min(ae.range || 0, Math.max(0, (matchTime - ae.spawnAt) - _tgw) * (ae.fillSpeed || 900));
+    const _pull  = (typeof fxAeIsPull === 'function') && fxAeIsPull(ae);
+    const _front = (typeof fxAeFrontDist === 'function') ? fxAeFrontDist(ae, _reach) : _reach;
+    const _fwx = Math.cos(ae.angle||0), _fwy = Math.sin(ae.angle||0);
+    // 前へ伸びる技は帯の中ほど、吸い込み技は炎の壁そのものに置く
+    const _atDist = (k)=> _pull ? _front : _reach*k;
     /* 歪み(採点表6)。**1か所でまとめて出す**ので属性ごとに書き足さない。
        炎系=上へ揺れる陽炎 / 爆風=外へ広がる球面波。
        半径は当たり判定から取るので、歪みが判定より大きくならない。 */
     if(fx.distort){
-      const tgw = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
       if(!_fxWarpAt.has(ae.id) || (matchTime - _fxWarpAt.get(ae.id)) > 0.16){
         _fxWarpAt.set(ae.id, matchTime);
         const isBlast = ae.kind === 'circle';
-        const fsw = ae.fillSpeed || 900;
-        const rch = Math.min(ae.range || 0, Math.max(0, (matchTime - ae.spawnAt) - tgw) * fsw);
         if(isBlast){
           /* 半径は判定どおりでも、画面を覆うほど大きいと歪みが画面効果になってしまう。
              見せたいのは「爆心の周りが揺れる」ことなので上限を掛ける。 */
-          if(rch > 20) fx.distort({ x:ae.x, y:ae.y, z:(ae.z||0)+30,
-                                    radius:Math.min(rch, ae.range||200, WARP_R_MAX),
-                                    life:0.45, strength:0.016, kind:'shock' });
-        } else if(rch > 40){
+          if(_reach > 20) fx.distort({ x:ae.x, y:ae.y, z:(ae.z||0)+30,
+                                       radius:Math.min(_reach, ae.range||200, WARP_R_MAX),
+                                       life:0.45, strength:0.016, kind:'shock' });
+        } else if(_reach > 40){
           // 帯・扇の中ほどに陽炎を1つ。判定の半幅を超えない大きさにする
-          const hw = (typeof fxAeHalfWidth === 'function') ? fxAeHalfWidth(ae, rch*0.6) : 60;
-          const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
-          fx.distort({ x:ae.x + fwx*rch*0.6, y:ae.y + fwy*rch*0.6, z:(ae.z||0)+40,
+          const d  = _atDist(0.6);
+          const hw = (typeof fxAeHalfWidth === 'function') ? fxAeHalfWidth(ae, d) : 60;
+          fx.distort({ x:ae.x + _fwx*d, y:ae.y + _fwy*d, z:(ae.z||0)+40,
                        radius:Math.max(50, Math.min(hw, WARP_R_MAX)), life:0.5, strength:0.010,
                        freq:3.4, kind:'heat' });
         }
       }
     }
-    {
-      const tg2 = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
-      const fs2 = ae.fillSpeed || 900;
-      const rc2 = Math.min(ae.range || 0, Math.max(0, (matchTime - ae.spawnAt) - tg2) * fs2);
-      if(rc2 > 10){
-        const isC = ae.kind === 'circle';
-        const hw2 = isC ? rc2
-          : ((typeof fxAeHalfWidth === 'function') ? fxAeHalfWidth(ae, rc2*0.7) : 60);
-        const fwx2 = Math.cos(ae.angle||0), fwy2 = Math.sin(ae.angle||0);
-        const ax2 = isC ? ae.x : ae.x + fwx2*rc2*0.7;
-        const ay2 = isC ? ae.y : ae.y + fwy2*rc2*0.7;
-        fxGlAmbient(fx, { x:ax2, y:ay2 }, c, 'area', dt, hw2);
-        if(!_fxScorchAt.has(ae.id) || (matchTime - _fxScorchAt.get(ae.id)) > 0.22){
-          _fxScorchAt.set(ae.id, matchTime);
-          fxGlScorch(fx, ax2, ay2, c, Math.max(40, Math.min(hw2, 240)));
-        }
+    if(_reach > 10){
+      const isC = ae.kind === 'circle';
+      const d2  = _atDist(0.7);
+      const hw2 = isC ? _reach
+        : ((typeof fxAeHalfWidth === 'function') ? fxAeHalfWidth(ae, d2) : 60);
+      const ax2 = isC ? ae.x : ae.x + _fwx*d2;
+      const ay2 = isC ? ae.y : ae.y + _fwy*d2;
+      fxGlAmbient(fx, { x:ax2, y:ay2 }, c, 'area', dt, hw2);
+      if(!_fxScorchAt.has(ae.id) || (matchTime - _fxScorchAt.get(ae.id)) > 0.22){
+        _fxScorchAt.set(ae.id, matchTime);
+        fxGlScorch(fx, ax2, ay2, c, Math.max(40, Math.min(hw2, 240)));
       }
     }
-    if(typeof fxAeFrontRibbon === 'function'){
-      const tg = ae.telegraphTime != null ? ae.telegraphTime : 0.18;
-      const fs = ae.fillSpeed || 900;
-      const reach = Math.min(ae.range || 0, Math.max(0, (matchTime - ae.spawnAt) - tg) * fs);
-      fxAeFrontRibbon(fx, ae, c, reach);
-    }
+    // 前縁の帯。吸い込み技では前縁が術者へ寄ってくるので、帯もそのまま逆向きに動く
+    if(typeof fxAeFrontRibbon === 'function' && (!_pull || _reach > 8))
+      fxAeFrontRibbon(fx, ae, c, _front);
     fxGlAccent(fx, ae, c, 'sustain', dt);
   }
   // 消えた範囲技のidは捨てる(Setが試合中ずっと膨らむのを防ぐ)

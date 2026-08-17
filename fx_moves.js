@@ -72,15 +72,38 @@ function fxHitRadius(p){
    ・rect  … rectWidth/2(距離によらず一定)
    ・fan   … along*tan(θ/2)(先へ行くほど広がる。**定数にすると近くで大きく外れる**)
    ・その他 … width/zigzagWidth の半分 */
+/* 【形の読み方】combat.js の buildAe は形を **`ae.kind`** に入れる(`aoeShape` は
+   move 側のキーで、ae には付かない)。`aoeShape` だけを見ていたため
+   **どの範囲技も最後の行に落ちていた**。矩形は ae.width が正しく入るので偶然
+   合っていたが、扇は ae.width が 0 なので**半幅0**になり、粒も前縁の帯も
+   中心線の1本に潰れていた。両方のキーを見る。 */
 function fxAeHalfWidth(ae, along){
   if(!ae) return 60;
-  if(ae.aoeShape === 'rect')  return (ae.rectWidth || 200) * 0.5;
-  if(ae.aoeShape === 'fan' || ae.aoeShape === 'fanZigzag'){
+  const shape = ae.kind || ae.aoeShape;
+  // rect / gate(羅生門の通路)は距離によらず一定の幅
+  if(shape === 'rect' || shape === 'gate') return (ae.width || ae.rectWidth || 200) * 0.5;
+  if(shape === 'fan' || shape === 'fanZigzag'){
     const th = ((ae.fanAngleDeg || 45) * Math.PI/180) / 2;
     return Math.max(20, (along || 0) * Math.tan(th));
   }
-  return ((ae.zigzagWidth ?? ae.width ?? 120)) * 0.5;
+  return ((ae.zigzagWidth || ae.width || 120)) * 0.5;
 }
+
+/* 範囲技の「いま充填の前縁が居る距離」。
+   【なぜ1か所に置くか】羅生門(kind:'gate')だけは**最遠から門へ逆走する吸い込み技**で、
+   前縁は時間とともに ae.range から doorDist へ**縮む**。共通の層が
+   「発生から fillSpeed×時間ぶん前へ進む」と決め打ちしていたため、
+   帯も粒も焦げ跡も**吸い込みと逆の向きへ飛び出していた**(2026-08-17に指摘)。
+   式は combat.js の frontDist と同じ。**同じ判定を2か所目に書かない。** */
+function fxAeFrontDist(ae, reach){
+  if(ae && (ae.kind || ae.aoeShape) === 'gate'){
+    const door = ae.doorDist || 0;
+    return Math.max(door, (ae.range || 0) - reach);
+  }
+  return reach;
+}
+// 吸い込み技(前縁が術者へ向かって縮む)かどうか。粒の速度の向きを決めるのに使う
+function fxAeIsPull(ae){ return !!ae && (ae.kind || ae.aoeShape) === 'gate'; }
 /* 上の半幅から、中心線に対する横のずれを1つ引く(-1..+1 の一様乱数) */
 function fxAeLateral(ae, along){ return (Math.random()*2 - 1) * fxAeHalfWidth(ae, along); }
 
@@ -1759,14 +1782,21 @@ FX_MOVES.ogre = {
   sustain(fx, ae, c, dt){
     const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
     const rgx = -fwy, rgy = fwx;
-    const halfW = (ae.rectWidth || 220)*0.5;
-    const gate = ae.gateDist || 170;
+    /* **ae に rectWidth / gateDist は無い。** combat.js が入れるのは width / doorDist で、
+       doorDist は遮蔽物で短くなった実際の門の位置。既定値を読んでいたため、
+       門が近くに出た場合でも粒は170の位置を境に湧いていた。 */
+    const halfW = fxAeHalfWidth(ae, 0);
+    const gate = ae.doorDist != null ? ae.doorDist : 170;
     const far = ae.range || 1000;
+    // いま炎の壁が居る距離(最遠→門へ縮む)。ここより手前は「もう吸い終わった」場所
+    const front = Math.max(gate, Math.min(far, fxAeFrontDist(ae, fxAeReach(ae, dt))));
     const hot = fxHot(c, 0.45);
-    /* **奥から門へ向かって流れる**火の粉。速度を門の向き(-fw)にすることで
-       「吸い込まれている」が速度として読める。ここがこの技の性格そのもの。 */
+    /* **門へ向かって流れる**火の粉。速度を門の向き(-fw)にすることで
+       「吸い込まれている」が速度として読める。ここがこの技の性格そのもの。
+       湧く場所は炎の壁(front)の**すぐ奥**に寄せる。通路全体へ均等に撒くと、
+       もう炎が通り過ぎた手前側でも粒が湧き続けて、壁が動いて見えなかった。 */
     for(let i=fxSpawnN(dt, 55); i>0; i--){
-      const along = gate + Math.random()*(far-gate);
+      const along = Math.min(far, front + Math.random()*Math.max(60, (far-front)*0.5));
       const lat = (Math.random()*2-1)*halfW*0.85;
       const x = ae.x + fwx*along + rgx*lat, y = ae.y + fwy*along + rgy*lat;
       const sp = 150 + Math.random()*220;
@@ -1775,6 +1805,22 @@ FX_MOVES.ogre = {
                 az:-60, r:hot[0], g:hot[1], b:hot[2], bright:1.15,
                 life:0.5+Math.random()*0.4, size0:10+Math.random()*10, size1:2,
                 turb:18, turbFreq:1.2, spin:3, stretch:0.8 });
+    }
+    /* 門と炎の壁のあいだ(=吸い込まれる区間)に、門へ吸われていく尾を引く粒。
+       速度が門の向きなだけでは「奥から手前へ流れる炎」に見えるので、
+       **門に着いて消える**ところまで見せて「吸い込み」にする。 */
+    for(let i=fxSpawnN(dt, 18); i>0; i--){
+      const along = gate + Math.random()*Math.max(1, front-gate);
+      const lat = (Math.random()*2-1)*halfW*0.7;
+      const x = ae.x + fwx*along + rgx*lat, y = ae.y + fwy*along + rgy*lat;
+      const d = Math.max(20, along - gate);
+      const life = 0.28 + Math.random()*0.18;
+      const sp = d/life;                       // 寿命のあいだにちょうど門へ着く速さ
+      fx.emit({ x, y, z: fxGroundZ(x,y) + 10 + Math.random()*40,
+                vx:-fwx*sp, vy:-fwy*sp, vz: 6+Math.random()*14, az:-30,
+                r:c[0], g:c[1], b:c[2], bright:1.0, life,
+                size0:8+Math.random()*8, size1:1, turb:6, turbFreq:1.6,
+                spin:2, stretch:1.4 });
     }
     // 門の柱を光らせる(門がどこにあるか画面から分からなかった)
     if(Math.random() < Math.min(dt||0,0.05)*22){
