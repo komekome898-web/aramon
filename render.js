@@ -3941,7 +3941,10 @@ function fx3dFireGlow(x, y, gz, r, col, fade){
    カメラは術者の145後ろなので、260にすると術者の115先から筒が始まる。
    射程800〜2200の技では見え方はほぼ変わらず、足元の巨大な断面だけが消える。 */
 const TUBE_NEAR = 260;
-function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
+/* denseK: 途中の輪の「中身の濃さ」を落とす係数(既定1)。
+   フラワービームのように**同じ場所に何本も重ねる技**では、1本ぶんの中身を薄くしないと
+   3本の筒が溶けて1つの緑の塊に見える。縁の線は落とさないので、本数は数えられる。 */
+function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach, denseK){
   const segs = 16;
   // 縦半径は横の半分。これより薄くすると、正面から撃った時に地面へ貼り付いた
   // 板にしか見えなくなる(実際に起きた)。細いビームでも背丈の半分は確保する
@@ -4068,8 +4071,9 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
       const c0 = gpt(i/GSEG, 0), c1 = gpt((i+1)/GSEG, 0);
       if(!c0||!c1) continue;
       const t0 = i/GSEG;
-      ctx.globalAlpha = fade * (0.85 - 0.6*t0);
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.2, 4.5*(1 - t0*0.7));
+      // 帯の芯。**外殻の円より目立たせない**(細い1本の線に見える原因になっていた)
+      ctx.globalAlpha = fade * (0.62 - 0.45*t0);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.2, 3.2*(1 - t0*0.7));
       ctx.beginPath(); ctx.moveTo(c0.x,c0.y); ctx.lineTo(c1.x,c1.y); ctx.stroke();
     }
     ctx.globalAlpha = fade;
@@ -4138,11 +4142,13 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   if(pts.length >= 2){
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.85;
+    /* 正面撃ちでは芯を控えめにする。胴体が描かれないぶん芯だけが目立ち、
+       「中心の線1本しか出ていない」に見えていた。主役は外殻の円のほう。 */
+    ctx.globalAlpha = _headOn ? 0.55 : 0.85;
     ctx.strokeStyle = '#ffffff';
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for(let i=0;i<pts.length-1;i++){
-      const w = Math.max(1.2, Math.min((nrm[i].r + nrm[i+1].r)*0.5*0.18, 14));
+      const w = Math.max(1.2, Math.min((nrm[i].r + nrm[i+1].r)*0.5*(_headOn ? 0.11 : 0.18), _headOn ? 8 : 14));
       ctx.lineWidth = w;
       ctx.beginPath();
       ctx.moveTo(pts[i].x, pts[i].y);
@@ -4153,7 +4159,7 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
   }
   // 断面の輪。両端は塗りつぶし、途中は輪郭だけを等間隔に入れて「筒」だと分かるようにする。
   // uH/uV をそのまま基底にすれば、投影された楕円がそのまま描ける
-  const ringAt = (i, filled)=>{
+  const ringAt = (i, filled, kA)=>{
     const c = pts[i], h = uH[i], v = uV[i];
     const det = h.x*v.y - h.y*v.x;
     if(Math.abs(det) < 1) return;          // 真横から見て潰れているときは描かない
@@ -4170,23 +4176,33 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
     /* 正面撃ちでは口を**光のにじみ**にする。以前は外周を `shell` の0.9αで締めていたので、
        画面上440pxの**つやのあるシャボン玉**になり、判定(幅140px)の3倍の物体が
        浮いて見えた。縁を0で終わらせて溶かし、濃さも落とす。 */
-    const ringA = (_big <= 1 ? 1 : Math.max(0.12, 1/(_big*_big)))
-                * (nearK[i] != null ? nearK[i] : 1) * (_headOn ? 0.4 : 1);
+    /* 【薄くしすぎない】以前は `1/(_big*_big)` に加えて正面撃ちで 0.4 を掛けていたため、
+       口も途中の輪もほとんど消え、**残るのは芯の白い線と地面の帯だけ**になっていた。
+       「範囲に対して細く見える」の正体がこれ(発注者指摘・2026-08-17)。
+       外殻の円がこの技の主役なので、減衰は緩く(1/_big)・下限も高く取る。 */
+    const ringA = (_big <= 1 ? 1 : Math.max(0.40, 1/_big))
+                * (nearK[i] != null ? nearK[i] : 1) * (kA == null ? 1 : kA);
     ctx.save();
     ctx.globalAlpha = ringA;
     ctx.transform(h.x, h.y, v.x, v.y, c.x, c.y);
     ctx.beginPath(); ctx.arc(0,0,1,0,Math.PI*2);
-    if(filled){
-      const g = ctx.createRadialGradient(0,0,0, 0,0,1);
-      g.addColorStop(0, 'rgba(255,255,255,0.98)');
-      g.addColorStop(0.4, _hexA(sh.bright, 0.55));
-      g.addColorStop(0.82, _hexA(col, _headOn ? 0.16 : 0.35));
-      g.addColorStop(1, _headOn ? _hexA(col, 0) : _hexA(shell, 0.9));
-      ctx.fillStyle = g; ctx.fill();
-    } else {
-      // 線幅は変換前の空間で指定するので、拡大率で割って画面上の太さを揃える
-      ctx.lineWidth = 2.2 / Math.max(1, Math.sqrt(Math.abs(det)));
-      ctx.strokeStyle = _hexA(shell, 0.5);
+    /* 中身も薄く塗る。**輪郭だけにすると「ばね(コイル)」に見える。**
+       薄い面を距離ぶん重ねると、手前ほど濃い「光の柱」になって太さが読める。
+       いちばん外は α0 で終わらせて溶かす(ベタで締めると つやのあるシャボン玉になる)。 */
+    /* 途中の輪の中身は**薄く**。加算で6〜8枚重なるので、1枚を濃くすると
+       白い技(天河天翔)では中が真っ白な円盤に潰れる。濃いのは縁だけでよい。 */
+    const _dk = denseK == null ? 1 : denseK;
+    const g = ctx.createRadialGradient(0,0,0, 0,0,1);
+    g.addColorStop(0, filled ? 'rgba(255,255,255,0.98)' : _hexA(sh.bright, 0.12*_dk));
+    g.addColorStop(0.4, _hexA(sh.bright, filled ? 0.55 : 0.07*_dk));
+    g.addColorStop(0.78, _hexA(col, filled ? 0.42 : 0.11*_dk));
+    g.addColorStop(0.93, _hexA(shell, filled ? 0.95 : 0.42));
+    g.addColorStop(1, _hexA(shell, 0));
+    ctx.fillStyle = g; ctx.fill();
+    if(!filled){
+      // 縁の線。**これが「外殻の円」そのもの。** 変換前の空間で指定するので拡大率で割る
+      ctx.lineWidth = 3.0 / Math.max(1, Math.sqrt(Math.abs(det)));
+      ctx.strokeStyle = _hexA(shell, 0.75);
       ctx.stroke();
     }
     ctx.restore();
@@ -4197,14 +4213,19 @@ function fx3dBeamTube(ox, oy, angle, reach, radius, col, fade, fullReach){
      **正面へ撃ったときは輪を減らす。** 芯が画面上でほぼ点になるので、
      輪を8本も入れると同心楕円の重なり=シャボン玉にしか見えない。 */
   const _axisLen = Math.hypot(pts[last].x-pts[0].x, pts[last].y-pts[0].y);
-  /* 正面撃ちでは**途中の輪を1本も入れない**(2本でも同心楕円に見えると指摘された)。
-     伸びは上で敷いた地面の帯が受け持つので、輪は口と先端の2枚だけでよい。 */
-  const _rings = _axisLen < nrm[0].r*1.2 ? 1 : 8;
+  /* 【何本入れるか】一度「正面撃ちでは1本も入れない」にしたが、そうすると
+     正面へ撃ったとき**画に残るのが芯の白い線と地面の帯だけ**になり、判定の幅より
+     ずっと細い技に見えた(発注者指摘・2026-08-17)。外殻の円を主役にするので必ず入れる。
+     ただし節は手前に詰まっているので**距離で等分**して選ぶ(添字で割ると足元に固まり、
+     同心楕円=シャボン玉に見える)。正面撃ちは奥へ向かうトンネルなので本数は控えめに。 */
+  const _rings = _axisLen < nrm[0].r*1.2 ? 6 : 8;
   for(let k=1;k<_rings;k++){
-    const want = reach*k/_rings;
+    const t = k/_rings;
+    const want = reach*t;
     let i = 0, best = Infinity;
     for(let j=1;j<last;j++){ const d = Math.abs(alongs[j]-want); if(d<best){ best=d; i=j; } }
-    if(i>0 && i<last) ringAt(i, false);
+    // 奥へ行くほど薄く。全部同じ濃さで並べると平らな的(同心円)に見える
+    if(i>0 && i<last) ringAt(i, false, 1 - 0.55*t);
   }
   ringAt(0, true); ringAt(last, true);
   ctx.restore();
@@ -4802,7 +4823,8 @@ function fx3dFlowerBeams(ae, fillDist, fade, inTelegraph){
     if(inTelegraph) continue;
     const curReach = Math.min(ranges[b], fillDist);
     if(curReach<=2) continue;
-    fx3dBeamTube(ae.x, ae.y, a, curReach, ae.width/2, col, fade, ranges[b]);
+    // 3本が重なるので中身は薄く(縁の線はそのまま。本数が読めなくなるため)
+    fx3dBeamTube(ae.x, ae.y, a, curReach, ae.width/2, col, fade, ranges[b], 0.35);
   }
 }
 // ジグザグ(超雷撃・ホーリーサンダー・ライトニング): 空から落ちる本物の落雷にする
