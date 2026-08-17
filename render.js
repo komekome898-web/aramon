@@ -1860,8 +1860,68 @@ function fxStyleGodOrb(pr, r){
   }
   ctx.restore();
 }
-// ビッグバン/ヴァニッシュ: 光を吸い込む黒い球+降着円盤+黒い電撃
-function fxStyleVoidOrb(pr, r){
+/* いちご(西野ピかさの「ずっとずっとキミのことが好き!!」の弾)。
+   **色を決め打ちする例外**(発注者指定・2026-08-17)。ハート門(北大路さつキジン)と
+   同じ扱いで、「いちごは赤」と決まっているものなので装備オーラの色には乗せない。
+   **いちごだけが赤で、降着円盤・電撃・爆風はこれまでの色のまま。**
+   実の下端は r*1.15 までに収める(当たり判定より大きい弾にしない)。 */
+const BERRY_RED   = '#e8323c';
+const BERRY_DARK  = '#a3121d';
+const BERRY_LIGHT = '#ff9aa0';
+const BERRY_LEAF  = '#3f9d43';
+const BERRY_LEAF_D= '#256b2a';
+const BERRY_SEED  = '#ffe9a8';
+// 種の位置(実の半幅・半径に対する割合)。乱数にすると毎フレーム散らばって見える
+const BERRY_SEEDS = [[-0.46,-0.26],[0.00,-0.34],[0.46,-0.26],
+                     [-0.60, 0.10],[-0.20, 0.02],[0.20, 0.02],[0.60, 0.10],
+                     [-0.34, 0.44],[0.34, 0.44],[0.00, 0.36],[0.00, 0.72]];
+function fxBerry(r){
+  const bot = r*1.15;            // 実の先(下端)
+  const w   = r*0.90;            // 実の最大半幅
+  const top = -r*0.60;           // 実の上端(ヘタの付け根)
+  ctx.save();
+  // 実。上が二山にふくらみ、下は一点へ細る
+  ctx.beginPath();
+  ctx.moveTo(0, bot);
+  ctx.bezierCurveTo(-w*0.98, bot*0.42, -w*1.0, top+r*0.12, -w*0.44, top);
+  ctx.bezierCurveTo(-w*0.20, top-r*0.16, w*0.20, top-r*0.16, w*0.44, top);
+  ctx.bezierCurveTo(w*1.0, top+r*0.12, w*0.98, bot*0.42, 0, bot);
+  ctx.closePath();
+  const g = ctx.createRadialGradient(-w*0.34, top+r*0.28, r*0.05, 0, r*0.25, r*1.35);
+  g.addColorStop(0,    BERRY_LIGHT);
+  g.addColorStop(0.42, BERRY_RED);
+  g.addColorStop(1,    BERRY_DARK);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = BERRY_DARK; ctx.lineWidth = Math.max(1, r*0.05); ctx.stroke();
+  // 種
+  ctx.fillStyle = BERRY_SEED;
+  for(const [sx, sy] of BERRY_SEEDS){
+    ctx.beginPath();
+    ctx.ellipse(sx*w*0.82, sy*r*0.9, r*0.075, r*0.05, sx*0.6, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // ヘタ(5枚の葉)と軸。実の上に載せる
+  for(let i=0;i<5;i++){
+    const a = -Math.PI/2 + (i-2)*0.62;
+    const len = r*(i===2 ? 0.78 : 0.66);
+    ctx.beginPath();
+    ctx.moveTo(0, top+r*0.06);
+    ctx.lineTo(Math.cos(a-0.16)*len*0.7, top+r*0.06 + Math.sin(a-0.16)*len*0.7);
+    ctx.lineTo(Math.cos(a)*len,          top+r*0.06 + Math.sin(a)*len);
+    ctx.lineTo(Math.cos(a+0.16)*len*0.7, top+r*0.06 + Math.sin(a+0.16)*len*0.7);
+    ctx.closePath();
+    ctx.fillStyle = i%2 ? BERRY_LEAF_D : BERRY_LEAF; ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.moveTo(0, top+r*0.04); ctx.lineTo(0, top-r*0.42);
+  ctx.strokeStyle = BERRY_LEAF_D; ctx.lineWidth = Math.max(1.2, r*0.09);
+  ctx.lineCap = 'round'; ctx.stroke();
+  ctx.restore();
+}
+/* ビッグバン/ヴァニッシュ: 光を吸い込む黒い球+降着円盤+黒い電撃。
+   core を渡すと球のかわりにそれを描く(いちご=西野ピかさ専用)。
+   **輪と電撃はどちらでも同じ**なので、いちご用に写しを作らない。 */
+function fxStyleVoidOrb(pr, r, core){
   const col = pr.color || '#14121c';
   const [arcDim, arcLit] = arcColorsFor(pr.auraTint);
   const spin = matchTime*1.7 + (pr.id||0);
@@ -1876,17 +1936,23 @@ function fxStyleVoidOrb(pr, r){
   };
   ring(0.55, r*1.9, r*0.3, arcLit);
   ring(0.85, r*1.55, r*0.12, '#ffffff');
-  // 事象の地平面: 完全な黒。縁だけ薄く光らせて球であることを見せる
-  const g = ctx.createRadialGradient(0,0, r*0.2, 0,0, r*1.1);
-  g.addColorStop(0, '#000000');
-  g.addColorStop(0.72, _mixHex(col, '#000000', 0.5));
-  g.addColorStop(1, col);
-  ctx.beginPath(); ctx.arc(0,0,r*1.05,0,Math.PI*2);
-  ctx.fillStyle = g; ctx.fill();
+  if(core){
+    core(r);
+  } else {
+    // 事象の地平面: 完全な黒。縁だけ薄く光らせて球であることを見せる
+    const g = ctx.createRadialGradient(0,0, r*0.2, 0,0, r*1.1);
+    g.addColorStop(0, '#000000');
+    g.addColorStop(0.72, _mixHex(col, '#000000', 0.5));
+    g.addColorStop(1, col);
+    ctx.beginPath(); ctx.arc(0,0,r*1.05,0,Math.PI*2);
+    ctx.fillStyle = g; ctx.fill();
+  }
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.beginPath(); ctx.arc(0,0,r*1.04,0,Math.PI*2);
-  ctx.strokeStyle = _hexA(arcLit, 0.7); ctx.lineWidth = r*0.09; ctx.stroke();
+  if(!core){                                   // 球の縁の光。いちごには回さない
+    ctx.beginPath(); ctx.arc(0,0,r*1.04,0,Math.PI*2);
+    ctx.strokeStyle = _hexA(arcLit, 0.7); ctx.lineWidth = r*0.09; ctx.stroke();
+  }
   ring(0.5, r*1.3, r*0.2, arcDim);                   // 手前を通る側の輪
   ctx.lineCap='round'; ctx.lineJoin='round';
   const jseed = Math.floor(matchTime*18) + (pr.id||0);
@@ -2340,6 +2406,8 @@ function fxStyleRequiem(pr, r){
 const REAL_STYLE_FX = {
   godorb:   fxStyleGodOrb,
   voidOrb:  fxStyleVoidOrb,
+  // 西野ピかさ専用。輪と電撃はビッグバンのまま、球だけ赤いいちごに差し替える
+  strawberry: (pr, r)=> fxStyleVoidOrb(pr, r, fxBerry),
   crescent: fxStyleCrescent,
   tornado:  fxStyleTornado,
   holy:     fxStyleHoly,
@@ -2357,7 +2425,8 @@ const PROJ_SIMPLE_PX       = 12;   // 画面上の半径(実ピクセル)がこ�
 const PROJ_SIMPLE_PX_HEAVY = 48;   // 弾が多いときのしきい値
 const PROJ_DETAIL_BUDGET   = 14;   // 同時にこの数までは全部きちんと描く
 function drawSimpleProjectile(pr, r){
-  const col = pr.orbColor || pr.color || '#ffffff';
+  // いちごの弾は遠くで簡易表示に落ちても赤のまま(距離で色が変わって見えないように)
+  const col = pr.projStyle==='strawberry' ? BERRY_RED : (pr.orbColor || pr.color || '#ffffff');
   // 芯を小さく締めて外へ素早く消す。均等に塗ると「色の付いた玉」に見えてしまう
   const g = ctx.createRadialGradient(0,0, 0, 0,0, r*1.25);
   g.addColorStop(0,    '#ffffff');
@@ -2428,16 +2497,24 @@ function drawProjectile(pr,p){
     ctx.restore();
     return;
   }
-  if(pr.projStyle==='voidOrb'){
+  if(pr.projStyle==='voidOrb' || pr.projStyle==='strawberry'){
     // ビッグバン(ピクシー): 黒く発光する球+周囲に黒いビリビリ(電撃アーク)
+    /* 西野ピかさの「ずっとずっとキミのことが好き!!」は球のかわりに赤いいちご。
+       **いちごだけが赤で、電撃・輪・爆風はこれまでの色のまま**(発注者指定・2026-08-17)。
+       電撃の描き方は共通なので、いちご用に写しを作らずここで芯だけ入れ替える。 */
+    const _berry = pr.projStyle==='strawberry';
     const col = pr.color || '#14121c';
     const r = (pr.hitR||24);
-    if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor='#6b2fa8'; }
-    const grad = ctx.createRadialGradient(-r*0.25,-r*0.25,r*0.1, 0,0,r);
-    grad.addColorStop(0,'#3a2050');
-    grad.addColorStop(0.5, col);
-    grad.addColorStop(1, '#000000');
-    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle=grad; ctx.fill();
+    if(!renderHeavyLoad){ ctx.shadowBlur=20; ctx.shadowColor = _berry ? BERRY_RED : '#6b2fa8'; }
+    if(_berry){
+      fxBerry(r);
+    } else {
+      const grad = ctx.createRadialGradient(-r*0.25,-r*0.25,r*0.1, 0,0,r);
+      grad.addColorStop(0,'#3a2050');
+      grad.addColorStop(0.5, col);
+      grad.addColorStop(1, '#000000');
+      ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle=grad; ctx.fill();
+    }
     ctx.shadowBlur=0;
     // 周囲のビリビリ(電撃アーク)。既定は黒紫、装備スキンの差し色があればその色に
     const [arcDim, arcLit] = arcColorsFor(pr.auraTint);
