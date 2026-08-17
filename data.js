@@ -3858,6 +3858,10 @@ const SKIN_MEDIA = {
     bgm: { final5:'audio/bgm_satsuki_ssr_final5.m4a', lastBattle:'audio/bgm_satsuki_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_satsuki_ssr_tier3.m4a', kill:'audio/se_satsuki_ssr_kill.m4a', win:'audio/se_satsuki_ssr_win.m4a' },
   },
+  tsukasa_ssr: { /*@tsukasa_ssr*/
+    promote: { video:'video/tsukasa_ssr_promote', audio:'audio/tsukasa_ssr_promote_audio.m4a', safetyMs:30413 },
+    se: { tier3:'audio/se_tsukasa_ssr_tier3.m4a' },
+  },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
 /* 【覚醒スキンは元のSSRの専用BGM・専用SEをそのまま受け継ぐ】
