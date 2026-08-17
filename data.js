@@ -1001,7 +1001,10 @@ const SSR_SKIN_TIER3 = {
     aoeStyle:'heart',
     endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff5fa8', se:'tornado', style:'heartBlast' },
   }}, /*@satsuki_ssr*/
-  tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15 }, /*@tsukasa_ssr*/
+  /* 西野ピかさ(ピクシー): 「ビッグバン」の黒い球をいちごに差し替える(発注者指定・2026-08-17)。
+     projStyle だけを上書きするので、威力・射程・弾速・当たり判定・爆風は素のビッグバンのまま。
+     **いちごだけが赤**で、電撃・降着円盤・ドームの爆風はこれまでどおりオーラの色に乗る。 */
+  tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15, move:{ projStyle:'strawberry' } }, /*@tsukasa_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1180,6 +1183,8 @@ const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
     { t:'✨ SSRスキン「西野ピかさ」が登場しました！ ピクシーのスキンです', g:['feature','monster'] },
     { t:'「西野ピかさ」がモッチーのスキンとして登録されていたのを、ピクシーのスキンに直しました。すでに持っている方はピクシーの着せ替えに並びます', g:['fix','monster'] },
+    { t:'「西野ピかさ」のtier3「ずっとずっとキミのことが好き!!」の弾が赤いいちごになりました。電撃・輪・着弾のドームはこれまでどおりです。技の威力・射程・弾速・爆風の広さは変わりません', g:['av','monster'] },
+    { t:'「西野ピかさ」にキル時・勝利時の専用SEを追加しました', g:['monster','av'] },
     { t:'「西野ピかさ」に専用BGMを追加しました。残り6人以上・残り5人以下は「北大路さつキジン」と同じ曲で、残り2人だけ専用の曲になります', g:['av','monster'] },
     { t:'「北大路さつキジン」の専用BGMを1段ずつずらしました。残り6人以上でこれまでの残り5人以下の曲、残り5人以下でこれまでの残り2人の曲が流れ、残り2人は新しい曲になります', g:['av','monster'] },
     { t:'アークの「天の慈悲」に、着弾点から広がるドーム状の爆風を追加しました(半径240・威力24)。直撃58と合わせて最大82になります', g:['balance','monster'] },
@@ -3880,7 +3885,8 @@ const SKIN_MEDIA = {
     bgm: { battle:'audio/bgm_satsuki_ssr_final5.m4a',
            final5:'audio/bgm_satsuki_ssr_lastbattle.m4a',
            lastBattle:'audio/bgm_tsukasa_ssr_last2.mp3' },
-    se: { tier3:'audio/se_tsukasa_ssr_tier3.m4a' },
+    se: { tier3:'audio/se_tsukasa_ssr_tier3.m4a', kill:'audio/se_tsukasa_ssr_kill.mp3',
+          win:'audio/se_tsukasa_ssr_win.mp3' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
