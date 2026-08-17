@@ -300,7 +300,6 @@ const WALK_ANIM = {
     base: { front:_loadWalk('mocchi_walk_f'),     back:_loadWalk('mocchi_walk_b') },     // 素モッチー(色スキン対応)
     ssr: [
       { skinId:'mocchi_ssr', front:_loadWalk('mocchi_ssr_walk_f'), back:_loadWalk('mocchi_ssr_walk_b') }, // ラガモッチー
-      { skinId:'tsukasa_ssr', front:_loadWalk('tsukasa_ssr_walk_f'), back:_loadWalk('tsukasa_ssr_walk_b') }, /*@tsukasa_ssr*/
     ],
   },
   god: {
@@ -374,6 +373,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
     ssr: [
       { skinId:'choco_ssr', front:_loadWalk('choco_ssr_walk_f'), back:_loadWalk('choco_ssr_walk_b') }, // SSRちょこ
+      { skinId:'tsukasa_ssr', front:_loadWalk('tsukasa_ssr_walk_f'), back:_loadWalk('tsukasa_ssr_walk_b') }, /*@tsukasa_ssr*/
     ],
   },
   dullahan:{ /*@dullahan*/
@@ -1178,7 +1178,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
-    { t:'✨ SSRスキン「西野ピかさ」が登場しました！', g:['feature','monster'] },
+    { t:'✨ SSRスキン「西野ピかさ」が登場しました！ ピクシーのスキンです', g:['feature','monster'] },
+    { t:'「西野ピかさ」がモッチーのスキンとして登録されていたのを、ピクシーのスキンに直しました。すでに持っている方はピクシーの着せ替えに並びます', g:['fix','monster'] },
     { t:'「西野ピかさ」に専用BGMを追加しました。残り6人以上・残り5人以下は「北大路さつキジン」と同じ曲で、残り2人だけ専用の曲になります', g:['av','monster'] },
     { t:'「北大路さつキジン」の専用BGMを1段ずつずらしました。残り6人以上でこれまでの残り5人以下の曲、残り5人以下でこれまでの残り2人の曲が流れ、残り2人は新しい曲になります', g:['av','monster'] },
     { t:'アークの「天の慈悲」に、着弾点から広がるドーム状の爆風を追加しました(半径240・威力24)。直撃58と合わせて最大82になります', g:['balance','monster'] },
@@ -3800,7 +3801,7 @@ const SSR_SKINS = {
   guts_ssr_awake: { element:'dullahan', name:'狂戦士ガッツ【覚醒】', iconImg:'guts_ssr_awake', playerImg:'guts_player_ssr_awake', awakenOf:'guts_ssr' }, /*@guts_ssr_awake*/
   satsuki_ssr:    { element:'ogre', name:'北大路さつキジン', iconImg:'satsuki_ssr', playerImg:'satsuki_player_ssr' }, /*@satsuki_ssr*/
   satsuki_ssr_awake:{ element:'ogre', name:'北大路さつキジン【覚醒】', iconImg:'satsuki_ssr_awake', playerImg:'satsuki_player_ssr_awake', awakenOf:'satsuki_ssr' }, /*@satsuki_ssr_awake*/
-  tsukasa_ssr:    { element:'mocchi', name:'西野ピかさ', iconImg:'tsukasa_ssr', playerImg:'tsukasa_player_ssr' }, /*@tsukasa_ssr*/
+  tsukasa_ssr:    { element:'pixie', name:'西野ピかさ', iconImg:'tsukasa_ssr', playerImg:'tsukasa_player_ssr' }, /*@tsukasa_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
