@@ -295,9 +295,12 @@ async function beginMultiplayerMatchInner(){
     /* 積み荷は mastermonSnapshot 1つで作る(部屋へ送る自分の育成値・ゴーストと同じ形)。
        以前はここだけ転生回数・適正・基礎値アイテムを載せておらず、ホストのマスモンbotに
        育成の一部が反映されていなかった。 */
+    /* **積み荷を作る時点でホスト自身のマスモンの合計まで縮める。**
+       受け取ってから各自で縮めるとホストとゲストで基準が違い、HP・速度が食い違う。 */
+    const hostLimit = battleStatLimitOf(ownMastermons[game.selectedMastermonKey] || null, game.selectedElement);
     hostMastermonBots = shuffledCandidates.map(k=>{
       const skin = (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null;
-      return Object.assign({ key:k }, mastermonSnapshot(ownMastermons[k], skin));
+      return Object.assign({ key:k }, capMastermonToLimit(mastermonSnapshot(ownMastermons[k], skin), hostLimit));
     });
   } else {
     console.log('[aramon] NON-HOST: waiting for seed+world...');

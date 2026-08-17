@@ -1186,6 +1186,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
+    { t:'バトルに出る自分以外のモンスター(bot・ゴースト・自分の他のマスモン)が、自分が使っているマスモンのステータス合計を超えなくなりました。育ちきった相手が出てきても、こちらより数字の上で強いことはありません', g:['balance','solo','multi'] },
     { t:'🎒 バッグを使いやすくしました。左のアイテム欄だけがスクロールするようになり、説明と「使用する」は常に画面の中に見えます', g:['general'] },
     { t:'バッグの右のマスモン一覧は、選ぶまでステータスを閉じて一度に多くの子が見えるようになりました。選んだ子はステータスが開いた状態で一番上に固定され、左のアイテムを変えても動きません', g:['general'] },
     { t:'バッグで使えない相手が選べなくなりました(遠征中の子、ステータスが上限に届いている子)。理由も名前の横に出ます', g:['general'] },
@@ -2336,6 +2337,55 @@ function syntheticMastermonForLevel(elementKey, level, rebirth){
   });
   return { element:elementKey, level:lv, stats, rebirth:n };
 }
+
+/* =====================================================================
+   自分以外のモンスターの強さの上限(発注者指示 2026-08-17)
+
+   **バトルに出る自分以外のモンスターは、自分が使っているマスモンのステータス合計を
+   上回らない。** bot・ゴースト・自分の他のマスモン(マルチの★bot / レイドの味方)が対象。
+   通し方は「上限を1つ作る(battleStatLimitOf) → 写しを通す(capMastermonToLimit)」の2段で、
+   **判定を各所に散らさない。**
+
+   ・縮め方は6ステータスを同じ比率で下げる(下限1)。誰かのステータスの形は保たれる。
+   ・基礎値アイテム(baseHp/baseSpd)と転生回数も自分のぶんで頭打ちにする。どちらも
+     ステータスと同じ計算に乗って強さになるので、ここを見ないと合計だけ守っても強い。
+   ・適正(apt)は触らない。**合計が同じでも適正が高いほど1ポイントの効きは良い**ので、
+     ここは差が残る(発注者へ報告済み)。
+   ・**人間のプレイヤー(マルチ)は対象外。** 他人のマスモンを弱めることはしない。
+   ・元のオブジェクトは書き換えない(ゴースト・部屋の積み荷を壊さないため)。
+   ・マルチのホストのマスモンbotは**積み荷を作るときに縮めておく**。受け取ってから各自で
+     縮めると、ホストとゲストで基準が違いHP・速度が食い違う(位置補正が暴れる)。 */
+function battleStatLimitOf(mm, elementKey){
+  // マスモンを連れていないときは種族の初期値が自分の強さ(育成ぶん0)
+  const base = (mm && mm.stats) ? mm : { stats: mastermonInitialStats(elementKey || 'mocchi') };
+  return {
+    total:   Math.max(1, mastermonStatTotal(base)),
+    baseHp:  Math.max(0, Math.round((mm && mm.baseHp) || 0)),
+    baseSpd: Math.max(0, Math.round((mm && mm.baseSpd) || 0)),
+    rebirth: mastermonRebirthCount(mm),
+  };
+}
+function capMastermonToLimit(mm, limit){
+  if(!mm || !mm.stats || !limit) return mm;
+  const total = mastermonStatTotal(mm);
+  const overStats = total > limit.total;
+  const overBase  = ((mm.baseHp || 0) > limit.baseHp) || ((mm.baseSpd || 0) > limit.baseSpd);
+  const overRb    = mastermonRebirthCount(mm) > limit.rebirth;
+  if(!overStats && !overBase && !overRb) return mm;
+  const out = Object.assign({}, mm);
+  if(overStats){
+    const k = limit.total / total;
+    out.stats = {};
+    MASTERMON_STATS.forEach(s=>{ out.stats[s.key] = Math.max(1, Math.floor((mm.stats[s.key] || 0) * k)); });
+  }
+  if(overBase){
+    out.baseHp  = Math.min(Math.round(mm.baseHp || 0),  limit.baseHp);
+    out.baseSpd = Math.min(Math.round(mm.baseSpd || 0), limit.baseSpd);
+  }
+  if(overRb) out.rebirth = limit.rebirth;
+  return out;
+}
+
 // マスモンのステータスから、バトル中に適用する各種倍率を算出。
 // 適正S以上のステータスは倍率の伸びも良くなる(mastermonStatFactorの第3引数)。
 function mastermonEffectMults(mm){
