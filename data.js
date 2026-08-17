@@ -395,6 +395,9 @@ const WALK_ANIM = {
   },
   centaur: { /*@centaur*/
     base: { front:_loadWalk('centaur_walk_f'), back:_loadWalk('centaur_walk_b') },
+    ssr: [
+      { skinId:'oki_ssr', front:_loadWalk('oki_ssr_walk_f'), back:_loadWalk('oki_ssr_walk_b') }, /*@oki_ssr*/
+    ],
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -802,6 +805,7 @@ const SSR_SKIN_AURA = {
   satsuki_ssr:    'yellow', /*@satsuki_ssr*/
   satsuki_ssr_awake:'yellow', /*@satsuki_ssr_awake*/
   tsukasa_ssr:    'yellow', /*@tsukasa_ssr*/
+  oki_ssr:        'blue', /*@oki_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1005,6 +1009,7 @@ const SSR_SKIN_TIER3 = {
      projStyle だけを上書きするので、威力・射程・弾速・当たり判定・爆風は素のビッグバンのまま。
      **いちごだけが赤**で、電撃・降着円盤・ドームの爆風はこれまでどおりオーラの色に乗る。 */
   tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15, move:{ projStyle:'strawberry' } }, /*@tsukasa_ssr*/
+  oki_ssr:        { name:'大将軍の矛', dmgMult:1.15 }, /*@oki_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1151,11 +1156,11 @@ function ssrTier3DmgMult(move, attacker){
 const LOBBY_BANNERS = [
   // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)。新しい順。
   { rar:'SSR', name:'西野ピかさ', tag:'新登場・ガチャ', img:'monsters/tsukasa_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@tsukasa_ssr*/
+  { rar:'SSR', name:'秦の怪鳥', tag:'新登場・ガチャ', img:'monsters/oki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@oki_ssr*/
   // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
   { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ',   img:'monsters/satsuki_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
   { rar:'SSR', name:'メタルグレイモン', tag:'新登場・ガチャ',   img:'monsters/metag_ssr.png',     size:'150%', pos:'50% 20%', open:'gacha' },
   { rar:'SSR', name:'ガルルモン',       tag:'新登場・ガチャ',   img:'monsters/garurumon_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' },
-  { rar:'SSR', name:'ラガモッチー',     tag:'新登場・ガチャ',   img:'monsters/mocchi_ssr.png',    size:'165%', pos:'50% 18%', open:'gacha' },
 ];
 const LOBBY_BANNER_MS = 3000;
 
@@ -1181,6 +1186,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-17', items:[
+    { t:'✨ SSRスキン「秦の怪鳥」が登場しました！', g:['feature','monster'] },
     { t:'マスモンの名前を変えたあと、モンスターが小さくなったり選択のポップアップが途切れたりしていたのを直しました。キーボードを閉じたときの画面の大きさの測り方が原因でした', g:['fix','general'] },
     { t:'🎰 スキンガチャが「荒モン100%ダブルピックアップ」になりました！ ピックアップは「北大路さつキジン」と「西野ピかさ」の2体で、SSR全体2%のうちこの2体で合わせて1%(各0.5%)、他のSSRが合わせて1%です', g:['feature','general'] },
     { t:'✨ SSRスキン「西野ピかさ」が登場しました！ ピクシーのスキンです', g:['feature','monster'] },
@@ -3809,6 +3815,7 @@ const SSR_SKINS = {
   satsuki_ssr:    { element:'ogre', name:'北大路さつキジン', iconImg:'satsuki_ssr', playerImg:'satsuki_player_ssr' }, /*@satsuki_ssr*/
   satsuki_ssr_awake:{ element:'ogre', name:'北大路さつキジン【覚醒】', iconImg:'satsuki_ssr_awake', playerImg:'satsuki_player_ssr_awake', awakenOf:'satsuki_ssr' }, /*@satsuki_ssr_awake*/
   tsukasa_ssr:    { element:'pixie', name:'西野ピかさ', iconImg:'tsukasa_ssr', playerImg:'tsukasa_player_ssr' }, /*@tsukasa_ssr*/
+  oki_ssr:        { element:'centaur', name:'秦の怪鳥', iconImg:'oki_ssr', playerImg:'oki_player_ssr' }, /*@oki_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 

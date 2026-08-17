@@ -1,0 +1,17 @@
+{
+  "id": "oki_ssr",
+  "element": "centaur",
+  "name": "秦の怪鳥",
+  "aura": "blue",
+  "seasonExclusive": false,
+  "iconImg": "oki_ssr",
+  "playerImg": "oki_player_ssr",
+  "walkPrefix": "oki_ssr_walk_",
+  "t3name": "大将軍の矛",
+  "t3mult": 1.15,
+  "raidEffect": false,
+  "raidDealt": 1.5,
+  "raidTaken": 0.75,
+  "raidPickup": false,
+  "raidClear": false
+}
