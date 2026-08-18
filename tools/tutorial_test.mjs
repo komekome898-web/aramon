@@ -43,6 +43,24 @@ const page = await ctx.newPage();
 const errs = [];
 page.on('pageerror', e=> errs.push(String(e).slice(0,200)));
 
+// 帯の案内に出てくる「」の文字が、実際にその画面のボタンに書いてあるか。
+// ボタン名を変えたのに案内が古いまま、という食い違いを検出する(2026-08-18の「出撃/バトル開始」)
+const hintLabels = ()=> page.evaluate(()=>{
+  const st = (typeof tutState!=='undefined' && tutState) ? TUTORIAL_STEPS[tutState.i] : null;
+  if(!st) return { ok:false, missing:['ステップ不明'] };
+  const terms = (st.hint || '').match(/「[^」]+」/g) || [];
+  if(!terms.length) return { ok:true, missing:[] };
+  const norm = (t)=> (t||'').replace(/\s+/g, '');
+  let text = '';
+  (st.allow || []).forEach(sel=> document.querySelectorAll(sel).forEach(el=>{
+    text += norm(el.textContent);
+    el.querySelectorAll('input,textarea').forEach(i=>{ text += norm(i.placeholder || ''); });
+  }));
+  const missing = terms.map(t=> t.slice(1,-1)).filter(t=> !text.includes(norm(t)));
+  return { ok: missing.length === 0, missing, id: st.id };
+});
+const okHint = async ()=>{ const r = await hintLabels(); ok(`案内の文字が画面にある(${r.id||'?'})`, r.ok, (r.missing||[]).join(' / ')); };
+
 await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil:'load' });
 await page.waitForTimeout(1500);
 
@@ -68,6 +86,7 @@ ok('ステップ1はモンスター選択', await step() === 'pickMonster');
 await cardNext();                                  // 「まずは相棒を選ぼう」カードを閉じる
 ok('帯が出ている', await shown('tutorialBand'));
 ok('押せる対象がある(pickMonster)', (await allowedCount()) > 0, `allow=${await allowedCount()}`);
+await okHint();
 
 // ---- 3. ロック: 許可していないボタンは効かない(本物のタップで確かめる)
 await page.click('#headerSettingsBtn', { force:true }).catch(()=>{});
@@ -82,7 +101,8 @@ ok('モンスターを選ぶと次へ進む', await step() === 'match');
 // ---- 5. 練習試合
 await cardNext();                                  // 「1試合やってみよう」カードを閉じる
 await page.waitForTimeout(300);
-ok('出撃ボタンが押せる状態', (await allowedCount()) > 0);
+ok('バトル開始ボタンが押せる状態', (await allowedCount()) > 0);
+await okHint();
 await page.evaluate(()=> document.getElementById('joinBtn').click());
 await page.waitForTimeout(1200);
 const m = await page.evaluate(()=>({
@@ -114,6 +134,7 @@ ok('次はマスモン登録', await step() === 'register', `step=${await step()
 await cardNext();
 await page.waitForTimeout(300);
 ok('登録の対象が押せる', (await allowedCount()) > 0);
+await okHint();
 await page.evaluate(()=>{
   document.getElementById('mastermonRegisterName').value = 'テストモン';
   document.getElementById('mastermonRegisterConfirmBtn').click();
@@ -134,6 +155,7 @@ await cardNext();
 await page.waitForTimeout(500);
 ok('トレーニング画面が開いている', await shown('mastermonScreen'));
 ok('トレーニングの対象が押せる', (await allowedCount()) > 0);
+await okHint();
 const trainInfo = await page.evaluate(()=>{
   const menu = document.querySelector('.mm-train-btn');
   const exec = document.getElementById('mastermonExecuteTrainBtn');
@@ -158,6 +180,7 @@ const diaBefore = await page.evaluate(()=> loadWallet().dia);
 await cardNext();
 await page.waitForTimeout(600);
 ok('ガチャ画面が開いている', await shown('gachaOverlay'));
+await okHint();
 await page.evaluate(()=> doGacha(10));
 await page.waitForTimeout(1200);
 const g = await page.evaluate(()=>({
@@ -180,10 +203,16 @@ ok('スキンを得たら着せ替えへ', await step() === 'dressup', `step=${a
 await cardNext();
 await page.waitForTimeout(600);
 ok('着せ替えの対象が押せる', (await allowedCount()) > 0);
-await page.evaluate(()=>{
-  const k = tutorialMastermonKey();
-  setEquippedSkin(k, window.__tutSkin);
+// 引いたスキンのサムネをタップ → 確定ボタンが「これに着せ替える」になる(案内どおりの文字)
+const picked = await page.evaluate(()=>{
+  const th = document.querySelector(`.mm-skin-thumb[data-skin="${window.__tutSkin}"]`);
+  if(th) th.click();
+  return !!th;
 });
+ok('引いたスキンのサムネがある', picked);
+await page.waitForTimeout(300);
+await okHint();
+await page.evaluate(()=>{ document.getElementById('mmSkinConfirmBtn').click(); });
 await page.waitForTimeout(600);
 ok('着せ替えると次へ', ['pwa','help'].includes(await step()), `step=${await step()}`);
 
@@ -193,6 +222,7 @@ ok('ヘルプ案内へ', await step() === 'help', `step=${await step()}`);
 await cardNext();
 await page.waitForTimeout(400);
 ok('ヘルプの対象が押せる', (await allowedCount()) > 0);
+await okHint();
 await page.evaluate(()=>{ document.getElementById('helpOverlay').classList.remove('hidden'); });
 await page.waitForTimeout(400);
 await page.evaluate(()=>{ document.getElementById('helpOverlay').classList.add('hidden'); });
