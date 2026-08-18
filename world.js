@@ -19,7 +19,8 @@ let matchTime = 0;
 let zoneState = null;
 let game = { started:false, over:false, tipTimer:7, selectedElement:null, selectedMap:'random', realMapMode:false, autoRun:false, trainingRange:false, raid:false,
              teamSize:1,     // 1=個人戦(従来どおり)。2以上でチーム戦。書くのは teamResetState()/assignTeams()(combat.js)だけ
-             arena:false };  // バトルアリーナ(3v3・1本勝負)中か。書くのは arenaResetState()(combat.js)と試合開始の各入口だけ
+             arena:false,    // バトルアリーナ(3v3・1本勝負)中か。書くのは arenaResetState()(combat.js)と試合開始の各入口だけ
+             tutorialMatch:false }; // チュートリアルの練習試合中か。書くのは startGame() だけ(体数・マップ・安置・botの強さがここで変わる)
 
 /* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
    バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが

@@ -796,7 +796,8 @@ function updateBotAI(b, dt){
   if(b.attackTargetId){ const t=getEntity(b.attackTargetId); if(!t||!t.alive) b.attackTargetId=null; }
   b.aiTimer -= dt;
   if(b.aiTimer>0) return;
-  b.aiTimer = rand(0.22,0.4);
+  // チュートリアルの練習試合だけ反応を鈍くする(通常の試合は倍率1のまま)
+  b.aiTimer = rand(0.22,0.4) * (game.tutorialMatch ? TUTORIAL_MATCH.botThinkMult : 1);
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
   if(b.isRaidBoss){ updateRaidBossAI(b); return; }
 

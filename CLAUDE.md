@@ -21,7 +21,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + JS + Fire
 
 | 場所 | 担当 |
 |---|---|
-| `index.html` | 全画面のDOM。読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → network.js |
+| `index.html` | 全画面のDOM。読み込み順: firebase.js(module) → data.js → audio.js → world.js → combat.js → render.js → input.js → ui.js → tutorial.js → network.js |
 | `style.css` | 全スタイル。CSS変数は`:root` |
 | `data.js` | 定数・マスタ: WORLD/MAPS/ELEMENTS/SIGNATURE_MOVES、マスモン(育成/EXP/倍率)、試合内アイテム、アカウント系(通貨・バッグ・ガチャ・ショップ・報酬)、`UPDATE_HISTORY`、オーラ/SSRスキン、SSRスキン専用メディア(`SKIN_MEDIA`=昇格演出・専用BGM/SE・宣伝画像)、色スキン(`SKIN_CONFIG`/`recolorToCanvas`)、歩行アニメ(`WALK_ANIM`/`getDisplayImage`)、`real3dHeightAt`、`OBST_SHAPES` |
 | `audio.js` | BGM/SE。原則Web Audio合成、一部のみ実音源 |
@@ -31,6 +31,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + JS + Fire
 | `input.js` | タッチ/キー入力、ジョイスティック、カメラ、文字入力ポップアップ |
 | `ui.js` | 画面遷移、リザルト、ランキング、マスモンUI、管理者画面、localStorage、アカウント、バッグ/ガチャ/ショップ、ロビー |
 | `network.js` | マルチ同期(ホスト権威型) |
+| `tutorial.js` | 初回チュートリアル(進行役)。**順番・文言・完了条件は`data.js`の`TUTORIAL_STEPS`が正。** 押せるものを絞るのはcapture段のクリック濾過(座標を使わないので強制横向きでも効く) |
 | `firebase.js` | Firebase初期化・API。`window.__aramon*`で公開(ESモジュールの橋渡し) |
 | `real3d.js` | リアルマップのWebGL描画(`window.__aramonReal3D`) |
 | `sw.js` / `manifest.json` | SW(コード=ネットワーク優先 / 素材=stale-while-revalidate) / PWAマニフェスト |

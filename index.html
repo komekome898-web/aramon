@@ -225,6 +225,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <button id="closeHelpBtn" class="overlay-close-btn">✕</button>
     <div class="lobby-menu-title">❓ ヘルプ / 操作マニュアル</div>
     <div class="lobby-menu-list">
+      <button class="lobby-menu-btn" id="helpReplayTutorialBtn"><span class="lobby-menu-icon">🔰</span><span class="lobby-menu-text"><b>はじめての説明をもう一度</b><i>チュートリアルの説明だけを見返します</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_addhome.png" data-title="ホーム画面追加方法"><span class="lobby-menu-icon">🏠</span><span class="lobby-menu-text"><b>ホーム画面追加方法</b><i>アイコンからアプリのようにすぐ起動</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_account.png" data-title="アカウントの作り方"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>アカウントの作り方</b><i>ログインしてデータを他の端末にも引き継ぐ</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_battle.png" data-title="バトルの始め方"><span class="lobby-menu-icon">⚔️</span><span class="lobby-menu-text"><b>バトルの始め方</b><i>モンスター選択からバトル開始まで</i></span></button>
@@ -1564,6 +1565,25 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 </div>
 
 <!-- トースト。#appRootの最後に直接置く(#hudの中だとz-indexがロビー等より低く隠れて見えない) -->
+<!-- チュートリアル層。全画面カード / 画面下の帯 / 対象を光らせるクラス の3つだけ。
+     穴あきマスクは使わない(強制横向きの座標変換で位置が合わないため)。
+     ※新しいオーバーレイなので render.js の touchmove と input.js の touchend/dblclick にも id を登録すること -->
+<div id="tutorialLayer" class="hidden">
+  <div id="tutorialCard" class="hidden">
+    <div id="tutorialCardTitle" class="tut-card-title"></div>
+    <img id="tutorialCardImg" class="tut-card-img hidden" alt="">
+    <div id="tutorialCardText" class="tut-card-text"></div>
+    <div class="tut-card-btns">
+      <button id="tutorialCardSubBtn" class="tut-card-sub hidden"></button>
+      <button id="tutorialCardNextBtn" class="tut-card-next">次へ</button>
+    </div>
+  </div>
+  <div id="tutorialBand" class="hidden">
+    <span id="tutorialBandStep" class="tut-band-step"></span>
+    <span id="tutorialBandText" class="tut-band-text"></span>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 </div>
@@ -1586,6 +1606,8 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <script src="render.js"></script>
 <script src="input.js"></script>
 <script src="ui.js"></script>
+<!-- 初回チュートリアル。ui.jsの関数を呼ぶので必ずその後ろ -->
+<script src="tutorial.js"></script>
 <!-- リアルマップ(テスト)のWebGL描画。ESモジュールなので window.__aramonReal3D 経由で使う -->
 <script type="module" src="real3d.js"></script>
 <!-- 技エフェクトのWebGL層。全マップで動く(real3d.jsと違いリアルマップ限定ではない) -->
