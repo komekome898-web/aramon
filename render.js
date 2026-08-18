@@ -7008,6 +7008,7 @@ function updateHUD(){
   statusEl.innerHTML = statusHtml;
 
   const aliveCount = entities.filter(e=>e.alive).length;
+  let squadCount = null; // チーム戦のときだけ残り部隊数を入れる(BGMの盛り上がり判定用)
   {
     /* 生存カウンタの言葉はモードで3通り。**どれも同じ2要素(#aliveNum/#aliveLabel)へ書く**ので、
        前のモードの文言が残らないよう毎フレーム両方を確定させる。
@@ -7022,7 +7023,8 @@ function updateHUD(){
       // ダウン中も alive のまま=部隊はまだ生きている(全員が本当に倒れて初めて1部隊減る)
       const squads = new Set();
       for(const e of entities){ if(e.alive && e.teamId!=null) squads.add(e.teamId); }
-      num = `${squads.size}部隊`; label = `残り${aliveCount}人`;
+      squadCount = squads.size;
+      num = `${squadCount}部隊`; label = `残り${aliveCount}人`;
     } else {
       num = String(aliveCount); label = '体 生存中';
     }
@@ -7030,7 +7032,9 @@ function updateHUD(){
     if(an.textContent!==num) an.textContent = num;
     if(al.textContent!==label) al.textContent = label;
   }
-  bgmUpdateBattleIntensity(aliveCount); // 残り人数で試合BGMの盛り上がりを切替
+  // チーム戦BRだけ残り部隊数でBGMの盛り上がりを切替(残り人数だと、同じ部隊のbotが
+  // 順に落ちるだけで人数が減り曲が動いてしまうため)。アリーナ・個人戦は従来どおり残り人数。
+  bgmUpdateBattleIntensity(squadCount!=null ? squadCount : aliveCount);
   document.getElementById('zoneStatus').textContent = zoneLabel();
   const countdown = zoneCountdownSeconds();
   document.getElementById('zoneCountdown').textContent = countdown===null ? '--:--' : fmtTime(countdown);

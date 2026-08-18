@@ -771,13 +771,15 @@ function bgmSetTrack(name){
     bgmTrackGain.gain.linearRampToValueAtTime(1, t+0.9);
   }
 }
-function bgmUpdateBattleIntensity(aliveCount){
+function bgmUpdateBattleIntensity(count){
   /* レイドは総力戦なので、最初から最後まで「残り2人」の盛り上がり(ラストバトル)で固定する。
      人数で決めると、ボス+4人=5体からbotが減るたびに曲が切り替わって落ち着かない。
      専用BGMを持つSSRスキンを装備していれば、そのラストバトル曲が優先される
      (選び分けは bgmFileLoopTarget の activeSkinBgmSet 側で既に効いている)。 */
   if(typeof game!=='undefined' && game && game.raid){ bgmState.intensity = 4; return; }
-  bgmState.intensity = aliveCount<=2 ? 4 : aliveCount<=5 ? 3 : aliveCount<=10 ? 2 : aliveCount<=20 ? 1 : 0;
+  // 引数countは通常/アリーナは残り人数、チーム戦BRは残り部隊数(呼び出し側=render.jsで切替済み)。
+  // 同じ部隊のbotが順に落ちて人数だけ減っても曲が動かないよう、チーム戦は部隊数を見る。
+  bgmState.intensity = count<=2 ? 4 : count<=5 ? 3 : count<=10 ? 2 : count<=20 ? 1 : 0;
 }
 // テスト用: intensityを直接指定する(管理者画面のBGM確認から使う)
 function bgmSetIntensity(n){ bgmState.intensity = n|0; }
