@@ -70,6 +70,17 @@ function applyWorldScale(scale){
   ZONE_CENTER0.x = WORLD.w/2;
   ZONE_CENTER0.y = WORLD.h/2;
   ZONE_PHASES = ZONE_PHASES_BASE.map(p=>({...p, holdRadius: Math.round(p.holdRadius*scale)}));
+  /* チュートリアルの練習試合だけ、安置の縮小と待ち時間を縮めて2〜3分で決着させる。
+     **通常の試合は今までどおり(倍率1)。** 入口の判定は game.tutorialMatch 1つ。 */
+  const tutMult = (typeof game !== 'undefined' && game.tutorialMatch) ? TUTORIAL_MATCH.zoneTimeMult : 1;
+  if(tutMult !== 1){
+    ZONE_PHASES = ZONE_PHASES.map(p=>({
+      ...p,
+      shrinkTime: Math.round(p.shrinkTime * tutMult),
+      // 最終フェーズの holdTime は「終わらせない」ための番人なので縮めない
+      holdTime:   p.holdTime > 9999 ? p.holdTime : Math.round(p.holdTime * tutMult),
+    }));
+  }
   worldDensityScale = scale*scale; // 面積比に応じて岩/地形の個数密度を調整
 }
 
@@ -1188,6 +1199,10 @@ const UPDATE_HISTORY = [
   { date:'2026-08-18', items:[
     { t:'チーム戦の試合BGMが、残り人数ではなく残り部隊数で盛り上がるようになりました。同じ部隊の仲間が次々倒れても曲は動かず、部隊が丸ごと脱落したときだけ盛り上がります', g:['multi','av'] },
     { t:'設定の「画面カスタマイズ」で、チーム戦のピンボタンも位置とサイズを変えられるようになりました', g:['multi','general'] },
+    { t:'🔰 はじめて遊ぶ方向けのチュートリアルを追加しました。モンスター選び→練習バトル→マスモン登録→育成→アカウント作成→無料10連ガチャ→着せ替えまで、順番に案内します', g:['feature','general'] },
+    { t:'チュートリアルの10連ガチャは無料で、登録したマスモンのスキンが1つ必ず出ます。最後まで進めるとダイヤ60・トレーニングチケット3枚・称号「新人モン動」を受け取れます', g:['feature'] },
+    { t:'チュートリアルの練習バトルは10体・短めの安置で、相手も控えめの強さにしてあります(通常のバトルは今までどおりです)', g:['balance','solo'] },
+    { t:'ヘルプに「はじめての説明をもう一度」を追加しました', g:['general'] },
   ]},
   { date:'2026-08-17', items:[
     { t:'バトルに出る自分以外のモンスター(bot・ゴースト・自分の他のマスモン)が、自分が使っているマスモンのステータス合計を超えなくなりました。育ちきった相手が出てきても、こちらより数字の上で強いことはありません', g:['balance','solo','multi'] },
@@ -3106,6 +3121,7 @@ const TITLES = [
   // 特殊
   { id:'ssr',     name:'強運の持ち主',   emoji:'🍀', cat:'特殊', type:'ssr' },
   { id:'allElem', name:'オールラウンダー', emoji:'🌈', cat:'特殊', type:'allElem' },
+  { id:'tutorial', name:'新人モン動', emoji:'🔰', cat:'特殊', type:'tutorial' },
 ];
 const TITLES_BY_ID = {}; TITLES.forEach(t=>{ TITLES_BY_ID[t.id]=t; });
 // 解放条件の説明文
@@ -3118,6 +3134,7 @@ function titleCondText(t){
     case 'totalKills':  return `通算${t.n}キル`;
     case 'totalDamage': return `通算${t.n}ダメージ`;
     case 'ssr':         return `SSRスキンを入手`;
+    case 'tutorial':    return `チュートリアルを終える`;
     case 'allElem':     return `全モンスターでプレイ`;
     default:            return '';
   }
@@ -4338,6 +4355,105 @@ function shardExchangeLabel(e){
   if(e.reward.catalog) return `🎫 ${catalogTitle(e.reward.catalog)}`;
   return '';
 }
+
+/* =====================================================================
+   初回チュートリアル(新規プレイヤーの離脱防止。発注者指示 2026-08-18)
+
+   **順番・文言・完了条件はこの表1つ。** ステップを増やすときはここへ1行足す。
+   進行の面倒(カードの表示・帯・画面のロック・保存・再開)は tutorial.js が見る。
+
+   1行の中身:
+     id       進捗の保存に使う名前。**変えると途中の人が再開できなくなる**
+     card     節目に出す全画面カード { title, body, img }
+     hint     操作している間、画面下の帯に出す一言
+     allow    その間さわってよい要素(セレクタ)。**先頭が光る**
+     enter()  カードを閉じたときに一度だけ走る(画面を開くなどの前準備)
+     done()   これが true になったら次のステップへ。**省略するとカードを閉じただけで進む**
+     skipIf() 最初から満たしているとき、そのステップを飛ばす
+     optional true なら帯に「あとで」を出す(アカウント登録だけ)
+
+   ・**試合中は画面をロックしない**(操作できなくなるため)。tutorial.js 側の共通判断。
+   ・関数の中身は実行時にしか評価されないので、ui.js の関数をそのまま呼んでよい。
+   ===================================================================== */
+const TUTORIAL_STEPS = [
+  { id:'pickMonster',
+    card:{ title:'まずは相棒を選ぼう', body:'モンスターごとに技も強さも違う。気になった子を選んでみよう。あとから何度でも変えられるよ。' },
+    hint:'モンスターを選ぼう',
+    allow:['#lobbyMonsterStage', '#monsterPickOverlay', '#monsterListScreen'],
+    done:()=> !!game.selectedElement },
+
+  { id:'match',
+    card:{ title:'1試合やってみよう', body:'左のスティックで移動、右のボタンで攻撃。最後の1体まで生き残れば勝ち！\n今回は短めの練習試合。倒されても大丈夫、そのまま次へ進むよ。' },
+    hint:'「出撃」で試合を始めよう',
+    allow:['#joinBtn'],
+    enter:()=> tutorialSetSoloMode(),
+    done:()=> !document.getElementById('resultScreen').classList.contains('hidden') },
+
+  { id:'register',
+    card:{ title:'マスモンに登録しよう', body:'気に入ったモンスターは「マスモン」として登録できる。レベルが上がって強くなり、ずっと相棒として育てられるよ。' },
+    hint:'名前を決めて「登録する」を押そう',
+    allow:['#mastermonRegisterPrompt', '#textInputOverlay'],
+    skipIf:()=> !!loadMastermons()[game.selectedElement],
+    done:()=> !!loadMastermons()[game.selectedElement] },
+
+  { id:'train',
+    card:{ title:'マスモンを育てよう', body:'トレーニングでステータスが伸びる。チケットは試合やレベルアップで増えていくよ。' },
+    hint:'メニューを選んで「トレ実行」を押そう',
+    allow:['#mastermonScreen'],
+    enter:()=> tutorialOpenTraining(),
+    skipIf:()=> !tutorialMastermonKey(),
+    done:()=> tutorialTrainDone() },
+
+  { id:'account',
+    card:{ title:'データを守ろう', body:'アカウントを作ると、機種変更やホーム画面に追加したときもデータを引き継げる。\n名前とパスワードを決めるだけ。あとからでもOK。' },
+    hint:'アカウントを作ろう',
+    allow:['#accountOverlay', '#textInputOverlay'],
+    enter:()=> tutorialOpenAccount(),
+    optional:true,
+    skipIf:()=> accountState.loggedIn,
+    done:()=> accountState.loggedIn },
+
+  { id:'gacha',
+    card:{ title:'ガチャを引いてみよう', body:'今回は特別に10連が無料！\n相棒の新しい姿がきっと手に入るよ。' },
+    hint:'「10連」を押そう',
+    allow:['#gachaOverlay', '#ssrRevealOverlay'],
+    enter:()=> tutorialOpenGacha(),
+    done:()=> tutorialGachaDone() },
+
+  { id:'dressup',
+    card:{ title:'スキンを着せてみよう', body:'手に入れたスキンは「着せ替え」でいつでも変えられる。見た目もオーラも変わるよ。' },
+    hint:'新しいスキンを選んで「決定」を押そう',
+    allow:['#mastermonScreen'],
+    enter:()=> tutorialOpenDressup(),
+    skipIf:()=> !tutorialMastermonKey(),
+    done:()=> tutorialDressupDone() },
+
+  { id:'pwa',
+    card:{ title:'ホーム画面に追加しよう', body:'共有ボタンから「ホーム画面に追加」すると、アプリのように全画面ですぐ遊べる。\n※追加したあとは、さっき作ったアカウントでログインしてね。', img:'guide/addhome-guide.png' },
+    skipIf:()=> tutorialIsStandalone() },
+
+  { id:'help',
+    card:{ title:'困ったときは', body:'遊び方・操作・画面の見かたは、いつでもヘルプで見られるよ。' },
+    hint:'ヘルプ(❓)を開いてみよう',
+    allow:['#openHelpFromLobbyBtn', '#headerHelpBtn', '#helpOverlay', '#helpImageOverlay'],
+    enter:()=> tutorialBackToLobby(),
+    done:()=> tutorialHelpDone() },
+
+  { id:'finish',
+    card:{ title:'チュートリアル完了！', body:'これで一通りの遊び方はおしまい。あとは自由に暴れよう！\nお礼にプレゼントを受け取ってね。' } },
+];
+
+/* チュートリアルの練習試合。**通常の試合の数値には一切影響させない**
+   (入口の判定は game.tutorialMatch 1つ。射撃訓練場の game.trainingRange と同じ流儀) */
+const TUTORIAL_MATCH = {
+  botCount:      9,     // 自分を入れて10体
+  mapScale:      0.5,   // 10体で全面マップだと出会えないので狭くする
+  zoneTimeMult:  0.5,   // 安置の縮小・待ち時間を半分にして2〜3分で決着させる
+  botPowerMult:  0.6,   // 初回は勝てる手応えにする(自分のステータス合計の6割を上限にする)
+  botThinkMult:  2.2,   // botの考え直す間隔(反応の鈍さ)。大きいほど動き出しが遅い
+};
+// チュートリアル完了のプレゼント
+const TUTORIAL_REWARD = { dia: 60, items: [{ key:'freeTrainTicket', n: 3 }] };
 
 /* =====================================================================
    GAME STATE

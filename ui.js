@@ -1575,7 +1575,11 @@ const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
 // サーバーに同期するlocalStorageキー(音量などの端末固有設定は同期しない)。
 // ※このコードはPLAYER_NAME_KEY等の宣言より前に実行されるため、キー名は文字列で直接指定する
-const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1','aramon_expedition_v1','aramon_rank_v1'];
+const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramon_player_name_v1','aramon_wallet_v1','aramon_bag_v1','aramon_skins_v1','aramon_catalogs_v1','aramon_gachacount_v1','aramon_promo_skingacha_v1','aramon_promo_rockssr_v1','aramon_titles_v1','aramon_daily_v1','aramon_season_v1','aramon_raid_v1','aramon_raidgachacount_v1','aramon_expedition_v1','aramon_rank_v1',
+  /* チュートリアルの無料10連を受け取り済みか。**進捗(aramon_tutorial_v1)は端末ごとなので同期しないが、
+     こちらは同期する。** ホーム画面に追加するとiOSではlocalStorageが別扱いになり、チュートリアルが
+     もう一度出る。そのときに無料10連まで二度もらえてしまうのを防ぐ。 */
+  'aramon_tutorial_gift_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1700,6 +1704,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       updateAccountBar();
       accountShowMsg('アカウントを作成しました！今後は自動でログインします', true);
       pushToast(`ようこそ、${name}！`);
+      if(typeof tutorialOnAccount==='function') tutorialOnAccount('create');
       promoOryouResetIfNeeded(name);
       maybeShowSkinGachaPromo();
       maybeShowRockSsrPromo();
@@ -1712,6 +1717,9 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       updateAccountBar();
       accountShowMsg('ログインしました！', true);
       pushToast(`おかえりなさい、${acc.name}！`);
+      /* **既存アカウントへのログインはローカルのデータがサーバーの内容で置き換わる**
+         (applyAccountData)。チュートリアルの途中なら、そこまでの分は消えているので終わりにする。 */
+      if(typeof tutorialOnAccount==='function') tutorialOnAccount('login');
       promoOryouResetIfNeeded(acc.name);
       maybeShowSkinGachaPromo();
       maybeShowRockSsrPromo();
@@ -2552,6 +2560,7 @@ function incrementGachaCount(n){
 // タイトル画面ではなくロビー(#startScreen)が表示されている時だけポップアップを出す。
 // 未表示ならここでは何もせず、pending扱いのままにしておく(enterLobby()等から呼び直される)。
 function maybeFlushPendingPromoPopups(){
+  if(typeof tutorialBlocksPopups==='function' && tutorialBlocksPopups()) return; // チュートリアル中は後回し
   const startScr = document.getElementById('startScreen');
   if(!startScr || startScr.classList.contains('hidden')) return; // まだタイトル画面など→ロビーに来るまで待つ
   if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
@@ -2883,7 +2892,9 @@ function ssrShouldPromote(alreadyOwned){
 function doGacha(count){
   if(gachaAnim.phase!=='idle') return; // 演出中は無効
   if(gachaMode==='raid' && !raidGachaOpenNow()){ pushToast('レイドガチャは近日公開です'); return; }
-  const cost = count===10 ? GACHA_COST_DIA_TEN : GACHA_COST_DIA_SINGLE;
+  // チュートリアルの初回10連だけ無料(この判定は1回読むと消える)
+  const tutFree = (typeof tutorialGachaIsFree==='function') && tutorialGachaIsFree(count);
+  const cost = tutFree ? 0 : (count===10 ? GACHA_COST_DIA_TEN : GACHA_COST_DIA_SINGLE);
   const w = loadWallet();
   if(w.dia < cost){ pushToast('ダイヤが足りません'); return; }
   w.dia -= cost; saveWallet(w);
@@ -2891,7 +2902,9 @@ function doGacha(count){
   const results = [];
   for(let i=0;i<count;i++){
     const guaranteed = (count===10 && i===count-1); // 10連の10個目はSR以上確定
-    const roll = gachaRollOne(guaranteed);
+    let roll = gachaRollOne(guaranteed);
+    // チュートリアルの確定枠。**付与も演出も結果表示もこの roll しか見ない**ので差し替えだけで足りる
+    if(typeof tutorialRigGachaRoll==='function') roll = tutorialRigGachaRoll(roll, i, count);
     // レイドガチャのSSR枠はレイド特効スキンのピックアップに差し替える(全体2%のうち1%)
     if(gachaMode==='raid' && roll.kind==='skin' && roll.rarity==='SSR') roll.skinId = pickRaidGachaSsrSkinId();
     let dup = false, shardGain = 0;
@@ -4247,6 +4260,10 @@ function startGame(opts){
   const arenaMode = !!(opts && opts.arena);   // バトルアリーナ(3v3・1本勝負)。teamSizeは3固定
   const teamSize = arenaMode ? ARENA_TEAM_SIZE : Math.max(1, ((opts && opts.teamSize)|0) || 1);
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
+  /* チュートリアルの練習試合。体数・マップの広さ・安置の速さ・botの強さがこの1つで決まる。
+     ロビーの「出撃」からも入るので、チュートリアル側の申告(tutorialWantsShortMatch)も見る。 */
+  game.tutorialMatch = !!(opts && opts.tutorial)
+                    || ((typeof tutorialWantsShortMatch==='function') && tutorialWantsShortMatch());
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
   teamResetState();             // チーム戦の状態も持ち越さない(必要ならこの後assignTeamsで立て直す)
   arenaResetState();            // アリーナの状態も持ち越さない(入口で消してから立て直す)
@@ -4275,7 +4292,8 @@ function startGame(opts){
   applyStartPitchForMap();   // マップが決まってから視点の初期角度を決める
   applyReal3DLayer();
   applyFxGlLayer(true);
-  applyWorldScale(1);
+  // 練習試合は10体しかいないので、全面マップだと出会えない。狭くする(安置の時間短縮も中で効く)
+  applyWorldScale(game.tutorialMatch ? TUTORIAL_MATCH.mapScale : 1);
   if(game.arena) initArenaZone(); else initZone();   // アリーナは中央固定の小さい安置
   genVolcanoAndLava();
   genWater();
@@ -4294,7 +4312,8 @@ function startGame(opts){
   const teamMode = teamSize > 1;
   const teamCount = game.arena ? 2
                   : teamMode ? Math.max(2, ((opts && opts.teamCount)|0) || Math.floor(30/teamSize)) : 0;
-  const totalEntityCount = teamMode ? teamSize*teamCount : 30;
+  const totalEntityCount = game.tutorialMatch ? (1 + TUTORIAL_MATCH.botCount)
+                        : teamMode ? teamSize*teamCount : 30;
   const spawnPoints = game.arena ? pickArenaSpawnPointsBatch(teamSize)   // 対面配置(シード付きの対はseededPickArenaSpawnPointsBatch)
                     : teamMode ? pickTeamSpawnPointsBatch(teamCount, teamSize)
                                : pickSpawnPointsBatch(totalEntityCount);
@@ -4311,6 +4330,8 @@ function startGame(opts){
   const playerRebirth = mastermonRebirthCount(playerMm);
   // 自分以外は自分のステータス合計を上回らせない(battleStatLimitOf / capMastermonToLimit)
   const statLimit = battleStatLimitOf(playerMm, game.selectedElement);
+  // 練習試合は「勝てる手応え」にする。**上限に倍率を掛けるだけ**で新しい経路は作らない
+  if(game.tutorialMatch) statLimit.total = Math.max(1, Math.round(statLimit.total * TUTORIAL_MATCH.botPowerMult));
   // 他の人が育てたマスモンの写し(ゴースト)を何体か混ぜる。取れなければ空配列で従来どおり
   const ghosts = pickGhostsForMatch(playerMmLevel, playerRebirth);
   for(let i=0;i<totalEntityCount-1;i++){
@@ -4328,6 +4349,10 @@ function startGame(opts){
     } else if(playerMmLevel){
       const botLevel = clamp(playerMmLevel + randInt(-10, 10), 1, MASTERMON_LEVEL_CAP);
       applyMastermonStatsToEntity(bot, capMastermonToLimit(syntheticMastermonForLevel(elKey, botLevel, playerRebirth), statLimit));
+    } else if(game.tutorialMatch){
+      /* チュートリアルはマスモン登録より前なので、上の分岐(プレイヤーのマスモン基準)に入らない。
+         種族の初期値のマスモンを作って上限で縮め、**素の自分より確実に弱く**する。 */
+      applyMastermonStatsToEntity(bot, capMastermonToLimit(syntheticMastermonForLevel(elKey, 1, 0), statLimit));
     }
     entities.push(bot);
   }
@@ -6074,6 +6099,7 @@ function titleConditionMet(t, cum){
     case 'totalKills':  return cum.kills   >= t.n;
     case 'totalDamage': return cum.damage  >= t.n;
     case 'ssr':         return ownsAnySsr();
+    case 'tutorial':    return (typeof tutorialIsDone==='function') && tutorialIsDone();
     case 'allElem':     return Object.keys(ELEMENTS).every(k=> cum.elemPlayed.has(k));
     default:            return false;
   }
@@ -6131,6 +6157,7 @@ function dailyCheckLogin(){
 }
 // ロビー画面が表示されたときに呼ぶ。タイトル画面ではなくロビーでポップアップを出すための入口。
 function flushPendingLoginBonusPopup(){
+  if(typeof tutorialBlocksPopups==='function' && tutorialBlocksPopups()) return; // チュートリアル中は後回し(保留は消さない)
   if(!pendingLoginBonusPopup) return;
   const g = pendingLoginBonusPopup;
   pendingLoginBonusPopup = null;
@@ -10248,6 +10275,8 @@ function initTitleScreen(){
     if(typeof bgmSetTrack==='function') bgmSetTrack('title');
     scr.classList.add('fading');
     document.getElementById('startScreen').classList.remove('hidden');
+    // 初回チュートリアル(未ログイン・未完了の端末だけ)。ポップアップより先に判断する
+    if(typeof tutorialMaybeStart==='function') tutorialMaybeStart();
     if(typeof maybeFlushPendingPromoPopups==='function') maybeFlushPendingPromoPopups();
     if(typeof flushPendingLoginBonusPopup==='function') flushPendingLoginBonusPopup(); // ログインボーナスはロビーで出す(タイトルには出さない)
     setTimeout(()=>{ scr.classList.add('hidden'); }, 480);

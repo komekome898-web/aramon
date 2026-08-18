@@ -2574,6 +2574,66 @@
 
   /* #appRootの最後(#hudの外)に置いてあるので、z-indexは他の全画面(#startScreen:30含む)より
      大きくして必ず最前面に出す。pointer-events:noneは#hudから継承していたため明示が必要。 */
+  /* ===== 初回チュートリアル =====
+     ・#toast(950) / #textInputOverlay(900) より上に出す
+     ・層そのものは pointer-events:none。カードと帯だけが受ける
+       (押せるものを絞るのは tutorial.js の capture段の濾過。CSSでは塞がない)
+     ・光らせるのは outline。overflow:hidden の枠に入っても角が切れない
+     ・クラス名は必ず tut- 接頭辞(画面固有の短い名前と衝突させない) */
+  #tutorialLayer{
+    position:absolute; inset:0; z-index:960; pointer-events:none;
+    display:flex; flex-direction:column; justify-content:flex-end; align-items:center;
+  }
+  #tutorialLayer.hidden{ display:none !important; }
+  #tutorialCard{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:min(calc(74 * var(--vw)), 560px); max-height:calc(84 * var(--vh));
+    display:flex; flex-direction:column; gap:calc(1.6 * var(--vh));
+    padding:calc(2.6 * var(--vh)) calc(3 * var(--vw));
+    background:linear-gradient(180deg, rgba(12,18,28,0.98), rgba(8,12,20,0.98));
+    border:1px solid var(--amber); border-radius:14px;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.6), 0 18px 40px -18px rgba(0,0,0,0.95);
+    pointer-events:auto; text-align:center;
+  }
+  #tutorialCard.hidden{ display:none !important; }
+  .tut-card-title{ font-size:16px; font-weight:700; color:var(--amber); letter-spacing:1px; flex:0 0 auto; }
+  .tut-card-img{ max-width:100%; max-height:calc(34 * var(--vh)); flex:0 1 auto; object-fit:contain; align-self:center; border-radius:8px; }
+  .tut-card-img.hidden{ display:none !important; }
+  .tut-card-text{ font-size:12px; line-height:1.6; color:var(--ink); white-space:pre-wrap; flex:0 1 auto; overflow-y:auto; }
+  .tut-card-btns{ display:flex; gap:10px; justify-content:center; flex:0 0 auto; }
+  .tut-card-next, .tut-card-sub{
+    min-height:var(--tap-main); flex-shrink:0; padding:0 22px; border-radius:8px; cursor:pointer;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14px; border:none;
+  }
+  .tut-card-next{ background:var(--amber); color:#1a1306; }
+  .tut-card-sub{ background:rgba(255,255,255,0.10); color:var(--ink); border:1px solid var(--panel-line); }
+  .tut-card-sub.hidden{ display:none !important; }
+  /* 操作中の指示。画面の下に細く出す(HUDと重ならないよう高さを抑える) */
+  #tutorialBand{
+    position:absolute; left:50%; bottom:calc(1.6 * var(--vh)); transform:translateX(-50%);
+    max-width:calc(90 * var(--vw)); display:flex; align-items:center; gap:8px;
+    padding:calc(1.1 * var(--vh)) calc(2.4 * var(--vw));
+    background:rgba(10,14,22,0.92); border:1px solid var(--amber); border-radius:999px;
+    box-shadow:0 6px 18px -8px rgba(0,0,0,0.9);
+    /* **帯はタップを通す。** 中にボタンが無いので、下にある「次に押すボタン」を
+       うっかり覆っても操作の邪魔にならない(重なるのは見た目だけ) */
+    pointer-events:none;
+  }
+  #tutorialBand.hidden{ display:none !important; }
+  .tut-band-step{ font-size:11px; font-weight:700; color:#1a1306; background:var(--amber); border-radius:999px; padding:2px 8px; flex-shrink:0; }
+  .tut-band-text{ font-size:12px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #tutorialBand.tut-shake{ animation:tutShake 0.32s ease; }
+  @keyframes tutShake{ 0%,100%{ transform:translateX(-50%); } 25%{ transform:translateX(calc(-50% - 7px)); } 75%{ transform:translateX(calc(-50% + 7px)); } }
+  /* 次に押すものを光らせる。**位置ではなく要素そのものに付ける**ので回転しても必ず合う */
+  .tut-spot{
+    outline:3px solid var(--amber); outline-offset:2px; border-radius:6px;
+    animation:tutPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes tutPulse{
+    0%,100%{ box-shadow:0 0 0 0 rgba(244,196,48,0.55), 0 0 16px rgba(244,196,48,0.45); }
+    50%    { box-shadow:0 0 0 7px rgba(244,196,48,0.14), 0 0 26px rgba(244,196,48,0.75); }
+  }
+
   #toast{ position:absolute; left:50%; top:16%; transform:translateX(-50%); z-index:950; pointer-events:none;
     font-size:13px; letter-spacing:1px; padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px; opacity:0; transition:opacity .2s; white-space:nowrap;}
   /* トレーニングカードの選択肢(#trainCardBar)が出ている間だけ下へ逃がす(showTrainCards/hideTrainCardsで付け外し)。
