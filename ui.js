@@ -1463,6 +1463,7 @@ function enterHudCustomize(){
   hudEditDraft = JSON.parse(JSON.stringify(loadHudLayout()));
   applyHudLayout();
   showTrainCardSample(true);   // 普段は隠れているカードを見本として出す(大きさ・位置を決めるため)
+  document.getElementById('pingBtn').classList.remove('hidden'); // ピンも普段は非表示なので編集中だけ見本を出す
   document.getElementById('startScreen').classList.add('hidden');
   document.documentElement.classList.add('hud-editing');
   document.getElementById('hudCustomizeBar').classList.remove('hidden');
@@ -1479,6 +1480,7 @@ function enterHudCustomize(){
 function exitHudCustomize(save){
   if(save && hudEditDraft) saveHudLayout(hudEditDraft);
   showTrainCardSample(false);
+  document.getElementById('pingBtn').classList.add('hidden'); // 見本を消す(実際の表示可否は次のupdateHUDが判定)
   hudEditDraft = null; hudDrag = null;
   document.documentElement.classList.remove('hud-editing');
   document.getElementById('hudCustomizeBar').classList.add('hidden');

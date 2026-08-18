@@ -1187,6 +1187,7 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-18', items:[
     { t:'チーム戦の試合BGMが、残り人数ではなく残り部隊数で盛り上がるようになりました。同じ部隊の仲間が次々倒れても曲は動かず、部隊が丸ごと脱落したときだけ盛り上がります', g:['multi','av'] },
+    { t:'設定の「画面カスタマイズ」で、チーム戦のピンボタンも位置とサイズを変えられるようになりました', g:['multi','general'] },
   ]},
   { date:'2026-08-17', items:[
     { t:'バトルに出る自分以外のモンスター(bot・ゴースト・自分の他のマスモン)が、自分が使っているマスモンのステータス合計を超えなくなりました。育ちきった相手が出てきても、こちらより数字の上で強いことはありません', g:['balance','solo','multi'] },
@@ -3055,7 +3056,7 @@ const HUD_DRAGGABLE = {
   turnLeftBtn:'左回転', turnRightBtn:'右回転', movePanel:'技',
   topLeft:'HP/ガッツ', statsPanel:'撃破/ダメ', topRight:'情報/地図',
   // 普段は隠れているので、編集モードのあいだだけ見本を出して動かせるようにしてある
-  trainCardBar:'トレーニング',
+  trainCardBar:'トレーニング', pingBtn:'ピン',
 };
 const HUD_DRAGGABLE_IDS = Object.keys(HUD_DRAGGABLE);
 function loadHudLayout(){ try{ return JSON.parse(localStorage.getItem(HUD_LAYOUT_KEY)) || {}; }catch(e){ return {}; } }
