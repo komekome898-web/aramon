@@ -929,15 +929,18 @@ function updateBotAI(b, dt){
 /* =====================================================================
    MOVEMENT
 ===================================================================== */
-function computeVolcanoAvoidAngle(m, target, ang){
-  if(!currentMap.hasVolcano || volcanoObstacles.length===0) return ang;
+// 進路上に円形障害物(火山/岩/水晶)があれば、ぶつかる前に左右へ迂回する角度を返す。
+// 【チーム戦のスタック対策】以前は火山だけを見ていたため、岩・水晶へ向かって直進すると
+// 反応がtryMoveAxisの接線すべり任せになり、味方に押し合われて動けなくなることがあった
+// (2026-08-19)。同じロジックを岩・水晶にも広げ、当たる前の早い段階で迂回させる。
+function computeObstacleAvoidAngle(m, target, ang){
   const targetDist = dist(m, target);
   let strongestPush = 0, pushSign = m.avoidDirSign || 1;
-  for(const v of volcanoObstacles){
-    const clearance = mountainGroundRadius(v) + m.radius + 70;
-    const obDist = dist(m, v);
-    if(obDist > targetDist + clearance || obDist > 2600) continue;
-    const toOb = angTo(m, v);
+  const consider=(ox,oy,r)=>{
+    const clearance = r + m.radius + 70;
+    const obDist = dist(m, {x:ox,y:oy});
+    if(obDist > targetDist + clearance || obDist > 2600) return;
+    const toOb = angTo(m, {x:ox,y:oy});
     let diff = toOb - ang;
     while(diff > Math.PI) diff -= Math.PI*2;
     while(diff < -Math.PI) diff += Math.PI*2;
@@ -949,6 +952,12 @@ function computeVolcanoAvoidAngle(m, target, ang){
         pushSign = diff >= 0 ? -1 : 1; // 障害物が進路の右にあれば左へ、左にあれば右へ迂回
       }
     }
+  };
+  if(currentMap.hasVolcano){ for(const v of volcanoObstacles) consider(v.x, v.y, mountainGroundRadius(v)); }
+  // 岩・水晶は「建物などへ登っていない(地面基準)」ときだけ実際に当たる(blockedByRock/Crystalと同じ条件)
+  if(m.z <= baseTerrainHeightAt(m.x, m.y) + 25){
+    for(const r of rocks) consider(r.x, r.y, r.radius);
+    for(const c of crystalObstacles) consider(c.x, c.y, c.radius);
   }
   return strongestPush > 0 ? ang + pushSign*strongestPush : ang;
 }
@@ -1040,7 +1049,7 @@ function resolveMovement(m, dt){
     } else {
       let ang = angTo(m,target);
       if(!m.isPlayer){
-        ang = computeVolcanoAvoidAngle(m, target, ang);
+        ang = computeObstacleAvoidAngle(m, target, ang);
         m.stuckTimer += dt;
         if(m.stuckTimer > 0.4){
           const moved = dist(m, m.stuckCheckPos);

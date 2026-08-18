@@ -874,6 +874,26 @@ function spawnLoot(n, center, radius){
   }
 }
 
+// 静的な1点を円形障害物(岩/火山/水晶)の外側 margin ぶんへ寄せる(spawnLoot同様の「拾えない位置に置かない」対策)。
+// depenetrateObstaclesと違い1フレームで一気に解消してよい(動いているキャラのワープ防止が要らないため)。
+// 複数の障害物が重なる位置も想定し、深い方から順に数回押し出す。
+function clearObstaclePoint(x, y, margin){
+  for(let iter=0; iter<4; iter++){
+    let ox=0, oy=0, depth=0;
+    const consider=(cx,cy,r)=>{
+      const rr = r + margin;
+      const ddx=x-cx, ddy=y-cy; const d=Math.hypot(ddx,ddy)||0.0001;
+      const pen = rr - d;
+      if(pen>depth){ depth=pen; ox=ddx/d; oy=ddy/d; }
+    };
+    for(const rk of rocks) consider(rk.x, rk.y, rk.radius);
+    for(const v of volcanoObstacles) consider(v.x, v.y, mountainGroundRadius(v));
+    for(const c of crystalObstacles) consider(c.x, c.y, c.radius);
+    if(depth<=0) break;
+    x += ox*depth; y += oy*depth;
+  }
+  return { x: clamp(x, 0, WORLD.w), y: clamp(y, 0, WORLD.h) };
+}
 /* ===== デス円盤石(kind:'deathDisc') =====
    倒された者が試合中に確定したトレーニング強化(matchTrainLog)を石の円盤として落とす。
    **ソロもマルチのホストもこの1つを通る**(killEntityから呼ばれる。ゲストへの見た目は
@@ -883,11 +903,15 @@ function spawnDeathDisc(victim){
   const log = victim.matchTrainLog;
   if(!log || !log.length) return null;
   const keys = log.slice(-DEATH_DISC_MAX_ITEMS);     // 新しい方から最大 DEATH_DISC_MAX_ITEMS 件
+  // 【スタック対策】倒れた場所が岩・火山・水晶に埋まっていると、誰も拾える距離まで
+  // 近づけず円盤石が永久に取れなくなる(2026-08-19)。spawnLootの障害物除けと同じ考え方で
+  // 落下地点を外側へ逃がす。マージンは拾える距離(e.radius+14)より確実に広く取る
+  const drop = clearObstaclePoint(victim.x, victim.y, DEATH_DISC_DROP_CLEAR_MARGIN);
   const it = {
     id: nextId++, kind:'deathDisc', type:null, keys,
     owner: (typeof displayNameFor==='function') ? displayNameFor(victim) : victim.name,
     ownerTeamId: (victim.teamId!=null) ? victim.teamId : null,   // 敵味方の色分け用(見る側のチームと比較)
-    x: victim.x, y: victim.y, z: baseTerrainHeightAt(victim.x, victim.y), bob: rand(0,Math.PI*2),
+    x: drop.x, y: drop.y, z: baseTerrainHeightAt(drop.x, drop.y), bob: rand(0,Math.PI*2),
   };
   lootItems.push(it);
   if(netState.mode==='multi' && netState.isHost && window.__aramonPushLootEvent){
