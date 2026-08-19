@@ -3981,7 +3981,7 @@ function renderLobbyPlayerList(){
   for(let i=0;i<botCount;i++){
     const mmName = ownMmNames[i];
     if(mmName){
-      rows.push(`<div class="lobby-player-row is-bot is-own-mm"><span class="lp-dot"></span><span>${mmName}（Bot待機枠・あなたのマスモン）</span></div>`);
+      rows.push(`<div class="lobby-player-row is-bot is-own-mm"><span class="lp-dot"></span><span>${mmName}（Bot待機枠）</span></div>`);
     } else {
       rows.push(`<div class="lobby-player-row is-bot"><span class="lp-dot"></span><span>Bot 待機枠</span></div>`);
     }
