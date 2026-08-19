@@ -621,6 +621,12 @@ function killEntity(victim, killer){
   // チーム戦: 立っている味方がいればここで死亡せず「ダウン」で踏みとどまる。
   // ダウン中にHP0(とどめ)・出血タイマー切れのときは通らず、本当の死亡へ進む。
   if(tryEnterDowned(victim, killer)) return;
+  // 【発注者要望 2026-08-19】チーム戦の本当の死亡はここから先。キル数・キルボーナスは
+  // 「とどめを刺した人」ではなく「ダウンさせた人」に入れる(とどめが別人・出血死でも同じ)。
+  if(isTeamMatch() && victim.downedByKillerId!=null){
+    const downer = entities.find(o=>o.id===victim.downedByKillerId);
+    if(downer) killer = downer;
+  }
   victim.alive = false;
   victim.downed = false; victim.downedUntil = 0; victim.reviveProgress = 0;
   victim.deathAt = matchTime;
@@ -1257,6 +1263,9 @@ function tryEnterDowned(victim, killer){
   victim.reviveProgress = 0;
   victim.attackTargetId = null;
   victim.dashTimer = 0;
+  // 【発注者要望 2026-08-19】チーム戦のキル数・キルボーナスは「とどめを刺した人」ではなく
+  // 「ダウンさせた人」に入れる。ここで記録し、killEntity側の本当の死亡時にこれで上書きする
+  victim.downedByKillerId = (killer && killer.id!==victim.id) ? killer.id : null;
   const text = (killer && killer.id!==victim.id)
     ? `${displayNameFor(killer)} が ${displayNameFor(victim)} をダウンさせた`
     : `${displayNameFor(victim)} はダウンした`;
@@ -1272,6 +1281,7 @@ function tryEnterDowned(victim, killer){
 // 蘇生(味方が半径内に一定時間とどまると発動。進行はupdateTeamStatesが進める)
 function reviveEntity(e){
   e.downed = false; e.downedUntil = 0; e.reviveProgress = 0;
+  e.downedByKillerId = null;   // 蘇生したら「誰にダウンさせられたか」の記録も白紙に戻す
   e.hp = Math.max(1, Math.round(e.maxHp*TEAM_REVIVE_HP_RATIO));
   const text = `${displayNameFor(e)} が蘇生した`;
   pushKillFeed(text);

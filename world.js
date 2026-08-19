@@ -718,6 +718,7 @@ function createMonster(elementKey, isPlayer, name, overrides){
     recentAttackers:{},
     // チーム戦(combat.jsのassignTeamsが割り当てる)。null=個人戦=従来どおり
     teamId:null, downed:false, downedUntil:0, reviveProgress:0,
+    downedByKillerId:null,   // チーム戦: 自分をダウンさせた相手のid(killEntityがキル数・キルボーナスの帰属に使う)
     needsDepenetrate:false,   // このフレームにめり込みの点検が要るか(depenetrateStuckEntities)
   };
 }
