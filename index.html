@@ -142,6 +142,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      <!-- ステージ自体が「モンスター選択」のボタン(表示中のモンスター/未選択の案内をタップする) -->
      <button type="button" id="lobbyMonsterStage">
        <div id="lobbyMonsterGlow"></div>
+       <!-- チーム戦で部屋にいる間だけ、自分の斜め後ろ左右にチームメンバーを表示する(2026-08-19)。
+            中身・出し入れはui.jsのrenderLobbyTeammates()が担当。シングルのマルチPvP・レイドでは出さない -->
+       <img id="lobbyMateImgLeft" class="lobby-mate-img hidden" alt="">
+       <img id="lobbyMateImgRight" class="lobby-mate-img hidden" alt="">
        <img id="lobbyMonsterImg" alt="">
        <div id="lobbyMonsterEmpty">モンスターを選択してください</div>
      </button>

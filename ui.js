@@ -3956,6 +3956,53 @@ function getHostMastermonBotOrder(){
   if(!hostMastermonBotOrder) hostMastermonBotOrder = computeHostMastermonBotOrder();
   return hostMastermonBotOrder;
 }
+/* チーム戦の部屋で、自分の斜め後ろ左右にチームメンバーのモンスターを表示する。
+   【発注者要望 2026-08-19】
+   ・出すのは lobbyMode==='team' の部屋にいる間だけ(シングルのマルチPvP・レイドは対象外)
+   ・中身は人間の参加者(netState.humanPlayers、自分以外)→ 残り枠はホストが連れてくる
+     自分の他マスモン(getHostMastermonBotOrder。ゲストからは見えないので出さない)の順
+   ・renderLobbyPlayerList() と同じタイミング(参加者が変わるたび)で描き直すので、
+     他のプレイヤーが入って中身が変わればここも自動で変わる */
+function computeLobbyTeammates(){
+  if(lobbyMode!=='team' || !netState.roomId) return [];
+  const human = netState.humanPlayers || {};
+  const humanIds = Object.keys(human).filter(id=>id!==netState.myPlayerId).sort();
+  const mates = humanIds.map(id=>{
+    const p = human[id];
+    return (p && p.element) ? { element:p.element, skinId:p.skin||null } : null;
+  }).filter(Boolean);
+  const maxMates = Math.max(0, (netState.capacity||0) - 1);
+  if(mates.length < maxMates && netState.isHost && typeof getHostMastermonBotOrder==='function'){
+    const mmData = loadMastermons();
+    const botCount = Math.max(0, netState.capacity - (Object.keys(human).length));
+    const order = getHostMastermonBotOrder().slice(0, botCount);
+    for(const k of order){
+      if(mates.length >= maxMates) break;
+      if(mmData[k]) mates.push({ element:k, skinId: (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null });
+    }
+  }
+  return mates.slice(0, 2);   // 斜め後ろは左右2枠だけ(チーム戦は3人1組=自分+2)
+}
+function lobbyMateImageSrc(mate){
+  const still = mate.skinId && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(mate.skinId) : null;
+  return still || imgSrcFor(`monsters/${mate.element}`);
+}
+function hideLobbyTeammates(){
+  const left = document.getElementById('lobbyMateImgLeft'), right = document.getElementById('lobbyMateImgRight');
+  if(left){ left.classList.add('hidden'); left.removeAttribute('src'); }
+  if(right){ right.classList.add('hidden'); right.removeAttribute('src'); }
+}
+function renderLobbyTeammates(){
+  const left = document.getElementById('lobbyMateImgLeft'), right = document.getElementById('lobbyMateImgRight');
+  if(!left || !right) return;
+  const mates = computeLobbyTeammates();
+  [left, right].forEach((img, i)=>{
+    const mate = mates[i];
+    if(!mate || !ELEMENTS[mate.element]){ img.classList.add('hidden'); img.removeAttribute('src'); return; }
+    img.src = lobbyMateImageSrc(mate);
+    img.classList.remove('hidden');
+  });
+}
 function renderLobbyPlayerList(){
   const listEl = document.getElementById('lobbyPlayerList');
   const rows = [];
@@ -3988,6 +4035,7 @@ function renderLobbyPlayerList(){
   }
   listEl.innerHTML = rows.join('');
   document.getElementById('lobbySubText').textContent = `${humanIds.length} / ${netState.capacity} 人が参加中`;
+  renderLobbyTeammates();   // 参加者が変わるたびに、斜め後ろのチームメンバー表示も更新する(2026-08-19)
 }
 
 // ホストが「スタート」を押した後の3秒カウントダウンの状態。
@@ -4034,6 +4082,7 @@ async function handleRoomDisbanded(){
   pushToast('ホストが部屋を解散しました');
   joinInProgress = false;
   updatePlayButtonsEnabled();
+  hideLobbyTeammates();   // 部屋を離れたので斜め後ろのチームメンバー表示も消す(2026-08-19)
   await openFindRoomScreen();
 }
 
@@ -4041,6 +4090,7 @@ function enterLobbyForRoom(){
   document.getElementById('lobbyScreen').classList.remove('hidden');
   resetLobbyCountdownDisplay();
   document.getElementById('lobbyPlayerList').innerHTML='';
+  hideLobbyTeammates();   // 最初のスナップショットが届くまでの一瞬、前の部屋の表示が残らないようにする(2026-08-19)
   hostCountdownTimer=null; hostCountdownSnapshot=null;
   showLobbyButtonsForRole();
 
@@ -4254,6 +4304,7 @@ document.getElementById('lobbyDisbandBtn').addEventListener('click', async ()=>{
   updatePlayButtonsEnabled();
   netState.roomId=null; netState.isHost=false; netState.humanPlayers={}; netState.hostId=null;
   matchBeginning = false;
+  hideLobbyTeammates();   // 部屋を離れたので斜め後ろのチームメンバー表示も消す(2026-08-19)
   if(roomId){
     await window.__aramonLeaveRoom(roomId); // 自分のリスナー解除+players登録解除
     await window.__aramonDisbandRoom(roomId, lobbyEntryId); // 部屋自体を削除
@@ -4266,6 +4317,7 @@ document.getElementById('lobbyGuestLeaveBtn').addEventListener('click', async ()
   joinInProgress = false;
   updatePlayButtonsEnabled();
   if(netState.roomId) await window.__aramonLeaveRoom(netState.roomId);
+  hideLobbyTeammates();   // 部屋を離れたので斜め後ろのチームメンバー表示も消す(2026-08-19)
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
 });
@@ -4278,6 +4330,7 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
     await window.__aramonLeaveRoom(netState.roomId);
     await window.__aramonCleanupLobbyEntry();
   }
+  hideLobbyTeammates();   // 部屋を離れたので斜め後ろのチームメンバー表示も消す(2026-08-19)
   document.getElementById('lobbyScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
 });
