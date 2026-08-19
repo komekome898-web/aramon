@@ -3797,8 +3797,8 @@ function updateModePickPanels(){
   document.getElementById('multiOptions').classList.toggle('hidden', !isPvp4);
   // 部屋のボタン: マルチPvPと、部屋でも遊べるチーム戦に出す
   document.getElementById('multiActionRow').classList.toggle('hidden', !(isPvp4 || isTeam));
-  // バトル開始(部屋を使わない入口): 30人バトロワと、1人でも遊べるチーム戦に出す
-  document.getElementById('joinBtn').classList.toggle('hidden', !((lobbyMode==='single' && lobbySubMode==='br30') || isTeam));
+  // バトル開始(部屋を使わない入口): 30人バトロワだけ(チーム戦のソロ出撃は廃止・2026-08-19)
+  document.getElementById('joinBtn').classList.toggle('hidden', !(lobbyMode==='single' && lobbySubMode==='br30'));
   // サブ選択の説明文(選んでいるものに合わせて差し替える)
   const singleNote = document.getElementById('singleSubNote');
   if(singleNote) singleNote.textContent = isPvp4
@@ -4282,24 +4282,19 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
   document.getElementById('startScreen').classList.remove('hidden');
 });
 
-/* opts.teamSize(2以上)を渡すとソロのチーム戦(自分+botの小隊 vs botチーム)になる。
-   opts.teamCount で対戦チーム数を変えられる(既定は総勢30体になる数)。
-   opts.arena はバトルアリーナ(1チームvs1チーム)の印。**試合の中身(狭い戦場・対面配置)は
-   別担当が実装する**ので、ここでは入口の呼び出しだけ配線してある。
-   何も渡さなければ従来どおりの個人戦30体で、経路は1バイトも変わらない
-   (チーム戦の分岐は isTeamMatch() 1つ。game.trainingRange と同じ方式)。 */
+/* ロビーの「バトル開始」(部屋を使わない入口)。30人バトロワの個人戦専用
+   (チーム戦のソロ出撃は2026-08-19に廃止。部屋を使うマルチのチーム戦はnetwork.jsのbeginMultiplayerMatchInner側)。
+   opts.tutorial だけは今も使う(チュートリアルの練習試合の入口を兼ねる)。 */
 function startGame(opts){
-  const arenaMode = !!(opts && opts.arena);   // バトルアリーナ(3v3・1本勝負)。teamSizeは3固定
-  const teamSize = arenaMode ? ARENA_TEAM_SIZE : Math.max(1, ((opts && opts.teamSize)|0) || 1);
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
   /* チュートリアルの練習試合。体数・マップの広さ・安置の速さ・botの強さがこの1つで決まる。
      ロビーの「出撃」からも入るので、チュートリアル側の申告(tutorialWantsShortMatch)も見る。 */
   game.tutorialMatch = !!(opts && opts.tutorial)
                     || ((typeof tutorialWantsShortMatch==='function') && tutorialWantsShortMatch());
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
-  teamResetState();             // チーム戦の状態も持ち越さない(必要ならこの後assignTeamsで立て直す)
-  arenaResetState();            // アリーナの状態も持ち越さない(入口で消してから立て直す)
-  game.arena = arenaMode;
+  teamResetState();             // 前の試合(マルチのチーム戦など)のチーム状態を持ち越さない
+  arenaResetState();            // 同じくアリーナの状態も持ち越さない
+  game.arena = false;           // このソロ入口はアリーナを扱わない
   // ロビーの選択から netState を作り直す(この後ソロへ潰す)
   syncNetStateToLobbyMode();
   /* ここは部屋を使わない入口なので、netState は意図的にソロへ潰す(ソロレイド・射撃訓練場と
@@ -4326,7 +4321,7 @@ function startGame(opts){
   applyFxGlLayer(true);
   // 練習試合は10体しかいないので、全面マップだと出会えない。狭くする(安置の時間短縮も中で効く)
   applyWorldScale(game.tutorialMatch ? TUTORIAL_MATCH.mapScale : 1);
-  if(game.arena) initArenaZone(); else initZone();   // アリーナは中央固定の小さい安置
+  initZone();
   genVolcanoAndLava();
   genWater();
   genOasisZones();
@@ -4339,16 +4334,9 @@ function startGame(opts){
     const mmData = loadMastermons()[game.selectedMastermonKey];
     if(mmData) playerDisplayName = mmData.name;
   }
-  // チーム戦は「チーム数×人数」、個人戦は従来どおり30体。アリーナは2チーム固定(3v3=6体)。
-  // 同チームは隣接スポーン(pickTeamSpawnPointsBatch。シード付きの対はseededPickTeamSpawnPointsBatch)
-  const teamMode = teamSize > 1;
-  const teamCount = game.arena ? 2
-                  : teamMode ? Math.max(2, ((opts && opts.teamCount)|0) || Math.floor(30/teamSize)) : 0;
-  const totalEntityCount = game.tutorialMatch ? (1 + TUTORIAL_MATCH.botCount)
-                        : teamMode ? teamSize*teamCount : 30;
-  const spawnPoints = game.arena ? pickArenaSpawnPointsBatch(teamSize)   // 対面配置(シード付きの対はseededPickArenaSpawnPointsBatch)
-                    : teamMode ? pickTeamSpawnPointsBatch(teamCount, teamSize)
-                               : pickSpawnPointsBatch(totalEntityCount);
+  // 従来どおり個人戦30体(チュートリアルだけ体数が変わる)
+  const totalEntityCount = game.tutorialMatch ? (1 + TUTORIAL_MATCH.botCount) : 30;
+  const spawnPoints = pickSpawnPointsBatch(totalEntityCount);
   player = createMonster(game.selectedElement, true, playerDisplayName, { spawnPoint: spawnPoints[0] });
   applyMastermonToPlayer();
   entities.push(player);
@@ -4388,17 +4376,10 @@ function startGame(opts){
     }
     entities.push(bot);
   }
-  // チーム戦: 生成順(自分が先頭=チーム0)をteamSizeずつ区切って割り当てる
-  if(teamMode) assignTeams(teamSize);
   // ミューテーター「スポーンアイテム数1.5倍」(非公開中は常に1)
   const mutSpawnMultSolo = (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1;
-  if(game.arena){
-    // アリーナは少数を中央帯(安置内)だけに撒く(シード付きの対はbeginMultiplayerMatchInner)
-    spawnLoot(ARENA_LOOT_COUNT, ZONE_CENTER0, ARENA_ZONE_RADIUS*ARENA_LOOT_SPREAD);
-  } else {
-    spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
-    spawnOasisBonusLoot();
-  }
+  spawnLoot(Math.round(420 * mutSpawnMultSolo), ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
+  spawnOasisBonusLoot();
   updateCamera();
 
   document.getElementById('startScreen').classList.add('hidden');
@@ -5246,16 +5227,8 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   document.getElementById('joinBtn').disabled = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
-  // バトル開始(部屋を使わない入口)。モードごとの構成はここで1回だけ決める
-  if(lobbyMode==='team' && lobbySubMode==='arena'){
-    // バトルアリーナ: 3人1組の1チームvs1チーム=6体(試合の中身の調整は別担当)
-    startGame({ arena:true, teamSize:TEAM_BR_SQUAD_SIZE, teamCount:2 });
-  } else if(lobbyMode==='team'){
-    // 20チームバトロワ: 3人1組×20チーム=総勢60体
-    startGame({ teamSize:TEAM_BR_SQUAD_SIZE, teamCount:TEAM_BR_TEAM_COUNT });
-  } else {
-    startGame();   // シングル>30人バトロワ(従来の個人戦30体)
-  }
+  // バトル開始(部屋を使わない入口)。30人バトロワの個人戦専用(チーム戦のソロ出撃は廃止・2026-08-19)
+  startGame();
 });
 document.getElementById('openRangeBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
