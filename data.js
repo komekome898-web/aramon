@@ -365,6 +365,9 @@ const WALK_ANIM = {
   },
   leaf: {
     base: { front:_loadWalk('leaf_walk_f'), back:_loadWalk('leaf_walk_b') },              // プラント(色スキン対応)
+    ssr: [
+      { skinId:'leaf_ssr', front:_loadWalk('leaf_ssr_walk_f'), back:_loadWalk('leaf_ssr_walk_b') }, /*@leaf_ssr*/
+    ],
   },
   rock: {
     base: { front:_loadWalk('rock_walk_f'), back:_loadWalk('rock_walk_b') },              // ゴーレム(色スキン対応)
@@ -823,6 +826,7 @@ const SSR_SKIN_AURA = {
   satsuki_ssr_awake:'yellow', /*@satsuki_ssr_awake*/
   tsukasa_ssr:    'yellow', /*@tsukasa_ssr*/
   oki_ssr:        'blue', /*@oki_ssr*/
+  leaf_ssr:       'white', /*@leaf_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1031,6 +1035,7 @@ const SSR_SKIN_TIER3 = {
      **いちごだけが赤**で、電撃・降着円盤・ドームの爆風はこれまでどおりオーラの色に乗る。 */
   tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15, move:{ projStyle:'strawberry' } }, /*@tsukasa_ssr*/
   oki_ssr:        { name:'大将軍の矛', dmgMult:1.15 }, /*@oki_ssr*/
+  leaf_ssr:       { name:'引力光線', dmgMult:1.15 }, /*@leaf_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1178,10 +1183,10 @@ const LOBBY_BANNERS = [
   // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)。新しい順。
   { rar:'SSR', name:'西野ピかさ', tag:'新登場・ガチャ', img:'monsters/tsukasa_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@tsukasa_ssr*/
   { rar:'SSR', name:'秦の怪鳥', tag:'新登場・ガチャ', img:'monsters/oki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@oki_ssr*/
+  { rar:'SSR', name:'メカビオギドラ', tag:'新登場・ガチャ', img:'monsters/leaf_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@leaf_ssr*/
   // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
   { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ',   img:'monsters/satsuki_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
   { rar:'SSR', name:'メタルグレイモン', tag:'新登場・ガチャ',   img:'monsters/metag_ssr.png',     size:'150%', pos:'50% 20%', open:'gacha' },
-  { rar:'SSR', name:'ガルルモン',       tag:'新登場・ガチャ',   img:'monsters/garurumon_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' },
 ];
 const LOBBY_BANNER_MS = 3000;
 
@@ -1206,6 +1211,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-20', items:[
+    { t:'✨ SSRスキン「メカビオギドラ」が登場しました！', g:['feature','monster'] },
+  ]},
   { date:'2026-08-19', items:[
     { t:'⚔️ tier3技(各モンスターの最後の技)の強さを見直しました。弱かった技をまとめて引き上げ、技どうしの差を約7倍から約1.8倍まで縮めています', g:['balance','monster'] },
     { t:'とくに大きく強くなった技: ゴーレム「竜巻アタック」(3本の間隔を詰めて当たりやすく・威力21→34・弾速520→760)、モッチー「モッチ砲」(威力46→86・幅120→220)、キュービ「天河天翔」(威力48→74・幅160→200)、ライガー「超雷撃」(威力40→64・幅110→150)', g:['balance','monster'] },
@@ -3943,6 +3951,7 @@ const SSR_SKINS = {
   satsuki_ssr_awake:{ element:'ogre', name:'北大路さつキジン【覚醒】', iconImg:'satsuki_ssr_awake', playerImg:'satsuki_player_ssr_awake', awakenOf:'satsuki_ssr' }, /*@satsuki_ssr_awake*/
   tsukasa_ssr:    { element:'pixie', name:'西野ピかさ', iconImg:'tsukasa_ssr', playerImg:'tsukasa_player_ssr' }, /*@tsukasa_ssr*/
   oki_ssr:        { element:'centaur', name:'秦の怪鳥', iconImg:'oki_ssr', playerImg:'oki_player_ssr' }, /*@oki_ssr*/
+  leaf_ssr:       { element:'leaf', name:'メカビオギドラ', iconImg:'leaf_ssr', playerImg:'leaf_player_ssr' }, /*@leaf_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
