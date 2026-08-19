@@ -3952,8 +3952,24 @@ function renderLobbyPlayerList(){
     rows.push(`<div class="lobby-player-row"><span class="lp-dot"></span><span>${p.name||'名無しのモンスター'}${hostTag}（${ELEMENTS[p.element]?.label||'?'}）${id===netState.myPlayerId?'（あなた）':''}</span></div>`);
   });
   const botCount = Math.max(0, netState.capacity - humanIds.length);
+  /* 【発注者要望 2026-08-19】部屋作成者(ホスト)がbot待機枠へ連れてくる自分の他のマスモンを
+     一覧に表示する。実際の割り振り(誰がどの枠に入るか)はbeginMultiplayerMatchInnerが
+     試合開始時にシードで確定させるが、選ばれる候補の集合と「先頭からbotCount件が採用される」
+     考え方はここと同じにしてあるので、表示と実際の結果がズレない。
+     他プレイヤーが参加してbotCountが減れば、この一覧の行も自動的に減る=「弾かれる」がそのまま見た目になる。
+     レイドはこの枠組みを使わない(別のあずかり方をする)ので出さない。 */
+  let ownMmNames = [];
+  if(netState.isHost && !netState.raid && typeof loadMastermons==='function'){
+    const mmData = loadMastermons();
+    ownMmNames = Object.keys(mmData).filter(k=>k!==game.selectedMastermonKey).map(k=>mmData[k].name);
+  }
   for(let i=0;i<botCount;i++){
-    rows.push(`<div class="lobby-player-row is-bot"><span class="lp-dot"></span><span>Bot 待機枠</span></div>`);
+    const mmName = ownMmNames[i];
+    if(mmName){
+      rows.push(`<div class="lobby-player-row is-bot is-own-mm"><span class="lp-dot"></span><span>${mmName}（Bot待機枠・あなたのマスモン）</span></div>`);
+    } else {
+      rows.push(`<div class="lobby-player-row is-bot"><span class="lp-dot"></span><span>Bot 待機枠</span></div>`);
+    }
   }
   listEl.innerHTML = rows.join('');
   document.getElementById('lobbySubText').textContent = `${humanIds.length} / ${netState.capacity} 人が参加中`;

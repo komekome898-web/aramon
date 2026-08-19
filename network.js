@@ -437,9 +437,18 @@ async function beginMultiplayerMatchInner(){
 
   const names = seededShuffle(rng, BOT_NAMES);
   const botElements = seededShuffle(rng, Object.keys(ELEMENTS));
-  // ホストのマスモン候補を、どのbot枠に登場させるかも共有シードで決める(host/guest間で必ず一致させるため)
+  // ホストのマスモン候補を、どのbot枠に登場させるかも共有シードで決める(host/guest間で必ず一致させるため)。
+  // 【発注者要望 2026-08-19】以前は全bot枠から完全ランダムに選んでいたため、自分のマスモンが
+  // 敵チームに出ることがあった。ホスト自身のチームの空き枠を優先的に埋め、余れば他チームへ回す。
   const mastermonBotCount = Math.min((hostMastermonBots||[]).length, botCount);
-  const slotOrder = seededShuffle(rng, Array.from({length:botCount}, (_,i)=>i));
+  const hostFlatIdx = humanList.findIndex(h=>h.id===netState.hostId);
+  const hostTeamId = (matchTeamSize>1 && hostFlatIdx>=0) ? Math.floor(hostFlatIdx/matchTeamSize) : -1;
+  const ownTeamSlots = [], otherSlots = [];
+  for(let i=0;i<botCount;i++){
+    const teamOfSlot = matchTeamSize>1 ? Math.floor((usedSlots+i)/matchTeamSize) : -1;
+    (hostTeamId>=0 && teamOfSlot===hostTeamId ? ownTeamSlots : otherSlots).push(i);
+  }
+  const slotOrder = seededShuffle(rng, ownTeamSlots).concat(seededShuffle(rng, otherSlots));
   const slotToMastermon = new Map();
   for(let j=0;j<mastermonBotCount;j++){ slotToMastermon.set(slotOrder[j], hostMastermonBots[j]); }
   for(let i=0;i<botCount;i++){

@@ -2024,6 +2024,9 @@
   }
   .lobby-player-row .lp-dot{ width:7px; height:7px; border-radius:50%; background:var(--amber); flex-shrink:0; }
   .lobby-player-row.is-bot .lp-dot{ background:var(--ink-dim); }
+  /* Bot待機枠のうち「自分のマスモン」枠は淡く色を付けて他のBot枠と区別する(2026-08-19) */
+  .lobby-player-row.is-own-mm{ background:rgba(255,196,48,0.07); border-color:rgba(255,196,48,0.35); }
+  .lobby-player-row.is-own-mm .lp-dot{ background:var(--amber); }
   #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); min-height:14px; }
   #lobbyCancelBtn{
     margin-top:2px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;

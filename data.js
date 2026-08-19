@@ -29,6 +29,7 @@ const TEAM_REVIVE_SEC          = 2.5;  // 蘇生に必要なとどまり時間(�
 const TEAM_DOWN_BLEED_SEC      = 30;   // ダウンから出血死までの時間(秒)
 const TEAM_DOWN_SPEED_MULT     = 0.1;  // ダウン中の移動速度倍率(這い移動。通常の10%・発注者決定 2026-08-14)
 const TEAM_DOWN_DMG_TAKEN_MULT = 1.5;  // ダウン中の被ダメ倍率
+const TEAM_DOWN_INVULN_SEC     = 2;    // ダウン直後の無敵時間(秒)。この間はとどめを刺せない(発注者要望 2026-08-19)
 const TEAM_DOWN_HP_RATIO       = 0.3;  // ダウンした瞬間に残すHP(最大HP比。とどめ用の体力。0にしない=HPバーが空にならない)
 const TEAM_REVIVE_HP_RATIO     = 0.4;  // 蘇生で戻るHP(最大HP比)
 const TEAM_BOT_REVIVE_SEEK_RANGE = 1600; // botが蘇生に向かうダウン味方の探索距離
@@ -1196,6 +1197,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-19', items:[
+    { t:'チーム戦のマルチプレイで、部屋作成者が連れてくる自分の他のマスモンが自分のチームへ優先的に入るようにしました。部屋のロビーにも、bot待機枠に参戦する自分のマスモンを表示するようにしました(他のプレイヤーが参加すると弾かれます)。またダウンしたモンスターは2秒間無敵になり、その間はとどめを刺されなくなりました', g:['fix','multi','balance'] },
+  ]},
   { date:'2026-08-19', items:[
     { t:'チーム戦のキル数・キルボーナス(HP・ガッツ回復)を、とどめを刺した人ではなく相手をダウンさせた人に入るようにしました', g:['fix','multi','balance'] },
   ]},

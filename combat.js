@@ -457,6 +457,8 @@ function applyDamage(target, dmg, source, opts){
   if(raidFriendlyFireBlocked(target, source)) return;
   // チーム戦のフレンドリーファイア無しも同じ1か所で止める(状態異常・ガッツ削りも入口がここ)
   if(teamFriendlyFireBlocked(target, source)) return;
+  // ダウン直後2秒は無敵(とどめが刺せない。TEAM_DOWN_INVULN_SEC。発注者要望 2026-08-19)
+  if(entityDowned(target) && target.downedInvulnUntil > matchTime) return;
   if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
   const involvesHuman = isNetworkedHuman(target) || (source && isNetworkedHuman(source));
   const isAuthoritative = (opts && opts.authoritative) || (netState.mode==='multi' && netState.isHost);
@@ -1266,6 +1268,9 @@ function tryEnterDowned(victim, killer){
   // 【発注者要望 2026-08-19】チーム戦のキル数・キルボーナスは「とどめを刺した人」ではなく
   // 「ダウンさせた人」に入れる。ここで記録し、killEntity側の本当の死亡時にこれで上書きする
   victim.downedByKillerId = (killer && killer.id!==victim.id) ? killer.id : null;
+  // ダウン直後2秒は無敵(その間はとどめを刺せない。発注者要望 2026-08-19)。
+  // 起き上がる瞬間に囲まれて即詰みになるのを防ぐ狙い
+  victim.downedInvulnUntil = matchTime + TEAM_DOWN_INVULN_SEC;
   const text = (killer && killer.id!==victim.id)
     ? `${displayNameFor(killer)} が ${displayNameFor(victim)} をダウンさせた`
     : `${displayNameFor(victim)} はダウンした`;
@@ -1282,6 +1287,7 @@ function tryEnterDowned(victim, killer){
 function reviveEntity(e){
   e.downed = false; e.downedUntil = 0; e.reviveProgress = 0;
   e.downedByKillerId = null;   // 蘇生したら「誰にダウンさせられたか」の記録も白紙に戻す
+  e.downedInvulnUntil = 0;
   e.hp = Math.max(1, Math.round(e.maxHp*TEAM_REVIVE_HP_RATIO));
   const text = `${displayNameFor(e)} が蘇生した`;
   pushKillFeed(text);
@@ -2450,6 +2456,8 @@ function update(dt){
   if(dps>0){
     for(const e of entities){
       if(!e.alive) continue;
+      // ダウン直後の無敵中は安置外ダメージも通さない(「2秒間無敵」を環境ダメージにも揃える)
+      if(entityDowned(e) && e.downedInvulnUntil > matchTime) continue;
       if(dist(e, zoneState.center) > zoneState.radius){
         e.hp -= dps*dt;
         if(Math.random()<0.08) spawnDmgText(e.x, e.y, e.z, Math.round(dps), '#ff9c3d');
@@ -2461,6 +2469,8 @@ function update(dt){
   if(lavaZones.length>0){
     for(const e of entities){
       if(!e.alive) continue;
+      // ダウン直後の無敵中は溶岩ダメージも通さない(上と同じ理由)
+      if(entityDowned(e) && e.downedInvulnUntil > matchTime) continue;
       let inLava = false;
       for(const lz of lavaZones){
         if(Math.hypot(e.x-lz.x, e.y-lz.y) < lz.radius + e.radius*0.4){ inLava = true; break; }
