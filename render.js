@@ -3201,8 +3201,11 @@ function drawSkyAndGround(){
   ctx.fillRect(0, Math.max(horizonY,0), viewW, viewH-Math.max(horizonY,0));
 }
 function drawTerrainDecor(){
+  // 観戦中は「見ている本体」基準で描画範囲を決める(以前は自分の死亡地点基準のままで、
+  // 観戦先の近くの地形装飾が抜け落ちる原因になっていた。2026-08-19)
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
   for(const d of terrainDecor){
-    if(Math.abs(d.x-player.x)>1000 || Math.abs(d.y-player.y)>1000) continue;
+    if(Math.abs(d.x-ve.x)>1000 || Math.abs(d.y-ve.y)>1000) continue;
     const p = projectGround(d.x,d.y);
     if(!p || p.x<-40||p.x>viewW+40||p.y<-40||p.y>viewH+40) continue;
     ctx.beginPath(); ctx.ellipse(p.x,p.y, d.r*p.scale, d.r*p.scale*0.4, 0,0,Math.PI*2);
@@ -3212,7 +3215,10 @@ function drawTerrainDecor(){
 }
 function drawDangerVignette(){
   if(game.trainingRange) return; // 射撃訓練場は安置なし
-  const d = dist(player, zoneState.center);
+  // 観戦中は見ている本体の位置で安置外判定する。以前は自分(倒れて動かない)の位置基準の
+  // ままだったため、自分の死亡地点が安置の外になると観戦画面まで安置外表示になっていた(2026-08-19)
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
+  const d = dist(ve, zoneState.center);
   const outside = d > zoneState.radius;
   ctx.save();
   if(outside){
@@ -3272,12 +3278,14 @@ function drawDownedOverlay(){
 // 地面の塗り分けに頼らずに「どちらが安置内か」を確実に伝えられる。
 function drawZoneCompass(){
   if(game.trainingRange) return; // 射撃訓練場は安置なし
-  const d = dist(player, zoneState.center);
+  // 観戦中は見ている本体基準(drawDangerVignetteと同じ理由。2026-08-19)
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
+  const d = dist(ve, zoneState.center);
   const outside = d > zoneState.radius;
   const distToEdge = Math.abs(d - zoneState.radius);
   if(!outside && distToEdge > 3000) return; // 十分安全な時は非表示
 
-  const bearingWorld = angTo(player, zoneState.center);
+  const bearingWorld = angTo(ve, zoneState.center);
   const bearingScreen = bearingWorld - camState.yaw;
   const cx = viewW/2, cy = 70, r = 24;
 
@@ -5516,8 +5524,9 @@ function drawLandingMarkers(){
 }
 function drawWaterZones(){
   if(seaZones.length===0 && riverZones.length===0 && oasisZones.length===0) return;
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player; // 観戦中は見ている本体基準(2026-08-19)
   const draw = (z, fill, stroke)=>{
-    if(Math.abs(z.x-player.x)>2400 || Math.abs(z.y-player.y)>2400) return;
+    if(Math.abs(z.x-ve.x)>2400 || Math.abs(z.y-ve.y)>2400) return;
     // 塗りつぶしなので投影できない点は詰めてつなぐ(線と違い、切ると水面に穴が空く)
     const pts = projectCircleRing(z, z.radius, 22).filter(Boolean);
     if(pts.length<3) return;
@@ -6177,8 +6186,9 @@ const FX_FLASH_MAX = 0.10, FX_FLASH_DECAY = 1.4;
 // amount: 0..1。dist を渡すとプレイヤーからの距離で自動的に弱める
 function fxPunch(amount, x, y){
   let a = Math.max(0, Math.min(1, amount));
-  if(x != null && player){
-    const d = Math.hypot(x - player.x, y - player.y);
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player; // 観戦中は見ている本体からの距離で減衰(2026-08-19)
+  if(x != null && ve){
+    const d = Math.hypot(x - ve.x, y - ve.y);
     a *= Math.max(0, 1 - d / FX_PUNCH_FALLOFF);
   }
   if(a <= 0.01) return;
@@ -6750,6 +6760,8 @@ function drawPingMarkers(){
   }
 }
 function renderMinimap(){
+  // 観戦中は見ている本体を基準にする(自分表示・敵味方色分けの両方。2026-08-19)
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
   const w = miniCanvas.width, h = miniCanvas.height;
   miniCtx.clearRect(0,0,w,h);
   miniCtx.fillStyle='rgba(11,19,32,0.5)'; miniCtx.fillRect(0,0,w,h);
@@ -6808,7 +6820,7 @@ function renderMinimap(){
   for(const e of entities){
     if(!e.alive) continue;
     // チーム戦の味方は緑の点+白い縁取り(自分の白い点と同型の強調)で敵と即区別する
-    const isAllyM = (typeof sameTeam==='function') && player && sameTeam(player, e);
+    const isAllyM = (typeof sameTeam==='function') && ve && sameTeam(ve, e);
     /* チーム戦は「敵か味方か自分か」の3値だけにする。元素色のままだと
        多色の紙吹雪になり敵味方が判別できない(批評指摘)。個人戦は従来どおり元素色。
        味方は緑+白縁の【三角】=色相だけでなく形でも区別する(赤緑色覚対応。
@@ -6823,8 +6835,8 @@ function renderMinimap(){
       miniCtx.strokeStyle='rgba(255,255,255,0.9)'; miniCtx.lineWidth=1; miniCtx.stroke();
     } else {
       miniCtx.beginPath();
-      miniCtx.arc(e.x*scale, e.y*scale, e.isPlayer?3.4:2.2, 0, Math.PI*2);
-      miniCtx.fillStyle = e.isPlayer ? '#ffffff'
+      miniCtx.arc(e.x*scale, e.y*scale, e===ve?3.4:2.2, 0, Math.PI*2);
+      miniCtx.fillStyle = e===ve ? '#ffffff'
         : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
       miniCtx.fill();
     }
@@ -6849,7 +6861,9 @@ function renderMinimap(){
       miniCtx.restore();
     }
   }
-  const px=player.x*scale, py=player.y*scale, yaw=camState.yaw;
+  // 「自分」の矢印は観戦中は見ている本体の位置・向きを示す(以前は自分の死亡地点に矢印が
+  // 残ったままで、ミニマップと画面の安置表示がチグハグになる原因の一つだった。2026-08-19)
+  const px=ve.x*scale, py=ve.y*scale, yaw=camState.yaw;
   miniCtx.beginPath();
   miniCtx.moveTo(px,py);
   miniCtx.lineTo(px+Math.cos(yaw)*12, py+Math.sin(yaw)*12);
@@ -6934,17 +6948,24 @@ function showHitMarker(){
 }
 function updateHUD(){
   if(!player) return;
-  const el = ELEMENTS[player.element];
-  // ランキング表示名(名前入力欄)をそのままHUDに表示する
-  document.getElementById('hudName').textContent =
-    (typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー');
-  /* トレーニングで変わった数値を**全部**プレイヤー欄に出す(発注者指示)。
+  // 観戦中はHUDの「技などの各フィールド」を見ている本体(ve)のものにする。
+  // 以前は倒された後もplayer(自分)の値のままで、視点は観戦対象なのにHP・技・CDだけ
+  // 自分のものが表示され続ける「チグハグ」の原因になっていた(2026-08-19)。
+  const spectating = (typeof spectatingNow==='function') && spectatingNow();
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
+  if(!ve) return;
+  const el = ELEMENTS[ve.element];
+  // ランキング表示名(名前入力欄)は自分を見ているときだけ。観戦中は観戦対象の名前を出す
+  document.getElementById('hudName').textContent = spectating
+    ? ((typeof displayNameFor==='function') ? displayNameFor(ve) : (ve.name||'プレイヤー'))
+    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー'));
+  /* トレーニングで変わった数値を**全部**欄に出す(発注者指示)。観戦中は観戦対象のぶんを出す。
      一覧の作りは matchTrainBoardRows(ui.js)が1か所で持っている ―― カードぶんと
      拾ったアイテムぶんを同じ「元から何%」に揃えて混ぜる。ここは並べるだけ。
      **毎フレームinnerHTMLを書き換えない。** 中身が変わったときだけ作り直す。 */
   {
     const line = document.getElementById('trainBuffsLine');
-    const rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(player) : [];
+    const rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(ve) : [];
     const sig = rows.map(r=>r.label+r.text).join('|');
     if(line._tbSig !== sig){
       line._tbSig = sig;
@@ -6954,14 +6975,15 @@ function updateHUD(){
   }
   document.getElementById('hudElTag').textContent = el.label;
   // HUD左上バーの色はモンスター本来の色ではなくオーラ色(スキンによる変化を考慮)
-  const playerAura = (typeof getMonsterAura==='function') ? getMonsterAura(player) : null;
+  const playerAura = (typeof getMonsterAura==='function') ? getMonsterAura(ve) : null;
   const accentColor = (playerAura && typeof auraColorHex==='function') ? auraColorHex(playerAura) : el.color;
   document.documentElement.style.setProperty('--accent', accentColor);
   if(typeof updateRaidHud==='function') updateRaidHud();   // レイド中だけボスHP・残り時間・与ダメを更新
   updateSquadPanel();   // チーム戦だけ小隊バー(個人戦では隠れたまま)
   if(typeof prunePings==='function') prunePings();             // ピンの寿命(ゲストのループでも回る)
   if(typeof updateKillLeader==='function') updateKillLeader(); // 同期済みkillsから毎フレーム導出(同期追加なし)
-  // ピンボタンはチーム系モードの試合中だけ出す(個人戦・レイド・射撃訓練場では非表示)
+  // ピンボタンはチーム系モードの試合中だけ出す(個人戦・レイド・射撃訓練場では非表示)。
+  // これは「自分が」ピンを打てるかどうかの操作ボタンなので観戦対象ではなく自分のaliveで判定する
   {
     const pingBtnEl = document.getElementById('pingBtn');
     if(pingBtnEl){
@@ -6970,28 +6992,28 @@ function updateHUD(){
       pingBtnEl.classList.toggle('hidden', !showPing);
     }
   }
-  const hpPct = clamp(player.hp/player.maxHp,0,1)*100;
+  const hpPct = clamp(ve.hp/ve.maxHp,0,1)*100;
   document.getElementById('hpFill').style.width = hpPct+'%';
   document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');
-  document.getElementById('hpNum').textContent = `${Math.max(0,Math.round(player.hp))} / ${player.maxHp}`;
+  document.getElementById('hpNum').textContent = `${Math.max(0,Math.round(ve.hp))} / ${ve.maxHp}`;
 
-  const gutsPct = clamp(player.guts/player.maxGuts,0,1)*100;
+  const gutsPct = clamp(ve.guts/ve.maxGuts,0,1)*100;
   document.getElementById('gutsFill').style.width = gutsPct+'%';
-  document.getElementById('gutsNum').textContent = `${Math.max(0,Math.round(player.guts))} / ${player.maxGuts}`;
+  document.getElementById('gutsNum').textContent = `${Math.max(0,Math.round(ve.guts))} / ${ve.maxGuts}`;
 
-  const stateSc = STATE_CHANGES[player.element];
+  const stateSc = STATE_CHANGES[ve.element];
   const stateCdFillEl = document.getElementById('stateCdFill');
   const stateCdLabelEl = document.getElementById('stateCdLabel');
   if(stateSc){
-    if(player.stateUntil > matchTime){
+    if(ve.stateUntil > matchTime){
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ff6b6b,#ff2b2b)';
-      stateCdLabelEl.textContent = `${stateSc.name} 発動中 残り${Math.ceil(player.stateUntil-matchTime)}秒`;
-    } else if(player.stateCooldownUntil > matchTime){
-      const cdPct = clamp(1-((player.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
+      stateCdLabelEl.textContent = `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
+    } else if(ve.stateCooldownUntil > matchTime){
+      const cdPct = clamp(1-((ve.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
       stateCdFillEl.style.width = cdPct+'%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
-      stateCdLabelEl.textContent = `${stateSc.name} クールタイム残り${Math.ceil(player.stateCooldownUntil-matchTime)}秒`;
+      stateCdLabelEl.textContent = `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
     } else {
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
@@ -7001,10 +7023,10 @@ function updateHUD(){
 
   const statusEl = document.getElementById('statusIcons');
   let statusHtml = '';
-  if(player.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど</span>`;
-  if(player.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足</span>`;
-  if(player.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり</span>`;
-  if(player.poisonUntil > matchTime) statusHtml += `<span class="status-pill poison">どく</span>`;
+  if(ve.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど</span>`;
+  if(ve.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足</span>`;
+  if(ve.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり</span>`;
+  if(ve.poisonUntil > matchTime) statusHtml += `<span class="status-pill poison">どく</span>`;
   statusEl.innerHTML = statusHtml;
 
   const aliveCount = entities.filter(e=>e.alive).length;
@@ -7014,7 +7036,9 @@ function updateHUD(){
        前のモードの文言が残らないよう毎フレーム両方を確定させる。
          アリーナ  : 自3 v 敵3      (1本勝負なので部隊数に意味が無い)
          チーム戦BR: 12部隊 / 残り34人 (APEXと同じ「部隊数と残り人数」・発注者要望 2026-08-14)
-         個人戦    : 20 体 生存中 */
+         個人戦    : 20 体 生存中
+       これは試合全体の集計であって「技などのフィールド」ではないため、observing中でも
+       自分(player)のチームIDを基準にする(観戦対象を渡り歩いても数字が飛ばないように)。 */
     let num, label;
     if(game.arena && player && player.teamId!=null){
       const own = entities.filter(e=>e.alive && e.teamId===player.teamId).length;
@@ -7038,28 +7062,29 @@ function updateHUD(){
   document.getElementById('zoneStatus').textContent = zoneLabel();
   const countdown = zoneCountdownSeconds();
   document.getElementById('zoneCountdown').textContent = countdown===null ? '--:--' : fmtTime(countdown);
-  document.getElementById('killCountNum').textContent = player.kills;
-  document.getElementById('damageDealtNum').textContent = Math.round(player.damageDealt);
+  // キル数・与ダメも観戦中は観戦対象のもの(HPや技と同じ「その本体の戦績」として揃える)
+  document.getElementById('killCountNum').textContent = ve.kills;
+  document.getElementById('damageDealtNum').textContent = Math.round(ve.damageDealt);
   document.getElementById('matchClock').textContent = fmtTime(matchTime);
 
   // 装備スキンでtier3が専用技に変わる場合は解決後の技を表示する(技名・消費ガッツが変わる)
-  let mv = activeMove(player);
-  if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
+  let mv = activeMove(ve);
+  if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, ve);
   // 技フィールドのマーク/テーマ色は、その技のオーラ色にする(tier3は装備SSRで一致技に変わる)
-  const mvAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : mv.aura;
+  const mvAura = (typeof getMoveAura==='function') ? getMoveAura(mv, ve) : mv.aura;
   const moveMarkColor = (mvAura && typeof auraColorHex==='function') ? auraColorHex(mvAura) : mv.color;
-  document.getElementById('moveName').textContent = (typeof getMoveName==='function') ? getMoveName(mv, player) : mv.name;
+  document.getElementById('moveName').textContent = (typeof getMoveName==='function') ? getMoveName(mv, ve) : mv.name;
   document.documentElement.style.setProperty('--moveColor', moveMarkColor);
-  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(player, mv)}`;
-  const tierMoves = SIGNATURE_MOVES[player.element];
+  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
+  const tierMoves = SIGNATURE_MOVES[ve.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
     const tierMove = tierMoves[t-1];
-    const tierAura = (typeof getMoveAura==='function') ? getMoveAura(tierMove, player) : tierMove.aura;
+    const tierAura = (typeof getMoveAura==='function') ? getMoveAura(tierMove, ve) : tierMove.aura;
     const tierColor = (tierAura && typeof auraColorHex==='function') ? auraColorHex(tierAura) : moveMarkColor;
     dot.style.setProperty('--dotColor', tierColor);
-    dot.classList.toggle('unlocked', t<=player.moveTierUnlocked);
-    dot.classList.toggle('selected', t===player.moveTierSelected);
+    dot.classList.toggle('unlocked', t<=ve.moveTierUnlocked);
+    dot.classList.toggle('selected', t===ve.moveTierSelected);
   }
   document.getElementById('moveIcon').innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
 
@@ -7071,22 +7096,22 @@ function updateHUD(){
   const feedBusy = (()=>{ const kf = document.getElementById('killFeed'); return kf && kf.children.length > 0; })();
   document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0 && !feedBusy) ? '1':'0';
 
-  const fireMax = effectiveCooldown(player, mv);
-  const fireProgress = fireMax>0 ? clamp(1 - player.fireCooldown/fireMax, 0, 1) : 1;
+  const fireMax = effectiveCooldown(ve, mv);
+  const fireProgress = fireMax>0 ? clamp(1 - ve.fireCooldown/fireMax, 0, 1) : 1;
   setCooldownRing(document.getElementById('fireCdRing'), fireProgress);
 
-  const dashProgress = clamp(1 - player.dashCooldown/DASH_COOLDOWN_MAX, 0, 1);
+  const dashProgress = clamp(1 - ve.dashCooldown/DASH_COOLDOWN_MAX, 0, 1);
   setCooldownRing(document.getElementById('dashCdRing'), dashProgress);
 
   let lockOn=false;
-  if(player.alive){
-    const fx=Math.cos(player.facingAngle), fy=Math.sin(player.facingAngle);
+  if(ve.alive){
+    const fx=Math.cos(ve.facingAngle), fy=Math.sin(ve.facingAngle);
     for(const e of entities){
-      if(e===player||!e.alive) continue;
-      if(typeof sameTeam==='function' && sameTeam(player, e)) continue; // チーム戦: 味方にはロックオン表示を出さない(攻撃も当たらない)
-      if(e.z - player.z > (typeof upwardBlockLimit==='function' ? upwardBlockLimit() : UPWARD_BLOCK_THRESHOLD)) continue;
-      const d=dist(player,e); if(d>mv.range) continue;
-      const dirx=(e.x-player.x)/Math.max(d,0.001), diry=(e.y-player.y)/Math.max(d,0.001);
+      if(e===ve||!e.alive) continue;
+      if(typeof sameTeam==='function' && sameTeam(ve, e)) continue; // チーム戦: 味方にはロックオン表示を出さない(攻撃も当たらない)
+      if(e.z - ve.z > (typeof upwardBlockLimit==='function' ? upwardBlockLimit() : UPWARD_BLOCK_THRESHOLD)) continue;
+      const d=dist(ve,e); if(d>mv.range) continue;
+      const dirx=(e.x-ve.x)/Math.max(d,0.001), diry=(e.y-ve.y)/Math.max(d,0.001);
       if(dirx*fx+diry*fy>0.9){ lockOn=true; break; }
     }
   }

@@ -1732,6 +1732,16 @@ function ensureSpectateTarget(){
   return cur;
 }
 // 次の生存プレイヤーへ観戦対象を切り替える
+// 観戦対象の切替: 対象の位置へ視点を飛ばし、向きは対象自身のfacingAngleへ滑らかに寄せる
+// (以前はangTo(player,target)=「(倒れて動かない)自分から見た方角」を使っており、
+//  対象自身の視界とズレていた。updateCamera側の毎フレーム追従に引き継ぐための初動だけここが担当)
+function spectateSnapToTarget(target){
+  camSnap.active = true;
+  camSnap.fromYaw = camState.yaw;
+  camSnap.toYaw = camState.yaw + angleDiff(target.facingAngle, camState.yaw);
+  camSnap.t = 0;
+  camSnap.duration = 0.28;
+}
 function spectateNext(){
   const cands = spectateCandidates();
   if(!cands.length){ spectateTargetId=null; if(typeof updateSpectateBar==='function') updateSpectateBar(); return; }
@@ -1739,7 +1749,7 @@ function spectateNext(){
   idx = (idx+1) % cands.length;
   spectateTargetId = cands[idx].id;
   if(typeof updateSpectateBar==='function') updateSpectateBar();
-  startCameraSnap(cands[idx]);
+  spectateSnapToTarget(cands[idx]);
 }
 // カメラ・描画の視点主体(観戦中は生存プレイヤー、通常は自分)
 function currentViewEntity(){
@@ -1749,10 +1759,18 @@ function currentViewEntity(){
   }
   return player;
 }
-function updateCamera(){
+function updateCamera(dt){
   const v = currentViewEntity();
   // マップを移ったときに前のマップの視点角度が残らないようにする(リアルマップだけ上向きが広い)
   camState.pitch = clamp(camState.pitch, camPitchMin(), CAM_PITCH_MAX);
+  /* 【観戦カメラ修正 2026-08-19】観戦中は自分でドラッグ操作せず、見ているモンスター
+     本体の向き(facingAngle=その本体のAI/入力が向いている方向)へ視点を追従させる。
+     以前はcamState.yaw/pitchが自分の最後の操作値のまま固定/操作可能で、
+     「視点と画面表示がチグハグ」になる原因の一つだった。
+     camSnap(spectateNext等の切替演出)中はそちらを優先し、終わったら追従を再開する。 */
+  if(spectatingNow() && !camSnap.active){
+    camState.yaw += angleDiff(v.facingAngle, camState.yaw) * clamp((dt||0)*8, 0, 1);
+  }
   camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
   camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
   camPos.z = v.z + camState.height;
@@ -2326,7 +2344,7 @@ function updateSummonIntro(dt){
     playSe(skinSummonSeName(player) || 'shuwaa');
   }
   updateCameraSnap(dt);
-  updateCamera();
+  updateCamera(dt);
   // update()を通さないので、演出用のきらめき粒子だけここで進める
   for(let i=particles.length-1;i>=0;i--){
     const p = particles[i];
@@ -2386,7 +2404,7 @@ function update(dt){
   for(const e of entities){ if(e.alive){ e.needsDepenetrate = true; resolveMovement(e, dt); } }
   separateEntities();
   depenetrateStuckEntities();   // 押し合い・非移動で障害物へ埋まった者を必ず外へ出す
-  updateCamera();
+  updateCamera(dt);
 
   for(const e of entities){
     if(!e.alive) continue;

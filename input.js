@@ -219,6 +219,7 @@ window.addEventListener('keyup', (e)=>{ keys[e.key.toLowerCase()] = false; });
 let tapTrack = { pointerId:null, startX:0, startY:0, startTime:0, moved:false };
 
 function handleEnemyTap(sx,sy){
+  if(typeof spectatingNow==='function' && spectatingNow()) return; // 観戦中はタップでの視点操作を無効化(自動追従を優先)
   let best=null, bestD=Infinity;
   for(const [id,sp] of monsterScreenPos){
     const ent = getEntity(id);
@@ -241,6 +242,10 @@ canvas.addEventListener('pointerdown', (e)=>{
 });
 window.addEventListener('pointermove', (e)=>{
   if(!lookDrag.active || e.pointerId!==lookDrag.pointerId) return;
+  if(Math.hypot(e.clientX-tapTrack.startX, e.clientY-tapTrack.startY) > 10) tapTrack.moved = true;
+  // 【観戦カメラ修正 2026-08-19】観戦中は自分でドラッグ操作しない(見ている本体の向きへ自動追従。combat.jsのupdateCamera)。
+  // タップ位置の記録だけは続け(スワイプ扱いでタップ判定を弾くため)、視点操作だけ止める。
+  if(typeof spectatingNow==='function' && spectatingNow()) { lookDrag.lastX=e.clientX; lookDrag.lastY=e.clientY; return; }
   camSnap.active = false;
   const dx = e.clientX-lookDrag.lastX, dy = e.clientY-lookDrag.lastY;
   lookDrag.lastX = e.clientX; lookDrag.lastY = e.clientY;
@@ -249,7 +254,6 @@ window.addEventListener('pointermove', (e)=>{
   camState.yaw += logical.x*lookSettings.sensX;
   // 上下の可動範囲はマップ依存(リアルマップだけ空側へ広い。world.jsのcamPitchMin)
   camState.pitch = clamp(camState.pitch + (invertPitchY ? logical.y : -logical.y)*lookSettings.sensY, camPitchMin(), CAM_PITCH_MAX);
-  if(Math.hypot(e.clientX-tapTrack.startX, e.clientY-tapTrack.startY) > 10) tapTrack.moved = true;
 });
 window.addEventListener('pointerup', (e)=>{
   if(e.pointerId!==lookDrag.pointerId) return;
