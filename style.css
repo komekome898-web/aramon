@@ -447,17 +447,17 @@
   #lobbyMonsterImg.hidden{ display:none !important; }
   /* チーム戦の部屋にいる間だけ出す、自分の斜め後ろ左右のチームメンバー(2026-08-19)。
      主役より一回り小さく・少し暗くして「後ろにいる」印象にする。クリックは主役ボタンへ素通し。
-     bottomを主役よりわずかに高くして「少し上側(奥)」に立たせる(発注者要望 2026-08-19)。
-     ※前回7vhにしたら主役から離れすぎて見えた(発注者指摘)ので、控えめな値に戻す */
+     bottomを主役よりわずかに高くして「少し上側(奥)」に立たせる。
+     left/rightは主役に軽く重なる程度まで寄せる(発注者指摘 2026-08-19。以前は端に寄りすぎて見切れていた) */
   .lobby-mate-img{
     position:absolute; bottom:calc(3 * var(--vh)); z-index:0; pointer-events:none;
-    max-height:60%; max-width:38%; object-fit:contain;
+    max-height:58%; max-width:36%; object-fit:contain;
     filter:drop-shadow(0 6px 12px rgba(0,0,0,0.75)) brightness(0.8);
     opacity:0.92;
   }
+  #lobbyMateImgLeft{ left:14%; }
+  #lobbyMateImgRight{ right:14%; }
   .lobby-mate-img.hidden{ display:none !important; }
-  #lobbyMateImgLeft{ left:2%; }
-  #lobbyMateImgRight{ right:2%; }
   /* 未選択のときの案内。ここをタップして選択させるのでボタンらしく見せる */
   #lobbyMonsterEmpty{
     align-self:center; font-family:'Russo One',sans-serif; letter-spacing:1px;
@@ -2038,36 +2038,44 @@
        通常時の幅(「チーム戦・20チームバトロワ」が切れない値)はここでは変えない。 */
     width:clamp(80px, calc(16 * var(--vw)), 150px);
   }
-  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:14px 18px; width:100%; }
-  .lobby-title{ font-family:'Russo One',sans-serif; font-size:17px; color:var(--amber); letter-spacing:1px; text-align:center; }
-  .lobby-sub{ font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
+  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 10px; width:100%; }
+  .lobby-title{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); letter-spacing:0.5px; text-align:center; white-space:nowrap; }
+  .lobby-sub{ font-size:10px; color:var(--ink-dim); letter-spacing:0.5px; white-space:nowrap; }
   #lobbyPlayerList{ display:flex; flex-direction:column; gap:5px; width:100%; margin-top:2px; }
   .lobby-player-row{
-    display:flex; align-items:center; gap:10px; padding:6px 14px; background:rgba(255,255,255,0.04);
-    border:1px solid var(--panel-line); border-radius:6px; font-size:12px;
+    display:flex; align-items:center; gap:7px; padding:6px 10px; background:rgba(255,255,255,0.04);
+    border:1px solid var(--panel-line); border-radius:6px; font-size:10.5px;
   }
   .lobby-player-row .lp-dot{ width:7px; height:7px; border-radius:50%; background:var(--amber); flex-shrink:0; }
   .lobby-player-row.is-bot .lp-dot{ background:var(--ink-dim); }
+  /* 文言が長くても2行に折れて気持ち悪くならないよう、1行に収めて「…」で切る(発注者指摘 2026-08-19) */
+  .lobby-player-row > span:last-child{
+    flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
   /* Bot待機枠のうち「自分のマスモン」枠は淡く色を付けて他のBot枠と区別する(2026-08-19) */
   .lobby-player-row.is-own-mm{ background:rgba(255,196,48,0.07); border-color:rgba(255,196,48,0.35); }
   .lobby-player-row.is-own-mm .lp-dot{ background:var(--amber); }
-  #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); min-height:14px; }
+  #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--amber); min-height:13px; }
   #lobbyCancelBtn{
-    margin-top:2px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    margin-top:2px; padding:7px 16px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+    white-space:nowrap;
   }
-  #lobbyHostBtnRow{ display:flex; gap:12px; margin-top:2px; }
+  #lobbyHostBtnRow{ display:flex; gap:7px; margin-top:2px; }
   #lobbyStartBtn{
-    padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    padding:7px 14px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+    white-space:nowrap;
   }
   #lobbyDisbandBtn{
-    padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    padding:7px 14px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
     color:var(--ink); background:rgba(255,80,80,0.12); border:1px solid rgba(255,80,80,0.4); border-radius:6px; cursor:pointer;
+    white-space:nowrap;
   }
   #lobbyGuestLeaveBtn{
-    margin-top:2px; padding:8px 26px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:1px;
+    margin-top:2px; padding:7px 16px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+    white-space:nowrap;
   }
 
   /* ロビーの右列は**横並び**。縦に積むと最小の高さ(--tap-main)×2で90px超になり、
