@@ -289,9 +289,11 @@ async function beginMultiplayerMatchInner(){
     }
     mapKey = (typeof resolveMapKey==='function') ? resolveMapKey() : (game.selectedMap || 'wild'); // 'ランダム'選択時は実マップを確定
     // ホストが持っているマスモンのうち、今使っているもの以外からランダムに選んでbot候補にする。
+    // 【発注者要望 2026-08-19】並び順はロビー画面(ui.jsのgetHostMastermonBotOrder)と同じものを使う。
+    // ここで改めてshuffle()し直すと、待機画面のプレビューと実際に参戦するマスモンがズレてしまう。
     const ownMastermons = loadMastermons();
-    const candidateKeys = Object.keys(ownMastermons).filter(k=>k!==game.selectedMastermonKey);
-    const shuffledCandidates = shuffle(candidateKeys);
+    const shuffledCandidates = (typeof getHostMastermonBotOrder==='function') ? getHostMastermonBotOrder()
+      : shuffle(Object.keys(ownMastermons).filter(k=>k!==game.selectedMastermonKey));
     /* 積み荷は mastermonSnapshot 1つで作る(部屋へ送る自分の育成値・ゴーストと同じ形)。
        以前はここだけ転生回数・適正・基礎値アイテムを載せておらず、ホストのマスモンbotに
        育成の一部が反映されていなかった。 */

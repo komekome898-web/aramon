@@ -3941,6 +3941,21 @@ document.querySelectorAll('.cap-tab').forEach(tab=>{
   });
 });
 
+// 部屋作成者(ホスト)が連れてくる「自分の他のマスモン」の並び順を、部屋作成時に1回だけ確定させて使い回す。
+// 【発注者要望 2026-08-19】以前はロビー表示(renderLobbyPlayerList)と試合開始処理(network.jsのbeginMultiplayerMatchInner)
+// がそれぞれ別々にshuffle()を呼んでいたため、待機画面のプレビューと実際に参戦するマスモンが一致しないことがあった。
+// ここで確定させた並びを両方から参照することで、必ず一致させる。
+let hostMastermonBotOrder = null;
+function computeHostMastermonBotOrder(){
+  const mmData = loadMastermons();
+  const candidateKeys = Object.keys(mmData).filter(k=>k!==game.selectedMastermonKey);
+  return shuffle(candidateKeys);
+}
+function getHostMastermonBotOrder(){
+  if(!netState.isHost) return [];
+  if(!hostMastermonBotOrder) hostMastermonBotOrder = computeHostMastermonBotOrder();
+  return hostMastermonBotOrder;
+}
 function renderLobbyPlayerList(){
   const listEl = document.getElementById('lobbyPlayerList');
   const rows = [];
@@ -3961,7 +3976,7 @@ function renderLobbyPlayerList(){
   let ownMmNames = [];
   if(netState.isHost && !netState.raid && typeof loadMastermons==='function'){
     const mmData = loadMastermons();
-    ownMmNames = Object.keys(mmData).filter(k=>k!==game.selectedMastermonKey).map(k=>mmData[k].name);
+    ownMmNames = getHostMastermonBotOrder().map(k=>mmData[k].name);
   }
   for(let i=0;i<botCount;i++){
     const mmName = ownMmNames[i];
@@ -4126,6 +4141,7 @@ async function createRoomFlow(){
   netState.isHost = true;
   netState.myPlayerId = result.myPlayerId;
   netState.hostId = netState.myPlayerId;
+  hostMastermonBotOrder = null;   // 新しい部屋ごとに並びを引き直す(前の部屋の並びを持ち越さない)
 
   enterLobbyForRoom();
 }
