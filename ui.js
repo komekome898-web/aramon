@@ -3983,14 +3983,36 @@ function computeLobbyTeammates(){
   }
   return mates.slice(0, 2);   // 斜め後ろは左右2枠だけ(チーム戦は3人1組=自分+2)
 }
-function lobbyMateImageSrc(mate){
-  const still = mate.skinId && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(mate.skinId) : null;
-  return still || imgSrcFor(`monsters/${mate.element}`);
+// チームメンバーの歩行モーション(中央の主役と同じ仕組み。lobbyWalkTimer/renderLobbyMonster参照)。
+// 各<img>ごとにタイマーをぶら下げるので、複数体を同時に・別々のコマ数でも回せる
+function stopMateWalkAnim(img){ if(img._mateWalkTimer){ clearInterval(img._mateWalkTimer); img._mateWalkTimer=null; } }
+function startMateWalkAnim(img, element, skinId, retry){
+  stopMateWalkAnim(img);
+  const still = skinId && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(skinId) : null;
+  img.src = still || imgSrcFor(`monsters/${element}`);
+  const frames = (typeof monsterWalkFrameDataUrls==='function') ? monsterWalkFrameDataUrls(element, skinId, 'front') : null;
+  if(!frames || !frames.length){
+    // 画像の読み込み待ちのことがあるので少しリトライする(renderLobbyMonsterと同じ考え方)
+    if((retry||0) < 6){
+      setTimeout(()=>{ if(!img.classList.contains('hidden')) startMateWalkAnim(img, element, skinId, (retry||0)+1); }, 350);
+    }
+    return;
+  }
+  let i = 0;
+  img.src = frames[0];
+  const dur = (typeof WALK_FRAME_DUR==='number' ? WALK_FRAME_DUR : 0.11) * 1000;
+  img._mateWalkTimer = setInterval(()=>{
+    i = (i + 1) % frames.length;
+    img.src = frames[i];
+  }, dur);
 }
 function hideLobbyTeammates(){
   const left = document.getElementById('lobbyMateImgLeft'), right = document.getElementById('lobbyMateImgRight');
-  if(left){ left.classList.add('hidden'); left.removeAttribute('src'); }
-  if(right){ right.classList.add('hidden'); right.removeAttribute('src'); }
+  [left, right].forEach(img=>{
+    if(!img) return;
+    stopMateWalkAnim(img);
+    img.classList.add('hidden'); img.removeAttribute('src');
+  });
 }
 function renderLobbyTeammates(){
   const left = document.getElementById('lobbyMateImgLeft'), right = document.getElementById('lobbyMateImgRight');
@@ -3998,9 +4020,13 @@ function renderLobbyTeammates(){
   const mates = computeLobbyTeammates();
   [left, right].forEach((img, i)=>{
     const mate = mates[i];
-    if(!mate || !ELEMENTS[mate.element]){ img.classList.add('hidden'); img.removeAttribute('src'); return; }
-    img.src = lobbyMateImageSrc(mate);
+    if(!mate || !ELEMENTS[mate.element]){ stopMateWalkAnim(img); img.classList.add('hidden'); img.removeAttribute('src'); return; }
+    // 同じ相手のままなら描き直さない(歩行タイマーを毎回作り直してカクつかせない)
+    const subject = `${mate.element}|${mate.skinId||''}`;
     img.classList.remove('hidden');
+    if(img.dataset.mateSubject === subject) return;
+    img.dataset.mateSubject = subject;
+    startMateWalkAnim(img, mate.element, mate.skinId);
   });
 }
 function renderLobbyPlayerList(){

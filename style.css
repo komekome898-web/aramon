@@ -446,10 +446,11 @@
   }
   #lobbyMonsterImg.hidden{ display:none !important; }
   /* チーム戦の部屋にいる間だけ出す、自分の斜め後ろ左右のチームメンバー(2026-08-19)。
-     主役より一回り小さく・少し暗くして「後ろにいる」印象にする。クリックは主役ボタンへ素通し */
+     主役より一回り小さく・少し暗くして「後ろにいる」印象にする。クリックは主役ボタンへ素通し。
+     bottomを主役より高くして「少し上側(奥)」に立たせる(発注者要望 2026-08-19) */
   .lobby-mate-img{
-    position:absolute; bottom:calc(1 * var(--vh)); z-index:0; pointer-events:none;
-    max-height:68%; max-width:40%; object-fit:contain;
+    position:absolute; bottom:calc(7 * var(--vh)); z-index:0; pointer-events:none;
+    max-height:60%; max-width:38%; object-fit:contain;
     filter:drop-shadow(0 6px 12px rgba(0,0,0,0.75)) brightness(0.8);
     opacity:0.92;
   }
@@ -2025,7 +2026,13 @@
   #startScreen.behind-matching #lobbyLayout,
   #startScreen.behind-matching #topHeader{ pointer-events:none; }
   #startScreen.behind-matching #lobbyLeft,
-  #startScreen.behind-matching #lobbyRight{ opacity:0.22; }
+  #startScreen.behind-matching #lobbyRight{
+    opacity:0.22;
+    /* 【発注者要望 2026-08-19】待機中は中央のチームメンバー表示(斜め後ろ左右)が
+       右列に隠れて1人見えなくなっていたため、待機中だけ右列を狭くして中央を広げる。
+       通常時の幅(「チーム戦・20チームバトロワ」が切れない値)はここでは変えない。 */
+    width:clamp(80px, calc(16 * var(--vw)), 150px);
+  }
   #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:14px 18px; width:100%; }
   .lobby-title{ font-family:'Russo One',sans-serif; font-size:17px; color:var(--amber); letter-spacing:1px; text-align:center; }
   .lobby-sub{ font-size:11px; color:var(--ink-dim); letter-spacing:1px; }
