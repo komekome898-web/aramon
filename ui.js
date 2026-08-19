@@ -8423,9 +8423,10 @@ function buildMastermonMovesHtml(key, opts){
     // 威力は「直撃+爆風」の合計を表示(ビッグバンのように威力の大半がblast側にある技で0表示にならないように)。
     // endBlastは重なった3つのドーム全部に当たった場合の合計(インフェルノ等)。
     // warheadsは核弾頭N発ぶんの「直撃+着弾ドーム」合計(ギガデストロイヤー)。
-    // **羅生門(aoeShape:'gate')は直撃が無く、endBlastのドームだけがダメージ源**なので
-    // mv.dmg(倍率の基準にだけ使う値)は加えない(二重計上を避ける)
-    const baseDmg = (mv.aoeShape==='gate' ? 0 : mv.dmg) + (mv.blast ? (mv.blast.dmg||0) : 0)
+    /* 羅生門(aoeShape:'gate')は「吸い込む炎(mv.dmg)」と「門の爆風(endBlast)」の2段構え。
+       **炎のダメージは combat.js の kind==='gate' で実際に applyDamage している**ので、
+       ここでも合計に入れる(以前は0扱いで、技一覧だけ炎のぶんが抜けていた。2026-08-19) */
+    const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0)
       + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0)
       + (mv.warheads ? ((mv.warheads.dmg||0) + (mv.warheads.blast ? mv.warheads.blast.dmg||0 : 0)) * (mv.warheads.count||1) : 0);
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));

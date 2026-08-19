@@ -647,31 +647,34 @@ const SIGNATURE_MOVES = {
   aqua: [
     { name:'水風船',     tier:1, color:'#3dccc7', range:750,  dmg:23, cooldown:0.8,  gutsCost:8, projSpeed:560, hitR:11, splash:68, icon:'💧' },
     { name:'アクアウェイブ',   tier:2, color:'#3dccc7', range:1500, dmg:12, cooldown:1.0, gutsCost:16, projSpeed:520, hitR:6,  burst:3, burstGap:0.1, icon:'💧' },
-    { name:'クリスタルレイン',   tier:3, color:'#3dccc7', dmg:42, cooldown:1.9, gutsCost:24,
+    { name:'クリスタルレイン',   tier:3, color:'#3dccc7', dmg:62, cooldown:1.9, gutsCost:24,
       aoeShape:'rect', range:900, rectWidth:260, aoeStyle:'crystal', seStyle:'crystalRain' },
   ],
   leaf: [
     { name:'種',     tier:1, color:'#7fb236', range:650,  dmg:22, cooldown:0.78, gutsCost:8, projSpeed:500, hitR:12, splash:72, icon:'🍃' },
     { name:'種マシンガン', tier:2, color:'#7fb236', range:1300, dmg:11, cooldown:1.15, gutsCost:16, projSpeed:460, hitR:6,  burst:4, burstGap:0.11, icon:'🍃' },
-    { name:'フラワービーム',   tier:3, color:'#8fe33f', dmg:44, cooldown:2.2, gutsCost:24,
+    { name:'フラワービーム',   tier:3, color:'#8fe33f', dmg:58, cooldown:2.2, gutsCost:24,
       aoeShape:'beams', range:1200, beamWidth:100, beamCount:3, beamSpreadDeg:40, aoeStyle:'flower' },
   ],
   spark: [
     { name:'かみなり',   tier:1, color:'#f4c430', range:650,  dmg:20, cooldown:0.7,  gutsCost:8, projSpeed:600, hitR:10, splash:62, icon:'⚡️' },
     { name:'雷撃', tier:2, color:'#f4c430', range:1300, dmg:9,  cooldown:0.85, gutsCost:16, projSpeed:560, hitR:5,  burst:5, burstGap:0.08, icon:'⚡️' },
-    { name:'超雷撃',     tier:3, color:'#fff34d', dmg:40, cooldown:1.9, gutsCost:24,
-      aoeShape:'zigzag', range:1400, zigzagWidth:110, aoeStyle:'thunder' },
+    { name:'超雷撃',     tier:3, color:'#fff34d', dmg:64, cooldown:1.9, gutsCost:24,
+      aoeShape:'zigzag', range:1400, zigzagWidth:150, aoeStyle:'thunder' },
   ],
   rock: [
     { name:'ロケットパンチ',       tier:1, color:'#a98a68', range:600,  dmg:28, cooldown:0.95, gutsCost:8, projSpeed:440, hitR:14, splash:78, icon:'👊🏿' },
     { name:'掌打',   tier:2, color:'#a98a68', range:1200, dmg:15, cooldown:1.3, gutsCost:16, projSpeed:380, hitR:9,  burst:3, burstGap:0.14, icon:'🤚🏿' },
-    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:21, cooldown:2.4, gutsCost:24, projSpeed:520, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true,
-      burst:3, burstGap:0, burstSpread:0, burstSideStep:105 }, // 超番長ボーナスと同じ3本構成(色・エフェクトはそのまま)。1本あたりのdmgは合計が旧来の62相当になるよう調整
+    { name:'竜巻アタック', tier:3, color:'#a98a68', range:1600, dmg:34, cooldown:2.4, gutsCost:24, projSpeed:760, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true,
+      burst:3, burstGap:0, burstSpread:0, burstSideStep:55 }, /* 超番長ボーナスと同じ3本構成(色・エフェクトはそのまま)。
+      **横並びの間隔(burstSideStep)は「単体に何本当たるか」を決める最重要の数字。**105では
+      単体にはほぼ1本しか当たらず、紙の合計63に対して実際は21しか入っていなかった(2026-08-19)。
+      55へ詰めて2本前後が当たるようにし、あわせて1本の威力と弾速を上げてある。 */
   ],
   phoenix: [
     { name:'火炎砲',     tier:1, color:'#e8432a', range:725,  dmg:25, cooldown:0.82, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🔥' },
     { name:'火炎連砲', tier:2, color:'#e8432a', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🔥' },
-    { name:'ファイアウェーブ', tier:3, color:'#ff8a3d', dmg:47, cooldown:2.0, gutsCost:24,
+    { name:'ファイアウェーブ', tier:3, color:'#ff8a3d', dmg:58, cooldown:2.0, gutsCost:24,
       aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava', seStyle:'fireWave' },
   ],
   ark: [
@@ -686,7 +689,7 @@ const SIGNATURE_MOVES = {
   warm: [
     { name:'毒ガス',       tier:1, color:'#9b5fd1', range:700,  dmg:23, cooldown:0.85, gutsCost:8, projSpeed:500, hitR:12, splash:75, icon:'☠️' },
     { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:16, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
-    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:56, cooldown:2.1, gutsCost:24, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell', selfSpeedBuffOnHit:true },
+    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:70, cooldown:2.1, gutsCost:24, projSpeed:760, hitR:34, splash:58, shape:'sphere', projStyle:'shell', selfSpeedBuffOnHit:true },
   ],
   illumine: [
     { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️', seStyle:'venomEdge' },
@@ -699,20 +702,21 @@ const SIGNATURE_MOVES = {
   fox: [
     { name:'狐火',     tier:1, color:'#eaf6ff', range:700,  dmg:23, cooldown:0.82, gutsCost:8, projSpeed:530, hitR:13, splash:74 },
     { name:'超狐火',   tier:2, color:'#eaf6ff', range:1450, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:540, hitR:7,  burst:3, burstGap:0.1 },
-    { name:'天河天翔', tier:3, color:'#ffffff', dmg:48, cooldown:2.1, gutsCost:24,
-      aoeShape:'rect', range:2200, rectWidth:160, aoeStyle:'galaxy' },
+    { name:'天河天翔', tier:3, color:'#ffffff', dmg:74, cooldown:2.1, gutsCost:24,
+      // 幅はキュービの特性(hitboxMult 1.5)で実効300になる。ここは素の値
+      aoeShape:'rect', range:2200, rectWidth:200, aoeStyle:'galaxy' },
   ],
   mocchi: [
     { name:'もんた',     tier:1, color:'#ff8fc4', range:700,  dmg:24, cooldown:0.85, gutsCost:8, projSpeed:530, hitR:12, splash:70, icon:'🖐🏻', seStyle:'monta' },
     { name:'さくらふぶき', tier:2, color:'#ff8fc4', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,  burst:3, burstGap:0.1, icon:'🌸' },
-    { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400,
-      aoeShape:'rect', range:1000, rectWidth:120, aoeStyle:'sakura', seStyle:'mocchiBeam' },
+    { name:'モッチ砲', tier:3, color:'#ff5fb0', dmg:86, cooldown:2.1, gutsCost:24, projSpeed:1400,
+      aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'sakura', seStyle:'mocchiBeam' },
   ],
   suezo: [
     { name:'ツバはき',   tier:1, color:'#ffdd33', range:700,  dmg:22, cooldown:0.8,  gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'💧' },
     { name:'熱視線', tier:2, color:'#ffdd33', dmg:30, cooldown:1.1, gutsCost:16,
       aoeShape:'rect', range:1300, rectWidth:70, seStyle:'beam' },
-    { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:45, cooldown:2.0, gutsCost:24,
+    { name:'サイコキネシス', tier:3, color:'#3d9fff', dmg:66, cooldown:2.0, gutsCost:24,
       aoeShape:'fanZigzag', range:1300, fanAngleDeg:30, aoeStyle:'psychic' },
   ],
   // ガリ(god): 特性で全技の射程が長め・消費ガッツ-12.5%(射程/gutsCostを各技に直接反映)
@@ -720,7 +724,8 @@ const SIGNATURE_MOVES = {
     { name:'ストレート', tier:1, color:'#f5f0ff', range:900, dmg:24, cooldown:0.85, gutsCost:7, projSpeed:560, hitR:13, splash:70, icon:'👊🏻' },
     { name:'ホーリーサンダー', tier:2, color:'#fff2b0', dmg:26, cooldown:1.15, gutsCost:14,
       aoeShape:'zigzag', range:1600, zigzagWidth:105, aoeStyle:'thunder', icon:'⚡️' },
-    { name:'ゴッドライジング', tier:3, color:'#ffffff', dmg:24, cooldown:2.1, gutsCost:21, projSpeed:600,
+    // **この技は4球撃つ。**dmgは1球ぶんなので、上げると4倍で効く(2026-08-19の調整で小幅に留めた)
+    { name:'ゴッドライジング', tier:3, color:'#ffffff', dmg:28, cooldown:2.1, gutsCost:21, projSpeed:820,
       range:1200, hitR:30, splash:0, projStyle:'godorb', multiOrb:['#ff4d4d','#4d7cff','#ffe14d','#4dff6a'],
       orbAuras:['red','blue','yellow','green'], orbSpreadDeg:9, icon:'✨' },
   ],
@@ -728,7 +733,7 @@ const SIGNATURE_MOVES = {
   zan: [
     { name:'ソニックナイフ', tier:1, color:'#8fa0c8', range:680, dmg:20, cooldown:0.8, gutsCost:8, projSpeed:640, hitR:11, splash:64, icon:'🗡️' },
     { name:'フォルターブリッツ', tier:2, color:'#8fa0c8', range:1250, dmg:11, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:6, burst:3, burstGap:0.1, icon:'🗡️' },
-    { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:21, cooldown:2.0, gutsCost:24, projSpeed:820,
+    { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:24, cooldown:2.0, gutsCost:24, projSpeed:900,
       range:1340, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙', seStyle:'darkHoust' },
   ],
   // ピクシー: 特性で移動速度1.2倍・被ダメ1.2倍(高機動・低耐久のグラスキャノン)
@@ -742,13 +747,13 @@ const SIGNATURE_MOVES = {
     // dmg=球体の直撃ダメージ / blast.dmg=着弾後の爆風ダメージ(両方当たれば合計値)
     { name:'ビッグバン', tier:3, color:'#14121c', dmg:20, cooldown:2.3, gutsCost:24,
       range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮',
-      blast:{ radius:330, dmg:60, color:'#14121c', expandTime:0.5 } },
+      blast:{ radius:330, dmg:72, color:'#14121c', expandTime:0.5 } },
   ],
   dullahan:[ /*@dullahan*/
     { name:'まっぷたつ', tier:1, color:'#f4f7ff', aoeShape:'rect', range:700, rectWidth:55, dmg:24, cooldown:0.85, gutsCost:8, aoeStyle:'zangetsu', closeBonusMax:1.5, icon:'🗡️' },
     { name:'風神剣', tier:2, color:'#f4f7ff', range:1300, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:760, hitR:18, burst:3, burstGap:0.09, projStyle:'crescentWhite', closeBonusMax:1.5, icon:'🗡️' },
     // selfBlast: 撃った瞬間に自分の足元でドーム状の爆風が広がる。そのあと竜巻と一緒に前進する
-    { name:'最終奥義', tier:3, color:'#f4f7ff', range:1300, dmg:64, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, selfMoveWithProjectile:true,
+    { name:'最終奥義', tier:3, color:'#f4f7ff', range:1300, dmg:78, cooldown:2.1, gutsCost:26, projSpeed:1500, hitR:34, projStyle:'tornadoAura', closeBonusMax:1.5, selfMoveWithProjectile:true,
       selfBlast:{ radius:420, dmg:46, expandTime:0.42 }, icon:'🌪️' }
   ],
   /* ハムの特性は「技の弾速が速く、射程が短い」。**その通りに全技へ効かせてある**
@@ -773,7 +778,7 @@ const SIGNATURE_MOVES = {
        (fireMoveのendBlastDmgMult=effDmg/move.dmgと同じ比率をそのまま使う。二重の表を作らない)。
        kind='gate'の当たり判定・引き寄せ・炎ダメージ・爆発トリガーはcombat.jsのupdateAreaEffectsに実装。
        gateDist: 発注者依頼(2026-08-12)で260→170に短縮し、門を自分の近くに出す。 */
-    { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:47, cooldown:2, gutsCost:24,
+    { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:30, cooldown:2, gutsCost:24,
       aoeShape:'gate', gateDist:170, rectWidth:220,
       endBlast:{ count:1, radius:240, dmg:47, expandTime:0.45, color:'#ff6a2e', se:'tornado' } }
   ],
@@ -980,16 +985,20 @@ const SSR_SKIN_TIER3 = {
   // burstTints は連射の何発目かで色を変えるための一覧(弾の auraTint に入る)。
   // projVariant は描画側が専用の見た目に切り替えるための目印。
   // burstSideStep があると、扇状に散らさず発射位置を横にずらして「横並び」で同時に飛ばす
+  /* **素の竜巻アタックと数値を合わせて動かすこと。** ここは倍率ではなく絶対値なので、
+     素のほうだけ上げるとSSRスキンの方が弱くなる(2026-08-19の調整で実際に起きかけた)。
+     横並びの間隔も素と同じ55にして、単体に2本前後当たるようにしてある。 */
   rock_ssr:       { name:'超番長ボーナス', move:{ /*@rock_ssr*/
-    dmg:40, burst:3, burstGap:0, burstSpread:0, burstSideStep:105,
-    cooldown:3.0, projSpeed:560, range:1500, gutsCost:26,
+    dmg:48, burst:3, burstGap:0, burstSpread:0, burstSideStep:55,
+    cooldown:3.0, projSpeed:760, range:1500, gutsCost:26,
     projStyle:'tornado', projVariant:'bonus7',
     burstTints:['#3f74e6','#e6453f','#3f74e6'],
   }},
   // 大喰いの利世(ウンディーネ): クリスタルレインを置き換える専用tier3。
   // 赤い触手が足元から生えて範囲を進む。lifestealMult はこの技だけHP回復を倍にする。
+  // **素のクリスタルレインと数値を合わせて動かすこと**(絶対値指定なので自動では追従しない)
   aqua_ssr:       { name:'鱗赫', move:{ /*@aqua_ssr*/
-    dmg:48, rectWidth:340, aoeStyle:'kagune', lifestealMult:2,
+    dmg:70, rectWidth:340, aoeStyle:'kagune', lifestealMult:2,
   }},
   guts_ssr:       { name:'ドラゴンころし', dmgMult:1.15 }, /*@guts_ssr*/
   zod_ssr:        { name:'言葉は無粋', dmgMult:1.15 }, /*@zod_ssr*/
@@ -1198,6 +1207,11 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-19', items:[
+    { t:'⚔️ tier3技(各モンスターの最後の技)の強さを見直しました。弱かった技をまとめて引き上げ、技どうしの差を約7倍から約1.8倍まで縮めています', g:['balance','monster'] },
+    { t:'とくに大きく強くなった技: ゴーレム「竜巻アタック」(3本の間隔を詰めて当たりやすく・威力21→34・弾速520→760)、モッチー「モッチ砲」(威力46→86・幅120→220)、キュービ「天河天翔」(威力48→74・幅160→200)、ライガー「超雷撃」(威力40→64・幅110→150)', g:['balance','monster'] },
+    { t:'爆風を持たない技の弾が速くなりました。ワーム「シェルアタック」500→760、ガリ「ゴッドライジング」600→820、ザン「ダークホウスト」820→900', g:['balance','monster'] },
+    { t:'キジン「羅生門」の吸い込む炎のダメージを47→30に下げました。門の爆風はそのままです', g:['balance','monster'] },
+    { t:'技一覧の「威力」で、キジン「羅生門」の吸い込む炎のダメージが数えられていなかったのを直しました(実際のダメージは前から入っていました)', g:['fix','general'] },
     { t:'待機画面の「対戦相手を探しています…」パネルの文字・ボタンが2行に折れてしまう不具合を修正しました(文字サイズを詰めて1行に収まるようにしました)。チームメンバーの表示も、自分のマスモンに軽く重なる位置まで寄せました', g:['fix','multi'] },
   ]},
   { date:'2026-08-19', items:[
