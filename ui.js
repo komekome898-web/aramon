@@ -5976,10 +5976,15 @@ function buildSkinShare(skinId){
     sub: el ? `${el.label} のスキン` : 'スキン',
     image: img || shareArtImage(m.element, null),
     imageLabel: m.name,
-    rows: [
-      { label:'レアリティ', value: rar },
-      { label:'モンスター', value: el ? el.label : m.element },
-    ],
+    foil: rar === 'SSR' ? 'ssr' : null,   // SSRのカードだけ虹色の箔を1枚重ねる
+    /* 専用技はSSRの一番の価値なので必ず出す(**引くのは skinTier3Def 1か所**)。
+       色スキン(SR)には専用技が無いので、そのときは2列のまま。 */
+    rows: (()=>{
+      const r = [{ label:'レアリティ', value: rar }, { label:'モンスター', value: el ? el.label : m.element }];
+      const def = (typeof skinTier3Def==='function') ? skinTier3Def(skinId) : null;
+      if(def && def.name) r.push({ label:'専用技', value: def.name });
+      return r;
+    })(),
     chips: ['スキンガチャ'],
   };
   const text = buildShareText([

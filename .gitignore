@@ -6,3 +6,6 @@ __pycache__/
 
 # 技エフェクトの撮影結果(tools/fx_shot.mjs の出力)。撮り直せる派生物なので追跡しない
 shots/
+
+# シェアカードのプレビュー画像(tools/share_shot.mjs の出力)。撮り直せる派生物なので追跡しない
+tools/_share_preview/
