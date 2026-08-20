@@ -1225,6 +1225,12 @@ function refreshLobby(){
   updateLobbyPickLabels();
   updateLobbyBgmLabel();
   renderLobbyMonster();
+  /* 斜め後ろのチームメンバーも主役と同じ流れで描き直す(2026-08-20)。
+     computeLobbyTeammates() が「チーム戦の部屋にいなければ空」を返すので、
+     **試合が終わってロビーへ戻ったときや他の画面から戻ったときは自動的に消える。**
+     以前は参加者が変わったとき(renderLobbyPlayerList)しか呼んでおらず、
+     試合後に直前の味方が出たまま残っていた。 */
+  renderLobbyTeammates();
   startLobbyBannerLoop();
   startLobbyRoomPoll();
   refreshGhosts();   // 他の人が育てたマスモン(ソロの敵に混ぜる)を間隔を空けて取り直す
@@ -4012,6 +4018,9 @@ function hideLobbyTeammates(){
     if(!img) return;
     stopMateWalkAnim(img);
     img.classList.add('hidden'); img.removeAttribute('src');
+    /* 「同じ相手なら描き直さない」の目印も消す。残すと、同じ相手で再表示したときに
+       renderLobbyTeammates() が早期returnして**srcが空のまま出る**(2026-08-20) */
+    delete img.dataset.mateSubject;
   });
 }
 function renderLobbyTeammates(){
@@ -10386,7 +10395,7 @@ function initTitleScreen(){
   const scr = document.getElementById('startScreen');
   const sync = ()=>{
     // 画面が隠れている間はタイマーを回さない(歩行アニメ・バナー切り替え・部屋の監視)
-    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); stopLobbyBannerLoop(); stopLobbyRoomPoll(); stopExpeditionTick(); }
+    if(scr.classList.contains('hidden')){ stopLobbyWalkAnim(); hideLobbyTeammates(); stopLobbyBannerLoop(); stopLobbyRoomPoll(); stopExpeditionTick(); }
     else refreshLobby();
   };
   new MutationObserver(sync).observe(scr, { attributes:true, attributeFilter:['class'] });
