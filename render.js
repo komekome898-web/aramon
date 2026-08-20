@@ -248,6 +248,7 @@ function skinnedImageForEntity(entity){
      bars            : [{label,rank,value,max,color}] … rowsの代わりに縦並びのバーで見せる
                        (マスモンは6項目すべてを適正バッジ付きのバーで出す)
      chips           : [文字列] 0〜3個
+     foil            : 'ssr' … 箔(虹色の層)を足す。省略時は無し
    }
 
    【注意】monsters/*.png は同一オリジンなのでcanvasが汚染されずtoBlobできる。
@@ -272,7 +273,7 @@ function _shareRoundRect(cx, x, y, w, h, r){
 /* 枠に収まるまでフォントを落とし、最小サイズでも入らなければ末尾を「…」にする。
    **カードの文字はすべてこれを通す**(プレイヤー名もマスモン名も長さが読めないため)。
    実際に描いたフォントサイズを返す。 */
-function _shareFitText(cx, text, x, y, maxW, basePx, minPx, weight){
+function _shareFitFont(cx, text, maxW, basePx, minPx, weight){
   let px = basePx, s = String(text==null ? '' : text);
   while(px > minPx){
     cx.font = _shareFont(px, weight);
@@ -284,8 +285,13 @@ function _shareFitText(cx, text, x, y, maxW, basePx, minPx, weight){
     while(s.length > 1 && cx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
     s += '…';
   }
-  cx.fillText(s, x, y);
-  return px;
+  return { px, text: s };
+}
+function _shareFitText(cx, text, x, y, maxW, basePx, minPx, weight){
+  const fit = _shareFitFont(cx, text, maxW, basePx, minPx, weight);
+  cx.font = _shareFont(fit.px, weight);
+  cx.fillText(fit.text, x, y);
+  return fit.px;
 }
 // object-fit:contain 相当。枠の中央に、はみ出さないよう収める
 function _shareDrawContain(cx, img, x, y, w, h){
@@ -309,6 +315,133 @@ function _shareDrawArt(cx, spec, x, y, w, h){
   cx.font = _shareFont(Math.round(r), 700);
   cx.fillText(String(spec.imageLabel || '？').slice(0, 1), cxx, cyy + 2);
   cx.restore();
+}
+/* ===== トレカ風の装飾(2026-08-19に刷新) =====
+   **色は決め打ちしない。**すべて accent から作るので、勝敗・属性・レアリティで
+   自動的に色が変わる。地紋・光沢・金具は全カード共通で、レアリティ(spec.foil)の
+   ときだけ虹色の層を1枚足す。 */
+function _shareShade(hex, k){          // k>0で明るく、k<0で暗く
+  try{
+    const c = hexToRgb(hex);
+    const f = (v)=> k>=0 ? v + (255-v)*k : v*(1+k);
+    return _rgbToHex([f(c[0]), f(c[1]), f(c[2])]);
+  }catch(err){ return hex; }
+}
+// 箔押しの金属グラデ(明→色→濃→色→明)。板を斜めから見た反射に見せる
+function _shareMetal(cx, x0, y0, x1, y1, accent){
+  const g = cx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0.00, _shareShade(accent, 0.60));
+  g.addColorStop(0.26, accent);
+  g.addColorStop(0.50, _shareShade(accent, -0.45));
+  g.addColorStop(0.74, accent);
+  g.addColorStop(1.00, _shareShade(accent, 0.60));
+  return g;
+}
+/* 虹の箔。**SSRのカードはこれが主役の色**になる(枠・金具・見出し・ネームプレート)。
+   accentから作る金属グラデ(_shareMetal)と差し替えて使うので、引数の形をそろえてある。 */
+const SHARE_RAINBOW = ['#ff5f8f','#ffb03c','#ffe94d','#5fffa8','#5fd0ff','#c98bff','#ff5f8f'];
+function _shareRainbowGrad(cx, x0, y0, x1, y1){
+  const g = cx.createLinearGradient(x0, y0, x1, y1);
+  SHARE_RAINBOW.forEach((c, i, arr)=> g.addColorStop(i/(arr.length-1), c));
+  return g;
+}
+// 六角の地紋。カード全面にうっすら敷いて「紙の質感」を出す
+function _shareDrawPattern(cx, accent){
+  const r = 34, dx = r*1.5, dy = r*Math.sqrt(3);
+  cx.save();
+  cx.globalAlpha = 0.06;
+  cx.strokeStyle = _shareShade(accent, 0.4);
+  cx.lineWidth = 1.5;
+  for(let col = 0, x = -r; x < SHARE_CARD_W + r; col++, x += dx){
+    for(let y = (col % 2 ? dy/2 : 0) - dy; y < SHARE_CARD_H + dy; y += dy){
+      cx.beginPath();
+      for(let i = 0; i < 6; i++){
+        const a = Math.PI/180 * (60*i);
+        const px = x + Math.cos(a)*r, py = y + Math.sin(a)*r;
+        if(i === 0) cx.moveTo(px, py); else cx.lineTo(px, py);
+      }
+      cx.closePath(); cx.stroke();
+    }
+  }
+  cx.restore();
+}
+// 斜めに走る箔の光沢。SSRのときだけ虹色を1枚重ねる
+function _shareDrawSheen(cx, foil){
+  cx.save();
+  cx.globalCompositeOperation = 'lighter';
+  [[-120, 240, 0.10], [420, 150, 0.06]].forEach(([sx, w, a])=>{
+    const g = cx.createLinearGradient(sx, SHARE_CARD_H, sx + w, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    cx.fillStyle = g;
+    cx.beginPath();
+    cx.moveTo(sx, SHARE_CARD_H); cx.lineTo(sx + SHARE_CARD_H*0.55, 0);
+    cx.lineTo(sx + SHARE_CARD_H*0.55 + w, 0); cx.lineTo(sx + w, SHARE_CARD_H);
+    cx.closePath(); cx.fill();
+  });
+  if(foil === 'ssr'){
+    const RAINBOW = ['#ff5f8f','#ffd23c','#5fffa8','#5fd0ff','#c98bff'];
+    const g = cx.createLinearGradient(0, SHARE_CARD_H, SHARE_CARD_W, 0);   // 全面にうっすら
+    RAINBOW.forEach((c,i,arr)=> g.addColorStop(i/(arr.length-1), _hexA(c, 0.09)));
+    cx.fillStyle = g; cx.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
+    /* 斜めの虹の帯。**両端を長くぼかす**(急に色が変わると、箔ではなく描画の失敗に見える) */
+    const bx = 120, bw = 560;
+    const g2 = cx.createLinearGradient(bx, SHARE_CARD_H, bx + bw, 0);
+    g2.addColorStop(0, 'rgba(255,255,255,0)');
+    RAINBOW.forEach((c,i,arr)=>{
+      const t = i/(arr.length-1);
+      const a = 0.20 * Math.sin(Math.PI * (0.12 + 0.76*t));   // 中央が濃く、両端は0へ
+      g2.addColorStop(0.12 + 0.76*t, _hexA(c, a));
+    });
+    g2.addColorStop(1, 'rgba(255,255,255,0)');
+    cx.fillStyle = g2;
+    cx.beginPath();
+    cx.moveTo(bx, SHARE_CARD_H); cx.lineTo(bx + SHARE_CARD_H*0.55, 0);
+    cx.lineTo(bx + SHARE_CARD_H*0.55 + bw, 0); cx.lineTo(bx + bw, SHARE_CARD_H);
+    cx.closePath(); cx.fill();
+  }
+  cx.restore();
+}
+// 四隅のL字金具。カードの「額装されている感じ」はここで出る
+function _shareDrawCorners(cx, x, y, w, h, accent, grad){
+  const L = 54, T = 5;
+  cx.save();
+  cx.strokeStyle = grad || _shareMetal(cx, x, y, x + w, y + h, accent);
+  cx.lineWidth = T; cx.lineCap = 'square';
+  [[x, y, 1, 1], [x+w, y, -1, 1], [x, y+h, 1, -1], [x+w, y+h, -1, -1]].forEach(([px, py, sx, sy])=>{
+    cx.beginPath();
+    cx.moveTo(px + sx*L, py); cx.lineTo(px, py); cx.lineTo(px, py + sy*L);
+    cx.stroke();
+  });
+  cx.restore();
+}
+/* 見出しの箔押し文字。濃い縁取り+落ち影+金属グラデで、背景に負けないようにする。
+   縮める処理は _shareFitText と同じ(1か所にまとめてある)。 */
+function _shareFoilText(cx, text, x, y, maxW, basePx, minPx, accent, rainbow){
+  const fit = _shareFitFont(cx, text, maxW, basePx, minPx, 700);
+  cx.save();
+  cx.font = _shareFont(fit.px, 700);
+  const w = Math.max(40, cx.measureText(fit.text).width);
+  cx.shadowColor = 'rgba(0,0,0,0.65)'; cx.shadowBlur = 12; cx.shadowOffsetY = 4;
+  cx.lineJoin = 'round'; cx.lineWidth = Math.max(4, fit.px*0.10);
+  cx.strokeStyle = 'rgba(8,10,16,0.92)';
+  cx.strokeText(fit.text, x, y);
+  cx.shadowColor = 'transparent'; cx.shadowBlur = 0; cx.shadowOffsetY = 0;
+  cx.fillStyle = rainbow ? _shareRainbowGrad(cx, x, y - fit.px, x + w, y)
+                         : _shareMetal(cx, x, y - fit.px, x + w, y, _shareShade(accent, 0.15));
+  cx.fillText(fit.text, x, y);
+  cx.restore();
+  return fit.px;
+}
+// ゲームのロゴ。**読めていなければ文字で代用する**(シェアは絶対に落とさない)
+let _shareLogoImg = null;
+function _shareLogo(){
+  if(_shareLogoImg === null){
+    try{ _shareLogoImg = new Image(); _shareLogoImg.src = 'images/title_logo.png'; }
+    catch(err){ _shareLogoImg = false; }
+  }
+  return (_shareLogoImg && _shareLogoImg.complete && _shareLogoImg.naturalWidth) ? _shareLogoImg : null;
 }
 function _shareDrawChips(cx, chips, x, y, maxW){
   let cur = x;
@@ -367,28 +500,57 @@ function _shareDrawBars(cx, bars, x, y, w, pitch){
     cx.fillText(String(b.value), x + w, ty);
     cx.textAlign = 'left';
     // バー本体
-    const bh = 10, by = ty + 10;
-    cx.fillStyle = 'rgba(255,255,255,0.13)';
+    const bh = 12, by = ty + 10;
+    cx.fillStyle = 'rgba(255,255,255,0.10)';
     _shareRoundRect(cx, x, by, w, bh, bh/2); cx.fill();
+    cx.strokeStyle = 'rgba(255,255,255,0.10)'; cx.lineWidth = 1;
+    _shareRoundRect(cx, x, by, w, bh, bh/2); cx.stroke();
     const pct = Math.max(0, Math.min(1, (b.value||0) / (b.max || 1)));
     if(pct > 0){
-      cx.fillStyle = b.color || '#f4c430';
-      _shareRoundRect(cx, x, by, Math.max(bh, w*pct), bh, bh/2); cx.fill();
+      const col = b.color || '#f4c430';
+      const bw = Math.max(bh, w*pct);
+      const bg = cx.createLinearGradient(x, by, x, by + bh);   // 上が明るい=光沢
+      bg.addColorStop(0, _shareShade(col, 0.45));
+      bg.addColorStop(0.55, col);
+      bg.addColorStop(1, _shareShade(col, -0.3));
+      cx.fillStyle = bg;
+      _shareRoundRect(cx, x, by, bw, bh, bh/2); cx.fill();
+      cx.save();                                              // 先端の光
+      cx.globalCompositeOperation = 'lighter'; cx.globalAlpha = 0.5;
+      cx.fillStyle = _shareShade(col, 0.7);
+      _shareRoundRect(cx, x + bw - Math.min(18, bw), by + 1, Math.min(18, bw), bh - 2, bh/2); cx.fill();
+      cx.restore();
     }
   });
 }
 // 数値行。2〜4個を等幅に割り、値だけ大きく出す
-function _shareDrawRows(cx, rows, x, y, maxW, accent){
+function _shareDrawRows(cx, rows, x, y, maxW, accent, rainbow){
   const list = (rows || []).slice(0, 4);
   if(!list.length) return;
-  const colW = maxW / list.length;
+  /* 列の幅は等分ではなく**中身の長さで配分する**。等分だと長い値(専用技の名前など)だけが
+     「…」で切れて読めなくなる。短い列が潰れないよう下限を設けてある。 */
+  cx.font = _shareFont(30, 700);
+  const need = list.map(r=> Math.max(cx.measureText(String(r.value||'')).width,
+                                     cx.measureText(String(r.label||'')).width * 0.8, 40));
+  const sum = need.reduce((a,b)=>a+b, 0) || 1;
+  const minW = maxW * (list.length > 2 ? 0.20 : 0.30);
+  let widths = need.map(n=> Math.max(minW, maxW * (n/sum)));
+  const over = widths.reduce((a,b)=>a+b,0) / maxW;
+  if(over > 1) widths = widths.map(w=> w/over);           // 合計がはみ出したら比例で戻す
+  let cur = x;
   list.forEach((r, i)=>{
-    const cxx = x + colW*i;
+    const cxx = cur, colW = widths[i];
+    cur += colW;
     cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+    if(i > 0){                                  // 列の仕切り(数字が並んで見えるように)
+      cx.save();
+      cx.strokeStyle = 'rgba(255,255,255,0.10)'; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(cxx - 12, y - 22); cx.lineTo(cxx - 12, y + 62); cx.stroke();
+      cx.restore();
+    }
     cx.fillStyle = SHARE_DIM;
     _shareFitText(cx, r.label, cxx, y, colW - 24, 20, 13, 600);
-    cx.fillStyle = accent;
-    _shareFitText(cx, r.value, cxx, y + 50, colW - 24, 46, 26, 700);
+    _shareFoilText(cx, r.value, cxx, y + 52, colW - 24, 48, 26, accent, rainbow);
   });
 }
 
@@ -408,62 +570,159 @@ function shareCardCanvas(spec){
 function _shareDrawCard(cx, spec){
   const accent  = spec.accent  || '#f4c430';
   const accent2 = spec.accent2 || '#1b2740';
-  // 背景(基調色→暗い地の縦グラデ + 対角の薄いストライプ)
-  const g = cx.createLinearGradient(0, 0, SHARE_CARD_W*0.35, SHARE_CARD_H);
-  g.addColorStop(0, accent2); g.addColorStop(0.55, '#0a1120'); g.addColorStop(1, '#06090f');
-  cx.fillStyle = g; cx.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
+  const W = SHARE_CARD_W, H = SHARE_CARD_H;
+  /* **SSRのカードは虹色が主役。** 枠・金具・見出し・ネームプレートの「箔」をすべて虹に
+     差し替える(呼び出し方は同じなので、以降の組み立ては1本のまま)。 */
+  const isSsr = spec.foil === 'ssr';
+  const foilGrad = (x0, y0, x1, y1)=> isSsr ? _shareRainbowGrad(cx, x0, y0, x1, y1)
+                                            : _shareMetal(cx, x0, y0, x1, y1, accent);
+
+  /* ---- 地: 基調色から暗い地へ + 六角の地紋 + 四辺のビネット ---- */
+  const g = cx.createLinearGradient(0, 0, W*0.42, H);
+  g.addColorStop(0, _shareShade(accent2, 0.18));
+  g.addColorStop(0.5, '#0a1120');
+  g.addColorStop(1, '#05080e');
+  cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+  _shareDrawPattern(cx, accent);
+  const vg = cx.createRadialGradient(W*0.42, H*0.48, 120, W*0.42, H*0.48, W*0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.62)');
+  cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
+
+  /* ---- 主役の後ろの光(放射) ---- */
+  const AX = 60, AY = 86, AW = 420, AH = 420;       // 絵の窓
+  const glow = cx.createRadialGradient(AX+AW/2, AY+AH/2, 20, AX+AW/2, AY+AH/2, 330);
+  glow.addColorStop(0, _hexA(accent, 0.42));
+  glow.addColorStop(0.55, _hexA(accent, 0.10));
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  cx.fillStyle = glow; cx.fillRect(0, 0, 760, H);
+
+  /* ---- 枠: 二重 + 四隅の金具。カードらしさはここで決まる ---- */
   cx.save();
-  cx.globalAlpha = 0.05; cx.fillStyle = '#ffffff';
-  for(let i = -SHARE_CARD_H; i < SHARE_CARD_W; i += 56){
-    cx.beginPath(); cx.moveTo(i, SHARE_CARD_H); cx.lineTo(i + SHARE_CARD_H*0.6, 0);
-    cx.lineTo(i + SHARE_CARD_H*0.6 + 16, 0); cx.lineTo(i + 16, SHARE_CARD_H); cx.fill();
+  cx.strokeStyle = foilGrad(16, 16, W-16, H-16);
+  cx.lineWidth = isSsr ? 7 : 6;
+  _shareRoundRect(cx, 16, 16, W-32, H-32, 26); cx.stroke();
+  cx.strokeStyle = _hexA(_shareShade(accent, 0.5), 0.55); cx.lineWidth = 1.5;
+  _shareRoundRect(cx, 28, 28, W-56, H-56, 20); cx.stroke();
+  cx.restore();
+  _shareDrawCorners(cx, 34, 34, W-68, H-68, accent, isSsr ? foilGrad(34, 34, W-34, H-34) : null);
+
+  /* ---- 左: 絵の窓 ---- */
+  cx.save();
+  _shareRoundRect(cx, AX, AY, AW, AH, 18);
+  const ig = cx.createLinearGradient(AX, AY, AX, AY+AH);
+  ig.addColorStop(0, _hexA(_shareShade(accent2, 0.25), 0.9));
+  ig.addColorStop(1, 'rgba(4,7,12,0.9)');
+  cx.fillStyle = ig; cx.fill();
+  cx.clip();
+  // 窓の中の放射線(トレカの背景によくある光条)
+  cx.save();
+  cx.globalAlpha = 0.16; cx.strokeStyle = _shareShade(accent, 0.35); cx.lineWidth = 12;
+  for(let i = 0; i < 16; i++){
+    const a = Math.PI*2/16*i + 0.2;
+    cx.beginPath(); cx.moveTo(AX+AW/2, AY+AH/2);
+    cx.lineTo(AX+AW/2 + Math.cos(a)*520, AY+AH/2 + Math.sin(a)*520); cx.stroke();
   }
   cx.restore();
-  // 基調色の光(左の絵の後ろ)
-  const glow = cx.createRadialGradient(264, 320, 20, 264, 320, 300);
-  glow.addColorStop(0, accent); glow.addColorStop(1, 'rgba(0,0,0,0)');
-  cx.save(); cx.globalAlpha = 0.22; cx.fillStyle = glow;
-  cx.fillRect(0, 0, 620, SHARE_CARD_H); cx.restore();
-  // 内枠
-  cx.strokeStyle = accent; cx.lineWidth = 2; cx.globalAlpha = 0.65;
-  _shareRoundRect(cx, 24, 24, SHARE_CARD_W-48, SHARE_CARD_H-48, 22); cx.stroke();
-  cx.globalAlpha = 1;
-
-  // 左: 主役の絵と台座
+  // 台座の影
   cx.save();
-  cx.globalAlpha = 0.3; cx.fillStyle = accent;
-  cx.beginPath(); cx.ellipse(264, 512, 150, 26, 0, 0, Math.PI*2); cx.fill();
+  cx.globalAlpha = 0.35; cx.fillStyle = '#000';
+  cx.beginPath(); cx.ellipse(AX+AW/2, AY+AH-46, 148, 24, 0, 0, Math.PI*2); cx.fill();
   cx.restore();
-  _shareDrawArt(cx, { ...spec, accent, accent2 }, 84, 118, 360, 380);
+  cx.save();
+  cx.globalAlpha = 0.32; cx.fillStyle = accent;
+  cx.beginPath(); cx.ellipse(AX+AW/2, AY+AH-50, 132, 18, 0, 0, Math.PI*2); cx.fill();
+  cx.restore();
+  /* 絵は2回描く。1回目は基調色の影をぼかして**輪郭の光**にし、2回目で本体を重ねる
+     (スプライトの形に沿って光るので、切り抜き画像がそのまま主役に見える) */
+  const art = { ...spec, accent, accent2 };
+  cx.save();
+  cx.shadowColor = _hexA(accent, 0.85); cx.shadowBlur = 34;
+  _shareDrawArt(cx, art, AX+26, AY+18, AW-52, AH-96);
+  cx.restore();
+  _shareDrawArt(cx, art, AX+26, AY+18, AW-52, AH-96);
+  cx.restore();
+  cx.save();
+  cx.strokeStyle = _hexA(_shareShade(accent, 0.35), 0.75); cx.lineWidth = 2;
+  _shareRoundRect(cx, AX, AY, AW, AH, 18); cx.stroke();
+  cx.restore();
+
+  /* ---- 絵の下のネームプレート ---- */
   if(spec.imageLabel){
-    cx.fillStyle = SHARE_INK; cx.textAlign = 'center'; cx.textBaseline = 'alphabetic';
-    _shareFitText(cx, spec.imageLabel, 264, 576, 340, 28, 16, 700);
+    const NY = AY + AH + 14, NH = 54;
+    cx.save();
+    _shareRoundRect(cx, AX, NY, AW, NH, 10);
+    const ng = cx.createLinearGradient(AX, NY, AX, NY+NH);
+    ng.addColorStop(0, 'rgba(14,20,32,0.95)'); ng.addColorStop(1, 'rgba(6,9,16,0.95)');
+    cx.fillStyle = ng; cx.fill();
+    cx.strokeStyle = foilGrad(AX, NY, AX+AW, NY+NH); cx.lineWidth = 2.5; cx.stroke();
+    cx.restore();
+    cx.fillStyle = SHARE_INK; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    _shareFitText(cx, spec.imageLabel, AX+AW/2, NY+NH/2+1, AW-36, 30, 16, 700);
+    cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
   }
 
-  // 右: 文字組み
-  const RX = 508, RW = SHARE_CARD_W - 508 - 64;
-  cx.textAlign = 'left';
-  cx.fillStyle = SHARE_DIM;
-  if(spec.player) _shareFitText(cx, spec.player, RX, 132, RW, 24, 15, 600);
-  cx.fillStyle = accent;
-  _shareFitText(cx, spec.headline || '', RX, 216, RW, 72, 40, 700);
-  cx.fillStyle = SHARE_INK;
-  /* サブの位置は**固定**。見出しの実サイズに連動させると、見出しが縮んだときに
-     サブがせり上がって重なる(レイドの「🐉 レイドボスを討伐！」で実際に起きた)。 */
-  if(spec.sub) _shareFitText(cx, spec.sub, RX, 266, RW, 30, 18, 600);
-  _shareDrawChips(cx, spec.chips, RX, 300, RW);
-  /* 数値の見せ方は2通り。**barsがあればそちらを優先**する(マスモンは6項目すべてを
-     バーと適正で見せたいので、3つだけの数値行では足りない)。 */
-  if(spec.bars && spec.bars.length) _shareDrawBars(cx, spec.bars, RX, 364, RW, 44);
-  else _shareDrawRows(cx, spec.rows, RX, 400, RW, accent);
+  /* ---- 右: 文字組み ---- */
+  const RX = 528, RW = W - RX - 64;
+  cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+  if(spec.player){
+    // プレイヤー名は小さな札に入れる(見出しとぶつからないように)
+    cx.font = _shareFont(17, 700);
+    const tagW = cx.measureText('PLAYER').width + 20;
+    cx.fillStyle = _hexA(accent, 0.85);
+    _shareRoundRect(cx, RX, 92, tagW, 26, 4); cx.fill();
+    cx.fillStyle = '#0a0d14'; cx.textBaseline = 'middle';
+    cx.fillText('PLAYER', RX + 10, 106);
+    cx.textBaseline = 'alphabetic';
+    cx.fillStyle = SHARE_INK;
+    _shareFitText(cx, spec.player, RX + tagW + 12, 114, RW - tagW - 12, 24, 15, 600);
+  }
+  _shareFoilText(cx, spec.headline || '', RX, 196, RW, 78, 40, accent, isSsr);
+  if(spec.sub){
+    cx.fillStyle = SHARE_INK;
+    /* サブの位置は**固定**。見出しの実サイズに連動させると、見出しが縮んだときに
+       サブがせり上がって重なる(レイドの「🐉 レイドボスを討伐！」で実際に起きた)。 */
+    _shareFitText(cx, spec.sub, RX, 244, RW, 30, 18, 600);
+  }
+  _shareDrawChips(cx, spec.chips, RX, 268, RW);
 
-  // 下: 出典
-  cx.fillStyle = SHARE_DIM; cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
-  cx.font = _shareFont(24, 700); cx.fillText('荒野モン動', 64, SHARE_CARD_H - 44);
-  cx.font = _shareFont(18, 600); cx.fillStyle = 'rgba(154,167,184,0.75)';
-  cx.fillText('WILD BATTLE ROYALE', 190, SHARE_CARD_H - 44);
-  cx.textAlign = 'right';
-  cx.fillText(typeof SHARE_URL!=='undefined' ? SHARE_URL.replace(/^https?:\/\//, '') : '', SHARE_CARD_W - 64, SHARE_CARD_H - 44);
+  /* ---- 右下: ステータス欄(トレカの下部パネル) ---- */
+  const useBars = !!(spec.bars && spec.bars.length);
+  const PY = useBars ? 318 : 336, PH = useBars ? 284 : 148;
+  cx.save();
+  _shareRoundRect(cx, RX-18, PY, RW+36, PH, 14);
+  cx.fillStyle = 'rgba(2,5,10,0.55)'; cx.fill();
+  cx.strokeStyle = _hexA(_shareShade(accent, 0.3), 0.35); cx.lineWidth = 1.5; cx.stroke();
+  cx.restore();
+  // バーは6本(マスモンの全ステータス)入る。**パネルの高さから逆算した間隔**にする
+  if(useBars) _shareDrawBars(cx, spec.bars, RX, PY + 38, RW, 42);
+  else _shareDrawRows(cx, spec.rows, RX, PY + 44, RW, accent, isSsr);
+
+  /* ---- 下: ロゴとURL ---- */
+  const logo = _shareLogo();
+  /* **四隅の金具(x=34..88 / y=587..641)を避ける。** 以前はロゴが金具の上に重なっていた。
+     左右の余白は金具の外側+余裕で 104px 取り、上下は金具より下に置かない。 */
+  const FX = 104, FY = H - 68, FH = 36;
+  cx.save();
+  cx.strokeStyle = _hexA(_shareShade(accent, 0.2), 0.30); cx.lineWidth = 1;
+  cx.beginPath(); cx.moveTo(FX, FY - 14); cx.lineTo(W - FX, FY - 14); cx.stroke();
+  cx.restore();
+  if(logo){
+    const lw = Math.min(_imgW(logo) * (FH / _imgH(logo)), 240);
+    cx.save(); cx.globalAlpha = 0.95;
+    cx.drawImage(logo, FX, FY, lw, FH);
+    cx.restore();
+  } else {
+    cx.fillStyle = SHARE_DIM; cx.font = _shareFont(24, 700);
+    cx.textBaseline = 'middle'; cx.fillText('荒野モン動', FX, FY + FH/2);
+    cx.textBaseline = 'alphabetic';
+  }
+  cx.fillStyle = 'rgba(154,167,184,0.85)'; cx.font = _shareFont(18, 600);
+  cx.textAlign = 'right'; cx.textBaseline = 'middle';
+  cx.fillText(typeof SHARE_URL!=='undefined' ? SHARE_URL.replace(/^https?:\/\//, '') : '', W - FX, FY + FH/2);
+  cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+
+  /* ---- 仕上げ: 箔の光沢を全面に(最後に重ねる) ---- */
+  _shareDrawSheen(cx, spec.foil);
 }
 // 描画が落ちたときの最後の砦。見出しだけでも読める1枚にする
 function _shareDrawFallback(cx, spec){
@@ -474,6 +733,9 @@ function _shareDrawFallback(cx, spec){
   cx.fillStyle = SHARE_DIM;
   _shareFitText(cx, spec.sub || '', SHARE_CARD_W/2, SHARE_CARD_H/2 + 48, SHARE_CARD_W - 120, 30, 18, 600);
 }
+// ロゴは読み込みに時間がかかるので、ページを開いた時点で取りにいっておく
+try{ _shareLogo(); }catch(err){}
+
 /* PNGのBlobにする。mimeを引数にしてあるのは、重すぎたときに
    image/jpeg 0.9 へ落とせるようにするため(透過を使っていないので見た目は変わらない)。 */
 function shareCardBlob(spec, canvas, mime){
