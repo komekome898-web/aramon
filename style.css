@@ -448,15 +448,23 @@
   /* チーム戦の部屋にいる間だけ出す、自分の斜め後ろ左右のチームメンバー(2026-08-19)。
      主役より一回り小さく・少し暗くして「後ろにいる」印象にする。クリックは主役ボタンへ素通し。
      bottomを主役よりわずかに高くして「少し上側(奥)」に立たせる。
-     left/rightは主役に軽く重なる程度まで寄せる(発注者指摘 2026-08-19。以前は端に寄りすぎて見切れていた) */
+     【発注者要望 2026-08-20】主役にもっと寄せる(**被ってよい。むしろ奥にいる感じが出る**)。
+     あわせて**外端ぞろえ(left/right の%)をやめ、主役の中心からの距離で置く**。
+     %はステージの幅に比例するのに主役の大きさは --vh で頭打ちなので、画面が広い端末ほど
+     味方だけが外へ流れていた(実測: 中心間の距離が iPhone SE 80px → iPhone 11 124px)。
+     中心ぞろえにすると、どの端末でも同じ寄り具合になる。 */
   .lobby-mate-img{
-    position:absolute; bottom:calc(3 * var(--vh)); z-index:0; pointer-events:none;
-    max-height:58%; max-width:36%; object-fit:contain;
-    filter:drop-shadow(0 6px 12px rgba(0,0,0,0.75)) brightness(0.8);
-    opacity:0.92;
+    position:absolute; bottom:calc(5 * var(--vh)); z-index:0; pointer-events:none;
+    max-height:52%; max-width:32%; object-fit:contain;
+    filter:drop-shadow(0 6px 12px rgba(0,0,0,0.75)) brightness(0.72);
+    opacity:0.9;
   }
-  #lobbyMateImgLeft{ left:14%; }
-  #lobbyMateImgRight{ right:14%; }
+  /* 主役の中心から味方の中心までの距離。**寄り具合はこの1つの数字だけで決まる。**
+     主役の横幅は max-width:min(80%, 46*var(--vh)) で決まっていて、実際には
+     ほぼ常に --vh 側が効くので、こちらも --vh でそろえて画面サイズに追従させる。 */
+  #lobbyMonsterStage{ --lobby-mate-gap: calc(17 * var(--vh)); }
+  #lobbyMateImgLeft { left:50%; transform:translateX(calc(-50% - var(--lobby-mate-gap))); }
+  #lobbyMateImgRight{ left:50%; transform:translateX(calc(-50% + var(--lobby-mate-gap))); }
   .lobby-mate-img.hidden{ display:none !important; }
   /* 未選択のときの案内。ここをタップして選択させるのでボタンらしく見せる */
   #lobbyMonsterEmpty{
