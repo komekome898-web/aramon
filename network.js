@@ -24,6 +24,17 @@ let lastInputSendAt = 0;
 let remoteInputs = {};   // playerId -> {mx,my,facing,wantFire,wantDash,moveTierSelected,seq}
 const processedRoomEventKeys = new Set(); // events(キルフィード等)の重複処理防止
 
+/* ===== ホストの沈黙(ゲスト側の取り残され対策) =====
+   ホストが圏外・アプリ終了になるとauthStateが止まり、敵もbotも凍ったまま自分だけ動ける
+   世界が残る。以前はトーストも出ずリザルトにも進めないので、アプリを終了するしかなかった。
+   authStateはrtdb経由でも50ms間隔で届く(net_transport.jsのキープアライブ)ので、
+   秒単位の途絶えは「ホストがもう居ない」とみなしてよい。 */
+const HOST_SILENCE_TIMEOUT = 5;          // これだけ(秒)authStateが途絶えたら試合を切り上げる
+const HOST_SILENCE_RESUME_GAP_MS = 1000; // フレームがこれ以上飛んだら「アプリが止まっていた」とみなし測り直す
+let hostAuthSeenAt = 0;                  // 最後にauthStateを受け取った時刻(performance.now基準・ms)
+let hostSilenceHandled = false;          // 二重に終わらせない
+let lastFrameGapMs = 0;                  // 直前フレームからの実経過(dtは0.05で頭打ちなので別に持つ)
+
 // ===== 自分の位置の突き合わせ(ラバーバンド対策) =====
 // 入力に連番(seq)を付けて送り、ホストは「最後に適用した入力seq」をauthStateで返す。
 // ゲストは自分の予測位置をseqごとに覚えておき、同じ入力時点どうしで誤差を取る。
@@ -270,6 +281,8 @@ async function beginMultiplayerMatchInner(){
   // 自分の位置の突き合わせ状態をリセット(前の試合の履歴が残ると初回補正が暴れる)
   selfInputSeq = 0; selfDashSeq = 0; selfPredHistory = []; selfCorrX = 0; selfCorrY = 0;
   selfCardSeq = 0; selfCardPick = null; resetTrainOffers();
+  // ホストの沈黙の計測も試合ごとにやり直す
+  hostAuthSeenAt = performance.now(); hostSilenceHandled = false; lastFrameGapMs = 0;
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -543,6 +556,7 @@ async function beginMultiplayerMatchInner(){
       if(id===netState.myPlayerId) continue;
       if(players[id] && players[id].input) remoteInputs[id] = players[id].input;
     }
+    dropAbsentRemoteInputs(netState.humanPlayers);
   });
   window.__aramonWatchEvents(netState.roomId, handleRoomEvent);
 
@@ -559,7 +573,10 @@ async function beginMultiplayerMatchInner(){
     });
   }
   window.__aramonWatchAuthState(netState.roomId, (authState)=>{
-    if(authState && !netState.isHost) applyAuthState(authState);
+    if(authState && !netState.isHost){
+      hostAuthSeenAt = performance.now();   // ホストが生きている唯一の証拠(rtc/rtdbどちらの便でも同じ)
+      applyAuthState(authState);
+    }
   });
   if(!netState.isHost){
     window.__aramonWatchShotEvents(netState.roomId, (evtKey, evt)=>{
@@ -576,6 +593,37 @@ async function beginMultiplayerMatchInner(){
   if(typeof applyHudLayout==='function') applyHudLayout(); // カスタマイズしたHUD配置を反映
   game.started=true;
   beginSummonIntro();   // 5秒の召喚演出 → 演出後に本戦開始(バトル開始SE/BGM)
+}
+
+/* 部屋から消えた(退出・切断した)相手の入力を捨て、そのエンティティを離席扱いにする。
+   remoteInputs は書き込むだけで消しておらず、applyRemoteInputsLocally() が最後の入力を
+   毎フレーム当て続けるので、通信が切れた相手が最後の方向へ壁まで走り続ける置物になっていた
+   (「回線を切ったほうが弾よけになる」不公平にも見える)。
+   rooms/{id}/players は onDisconnect で必ず消えるので、そこに居ないIDが離席の正。
+   入力を止めるだけで体は残す(生死・HPはホストの判定のままにする)。 */
+function dropAbsentRemoteInputs(players){
+  for(const id in remoteInputs){
+    if(id===netState.myPlayerId) continue;
+    if(players && players[id]) continue;
+    delete remoteInputs[id];
+    const ent = entities.find(e=>e.netPlayerId===id);
+    if(ent){ ent.inputMoveX = 0; ent.inputMoveY = 0; }
+  }
+}
+
+/* ホストの沈黙を見張る(ゲストだけ・試合中だけ)。
+   終わらせ方は既存の経路をそのまま使う(レイド=finishRaid / それ以外=showResult)ので、
+   リザルト・報酬・後始末はいつもの試合終了と同じ道を通る。
+   トーストは1枠で上書きされるが、リザルト画面自体が出るので消えても行き止まりにならない。 */
+function checkHostSilenceAsGuest(now){
+  if(hostSilenceHandled || game.over) return;
+  // 復帰直後(バックグラウンドでRAFごと止まっていた)は測り直す。通信が本当に切れていれば次の5秒で出る
+  if(lastFrameGapMs > HOST_SILENCE_RESUME_GAP_MS){ hostAuthSeenAt = now; return; }
+  if(now - hostAuthSeenAt < HOST_SILENCE_TIMEOUT*1000) return;
+  hostSilenceHandled = true;
+  pushToast('ホストとの接続が切れました');
+  if(game.raid){ finishRaid(false); return; }
+  showResult(false, (player && player.placement) || (entities.filter(e=>e.alive).length+1));
 }
 
 // 他プレイヤーの入力を、対応するローカルエンティティに反映する
@@ -1364,7 +1412,8 @@ function interpolateRemoteEntities(){
 let loopErrorCount = 0;
 function loop(now){
   try{
-    const dt = Math.min(0.05, (now-lastT)/1000);
+    lastFrameGapMs = now - lastT;   // dtは0.05で頭打ちなので、実際に飛んだ時間は別に控える
+    const dt = Math.min(0.05, lastFrameGapMs/1000);
     lastT = now;
     // パフォーマンス計測(管理者画面でONのときだけ実際に時計を読む)
     if(typeof perfFrameStart==='function') perfFrameStart(now);
@@ -1373,6 +1422,8 @@ function loop(now){
       if(introState.active){
         // 召喚演出中はmatchTimeを進めず、視点操作と演出のみ行う(ホスト/ゲスト共通)
         updateSummonIntro(dt);
+        // 演出の間はホストもauthStateを配信しないので、沈黙の計測はここから始める
+        hostAuthSeenAt = now;
       } else if(netState.mode!=='multi'){
         update(dt);
       } else if(netState.isHost){
@@ -1392,6 +1443,7 @@ function loop(now){
       } else {
         // 非ホスト: ダメージ・ガッツ・キル・ゾーン等の確定計算は一切行わず、
         // 自分の移動だけをローカルで滑らかに再現し、残りはホストからのauthState配信に委ねる
+        checkHostSilenceAsGuest(now);   // この分岐に入る=マルチのゲストなので、ソロ・ホストでは走らない
         updateCameraSnap(dt);
         computePlayerInput();
         if(player && player.alive){

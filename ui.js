@@ -1221,6 +1221,7 @@ function pickLobbyBgm(id){
   renderLobbyBgmList();   // 選択中の印を付け替える(画面は開いたままで聴き比べられる)
 }
 function refreshLobby(){
+  refreshAppUpdateTile();   // 「更新」タイルの出し入れ。升目の数が変わるので行数の計算より先に行う
   updateLobbyMenuRows();
   updateLobbyPickLabels();
   updateLobbyBgmLabel();
@@ -1576,6 +1577,78 @@ document.getElementById('bgmVolPlus').addEventListener('click', ()=>nudgeVolume(
 document.getElementById('seVolMinus').addEventListener('click', ()=>nudgeVolume('se', -1));
 document.getElementById('seVolPlus').addEventListener('click', ()=>nudgeVolume('se', +1));
 
+/* ===== 共通の確認ダイアログ =====
+   alert / confirm はPWAで見た目も文言も変えられず、強制横向きのときに向きも合わないので使わない。
+   **枠はマスモン削除の確認(#mastermonDeleteConfirm)をそのまま使い回す。**
+   新しいオーバーレイを足すとスクロールロックの除外3か所(render.jsのtouchmove /
+   input.jsのtouchendとdblclick)へのID追加が要るので、すでに通っている枠を共用するほうが事故が少ない。
+   ボタンのラベルと「はい」の色だけ呼び出し側から差し替える。 */
+let confirmDialogOnYes = null;
+let confirmDialogOnNo = null;
+function showConfirmDialog(opt){
+  const o = opt || {};
+  const box = document.getElementById('mastermonDeleteConfirm');
+  const yesBtn = document.getElementById('mastermonDeleteYesBtn');
+  const noBtn  = document.getElementById('mastermonDeleteNoBtn');
+  const textEl = document.getElementById('mastermonDeleteText');
+  if(!box || !yesBtn || !noBtn){ if(o.onYes) o.onYes(); return; }  // 枠が無い環境では操作を止めない
+  confirmDialogOnYes = o.onYes || null;
+  confirmDialogOnNo  = o.onNo  || null;
+  if(textEl) textEl.textContent = o.text || '';
+  yesBtn.textContent = o.yes || 'はい';
+  noBtn.textContent  = o.no  || 'いいえ';
+  /* 取り消しのつかない操作(削除・上書き)は赤のまま。そうでないもの(更新の適用など)は
+     他の主ボタンと同じ既定色へ戻す。CSSはID指定(#mastermonDeleteYesBtn)で赤なので、
+     赤にしないときだけインラインで打ち消す(style.cssに新しい規則を足さないため)。 */
+  const danger = (o.danger !== false);
+  yesBtn.style.background = danger ? '' : 'var(--amber)';
+  yesBtn.style.color      = danger ? '' : '#1a1306';
+  box.classList.remove('hidden');
+}
+function closeConfirmDialog(){
+  confirmDialogOnYes = null;
+  confirmDialogOnNo = null;
+  const box = document.getElementById('mastermonDeleteConfirm');
+  if(box) box.classList.add('hidden');
+}
+
+/* ===== アプリの新版が出たときの告知(Service Worker) =====
+   以前は index.html の controllerchange で問答無用に window.location.reload() していたため、
+   **着信などでアプリを離れて戻った瞬間に試合・ガチャ演出・入力中の名前が丸ごと消えて再起動**していた
+   (試合の状態はメモリにしか無い)。ここでは「ロビーに押せる導線を出すだけ」にして、
+   読み込み直すかどうかは必ず本人に決めてもらう。
+   トーストは1枠しか無く次のトーストで消えるので、**消えないタイル(#lobbyUpdateBtn)**で出す。 */
+let appUpdateReady = false;
+/* 新版を探しに行ってよい状況か。試合中・訓練場・リザルト中は探さない
+   (見つけても出す場所が無く、SWが入れ替わるきっかけを作るだけになる)。
+   index.html の visibilitychange からも呼ぶので、状況の判断はこの1か所に置く。 */
+function appUpdateShouldPoll(){
+  if(typeof game!=='undefined' && game && (game.started || game.trainingRange)) return false;
+  const scr = document.getElementById('startScreen');
+  return !!scr && !scr.classList.contains('hidden');
+}
+function refreshAppUpdateTile(){
+  const btn = document.getElementById('lobbyUpdateBtn');
+  if(!btn) return;
+  if(btn.classList.contains('hidden') !== appUpdateReady) return;  // 変化なし=升目の割り当てをやり直さない
+  btn.classList.toggle('hidden', !appUpdateReady);
+  updateLobbyMenuRows();   // 見えるタイルが1枚増えるので行数と幅を計算し直す
+}
+function notifyAppUpdateReady(){
+  if(appUpdateReady) return;
+  appUpdateReady = true;
+  refreshAppUpdateTile();
+  // 気付いてもらうため一度だけ知らせる。消えてもタイルが残るので押せる導線は失われない
+  if(typeof pushToast==='function' && appUpdateShouldPoll()) pushToast('新しいバージョンがあります');
+}
+document.getElementById('lobbyUpdateBtn').addEventListener('click', ()=>{
+  showConfirmDialog({
+    text:'新しいバージョンがあります。今すぐ読み込み直して更新しますか？',
+    yes:'今すぐ更新', no:'あとで', danger:false,
+    onYes:()=>{ window.location.reload(); },
+  });
+});
+
 // ===== プレイヤーアカウント(名前+パスコードでログイン・サーバー同期) =====
 const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の認証情報
 const ACCOUNT_LOCAL_TS_KEY = 'aramon_account_ts_v1'; // ローカルデータの最終更新時刻
@@ -1680,13 +1753,52 @@ document.getElementById('accountLoginBtn').addEventListener('click', ()=>{
 document.getElementById('accountCancelBtn').addEventListener('click', ()=>{
   document.getElementById('accountOverlay').classList.add('hidden');
 });
-document.getElementById('accountLogoutBtn').addEventListener('click', ()=>{
+function accountDoLogout(){
   accountState.loggedIn = false; accountState.name = null; accountState.key = null; accountState.pass = null;
   try{ localStorage.removeItem(ACCOUNT_CRED_KEY); }catch(err){}
   document.getElementById('accountOverlay').classList.add('hidden');
   updateAccountBar();
   pushToast('ログアウトしました');
+}
+/* ログアウトは1タップで済ませない。**押し間違えると次のログインに4桁のパスコードが要る**
+   (忘れると戻せない)ので、必ず1枚はさむ。この端末のデータ自体は消えないこともここで伝える。 */
+document.getElementById('accountLogoutBtn').addEventListener('click', ()=>{
+  const who = accountState.name ? `「${accountState.name}」` : 'このアカウント';
+  showConfirmDialog({
+    text:`${who}からログアウトします。この端末のデータはそのまま残りますが、次に入るときは4桁のパスコードが必要です。`,
+    yes:'ログアウト', no:'やめる',
+    onYes:accountDoLogout,
+  });
 });
+/* この端末に残っている進行データの中身。**消える物を数字で見せるため**に使う。
+   何も無い端末(新規)では null を返し、確認をはさまない。 */
+function localProgressSummary(){
+  let mm = 0, matches = 0;
+  try{ mm = Object.keys(loadMastermons() || {}).length; }catch(err){}
+  try{
+    const s = loadLocalStats();
+    if(s) matches = ((s.solo && s.solo.totalMatches) || 0) + ((s.multi && s.multi.totalMatches) || 0);
+  }catch(err){}
+  const w = (typeof loadWallet==='function') ? loadWallet() : { gold:0, dia:0 };
+  if(!mm && !matches && !w.gold && !w.dia) return null;
+  return `マスモン${mm}体・${matches}戦・🪙${w.gold}・💎${w.dia}`;
+}
+/* 既存アカウントへのログイン本体。applyAccountData が ACCOUNT_SYNC_KEYS を丸ごと
+   置き換えるので、**呼ぶ前に確認を取る**(呼び出し側の accountSubmitBtn を参照)。 */
+function accountFinishLogin(acc, key, pass){
+  accountState.loggedIn = true; accountState.name = acc.name; accountState.key = key; accountState.pass = pass;
+  saveAccountCreds({ name: acc.name, key, pass });
+  applyAccountData(acc.data);
+  applyAccountNameAsDisplayName(acc.name);
+  updateAccountBar();
+  accountShowMsg('ログインしました！', true);
+  pushToast(`おかえりなさい、${acc.name}！`);
+  /* **既存アカウントへのログインはローカルのデータがサーバーの内容で置き換わる**
+     (applyAccountData)。チュートリアルの途中なら、そこまでの分は消えているので終わりにする。 */
+  if(typeof tutorialOnAccount==='function') tutorialOnAccount('login');
+  promoOryouResetIfNeeded(acc.name);
+  maybeShowLoginPromos();
+}
 document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('accountNameInput').value.trim();
   const pass = document.getElementById('accountPassInput').value.trim();
@@ -1712,23 +1824,23 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
       pushToast(`ようこそ、${name}！`);
       if(typeof tutorialOnAccount==='function') tutorialOnAccount('create');
       promoOryouResetIfNeeded(name);
-      maybeShowSkinGachaPromo();
-      maybeShowRockSsrPromo();
+      maybeShowLoginPromos();
     } else if(String(acc.pass) === pass){
-      // ログイン: サーバーのデータを取り込む
-      accountState.loggedIn = true; accountState.name = acc.name; accountState.key = key; accountState.pass = pass;
-      saveAccountCreds({ name: acc.name, key, pass });
-      applyAccountData(acc.data);
-      applyAccountNameAsDisplayName(acc.name);
-      updateAccountBar();
-      accountShowMsg('ログインしました！', true);
-      pushToast(`おかえりなさい、${acc.name}！`);
-      /* **既存アカウントへのログインはローカルのデータがサーバーの内容で置き換わる**
-         (applyAccountData)。チュートリアルの途中なら、そこまでの分は消えているので終わりにする。 */
-      if(typeof tutorialOnAccount==='function') tutorialOnAccount('login');
-      promoOryouResetIfNeeded(acc.name);
-      maybeShowSkinGachaPromo();
-      maybeShowRockSsrPromo();
+      /* ログイン: サーバーのデータを取り込む(=この端末のデータは全部置き換わる)。
+         **黙って上書きしない。** ゲストで遊んだ端末から家族のアカウントに入っただけで
+         マスモン・通貨・スキンが消えるので、消える中身を数字で見せて必ず確認する。 */
+      const local = localProgressSummary();
+      if(local){
+        accountShowMsg('この端末のデータが消えます。確認してください');
+        showConfirmDialog({
+          text:`この端末のデータ(${local})は消えて、「${acc.name}」の内容に置き換わります。ログインしますか？`,
+          yes:'ログインする', no:'やめる',
+          onYes:()=>{ accountFinishLogin(acc, key, pass); },
+          onNo:()=>{ accountShowMsg('ログインをやめました。この端末のデータはそのままです'); },
+        });
+        return;
+      }
+      accountFinishLogin(acc, key, pass);
     } else {
       // 名前の重複検知: 別人のアカウントが存在する
       accountShowMsg('この名前は既に使われています。別の名前に変えるか、心当たりがあれば正しいパスコードを入力してください');
@@ -1767,8 +1879,7 @@ document.getElementById('accountSubmitBtn').addEventListener('click', async ()=>
         applyAccountNameAsDisplayName(acc.name);
         updateAccountBar();
         promoOryouResetIfNeeded(acc.name);
-        maybeShowSkinGachaPromo();   // ログイン中アカウントに記念ダイヤ+ポップアップ(一度だけ)
-        maybeShowRockSsrPromo();  // SSR轟金剛実装記念ダイヤ+ポップアップ(一度だけ)
+        maybeShowLoginPromos();   // 記念ダイヤの付与と告知(未読のものだけ・1回に1枚)
       } else if(acc && String(acc.pass) !== String(creds.pass)){
         // パスコードが変更された等でサーバーと不一致→ログイン解除
         accountState.loggedIn = false; accountState.key = null; accountState.pass = null;
@@ -2569,9 +2680,27 @@ function maybeFlushPendingPromoPopups(){
   if(typeof tutorialBlocksPopups==='function' && tutorialBlocksPopups()) return; // チュートリアル中は後回し
   const startScr = document.getElementById('startScreen');
   if(!startScr || startScr.classList.contains('hidden')) return; // まだタイトル画面など→ロビーに来るまで待つ
-  if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1') showSkinPromoPopup();
-  if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1') showRockSsrPromoPopup();
-  if(localStorage.getItem(METAG_GARURU_PROMO_PENDING_KEY)==='1') showMetagGaruruPromoPopup();
+  /* ログインボーナスが待っているならそちらが先。告知は保留のまま次にロビーへ来たときに出す
+     (受け取りの画面を宣伝で覆わない)。 */
+  if(pendingLoginBonusPopup) return;
+  /* 【1回に1枚だけ】以前は3つとも出していたうえ、閉じると次が連鎖して出ていたので、
+     起動するたびに広告を2〜3回閉じる作業から始まっていた。残りは保留のままで、
+     次にロビーへ来たときに1枚だけ出る(告知そのものは閉じれば既読になるので出ない)。 */
+  if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1'){ showSkinPromoPopup(); return; }
+  if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1'){ showRockSsrPromoPopup(); return; }
+  if(localStorage.getItem(METAG_GARURU_PROMO_PENDING_KEY)==='1'){ showMetagGaruruPromoPopup(); return; }
+}
+/* 告知の既読管理。更新履歴の未読判定(CHANGELOG_SEEN_KEY)と同じ作りで、
+   **署名(=その告知の中身)が既読と違うときだけ出す。**
+   一度閉じれば同じ告知は二度と出ず、ピックアップが変わって署名が変われば
+   「新しい告知」として1回だけ出る。端末ごとの既読なのでアカウント同期には入れない。 */
+function promoSeen(key, sig){ try{ return localStorage.getItem(key) === sig; }catch(err){ return false; } }
+function markPromoSeen(key, sig){ try{ localStorage.setItem(key, sig); }catch(err){} }
+// ログイン直後に出す告知はここへまとめる(呼び出し側で並べると足し忘れる)
+function maybeShowLoginPromos(){
+  maybeShowSkinGachaPromo();
+  maybeShowRockSsrPromo();
+  maybeShowMetagGaruruPromo();
 }
 // ===== スキンガチャ実装記念ポップアップ =====
 // このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
@@ -2632,12 +2761,15 @@ document.getElementById('skinPromoGachaBtn').addEventListener('click', ()=>{
 maybeFlushPendingPromoPopups();
 
 /* ===== ピックアップSSR実装記念ポップアップ =====
-   ログインしてロビーに来るたび毎回ポップアップを表示する。ダイヤ500個の付与だけは1アカウント1回のみ。
+   **一度閉じたら出さない。ピックアップが変わったときだけ新しい告知として1回出す。**
+   (以前はログインのたび毎回出していたため、起動の初手が広告を閉じる作業になっていた)
+   ダイヤ500個の付与は1アカウント1回のみ。
    出す画像・文言はスキンガチャのピックアップ(GACHA_PICKUP_SSR_IDS まわりの定数)から
    作るので、ピックアップを差し替えるとポップアップの絵も宣伝文も自動で入れ替わる
    (要素のIDは轟金剛のときのまま)。 */
 const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // ダイヤ受け取り済み(アカウント同期)
 const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
+const ROCK_SSR_PROMO_SEEN_KEY = 'aramon_promo_rockssr_seen_v1';       // 既読の署名(端末ローカル)
 const ROCK_SSR_PROMO_DIA = 500;
 /* ポップアップに出すピックアップ。レイド開催期間中はレイドガチャのピックアップに
    切り替える(画像は SKIN_MEDIA.promoImg から引くので、ツールで差し替えれば自動で入れ替わる)。 */
@@ -2681,11 +2813,21 @@ function showRockSsrPromoPopup(){
   if(img) img.classList.toggle('skin-promo-img-caption', !!lines.length);
   el.classList.remove('hidden');
 }
+/* この告知の署名。**今のピックアップそのもの**を署名にしてあるので、
+   ピックアップを差し替えれば自動的に「新しい告知」として1回だけ出る(対応表を手で持たない)。 */
+function rockSsrPromoSignature(){
+  if(promoIsRaidPickup())
+    return 'raid:' + ((typeof RAID_GACHA_PICKUP!=='undefined' && RAID_GACHA_PICKUP) || '');
+  const ids = (typeof GACHA_PICKUP_SSR_IDS!=='undefined' && GACHA_PICKUP_SSR_IDS) ? GACHA_PICKUP_SSR_IDS.join(',') : '';
+  return 'gacha:' + ids;
+}
 function dismissRockSsrPromoPopup(){
+  markPromoSeen(ROCK_SSR_PROMO_SEEN_KEY, rockSsrPromoSignature());   // 閉じた=既読。同じ告知は二度と出さない
   try{ localStorage.removeItem(ROCK_SSR_PROMO_PENDING_KEY); }catch(e){}
   const el = document.getElementById('rockSsrPromoOverlay');
   if(el) el.classList.add('hidden');
-  maybeShowMetagGaruruPromo();   // このポップアップを閉じた直後に、メタルグレイモン・ガルルモンの告知を続けて出す
+  /* 【連鎖しない】以前はここで次の告知(メタルグレイモン・ガルルモン)を続けて出していたので、
+     閉じた瞬間にもう1枚出て、2枚続けて閉じさせていた。残りの告知は次にロビーへ来たときに出る。 */
 }
 function maybeShowRockSsrPromo(){
   if(!accountState.loggedIn) return;                            // ログイン中のアカウントのみ
@@ -2699,8 +2841,8 @@ function maybeShowRockSsrPromo(){
     // ピックアップが2体のときは名前でなくキャンペーン名が入るので「SSR◯◯」とは書かない
     pushToast(`${gachaPickupName()}ピックアップ記念！ 💎+${ROCK_SSR_PROMO_DIA}`);
   }
-  // ポップアップ自体はログインのたび毎回表示する
-  try{ localStorage.setItem(ROCK_SSR_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
+  if(promoSeen(ROCK_SSR_PROMO_SEEN_KEY, rockSsrPromoSignature())) return;  // 一度閉じた告知は出さない
+  try{ localStorage.setItem(ROCK_SSR_PROMO_PENDING_KEY,'1'); }catch(e){}   // ボタンを押すまで表示を維持
   maybeFlushPendingPromoPopups();
 }
 document.getElementById('rockSsrPromoCloseBtn').addEventListener('click', ()=>{
@@ -2713,21 +2855,25 @@ document.getElementById('rockSsrPromoGachaBtn').addEventListener('click', ()=>{
 // SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
 
 /* ===== SSRメタルグレイモン・ガルルモン実装記念ポップアップ =====
-   上のレイドガチャ記念ポップアップ(dismissRockSsrPromoPopup)を閉じた直後に出す。
-   ダイヤ等の付与は無い告知だけなので「受け取り済み」判定は無く、上の記念ポップアップと同じく
-   ログインのたび毎回表示する(pendingフラグのみ。SW自動リロードで消えても再表示される)。 */
+   ダイヤ等の付与は無い告知だけ。**一度閉じたら二度と出さない。**
+   告知の中身が固定なので署名も固定の文字列にしてある。**中身を作り直したら署名を上げる**と、
+   新しい告知として1回だけ出る(更新履歴の未読判定と同じ考え方)。 */
 const METAG_GARURU_PROMO_PENDING_KEY = 'aramon_promo_metaggaruru_pending_v1'; // 未確認=表示中
+const METAG_GARURU_PROMO_SEEN_KEY = 'aramon_promo_metaggaruru_seen_v1';       // 既読の署名
+const METAG_GARURU_PROMO_SIG = 'metaggaruru_v1';                              // 告知の中身を変えたら上げる
 function showMetagGaruruPromoPopup(){
   const el = document.getElementById('metagGaruruPromoOverlay');
   if(el) el.classList.remove('hidden');
 }
 function dismissMetagGaruruPromoPopup(){
+  markPromoSeen(METAG_GARURU_PROMO_SEEN_KEY, METAG_GARURU_PROMO_SIG);   // 閉じた=既読
   try{ localStorage.removeItem(METAG_GARURU_PROMO_PENDING_KEY); }catch(e){}
   const el = document.getElementById('metagGaruruPromoOverlay');
   if(el) el.classList.add('hidden');
 }
 function maybeShowMetagGaruruPromo(){
-  try{ localStorage.setItem(METAG_GARURU_PROMO_PENDING_KEY,'1'); }catch(e){} // ボタンを押すまで表示を維持
+  if(promoSeen(METAG_GARURU_PROMO_SEEN_KEY, METAG_GARURU_PROMO_SIG)) return;  // 一度閉じた告知は出さない
+  try{ localStorage.setItem(METAG_GARURU_PROMO_PENDING_KEY,'1'); }catch(e){}  // ボタンを押すまで表示を維持
   maybeFlushPendingPromoPopups();
 }
 document.getElementById('metagGaruruPromoCloseBtn').addEventListener('click', ()=>{
@@ -7979,17 +8125,22 @@ document.getElementById('closeMastermonBtn').addEventListener('click', ()=>{
 });
 document.getElementById('viewMastermonBtn').addEventListener('click', ()=>openMastermonScreen(true));
 
-let mastermonPendingDeleteKey = null;
+/* この枠は showConfirmDialog() が共用する確認ダイアログ(ui.js前方)。
+   ボタンの処理は「呼び出し側が渡した処理を呼ぶだけ」に寄せてあるので、
+   **ここに個別の処理を書き足さない。** マスモンの削除も下の deleteMastermonConfirmed() を渡している。 */
 document.getElementById('mastermonDeleteNoBtn').addEventListener('click', ()=>{
-  document.getElementById('mastermonDeleteConfirm').classList.add('hidden');
-  mastermonPendingDeleteKey = null;
+  const cb = confirmDialogOnNo;
+  closeConfirmDialog();
+  if(cb) cb();
 });
 document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
-  if(!mastermonPendingDeleteKey) return;
-  const deletedKey = mastermonPendingDeleteKey;
+  const cb = confirmDialogOnYes;
+  closeConfirmDialog();
+  if(cb) cb();
+});
+function deleteMastermonConfirmed(deletedKey){
+  if(!deletedKey) return;
   deleteMastermon(deletedKey);
-  mastermonPendingDeleteKey = null;
-  document.getElementById('mastermonDeleteConfirm').classList.add('hidden');
   if(game.selectedMastermonKey===deletedKey){
     game.selectedMastermonKey = null;
     game.selectedElement = null;
@@ -8010,7 +8161,7 @@ document.getElementById('mastermonDeleteYesBtn').addEventListener('click', ()=>{
   mmCarousel.build();
   mmCarousel.reset(mastermonDetailKey);
   closeMastermonDetail();   // 消したマスモンの詳細に留まらないよう一覧へ戻す
-});
+}
 
 function renderMastermonDetail(key){
   const data = loadMastermons();
@@ -8136,9 +8287,10 @@ function renderMastermonDetail(key){
         pushToast(`${mm.name}は遠征中です。帰ってくるまで削除できません`);
         return;
       }
-      mastermonPendingDeleteKey = key;
-      document.getElementById('mastermonDeleteText').textContent = `${mm.name}とお別れします。いいですか？`;
-      document.getElementById('mastermonDeleteConfirm').classList.remove('hidden');
+      showConfirmDialog({
+        text:`${mm.name}とお別れします。いいですか？`,
+        onYes:()=>{ deleteMastermonConfirmed(key); },
+      });
     });
   }
 

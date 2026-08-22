@@ -10,13 +10,13 @@ document.addEventListener('selectstart', (e)=>{ if(!isTextEntry(e.target) && !is
 
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#tutorialLayer')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#mastermonDeleteConfirm') || e.target.closest('#tutorialLayer')) return;
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
 }, {passive:false});
 document.addEventListener('dblclick', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#tutorialLayer')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#mastermonDeleteConfirm') || e.target.closest('#tutorialLayer')) return;
   e.preventDefault();
 });
 
@@ -233,13 +233,27 @@ function handleEnemyTap(sx,sy){
 
 canvas.addEventListener('pointerdown', (e)=>{
   if(!game.started || game.over) return;
+  /* 【マルチタッチ 2026-08-22】視点は**先に掴んだ指**が最後まで持つ。
+     #hudはpointer-events:noneなので、左親指がジョイスティックの円から外れた瞬間
+     そのタッチはcanvasへ届く。以前は無条件にpointerIdを上書きしていたため、
+     カメラ操作が後から触れた指へ乗り移り、その指を離した時点でactive=falseになって
+     「右親指は着いているのにカメラが完全に止まる」状態になっていた。
+     tapTrack(敵タップ)も同じ指のぶんだけ記録する(別の指の座標が混ざると誤タップになる)。 */
+  if(lookDrag.active) return;
   lookDrag.active = true; lookDrag.pointerId = e.pointerId;
   lookDrag.lastX = e.clientX; lookDrag.lastY = e.clientY;
+  // 掴んだ指がcanvasの外(HUDのボタンの上など)へ滑ってもmove/upが届き続けるようにする
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
   tapTrack.pointerId = e.pointerId;
   tapTrack.startX = e.clientX; tapTrack.startY = e.clientY;
   tapTrack.startTime = performance.now();
   tapTrack.moved = false;
 });
+// 視点の指を手放す(次の指が掴めるようIDも空ける。IDを残すと同じIDが再利用されたとき誤作動する)
+function releaseLookDrag(pointerId){
+  lookDrag.active = false; lookDrag.pointerId = null;
+  try{ if(canvas.hasPointerCapture && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId); }catch(_){}
+}
 window.addEventListener('pointermove', (e)=>{
   if(!lookDrag.active || e.pointerId!==lookDrag.pointerId) return;
   if(Math.hypot(e.clientX-tapTrack.startX, e.clientY-tapTrack.startY) > 10) tapTrack.moved = true;
@@ -257,14 +271,17 @@ window.addEventListener('pointermove', (e)=>{
 });
 window.addEventListener('pointerup', (e)=>{
   if(e.pointerId!==lookDrag.pointerId) return;
-  lookDrag.active=false;
+  releaseLookDrag(e.pointerId);
   const elapsed = performance.now()-tapTrack.startTime;
   if(!tapTrack.moved && elapsed < 300 && e.pointerId===tapTrack.pointerId){
     const p = toLogicalPoint(e.clientX, e.clientY);
     handleEnemyTap(p.x, p.y);
   }
 });
-window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===lookDrag.pointerId) lookDrag.active=false; });
+window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===lookDrag.pointerId) releaseLookDrag(e.pointerId); });
+// 捕まえた指をOS都合で失ったとき(画面回転・要素の入れ替えなど)の保険。
+// 掴んだままだと次の指がずっと弾かれ、カメラが二度と動かなくなる
+canvas.addEventListener('lostpointercapture', (e)=>{ if(e.pointerId===lookDrag.pointerId) releaseLookDrag(e.pointerId); });
 
 const joyBaseEl = document.getElementById('joystickBase');
 const joyKnobEl = document.getElementById('joystickKnob');
@@ -338,19 +355,25 @@ fireBtnEl.addEventListener('pointercancel', ()=>{ fireBtnHeld=false; });
 fireBtnEl.addEventListener('pointerleave', ()=>{ fireBtnHeld=false; });
 
 // ダッシュを実際に開始する(向きの決め方をホスト/ゲストで完全に同じにするため関数に分けてある。
-// マルチではホストが applyRemoteInputsLocally からこれを呼んでゲストのダッシュを再現する)
+// マルチではホストが applyRemoteInputsLocally からこれを呼んでゲストのダッシュを再現する)。
+// 発動できない条件もここ1か所にまとめ、実際に始まったときだけtrueを返す
 function startEntityDash(m){
-  if(typeof entityDowned==='function' && entityDowned(m)) return;   // ダウン中(チーム戦)はダッシュ不可
+  if(typeof entityDowned==='function' && entityDowned(m)) return false;   // ダウン中(チーム戦)はダッシュ不可
+  /* 凍結中はここで弾く。resolveMovement(combat.js)が凍結中は冒頭でreturnして
+     dashTimerを減らさないので、以前は押した瞬間にクールタイムだけ焼かれ、
+     解凍した瞬間に「押した時の向き」へ勝手に飛び出していた。 */
+  if(m.freezeUntil > matchTime) return false;
   let dx=m.lastMoveX, dy=m.lastMoveY;
   if(Math.hypot(dx,dy)<0.1){ dx=Math.cos(m.facingAngle); dy=Math.sin(m.facingAngle); }
   const len = Math.hypot(dx,dy)||1;
   m.dashDirX=dx/len; m.dashDirY=dy/len;
   m.dashTimer=DASH_DURATION; m.dashCooldown=DASH_COOLDOWN_MAX;
   m.lastDashAt = matchTime; // 位置の突き合わせでダッシュ直後を判別するのに使う
+  return true;
 }
 function tryDash(m){
   if(!m.alive || m.dashCooldown>0) return;
-  startEntityDash(m);
+  if(!startEntityDash(m)) return;   // 不発のときはクールタイムも焼かない・ホストへも伝えない
   // マルチのゲストは「ダッシュした」ことをホストへ伝える(入力にdashSeqとして載る)。
   // 伝えないとホスト側は通常移動のまま計算し、ダッシュぶんが誤差になって引き戻される。
   if(m.isPlayer && typeof noteLocalDash==='function') noteLocalDash();
