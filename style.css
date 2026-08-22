@@ -2713,8 +2713,10 @@
   #stateCdFill{ height:100%; background:linear-gradient(90deg,#ff6b6b,#ff3b3b); width:0%; transition:width .15s; }
   #stateCdLabel{ font-size:9px; letter-spacing:0.5px; color:#ff8a8a; margin-top:1px; }
   #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right; }
-  #statusIcons{ display:flex; gap:5px; margin-top:3px; min-height:16px; }
-  .status-pill{ font-size:9px; padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; }
+  /* 状態は最大4つ同時。こおりは残り秒ぶん幅が伸びるので、#hpPanelの幅から
+     はみ出さないよう#trainBuffsLineと同じく折り返す(横へ伸ばさない) */
+  #statusIcons{ display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; min-height:16px; max-width:100%; }
+  .status-pill{ font-size:9px; padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; white-space:nowrap; }
   .status-pill.burn{ background:rgba(255,107,53,0.22); color:#ff9c5a; border:1px solid rgba(255,107,53,0.5); }
   .status-pill.slow{ background:rgba(120,150,255,0.22); color:#a9bcff; border:1px solid rgba(120,150,255,0.5); }
   .status-pill.freeze{ background:rgba(191,233,255,0.22); color:#bfe9ff; border:1px solid rgba(191,233,255,0.6); }
@@ -4542,9 +4544,13 @@ html.narrow-screen .resultBtnRow .share-icon-btn{ width:40px; }
 /* アイコンだけのボタンでは文字より少し大きく見せる */
 .share-icon-btn .share-ico{ width:19px; height:19px; vertical-align:-0.2em; }
 
-/* チーム戦: 自分がダウン中は攻撃UIを無効に見せる(発射自体はホスト/ソロ側で既に弾いている。
-   ボタンだけ生きていると「押せるのに撃てない」に見える)。render.jsのupdateSquadPanelが印を付ける */
-body.self-downed #fireBtn, body.self-downed #dashBtn, body.self-downed #movePanel{
+/* 攻撃UIを「今は効かない」と見せる状態は2つ。見え方は同じなので指定も1か所にまとめる。
+   ・self-downed = チーム戦のダウン中(render.jsのupdateSquadPanelが印を付ける)
+   ・self-frozen = こおり中(render.jsのupdateHUDが印を付ける。残り秒は状態ピルに出る)
+   どちらも発射・ダッシュ自体はホスト/ソロ側で既に弾いており、ボタンだけ生きていると
+   「押せるのに何も起きない」に見える。 */
+body.self-downed #fireBtn, body.self-downed #dashBtn, body.self-downed #movePanel,
+body.self-frozen #fireBtn, body.self-frozen #dashBtn, body.self-frozen #movePanel{
   opacity:0.35; pointer-events:none; filter:grayscale(0.8);
 }
 

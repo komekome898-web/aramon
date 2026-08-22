@@ -179,6 +179,11 @@
 
   let activeRoomId = null;
   let roomListeners = [];
+  /* いま自分が席を1つ確保している lobby エントリのキー。
+     退出のときに count を戻す先が要るのに、参加時はどこにも控えていなかった。
+     戻せないと入退室のたびに count だけが増え、誰も居ない部屋が「満員」扱いで
+     募集一覧から消える(マルチが成立しない直接の原因だった)。 */
+  let activeLobbySeat = null;   // { lobbyKey } / 席を持っていないときは null
 
   /* 【必ず通す】RTDBへ書く値から undefined を落とす。
      Realtime Database の set/push/update は、値のどこかに undefined が1つでもあると
@@ -241,6 +246,53 @@
       : null };
   }
 
+  /* ===== 部屋の席(lobby/{key}/count)の管理 =====
+     count は「席の予約数」。同時に入ろうとした人が定員を超えないよう、増やすのは必ず
+     トランザクションで行う。ただし count は自分で戻さないと減らない値で、
+     **通信断・アプリ終了では戻せない**(RTDBの onDisconnect は set/remove しか張れず、
+     加減算=トランザクションが張れないため。固定値の set を張ると、あとから入った人の
+     予約を巻き戻して定員を超えさせてしまう)。
+     一方 rooms/{id}/players は onDisconnect で確実に消えるので、**実際の在室人数の正は
+     players の側**。そこで「読むとき・入るときに players の実数へ寄せ直す」形にして、
+     戻し損ねた残骸で部屋が満員になったまま消えるのを防ぐ。 */
+  async function roomOccupancy(roomId){
+    try{
+      const snap = await get(ref(fbDb, `rooms/${roomId}/players`));
+      if(!snap.exists()) return null;   // 部屋自体がもう無い
+      let n = 0; snap.forEach(()=>{ n++; });
+      return n;
+    }catch(err){ return undefined; }    // 読めなかった=不明。呼び出し側は count のまま扱う
+  }
+
+  /* 席を1つ予約する。満員なら false。
+     real(=players の実数)が count より少ないときは、そのぶんを残骸とみなして詰める。
+     ※予約した直後(players へ自分を書く前)の人も real には数えられないので、
+       ごく短い窓では定員+1になりうる。部屋が永久に満員のまま消えるより軽い副作用として許容する。 */
+  async function reserveLobbySeat(lobbyKey, roomId, capacity){
+    const real = await roomOccupancy(roomId);
+    const res = await runTransaction(ref(fbDb, `lobby/${lobbyKey}/count`), (cur)=>{
+      if(cur===null) return cur;
+      const base = (real!=null && real < cur) ? real : cur;
+      if(base >= capacity) return;   // abort=満員
+      return base + 1;
+    });
+    return !!res.committed;
+  }
+
+  /* 自分の席を返す。二重に効いても負にならないよう下限0でトランザクションする
+     (退出→切断が続けて起きても、席を持っているのは1回きりなので activeLobbySeat で締める)。 */
+  async function releaseLobbySeat(){
+    const seat = activeLobbySeat;
+    activeLobbySeat = null;
+    if(!seat) return;
+    try{
+      await runTransaction(ref(fbDb, `lobby/${seat.lobbyKey}/count`), (cur)=>{
+        if(cur===null) return cur;    // エントリごと消えている(解散済み)
+        return Math.max(0, cur - 1);
+      });
+    }catch(err){}
+  }
+
   // 空いている部屋を探して入るか、無ければ新規に作ってホストになる
   // 部屋を新規作成してホストになる
   // mode は 'br'(バトルロイヤル)か 'raid'。部屋一覧で混ざらないよう分けて扱う。
@@ -249,6 +301,7 @@
   // sub はチーム戦のサブモード('br20'=20チームバトロワ / 'arena'=バトルアリーナ / null=従来型)。
   // これも素通し。旧クライアントの部屋には無いので、読む側は v.sub||null で扱う。
   window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub){
+    await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す(取りっぱなしを作らない)
     const roomMode = mode==='raid' ? 'raid' : 'br';
     const roomTeamSize = (teamSize|0) > 1 ? (teamSize|0) : 1;
     const roomSub = (sub==='br20' || sub==='arena') ? sub : null;
@@ -261,7 +314,12 @@
     const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, teamSize: roomTeamSize, sub: roomSub, count:1, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
     onDisconnect(lobbyEntryRef).remove();
+    /* ホストが落ちたら meta も消す。待機中のゲストの解散検知は「meta が消えたこと」だけを
+       見ているので、これが残っているとゲストは永遠に「ホストが試合を開始するのを待っています…」
+       のまま待たされる。試合中の meta 削除は無害(ゲスト側の解散検知は !game.started のときだけ)。 */
+    onDisconnect(ref(fbDb, `rooms/${roomId}/meta`)).remove();
     window.__aramonLobbyEntryId = lobbyEntryRef.key;
+    activeLobbySeat = { lobbyKey: lobbyEntryRef.key };   // 自分の1席(count:1)ぶん
     activeRoomId = roomId;
     return { roomId, isHost:true, myPlayerId };
   };
@@ -273,12 +331,24 @@
       const lobbyRef = ref(fbDb, 'lobby');
       const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
       const snap = await get(q);
-      const rooms = [];
+      const cands = [];
       snap.forEach(ch=>{
         const v = ch.val();
-        if(v && v.status==='waiting' && v.count < v.capacity && (v.mode||'br')===wantMode){
-          rooms.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, teamSize:(v.teamSize||1), sub:(v.sub||null), count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br') });
+        if(v && v.status==='waiting' && (v.mode||'br')===wantMode){
+          cands.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, teamSize:(v.teamSize||1), sub:(v.sub||null), count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br') });
         }
+      });
+      /* 人数は count(予約数)ではなく players の実数で出す。count は切断で戻り損ねるので、
+         そのまま使うと「満員」で一覧から消え、ロビーの待機人数バッジも嘘の数になる。
+         募集中の部屋はふつう数件なので、その件数ぶんだけ players を読む。 */
+      const occ = await Promise.all(cands.map(c=>roomOccupancy(c.roomId)));
+      const rooms = [];
+      cands.forEach((c, i)=>{
+        const real = occ[i];
+        if(real===null) return;              // 部屋が消えている(残ったlobbyエントリ)
+        const count = (real!=null) ? real : c.count;
+        if(!(count < c.capacity)) return;    // 本当に満員
+        rooms.push({ ...c, count });
       });
       rooms.sort((a,b)=> b.createdAt - a.createdAt);
       return rooms;
@@ -290,19 +360,15 @@
 
   // 指定した部屋に参加する(部屋を探す画面で選んだ場合)
   window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmInfo, skinId){
+    await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す
     try{
       const roomPlayersRef = ref(fbDb, `rooms/${roomId}/players`);
-      const lobbyCountRef = ref(fbDb, `lobby/${lobbyKey}/count`);
       const metaSnap = await get(ref(fbDb, `rooms/${roomId}/meta`));
       const meta = metaSnap.val();
       if(!meta || meta.status!=='waiting') return { ok:false, reason:'この部屋はもう開始しています' };
 
-      const txResult = await runTransaction(lobbyCountRef, (cur)=>{
-        if(cur===null) return cur;
-        if(cur >= meta.capacity) return; // abort
-        return cur + 1;
-      });
-      if(!txResult.committed) return { ok:false, reason:'この部屋は満員です' };
+      if(!(await reserveLobbySeat(lobbyKey, roomId, meta.capacity))) return { ok:false, reason:'この部屋は満員です' };
+      activeLobbySeat = { lobbyKey };   // 退出時にこの席を返す
 
       await set(child(roomPlayersRef, myPlayerId), {
         name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
@@ -312,6 +378,7 @@
       return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity, teamSize:(meta.teamSize||1), sub:(meta.sub||null), mode:(meta.mode||'br') };
     }catch(err){
       console.error('join room failed', err);
+      await releaseLobbySeat();   // 予約だけ通って登録に失敗した場合に席を残さない
       return { ok:false, reason:'参加に失敗しました' };
     }
   };
@@ -327,6 +394,7 @@
     const q = query(lobbyRef, orderByChild('status'), limitToLast(30));
     let joinedRoomId = null;
     let becameHost = false;
+    await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す
 
     try{
       const snap = await get(q);
@@ -341,13 +409,8 @@
 
       for(const cand of candidates){
         const roomPlayersRef = ref(fbDb, `rooms/${cand.roomId}/players`);
-        const lobbyCountRef = ref(fbDb, `lobby/${cand.lobbyKey}/count`);
-        const txResult = await runTransaction(lobbyCountRef, (cur)=>{
-          if(cur===null) return cur;
-          if(cur >= capacity) return; // abort
-          return cur + 1;
-        });
-        if(txResult.committed){
+        if(await reserveLobbySeat(cand.lobbyKey, cand.roomId, capacity)){
+          activeLobbySeat = { lobbyKey: cand.lobbyKey };   // 退出時にこの席を返す
           await set(child(roomPlayersRef, myPlayerId), {
             name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:false, input:{}
           });
@@ -359,6 +422,7 @@
     }catch(err){ console.error('room search failed', err); }
 
     if(!joinedRoomId){
+      await releaseLobbySeat();   // 予約だけ通って登録に失敗した候補の席を残さない
       const roomId = genId();
       const roomRef = ref(fbDb, `rooms/${roomId}`);
       await set(roomRef, {
@@ -368,7 +432,9 @@
       const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, teamSize: wantTeamSize, sub: wantSub, count:1, status:'waiting', mode:wantMode, createdAt: Date.now() });
       onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
       onDisconnect(lobbyEntryRef).remove();
+      onDisconnect(ref(fbDb, `rooms/${roomId}/meta`)).remove();   // 待機中の解散をゲストへ伝えるため(__aramonCreateRoomと同じ)
       window.__aramonLobbyEntryId = lobbyEntryRef.key;
+      activeLobbySeat = { lobbyKey: lobbyEntryRef.key };   // 自分の1席(count:1)ぶん
       joinedRoomId = roomId;
       becameHost = true;
     }
@@ -382,6 +448,7 @@
     try{
       await remove(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`));
     }catch(err){}
+    await releaseLobbySeat();   // 確保していた席を戻す(戻さないと部屋が満員のまま消える)
   };
 
   window.__aramonWatchRoomPlayers = function(roomId, callback){
@@ -425,6 +492,7 @@
   // ホストが部屋を解散する: 部屋自体を削除し、募集一覧のエントリも消す。
   // ゲスト側はmeta購読がnullを受け取ることで解散を検知する
   window.__aramonDisbandRoom = async function(roomId, lobbyEntryId){
+    activeLobbySeat = null;   // エントリごと消すので、席を戻す相手はもう居ない
     try{ await remove(ref(fbDb, `rooms/${roomId}`)); }catch(err){}
     if(lobbyEntryId){
       try{ await remove(ref(fbDb, `lobby/${lobbyEntryId}`)); }catch(err){}
@@ -642,6 +710,7 @@
   };
 
   window.__aramonCleanupLobbyEntry = async function(){
+    activeLobbySeat = null;   // 募集エントリごと消える(=席を戻す相手が無くなる)
     if(window.__aramonLobbyEntryId){
       try{ await remove(ref(fbDb, `lobby/${window.__aramonLobbyEntryId}`)); }catch(err){}
     }

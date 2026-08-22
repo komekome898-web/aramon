@@ -7287,9 +7287,17 @@ function updateHUD(){
   let statusHtml = '';
   if(ve.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど</span>`;
   if(ve.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足</span>`;
-  if(ve.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり</span>`;
+  // こおりは動けない時間なので、いつ動けるようになるかを残り秒で出す(押しても無反応な間の説明)
+  if(ve.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり ${Math.max(0,Math.ceil(ve.freezeUntil-matchTime))}s</span>`;
   if(ve.poisonUntil > matchTime) statusHtml += `<span class="status-pill poison">どく</span>`;
-  statusEl.innerHTML = statusHtml;
+  if(statusEl._stSig !== statusHtml){ statusEl._stSig = statusHtml; statusEl.innerHTML = statusHtml; }
+  /* 凍結中は自分のFIRE/DASH/技をCSSで無効に見せる(印はbody.self-frozen)。
+     発射・ダッシュ自体は既にcombat.jsのtryPlayerFireとinput.jsのstartEntityDashが弾いており、
+     ボタンだけ生きていると「押せるのに何も起きない」に見える。
+     ダウン中のbody.self-downedと同じ流儀だが、あちらのupdateSquadPanelはチーム戦以外で
+     早期returnするので、個人戦でも毎フレーム通るここ(凍結の判定と同じ場所)で付け外しする。 */
+  document.body.classList.toggle('self-frozen',
+    !!(game.started && !game.over && !spectating && player && player.freezeUntil > matchTime));
 
   const aliveCount = entities.filter(e=>e.alive).length;
   let squadCount = null; // チーム戦のときだけ残り部隊数を入れる(BGMの盛り上がり判定用)
@@ -7384,7 +7392,7 @@ function updateHUD(){
    INPUT
 ===================================================================== */
 document.addEventListener('touchmove', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#tutorialLayer')) return;
+  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#mastermonDeleteConfirm') || e.target.closest('#tutorialLayer')) return;
   e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); });

@@ -124,6 +124,14 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
        <!-- 募集中の部屋で待っている人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
        <span id="raidWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
+     <!-- アプリの新版が見つかったときだけ出る(通常は hidden)。ui.jsのrefreshAppUpdateTile()が出し入れする。
+          **自動リロードをやめた代わりの導線**なので、トーストではなく消えないタイルで出す。
+          **末尾に置く**: 先頭に入れると、出た瞬間に既存のタイルが1つずつずれて
+          押し間違いを誘う(押すと読み込み直しが走るので実害が大きい)。 -->
+     <button id="lobbyUpdateBtn" class="lobby-side-btn has-dot hidden">
+       <span class="lobby-side-icon">🔄</span><span class="lobby-side-label">更新</span>
+       <span class="notif-dot"></span>
+     </button>
     </div>
      <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え)。メニューの枠の外に固定する -->
      <div id="lobbyBanner">
@@ -1633,31 +1641,33 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <script>
   // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
   if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
-    let refreshing = false;
-    // 新しいService Workerが制御を奪った瞬間に、ページを1回だけ自動リロードして最新版へ切り替える
-    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
-      if(refreshing) return;
-      refreshing = true;
-      window.location.reload();
-    });
+    /* 【自動リロードはしない】以前はここで window.location.reload() していたが、
+       試合・ガチャ演出・入力中の文字はメモリにしか無いので、着信などでアプリを離れて戻った
+       瞬間に全部消えて再起動していた。新版を見つけても告知を出すだけにして、
+       読み込み直すかどうかは本人に決めてもらう(ui.jsのnotifyAppUpdateReady→ロビーの「更新」タイル)。
+       sw.jsはコード=ネットワーク優先なので、読み込み直すまで古いまま動いていても不整合は起きない。 */
+    const noticeUpdate = ()=>{ if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady(); };
+    navigator.serviceWorker.addEventListener('controllerchange', noticeUpdate);
 
     window.addEventListener('load', ()=>{
       navigator.serviceWorker.register('sw.js').then((reg)=>{
-        // ページを開くたび / 復帰するたびに、新しいsw.jsが無いか裏でチェック
+        // 起動時は1回だけ確認する(この時点ではまだロビーに来ていないので状況は見ない)
         reg.update().catch(()=>{});
+        /* 復帰のたびに確認していたが、sw.jsは skipWaiting()+clients.claim() なので
+           **試合中に前面へ戻っただけで新版がactivateされてしまう。**
+           確認するのはロビーにいるときだけにする(判断はui.js側の1か所)。 */
         document.addEventListener('visibilitychange', ()=>{
-          if(document.visibilityState === 'visible') reg.update().catch(()=>{});
+          if(document.visibilityState !== 'visible') return;
+          if(typeof appUpdateShouldPoll==='function' && !appUpdateShouldPoll()) return;
+          reg.update().catch(()=>{});
         });
 
         reg.addEventListener('updatefound', ()=>{
           const newWorker = reg.installing;
           if(!newWorker) return;
           newWorker.addEventListener('statechange', ()=>{
-            // 新しいSWが「installed」になり、かつ既にSWが動いている(=初回インストールではなく更新)場合、
-            // sw.js側のskipWaiting()によってすぐactivateされ、controllerchangeで自動リロードされる
-            if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
-              console.log('[aramon] 新しいバージョンを検出。自動更新します。');
-            }
+            // 「installed」かつ既にSWが動いている = 初回インストールではなく更新。ここで告知だけ出す
+            if(newWorker.state === 'installed' && navigator.serviceWorker.controller) noticeUpdate();
           });
         });
       }).catch(()=>{});
