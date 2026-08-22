@@ -124,6 +124,13 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
        <!-- 募集中の部屋で待っている人数(ui.jsのupdateLobbyRoomBadgesが更新) -->
        <span id="raidWaitBadge" class="lobby-wait-badge hidden"></span>
      </button>
+     <!-- 🐾 マスモン(育成)。**ロビーから育成へ行く唯一の入口**(以前はモンスター選択の中に埋もれていた)。
+          **末尾に足してある**: 2個ずつ1行なので、途中に入れると以降の組(バッグ/ショップ・ガチャ/レイド)が
+          全部ずれる。ここなら既存の組はそのままで、レイド非開催中(レイドは hidden)は
+          ガチャの右の空き升へ入るので行数も増えない。 -->
+     <button id="openMastermonBtn" class="lobby-side-btn">
+       <span class="lobby-side-icon">🐾</span><span class="lobby-side-label">マスモン</span>
+     </button>
      <!-- アプリの新版が見つかったときだけ出る(通常は hidden)。ui.jsのrefreshAppUpdateTile()が出し入れする。
           **自動リロードをやめた代わりの導線**なので、トーストではなく消えないタイルで出す。
           **末尾に置く**: 先頭に入れると、出た瞬間に既存のタイルが1つずつずれて
@@ -207,8 +214,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <button id="closeSettingsBtn" class="overlay-close-btn">✕</button>
     <div class="lobby-menu-title">⚙️ 設定</div>
     <div class="lobby-menu-list">
-      <button id="howToPlayBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📖</span><span class="lobby-menu-text"><b>遊び方説明</b><i>操作・オーラ相性・アイテム・状態変化とホーム画面への追加方法</i></span></button>
+      <button id="howToPlayBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📖</span><span class="lobby-menu-text"><b>遊び方説明</b><i>操作・相性・アイテム・状態変化・ホーム画面への追加</i></span></button>
       <button id="openHudCustomizeBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🎛️</span><span class="lobby-menu-text"><b>画面カスタマイズ</b><i>バトル画面のボタン配置とサイズを変える</i></span></button>
+      <!-- 視点設定は射撃訓練場の中にしか入口が無く、普通に遊んでいると辿り着けなかった。
+           ここからも同じ #lookSettingsOverlay を開く(オーバーレイは1つのまま・訓練場の入口も残す)。 -->
+      <button id="lookSettingsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🎚️</span><span class="lobby-menu-text"><b>視点設定</b><i>視野角・カメラ感度・視点の操作方法を変える</i></span></button>
       <button id="audioSettingsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔊</span><span class="lobby-menu-text"><b>音量設定</b><i>BGMと効果音の音量を調整する</i></span></button>
     </div>
     <button id="adminEntryBtn">管理者用</button>
@@ -221,7 +231,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <button id="closeMyPageBtn" class="overlay-close-btn">✕</button>
     <div class="lobby-menu-title">👤 マイページ</div>
     <div class="lobby-menu-list">
-      <button id="accountLoginBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>ログイン / アカウント作成</b><i>記録とマスモンを他の端末でも引き継ぐ</i></span></button>
+      <button id="accountLoginBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>ログイン / アカウント作成</b><i>記録とマスモンを失わないように保存する(機種変更の引き継ぎにも使えます)</i></span></button>
       <button id="titleMyStatsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📈</span><span class="lobby-menu-text"><b>マイ記録</b><i>これまでの戦績・称号を見る</i></span></button>
     </div>
     <div class="lobby-menu-field">
@@ -239,7 +249,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div class="lobby-menu-list">
       <button class="lobby-menu-btn" id="helpReplayTutorialBtn"><span class="lobby-menu-icon">🔰</span><span class="lobby-menu-text"><b>はじめての説明をもう一度</b><i>チュートリアルの説明だけを見返します</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_addhome.png" data-title="ホーム画面追加方法"><span class="lobby-menu-icon">🏠</span><span class="lobby-menu-text"><b>ホーム画面追加方法</b><i>アイコンからアプリのようにすぐ起動</i></span></button>
-      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_account.png" data-title="アカウントの作り方"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>アカウントの作り方</b><i>ログインしてデータを他の端末にも引き継ぐ</i></span></button>
+      <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_account.png" data-title="アカウントの作り方"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>アカウントの作り方</b><i>記録とマスモンを失わないように保存する(機種変更にも使えます)</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_battle.png" data-title="バトルの始め方"><span class="lobby-menu-icon">⚔️</span><span class="lobby-menu-text"><b>バトルの始め方</b><i>モンスター選択からバトル開始まで</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_register.png" data-title="マスモン登録の仕方"><span class="lobby-menu-icon">📋</span><span class="lobby-menu-text"><b>マスモン登録の仕方</b><i>バトルを1回終えるだけで登録できます</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_training.png" data-title="マスモンの育て方"><span class="lobby-menu-icon">💪</span><span class="lobby-menu-text"><b>マスモンの育て方</b><i>トレーニングでステータスを強化</i></span></button>
@@ -360,12 +370,6 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
           <button class="cap-tab active" data-cap="3">3人</button>
           <button class="cap-tab" data-cap="4">4人</button>
         </div>
-      </div>
-      <div id="invertPitchRow">
-        <span id="invertPitchLabel">視点上下反転</span>
-        <button id="invertPitchToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="invertPitchLabel">
-          <span class="toggle-switch-knob"></span>
-        </button>
       </div>
   </div>
 </div>
@@ -944,7 +948,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <div id="accountOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box account-box">
     <div class="mastermon-confirm-text" style="margin-bottom:6px;">👤 アカウント</div>
-    <div class="account-note">プレイヤー名と4桁のパスコードでログイン。未登録の名前なら新規作成します。データはサーバーに保存され、他の端末でも引き継げます。</div>
+    <!-- ゲストのデータは端末の中だけにあり、しばらく遊ばないとブラウザに消される。
+         「引き継ぎ」より先に「消えないように保存する」ことを伝える(2026-08-22)。 -->
+    <div class="account-note">プレイヤー名と4桁のパスコードでログイン。未登録の名前なら新規作成します。記録とマスモンがサーバーに保存されるので、端末から消えても元に戻せます(機種変更の引き継ぎにも使えます)。</div>
     <input type="text" id="accountNameInput" maxlength="12" placeholder="プレイヤー名" data-kb-title="プレイヤー名">
     <input type="tel" id="accountPassInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="パスコード(4桁の数字)" data-kb-title="パスコード(4桁の数字)">
     <div id="accountMsg" class="account-msg hidden"></div>
@@ -1430,7 +1436,23 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <button class="audio-step-btn" id="sensYPlus">+</button>
       <span class="audio-slider-val" id="sensYVal">18</span>
     </div>
-    <div class="mastermon-confirm-btnrow" style="margin-top:14px;">
+    <!-- 視点の操作方法。感度と同じ画面に集めておく(プレイモード選択の中にあった上下反転をここへ移動)。
+         2行の見た目は .look-toggle-row / .look-toggle-label で共通にする(片方だけ #id で
+         整えると、もう片方と余白がズレる。旧 #invertPitchRow の規則は style.css から外す)。 -->
+    <div class="look-toggle-row">
+      <span id="invertPitchLabel" class="look-toggle-label">視点上下反転</span>
+      <button id="invertPitchToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="invertPitchLabel">
+        <span class="toggle-switch-knob"></span>
+      </button>
+    </div>
+    <div class="look-toggle-row">
+      <span id="fireDragAimLabel" class="look-toggle-label">FIREを滑らせて視点を動かす</span>
+      <button id="fireDragAimToggle" class="toggle-switch" role="switch" aria-checked="true" aria-labelledby="fireDragAimLabel">
+        <span class="toggle-switch-knob"></span>
+      </button>
+    </div>
+    <!-- 行が6つになったので下のボタン行の余白は詰める(iPhone SE 横持ち=実効375pxでもスクロールさせない) -->
+    <div class="mastermon-confirm-btnrow" style="margin-top:8px;">
       <button id="lookResetBtn">初期値に戻す</button>
       <button id="closeLookSettingsBtn">閉じる</button>
     </div>

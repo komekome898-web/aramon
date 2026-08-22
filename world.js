@@ -25,7 +25,11 @@ let game = { started:false, over:false, tipTimer:7, selectedElement:null, select
 /* 視点操作の設定(視野角・左右/上下の感度)。射撃訓練場の「視点設定」から変更でき、
    バトルにもそのまま反映される。値の保存はui.js(localStorage)、視野角はreal3d.jsが
    window.__aramonLook から読んで3D側のカメラにも同じ角度を設定する。          */
-const LOOK_DEFAULTS = { fovDeg:64, sensX:0.0045, sensY:0.0018 };
+/* fireDragAim: FIREボタンを押した指をそのまま滑らせて視点を動かす(既定ON)。
+   右親指1本で「撃つ+狙う」が完結する。読むのは input.js だけ、UIはui.jsの視点設定。 */
+const LOOK_DEFAULTS = { fovDeg:64, sensX:0.0045, sensY:0.0018, fireDragAim:true };
+/* LOOK_LIMITSは「数値の範囲表」。真偽値の設定(fireDragAim)はここに入れない
+   ── ui.jsのloadLookSettings/スライダーが範囲を引ける数値だけを対象にしているため。 */
 const LOOK_LIMITS   = { fovDeg:[45,85], sensX:[0.0015,0.0090], sensY:[0.0006,0.0045] };
 let lookSettings = { ...LOOK_DEFAULTS };
 window.__aramonLook = lookSettings;
@@ -126,6 +130,40 @@ function getRealViewportSize(){
   if(!(w > 0) || !(h > 0)){ w = document.documentElement.clientWidth; h = document.documentElement.clientHeight; }
   return { w: w || 1, h: h || 1 };
 }
+/* ===== セーフエリア(ノッチ・ホームインジケーター) =====
+   env(safe-area-inset-*) はCSSからしか読めないので、隠しの計測用要素にpaddingとして当てて
+   計算値をpxで読み取る。env()を知らない環境ではpaddingが0になり、これまでと同じ見た目のまま。
+   計測用要素は回転の外(body直下)に置く ── env()が返すのは常に「実画面」の向きの値なので、
+   #appRootの中(回転後)へ入れても意味は変わらないが、混同しないよう外に置いている。 */
+let _safeProbeEl = null;
+function readScreenSafeInsets(){
+  try{
+    if(!_safeProbeEl || !_safeProbeEl.isConnected){
+      _safeProbeEl = document.createElement('div');
+      _safeProbeEl.id = 'safeAreaProbe';
+      _safeProbeEl.style.cssText =
+        'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+        + 'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) '
+        + 'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
+      (document.body || document.documentElement).appendChild(_safeProbeEl);
+    }
+    const cs = getComputedStyle(_safeProbeEl);
+    const px = (v)=>{ const n = parseFloat(v); return (isFinite(n) && n > 0) ? n : 0; };
+    return { t:px(cs.paddingTop), r:px(cs.paddingRight), b:px(cs.paddingBottom), l:px(cs.paddingLeft) };
+  }catch(err){ return { t:0, r:0, b:0, l:0 }; }
+}
+/* 実画面の上下左右のセーフエリアを、**アプリ側の上下左右**へ入れ替えて --safe-t/r/b/l に入れる。
+   #appRootは transform-origin:0 0 で rotate(90deg) するので、強制横向きでは
+     アプリの左端=実画面の上端(ノッチ) / 右端=下端(ホームバー) / 上端=右端 / 下端=左端
+   になる。**向きの分岐はこの1か所だけ**(CSS側は変数を読むだけで@mediaも向き判定も書かない)。 */
+function applySafeAreaVars(forced){
+  const s = readScreenSafeInsets();
+  const st = document.documentElement.style;
+  st.setProperty('--safe-t', (forced ? s.r : s.t) + 'px');
+  st.setProperty('--safe-r', (forced ? s.b : s.r) + 'px');
+  st.setProperty('--safe-b', (forced ? s.l : s.b) + 'px');
+  st.setProperty('--safe-l', (forced ? s.t : s.l) + 'px');
+}
 // #appRootの回転前サイズ・位置をpx実測値で直接指定する。
 // vw/vhだとモバイルブラウザのアドレスバー表示/非表示等で実際のviewportとズレて
 // 画面の両端が見切れることがあるため、必ずgetRealViewportSize()と同じ値を使う。
@@ -154,6 +192,8 @@ function applyAppRootTransform(forced, real){
   // クラスにしておけば、強制横向きで --vw/--vh とメディアクエリの基準が食い違う問題に
   // 巻き込まれず、JS側から意図した基準で切り替えられる。
   document.documentElement.classList.toggle('narrow-screen', real.w <= 520);
+  // セーフエリアも--vw/--vhと同じ経路で更新する(向きが変わるたびに入れ替わるため)
+  applySafeAreaVars(forced);
 }
 function updateForceLandscapeMode(){
   const real = getRealViewportSize();
