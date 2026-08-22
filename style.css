@@ -22,7 +22,23 @@
     /* トップ画面のヘッダーの高さ。ボタンを押しやすくするため少し厚くしてある。
        ヘッダーの下に敷く要素(#lobbyLayout / 右パネル)のtopもこの値を使う */
     --top-header-h: 36px;
+
+    /* ===== 試合HUDの文字の大きさ =====
+       腕を伸ばして持つ横持ちのスマホで9pxの数字は読めない。**HUDの文字はこの4段だけ**で
+       決め、個別のpxを散らかさない(足すたびに大きさがバラつくのを止めるため)。
+       大きさを変えるつまみは **--hud-text-scale の1つだけ**。
+       「文字サイズ 大」は ⚙️設定 →🎚️視点設定 で html.hud-text-large が付く。
+       ここはバトルHUD専用。ロビーや一覧の文字はこの変数を読まない。 */
+    --hud-text-scale: 1;
+    --hud-text-scale-large: 1.25;   /* 「大」の倍率。実機で詰めるならここだけ動かす */
+    --hud-fs-sm:   calc(11px * var(--hud-text-scale));  /* 添え字・単位・状態ピル */
+    --hud-fs-num:  calc(12px * var(--hud-text-scale));  /* HP/ガッツの実数値・キルフィード */
+    --hud-fs-name: calc(15px * var(--hud-text-scale));  /* 名前・技名・安置カウントダウン */
+    --hud-fs-big:  calc(18px * var(--hud-text-scale));  /* 生存数・Kill/Damage */
+    --hud-bar-h:   calc(8px  * var(--hud-text-scale));  /* HP/ガッツ/状態CDのバーの高さ */
   }
+  /* 文字サイズ「大」。**倍率は1つだけ**なので、ここでHUDの段が丸ごと動く */
+  html.hud-text-large{ --hud-text-scale: var(--hud-text-scale-large); }
   /* 長押しで文字/画像が選択されたり、iOSのコピー・調べる・画像を保存のメニューが
      出るのを全画面で防ぐ。入力欄だけは下で選択可能に戻す。
 
@@ -1910,6 +1926,21 @@
   .result-currency{ margin-top:4px; font-family:'Share Tech Mono',monospace; font-size:14px; color:var(--amber); letter-spacing:1px; }
   .result-currency:empty{ display:none; }
 
+  /* リザルトの死因1行(「⚔ 〇〇 に倒された」/「安全圏の外で力尽きた」など)。
+     キルフィードは3行・4.2秒で消え、直後に3秒の決着演出が入るので見返せなかった。
+     **クラス名は result- 接頭辞をそろえる**(画面固有の短い名前は既存と衝突する)。
+     1行に収め、長い名前はこの文字要素自身が「…」で切る(枠では隠さない)。 */
+  .result-death-cause{
+    margin-top:3px; display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:13px; letter-spacing:0.5px; color:#ffb0b0; max-width:100%;
+  }
+  .result-death-cause.hidden{ display:none !important; }
+  .result-death-icon{
+    width:22px; height:22px; border-radius:50%; object-fit:cover; flex:0 0 auto;
+    background:rgba(255,255,255,0.06); border:1px solid var(--panel-line);
+  }
+  .result-death-text{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
   /* チーム戦のリザルト: 小隊メンバーの成績(名前・キル・状態)を1行ずつ。
      行が3つ増えても縦にはみ出さないよう小さめに詰める(375x667縦持ちで実測済み) */
   .result-squad-info{ margin-top:2px; display:flex; flex-direction:column; gap:1px; align-items:center; }
@@ -2575,11 +2606,12 @@
 
   #hpPanel{ width:210px; padding:7px 14px 7px; border-top:3px solid var(--accent,var(--amber)); }
   #hpPanel .who{ display:flex; align-items:center; gap:8px; margin-bottom:3px; }
-  #hpPanel .nm{ font-weight:700; font-size:14px; letter-spacing:1px; }
-  #hpPanel .elTag{ font-size:9px; color:var(--ink-dim); letter-spacing:1px; }
-  .hpbar-track{ height:5.5px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.12);}
+  #hpPanel .nm{ font-weight:700; font-size:var(--hud-fs-name); letter-spacing:1px; }
+  #hpPanel .elTag{ font-size:var(--hud-fs-sm); color:var(--ink-dim); letter-spacing:1px; }
+  /* バーの高さも文字と同じ倍率で動かす(5.5pxは横持ちで残量が読み取れなかった) */
+  .hpbar-track{ height:var(--hud-bar-h); background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.12);}
   .hpbar-fill{ height:100%; background:linear-gradient(90deg,#6bff8e,#2fd35a); width:100%; transition:width .15s; }
-  #hpNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right;}
+  #hpNum{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-num); color:var(--ink-dim); margin-top:1px; text-align:right;}
 
   #topLeft{ position:absolute; top:14px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
   /* トレーニングで変わった数値(カード+拾ったアイテム)をプレイヤー欄の中に出す。
@@ -2618,22 +2650,38 @@
   /* 安置情報フィールドをミニマップの左に添える横並び配置 */
   #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:row; align-items:flex-start; gap:8px; }
   #counterPanel{ padding:7px 10px; text-align:right; white-space:nowrap; }
-  #aliveNum{ font-family:'Russo One',sans-serif; font-size:16px; color:var(--amber); }
-  #aliveLabel{ font-size:8px; letter-spacing:1.5px; color:var(--ink-dim); }
-  #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:9px; margin-top:2px; }
-  #zoneCountdown{ font-family:'Share Tech Mono',monospace; font-size:13px; font-weight:700; color:var(--amber); }
-  #matchClock{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); }
+  #aliveNum{ font-family:'Russo One',sans-serif; font-size:var(--hud-fs-big); color:var(--amber); }
+  #aliveLabel{ font-size:var(--hud-fs-sm); letter-spacing:1.5px; color:var(--ink-dim); }
+  #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); margin-top:2px; }
+  #zoneCountdown{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-name); font-weight:700; color:var(--amber); }
+  #matchClock{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); color:var(--ink-dim); }
 
   #statsPanel{ top:14px; left:50%; transform:translateX(-50%); padding:9px 20px; display:flex; gap:22px; }
   .stat-row{ display:flex; align-items:baseline; justify-content:center; gap:8px; }
-  .stat-lbl{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
-  .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
+  .stat-lbl{ font-size:var(--hud-fs-sm); letter-spacing:2px; color:var(--ink-dim); }
+  .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-big); color:var(--amber); }
 
-  #minimapWrap{ width:120px; height:120px; flex-shrink:0; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:rgba(11,19,32,0.5); box-shadow:0 0 18px -4px rgba(0,0,0,0.8);}
+  /* ミニマップのタップで縮尺を切り替える(render.jsのtoggleMinimapZoom)。
+     全世界固定の縮尺では交戦距離の敵が全部自分の点に重なっていた。
+     #hudはpointer-events:noneなので、#pingBtnと同じくここで明示して受け取る */
+  #minimapWrap{ width:120px; height:120px; flex-shrink:0; border-radius:50%; overflow:hidden; border:2px solid rgba(255,255,255,0.15); background:rgba(11,19,32,0.5); box-shadow:0 0 18px -4px rgba(0,0,0,0.8);
+    pointer-events:auto; cursor:pointer; touch-action:none; }
   #minimapCanvas{ width:100%; height:100%; display:block; }
 
-  #killFeed{ position:absolute; top:140px; right:14px;   /* 操作ヒント帯と交差しない高さ */ width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
-  .kf-item{ font-size:12px; padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%; }
+  /* ===== キルフィード =====
+     【座標の基準は #hud】index.htmlで #topRight の外(=#hudの直下)へ出してある。
+     以前は #topRight(position:absolute)の子だったので top/right が右上パネル基準になり、
+     「操作ヒント帯と交差しない高さ」という調整が14pxずれたまま効いていた。
+     その結果、回転ボタンと**必ず重なっていた**(実測: 812x375横持ちで46x46px、
+     375x667縦持ちでも46x46px。3行目はFIRE/DASHにも重なっていた)。
+
+     右端には上から ミニマップ → 回転ボタン → DASH/FIRE が縦に詰まっていて
+     3行ぶんの空きが無いので、**右端そのものを空けて左へ寄せる。**
+     空ける幅は回転ボタンの実寸(--turn-*)から出す ―― 数字を二重に持たない。 */
+  #killFeed{ position:absolute; top:140px;
+    right:calc(var(--turn-right) + var(--turn-size) * 2 + var(--turn-gap) + 10px);
+    width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
+  .kf-item{ font-size:var(--hud-fs-num); padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%; }
   @keyframes kfIn{ to{opacity:1; transform:translateY(0);} }   /* 横スライドは右端で見切れて斜め欠けに見えた */
 
   /* #appRootの最後(#hudの外)に置いてあるので、z-indexは他の全画面(#startScreen:30含む)より
@@ -2699,11 +2747,23 @@
   }
 
   #toast{ position:absolute; left:50%; top:16%; transform:translateX(-50%); z-index:950; pointer-events:none;
-    font-size:13px; letter-spacing:1px; padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px; opacity:0; transition:opacity .2s; white-space:nowrap;}
-  /* トレーニングカードの選択肢(#trainCardBar)が出ている間だけ下へ逃がす(showTrainCards/hideTrainCardsで付け外し)。
-     #trainCardBarはtop:58px固定・折り返しても高さは最大 ~129px(568x320実測)なので、
-     画面の高さに関わらずここまで下げれば既定位置では確実に被らない。 */
-  #toast.tc-active{ top:138px; }
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    max-width:calc(70 * var(--vw));
+    font-size:13px; letter-spacing:1px; opacity:0; transition:opacity .2s;
+    /* 枠は行ごとに持たせるので、入れ物側の箱の見た目は外す */
+    padding:0; background:none; border:0; }
+  /* トーストの1件 = 1行(world.jsのpushToastが最大3行まで積む) */
+  .toast-line{
+    padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px;
+    max-width:100%; text-align:center;
+    /* nowrapをやめて2行まで折り返す。「内部エラー…:<90文字>」が両端で切れて読めなかった。
+       切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く */
+    white-space:normal; overflow-wrap:anywhere;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+  /* トレーニングカードが出ている間は操作ヒント帯を出さない(#hud.tc-openはui.jsが付け外し)。
+     カードを画面の下へ移したので、#tipBox(bottom:128px)とだけ場所が重なる。
+     トーストは上(top:16%)にいるので、以前のように逃がす必要はなくなった。 */
+  #hud.tc-open #tipBox{ display:none; }
 
   #movePanel{
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
@@ -2714,14 +2774,14 @@
   #moveIcon{ width:38px; height:38px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
   #moveIcon svg{ width:22px; height:22px; }
   #moveInfo{ min-width:120px; }
-  #moveName{ font-weight:700; font-size:15px; }
+  #moveName{ font-weight:700; font-size:var(--hud-fs-name); }
   #tierDots{ display:flex; align-items:center; gap:5px; margin-top:5px; }
   /* 各点はその段階の技のオーラ色(--dotColorはJSで技ごとに設定)。ロック中は薄く・選択中は発光＆拡大 */
   .tier-dot{ width:9px; height:9px; border-radius:50%; background:var(--dotColor,rgba(255,255,255,0.32)); opacity:0.35; border:1px solid rgba(255,255,255,0.25);
     flex-shrink:0; transition:width .12s, height .12s; }
   .tier-dot.unlocked{ opacity:0.75; }
   .tier-dot.selected{ width:15px; height:15px; opacity:1; border-color:var(--dotColor,var(--amber)); box-shadow:0 0 7px var(--dotColor,var(--amber)); }
-  #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:3px; }
+  #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); color:var(--ink-dim); margin-top:3px; }
   #gutsTrack{ margin-top:2px; }
   #gutsFill{ height:100%; background:linear-gradient(90deg,#ffb56b,#ff7a59); width:100%; transition:width .15s; }
   @keyframes gutsWarnFlash{
@@ -2732,12 +2792,12 @@
   #gutsTrack.guts-warn{ animation: gutsWarnFlash 0.5s ease-out; }
   #stateCdTrack{ margin-top:2px; }
   #stateCdFill{ height:100%; background:linear-gradient(90deg,#ff6b6b,#ff3b3b); width:0%; transition:width .15s; }
-  #stateCdLabel{ font-size:9px; letter-spacing:0.5px; color:#ff8a8a; margin-top:1px; }
-  #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right; }
+  #stateCdLabel{ font-size:var(--hud-fs-sm); letter-spacing:0.5px; color:#ff8a8a; margin-top:1px; }
+  #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-num); color:var(--ink-dim); margin-top:1px; text-align:right; }
   /* 状態は最大4つ同時。こおりは残り秒ぶん幅が伸びるので、#hpPanelの幅から
      はみ出さないよう#trainBuffsLineと同じく折り返す(横へ伸ばさない) */
   #statusIcons{ display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; min-height:16px; max-width:100%; }
-  .status-pill{ font-size:9px; padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; white-space:nowrap; }
+  .status-pill{ font-size:var(--hud-fs-sm); padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; white-space:nowrap; }
   .status-pill.burn{ background:rgba(255,107,53,0.22); color:#ff9c5a; border:1px solid rgba(255,107,53,0.5); }
   .status-pill.slow{ background:rgba(120,150,255,0.22); color:#a9bcff; border:1px solid rgba(120,150,255,0.5); }
   .status-pill.freeze{ background:rgba(191,233,255,0.22); color:#bfe9ff; border:1px solid rgba(191,233,255,0.6); }
@@ -2781,8 +2841,11 @@
   @keyframes autoRunBob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
 
   /* ===== 射撃訓練場の操作バー(画面右上) ===== */
-  /* 訓練場では安置が無いので、安置情報のパネルは出さない */
+  /* 訓練場では安置が無いので、安置情報のパネルは出さない。
+     キルフィードは #topRight の子から #hud 直下へ移したので、**別に消す指定が要る**
+     (的を倒すたびに撃破の行が流れるのは訓練の邪魔なので、従来どおり出さない) */
   #hud.range-mode #topRight{ display:none; }
+  #hud.range-mode #killFeed{ display:none; }
   /* レイド中はバトルロイヤル専用の表示を隠す。レイドHUD(#raidHud)が画面上部に
      出るので、残り人数・安全圏の案内・Kill/Damageと重なって両方読めなくなる。
      ミニマップとキルフィードは残したいので #topRight ごとは消さない。            */
@@ -2791,13 +2854,33 @@
   /* レイドHUDのぶんだけミニマップを下げる */
   #hud.raid-mode #topRight{ top:calc(6 * var(--vh)); }
   /* ---- 試合中のトレーニングカード(**試合は止まらない**) ----
-  /* 置き場所: **撃破/ダメージ欄(#statsPanel)のすぐ下**。横長の帯にして視界を塞がない。
-     位置と大きさは「操作画面カスタマイズ」で動かせる(HUD_DRAGGABLEに入れてある)ので、
-     既定の中央寄せは translateX(-50%) のままでよい(カスタマイズ時は hudFlattenElement が
+     置き場所: **画面の下寄り・技パネルの上**。以前は top:58px で、最大約129pxの高さと
+     合わせて y=58〜187 を占め、375px高の端末では**照準(50%=187)まで届き**、
+     安置コンパス(cy=70)も覆っていた。撃ち合いの最中に画面の真ん中が塞がる。
+
+     【左右と下は「避ける相手の実寸」から決める】--tc-side / --tc-bottom の2つだけで
+     ジョイスティック・FIRE・DASH・回転ボタン・技パネルを全部よけている。
+     どれかを動かしたらこの2つも一緒に直す(値の出どころは各コメントに書いてある)。
+     位置と大きさは「操作画面カスタマイズ」で動かせる(HUD_DRAGGABLEに入れてある)。
+     中央寄せは translateX(-50%) のままでよい(カスタマイズ時は hudFlattenElement が
      left/top へ畳み込み、hudApplyPosScale が transform を scale だけに置き換えるため)。
      **出るときのアニメーションは透明度だけにする**(transformを動かすと位置とぶつかる)。 */
+  :root{
+    /* 左右に空ける幅 = ジョイスティック(left22+124)と回転ボタン列
+       (--turn-right 22 + --turn-size 52*2 + --turn-gap 10 = 136)の広いほう + すき間8 */
+    --tc-side: 154px;
+    /* 下に空ける高さ = DASH(bottom42 + 56)の上。技パネル(bottom18 + 約64)より上になる */
+    --tc-bottom: 106px;
+  }
+  html.narrow-screen{
+    /* ジョイスティック(16+112=128)/回転ボタン列(16+46*2+8=116)→ 広いほう+8 */
+    --tc-side: 136px;
+    /* DASH(bottom34 + 50)の上 */
+    --tc-bottom: 92px;
+  }
   #trainCardBar{
-    position:absolute; left:50%; top:58px; transform:translateX(-50%);
+    position:absolute; left:50%; bottom:var(--tc-bottom); transform:translateX(-50%);
+    max-width:calc(100% - var(--tc-side) * 2);
     z-index:26; pointer-events:auto; display:flex; flex-direction:column; align-items:stretch; gap:3px;
     padding:4px 6px; border-radius:11px;
     background:linear-gradient(180deg, rgba(14,20,32,0.9), rgba(8,12,20,0.9));
@@ -2808,8 +2891,10 @@
   .tc-timer-track{ height:3px; border-radius:2px; background:rgba(255,255,255,0.12); overflow:hidden; }
   .tc-timer-fill{ height:100%; width:100%; background:linear-gradient(90deg,#9fd1ff,#f4c430); }
   /* 横に並びきらない狭い端末では折り返す(画面外へはみ出させないための保険)。
-     iPhone横持ち(812/844)では1行に収まる。 */
-  .tc-cards{ display:flex; flex-wrap:wrap; justify-content:center; gap:4px; max-width:calc(62 * var(--vw)); }
+     **幅の上限は帯の親(#trainCardBar)が --tc-side から決めた値をそのまま使う。**
+     以前は calc(62 * var(--vw)) だったが、--vw は強制横向きでは実画面の幅
+     (=論理の高さ)なので、縦持ち端末では帯が不必要に細くなり行が増えていた。 */
+  .tc-cards{ display:flex; flex-wrap:wrap; justify-content:center; gap:4px; max-width:100%; }
   /* 1枚を「名前 → 増減」の横並びにして背を低くする(視界を塞がない横長の帯にするため)。 */
   .tc-card{
     display:flex; align-items:center; justify-content:center; gap:4px;
@@ -2841,11 +2926,15 @@
     color:#cfe9ff; background:rgba(8,14,24,0.72); border:1px solid rgba(120,190,255,0.32); }
   .look-settings-box{ max-width:min(560px, calc(92 * var(--vw))); width:min(560px, calc(92 * var(--vw))); position:relative; }
   .look-settings-note{ font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; margin-bottom:6px; }
-  /* 行が6つ(視野角/左右感度/上下感度/上下反転/FIREドラッグ/ボタン)になったので、
+  /* 行が7つ(視野角/左右感度/上下感度/上下反転/FIREドラッグ/文字サイズ/ボタン)になったので、
      いちばん低い画面(iPhone SE 横持ち=実効375px)でもスクロールしないよう
-     **この画面だけ**余白を詰める。詰める前は387pxで1.1画面ぶんはみ出していた。 */
-  .mastermon-confirm-box.look-settings-box{ padding:12px 30px; }
-  .look-settings-box .audio-slider-row{ margin:7px 0; }
+     **この画面だけ**余白を詰める。詰める前は387pxで1.1画面ぶんはみ出していた。
+     文字サイズの行を足した時点で 370px(置ける351px)まで戻り19pxはみ出したので、
+     枠の余白と行間をもう一段詰めてある。**行をこれ以上足すなら詰め直すのではなく
+     並べ方を変えること**(数字の詰め直しは次に何か足せばまた破綻する)。 */
+  .mastermon-confirm-box.look-settings-box{ padding:8px 30px; }
+  .look-settings-box .audio-slider-row{ margin:4px 0; }
+  .look-settings-box .look-toggle-row{ margin-top:4px; }
   .look-settings-box .audio-slider-label{ width:56px; font-size:13px; }
 
   /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */
@@ -3029,8 +3118,11 @@
   .cd-ring-bg{ fill:none; stroke:rgba(0,0,0,0.35); stroke-width:6; }
   .cd-ring-fg{ fill:none; stroke:var(--amber); stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset 0.05s linear; }
 
+  /* 回転ボタンの寸法と居場所は**この4つの変数が正**。キルフィード(避ける側)と
+     トレーニングカード(避ける側)が同じ値を読むので、数字を書き換えるのはここだけ。 */
+  :root{ --turn-size:52px; --turn-right:22px; --turn-gap:10px; --turn-bottom:185px; }
   #turnLeftBtn, #turnRightBtn{
-    position:absolute; width:52px; height:52px; border-radius:50%;
+    position:absolute; width:var(--turn-size); height:var(--turn-size); border-radius:50%;
     display:flex; align-items:center; justify-content:center;
     background:rgba(10,16,26,0.4); border:2px solid rgba(255,255,255,0.14);
     color:rgba(255,255,255,0.5); font-size:16px; pointer-events:auto; touch-action:none;
@@ -3038,8 +3130,8 @@
   }
   /* 左手はジョイスティック操作中で押しにくいため、左回転ボタンも右側(右回転ボタンの左隣)に置く。
      高さは右上のミニマップ・安置情報フィールドに被らない範囲でやや上寄せ */
-  #turnLeftBtn{ right:84px; bottom:185px; }
-  #turnRightBtn{ right:22px; bottom:185px; }
+  #turnLeftBtn{ right:calc(var(--turn-right) + var(--turn-size) + var(--turn-gap)); bottom:var(--turn-bottom); }
+  #turnRightBtn{ right:var(--turn-right); bottom:var(--turn-bottom); }
   #turnLeftBtn:active, #turnRightBtn:active{ background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.8); }
 
   #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; opacity:0; transition:opacity .4s; text-align:center; white-space:nowrap;}
@@ -4275,8 +4367,8 @@
   html.narrow-screen #pingBtn{ right:162px; bottom:36px; width:44px; height:44px; }
   html.narrow-screen #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
   html.narrow-screen #autoRunLabel{ left:16px; bottom:134px; width:112px; }
-  html.narrow-screen #turnLeftBtn{ right:70px; bottom:162px; width:46px; height:46px; }
-  html.narrow-screen #turnRightBtn{ right:16px; bottom:162px; width:46px; height:46px; }
+  /* 回転ボタンは変数だけ入れ替える(位置の式は本体側と共通。キルフィードとカードも追従する) */
+  html.narrow-screen{ --turn-size:46px; --turn-right:16px; --turn-gap:8px; --turn-bottom:162px; }
 
   #rotateOverlay{ display:none; }
 
@@ -4588,6 +4680,12 @@ body.self-downed #fireBtn, body.self-downed #dashBtn, body.self-downed #movePane
 body.self-frozen #fireBtn, body.self-frozen #dashBtn, body.self-frozen #movePanel{
   opacity:0.35; pointer-events:none; filter:grayscale(0.8);
 }
+/* ・self-noguts = 今の技を撃つガッツが足りない(combat.jsのupdateFireReadyMarkが印を付ける)
+   「押した後のトースト」でしか分からなかったので、FIREだけ先に沈ませる。
+   #movePanel は沈ませない(安い技へ落として撃つ逃げ道を残す)。
+   pointer-events は切らないこと。押している最中に切ると pointerup を取り逃し、
+   fireBtnHeld が立ったまま残る。 */
+body.self-noguts #fireBtn{ opacity:0.42; filter:grayscale(0.7); }
 
 /* チーム編成の補足(1行・小さく)。何が変わるかを選ぶ前に伝える */
 .team-size-note{ font-size:10px; color:rgba(230,236,245,0.55); margin-top:5px; letter-spacing:0.3px; }

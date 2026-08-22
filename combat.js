@@ -178,6 +178,10 @@ function fireMove(attacker, target, move){
       applyDamage(target, effDmg, attacker, { moveAura, gutsDrain: move.gutsDrainRatio||0,
                                               lifestealMult: move.lifestealMult||1 });
       spawnHit(target.x, target.y, target.z, effColor);
+    } else if(attacker.isPlayer){
+      // 空振り: ガッツは既に消費済みなのに完全に無音・無表示だった。
+      // 「届いていない」ことだけを控えめな空気音で知らせる(命中音よりはっきり弱い)
+      playSe('miss');
     }
     return;
   }
@@ -450,6 +454,15 @@ function applyTraitOnHit(source, target, finalDmg){
     }
   }
 }
+/* 自分が当てたときの合図(×印・命中SE)の間引き。範囲技・多段ヒットは1フレームで
+   何体にも当たるので、そのたびにDOMを触ると重い。この間隔で1回だけ通す。 */
+const SELF_HIT_FX_MIN_GAP = 0.05;   // 秒
+let lastSelfHitFxAt = -Infinity;
+function selfHitFxGate(){
+  if(matchTime - lastSelfHitFxAt < SELF_HIT_FX_MIN_GAP) return false;
+  lastSelfHitFxAt = matchTime;
+  return true;
+}
 function applyDamage(target, dmg, source, opts){
   if(!target.alive) return;
   // レイドでは味方どうしの攻撃は当たらない(ボスが絡む攻撃だけが通る)。
@@ -513,6 +526,15 @@ function applyDamage(target, dmg, source, opts){
   }
   if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= AURA_MATCH_MULT; // オーラ一致
   target.hp -= finalDmg; target.hitFlash = 0.18;
+  /* 【命中の手応え】自分が与えたダメージが確定した瞬間に、照準の×印(render.jsのshowHitMarker)と
+     命中SEを出す。ここは「ソロ/ホストの確定計算」だけが通る場所で、マルチのゲストは上の
+     予測分岐(involvesHuman && !isAuthoritative)で必ずreturn済みなので、
+     ゲストがnetwork.jsの見た目命中で出す×印と二重にはならない。
+     範囲技は1フレームに何体も当たるため、×印(=DOMのリフロー)とSEはselfHitFxGateで間引く。 */
+  if(source && source===player && source.id!==target.id && selfHitFxGate()){
+    if(typeof showHitMarker==='function') showHitMarker();
+    playSe('hitDealt');
+  }
   // 計測ハーネス用: ダメージ確定(HP減少)の時刻を記録(通常は__netProbe未定義で素通り)
   if(window.__netProbe) __netProbe.mark('dmg', { id: target.id, src: source?source.id:null, dmg: Math.round(finalDmg), hp: Math.round(target.hp), ts: Date.now() });
   // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
@@ -523,6 +545,12 @@ function applyDamage(target, dmg, source, opts){
     target.recentAttackers[source.id] = matchTime;
     target.lastAttackerId = source.id;
     target.lastAttackerAt = matchTime;
+    /* 【被弾方向マーカー用】撃ってきた相手の「その時の位置」と時刻を控える。
+       描画(画面外周の円弧)はrender.js側が player.lastHitFromX/Y と lastHitAt を読んで出すので、
+       ここは記録だけ。相手が動いても方向がぶれないよう、当たった瞬間の座標を固定で残す。 */
+    target.lastHitFromX = source.x;
+    target.lastHitFromY = source.y;
+    target.lastHitAt = matchTime;
   }
   // 状態変化「逆上」(スエゾー): 技を受けた時に確率で発動
   const targetSc = STATE_CHANGES[target.element];
@@ -1790,6 +1818,37 @@ function updateCamera(dt){
   camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
   camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
   camPos.z = v.z + camState.height;
+  updateMatchSignals();
+}
+/* 試合中に毎フレーム出す「自機まわりの合図」。
+   【なぜここから呼ぶか】ソロ/ホストは update()、マルチのゲストは network.js のゲスト分岐と
+   走るループが分かれており、両方が毎フレーム必ず通る関数はごく限られる。
+   updateCamera() はその1つで、かつソロ・ホスト・ゲストで同じ結果になるので、
+   ここ1か所から回せば「ホストでしか起きない」演出にならずに済む。 */
+function updateMatchSignals(){
+  updateFireReadyMark();   // 試合外でも呼ぶ(印を消す役目があるので早期returnしない)
+  if(!game.started || game.over) return;
+  if(typeof updateZoneShrinkWarning==='function') updateZoneShrinkWarning();
+}
+/* 【撃てない理由を押す前に見せる】ガッツが今の技の消費に足りない間だけ body.self-noguts を付け、
+   FIREボタンをCSS側で沈ませる(印だけ付けて見せ方はCSSに任せるのは body.self-frozen /
+   body.self-downed と同じ流儀)。技パネル(=安い技への切替)は沈ませないので、
+   「足りない → 下の技に落とす」という逃げ道は残る。
+   毎フレームDOMを触らないよう、状態が変わったときだけclassListを操作する。 */
+let fireReadyMarkOn = false;
+function updateFireReadyMark(){
+  const lack = !!(game.started && !game.over && player && player.alive
+                  && !spectatingNow() && !entityDowned(player) && playerGutsShort());
+  if(lack === fireReadyMarkOn) return;
+  fireReadyMarkOn = lack;
+  document.body.classList.toggle('self-noguts', lack);
+}
+/* 「今の技を撃つガッツが足りない」の判定はここ1か所。発射を弾く tryPlayerFire と
+   FIREを沈ませる印の両方がこれを見るので、片方だけ条件がずれることがない。 */
+function playerGutsShort(){
+  if(!player) return false;
+  const mv = activeMove(player);
+  return !!mv && player.guts < effectiveGutsCost(player, mv);
 }
 function updateCameraSnap(dt){
   if(!camSnap.active) return;
@@ -1923,7 +1982,7 @@ function tryPlayerFire(dt){
   if(entityDowned(player)) return;   // ダウン中は攻撃不可(発射条件はtryNonHostPlayerFireVisual/processRemoteFireEventsと一致させる)
   if(!(fireBtnHeld || keys['f'])) return;
   const mv = activeMove(player);
-  if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
+  if(playerGutsShort()){ warnGutsShortage(); return; }   // 判定はFIREの沈み(updateFireReadyMark)と共通
   let aimAngle = player.facingAngle;
   if(mv.melee){
     let best=null, bestD=mv.range;

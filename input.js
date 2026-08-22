@@ -432,6 +432,13 @@ document.getElementById('pingBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over && typeof sendPing==='function') sendPing();
 });
+/* ミニマップのタップで縮尺を切り替える(近距離ズーム ⇔ 全体表示。描画側はrender.jsのtoggleMinimapZoom)。
+   全世界固定の縮尺では1px≒151ワールド単位で、交戦距離の敵が全部自分の点に重なっていた。
+   stopPropagationしないと、この指がそのままcanvasの視点ドラッグを掴んでしまう */
+document.getElementById('minimapWrap').addEventListener('pointerdown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  if(typeof toggleMinimapZoom==='function') toggleMinimapZoom();
+});
 document.getElementById('turnLeftBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) turnCameraByDegrees(-90);

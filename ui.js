@@ -1371,6 +1371,9 @@ function syncLookToggles(){
   if(inv) inv.setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
   const fd = document.getElementById('fireDragAimToggle');
   if(fd) fd.setAttribute('aria-checked', fireDragAimOn() ? 'true' : 'false');
+  // バトル中の文字サイズ(html.hud-text-large が実際に付いているかを正とする)
+  const ht = document.getElementById('hudTextLargeToggle');
+  if(ht) ht.setAttribute('aria-checked', document.documentElement.classList.contains('hud-text-large') ? 'true' : 'false');
 }
 document.getElementById('fireDragAimToggle').addEventListener('click', ()=>{
   lookSettings.fireDragAim = !fireDragAimOn();
@@ -1383,6 +1386,7 @@ document.getElementById('lookResetBtn').addEventListener('click', ()=>{
   for(const k of Object.keys(lookSettings)) if(!(k in LOOK_DEFAULTS)) delete lookSettings[k];
   Object.assign(lookSettings, LOOK_DEFAULTS);
   setInvertPitch(false);   // 同じ画面に並んでいる上下反転も既定(OFF)へ戻す
+  setHudTextLarge(false);  // 同じく、バトル中の文字サイズも既定(標準)へ戻す
   applyLookSettings(); syncLookSliders(); syncLookToggles(); saveLookSettings();
   pushToast('視点設定を初期値に戻しました');
 });
@@ -3899,6 +3903,33 @@ function setInvertPitch(on){
 })();
 document.getElementById('invertPitchToggle').addEventListener('click', ()=> setInvertPitch(!invertPitchY));
 
+/* ===== バトル中の文字サイズ(標準/大) =====
+   HUDの数字は9px前後で、腕を伸ばして持つ横持ちでは読めなかった。既定を上げたうえで、
+   さらに大きくしたい人のために倍率を1段用意する。
+   **倍率の正は style.css の --hud-text-scale 1つだけ**で、ここは印(html.hud-text-large)を
+   付け外しするだけ。端末ごとの表示設定なので、上下反転と同じく専用キーで持つ
+   (アカウント同期に入れない。lookSettings へ相乗りしないのは LOOK_DEFAULTS が world.js に
+   あり、そこへ項目を足さないと loadLookSettings が復元してくれないため)。 */
+const HUD_TEXT_LARGE_KEY = 'aramon_hud_text_large_v1';
+let hudTextLarge = false;
+// 値を書くのはこの関数だけ(表示・保存もここでまとめる。視点設定の「初期値に戻す」からも呼ぶ)
+function setHudTextLarge(on){
+  hudTextLarge = !!on;
+  document.documentElement.classList.toggle('hud-text-large', hudTextLarge);
+  const btn = document.getElementById('hudTextLargeToggle');
+  if(btn) btn.setAttribute('aria-checked', hudTextLarge ? 'true' : 'false');
+  try{ localStorage.setItem(HUD_TEXT_LARGE_KEY, hudTextLarge ? '1' : '0'); }catch(err){}
+}
+(function restoreHudTextLarge(){
+  let on = false;
+  try{ on = localStorage.getItem(HUD_TEXT_LARGE_KEY) === '1'; }catch(err){}
+  hudTextLarge = on;
+  document.documentElement.classList.toggle('hud-text-large', on);
+  const btn = document.getElementById('hudTextLargeToggle');
+  if(btn) btn.setAttribute('aria-checked', on ? 'true' : 'false');
+})();
+document.getElementById('hudTextLargeToggle').addEventListener('click', ()=> setHudTextLarge(!hudTextLarge));
+
 /* =====================================================================
    MULTIPLAYER STATE
 ===================================================================== */
@@ -5383,6 +5414,7 @@ function raidShowResult(defeated, dmg, prevBest){
   if(newBest && prevBest>0) sub += `（これまでの最高 ${Math.round(prevBest).toLocaleString()}）`;
   if(noRecord) sub += '（記録は残りません）';
   document.getElementById('resultSub').textContent = sub;
+  setResultDeathCause(true);   // レイドに「誰に倒された」は無い。前の試合ぶんを必ず消す
   document.getElementById('statKills').textContent = player ? player.kills : 0;
   document.getElementById('statDamage').textContent = d.toLocaleString();
   document.getElementById('statTime').textContent = fmtTime(player && player.deathAt ? player.deathAt : matchTime);
@@ -5618,6 +5650,94 @@ function setResultMonsterIcon(elementKey, opts){
     }, RESULT_EMOTE_DELAY_MS);
   }
 }
+/* =====================================================================
+   死因(リザルトの「⚔ 〇〇 に倒された」)
+
+   キルフィードは3行・4.2秒で消え、その直後に3秒の決着演出が入ってリザルトへ進むので、
+   倒された側は**何に殺されたのかを見返せない**。改善のしようがないので1行だけ残す。
+
+   手がかりの出どころは2つ。どちらも既存の仕組みを読むだけで、combat.js は触っていない。
+   ・ソロ / マルチのホスト … combat.js が記録する player.lastAttackerId が正。
+     「倒された時刻から DEATH_ATTACKER_SEC 以内の攻撃者」という判定は、
+     killEntity() がキルを付ける決まりと同じにしてある(食い違うと表示とキルがズレる)。
+   ・マルチのゲスト … 自分の被弾は applyDamage を通らないので lastAttackerId が入らない。
+     ホストが配信するキルフィードの文面だけが手がかりなので、流れた行を控えておき、
+     **自分の名前で終わる形と丸ごと突き合わせる**(名前に「が」等が入っていても誤らない)。
+   ・相手のいない死に方(安置外・溶岩)は、倒れた場所を見て言葉を分ける。
+===================================================================== */
+const DEATH_ATTACKER_SEC = 8;   // combat.js の killEntity と同じ猶予
+let killFeedLog = [];           // 直近に流れたキルフィードの文面(ゲストの死因判定用)
+(function watchKillFeedForDeathCause(){
+  const feed = document.getElementById('killFeed');
+  if(!feed || typeof MutationObserver!=='function') return;
+  new MutationObserver(muts=>{
+    for(const m of muts) for(const n of m.addedNodes){
+      if(n.nodeType!==1) continue;
+      killFeedLog.push(n.textContent || '');
+      if(killFeedLog.length > 20) killFeedLog.shift();   // 直近だけあればよい
+    }
+  }).observe(feed, { childList:true });
+})();
+// 試合の入口で呼ぶ(前の試合の文面を持ち越して誤った死因を出さない)
+function resetDeathCause(){ killFeedLog.length = 0; }
+/* 死因を1つ返す。分からなければ null(その場合は何も出さない=嘘を書かない) */
+function deathCauseInfo(){
+  if(typeof player==='undefined' || !player) return null;
+  const now = (player.deathAt || (typeof matchTime!=='undefined' ? matchTime : 0));
+  // ① 直前に自分を攻撃していた相手(ソロ / ホスト)
+  if(player.lastAttackerId!=null && typeof entities!=='undefined'){
+    const atk = entities.find(o=>o.id===player.lastAttackerId);
+    if(atk && atk.id!==player.id && (now - (player.lastAttackerAt||0)) <= DEATH_ATTACKER_SEC){
+      return { text:`⚔ ${displayNameFor(atk)} に倒された`, ent:atk };
+    }
+  }
+  // ② キルフィードの文面(マルチのゲスト。新しい行から見る)
+  if(typeof displayNameFor==='function'){
+    const me = displayNameFor(player);
+    const killedBy = ` が ${me} を倒した`;
+    const zoneDeath = `${me} は安全圏外で力尽きた`;
+    for(let i=killFeedLog.length-1; i>=0; i--){
+      const t = killFeedLog[i];
+      if(t.endsWith(killedBy)) return { text:`⚔ ${t.slice(0, t.length-killedBy.length)} に倒された`, ent:null };
+      if(t === zoneDeath) break;   // 相手のいない死に方だったので③へ回す
+    }
+  }
+  // ③ 相手がいない死に方。倒れた場所で言葉を分ける(判定はcombat.jsのダメージ源と同じ形)
+  if(typeof zoneState!=='undefined' && zoneState && typeof dist==='function' &&
+     dist(player, zoneState.center) > zoneState.radius){
+    return { text:'☠ 安全圏の外で力尽きた', ent:null };
+  }
+  if(typeof lavaZones!=='undefined' && Array.isArray(lavaZones) &&
+     lavaZones.some(lz=> Math.hypot(player.x-lz.x, player.y-lz.y) < lz.radius + player.radius*0.4)){
+    return { text:'🌋 溶岩に飲まれた', ent:null };
+  }
+  return null;
+}
+/* リザルトの死因1行を書く。勝ったとき・レイド・分からないときは空にして必ず消す
+   (前の試合の文言が残るのがいちばん困る)。名前は textContent で入れる。 */
+function setResultDeathCause(isWin){
+  const el = document.getElementById('resultDeathCause');
+  if(!el) return;
+  el.innerHTML = '';
+  const info = isWin ? null : deathCauseInfo();
+  if(!info){ el.classList.add('hidden'); return; }
+  if(info.ent){
+    const skinId = (typeof entitySkinId==='function') ? entitySkinId(info.ent) : null;
+    const url = (skinId && typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(skinId)
+              : (info.ent.element && typeof imgSrcFor==='function' ? imgSrcFor('monsters/'+info.ent.element) : null);
+    if(url){
+      const img = document.createElement('img');
+      img.className = 'result-death-icon'; img.alt = ''; img.src = url;
+      img.onerror = ()=>{ img.remove(); };   // 画像が無くても文字だけで成り立つ
+      el.appendChild(img);
+    }
+  }
+  const span = document.createElement('span');
+  span.className = 'result-death-text';
+  span.textContent = info.text;
+  el.appendChild(span);
+  el.classList.remove('hidden');
+}
 const RESULT_EMOTE_DELAY_MS = 320;   // リザルトが出てからエモートを始めるまで
 /* リザルトのボタン列。レイドでは「ランキング/マイ記録」の代わりに
    「レイドランキング」を出す(通常の順位ランキングはレイドに存在しないため)。 */
@@ -5650,6 +5770,7 @@ function showResultNow(isWin, placement){
   document.getElementById('resultScreen').className = 'resultScreen ' + (isWin?'win':'lose');
   document.getElementById('resultRank').textContent = isWin ? '👑 WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
+  setResultDeathCause(isWin);   // 敗北時だけ「⚔ 〇〇 に倒された」/安置外/溶岩 の1行を添える
   /* チーム戦: 順位はチーム単位なので文言を「チーム順位」にし、小隊メンバー(名前・キル)を
      1行ずつ出す。個人戦では小隊欄を必ず隠す(前の試合の中身を持ち越さない)。 */
   {
@@ -8868,8 +8989,10 @@ function showTrainCards(keys){
   if(trainCardState){ trainCardQueue.push(keys); return; }
   const mm = (typeof player!=='undefined' && player) ? ensureMatchMm(player) : null;
   trainCardState = { keys, endAt: performance.now() + TRAIN_CARD_PICK_SEC*1000, raf:0 };
-  // 選択肢が出ている間はトーストが被らないよう下へ逃がす(hideTrainCardsで解除)
-  document.getElementById('toast')?.classList.add('tc-active');
+  /* 選択肢が出ている間だけ #hud に印を付ける(hideTrainCardsで解除)。
+     カードは画面の下(技パネルの上)へ移したので、場所が重なるのは操作ヒント帯
+     (#tipBox)だけ。CSS側の #hud.tc-open #tipBox がそれを引っ込める。 */
+  document.getElementById('hud')?.classList.add('tc-open');
   bar.innerHTML =
     `<div class="tc-timer-track"><div class="tc-timer-fill" id="trainCardTimer"></div></div>
      <div class="tc-cards">${keys.map(k=>{
@@ -8905,7 +9028,7 @@ function hideTrainCards(){
   trainCardState = null;
   const bar = document.getElementById('trainCardBar');
   if(bar){ bar.classList.add('hidden'); bar.innerHTML = ''; }
-  document.getElementById('toast')?.classList.remove('tc-active');
+  document.getElementById('hud')?.classList.remove('tc-open');
 }
 function pickTrainCard(key, auto){
   if(!trainCardState || trainCardState.keys.indexOf(key) < 0) return;
@@ -8930,7 +9053,9 @@ function resolveTrainCardForSelf(key, auto){
   pushToast(`${auto?'⌛ ':''}${t.label}：${t.desc}`);
 }
 // 試合の入口で必ず呼ぶ(前の試合のカードや待ち行列を持ち越さない)
-function resetTrainCards(){ hideTrainCards(); trainCardQueue.length = 0; }
+/* 試合の入口で必ず呼ばれる関数なので、**死因の手がかりもここで一緒に捨てる**
+   (呼び元はui.jsに3か所・network.jsに1か所あり、そのどれもがここを通る) */
+function resetTrainCards(){ hideTrainCards(); trainCardQueue.length = 0; resetDeathCause(); }
 /* 操作画面カスタマイズのあいだだけ、カードの見本を出す。
    普段は隠れている要素なので、出しておかないと大きさも位置も決められない。
    **見本は選べない**(タップはドラッグに使うため data-hud-drag 側が拾う)。 */
@@ -10107,6 +10232,7 @@ function renderAdminRaidAnalysis(){
 const SE_TEST_LABELS = {
   tap:'ボタン ポン', cardSwipe:'カード送り シュッ', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
   fire:'技発射 バァン', hitTaken:'被弾 ドスッ', noGuts:'ガッツ不足 ピピピ', fireRoar:'炎 ボオオオ',
+  hitDealt:'命中 ピシッ', miss:'空振り スカッ', zoneWarn:'安置縮小の予告',
   iceCrack:'氷 パリパリ', tornado:'竜巻 ゴオオオ', spin:'回転 シュルル', beam:'ビーム', whoosh:'風切り シュン',
   bell:'鐘 リンリン', chupiin:'召喚・柱 チュピーン', shuwaa:'召喚・収束 シュワァー', kill:'撃破 ズバシュ',
   fanfare:'勝利ファンファーレ', sad:'敗北', godRising:'ゴッドライジング 運命', ssrJackpot:'SSR大当たり', zashu:'ダークホウスト ズバシュ×5',

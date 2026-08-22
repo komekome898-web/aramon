@@ -3165,7 +3165,10 @@ function drawParticle(pt,p){
       ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else {
+      /* 通常のダメージ数字。**縁取りは必須**(縁なしの灰文字は戦闘距離で読めない=批評指摘)。
+         big/predには前から付いていたのに、いちばん出番の多いここだけ抜けていた */
       ctx.font="bold 13px 'Share Tech Mono', monospace";
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,0.8)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     }
   } else {
@@ -3475,6 +3478,131 @@ function drawTerrainDecor(){
     ctx.fill();
   }
 }
+/* =====================================================================
+   画面外周の警告(被弾方向・低HP)
+   ---------------------------------------------------------------------
+   安置警告(drawDangerVignette)と同じ「中央が透明・外周だけ濃い放射グラデ」で描く。
+   共通部分をdrawEdgeVignetteに切り出し、**色と濃さだけ**を変える
+   (安置ビネットの見た目は従来のまま)。数値は実機で詰める前提の名前付き定数。
+===================================================================== */
+const HIT_DIR_SEC       = 0.8;   // 被弾方向の円弧を出す時間(秒)
+const HIT_DIR_ARC_DEG   = 46;    // 円弧の開き(度)。狭いと視界の端で見落とす
+const HIT_DIR_ARC_RATIO = 0.42;  // 円弧の半径 = min(画面幅,画面高) × これ
+const HIT_DIR_ARC_WIDTH = 10;    // 円弧の太さ(px)
+const HIT_FLASH_SEC     = 0.28;  // 被弾時の赤ビネットの時間(秒)
+const HIT_FLASH_ALPHA   = 0.20;  // 被弾時の赤ビネットの最大濃さ
+const LOW_HP_WARN_RATIO     = 0.25;  // HPがこの割合以下で低HP警告を出す
+const LOW_HP_VIG_ALPHA_MAX  = 0.26;  // 低HP警告の最大濃さ(HP0付近・脈動の山)
+const LOW_HP_VIG_PULSE_SPD  = 5.0;   // 低HP警告の脈動の速さ(rad/秒)
+// 外周だけを染める共通ビネット。rgbは 'R,G,B' の文字列
+function drawEdgeVignette(rgb, alpha){
+  if(!(alpha > 0.004)) return;   // 見えない濃さでフルスクリーン塗りを走らせない
+  const grad = ctx.createRadialGradient(viewW/2,viewH/2, Math.min(viewW,viewH)*0.22, viewW/2,viewH/2, Math.max(viewW,viewH)*0.75);
+  grad.addColorStop(0, `rgba(${rgb},0)`);
+  grad.addColorStop(1, `rgba(${rgb},${alpha})`);
+  ctx.save();
+  ctx.fillStyle = grad; ctx.fillRect(0,0,viewW,viewH);
+  ctx.restore();
+}
+/* 被弾方向マーカー。視野角は64度なので、背後・側面から撃たれると
+   「HPだけ減る」状態になっていた(SEと頭上の数字しか手掛かりが無かった)。
+   撃ってきた相手の座標は combat.js が player.lastHitFromX/Y・lastHitAt(matchTime)へ
+   記録する。**まだ記録が無い版でも落ちないよう typeof で守り、あれば描く**。
+   自分が撃たれたときの話なので観戦対象(ve)ではなくplayerを見る。 */
+function drawHitDirection(){
+  if(!player || !player.alive) return;
+  if(typeof player.lastHitAt!=='number' || typeof player.lastHitFromX!=='number' || typeof player.lastHitFromY!=='number') return;
+  const age = matchTime - player.lastHitAt;
+  if(age < 0 || age > HIT_DIR_SEC) return;
+  // 一瞬の赤ビネット。方向は円弧が示すので、こちらは「殴られた」ことだけを伝える
+  if(age < HIT_FLASH_SEC) drawEdgeVignette('255,40,30', HIT_FLASH_ALPHA*(1-age/HIT_FLASH_SEC));
+  const dx = player.lastHitFromX - player.x, dy = player.lastHitFromY - player.y;
+  if(Math.hypot(dx,dy) < 1) return;   // 安置外・毒など発生源が自分と同じものには方向が無い
+  /* 相手の座標 → 自分から見た角度 → カメラyawとの差(drawZoneCompassと同じ作り方)。
+     画面座標は強制横向きの回転を済ませた論理座標系なので、この差だけで正しい向きになる */
+  const bearing = Math.atan2(dy, dx) - camState.yaw;
+  const fade = clamp(1 - age/HIT_DIR_SEC, 0, 1);
+  const R = Math.min(viewW, viewH) * HIT_DIR_ARC_RATIO;
+  const half = HIT_DIR_ARC_DEG*Math.PI/360;
+  ctx.save();
+  ctx.translate(viewW/2, viewH/2);
+  ctx.rotate(bearing);            // 回転後のローカル上方向(-y)が被弾方向
+  ctx.globalAlpha = fade;
+  ctx.lineCap = 'round';
+  if(!renderHeavyLoad){ ctx.shadowBlur = 14; ctx.shadowColor = 'rgba(255,40,20,0.9)'; }
+  ctx.lineWidth = HIT_DIR_ARC_WIDTH;
+  ctx.strokeStyle = 'rgba(255,70,45,0.95)';
+  ctx.beginPath(); ctx.arc(0,0,R, -Math.PI/2-half, -Math.PI/2+half); ctx.stroke();
+  // 円弧の内側に三角を1つ。色だけでなく形でも「そっちから来た」と分かるようにする
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.moveTo(0, -R+HIT_DIR_ARC_WIDTH*1.5);
+  ctx.lineTo(-HIT_DIR_ARC_WIDTH*0.8, -R+HIT_DIR_ARC_WIDTH*3.0);
+  ctx.lineTo( HIT_DIR_ARC_WIDTH*0.8, -R+HIT_DIR_ARC_WIDTH*3.0);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,110,80,0.9)'; ctx.fill();
+  ctx.restore();
+}
+/* 低HP警告。従来の手掛かりはバーの色と9pxの数字だけで、残りHP10でも画面は何も言わなかった。
+   ダウン中(チーム戦)は専用の赤ビネット(drawDownedOverlay)が出ているので二重にしない。
+   HPは観戦中のHUDと同じく見ている本体(ve)基準にする。 */
+function drawLowHpVignette(){
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
+  if(!ve || !ve.alive || !ve.maxHp) return;
+  if(typeof entityDowned==='function' && entityDowned(ve)) return;
+  const ratio = clamp(ve.hp/ve.maxHp, 0, 1);
+  if(ratio > LOW_HP_WARN_RATIO) return;
+  const t = 1 - ratio/LOW_HP_WARN_RATIO;                                   // 閾値で0・HP0で1
+  const pulse = 0.5 + 0.5*Math.sin(matchTime*LOW_HP_VIG_PULSE_SPD);       // 脈打たせて「まだ続いている」と分かるように
+  drawEdgeVignette('255,30,30', LOW_HP_VIG_ALPHA_MAX*(0.40+0.60*t)*(0.55+0.45*pulse));
+}
+/* 画面外の敵を指す三角マーカー。一定距離内の敵だけに絞る(遠くの60体ぶんを出すと
+   画面の縁が三角で埋まる)。色分けはミニマップと同じ言語:
+   チーム系モードは赤(敵)一色・個人戦は元素のアクセント色。味方(sameTeam)には出さない。
+   観戦中は他の表示と同じく「見ている本体(ve)」から見た画面外を示す。 */
+const OFFSCREEN_MARK_RANGE  = 1800;  // この距離以内の敵だけ出す(交戦圏の少し外まで)
+const OFFSCREEN_MARK_MARGIN = 16;    // 画面端から内側へこれだけ入れて描く(px)
+const OFFSCREEN_MARK_SIZE   = 8;     // 三角の大きさ(px)
+const OFFSCREEN_MARK_MAX    = 6;     // 同時に出す上限
+function drawOffscreenEnemyMarkers(){
+  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
+  if(!ve || !ve.alive || introState.active) return;
+  const teamMini = (typeof isTeamMatch==='function') && isTeamMatch();
+  const cx = viewW/2, cy = viewH/2;
+  const halfW = Math.max(24, cx - OFFSCREEN_MARK_MARGIN), halfH = Math.max(24, cy - OFFSCREEN_MARK_MARGIN);
+  let shown = 0;
+  ctx.save();
+  for(const e of entities){
+    if(shown >= OFFSCREEN_MARK_MAX) break;
+    if(e===ve || !e.alive) continue;
+    if(typeof sameTeam==='function' && sameTeam(ve, e)) continue;
+    const d = dist(ve, e);
+    if(d > OFFSCREEN_MARK_RANGE) continue;
+    const p = project(e.x, e.y, (e.z||0)+(e.radius||26));
+    if(p && p.x>=0 && p.x<=viewW && p.y>=0 && p.y<=viewH) continue;   // 画面内に見えているものには出さない
+    const bearing = angTo(ve, e) - camState.yaw;
+    const dirx = Math.sin(bearing), diry = -Math.cos(bearing);        // 画面上の向き(上=正面)
+    // 画面中央から伸ばした半直線と、内側マージンの矩形との交点に置く
+    const tx = Math.abs(dirx) > 1e-4 ? halfW/Math.abs(dirx) : Infinity;
+    const ty = Math.abs(diry) > 1e-4 ? halfH/Math.abs(diry) : Infinity;
+    const tEdge = Math.min(tx, ty);
+    const col = teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color);
+    ctx.save();
+    ctx.translate(cx + dirx*tEdge, cy + diry*tEdge);
+    ctx.rotate(bearing);                                              // ローカル上方向(-y)が敵の方向
+    ctx.globalAlpha = clamp(1 - d/OFFSCREEN_MARK_RANGE, 0.35, 1) * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(0, -OFFSCREEN_MARK_SIZE);
+    ctx.lineTo(-OFFSCREEN_MARK_SIZE*0.72, OFFSCREEN_MARK_SIZE*0.66);
+    ctx.lineTo( OFFSCREEN_MARK_SIZE*0.72, OFFSCREEN_MARK_SIZE*0.66);
+    ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.stroke();
+    ctx.restore();
+    shown++;
+  }
+  ctx.restore();
+}
 function drawDangerVignette(){
   if(game.trainingRange) return; // 射撃訓練場は安置なし
   // 観戦中は見ている本体の位置で安置外判定する。以前は自分(倒れて動かない)の位置基準の
@@ -3576,7 +3704,9 @@ function drawZoneCompass(){
     ctx.save();
     ctx.font = "bold 11px 'Rajdhani', sans-serif";
     ctx.fillStyle = '#ff9c5a'; ctx.textAlign = 'center';
-    ctx.fillText(`安置まで ${Math.round(distToEdge)}m`, cx, cy+r+15);
+    /* 距離の換算はピン・技の射程と同じ PING_UNITS_PER_M(ワールド10単位=1m)。
+       ここだけ生のワールド単位に「m」を付けていたので、同じ画面に10倍違う数字が並んでいた */
+    ctx.fillText(`安置まで ${Math.max(1, Math.round(distToEdge/PING_UNITS_PER_M))}m`, cx, cy+r+15);
     ctx.restore();
   }
 }
@@ -6388,6 +6518,9 @@ function render(){
   }
   if(introState.active) safeDraw(drawSummonIntroFront);
   safeDraw(drawDangerVignette);
+  safeDraw(drawLowHpVignette);   // 低HP警告(安置ビネットの上に重ねる。どちらも外周だけなので喧嘩しない)
+  safeDraw(drawHitDirection);    // 被弾方向の円弧+一瞬の赤ビネット(最も新しい情報なので警告類の最後)
+  safeDraw(drawOffscreenEnemyMarkers); // 画面外の敵を指す三角(ビネットの上・ピンやコンパスの下)
   safeDraw(drawDownedOverlay);   // チーム戦: 自分がダウン中の赤いビネット+蘇生待ちの案内
   safeDraw(drawPingMarkers);     // チーム戦: 小隊のピン(旗マーカー)。案内表示なので最前面に出す
   safeDraw(drawZoneCompass);
@@ -7021,23 +7154,55 @@ function drawPingMarkers(){
     ctx.restore();
   }
 }
+/* ===== ミニマップの縮尺 =====
+   全世界固定(120px で 18100単位)だと 1px≒151単位で、tier1の射程650〜750に居る敵は
+   すべて自分の点に重なる=交戦の役に立たなかった。既定を「自分中心の近距離ズーム」にし、
+   全体表示へ切り替えられるようにする(切り替えの入口は #minimapWrap のタップ。
+   toggleMinimapZoom() を呼べばよい)。半径は実機調整用の名前付き定数。 */
+const MINIMAP_ZOOM_RADIUS = 2000;   // 近距離ズーム時にミニマップの端までに収まるワールド距離
+let minimapZoomed = true;           // 既定は近距離(戦闘で使えるほう)
+function toggleMinimapZoom(){ minimapZoomed = !minimapZoomed; return minimapZoomed; }
 function renderMinimap(){
   // 観戦中は見ている本体を基準にする(自分表示・敵味方色分けの両方。2026-08-19)
   const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
   const w = miniCanvas.width, h = miniCanvas.height;
   miniCtx.clearRect(0,0,w,h);
   miniCtx.fillStyle='rgba(11,19,32,0.5)'; miniCtx.fillRect(0,0,w,h);
-  const scale = w/WORLD.w;
+  /* 縮尺と原点。全体表示は従来どおり(scale=w/WORLD.w・原点0)で1ドットも変わらない。
+     近距離ズームは「自分が中心・端までがMINIMAP_ZOOM_RADIUS」。安置の輪も敵も同じ式で
+     写すので、どちらの縮尺でも位置関係は正しいまま。 */
+  const zoomOn = minimapZoomed && ve;
+  const scale = zoomOn ? (w/2-2)/MINIMAP_ZOOM_RADIUS : w/WORLD.w;
+  const offX = zoomOn ? (w/2 - ve.x*scale) : 0;
+  const offY = zoomOn ? (h/2 - ve.y*scale) : 0;
+  const MX = (x)=> x*scale + offX;
+  const MY = (y)=> y*scale + offY;
   miniCtx.save();
   miniCtx.beginPath(); miniCtx.arc(w/2,h/2,w/2-2,0,Math.PI*2); miniCtx.clip();
   miniCtx.beginPath();
-  miniCtx.arc(zoneState.center.x*scale, zoneState.center.y*scale, zoneState.radius*scale, 0, Math.PI*2);
+  miniCtx.arc(MX(zoneState.center.x), MY(zoneState.center.y), zoneState.radius*scale, 0, Math.PI*2);
   miniCtx.strokeStyle='rgba(244,196,48,0.85)'; miniCtx.lineWidth=2; miniCtx.stroke();
+  /* 近距離ズームでは、開幕(半径9000超)のように安置の輪が枠の外へ出て1本も写らないことがある。
+     その時だけ中心の方向を指す小さな目印を縁に置く(全体表示では輪が必ず写るので出さない)。
+     ミニマップは北が上=ワールドと同じ向きなので、ワールドの角度をそのまま使う。 */
+  if(zoomOn){
+    const dz = Math.hypot(zoneState.center.x-ve.x, zoneState.center.y-ve.y);
+    if(Math.abs(zoneState.radius - dz)*scale > w/2-2){
+      const a = Math.atan2(zoneState.center.y-ve.y, zoneState.center.x-ve.x);
+      const rr = w/2-8;
+      miniCtx.save();
+      miniCtx.translate(w/2+Math.cos(a)*rr, h/2+Math.sin(a)*rr);
+      miniCtx.rotate(a+Math.PI/2);   // ローカル上方向(-y)を安置の中心へ向ける
+      miniCtx.beginPath(); miniCtx.moveTo(0,-5); miniCtx.lineTo(-4,4); miniCtx.lineTo(4,4); miniCtx.closePath();
+      miniCtx.fillStyle='rgba(244,196,48,0.9)'; miniCtx.fill();
+      miniCtx.restore();
+    }
+  }
   // 次回の安置予測(縮小中は縮小先)を点線で表示。雪山マップでは白い山と被らない青系にする
   if(zoneState.shrinking || zoneState.hasNext){
     miniCtx.save();
     miniCtx.beginPath();
-    miniCtx.arc(zoneState.toCenter.x*scale, zoneState.toCenter.y*scale, zoneState.toRadius*scale, 0, Math.PI*2);
+    miniCtx.arc(MX(zoneState.toCenter.x), MY(zoneState.toCenter.y), zoneState.toRadius*scale, 0, Math.PI*2);
     miniCtx.setLineDash([3,3]);
     miniCtx.strokeStyle = currentMap.mountainStyle==='snow' ? 'rgba(80,150,255,0.95)' : 'rgba(255,255,255,0.8)';
     miniCtx.lineWidth=1.4;
@@ -7046,30 +7211,30 @@ function renderMinimap(){
   }
   for(const sz of seaZones){
     miniCtx.beginPath();
-    miniCtx.arc(sz.x*scale, sz.y*scale, Math.max(1.5, sz.radius*scale), 0, Math.PI*2);
+    miniCtx.arc(MX(sz.x), MY(sz.y), Math.max(1.5, sz.radius*scale), 0, Math.PI*2);
     miniCtx.fillStyle = 'rgba(40,110,170,0.7)'; miniCtx.fill();
   }
   for(const rz of riverZones){
     miniCtx.beginPath();
-    miniCtx.arc(rz.x*scale, rz.y*scale, Math.max(1.5, rz.radius*scale), 0, Math.PI*2);
+    miniCtx.arc(MX(rz.x), MY(rz.y), Math.max(1.5, rz.radius*scale), 0, Math.PI*2);
     miniCtx.fillStyle = 'rgba(60,140,200,0.65)'; miniCtx.fill();
   }
   for(const oz of oasisZones){
     miniCtx.beginPath();
-    miniCtx.arc(oz.x*scale, oz.y*scale, Math.max(2, oz.radius*scale), 0, Math.PI*2);
+    miniCtx.arc(MX(oz.x), MY(oz.y), Math.max(2, oz.radius*scale), 0, Math.PI*2);
     miniCtx.fillStyle = 'rgba(80,170,220,0.55)'; miniCtx.fill();
   }
   for(const v of volcanoObstacles){
     const col = v.style==='snow' ? 'rgba(210,230,245,0.9)' : v.style==='forest' ? 'rgba(40,110,50,0.9)' : v.style==='pyramid' ? 'rgba(210,180,120,0.9)' : 'rgba(90,58,42,0.9)';
     miniCtx.beginPath();
     // ミニマップも「通れない広さ」= 地面の高さでの実半径で描く(当たり判定と一致させる)
-    miniCtx.arc(v.x*scale, v.y*scale, Math.max(2, mountainGroundRadius(v)*scale), 0, Math.PI*2);
+    miniCtx.arc(MX(v.x), MY(v.y), Math.max(2, mountainGroundRadius(v)*scale), 0, Math.PI*2);
     miniCtx.fillStyle = col; miniCtx.fill();
   }
   for(const lz of lavaZones){
     const r = Math.max(1.5, lz.radius*scale);
     miniCtx.beginPath();
-    miniCtx.arc(lz.x*scale, lz.y*scale, r, 0, Math.PI*2);
+    miniCtx.arc(MX(lz.x), MY(lz.y), r, 0, Math.PI*2);
     miniCtx.fillStyle = 'rgba(120,20,10,0.85)';
     miniCtx.fill();
     miniCtx.save();
@@ -7089,7 +7254,7 @@ function renderMinimap(){
        頭上の▽・小隊バーと同じ形言語)。敵・個人戦は従来の丸 */
     const teamMini = (typeof isTeamMatch==='function') && isTeamMatch();
     if(isAllyM){
-      const mx=e.x*scale, my2=e.y*scale, r=4.2;
+      const mx=MX(e.x), my2=MY(e.y), r=4.2;
       miniCtx.beginPath();
       miniCtx.moveTo(mx, my2-r); miniCtx.lineTo(mx+r*0.9, my2+r*0.7); miniCtx.lineTo(mx-r*0.9, my2+r*0.7);
       miniCtx.closePath();
@@ -7097,7 +7262,7 @@ function renderMinimap(){
       miniCtx.strokeStyle='rgba(255,255,255,0.9)'; miniCtx.lineWidth=1; miniCtx.stroke();
     } else {
       miniCtx.beginPath();
-      miniCtx.arc(e.x*scale, e.y*scale, e===ve?3.4:2.2, 0, Math.PI*2);
+      miniCtx.arc(MX(e.x), MY(e.y), e===ve?3.4:2.2, 0, Math.PI*2);
       miniCtx.fillStyle = e===ve ? '#ffffff'
         : (teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color));
       miniCtx.fill();
@@ -7116,7 +7281,7 @@ function renderMinimap(){
       miniCtx.save();
       miniCtx.globalAlpha = blink;
       miniCtx.beginPath();
-      miniCtx.arc(px2*scale, py2*scale, 3.6, 0, Math.PI*2);
+      miniCtx.arc(MX(px2), MY(py2), 3.6, 0, Math.PI*2);
       miniCtx.fillStyle = pg.kind==='enemy' ? '#ff5a5a' : '#ffd23c';
       miniCtx.fill();
       miniCtx.strokeStyle='rgba(255,255,255,0.95)'; miniCtx.lineWidth=1.2; miniCtx.stroke();
@@ -7125,11 +7290,22 @@ function renderMinimap(){
   }
   // 「自分」の矢印は観戦中は見ている本体の位置・向きを示す(以前は自分の死亡地点に矢印が
   // 残ったままで、ミニマップと画面の安置表示がチグハグになる原因の一つだった。2026-08-19)
-  const px=ve.x*scale, py=ve.y*scale, yaw=camState.yaw;
+  const px=MX(ve.x), py=MY(ve.y), yaw=camState.yaw;
   miniCtx.beginPath();
   miniCtx.moveTo(px,py);
   miniCtx.lineTo(px+Math.cos(yaw)*12, py+Math.sin(yaw)*12);
   miniCtx.strokeStyle='rgba(255,255,255,0.9)'; miniCtx.lineWidth=2; miniCtx.stroke();
+  miniCtx.restore();
+  /* いまどちらの縮尺かを下端に小さく出す(切り替えられる以上、これが無いと
+     「なぜ点が動いたのか」が分からない)。距離の換算はピン表示と同じPING_UNITS_PER_M */
+  miniCtx.save();
+  miniCtx.font = "bold 9px 'Rajdhani', sans-serif";
+  miniCtx.textAlign = 'center';
+  miniCtx.lineWidth = 3; miniCtx.strokeStyle = 'rgba(0,0,0,0.65)';
+  const zoomLabel = zoomOn ? `近 ${Math.round(MINIMAP_ZOOM_RADIUS/PING_UNITS_PER_M)}m` : '全体';
+  miniCtx.strokeText(zoomLabel, w/2, h-4);
+  miniCtx.fillStyle = 'rgba(255,255,255,0.75)';
+  miniCtx.fillText(zoomLabel, w/2, h-4);
   miniCtx.restore();
 }
 
@@ -7137,6 +7313,8 @@ function renderMinimap(){
    HUD
 ===================================================================== */
 const CD_RING_CIRC = 2*Math.PI*46; // SVG上の半径46に合わせた円周
+// ロックオン判定の遮蔽チェックを1フレームに何回まで走らせるか(岩は最大800個)
+const LOCKON_LOS_MAX_CHECKS = 3;
 function setCooldownRing(el, progress){
   if(!el) return;
   const p = clamp(progress, 0, 1);
@@ -7285,11 +7463,16 @@ function updateHUD(){
 
   const statusEl = document.getElementById('statusIcons');
   let statusHtml = '';
-  if(ve.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど</span>`;
-  if(ve.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足</span>`;
+  /* 4種とも残り秒を同じ書式(「名前 Ns」)で出す。以前は「こおり」だけ秒があり、
+     状態変化(#stateCdLabel)側も残り秒を出しているのに、やけど・鈍足・どくだけ
+     「いつ終わるのか分からない」不揃いだった。やけどは被ダメ1.5倍と重いので特に要る。
+     幅が伸びても#statusIconsはflex-wrapで折り返す。 */
+  const stSec = (until)=> Math.max(0, Math.ceil(until - matchTime));
+  if(ve.burnUntil > matchTime) statusHtml += `<span class="status-pill burn">やけど ${stSec(ve.burnUntil)}s</span>`;
+  if(ve.slowUntil > matchTime) statusHtml += `<span class="status-pill slow">鈍足 ${stSec(ve.slowUntil)}s</span>`;
   // こおりは動けない時間なので、いつ動けるようになるかを残り秒で出す(押しても無反応な間の説明)
-  if(ve.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり ${Math.max(0,Math.ceil(ve.freezeUntil-matchTime))}s</span>`;
-  if(ve.poisonUntil > matchTime) statusHtml += `<span class="status-pill poison">どく</span>`;
+  if(ve.freezeUntil > matchTime) statusHtml += `<span class="status-pill freeze">こおり ${stSec(ve.freezeUntil)}s</span>`;
+  if(ve.poisonUntil > matchTime) statusHtml += `<span class="status-pill poison">どく ${stSec(ve.poisonUntil)}s</span>`;
   if(statusEl._stSig !== statusHtml){ statusEl._stSig = statusHtml; statusEl.innerHTML = statusHtml; }
   /* 凍結中は自分のFIRE/DASH/技をCSSで無効に見せる(印はbody.self-frozen)。
      発射・ダッシュ自体は既にcombat.jsのtryPlayerFireとinput.jsのstartEntityDashが弾いており、
@@ -7309,6 +7492,14 @@ function updateHUD(){
          個人戦    : 20 体 生存中
        これは試合全体の集計であって「技などのフィールド」ではないため、observing中でも
        自分(player)のチームIDを基準にする(観戦対象を渡り歩いても数字が飛ばないように)。 */
+    /* マルチのときだけ「人間が何人残っているか」を添える(botだらけの試合に
+       気づけないため)。数え方は combat.js の isNetworkedHuman が正
+       ―― マルチ以外では常にfalseなので、ソロの文言は従来のまま変わらない。
+       DOMは増やさず #aliveLabel の文字だけで済ませる(#counterPanelはnowrapなので
+       右上から左へ伸びる。個人戦は「生存中」を人数に置き換えて幅を増やさない)。 */
+    const humanAlive = (typeof isNetworkedHuman==='function')
+      ? entities.filter(e=> e.alive && isNetworkedHuman(e)).length : 0;
+    const multiNow = (typeof netState!=='undefined') && netState.mode==='multi';
     let num, label;
     if(game.arena && player && player.teamId!=null){
       const own = entities.filter(e=>e.alive && e.teamId===player.teamId).length;
@@ -7318,9 +7509,9 @@ function updateHUD(){
       const squads = new Set();
       for(const e of entities){ if(e.alive && e.teamId!=null) squads.add(e.teamId); }
       squadCount = squads.size;
-      num = `${squadCount}部隊`; label = `残り${aliveCount}人`;
+      num = `${squadCount}部隊`; label = multiNow ? `残り${aliveCount}人(人${humanAlive})` : `残り${aliveCount}人`;
     } else {
-      num = String(aliveCount); label = '体 生存中';
+      num = String(aliveCount); label = multiNow ? `体 (人${humanAlive})` : '体 生存中';
     }
     const an = document.getElementById('aliveNum'), al = document.getElementById('aliveLabel');
     if(an.textContent!==num) an.textContent = num;
@@ -7345,7 +7536,11 @@ function updateHUD(){
   const moveMarkColor = (mvAura && typeof auraColorHex==='function') ? auraColorHex(mvAura) : mv.color;
   document.getElementById('moveName').textContent = (typeof getMoveName==='function') ? getMoveName(mv, ve) : mv.name;
   document.documentElement.style.setProperty('--moveColor', moveMarkColor);
-  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
+  /* 射程を技パネルに出す(技によって650〜1500と倍以上違うのに、どこにも出ていなかった)。
+     DOMは増やさず既存の#gutsCostLabelへ同居させる。距離の換算はピン表示と同じ
+     PING_UNITS_PER_M(ワールド10単位=1m)。 */
+  const rangeTxt = mv.range ? ` / 射程 ${Math.round(mv.range/PING_UNITS_PER_M)}m` : '';
+  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}${rangeTxt}`;
   const tierMoves = SIGNATURE_MOVES[ve.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
@@ -7376,13 +7571,24 @@ function updateHUD(){
   let lockOn=false;
   if(ve.alive){
     const fx=Math.cos(ve.facingAngle), fy=Math.sin(ve.facingAngle);
+    /* 岩・山の向こう側の敵でレティクルが赤くなると「当たる」と思って撃ち、
+       ガッツとCTだけ失う。弾を止めているのと同じ判定(combat.jsの
+       raycastObstacleDistance。火山と岩を見る)を1つ挟んで遮蔽を弾く。
+       全岩(最大800個)を走査するので、1フレームの呼び出し回数に上限を付ける。 */
+    let losChecks = LOCKON_LOS_MAX_CHECKS;
     for(const e of entities){
       if(e===ve||!e.alive) continue;
       if(typeof sameTeam==='function' && sameTeam(ve, e)) continue; // チーム戦: 味方にはロックオン表示を出さない(攻撃も当たらない)
       if(e.z - ve.z > (typeof upwardBlockLimit==='function' ? upwardBlockLimit() : UPWARD_BLOCK_THRESHOLD)) continue;
       const d=dist(ve,e); if(d>mv.range) continue;
       const dirx=(e.x-ve.x)/Math.max(d,0.001), diry=(e.y-ve.y)/Math.max(d,0.001);
-      if(dirx*fx+diry*fy>0.9){ lockOn=true; break; }
+      if(dirx*fx+diry*fy<=0.9) continue;
+      if(typeof raycastObstacleDistance==='function' && losChecks>0){
+        losChecks--;
+        // 相手の体の手前で遮られていたら遮蔽ありとみなす(半径ぶんは当たる側に倒す)
+        if(raycastObstacleDistance(ve.x, ve.y, Math.atan2(diry,dirx), d) < d - (e.radius||0)) continue;
+      }
+      lockOn=true; break;
     }
   }
   document.getElementById('crosshair').classList.toggle('lock', lockOn);
