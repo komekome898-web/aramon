@@ -3162,6 +3162,10 @@ const HUD_DRAGGABLE = {
   topLeft:'HP/ガッツ', statsPanel:'撃破/ダメ', topRight:'情報/地図',
   // 普段は隠れているので、編集モードのあいだだけ見本を出して動かせるようにしてある
   trainCardBar:'トレーニング', pingBtn:'ピン',
+  /* 撃破ログは元は「情報/地図」(#topRight)の子で一緒に動いていたが、回転ボタンとの
+     重なりを直すため#hudの直下へ出した。**ここに足さないと動かせなくなる**うえ、
+     編集中は暗幕の下に潜って見えなくなる(2026-08-22) */
+  killFeed:'撃破ログ',
 };
 const HUD_DRAGGABLE_IDS = Object.keys(HUD_DRAGGABLE);
 function loadHudLayout(){ try{ return JSON.parse(localStorage.getItem(HUD_LAYOUT_KEY)) || {}; }catch(e){ return {}; } }

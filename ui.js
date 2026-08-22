@@ -8990,8 +8990,9 @@ function showTrainCards(keys){
   const mm = (typeof player!=='undefined' && player) ? ensureMatchMm(player) : null;
   trainCardState = { keys, endAt: performance.now() + TRAIN_CARD_PICK_SEC*1000, raf:0 };
   /* 選択肢が出ている間だけ #hud に印を付ける(hideTrainCardsで解除)。
-     カードは画面の下(技パネルの上)へ移したので、場所が重なるのは操作ヒント帯
-     (#tipBox)だけ。CSS側の #hud.tc-open #tipBox がそれを引っ込める。 */
+     カードは画面の下(技パネルの上)へ移したので、場所が重なるのは操作ヒント帯(#tipBox)と
+     キルフィード(#killFeed)の2つ。CSS側の #hud.tc-open がその2つを引っ込める
+     (重ねると両方読めないので、選ばないと勝手に決まるカードを優先する)。 */
   document.getElementById('hud')?.classList.add('tc-open');
   bar.innerHTML =
     `<div class="tc-timer-track"><div class="tc-timer-fill" id="trainCardTimer"></div></div>
