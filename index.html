@@ -549,8 +549,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div id="matchClock">00:00</div>
     </div>
     <div id="minimapWrap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
-    <div id="killFeed"></div>
   </div>
+  <!-- キルフィードは **#hudの直下**に置く。#topRight(position:absolute)の子だった頃は
+       CSSの top/right が右上パネル基準になり、「操作ヒント帯と交差しない高さ」という
+       調整が14pxずれたまま効いて、回転ボタンと必ず重なっていた(実測46x46px)。 -->
+  <div id="killFeed"></div>
 
   <div id="tipBox">ドラッグで視点／スティックで移動／FIREで攻撃／DASHでダッシュ／スティックを上に2回弾くとオートラン</div>
   <div id="crosshair"></div>
@@ -661,6 +664,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
  <div id="resultInner">
   <div class="rank" id="resultRank">#1</div>
   <div class="sub" id="resultSub">勝利</div>
+  <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
+       setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
+  <div id="resultDeathCause" class="result-death-cause hidden"></div>
   <div class="resultStatsRow">
     <img id="resultMonsterIcon" class="result-monster-icon" alt="" data-variant="player" data-ext-idx="0" onerror="handleResultIconError(this)">
     <div class="resultStats">
@@ -1451,7 +1457,15 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
         <span class="toggle-switch-knob"></span>
       </button>
     </div>
-    <!-- 行が6つになったので下のボタン行の余白は詰める(iPhone SE 横持ち=実効375pxでもスクロールさせない) -->
+    <!-- バトル中の数字の大きさ。倍率は style.css の --hud-text-scale 1つだけで、
+         ONにすると html.hud-text-large が付いてHUDの文字とバーが丸ごと大きくなる -->
+    <div class="look-toggle-row">
+      <span id="hudTextLargeLabel" class="look-toggle-label">バトル中の文字を大きくする</span>
+      <button id="hudTextLargeToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="hudTextLargeLabel">
+        <span class="toggle-switch-knob"></span>
+      </button>
+    </div>
+    <!-- 行が7つになったので下のボタン行の余白は詰める(iPhone SE 横持ち=実効375pxでもスクロールさせない) -->
     <div class="mastermon-confirm-btnrow" style="margin-top:8px;">
       <button id="lookResetBtn">初期値に戻す</button>
       <button id="closeLookSettingsBtn">閉じる</button>

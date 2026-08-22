@@ -767,7 +767,9 @@ function tryNonHostPlayerFireVisual(dt){
   // combat.jsのfireMoveと同じく、スキン装備でtier3が専用技に変わる場合は先に解決する
   let mv = activeMove(player);
   if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
-  if(player.guts < effectiveGutsCost(player, mv)){ warnGutsShortage(); return; }
+  /* ガッツ不足の判定は combat.js の playerGutsShort() が正(FIREボタンを沈ませる印も同じ関数を見る)。
+     ここに同じ式を書くと、沈んでいるのに撃てる/撃てないのに沈まない、が起きる */
+  if(playerGutsShort()){ warnGutsShortage(); return; }
   const aimAngle = player.facingAngle;
 
   // クールダウン・見た目のガッツ消費だけローカルで進める(実値はホストのauthStateで上書きされる)
@@ -1115,6 +1117,9 @@ function spawnVisualShotFromEvent(evt){
 
 // レイドの挑戦者が並ぶ位置(ソロ・マルチで同じ計算を使う)
 function cy0RaidSpawnY(){ return WORLD.h/2 + WORLD.h*0.18; }
+/* 発射元の座標をauthStateに載せる時間。render.jsのHIT_DIR_SEC(0.8秒)より少し長くして、
+   配信の間隔で取りこぼさないようにする */
+const HIT_SOURCE_SEND_SEC = 1.2;
 function buildAuthStatePayload(){
   authPublishSeq++;
   const seq = authPublishSeq;
@@ -1170,6 +1175,13 @@ function buildAuthStatePayload(){
     if(bnR > 0) o.bn = Math.round(bnR*100)/100;
     const poR = (e.poisonUntil||0) - nowT;
     if(poR > 0) o.po = Math.round(poR*100)/100;
+    /* 【被弾方向マーカー(B-1)】ゲストは自分の被弾を「HPが減ったこと」でしか知らず
+       (applyAuthStateのhp差分。ゲストの自分にapplyDamageは走らない)、**誰に撃たれたかが
+       どこにも届いていない**。直近に撃たれたときだけ発射元の座標を載せる。
+       表示は0.8秒なので、載せる窓もそれに合わせた短い間だけでよい。 */
+    if(e.lastHitAt && nowT - e.lastHitAt < HIT_SOURCE_SEND_SEC){
+      o.lhx = Math.round(e.lastHitFromX); o.lhy = Math.round(e.lastHitFromY);
+    }
     // チーム戦: ダウンの残り秒数(dw)と蘇生の進み(rv)。絶対時刻は送らない(残り秒数方式)。
     // dwが載っていない=ダウンしていない、として受信側が判定する
     if(e.downed && e.alive){
@@ -1289,6 +1301,10 @@ function applyAuthState(authState){
       if(ent.isPlayer) playSe(skinHitSeName(ent) || 'hitTaken');
       spawnDmgText(ent.x, ent.y, ent.z, Math.round(hpDrop));
     }
+    /* 被弾方向マーカー(B-1)の材料。ホストが載せてきた発射元の座標をそのまま控える。
+       時刻はゲスト自身のmatchTimeで打ち直す(絶対時刻はホストとズレるため、
+       状態異常を残り秒数で送っているのと同じ理由) */
+    if(a.lhx != null){ ent.lastHitFromX = a.lhx; ent.lastHitFromY = a.lhy; ent.lastHitAt = matchTime; }
     if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
     if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
@@ -1518,6 +1534,7 @@ function loop(now){
                    予測側は小さく半透明(spawnPredDmgText)にして二重に見えないようにする */
                 if(player && p.ownerId===player.id){
                   if(typeof showHitMarker==='function') showHitMarker();
+                  playSe('hitDealt');   // 命中SE(ソロ/ホストは combat.js の applyDamage で鳴らす)
                   if(p.predDmg && typeof spawnPredDmgText==='function') spawnPredDmgText(e.x, e.y, e.z, p.predDmg);
                 }
                 break;

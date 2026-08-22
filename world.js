@@ -307,6 +307,7 @@ function updateRaidZone(dt){
    縮小先(toCenter/toRadius)を最初から入れておくので、安置予測の点線が開始直後から出る。
    マルチではホストのzoneStateがそのまま同期されるので、ゲスト側の追加処理は要らない。 */
 function initArenaZone(){
+  resetZoneWarning();   // 前の試合の予告済み印を持ち越さない
   const c = { x: ZONE_CENTER0.x, y: ZONE_CENTER0.y };
   zoneState = {
     phaseIndex:0, timer:0, shrinking:false, hasNext:true,
@@ -331,6 +332,7 @@ function updateArenaZone(dt){
   }
 }
 function initZone(){
+  resetZoneWarning();   // 前の試合の予告済み印を持ち越さない
   zoneState = {
     phaseIndex:0, timer:0, shrinking:false, hasNext:false,
     center:{...ZONE_CENTER0}, radius: ZONE_PHASES[0].holdRadius,
@@ -433,6 +435,31 @@ function zoneLabel(){
   if(game.arena) return zoneState.shrinking ? '決着圏へ縮小中' : (zoneState.hasNext ? '決着圏まで' : '決着圏');
   if(zoneState.phaseIndex===0) return '安全圏：待機中';
   return zoneState.shrinking ? '安全圏：縮小中' : '安全圏：安定';
+}
+/* =====================================================================
+   安全圏の縮小予告
+   縮小開始のトーストは「始まってから」しか出ず、右上13pxのカウントダウンは交戦中に
+   見に行けない。気付いたら圏外でHPが溶けている、という事故を減らすため、
+   縮小の ZONE_WARN_LEAD_SEC 秒前に予告のトーストとSEを1回だけ出す。
+   【マルチ】判定材料の zoneState(timer含む)はホストからゲストへ同期済みなので、
+   ホスト専用の updateZone の中ではなく「残り秒を読むだけ」のこの関数にしてある。
+   呼び出しは combat.js の updateMatchSignals(ホスト/ソロ/ゲストのすべてが毎フレーム通る)。
+===================================================================== */
+const ZONE_WARN_LEAD_SEC = 10;      // 縮小の何秒前に予告するか
+const ZONE_WARN_TOAST_SEC = 2.6;    // 予告トーストの表示秒数(通常より少し長く残す)
+let zoneWarnedPhase = -1;           // 予告済みのフェーズ番号(1回の縮小につき1回だけ鳴らす)
+function resetZoneWarning(){ zoneWarnedPhase = -1; }
+function updateZoneShrinkWarning(){
+  if(!zoneState) return;
+  if(game.trainingRange) return;              // 訓練場は縮まない
+  if(game.raid) return;                       // レイドは最初から最後までゆっくり縮み続けるので予告の意味がない
+  if(zoneState.shrinking) return;             // 縮小中は開始トーストが既に出ている
+  const left = zoneCountdownSeconds();
+  if(left == null || left > ZONE_WARN_LEAD_SEC) return;   // nullはこれ以上縮まないフェーズ
+  if(zoneWarnedPhase === zoneState.phaseIndex) return;
+  zoneWarnedPhase = zoneState.phaseIndex;
+  pushToast(`まもなく安全圏が縮小（あと${ZONE_WARN_LEAD_SEC}秒）`, { dur: ZONE_WARN_TOAST_SEC });
+  playSe('zoneWarn');
 }
 // 次の収縮(または現在の収縮が終わるまで)の残り秒数。もう収縮しない最終フェーズでは null を返す
 function zoneCountdownSeconds(){
@@ -1331,12 +1358,50 @@ function pushKillFeed(text){
   while(feed.children.length>3) feed.removeChild(feed.firstChild);
   setTimeout(()=>{ div.style.transition='opacity .5s'; div.style.opacity='0'; setTimeout(()=>div.remove(),520); }, 4200);
 }
-let toastTimer=null;
-function pushToast(text){
+/* 【トーストのキュー】以前は #toast 1要素に textContent を代入して1.6秒で消す上書き式だったため、
+   キルボーナス・技切替・安置縮小と、部屋の解散/参加キャンセル/内部エラーのような
+   「見逃すと理由が分からなくなる通知」が同じ1枠を奪い合っていた。
+   ここでは #toast の中に行(.toast-line)を最大 TOAST_MAX_ROWS 件まで積み、行ごとに寿命を持たせる。
+   ・DOMは #toast の子として作るだけ(index.html / style.css は他の担当なので触らない)
+   ・同じ文言が既に出ているときは行を増やさず寿命だけ延ばす(「ガッツ不足！」のような高頻度の通知が枠を埋めない)
+   ・長い文ほど読むのに時間がかかるので、既定の表示秒数を文字数で伸ばす
+     (内部エラーの詳細付きトーストが1.6秒で消えて読めなかった。呼び出し側の変更が要らない形にしてある)
+   呼び出しは pushToast(text) のままでよく、pushToast(text, {dur:秒}) で個別に延ばせる。 */
+const TOAST_MAX_ROWS = 3;          // 同時に積む最大件数
+const TOAST_DUR_BASE = 1.6;        // 表示秒数の下限(従来と同じ)
+const TOAST_DUR_PER_CHAR = 0.045;  // 1文字あたり伸ばす秒数
+const TOAST_DUR_MAX = 5.0;         // 文字数で伸ばす場合の上限
+let toastRows = [];
+function removeToastRow(row){
+  clearTimeout(row.timer);
+  const i = toastRows.indexOf(row);
+  if(i>=0) toastRows.splice(i,1);
+  if(row.el.parentNode) row.el.parentNode.removeChild(row.el);
   const el = document.getElementById('toast');
-  el.textContent = text; el.style.opacity='1';
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>{ el.style.opacity='0'; }, 1600);
+  if(el && !toastRows.length) el.style.opacity='0';   // 全部消えたら枠ごと隠す(従来と同じ見え方)
+}
+function pushToast(text, opts){
+  const el = document.getElementById('toast');
+  if(!el) return;
+  const msg = String(text);
+  const o = opts || {};
+  const dur = 1000 * (o.dur != null ? o.dur
+    : Math.min(TOAST_DUR_MAX, TOAST_DUR_BASE + msg.length*TOAST_DUR_PER_CHAR));
+  const same = toastRows.find(r=> r.text === msg);
+  if(same){   // 同じ文言は積み増さず、寿命だけ延ばす
+    clearTimeout(same.timer);
+    same.timer = setTimeout(()=> removeToastRow(same), dur);
+    return;
+  }
+  while(toastRows.length >= TOAST_MAX_ROWS) removeToastRow(toastRows[0]);  // あふれたら古い行から落とす
+  const div = document.createElement('div');
+  div.className = 'toast-line';
+  div.textContent = msg;
+  el.appendChild(div);
+  const row = { el: div, text: msg, timer: null };
+  row.timer = setTimeout(()=> removeToastRow(row), dur);
+  toastRows.push(row);
+  el.style.opacity = '1';
 }
 // FIREを押したがガッツ不足で技が撃てなかった時、左下のガッツゲージを一瞬強調する
 function flashGutsGauge(){

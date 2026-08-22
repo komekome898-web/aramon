@@ -267,6 +267,7 @@ function ensureProvidedSeBuffers(){
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, cardSwipe:0.07, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
+  hitDealt:0.07, miss:0.2, zoneWarn:2,
   fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6, ssrJackpot:0.9, zeusTier3:0.8,
   chocoSummon:1.5, chocoVanish:0.8, chocoHit:0.5, titleStart:1.2,
   buy:0.2, darkHoust:0.6, requiemEnd:0.3, mocchiBeam:0.5, monta:0.2, crystalRain:0.5, fireWave:0.5,
@@ -427,6 +428,27 @@ const SE_DEFS = {
   // ガッツ不足「ピピピッ」
   noGuts(t){
     for(let i=0;i<3;i++) seTone(t+i*0.08, {freq:1250, dur:0.045, type:'square', vol:0.28});
+  },
+  /* 命中(自分が当てた)「ピシッ」。被弾のhitTakenは低く重い音なので、こちらは高く短く軽くして
+     「当てた」と「当てられた」を音だけで区別できるようにする。乱戦で何度も鳴るぶん音量は控えめ。 */
+  hitDealt(t){
+    seNoise(t, {dur:0.03, vol:0.26, filterType:'highpass', filterFreq:4200});               // 当たりの弾け
+    seTone(t,       {freq:2100, freqEnd:1500, dur:0.05,  type:'triangle', vol:0.22, attack:0.002}); // 芯
+    seTone(t+0.012, {freq:3000,               dur:0.035, type:'sine',     vol:0.11, attack:0.002}); // 上の倍音でカリッと
+  },
+  /* 近接技の空振り「スカッ」。当たらなくてもガッツは減っているので、
+     「今の一撃は届いていない」ことだけ小さく知らせる(命中音より明確に弱く・低く) */
+  miss(t){
+    seNoise(t, {dur:0.13, vol:0.15, filterType:'bandpass', filterFreq:1900, filterEnd:520}); // 空を切る風
+    seTone(t,  {freq:520, freqEnd:280, dur:0.1, type:'sine', vol:0.07});                     // 抜ける感じの下降
+  },
+  /* 安全圏の縮小予告「ピロン↓ピロン」。交戦中で右上のカウントダウンを見に行けない時でも
+     気付けるよう、2音を少し伸ばして下降させる(危険を煽りすぎない中庸の音量) */
+  zoneWarn(t){
+    seTone(t,      {freq:880,  dur:0.16, type:'triangle', vol:0.34, attack:0.008});
+    seTone(t,      {freq:1320, dur:0.14, type:'sine',     vol:0.13, attack:0.008});
+    seTone(t+0.18, {freq:660,  dur:0.30, type:'triangle', vol:0.34, attack:0.008});
+    seTone(t+0.18, {freq:990,  dur:0.26, type:'sine',     vol:0.13, attack:0.008});
   },
   // インフェルノ・ファイアウェーブ「ボオオオオ」(燃え盛る炎)
   fireRoar(t, o){
