@@ -32,7 +32,7 @@
     --hud-text-scale: 1;
     --hud-text-scale-large: 1.25;   /* 「大」の倍率。実機で詰めるならここだけ動かす */
     --hud-fs-sm:   calc(11px * var(--hud-text-scale));  /* 添え字・単位・状態ピル */
-    --hud-fs-num:  calc(12px * var(--hud-text-scale));  /* HP/ガッツの実数値・キルフィード */
+    --hud-fs-num:  calc(12px * var(--hud-text-scale));  /* HP/ガッツの実数値 */
     --hud-fs-name: calc(15px * var(--hud-text-scale));  /* 名前・技名・安置カウントダウン */
     --hud-fs-big:  calc(18px * var(--hud-text-scale));  /* 生存数・Kill/Damage */
     --hud-bar-h:   calc(8px  * var(--hud-text-scale));  /* HP/ガッツ/状態CDのバーの高さ */
@@ -2656,7 +2656,27 @@
   #zoneCountdown{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-name); font-weight:700; color:var(--amber); }
   #matchClock{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); color:var(--ink-dim); }
 
-  #statsPanel{ top:14px; left:50%; transform:translateX(-50%); padding:9px 20px; display:flex; gap:22px; }
+  /* 【上部中央は左右の先客のぶんを空ける】画面幅の割合で伸ばすと、左のHPパネルと
+     右の安置欄+ミニマップに必ず重なる(#raidHudで踏んだのと同じ形)。
+     文字を大きくすると横に伸びるので、幅を決めずに置いていた頃は
+     667x375・文字大で右の残り人数と59px、HPパネルと23px重なっていた。
+     入りきらないときは横に伸びずに**2行へ折り返す**(下は空いている)。
+     空ける幅は各パネルの実寸から出しているので、#hpPanel / #minimapWrap /
+     #counterPanel の幅を変えたらここも直す(narrow側も同じ計算で別に持つ)。 */
+  :root{
+    --stats-left: 232px;    /* 14 + #hpPanel 210 + すき間8 */
+    --stats-right: 284px;   /* 14 + #minimapWrap 120 + 8 + #counterPanel 実測134 + 8 */
+  }
+  html.narrow-screen{
+    --stats-left: 202px;    /* 14 + #hpPanel 180 + 8 */
+    --stats-right: 250px;   /* 14 + #minimapWrap 96 + 8 + #counterPanel 実測124 + 8 */
+  }
+  /* 幅は left/right が決める(width:auto)。**fit-content にしてはいけない** ――
+     Chromiumは絶対配置の fit-content を max-content のまま返すので、rightを無視して
+     右へ伸び、右上の残り人数へ突き刺さる(実測で確認)。箱を先に決めて中身を折り返させる。 */
+  #statsPanel{ top:14px; left:var(--stats-left); right:var(--stats-right); margin:0 auto;
+    width:auto; transform:none;
+    padding:9px 14px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px 18px; }
   .stat-row{ display:flex; align-items:baseline; justify-content:center; gap:8px; }
   .stat-lbl{ font-size:var(--hud-fs-sm); letter-spacing:2px; color:var(--ink-dim); }
   .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-big); color:var(--amber); }
@@ -2678,10 +2698,23 @@
      右端には上から ミニマップ → 回転ボタン → DASH/FIRE が縦に詰まっていて
      3行ぶんの空きが無いので、**右端そのものを空けて左へ寄せる。**
      空ける幅は回転ボタンの実寸(--turn-*)から出す ―― 数字を二重に持たない。 */
-  #killFeed{ position:absolute; top:140px;
-    right:calc(var(--turn-right) + var(--turn-size) * 2 + var(--turn-gap) + 10px);
-    width:240px; display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
-  .kf-item{ font-size:var(--hud-fs-num); padding:5px 10px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%; }
+  :root{
+    /* 右端に空ける幅 = 回転ボタン2つぶん(--turn-*)+ すき間10。**数字を二重に持たない** */
+    --killfeed-right: calc(var(--turn-right) + var(--turn-size) * 2 + var(--turn-gap) + 10px);
+  }
+  /* 左へ寄せたぶん、狭い端末では中央の照準まで届く(667x375で実測26x26px重なった)。
+     **画面の中心線を越えない**ように幅の上限を持たせる(照準の半分13px + 余白9px)。 */
+  #killFeed{ position:absolute; top:140px; right:var(--killfeed-right);
+    width:240px; max-width:calc(50% - var(--killfeed-right) - 22px);
+    display:flex; flex-direction:column; gap:3px; align-items:flex-end; }
+  /* 【1件は2行まで】以前は行数の上限が無く、名前が長い試合では1件が3行になって
+     フィード全体が171pxまで伸び、技パネルとDASHに重なっていた(812x375で実測)。
+     切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く。
+     **文字サイズ「大」でも12pxのまま**にしてある ―― ここは元から12pxでHUDの中では
+     いちばん読みやすく、これを大きくすると3件で技パネルまで届いてしまうため。 */
+  .kf-item{ font-size:12px; line-height:1.25; padding:4px 9px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%;
+    white-space:normal; overflow-wrap:anywhere;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
   @keyframes kfIn{ to{opacity:1; transform:translateY(0);} }   /* 横スライドは右端で見切れて斜め欠けに見えた */
 
   /* #appRootの最後(#hudの外)に置いてあるので、z-indexは他の全画面(#startScreen:30含む)より
@@ -2760,10 +2793,11 @@
        切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く */
     white-space:normal; overflow-wrap:anywhere;
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-  /* トレーニングカードが出ている間は操作ヒント帯を出さない(#hud.tc-openはui.jsが付け外し)。
-     カードを画面の下へ移したので、#tipBox(bottom:128px)とだけ場所が重なる。
-     トーストは上(top:16%)にいるので、以前のように逃がす必要はなくなった。 */
-  #hud.tc-open #tipBox{ display:none; }
+  /* トレーニングカードが出ている8秒だけ引っ込めるもの(#hud.tc-openはui.jsが付け外し)。
+     カードを画面の下へ移したので、場所が重なるのは操作ヒント帯とキルフィードの2つ。
+     **重ねると両方読めない**ので、その8秒はカードを優先する(選ばないと勝手に決まるため)。
+     トーストは上(top:16%)にいるので、以前のように下へ逃がす必要はなくなった。 */
+  #hud.tc-open #tipBox, #hud.tc-open #killFeed{ display:none; }
 
   #movePanel{
     position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
@@ -2858,29 +2892,36 @@
      合わせて y=58〜187 を占め、375px高の端末では**照準(50%=187)まで届き**、
      安置コンパス(cy=70)も覆っていた。撃ち合いの最中に画面の真ん中が塞がる。
 
-     【左右と下は「避ける相手の実寸」から決める】--tc-side / --tc-bottom の2つだけで
-     ジョイスティック・FIRE・DASH・回転ボタン・技パネルを全部よけている。
-     どれかを動かしたらこの2つも一緒に直す(値の出どころは各コメントに書いてある)。
+     【左右と下は「避ける相手の実寸」から決める】--tc-left / --tc-right / --tc-bottom の
+     3つだけで HPパネル・小隊バー・ジョイスティック・FIRE・DASH・回転ボタン・技パネルを
+     全部よけている。どれかを動かしたらこの3つも一緒に直す(出どころは各コメントにある)。
      位置と大きさは「操作画面カスタマイズ」で動かせる(HUD_DRAGGABLEに入れてある)。
-     中央寄せは translateX(-50%) のままでよい(カスタマイズ時は hudFlattenElement が
-     left/top へ畳み込み、hudApplyPosScale が transform を scale だけに置き換えるため)。
+     カスタマイズ時は hudFlattenElement が offsetLeft/offsetTop を left/top へ畳み込み、
+     hudApplyPosScale が transform を scale だけに置き換えるので、既定の置き方は自由でよい。
      **出るときのアニメーションは透明度だけにする**(transformを動かすと位置とぶつかる)。 */
+  /* 【居場所は左右バラバラに空ける】画面の中央に置くと、左のHPパネル(210px・文字大では
+     下端が239pxまで伸びる)へ必ず食い込む。左右で空ける量を分けて、その帯の中で中央に置く
+     (#raidHud と同じやり方。左右の量は避ける相手の実寸から出す)。 */
   :root{
-    /* 左右に空ける幅 = ジョイスティック(left22+124)と回転ボタン列
-       (--turn-right 22 + --turn-size 52*2 + --turn-gap 10 = 136)の広いほう + すき間8 */
-    --tc-side: 154px;
-    /* 下に空ける高さ = DASH(bottom42 + 56)の上。技パネル(bottom18 + 約64)より上になる */
+    --tc-left: 232px;    /* 14 + #hpPanel/#squadPanel 210 + すき間8 */
+    --tc-right: 118px;   /* #fireBtn(right22 + 88)+ すき間8 */
+    /* 下に空ける高さ。**技パネルが文字サイズ「大」で伸びた高さ(実測85px)+bottom18** より上。
+       DASH(bottom42+56=98)の上でもあるので、右下のボタン群とも縦で離れる */
     --tc-bottom: 106px;
   }
   html.narrow-screen{
-    /* ジョイスティック(16+112=128)/回転ボタン列(16+46*2+8=116)→ 広いほう+8 */
-    --tc-side: 136px;
-    /* DASH(bottom34 + 50)の上 */
-    --tc-bottom: 92px;
+    --tc-left: 202px;    /* 14 + #hpPanel 180 + 8 */
+    --tc-right: 102px;   /* #fireBtn(right16 + 78)+ 8 */
+    /* 技パネル(narrowは余白が小さいぶん低い。文字大で実測76px)+bottom18 / DASH(34+50)の上 */
+    --tc-bottom: 100px;
   }
   #trainCardBar{
-    position:absolute; left:50%; bottom:var(--tc-bottom); transform:translateX(-50%);
-    max-width:calc(100% - var(--tc-side) * 2);
+    position:absolute; left:var(--tc-left); right:var(--tc-right); bottom:var(--tc-bottom);
+    /* 中身の幅で置きたいので width:max-content。**帯からはみ出さない上限は max-width で持つ**
+       (絶対配置の fit-content はChromiumが max-content のまま返し right を無視するため)。
+       余りは左右の auto マージンが等分するので、帯の中で中央に来る。 */
+    margin:0 auto; width:max-content; max-width:calc(100% - var(--tc-left) - var(--tc-right));
+    transform:none;
     z-index:26; pointer-events:auto; display:flex; flex-direction:column; align-items:stretch; gap:3px;
     padding:4px 6px; border-radius:11px;
     background:linear-gradient(180deg, rgba(14,20,32,0.9), rgba(8,12,20,0.9));
@@ -2890,21 +2931,26 @@
   @keyframes tcIn{ from{ opacity:0; } to{ opacity:1; } }
   .tc-timer-track{ height:3px; border-radius:2px; background:rgba(255,255,255,0.12); overflow:hidden; }
   .tc-timer-fill{ height:100%; width:100%; background:linear-gradient(90deg,#9fd1ff,#f4c430); }
-  /* 横に並びきらない狭い端末では折り返す(画面外へはみ出させないための保険)。
-     **幅の上限は帯の親(#trainCardBar)が --tc-side から決めた値をそのまま使う。**
-     以前は calc(62 * var(--vw)) だったが、--vw は強制横向きでは実画面の幅
-     (=論理の高さ)なので、縦持ち端末では帯が不必要に細くなり行が増えていた。 */
-  .tc-cards{ display:flex; flex-wrap:wrap; justify-content:center; gap:4px; max-width:100%; }
+  /* **幅の上限は帯の親(#trainCardBar)が --tc-left/--tc-right から決めた値をそのまま使う。**
+     以前は calc(62 * var(--vw)) を自分で持っていたが、--vw は強制横向きでは実画面の幅
+     (=論理の高さ)なので、縦持ち端末では帯が不必要に細くなり行が増えていた。
+     【カードは必ず1行に並べる】折り返した瞬間に帯の高さが倍になり(実測 49px→94px)、
+     667x375の画面では照準(y175〜201)を丸ごと覆ってしまう。
+     3枚で帯の幅を等分し(flex:1 1 0)、入りきらないぶんは**名前だけ**が「…」で縮む。
+     増減の数字は選ぶ判断そのものなので縮ませない(flex:0 0 auto)。 */
+  .tc-cards{ display:flex; flex-wrap:nowrap; justify-content:center; gap:4px; max-width:100%; }
   /* 1枚を「名前 → 増減」の横並びにして背を低くする(視界を塞がない横長の帯にするため)。 */
   .tc-card{
     display:flex; align-items:center; justify-content:center; gap:4px;
+    flex:1 1 0; min-width:0;
     padding:4px 5px; border-radius:9px; cursor:pointer; white-space:nowrap;
     background:linear-gradient(180deg, rgba(159,209,255,0.16), rgba(255,255,255,0.05));
     border:1px solid rgba(159,209,255,0.5); color:var(--ink); text-align:left;
   }
   .tc-card:active{ filter:brightness(1.25); }
-  .tc-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px; line-height:1.15; }
-  .tc-card-deltas{ display:flex; flex-direction:column; }
+  .tc-card-name{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:11px; line-height:1.15;
+    min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .tc-card-deltas{ display:flex; flex-direction:column; flex:0 0 auto; }
   /* 増減は1ステータス1行。上げは青・下げは赤で、選ぶ判断がひと目で付くようにする */
   .tc-card-delta{ font-family:'Share Tech Mono',monospace; font-size:8px; line-height:1.12; }
   .tc-card-delta.up{ color:#9fd1ff; }
@@ -4357,7 +4403,9 @@
   html.narrow-screen #hpPanel{ width:180px; }
   /* 小隊バーの幅はHPパネルに追従させる(180に合わせる。#hpPanelを変えたらここも直す) */
   html.narrow-screen #squadPanel{ width:180px; }
-  html.narrow-screen #killFeed{ width:170px; top:123px;}
+  /* topは本体側(140px)のままでよい。以前の123pxは #topRight 基準だった頃の名残で、
+     #hud基準にすると文字サイズ「大」の安置欄(下端131px)に8px重なる */
+  html.narrow-screen #killFeed{ width:170px; }
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
   /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */
   html.narrow-screen #raidHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
