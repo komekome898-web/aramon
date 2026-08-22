@@ -209,6 +209,18 @@ let fireBtnHeld = false;
 let joystick = { active:false, pointerId:null, nx:0, ny:0, baseX:0, baseY:0, radius:46, peakUpNy:0, scale:1, downAt:0 };
 let lookDrag = { active:false, pointerId:null, lastX:0, lastY:0 };
 
+/* 視点を回す計算は**ここ1か所だけ**。#gameCanvasのドラッグと、FIREボタンを押した指の
+   ドラッグ(FIREを滑らせて狙う)が同じ式を使う。感度・上下反転・可動範囲の正はここにしかない。
+   dx,dyは実画面上の移動量。**必ず両軸をtoLogicalDeltaへ渡す** ── 強制横向きでは縦横が
+   入れ替わるので、片方の軸だけ渡すともう一方が0になって動かなくなる。 */
+function applyLookDelta(dx, dy){
+  const logical = toLogicalDelta(dx, dy);
+  // 感度は視点設定(world.jsのlookSettings。設定 → 視点設定 から変更できる)
+  camState.yaw += logical.x*lookSettings.sensX;
+  // 上下の可動範囲はマップ依存(リアルマップだけ空側へ広い。world.jsのcamPitchMin)
+  camState.pitch = clamp(camState.pitch + (invertPitchY ? logical.y : -logical.y)*lookSettings.sensY, camPitchMin(), CAM_PITCH_MAX);
+}
+
 window.addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
   keys[k] = true;
@@ -263,11 +275,7 @@ window.addEventListener('pointermove', (e)=>{
   camSnap.active = false;
   const dx = e.clientX-lookDrag.lastX, dy = e.clientY-lookDrag.lastY;
   lookDrag.lastX = e.clientX; lookDrag.lastY = e.clientY;
-  const logical = toLogicalDelta(dx, dy);
-  // 感度は視点設定(world.jsのlookSettings。射撃訓練場から変更できる)
-  camState.yaw += logical.x*lookSettings.sensX;
-  // 上下の可動範囲はマップ依存(リアルマップだけ空側へ広い。world.jsのcamPitchMin)
-  camState.pitch = clamp(camState.pitch + (invertPitchY ? logical.y : -logical.y)*lookSettings.sensY, camPitchMin(), CAM_PITCH_MAX);
+  applyLookDelta(dx, dy);
 });
 window.addEventListener('pointerup', (e)=>{
   if(e.pointerId!==lookDrag.pointerId) return;
@@ -349,10 +357,47 @@ window.addEventListener('pointerup', releaseJoystick);
 window.addEventListener('pointercancel', releaseJoystick);
 
 const fireBtnEl = document.getElementById('fireBtn');
-fireBtnEl.addEventListener('pointerdown', (e)=>{ e.preventDefault(); e.stopPropagation(); fireBtnHeld=true; });
-fireBtnEl.addEventListener('pointerup', ()=>{ fireBtnHeld=false; });
-fireBtnEl.addEventListener('pointercancel', ()=>{ fireBtnHeld=false; });
-fireBtnEl.addEventListener('pointerleave', ()=>{ fireBtnHeld=false; });
+/* FIREを押した指を最後まで追いかける。
+   ・以前はpointerleaveでfireBtnHeld=falseにしていたので、**押したまま少し動くと発射が止まっていた**
+     (ボタンは狭い画面で78px・画面は被弾で揺れる・親指は必ず動く)。leaveでの解除は廃止し、
+     pointerup/pointercancel だけで離す。押した瞬間にsetPointerCaptureで指を捕まえ、
+     ボタンの外へ滑ってもイベントを取りこぼさないようにする。
+   ・pointermove: そのまま滑らせると視点が動く(右親指1本で「撃つ+狙う」が完結する)。
+     設定 lookSettings.fireDragAim でON/OFF、既定ON。OFFなら撃つだけで視点は動かない。 */
+let fireDrag = { pointerId:null, lastX:0, lastY:0 };
+fireBtnEl.addEventListener('pointerdown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  fireBtnHeld = true;
+  fireDrag.pointerId = e.pointerId; fireDrag.lastX = e.clientX; fireDrag.lastY = e.clientY;
+  try{ fireBtnEl.setPointerCapture(e.pointerId); }catch(_){}
+});
+/* move/up は**windowで受ける**(ジョイスティック・視点ドラッグと同じ作り)。
+   捕まえた指のイベントはFIREボタンからwindowまで上がってくるので取りこぼさず、
+   万一setPointerCaptureが効かない環境でも指を追える。ボタン側にも重ねて付けると
+   同じイベントを2回処理して視点が倍速で回るので、**listenerはwindow側だけ**にする。 */
+window.addEventListener('pointermove', (e)=>{
+  if(e.pointerId !== fireDrag.pointerId) return;   // FIREを押している指以外は無視
+  const dx = e.clientX-fireDrag.lastX, dy = e.clientY-fireDrag.lastY;
+  fireDrag.lastX = e.clientX; fireDrag.lastY = e.clientY;
+  if(!lookSettings.fireDragAim) return;            // 設定でOFFなら「押しっぱなしで撃つ」だけ
+  if(!game.started || game.over) return;
+  // 観戦中は見ている本体の向きへ自動追従する(canvas側のドラッグと同じ扱い)
+  if(typeof spectatingNow==='function' && spectatingNow()) return;
+  camSnap.active = false;                          // 自分で狙い始めたら敵タップのスナップは解除
+  applyLookDelta(dx, dy);
+});
+/* 離す。捕まえた指と同じIDのときだけ効かせる ── IDを見ないと、離した直後に
+   遅れて届くlostpointercaptureが「次に押した指」のfireBtnHeldまで落としてしまう。 */
+function releaseFireBtn(e){
+  if(e.pointerId !== fireDrag.pointerId) return;
+  fireBtnHeld = false;
+  fireDrag.pointerId = null;
+  try{ if(fireBtnEl.hasPointerCapture && fireBtnEl.hasPointerCapture(e.pointerId)) fireBtnEl.releasePointerCapture(e.pointerId); }catch(_){}
+}
+window.addEventListener('pointerup', releaseFireBtn);
+window.addEventListener('pointercancel', releaseFireBtn);
+// OS都合で指を失ったときの保険(画面回転・要素の入れ替えなど)。掴んだままだと撃ちっぱなしになる
+fireBtnEl.addEventListener('lostpointercapture', releaseFireBtn);
 
 // ダッシュを実際に開始する(向きの決め方をホスト/ゲストで完全に同じにするため関数に分けてある。
 // マルチではホストが applyRemoteInputsLocally からこれを呼んでゲストのダッシュを再現する)。

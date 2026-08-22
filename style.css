@@ -11,6 +11,14 @@
        viewport」基準になってしまい強制横向き時にズレるため、レイアウトでは必ずこちらを使う。 */
     --vw: 1vw;
     --vh: 1vh;
+    /* ノッチ/ホームインジケーターを避ける余白。**アプリ側の上下左右**で入っている
+       (強制横向きでは実画面と向きが入れ替わるので、world.jsのapplySafeAreaVarsが
+       env(safe-area-inset-*)を測って入れ替えて書き込む)。
+       env()が使えない/セーフエリアが無い端末では0のままで、これまでと同じ見た目になる。 */
+    --safe-t: 0px;
+    --safe-r: 0px;
+    --safe-b: 0px;
+    --safe-l: 0px;
     /* トップ画面のヘッダーの高さ。ボタンを押しやすくするため少し厚くしてある。
        ヘッダーの下に敷く要素(#lobbyLayout / 右パネル)のtopもこの値を使う */
     --top-header-h: 36px;
@@ -1983,10 +1991,15 @@
   .mode-tab.active, .cap-tab.active, .map-tab.active, .sub-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #multiOptions{ margin-top:4px; }
 
-  #invertPitchRow{
-    margin-top:14px; display:flex; align-items:center; gap:12px;
+  /* 視点設定の中のON/OFFの行(上下反転・FIREを滑らせて視点を動かす)。
+     **2行で共通のクラスにする** ── 片方だけ #id で整えると、項目を増やしたときに
+     余白と文字の大きさが行ごとにバラつく。ラベルは長いほうに合わせて折り返させ、
+     トグルは縮ませない(押せる大きさを保つ)。 */
+  .look-toggle-row{ margin-top:7px; display:flex; align-items:center; gap:12px; }
+  .look-toggle-label{
+    flex:1 1 auto; min-width:0;
+    font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; color:var(--ink-dim);
   }
-  #invertPitchLabel{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px; color:var(--ink-dim); }
   .toggle-switch{
     position:relative; width:46px; height:26px; padding:0; border-radius:14px; cursor:pointer;
     background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); flex-shrink:0;
@@ -2540,8 +2553,16 @@
   .howto-state-duration{ color:var(--ink-dim); }
   .howto-state-effect{ color:var(--ink-dim); }
 
-  /* ---------- HUD ---------- */
-  #hud{ position:absolute; inset:0; z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:manipulation;}
+  /* ---------- HUD ----------
+     セーフエリアぶんだけ内側へ寄せる(ノッチ/ホームインジケーターの下に潜らせない)。
+     **paddingではなくinsetで縮める**: 中のHUD部品は全部 position:absolute なので、
+     絶対配置の基準は「paddingの外側の辺」になり、paddingでは1pxも動かない。
+     #hudの箱そのものを小さくすれば、ジョイスティック(left/bottom)もFIRE/DASH(right/bottom)も
+     位置指定を書き換えずに内側へ入る。画面カスタマイズの配置もこの箱に対する割合なので一緒に追従する。
+     ゲーム画面(#gameCanvas等)は#hudの外なので、これまでどおり画面いっぱいに描かれる。
+     値はworld.jsが入れる(既定0 = これまでと同じ)。 */
+  #hud{ position:absolute; top:var(--safe-t); right:var(--safe-r); bottom:var(--safe-b); left:var(--safe-l);
+        z-index:10; pointer-events:none; font-family:'Rajdhani',sans-serif; touch-action:manipulation;}
 
   .hud-panel{
     position:absolute; background:var(--panel); border:1px solid var(--panel-line);
@@ -2722,7 +2743,13 @@
   .status-pill.freeze{ background:rgba(191,233,255,0.22); color:#bfe9ff; border:1px solid rgba(191,233,255,0.6); }
   .status-pill.poison{ background:rgba(155,95,209,0.22); color:#c9a0ee; border:1px solid rgba(155,95,209,0.6); }
 
-  #crosshair{ position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:none; }
+  /* 【照準は画面の実中心に置く】#hudをセーフエリアぶん縮めたので、#hudの50%は
+     もう画面の中心ではない。弾が飛ぶ先(canvasの中心)とズレると狙えなくなるので、
+     左右・上下の余白の差の半分だけ戻す。余白が0なら calc は 50% のままで従来と同じ。 */
+  #crosshair{ position:absolute;
+    left:calc(50% + (var(--safe-r) - var(--safe-l)) / 2);
+    top:calc(50% + (var(--safe-b) - var(--safe-t)) / 2);
+    width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:none; }
   #crosshair::before, #crosshair::after{ content:''; position:absolute; background:rgba(255,255,255,0.55); border-radius:2px; transition:background .12s; }
   #crosshair::before{ left:11px; top:0; width:4px; height:26px; }
   #crosshair::after{ left:0; top:11px; width:26px; height:4px; }
@@ -2730,7 +2757,11 @@
 
   /* ゲストのヒットマーカー: 見た目命中の瞬間に照準へ×印を0.15秒重ねる(showHitMarker)。
      普段は透明。hm-showが付いたときだけアニメーションで出て消える */
-  #hitMarker{ position:absolute; left:50%; top:50%; width:44px; height:44px; margin:-22px 0 0 -22px; pointer-events:none; opacity:0; }
+  /* 命中の×印は照準に重ねるものなので、#crosshairと同じ中心の出し方にする */
+  #hitMarker{ position:absolute;
+    left:calc(50% + (var(--safe-r) - var(--safe-l)) / 2);
+    top:calc(50% + (var(--safe-b) - var(--safe-t)) / 2);
+    width:44px; height:44px; margin:-22px 0 0 -22px; pointer-events:none; opacity:0; }
   #hitMarker::before, #hitMarker::after{ content:''; position:absolute; left:19px; top:0; width:6px; height:44px;
     background:rgba(255,236,180,0.95); border-radius:2px; box-shadow:0 0 6px rgba(255,200,80,0.8); }
   #hitMarker::before{ transform:rotate(45deg); }
@@ -2810,7 +2841,11 @@
     color:#cfe9ff; background:rgba(8,14,24,0.72); border:1px solid rgba(120,190,255,0.32); }
   .look-settings-box{ max-width:min(560px, calc(92 * var(--vw))); width:min(560px, calc(92 * var(--vw))); position:relative; }
   .look-settings-note{ font-size:11px; color:var(--ink-dim); letter-spacing:0.5px; margin-bottom:6px; }
-  .look-settings-box .audio-slider-row{ margin:12px 0; }
+  /* 行が6つ(視野角/左右感度/上下感度/上下反転/FIREドラッグ/ボタン)になったので、
+     いちばん低い画面(iPhone SE 横持ち=実効375px)でもスクロールしないよう
+     **この画面だけ**余白を詰める。詰める前は387pxで1.1画面ぶんはみ出していた。 */
+  .mastermon-confirm-box.look-settings-box{ padding:12px 30px; }
+  .look-settings-box .audio-slider-row{ margin:7px 0; }
   .look-settings-box .audio-slider-label{ width:56px; font-size:13px; }
 
   /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */

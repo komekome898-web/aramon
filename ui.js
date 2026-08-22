@@ -711,8 +711,13 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
   });
   // ロビー右上「🔰 はじめての方へ」→ ヘルプ画面(headerHelpBtnと同じオーバーレイを開くだけ)
   document.getElementById('openHelpFromLobbyBtn').addEventListener('click', ()=> lobbyOpenOverlay('helpOverlay'));
+  // ⚙️設定 →「🎚️ 視点設定」。射撃訓練場の rangeLookBtn と**同じ openLookSettings を呼ぶだけ**で、
+  // オーバーレイもスライダーも1つのまま(感度の正が2か所に分かれない)。
+  document.getElementById('lookSettingsBtn').addEventListener('click', ()=> openLookSettings());
+  // 🐾 マスモン(ロビーから育成へ直行。0体のときの案内は openMastermonScreen が出す)
+  document.getElementById('openMastermonBtn').addEventListener('click', ()=> openMastermonScreen(false));
   // 設定・マイページの中のボタンは、押したらそのオーバーレイを閉じてから目的の画面を開く
-  ['howToPlayBtn','openHudCustomizeBtn','audioSettingsBtn','adminEntryBtn'].forEach(id=>{
+  ['howToPlayBtn','openHudCustomizeBtn','lookSettingsBtn','audioSettingsBtn','adminEntryBtn'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', ()=> lobbyCloseOverlay('settingsOverlay'));
   });
@@ -1312,9 +1317,16 @@ const LOOK_LS_KEY = 'aramon_look_v1';
 function loadLookSettings(){
   try{
     const raw = JSON.parse(localStorage.getItem(LOOK_LS_KEY) || '{}');
+    /* **既定値(LOOK_DEFAULTS)の型を見て復元する。** 数値だけを見ていた頃は、
+       ON/OFFの項目が保存はされるのに復元されず、開くたび既定へ戻っていた。
+       型で分けておけば、LOOK_DEFAULTS に項目を1つ足すだけで保存も復元も付いてくる。 */
     for(const k of Object.keys(LOOK_DEFAULTS)){
-      const lim = LOOK_LIMITS[k];
-      if(typeof raw[k]==='number' && isFinite(raw[k])) lookSettings[k] = clamp(raw[k], lim[0], lim[1]);
+      if(typeof LOOK_DEFAULTS[k]==='boolean'){
+        if(typeof raw[k]==='boolean') lookSettings[k] = raw[k];
+      }else{
+        const lim = LOOK_LIMITS[k];
+        if(typeof raw[k]==='number' && isFinite(raw[k])) lookSettings[k] = lim ? clamp(raw[k], lim[0], lim[1]) : raw[k];
+      }
     }
   }catch(e){}
   applyLookSettings();
@@ -1347,13 +1359,36 @@ LOOK_SLIDERS.forEach(s=>{
   document.getElementById(s.minus).addEventListener('click', ()=>{ setLookValue(s, Math.round(lookSettings[s.key]*s.scale)-s.step); saveLookSettings(); });
   document.getElementById(s.plus ).addEventListener('click', ()=>{ setLookValue(s, Math.round(lookSettings[s.key]*s.scale)+s.step); saveLookSettings(); });
 });
+/* 視点設定の中のON/OFF(上下反転・FIREドラッグ)。
+   ・上下反転(invertPitchY)は昔から専用キーで保存しており、input.js がその変数を読む。
+     **変数名も保存キーも変えず**、置き場所(DOM)と初期値に戻す操作だけをここへ寄せた。
+   ・FIREドラッグは lookSettings.fireDragAim(既定値の正は world.js の LOOK_DEFAULTS)。
+   invertPitchY はこのファイルの後ろで宣言しているので、**この関数を読み込み時に呼ばない**
+   (呼ぶのは「視点設定を開いたとき」と「初期値に戻すを押したとき」だけ)。            */
+function fireDragAimOn(){ return lookSettings.fireDragAim !== false; }   // 既定ON
+function syncLookToggles(){
+  const inv = document.getElementById('invertPitchToggle');
+  if(inv) inv.setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
+  const fd = document.getElementById('fireDragAimToggle');
+  if(fd) fd.setAttribute('aria-checked', fireDragAimOn() ? 'true' : 'false');
+}
+document.getElementById('fireDragAimToggle').addEventListener('click', ()=>{
+  lookSettings.fireDragAim = !fireDragAimOn();
+  syncLookToggles();
+  saveLookSettings();
+});
 document.getElementById('lookResetBtn').addEventListener('click', ()=>{
+  // 既定に無いキーが残っていると「初期値に戻す」で戻らない項目ができるので、先に落とす
+  // (lookSettings は world.js が window.__aramonLook として持っている同じ実体なので、入れ替えずに書き換える)
+  for(const k of Object.keys(lookSettings)) if(!(k in LOOK_DEFAULTS)) delete lookSettings[k];
   Object.assign(lookSettings, LOOK_DEFAULTS);
-  applyLookSettings(); syncLookSliders(); saveLookSettings();
+  setInvertPitch(false);   // 同じ画面に並んでいる上下反転も既定(OFF)へ戻す
+  applyLookSettings(); syncLookSliders(); syncLookToggles(); saveLookSettings();
   pushToast('視点設定を初期値に戻しました');
 });
 function openLookSettings(){
   syncLookSliders();
+  syncLookToggles();
   document.getElementById('lookSettingsOverlay').classList.remove('hidden');
 }
 document.getElementById('closeLookSettingsBtn').addEventListener('click', ()=>{
@@ -3852,15 +3887,17 @@ document.getElementById('playerNameInput').addEventListener('input', (e)=>{
 
 const INVERT_PITCH_KEY = 'aramon_invert_pitch_v1';
 let invertPitchY = false;
+// 値を書くのはこの関数だけ(表示・保存もここでまとめて行う。視点設定の「初期値に戻す」からも呼ぶ)
+function setInvertPitch(on){
+  invertPitchY = !!on;
+  document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
+  try{ localStorage.setItem(INVERT_PITCH_KEY, invertPitchY ? '1' : '0'); }catch(err){}
+}
 (function restoreInvertPitch(){
   try{ invertPitchY = localStorage.getItem(INVERT_PITCH_KEY) === '1'; }catch(err){}
   document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
 })();
-document.getElementById('invertPitchToggle').addEventListener('click', ()=>{
-  invertPitchY = !invertPitchY;
-  document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
-  try{ localStorage.setItem(INVERT_PITCH_KEY, invertPitchY ? '1' : '0'); }catch(err){}
-});
+document.getElementById('invertPitchToggle').addEventListener('click', ()=> setInvertPitch(!invertPitchY));
 
 /* =====================================================================
    MULTIPLAYER STATE
@@ -8092,7 +8129,9 @@ function openMastermonScreen(fromResult){
   const keys = Object.keys(data);
   const noticeEl = document.getElementById('mastermonNotice');
   if(keys.length===0){
-    noticeEl.textContent = 'マスモンがいません。チャンピオンを取ってマスモン登録しよう！';
+    // 登録にチャンピオン(1位)は要らない(handleMastermonPostMatch は順位を見ない)。
+    // ヘルプ「マスモン登録の仕方: バトルを1回終えるだけで登録できます」と揃えた文言にする。
+    noticeEl.textContent = 'マスモンがまだいません。バトルを1回終えると登録できます(1位でなくてもOK)';
     noticeEl.classList.remove('hidden');
     clearTimeout(mastermonNoticeTimer);
     mastermonNoticeTimer = setTimeout(()=>noticeEl.classList.add('hidden'), 3200);
