@@ -71,6 +71,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      <button id="headerBgmBtn" class="header-bgm-btn" aria-label="ロビーBGM"><span class="header-bgm-icon">🎵</span><span id="headerBgmName">いちか</span></button>
      <span class="header-wallet"><span id="headerGold">🪙 0</span><span id="headerDia">💎 0</span></span>
    </span>
+   <!-- 通信できないときの表示(F-9)。**常設の項目ではない**ので上の注意には当たらない:
+        ヘッダーの並び(grid)には入れず absolute でヘッダーの下へ吊るしてあるため、
+        出ても名前・所持金の幅を1pxも取らない。通信できるときは hidden で消える。 -->
+   <span id="netOfflineChip" class="hidden" role="status" aria-live="polite"></span>
  </div>
 
  <div id="lobbyLayout">
@@ -484,8 +488,16 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <!-- LOBBY (matchmaking wait) -->
 <div id="lobbyScreen" class="hidden">
   <div id="lobbyInner">
-    <div class="lobby-title">対戦相手を探しています…</div>
+    <!-- 見出しはモードで変わる(チーム戦は「対戦相手」ではなく仲間を集める場面)。
+         書くのは ui.js の updateLobbyWaitState() 1か所だけ ―― 人数と状態の行と同じ理由で、
+         複数の場所から書くと必ずどこかが上書きして消える -->
+    <div class="lobby-title" id="lobbyTitleText">対戦相手を探しています…</div>
+    <!-- 【人数と状態は別の行】#lobbySubText は人数だけ、#lobbyStateText は「いつ始まるのか」。
+         以前は両方が #lobbySubText を取り合っていたため、参加者が更新されるたびに
+         renderLobbyPlayerList() の人数表示が状態の説明を消していた。
+         状態の行は文が長いので折り返す(.lobby-note。1行固定だと画面に入らない) -->
     <div class="lobby-sub" id="lobbySubText">部屋を検索中</div>
+    <div class="lobby-note" id="lobbyStateText"></div>
     <div id="lobbyPlayerList"></div>
     <div id="lobbyCountdown"></div>
     <button id="lobbyCancelBtn">キャンセル</button>
@@ -502,7 +514,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
   <div id="roomListInner">
     <div class="lobby-title" id="roomListTitle">部屋を探す</div>
     <div class="lobby-sub" id="roomListSubText">募集中の部屋を検索中…</div>
+    <!-- 行は ui.js の refreshRoomList() が <button> で作る(div だと押せることが伝わらない) -->
     <div id="roomListItems"></div>
+    <!-- 部屋を1つずつ見比べなくても遊べるようにする入口(F-4)。
+         人数の多い部屋から順に試すので、1人ずつ別の部屋へ散らばらない。 -->
+    <button id="roomListAutoJoinBtn">⚡ 空いてる部屋に入る</button>
     <div id="roomListBtnRow">
       <button id="roomListRefreshBtn">更新</button>
       <button id="roomListCancelBtn">キャンセル</button>
@@ -603,7 +619,16 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <span class="spectate-eye">👁 観戦中</span>
     <span id="spectateName">-</span>
     <button id="spectateNextBtn">▶ 次のプレイヤー</button>
+    <!-- 観戦から抜ける道。これが無いと、序盤に倒れたホストは最後の1人が決まるまで
+         観戦バーを眺め続けるしかなかった(ゲストは即リザルトで扱いが逆だった) -->
+    <button id="spectateExitBtn">🚪 リザルトへ</button>
   </div>
+  <!-- 試合を途中で抜ける入口(ui.jsのrequestMatchExit)。iPhoneでは着信・通知が来ても
+       中断できず、閉じるとリザルトも報酬も失われていた。押すと共通の確認ダイアログ
+       (#mastermonDeleteConfirm)が出るだけで、抜けたときは通常の終了と同じ showResult() を通る。
+       FIRE/DASH/🎯と同じ「pointerdownで完結する押しボタン」なので、
+       スクロールロック除外の3リストには入れない(確認ダイアログ側は既に入っている)。 -->
+  <button id="hudMenuBtn" aria-label="メニュー">☰</button>
   <div id="joystickBase"><div id="joystickKnob"></div></div>
   <div id="fireBtn">
     <svg class="cd-ring" viewBox="0 0 100 100">
@@ -698,6 +723,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <!-- シェアだけはアイコンの固定幅。等分にすると「トップ画面へ」が切れ、
          2行に折り返すと横長・低い画面でリザルトがはみ出す -->
     <button id="shareResultBtn" class="share-icon-btn" aria-label="SNSでシェア"><span class="share-ico"></span></button>
+    <!-- 連戦の入口。マルチは部屋に残ったまま待機画面へ戻る(ui.jsのreplayAgainBtn)。
+         レイドと部屋を抜けた後は出せないので setResultButtonsForRaid が隠す -->
+    <button id="replayAgainBtn">⟳ もう一度</button>
     <button id="replayBtn">トップ画面へ</button>
   </div>
  </div>

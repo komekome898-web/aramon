@@ -4083,6 +4083,15 @@ function resolveMapKey(){
   if(!keys.length) return 'wild';
   return keys[Math.floor(Math.random()*keys.length)];
 }
+/* 部屋一覧に出す「どのマップか」の表示用キー。**試合で使うマップは決めない** ――
+   実マップは開始時のシード(resolveMapKeyの結果)が正で、ランダムのまま部屋を立てた場合は
+   ここで確定させると「見たときの表示」と「実際に始まるマップ」が食い違う。
+   だからランダムは 'random' のまま返し、一覧側が「🎲 ランダム」と出す。 */
+function roomMapPickLabelKey(){
+  if(!game.selectedMap || game.selectedMap==='random') return 'random';
+  const k = mapKeyForMode(game.selectedMap);
+  return isSelectableMap(k) ? k : 'random';
+}
 function updateMapPreview(){
   const imgEl = document.getElementById('mapPreviewImage');
   const iconEl = document.getElementById('mapPreviewIcon');
@@ -4274,17 +4283,72 @@ function renderLobbyPlayerList(){
     const mmData = loadMastermons();
     ownMmNames = getHostMastermonBotOrder().map(k=>mmData[k].name);
   }
-  for(let i=0;i<botCount;i++){
-    const mmName = ownMmNames[i];
-    if(mmName){
-      rows.push(`<div class="lobby-player-row is-bot is-own-mm"><span class="lp-dot"></span><span>${mmName}（Bot待機枠）</span></div>`);
-    } else {
-      rows.push(`<div class="lobby-player-row is-bot"><span class="lp-dot"></span><span>Bot 待機枠</span></div>`);
-    }
+  /* 【名前の無いBot枠は1行にまとめる】以前は枠の数だけ行を出していたので、定員が大きいと
+     「Bot 待機枠」だけで29行(約812px)になり、誰が来ているのかも人が増えたことも
+     分からなくなっていた。**名前のある枠(自分のマスモン)は今までどおり1行ずつ出す**
+     ―― 誰が参戦するのかが分かることに意味があるため(2026-08-19の仕様)。
+     その枠も数が増えれば同じことが起きるので、出す行数には上限を設ける。 */
+  const LOBBY_MM_ROW_MAX = 6;
+  const mmNames = ownMmNames.slice(0, Math.min(botCount, LOBBY_MM_ROW_MAX));
+  for(const mmName of mmNames){
+    rows.push(`<div class="lobby-player-row is-bot is-own-mm"><span class="lp-dot"></span><span>${mmName}（Bot待機枠）</span></div>`);
+  }
+  const plainBots = botCount - mmNames.length;
+  if(plainBots > 0){
+    rows.push(`<div class="lobby-player-row is-bot is-bot-sum"><span class="lp-dot"></span><span>＋ Bot ${plainBots}体（待機枠）</span></div>`);
   }
   listEl.innerHTML = rows.join('');
-  document.getElementById('lobbySubText').textContent = `${humanIds.length} / ${netState.capacity} 人が参加中`;
+  // 人数の行。**状態(いつ始まるのか)はここに書かない**(書くと参加者が更新されるたびに消える)
+  const cap = netState.capacity || 0;
+  const full = cap > 0 && humanIds.length >= cap;
+  document.getElementById('lobbySubText').textContent =
+    `${humanIds.length} / ${cap} 人が参加中` + (full ? '（満員）' : '');
+  updateLobbyWaitState();
   renderLobbyTeammates();   // 参加者が変わるたびに、斜め後ろのチームメンバー表示も更新する(2026-08-19)
+}
+/* 待機画面の「状態」の行。人数の行(#lobbySubText)とは別に持つ。
+   **満員でも自動では始めない**(発注者判断・下記の理由)。代わりに、
+   ホストには「押していい」ことを、ゲストには「開始はホストが決める」ことを必ず出す。
+   自動開始を入れない理由: 部屋を作ったあと席を外している間に試合が始まってしまうと、
+   ホストは何もできないまま安置の外で倒れて記録だけが残る。人が集まる速さも読めない。 */
+function setLobbyStatusText(msg, ready){
+  const el = document.getElementById('lobbyStateText');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('is-ready', !!ready);
+}
+/* 待機画面の見出し。**モードで意味が違う**ので言い換える。
+   ・チーム戦 … 集めるのは味方(「対戦相手を探す」ではない)
+   ・レイド … 集めるのはボスへ一緒に挑む仲間
+   ・シングルのマルチPvP … 従来どおり対戦相手を探す場面
+   判定は既存の lobbyMode / netState.raid だけを見る(新しい判定を作らない)。
+   ゲストは joinSelectedRoom が部屋の mode/sub を lobbyMode へ写しているので、これで一致する。 */
+function lobbyWaitTitle(){
+  if(lobbyMode==='raid' || netState.raid) return '一緒に挑む仲間を募集中';
+  if(lobbyMode==='team') return 'チームメンバーを募集中';
+  return '対戦相手を探しています…';
+}
+function updateLobbyWaitState(){
+  const titleEl = document.getElementById('lobbyTitleText');
+  if(titleEl) titleEl.textContent = lobbyWaitTitle();
+  const humans = Object.keys(netState.humanPlayers||{}).length;
+  const cap = netState.capacity || 0;
+  const full = cap > 0 && humans >= cap;
+  // 「押していい」を光らせて伝える(自動開始の代わり)。相手が居ないうちと開始待ちの間は光らせない
+  const startBtn = document.getElementById('lobbyStartBtn');
+  if(startBtn) startBtn.classList.toggle('is-ready', !!(netState.isHost && humans >= 2 && !hostCountdownSnapshot));
+  if(hostCountdownSnapshot){ setLobbyStatusText('まもなく試合が始まります'); return; }   // 残り秒は #lobbyCountdown が出す
+  if(netState.isHost){
+    setLobbyStatusText(full
+      ? '全員そろいました！「スタート」を押すと始まります'
+      : (humans >= 2
+        ? '「スタート」を押せばいつでも始められます（空いた枠はBotが入ります）'
+        : '他のプレイヤーを待っています。「スタート」を押すとBotと一緒に始まります'), full || humans >= 2);
+  } else {
+    setLobbyStatusText(full
+      ? '満員になりました。ホストが始めるのを待っています…'
+      : 'ホストが試合を開始するのを待っています…（始める時機を決めるのはホストです）', false);
+  }
 }
 
 // ホストが「スタート」を押した後の3秒カウントダウンの状態。
@@ -4319,7 +4383,7 @@ function cancelHostCountdown(reason){
   if(hostCountdownTimer){ clearTimeout(hostCountdownTimer); hostCountdownTimer=null; }
   hostCountdownSnapshot = null;
   resetLobbyCountdownDisplay();
-  document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています。準備ができたら「スタート」を押してください';
+  updateLobbyWaitState();   // 状態の行を「待っています」へ戻す(人数の行は触らない)
   if(netState.roomId) window.__aramonCancelRoomStarting(netState.roomId);
   if(reason) pushToast(reason);
 }
@@ -4353,10 +4417,8 @@ function enterLobbyForRoom(){
     }
   });
 
-  if(netState.isHost){
-    document.getElementById('lobbySubText').textContent='他のプレイヤーを待っています。準備ができたら「スタート」を押してください';
-  } else {
-    document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
+  updateLobbyWaitState();   // 状態の行はホスト/ゲスト・満員かどうかから1か所で作る
+  if(!netState.isHost){
     window.__aramonWatchRoomMeta(netState.roomId, (meta)=>{
       if(!meta){
         if(!game.started && !matchBeginning) handleRoomDisbanded();
@@ -4368,7 +4430,7 @@ function enterLobbyForRoom(){
         startLobbyCountdownDisplay(meta.startAt);
       } else if(meta.status==='waiting'){
         resetLobbyCountdownDisplay();
-        document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
+        updateLobbyWaitState();
       } else if(meta.status==='playing' && !game.started && !matchBeginning){
         beginMultiplayerMatch();
       }
@@ -4402,19 +4464,41 @@ function currentEquippedSkinId(){
   if(!game.selectedElement || typeof getEquippedSkin!=='function') return null;
   return getEquippedSkin(game.selectedElement) || null;
 }
+/* 【F-8】通信できないときに勝手にソロ戦を始めない。
+   友達と遊ぶつもりで押したのに説明もなく1人用の試合が始まり、しかも戦績とRPが記録されていた。
+   共通の確認ダイアログで**必ず選ばせる**。「いいえ」ならロビーへ戻すだけ。 */
+function askPlaySoloInstead(text){
+  joinInProgress = false;                 // 押した側で立てたガードを一旦下ろす
+  updatePlayButtonsEnabled();
+  /* レイドの入口から来たときに30人バトロワを始めない(「1人で挑む」と同じ試合にする)。
+     どちらの試合になるかは netState.raid 1か所で決める(判定を増やさない)。 */
+  const soloRaid = !!netState.raid && (typeof raidStart==='function');
+  showConfirmDialog({
+    text, yes: soloRaid ? '1人で挑む' : '1人で遊ぶ', no:'やめる', danger:false,
+    onYes: ()=>{
+      joinInProgress = true;              // ソロ出撃と同じ扱いに戻す
+      if(soloRaid) raidStart(false, false); else startGame();
+    },
+  });
+}
 async function createRoomFlow(){
-  if(!window.__aramonCreateRoom){
-    pushToast('通信機能が利用できません。1人でプレイに切り替えます');
-    startGame();
-    return;
-  }
   /* 【必須】部屋を作る直前に、ロビーの選択から netState を作り直す。
      こうしないと前の試合で立った netState.raid が残り、通常マルチのつもりで
-     レイドの部屋ができる(逆も同様)。部屋のmodeは下で netState.raid から決まる。 */
+     レイドの部屋ができる(逆も同様)。部屋のmodeは下で netState.raid から決まる。
+     **通信できるかの判定より先に呼ぶ** ―― 下の確認ダイアログも netState.raid を見て
+     「1人で遊ぶ / 1人で挑む」を出し分けるため。 */
   syncNetStateToLobbyMode();
+  if(!window.__aramonCreateRoom){
+    askPlaySoloInstead(netState.raid
+      ? '通信できないため、仲間と挑む部屋を作れません。1人で挑みますか？'
+      : '通信できないため、みんなと対戦する部屋を作れません。1人で遊びますか？');
+    return;
+  }
   netState.cancelled = false;
   matchBeginning = false;
-  document.getElementById('lobbySubText').textContent='部屋を作成中…';
+  document.getElementById('lobbySubText').textContent='';   // 人数はまだ分からない
+  updateLobbyWaitState();                    // 見出しを今のモードに合わせる(中で1か所から書く)
+  setLobbyStatusText('部屋を作成中…');       // 状態だけこの場面の文言で上書きする
   document.getElementById('lobbyScreen').classList.remove('hidden');
   document.getElementById('lobbyPlayerList').innerHTML='';
   document.getElementById('lobbyCountdown').textContent='';
@@ -4425,13 +4509,17 @@ async function createRoomFlow(){
   const displayName = getDisplayNameFromInput();
   let result;
   try{
-    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br', netState.teamSize||1, netState.sub||null);
+    /* 最後の mapPick は部屋一覧に「どのマップか」を出すためだけの表示用。
+       'random' はそのまま渡し、一覧側で「ランダム」と出す(ここで実マップに確定させると
+       部屋を見た人には決まって見えるのに、実際は開始時のシードで引き直されるため嘘になる)。 */
+    result = await window.__aramonCreateRoom(netState.capacity, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId(), netState.raid?'raid':'br', netState.teamSize||1, netState.sub||null, roomMapPickLabelKey());
   }catch(err){
     console.error(err);
-    pushToast('部屋の作成に失敗しました。1人でプレイに切り替えます');
     document.getElementById('lobbyScreen').classList.add('hidden');
     document.getElementById('startScreen').classList.remove('hidden');
-    startGame();
+    askPlaySoloInstead(netState.raid
+      ? '部屋の作成に失敗しました。1人で挑みますか？'
+      : '部屋の作成に失敗しました。1人で遊びますか？');
     return;
   }
   if(netState.cancelled) return;
@@ -4450,55 +4538,203 @@ async function openFindRoomScreen(){
   syncNetStateToLobbyMode();
   document.getElementById('roomListScreen').classList.remove('hidden');
   // レイド経由(netState.raid)ならタイトルを変えて、どちらの部屋を探しているか分かるようにする
-  document.getElementById('roomListTitle').textContent = netState.raid ? '🐉 レイドの部屋を探す' : '部屋を探す';
+  // 探している部屋の種類が分かる見出しにする(待機画面の見出しと同じ考え方)
+  document.getElementById('roomListTitle').textContent =
+    netState.raid ? '🐉 レイドの部屋を探す' : (lobbyMode==='team' ? 'チーム戦の部屋を探す' : '部屋を探す');
+  startRoomListAutoRefresh();      // 開いている間だけ自動で更新する(閉じたら必ず止める)
   await refreshRoomList();
 }
-async function refreshRoomList(){
+
+/* =====================================================================
+   部屋一覧(F-4 / F-5 / F-9)
+
+   ・人口が少ないので「募集中の部屋はありません」を見て閉じた1秒後に部屋が立つ、が普通に起きる。
+     **開いている間だけ**5秒ごとに取り直す。閉じたら必ず止める(試合中に通信しない)。
+   ・自動更新はスクロール位置と押そうとしている行を飛ばさない。中身が同じなら描き直さない。
+   ・通信の材料は network.js の __aramonNet*(0件と通信失敗はここで見分ける)。
+     __aramonListOpenRooms は失敗しても [] を返すので、**rooms.length では区別できない。**
+===================================================================== */
+const ROOM_LIST_AUTO_REFRESH_MS = 5000;    // 自動更新の間隔
+const ROOM_LIST_TOUCH_HOLD_MS = 1500;      // 一覧に触れた直後は入れ替えない(押した先が別の部屋に変わらないように)
+const ROOM_AUTO_JOIN_TRIES = 3;            // 「空いてる部屋に入る」で試す部屋の数(満員なら次へ)
+let roomListAutoTimer = null;
+let roomListTouchAt = 0;                   // 最後に一覧へ触れた時刻
+let roomListSig = '';                      // いま出している一覧の中身。同じなら描き直さない
+let roomJoinBusy = false;                  // 参加中の二重タップガード
+                                           // (joinInProgress は一覧を開いた時点で既にtrueなので別に持つ)
+function roomListVisible(){
+  const el = document.getElementById('roomListScreen');
+  return !!el && !el.classList.contains('hidden');
+}
+function startRoomListAutoRefresh(){
+  if(roomListAutoTimer) return;
+  roomListAutoTimer = setInterval(()=>{
+    // 画面が閉じられていたら必ず止める(キャンセル以外の経路で隠れた場合の保険)
+    if(!roomListVisible()){ stopRoomListAutoRefresh(); return; }
+    if(roomJoinBusy) return;               // 参加の返事を待っている間は一覧を触らない
+    refreshRoomList({ auto:true });
+  }, ROOM_LIST_AUTO_REFRESH_MS);
+}
+function stopRoomListAutoRefresh(){
+  if(roomListAutoTimer){ clearInterval(roomListAutoTimer); roomListAutoTimer = null; }
+}
+/* 名前は本人が入力した文字列なので、そのままHTMLへ入れると `<` で行が壊れる。
+   ここは1行だけの用途なので、この場で最小限のエスケープをする。 */
+function roomListEscape(s){
+  return String(s==null ? '' : s).replace(/[&<>"]/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+// 一覧の代わりに1行のお知らせを出す(0件・通信失敗・通信機能なし)
+function showRoomListMessage(sig, body, sub, isError){
   const listEl = document.getElementById('roomListItems');
   const subEl = document.getElementById('roomListSubText');
-  subEl.textContent = '募集中の部屋を検索中…';
-  listEl.innerHTML = '<div class="rank-empty">検索中…</div>';
+  roomListSig = sig;
+  listEl.classList.remove('is-room-joining');
+  listEl.innerHTML = `<div class="rank-empty${isError?' is-net-error':''}">${body}</div>`;
+  subEl.textContent = sub;
+}
+async function refreshRoomList(opts){
+  const auto = !!(opts && opts.auto);
+  const listEl = document.getElementById('roomListItems');
+  const subEl = document.getElementById('roomListSubText');
+  if(!auto){
+    // 自動更新のときは「検索中…」で一覧を消さない(5秒ごとに画面がちらつく)
+    subEl.textContent = '募集中の部屋を検索中…';
+    listEl.innerHTML = '<div class="rank-empty">検索中…</div>';
+    roomListSig = '';
+  }
   if(!window.__aramonListOpenRooms){
-    listEl.innerHTML = '<div class="rank-empty">通信機能が利用できません</div>';
-    subEl.textContent = '';
+    showRoomListMessage('noNet', '通信できません。電波の届く場所でもう一度お試しください', '通信できません', true);
     return;
   }
   const rooms = await window.__aramonListOpenRooms(netState.raid?'raid':'br');
-  if(!rooms.length){
-    listEl.innerHTML = '<div class="rank-empty">現在募集中の部屋はありません</div>';
-    subEl.textContent = '部屋が見つかりませんでした';
+  if(!roomListVisible() || roomJoinBusy) return;   // 待っている間に閉じた/参加を始めていたら触らない
+  /* 【F-9】圏外でも「現在募集中の部屋はありません」と出ていた。
+     失敗した戻り値には印が付いているので、0件と区別して文言を変える。 */
+  const failed = (typeof window.__aramonNetFailed==='function') && window.__aramonNetFailed(rooms);
+  if(failed){
+    const online = (typeof window.__aramonNetOnline==='function') ? window.__aramonNetOnline() : true;
+    showRoomListMessage('fail:'+online,
+      online ? '通信に失敗しました。もう一度お試しください' : 'オフラインです。電波の届く場所でもう一度お試しください',
+      online ? '部屋を確認できませんでした' : 'オフライン', true);
     return;
   }
-  subEl.textContent = `${rooms.length}件の部屋が見つかりました`;
+  if(!rooms.length){
+    showRoomListMessage('empty', '現在募集中の部屋はありません<br>「部屋を作る」で待っていると誰かが来ます', '自動で探し続けています');
+    return;
+  }
+  subEl.textContent = `${rooms.length}件（自動更新中）`;
+  const sig = rooms.map(r=>`${r.roomId}:${r.count}/${r.capacity}`).join(',');
+  if(sig === roomListSig) return;          // 中身が同じなら描き直さない(押す直前に行が入れ替わらない)
+  // 触った直後の入れ替えは、押した先が別の部屋に変わる事故になるので見送る(次の回で入る)
+  if(auto && Date.now() - roomListTouchAt < ROOM_LIST_TOUCH_HOLD_MS) return;
+  const keepScroll = listEl.scrollTop;
+  roomListSig = sig;
   // 部屋の種類の表示。sub が無い部屋は旧クライアント(従来のマルチPvP/スクワッド)
+  /* 部屋一覧のマップ名。**対応表を手で持たない** ―― 名前は MAPS が正で、ここは引くだけ。
+     mapPick が無い部屋(旧方式・古いクライアントが立てた部屋)は何も出さない(嘘を出すより無いほうがよい) */
+  const roomMapLabel = (r)=>{
+    if(!r.mapPick) return '';
+    if(r.mapPick === 'random') return '・🎲 ランダム';
+    const m = (typeof MAPS!=='undefined') && MAPS[r.mapPick];
+    return m && m.label ? `・${m.label}` : '';
+  };
   const roomKindLabel = (r)=> r.sub==='br20' ? '・20チームバトロワ'
     : r.sub==='arena' ? '・バトルアリーナ'
     : r.teamSize>1 ? `・スクワッド(${r.teamSize}人1組)` : '';
+  /* 行は <button>。div のままだと読み上げでは押せることが伝わらず、
+     見た目でも「押せる物」に見えない(F-4)。 */
+  listEl.classList.remove('is-room-joining');
   listEl.innerHTML = rooms.map(r=>`
-    <div class="room-row" data-room-id="${r.roomId}" data-lobby-key="${r.lobbyKey}">
-      <div>
-        <div class="rm-host">${r.hostName}の部屋</div>
-        <div class="rm-sub">定員 ${r.capacity}人${roomKindLabel(r)}</div>
-      </div>
-      <div class="rm-count">${r.count} / ${r.capacity}</div>
-    </div>
+    <button type="button" class="room-row" data-room-id="${roomListEscape(r.roomId)}" data-lobby-key="${roomListEscape(r.lobbyKey)}">
+      <span class="rm-main">
+        <span class="rm-host">${roomListEscape(r.hostName)}の部屋</span>
+        <span class="rm-sub">定員 ${r.capacity}人${roomKindLabel(r)}${roomMapLabel(r)}</span>
+      </span>
+      <span class="rm-count">${r.count} / ${r.capacity}</span>
+    </button>
   `).join('');
+  listEl.scrollTop = keepScroll;           // 自動更新でスクロール位置を飛ばさない
   listEl.querySelectorAll('.room-row').forEach(row=>{
-    row.addEventListener('click', ()=>joinSelectedRoom(row.dataset.roomId, row.dataset.lobbyKey));
+    row.addEventListener('click', ()=>joinSelectedRoom(row.dataset.roomId, row.dataset.lobbyKey, row));
   });
 }
-async function joinSelectedRoom(roomId, lobbyKey){
+/* 押した行を「参加中…」にする(F-5)。
+   join は get→runTransaction→set の3往復で回線が悪いと数秒かかるのに、
+   これが無いと画面が一切変わらず、無反応だと思って何度も押すことになる。 */
+function markRoomRowJoining(rowEl, on){
+  const listEl = document.getElementById('roomListItems');
+  if(listEl) listEl.classList.toggle('is-room-joining', !!on);
+  if(!rowEl) return;
+  const subEl = rowEl.querySelector('.rm-sub');
+  if(on){
+    if(subEl && rowEl.dataset.subKeep == null){ rowEl.dataset.subKeep = subEl.textContent; subEl.textContent = '参加中…'; }
+    rowEl.classList.add('is-joining');
+  }else{
+    if(subEl && rowEl.dataset.subKeep != null){ subEl.textContent = rowEl.dataset.subKeep; delete rowEl.dataset.subKeep; }
+    rowEl.classList.remove('is-joining');
+  }
+}
+/* 空いている部屋へおまかせで入る(F-4)。**人数の多い部屋から順に**試す。
+   1人ずつ別の部屋に散らばると、どの部屋も人が集まらないまま終わるため。
+   その部屋が満員で弾かれたら次の部屋へ回す(理由を出して止まらない)。 */
+async function autoJoinOpenRoom(){
+  if(roomJoinBusy) return;
+  const blocked = netBlockedReason();
+  if(blocked){ pushToast(blocked); return; }
+  // 起動直後の猶予中は netBlockedReason() が null でも下回りがまだ無いことがある
+  if(!window.__aramonListOpenRooms){ pushToast('通信の準備ができていません。しばらくしてからお試しください'); return; }
+  const subEl = document.getElementById('roomListSubText');
+  subEl.textContent = '空いている部屋を探しています…';
+  stopRoomListAutoRefresh();
+  let rooms = [];
+  // 5秒前の一覧では満員になっている場合があるので、押したその場で取り直す
+  try{ rooms = await window.__aramonListOpenRooms(netState.raid?'raid':'br') || []; }catch(err){ rooms = []; }
+  if(!roomListVisible()) return;
+  if(typeof window.__aramonNetFailed==='function' && window.__aramonNetFailed(rooms)){
+    pushToast('通信に失敗しました。電波の良い場所でもう一度お試しください');
+    roomListSig = ''; await refreshRoomList(); startRoomListAutoRefresh();
+    return;
+  }
+  const cands = rooms.slice().sort((a,b)=> (b.count||0) - (a.count||0)).slice(0, ROOM_AUTO_JOIN_TRIES);
+  for(const r of cands){
+    const row = document.querySelector(`#roomListItems .room-row[data-room-id="${r.roomId}"]`);
+    if(await joinSelectedRoom(r.roomId, r.lobbyKey, row, { quiet:true })) return;   // 入れたら終わり
+    if(!roomListVisible()) return;
+  }
+  pushToast(cands.length ? '空いている部屋に入れませんでした。もう一度お試しください' : '空いている部屋が見つかりませんでした');
+  roomListSig = ''; await refreshRoomList(); startRoomListAutoRefresh();
+}
+/* 部屋に入る。**入れたら true**(「空いてる部屋に入る」が次の部屋を試すかの判断に使う)。
+   opts.quiet = 失敗しても自分では文言を出さない(呼んだ側がまとめて出す)。 */
+async function joinSelectedRoom(roomId, lobbyKey, rowEl, opts){
+  const quiet = !!(opts && opts.quiet);
+  if(roomJoinBusy) return false;           // 【F-5】ここだけ二重タップガードが無かった
   if(!window.__aramonJoinRoom){
-    pushToast('通信機能が利用できません');
-    return;
+    pushToast('通信できません。電波の届く場所でもう一度お試しください');
+    return false;
   }
+  roomJoinBusy = true;
+  stopRoomListAutoRefresh();               // 参加の返事を待っている間に一覧を入れ替えない
+  markRoomRowJoining(rowEl, true);
   const displayName = getDisplayNameFromInput();
-  const result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
-  if(!result.ok){
-    pushToast(result.reason||'参加に失敗しました');
-    await refreshRoomList();
-    return;
+  let result;
+  try{
+    result = await window.__aramonJoinRoom(roomId, lobbyKey, displayName, game.selectedElement, currentMastermonInfo(), currentEquippedSkinId());
+  }catch(err){
+    console.error(err);
+    result = { ok:false, reason:'参加に失敗しました(通信エラー)' };
   }
+  if(!result || !result.ok){
+    markRoomRowJoining(rowEl, false);
+    roomJoinBusy = false;
+    if(!quiet){
+      pushToast((result && result.reason) || '参加に失敗しました');
+      if(roomListVisible()){ roomListSig = ''; await refreshRoomList(); startRoomListAutoRefresh(); }
+    }
+    return false;
+  }
+  roomJoinBusy = false;
+  markRoomRowJoining(rowEl, false);
   netState.cancelled = false;
   matchBeginning = false;
   netState.roomId = result.roomId;
@@ -4517,15 +4753,18 @@ async function joinSelectedRoom(roomId, lobbyKey){
   netState.sub = result.sub || null;
   if(typeof updateLobbyPickLabels==='function') updateLobbyPickLabels();
 
+  stopRoomListAutoRefresh();   // 部屋に入ったので一覧の自動更新は止める
   document.getElementById('roomListScreen').classList.add('hidden');
-  document.getElementById('lobbySubText').textContent='ホストが試合を開始するのを待っています…';
-  enterLobbyForRoom();
+  document.getElementById('lobbySubText').textContent='';   // 人数は最初のスナップショットで入る
+  enterLobbyForRoom();   // 状態の行は中の updateLobbyWaitState() が書く
+  return true;
 }
 
 
 document.getElementById('lobbyStartBtn').addEventListener('click', async ()=>{
   if(hostCountdownSnapshot) return; // カウント中の多重押下防止
   hostCountdownSnapshot = Object.keys(netState.humanPlayers||{});
+  updateLobbyWaitState();   // 状態の行を「まもなく始まります」へ(押した合図)
   const startAt = Date.now() + 3000;
   netState.matchStarting = false;
   await window.__aramonSetRoomStarting(netState.roomId, startAt);
@@ -5513,6 +5752,35 @@ function rangeApplyMonsterChange(){
   updateCamera();
 }
 let joinInProgress = false;
+/* ===== 通信できるかどうかの見せ方(F-8 / F-9) =====
+   判定の材料は network.js の __aramonNetOnline() / __aramonNetReady() だけを見る
+   (同じ判定を2か所に書かない)。**ここでは disabled にしない** ――
+   disabled だと click が発火せず「押しても何も起きない」になるので、
+   見た目だけ沈ませ(is-net-blocked)、押されたら理由をトーストで返す。 */
+const NET_READY_GRACE_MS = 8000;   // 起動直後は firebase.js の読み込み待ち。すぐ「通信できない」と決めつけない
+const netUiGraceUntil = Date.now() + NET_READY_GRACE_MS;
+function netBlockedReason(){
+  const online = (typeof window.__aramonNetOnline==='function') ? window.__aramonNetOnline() : true;
+  if(!online) return 'オフラインです。電波の届く場所でもう一度お試しください';
+  const ready = (typeof window.__aramonNetReady==='function')
+    ? window.__aramonNetReady() : !!window.__aramonListOpenRooms;
+  if(!ready && Date.now() > netUiGraceUntil) return '通信の準備ができていません。しばらくしてからお試しください';
+  return null;
+}
+function refreshNetUiState(){
+  const reason = netBlockedReason();
+  for(const id of ['createRoomBtn','findRoomBtn']){
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('is-net-blocked', !!reason);
+  }
+  // ヘッダーの帯。通信できるときは消える(常設の項目ではないので名前の幅を取らない)
+  const chip = document.getElementById('netOfflineChip');
+  if(chip){
+    const online = (typeof window.__aramonNetOnline==='function') ? window.__aramonNetOnline() : true;
+    if(reason) chip.textContent = online ? '📡 通信できません' : '📡 オフライン';
+    chip.classList.toggle('hidden', !reason);
+  }
+}
 // モンスター(またはマスモン)が選択されていない状態では、ソロの「バトルに参加する」だけでなく
 // マルチプレイの「部屋を作る」「部屋を探す」もクリックできないようにする
 // (未選択のままマルチプレイに入れてしまう不具合の修正)
@@ -5523,6 +5791,7 @@ function updatePlayButtonsEnabled(){
   document.getElementById('createRoomBtn').disabled = !enabled;
   document.getElementById('findRoomBtn').disabled = !enabled;
   document.getElementById('pickMonsterNotice').classList.toggle('hidden', enabled);
+  refreshNetUiState();   // 通信の状態はここを通るたびに見直す(押す直前には必ず通る)
 }
 document.getElementById('joinBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
@@ -5550,6 +5819,9 @@ document.getElementById('rangeMonsterBtn').addEventListener('click', ()=>{
 document.getElementById('createRoomBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
   if(!game.selectedElement){ pushToast('先にモンスターを選択してください'); return; }
+  // 沈んでいる理由を必ず言う(disabledにすると何も起きず理由が分からない)
+  const blocked = netBlockedReason();
+  if(blocked){ pushToast(blocked); return; }
   joinInProgress = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
@@ -5558,16 +5830,36 @@ document.getElementById('createRoomBtn').addEventListener('click', ()=>{
 document.getElementById('findRoomBtn').addEventListener('click', ()=>{
   if(joinInProgress) return;
   if(!game.selectedElement){ pushToast('先にモンスターを選択してください'); return; }
+  const blocked = netBlockedReason();
+  if(blocked){ pushToast(blocked); return; }
   joinInProgress = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
   openFindRoomScreen();
 });
-document.getElementById('roomListRefreshBtn').addEventListener('click', ()=>{ refreshRoomList(); });
+document.getElementById('roomListRefreshBtn').addEventListener('click', ()=>{
+  roomListSig = '';                 // 手で押したときは必ず作り直す
+  refreshRoomList();
+  // 押した直後にまた自動更新が走らないよう、間隔を数え直す(止めてから掛け直す)
+  stopRoomListAutoRefresh();
+  startRoomListAutoRefresh();
+});
+document.getElementById('roomListAutoJoinBtn').addEventListener('click', ()=>{ autoJoinOpenRoom(); });
+/* 一覧に指が触れた時刻を覚えておく(自動更新が押す直前に行を入れ替えないため)。
+   行ごとではなく枠に1回だけ付ける(行は描き直すたびに作り直されるので付け直しが要らない)。 */
+(function(){
+  const listEl = document.getElementById('roomListItems');
+  if(!listEl) return;
+  const mark = ()=>{ roomListTouchAt = Date.now(); };
+  listEl.addEventListener('pointerdown', mark, { passive:true });
+  listEl.addEventListener('touchstart', mark, { passive:true });
+})();
 document.getElementById('roomListCancelBtn').addEventListener('click', ()=>{
   joinInProgress = false;
+  stopRoomListAutoRefresh();   // 【必須】閉じたら必ず止める(試合中に通信し続けない)
   document.getElementById('roomListScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
+  updatePlayButtonsEnabled();
 });
 
 /* =====================================================================
@@ -5597,6 +5889,8 @@ function matchFinishMonsterImgTag(){
 }
 function showResult(isWin, placement){
   if(game.over || matchFinishFreezeActive()) return;   // 二重起動を防ぐ
+  // 倒れたときの「観戦する / リザルトへ」を開いたままなら閉じる(演出とリザルトの上に残さない)
+  if(typeof closeDownChoiceIfOpen==='function') closeDownChoiceIfOpen();
   const ov = document.getElementById('matchFinishOverlay');
   const host = document.getElementById('matchFinishMonster');
   const label = document.getElementById('matchFinishText');
@@ -5746,9 +6040,21 @@ function setResultButtonsForRaid(isRaid){
   set('viewRankingBtn', isRaid);
   set('viewMyStatsBtn', isRaid);
   set('viewRaidRankBtn', !isRaid);
+  // 「⟳ もう一度」は同じ条件でもう1試合できるときだけ(判定は canReplayAgain 1か所)
+  set('replayAgainBtn', !canReplayAgain());
+}
+/* もう1試合できるか。
+   ・レイド … 挑戦の入口(期間・条件・デモ)を必ず通したいのでここからは始めない
+   ・マルチ … 部屋に残っていること(トップ画面へ を押すと部屋から抜けるので出せなくなる)
+   ・ソロ … 参戦するモンスターが決まっていればいつでも */
+function canReplayAgain(){
+  if(game.raid || game.trainingRange) return false;
+  if(netState.mode==='multi') return !!netState.roomId;
+  return !!game.selectedElement;
 }
 function showResultNow(isWin, placement){
   if(game.over) return;
+  if(typeof closeDownChoiceIfOpen==='function') closeDownChoiceIfOpen();  // 開いたままの選択肢を閉じる
   game.over=true;
   game.started=false;
   joinInProgress = false;
@@ -7458,9 +7764,11 @@ function buildMastermonMenuHtml(mm){
           <span class="mm-menu-btn-desc">${m.desc}</span>
         </span>
       </button>`);
-  /* 転生ボタンはレベル100に到達したマスモンにだけ出す(着せ替えの下)。
+  /* 転生ボタンはレベル100に到達したマスモンにだけ出す。
      上限まで回した個体は**ボタンを消さずに到達を出す**(覚醒ボタンと同じ考え方。
-     黙って消えると「押せたはずのものが無くなった」と読めてしまう)。 */
+     黙って消えると「押せたはずのものが無くなった」と読めてしまう)。
+     いま転生できるときだけ、下の「上へ回す」で先頭へ移す。 */
+  let readyRebirthHtml = null;
   if(rebirthMaxedOut(mm)){
     items.push(`
       <button class="mm-menu-btn mm-menu-btn-rebirth mm-menu-btn-rebirth-max" data-action="rebirth-max">
@@ -7471,14 +7779,16 @@ function buildMastermonMenuHtml(mm){
         </span>
       </button>`);
   } else if(canRebirthMastermon(mm)){
-    items.push(`
-      <button class="mm-menu-btn mm-menu-btn-rebirth" data-action="rebirth">
+    /* いま転生できる個体のボタンは**一覧の先頭へ回す**(下に埋もれて見つけられない、
+       と指摘があった。覚醒ボタンと同じ扱い)。実際に足すのは下の「上へ回す」ところ。 */
+    readyRebirthHtml = `
+      <button class="mm-menu-btn mm-menu-btn-rebirth is-ready" data-action="rebirth">
         <span class="mm-menu-btn-icon">✦</span>
         <span class="mm-menu-btn-text">
-          <span class="mm-menu-btn-label">転生(あと${REBIRTH_MAX-mastermonRebirthCount(mm)}回)</span>
-          <span class="mm-menu-btn-desc">レベル1に戻る代わりに上限・基礎値・適正が上がる(取り消せません)</span>
+          <span class="mm-menu-btn-label">転生<span class="mm-menu-ready">できます！</span></span>
+          <span class="mm-menu-btn-desc">あと${REBIRTH_MAX-mastermonRebirthCount(mm)}回 ／ レベル1に戻る代わりに上限・基礎値・適正が上がる(取り消せません)</span>
         </span>
-      </button>`);
+      </button>`;
   }
   /* 秘伝の書。**持っているときだけ出す**(交換所で手に入れる前から並べても押せないだけ)。
      すでに付いていれば今の強化をボタンに出して、**書を1冊使って付け替えることになる**と分かるようにする。 */
@@ -7498,9 +7808,16 @@ function buildMastermonMenuHtml(mm){
         </span>
       </button>`);
   }
-  /* 覚醒ボタン。**条件を満たしていれば一番上**に出す(下に埋もれて見つけられない、
-     と指摘があった・2026-08-11)。まだ条件が足りないうちは今までどおり一番下で、
-     「あと何が要るか」の目標として置いておく。 */
+  /* 【いま実行できるものを上へ】転生・覚醒は「条件が整った瞬間」が来ても下に埋もれて
+     気づけない。**できるようになった項目だけ**先頭へ回す(条件が足りないうちは
+     今までどおりの並びのまま ―― 順番がむやみに動くと迷子になる)。
+     判定は既にある canRebirthMastermon() / awakenReadyFor() をそのまま使う。
+
+     【両方できるときは 覚醒 → 転生 の順】転生はステータスを
+     REBIRTH_STAT_KEEP_RATIO(1/3)まで落とすので、先に転生すると
+     覚醒の条件(6ステータスすべて AWAKEN_STAT_MIN 以上)が崩れて遠のく。
+     取り返しがつかない順序なので、覚醒を必ず上に置く。 */
+  if(readyRebirthHtml) items.unshift(readyRebirthHtml);
   const aw = awakenMenuBtnHtml(mm);
   if(aw) (awakenReadyFor(mm) ? items.unshift(aw) : items.push(aw));
   return `<div class="mm-menu-list">${items.join('')}</div>`;
@@ -9276,12 +9593,109 @@ function onPlayerDown(){
     startSpectating('倒れました。残っている仲間を観戦します');
     return;
   }
-  if(netState.mode==='multi' && netState.isHost){
-    startSpectating('あなたは敗退しました。生き残っているプレイヤーを観戦します');
-    return;
+  /* 通常マルチで倒れたとき。**ホストとゲストで扱いを揃える。**
+     以前はホストだけが問答無用で観戦へ入り(抜ける手段なし)、ゲストは問答無用で
+     リザルトへ落ちていた。どちらを見たいかは本人にしか決められないので選ばせる。
+     ・ホスト … 権威(authStateの配信)を続けるために観戦を既定にする。抜ける道は観戦バーの「🚪 リザルトへ」。
+     ・ゲスト … 既定はこれまでどおりリザルト。観戦したい人のために選択肢を出す。 */
+  if(netState.mode==='multi'){
+    if(netState.isHost){
+      startSpectating('あなたは敗退しました。生き残っているプレイヤーを観戦します');
+      return;
+    }
+    if(typeof spectateCandidates==='function' && spectateCandidates().length){
+      askGuestSpectateOrResult();
+      return;
+    }
   }
-  showResult(false, player.placement||entities.filter(e=>e.alive).length+1);
+  showResult(false, downedPlacement());
 }
+/* 倒れた/抜けた時点の順位。生きたまま抜けるときは「今倒れたのと同じ順位」になる。
+   計算を1か所にしておかないと、抜ける経路ごとに順位の出し方がずれる。 */
+function downedPlacement(){
+  const alive = entities.filter(e=>e.alive).length;
+  if(player && player.placement) return player.placement;
+  return (player && player.alive) ? Math.max(1, alive) : alive + 1;
+}
+/* ゲストが倒れたときの「観戦する / リザルトへ」。
+   **枠は共通の確認ダイアログ(#mastermonDeleteConfirm)を使い回す** ―― 新しいオーバーレイを
+   作るとスクロールロック除外の3か所(render.js/input.js)への追加が要るため。 */
+let downChoiceOpen = false;
+function askGuestSpectateOrResult(){
+  const placement = downedPlacement();
+  downChoiceOpen = true;
+  showConfirmDialog({
+    text: '倒れました。試合の続きを観戦しますか？（観戦中でもいつでもリザルトへ進めます）',
+    yes: '👁 観戦する', no: '🚪 リザルトへ', danger: false,
+    onYes: ()=>{ downChoiceOpen = false; startSpectating('観戦モードに入りました'); },
+    onNo:  ()=>{ downChoiceOpen = false; showResult(false, placement); },
+  });
+}
+/* 試合が先に終わったら、開いたままの選択肢を閉じる(リザルトの上に残さない)。
+   自分が出したときだけ閉じる ―― 他の用事の確認ダイアログを巻き添えにしないため。 */
+function closeDownChoiceIfOpen(){
+  if(!downChoiceOpen) return;
+  downChoiceOpen = false;
+  closeConfirmDialog();
+}
+/* =====================================================================
+   試合を途中で抜ける(HUDの☰ / 観戦バーの「🚪 リザルトへ」)
+
+   一度始めたら死ぬまで抜けられず、着信や通知が来たらタブを閉じるしかなかった
+   (閉じるとリザルトも報酬も段位も失われる)。
+   **新しい終了経路は作らない。** 必ず既存の showResult()(通常戦)/ finishRaid()(レイド)を
+   通すので、戦績・報酬・ランキング送信・マスモンEXPは普通に終えたときと1つも変わらない。
+===================================================================== */
+function canExitMatchNow(){
+  return !!(game.started && !game.over && !game.trainingRange && player);
+}
+/* 自分が抜けると他人の試合まで終わってしまう立場か。
+   ホストは authState を配信している当人で、network.js の loop は
+   `game.started && !game.over` の間しか配信しない(=リザルトへ進んだ時点で権威が消える)。 */
+function exitEndsMatchForOthers(){
+  if(netState.mode!=='multi' || !netState.isHost) return false;
+  return Object.keys(netState.humanPlayers||{}).filter(id=>id!==netState.myPlayerId).length > 0;
+}
+function requestMatchExit(){
+  if(!canExitMatchNow()) return;
+  const warnHost = exitEndsMatchForOthers();
+  showConfirmDialog({
+    text: warnHost
+      ? 'あなたはホストです。抜けると参加中のプレイヤー全員の試合も終わります。ここまでの戦績と報酬は記録されます。'
+      : 'この試合を抜けてリザルトへ進みます。ここまでの戦績と報酬はそのまま記録されます。',
+    yes: '🚪 リザルトへ抜ける', no: '続ける', danger: warnHost,
+    onYes: doMatchExit,
+  });
+}
+function doMatchExit(){
+  if(!canExitMatchNow()) return;
+  // レイドはリザルトの作り方が別(与ダメの記録もここが持つ)。ホストが落ちたときにゲストが
+  // 通るのと同じ finishRaid(false) をそのまま使う
+  if(game.raid){ if(typeof finishRaid==='function') finishRaid(false); return; }
+  if(exitEndsMatchForOthers()){
+    /* ホストが抜けると配信が止まる。何も言わずに止めるとゲストは
+       HOST_SILENCE_TIMEOUT(5秒)の沈黙のあと「ホストとの接続が切れました」で終わる。
+       **既にある matchEnd イベント**を先に流して、全員がその場で自分のリザルトへ進めるようにする
+       (勝者なしなので winnerNetId は null。network.js の handleRoomEvent がそのまま扱う)。
+       直前に authState を1回配信するのは combat.js の決着処理と同じ理由で、
+       最後のHP・キル数を取りこぼさないため。 */
+    try{
+      if(window.__aramonPublishAuthState && typeof buildAuthStatePayload==='function'){
+        window.__aramonPublishAuthState(netState.roomId, buildAuthStatePayload()).catch(()=>{});
+      }
+      if(window.__aramonPushEvent){
+        window.__aramonPushEvent(netState.roomId, { kind:'matchEnd', winnerNetId:null, winnerName:null, ts:Date.now() });
+      }
+    }catch(err){}
+  }
+  showResult(false, downedPlacement());
+}
+/* HUDの☰。FIRE/DASHと同じく pointerdown で完結させる
+   (click にすると、素早く2回叩いたとき input.js の touchend が2回目を握り潰す)。 */
+document.getElementById('hudMenuBtn').addEventListener('pointerdown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  requestMatchExit();
+});
 /* 観戦を始める(自分が倒れて試合が続く場面)。視点を味方へ移して観戦バーを出すところまで。
    通常マルチのホスト敗退時とレイドで共用する。残っている味方が居なければ何もしない
    (レイドなら全滅として checkRaidEnd() が試合を終わらせる)。 */
@@ -9301,22 +9715,92 @@ function updateSpectateBar(){
   if(!bar) return;
   const spectating = (typeof spectatingNow==='function' ? spectatingNow() : false)
     && typeof spectateTargetId!=='undefined' && spectateTargetId!=null;
+  let shown = false;
   if(spectating){
     const t = getEntity(spectateTargetId);
     if(t){
       const nameEl = document.getElementById('spectateName');
       if(nameEl) nameEl.textContent = displayNameFor(t);
       bar.classList.remove('hidden');
-      return;
+      shown = true;
     }
   }
-  bar.classList.add('hidden');
+  if(!shown) bar.classList.add('hidden');
 }
 document.getElementById('spectateNextBtn').addEventListener('click', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(typeof spectateNext==='function') spectateNext();
 });
+/* 観戦をやめてリザルトへ。ホストは他の人の試合も終わるので☰と同じ確認を出す
+   (判断も文言も requestMatchExit 1か所)。 */
+document.getElementById('spectateExitBtn').addEventListener('click', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  requestMatchExit();
+});
 function onPlayerWin(){ showResult(true, 1); }
+
+/* =====================================================================
+   「⟳ もう一度」(リザルト → すぐ次の試合)
+
+   連戦するのに「トップ画面へ」→「バトル開始」の2タップが要り、マルチでは
+   replayBtn が部屋からも抜けるので、4人で遊ぶたびに部屋の作り直し・探し直しになっていた。
+   ・ソロ … そのまま startGame()。入口の後始末(レイド/チーム/アリーナ/トレカ)は全部その中にある
+   ・マルチ … **部屋に残ったまま**待機画面へ戻る。ホストが「スタート」を押せば次の試合が始まる
+===================================================================== */
+document.getElementById('replayAgainBtn').addEventListener('click', async ()=>{
+  if(!canReplayAgain()) return;
+  const btn = document.getElementById('replayAgainBtn');
+  btn.disabled = true;   // 部屋の後始末に await が入るので、その間の二度押しを止める
+  try{
+    document.getElementById('resultScreen').classList.add('hidden');
+    document.getElementById('killFeed').innerHTML='';
+    game.started = false;
+    joinInProgress = false;
+    hostSpectating = false;
+    if(typeof spectateTargetId!=='undefined') spectateTargetId = null;
+    updateSpectateBar();
+    if(netState.mode!=='multi'){
+      // ソロ: 直前と同じ設定でもう1試合(game.over は startGame が false に戻す)
+      renderSelectorCards();
+      startGame();
+      return;
+    }
+    /* マルチ: 部屋はそのまま。**ここで syncNetStateToLobbyMode() を呼ばない** ――
+       あれはロビーの選択から netState を作り直す関数で、今いる部屋の定員・モードを
+       自分のロビー設定で上書きしてしまう(部屋とゲストで食い違う)。
+       部屋を抜けるのは今までどおり「トップ画面へ」(replayBtn)の役目。 */
+    netState.matchStarting = false;
+    matchBeginning = false;
+    if(hostCountdownTimer){ clearTimeout(hostCountdownTimer); hostCountdownTimer = null; }
+    hostCountdownSnapshot = null;
+    showRematchLobby();
+    if(netState.isHost && netState.roomId){
+      /* 【必須】部屋metaのシードを消してから「待機」へ戻す。
+         ゲストの __aramonWaitForRoomSeed は「seed と fixedPlayers が載っていれば即座に解決」なので、
+         前の試合のシードが残ったままだと、次の試合でゲストだけ**古いシードで世界を組み立てる**
+         (地形もスポーンもホストと食い違う)。__aramonSetRoomSeed に null を渡すと
+         その2つが消えるので、新しいシードが載るまでゲストは待てるようになる。 */
+      try{ await window.__aramonSetRoomSeed(netState.roomId, null, null, null, null, null, netState.teamSize||1, netState.sub||null); }catch(err){}
+      try{ await window.__aramonSetRoomStatus(netState.roomId, 'waiting'); }catch(err){}
+    }
+  } finally {
+    btn.disabled = false;
+  }
+});
+/* 試合のあと、同じ部屋のまま待機画面へ戻す。
+   **enterLobbyForRoom() は呼ばない** ―― あれは部屋の購読(players/meta)を登録する関数で、
+   2回目を呼ぶと同じ購読が二重に付く(部屋を出るまで外れない)。購読は試合中も生きているので、
+   ここは画面を出して表示を作り直すだけでよい。 */
+function showRematchLobby(){
+  document.getElementById('startScreen').classList.remove('hidden');   // 待機パネルは背後にロビーが要る
+  document.getElementById('lobbyScreen').classList.remove('hidden');
+  document.getElementById('roomListScreen').classList.add('hidden');
+  resetLobbyCountdownDisplay();
+  showLobbyButtonsForRole();
+  renderLobbyPlayerList();       // 中で人数の行と状態の行を作り直す
+  updatePlayButtonsEnabled();
+  renderSelectorCards();         // 試合でマスモンのEXP等が動いているので作り直す
+}
 
 document.getElementById('replayBtn').addEventListener('click', async ()=>{
   // レイドは専用の後始末(game.raidを下ろしてロビーへ戻す)
@@ -10755,6 +11239,15 @@ function initTitleScreen(){
   restoreLobbyPrefs();
   buildHowtoLists();
   shareBindUi();     // Xへのシェア(常設ボタンの結線。中身は開いたときに作る)
+  /* 通信の状態の購読(F-8/F-9)。**window の load を待つ** ――
+     __aramonNetWatch を作るのは network.js で、読み込み順ではこのファイルより後になる。
+     ここで直接呼ぶとまだ生えていない(登録できずオフライン表示が出ない)。 */
+  window.addEventListener('load', ()=>{
+    if(typeof window.__aramonNetWatch === 'function') window.__aramonNetWatch(()=>refreshNetUiState());
+    else refreshNetUiState();
+    // firebase.js の読み込み待ちの猶予が明けた時点でもう一度見る(読めなかった場合はここで沈む)
+    setTimeout(refreshNetUiState, NET_READY_GRACE_MS + 200);
+  });
   sync();
   initTitleScreen();
 }

@@ -342,7 +342,7 @@
   // teamSize はチーム戦の1チーム人数(1=個人戦)。capacity と同様に素通しで部屋metaへ載せるだけ
   // sub はチーム戦のサブモード('br20'=20チームバトロワ / 'arena'=バトルアリーナ / null=従来型)。
   // これも素通し。旧クライアントの部屋には無いので、読む側は v.sub||null で扱う。
-  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub){
+  window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub, mapPick){
     /* 失敗は**従来どおり例外のまま**投げる(ui.js側が try/catch している)。
        ここでは成否を記録するだけにして、呼び出し側の分岐を変えない。 */
     try{
@@ -357,10 +357,14 @@
     const roomId = genId();
     const roomRef = ref(fbDb, `rooms/${roomId}`);
     await set(roomRef, {
-      meta: { hostId: myPlayerId, capacity, teamSize: roomTeamSize, sub: roomSub, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName },
+      meta: { hostId: myPlayerId, capacity, teamSize: roomTeamSize, sub: roomSub, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName, mapPick: mapPick||null },
       players: { [myPlayerId]: { name: playerName, element: elementKey, ...mmEntryFields(mmInfo), skin: skinId||null, joinedAt: Date.now(), isHost:true, input:{} } },
     });
-    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, teamSize: roomTeamSize, sub: roomSub, count:1, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName });
+    /* mapPick は部屋一覧に「どのマップか」を出すためだけの表示用。**|| null が必須** ――
+       RTDBは undefined が1つでも混ざると書き込みを丸ごと拒否する。
+       実際に使うマップはホストが「スタート」を押したときのシード(__aramonSetRoomSeed)が正で、
+       ここの値は選び直されても追いかけない(表示が少し古くなるだけで試合には影響しない)。 */
+    const lobbyEntryRef = push(ref(fbDb,'lobby'), { roomId, capacity, teamSize: roomTeamSize, sub: roomSub, count:1, status:'waiting', mode:roomMode, createdAt: Date.now(), hostName: playerName, mapPick: mapPick||null });
     onDisconnect(ref(fbDb, `rooms/${roomId}/players/${myPlayerId}`)).remove();
     onDisconnect(lobbyEntryRef).remove();
     /* ホストが落ちたら meta も消す。待機中のゲストの解散検知は「meta が消えたこと」だけを
@@ -385,7 +389,7 @@
       snap.forEach(ch=>{
         const v = ch.val();
         if(v && v.status==='waiting' && (v.mode||'br')===wantMode){
-          cands.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, teamSize:(v.teamSize||1), sub:(v.sub||null), count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br') });
+          cands.push({ lobbyKey: ch.key, roomId: v.roomId, capacity: v.capacity, teamSize:(v.teamSize||1), sub:(v.sub||null), count: v.count, hostName: v.hostName||'名無しのモンスター', createdAt: v.createdAt||0, mode:(v.mode||'br'), mapPick:(v.mapPick||null) });
         }
       });
       /* 人数は count(予約数)ではなく players の実数で出す。count は切断で戻り損ねるので、
