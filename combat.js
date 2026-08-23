@@ -832,8 +832,10 @@ function updateBotAI(b, dt){
   if(b.attackTargetId){ const t=getEntity(b.attackTargetId); if(!t||!t.alive) b.attackTargetId=null; }
   b.aiTimer -= dt;
   if(b.aiTimer>0) return;
-  // チュートリアルの練習試合だけ反応を鈍くする(通常の試合は倍率1のまま)
-  b.aiTimer = rand(0.22,0.4) * (game.tutorialMatch ? TUTORIAL_MATCH.botThinkMult : 1);
+  /* 反応の鈍さ。チュートリアルの練習試合と難易度「やさしい」の**両方を1つの式**で通す
+     (中身は data.js の matchBotThinkMult。手加減が強いほうだけを採る)。
+     ふつうの試合・マルチ・レイドでは倍率1のままで、従来と1つも変わらない。 */
+  b.aiTimer = rand(0.22,0.4) * matchBotThinkMult();
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
   if(b.isRaidBoss){ updateRaidBossAI(b); return; }
 

@@ -4645,6 +4645,92 @@ const TUTORIAL_MATCH = {
 const TUTORIAL_REWARD = { dia: 60, items: [{ key:'freeTrainTicket', n: 3 }] };
 
 /* =====================================================================
+   難易度「やさしい / ふつう」(D-6)
+
+   チュートリアルを卒業した次の試合からいきなり等倍になる段差を埋めるための、
+   プレイヤーが自分で選ぶ手加減。**この表に1行足せば難易度が増える。**
+   呼ぶ側は id で分岐せず、下の関数だけを見ること。
+
+   ・**数字の正は TUTORIAL_MATCH**(発注者決定「練習試合の係数を使い回す」)。
+     ここは読むだけにして二重に持たない。**調整するときは TUTORIAL_MATCH のほうを直す。**
+   ・**やさしいで変えるのは bot の強さと反応の2つだけ。**
+     TUTORIAL_MATCH には体数(botCount)・マップの広さ(mapScale)・安置の速さ(zoneTimeMult)も
+     あるが、あれは「チュートリアルを2〜3分で終わらせる」ための時間短縮であって難易度ではない。
+     やさしいでも30人・全面マップ・通常の安置で遊ぶ(そこまで変えると別のゲームになる)。
+   ・**記録するかどうか(ranked)もこの表の欄にしてある。** 呼ぶ側が
+     `matchDifficultyId()==='easy'` と各所に書くのを防ぐため。
+     ranked:false ではランキング送信と段位RPを止めるが、**ダイヤ・EXPは従来どおり入る**
+     (発注者決定 2026-08-22)。
+   ===================================================================== */
+const MATCH_DIFFICULTIES = [
+  { id:'normal', label:'ふつう',   icon:'⚔️', ranked:true,
+    note:'記録に残る本番。ランキングと段位RPが動く',
+    botPowerMult: 1, botThinkMult: 1 },
+  { id:'easy',   label:'やさしい', icon:'🌱', ranked:false,
+    note:'敵が弱く、動き出しも遅い。ダイヤと経験値は入るが、ランキングと段位RPには残らない',
+    botPowerMult: TUTORIAL_MATCH.botPowerMult,   // 正は TUTORIAL_MATCH(ここは読むだけ)
+    botThinkMult: TUTORIAL_MATCH.botThinkMult }, // 同上
+];
+const MATCH_DIFFICULTY_DEFAULT = 'normal';                   // 既定は今までどおりの試合
+const MATCH_DIFFICULTY_KEY = 'aramon_match_difficulty_v1';   // 端末ごとの選択(localStorage)
+
+/* いま選んでいる難易度。**書くのは setMatchDifficulty() だけ**(localStorage を触るのもそこだけ)。
+   読み出しは最初に要ったときの1回で、以降はこの変数が正。 */
+let matchDifficultyCur = null;
+function matchDifficultyById(id){ return MATCH_DIFFICULTIES.find(d=> d.id === id) || null; }
+// いま選んでいる難易度の1行(必ず何かを返す。壊れた保存値は既定へ丸める)
+function matchDifficulty(){
+  if(!matchDifficultyCur){
+    let saved = null;
+    try{ saved = localStorage.getItem(MATCH_DIFFICULTY_KEY); }catch(err){}
+    matchDifficultyCur = matchDifficultyById(saved)
+                      || matchDifficultyById(MATCH_DIFFICULTY_DEFAULT) || MATCH_DIFFICULTIES[0];
+  }
+  return matchDifficultyCur;
+}
+function matchDifficultyId(){ return matchDifficulty().id; }
+// 難易度を変える唯一の入口。表に無い id は無視する(選択を壊さない)
+function setMatchDifficulty(id){
+  const d = matchDifficultyById(id);
+  if(!d) return matchDifficulty();
+  matchDifficultyCur = d;
+  try{ localStorage.setItem(MATCH_DIFFICULTY_KEY, d.id); }catch(err){}
+  return d;
+}
+
+/* 難易度が効く試合か。**「シングル・30人バトロワ」(部屋を使わないソロの個人戦)だけ**に効かせる。
+   マルチ・チーム戦・レイド・アリーナ・射撃訓練場まで効かせると、他の人と同じ部屋の試合や
+   勝敗の無い場所にまで手加減が漏れる。**この判定はここ1か所**(呼ぶ側に書き足さない)。 */
+function matchDifficultyApplies(){
+  if(typeof game==='undefined' || !game) return false;
+  if(game.trainingRange || game.raid || game.arena) return false;
+  if(typeof isTeamMatch==='function' && isTeamMatch()) return false;
+  if(typeof netState!=='undefined' && netState && netState.mode==='multi') return false;
+  return true;
+}
+/* この試合の成績をランキング・段位RPへ登録してよいか。**可否はこの1関数で決める。**
+   難易度が効かない試合(マルチ・レイド等)は今までどおり常に true。 */
+function matchDifficultyRanked(){
+  return !matchDifficultyApplies() || !!matchDifficulty().ranked;
+}
+
+/* ===== 手加減の倍率(チュートリアルの練習試合と難易度をまとめた1つの入口) =====
+   両方が効く場面(練習試合を「やさしい」のまま遊ぶ)では**掛け算にせず、手加減が強いほうだけ**を採る。
+   掛けると 0.6×0.6=0.36 / 2.2×2.2=4.84 と、どちらの設計値でもない別物になるうえ、
+   **練習試合の手応えが難易度の選択で変わってしまう**(練習試合は1ミリも変えない、が条件)。
+   やさしいの係数は TUTORIAL_MATCH と同じ値なので、練習試合は選択に関係なく従来どおり。 */
+function matchBotPowerMult(){   // bot のステータス合計の上限に掛ける(小さいほど弱い)
+  const tut = (typeof game!=='undefined' && game && game.tutorialMatch) ? TUTORIAL_MATCH.botPowerMult : 1;
+  const dif = matchDifficultyApplies() ? matchDifficulty().botPowerMult : 1;
+  return Math.min(tut, dif);
+}
+function matchBotThinkMult(){   // bot が考え直す間隔に掛ける(大きいほど反応が鈍い)
+  const tut = (typeof game!=='undefined' && game && game.tutorialMatch) ? TUTORIAL_MATCH.botThinkMult : 1;
+  const dif = matchDifficultyApplies() ? matchDifficulty().botThinkMult : 1;
+  return Math.max(tut, dif);
+}
+
+/* =====================================================================
    はじめてその画面を開いたときの1枚カード(D-2)
 
    チュートリアル本編に全部の遊びを詰めると長くなりすぎてやめてしまうので、
