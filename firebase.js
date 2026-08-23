@@ -346,10 +346,10 @@
     /* 失敗は**従来どおり例外のまま**投げる(ui.js側が try/catch している)。
        ここでは成否を記録するだけにして、呼び出し側の分岐を変えない。 */
     try{
-      return await createRoomInner(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub);
+      return await createRoomInner(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub, mapPick);
     }catch(err){ netMark('createRoom', false, err); throw err; }
   };
-  async function createRoomInner(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub){
+  async function createRoomInner(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub, mapPick){
     await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す(取りっぱなしを作らない)
     const roomMode = mode==='raid' ? 'raid' : 'br';
     const roomTeamSize = (teamSize|0) > 1 ? (teamSize|0) : 1;
