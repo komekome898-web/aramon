@@ -1394,6 +1394,10 @@ function pushToast(text, opts){
     return;
   }
   while(toastRows.length >= TOAST_MAX_ROWS) removeToastRow(toastRows[0]);  // あふれたら古い行から落とす
+  /* 【試合中は下地を敷かない】戦闘中の黒帯は視界を塞ぐので、文字だけを縁取りで浮かせる
+     (見え方はstyle.cssの #toast.in-match 側が持つ)。#toastは#hudの外にあり、#hudは
+     隠れないのでCSSだけでは試合中か判別できない。出す瞬間のここ1か所で印を付ける。 */
+  el.classList.toggle('in-match', !!(typeof game!=='undefined' && game && game.started && !game.over));
   const div = document.createElement('div');
   div.className = 'toast-line';
   div.textContent = msg;
