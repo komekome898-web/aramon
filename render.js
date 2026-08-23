@@ -7180,7 +7180,18 @@ function drawPingMarkers(){
      window.__aramonSetNetHud(true/false) で切り替え、選択はlocalStorageに残す。
 ===================================================================== */
 const NET_CHIP_TOP = 140;      // ミニマップ(top14 + 高さ120)のすぐ下
-const NET_CHIP_RIGHT = 14;     // 右端の余白(#topRightと同じ)
+/* 右端はキルフィードが使っているので、その左隣へ置く。
+   **キルフィードの幅は style.css が正**(#killFeed の width:240px / narrow は 170px)で、
+   ここは読むだけ。**style.css 側を変えたらこの2つの数字も一緒に直すこと。**
+   要素から実測しない理由: 毎フレーム描くので getBoundingClientRect を呼ぶとレイアウトを
+   同期で走らせてしまう(このチップのためだけに払う代償としては高い)。 */
+const NET_CHIP_KILLFEED_W = 240;        // style.css の #killFeed の width
+const NET_CHIP_KILLFEED_W_NARROW = 170; // style.css の html.narrow-screen #killFeed の width
+const NET_CHIP_GAP = 12;                // キルフィードとのすき間
+function netChipRight(){
+  const narrow = document.documentElement.classList.contains('narrow-screen');
+  return 14 + (narrow ? NET_CHIP_KILLFEED_W_NARROW : NET_CHIP_KILLFEED_W) + NET_CHIP_GAP;
+}
 const NET_CHIP_PAD = 8;
 const NET_RTT_GOOD_MS = 80;    // これ以下は良好(緑)
 const NET_RTT_FAIR_MS = 180;   // これ以下は普通(琥珀)。超えたら赤
@@ -7223,7 +7234,7 @@ function drawNetStatusChip(){
   ctx.font = "11px 'Share Tech Mono', monospace";
   const w = Math.max(ctx.measureText(l1).width, l2 ? ctx.measureText(l2).width : 0) + NET_CHIP_PAD*2;
   const h = (l2 ? 30 : 20);
-  const x0 = viewW - safeInsetPx('--safe-r') - NET_CHIP_RIGHT - w;
+  const x0 = viewW - safeInsetPx('--safe-r') - netChipRight() - w;
   const y0 = NET_CHIP_TOP + safeInsetPx('--safe-t');
   ctx.beginPath();
   const r = 5;

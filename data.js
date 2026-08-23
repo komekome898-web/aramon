@@ -3166,6 +3166,8 @@ const HUD_DRAGGABLE = {
      重なりを直すため#hudの直下へ出した。**ここに足さないと動かせなくなる**うえ、
      編集中は暗幕の下に潜って見えなくなる(2026-08-22) */
   killFeed:'撃破ログ',
+  // 試合を抜けるメニュー(☰)。常時表示なので編集モード用の見本処理は要らない
+  hudMenuBtn:'メニュー',
 };
 const HUD_DRAGGABLE_IDS = Object.keys(HUD_DRAGGABLE);
 function loadHudLayout(){ try{ return JSON.parse(localStorage.getItem(HUD_LAYOUT_KEY)) || {}; }catch(e){ return {}; } }
