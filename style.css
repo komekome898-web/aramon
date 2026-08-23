@@ -899,6 +899,16 @@
   .header-bgm-btn .header-bgm-icon{ font-size:10px; flex-shrink:0; }
   .header-bgm-btn #headerBgmName{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #topHeader .header-wallet span{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink); }
+  /* 通信できないときだけ出る帯(F-9)。**ヘッダーの並びには入れない** ――
+     grid の項目として足すと中央の名前が「お…」と省略されるので、
+     absolute でヘッダーの下端へ吊るし、横幅を1pxも取らないようにしている。
+     指の操作は下の画面へ通す(飾りなので押す物ではない)。 */
+  #netOfflineChip{
+    position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    margin-top:4px; padding:2px 10px; border-radius:9px; pointer-events:none; white-space:nowrap;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; letter-spacing:0.5px; line-height:16px;
+    color:#1a0606; background:var(--danger); border:1px solid #04060a;
+  }
   .account-box{ max-width:min(480px, calc(92 * var(--vw))); }
   .account-note{ font-size:11px; color:var(--ink-dim); line-height:1.6; margin-bottom:10px; text-align:left; }
   .account-box input{
@@ -2093,6 +2103,12 @@
   #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 10px; width:100%; }
   .lobby-title{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); letter-spacing:0.5px; text-align:center; white-space:nowrap; }
   .lobby-sub{ font-size:10px; color:var(--ink-dim); letter-spacing:0.5px; white-space:nowrap; }
+  /* 状態の行(「いつ始まるのか」)。パネルの内寸は約206px(iPhone SE級)しかないのに
+     以前は nowrap の1行だったため、34文字の説明が画面の外へ出て読めなかった
+     (#lobbyScreen は touch-action:pan-y なので横スクロールもできない)。**必ず折り返す。** */
+  .lobby-note{ font-size:10px; line-height:1.6; color:var(--ink-dim); letter-spacing:0.3px;
+    white-space:normal; overflow-wrap:anywhere; text-align:center; width:100%; }
+  .lobby-note.is-ready{ color:var(--amber); font-weight:700; }
   #lobbyPlayerList{ display:flex; flex-direction:column; gap:5px; width:100%; margin-top:2px; }
   .lobby-player-row{
     display:flex; align-items:center; gap:7px; padding:6px 10px; background:rgba(255,255,255,0.04);
@@ -2107,7 +2123,14 @@
   /* Bot待機枠のうち「自分のマスモン」枠は淡く色を付けて他のBot枠と区別する(2026-08-19) */
   .lobby-player-row.is-own-mm{ background:rgba(255,196,48,0.07); border-color:rgba(255,196,48,0.35); }
   .lobby-player-row.is-own-mm .lp-dot{ background:var(--amber); }
+  /* 名前の無いBot枠は1行にまとめる(人の行と間違えないよう、点も枠も沈める) */
+  .lobby-player-row.is-bot-sum{ background:rgba(255,255,255,0.02); border-style:dashed; color:var(--ink-dim); }
   #lobbyCountdown{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--amber); min-height:13px; }
+  /* 待機画面のボタンは押せる大きさの下限を守る(実測31pxしかなかった)。
+     パネルには余白があり(667x375で内容260px / 枠339px)、上げてもスクロールは出ない。 */
+  #lobbyCancelBtn, #lobbyStartBtn, #lobbyDisbandBtn, #lobbyGuestLeaveBtn{
+    min-height:var(--tap-pick); flex-shrink:0;
+  }
   #lobbyCancelBtn{
     margin-top:2px; padding:7px 16px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
     color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
@@ -2118,6 +2141,13 @@
     padding:7px 14px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
     white-space:nowrap;
+  }
+  /* 【自動では始めない】人がそろっても勝手に開始しない(ホストが席を外している間に
+     始まってしまうため)。代わりに「押していい」ことを光らせて伝える。 */
+  #lobbyStartBtn.is-ready{ animation:lobbyStartReady 1.4s ease-in-out infinite; }
+  @keyframes lobbyStartReady{
+    0%,100%{ box-shadow:0 0 0 0 rgba(244,196,48,0.0); }
+    50%{ box-shadow:0 0 12px 3px rgba(244,196,48,0.75); }
   }
   #lobbyDisbandBtn{
     padding:7px 14px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:0.5px;
@@ -2148,31 +2178,69 @@
   }
   #findRoomBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #createRoomBtn:disabled, #findRoomBtn:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; }
+  /* 通信できないときの「沈んだ見た目」(F-8)。**disabled にはしない** ――
+     disabled にすると click が発火せず「押しても何も起きない」になり、
+     なぜ遊べないのかが最後まで分からない。押されたら理由をトーストで返す。 */
+  #createRoomBtn.is-net-blocked, #findRoomBtn.is-net-blocked{
+    opacity:0.45; filter:grayscale(0.65); box-shadow:none;
+  }
 
-  #roomListInner{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:18px; width:100%; max-height:calc(88 * var(--vh)); }
+  /* 【箱を先に決める】使える縦幅(88vh)から、見出し・自動入室・ボタン行・すき間を引いた残りが
+     一覧の高さになる。逆に一覧の高さを先に決めると、ボタンを1つ足しただけで枠から出る
+     (実測: 667x375 で padding18+gap12 のままボタン行を足すと 88vh を 30px 超えた)。 */
+  #roomListInner{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:14px; width:100%; max-height:calc(88 * var(--vh)); }
   #roomListItems{
-    display:flex; flex-direction:column; gap:8px; width:100%; margin-top:6px;
-    max-height:calc(42 * var(--vh)); overflow-y:scroll; padding-right:8px;
+    display:flex; flex-direction:column; gap:8px; width:100%; margin-top:2px;
+    max-height:calc(34 * var(--vh)); overflow-y:scroll; padding-right:8px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
   #roomListItems::-webkit-scrollbar{ width:12px; }
   #roomListItems::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
   #roomListItems::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
   #roomListItems{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
+  /* 行は <button>(押せることが見た目でも読み上げでも伝わる)。押せるので高さの下限を守る。
+     中の文字は**その要素自身**で1行に切る(枠を overflow:hidden で隠さない)。
+     切らないと、長い名前のときだけ行が3行に伸びて一覧が数件しか入らなくなる
+     (実測: 667x375 で 1行あたり126px)。 */
   .room-row{
-    display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px;
+    min-height:var(--tap-pick); flex-shrink:0; width:100%; text-align:left;
+    font-family:'Rajdhani',sans-serif; color:var(--ink);
     background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:8px; cursor:pointer;
   }
   .room-row:active{ background:rgba(244,196,48,0.1); }
-  .room-row .rm-host{ font-size:13px; font-weight:600; }
-  .room-row .rm-sub{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+  .room-row .rm-main{ flex:1 1 auto; min-width:0; }
+  .room-row .rm-host{ display:block; font-size:13px; font-weight:600;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .room-row .rm-sub{ display:block; font-size:10px; color:var(--ink-dim); margin-top:2px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .room-row .rm-count{ font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--amber); flex-shrink:0; }
-  #roomListItems .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
-  #roomListBtnRow{ display:flex; gap:12px; margin-top:4px; }
-  #roomListRefreshBtn, #roomListCancelBtn{
-    padding:10px 22px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:1px;
-    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+  /* 参加中(F-5)。押した行だけを残して他を沈め、「今この部屋に入ろうとしている」を見せる。
+     押しても画面が変わらないと、無反応だと思って何度も押してしまう。 */
+  #roomListItems.is-room-joining .room-row{ opacity:0.35; }
+  #roomListItems.is-room-joining .room-row.is-joining{
+    opacity:1; border-color:var(--amber); background:rgba(244,196,48,0.12);
   }
+  .room-row.is-joining .rm-sub{ color:var(--amber); }
+  #roomListItems .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:16px 6px; line-height:1.6; }
+  #roomListItems .rank-empty.is-net-error{ color:var(--danger); }
+  #roomListBtnRow{ display:flex; gap:10px; margin-top:2px; width:100%; }
+  /* 押せる物の高さの下限(実測で約36pxしかなく --tap-pick=44px を割っていた)。
+     幅は枠から決める(flex:1)。667x375 では内寸198pxしかないので、
+     文字を折り返させず padding で押し広げない。 */
+  #roomListRefreshBtn, #roomListCancelBtn{
+    flex:1 1 0; min-width:0; min-height:var(--tap-pick); flex-shrink:0;
+    padding:0 8px; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:13px; letter-spacing:0.5px;
+    color:var(--ink); background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:6px; cursor:pointer;
+    white-space:nowrap;
+  }
+  #roomListAutoJoinBtn{
+    width:100%; min-height:var(--tap-pick); flex-shrink:0;
+    padding:0 8px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:0.5px;
+    color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
+    white-space:nowrap;
+  }
+  #roomListAutoJoinBtn:active{ filter:brightness(0.9); }
 
   .monster-grid{
     display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:920px;
@@ -2692,27 +2760,31 @@
      【座標の基準は #hud】index.htmlで #topRight の外(=#hudの直下)へ出してある。
      以前は #topRight(position:absolute)の子だったので top/right が右上パネル基準になり、
      「操作ヒント帯と交差しない高さ」という調整が14pxずれたまま効いていた。
-     その結果、回転ボタンと**必ず重なっていた**(実測: 812x375横持ちで46x46px、
-     375x667縦持ちでも46x46px。3行目はFIRE/DASHにも重なっていた)。
 
-     右端には上から ミニマップ → 回転ボタン → DASH/FIRE が縦に詰まっていて
-     3行ぶんの空きが無いので、**右端そのものを空けて左へ寄せる。**
-     空ける幅は回転ボタンの実寸(--turn-*)から出す ―― 数字を二重に持たない。 */
-  :root{
-    /* 右端に空ける幅 = 回転ボタン2つぶん(--turn-*)+ すき間10。**数字を二重に持たない** */
-    --killfeed-right: calc(var(--turn-right) + var(--turn-size) * 2 + var(--turn-gap) + 10px);
-  }
-  /* 左へ寄せたぶん、狭い端末では中央の照準まで届く(667x375で実測26x26px重なった)。
-     **画面の中心線を越えない**ように幅の上限を持たせる(照準の半分13px + 余白9px)。 */
-  #killFeed{ position:absolute; top:140px; right:var(--killfeed-right);
-    width:240px; max-width:calc(50% - var(--killfeed-right) - 22px);
+     【2026-08-23 発注者の指示で右端へ戻した】いったん回転ボタンの左へ逃がしたが、
+     左へ寄せると中央の照準に近づいて撃ち合いの視界に入る。
+     **回転ボタンと重なってよい。ただし重なっても押せること**が条件なので、
+     逃がすのをやめる代わりに #killFeed と .kf-item を pointer-events:none にして
+     タップを下のボタンへ通す(キルフィードは読むだけで押す物が無い)。
+     **z-indexで持ち上げるだけにしない** ―― 見た目の前後が変わるだけで、指は素通りしない。
+
+     右端の余白は他のHUD部品と同じ 14px。**--safe-r をここで足さない**
+     ―― #hud 自体が inset で --safe-* ぶん縮んでおり、足すと二重に効く。 */
+  /* 【照準は越えない】幅の上限で画面の中心線より右に留める(照準の半分13px + 余白9px)。
+     回転ボタンとの重なりは許容、照準との重なりは不可(発注者指定)。 */
+  #killFeed{ position:absolute; top:140px; right:14px;
+    width:240px; max-width:calc(50% - 14px - 22px);
+    pointer-events:none;
     display:flex; flex-direction:column; gap:3px; align-items:flex-end; }
   /* 【1件は2行まで】以前は行数の上限が無く、名前が長い試合では1件が3行になって
      フィード全体が171pxまで伸び、技パネルとDASHに重なっていた(812x375で実測)。
      切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く。
      **文字サイズ「大」でも12pxのまま**にしてある ―― ここは元から12pxでHUDの中では
      いちばん読みやすく、これを大きくすると3件で技パネルまで届いてしまうため。 */
+  /* pointer-events:none は #killFeed から継承するが、**行にも明示しておく**
+     (回転ボタンの上に乗る当人なので、ここが効かないと押せなくなる) */
   .kf-item{ font-size:12px; line-height:1.25; padding:4px 9px; background:rgba(8,12,20,0.85); border-left:3px solid var(--danger); border-radius:3px; opacity:0; transform:translateY(-4px); animation:kfIn .25s forwards; max-width:100%;
+    pointer-events:none;
     white-space:normal; overflow-wrap:anywhere;
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
   @keyframes kfIn{ to{opacity:1; transform:translateY(0);} }   /* 横スライドは右端で見切れて斜め欠けに見えた */
@@ -2793,6 +2865,19 @@
        切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く */
     white-space:normal; overflow-wrap:anywhere;
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+  /* 【試合中は下地を敷かない】戦闘中の黒帯は視界を塞ぐ(発注者指摘)。
+     背景と枠を外すぶん、**文字は縁取りで浮かせる** ―― ダメージ数値に strokeText を足したのと
+     同じ理屈で、砂漠・雪山のような明るい地面でも読めるだけの太さが要る。
+     text-shadow を8方向+落とし影で重ねて黒フチにする(-webkit-text-stroke は
+     文字の内側を削って細く見えるので使わない)。
+     印(in-match)を付けるのは world.js の pushToast。ロビーでは今までどおり黒帯のまま。 */
+  #toast.in-match .toast-line{
+    background:none; border-color:transparent; padding:2px 6px;
+    font-weight:800; color:#fff;
+    text-shadow:
+      1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000,
+      1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000,
+      0 2px 7px rgba(0,0,0,0.95); }
   /* トレーニングカードが出ている8秒だけ引っ込めるもの(#hud.tc-openはui.jsが付け外し)。
      カードを画面の下へ移したので、場所が重なるのは操作ヒント帯とキルフィードの2つ。
      **重ねると両方読めない**ので、その8秒はカードを優先する(選ばないと勝手に決まるため)。
@@ -2983,22 +3068,65 @@
   .look-settings-box .look-toggle-row{ margin-top:4px; }
   .look-settings-box .audio-slider-label{ width:56px; font-size:13px; }
 
-  /* ===== 観戦バー(ホスト敗退後に生存プレイヤーを観戦) ===== */
+  /* ===== 試合中に足した帯・ボタンの居場所 =====
+     【上の帯の下端はここが正】#statsPanel(撃破/ダメージ)は文字サイズ「大」で
+     y14..90 まで伸びる(667x375で実測76px)。上に置く物は必ずその下から始める。 */
+  :root{ --hud-bar-top: 98px; }
+
+  /* ===== 観戦バー(倒れた後に生存プレイヤーを観戦) ===== */
   /* 【必須】pointer-events:auto。#hudは pointer-events:none なので、これが無いと
      「次のプレイヤー」ボタンのタップがバーを素通りしてキャンバス(視点ドラッグ)へ抜け、
      ボタンが一切反応しない。#rangeBar と同じ扱いにしてある。                        */
-  #spectateBar{ position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:40; pointer-events:auto;
-    display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:12px;
+  /* 【中央寄せは left/right + margin:auto で行う】`left:50%` だと絶対配置の
+     「入る幅」が画面の半分しか無いものとして計算され、ボタンが2つになった時点で
+     勝手に2〜3段へ折り返した(667x375で実測84px、812x375で110pxまで背が伸びた)。
+     #trainCardBar と同じ「width:max-content + margin:auto + max-width」に揃える
+     (絶対配置の fit-content はChromiumが max-content のまま返すので使わない)。
+
+     【居場所は下】ボタンが2つになると帯の幅が400pxを超え、667x375では画面の上の
+     どこに置いてもHPパネル(x..224)か右上の安置欄・ミニマップ(x426..)に必ず食い込む
+     (以前の top:12px は #statsPanel と常に39px重なっていた)。
+     左端は #trainCardBar と同じ --tc-left を読む ―― HPパネルと小隊バーを横によけるため
+     (同じ意味の数字を2か所に持たない)。下端は FIREボタンの上端+8px から出す。 */
+  :root{         --spectate-bottom: 118px; }   /* #fireBtn(bottom22 + 88)+ すき間8 */
+  html.narrow-screen{ --spectate-bottom: 102px; }   /* narrowは #fireBtn(bottom16 + 78)+ 8 */
+  #spectateBar{ position:absolute; left:var(--tc-left); right:14px; bottom:var(--spectate-bottom); top:auto; margin:0 auto; z-index:40; pointer-events:auto;
+    display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:8px; padding:6px 10px; border-radius:12px;
+    width:max-content; max-width:calc(100% - 28px);
     background:linear-gradient(180deg, rgba(20,16,8,0.92), rgba(8,6,3,0.92));
     border:1px solid rgba(244,196,48,0.55); box-shadow:0 4px 16px -4px rgba(0,0,0,0.7);
     font-family:'Rajdhani',sans-serif; }
   #spectateBar .spectate-eye{ font-weight:800; font-size:12px; letter-spacing:0.5px; color:#ffd76a; white-space:nowrap; }
+  /* 名前は伸ばさない(ボタン2つを押せる大きさで残すほうが大事)。長い名前は「…」で切る。
+     12vw まで: 帯の全幅が667x375で1段に収まる(2段になると回転ボタンまで届く。実測) */
   #spectateBar #spectateName{ font-weight:800; font-size:13px; color:#fff; white-space:nowrap;
-    max-width:calc(36 * var(--vw)); overflow:hidden; text-overflow:ellipsis; }
-  #spectateBar #spectateNextBtn{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:0.5px;
+    max-width:calc(12 * var(--vw)); overflow:hidden; text-overflow:ellipsis; }
+  /* 観戦中の唯一の操作なので、押せる大きさ(--tap-pick)を必ず確保する。
+     flex-shrink:0 が無いと、名前が長いときにflexがボタンを潰す */
+  #spectateBar button{ font-family:'Rajdhani',sans-serif; font-weight:800; font-size:12px; letter-spacing:0.5px;
+    display:inline-flex; align-items:center; justify-content:center;
+    min-height:var(--tap-pick); flex-shrink:0;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:9px;
-    padding:5px 12px; cursor:pointer; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); }
-  #spectateBar #spectateNextBtn:active{ transform:translateY(1px); }
+    padding:0 12px; cursor:pointer; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); }
+  #spectateBar button:active{ transform:translateY(1px); }
+  /* 「抜ける」は主役ではないので沈めた色にする(押し間違いを減らす) */
+  #spectateBar #spectateExitBtn{ color:#ffd0c6; background:linear-gradient(180deg, rgba(30,18,16,0.95), rgba(16,10,9,0.95));
+    border:1px solid rgba(255,140,120,0.5); }
+
+  /* ===== 試合中のメニュー(☰) =====
+     置き場所は「#statsPanel の下 / #trainCardBar の上 / #killFeed(x≥356) の左」の空き帯で、
+     667x375(いちばん狭い論理サイズ)でも x202..246 y98..142 に誰も居ない。
+     数字の出どころは各パネルの実測なので、それらを動かしたらここも直す。 */
+  #hudMenuBtn{ position:absolute; left:232px; top:var(--hud-bar-top); z-index:23; pointer-events:auto;
+    width:var(--tap-pick); height:var(--tap-pick); min-height:var(--tap-pick); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    font-size:18px; line-height:1; color:rgba(255,255,255,0.72); cursor:pointer;
+    background:rgba(10,16,26,0.55); border:1px solid rgba(255,255,255,0.18); border-radius:12px;
+    touch-action:none; }
+  html.narrow-screen #hudMenuBtn{ left:202px; }   /* #hpPanel が180pxになるぶん左へ(--stats-left と同じ考え方) */
+  #hudMenuBtn:active{ background:rgba(255,255,255,0.14); color:#fff; }
+  /* 射撃訓練場は #rangeBar に「🚪 退出」があるので出さない */
+  #hud.range-mode #hudMenuBtn{ display:none; }
 
   /* =====================================================================
      決着演出(リザルトの手前に3秒だけ挟む)
@@ -3212,13 +3340,20 @@
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
-  #replayBtn, #viewMastermonBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn, #rankingMonsterFilterCloseBtn{
+  #replayBtn, #replayAgainBtn, #viewMastermonBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn, #rankingMonsterFilterCloseBtn{
     margin-top:0; padding:13px 16px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
   #viewRankingBtn, #viewMyStatsBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+  /* 連戦(⟳ もう一度)はいちばん押す物なので、緑で「進む」側だと分かるようにする */
+  #replayAgainBtn{ background:linear-gradient(180deg,#8ff0a8,#3fd06a); }
   .resultBtnRow{ display:flex; gap:10px; margin-top:26px; flex-wrap:nowrap; width:100%; max-width:640px; }
-  .resultBtnRow button{ flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* 【左右の余白は詰める】ボタンが6個に増えた(⟳ もう一度)ぶん1つあたりの幅が
+     約100pxまで下がり、16pxずつの余白では「トップ画面へ」「⟳ もう一度」が
+     「…」で切れる(667x375の縦持ちで実測)。文字は縮めずに余白側を削る。 */
+  .resultBtnRow button{ flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    padding-left:6px; padding-right:6px;
+    min-height:var(--tap-pick); }   /* 押せる大きさの下限(実測42pxで足りていなかった) */
   /* レイドのリザルトに出るボタンだけ紫(レイド画面・レイドランキングと同じ色) */
   #viewRaidRankBtn{ color:#efe2ff; border:1px solid rgba(190,130,255,0.85);
     background:linear-gradient(180deg,#8b4fd8,#5f2ba8); box-shadow:0 0 14px -4px rgba(170,110,255,0.9); }
@@ -3731,6 +3866,9 @@
     box-shadow:0 0 12px -3px rgba(255,206,120,0.7);
   }
   .mm-menu-btn-rebirth .mm-menu-btn-label{ color:#ffe6a8; }
+  /* いま転生できるときは一覧の先頭へ来る(ui.jsのbuildMastermonMenuHtml)。
+     そこに来たことが分かるよう、覚醒ボタンと同じ脈動を掛ける(色は転生の金のまま) */
+  .mm-menu-btn-rebirth.is-ready{ animation:awReadyPulse 1.8s ease-in-out infinite; }
   /* 転生を上限まで使い切った個体。もう押せないので誘わない色にしつつ、
      到達したことは分かるように金の縁だけ残す(覚醒ボタンの「条件不足」と同じ考え方) */
   .mm-menu-btn-rebirth-max{
