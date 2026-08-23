@@ -1899,7 +1899,13 @@ document.getElementById('lobbyUpdateBtn').addEventListener('click', ()=>{
   showConfirmDialog({
     text:'新しいバージョンがあります。今すぐ読み込み直して更新しますか？',
     yes:'今すぐ更新', no:'あとで', danger:false,
-    onYes:()=>{ window.location.reload(); },
+    /* 【ただreloadしない】待機中の新しいSWへ切り替えてから読み込み直す(index.htmlの
+       __aramonApplyUpdate)。切り替えずにreloadすると古いSWが古いキャッシュを返し続けるので
+       画面は何も変わらず、次の起動でまた「更新があります」が出る(嘘が繰り返される)。 */
+    onYes:()=>{
+      if(typeof window.__aramonApplyUpdate==='function') window.__aramonApplyUpdate();
+      else window.location.reload();
+    },
   });
 });
 
