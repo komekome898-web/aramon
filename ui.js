@@ -1893,17 +1893,12 @@ const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramo
          別端末の値が来ても壊れない(消したマスモンや終わったレイドは黙って既定へ落ちる)
      **入れないもの**: 画質(aramon_perf_v1=開発用)・チュートリアル進捗・更新履歴の既読・
      告知の表示済み(どれも端末ごとの状態)。HUD配置は下の LOCAL_WINS で別扱いにする。 */
-  'aramon_look_v1', 'aramon_invert_pitch_v1', 'aramon_hud_text_large_v1',
-  'aramon_audio_v1', 'aramon_net_hud_v1', 'aramon_lobby_prefs_v1'];
-/* 【HUD配置だけは「この端末に何も無いときだけ」取り込む】
-   位置(fx,fy)は割合なので端末が変わっても移せるが、**大きさ(s)は固定pxへの倍率**なので、
-   iPadで2.0倍にしたジョイスティックはiPhone SEでは画面の半分を覆う。
-   さらに同期はログインのときだけでなく「サーバーのほうが新しい」たびに走るので、
-   ふつうに同期へ入れるとスマホとタブレットを併用している人は**触るたびに互いの配置を
-   上書きし合う**(しかも黙って壊れるので原因が分からない)。
-   そこで「送るが、取り込むのはこの端末がまだ一度も配置を決めていないときだけ」にする。
-   これで機種変(新しい端末=空)では引き継がれ、2台持ちでは各端末の配置が守られる。 */
-const ACCOUNT_SYNC_KEYS_LOCAL_WINS = ['aramon_hud_layout_v1'];
+    
+    ];
+/* 【設定はアカウントに同期しない】感度・HUD配置・音量などは**端末ごとの好み**。
+   同期すると画面の大きさが違う端末どうしで黙って上書きし合い、しかも原因が分からない
+   (HUDの大きさは固定pxへの倍率なので、タブレットの配置がスマホでは画面の半分を覆う)。
+   機種変のやり直しより「知らないうちに壊れる」ほうが直しにくいので、同期しない。 */
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1911,7 +1906,7 @@ function saveAccountCreds(c){ try{ localStorage.setItem(ACCOUNT_CRED_KEY, JSON.s
 
 function collectAccountData(){
   const out = {};
-  for(const k of ACCOUNT_SYNC_KEYS.concat(ACCOUNT_SYNC_KEYS_LOCAL_WINS)){
+  for(const k of ACCOUNT_SYNC_KEYS){
     const v = localStorage.getItem(k);
     if(v!=null) out[k] = v;
   }
@@ -1922,32 +1917,10 @@ function applyAccountData(d){
   for(const k of ACCOUNT_SYNC_KEYS){
     if(d[k]!=null){ try{ localStorage.setItem(k, d[k]); }catch(err){} }
   }
-  // HUD配置は「この端末がまだ一度も決めていないときだけ」取り込む(理由は宣言のところ)
-  for(const k of ACCOUNT_SYNC_KEYS_LOCAL_WINS){
-    if(d[k]==null) continue;
-    try{ if(localStorage.getItem(k)==null) localStorage.setItem(k, d[k]); }catch(err){}
-  }
   const savedName = localStorage.getItem('aramon_player_name_v1');
   if(savedName!=null) document.getElementById('playerNameInput').value = savedName;
-  reapplySyncedSettings();
   renderSelectorCards();
   updateAccountBar();
-}
-/* 同期で入れ替わった設定を、いまの画面へ反映し直す。
-   **localStorage を書いただけでは何も変わらない**(読むのは起動時の1回だけなので、
-   ログインしても次の起動まで古い感度・音量のままになる)。
-   どれも「読み直して当てる」関数がすでにあるので、ここでは呼び直すだけにする。 */
-function reapplySyncedSettings(){
-  /* **1つずつ包む。** まとめて try で囲むと、最初の1つが落ちた時点で残りが当たらない
-     (この関数は起動直後の自動ログインからも呼ばれ、まだ実行されていない const を
-      読む関数が混ざりうる=TDZ)。落ちたものだけ諦めて、他は当てる。 */
-  const step = (fn)=>{ try{ if(typeof fn==='function') fn(); }catch(err){} };
-  step(typeof loadLookSettings==='function' ? loadLookSettings : null);
-  step(typeof restoreInvertPitchFromStorage==='function' ? restoreInvertPitchFromStorage : null);
-  step(typeof restoreHudTextLargeFromStorage==='function' ? restoreHudTextLargeFromStorage : null);
-  step(typeof reloadAudioSettingsFromStorage==='function' ? reloadAudioSettingsFromStorage : null);
-  step(typeof syncNetHudToggle==='function' ? syncNetHudToggle : null);
-  step(typeof applyHudLayout==='function' ? applyHudLayout : null);
 }
 // ローカルデータが更新された時に呼ばれる。ログイン中ならデバウンスしてサーバーへ送信
 function accountMarkDirty(){

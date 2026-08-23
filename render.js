@@ -7262,7 +7262,10 @@ function drawNetStatusChip(){
    全体表示へ切り替えられるようにする(切り替えの入口は #minimapWrap のタップ。
    toggleMinimapZoom() を呼べばよい)。半径は実機調整用の名前付き定数。 */
 const MINIMAP_ZOOM_RADIUS = 2000;   // 近距離ズーム時にミニマップの端までに収まるワールド距離
-let minimapZoomed = true;           // 既定は近距離(戦闘で使えるほう)
+/* 【既定は全体表示】ミニマップは元から「ワールド全体を出す物」で、みんなその見え方に慣れている。
+   既定を勝手に近距離へ変えると、同じ画面が黙って別物になる(2026-08-23に戻した)。
+   近距離へ寄せたい人はミニマップをタップして切り替える。 */
+let minimapZoomed = false;
 function toggleMinimapZoom(){ minimapZoomed = !minimapZoomed; return minimapZoomed; }
 function renderMinimap(){
   // 観戦中は見ている本体を基準にする(自分表示・敵味方色分けの両方。2026-08-19)
