@@ -18,6 +18,16 @@ const TUTORIAL_GIFT_KEY = 'aramon_tutorial_gift_v1';  // 無料10連を受け取
 const TUT_TICK_MS = 250;      // 完了判定を見にいく間隔
 const TUT_STUCK_MS = 1500;    // 押せるものが1つも無い状態がこれだけ続いたら復帰カード
 const TUT_NUDGE_LIMIT = 3;    // 押せない所を続けて叩いた回数の上限
+/* 練習試合の中で出す帯の居場所。
+   既定(style.css)の bottom は画面のいちばん下で、試合中は技パネル(#movePanel)と重なる。
+   空いているのは「技パネルの上 〜 操作ヒント #tipBox の下」の帯だけ(実測で35px)。
+   **数字を二重に持たないため、技パネルの実物の位置から毎回決める。**
+   割合(--vh)で置くと縦320pxの端末だけ技パネルに刺さるので、ここはHUDと同じpxで扱う
+   (#movePanel/#tipBox/#fireBtn も style.css では px 指定)。 */
+const TUT_BAND_CLEAR_PX = 1;      // 上下のすき間。空きが29pxしかない端末があるので1pxしか取れない
+const TUT_BAND_FALLBACK_PX = 96;  // 実物が測れないときの位置(実測 技パネルの上端93+3)
+const TUT_BAND_MIN_PX = 60;       // 画面カスタマイズで技パネルを動かされても、この範囲から出さない
+const TUT_BAND_H_PX = 28;         // 帯の高さ(隠れていて測れないときの見込み)
 
 // ステップ間で受け渡す一時値(トレーニング前のステータス、着せ替え前のスキンなど)
 const tutorialVars = {};
@@ -89,6 +99,10 @@ function tutorialBegin(stepId){
   if(tutState) return;
   let i = TUTORIAL_STEPS.findIndex(s=>s.id === stepId);
   if(i < 0) i = 0;
+  /* 保険: 練習試合の中の段から始めようとしたら、その手前の「試合を始める段」まで戻す。
+     試合が動いていないところで試合中の案内を出しても何も起きないため。
+     (通常は inMatch の段を保存しないので、ここへ来るのは古い保存を読んだときだけ) */
+  while(i > 0 && TUTORIAL_STEPS[i].inMatch) i--;
   tutState = { i, phase:'card', entered:false, nudges:0, bandAt:0, review:false };
   document.getElementById('tutorialLayer').classList.remove('hidden');
   tutorialEnterStep();
@@ -99,7 +113,9 @@ function tutorialBegin(stepId){
 function tutorialEnterStep(){
   const st = tutorialCurrentStep();
   if(!st){ tutorialFinish(); return; }
-  if(!tutState.review){
+  /* 進捗の保存。**練習試合の中の段は保存しない**(p.step は「試合」の段のまま残る)。
+     試合の途中で閉じられたら、次に開いたときは試合のやり直しから再開するのが正しいため。 */
+  if(!tutState.review && !st.inMatch){
     const p = loadTutorialProgress();
     p.step = st.id; saveTutorialProgress(p);
   }
@@ -132,15 +148,21 @@ function tutorialAfterCard(st){
   tutState.phase = 'band'; tutState.bandAt = performance.now();
   tutorialBandShow(st);
 }
-function tutorialAdvance(){
+/* 次のステップへ。opts.silent=true のときは進んだ音を鳴らさない
+   (試合が終わって残りの案内をまとめて畳むときに、同じ音が連打されるのを防ぐ) */
+function tutorialAdvance(opts){
   if(!tutState) return;
+  const st = tutorialCurrentStep();
+  if(st && typeof st.leave === 'function'){
+    try{ st.leave(); }catch(err){ console.warn('[tutorial] leave失敗', st.id, err); }
+  }
   tutorialClearSpot();
   tutState.i++;
   if(tutState.i >= TUTORIAL_STEPS.length){
     if(tutState.review){ tutorialStop(); return; }
     tutorialFinish(); return;
   }
-  if(typeof playSe === 'function') playSe('pickup');
+  if(!(opts && opts.silent) && typeof playSe === 'function') playSe('pickup');
   tutorialEnterStep();
 }
 function tutorialTick(){
@@ -148,11 +170,13 @@ function tutorialTick(){
   const st = tutorialCurrentStep();
   if(!st) return;
   if(tutState.phase !== 'band') return;
+  if(st.inMatch){ tutorialTickInMatch(st); return; }
   // 試合中は帯を出さない(画面を邪魔しない)。ロックも tutorialGate 側で外れる
-  const inMatch = game.started && !game.over;
+  const inMatch = tutorialMatchLive();
   document.getElementById('tutorialBand').classList.toggle('hidden', inMatch);
   if(inMatch){ tutorialClearSpot(); }
   else {
+    tutorialBandPlace(false);
     tutorialMarkSpot(st);
     // 押せるものが1つも無いまま固まっていないか(詰み防止)
     if(tutorialVisibleAllowed().length === 0){
@@ -164,6 +188,41 @@ function tutorialTick(){
   let done = false;
   try{ done = !!st.done(); }catch(err){}
   if(done) tutorialAdvance();
+}
+
+/* ===== 練習試合の中の案内(表の inMatch) =====
+   **試合は止まらない。** だからここでは
+   ・画面をロックしない(tutorialGate は試合中そのまま素通りする)
+   ・カードを出さない(表側で card を持たせない)
+   ・帯と光る印だけを出し、読める最低時間(TUT_MATCH_READ_SEC)は必ず残す
+   進めなくなる事故を防ぐ保険は3つ:
+   ① done() を満たす ② limitSec 秒たつ ③ 倒された/試合が終わった → 残りは黙って畳む
+   ③で畳んだあとは limitSec を持たない matchEnd に落ちて、リザルトが出るまでそこで待つ
+   (試合の上へ次の説明カードが出ないようにするため)。 */
+function tutorialMatchLive(){ return !!(game.started && !game.over); }
+// もう操作の練習ができない状態(倒された・観戦に入った・試合が終わった)
+function tutorialMatchPracticeOver(){
+  if(!tutorialMatchLive()) return true;
+  if(typeof player === 'undefined' || !player || !player.alive) return true;
+  if(typeof spectatingNow === 'function' && spectatingNow()) return true;
+  return false;
+}
+function tutorialBandSec(){ return tutState ? (performance.now() - tutState.bandAt) / 1000 : 0; }
+function tutorialTickInMatch(st){
+  const live = tutorialMatchLive();
+  const show = live && !!st.hint;
+  const band = document.getElementById('tutorialBand');
+  if(band) band.classList.toggle('hidden', !show);
+  if(show){ tutorialBandPlace(true); tutorialMarkSpot(st); }
+  else { tutorialClearSpot(); }
+  if(st.limitSec){
+    if(tutorialMatchPracticeOver()){ tutorialAdvance({ silent:true }); return; }   // 保険③
+    if(tutorialBandSec() > st.limitSec){ tutorialAdvance({ silent:true }); return; }  // 保険②
+  }
+  let done = false;
+  try{ done = !!st.done(); }catch(err){}
+  // 先に条件を満たしていても、帯が一瞬で消えないように読む時間だけは残す
+  if(done && (!st.hint || tutorialBandSec() >= TUT_MATCH_READ_SEC)) tutorialAdvance();
 }
 // 進めなくなったとき。ここに落ちても必ず先へ行ける
 function tutorialRecover(){
@@ -234,14 +293,47 @@ function tutorialCardHide(){
 function tutorialBandShow(st){
   const band = document.getElementById('tutorialBand');
   if(!band) return;
-  document.getElementById('tutorialBandStep').textContent = `${tutState.i + 1}/${TUTORIAL_STEPS.length}`;
+  document.getElementById('tutorialBandStep').textContent = tutorialStepCounter();
   document.getElementById('tutorialBandText').textContent = st.hint || '';
-  band.classList.remove('hidden');
+  tutorialBandPlace(!!st.inMatch);
+  band.classList.toggle('hidden', !!st.inMatch && !st.hint);   // 帯の中身が無い段(matchEnd)は出さない
   document.getElementById('tutorialLayer').classList.remove('hidden');
 }
 function tutorialBandHide(){
   const band = document.getElementById('tutorialBand');
   if(band) band.classList.add('hidden');
+  tutorialBandPlace(false);   // 試合中に寄せた位置を必ず元へ返す
+}
+/* 帯の居場所。試合中だけ技パネルの上へ寄せる(重なると技の切り替えが見えなくなる)。
+   位置を持っているのは style.css なので、**戻すときは空文字にして元の指定へ返す。** */
+function tutorialBandPlace(inMatch){
+  const band = document.getElementById('tutorialBand');
+  if(!band) return;
+  if(!inMatch){ band.style.bottom = ''; return; }
+  let px = TUT_BAND_FALLBACK_PX;
+  const mp = document.getElementById('movePanel');
+  const hud = document.getElementById('hud');
+  if(mp && hud && mp.offsetParent !== null && hud.offsetHeight){
+    px = (hud.offsetHeight - mp.offsetTop) + TUT_BAND_CLEAR_PX;   // 技パネルの「上端」より上へ
+    // 操作ヒント(#tipBox)の下にも収める。**上下とも実物から決めるので数字を持たない**
+    const tip = document.getElementById('tipBox');
+    if(tip && tip.offsetParent !== null){
+      const tipBottom = hud.offsetHeight - (tip.offsetTop + tip.offsetHeight);
+      px = Math.min(px, tipBottom - (band.offsetHeight || TUT_BAND_H_PX) - TUT_BAND_CLEAR_PX);
+    }
+    // 画面カスタマイズで技パネルを上下へ動かされても、帯は下半分に留める
+    px = Math.max(TUT_BAND_MIN_PX, Math.min(px, Math.round(hud.offsetHeight * 0.5)));
+  }
+  band.style.bottom = px + 'px';
+}
+/* 帯の「n/N」。**練習試合の中の案内は数に入れない。**
+   段数が急に増えたように見えると「まだこんなにあるのか」と閉じられてしまうため、
+   試合中の案内は直前の「試合」の段と同じ番号のまま出す。 */
+function tutorialStepCounter(){
+  const total = TUTORIAL_STEPS.filter(s=> !s.inMatch).length;
+  let n = 0;
+  for(let i = 0; i <= tutState.i && i < TUTORIAL_STEPS.length; i++){ if(!TUTORIAL_STEPS[i].inMatch) n++; }
+  return `${Math.max(1, n)}/${total}`;
 }
 // 押せない所を叩いたときに帯を揺らす(何度も続いたら復帰カードを出す)
 function tutorialNudge(){
@@ -341,6 +433,60 @@ function tutorialSetSoloMode(){
   if(typeof setLobbyMode === 'function') setLobbyMode('single');
   if(typeof setLobbySubMode === 'function') setLobbySubMode('br30');
 }
+/* ===== 練習試合の中の案内が見る「今の状態」 =====
+   **新しい状態変数を増やさない。** 見るのは既にある camState / player / zoneState /
+   fireBtnHeld だけで、ステップ間の控えは tutorialVars に置く(トレーニングと同じ流儀)。 */
+function tutorialMarkYaw(){
+  tutorialVars.yaw0 = (typeof camState !== 'undefined' && camState) ? camState.yaw : 0;
+}
+// 控えた向きから th ラジアン以上回ったか
+function tutorialYawMoved(th){
+  if(typeof camState === 'undefined' || !camState) return true;   // 読めないなら止めない
+  return Math.abs(camState.yaw - (tutorialVars.yaw0 || 0)) >= th;
+}
+/* 「FIREを押したまま滑らせて狙う」。専用の印は作らず、
+   **FIREを押している間に向きが変わったか**だけを見る(離している間は基準を取り直す)。 */
+function tutorialFireAimDone(){
+  if(typeof fireBtnHeld === 'undefined') return true;
+  if(!fireBtnHeld){ tutorialMarkYaw(); return false; }
+  return tutorialYawMoved(TUT_AIM_YAW_RAD);
+}
+function tutorialMarkMoveTier(){
+  tutorialVars.tier0 = (typeof player !== 'undefined' && player) ? player.moveTierSelected : 1;
+}
+/* 技のこと。試合の始めは tier1 しか無く、修行チケットを拾って初めて切り替えられる。
+   だから**拾えた**か**自分で切り替えた**かのどちらでも「分かった」と見なす。 */
+function tutorialMoveTierDone(){
+  if(typeof player === 'undefined' || !player) return true;
+  if((player.moveTierUnlocked || 1) > 1) return true;
+  return player.moveTierSelected !== (tutorialVars.tier0 || 1);
+}
+// 安置の中にいるか。**判定式は render.js / combat.js と同じ**(中心からの距離と半径だけ)
+function tutorialInZoneDone(){
+  if(typeof zoneState === 'undefined' || !zoneState) return true;
+  if(typeof player === 'undefined' || !player) return true;
+  return dist(player, zoneState.center) <= zoneState.radius;
+}
+function tutorialMarkGuts(){ tutorialVars.gutsLow = null; }
+/* ガッツは「切れても待てば戻る」と気づいてもらう段。
+   いちばん低かった値を覚えておき、そこから戻り始めたら次へ(満タンのままなら即次へ)。 */
+function tutorialGutsDone(){
+  if(typeof player === 'undefined' || !player || !player.maxGuts) return true;
+  const g = player.guts;
+  tutorialVars.gutsLow = (tutorialVars.gutsLow == null) ? g : Math.min(tutorialVars.gutsLow, g);
+  if(g >= player.maxGuts) return true;
+  return g > tutorialVars.gutsLow + TUT_GUTS_REGAIN;
+}
+/* 「開いて見た」で終わる段(遠征・プレイモード)。ヘルプ(tutorialHelpDone)と同じ作りで、
+   **開いている間は false・閉じたら true**。中で何かを実行させると、
+   遠征なら相棒が何時間も出払い、マルチなら部屋を立てて放置になるのでそこまではさせない。 */
+function tutorialSeenOverlayDone(varKey, ids){
+  const open = ids.some(id=>{ const el = document.getElementById(id); return !!el && !el.classList.contains('hidden'); });
+  if(open){ tutorialVars[varKey] = true; return false; }
+  return !!tutorialVars[varKey];
+}
+function tutorialExpeditionDone(){ return tutorialSeenOverlayDone('expSeen', ['expeditionOverlay', 'expeditionPickOverlay']); }
+function tutorialModePickDone(){ return tutorialSeenOverlayDone('modeSeen', ['modePickOverlay']); }
 function tutorialOpenAccount(){
   const btn = document.getElementById('accountLoginBtn');
   if(btn) btn.click();   // 既存の「開く」処理をそのまま使う(合成clickなので濾過は素通り)
@@ -468,3 +614,21 @@ function tutorialReplayShow(){
     tutorialReplayCards();
   });
 })();
+
+/* ===== はじめてその画面を開いたときの1枚カード(FIRST_VISIT_CARDS) =====
+   チュートリアル本編に全部の遊びを詰めると長くてやめてしまうので、
+   **その画面を初めて開いたときに1枚だけ**説明を出す(遠征・マルチは本編で教えるので表に無い)。
+   ・**画面ごとの分岐はここに書かない。** 対応は data.js の FIRST_VISIT_CARDS が正で、1行足せば増える
+   ・capture段で見るだけ。既存のハンドラは書き換えないので、押したボタンは普段どおり動く
+   ・本編の最中(tutState)は出さない。カードの取り合いになる
+   ・e.isTrusted を見るのは、チュートリアルやツールが投げる合成クリックで出さないため */
+document.addEventListener('click', (e)=>{
+  if(!e.isTrusted || tutState) return;
+  if(typeof tutorialIsDone==='function' && !tutorialIsDone()) return;
+  if(typeof firstVisitCardForTarget!=='function') return;
+  const c = firstVisitCardForTarget(e.target);
+  if(!c) return;
+  markFirstVisitSeen(c.id);
+  // 画面が開いてから重ねる(先に出すと、開いた画面がカードの上に来る)
+  setTimeout(()=>{ tutorialCardShow({ title:c.title, body:c.body, next:'わかった' }, ()=>{}, null); }, 350);
+}, true);

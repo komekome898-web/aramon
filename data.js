@@ -4477,16 +4477,27 @@ function shardExchangeLabel(e){
    1行の中身:
      id       進捗の保存に使う名前。**変えると途中の人が再開できなくなる**
      card     節目に出す全画面カード { title, body, img }
-     hint     操作している間、画面下の帯に出す一言
+     hint     操作している間、画面下の帯に出す一言。**帯は1行で切れる**ので20字くらいまで
      allow    その間さわってよい要素(セレクタ)。**先頭が光る**
      enter()  カードを閉じたときに一度だけ走る(画面を開くなどの前準備)
+     leave()  そのステップを終えたときに一度だけ走る(開いた物を元へ戻す後始末)
      done()   これが true になったら次のステップへ。**省略するとカードを閉じただけで進む**
      skipIf() 最初から満たしているとき、そのステップを飛ばす
-     optional true なら帯に「あとで」を出す(アカウント登録だけ)
+     optional true ならカードに「あとで」を出す(飛ばしてよいステップ)
+     inMatch  true = **練習試合の中で出す案内**。カードは出さず帯だけ。画面はロックしない
+     limitSec inMatch のときの待ち上限(秒)。過ぎたら黙って次へ(試合は止まらないので必須)
 
    ・**試合中は画面をロックしない**(操作できなくなるため)。tutorial.js 側の共通判断。
    ・関数の中身は実行時にしか評価されないので、ui.js の関数をそのまま呼んでよい。
    ===================================================================== */
+/* 練習試合の中の案内(inMatch)で使う数値。**試合は止まらない**前提で決めてある。
+   ・読む余裕が無いので帯は短く、条件を満たしたら即次へ。
+   ・できなくても必ず先へ行けるように、1つの案内で待つ上限を持たせる。 */
+const TUT_MATCH_STEP_SEC = 22;    // 1つの案内で待つ上限(秒)。過ぎたら次へ送る
+const TUT_MATCH_READ_SEC = 2.2;   // 帯を最低これだけは残す(先に条件を満たしていても一瞬で消えない)
+const TUT_LOOK_YAW_RAD   = 1.0;   // 「まわりを見た」と認める向きの変化(約57度)
+const TUT_AIM_YAW_RAD    = 0.35;  // 「FIREを滑らせて狙った」と認める向きの変化(約20度)
+const TUT_GUTS_REGAIN    = 5;     // 「ガッツが戻り始めた」と認める回復量
 const TUTORIAL_STEPS = [
   { id:'pickMonster',
     card:{ title:'まずは相棒を選ぼう', body:'モンスターごとに技も強さも違う。気になった子を選んでみよう。あとから何度でも変えられるよ。' },
@@ -4495,11 +4506,57 @@ const TUTORIAL_STEPS = [
     done:()=> !!game.selectedElement },
 
   { id:'match',
-    card:{ title:'1試合やってみよう', body:'左下のスティックで移動、右下の「FIRE」で攻撃。最後の1体まで生き残れば勝ち！\n今回は短めの練習試合。倒されても大丈夫、そのまま次へ進むよ。' },
+    card:{ title:'1試合やってみよう',
+      body:'左下のスティックで移動、右下の「FIRE」で攻撃。\n画面をドラッグすると見ている向きが変わる。FIREは押したまま指を滑らせても狙えるよ。\n最後の1体まで生き残れば勝ち！ 今回は短めの練習試合。倒されても大丈夫、そのまま次へ進むよ。\n\n試合が始まったら、画面の下に次にやることを1つずつ出すね。' },
     hint:'「バトル開始」で試合を始めよう',
     allow:['#joinBtn'],
     enter:()=> tutorialSetSoloMode(),
-    done:()=> !document.getElementById('resultScreen').classList.contains('hidden') },
+    done:()=> game.started && !game.over },
+
+  /* ---- ここから練習試合の中(inMatch)。**カードは出さない**(試合が止まらないので読めない)。
+     順番は「見る → 狙う → 倒す → 技 → 安置 → ガッツ」。倒されたり試合が終わったら
+     残りは黙って畳んで matchEnd へ落ちる(tutorial.js の共通処理)。 */
+  { id:'mLook', inMatch:true, limitSec:TUT_MATCH_STEP_SEC,
+    hint:'画面をドラッグしてまわりを見よう',
+    allow:[],                       // 画面全体が対象。**光らせる物は無い**(#gameCanvasを光らせると枠が画面外へ出る)
+    enter:()=> tutorialMarkYaw(),
+    done:()=> tutorialYawMoved(TUT_LOOK_YAW_RAD) },
+
+  { id:'mAim', inMatch:true, limitSec:TUT_MATCH_STEP_SEC,
+    hint:'「FIRE」は押したまま滑らせて狙える',
+    allow:['#fireBtn'],
+    enter:()=> tutorialMarkYaw(),
+    done:()=> tutorialFireAimDone() },
+
+  { id:'mKill', inMatch:true, limitSec:TUT_MATCH_STEP_SEC,
+    hint:'敵に近づいて「FIRE」で倒そう',
+    allow:['#fireBtn'],
+    done:()=> !!player && (player.kills||0) >= 1 },
+
+  { id:'mTier', inMatch:true, limitSec:TUT_MATCH_STEP_SEC,
+    hint:'🎫を拾うと強い技。タップで切替',
+    allow:['#movePanel'],
+    enter:()=> tutorialMarkMoveTier(),
+    done:()=> tutorialMoveTierDone() },
+
+  { id:'mZone', inMatch:true, limitSec:TUT_MATCH_STEP_SEC,
+    hint:'安置(黄色い円)の外はダメージ',
+    allow:['#minimapWrap'],
+    done:()=> tutorialInZoneDone() },
+
+  { id:'mGuts', inMatch:true, limitSec:TUT_MATCH_STEP_SEC,
+    hint:'ガッツは技の燃料。待てば戻る',
+    allow:['#gutsTrack'],
+    enter:()=> tutorialMarkGuts(),
+    done:()=> tutorialGutsDone() },
+
+  /* 試合の終わりを待つだけの段。**limitSec を持たせない**(ここで時間切れにすると
+     まだ試合中なのに次のカードが試合の上へ出てしまう)。帯も出さない(hintなし)。
+     リザルトを通らずにロビーへ戻された場合(通信切れなど)にも止まらないよう、
+     「試合が終わっていてロビーが出ている」でも次へ行く。 */
+  { id:'matchEnd', inMatch:true,
+    done:()=> !document.getElementById('resultScreen').classList.contains('hidden')
+           || (!game.started && !document.getElementById('startScreen').classList.contains('hidden')) },
 
   { id:'register',
     card:{ title:'マスモンに登録しよう', body:'気に入ったモンスターは「マスモン」として登録できる。レベルが上がって強くなり、ずっと相棒として育てられるよ。' },
@@ -4540,6 +4597,26 @@ const TUTORIAL_STEPS = [
     skipIf:()=> !tutorialMastermonKey(),
     done:()=> tutorialDressupDone() },
 
+  /* 試合の外の遊び方(D-2)。**全部は入れない**(長いとやめてしまう)。
+     ここに置くのは「教わらないと存在に気づけない」2つだけ ―― 遠征とマルチ。
+     残りの画面は FIRST_VISIT_CARDS(初めて開いたときの1枚)にまかせる。 */
+  { id:'expedition',
+    card:{ title:'留守のあいだも育てよう', body:'マスモンは「遠征」へ送り出せる。しばらくすると経験値やアイテムを持って帰ってくるよ。\n遊んでいない間も育つので、ロビーに戻ったらのぞいてみよう。' },
+    hint:'左の「遠征」を開いてみよう',
+    allow:['#openExpeditionBtn', '#expeditionOverlay', '#expeditionPickOverlay'],
+    enter:()=> tutorialBackToLobby(),
+    optional:true,
+    done:()=> tutorialExpeditionDone() },
+
+  { id:'multi',
+    card:{ title:'誰かと一緒に遊ぶには', body:'「プレイモード」で「マルチPvP(2〜4人)」を選ぶと、「部屋を作る」「部屋を探す」が出てくる。\n「部屋を探す」を押すだけで、待っている誰かと遊べるよ。もらえる経験値もぐんと増える。' },
+    hint:'「プレイモード」を開いてみよう',
+    allow:['#openModePickBtn', '#modePickOverlay'],
+    enter:()=> tutorialBackToLobby(),
+    optional:true,
+    leave:()=> tutorialSetSoloMode(),   // 見に行ったあとは1人で遊べるシングルへ戻しておく
+    done:()=> tutorialModePickDone() },
+
   { id:'pwa',
     card:{ title:'ホーム画面に追加しよう', body:'共有ボタンから「ホーム画面に追加」すると、アプリのように全画面ですぐ遊べる。\n※追加したあとは、さっき作ったアカウントでログインしてね。', img:'guide/addhome-guide.png' },
     skipIf:()=> tutorialIsStandalone() },
@@ -4566,6 +4643,166 @@ const TUTORIAL_MATCH = {
 };
 // チュートリアル完了のプレゼント
 const TUTORIAL_REWARD = { dia: 60, items: [{ key:'freeTrainTicket', n: 3 }] };
+
+/* =====================================================================
+   はじめてその画面を開いたときの1枚カード(D-2)
+
+   チュートリアル本編に全部の遊びを詰めると長くなりすぎてやめてしまうので、
+   **ロビーのボタンを初めて押したときに、その画面の説明を1枚だけ出す。**
+   ・**この表に1行足せば増える。** 画面ごとの分岐は書かない
+   ・出す仕組み(押した検知・保存・チュートリアル中は出さない)は tutorial.js の共通処理
+   ・btn = 押されたボタン(セレクタ)。id = 出し終わったことを覚える名前(**変えると再び出る**)
+   ・チュートリアル本編で教える画面(遠征・プレイモード)はここに入れない(二重に出るため)
+   ===================================================================== */
+const FIRST_VISIT_KEY = 'aramon_first_visit_v1';   // 出し終わったidの一覧。**端末ごと**(見た/見ないの記録)
+const FIRST_VISIT_CARDS = [
+  { id:'range',   btn:'#openRangeBtn',    title:'射撃訓練場',
+    body:'的は倒しても復活し、アイテムは何度でも拾える練習場。\n技の届く距離や、FIREを滑らせて狙う感じをここで確かめよう。勝ち負けは無いので、いつ抜けてもOK。' },
+  { id:'mission', btn:'#openMissionBtn',  title:'ミッション',
+    body:'毎日のデイリーミッションと、シーズンパスがここ。\n試合をこなすだけで進むので、遊んだあとにのぞくとゴールドやダイヤがたまっているよ。' },
+  { id:'bag',     btn:'#openBagBtn',      title:'バッグ',
+    body:'手に入れたアイテムと称号はここ。\n「タネ」はマスモンのステータスを直接のばす。使う相手を右から選んでね。' },
+  { id:'shop',    btn:'#openShopBtn',     title:'ショップ',
+    body:'試合でたまったゴールドでアイテムを買える。\n「💠モン晶こうかん」タブでは、ガチャの被りでたまるモン晶を特別なアイテムに換えられるよ。' },
+  { id:'ranking', btn:'#titleRankingBtn', title:'ランキング',
+    body:'撃破数・与ダメージ・マスモンの育ち具合が全国で並ぶ。\n通常マップ／リアルマップ／マスモンでタブが分かれているよ。' },
+  { id:'gallery', btn:'#openGalleryBtn',  title:'ギャラリー',
+    body:'持っているスキンを大きく鑑賞できる。\nSSRスキンは専用のムービー・BGM・効果音も聴ける(ミュージアム)。気に入った曲はロビーBGMにもできるよ。' },
+  { id:'gacha',   btn:'#openGachaBtn',    title:'ガチャ',
+    body:'ダイヤでスキンを引く。持っているスキンが出たときは「モン晶(💠)」がもらえて、ショップで交換できる。\n引いた回数でも節目の報酬がもらえるよ。' },
+  { id:'raid',    btn:'#openRaidBtn',     title:'レイドバトル',
+    body:'みんなで大きなボスに挑む期間限定のバトル。\n倒しきれなくても、与えたダメージが積み上がって報酬になるよ。1人でも部屋を作っても挑める。' },
+];
+function firstVisitCardFor(sel){ return FIRST_VISIT_CARDS.find(c=> c.btn === sel) || null; }
+function loadFirstVisitSeen(){
+  try{ return JSON.parse(localStorage.getItem(FIRST_VISIT_KEY)) || {}; }catch(err){ return {}; }
+}
+function markFirstVisitSeen(id){
+  const s = loadFirstVisitSeen();
+  if(s[id]) return;
+  s[id] = 1;
+  try{ localStorage.setItem(FIRST_VISIT_KEY, JSON.stringify(s)); }catch(err){}
+}
+/* 押された要素から「まだ出していないカード」を引く。押した先が中の <span> でも当たるように
+   closest() で探す(座標を使わないので強制横向きでも効く)。無ければ null。 */
+function firstVisitCardForTarget(el){
+  if(!el || !el.closest) return null;
+  for(const c of FIRST_VISIT_CARDS){
+    if(el.closest(c.btn)) return loadFirstVisitSeen()[c.id] ? null : c;
+  }
+  return null;
+}
+
+/* =====================================================================
+   用語集(D-3)
+
+   ガッツ・安置・モン晶…といった中核の言葉が、ゲーム内のどこにも説明されていなかった。
+   **説明はこの表1つ**にまとめ、遊び方ガイドの「用語集」の章はここから組み立てる
+   (ELEMENTS / STATE_CHANGES / CHANGELOG_TAGS と同じ流儀。手書きの一覧を作らない)。
+
+   1行の中身: { id, cat, icon, term, desc }
+     cat  GLOSSARY_CATEGORIES の id。章の中の並びはこの表の順そのまま
+     desc **文字列か、文字列を返す関数**。数字を出すときは必ず関数にして
+          **定数から組み立てる**(定数を変えたら説明も変わる。数字を二重に持たない)
+
+   画面側は次の2つだけ使えばよい:
+     glossaryEntries(catId)  … その章の項目(catId 省略で全件)
+     glossaryText(entry)     … その項目の説明文(関数でも文字列でも同じ形で返る)
+   ===================================================================== */
+const GLOSSARY_CATEGORIES = [
+  { id:'battle', label:'バトルの言葉' },
+  { id:'grow',   label:'育成の言葉' },
+  { id:'meta',   label:'やりこみの言葉' },
+];
+const GLOSSARY = [
+  /* ---- バトル ---- */
+  { id:'guts', cat:'battle', icon:'💪', term:'ガッツ',
+    desc:()=> `技を撃つための燃料。HPバーの下の細いバーがそれで、技ごとに決まった量を使う。`
+            + `足りないと「ガッツ不足！」と出て撃てず、FIREボタンも灰色になる。`
+            + `時間がたつと自動で戻り、ステータスの「かしこさ」が高いほど回復が速い。`
+            + `落ちている${GUTS_ITEM.name}(🍬)を拾うと ガッツ+${GUTS_ITEM.restore}・上限+${GUTS_ITEM.maxBoost}。` },
+  { id:'zone', cat:'battle', icon:'🟡', term:'安置（安全圏）',
+    desc:()=> `ミニマップの黄色い円の中が安置。外にいるとじわじわダメージを受け、`
+            + `終盤ほど痛くなる(最後は毎秒${ZONE_PHASES_BASE[ZONE_PHASES_BASE.length-1].dps})。`
+            + `円は時間で小さくなり、点線が次の縮小先(安置予測)。`
+            + `縮み始める${ZONE_WARN_LEAD_SEC}秒前に知らせが出るので、そこで動き出せば間に合う。` },
+  { id:'tier', cat:'battle', icon:'🎫', term:'技のtierと修行チケット',
+    desc:()=> `技は3段階(tier1〜3)あり、試合の始めはtier1だけ。`
+            + `落ちている${TICKET_ITEM.name}(🎫)を拾うと上の技が使えるようになる。`
+            + `画面下の技パネルをタップすると使う技を切り替えられる(左右のフリックでも切替)。` },
+  { id:'autorun', cat:'battle', icon:'🏃', term:'オートラン',
+    desc:'左のスティックを上へ2回はじくと、指を離しても走り続ける。もう一度スティックを触るか、被弾すると解除。移動が長い序盤に使うと楽。' },
+  { id:'dash', cat:'battle', icon:'💨', term:'ダッシュ',
+    desc:()=> `右下のDASHで短い距離を一気に移動する(通常の${DASH_SPEED_MULT}倍の速さ)。`
+            + `技をよけるときと、安置へ急ぐときの両方に使える。` },
+  { id:'down', cat:'battle', icon:'🩹', term:'ダウンと蘇生',
+    desc:()=> `チーム戦だけの仕組み。HPが尽きても一度は「ダウン」で踏みとどまり、這って動ける`
+            + `(移動は${Math.round(TEAM_DOWN_SPEED_MULT*100)}%・被ダメ${TEAM_DOWN_DMG_TAKEN_MULT}倍)。`
+            + `仲間が近く(${Math.round(TEAM_REVIVE_RADIUS/PING_UNITS_PER_M)}mほど)に${TEAM_REVIVE_SEC}秒とどまると蘇生でき、`
+            + `HPが最大の${Math.round(TEAM_REVIVE_HP_RATIO*100)}%まで戻る。`
+            + `誰も来ないまま${TEAM_DOWN_BLEED_SEC}秒たつと力尽きる。` },
+  { id:'ping', cat:'battle', icon:'🎯', term:'ピン（合図）',
+    desc:()=> `チーム戦で出る🎯ボタン。見ている方向へ「ここへ行こう」「敵がいる」の合図を置ける。`
+            + `味方の画面とミニマップに${PING_LIFETIME_SEC}秒だけ出るので、文字を打たずに意思を伝えられる。` },
+  { id:'deathDisc', cat:'battle', icon:'🥏', term:'デス円盤石',
+    desc:()=> `倒されたモンスターが、試合中に得た強化を石の円盤として最大${DEATH_DISC_MAX_ITEMS}個落とす。`
+            + `誰でも拾えて、拾った瞬間にそのまま自分の強化になる。`
+            + `拾った力も自分が倒されればまた落ちるので、強化が試合の中をぐるぐる巡る。` },
+  { id:'disc', cat:'battle', icon:'💿', term:'円盤石',
+    desc:'試合の開始やガチャの召喚でモンスターの足元に出る、光る石の円盤。演出なので効果は無い(強化の石は「デス円盤石」のほう)。' },
+
+  /* ---- 育成 ---- */
+  { id:'mastermon', cat:'grow', icon:'⭐', term:'マスモン',
+    desc:()=> `ずっと相棒として育てられるモンスター。試合を1回終えると登録でき、1種族につき1体。`
+            + `レベルは${MASTERMON_LEVEL_CAP}が上限で、上げたステータスは次の試合にそのまま乗る。` },
+  { id:'aptitude', cat:'grow', icon:'🅰️', term:'適正（ステータスの横のバッジ）',
+    desc:()=> `ステータスごとの「トレーニングの伸びやすさ」。段階は ${APTITUDE_ORDER.join('→')} で、`
+            + `1回のトレーニングで伸びる量が ${APTITUDE_TRAIN_MULT[APTITUDE_ORDER[0]]}倍`
+            + `〜${APTITUDE_TRAIN_MULT[APTITUDE_ORDER[APTITUDE_ORDER.length-1]]}倍まで変わる。`
+            + `種族の適正はSまでで、それより上は転生でしか手に入らない。`
+            + `S以上はステータス1ポイントあたりの効きも良くなる。` },
+  { id:'rebirth', cat:'grow', icon:'♻️', term:'転生',
+    desc:()=> `レベル${REBIRTH_LEVEL_REQ}のマスモンをレベル1に戻す代わりに、`
+            + `適正を${REBIRTH_APT_PICKS}つ1段階ずつ上げる。ステータスは${Math.round(1/REBIRTH_STAT_KEEP_RATIO)}分の1だけ残り、`
+            + `上限が+${REBIRTH_STAT_CAP_STEP}、トレーニングチケットも${REBIRTH_TICKETS}枚もらえる。`
+            + `${REBIRTH_MAX}回まで重ねられて、そのたびに伸びしろが増える。` },
+  { id:'awaken', cat:'grow', icon:'✵', term:'覚醒',
+    desc:()=> `育て込んだマスモンだけの最終形態。転生${AWAKEN_REBIRTH_REQ}回以上＋6つのステータスすべて${AWAKEN_STAT_MIN}以上で、`
+            + `対応するSSRスキンを着ていると覚醒できる。姿が変わり、tier3の技に強化を1つ選んで付けられる。`
+            + `着せ替えで元の姿に戻すこともできる(戻すと強化も外れる)。` },
+  { id:'hiden', cat:'grow', icon:(PLAYER_ITEMS.hidenScroll||{}).icon || '📖', term:'秘伝の書',
+    desc:()=> `モン晶${(SHARD_EXCHANGE.find(e=>e.id==='hiden')||{cost:0}).cost}個で交換できる技の強化アイテム。`
+            + `いま着ているスキンのtier3技に「威力アップ」などの強化を1つ付けられる。`
+            + `1体につき${HIDEN_MAX_PER_MASTERMON}つまでで、覚醒の強化とは重ねてかけられる。` },
+  { id:'expedition', cat:'grow', icon:'🧭', term:'遠征',
+    desc:()=> `マスモンを送り出しておくと、時間がたって経験値やアイテムを持ち帰る。`
+            + `枠はマスモンの数で増える(${EXPEDITION_SLOT_UNLOCKS.map(u=>`${u.own}体で${u.slots}枠`).join('・')})。`
+            + `行き先とステータスの相性がよいほど成果が大きい。出ている間その子は試合に出せない。` },
+
+  /* ---- やりこみ ---- */
+  { id:'shard', cat:'meta', icon:SHARD_ICON, term:SHARD_NAME,
+    desc:()=> `ガチャで「すでに持っているスキン」が出たとき(これを被りという)にもらえる石。`
+            + `SRの被りで${DUP_SKIN_SHARD}個・SSRの被りで${DUP_SSR_SHARD}個。`
+            + `ショップの「${SHARD_ICON}モン晶こうかん」で、${SHARD_EXCHANGE.map(e=>shardExchangeLabel(e)).join('・')} と交換できる。` },
+  { id:'rank', cat:'meta', icon:'👑', term:'段位とRP',
+    desc:()=> `試合の成績でたまる点がRP、その量で決まる位が段位(${RANKS.map(r=>r.name).join('→')})。`
+            + `1試合で 1位=+${RANK_RP_WIN} / `
+            + RANK_RP_PLACE.map((p,i)=> `${i === RANK_RP_PLACE.length-1 ? 'それ以下' : `上位${Math.round(p.top*100)}%`}=${p.rp>0?'+':''}${p.rp}`).join(' / ')
+            + `、さらに撃破1体につき+${RANK_RP_PER_KILL}(最大+${RANK_RP_KILL_MAX})。`
+            + `ソロは${RANK_RP_MULT.solo}倍。下位に沈むと減るが、一度上がった段位より下には落ちない。`
+            + `シーズンが切り替わると0からやり直しになる。` },
+  { id:'sp', cat:'meta', icon:'🎖️', term:'SP（シーズンポイント）',
+    desc:()=> `シーズンパスの進み具合。試合ごとに撃破数・与ダメージ・勝利でたまり、`
+            + `${SEASON_SP_PER_TIER}SPごとに1段階、全${SEASON_MAX_TIER}段階の報酬がもらえる(すべて無料)。`
+            + `シーズンが切り替わると0に戻る。` },
+  { id:'mutator', cat:'meta', icon:'🎲', term:'ミューテーター',
+    desc:()=> `曜日ごとに変わる特別ルール。ミッション画面のカレンダーで今日の内容を確認できる。`
+            + `効果は ${MUTATOR_LEGEND.map(m=>`${m.label}=${m.desc}`).join(' / ')}。` },
+  { id:'raid', cat:'meta', icon:'🐉', term:'レイド',
+    desc:'期間限定の大型ボス戦。倒しきれなくても与えたダメージが全員ぶん積み上がり、討伐までみんなで削っていく。自分の与ダメージに応じて報酬とランキングがつく。' },
+];
+function glossaryText(e){ return e ? (typeof e.desc === 'function' ? e.desc() : (e.desc || '')) : ''; }
+function glossaryEntries(catId){ return catId ? GLOSSARY.filter(g=> g.cat === catId) : GLOSSARY.slice(); }
 
 /* =====================================================================
    GAME STATE
