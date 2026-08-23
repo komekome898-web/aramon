@@ -195,6 +195,43 @@ function applyAppRootTransform(forced, real){
   // セーフエリアも--vw/--vhと同じ経路で更新する(向きが変わるたびに入れ替わるため)
   applySafeAreaVars(forced);
 }
+/* ===== 「横向きにしてください」の案内(#rotateOverlay) =====
+   小さい画面は縦持ちでも #appRoot を90度回して横向きで遊べるので案内は要らない。
+   だが長辺が FORCE_LANDSCAPE_MAX_SIDE を超える端末(iPadの768×1024など)は回転の対象外で、
+   **縦長のまま試合が始まってしまい、横にしてほしいとも伝えていなかった。**
+   そこで「回せない端末が縦持ちのときだけ」この案内を出す。
+
+   #rotateOverlay は style.css で `#rotateOverlay{ display:none; }` と固定されている。
+   CSSは他の担当のファイルなので触らず、**JSのインラインstyleで上書き**する。
+   インラインstyleはセレクタより優先度が高いので !important を足さなくても必ず勝つ。
+   見た目の指定もCSS側に無い(display:none以外は空)ので、ここで全部当てる。 */
+const ROTATE_HINT_Z = 100000;        // 既存の最大 z-index(9999)より確実に上
+const ROTATE_HINT_FONT_PX = 17;      // 持ち方で文字サイズを変えないので固定px
+const rotateOverlayEl = document.getElementById('rotateOverlay');
+let rotateHintDismissed = false;     // 一度閉じたら、次に横へ戻すまで出し直さない
+function updateRotateHint(isPortrait, isSmallScreen){
+  if(!rotateOverlayEl) return;
+  // 指で持って回せる機器だけが対象。マウスのPCで縦長の窓にしただけの人には出さない
+  const isTouch = (navigator.maxTouchPoints || 0) > 0 || ('ontouchstart' in window);
+  if(!isPortrait) rotateHintDismissed = false;   // 横に戻したら次の縦持ちでまた出す
+  const want = isPortrait && !isSmallScreen && isTouch && !rotateHintDismissed;
+  if(!want){ rotateOverlayEl.style.display = 'none'; return; }
+  const s = readScreenSafeInsets();
+  rotateOverlayEl.style.cssText =
+    'position:fixed;top:0;left:0;right:0;bottom:0;z-index:' + ROTATE_HINT_Z + ';'
+    + 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;'
+    + 'background:rgba(4,6,10,0.94);color:#fff;text-align:center;'
+    + 'padding:' + s.t + 'px ' + s.r + 'px ' + s.b + 'px ' + s.l + 'px;'
+    + 'font-size:' + ROTATE_HINT_FONT_PX + 'px;letter-spacing:1px;line-height:1.6;';
+  // 台に固定していて回せない人が詰まないよう、触れば閉じられるようにしておく
+  if(!rotateOverlayEl.dataset.tapClose){
+    rotateOverlayEl.dataset.tapClose = '1';
+    rotateOverlayEl.addEventListener('click', ()=>{
+      rotateHintDismissed = true;
+      rotateOverlayEl.style.display = 'none';
+    });
+  }
+}
 function updateForceLandscapeMode(){
   const real = getRealViewportSize();
   // 向きはメディアクエリを優先(実測pxはアドレスバーやキーボードで揺れる)
@@ -207,6 +244,8 @@ function updateForceLandscapeMode(){
   const shouldForce = isPortrait && isSmallScreen;
   document.documentElement.classList.toggle('force-landscape', shouldForce);
   applyAppRootTransform(shouldForce, real);
+  // 回せない端末が縦持ちのときだけ案内を出す(判定はこの1か所から渡す)
+  updateRotateHint(isPortrait, isSmallScreen);
   return shouldForce;
 }
 function isForcedLandscape(){
@@ -280,6 +319,50 @@ if(_mqPortrait){
 ['DOMContentLoaded','load','pageshow'].forEach(ev=> window.addEventListener(ev, resize));
 [50, 150, 400, 900, 2000].forEach(ms=> setTimeout(resize, ms));
 resize();
+
+/* =====================================================================
+   スクロールロックの除外リスト(正はここだけ)
+
+   画面全体はスクロール・ダブルタップ拡大を止めてある(試合中に画面がずれるのを防ぐため)。
+   その「止めない場所」の指定は3か所で必要になる:
+     ・render.js の touchmove    … 指でなぞってスクロールできる場所
+     ・input.js  の touchend     … 素早い連続タップを潰さない場所
+     ・input.js  の dblclick     … ダブルタップ拡大を止めない場所
+   以前はこの3か所に**52個のIDを並べた同じ1行**がそのまま書いてあり、画面を1つ足すたびに
+   3か所へ手で書き足す必要があった(1か所でも漏れると、その画面はスクロールもタップも効かない)。
+   同じ意味のものを2か所に書かないというCLAUDE.mdの決まりどおり、正をこの配列1つにして、
+   3か所は scrollLockExempt() を呼ぶだけにする。
+
+   world.js に置く理由: 読み込み順が data.js → audio.js → world.js → combat.js → render.js →
+   input.js なので、使う2ファイルより必ず先に読まれる。かつ画面の向き・寸法という
+   「全画面に効く決まり」を持っているのがこのファイルなので、置き場所として自然。
+
+   ★新しい画面/オーバーレイを足したら、**この配列へIDを1行足すだけ**でよい。
+===================================================================== */
+const SCROLL_LOCK_EXEMPT_IDS = [
+  "titleScreen", "startScreen", "settingsOverlay", "myPageOverlay",
+  "helpOverlay", "helpImageOverlay", "monsterPickOverlay", "mapPickOverlay",
+  "modePickOverlay", "audioSettingsOverlay", "lobbyBgmOverlay", "accountOverlay",
+  "bagOverlay", "galleryOverlay", "missionOverlay", "expeditionOverlay",
+  "expeditionPickOverlay", "loginBonusPopup", "season1PreviewOverlay", "gachaOverlay",
+  "ssrPromoteOverlay", "skinPromoOverlay", "rockSsrPromoOverlay", "metagGaruruPromoOverlay",
+  "skinPreviewOverlay", "shopOverlay", "changelogOverlay", "rankingScreen",
+  "myStatsScreen", "howToPlayScreen", "mastermonScreen", "resultScreen",
+  "monsterListScreen", "adminPassScreen", "adminScreen", "lobbyScreen",
+  "roomListScreen", "spectateBar", "trainCardBar", "rangeBar",
+  "lookSettingsOverlay", "textInputOverlay", "rebirthOverlay", "awakenOverlay",
+  "hidenOverlay", "rebirthAnimOverlay", "awakenAnimOverlay", "raidOverlay",
+  "raidRankOverlay", "shareOverlay", "mastermonDeleteConfirm", "tutorialLayer",
+];
+/* 1本のセレクタにまとめておく(呼ばれるたびに組み直さない)。
+   closest は「,区切りのどれかに当たる最も近い祖先」を返すので、
+   以前の `closest('#a') || closest('#b') || …` と結果は完全に同じ。 */
+const SCROLL_LOCK_EXEMPT_SELECTOR = SCROLL_LOCK_EXEMPT_IDS.map((id)=>'#'+id).join(',');
+// 押された物が「スクロールを止めない場所」の中かどうか。
+// closest を持たない対象(テキストノード等)は素通しではなく false を返す(以前は例外で落ちていた)。
+function scrollLockExempt(target){
+  return !!(target && target.closest && target.closest(SCROLL_LOCK_EXEMPT_SELECTOR));
+}
 
 /* =====================================================================
    ZONE

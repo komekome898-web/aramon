@@ -77,9 +77,74 @@ const MODES = [
   { name:'レイド',       mode:'raid',   sub:null },
 ];
 
+/* #startScreen 以外の3画面。中身の出方で壊れ方が変わるので、それぞれ「起きうる姿」を並べる。
+   scrollIds = スクロールが出ていないか見る枠(パネル本体と、その中身の箱)。 */
+const SCREENS = [
+  { id:'lobbyScreen',    name:'待機部屋', variants:['host','guest','few'], scrollIds:['lobbyScreen','lobbyInner'] },
+  { id:'roomListScreen', name:'部屋一覧', variants:['few','many','empty'], scrollIds:['roomListScreen','roomListInner'] },
+  /* リザルトはスクロール量で見ない。fitResultScreen() が入り切らない中身を
+     transform:scale で丸ごと縮めて収めるが、**transform はレイアウトの寸法を変えない**ので
+     scrollHeight は縮む前のままになり、実際には収まっているのに「溢れている」と出てしまう。
+     収まっているかは外接矩形で見る「見切れ」が担当し、ここは押せる大きさ(縮小の巻き添え)を見る。 */
+  { id:'resultScreen',   name:'リザルト', variants:['plain','full'],       scrollIds:[] },
+];
+
+/* ===== 例外リスト(意図的に許しているもの) =====
+   検査を厳しくすると、これまで素通りしていた既存の作りが落ちる。**黙って基準を下げない**で、
+   ここへ「何を・どの画面で・なぜ許すのか」を書いて残す。直したらこの行を消す。
+   kind/label/id はすべて満たしたときだけ許可(広く効きすぎないように3つで絞る)。
+   ※ ここに載っているのは「直さなくてよい」ではなく「**別の担当のファイルなので今は直せない**」。
+      実行のたびに一覧で出るので、放っておいても見えなくならない。 */
+const KNOWN = [
+  { kind:'文字が切れる', label:/./, id:/^(changelogNewPop|season-ssr-pop|lobbyRankNext|EM)$/,
+    why:'ロビーの吹き出し・段位の補足が7.0〜8.5px。実機で読めない大きさだが、直すのは style.css(別担当)' },
+  { kind:'文字が切れる', label:/./,
+    id:/^(lobby-banner-rar|lobby-banner-tag|lobby-pick-label|lobby-side-label|lobby-count|lobbyCount|lobbyMonsterTapHint|title-sub)$/,
+    why:'ロビーのタイル・バナーの小ラベルが9.0〜9.9pxで下限をわずかに割る。値はタイルの高さから逆算しているので、字だけ上げると入らない(style.css担当)' },
+  { kind:'見切れ', label:/待機部屋/, id:/^lobbyInner$/,
+    why:'下と同じ原因(定員ぶんの行で中身が枠より高い)。iPad縦持ちだけ溢れが小さく、スクロールにならず2pxはみ出す形で出る(style.css担当)' },
+  { kind:'スクロール発生', label:/待機部屋/, id:/^lobbyScreen$/,
+    why:'定員8人ぶんの行を出すと15〜51px溢れる。パネルは overflow-y:auto で送れるが「新画面はスクロールなしで収まる縦幅に」には反する(style.css担当)' },
+  { kind:'小さすぎ', label:/リザルト/,
+    id:/^(shareResultBtn|viewRankingBtn|viewMyStatsBtn|viewMastermonBtn|viewRaidRankBtn|replayBtn|replayAgainBtn|mastermonRegisterSkipBtn|mastermonRegisterConfirmBtn)$/,
+    why:'fitResultScreen() が入り切らない中身を transform:scale で丸ごと縮めるので、押せる大きさも一緒に26〜41pxまで縮む。中身を減らすか縮小の下限を決める必要がある(ui.js / style.css担当)' },
+];
+
 const failures = [];
+const knownHits = [];
 const notes = [];
+/* 同じ物が端末×モードのぶんだけ並ぶと、40件の頭打ちで**別の不具合が見えなくなる**。
+   「どの要素が・何件で落ちたか」を1行にまとめた索引も出す(直す順番を決めるのに使う)。 */
+const findingIndex = new Map();
 const STRESS_N = 3;   // 素の状態 / ボタン+9個 / 文字を長く
+
+const knownFor = (kind, label, id)=>
+  KNOWN.find(k=> k.kind===kind && k.label.test(label) && k.id.test(id));
+/* 見つかったものを「本当の失敗」と「例外として許したもの」へ振り分ける。
+   3画面ぶん同じ書き方を繰り返さないよう、判定はここ1か所にまとめる。 */
+function pushFindings(label, r){
+  const emit = (kind, items, key, fmt)=>{
+    if(!items || !items.length) return;
+    const hot = [];
+    for(const x of items){
+      const k = knownFor(kind, label, String(key(x)));
+      if(k){ knownHits.push(`[${kind}] ${label} — ${fmt(x)}  ※許可: ${k.why}`); continue; }
+      hot.push(x);
+      const ik = `[${kind}] ${fmt(x)}`;
+      findingIndex.set(ik, (findingIndex.get(ik) || 0) + 1);
+    }
+    if(hot.length) failures.push(`[${kind}] ${label} — ${hot.slice(0,4).map(fmt).join(' / ')}`);
+  };
+  emit('見切れ', r.outside, x=>x.id, x=>`${x.id}が${x.over}px外`);
+  emit('小さすぎ', r.tooSmall, x=>x.id, x=>`${x.id} ${x.got}px < ${x.floor}px`);
+  emit('中身がはみ出す', r.spill, x=>x.id, x=>`${x.id} が${x.out}px外`);
+  emit('文字が切れる', r.clipped, x=>x.id, x=>`${x.id}(${x.why})`);
+  emit('重なり', r.overlap, x=>`${x.a}×${x.b}`, x=>`${x.a}×${x.b} ${x.px}px`);
+  emit('スクロール発生', r.scrolls, x=>x.id, x=>`${x.id}が+${x.d}px`);
+  if(r.order && r.order.length){
+    failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
+  }
+}
 
 for(const dev of DEVICES){
   const page = await browser.newPage({
@@ -107,12 +172,20 @@ for(const dev of DEVICES){
       if(el.id==='joinBtn' || el.id==='createRoomBtn' || el.id==='findRoomBtn') return window.__tap('main');
       if(el.classList.contains('lobby-side-btn') || el.classList.contains('lobby-pick-btn')) return window.__tap('pick');
       if(el.classList.contains('lobby-emote-btn')) return 34;
+      /* 待機部屋・部屋一覧・リザルトの押せる物。個別の決まりが無いので、
+         「押せる物には最小の高さ」の一般則の下限(--tap-pick)をそのまま当てる。
+         ここが空いていたせいで「解散」「部屋を抜ける」が28pxで並んでいた。 */
+      if(el.closest('#lobbyScreen, #roomListScreen, #resultScreen')) return window.__tap('pick');
       return 0;   // バナー等の「押せるが大きさの決まりが無い」物は対象外
     };
-    window.__auditLobby = ()=>{
+    /* 文字の下限。**6.5pxは「読めない」の下限であって「読める」の下限ではない**ので、
+       7〜9pxの文字が全部素通りしていた。実用値(10px)へ上げる。
+       いま通らない物は握りつぶさず、テスト側の KNOWN へ理由付きで載せて毎回一覧に出す。 */
+    window.__MIN_FONT = 10;
+    window.__auditScreen = (screenId)=>{
       const root = document.getElementById('appRoot');
       const rb = root.getBoundingClientRect();
-      const screenEl = document.getElementById('startScreen');
+      const screenEl = document.getElementById(screenId);
       const vis = (el)=>{
         const s = getComputedStyle(el);
         if(s.display==='none' || s.visibility==='hidden' || s.opacity==='0') return false;
@@ -120,12 +193,26 @@ for(const dev of DEVICES){
         return r.width>0 && r.height>0;
       };
       const outside = [], tooSmall = [], overlap = [];
+      /* 中がスクロールする箱(部屋一覧の行など)の中身は、いま画面の外にあっても指で送れば読める。
+         「外へ出ている」「切れている」と数えるのは**箱そのもの**の役目にして、中身は数えない。
+         その箱がスクロールしてよい場所なのかは、別に測るスクロール量(__scrollOf)で見る。
+         ロビー(#startScreen)にはスクロールする箱が1つも無いので、この除外は効かない。 */
+      const scrollBoxUp = (el, axis)=>{
+        for(let p = el.parentElement; p && p !== screenEl.parentElement; p = p.parentElement){
+          const s = getComputedStyle(p);
+          if(axis==='y' && /(auto|scroll)/.test(s.overflowY) && p.scrollHeight - p.clientHeight > 2) return p;
+          if(axis==='x' && /(auto|scroll)/.test(s.overflowX) && p.scrollWidth - p.clientWidth > 2) return p;
+        }
+        return null;
+      };
+      const inScrollBox = (el)=> !!(scrollBoxUp(el,'y') || scrollBoxUp(el,'x'));
       /* 1. #appRoot の外へ出ていないか。#appRoot は90度回っているが、子も同じ変換を
             受けるので外接矩形どうしの比較でそのまま判定できる(90度なので軸は入れ替わるだけ)。 */
       for(const el of screenEl.querySelectorAll('*')){
         if(!vis(el)) continue;
         const s = getComputedStyle(el);
         if(s.position==='fixed') continue;
+        if(inScrollBox(el)) continue;
         const r = el.getBoundingClientRect();
         const over = Math.max(rb.left-r.left, r.right-rb.right, rb.top-r.top, r.bottom-rb.bottom);
         if(over > 1) outside.push({ id: el.id || el.className.toString().slice(0,40), over: Math.round(over) });
@@ -149,7 +236,7 @@ for(const dev of DEVICES){
             この3つは実機で起きた不具合(ラベルが半分消える/吹き出しが潰れる)を
             そのまま言い表したもので、どこに何を足しても同じ基準で効く。 */
       const clipped = [];
-      const MIN_FONT = 6.5;   // これ未満は読めない
+      const MIN_FONT = window.__MIN_FONT;
       const hasOwnText = (el)=> [...el.childNodes].some(n=> n.nodeType===3 && n.textContent.trim());
       /* 測るのは**文字そのもの**(Range で実際の文字の矩形を取る)。
          scrollWidth/scrollHeight は絶対配置の飾り(角のNEWバッジ等)や擬似要素まで
@@ -198,8 +285,12 @@ for(const dev of DEVICES){
         const rot = document.documentElement.classList.contains('force-landscape');
         const dy = rot ? Math.max(cut.left, cut.right) : Math.max(cut.top, cut.bottom);
         const dx = rot ? Math.max(cut.top, cut.bottom) : Math.max(cut.left, cut.right);
-        if(dy > 1.5) clipped.push({ id, why:`縦に${dy.toFixed(1)}px切れる` });
-        else if(!ellipsis && dx > 1.5) clipped.push({ id, why:`横に${dx.toFixed(1)}px切れる` });
+        /* 箱がその向きにスクロールするなら「切れている」ではなく「送れば読める」。
+           dy/dx は文字にとっての縦横で、overflowY/scrollHeight も同じ座標系(回転は見た目だけ)。 */
+        const boxScrollY = /(auto|scroll)/.test(bs.overflowY) && box.scrollHeight - box.clientHeight > 2;
+        const boxScrollX = /(auto|scroll)/.test(bs.overflowX) && box.scrollWidth - box.clientWidth > 2;
+        if(!boxScrollY && dy > 1.5) clipped.push({ id, why:`縦に${dy.toFixed(1)}px切れる` });
+        else if(!ellipsis && !boxScrollX && dx > 1.5) clipped.push({ id, why:`横に${dx.toFixed(1)}px切れる` });
       }
       /* 2c. ボタンの中身がボタンの箱に収まっているか。
             タイルは overflow:hidden を**わざと外している**(付けると角の通知ドットが
@@ -241,15 +332,33 @@ for(const dev of DEVICES){
           }
         }
       }
+      return { outside, tooSmall, clipped, spill, overlap };
+    };
+    /* スクロール量を測る。ロビーは「スクロールさせない」決まりなので、どの枠にも出てはいけない。
+       待機部屋・部屋一覧のパネルは overflow-y:auto だが、**画面ぶんスクロールするのは作りの失敗**
+       (第3弾で待機画面が2.14画面ぶん出ていた)なので、同じ物差しで測って出す。 */
+    window.__scrollOf = (ids)=>{
       const sc = (id)=>{ const el=document.getElementById(id); return el ? el.scrollHeight-el.clientHeight : -1; };
-      // ロビーはスクロールさせない決まりなので、どの枠にもスクロールが出てはいけない
-      const scrolls = [];
-      for(const id of ['lobbyLeft','lobbyMenuGrid','lobbyRight','lobbyRightTop','lobbyCenter','lobbyActionArea','startScreen']){
+      const out = [];
+      for(const id of ids){
         /* 3px以上を「スクロールが出た」とみなす。scrollHeight/clientHeight は整数に
-           丸められるため、要素の位置が小数だと中身が収まっていても1〜2px差が出る。
-           **本当に画面の外へ出たかは上の outside(小数のまま比較)が見ている。** */
-        const d = sc(id); if(d > 2) scrolls.push({ id, d });
+           丸められるため、要素の位置が小数だと中身が収まっていても1〜2px差が出る。 */
+        const d = sc(id); if(d > 2) out.push({ id, d });
       }
+      return out;
+    };
+    window.__auditLobby = ()=>{
+      const base = window.__auditScreen('startScreen');
+      const screenEl = document.getElementById('startScreen');
+      const vis = (el)=>{
+        const s = getComputedStyle(el);
+        if(s.display==='none' || s.visibility==='hidden' || s.opacity==='0') return false;
+        const r = el.getBoundingClientRect();
+        return r.width>0 && r.height>0;
+      };
+      /* ロビーはスクロールさせない決まりなので、どの枠にもスクロールが出てはいけない。
+         **本当に画面の外へ出たかは outside(小数のまま比較)が見ている。** */
+      const scrolls = window.__scrollOf(['lobbyLeft','lobbyMenuGrid','lobbyRight','lobbyRightTop','lobbyCenter','lobbyActionArea','startScreen']);
       const cols = (()=>{ const g=document.getElementById('lobbyMenuGrid');
         return g ? getComputedStyle(g).gridTemplateColumns.split(' ').filter(Boolean).length : 0; })();
       /* 並び順: DOMの並び(画面で読む順)どおりに、2個ずつ同じ行の左右へ入っているか。
@@ -268,7 +377,7 @@ for(const dev of DEVICES){
           }
         });
       }
-      return { outside, tooSmall, clipped, spill, overlap, scrolls, menuCols: cols, order };
+      return { ...base, scrolls, menuCols: cols, order };
     };
     /* 5. 「これから起きうること」を実際に起こして、それでも壊れないかを見る。
           ・増やす … 左メニューへ9個(右列は増やさないのが決まりなので注入しない)
@@ -299,6 +408,76 @@ for(const dev of DEVICES){
       document.querySelectorAll('[data-stress]').forEach(e=>e.remove());
       document.querySelectorAll('[data-orig]').forEach(e=>{ e.textContent = e.dataset.orig; delete e.dataset.orig; });
     };
+
+    /* ===== #startScreen 以外の3画面 =====
+       待機部屋(#lobbyScreen)・部屋一覧(#roomListScreen)・リザルト(#resultScreen)は
+       #startScreen の**兄弟**なので、走査対象を #startScreen に固定していたこれまでの作りでは
+       1度も見ていなかった。「待機画面が2.14画面ぶんスクロールする」「ボタンが36pxしかない」が
+       残っていたのはこの穴のせい。
+       中身は雛形を手で書かず、**ui.js の描画関数へ通す**(renderLobbyPlayerList /
+       refreshRoomList / fitResultScreen)。そうしないと画面を直したときにここだけ古い形で残る。 */
+    const SCREEN_IDS = ['startScreen','lobbyScreen','roomListScreen','resultScreen'];
+    const LONG_NAME = 'とてもながいなまえのプレイヤー';
+    window.__showOnly = (id)=>{
+      for(const s of SCREEN_IDS){ const el=document.getElementById(s); if(el) el.classList.add('hidden'); }
+      if(id) document.getElementById(id).classList.remove('hidden');
+    };
+    window.__fillLobbyScreen = (variant)=>{
+      window.__showOnly('lobbyScreen');
+      netState.raid = false;
+      netState.capacity = 8;
+      netState.hostId = 'p0';
+      netState.isHost = (variant !== 'guest');
+      netState.myPlayerId = netState.isHost ? 'p0' : 'p1';
+      const names = ['ホストのひと', LONG_NAME, 'くろねこ', 'ゆうしゃ', 'まもの', 'せんし', 'まほうつかい', 'りゅうき'];
+      const n = (variant === 'few') ? 2 : names.length;
+      netState.humanPlayers = {};
+      for(let i=0;i<n;i++) netState.humanPlayers['p'+i] = { name: names[i], element:'dullahan' };
+      renderLobbyPlayerList();
+      updateLobbyWaitState();
+      showLobbyButtonsForRole();
+      document.getElementById('lobbyCountdown').textContent = 'まもなく開始… 5';
+    };
+    window.__fillRoomList = async (variant)=>{
+      window.__showOnly('roomListScreen');
+      const cnt = variant==='empty' ? 0 : (variant==='many' ? 8 : 3);
+      const rooms = [];
+      for(let i=0;i<cnt;i++) rooms.push({
+        roomId:'r'+i, lobbyKey:'k'+i, hostName: i===1 ? LONG_NAME : ('プレイヤー'+(i+1)),
+        capacity:8, count:(i%8)+1, teamSize: (i%2)?2:1, sub: (i%3===0)?'br20':null, mapPick:'random',
+      });
+      // 通信の口だけ差し替えて、一覧の描画は本物(refreshRoomList)に任せる
+      window.__aramonListOpenRooms = async ()=> rooms;
+      window.__aramonNetFailed = ()=> false;
+      roomListSig = '';
+      document.getElementById('roomListTitle').textContent = 'チーム戦の部屋を探す';
+      await refreshRoomList();
+    };
+    window.__fillResult = (variant)=>{
+      window.__showOnly('resultScreen');
+      document.getElementById('resultRank').textContent = '#1';
+      document.getElementById('resultSub').textContent = '勝利';
+      document.getElementById('statKills').textContent = '12';
+      document.getElementById('statDamage').textContent = '18,420';
+      document.getElementById('statTime').textContent = '12:34';
+      document.getElementById('scoreSubmitStatus').textContent = 'スコアを送信しました';
+      document.getElementById('resultCurrencyLine').textContent = '💰 320 コイン ／ 💎 4 ジェム を獲得';
+      document.getElementById('resultMonsterIcon').src = 'monsters/phoenix.png';
+      // full = 出るものを全部出した状態(死因・小隊・バッジ・マスモン・登録の勧め)
+      const full = (variant === 'full');
+      const put = (id, html)=>{
+        const el = document.getElementById(id); if(!el) return;
+        el.classList.toggle('hidden', !full);
+        if(full && html != null) el.innerHTML = html;
+      };
+      put('resultDeathCause', `⚔ ${LONG_NAME} に倒された`);
+      put('resultSquadInfo', `<div>小隊: あなた 12撃破 ／ ${LONG_NAME} 3撃破 ／ なかま ダウン</div>`);
+      put('resultBadges', '<span class="result-badge season">🎫 シーズン +12 SP</span><span class="result-badge">🏆 自己ベスト更新</span>');
+      put('mastermonResultInfo', '<div>マスモン「ほのお」が Lv12 → Lv13 になりました</div>');
+      put('mastermonRegisterPrompt', null);   // 中に入力欄とボタンがあるので中身は書き換えない
+      if(typeof setResultButtonsForRaid==='function') setResultButtonsForRaid(false);
+      if(typeof fitResultScreen==='function') fitResultScreen();
+    };
   });
 
   const STRESS = [ {k:null, t:''}, {k:'future', t:' / 将来+9個'}, {k:'long', t:' / 文字を長く'} ];
@@ -319,17 +498,34 @@ for(const dev of DEVICES){
           return window.__auditLobby();
         }, { mode:m.mode, sub:m.sub, withMonster, stress: st.k });
 
-        if(r.outside.length) failures.push(`[見切れ] ${label} — ${r.outside.slice(0,4).map(x=>`${x.id}が${x.over}px外`).join(' / ')}`);
-        if(r.tooSmall.length) failures.push(`[小さすぎ] ${label} — ${r.tooSmall.slice(0,4).map(x=>`${x.id} ${x.got}px < ${x.floor}px`).join(' / ')}`);
-        if(r.spill.length) failures.push(`[中身がはみ出す] ${label} — ${r.spill.slice(0,4).map(x=>`${x.id} が${x.out}px外`).join(' / ')}`);
-        if(r.clipped.length) failures.push(`[文字が切れる] ${label} — ${r.clipped.slice(0,4).map(x=>`${x.id}${`(${x.why})`}`).join(' / ')}`);
-        if(r.overlap.length) failures.push(`[重なり] ${label} — ${r.overlap.slice(0,3).map(x=>`${x.a}×${x.b} ${x.px}px`).join(' / ')}`);
-        if(r.order && r.order.length) failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
-        if(r.scrolls.length) failures.push(`[スクロール発生] ${label} — ${r.scrolls.map(x=>`${x.id}が+${x.d}px`).join(' / ')}`);
+        pushFindings(label, r);
         if(st.k) notes.push(`${label}: メニュー${r.menuCols}列・縦は伸びず・切れ0`);
       }
     }
   }
+
+  /* ===== 待機部屋 / 部屋一覧 / リザルト =====
+     ロビー本体と同じ物差し(見切れ/押しやすさ/文字/はみ出し/重なり/スクロール)で見る。
+     端末ごとに 3+3+2 = 8通り。ページの用意が一番重い処理なので、同じページを使い回す。 */
+  for(const s of SCREENS){
+    for(const v of s.variants){
+      const label = `${dev.name} / ${s.name}(${v})`;
+      const r = await page.evaluate(async (o)=>{
+        if(o.id==='lobbyScreen') window.__fillLobbyScreen(o.v);
+        else if(o.id==='roomListScreen') await window.__fillRoomList(o.v);
+        else window.__fillResult(o.v);
+        // パネルは 0.22秒のスライドで出るので、動き終わってから測る(途中の位置で測らない)
+        await new Promise(r=> setTimeout(r, 300));
+        await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
+        const base = window.__auditScreen(o.id);
+        base.scrolls = window.__scrollOf(o.scrollIds);
+        return base;
+      }, { id:s.id, v, scrollIds:s.scrollIds });
+      pushFindings(label, r);
+    }
+  }
+  await page.evaluate(()=> window.__showOnly('startScreen'));   // 状態を残さずロビーへ戻す
+
   if(jsErrors.length) failures.push(`[JSエラー] ${dev.name} — ${jsErrors[0].slice(0,160)}`);
   await page.close();
 }
@@ -337,7 +533,20 @@ for(const dev of DEVICES){
 await browser.close();
 server.close();
 
-console.log(`検査: ${DEVICES.length}端末 × ${MODES.length}モード × 選択有無2 × 負荷${STRESS_N}種 = ${DEVICES.length*MODES.length*2*STRESS_N}通り`);
+const SCREEN_CASES = SCREENS.reduce((n,s)=> n + s.variants.length, 0);
+console.log(`検査: ${DEVICES.length}端末 × (${MODES.length}モード × 選択有無2 × 負荷${STRESS_N}種 + 別画面${SCREEN_CASES}通り)`
+  + ` = ${DEVICES.length*(MODES.length*2*STRESS_N + SCREEN_CASES)}通り  文字の下限 ${10}px`);
+// LOBBY_TEST_ALL=1 を付けると省略せず全部出す(直す前の棚卸しに使う)
+const SHOW_ALL = !!process.env.LOBBY_TEST_ALL;
+if(knownHits.length){
+  console.log('\n--- 例外として許しているもの(直したらKNOWNの行を消す。LOBBY_TEST_ALL=1 で全件) ---');
+  const seen = new Set();
+  for(const h of knownHits){
+    const k = SHOW_ALL ? h : h.replace(/^(\[[^\]]+\]) [^/]+\//, '$1 ');   // 端末名の違いは1件にまとめる
+    if(seen.has(k)) continue; seen.add(k); console.log('  ' + k);
+  }
+  console.log(`  … のべ${knownHits.length}件`);
+}
 if(notes.length){
   console.log('\n--- 「増えても壊れない」の確認(スクロールへ逃げた例) ---');
   for(const n of notes.slice(0,4)) console.log('  ' + n);
@@ -345,8 +554,12 @@ if(notes.length){
 }
 if(failures.length){
   console.log('\n== 失敗 ==');
-  for(const f of failures.slice(0,40)) console.log('  ' + f);
-  if(failures.length>40) console.log(`  … 他${failures.length-40}件`);
+  const max = SHOW_ALL ? failures.length : 40;
+  for(const f of failures.slice(0,max)) console.log('  ' + f);
+  if(failures.length>max) console.log(`  … 他${failures.length-max}件(LOBBY_TEST_ALL=1 で全部出る)`);
+  // 同じ物が端末×モードのぶん並ぶので、要素ごとにまとめた索引も出す(頭打ちで隠れないように)
+  console.log('\n-- 落ちた物の索引(件数の多い順) --');
+  for(const [k,n] of [...findingIndex.entries()].sort((a,b)=> b[1]-a[1])) console.log(`  ${n}件  ${k}`);
   process.exit(1);
 }
 console.log('\n== 全チェックOK(見切れ0 / 小さすぎ0 / 重なり0) ==');

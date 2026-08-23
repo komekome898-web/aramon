@@ -9,13 +9,17 @@ import fs from 'fs';
 import path from 'path';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-let chromium;
+let chromium = null;
 try{ ({ chromium } = await import('playwright')); }
 catch{
+  // グローバルに入れてある場合も拾う(lobby_layout_test.mjs と同じ探し方に合わせた)
   const { createRequire } = await import('module');
-  const req = createRequire(path.join(process.cwd(), 'x.js'));
-  ({ chromium } = req('playwright'));
+  for(const b of ['/opt/node22/lib/node_modules/', '/usr/lib/node_modules/', '/usr/local/lib/node_modules/',
+                  path.join(process.cwd(), 'x.js')]){
+    try{ ({ chromium } = createRequire(b)('playwright')); break; }catch{}
+  }
 }
+if(!chromium){ console.error('playwrightが見つかりません(npm i -g playwright)。'); process.exit(1); }
 
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css',
                 '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
@@ -119,13 +123,19 @@ ok('参加は10体', m.n === 10, `n=${m.n}`);
 ok('安置が短くなっている', m.hold0 === 31 && m.shrink1 === 18, `hold0=${m.hold0} shrink1=${m.shrink1}`);
 ok('マップが狭い', m.world < 10000, `world=${m.world}`);
 ok('botのステータス合計が自分より低い', m.botTotal !== null && m.botTotal < m.myTotal, `bot=${m.botTotal} me=${m.myTotal}`);
-ok('試合中は帯を出さない', !(await shown('tutorialBand')));
+/* 【2026-08-23 変更】以前は「試合中は帯を出さない」を確かめていたが、
+   練習試合の中に案内(inMatch の mLook〜mGuts)を出すようになったので**逆になった**。
+   カードは出さない・帯だけ、という約束はそのまま(カードが出ると試合が読めなくなる)。 */
+ok('試合中も帯を出す', await shown('tutorialBand'));
+ok('試合中はカードを出さない', !(await shown('tutorialCard')));
+ok('試合が始まったら練習試合の案内に入る', (await step() || '').startsWith('m'), `step=${await step()}`);
 
 // 決着させる(botを全部倒す)
 await page.evaluate(()=>{
   entities.filter(e=> e!==player && e.alive).forEach(e=> killEntity(e, player));
 });
-await page.waitForTimeout(4200);
+// 試合の終わり → matchEnd 段 → リザルト、と1段増えたので待ちを伸ばす(4.2秒では足りない)
+await page.waitForTimeout(6000);
 ok('リザルトに到達', await shown('resultScreen'));
 await page.waitForTimeout(500);
 ok('次はマスモン登録', await step() === 'register', `step=${await step()}`);
@@ -214,7 +224,16 @@ await page.waitForTimeout(300);
 await okHint();
 await page.evaluate(()=>{ document.getElementById('mmSkinConfirmBtn').click(); });
 await page.waitForTimeout(600);
-ok('着せ替えると次へ', ['pwa','help'].includes(await step()), `step=${await step()}`);
+// 着せ替えのあとは 遠征 → マルチ → PWA → ヘルプ の順(遠征とマルチは「あとで」で飛ばせる)
+ok('着せ替えると次へ', ['expedition','multi','pwa','help'].includes(await step()), `step=${await step()}`);
+
+// ---- 10b. 遠征・マルチの案内(どちらも optional。「あとで」で飛ばせることを確かめる)
+for(const id of ['expedition','multi']){
+  if(await step() !== id) continue;
+  ok(`${id}のカードに「あとで」がある`, await page.evaluate(()=> !document.getElementById('tutorialCardSubBtn').classList.contains('hidden')));
+  await page.evaluate(()=> document.getElementById('tutorialCardSubBtn').click());
+  await page.waitForTimeout(500);
+}
 
 // ---- 11. PWA案内 → ヘルプ
 if(await step() === 'pwa'){ await cardNext(); await page.waitForTimeout(400); }
