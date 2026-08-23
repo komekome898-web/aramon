@@ -36,16 +36,8 @@
        大きさを変えるつまみは **--hud-text-scale の1つだけ**。
        「文字サイズ 大」は ⚙️設定 →🎚️視点設定 で html.hud-text-large が付く。
        ここはバトルHUD専用。ロビーや一覧の文字はこの変数を読まない。 */
-    --hud-text-scale: 1;
-    --hud-text-scale-large: 1.25;   /* 「大」の倍率。実機で詰めるならここだけ動かす */
-    --hud-fs-sm:   calc(11px * var(--hud-text-scale));  /* 添え字・単位・状態ピル */
-    --hud-fs-num:  calc(12px * var(--hud-text-scale));  /* HP/ガッツの実数値 */
-    --hud-fs-name: calc(15px * var(--hud-text-scale));  /* 名前・技名・安置カウントダウン */
-    --hud-fs-big:  calc(18px * var(--hud-text-scale));  /* 生存数・Kill/Damage */
-    --hud-bar-h:   calc(8px  * var(--hud-text-scale));  /* HP/ガッツ/状態CDのバーの高さ */
   }
   /* 文字サイズ「大」。**倍率は1つだけ**なので、ここでHUDの段が丸ごと動く */
-  html.hud-text-large{ --hud-text-scale: var(--hud-text-scale-large); }
   /* 長押しで文字/画像が選択されたり、iOSのコピー・調べる・画像を保存のメニューが
      出るのを全画面で防ぐ。入力欄だけは下で選択可能に戻す。
 
@@ -2729,12 +2721,12 @@
 
   #hpPanel{ width:210px; padding:7px 14px 7px; border-top:3px solid var(--accent,var(--amber)); }
   #hpPanel .who{ display:flex; align-items:center; gap:8px; margin-bottom:3px; }
-  #hpPanel .nm{ font-weight:700; font-size:var(--hud-fs-name); letter-spacing:1px; }
-  #hpPanel .elTag{ font-size:var(--hud-fs-sm); color:var(--ink-dim); letter-spacing:1px; }
+  #hpPanel .nm{ font-weight:700; font-size:14px; letter-spacing:1px; }
+  #hpPanel .elTag{ font-size:9px; color:var(--ink-dim); letter-spacing:1px; }
   /* バーの高さも文字と同じ倍率で動かす(5.5pxは横持ちで残量が読み取れなかった) */
-  .hpbar-track{ height:var(--hud-bar-h); background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.12);}
+  .hpbar-track{ height:5.5px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.12);}
   .hpbar-fill{ height:100%; background:linear-gradient(90deg,#6bff8e,#2fd35a); width:100%; transition:width .15s; }
-  #hpNum{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-num); color:var(--ink-dim); margin-top:1px; text-align:right;}
+  #hpNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right;}
 
   #topLeft{ position:absolute; top:14px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
   /* トレーニングで変わった数値(カード+拾ったアイテム)をプレイヤー欄の中に出す。
@@ -2773,11 +2765,11 @@
   /* 安置情報フィールドをミニマップの左に添える横並び配置 */
   #topRight{ position:absolute; top:14px; right:14px; display:flex; flex-direction:row; align-items:flex-start; gap:8px; }
   #counterPanel{ padding:7px 10px; text-align:right; white-space:nowrap; }
-  #aliveNum{ font-family:'Russo One',sans-serif; font-size:var(--hud-fs-big); color:var(--amber); }
-  #aliveLabel{ font-size:var(--hud-fs-sm); letter-spacing:1.5px; color:var(--ink-dim); }
-  #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); margin-top:2px; }
-  #zoneCountdown{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-name); font-weight:700; color:var(--amber); }
-  #matchClock{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); color:var(--ink-dim); }
+  #aliveNum{ font-family:'Russo One',sans-serif; font-size:16px; color:var(--amber); }
+  #aliveLabel{ font-size:8px; letter-spacing:1.5px; color:var(--ink-dim); }
+  #zoneStatus{ font-family:'Share Tech Mono',monospace; font-size:9px; margin-top:2px; }
+  #zoneCountdown{ font-family:'Share Tech Mono',monospace; font-size:13px; font-weight:700; color:var(--amber); }
+  #matchClock{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); }
 
   /* 【上部中央は左右の先客のぶんを空ける】画面幅の割合で伸ばすと、左のHPパネルと
      右の安置欄+ミニマップに必ず重なる(#raidHudで踏んだのと同じ形)。
@@ -2801,8 +2793,8 @@
     width:auto; transform:none;
     padding:9px 14px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px 18px; }
   .stat-row{ display:flex; align-items:baseline; justify-content:center; gap:8px; }
-  .stat-lbl{ font-size:var(--hud-fs-sm); letter-spacing:2px; color:var(--ink-dim); }
-  .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-big); color:var(--amber); }
+  .stat-lbl{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
+  .stat-row span:last-child{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
 
   /* ミニマップのタップで縮尺を切り替える(render.jsのtoggleMinimapZoom)。
      全世界固定の縮尺では交戦距離の敵が全部自分の点に重なっていた。
@@ -2948,14 +2940,14 @@
   #moveIcon{ width:38px; height:38px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
   #moveIcon svg{ width:22px; height:22px; }
   #moveInfo{ min-width:120px; }
-  #moveName{ font-weight:700; font-size:var(--hud-fs-name); }
+  #moveName{ font-weight:700; font-size:15px; }
   #tierDots{ display:flex; align-items:center; gap:5px; margin-top:5px; }
   /* 各点はその段階の技のオーラ色(--dotColorはJSで技ごとに設定)。ロック中は薄く・選択中は発光＆拡大 */
   .tier-dot{ width:9px; height:9px; border-radius:50%; background:var(--dotColor,rgba(255,255,255,0.32)); opacity:0.35; border:1px solid rgba(255,255,255,0.25);
     flex-shrink:0; transition:width .12s, height .12s; }
   .tier-dot.unlocked{ opacity:0.75; }
   .tier-dot.selected{ width:15px; height:15px; opacity:1; border-color:var(--dotColor,var(--amber)); box-shadow:0 0 7px var(--dotColor,var(--amber)); }
-  #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-sm); color:var(--ink-dim); margin-top:3px; }
+  #gutsCostLabel{ font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:3px; }
   #gutsTrack{ margin-top:2px; }
   #gutsFill{ height:100%; background:linear-gradient(90deg,#ffb56b,#ff7a59); width:100%; transition:width .15s; }
   @keyframes gutsWarnFlash{
@@ -2966,12 +2958,12 @@
   #gutsTrack.guts-warn{ animation: gutsWarnFlash 0.5s ease-out; }
   #stateCdTrack{ margin-top:2px; }
   #stateCdFill{ height:100%; background:linear-gradient(90deg,#ff6b6b,#ff3b3b); width:0%; transition:width .15s; }
-  #stateCdLabel{ font-size:var(--hud-fs-sm); letter-spacing:0.5px; color:#ff8a8a; margin-top:1px; }
-  #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:var(--hud-fs-num); color:var(--ink-dim); margin-top:1px; text-align:right; }
+  #stateCdLabel{ font-size:9px; letter-spacing:0.5px; color:#ff8a8a; margin-top:1px; }
+  #gutsNum{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); margin-top:1px; text-align:right; }
   /* 状態は最大4つ同時。こおりは残り秒ぶん幅が伸びるので、#hpPanelの幅から
      はみ出さないよう#trainBuffsLineと同じく折り返す(横へ伸ばさない) */
   #statusIcons{ display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; min-height:16px; max-width:100%; }
-  .status-pill{ font-size:var(--hud-fs-sm); padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; white-space:nowrap; }
+  .status-pill{ font-size:9px; padding:1px 6px; border-radius:8px; font-weight:600; letter-spacing:0.5px; white-space:nowrap; }
   .status-pill.burn{ background:rgba(255,107,53,0.22); color:#ff9c5a; border:1px solid rgba(255,107,53,0.5); }
   .status-pill.slow{ background:rgba(120,150,255,0.22); color:#a9bcff; border:1px solid rgba(120,150,255,0.5); }
   .status-pill.freeze{ background:rgba(191,233,255,0.22); color:#bfe9ff; border:1px solid rgba(191,233,255,0.6); }
@@ -3172,16 +3164,7 @@
      置き場所は「#statsPanel の下 / #trainCardBar の上 / #killFeed(x≥356) の左」の空き帯で、
      667x375(いちばん狭い論理サイズ)でも x202..246 y98..142 に誰も居ない。
      数字の出どころは各パネルの実測なので、それらを動かしたらここも直す。 */
-  #hudMenuBtn{ position:absolute; left:232px; top:var(--hud-bar-top); z-index:23; pointer-events:auto;
-    width:var(--tap-pick); height:var(--tap-pick); min-height:var(--tap-pick); flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; padding:0;
-    font-size:18px; line-height:1; color:rgba(255,255,255,0.72); cursor:pointer;
-    background:rgba(10,16,26,0.55); border:1px solid rgba(255,255,255,0.18); border-radius:12px;
-    touch-action:none; }
-  html.narrow-screen #hudMenuBtn{ left:202px; }   /* #hpPanel が180pxになるぶん左へ(--stats-left と同じ考え方) */
-  #hudMenuBtn:active{ background:rgba(255,255,255,0.14); color:#fff; }
   /* 射撃訓練場は #rangeBar に「🚪 退出」があるので出さない */
-  #hud.range-mode #hudMenuBtn{ display:none; }
 
   /* =====================================================================
      決着演出(リザルトの手前に3秒だけ挟む)

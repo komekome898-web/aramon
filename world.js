@@ -1450,7 +1450,6 @@ function pushKillFeed(text){
    ・長い文ほど読むのに時間がかかるので、既定の表示秒数を文字数で伸ばす
      (内部エラーの詳細付きトーストが1.6秒で消えて読めなかった。呼び出し側の変更が要らない形にしてある)
    呼び出しは pushToast(text) のままでよく、pushToast(text, {dur:秒}) で個別に延ばせる。 */
-const TOAST_MAX_ROWS = 3;          // 同時に積む最大件数
 const TOAST_DUR_BASE = 1.6;        // 表示秒数の下限(従来と同じ)
 const TOAST_DUR_PER_CHAR = 0.045;  // 1文字あたり伸ばす秒数
 const TOAST_DUR_MAX = 5.0;         // 文字数で伸ばす場合の上限
@@ -1463,6 +1462,8 @@ function removeToastRow(row){
   const el = document.getElementById('toast');
   if(el && !toastRows.length) el.style.opacity='0';   // 全部消えたら枠ごと隠す(従来と同じ見え方)
 }
+/* 【1枠・上書き式に戻す】一時は最大3行積む形にしたが、**覆う面積が増えて戦闘の邪魔**に
+   なった(発注者判断 2026-08-23)。試合中は下地も敷かない(#toast.in-match)。 */
 function pushToast(text, opts){
   const el = document.getElementById('toast');
   if(!el) return;
@@ -1470,17 +1471,11 @@ function pushToast(text, opts){
   const o = opts || {};
   const dur = 1000 * (o.dur != null ? o.dur
     : Math.min(TOAST_DUR_MAX, TOAST_DUR_BASE + msg.length*TOAST_DUR_PER_CHAR));
-  const same = toastRows.find(r=> r.text === msg);
-  if(same){   // 同じ文言は積み増さず、寿命だけ延ばす
-    clearTimeout(same.timer);
-    same.timer = setTimeout(()=> removeToastRow(same), dur);
-    return;
-  }
-  while(toastRows.length >= TOAST_MAX_ROWS) removeToastRow(toastRows[0]);  // あふれたら古い行から落とす
-  /* 【試合中は下地を敷かない】戦闘中の黒帯は視界を塞ぐので、文字だけを縁取りで浮かせる
-     (見え方はstyle.cssの #toast.in-match 側が持つ)。#toastは#hudの外にあり、#hudは
-     隠れないのでCSSだけでは試合中か判別できない。出す瞬間のここ1か所で印を付ける。 */
+  // 試合中かどうかの印。見え方(下地を敷くか)は style.css の #toast.in-match が持つ
   el.classList.toggle('in-match', !!(typeof game!=='undefined' && game && game.started && !game.over));
+  for(const r of toastRows) clearTimeout(r.timer);
+  toastRows.length = 0;
+  el.innerHTML = '';
   const div = document.createElement('div');
   div.className = 'toast-line';
   div.textContent = msg;

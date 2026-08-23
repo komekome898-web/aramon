@@ -625,17 +625,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <span class="spectate-eye">👁 観戦中</span>
     <span id="spectateName">-</span>
     <button id="spectateNextBtn">▶ 次のプレイヤー</button>
-    <!-- 観戦から抜ける道。これが無いと、序盤に倒れたホストは最後の1人が決まるまで
-         観戦バーを眺め続けるしかなかった(ゲストは即リザルトで扱いが逆だった) -->
-    <button id="spectateExitBtn">🚪 リザルトへ</button>
+    <!-- チーム戦で倒され、残っている味方がbotだけのときにだけ出す(ui.jsのspectateExitAllowed)。
+         人が残っているあいだは、その人たちの試合を終わらせないので出さない -->
+    <button id="spectateExitBtn" class="hidden">🚪 試合を抜ける</button>
   </div>
-  <!-- 試合を途中で抜ける入口(ui.jsのrequestMatchExit)。iPhoneでは着信・通知が来ても
-       中断できず、閉じるとリザルトも報酬も失われていた。押すと共通の確認ダイアログ
-       (#mastermonDeleteConfirm)が出るだけで、抜けたときは通常の終了と同じ showResult() を通る。
-       FIRE/DASH/🎯と同じ「pointerdownで完結する押しボタン」なので、
-       スクロールロック除外の3リストには入れない(確認ダイアログ側は既に入っている)。 -->
-  <button id="hudMenuBtn" aria-label="メニュー">☰</button>
-  <div id="joystickBase"><div id="joystickKnob"></div></div>
+    <div id="joystickBase"><div id="joystickKnob"></div></div>
   <div id="fireBtn">
     <svg class="cd-ring" viewBox="0 0 100 100">
       <circle class="cd-ring-bg" cx="50" cy="50" r="46"></circle>
@@ -1500,15 +1494,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
         <span class="toggle-switch-knob"></span>
       </button>
     </div>
-    <!-- バトル中の数字の大きさ。倍率は style.css の --hud-text-scale 1つだけで、
-         ONにすると html.hud-text-large が付いてHUDの文字とバーが丸ごと大きくなる -->
-    <div class="look-toggle-row">
-      <span id="hudTextLargeLabel" class="look-toggle-label">バトル中の文字を大きくする</span>
-      <button id="hudTextLargeToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="hudTextLargeLabel">
-        <span class="toggle-switch-knob"></span>
-      </button>
-    </div>
-    <!-- 行が7つになったので下のボタン行の余白は詰める(iPhone SE 横持ち=実効375pxでもスクロールさせない) -->
+        <!-- 行が7つになったので下のボタン行の余白は詰める(iPhone SE 横持ち=実効375pxでもスクロールさせない) -->
     <div class="mastermon-confirm-btnrow" style="margin-top:8px;">
       <button id="lookResetBtn">初期値に戻す</button>
       <button id="closeLookSettingsBtn" data-overlay-close>閉じる</button>
