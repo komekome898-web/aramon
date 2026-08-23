@@ -1519,9 +1519,6 @@ function syncLookToggles(){
   if(inv) inv.setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
   const fd = document.getElementById('fireDragAimToggle');
   if(fd) fd.setAttribute('aria-checked', fireDragAimOn() ? 'true' : 'false');
-  // バトル中の文字サイズ(html.hud-text-large が実際に付いているかを正とする)
-  const ht = document.getElementById('hudTextLargeToggle');
-  if(ht) ht.setAttribute('aria-checked', document.documentElement.classList.contains('hud-text-large') ? 'true' : 'false');
 }
 document.getElementById('fireDragAimToggle').addEventListener('click', ()=>{
   lookSettings.fireDragAim = !fireDragAimOn();
@@ -1534,7 +1531,6 @@ document.getElementById('lookResetBtn').addEventListener('click', ()=>{
   for(const k of Object.keys(lookSettings)) if(!(k in LOOK_DEFAULTS)) delete lookSettings[k];
   Object.assign(lookSettings, LOOK_DEFAULTS);
   setInvertPitch(false);   // 同じ画面に並んでいる上下反転も既定(OFF)へ戻す
-  setHudTextLarge(false);  // 同じく、バトル中の文字サイズも既定(標準)へ戻す
   applyLookSettings(); syncLookSliders(); syncLookToggles(); saveLookSettings();
   pushToast('視点設定を初期値に戻しました');
 });
@@ -4119,34 +4115,6 @@ function restoreInvertPitchFromStorage(){
 restoreInvertPitchFromStorage();
 document.getElementById('invertPitchToggle').addEventListener('click', ()=> setInvertPitch(!invertPitchY));
 
-/* ===== バトル中の文字サイズ(標準/大) =====
-   HUDの数字は9px前後で、腕を伸ばして持つ横持ちでは読めなかった。既定を上げたうえで、
-   さらに大きくしたい人のために倍率を1段用意する。
-   **倍率の正は style.css の --hud-text-scale 1つだけ**で、ここは印(html.hud-text-large)を
-   付け外しするだけ。端末ごとの表示設定なので、上下反転と同じく専用キーで持つ
-   (アカウント同期に入れない。lookSettings へ相乗りしないのは LOOK_DEFAULTS が world.js に
-   あり、そこへ項目を足さないと loadLookSettings が復元してくれないため)。 */
-const HUD_TEXT_LARGE_KEY = 'aramon_hud_text_large_v1';
-let hudTextLarge = false;
-// 値を書くのはこの関数だけ(表示・保存もここでまとめる。視点設定の「初期値に戻す」からも呼ぶ)
-function setHudTextLarge(on){
-  hudTextLarge = !!on;
-  document.documentElement.classList.toggle('hud-text-large', hudTextLarge);
-  const btn = document.getElementById('hudTextLargeToggle');
-  if(btn) btn.setAttribute('aria-checked', hudTextLarge ? 'true' : 'false');
-  try{ localStorage.setItem(HUD_TEXT_LARGE_KEY, hudTextLarge ? '1' : '0'); }catch(err){}
-}
-// 起動時とアカウント同期の直後の両方から呼ぶ(上の restoreInvertPitchFromStorage と同じ理由)
-function restoreHudTextLargeFromStorage(){
-  let on = false;
-  try{ on = localStorage.getItem(HUD_TEXT_LARGE_KEY) === '1'; }catch(err){}
-  hudTextLarge = on;
-  document.documentElement.classList.toggle('hud-text-large', on);
-  const btn = document.getElementById('hudTextLargeToggle');
-  if(btn) btn.setAttribute('aria-checked', on ? 'true' : 'false');
-}
-restoreHudTextLargeFromStorage();
-document.getElementById('hudTextLargeToggle').addEventListener('click', ()=> setHudTextLarge(!hudTextLarge));
 
 /* =====================================================================
    MULTIPLAYER STATE
@@ -9926,12 +9894,6 @@ function doMatchExit(){
   }
   showResult(false, downedPlacement());
 }
-/* HUDの☰。FIRE/DASHと同じく pointerdown で完結させる
-   (click にすると、素早く2回叩いたとき input.js の touchend が2回目を握り潰す)。 */
-document.getElementById('hudMenuBtn').addEventListener('pointerdown', (e)=>{
-  e.preventDefault(); e.stopPropagation();
-  requestMatchExit();
-});
 /* 観戦を始める(自分が倒れて試合が続く場面)。視点を味方へ移して観戦バーを出すところまで。
    通常マルチのホスト敗退時とレイドで共用する。残っている味方が居なければ何もしない
    (レイドなら全滅として checkRaidEnd() が試合を終わらせる)。 */
@@ -9962,6 +9924,20 @@ function updateSpectateBar(){
     }
   }
   if(!shown) bar.classList.add('hidden');
+  /* 【「試合を抜ける」を出す条件】チーム戦で自分が倒れ、**残っている味方がbotだけ**のとき。
+     人が残っているなら、その人たちの試合を終わらせないので出さない(観戦だけ)。
+     通常のバトル中には出さない ―― 試合の画面にボタンを増やさない。 */
+  const exitBtn = document.getElementById('spectateExitBtn');
+  if(exitBtn) exitBtn.classList.toggle('hidden', !(shown && spectateExitAllowed()));
+}
+/* 残っている味方が全員bot(人が1人もいない)か。人が居るあいだは抜けさせない。 */
+function spectateExitAllowed(){
+  if(!(typeof isTeamMatch==='function' && isTeamMatch())) return false;
+  if(!player || player.teamId==null) return false;
+  const mates = (typeof teamMembers==='function') ? teamMembers(player.teamId) : [];
+  const humanLeft = mates.some(m=> m!==player && m.alive
+    && (m.isPlayer || (typeof isNetworkedHuman==='function' && isNetworkedHuman(m))));
+  return !humanLeft;
 }
 document.getElementById('spectateNextBtn').addEventListener('click', (e)=>{
   e.preventDefault(); e.stopPropagation();

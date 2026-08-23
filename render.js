@@ -3498,9 +3498,6 @@ const HIT_DIR_ARC_RATIO = 0.42;  // 円弧の半径 = min(画面幅,画面高) �
 const HIT_DIR_ARC_WIDTH = 10;    // 円弧の太さ(px)
 const HIT_FLASH_SEC     = 0.28;  // 被弾時の赤ビネットの時間(秒)
 const HIT_FLASH_ALPHA   = 0.20;  // 被弾時の赤ビネットの最大濃さ
-const LOW_HP_WARN_RATIO     = 0.25;  // HPがこの割合以下で低HP警告を出す
-const LOW_HP_VIG_ALPHA_MAX  = 0.26;  // 低HP警告の最大濃さ(HP0付近・脈動の山)
-const LOW_HP_VIG_PULSE_SPD  = 5.0;   // 低HP警告の脈動の速さ(rad/秒)
 // 外周だけを染める共通ビネット。rgbは 'R,G,B' の文字列
 function drawEdgeVignette(rgb, alpha){
   if(!(alpha > 0.004)) return;   // 見えない濃さでフルスクリーン塗りを走らせない
@@ -3548,66 +3545,6 @@ function drawHitDirection(){
   ctx.lineTo( HIT_DIR_ARC_WIDTH*0.8, -R+HIT_DIR_ARC_WIDTH*3.0);
   ctx.closePath();
   ctx.fillStyle = 'rgba(255,110,80,0.9)'; ctx.fill();
-  ctx.restore();
-}
-/* 低HP警告。従来の手掛かりはバーの色と9pxの数字だけで、残りHP10でも画面は何も言わなかった。
-   ダウン中(チーム戦)は専用の赤ビネット(drawDownedOverlay)が出ているので二重にしない。
-   HPは観戦中のHUDと同じく見ている本体(ve)基準にする。 */
-function drawLowHpVignette(){
-  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
-  if(!ve || !ve.alive || !ve.maxHp) return;
-  if(typeof entityDowned==='function' && entityDowned(ve)) return;
-  const ratio = clamp(ve.hp/ve.maxHp, 0, 1);
-  if(ratio > LOW_HP_WARN_RATIO) return;
-  const t = 1 - ratio/LOW_HP_WARN_RATIO;                                   // 閾値で0・HP0で1
-  const pulse = 0.5 + 0.5*Math.sin(matchTime*LOW_HP_VIG_PULSE_SPD);       // 脈打たせて「まだ続いている」と分かるように
-  drawEdgeVignette('255,30,30', LOW_HP_VIG_ALPHA_MAX*(0.40+0.60*t)*(0.55+0.45*pulse));
-}
-/* 画面外の敵を指す三角マーカー。一定距離内の敵だけに絞る(遠くの60体ぶんを出すと
-   画面の縁が三角で埋まる)。色分けはミニマップと同じ言語:
-   チーム系モードは赤(敵)一色・個人戦は元素のアクセント色。味方(sameTeam)には出さない。
-   観戦中は他の表示と同じく「見ている本体(ve)」から見た画面外を示す。 */
-const OFFSCREEN_MARK_RANGE  = 1800;  // この距離以内の敵だけ出す(交戦圏の少し外まで)
-const OFFSCREEN_MARK_MARGIN = 16;    // 画面端から内側へこれだけ入れて描く(px)
-const OFFSCREEN_MARK_SIZE   = 8;     // 三角の大きさ(px)
-const OFFSCREEN_MARK_MAX    = 6;     // 同時に出す上限
-function drawOffscreenEnemyMarkers(){
-  const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
-  if(!ve || !ve.alive || introState.active) return;
-  const teamMini = (typeof isTeamMatch==='function') && isTeamMatch();
-  const cx = viewW/2, cy = viewH/2;
-  const halfW = Math.max(24, cx - OFFSCREEN_MARK_MARGIN), halfH = Math.max(24, cy - OFFSCREEN_MARK_MARGIN);
-  let shown = 0;
-  ctx.save();
-  for(const e of entities){
-    if(shown >= OFFSCREEN_MARK_MAX) break;
-    if(e===ve || !e.alive) continue;
-    if(typeof sameTeam==='function' && sameTeam(ve, e)) continue;
-    const d = dist(ve, e);
-    if(d > OFFSCREEN_MARK_RANGE) continue;
-    const p = project(e.x, e.y, (e.z||0)+(e.radius||26));
-    if(p && p.x>=0 && p.x<=viewW && p.y>=0 && p.y<=viewH) continue;   // 画面内に見えているものには出さない
-    const bearing = angTo(ve, e) - camState.yaw;
-    const dirx = Math.sin(bearing), diry = -Math.cos(bearing);        // 画面上の向き(上=正面)
-    // 画面中央から伸ばした半直線と、内側マージンの矩形との交点に置く
-    const tx = Math.abs(dirx) > 1e-4 ? halfW/Math.abs(dirx) : Infinity;
-    const ty = Math.abs(diry) > 1e-4 ? halfH/Math.abs(diry) : Infinity;
-    const tEdge = Math.min(tx, ty);
-    const col = teamMini ? '#ff5a5a' : (ELEMENTS[e.element].accent || ELEMENTS[e.element].color);
-    ctx.save();
-    ctx.translate(cx + dirx*tEdge, cy + diry*tEdge);
-    ctx.rotate(bearing);                                              // ローカル上方向(-y)が敵の方向
-    ctx.globalAlpha = clamp(1 - d/OFFSCREEN_MARK_RANGE, 0.35, 1) * 0.9;
-    ctx.beginPath();
-    ctx.moveTo(0, -OFFSCREEN_MARK_SIZE);
-    ctx.lineTo(-OFFSCREEN_MARK_SIZE*0.72, OFFSCREEN_MARK_SIZE*0.66);
-    ctx.lineTo( OFFSCREEN_MARK_SIZE*0.72, OFFSCREEN_MARK_SIZE*0.66);
-    ctx.closePath();
-    ctx.fillStyle = col; ctx.fill();
-    ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.stroke();
-    ctx.restore();
-    shown++;
-  }
   ctx.restore();
 }
 function drawDangerVignette(){
@@ -6525,9 +6462,7 @@ function render(){
   }
   if(introState.active) safeDraw(drawSummonIntroFront);
   safeDraw(drawDangerVignette);
-  safeDraw(drawLowHpVignette);   // 低HP警告(安置ビネットの上に重ねる。どちらも外周だけなので喧嘩しない)
   safeDraw(drawHitDirection);    // 被弾方向の円弧+一瞬の赤ビネット(最も新しい情報なので警告類の最後)
-  safeDraw(drawOffscreenEnemyMarkers); // 画面外の敵を指す三角(ビネットの上・ピンやコンパスの下)
   safeDraw(drawDownedOverlay);   // チーム戦: 自分がダウン中の赤いビネット+蘇生待ちの案内
   safeDraw(drawPingMarkers);     // チーム戦: 小隊のピン(旗マーカー)。案内表示なので最前面に出す
   safeDraw(drawZoneCompass);
@@ -7650,8 +7585,7 @@ function updateHUD(){
   /* 射程を技パネルに出す(技によって650〜1500と倍以上違うのに、どこにも出ていなかった)。
      DOMは増やさず既存の#gutsCostLabelへ同居させる。距離の換算はピン表示と同じ
      PING_UNITS_PER_M(ワールド10単位=1m)。 */
-  const rangeTxt = mv.range ? ` / 射程 ${Math.round(mv.range/PING_UNITS_PER_M)}m` : '';
-  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}${rangeTxt}`;
+  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
   const tierMoves = SIGNATURE_MOVES[ve.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
