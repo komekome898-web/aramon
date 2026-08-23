@@ -20,8 +20,15 @@
     --safe-b: 0px;
     --safe-l: 0px;
     /* トップ画面のヘッダーの高さ。ボタンを押しやすくするため少し厚くしてある。
-       ヘッダーの下に敷く要素(#lobbyLayout / 右パネル)のtopもこの値を使う */
-    --top-header-h: 36px;
+       ヘッダーの下に敷く要素(#lobbyLayout / 右パネル)のtopもこの値を使う。
+       **ヘッダーには項目を増やせない**(名前が「お…」に省略される)ので、
+       押し間違いは「今ある4つを大きくする」で減らす。36px時代のアイコンは30x27pxだった。 */
+    --top-header-h: 42px;
+    --header-icon-btn: 36px;   /* ⚙️👤🆕❓ の実寸(正方形)。--top-header-h から6px引いた値 */
+    /* 右上の閉じる✕(.overlay-close-btn)に見出しが潜らないよう空ける幅。
+       ✕の実寸は押しやすさの下限 --tap-pick(44px)に合わせてあるので、
+       **数字はここだけ**に置き、見出し側は padding-right:var(--overlay-close-gap) と書く。 */
+    --overlay-close-gap: calc(var(--tap-pick, 44px) + 14px);
 
     /* ===== 試合HUDの文字の大きさ =====
        腕を伸ばして持つ横持ちのスマホで9pxの数字は読めない。**HUDの文字はこの4段だけ**で
@@ -252,11 +259,11 @@
      字の大きさも段の高さの割合なので、どんな高さのタイルでも段からはみ出さない。 */
   #lobbyLeft .season-ssr-pop, #lobbyLeft .raid-gacha-pop{
     position:static; grid-row:1; align-self:center; justify-self:stretch; margin:0; z-index:3;
-    /* 帯(タイルの20%)に対して字は12%。絵文字は字より背が高く描かれるので、
-       行の高さを帯いっぱいに取ったうえで字を十分小さくし、余裕を持たせる。 */
-    font-size:max(calc(var(--tile-h, var(--tap-pick)) * 0.12), 7px);
-    line-height:max(calc(var(--tile-h, var(--tap-pick)) * 0.20), 11px);
-    height:max(calc(var(--tile-h, var(--tap-pick)) * 0.20), 11px);
+    /* 帯の高さは --tile-band-h(1か所)。字はその中に収まる大きさで、**下限10px**。
+       7pxでは実機で読めなかったので、字の下限を先に決めて帯の高さをそこから決めている。 */
+    font-size:max(calc(var(--tile-h, var(--tap-pick)) * 0.16), 10px);
+    line-height:var(--tile-band-h);
+    height:var(--tile-band-h);
     padding:0 2px; text-align:center; border-radius:6px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     /* 元は角に貼るシールなので傾き(rotate)と上下の揺れが付いている。
@@ -292,6 +299,15 @@
        **画面が低くてもここから下げない。** 下げると押せないボタンになる。 */
     --tap-main: 46px;   /* バトル開始・部屋を作る/探す */
     --tap-pick: 44px;   /* 左メニューのタイル・マップ/プレイモード */
+    /* 【リザルトだけの事情】中身が入りきらないと fitResultScreen() が #resultInner を
+       まるごと transform:scale で縮めるので、**押せる大きさも道連れ**になる(実測26px)。
+       ・--result-fit-min … 縮小の下限。ui.js の fitResultScreen が読むので**素の数値だけ**
+       ・--result-btn-h  … その下限を掛けても 44px を割らない素の高さ(44 ÷ 0.82 ≒ 54px)
+       ※ 下の 0.82 は --result-fit-min と同じ値を二重に持っている(calcの割り算に
+          var() を置けない古いSafari対策)。**直すときは必ず両方直すこと。**
+       下限より縮めないと入らないときは、縮めるのをやめて画面をスクロールさせる(ui.js側)。 */
+    --result-fit-min: 0.82;
+    --result-btn-h: calc(var(--tap-pick) / 0.82);
     /* 【ロビーの寸法の調整つまみ】ここは**素の数値だけ**にする。
        calc()やclamp()を書くと ui.js 側が読めない(カスタムプロパティは
        未解決の文字列で返るため parseFloat が NaN になり、黙って既定値へ落ちる)。
@@ -301,6 +317,13 @@
     --menu-col-w-share: 0.12;  /* 同・ふだんはロビー横幅のこの割合 */
     --menu-w-share: 0.38;      /* 左メニュー全体が広がってよい横幅の割合(中央を残すため) */
     --tile-h-max: 64px;        /* タイル1枚の高さの上限(縦が余る画面で間延びさせない) */
+    /* 【タイルの中の段の高さはここ1か所】帯(吹き出し)とラベルの高さ。
+       .lobby-side-btn の grid-template-rows と #lobbyLeft .season-ssr-pop の height が
+       同じ値を見る(以前は同じ式を2か所に書いていて、片方だけ直すと吹き出しが段からはみ出した)。
+       **下限は「字が10pxで読める高さ」から決めている。** 実機で7〜9pxは読めなかった
+       (tools/lobby_layout_test.mjs の文字下限を10pxへ上げて発覚・2026-08-23)。 */
+    --tile-band-h: max(calc(var(--tile-h, var(--tap-pick)) * 0.22), 14px);
+    --tile-label-h: max(calc(var(--tile-h, var(--tap-pick)) * 0.28), 13px);
   }
   #lobbyLeft{
     display:flex; flex-direction:column; gap:calc(0.5 * var(--vh));
@@ -365,9 +388,9 @@
     /* 帯 / アイコン / ラベル。割合で決めつつ、**読める下限(px)を割らない**ように max() を挟む。
        小さい方のタイル(=下限の44px)でも 11 + 12 + アイコン15 + 枠4 = 42 で必ず収まる。 */
     grid-template-rows:
-      max(calc(var(--tile-h, var(--tap-pick)) * 0.20), 11px)
+      var(--tile-band-h)
       1fr
-      max(calc(var(--tile-h, var(--tap-pick)) * 0.28), 12px);
+      var(--tile-label-h);
     padding:0 4px; border-radius:10px;
     color:var(--ink); background:linear-gradient(180deg, rgba(12,18,30,0.88), rgba(12,18,30,0.42));
     border:1px solid var(--panel-line); border-top:3px solid var(--amber);
@@ -387,7 +410,8 @@
   /* 名前は**必ず1行**。長ければ「…」で切る。1行なので高さは文字の長さで変わらない */
   .lobby-side-label{
     grid-row:3; align-self:center;
-    font-size:max(calc(var(--tile-h, var(--tap-pick)) * 0.215), 9px); line-height:1.2;
+    /* 下限10px(9pxは実機で読めない)。1行なので高さは --tile-label-h から出ない */
+    font-size:max(calc(var(--tile-h, var(--tap-pick)) * 0.215), 10px); line-height:1.2;
     white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis;
   }
   /* レイドは紫。上の帯だけ色を変えて、開催中のコンテンツだと一目で分かるようにする */
@@ -445,8 +469,9 @@
     display:block; width:min(100%, calc(38 * var(--vw))); height:auto; margin:0 auto;
     filter:drop-shadow(0 0 14px rgba(244,196,48,0.35)) drop-shadow(0 3px 6px rgba(0,0,0,0.7));
   }
-  #lobbyCenter .title-sub{ font-size:clamp(8px, calc(2.3 * var(--vh)), 12px); }
-  #lobbyCenter .lobby-count{ font-size:clamp(9px, calc(2.5 * var(--vh)), 12px); margin-top:2px; }
+  /* 下限は10px。8〜9pxは実機で読めない(1行のままなので高さは1〜2px増えるだけ) */
+  #lobbyCenter .title-sub{ font-size:clamp(10px, calc(2.3 * var(--vh)), 12px); }
+  #lobbyCenter .lobby-count{ font-size:clamp(10px, calc(2.5 * var(--vh)), 12px); margin-top:2px; }
   /* ステージ自体が選択ボタン。<button>なので見た目をリセットしてから並べる */
   #lobbyMonsterStage{
     position:relative; flex:1 1 auto; min-height:0; width:100%;
@@ -493,6 +518,11 @@
   /* 未選択のときの案内。ここをタップして選択させるのでボタンらしく見せる */
   #lobbyMonsterEmpty{
     align-self:center; font-family:'Russo One',sans-serif; letter-spacing:1px;
+    /* 【箱はステージから決める】中央はメニューの列が増えると細くなる。
+       箱を中身なりに広げるとステージからはみ出すので、幅と高さをステージで頭打ちにして、
+       入りきらない文字は**この要素自身**が「…」で切る(枠を伸ばさない)。 */
+    min-width:0; max-width:100%; max-height:100%;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     font-size:clamp(11px, calc(3.2 * var(--vh)), 15px); color:var(--amber);
     padding:calc(1.2 * var(--vh)) clamp(16px, calc(4.5 * var(--vw)), 30px);
     border:1px dashed var(--amber); border-radius:10px;
@@ -501,7 +531,7 @@
   }
   @keyframes lobbyPickPulse{ 0%,100%{ box-shadow:0 0 0 rgba(244,196,48,0); } 50%{ box-shadow:0 0 20px -4px rgba(244,196,48,0.75); } }
   #lobbyMonsterTapHint{
-    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:clamp(9px, calc(2.5 * var(--vh)), 12px);
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:clamp(10px, calc(2.5 * var(--vh)), 12px);
     letter-spacing:1px; color:var(--ink-dim); opacity:0.9;
   }
   /* エモートボタン。中央が細いときは**折り返す**(ボタンを縮めない・切らない)。
@@ -594,11 +624,11 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lrp-rp{ margin-left:auto; font-family:'Share Tech Mono',monospace;
     font-size:clamp(11px, calc(3 * var(--vh)), 14px); color:var(--ink); white-space:nowrap; }
-  .lrp-rp em{ font-style:normal; font-size:8px; color:var(--ink-dim); margin-left:1px; }
+  .lrp-rp em{ font-style:normal; font-size:10px; color:var(--ink-dim); margin-left:1px; }
   .lrp-track{ height:4px; margin:3px 0 2px; border-radius:3px; overflow:hidden;
     background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.12); }
   .lrp-fill{ height:100%; width:0; border-radius:3px; background:var(--rank-color, var(--amber)); transition:width .3s; }
-  .lrp-next{ font-size:8.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lrp-next{ font-size:10px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lobby-pick-btn{
     display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:2px;
     cursor:pointer; text-align:left;
@@ -615,7 +645,7 @@
   .side-btn-range{ border-top-color:#6fc3ff; }
   .side-btn-range .lobby-side-icon{ background:rgba(110,190,255,0.22); }
   .side-btn-range:disabled{ opacity:0.45; }
-  .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9.5px; letter-spacing:1px; color:var(--ink-dim); }
+  .lobby-pick-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; letter-spacing:1px; color:var(--ink-dim); }
   .lobby-pick-value{ font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px;
     /* 最小を10pxまで下げる。11pxだと375x667の縦持ちで「シングル・30人バトロワ」が4px切れていた */
     font-size:clamp(10px, calc(2.9 * var(--vh)), 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
@@ -635,7 +665,7 @@
   .lobby-banner-shade{ position:absolute; inset:0;
     background:linear-gradient(180deg, rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.82) 100%); }
   .lobby-banner-rar{
-    position:absolute; left:0; top:0; padding:2px 8px; font-family:'Russo One',sans-serif; font-size:9px; letter-spacing:1px;
+    position:absolute; left:0; top:0; padding:2px 8px; font-family:'Russo One',sans-serif; font-size:10px; letter-spacing:1px;
     color:#241a04; background:linear-gradient(90deg,#ff6b6b,#ffd93b,#6bff8f,#4dc9ff,#c07bff,#ff6b6b);
     background-size:200% 100%; animation:resultRainbow 6s linear infinite;
     border-bottom-right-radius:8px;
@@ -646,7 +676,7 @@
   /* 入手印は**右上へ逃がす**。名前と同じ行に置くと、375x667の縦持ち(=論理667x375)で
      カードが約170pxしかなく、スキン名が30px切れていた(2026-08-14 実測)。
      名前に足の幅を丸ごと渡すことで、長い名前でも「…」にならない。 */
-  .lobby-banner-tag{ position:absolute; right:0; top:0; font-size:9px; font-weight:700; color:#1a1306;
+  .lobby-banner-tag{ position:absolute; right:0; top:0; font-size:10px; font-weight:700; color:#1a1306;
     background:linear-gradient(180deg,#ffd76a,#f4c430); border-bottom-left-radius:8px;
     padding:1px 7px; white-space:nowrap; z-index:3; }
   #lobbyBannerDots{ display:flex; gap:4px; justify-content:center; margin-top:5px; }
@@ -663,7 +693,7 @@
   #helpImageScroll{ overflow:auto; max-height:calc(80 * var(--vh)); border-radius:10px; }
   #helpImageTag{ display:block; width:100%; height:auto; border-radius:10px; }
   .lobby-menu-title{ font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:1px; color:var(--ink);
-    margin-bottom:10px; padding-right:46px; }
+    margin-bottom:10px; padding-right:var(--overlay-close-gap); }
   .lobby-menu-list{ display:flex; flex-direction:column; gap:7px; }
   /* ロビーBGM選択。曲数はスキン所持で増えるので、横に並べて折り返す */
   .lobby-bgm-note{ font-size:11px; line-height:1.4; color:var(--ink-dim); margin-bottom:9px; }
@@ -757,7 +787,7 @@
   .mastermon-confirm-box.changelog-box{ position:relative; max-width:min(680px, calc(94 * var(--vw))); width:min(680px, calc(94 * var(--vw)));
     height:calc(90 * var(--vh)); max-height:calc(90 * var(--vh)); overflow:hidden; text-align:left;
     display:flex; flex-direction:column; gap:8px; }
-  .changelog-head{ flex:0 0 auto; padding-right:46px; }
+  .changelog-head{ flex:0 0 auto; padding-right:var(--overlay-close-gap); }
   .changelog-title{ font-family:'Russo One',sans-serif; font-size:16px; letter-spacing:1px; color:var(--ink); }
   .changelog-tags{ margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; }
   .changelog-tag{
@@ -861,17 +891,22 @@
   #topHeader .header-side{ display:flex; align-items:center; gap:8px; min-width:0; }
   /* 左端ぎりぎりだと親指が届きにくいので、少し内側へ寄せる */
   #topHeader .header-left{ gap:8px; margin-left:14px; }
+  /* ⚙️👤🆕❓。4つ並ぶので押し間違えやすい。**正方形で --header-icon-btn(36px)**まで大きくした
+     (以前は30x27pxで、指で押すには小さすぎた)。ヘッダーは項目を増やせないぶん、
+     1つ1つを大きくして押しやすさを取る。 */
   .header-icon-btn{
-    position:relative; width:30px; height:27px; border-radius:7px; cursor:pointer; font-size:15px; line-height:1;
+    position:relative; width:var(--header-icon-btn); height:var(--header-icon-btn);
+    border-radius:9px; cursor:pointer; font-size:17px; line-height:1;
     color:var(--ink); background:rgba(255,255,255,0.07); border:1px solid var(--panel-line);
     display:flex; align-items:center; justify-content:center; flex-shrink:0;
   }
   .header-icon-btn:active{ background:rgba(244,196,48,0.22); }
   /* 更新履歴アイコンの未読ポップ。アイコンの右上に小さく載せる */
   .header-icon-btn .changelog-new-pop{
-    position:absolute; top:-5px; right:-6px; margin:0; padding:0 3px; min-width:0;
-    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:7.5px; letter-spacing:0;
-    line-height:11px; height:11px; border-radius:6px; color:#1a1306;
+    position:absolute; top:-3px; right:-5px; margin:0; padding:0 4px; min-width:0;
+    /* 7.5pxは実機で読めなかった。アイコンが36px角になったぶんの余裕で10pxまで上げる */
+    font-family:'Rajdhani',sans-serif; font-weight:800; font-size:10px; letter-spacing:0;
+    line-height:13px; height:13px; border-radius:7px; color:#1a1306;
     background:var(--danger); border:1px solid #04060a; animation:none; transform:none;
   }
   .header-icon-btn .changelog-new-pop::after{ display:none; }
@@ -941,8 +976,13 @@
   .bag-box #bagTitlePane.hidden{ display:none !important; }
   .bag-box .bag-title-hint{ flex:0 0 auto; }
   /* バッグ/ショップの右上×ボタン(ガチャと同じ見た目)。下の閉じるボタンは廃止 */
-  .overlay-close-btn{ position:absolute; top:10px; right:12px; z-index:2; width:37px; height:37px; border-radius:50%;
-    font-size:17px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:1px solid #e0af1e; cursor:pointer;
+  /* 【押せる物には最小の大きさ】以前は37x37pxでAppleの指針(44pt)を割っていた。
+     実寸を --tap-pick(44px)へ揃え、見出しが潜らないよう空ける幅は
+     --overlay-close-gap 1か所で持つ(数字を各見出しへ散らかさない)。 */
+  .overlay-close-btn{ position:absolute; top:8px; right:10px; z-index:2;
+    width:var(--tap-pick); height:var(--tap-pick); min-width:var(--tap-pick); min-height:var(--tap-pick);
+    flex-shrink:0; border-radius:50%;
+    font-size:18px; font-weight:700; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:1px solid #e0af1e; cursor:pointer;
     display:flex; align-items:center; justify-content:center; }
   .overlay-close-btn:active{ filter:brightness(0.92); }
   /* align-items:stretch にして左右の列が箱の高さいっぱいまで伸びるようにする
@@ -1355,7 +1395,7 @@
   .shop-buy-btn:disabled{ opacity:0.4; cursor:not-allowed; }
   /* ショップ: ヘッダー(タイトル＋所持ゴールド)を全幅で効かせ、その下に左右2カラム */
   .shop-header{ display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding-bottom:8px; margin-bottom:10px; padding-right:42px; border-bottom:1px solid var(--panel-line); }
+    padding-bottom:8px; margin-bottom:10px; padding-right:var(--overlay-close-gap); border-bottom:1px solid var(--panel-line); }
   .shop-header-left{ display:flex; align-items:center; gap:12px; min-width:0; }
   .shop-header-nav{ display:flex; gap:8px; flex-shrink:0; }
   .shop-nav-btn{ padding:6px 12px; border-radius:16px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px;
@@ -1572,7 +1612,7 @@
     max-height:calc(99 * var(--vh)); padding:8px 10px; border-radius:10px;
     overflow-y:auto; }
   #missionOverlay{ padding:0; }
-  .mission-box > .mastermon-confirm-text{ padding-right:44px; }
+  .mission-box > .mastermon-confirm-text{ padding-right:var(--overlay-close-gap); }
   .mission-tabs{ display:flex; gap:8px; justify-content:center; margin-bottom:8px; }
   .mission-tab{ position:relative; padding:7px 22px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
@@ -1585,7 +1625,7 @@
     max-height:calc(94 * var(--vh)); overflow-y:auto; }
   .mastermon-confirm-box.expedition-pick-box{ position:relative; max-width:min(820px, calc(96 * var(--vw))); width:min(820px, calc(96 * var(--vw)));
     max-height:calc(94 * var(--vh)); overflow-y:auto; }
-  .exp-title{ margin-bottom:6px; padding-right:44px; }
+  .exp-title{ margin-bottom:6px; padding-right:var(--overlay-close-gap); }
   .exp-note{ font-size:11px; color:var(--ink-dim); line-height:1.4; margin-bottom:8px; text-align:center; }
   .exp-note b{ color:var(--amber); }
   .exp-slots{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; width:100%; }
@@ -2100,7 +2140,13 @@
        通常時の幅(「チーム戦・20チームバトロワ」が切れない値)はここでは変えない。 */
     width:clamp(80px, calc(16 * var(--vw)), 150px);
   }
-  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 10px; width:100%; }
+  /* 【箱を先に決める】定員8人ぶんの行が出るとパネルからあふれていた
+     (実測 iPhone SE 縦持ち+51px / iPhone12 +35 / iPhone11 +23 / iPad縦は lobbyInner が2pxはみ出し)。
+     箱の高さはパネルから決め、**あふれるぶんは参加者の一覧だけが送れる**ようにする。
+     こうすると見出し・状態の行・ボタンは何人いても必ず見えたままになる
+     (箱ごとスクロールにすると、8人目が来た瞬間に「開始」ボタンが画面の外へ出る)。 */
+  #lobbyInner{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 10px; width:100%;
+    max-height:100%; min-height:0; }
   .lobby-title{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); letter-spacing:0.5px; text-align:center; white-space:nowrap; }
   .lobby-sub{ font-size:10px; color:var(--ink-dim); letter-spacing:0.5px; white-space:nowrap; }
   /* 状態の行(「いつ始まるのか」)。パネルの内寸は約206px(iPhone SE級)しかないのに
@@ -2109,7 +2155,10 @@
   .lobby-note{ font-size:10px; line-height:1.6; color:var(--ink-dim); letter-spacing:0.3px;
     white-space:normal; overflow-wrap:anywhere; text-align:center; width:100%; }
   .lobby-note.is-ready{ color:var(--amber); font-weight:700; }
-  #lobbyPlayerList{ display:flex; flex-direction:column; gap:5px; width:100%; margin-top:2px; }
+  /* **スクロールするのはここだけ。** 余りを吸って伸び縮みする(#lobbyScreen は
+     スクロールロックの除外に入っているので、この中も指で送れる) */
+  #lobbyPlayerList{ display:flex; flex-direction:column; gap:5px; width:100%; margin-top:2px;
+    flex:1 1 auto; min-height:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   .lobby-player-row{
     display:flex; align-items:center; gap:7px; padding:6px 10px; background:rgba(255,255,255,0.04);
     border:1px solid var(--panel-line); border-radius:6px; font-size:10.5px;
@@ -2184,6 +2233,12 @@
   #createRoomBtn.is-net-blocked, #findRoomBtn.is-net-blocked{
     opacity:0.45; filter:grayscale(0.65); box-shadow:none;
   }
+  /* 【選べないボタンは disabled にしない】disabled は click が発火しないので
+     「押しても何も起きず理由も出ない」になる。**見た目だけ沈めてタップは受け**、
+     押されたら理由と入手先をトーストで返す(遠征の帰還のホラ貝の文言が手本)。
+     .is-net-blocked と同じ見せ方で、こちらは「持ち物・お金が足りない」全般に使う。
+     ショップの品・トレ実行に付いている。 */
+  .is-blocked-btn{ opacity:0.45; filter:grayscale(0.65); box-shadow:none; }
 
   /* 【箱を先に決める】使える縦幅(88vh)から、見出し・自動入室・ボタン行・すき間を引いた残りが
      一覧の高さになる。逆に一覧の高さを先に決めると、ボタンを1つ足しただけで枠から出る
@@ -2529,8 +2584,8 @@
     padding-right:14px; display:flex; flex-direction:column; gap:9px;
   }
   .ml-info-scroll::-webkit-scrollbar{ width:0; }
-  /* 右上の×ボタン(right:12px / 37px幅)と重ならないよう右側を空けておく */
-  .ml-info-head{ flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-right:46px; }
+  /* 右上の×ボタン(--tap-pick幅)と重ならないよう右側を空けておく(幅は--overlay-close-gapが正) */
+  .ml-info-head{ flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-right:var(--overlay-close-gap); }
   .ml-info-name{ font-family:'Russo One',sans-serif; font-size:clamp(15px, calc(4.2 * var(--vh)), 21px); letter-spacing:1px; }
   .ml-info-chip{
     font-size:10px; font-weight:700; letter-spacing:0.5px; padding:3px 8px; border-radius:11px;
@@ -3353,7 +3408,8 @@
      「…」で切れる(667x375の縦持ちで実測)。文字は縮めずに余白側を削る。 */
   .resultBtnRow button{ flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     padding-left:6px; padding-right:6px;
-    min-height:var(--tap-pick); }   /* 押せる大きさの下限(実測42pxで足りていなかった) */
+    /* 押せる大きさの下限。**縮小の巻き添えを見込んだ高さ**にしてある(--result-btn-h参照) */
+    min-height:var(--result-btn-h); flex-shrink:0; }
   /* レイドのリザルトに出るボタンだけ紫(レイド画面・レイドランキングと同じ色) */
   #viewRaidRankBtn{ color:#efe2ff; border:1px solid rgba(190,130,255,0.85);
     background:linear-gradient(180deg,#8b4fd8,#5f2ba8); box-shadow:0 0 14px -4px rgba(170,110,255,0.9); }
@@ -3413,6 +3469,23 @@
   #rankingList{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
   .rank-row{ display:flex; align-items:center; gap:10px; padding:6px 14px; background:rgba(255,255,255,0.04); border-radius:6px; border:1px solid var(--panel-line); }
   .rank-row.rank-row-top{ background:rgba(244,196,48,0.08); border-color:rgba(244,196,48,0.4); }
+  /* --- 自分の行(C-5)。「送信しました、と出るのに自分の記録が見当たらない」への対応 ---
+     50位圏外の人にも順位を見せるため、一覧の末尾へ「あなた #N」の行を貼り付ける。
+     **貼り付ける行は不透明にする**(半透明のままだと下の行が透ける)。 */
+  .rank-row.rank-row-me{ background:rgba(244,196,48,0.18); border-color:rgba(244,196,48,0.75); }
+  .rank-row.rank-row-me.is-outside{
+    position:sticky; bottom:0; z-index:1;
+    background:linear-gradient(180deg, rgba(62,48,12,0.98), rgba(26,20,6,0.98));
+    box-shadow:0 -6px 14px -8px rgba(0,0,0,0.9);
+  }
+  /* 断言できるときだけ「あなた」。未ログインで表示名が一致しただけのときは
+     色を落として「同じ表示名」と書く(他人を自分だと言い切らない) */
+  .rank-me-chip{
+    flex-shrink:0; font-family:'Rajdhani',sans-serif; font-weight:800; font-size:10px; letter-spacing:0.5px;
+    line-height:16px; padding:0 6px; border-radius:8px; color:#1a1306; background:var(--amber);
+  }
+  .rank-me-chip.is-maybe{ color:var(--ink); background:rgba(255,255,255,0.14); border:1px solid var(--panel-line); }
+  .rank-mine-sep{ margin-top:4px; text-align:center; font-size:10px; letter-spacing:0.5px; color:var(--ink-dim); line-height:1.5; }
   .rank-crown{ font-size:16px; width:18px; text-align:center; flex-shrink:0; }
   .rank-row .rk{ font-family:'Russo One',sans-serif; font-size:14px; color:var(--amber); width:28px; flex-shrink:0; }
   .rank-icon{ width:26px; height:26px; border-radius:50%; object-fit:cover; flex-shrink:0; background:rgba(255,255,255,0.08); border:1px solid var(--panel-line); }
@@ -3558,7 +3631,7 @@
   #mastermonDetailPanel .mm-info-grid .ml-sec-status{ flex:none; max-width:none; overflow:visible; }
   .mm-info-moves{ grid-column:1 / -1; }
   /* ステータスの上まで全幅で伸ばすヘッダー(モンスター一覧の .ml-info-head と同じ位置) */
-  #mastermonDetailPanel .mm-subview-header{ flex:0 0 auto; padding-right:46px; flex-wrap:nowrap; }
+  #mastermonDetailPanel .mm-subview-header{ flex:0 0 auto; padding-right:var(--overlay-close-gap); flex-wrap:nowrap; }
   #mastermonDetailPanel .mm-subview-title{
     font-family:'Russo One',sans-serif; font-size:clamp(13px, calc(3.7 * var(--vh)), 19px); letter-spacing:1px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
@@ -3691,8 +3764,8 @@
     text-shadow:0 0 10px rgba(255,90,50,0.6); flex-shrink:0; }
   /* 「レイドバトル〜不死のゾッド〜」。荒々しく光る紫文字。
      Russo One は角ばって重いので、傾け+多重グローで禍々しさを出す。 */
-  /* タイトルは閉じるボタン(右上37px)に重ならないよう右側を空けておく */
-  .raid-box .raid-title-main{ padding-right:44px; }
+  /* タイトルは閉じるボタン(右上 --tap-pick)に重ならないよう右側を空けておく */
+  .raid-box .raid-title-main{ padding-right:var(--overlay-close-gap); }
   .raid-title-main{
     font-size:19px; letter-spacing:3px; color:#e8c4ff;
     transform:skewX(-7deg); transform-origin:left center;
@@ -4353,7 +4426,9 @@
     color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:13px; text-align:center;
   }
   .mastermon-register-btnrow{ display:flex; gap:10px; width:100%; }
-  .mastermon-register-btnrow button{ flex:1 1 auto; padding:9px 0; border-radius:6px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px; }
+  /* 縮小の巻き添えで26pxまで潰れていた。素の高さを --result-btn-h にして下限を守る */
+  .mastermon-register-btnrow button{ flex:1 1 auto; min-height:var(--result-btn-h); flex-shrink:0;
+    padding:9px 0; border-radius:6px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px; }
   #mastermonRegisterSkipBtn{ background:rgba(255,255,255,0.06); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonRegisterConfirmBtn{ background:var(--amber); color:#1a1306; border:none; }
 
@@ -4821,12 +4896,13 @@ button:active{ transform:scale(0.96); }
    リザルトは `.resultBtnRow button{flex:1 1 0}` の方が詳細度が高いので、
    同じ詳細度以上のセレクタで上書きする(ここを弱めると5等分に戻る) */
 .share-icon-btn, .resultBtnRow .share-icon-btn{
-  flex:0 0 auto; width:46px; padding-left:0; padding-right:0;
+  /* 幅も縮小の巻き添えを受ける(実測31.9px)ので、高さと同じ --result-btn-h でそろえる。
+     **持ち方で幅を変えない** ―― 以前の html.narrow-screen での40pxは、縮小後に
+     さらに小さくなって押せなくなっていた。 */
+  flex:0 0 auto; width:var(--result-btn-h); padding-left:0; padding-right:0;
   font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
   color:#0b0d12; background:#fff; border:none; border-radius:6px; cursor:pointer;
 }
-html.narrow-screen .share-icon-btn,
-html.narrow-screen .resultBtnRow .share-icon-btn{ width:40px; }
 /* SSR獲得画面のシェア。獲得したスキン名の下に置く。
    .ssr-reveal-inner は overflow:hidden の縦フレックスなので、flexを指定しないと
    高さ0まで潰されて押せなくなる(縮むのは flex:0 1 auto のスキン画像側でよい) */

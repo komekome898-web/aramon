@@ -11,8 +11,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="荒野モン動">
-<link rel="apple-touch-icon" href="monsters/phoenix.png">
-<link rel="icon" type="image/png" href="monsters/phoenix.png">
+<!-- ホーム画面/タブのアイコン。**正方形の専用画像を使う。**
+     以前はモンスター画像(1536x1024の横長)を使い回していたため、iOSが正方形へ潰していた。 -->
+<link rel="apple-touch-icon" href="images/icon-apple-180.png">
+<link rel="icon" type="image/png" href="images/icon-192.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -225,6 +227,14 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <button id="lookSettingsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🎚️</span><span class="lobby-menu-text"><b>視点設定</b><i>視野角・カメラ感度・視点の操作方法を変える</i></span></button>
       <button id="audioSettingsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔊</span><span class="lobby-menu-text"><b>音量設定</b><i>BGMと効果音の音量を調整する</i></span></button>
     </div>
+    <!-- マルチの遅延(RTT)表示。既定OFFで入口が無かったので設定へ出す(F-10)。
+         保存は render.js 側(__aramonSetNetHud が localStorage へ書く)。 -->
+    <div class="look-toggle-row">
+      <span id="netHudLabel" class="look-toggle-label">📡 マルチの遅延（ms）を表示</span>
+      <button id="netHudToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="netHudLabel">
+        <span class="toggle-switch-knob"></span>
+      </button>
+    </div>
     <button id="adminEntryBtn">管理者用</button>
   </div>
 </div>
@@ -251,6 +261,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <button id="closeHelpBtn" class="overlay-close-btn">✕</button>
     <div class="lobby-menu-title">❓ ヘルプ / 操作マニュアル</div>
     <div class="lobby-menu-list">
+      <!-- 【最上段は「遊び方ガイド」】オーラ相性・アイテム・状態変化が載っているのはこの画面だけなのに、
+           以前は ⚙️設定 → 遊び方説明 の奥にしか入口が無く、❓ヘルプからも 🔰はじめて からも辿れなかった。
+           開く先は設定の「遊び方説明」と**同じ #howToPlayScreen**(画面を増やさない)。 -->
+      <button class="lobby-menu-btn" id="helpHowToPlayBtn"><span class="lobby-menu-icon">📖</span><span class="lobby-menu-text"><b>遊び方ガイド</b><i>操作・オーラ相性・アイテム・状態変化のすべて</i></span></button>
       <button class="lobby-menu-btn" id="helpReplayTutorialBtn"><span class="lobby-menu-icon">🔰</span><span class="lobby-menu-text"><b>はじめての説明をもう一度</b><i>チュートリアルの説明だけを見返します</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_addhome.png" data-title="ホーム画面追加方法"><span class="lobby-menu-icon">🏠</span><span class="lobby-menu-text"><b>ホーム画面追加方法</b><i>アイコンからアプリのようにすぐ起動</i></span></button>
       <button class="lobby-menu-btn help-manual-btn" data-manual="guide/manual_account.png" data-title="アカウントの作り方"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>アカウントの作り方</b><i>記録とマスモンを失わないように保存する(機種変更にも使えます)</i></span></button>
@@ -1438,8 +1452,17 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <button class="audio-step-btn" id="seVolPlus">+</button>
       <span class="audio-slider-val" id="seVolVal">70</span>
     </div>
+    <!-- 公共の場でとっさに消せる手段が無かったので1行で足す。
+         BGM/SEの数値はミュート前の値を覚えておき、解除でそのまま戻す(ui.jsのtoggleMuteAll)。 -->
+    <div class="look-toggle-row">
+      <span id="muteAllLabel" class="look-toggle-label">🔇 音をすべて消す（一括ミュート）</span>
+      <button id="muteAllToggle" class="toggle-switch" role="switch" aria-checked="false" aria-labelledby="muteAllLabel">
+        <span class="toggle-switch-knob"></span>
+      </button>
+    </div>
     <div class="mastermon-confirm-btnrow" style="margin-top:16px;">
-      <button id="closeAudioSettingsBtn">閉じる</button>
+      <!-- data-overlay-close = 背景タップ/戻る操作から押される「この画面の閉じる」の目印(ui.js) -->
+      <button id="closeAudioSettingsBtn" data-overlay-close>閉じる</button>
     </div>
   </div>
 </div>
@@ -1496,7 +1519,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <!-- 行が7つになったので下のボタン行の余白は詰める(iPhone SE 横持ち=実効375pxでもスクロールさせない) -->
     <div class="mastermon-confirm-btnrow" style="margin-top:8px;">
       <button id="lookResetBtn">初期値に戻す</button>
-      <button id="closeLookSettingsBtn">閉じる</button>
+      <button id="closeLookSettingsBtn" data-overlay-close>閉じる</button>
     </div>
   </div>
 </div>
@@ -1710,11 +1733,18 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
        瞬間に全部消えて再起動していた。新版を見つけても告知を出すだけにして、
        読み込み直すかどうかは本人に決めてもらう(ui.jsのnotifyAppUpdateReady→ロビーの「更新」タイル)。
        sw.jsはコード=ネットワーク優先なので、読み込み直すまで古いまま動いていても不整合は起きない。 */
+    /* 【重要】controllerchange は「新版が出たとき」だけでなく
+       「SWが初めてこのページの制御を取ったとき」にも発火する(sw.js が clients.claim() を呼ぶため)。
+       タスクキル後の初回起動は制御されていない状態で始まるので、そのままだと
+       更新など無いのに毎回「更新があります」と出る(実機で報告あり・2026-08-23)。
+       **読み込んだ時点で既に制御されていた場合だけ**が本物の更新。
+       この1つの値を controllerchange と updatefound の両方で使う(判定を2通りに分けない)。 */
+    const hadControllerAtLoad = !!navigator.serviceWorker.controller;
     const noticeUpdate = ()=>{ if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady(); };
-    navigator.serviceWorker.addEventListener('controllerchange', noticeUpdate);
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(hadControllerAtLoad) noticeUpdate(); });
 
     window.addEventListener('load', ()=>{
-      navigator.serviceWorker.register('sw.js').then((reg)=>{
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg)=>{
         // 起動時は1回だけ確認する(この時点ではまだロビーに来ていないので状況は見ない)
         reg.update().catch(()=>{});
         /* 復帰のたびに確認していたが、sw.jsは skipWaiting()+clients.claim() なので
@@ -1730,8 +1760,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
           const newWorker = reg.installing;
           if(!newWorker) return;
           newWorker.addEventListener('statechange', ()=>{
-            // 「installed」かつ既にSWが動いている = 初回インストールではなく更新。ここで告知だけ出す
-            if(newWorker.state === 'installed' && navigator.serviceWorker.controller) noticeUpdate();
+            /* 「installed」かつ**読み込んだ時点で既に制御されていた** = 初回インストールではなく更新。
+               navigator.serviceWorker.controller を今読むと、clients.claim() で既に値が入っており
+               本当の初回インストールでも「更新」と誤判定する。 */
+            if(newWorker.state === 'installed' && hadControllerAtLoad) noticeUpdate();
           });
         });
       }).catch(()=>{});
