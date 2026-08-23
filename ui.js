@@ -697,44 +697,6 @@ function buildHowtoLists(){
 function lobbyOpenOverlay(id){ document.getElementById(id).classList.remove('hidden'); }
 function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidden'); }
 
-/* =====================================================================
-   オーバーレイの閉じ方をそろえる(C-6)
-   これまでは ✕ボタン / 下部の「閉じる」ボタン / 何も無い の3通りが混ざっていて、
-   **背景をタップして閉じられるのはシェア画面だけ**だった。ここで
-   「背景タップ」と「端末の戻る操作」の2つを、委譲した1つずつのハンドラで全画面に効かせる。
-
-   閉じ方そのものは書き足さない。**その画面が持っている閉じるボタンを押す**だけにして、
-   「閉じるとは何をすることか」の写しを2つ作らない(ヘルプの画像ビューアのように
-   「閉じたら前の画面へ戻る」ものも、これで今までどおり動く)。
-   ===================================================================== */
-
-/* 【背景タップで閉じてはいけないものの一覧。除外の判断はここ1か所】
-   増やすときは必ず理由を書くこと。理由が書けないものは除外しない。 */
-const BACKDROP_KEEP_OPEN_IDS = new Set([
-  // 「はい/いいえ」を選ばせるのが目的。背景タップはそのどちらでもないので、黙って消えると危ない
-  'mastermonDeleteConfirm',
-  // 名前とパスコードを入力している最中。指が当たって消えると全部打ち直しになる
-  'accountOverlay',
-  // すでに専用の背景タップ閉じを持っている(shareBindUi)。二重に閉じない
-  'shareOverlay',
-  /* 取り返しのつかない選択(転生・覚醒・秘伝)。何を選んだかで結果が変わるので、
-     背景タップで消えると「何が起きたのか分からない」状態になる */
-  'rebirthOverlay', 'awakenOverlay', 'hidenOverlay',
-  /* 一度きりの告知(ログインボーナス・記念スキンの配布)。閉じたことを「読んだ」として
-     記録する専用ボタンを持っており、背景タップで消すと二度と出ない */
-  'loginBonusPopup', 'skinPromoOverlay', 'rockSsrPromoOverlay', 'metagGaruruPromoOverlay',
-]);
-/* その画面の「閉じる」を押す。✕(.overlay-close-btn)が無い画面は、下部の閉じるボタンに
-   data-overlay-close を付けて目印にしてある(手書きのID対応表を作らないため)。 */
-function closeOverlayByItsOwnButton(ov){
-  const btn = ov.querySelector('.overlay-close-btn, [data-overlay-close]');
-  if(btn) btn.click();
-  else ov.classList.add('hidden');
-}
-function backdropClosableOverlays(){
-  return [...document.querySelectorAll('.mastermon-confirm-overlay:not(.hidden)')]
-    .filter(o=> !BACKDROP_KEEP_OPEN_IDS.has(o.id));
-}
 /* ON/OFFの行(.look-toggle-row)は**どこを押しても切り替わる**ようにする。
    スイッチ本体は46x26pxで押しやすさの下限(44px)を割っているが、大きくすると
    視点設定の箱(すでに高さの99%を使っている)に入らない。行の横幅いっぱいを
@@ -747,54 +709,6 @@ document.addEventListener('click', (e)=>{
   if(sw) sw.click();
 });
 
-// 背景(=オーバーレイ自身)をタップしたときだけ閉じる。枠の中は e.target が中の要素になるので効かない
-document.addEventListener('click', (e)=>{
-  const ov = e.target;
-  if(!(ov instanceof Element)) return;
-  if(!ov.classList.contains('mastermon-confirm-overlay') || ov.classList.contains('hidden')) return;
-  if(BACKDROP_KEEP_OPEN_IDS.has(ov.id)) return;
-  closeOverlayByItsOwnButton(ov);
-});
-
-/* ===== 端末の「戻る」(Safariの画面端スワイプ / Androidの戻るボタン)を受け止める =====
-   pushState も popstate もコードに1つも無かったので、タブで遊んでいる人が画面端を
-   スワイプすると**ゲームごと前のページへ戻って**いた(試合の状態はメモリにしか無いので全部消える)。
-   ここでは履歴を1つ余分に積んでおき、戻られたら**1階層だけ**閉じて積み直す。
-   ・**試合中は何も閉じない。**勝手に試合を終わらせない(退出は今までどおり画面の×から)
-   ・閉じる物が無いときは「もう一度戻るとゲームを離れます」と伝えてから離す
-     (積み直しっぱなしにすると、本当に出たい人が二度と出られなくなる) */
-function pushHistoryGuard(){
-  try{ history.pushState({ aramon:'guard' }, ''); }catch(err){}
-}
-let backLeaveArmedAt = 0;          // 「何も閉じる物が無い状態で戻られた」時刻
-const BACK_LEAVE_WINDOW_MS = 3000; // この間にもう一度戻られたら本当に離れさせる
-window.addEventListener('popstate', ()=>{
-  // 試合中(訓練場を含む)は戻る操作を無視する。**試合を終わらせない**
-  if(typeof game!=='undefined' && game && ((game.started && !game.over) || game.trainingRange)){
-    pushHistoryGuard();
-    if(typeof pushToast==='function') pushToast('試合中は「戻る」で退出しません（画面の×から退出できます）');
-    return;
-  }
-  const open = backdropClosableOverlays();
-  if(open.length){
-    // いちばん上に出ている1枚だけ閉じる(重なり順が同じならDOMであとの物が上)
-    let top = open[0], topZ = -Infinity;
-    for(const o of open){
-      const z = parseInt(getComputedStyle(o).zIndex, 10) || 0;
-      if(z >= topZ){ topZ = z; top = o; }
-    }
-    closeOverlayByItsOwnButton(top);
-    pushHistoryGuard();
-    backLeaveArmedAt = 0;
-    return;
-  }
-  const now = Date.now();
-  if(now - backLeaveArmedAt < BACK_LEAVE_WINDOW_MS){ backLeaveArmedAt = 0; return; }  // 2回続けて=本当に離れる
-  backLeaveArmedAt = now;
-  pushHistoryGuard();
-  if(typeof pushToast==='function') pushToast('もう一度「戻る」でゲームを離れます');
-});
-pushHistoryGuard();   // 最初の1つを積んでおく(これが無いと1回目の戻るでページごと出てしまう)
 
 {
   const pairs = [
