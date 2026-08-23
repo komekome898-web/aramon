@@ -696,6 +696,106 @@ function buildHowtoLists(){
 // ---- 設定 / マイページ / 各選択オーバーレイの開閉 ----
 function lobbyOpenOverlay(id){ document.getElementById(id).classList.remove('hidden'); }
 function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidden'); }
+
+/* =====================================================================
+   オーバーレイの閉じ方をそろえる(C-6)
+   これまでは ✕ボタン / 下部の「閉じる」ボタン / 何も無い の3通りが混ざっていて、
+   **背景をタップして閉じられるのはシェア画面だけ**だった。ここで
+   「背景タップ」と「端末の戻る操作」の2つを、委譲した1つずつのハンドラで全画面に効かせる。
+
+   閉じ方そのものは書き足さない。**その画面が持っている閉じるボタンを押す**だけにして、
+   「閉じるとは何をすることか」の写しを2つ作らない(ヘルプの画像ビューアのように
+   「閉じたら前の画面へ戻る」ものも、これで今までどおり動く)。
+   ===================================================================== */
+
+/* 【背景タップで閉じてはいけないものの一覧。除外の判断はここ1か所】
+   増やすときは必ず理由を書くこと。理由が書けないものは除外しない。 */
+const BACKDROP_KEEP_OPEN_IDS = new Set([
+  // 「はい/いいえ」を選ばせるのが目的。背景タップはそのどちらでもないので、黙って消えると危ない
+  'mastermonDeleteConfirm',
+  // 名前とパスコードを入力している最中。指が当たって消えると全部打ち直しになる
+  'accountOverlay',
+  // すでに専用の背景タップ閉じを持っている(shareBindUi)。二重に閉じない
+  'shareOverlay',
+  /* 取り返しのつかない選択(転生・覚醒・秘伝)。何を選んだかで結果が変わるので、
+     背景タップで消えると「何が起きたのか分からない」状態になる */
+  'rebirthOverlay', 'awakenOverlay', 'hidenOverlay',
+  /* 一度きりの告知(ログインボーナス・記念スキンの配布)。閉じたことを「読んだ」として
+     記録する専用ボタンを持っており、背景タップで消すと二度と出ない */
+  'loginBonusPopup', 'skinPromoOverlay', 'rockSsrPromoOverlay', 'metagGaruruPromoOverlay',
+]);
+/* その画面の「閉じる」を押す。✕(.overlay-close-btn)が無い画面は、下部の閉じるボタンに
+   data-overlay-close を付けて目印にしてある(手書きのID対応表を作らないため)。 */
+function closeOverlayByItsOwnButton(ov){
+  const btn = ov.querySelector('.overlay-close-btn, [data-overlay-close]');
+  if(btn) btn.click();
+  else ov.classList.add('hidden');
+}
+function backdropClosableOverlays(){
+  return [...document.querySelectorAll('.mastermon-confirm-overlay:not(.hidden)')]
+    .filter(o=> !BACKDROP_KEEP_OPEN_IDS.has(o.id));
+}
+/* ON/OFFの行(.look-toggle-row)は**どこを押しても切り替わる**ようにする。
+   スイッチ本体は46x26pxで押しやすさの下限(44px)を割っているが、大きくすると
+   視点設定の箱(すでに高さの99%を使っている)に入らない。行の横幅いっぱいを
+   当たり判定にすれば、字を読んでそのまま押せる。**行を増やしても自動で効く。** */
+document.addEventListener('click', (e)=>{
+  if(!(e.target instanceof Element)) return;
+  const row = e.target.closest('.look-toggle-row');
+  if(!row || e.target.closest('.toggle-switch')) return;   // スイッチ自体は各自のハンドラが処理する
+  const sw = row.querySelector('.toggle-switch');
+  if(sw) sw.click();
+});
+
+// 背景(=オーバーレイ自身)をタップしたときだけ閉じる。枠の中は e.target が中の要素になるので効かない
+document.addEventListener('click', (e)=>{
+  const ov = e.target;
+  if(!(ov instanceof Element)) return;
+  if(!ov.classList.contains('mastermon-confirm-overlay') || ov.classList.contains('hidden')) return;
+  if(BACKDROP_KEEP_OPEN_IDS.has(ov.id)) return;
+  closeOverlayByItsOwnButton(ov);
+});
+
+/* ===== 端末の「戻る」(Safariの画面端スワイプ / Androidの戻るボタン)を受け止める =====
+   pushState も popstate もコードに1つも無かったので、タブで遊んでいる人が画面端を
+   スワイプすると**ゲームごと前のページへ戻って**いた(試合の状態はメモリにしか無いので全部消える)。
+   ここでは履歴を1つ余分に積んでおき、戻られたら**1階層だけ**閉じて積み直す。
+   ・**試合中は何も閉じない。**勝手に試合を終わらせない(退出は今までどおり画面の×から)
+   ・閉じる物が無いときは「もう一度戻るとゲームを離れます」と伝えてから離す
+     (積み直しっぱなしにすると、本当に出たい人が二度と出られなくなる) */
+function pushHistoryGuard(){
+  try{ history.pushState({ aramon:'guard' }, ''); }catch(err){}
+}
+let backLeaveArmedAt = 0;          // 「何も閉じる物が無い状態で戻られた」時刻
+const BACK_LEAVE_WINDOW_MS = 3000; // この間にもう一度戻られたら本当に離れさせる
+window.addEventListener('popstate', ()=>{
+  // 試合中(訓練場を含む)は戻る操作を無視する。**試合を終わらせない**
+  if(typeof game!=='undefined' && game && ((game.started && !game.over) || game.trainingRange)){
+    pushHistoryGuard();
+    if(typeof pushToast==='function') pushToast('試合中は「戻る」で退出しません（画面の×から退出できます）');
+    return;
+  }
+  const open = backdropClosableOverlays();
+  if(open.length){
+    // いちばん上に出ている1枚だけ閉じる(重なり順が同じならDOMであとの物が上)
+    let top = open[0], topZ = -Infinity;
+    for(const o of open){
+      const z = parseInt(getComputedStyle(o).zIndex, 10) || 0;
+      if(z >= topZ){ topZ = z; top = o; }
+    }
+    closeOverlayByItsOwnButton(top);
+    pushHistoryGuard();
+    backLeaveArmedAt = 0;
+    return;
+  }
+  const now = Date.now();
+  if(now - backLeaveArmedAt < BACK_LEAVE_WINDOW_MS){ backLeaveArmedAt = 0; return; }  // 2回続けて=本当に離れる
+  backLeaveArmedAt = now;
+  pushHistoryGuard();
+  if(typeof pushToast==='function') pushToast('もう一度「戻る」でゲームを離れます');
+});
+pushHistoryGuard();   // 最初の1つを積んでおく(これが無いと1回目の戻るでページごと出てしまう)
+
 {
   const pairs = [
     ['headerSettingsBtn','settingsOverlay','closeSettingsBtn'],
@@ -709,8 +809,20 @@ function lobbyCloseOverlay(id){ document.getElementById(id).classList.add('hidde
     document.getElementById(openId).addEventListener('click', ()=> lobbyOpenOverlay(ovId));
     document.getElementById(closeId).addEventListener('click', ()=> lobbyCloseOverlay(ovId));
   });
-  // ロビー右上「🔰 はじめての方へ」→ ヘルプ画面(headerHelpBtnと同じオーバーレイを開くだけ)
-  document.getElementById('openHelpFromLobbyBtn').addEventListener('click', ()=> lobbyOpenOverlay('helpOverlay'));
+  /* ロビーの「🔰 はじめて」→ **チュートリアルの説明をもう一度**(C-4)。
+     以前は ❓ヘルプ(headerHelpBtn)と同じ #helpOverlay を開くだけで、
+     アイコンと名前が違うだけの同じ画面が2つある状態だった。
+     ❓=調べる場所 / 🔰=もう一度教わる、と役割を分ける。
+     tutorial.js は ui.js より後に読み込まれるので存在を見てから呼ぶ(未読込ならヘルプへ落とす)。 */
+  document.getElementById('openHelpFromLobbyBtn').addEventListener('click', ()=>{
+    if(typeof tutorialReplayCards==='function') tutorialReplayCards();
+    else lobbyOpenOverlay('helpOverlay');
+  });
+  // ❓ヘルプ →「📖 遊び方ガイド」。設定の「遊び方説明」と同じ #howToPlayScreen を開く
+  document.getElementById('helpHowToPlayBtn').addEventListener('click', ()=>{
+    lobbyCloseOverlay('helpOverlay');
+    openHowToPlayScreen();
+  });
   // ⚙️設定 →「🎚️ 視点設定」。射撃訓練場の rangeLookBtn と**同じ openLookSettings を呼ぶだけ**で、
   // オーバーレイもスライダーも1つのまま(感度の正が2か所に分かれない)。
   document.getElementById('lookSettingsBtn').addEventListener('click', ()=> openLookSettings());
@@ -1257,10 +1369,23 @@ function updateLobbyMenuRows(){
   const cs = getComputedStyle(grid);
   // padding を除いた「実際に行が置ける高さ」で数える(clientHeight は padding 込み)
   const h = grid.clientHeight - (parseFloat(cs.paddingTop)||0) - (parseFloat(cs.paddingBottom)||0);
-  if(!(h > 0)) return;   // 画面が隠れている間は測れないので何もしない(次の表示時に効く)
+  const vis = [...grid.children].filter(c=> getComputedStyle(c).display!=='none');
+  if(!(h > 0)){
+    /* 測れない(画面が隠れている・向き変更の途中で寸法が未確定)。
+       **黙って諦めない。** 諦めると「いま見えているタイル」と「割り当て済みの升目」が
+       食い違ったまま残り、あとから出たタイルが**存在しない行**に置かれる。
+       grid は足りない行を暗黙に足して伸びるので、そのぶんが枠からはみ出し、
+       DOMであとに来る #lobbyBanner の下に潜って見えなくなる
+       (2026-08-23 実機報告「更新タイルが隠れる」。iPhone 11 縦持ちで実測27.2px重なり)。
+       いま分かっている行数のまま升目だけ配り直して行の食い違いを消し、
+       測れるようになったら測り直す。 */
+    placeLobbyMenuTiles(grid, vis, lobbyMenuCurrentRows(grid));
+    scheduleLobbyMenuRetry();
+    return;
+  }
+  cancelLobbyMenuRetry();
   const gap = parseFloat(cs.rowGap) || 0;
   const tap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tap-pick')) || 44;
-  const vis = [...grid.children].filter(c=> getComputedStyle(c).display!=='none');
   const pairs = Math.ceil(vis.length / LOBBY_MENU_COLS) || 1;   // 横並び1組=1行
   const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));  // 下限の高さで入る行数
   const rows = Math.max(1, Math.min(fit, pairs));
@@ -1289,17 +1414,41 @@ function updateLobbyMenuRows(){
        ・並べ替えたいときはDOMを読む順に書き換えるだけでよい
      の両方が成り立つ。CSSの自動配置(grid-auto-flow)に任せると、
      列ごとに縦へ読む順でDOMを書く必要があり、次の並べ替えで必ず間違える。 */
-  const place = (rows)=>{
-    grid.style.setProperty('--menu-rows', rows);
-    vis.forEach((el, i)=>{
-      const pair = Math.floor(i / LOBBY_MENU_COLS);    // 何組目か
-      const inPair = i % LOBBY_MENU_COLS;              // 組の中の左右
-      const block = Math.floor(pair / rows);           // 何ブロック目(2列ずつ右へ)
-      el.style.gridRow = String((pair % rows) + 1);
-      el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
-    });
-  };
-  place(rows);
+  placeLobbyMenuTiles(grid, vis, rows);
+}
+/* 升目の割り当て本体。**行数と升目は必ずセットで書く**(片方だけ変えると
+   存在しない行に置かれたタイルが枠の外へ落ちる)。測れないときもここだけは通す。 */
+function placeLobbyMenuTiles(grid, vis, rows){
+  grid.style.setProperty('--menu-rows', rows);
+  vis.forEach((el, i)=>{
+    const pair = Math.floor(i / LOBBY_MENU_COLS);    // 何組目か
+    const inPair = i % LOBBY_MENU_COLS;              // 組の中の左右
+    const block = Math.floor(pair / rows);           // 何ブロック目(2列ずつ右へ)
+    el.style.gridRow = String((pair % rows) + 1);
+    el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
+  });
+}
+// いま割り当ててある行数。まだ一度も測っていなければCSSの既定(4行)。
+function lobbyMenuCurrentRows(grid){
+  const v = parseFloat(grid.style.getPropertyValue('--menu-rows'));
+  return (isFinite(v) && v >= 1) ? Math.round(v) : 4;
+}
+/* 測れなかったときの測り直し。ロビーが表示されたときは refreshLobby() が呼び直すので、
+   ここが要るのは「表示されたまま一時的に寸法が0になる」場合(向き変更の直後など)だけ。
+   無限には回さない(隠れている間ずっと回すと電池を食う)。 */
+let lobbyMenuRetryTimer = 0, lobbyMenuRetryLeft = 0;
+const LOBBY_MENU_RETRY_MS = 150, LOBBY_MENU_RETRY_MAX = 8;
+function scheduleLobbyMenuRetry(){
+  if(lobbyMenuRetryTimer) return;
+  if(lobbyMenuRetryLeft <= 0) lobbyMenuRetryLeft = LOBBY_MENU_RETRY_MAX;
+  lobbyMenuRetryTimer = setTimeout(()=>{
+    lobbyMenuRetryTimer = 0;
+    if(--lobbyMenuRetryLeft > 0) updateLobbyMenuRows();
+  }, LOBBY_MENU_RETRY_MS);
+}
+function cancelLobbyMenuRetry(){
+  if(lobbyMenuRetryTimer) clearTimeout(lobbyMenuRetryTimer);
+  lobbyMenuRetryTimer = 0; lobbyMenuRetryLeft = 0;
 }
 
 
@@ -1403,12 +1552,78 @@ loadLookSettings();
 
 document.getElementById('audioSettingsBtn').addEventListener('click', ()=>{
   syncAudioSliders();
+  syncMuteToggle();
   document.getElementById('audioSettingsOverlay').classList.remove('hidden');
 });
 document.getElementById('closeAudioSettingsBtn').addEventListener('click', ()=>{
   document.getElementById('audioSettingsOverlay').classList.add('hidden');
   saveAudioSettings();
 });
+
+/* ===== 一括ミュート(C-9) =====
+   公共の場でとっさに音を消す手段が無かった。**新しい音量の概念は作らない** ――
+   ミュート前のBGM/SEの値を覚えておき、解除でそのまま戻すだけ。
+   「音が消えている状態」の正は audioSettings の値そのもの(両方0)なので、
+   別に持ったON/OFFとスライダーが食い違うことがない。 */
+const MUTE_PREV_KEY = 'aramon_mute_prev_v1';
+function audioIsMuted(){ return audioSettings.bgm <= 0.0005 && audioSettings.se <= 0.0005; }
+function syncMuteToggle(){
+  const btn = document.getElementById('muteAllToggle');
+  if(btn) btn.setAttribute('aria-checked', audioIsMuted() ? 'true' : 'false');
+}
+function toggleMuteAll(){
+  if(audioIsMuted()){
+    let prev = null;
+    try{ prev = JSON.parse(localStorage.getItem(MUTE_PREV_KEY)); }catch(err){}
+    // 覚えていない(初回・両方0で保存されていた)ときは既定値へ戻す。無音のままにしない
+    audioSettings.bgm = (prev && typeof prev.bgm==='number' && prev.bgm > 0) ? prev.bgm : 0.5;
+    audioSettings.se  = (prev && typeof prev.se ==='number' && prev.se  > 0) ? prev.se  : 0.7;
+  } else {
+    try{ localStorage.setItem(MUTE_PREV_KEY, JSON.stringify({ bgm:audioSettings.bgm, se:audioSettings.se })); }catch(err){}
+    audioSettings.bgm = 0; audioSettings.se = 0;
+  }
+  applyAudioVolumes();
+  saveAudioSettings();
+  syncAudioSliders();
+  syncMuteToggle();
+}
+document.getElementById('muteAllToggle').addEventListener('click', toggleMuteAll);
+/* 同期で音量が入れ替わったとき用の読み直し。**保存の形は audio.js の
+   AUDIO_SETTINGS_KEY が正**なので、ここでは同じ形を読んで当てるだけにする。 */
+function reloadAudioSettingsFromStorage(){
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem('aramon_audio_v1')); }catch(err){}
+  if(!saved || typeof saved.bgm!=='number' || typeof saved.se!=='number') return;
+  audioSettings.bgm = Math.min(1, Math.max(0, saved.bgm));
+  audioSettings.se  = Math.min(1, Math.max(0, saved.se));
+  applyAudioVolumes();
+  syncAudioSliders();
+  syncMuteToggle();
+}
+
+/* ===== マルチの遅延(RTT)表示(F-10) =====
+   表示そのものは render.js が持っている。ここは入口(ON/OFF)だけで、
+   **保存も向こう側**(__aramonSetNetHud が localStorage へ書く)。値の正を2か所に持たない。 */
+function syncNetHudToggle(){
+  const btn = document.getElementById('netHudToggle');
+  if(!btn) return;
+  /* アカウント同期で保存値が入れ替わっていることがあるので、**保存値のほうを正として
+     render.js 側へ入れ直してから**表示を合わせる(向こうは起動時に1回しか読まない)。 */
+  if(typeof window.__aramonSetNetHud==='function'){
+    let saved = null;
+    try{ saved = localStorage.getItem('aramon_net_hud_v1'); }catch(err){}
+    if(saved!=null && (saved==='1') !== !!window.__aramonGetNetHud()) window.__aramonSetNetHud(saved==='1');
+  }
+  const on = (typeof window.__aramonGetNetHud==='function') ? !!window.__aramonGetNetHud() : false;
+  btn.setAttribute('aria-checked', on ? 'true' : 'false');
+}
+document.getElementById('netHudToggle').addEventListener('click', ()=>{
+  if(typeof window.__aramonSetNetHud!=='function'){ pushToast('この端末では遅延表示を切り替えられません'); return; }
+  window.__aramonSetNetHud(!window.__aramonGetNetHud());
+  syncNetHudToggle();
+});
+document.getElementById('headerSettingsBtn').addEventListener('click', syncNetHudToggle);
+syncNetHudToggle();
 
 /* =====================================================================
    バトル操作画面カスタマイズ(HUD配置編集)
@@ -1697,7 +1912,30 @@ const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramo
   /* チュートリアルの無料10連を受け取り済みか。**進捗(aramon_tutorial_v1)は端末ごとなので同期しないが、
      こちらは同期する。** ホーム画面に追加するとiOSではlocalStorageが別扱いになり、チュートリアルが
      もう一度出る。そのときに無料10連まで二度もらえてしまうのを防ぐ。 */
-  'aramon_tutorial_gift_v1'];
+  'aramon_tutorial_gift_v1',
+  /* ===== ここから設定系(2026-08-23に追加) =====
+     「機種変してログインしたら、感度も音量も全部やり直しになった」への対応。
+     **入れる基準は「画面の大きさに関係しない好みか」**。関係しないものだけ入れる。
+       ・視点設定(視野角・左右/上下の感度・FIREを滑らせて視点)…… 手の慣れの話
+       ・視点上下反転 …………………………………………………… 同上
+       ・バトル中の文字を大きくする ……………………………… 目の話(端末ではなく人に付く)
+       ・音量 ………………………………………………………………… 好みの話
+       ・マルチの遅延表示 ………………………………………………… 好みの話
+       ・ロビーの前回の選択(マップ/モード/参戦モンスター) … 復元は存在チェック付きなので
+         別端末の値が来ても壊れない(消したマスモンや終わったレイドは黙って既定へ落ちる)
+     **入れないもの**: 画質(aramon_perf_v1=開発用)・チュートリアル進捗・更新履歴の既読・
+     告知の表示済み(どれも端末ごとの状態)。HUD配置は下の LOCAL_WINS で別扱いにする。 */
+  'aramon_look_v1', 'aramon_invert_pitch_v1', 'aramon_hud_text_large_v1',
+  'aramon_audio_v1', 'aramon_net_hud_v1', 'aramon_lobby_prefs_v1'];
+/* 【HUD配置だけは「この端末に何も無いときだけ」取り込む】
+   位置(fx,fy)は割合なので端末が変わっても移せるが、**大きさ(s)は固定pxへの倍率**なので、
+   iPadで2.0倍にしたジョイスティックはiPhone SEでは画面の半分を覆う。
+   さらに同期はログインのときだけでなく「サーバーのほうが新しい」たびに走るので、
+   ふつうに同期へ入れるとスマホとタブレットを併用している人は**触るたびに互いの配置を
+   上書きし合う**(しかも黙って壊れるので原因が分からない)。
+   そこで「送るが、取り込むのはこの端末がまだ一度も配置を決めていないときだけ」にする。
+   これで機種変(新しい端末=空)では引き継がれ、2台持ちでは各端末の配置が守られる。 */
+const ACCOUNT_SYNC_KEYS_LOCAL_WINS = ['aramon_hud_layout_v1'];
 const accountState = { loggedIn:false, name:null, key:null, pass:null, syncTimer:null };
 
 function loadAccountCreds(){ try{ return JSON.parse(localStorage.getItem(ACCOUNT_CRED_KEY)); }catch(err){ return null; } }
@@ -1705,7 +1943,7 @@ function saveAccountCreds(c){ try{ localStorage.setItem(ACCOUNT_CRED_KEY, JSON.s
 
 function collectAccountData(){
   const out = {};
-  for(const k of ACCOUNT_SYNC_KEYS){
+  for(const k of ACCOUNT_SYNC_KEYS.concat(ACCOUNT_SYNC_KEYS_LOCAL_WINS)){
     const v = localStorage.getItem(k);
     if(v!=null) out[k] = v;
   }
@@ -1716,10 +1954,32 @@ function applyAccountData(d){
   for(const k of ACCOUNT_SYNC_KEYS){
     if(d[k]!=null){ try{ localStorage.setItem(k, d[k]); }catch(err){} }
   }
+  // HUD配置は「この端末がまだ一度も決めていないときだけ」取り込む(理由は宣言のところ)
+  for(const k of ACCOUNT_SYNC_KEYS_LOCAL_WINS){
+    if(d[k]==null) continue;
+    try{ if(localStorage.getItem(k)==null) localStorage.setItem(k, d[k]); }catch(err){}
+  }
   const savedName = localStorage.getItem('aramon_player_name_v1');
   if(savedName!=null) document.getElementById('playerNameInput').value = savedName;
+  reapplySyncedSettings();
   renderSelectorCards();
   updateAccountBar();
+}
+/* 同期で入れ替わった設定を、いまの画面へ反映し直す。
+   **localStorage を書いただけでは何も変わらない**(読むのは起動時の1回だけなので、
+   ログインしても次の起動まで古い感度・音量のままになる)。
+   どれも「読み直して当てる」関数がすでにあるので、ここでは呼び直すだけにする。 */
+function reapplySyncedSettings(){
+  /* **1つずつ包む。** まとめて try で囲むと、最初の1つが落ちた時点で残りが当たらない
+     (この関数は起動直後の自動ログインからも呼ばれ、まだ実行されていない const を
+      読む関数が混ざりうる=TDZ)。落ちたものだけ諦めて、他は当てる。 */
+  const step = (fn)=>{ try{ if(typeof fn==='function') fn(); }catch(err){} };
+  step(typeof loadLookSettings==='function' ? loadLookSettings : null);
+  step(typeof restoreInvertPitchFromStorage==='function' ? restoreInvertPitchFromStorage : null);
+  step(typeof restoreHudTextLargeFromStorage==='function' ? restoreHudTextLargeFromStorage : null);
+  step(typeof reloadAudioSettingsFromStorage==='function' ? reloadAudioSettingsFromStorage : null);
+  step(typeof syncNetHudToggle==='function' ? syncNetHudToggle : null);
+  step(typeof applyHudLayout==='function' ? applyHudLayout : null);
 }
 // ローカルデータが更新された時に呼ばれる。ログイン中ならデバウンスしてサーバーへ送信
 function accountMarkDirty(){
@@ -3583,7 +3843,7 @@ function renderShop(){
           <span class="shop-item-owned">所持数 ${owned}</span>
         </span>
       </div>
-      <button class="bag-use-btn shop-buy-btn" data-key="${k}" data-price="${price}" ${w.gold<price?'disabled':''}>🪙${price}</button>
+      <button class="bag-use-btn shop-buy-btn${w.gold<price?' is-blocked-btn':''}" data-key="${k}" data-price="${price}">🪙${price}</button>
     </div>`;
   }).join('');
   listEl.querySelectorAll('.shop-buy-btn').forEach(b=>{
@@ -3608,7 +3868,7 @@ function renderShardExchange(w, bag){
           ${owned!=null ? `<span class="shop-item-owned">所持数 ${owned}</span>` : ''}
         </span>
       </div>
-      <button class="bag-use-btn shop-buy-btn shard-buy-btn" data-idx="${i}" ${short?'disabled':''}>${SHARD_ICON}${e.cost}</button>
+      <button class="bag-use-btn shop-buy-btn shard-buy-btn${short?' is-blocked-btn':''}" data-idx="${i}">${SHARD_ICON}${e.cost}</button>
     </div>`;
   }).join('');
   el.querySelectorAll('.shard-buy-btn').forEach(b=>{
@@ -3619,6 +3879,12 @@ function exchangeShard(idx){
   const e = SHARD_EXCHANGE[idx];
   if(!e) return;
   // **払えたときだけ渡す。** spendShards は足りなければ何も引かずに false を返す
+  const wNow = loadWallet();
+  if(wNow.shard < e.cost){
+    pushToast(`${SHARD_ICON} ${SHARD_NAME}があと${e.cost - wNow.shard}個足りません（ガチャで持っているスキンが出たとき（被り）にもらえます）`);
+    return;
+  }
+  // **払えたときだけ渡す。** spendShards は足りなければ何も引かずに false を返す
   if(!spendShards(e.cost)){ pushToast(`${SHARD_NAME}が足りません`); return; }
   grantReward(e.reward);
   playSe('pickup');
@@ -3626,9 +3892,12 @@ function exchangeShard(idx){
   renderShop();
   if(typeof updateAccountBar==='function') updateAccountBar();
 }
+/* 【押せない理由は必ず言う】買えない品は disabled にせず見た目だけ沈めてある(is-blocked-btn)ので、
+   押されたらここで**足りない分と入手先**を返す。文言の手本は遠征の帰還のホラ貝
+   (「📯 帰還のホラ貝がありません（ショップで買えます）」)。 */
 function buyShopItem(itemKey, price){
   const w = loadWallet();
-  if(w.gold < price){ pushToast('ゴールドが足りません'); return; }
+  if(w.gold < price){ pushToast(`🪙 ゴールドがあと${price - w.gold}足りません（バトルの報酬・ミッション・遠征でたまります）`); return; }
   w.gold -= price;
   saveWallet(w);
   addBagItem(itemKey, 1);
@@ -3868,10 +4137,13 @@ if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログ
 if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
 updateChangelogBadge(); // 更新履歴の未読「new」バッジ
 
-document.getElementById('howToPlayBtn').addEventListener('click', ()=>{
+/* 遊び方ガイドを開く。**入口は2つ(⚙️設定 → 遊び方説明 / ❓ヘルプ → 遊び方ガイド)あるが
+   開け方はこの1か所**にまとめる(片方だけ startScreen を隠し忘れる事故を作らない)。 */
+function openHowToPlayScreen(){
   document.getElementById('howToPlayScreen').classList.remove('hidden');
   document.getElementById('startScreen').classList.add('hidden');
-});
+}
+document.getElementById('howToPlayBtn').addEventListener('click', openHowToPlayScreen);
 document.getElementById('closeHowToPlayBtn').addEventListener('click', ()=>{
   document.getElementById('howToPlayScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
@@ -3897,10 +4169,13 @@ function setInvertPitch(on){
   document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
   try{ localStorage.setItem(INVERT_PITCH_KEY, invertPitchY ? '1' : '0'); }catch(err){}
 }
-(function restoreInvertPitch(){
+/* localStorage から読み直して当てる。**起動時とアカウント同期の直後の両方から呼ぶ**
+   (同期でキーが入れ替わっても、読み直さなければ画面と挙動は古いまま)。 */
+function restoreInvertPitchFromStorage(){
   try{ invertPitchY = localStorage.getItem(INVERT_PITCH_KEY) === '1'; }catch(err){}
   document.getElementById('invertPitchToggle').setAttribute('aria-checked', invertPitchY ? 'true' : 'false');
-})();
+}
+restoreInvertPitchFromStorage();
 document.getElementById('invertPitchToggle').addEventListener('click', ()=> setInvertPitch(!invertPitchY));
 
 /* ===== バトル中の文字サイズ(標準/大) =====
@@ -3920,14 +4195,16 @@ function setHudTextLarge(on){
   if(btn) btn.setAttribute('aria-checked', hudTextLarge ? 'true' : 'false');
   try{ localStorage.setItem(HUD_TEXT_LARGE_KEY, hudTextLarge ? '1' : '0'); }catch(err){}
 }
-(function restoreHudTextLarge(){
+// 起動時とアカウント同期の直後の両方から呼ぶ(上の restoreInvertPitchFromStorage と同じ理由)
+function restoreHudTextLargeFromStorage(){
   let on = false;
   try{ on = localStorage.getItem(HUD_TEXT_LARGE_KEY) === '1'; }catch(err){}
   hudTextLarge = on;
   document.documentElement.classList.toggle('hud-text-large', on);
   const btn = document.getElementById('hudTextLargeToggle');
   if(btn) btn.setAttribute('aria-checked', on ? 'true' : 'false');
-})();
+}
+restoreHudTextLargeFromStorage();
 document.getElementById('hudTextLargeToggle').addEventListener('click', ()=> setHudTextLarge(!hudTextLarge));
 
 /* =====================================================================
@@ -6177,6 +6454,7 @@ function fitResultScreen(){
   const inner = document.getElementById('resultInner');
   if(!scr || !inner || scr.classList.contains('hidden')) return;
   inner.style.transform = '';
+  inner.style.marginBottom = '';
   scr.classList.remove('result-fitted');
   const cs = getComputedStyle(scr);
   // clientHeight は padding を含むので、実際に置ける高さは上下paddingを引いた残り
@@ -6184,8 +6462,19 @@ function fitResultScreen(){
   const need = inner.offsetHeight;
   if(!(avail > 0) || !(need > 0) || need <= avail) return;
   const k = avail / need;
-  inner.style.transform = `scale(${k.toFixed(4)})`;
-  scr.classList.add('result-fitted');
+  /* 【縮小には下限を設ける】transform:scale は中身を丸ごと縮めるので、**押せる大きさも道連れ**に
+     なる(実測でボタンが26pxまで縮んでいた)。下限は style.css の --result-fit-min が正で、
+     ボタンの素の高さ(--result-btn-h)は「その下限を掛けても44pxを割らない」値にしてある。
+     **下限まで縮めても入らないときは、そこで縮めるのをやめて画面をスクロールさせる。**
+     それ以上縮めても「読めないし押せない画面が全部見えている」だけで、誰の得にもならない。 */
+  const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--result-fit-min')) || 0.82;
+  const k2 = Math.max(k, min);
+  inner.style.transform = `scale(${k2.toFixed(4)})`;
+  /* transform は場所の取り方を変えないので、縮めたぶんだけ負のmarginで詰める。
+     こうしないとスクロールできる量が縮める前の高さのままになり、
+     「送っても中身が増えない空白」がぶら下がる。 */
+  inner.style.marginBottom = (-Math.round(need * (1 - k2))) + 'px';
+  if(k >= min) scr.classList.add('result-fitted');   // 全部収まった=スクロールは不要
 }
 /* ===== 段位(数字と表は data.js) =====
    **RPを動かすのは rankOnMatchEnd だけ。** 呼ぶのは showResultNow と raidShowResult の
@@ -8691,7 +8980,7 @@ function renderMastermonDetail(key){
   // トレーニング画面では実行ボタンをヘッダー右に置く。ヘッダーはステータスの上まで
   // 全幅で伸ばす(モンスター一覧の画面と同じ形)。タブを開いているときだけ戻るボタンを出す
   const trainExecBtnHtml = mastermonDetailTab==='training' ? `
-      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-header-exec-btn" ${(!mastermonSelectedTraining||mm.tickets<=0)?'disabled':''}>トレ実行🎫${mm.tickets}枚</button>` : '';
+      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-header-exec-btn${(!mastermonSelectedTraining||mm.tickets<=0)?' is-blocked-btn':''}">トレ実行🎫${mm.tickets}枚</button>` : '';
   const headerHtml = `
     <div class="mm-subview-header">
       <div class="mm-subview-title">${mm.name}<span class="mm-subview-sub">Lv.${mm.level}${mastermonDetailTab?` ／ ${TAB_TITLES[mastermonDetailTab]}`:''}</span></div>
@@ -8779,7 +9068,13 @@ function renderMastermonDetail(key){
       });
     });
     document.getElementById('mastermonExecuteTrainBtn').addEventListener('click', ()=>{
-      if(!mastermonSelectedTraining) return;
+      /* 【押せない理由は必ず言う】disabled をやめて見た目だけ沈めてあるので、
+         押されたら「何が足りないか」と「どこで手に入るか」をここで返す。 */
+      if(mm.tickets <= 0){
+        pushToast('🎫 修行チケットがありません（バトルでレベルが上がると1枚もらえます／転生でもまとめてもらえます）');
+        return;
+      }
+      if(!mastermonSelectedTraining){ pushToast('💪 鍛えたいメニューを先に選んでください'); return; }
       if(typeof expeditionIsBusy==='function' && expeditionIsBusy(key)){
         pushToast(`${mm.name}は遠征中です。帰ってくるまでトレーニングできません`);
         return;
@@ -9987,9 +10282,69 @@ function rankElemChipsHtml(elems){
   const rest = elems.length - RANK_ELEM_CHIP_MAX;
   return `<span class="rankrp-chips">${html}${rest>0?`<span class="rankrp-more">+${rest}</span>`:''}</span>`;
 }
+/* =====================================================================
+   ランキングで「自分」を見つける(C-5)
+
+   照合できるのは**表示名だけ**。ランキングの記録(scores/{名前}__{モンスター})には
+   アカウントのキーが入っていない(firebase.js の __aramonSubmitScore が送っている中身を確認済み。
+   より確かな手がかりを増やすには送る側=別担当のファイルを変える必要がある)。
+   そのままだと同名や既定の「名無しのモンスター」で**他人を自分として光らせる**ので、
+   確からしさを2段に分けて扱う:
+
+     ・ログイン中 … アカウント名は accounts/{名前} がキーで**重複を作れない**
+       (作成時に「この名前は既に使われています」で弾かれる)。しかもログインすると
+       表示名はアカウント名で上書きされる(applyAccountNameAsDisplayName)。
+       よって**名前の一致 = 本人**と断言してよい。
+     ・未ログイン … 誰でも同じ名前を名乗れる。**既定の「名無しのモンスター」と空欄は照合しない**
+       (全員がこの名前になるので必ず誤検出する)。自分で付けた名前のときだけ、
+       「あなた」と断言せず「同じ表示名」として控えめに印を付ける。
+   ===================================================================== */
+const RANK_DEFAULT_NAME = '名無しのモンスター';
+function rankMyIdentity(){
+  if(typeof accountState!=='undefined' && accountState.loggedIn && accountState.name){
+    return { name: accountState.name, sure:true };
+  }
+  const el = document.getElementById('playerNameInput');
+  const raw = el ? (el.value||'').trim().slice(0,12) : '';
+  if(!raw || raw === RANK_DEFAULT_NAME) return null;   // 誰でも同じ名前 = 照合できない
+  return { name: raw, sure:false };
+}
+// 行に付ける印。断言できるときだけ「あなた」と言う
+function rankMeChip(me){
+  return me.sure ? '<span class="rank-me-chip">あなた</span>'
+                 : '<span class="rank-me-chip is-maybe">同じ表示名</span>';
+}
+// 一覧に出す並びと同じ数え方で、任意の位置の順位を出す(同点は同順位・次は人数ぶん飛ぶ)
+function rankAtIndex(sorted, idx, valueOf){
+  let prev = null, rank = 0;
+  for(let i=0; i<=idx; i++){
+    const sc = valueOf(sorted[i]);
+    rank = (prev!==null && sc===prev) ? rank : i+1;
+    prev = sc;
+  }
+  return rank;
+}
+/* 一覧の末尾に固定する「あなた #N」の行。**50位圏外の人にも自分の順位を見せる**のが目的。
+   行の中身は一覧とまったく同じ組み立て関数(bodyOf)を通すので、見た目が二重管理にならない。
+   戻り値: { html, row, rank } 見つからない/すでに一覧に出ているときは null。 */
+function rankMineTail(sorted, shownCount, nameOf, valueOf, bodyOf, me){
+  if(!me) return null;
+  let idx = -1;
+  for(let i=0; i<sorted.length; i++){ if(nameOf(sorted[i]) === me.name){ idx = i; break; } }
+  if(idx < 0 || idx < shownCount) return null;
+  const rank = rankAtIndex(sorted, idx, valueOf);
+  return { row: sorted[idx], rank,
+    html: `<div class="rank-mine-sep">${shownCount}位まで表示中 ── あなたの順位</div>`
+        + `<div class="rank-row rank-row-me is-outside">${rankMeChip(me)}<span class="rk">#${rank}</span>${bodyOf(sorted[idx], rank)}</div>` };
+}
+// 自分が見つからなかったときの案内(表示名を決めていない人に「なぜ出ないか」を伝える)
+function rankNoIdentityHint(me){
+  return me ? '' : '<div class="rank-mine-sep">自分の順位を出すには、👤マイページで表示名を決めるかログインしてください</div>';
+}
+
 // 順位の見出し(同点は同順位・次は人数ぶん飛ぶ)を付けながら行を組む。
 // `rankrp-row` は段位用の詰めた並び(名前と内訳を1行に入れるため間隔を狭くしてある)。
-function rankRowsHtml(items, valueOf, bodyOf){
+function rankRowsHtml(items, valueOf, bodyOf, nameOf, me){
   let prevScore = null, prevRank = 0;
   return items.map((it,i)=>{
     const score = valueOf(it);
@@ -9997,55 +10352,67 @@ function rankRowsHtml(items, valueOf, bodyOf){
     prevScore = score; prevRank = rank;
     const crown = RANK_CROWN[rank];
     const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
-    return { rank, html:`<div class="rank-row rankrp-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${bodyOf(it, rank)}</div>` };
+    // 自分の行は色を変えて印を付ける(照合の確かさは rankMyIdentity が決める)
+    const isMe = !!(me && nameOf && nameOf(it) === me.name);
+    return { rank, html:`<div class="rank-row rankrp-row${crown?' rank-row-top':''}${isMe?' rank-row-me':''}">${crownHtml}${isMe?rankMeChip(me):''}<span class="rk">#${rank}</span>${bodyOf(it, rank)}</div>` };
   });
 }
 /* 段位タブの描画。**行の主役はユーザー名。** モンスターのアイコンは
    「モンスター別RP」の内訳チップの中だけに出す(誰の記録かを先に読ませる)。 */
 function renderRankRankingList(listEl, mode, rows){
-  const me = sharePlayerName();
-  let mine = null, built;
+  const me = rankMyIdentity();            // 誤検出しない照合のしかたは rankMyIdentity 参照
+  const SHOWN = 50;                       // 一覧に並べる件数(圏外の自分は末尾に固定で足す)
+  let mine = null, built, tail = null;
   if(mode === 'rankPoint'){
     let users = aggregateRankRows(rows).filter(u=>u.rp > 0);
     if(currentRankingMonster !== 'all'){
       users = users.filter(u=>u.elems.some(e=>e.element===currentRankingMonster));
     }
     users.sort((a,b)=>b.rp-a.rp);
-    built = rankRowsHtml(users.slice(0,50), u=>u.rp, (u,rank)=>{
+    const nameOf = (u)=> u.name;
+    const valueOf = (u)=> u.rp;
+    const bodyOf = (u,rank)=>{
       const p = rankProgress(u.rp);
-      if(u.name===me && !mine) mine = { rank, val:u.rp, rankName:`${p.cur.icon} ${p.cur.name}`,
+      if(me && u.name===me.name && !mine) mine = { rank, val:u.rp, rankName:`${p.cur.icon} ${p.cur.name}`,
         element: u.elems[0] ? u.elems[0].element : null,      // シェア画像に出す絵は一番稼いだ子
         monsterLabel: u.elems[0] && ELEMENTS[u.elems[0].element] ? ELEMENTS[u.elems[0].element].label : '' };
       return `<span class="rankrp-mark" style="--rank-color:${p.cur.color}">${p.cur.icon}<i>${p.cur.name}</i></span>` +
              `<span class="rankrp-user">${rankEscape(u.name)}</span>` +
              rankElemChipsHtml(u.elems) +
              `<span class="rv">${u.rp}<em>RP</em></span>`;
-    });
+    };
+    built = rankRowsHtml(users.slice(0,SHOWN), valueOf, bodyOf, nameOf, me);
+    tail = rankMineTail(users, SHOWN, nameOf, valueOf, bodyOf, me);
   } else {
     // モンスター別RP: 「ユーザー名 × モンスター」の取り分そのままを並べる
     let recs = (rows||[]).filter(r=>r.element && r.rankRpSum);
     if(currentRankingMonster !== 'all') recs = recs.filter(r=>r.element===currentRankingMonster);
     recs = recs.slice().sort((a,b)=>(b.rankRpSum||0)-(a.rankRpSum||0));
-    built = rankRowsHtml(recs.slice(0,50), r=>Math.round(r.rankRpSum||0), (r,rank)=>{
+    const nameOf = (r)=> r.name || RANK_DEFAULT_NAME;
+    const valueOf = (r)=> Math.round(r.rankRpSum||0);
+    const bodyOf = (r,rank)=>{
       const v = Math.round(r.rankRpSum||0);
-      const nm = r.name || '名無しのモンスター';
+      const nm = nameOf(r);
       const label = ELEMENTS[r.element] ? ELEMENTS[r.element].label : r.element;
       const skinUrl = r.skin && typeof skinnedIconDataUrl==='function' ? skinnedIconDataUrl(r.skin) : null;
       const icon = skinUrl
         ? `<img class="rank-icon" src="${skinUrl}" alt="">`
         : `<img class="rank-icon" src="${imgSrcFor(`monsters/${r.element}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${r.element}')">`;
-      if(nm===me && !mine) mine = { rank, val:v, element:r.element, skinId:r.skin||null, monsterLabel:label };
+      if(me && nm===me.name && !mine) mine = { rank, val:v, element:r.element, skinId:r.skin||null, monsterLabel:label };
       return `${icon}<span class="rankrp-user">${rankEscape(nm)}</span>` +
              `<span class="rankrp-elem">${rankEscape(label)}</span>` +
              `<span class="rv ${v<0?'dn':'up'}">${v>0?'+':''}${v}<em>RP</em></span>`;
-    });
+    };
+    built = rankRowsHtml(recs.slice(0,SHOWN), valueOf, bodyOf, nameOf, me);
+    tail = rankMineTail(recs, SHOWN, nameOf, valueOf, bodyOf, me);
   }
   if(!built.length){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
     setRankShareTarget(false, null);
     return;
   }
-  listEl.innerHTML = built.map(b=>b.html).join('');
+  // 50位圏外でも自分の順位は必ず見せる(tail が bodyOf を通しているので mine もそこで埋まる)
+  listEl.innerHTML = built.map(b=>b.html).join('') + (tail ? tail.html : rankNoIdentityHint(me));
   setRankShareTarget(false, mine && {
     rank: mine.rank,
     title: `${RANKING_MODE_LABEL[mode] || mode}ランキング`,
@@ -10087,22 +10454,21 @@ async function loadRankingList(mode){
     // 読み取り時のフォールバック込みの値で改めて並べ直す
     filtered = filtered.slice().sort((a,b)=>scoreOf(b)-scoreOf(a));
   }
-  const top = filtered.slice(0,50);
+  const SHOWN = 50;                 // 一覧に並べる件数(圏外の自分は末尾に固定で足す)
+  const top = filtered.slice(0, SHOWN);
   if(top.length===0){
     listEl.innerHTML = '<div class="rank-empty">まだ記録がありません</div>';
     return;
   }
   let prevScore = null, prevRank = 0;
-  const me = sharePlayerName();   // 自分の行が一覧にあればシェアできる
+  const me = rankMyIdentity();      // 誤検出しない照合のしかたは rankMyIdentity 参照
   let mine = null;
-  listEl.innerHTML = top.map((r,i)=>{
+  const nameOf = (r)=> r.name || RANK_DEFAULT_NAME;
+  // 行の中身。**一覧と「あなた #N」の行で同じものを通す**(見た目を二重に持たない)
+  const bodyOf = (r, rank)=>{
     const score = scoreOf(r);
     const val = mode==='mastermonLevel' ? `Lv.${score}` : mode==='mastermonRebirth' ? `★${score}` : score;
-    const nm = (r.name||'名無しのモンスター');
-    const rank = (prevScore!==null && score===prevScore) ? prevRank : i+1;
-    prevScore = score; prevRank = rank;
-    const crown = RANK_CROWN[rank];
-    const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
+    const nm = nameOf(r);
     // 記録時に装備していたスキンがあればそのアイコンを表示(なければ通常のモンスター画像)
     let iconHtml = '';
     if(r.element){
@@ -10114,9 +10480,19 @@ async function loadRankingList(mode){
     const mmHtml = rankMastermonHtml(r.mastermonName);
     // マスモン自身の記録タブは地形の区別が無いので、称号バッジは通常マップ扱いで見る
     const titleHtml = (typeof recordTitleBadgesHtml==='function') ? recordTitleBadgesHtml(r, isMastermonMode ? 'normal' : currentRankingMapType) : '';
-    if(nm === me && !mine) mine = { r, rank, val };   // シェア用に自分の行を控える
-    return `<div class="rank-row${crown?' rank-row-top':''}">${crownHtml}<span class="rk">#${rank}</span>${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span></div>`;
-  }).join('');
+    if(me && nm===me.name && !mine) mine = { r, rank, val };   // シェア用に自分の行を控える
+    return `${iconHtml}${mmHtml}<span class="rn">${nm}</span>${titleHtml}<span class="rv">${val}</span>`;
+  };
+  const tail = rankMineTail(filtered, SHOWN, nameOf, scoreOf, bodyOf, me);
+  listEl.innerHTML = top.map((r,i)=>{
+    const score = scoreOf(r);
+    const rank = (prevScore!==null && score===prevScore) ? prevRank : i+1;
+    prevScore = score; prevRank = rank;
+    const crown = RANK_CROWN[rank];
+    const crownHtml = crown ? `<span class="rank-crown" style="color:${crown.color}; text-shadow:0 0 8px ${crown.glow};">👑</span>` : '';
+    const isMe = !!(me && nameOf(r)===me.name);
+    return `<div class="rank-row${crown?' rank-row-top':''}${isMe?' rank-row-me':''}">${crownHtml}${isMe?rankMeChip(me):''}<span class="rk">#${rank}</span>${bodyOf(r, rank)}</div>`;
+  }).join('') + (tail ? tail.html : rankNoIdentityHint(me));
   const scopeLabel = isMastermonMode ? 'マスモン' : (RANKING_SCOPE_LABEL[currentRankingMapType] || RANKING_SCOPE_LABEL.normal);
   setRankShareTarget(false, mine && {
     rank: mine.rank,

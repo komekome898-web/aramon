@@ -96,18 +96,8 @@ const SCREENS = [
    ※ ここに載っているのは「直さなくてよい」ではなく「**別の担当のファイルなので今は直せない**」。
       実行のたびに一覧で出るので、放っておいても見えなくならない。 */
 const KNOWN = [
-  { kind:'文字が切れる', label:/./, id:/^(changelogNewPop|season-ssr-pop|lobbyRankNext|EM)$/,
-    why:'ロビーの吹き出し・段位の補足が7.0〜8.5px。実機で読めない大きさだが、直すのは style.css(別担当)' },
-  { kind:'文字が切れる', label:/./,
-    id:/^(lobby-banner-rar|lobby-banner-tag|lobby-pick-label|lobby-side-label|lobby-count|lobbyCount|lobbyMonsterTapHint|title-sub)$/,
-    why:'ロビーのタイル・バナーの小ラベルが9.0〜9.9pxで下限をわずかに割る。値はタイルの高さから逆算しているので、字だけ上げると入らない(style.css担当)' },
-  { kind:'見切れ', label:/待機部屋/, id:/^lobbyInner$/,
-    why:'下と同じ原因(定員ぶんの行で中身が枠より高い)。iPad縦持ちだけ溢れが小さく、スクロールにならず2pxはみ出す形で出る(style.css担当)' },
-  { kind:'スクロール発生', label:/待機部屋/, id:/^lobbyScreen$/,
-    why:'定員8人ぶんの行を出すと15〜51px溢れる。パネルは overflow-y:auto で送れるが「新画面はスクロールなしで収まる縦幅に」には反する(style.css担当)' },
-  { kind:'小さすぎ', label:/リザルト/,
-    id:/^(shareResultBtn|viewRankingBtn|viewMyStatsBtn|viewMastermonBtn|viewRaidRankBtn|replayBtn|replayAgainBtn|mastermonRegisterSkipBtn|mastermonRegisterConfirmBtn)$/,
-    why:'fitResultScreen() が入り切らない中身を transform:scale で丸ごと縮めるので、押せる大きさも一緒に26〜41pxまで縮む。中身を減らすか縮小の下限を決める必要がある(ui.js / style.css担当)' },
+  /* いまは空。**空であることに意味がある** ―― ここが空なら「見えている画面はすべて基準を満たす」。
+     直せない物が出たら、消すのではなく理由付きで足すこと(実行のたびに一覧へ出る)。 */
 ];
 
 const failures = [];
@@ -332,6 +322,28 @@ for(const dev of DEVICES){
           }
         }
       }
+      /* 4. 【親が違っても重なる物は見る】上の3は「同じ親の中」しか比べていないので、
+         枠の外に置いてある物との重なりを素通ししていた。
+         2026-08-23、あとから出た更新タイルがSSRバナー(グリッドの兄弟)の下へ27.2px潜り、
+         押せるのに見えない状態になったのを、この検査が無いせいで取り逃がしている。
+         メニューのタイルは「枠から出たら必ず何かに潜る」ので、枠の外の相手とも比べる。 */
+      const gridTiles = [...document.querySelectorAll('#lobbyMenuGrid > *')]
+        .filter(el=> getComputedStyle(el).display !== 'none');
+      for(const outsider of ['lobbyBanner', 'lobbyRankPanel', 'lobbyActionArea']){
+        const o = document.getElementById(outsider);
+        if(!o || getComputedStyle(o).display === 'none') continue;
+        const ob = o.getBoundingClientRect();
+        if(!(ob.width > 0 && ob.height > 0)) continue;
+        for(const t of gridTiles){
+          const a = t.getBoundingClientRect();
+          const ox = Math.min(a.right, ob.right) - Math.max(a.left, ob.left);
+          const oy = Math.min(a.bottom, ob.bottom) - Math.max(a.top, ob.top);
+          if(ox > 1 && oy > 1){
+            overlap.push({ a: t.id || t.className.toString().slice(0,24),
+                           b: outsider, px: Math.round(Math.min(ox, oy)) });
+          }
+        }
+      }
       return { outside, tooSmall, clipped, spill, overlap };
     };
     /* スクロール量を測る。ロビーは「スクロールさせない」決まりなので、どの枠にも出てはいけない。
@@ -385,6 +397,25 @@ for(const dev of DEVICES){
                      ここで必ず壊れる**ので、直したはずの向き(箱→中身)の証明になる。 */
     const LONG = 'とてもながいなまえのこうもく';
     window.__injectStress = (kind)=>{
+      /* 既定で hidden のタイルを出す。**本物の経路(notifyAppUpdateReady)を通す**ので、
+         出し方を変えたらテストも自動で追随する(見せかけだけhiddenを外すと素通しになる) */
+      if(kind==='update' || kind==='raidUpd' || kind==='lateUpd'){
+        if(kind==='raidUpd'){
+          const raid = document.getElementById('openRaidBtn');
+          if(raid) raid.classList.remove('hidden');
+        }
+        if(kind==='lateUpd'){
+          // 寸法が取れない状態で出す。updateLobbyMenuRows() が測れずに返る経路を通す
+          const layout = document.getElementById('lobbyLayout');
+          const keep = layout ? layout.style.height : '';
+          if(layout) layout.style.height = '0px';
+          if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady();
+          if(layout) layout.style.height = keep;
+        } else {
+          if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady();
+        }
+        return;
+      }
       if(kind==='future'){
         const grid = document.getElementById('lobbyMenuGrid');
         for(let i=0;i<9;i++){
@@ -405,6 +436,13 @@ for(const dev of DEVICES){
       }
     };
     window.__clearStress = ()=>{
+      // 出しっぱなしにすると次のケースへ持ち越して結果が混ざる
+      if(typeof appUpdateReady!=='undefined') appUpdateReady = false;
+      const upd = document.getElementById('lobbyUpdateBtn');
+      if(upd) upd.classList.add('hidden');
+      const raid = document.getElementById('openRaidBtn');
+      if(raid) raid.classList.add('hidden');
+      if(typeof updateLobbyMenuRows==='function') updateLobbyMenuRows();
       document.querySelectorAll('[data-stress]').forEach(e=>e.remove());
       document.querySelectorAll('[data-orig]').forEach(e=>{ e.textContent = e.dataset.orig; delete e.dataset.orig; });
     };
@@ -480,6 +518,14 @@ for(const dev of DEVICES){
     };
   });
 
+  /* 【既定で hidden の物が「あとから出る」場合を必ず見る】
+     2026-08-23、更新タイル(#lobbyUpdateBtn)がバナーの下に27.2px潜って見えなくなった。
+     既存の「将来+9個」は最初から見えているタイルを増やすだけなので、この形を素通ししていた。
+     ・update    = 更新タイルが出た(11枚)
+     ・raidUpd   = レイド開催中 + 更新タイル(12枚)
+     ・lateUpd   = **寸法が測れない間に出た**(今回の原因そのもの)。
+                   updateLobbyMenuRows() は測れないと黙って返るので、升目の割り当てだけが
+                   古いまま残り、あとから出たタイルが存在しない行へ置かれて枠の外へ出た。 */
   const STRESS = [ {k:null, t:''}, {k:'future', t:' / 将来+9個'}, {k:'long', t:' / 文字を長く'} ];
   for(const m of MODES){
     for(const withMonster of [false, true]){
@@ -504,6 +550,34 @@ for(const dev of DEVICES){
     }
   }
 
+  /* ===== 既定で hidden のタイルが「あとから出る」場合 =====
+     モードにも選択の有無にも依存しないので、**端末ごとに1回だけ**回す
+     (モード×選択有無で回すと組み合わせが倍増して実行時間が破綻する)。 */
+  for(const st of [{k:'update', t:'更新タイル'}, {k:'raidUpd', t:'レイド+更新'},
+                   {k:'lateUpd', t:'測れない間に更新'}]){
+    const label = `${dev.name} / ${st.t}`;
+    const r = await page.evaluate(async (kind)=>{
+      window.__clearStress();
+      game.selectedElement = 'dullahan';
+      setLobbyMode('single', { save:false });
+      refreshLobby();
+      window.__injectStress(kind);
+      await new Promise(r=> setTimeout(r, 450));   // 測り直しの再試行(150ms×最大8回)を待つ
+      await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
+      const base = window.__auditLobby();
+      const upd = document.getElementById('lobbyUpdateBtn');
+      base.updShown = !!(upd && !upd.classList.contains('hidden'));
+      return base;
+    }, st.k);
+    pushFindings(label, r);
+    /* 出ていないと検査そのものが素通しになるので、出たことを必ず確かめる。
+       **結果は notes ではなく直に出す** ―― notes は件数の頭打ちで埋もれ、
+       「本当に回ったのか」が確かめられなかった(実際に一度分からなくなった)。 */
+    if(!r.updShown) failures.push(`[更新タイルが出ていない] ${label}`);
+    console.log(`  ${label}: タイル${r.updShown?'あり':'なし'}・メニュー${r.menuCols}列・重なり${r.overlap.length}件`);
+  }
+  await page.evaluate(()=> window.__clearStress());
+
   /* ===== 待機部屋 / 部屋一覧 / リザルト =====
      ロビー本体と同じ物差し(見切れ/押しやすさ/文字/はみ出し/重なり/スクロール)で見る。
      端末ごとに 3+3+2 = 8通り。ページの用意が一番重い処理なので、同じページを使い回す。 */
@@ -514,8 +588,16 @@ for(const dev of DEVICES){
         if(o.id==='lobbyScreen') window.__fillLobbyScreen(o.v);
         else if(o.id==='roomListScreen') await window.__fillRoomList(o.v);
         else window.__fillResult(o.v);
-        // パネルは 0.22秒のスライドで出るので、動き終わってから測る(途中の位置で測らない)
-        await new Promise(r=> setTimeout(r, 300));
+        /* パネルはスライドして出るので、**動き終わってから**測る。
+           秒数で待つと機械の速さで結果が変わる(同じコードで2px/3pxと揺れ、対象端末まで変わった)。
+           【必ず終わる物だけを待つ】通知ドットやTAP STARTは infinite なので finished が
+           永久に解決しない。iterations が有限の物だけに絞り、さらに保険で1秒で打ち切る
+           (待ち損ねても最後のrAF2回で救えるが、無限に止まるのは避ける)。 */
+        const finite = document.getAnimations().filter(a=>{
+          const it = a.effect && a.effect.getTiming && a.effect.getTiming().iterations;
+          return it !== Infinity;
+        }).map(a=> a.finished.catch(()=>{}));
+        await Promise.race([ Promise.all(finite), new Promise(r=> setTimeout(r, 1000)) ]);
         await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
         const base = window.__auditScreen(o.id);
         base.scrolls = window.__scrollOf(o.scrollIds);
