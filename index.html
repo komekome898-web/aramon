@@ -1720,35 +1720,46 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <script>
   // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
   if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
-    /* ===== 更新は「タイトル画面の読み込み中」に黙って済ませる =====
-       これが元からの設計。**プレイヤーに何も押させない。**
-
-       直すべきだったのは「試合中に予告なくリロードされる」ことだけだった。
-       一時はロビーに「🔄 更新」タイルを出す形にしたが、押させる手間・画面のズレ・
-       更新が無いのに出る誤報を生んで、遊ぶ人の邪魔にしかならなかった(2026-08-23に撤去)。
+    /* ===== 更新は「試合中でないとき」に黙って済ませる =====
+       **プレイヤーに何も押させない。** 防ぎたいのは「試合中に予告なく読み込み直される」ことだけで、
+       ロビーや各画面では今までどおり自動で新しくなる。
+       (一度「タイトル画面にいる間だけ」にしたが、バックグラウンドから戻すとロビーに居るので
+        いつまでも更新されなかった。2026-08-23 に直した)
 
        仕組み:
        ・新しいSWは待機で止まる(sw.js は skipWaiting しない)
-       ・**タイトル画面にいる間だけ**、待機中のSWへ切り替えて1回だけ読み込み直す。
-         この時点では試合もガチャ演出も入力中の文字も無いので、何も失われない
-       ・タイトルを抜けたら以降は一切触らない。試合中に入れ替わることは起きない
-         (待機で止まっているので、放っておけば次の起動で当たる) */
+       ・安全なときだけ切り替えて1回読み込み直す。安全でなければ**控えておいて**、
+         安全になった時点で当てる(試合が終わってロビーへ戻ったとき等)
+       ・前面へ戻るたびに新版の有無を確認する(バックグラウンドで放置していても取り残されない) */
     let swReg = null;
-    let applied = false;   // 1回の起動で読み込み直すのは1度だけ(繰り返さない)
-    // タイトル画面にいる=まだ遊び始めていない。ここでだけ入れ替えてよい
-    const atTitle = ()=>{
+    let applied = false;      // 1回の起動で読み込み直すのは1度だけ
+    let recheck = 0;          // 安全になるのを待っている間だけ回す見張り
+    /* いま読み込み直してよいか。**試合中は絶対に不可。**
+       あわせて「途中の入力・演出」も守る ―― 消えると打ち直し/見逃しになるもの。 */
+    const safeToApply = ()=>{
       if(applied) return false;
       if(typeof game!=='undefined' && game && (game.started || game.trainingRange)) return false;
-      const t = document.getElementById('titleScreen');
-      return !!t && !t.classList.contains('hidden');
+      for(const id of ['textInputOverlay','gachaOverlay','ssrPromoteOverlay','ssrRevealOverlay',
+                       'rebirthAnimOverlay','awakenAnimOverlay','matchFinishOverlay']){
+        const e = document.getElementById(id);
+        if(e && !e.classList.contains('hidden')) return false;
+      }
+      return true;
     };
-    const applyIfWaitingAtTitle = ()=>{
-      if(!swReg || !swReg.waiting || !atTitle()) return;
+    const applyWaiting = ()=>{
+      if(!swReg || !swReg.waiting || applied) return;
+      if(!safeToApply()){ armRecheck(); return; }   // いまは危ない。安全になったら当てる
       applied = true;
+      if(recheck){ clearInterval(recheck); recheck = 0; }
       swReg.waiting.postMessage({ type:'SKIP_WAITING' });
       // 切り替わらない端末でも取り残されないよう、少し待って必ず読み込み直す
       setTimeout(()=>{ location.reload(); }, 1200);
     };
+    // 新版が控えているのに当てられないときだけ、安全になるのを見張る(ふだんは回さない)
+    function armRecheck(){
+      if(recheck) return;
+      recheck = setInterval(()=>{ if(swReg && swReg.waiting && safeToApply()) applyWaiting(); }, 3000);
+    }
     navigator.serviceWorker.addEventListener('controllerchange', ()=>{
       if(applied) location.reload();   // 上で頼んだ切り替えが済んだ。初回の制御取得では何もしない
     });
@@ -1756,14 +1767,17 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     window.addEventListener('load', ()=>{
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg)=>{
         swReg = reg;
-        applyIfWaitingAtTitle();                       // 前回の起動で用意された新版が控えていることがある
-        reg.update().then(applyIfWaitingAtTitle).catch(()=>{});
+        applyWaiting();                                // 前回の起動で用意された新版が控えていることがある
+        reg.update().then(applyWaiting).catch(()=>{});
+        // 前面へ戻るたびに確認する。これが無いと、バックグラウンドで放置した端末が取り残される
+        document.addEventListener('visibilitychange', ()=>{
+          if(document.visibilityState !== 'visible') return;
+          reg.update().then(applyWaiting).catch(()=>{});
+        });
         reg.addEventListener('updatefound', ()=>{
           const w = reg.installing;
           if(!w) return;
-          w.addEventListener('statechange', ()=>{
-            if(w.state === 'installed') applyIfWaitingAtTitle();
-          });
+          w.addEventListener('statechange', ()=>{ if(w.state === 'installed') applyWaiting(); });
         });
       }).catch(()=>{});
     });
