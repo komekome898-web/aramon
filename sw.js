@@ -1,7 +1,7 @@
 // ファイルを更新するたびに、このバージョン番号を必ず上げてください。
 // (例: v2 -> v3 -> v4 ...) 番号を上げないと、ユーザーの端末に古いキャッシュが
 // 残り続け、更新した内容が反映されません。
-const CACHE_NAME = 'aramon-cache-v671';
+const CACHE_NAME = 'aramon-cache-v672';
 // 画像と音は「別のキャッシュ」に入れ、バージョンを上げても消さない。
 // コード(html/js/css)だけが毎回入れ替わり、11MBの画像と5.7MBの音は貯めたまま使える。
 const MEDIA_CACHE = 'aramon-media';
@@ -99,32 +99,20 @@ function mediaResponse(request) {
   );
 }
 
-/* コード(html/js/css/json): stale-while-revalidate
-   以前はネットワーク優先だったので、**オンラインである限り毎回2.5MBを取り直していた**
-   (ui.js 592KB / render.js 387KB / audio.js 385KB / data.js 343KB / style.css 333KB …)。
-   ホーム画面から開いても毎回そのぶん待たされるので、素材と同じ扱いへ変える。
-
-   【古いまま張り付かない根拠】キャッシュ名にバージョンが入っていて(CACHE_NAME)、
-   コードは**そのバージョンのキャッシュにしか入らない**。コミットのたびに番号を上げる運用なので、
-   新しいSWがactivateした時点で上の activate ハンドラが古い世代のキャッシュを丸ごと削除し、
-   次の取得はネットワークから入り直す。つまり「1世代ぶん古い物が1回だけ出る」以上には絶対にならない。
-   さらに保険として、ここで**毎回ネットワークへ確認**し(304なら数百バイト)、
-   受け取った新しい中身をキャッシュへ上書きする。万一バージョンを上げ忘れても、
-   次の起動には新しい中身になる ── どちらか一方が効いていれば張り付かない二重の作りにしてある。 */
+/* コード(html/js/css/json): ネットワーク優先
+   **キャッシュから先に返してはいけない。** 一時 stale-while-revalidate にしたが、
+   それだと画面はいつも1世代前の中身で動く。直したはずの index.html が読み込まれず、
+   不具合の修正が効かないという事故を実際に起こした(2026-08-23)。
+   起動の速さより「出したものがその場で効くこと」を優先する。
+   取れなかったとき(圏外・機内モード)だけキャッシュを返すので、オフラインでも起動できる。 */
 function codeResponse(request) {
-  return caches.open(CACHE_NAME).then((cache) =>
-    cache.match(request).then((cached) => {
-      /* 裏の取り直しは**cacheオプションを付けない**(=ブラウザのHTTPキャッシュに従う)。
-         no-storeにすると条件付きGETが効かず、毎回2.5MBを本当に落としてしまい意味がなくなる。
-         付けなければ ETag / Last-Modified で 304 が返り、変わった物だけが実際に流れる。 */
-      const network = fetch(request).then((res) => {
-        // 206(部分取得)や opaque はキャッシュに入れない(壊れた内容を配り続けるため)
-        if (res && res.ok && res.status === 200 && res.type !== 'opaque') cache.put(request, res.clone());
-        return res;
-      }).catch(() => cached);
-      return cached || network;
-    })
-  );
+  return fetch(request).then((res) => {
+    if (res && res.ok && res.status === 200 && res.type !== 'opaque') {
+      const copy = res.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(()=>{});
+    }
+    return res;
+  }).catch(() => caches.open(CACHE_NAME).then((cache) => cache.match(request)));
 }
 
 /* キャッシュを一切通さないもの。
