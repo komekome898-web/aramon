@@ -397,23 +397,13 @@ for(const dev of DEVICES){
                      ここで必ず壊れる**ので、直したはずの向き(箱→中身)の証明になる。 */
     const LONG = 'とてもながいなまえのこうもく';
     window.__injectStress = (kind)=>{
-      /* 既定で hidden のタイルを出す。**本物の経路(notifyAppUpdateReady)を通す**ので、
-         出し方を変えたらテストも自動で追随する(見せかけだけhiddenを外すと素通しになる) */
-      if(kind==='update' || kind==='raidUpd' || kind==='lateUpd'){
-        if(kind==='raidUpd'){
-          const raid = document.getElementById('openRaidBtn');
-          if(raid) raid.classList.remove('hidden');
-        }
-        if(kind==='lateUpd'){
-          // 寸法が取れない状態で出す。updateLobbyMenuRows() が測れずに返る経路を通す
-          const layout = document.getElementById('lobbyLayout');
-          const keep = layout ? layout.style.height : '';
-          if(layout) layout.style.height = '0px';
-          if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady();
-          if(layout) layout.style.height = keep;
-        } else {
-          if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady();
-        }
+      /* 既定で hidden のタイル(レイド)を出す。**「あとから出る物」を必ず見る**ための組。
+         更新タイルは2026-08-23に撤去したので、いまはレイドだけが対象。
+         同じ形の物を足したらここへ1行足すこと(枠の外との重なりを下の4で見ている)。 */
+      if(kind==='raidTile'){
+        const raid = document.getElementById('openRaidBtn');
+        if(raid) raid.classList.remove('hidden');
+        if(typeof updateLobbyMenuRows==='function') updateLobbyMenuRows();
         return;
       }
       if(kind==='future'){
@@ -437,9 +427,6 @@ for(const dev of DEVICES){
     };
     window.__clearStress = ()=>{
       // 出しっぱなしにすると次のケースへ持ち越して結果が混ざる
-      if(typeof appUpdateReady!=='undefined') appUpdateReady = false;
-      const upd = document.getElementById('lobbyUpdateBtn');
-      if(upd) upd.classList.add('hidden');
       const raid = document.getElementById('openRaidBtn');
       if(raid) raid.classList.add('hidden');
       if(typeof updateLobbyMenuRows==='function') updateLobbyMenuRows();
@@ -519,7 +506,7 @@ for(const dev of DEVICES){
   });
 
   /* 【既定で hidden の物が「あとから出る」場合を必ず見る】
-     2026-08-23、更新タイル(#lobbyUpdateBtn)がバナーの下に27.2px潜って見えなくなった。
+     2026-08-23、あとから出たタイルがバナーの下に27.2px潜って見えなくなった。
      既存の「将来+9個」は最初から見えているタイルを増やすだけなので、この形を素通ししていた。
      ・update    = 更新タイルが出た(11枚)
      ・raidUpd   = レイド開催中 + 更新タイル(12枚)
@@ -551,30 +538,27 @@ for(const dev of DEVICES){
   }
 
   /* ===== 既定で hidden のタイルが「あとから出る」場合 =====
-     モードにも選択の有無にも依存しないので、**端末ごとに1回だけ**回す
-     (モード×選択有無で回すと組み合わせが倍増して実行時間が破綻する)。 */
-  for(const st of [{k:'update', t:'更新タイル'}, {k:'raidUpd', t:'レイド+更新'},
-                   {k:'lateUpd', t:'測れない間に更新'}]){
-    const label = `${dev.name} / ${st.t}`;
-    const r = await page.evaluate(async (kind)=>{
+     2026-08-23、あとから出たタイルがSSRバナーの下へ27.2px潜って見えなくなった。
+     既存の「+9個」は最初から見えているタイルを増やすだけなので、この形を素通ししていた。
+     モードにも選択の有無にも依存しないので**端末ごとに1回だけ**回す。 */
+  {
+    const label = `${dev.name} / レイドタイルがあとから出る`;
+    const r = await page.evaluate(async ()=>{
       window.__clearStress();
       game.selectedElement = 'dullahan';
       setLobbyMode('single', { save:false });
       refreshLobby();
-      window.__injectStress(kind);
-      await new Promise(r=> setTimeout(r, 450));   // 測り直しの再試行(150ms×最大8回)を待つ
+      window.__injectStress('raidTile');
+      await new Promise(r=> setTimeout(r, 450));
       await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
       const base = window.__auditLobby();
-      const upd = document.getElementById('lobbyUpdateBtn');
-      base.updShown = !!(upd && !upd.classList.contains('hidden'));
+      const raid = document.getElementById('openRaidBtn');
+      base.shown = !!(raid && !raid.classList.contains('hidden'));
       return base;
-    }, st.k);
+    });
     pushFindings(label, r);
-    /* 出ていないと検査そのものが素通しになるので、出たことを必ず確かめる。
-       **結果は notes ではなく直に出す** ―― notes は件数の頭打ちで埋もれ、
-       「本当に回ったのか」が確かめられなかった(実際に一度分からなくなった)。 */
-    if(!r.updShown) failures.push(`[更新タイルが出ていない] ${label}`);
-    console.log(`  ${label}: タイル${r.updShown?'あり':'なし'}・メニュー${r.menuCols}列・重なり${r.overlap.length}件`);
+    if(!r.shown) failures.push(`[タイルが出ていない] ${label}`);
+    console.log(`  ${label}: タイル${r.shown?'あり':'なし'}・メニュー${r.menuCols}列・重なり${r.overlap.length}件`);
   }
   await page.evaluate(()=> window.__clearStress());
 

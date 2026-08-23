@@ -137,14 +137,6 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
      <button id="openMastermonBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🐾</span><span class="lobby-side-label">マスモン</span>
      </button>
-     <!-- アプリの新版が見つかったときだけ出る(通常は hidden)。ui.jsのrefreshAppUpdateTile()が出し入れする。
-          **自動リロードをやめた代わりの導線**なので、トーストではなく消えないタイルで出す。
-          **末尾に置く**: 先頭に入れると、出た瞬間に既存のタイルが1つずつずれて
-          押し間違いを誘う(押すと読み込み直しが走るので実害が大きい)。 -->
-     <button id="lobbyUpdateBtn" class="lobby-side-btn has-dot hidden">
-       <span class="lobby-side-icon">🔄</span><span class="lobby-side-label">更新</span>
-       <span class="notif-dot"></span>
-     </button>
     </div>
      <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え)。メニューの枠の外に固定する -->
      <div id="lobbyBanner">
@@ -1728,58 +1720,49 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <script>
   // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
   if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
-    /* ===== 新版の見つけ方 =====
-       根拠は **reg.waiting があること** ただ1つ。「インストールが終わって、まだ切り替えていない
-       新しいSWが控えている」= 本当に新版が用意できた状態で、これ以外の条件は使わない。
+    /* ===== 更新は「タイトル画面の読み込み中」に黙って済ませる =====
+       これが元からの設計。**プレイヤーに何も押させない。**
 
-       【controllerchange を根拠にしない】以前はこれで判断していたが、この行事は
-       「新版が出たとき」だけでなく「SWが初めてこのページの制御を取ったとき」にも飛ぶ。
-       sw.js が clients.claim() を呼ぶので、制御されていない状態で開いたページでは必ず1回飛び、
-       更新など無いのに毎回「更新があります」と嘘をついていた(実機で報告・2026-08-23)。
-       いまは sw.js 側が skipWaiting をやめて待機で止まるので、勝手にactivateすることも無い。
+       直すべきだったのは「試合中に予告なくリロードされる」ことだけだった。
+       一時はロビーに「🔄 更新」タイルを出す形にしたが、押させる手間・画面のズレ・
+       更新が無いのに出る誤報を生んで、遊ぶ人の邪魔にしかならなかった(2026-08-23に撤去)。
 
-       【自動リロードはしない】試合・ガチャ演出・入力中の文字はメモリにしか無いので、
-       着信などで戻った瞬間に消えてしまう。読み込み直すかどうかは本人が決める。 */
+       仕組み:
+       ・新しいSWは待機で止まる(sw.js は skipWaiting しない)
+       ・**タイトル画面にいる間だけ**、待機中のSWへ切り替えて1回だけ読み込み直す。
+         この時点では試合もガチャ演出も入力中の文字も無いので、何も失われない
+       ・タイトルを抜けたら以降は一切触らない。試合中に入れ替わることは起きない
+         (待機で止まっているので、放っておけば次の起動で当たる) */
     let swReg = null;
-    let applying = false;   // 「今すぐ更新」を押した後だけ読み込み直す
-    const noticeIfWaiting = ()=>{
-      if(swReg && swReg.waiting && typeof notifyAppUpdateReady==='function') notifyAppUpdateReady();
+    let applied = false;   // 1回の起動で読み込み直すのは1度だけ(繰り返さない)
+    // タイトル画面にいる=まだ遊び始めていない。ここでだけ入れ替えてよい
+    const atTitle = ()=>{
+      if(applied) return false;
+      if(typeof game!=='undefined' && game && (game.started || game.trainingRange)) return false;
+      const t = document.getElementById('titleScreen');
+      return !!t && !t.classList.contains('hidden');
     };
-    /* 本人が「今すぐ更新」を押したときの適用。**待機中のSWへ切り替えてから**読み込み直す。
-       ここで切り替えずにただreloadすると、古いSWが古いキャッシュを返し続けるので
-       画面は何も変わらず、次の起動でまた「更新があります」が出る(嘘が繰り返される)。 */
-    window.__aramonApplyUpdate = function(){
-      if(!swReg || !swReg.waiting){ location.reload(); return; }
-      applying = true;
+    const applyIfWaitingAtTitle = ()=>{
+      if(!swReg || !swReg.waiting || !atTitle()) return;
+      applied = true;
       swReg.waiting.postMessage({ type:'SKIP_WAITING' });
       // 切り替わらない端末でも取り残されないよう、少し待って必ず読み込み直す
-      setTimeout(()=>{ if(applying){ applying = false; location.reload(); } }, 1500);
+      setTimeout(()=>{ location.reload(); }, 1200);
     };
     navigator.serviceWorker.addEventListener('controllerchange', ()=>{
-      if(!applying) return;   // 初回の制御取得では何もしない(ここが嘘の告知の元だった)
-      applying = false;
-      location.reload();
+      if(applied) location.reload();   // 上で頼んだ切り替えが済んだ。初回の制御取得では何もしない
     });
 
     window.addEventListener('load', ()=>{
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg)=>{
         swReg = reg;
-        reg.update().catch(()=>{});
-        noticeIfWaiting();   // 前回の起動で用意された新版が既に控えていることがある
-        /* 復帰のたびに確認していたが、確認するのはロビーにいるときだけにする
-           (判断は ui.js の appUpdateShouldPoll 1か所)。待機で止まるので試合中に
-           勝手に入れ替わることは無いが、無駄な通信もしない。 */
-        document.addEventListener('visibilitychange', ()=>{
-          if(document.visibilityState !== 'visible') return;
-          if(typeof appUpdateShouldPoll==='function' && !appUpdateShouldPoll()) return;
-          reg.update().then(noticeIfWaiting).catch(()=>{});
-        });
+        applyIfWaitingAtTitle();                       // 前回の起動で用意された新版が控えていることがある
+        reg.update().then(applyIfWaitingAtTitle).catch(()=>{});
         reg.addEventListener('updatefound', ()=>{
-          const newWorker = reg.installing;
-          if(!newWorker) return;
-          // installed になった時点で waiting に入る。初回インストール(activeが無い)は更新ではない
-          newWorker.addEventListener('statechange', ()=>{
-            if(newWorker.state === 'installed') noticeIfWaiting();
+          const w = reg.installing;
+          if(!w) return;
+          w.addEventListener('statechange', ()=>{
+            if(w.state === 'installed') applyIfWaitingAtTitle();
           });
         });
       }).catch(()=>{});
