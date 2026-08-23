@@ -1728,42 +1728,58 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <script>
   // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
   if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
-    /* 【自動リロードはしない】以前はここで window.location.reload() していたが、
-       試合・ガチャ演出・入力中の文字はメモリにしか無いので、着信などでアプリを離れて戻った
-       瞬間に全部消えて再起動していた。新版を見つけても告知を出すだけにして、
-       読み込み直すかどうかは本人に決めてもらう(ui.jsのnotifyAppUpdateReady→ロビーの「更新」タイル)。
-       sw.jsはコード=ネットワーク優先なので、読み込み直すまで古いまま動いていても不整合は起きない。 */
-    /* 【重要】controllerchange は「新版が出たとき」だけでなく
-       「SWが初めてこのページの制御を取ったとき」にも発火する(sw.js が clients.claim() を呼ぶため)。
-       タスクキル後の初回起動は制御されていない状態で始まるので、そのままだと
-       更新など無いのに毎回「更新があります」と出る(実機で報告あり・2026-08-23)。
-       **読み込んだ時点で既に制御されていた場合だけ**が本物の更新。
-       この1つの値を controllerchange と updatefound の両方で使う(判定を2通りに分けない)。 */
-    const hadControllerAtLoad = !!navigator.serviceWorker.controller;
-    const noticeUpdate = ()=>{ if(typeof notifyAppUpdateReady==='function') notifyAppUpdateReady(); };
-    navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(hadControllerAtLoad) noticeUpdate(); });
+    /* ===== 新版の見つけ方 =====
+       根拠は **reg.waiting があること** ただ1つ。「インストールが終わって、まだ切り替えていない
+       新しいSWが控えている」= 本当に新版が用意できた状態で、これ以外の条件は使わない。
+
+       【controllerchange を根拠にしない】以前はこれで判断していたが、この行事は
+       「新版が出たとき」だけでなく「SWが初めてこのページの制御を取ったとき」にも飛ぶ。
+       sw.js が clients.claim() を呼ぶので、制御されていない状態で開いたページでは必ず1回飛び、
+       更新など無いのに毎回「更新があります」と嘘をついていた(実機で報告・2026-08-23)。
+       いまは sw.js 側が skipWaiting をやめて待機で止まるので、勝手にactivateすることも無い。
+
+       【自動リロードはしない】試合・ガチャ演出・入力中の文字はメモリにしか無いので、
+       着信などで戻った瞬間に消えてしまう。読み込み直すかどうかは本人が決める。 */
+    let swReg = null;
+    let applying = false;   // 「今すぐ更新」を押した後だけ読み込み直す
+    const noticeIfWaiting = ()=>{
+      if(swReg && swReg.waiting && typeof notifyAppUpdateReady==='function') notifyAppUpdateReady();
+    };
+    /* 本人が「今すぐ更新」を押したときの適用。**待機中のSWへ切り替えてから**読み込み直す。
+       ここで切り替えずにただreloadすると、古いSWが古いキャッシュを返し続けるので
+       画面は何も変わらず、次の起動でまた「更新があります」が出る(嘘が繰り返される)。 */
+    window.__aramonApplyUpdate = function(){
+      if(!swReg || !swReg.waiting){ location.reload(); return; }
+      applying = true;
+      swReg.waiting.postMessage({ type:'SKIP_WAITING' });
+      // 切り替わらない端末でも取り残されないよう、少し待って必ず読み込み直す
+      setTimeout(()=>{ if(applying){ applying = false; location.reload(); } }, 1500);
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(!applying) return;   // 初回の制御取得では何もしない(ここが嘘の告知の元だった)
+      applying = false;
+      location.reload();
+    });
 
     window.addEventListener('load', ()=>{
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg)=>{
-        // 起動時は1回だけ確認する(この時点ではまだロビーに来ていないので状況は見ない)
+        swReg = reg;
         reg.update().catch(()=>{});
-        /* 復帰のたびに確認していたが、sw.jsは skipWaiting()+clients.claim() なので
-           **試合中に前面へ戻っただけで新版がactivateされてしまう。**
-           確認するのはロビーにいるときだけにする(判断はui.js側の1か所)。 */
+        noticeIfWaiting();   // 前回の起動で用意された新版が既に控えていることがある
+        /* 復帰のたびに確認していたが、確認するのはロビーにいるときだけにする
+           (判断は ui.js の appUpdateShouldPoll 1か所)。待機で止まるので試合中に
+           勝手に入れ替わることは無いが、無駄な通信もしない。 */
         document.addEventListener('visibilitychange', ()=>{
           if(document.visibilityState !== 'visible') return;
           if(typeof appUpdateShouldPoll==='function' && !appUpdateShouldPoll()) return;
-          reg.update().catch(()=>{});
+          reg.update().then(noticeIfWaiting).catch(()=>{});
         });
-
         reg.addEventListener('updatefound', ()=>{
           const newWorker = reg.installing;
           if(!newWorker) return;
+          // installed になった時点で waiting に入る。初回インストール(activeが無い)は更新ではない
           newWorker.addEventListener('statechange', ()=>{
-            /* 「installed」かつ**読み込んだ時点で既に制御されていた** = 初回インストールではなく更新。
-               navigator.serviceWorker.controller を今読むと、clients.claim() で既に値が入っており
-               本当の初回インストールでも「更新」と誤判定する。 */
-            if(newWorker.state === 'installed' && hadControllerAtLoad) noticeUpdate();
+            if(newWorker.state === 'installed') noticeIfWaiting();
           });
         });
       }).catch(()=>{});

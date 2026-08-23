@@ -1,7 +1,7 @@
 // ファイルを更新するたびに、このバージョン番号を必ず上げてください。
 // (例: v2 -> v3 -> v4 ...) 番号を上げないと、ユーザーの端末に古いキャッシュが
 // 残り続け、更新した内容が反映されません。
-const CACHE_NAME = 'aramon-cache-v669';
+const CACHE_NAME = 'aramon-cache-v670';
 // 画像と音は「別のキャッシュ」に入れ、バージョンを上げても消さない。
 // コード(html/js/css)だけが毎回入れ替わり、11MBの画像と5.7MBの音は貯めたまま使える。
 const MEDIA_CACHE = 'aramon-media';
@@ -56,7 +56,19 @@ self.addEventListener('install', (event) => {
       cache.addAll(CORE_ASSETS).catch(()=>{}).then(() => precacheUrlsFromIndex(cache))
     ).catch(()=>{})
   );
-  self.skipWaiting();
+  /* 【skipWaiting しない】新しいSWは「待機中(waiting)」で止める。
+     ページ側は **reg.waiting があること** だけを「新版が来た」の根拠にする。
+     skipWaiting すると新SWが勝手にactivateし、clients.claim() で controllerchange が飛ぶ。
+     これは「初めて制御を取っただけ」でも飛ぶので、更新が無くても告知が出てしまう
+     (タスクキル後の初回起動で毎回「更新があります」と嘘をついていた・2026-08-23)。
+     待機で止めれば、告知が出るのは本当に新版が用意できたときだけになる。
+     適用は本人が「今すぐ更新」を押したときだけ(下の message で skipWaiting する)。 */
+});
+
+/* ページから「更新して」と言われたときだけ待機をやめてactivateする。
+   これを受けた直後に controllerchange が飛ぶので、ページはそこで読み込み直す。 */
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
