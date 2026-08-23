@@ -358,6 +358,12 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
           </div>
         </div>
         <div class="team-size-note" id="singleSubNote">総勢30体のバトルロイヤル。1人ですぐに遊べます</div>
+        <!-- 難易度(30人バトロワのときだけ出す)。中身は data.js の MATCH_DIFFICULTIES から作る -->
+        <div id="difficultyRow" class="hidden">
+          <div class="pick-label" style="margin-top:10px;">難易度</div>
+          <div id="difficultyTabs" class="sub-mode-tabs"></div>
+          <div class="team-size-note" id="difficultyNote"></div>
+        </div>
       </div>
       <div id="teamSubRow" class="hidden">
         <div class="pick-label" style="margin-top:10px;">遊び方</div>
@@ -484,6 +490,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div class="howto-section">
       <div class="howto-title">状態変化</div>
       <div class="howto-states" id="howtoStates"></div>
+    </div>
+    <!-- 用語集。中身は data.js の GLOSSARY から作る(1行足せば載る) -->
+    <div class="howto-section">
+      <div class="howto-title">用語集</div>
+      <div id="howtoGlossary"></div>
     </div>
     </div>
 
@@ -708,6 +719,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
   <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
   <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
     <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
+    <!-- スキップすると、この試合ぶんの経験値は誰にも入らずに消える(ui.jsが控えを捨てる)。
+         押す前に分かるようにしておく -->
+    <div class="mastermon-register-note">スキップすると、この試合の経験値は入りません</div>
     <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前" data-kb-title="マスモンの名前">
     <div class="mastermon-register-btnrow">
       <button id="mastermonRegisterSkipBtn">スキップ</button>

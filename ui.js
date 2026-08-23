@@ -665,6 +665,20 @@ function buildHowtoLists(){
     itemsEl.innerHTML = cards.join('');
   }
 
+  /* 用語集。**表(data.jsのGLOSSARY)が正**で、ここは並べるだけ。
+     説明文は glossaryText() が定数から組み立てるので、数値を変えれば文章も変わる。 */
+  const glossEl = document.getElementById('howtoGlossary');
+  if(glossEl && typeof GLOSSARY_CATEGORIES!=='undefined' && typeof glossaryEntries==='function'){
+    glossEl.innerHTML = GLOSSARY_CATEGORIES.map(c=>
+      `<div class="howto-gloss-cat">${c.label}</div>` +
+      glossaryEntries(c.id).map(g=>
+        `<div class="howto-gloss-row">
+           <div class="howto-gloss-term">${g.icon||''} ${g.term}</div>
+           <div class="howto-gloss-desc">${glossaryText(g)}</div>
+         </div>`).join('')
+    ).join('');
+  }
+
   const statesEl = document.getElementById('howtoStates');
   if(statesEl){
     const cards = Object.keys(ELEMENTS).map(key=>{
@@ -4103,6 +4117,27 @@ function setLobbySubMode(sub, opts){
 }
 /* モード選択オーバーレイと右カラムのボタンの出し分けを1か所で行う(setLobbyMode/
    setLobbySubMode の両方から呼ばれる。ここ以外でこれらの表示を切り替えない)。 */
+/* 難易度(やさしい/ふつう)。**表(MATCH_DIFFICULTIES)から作る**ので、1行足せば選べる物が増える。
+   出すのは30人バトロワのときだけ ―― マルチで自分だけ手加減すると、他の人の試合のbotまで
+   弱くなってしまう(効くかどうかの判定は data.js の matchDifficultyApplies が正)。 */
+function renderDifficultyTabs(show){
+  const row = document.getElementById('difficultyRow');
+  const tabs = document.getElementById('difficultyTabs');
+  const note = document.getElementById('difficultyNote');
+  if(!row || !tabs) return;
+  row.classList.toggle('hidden', !show);
+  if(!show) return;
+  const cur = (typeof matchDifficultyId==='function') ? matchDifficultyId() : 'normal';
+  tabs.innerHTML = MATCH_DIFFICULTIES.map(d=>
+    `<button class="sub-tab${d.id===cur?' active':''}" data-diff="${d.id}">${d.icon} ${d.label}</button>`).join('');
+  tabs.querySelectorAll('.sub-tab').forEach(b=> b.addEventListener('click', ()=>{
+    setMatchDifficulty(b.dataset.diff);
+    updateModePickPanels();
+    updateLobbyPickLabels();
+  }));
+  // 説明文は表(MATCH_DIFFICULTIES の note)が正。ここで書き足さない
+  if(note) note.textContent = matchDifficulty().note;
+}
 function updateModePickPanels(){
   const isRaid = lobbyMode==='raid';
   const isTeam = lobbyMode==='team';
@@ -4115,6 +4150,7 @@ function updateModePickPanels(){
   document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
   // 人数タブ(2〜4人)はシングル>マルチPvPのときだけ
   document.getElementById('multiOptions').classList.toggle('hidden', !isPvp4);
+  renderDifficultyTabs(!isTeam && !isRaid && lobbySubMode==='br30');
   // 部屋のボタン: マルチPvPと、部屋でも遊べるチーム戦に出す
   document.getElementById('multiActionRow').classList.toggle('hidden', !(isPvp4 || isTeam));
   // バトル開始(部屋を使わない入口): 30人バトロワだけ(チーム戦のソロ出撃は廃止・2026-08-19)
@@ -4992,7 +5028,10 @@ function startGame(opts){
   // 自分以外は自分のステータス合計を上回らせない(battleStatLimitOf / capMastermonToLimit)
   const statLimit = battleStatLimitOf(playerMm, game.selectedElement);
   // 練習試合は「勝てる手応え」にする。**上限に倍率を掛けるだけ**で新しい経路は作らない
-  if(game.tutorialMatch) statLimit.total = Math.max(1, Math.round(statLimit.total * TUTORIAL_MATCH.botPowerMult));
+  /* 手加減はチュートリアルの練習試合と難易度をまとめた matchBotPowerMult() 1つが正。
+     倍率1(=ふつうの試合)のときは何もしないので、従来と1つも変わらない。 */
+  const botPowerMult = (typeof matchBotPowerMult==='function') ? matchBotPowerMult() : 1;
+  if(botPowerMult !== 1) statLimit.total = Math.max(1, Math.round(statLimit.total * botPowerMult));
   // 他の人が育てたマスモンの写し(ゴースト)を何体か混ぜる。取れなければ空配列で従来どおり
   const ghosts = pickGhostsForMatch(playerMmLevel, playerRebirth);
   for(let i=0;i<totalEntityCount-1;i++){
@@ -6304,6 +6343,8 @@ function fitResultScreen(){
    1回ずつで、どちらも game.over ガードの内側なので1試合1回が保証されている。 */
 function rankOnMatchEnd(o){
   if(game.trainingRange) return null;      // 射撃訓練場は勝敗が無い
+  // 「やさしい」は段位RPも動かさない(判定は matchDifficultyRanked() 1つ)
+  if(typeof matchDifficultyRanked==='function' && !matchDifficultyRanked()) return null;
   if(typeof addRankRp!=='function') return null;
   // 第2引数=そのモンスターの取り分。ランキングの「モンスター別RP」はこの集計を送っている
   const res = addRankRp(rankRpForMatch(o), o && o.element);
@@ -7567,6 +7608,12 @@ function renderSeasonOverlay(){
 
 function submitScoreToRanking(isWin, placement){
   const statusEl = document.getElementById('scoreSubmitStatus');
+  /* 難易度「やさしい」は記録に残さない(発注者決定)。**可否は matchDifficultyRanked() が正**で、
+     ここで難易度のidを見て分岐しない。ダイヤ・EXP・ミッションは従来どおり入る。 */
+  if(typeof matchDifficultyRanked==='function' && !matchDifficultyRanked()){
+    statusEl.textContent = `「${matchDifficulty().label}」ではランキングに記録されません`;
+    return;
+  }
   if(!window.__aramonSubmitScore){ statusEl.textContent=''; return; }
   const rawName = (document.getElementById('playerNameInput').value||'').trim();
   const name = rawName ? rawName.slice(0,12) : '名無しのモンスター';

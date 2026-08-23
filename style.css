@@ -2696,6 +2696,12 @@
   .howto-state-text{ text-align:left; font-size:10px; line-height:1.4; }
   .howto-state-name{ font-weight:700; color:#ff6b6b; }
   .howto-state-trigger{ color:var(--ink-dim); }
+  /* 用語集。文字は本文と同じ大きさで、章の見出しだけ色を変える。
+     箱の高さは中身なりでよい(遊び方ガイドはもともと縦にスクロールする画面) */
+  .howto-gloss-cat{ margin:12px 0 6px; font-weight:700; font-size:13px; color:var(--amber); letter-spacing:1px; }
+  .howto-gloss-row{ display:flex; gap:10px; padding:5px 0; border-top:1px solid var(--panel-line); }
+  .howto-gloss-term{ flex:0 0 auto; width:calc(24 * var(--vw)); max-width:150px; font-weight:700; font-size:12px; }
+  .howto-gloss-desc{ flex:1 1 auto; min-width:0; font-size:12px; color:var(--ink-dim); line-height:1.5; }
   .howto-state-duration{ color:var(--ink-dim); }
   .howto-state-effect{ color:var(--ink-dim); }
 
@@ -4408,6 +4414,8 @@
     width:100%; padding:9px 12px; background:rgba(0,0,0,0.3); border:1px solid var(--panel-line); border-radius:6px;
     color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:13px; text-align:center;
   }
+  /* スキップの代償を押す前に伝える。目立たせすぎると登録の邪魔なので控えめに */
+  .mastermon-register-note{ font-size:11px; color:var(--ink-dim); margin-top:4px; }
   .mastermon-register-btnrow{ display:flex; gap:10px; width:100%; }
   /* 縮小の巻き添えで26pxまで潰れていた。素の高さを --result-btn-h にして下限を守る */
   .mastermon-register-btnrow button{ flex:1 1 auto; min-height:var(--result-btn-h); flex-shrink:0;
