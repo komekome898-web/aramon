@@ -1338,7 +1338,6 @@ function pickLobbyBgm(id){
   renderLobbyBgmList();   // 選択中の印を付け替える(画面は開いたままで聴き比べられる)
 }
 function refreshLobby(){
-  refreshAppUpdateTile();   // 「更新」タイルの出し入れ。升目の数が変わるので行数の計算より先に行う
   updateLobbyMenuRows();
   updateLobbyPickLabels();
   updateLobbyBgmLabel();
@@ -1866,48 +1865,11 @@ function closeConfirmDialog(){
   if(box) box.classList.add('hidden');
 }
 
-/* ===== アプリの新版が出たときの告知(Service Worker) =====
-   以前は index.html の controllerchange で問答無用に window.location.reload() していたため、
-   **着信などでアプリを離れて戻った瞬間に試合・ガチャ演出・入力中の名前が丸ごと消えて再起動**していた
-   (試合の状態はメモリにしか無い)。ここでは「ロビーに押せる導線を出すだけ」にして、
-   読み込み直すかどうかは必ず本人に決めてもらう。
-   トーストは1枠しか無く次のトーストで消えるので、**消えないタイル(#lobbyUpdateBtn)**で出す。 */
-let appUpdateReady = false;
-/* 新版を探しに行ってよい状況か。試合中・訓練場・リザルト中は探さない
-   (見つけても出す場所が無く、SWが入れ替わるきっかけを作るだけになる)。
-   index.html の visibilitychange からも呼ぶので、状況の判断はこの1か所に置く。 */
-function appUpdateShouldPoll(){
-  if(typeof game!=='undefined' && game && (game.started || game.trainingRange)) return false;
-  const scr = document.getElementById('startScreen');
-  return !!scr && !scr.classList.contains('hidden');
-}
-function refreshAppUpdateTile(){
-  const btn = document.getElementById('lobbyUpdateBtn');
-  if(!btn) return;
-  if(btn.classList.contains('hidden') !== appUpdateReady) return;  // 変化なし=升目の割り当てをやり直さない
-  btn.classList.toggle('hidden', !appUpdateReady);
-  updateLobbyMenuRows();   // 見えるタイルが1枚増えるので行数と幅を計算し直す
-}
-function notifyAppUpdateReady(){
-  if(appUpdateReady) return;
-  appUpdateReady = true;
-  refreshAppUpdateTile();
-  // 気付いてもらうため一度だけ知らせる。消えてもタイルが残るので押せる導線は失われない
-  if(typeof pushToast==='function' && appUpdateShouldPoll()) pushToast('新しいバージョンがあります');
-}
-document.getElementById('lobbyUpdateBtn').addEventListener('click', ()=>{
-  showConfirmDialog({
-    text:'新しいバージョンがあります。今すぐ読み込み直して更新しますか？',
-    yes:'今すぐ更新', no:'あとで', danger:false,
-    /* 【ただreloadしない】待機中の新しいSWへ切り替えてから読み込み直す(index.htmlの
-       __aramonApplyUpdate)。切り替えずにreloadすると古いSWが古いキャッシュを返し続けるので
-       画面は何も変わらず、次の起動でまた「更新があります」が出る(嘘が繰り返される)。 */
-    onYes:()=>{
-      if(typeof window.__aramonApplyUpdate==='function') window.__aramonApplyUpdate();
-      else window.location.reload();
-    },
-  });
-});
+/* ===== アプリの新版が出たときの扱い =====
+   **画面には何も出さない。プレイヤーに何も押させない。**
+   タイトル画面の読み込み中に index.html 側が黙って入れ替える(元からの設計)。
+   一時はロビーに「🔄 更新」タイルを出したが、押させる手間・画面のズレ・
+   更新が無いのに出る誤報を生んだので撤去した(2026-08-23)。 */
 
 // ===== プレイヤーアカウント(名前+パスコードでログイン・サーバー同期) =====
 const ACCOUNT_CRED_KEY = 'aramon_account_v1';        // 自動ログイン用の認証情報
