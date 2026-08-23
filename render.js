@@ -3142,6 +3142,10 @@ function drawProjectile(pr,p){
   }
   ctx.restore();
 }
+/* 予測ダメージ数字の濃さ。確定した実数字(通常のダメージ数字)よりはっきり弱くする ――
+   ゲストの予測は補間された相手位置に当たっているだけで、外れることがあるため(F-11) */
+const PRED_DMG_ALPHA = 0.55;       // 確定待ちのあいだの濃さ
+const PRED_DMG_MISS_ALPHA = 0.28;  // 取り消しと決まったあとの濃さ
 function drawParticle(pt,p){
   const a = clamp(pt.life/pt.maxLife,0,1);
   ctx.save();
@@ -3158,10 +3162,13 @@ function drawParticle(pt,p){
       ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else if(pt.pred){
-      /* ゲストの予測ダメージ(見た目専用)。確定の実数字より一段小さく・薄くして
-         二重に見せない。ただし縁取りは付ける(縁なしの灰文字は戦闘距離で読めない=批評指摘) */
-      ctx.font="bold 15px 'Share Tech Mono', monospace";
-      ctx.globalAlpha = a*0.8;
+      /* ゲストの予測ダメージ(見た目専用)。**これはまだ確定していない数字**なので、
+         確定の実数字より一段小さく・薄くして二重に見せない。
+         ホストの確定が来なかったときは network.js が predMiss を立てて寿命を切り詰める
+         ので、そこからさらに薄くして「取り消された」ことが分かるようにする(F-11)。
+         縁取りは残す(縁なしの灰文字は戦闘距離で読めない=批評指摘)。 */
+      ctx.font="bold 13px 'Share Tech Mono', monospace";
+      ctx.globalAlpha = a * (pt.predMiss ? PRED_DMG_MISS_ALPHA : PRED_DMG_ALPHA);
       ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else {
@@ -6533,6 +6540,7 @@ function render(){
   safeDraw(renderFxGlLayer);
   fxPunchRestore();
   safeDraw(drawFxFlash);
+  safeDraw(drawNetStatusChip);   // 通信の遅延(マルチの試合中・設定でONのときだけ)
   safeDraw(renderMinimap);
 }
 /* WebGL VFX層を1フレーム進めて描く。時間は実時間(前フレームからの経過)で進める:
@@ -7154,6 +7162,89 @@ function drawPingMarkers(){
     ctx.restore();
   }
 }
+/* =====================================================================
+   通信の遅延表示(F-10)
+   ---------------------------------------------------------------------
+   RTTは net_transport.js が実測し network.js が往復として持っているのに、
+   **画面のどこからも読まれていなかった**。カクついたときに「自分の回線なのか、
+   ホストなのか、ゲームが重いのか」を切り分ける手掛かりが1つも無く、
+   ホスト/ゲストで条件が違うことすら説明されていないので
+   「当たり判定がおかしい」という感想だけが残る。
+
+   ・出すのはマルチの試合中だけ(ソロでは何も描かない)。材料は network.js の netHudInfo()。
+   ・**管理者画面の #perfOverlay とは別物**(あちらは開発用)。ここは常に見えてよいもの。
+   ・DOMを増やせない(index.html/style.cssは別班の担当)ので、キャンバスに直接描く。
+     位置はミニマップの真下・右端 ―― キルフィードは右端から
+     --killfeed-right ぶん左へ逃がしてあるので、この帯は空いている。
+   ・**既定はOFF。** 常時表示は好みが割れるうえ、設定画面が別班の担当で今は入口が作れない。
+     window.__aramonSetNetHud(true/false) で切り替え、選択はlocalStorageに残す。
+===================================================================== */
+const NET_CHIP_TOP = 140;      // ミニマップ(top14 + 高さ120)のすぐ下
+const NET_CHIP_RIGHT = 14;     // 右端の余白(#topRightと同じ)
+const NET_CHIP_PAD = 8;
+const NET_RTT_GOOD_MS = 80;    // これ以下は良好(緑)
+const NET_RTT_FAIR_MS = 180;   // これ以下は普通(琥珀)。超えたら赤
+const NET_HUD_STORAGE_KEY = 'aramon_net_hud_v1';
+let netHudEnabled = false;     // 既定OFF
+try{ netHudEnabled = localStorage.getItem(NET_HUD_STORAGE_KEY) === '1'; }catch(err){}
+window.__aramonSetNetHud = function(on){
+  netHudEnabled = !!on;
+  try{ localStorage.setItem(NET_HUD_STORAGE_KEY, netHudEnabled ? '1' : '0'); }catch(err){}
+  return netHudEnabled;
+};
+window.__aramonGetNetHud = function(){ return netHudEnabled; };
+/* セーフエリアは world.js が --safe-* に入れている(向きの入れ替えもあちらの1か所)。
+   キャンバスは#hudと違って画面いっぱいなので、ここだけ自分で足す。
+   インラインstyleに入っている値なので getComputedStyle を通さずに読める(毎フレーム読んでも安い) */
+function safeInsetPx(name){
+  const n = parseFloat(document.documentElement.style.getPropertyValue(name));
+  return (isFinite(n) && n > 0) ? n : 0;
+}
+function drawNetStatusChip(){
+  if(!netHudEnabled) return;
+  const info = (typeof netHudInfo==='function') ? netHudInfo() : null;
+  if(!info) return;   // ソロ/試合外は何も出さない
+  const online = (typeof window.__aramonNetOnline==='function') ? window.__aramonNetOnline() : true;
+  let l1, l2 = '', color;
+  if(!online){
+    l1 = '通信断'; color = '#ff6a6a';
+  } else if(info.host){
+    // ホストは自分が基準。往復が無いこと自体が「有利側」の説明になる
+    l1 = 'ホスト'; l2 = '基準'; color = '#58e07e';
+  } else if(info.rtt == null){
+    l1 = '遅延 計測中'; color = 'rgba(235,240,248,0.75)';
+  } else {
+    const ms = Math.round(info.rtt);
+    l1 = `遅延 ${ms}ms`;
+    color = ms <= NET_RTT_GOOD_MS ? '#58e07e' : (ms <= NET_RTT_FAIR_MS ? '#f4c430' : '#ff6a6a');
+    if(info.interp != null) l2 = `表示ずれ ${Math.round(info.interp)}ms`;
+  }
+  ctx.save();
+  ctx.font = "11px 'Share Tech Mono', monospace";
+  const w = Math.max(ctx.measureText(l1).width, l2 ? ctx.measureText(l2).width : 0) + NET_CHIP_PAD*2;
+  const h = (l2 ? 30 : 20);
+  const x0 = viewW - safeInsetPx('--safe-r') - NET_CHIP_RIGHT - w;
+  const y0 = NET_CHIP_TOP + safeInsetPx('--safe-t');
+  ctx.beginPath();
+  const r = 5;
+  ctx.moveTo(x0+r, y0);
+  ctx.arcTo(x0+w, y0,   x0+w, y0+h, r);
+  ctx.arcTo(x0+w, y0+h, x0,   y0+h, r);
+  ctx.arcTo(x0,   y0+h, x0,   y0,   r);
+  ctx.arcTo(x0,   y0,   x0+w, y0,   r);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(11,19,32,0.55)';   // 他のHUDパネルと同じトーン
+  ctx.fill();
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(l1, x0+w-NET_CHIP_PAD, y0 + (l2 ? 10 : 10));
+  if(l2){
+    ctx.fillStyle = 'rgba(235,240,248,0.6)';
+    ctx.fillText(l2, x0+w-NET_CHIP_PAD, y0 + 21);
+  }
+  ctx.restore();
+}
+
 /* ===== ミニマップの縮尺 =====
    全世界固定(120px で 18100単位)だと 1px≒151単位で、tier1の射程650〜750に居る敵は
    すべて自分の点に重なる=交戦の役に立たなかった。既定を「自分中心の近距離ズーム」にし、
@@ -7375,16 +7466,22 @@ function updateSquadPanel(){
   }
 }
 /* ゲストのヒットマーカー: 自分の弾が見た目命中した瞬間、照準に×印を0.15秒重ねる。
-   ホストはapplyDamageの実ダメージ数字が即出るので呼ばない(network.jsのゲスト経路だけが呼ぶ) */
+   ホストはapplyDamageの実ダメージ数字が即出るので呼ばない(network.jsのゲスト経路だけが呼ぶ)。
+   predicted=true は**まだホストの確定が来ていない予測**。確定と同じ濃さで出すと
+   「×印が出たのに減らない」という不信になるので薄くする(F-11)。
+   濃さは filter で掛ける ―― opacity は .hm-show のアニメーションが持っているので、
+   inline の opacity と喧嘩する(アニメーションが勝つ/!importantにすると消えなくなる)。 */
+const HIT_MARKER_PRED_DIM = 0.55;   // 予測の×印の濃さ(1=確定と同じ)
 let hitMarkerTimer = null;
-function showHitMarker(){
+function showHitMarker(predicted){
   const el = document.getElementById('hitMarker');
   if(!el) return;
+  el.style.filter = predicted ? `opacity(${HIT_MARKER_PRED_DIM})` : '';
   el.classList.remove('hm-show');
   void el.offsetWidth;   // アニメーションを毎回最初から再生する
   el.classList.add('hm-show');
   if(hitMarkerTimer) clearTimeout(hitMarkerTimer);
-  hitMarkerTimer = setTimeout(()=> el.classList.remove('hm-show'), 170);
+  hitMarkerTimer = setTimeout(()=>{ el.classList.remove('hm-show'); el.style.filter=''; }, 170);
 }
 function updateHUD(){
   if(!player) return;

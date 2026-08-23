@@ -19,6 +19,30 @@
   const fbApp = initializeApp(firebaseConfig);
   const fbDb = getDatabase(fbApp);
 
+  /* ===== 通信の成否を1か所へ集める =====
+     ここは例外を握り潰す場所が多く、握り潰したぶんは呼び出し側から見ると
+     「0件だった」「まだ準備中」と見分けが付かない(部屋一覧が圏外でも
+     「現在募集中の部屋はありません」になっていた)。**戻り値の形は変えず**、
+     成否だけを network.js の1か所へ投げ、失敗した戻り値には見えない印を付ける。
+     状態の持ち主が network.js 側にあるのは、圏外だとこのファイル自体が
+     読み込めない(index.htmlが .catch で握る)ため ―― 詳しくは network.js の
+     「通信の状態を1か所で持つ」の項。 */
+  function netMark(op, ok, err){
+    try{ if(window.__aramonNetMark) window.__aramonNetMark(op, ok, err); }catch(e){}
+    return ok;
+  }
+  // 失敗して返す値に印を付けて返す(呼び出し側は window.__aramonNetFailed(戻り値) で読む)
+  function netFailValue(op, err, value){
+    netMark(op, false, err);
+    try{ if(window.__aramonNetTagFailed) window.__aramonNetTagFailed(value); }catch(e){}
+    return value;
+  }
+  // 失敗の理由をプレイヤーの言葉で1つに決める(文言の分岐を各所に散らさない)
+  function netFailReason(fallback){
+    const online = (typeof window.__aramonNetOnline==='function') ? window.__aramonNetOnline() : true;
+    return online ? fallback : '通信できません。電波の状態を確認してください';
+  }
+
   function makeScoreKey(name, element){
     // Firebaseキーに使えない文字を除去し、プレイヤー名+モンスターで一意なキーを作る
     const safeName = String(name||'').replace(/[.#$/\[\]\s]/g,'_').slice(0,40) || 'anon';
@@ -30,17 +54,27 @@
   window.__aramonAccountKey = function(name){
     return String(name||'').replace(/[.#$/\[\]\s]/g,'_').slice(0,24).toLowerCase() || 'anon';
   };
+  /* アカウント系は**例外をそのまま投げる**(呼び出し側が try/catch している)。
+     ここでは成否を記録するだけにして、投げ方は従来どおりにする ――
+     戻り値や例外の形を変えると ui.js 側の分岐が変わってしまうため。 */
   window.__aramonGetAccount = async function(nameKey){
-    const snap = await get(ref(fbDb, `accounts/${nameKey}`));
-    return snap.exists() ? snap.val() : null;
+    try{
+      const snap = await get(ref(fbDb, `accounts/${nameKey}`));
+      netMark('account', true);
+      return snap.exists() ? snap.val() : null;   // null=そのアカウントが無い(通信は成功)
+    }catch(err){ netMark('account', false, err); throw err; }
   };
   window.__aramonSetAccount = async function(nameKey, obj){
-    await set(ref(fbDb, `accounts/${nameKey}`), obj);
-    return true;
+    try{
+      await set(ref(fbDb, `accounts/${nameKey}`), obj);
+      return netMark('account', true);
+    }catch(err){ netMark('account', false, err); throw err; }
   };
   window.__aramonUpdateAccountData = async function(nameKey, dataObj){
-    await update(ref(fbDb, `accounts/${nameKey}`), { data: dataObj, updatedAt: Date.now() });
-    return true;
+    try{
+      await update(ref(fbDb, `accounts/${nameKey}`), { data: dataObj, updatedAt: Date.now() });
+      return netMark('accountSync', true);
+    }catch(err){ netMark('accountSync', false, err); throw err; }
   };
 
   window.__aramonSubmitScore = async function(entry){
@@ -105,9 +139,10 @@
           ts: entry.ts,
         };
       });
-      return true;
+      return netMark('submitScore', true);
     }catch(err){
       console.error('score submit failed', err);
+      netMark('submitScore', false, err);
       return false;
     }
   };
@@ -122,10 +157,12 @@
       const rows = [];
       snap.forEach(child=>{ rows.push(child.val()); });
       rows.sort((a,b)=> (b[field]||0) - (a[field]||0));
+      netMark('ranking', true);
       return rows;
     }catch(err){
       console.error('ranking fetch failed', err);
-      return null;
+      // ここは元から null が「失敗」の合図。印も付けて他のAPIと扱いを揃える
+      return netFailValue('ranking', err, null);
     }
   };
 
@@ -144,9 +181,10 @@
   window.__aramonLogMatch = async function(entry){
     try{
       await push(ref(fbDb, 'matchLogs'), entry);
-      return true;
+      return netMark('matchLog', true);
     }catch(err){
       console.error('match log failed', err);
+      netMark('matchLog', false, err);
       return false;
     }
   };
@@ -156,10 +194,11 @@
       const snap = await get(ref(fbDb, 'matchLogs'));
       const rows = [];
       snap.forEach(child=>{ rows.push(child.val()); });
+      netMark('matchLogs', true);
       return rows;
     }catch(err){
       console.error('match logs fetch failed', err);
-      return null;
+      return netFailValue('matchLogs', err, null);
     }
   };
 
@@ -225,6 +264,9 @@
      黙って落ちる作りにしたせいでフル配信の全滅に長く気づけなかった。 */
   const warnedRoomWrites = new Set();
   function warnRoomWrite(label, err){
+    // 失敗は毎回記録する(consoleは最初の1回だけ)。試合中に通信が死んだことを
+    // UI側が知る手掛かりがこれしかないため。連続する同じ失敗は netNotify 側で間引かれる
+    netMark('roomWrite:'+label, false, err);
     if(warnedRoomWrites.has(label)) return;
     warnedRoomWrites.add(label);
     console.warn(`[aramon] room write failed (${label})`, err);
@@ -301,6 +343,13 @@
   // sub はチーム戦のサブモード('br20'=20チームバトロワ / 'arena'=バトルアリーナ / null=従来型)。
   // これも素通し。旧クライアントの部屋には無いので、読む側は v.sub||null で扱う。
   window.__aramonCreateRoom = async function(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub){
+    /* 失敗は**従来どおり例外のまま**投げる(ui.js側が try/catch している)。
+       ここでは成否を記録するだけにして、呼び出し側の分岐を変えない。 */
+    try{
+      return await createRoomInner(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub);
+    }catch(err){ netMark('createRoom', false, err); throw err; }
+  };
+  async function createRoomInner(capacity, playerName, elementKey, mmInfo, skinId, mode, teamSize, sub){
     await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す(取りっぱなしを作らない)
     const roomMode = mode==='raid' ? 'raid' : 'br';
     const roomTeamSize = (teamSize|0) > 1 ? (teamSize|0) : 1;
@@ -321,8 +370,9 @@
     window.__aramonLobbyEntryId = lobbyEntryRef.key;
     activeLobbySeat = { lobbyKey: lobbyEntryRef.key };   // 自分の1席(count:1)ぶん
     activeRoomId = roomId;
+    netMark('createRoom', true);
     return { roomId, isHost:true, myPlayerId };
-  };
+  }
 
   // 募集中の部屋一覧を取得する(部屋を探す画面用)
   window.__aramonListOpenRooms = async function(mode){
@@ -351,17 +401,24 @@
         rooms.push({ ...c, count });
       });
       rooms.sort((a,b)=> b.createdAt - a.createdAt);
+      netMark('listRooms', true);
       return rooms;
     }catch(err){
       console.error('list rooms failed', err);
-      return [];
+      /* 【F-9】失敗も空配列で返すのは従来どおり(呼び出し側は rooms.length / rooms.map を
+         そのまま使っている)。ただし**「0件」と「通信に失敗」は別物**なので、
+         この配列には印を付けて返す。UI側は window.__aramonNetFailed(rooms) で見分ける。 */
+      return netFailValue('listRooms', err, []);
     }
   };
 
   // 指定した部屋に参加する(部屋を探す画面で選んだ場合)
   window.__aramonJoinRoom = async function(roomId, lobbyKey, playerName, elementKey, mmInfo, skinId){
-    await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す
     try{
+      /* 席を返すのも通信。**try の中に入れる** ―― 外に置くと、ここで例外が出たときに
+         呼び出し側(ui.jsのjoinSelectedRoom)は try/catch を持っていないので
+         「押しても何も起きない」になる(理由も出ない)。 */
+      await releaseLobbySeat();   // 新しい席を取る前に、持っている席は必ず返す
       const roomPlayersRef = ref(fbDb, `rooms/${roomId}/players`);
       const metaSnap = await get(ref(fbDb, `rooms/${roomId}/meta`));
       const meta = metaSnap.val();
@@ -375,11 +432,15 @@
       });
       onDisconnect(child(roomPlayersRef, myPlayerId)).remove();
       activeRoomId = roomId;
+      netMark('joinRoom', true);
       return { ok:true, roomId, isHost:false, myPlayerId, capacity: meta.capacity, teamSize:(meta.teamSize||1), sub:(meta.sub||null), mode:(meta.mode||'br') };
     }catch(err){
       console.error('join room failed', err);
       await releaseLobbySeat();   // 予約だけ通って登録に失敗した場合に席を残さない
-      return { ok:false, reason:'参加に失敗しました' };
+      /* 【F-9】「満員」「もう始まっている」と**通信できない**を同じ文言にしない。
+         reason はそのままトーストに出るので、圏外のときは電波の話にする。 */
+      return netFailValue('joinRoom', err,
+        { ok:false, reason: netFailReason('参加に失敗しました(通信エラー)') });
     }
   };
 
@@ -419,7 +480,7 @@
           break;
         }
       }
-    }catch(err){ console.error('room search failed', err); }
+    }catch(err){ console.error('room search failed', err); netMark('findRoom', false, err); }
 
     if(!joinedRoomId){
       await releaseLobbySeat();   // 予約だけ通って登録に失敗した候補の席を残さない
@@ -440,6 +501,7 @@
     }
 
     activeRoomId = joinedRoomId;
+    netMark('findRoom', true);
     return { roomId: joinedRoomId, isHost: becameHost, myPlayerId };
   };
 
@@ -462,10 +524,12 @@
   window.__aramonFetchRoomPlayersOnce = async function(roomId){
     try{
       const snap = await get(ref(fbDb, `rooms/${roomId}/players`));
+      netMark('roomPlayers', true);
       return snap.val() || {};
     }catch(err){
       console.error('fetch players once failed', err);
-      return {};
+      // 空オブジェクトは「誰も居ない」とも読めてしまうので、失敗の印を付けて返す
+      return netFailValue('roomPlayers', err, {});
     }
   };
 
@@ -686,20 +750,24 @@
         const best = Math.max((cur && cur.best) || 0, add); // 1回の最大ダメージランキング用
         return { name: String(playerName||'ゲスト').slice(0,24), dmg: prev + add, runs, best, at: Date.now() };
       });
-    }catch(err){ console.warn('raid damage report failed', err); }
+    }catch(err){ console.warn('raid damage report failed', err); netMark('raidDamage', false, err); }
   };
   window.__aramonFetchRaidTotal = async function(weekId){
     try{
       const snap = await get(ref(fbDb, `raids/${weekId}/total`));
+      netMark('raidTotal', true);
       return snap.val() || 0;
-    }catch(err){ return 0; }
+    }catch(err){ netMark('raidTotal', false, err); return 0; }
   };
   /* ランキングは players をそのまま読んで手元で並べ替える。
      orderByChild('dmg') を使うとセキュリティルール側に .indexOn が要り、
      無いと並べ替えが効かない/弾かれる。参加者はせいぜい数十人なので全件読んで問題ない。
      失敗はここで握りつぶさず投げる(呼び出し側が「読み込めなかった」と出せるように)。 */
   window.__aramonFetchRaidRanking = async function(weekId, topN){
-    const snap = await get(ref(fbDb, `raids/${weekId}/players`));
+    let snap;
+    // 失敗は投げたまま(呼び出し側が「読み込めなかった」と出せるように)。記録だけ足す
+    try{ snap = await get(ref(fbDb, `raids/${weekId}/players`)); netMark('raidRanking', true); }
+    catch(err){ netMark('raidRanking', false, err); throw err; }
     const rows = [];
     snap.forEach(ch=>{
       const v = ch.val();

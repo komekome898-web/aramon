@@ -12,6 +12,131 @@ let lastT = performance.now();
      滑らかに追従表示するだけにする(自分でシミュレーションしない)
    - これにより非ホスト側での「同期ズレ」「ボットが止まって見える」を構造的に防ぐ
 ===================================================================== */
+
+/* =====================================================================
+   通信の状態(オフライン・直近の通信の成否)を1か所で持つ
+   ---------------------------------------------------------------------
+   ・**なぜ firebase.js ではなくここか**: firebase.js は index.html から動的importされ、
+     圏外だと**読み込み自体が失敗して window.__aramon* が1つも生えない**
+     (index.html側で .catch(()=>{}) している)。「オフラインかどうか」を知りたいのは
+     まさにその状況なので、状態の持ち主は常に読み込まれる classic script のこちらに置く。
+     firebase.js は成否を __aramonNetMark() へ投げ込むだけにする(判定を2か所に書かない)。
+   ・目的は、受け側が「**0件だったのか、通信に失敗したのか**」を区別できるようにすること。
+     **戻り値の形は変えない**(配列は配列のまま)。失敗した戻り値には見えない印を付け、
+     __aramonNetFailed(戻り値) で読む。既存の呼び出し側(rooms.length / rooms.map)は無改修で動く。
+   ・表示・文言はUI側(ui.js)の担当。ここは材料を出すだけ。
+===================================================================== */
+const NET_NOTIFY_MIN_MS = 800;   // 同じ結果の連続通知は間引く(authStateは毎秒20回以上書くため)
+const netHealth = {
+  online: (typeof navigator === 'undefined') || navigator.onLine !== false,
+  offlineSince: 0,          // オフラインになった時刻(ms)。オンラインなら0
+  lastOkAt: 0,              // 最後に成功した通信の時刻
+  lastFailAt: 0, lastFailOp: null,
+  ops: Object.create(null), // op名 -> { ok, at, msg }
+};
+if(!netHealth.online) netHealth.offlineSince = Date.now();
+const netWatchers = [];
+let netLastNotifyAt = 0, netLastNotifyKey = '';
+function netStatusSnapshot(){
+  return {
+    online: netHealth.online,
+    offlineSince: netHealth.offlineSince,
+    lastOkAt: netHealth.lastOkAt,
+    lastFailAt: netHealth.lastFailAt,
+    lastFailOp: netHealth.lastFailOp,
+    ready: typeof window.__aramonListOpenRooms === 'function',
+  };
+}
+function netNotify(key){
+  const now = Date.now();
+  if(key && key === netLastNotifyKey && now - netLastNotifyAt < NET_NOTIFY_MIN_MS) return;
+  netLastNotifyKey = key || ''; netLastNotifyAt = now;
+  const snap = netStatusSnapshot();
+  for(const cb of netWatchers){ try{ cb(snap); }catch(err){} }
+}
+if(typeof window !== 'undefined' && window.addEventListener){
+  window.addEventListener('online', ()=>{
+    if(netHealth.online) return;
+    netHealth.online = true; netHealth.offlineSince = 0; netNotify('on');
+  });
+  window.addEventListener('offline', ()=>{
+    if(!netHealth.online) return;
+    netHealth.online = false; netHealth.offlineSince = Date.now(); netNotify('off');
+  });
+}
+/* 端末がオンラインか。**navigator.onLine は「何かに繋がっている」しか言わない**ので、
+   これだけでは足りない。実際に届いたかどうかは __aramonNetMark の記録の方を見る。 */
+window.__aramonNetOnline = function(){ return !!netHealth.online; };
+/* 通信の下回りが使えるか(firebase.jsを読み込めたか)。マルチのボタンを沈ませる判断用 */
+window.__aramonNetReady = function(){ return typeof window.__aramonListOpenRooms === 'function'; };
+window.__aramonNetStatus = netStatusSnapshot;
+/* firebase.js が通信の成否を投げ込む口。op は 'listRooms' / 'createRoom' などの識別子 */
+window.__aramonNetMark = function(op, ok, err){
+  const now = Date.now();
+  netHealth.ops[op] = { ok: !!ok, at: now,
+    msg: ok ? '' : String((err && (err.message || err.code)) || err || '') };
+  if(ok) netHealth.lastOkAt = now;
+  else { netHealth.lastFailAt = now; netHealth.lastFailOp = op; }
+  netNotify((ok ? 'ok:' : 'ng:') + op);
+  return ok;
+};
+/* 直近のその通信が失敗したか。null = まだ一度も呼んでいない */
+window.__aramonNetOpFailed = function(op){
+  const r = netHealth.ops[op];
+  return r ? !r.ok : null;
+};
+/* 失敗して返ってきた値に印を付ける / 読む。印は列挙されないので、
+   そのまま map/JSON.stringify しても従来と同じ結果になる。 */
+window.__aramonNetTagFailed = function(v){
+  if(v && typeof v === 'object'){
+    try{ Object.defineProperty(v, '__netFailed', { value:true, enumerable:false, configurable:true }); }catch(err){}
+  }
+  return v;
+};
+window.__aramonNetFailed = function(v){ return !!(v && typeof v === 'object' && v.__netFailed === true); };
+/* 状態が変わったら呼ばれる購読。登録時に1回すぐ呼ぶ。戻り値は解除関数 */
+window.__aramonNetWatch = function(cb){
+  if(typeof cb !== 'function') return ()=>{};
+  netWatchers.push(cb);
+  try{ cb(netStatusSnapshot()); }catch(err){}
+  return ()=>{ const i = netWatchers.indexOf(cb); if(i >= 0) netWatchers.splice(i, 1); };
+};
+
+/* =====================================================================
+   遅延(RTT)の実測
+   自分の入力(seq)をホストが適用して aseq を返してくるまでの往復を測る。
+   net_transport.js の ping/pong は **WebRTCが繋がっている間しか測れない**が、
+   こちらは rtdb 経由でも測れ、しかもホストの1tickぶんも込みなので
+   「押してから世界に反映されるまで」というプレイヤーの体感に一番近い。
+   使い道は2つ: ①HUDの遅延表示(F-10) ②予測命中の取り消し待ち時間(F-11)。
+===================================================================== */
+const NET_RTT_EWMA_ALPHA = 0.25;   // 1回の実測をどれだけ効かせるか(大きいほど敏感)
+const NET_RTT_STALE_MS = 4000;     // これだけ更新が無ければ「測れていない」扱い
+const NET_RTT_MAX_MS = 5000;       // これを超える値はスリープ明け等の異常として捨てる
+let netRttMs = null;               // EWMAした往復(ms)。null=未計測
+let netRttAt = 0;                  // 最後に更新した時刻(performance.now)
+function noteNetRtt(ms){
+  if(!(ms >= 0) || ms > NET_RTT_MAX_MS) return;
+  netRttMs = (netRttMs == null) ? ms : netRttMs + (ms - netRttMs) * NET_RTT_EWMA_ALPHA;
+  netRttAt = performance.now();
+}
+function currentNetRttMs(){
+  if(netRttMs != null && performance.now() - netRttAt < NET_RTT_STALE_MS) return netRttMs;
+  // ackがまだ来ていない間だけ、WebRTCの実測ping(あれば)で代用する
+  const st = (typeof window.__aramonNetStats === 'function') ? window.__aramonNetStats() : null;
+  if(st && st.peers){
+    for(const p of st.peers){ if(p.rttMs != null) return p.rttMs; }
+  }
+  return null;
+}
+/* HUDの遅延表示(F-10)の材料。**描画は render.js の drawNetStatusChip()**。
+   ソロでは null を返す(=何も出さない)。ホストは自分が基準なので往復を出さない。 */
+function netHudInfo(){
+  if(!game.started || netState.mode !== 'multi') return null;
+  if(netState.isHost) return { host:true, rtt:null, interp:null };
+  return { host:false, rtt: currentNetRttMs(), interp: interpDelayMs };
+}
+
 // 自分の入力を送る間隔(秒)。rtdb=約22回/秒(Firebaseのquota都合)。
 // WebRTC直結(net_transport.js)が確立している間だけ約40回/秒へ上げる
 const INPUT_SEND_INTERVAL_RTDB = 0.045;
@@ -107,7 +232,94 @@ const EXTRAP_CAP_MS = 180;     // スナップショット欠落時に速度で�
 /* ゲストがauthStateのHPの減りを「攻撃を受けた」とみなす下限(HP)。
    安全圏・溶岩の環境ダメージは1配信(50ms)あたり数HPなので、それより大きい減りだけを拾う */
 const GUEST_HIT_FEEDBACK_MIN = 5;
-const AUTH_FULL_EVERY = 8;     // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
+
+/* =====================================================================
+   ゲストの「予測命中」の取り消し(F-11)
+   ---------------------------------------------------------------------
+   ゲストの見た目弾は**補間された(=遅れた)相手位置**に当たる。ホストの確定判定は
+   巻き戻し(entityRewoundPos)で、座標系も弾の軌道も別物なので**必ずズレる**。
+   外れたときに×印と数字が出っぱなしになるのが「当たったのに減らない」の正体。
+
+   【確定が来たかどうかの判定】**自分の damageDealt が増えたこと**を使う。
+   ホストは buildAuthStatePayload で全エンティティに damageDealt を毎tick載せており
+   (フル配信待ちにならない)、applyAuthState が自分のぶんも受けている。
+   「相手のHPが減ったか」で見ると他人が与えたダメージまで自分の手柄に数えてしまうが、
+   damageDealt は**ホストが自分の攻撃として計上した量**なので、与えた側の証拠として正しい。
+   どの相手に当たったかまでは分からないが、ここで消したいのは「1件も当たっていないのに
+   出てしまった表示」なので、「この窓の間に自分の与ダメが1も増えなかった」で十分。
+   1配信で複数発ぶんまとめて確定することがあり、その内訳は分からない。連射で同時に
+   何発も当てたときは**当たっていた表示まで取り消しうる**が、消えるのは薄い予測数字だけで、
+   確定の実数字(HPの減りから出る本来の数字)はそのまま出る。逆向きの誤り
+   (外れたのに残す)より軽いので、この向きに倒してある。
+
+   待ち時間は往復の実測(currentNetRttMs)に合わせる。固定値にすると回線が悪い人ほど
+   **本当は当たっているのに取り消す**ことになり、今より悪い嘘になる。
+===================================================================== */
+const PRED_HIT_CONFIRM_BASE_SEC = 0.22;  // 往復に上乗せする猶予(ホストの1tick+配信間隔ぶん)
+const PRED_HIT_CONFIRM_MIN_SEC  = 0.35;  // 待ち時間の下限
+const PRED_HIT_CONFIRM_MAX_SEC  = 1.20;  // 待ち時間の上限(これ以上は待たずに取り消す)
+const PRED_HIT_TEXT_EXTRA_SEC   = 0.15;  // 予測数字は待ち時間より少し長く生かす(取り消しが見えるように)
+const PRED_HIT_CANCEL_FADE_SEC  = 0.12;  // 取り消しと決まってから消えるまで
+// ※ 予測の×印・予測数字の「濃さ」は描画側の話なので render.js が持つ
+//    (HIT_MARKER_PRED_DIM / drawParticle の pred 分岐)。数字を2か所に置かない。
+let guestPredHits = [];       // [{at, part}] 未確定の予測命中。partは予測ダメージ数字のパーティクル
+let guestPredDmgDealt = null; // 直前に受け取った自分の damageDealt(増分で確定を判定する)
+function predHitConfirmSec(){
+  const rtt = currentNetRttMs();
+  const w = PRED_HIT_CONFIRM_BASE_SEC + (rtt != null ? rtt/1000 : PRED_HIT_CONFIRM_MAX_SEC);
+  return clamp(w, PRED_HIT_CONFIRM_MIN_SEC, PRED_HIT_CONFIRM_MAX_SEC);
+}
+/* 見た目命中の瞬間の表示。**確定ではないと分かる濃さ**で出し、あとで取り消せるよう控える */
+function noteGuestPredHit(e, p){
+  const wait = predHitConfirmSec();
+  if(typeof showHitMarker === 'function') showHitMarker(true);   // 薄い×印(予測)
+  playSe('hitDealt');   // 命中SE(ソロ/ホストは combat.js の applyDamage で鳴らす)
+  let part = null;
+  if(p.predDmg && typeof spawnPredDmgText === 'function'){
+    spawnPredDmgText(e.x, e.y, e.z, p.predDmg);
+    /* spawnPredDmgText(world.js)の既定の寿命は取り消しの窓より短く、待っている間に
+       自然に消えてしまう。**この関数の呼び出し元はここだけ**なので、控えた直後に
+       寿命だけをこちらの窓に合わせる(world.js側の既定は触らない)。 */
+    const last = particles[particles.length - 1];
+    if(last && last.pred){
+      part = last;
+      part.life = part.maxLife = wait + PRED_HIT_TEXT_EXTRA_SEC;
+    }
+  }
+  guestPredHits.push({ at: matchTime, wait, part, dmg: p.predDmg || 0 });
+}
+/* 毎フレーム点検し、待ち時間を過ぎても確定が来なかったものを取り消す(薄く消す)。
+   確定が来たものは、ホストの実数字(HPの減りから出る)に役目を譲って控えを捨てるだけ。 */
+function updateGuestPredHits(){
+  if(!guestPredHits.length) return;
+  for(let i = guestPredHits.length - 1; i >= 0; i--){
+    const h = guestPredHits[i];
+    if(h.confirmed){ guestPredHits.splice(i, 1); continue; }
+    if(matchTime - h.at < h.wait) continue;
+    if(h.part && h.part.life > PRED_HIT_CANCEL_FADE_SEC){
+      // 残り寿命を切り詰める。描画側は life/maxLife を濃さに使うので、そのまま薄くなって消える
+      h.part.life = PRED_HIT_CANCEL_FADE_SEC;
+      h.part.predMiss = true;   // render.js: 取り消し中はさらに薄く描く
+    }
+    guestPredHits.splice(i, 1);
+  }
+}
+/* ホストが自分の与ダメを計上した=古い予測から順に「当たっていた」とみなす。
+   1配信で何発ぶん確定したかは分からないので、増えた量が予測値の
+   PRED_HIT_DMG_TOLERANCE 倍を賄えるあいだ、古い順に確定にしていく
+   (予測値は概算なので、ぴったり突き合わせようとすると常に外れる)。 */
+const PRED_HIT_DMG_TOLERANCE = 0.6;
+function confirmGuestPredHits(deltaDmg){
+  let left = deltaDmg;
+  for(const h of guestPredHits){
+    if(h.confirmed) continue;
+    h.confirmed = true;
+    left -= Math.max(1, h.dmg || 0) * PRED_HIT_DMG_TOLERANCE;
+    if(left <= 0) break;
+  }
+}
+
+const AUTH_FULL_EVERY = 8;   // 何回に1回、静的値(maxHp/train係数等)も載せた「フル」配信にするか(残りは位置等の軽量配信)
 const HOST_HISTORY_CAP = 60;   // ホストの位置履歴(ラグ補正の巻き戻し用)保持スナップショット数
 let guestSnapBuf = [];         // ゲスト: 補間用スナップショット {rt, ht, seq, ents:{id:{x,y,z,f,vx,vy,alive}}}
 let guestCurViewSeq = 0;       // ゲスト: 今まさに描画している(=狙いを定めている)ホストseq
@@ -283,6 +495,9 @@ async function beginMultiplayerMatchInner(){
   selfCardSeq = 0; selfCardPick = null; resetTrainOffers();
   // ホストの沈黙の計測も試合ごとにやり直す
   hostAuthSeenAt = performance.now(); hostSilenceHandled = false; lastFrameGapMs = 0;
+  // 遅延の実測と予測命中の控えも試合ごとに捨てる(前の試合の値で待ち時間が決まらないように)
+  netRttMs = null; netRttAt = 0;
+  guestPredHits.length = 0; guestPredDmgDealt = null;
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
@@ -719,7 +934,8 @@ function sendLocalInputIfMultiplayer(now){
     // この入力を送った時点の自分の予測位置を先に覚えておく。
     // ホストが「このseqまで適用した」と返してきたとき、同じ時点どうしで誤差を比較する
     if(player && !netState.isHost){
-      selfPredHistory.push({ seq:selfInputSeq, x:player.x, y:player.y });
+      // t: 送った時刻。ホストが aseq で返してきたときに往復(RTT)を測るのに使う(F-10)
+      selfPredHistory.push({ seq:selfInputSeq, x:player.x, y:player.y, t:now });
       if(selfPredHistory.length > SELF_HISTORY_CAP) selfPredHistory.shift();
     }
     window.__aramonSendInput(netState.roomId, {
@@ -1258,6 +1474,11 @@ function applyAuthState(authState){
         }
         if(hist){
           errX = a.x - hist.x; errY = a.y - hist.y;
+          // 遅延の実測(F-10): 「この入力を送ってから、それを反映した配信が届くまで」の往復。
+          // 押してから世界に反映されるまでの体感そのものなので、これをHUDに出す
+          // **同じaseqが何度も返る**(ホストが次の入力を適用するまで)ので、測るのは最初の1回だけ。
+          // 2回目以降まで数えると、届くのが遅れたぶんだけRTTが実際より長く出る
+          if(typeof hist.t === 'number'){ noteNetRtt(performance.now() - hist.t); hist.t = null; }
           // 適用済みより古い履歴は破棄
           while(selfPredHistory.length && selfPredHistory[0].seq < a.aseq) selfPredHistory.shift();
         }
@@ -1307,6 +1528,14 @@ function applyAuthState(authState){
     if(a.lhx != null){ ent.lastHitFromX = a.lhx; ent.lastHitFromY = a.lhy; ent.lastHitAt = matchTime; }
     if(typeof a.maxHp==='number') ent.maxHp = a.maxHp;
     if(typeof a.maxGuts==='number') ent.maxGuts = a.maxGuts;
+    /* 予測命中の確定(F-11)。**自分の与ダメが増えたことがホストの確定の証拠**。
+       相手のHPの減りで見ると他人が与えたぶんまで自分の手柄に数えてしまうので使わない。 */
+    if(ent.isPlayer && typeof a.damageDealt === 'number'){
+      if(guestPredDmgDealt != null && a.damageDealt > guestPredDmgDealt){
+        confirmGuestPredHits(a.damageDealt - guestPredDmgDealt);
+      }
+      guestPredDmgDealt = a.damageDealt;
+    }
     ent.kills = a.kills; ent.damageDealt = a.damageDealt;
     // レイドの貢献度もホストの値をそのまま採用する(ゲストは自分では数えない)
     if(typeof a.rd==='number') ent.raidDamage = a.rd;
@@ -1490,6 +1719,7 @@ function loop(now){
         predictLootPickupsAsGuest(); // 重なったアイテムは即座に見た目を消す(確定はホスト)
         tryNonHostPlayerFireVisual(dt);
         updatePendingAoeCasts();        // 連射する範囲技の2発目以降を時刻到達で出す(見た目専用)
+        updateGuestPredHits();          // 確定が来なかった予測命中の表示を取り消す(F-11)
         showGuestEnvironmentDamage(dt); // 安全圏外/溶岩のダメージ表示(HPの確定はホスト)
         // 自分が撃った見た目専用の弾だけをローカルで移動させる(当たり判定はホストが確定する)
         for(let i=projectiles.length-1;i>=0;i--){
@@ -1532,11 +1762,7 @@ function loop(now){
                 /* ゲストの体感: 自分の弾が見た目命中した瞬間に、照準の×印と予測ダメージを出す。
                    確定の実数字は従来どおりホストのauthState(HPの減り)から後で出るので、
                    予測側は小さく半透明(spawnPredDmgText)にして二重に見えないようにする */
-                if(player && p.ownerId===player.id){
-                  if(typeof showHitMarker==='function') showHitMarker();
-                  playSe('hitDealt');   // 命中SE(ソロ/ホストは combat.js の applyDamage で鳴らす)
-                  if(p.predDmg && typeof spawnPredDmgText==='function') spawnPredDmgText(e.x, e.y, e.z, p.predDmg);
-                }
+                if(player && p.ownerId===player.id) noteGuestPredHit(e, p);
                 break;
               }
             }
