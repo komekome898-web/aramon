@@ -10,13 +10,13 @@ document.addEventListener('selectstart', (e)=>{ if(!isTextEntry(e.target) && !is
 
 let lastTouchEndTime = 0;
 document.addEventListener('touchend', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#mastermonDeleteConfirm') || e.target.closest('#tutorialLayer')) return;
+  if(scrollLockExempt(e.target)) return;   // world.js の SCROLL_LOCK_EXEMPT_IDS が正
   const now = performance.now();
   if(now - lastTouchEndTime <= 350) e.preventDefault();
   lastTouchEndTime = now;
 }, {passive:false});
 document.addEventListener('dblclick', (e)=>{
-  if(e.target.closest('#titleScreen') || e.target.closest('#startScreen') || e.target.closest('#settingsOverlay') || e.target.closest('#myPageOverlay') || e.target.closest('#helpOverlay') || e.target.closest('#helpImageOverlay') || e.target.closest('#monsterPickOverlay') || e.target.closest('#mapPickOverlay') || e.target.closest('#modePickOverlay') || e.target.closest('#audioSettingsOverlay') || e.target.closest('#lobbyBgmOverlay') || e.target.closest('#accountOverlay') || e.target.closest('#bagOverlay') || e.target.closest('#galleryOverlay') || e.target.closest('#missionOverlay') || e.target.closest('#expeditionOverlay') || e.target.closest('#expeditionPickOverlay') || e.target.closest('#loginBonusPopup') || e.target.closest('#season1PreviewOverlay') || e.target.closest('#gachaOverlay') || e.target.closest('#ssrPromoteOverlay') || e.target.closest('#skinPromoOverlay') || e.target.closest('#rockSsrPromoOverlay') || e.target.closest('#metagGaruruPromoOverlay') || e.target.closest('#skinPreviewOverlay') || e.target.closest('#shopOverlay') || e.target.closest('#changelogOverlay') || e.target.closest('#rankingScreen') || e.target.closest('#myStatsScreen') || e.target.closest('#howToPlayScreen') || e.target.closest('#mastermonScreen') || e.target.closest('#resultScreen') || e.target.closest('#monsterListScreen') || e.target.closest('#adminPassScreen') || e.target.closest('#adminScreen') || e.target.closest('#lobbyScreen') || e.target.closest('#roomListScreen') || e.target.closest('#spectateBar') || e.target.closest('#trainCardBar') || e.target.closest('#rangeBar') || e.target.closest('#lookSettingsOverlay') || e.target.closest('#textInputOverlay') || e.target.closest('#rebirthOverlay') || e.target.closest('#awakenOverlay') || e.target.closest('#hidenOverlay') || e.target.closest('#rebirthAnimOverlay') || e.target.closest('#awakenAnimOverlay') || e.target.closest('#raidOverlay') || e.target.closest('#raidRankOverlay') || e.target.closest('#shareOverlay') || e.target.closest('#mastermonDeleteConfirm') || e.target.closest('#tutorialLayer')) return;
+  if(scrollLockExempt(e.target)) return;   // world.js の SCROLL_LOCK_EXEMPT_IDS が正
   e.preventDefault();
 });
 
@@ -398,6 +398,79 @@ window.addEventListener('pointerup', releaseFireBtn);
 window.addEventListener('pointercancel', releaseFireBtn);
 // OS都合で指を失ったときの保険(画面回転・要素の入れ替えなど)。掴んだままだと撃ちっぱなしになる
 fireBtnEl.addEventListener('lostpointercapture', releaseFireBtn);
+
+/* =====================================================================
+   画面から離れて戻ったとき(スリープ・着信・アプリ切替)
+
+   ・**押しっぱなしを必ず解除する。** iOSは離脱時に指のイベントを最後まで届けないことがある。
+     pointercancel が来る端末では上の release* が効くが、来ない端末では来ない。
+     来なかった場合、戻ってきた瞬間から勝手に前進し続ける・撃ち続ける状態で復帰する。
+     見えなくなった時点で全部「離した」状態へ戻す ── 押し直せばよいだけなので
+     間違って解除したときの損は小さく、解除し損ねたときの損だけが大きい。
+   ・解除は**上で使っている release*() をそのまま使う**(捕まえた指の解放や後始末が
+     1か所に書いてあるので、ここで同じことを書き直さない)。
+===================================================================== */
+function releaseAllHeldInputs(){
+  // FIRE(押しっぱなし発射 + 滑らせて狙う)
+  if(fireDrag.pointerId !== null) releaseFireBtn({ pointerId: fireDrag.pointerId });
+  fireBtnHeld = false;                       // 指のIDが残っていない経路(キー操作など)の保険
+  // 視点ドラッグ。掴んだままだと次の指がずっと弾かれ、カメラが二度と動かない
+  if(lookDrag.active || lookDrag.pointerId !== null) releaseLookDrag(lookDrag.pointerId);
+  /* ジョイスティック。**releaseJoystick() は通さない** ── あれは「上へ弾いた」判定を含むので、
+     中断をまたいで通すと戻った瞬間にオートランが点くことがある。ここでは値だけ戻す。 */
+  joystick.active = false; joystick.pointerId = null;
+  joystick.nx = 0; joystick.ny = 0; joystick.peakUpNy = 0; joystick.downAt = 0;
+  if(joyKnobEl) joyKnobEl.style.transform = 'translate(0,0)';
+  autoRunFlickTime = 0;                      // 中断をまたいだ2回目の弾きは数えない
+  // オートラン(走り続けたまま戻ってこないように、離れた時点で切る)
+  if(typeof game === 'object' && game.autoRun) setAutoRun(false);
+  // キーボード: PCで他の窓へ移ると keyup が届かず押しっぱなしになる
+  for(const k in keys) keys[k] = false;
+}
+
+/* ===== 試合中は画面を消させない(Wake Lock) =====
+   長い試合は「見ている時間」のほうが長いので、自動ロックで画面が落ちてそのまま倒される。
+   試合中だけロックを取り、離れたら解放・戻ったら取り直す。
+   **取れない端末では何もしない**(未対応・拒否のどちらも例外を握りつぶすだけで、
+   これまでとまったく同じ動きになる)。 */
+const WAKE_LOCK_CHECK_MS = 4000;   // 試合の開始/終了を拾う見張りの間隔(4秒に1回の分岐だけ)
+const WAKE_LOCK_MAX_FAIL = 3;      // 断られ続ける端末に何度も頼まない
+let wakeLockSentinel = null;
+let wakeLockFails = 0;
+function wantWakeLock(){
+  return document.visibilityState === 'visible'
+      && typeof game === 'object' && !!game.started && !game.over;
+}
+function requestWakeLockIfPlaying(){
+  if(!(navigator.wakeLock && navigator.wakeLock.request)) return;   // 未対応の端末では何もしない
+  if(wakeLockSentinel || wakeLockFails >= WAKE_LOCK_MAX_FAIL) return;
+  if(!wantWakeLock()) return;
+  navigator.wakeLock.request('screen').then((s)=>{
+    wakeLockSentinel = s; wakeLockFails = 0;
+    // 画面が隠れるとOSが勝手に解放する。参照を捨てて、戻ったときに取り直せるようにする
+    if(s.addEventListener) s.addEventListener('release', ()=>{ if(wakeLockSentinel === s) wakeLockSentinel = null; });
+  }).catch(()=>{ wakeLockFails++; });
+}
+function releaseWakeLock(){
+  const s = wakeLockSentinel; wakeLockSentinel = null;
+  if(!s || !s.release) return;
+  try{ const p = s.release(); if(p && p.catch) p.catch(()=>{}); }catch(_){}
+}
+setInterval(()=>{
+  if(wantWakeLock()) requestWakeLockIfPlaying();
+  else if(wakeLockSentinel) releaseWakeLock();
+}, WAKE_LOCK_CHECK_MS);
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible'){ requestWakeLockIfPlaying(); return; }
+  releaseAllHeldInputs();
+  releaseWakeLock();
+});
+/* PCや一部のAndroidは、別の窓へ移っても visibilitychange が来ない。
+   blur でも同じ後始末をする(押しっぱなしの解除は何度やっても害が無い)。 */
+window.addEventListener('blur', releaseAllHeldInputs);
+// ホーム画面へ戻る・タブを捨てる(iOSはこの経路しか来ないことがある)
+window.addEventListener('pagehide', ()=>{ releaseAllHeldInputs(); releaseWakeLock(); });
 
 // ダッシュを実際に開始する(向きの決め方をホスト/ゲストで完全に同じにするため関数に分けてある。
 // マルチではホストが applyRemoteInputsLocally からこれを呼んでゲストのダッシュを再現する)。
