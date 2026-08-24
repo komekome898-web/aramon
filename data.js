@@ -417,6 +417,9 @@ const WALK_ANIM = {
   },
   narga:   { /*@narga*/
     base: { front:_loadWalk('narga_walk_f'), back:_loadWalk('narga_walk_b') },
+    ssr: [
+      { skinId:'narga_ssr', front:_loadWalk('narga_ssr_walk_f'), back:_loadWalk('narga_ssr_walk_b') }, /*@narga_ssr*/
+    ],
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -836,6 +839,7 @@ const SSR_SKIN_AURA = {
   tsukasa_ssr:    'yellow', /*@tsukasa_ssr*/
   oki_ssr:        'blue', /*@oki_ssr*/
   leaf_ssr:       'white', /*@leaf_ssr*/
+  narga_ssr:      'green', /*@narga_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1047,6 +1051,7 @@ const SSR_SKIN_TIER3 = {
   tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15, move:{ projStyle:'strawberry' } }, /*@tsukasa_ssr*/
   oki_ssr:        { name:'大将軍の矛', dmgMult:1.15 }, /*@oki_ssr*/
   leaf_ssr:       { name:'引力光線', dmgMult:1.15 }, /*@leaf_ssr*/
+  narga_ssr:      { name:'デスレーザー', dmgMult:1.15 }, /*@narga_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1195,9 +1200,9 @@ const LOBBY_BANNERS = [
   { rar:'SSR', name:'西野ピかさ', tag:'新登場・ガチャ', img:'monsters/tsukasa_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@tsukasa_ssr*/
   { rar:'SSR', name:'秦の怪鳥', tag:'新登場・ガチャ', img:'monsters/oki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@oki_ssr*/
   { rar:'SSR', name:'メカビオギドラ', tag:'新登場・ガチャ', img:'monsters/leaf_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@leaf_ssr*/
+  { rar:'SSR', name:'ゴッドエンペラー', tag:'新登場・ガチャ', img:'monsters/narga_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@narga_ssr*/
   // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
   { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ',   img:'monsters/satsuki_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
-  { rar:'SSR', name:'メタルグレイモン', tag:'新登場・ガチャ',   img:'monsters/metag_ssr.png',     size:'150%', pos:'50% 20%', open:'gacha' },
 ];
 const LOBBY_BANNER_MS = 3000;
 
@@ -1223,6 +1228,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-24', items:[
+    { t:'✨ SSRスキン「ゴッドエンペラー」が登場しました！', g:['feature','monster'] },
     { t:'🆕 新モンスター「ナーガ」が登場しました！ 技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', g:['feature','monster'] },
     { t:'💪 トレーニングを実行したあとも、選んでいたメニューが選ばれたままになりました。同じトレーニングを続けるときに毎回選び直さなくてよくなります', g:['general'] },
   ]},
@@ -3993,6 +3999,7 @@ const SSR_SKINS = {
   tsukasa_ssr:    { element:'pixie', name:'西野ピかさ', iconImg:'tsukasa_ssr', playerImg:'tsukasa_player_ssr' }, /*@tsukasa_ssr*/
   oki_ssr:        { element:'centaur', name:'秦の怪鳥', iconImg:'oki_ssr', playerImg:'oki_player_ssr' }, /*@oki_ssr*/
   leaf_ssr:       { element:'leaf', name:'メカビオギドラ', iconImg:'leaf_ssr', playerImg:'leaf_player_ssr' }, /*@leaf_ssr*/
+  narga_ssr:      { element:'narga', name:'ゴッドエンペラー', iconImg:'narga_ssr', playerImg:'narga_player_ssr' }, /*@narga_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
