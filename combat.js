@@ -213,11 +213,11 @@ function fireMove(attacker, target, move){
         ae.beamRanges = [];
         for(let i=0;i<count;i++){
           const off = count>1 ? (i/(count-1)-0.5)*spread : 0;
-          ae.beamRanges.push(raycastObstacleDistance(attacker.x, attacker.y, aimAngle+off, move.range));
+          ae.beamRanges.push(moveReachDistance(move, attacker.x, attacker.y, aimAngle+off));
         }
         ae.life = ae.telegraphTime + Math.max(...ae.beamRanges)/ae.fillSpeed + 0.25;
       } else {
-        ae.range = raycastObstacleDistance(attacker.x, attacker.y, aimAngle, move.range);
+        ae.range = moveReachDistance(move, attacker.x, attacker.y, aimAngle);
         ae.life = ae.telegraphTime + ae.range/ae.fillSpeed + 0.25;
         if(move.aoeShape==='gate'){
           // 遮蔽物で通路が短くなっても、門は必ず届く範囲の中に置く
@@ -385,6 +385,13 @@ function raySegmentCircleDist(ox,oy,angle,cx,cy,cr){
   if(t1>=0) return t1;
   if(t2>=0) return 0;
   return null;
+}
+/* 範囲技(扇・帯・ビーム)が実際に届く距離。**貫通技(`pierce`)は遮蔽物で止まらず射程いっぱいまで届く。**
+   ホスト側の判定(fireMove)とゲスト側の見た目(network.js)の両方から呼ぶので、**貫通かどうかを見るのはここだけ。**
+   2か所目に書くと、ゲストにだけ岩で止まって見える(当たり判定はホストなので当たりはする)食い違いが起きる。 */
+function moveReachDistance(move, ox, oy, angle){
+  if(move && move.pierce) return move.range;
+  return raycastObstacleDistance(ox, oy, angle, move.range);
 }
 // 指定方向に岩・火山などの障害物があれば、そこまでの距離を返す(貫通防止用)。無ければmaxRangeを返す
 function raycastObstacleDistance(ox,oy,angle,maxRange){
@@ -1945,11 +1952,19 @@ function checkPassiveStateTriggers(m){
   }
 }
 function effectiveCooldown(m, mv){
+  /* 消費ガッツと同じ理由で、**ここでスキンの専用技を解決する。** 呼び出し側が素の技を渡す所と
+     解決後を渡す所が混在しており、ソロ(素の2.2秒)とマルチのゲスト(解決後の3.0秒)で
+     超番長ボーナスのクールタイムが食い違っていた。HUDのリングも解決後を見ている。 */
+  if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, m);
   const el = ELEMENTS[m.element];
   const eff = activeStateEffects(m);
   return mv.cooldown * (el.cooldownMod || 1) * (m.trainCooldownMult || 1) * (m.mastermonCooldownMult || 1) * (eff && eff.cooldownMult || 1);
 }
 function effectiveGutsCost(m, mv){
+  /* スキンの専用技は消費ガッツも上書きする(ゴッドエンペラーの10/20/30)ので、**ここで解決する。**
+     解決しないと「撃てるかの判定は素の8、実際に引かれるのは10」になり、
+     ガッツが足りないのに撃ててしまう。fireMoveは解決後の技で呼ぶが、二重に当てても同じ値になる。 */
+  if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, m);
   const eff = activeStateEffects(m);
   const scaled = mv.gutsCost * (eff && eff.gutsCostMult || 1);
   return Math.max(1, Math.round(scaled) - (m.trainGutsCostReduction || 0));

@@ -44,7 +44,9 @@ description: 荒野モン動のモンスター追加チェックリスト・SSR/
 - **SSRだけの特典は「tier3の技名と威力」。** SRはオーラ・エフェクトのみ。この線引きを守る。
 - `SSR_SKIN_TIER3`は`dmgMult`(倍率だけ)か`move:{...}`(フィールド上書きで性能ごと専用技化。`blast`はマージ)。**`move`に`dmg`を書くときは`dmgMult`を併記しない**(二重適用)。
 - **`SSR_SKIN_TIER3`内で`auraColorHex()`を呼ばない。** `SKIN_COLORS`の宣言が後ろにありTDZでdata.js全体が落ちる。色はリテラルで書く。
+- **tier1/tier2も専用技にできる**(`SSR_SKIN_TIER3[skinId].tiers = { 1:{name,move}, 2:{…} }`)。ゴッドエンペラー(narga_ssr)だけがこの形。**tier1/2は`dmgMult`が効かない**(`ssrTier3DmgMult`はtier3専用)ので威力は`move.dmg`に絶対値で書く。**引くのは`skinMoveDef(move, skinId)`1か所**で、`tiers`を直接読まない。
 - **専用技の解決は`skinTier3Move(move, attacker)`で、呼ぶ場所は4か所**: combat.jsの`fireMove`先頭 / network.jsの`tryNonHostPlayerFireVisual` / render.jsのHUD技フィールド / ui.jsの`buildMastermonMovesHtml`。fireMove先頭で解決すれば威力・弾速・射程・爆風・ガッツ・SEはすべて解決後の値で流れる。
+- **消費ガッツとクールタイムは`effectiveGutsCost`/`effectiveCooldown`の中でも解決する。** 呼び出し側が素の技を渡す所と解決後を渡す所が混在しているため(実際に、超番長ボーナスのクールタイムがソロだけ素の2.2秒で動いていた)。
 - 色の例外フラグ: `keepBaseColor`=本体色は元のまま差し色だけオーラ色 / `keepArcColor`=本体はオーラ色でビリビリだけ既定の紫。ビリビリ2色は`arcColorsFor(tint)`に集約。**`spawnGroundBlast`には弾の`auraTint`を渡す**(渡さないとドームだけ既定色に戻る)。
 - スキン別SEは3表(combat.js): `SKIN_TIER3_SE` / `SKIN_SUMMON_SE` / `SKIN_HIT_SE`。`playSe(skinXxxSeName(entity) || '既定SE')`の形なので未定義は自動で既定。
 - スキンプレビューは歩行を再生する(`skinWalkFrameDataUrls` + `startSkinPreviewAnim`)。未ロードならnullで静止画のまま(0.35秒×6回リトライ)。閉じたら必ず`stopSkinPreviewAnim()`。

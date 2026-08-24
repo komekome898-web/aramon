@@ -1019,10 +1019,11 @@ function tryNonHostPlayerFireVisual(dt){
         ? Array.from({length:mv.beamCount||3}, (_,b)=>{
             const spread=(mv.beamSpreadDeg||40)*Math.PI/180, count=mv.beamCount||3;
             const off=count>1 ? (b/(count-1)-0.5)*spread : 0;
-            return raycastObstacleDistance(player.x, player.y, ang+off, mv.range);
+            return moveReachDistance(mv, player.x, player.y, ang+off);
           })
         : undefined;
-      const reach = beamRanges ? Math.max(...beamRanges) : raycastObstacleDistance(player.x, player.y, ang, mv.range);
+      // 貫通技(pierce)は遮蔽物で止まらない。判定は combat.js の moveReachDistance 1か所
+      const reach = beamRanges ? Math.max(...beamRanges) : moveReachDistance(mv, player.x, player.y, ang);
       return {
         id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
         angle:ang, color:effColor, range: beamRanges ? mv.range : reach, width,
