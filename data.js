@@ -1255,7 +1255,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-24', items:[
-    { t:'✨ SSRスキン「ゴッドエンペラー」が登場しました！ 3つの技がすべて専用技になります。「デスミサイル」はミサイルを3連射し、当たった場所ごとに小さな爆風が広がります。「デスブレイク」は黒い球を撃ち出し、着弾点に大きなドームの爆風が広がります。「デスレーザー」は岩や山を貫通して射程いっぱいまで届く、細く速いビームです。そのぶん消費ガッツは10・20・30と重めです', g:['feature','monster','balance'] },
+    { t:'✨ SSRスキン「ゴッドエンペラー」が登場しました！ 3つの技がすべて専用技になります。「デスミサイル」はミサイルを3連射し、当たった場所ごとに小さな爆風が広がります。「デスブレイク」は黒い球を撃ち出し、着弾点に大きなドームの爆風が広がります。「デスレーザー」は岩や山を貫通して射程いっぱいまで届く、細く速いビームで、撃つと専用の音が鳴ります。そのぶん消費ガッツは10・20・30と重めです', g:['feature','monster','balance','av'] },
     { t:'🆕 新モンスター「ナーガ」が登場しました！ 技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)。tier3「アイビーム」は岩や山を貫通して射程いっぱいまで届きます。伸びが速くなったかわりに幅は細くなりました(120→80)', g:['feature','monster','balance'] },
     { t:'💪 トレーニングを実行したあとも、選んでいたメニューが選ばれたままになりました。同じトレーニングを続けるときに毎回選び直さなくてよくなります', g:['general'] },
   ]},
@@ -4117,6 +4117,7 @@ const SKIN_MEDIA = {
   narga_ssr: { /*@narga_ssr*/
     promote: { video:'video/narga_ssr_promote', audio:'audio/narga_ssr_promote_audio.m4a', safetyMs:14605, bgmOnReveal:'lastBattle' },
     bgm: { battle:'audio/bgm_narga_ssr_battle.m4a', final5:'audio/bgm_narga_ssr_final5.m4a', lastBattle:'audio/bgm_narga_ssr_lastbattle.m4a' },
+    se: { tier3:'audio/se_narga_ssr_tier3.mp3' },   // デスレーザーの専用SE
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
