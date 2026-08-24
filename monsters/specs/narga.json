@@ -6,7 +6,7 @@
   "speed": 185,
   "hp": 130,
   "trait": "narga",
-  "traitDesc": "技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)",
+  "traitDesc": "技の威力が高い。技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)",
   "traitEffects": {
     "poisonSec": 10
   },

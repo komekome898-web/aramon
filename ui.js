@@ -16,7 +16,8 @@ const TRAIT_DESC = {
   hum:        '技の弾速が速く、射程が短い', /*@hum*/
   ogre:       '与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', /*@ogre*/
   cent:       '技の射程が長く、弾速が速い', /*@centaur*/
-  narga:      '技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', /*@narga*/
+  // 「技の威力が高い」の効きは SIGNATURE_MOVES.narga の数字そのもの(倍率ではない)。data.js のコメント参照
+  narga:      '技の威力が高い。技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', /*@narga*/
   // <<AUTO:TRAIT_DESC>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 function stateTriggerText(sc){
@@ -646,7 +647,7 @@ function buildHowtoLists(){
       cards.push(`
         <div class="howto-item-card">
           <div class="howto-item-icon" style="background:${hi.color};">🧴</div>
-          <div class="howto-item-text"><div class="howto-item-name">${hi.name}</div><div class="howto-item-effect">HP+${hi.heal}</div></div>
+          <div class="howto-item-text"><div class="howto-item-name">${hi.name}</div><div class="howto-item-effect">最大HPの${healItemPctText(hi)}回復</div></div>
         </div>`);
     });
     cards.push(`
@@ -1295,9 +1296,11 @@ function refreshLobby(){
    そこでここで実測して CSS変数へ渡す。行の高さ・すき間の値はCSS側が正で、
    ここは読むだけにしてある(同じ数字を2か所に書かない)。 */
 const LOBBY_MENU_COLS = 2;   // 1組の横並び数。組が入りきらなくなると右へ2列ずつ増える
+let lobbyMenuLastSig = '';   // 前回書いた結果(同じなら書かない。watchLobbyMenuBox の無限ループ防止)
 function updateLobbyMenuRows(){
   const grid = document.getElementById('lobbyMenuGrid');
   if(!grid) return;
+  watchLobbyMenuBox(grid);
   const cs = getComputedStyle(grid);
   // padding を除いた「実際に行が置ける高さ」で数える(clientHeight は padding 込み)
   const h = grid.clientHeight - (parseFloat(cs.paddingTop)||0) - (parseFloat(cs.paddingBottom)||0);
@@ -1312,6 +1315,7 @@ function updateLobbyMenuRows(){
        いま分かっている行数のまま升目だけ配り直して行の食い違いを消し、
        測れるようになったら測り直す。 */
     placeLobbyMenuTiles(grid, vis, lobbyMenuCurrentRows(grid));
+    lobbyMenuLastSig = '';   // 仮置きなので、測れるようになったら必ず組み直す
     scheduleLobbyMenuRetry();
     return;
   }
@@ -1330,7 +1334,6 @@ function updateLobbyMenuRows(){
      rows は「下限の高さで入る数」なので tileH >= --tap-pick が必ず成り立つ。
      上限も設ける(縦が余る画面でタイルだけ間延びして字が巨大になるのを防ぐ)。 */
   const tileH = Math.min((h - (rows - 1) * gap) / rows, num('--tile-h-max', 64));
-  grid.style.setProperty('--tile-h', tileH.toFixed(2) + 'px');
   /* 1列の幅。**左メニューが広がってよい上限**を決めておき、列が増えたら幅を詰める。
      こうしないと、項目が増えたぶんだけ左が太り、中央が幅0まで潰れて中の文字が壊れる
      (2026-08-15 実測: 中央が0pxになり案内文が高さ378pxに化けた)。 */
@@ -1339,7 +1342,18 @@ function updateLobbyMenuRows(){
   const ideal = Math.min(Math.max(layoutW * num('--menu-col-w-share', 0.12), num('--menu-col-w-min', 72)),
                          num('--menu-col-w-max', 96));
   const roomy = (layoutW * num('--menu-w-share', 0.38) - (cols - 1) * colGap) / cols;
-  grid.style.setProperty('--menu-col-w', Math.max(28, Math.min(ideal, roomy)).toFixed(2) + 'px');
+  const colW = Math.max(28, Math.min(ideal, roomy));
+  /* 【書く前に、前回と同じ結果かを見る】見張り(下の watchLobbyMenuBox)から何度も呼ばれるので、
+     同じ結果なら**1バイトも書かない**。書けばまた見張りが反応して呼ばれ、無限に回る。 */
+  const sig = `${vis.length}:${rows}:${tileH.toFixed(2)}:${colW.toFixed(2)}`;
+  if(sig === lobbyMenuLastSig) return;
+  lobbyMenuLastSig = sig;
+  /* 組み直したら、**次のフレームでもう一度測る。** 画面を出したその場で測ると、
+     まだセーフエリアや画面の高さが最終値になっていないことがある(実機のみ)。
+     結果が同じならこの1行の上で戻るので、余計な書き込みは起きない。 */
+  if(typeof requestAnimationFrame==='function') requestAnimationFrame(()=> updateLobbyMenuRows());
+  grid.style.setProperty('--tile-h', tileH.toFixed(2) + 'px');
+  grid.style.setProperty('--menu-col-w', colW.toFixed(2) + 'px');
   /* 升目を1つずつ指定する。**DOMの並び順は画面で読む順(左→右、次の行)のまま**にして、
      入る行数を超えた組は右となりの2列へ回す。こうすると
        ・縦には決して伸びない(=見切れない。ロビーはスクロールさせない決まり)
@@ -1381,6 +1395,33 @@ function scheduleLobbyMenuRetry(){
 function cancelLobbyMenuRetry(){
   if(lobbyMenuRetryTimer) clearTimeout(lobbyMenuRetryTimer);
   lobbyMenuRetryTimer = 0; lobbyMenuRetryLeft = 0;
+}
+/* 【左メニューの箱を見張る】測り直しのタイマーだけでは足りなかった。
+   ロビーが**隠れている間**に組もうとすると高さが0で測れず、仮の行数(4行)のまま置かれる。
+   タイトル画面は最低1.9秒出るのに測り直しは1.2秒(150ms×8)で尽きるので、
+   起動の仕方によっては**4行のまま確定**し、10個のタイルが右の2列へあふれる。
+   すると左メニューが倍の幅になり、中央の列が細くなってタイトル・案内文が「…」で切れる
+   (2026-08-24 実機報告「起動時に表示が乱れることがある」)。
+
+   箱の大きさが変わった瞬間(ロビーが見えた・向きが変わった・セーフエリアが入った)と、
+   タイルが増減した瞬間(レイドの開催が決まって出た等)に組み直せば、
+   「測れないうちに決めてしまった」型の事故がまとめて消える。
+   **同じ結果なら何も書かない**ので、自分の書き込みで呼び戻されて回り続けることはない。 */
+let lobbyMenuBoxWatched = false;
+function watchLobbyMenuBox(grid){
+  if(lobbyMenuBoxWatched || !grid) return;
+  lobbyMenuBoxWatched = true;
+  const again = ()=> updateLobbyMenuRows();
+  if(typeof ResizeObserver === 'function'){
+    try{ new ResizeObserver(again).observe(grid); }catch(e){}
+  }
+  if(typeof MutationObserver === 'function'){
+    // タイルの出し入れは class の付け外し(hidden)なので、属性と子の増減を見る
+    try{
+      new MutationObserver(again).observe(grid, { childList:true, subtree:true,
+        attributes:true, attributeFilter:['class','hidden'] });
+    }catch(e){}
+  }
 }
 
 
@@ -4968,6 +5009,7 @@ document.getElementById('lobbyCancelBtn').addEventListener('click', async ()=>{
    (チーム戦のソロ出撃は2026-08-19に廃止。部屋を使うマルチのチーム戦はnetwork.jsのbeginMultiplayerMatchInner側)。
    opts.tutorial だけは今も使う(チュートリアルの練習試合の入口を兼ねる)。 */
 function startGame(opts){
+  resetMatchFinishAnim();       // 前の試合の決着演出(と待ちのタイマー)を持ち越さない
   game.trainingRange = false;   // 射撃訓練場の状態を持ち越さない
   /* チュートリアルの練習試合。体数・マップの広さ・安置の速さ・botの強さがこの1つで決まる。
      ロビーの「出撃」からも入るので、チュートリアル側の申告(tutorialWantsShortMatch)も見る。 */
@@ -6018,7 +6060,19 @@ const MATCH_FINISH_ANIM_MS = 3000;
 // 演出中は試合を止める。時刻で持つのは、万一 showResultNow まで進めなかった場合でも
 // 3秒後に必ず自動で解除され、操作不能のまま固まらないようにするため(保険)。
 let matchFinishFreezeUntil = 0;
+let matchFinishTimer = 0;
 function matchFinishFreezeActive(){ return performance.now() < matchFinishFreezeUntil; }
+/* 次の試合を始めるときは、前の試合の演出を必ず畳む。**待ちに入れたタイマーも消す。**
+   残っていると、新しい試合の最中に前の試合のリザルトへ落ちる
+   (2026-08-24 実機報告「もう一度の次の試合で前の勝利演出が流れて終わる」の防波堤)。 */
+function resetMatchFinishAnim(){
+  if(matchFinishTimer){ clearTimeout(matchFinishTimer); matchFinishTimer = 0; }
+  matchFinishFreezeUntil = 0;
+  const ov = document.getElementById('matchFinishOverlay');
+  if(ov) ov.className = 'hidden';
+  const host = document.getElementById('matchFinishMonster');
+  if(host) host.innerHTML = '';
+}
 // 演出に出す「こちらを向いた姿」。装備スキン(SSR/色スキン)があればその見た目にする
 function matchFinishMonsterImgTag(){
   const ent = (typeof player!=='undefined') ? player : null;
@@ -6047,7 +6101,8 @@ function showResult(isWin, placement){
   ov.className = isWin ? 'mf-win' : 'mf-lose';   // hiddenを外しつつ勝敗クラスを付ける
   // 前回のアニメーションが残っていると再生されないので、強制的に作り直す
   void ov.offsetWidth;
-  setTimeout(()=>{
+  matchFinishTimer = setTimeout(()=>{
+    matchFinishTimer = 0;
     ov.className = 'hidden';
     host.innerHTML = '';
     matchFinishFreezeUntil = 0;

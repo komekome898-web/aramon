@@ -2262,14 +2262,15 @@ function updateLootPickups(){
         if(it.kind==='heal'){
           const hi = HEAL_ITEMS[it.type];
           if(e.hp >= e.maxHp){
-            const boost = Math.round(hi.heal * 0.2);
+            const boost = hi.maxBoost;
             e.maxHp += boost;
             e.hp += boost;
             spawnDmgText(e.x, e.y, e.z, '上限+'+boost, '#ffe06b');
             lootToast(e, `${hi.name}：HP上限+${boost}`);
             consumed = true;
           } else {
-            const healed = Math.min(hi.heal, e.maxHp-e.hp);
+            // 回復量は最大HPの割合(healItemAmount 1か所で出す)
+            const healed = Math.min(healItemAmount(hi, e), e.maxHp-e.hp);
             e.hp += healed;
             spawnDmgText(e.x, e.y, e.z, '+'+Math.round(healed), '#7fffa0');
             lootToast(e, `${hi.name} で HP+${Math.round(healed)}`);

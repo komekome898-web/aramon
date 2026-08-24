@@ -475,6 +475,7 @@ async function beginMultiplayerMatchInner(){
   document.getElementById('resultScreen').classList.add('hidden');
 
   entities=[]; projectiles=[]; lootItems=[]; particles=[]; areaEffects=[]; pendingAoeCasts=[]; nextId=1;
+  if(typeof resetMatchFinishAnim==='function') resetMatchFinishAnim();  // 前の試合の決着演出と待ちのタイマーを畳む
   resetTrainCards();   // トレーニングカードの表示と待ち行列を必ず空にする(前の試合ぶんを持ち越さない)
   matchTime=0; game.over=false; game.tipTimer=7; hostSpectating=false; spectateTargetId=null; lastGutsWarnAt=-Infinity;
   camState.yaw = 0; camState.pitch = 0.27;
@@ -486,7 +487,11 @@ async function beginMultiplayerMatchInner(){
   joyKnobEl.style.transform='translate(0,0)';
   remoteInputs = {}; processedHitKeys.clear(); authPublishTimer=0;
   pendingRemoteFireEvents.length = 0; processedFireEventKeys.clear();
-  processedLootEventKeys.clear(); processedRoomEventKeys.clear();
+  processedLootEventKeys.clear();
+  /* **processedRoomEventKeys は消さない。** ここには matchEnd(試合を終わらせるイベント)が
+     混ざっていて、消してしまうと前の試合のものを「初めて見た」として処理してしまう。
+     ホスト側で置き場を空にしてはいるが、消し損ねた場合の最後の砦としてこちらも残す。
+     キーは部屋の中で重複しないので、残っていても誤って弾くことはない。 */
   // 補間/ラグ補正の状態をリセット
   guestSnapBuf = []; guestCurViewSeq = 0; hostPosHistory = []; authPublishSeq = 0; lastPubPos = {};
   hostClockOffset = null; hostForceFullNext = false; interpDelayMs = INTERP_DELAY_MS;
@@ -612,6 +617,10 @@ async function beginMultiplayerMatchInner(){
 
   // ホストは生成した障害物一式を含めてシード等を配信する(ゲストはこれを正とする)
   if(netState.isHost){
+    /* 【シードを配る前に】前の試合の使い捨てイベントを消す。ゲストはシードが載ってから
+       購読を貼るので、ここで消しておけば全員が空の状態で2試合目を始められる。
+       残っていると、貼った瞬間に前の試合の matchEnd が流れてその場で試合が終わる。 */
+    if(window.__aramonClearRoomTransient) await window.__aramonClearRoomTransient(netState.roomId);
     const worldData = packWorldForSync();
     console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
     await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize, matchSub);
@@ -765,6 +774,9 @@ async function beginMultiplayerMatchInner(){
     });
   }
 
+  /* 前の試合ぶんの購読を畳んでから貼り直す(「もう一度」で同じ部屋のまま2試合目に入るため)。
+     畳まないと同じ購読が積み上がり、試合を重ねるほど同じイベントが何重にも届く。 */
+  if(window.__aramonClearMatchListeners) window.__aramonClearMatchListeners();
   window.__aramonWatchInputs(netState.roomId, (players)=>{
     netState.humanPlayers = players||{};
     for(const id in players){

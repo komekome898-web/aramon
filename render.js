@@ -1384,7 +1384,8 @@ function drawLootItem(it,p){
     ctx.shadowBlur=0;
     if(dist(it,player)<160){
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
-      ctx.fillText(`${hi.name} (+${hi.heal})`, 0, -13*sz);
+      // 回復量は最大HPの割合なので、実際に自分が回復する数値を出す(見た目と結果を合わせる)
+      ctx.fillText(`${hi.name} (+${healItemAmount(hi, player)})`, 0, -13*sz);
     }
   } else if(it.kind==='ticket'){
     const bob = Math.sin(matchTime*2.4+it.bob)*2.5;

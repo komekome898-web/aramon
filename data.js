@@ -801,11 +801,15 @@ const SIGNATURE_MOVES = {
        (オーラ相性が green なので黒にしない)。 */
     { name:'メテオドライブ', tier:3, color:'#7fb236', range:1620, dmg:22, cooldown:2.2, gutsCost:24, projSpeed:1380, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'voidOrb', blast:{ radius:325, dmg:26, expandTime:0.5, color:'#7fb236' } }
   ],
+  /* ナーガの特性「技の威力が高い」は、**倍率ではなくここの数字そのもの**で効かせている
+     (ガリの射程・ハムの弾速と同じ形。エンジンに分岐を足さない)。
+     ELEMENTS の dmgDealtMod にすると、ナーガのスキンであるゴッドエンペラーにも同じ倍率が乗り、
+     「素はゴッドエンペラーの0.8倍」という関係が崩れる。**威力を動かすときは両方を見ること。** */
   narga:   [ /*@narga*/
-    { name:'真空弾', tier:1, color:'#7a2fc6', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
-    { name:'連続真空弾', tier:2, color:'#7a2fc6', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
+    { name:'真空弾', tier:1, color:'#7a2fc6', range:700, dmg:38, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
+    { name:'連続真空弾', tier:2, color:'#7a2fc6', range:1400, dmg:20, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
     // pierce: 遮蔽物で止まらず射程いっぱいまで貫く(判定は combat.js の moveReachDistance 1か所)
-    { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1900, aoeShape:'rect', aoeStyle:'sakura', rectWidth:80, pierce:true }
+    { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:83, cooldown:2.1, gutsCost:24, projSpeed:1900, aoeShape:'rect', aoeStyle:'sakura', rectWidth:80, pierce:true }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -1256,7 +1260,10 @@ const CHANGELOG_TAGS = [
 const UPDATE_HISTORY = [
   { date:'2026-08-24', items:[
     { t:'✨ SSRスキン「ゴッドエンペラー」が登場しました！ 3つの技がすべて専用技になります。「デスミサイル」はミサイルを3連射し、当たった場所ごとに小さな爆風が広がります。「デスブレイク」は黒い球を撃ち出し、着弾点に大きなドームの爆風が広がります。「デスレーザー」は岩や山を貫通して射程いっぱいまで届く、細く速いビームで、撃つと専用の音が鳴ります。そのぶん消費ガッツは10・20・30と重めです', g:['feature','monster','balance','av'] },
-    { t:'🆕 新モンスター「ナーガ」が登場しました！ 技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)。tier3「アイビーム」は岩や山を貫通して射程いっぱいまで届きます。伸びが速くなったかわりに幅は細くなりました(120→80)', g:['feature','monster','balance'] },
+    { t:'🆕 新モンスター「ナーガ」が登場しました！ 特性は「技の威力が高い」で、3つの技すべてが他のモンスターより高い威力です(真空弾38・連続真空弾20×3・アイビーム83)。技が当たると相手をどく状態にします(10秒間1秒毎に5ダメージ、どくではHPは1残る)。tier3「アイビーム」は岩や山を貫通して射程いっぱいまで届き、伸びが速いかわりに幅は細めです', g:['feature','monster','balance'] },
+    { t:'🧴 ガロエオイルの回復量が「最大HPの割合」になりました。大60%・中40%・小20%です。これまでは固定の量だったので、育ったマスモンほど拾っても効かなくなっていました', g:['balance','general'] },
+    { t:'起動したときにロビーの並びが崩れ、ボタンが右へあふれて中央の文字が切れることがあったのを直しました', g:['fix','general'] },
+    { t:'マルチで「もう一度」を押した次の試合が、前の試合の勝敗表示が出たまますぐ終わってしまうことがあったのを直しました', g:['fix','multi'] },
     { t:'💪 トレーニングを実行したあとも、選んでいたメニューが選ばれたままになりました。同じトレーニングを続けるときに毎回選び直さなくてよくなります', g:['general'] },
   ]},
   { date:'2026-08-23', items:[
@@ -1708,11 +1715,22 @@ const LOOT_MIX_NORMAL = { heal:0.35, ticket:0.62, guts:0.92 };
 const LOOT_MIX_RAID   = { heal:0.24, ticket:0.32, guts:0.95 };
 function lootMix(){ return (typeof game!=='undefined' && game && game.raid) ? LOOT_MIX_RAID : LOOT_MIX_NORMAL; }
 
+/* 回復量は**最大HPの割合**(発注者指定・2026-08-24)。固定値だと育ったマスモンほど効かなくなり、
+   終盤ほど拾う意味が薄れていた。maxBoost は「HPが満タンのときに代わりに上がる上限」で、
+   こちらは固定のまま(割合にすると拾うたびに上限が増え、その増えた上限にまた割合が乗って際限なく伸びる)。
+   実際の回復量は healItemAmount() 1か所で出す。表示も同じ関数を通すこと。 */
 const HEAL_ITEMS = {
-  oilS: { name:'小ガロエオイル', heal:20, color:'#9b6b2f', accent:'#e8c873', size:0.8  },
-  oilM: { name:'中ガロエオイル', heal:45, color:'#b9802f', accent:'#f0d27a', size:1.05 },
-  oilL: { name:'大ガロエオイル', heal:80, color:'#d99a2b', accent:'#ffe28a', size:1.35 },
+  oilS: { name:'小ガロエオイル', healPct:0.2, maxBoost:4,  color:'#9b6b2f', accent:'#e8c873', size:0.8  },
+  oilM: { name:'中ガロエオイル', healPct:0.4, maxBoost:9,  color:'#b9802f', accent:'#f0d27a', size:1.05 },
+  oilL: { name:'大ガロエオイル', healPct:0.6, maxBoost:16, color:'#d99a2b', accent:'#ffe28a', size:1.35 },
 };
+// このアイテムがこのモンスターを回復する量(最大HPの割合。下限1)
+function healItemAmount(hi, ent){
+  const maxHp = (ent && ent.maxHp) || 100;
+  return Math.max(1, Math.round(maxHp * (hi.healPct || 0)));
+}
+// 一覧・拾い物の表示用(相手が決まっていないので割合のまま出す)
+function healItemPctText(hi){ return Math.round((hi.healPct || 0) * 100) + '%'; }
 const HEAL_TYPES = Object.keys(HEAL_ITEMS);
 
 /* ===== トレーニングアイテム(出現率は低め=たまに来るご褒美) =====
