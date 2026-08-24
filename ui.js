@@ -387,11 +387,15 @@ function caroStatDescHtml(){
   ).join('')}</div>`;
 }
 // STATUSセクション。モンスター一覧とマスモン選択で同じ見た目にするため共用する
-function caroStatusSecHtml(mm, apt, preview, note){
-  return `<div class="ml-sec ml-sec-status">
+// opts.inlineDesc … 効果を各行に出し、下の説明2行を省く(トレーニング画面)
+// opts.footHtml   … 説明の代わりにセクション下部へ置く中身(トレ実行ボタン)
+function caroStatusSecHtml(mm, apt, preview, note, opts){
+  const o = opts || {};
+  return `<div class="ml-sec ml-sec-status${o.inlineDesc?' has-eff':''}">
     <div class="ml-sec-title">STATUS<span class="ml-sec-note">${note}</span></div>
-    ${buildMastermonStatsColHtml(mm, apt || {}, preview)}
-    ${caroStatDescHtml()}
+    ${buildMastermonStatsColHtml(mm, apt || {}, preview, o)}
+    ${o.inlineDesc ? '' : caroStatDescHtml()}
+    ${o.footHtml || ''}
   </div>`;
 }
 // 名前の横に置くオーラのマーク(●をオーラ色で。絵文字だと色が固定なので自前で描く)
@@ -8833,11 +8837,16 @@ function renderMastermonDetail(key){
   const savedContentScroll = prevContent ? prevContent.scrollTop : 0;
 
   const preview = (mastermonDetailTab==='training' && mastermonSelectedTraining) ? previewMastermonTraining(mm, mastermonSelectedTraining) : null;
+  const isTrainTab = (mastermonDetailTab==='training');
+  // トレーニング画面は効果を各行へ入れて説明2行を省き、空いた下部へ実行ボタンを置く
+  const trainExecBtnHtml = isTrainTab ? `
+      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-stat-exec-btn${(!mastermonSelectedTraining||mm.tickets<=0)?' is-blocked-btn':''}">トレ実行🎫${mm.tickets}枚</button>` : '';
   // 着せ替え画面のみステータス列を表示しない(プレビューを大きく取るため)。
   // それ以外はモンスター一覧と同じSTATUSセクション(バー+説明2行)にそろえる
   // 着せ替え(プレビューを大きく取る)と詳細情報(グリッド内にSTATUSを含む)は左の列を出さない
   const statsColHtml = (mastermonDetailTab==='dressup' || mastermonDetailTab==='info')
-    ? '' : caroStatusSecHtml(mm, apt, preview, '育成後 / 適正');
+    ? '' : caroStatusSecHtml(mm, apt, preview, isTrainTab ? '適正 / 効果' : '育成後 / 適正',
+        isTrainTab ? { inlineDesc:true, footHtml:`<div class="ml-stat-foot">${trainExecBtnHtml}</div>` } : null);
 
   const TAB_TITLES = { info:'詳細情報', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
   let contentHtml;
@@ -8847,14 +8856,11 @@ function renderMastermonDetail(key){
   else if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
   else contentHtml = buildMastermonMenuHtml(mm);  // 初期はメニュー(Lv100なら転生も並ぶ)
 
-  // トレーニング画面では実行ボタンをヘッダー右に置く。ヘッダーはステータスの上まで
-  // 全幅で伸ばす(モンスター一覧の画面と同じ形)。タブを開いているときだけ戻るボタンを出す
-  const trainExecBtnHtml = mastermonDetailTab==='training' ? `
-      <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-header-exec-btn${(!mastermonSelectedTraining||mm.tickets<=0)?' is-blocked-btn':''}">トレ実行🎫${mm.tickets}枚</button>` : '';
+  // ヘッダーはステータスの上まで全幅で伸ばす(モンスター一覧の画面と同じ形)。
+  // タブを開いているときだけ戻るボタンを出す
   const headerHtml = `
     <div class="mm-subview-header">
       <div class="mm-subview-title">${mm.name}<span class="mm-subview-sub">Lv.${mm.level}${mastermonDetailTab?` ／ ${TAB_TITLES[mastermonDetailTab]}`:''}</span></div>
-      ${trainExecBtnHtml}
       ${mastermonDetailTab ? '<button class="mm-back-btn">← 戻る</button>' : ''}
     </div>`;
 
@@ -9033,7 +9039,9 @@ function buildMastermonSkinHtml(key){
 }
 
 // ステータス(ライフ・ちから等)バー: メニュー/詳細情報/技一覧/トレーニングの全画面で共通表示
-function buildMastermonStatsColHtml(mm, apt, preview){
+// opts.inlineDesc を付けると、適正バッジの右に効果(STAT_SHORT_DESC)を並べる
+function buildMastermonStatsColHtml(mm, apt, preview, opts){
+  const inlineDesc = !!(opts && opts.inlineDesc);
   const cap = mastermonStatCap(mm);   // 転生の回数ぶん上限が上がり、バーもそこまで伸びる
   const statsHtml = MASTERMON_STATS.map(s=>{
     const v = mm.stats[s.key];
@@ -9045,10 +9053,12 @@ function buildMastermonStatsColHtml(mm, apt, preview){
     const effDelta = resultVal - v;
     const deltaHtml = effDelta ? `<span class="mm-stat-delta ${effDelta>0?'up':'down'}">(${effDelta>0?'+':''}${effDelta})</span>` : '';
     const aptGrade = apt[s.key];
+    const effHtml = inlineDesc ? `<span class="mm-stat-eff">${STAT_SHORT_DESC[s.key]}</span>` : '';
     return `
       <div class="mm-stat-row">
         <div class="mm-stat-toprow">
           <span class="mm-stat-name">${s.label}<span class="mm-stat-apt-badge apt-${aptitudeCssKey(aptGrade)}">${aptGrade}</span></span>
+          ${effHtml}
           <span class="mm-stat-val">${resultVal}${deltaHtml}</span>
         </div>
         <div class="mm-stat-track"><div class="mm-stat-fill" style="width:${pct}%; background:${s.color};"></div></div>
