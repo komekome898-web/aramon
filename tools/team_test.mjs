@@ -1,15 +1,20 @@
 /* チーム戦の土台(teamId・ダウン→蘇生・全滅・チーム順位・bot小隊行動)の自動検証。
-   ヘッドレスChromiumでゲーム本体(index.html)をそのまま読み込み、ソロ経路で
-   試合を組み立てて確認する(real3d_shot.mjs と同じ配信サーバ+起動フラグ)。
+   ヘッドレスChromiumでゲーム本体(index.html)をそのまま読み込んで確かめる。
    ゲームの遊び心地の確認ではない(それは発注者がiPhone実機で行う)。
+
+   【試合の組み方】**マルチの組み立て(beginMultiplayerMatchInner)を直接呼ぶ。**
+   通信の入口(window.__aramon*)だけをその場のスタブへ差し替える ―― ghost_team_test.mjs と同じ流儀。
+   以前は startGame({teamSize,teamCount}) というソロのチーム戦の入口を使っていたが、
+   その入口は2026-08-19に廃止された(チーム戦は部屋を作って遊ぶ形に一本化)。
+   入口が消えたあともこのテストは古い呼び方のままで、チームが1つも作られず落ちていた。
 
    使い方: node tools/team_test.mjs
    確認内容:
      1. チーム割当・チームスポーンが決定的(シード付き関数が同じ入力で同じ出力)
-     2. ソロのチーム戦(3人1組×4チーム=12体): 割当規則・隣接スポーン・
+     2. チーム戦(3人1組×4チーム=12体): 割当規則・隣接スポーン・
         同チームへのダメージ0・ダウン→botの自動蘇生・出血死・
         1チーム残しの決着とチーム順位
-     3. 個人戦(従来の30体)の挙動が変わっていないこと
+     3. 個人戦(ソロの30体)の挙動が変わっていないこと
      4. 3人1組×20チーム=60体で60秒回してJSエラーゼロ+update()の所要時間計測 */
 import fs from 'fs';
 import http from 'http';
@@ -58,7 +63,8 @@ page.on('console', m=>{ if(m.type()==='error') resourceNoise.push('console: '+m.
 
 await page.goto(`${ORIGIN}/index.html`, { waitUntil:'load' });
 await page.waitForFunction(()=> typeof startGame==='function' && typeof update==='function'
-  && typeof assignTeams==='function' && typeof killEntity==='function', null, { timeout:30000 });
+  && typeof assignTeams==='function' && typeof killEntity==='function'
+  && typeof beginMultiplayerMatchInner==='function', null, { timeout:30000 });
 
 const results = {};
 
@@ -67,20 +73,59 @@ const results = {};
 await page.evaluate(()=>{
   window.__resultLog = [];
   window.showResult = (isWin, placement)=>{ window.__resultLog.push({ isWin:!!isWin, placement }); game.over = true; game.started = false; };
-  window.__setupSolo = (opts)=>{
+  /* 毎フレームのループは止める。**こちらが update(1/60) を刻む**ので、
+     裏でループにも回されると同じフレームが二度進んで結果が揺れる。 */
+  window.requestAnimationFrame = function(){ return 0; };
+  for(const k of ['playSe','playBgm','stopBgm','playMoveSe']){ if(typeof window[k]==='function') window[k]=function(){}; }
+  /* 通信の入口をその場のスタブへ差し替える(実際の通信はしない)。
+     **試合の組み立てそのものは本物**(beginMultiplayerMatchInner)なので、
+     チーム割当・スポーン・bot生成は実際の試合と同じ道を通る。 */
+  const noop = ()=>{};
+  const asyncNoop = async ()=>{};
+  window.__aramonWaitForRoomSeed = async ()=> null;
+  // 購読(貼るだけ。何も流れてこない)
+  ['__aramonWatchInputs','__aramonWatchEvents','__aramonWatchHitsAsHost','__aramonWatchFireEvents',
+   '__aramonWatchAuthState','__aramonWatchShotEvents','__aramonWatchLootEvents',
+   '__aramonClearMatchListeners','__aramonCleanupLobbyEntry'].forEach(k=> window[k]=noop);
+  // 送信(試合中に毎フレーム呼ばれるものを含む。**1つでも欠けると試合の途中で落ちる**)
+  ['__aramonSetRoomSeed','__aramonClearRoomTransient','__aramonPublishState','__aramonPublishAuthState',
+   '__aramonPushEvent','__aramonPushShotEvent','__aramonPushLootEvent','__aramonReportHit',
+   '__aramonSendFireEvent','__aramonSendInput','__aramonSendRecon','__aramonAddRaidDamage',
+   '__aramonLogMatch','__aramonSetRoomStatus'].forEach(k=> window[k]=asyncNoop);
+  window.NetTransport = null;
+  /* チーム戦を1つ組む。人間は自分1人で、残りはbotが埋める(部屋の定員=teamSize×teamCount)。
+     **チーム戦の入口はマルチだけ**なので、ここもマルチの組み立てを呼ぶ。 */
+  window.__setupTeam = async (teamSize, teamCount)=>{
     game.selectedElement = 'fire';
     game.selectedMap = 'wild';
     game.realMapMode = false;
     game.selectedMastermonKey = null;
     window.__resultLog = [];
-    startGame(opts);
+    netState.mode = 'multi'; netState.roomId = 'TEST'; netState.isHost = true;
+    netState.myPlayerId = 'aaaa'; netState.hostId = 'aaaa';
+    netState.capacity = teamSize * teamCount; netState.teamSize = teamSize;
+    netState.sub = null; netState.raid = false;
+    netState.humanPlayers = { aaaa:{ name:'テスト', element:'fire', skin:null, mm:null, mmLevel:null } };
+    game.started = false; game.over = false; matchBeginning = false; netState.matchStarting = false;
+    await beginMultiplayerMatchInner();
     introState.active = false;   // 召喚演出は飛ばして即プレイ状態にする
+  };
+  // 個人戦(ソロ)。こちらは従来どおり startGame() をそのまま呼ぶ
+  window.__setupSolo = ()=>{
+    game.selectedElement = 'fire';
+    game.selectedMap = 'wild';
+    game.realMapMode = false;
+    game.selectedMastermonKey = null;
+    window.__resultLog = [];
+    netState.mode = 'solo';
+    startGame();
+    introState.active = false;
   };
 });
 
 /* ===== 1. 決定性: シード付きチームスポーンと割当規則 ===== */
-results.determinism = await page.evaluate(()=>{
-  window.__setupSolo({ teamSize:3, teamCount:4 });   // WORLD/rocks等を実試合と同じ状態にしてから測る
+results.determinism = await page.evaluate(async ()=>{
+  await window.__setupTeam(3, 4);   // WORLD/rocks等を実試合と同じ状態にしてから測る
   const a = seededPickTeamSpawnPointsBatch(makeSeededRng(20260814), 20, 3);
   const b = seededPickTeamSpawnPointsBatch(makeSeededRng(20260814), 20, 3);
   const c = seededPickTeamSpawnPointsBatch(makeSeededRng(999), 20, 3);
@@ -92,8 +137,8 @@ results.determinism = await page.evaluate(()=>{
 });
 
 /* ===== 2a. チーム割当・隣接スポーン(3人1組×4チーム=12体) ===== */
-results.teamAssign = await page.evaluate(()=>{
-  window.__setupSolo({ teamSize:3, teamCount:4 });
+results.teamAssign = await page.evaluate(async ()=>{
+  await window.__setupTeam(3, 4);
   const byTeam = new Map();
   for(const e of entities){
     if(!byTeam.has(e.teamId)) byTeam.set(e.teamId, []);
@@ -133,8 +178,8 @@ results.friendlyFire = await page.evaluate(()=>{
 });
 
 /* ===== 2c. ダウン→botの自動蘇生 ===== */
-results.downRevive = await page.evaluate(()=>{
-  window.__setupSolo({ teamSize:3, teamCount:4 });
+results.downRevive = await page.evaluate(async ()=>{
+  await window.__setupTeam(3, 4);
   const cx = WORLD.w/2, cy = WORLD.h/2;
   const team2 = entities.filter(e=>e.teamId===2);
   const [m1, m2, m3] = team2;
@@ -166,8 +211,8 @@ results.downRevive = await page.evaluate(()=>{
 });
 
 /* ===== 2d. 出血死(蘇生が来なければタイマー切れで死亡) ===== */
-results.bleedOut = await page.evaluate(()=>{
-  window.__setupSolo({ teamSize:3, teamCount:4 });
+results.bleedOut = await page.evaluate(async ()=>{
+  await window.__setupTeam(3, 4);
   const team1 = entities.filter(e=>e.teamId===1);
   const victim = team1[0];
   // 仲間を蘇生探索距離(1600)の外へ置いて蘇生させない
@@ -183,8 +228,8 @@ results.bleedOut = await page.evaluate(()=>{
 });
 
 /* ===== 2e. 決着: 1チーム残しで勝敗・チーム順位(全滅チームは同順位) ===== */
-results.teamWin = await page.evaluate(()=>{
-  window.__setupSolo({ teamSize:3, teamCount:4 });
+results.teamWin = await page.evaluate(async ()=>{
+  await window.__setupTeam(3, 4);
   const wipeTeam = (tid)=>{
     for(const m of entities.filter(e=>e.teamId===tid)){
       for(let k=0;k<3 && m.alive;k++) killEntity(m, player);   // 1回目はダウン、2回目でとどめ
@@ -207,7 +252,7 @@ results.teamWin = await page.evaluate(()=>{
 
 /* ===== 3. 個人戦(現行)の無変化確認 ===== */
 results.soloRegression = await page.evaluate(()=>{
-  window.__setupSolo();       // 引数なし=従来どおり
+  window.__setupSolo();       // ソロの個人戦(従来どおり)
   const base = {
     entityCount: entities.length,
     teamSize: game.teamSize,
@@ -236,8 +281,8 @@ results.soloRegression = await page.evaluate(()=>{
 });
 
 /* ===== 4. 60体(3人1組×20チーム)で60秒: JSエラーと1フレームのupdate時間 ===== */
-results.load60 = await page.evaluate(()=>{
-  window.__setupSolo({ teamSize:3, teamCount:20 });
+results.load60 = await page.evaluate(async ()=>{
+  await window.__setupTeam(3, 20);
   const counts = {
     entityCount: entities.length,
     teamCount: new Set(entities.map(e=>e.teamId)).size,
