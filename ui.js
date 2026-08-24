@@ -9683,6 +9683,21 @@ function pickGhostsForMatch(playerMmLevel, playerRebirth){
   }
   return out;
 }
+/* チーム戦の敵として出すゴーストの積み荷を作る。**ホストだけが呼ぶ。**
+   選び方も強さの縮め方もソロと同じ関数を通す(pickGhostsForMatch / capMastermonToLimit)ので、
+   「同じ人から1体まで」「レベル差が離れすぎたら使わない」といった決まりが1か所のままになる。
+   ここで作った一覧を部屋のシードへ載せて配るため、**全員が同じ相手を同じ強さで見る**
+   (各自が引きに行くと相手も強さもバラバラになり、ホストとゲストで世界が食い違う)。 */
+function ghostBotsForRoom(){
+  if(typeof pickGhostsForMatch!=='function') return [];
+  const own = loadMastermons();
+  const myMm = (game.selectedMastermonKey && own[game.selectedMastermonKey]) || null;
+  const ghosts = pickGhostsForMatch(myMm ? myMm.level : null, mastermonRebirthCount(myMm));
+  if(!ghosts.length) return [];
+  // 縮める基準はホスト自身(hostMastermonBots と同じ。受け取ってから各自で縮めない)
+  const limit = battleStatLimitOf(myMm, game.selectedElement);
+  return ghosts.map(g=> Object.assign({}, capMastermonToLimit(g, limit), { owner: g.owner || '' }));
+}
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){
   if(!game.selectedMastermonKey) return;

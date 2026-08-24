@@ -603,8 +603,9 @@
 
   // teamSize はチーム戦の1チーム人数(1=個人戦)、sub はチーム戦のサブモード('br20'/'arena'/null)。
   // どちらも素通しで載せ、ゲストは__aramonWaitForRoomSeedで受け取る(試合の組み立てはこの値が正)
-  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, teamSize, sub){
-    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null, world: worldData||null, teamSize: (teamSize|0)>1 ? (teamSize|0) : 1, sub: (sub==='br20'||sub==='arena') ? sub : null }); }catch(err){}
+  // ghostBots は他の人が育てたマスモンの写し(チーム戦の敵として出す)。ホストが選んだものが正
+  window.__aramonSetRoomSeed = async function(roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, teamSize, sub, ghostBots){
+    try{ await update(ref(fbDb, `rooms/${roomId}/meta`), { seed, fixedPlayers: fixedPlayers||null, mapKey: mapKey||'wild', hostMastermonBots: hostMastermonBots||null, world: worldData||null, teamSize: (teamSize|0)>1 ? (teamSize|0) : 1, sub: (sub==='br20'||sub==='arena') ? sub : null, ghostBots: (ghostBots && ghostBots.length) ? ghostBots : null }); }catch(err){}
   };
 
   window.__aramonWaitForRoomSeed = function(roomId, timeoutMs){
@@ -614,7 +615,7 @@
       const cb = (snap)=>{
         const v = snap.val();
         if(v && v.seed!=null && v.fixedPlayers && !done){
-          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[], world:v.world||null, teamSize:(v.teamSize||1), sub:(v.sub||null) });
+          done=true; off(r,'value',cb); resolve({ seed:v.seed, fixedPlayers:v.fixedPlayers, mapKey:v.mapKey||'wild', hostMastermonBots:v.hostMastermonBots||[], world:v.world||null, teamSize:(v.teamSize||1), sub:(v.sub||null), ghostBots:v.ghostBots||[] });
         }
       };
       onValue(r, cb);

@@ -19,7 +19,10 @@ description: 荒野モン動の戦闘ロジック(combat.js)・技のギミッ�
 
 - **マスモンを他所へ渡す形は`mastermonSnapshot(mm, skinId)`(data.js)1つだけ。** 使うのは3か所とも: 部屋へ送る自分の育成値(`currentMastermonInfo`)/ マルチのマスモンbotの積み荷(`hostMastermonBots`)/ ゴースト。**4か所目を作らない。**
   - `baseHp`/`baseSpd`は**基礎値アイテムぶんだけ**(受け側が`rebirth`から転生ぶんを足し直すので、合計を入れると二重に乗る)。`awakenBoost`は**解決済みの1語**。無いものは`null`(Firebaseは`undefined`を受け付けない)。
-- **ゴーストはソロ専用**(マルチは部屋のシードで両側が同じ世界を作る前提)。差し込み方はマルチのマスモンbot(`network.js`)とまったく同じで、`isMastermonBot`を立てれば★と金色、`mastermonLevel`を入れれば撃破EXPボーナスが**追加コード無し**で効く。
+- **ゴーストはソロと「チーム戦」に出る。** 差し込み方はマルチのマスモンbot(`network.js`)とまったく同じで、`isMastermonBot`を立てれば★と金色、`mastermonLevel`を入れれば撃破EXPボーナスが**追加コード無し**で効く。
+  - **マルチでは各自が引きに行かない。ホストが選んで部屋のシードへ載せて配る**(`ghostBotsForRoom()`→`__aramonSetRoomSeed`の`ghostBots`)。各自が引くと相手も強さもバラバラになり、ホストとゲストで世界が食い違う。強さを縮める基準もホスト(`battleStatLimitOf`)。
+  - 入る枠は**人間が1人もいないチームだけ**(誰から見ても敵になる)。枠の抽選も共有シード。個人戦のマルチとレイドには出さない。
+  - 検査は `node tools/ghost_team_test.mjs`(ホストとゲストで60体が1つも食い違わないこと・味方側に入らないこと)。
 - 選び方は`pickGhostsForMatch()`1か所: 自分を除く / **自分のマスモンLv±`GHOST_LEVEL_RANGE`(15)** / **同じ人から1体** / 上限`GHOST_BOT_MAX`(8) / **転生回数は自分の回数で頭打ち**。マスモン未選択のときは出さない。
 - **取れなくても従来どおりの合成botで遊べる**(`syntheticMastermonForLevel`へ落ちるだけ)。取得は5分キャッシュ + `limitToLast(50)`で、**全件取得にしない**(`scores`が全件取得で肥大した前例)。
 

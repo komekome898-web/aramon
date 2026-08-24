@@ -506,7 +506,7 @@ async function beginMultiplayerMatchInner(){
 
   // 部屋のシードと確定参加者リストを決定/取得
   // ホストが「試合開始が確定した瞬間の参加者一覧」を1回だけ書き込み、非ホストはそれだけを読む(誰も新規にgetしない)
-  let seed, fixedPlayers, mapKey, hostMastermonBots, sharedWorld = null;
+  let seed, fixedPlayers, mapKey, hostMastermonBots, ghostBots, sharedWorld = null;
   let matchTeamSize = 1;   // この試合のチーム人数(1=個人戦)。ホストは部屋の設定、ゲストはシード配信の値が正
   let matchSub = null;     // この試合のサブモード('br20'/'arena'/null=従来型)。持ち方はteamSizeと同じ
   if(netState.isHost){
@@ -537,6 +537,11 @@ async function beginMultiplayerMatchInner(){
       const skin = (typeof getEquippedSkin==='function') ? getEquippedSkin(k) : null;
       return Object.assign({ key:k }, capMastermonToLimit(mastermonSnapshot(ownMastermons[k], skin), hostLimit));
     });
+    /* チーム戦だけ、他の人が育てたマスモン(ゴースト)を敵として混ぜる。
+       **ホストが選んでシードに載せる**ので、全員が同じ相手を同じ強さで見る。
+       レイドは全員でボスと戦う場なので混ぜない。取れなければ空で従来どおり。 */
+    ghostBots = (matchTeamSize>1 && !netState.raid && typeof ghostBotsForRoom==='function')
+      ? ghostBotsForRoom() : [];
   } else {
     console.log('[aramon] NON-HOST: waiting for seed+world...');
     const result = await window.__aramonWaitForRoomSeed(netState.roomId, 12000);
@@ -545,6 +550,7 @@ async function beginMultiplayerMatchInner(){
       fixedPlayers = result.fixedPlayers;
       mapKey = result.mapKey || 'wild';
       hostMastermonBots = result.hostMastermonBots || [];
+      ghostBots = result.ghostBots || [];        // ホストが選んだゴースト(チーム戦の敵)
       sharedWorld = result.world || null; // ホストが生成した障害物(あれば正として使う)
       matchTeamSize = Math.max(1, result.teamSize||1); // チーム人数もホストの配信が正
       matchSub = result.sub || null;                   // サブモードも同様
@@ -556,6 +562,7 @@ async function beginMultiplayerMatchInner(){
       fixedPlayers = netState.humanPlayers || {};
       mapKey = game.selectedMap || 'wild';
       hostMastermonBots = [];
+      ghostBots = [];
       console.warn('[aramon] NON-HOST: TIMEOUT, falling back to local snapshot', seed, fixedPlayers);
     }
   }
@@ -623,7 +630,7 @@ async function beginMultiplayerMatchInner(){
     if(window.__aramonClearRoomTransient) await window.__aramonClearRoomTransient(netState.roomId);
     const worldData = packWorldForSync();
     console.log('[aramon] HOST: publishing seed+world', seed, mapKey);
-    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize, matchSub);
+    await window.__aramonSetRoomSeed(netState.roomId, seed, fixedPlayers, mapKey, hostMastermonBots, worldData, matchTeamSize, matchSub, ghostBots);
   }
 
   // 参加している人間プレイヤーの一覧を「IDの文字列順」で確定させる(全員が同じ順序で処理するため)
@@ -690,6 +697,21 @@ async function beginMultiplayerMatchInner(){
   const slotOrder = seededShuffle(rng, ownTeamSlots).concat(seededShuffle(rng, otherSlots));
   const slotToMastermon = new Map();
   for(let j=0;j<mastermonBotCount;j++){ slotToMastermon.set(slotOrder[j], hostMastermonBots[j]); }
+  /* ゴースト(他の人が育てたマスモン)は**人間が1人もいないチームの枠を先に埋める。**
+     こうすると誰から見ても味方ではなく敵として出る(人間のいるチーム=誰かの味方枠を避ける)。
+     どの枠に入るかも共有シードで決めるので、ホストとゲストで必ず同じ並びになる。 */
+  const humanTeams = new Set();
+  if(matchTeamSize>1) humanList.forEach((h,idx)=> humanTeams.add(Math.floor(idx/matchTeamSize)));
+  const ghostSlots = [];
+  for(let i=0;i<botCount;i++){
+    if(slotToMastermon.has(i)) continue;   // ホストのマスモンが入る枠とは取り合わない
+    const teamOfSlot = matchTeamSize>1 ? Math.floor((usedSlots+i)/matchTeamSize) : -1;
+    if(matchTeamSize>1 && !humanTeams.has(teamOfSlot)) ghostSlots.push(i);
+  }
+  const ghostOrder = seededShuffle(rng, ghostSlots);
+  const slotToGhost = new Map();
+  const ghostBotCount = Math.min((ghostBots||[]).length, ghostOrder.length);
+  for(let j=0;j<ghostBotCount;j++){ slotToGhost.set(ghostOrder[j], ghostBots[j]); }
   for(let i=0;i<botCount;i++){
     const sp = spawnPoints[spawnIdx++];
     const mmDef = slotToMastermon.get(i);
@@ -699,6 +721,17 @@ async function beginMultiplayerMatchInner(){
       ent.isMastermonBot = true;
       ent.mastermonLevel = mmDef.level||1;
       if(mmDef.skin) ent.skinId = mmDef.skin;     // マスモンbotの着せ替えスキンを反映
+      entities.push(ent);
+    } else if(slotToGhost.get(i)){
+      /* 他の人が育てたマスモン。差し込み方はホストのマスモンbotと同じで、
+         **持ち主の名前(ghostOwner)だけ足す**(頭の上に「〇〇 の」と出る。render.js) */
+      const g = slotToGhost.get(i);
+      const ent = createMonster(g.element, false, g.name, { id: idCounter++, spawnPoint: sp });
+      applyMastermonStatsToEntity(ent, g);
+      ent.isMastermonBot = true;
+      ent.mastermonLevel = g.level || 1;
+      if(g.skin) ent.skinId = g.skin;
+      ent.ghostOwner = g.owner || null;
       entities.push(ent);
     } else {
       const elKey = botElements[i % botElements.length];
