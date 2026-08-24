@@ -276,6 +276,28 @@
     roomListeners.forEach(({r,cb,isChildAdded})=>off(r, isChildAdded?'child_added':'value', cb));
     roomListeners = [];
   }
+  /* 試合ぶんの購読だけを畳む(部屋のplayers/metaはロビーのものなので残す)。
+     「もう一度」で同じ部屋のまま2試合目に入ると、畳まないまま同じ購読をもう1組
+     貼ることになり、試合を重ねるほど同じイベントが何重にも届く。 */
+  window.__aramonClearMatchListeners = function(){
+    const keep = [];
+    roomListeners.forEach((L)=>{
+      if(L.scope!=='match'){ keep.push(L); return; }
+      off(L.r, L.isChildAdded?'child_added':'value', L.cb);
+    });
+    roomListeners = keep;
+  };
+  /* 試合ごとに使い捨てる置き場を空にする(ホストが試合を始める直前に呼ぶ)。
+     **onChildAdded は購読した瞬間に「もう入っている子」を全部流し込む。**
+     前の試合の events が残っていると、2試合目を始めた全員へ前の試合の matchEnd が
+     もう一度届き、始まったばかりの試合がその場で勝敗表示のまま終わる
+     (2026-08-24 実機報告「もう一度を押した次の試合で前の勝利演出が流れて終わる」)。 */
+  window.__aramonClearRoomTransient = async function(roomId){
+    if(!roomId) return;
+    const paths = ['events','shotEvents','lootEvents','fireEvents','hits','authState'];
+    try{ await Promise.all(paths.map(p=> remove(ref(fbDb, `rooms/${roomId}/${p}`)))); }
+    catch(err){ warnRoomWrite('clearTransient', err); }
+  };
 
   // 部屋のプレイヤー情報に載せるマスモン情報(レベル+育成ステータス)。
   // mmLevel は旧クライアント互換のために残す(新クライアントは mm.level を見る)。
@@ -606,7 +628,7 @@
     const r = ref(fbDb, `rooms/${roomId}/state`);
     const cb = (snap)=>{ callback(snap.val()||null); };
     onValue(r, cb);
-    roomListeners.push({r,cb});
+    roomListeners.push({r,cb,scope:'match'});
   };
 
   window.__aramonPublishState = async function(roomId, stateObj){
@@ -619,7 +641,7 @@
     const r = ref(fbDb, `rooms/${roomId}/players`);
     const cb = (snap)=>{ callback(snap.val()||{}); };
     onValue(r, cb);
-    roomListeners.push({r,cb});
+    roomListeners.push({r,cb,scope:'match'});
   };
 
   window.__aramonPushEvent = async function(roomId, evt){
@@ -634,7 +656,7 @@
     const r = ref(fbDb, `rooms/${roomId}/events`);
     const cb = (snap)=>{ callback(snap.val(), snap.key); };
     onChildAdded(r, cb);
-    roomListeners.push({r,cb,isChildAdded:true});
+    roomListeners.push({r,cb,isChildAdded:true,scope:'match'});
   };
 
   // 命中報告: 誰かが人間に当てた攻撃を報告し、ホストだけが確定計算する
@@ -646,7 +668,7 @@
     const r = ref(fbDb, `rooms/${roomId}/hits`);
     const cb = (snap)=>{ callback(snap.key, snap.val()); };
     onChildAdded(r, cb);
-    roomListeners.push({r,cb,isChildAdded:true});
+    roomListeners.push({r,cb,isChildAdded:true,scope:'match'});
   };
 
   // 単発の「発射しました」イベント: 誰が・どの技を・どこから・どの方向へ撃ったかを都度送信する
@@ -659,7 +681,7 @@
     const r = ref(fbDb, `rooms/${roomId}/fireEvents`);
     const cb = (snap)=>{ callback(snap.key, snap.val()); };
     onChildAdded(r, cb);
-    roomListeners.push({r,cb,isChildAdded:true});
+    roomListeners.push({r,cb,isChildAdded:true,scope:'match'});
   };
 
   // ホストが確定させた権威状態(人間プレイヤーのHP/ガッツ/生存)を配信
@@ -673,7 +695,7 @@
     const r = ref(fbDb, `rooms/${roomId}/shotEvents`);
     const cb = (snap)=>{ callback(snap.key, snap.val()); };
     onChildAdded(r, cb);
-    roomListeners.push({r,cb,isChildAdded:true});
+    roomListeners.push({r,cb,isChildAdded:true,scope:'match'});
   };
 
   // アイテムの出現/取得を都度配信する(ホストのlootItems配列は非ホストに自動同期されないため、
@@ -685,7 +707,7 @@
     const r = ref(fbDb, `rooms/${roomId}/lootEvents`);
     const cb = (snap)=>{ callback(snap.key, snap.val()); };
     onChildAdded(r, cb);
-    roomListeners.push({r,cb,isChildAdded:true});
+    roomListeners.push({r,cb,isChildAdded:true,scope:'match'});
   };
 
   /* WebRTCシグナリング(net_transport.js用)
@@ -713,7 +735,7 @@
     const r = ref(fbDb, `rooms/${roomId}/authState`);
     const cb = (snap)=>{ callback(snap.val()||null); };
     onValue(r, cb);
-    roomListeners.push({r,cb});
+    roomListeners.push({r,cb,scope:'match'});
   };
 
   /* --- ゴーストマスモン ---
