@@ -198,6 +198,7 @@ const ELEMENTS = {
   hum:     { label:'ハム', color:'#e0ad7b', dark:'#86684a', accent:'#e07be0', speed:210, hp:90, trait:'hum' }, /*@hum*/
   ogre:    { label:'キジン', color:'#e0ad7b', dark:'#86684a', speed:185, hp:130, trait:'ogre', dmgDealtMod:1.2 }, /*@ogre*/
   centaur: { label:'ケンタウロス', color:'#7fb236', dark:'#4f6f1f', speed:190, hp:110, trait:'cent' }, /*@centaur*/
+  narga:   { label:'ナーガ', color:'#7a2fc6', dark:'#491c77', speed:185, hp:130, trait:'narga' }, /*@narga*/
   // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -413,6 +414,9 @@ const WALK_ANIM = {
     ssr: [
       { skinId:'oki_ssr', front:_loadWalk('oki_ssr_walk_f'), back:_loadWalk('oki_ssr_walk_b') }, /*@oki_ssr*/
     ],
+  },
+  narga:   { /*@narga*/
+    base: { front:_loadWalk('narga_walk_f'), back:_loadWalk('narga_walk_b') },
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -794,6 +798,11 @@ const SIGNATURE_MOVES = {
        (オーラ相性が green なので黒にしない)。 */
     { name:'メテオドライブ', tier:3, color:'#7fb236', range:1620, dmg:22, cooldown:2.2, gutsCost:24, projSpeed:1380, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'voidOrb', blast:{ radius:325, dmg:26, expandTime:0.5, color:'#7fb236' } }
   ],
+  narga:   [ /*@narga*/
+    { name:'真空弾', tier:1, color:'#7a2fc6', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
+    { name:'連続真空弾', tier:2, color:'#7a2fc6', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
+    { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400, aoeShape:'rect', aoeStyle:'sakura', rectWidth:120 }
+  ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -838,6 +847,7 @@ const MONSTER_AURA = {
   hum:     'yellow', /*@hum*/
   ogre:    'yellow', /*@ogre*/
   centaur: 'green', /*@centaur*/
+  narga:   'black', /*@narga*/
   // <<AUTO:MONSTER_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
@@ -861,6 +871,7 @@ const MOVE_AURA = {
   '正拳':'yellow','ワンツー':'yellow','暗けい':'yellow', /*@hum*/
   '殴打':'yellow','阿修羅':'red','羅生門':'yellow', /*@ogre*/
   'スロウランサー':'green','マインドフレア':'green','メテオドライブ':'green', /*@centaur*/
+  '真空弾':'black','連続真空弾':'black','アイビーム':'black', /*@narga*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1212,6 +1223,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-24', items:[
+    { t:'🆕 新モンスター「ナーガ」が登場しました！ 技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', g:['feature','monster'] },
     { t:'💪 トレーニングを実行したあとも、選んでいたメニューが選ばれたままになりました。同じトレーニングを続けるときに毎回選び直さなくてよくなります', g:['general'] },
   ]},
   { date:'2026-08-23', items:[
@@ -1765,6 +1777,10 @@ const STATE_CHANGES = {
     name:'憤怒', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.5,
     effects:{ dmgMult:1.2, gutsRegenMult:2, cooldownMult:0.667, speedMult:1.5 },
   },
+  narga:   { /*@narga*/
+    name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,
+    effects:{ gutsRegenMult:2, speedMult:1.5 },
+  },
   // <<AUTO:STATE_CHANGES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -1808,6 +1824,7 @@ const APTITUDE = {
   hum:     { life:'C', power:'A', wisdom:'E', accuracy:'C', evasion:'A', vitality:'E' }, /*@hum*/
   ogre:    { life:'C', power:'A', wisdom:'D', accuracy:'C', evasion:'B', vitality:'B' }, /*@ogre*/
   centaur: { life:'C', power:'C', wisdom:'B', accuracy:'A', evasion:'D', vitality:'D' }, /*@centaur*/
+  narga:   { life:'C', power:'B', wisdom:'E', accuracy:'B', evasion:'D', vitality:'C' }, /*@narga*/
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 /* 特性の「技を当てたときに相手へ起きること」。
@@ -1822,6 +1839,7 @@ const APTITUDE = {
    例: { burnSec:10, gutsDrain:0.3 } = 命中で10秒やけど + 与ダメの30%ぶん相手のガッツを削る */
 const TRAIT_ON_HIT = {
   ogre:       { burnSec:10 }, /*@ogre*/
+  narga:      { poisonSec:10 }, /*@narga*/
   // <<AUTO:TRAIT_ON_HIT>> ここから上へ tools のスタジオが新しい特性の行を追記する
 };
 // 適正は E→D→C→B→A→S の6段階。Sは転生でしか手に入らない(種族の初期適正には出てこない)。
@@ -3931,6 +3949,7 @@ const SKIN_CONFIG = {
   hum:     { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:15, window:60} }, /*@hum*/
   ogre:    { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:30, window:60} }, /*@ogre*/
   centaur: { colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:190, window:60} }, /*@centaur*/
+  narga:   { colors:['white','red','blue','yellow','green'], source:{type:'chroma', hue:275, window:60} }, /*@narga*/
   // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)

@@ -16,6 +16,7 @@ const TRAIT_DESC = {
   hum:        '技の弾速が速く、射程が短い', /*@hum*/
   ogre:       '与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', /*@ogre*/
   cent:       '技の射程が長く、弾速が速い', /*@centaur*/
+  narga:      '技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', /*@narga*/
   // <<AUTO:TRAIT_DESC>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 function stateTriggerText(sc){

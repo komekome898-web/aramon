@@ -1,0 +1,70 @@
+{
+  "key": "narga",
+  "label": "ナーガ",
+  "color": "#7a2fc6",
+  "dark": "#491c77",
+  "speed": 185,
+  "hp": 130,
+  "trait": "narga",
+  "traitDesc": "技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)",
+  "traitEffects": {
+    "poisonSec": 10
+  },
+  "aura": "black",
+  "aptitude": {
+    "life": "C",
+    "power": "B",
+    "wisdom": "E",
+    "accuracy": "B",
+    "evasion": "D",
+    "vitality": "C"
+  },
+  "skin": {
+    "colors": [
+      "white",
+      "red",
+      "blue",
+      "yellow",
+      "green"
+    ],
+    "source": {
+      "type": "chroma",
+      "hue": 275,
+      "window": 60
+    }
+  },
+  "moves": [
+    {
+      "name": "真空弾",
+      "icon": "🔥"
+    },
+    {
+      "name": "連続真空弾",
+      "icon": "🔥"
+    },
+    {
+      "name": "アイビーム",
+      "template": "beam"
+    }
+  ],
+  "walk": {
+    "front": "assets/narga/front.mp4",
+    "back": "assets/narga/back.mp4",
+    "source": "video",
+    "mode": "chroma"
+  },
+  "images": {
+    "icon": "assets/narga/icon.png"
+  },
+  "stateChange": {
+    "name": "逆上",
+    "duration": 20,
+    "cooldown": 60,
+    "trigger": "onHitTakenChance",
+    "triggerValue": 0.2,
+    "effects": {
+      "gutsRegenMult": 2,
+      "speedMult": 1.5
+    }
+  }
+}
