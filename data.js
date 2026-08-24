@@ -1060,14 +1060,14 @@ const SSR_SKIN_TIER3 = {
      ・デスブレイク = ピクシー「ビッグバン」と同じ見た目(voidOrbの球+着弾ドーム)。素の連射は止める
      ・デスレーザー = 素の「アイビーム」を細く・速く・強くした貫通ビーム(pierceは素から引き継ぐ)。
        威力は絶対値で持つので dmgMult は付けない(二重に掛かるため) */
-  narga_ssr:      { name:'デスレーザー', move:{ dmg:64, projSpeed:2600, rectWidth:56, gutsCost:30 }, /*@narga_ssr*/
+  narga_ssr:      { name:'デスレーザー', move:{ dmg:104, projSpeed:2600, rectWidth:56, gutsCost:30 }, /*@narga_ssr*/
     tiers:{
-      1:{ name:'デスミサイル', move:{ dmg:7, cooldown:0.9, gutsCost:10, projSpeed:620, hitR:13, splash:0,
+      1:{ name:'デスミサイル', move:{ dmg:10, cooldown:0.9, gutsCost:10, projSpeed:620, hitR:13, splash:0,
                                       burst:3, burstGap:0.1, burstSpread:0.06,
-                                      blast:{ radius:95, dmg:4, expandTime:0.3, color:'#7a2fc6' } } },
-      2:{ name:'デスブレイク', move:{ dmg:16, cooldown:1.15, gutsCost:20, range:1300, projSpeed:620, hitR:26,
+                                      blast:{ radius:95, dmg:6, expandTime:0.3, color:'#7a2fc6' } } },
+      2:{ name:'デスブレイク', move:{ dmg:26, cooldown:1.15, gutsCost:20, range:1300, projSpeed:620, hitR:26,
                                       burst:1, burstGap:0, projStyle:'voidOrb',
-                                      blast:{ radius:240, dmg:30, expandTime:0.45, color:'#7a2fc6' } } },
+                                      blast:{ radius:240, dmg:48, expandTime:0.45, color:'#7a2fc6' } } },
     } },
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
