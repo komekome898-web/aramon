@@ -8966,7 +8966,8 @@ function renderMastermonDetail(key){
       });
       pushToast(`トレーニング結果: ${parts.join(' / ')}`);
       playSe('train');
-      mastermonSelectedTraining = null;
+      // 選んだメニューは残す(同じトレーニングを続けて回すのが普通なので、毎回選び直させない)。
+      // 再描画で変動値のプレビューも新しい値で引き直る
       renderMastermonList();
       renderMastermonCard(key);   // 詳細ビュー左の大きいカードもHP/速さを即反映(cloneなので作り直さないと古い数値のまま)
       renderMastermonDetail(key);
