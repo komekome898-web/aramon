@@ -2616,6 +2616,23 @@
     color:var(--ink-dim); white-space:nowrap; min-width:0;
   }
   .ml-stat-desc-item b{ font-weight:700; }
+  /* トレーニング画面だけは説明2行をやめ、各行の適正バッジの右へ効果を入れる。
+     幅が足りないときは効果側だけを省略記号で切る(数値は必ず出す) */
+  .mm-stat-eff{
+    flex:1 1 auto; min-width:0; font-size:clamp(7px, calc(2 * var(--vh)), 9px);
+    color:var(--ink-dim); letter-spacing:-0.2px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 説明2行が無いぶんだけ下が余るので、実行ボタンは箱の底へ寄せる(縦フレックス+margin-top:auto)。
+     バーが入りきらない画面では余りが0になり、ボタンは今までどおりバーの直下に付く */
+  .ml-sec-status.has-eff{ display:flex; flex-direction:column; }
+  .ml-sec-status.has-eff .mastermon-detail-statscol{ flex:0 0 auto; }
+  /* 空いた下部に置くトレ実行ボタン。列がスクロールしても下に貼り付けて常に押せるようにする */
+  .ml-stat-foot{
+    position:sticky; bottom:0; z-index:2; display:flex; flex:0 0 auto;
+    margin:auto 0 0; padding:8px 0 2px; background:#0a1018;
+    border-top:1px solid rgba(255,255,255,0.07);
+  }
   .ml-trait-text{ font-size:11px; line-height:1.6; color:var(--ink); }
   .ml-trait-bonus{ margin-top:4px; font-size:10px; line-height:1.5; color:var(--amber); }
   .ml-state-name{ font-size:12px; font-weight:700; color:var(--ink); }
@@ -3630,6 +3647,10 @@
     flex:0 0 clamp(172px, calc(33 * var(--vw)), 250px); min-height:0;
     overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
+  /* 効果を行内に出すトレーニング画面は1行が長くなるぶんだけ列を広げる */
+  #mastermonDetailPanel .ml-sec-status.has-eff{
+    flex-basis:clamp(198px, calc(38 * var(--vw)), 286px);
+  }
   /* 初期画面: ステータスの右に縦並びの3ボタン */
   .mm-menu-list{ display:flex; flex-direction:column; gap:8px; justify-content:center; min-height:100%; }
   .mm-menu-btn{
@@ -4456,10 +4477,10 @@
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
   .mastermon-execute-btn:disabled{ opacity:0.35; cursor:not-allowed; }
-  /* トレーニング画面ヘッダー内の実行ボタン(戻るボタンの左)。折り返させない */
-  .mm-header-exec-btn{
-    margin-left:auto; flex-shrink:0; white-space:nowrap;
-    padding:8px 14px; font-size:11px;
+  /* トレーニング画面の実行ボタン。STATUSの下(旧・説明2行の位置)に横いっぱいで置く */
+  .mm-stat-exec-btn{
+    width:100%; min-height:var(--tap-pick); flex-shrink:0; white-space:nowrap;
+    padding:8px 10px; font-size:clamp(11px, calc(3 * var(--vh)), 13px);
   }
   .mm-train-grid{ grid-template-columns:repeat(2,1fr); gap:6px; }
   .mastermon-delete-btn{
