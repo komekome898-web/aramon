@@ -878,8 +878,8 @@ function activeMove(m){
 }
 function pickBestAffordableTier(m){
   for(let t=m.moveTierUnlocked; t>=1; t--){
-    const mv = SIGNATURE_MOVES[m.element][t-1];
-    const cost = Math.max(1, mv.gutsCost - (m.trainGutsCostReduction||0));
+    // 消費ガッツの計算は effectiveGutsCost 1か所(スキンの専用技・状態変化・訓練ぶんが全部乗る)
+    const cost = effectiveGutsCost(m, SIGNATURE_MOVES[m.element][t-1]);
     if(m.guts >= cost) return t;
   }
   return 1;

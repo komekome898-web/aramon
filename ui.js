@@ -9173,6 +9173,7 @@ function describeMoveFeatureText(mv){
   else if(mv.aoeShape==='fanZigzag') parts.push('扇状かつジグザグに攻撃');
   // 羅生門: 自分の前に門を出し、範囲最遠から自分へ炎が迫って敵を門の前まで吸い込む(直撃は無い)
   else if(mv.aoeShape==='gate') parts.push(`自分の前に羅生門を出現させ、幅${mv.rectWidth}の範囲最遠から自分へ炎が迫る。触れた敵を門の前まで吸い込む`);
+  if(mv.pierce) parts.push('岩や山を貫通して射程いっぱいまで届く');
   if(mv.burst) parts.push(`${mv.burst}連射`);
   if(mv.splash) parts.push(`着弾時に半径${mv.splash}へ爆風`);
   if(mv.blast) parts.push(`直撃${mv.dmg}+着弾点から半径${mv.blast.radius}へドーム状の爆風${mv.blast.dmg}`);

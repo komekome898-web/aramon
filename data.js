@@ -804,7 +804,8 @@ const SIGNATURE_MOVES = {
   narga:   [ /*@narga*/
     { name:'真空弾', tier:1, color:'#7a2fc6', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
     { name:'連続真空弾', tier:2, color:'#7a2fc6', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
-    { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400, aoeShape:'rect', aoeStyle:'sakura', rectWidth:120 }
+    // pierce: 遮蔽物で止まらず射程いっぱいまで貫く(判定は combat.js の moveReachDistance 1か所)
+    { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1900, aoeShape:'rect', aoeStyle:'sakura', rectWidth:80, pierce:true }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -1051,10 +1052,27 @@ const SSR_SKIN_TIER3 = {
   tsukasa_ssr:    { name:'ずっとずっとキミのことが好き!!', dmgMult:1.15, move:{ projStyle:'strawberry' } }, /*@tsukasa_ssr*/
   oki_ssr:        { name:'大将軍の矛', dmgMult:1.15 }, /*@oki_ssr*/
   leaf_ssr:       { name:'引力光線', dmgMult:1.15 }, /*@leaf_ssr*/
-  narga_ssr:      { name:'デスレーザー', dmgMult:1.15 }, /*@narga_ssr*/
+  /* ゴッドエンペラー(ナーガ): **3つの技すべてを専用技に差し替える**唯一のスキン(発注者指定・2026-08-24)。
+     tier1/tier2の上書きは `tiers` に置く(引くのは skinMoveDef 1か所)。消費ガッツは 10 / 20 / 30。
+     素の技より少し強いぶんをガッツで払う形にしてあるので、**素のナーガを調整したらここも見直す**
+     (倍率ではなく絶対値で持っているため自動では追従しない)。
+     ・デスミサイル = 素の「真空弾」を3連射にし、着弾ごとに小さいドーム爆風
+     ・デスブレイク = ピクシー「ビッグバン」と同じ見た目(voidOrbの球+着弾ドーム)。素の連射は止める
+     ・デスレーザー = 素の「アイビーム」を細く・速く・強くした貫通ビーム(pierceは素から引き継ぐ)。
+       威力は絶対値で持つので dmgMult は付けない(二重に掛かるため) */
+  narga_ssr:      { name:'デスレーザー', move:{ dmg:64, projSpeed:2600, rectWidth:56, gutsCost:30 }, /*@narga_ssr*/
+    tiers:{
+      1:{ name:'デスミサイル', move:{ dmg:7, cooldown:0.9, gutsCost:10, projSpeed:620, hitR:13, splash:0,
+                                      burst:3, burstGap:0.1, burstSpread:0.06,
+                                      blast:{ radius:95, dmg:4, expandTime:0.3, color:'#7a2fc6' } } },
+      2:{ name:'デスブレイク', move:{ dmg:16, cooldown:1.15, gutsCost:20, range:1300, projSpeed:620, hitR:26,
+                                      burst:1, burstGap:0, projStyle:'voidOrb',
+                                      blast:{ radius:240, dmg:30, expandTime:0.45, color:'#7a2fc6' } } },
+    } },
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
-// スキン装備時のtier3を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
+// スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
+// 中心はtier3だが、スキンが `tiers` を持っていればtier1/tier2も同じ形で差し替わる。
 // 対象外はそのまま元の技を返す。結果はスキンID+技名でキャッシュし毎フレームの生成を避ける。
 // 威力倍率(dmgMult)は従来どおり effectiveMoveDmg 側の ssrTier3DmgMult が掛けるので、ここでは触らない。
 /* スキンIDから tier3 の専用技の定義を引く。**覚醒スキンは元のスキンのものを受け継ぐ。**
@@ -1068,12 +1086,22 @@ function skinTier3Def(skinId){
     return SSR_SKIN_TIER3[SSR_SKINS[skinId].awakenOf] || null;
   return null;
 }
+/* スキンがこの技を上書きしているかを引く。tier3はスキンの行そのもの、tier1/tier2は `tiers` の中。
+   **`tiers` を直接読む場所を増やさない。必ずこの関数を通す**(引く場所が散ると、技名だけ
+   専用名になって数値が素のまま、といった食い違いが起きる)。 */
+function skinMoveDef(move, skinId){
+  const def = skinTier3Def(skinId);
+  if(!def || !move) return null;
+  if(move.tier===3) return def;
+  return (def.tiers && def.tiers[move.tier]) || null;
+}
 const _skinTier3MoveCache = {};
 function skinTier3Move(move, attacker){
-  if(!move || move.tier!==3) return move;
+  if(!move) return move;
   const sid = entitySkinId(attacker);
-  const def = skinTier3Def(sid);
-  const boosts = entityMoveBoosts(attacker);
+  const def = skinMoveDef(move, sid);
+  // 技強化(覚醒・秘伝の書)はtier3だけに効く従来どおりの決まり
+  const boosts = (move.tier===3) ? entityMoveBoosts(attacker) : [];
   if(!def && !boosts.length) return move;
   /* 強化は「どの段のどの種類か」で結果が変わるのでキャッシュキーに混ぜる。
      **強化を1つでも足したらここに必ず入れる。** 混ぜ忘れると同じスキンの同じ技で
@@ -1165,15 +1193,14 @@ function entityAwakenBoost(entity){
   const b = entityMoveBoosts(entity).find(x=>x.src==='awaken');
   return b ? b.kind : null;
 }
-// 技の表示名(SSR装備時はtier3を専用名に上書き)
+// 技の表示名(SSR装備時は専用名に上書き。tier1/tier2も上書きするスキンがある)
 function getMoveName(move, attacker){
-  if(move && move.tier===3){
-    const def = skinTier3Def(entitySkinId(attacker));
-    if(def && def.name) return def.name;
-  }
+  const def = skinMoveDef(move, entitySkinId(attacker));
+  if(def && def.name) return def.name;
   return move ? move.name : '';
 }
 /* SSR装備時のtier3威力倍率(非装備/非tier3は1)。「威力」の強化を選んでいればさらに掛かる。
+   **tier1/tier2を上書きするスキン(`tiers`)は威力を絶対値で持つ決まりなので、ここでは掛けない。**
    **載っている強化を全部掛ける。** 1つしか見ないと、技一覧の表示だけ上がって
    実戦のダメージが上がらない(表示と実戦力の食い違い)。 */
 function ssrTier3DmgMult(move, attacker){
@@ -1228,8 +1255,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-24', items:[
-    { t:'✨ SSRスキン「ゴッドエンペラー」が登場しました！', g:['feature','monster'] },
-    { t:'🆕 新モンスター「ナーガ」が登場しました！ 技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', g:['feature','monster'] },
+    { t:'✨ SSRスキン「ゴッドエンペラー」が登場しました！ 3つの技がすべて専用技になります。「デスミサイル」はミサイルを3連射し、当たった場所ごとに小さな爆風が広がります。「デスブレイク」は黒い球を撃ち出し、着弾点に大きなドームの爆風が広がります。「デスレーザー」は岩や山を貫通して射程いっぱいまで届く、細く速いビームです。そのぶん消費ガッツは10・20・30と重めです', g:['feature','monster','balance'] },
+    { t:'🆕 新モンスター「ナーガ」が登場しました！ 技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)。tier3「アイビーム」は岩や山を貫通して射程いっぱいまで届きます。伸びが速くなったかわりに幅は細くなりました(120→80)', g:['feature','monster','balance'] },
     { t:'💪 トレーニングを実行したあとも、選んでいたメニューが選ばれたままになりました。同じトレーニングを続けるときに毎回選び直さなくてよくなります', g:['general'] },
   ]},
   { date:'2026-08-23', items:[
