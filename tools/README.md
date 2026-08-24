@@ -249,6 +249,7 @@ iPhone版はコミット時に自動で上げます。
 | `node tools/tutorial_test.mjs` | 初回チュートリアルを最後まで通せるか |
 | `node tools/measure_layout.mjs` | 画面の寸法・スクロール量・持ち方での文字サイズ差 |
 | `node tools/changelog_check.mjs` | 更新履歴(`UPDATE_HISTORY`)の形・日付・同じ話題の重複 |
+| `node tools/ghost_team_test.mjs` | チーム戦のゴーストが**ホストとゲストで完全に一致**するか・味方側に入らないか |
 
 ## `changelog_check.mjs`(更新履歴)
 
