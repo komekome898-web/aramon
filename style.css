@@ -4412,12 +4412,18 @@
   .mm-train-title{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); margin-top:2px; }
   .mm-train-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
   .mm-train-btn{
-    display:flex; align-items:center; justify-content:center; padding:10px 8px; text-align:center;
+    display:flex; align-items:center; justify-content:center; padding:10px 6px; text-align:center;
     background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:8px;
     color:var(--ink); cursor:pointer;
   }
   .mm-train-btn.active{ border-color:var(--amber); background:rgba(244,196,48,0.12); box-shadow:0 0 0 1px var(--amber) inset; }
-  .mm-train-name{ font-size:12px; font-weight:700; text-align:center; }
+  /* 【項目名は必ず1行】折り返すとその行だけ背が伸びて並びが崩れる(667幅で「ドミノ倒し」が2行になった)。
+     いちばん狭い667幅の枠(58px)にも5文字が入るよう、文字の大きさは画面の論理幅から決める。
+     さらに長い名前が来たときは、この文字要素自身が「…」で切る(枠では隠さない)。 */
+  .mm-train-name{
+    font-size:clamp(9px, calc(1.6 * var(--vw)), 12px); font-weight:700; text-align:center;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; max-width:100%;
+  }
   .mastermon-use-btn{
     padding:13px 20px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1.5px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
