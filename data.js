@@ -323,6 +323,9 @@ const WALK_ANIM = {
   },
   suezo: {
     base: { front:_loadWalk('suezo_walk_f'), back:_loadWalk('suezo_walk_b') },            // スエゾー(色スキン対応)
+    ssr: [
+      { skinId:'suezo_ssr', front:_loadWalk('suezo_ssr_walk_f'), back:_loadWalk('suezo_ssr_walk_b') }, /*@suezo_ssr*/
+    ],
   },
   zan: {
     base: { front:_loadWalk('zan_walk_f'), back:_loadWalk('zan_walk_b') },                // ザン(色スキン対応)
@@ -845,6 +848,7 @@ const SSR_SKIN_AURA = {
   oki_ssr:        'blue', /*@oki_ssr*/
   leaf_ssr:       'white', /*@leaf_ssr*/
   narga_ssr:      'green', /*@narga_ssr*/
+  suezo_ssr:      'red', /*@suezo_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1074,6 +1078,7 @@ const SSR_SKIN_TIER3 = {
                                       burst:1, burstGap:0, projStyle:'voidOrb',
                                       blast:{ radius:240, dmg:48, expandTime:0.45, color:'#7a2fc6' } } },
     } },
+  suezo_ssr:      { name:'真瞳術', dmgMult:1.15 }, /*@suezo_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1233,8 +1238,8 @@ const LOBBY_BANNERS = [
   { rar:'SSR', name:'秦の怪鳥', tag:'新登場・ガチャ', img:'monsters/oki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@oki_ssr*/
   { rar:'SSR', name:'メカビオギドラ', tag:'新登場・ガチャ', img:'monsters/leaf_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@leaf_ssr*/
   { rar:'SSR', name:'ゴッドエンペラー', tag:'新登場・ガチャ', img:'monsters/narga_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@narga_ssr*/
+  { rar:'SSR', name:'バジリスエゾー', tag:'新登場・ガチャ', img:'monsters/suezo_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@suezo_ssr*/
   // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
-  { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ',   img:'monsters/satsuki_ssr.png',   size:'150%', pos:'50% 20%', open:'gacha' },
 ];
 const LOBBY_BANNER_MS = 3000;
 
@@ -1259,6 +1264,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-26', items:[
+    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！', g:['feature','monster'] },
+  ]},
   { date:'2026-08-25', items:[
     { t:'💥 ゴッドエンペラーの「デスレーザー」の威力を104→150に上げ、全モンスターの技で単発威力を最大にしました', g:['monster','balance'] },
   ]},
@@ -4050,6 +4058,7 @@ const SSR_SKINS = {
   oki_ssr:        { element:'centaur', name:'秦の怪鳥', iconImg:'oki_ssr', playerImg:'oki_player_ssr' }, /*@oki_ssr*/
   leaf_ssr:       { element:'leaf', name:'メカビオギドラ', iconImg:'leaf_ssr', playerImg:'leaf_player_ssr' }, /*@leaf_ssr*/
   narga_ssr:      { element:'narga', name:'ゴッドエンペラー', iconImg:'narga_ssr', playerImg:'narga_player_ssr' }, /*@narga_ssr*/
+  suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
