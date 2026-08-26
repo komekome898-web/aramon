@@ -5505,10 +5505,13 @@ fxGlareEyesImg.src = './images/fx_glare_eyes.png';
 /* 【大きさは扇の広がりから決める】固定のワールド幅にすると、伸び始めの近い所では
    画面いっぱいに膨らんで空に浮いて見えた(実測)。扇のその地点での幅に合わせると、
    技が伸びるのに合わせて眼も自然に大きくなる。 */
-const GLARE_EYES_ALONG = 0.55;   // 扇のどのあたりに出すか(0=足元 / 1=先端)
+/* 眼は**扇の広がる先端に乗って相手へ飛んでいく**(発注者指定・2026-08-26)。
+   位置を先端の割合で決めるので、技が伸びるのに合わせて前へ進み、
+   同時に扇が広がるぶん大きくなる ―― 別に動かす仕掛けは要らない。 */
+const GLARE_EYES_ALONG = 0.9;    // 扇のどのあたりに乗るか(1=先端そのもの)
 const GLARE_EYES_WMUL  = 1.7;    // 扇のその地点の幅の何倍にするか
-const GLARE_EYES_ZBASE = 95;     // 出す高さ(足元から)。扇の少し上に浮かせる
-const GLARE_EYES_ZMUL  = 0.05;   // 遠くへ出すほど少しだけ高くする
+const GLARE_EYES_ZBASE = 40;     // 出す高さ(足元から)。扇にぴったり沿わせる
+const GLARE_EYES_WCAP  = 0.45;   // 大きくなりすぎない上限(射程に対する割合)
 function drawGlareEyesFx(ae, fillDist, fadeAlpha){
   if(!fxGlareEyesReady || renderHeavyLoad) return;
   const elapsed = matchTime - ae.spawnAt;
@@ -5522,13 +5525,14 @@ function drawGlareEyesFx(ae, fillDist, fadeAlpha){
   const reach = Math.min(ae.range||0, fillDist!=null ? fillDist : (ae.range||0));
   const along = Math.max(60, reach*GLARE_EYES_ALONG);
   const wx = ae.x + Math.cos(ae.angle)*along, wy = ae.y + Math.sin(ae.angle)*along;
-  const p = project(wx, wy, (ae.z||0) + GLARE_EYES_ZBASE + along*GLARE_EYES_ZMUL);
+  const p = project(wx, wy, (ae.z||0) + GLARE_EYES_ZBASE);
   if(!p) return;
   const pulse = 1 + 0.06*Math.sin(matchTime*9);        // ゆっくり息づく
-  // 扇のその地点での幅(当たり判定と同じ角度から出す)を基準にする
+  /* 扇のその地点での幅(当たり判定と同じ角度から出す)を基準にする。
+     **上限を付ける** ―― 先端まで飛ぶと幅が射程なりに膨らみ、画面からはみ出したため。 */
   const half = (ae.fanAngleDeg||30)*Math.PI/360;
-  const fanW = 2*along*Math.tan(half);
-  const w = fanW * GLARE_EYES_WMUL * p.scale * pulse;
+  const fanW = Math.min(2*along*Math.tan(half)*GLARE_EYES_WMUL, (ae.range||1000)*GLARE_EYES_WCAP);
+  const w = fanW * p.scale * pulse;
   const h = w * (fxGlareEyesImg.height/fxGlareEyesImg.width);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';            // 画像の黒がそのまま透明になる
