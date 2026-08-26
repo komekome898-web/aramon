@@ -742,16 +742,42 @@ function ensureSkinMediaSeBuffers(skinId){
     if(one) one.ensure();
   });
 }
+/* 1つの区分に複数の音源を書くと、**重みで鳴らし分ける**(バジリスエゾーのtier3が60/30/10)。
+   書き方は data.js の SKIN_MEDIA 側が正で、`'ファイル'` でも `[{src,weight},…]` でもよい。
+   1つだけのときも同じ形へまとめるので、**鳴らす側の分岐はこの関数の中だけ**で済む。
+   返す物は今までのワンショットと同じ使い方(ensure / play)ができるので、呼び出し側は変えなくてよい。 */
+function makeSkinSeSet(entry){
+  const list = (Array.isArray(entry) ? entry : [entry])
+    .map(v=> (typeof v === 'string') ? { src:v, weight:1 } : v)
+    .filter(v=> v && v.src);
+  if(!list.length) return null;
+  const variants = list.map(v=>({ one: createSeOneShot('./' + v.src, 1.2),
+                                  weight: Math.max(0, +v.weight || 0) }));
+  const total = variants.reduce((s, v)=> s + v.weight, 0);
+  return {
+    ensure(){ variants.forEach(v=> v.one.ensure()); },
+    play(t){
+      // 重みが全部0(書き忘れ)なら等確率にして、無音にはしない
+      let r = Math.random() * (total > 0 ? total : variants.length);
+      for(const v of variants){
+        r -= (total > 0 ? v.weight : 1);
+        if(r < 0) return v.one.play(t);
+      }
+      return variants[variants.length-1].one.play(t);
+    },
+  };
+}
 Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).forEach(id=>{
   const se = SKIN_MEDIA[id].se;
   if(!se) return;
   Object.keys(se).forEach(slot=>{
     if(!se[slot] || !SKIN_SE_FALLBACK[slot]) return;
+    const set = makeSkinSeSet(se[slot]);
+    if(!set) return;
     const name = `skinSe:${id}:${slot}`;
-    const one = createSeOneShot('./' + se[slot], 1.2);
-    skinMediaSeOneShots[name] = one;
+    skinMediaSeOneShots[name] = set;
     SE_MIN_GAP[name] = SKIN_SE_GAP[slot];
-    SE_DEFS[name] = (t, o)=>{ if(!one.play(t)) SE_DEFS[SKIN_SE_FALLBACK[slot]](t, o); };
+    SE_DEFS[name] = (t, o)=>{ if(!set.play(t)) SE_DEFS[SKIN_SE_FALLBACK[slot]](t, o); };
   });
 });
 // メニュー系の<button>タップで共通の「ポン」を鳴らす
