@@ -15,6 +15,8 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + JS + Fire
    長い作業では会話が要約され、決定事項が消える。**同じことを二度聞かない。** 質問する前に必ず作業メモを読む。
 6. **プレイに関わる大きな変更をしたら`data.js`の`UPDATE_HISTORY`に1行追記する。** 書き方は下の「更新履歴の書き方」に全部ある。**書いたら`node tools/changelog_check.mjs`を通す。**
 
+**このうち1・6と、構文チェック・ロビーのレイアウト検査は`tools/hooks/`のフックが自動で止める**(`.claude/settings.json`から呼ばれる)。止められたら理由がそのまま返るので、直してから進む。中身は`tools/README.md`の「hooks/」。
+
 ## 更新履歴の書き方(`data.js`の`UPDATE_HISTORY`)
 
 **更新履歴は「作業の経過」ではなく「いま遊ぶ人にとってゲームがどうなっているか」を書く場所。** 作業の経過はコミットとPRに残るので、履歴へ持ち込まない。
@@ -67,7 +69,7 @@ iPhoneブラウザ(PWA)向けTPSバトルロイヤル。HTML5 Canvas + JS + Fire
 | `video/` | SSR昇格演出の動画(`*_promote.mp4`/`.webm`。音声は`audio/`側と同時再生) |
 | `monsters/*.png` | モンスター画像。静止画+歩行スプライト`<prefix>_walk_f1..8`/`_b1..8`(320px・256色透過)。仕様JSONは`monsters/specs/` |
 | `vendor/` | Three.js r160(MIT) |
-| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定・持ち方での文字サイズ差)、`lobby_layout_test.mjs`(ロビーの見切れ/押しやすさ/重なりを7端末×5モードで検査)、`changelog_check.mjs`(更新履歴の形・日付・重複)、`undef_check.mjs`(未定義の識別子)。開発用でゲームには読み込まない |
+| `tools/` | モンスター追加ツール、`measure_layout.mjs`(画面の寸法測定・持ち方での文字サイズ差)、`lobby_layout_test.mjs`(ロビーの見切れ/押しやすさ/重なりを7端末×5モードで検査)、`changelog_check.mjs`(更新履歴の形・日付・重複)、`undef_check.mjs`(未定義の識別子)、`hooks/`(下の絶対ルールを自動で止めるフック。`.claude/settings.json`から呼ばれる)。開発用でゲームには読み込まない |
 | `guide/` | 遊び方ガイドの画像 |
 
 ## 全画面に効く決まり(詳細は aramon-layout)

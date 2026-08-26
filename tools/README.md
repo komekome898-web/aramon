@@ -297,3 +297,21 @@ node tools/undef_check.mjs path/to/one.js  # 指定したファイルだけ
 - いま直せない指摘は**ファイル冒頭の `KNOWN` に理由付きで登録**してあり、実行のたびに一覧で出ます
   (「見なかったことにする」のではなく「意図的に許した」を残すため)。直したらその行を消します。
 - `LOBBY_TEST_ALL=1` を付けると省略せず全件出ます。
+
+## `hooks/`
+
+Claude Codeが自動で回す検査。`.claude/settings.json` から呼ばれます(手で叩くものではありません)。
+CLAUDE.mdの「絶対に守るルール」のうち、忘れると事故になる4つを機械で止めます。
+
+| スクリプト | いつ動くか | 何を止めるか |
+|---|---|---|
+| `js_syntax.sh` | `.js`/`.mjs` を書き換えた直後 | `node --check` が落ちるコード |
+| `changelog.sh` | `data.js` を書き換えた直後 | 更新履歴の形・日付・重複のエラー(注意は止めずに伝えるだけ) |
+| `cache_bump.sh` | 作業を終えるとき | 配信するファイルを変えたのに `sw.js` の `CACHE_NAME` が据え置き(絶対ルール1) |
+| `lobby_layout.sh` | 作業を終えるとき | `style.css`/`index.html`/`ui.js` を触ったのにロビーの検査を通していない |
+
+- 止めるときは終了コード2で、理由がそのままClaudeへ返ります。
+- `lobby_layout.sh` は3分かかるので、**同じ中身では二度回しません**(`.claude/hooks-cache/`にハッシュを控える。gitには入れない)。
+  `playwright`が無い環境では黙って飛ばします。
+- 一時的に全部止めたいときは `.claude/settings.json` の `hooks` を消すのではなく、
+  Claude Codeの `/hooks` から個別に外してください。

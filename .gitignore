@@ -9,3 +9,6 @@ shots/
 
 # シェアカードのプレビュー画像(tools/share_shot.mjs の出力)。撮り直せる派生物なので追跡しない
 tools/_share_preview/
+
+# フック(tools/hooks/)が「同じ中身で二度回さない」ために控えるハッシュ。端末ごとの状態
+.claude/hooks-cache/
