@@ -9285,6 +9285,10 @@ function buildMastermonMovesHtml(key, opts){
     const pseudoNoBoost = { element:key, isPlayer:true, moveBoosts:[] };
     const mvPlain = (hasBoost && baseMv.tier===3 && typeof skinTier3Move==='function')
       ? skinTier3Move(baseMv, pseudoNoBoost) : null;
+    /* 装備スキンのtier3に「確率で変わる当たり」があるときは、その説明も足す
+       (文面は data.js が同じ表から作るので、確率や効果を変えれば説明も追従する)。 */
+    const variantText = (!ignoreSkin && mv.tier===3 && equippedForMoves && typeof skinTier3VariantText==='function')
+      ? skinTier3VariantText(equippedForMoves) : '';
     const icon = mv.icon || fallbackIcon;
     // 技アイコンは該当オーラのアイコンを表示(tier3は装備SSRスキンで一致技に変わる)
     const dispAura = (typeof getMoveAura==='function') ? getMoveAura(mv, pseudoForMove) : mv.aura;
@@ -9344,7 +9348,7 @@ function buildMastermonMovesHtml(key, opts){
           <span${cls('speed')}>${isAoe?'範囲拡大速度':'弾速'} ${upTxt('speed', plainSpeed, speedVal)}</span>
           <span${cls('range')}>射程 ${upTxt('range', mvPlain?mvPlain.range:null, mv.range)}</span>
         </div>
-        <div class="mm-move-feature${isUp('feature')?' mm-move-up':''}">${describeMoveFeatureText(mv)}</div>
+        <div class="mm-move-feature${isUp('feature')?' mm-move-up':''}">${[describeMoveFeatureText(mv), variantText].filter(Boolean).join('・')}</div>
       </div>
     </div>`;
   }).join('');
