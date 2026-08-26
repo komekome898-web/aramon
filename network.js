@@ -1076,6 +1076,7 @@ function tryNonHostPlayerFireVisual(dt){
         beamRanges, fillSpeed, telegraphTime:0.18,
         spawnAt:matchTime, life: 0.18 + reach/fillSpeed + 0.25,
         style:mv.aoeStyle||null, moveAura, auraTint, auraAccent,
+        glareEyes: !!mv.glareEyes,   // 睨む眼(ホスト側の buildAe と同じ印)
       };
     };
     let firstLife = 0;

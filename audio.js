@@ -729,8 +729,10 @@ const SE_DEFS = {
    SE名は 'skinSe:<スキンid>:<区分>'。SE_DEFS へ入れるので、管理者画面のSE確認にも
    自動で並ぶ。音源が未ロード・取得失敗のときは既存のSEへ落ちるので無音にはならない。 */
 // 区分は data.js の SKIN_SE_SLOTS が正。ここは「無いときに鳴る既存のSE」と「連打の間引き」だけ
-const SKIN_SE_FALLBACK = { summon:'shuwaa', tier3:'fire', hit:'hitTaken', kill:'kill', win:'fanfare' };
-const SKIN_SE_GAP      = { summon:1.5,      tier3:0.6,    hit:0.3,        kill:0.4,    win:1.5 };
+const SKIN_SE_FALLBACK = { summon:'shuwaa', tier3:'fire', tier3hit:'hitDealt',
+                           hit:'hitTaken', kill:'kill', win:'fanfare' };
+const SKIN_SE_GAP      = { summon:1.5,      tier3:0.6,   tier3hit:0.3,
+                           hit:0.3,         kill:0.4,    win:1.5 };
 const skinMediaSeOneShots = {};   // SE名 -> ワンショット
 function skinMediaSeName(skinId, slot){
   const name = `skinSe:${skinId}:${slot}`;

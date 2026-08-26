@@ -1078,7 +1078,9 @@ const SSR_SKIN_TIER3 = {
                                       burst:1, burstGap:0, projStyle:'voidOrb',
                                       blast:{ radius:240, dmg:48, expandTime:0.45, color:'#7a2fc6' } } },
     } },
-  suezo_ssr:      { name:'真瞳術', dmgMult:1.15 }, /*@suezo_ssr*/
+  /* バジリスエゾー: 技の絵は素の「サイコキネシス」のまま。**睨む赤い眼を上へ重ねるだけ**の印。
+     描くのは render.js の drawGlareEyesFx 1か所(画像は images/fx_glare_eyes.png)。 */
+  suezo_ssr:      { name:'真瞳術', dmgMult:1.15, move:{ glareEyes:true } }, /*@suezo_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1265,7 +1267,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-26', items:[
-    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！ tier3「真瞳術」は撃つたびに鳴き声が変わります(3種類。まれにしか出ないものもあります)', g:['feature','monster','av'] },
+    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！ tier3「真瞳術」は撃つたびに鳴き声が変わり(3種類。まれにしか出ないものもあります)、技の上に睨みつける赤い眼が浮かびます。当てたときと相手を倒したときにも専用の音が鳴ります', g:['feature','monster','av'] },
   ]},
   { date:'2026-08-25', items:[
     { t:'💥 ゴッドエンペラーの「デスレーザー」の威力を104→150に上げ、全モンスターの技で単発威力を最大にしました', g:['monster','balance'] },
@@ -4162,7 +4164,9 @@ const SKIN_MEDIA = {
     se: { summon:'audio/se_suezo_ssr_summon.m4a',
           tier3:[ { src:'audio/se_suezo_ssr_tier3_a.mp3', weight:60 },
                   { src:'audio/se_suezo_ssr_tier3_b.mp3', weight:30 },
-                  { src:'audio/se_suezo_ssr_tier3_c.mp3', weight:10 } ] },
+                  { src:'audio/se_suezo_ssr_tier3_c.mp3', weight:10 } ],
+          tier3hit:'audio/se_suezo_ssr_tier3hit.mp3',   // 真瞳術を当てたとき
+          kill:'audio/se_suezo_ssr_kill.mp3' },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
@@ -4188,7 +4192,10 @@ Object.keys(SSR_SKINS).forEach(id=>{
 /* 専用SEの区分。並びは試合で鳴る順(ギャラリーのボタンの並びもこの順になる)。
    **ここへ1行足せば、SKIN_MEDIA.se の受け取り・SE_DEFSへの登録・combat.jsの差し替え表・
    ギャラリー・管理者画面のSE確認まで全部が回る。**(2026-08-17に summon を追加) */
-const SKIN_SE_SLOTS = { summon:'召喚演出', tier3:'技(tier3)', hit:'被弾', kill:'キル', win:'勝利' };
+/* tier3hit は「tier3を**当てた**ときに鳴る音」。hit(=自分が被弾したとき)とは別物なので混同しない。
+   鳴らす名前の解決は combat.js の SKIN_TIER3_HIT_SE、鳴らすのは applyDamage の1か所。 */
+const SKIN_SE_SLOTS = { summon:'召喚演出', tier3:'技(tier3)', tier3hit:'技(tier3)の命中',
+                        hit:'被弾', kill:'キル', win:'勝利' };
 const SKIN_BGM_SLOTS = { battle:'残り6人以上', final5:'残り5人以下', lastBattle:'残り2人' };
 function skinMediaOf(skinId){ return (skinId && SKIN_MEDIA[skinId]) || null; }
 
