@@ -1265,7 +1265,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-26', items:[
-    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！', g:['feature','monster'] },
+    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！ tier3「真瞳術」は撃つたびに鳴き声が変わります(3種類。まれにしか出ないものもあります)', g:['feature','monster','av'] },
   ]},
   { date:'2026-08-25', items:[
     { t:'💥 ゴッドエンペラーの「デスレーザー」の威力を104→150に上げ、全モンスターの技で単発威力を最大にしました', g:['monster','balance'] },
@@ -4154,7 +4154,15 @@ const SKIN_MEDIA = {
   suezo_ssr: { /*@suezo_ssr*/
     promote: { video:'video/suezo_ssr_promote', audio:'audio/suezo_ssr_promote_audio.m4a', safetyMs:32787, bgmOnReveal:'lastBattle' },
     bgm: { battle:'audio/bgm_suezo_ssr_battle.m4a', final5:'audio/bgm_suezo_ssr_final5.m4a', lastBattle:'audio/bgm_suezo_ssr_lastbattle.m4a' },
-    se: { summon:'audio/se_suezo_ssr_summon.m4a' },
+    /* 【1区分に複数書くと確率で鳴らし分ける】tier3「真瞳術」は3種を 60% / 30% / 10% で鳴らす
+       (発注者指定・2026-08-26)。weight の合計で割るので、比だけ合っていればよい。
+       文字列1つの従来の書き方もそのまま使える。抽選は audio.js の makeSkinSeSet 1か所。
+       ※ スタジオで**この子の専用メディアを更新し直すと、この行はツールの書式で上書きされる**
+         (配列は書けないため tier3 が消える)。そのときはここを書き戻すこと。 */
+    se: { summon:'audio/se_suezo_ssr_summon.m4a',
+          tier3:[ { src:'audio/se_suezo_ssr_tier3_a.mp3', weight:60 },
+                  { src:'audio/se_suezo_ssr_tier3_b.mp3', weight:30 },
+                  { src:'audio/se_suezo_ssr_tier3_c.mp3', weight:10 } ] },
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
