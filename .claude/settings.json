@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR:-.}/tools/hooks/js_syntax.sh",
+            "timeout": 30,
+            "statusMessage": "構文チェック(node --check)"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR:-.}/tools/hooks/changelog.sh",
+            "timeout": 30,
+            "statusMessage": "更新履歴の検査"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR:-.}/tools/hooks/cache_bump.sh",
+            "timeout": 30,
+            "statusMessage": "sw.js の CACHE_NAME を確認"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR:-.}/tools/hooks/lobby_layout.sh",
+            "timeout": 400,
+            "statusMessage": "ロビーのレイアウト検査(最大3分)"
+          }
+        ]
+      }
+    ]
+  }
+}
