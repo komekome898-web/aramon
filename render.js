@@ -5512,6 +5512,30 @@ const GLARE_EYES_ALONG = 0.9;    // 扇のどのあたりに乗るか(1=先端�
 const GLARE_EYES_WMUL  = 1.7;    // 扇のその地点の幅の何倍にするか
 const GLARE_EYES_ZBASE = 40;     // 出す高さ(足元から)。扇にぴったり沿わせる
 const GLARE_EYES_WCAP  = 0.45;   // 大きくなりすぎない上限(射程に対する割合)
+/* 眼を技の色に合わせる。**色相だけ差し替え、明るさと鮮やかさはそのまま**にするので、
+   炎のような濃淡がそのまま残る(fxSevenSprite と同じやり方)。色ごとに1枚だけ作って使い回す。 */
+const _fxGlareTint = {};
+function fxGlareEyesSprite(hex){
+  if(!fxGlareEyesReady) return null;
+  if(!hex) return fxGlareEyesImg;            // 当たり無しは元の絵のまま
+  if(_fxGlareTint[hex]) return _fxGlareTint[hex];
+  const w = fxGlareEyesImg.naturalWidth, h = fxGlareEyesImg.naturalHeight;
+  if(!w || !h) return fxGlareEyesImg;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d', { willReadFrequently:true });
+  cx.drawImage(fxGlareEyesImg, 0, 0);
+  const rgbT = hexToRgb(hex), hueT = rgbToHsl(rgbT[0], rgbT[1], rgbT[2])[0];
+  const im = cx.getImageData(0, 0, w, h), d = im.data;
+  for(let i=0;i<d.length;i+=4){
+    if(!d[i+3]) continue;
+    const hsl = rgbToHsl(d[i], d[i+1], d[i+2]);
+    const o = hslToRgb(hueT, hsl[1], hsl[2]);
+    d[i]=o[0]; d[i+1]=o[1]; d[i+2]=o[2];
+  }
+  cx.putImageData(im, 0, 0);
+  _fxGlareTint[hex] = c;
+  return c;
+}
 function drawGlareEyesFx(ae, fillDist, fadeAlpha){
   if(!fxGlareEyesReady || renderHeavyLoad) return;
   const elapsed = matchTime - ae.spawnAt;
@@ -5527,6 +5551,8 @@ function drawGlareEyesFx(ae, fillDist, fadeAlpha){
   const wx = ae.x + Math.cos(ae.angle)*along, wy = ae.y + Math.sin(ae.angle)*along;
   const p = project(wx, wy, (ae.z||0) + GLARE_EYES_ZBASE);
   if(!p) return;
+  const img = fxGlareEyesSprite(ae.glareTint || null);
+  if(!img) return;
   const pulse = 1 + 0.06*Math.sin(matchTime*9);        // ゆっくり息づく
   /* 扇のその地点での幅(当たり判定と同じ角度から出す)を基準にする。
      **上限を付ける** ―― 先端まで飛ぶと幅が射程なりに膨らみ、画面からはみ出したため。 */
@@ -5537,7 +5563,7 @@ function drawGlareEyesFx(ae, fillDist, fadeAlpha){
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';            // 画像の黒がそのまま透明になる
   ctx.globalAlpha = Math.min(1, a);
-  ctx.drawImage(fxGlareEyesImg, p.x - w/2, p.y - h/2, w, h);
+  ctx.drawImage(img, p.x - w/2, p.y - h/2, w, h);
   ctx.restore();
 }
 /* 範囲技1つぶんの描画。**眼は技の絵の上へ重ねたいので、中身を描き切ってから足す。** */

@@ -1089,6 +1089,7 @@ function tryNonHostPlayerFireVisual(dt){
         spawnAt:matchTime, life: 0.18 + reach/fillSpeed + 0.25,
         style:mv.aoeStyle||null, moveAura, auraTint, auraAccent,
         glareEyes: !!mv.glareEyes,   // 睨む眼(ホスト側の buildAe と同じ印)
+        glareTint: (seVar && seVar.color) || null,
       };
     };
     let firstLife = 0;
@@ -1256,6 +1257,7 @@ function broadcastNewShotsAsHost(){
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
       beamRanges:ae.beamRanges||null, style:ae.style||null, auraTint:ae.auraTint||null, auraAccent:ae.auraAccent||null, moveAura:ae.moveAura||null,
       glareEyes: ae.glareEyes ? 1 : 0,   // 睨む眼(これが無いと他の人の画面に眼が出ない)
+      glareTint: ae.glareTint || null,
       doorDist:ae.doorDist||0, // 羅生門(kind:'gate')の門の位置。ゲストは自分で遮蔽物の再計算をしないのでそのまま渡す
     });
   }
@@ -1387,6 +1389,7 @@ function spawnVisualShotFromEvent(evt){
       fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
       style:evt.style||null, auraTint:evt.auraTint||null, auraAccent:evt.auraAccent||null, moveAura:evt.moveAura||null,
       glareEyes: !!evt.glareEyes,
+      glareTint: evt.glareTint || null,
       doorDist:evt.doorDist||0, // 羅生門の見た目(fx3dGate)が門の位置を読む。hitIdsは付けないので判定はしない(見た目のみ)
     });
   }
