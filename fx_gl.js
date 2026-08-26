@@ -254,9 +254,23 @@ function buildParticles(){
   return mesh;
 }
 
+/* 【白く光る粒を出さない】(発注者指示)
+   技の絵の上に白い粒が乗ると、技そのものの形と、技に重ねた演出(睨む眼など)が
+   白飛びに飲まれて見えなくなる。**技本体(帯・輪・2Dの絵)は残し、白い粒だけを捨てる。**
+   判定はここ1か所。粒の3チャンネルの最小値がこの値以上なら「白い粒」とみなす
+   (色が付いている粒 = 炎の火の粉・水しぶき・闇の粒などは最小値が低いので残る)。
+   煤(soot)は下を暗くするためのもので光らないので対象外。                      */
+const FX_WHITE_PARTICLE_MIN = 0.80;
+function fxIsWhiteParticle(o){
+  if(o.soot) return false;
+  if(o.hot != null && o.hot <= 0) return false;   // hot:0 = 煙・土ぼこり(光らない)
+  return Math.min(o.r||0, o.g||0, o.b||0) >= FX_WHITE_PARTICLE_MIN;
+}
+
 /* 粒を1つ発生させる。リングバッファなので上限を超えると古いものから上書きされる
    (「出さない」より「一番古いものを捨てる」ほうが、密度の落ち方が自然)。      */
 function emitOne(o){
+  if(fxIsWhiteParticle(o)) return;
   const i = P.head; P.head = (P.head + 1) % MAX_PARTICLES;
   const a = P.attr;
   const i3 = i*3, i4 = i*4;

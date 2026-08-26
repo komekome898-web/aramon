@@ -5537,7 +5537,10 @@ function fxGlareEyesSprite(hex){
   return c;
 }
 function drawGlareEyesFx(ae, fillDist, fadeAlpha){
-  if(!fxGlareEyesReady || renderHeavyLoad) return;
+  /* **重いときも描く。** 絵を1枚貼るだけなので負荷はほぼ無く、逆に
+     renderHeavyLoad で切ると、人数の多いチーム戦(リアルマップ)でだけ
+     睨む眼が出ない = 一番見せたい場面で消える、という事故になっていた。 */
+  if(!fxGlareEyesReady) return;
   const elapsed = matchTime - ae.spawnAt;
   const life = Math.max(0.2, ae.life || 1);
   // 出て(0.18秒)→ しばらく睨んで → 消える。技の伸びに合わせて少し前へ進む
