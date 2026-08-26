@@ -229,6 +229,7 @@ function fireMove(attacker, target, move){
         hitSe, // 当てたときの専用SE(applyDamageのoptsへそのまま渡す)
         healRatio: (seVar && seVar.healRatio) || 0, // 当たり: 与えたダメージのこの割合を回復
         glareEyes: !!move.glareEyes, // 睨む眼を重ねる(バジリスエゾーの真瞳術)
+        glareTint: (seVar && seVar.color) || null, // 眼も当たりの色に合わせる(無ければ元の絵のまま)
         lifestealMult: move.lifestealMult||1, // この技だけHP回復を増やす(鱗赫)
         closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
         // 扇/帯の技が届いた先端に出す仕上げの爆風ドーム(インフェルノ等)。
