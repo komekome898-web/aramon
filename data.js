@@ -4151,6 +4151,9 @@ const SKIN_MEDIA = {
     bgm: { battle:'audio/bgm_narga_ssr_battle.m4a', final5:'audio/bgm_narga_ssr_final5.m4a', lastBattle:'audio/bgm_narga_ssr_lastbattle.m4a' },
     se: { tier3:'audio/se_narga_ssr_tier3.mp3' },   // デスレーザーの専用SE
   },
+  suezo_ssr: { /*@suezo_ssr*/
+    bgm: { battle:'audio/bgm_suezo_ssr_battle.m4a', final5:'audio/bgm_suezo_ssr_final5.m4a', lastBattle:'audio/bgm_suezo_ssr_lastbattle.m4a' },
+  },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
 /* 【覚醒スキンは元のSSRの専用BGM・専用SEをそのまま受け継ぐ】
