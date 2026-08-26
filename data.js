@@ -1267,7 +1267,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-26', items:[
-    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！ tier3「真瞳術」は撃つたびに鳴き声が変わり(3種類。まれにしか出ないものもあります)、技の上に睨みつける赤い眼が浮かびます。当てたときと相手を倒したときにも専用の音が鳴ります', g:['feature','monster','av'] },
+    { t:'✨ SSRスキン「バジリスエゾー」が登場しました！ tier3「真瞳術」は睨みつける赤い眼が相手へ飛んでいき、撃つたびに当たりが変わります ―― 30%で青くなり与えたダメージの50%を回復、10%で紫になり威力1.5倍。鳴き声も当たりごとに変わります。当てたときと相手を倒したときにも専用の音が鳴ります', g:['feature','monster','av','balance'] },
   ]},
   { date:'2026-08-25', items:[
     { t:'💥 ゴッドエンペラーの「デスレーザー」の威力を104→150に上げ、全モンスターの技で単発威力を最大にしました', g:['monster','balance'] },
@@ -4162,9 +4162,14 @@ const SKIN_MEDIA = {
        ※ スタジオで**この子の専用メディアを更新し直すと、この行はツールの書式で上書きされる**
          (配列は書けないため tier3 が消える)。そのときはここを書き戻すこと。 */
     se: { summon:'audio/se_suezo_ssr_summon.m4a',
+          /* 【1行=1つの当たり】音・エフェクトの色・追加効果を同じ行に書く。
+             こうしておけば「鳴った音と起きたことが食い違う」ことが構造的に起きない。
+             color はエフェクトの色だけを変える。**オーラ(相性)は赤のまま**なので有利不利は変わらない。 */
           tier3:[ { src:'audio/se_suezo_ssr_tier3_a.mp3', weight:60 },
-                  { src:'audio/se_suezo_ssr_tier3_b.mp3', weight:30 },
-                  { src:'audio/se_suezo_ssr_tier3_c.mp3', weight:10 } ],
+                  { src:'audio/se_suezo_ssr_tier3_b.mp3', weight:30,
+                    color:'#3d9fff', healRatio:0.5 },   // 与えたダメージの50%を回復
+                  { src:'audio/se_suezo_ssr_tier3_c.mp3', weight:10,
+                    color:'#a24dff', dmgMult:1.5 } ],   // 威力1.5倍
           tier3hit:'audio/se_suezo_ssr_tier3hit.mp3',   // 真瞳術を当てたとき
           kill:'audio/se_suezo_ssr_kill.mp3' },
   },
@@ -4198,6 +4203,40 @@ const SKIN_SE_SLOTS = { summon:'召喚演出', tier3:'技(tier3)', tier3hit:'技
                         hit:'被弾', kill:'キル', win:'勝利' };
 const SKIN_BGM_SLOTS = { battle:'残り6人以上', final5:'残り5人以下', lastBattle:'残り2人' };
 function skinMediaOf(skinId){ return (skinId && SKIN_MEDIA[skinId]) || null; }
+/* 専用SEの「当たりの種類」の一覧。文字列1つでも配列でも同じ形にして返す。
+   **重みも色も追加効果もこの1つの表が正**で、引くのはこの関数だけ。 */
+function skinSeVariantList(skinId, slot){
+  const media = skinMediaOf(skinId);
+  const e = media && media.se && media.se[slot];
+  if(!e) return [];
+  return (Array.isArray(e) ? e : [e])
+    .map(v=> (typeof v === 'string') ? { src:v, weight:1 } : v)
+    .filter(v=> v && v.src);
+}
+// 重みで1つ引く(該当なしは-1)。**技を撃つときに1度だけ引き、音・色・効果すべてに同じ結果を使う。**
+function pickSkinSeVariant(skinId, slot){
+  const list = skinSeVariantList(skinId, slot);
+  if(!list.length) return -1;
+  const w = (v)=> Math.max(0, +v.weight || 0);
+  const total = list.reduce((s2, v)=> s2 + w(v), 0);
+  let r = Math.random() * (total > 0 ? total : list.length);
+  for(let i=0;i<list.length;i++){
+    r -= (total > 0 ? w(list[i]) : 1);
+    if(r < 0) return i;
+  }
+  return list.length - 1;
+}
+/* この技を撃つときの「当たり」を決める。tier3で専用SEが複数あるスキンだけが対象。
+   idx を渡すとその番号をそのまま使う(マルチでゲストが引いた結果をホストが再現するため)。 */
+function rollSkinTier3Variant(attacker, move, idx){
+  if(!attacker || !move || move.tier!==3) return null;
+  const sid = (typeof entitySkinId==='function') ? entitySkinId(attacker) : null;
+  const list = skinSeVariantList(sid, 'tier3');
+  if(list.length < 2) return null;                  // 1つだけなら従来どおり(引く意味が無い)
+  const i = (idx!=null && idx>=0 && idx<list.length) ? idx : pickSkinSeVariant(sid, 'tier3');
+  if(i < 0) return null;
+  return Object.assign({ index:i }, list[i]);
+}
 
 // skinId 体系: 色スキン = "element:colorId" / SSRスキン = SSR_SKINSのキー
 // SSRスキンの画像を SSR_SKINS から自動で読み込む。

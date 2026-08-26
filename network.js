@@ -958,8 +958,11 @@ function processRemoteFireEvents(){
     const projBefore = projectiles.length;
     // リアルマップの上下のねらいは撃った本人のカメラでしか分からないので、届いた値を使う
     ent.aimSlopeOverride = (typeof evt.slope==='number') ? evt.slope : null;
+    // 当たりはゲストが引いた番号をそのまま使う(引き直すと音と効果が食い違う)
+    ent.seVariantOverride = (typeof evt.sev==='number') ? evt.sev : null;
     fireMove(ent, targetPoint, mv);
     ent.aimSlopeOverride = null;
+    ent.seVariantOverride = null;
     ent.fireCooldown = effectiveCooldown(ent, mv);
     if(hasLagComp){
       ent.x=savedX; ent.y=savedY;
@@ -998,7 +1001,7 @@ function sendLocalInputIfMultiplayer(now){
 
 // 自分が実際に1回発射した瞬間だけ、単発イベントとして送信する
 // (ホストはこれを見て、非ホストの発射をシミュレーションに反映する)
-function sendFireEventIfMultiplayer(aimAngle, mv, aimSlope){
+function sendFireEventIfMultiplayer(aimAngle, mv, aimSlope, seVarIndex){
   if(netState.mode!=='multi' || !netState.roomId || netState.isHost) return;
   // 計測ハーネス用: 発射イベントの送信時刻を記録(通常は__netProbe未定義で素通り)
   if(window.__netProbe) __netProbe.mark('fireSent', { ts: Date.now() });
@@ -1008,6 +1011,7 @@ function sendFireEventIfMultiplayer(aimAngle, mv, aimSlope){
     // リアルマップの上下のねらい。ホストは自分のカメラしか持っていないので必ず送る
     slope: aimSlope || 0,
     moveTier: player.moveTierSelected,
+    sev: (seVarIndex!=null) ? seVarIndex : null,   // 引いた当たりの番号(ホストが同じ結果で判定する)
     // ③ ラグ補正用: 撃った瞬間の自分の位置(予測=正確)と、その時見ていたホストseq
     fx: Math.round(player.x), fy: Math.round(player.y),
     viewSeq: guestCurViewSeq,
@@ -1028,6 +1032,9 @@ function tryNonHostPlayerFireVisual(dt){
   // combat.jsのfireMoveと同じく、スキン装備でtier3が専用技に変わる場合は先に解決する
   let mv = activeMove(player);
   if(typeof skinTier3Move==='function') mv = skinTier3Move(mv, player);
+  /* 当たり(音・色・追加効果)は**撃つ側が1度だけ引く**。番号を発射イベントに載せて送り、
+     ホストは同じ番号で判定するので、見た目と実際の効果が必ず一致する。 */
+  const seVar = (typeof rollSkinTier3Variant==='function') ? rollSkinTier3Variant(player, mv) : null;
   /* ガッツ不足の判定は combat.js の playerGutsShort() が正(FIREボタンを沈ませる印も同じ関数を見る)。
      ここに同じ式を書くと、沈んでいるのに撃てる/撃てないのに沈まない、が起きる */
   if(playerGutsShort()){ warnGutsShortage(); return; }
@@ -1047,8 +1054,13 @@ function tryNonHostPlayerFireVisual(dt){
   // combat.jsのfireMoveと同じ見た目情報(スタイル・オーラ色・SSR色替え)を付与し、
   // ゲスト自身のtier3エフェクトがホストと同じ見た目で描画されるようにする
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(mv, player) : (mv.aura||null);
-  const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(mv, player) : mv.color;
-  const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(mv, player) : null;
+  const effColor = (seVar && seVar.color) ? seVar.color
+                 : ((typeof getMoveEffectColor==='function') ? getMoveEffectColor(mv, player) : mv.color);
+  /* 差し色も当たりの色にする。**GPUの粒や尾はこの色で描く**ので、ここを変えないと
+     枠だけ色が変わって中身が元の色のまま、という半端な見え方になる(実際にそうなった)。
+     オーラ(moveAura=相性)は触らないので、有利不利は今までどおり。 */
+  const auraTint = (seVar && seVar.color) ? seVar.color
+                 : ((typeof getMoveAuraTint==='function') ? getMoveAuraTint(mv, player) : null);
   // 白黒オーラのSSR tier3だけに付く差し色の向き(combat.js と同じ。詳細は data.js の getMoveAuraAccent)
   const auraAccent = (typeof getMoveAuraAccent==='function') ? getMoveAuraAccent(mv, player) : null;
 
@@ -1172,7 +1184,7 @@ function tryNonHostPlayerFireVisual(dt){
     playSe('fire', { kind:'single' });
   }
 
-  sendFireEventIfMultiplayer(aimAngle, mv, aimSlope);
+  sendFireEventIfMultiplayer(aimAngle, mv, aimSlope, seVar ? seVar.index : null);
 }
 
 // ===== ホスト専用: 命中報告を確定計算し、authStateとして配信 =====
@@ -1243,6 +1255,7 @@ function broadcastNewShotsAsHost(){
       range:ae.range, width:ae.width, fanAngleDeg:ae.fanAngleDeg, beamCount:ae.beamCount,
       beamSpreadDeg:ae.beamSpreadDeg, life:ae.life, fillSpeed:ae.fillSpeed, telegraphTime:ae.telegraphTime,
       beamRanges:ae.beamRanges||null, style:ae.style||null, auraTint:ae.auraTint||null, auraAccent:ae.auraAccent||null, moveAura:ae.moveAura||null,
+      glareEyes: ae.glareEyes ? 1 : 0,   // 睨む眼(これが無いと他の人の画面に眼が出ない)
       doorDist:ae.doorDist||0, // 羅生門(kind:'gate')の門の位置。ゲストは自分で遮蔽物の再計算をしないのでそのまま渡す
     });
   }
@@ -1373,6 +1386,7 @@ function spawnVisualShotFromEvent(evt){
       beamSpreadDeg:evt.beamSpreadDeg, spawnAt:matchTime, life:evt.life,
       fillSpeed:evt.fillSpeed||900, telegraphTime:evt.telegraphTime||0.18, beamRanges:evt.beamRanges||undefined,
       style:evt.style||null, auraTint:evt.auraTint||null, auraAccent:evt.auraAccent||null, moveAura:evt.moveAura||null,
+      glareEyes: !!evt.glareEyes,
       doorDist:evt.doorDist||0, // 羅生門の見た目(fx3dGate)が門の位置を読む。hitIdsは付けないので判定はしない(見た目のみ)
     });
   }

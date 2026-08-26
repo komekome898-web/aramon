@@ -155,12 +155,17 @@ function fireMove(attacker, target, move){
   // スキン装備でtier3が専用技に変わる場合はここで解決し、以降すべて解決後の技で処理する
   // (威力・弾速・射程・爆風・消費ガッツ・技名がまとめて差し替わる)
   if(typeof skinTier3Move==='function') move = skinTier3Move(move, attacker);
+  /* 【当たりの抽選はここ1回だけ】音・エフェクトの色・追加効果を同じ結果から配るので、
+     「鳴った音と起きたこと」が食い違わない。表は data.js の SKIN_MEDIA.se.tier3。
+     マルチでゲストが撃ったぶんは、ゲストが引いた番号(seVariantOverride)をそのまま使う。 */
+  const seVar = rollSkinTier3Variant(attacker, move,
+                  (attacker.seVariantOverride!=null ? attacker.seVariantOverride : null));
   // SE: 自分の技発射のみ(負荷対策)。専用SEがある技はそれを、無ければ単発/連射の共通音
   if(attacker.isPlayer && !move.aoeShape){
     const sp = moveSeName(move, attacker);
     if(sp){
       const flight = (move.range && move.projSpeed) ? move.range/effectiveProjSpeed(attacker, move) : undefined;
-      playSe(sp, { dur: flight });
+      playSe(sp, { dur: flight, variant: seVar ? seVar.index : undefined });
     } else {
       playSe('fire', { kind: move.burst ? 'burst' : 'single' });
     }
@@ -169,13 +174,19 @@ function fireMove(attacker, target, move){
   if(attacker.element==='ark' && move.tier===3){
     attacker.graceUntil = matchTime + 10;
   }
-  const effDmg = effectiveMoveDmg(attacker, move);
+  const effDmg = effectiveMoveDmg(attacker, move) * ((seVar && seVar.dmgMult) || 1);
   const effProjSpeed = effectiveProjSpeed(attacker, move);
   const hbMult = ELEMENTS[attacker.element].hitboxMult || 1; // キュービ「当たり判定が大きい」特性
   const moveAura = (typeof getMoveAura==='function') ? getMoveAura(move, attacker) : (move.aura||null);
-  const effColor = (typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color; // スキン装備tier3は装備オーラ色に
+  // 当たりが出たらエフェクトの色だけ変える。**moveAura(相性)は触らない**ので有利不利は変わらない
+  const effColor = (seVar && seVar.color) ? seVar.color
+                 : ((typeof getMoveEffectColor==='function') ? getMoveEffectColor(move, attacker) : move.color);
   // 差し色(ビリビリ電撃等のアクセント)。keepBaseColorの技は本体が黒のままここだけオーラ色になる
-  const auraTint = (typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null;
+  /* 差し色も当たりの色にする。**GPUの粒や尾はこの色で描く**ので、ここを変えないと
+     枠だけ色が変わって中身が元の色のまま、という半端な見え方になる(実際にそうなった)。
+     オーラ(moveAura=相性)は触らないので、有利不利は今までどおり。 */
+  const auraTint = (seVar && seVar.color) ? seVar.color
+                 : ((typeof getMoveAuraTint==='function') ? getMoveAuraTint(move, attacker) : null);
   /* 白黒オーラ('white'/'black')のときだけ入る差し色の「向き」。本体色は素の技のまま残り、
      WebGL層(fxGlAccent)が芯の白熱 / 外周の黒い煤だけを足す。詳細は data.js の getMoveAuraAccent。 */
   const auraAccent = (typeof getMoveAuraAccent==='function') ? getMoveAuraAccent(move, attacker) : null;
@@ -216,6 +227,7 @@ function fireMove(attacker, target, move){
         spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint, auraAccent,
         gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
         hitSe, // 当てたときの専用SE(applyDamageのoptsへそのまま渡す)
+        healRatio: (seVar && seVar.healRatio) || 0, // 当たり: 与えたダメージのこの割合を回復
         glareEyes: !!move.glareEyes, // 睨む眼を重ねる(バジリスエゾーの真瞳術)
         lifestealMult: move.lifestealMult||1, // この技だけHP回復を増やす(鱗赫)
         closeBonusMax: move.closeBonusMax||1, // 命中距離が短いほど威力アップ(デュラハン)
@@ -293,7 +305,8 @@ function fireMove(attacker, target, move){
     lockMoveFacing(attacker, aimAngleBase, totalLife);
     if(attacker.isPlayer){
       const sp = moveSeName(move, attacker);
-      playSe(sp || 'fire', sp ? { dur: totalLife } : { kind:'aoe', dur: totalLife }); // 技の持続時間に合わせた長さで鳴らす
+      const sv = seVar ? seVar.index : undefined;   // 引いた当たりと同じ音を鳴らす
+      playSe(sp || 'fire', sp ? { dur: totalLife, variant: sv } : { kind:'aoe', dur: totalLife });
     }
     return;
   }
@@ -364,6 +377,7 @@ function fireMove(attacker, target, move){
       auraAccent,
       gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り(キッス等)
       hitSe, // 当てたときの専用SE
+      healRatio: (seVar && seVar.healRatio) || 0,
       selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false,
       burstIndex: i, // 連射内の何発目か(レクイエムエンドの3形態描き分け等に使う)
       blast: move.blast||null, // ピクシー「ビッグバン」等: 着弾/最大射程到達で地面にドーム状AoEを発生させる
@@ -586,6 +600,16 @@ function applyDamage(target, dmg, source, opts){
     source.damageDealt += finalDmg;
     // レイド: ボスへ与えたぶんだけを貢献度として別に数える(味方への誤射は元から通らない)
     if(game.raid && target.isRaidBoss) source.raidDamage = (source.raidDamage||0) + finalDmg;
+    /* 技側から直接指定するHP回復(バジリスエゾーの当たり)。**属性の特性とは別枠。**
+       アクアの吸収と同じ見せ方(緑の数字)にして、増えたことがその場で分かるようにする。 */
+    const healRatio = (opts && opts.healRatio) || 0;
+    if(healRatio > 0){
+      const got = Math.min(finalDmg*healRatio, source.maxHp - source.hp);
+      if(got > 0){
+        source.hp += got;
+        spawnDmgText(source.x, source.y, source.z, '+'+Math.round(got), '#7fffa0');
+      }
+    }
     if(source.element==='aqua'){
       // 技によってはHP回復を増やす(大喰いの利世の鱗赫は2倍)
       const lsMult = (opts && opts.lifestealMult) || 1;
@@ -2053,7 +2077,7 @@ function updateProjectiles(dt){
       if(t>=1){
         for(const e of entities){
           if(!e.alive || e.id===p.ownerId) continue;
-          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe });
+          if(dist(p,e) < e.radius+p.splash) applyDamage(e, p.dmg, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
         }
         spawnHit(p.x,p.y,p.landZ||0,p.color);
         spawnDeath(p.x,p.y,p.landZ||0,p.color);
@@ -2091,7 +2115,7 @@ function updateProjectiles(dt){
         if(p.splash>0){
           for(const o of entities){
             if(!o.alive || o.id===p.ownerId) continue;
-            if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe });
+            if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
           }
         }
         hit = true;
@@ -2107,7 +2131,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(!projHeightHits(p,o)) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
             }
           }
           hit=true; break;
@@ -2126,7 +2150,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(!o.alive || o.id===p.ownerId) continue;
               if(!projHeightHits(p,o)) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
             }
           }
           hit=true; break;
@@ -2151,7 +2175,7 @@ function updateProjectiles(dt){
         if(hitNow){
           // blast付き(ビッグバン等)も球体の直撃ダメージを与える。着弾後の爆風ダメージは別途spawnGroundBlastで判定
           const dmgMult = closeRangeDmgMult(p.closeBonusMax, p.traveled, p.maxRange); // 命中距離が短いほど威力アップ(デュラハン)
-          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe });
+          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit){
             const owner = getEntity(p.ownerId);
@@ -2165,7 +2189,7 @@ function updateProjectiles(dt){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;
               if(!projHeightHits(p,o)) continue;
-              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe });
+              if(dist(p,o)<p.splash) applyDamage(o, p.dmg*0.6, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
             }
           }
           spawnHit(tp.x,tp.y,e.z,p.color);
@@ -2631,7 +2655,7 @@ function updateAreaEffects(dt){
         if(inCorridor && !notYetReached){
           ae.hitIds.add(ent.id);
           // 発注者依頼(2026-08-12): 引き寄せだけでなく、炎に触れた瞬間にもダメージを入れる
-          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe,
+          applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe, healRatio: ae.healRatio||0,
                                             lifestealMult: ae.lifestealMult||1 });
           ent.pulledUntil = ae.gateArriveAt;
           ent.pulledX = doorX; ent.pulledY = doorY;
@@ -2661,7 +2685,7 @@ function updateAreaEffects(dt){
           if(ae.hitIds.has(key)) continue;
           if(hitTestRect(origin, ent, beamAngle, curReach, ae.width/2)){
             ae.hitIds.add(key);
-            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe,
+            applyDamage(ent, ae.dmg, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe, healRatio: ae.healRatio||0,
                                               lifestealMult: ae.lifestealMult||1 });
             spawnHit(ent.x, ent.y, ent.z, ae.color);
           }
@@ -2685,7 +2709,7 @@ function updateAreaEffects(dt){
         if(hit){
           ae.hitIds.add(ent.id);
           const dmgMult = closeRangeDmgMult(ae.closeBonusMax, dist(origin, ent), ae.range); // 命中距離が短いほど威力アップ(デュラハン)
-          applyDamage(ent, ae.dmg*dmgMult, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe,
+          applyDamage(ent, ae.dmg*dmgMult, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe, healRatio: ae.healRatio||0,
                                             lifestealMult: ae.lifestealMult||1 });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
         }
