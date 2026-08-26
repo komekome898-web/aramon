@@ -758,14 +758,21 @@ function makeSkinSeSet(entry){
   const total = variants.reduce((s, v)=> s + v.weight, 0);
   return {
     ensure(){ variants.forEach(v=> v.one.ensure()); },
-    play(t){
-      // 重みが全部0(書き忘れ)なら等確率にして、無音にはしない
-      let r = Math.random() * (total > 0 ? total : variants.length);
-      for(const v of variants){
-        r -= (total > 0 ? v.weight : 1);
-        if(r < 0) return v.one.play(t);
+    /* 何番を鳴らすかは呼び出し側が決める(技を撃つときに1度だけ引いた番号)。
+       渡されなければここで引く。**重みの持ち主は data.js の1つの表**で、
+       ここはその結果を鳴らすだけ ―― 同じ抽選を2か所に書かないため。 */
+    play(t, idx){
+      let i = idx;
+      if(!(i >= 0 && i < variants.length)){
+        // 重みが全部0(書き忘れ)なら等確率にして、無音にはしない
+        let r = Math.random() * (total > 0 ? total : variants.length);
+        i = variants.length - 1;
+        for(let k=0;k<variants.length;k++){
+          r -= (total > 0 ? variants[k].weight : 1);
+          if(r < 0){ i = k; break; }
+        }
       }
-      return variants[variants.length-1].one.play(t);
+      return variants[i].one.play(t);
     },
   };
 }
@@ -779,7 +786,7 @@ Object.keys(typeof SKIN_MEDIA!=='undefined' ? SKIN_MEDIA : {}).forEach(id=>{
     const name = `skinSe:${id}:${slot}`;
     skinMediaSeOneShots[name] = set;
     SE_MIN_GAP[name] = SKIN_SE_GAP[slot];
-    SE_DEFS[name] = (t, o)=>{ if(!set.play(t)) SE_DEFS[SKIN_SE_FALLBACK[slot]](t, o); };
+    SE_DEFS[name] = (t, o)=>{ if(!set.play(t, o && o.variant)) SE_DEFS[SKIN_SE_FALLBACK[slot]](t, o); };
   });
 });
 // メニュー系の<button>タップで共通の「ポン」を鳴らす

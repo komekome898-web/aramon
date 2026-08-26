@@ -69,6 +69,8 @@ const VIEW = opt('view', 'front');
    そのスキンを装備した状態にする。素の技とは見た目も性能も別物なので、
    **SSR専用は必ずスキンを着せて撮る。** */
 const SKIN = opt('skin', '');
+// --variant <番号>: 確率で見た目と効果が変わる技(真瞳術)の、どの当たりを撮るか
+const VARIANT = opt('variant', '');
 /* --shake: カメラのピン留めを外して撮る。
    通常はコマごとにカメラを固定して「技の見え方以外の差」を消しているが、
    その副作用で**技が起こした画面揺れも必ず打ち消される**(採点表8が原理的に測れない)。
@@ -248,15 +250,19 @@ const DRIVER = `(function(){
              cam:{ x:Math.round(camPos.x), y:Math.round(camPos.y), z:Math.round(camPos.z) } };
   };
   /* 指定tierの技を1発撃つ。撃つのは「プレイヤー本人が撃つ」経路そのもの。 */
-  api.fire = function(tier){
+  api.fire = function(tier, seVariant){
     const me = api._me;
     me.moveTierSelected = tier;
+    /* 当たり(音・色・追加効果)が確率で変わる技を撮るための指定。
+       番号を渡すと fireMove がその当たりで撃つ(--variant)。 */
+    me.seVariantOverride = (seVariant!=null) ? seVariant : null;
     const mv = activeMove(me);
     me.guts = me.maxGuts;
     const aim = mv.melee ? api._tgt
               : { x: me.x + Math.cos(me.facingAngle)*2000, y: me.y + Math.sin(me.facingAngle)*2000 };
     fireMove(me, mv.melee ? api._tgt : aim, mv);
     me.fireCooldown = 9999;   // 連射させない(1発だけを見る)
+    me.seVariantOverride = null;
     /* 実際に出た技の名前は fireMove の中で skinTier3Move() を通ったあとの値。
        activeMove() の戻りは素の技なので、**SSR専用tier3を撮っても素の名前が記録される**。
        出た弾/範囲技から拾い直す(スキンが効いているかの確認になる)。 */
@@ -440,7 +446,7 @@ for(const [el, tiers] of byElement){
       await page.waitForTimeout(120);
       await page.evaluate(()=> window.__fx.draw());
       await page.waitForTimeout(60);
-      const info = await page.evaluate((t)=> window.__fx.fire(t), tier);
+      const info = await page.evaluate((a)=> window.__fx.fire(a.t, a.v), { t: tier, v: VARIANT!=='' ? +VARIANT : null });
       let prev = 0;
       for(const at of FRAMES){
         /* 1回の evaluate が長いと Playwright のタイムアウト(30秒)に当たるので、
