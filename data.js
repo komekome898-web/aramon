@@ -4226,6 +4226,23 @@ function pickSkinSeVariant(skinId, slot){
   }
   return list.length - 1;
 }
+/* 当たりの説明文。**同じ表から作る**ので、確率や効果を変えれば説明も一緒に変わる
+   (技一覧に書いた数字が実際と食い違う、という事故が起きない)。 */
+function skinTier3VariantText(skinId){
+  const list = skinSeVariantList(skinId, 'tier3');
+  if(list.length < 2) return '';
+  const w = (v)=> Math.max(0, +v.weight || 0);
+  const total = list.reduce((s2, v)=> s2 + w(v), 0) || list.length;
+  const parts = [];
+  for(const v of list){
+    const eff = [];
+    if(v.dmgMult && v.dmgMult !== 1) eff.push(`威力${v.dmgMult}倍`);
+    if(v.healRatio) eff.push(`与えたダメージの${Math.round(v.healRatio*100)}%を回復`);
+    if(!eff.length) continue;                       // 何も起きない当たりは書かない
+    parts.push(`${Math.round(w(v)/total*100)}%で${eff.join('・')}`);
+  }
+  return parts.length ? `撃つたびに ${parts.join(' / ')}(音とエフェクトの色も変わる)` : '';
+}
 /* この技を撃つときの「当たり」を決める。tier3で専用SEが複数あるスキンだけが対象。
    idx を渡すとその番号をそのまま使う(マルチでゲストが引いた結果をホストが再現するため)。 */
 function rollSkinTier3Variant(attacker, move, idx){
