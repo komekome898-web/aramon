@@ -5494,7 +5494,61 @@ function areaEffectAnchor(ae){
   }
   return null;
 }
+/* 睨みつける赤い眼(バジリスエゾー「真瞳術」に重ねる)。
+   **技そのものの絵は一切変えず、上へ重ねるだけ。** 素の「サイコキネシス」は今までどおり。
+   出す場所は扇の中ほど・目の高さ。カメラの方を向く板なので、どの角度から見ても睨まれて見える。
+   画像の黒は加算合成(lighter)で自然に消えるので、切り抜きは要らない。 */
+const fxGlareEyesImg = new Image();
+let fxGlareEyesReady = false;
+fxGlareEyesImg.onload = ()=>{ fxGlareEyesReady = true; };
+fxGlareEyesImg.src = './images/fx_glare_eyes.png';
+/* 【大きさは扇の広がりから決める】固定のワールド幅にすると、伸び始めの近い所では
+   画面いっぱいに膨らんで空に浮いて見えた(実測)。扇のその地点での幅に合わせると、
+   技が伸びるのに合わせて眼も自然に大きくなる。 */
+const GLARE_EYES_ALONG = 0.55;   // 扇のどのあたりに出すか(0=足元 / 1=先端)
+const GLARE_EYES_WMUL  = 1.7;    // 扇のその地点の幅の何倍にするか
+const GLARE_EYES_ZBASE = 95;     // 出す高さ(足元から)。扇の少し上に浮かせる
+const GLARE_EYES_ZMUL  = 0.05;   // 遠くへ出すほど少しだけ高くする
+function drawGlareEyesFx(ae, fillDist, fadeAlpha){
+  if(!fxGlareEyesReady || renderHeavyLoad) return;
+  const elapsed = matchTime - ae.spawnAt;
+  const life = Math.max(0.2, ae.life || 1);
+  // 出て(0.18秒)→ しばらく睨んで → 消える。技の伸びに合わせて少し前へ進む
+  const t = clamp(elapsed/life, 0, 1);
+  const fadeIn  = clamp(elapsed/0.18, 0, 1);
+  const fadeOut = clamp((1 - t)/0.35, 0, 1);
+  const a = fadeIn * fadeOut * (fadeAlpha!=null ? fadeAlpha : 1);
+  if(a <= 0.01) return;
+  const reach = Math.min(ae.range||0, fillDist!=null ? fillDist : (ae.range||0));
+  const along = Math.max(60, reach*GLARE_EYES_ALONG);
+  const wx = ae.x + Math.cos(ae.angle)*along, wy = ae.y + Math.sin(ae.angle)*along;
+  const p = project(wx, wy, (ae.z||0) + GLARE_EYES_ZBASE + along*GLARE_EYES_ZMUL);
+  if(!p) return;
+  const pulse = 1 + 0.06*Math.sin(matchTime*9);        // ゆっくり息づく
+  // 扇のその地点での幅(当たり判定と同じ角度から出す)を基準にする
+  const half = (ae.fanAngleDeg||30)*Math.PI/360;
+  const fanW = 2*along*Math.tan(half);
+  const w = fanW * GLARE_EYES_WMUL * p.scale * pulse;
+  const h = w * (fxGlareEyesImg.height/fxGlareEyesImg.width);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';            // 画像の黒がそのまま透明になる
+  ctx.globalAlpha = Math.min(1, a);
+  ctx.drawImage(fxGlareEyesImg, p.x - w/2, p.y - h/2, w, h);
+  ctx.restore();
+}
+/* 範囲技1つぶんの描画。**眼は技の絵の上へ重ねたいので、中身を描き切ってから足す。** */
 function drawSingleAreaEffect(ae){
+  drawSingleAreaEffectBody(ae);
+  if(ae.glareEyes){
+    const elapsed = matchTime - ae.spawnAt;
+    if(elapsed <= ae.life){
+      const fillSpeed = ae.fillSpeed || 900;
+      const telegraphTime = ae.telegraphTime||0.18;
+      drawGlareEyesFx(ae, Math.max(0, elapsed - telegraphTime)*fillSpeed, 1);
+    }
+  }
+}
+function drawSingleAreaEffectBody(ae){
     const elapsed = matchTime - ae.spawnAt;
     if(elapsed > ae.life) return;
     const telegraphTime = ae.telegraphTime||0.18;

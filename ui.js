@@ -2388,6 +2388,7 @@ function renderGalleryMuseumList(){
 // combat.jsのconstはwindowのプロパティにならないため、文字列キー経由ではなく直接参照する
 function gallerySkinSeName(skinId, slot){
   const table = slot==='summon' ? SKIN_SUMMON_SE : slot==='tier3' ? SKIN_TIER3_SE
+              : slot==='tier3hit' ? SKIN_TIER3_HIT_SE
               : slot==='hit' ? SKIN_HIT_SE
               : slot==='kill' ? SKIN_KILL_SE : slot==='win' ? SKIN_WIN_SE : null;
   return (table && table[skinId]) || null;
