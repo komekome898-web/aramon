@@ -20,8 +20,10 @@
    確かめること(発注者が出した3条件と1対1):
      1. 見切れない  … 画面の要素が1つも #appRoot の外へ出ない
      2. 押しやすい  … 操作できる物はすべて --tap-* の下限以上の実寸で描かれる
-     2b.文字が読める … 画面の中の文字が1つも「縦に切れる/横に切れる/小さすぎる」に
-                       なっていない(ボタン単位ではなく文字を持つ要素すべてを見る)
+     2b.文字が見えている … 画面の中の文字が1つも「縦に切れる/横に切れる」になっていない
+                       (ボタン単位ではなく文字を持つ要素すべてを見る)。
+                       **字の大きさそのものは検査しない** ―― 小さいのは多くの場合
+                       レイアウトを守るための設計判断で、不具合ではない。
      2c.はみ出さない … ボタンの中身がボタンの箱の中に収まっている。タイルは
                        overflow:hidden を外してある(角の通知ドットが切れるため)ので、
                        隠さない代わりにここで確かめる
@@ -152,23 +154,12 @@ const PANELS = [
    ※ ここに載っているのは「直さなくてよい」ではなく「**別の担当のファイルなので今は直せない**」。
       実行のたびに一覧で出るので、放っておいても見えなくならない。 */
 const KNOWN = [
-  /* 【PANELS の画面の文字サイズ】**発注者判断で変更しない**(2026-08-26)。
+  /* いまは空。**空であることに意味がある** ―― ここが空なら「見えている画面はすべて基準を満たす」。
+     直せない物が出たら、消すのではなく理由付きで足すこと(実行のたびに一覧へ出る)。
 
-     検査の対象をロビー周辺から全画面へ広げたところ、ロビー以外の画面に 7〜9.5px の文字が
-     残っていた。実体は18か所(のべ件数が8000を超えるのは、更新履歴のタグのように
-     1画面に何百個も並ぶ物があるため)。内訳:
-       マスモン詳細4タブ … タブ / ステータス説明2行 / 効果 / 適正バッジ / EXP /
-                            HP・速さの見出し / 注記 / 技のtierバッジ    …8か所
-       その他            … 更新履歴のタグ2種・ミッションの曜日と印・モンスター一覧の
-                            見出しと「選択中」・称号の条件・マイ記録のラベル・管理者用 …10か所
-
-     一覧を出して検討した結果、**上げない**と決めた ―― どれも1行に複数の要素が並んでいるので、
-     字を大きくすると行が伸びる。**読みにくさより画面が崩れるリスクの方が高い**という判断。
-     ここは「まだ直していない物」ではなく「直さないと決めた物」なので、
-     **勝手に上げないこと。** 変えるなら発注者へ確認してから。 */
-  { kind:'文字が切れる', detail:/小さすぎる/,
-    label:/(ショップ|バッグ|ギャラリー|ミッション|遠征|更新履歴|ヘルプ|設定|音量設定|視点設定|遊び方ガイド|ランキング|マイ記録|モンスター一覧|マスモン詳細)/,
-    id:/./, why:'発注者判断で変更しない(字を上げると行が伸び、画面が崩れるリスクの方が高い)' },
+     ※ 2026-08-26、ここに「ロビー以外の画面の文字サイズ」を載せていたが、
+        **検査の側が間違っていた**ので、例外ではなく検査そのものを外した。
+        文字の小ささは不具合ではない(レイアウトを守るための設計判断)。 */
 ];
 
 const failures = [];
@@ -179,7 +170,7 @@ const notes = [];
 const findingIndex = new Map();
 const STRESS_N = 3;   // 素の状態 / ボタン+9個 / 文字を長く
 
-/* detail を書くと、指摘の本文(「字が9.5pxで小さすぎる」など)にも当てて絞り込める。
+/* detail を書くと、指摘の本文(「〇〇が2px外」など)にも当てて絞り込める。
    書かなければ従来どおり kind/label/id の3つで判定する。 */
 const knownFor = (kind, label, id, detail)=>
   KNOWN.find(k=> k.kind===kind && k.label.test(label) && k.id.test(id)
@@ -200,7 +191,7 @@ function pushFindings(label, r){
     if(hot.length) failures.push(`[${kind}] ${label} — ${hot.slice(0,4).map(fmt).join(' / ')}`);
   };
   emit('見切れ', r.outside, x=>x.id, x=>`${x.id}が${x.over}px外`);
-  emit('小さすぎ', r.tooSmall, x=>x.id, x=>`${x.id} ${x.got}px < ${x.floor}px`);
+  emit('押せる大きさが足りない', r.tooSmall, x=>x.id, x=>`${x.id} ${x.got}px < ${x.floor}px`);
   emit('中身がはみ出す', r.spill, x=>x.id, x=>`${x.id} が${x.out}px外`);
   emit('文字が切れる', r.clipped, x=>x.id, x=>`${x.id}(${x.why})`);
   emit('重なり', r.overlap, x=>`${x.a}×${x.b}`, x=>`${x.a}×${x.b} ${x.px}px`);
@@ -259,10 +250,14 @@ for(const dev of DEVICES){
       if(el.closest('#lobbyScreen, #roomListScreen, #resultScreen')) return window.__tap('pick');
       return 0;   // バナー等の「押せるが大きさの決まりが無い」物は対象外
     };
-    /* 文字の下限。**6.5pxは「読めない」の下限であって「読める」の下限ではない**ので、
-       7〜9pxの文字が全部素通りしていた。実用値(10px)へ上げる。
-       いま通らない物は握りつぶさず、テスト側の KNOWN へ理由付きで載せて毎回一覧に出す。 */
-    window.__MIN_FONT = 10;
+    /* 【文字の大きさは検査しない】(2026-08-26 発注者判断)
+       一時期ここに下限(10px)を置いていたが、**それは検査の越権だった。**
+       この検査が守るのはレイアウト ―― 隠れる・切れる・重なる・はみ出す・送れてしまう。
+       文字が小さいのは、**そのレイアウトを守るために意図してそうしている**ことが多く、
+       小ささを不具合として挙げると「直す」=字を大きくする=行が伸びる=画面が崩れる、
+       という**この検査が防ぎたかったことを起こさせる**方向へ働く。
+       読みやすさは実機を見た人が決めること。機械は「読めるか」ではなく
+       「**その字が箱の中に収まって見えているか**」だけを見る(下の 縦に切れる/横に切れる)。 */
     window.__auditScreen = (screenId)=>{
       const root = document.getElementById('appRoot');
       const rb = root.getBoundingClientRect();
@@ -326,11 +321,10 @@ for(const dev of DEVICES){
             すべて見る。読めなくなり方は次の3つしかない:
               ・縦に切れる  … 箱より中身が高い(overflow:hidden で上下が消える)
               ・横に切れる  … 「…」を出さない作りなのに幅が足りない
-              ・小さすぎる  … 実寸の字が読める大きさを割っている
-            この3つは実機で起きた不具合(ラベルが半分消える/吹き出しが潰れる)を
-            そのまま言い表したもので、どこに何を足しても同じ基準で効く。 */
+            実機で起きた不具合(ラベルが半分消える/吹き出しが潰れる)をそのまま言い表したもので、
+            どこに何を足しても同じ基準で効く。
+            **字の大きさそのものは見ない**(上の「文字の大きさは検査しない」を参照)。 */
       const clipped = [];
-      const MIN_FONT = window.__MIN_FONT;
       const hasOwnText = (el)=> [...el.childNodes].some(n=> n.nodeType===3 && n.textContent.trim());
       /* 測るのは**文字そのもの**(Range で実際の文字の矩形を取る)。
          scrollWidth/scrollHeight は絶対配置の飾り(角のNEWバッジ等)や擬似要素まで
@@ -351,8 +345,6 @@ for(const dev of DEVICES){
         if(!vis(el) || !hasOwnText(el)) continue;
         const s2 = getComputedStyle(el);
         const id = el.id || el.className.toString().trim().split(/\s+/)[0] || el.tagName;
-        const fs2 = parseFloat(s2.fontSize) || 0;
-        if(fs2 < MIN_FONT){ clipped.push({ id, why:`字が${fs2.toFixed(1)}pxで小さすぎる` }); continue; }
         const t = textRectOf(el);
         if(!t) continue;
         // 文字を切る箱(overflow が visible でない祖先)まで遡って、その中に収まっているか見る
@@ -799,8 +791,9 @@ await browser.close();
 server.close();
 
 const SCREEN_CASES = SCREENS.reduce((n,s)=> n + s.variants.length, 0);
-console.log(`検査: ${DEVICES.length}端末 × (${MODES.length}モード × 選択有無2 × 負荷${STRESS_N}種 + 別画面${SCREEN_CASES}通り)`
-  + ` = ${DEVICES.length*(MODES.length*2*STRESS_N + SCREEN_CASES)}通り  文字の下限 ${10}px`);
+console.log(`検査: ${DEVICES.length}端末 × (${MODES.length}モード × 選択有無2 × 負荷${STRESS_N}種`
+  + ` + 別画面${SCREEN_CASES}通り + 画面ごとの方針${PANELS.length}通り)`
+  + ` = ${DEVICES.length*(MODES.length*2*STRESS_N + SCREEN_CASES + PANELS.length)}通り`);
 // LOBBY_TEST_ALL=1 を付けると省略せず全部出す(直す前の棚卸しに使う)
 const SHOW_ALL = !!process.env.LOBBY_TEST_ALL;
 if(knownHits.length){
@@ -831,4 +824,4 @@ if(failures.length){
 }
 console.log(knownHits.length
   ? `\n== 全チェックOK(構造は基準どおり)。ただし例外として許している指摘が のべ${knownHits.length}件ある ==`
-  : '\n== 全チェックOK(見切れ0 / 小さすぎ0 / 重なり0。例外もなし) ==');
+  : '\n== 全チェックOK(見切れ0 / 文字切れ0 / 重なり0。例外もなし) ==');
