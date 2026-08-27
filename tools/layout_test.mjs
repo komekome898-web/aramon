@@ -1,13 +1,24 @@
-/* ロビーのレイアウト契約を機械で守るテスト(開発用。ゲームには読み込まない)。
+/* 画面レイアウトの契約を機械で守るテスト(開発用。ゲームには読み込まない)。
 
-   ロビーはボタンを足すたびに壊れてきた画面で、2026-08-15には出撃ボタンが
-   20pxまで潰れて文字が消えた。**数字の詰め直しではなく構造で止める**と決めたので、
-   その構造が守られていることをここで毎回確かめる。
+   画面はボタンを足すたびに壊れてきた。2026-08-15にはロビーの出撃ボタンが20pxまで潰れて
+   文字が消え、2026-08-26には横向きで起動したロビーの左メニューが右へあふれ、
+   マスモンのトレーニング画面では「丈夫さ」が実行ボタンの下敷きになっていた。
+   **数字の詰め直しではなく構造で止める**と決めたので、その構造が守られていることを
+   ここで毎回確かめる。対象はロビーだけでなく、下の PANELS に並べた全画面。
 
-   使い方: node tools/lobby_layout_test.mjs
+   使い方: node tools/layout_test.mjs
+
+   【画面の3原則】(CLAUDE.md「全画面に効く決まり」と同じもの。ここが実行版)
+     R1 箱は画面から決める … 外枠の大きさは使える場所から決める。中身の合計で決めない。
+     R2 スクロールするのは「読む物」だけ … 一覧・本文は送ってよい。**操作(ボタン)と
+        見出しはスクロールの外**に置く。sticky で中身の上へ貼らない
+        (貼ると、入りきらない行が黙ってボタンの下に隠れる)。
+     R3 足りないときに削る順番を決めておく … 操作 > 情報 > 飾り。
+        決めていない画面は作らない(決めていないと、足りなくなった瞬間に
+        「潰れる/切れる/はみ出す」のどれかが必ず起きる)。
 
    確かめること(発注者が出した3条件と1対1):
-     1. 見切れない  … ロビーの要素が1つも #appRoot の外へ出ない
+     1. 見切れない  … 画面の要素が1つも #appRoot の外へ出ない
      2. 押しやすい  … 操作できる物はすべて --tap-* の下限以上の実寸で描かれる
      2b.文字が読める … 画面の中の文字が1つも「縦に切れる/横に切れる/小さすぎる」に
                        なっていない(ボタン単位ではなく文字を持つ要素すべてを見る)
@@ -15,12 +26,13 @@
                        overflow:hidden を外してある(角の通知ドットが切れるため)ので、
                        隠さない代わりにここで確かめる
      3. 重ならない  … 同じ列の中で操作できる物どうしが重ならない
-     4. 端末と持ち方… 縦持ち(強制横向き)/実横持ち/タブレットの計7通り
+     4. 端末と持ち方… 縦持ち(強制横向き)4・実横持ち2・タブレット1・縦を削られた状態3 の計10通り
      5. **これから起きうることを実際に起こす** … ボタンを9個足した状態と、
         画面の文字をすべて長くした状態でも 1〜3 が成り立つ。
         箱の大きさが中身で決まっていたらここで必ず壊れるので、
         「箱が先・中身は箱から」の作りになっていることの証明になる。
-        ロビーはスクロールさせないので、**どの枠もスクロールが出ていないこと**も見る。 */
+        ロビーはスクロールさせないので、**どの枠もスクロールが出ていないこと**も見る。
+     6. 画面ごとの方針 … 下の PANELS に並べた画面を1つずつ開いて 1〜3 と R2 を見る。 */
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -96,6 +108,43 @@ const SCREENS = [
   { id:'resultScreen',   name:'リザルト', variants:['plain','full'],       scrollIds:[] },
 ];
 
+/* ===== 画面ごとの方針(この表が正) =====
+   **画面を1つ足したら、ここへ1行足す。** 足さなければ検査されない = 次に壊れる画面になる。
+
+   id      … 画面/オーバーレイの DOM id
+   name    … 落ちたときに出す名前
+   open    … 開き方。順に実行する
+                { btn:'…' }        そのidのボタンを押す(実際の導線をそのまま辿る)
+                { call:['fn',…引数] } その名前の関数を呼ぶ(ボタンが無い画面用)
+                { sel:'…', idx:n } そのセレクタのn番目を押す(タブの切り替え)
+   noScroll… **スクロールしてはいけない枠**のid。ここに挙げた枠に送れる余地が出たら失敗。
+             枠の中の一覧・本文はスクロールしてよい(挙げない)。R2そのもの。 */
+const PANELS = [
+  { id:'shopOverlay',       name:'ショップ',       open:[{btn:'openShopBtn'}], noScroll:['shopOverlay'] },
+  { id:'shopOverlay',       name:'ショップ(交換)', open:[{btn:'openShopBtn'},{sel:'.shop-tab',idx:2}], noScroll:['shopOverlay'] },
+  { id:'bagOverlay',        name:'バッグ',         open:[{btn:'openBagBtn'}], noScroll:['bagOverlay'] },
+  { id:'bagOverlay',        name:'バッグ(称号)',   open:[{btn:'openBagBtn'},{sel:'.bag-tab',idx:1}], noScroll:['bagOverlay'] },
+  { id:'galleryOverlay',    name:'ギャラリー',     open:[{btn:'openGalleryBtn'}], noScroll:['galleryOverlay'] },
+  { id:'missionOverlay',    name:'ミッション',     open:[{btn:'openMissionBtn'}], noScroll:['missionOverlay'] },
+  { id:'missionOverlay',    name:'ミッション(シーズン)', open:[{btn:'openMissionBtn'},{sel:'.mission-tab',idx:2}], noScroll:['missionOverlay'] },
+  { id:'expeditionOverlay', name:'遠征',           open:[{btn:'openExpeditionBtn'}], noScroll:['expeditionOverlay'] },
+  { id:'changelogOverlay',  name:'更新履歴',       open:[{btn:'changelogBtn'}], noScroll:['changelogOverlay'] },
+  { id:'helpOverlay',       name:'ヘルプ',         open:[{btn:'headerHelpBtn'}], noScroll:['helpOverlay'] },
+  { id:'settingsOverlay',   name:'設定',           open:[{btn:'headerSettingsBtn'}], noScroll:['settingsOverlay'] },
+  { id:'audioSettingsOverlay', name:'音量設定',    open:[{btn:'headerSettingsBtn'},{btn:'audioSettingsBtn'}], noScroll:['audioSettingsOverlay'] },
+  { id:'lookSettingsOverlay',  name:'視点設定',    open:[{btn:'headerSettingsBtn'},{btn:'lookSettingsBtn'}], noScroll:['lookSettingsOverlay'] },
+  { id:'howToPlayScreen',   name:'遊び方ガイド',   open:[{btn:'headerSettingsBtn'},{btn:'howToPlayBtn'}], noScroll:[] },
+  { id:'rankingScreen',     name:'ランキング',     open:[{call:['openRankingScreen']}], noScroll:[] },
+  { id:'myStatsScreen',     name:'マイ記録',       open:[{call:['openMyStatsScreen']}], noScroll:[] },
+  { id:'monsterListScreen', name:'モンスター一覧', open:[{call:['openMonsterListScreen']}], noScroll:[] },
+  /* マスモン詳細の4タブ。**丈夫さが実行ボタンの下敷きになっていた画面**(2026-08-26)。
+     タブごとに中身の作りが違うので4つとも見る。 */
+  { id:'mastermonScreen', name:'マスモン詳細(詳細情報)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','info']}], noScroll:['mastermonDetailPanel'] },
+  { id:'mastermonScreen', name:'マスモン詳細(トレーニング)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','training']}], noScroll:['mastermonDetailPanel'] },
+  { id:'mastermonScreen', name:'マスモン詳細(編集)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','edit']}], noScroll:['mastermonDetailPanel'] },
+  { id:'mastermonScreen', name:'マスモン詳細(着せ替え)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','dressup']}], noScroll:['mastermonDetailPanel'] },
+];
+
 /* ===== 例外リスト(意図的に許しているもの) =====
    検査を厳しくすると、これまで素通りしていた既存の作りが落ちる。**黙って基準を下げない**で、
    ここへ「何を・どの画面で・なぜ許すのか」を書いて残す。直したらこの行を消す。
@@ -103,8 +152,18 @@ const SCREENS = [
    ※ ここに載っているのは「直さなくてよい」ではなく「**別の担当のファイルなので今は直せない**」。
       実行のたびに一覧で出るので、放っておいても見えなくならない。 */
 const KNOWN = [
-  /* いまは空。**空であることに意味がある** ―― ここが空なら「見えている画面はすべて基準を満たす」。
-     直せない物が出たら、消すのではなく理由付きで足すこと(実行のたびに一覧へ出る)。 */
+  /* 【PANELS の画面の文字サイズ】2026-08-26に検査の対象をロビー周辺から全画面へ広げたところ、
+     ロビー以外の画面には 7〜9.5px の文字が大量に残っていた(のべ8000件超)。
+     **黙って基準を下げない**ので、ここへ理由付きで載せて毎回件数を出す。
+
+     いま直さないのは、直し方が「1か所を大きくする」ではないから ―― 文字を大きくすると
+     その行が伸び、入らなくなった画面がまた潰れる。**画面ごとに箱を決め直す作業**が要る
+     (ロビーとマスモンのトレーニング画面で実際にやったのと同じことを、残りの画面でもやる)。
+     順番にやる前提で、まず構造(隠れる・重なる・はみ出す・スクロールする)を止めた。
+     1画面直すたびに、この行の label から画面名を1つ外していく。 */
+  { kind:'文字が切れる', detail:/小さすぎる/,
+    label:/(ショップ|バッグ|ギャラリー|ミッション|遠征|更新履歴|ヘルプ|設定|音量設定|視点設定|遊び方ガイド|ランキング|マイ記録|モンスター一覧|マスモン詳細)/,
+    id:/./, why:'ロビー以外の画面の文字サイズは未着手(画面ごとに箱を決め直す作業が要る)' },
 ];
 
 const failures = [];
@@ -115,8 +174,11 @@ const notes = [];
 const findingIndex = new Map();
 const STRESS_N = 3;   // 素の状態 / ボタン+9個 / 文字を長く
 
-const knownFor = (kind, label, id)=>
-  KNOWN.find(k=> k.kind===kind && k.label.test(label) && k.id.test(id));
+/* detail を書くと、指摘の本文(「字が9.5pxで小さすぎる」など)にも当てて絞り込める。
+   書かなければ従来どおり kind/label/id の3つで判定する。 */
+const knownFor = (kind, label, id, detail)=>
+  KNOWN.find(k=> k.kind===kind && k.label.test(label) && k.id.test(id)
+                 && (!k.detail || k.detail.test(String(detail||''))));
 /* 見つかったものを「本当の失敗」と「例外として許したもの」へ振り分ける。
    3画面ぶん同じ書き方を繰り返さないよう、判定はここ1か所にまとめる。 */
 function pushFindings(label, r){
@@ -124,7 +186,7 @@ function pushFindings(label, r){
     if(!items || !items.length) return;
     const hot = [];
     for(const x of items){
-      const k = knownFor(kind, label, String(key(x)));
+      const k = knownFor(kind, label, String(key(x)), fmt(x));
       if(k){ knownHits.push(`[${kind}] ${label} — ${fmt(x)}  ※許可: ${k.why}`); continue; }
       hot.push(x);
       const ik = `[${kind}] ${fmt(x)}`;
@@ -138,6 +200,7 @@ function pushFindings(label, r){
   emit('文字が切れる', r.clipped, x=>x.id, x=>`${x.id}(${x.why})`);
   emit('重なり', r.overlap, x=>`${x.a}×${x.b}`, x=>`${x.a}×${x.b} ${x.px}px`);
   emit('スクロール発生', r.scrolls, x=>x.id, x=>`${x.id}が+${x.d}px`);
+  emit('操作がスクロールの中で貼り付いている', r.sticky, x=>x.id, x=>`${x.id}(${x.box}の中)`);
   if(r.spread){
     failures.push(`[左メニューが横へ広がった] ${label} — ${r.spread.cols}列(縦${r.spread.leftH}pxあり、2列に要るのは${r.spread.need}px)`);
     const ik = '[左メニューが横へ広がった] 縦は足りているのに列が増えた';
@@ -155,6 +218,17 @@ for(const dev of DEVICES){
   });
   const jsErrors = [];
   page.on('pageerror', e=> jsErrors.push(String(e)));
+  /* マスモン詳細を測るには育成済みの子が1体要る。チュートリアルは済み扱いにして
+     案内カードを出さない(出ると全画面を覆って測定にならない)。 */
+  await page.addInitScript(()=>{
+    try{
+      localStorage.setItem('aramon_tutorial_v1', JSON.stringify({ state:'done' }));
+      localStorage.setItem('aramon_mastermons_v1', JSON.stringify({
+        suezo:{ element:'suezo', name:'テスト', level:23, exp:0, tickets:3,
+                stats:{ life:90, power:110, wisdom:150, accuracy:130, evasion:90, vitality:90 } },
+      }));
+    }catch(e){}
+  });
   await page.goto(`${ORIGIN}/index.html`, { waitUntil:'load' });
   await page.waitForFunction(()=> typeof setLobbyMode==='function' && typeof refreshLobby==='function', null, { timeout:30000 });
   await page.waitForFunction(()=>{ const t=document.getElementById('titleTapStart'); return t && !t.classList.contains('hidden'); }, null, { timeout:30000 });
@@ -208,6 +282,14 @@ for(const dev of DEVICES){
         return null;
       };
       const inScrollBox = (el)=> !!(scrollBoxUp(el,'y') || scrollBoxUp(el,'x'));
+      // 祖先に「切る箱」があるか(overflow が visible でない = そこから外へは描かれない)
+      const clippedUp = (el)=>{
+        for(let p = el.parentElement; p && p !== screenEl.parentElement; p = p.parentElement){
+          const s = getComputedStyle(p);
+          if(s.overflowY !== 'visible' || s.overflowX !== 'visible') return true;
+        }
+        return false;
+      };
       /* 1. #appRoot の外へ出ていないか。#appRoot は90度回っているが、子も同じ変換を
             受けるので外接矩形どうしの比較でそのまま判定できる(90度なので軸は入れ替わるだけ)。 */
       for(const el of screenEl.querySelectorAll('*')){
@@ -215,6 +297,11 @@ for(const dev of DEVICES){
         const s = getComputedStyle(el);
         if(s.position==='fixed') continue;
         if(inScrollBox(el)) continue;
+        /* 枠に切られている物は、枠の外へは1pxも描かれない。**枠のほうを見ればよい**
+           (枠自身もこのループで別に測っている)。ここを見ていなかったので、
+           カードの上を横切る光(.ml-card-shine)のように「わざと枠より大きく作って
+           overflow:hidden で切る」飾りが、毎回「190px外へ出ている」と報告されていた。 */
+        if(clippedUp(el)) continue;
         const r = el.getBoundingClientRect();
         const over = Math.max(rb.left-r.left, r.right-rb.right, rb.top-r.top, r.bottom-rb.bottom);
         if(over > 1) outside.push({ id: el.id || el.className.toString().slice(0,40), over: Math.round(over) });
@@ -425,6 +512,58 @@ for(const dev of DEVICES){
       })();
       return { ...base, scrolls, menuCols: cols, order, spread };
     };
+
+    /* ===== PANELS(画面ごとの方針)を測るための道具 ===== */
+    /* 画面は1つだけ出す。前の画面が残ったまま測ると、隠れている物まで数えてしまう。 */
+    window.__closePanels = ()=>{
+      document.querySelectorAll('.mastermon-confirm-overlay, .resultScreen, #gachaOverlay, #lobbyScreen, #roomListScreen, #textInputOverlay')
+        .forEach(o=> o.classList.add('hidden'));
+      document.getElementById('startScreen').classList.remove('hidden');
+    };
+    /* 表に書いた手順どおりに開く。**実際の導線(ボタンを押す)をそのまま辿る**ので、
+       「開く関数は直したが導線は古いまま」を素通りしない。 */
+    window.__openPanel = async (steps)=>{
+      window.__closePanels();
+      for(const s of steps){
+        if(s.btn){ const b = document.getElementById(s.btn); if(b) b.click(); }
+        else if(s.call){ const f = window[s.call[0]]; if(typeof f==='function') await f(...s.call.slice(1)); }
+        else if(s.sel){ const t = document.querySelectorAll(s.sel)[s.idx||0]; if(t) t.click(); }
+        await new Promise(r=> requestAnimationFrame(r));
+      }
+      // 出るときの動きが終わってから測る(秒数で待つと機械の速さで結果が変わる)
+      const finite = document.getAnimations().filter(a=>{
+        const it = a.effect && a.effect.getTiming && a.effect.getTiming().iterations;
+        return it !== Infinity;
+      }).map(a=> a.finished.catch(()=>{}));
+      await Promise.race([ Promise.all(finite), new Promise(r=> setTimeout(r, 800)) ]);
+      await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
+    };
+    /* 【R2の検査】操作がスクロールの中で貼り付いていないか。
+       スクロールする箱の中に position:sticky/fixed の押せる物があると、
+       入りきらない中身が**黙ってその下に隠れる**(2026-08-26 マスモンのトレーニング画面で、
+       6行目の「丈夫さ」がトレ実行ボタンの下敷きになっていた)。
+       ボタンはスクロールの外へ出す ―― 重ねない作りなら隠れようがない。 */
+    window.__stickyControls = (screenId)=>{
+      const root = document.getElementById(screenId);
+      if(!root) return [];
+      const out = [];
+      for(const el of root.querySelectorAll('*')){
+        const s = getComputedStyle(el);
+        if(s.display==='none' || s.visibility==='hidden') continue;
+        if(s.position!=='sticky' && s.position!=='fixed') continue;
+        const isCtl = el.tagName==='BUTTON' || el.querySelector('button') || el.getAttribute('role')==='button';
+        if(!isCtl) continue;
+        for(let p = el.parentElement; p && p!==root.parentElement; p = p.parentElement){
+          const ps = getComputedStyle(p);
+          if(/(auto|scroll)/.test(ps.overflowY) && p.scrollHeight - p.clientHeight > 2){
+            out.push({ id: el.id || el.className.toString().trim().split(/\s+/)[0] || el.tagName,
+                       box: p.id || p.className.toString().trim().split(/\s+/)[0] || p.tagName });
+            break;
+          }
+        }
+      }
+      return out;
+    };
     /* 5. 「これから起きうること」を実際に起こして、それでも壊れないかを見る。
           ・増やす … 左メニューへ9個(右列は増やさないのが決まりなので注入しない)
           ・伸ばす … 画面の文字をすべて長くする。**箱の大きさが中身で決まっていたら
@@ -632,6 +771,21 @@ for(const dev of DEVICES){
   }
   await page.evaluate(()=> window.__showOnly('startScreen'));   // 状態を残さずロビーへ戻す
 
+  /* ===== 画面ごとの方針(PANELS)を1つずつ開いて測る =====
+     ロビーと同じ物差しに、R2(操作がスクロールの中で貼り付いていないか)を足して見る。 */
+  for(const p of PANELS){
+    const label = `${dev.name} / ${p.name}`;
+    const r = await page.evaluate(async (o)=>{
+      await window.__openPanel(o.open);
+      const base = window.__auditScreen(o.id);
+      base.scrolls = window.__scrollOf(o.noScroll);
+      base.sticky = window.__stickyControls(o.id);
+      return base;
+    }, { id:p.id, open:p.open, noScroll:p.noScroll });
+    pushFindings(label, r);
+  }
+  await page.evaluate(()=> window.__closePanels());
+
   if(jsErrors.length) failures.push(`[JSエラー] ${dev.name} — ${jsErrors[0].slice(0,160)}`);
   await page.close();
 }
@@ -649,9 +803,11 @@ if(knownHits.length){
   const seen = new Set();
   for(const h of knownHits){
     const k = SHOW_ALL ? h : h.replace(/^(\[[^\]]+\]) [^/]+\//, '$1 ');   // 端末名の違いは1件にまとめる
-    if(seen.has(k)) continue; seen.add(k); console.log('  ' + k);
+    if(seen.has(k)) continue; seen.add(k);
+    if(SHOW_ALL || seen.size <= 8) console.log('  ' + k);
   }
-  console.log(`  … のべ${knownHits.length}件`);
+  if(!SHOW_ALL && seen.size > 8) console.log(`  …ほか${seen.size - 8}種`);
+  console.log(`  … のべ${knownHits.length}件(LOBBY_TEST_ALL=1 で全件)`);
 }
 if(notes.length){
   console.log('\n--- 「増えても壊れない」の確認(スクロールへ逃げた例) ---');
@@ -668,4 +824,6 @@ if(failures.length){
   for(const [k,n] of [...findingIndex.entries()].sort((a,b)=> b[1]-a[1])) console.log(`  ${n}件  ${k}`);
   process.exit(1);
 }
-console.log('\n== 全チェックOK(見切れ0 / 小さすぎ0 / 重なり0) ==');
+console.log(knownHits.length
+  ? `\n== 全チェックOK(構造は基準どおり)。ただし例外として許している指摘が のべ${knownHits.length}件ある ==`
+  : '\n== 全チェックOK(見切れ0 / 小さすぎ0 / 重なり0。例外もなし) ==');

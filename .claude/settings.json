@@ -30,9 +30,9 @@
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR:-.}/tools/hooks/lobby_layout.sh",
+            "command": "${CLAUDE_PROJECT_DIR:-.}/tools/hooks/layout.sh",
             "timeout": 400,
-            "statusMessage": "ロビーのレイアウト検査(最大3分)"
+            "statusMessage": "画面レイアウトの検査(最大4分)"
           }
         ]
       }

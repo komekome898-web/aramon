@@ -245,7 +245,7 @@ iPhone版はコミット時に自動で上げます。
 | コマンド | 見るもの |
 |---|---|
 | `node tools/undef_check.mjs` | **どのスコープからも解決できない識別子**(引数の渡し忘れ・打ち間違い) |
-| `node tools/lobby_layout_test.mjs` | ロビー/待機部屋/部屋一覧/リザルトの 見切れ・押しやすさ・文字・重なり・スクロール |
+| `node tools/layout_test.mjs` | **全画面**の 見切れ・押しやすさ・文字・重なり・スクロール・横への広がり・操作の貼り付き |
 | `node tools/tutorial_test.mjs` | 初回チュートリアルを最後まで通せるか |
 | `node tools/measure_layout.mjs` | 画面の寸法・スクロール量・持ち方での文字サイズ差 |
 | `node tools/changelog_check.mjs` | 更新履歴(`UPDATE_HISTORY`)の形・日付・同じ話題の重複 |
@@ -289,13 +289,24 @@ node tools/undef_check.mjs                 # リポジトリ全体
 node tools/undef_check.mjs path/to/one.js  # 指定したファイルだけ
 ```
 
-## `lobby_layout_test.mjs`
+## `layout_test.mjs`
 
-7端末 ×(5モード × 選択有無2 × 負荷3種 + 別画面8通り)= 266通り。3分ほどかかります。
+10端末 ×(5モード × 選択有無2 × 負荷3種 + 別画面8通り + 画面ごとの方針21通り)。4分ほどかかります。
 
-- 検査対象は `#startScreen` に加えて **`#lobbyScreen` / `#roomListScreen` / `#resultScreen`**。
-- いま直せない指摘は**ファイル冒頭の `KNOWN` に理由付きで登録**してあり、実行のたびに一覧で出ます
+**画面の3原則を機械で守るのがこのツールです**(CLAUDE.md「全画面に効く決まり」と同じもの)。
+
+  R1 箱は画面から決める / R2 スクロールするのは「読む物」だけ(操作はスクロールの外) /
+  R3 縦が足りないときに削る順番を画面ごとに決めておく
+
+- 検査対象は `#startScreen`・`#lobbyScreen`・`#roomListScreen`・`#resultScreen` に加えて、
+  **ファイル冒頭の `PANELS`(画面ごとの方針の表)に並べた全画面**。
+  **画面を1つ足したら `PANELS` へ1行足すこと。** 足さない画面は検査されません。
+- 端末には「**縦を20/35/55px削られた状態**」を含みます。iOSはPWAを横向きで起動した直後、
+  まだ縦持ちのセーフエリアを返すことがあり、そのぶん低い画面でレイアウトが確定するためです。
+- いま直せない指摘は**ファイル冒頭の `KNOWN` に理由付きで登録**してあり、実行のたびに件数が出ます
   (「見なかったことにする」のではなく「意図的に許した」を残すため)。直したらその行を消します。
+  いまの `KNOWN`= **ロビー以外の画面の文字サイズ(7〜9.5px、のべ8700件超)**。
+  文字を大きくすると行が伸びて別の場所が潰れるので、画面ごとに箱を決め直す作業とセットでやります。
 - `LOBBY_TEST_ALL=1` を付けると省略せず全件出ます。
 
 ## `hooks/`
@@ -308,10 +319,10 @@ CLAUDE.mdの「絶対に守るルール」のうち、忘れると事故にな�
 | `js_syntax.sh` | `.js`/`.mjs` を書き換えた直後 | `node --check` が落ちるコード |
 | `changelog.sh` | `data.js` を書き換えた直後 | 更新履歴の形・日付・重複のエラー(注意は止めずに伝えるだけ) |
 | `cache_bump.sh` | 作業を終えるとき | 配信するファイルを変えたのに `sw.js` の `CACHE_NAME` が据え置き(絶対ルール1) |
-| `lobby_layout.sh` | 作業を終えるとき | `style.css`/`index.html`/`ui.js` を触ったのにロビーの検査を通していない |
+|  `layout.sh` | 作業を終えるとき | `style.css`/`index.html`/`ui.js` を触ったのに画面レイアウトの検査を通していない |
 
 - 止めるときは終了コード2で、理由がそのままClaudeへ返ります。
-- `lobby_layout.sh` は3分かかるので、**同じ中身では二度回しません**(`.claude/hooks-cache/`にハッシュを控える。gitには入れない)。
+-  `layout.sh` は3分かかるので、**同じ中身では二度回しません**(`.claude/hooks-cache/`にハッシュを控える。gitには入れない)。
   `playwright`が無い環境では黙って飛ばします。
 - 一時的に全部止めたいときは `.claude/settings.json` の `hooks` を消すのではなく、
   Claude Codeの `/hooks` から個別に外してください。
