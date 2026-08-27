@@ -67,6 +67,13 @@ const DEVICES = [
   { name:'iPhone SE 横持ち',   w:667,  h:375 },
   { name:'iPhone 12 横持ち',   w:844,  h:390 },
   { name:'iPad 縦持ち',        w:768,  h:1024 },
+  /* 【縦を削られた状態】iOSはPWAを横向きで起動した直後、まだ縦持ちのセーフエリアを
+     返すことがあり、そのぶん20〜50px低い画面でレイアウトが確定する。
+     ここが**あと数px足りない**だけで左メニューが横へ広がり、中央が潰れていた
+     (2026-08-26 実機報告)。境界の前後をまたぐ3つを常時見る。 */
+  { name:'横持ち・縦-20px',    w:667,  h:355, short:true },
+  { name:'横持ち・縦-35px',    w:667,  h:340, short:true },
+  { name:'横持ち・縦-55px',    w:667,  h:320, short:true },
 ];
 // プレイモードで右列の中身が変わる(部屋のボタンの有無)ので全部見る
 const MODES = [
@@ -131,6 +138,11 @@ function pushFindings(label, r){
   emit('文字が切れる', r.clipped, x=>x.id, x=>`${x.id}(${x.why})`);
   emit('重なり', r.overlap, x=>`${x.a}×${x.b}`, x=>`${x.a}×${x.b} ${x.px}px`);
   emit('スクロール発生', r.scrolls, x=>x.id, x=>`${x.id}が+${x.d}px`);
+  if(r.spread){
+    failures.push(`[左メニューが横へ広がった] ${label} — ${r.spread.cols}列(縦${r.spread.leftH}pxあり、2列に要るのは${r.spread.need}px)`);
+    const ik = '[左メニューが横へ広がった] 縦は足りているのに列が増えた';
+    findingIndex.set(ik, (findingIndex.get(ik) || 0) + 1);
+  }
   if(r.order && r.order.length){
     failures.push(`[並び順] ${label} — ${r.order.slice(0,3).map(x=>`${x.id} は${x.want}のはずが${x.got}`).join(' / ')}`);
   }
@@ -389,7 +401,29 @@ for(const dev of DEVICES){
           }
         });
       }
-      return { ...base, scrolls, menuCols: cols, order };
+      /* 【横へ広げてよいのは、縦にどうやっても入らないときだけ】
+         左メニューが2列を超えて広がると、そのぶん中央が細くなり、
+         タイトルと案内文が「…」で切れる(2026-08-26 実機報告)。
+         「…」は許した切り方なので文字の検査では捕まらない。**ここで別に見る。**
+
+         判定はゲーム側の決まりをそのまま置く: 押せる高さ(--tap-pick)と行間の下限で
+         1ブロック(2列)に全部入る高さがあるなら、列は2でなければならない。
+         入る高さは**バナーを引っ込めたぶきも含めて**数える(ゲーム側も同じ順で削る)。 */
+      const spread = (()=>{
+        const g = document.getElementById('lobbyMenuGrid');
+        const left = document.getElementById('lobbyLeft');
+        if(!g || !left) return null;
+        const lcs = getComputedStyle(left), gcs = getComputedStyle(g);
+        const leftH = left.clientHeight - (parseFloat(lcs.paddingTop)||0) - (parseFloat(lcs.paddingBottom)||0);
+        const gridPad = (parseFloat(gcs.paddingTop)||0) + (parseFloat(gcs.paddingBottom)||0);
+        const tap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tap-pick')) || 44;
+        const n = [...g.children].filter(vis).length;
+        const pairs = Math.ceil(n/2) || 1;
+        const need = pairs*tap + (pairs-1)*2 + gridPad;   // 行間の下限は2px(ui.js と同じ)
+        if(leftH < need) return null;                     // 本当に入らない = 横へ逃がしてよい
+        return cols > 2 ? { cols, need:Math.round(need), leftH:Math.round(leftH) } : null;
+      })();
+      return { ...base, scrolls, menuCols: cols, order, spread };
     };
     /* 5. 「これから起きうること」を実際に起こして、それでも壊れないかを見る。
           ・増やす … 左メニューへ9個(右列は増やさないのが決まりなので注入しない)
@@ -517,6 +551,12 @@ for(const dev of DEVICES){
   for(const m of MODES){
     for(const withMonster of [false, true]){
       for(const st of STRESS){
+        /* 縦を削られた端末では「将来+9個」を重ねない。**起きうることの掛け算をしない**
+           ―― 縦不足は実際に起きること、+9個はまだ起きていないこと。両方を同時に
+           満たす形(19個を320pxに、押せる高さを割らず、スクロールもさせず)は
+           そもそも存在しないので、テストを通すために基準を下げる羽目になる。
+           +9個は通常の高さの端末4種で見ている。 */
+        if(dev.short && st.k==='future') continue;
         const label = `${dev.name} / ${m.name} / ${withMonster?'モンスター選択済':'未選択'}${st.t}`;
         const r = await page.evaluate(async (o)=>{
           window.__clearStress();

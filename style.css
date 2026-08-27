@@ -276,8 +276,15 @@
        1. 押せる物には必ず最小の高さ(--tap-*)を与え、flex-shrink:0 で縮ませない。
           → 潰れることが構造上ありえない。
        2. 増える物(メニュー)は**縦に積まず、入る数だけ縦に並べて残りは次の列へ流す**
-          (#lobbyMenuGrid の grid-auto-flow:column + auto-fill)。
+          (升目は ui.js の updateLobbyMenuRows() が割り当てる)。
           → 何個足しても列の高さは画面の高さのままで、はみ出さない。
+       2b.**縦が足りないときに削る順番を決めておく: メニュー > バナー > 行間 > 横へ逃がす。**
+          横へ逃がすのは最後の手段。左メニューが2列を超えると中央がそのぶん細くなり、
+          タイトルと案内文が「…」で切れる(2026-08-26 実機報告。横向きで起動した直後は
+          iOSがまだ縦持ちのセーフエリアを返し、20〜50px低い状態で確定していた)。
+          先にバナー(お知らせ)を引っ込めれば60px以上まとめて空くので、
+          **あと数pxの不足で崩れる崖が構造から消える。**
+          守れているかは lobby_layout_test.mjs の「左メニューが横へ広がった」が毎回見る。
        3. 右列は幅が決まっていて横へ逃がせない。だから**出撃に要る物だけ**を置き、
           項目を増やさない。増やすものは左のメニューへ。
        4. 中央はステージ(#lobbyMonsterStage)だけが伸び縮みして余りを吸う。
@@ -309,6 +316,9 @@
     --menu-col-w-share: 0.12;  /* 同・ふだんはロビー横幅のこの割合 */
     --menu-w-share: 0.38;      /* 左メニュー全体が広がってよい横幅の割合(中央を残すため) */
     --tile-h-max: 64px;        /* タイル1枚の高さの上限(縦が余る画面で間延びさせない) */
+    /* 段の間(ふだんの値)。--vh に対する割合で、実際の px は ui.js が
+       「押せる高さを確保した残り」から決めて --menu-row-gap へ入れる。 */
+    --menu-row-gap-share: 0.9;
     /* 【タイルの中の段の高さはここ1か所】帯(吹き出し)とラベルの高さ。
        .lobby-side-btn の grid-template-rows と #lobbyLeft .season-ssr-pop の height が
        同じ値を見る(以前は同じ式を2か所に書いていて、片方だけ直すと吹き出しが段からはみ出した)。
@@ -339,8 +349,10 @@
        auto にすると中身の合計で決まり、文字や吹き出しが増えたぶんだけはみ出す。 */
     grid-template-rows:repeat(var(--menu-rows, 4), var(--tile-h, var(--tap-pick)));
     grid-auto-columns:var(--menu-col-w, var(--menu-col-w-max));
-    /* 段の間は指が隣を押さない程度に空ける(1.9pxだとボタンがほぼ接していた) */
-    gap:calc(0.9 * var(--vh)) 5px; align-content:center; justify-content:start; padding-top:9px;
+    /* 段の間は指が隣を押さない程度に空ける(1.9pxだとボタンがほぼ接していた)。
+       実際の値は ui.js が --menu-row-gap に入れる(縦が足りないときは詰まる)。
+       下の 4px は最初の1フレームだけの仮値。 */
+    gap:var(--menu-row-gap, 4px) 5px; align-content:center; justify-content:start; padding-top:9px;
   }
   /* バナーはメニューの幅に合わせる。ただし列が増えても2列ぶんで頭打ち
      (横に長い帯になると絵が間延びし、中央の幅も食う) */
@@ -2235,7 +2247,10 @@
   /* 【箱を先に決める】使える縦幅(88vh)から、見出し・自動入室・ボタン行・すき間を引いた残りが
      一覧の高さになる。逆に一覧の高さを先に決めると、ボタンを1つ足しただけで枠から出る
      (実測: 667x375 で padding18+gap12 のままボタン行を足すと 88vh を 30px 超えた)。 */
-  #roomListInner{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:14px; width:100%; max-height:calc(88 * var(--vh)); }
+  /* 上限は**この枠(#roomListScreen)そのもの**。画面の高さの割合(88vh)で決めていたが、
+     枠はヘッダー(--top-header-h)の下から始まるので、低い画面ではヘッダーのぶんだけ
+     はみ出していた(667x320 で実測2px)。割合の決め打ちをやめれば端末によらず必ず収まる。 */
+  #roomListInner{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:14px; width:100%; max-height:100%; }
   #roomListItems{
     display:flex; flex-direction:column; gap:8px; width:100%; margin-top:2px;
     max-height:calc(34 * var(--vh)); overflow-y:scroll; padding-right:8px;

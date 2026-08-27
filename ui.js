@@ -1297,14 +1297,39 @@ function refreshLobby(){
    そこでここで実測して CSS変数へ渡す。行の高さ・すき間の値はCSS側が正で、
    ここは読むだけにしてある(同じ数字を2か所に書かない)。 */
 const LOBBY_MENU_COLS = 2;   // 1組の横並び数。組が入りきらなくなると右へ2列ずつ増える
+const LOBBY_MENU_GAP_MIN = 2;   // 行間の下限。飾りの余白より「押せる高さ」を優先する
 let lobbyMenuLastSig = '';   // 前回書いた結果(同じなら書かない。watchLobbyMenuBox の無限ループ防止)
+let lobbyBannerNaturalH = 0; // バナーの素の高さ。出ているときに測って覚える(隠している間の計算用)
+
+/* 【縦が足りないときに何を削るか】メニュー(操作) > バナー(お知らせ) > 行間 > 横へ逃がす。
+
+   この順番が要。以前は「入る行数」だけで決めていたので、**あと数pxのために
+   いきなり横へ2列増え**、左メニューが倍幅になって中央が潰れた
+   (2026-08-26 実機報告「横向きのまま起動するとロビーが崩れる」。iOSはPWAを横で起動した
+   直後、まだ縦持ちのセーフエリアを返すことがあり、そのぶん20〜50px低い状態で確定していた)。
+   バナーを引っ込めれば60px以上まとめて空くので、**数pxの不足で崩れる崖が構造から消える。**
+
+   もう1つの要点は**測る場所を親(#lobbyLeft)にした**こと。子(グリッド)の高さは
+   バナーの有無で変わり、そのバナーの出し入れをこちらが決めるので、子を測ると堂々巡りになる
+   (隠す→広くなる→戻す→狭くなる…)。親の高さは中身に左右されないので答えが揺れない。 */
 function updateLobbyMenuRows(){
   const grid = document.getElementById('lobbyMenuGrid');
   if(!grid) return;
   watchLobbyMenuBox(grid);
   const cs = getComputedStyle(grid);
-  // padding を除いた「実際に行が置ける高さ」で数える(clientHeight は padding 込み)
-  const h = grid.clientHeight - (parseFloat(cs.paddingTop)||0) - (parseFloat(cs.paddingBottom)||0);
+  const gridPad = (parseFloat(cs.paddingTop)||0) + (parseFloat(cs.paddingBottom)||0);
+  const left = document.getElementById('lobbyLeft');
+  const banner = document.getElementById('lobbyBanner');
+  const lcs = left ? getComputedStyle(left) : null;
+  // 左の列が使える高さ(padding を除く)。ここが全部の計算のもと
+  const leftH = left
+    ? left.clientHeight - (parseFloat(lcs.paddingTop)||0) - (parseFloat(lcs.paddingBottom)||0)
+    : grid.clientHeight;
+  const leftGap = lcs ? (parseFloat(lcs.rowGap)||0) : 0;
+  // バナーの素の高さ。出ている間に測っておけば、隠している間も同じ値で計算できる
+  if(banner && !banner.classList.contains('hidden') && banner.offsetHeight > 0) lobbyBannerNaturalH = banner.offsetHeight;
+  const bannerH = banner ? lobbyBannerNaturalH : 0;
+  const h = leftH;
   const vis = [...grid.children].filter(c=> getComputedStyle(c).display!=='none');
   if(!(h > 0)){
     /* 測れない(画面が隠れている・向き変更の途中で寸法が未確定)。
@@ -1321,20 +1346,42 @@ function updateLobbyMenuRows(){
     return;
   }
   cancelLobbyMenuRetry();
-  const gap = parseFloat(cs.rowGap) || 0;
-  const tap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tap-pick')) || 44;
-  const pairs = Math.ceil(vis.length / LOBBY_MENU_COLS) || 1;   // 横並び1組=1行
-  const fit = Math.max(1, Math.floor((h + gap) / (tap + gap)));  // 下限の高さで入る行数
-  const rows = Math.max(1, Math.min(fit, pairs));
-  const cols = Math.max(1, Math.ceil(pairs / rows));
   const css = getComputedStyle(document.documentElement);
   const num = (name, def)=>{ const v = parseFloat(css.getPropertyValue(name)); return isFinite(v) ? v : def; };
+  const tap = parseFloat(css.getPropertyValue('--tap-pick')) || 44;
+  const vhPx = parseFloat(css.getPropertyValue('--vh')) || 0;
+  const gapWant = Math.max(0, num('--menu-row-gap-share', 0.9) * vhPx);   // ふだんの行間(飾り)
+  const pairs = Math.ceil(vis.length / LOBBY_MENU_COLS) || 1;             // 横並び1組=1行
+  // この行数を2列(1ブロック)で置くのに最低限要る高さ。行間は下限まで詰めた値で見る
+  const needFor = (n)=> n * tap + (n - 1) * LOBBY_MENU_GAP_MIN + gridPad;
+
+  /* ① まずバナー込みで、全部を1ブロック(2列)に置けるか。
+     ② 置けなければバナーを引っ込めて、もう一度置けるか。
+     ③ それでも置けないときだけ、横へ逃がす(このときバナーは戻す ―― 行数が減って
+        場所が空くので、隠しておく理由が無い)。 */
+  let showBanner = true;
+  let menuH = h - (bannerH ? bannerH + leftGap : 0);
+  if(bannerH && menuH < needFor(pairs) && h >= needFor(pairs)){ showBanner = false; menuH = h; }
+  let rows = pairs;
+  if(menuH < needFor(pairs)){
+    showBanner = true;
+    menuH = h - (bannerH ? bannerH + leftGap : 0);
+    rows = Math.max(1, Math.min(pairs,
+      Math.floor((menuH - gridPad + LOBBY_MENU_GAP_MIN) / (tap + LOBBY_MENU_GAP_MIN))));
+  }
+  const cols = Math.max(1, Math.ceil(pairs / rows));
+  const inner = menuH - gridPad;
+  /* 行間は「余っているぶんだけ」空ける。押せる高さ(--tap-pick)を先に確保してから、
+     残りを飾りの余白へ回す ―― 逆にすると余白のせいでタイルが下限を割る。 */
+  const gap = rows > 1
+    ? Math.max(LOBBY_MENU_GAP_MIN, Math.min(gapWant, (inner - rows * tap) / (rows - 1)))
+    : gapWant;
   /* タイル1枚の高さ。**中身とは無関係に、使える高さを行数で割るだけ**で決まる。
      この値からタイルの中の帯・アイコン・文字の大きさがすべて決まる(style.css参照)ので、
      文字が長かろうが吹き出しが付こうがフォントが遅れて来ようが、はみ出しようがない。
-     rows は「下限の高さで入る数」なので tileH >= --tap-pick が必ず成り立つ。
+     rows と gap の決め方から tileH >= --tap-pick が必ず成り立つ。
      上限も設ける(縦が余る画面でタイルだけ間延びして字が巨大になるのを防ぐ)。 */
-  const tileH = Math.min((h - (rows - 1) * gap) / rows, num('--tile-h-max', 64));
+  const tileH = Math.min((inner - (rows - 1) * gap) / rows, num('--tile-h-max', 64));
   /* 1列の幅。**左メニューが広がってよい上限**を決めておき、列が増えたら幅を詰める。
      こうしないと、項目が増えたぶんだけ左が太り、中央が幅0まで潰れて中の文字が壊れる
      (2026-08-15 実測: 中央が0pxになり案内文が高さ378pxに化けた)。 */
@@ -1346,7 +1393,7 @@ function updateLobbyMenuRows(){
   const colW = Math.max(28, Math.min(ideal, roomy));
   /* 【書く前に、前回と同じ結果かを見る】見張り(下の watchLobbyMenuBox)から何度も呼ばれるので、
      同じ結果なら**1バイトも書かない**。書けばまた見張りが反応して呼ばれ、無限に回る。 */
-  const sig = `${vis.length}:${rows}:${tileH.toFixed(2)}:${colW.toFixed(2)}`;
+  const sig = `${vis.length}:${rows}:${tileH.toFixed(2)}:${colW.toFixed(2)}:${gap.toFixed(2)}:${showBanner?1:0}`;
   if(sig === lobbyMenuLastSig) return;
   lobbyMenuLastSig = sig;
   /* 組み直したら、**次のフレームでもう一度測る。** 画面を出したその場で測ると、
@@ -1355,6 +1402,9 @@ function updateLobbyMenuRows(){
   if(typeof requestAnimationFrame==='function') requestAnimationFrame(()=> updateLobbyMenuRows());
   grid.style.setProperty('--tile-h', tileH.toFixed(2) + 'px');
   grid.style.setProperty('--menu-col-w', colW.toFixed(2) + 'px');
+  grid.style.setProperty('--menu-row-gap', gap.toFixed(2) + 'px');
+  // 縦が足りないときはバナーを引っ込める(メニューを横へ広げるより先に削るのはこちら)
+  if(banner) banner.classList.toggle('hidden', !showBanner);
   /* 升目を1つずつ指定する。**DOMの並び順は画面で読む順(左→右、次の行)のまま**にして、
      入る行数を超えた組は右となりの2列へ回す。こうすると
        ・縦には決して伸びない(=見切れない。ロビーはスクロールさせない決まり)
