@@ -792,6 +792,12 @@ async function beginMultiplayerMatchInner(){
     seededSpawnLoot(lootRng, multiLootCount, ZONE_CENTER0, ZONE_PHASES[0].holdRadius*0.95);
     seededSpawnOasisBonusLoot(lootRng);
   }
+  /* ミューテーター「技強化」と技強化チケットを、マルチでも効かせる(ソロと同じ関数)。
+     レイド・アリーナのtier全解放を上で済ませたあとに呼ぶ ── 関数側が
+     「既に全解放なら何もしない」ので、チケットを無駄に消費しない。
+     解放するのは**自分の分だけ**でよい。相手の技は「何を撃ったか」が発射イベントに
+     載って届き、ホストはその技をそのまま撃たせる(tierで撃ち直さない)。 */
+  if(typeof applyMatchStartTierBoost==='function') applyMatchStartTierBoost();
   updateCamera();
 
   // トランスポート: 常にrtdbで開始し、WebRTC直結が確立した相手からrtcへ自動昇格する

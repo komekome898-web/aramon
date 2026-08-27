@@ -1273,6 +1273,7 @@ function pickLobbyBgm(id){
 }
 function refreshLobby(){
   updateLobbyMenuRows();
+  scheduleLobbyMenuSettle();   // 出した直後の寸法は当てにならないので、少し置いて測り直す
   updateLobbyPickLabels();
   updateLobbyBgmLabel();
   renderLobbyMonster();
@@ -1314,7 +1315,7 @@ function updateLobbyMenuRows(){
        (2026-08-23 実機報告「更新タイルが隠れる」。iPhone 11 縦持ちで実測27.2px重なり)。
        いま分かっている行数のまま升目だけ配り直して行の食い違いを消し、
        測れるようになったら測り直す。 */
-    placeLobbyMenuTiles(grid, vis, lobbyMenuCurrentRows(grid));
+    placeLobbyMenuTiles(grid, vis, lobbyMenuCurrentRows(grid, vis));
     lobbyMenuLastSig = '';   // 仮置きなので、測れるようになったら必ず組み直す
     scheduleLobbyMenuRetry();
     return;
@@ -1374,10 +1375,32 @@ function placeLobbyMenuTiles(grid, vis, rows){
     el.style.gridColumn = String(block * LOBBY_MENU_COLS + inPair + 1);
   });
 }
-// いま割り当ててある行数。まだ一度も測っていなければCSSの既定(4行)。
-function lobbyMenuCurrentRows(grid){
+/* いま割り当ててある行数。まだ一度も測れていないときの仮置きは
+   **「1ブロックに全部(=行数を項目の組の数と同じにする)」**。
+
+   【なぜ4行の決め打ちをやめたか】測れないまま4行で置くと、10個のタイルが
+   右の2列へあふれる。すると左メニューが倍の幅になり、中央の列が細くなって
+   タイトル・案内文が「…」で切れる(2026-08-26 実機報告「横画面で起動すると
+   ロビーのタイルがはみ出て崩れる。縦にしてから横へ戻すと直る」)。
+   1ブロックなら**横には決して広がらない**ので、中央を潰す壊れ方をしない。
+   縦は測れた時点で必ず組み直される。 */
+function lobbyMenuCurrentRows(grid, vis){
   const v = parseFloat(grid.style.getPropertyValue('--menu-rows'));
-  return (isFinite(v) && v >= 1) ? Math.round(v) : 4;
+  if(isFinite(v) && v >= 1) return Math.round(v);
+  const n = vis ? vis.length : 0;
+  return Math.max(1, Math.ceil(n / LOBBY_MENU_COLS) || 1);
+}
+/* ロビーが見えた直後の測り直し。**一度きりの計測に賭けない。**
+   実機では、出したその場ではまだ画面の高さ・セーフエリア・フォントが
+   最終値になっていないことがある(world.js の起動時 resize が
+   50/150/400/900/2000ms で測り直しているのと同じ理由)。
+   同じ結果なら1バイトも書かないので、余分に呼んでも害は無い。 */
+const LOBBY_MENU_SETTLE_MS = [0, 80, 250, 600, 1200];
+function scheduleLobbyMenuSettle(){
+  LOBBY_MENU_SETTLE_MS.forEach(ms=> setTimeout(updateLobbyMenuRows, ms));
+  try{
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=> updateLobbyMenuRows()).catch(()=>{});
+  }catch(err){}
 }
 /* 測れなかったときの測り直し。ロビーが表示されたときは refreshLobby() が呼び直すので、
    ここが要るのは「表示されたまま一時的に寸法が0になる」場合(向き変更の直後など)だけ。
@@ -5064,6 +5087,7 @@ function startGame(opts){
   const spawnPoints = pickSpawnPointsBatch(totalEntityCount);
   player = createMonster(game.selectedElement, true, playerDisplayName, { spawnPoint: spawnPoints[0] });
   applyMastermonToPlayer();
+  applyMatchStartTierBoost();   // ミューテーター「技強化」と技強化チケット(マルチも同じ関数を通す)
   entities.push(player);
   const names = shuffle(BOT_NAMES);
   const botElements = shuffle(Object.keys(ELEMENTS));
@@ -9004,7 +9028,7 @@ function renderMastermonDetail(key){
       /* 【押せない理由は必ず言う】disabled をやめて見た目だけ沈めてあるので、
          押されたら「何が足りないか」と「どこで手に入るか」をここで返す。 */
       if(mm.tickets <= 0){
-        pushToast('🎫 修行チケットがありません（バトルでレベルが上がると1枚もらえます／転生でもまとめてもらえます）');
+        pushToast('🎫 修行チケットがありません（レベルアップで1枚、転生でまとめてもらえます）');
         return;
       }
       if(!mastermonSelectedTraining){ pushToast('💪 鍛えたいメニューを先に選んでください'); return; }
@@ -9716,15 +9740,32 @@ function applyMastermonToPlayer(){
   const data = loadMastermons();
   const mm = data[game.selectedMastermonKey];
   applyMastermonStatsToEntity(player, mm);
-  // ミューテーター「技tier2スタート」: 全員tier2からスタート(訓練場除く。非公開中は常にfalse)
-  const mutTierActive = (typeof mutatorTierStartActive==='function') && mutatorTierStartActive() && !game.trainingRange;
+}
+/* 試合開始時の技tier解放(ミューテーター「技強化」と技強化チケット)。
+
+   **ソロもマルチもレイドも、必ずここ1か所を通す。** 以前は applyMastermonToPlayer() の中に
+   書いてあり、その関数を呼ばないマルチ(部屋を作る/探す・チーム戦)では
+   チケットもミューテーターも一切効いていなかった(2026-08-26 発注者報告)。
+   マルチではステータス補正を「部屋の参加者情報」から当てる別の道を通るため、
+   ステータスの適用とtierの解放は分けてある。
+
+   呼ぶ場所は「その試合のtierが確定したあと」。訓練場とレイドは最初から全解放なので、
+   ここで**チケットを消費しない**(消費だけして意味が無いのを防ぐ)。 */
+function applyMatchStartTierBoost(){
+  if(!player) return;
+  if((player.moveTierUnlocked||1) >= 3) return;   // 訓練場・レイド: 既に全解放
+  // ミューテーター「技tier2スタート」: 全員tier2からスタート(非公開中は常にfalse)
+  const mutTierActive = (typeof mutatorTierStartActive==='function') && mutatorTierStartActive();
   if(mutTierActive){
     player.moveTierUnlocked = Math.max(player.moveTierUnlocked||1, 2);
     player.moveTierSelected = 2;
   }
   // 技強化チケット: ストックがあれば1つ消費して技tier2解放でスタート
   // (ミューテーター発動中はさらに1段上がりtier3解放でスタート)
-  if(mm && mm.nextMoveBoost > 0 && !game.trainingRange){   // 訓練場ではチケットを消費しない(最初から全解放)
+  if(!game.selectedMastermonKey) return;
+  const data = loadMastermons();
+  const mm = data[game.selectedMastermonKey];
+  if(mm && mm.nextMoveBoost > 0){
     const bumpTier = mutTierActive ? 3 : 2;
     player.moveTierUnlocked = Math.max(player.moveTierUnlocked||1, bumpTier);
     player.moveTierSelected = bumpTier;

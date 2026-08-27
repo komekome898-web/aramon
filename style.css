@@ -2626,10 +2626,20 @@
   /* 説明2行が無いぶんだけ下が余るので、実行ボタンは箱の底へ寄せる(縦フレックス+margin-top:auto)。
      バーが入りきらない画面では余りが0になり、ボタンは今までどおりバーの直下に付く */
   .ml-sec-status.has-eff{ display:flex; flex-direction:column; }
-  .ml-sec-status.has-eff .mastermon-detail-statscol{ flex:0 0 auto; }
-  /* 空いた下部に置くトレ実行ボタン。列がスクロールしても下に貼り付けて常に押せるようにする */
+  /* 【重ならない作りにする】**バーの列だけ**がスクロールし、実行ボタンはその外に立つ。
+     以前はセクションごとスクロールさせ、ボタンを position:sticky で底に貼っていたので、
+     6行が入りきらない画面では最後の行(丈夫さ)がボタンの下に隠れていた
+     (2026-08-26 実機報告・縦画面ロック時)。**隠すのではなく場所を分ける。** */
+  .ml-sec-status.has-eff{ overflow:hidden; }
+  .ml-sec-status.has-eff .mastermon-detail-statscol{
+    flex:1 1 auto; min-height:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  /* トレーニング画面は実行ボタンのぶん縦が狭い。6行が**スクロールなしで収まる**よう、
+     行の間だけ詰める(実測で余りが22px→37pxになる。端末のフォント差を吸収する幅) */
+  .ml-sec-status.has-eff .mm-stats-wrap{ gap:3px; }
+  /* 空いた下部に置くトレ実行ボタン。スクロールの外にあるので必ず見えて押せる */
   .ml-stat-foot{
-    position:sticky; bottom:0; z-index:2; display:flex; flex:0 0 auto;
+    position:static; z-index:2; display:flex; flex:0 0 auto;
     margin:auto 0 0; padding:8px 0 2px; background:#0a1018;
     border-top:1px solid rgba(255,255,255,0.07);
   }
@@ -2931,10 +2941,12 @@
   .toast-line{
     padding:7px 16px; background:rgba(8,12,20,0.8); border:1px solid var(--panel-line); border-radius:4px;
     max-width:100%; text-align:center;
-    /* nowrapをやめて2行まで折り返す。「内部エラー…:<90文字>」が両端で切れて読めなかった。
-       切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く */
+    /* nowrapをやめて折り返す。「内部エラー…:<90文字>」が両端で切れて読めなかった。
+       切るのはこの文字要素自身の役目なので overflow:hidden はここだけに置く。
+       **3行まで。** 2行だと入手方法まで書いた案内(修行チケット等)が
+       最後まで読めず途中で切れていた(2026-08-26 実機報告)。 */
     white-space:normal; overflow-wrap:anywhere;
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
   /* 【試合中は下地を敷かない】戦闘中の黒帯は視界を塞ぐ(発注者指摘)。
      背景と枠を外すぶん、**文字は縁取りで浮かせる** ―― ダメージ数値に strokeText を足したのと
      同じ理屈で、砂漠・雪山のような明るい地面でも読めるだけの太さが要る。
