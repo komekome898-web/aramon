@@ -3395,30 +3395,33 @@ const DAILY_MISSIONS = [
 /* 累計ミッション: マスモン1体ごとに、その子の戦歴(rec)や育成状況で進む。
    value はその子の現在値。tiers は小さい順で、**届いた段を1つずつ受け取る**。
    受け取り状況は mm.mis[key] = 受け取り済みの段数(1始まり)。
-   数値バランスは発注者が実機で調整する前提なので、この表が唯一の置き場。 */
+   数値バランスは発注者が実機で調整する前提なので、この表が唯一の置き場。
+   【報酬の設計意図(2026-08-28)】💠(モン晶)は最終段のみ(秘伝の書=💠100 の長期目標を
+   崩さない)。後半に🪙を残す(トレーニング消費は後半ほど大きい)。 */
 const LIFETIME_MISSIONS = [
   { key:'matches',  icon:'⚔️', label:'試合に出る',       unit:'試合',
     value:(mm)=> mmRec(mm).m,
-    tiers:[ {n:5,   reward:{gold:300}},  {n:20,  reward:{dia:15}},
-            {n:50,  reward:{gold:1500}}, {n:100, reward:{dia:30}}, {n:200, reward:{gold:5000}} ] },
+    tiers:[ {n:5,   reward:{gold:500}}, {n:20,  reward:{dia:20}},
+            {n:50,  reward:{item:'freeTrainTicket', n:1}},
+            {n:100, reward:{gold:3000}}, {n:200, reward:{shard:50}} ] },
   { key:'kills',    icon:'🎯', label:'敵を倒す',         unit:'キル',
     value:(mm)=> mmRec(mm).k,
-    tiers:[ {n:10,  reward:{gold:300}},  {n:50,  reward:{dia:15}},
-            {n:150, reward:{gold:2000}}, {n:400, reward:{dia:40}} ] },
+    tiers:[ {n:10,  reward:{gold:500}}, {n:50,  reward:{dia:20}},
+            {n:150, reward:{item:'freeTrainTicket', n:1}}, {n:400, reward:{dia:40}} ] },
   { key:'damage',   icon:'💥', label:'ダメージを与える', unit:'',
     value:(mm)=> mmRec(mm).dmg,
-    tiers:[ {n:10000,  reward:{gold:300}},  {n:50000,  reward:{dia:15}},
+    tiers:[ {n:10000,  reward:{gold:500}},  {n:50000,  reward:{dia:20}},
             {n:150000, reward:{gold:2000}}, {n:400000, reward:{dia:40}} ] },
   { key:'level',    icon:'🌟', label:'レベルを上げる',   unit:'',
     value:(mm)=> (mm.level||1),
-    tiers:[ {n:10, reward:{gold:500}}, {n:30, reward:{dia:20}},
-            {n:60, reward:{gold:3000}}, {n:100, reward:{dia:50}} ] },
+    tiers:[ {n:10, reward:{gold:1000}}, {n:30, reward:{dia:30}},
+            {n:60, reward:{item:'freeTrainTicket', n:2}}, {n:100, reward:{dia:80}} ] },
   { key:'rebirth',  icon:'♻️', label:'転生する',         unit:'回',
     value:(mm)=> mastermonRebirthCount(mm),
-    tiers:[ {n:1, reward:{dia:20}}, {n:3, reward:{dia:30}}, {n:5, reward:{dia:50}} ] },
+    tiers:[ {n:1, reward:{dia:40}}, {n:3, reward:{gold:5000}}, {n:5, reward:{dia:120}} ] },
   { key:'training', icon:'💪', label:'トレーニングする', unit:'回',
     value:(mm)=> mmRec(mm).tr,
-    tiers:[ {n:20, reward:{gold:500}}, {n:60, reward:{dia:15}}, {n:150, reward:{gold:3000}} ] },
+    tiers:[ {n:20, reward:{gold:1000}}, {n:60, reward:{dia:20}}, {n:150, reward:{gold:3000}} ] },
 ];
 function lifetimeClaimedTier(mm, key){ return Math.max(0, Math.round((mm && mm.mis && mm.mis[key]) || 0)); }
 // 次に受け取れる段(1始まり)。無ければ0
@@ -3436,6 +3439,25 @@ function lifetimeLordEarned(elementKey){
   const mm = loadMastermons()[elementKey];
   return !!mm && lifetimeMissionAllComplete(mm);
 }
+/* ===== プレイヤー累計ミッション(ミッション「累計」タブの最上部) =====
+   段の n と称号名は **TITLES が正**(手書きの対応表を作らない。ui.js の
+   accountMissionDefs が type ごとに n 昇順へソートして段にする)。ここに持つのは
+   **報酬列だけ**(typeごと・n昇順。TITLES の途中に段が挿し込まれても昇順どうしで
+   対応するのでずれない)。列が足りない段は既定 {gold:1000}。
+   【報酬の設計意図】💠(モン晶)は各typeに多くて1段だけ(秘伝の書=💠100 の長期目標を
+   崩さない)。数値は発注者が実機で調整する。 */
+const ACCOUNT_MISSION_REWARDS = {
+  matches:     [ {gold:300}, {gold:1000}, {dia:30},   {dia:50},   {shard:50} ], // 1/10/50/100/300
+  wins:        [ {gold:500}, {dia:20},    {dia:40},   {shard:50}, {dia:150}  ], // 1/5/10/25/50
+  totalKills:  [ {dia:30},   {gold:5000}, {dia:100} ],                          // 100/500/1000
+  totalDamage: [ {dia:30},   {dia:50} ],                                        // 50000/200000
+};
+/* TITLES に段が無いプレイヤー累計ミッション。進捗の取り方は ui.js 側
+   (titlesCumulativeStats の elemPlayed)。20種の段は称号「オールラウンダー」と同時期に届く。 */
+const ACCOUNT_EXTRA_MISSIONS = [
+  { key:'elems', icon:'🌈', label:'いろんなモンスターで遊ぶ', unit:'種',
+    tiers:[ {n:5, reward:{gold:1000}}, {n:10, reward:{dia:30}}, {n:20, reward:{dia:80}} ] },
+];
 function dailyTodayStr(){ const d=new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
 function loadDaily(){
   try{
@@ -3454,6 +3476,7 @@ function rewardText(r){
   const parts = [];
   if(r.gold) parts.push(`🪙${r.gold}`);
   if(r.dia)  parts.push(`💎${r.dia}`);
+  if(r.shard) parts.push(`💠${r.shard}`); // モン晶(SHARD_ICONと同じ絵。宣言順の都合で直書き)
   for(const x of rewardItemList(r)) parts.push(playerItemTextLabel(x.key, x.n));
   if(r.skin){ const m = (typeof skinMeta==='function') ? skinMeta(r.skin) : null; parts.push(`✨${m?m.name:'スキン'}`); }
   return parts.join(' ');
