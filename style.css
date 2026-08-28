@@ -1622,6 +1622,29 @@
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
   .mission-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
   .mission-pane{ width:100%; display:flex; flex-direction:column; align-items:center; }
+  /* 累計ミッション(マスモン1体=1カード)。行の作り・文字サイズはデイリーの
+     ミッション行(.daily-mission-name / .daily-bar / .daily-claim-btn)をそのまま使う。
+     新しい文字サイズは作らない。 */
+  .lt-list{ display:flex; flex-direction:column; gap:8px; width:100%; }
+  .lt-empty{ font-size:11px; color:var(--ink-dim); padding:14px 0; }
+  .lt-card{ width:100%; padding:8px 10px; background:rgba(255,255,255,0.03);
+    border:1px solid var(--panel-line); border-radius:8px; }
+  .lt-card-head{ display:flex; align-items:center; gap:7px; margin-bottom:6px; min-width:0; }
+  .lt-mm-ico{ width:30px; height:30px; object-fit:contain; flex-shrink:0; }
+  .lt-mm-name{ font-size:12.5px; font-weight:700; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lt-mm-lv{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); flex-shrink:0; }
+  .lt-lord-badge{ font-size:13px; flex-shrink:0; }
+  .lt-rows{ display:flex; flex-direction:column; gap:5px; }
+  .lt-row{ display:flex; align-items:center; gap:10px; padding:6px 10px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:7px; }
+  .lt-row.ready{ border-color:var(--amber); background:rgba(244,196,48,0.10); }
+  .lt-row-info{ flex:1 1 auto; min-width:0; }
+  .lt-done{ font-size:11px; color:var(--amber); font-weight:700; }
+  /* 押せる物には最小の高さ + flex-shrink:0(flexに潰させない)。
+     高さはデイリーの受け取るボタンの実寸(約30px)を下限として明文化 */
+  .lt-claim-btn{ min-height:30px; flex-shrink:0; }
+  .lt-claim-btn:disabled{ opacity:0.4; cursor:default; }
 
   /* ===== 遠征 =====
      枠は横並び(最大3)。1画面に収める前提なので縦に積まない。 */

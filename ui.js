@@ -7104,6 +7104,7 @@ function titleConditionMet(t, cum){
     case 'ssr':         return ownsAnySsr();
     case 'tutorial':    return (typeof tutorialIsDone==='function') && tutorialIsDone();
     case 'allElem':     return Object.keys(ELEMENTS).every(k=> cum.elemPlayed.has(k));
+    case 'lifetimeLord': return (typeof lifetimeLordEarned==='function') && lifetimeLordEarned(t.element);
     default:            return false;
   }
 }
@@ -7198,6 +7199,7 @@ function updateDailyBadge(){
   const claimable = DAILY_MISSIONS.some(m=>{ const st=d.missions[m.id]; return st && st.progress>=m.target && !st.claimed; });
   dot.classList.toggle('hidden', !claimable);
   updateMissionBadge();
+  updateLifetimeBadge(); // ロビー表示のたびに呼ばれる導線に累計も乗せる
 }
 function renderDailyLoginTrack(){
   const el = document.getElementById('dailyLoginTrack');
@@ -7253,13 +7255,97 @@ function renderDailyMissions(){
     });
   });
 }
-// ミッション: デイリー/シーズン1のタブ切替(バッグの.bag-tabと同じパターン)
+/* 累計ミッション(タブ「累計」)。**データは data.js の LIFETIME_MISSIONS / mm.rec が正**で、
+   ここは表示と受け取りだけ。受け取り状況は mm.mis[key] = 受け取り済みの段数(1始まり)。
+   行の作り・文字サイズはデイリーのミッション行(.daily-*)をそのまま使う。 */
+function renderLifetimeMissions(){
+  const el = document.getElementById('lifetimeMissionList');
+  if(!el || typeof LIFETIME_MISSIONS==='undefined') return;
+  const data = loadMastermons();
+  // 未登録の種族は出さない(進めようがない)。1体も居なければ登録への案内だけ
+  const keys = Object.keys(ELEMENTS).filter(k=> data[k]);
+  if(!keys.length){
+    el.innerHTML = '<div class="lt-empty">マスモンを登録すると累計ミッションが始まります</div>';
+    return;
+  }
+  el.innerHTML = keys.map(key=>{
+    const mm = data[key];
+    // アイコンはマイ記録と同じ流儀: 装備スキンがあればその姿、無ければ既定画像
+    const equippedSkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
+    const skinUrl = (equippedSkin && typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(equippedSkin) : null;
+    const iconImg = skinUrl
+      ? `<img class="lt-mm-ico" src="${skinUrl}" alt="">`
+      : `<img class="lt-mm-ico" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">`;
+    const lord = (typeof lifetimeMissionAllComplete==='function' && lifetimeMissionAllComplete(mm))
+      ? '<span class="lt-lord-badge">👑</span>' : '';
+    const rows = LIFETIME_MISSIONS.map(def=>{
+      const done = lifetimeClaimedTier(mm, def.key);
+      const claimable = lifetimeClaimableTier(mm, def);
+      const allDone = done >= def.tiers.length;
+      const next = allDone ? null : def.tiers[done];
+      const value = def.value(mm);
+      const pct = allDone ? 100 : Math.min(100, Math.round(value/next.n*100));
+      const prog = allDone
+        ? '<span class="lt-done">達成🎉</span>'
+        : `<span class="daily-progress-num">${Math.min(value,next.n)} / ${next.n}${def.unit?' '+def.unit:''}</span>`;
+      const reward = allDone ? '' : `<div class="daily-mission-reward">報酬 ${rewardText(next.reward)}</div>`;
+      const action = allDone ? ''
+        : `<div class="daily-mission-action"><button class="daily-claim-btn lt-claim-btn" data-mm="${key}" data-k="${def.key}" ${claimable?'':'disabled'}>受け取る</button></div>`;
+      return `<div class="lt-row ${claimable?'ready':''}">
+        <div class="lt-row-info">
+          <div class="daily-mission-name">${def.icon} ${def.label}　${prog}</div>
+          <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
+          ${reward}
+        </div>
+        ${action}
+      </div>`;
+    }).join('');
+    return `<div class="lt-card">
+      <div class="lt-card-head">${iconImg}<span class="lt-mm-name">${mm.name}</span><span class="lt-mm-lv">Lv.${mm.level}</span>${lord}</div>
+      <div class="lt-rows">${rows}</div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.lt-claim-btn:not([disabled])').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const def = LIFETIME_MISSIONS.find(d=> d.key===btn.dataset.k);
+      const all = loadMastermons();
+      const mm = all[btn.dataset.mm];
+      if(!def || !mm) return;
+      const tier = lifetimeClaimableTier(mm, def);
+      if(!tier) return;
+      const reward = def.tiers[tier-1].reward;
+      if(!mm.mis) mm.mis = {};
+      mm.mis[def.key] = tier;
+      grantReward(reward);
+      saveMastermons(all);
+      updateAccountBar();
+      if(typeof pushToast==='function') pushToast(`報酬 ${rewardText(reward)} を受け取った！`);
+      // 全段そろったら覇者称号が解放される(判定は titleConditionMet の lifetimeLord)
+      const newly = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
+      newly.forEach(t=>{ if(typeof pushToast==='function') pushToast(`👑 称号「${t.name}」を獲得！`); });
+      renderLifetimeMissions();
+      updateLifetimeBadge();
+    });
+  });
+}
+// 累計ミッションに受け取れる段が1つでもあれば「累計」タブへドット
+function updateLifetimeBadge(){
+  const dot = document.getElementById('missionTabLifetimeDot');
+  if(!dot || typeof LIFETIME_MISSIONS==='undefined' || typeof loadMastermons!=='function') return;
+  const data = loadMastermons();
+  const claimable = Object.keys(data).some(k=> LIFETIME_MISSIONS.some(def=> lifetimeClaimableTier(data[k], def) > 0));
+  dot.classList.toggle('hidden', !claimable);
+  updateMissionBadge();
+}
+// ミッション: デイリー/シーズン1/累計のタブ切替(バッグの.bag-tabと同じパターン)
 function missionShowTab(tab){
   document.querySelectorAll('.mission-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.getElementById('missionDailyPane').classList.toggle('hidden', tab!=='daily');
   document.getElementById('missionSeasonPane').classList.toggle('hidden', tab!=='season');
+  document.getElementById('missionLifetimePane').classList.toggle('hidden', tab!=='lifetime');
   if(tab==='daily'){ renderDailyLoginTrack(); renderDailyMissions(); }
   else if(tab==='season'){ renderSeasonOverlay(); }
+  else if(tab==='lifetime'){ renderLifetimeMissions(); }
 }
 document.querySelectorAll('.mission-tab').forEach(tab=>{
   tab.addEventListener('click', ()=> missionShowTab(tab.dataset.tab));
@@ -7662,13 +7748,16 @@ function updateSeasonBadge(){
   dot.classList.toggle('hidden', !claimable);
   updateMissionBadge();
 }
-// デイリー・シーズンどちらかに未受取があれば、ロビーの「ミッション」ボタン側のドットを点ける
+// デイリー・シーズン・累計のどれかに未受取があれば、ロビーの「ミッション」ボタン側のドットを点ける
 function updateMissionBadge(){
   const dot = document.getElementById('missionDot');
   if(!dot) return;
   const dailyDot = document.getElementById('missionTabDailyDot');
   const seasonDot = document.getElementById('missionTabSeasonDot');
-  const claimable = (dailyDot && !dailyDot.classList.contains('hidden')) || (seasonDot && !seasonDot.classList.contains('hidden'));
+  const lifetimeDot = document.getElementById('missionTabLifetimeDot');
+  const claimable = (dailyDot && !dailyDot.classList.contains('hidden'))
+                 || (seasonDot && !seasonDot.classList.contains('hidden'))
+                 || (lifetimeDot && !lifetimeDot.classList.contains('hidden'));
   dot.classList.toggle('hidden', !claimable);
 }
 function seasonClaim(t){
