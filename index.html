@@ -821,6 +821,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 </div>
 
 <!-- MY STATS -->
+<!-- 「モンスター別(MY MONSTERS)」の列は撤去。個体の記録はマスモン詳細の「あゆみ」タブへ -->
 <div id="myStatsScreen" class="resultScreen hidden">
   <div id="myStatsColumns">
     <div id="myStatsLeftCol">
@@ -830,10 +831,8 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
         <button class="mystat-mode-tab" data-mode="multi">マルチ</button>
       </div>
       <div id="myStatsOverall"></div>
-    </div>
-    <div id="myStatsRightCol">
-      <div class="rank mystat-col-title" id="myMonstersTitle">MY MONSTERS</div>
-      <div id="myStatsByElement"></div>
+      <!-- スクロールの外に置き、どの端末でも必ず見える(行き先の案内が隠れないように) -->
+      <div class="mystat-jump-note">モンスターごとの記録はマスモン詳細の📖あゆみへ</div>
     </div>
   </div>
   <button id="closeMyStatsBtn">閉じる</button>

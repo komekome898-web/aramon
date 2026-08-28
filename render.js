@@ -247,7 +247,7 @@ function skinnedImageForEntity(entity){
      rows            : [{label,value}] 2〜4個。valueは桁区切り済みの**文字列**で渡す
      bars            : [{label,rank,value,max,color}] … rowsの代わりに縦並びのバーで見せる
                        (マスモンは6項目すべてを適正バッジ付きのバーで出す)
-     chips           : [文字列] 0〜3個
+     chips           : [文字列] 0〜5個(1行に入りきらないぶんは描かれない)
      foil            : 'ssr' … 箔(虹色の層)を足す。省略時は無し
    }
 
@@ -443,9 +443,12 @@ function _shareLogo(){
   }
   return (_shareLogoImg && _shareLogoImg.complete && _shareLogoImg.naturalWidth) ? _shareLogoImg : null;
 }
+/* チップは1行だけ(下はステータス欄なので2行目の場所が無い)。
+   横に入りきらないぶんは**描かずに止める**ので、specが何個渡してもはみ出さない。
+   マスモンのカードは 転生・種族・戦歴2つ で最大4個になる(2026-08-28)。 */
 function _shareDrawChips(cx, chips, x, y, maxW){
   let cur = x;
-  for(const raw of (chips || []).slice(0, 3)){
+  for(const raw of (chips || []).slice(0, 5)){
     const t = String(raw || ''); if(!t) continue;
     cx.font = _shareFont(19, 600);
     const w = cx.measureText(t).width + 26;
