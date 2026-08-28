@@ -7261,6 +7261,11 @@ function renderDailyMissions(){
 function renderLifetimeMissions(){
   const el = document.getElementById('lifetimeMissionList');
   if(!el || typeof LIFETIME_MISSIONS==='undefined') return;
+  /* 受け取りのたびに丸ごと描き直すので、スクロール位置を控えて戻す。
+     戻さないと、下のカードで受け取った瞬間に一覧の先頭へ飛ばされる。
+     スクロールする箱はパネル(.mission-box)側。 */
+  const scrollBox = el.closest('.mission-box');
+  const savedScroll = scrollBox ? scrollBox.scrollTop : 0;
   const data = loadMastermons();
   // 未登録の種族は出さない(進めようがない)。1体も居なければ登録への案内だけ
   const keys = Object.keys(ELEMENTS).filter(k=> data[k]);
@@ -7305,6 +7310,7 @@ function renderLifetimeMissions(){
       <div class="lt-rows">${rows}</div>
     </div>`;
   }).join('');
+  if(scrollBox) scrollBox.scrollTop = savedScroll;
   el.querySelectorAll('.lt-claim-btn:not([disabled])').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const def = LIFETIME_MISSIONS.find(d=> d.key===btn.dataset.k);
