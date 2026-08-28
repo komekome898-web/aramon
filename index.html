@@ -1123,8 +1123,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div class="s1prev-sub-title">ℹ️ 曜日ごとの変則ルール</div>
       <div id="seasonLegend" class="s1prev-legend"></div>
     </div>
-    <!-- 累計(マスモンごとの通算ミッション。中身は ui.js の renderLifetimeMissions が描く) -->
+    <!-- 累計(プレイヤー累計 + マスモンごとの通算ミッション。中身は ui.js の renderLifetimeMissions が描く) -->
     <div id="missionLifetimePane" class="mission-pane hidden">
+      <div class="daily-section-title">🏅 プレイヤー累計（すべてのプレイの通算）</div>
+      <div id="acctMissionList" class="lt-list"></div>
+      <div class="daily-section-title">🐾 マスモンごとの累計（タップで開閉）</div>
       <div class="season-note">マスモンごとの通算記録で進むミッション。すべて達成すると、その子の「覇者」称号を獲得。</div>
       <div id="lifetimeMissionList" class="lt-list"></div>
     </div>

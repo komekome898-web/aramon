@@ -1924,6 +1924,8 @@ const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramo
      こちらは同期する。** ホーム画面に追加するとiOSではlocalStorageが別扱いになり、チュートリアルが
      もう一度出る。そのときに無料10連まで二度もらえてしまうのを防ぐ。 */
   'aramon_tutorial_gift_v1',
+  // プレイヤー累計ミッション(ミッション「累計」タブ最上部)の受け取り状況
+  'aramon_acct_missions_v1',
   /* ===== ここから設定系(2026-08-23に追加) =====
      「機種変してログインしたら、感度も音量も全部やり直しになった」への対応。
      **入れる基準は「画面の大きさに関係しない好みか」**。関係しないものだけ入れる。
@@ -7258,6 +7260,119 @@ function renderDailyMissions(){
 /* 累計ミッション(タブ「累計」)。**データは data.js の LIFETIME_MISSIONS / mm.rec が正**で、
    ここは表示と受け取りだけ。受け取り状況は mm.mis[key] = 受け取り済みの段数(1始まり)。
    行の作り・文字サイズはデイリーのミッション行(.daily-*)をそのまま使う。 */
+
+/* ===== プレイヤー累計ミッション(マスモンではなく全プレイの通算で進む) =====
+   段の n と称号名は **段階称号の表(TITLES)から生成**する(手書きの対応表を作らない)。
+   報酬列は data.js の ACCOUNT_MISSION_REWARDS、TITLES に段が無い項目だけ
+   ACCOUNT_EXTRA_MISSIONS。受け取り状況は localStorage
+   `aramon_acct_missions_v1` = { 称号id または 'elems:1' 形式のキー : 受領ts }。 */
+const ACCT_MISSIONS_KEY = 'aramon_acct_missions_v1';
+function loadAcctMissions(){
+  try{ return JSON.parse(localStorage.getItem(ACCT_MISSIONS_KEY)) || {}; }catch(err){ return {}; }
+}
+function saveAcctMissions(d){
+  try{ localStorage.setItem(ACCT_MISSIONS_KEY, JSON.stringify(d)); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty(); // ACCOUNT_SYNC_KEYS にも入れてある
+}
+/* 表示する項目。段は TITLES の該当 type を **n で昇順ソートしてから**列にする
+   (TITLES の途中に称号が挿し込まれても、報酬列(n昇順)との対応がずれない)。 */
+function accountMissionDefs(){
+  if(typeof TITLES==='undefined' || typeof titlesCumulativeStats!=='function') return [];
+  const cum = titlesCumulativeStats();
+  const meta = [
+    { type:'matches',     icon:'⚔️', label:'試合に出る',       unit:'試合', value:cum.matches },
+    { type:'wins',        icon:'🏆', label:'勝利する',         unit:'勝',   value:cum.wins },
+    { type:'totalKills',  icon:'🎯', label:'敵を倒す',         unit:'キル', value:cum.kills },
+    { type:'totalDamage', icon:'💥', label:'ダメージを与える', unit:'',     value:cum.damage },
+  ];
+  const defs = meta.map(m=>{
+    const rows = TITLES.filter(t=> t.type===m.type).slice().sort((a,b)=> a.n-b.n);
+    const rewards = (typeof ACCOUNT_MISSION_REWARDS!=='undefined' && ACCOUNT_MISSION_REWARDS[m.type]) || [];
+    return { key:m.type, icon:m.icon, label:m.label, unit:m.unit, value:m.value,
+      tiers: rows.map((t,i)=> ({ n:t.n, reward: rewards[i] || {gold:1000}, title:t, ck:t.id })) };
+  });
+  for(const ex of (typeof ACCOUNT_EXTRA_MISSIONS!=='undefined' ? ACCOUNT_EXTRA_MISSIONS : [])){
+    defs.push({ key:ex.key, icon:ex.icon, label:ex.label, unit:ex.unit,
+      value: ex.key==='elems' ? cum.elemPlayed.size : 0,
+      tiers: ex.tiers.map((t,i)=> ({ n:t.n, reward:t.reward, title:null, ck:`${ex.key}:${i+1}` })) });
+  }
+  return defs;
+}
+// 受け取り済みの段数と、いま受け取れる段(1始まり。無ければ0)。届いた段を1つずつ受け取るのは LIFETIME_MISSIONS と同じ流儀
+function accountMissionState(def, store){
+  let done = 0;
+  while(done < def.tiers.length && store[def.tiers[done].ck]) done++;
+  const claimable = (done < def.tiers.length && def.value >= def.tiers[done].n) ? done + 1 : 0;
+  return { done, claimable };
+}
+/* 「受け取り可があるか」。バッジ(updateLifetimeBadge)と画面が**これを共用**する
+   (同じ判定を2か所に書かない)。 */
+function accountMissionsHasClaimable(){
+  const store = loadAcctMissions();
+  return accountMissionDefs().some(def=> accountMissionState(def, store).claimable > 0);
+}
+function ltCardHasClaimable(mm){
+  return LIFETIME_MISSIONS.some(def=> lifetimeClaimableTier(mm, def) > 0);
+}
+/* ミッション1行ぶんのHTML。プレイヤー累計とマスモンカードの両方が使う。
+   title があれば報酬の後に称号名を添える(解放自体は試合終了時の checkTitleUnlocks 済み)。 */
+function ltRowHtml(o){
+  const prog = o.allDone
+    ? '<span class="lt-done">達成🎉</span>'
+    : `<span class="daily-progress-num">${Math.min(o.value,o.n)} / ${o.n}${o.unit?' '+o.unit:''}</span>`;
+  const titleTxt = (!o.allDone && o.title) ? ` ＋ 称号「${o.title.name}」` : '';
+  const reward = o.allDone ? '' : `<div class="daily-mission-reward">報酬 ${rewardText(o.reward)}${titleTxt}</div>`;
+  const action = o.allDone ? ''
+    : `<div class="daily-mission-action"><button class="daily-claim-btn ${o.btnClass}" ${o.attrs} ${o.claimable?'':'disabled'}>受け取る</button></div>`;
+  const pct = o.allDone ? 100 : Math.min(100, Math.round(o.value/o.n*100));
+  return `<div class="lt-row ${o.claimable?'ready':''}">
+    <div class="lt-row-info">
+      <div class="daily-mission-name">${o.icon} ${o.label}　${prog}</div>
+      <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
+      ${reward}
+    </div>
+    ${action}
+  </div>`;
+}
+function renderAccountMissions(){
+  const el = document.getElementById('acctMissionList');
+  if(el === null) return;
+  const store = loadAcctMissions();
+  el.innerHTML = accountMissionDefs().map(def=>{
+    const st = accountMissionState(def, store);
+    const allDone = st.done >= def.tiers.length;
+    const next = allDone ? null : def.tiers[st.done];
+    return ltRowHtml({ icon:def.icon, label:def.label, unit:def.unit, value:def.value,
+      allDone, n: next?next.n:0, reward: next?next.reward:null, title: next?next.title:null,
+      claimable: st.claimable>0, btnClass:'acct-claim-btn', attrs:`data-k="${def.key}"` });
+  }).join('');
+  el.querySelectorAll('.acct-claim-btn:not([disabled])').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const def = accountMissionDefs().find(d=> d.key===btn.dataset.k);
+      if(!def) return;
+      const store2 = loadAcctMissions();
+      const st = accountMissionState(def, store2);
+      if(!st.claimable) return;                 // 進捗がn以上 && 未受領の最小tierだけ受け取れる
+      const tier = def.tiers[st.claimable-1];
+      store2[tier.ck] = Date.now();             // 先に受領を書いてから付与(二重受け取り防止)
+      grantReward(tier.reward);
+      saveAcctMissions(store2);
+      updateAccountBar();
+      /* 称号の解放は試合終了時の checkTitleUnlocks で自動的に済んでいる
+         (ここで checkTitleUnlocks の戻りを当てにしない=常に空)。名前だけ再掲する。 */
+      const titleTxt = tier.title ? `（称号『${tier.title.name}』獲得済み）` : '';
+      if(typeof pushToast==='function') pushToast(`報酬 ${rewardText(tier.reward)} を受け取った！${titleTxt}`);
+      renderLifetimeMissions();
+      updateLifetimeBadge();
+    });
+  });
+}
+
+/* マスモンカードの開閉(アコーディオン。既定=閉)。モジュール変数なので再描画で消えない。
+   受け取り可の段があるカードは初回描画時に自動で開く(ltAutoOpened で「一度自動で開いた」
+   ことを覚え、手で閉じ直したのを次の描画で開き直さない)。所持1体だけなら常に開く。 */
+const ltOpenCards = new Set();
+const ltAutoOpened = new Set();
 function renderLifetimeMissions(){
   const el = document.getElementById('lifetimeMissionList');
   if(!el || typeof LIFETIME_MISSIONS==='undefined') return;
@@ -7266,11 +7381,13 @@ function renderLifetimeMissions(){
      スクロールする箱はパネル(.mission-box)側。 */
   const scrollBox = el.closest('.mission-box');
   const savedScroll = scrollBox ? scrollBox.scrollTop : 0;
+  renderAccountMissions();   // 最上部のプレイヤー累計(アコーディオンの外・常時展開)
   const data = loadMastermons();
   // 未登録の種族は出さない(進めようがない)。1体も居なければ登録への案内だけ
   const keys = Object.keys(ELEMENTS).filter(k=> data[k]);
   if(!keys.length){
     el.innerHTML = '<div class="lt-empty">マスモンを登録すると累計ミッションが始まります</div>';
+    if(scrollBox) scrollBox.scrollTop = savedScroll;
     return;
   }
   el.innerHTML = keys.map(key=>{
@@ -7283,34 +7400,38 @@ function renderLifetimeMissions(){
       : `<img class="lt-mm-ico" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">`;
     const lord = (typeof lifetimeMissionAllComplete==='function' && lifetimeMissionAllComplete(mm))
       ? '<span class="lt-lord-badge">👑</span>' : '';
+    // 開閉の決定。判定はバッジと同じ ltCardHasClaimable を使う
+    const hasClaim = ltCardHasClaimable(mm);
+    if(keys.length===1) ltOpenCards.add(key);                    // 1体だけなら常に開く
+    else if(hasClaim && !ltAutoOpened.has(key)){ ltOpenCards.add(key); ltAutoOpened.add(key); }
+    const open = ltOpenCards.has(key);
+    // 頭に出す達成数 = 受け取り済みの段数の合計 / 全ミッション段数
+    const doneCount  = LIFETIME_MISSIONS.reduce((a,d)=> a + Math.min(lifetimeClaimedTier(mm, d.key), d.tiers.length), 0);
+    const totalCount = LIFETIME_MISSIONS.reduce((a,d)=> a + d.tiers.length, 0);
     const rows = LIFETIME_MISSIONS.map(def=>{
       const done = lifetimeClaimedTier(mm, def.key);
       const claimable = lifetimeClaimableTier(mm, def);
       const allDone = done >= def.tiers.length;
       const next = allDone ? null : def.tiers[done];
-      const value = def.value(mm);
-      const pct = allDone ? 100 : Math.min(100, Math.round(value/next.n*100));
-      const prog = allDone
-        ? '<span class="lt-done">達成🎉</span>'
-        : `<span class="daily-progress-num">${Math.min(value,next.n)} / ${next.n}${def.unit?' '+def.unit:''}</span>`;
-      const reward = allDone ? '' : `<div class="daily-mission-reward">報酬 ${rewardText(next.reward)}</div>`;
-      const action = allDone ? ''
-        : `<div class="daily-mission-action"><button class="daily-claim-btn lt-claim-btn" data-mm="${key}" data-k="${def.key}" ${claimable?'':'disabled'}>受け取る</button></div>`;
-      return `<div class="lt-row ${claimable?'ready':''}">
-        <div class="lt-row-info">
-          <div class="daily-mission-name">${def.icon} ${def.label}　${prog}</div>
-          <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
-          ${reward}
-        </div>
-        ${action}
-      </div>`;
+      return ltRowHtml({ icon:def.icon, label:def.label, unit:def.unit, value:def.value(mm),
+        allDone, n: next?next.n:0, reward: next?next.reward:null, title:null,
+        claimable: claimable>0, btnClass:'lt-claim-btn', attrs:`data-mm="${key}" data-k="${def.key}"` });
     }).join('');
-    return `<div class="lt-card">
-      <div class="lt-card-head">${iconImg}<span class="lt-mm-name">${mm.name}</span><span class="lt-mm-lv">Lv.${mm.level}</span>${lord}</div>
+    return `<div class="lt-card ${open?'open':''}">
+      <button class="lt-card-head" data-mm="${key}">${iconImg}<span class="lt-mm-name">${mm.name}</span><span class="lt-mm-lv">Lv.${mm.level}</span>${lord}<span class="lt-count">${doneCount}/${totalCount}</span>${hasClaim?'<span class="lt-claim-dot"></span>':''}<span class="lt-fold">${open?'▾':'▸'}</span></button>
       <div class="lt-rows">${rows}</div>
     </div>`;
   }).join('');
   if(scrollBox) scrollBox.scrollTop = savedScroll;
+  // 頭のタップで開閉。手で触ったカードは以後自動で開き直さない
+  el.querySelectorAll('.lt-card-head').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const k = btn.dataset.mm;
+      ltAutoOpened.add(k);
+      if(ltOpenCards.has(k)) ltOpenCards.delete(k); else ltOpenCards.add(k);
+      renderLifetimeMissions();
+    });
+  });
   el.querySelectorAll('.lt-claim-btn:not([disabled])').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const def = LIFETIME_MISSIONS.find(d=> d.key===btn.dataset.k);
@@ -7334,12 +7455,14 @@ function renderLifetimeMissions(){
     });
   });
 }
-// 累計ミッションに受け取れる段が1つでもあれば「累計」タブへドット
+/* 累計(マスモンカード or プレイヤー累計)に受け取れる段が1つでもあれば「累計」タブへドット。
+   判定はカード側と同じ ltCardHasClaimable / accountMissionsHasClaimable を共用する。 */
 function updateLifetimeBadge(){
   const dot = document.getElementById('missionTabLifetimeDot');
   if(!dot || typeof LIFETIME_MISSIONS==='undefined' || typeof loadMastermons!=='function') return;
   const data = loadMastermons();
-  const claimable = Object.keys(data).some(k=> LIFETIME_MISSIONS.some(def=> lifetimeClaimableTier(data[k], def) > 0));
+  const claimable = Object.keys(data).some(k=> ltCardHasClaimable(data[k]))
+                 || accountMissionsHasClaimable();
   dot.classList.toggle('hidden', !claimable);
   updateMissionBadge();
 }

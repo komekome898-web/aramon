@@ -1629,7 +1629,20 @@
   .lt-empty{ font-size:11px; color:var(--ink-dim); padding:14px 0; }
   .lt-card{ width:100%; padding:8px 10px; background:rgba(255,255,255,0.03);
     border:1px solid var(--panel-line); border-radius:8px; }
-  .lt-card-head{ display:flex; align-items:center; gap:7px; margin-bottom:6px; min-width:0; }
+  /* カードの頭はタップで開閉するボタン(既定=閉。受け取り可の子は自動で開く)。
+     押せる物の一般則どおり min-height(--tap-pick)+flex-shrink:0。ボタン既定の見た目は打ち消す */
+  .lt-card-head{ display:flex; align-items:center; gap:7px; min-width:0; width:100%;
+    min-height:var(--tap-pick); flex-shrink:0; margin:0; padding:2px 0;
+    background:none; border:none; cursor:pointer; text-align:left;
+    font-family:inherit; color:var(--ink); }
+  .lt-card.open .lt-card-head{ margin-bottom:6px; }
+  .lt-card:not(.open) .lt-rows{ display:none; }
+  .lt-count{ margin-left:auto; font-family:'Share Tech Mono',monospace; font-size:11px;
+    color:var(--ink-dim); flex-shrink:0; }
+  /* 受け取り可の金ドット。角へ飛ばさず頭の行の中に普通の要素として置く(はみ出さない) */
+  .lt-claim-dot{ width:9px; height:9px; border-radius:50%; background:var(--amber);
+    box-shadow:0 0 6px rgba(244,196,48,0.8); flex-shrink:0; }
+  .lt-fold{ font-size:11px; color:var(--ink-dim); flex-shrink:0; }
   .lt-mm-ico{ width:30px; height:30px; object-fit:contain; flex-shrink:0; }
   .lt-mm-name{ font-size:12.5px; font-weight:700; color:var(--ink);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1643,8 +1656,8 @@
   .lt-done{ font-size:11px; color:var(--amber); font-weight:700; }
   /* 押せる物には最小の高さ + flex-shrink:0(flexに潰させない)。
      高さはデイリーの受け取るボタンの実寸(約30px)を下限として明文化 */
-  .lt-claim-btn{ min-height:30px; flex-shrink:0; }
-  .lt-claim-btn:disabled{ opacity:0.4; cursor:default; }
+  .lt-claim-btn, .acct-claim-btn{ min-height:30px; flex-shrink:0; }
+  .lt-claim-btn:disabled, .acct-claim-btn:disabled{ opacity:0.4; cursor:default; }
 
   /* ===== 遠征 =====
      枠は横並び(最大3)。1画面に収める前提なので縦に積まない。 */
