@@ -732,6 +732,7 @@ async function beginMultiplayerMatchInner(){
       ent.mastermonLevel = g.level || 1;
       if(g.skin) ent.skinId = g.skin;
       ent.ghostOwner = g.owner || null;
+      ent.ghostOwnerKey = g.srcKey || null;   // るすばん報告の宛先(試合終了時にホストの reportGhostResults が読む)
       entities.push(ent);
     } else {
       const elKey = botElements[i % botElements.length];

@@ -10,5 +10,8 @@ shots/
 # シェアカードのプレビュー画像(tools/share_shot.mjs の出力)。撮り直せる派生物なので追跡しない
 tools/_share_preview/
 
+# 作業中の画面スクショ(検証用に撮り直せる派生物)。追跡しない
+shots_agent/
+
 # フック(tools/hooks/)が「同じ中身で二度回さない」ために控えるハッシュ。端末ごとの状態
 .claude/hooks-cache/

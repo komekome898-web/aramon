@@ -1267,6 +1267,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-28', items:[
+    { t:'👻 「るすばん報告」が届くようになりました！ ログインしていると、あなたのマスモンは他の人の試合に出かけます。何体たおしたか・誰にやられたかの報告が、ロビーの自分の子の吹き出しと マイページ→るすばん報告 で読めます', g:['feature','general','monster'] },
+    { t:'🏆 リザルトが2ページになりました。1枚目は勝敗とその試合のハイライト(初チャンピオン・自己ベスト更新・連続キル・大逆転など)、2枚目に細かい数字とバッジ。スワイプかボタンで切り替えられます', g:['feature','general'] },
     { t:'📖 マスモン詳細に「あゆみ」が加わりました！ ともに戦った試合数・チャンピオン回数・通算キル・初チャンピオンの日などが、その子ごとに残っていきます(記録は今日のぶんから)。SNSシェアもここからで、画像にあゆみの内容が入ります。マイ記録にあったモンスターごとの記録はこちらへ一本化しました', g:['feature','general'] },
     { t:'🎯 ミッションに「累計」が加わりました！ マスモンごとに 試合数・キル・ダメージ・レベル・転生・トレーニング の累計ミッションがあり、達成するとゴールドやダイヤがもらえます。すべて達成すると、その種族の覇者称号(「ドラゴンの覇者」など)を獲得できます', g:['feature','general','monster'] },
     { t:'👑 称号が増えました。1試合のキルは40キルまで、1試合のダメージは20000まで段階が伸び、種族ごとの覇者称号も加わりました', g:['feature','general'] },
@@ -3329,6 +3331,26 @@ Object.keys(ELEMENTS).forEach(key=>{
                 cat:'覇者', type:'lifetimeLord', element:key });
 });
 const TITLES_BY_ID = {}; TITLES.forEach(t=>{ TITLES_BY_ID[t.id]=t; });
+
+/* =====================================================================
+   試合ハイライト: リザルトの1枚目に**1試合1つだけ**出す。上から順に最初に当たった物。
+   ctx = { isWin, placement, kills, damage, bestKills, bestDamage(更新前の自己ベスト),
+           mmFirstWin(この子の初チャンピオンか), maxStreak(10秒以内の連続キルの最大),
+           hpRatio(終了時HP割合 0..1) }
+   文言は遊ぶ人向けの短い日本語。ここに1行足せば増える。
+===================================================================== */
+const HIGHLIGHT_CLUTCH_HP = 0.15;   // 「残りHPわずかで勝利」とみなす割合
+const HIGHLIGHT_DEFS = [
+  { id:'firstWin',  test:(c)=> c.isWin && c.mmFirstWin,                    text:(c)=> '🌟 この子と初めてのチャンピオン！' },
+  { id:'bestKills', test:(c)=> c.kills>0 && c.kills>c.bestKills,           text:(c)=> `🔥 自己ベスト更新！ ${c.kills}キル` },
+  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `💥 自己ベスト更新！ ${c.damage.toLocaleString()}ダメージ` },
+  { id:'streak3',   test:(c)=> c.maxStreak>=3,                             text:(c)=> `⚡ ${c.maxStreak}連続キル！` },
+  { id:'clutch',    test:(c)=> c.isWin && c.hpRatio<=HIGHLIGHT_CLUTCH_HP,  text:(c)=> '🛡️ 残りHPわずかからの大逆転！' },
+];
+function pickHighlight(ctx){
+  for(const d of HIGHLIGHT_DEFS){ try{ if(d.test(ctx)) return d.text(ctx); }catch(e){} }
+  return '';
+}
 // 解放条件の説明文
 function titleCondText(t){
   switch(t.type){

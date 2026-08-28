@@ -353,6 +353,7 @@ const SCROLL_LOCK_EXEMPT_IDS = [
   "lookSettingsOverlay", "textInputOverlay", "rebirthOverlay", "awakenOverlay",
   "hidenOverlay", "rebirthAnimOverlay", "awakenAnimOverlay", "raidOverlay",
   "raidRankOverlay", "shareOverlay", "mastermonDeleteConfirm", "tutorialLayer",
+  "ghostNewsOverlay",
 ];
 /* 1本のセレクタにまとめておく(呼ばれるたびに組み直さない)。
    closest は「,区切りのどれかに当たる最も近い祖先」を返すので、

@@ -106,8 +106,11 @@ const SCREENS = [
   /* リザルトはスクロール量で見ない。fitResultScreen() が入り切らない中身を
      transform:scale で丸ごと縮めて収めるが、**transform はレイアウトの寸法を変えない**ので
      scrollHeight は縮む前のままになり、実際には収まっているのに「溢れている」と出てしまう。
-     収まっているかは外接矩形で見る「見切れ」が担当し、ここは押せる大きさ(縮小の巻き添え)を見る。 */
-  { id:'resultScreen',   name:'リザルト', variants:['plain','full'],       scrollIds:[] },
+     収まっているかは外接矩形で見る「見切れ」が担当し、ここは押せる大きさ(縮小の巻き添え)を見る。
+     2ページのスライド式なので、**-p2 付きは resultGoPage(1) で2枚目へ切り替えてから測る**
+     (1枚目・2枚目の両方を必ず見る。出ていない側のページは visibility:hidden なので
+      検査の対象から自然に外れる)。 */
+  { id:'resultScreen',   name:'リザルト', variants:['plain','full','plain-p2','full-p2'], scrollIds:[] },
 ];
 
 /* ===== 画面ごとの方針(この表が正) =====
@@ -140,6 +143,8 @@ const PANELS = [
   { id:'rankingScreen',     name:'ランキング',     open:[{call:['openRankingScreen']}], noScroll:[] },
   { id:'myStatsScreen',     name:'マイ記録',       open:[{call:['openMyStatsScreen']}], noScroll:[] },
   { id:'monsterListScreen', name:'モンスター一覧', open:[{call:['openMonsterListScreen']}], noScroll:[] },
+  /* るすばん報告: 一覧(#ghostNewsList)だけがスクロールする作りなので、overlay本体は送れてはいけない */
+  { id:'ghostNewsOverlay',  name:'るすばん報告',   open:[{call:['openGhostNewsOverlay']}], noScroll:['ghostNewsOverlay'] },
   /* マスモン詳細の4タブ。**丈夫さが実行ボタンの下敷きになっていた画面**(2026-08-26)。
      タブごとに中身の作りが違うので4つとも見る。 */
   { id:'mastermonScreen', name:'マスモン詳細(詳細情報)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','info']}], noScroll:['mastermonDetailPanel'] },
@@ -651,6 +656,9 @@ for(const dev of DEVICES){
       await refreshRoomList();
     };
     window.__fillResult = (variant)=>{
+      // 「-p2」付きは2枚目(数字と導線)へ切り替えて測る
+      const page2 = /-p2$/.test(variant);
+      variant = variant.replace(/-p2$/, '');
       window.__showOnly('resultScreen');
       document.getElementById('resultRank').textContent = '#1';
       document.getElementById('resultSub').textContent = '勝利';
@@ -660,7 +668,7 @@ for(const dev of DEVICES){
       document.getElementById('scoreSubmitStatus').textContent = 'スコアを送信しました';
       document.getElementById('resultCurrencyLine').textContent = '💰 320 コイン ／ 💎 4 ジェム を獲得';
       document.getElementById('resultMonsterIcon').src = 'monsters/phoenix.png';
-      // full = 出るものを全部出した状態(死因・小隊・バッジ・マスモン・登録の勧め)
+      // full = 出るものを全部出した状態(死因・ハイライト・小隊・バッジ・マスモン・登録の勧め)
       const full = (variant === 'full');
       const put = (id, html)=>{
         const el = document.getElementById(id); if(!el) return;
@@ -668,11 +676,13 @@ for(const dev of DEVICES){
         if(full && html != null) el.innerHTML = html;
       };
       put('resultDeathCause', `⚔ ${LONG_NAME} に倒された`);
+      put('resultHighlight', '🔥 自己ベスト更新！ 12キル');
       put('resultSquadInfo', `<div>小隊: あなた 12撃破 ／ ${LONG_NAME} 3撃破 ／ なかま ダウン</div>`);
       put('resultBadges', '<span class="result-badge season">🎫 シーズン +12 SP</span><span class="result-badge">🏆 自己ベスト更新</span>');
       put('mastermonResultInfo', '<div>マスモン「ほのお」が Lv12 → Lv13 になりました</div>');
       put('mastermonRegisterPrompt', null);   // 中に入力欄とボタンがあるので中身は書き換えない
       if(typeof setResultButtonsForRaid==='function') setResultButtonsForRaid(false);
+      if(typeof resultGoPage==='function') resultGoPage(page2 ? 1 : 0, { instant:true });
       if(typeof fitResultScreen==='function') fitResultScreen();
     };
   });
