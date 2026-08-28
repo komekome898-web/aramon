@@ -1965,6 +1965,8 @@ function applyAccountData(d){
   if(savedName!=null) document.getElementById('playerNameInput').value = savedName;
   renderSelectorCards();
   updateAccountBar();
+  // あゆみの記録遡り②ログイン等でデータが丸ごと入れ替わった直後(古いrecが入ってきても復元する)
+  if(typeof backfillMastermonRecs==='function') backfillMastermonRecs();
 }
 // ローカルデータが更新された時に呼ばれる。ログイン中ならデバウンスしてサーバーへ送信
 function accountMarkDirty(){
@@ -3694,7 +3696,7 @@ function showGachaResults(results, granted){
   const brag = results.find(r=>r.kind==='skin' && r.rarity==='SSR' && !r.dup)
             || results.find(r=>r.kind==='skin' && r.rarity==='SR'  && !r.dup);
   if(brag) setLastSkinShare(brag.skinId);
-  const shareBtn = brag ? '<button id="shareGachaBtn" class="gacha-share-btn"><span class="share-ico"></span> SNSでシェア</button>' : '';
+  const shareBtn = brag ? '<button id="shareGachaBtn" class="share-label-btn gacha-share-btn"><span class="share-ico"></span> SNSでシェア</button>' : '';
   const res = document.getElementById('gachaResult');
   res.innerHTML = `<div class="gacha-result-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
     ${grantMsg}${shareBtn}<div class="gacha-result-tap">タップで閉じる</div>`;
@@ -4120,6 +4122,7 @@ updateAccountBar();
 // 後ろに置くと「起動時に付与→popupへ控える」の値をnullで上書きしてしまう)。
 var pendingLoginBonusPopup = null;
 if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
+backfillMastermonRecs(); // あゆみの記録遡り①起動時(local→server。冪等なので毎回実行してよい)
 if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
 updateChangelogBadge(); // 更新履歴の未読「new」バッジ
 
@@ -6428,7 +6431,7 @@ function showResultNow(isWin, placement){
     if(hlEl){
       let hlText = '';
       if(!game.raid && typeof pickHighlight==='function'){
-        const modeKey = netState.mode==='multi' ? 'multi' : 'solo';
+        const modeKey = statsModeBucket();   // チーム戦はteamバケットを見る(soloの自己ベストで誤発火させない)
         const hlStats = loadLocalStats() || defaultLocalStats();
         const ms = hlStats[modeKey] || {};
         const mm = game.selectedMastermonKey ? loadMastermons()[game.selectedMastermonKey] : null;
@@ -6476,7 +6479,7 @@ function showResultNow(isWin, placement){
   const _dmg = Math.round(player.damageDealt);
   const _preElem = elementBestAcrossModes(player.element);
   const _elemNewTitles = elementNewTitleBadges(_preElem, player.kills, _dmg);
-  recordMatchResult(player.element, player.kills, _dmg, !!isWin, netState.mode==='multi' ? 'multi' : 'solo');
+  recordMatchResult(player.element, player.kills, _dmg, !!isWin, statsModeBucket());
   const _newTitles = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
   if(typeof dailyOnMatchEnd==='function') dailyOnMatchEnd({ kills: player.kills, isWin: !!isWin });
   const _seasonSp = (typeof seasonOnMatchEnd==='function') ? seasonOnMatchEnd({ kills: player.kills, damage: _dmg, isWin: !!isWin }) : 0;
@@ -6840,7 +6843,10 @@ function shareMapLabel(){
             : (MAPS[game.selectedMap] ? game.selectedMap : 'wild');
   return (MAPS[key] || MAPS.wild).label;
 }
-function shareModeLabel(){ return netState.mode==='multi' ? 'マルチプレイ' : 'ソロ'; }
+function shareModeLabel(){
+  if(typeof isTeamMatch==='function' && isTeamMatch()) return 'チーム戦';
+  return netState.mode==='multi' ? 'マルチプレイ' : 'ソロ';
+}
 // 参戦しているマスモンの名前(登録していなければモンスター名)
 function shareMonsterName(elementKey){
   const el = ELEMENTS[elementKey];
@@ -7024,7 +7030,9 @@ function logMatchForAdmin(isWin, placement){
     mapLabel: map.label,
     element: elementKey,
     elementLabel: el ? el.label : elementKey,
-    mode: netState.mode==='multi' ? 'multi' : 'solo',
+    // 2026-08-28からチーム戦は 'team' で残す。過去ログは2値(solo/multi)のままなので
+    // 過去のチーム戦は遡って区別できない(チーム戦もmultiとして記録されている)
+    mode: statsModeBucket(),
     win: !!isWin,
     place: placement || 0,
     ...matchOutcomeFields(),
@@ -7070,7 +7078,7 @@ function defaultModeStats(){
   };
 }
 function defaultLocalStats(){
-  return { solo: defaultModeStats(), multi: defaultModeStats() };
+  return { solo: defaultModeStats(), multi: defaultModeStats(), team: defaultModeStats() };
 }
 function loadLocalStats(){
   try{
@@ -7080,12 +7088,14 @@ function loadLocalStats(){
     if(!parsed) return null;
     // 旧フォーマット(ソロ/マルチ分離前)は、これまでの記録をまるごとソロ側へ引き継ぐ形で移行する
     if(!parsed.solo && !parsed.multi && typeof parsed.totalMatches==='number'){
-      const migrated = { solo: parsed, multi: defaultModeStats() };
+      const migrated = { solo: parsed, multi: defaultModeStats(), team: defaultModeStats() };
       saveLocalStats(migrated);
       return migrated;
     }
+    // 無いバケットは既定で補完する(team追加前のデータもこれで移行が要らない)
     if(!parsed.solo) parsed.solo = defaultModeStats();
     if(!parsed.multi) parsed.multi = defaultModeStats();
+    if(!parsed.team) parsed.team = defaultModeStats();
     return parsed;
   }catch(err){ return null; }
 }
@@ -7093,10 +7103,18 @@ function saveLocalStats(stats){
   try{ localStorage.setItem(LOCAL_STATS_KEY, JSON.stringify(stats)); }catch(err){}
   accountMarkDirty();
 }
+/* 記録の入れ物(solo/multi/team)の判定はこの1か所。
+   チーム戦はマルチの上で成り立つので、マルチ判定より先に見る */
+function statsModeBucket(){
+  if(typeof isTeamMatch==='function' && isTeamMatch()) return 'team';
+  return netState.mode==='multi' ? 'multi' : 'solo';
+}
 function recordMatchResult(elementKey, kills, damage, isWin, mode){
   let stats = loadLocalStats();
   if(!stats) stats = defaultLocalStats();
-  const modeKey = mode==='multi' ? 'multi' : 'solo';
+  // 渡された 'solo'/'multi'/'team' をそのまま使う('multi'以外→solo の正規化は
+  // 'team' を 'solo' に潰すのでしない)。既知以外の値だけ 'solo' へ落とす
+  const modeKey = (mode==='multi' || mode==='team' || mode==='solo') ? mode : 'solo';
   if(!stats[modeKey]) stats[modeKey] = defaultModeStats();
   const ms = stats[modeKey];
   if(!ms.byElement) ms.byElement = {};
@@ -7123,15 +7141,134 @@ function computeDerivedStats(stats){
   const avgDamage = (stats.totalMatches||0)>0 ? (stats.totalDamage||0)/stats.totalMatches : 0;
   return { deaths, kd, avgDamage };
 }
-// あるモンスター(element)のソロ+マルチ合算の最高キル/ダメージ
+// あるモンスター(element)のソロ+マルチ+チーム戦合算の最高キル/ダメージ
 function elementBestAcrossModes(elementKey){
   const s = loadLocalStats() || defaultLocalStats();
   let bestKills=0, bestDamage=0;
-  for(const m of ['solo','multi']){
+  for(const m of ['solo','multi','team']){
     const be = s[m] && s[m].byElement && s[m].byElement[elementKey];
     if(be){ bestKills = Math.max(bestKills, be.bestKills||0); bestDamage = Math.max(bestDamage, be.bestDamage||0); }
   }
   return { bestKills, bestDamage };
+}
+
+/* =====================================================================
+   あゆみ(マスモン戦歴 rec)の記録遡り(バックフィル)
+
+   recの導入(2026-08-28)より前から遊んでいる人の過去の試合を、手元の集計(マイ記録)と
+   サーバーの試合ログから rec へ取り込む。**絶対条件: 冪等(max/min型)・フラグ無し・毎回実行。**
+   「一度やったら二度とやらない」フラグは
+     ①ログイン上書き(applyAccountDataでrecが古いデータに置き換わる)
+     ②機種変(新端末にはフラグも記録も無い)
+     ③後から登録(バックフィル後に登録したマスモン)
+   の3つの穴を作る(設計レビュー確定)。かわりに全部の値を max/min でしか動かさず、
+   何度実行しても同じ結果に収束させる。**加算は禁止**(実行のたびに増えてしまう)。
+   呼び出しは backfillMastermonRecs() 1関数に寄せ、
+   起動時・applyAccountData末尾・マスモン登録直後の3か所から呼ぶ。 */
+// 手元の集計から: 試合数(3モードの合算)と最高キル/ダメージだけはマイ記録が持っている
+function backfillMastermonRecsLocal(onlyKey){
+  if(typeof mmRec!=='function') return;
+  const stats = loadLocalStats();
+  if(!stats) return;
+  const data = loadMastermons();
+  let changed = false;
+  for(const key of Object.keys(data)){
+    if(onlyKey && key!==onlyKey) continue;
+    const rec = mmRec(data[key]); if(!rec) continue;
+    let m=0, bk=0, bd=0;
+    for(const mode of ['solo','multi','team']){
+      const be = stats[mode] && stats[mode].byElement && stats[mode].byElement[key];
+      if(!be) continue;
+      m += be.matches||0;
+      bk = Math.max(bk, be.bestKills||0);
+      bd = Math.max(bd, be.bestDamage||0);
+    }
+    const nm = Math.max(rec.m||0, m), nbk = Math.max(rec.bk||0, bk), nbd = Math.max(rec.bd||0, bd);
+    if(nm!==rec.m || nbk!==rec.bk || nbd!==rec.bd){
+      rec.m = nm; rec.bk = nbk; rec.bd = nbd;
+      changed = true;
+    }
+  }
+  if(changed) saveMastermons(data);
+}
+/* サーバーの試合ログの取得はセッション中1回だけ(取得失敗はキャッシュせず次の機会に回す)。
+   varで宣言する: 起動時の呼び出しはスクリプト評価の途中(ui.js前方)なので、
+   let/constだとTDZで落ちる。 */
+var backfillLogsFetchPromise = null;
+function backfillGetLogsOnce(){
+  if(!backfillLogsFetchPromise){
+    backfillLogsFetchPromise = (async ()=>{
+      // 起動直後はfirebase.js(module)がまだ読み込み中なので、APIが生えるまで待つ(最大約2分)
+      for(let i=0; i<240 && !window.__aramonFetchMatchLogs; i++){
+        await new Promise(r=>setTimeout(r, 500));
+      }
+      if(!window.__aramonFetchMatchLogs) return null;
+      return window.__aramonFetchMatchLogs();
+    })().then(rows=>{
+      if(!Array.isArray(rows)){ backfillLogsFetchPromise = null; return null; }
+      return rows;
+    }).catch(()=>{ backfillLogsFetchPromise = null; return null; });
+  }
+  return backfillLogsFetchPromise;
+}
+/* サーバーの試合ログから: 通算キル/ダメージ/チャンピオン・出会った日・初チャンピオンまで遡れる。
+   条件=ログイン中かつ表示名が固有(空や既定名は同名の他人を自分として数えてしまうので照合しない。
+   段位ハイライトの RANK_DEFAULT_NAME と同じ理屈)。 */
+async function backfillMastermonRecsFromServer(onlyKey){
+  if(typeof mmRec!=='function') return;
+  if(typeof accountState==='undefined' || !accountState.loggedIn) return;
+  const myName = (typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : '';
+  if(!myName || myName==='名無しのモンスター') return;
+  const rows = await backfillGetLogsOnce();
+  if(!Array.isArray(rows)) return;
+  const data = loadMastermons();
+  let changed = false;
+  for(const key of Object.keys(data)){
+    if(onlyKey && key!==onlyKey) continue;
+    const rec = mmRec(data[key]); if(!rec) continue;
+    // 自分のこのモンスターの通常試合(レイド除く)を集計
+    let m2=0, k2=0, dmg2=0, w2=0, bk2=0, bd2=0, since2=0, fw2=0, found=false;
+    for(const r of rows){
+      if(!r || r.raid) continue;
+      if(r.name!==myName || r.element!==key) continue;
+      found = true;
+      const kills = Math.max(0, Math.round(r.kills||0));
+      const dmg   = Math.max(0, Math.round(r.dmg||0));
+      m2++; k2 += kills; dmg2 += dmg;
+      if(r.win) w2++;
+      bk2 = Math.max(bk2, kills);
+      bd2 = Math.max(bd2, dmg);
+      const ts = +r.ts || 0;
+      if(ts>0){
+        since2 = since2>0 ? Math.min(since2, ts) : ts;
+        if(r.win) fw2 = fw2>0 ? Math.min(fw2, ts) : ts;
+      }
+    }
+    if(!found) continue;
+    const before = JSON.stringify(rec);
+    // 取り込みも max/min だけ(加算禁止。何度実行しても同じ値に収束する)
+    rec.m   = Math.max(rec.m||0, m2);
+    rec.k   = Math.max(rec.k||0, k2);
+    rec.dmg = Math.max(rec.dmg||0, dmg2);
+    rec.w   = Math.max(rec.w||0, w2);
+    rec.bk  = Math.max(rec.bk||0, bk2);
+    rec.bd  = Math.max(rec.bd||0, bd2);
+    if(since2>0) rec.since = (rec.since>0) ? Math.min(rec.since, since2) : since2;
+    if(fw2>0)    rec.fw    = (rec.fw>0)    ? Math.min(rec.fw, fw2)       : fw2;
+    rec.bf = 1;   // 引き継いだ印(あゆみの注記が読む。判定には使わない)
+    if(JSON.stringify(rec)!==before) changed = true;
+  }
+  if(changed){ saveMastermons(data); accountMarkDirty(); }
+}
+/* 入口はこの1関数だけ。local(同期)→server(非同期)の順。onlyKey を渡すとその1体だけ見る。
+   呼び出し3か所: ①起動時(dailyCheckLoginの直後) ②applyAccountDataの末尾
+   ③マスモン登録直後(登録リスナー内) */
+function backfillMastermonRecs(onlyKey){
+  try{ backfillMastermonRecsLocal(onlyKey); }catch(err){}
+  try{
+    const p = backfillMastermonRecsFromServer(onlyKey);
+    if(p && p.catch) p.catch(()=>{});
+  }catch(err){}
 }
 // このモンスターが今回の試合で新たに超えたキル/ダメージ称号(各カテゴリの最高の1つ)を返す
 function elementNewTitleBadges(prevElem, kills, damage){
@@ -7150,10 +7287,10 @@ function elementNewTitleBadges(prevElem, kills, damage){
 /* =====================================================================
    称号(タイトル)の解放判定
 ===================================================================== */
-// solo+multiを合算した通算値と、1試合の自己ベストをまとめる
+// solo+multi+teamを合算した通算値と、1試合の自己ベストをまとめる
 function titlesCumulativeStats(){
   const s = loadLocalStats() || defaultLocalStats();
-  const modes = ['solo','multi'];
+  const modes = ['solo','multi','team'];
   let wins=0, matches=0, kills=0, damage=0, bestKills=0, bestDamage=0;
   const elemPlayed = new Set();
   for(const m of modes){
@@ -8308,8 +8445,12 @@ function buildMastermonAyumiHtml(key, mm){
   const rb = mastermonRebirthCount(mm);
   const lord = !!((loadTitles().unlocked || {})['lord_'+key]);
   const box = (label, value)=>`<div class="mystat-box"><div class="ml">${label}</div><div class="mv">${value}</div></div>`;
-  // 旧個体(since=0)は記録がここから始まると明示する(0が並ぶのを不具合と誤解させない)
-  const oldNote = rec.since ? '' : `<div class="mm-ayumi-note">この子の記録は今日からはじまります</div>`;
+  /* 注記: サーバーの試合ログから引き継げた個体(rec.bf)はそのことを、
+     引き継ぐ過去も無い旧個体(since=0)は記録がここから始まることを明示する
+     (0が並ぶ・急に数字が入るのを不具合と誤解させない) */
+  const oldNote = rec.bf ? `<div class="mm-ayumi-note">これまでの試合の記録を引き継ぎました(トレーニング回数は今日から数えます)</div>`
+                : !rec.since ? `<div class="mm-ayumi-note">この子の記録は今日からはじまります</div>`
+                : '';
   return `
     ${oldNote}
     <div class="mm-ayumi-grid">
@@ -9205,7 +9346,7 @@ function renderMastermonDetail(key){
      中身の欄の下に position:static の固定行として置く(stickyで中身の上へ貼らない) */
   const ayumiFootHtml = (mastermonDetailTab==='ayumi') ? `
           <div class="mm-ayumi-foot">
-            <button id="mmAyumiShareBtn" class="mastermon-execute-btn"><span class="share-ico"></span> SNSでシェア</button>
+            <button id="mmAyumiShareBtn" class="share-label-btn"><span class="share-ico"></span> SNSでシェア</button>
           </div>` : '';
 
   // ヘッダーはステータスの上まで全幅で伸ばす(モンスター一覧の画面と同じ形)。
@@ -10263,6 +10404,8 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
     infoEl.classList.remove('hidden');
   }
   saveMastermons(data);
+  // あゆみの記録遡り③登録直後(登録前に遊んでいた分をこの1体のrecへ取り込む)
+  backfillMastermonRecs(elementKey);
   // そのまま再戦しても経験値が入るように、登録と同時にこのマスモンを選択状態にする
   game.selectedElement = elementKey;
   game.selectedMastermonKey = elementKey;
@@ -10977,7 +11120,7 @@ function renderMyStats(){
   const stats = allStats[myStatsModeTab] || defaultModeStats();
   const derived = computeDerivedStats(stats);
   const overallEl = document.getElementById('myStatsOverall');
-  // 段位はモード(ソロ/マルチ)で分かれないアカウントの記録なので、両方のタブで同じものを出す
+  // 段位はモード(ソロ/マルチ/チーム戦)で分かれないアカウントの記録なので、どのタブでも同じものを出す
   const rk = (typeof loadRank==='function') ? loadRank() : null;
   const rkNow = rk ? rankProgress(rk.rp) : null;
   const rkBest = rk ? (RANKS.find(x=>x.id===rk.best) || RANKS[0]) : null;
@@ -10985,16 +11128,23 @@ function renderMyStats(){
      「あゆみ」タブが引き継ぐ。**stats.byElement 自体は消さない**(称号の判定が読む)。
      空いたぶん、既にある値から出せる通算の記録(勝率・キル・与ダメージ)を足した。 */
   const winRate = (stats.totalMatches>0) ? ((stats.totalWins||0) / stats.totalMatches * 100) : 0;
+  /* チーム戦はK/Dを出さない ―― 自分が倒れてもチームが勝てるので「死亡数=負け数」が
+     成り立たず、K/Dが数えられない。代わりに平均キルを出し、勝率はチーム優勝率と明記する */
+  const isTeamTab = (myStatsModeTab==='team');
+  const avgKills = (stats.totalMatches>0) ? (stats.totalKills||0)/stats.totalMatches : 0;
+  const kdOrAvgKillsBox = isTeamTab
+    ? `<div class="mystat-box"><div class="ml">平均キル</div><div class="mv">${avgKills.toFixed(1)}</div></div>`
+    : `<div class="mystat-box"><div class="ml">K/D</div><div class="mv">${derived.kd.toFixed(2)}</div></div>`;
   overallEl.innerHTML = `
     ${rkNow ? `<div class="mystat-box"><div class="ml">段位（今シーズン）</div><div class="mv" style="color:${rkNow.cur.color}">${rkNow.cur.icon} ${rkNow.cur.name}<span class="mystat-rank-rp">${rk.rp} RP${rkNow.next?`／次まで ${rkNow.next.rp - rk.rp}`:''}</span></div></div>` : ''}
     ${rkBest ? `<div class="mystat-box"><div class="ml">到達した最高段位</div><div class="mv" style="color:${rkBest.color}">${rkBest.icon} ${rkBest.name}</div></div>` : ''}
     <div class="mystat-box"><div class="ml">通算マッチ数</div><div class="mv">${stats.totalMatches||0}</div></div>
     <div class="mystat-box"><div class="ml">通算勝利数</div><div class="mv">${stats.totalWins||0}</div></div>
-    <div class="mystat-box"><div class="ml">勝率</div><div class="mv">${winRate.toFixed(1)}%</div></div>
+    <div class="mystat-box"><div class="ml">${isTeamTab?'勝率（チーム優勝率）':'勝率'}</div><div class="mv">${winRate.toFixed(1)}%</div></div>
     <div class="mystat-box"><div class="ml">通算キル数</div><div class="mv">${stats.totalKills||0}</div></div>
     <div class="mystat-box"><div class="ml">通算与ダメージ</div><div class="mv">${Number(stats.totalDamage||0).toLocaleString()}</div></div>
     <div class="mystat-box"><div class="ml">最高キル数</div><div class="mv">${stats.bestKills||0} ${statTitleChip('matchKills', stats.bestKills||0)}</div></div>
-    <div class="mystat-box"><div class="ml">K/D</div><div class="mv">${derived.kd.toFixed(2)}</div></div>
+    ${kdOrAvgKillsBox}
     <div class="mystat-box"><div class="ml">最高ダメージ</div><div class="mv">${stats.bestDamage||0} ${statTitleChip('matchDamage', stats.bestDamage||0)}</div></div>
     <div class="mystat-box"><div class="ml">平均ダメージ</div><div class="mv">${Math.round(derived.avgDamage)}</div></div>
   `;
@@ -11131,7 +11281,8 @@ function adminMapLabel(r){ return MAPS[r.map] ? MAPS[r.map].label : (r.mapLabel 
 function adminMonLabel(r){ return ELEMENTS[r.element] ? ELEMENTS[r.element].label : (r.elementLabel || r.element || '?'); }
 // モード表示。レイドは別枠だが、ソロ/マルチも記録してあるので括弧で添える
 function adminModeLabel(r){
-  const co = r.mode==='multi' ? 'マルチ' : 'ソロ';
+  // 'team' は2026-08-28以降のログだけ(それ以前のチーム戦はmultiに含まれ区別できない)
+  const co = r.mode==='team' ? 'チーム戦' : r.mode==='multi' ? 'マルチ' : 'ソロ';
   return r.raid ? `レイド(${co})` : co;
 }
 // 1試合の長さ。古いログにはsecが無いので「—」にする(0と区別する)

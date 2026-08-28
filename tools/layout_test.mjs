@@ -142,6 +142,8 @@ const PANELS = [
   { id:'howToPlayScreen',   name:'遊び方ガイド',   open:[{btn:'headerSettingsBtn'},{btn:'howToPlayBtn'}], noScroll:[] },
   { id:'rankingScreen',     name:'ランキング',     open:[{call:['openRankingScreen']}], noScroll:[] },
   { id:'myStatsScreen',     name:'マイ記録',       open:[{call:['openMyStatsScreen']}], noScroll:[] },
+  /* チーム戦タブは項目が違う(K/Dの代わりに平均キル・勝率の見出しが長い)ので別に見る */
+  { id:'myStatsScreen',     name:'マイ記録(チーム戦)', open:[{call:['openMyStatsScreen']},{sel:'.mystat-mode-tab',idx:2}], noScroll:[] },
   { id:'monsterListScreen', name:'モンスター一覧', open:[{call:['openMonsterListScreen']}], noScroll:[] },
   /* るすばん報告: 一覧(#ghostNewsList)だけがスクロールする作りなので、overlay本体は送れてはいけない */
   { id:'ghostNewsOverlay',  name:'るすばん報告',   open:[{call:['openGhostNewsOverlay']}], noScroll:['ghostNewsOverlay'] },

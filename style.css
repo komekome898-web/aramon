@@ -3799,7 +3799,8 @@
     margin:0; padding:8px 14px 2px 0; background:#0a1018;
     border-top:1px solid rgba(255,255,255,0.07);
   }
-  .mm-ayumi-foot .mastermon-execute-btn{
+  /* ボタンの色・字は共通の .share-label-btn(白)。ここは置き方(幅・最小高さ)だけ持つ */
+  .mm-ayumi-foot .share-label-btn{
     width:100%; min-height:var(--tap-pick); flex-shrink:0; white-space:nowrap;
     display:flex; align-items:center; justify-content:center; gap:6px;
   }
@@ -5053,19 +5054,23 @@ button:active{ transform:scale(0.96); }
   font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
   color:#0b0d12; background:#fff; border:none; border-radius:6px; cursor:pointer;
 }
-/* SSR獲得画面のシェア。獲得したスキン名の下に置く。
-   .ssr-reveal-inner は overflow:hidden の縦フレックスなので、flexを指定しないと
-   高さ0まで潰されて押せなくなる(縮むのは flex:0 1 auto のスキン画像側でよい) */
-.ssr-reveal-share{
-  flex:0 0 auto; margin-top:4px; padding:8px 20px; border-radius:20px; cursor:pointer;
+/* 文字付きシェアボタンはこの1クラスに統一(白)。アイコンだけの正方形は .share-icon-btn */
+.share-label-btn{
+  flex:0 0 auto; padding:8px 20px; border-radius:20px; cursor:pointer;
   font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
   color:#0b0d12; background:#fff; border:none;
 }
-/* ガチャ結果の中のシェア。結果はどこを触っても閉じるので、JS側でstopPropagationしている */
+/* SSR獲得画面のシェア。獲得したスキン名の下に置く。
+   .ssr-reveal-inner は overflow:hidden の縦フレックスなので、flex:0 0 auto
+   (share-label-btn側にある)が無いと高さ0まで潰されて押せなくなる
+   (縮むのは flex:0 1 auto のスキン画像側でよい)。見た目は share-label-btn が持つ */
+.ssr-reveal-share{
+  margin-top:4px;
+}
+/* ガチャ結果の中のシェア。結果はどこを触っても閉じるので、JS側でstopPropagationしている。
+   見た目は share-label-btn が持つ(paddingだけ従来の22pxを維持) */
 .gacha-share-btn{
-  margin-top:8px; padding:8px 22px; border-radius:20px; cursor:pointer;
-  font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
-  color:#0b0d12; background:#fff; border:none;
+  margin-top:8px; padding:8px 22px;
 }
 
 /* 共有マーク(YouTubeなどで一般的な、右へ飛ぶ矢印)。
