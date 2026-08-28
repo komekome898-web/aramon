@@ -7452,8 +7452,8 @@ function renderDailyMissions(){
       <div class="daily-mission-info">
         <div class="daily-mission-name">${m.name}</div>
         <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
-        <div class="daily-mission-reward">報酬 ${rewardText(m.reward)}</div>
       </div>
+      ${missionRewardHtml(m.reward)}
       <div class="daily-mission-action">${action}</div>
     </div>`;
   }).join('');
@@ -7531,14 +7531,25 @@ function accountMissionsHasClaimable(){
 function ltCardHasClaimable(mm){
   return LIFETIME_MISSIONS.some(def=> lifetimeClaimableTier(mm, def) > 0);
 }
+/* ミッションの報酬をチップで縦に積む(1つ=1行)。**デイリーも累計もここを通す。**
+   ・ゲージの右・受け取るボタンの左に置く(2026-08-28 発注者指定)
+   ・複数の報酬は行を分ける。長い名前のアイテムでも**切らずに折り返す**ので、
+     省略も潰れもボタンへの被りも起きない(チップは flex の兄弟で、縮まない)
+   extra は報酬以外に添える行(称号名など)。 */
+function missionRewardHtml(reward, extra){
+  const lines = (typeof rewardParts==='function') ? rewardParts(reward) : [];
+  if(extra) lines.push(extra);
+  if(!lines.length) return '';
+  return `<div class="mission-reward">${lines.map(t=>`<span class="mission-reward-line">${t}</span>`).join('')}</div>`;
+}
 /* ミッション1行ぶんのHTML。プレイヤー累計とマスモンカードの両方が使う。
    title があれば報酬の後に称号名を添える(解放自体は試合終了時の checkTitleUnlocks 済み)。 */
 function ltRowHtml(o){
   const prog = o.allDone
     ? '<span class="lt-done">達成🎉</span>'
     : `<span class="daily-progress-num">${Math.min(o.value,o.n)} / ${o.n}${o.unit?' '+o.unit:''}</span>`;
-  const titleTxt = (!o.allDone && o.title) ? ` ＋ 称号「${o.title.name}」` : '';
-  const reward = o.allDone ? '' : `<div class="daily-mission-reward">報酬 ${rewardText(o.reward)}${titleTxt}</div>`;
+  const titleTxt = (!o.allDone && o.title) ? `称号「${o.title.name}」` : '';
+  const reward = o.allDone ? '' : missionRewardHtml(o.reward, titleTxt);
   const action = o.allDone ? ''
     : `<div class="daily-mission-action"><button class="daily-claim-btn ${o.btnClass}" ${o.attrs} ${o.claimable?'':'disabled'}>受け取る</button></div>`;
   const pct = o.allDone ? 100 : Math.min(100, Math.round(o.value/o.n*100));
@@ -7546,8 +7557,8 @@ function ltRowHtml(o){
     <div class="lt-row-info">
       <div class="daily-mission-name">${o.icon} ${o.label}　${prog}</div>
       <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
-      ${reward}
     </div>
+    ${reward}
     ${action}
   </div>`;
 }

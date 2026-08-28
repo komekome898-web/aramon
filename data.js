@@ -3471,16 +3471,20 @@ function saveDaily(d){
   if(typeof accountMarkDirty==='function') accountMarkDirty();
 }
 // 報酬の表示テキスト(🪙100 💎5 🎟️×1 等)
-function rewardText(r){
-  if(!r) return '';
+/* 報酬を「1つ=1要素」の配列で返す。**中身の正はここ1か所。**
+   1行に並べたいところは rewardText()(下)、1つずつ行に分けたいところ(ミッションの行)は
+   こちらを使う。分け方を2か所に書かないための入口。 */
+function rewardParts(r){
+  if(!r) return [];
   const parts = [];
   if(r.gold) parts.push(`🪙${r.gold}`);
   if(r.dia)  parts.push(`💎${r.dia}`);
   if(r.shard) parts.push(`💠${r.shard}`); // モン晶(SHARD_ICONと同じ絵。宣言順の都合で直書き)
   for(const x of rewardItemList(r)) parts.push(playerItemTextLabel(x.key, x.n));
   if(r.skin){ const m = (typeof skinMeta==='function') ? skinMeta(r.skin) : null; parts.push(`✨${m?m.name:'スキン'}`); }
-  return parts.join(' ');
+  return parts;
 }
+function rewardText(r){ return rewardParts(r).join(' '); }
 // 報酬を実際に付与
 // 報酬のアイテムを {key,n} の配列にそろえる。1個だけなら item/n、複数なら items:[{key,n}...]
 function rewardItemList(r){
