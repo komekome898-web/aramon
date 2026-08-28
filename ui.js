@@ -1286,6 +1286,7 @@ function refreshLobby(){
   startLobbyBannerLoop();
   startLobbyRoomPoll();
   refreshGhosts();   // 他の人が育てたマスモン(ソロの敵に混ぜる)を間隔を空けて取り直す
+  if(typeof refreshGhostNews==='function') refreshGhostNews();   // るすばん報告の未読(吹き出し)
 }
 /* 左メニューの行数を「画面に入る数」に合わせる。**ロビーが縦に伸びない仕組みの要。**
 
@@ -5168,6 +5169,7 @@ function startGame(opts){
       bot.mastermonLevel = g.level || 1;
       if(g.skin) bot.skinId = g.skin;
       bot.ghostOwner = g.owner || null;
+      bot.ghostOwnerKey = g.srcKey || null;   // るすばん報告の宛先(試合終了時に reportGhostResults が読む)
     } else if(playerMmLevel){
       const botLevel = clamp(playerMmLevel + randInt(-10, 10), 1, MASTERMON_LEVEL_CAP);
       applyMastermonStatsToEntity(bot, capMastermonToLimit(syntheticMastermonForLevel(elKey, botLevel, playerRebirth), statLimit));
@@ -5915,6 +5917,8 @@ function raidShowResult(defeated, dmg, prevBest){
   if(noRecord) sub += '（記録は残りません）';
   document.getElementById('resultSub').textContent = sub;
   setResultDeathCause(true);   // レイドに「誰に倒された」は無い。前の試合ぶんを必ず消す
+  // ハイライトはバトロワ用なのでレイドでは出さない。前の試合ぶんを必ず消す
+  { const hl = document.getElementById('resultHighlight'); if(hl){ hl.textContent=''; hl.classList.add('hidden'); } }
   document.getElementById('statKills').textContent = player ? player.kills : 0;
   document.getElementById('statDamage').textContent = d.toLocaleString();
   document.getElementById('statTime').textContent = fmtTime(player && player.deathAt ? player.deathAt : matchTime);
@@ -5958,6 +5962,7 @@ function raidShowResult(defeated, dmg, prevBest){
   // レイドは討伐・自己ベスト更新を「勝ち」あつかいにする(リザルトの見出しと同じ判定)
   setResultMonsterIcon(player ? player.element : game.selectedElement, { win: !!(defeated || newBest) });
   setResultButtonsForRaid(true);
+  resultGoPage(0, { instant:true });   // レイドも必ず1枚目から(レイドランキングは2枚目の「詳細 ›」の先)
   scr.classList.remove('hidden');
   if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
   if(window.__aramonFxGl) window.__aramonFxGl.setActive(false);
@@ -6326,6 +6331,46 @@ function canReplayAgain(){
   if(netState.mode==='multi') return !!netState.roomId;
   return !!game.selectedElement;
 }
+/* =====================================================================
+   リザルトの2ページ(1枚目=勝敗と余韻 / 2枚目=数字と導線)
+   ・切替は resultGoPage() 1か所。「詳細 ›」「‹ もどる」と横スワイプの両対応。
+   ・スワイプは #resultPager の pointerdown/up で判定し、縦持ち(強制横向き)は
+     toLogicalDelta() で回転補正する。preventDefault しないので、
+     ボタンの上のタップはそのまま click として通る。
+   ・showResultNow / raidShowResult のたびに必ず1枚目へ戻す(instant=スライドを見せない)。
+===================================================================== */
+const RESULT_SWIPE_PX = 40;   // これ以上の横移動でページ送りとみなす
+let resultPageIdx = 0;
+function resultGoPage(idx, opts){
+  resultPageIdx = idx ? 1 : 0;
+  const pager = document.getElementById('resultPager');
+  if(!pager) return;
+  const instant = !!(opts && opts.instant);
+  if(instant) pager.classList.add('no-anim');
+  pager.classList.toggle('page2', resultPageIdx===1);
+  document.querySelectorAll('#resultPageNav .result-dot')
+    .forEach((d,i)=> d.classList.toggle('on', i===resultPageIdx));
+  if(instant){ void pager.offsetWidth; pager.classList.remove('no-anim'); }
+}
+(function bindResultPager(){
+  const pager = document.getElementById('resultPager');
+  if(!pager) return;
+  const detail = document.getElementById('resultDetailBtn');
+  const back = document.getElementById('resultBackBtn');
+  if(detail) detail.addEventListener('click', ()=> resultGoPage(1));
+  if(back) back.addEventListener('click', ()=> resultGoPage(0));
+  let sx=null, sy=null, pid=null;
+  pager.addEventListener('pointerdown', (e)=>{ sx=e.clientX; sy=e.clientY; pid=e.pointerId; }, {passive:true});
+  pager.addEventListener('pointerup', (e)=>{
+    if(sx==null || e.pointerId!==pid){ sx=sy=pid=null; return; }
+    const d = (typeof toLogicalDelta==='function') ? toLogicalDelta(e.clientX-sx, e.clientY-sy)
+                                                   : { x:e.clientX-sx, y:e.clientY-sy };
+    sx=sy=pid=null;
+    if(Math.abs(d.x) < RESULT_SWIPE_PX || Math.abs(d.x) <= Math.abs(d.y)) return;
+    resultGoPage(d.x < 0 ? 1 : 0);
+  }, {passive:true});
+  pager.addEventListener('pointercancel', ()=>{ sx=sy=pid=null; }, {passive:true});
+})();
 function showResultNow(isWin, placement){
   if(game.over) return;
   if(typeof closeDownChoiceIfOpen==='function') closeDownChoiceIfOpen();  // 開いたままの選択肢を閉じる
@@ -6373,6 +6418,36 @@ function showResultNow(isWin, placement){
       }
     }
   }
+  /* 試合ハイライト(1枚目に1つだけ。定義表は data.js の HIGHLIGHT_DEFS)。
+     **まだ今試合の記録を書き込む前**にここで判定する:
+     ・bestKills/bestDamage … この下の recordMatchResult() が更新する前のモード別自己ベスト
+     ・mmFirstWin … handleMastermonPostMatch()(この関数の後半)が mmRec(mm).w を増やす前の値
+     処理の順番を入れ替えるときはこの前提が壊れていないか確かめること。 */
+  {
+    const hlEl = document.getElementById('resultHighlight');
+    if(hlEl){
+      let hlText = '';
+      if(!game.raid && typeof pickHighlight==='function'){
+        const modeKey = netState.mode==='multi' ? 'multi' : 'solo';
+        const hlStats = loadLocalStats() || defaultLocalStats();
+        const ms = hlStats[modeKey] || {};
+        const mm = game.selectedMastermonKey ? loadMastermons()[game.selectedMastermonKey] : null;
+        // mmRec(戦歴)は別担当が導入中。まだ無い環境では「初チャンピオン」だけ出ない
+        const mmFirstWin = !!(isWin && mm && typeof mmRec==='function' && mmRec(mm) && !(mmRec(mm).w > 0));
+        hlText = pickHighlight({
+          isWin: !!isWin, placement,
+          kills: player.kills, damage: Math.round(player.damageDealt),
+          bestKills: ms.bestKills||0, bestDamage: ms.bestDamage||0,
+          mmFirstWin,
+          maxStreak: (typeof playerMaxKillStreak==='function' && typeof KILL_STREAK_WINDOW_SEC!=='undefined')
+                       ? playerMaxKillStreak(KILL_STREAK_WINDOW_SEC) : 0,
+          hpRatio: (player.maxHp > 0) ? Math.max(0, player.hp) / player.maxHp : 0,
+        });
+      }
+      hlEl.textContent = hlText;
+      hlEl.classList.toggle('hidden', !hlText);
+    }
+  }
   document.getElementById('statKills').textContent = player.kills;
   document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
@@ -6393,6 +6468,7 @@ function showResultNow(isWin, placement){
   }
   setResultMonsterIcon(player.element, { win: !!isWin });
   setResultButtonsForRaid(false);
+  resultGoPage(0, { instant:true });   // リザルトを出すたびに必ず1枚目から(前の試合のページを持ち越さない)
   document.getElementById('resultScreen').classList.remove('hidden');
   // 自己ベスト更新の検出用に、記録前のベストを控えておく(全体＋このモンスター毎)
   const _preCum = titlesCumulativeStats();
@@ -6441,6 +6517,10 @@ function showResultNow(isWin, placement){
    次に何か足せばまた同じことが起きるので、**入らなければ縮める**の1か所で断つ。
 
    ・縮小は #resultInner ごと transform:scale。文字も余白も同じ比率で小さくなる。
+   ・【2ページ化後の測り方】#resultPager は2枚のページを横に並べたflexなので、
+     その高さ(=#resultInnerのoffsetHeight)は**高いほうのページ**の高さになる。
+     つまり従来どおり inner.offsetHeight を測れば「両方のページが収まる縮小率」が
+     1回で決まり、ページを切り替えても縮尺が跳ねない(translateXは寸法を変えない)。
    ・transform は場所を取らないので、縮めたときだけ上詰め(.result-fitted)にする。
    ・下限 FIT_MIN は設けない(読めない小ささになる前に中身を減らすべきだが、
      「押せない」よりは「小さい」ほうがましなので、まず必ず収める)。
@@ -9833,9 +9913,12 @@ function resolveTrainCardForSelf(key, auto){
   pushToast(`${auto?'⌛ ':''}${t.label}：${t.desc}`);
 }
 // 試合の入口で必ず呼ぶ(前の試合のカードや待ち行列を持ち越さない)
-/* 試合の入口で必ず呼ばれる関数なので、**死因の手がかりもここで一緒に捨てる**
-   (呼び元はui.jsに3か所・network.jsに1か所あり、そのどれもがここを通る) */
-function resetTrainCards(){ hideTrainCards(); trainCardQueue.length = 0; resetDeathCause(); }
+/* 試合の入口で必ず呼ばれる関数なので、**死因の手がかりと連続キルの記録も
+   ここで一緒に捨てる**(呼び元はui.jsに3か所・network.jsに1か所あり、そのどれもがここを通る) */
+function resetTrainCards(){
+  hideTrainCards(); trainCardQueue.length = 0; resetDeathCause();
+  if(typeof resetKillStreakLog==='function') resetKillStreakLog();   // combat.js(ハイライト用)
+}
 /* 操作画面カスタマイズのあいだだけ、カードの見本を出す。
    普段は隠れている要素なので、出しておかないと大きさも位置も決められない。
    **見本は選べない**(タップはドラッグに使うため data-hud-drag 側が拾う)。 */
@@ -9906,6 +9989,7 @@ function pickGhostsForMatch(playerMmLevel, playerRebirth){
     const m = usable[Math.floor(Math.random()*usable.length)];
     out.push(Object.assign({}, m, {
       owner: g.owner || '',
+      srcKey: g.key,   // 持ち主のアカウントキー(るすばん報告の宛先。ghostsノードで公開済みの値)
       rebirth: Math.min(Math.round(m.rebirth||0), playerRebirth),
     }));
     if(out.length >= GHOST_BOT_MAX) break;
@@ -9925,7 +10009,123 @@ function ghostBotsForRoom(){
   if(!ghosts.length) return [];
   // 縮める基準はホスト自身(hostMastermonBots と同じ。受け取ってから各自で縮めない)
   const limit = battleStatLimitOf(myMm, game.selectedElement);
-  return ghosts.map(g=> Object.assign({}, capMastermonToLimit(g, limit), { owner: g.owner || '' }));
+  // srcKey = 持ち主のアカウントキー(るすばん報告の宛先)。部屋のmetaへ載るが、ghostsノードで公開済みの値
+  return ghosts.map(g=> Object.assign({}, capMastermonToLimit(g, limit), { owner: g.owner || '', srcKey: g.srcKey || '' }));
+}
+/* ===== るすばん報告(ゴーストの帰還報告) =====
+   自分のマスモンの写し(ゴースト)が他の人の試合に出た結果を、持ち主に届ける。
+   ・書く側: ゴーストが出た試合のプレイヤー(ソロ=本人/マルチ=ホスト)が
+     試合終了時に reportGhostResults() で ghostReports/{持ち主キー} へ1件ずつ書く。
+   ・読む側: 持ち主がロビーで refreshGhostNews()(5分キャッシュ。refreshGhostsと同じ流儀)で読み、
+     未読があればロビー中央の自分の子に吹き出し(#ghostNewsPop)を出す。常設入口はマイページ。
+   ・既読は端末ごと(localStorage)。試合の進行にも記録にも影響しない、お知らせだけの機能。 */
+function reportGhostResults(){
+  try{
+    if(!window.__aramonPushGhostReport) return;
+    if(netState.mode==='multi' && !netState.isHost) return;   // マルチはホストが代表で書く
+    if(game.trainingRange || netState.raid) return;           // 訓練場・レイドにはゴーストが出ない
+    if(typeof entities==='undefined' || !Array.isArray(entities)) return;
+    const vsName = getDisplayNameFromInput() || '名無しのモンスター';
+    for(const bot of entities){
+      if(!bot || !bot.ghostOwnerKey) continue;
+      // 自分のゴーストは来ない(pickGhostsForMatchが除外済み)が、念のため自分宛は飛ばす
+      if(accountState.key && bot.ghostOwnerKey === accountState.key) continue;
+      const atk = entities.find(e=> e && e.id===bot.lastAttackerId);
+      const report = { at: Date.now(), mm: bot.name, k: bot.kills||0,
+                       dead: !bot.alive, by: (!bot.alive && atk) ? displayNameFor(atk) : '',
+                       vs: vsName };
+      // 失敗しても試合の流れを止めない(報告は届かないだけ)
+      try{ Promise.resolve(window.__aramonPushGhostReport(bot.ghostOwnerKey, report)).catch(()=>{}); }
+      catch(err){}
+    }
+  }catch(err){ /* 報告に失敗しても試合の流れは止めない */ }
+}
+// ---- 読む側: キャッシュ・未読数・吹き出し ----
+const GHOSTNEWS_SEEN_KEY = 'aramon_ghostnews_seen_v1';   // 最終閲覧ts(端末ごと。同期しない)
+const GHOSTNEWS_CACHE_MS = 5*60*1000;                    // 取り直す間隔(refreshGhostsと同じ)
+let ghostNewsCache = { at:0, list:[] };
+function ghostNewsSeenTs(){ try{ return Number(localStorage.getItem(GHOSTNEWS_SEEN_KEY))||0; }catch(err){ return 0; } }
+function markGhostNewsSeen(){
+  try{ localStorage.setItem(GHOSTNEWS_SEEN_KEY, String(Date.now())); }catch(err){}
+  updateGhostNewsPop();
+}
+function ghostNewsUnreadCount(){
+  const seen = ghostNewsSeenTs();
+  return ghostNewsCache.list.filter(r=> r && (r.at||0) > seen).length;
+}
+function updateGhostNewsPop(){
+  const pop = document.getElementById('ghostNewsPop');
+  if(pop) pop.classList.toggle('hidden', ghostNewsUnreadCount() <= 0);
+}
+// ロビーを開いたときに取り直す(refreshLobbyから)。ログイン中だけ。失敗しても遊びに影響しない
+async function refreshGhostNews(){
+  if(!accountState.loggedIn || !accountState.key || !window.__aramonFetchGhostReports){
+    ghostNewsCache = { at:0, list:[] };   // ログアウト中は空(次のログイン後すぐ取り直せる)
+    updateGhostNewsPop();
+    return;
+  }
+  if(Date.now() - ghostNewsCache.at < GHOSTNEWS_CACHE_MS) return;
+  ghostNewsCache.at = Date.now();   // 失敗しても連打しない
+  try{ ghostNewsCache.list = (await window.__aramonFetchGhostReports(accountState.key)) || []; }
+  catch(err){ /* 読めなくても遊びには影響しない */ }
+  updateGhostNewsPop();
+}
+// ---- 専用ビュー(#ghostNewsOverlay) ----
+function ghostNewsItemHtml(r){
+  const esc = roomListEscape;
+  const d = new Date(r.at||0);
+  const date = (r.at ? `${d.getMonth()+1}/${d.getDate()} ` : '');
+  const mm = esc(r.mm||'あなたの子');
+  const vs = esc(r.vs||'だれか');
+  const deed = (r.k>0) ? `<b>${mm}</b>が ${Math.round(r.k)}体たおした！` : `<b>${mm}</b>が出撃した`;
+  const fate = r.dead
+    ? (r.by ? `${esc(r.by)}にやられた…` : 'ちからつきてしまった…')
+    : 'さいごまで生きのこった！';
+  return `<div class="ghostnews-item">
+    <div class="ghostnews-line1">${date}${vs}の世界で ${deed}</div>
+    <div class="ghostnews-line2 ${r.dead?'lost':'alive'}">${fate}</div>
+  </div>`;
+}
+function renderGhostNewsList(){
+  const listEl = document.getElementById('ghostNewsList');
+  if(!listEl) return;
+  // 未ログイン時は説明行を隠す(「出かけています」と「ログインすると出かけます」が矛盾するため)
+  const noteEl = document.getElementById('ghostNewsNote');
+  if(noteEl) noteEl.classList.toggle('hidden', !(accountState.loggedIn && accountState.key));
+  if(!accountState.loggedIn || !accountState.key){
+    listEl.innerHTML = '<div class="ghostnews-empty">アカウントにログインすると、あなたのマスモンが他の人の試合に出かけるようになります</div>';
+    return;
+  }
+  const list = ghostNewsCache.list.filter(r=> r && r.at).slice().sort((a,b)=> (b.at||0)-(a.at||0));
+  if(!list.length){
+    listEl.innerHTML = '<div class="ghostnews-empty">まだ報告はありません。あなたの子が誰かの試合に出ると届きます</div>';
+    return;
+  }
+  listEl.innerHTML = list.map(ghostNewsItemHtml).join('');
+}
+function openGhostNewsOverlay(){
+  renderGhostNewsList();
+  document.getElementById('ghostNewsOverlay').classList.remove('hidden');
+  markGhostNewsSeen();   // 開いたら既読(吹き出しを消す)
+  // キャッシュが古ければ取り直し、開いたままなら描き直す(5分の間隔はrefreshGhostNews側が見る)
+  const before = ghostNewsCache.at;
+  Promise.resolve(refreshGhostNews()).then(()=>{
+    if(ghostNewsCache.at !== before &&
+       !document.getElementById('ghostNewsOverlay').classList.contains('hidden')) renderGhostNewsList();
+  }).catch(()=>{});
+}
+{
+  const pop = document.getElementById('ghostNewsPop');
+  if(pop) pop.addEventListener('click', ()=> openGhostNewsOverlay());
+  const openBtn = document.getElementById('openGhostNewsBtn');
+  if(openBtn) openBtn.addEventListener('click', ()=>{
+    lobbyCloseOverlay('myPageOverlay');   // マイページから開いたら、マイページは閉じる
+    openGhostNewsOverlay();
+  });
+  const closeBtn = document.getElementById('closeGhostNewsBtn');
+  if(closeBtn) closeBtn.addEventListener('click', ()=>{
+    document.getElementById('ghostNewsOverlay').classList.add('hidden');
+  });
 }
 // バトル開始時、選択中のマスモンのステータス倍率をプレイヤーに適用
 function applyMastermonToPlayer(){
@@ -9979,6 +10179,9 @@ function applyMatchStartTierBoost(){
 /* overrides.damage を渡すと、経験値の計算だけその値を使う。
    レイドは与ダメージの桁が通常の試合と違うので、釣り合わせた値を渡すために使う。 */
 function handleMastermonPostMatch(isWin, overrides){
+  /* るすばん報告。リザルトの表示とは独立していて、毎試合必ず通るここで1回だけ書く
+     (途中にreturnがあるので先頭に置く)。書く条件は reportGhostResults 側が持つ。 */
+  reportGhostResults();
   const dmgForExp = (overrides && overrides.damage!=null) ? Math.round(overrides.damage) : Math.round(player.damageDealt);
   const infoEl = document.getElementById('mastermonResultInfo');
   const registerEl = document.getElementById('mastermonRegisterPrompt');

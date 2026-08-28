@@ -450,7 +450,10 @@
   @keyframes gachaSheen{ 0%{ background-position:135% 0; } 60%,100%{ background-position:-65% 0; } }
 
   /* ---- 中央: タイトル + 選択中モンスター ---- */
+  /* position:relative は、るすばん報告の吹き出し(#ghostNewsPop)を絶対配置で重ねるための土台。
+     もともと static(gridの子)なので付けても寸法は変わらない。 */
   #lobbyCenter{
+    position:relative;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:calc(0.6 * var(--vh)); min-width:0; height:100%; overflow:hidden; padding-bottom:6px;
   }
@@ -597,6 +600,49 @@
     color:var(--ink); text-shadow:0 2px 6px rgba(0,0,0,0.9); display:flex; align-items:center; gap:6px;
   }
   #lobbyMonsterName .lobby-mon-sub{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; color:var(--ink-dim); }
+  /* ===== るすばん報告 ===== */
+  /* 吹き出し: 白っぽい箱+下向きの三角(::after)。傾き・揺れのtransformは付けない
+     (#lobbyCenter は overflow:hidden の枠。「飾りを枠の中に持ち込まない」)。
+     絶対配置なので他の要素は1pxも動かない(ロビーはスクロールさせない決まり)。
+     文字は1行+「…」— 切るのは内側のspan。**ボタン自身を overflow:hidden にしない**
+     (わざと外へ出している三角が切れる)。 */
+  #ghostNewsPop{
+    position:absolute; left:50%; top:36%; transform:translateX(-50%); z-index:3;
+    max-width:94%; padding:6px 12px; border-radius:14px; cursor:pointer;
+    background:rgba(255,255,255,0.94); border:1px solid rgba(20,26,40,0.35);
+    box-shadow:0 6px 16px -4px rgba(0,0,0,0.55);
+    font-family:'Rajdhani',sans-serif; font-weight:800; letter-spacing:0.5px; color:#1a2030;
+    /* 文字サイズは .lobby-count と同じ値を流用(持ち方で変えない) */
+    font-size:clamp(10px, calc(2.5 * var(--vh)), 12px);
+    min-height:30px;
+  }
+  #ghostNewsPop::after{
+    content:''; position:absolute; left:50%; top:100%; transform:translateX(-50%);
+    border:6px solid transparent; border-top-color:rgba(255,255,255,0.94); border-bottom:none;
+  }
+  /* 基底の button:active{transform:scale(0.96)} だと translateX(-50%) が消えて右へ飛ぶので両方書く */
+  #ghostNewsPop:active{ transform:translateX(-50%) scale(0.96); }
+  .ghostnews-pop-text{ display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* 専用ビュー。箱はflex縦: 見出し・説明・✕はスクロールの外、一覧(#ghostNewsList)だけがスクロール(R2)。
+     縦が足りないときに削る順: 一覧(縮んでも指で送れる) > 説明 > 見出し・✕は削らない。 */
+  .mastermon-confirm-box.ghostnews-box{
+    position:relative; max-width:min(560px, calc(95 * var(--vw))); width:min(560px, calc(95 * var(--vw)));
+    max-height:calc(92 * var(--vh)); display:flex; flex-direction:column; text-align:left;
+  }
+  .ghostnews-box .lobby-menu-title{ flex:0 0 auto; }
+  .ghostnews-note{ flex:0 0 auto; font-size:11px; line-height:1.5; color:var(--ink-dim);
+    margin-bottom:10px; padding-right:var(--overlay-close-gap); }
+  .ghostnews-list{ flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    display:flex; flex-direction:column; gap:7px; }
+  .ghostnews-item{ flex:0 0 auto; padding:9px 12px; border-radius:10px;
+    background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); }
+  .ghostnews-line1{ font-size:12px; line-height:1.5; color:var(--ink); }
+  .ghostnews-line1 b{ color:var(--amber); }
+  .ghostnews-line2{ font-size:11px; line-height:1.5; margin-top:2px; }
+  .ghostnews-line2.alive{ color:#7fd98a; }
+  .ghostnews-line2.lost{ color:var(--ink-dim); }
+  .ghostnews-empty{ font-size:12px; line-height:1.7; color:var(--ink-dim); padding:8px 2px; }
+
   /* ---- 右: マップ / モード / 出撃 ---- */
   /* 上下2枚構成: #lobbyRightTop(いまの状態と出撃の設定)と
      #lobbyActionArea(出撃の操作・常に下端)。**この2枚を崩さない。**
@@ -2043,7 +2089,8 @@
   #resultScreen .sub{ margin-top:1px; font-size:12px; }
   #resultScreen .resultStatsRow{ margin-top:8px; gap:16px; }
   #resultScreen .resultStats .num{ font-size:18px; }
-  #resultScreen .result-monster-icon{ width:50px; height:50px; }
+  /* 1枚目は「勝敗と余韻」の場なので、アイコンは詰めずに大きめのまま出す(発注者指定) */
+  #resultScreen .result-monster-icon{ width:64px; height:64px; margin-top:8px; }
   #resultScreen #scoreSubmitStatus{ margin-top:4px; min-height:12px; font-size:10px; }
   #resultScreen .mastermon-result-info{ margin-top:4px; padding:5px 12px; font-size:11px; }
   #resultScreen .mastermon-register-prompt{ margin-top:6px; padding:8px 14px; gap:6px; }
@@ -2051,6 +2098,30 @@
   #resultScreen .mastermon-register-btnrow button{ padding:7px 0; }
   #resultScreen .resultBtnRow{ margin-top:10px; }
   #resultScreen .resultBtnRow button{ padding:11px 0; }
+
+  /* ---------- リザルトの2ページ(1枚目=勝敗と余韻 / 2枚目=数字と導線) ----------
+     切替は ui.js の resultGoPage()。transform:translateX のスライドで、
+     この overflow:hidden は「ページの枠」の役目(文字要素の省略ではない)。
+     出ていない側のページは visibility:hidden で畳む ―― 枠の外のボタンを
+     押せなくするためで、スライド中(0.25s)だけ両方見える(遅延付きのtransition)。 */
+  #resultPager{ width:100%; overflow:hidden; display:flex; align-items:flex-start; }
+  .result-page{ flex:0 0 100%; min-width:0; display:flex; flex-direction:column; align-items:center;
+    transition:transform 0.25s ease, visibility 0s 0.25s; visibility:hidden; }
+  #resultPager:not(.page2) #resultPage1,
+  #resultPager.page2 #resultPage2{ visibility:visible; transition:transform 0.25s ease, visibility 0s; }
+  #resultPager.page2 .result-page{ transform:translateX(-100%); }
+  /* showResultNow が1枚目へ戻すときはスライドを見せない(前の試合の残像になる) */
+  #resultPager.no-anim .result-page{ transition:none; }
+  /* ページの現在地(ドット2つ)。表示だけで押す物ではない */
+  #resultPageNav{ display:flex; gap:8px; justify-content:center; margin-top:8px;
+    pointer-events:none; flex-shrink:0; }
+  #resultPageNav .result-dot{ width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,0.22); }
+  #resultPageNav .result-dot.on{ background:var(--amber); }
+  /* 試合ハイライト(1枚目・1試合1つだけ)。長い文言は自分で「…」に切る */
+  .result-highlight{ margin-top:6px; padding:5px 14px; border-radius:6px; font-size:13px; letter-spacing:1px;
+    color:var(--amber); background:rgba(244,196,48,0.1); border:1px solid rgba(244,196,48,0.45);
+    max-width:min(92 * var(--vw), 560px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .result-highlight.hidden{ display:none !important; }
 
   .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
   #playerNameInput{

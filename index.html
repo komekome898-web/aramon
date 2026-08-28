@@ -162,6 +162,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
        <img id="lobbyMonsterImg" alt="">
        <div id="lobbyMonsterEmpty">モンスターを選択してください</div>
      </button>
+     <!-- るすばん報告の吹き出し。#lobbyCenter に絶対配置なので他の要素を1pxも動かさない
+          (ロビーはスクロールさせない決まり)。ステージは<button>なので中に入れず兄弟に置く。
+          未読が無ければ hidden(出し入れは ui.js の updateGhostNewsPop)。 -->
+     <button type="button" id="ghostNewsPop" class="hidden"><span class="ghostnews-pop-text">👻 るすばん報告があるよ！</span></button>
      <!-- エモート。ステージ(#lobbyMonsterStage)は flex:1 1 auto で余白を吸収するので、
           この行を足すとステージが少し縮むだけで**スクロールは出ない**。
           ボタンの入れ子は不正なのでステージの中には入れず兄弟に置く。中身は EMOTES から自動生成 -->
@@ -239,11 +243,22 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div class="lobby-menu-list">
       <button id="accountLoginBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">🔑</span><span class="lobby-menu-text"><b>ログイン / アカウント作成</b><i>記録とマスモンを失わないように保存する(機種変更の引き継ぎにも使えます)</i></span></button>
       <button id="titleMyStatsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">📈</span><span class="lobby-menu-text"><b>マイ記録</b><i>これまでの戦績・称号を見る</i></span></button>
+      <button id="openGhostNewsBtn" class="lobby-menu-btn"><span class="lobby-menu-icon">👻</span><span class="lobby-menu-text"><b>るすばん報告</b><i>あなたのマスモンが他の人の試合で残した結果を見る</i></span></button>
     </div>
     <div class="lobby-menu-field">
       <div class="pick-label" id="playerNameLabel">ランキング表示名(任意)</div>
       <input type="text" id="playerNameInput" maxlength="12" placeholder="名無しのモンスター">
     </div>
+  </div>
+</div>
+
+<!-- るすばん報告(ゴーストの帰還報告)。見出し・✕はスクロールの外、一覧(#ghostNewsList)だけがスクロールする -->
+<div id="ghostNewsOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box ghostnews-box">
+    <button id="closeGhostNewsBtn" class="overlay-close-btn">✕</button>
+    <div class="lobby-menu-title">👻 るすばん報告</div>
+    <div id="ghostNewsNote" class="ghostnews-note">あなたのマスモンは、ログインしているあいだ他の人の試合に出かけています</div>
+    <div id="ghostNewsList" class="ghostnews-list"></div>
   </div>
 </div>
 
@@ -696,52 +711,72 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 <div id="resultScreen" class="resultScreen hidden">
  <!-- 【#resultInner を外さない】中身が縦に収まらないときは fitResultScreen() がこの箱ごと
       縮小して必ず1画面に収める。直下に要素を足すと縮小の対象から外れて見切れる。
-      新しい帯はこの中に足すこと。 -->
+      新しい帯はこの中に足すこと。
+
+      リザルトは2ページのスライド式(1枚目=勝敗と余韻 / 2枚目=数字と導線)。
+      切替は ui.js の resultGoPage()(詳細›/‹もどる ボタンと横スワイプの両対応)。
+      showResultNow / raidShowResult のたびに必ず1枚目へ戻る。 -->
  <div id="resultInner">
-  <div class="rank" id="resultRank">#1</div>
-  <div class="sub" id="resultSub">勝利</div>
-  <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
-       setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
-  <div id="resultDeathCause" class="result-death-cause hidden"></div>
-  <div class="resultStatsRow">
+  <div id="resultPager">
+   <div id="resultPage1" class="result-page">
+    <div class="rank" id="resultRank">#1</div>
+    <div class="sub" id="resultSub">勝利</div>
+    <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
+         setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
+    <div id="resultDeathCause" class="result-death-cause hidden"></div>
+    <!-- 試合ハイライト(1試合1つだけ)。定義表は data.js の HIGHLIGHT_DEFS、
+         中身は showResultNow が pickHighlight() で書く。無い試合とレイドでは hidden -->
+    <div id="resultHighlight" class="result-highlight hidden"></div>
     <img id="resultMonsterIcon" class="result-monster-icon" alt="" data-variant="player" data-ext-idx="0" onerror="handleResultIconError(this)">
-    <div class="resultStats">
-      <div><div class="num" id="statKills">0</div><div class="lbl">撃破数</div></div>
-      <div><div class="num" id="statDamage">0</div><div class="lbl">与ダメージ</div></div>
-      <div><div class="num" id="statTime">00:00</div><div class="lbl">生存時間</div></div>
+    <div id="resultCurrencyLine" class="result-currency"></div>
+    <!-- EXPの1行。登録の促しと対にするため必ず1枚目に置く -->
+    <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
+    <!-- 【必ず1枚目に置く】スキップするとこの試合の経験値が消える対話なので、2枚目へ隠さない -->
+    <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
+      <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
+      <!-- スキップすると、この試合ぶんの経験値は誰にも入らずに消える(ui.jsが控えを捨てる)。
+           押す前に分かるようにしておく -->
+      <div class="mastermon-register-note">スキップすると、この試合の経験値は入りません</div>
+      <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前" data-kb-title="マスモンの名前">
+      <div class="mastermon-register-btnrow">
+        <button id="mastermonRegisterSkipBtn">スキップ</button>
+        <button id="mastermonRegisterConfirmBtn">登録する</button>
+      </div>
     </div>
-  </div>
-  <div id="scoreSubmitStatus"></div>
-  <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->
-  <div id="resultSquadInfo" class="result-squad-info hidden"></div>
-  <div id="resultCurrencyLine" class="result-currency"></div>
-  <div id="resultBadges" class="result-badges hidden"></div>
-  <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
-  <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
-    <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
-    <!-- スキップすると、この試合ぶんの経験値は誰にも入らずに消える(ui.jsが控えを捨てる)。
-         押す前に分かるようにしておく -->
-    <div class="mastermon-register-note">スキップすると、この試合の経験値は入りません</div>
-    <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前" data-kb-title="マスモンの名前">
-    <div class="mastermon-register-btnrow">
-      <button id="mastermonRegisterSkipBtn">スキップ</button>
-      <button id="mastermonRegisterConfirmBtn">登録する</button>
+    <div class="resultBtnRow">
+      <!-- 連戦の入口。マルチは部屋に残ったまま待機画面へ戻る(ui.jsのreplayAgainBtn)。
+           レイドと部屋を抜けた後は出せないので setResultButtonsForRaid が隠す -->
+      <button id="replayAgainBtn">⟳ もう一度</button>
+      <button id="replayBtn">トップ画面へ</button>
+      <button id="resultDetailBtn">詳細 ›</button>
     </div>
+   </div>
+   <div id="resultPage2" class="result-page">
+    <div class="resultStatsRow">
+      <div class="resultStats">
+        <div><div class="num" id="statKills">0</div><div class="lbl">撃破数</div></div>
+        <div><div class="num" id="statDamage">0</div><div class="lbl">与ダメージ</div></div>
+        <div><div class="num" id="statTime">00:00</div><div class="lbl">生存時間</div></div>
+      </div>
+    </div>
+    <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->
+    <div id="resultSquadInfo" class="result-squad-info hidden"></div>
+    <div id="scoreSubmitStatus"></div>
+    <div id="resultBadges" class="result-badges hidden"></div>
+    <div class="resultBtnRow">
+      <button id="viewRankingBtn">ランキング</button>
+      <button id="viewMyStatsBtn">マイ記録</button>
+      <!-- レイドのリザルトでは上2つの代わりにこれを出す(setResultButtonsForRaid) -->
+      <button id="viewRaidRankBtn" class="hidden">レイドランキング</button>
+      <button id="viewMastermonBtn">マスモン</button>
+      <!-- シェアだけはアイコンの固定幅。等分にすると「もどる」等が切れ、
+           2行に折り返すと横長・低い画面でリザルトがはみ出す -->
+      <button id="shareResultBtn" class="share-icon-btn" aria-label="SNSでシェア"><span class="share-ico"></span></button>
+      <button id="resultBackBtn">‹ もどる</button>
+    </div>
+   </div>
   </div>
-  <div class="resultBtnRow">
-    <button id="viewRankingBtn">ランキング</button>
-    <button id="viewMyStatsBtn">マイ記録</button>
-    <!-- レイドのリザルトでは上2つの代わりにこれを出す(setResultButtonsForRaid) -->
-    <button id="viewRaidRankBtn" class="hidden">レイドランキング</button>
-    <button id="viewMastermonBtn">マスモン</button>
-    <!-- シェアだけはアイコンの固定幅。等分にすると「トップ画面へ」が切れ、
-         2行に折り返すと横長・低い画面でリザルトがはみ出す -->
-    <button id="shareResultBtn" class="share-icon-btn" aria-label="SNSでシェア"><span class="share-ico"></span></button>
-    <!-- 連戦の入口。マルチは部屋に残ったまま待機画面へ戻る(ui.jsのreplayAgainBtn)。
-         レイドと部屋を抜けた後は出せないので setResultButtonsForRaid が隠す -->
-    <button id="replayAgainBtn">⟳ もう一度</button>
-    <button id="replayBtn">トップ画面へ</button>
-  </div>
+  <div id="resultPageNav"><span class="result-dot on"></span><span class="result-dot"></span></div>
  </div>
 </div>
 

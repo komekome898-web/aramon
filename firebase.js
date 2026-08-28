@@ -759,6 +759,29 @@
     return out;
   };
 
+  /* --- るすばん報告 ---
+     ghostReports/{accountKey} … { at:更新時刻, list:[ {at, mm, k, dead, by, vs} … 最新20件 ] }
+     ゴーストが出た試合のプレイヤー(ソロ=本人/マルチ=ホスト)が書き、持ち主が読む。
+     ※ 新しいパスなので、Firebaseコンソールのセキュリティルールに ghostReports の
+        .read / .write を足す必要がある(ghosts のときと同じ。未定義パスは既定で拒否)。 */
+  window.__aramonPushGhostReport = async function(ownerKey, report){
+    const key = String(ownerKey||'').replace(/[.#$/\[\]]/g,'_').slice(0,64);
+    if(!key) return false;
+    await runTransaction(ref(fbDb, `ghostReports/${key}`), (cur)=>{
+      const list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+      list.push(report);
+      return { at: Date.now(), list: list.slice(-20) };   // 最新20件で頭打ち(肥大させない)
+    });
+    return true;
+  };
+  window.__aramonFetchGhostReports = async function(ownerKey){
+    const key = String(ownerKey||'').replace(/[.#$/\[\]]/g,'_').slice(0,64);
+    if(!key) return [];
+    const snap = await get(ref(fbDb, `ghostReports/${key}`));
+    const v = snap.val();
+    return (v && Array.isArray(v.list)) ? v.list : [];
+  };
+
   /* --- 週替わりレイド ---
      raids/{weekId}/total      … 全プレイヤーの与ダメ累計(トランザクションで加算)
      raids/{weekId}/players/{名前キー} … 個人の累計(ランキング用)

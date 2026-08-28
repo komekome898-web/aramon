@@ -688,6 +688,29 @@ function applyDamage(target, dmg, source, opts){
 
   if(target.hp<=0){ killEntity(target, source); }
 }
+/* =====================================================================
+   プレイヤーの連続キル記録(リザルトのハイライト「⚡ N連続キル！」用)
+   killEntity() が積み、ui.js の showResultNow が playerMaxKillStreak() で読む。
+   空にする分岐は1か所 ―― resetTrainCards()(ui.js。全試合の入口4か所が必ず通る)から
+   resetKillStreakLog() を呼ぶ。試合開始の場所へ個別に足さない。
+   マルチのゲストは killEntity がホスト側でしか走らないので積まれない(=この
+   ハイライトが出ないだけで、他のハイライト判定には影響しない)。 */
+const KILL_STREAK_WINDOW_SEC = 10;   // この秒数の幅に収まったキルを「連続」とみなす
+let playerKillTimes = [];
+function resetKillStreakLog(){ playerKillTimes.length = 0; }
+// windowSec 秒の幅に収まる連続キル数の最大を返す(1キルなら1、0キルなら0)
+function playerMaxKillStreak(windowSec){
+  let best = 0;
+  for(let i=0; i<playerKillTimes.length; i++){
+    let n = 1;
+    for(let j=i+1; j<playerKillTimes.length; j++){
+      if(playerKillTimes[j] - playerKillTimes[i] <= windowSec) n++;
+      else break;
+    }
+    if(n > best) best = n;
+  }
+  return best;
+}
 function killEntity(victim, killer){
   if(!victim.alive) return;
   // 安全圏外ダメージや溶岩などキラー不在の死亡は、直前に攻撃していた相手にキルを付与する
@@ -717,6 +740,7 @@ function killEntity(victim, killer){
   spawnDeathDisc(victim);
   if(killer && entities.includes(killer) && killer.id!==victim.id){
     killer.kills += 1;
+    if(killer.isPlayer) playerKillTimes.push(matchTime);   // 連続キルのハイライト用
     killer.hp = Math.min(killer.maxHp, killer.hp + 50);
     killer.guts = Math.min(killer.maxGuts, killer.guts + 50);
     spawnDmgText(killer.x, killer.y, killer.z, '+50', '#7fffa0');
