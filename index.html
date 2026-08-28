@@ -864,6 +864,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div id="myStatsModeTabs">
         <button class="mystat-mode-tab active" data-mode="solo">ソロ</button>
         <button class="mystat-mode-tab" data-mode="multi">マルチ</button>
+        <button class="mystat-mode-tab" data-mode="team">チーム戦</button>
       </div>
       <div id="myStatsOverall"></div>
       <!-- スクロールの外に置き、どの端末でも必ず見える(行き先の案内が隠れないように) -->
@@ -1158,8 +1159,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div class="s1prev-sub-title">ℹ️ 曜日ごとの変則ルール</div>
       <div id="seasonLegend" class="s1prev-legend"></div>
     </div>
-    <!-- 累計(マスモンごとの通算ミッション。中身は ui.js の renderLifetimeMissions が描く) -->
+    <!-- 累計(プレイヤー累計 + マスモンごとの通算ミッション。中身は ui.js の renderLifetimeMissions が描く) -->
     <div id="missionLifetimePane" class="mission-pane hidden">
+      <div class="daily-section-title">🏅 プレイヤー累計（すべてのプレイの通算）</div>
+      <div id="acctMissionList" class="lt-list"></div>
+      <div class="daily-section-title">🐾 マスモンごとの累計（タップで開閉）</div>
       <div class="season-note">マスモンごとの通算記録で進むミッション。すべて達成すると、その子の「覇者」称号を獲得。</div>
       <div id="lifetimeMissionList" class="lt-list"></div>
     </div>
@@ -1358,7 +1362,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <img id="ssrRevealIcon" class="ssr-reveal-icon" alt="">
       <div id="ssrRevealText" class="ssr-reveal-text"></div>
       <!-- 画面のどこを触っても次へ進むので、この2つは stopPropagation してある -->
-      <button id="ssrRevealShareBtn" class="ssr-reveal-share"><span class="share-ico"></span> SNSでシェア</button>
+      <button id="ssrRevealShareBtn" class="share-label-btn ssr-reveal-share"><span class="share-ico"></span> SNSでシェア</button>
     </div>
     <button id="ssrRevealSkip" class="ssr-reveal-skip">スキップ ▶</button>
   </div>

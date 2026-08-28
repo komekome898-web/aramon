@@ -1675,7 +1675,20 @@
   .lt-empty{ font-size:11px; color:var(--ink-dim); padding:14px 0; }
   .lt-card{ width:100%; padding:8px 10px; background:rgba(255,255,255,0.03);
     border:1px solid var(--panel-line); border-radius:8px; }
-  .lt-card-head{ display:flex; align-items:center; gap:7px; margin-bottom:6px; min-width:0; }
+  /* カードの頭はタップで開閉するボタン(既定=閉。受け取り可の子は自動で開く)。
+     押せる物の一般則どおり min-height(--tap-pick)+flex-shrink:0。ボタン既定の見た目は打ち消す */
+  .lt-card-head{ display:flex; align-items:center; gap:7px; min-width:0; width:100%;
+    min-height:var(--tap-pick); flex-shrink:0; margin:0; padding:2px 0;
+    background:none; border:none; cursor:pointer; text-align:left;
+    font-family:inherit; color:var(--ink); }
+  .lt-card.open .lt-card-head{ margin-bottom:6px; }
+  .lt-card:not(.open) .lt-rows{ display:none; }
+  .lt-count{ margin-left:auto; font-family:'Share Tech Mono',monospace; font-size:11px;
+    color:var(--ink-dim); flex-shrink:0; }
+  /* 受け取り可の金ドット。角へ飛ばさず頭の行の中に普通の要素として置く(はみ出さない) */
+  .lt-claim-dot{ width:9px; height:9px; border-radius:50%; background:var(--amber);
+    box-shadow:0 0 6px rgba(244,196,48,0.8); flex-shrink:0; }
+  .lt-fold{ font-size:11px; color:var(--ink-dim); flex-shrink:0; }
   .lt-mm-ico{ width:30px; height:30px; object-fit:contain; flex-shrink:0; }
   .lt-mm-name{ font-size:12.5px; font-weight:700; color:var(--ink);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1689,8 +1702,8 @@
   .lt-done{ font-size:11px; color:var(--amber); font-weight:700; }
   /* 押せる物には最小の高さ + flex-shrink:0(flexに潰させない)。
      高さはデイリーの受け取るボタンの実寸(約30px)を下限として明文化 */
-  .lt-claim-btn{ min-height:30px; flex-shrink:0; }
-  .lt-claim-btn:disabled{ opacity:0.4; cursor:default; }
+  .lt-claim-btn, .acct-claim-btn{ min-height:30px; flex-shrink:0; }
+  .lt-claim-btn:disabled, .acct-claim-btn:disabled{ opacity:0.4; cursor:default; }
 
   /* ===== 遠征 =====
      枠は横並び(最大3)。1画面に収める前提なので縦に積まない。 */
@@ -3799,7 +3812,8 @@
     margin:0; padding:8px 14px 2px 0; background:#0a1018;
     border-top:1px solid rgba(255,255,255,0.07);
   }
-  .mm-ayumi-foot .mastermon-execute-btn{
+  /* ボタンの色・字は共通の .share-label-btn(白)。ここは置き方(幅・最小高さ)だけ持つ */
+  .mm-ayumi-foot .share-label-btn{
     width:100%; min-height:var(--tap-pick); flex-shrink:0; white-space:nowrap;
     display:flex; align-items:center; justify-content:center; gap:6px;
   }
@@ -5053,19 +5067,23 @@ button:active{ transform:scale(0.96); }
   font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px;
   color:#0b0d12; background:#fff; border:none; border-radius:6px; cursor:pointer;
 }
-/* SSR獲得画面のシェア。獲得したスキン名の下に置く。
-   .ssr-reveal-inner は overflow:hidden の縦フレックスなので、flexを指定しないと
-   高さ0まで潰されて押せなくなる(縮むのは flex:0 1 auto のスキン画像側でよい) */
-.ssr-reveal-share{
-  flex:0 0 auto; margin-top:4px; padding:8px 20px; border-radius:20px; cursor:pointer;
+/* 文字付きシェアボタンはこの1クラスに統一(白)。アイコンだけの正方形は .share-icon-btn */
+.share-label-btn{
+  flex:0 0 auto; padding:8px 20px; border-radius:20px; cursor:pointer;
   font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
   color:#0b0d12; background:#fff; border:none;
 }
-/* ガチャ結果の中のシェア。結果はどこを触っても閉じるので、JS側でstopPropagationしている */
+/* SSR獲得画面のシェア。獲得したスキン名の下に置く。
+   .ssr-reveal-inner は overflow:hidden の縦フレックスなので、flex:0 0 auto
+   (share-label-btn側にある)が無いと高さ0まで潰されて押せなくなる
+   (縮むのは flex:0 1 auto のスキン画像側でよい)。見た目は share-label-btn が持つ */
+.ssr-reveal-share{
+  margin-top:4px;
+}
+/* ガチャ結果の中のシェア。結果はどこを触っても閉じるので、JS側でstopPropagationしている。
+   見た目は share-label-btn が持つ(paddingだけ従来の22pxを維持) */
 .gacha-share-btn{
-  margin-top:8px; padding:8px 22px; border-radius:20px; cursor:pointer;
-  font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
-  color:#0b0d12; background:#fff; border:none;
+  margin-top:8px; padding:8px 22px;
 }
 
 /* 共有マーク(YouTubeなどで一般的な、右へ飛ぶ矢印)。
