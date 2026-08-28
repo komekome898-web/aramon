@@ -145,6 +145,7 @@ const PANELS = [
   { id:'mastermonScreen', name:'マスモン詳細(トレーニング)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','training']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(編集)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','edit']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(着せ替え)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','dressup']}], noScroll:['mastermonDetailPanel'] },
+  { id:'mastermonScreen', name:'マスモン詳細(あゆみ)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','ayumi']}], noScroll:['mastermonDetailPanel'] },
 ];
 
 /* ===== 例外リスト(意図的に許しているもの) =====
