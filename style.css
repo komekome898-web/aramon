@@ -1646,9 +1646,22 @@
   .daily-mission.ready{ border-color:var(--amber); background:rgba(244,196,48,0.10); }
   .daily-mission-info{ flex:1 1 auto; min-width:0; }
   .daily-mission-name{ font-size:12.5px; font-weight:700; color:var(--ink); }
-  .daily-bar{ height:6px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden; margin:5px 0 3px; }
+  /* ゲージは**画面いっぱいに伸ばさない。** 横長の画面では1本の線が端まで走って
+     どこまで進んだのか読み取りにくかった(2026-08-28 実機報告)。上限を決めておき、
+     残りの横幅は報酬と受け取るボタンへ回す。 */
+  .daily-bar{ height:6px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden; margin:5px 0 3px;
+    max-width:min(320px, calc(45 * var(--vw))); }
   .daily-bar-fill{ height:100%; background:linear-gradient(90deg,#ffd76a,#f4c430); border-radius:3px; }
-  .daily-mission-reward{ font-size:10px; color:var(--ink-dim); }
+  /* 報酬(ゲージの右・ボタンの左)。**1つ=1行**のチップで縦に積む。
+     ・flex-shrink:0 なので押し潰されない
+     ・overflow:hidden も ellipsis も付けない = 省略されない。長い名前は
+       チップの中で折り返す(max-widthで幅の上限だけ決める)
+     ・ボタンとは flex の兄弟なので、重なりようがない */
+  .mission-reward{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px;
+    max-width:min(190px, calc(28 * var(--vw))); }
+  .mission-reward-line{ font-size:10px; line-height:1.35; color:var(--ink);
+    background:rgba(255,255,255,0.06); border:1px solid var(--panel-line); border-radius:5px;
+    padding:2px 7px; text-align:right; overflow-wrap:anywhere; }
   .daily-mission-action{ flex-shrink:0; }
   .daily-claim-btn{ padding:6px 14px; border-radius:7px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:12px; color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; }
