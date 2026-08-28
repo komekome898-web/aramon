@@ -1266,6 +1266,12 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-28', items:[
+    { t:'📖 マスモン詳細に「あゆみ」が加わりました！ ともに戦った試合数・チャンピオン回数・通算キル・初チャンピオンの日などが、その子ごとに残っていきます(記録は今日のぶんから)。SNSシェアもここからで、画像にあゆみの内容が入ります。マイ記録にあったモンスターごとの記録はこちらへ一本化しました', g:['feature','general'] },
+    { t:'🎯 ミッションに「累計」が加わりました！ マスモンごとに 試合数・キル・ダメージ・レベル・転生・トレーニング の累計ミッションがあり、達成するとゴールドやダイヤがもらえます。すべて達成すると、その種族の覇者称号(「ドラゴンの覇者」など)を獲得できます', g:['feature','general','monster'] },
+    { t:'👑 称号が増えました。1試合のキルは40キルまで、1試合のダメージは20000まで段階が伸び、種族ごとの覇者称号も加わりました', g:['feature','general'] },
+    { t:'📈 マイ記録に勝率・通算キル・通算与ダメージが出るようになりました', g:['general'] },
+  ]},
   { date:'2026-08-26', items:[
     { t:'✨ SSRスキン「バジリスエゾー」が登場しました！ tier3「真瞳術」は睨みつける赤い眼が相手へ飛んでいき、撃つたびに当たりが変わります ―― 30%で青くなり与えたダメージの50%を回復、10%で紫になり威力1.5倍。鳴き声も当たりごとに変わります。当てたときと相手を倒したときにも専用の音が鳴ります', g:['feature','monster','av','balance'] },
     { t:'🎆 すべての技のエフェクトから、技の上に乗っていた白く光る粒をなくしました。白飛びで潰れていた技の形と色が見えるようになります', g:['av','general'] },
@@ -2099,6 +2105,26 @@ const REBIRTH_APT_PICKS        = 3;     // 転生時に1段階上げる適正の
 const REBIRTH_EXP_MULT_STEP    = 0.5;
 
 function mastermonRebirthCount(mm){ return Math.max(0, Math.round((mm && mm.rebirth) || 0)); }
+/* マスモン戦歴(rec): m=試合数, w=チャンピオン回数, k=通算キル, dmg=通算与ダメージ,
+   bk=最高キル, bd=最高与ダメージ, tr=トレーニング回数, fw=初チャンピオンの時刻(0=未),
+   since=登録時刻。あゆみ画面と累計ミッション(LIFETIME_MISSIONS)が読む。
+   mastermonSnapshot には**含めない**(Firebaseのghostsノードを太らせない)。 */
+// rec が無い既存の個体には作って返す(既存プレイヤーのデータを壊さない)
+function mmRec(mm){
+  if(!mm) return null;
+  if(!mm.rec) mm.rec = { m:0, w:0, k:0, dmg:0, bk:0, bd:0, tr:0, fw:0, since:0 };
+  return mm.rec;
+}
+// 試合1回ぶんの記録。呼び出しは ui.js の handleMastermonPostMatch(別担当)
+function mmRecordMatch(mm, o){
+  const r = mmRec(mm); if(!r) return;
+  const kills = Math.max(0, Math.round((o&&o.kills)||0));
+  const dmg   = Math.max(0, Math.round((o&&o.damage)||0));
+  r.m++; r.k += kills; r.dmg += dmg;
+  if(kills > r.bk) r.bk = kills;
+  if(dmg > r.bd) r.bd = dmg;
+  if(o && o.isWin){ if(!r.w && !r.fw) r.fw = Date.now(); r.w++; }
+}
 // n回目(1始まり)の転生でもらえる基礎値の加算。表の外(上限を超えた回)は0
 function rebirthBaseBonusStep(n){ return REBIRTH_BASE_BONUS_STEPS[Math.round(n)-1] || 0; }
 // 転生をn回した個体の基礎値加算の合計。**保存せず毎回数え直す**(表を直せば既存の個体にも効く)
@@ -2434,6 +2460,7 @@ function createMastermon(elementKey, name){
     name: (name||'').trim().slice(0,10) || ELEMENTS[elementKey].label,
     level: 1, exp: 0, tickets: 1,
     stats: mastermonInitialStats(elementKey),
+    rec: { m:0, w:0, k:0, dmg:0, bk:0, bd:0, tr:0, fw:0, since:Date.now() },
   };
 }
 // 実際には反映せず、実行した場合の各ステータス変動量(クランプ後の差分)だけを計算する
@@ -2462,6 +2489,7 @@ function applyMastermonTraining(mm, trainingKey){
   const cap = mastermonStatCap(mm);
   Object.keys(changes).forEach(k=>{ mm.stats[k] = mastermonClampStat(mm.stats[k]+changes[k], cap); });
   mm.tickets -= 1;
+  mmRec(mm).tr++; // 戦歴: トレーニング回数(プレビューでは数えない)
   return changes;
 }
 // 試合成績に応じてEXPを付与し、レベルアップ毎にトレーニングチケットを1枚獲得
@@ -3257,6 +3285,8 @@ const TITLES = [
   { id:'kill15', name:'プレデター',       emoji:'🐾', cat:'キル', type:'matchKills', n:15 },
   { id:'kill20', name:'爪痕プレデター',   emoji:'🩸', cat:'キル', type:'matchKills', n:20 },
   { id:'kill25', name:'モンスターの覇者', emoji:'👑', cat:'キル', type:'matchKills', n:25 },
+  { id:'kill30', name:'修羅',             emoji:'👹', cat:'キル', type:'matchKills', n:30 },
+  { id:'kill40', name:'荒野の死神',       emoji:'💀', cat:'キル', type:'matchKills', n:40 },
   // 1試合の与ダメージ
   { id:'dmg1000', name:'パンチ',           emoji:'👊', cat:'ダメージ', type:'matchDamage', n:1000 },
   { id:'dmg1500', name:'アッパー',         emoji:'🥊', cat:'ダメージ', type:'matchDamage', n:1500 },
@@ -3265,6 +3295,10 @@ const TITLES = [
   { id:'dmg3000', name:'縦ハンマー',       emoji:'⛏️', cat:'ダメージ', type:'matchDamage', n:3000 },
   { id:'dmg4000', name:'ダブルハンマー',   emoji:'🛠️', cat:'ダメージ', type:'matchDamage', n:4000 },
   { id:'dmg5000', name:'メテオハンマー',   emoji:'☄️', cat:'ダメージ', type:'matchDamage', n:5000 },
+  { id:'dmg7500',  name:'ギガハンマー',   emoji:'🌋', cat:'ダメージ', type:'matchDamage', n:7500 },
+  { id:'dmg10000', name:'テラハンマー',   emoji:'🌠', cat:'ダメージ', type:'matchDamage', n:10000 },
+  { id:'dmg15000', name:'星砕き',         emoji:'💫', cat:'ダメージ', type:'matchDamage', n:15000 },
+  { id:'dmg20000', name:'創世ハンマー',   emoji:'🌌', cat:'ダメージ', type:'matchDamage', n:20000 },
   // 累計勝利
   { id:'win1',  name:'初モン勝ち',       emoji:'🎉', cat:'勝利', type:'wins', n:1 },
   { id:'win5',  name:'常勝の風格',       emoji:'🌟', cat:'勝利', type:'wins', n:5 },
@@ -3289,6 +3323,11 @@ const TITLES = [
   { id:'allElem', name:'オールラウンダー', emoji:'🌈', cat:'特殊', type:'allElem' },
   { id:'tutorial', name:'新人モン動', emoji:'🔰', cat:'特殊', type:'tutorial' },
 ];
+// 種族ごとの覇者称号。ELEMENTS に1体足せば称号も自動で増える
+Object.keys(ELEMENTS).forEach(key=>{
+  TITLES.push({ id:`lord_${key}`, name:`${ELEMENTS[key].label}の覇者`, emoji:'👑',
+                cat:'覇者', type:'lifetimeLord', element:key });
+});
 const TITLES_BY_ID = {}; TITLES.forEach(t=>{ TITLES_BY_ID[t.id]=t; });
 // 解放条件の説明文
 function titleCondText(t){
@@ -3302,6 +3341,7 @@ function titleCondText(t){
     case 'ssr':         return `SSRスキンを入手`;
     case 'tutorial':    return `チュートリアルを終える`;
     case 'allElem':     return `全モンスターでプレイ`;
+    case 'lifetimeLord': return `${ELEMENTS[t.element].label}の累計ミッションをすべて達成`;
     default:            return '';
   }
 }
@@ -3330,6 +3370,50 @@ const DAILY_MISSIONS = [
   // 被り還元の廃止ぶんの埋め合わせで 5 → 10(2026-08-15)
   { id:'win',  name:'1回勝利する',       target:1, reward:{ dia:10 },   track:'win'  },
 ];
+/* 累計ミッション: マスモン1体ごとに、その子の戦歴(rec)や育成状況で進む。
+   value はその子の現在値。tiers は小さい順で、**届いた段を1つずつ受け取る**。
+   受け取り状況は mm.mis[key] = 受け取り済みの段数(1始まり)。
+   数値バランスは発注者が実機で調整する前提なので、この表が唯一の置き場。 */
+const LIFETIME_MISSIONS = [
+  { key:'matches',  icon:'⚔️', label:'試合に出る',       unit:'試合',
+    value:(mm)=> mmRec(mm).m,
+    tiers:[ {n:5,   reward:{gold:300}},  {n:20,  reward:{dia:15}},
+            {n:50,  reward:{gold:1500}}, {n:100, reward:{dia:30}}, {n:200, reward:{gold:5000}} ] },
+  { key:'kills',    icon:'🎯', label:'敵を倒す',         unit:'キル',
+    value:(mm)=> mmRec(mm).k,
+    tiers:[ {n:10,  reward:{gold:300}},  {n:50,  reward:{dia:15}},
+            {n:150, reward:{gold:2000}}, {n:400, reward:{dia:40}} ] },
+  { key:'damage',   icon:'💥', label:'ダメージを与える', unit:'',
+    value:(mm)=> mmRec(mm).dmg,
+    tiers:[ {n:10000,  reward:{gold:300}},  {n:50000,  reward:{dia:15}},
+            {n:150000, reward:{gold:2000}}, {n:400000, reward:{dia:40}} ] },
+  { key:'level',    icon:'🌟', label:'レベルを上げる',   unit:'',
+    value:(mm)=> (mm.level||1),
+    tiers:[ {n:10, reward:{gold:500}}, {n:30, reward:{dia:20}},
+            {n:60, reward:{gold:3000}}, {n:100, reward:{dia:50}} ] },
+  { key:'rebirth',  icon:'♻️', label:'転生する',         unit:'回',
+    value:(mm)=> mastermonRebirthCount(mm),
+    tiers:[ {n:1, reward:{dia:20}}, {n:3, reward:{dia:30}}, {n:5, reward:{dia:50}} ] },
+  { key:'training', icon:'💪', label:'トレーニングする', unit:'回',
+    value:(mm)=> mmRec(mm).tr,
+    tiers:[ {n:20, reward:{gold:500}}, {n:60, reward:{dia:15}}, {n:150, reward:{gold:3000}} ] },
+];
+function lifetimeClaimedTier(mm, key){ return Math.max(0, Math.round((mm && mm.mis && mm.mis[key]) || 0)); }
+// 次に受け取れる段(1始まり)。無ければ0
+function lifetimeClaimableTier(mm, def){
+  const done = lifetimeClaimedTier(mm, def.key);
+  if(done >= def.tiers.length) return 0;
+  return def.value(mm) >= def.tiers[done].n ? done + 1 : 0;
+}
+// 全項目の最終段まで受け取り済みか(覇者称号の条件)
+function lifetimeMissionAllComplete(mm){
+  return !!mm && LIFETIME_MISSIONS.every(d=> lifetimeClaimedTier(mm, d.key) >= d.tiers.length);
+}
+// 覇者称号の条件。ui.js の titleConditionMet から呼ばれる(別担当が結線)
+function lifetimeLordEarned(elementKey){
+  const mm = loadMastermons()[elementKey];
+  return !!mm && lifetimeMissionAllComplete(mm);
+}
 function dailyTodayStr(){ const d=new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
 function loadDaily(){
   try{

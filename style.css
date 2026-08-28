@@ -1622,6 +1622,29 @@
     color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); border-radius:16px; cursor:pointer; }
   .mission-tab.active{ color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border-color:transparent; }
   .mission-pane{ width:100%; display:flex; flex-direction:column; align-items:center; }
+  /* 累計ミッション(マスモン1体=1カード)。行の作り・文字サイズはデイリーの
+     ミッション行(.daily-mission-name / .daily-bar / .daily-claim-btn)をそのまま使う。
+     新しい文字サイズは作らない。 */
+  .lt-list{ display:flex; flex-direction:column; gap:8px; width:100%; }
+  .lt-empty{ font-size:11px; color:var(--ink-dim); padding:14px 0; }
+  .lt-card{ width:100%; padding:8px 10px; background:rgba(255,255,255,0.03);
+    border:1px solid var(--panel-line); border-radius:8px; }
+  .lt-card-head{ display:flex; align-items:center; gap:7px; margin-bottom:6px; min-width:0; }
+  .lt-mm-ico{ width:30px; height:30px; object-fit:contain; flex-shrink:0; }
+  .lt-mm-name{ font-size:12.5px; font-weight:700; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lt-mm-lv{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); flex-shrink:0; }
+  .lt-lord-badge{ font-size:13px; flex-shrink:0; }
+  .lt-rows{ display:flex; flex-direction:column; gap:5px; }
+  .lt-row{ display:flex; align-items:center; gap:10px; padding:6px 10px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); border-radius:7px; }
+  .lt-row.ready{ border-color:var(--amber); background:rgba(244,196,48,0.10); }
+  .lt-row-info{ flex:1 1 auto; min-width:0; }
+  .lt-done{ font-size:11px; color:var(--amber); font-weight:700; }
+  /* 押せる物には最小の高さ + flex-shrink:0(flexに潰させない)。
+     高さはデイリーの受け取るボタンの実寸(約30px)を下限として明文化 */
+  .lt-claim-btn{ min-height:30px; flex-shrink:0; }
+  .lt-claim-btn:disabled{ opacity:0.4; cursor:default; }
 
   /* ===== 遠征 =====
      枠は横並び(最大3)。1画面に収める前提なので縦に積まない。 */
@@ -3560,26 +3583,25 @@
   .rankrp-chip b.up{ color:#7fe3a8; }
   .rankrp-chip b.dn{ color:#ff9a9a; }
   .rankrp-more{ font-size:9px; color:var(--ink-dim); }
-  #rankingList .rank-empty, #myStatsByElement .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
+  #rankingList .rank-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px; }
 
   #myStatsScreen{
     justify-content:flex-start; padding-top:20px; padding-bottom:16px;
     display:flex; flex-direction:column; align-items:center;
   }
+  /* 「モンスター別」の右列は撤去(個体の記録はマスモン詳細の「あゆみ」へ)。
+     残った1列を少し広げて、通算の記録を3列のグリッドで見せる */
   #myStatsColumns{
     display:flex; gap:28px; align-items:stretch; justify-content:center;
     width:min(calc(94 * var(--vw)),860px); margin-top:6px;
     flex:1 1 auto; min-height:0;
   }
   #myStatsLeftCol{
-    display:flex; flex-direction:column; align-items:center; flex:0 0 auto; width:280px;
+    display:flex; flex-direction:column; align-items:center; flex:0 1 auto;
+    width:min(calc(94 * var(--vw)), 560px);
     min-height:0;
   }
-  #myStatsRightCol{
-    display:flex; flex-direction:column; align-items:center; flex:1 1 auto; min-width:0;
-    min-height:0;
-  }
-  #myStatsTitle.mystat-col-title, #myMonstersTitle.mystat-col-title{
+  #myStatsTitle.mystat-col-title{
     font-size:14px; text-shadow:none; flex-shrink:0;
   }
   #myStatsModeTabs{ display:flex; gap:8px; margin-top:8px; flex-shrink:0; }
@@ -3589,7 +3611,7 @@
   }
   .mystat-mode-tab.active{ color:#1a1306; background:var(--amber); border-color:var(--amber); }
   #myStatsOverall{
-    display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; width:100%;
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:10px; width:100%;
     overflow-y:auto; min-height:0; padding-bottom:4px;
     touch-action:pan-y; -webkit-overflow-scrolling:touch;
   }
@@ -3599,28 +3621,8 @@
   }
   .mystat-box .mv{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--amber); }
   .mystat-box .ml{ font-size:8px; letter-spacing:1.2px; color:var(--ink-dim); }
-  #myStatsByElement{
-    margin-top:10px; width:100%; flex:1 1 auto; min-height:0; overflow-y:scroll;
-    display:grid; grid-template-columns:1fr 1fr; gap:6px; padding-right:10px; padding-bottom:4px;
-    align-content:start;
-    touch-action:pan-y; -webkit-overflow-scrolling:touch;
-  }
-  #myStatsByElement .rank-empty{ grid-column:1 / -1; }
-  #myStatsByElement::-webkit-scrollbar{ width:12px; }
-  #myStatsByElement::-webkit-scrollbar-track{ background:rgba(255,255,255,0.04); border-radius:6px; }
-  #myStatsByElement::-webkit-scrollbar-thumb{ background:var(--amber); border-radius:6px; border:2px solid #04060a; }
-  #myStatsByElement{ scrollbar-width:auto; scrollbar-color:var(--amber) rgba(255,255,255,0.04); }
-  .mystat-elem-row{
-    display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 10px; background:rgba(255,255,255,0.04);
-    border-radius:6px; border:1px solid var(--panel-line); flex-shrink:0;
-  }
-  .mystat-elem-row .ei{ width:24px; height:24px; border-radius:50%; object-fit:cover; background:rgba(255,255,255,0.08); }
-  .mystat-elem-row .en{ text-align:center; font-size:12px; font-weight:600; margin-top:1px; }
-  .mystat-elem-row .en-mastermon{
-    text-align:center; font-size:10px; font-weight:700; color:#ffd76a; margin-top:-1px;
-    text-shadow:0 0 4px rgba(255,183,10,0.5);
-  }
-  .mystat-elem-row .ev-line{ width:100%; text-align:left; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--ink); }
+  /* モンスター別の記録の行き先(あゆみ)への一言。スクロールの外(グリッドの下)で常に見える */
+  .mystat-jump-note{ flex-shrink:0; font-size:10px; color:var(--ink-dim); text-align:center; padding:4px 0 0; }
 
   /* ---------- MASTERMON (マスモン) ---------- */
   /* カルーセル + 詳細(モンスター選択と同じ作り)。背景は不透明にして裏のHUDを透かさない */
@@ -3697,6 +3699,38 @@
   .mm-menu-btn-desc{
     font-family:'Rajdhani',sans-serif; font-weight:600; letter-spacing:0;
     font-size:clamp(8.5px, calc(2.3 * var(--vh)), 10.5px); line-height:1.35; color:var(--ink-dim);
+  }
+  /* ---------- あゆみ(戦歴)タブ ---------- */
+  /* 記録カードはマイ記録の .mystat-box を流用して3列。読む物なのでスクロール枠の中でよい(R2)。
+     文字サイズはすべて既存の値(.mystat-box / .mm-menu-btn-*)をそのまま使う */
+  .mm-ayumi-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .mm-ayumi-note{
+    font-family:'Rajdhani',sans-serif; font-weight:600; color:var(--ink-dim);
+    font-size:clamp(8.5px, calc(2.3 * var(--vh)), 10.5px); line-height:1.35; margin:0 0 8px;
+  }
+  /* 覇者称号の帯。未獲得は薄く条件だけ見せ、獲得済みは金色で光らせる */
+  .mm-ayumi-lord{
+    margin-top:8px; padding:8px 10px; border-radius:8px; text-align:center;
+    font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px;
+    font-size:clamp(12px, calc(3.3 * var(--vh)), 15px);
+    color:var(--ink-dim); background:rgba(255,255,255,0.04); border:1px dashed var(--panel-line);
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+  }
+  .mm-ayumi-lord.is-earned{
+    color:#1a1306; border:1px solid rgba(255,215,120,0.9);
+    background:linear-gradient(180deg,#ffd76a,#f4c430);
+    box-shadow:0 0 12px -3px rgba(255,206,120,0.8);
+  }
+  /* シェアはスクロールの外(R2)。トレーニングの .ml-stat-foot と同じ流儀の下部固定行。
+     stickyにしない(貼ると入りきらない記録カードが黙ってボタンの下に隠れる) */
+  .mm-ayumi-foot{
+    position:static; z-index:2; display:flex; flex:0 0 auto;
+    margin:0; padding:8px 14px 2px 0; background:#0a1018;
+    border-top:1px solid rgba(255,255,255,0.07);
+  }
+  .mm-ayumi-foot .mastermon-execute-btn{
+    width:100%; min-height:var(--tap-pick); flex-shrink:0; white-space:nowrap;
+    display:flex; align-items:center; justify-content:center; gap:6px;
   }
   .mm-back-btn{
     flex-shrink:0; padding:6px 12px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px;

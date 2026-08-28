@@ -128,7 +128,8 @@ const PANELS = [
   { id:'bagOverlay',        name:'バッグ(称号)',   open:[{btn:'openBagBtn'},{sel:'.bag-tab',idx:1}], noScroll:['bagOverlay'] },
   { id:'galleryOverlay',    name:'ギャラリー',     open:[{btn:'openGalleryBtn'}], noScroll:['galleryOverlay'] },
   { id:'missionOverlay',    name:'ミッション',     open:[{btn:'openMissionBtn'}], noScroll:['missionOverlay'] },
-  { id:'missionOverlay',    name:'ミッション(シーズン)', open:[{btn:'openMissionBtn'},{sel:'.mission-tab',idx:2}], noScroll:['missionOverlay'] },
+  { id:'missionOverlay',    name:'ミッション(シーズン)', open:[{btn:'openMissionBtn'},{sel:'.mission-tab',idx:1}], noScroll:['missionOverlay'] },
+  { id:'missionOverlay',    name:'ミッション(累計)', open:[{btn:'openMissionBtn'},{sel:'.mission-tab',idx:2}], noScroll:['missionOverlay'] },
   { id:'expeditionOverlay', name:'遠征',           open:[{btn:'openExpeditionBtn'}], noScroll:['expeditionOverlay'] },
   { id:'changelogOverlay',  name:'更新履歴',       open:[{btn:'changelogBtn'}], noScroll:['changelogOverlay'] },
   { id:'helpOverlay',       name:'ヘルプ',         open:[{btn:'headerHelpBtn'}], noScroll:['helpOverlay'] },
@@ -145,6 +146,7 @@ const PANELS = [
   { id:'mastermonScreen', name:'マスモン詳細(トレーニング)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','training']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(編集)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','edit']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(着せ替え)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','dressup']}], noScroll:['mastermonDetailPanel'] },
+  { id:'mastermonScreen', name:'マスモン詳細(あゆみ)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','ayumi']}], noScroll:['mastermonDetailPanel'] },
 ];
 
 /* ===== 例外リスト(意図的に許しているもの) =====

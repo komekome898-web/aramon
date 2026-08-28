@@ -6849,6 +6849,10 @@ function buildMastermonShare(key){
   const chips = [];
   if(rb > 0) chips.push(`★ 転生${rb}`);
   chips.push(species);
+  /* あゆみ(戦歴)もカードへ入れる。1試合もしていない子は出さない(0戦は自慢にならない)。
+     チップが最大4つになるぶんは描画側(render.jsの_shareDrawChips)が上限5まで受ける */
+  const rec = mmRec(mm);
+  if(rec && rec.m > 0){ chips.push(`⚔️${rec.m}戦`); chips.push(`🏆${rec.w}勝`); }
   const spec = {
     ...SHARE_ACCENT.mm,
     player: sharePlayerName(),
@@ -6861,11 +6865,14 @@ function buildMastermonShare(key){
     chips,
   };
   // ステータスと適正は画像側のバーで見せているので、文面では繰り返さない
-  const text = buildShareText([
+  const lines = [
     `マスモン「${mm.name}」Lv.${mm.level}${rb>0?` ★転生${rb}`:''}`,
     skinName ? `${species} ／ スキン「${skinName}」` : species,
-    '自慢のマスモンステータスを見て！',
-  ], ['#マスモン']);
+  ];
+  // あゆみ(戦歴)の1行。上限超過時は末尾から削られるので、飾りの行より前に置く
+  if(rec && rec.m > 0) lines.push(`ともに${rec.m}戦・チャンピオン${rec.w}回・通算${rec.k}キル`);
+  lines.push('自慢のマスモンステータスを見て！');
+  const text = buildShareText(lines, ['#マスモン']);
   return { spec, text };
 }
 /* スキン獲得(SSR獲得画面・ガチャ結果の両方から使う)。
@@ -7097,6 +7104,7 @@ function titleConditionMet(t, cum){
     case 'ssr':         return ownsAnySsr();
     case 'tutorial':    return (typeof tutorialIsDone==='function') && tutorialIsDone();
     case 'allElem':     return Object.keys(ELEMENTS).every(k=> cum.elemPlayed.has(k));
+    case 'lifetimeLord': return (typeof lifetimeLordEarned==='function') && lifetimeLordEarned(t.element);
     default:            return false;
   }
 }
@@ -7191,6 +7199,7 @@ function updateDailyBadge(){
   const claimable = DAILY_MISSIONS.some(m=>{ const st=d.missions[m.id]; return st && st.progress>=m.target && !st.claimed; });
   dot.classList.toggle('hidden', !claimable);
   updateMissionBadge();
+  updateLifetimeBadge(); // ロビー表示のたびに呼ばれる導線に累計も乗せる
 }
 function renderDailyLoginTrack(){
   const el = document.getElementById('dailyLoginTrack');
@@ -7246,13 +7255,103 @@ function renderDailyMissions(){
     });
   });
 }
-// ミッション: デイリー/シーズン1のタブ切替(バッグの.bag-tabと同じパターン)
+/* 累計ミッション(タブ「累計」)。**データは data.js の LIFETIME_MISSIONS / mm.rec が正**で、
+   ここは表示と受け取りだけ。受け取り状況は mm.mis[key] = 受け取り済みの段数(1始まり)。
+   行の作り・文字サイズはデイリーのミッション行(.daily-*)をそのまま使う。 */
+function renderLifetimeMissions(){
+  const el = document.getElementById('lifetimeMissionList');
+  if(!el || typeof LIFETIME_MISSIONS==='undefined') return;
+  /* 受け取りのたびに丸ごと描き直すので、スクロール位置を控えて戻す。
+     戻さないと、下のカードで受け取った瞬間に一覧の先頭へ飛ばされる。
+     スクロールする箱はパネル(.mission-box)側。 */
+  const scrollBox = el.closest('.mission-box');
+  const savedScroll = scrollBox ? scrollBox.scrollTop : 0;
+  const data = loadMastermons();
+  // 未登録の種族は出さない(進めようがない)。1体も居なければ登録への案内だけ
+  const keys = Object.keys(ELEMENTS).filter(k=> data[k]);
+  if(!keys.length){
+    el.innerHTML = '<div class="lt-empty">マスモンを登録すると累計ミッションが始まります</div>';
+    return;
+  }
+  el.innerHTML = keys.map(key=>{
+    const mm = data[key];
+    // アイコンはマイ記録と同じ流儀: 装備スキンがあればその姿、無ければ既定画像
+    const equippedSkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
+    const skinUrl = (equippedSkin && typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(equippedSkin) : null;
+    const iconImg = skinUrl
+      ? `<img class="lt-mm-ico" src="${skinUrl}" alt="">`
+      : `<img class="lt-mm-ico" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">`;
+    const lord = (typeof lifetimeMissionAllComplete==='function' && lifetimeMissionAllComplete(mm))
+      ? '<span class="lt-lord-badge">👑</span>' : '';
+    const rows = LIFETIME_MISSIONS.map(def=>{
+      const done = lifetimeClaimedTier(mm, def.key);
+      const claimable = lifetimeClaimableTier(mm, def);
+      const allDone = done >= def.tiers.length;
+      const next = allDone ? null : def.tiers[done];
+      const value = def.value(mm);
+      const pct = allDone ? 100 : Math.min(100, Math.round(value/next.n*100));
+      const prog = allDone
+        ? '<span class="lt-done">達成🎉</span>'
+        : `<span class="daily-progress-num">${Math.min(value,next.n)} / ${next.n}${def.unit?' '+def.unit:''}</span>`;
+      const reward = allDone ? '' : `<div class="daily-mission-reward">報酬 ${rewardText(next.reward)}</div>`;
+      const action = allDone ? ''
+        : `<div class="daily-mission-action"><button class="daily-claim-btn lt-claim-btn" data-mm="${key}" data-k="${def.key}" ${claimable?'':'disabled'}>受け取る</button></div>`;
+      return `<div class="lt-row ${claimable?'ready':''}">
+        <div class="lt-row-info">
+          <div class="daily-mission-name">${def.icon} ${def.label}　${prog}</div>
+          <div class="daily-bar"><div class="daily-bar-fill" style="width:${pct}%"></div></div>
+          ${reward}
+        </div>
+        ${action}
+      </div>`;
+    }).join('');
+    return `<div class="lt-card">
+      <div class="lt-card-head">${iconImg}<span class="lt-mm-name">${mm.name}</span><span class="lt-mm-lv">Lv.${mm.level}</span>${lord}</div>
+      <div class="lt-rows">${rows}</div>
+    </div>`;
+  }).join('');
+  if(scrollBox) scrollBox.scrollTop = savedScroll;
+  el.querySelectorAll('.lt-claim-btn:not([disabled])').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const def = LIFETIME_MISSIONS.find(d=> d.key===btn.dataset.k);
+      const all = loadMastermons();
+      const mm = all[btn.dataset.mm];
+      if(!def || !mm) return;
+      const tier = lifetimeClaimableTier(mm, def);
+      if(!tier) return;
+      const reward = def.tiers[tier-1].reward;
+      if(!mm.mis) mm.mis = {};
+      mm.mis[def.key] = tier;
+      grantReward(reward);
+      saveMastermons(all);
+      updateAccountBar();
+      if(typeof pushToast==='function') pushToast(`報酬 ${rewardText(reward)} を受け取った！`);
+      // 全段そろったら覇者称号が解放される(判定は titleConditionMet の lifetimeLord)
+      const newly = (typeof checkTitleUnlocks==='function') ? checkTitleUnlocks() : [];
+      newly.forEach(t=>{ if(typeof pushToast==='function') pushToast(`👑 称号「${t.name}」を獲得！`); });
+      renderLifetimeMissions();
+      updateLifetimeBadge();
+    });
+  });
+}
+// 累計ミッションに受け取れる段が1つでもあれば「累計」タブへドット
+function updateLifetimeBadge(){
+  const dot = document.getElementById('missionTabLifetimeDot');
+  if(!dot || typeof LIFETIME_MISSIONS==='undefined' || typeof loadMastermons!=='function') return;
+  const data = loadMastermons();
+  const claimable = Object.keys(data).some(k=> LIFETIME_MISSIONS.some(def=> lifetimeClaimableTier(data[k], def) > 0));
+  dot.classList.toggle('hidden', !claimable);
+  updateMissionBadge();
+}
+// ミッション: デイリー/シーズン1/累計のタブ切替(バッグの.bag-tabと同じパターン)
 function missionShowTab(tab){
   document.querySelectorAll('.mission-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.getElementById('missionDailyPane').classList.toggle('hidden', tab!=='daily');
   document.getElementById('missionSeasonPane').classList.toggle('hidden', tab!=='season');
+  document.getElementById('missionLifetimePane').classList.toggle('hidden', tab!=='lifetime');
   if(tab==='daily'){ renderDailyLoginTrack(); renderDailyMissions(); }
   else if(tab==='season'){ renderSeasonOverlay(); }
+  else if(tab==='lifetime'){ renderLifetimeMissions(); }
 }
 document.querySelectorAll('.mission-tab').forEach(tab=>{
   tab.addEventListener('click', ()=> missionShowTab(tab.dataset.tab));
@@ -7655,13 +7754,16 @@ function updateSeasonBadge(){
   dot.classList.toggle('hidden', !claimable);
   updateMissionBadge();
 }
-// デイリー・シーズンどちらかに未受取があれば、ロビーの「ミッション」ボタン側のドットを点ける
+// デイリー・シーズン・累計のどれかに未受取があれば、ロビーの「ミッション」ボタン側のドットを点ける
 function updateMissionBadge(){
   const dot = document.getElementById('missionDot');
   if(!dot) return;
   const dailyDot = document.getElementById('missionTabDailyDot');
   const seasonDot = document.getElementById('missionTabSeasonDot');
-  const claimable = (dailyDot && !dailyDot.classList.contains('hidden')) || (seasonDot && !seasonDot.classList.contains('hidden'));
+  const lifetimeDot = document.getElementById('missionTabLifetimeDot');
+  const claimable = (dailyDot && !dailyDot.classList.contains('hidden'))
+                 || (seasonDot && !seasonDot.classList.contains('hidden'))
+                 || (lifetimeDot && !lifetimeDot.classList.contains('hidden'));
   dot.classList.toggle('hidden', !claimable);
 }
 function seasonClaim(t){
@@ -8046,8 +8148,8 @@ const MM_MENU_ITEMS = [
   { tab:'info',     icon:'📊', label:'詳細情報',     desc:'ステ倍率・特性・状態変化・技の詳しいデータを見る' },
   { tab:'training', icon:'💪', label:'トレーニング', desc:'チケットを使ってステータスを上げる' },
   { tab:'dressup',  icon:'👕', label:'着せ替え',     desc:'スキンを変更し見た目とオーラを変える' },
-  // タブを開かずその場でシェア画面を出すので、tabではなくactionで区別する(転生ボタンと同じ形)
-  { action:'share', icon:'<span class="share-ico"></span>', label:'SNSでシェア', desc:'このマスモンの育ち具合を画像にしてSNSへ投稿する' },
+  // シェアは「あゆみ」タブの中に統合した(記録を見てからそのまま投稿できる)
+  { tab:'ayumi', icon:'📖', label:'あゆみ', desc:'この子と歩んだ記録を見る・SNSでシェア' },
 ];
 function buildMastermonMenuHtml(mm){
   const items = MM_MENU_ITEMS.map(m=>`
@@ -8115,6 +8217,36 @@ function buildMastermonMenuHtml(mm){
   const aw = awakenMenuBtnHtml(mm);
   if(aw) (awakenReadyFor(mm) ? items.unshift(aw) : items.push(aw));
   return `<div class="mm-menu-list">${items.join('')}</div>`;
+}
+/* 「あゆみ」画面: この子と歩んだ記録(mmRec)。カードはマイ記録の .mystat-box を流用する。
+   シェアボタンはここには入れない ―― スクロールの外の下部固定行(renderMastermonDetailの
+   ayumiFootHtml)が持つ(R2: 操作はスクロールの外)。 */
+function buildMastermonAyumiHtml(key, mm){
+  const rec = mmRec(mm);
+  const species = ELEMENTS[key] ? ELEMENTS[key].label : key;
+  const fmtD = (ts)=>{ if(!ts) return '—'; const d = new Date(ts); return `${d.getMonth()+1}/${d.getDate()}`; };
+  const rb = mastermonRebirthCount(mm);
+  const lord = !!((loadTitles().unlocked || {})['lord_'+key]);
+  const box = (label, value)=>`<div class="mystat-box"><div class="ml">${label}</div><div class="mv">${value}</div></div>`;
+  // 旧個体(since=0)は記録がここから始まると明示する(0が並ぶのを不具合と誤解させない)
+  const oldNote = rec.since ? '' : `<div class="mm-ayumi-note">この子の記録は今日からはじまります</div>`;
+  return `
+    ${oldNote}
+    <div class="mm-ayumi-grid">
+      ${box('出会った日', fmtD(rec.since))}
+      ${box('ともに戦った試合', `${rec.m}回`)}
+      ${box('チャンピオン', `${rec.w}回`)}
+      ${box('初チャンピオン', fmtD(rec.fw))}
+      ${box('通算キル', rec.k)}
+      ${box('通算ダメージ', Number(rec.dmg||0).toLocaleString())}
+      ${box('最高キル', rec.bk)}
+      ${box('最高ダメージ', Number(rec.bd||0).toLocaleString())}
+      ${box('トレーニング', `${rec.tr}回`)}
+      ${box('転生', rb >= REBIRTH_MAX ? `👑 ${rb}回` : `${rb}回`)}
+    </div>
+    <div class="mm-ayumi-lord${lord ? ' is-earned' : ''}">${
+      lord ? `👑 ${species}の覇者` : `👑 ${species}の覇者 ── 累計ミッション達成で獲得`
+    }</div>`;
 }
 /* 覚醒ボタン。**条件を満たしていなくても隠さず、「あと何が要るか」を出す。**
    長期の目標として一番効くのがこの表示なので、押せないときも進捗が見えるようにしている。
@@ -8974,18 +9106,27 @@ function renderMastermonDetail(key){
       <button id="mastermonExecuteTrainBtn" class="mastermon-execute-btn mm-stat-exec-btn${(!mastermonSelectedTraining||mm.tickets<=0)?' is-blocked-btn':''}">トレ実行🎫${mm.tickets}枚</button>` : '';
   // 着せ替え画面のみステータス列を表示しない(プレビューを大きく取るため)。
   // それ以外はモンスター一覧と同じSTATUSセクション(バー+説明2行)にそろえる
-  // 着せ替え(プレビューを大きく取る)と詳細情報(グリッド内にSTATUSを含む)は左の列を出さない
-  const statsColHtml = (mastermonDetailTab==='dressup' || mastermonDetailTab==='info')
+  // 着せ替え(プレビューを大きく取る)・詳細情報(グリッド内にSTATUSを含む)・
+  // あゆみ(記録を広く見せる)は左の列を出さない
+  const statsColHtml = (mastermonDetailTab==='dressup' || mastermonDetailTab==='info' || mastermonDetailTab==='ayumi')
     ? '' : caroStatusSecHtml(mm, apt, preview, isTrainTab ? '適正 / 効果' : '育成後 / 適正',
         isTrainTab ? { inlineDesc:true, footHtml:`<div class="ml-stat-foot">${trainExecBtnHtml}</div>` } : null);
 
-  const TAB_TITLES = { info:'詳細情報', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え' };
+  const TAB_TITLES = { info:'詳細情報', training:'トレーニング', edit:'マスモン編集', dressup:'着せ替え', ayumi:'あゆみ' };
   let contentHtml;
   if(mastermonDetailTab==='training') contentHtml = buildMastermonTrainingHtml(mm);
   else if(mastermonDetailTab==='edit') contentHtml = buildMastermonEditHtml(mm);
   else if(mastermonDetailTab==='dressup') contentHtml = buildMastermonSkinHtml(key);
   else if(mastermonDetailTab==='info') contentHtml = buildMastermonInfoHtml(key, mm, el);
+  else if(mastermonDetailTab==='ayumi') contentHtml = buildMastermonAyumiHtml(key, mm);
   else contentHtml = buildMastermonMenuHtml(mm);  // 初期はメニュー(Lv100なら転生も並ぶ)
+
+  /* あゆみのシェアボタンはスクロールの外(R2)。トレーニングの .ml-stat-foot と同じ流儀で、
+     中身の欄の下に position:static の固定行として置く(stickyで中身の上へ貼らない) */
+  const ayumiFootHtml = (mastermonDetailTab==='ayumi') ? `
+          <div class="mm-ayumi-foot">
+            <button id="mmAyumiShareBtn" class="mastermon-execute-btn"><span class="share-ico"></span> SNSでシェア</button>
+          </div>` : '';
 
   // ヘッダーはステータスの上まで全幅で伸ばす(モンスター一覧の画面と同じ形)。
   // タブを開いているときだけ戻るボタンを出す
@@ -9003,7 +9144,7 @@ function renderMastermonDetail(key){
         <div class="mm-content-wrap">
           <div class="mm-subview-content">${contentHtml}</div>
           <div class="mm-scrollbar hidden"><div class="mm-scrollbar-thumb"></div></div>
-        </div>
+        </div>${ayumiFootHtml}
       </div>
     </div>`;
 
@@ -9039,6 +9180,15 @@ function renderMastermonDetail(key){
     mastermonPreviewSkin = null;
     renderMastermonDetail(key);
   });
+
+  if(mastermonDetailTab==='ayumi'){
+    // シェアは旧メニューの action==='share' と同じ処理(あゆみに統合)
+    const shareBtn = document.getElementById('mmAyumiShareBtn');
+    if(shareBtn) shareBtn.addEventListener('click', ()=>{
+      const s = buildMastermonShare(key);
+      if(s) openShareOverlay(s.spec, s.text); else pushToast('このマスモンをシェアできませんでした');
+    });
+  }
 
   if(mastermonDetailTab==='edit'){
     document.getElementById('mastermonRenameBtn').addEventListener('click', ()=>{
@@ -9840,6 +9990,8 @@ function handleMastermonPostMatch(isWin, overrides){
     const mm = data[game.selectedMastermonKey];
     if(mm){
       const killExpBonus = Math.round(player.mastermonKillExpBonus||0);
+      // 戦歴(あゆみ): EXPと同じ試合1回ぶんを記録する。このあとの saveMastermons で一緒に保存される
+      mmRecordMatch(mm, { kills: player.kills, damage: dmgForExp, isWin: !!isWin });
       // ミューテーター「報酬2倍」(非公開中は常に1)。ゴールド/ダイヤと同様EXPにも反映
       const mutRewardMultExp = (typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1;
       const result = awardMastermonExp(mm, {
@@ -9895,8 +10047,11 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
   let toastExpText = '';
   if(pendingRegisterMatchStats){
     const mm = data[elementKey];
-    const result = awardMastermonExp(mm, pendingRegisterMatchStats);
+    const st = pendingRegisterMatchStats;   // null に戻す前に控える(下の戦歴の記録が読む)
+    const result = awardMastermonExp(mm, st);
     pendingRegisterMatchStats = null;
+    // 戦歴(あゆみ): 登録のきっかけになった試合も1試合として記録する
+    mmRecordMatch(mm, { kills: st.kills, damage: st.damage, isWin: st.champion });
     toastExpText = ` EXP+${result.expGain}`;
     let infoText = `${mm.name} EXP+${result.expGain}`;
     if(result.levelsGained>0) infoText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
@@ -10623,43 +10778,23 @@ function renderMyStats(){
   const rk = (typeof loadRank==='function') ? loadRank() : null;
   const rkNow = rk ? rankProgress(rk.rp) : null;
   const rkBest = rk ? (RANKS.find(x=>x.id===rk.best) || RANKS[0]) : null;
+  /* 「モンスター別」のセクションは撤去した(2026-08-28)。個体の記録はマスモン詳細の
+     「あゆみ」タブが引き継ぐ。**stats.byElement 自体は消さない**(称号の判定が読む)。
+     空いたぶん、既にある値から出せる通算の記録(勝率・キル・与ダメージ)を足した。 */
+  const winRate = (stats.totalMatches>0) ? ((stats.totalWins||0) / stats.totalMatches * 100) : 0;
   overallEl.innerHTML = `
     ${rkNow ? `<div class="mystat-box"><div class="ml">段位（今シーズン）</div><div class="mv" style="color:${rkNow.cur.color}">${rkNow.cur.icon} ${rkNow.cur.name}<span class="mystat-rank-rp">${rk.rp} RP${rkNow.next?`／次まで ${rkNow.next.rp - rk.rp}`:''}</span></div></div>` : ''}
     ${rkBest ? `<div class="mystat-box"><div class="ml">到達した最高段位</div><div class="mv" style="color:${rkBest.color}">${rkBest.icon} ${rkBest.name}</div></div>` : ''}
     <div class="mystat-box"><div class="ml">通算マッチ数</div><div class="mv">${stats.totalMatches||0}</div></div>
     <div class="mystat-box"><div class="ml">通算勝利数</div><div class="mv">${stats.totalWins||0}</div></div>
+    <div class="mystat-box"><div class="ml">勝率</div><div class="mv">${winRate.toFixed(1)}%</div></div>
+    <div class="mystat-box"><div class="ml">通算キル数</div><div class="mv">${stats.totalKills||0}</div></div>
+    <div class="mystat-box"><div class="ml">通算与ダメージ</div><div class="mv">${Number(stats.totalDamage||0).toLocaleString()}</div></div>
     <div class="mystat-box"><div class="ml">最高キル数</div><div class="mv">${stats.bestKills||0} ${statTitleChip('matchKills', stats.bestKills||0)}</div></div>
     <div class="mystat-box"><div class="ml">K/D</div><div class="mv">${derived.kd.toFixed(2)}</div></div>
     <div class="mystat-box"><div class="ml">最高ダメージ</div><div class="mv">${stats.bestDamage||0} ${statTitleChip('matchDamage', stats.bestDamage||0)}</div></div>
     <div class="mystat-box"><div class="ml">平均ダメージ</div><div class="mv">${Math.round(derived.avgDamage)}</div></div>
   `;
-  const byElEl = document.getElementById('myStatsByElement');
-  if(!stats.totalMatches){
-    byElEl.innerHTML = '<div class="rank-empty">まだ記録がありません。1試合プレイすると記録されます</div>';
-    return;
-  }
-  const ownMastermons = loadMastermons();
-  const rows = Object.keys(ELEMENTS).map(key=>{
-    const el = ELEMENTS[key];
-    const es = (stats.byElement && stats.byElement[key]) || { bestDamage:0, bestKills:0, matches:0 };
-    const mm = ownMastermons[key];
-    const mmLine = mm ? `<span class="en-mastermon">★ ${mm.name} Lv.${mm.level}</span>` : '';
-    // アイコンは、そのモンスターに現在装備中のスキンがあればそれを使う(無ければデフォルト画像)
-    const equippedSkin = (typeof getEquippedSkin==='function') ? getEquippedSkin(key) : null;
-    const skinUrl = (equippedSkin && typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(equippedSkin) : null;
-    const iconImg = skinUrl
-      ? `<img class="ei" src="${skinUrl}" alt="">`
-      : `<img class="ei" src="${imgSrcFor(`monsters/${key}`)}" data-ext-idx="0" alt="" onerror="handleMonsterImgError(this, 'monsters/${key}')">`;
-    return `<div class="mystat-elem-row">
-      ${iconImg}
-      <span class="en">${el.label}</span>
-      ${mmLine}
-      <span class="ev-line">使用回数　${es.matches||0}回</span>
-      <span class="ev-line">最高キル　${es.bestKills||0} ${statTitleChip('matchKills', es.bestKills||0)}</span>
-      <span class="ev-line">最高ダメージ　${es.bestDamage||0} ${statTitleChip('matchDamage', es.bestDamage||0)}</span>
-    </div>`;
-  });
-  byElEl.innerHTML = rows.join('');
 }
 document.getElementById('viewMyStatsBtn').addEventListener('click', ()=>openMyStatsScreen(false));
 // レイドのリザルトから直接レイドランキングへ

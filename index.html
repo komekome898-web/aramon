@@ -821,6 +821,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 </div>
 
 <!-- MY STATS -->
+<!-- 「モンスター別(MY MONSTERS)」の列は撤去。個体の記録はマスモン詳細の「あゆみ」タブへ -->
 <div id="myStatsScreen" class="resultScreen hidden">
   <div id="myStatsColumns">
     <div id="myStatsLeftCol">
@@ -830,10 +831,8 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
         <button class="mystat-mode-tab" data-mode="multi">マルチ</button>
       </div>
       <div id="myStatsOverall"></div>
-    </div>
-    <div id="myStatsRightCol">
-      <div class="rank mystat-col-title" id="myMonstersTitle">MY MONSTERS</div>
-      <div id="myStatsByElement"></div>
+      <!-- スクロールの外に置き、どの端末でも必ず見える(行き先の案内が隠れないように) -->
+      <div class="mystat-jump-note">モンスターごとの記録はマスモン詳細の📖あゆみへ</div>
     </div>
   </div>
   <button id="closeMyStatsBtn">閉じる</button>
@@ -1103,6 +1102,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <div class="mission-tabs">
       <button class="mission-tab active" data-tab="daily">デイリー<span id="missionTabDailyDot" class="notif-dot hidden"></span></button>
       <button class="mission-tab" data-tab="season">シーズン1<span id="missionTabSeasonDot" class="notif-dot hidden"></span></button>
+      <button class="mission-tab" data-tab="lifetime">累計<span id="missionTabLifetimeDot" class="notif-dot hidden"></span></button>
     </div>
     <div id="missionDailyPane" class="mission-pane">
       <div class="daily-section-title">🎁 ログインボーナス（毎日ログインで受け取り）</div>
@@ -1122,6 +1122,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div id="seasonCalendar" class="s1prev-calendar"></div>
       <div class="s1prev-sub-title">ℹ️ 曜日ごとの変則ルール</div>
       <div id="seasonLegend" class="s1prev-legend"></div>
+    </div>
+    <!-- 累計(マスモンごとの通算ミッション。中身は ui.js の renderLifetimeMissions が描く) -->
+    <div id="missionLifetimePane" class="mission-pane hidden">
+      <div class="season-note">マスモンごとの通算記録で進むミッション。すべて達成すると、その子の「覇者」称号を獲得。</div>
+      <div id="lifetimeMissionList" class="lt-list"></div>
     </div>
   </div>
 </div>
