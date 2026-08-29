@@ -7170,7 +7170,7 @@ function renderResultExpInfo(){
        `Lv+2`(この列の主役の次に強い)、右を `トレーニングチケット2枚` にする。
        レベルが上がらなかった試合は行ごと出さない ―― 「Lv+0」は伝える中身が無い。 */
     if(d.levelsGained > 0){
-      row('Lv+' + rsNum(d.levelsGained), 'トレーニングチケット' + rsNum(d.levelsGained) + '枚', false, false, true);
+      row('Lv+' + rsNum(d.levelsGained), 'トレーニングチケット+' + rsNum(d.levelsGained) + '枚', false, false, true);
     }
   }
 }
