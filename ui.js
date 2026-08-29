@@ -6448,7 +6448,11 @@ function showResultNow(isWin, placement){
       meta.textContent = parts.join(' · ');
     }
   }
-  document.getElementById('resultRank').textContent = isWin ? '👑 WINNER' : ('#'+placement);
+  /* 【順位に絵文字を足さない】王冠の絵文字は端末が描く既製の絵なので、線の太さも彩度も
+     この画面(暗い面 + 金1色)と揃わず、いちばん大きい文字の隣で一点だけ浮く。
+     勝ちであることは特大の金文字・グロー・立ち絵の板の色で既に伝わっている。
+     ※ シェア画像(下の headline)は白地の別物なので、そちらは王冠を残す。 */
+  document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
   document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
   setResultDeathCause(isWin);   // 敗北時だけ「⚔ 〇〇 に倒された」/安置外/溶岩 の1行を添える
   /* チーム戦: 順位はチーム単位なので文言を「チーム順位」にし、小隊メンバー(名前・キル)を
