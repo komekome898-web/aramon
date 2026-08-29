@@ -206,6 +206,7 @@ function pushFindings(label, r){
   emit('重なり', r.overlap, x=>`${x.a}×${x.b}`, x=>`${x.a}×${x.b} ${x.px}px`);
   emit('スクロール発生', r.scrolls, x=>x.id, x=>`${x.id}が+${x.d}px`);
   emit('操作がスクロールの中で貼り付いている', r.sticky, x=>x.id, x=>`${x.id}(${x.box}の中)`);
+  emit('素のままのボタン', r.rawBtn, x=>x.id, x=>`${x.id}(見た目が当たっていない)`);
   if(r.spread){
     failures.push(`[左メニューが横へ広がった] ${label} — ${r.spread.cols}列(縦${r.spread.leftH}pxあり、2列に要るのは${r.spread.need}px)`);
     const ik = '[左メニューが横へ広がった] 縦は足りているのに列が増えた';
@@ -324,6 +325,19 @@ for(const dev of DEVICES){
         // 回転しているので「縦」は幅か高さのどちらか。小さい方が押しやすさを決める短辺
         const short = Math.min(r.width, r.height);
         if(short + 0.5 < floor) tooSmall.push({ id: el.id || el.className.toString().slice(0,40), got: Math.round(short*10)/10, floor });
+      }
+      /* 2d. **素のままのボタンが混じっていないか。**
+            見た目をIDの列挙で当てている場所へボタンを足すと、その列挙から漏れて
+            ブラウザ既定の灰色いボタンがそのまま出る(2026-08-28 リザルトの
+            「詳細 ›」「‹ もどる」で実際に起きた)。目で気づくまで分からないので機械で見る。
+            判定は**枠線の描き方**: 素のボタンだけが outset(スタイルを当てれば必ず変わる)。 */
+      const rawBtn = [];
+      for(const el of screenEl.querySelectorAll('button')){
+        if(!vis(el)) continue;
+        const bs = getComputedStyle(el);
+        if(bs.borderTopStyle === 'outset' || bs.borderBottomStyle === 'outset'){
+          rawBtn.push({ id: el.id || el.className.toString().trim().split(/\s+/)[0] || el.textContent.trim().slice(0,12) });
+        }
       }
       /* 2b. **画面の中の文字が1つでも読めなくなっていないか。**
             ボタン単位の当て物ではなく、ロビーの中で「自分で文字を持っている要素」を
@@ -449,7 +463,7 @@ for(const dev of DEVICES){
           }
         }
       }
-      return { outside, tooSmall, clipped, spill, overlap };
+      return { outside, tooSmall, clipped, spill, overlap, rawBtn };
     };
     /* スクロール量を測る。ロビーは「スクロールさせない」決まりなので、どの枠にも出てはいけない。
        待機部屋・部屋一覧のパネルは overflow-y:auto だが、**画面ぶんスクロールするのは作りの失敗**
