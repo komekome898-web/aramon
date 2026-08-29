@@ -211,6 +211,11 @@ function pushFindings(label, r){
   emit('スクロール発生', r.scrolls, x=>x.id, x=>`${x.id}が+${x.d}px`);
   emit('操作がスクロールの中で貼り付いている', r.sticky, x=>x.id, x=>`${x.id}(${x.box}の中)`);
   emit('素のままのボタン', r.rawBtn, x=>x.id, x=>`${x.id}(見た目が当たっていない)`);
+  if(r.primary && r.primary.length !== 1){
+    failures.push(`[主役の操作が${r.primary.length}個] ${label} — ${r.primary.length? r.primary.join(' / ') : '塗りのボタンが1つも無い'}`);
+    const ik = `[主役の操作が${r.primary.length}個] 塗りのボタンがちょうど1つでない`;
+    findingIndex.set(ik, (findingIndex.get(ik) || 0) + 1);
+  }
   if(r.spread){
     failures.push(`[左メニューが横へ広がった] ${label} — ${r.spread.cols}列(縦${r.spread.leftH}pxあり、2列に要るのは${r.spread.need}px)`);
     const ik = '[左メニューが横へ広がった] 縦は足りているのに列が増えた';
@@ -472,6 +477,39 @@ for(const dev of DEVICES){
     /* スクロール量を測る。ロビーは「スクロールさせない」決まりなので、どの枠にも出てはいけない。
        待機部屋・部屋一覧のパネルは overflow-y:auto だが、**画面ぶんスクロールするのは作りの失敗**
        (第3弾で待機画面が2.14画面ぶん出ていた)なので、同じ物差しで測って出す。 */
+    /* 【主役の操作がちょうど1つあるか】
+       リザルトでは「塗りつぶしたボタン」が**その画面で一番大事な操作**を表す約束にしてある。
+       ところがこれは目で見るまで分からず、実際に2回とも見た目の指定の**強さ比べ**で壊れた:
+         ・ボタン全体への指定が個別の指定より強く、金が一度も当たらず**0個**になった
+         ・登録待ちの画面で金が**3つ**並び、答えるべき操作が一番弱かった
+       どちらも「指定は書いてあるのに効いていない」ので、CSSを読んでも気付けない。
+       **描かれた結果**(塗りがあるか)を数えて、0個でも2個以上でも落とす。
+       塗りの判定は「背景に絵(グラデ)がある」か「背景色が透けていない(α≧0.5)」。
+       控えめなボタンは α=0.06〜0.08 なので、両者ははっきり分かれる。 */
+    window.__primaryActions = ()=>{
+      /* vis は __auditScreen の中のローカルなのでここからは見えない。同じ判定を持つ */
+      const seen = (el)=>{
+        const s = getComputedStyle(el);
+        if(s.display==='none' || s.visibility==='hidden' || s.opacity==='0') return false;
+        const r = el.getBoundingClientRect();
+        return r.width>0 && r.height>0;
+      };
+      const boxes = ['resultActions','mastermonRegisterPrompt'];
+      const out = [];
+      for(const bid of boxes){
+        const box = document.getElementById(bid);
+        if(!box || !seen(box)) continue;
+        for(const b of box.querySelectorAll('button')){
+          if(!seen(b)) continue;
+          const cs = getComputedStyle(b);
+          const hasArt = cs.backgroundImage && cs.backgroundImage !== 'none';
+          const m = (cs.backgroundColor||'').match(/rgba?\(([^)]+)\)/);
+          const a = m ? (m[1].split(',')[3] !== undefined ? parseFloat(m[1].split(',')[3]) : 1) : 0;
+          if(hasArt || a >= 0.5) out.push(b.id || b.textContent.trim().slice(0,10));
+        }
+      }
+      return out;
+    };
     window.__scrollOf = (ids)=>{
       const sc = (id)=>{ const el=document.getElementById(id); return el ? el.scrollHeight-el.clientHeight : -1; };
       const out = [];
@@ -818,6 +856,7 @@ for(const dev of DEVICES){
         await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
         const base = window.__auditScreen(o.id);
         base.scrolls = window.__scrollOf(o.scrollIds);
+        if(o.id === 'resultScreen') base.primary = window.__primaryActions();
         return base;
       }, { id:s.id, v, scrollIds:s.scrollIds });
       pushFindings(label, r);
