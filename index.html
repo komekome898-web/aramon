@@ -768,7 +768,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       </div>
     </div>
 
-    <!-- 右: 自分の統計3つ + 小隊。
+    <!-- 右: 自分の統計5つ + 小隊。
          統計は箱で囲まない(小さい灰のラベル + 大きい数値 + 下に細い罫) -->
     <div id="rsPerf" class="rs-panel rs-col">
       <div class="rs-col-head">戦績</div>
@@ -780,6 +780,16 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
           <div class="rs-in"><div class="lbl">撃破数</div><div class="num" id="statKills">0</div></div>
           <div class="rs-in"><div class="lbl">与ダメージ</div><div class="num" id="statDamage">0</div></div>
           <div class="rs-in"><div class="lbl">生存時間</div><div class="num" id="statTime">00:00</div></div>
+          <!-- 【あとから足した2行 ―― 2026-08-29(8巡目)】APEXの小隊カードは同じ形の縦長パネルを
+               5行の統計で最後まで使い切っている。こちらは3行で面積の半分が空気だったので2行足した。
+               **新しい計測は持ち込まない**(持つとマルチ同期・レイド・訓練場すべてに影響が出る) ――
+               どちらも試合ハイライト(pickHighlight)が既に読んでいる値をそのまま出す。
+               書き込むのは ui.js の showResultNow / raidShowResult(値の出どころは rsKillStreakText /
+               rsHpText の2つだけ)。
+               【.rs-stat-extra】チーム戦では小隊の行があるぶん統計が横1行に畳まれ、
+               5等分した幅には数値が入らないので、この2行だけ畳む(style.css の :has() の節)。 -->
+          <div class="rs-in rs-stat-extra"><div class="lbl">連続撃破</div><div class="num" id="statStreak">0</div></div>
+          <div class="rs-in rs-stat-extra"><div class="lbl">残りHP</div><div class="num" id="statHp">0%</div></div>
         </div>
       </div>
       <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->

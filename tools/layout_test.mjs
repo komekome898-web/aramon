@@ -726,11 +726,19 @@ for(const dev of DEVICES){
       const page2 = /-p2$/.test(variant);
       variant = variant.replace(/-p2$/, '');
       window.__showOnly('resultScreen');
-      document.getElementById('resultRank').textContent = '#1';
-      document.getElementById('resultSub').textContent = '勝利';
+      /* 【中身は実物と同じ経路で作る】以前ここは #resultRank へ直接「#1」と書くだけで、
+         **setResultPlacement() を1度も通していなかった。** そのせいで検査の間だけ
+         #resultScreen に data-rankcard が付かず、見出しが旧サイズ(46px)のまま測られ、
+         順位の札(#rsRankCard)は前の状態のまま残っていた ―― 実機と撮影は新サイズ。
+         「合格したのに壊れている」を3回生んだのと同じ穴なので、**判定を持つ関数を通す**。
+         見出しの文言も showResultNow / raidShowResult と同じ言葉にそろえる。 */
+      document.getElementById('resultRank').textContent = 'WINNER';
+      document.getElementById('resultSub').textContent = '生き残った！今夜はモン勝ちだ！';
       document.getElementById('statKills').textContent = '12';
       document.getElementById('statDamage').textContent = '18,420';
       document.getElementById('statTime').textContent = '12:34';
+      document.getElementById('statStreak').textContent = '3';
+      document.getElementById('statHp').textContent = '18%';
       document.getElementById('scoreSubmitStatus').textContent = 'スコアを送信しました';
       document.getElementById('resultCurrencyLine').textContent = '💰 320 コイン ／ 💎 4 ジェム を獲得';
       document.getElementById('resultMonsterIcon').src = 'monsters/phoenix.png';
@@ -746,13 +754,25 @@ for(const dev of DEVICES){
         raid:     { death:0, hl:0, squad:0, badges:1, mmInfo:1, reg:0, raid:1 },
       };
       const on = SHOW[variant] || SHOW.plain;
+      const scr = document.getElementById('resultScreen');
+      scr.className = 'resultScreen ' + ((variant === 'lose' || variant === 'register') ? 'lose' : 'win');
+      scr.dataset.tone = (variant === 'lose' || variant === 'register') ? 'lose' : 'win';
       if(variant === 'lose' || variant === 'register'){
-        document.getElementById('resultRank').textContent = '#7';
-        document.getElementById('resultSub').textContent = '撃破された';
+        document.getElementById('resultRank').textContent = '敗北';
+        document.getElementById('resultSub').textContent = '';
       }
       if(variant === 'raid'){
-        document.getElementById('resultRank').textContent = '🐉 討伐成功';
-        document.getElementById('resultSub').textContent = '与えたダメージ 128,400';
+        document.getElementById('resultRank').textContent = '討伐成功';
+        document.getElementById('resultSub').textContent = '自己ベスト更新！';
+      }
+      /* 順位の札(と、それに連動する見出しの級・色)は **setResultPlacement() が唯一の入口**。
+         レイドだけ順位が無いので null を渡して札ごと畳む ―― 札が出る場面と出ない場面の
+         両方を、実機とまったく同じ姿で測る。チーム戦は順位がチーム単位(母数もチーム数)。 */
+      if(typeof setResultPlacement === 'function'){
+        const lost = (variant === 'lose' || variant === 'register');
+        if(variant === 'raid') setResultPlacement(null);
+        else if(on.squad) setResultPlacement({ placement: lost?3:1, total:3, team:true });
+        else setResultPlacement({ placement: lost?7:1, total:7 });
       }
       const put = (id, want, html)=>{
         const el = document.getElementById(id); if(!el) return;

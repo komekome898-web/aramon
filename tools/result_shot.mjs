@@ -150,6 +150,14 @@ function buildResultShot(o){
     player.damageDealt = 18420;
     player.hp = Math.round(player.maxHp * 0.18);
     player.mastermonKillExpBonus = 40;
+    /* 戦績の「連続撃破」は combat.js が killEntity のたびに積む記録から出る。
+       ここは試合を回さずに結果だけ作るので、**同じ入れ物へ倒した時刻を入れておく**
+       (入れないと、撃破数12なのに連続撃破0という実機では起きない絵が撮れる)。
+       下の並びは「10秒(KILL_STREAK_WINDOW_SEC)の幅に3つ入る山が最大」= 連続撃破3。 */
+    if(typeof playerKillTimes !== 'undefined'){
+      playerKillTimes.length = 0;
+      for(const s of [40, 96, 100, 104, 240, 300, 480, 700]) playerKillTimes.push(s);
+    }
 
     /* 3. マスモン。登録の対話を出す場面だけ「まだ登録が無い」状態にする */
     if(base === 'register'){
@@ -171,6 +179,11 @@ function buildResultShot(o){
       recordMatchResult(ELEM, 99, 999999, false, 'solo');
       isWin = false; placement = 7;
       player.kills = 2; player.damageDealt = 3120;
+      // 倒されて終わった試合はHPが残らない(戦績の「残りHP」は 0% になるのが実機の姿)
+      player.hp = 0;
+      /* 倒した時刻も2キルぶんに入れ替える。上の既定(12キル)のままだと連続撃破が3になり、
+         **この場面の狙い(ハイライトが出ていない姿)が壊れる。** */
+      if(typeof playerKillTimes !== 'undefined'){ playerKillTimes.length = 0; playerKillTimes.push(600, 740); }
       player.alive = false; player.deathAt = 754;
       player.lastAttackerId = mates[0].id;             // 「⚔ 〇〇 に倒された」の1行が出る条件
       player.lastAttackerAt = 752;

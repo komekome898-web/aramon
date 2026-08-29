@@ -5947,6 +5947,9 @@ function raidShowResult(defeated, dmg, prevBest){
   document.getElementById('statKills').textContent = rsNum(player ? player.kills : 0);
   document.getElementById('statDamage').textContent = rsNum(d);
   document.getElementById('statTime').textContent = fmtTime(player && player.deathAt ? player.deathAt : matchTime);
+  // あとから足した2行。通常の試合とまったく同じ出どころを通す(レイドだけ別の式を書かない)
+  document.getElementById('statStreak').textContent = rsKillStreakText();
+  document.getElementById('statHp').textContent = rsHpText(player);
 
   /* 報酬。通常の試合と同じ「参加ぶん + 成果ぶん(+討伐ボーナス)」で、成果ぶんを与ダメから出す。
      **式は data.js の matchRewardBreakdown() 1か所。** ここで自前に計算し直さない。 */
@@ -6590,6 +6593,9 @@ function showResultNow(isWin, placement){
   document.getElementById('statKills').textContent = rsNum(player.kills);
   document.getElementById('statDamage').textContent = rsNum(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
+  // あとから足した2行。値の出どころは rsKillStreakText / rsHpText の1か所だけ
+  document.getElementById('statStreak').textContent = rsKillStreakText();
+  document.getElementById('statHp').textContent = rsHpText(player);
   /* ゴールド/ダイヤ報酬(経験値と一緒に入手。game.overガードにより1試合1回だけ)。
      **額の式は data.js の matchRewardBreakdown() 1か所。** ここで自前に計算し直さない
      ―― 財布へ入れる額と画面の台帳が別々に作られていた頃、合計と「報酬 +◯◯」が
@@ -6741,6 +6747,29 @@ function rsScreenHidden(){
   const scr = document.getElementById('resultScreen');
   return !scr || scr.classList.contains('hidden');
 }
+/* =====================================================================
+   戦績の「あとから足した2行」の値(連続撃破 / 残りHP)
+
+   **どちらも新しい計測を持っていない。** 試合ハイライト(pickHighlight)へ渡している
+   値をそのまま画面へ出しているだけなので、マルチ同期にもレイドにも訓練場にも
+   足すものが1つも無い(新しい状態を持つと、その3つ全部の後始末が要る)。
+   書き込むのは showResultNow と raidShowResult の2か所で、値の出どころはここ1か所。
+===================================================================== */
+/* 連続撃破 = KILL_STREAK_WINDOW_SEC 秒の幅に収まったキルの最大数(combat.js が積む)。
+   **マルチのゲストでは `--`** ―― 積んでいる killEntity はホスト側でしか走らないので、
+   ゲストの手元では何キルしても 0 のままになる(0 と書くと嘘になる)。 */
+function rsKillStreakText(){
+  if(netState.mode === 'multi' && !netState.isHost) return RS_STAT_NA;
+  if(typeof playerMaxKillStreak !== 'function' || typeof KILL_STREAK_WINDOW_SEC === 'undefined') return RS_STAT_NA;
+  return rsNum(playerMaxKillStreak(KILL_STREAK_WINDOW_SEC));
+}
+/* 残りHP = 最大HPに対する割合(%)。ゲストにも authState で同期済みの値なので全場面で出せる。
+   倒れて終わった試合は 0% になる ―― それがこの欄の意味(あと何割で生き残れたか)。 */
+function rsHpText(ent){
+  if(!ent || !(ent.maxHp > 0)) return RS_STAT_NA;
+  const pct = Math.round((Math.max(0, ent.hp) / ent.maxHp) * 100);
+  return rsNum(Math.max(0, Math.min(100, pct))) + '%';
+}
 // 演出で出す要素(.rs-in)を見せる。セレクタは複数まとめて渡してよい
 function rsShow(sel){
   document.querySelectorAll(sel).forEach(el=> el.classList.add('rs-shown'));
@@ -6846,16 +6875,23 @@ function rsNumFromText(t){
   const s = String(t||'').replace(/[^\d]/g, '');
   return s ? parseInt(s, 10) : 0;
 }
-/* 統計3つ(撃破数・与ダメージ・生存時間)をカウントアップさせる。
+/* 統計5つ(撃破数・与ダメージ・生存時間・連続撃破・残りHP)をカウントアップさせる。
    **回っている途中も止まったあとも書式は同じ rsNum。** 以前はここで「今画面に入っている
    文字にカンマがあるか」を見て書式を決めていたが、書き込む側(通常戦とレイド)で
-   書式が違ったので、同じ画面の中で桁の読み方が変わっていた(批評の指摘)。 */
+   書式が違ったので、同じ画面の中で桁の読み方が変わっていた(批評の指摘)。
+   【`--` の欄は回さない】rsNumFromText は数字以外を捨てるので、`--` を渡すと
+   0 から 0 へ数え上げて「0」という**別の値**が出てしまう。値が無い欄は触らない。 */
 function rsCountStats(){
-  const k = document.getElementById('statKills');
-  const d = document.getElementById('statDamage');
+  const spin = (id, fmt)=>{
+    const el = document.getElementById(id);
+    if(!el || el.textContent === RS_STAT_NA) return;
+    rsCountUp(el, rsNumFromText(el.textContent), fmt || rsNum);
+  };
+  spin('statKills');
+  spin('statDamage');
+  spin('statStreak');
+  spin('statHp', v=> rsNum(v) + '%');
   const t = document.getElementById('statTime');
-  if(k) rsCountUp(k, rsNumFromText(k.textContent), rsNum);
-  if(d) rsCountUp(d, rsNumFromText(d.textContent), rsNum);
   if(t){
     const m = /(\d+):(\d+)/.exec(t.textContent||'');
     if(m){
