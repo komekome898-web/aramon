@@ -2295,7 +2295,12 @@
      大きく出る所(合計=23px)は等倍のままにして、小さい所だけ1.15倍にする。 */
   #resultScreen .rs-led-row .rs-ico,
   #resultScreen .rs-next .rs-ico,
-  #resultScreen .result-badge .rs-ico{ width:1.15em; height:1.15em; }
+  /* チップは字を9pxまで落としたので、1.15emだと絵が10.3pxになりトロフィーが砂時計に見える。
+     **絵の実寸を11.5px前後に保つ**ために、チップだけ倍率を上げる(字ではなく絵の実寸が正)。
+     【上げすぎない】インラインのSVGが line-height(14px)より高くなると行箱が伸び、
+     チップの高さ20px=--rs-badge-row が狂って棚の段数の計算が合わなくなる。
+     ここを触ったら **チップの高さが20pxのまま**か必ず測ること。 */
+  #resultScreen .result-badge .rs-ico{ width:1.28em; height:1.28em; }
   /* 【左そろえ・上詰め】.resultScreen{text-align:center} を継いでいるので明示的に左へ戻す。
      justify-content は flex-start(上詰め)。余った縦は下に1つの塊で残す。 */
   /* 【高さは中身なり・上限だけ画面から】max-height:100% が唯一の「画面から決める」箇所。
@@ -2413,9 +2418,11 @@
      ついでに 45° の斜め切りがここにも通り、余った縦をこの板が全部使う(立ち絵が主役)。
      枠と面はパネルと同じ二枚重ね(::before=枠の色 / ::after=1px内側の面)。
      **絵そのものは clip-path の外**に置く ―― 勝利の跳ねる動きが角で切られないように。 */
-  /* 【上の1行と離す】勝利のときは立ち絵から粒(✨)が上へ飛ぶ(ui.js の playEmote)。
-     板の金枠とハイライトの1行が近いと、粒が両方に重なって文字が読めなくなる
-     (667×320で発生)。粒の飛ぶ先を空けるために上だけ --rs-gap-l を取る。 */
+  /* 【上の1行との間は --rs-gap-m へ戻した(2026-08-29・4巡目)】
+     以前は勝利の粒(✨)が板の外・上へ飛んで金枠とハイライトの1行に重なるので、
+     逃げ場として上だけ --rs-gap-l を取っていた。ui.js が**リザルトのときだけ粒を板の内側へ
+     寄せる**ようになったので逃げ場は不要になり、他の段と同じ刻みへそろえた。
+     ここを詰め直すときは、粒が板の外へ出ていないかを必ず絵で見ること。 */
   /* 【高さは画面から決める(R1)】カードを中身の高さで畳むようにしたので、
      立ち絵の板だけは**自分の高さを持たない**(中の絵は絶対配置=高さ0)。
      ここで画面に対する割合を1つ決めるのが、この画面で唯一の「板の大きさの出どころ」。
@@ -2423,7 +2430,7 @@
      縦が足りない端末では flex-shrink で最初にここが縮む(R3の「装飾がいちばん先に削れる」)。 */
   #resultScreen .rs-hero-art{
     flex:1 1 auto; min-height:0; height:calc(42 * var(--vh));
-    margin-top:var(--rs-gap-l); position:relative;
+    margin-top:var(--rs-gap-m); position:relative;
     filter:drop-shadow(0 0 10px var(--rs-glow));
   }
   #resultScreen .rs-hero-art::before,
@@ -2494,7 +2501,22 @@
     flex:0 0 auto; margin-top:var(--rs-gap-s); justify-content:flex-start;
     font-size:11px; gap:var(--rs-gap-m);
   }
-  #resultScreen .result-death-icon{ width:17px; height:17px; }
+  /* 【倒した相手の顔は残す。素材の言語に乗せる】批評で「リザルトの中に残った絵文字に見える」と
+     読まれたのはこの17pxの丸。**消さない** ―― 「誰に倒されたか」は次の1戦の動機になる実情報で、
+     2026-08-28にその狙いで足したもの。浮いて見えていたのは**丸角と原色**が
+     この画面の言語(45°の切り欠き・モノクロ+アクセント1色)から外れていたせいなので、
+     形と色のほうを合わせる:丸角 → 45°の切り欠き、彩度を落として1pxの罫で囲む。 */
+  #resultScreen .result-death-icon{
+    width:17px; height:17px; border-radius:0; border:0;
+    box-shadow:inset 0 0 0 1px var(--rs-line-strong);
+    filter:grayscale(0.5) brightness(0.92);
+    background:rgba(255,255,255,0.06);
+    clip-path:polygon(
+      var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
+      100% var(--rs-cut-s), 100% calc(100% - var(--rs-cut-s)),
+      calc(100% - var(--rs-cut-s)) 100%, var(--rs-cut-s) 100%,
+      0 calc(100% - var(--rs-cut-s)), 0 var(--rs-cut-s));
+  }
 
   /* ---------- 1枚目 右: 統計3つ + 小隊 ----------
      【APEXから取る】統計は**箱で囲まない**。小さい灰のラベル + 大きい数値 + 下に細い罫。
@@ -2827,7 +2849,10 @@
      チップが1列しか無い試合では棚の中に46pxの穴が空いた(敗北の2枚目)。
      max-height に変えると、入る段数が中身で決まり、入りきらないぶんだけ棚の中を送る。
      max-height は段の整数倍なので、切れ目は必ず段の境目に来る(中途半端に切れない)。 */
-  #resultScreen{ --rs-badge-row:20px; }   /* line-height14 + 上下padding4 + 枠2 */
+  /* line-height14 + 上下padding4 + 枠2 = 20px。**+1pxは絵のぶんの逃げ**
+     ―― チップの中の単色SVG(1.28em=11.5px)が行箱をわずかに押し広げて実測20.27pxになる。
+     段の高さを実測より小さく見積もると、3段目が0.8pxだけ切れて「中途半端に切れた棚」になる。 */
+  #resultScreen{ --rs-badge-row:21px; }
   #resultScreen .result-badges{
     flex:0 1 auto; margin-top:var(--rs-gap-s); max-width:100%;
     max-height:calc(3 * var(--rs-badge-row) + 2 * var(--rs-gap-s));
