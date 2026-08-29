@@ -713,68 +713,189 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       縮小して必ず1画面に収める。直下に要素を足すと縮小の対象から外れて見切れる。
       新しい帯はこの中に足すこと。
 
-      リザルトは2ページのスライド式(1枚目=勝敗と余韻 / 2枚目=数字と導線)。
+      リザルトは2ページのスライド式で、各ページは**左右2列**。
+        1枚目 = #rsHero(順位・勝敗・死因・ハイライト・立ち絵) | #rsPerf(統計3つ・小隊)
+        2枚目 = #rsLedger(報酬の内訳→小計→×倍率→合計)      | #rsProgress(EXP・次の報酬・バッジ)
       切替は ui.js の resultGoPage()(詳細›/‹もどる ボタンと横スワイプの両対応)。
-      showResultNow / raidShowResult のたびに必ず1枚目へ戻る。 -->
+      showResultNow / raidShowResult のたびに必ず1枚目へ戻る。
+      **登録の対話と操作バーはページャの外**(両ページで同じ物が見えている)。 -->
  <div id="resultInner">
   <div id="resultPager">
+   <!-- ============ 1枚目 = 「自分は何位で、どう戦ったか」 ============ -->
    <div id="resultPage1" class="result-page">
-    <div class="rank" id="resultRank">#1</div>
-    <div class="sub" id="resultSub">勝利</div>
-    <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
-         setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
-    <div id="resultDeathCause" class="result-death-cause hidden"></div>
-    <!-- 試合ハイライト(1試合1つだけ)。定義表は data.js の HIGHLIGHT_DEFS、
-         中身は showResultNow が pickHighlight() で書く。無い試合とレイドでは hidden -->
-    <div id="resultHighlight" class="result-highlight hidden"></div>
-    <img id="resultMonsterIcon" class="result-monster-icon" alt="" data-variant="player" data-ext-idx="0" onerror="handleResultIconError(this)">
-    <div id="resultCurrencyLine" class="result-currency"></div>
-    <!-- EXPの1行。登録の促しと対にするため必ず1枚目に置く -->
-    <div id="mastermonResultInfo" class="mastermon-result-info hidden"></div>
-    <!-- 【必ず1枚目に置く】スキップするとこの試合の経験値が消える対話なので、2枚目へ隠さない -->
-    <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
+
+    <!-- 左: 順位・勝敗・死因・ハイライト・立ち絵。
+         【立ち絵の入場は親(.rs-hero-art)へ掛ける】#resultMonsterIcon 自身には
+         @keyframes resultIconHappyBounce が infinite で掛かっていて、
+         CSSアニメーションはインラインの transform より強い(ui.js:6218 に同じ罠の記録)。 -->
+    <div id="rsHero" class="rs-panel rs-col">
+      <!-- 試合の素性(モード/マップ/人数)の1行。中身は ui.js が書く。
+           空のままなら :empty で消えるので、書かれなくても崩れない -->
+      <div id="rsMatchMeta" class="rs-meta rs-in"></div>
+      <!-- 【順位の札 + 見出し】左端に縦いっぱいの札(順位)、その右に見出し以下を積む。
+           札を縦いっぱいにするのは、順位がこの画面の主役だから ―― 以前は小さな角丸の
+           チップで、右の統計(与ダメージ)より字が小さく、階層が逆転していた。 -->
+      <div class="rs-hero-body">
+        <!-- 順位の札。**中身と順位帯(金/銀/無彩)を書くのは ui.js の setResultPlacement() 1か所。**
+             レイドには順位が無いので、そこだけ札ごと畳む(見出しは従来どおり全幅で出る)。 -->
+        <div id="rsRankCard" class="rs-rank-card rs-in" data-band="gold">
+          <div class="rs-rank-cap" id="rsRankCap">順位</div>
+          <div class="rs-rank-mid">
+            <!-- 字高は見出し(WINNER)と同じ --rs-rank-fs。右の統計より必ず大きい -->
+            <div class="rs-rank-num" id="rsPlaceNum">1</div>
+            <!-- 母数。「7人中7位」なのか「20人中7位」なのかが読めないと順位の意味が出ない -->
+            <div class="rs-rank-of" id="rsPlaceOf">/ 7</div>
+          </div>
+          <!-- 順位帯の名前(2〜3位のときだけ出る)。空なら :empty で消える -->
+          <div class="rs-rank-band" id="rsRankBand"></div>
+        </div>
+        <div class="rs-hero-main">
+          <!-- 見出しも同じ理由で親を1枚かませる(#resultRank には winPulse が掛かっている) -->
+          <div class="rs-rank-wrap rs-in">
+            <div class="rank" id="resultRank">WINNER</div>
+          </div>
+          <div class="sub rs-in" id="resultSub">勝利</div>
+          <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
+               setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
+          <div id="resultDeathCause" class="result-death-cause rs-in hidden"></div>
+          <!-- 試合ハイライト(1試合1つだけ)。定義表は data.js の HIGHLIGHT_DEFS、
+               中身は showResultNow が pickHighlight() で書く。無い試合とレイドでは hidden -->
+          <div id="resultHighlight" class="result-highlight rs-in hidden"></div>
+          <div class="rs-hero-art rs-in">
+            <img id="resultMonsterIcon" class="result-monster-icon" alt="" data-variant="player" data-ext-idx="0" onerror="handleResultIconError(this)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右: 自分の統計5つ + 小隊。
+         統計は箱で囲まない(小さい灰のラベル + 大きい数値 + 下に細い罫) -->
+    <div id="rsPerf" class="rs-panel rs-col">
+      <div class="rs-col-head">戦績</div>
+      <div class="resultStatsRow">
+        <div class="resultStats">
+          <!-- 【ラベルが先・数値があと】小さい灰のラベルの下に大きい数値、その下に細い罫
+               (APEXの並び)。CSSの column-reverse で入れ替えると、入りきらないときの
+               溢れ方が逆向きになって行が溢れるので、**並び順はここで作る。** -->
+          <div class="rs-in"><div class="lbl">撃破数</div><div class="num" id="statKills">0</div></div>
+          <div class="rs-in"><div class="lbl">与ダメージ</div><div class="num" id="statDamage">0</div></div>
+          <div class="rs-in"><div class="lbl">生存時間</div><div class="num" id="statTime">00:00</div></div>
+          <!-- 【あとから足した2行 ―― 2026-08-29(8巡目)】APEXの小隊カードは同じ形の縦長パネルを
+               5行の統計で最後まで使い切っている。こちらは3行で面積の半分が空気だったので2行足した。
+               **新しい計測は持ち込まない**(持つとマルチ同期・レイド・訓練場すべてに影響が出る) ――
+               どちらも試合ハイライト(pickHighlight)が既に読んでいる値をそのまま出す。
+               書き込むのは ui.js の showResultNow / raidShowResult(値の出どころは rsKillStreakText /
+               rsHpText の2つだけ)。
+               【.rs-stat-extra】チーム戦では小隊の行があるぶん統計が横1行に畳まれ、
+               5等分した幅には数値が入らないので、この2行だけ畳む(style.css の :has() の節)。 -->
+          <div class="rs-in rs-stat-extra"><div class="lbl">連続撃破</div><div class="num" id="statStreak">0</div></div>
+          <div class="rs-in rs-stat-extra"><div class="lbl">残りHP</div><div class="num" id="statHp">0%</div></div>
+        </div>
+      </div>
+      <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->
+      <div id="resultSquadInfo" class="result-squad-info rs-in hidden"></div>
+    </div>
+   </div>
+
+   <!-- ============ 2枚目 = 「何を手に入れたか」 ============ -->
+   <div id="resultPage2" class="result-page">
+
+    <!-- 左: 報酬の台帳(内訳 → 小計 → ×倍率 → 合計)。
+         **この画面でスクロールしてよいのは #rsLedgerRows と #resultBadges の2つだけ。**
+         中身は B班(ui.js)が matchRewardBreakdown() から書く。
+         下にある1組は**見本**なので、B班が実装したら丸ごと置き換わる。 -->
+    <div id="rsLedger" class="rs-panel rs-col">
+      <div class="rs-col-head">獲得報酬</div>
+      <div id="rsLedgerRows" class="rs-ledger-rows">
+        <!-- ▼▼ 見本(B班が置き換える)。値が無い欄は消さず「--」で残す ▼▼ -->
+        <div class="rs-led-row rs-in"><span class="rs-led-name">参加</span><span class="rs-led-val">🪙 20</span><span class="rs-led-val">💎 8</span></div>
+        <div class="rs-led-row rs-in"><span class="rs-led-name">撃破 ×3</span><span class="rs-led-val">🪙 30</span><span class="rs-led-val rs-led-off">--</span></div>
+        <div class="rs-led-row rs-in"><span class="rs-led-name">チャンピオン</span><span class="rs-led-val">🪙 50</span><span class="rs-led-val">💎 15</span></div>
+        <div class="rs-led-row rs-in"><span class="rs-led-name">生存 12:34</span><span class="rs-led-val">🪙 12</span><span class="rs-led-val rs-led-off">--</span></div>
+        <!-- ▲▲ 見本ここまで ▲▲ -->
+      </div>
+      <div id="rsLedgerSubtotal" class="rs-led-row rs-led-sub rs-in">
+        <span class="rs-led-name">小計</span><span class="rs-led-val">🪙 112</span><span class="rs-led-val">💎 23</span>
+      </div>
+      <div id="rsLedgerMults" class="rs-led-mults rs-in">
+        <!-- ▼ 見本(B班が置き換える) -->
+        <div class="rs-led-mult"><span class="rs-led-mult-x">×2.0</span><span class="rs-led-mult-name">みんなで対戦</span></div>
+      </div>
+      <div id="rsLedgerTotal" class="rs-led-total rs-in">
+        <span class="rs-led-total-lbl">合計</span>
+        <span class="rs-led-total-val"><span id="rsTotalGold">🪙 224</span><span id="rsTotalDia">💎 46</span></span>
+      </div>
+      <!-- 台帳が出せないとき(レイドのデモ=記録は残りません 等)の1行。ui.js が書く -->
+      <div id="resultCurrencyLine" class="result-currency"></div>
+    </div>
+
+    <!-- 右: マスモンEXPバー・次の報酬・バッジ棚 -->
+    <div id="rsProgress" class="rs-panel rs-col">
+      <div class="rs-col-head">育成と記録</div>
+      <!-- EXPバー。伸ばすのは B班(#rsExpFill の style.width)。下の 38% は見本。
+           【2段で組む】Lvはバーの左右へ置く(APEXのレベルバーと同じ)。
+           3段にすると 667×320 でバッジ棚に1段ぶんの高さが残らない -->
+      <div id="rsExpBar" class="rs-exp rs-in">
+        <div class="rs-exp-head">
+          <span class="rs-exp-lbl">マスモン経験値</span>
+          <span class="rs-exp-val" id="rsExpVal">--</span>
+        </div>
+        <div class="rs-exp-bar">
+          <span class="rs-exp-lv" id="rsExpLv">Lv --</span>
+          <div class="rs-exp-track"><div class="rs-exp-fill" id="rsExpFill" style="width:38%"></div></div>
+          <span class="rs-exp-lv" id="rsExpLvNext">Lv --</span>
+        </div>
+      </div>
+      <!-- EXPの1行(「Lv12 → Lv13」など)。中身は handleMastermonPostMatch が書く -->
+      <div id="mastermonResultInfo" class="mastermon-result-info rs-in hidden"></div>
+      <!-- 「次の報酬」。中身は B班が書く。下は見本 -->
+      <div id="rsNextReward" class="rs-next rs-in">
+        <span class="rs-next-lbl">次の報酬</span>
+        <span class="rs-next-body" id="rsNextRewardBody">--</span>
+      </div>
+      <div id="resultBadges" class="result-badges rs-in hidden"></div>
+      <div id="scoreSubmitStatus"></div>
+    </div>
+   </div>
+  </div>
+
+  <!-- 【ページャの外・スクロールしない独立の帯】スキップするとこの試合の経験値が消える対話。
+       台帳や右列のスクロール域に入れると「登録する/スキップ」が黙って画面外へ出る
+       (2026-08-26「丈夫さ」と同型の事故)。必ず #resultActions の直上に置く。 -->
+  <div id="mastermonRegisterPrompt" class="mastermon-register-prompt hidden">
+    <div class="mastermon-register-texts">
       <div class="mastermon-register-text">このモンスターをマスモン登録しますか？</div>
       <!-- スキップすると、この試合ぶんの経験値は誰にも入らずに消える(ui.jsが控えを捨てる)。
            押す前に分かるようにしておく -->
       <div class="mastermon-register-note">スキップすると、この試合の経験値は入りません</div>
-      <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前" data-kb-title="マスモンの名前">
-      <div class="mastermon-register-btnrow">
-        <button id="mastermonRegisterSkipBtn">スキップ</button>
-        <button id="mastermonRegisterConfirmBtn">登録する</button>
-      </div>
     </div>
-    <div class="resultBtnRow">
-      <!-- 連戦の入口。マルチは部屋に残ったまま待機画面へ戻る(ui.jsのreplayAgainBtn)。
-           レイドと部屋を抜けた後は出せないので setResultButtonsForRaid が隠す -->
-      <button id="replayAgainBtn">⟳ もう一度</button>
-      <button id="replayBtn">トップ画面へ</button>
-      <button id="resultDetailBtn">詳細 ›</button>
+    <input type="text" id="mastermonRegisterName" maxlength="10" placeholder="マスモンの名前" data-kb-title="マスモンの名前">
+    <div class="mastermon-register-btnrow">
+      <button id="mastermonRegisterSkipBtn">スキップ</button>
+      <button id="mastermonRegisterConfirmBtn">登録する</button>
     </div>
-   </div>
-   <div id="resultPage2" class="result-page">
-    <div class="resultStatsRow">
-      <div class="resultStats">
-        <div><div class="num" id="statKills">0</div><div class="lbl">撃破数</div></div>
-        <div><div class="num" id="statDamage">0</div><div class="lbl">与ダメージ</div></div>
-        <div><div class="num" id="statTime">00:00</div><div class="lbl">生存時間</div></div>
-      </div>
-    </div>
-    <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->
-    <div id="resultSquadInfo" class="result-squad-info hidden"></div>
-    <div id="scoreSubmitStatus"></div>
-    <div id="resultBadges" class="result-badges hidden"></div>
-    <div class="resultBtnRow">
-      <button id="viewRankingBtn">ランキング</button>
-      <button id="viewMyStatsBtn">マイ記録</button>
-      <!-- レイドのリザルトでは上2つの代わりにこれを出す(setResultButtonsForRaid) -->
-      <button id="viewRaidRankBtn" class="hidden">レイドランキング</button>
-      <button id="viewMastermonBtn">マスモン</button>
-      <!-- シェアだけはアイコンの固定幅。等分にすると「もどる」等が切れ、
-           2行に折り返すと横長・低い画面でリザルトがはみ出す -->
-      <button id="shareResultBtn" class="share-icon-btn" aria-label="SNSでシェア"><span class="share-ico"></span></button>
-      <button id="resultBackBtn">‹ もどる</button>
-    </div>
-   </div>
+  </div>
+
+  <!-- 【操作バーは両ページ共通の1本】どれを出すかは ui.js の updateResultActions() が
+       .hidden で決める。**`.resultBtnRow` クラスを外さないこと** ―― `.resultBtnRow button` は
+       #closeRankingBtn などと見た目の出どころを共有していて、外すとランキング/マイ記録の
+       閉じるボタンが素の白ボタンに戻る(2026-08-28の事故と同型)。 -->
+  <div id="resultActions" class="resultBtnRow">
+    <!-- 連戦の入口。マルチは部屋に残ったまま待機画面へ戻る(ui.jsのreplayAgainBtn)。
+         レイドと部屋を抜けた後は出せないので setResultButtonsForRaid が隠す -->
+    <button id="replayAgainBtn">⟳ もう一度</button>
+    <button id="replayBtn">トップ画面へ</button>
+    <button id="resultDetailBtn">詳細 ›</button>
+    <!-- 1枚目から始まるので「‹ もどる」は最初は出さない(ページ送りは ui.js が切り替える) -->
+    <button id="resultBackBtn" class="hidden">‹ もどる</button>
+    <button id="viewRankingBtn">ランキング</button>
+    <button id="viewMyStatsBtn">マイ記録</button>
+    <!-- レイドのリザルトでは上2つの代わりにこれを出す(setResultButtonsForRaid) -->
+    <button id="viewRaidRankBtn" class="hidden">レイドランキング</button>
+    <button id="viewMastermonBtn">マスモン</button>
+    <!-- シェアだけはアイコンの固定幅。等分にすると「もどる」等が切れ、
+         2行に折り返すと横長・低い画面でリザルトがはみ出す -->
+    <button id="shareResultBtn" class="share-icon-btn" aria-label="SNSでシェア"><span class="share-ico"></span></button>
   </div>
   <div id="resultPageNav"><span class="result-dot on"></span><span class="result-dot"></span></div>
  </div>

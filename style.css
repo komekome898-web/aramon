@@ -2110,53 +2110,1229 @@
   .result-squad-kills{ font-family:'Share Tech Mono',monospace; color:var(--ink-dim); }
   .result-squad-state{ font-size:10px; color:var(--ink-dim); }
 
-  /* リザルト画面: 報酬表示の追加で縦にはみ出さないよう全体を詰める */
-  #resultScreen{ padding:10px 24px; }
-  /* 詰めてもなお入らないときは fitResultScreen() が #resultInner を縮小する。
-     transform は場所を取らないので、縮めたあとは上詰めにして余白を下へ寄せる。 */
-  #resultInner{ display:flex; flex-direction:column; align-items:center; width:100%;
-    transform-origin:top center; }
-  /* 縮小後はもう全部見えているので、スクロールは切る。transform は場所を取らず
-     縮める前の高さのまま残るため、切らないと「空白を上下に振れるだけ」の無駄な
-     スクロールが残る(中身は動いて見えるのに読める量は増えない)。 */
-  #resultScreen.result-fitted{ justify-content:flex-start; overflow-y:hidden; }
-  #resultScreen .rank{ font-size:clamp(28px,calc(7.5 * var(--vw)),46px); }
-  #resultScreen .sub{ margin-top:1px; font-size:12px; }
-  #resultScreen .resultStatsRow{ margin-top:8px; gap:16px; }
-  #resultScreen .resultStats .num{ font-size:18px; }
-  /* 1枚目は「勝敗と余韻」の場なので、アイコンは詰めずに大きめのまま出す(発注者指定) */
-  #resultScreen .result-monster-icon{ width:64px; height:64px; margin-top:8px; }
-  #resultScreen #scoreSubmitStatus{ margin-top:4px; min-height:12px; font-size:10px; }
-  #resultScreen .mastermon-result-info{ margin-top:4px; padding:5px 12px; font-size:11px; }
-  #resultScreen .mastermon-register-prompt{ margin-top:6px; padding:8px 14px; gap:6px; }
-  #resultScreen .mastermon-register-prompt input{ padding:7px 12px; }
-  #resultScreen .mastermon-register-btnrow button{ padding:7px 0; }
-  #resultScreen .resultBtnRow{ margin-top:10px; }
-  #resultScreen .resultBtnRow button{ padding:11px 0; }
+  /* =====================================================================
+     リザルト画面(#resultScreen だけ)
 
-  /* ---------- リザルトの2ページ(1枚目=勝敗と余韻 / 2枚目=数字と導線) ----------
-     切替は ui.js の resultGoPage()。transform:translateX のスライドで、
+     【この節を触る前に読むこと】
+     ・`.resultScreen` は8画面の共通クラス(遊び方/マスモン/モンスター一覧/マイ記録/
+       ランキング/管理者パス/管理者/リザルト)。**ここの変更は必ず `#resultScreen …` の
+       ID起点で書く。** `.resultScreen{}` と `.resultScreen .rank` を触ると7画面が巻き添え。
+     ・**新しいクラス名は全部 `rs-` 接頭辞。** `.num`/`.lbl`/`.row`/`.total`/`.bar` のような
+       短い単独名を足さない(`.num`/`.lbl` は `.resultStats` が使用中。過去に
+       `.result-badge rank` が `.resultScreen .rank` と衝突して46pxになった)。
+     ・**`#resultScreen` の className は毎回総入れ替えされる**(ui.js:6400 / 5913)。
+       恒久クラスを足しても消えるので、トーンは `[data-tone]` の属性で書く
+       (今も付く `.win`/`.lose` は併記して、B班のJSが入る前でも色が出るようにしてある)。
+
+     【画面の形】横画面なので**各ページを左右2列**にする。
+       1枚目 #rsHero(順位・勝敗・死因・ハイライト・立ち絵) | #rsPerf(統計3つ・小隊)
+       2枚目 #rsLedger(内訳→小計→×倍率→合計)            | #rsProgress(EXP・次の報酬・バッジ)
+       ページャの外に 登録の対話 → 操作バー → ページ点 の3段。
+
+     【R1 箱は画面から決める】#resultInner は flex:1 1 auto で**画面の残り**を取る。
+     中身の合計で高さを決めない。
+     【カードは中身の高さで畳む ―― 2026-08-29(4巡目)】
+       R1が禁じているのは「中身の合計で**外枠**が決まること」で、**外枠(画面の残り)の中で
+       カードが中身なりの高さになるのは違反ではない。** 以前は .result-page が
+       align-items:stretch で2枚のカードを**画面の残りいっぱいに引き伸ばして**いたため、
+       中身が少ない端末ほどカードの中に無地の穴が空いた(戦績=下端に63px、
+       台帳=中ほどに130px、育成=下端。**穴の位置がカードごとに違うので1画面に2種類の穴**)。
+       行間を詰め直しても消えないので、**引き伸ばしそのものをやめた。**
+       ・カードの高さ = 中身の高さ。上限だけ画面から取る(max-height:100%)。
+       ・入りきらないときだけ中が同じ割合で縮む/送られる(従来どおり)。
+     【左右2枚は上端をそろえる(高さは違ってよい)】低いほうを高いほうに合わせると、
+       差のぶんがそのままカードの中の穴に戻る(それが上の失敗そのもの)。
+       上端をそろえるのは、2枚の見出し帯(戦績/獲得報酬)が同じ行に並ぶのがいちばん強い
+       そろえの手掛かりだから。**余った縦はカードの下に無地で残す**(APEXも下半分は空)。
+     【R2 スクロールしてよいのは #rsLedgerRows と #resultBadges の2つだけ。】
+     操作バー・登録の対話・ページ点・順位はスクロールの外に置いてある。
+     【R3 縦が足りないときに削る順番】操作(操作バー+登録の対話) > 順位と勝敗 > 合計 >
+     内訳の行 > 小隊/バッジ > 装飾。
+
+     【余白は3段だけ】--rs-gap-s / -m / -l(3 / 6 / 12px)。**中間の数字を新しく作らない。**
+     4pxや5pxを足すと、次に誰かが7pxを足して律が消える。
+     【列の中身は上詰め・行の高さは固定】**行を伸ばして余りを吸わせない。**
+     行間は中身の意味が決めるもので、箱の余りが決めるものではない
+     (2026-08-29に `justify-content:space-between` で余りを段の間へ配り、
+      行42pxに対して行間85〜175pxになって表が浮島に分解した)。
+     余った縦の受け先は2つだけ:**各カードの最終行(合計/送信状態)の下端固定**と、
+     **カードの下に残る無地**。伸びてよいのは立ち絵だけ。
+     【斜め切りは45°で統一】大きい面(パネル・帯・ボタン)は --rs-cut、
+     小さい札(バッジ・チップ)は --rs-cut-s。**丸角を混ぜない。**
+     ===================================================================== */
+  #resultScreen{
+    /* 色はここ1か所から。勝敗でアクセントが変わる(APEXは1位も7位も同じ色) */
+    --rs-accent:#ffd76a; --rs-accent2:#f4c430; --rs-glow:rgba(255,183,3,0.55);
+    --rs-line:rgba(255,255,255,0.10);
+    --rs-line-strong:rgba(255,255,255,0.20);
+    --rs-dim:#93a0b3;
+    --rs-cut:13px;     /* 大きい面の斜め切り(4隅・45°)。丸角にしない。
+                          8pxだと2倍解像度で角が丸く見えて「丸角と斜め切りの混在」に読まれた */
+    --rs-cut-s:4px;    /* 小さい札(バッジ)の斜め切り。角度は同じ45° */
+    --rs-gap-s:3px; --rs-gap-m:6px; --rs-gap-l:12px;   /* 余白はこの3つだけ */
+    /* 【行の刻みは固定値】表の行は縦の余りで伸び縮みさせない(伸ばすと行間が散って
+       表が浮島に分解する。2026-08-29の失敗)。足りないときだけ全行が同じ割合で縮む。 */
+    --rs-row-h:24px;    /* 表の1行。台帳(明細・小計)と小隊で**同じ刻み**を使う */
+    --rs-stat-h:72px;   /* 戦績の1行(ラベル+大きい数値+罫)= --rs-row-h の3つぶん。
+                           **5行(2026-08-29・8巡目)ではこれが「上限」として効く** ――
+                           5行ぶん(360px)はどのカードにも入らないので、実際の行は
+                           使える縦を5等分した高さまで一様に縮む(端末ごとに一定・場面では変わらない) */
+    /* 【この画面でいちばん大きい字】見出し(WINNER / 撃破された / 討伐成功)と
+       順位の札の数字が**同じ字高**で並ぶための出どころ。ここ1か所が正で、
+       .rank と .rs-rank-num の両方がこれを読む(同じ意味の数字を2か所に書かない)。
+       札の幅もこれから決める = 字が小さくなる端末では札も細くなる。 */
+    --rs-rank-fs:clamp(24px, calc(6.6 * var(--vw)), 46px);
+    /* 順位の数字だけは見出しより一段大きい = この画面の主役。
+       札の幅もこの字から決まる(中身の文字数からではない)。 */
+    --rs-rank-num-fs:calc(1.5 * var(--rs-rank-fs));
+    padding:var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-r))
+            var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-l));
+    /* 地=濃紺〜黒の放射グラデ。ビネットと微細グレインは ::before / ::after(**静的**) */
+    background:
+      radial-gradient(128% 96% at 50% 4%, rgba(38,54,84,0.55), rgba(6,9,15,0.99) 58%),
+      #04060a;
+  }
+  #resultScreen[data-tone="win"], #resultScreen.win{
+    --rs-accent:#ffd76a; --rs-accent2:#f4c430; --rs-glow:rgba(255,183,3,0.55);
+  }
+  /* 【負けの画面でいちばん明るい面を操作バーにしない ―― 2026-08-29(6巡目)】
+     負けのアクセントは淡い青灰なので、そのまま塗ると「トップ画面へ」が画面でいちばん
+     明るい面になり、主役の順位(くすんだ灰)より強かった(批評)。APEXの7位の画面も
+     順位だけが光り、ボタンは沈んだ灰の帯。**塗りは1つのまま**(検査の数え方も変えない)で、
+     塗りの明度だけを落とす ―― 色は足さず、同じアクセントの上に暗い層を1枚重ねる。 */
+  #resultScreen{ --rs-fill-shade:linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0));
+                 --rs-fill-ink:#1a1306; }
+  #resultScreen[data-tone="lose"], #resultScreen.lose{
+    --rs-accent:#9fb0c8; --rs-accent2:#6d7f96; --rs-glow:rgba(120,140,170,0.35);
+    --rs-fill-shade:linear-gradient(180deg, rgba(2,5,10,0.46), rgba(2,5,10,0.68));
+    --rs-fill-ink:var(--ink);
+  }
+  /* ビネット + トーンの薄い上明かり。**アニメーションさせない**(全画面の擬似要素を
+     動かすと常時再描画になる。静的で十分) */
+  #resultScreen::before{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(74% 46% at 50% 0%, var(--rs-glow), rgba(0,0,0,0) 72%),
+      radial-gradient(108% 84% at 50% 46%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.62) 100%);
+    opacity:0.42;
+  }
+  /* 微細グレイン(静的タイル1枚) */
+  #resultScreen::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0.05;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size:120px 120px;
+  }
+  /* 【#resultInner は画面から高さを取る】中身の合計で決めない。
+     fitResultScreen() は need<=avail で即returnする=安全網として残るだけになる。 */
+  #resultInner{
+    position:relative; z-index:1;
+    display:flex; flex-direction:column; align-items:stretch; gap:var(--rs-gap-m);
+    width:100%; flex:1 1 auto; min-height:0;
+    transform-origin:top center;
+  }
+  /* 縮小(安全網)が発火したときだけ上詰めにしてスクロールを切る */
+  #resultScreen.result-fitted{ justify-content:flex-start; overflow-y:hidden; }
+
+  /* ---------- 2ページのスライド(切替は ui.js の resultGoPage()) ----------
      この overflow:hidden は「ページの枠」の役目(文字要素の省略ではない)。
      出ていない側のページは visibility:hidden で畳む ―― 枠の外のボタンを
      押せなくするためで、スライド中(0.25s)だけ両方見える(遅延付きのtransition)。 */
-  #resultPager{ width:100%; overflow:hidden; display:flex; align-items:flex-start; }
-  .result-page{ flex:0 0 100%; min-width:0; display:flex; flex-direction:column; align-items:center;
+  #resultPager{ width:100%; overflow:hidden; display:flex; align-items:stretch;
+    flex:1 1 auto; min-height:0; }
+  /* 【ページは画面の残りいっぱい・カードは中身の高さ】
+     height:100% は**必ず残す** ―― ページの高さが auto(中身なり)になると、
+     下の .rs-col{max-height:100%} の割合が解けずに none になり、縦が足りない端末で
+     カードが #resultPager の overflow:hidden に**黙って切られる**。
+     【左右2枚は上端も下端もそろえる ―― 2026-08-29(6巡目)】
+     align-items:stretch + align-content:stretch = **2枚とも段(=ページの高さ)いっぱい。**
+     以前は align-items:flex-start(中身なりの高さ)+ align-content:center で、
+     上端だけがそろい**下端が左右でずれていた**(実測 win-p1で56px / team-p1で113px。
+     右カードだけ途中で終わり、その下が空洞に見える)。APEXのXP面は空白があっても
+     左右・上下が軸でそろっていて、この「途中で終わった感じ」が出ない。
+     **余りは行間ではなく「行そのものの高さ」で吸う**(下の .resultStats > div など。
+     行が同じ割合で伸びるので刻みは崩れず、見出し罫の直下だけに無地の帯が溜まらない)。
+     flex-wrap:wrap は残す(折り返しは起きない。2枚とも flex-basis:0 なので必ず1段)。 */
+  .result-page{ flex:0 0 100%; min-width:0; min-height:0; height:100%;
+    display:flex; flex-direction:row; flex-wrap:wrap; align-items:stretch;
+    align-content:stretch; gap:var(--rs-gap-l);
     transition:transform 0.25s ease, visibility 0s 0.25s; visibility:hidden; }
   #resultPager:not(.page2) #resultPage1,
   #resultPager.page2 #resultPage2{ visibility:visible; transition:transform 0.25s ease, visibility 0s; }
   #resultPager.page2 .result-page{ transform:translateX(-100%); }
-  /* showResultNow が1枚目へ戻すときはスライドを見せない(前の試合の残像になる) */
+  /* showResultNow が1枚目へ戻すときはスライドを見せない(前の試合の残像になる)。
+     【詳細度をそろえること】上の `#resultPager.page2 #resultPage2`(ID2つ)のほうが強く、
+     `#resultPager.no-anim .result-page`(ID1つ)では transition を消せずに
+     0.25秒かけて滑っていた(撮影で2枚目が90pxずれて右端が切れた)。 */
+  #resultPager.no-anim:not(.page2) #resultPage1,
+  #resultPager.no-anim.page2 #resultPage2,
   #resultPager.no-anim .result-page{ transition:none; }
-  /* ページの現在地(ドット2つ)。表示だけで押す物ではない */
-  #resultPageNav{ display:flex; gap:8px; justify-content:center; margin-top:8px;
-    pointer-events:none; flex-shrink:0; }
-  #resultPageNav .result-dot{ width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,0.22); }
-  #resultPageNav .result-dot.on{ background:var(--amber); }
-  /* 試合ハイライト(1枚目・1試合1つだけ)。長い文言は自分で「…」に切る */
+
+  /* ---------- パネル(4隅を45°で落とす。丸角にしない) ----------
+     【中身は切らない】斜め切りは**背景の擬似要素だけ**に掛ける。パネル自身に
+     clip-path を掛けると、入りきらない文字が黙って消える(overflow:hidden と同じ事故)。
+     ::before=枠線の色 / ::after=1px内側の面。この差が1pxの枠に見える。
+     【4隅そろえる】1か所だけ落とすと「少しだけ斜め」に見えて中途半端になる。
+     同じ形を帯・ボタン・札にも使って、画面ぜんぶの共通言語にする。 */
+  #resultScreen .rs-panel{ position:relative; min-width:0; min-height:0;
+    padding:var(--rs-gap-s) var(--rs-gap-l); text-align:left; }
+  #resultScreen .rs-panel::before,
+  #resultScreen .rs-panel::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .rs-panel::before{ background:var(--rs-line-strong); }
+  #resultScreen .rs-panel::after{
+    inset:1px;
+    background-image:
+      linear-gradient(90deg, var(--rs-accent), rgba(255,255,255,0) 58%),
+      linear-gradient(180deg, var(--rs-face-top), rgba(255,255,255,0.016) 38%, rgba(0,0,0,0.42));
+    background-size:100% 2px, 100% 100%;
+    background-repeat:no-repeat, no-repeat;
+    background-color:var(--rs-face);
+  }
+  /* 【主役側の面を一段明るく】左(順位・台帳)が主役、右(統計・育成)が従。
+     塗り・枠・角が完全に同じだと、どちらが主役かが面に出ない。 */
+  #resultScreen{ --rs-face:rgba(3,6,11,0.62); --rs-face-top:rgba(255,255,255,0.05); }
+  #rsHero, #rsLedger{ --rs-face:rgba(18,27,44,0.66); --rs-face-top:rgba(255,255,255,0.10); }
+  #resultScreen .rs-panel > *{ position:relative; z-index:1; }
+
+  /* ---------- リザルトのアイコン(.rs-ico) ----------
+     絵は data.js の `RS_ICONS` が返すインラインSVG(viewBox 0 0 24 24 / fill:currentColor /
+     id・defs・gradient なし)。**色は使う側の color、大きさは使う側の font-size に乗る。**
+     寸法と間隔は**この1か所**が正 ―― data.js 側はいまインラインstyleで同じ値を持っているが、
+     それが外れてもここで同じ見た目になるようにしてある(CLAUDE.md「同じ意味の数字を2か所に書かない」)。
+     インラインstyleがある間はそちらが勝つので、この節は「外れたとき用の受け皿」でもある。 */
+  #resultScreen .rs-ico{
+    width:1em; height:1em; flex:0 0 auto;
+    vertical-align:-0.14em;      /* 文字の中に置いたときの座り。行の高さは変えない */
+    margin-right:0.3em;          /* アイコンと数字の間。ここが唯一の出どころ */
+  }
+  /* 【小さい所だけ一回り大きく】10〜11pxで出る台帳の行・チップ・札では、
+     24pxの升目で描いた自己ベスト(トロフィー)が砂時計寄りに見える瞬間がある。
+     大きく出る所(合計=23px)は等倍のままにして、小さい所だけ1.15倍にする。 */
+  #resultScreen .rs-led-row .rs-ico,
+  #resultScreen .rs-next .rs-ico,
+  /* チップは字を9pxまで落としたので、1.15emだと絵が10.3pxになりトロフィーが砂時計に見える。
+     **絵の実寸を11.5px前後に保つ**ために、チップだけ倍率を上げる(字ではなく絵の実寸が正)。
+     【上げすぎない】インラインのSVGが line-height(14px)より高くなると行箱が伸び、
+     チップの高さ20px=--rs-badge-row が狂って棚の段数の計算が合わなくなる。
+     ここを触ったら **チップの高さが20pxのまま**か必ず測ること。 */
+  #resultScreen .result-badge .rs-ico{ width:1.28em; height:1.28em; }
+  /* 【左そろえ・上詰め】.resultScreen{text-align:center} を継いでいるので明示的に左へ戻す。
+     justify-content は flex-start(上詰め)。余った縦は下に1つの塊で残す。 */
+  /* 【高さは中身なり・上限だけ画面から】max-height:100% が唯一の「画面から決める」箇所。
+     ここが効いているので、縦が足りない端末では中身が同じ割合で縮む/送られる。 */
+  #resultScreen .rs-col{
+    display:flex; flex-direction:column; justify-content:flex-start;
+    min-width:0; min-height:0; max-height:100%; text-align:left;
+  }
+  /* 列の幅の配分。順位と台帳を主役にするので、そちら側をわずかに広く取る */
+  #rsHero{ flex:1.05 1 0; }
+  #rsPerf{ flex:1 1 0; }
+  #rsLedger{ flex:1.2 1 0; }
+  #rsProgress{ flex:1 1 0; }
+  /* 【余りを行間へ配らない ―― 2026-08-29に一度やって失敗した】
+     以前ここに `justify-content:space-between` を書いて「下端の空きを0にする」ことを狙ったが、
+     余りが段と段の間に散り、**表が浮島に分解した**(実測: 行の高さ42pxに対して
+     行間が85〜175px。667×320 のときだけ余りが無くて正常に見える=縦が余るほど壊れる作り)。
+     **行間は中身の意味が決めるもので、箱の余りが決めるものではない。**
+     **余った縦はカードの下に無地で残す。** 下に少し空くほうが、行間が散るよりずっと良い。
+     【`margin-top:auto` での下端固定はやめた(2026-08-29・4巡目)】
+     カードが中身の高さで畳まれるようになったので、カードの中に「余り」はもう無い。
+     以前は #rsLedgerSubtotal と #scoreSubmitStatus を下端へ飛ばしていて、それが
+     **台帳の中ほどに130pxの穴**を作っていた(明細と小計の間)。**新しく足さないこと。** */
+  /* 列の見出し(小さい灰・字間広め)。APEXの「XP内訳」に当たる段 */
+  #resultScreen .rs-col-head{
+    flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:9.5px; letter-spacing:2.4px; color:var(--rs-dim);
+    padding-bottom:var(--rs-gap-s); margin-bottom:var(--rs-gap-m);
+    border-bottom:1px solid var(--rs-line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* ---------- 1枚目 左: 順位・勝敗・死因・ハイライト・立ち絵 ----------
+     【APEXと変える点A】APEXは順位を右上の小箱へ追いやっているが、それはPCの大画面だから
+     成立する配置。スマホの横画面では**順位を主役にする。** */
+  #rsHero{ align-items:stretch; }
+  /* 試合の素性(モード/マップ/人数)。ui.js が書かなければ :empty で消える */
+  #resultScreen .rs-meta{
+    flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:9px; letter-spacing:2.4px; color:var(--rs-dim); margin-bottom:var(--rs-gap-s);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .rs-meta:empty{ display:none; }
+
+  /* ---------- 順位の札(#rsRankCard)と見出しの2列 ----------
+     【なぜ札にしたか】以前の順位は 65×60px の角丸チップで、灰の地に灰の字だった。
+     字の大きさで並べると右の統計(与ダメージ)より小さく、**画面の主役が順位でない**
+     状態になっていた。しかも #3 と #7 が同じ見た目・同じ「撃破された」で、
+     **上位と下位が見分けられない**(色の問題ではなく情報が落ちている)。
+     直し方は1つ:**左端に縦いっぱいの札を立て、そこへ順位を主役として置く。**
+       ・字高は見出し(WINNER)と同じ --rs-rank-fs。右の統計より必ず大きい。
+       ・母数(/20)を添える。「7人中7位」なのか「20人中7位」なのかが読める。
+       ・順位帯で**縁の色**を変える(1位=金 / 2〜3位=銀 / それ以下=無彩)。
+     【札は塗らない】APEXも順位は「暗い面 + 明るい縁 + 色の付いた数字」で、塗りは
+     「次へ進む」ボタン1つだけ。**塗りは操作バーに1つ**という約束(#resultActions の節)を
+     そのまま守れるので、面ではなく縁と字で主役を作る。
+     【判定は1か所】金/銀/無彩の切り分けは ui.js の setResultPlacement() だけが持ち、
+     ここは data-band を色に置き換えるだけ。 */
+  #resultScreen .rs-hero-body{
+    flex:1 1 auto; min-height:0; min-width:0;
+    display:flex; flex-direction:row; align-items:stretch; gap:var(--rs-gap-l);
+  }
+  #resultScreen .rs-hero-main{
+    flex:1 1 auto; min-width:0; min-height:0;
+    display:flex; flex-direction:column; justify-content:flex-start;
+  }
+  /* 札の幅は字の大きさから決める(中身の文字数からではない)。2桁+左右の余白が入る比。
+     【縦いっぱい】align-items:stretch の子なので、高さは左カードの残り全部になる。 */
+  #resultScreen .rs-rank-card{
+    position:relative; flex:0 0 auto; width:calc(1.45 * var(--rs-rank-num-fs));
+    display:flex; flex-direction:column; align-items:center;
+    padding:var(--rs-gap-m) var(--rs-gap-s);
+    /* 既定(無彩)= 順位帯を持たない4位以下。**数字は明るいまま**にする ――
+       以前の失敗は「灰色地に灰色の字」で、順位がいちばん弱い要素になっていたこと。
+       順位帯の差は縁と上明かりの色で出し、数字の読みやすさは落とさない。
+       【2026-08-29(6巡目)に一段明るくした】負けの画面で「トップ画面へ」の塗りより
+       主役の順位が暗かった(批評)。塗りの明度を落とすのと対で、こちらは上げる。
+       **銀より必ず一段暗く保つこと**(近づけると金/銀/無彩の3段が読めなくなる)。 */
+    --rs-band:#d3deee; --rs-band2:#4e5f76; --rs-band-glow:rgba(160,185,220,0.28);
+  }
+  #resultScreen .rs-rank-card[data-band="gold"]{
+    --rs-band:#ffd76a; --rs-band2:#f4c430; --rs-band-glow:rgba(255,183,3,0.50);
+  }
+  #resultScreen .rs-rank-card[data-band="silver"]{
+    --rs-band:#eef4ff; --rs-band2:#8fa6c4; --rs-band-glow:rgba(196,219,255,0.40);
+  }
+  /* 面と縁はパネルと同じ二枚重ね(::before=縁の色 / ::after=中の面)。
+     **縁は2px**にしてある ―― 1pxだと順位帯の色が細すぎて金と銀が並んでも差が読めない。 */
+  #resultScreen .rs-rank-card::before,
+  #resultScreen .rs-rank-card::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .rs-rank-card::before{
+    background:linear-gradient(180deg, var(--rs-band), var(--rs-band2));
+  }
+  #resultScreen .rs-rank-card::after{
+    inset:2px;
+    background-image:
+      linear-gradient(180deg, var(--rs-band-glow), rgba(0,0,0,0) 46%),
+      linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.42));
+    background-color:rgba(5,9,15,0.88);
+  }
+  #resultScreen .rs-rank-card > *{ position:relative; z-index:1; max-width:100%; }
+  /* 「順位」/「チーム順位」。列の見出し(戦績・獲得報酬)と同じ小さい灰+罫にそろえる */
+  #resultScreen .rs-rank-cap{
+    flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:8.5px; letter-spacing:2.4px; color:var(--rs-dim); text-align:center;
+    align-self:stretch; padding-bottom:var(--rs-gap-s);
+    border-bottom:1px solid var(--rs-line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 数字と母数は札の中で縦中央。余りは上下に均等に残す(札の中に穴を1か所作らない) */
+  #resultScreen .rs-rank-mid{
+    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+  }
+  #resultScreen .rs-rank-num{
+    font-family:'Russo One',sans-serif; font-size:var(--rs-rank-num-fs);
+    line-height:1.1; letter-spacing:0; color:var(--rs-band);
+    text-shadow:0 0 14px var(--rs-band-glow), 0 1px 2px rgba(0,0,0,0.8);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  #resultScreen .rs-rank-of{
+    font-family:'Share Tech Mono',monospace; font-size:11px; letter-spacing:0.5px;
+    color:var(--rs-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  /* 順位帯の名前。2〜3位のときだけ入る(1位は見出しの WINNER が言っている)。
+     【添え字にとどめる ―― 2026-08-29(6巡目)】以前はここが帯の色(銀)で光っていて、
+     見出しの「敗北」と**称える印・否定する言葉が同時に最大**になり、0.5秒で読む答えが
+     2つになっていた(批評)。**見出しの言葉は変えない**(発注者の決定)ので、こちら側を
+     札の上の「順位」キャップとまったく同じ格(8.5px・灰)へ落とす ――
+     上下で対になる**事実の添え字**になり、見出しと張り合わなくなる。
+     順位帯そのものの差は、いままでどおり札の縁の色(金/銀/無彩)が持つ。 */
+  #resultScreen .rs-rank-band{
+    flex:0 0 auto; align-self:stretch; text-align:center;
+    font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:8.5px; letter-spacing:2.4px; color:var(--rs-dim);
+    padding-top:var(--rs-gap-s); border-top:1px solid var(--rs-line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .rs-rank-band:empty{ display:none; }
+  /* 【グローは text-shadow で掛けない】順位の文字列には絵文字(👑)が入る。
+     絵文字はカラーグリフなので text-shadow が**字形ではなく四角い枠の影**になり、
+     「WINNER」の後ろに灰色の箱が出る(実際に出た)。字形どおりに光らせるには
+     親へ filter:drop-shadow を掛ける(合成後のアルファを使うので絵文字でも正しい)。
+     光の脈も親側へ移した ―― 元の winPulse は #resultRank 自身に text-shadow を
+     打っていて、CSSアニメーションは通常の指定より強いので消せなかった。 */
+  #resultScreen .rs-rank-wrap{
+    flex:0 0 auto; max-width:100%;
+    filter:drop-shadow(0 0 7px var(--rs-glow)) drop-shadow(0 1px 2px rgba(0,0,0,0.75));
+  }
+  /* 順位の下の斜めの帯。パネル・ボタンと同じ45°で、順位も同じ言語に入れる */
+  #resultScreen .rs-rank-wrap::after{
+    content:''; display:block; width:46px; height:3px; margin-top:var(--rs-gap-s);
+    background:var(--rs-accent);
+    clip-path:polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+  }
+  #resultScreen[data-tone="win"] .rs-rank-wrap,
+  #resultScreen.win .rs-rank-wrap{ animation:rsRankPulse 1.7s ease-in-out infinite; }
+  @keyframes rsRankPulse{
+    0%,100%{ filter:drop-shadow(0 0 6px var(--rs-glow)) drop-shadow(0 1px 2px rgba(0,0,0,0.75)); }
+    50%    { filter:drop-shadow(0 0 16px var(--rs-glow)) drop-shadow(0 1px 2px rgba(0,0,0,0.75)); }
+  }
+  /* 2列にしたので上限は「列の幅」から決める(1列時の46pxのままだと折り返す)。
+     【line-height を字の高さぎりぎりにしない】Russo One は字の高さが行送りより大きく、
+     1.04 だと overflow:hidden が上下を2〜3px削る(layout_test の「文字が切れる」で検出)。 */
+  /* 見出し = 勝敗の言葉(WINNER / 撃破された / 討伐成功…)。**順位そのものは左の札**。
+     字高は札の数字と同じ --rs-rank-fs(出どころは #resultScreen の変数1か所)。 */
+  #resultScreen .rank{
+    font-size:var(--rs-rank-fs); line-height:1.25; letter-spacing:1px;
+    color:var(--rs-accent); text-shadow:none; animation:none;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  /* 【勝ちと負けを「同じ枠の中身違い」にする ―― 2026-08-29(5巡目)】
+     以前は負けのときだけ順位を**塗った札**にして、操作バーの塗りを外していた。
+     順位が左の札(縁の色 = 順位帯)へ移ったので、その特例は無くなった:
+       ・見出しは勝ちも負けも同じ「光る大きな字 + 斜めの帯」
+       ・塗りは操作バーの1つへ戻す(#resultActions の節。APEXも明るいバーは「次へ進む」だけ)
+     負けの画面で最初に目に入るのは、縦いっぱいの札に入った特大の順位のほう。 */
+  /* 【順位の札が出ている画面では主役は順位ひとつ ―― 2026-08-29(7巡目)】
+     勝ちの画面は「WINNER」と札の「1」が**同じ金・同じ級**で左右に並び、視線の着地点が
+     2つあった(批評)。負けは「灰の敗北 + 白く明るい7」で既に主役が1つなので、
+     **勝ちも負けと同じ扱い = 順位が主役**へそろえる(勝ち負けで主役の場所が入れ替わらない)。
+     直し方は3つとも「見出しを一段落とす」側だけ:
+       ・字高 … 順位の 1.5倍 → 見出しは 0.72倍(順位 > 見出し > 統計の数値 の3段になる)
+       ・色  … トーンのアクセント(勝ち=金)ではなく、この画面の地の文字色
+               **負けの見出し「敗北」の言葉は1文字も触っていない**(色と級だけ)
+       ・光  … 脈打つ光を見出しから外し、札の数字へ移す(光る物も1つ)
+     **レイド(順位が無い=札を畳む場面)では従来どおり見出しが主役のまま。**
+     判定の出どころは ui.js の setResultPlacement() 1か所で、そこが #resultScreen へ
+     data-rankcard を書く(className は毎回総入れ替えされるので属性で持つ)。 */
+  #resultScreen[data-rankcard="on"] .rank{
+    font-size:calc(0.72 * var(--rs-rank-fs));
+    color:var(--ink-dim);
+  }
+  #resultScreen[data-rankcard="on"] .rs-rank-wrap{
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,0.75)); animation:none;
+  }
+  /* 光の脈は札の数字へ。数字自身の text-shadow はそのまま(色は順位帯の色) */
+  #resultScreen[data-tone="win"][data-rankcard="on"] .rs-rank-num,
+  #resultScreen.win[data-rankcard="on"] .rs-rank-num{
+    animation:rsRankPulse 1.7s ease-in-out infinite;
+  }
+  /* 【1行で省略する ―― 2026-08-29(6巡目)】チーム戦の「小隊の勝利！ A・B・C」は
+     2行クランプにしてあったが、実際に出たのは**2行目に「や」1文字だけ**落ちた姿だった
+     (実測: 幅277pxに対して文の幅が少し足りないだけで折り返す)。
+     顔ぶれは右列の「小隊メンバー」が名前・撃破・生死まで並べているので、ここは
+     **1行で省略**にする ―― この画面の他の1行(素性・死因・次の報酬)と同じ流儀にそろう。
+     切るのは**この文字要素自身**の役目(枠では隠さない)。 */
+  /* 【副題は記録の帯より1段小さく ―― 2026-08-29(7巡目)】副題(生き残った!…)と
+     記録の帯(この子と初めてのチャンピオン!)が**ほぼ同じ級で2行続き**、
+     見出しから下が「大→中→中」になっていた(批評)。副題を1段落として
+     **中位に立つのは記録の帯だけ**にする(帯は下の .result-highlight で12pxへ上げる)。 */
+  #resultScreen .sub{
+    flex:0 0 auto; margin-top:var(--rs-gap-s); font-size:10px; letter-spacing:1.4px;
+    line-height:1.32; color:var(--ink-dim); text-align:left; max-width:100%;
+    display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 添える言葉が無い場面(ソロの敗北)では行ごと消す。空の行は余白として残さない */
+  #resultScreen .sub:empty{ display:none; }
+  /* 立ち絵。**枠自身を正方形にして、絵は inset:0 でぴったり埋める。**
+     こうすると絵が枠より大きくなる余地が消える ―― 以前は絵に height:100% や
+     max-height:100% を掛けていて、flexで縮んだ枠に対して割合が解けきらず
+     2〜6px はみ出していた(枠に overflow:hidden を足した瞬間に角が切れる形)。
+     枠は縦の余りを吸い、足りなければ最初に縮む(R3の「装飾がいちばん先に削れる」)。 */
+  /* 【丸ではなく斜め切りの板にする】円のままだと、幅を aspect-ratio に、高さを flex に
+     決めさせることになり、どちらかが勝った瞬間に**楕円**になる(実測で2回発生)。
+     板なら幅も高さも枠から素直に決まり、絵は object-fit:contain で歪まない。
+     ついでに 45° の斜め切りがここにも通り、余った縦をこの板が全部使う(立ち絵が主役)。
+     枠と面はパネルと同じ二枚重ね(::before=枠の色 / ::after=1px内側の面)。
+     **絵そのものは clip-path の外**に置く ―― 勝利の跳ねる動きが角で切られないように。 */
+  /* 【上の1行との間は --rs-gap-m へ戻した(2026-08-29・4巡目)】
+     以前は勝利の粒(✨)が板の外・上へ飛んで金枠とハイライトの1行に重なるので、
+     逃げ場として上だけ --rs-gap-l を取っていた。ui.js が**リザルトのときだけ粒を板の内側へ
+     寄せる**ようになったので逃げ場は不要になり、他の段と同じ刻みへそろえた。
+     ここを詰め直すときは、粒が板の外へ出ていないかを必ず絵で見ること。 */
+  /* 【高さは画面から決める(R1)】カードを中身の高さで畳むようにしたので、
+     立ち絵の板だけは**自分の高さを持たない**(中の絵は絶対配置=高さ0)。
+     ここで画面に対する割合を1つ決めるのが、この画面で唯一の「板の大きさの出どころ」。
+     42 は「iPhone12 横持ちで従来と同じ165px前後」になる値。
+     縦が足りない端末では flex-shrink で最初にここが縮む(R3の「装飾がいちばん先に削れる」)。 */
+  #resultScreen .rs-hero-art{
+    flex:1 1 auto; min-height:0; height:calc(42 * var(--vh));
+    margin-top:var(--rs-gap-m); position:relative;
+    filter:drop-shadow(0 0 10px var(--rs-glow));
+  }
+  #resultScreen .rs-hero-art::before,
+  #resultScreen .rs-hero-art::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .rs-hero-art::before{ background:var(--rs-accent); }
+  /* 【台は「設計された台」にする】以前は中心から外へ均一に減衰する丸いぼかし1枚で、
+     ソフトブラシで塗った染みに見えていた(批評)。**輪郭のある楕円の台**へ作り替える。
+     手前から奥へ ①台の縁のリング ②台の面 ③台の下の影 ④床と壁の境目 ⑤奥のあかり。
+     ①②は色の止め位置を隣り合わせにして**縁を立てる**(ぼかさない)のがこの見た目の芯。 */
+  #resultScreen .rs-hero-art::after{
+    inset:2px;
+    background:
+      /* ① 台の縁(楕円のリング。ここだけアクセント色そのもの) */
+      radial-gradient(ellipse 38% 7.5% at 50% 84%,
+        rgba(0,0,0,0) 0 62%, var(--rs-accent) 66% 76%, rgba(0,0,0,0) 80%),
+      /* ② 台の面。**中心を暗く落として縁だけ光らせる**(上から見た台座の見え方)。
+         全面をベタで光らせると、輪郭のあるぼかし=やはり「染み」に見える */
+      radial-gradient(ellipse 38% 7.5% at 50% 84%,
+        rgba(7,11,18,0.62) 0 40%, rgba(7,11,18,0) 58%, rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 38% 7.5% at 50% 84%,
+        var(--rs-glow) 0 58%, rgba(0,0,0,0) 64%),
+      /* ③ 台の下の影(足元を床へ接地させる) */
+      radial-gradient(ellipse 44% 5% at 50% 90%, rgba(0,0,0,0.6), rgba(0,0,0,0) 72%),
+      /* ④ 床と壁の境目の細い線 */
+      linear-gradient(180deg,
+        rgba(0,0,0,0) 0 73%, rgba(255,255,255,0.07) 73% 73.6%, rgba(0,0,0,0) 74%),
+      /* ⑤ 奥のあかり + 面のグラデーション */
+      radial-gradient(58% 44% at 50% 72%, var(--rs-glow), rgba(0,0,0,0) 74%),
+      linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02) 40%, rgba(0,0,0,0.45)),
+      #070b12;
+  }
+  /* 【置換要素に width:auto を残さない】<img> は絶対配置で上下左右を留めても、
+     width/height が auto だと**元画像の大きさ(320px)**になって枠を無視する(実測で1100px溢れた)。
+     大きさは必ず割合で書く。 */
+  /* 絵は板より一回り小さく置く。エモート(勝ち=跳ねる/負け=うなだれる)が
+     transform で傾くので、その振れ幅ぶんの余白を枠の内側に残しておく
+     ―― 枠に overflow:hidden を掛けて切るのではなく、**はみ出さない大きさにする。** */
+  #resultScreen .result-monster-icon{
+    position:absolute; top:10%; left:10%; z-index:1;
+    width:80%; height:80%; margin:0;
+    border:0; border-radius:0; box-shadow:none;
+    object-fit:contain; background:none;
+  }
+  /* 負けたときは「同じ板を色だけ落とす」。透過灰の楕円を置いただけにしない */
+  #resultScreen[data-tone="lose"] .result-monster-icon,
+  #resultScreen.lose .result-monster-icon{ filter:grayscale(0.45) brightness(0.86); }
+  /* 試合ハイライト(1試合1つだけ)。長い文言は自分で「…」に切る */
   .result-highlight{ margin-top:6px; padding:5px 14px; border-radius:6px; font-size:13px; letter-spacing:1px;
     color:var(--amber); background:rgba(244,196,48,0.1); border:1px solid rgba(244,196,48,0.45);
     max-width:min(92 * var(--vw), 560px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .result-highlight.hidden{ display:none !important; }
+  /* リザルトでは列の幅に収める。丸角をやめて斜め切りの言語にそろえる */
+  /* 【この帯がこのカードの中位 ―― 2026-08-29(7巡目)】副題を10pxへ落としたぶん、
+     記録の帯はここで12pxに上げて「見出し(大)→ 記録の帯(中)→ 副題(小)」の3段にする。 */
+  #resultScreen .result-highlight{
+    flex:0 0 auto; margin-top:var(--rs-gap-m); padding:var(--rs-gap-s) var(--rs-gap-m);
+    font-size:12px; font-weight:700; letter-spacing:0.5px;
+    max-width:100%; border-radius:0; color:var(--rs-accent);
+    background:linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,255,255,0));
+    border:0; border-left:2px solid var(--rs-accent);
+  }
+  #resultScreen .result-death-cause{
+    flex:0 0 auto; margin-top:var(--rs-gap-s); justify-content:flex-start;
+    font-size:11px; gap:var(--rs-gap-m);
+  }
+  /* 【倒した相手の顔は残す。素材の言語に乗せる】批評で「リザルトの中に残った絵文字に見える」と
+     読まれたのはこの17pxの丸。**消さない** ―― 「誰に倒されたか」は次の1戦の動機になる実情報で、
+     2026-08-28にその狙いで足したもの。浮いて見えていたのは**丸角と原色**が
+     この画面の言語(45°の切り欠き・モノクロ+アクセント1色)から外れていたせいなので、
+     形と色のほうを合わせる:丸角 → 45°の切り欠き、彩度を落として1pxの罫で囲む。 */
+  #resultScreen .result-death-icon{
+    width:17px; height:17px; border-radius:0; border:0;
+    box-shadow:inset 0 0 0 1px var(--rs-line-strong);
+    filter:grayscale(0.5) brightness(0.92);
+    background:rgba(255,255,255,0.06);
+    clip-path:polygon(
+      var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
+      100% var(--rs-cut-s), 100% calc(100% - var(--rs-cut-s)),
+      calc(100% - var(--rs-cut-s)) 100%, var(--rs-cut-s) 100%,
+      0 calc(100% - var(--rs-cut-s)), 0 var(--rs-cut-s));
+  }
+
+  /* ---------- 1枚目 右: 統計5つ + 小隊 ----------
+     【APEXから取る】統計は**箱で囲まない**。小さい灰のラベル + 大きい数値 + 下に細い罫。
+     【行を伸ばして余りを吸わせない】各行は中身ぶんの高さのまま上に詰め、
+     余った縦は列の下に1つの塊で残す(APEXのXP内訳の表と同じ)。 */
+  /* 【入れ子のflexを増やさない】共通の .resultStatsRow は align-items:center の
+     row-flex で、そのままだと中の縦積みの高さが決まらず3行が0pxに潰れた(実際に消えた)。
+     ここでは素のブロックに戻し、縦積みは .resultStats 1枚だけで作る。 */
+  /* 【行の高さは1つの固定値にする】3行に高さを「分け合わせる」と、カードが高いほど
+     行間が広がり(実測175px)、統計が離れ小島になった。**上限を1つ決めて、
+     どの端末でも同じ刻みにする。** 余りは行間ではなくカードの下へ無地で残す。
+     align-items:stretch を必ず書くこと ―― 共通の .resultStatsRow は center で、
+     center のままだと中の縦積みの高さが決まらず3行が0pxに潰れる(実際に消えた)。 */
+  /* 【flex-direction:column を外さない】共通の .resultStatsRow は**横**のflexで、
+     そのままだと中の .resultStats は「縦は align-items:stretch で決まる=中身より小さくならない」
+     ふるまいになり、縦が足りない端末で行が縮まず5〜7px溢れる(実測)。
+     縦のflexにしておけば、足りないぶんがそのまま行の縮みへ伝わる。 */
+  /* 【伸ばさない ―― 2026-08-29(7巡目)】ここが伸びると、余りが**統計と小隊の間**へ
+     入って穴になる(小隊はこの箱の後ろに来る)。余りはカードの下へ1回だけ落とす。 */
+  #resultScreen .resultStatsRow{
+    flex:0 1 auto; min-height:0; margin-top:0; gap:0;
+    display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
+  }
+  /* 【justify-content を必ず書く】共通の .resultStats(1つ下の節・classだけの指定)が
+     center を持っているので、書かないと3行の塊が列の真ん中に浮き、
+     見出しと1行目の間に大きな穴があく(実測85px)。**上詰めが正**。 */
+  /* 【max-height:100% を外さない】この箱は .resultStatsRow(**横**のflex)の中の1枚なので、
+     縦は align-items:stretch で決まる = **中身より小さくはならない。**
+     行の高さを決め打ち(下の height:--rs-stat-h)にしてから、縦が足りない端末では
+     ここで上限を切らないと3行ぶん(216px)のまま5〜7px溢れる(実測)。 */
+  #resultScreen .resultStats{
+    flex:0 1 auto; min-width:0; min-height:0; max-height:100%; justify-content:flex-start;
+    display:flex; flex-direction:column; flex-wrap:nowrap; gap:0; width:100%;
+  }
+  /* 【column-reverse を使わない】DOMを「ラベル→数値」の順に並べ替えて素直な column にした。
+     column-reverse は中身が枠に入りきらないときの溢れ方が逆向きになり、
+     どの端末でも9pxぶん行が溢れて見えた(実測)。並び順はHTML側で作る。 */
+  /* 【行の高さは中身から決めた固定値・余りは行へ配らない ―― 2026-08-29(7巡目)】
+     6巡目は「余りを行そのものの高さに引き受けさせる」形にしたが、それは
+     **同じ部品が場面ごとに違う寸法になる**という別の崩れを生んだ(実測: 報酬の行が
+     勝ちの2枚目で44px・敗北の2枚目で60px。行の数が少ない場面ほど行が太る)。
+     行の高さは中身が決めるものなので --rs-stat-h の決め打ちへ戻し、
+     **余った縦はカードの下に1回だけ無地で落とす**(行間へも行の高さへも配らない)。
+     ・伸びない … flex-grow:0(どの場面でも同じ刻み)
+     ・縮む    … flex-shrink:1(縦が足りない端末では全行が同じ割合で縮む。従来どおり)
+     【5行になっても --rs-stat-h は 72px のまま ―― 2026-08-29(8巡目)】
+     5行 × 72px = 360px はどの端末のカードにも入らないので、実際の行の高さは
+     「使える縦 ÷ 5」まで一様に縮んだ値になる(iPhone12横持ちで約54px)。
+     **場面ごとには変わらない**(同じ端末なら勝ち・負け・レイドで同じ刻み)ので、
+     過去2回の失敗(余りを行へ配って場面ごとに行が太る)は起きない。
+     代わりに、余りが行の下へ落ちずカードの下端まで統計で埋まる = 今回の狙いそのもの。 */
+  #resultScreen .resultStats > div{
+    flex:0 1 var(--rs-stat-h); min-height:0; min-width:0; height:var(--rs-stat-h); text-align:left;
+    /* column-reverse は使わない(溢れ方が逆になる)。並びはHTML側で作ってある。
+       【中身は行の中央 ―― 2026-08-29(6巡目)】以前は下寄せで、余りが**全部その行の上**へ
+       乗っていた。行が伸びると1行目の余り(=見出し罫の直下の無地の帯)だけが目立つ。
+       中央にすると余りが行の上下へ半分ずつ入り、**罫も数値も等間隔**に並ぶ。 */
+    display:flex; flex-direction:column; justify-content:center;
+    /* 【上下の余白を持たない ―― 2026-08-29(8巡目)】3行だった頃は行に余裕があったので
+       上下 --rs-gap-s を持っていたが、5行になると縦が一番削られた端末(667×320)で
+       1行が約40pxまで縮み、**その6pxぶんだけ中身が罫を越える。**
+       余りがあるときは justify-content:center が同じ見た目の余白を作るので、
+       固定の余白を持たなくても詰まって見えることはない(足りないときだけ差が出る)。 */
+    padding:0; border-bottom:1px solid var(--rs-line);
+  }
+  /* 【罫を引いてから余らせない】縦積みのときの最後の1行は、罫がカードの下端の枠と
+     二重になるだけなので消す(「4行目が読み込めていない表」に見える原因)。
+     小隊が出て**横並び**になっているときは、3つの罫が1本の線に見えるので残す。
+     :has() が効かない環境では罫が残るだけで、壊れ方は増えない。 */
+  #rsPerf:not(:has(> #resultSquadInfo:not(.hidden))) .resultStats > div:last-child{
+    border-bottom:0;
+  }
+  #resultScreen .resultStats div{ text-align:left; }
+  /* 【下の1pxを持たない ―― 2026-08-29(8巡目)】5行になったぶん、縦が一番削られた
+     端末(667×320)では1行が約42pxまで縮む。数値の行送り(1.25)が既に離れを作るので、
+     ここの1pxは見た目に効かず、足りないときだけ罫を越える側に効いていた。 */
+  #resultScreen .resultStats .lbl{
+    flex:0 0 auto;
+    font-size:8.5px; letter-spacing:1.6px; color:var(--rs-dim); margin:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 【縮ませない】overflow:hidden を持つので flex の自動最小が0になり、
+     詰まると行の途中で字が切れる(実測2px)。切るより溢れて検査に出るほうがよい */
+  #resultScreen .resultStats .num{
+    flex:0 0 auto;
+    /* --rs-stat-h の中で「ラベル+数値+余白」がちょうど収まる大きさ。
+       ここを上げるときは --rs-stat-h も一緒に上げる(2か所で1つの寸法を持っている)。
+       【縦積みのときは一回り大きく ―― 2026-08-29(6巡目)】左右の底をそろえて行が伸びたぶん、
+       数値そのものを大きくして余りを減らす(APEXも統計の数字は大きい)。
+       **チーム戦で横1行に畳んだときは元の大きさへ戻す**(下の :has() の節。
+       3等分した幅では「18,420」が入りきらず、行の途中で切れる)。 */
+    font-family:'Share Tech Mono',monospace; font-size:clamp(15px, calc(7.4 * var(--vh)), 31px);
+    /* 行送りを字の高さぎりぎりにしない(1.06 だと overflow:hidden が2px削る) */
+    line-height:1.25; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 小隊(チーム戦のときだけ)。行は「名前 … 撃破n 状態」で左右に振る。
+     【行に高さを分け合わせない】以前は flex:1 1 0 で3人が高さを分け合い、
+     行間が135pxになって「同じ小隊に見えない」と言われた。行は --rs-row-h の決め打ちで、
+     **台帳の明細と同じ刻み**にしてある(画面に表の刻みを2種類作らない)。 */
+  #resultScreen .result-squad-info{
+    flex:0 1 auto; min-height:0; margin-top:var(--rs-gap-m); align-items:stretch; gap:0;
+  }
+  #resultScreen .result-squad-title{
+    font-size:8.5px; letter-spacing:2.4px; color:var(--rs-dim); text-align:left;
+    padding-bottom:2px; border-bottom:1px solid var(--rs-line);
+  }
+  /* 人数が3人でも4人でも同じ刻み(高さは固定。足りないときだけ同じ割合で縮む) */
+  #resultScreen .result-squad-row{
+    flex:0 1 auto; min-height:0; height:var(--rs-row-h);
+    display:flex; align-items:center; gap:var(--rs-gap-m); font-size:10.5px; letter-spacing:0;
+    padding:0; border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  #resultScreen .result-squad-row .sq-mark{ font-size:7.5px; color:var(--rs-dim); flex:0 0 auto; }
+  #resultScreen .result-squad-name{ flex:1 1 auto; min-width:0; max-width:none; text-align:left; }
+  #resultScreen .result-squad-row.sq-me .result-squad-name{ color:var(--rs-accent); }
+  /* 【小隊の数字も「小さいラベル + 大きい数字」にする ―― 2026-08-29(7巡目)】
+     「撃破 12 生存」は語も数字も同じ級・同じ色で、**数字が文に埋もれていた**(批評)。
+     右列の統計(ラベル8.5px灰 + 大きい数値)と同じ扱いへ寄せる。
+     **行の高さ(--rs-row-h)は増やさない** ―― 数字は13pxまで(24pxの行に収まる)。 */
+  #resultScreen .result-squad-kills{
+    flex:0 0 auto; display:inline-flex; align-items:baseline; gap:var(--rs-gap-s);
+  }
+  #resultScreen .rs-sq-lbl{ font-size:8.5px; letter-spacing:1.6px; color:var(--rs-dim); }
+  #resultScreen .rs-sq-num{
+    font-family:'Share Tech Mono',monospace; font-size:13px; line-height:1; color:var(--ink);
+  }
+  #resultScreen .result-squad-state{ flex:0 0 auto; font-size:9px; }
+  /* 【小隊が出ているときは統計を横1行へ畳む】
+     縦積みの統計(約111px)と小隊(約72px)と見出しは、667×320で登録の対話も出ている
+     いちばん詰まった場面(147px)に同時には入らない ―― 実測で16px溢れた。
+     R3の「縦が足りないときは情報の密度を上げる」をここで効かせる。
+     :has() が効かない環境では縦積みのままになるだけで、壊れ方は増えない。 */
+  /* 【余りは行へ配らない ―― 2026-08-29(7巡目)】6巡目は統計の1行と小隊の行に余りを
+     分け合わせたが、それだと**同じ行が場面ごとに違う高さ**になる(行の数が少ない場面ほど
+     太る)。チーム戦でも刻みは他の場面と同じにして、余りはカードの下へ1回だけ落とす。
+     【数値の大きさは戻す】3等分した幅では「18,420」が31pxだと入りきらない。 */
+  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats{ flex-direction:row; gap:var(--rs-gap-m); }
+  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats > div{ flex:1 1 0; height:var(--rs-stat-h); }
+  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats .num{
+    font-size:clamp(15px, calc(6.6 * var(--vh)), 29px);
+  }
+  /* 【チーム戦だけ統計は3項目のまま ―― 2026-08-29(8巡目)】
+     小隊の行があるチーム戦では統計が**横1行**に畳まれる(1つ上の節)。
+     5等分すると1欄が iPhone12横持ちで約74pxしかなく、「18,420」が入らない
+     (数値だけで約93px要る)。R3の「縦が足りないときに削る順番 = 情報を削る」に従い、
+     あとから足した2行のほうを畳む。**行の高さも数値の大きさも今までのまま**。
+     :has() が効かない環境では縦積みのまま5行出るだけで、壊れ方は増えない。 */
+  /* 【他の物が縦を要るときは、この2行がいちばん先に消える ―― R3】
+     戦績の列に入れる物が増える場面は2つあり、どちらも5行ぶんの縦が残らない:
+       ・チーム戦 … 小隊の行がこの列に入り、統計は横1行へ畳まれる。5等分した幅では
+                    「18,420」が入らない(数値だけで約93px要る)
+       ・マスモン登録の対話 … 画面の下に帯が1本増え、**両方の列が同じだけ低くなる**。
+                    667×320 では1行が28pxまで縮み、ラベル+数値(約41px)が罫を越えた(実測)
+     どちらも「操作 > 情報 > 飾り」の情報側なので、**あとから足した2行を畳む**。
+     残る3行(撃破数・与ダメージ・生存時間)は行の高さも数値の大きさも今までのまま。
+     :has() が効かない環境では5行のままになるだけで、壊れ方は増えない。 */
+  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .rs-stat-extra,
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) .rs-stat-extra{ display:none; }
+
+  /* ---------- 2枚目 左: 報酬の台帳 ----------
+     並びは 内訳 → 小計 → ×倍率 → **合計(特大)**。
+     「小計に倍率を掛けたものが合計」と見せる(行の総和=合計ではない)。
+     **値が無い欄も消さず `--` で残す**(APEXから。次の目標を教える)。
+     【明細は1つの塊にする】明細(参加/撃破/チャンピオン…)は隙間なしで詰め、
+     ゼブラの帯が続けて並ぶようにする。**罫は「小計の上」に1本だけ。**
+     合計だけは margin-top:auto でカードの下端へ固定し、余った縦はその1か所へまとめる
+     (行間へ配ると表が浮島に分解する。2026-08-29の失敗)。 */
+  /* 【伸ばさない ―― 2026-08-29(7巡目)】ここが伸びると余りが明細の行へ配られ、
+     行の数が少ない場面ほど行が太る(実測: 勝ちの2枚目44px / 敗北の2枚目60px)。
+     余りはカードの下に1回だけ無地で落とす。入りきらないときだけ中を送る。 */
+  #resultScreen .rs-ledger-rows{
+    flex:0 1 auto; min-height:0; display:flex; flex-direction:column;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  /* 【行の高さは場面によらず --rs-row-h ―― 2026-08-29(7巡目)】
+     **縮ませない**(flex-shrink:0)―― 足りないときは従来どおり明細の中だけを送る。 */
+  #resultScreen .rs-ledger-rows > .rs-led-row{
+    flex:0 0 var(--rs-row-h); height:var(--rs-row-h); align-items:center;
+  }
+  #resultScreen .rs-led-row{
+    display:flex; align-items:center; gap:var(--rs-gap-m);
+    font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px;
+    padding:0 var(--rs-gap-s);
+  }
+  #resultScreen .rs-ledger-rows .rs-led-row:nth-child(odd){ background:rgba(255,255,255,0.045); }
+  #resultScreen .rs-led-name{
+    flex:1 1 auto; min-width:0; text-align:left; color:var(--ink-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .rs-led-val{
+    flex:0 0 auto; width:58px; text-align:right; color:var(--ink);
+    font-family:'Share Tech Mono',monospace; font-size:11.5px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .rs-led-val.rs-led-off{ color:var(--rs-dim); opacity:0.6; }
+  /* 小計 = 明細の塊の締め。**この画面で明細まわりの罫はここ1本だけ。** */
+  #resultScreen .rs-led-sub{
+    flex:0 0 auto; height:auto; min-height:var(--rs-row-h);
+    margin-top:var(--rs-gap-m); padding-top:var(--rs-gap-m);
+    border-top:1px solid var(--rs-line-strong); background:none;
+  }
+  #resultScreen .rs-led-sub .rs-led-name{ color:var(--rs-dim); letter-spacing:1.4px; font-size:10px; }
+  /* 【明細 < 小計 < 合計 の3段を数字にも付ける】小計の数字が明細と同じ大きさ・同じ色だと、
+     罫1本しか差が無く「明細・明細・大」の2段に見える(批評)。**小計は明細より1段小さく暗く**。
+     額の大きさで主役を決めるのは合計(特大・アクセント)1つだけにする。 */
+  #resultScreen .rs-led-sub .rs-led-val{ font-size:10px; color:var(--rs-dim); }
+  #resultScreen .rs-led-mults{
+    flex:0 0 auto; display:flex; flex-direction:column; gap:1px;
+    margin-top:var(--rs-gap-s); padding:0 var(--rs-gap-s);
+  }
+  #resultScreen .rs-led-mults:empty{ display:none; }
+  #resultScreen .rs-led-mult{
+    display:flex; align-items:baseline; gap:var(--rs-gap-m); font-family:'Rajdhani',sans-serif;
+    font-weight:700; font-size:10px; color:var(--rs-accent);
+  }
+  #resultScreen .rs-led-mult-x{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; }
+  #resultScreen .rs-led-mult-name{ flex:1 1 auto; min-width:0; text-align:left; color:var(--ink-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* 【合計は特大で単独で立たせる】APEXの「総合獲得XP」に当たる主役。
+     **カードの下端に固定**(上の #rsLedgerTotal{margin-top:auto})。明細の塊から切り離した
+     別ブロックにして、「どれが集計行か」を位置でも読めるようにする。 */
+  /* 【この面も伸ばさない ―― 2026-08-29(7巡目)】6巡目は余りをこの面に引き受けさせたが、
+     明細の少ない試合では「小計」と「合計」の間が90px空いて、そこが穴に見えた(批評)。
+     **余った縦はカードの下に1回だけ無地で落とす**(行間へも行の高さへもこの面へも配らない)。
+     **下端へ飛ばして穴を作らない**(margin-top:auto は使わない)。 */
+  #resultScreen .rs-led-total{
+    flex:0 0 auto; min-height:0; display:flex; align-items:center; justify-content:space-between;
+    gap:var(--rs-gap-m);
+    padding:var(--rs-gap-m) var(--rs-gap-s) 0; border-top:1px solid var(--rs-line-strong);
+  }
+  #resultScreen .rs-led-total-lbl{
+    flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:9px; letter-spacing:2.4px; color:var(--rs-dim);
+  }
+  #resultScreen .rs-led-total-val{
+    flex:1 1 auto; min-width:0; display:flex; justify-content:flex-end; gap:var(--rs-gap-l);
+    font-family:'Russo One',sans-serif; font-size:clamp(15px, calc(3.2 * var(--vw)), 23px);
+    line-height:1.3; color:var(--rs-accent);
+    /* 🪙💎 が入るので text-shadow ではなく drop-shadow(順位と同じ理由。
+       カラー絵文字の text-shadow は字形でなく四角い枠の影になる) */
+    filter:drop-shadow(0 0 8px var(--rs-glow));
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 台帳が出せないとき(レイドのデモ=記録は残りません 等)の1行 */
+  #resultScreen .result-currency{
+    flex:0 0 auto; margin-top:var(--rs-gap-s); font-size:10.5px; letter-spacing:0.5px;
+    color:var(--rs-dim); text-align:left; max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  /* 出す試合が限られる1行。空のときは縦を1pxも使わせない(合計の下端固定がずれる) */
+  #resultScreen .result-currency:empty{ display:none; }
+
+  /* ---------- 2枚目 右: マスモンEXP・次の報酬・バッジ ----------
+     EXPは2段だけ(ラベルと値 / Lv—バー—次のLv)。APEXのレベルバーと同じ組み方で、
+     Lvを左右へ出すぶん段が1つ減る。 */
+  #resultScreen .rs-exp{ flex:0 0 auto; display:flex; flex-direction:column; gap:var(--rs-gap-s); }
+  #resultScreen .rs-exp-head{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--rs-gap-m); }
+  #resultScreen .rs-exp-bar{ display:flex; align-items:center; gap:var(--rs-gap-m); }
+  #resultScreen .rs-exp-lbl{
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9px; letter-spacing:2px;
+    color:var(--rs-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .rs-exp-val{
+    font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); flex:0 0 auto;
+  }
+  /* 【素の角丸1本にしない】APEXのレベルバー(apex_xp_win.png 中央下)は
+     **左右にLvの札・バーに目盛り・先端に明るい端**が付いていて、それが「作り込まれた部材」に
+     見せている。こちらは他の部材(パネル・チップ・台)だけ作り込んで、バーだけ素だったので浮いた。
+     目盛りは repeating-linear-gradient の1本線で作る(要素は増やさない)。 */
+  #resultScreen .rs-exp-track{
+    flex:1 1 auto; min-width:0;
+    height:8px; border:1px solid var(--rs-line);
+    background:
+      /* 4分割の目盛り。0%の位置は枠と重なるので 25% ごとに1本ずつ立てる */
+      repeating-linear-gradient(90deg,
+        rgba(0,0,0,0) 0 calc(25% - 1px), rgba(255,255,255,0.22) calc(25% - 1px) 25%),
+      rgba(255,255,255,0.09);
+    /* 端を斜めに落として、パネルの斜め切りと同じ45°にそろえる */
+    clip-path:polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+  }
+  /* 先端は box-shadow で描く(border/擬似要素だと幅が変わって伸びる長さがずれる)。
+     track の clip-path が外へ出たぶんを切るので、0%と100%でもはみ出さない。 */
+  #resultScreen .rs-exp-fill{
+    height:100%; width:0; background:linear-gradient(90deg, var(--rs-accent2), var(--rs-accent));
+    box-shadow:0 0 10px var(--rs-glow), 2px 0 0 rgba(255,255,255,0.8);
+    transition:width 0.24s ease;
+  }
+  /* 左右のLv = APEXの菱形の札に当たる部材。斜め切りは小さい札と同じ --rs-cut-s */
+  #resultScreen .rs-exp-lv{
+    flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:9px;
+    color:var(--rs-dim); white-space:nowrap;
+    padding:1px var(--rs-gap-m); background:rgba(255,255,255,0.07);
+    box-shadow:inset 0 0 0 1px var(--rs-line);
+    clip-path:polygon(
+      var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
+      100% var(--rs-cut-s), 100% calc(100% - var(--rs-cut-s)),
+      calc(100% - var(--rs-cut-s)) 100%, var(--rs-cut-s) 100%,
+      0 calc(100% - var(--rs-cut-s)), 0 var(--rs-cut-s));
+  }
+  /* いま居るLvが主、次のLvは予告。札の明るさで主従を付ける */
+  #resultScreen #rsExpLv{ color:var(--ink); box-shadow:inset 0 0 0 1px var(--rs-line-strong); }
+  /* EXPの1行。**行の途中で切らない** ―― flexで縮めると1行の真ん中で切れて
+     「壊れている」ように見えるので、高さは2行ぶんに固定し(-webkit-line-clamp)、
+     縦が足りないときに譲るのはバッジ棚のほう(R3で小隊/バッジのほうが下)。 */
+  /* EXPの1行。**高さは max-height で止める** ―― -webkit-line-clamp は
+     中に <div> が入ると効かない(ui.js側が段落を入れた瞬間に5行まで伸びて列が溢れた)。
+     line-height を数値で固定してあるので、2行ぶんで必ず行の境目で止まる。 */
+  #resultScreen .mastermon-result-info{
+    flex:0 0 auto; margin-top:var(--rs-gap-s); padding:var(--rs-gap-s) var(--rs-gap-m);
+    font-size:10px; line-height:13px; text-align:left;
+    max-height:calc(2 * 13px + 2 * var(--rs-gap-s)); overflow:hidden;
+    border-radius:0; border:0; border-left:2px solid var(--rs-accent);
+    color:var(--rs-accent); background:linear-gradient(90deg, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  }
+  /* ---------- EXPの内訳(#mastermonResultInfo) ----------
+     ui.js は**クラスを外して**台帳と同じ .rs-led-row を並べる箱として使うので、
+     ここは**ID起点**で書く(クラス側の指定は、EXPが無い試合の hidden 用に残してある)。
+     行の高さを line-height で固定し、max-height を「行の整数倍」にして
+     **行の途中で切れない**ようにする。 */
+  /* 【この列にも「大」を1つ置く ―― 2026-08-29(6巡目)】獲得EXP・撃破ボーナス・チケット・
+     次の報酬・チップが**全部同じ字**で並び、左カードは「合計」だけが大きいのに
+     右カードには対になる大が無かった(批評)。**獲得EXP を左の「合計」と同じ字高**へ上げ、
+     残り(内訳の2行)はそのぶん小さく落とす。字高の出どころは合計と同じ式。
+     高さは2種類の行の刻みで持つ ―― 行の整数倍で切るので、途中で切れた行にならない。 */
+  #resultScreen #mastermonResultInfo{
+    --rs-exp-row:13px;    /* 内訳の1行(撃破ボーナス・チケット) */
+    --rs-exp-lead:30px;   /* 獲得EXP の1行(合計と同じ字高が入る高さ) */
+    flex:0 0 auto; margin-top:var(--rs-gap-s);
+    display:flex; flex-direction:column;
+    padding:0 0 0 var(--rs-gap-m); border:0; border-left:2px solid var(--rs-accent);
+    border-radius:0; background:linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0));
+    /* 大1行 + 内訳2行。行の境目で止まる */
+    max-height:calc(var(--rs-exp-lead) + 2 * var(--rs-exp-row)); overflow:hidden;
+  }
+  /* 行の高さは height で決め打ち。baseline そろえのままだと大きいほうの字に
+     引っぱられて1pxずつ伸び、max-height の「行の整数倍」がずれる(実測45px/42px) */
+  #resultScreen #mastermonResultInfo .rs-led-row{
+    flex:0 0 auto; height:var(--rs-exp-row); align-items:center;
+    padding:0; font-size:9px; line-height:var(--rs-exp-row); background:none;
+  }
+  #resultScreen #mastermonResultInfo .rs-led-val{ color:var(--rs-accent); font-size:9.5px; }
+  /* 獲得EXP = この列の主役。左カードの「合計」と同じ組み方(小さい灰のラベル + 特大の数字) */
+  #resultScreen #mastermonResultInfo .rs-exp-gain{
+    height:var(--rs-exp-lead); align-items:baseline;
+  }
+  #resultScreen #mastermonResultInfo .rs-exp-gain .rs-led-name{
+    font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:9px; letter-spacing:2.4px; color:var(--rs-dim);
+  }
+  #resultScreen #mastermonResultInfo .rs-exp-gain .rs-led-val{
+    flex:0 0 auto; width:auto;
+    font-family:'Russo One',sans-serif; font-size:clamp(15px, calc(3.2 * var(--vw)), 23px);
+    line-height:1.3; color:var(--rs-accent);
+    filter:drop-shadow(0 0 8px var(--rs-glow));
+  }
+  #resultScreen #mastermonResultInfo.hidden{ display:none !important; }
+  /* 登録の帯が出ている間は右列が164pxしかないので内訳を1行に落とす(大の1行は残す) */
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #mastermonResultInfo{
+    max-height:calc(var(--rs-exp-lead) + var(--rs-exp-row));
+  }
+  /* 【APEXから取る】「次の報酬」を先に見せる */
+  #resultScreen .rs-next{
+    flex:0 0 auto; margin-top:var(--rs-gap-s); padding:var(--rs-gap-s) var(--rs-gap-m);
+    display:flex; align-items:baseline; gap:var(--rs-gap-m);
+    background:rgba(255,255,255,0.045);
+    clip-path:polygon(
+      var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
+      100% var(--rs-cut-s), 100% calc(100% - var(--rs-cut-s)),
+      calc(100% - var(--rs-cut-s)) 100%, var(--rs-cut-s) 100%,
+      0 calc(100% - var(--rs-cut-s)), 0 var(--rs-cut-s));
+  }
+  /* 【中身の格で字の大きさを分ける】右列の4ブロック(獲得EXP群 / この試合の記録 /
+     次の報酬 / チップ列)が全部同じ行高・同じ字の大きさで、枠の種類だけで区別していたので
+     横並びに見えていた(批評)。**格の順は 記録(13px) > EXPの内訳(10.5px) >
+     次の報酬(10px) > チップ(9px)。** 次の報酬は「まだ手に入っていない予告」、
+     チップは「あとで効いてくるメタ通貨」なので、いちばん小さくてよい。 */
+  #resultScreen .rs-next-lbl{
+    flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:8.5px; letter-spacing:2px; color:var(--rs-dim);
+  }
+  #resultScreen .rs-next-body{
+    flex:1 1 auto; min-width:0; text-align:right; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:10px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* ---------- この試合の主役の記録(.rs-lead-record) ----------
+     「自己ベスト 撃破12」と「称号1件」がバッジ棚の中で同格に並んでいて、
+     どれがこの試合いちばん嬉しい事実なのか読めなかった(批評の指摘)。
+     ui.js が棚の**外**へ出したこの札を、面と字の大きさで一段上に見せる。
+     **棚の段の高さ(--rs-badge-row)には触らない** ―― 棚の外なので計算に関わらない。
+     祝いごとが無い試合は ui.js が札ごと出さないので、そのときは縦を1pxも使わない。 */
+  /* 【塗らない】面を明るく塗ると、操作バーの唯一の塗り(トップ画面へ/マスモン)と
+     同じ強さで並び、「塗りは1画面に1つ」が崩れる。**アクセントの枠 + 暗い面**にして、
+     強さは枠と字だけで出す。 */
+  #resultScreen .rs-lead-record{
+    margin-top:var(--rs-gap-s);
+    background:rgba(3,6,11,0.5); border:1px solid var(--rs-accent);
+  }
+  /* この札だけは右列でいちばん上の格。ラベルも次の報酬より1段大きいままにする */
+  #resultScreen .rs-lead-record .rs-next-lbl{ color:var(--rs-accent); font-size:9px; }
+  #resultScreen .rs-lead-record .rs-next-body{
+    font-size:13px; font-weight:800; color:var(--rs-accent);
+  }
+  #resultScreen .rs-lead-record:empty{ display:none; }
+  /* ---------- バッジ棚 ----------
+     **台帳と並んでここだけスクロールしてよい**。
+     【高さは必ず「段の整数倍」】flexに任せて縮ませると、最後の段が上半分だけ見える
+     **中途半端に切れた見た目**が必ず出る(実測。667×320で毎回出ていた)。
+     そこで棚の高さを段数で決め打ちし、flex-shrink:0 で誰にも縮ませない。
+     ・ふだん      … 3段(66px)
+     ・登録の対話中 … 2段(43px)
+     どちらも667×320の右列(231px / 登録中は164px)に必ず入る段数にしてある。
+     **右列に何かを1つ足したらこの段数を見直すこと**(実測で決めた数字)。
+     入りきらないぶんは棚の中だけを送る(段の境目で止まるので切れて見えない)。
+     段の高さを固定するために **.result-badge に line-height を明示する**
+     ―― 書体のぶら下がりで段の高さが変わると、この計算がその場でずれる。 */
+  /* 【上限は段数・実際の高さは中身なり】以前は height で3段(66px)を**必ず**確保していたので、
+     チップが1列しか無い試合では棚の中に46pxの穴が空いた(敗北の2枚目)。
+     max-height に変えると、入る段数が中身で決まり、入りきらないぶんだけ棚の中を送る。
+     max-height は段の整数倍なので、切れ目は必ず段の境目に来る(中途半端に切れない)。 */
+  /* line-height14 + 上下padding4 + 枠2 = 20px。**+1pxは絵のぶんの逃げ**
+     ―― チップの中の単色SVG(1.28em=11.5px)が行箱をわずかに押し広げて実測20.27pxになる。
+     段の高さを実測より小さく見積もると、3段目が0.8pxだけ切れて「中途半端に切れた棚」になる。 */
+  #resultScreen{ --rs-badge-row:21px; }
+  /* 【棚に余りを吸わせない】flex:1 1 auto にすると棚だけが高くなり、チップの最終段と
+     棚の下端の間に無地が入る(=棚の中に穴)。余りを受けるのはこの列の最終行のほう。 */
+  #resultScreen .result-badges{
+    flex:0 1 auto; margin-top:var(--rs-gap-s); max-width:100%;
+    max-height:calc(3 * var(--rs-badge-row) + 2 * var(--rs-gap-s));
+    justify-content:flex-start; align-content:flex-start; gap:var(--rs-gap-s);
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  /* 登録の帯が出ている間は右列の残りが少ないので1段に落とす。
+     R3で「小隊/バッジ」は報酬・EXPの情報より下なので、譲るのはこの棚。 */
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) .result-badges{
+    max-height:var(--rs-badge-row);
+  }
+  #resultScreen .result-badges.hidden{ display:none !important; }
+  /* 1行きり。**縮めない**(縮めると行の途中で切れて壊れて見える) */
+  /* この列の最終行。**カードの下端へ固定**して、余った縦をこの1か所へまとめる
+     (段の間へ配ると育成の3ブロックが離れ小島になる。2026-08-29の失敗) */
+  /* 【この行も伸ばさない ―― 2026-08-29(7巡目)】左カードの「合計」と同じ扱いにそろえる。
+     余りは**カードの下に1回だけ無地で落とす**(この行・棚・行間のどれにも配らない)。
+     左右のカードで余りの落ち方がそろうので、下半分に同じ高さの静かな場ができる。 */
+  #resultScreen #scoreSubmitStatus{
+    flex:0 0 auto; margin-top:0; padding-top:var(--rs-gap-s);
+    display:flex; align-items:center;
+    min-height:0; font-size:9px; line-height:1.35; text-align:left;
+    /* 縦中央にするため flex にした。中の文字は無名のflex項目になり
+       text-overflow が効かないので、**1行で切らずに折り返す**(場は広いので入る)。 */
+    color:var(--rs-dim); white-space:normal; overflow:hidden;
+  }
+  /* 【登録の対話が出ている間は送信状態の行を出さない】
+     667×320 で登録の帯が出ると右列は147pxしかなく、この1行(18px)を残すと
+     バッジ棚が1段ぶんを確保できない。**行の途中で切れた文字を残すより、
+     いちばん優先度の低い1行を丸ごと引っ込めるほうがよい**(R3)。
+     登録を決めた直後に ui.js が対話を畳むので、そこで元に戻る。 */
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #scoreSubmitStatus{ display:none; }
+
+  /* ---------- 登録の対話(ページャの外・スクロールしない独立の帯) ----------
+     中に入れると「登録する/スキップ」が黙って画面外へ出る(2026-08-26「丈夫さ」と同型)。
+     横1本の帯にしてあるので、縦は押せるボタンの高さ1つぶんで済む。 */
+  #resultScreen .mastermon-register-prompt{
+    flex:0 0 auto; width:100%; margin-top:0;
+    padding:var(--rs-gap-s) var(--rs-gap-l); gap:var(--rs-gap-l); border-radius:0;
+    flex-direction:row; align-items:center; text-align:left;
+    background:rgba(255,255,255,0.05); border:1px solid var(--rs-line-strong);
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .mastermon-register-texts{ flex:1 1 auto; min-width:0; }
+  #resultScreen .mastermon-register-text{
+    font-size:11px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .mastermon-register-note{
+    margin-top:1px; font-size:9px; color:var(--rs-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 【名前欄とボタンも45°で落とす ―― 2026-08-29(6巡目)】この3つだけが角の切れていない
+     ただの長方形で、画面の他の押せる物(操作バー)と言語が違っていた(批評)。
+     切り欠きは操作バーのボタンと**同じ --rs-cut**(同じ高さの物は同じ長さで落とす)。
+     【3つの寸法をそろえる ―― 2026-08-29(7巡目)】6巡目は角度だけそろって、
+     **大きさと高さがそろっていなかった**(実測: 名前欄は高さ30px・切り欠きが短く見え、
+     ボタンは高さ約48px。1本の帯の中に高さの違う3つが並び、間隔も 12px と 6px で不揃い)。
+     切り欠きは「同じ長さを掛けても、箱の高さが違えば違う形に見える」ので、**まず高さを
+     1つにする** ―― 押せる物の高さの出どころは操作バーと同じ --result-btn-h 1つ
+     (この画面の押せる物はすべてこの高さ。**新しい高さの数字を作らない**)。
+     間隔も帯の gap 1つ(--rs-gap-l)へそろえ、名前欄↔スキップ↔登録する を等間隔にする。 */
+  #resultScreen .mastermon-register-prompt input,
+  #resultScreen .mastermon-register-btnrow button{
+    height:var(--result-btn-h); min-height:var(--result-btn-h); flex-shrink:0;
+    border-radius:0;
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .mastermon-register-prompt input{
+    flex:0 1 160px; width:auto; min-width:0; padding:0 var(--rs-gap-l); font-size:12px;
+  }
+  #resultScreen .mastermon-register-btnrow{ flex:0 0 auto; width:auto; gap:var(--rs-gap-l); }
+  #resultScreen .mastermon-register-btnrow button{
+    flex:0 0 auto; min-width:84px; padding:0 var(--rs-gap-l); font-size:11.5px;
+  }
+
+  /* ---------- 操作バー(両ページ共通の1本) ----------
+     **`.resultBtnRow` は外さない。** `.resultBtnRow button` は #closeRankingBtn などと
+     見た目の出どころを共有していて、外すとランキング/マイ記録の閉じるボタンが
+     素の白ボタンに戻る(2026-08-28の事故と同型)。
+     どれを出すかは ui.js の updateResultActions() が .hidden で決める。 */
+  #resultScreen #resultActions{
+    flex:0 0 auto; margin-top:0; max-width:none; gap:var(--rs-gap-m);
+  }
+  #resultScreen #resultActions > button{
+    padding:9px 5px; font-size:12px; letter-spacing:0.5px; border-radius:0;
+    /* 押せる大きさの下限は .resultBtnRow button から引き継ぐ(min-height/flex-shrink)。
+       斜め切りはパネルと同じ45°・同じ長さ */
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen #resultActions > button.hidden{ display:none !important; }
+  /* ---------- アクセントは画面に1色・1個だけ ----------
+     以前は 緑(もう一度)・金(トップ画面へ/マスモン)・白(シェア)・紫(レイド)が
+     同じ強さで並び、どれが主役か面から読めなかった。
+     **塗るのは「いちばん押す物」1つだけ**にして、あとは同じ暗い面 + 1pxの罫にそろえる。 */
+  #resultScreen #resultActions > button{
+    color:var(--ink); background:rgba(255,255,255,0.07);
+    border:1px solid var(--rs-line-strong); box-shadow:none;
+  }
+  #resultScreen #resultActions > button:active{ background:rgba(255,255,255,0.13); }
+  /* 【塗りは1画面に1つ。0個にしない】0個にすると「次にどこへ行くのか」が画面から消える。
+     APEXも `SPACE 次に進む` の1本だけが明るいバーになっている。
+     **主役 = このリザルトを閉じて次へ進む道** ―― 1枚目は「トップ画面へ」、
+     2枚目は「マスモン」。updateResultActions() が
+       #replayBtn        … 1枚目だけ表示
+       #viewMastermonBtn … 2枚目だけ表示(レイドでも出る)
+     にしているので、**どのページ・どの経路でも塗りは必ず1つ**になる。
+     「⟳ もう一度」と「レイドランキング」からは塗りを外した(同じ強さで2つ並んでいた)。
+     【必ず `#resultActions >` から書くこと】上の `#resultScreen #resultActions > button` は
+     ID2つ+要素1つで、`#resultScreen #replayBtn`(ID2つ)より**強い**。
+     ID2つで書くと後ろに置いても負けて、**塗りが0個の画面**になる
+     (2026-08-29に実際にそうなっていた ―― 金の指定は書いてあるのに1つも塗られていなかった)。 */
+  #resultScreen #resultActions > #replayBtn,
+  #resultScreen #resultActions > #viewMastermonBtn{
+    color:var(--rs-fill-ink); border:0; font-weight:700;
+    /* 上に重ねる --rs-fill-shade は勝ちでは透明・負けでは暗い層(#resultScreen の変数) */
+    background-color:transparent;
+    background-image:var(--rs-fill-shade), linear-gradient(180deg, var(--rs-accent), var(--rs-accent2));
+  }
+  /* ---------- 塗りの居場所は「その画面でいちばん大事な操作」 ----------
+     【決まり】**塗りは1画面に1つ**:
+       1枚目 = トップ画面へ / 2枚目 = マスモン(勝ち負け・レイドを問わず同じ)
+       登録の帯が出ている間 = **登録する**(両ページとも操作バーの塗りを落とす)。
+     【負けの特例はやめた ―― 2026-08-29(5巡目)】以前は「敗北の1枚目だけ順位を塗り、
+     操作バーの塗りを外す」ようにしていた。順位が左の縦いっぱいの札(特大の数字 + 順位帯の縁)
+     へ移り、面を塗らなくても画面でいちばん強い要素になったので特例を畳んだ。
+     APEXも順位は「暗い面 + 明るい縁」で、明るいバーは「SPACE 次に進む」の1本だけ。
+     **勝ちと負けで塗りの居場所が入れ替わらない**ぶん、画面の読み方も1つになる。
+     【詳細度】上の指定は `#resultScreen #resultActions > #replayBtn`(ID3つ+子)なので、
+     打ち消す側は必ずそれより強く書く。:has() を足して勝たせてある。
+     :has() が効かない環境では**従来どおり操作バーが塗られる**(塗り0個にはならない)。 */
+  /* 登録待ち … こちらは「登録する」が塗りで立っているので、操作バーは完全に控えめへ。
+     ここでアクセントの枠を残すと、答えるべき操作と competing する。 */
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #replayBtn,
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #viewMastermonBtn{
+    color:var(--ink); background:rgba(255,255,255,0.07);
+    border:1px solid var(--rs-line-strong); font-weight:700;
+  }
+  #resultScreen #resultActions > .share-icon-btn{
+    padding-left:0; padding-right:0; font-size:15px;
+    color:var(--rs-accent); background:rgba(255,255,255,0.07);
+  }
+  #resultScreen #resultActions > .share-icon-btn .share-ico{ background:var(--rs-accent); }
+  /* 登録の帯。**ここには塗りを置かない。**
+     【なぜ「登録する」ではなく「トップ画面へ」を塗るのか】塗りは1画面に1つと決めたので、
+     登録の帯が出ている間はどちらか一方を落とす必要がある。落とすのは登録の帯のほうにした:
+     ・登録の帯はページャの外の**独立した帯**として面と枠で既に目立っており、
+       位置(操作バーのすぐ上・横1本)だけで「今これを決める」ことが読める。
+     ・操作バーの塗りをページごとに出し入れすると、**塗りが0個になる瞬間**ができる
+       (登録を決めた直後に帯が畳まれるまでの間)。塗りの居場所は固定しておくほうが安全。
+     ・実際に「登録する」の塗りが画面でいちばん明るい面になり、批評で
+       「アクセント外の新しい色が増えた」と読まれた(敗北トーンでは淡い青灰の塗りになる)。
+     そこで登録の2つは「アクセントの枠 + 暗い面」にそろえ、字の色で主従を付ける。
+     【2026-08-29(4巡目)に逆へ倒した】上の考えは画面で裏目に出た ―― 枠だけの「登録する」より
+     隣の「スキップ」の面のほうが明るく、**捨てる側が主役**に見えた。
+     いま塗りを持つべきなのは「プレイヤーが答えなければいけない操作」なので、
+     **登録する=塗り / スキップ=いちばん暗い面**にして、そのぶん操作バーの塗りを落とす
+     (上の #resultActions の節。塗りの総数は1つのまま)。 */
+  #resultScreen #mastermonRegisterSkipBtn{
+    color:var(--rs-dim); background:rgba(0,0,0,0.34); border:1px solid var(--rs-line);
+  }
+  #resultScreen #mastermonRegisterConfirmBtn{
+    color:#1a1306; font-weight:800;
+    background:linear-gradient(180deg, var(--rs-accent), var(--rs-accent2)); border:0;
+    box-shadow:0 0 14px var(--rs-glow);
+  }
+  /* ページの現在地。**操作の一部なので見える大きさにする** ―― 3pxの点では
+     「今どちらのページか」が読めず、置いてある意味がなかった。
+     縦は削ったままで、横に伸ばして今いるほうだけ長く・明るくする。 */
+  #resultPageNav{ display:flex; gap:var(--rs-gap-m); justify-content:center; margin-top:0;
+    pointer-events:none; flex-shrink:0; align-items:center; }
+  #resultPageNav .result-dot{ width:18px; height:5px; border-radius:0;
+    background:rgba(255,255,255,0.26); transform:skewX(-26deg);
+    transition:width 0.2s ease, background 0.2s ease; }
+  #resultPageNav .result-dot.on{ width:34px; background:var(--rs-accent);
+    box-shadow:0 0 10px var(--rs-glow); }
+
+  /* ---------- バッジの見た目(モノクロ + アクセント1色) ----------
+     【色でばらけさせない】以前は シーズン=青 / 段位=灰 / 自己ベスト=虹 / 称号=虹 と
+     4系統の色が並んで、棚だけが騒がしくなっていた。APEXの2枚はどちらも
+     **ほぼモノクロ + アクセント1色**で、それが「よく設計されている」印象の芯になっている。
+     **種類の違いは色ではなく、先頭の単色アイコン(data.js の RS_ICONS)と枠の強さで表す。**
+     【絵文字を足し戻さない】この画面のアイコンはカラー絵文字をやめて単色SVGにしてある。
+     チップに絵文字を1つ混ぜると、SVGと既製の絵で線の太さも色数も揃わず台無しになる。
+     `.result-badge` はリザルトでしか使わないが、他画面を巻き込まないよう
+     ID起点で上書きする(基のクラスは触らない)。 */
+  /* 字は右列でいちばん小さい段(9px)。格の順は 記録13 > EXP内訳10.5 > 次の報酬10 > チップ9 */
+  #resultScreen .result-badge{
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9px; letter-spacing:0.5px;
+    /* 【line-height は必ず数値で固定】棚の高さを段数で決め打ちしているので、
+       書体のぶら下がり任せにすると段の高さがずれて計算が合わなくなる。
+       ここを変えたら --rs-badge-row も直す(2か所で1つの寸法を持っている) */
+    line-height:14px;
+    padding:2px var(--rs-gap-m); border-radius:0;
+    color:var(--ink-dim); background:rgba(255,255,255,0.06);
+    border:1px solid var(--rs-line); text-shadow:none;
+    clip-path:polygon(
+      var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
+      100% var(--rs-cut-s), 100% calc(100% - var(--rs-cut-s)),
+      calc(100% - var(--rs-cut-s)) 100%, var(--rs-cut-s) 100%,
+      0 calc(100% - var(--rs-cut-s)), 0 var(--rs-cut-s));
+  }
+  /* シーズンSP・段位RP = 面はそのまま。数字が読めればよい情報 */
+  #resultScreen .result-badge.season,
+  #resultScreen .result-badge.rankrp{
+    color:var(--ink); background:rgba(255,255,255,0.08); border-color:var(--rs-line);
+  }
+  /* 自己ベスト更新・称号獲得 = この画面で唯一の「祝いごと」。
+     **虹をやめて、アクセント1色の枠と文字**にする。動きは登場のポップだけ残す。 */
+  #resultScreen .result-badge.best,
+  #resultScreen .result-badge.title{
+    color:var(--rs-accent); font-weight:800;
+    background:linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05));
+    border-color:var(--rs-accent);
+    animation:titlePop 0.5s ease;   /* resultRainbow(虹の流れ)は外す */
+  }
+  #resultScreen .result-badge.more{
+    color:var(--rs-dim); background:rgba(255,255,255,0.04); border-style:dashed;
+  }
+
+  /* ---------- 入場演出の下ごしらえ(実際に動かすのは ui.js) ----------
+     【既定(クラス無し)は「全部見えている」状態】にしておくこと。
+     opacity:0 を既定にすると、ui.js側の演出が入るまで画面が真っ白になり、
+     layout_test の vis() が opacity==='0' を不可視として飛ばすので**検査からも消える**。
+     使い方: #resultScreen に .rs-seq-run を付けてから、出したい要素に .rs-shown を足す。 */
+  /* 【ずらすのは「上」へ】下へずらすと、まだ出していない要素の transform が
+     枠の下側へはみ出したぶんとして数えられ、演出の途中だけ列がスクロールする
+     (実測で全端末・全場面に9pxの溢れが出た)。上へのはみ出しは数えられない。 */
+  #resultScreen.rs-seq-run .rs-in{ opacity:0; transform:translateY(-9px); }
+  #resultScreen.rs-seq-run .rs-in.rs-shown{
+    opacity:1; transform:none;
+    transition:opacity 0.26s ease, transform 0.3s cubic-bezier(0.18,0.84,0.28,1);
+  }
+  /* パネルの面と枠だけを斜めにワイプさせたいとき用(中身は .rs-in が持つ) */
+  #resultScreen.rs-seq-run .rs-panel::before,
+  #resultScreen.rs-seq-run .rs-panel::after{ opacity:0; transition:opacity 0.3s ease; }
+  #resultScreen.rs-seq-run.rs-panels-in .rs-panel::before,
+  #resultScreen.rs-seq-run.rs-panels-in .rs-panel::after{ opacity:1; }
 
   .pick-label{ font-size:13px; letter-spacing:3px; color:var(--ink-dim); margin:18px 0 10px; }
   #playerNameInput{

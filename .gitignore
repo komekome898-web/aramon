@@ -15,3 +15,6 @@ shots_agent/
 
 # フック(tools/hooks/)が「同じ中身で二度回さない」ために控えるハッシュ。端末ごとの状態
 .claude/hooks-cache/
+
+# APEXリザルトの参考画像(発注者支給。他社の著作物なのでリポジトリへ入れない)
+.claude/apex-ref/

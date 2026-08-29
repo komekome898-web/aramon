@@ -1266,6 +1266,12 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-29', items:[
+    { t:'🏆 リザルト画面を作り直しました。順位は左端の大きな札に出て、何人中何位か(チーム戦はチーム順位)まで分かります。1位は金、2〜3位は銀に札の色が変わります。これまでは入り切らないぶんを画面ごと縮めていました', g:['general'] },
+    { t:'📊 リザルトの戦績が5項目になりました。撃破数・与ダメージ・生存時間に加えて、続けざまに倒した最高数(連続撃破)と、試合を終えたときの残りHPが出ます。チーム戦は小隊の欄があるので3項目のままです', g:['general'] },
+    { t:'💰 もらった報酬の内訳が出るようになりました。参加・撃破・チャンピオンといった中身と、みんなで対戦やリアルマップの倍率、そして合計が順に並んで数字が動きます', g:['feature','general'] },
+    { t:'📊 リザルトにマスモンの経験値バーが出るようになりました。次のレベルまでの残りと、そのとき何がもらえるかが分かります', g:['feature','monster'] },
+  ]},
   { date:'2026-08-28', items:[
     { t:'👻 「るすばん報告」が届くようになりました！ ログインしていると、あなたのマスモンは他の人の試合に出かけます。何体たおしたか・誰にやられたかの報告が、ロビーの自分の子の吹き出しと マイページ→るすばん報告 で読めます', g:['feature','general','monster'] },
     { t:'🏆 リザルトが2ページになりました。1枚目は勝敗とその試合のハイライト(初チャンピオン・自己ベスト更新・連続キル・大逆転など)、2枚目に細かい数字とバッジ。スワイプかボタンで切り替えられます', g:['feature','general'] },
@@ -3340,12 +3346,17 @@ const TITLES_BY_ID = {}; TITLES.forEach(t=>{ TITLES_BY_ID[t.id]=t; });
    文言は遊ぶ人向けの短い日本語。ここに1行足せば増える。
 ===================================================================== */
 const HIGHLIGHT_CLUTCH_HP = 0.15;   // 「残りHPわずかで勝利」とみなす割合
+/* 【文言に絵文字を入れない】この1行が出るのはリザルトの1枚目だけで、そこは
+   `#resultScreen .result-highlight` が**左のアクセント罫 + アクセント色の文字**を
+   既に持っている。飾りは罫と色が受け持つので、頭に絵文字を足すと
+   金1色の画面に既製の絵が1つだけ浮く(2026-08-29 批評の指摘)。 */
 const HIGHLIGHT_DEFS = [
-  { id:'firstWin',  test:(c)=> c.isWin && c.mmFirstWin,                    text:(c)=> '🌟 この子と初めてのチャンピオン！' },
-  { id:'bestKills', test:(c)=> c.kills>0 && c.kills>c.bestKills,           text:(c)=> `🔥 自己ベスト更新！ ${c.kills}キル` },
-  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `💥 自己ベスト更新！ ${c.damage.toLocaleString()}ダメージ` },
-  { id:'streak3',   test:(c)=> c.maxStreak>=3,                             text:(c)=> `⚡ ${c.maxStreak}連続キル！` },
-  { id:'clutch',    test:(c)=> c.isWin && c.hpRatio<=HIGHLIGHT_CLUTCH_HP,  text:(c)=> '🛡️ 残りHPわずかからの大逆転！' },
+  { id:'firstWin',  test:(c)=> c.isWin && c.mmFirstWin,                    text:(c)=> 'この子と初めてのチャンピオン！' },
+  { id:'bestKills', test:(c)=> c.kills>0 && c.kills>c.bestKills,           text:(c)=> `自己ベスト更新！ ${c.kills}キル` },
+  // 数字の書式はリザルト共通の rsNum(4桁以上を3桁区切り)。ここだけ別の書き方をしない
+  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `自己ベスト更新！ ${rsNum(c.damage)}ダメージ` },
+  { id:'streak3',   test:(c)=> c.maxStreak>=3,                             text:(c)=> `${c.maxStreak}連続キル！` },
+  { id:'clutch',    test:(c)=> c.isWin && c.hpRatio<=HIGHLIGHT_CLUTCH_HP,  text:(c)=> '残りHPわずかからの大逆転！' },
 ];
 function pickHighlight(ctx){
   for(const d of HIGHLIGHT_DEFS){ try{ if(d.test(ctx)) return d.text(ctx); }catch(e){} }
@@ -3997,6 +4008,127 @@ const GOLD_MULTI_MULT = 2;       // マルチプレイはゴールド2倍
    **数値は発注者が実機で調整する。** */
 const DIA_MATCH_BASE = 8;        // 参加報酬
 const DIA_CHAMPION_BONUS = 15;   // チャンピオンボーナス
+
+/* 試合報酬の内訳。**額の式はここ1か所だけに置く。**
+   通常の試合とレイドでそれぞれ別に書いていたせいで、内訳が画面に残らず、
+   片方だけ直す事故も起きうる形だった。リザルトは rows をそのまま並べ、
+   財布へ入れるのは gold / dia をそのまま渡す(表示と加算を2か所に書かない)。
+
+   rows の作り:
+   - 素点の行 = { label, gold, dia }。**倍率を掛ける前の額**を持つ。
+   - 倍率の行 = { label, mult, on }。on は倍率が効く側('gold' / 'dia' / 'both')。
+     ゴールドだけ2倍・ダイヤは等倍、といった差が実際にあるので効く側を持たせる。
+   合計は「素点の合計に、rows の順で倍率を掛けて最後に丸める」。
+   掛ける順番は元の式と同じにしてあるので、額は1の位まで変わらない。 */
+function matchRewardBreakdown(o){
+  o = o || {};
+  const kind    = o.kind === 'raid' ? 'raid' : 'br';
+  const kills   = Math.max(0, Math.round(o.kills || 0));
+  const damage  = Math.max(0, o.damage || 0);
+  const isWin   = !!o.isWin;
+  const mutMult = (typeof o.mutMult === 'number' && isFinite(o.mutMult)) ? o.mutMult : 1;
+  // レイドのデモなど「記録が残らない試合」は報酬なし。内訳も出さない
+  if(o.noRecord) return { rows: [], gold: 0, dia: 0 };
+
+  const rows = [];
+  rows.push({ label:'参加', gold: GOLD_MATCH_BASE, dia: DIA_MATCH_BASE });
+
+  if(kind === 'raid'){
+    const goldFromDmg = Math.min(RAID_RUN_GOLD_MAX, Math.round(damage * RAID_RUN_GOLD_PER_DMG));
+    const diaFromDmg  = Math.min(RAID_RUN_DIA_MAX,  Math.round(damage * RAID_RUN_DIA_PER_DMG));
+    if(goldFromDmg || diaFromDmg) rows.push({ label:'与えたダメージ', gold: goldFromDmg, dia: diaFromDmg });
+    if(o.defeated) rows.push({ label:'討伐成功', gold: GOLD_CHAMPION_BONUS, dia: DIA_CHAMPION_BONUS });
+    if(o.isMulti) rows.push({ label:'みんなで挑戦', mult: GOLD_MULTI_MULT, on:'gold' });
+    if(mutMult !== 1) rows.push({ label:'報酬アップ中', mult: mutMult, on:'both' });
+  } else {
+    if(kills > 0) rows.push({ label:`撃破 ×${kills}`, gold: kills * GOLD_PER_KILL });
+    if(isWin) rows.push({ label:'チャンピオン', gold: GOLD_CHAMPION_BONUS, dia: DIA_CHAMPION_BONUS });
+    if(o.isMulti) rows.push({ label:'みんなで対戦', mult: GOLD_MULTI_MULT, on:'gold' });
+    if(o.realMap) rows.push({ label:'リアルマップ', mult: REAL_MAP_REWARD_MULT, on:'both' });
+    if(mutMult !== 1) rows.push({ label:'報酬アップ中', mult: mutMult, on:'both' });
+    if(o.arena) rows.push({ label:'アリーナ', mult: GOLD_ARENA_MULT, on:'gold' });
+  }
+
+  let gold = 0, dia = 0;
+  for(const r of rows){ if(r.mult === undefined){ gold += (r.gold||0); dia += (r.dia||0); } }
+  // 倍率は rows に並んだ順で掛ける(元の式と同じ順番。順番を変えると端数がずれる)
+  for(const r of rows){
+    if(r.mult === undefined) continue;
+    if(r.on !== 'dia')  gold *= r.mult;
+    if(r.on !== 'gold') dia  *= r.mult;
+  }
+  return { rows, gold: Math.round(gold), dia: Math.round(dia) };
+}
+
+/* =====================================================================
+   リザルト画面のアイコン(SVG)。**使うのはリザルトの中だけ。**
+
+   なぜ絵文字をやめたか: 端末が描く既製の絵文字は線の太さ・彩度・光沢がどれもばらばらで、
+   「暗い面 + 金1色」のこの画面に7種類が同時に並ぶと、そこだけ別の絵を貼ったように浮く
+   (批評の指摘)。ヘッダー・ショップ・バッグ・ミッション・ガチャ・遠征・ロビーは
+   **絵文字のまま据え置き**(発注者決定。不統一は承知のうえ)。ここを他画面へ広げない。
+
+   作りの決まり(レイド限定アイテムのアイコンと同じ流儀):
+   ・**単色。fill は currentColor** ―― 色は使う側が決める。台帳(白)・合計(金)・
+     値なし(灰)が同じ絵で通り、**style.css を1行も足さずに済む**。
+   ・**id / defs / gradient を一切使わない。** 台帳では同じ絵が何行にも出るので、
+     idを持つと画面内で衝突して塗りが化ける。
+   ・viewBox は `0 0 24 24` に統一。**角はすべて45°で落とす**(画面の斜め切りと同じ言語)。
+     面の太さも24基準で約3.2〜3.4にそろえてあるので、並べても線幅が揃って見える。
+     ゴールドだけ円なのは「硬貨は丸い」という一点だけの例外で、中心の菱形で45°に乗せる。
+   ・**寸法と間隔はここに書かない。** 大きさ(1em)・座り・アイコンと数字の間は
+     style.css の `#resultScreen .rs-ico` 1か所が持つ。以前ここにインラインstyleで
+     同じ値を持っていたが、インラインはCSSより強いので「小さい所だけ一回り大きく」の
+     指定が効かなかった(同じ意味の数字を2か所に持たない ―― 正はCSS側)。
+===================================================================== */
+const RS_ICON_ATTRS = 'class="rs-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"';
+const RS_ICONS = {
+  // ゴールド: 縁のある硬貨(輪 + 中心の菱形)
+  coin: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M12 2.2a9.8 9.8 0 1 0 0 19.6 9.8 9.8 0 0 0 0-19.6zm0 3.4a6.4 6.4 0 1 1 0 12.8 6.4 6.4 0 0 1 0-12.8z"/><path d="M12 8.6l3.4 3.4-3.4 3.4L8.6 12z"/></svg>`,
+  // ダイヤ: 上面と下面を帯で切った宝石
+  dia: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M8 3h8l5 6-9 12L3 9z M4.6 8h14.8v2.4H4.6z"/></svg>`,
+  /* 自己ベスト: トロフィー(浅い鉢・短い脚・広い台)。
+     **鉢を深く絞って台を細くすると砂時計に見える**(最初の形で実際にそうなった)。
+     鉢の底を広く、台の上辺を脚の近くまで広げて、上下の塊を「杯と台」に読ませる。 */
+  best: `<svg ${RS_ICON_ATTRS}><path d="M5 2.6h14v3.4l-2.6 2.6H7.6L5 6z"/><path d="M10.6 8.6h2.8v5.6h-2.8z"/><path d="M8.2 14.2h7.6v1.8H8.2z"/><path d="M5.2 16h13.6l1.6 1.6v2.8H3.6v-2.8z"/></svg>`,
+  // 称号: 帯から下がった八角の勲章(中心を菱形で抜く)
+  title: `<svg ${RS_ICON_ATTRS}><path d="M6.5 2h11v2l-3.2 3.2H9.7L6.5 4z"/><path fill-rule="evenodd" d="M9.2 6.2h5.6l4.8 4.8v5.6l-4.8 4.8H9.2l-4.8-4.8V11z M12 10.8l3 3-3 3-3-3z"/></svg>`,
+  // シーズン: 角を落とした通行証(しおり形)
+  season: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M4.5 2.5h11l4 4v15L12 17.1 4.5 21.5z M7.7 6.2h8.6v2.6H7.7z"/></svg>`,
+  /* トレーニングチケット: 両端を浅く切り欠いた券 + 中央の穴。
+     切り欠きを深くすると蝶ネクタイに見えるので、深さは高さの1/6までにする。 */
+  ticket: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M1.6 5.4h20.8v4l-2 2 2 2v4H1.6v-4l2-2-2-2z M12 9.4l2 2-2 2-2-2z"/></svg>`,
+  /* 段位: 山形2段の記章。**段位ごとの絵は作らない** ―― RANKS の絵文字(🌱🪨🥉…)は
+     ロビーやランキングでも使う共通の表で、リザルトのためにあの表を書き換えない。
+     段位の別は隣に出る名前(見習い/石/銅…)が持っているので、印は1種類でよい。 */
+  rank: `<svg ${RS_ICON_ATTRS}><path d="M12 2l7 7-2.4 2.4L12 6.8 7.4 11.4 5 9z"/><path d="M12 11.6l7 7-2.4 2.4L12 16.4l-4.6 4.6L5 18.6z"/></svg>`,
+  /* ここから下の3つは死因の1行(「〇〇 に倒された」/安置外/溶岩)専用。
+     絵文字(⚔ ☠ 🌋)のままだと、金1色の暗い面にひとつだけ既製の絵が残る。
+     ・sword … 刃・鍔・柄・柄頭の4枚。先端と鍔の端を45°で落とす(柄頭は硬貨と同じ菱形)
+     ・zone  … 安全圏は八角の輪(45°だけでできた形)。**輪の外に菱形を1つ置いて
+               「外にいた」ことを絵にする。** 輪だけだと硬貨と見分けが付かない
+     ・lava  … 45°の斜面の山 + 上に噴き上がる菱形。溶岩だと一目で分かる形にする */
+  sword: `<svg ${RS_ICON_ATTRS}><path d="M12 0.8l2.6 2.6V14H9.4V3.4z"/><path d="M3.4 14h17.2l-3 3H6.4z"/><path d="M9.6 17h4.8v2.6H9.6z"/><path d="M12 18.8l2.6 2.6-2.6 2.6-2.6-2.6z"/></svg>`,
+  zone: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M7 2h7l5 5v7l-5 5H7l-5-5V7z M8.1 5.2h4.8l2.9 2.9v4.8l-2.9 2.9H8.1l-2.9-2.9V8.1z"/><path d="M19.8 17l2.8 2.8-2.8 2.8-2.8-2.8z"/></svg>`,
+  lava: `<svg ${RS_ICON_ATTRS}><path d="M9.6 8.4h4.8l9.2 9.2H0.4z"/><path d="M12 1.2l3 3-3 3-3-3z"/></svg>`,
+};
+// アイコンはHTMLとして埋める(textContent に入れると生タグが出る)
+function rsIconHtml(key){ return RS_ICONS[key] || ''; }
+
+/* リザルトに出る数字は**すべてこの関数を通す**(1か所だけ)。
+   4桁以上を3桁区切りにする ―― 同じ画面の中に `18420`(区切りなし)と `7,698`(区切りあり)が
+   同時に出ていて、桁の読み方が場所によって変わっていた(批評の指摘)。
+   カウントアップの途中も同じ書式にするため、演出側の書式関数もここを呼ぶ。
+   **toLocaleString は使わない** ―― 区切り文字が端末の言語で変わる(空白やピリオドになる国がある)。 */
+function rsNum(v){
+  const n = Math.round(Number(v) || 0);
+  const s = Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (n < 0 ? '-' : '') + s;
+}
+/* 値が取れない欄の書き方。**欄そのものは消さずにこれを置く**(報酬の台帳と同じ流儀)。
+   カウントアップ(ui.js の rsCountStats)はこの文字を見て「回さない」と決めるので、
+   別の文字(「-」「なし」)を混ぜると 0 から数え上がって嘘の数字が出る。 */
+const RS_STAT_NA = '--';
 
 /* レイド限定アイテムのアイコン(SVG)。
    絵文字だと「実」と見分けが付かず、貴重さも伝わらないので専用の絵にする。

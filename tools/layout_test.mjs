@@ -103,14 +103,18 @@ const MODES = [
 const SCREENS = [
   { id:'lobbyScreen',    name:'待機部屋', variants:['host','guest','few'], scrollIds:['lobbyScreen','lobbyInner'] },
   { id:'roomListScreen', name:'部屋一覧', variants:['few','many','empty'], scrollIds:['roomListScreen','roomListInner'] },
-  /* リザルトはスクロール量で見ない。fitResultScreen() が入り切らない中身を
-     transform:scale で丸ごと縮めて収めるが、**transform はレイアウトの寸法を変えない**ので
-     scrollHeight は縮む前のままになり、実際には収まっているのに「溢れている」と出てしまう。
-     収まっているかは外接矩形で見る「見切れ」が担当し、ここは押せる大きさ(縮小の巻き添え)を見る。
-     2ページのスライド式なので、**-p2 付きは resultGoPage(1) で2枚目へ切り替えてから測る**
+  /* 【リザルトは2ページ×2列】-p2 付きは resultGoPage(1) で2枚目へ切り替えてから測る
      (1枚目・2枚目の両方を必ず見る。出ていない側のページは visibility:hidden なので
-      検査の対象から自然に外れる)。 */
-  { id:'resultScreen',   name:'リザルト', variants:['plain','full','plain-p2','full-p2'], scrollIds:[] },
+      検査の対象から自然に外れる)。
+
+     **スクロールしてよいのは台帳の行(#rsLedgerRows)とバッジ棚(#resultBadges)だけ。**
+     それ以外の枠に送れる余地が出たら失敗にする ―― ここが長らく `scrollIds:[]` で、
+     リザルトのスクロールを1件も見ていなかった。以前は fitResultScreen() が
+     入り切らない中身を transform:scale で丸ごと縮めており、transform は寸法を変えないので
+     scrollHeight が縮む前のままになって誤検知したが、**2列化で縮小そのものが
+     発火しなくなった**(33場面で0件)ので、素直に測れるようになった。 */
+  { id:'resultScreen',   name:'リザルト', variants:['plain','full','plain-p2','full-p2','raid','register','team','lose'],
+    scrollIds:['resultInner','rsHero','rsPerf','rsLedger','rsProgress','resultActions'] },
 ];
 
 /* ===== 画面ごとの方針(この表が正) =====
@@ -207,6 +211,11 @@ function pushFindings(label, r){
   emit('スクロール発生', r.scrolls, x=>x.id, x=>`${x.id}が+${x.d}px`);
   emit('操作がスクロールの中で貼り付いている', r.sticky, x=>x.id, x=>`${x.id}(${x.box}の中)`);
   emit('素のままのボタン', r.rawBtn, x=>x.id, x=>`${x.id}(見た目が当たっていない)`);
+  if(r.primary && r.primary.length !== 1){
+    failures.push(`[主役の操作が${r.primary.length}個] ${label} — ${r.primary.length? r.primary.join(' / ') : '塗りのボタンが1つも無い'}`);
+    const ik = `[主役の操作が${r.primary.length}個] 塗りのボタンがちょうど1つでない`;
+    findingIndex.set(ik, (findingIndex.get(ik) || 0) + 1);
+  }
   if(r.spread){
     failures.push(`[左メニューが横へ広がった] ${label} — ${r.spread.cols}列(縦${r.spread.leftH}pxあり、2列に要るのは${r.spread.need}px)`);
     const ik = '[左メニューが横へ広がった] 縦は足りているのに列が増えた';
@@ -468,6 +477,47 @@ for(const dev of DEVICES){
     /* スクロール量を測る。ロビーは「スクロールさせない」決まりなので、どの枠にも出てはいけない。
        待機部屋・部屋一覧のパネルは overflow-y:auto だが、**画面ぶんスクロールするのは作りの失敗**
        (第3弾で待機画面が2.14画面ぶん出ていた)なので、同じ物差しで測って出す。 */
+    /* 【主役の操作がちょうど1つあるか】
+       リザルトでは「塗りつぶしたボタン」が**その画面で一番大事な操作**を表す約束にしてある。
+       ところがこれは目で見るまで分からず、実際に2回とも見た目の指定の**強さ比べ**で壊れた:
+         ・ボタン全体への指定が個別の指定より強く、金が一度も当たらず**0個**になった
+         ・登録待ちの画面で金が**3つ**並び、答えるべき操作が一番弱かった
+       どちらも「指定は書いてあるのに効いていない」ので、CSSを読んでも気付けない。
+       **描かれた結果**(塗りがあるか)を数えて、0個でも2個以上でも落とす。
+       塗りの判定は「背景に絵(グラデ)がある」か「背景色が透けていない(α≧0.5)」。
+       控えめなボタンは α=0.06〜0.08 なので、両者ははっきり分かれる。 */
+    window.__primaryActions = ()=>{
+      /* vis は __auditScreen の中のローカルなのでここからは見えない。同じ判定を持つ */
+      const seen = (el)=>{
+        const s = getComputedStyle(el);
+        if(s.display==='none' || s.visibility==='hidden' || s.opacity==='0') return false;
+        const r = el.getBoundingClientRect();
+        return r.width>0 && r.height>0;
+      };
+      /* 【主役はボタンとは限らない】負けの画面では順位そのもの(#resultRank)を塗って
+         主役にし、操作バーは全部枠だけにしてある。ボタンだけ数えると 0個 と出るので、
+         **順位も同じ物差しで数える。** 勝ちの順位は塗りではなく光る文字なので数に入らない。 */
+      const boxes = ['resultActions','mastermonRegisterPrompt'];
+      const cand = [];
+      { const rk = document.getElementById('resultRank'); if(rk && seen(rk)) cand.push(rk); }
+      const out = [];
+      for(const bid of boxes){
+        const box = document.getElementById(bid);
+        if(!box || !seen(box)) continue;
+        for(const b of box.querySelectorAll('button')) cand.push(b);
+      }
+      {
+        for(const b of cand){
+          if(!seen(b)) continue;
+          const cs = getComputedStyle(b);
+          const hasArt = cs.backgroundImage && cs.backgroundImage !== 'none';
+          const m = (cs.backgroundColor||'').match(/rgba?\(([^)]+)\)/);
+          const a = m ? (m[1].split(',')[3] !== undefined ? parseFloat(m[1].split(',')[3]) : 1) : 0;
+          if(hasArt || a >= 0.5) out.push(b.id || b.textContent.trim().slice(0,10));
+        }
+      }
+      return out;
+    };
     window.__scrollOf = (ids)=>{
       const sc = (id)=>{ const el=document.getElementById(id); return el ? el.scrollHeight-el.clientHeight : -1; };
       const out = [];
@@ -676,29 +726,74 @@ for(const dev of DEVICES){
       const page2 = /-p2$/.test(variant);
       variant = variant.replace(/-p2$/, '');
       window.__showOnly('resultScreen');
-      document.getElementById('resultRank').textContent = '#1';
-      document.getElementById('resultSub').textContent = '勝利';
+      /* 【中身は実物と同じ経路で作る】以前ここは #resultRank へ直接「#1」と書くだけで、
+         **setResultPlacement() を1度も通していなかった。** そのせいで検査の間だけ
+         #resultScreen に data-rankcard が付かず、見出しが旧サイズ(46px)のまま測られ、
+         順位の札(#rsRankCard)は前の状態のまま残っていた ―― 実機と撮影は新サイズ。
+         「合格したのに壊れている」を3回生んだのと同じ穴なので、**判定を持つ関数を通す**。
+         見出しの文言も showResultNow / raidShowResult と同じ言葉にそろえる。 */
+      document.getElementById('resultRank').textContent = 'WINNER';
+      document.getElementById('resultSub').textContent = '生き残った！今夜はモン勝ちだ！';
       document.getElementById('statKills').textContent = '12';
       document.getElementById('statDamage').textContent = '18,420';
       document.getElementById('statTime').textContent = '12:34';
+      document.getElementById('statStreak').textContent = '3';
+      document.getElementById('statHp').textContent = '18%';
       document.getElementById('scoreSubmitStatus').textContent = 'スコアを送信しました';
       document.getElementById('resultCurrencyLine').textContent = '💰 320 コイン ／ 💎 4 ジェム を獲得';
       document.getElementById('resultMonsterIcon').src = 'monsters/phoenix.png';
-      // full = 出るものを全部出した状態(死因・ハイライト・小隊・バッジ・マスモン・登録の勧め)
-      const full = (variant === 'full');
-      const put = (id, html)=>{
-        const el = document.getElementById(id); if(!el) return;
-        el.classList.toggle('hidden', !full);
-        if(full && html != null) el.innerHTML = html;
+      /* 出す物の組み合わせは場面ごとに決める。**「全部出す(full)」だけでは足りない** ――
+         レイドは操作バーの中身が入れ替わり、登録の対話は帯が1本増え、
+         チーム戦は小隊の行が増える。どれも縦の使い方が変わるので、別々に見る。 */
+      const SHOW = {
+        plain:    { death:0, hl:0, squad:0, badges:0, mmInfo:0, reg:0, raid:0 },
+        full:     { death:1, hl:1, squad:1, badges:1, mmInfo:1, reg:1, raid:0 },
+        lose:     { death:1, hl:0, squad:0, badges:1, mmInfo:1, reg:0, raid:0 },
+        team:     { death:0, hl:1, squad:1, badges:1, mmInfo:1, reg:0, raid:0 },
+        register: { death:1, hl:0, squad:0, badges:0, mmInfo:0, reg:1, raid:0 },
+        raid:     { death:0, hl:0, squad:0, badges:1, mmInfo:1, reg:0, raid:1 },
       };
-      put('resultDeathCause', `⚔ ${LONG_NAME} に倒された`);
-      put('resultHighlight', '🔥 自己ベスト更新！ 12キル');
-      put('resultSquadInfo', `<div>小隊: あなた 12撃破 ／ ${LONG_NAME} 3撃破 ／ なかま ダウン</div>`);
-      put('resultBadges', '<span class="result-badge season">🎫 シーズン +12 SP</span><span class="result-badge">🏆 自己ベスト更新</span>');
-      put('mastermonResultInfo', '<div>マスモン「ほのお」が Lv12 → Lv13 になりました</div>');
-      put('mastermonRegisterPrompt', null);   // 中に入力欄とボタンがあるので中身は書き換えない
-      if(typeof setResultButtonsForRaid==='function') setResultButtonsForRaid(false);
+      const on = SHOW[variant] || SHOW.plain;
+      const scr = document.getElementById('resultScreen');
+      scr.className = 'resultScreen ' + ((variant === 'lose' || variant === 'register') ? 'lose' : 'win');
+      scr.dataset.tone = (variant === 'lose' || variant === 'register') ? 'lose' : 'win';
+      if(variant === 'lose' || variant === 'register'){
+        document.getElementById('resultRank').textContent = '敗北';
+        document.getElementById('resultSub').textContent = '';
+      }
+      if(variant === 'raid'){
+        document.getElementById('resultRank').textContent = '討伐成功';
+        document.getElementById('resultSub').textContent = '自己ベスト更新！';
+      }
+      /* 順位の札(と、それに連動する見出しの級・色)は **setResultPlacement() が唯一の入口**。
+         レイドだけ順位が無いので null を渡して札ごと畳む ―― 札が出る場面と出ない場面の
+         両方を、実機とまったく同じ姿で測る。チーム戦は順位がチーム単位(母数もチーム数)。 */
+      if(typeof setResultPlacement === 'function'){
+        const lost = (variant === 'lose' || variant === 'register');
+        if(variant === 'raid') setResultPlacement(null);
+        else if(on.squad) setResultPlacement({ placement: lost?3:1, total:3, team:true });
+        else setResultPlacement({ placement: lost?7:1, total:7 });
+      }
+      const put = (id, want, html)=>{
+        const el = document.getElementById(id); if(!el) return;
+        el.classList.toggle('hidden', !want);
+        if(want && html != null) el.innerHTML = html;
+      };
+      put('resultDeathCause', on.death, `⚔ ${LONG_NAME} に倒された`);
+      put('resultHighlight', on.hl, '🔥 自己ベスト更新！ 12キル');
+      put('resultSquadInfo', on.squad, `<div>小隊: あなた 12撃破 ／ ${LONG_NAME} 3撃破 ／ なかま ダウン</div>`);
+      put('resultBadges', on.badges, '<span class="result-badge season">🎫 シーズン +12 SP</span><span class="result-badge">🏆 自己ベスト更新</span>');
+      put('mastermonResultInfo', on.mmInfo, '<div>マスモン「ほのお」が Lv12 → Lv13 になりました</div>');
+      put('mastermonRegisterPrompt', on.reg, null);   // 中に入力欄とボタンがあるので中身は書き換えない
+      if(typeof setResultButtonsForRaid==='function') setResultButtonsForRaid(!!on.raid);
       if(typeof resultGoPage==='function') resultGoPage(page2 ? 1 : 0, { instant:true });
+      /* 【演出を必ず終わらせてから測る】入場の演出は要素を opacity:0 から出すが、
+         下の vis() は opacity==='0' を不可視として飛ばす。演出を走らせないまま測ると
+         **台帳もバッジも「見えていない要素」として検査対象から丸ごと消える**
+         ―― 合格したのに壊れている、が起きる。ここで最後まで進めた姿にする。 */
+      if(typeof playResultSequence==='function') playResultSequence();
+      if(typeof playResultPage2Sequence==='function' && page2) playResultPage2Sequence();
+      if(typeof finishResultSequence==='function') finishResultSequence();
       if(typeof fitResultScreen==='function') fitResultScreen();
     };
   });
@@ -789,6 +884,7 @@ for(const dev of DEVICES){
         await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
         const base = window.__auditScreen(o.id);
         base.scrolls = window.__scrollOf(o.scrollIds);
+        if(o.id === 'resultScreen') base.primary = window.__primaryActions();
         return base;
       }, { id:s.id, v, scrollIds:s.scrollIds });
       pushFindings(label, r);
