@@ -7066,9 +7066,11 @@ function renderResultExpInfo(){
   const d = _rsExp;
   if(!d){ el.className = 'mastermon-result-info rs-in hidden'; return; }
   el.className = 'rs-in';
-  const row = (label, value, off)=>{
+  /* lead=true の1行だけ「この列の大」にする(見た目は style.css の .rs-exp-gain)。
+     左カードの「合計」と同じ字高で、右カードにも対になる大を1つ置くため。 */
+  const row = (label, value, off, lead)=>{
     const r = document.createElement('div');
-    r.className = 'rs-led-row';
+    r.className = 'rs-led-row' + (lead ? ' rs-exp-gain' : '');
     const n = document.createElement('span');
     n.className = 'rs-led-name';
     n.textContent = label;
@@ -7080,9 +7082,9 @@ function renderResultExpInfo(){
   };
   if(d.capped){
     // 最高レベルなのでEXPは入らない。代わりのゴールドは台帳の「Lv上限ボーナス」に出ている
-    row('獲得EXP', '--', true);
+    row('獲得EXP', '--', true, true);
   } else {
-    row('獲得EXP', rsNum(d.expGain));
+    row('獲得EXP', rsNum(d.expGain), false, true);
     // 値が無い欄も消さずに「--」で残す(台帳と同じ流儀。次に何を狙えばいいかが分かる)
     row('撃破ボーナス', d.bonusExp > 0 ? ('+' + rsNum(d.bonusExp)) : '--', !(d.bonusExp > 0));
     // チケットは上がった試合だけ(上がらない試合は「次の報酬」の欄が同じことを教えている)
