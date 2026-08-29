@@ -1140,6 +1140,10 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <button class="mission-tab" data-tab="season">シーズン1<span id="missionTabSeasonDot" class="notif-dot hidden"></span></button>
       <button class="mission-tab" data-tab="lifetime">累計<span id="missionTabLifetimeDot" class="notif-dot hidden"></span></button>
     </div>
+    <!-- 【見出しとタブはスクロールの外】ここから下だけが指で送れる枠(R2)。
+         スクロールバーは #missionScrollbar(共通の attachVisibleScrollbar が動かす)。 -->
+    <div class="mm-content-wrap mission-scroll-wrap">
+     <div id="missionPanes" class="mission-panes">
     <div id="missionDailyPane" class="mission-pane">
       <div class="daily-section-title">🎁 ログインボーナス（毎日ログインで受け取り）</div>
       <div id="dailyLoginTrack" class="daily-login-track"></div>
@@ -1166,6 +1170,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div class="daily-section-title">🐾 マスモンごとの累計（タップで開閉）</div>
       <div class="season-note">マスモンごとの通算記録で進むミッション。すべて達成すると、その子の「覇者」称号を獲得。</div>
       <div id="lifetimeMissionList" class="lt-list"></div>
+    </div>
+     </div>
+     <div class="mm-scrollbar hidden" id="missionScrollbar"><div class="mm-scrollbar-thumb"></div></div>
     </div>
   </div>
 </div>
