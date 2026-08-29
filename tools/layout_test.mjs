@@ -494,12 +494,20 @@ for(const dev of DEVICES){
         const r = el.getBoundingClientRect();
         return r.width>0 && r.height>0;
       };
+      /* 【主役はボタンとは限らない】負けの画面では順位そのもの(#resultRank)を塗って
+         主役にし、操作バーは全部枠だけにしてある。ボタンだけ数えると 0個 と出るので、
+         **順位も同じ物差しで数える。** 勝ちの順位は塗りではなく光る文字なので数に入らない。 */
       const boxes = ['resultActions','mastermonRegisterPrompt'];
+      const cand = [];
+      { const rk = document.getElementById('resultRank'); if(rk && seen(rk)) cand.push(rk); }
       const out = [];
       for(const bid of boxes){
         const box = document.getElementById(bid);
         if(!box || !seen(box)) continue;
-        for(const b of box.querySelectorAll('button')){
+        for(const b of box.querySelectorAll('button')) cand.push(b);
+      }
+      {
+        for(const b of cand){
           if(!seen(b)) continue;
           const cs = getComputedStyle(b);
           const hasArt = cs.backgroundImage && cs.backgroundImage !== 'none';

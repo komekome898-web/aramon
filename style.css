@@ -2969,8 +2969,16 @@
      【詳細度】上の指定は `#resultScreen #resultActions > #replayBtn`(ID3つ+子)なので、
      打ち消す側は必ずそれより強く書く。属性/:has() を足して勝たせてある。
      :has() が効かない環境では**従来どおり操作バーが塗られる**(塗り0個にはならない)。 */
+  /* 負けの1枚目 … 面は落とすが、**どれを押すかは残す**。塗りではなくアクセントの枠と字にして、
+     順位の札(塗り)より必ず一段暗くする。全部同じ暗い面にすると
+     「次にどこへ行くのか」が画面から消える(その事故を避けるための約束が元の指定)。 */
   #resultScreen[data-tone="lose"] #resultActions > #replayBtn,
-  #resultScreen.lose #resultActions > #replayBtn,
+  #resultScreen.lose #resultActions > #replayBtn{
+    color:var(--rs-accent); background:rgba(255,255,255,0.10);
+    border:1px solid var(--rs-accent); font-weight:700;
+  }
+  /* 登録待ち … こちらは「登録する」が塗りで立っているので、操作バーは完全に控えめへ。
+     ここでアクセントの枠を残すと、答えるべき操作と competing する。 */
   #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #replayBtn,
   #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #viewMastermonBtn{
     color:var(--ink); background:rgba(255,255,255,0.07);
