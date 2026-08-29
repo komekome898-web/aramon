@@ -930,6 +930,10 @@ function playEmote(el, key, opts){
                baseOrigin: el.style.transformOrigin || '',
                baseTransition: el.style.transition || '',
                baseSrc: frames ? el.getAttribute('src') : null };
+  /* 粒(✨💧…)の出どころ。**定義は EMOTES が正**で、呼ぶ側は必要なぶんだけ上書きできる
+     (opts.fx)。リザルトだけ粒が文字と枠に重なるのを、仕組みを変えずに直すための口。
+     渡さなければ今までどおり EMOTES の値がそのまま出る = 他の画面は1pxも変わらない。 */
+  const fx = def.fx ? (o.fx ? Object.assign({}, def.fx, o.fx) : def.fx) : null;
   const loops = def.loop || 1;
   const total = def.dur * loops;
   const t0 = performance.now();
@@ -950,7 +954,7 @@ function playEmote(el, key, opts){
     const li = Math.min(loops-1, Math.floor(elapsed / def.dur));
     // 粒は「1周ごと」に出し直す(everyが無ければ最初の1回だけ)。出続けるほうが生きて見える
     if(li !== st.loopIdx){
-      if(def.fx && (li === 0 || def.fx.every)) spawnEmoteFx(el, def.fx, st);
+      if(fx && (li === 0 || fx.every)) spawnEmoteFx(el, fx, st);
       st.loopIdx = li;
     }
     const t = (elapsed % def.dur) / def.dur;
@@ -5928,15 +5932,15 @@ function raidShowResult(defeated, dmg, prevBest){
     defeated ? '討伐成功' :
     newBest  ? '自己ベスト更新' :
     died     ? '力尽きた' : '時間切れ';
-  let sub = `与えたダメージ ${d.toLocaleString()}`;
-  if(newBest && prevBest>0) sub += `（これまでの最高 ${Math.round(prevBest).toLocaleString()}）`;
+  let sub = `与えたダメージ ${rsNum(d)}`;
+  if(newBest && prevBest>0) sub += `（これまでの最高 ${rsNum(prevBest)}）`;
   if(noRecord) sub += '（記録は残りません）';
   document.getElementById('resultSub').textContent = sub;
   setResultDeathCause(true);   // レイドに「誰に倒された」は無い。前の試合ぶんを必ず消す
   // ハイライトはバトロワ用なのでレイドでは出さない。前の試合ぶんを必ず消す
   { const hl = document.getElementById('resultHighlight'); if(hl){ hl.textContent=''; hl.classList.add('hidden'); } }
-  document.getElementById('statKills').textContent = player ? player.kills : 0;
-  document.getElementById('statDamage').textContent = d.toLocaleString();
+  document.getElementById('statKills').textContent = rsNum(player ? player.kills : 0);
+  document.getElementById('statDamage').textContent = rsNum(d);
   document.getElementById('statTime').textContent = fmtTime(player && player.deathAt ? player.deathAt : matchTime);
 
   /* 報酬。通常の試合と同じ「参加ぶん + 成果ぶん(+討伐ボーナス)」で、成果ぶんを与ダメから出す。
@@ -6236,7 +6240,8 @@ function setResultMonsterIcon(elementKey, opts){
       if(document.getElementById('resultScreen').classList.contains('hidden')) return;
       // 効果音は鳴らさない(勝利ファンファーレ・敗北音と重なるため)
       playEmote(iconEl, opts.win ? 'joy' : 'sad',
-                { element:elementKey, skinId:sk, fxOnly: !!opts.win, silent:true });
+                { element:elementKey, skinId:sk, fxOnly: !!opts.win, silent:true,
+                  fx: opts.win ? RESULT_EMOTE_JOY_FX : null });
     }, RESULT_EMOTE_DELAY_MS);
   }
 }
@@ -6278,7 +6283,7 @@ function deathCauseInfo(){
   if(player.lastAttackerId!=null && typeof entities!=='undefined'){
     const atk = entities.find(o=>o.id===player.lastAttackerId);
     if(atk && atk.id!==player.id && (now - (player.lastAttackerAt||0)) <= DEATH_ATTACKER_SEC){
-      return { text:`⚔ ${displayNameFor(atk)} に倒された`, ent:atk };
+      return { icon:'sword', text:`${displayNameFor(atk)} に倒された`, ent:atk };
     }
   }
   // ② キルフィードの文面(マルチのゲスト。新しい行から見る)
@@ -6288,23 +6293,31 @@ function deathCauseInfo(){
     const zoneDeath = `${me} は安全圏外で力尽きた`;
     for(let i=killFeedLog.length-1; i>=0; i--){
       const t = killFeedLog[i];
-      if(t.endsWith(killedBy)) return { text:`⚔ ${t.slice(0, t.length-killedBy.length)} に倒された`, ent:null };
+      if(t.endsWith(killedBy)) return { icon:'sword', text:`${t.slice(0, t.length-killedBy.length)} に倒された`, ent:null };
       if(t === zoneDeath) break;   // 相手のいない死に方だったので③へ回す
     }
   }
   // ③ 相手がいない死に方。倒れた場所で言葉を分ける(判定はcombat.jsのダメージ源と同じ形)
   if(typeof zoneState!=='undefined' && zoneState && typeof dist==='function' &&
      dist(player, zoneState.center) > zoneState.radius){
-    return { text:'☠ 安全圏の外で力尽きた', ent:null };
+    return { icon:'zone', text:'安全圏の外で力尽きた', ent:null };
   }
   if(typeof lavaZones!=='undefined' && Array.isArray(lavaZones) &&
      lavaZones.some(lz=> Math.hypot(player.x-lz.x, player.y-lz.y) < lz.radius + player.radius*0.4)){
-    return { text:'🌋 溶岩に飲まれた', ent:null };
+    return { icon:'lava', text:'溶岩に飲まれた', ent:null };
   }
   return null;
 }
 /* リザルトの死因1行を書く。勝ったとき・レイド・分からないときは空にして必ず消す
-   (前の試合の文言が残るのがいちばん困る)。名前は textContent で入れる。 */
+   (前の試合の文言が残るのがいちばん困る)。名前は textContent で入れる。
+
+   【絵文字を使わない(2026-08-29)】頭に付いていた ⚔ / ☠ / 🌋 は端末が描く既製の絵で、
+   金1色の暗い面に**リザルトの中だけ絵文字が残っている**ように見えた(批評の指摘)。
+   deathCauseInfo() が返す icon(sword / zone / lava)を RS_ICONS の単色SVGに引くだけにし、
+   **絵と文言を分けて持つ**(文言側に絵を混ぜない)。
+   SVGは文字要素の中へ入れる ―― 外(flexの直下)へ置くと `.result-death-cause` の gap と
+   `.rs-ico` の margin が二重に効いて、他のアイコンより広く空く。
+   **寸法はここで持たない**(`.rs-ico` = style.css が正)。 */
 function setResultDeathCause(isWin){
   const el = document.getElementById('resultDeathCause');
   if(!el) return;
@@ -6324,11 +6337,19 @@ function setResultDeathCause(isWin){
   }
   const span = document.createElement('span');
   span.className = 'result-death-text';
-  span.textContent = info.text;
+  span.innerHTML = rsIconHtml(info.icon);              // 絵はSVG(定数のみ)
+  span.appendChild(document.createTextNode(info.text)); // 名前は必ず textContent 相当で入れる
   el.appendChild(span);
   el.classList.remove('hidden');
 }
 const RESULT_EMOTE_DELAY_MS = 320;   // リザルトが出てからエモートを始めるまで
+/* 【リザルトだけ粒の出どころを下げる】「よろこぶ」の粒(✨)は EMOTES の既定だと
+   絵の上のほう(at:0.17)から出て58px上がるので、リザルトでは**立ち絵の板を突き抜けて
+   「自己ベスト更新！」の帯と金の枠に重なり、文字が読めなくなっていた**(批評の指摘)。
+   出どころを絵の下寄り(at)へ移し、広がり(spread)を絵の幅の中へ収めると、
+   上がりきっても板の中で消える。**EMOTES の表も spawnEmoteFx の仕組みも変えていない**ので、
+   ロビー・マスモン画面のエモートは1pxも変わらない(この上書きを渡すのはリザルトだけ)。 */
+const RESULT_EMOTE_JOY_FX = { at:0.78, spread:0.95 };
 /* リザルトのボタン列。レイドでは「ランキング/マイ記録」の代わりに
    「レイドランキング」を出す(通常の順位ランキングはレイドに存在しないため)。
    **判定そのものは updateResultActions() 1か所へ寄せてある** ―― ここで「レイドか」だけを
@@ -6511,8 +6532,10 @@ function showResultNow(isWin, placement){
       hlEl.classList.toggle('hidden', !hlText);
     }
   }
-  document.getElementById('statKills').textContent = player.kills;
-  document.getElementById('statDamage').textContent = Math.round(player.damageDealt);
+  /* 数字の書式はリザルト共通の rsNum(4桁以上を3桁区切り)。
+     **ここが素の数字のままだったので、同じ画面の中で `18420` と `7,698` が並んでいた。** */
+  document.getElementById('statKills').textContent = rsNum(player.kills);
+  document.getElementById('statDamage').textContent = rsNum(player.damageDealt);
   document.getElementById('statTime').textContent = fmtTime(player.deathAt||matchTime);
   /* ゴールド/ダイヤ報酬(経験値と一緒に入手。game.overガードにより1試合1回だけ)。
      **額の式は data.js の matchRewardBreakdown() 1か所。** ここで自前に計算し直さない
@@ -6771,18 +6794,15 @@ function rsNumFromText(t){
   return s ? parseInt(s, 10) : 0;
 }
 /* 統計3つ(撃破数・与ダメージ・生存時間)をカウントアップさせる。
-   桁区切りの有無は**今画面に入っている文字に合わせる**(通常戦は素の数字、
-   レイドは toLocaleString。ここで揃えると片方の見た目が黙って変わる)。 */
+   **回っている途中も止まったあとも書式は同じ rsNum。** 以前はここで「今画面に入っている
+   文字にカンマがあるか」を見て書式を決めていたが、書き込む側(通常戦とレイド)で
+   書式が違ったので、同じ画面の中で桁の読み方が変わっていた(批評の指摘)。 */
 function rsCountStats(){
   const k = document.getElementById('statKills');
   const d = document.getElementById('statDamage');
   const t = document.getElementById('statTime');
-  if(k) rsCountUp(k, rsNumFromText(k.textContent), v=> String(Math.round(v)));
-  if(d){
-    const comma = /,/.test(d.textContent||'');
-    const to = rsNumFromText(d.textContent);
-    rsCountUp(d, to, v=> comma ? Math.round(v).toLocaleString() : String(Math.round(v)));
-  }
+  if(k) rsCountUp(k, rsNumFromText(k.textContent), rsNum);
+  if(d) rsCountUp(d, rsNumFromText(d.textContent), rsNum);
   if(t){
     const m = /(\d+):(\d+)/.exec(t.textContent||'');
     if(m){
@@ -6810,7 +6830,7 @@ function rsLedgerValSpan(v, kind){
   s.innerHTML = rsIconHtml(kind);
   const n = document.createElement('span');
   n.className = 'rs-led-num';
-  n.textContent = v.toLocaleString();
+  n.textContent = rsNum(v);
   s.appendChild(n);
   return s;
 }
@@ -6841,7 +6861,7 @@ function rsCountLedgerRow(row){
   if(!row) return;
   row.querySelectorAll('.rs-led-val[data-rs-to]').forEach(sp=>{
     const to = parseInt(sp.dataset.rsTo, 10) || 0;
-    rsCountUp(rsValNumEl(sp), to, v=> Math.round(v).toLocaleString());
+    rsCountUp(rsValNumEl(sp), to, rsNum);
   });
 }
 function rsFmtMult(m){
@@ -6871,8 +6891,8 @@ function renderResultLedger(){
     /* 内訳は出さないが額は出す(射撃訓練場)。ここを消すと、もらえているのに
        画面のどこにも出ない状態になる。 */
     if(lineEl && _rsPlainReward) lineEl.innerHTML =
-      '報酬　' + rsIconHtml('coin') + '+' + (_rsPlainReward.gold|0)
-      + '　'  + rsIconHtml('dia')  + '+' + (_rsPlainReward.dia|0);
+      '報酬　' + rsIconHtml('coin') + '+' + rsNum(_rsPlainReward.gold)
+      + '　'  + rsIconHtml('dia')  + '+' + rsNum(_rsPlainReward.dia);
     if(goldEl){ delete goldEl.dataset.rsTo; rsSetIconVal(goldEl, 'coin', '--'); }
     if(diaEl){  delete diaEl.dataset.rsTo;  rsSetIconVal(diaEl,  'dia',  '--'); }
     return;
@@ -6931,8 +6951,8 @@ function renderResultLedger(){
   }
   const totGold = (bd.gold || 0) + bonusGold;
   const totDia  = (bd.dia  || 0) + bonusDia;
-  if(goldEl){ goldEl.dataset.rsTo = String(totGold); rsSetIconVal(goldEl, 'coin', totGold.toLocaleString()); }
-  if(diaEl){  diaEl.dataset.rsTo  = String(totDia);  rsSetIconVal(diaEl,  'dia',  totDia.toLocaleString()); }
+  if(goldEl){ goldEl.dataset.rsTo = String(totGold); rsSetIconVal(goldEl, 'coin', rsNum(totGold)); }
+  if(diaEl){  diaEl.dataset.rsTo  = String(totDia);  rsSetIconVal(diaEl,  'dia',  rsNum(totDia)); }
 }
 /* =====================================================================
    マスモンのEXPバー
@@ -6974,7 +6994,7 @@ function renderResultExpBar(){
     if(next) next.innerHTML = '最高レベル 経験値は ' + rsIconHtml('coin') + 'に変わります';
     return;
   }
-  val.textContent = d.toExp.toLocaleString() + ' / ' + d.toNeed.toLocaleString();
+  val.textContent = rsNum(d.toExp) + ' / ' + rsNum(d.toNeed);
   lv.textContent  = 'Lv ' + d.toLevel;
   lvN.textContent = 'Lv ' + (d.toLevel + 1);
   setFinal(rsExpPct(d.toExp, d.toNeed));
@@ -7020,11 +7040,11 @@ function renderResultExpInfo(){
     // 最高レベルなのでEXPは入らない。代わりのゴールドは台帳の「Lv上限ボーナス」に出ている
     row('獲得EXP', '--', true);
   } else {
-    row('獲得EXP', d.expGain.toLocaleString());
+    row('獲得EXP', rsNum(d.expGain));
     // 値が無い欄も消さずに「--」で残す(台帳と同じ流儀。次に何を狙えばいいかが分かる)
-    row('撃破ボーナス', d.bonusExp > 0 ? ('+' + d.bonusExp.toLocaleString()) : '--', !(d.bonusExp > 0));
+    row('撃破ボーナス', d.bonusExp > 0 ? ('+' + rsNum(d.bonusExp)) : '--', !(d.bonusExp > 0));
     // チケットは上がった試合だけ(上がらない試合は「次の報酬」の欄が同じことを教えている)
-    if(d.levelsGained > 0) row('トレーニングチケット', '+' + d.levelsGained);
+    if(d.levelsGained > 0) row('トレーニングチケット', '+' + rsNum(d.levelsGained));
   }
 }
 /* EXPバーを伸ばす演出。**登録の対話のあとにも単独で呼ぶ** ――
@@ -7049,7 +7069,7 @@ function playExpBarSequence(){
   } else {
     rsStep(20, ()=> setW(rsExpPct(d.toExp, d.toNeed)));
   }
-  if(val) rsCountUp(val, d.toExp, v=> Math.round(v).toLocaleString() + ' / ' + d.toNeed.toLocaleString());
+  if(val) rsCountUp(val, d.toExp, v=> rsNum(v) + ' / ' + rsNum(d.toNeed));
 }
 /* 2枚目(獲得したもの)を丸ごと描き直す。**呼ぶのは showResultNow / raidShowResult の
    終わり際と relayoutResult の3か所だけ。** handleMastermonPostMatch がEXPと
@@ -7138,7 +7158,7 @@ function playResultPage2Sequence(){
     for(const el of [g, d]){
       if(!el || !el.dataset.rsTo) continue;
       // 回すのは数字だけ。アイコン(SVG)は消さない
-      rsCountUp(rsValNumEl(el), parseInt(el.dataset.rsTo, 10) || 0, v=> Math.round(v).toLocaleString());
+      rsCountUp(rsValNumEl(el), parseInt(el.dataset.rsTo, 10) || 0, rsNum);
     }
   });
   rsStep(t + 420, ()=>{ rsShow('#rsExpBar'); playExpBarSequence(); });
@@ -7195,13 +7215,21 @@ function rankOnMatchEnd(o){
    その計算がその場で崩れる。だから主役は棚の外へ出す。
    専用のクラスが要るならA班へ(ここでは新しいCSSを足していない)。
    クラス名は `rs-` 接頭辞。**`rank` の単独名は使わない**
-   (`.resultScreen .rank` = 順位の巨大文字と衝突して46pxになった事故がある)。 */
+   (`.resultScreen .rank` = 順位の巨大文字と衝突して46pxになった事故がある)。
+
+   【「他1」をやめた(2026-08-29)】以前は1件目だけ出して残りを `　他1` と件数に畳んでいた。
+   ・**何が起きたのかを一言も伝えない数字**が、文の中に裸で残る(批評の指摘)。
+   ・かといって2件目を同じ行へ足すと入らない ―― この札の本文は1行・省略記号付き
+     (`.rs-next-body` は white-space:nowrap)。iPhone12横持ちの実測で本文に使える幅は
+     約250pxで、1件目の「自己ベスト 撃破 12」で既に160px使う。足せば黙って切れる。
+   そこで**2件目以降は件数に畳まず、バッジ棚のチップとして中身ごと出す**(戻り値で返す)。
+   札は主役1件、棚がその他 ―― もともとこの画面が持っている段付けにそのまま乗る。 */
 function rsRenderLeadRecord(list){
   const col = document.getElementById('rsProgress');
   const anchor = document.getElementById('rsNextReward');
   let el = col ? col.querySelector('.rs-lead-record') : null;
-  if(!col || !anchor) return;
-  if(!list || !list.length){ if(el) el.remove(); return; }   // 祝いごとが無い試合は札ごと出さない
+  if(!col || !anchor) return [];
+  if(!list || !list.length){ if(el) el.remove(); return []; }   // 祝いごとが無い試合は札ごと出さない
   if(!el){
     el = document.createElement('div');
     el.className = 'rs-next rs-lead-record rs-in';
@@ -7213,11 +7241,11 @@ function rsRenderLeadRecord(list){
   lbl.textContent = 'この試合の記録';
   const body = document.createElement('span');
   body.className = 'rs-next-body';
-  /* 1行きりの札なので、いちばん大きい1件だけ出して残りは件数に畳む(切れた文字を残さない)。
-     **list の中身はHTML**(先頭に RS_ICONS のSVGが付く)。組み立てるのは
+  /* **list の中身はHTML**(先頭に RS_ICONS のSVGが付く)。組み立てるのは
      renderResultBadges だけで、中身は定数の文言と数字しか通していない。 */
-  body.innerHTML = list[0] + (list.length > 1 ? `　他${list.length - 1}` : '');
+  body.innerHTML = list[0].html;
   el.appendChild(lbl); el.appendChild(body);
+  return list.slice(1);   // 札に載せられなかったぶん(棚のチップへ回す)
 }
 /* リザルトの記録バッジ。
    **平坦にしない。** 以前は「自己ベスト」も「称号獲得」も同じ大きさ・同じ枠のチップで
@@ -7240,18 +7268,23 @@ function renderResultBadges(o){
   const elemLabel = o.elementLabel || 'このモンスター';
   const monsterKillsBest = !globalKillsBest && o.kills>0 && o.kills > (o.prevElemBestKills||0);
   const monsterDamageBest = !globalDamageBest && o.damage>0 && o.damage > (o.prevElemBestDamage||0);
-  const num = (v)=> Math.round(v||0).toLocaleString();
   /* 【絵文字を使わない】札もチップもアイコンは data.js の RS_ICONS(単色SVG)から取る。
      色は使う側のCSSが決めるので、金の札でも灰のチップでも同じ文字列が使える。
      **段位は RANKS の絵文字(o.rank.after.icon)を使わない** ―― あの表はロビーと
-     ランキングでも読むので書き換えず、リザルトでだけ共通の記章に差し替える。 */
+     ランキングでも読むので書き換えず、リザルトでだけ共通の記章に差し替える。
+     数字は rsNum(4桁以上を3桁区切り)。**リザルトの数字はここも含めて全部同じ書式。** */
   const icoBest = rsIconHtml('best'), icoRank = rsIconHtml('rank');
-  if(globalKillsBest)  leads.push(`${icoBest}自己ベスト 撃破 ${num(o.kills)}`);
-  if(globalDamageBest) leads.push(`${icoBest}自己ベスト ダメージ ${num(o.damage)}`);
-  if(monsterKillsBest)  leads.push(`${icoBest}${elemLabel}の最高 撃破 ${num(o.kills)}`);
-  if(monsterDamageBest) leads.push(`${icoBest}${elemLabel}の最高 ダメージ ${num(o.damage)}`);
-  if(o.rank && o.rank.promoted) leads.push(`${icoRank}段位アップ ${o.rank.after.name}`);
-  rsRenderLeadRecord(leads);
+  if(globalKillsBest)  leads.push({ html:`${icoBest}自己ベスト 撃破 ${rsNum(o.kills)}` });
+  if(globalDamageBest) leads.push({ html:`${icoBest}自己ベスト ダメージ ${rsNum(o.damage)}` });
+  if(monsterKillsBest)  leads.push({ html:`${icoBest}${elemLabel}の最高 撃破 ${rsNum(o.kills)}` });
+  if(monsterDamageBest) leads.push({ html:`${icoBest}${elemLabel}の最高 ダメージ ${rsNum(o.damage)}` });
+  /* 段位アップは棚に**同じことを言うチップ(`〈記章〉石 +40 RP`)が必ず出る**ので、
+     札からあふれたときは棚へ回さない(dup=同じ話題が棚にある)。 */
+  if(o.rank && o.rank.promoted) leads.push({ html:`${icoRank}段位アップ ${o.rank.after.name}`, dup:true });
+  // 札は主役1件だけ。あふれたぶんは件数に畳まず、そのままチップにして棚のいちばん前へ置く
+  for(const e of rsRenderLeadRecord(leads)){
+    if(!e.dup) badges.push(`<span class="result-badge rs-lead-extra">${e.html}</span>`);
+  }
 
   // 称号は1つに畳む。**`称号獲得「」` を繰り返さない** ―― 少ないうちは名前そのものを出す
   const globalNewIds = new Set((o.newTitles||[]).map(t=>t.id));
@@ -7269,10 +7302,10 @@ function renderResultBadges(o){
   } else if(titles.length > 2){
     badges.push(`<span class="result-badge title">${icoTitle}称号 +${titles.length}</span>`);
   }
-  if(o.seasonSp>0) badges.push(`<span class="result-badge season">${rsIconHtml('season')}シーズン +${o.seasonSp} SP</span>`);
+  if(o.seasonSp>0) badges.push(`<span class="result-badge season">${rsIconHtml('season')}シーズン +${rsNum(o.seasonSp)} SP</span>`);
   if(o.rank && o.rank.delta !== 0){
     const sign = o.rank.delta > 0 ? '+' : '';
-    badges.push(`<span class="result-badge rankrp">${icoRank}${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
+    badges.push(`<span class="result-badge rankrp">${icoRank}${o.rank.after.name} ${sign}${rsNum(o.rank.delta)} RP</span>`);
   }
   /* 畳んだので通常は3個以内に収まるが、上限は残しておく(棚の段数は決め打ちのため) */
   const MAX_RESULT_BADGES = 6;

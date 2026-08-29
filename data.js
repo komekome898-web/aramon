@@ -3347,7 +3347,8 @@ const HIGHLIGHT_CLUTCH_HP = 0.15;   // 「残りHPわずかで勝利」とみな
 const HIGHLIGHT_DEFS = [
   { id:'firstWin',  test:(c)=> c.isWin && c.mmFirstWin,                    text:(c)=> 'この子と初めてのチャンピオン！' },
   { id:'bestKills', test:(c)=> c.kills>0 && c.kills>c.bestKills,           text:(c)=> `自己ベスト更新！ ${c.kills}キル` },
-  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `自己ベスト更新！ ${c.damage.toLocaleString()}ダメージ` },
+  // 数字の書式はリザルト共通の rsNum(4桁以上を3桁区切り)。ここだけ別の書き方をしない
+  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `自己ベスト更新！ ${rsNum(c.damage)}ダメージ` },
   { id:'streak3',   test:(c)=> c.maxStreak>=3,                             text:(c)=> `${c.maxStreak}連続キル！` },
   { id:'clutch',    test:(c)=> c.isWin && c.hpRatio<=HIGHLIGHT_CLUTCH_HP,  text:(c)=> '残りHPわずかからの大逆転！' },
 ];
@@ -4069,11 +4070,12 @@ function matchRewardBreakdown(o){
    ・viewBox は `0 0 24 24` に統一。**角はすべて45°で落とす**(画面の斜め切りと同じ言語)。
      面の太さも24基準で約3.2〜3.4にそろえてあるので、並べても線幅が揃って見える。
      ゴールドだけ円なのは「硬貨は丸い」という一点だけの例外で、中心の菱形で45°に乗せる。
-   ・大きさは `1em`。**使う側の font-size と色にそのまま乗る**ので、
-     台帳の11pxから合計の23pxまで同じ文字列で通る(寸法を2か所に持たない)。
+   ・**寸法と間隔はここに書かない。** 大きさ(1em)・座り・アイコンと数字の間は
+     style.css の `#resultScreen .rs-ico` 1か所が持つ。以前ここにインラインstyleで
+     同じ値を持っていたが、インラインはCSSより強いので「小さい所だけ一回り大きく」の
+     指定が効かなかった(同じ意味の数字を2か所に持たない ―― 正はCSS側)。
 ===================================================================== */
-const RS_ICON_ATTRS = 'class="rs-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"'
-  + ' style="width:1em;height:1em;vertical-align:-0.14em;margin-right:0.3em;flex:0 0 auto"';
+const RS_ICON_ATTRS = 'class="rs-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"';
 const RS_ICONS = {
   // ゴールド: 縁のある硬貨(輪 + 中心の菱形)
   coin: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M12 2.2a9.8 9.8 0 1 0 0 19.6 9.8 9.8 0 0 0 0-19.6zm0 3.4a6.4 6.4 0 1 1 0 12.8 6.4 6.4 0 0 1 0-12.8z"/><path d="M12 8.6l3.4 3.4-3.4 3.4L8.6 12z"/></svg>`,
@@ -4094,9 +4096,29 @@ const RS_ICONS = {
      ロビーやランキングでも使う共通の表で、リザルトのためにあの表を書き換えない。
      段位の別は隣に出る名前(見習い/石/銅…)が持っているので、印は1種類でよい。 */
   rank: `<svg ${RS_ICON_ATTRS}><path d="M12 2l7 7-2.4 2.4L12 6.8 7.4 11.4 5 9z"/><path d="M12 11.6l7 7-2.4 2.4L12 16.4l-4.6 4.6L5 18.6z"/></svg>`,
+  /* ここから下の3つは死因の1行(「〇〇 に倒された」/安置外/溶岩)専用。
+     絵文字(⚔ ☠ 🌋)のままだと、金1色の暗い面にひとつだけ既製の絵が残る。
+     ・sword … 刃・鍔・柄・柄頭の4枚。先端と鍔の端を45°で落とす(柄頭は硬貨と同じ菱形)
+     ・zone  … 安全圏は八角の輪(45°だけでできた形)。**輪の外に菱形を1つ置いて
+               「外にいた」ことを絵にする。** 輪だけだと硬貨と見分けが付かない
+     ・lava  … 45°の斜面の山 + 上に噴き上がる菱形。溶岩だと一目で分かる形にする */
+  sword: `<svg ${RS_ICON_ATTRS}><path d="M12 0.8l2.6 2.6V14H9.4V3.4z"/><path d="M3.4 14h17.2l-3 3H6.4z"/><path d="M9.6 17h4.8v2.6H9.6z"/><path d="M12 18.8l2.6 2.6-2.6 2.6-2.6-2.6z"/></svg>`,
+  zone: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M7 2h7l5 5v7l-5 5H7l-5-5V7z M8.1 5.2h4.8l2.9 2.9v4.8l-2.9 2.9H8.1l-2.9-2.9V8.1z"/><path d="M19.8 17l2.8 2.8-2.8 2.8-2.8-2.8z"/></svg>`,
+  lava: `<svg ${RS_ICON_ATTRS}><path d="M9.6 8.4h4.8l9.2 9.2H0.4z"/><path d="M12 1.2l3 3-3 3-3-3z"/></svg>`,
 };
 // アイコンはHTMLとして埋める(textContent に入れると生タグが出る)
 function rsIconHtml(key){ return RS_ICONS[key] || ''; }
+
+/* リザルトに出る数字は**すべてこの関数を通す**(1か所だけ)。
+   4桁以上を3桁区切りにする ―― 同じ画面の中に `18420`(区切りなし)と `7,698`(区切りあり)が
+   同時に出ていて、桁の読み方が場所によって変わっていた(批評の指摘)。
+   カウントアップの途中も同じ書式にするため、演出側の書式関数もここを呼ぶ。
+   **toLocaleString は使わない** ―― 区切り文字が端末の言語で変わる(空白やピリオドになる国がある)。 */
+function rsNum(v){
+  const n = Math.round(Number(v) || 0);
+  const s = Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (n < 0 ? '-' : '') + s;
+}
 
 /* レイド限定アイテムのアイコン(SVG)。
    絵文字だと「実」と見分けが付かず、貴重さも伝わらないので専用の絵にする。
