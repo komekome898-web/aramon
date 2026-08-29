@@ -2331,8 +2331,16 @@
      台帳に何行も並ぶので、id を持つと衝突する)。 */
   #resultScreen .rs-ico-coin{ color:#cdd6e2; }
   #resultScreen .rs-ico-coin path:last-child{ opacity:0.72; }
-  #resultScreen .rs-ico-dia{ color:#7fd8f5; filter:drop-shadow(0 0 2px rgba(127,216,245,0.55)); }
-  #resultScreen .rs-ico-dia path:last-child{ opacity:0.45; }
+  /* 【ダイヤの光沢】面ごとに濃さを変える。順は data.js の RS_ICONS.dia の並びと対:
+       1 天面(いちばん明るい) / 2 左の冠 / 3 右の冠(左より落として陰にする) /
+       4 下の錐(いちばん暗い) / 5 きらめき(白に近い細い筋)
+     並びを入れ替えたら**ここも一緒に直す**(data.js 側にも同じ断りを書いてある)。 */
+  #resultScreen .rs-ico-dia{ color:#7fd8f5; filter:drop-shadow(0 0 2.5px rgba(127,216,245,0.6)); }
+  #resultScreen .rs-ico-dia path:nth-child(1){ opacity:1; }
+  #resultScreen .rs-ico-dia path:nth-child(2){ opacity:0.82; }
+  #resultScreen .rs-ico-dia path:nth-child(3){ opacity:0.52; }
+  #resultScreen .rs-ico-dia path:nth-child(4){ opacity:0.66; }
+  #resultScreen .rs-ico-dia path:nth-child(5){ fill:#ffffff; opacity:0.9; }
   /* 【左そろえ・上詰め】.resultScreen{text-align:center} を継いでいるので明示的に左へ戻す。
      justify-content は flex-start(上詰め)。余った縦は下に1つの塊で残す。 */
   /* 【高さは中身なり・上限だけ画面から】max-height:100% が唯一の「画面から決める」箇所。
@@ -3039,11 +3047,12 @@
     filter:drop-shadow(0 0 6px var(--rs-glow));
   }
   /* 【この行の右だけ幅を固定しない】ほかの行の右は数字なので 58px で桁をそろえているが、
-     ここは「トレーニングチケット19枚」という**文**が入る。58pxのままだと
-     `トレーニン…` と切れる(実際に切れていた)。左が短いぶんを全部もらう。 */
+     ここは「トレーニングチケット+6枚」という**文**が入る。58pxのままだと
+     `トレーニン…` と切れる(実際に切れていた)。左が短いぶんを全部もらう。
+     **字は他の行と同じまま**(Share Tech Mono 11.5px)―― 別の書体・別の大きさにすると
+     この1行だけ浮く(実機で浮いていた)。**変えるのは幅の決め方だけ。** */
   #resultScreen #mastermonResultInfo .rs-exp-lvup .rs-led-val{
-    flex:1 1 auto; width:auto; min-width:0; color:var(--ink);
-    font-family:'Rajdhani',sans-serif; font-size:10px; letter-spacing:0.4px;
+    flex:1 1 auto; width:auto; min-width:0;
   }
   #resultScreen #mastermonResultInfo.hidden{ display:none !important; }
   /* 登録の帯が出ている間は右列が164pxしかないので内訳を1行に落とす(大の1行は残す) */
