@@ -2149,7 +2149,8 @@
     --rs-line:rgba(255,255,255,0.10);
     --rs-line-strong:rgba(255,255,255,0.20);
     --rs-dim:#93a0b3;
-    --rs-cut:8px;      /* 大きい面の斜め切り(4隅・45°)。丸角にしない */
+    --rs-cut:13px;     /* 大きい面の斜め切り(4隅・45°)。丸角にしない。
+                          8pxだと2倍解像度で角が丸く見えて「丸角と斜め切りの混在」に読まれた */
     --rs-cut-s:4px;    /* 小さい札(バッジ)の斜め切り。角度は同じ45° */
     --rs-gap-s:3px; --rs-gap-m:6px; --rs-gap-l:12px;   /* 余白はこの3つだけ */
     padding:var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-r))
@@ -2228,11 +2229,15 @@
     inset:1px;
     background-image:
       linear-gradient(90deg, var(--rs-accent), rgba(255,255,255,0) 58%),
-      linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.016) 38%, rgba(0,0,0,0.42));
+      linear-gradient(180deg, var(--rs-face-top), rgba(255,255,255,0.016) 38%, rgba(0,0,0,0.42));
     background-size:100% 2px, 100% 100%;
     background-repeat:no-repeat, no-repeat;
-    background-color:rgba(3,6,11,0.62);
+    background-color:var(--rs-face);
   }
+  /* 【主役側の面を一段明るく】左(順位・台帳)が主役、右(統計・育成)が従。
+     塗り・枠・角が完全に同じだと、どちらが主役かが面に出ない。 */
+  #resultScreen{ --rs-face:rgba(3,6,11,0.62); --rs-face-top:rgba(255,255,255,0.05); }
+  #rsHero, #rsLedger{ --rs-face:rgba(18,27,44,0.66); --rs-face-top:rgba(255,255,255,0.10); }
   #resultScreen .rs-panel > *{ position:relative; z-index:1; }
   /* 【左そろえ・上詰め】.resultScreen{text-align:center} を継いでいるので明示的に左へ戻す。
      justify-content は flex-start(上詰め)。余った縦は下に1つの塊で残す。 */
@@ -2244,7 +2249,8 @@
   #rsHero{ flex:1.05 1 0; }
   #rsPerf{ flex:1 1 0; }
   #rsLedger{ flex:1.2 1 0; }
-  #rsProgress{ flex:1 1 0; }
+  /* 中身の下が大きく空くのを止める。段の間に余りを分ける */
+  #rsProgress{ flex:1 1 0; justify-content:space-between; }
   /* 列の見出し(小さい灰・字間広め)。APEXの「XP内訳」に当たる段 */
   #resultScreen .rs-col-head{
     flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
@@ -2307,24 +2313,48 @@
      max-height:100% を掛けていて、flexで縮んだ枠に対して割合が解けきらず
      2〜6px はみ出していた(枠に overflow:hidden を足した瞬間に角が切れる形)。
      枠は縦の余りを吸い、足りなければ最初に縮む(R3の「装飾がいちばん先に削れる」)。 */
+  /* 【丸ではなく斜め切りの板にする】円のままだと、幅を aspect-ratio に、高さを flex に
+     決めさせることになり、どちらかが勝った瞬間に**楕円**になる(実測で2回発生)。
+     板なら幅も高さも枠から素直に決まり、絵は object-fit:contain で歪まない。
+     ついでに 45° の斜め切りがここにも通り、余った縦をこの板が全部使う(立ち絵が主役)。
+     枠と面はパネルと同じ二枚重ね(::before=枠の色 / ::after=1px内側の面)。
+     **絵そのものは clip-path の外**に置く ―― 勝利の跳ねる動きが角で切られないように。 */
   #resultScreen .rs-hero-art{
-    /* 【枠に aspect-ratio も割合の高さも持たせない】どちらも「幅から高さ」「高さから幅」の
-       行き来ができてしまい、flexが決めた高さを絵が押し返して列ごと数十px溢れた(実測)。
-       枠は**縦の列**にして、縮むのは絵そのものに任せる。 */
-    flex:0 1 auto; min-height:0; margin-top:var(--rs-gap-m);
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    flex:1 1 auto; min-height:0; margin-top:var(--rs-gap-m); position:relative;
+    filter:drop-shadow(0 0 10px var(--rs-glow));
   }
-  /* 大きさは高さだけで決め、幅は aspect-ratio に任せる。
-     縦の列の中で flex:0 1 auto + min-height:0 なので、詰まれば絵自身が縮む。 */
+  #resultScreen .rs-hero-art::before,
+  #resultScreen .rs-hero-art::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .rs-hero-art::before{ background:var(--rs-accent); }
+  #resultScreen .rs-hero-art::after{
+    inset:2px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02) 40%, rgba(0,0,0,0.45)),
+      radial-gradient(70% 60% at 50% 78%, var(--rs-glow), rgba(0,0,0,0) 70%),
+      #070b12;
+  }
+  /* 【置換要素に width:auto を残さない】<img> は絶対配置で上下左右を留めても、
+     width/height が auto だと**元画像の大きさ(320px)**になって枠を無視する(実測で1100px溢れた)。
+     大きさは必ず割合で書く。 */
+  /* 絵は板より一回り小さく置く。エモート(勝ち=跳ねる/負け=うなだれる)が
+     transform で傾くので、その振れ幅ぶんの余白を枠の内側に残しておく
+     ―― 枠に overflow:hidden を掛けて切るのではなく、**はみ出さない大きさにする。** */
   #resultScreen .result-monster-icon{
-    flex:0 1 auto; min-height:0;
-    height:clamp(44px, calc(30 * var(--vh)), 130px);
-    /* 枠が縮んだときに絵も一緒に縮む止め。これが無いと枠だけ縮んで絵が数px残り、
-       枠に overflow:hidden を足した瞬間に丸い縁が切れる形になる(実測3〜5px) */
-    max-height:100%;
-    width:auto; aspect-ratio:1 / 1; max-width:100%;
-    margin:0; border-width:2px;
+    position:absolute; top:10%; left:10%; z-index:1;
+    width:80%; height:80%; margin:0;
+    border:0; border-radius:0; box-shadow:none;
+    object-fit:contain; background:none;
   }
+  /* 負けたときは「同じ板を色だけ落とす」。透過灰の楕円を置いただけにしない */
+  #resultScreen[data-tone="lose"] .result-monster-icon,
+  #resultScreen.lose .result-monster-icon{ filter:grayscale(0.45) brightness(0.86); }
   /* 試合ハイライト(1試合1つだけ)。長い文言は自分で「…」に切る */
   .result-highlight{ margin-top:6px; padding:5px 14px; border-radius:6px; font-size:13px; letter-spacing:1px;
     color:var(--amber); background:rgba(244,196,48,0.1); border:1px solid rgba(244,196,48,0.45);
@@ -2351,16 +2381,27 @@
   /* 【入れ子のflexを増やさない】共通の .resultStatsRow は align-items:center の
      row-flex で、そのままだと中の縦積みの高さが決まらず3行が0pxに潰れた(実際に消えた)。
      ここでは素のブロックに戻し、縦積みは .resultStats 1枚だけで作る。 */
-  #resultScreen .resultStatsRow{ flex:0 0 auto; display:block; margin-top:0; gap:0; }
+  /* 【縦に均等配分して罫を下端まで通す】上詰めにして余りを下に1塊で残すと、
+     カード高の4割が無地になって「箱だけ大きい」画面になった(批評で最低点)。
+     3行が高さを分け合い、いちばん下の罫がカードの底に来る形にする。
+     align-items:stretch を必ず書くこと ―― 共通の .resultStatsRow は center で、
+     center のままだと中の縦積みの高さが決まらず3行が0pxに潰れる(実際に消えた)。 */
+  #resultScreen .resultStatsRow{
+    flex:1 1 auto; min-height:0; margin-top:0; gap:0;
+    display:flex; align-items:stretch; justify-content:flex-start;
+  }
   #resultScreen .resultStats{
+    flex:1 1 auto; min-width:0; min-height:0;
     display:flex; flex-direction:column; flex-wrap:nowrap; gap:0; width:100%;
   }
   /* 【column-reverse を使わない】DOMを「ラベル→数値」の順に並べ替えて素直な column にした。
      column-reverse は中身が枠に入りきらないときの溢れ方が逆向きになり、
      どの端末でも9pxぶん行が溢れて見えた(実測)。並び順はHTML側で作る。 */
   #resultScreen .resultStats > div{
-    flex:0 0 auto; min-width:0; text-align:left;
-    display:flex; flex-direction:column;
+    flex:1 1 0; min-height:0; min-width:0; text-align:left;
+    /* column-reverse は使わない(溢れ方が逆になる)。並びはHTML側で作ってある。
+       中身は下寄せ ―― 数値と罫を必ず隣り合わせにして、余りは各行の上へ逃がす */
+    display:flex; flex-direction:column; justify-content:flex-end;
     padding:var(--rs-gap-s) 0; border-bottom:1px solid var(--rs-line);
   }
   #resultScreen .resultStats div{ text-align:left; }
@@ -2375,14 +2416,16 @@
   }
   /* 小隊(チーム戦のときだけ)。行は「名前 … 撃破n 状態」で左右に振る */
   #resultScreen .result-squad-info{
-    flex:0 1 auto; min-height:0; margin-top:var(--rs-gap-m); align-items:stretch; gap:0;
+    flex:1 1 auto; min-height:0; margin-top:var(--rs-gap-m); align-items:stretch; gap:0;
   }
   #resultScreen .result-squad-title{
     font-size:8.5px; letter-spacing:2.4px; color:var(--rs-dim); text-align:left;
     padding-bottom:2px; border-bottom:1px solid var(--rs-line);
   }
+  /* 人数が3人でも4人でも同じ規則で伸びる(行が高さを分け合う) */
   #resultScreen .result-squad-row{
-    display:flex; align-items:baseline; gap:var(--rs-gap-m); font-size:10.5px; letter-spacing:0;
+    flex:1 1 0; min-height:0;
+    display:flex; align-items:center; gap:var(--rs-gap-m); font-size:10.5px; letter-spacing:0;
     padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.04);
   }
   #resultScreen .result-squad-row .sq-mark{ font-size:7.5px; color:var(--rs-dim); flex:0 0 auto; }
@@ -2395,6 +2438,7 @@
      いちばん詰まった場面(147px)に同時には入らない ―― 実測で16px溢れた。
      R3の「縦が足りないときは情報の密度を上げる」をここで効かせる。
      :has() が効かない環境では縦積みのままになるだけで、壊れ方は増えない。 */
+  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStatsRow{ flex:0 0 auto; }
   #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats{ flex-direction:row; gap:var(--rs-gap-m); }
   #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats > div{ flex:1 1 0; }
 
@@ -2405,8 +2449,11 @@
      【上詰め】行も小計も合計も見出しのすぐ下へ詰める。余りは列の下に1つの塊で残す
      ―― margin-top:auto で合計を下端へ飛ばすと、行と合計の間に大きな穴があく。 */
   #resultScreen .rs-ledger-rows{
-    flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
+  /* 行が高さを分け合う。min-height を割らないので、行が増えれば枠の中だけを送る */
+  #resultScreen .rs-ledger-rows > .rs-led-row{ flex:1 1 auto; min-height:20px; align-items:center; }
   #resultScreen .rs-led-row{
     display:flex; align-items:baseline; gap:var(--rs-gap-m);
     font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px;
@@ -2424,7 +2471,7 @@
   }
   #resultScreen .rs-led-val.rs-led-off{ color:var(--rs-dim); opacity:0.6; }
   #resultScreen .rs-led-sub{
-    flex:0 0 auto; margin-top:var(--rs-gap-s); padding-top:var(--rs-gap-s);
+    flex:0 0 auto; margin-top:0; padding-top:var(--rs-gap-s);
     border-top:1px solid var(--rs-line); background:none;
   }
   #resultScreen .rs-led-sub .rs-led-name{ color:var(--rs-dim); letter-spacing:1.4px; font-size:10px; }
@@ -2496,12 +2543,36 @@
   /* EXPの1行。**行の途中で切らない** ―― flexで縮めると1行の真ん中で切れて
      「壊れている」ように見えるので、高さは2行ぶんに固定し(-webkit-line-clamp)、
      縦が足りないときに譲るのはバッジ棚のほう(R3で小隊/バッジのほうが下)。 */
+  /* EXPの1行。**高さは max-height で止める** ―― -webkit-line-clamp は
+     中に <div> が入ると効かない(ui.js側が段落を入れた瞬間に5行まで伸びて列が溢れた)。
+     line-height を数値で固定してあるので、2行ぶんで必ず行の境目で止まる。 */
   #resultScreen .mastermon-result-info{
     flex:0 0 auto; margin-top:var(--rs-gap-s); padding:var(--rs-gap-s) var(--rs-gap-m);
-    font-size:10px; text-align:left;
+    font-size:10px; line-height:13px; text-align:left;
+    max-height:calc(2 * 13px + 2 * var(--rs-gap-s)); overflow:hidden;
     border-radius:0; border:0; border-left:2px solid var(--rs-accent);
     color:var(--rs-accent); background:linear-gradient(90deg, rgba(255,255,255,0.09), rgba(255,255,255,0));
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+  }
+  /* ---------- EXPの内訳(#mastermonResultInfo) ----------
+     ui.js は**クラスを外して**台帳と同じ .rs-led-row を並べる箱として使うので、
+     ここは**ID起点**で書く(クラス側の指定は、EXPが無い試合の hidden 用に残してある)。
+     行の高さを line-height で固定し、max-height を「行の整数倍」にして
+     **行の途中で切れない**ようにする。 */
+  #resultScreen #mastermonResultInfo{
+    flex:0 0 auto; margin-top:var(--rs-gap-s);
+    display:flex; flex-direction:column;
+    padding:0 0 0 var(--rs-gap-m); border:0; border-left:2px solid var(--rs-accent);
+    border-radius:0; background:linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0));
+    max-height:calc(3 * 14px); overflow:hidden;   /* 3行ぶん。行の境目で止まる */
+  }
+  #resultScreen #mastermonResultInfo .rs-led-row{
+    flex:0 0 auto; padding:0; font-size:10px; line-height:14px; background:none;
+  }
+  #resultScreen #mastermonResultInfo .rs-led-val{ color:var(--rs-accent); font-size:10.5px; }
+  #resultScreen #mastermonResultInfo.hidden{ display:none !important; }
+  /* 登録の帯が出ている間は右列が164pxしかないので2行に落とす */
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #mastermonResultInfo{
+    max-height:calc(2 * 14px);
   }
   /* 【APEXから取る】「次の報酬」を先に見せる */
   #resultScreen .rs-next{
@@ -2527,21 +2598,24 @@
      【高さは必ず「段の整数倍」】flexに任せて縮ませると、最後の段が上半分だけ見える
      **中途半端に切れた見た目**が必ず出る(実測。667×320で毎回出ていた)。
      そこで棚の高さを段数で決め打ちし、flex-shrink:0 で誰にも縮ませない。
-     ・ふだん      … 4段(89px)。667×320でも右列に105px残るので必ず入る
-     ・登録の対話中 … 2段(43px)。同じ場面で右列に残るのは53pxなのでこれが上限
+     ・ふだん      … 3段(66px)
+     ・登録の対話中 … 2段(43px)
+     どちらも667×320の右列(231px / 登録中は164px)に必ず入る段数にしてある。
+     **右列に何かを1つ足したらこの段数を見直すこと**(実測で決めた数字)。
      入りきらないぶんは棚の中だけを送る(段の境目で止まるので切れて見えない)。
      段の高さを固定するために **.result-badge に line-height を明示する**
      ―― 書体のぶら下がりで段の高さが変わると、この計算がその場でずれる。 */
   #resultScreen{ --rs-badge-row:20px; }   /* line-height14 + 上下padding4 + 枠2 */
   #resultScreen .result-badges{
     flex:0 0 auto; margin-top:var(--rs-gap-s); max-width:100%;
-    height:calc(4 * var(--rs-badge-row) + 3 * var(--rs-gap-s));
+    height:calc(3 * var(--rs-badge-row) + 2 * var(--rs-gap-s));
     justify-content:flex-start; align-content:flex-start; gap:var(--rs-gap-s);
     overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
-  /* 登録の対話が出ている間は右列が53pxしか残らないので2段に落とす */
+  /* 登録の帯が出ている間は右列の残りが少ないので1段に落とす。
+     R3で「小隊/バッジ」は報酬・EXPの情報より下なので、譲るのはこの棚。 */
   #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) .result-badges{
-    height:calc(2 * var(--rs-badge-row) + var(--rs-gap-s));
+    height:var(--rs-badge-row);
   }
   #resultScreen .result-badges.hidden{ display:none !important; }
   /* 1行きり。**縮めない**(縮めると行の途中で切れて壊れて見える) */
@@ -2605,7 +2679,34 @@
       0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
   }
   #resultScreen #resultActions > button.hidden{ display:none !important; }
-  #resultScreen #resultActions > .share-icon-btn{ padding-left:0; padding-right:0; font-size:15px; }
+  /* ---------- アクセントは画面に1色・1個だけ ----------
+     以前は 緑(もう一度)・金(トップ画面へ/マスモン)・白(シェア)・紫(レイド)が
+     同じ強さで並び、どれが主役か面から読めなかった。
+     **塗るのは「いちばん押す物」1つだけ**にして、あとは同じ暗い面 + 1pxの罫にそろえる。 */
+  #resultScreen #resultActions > button{
+    color:var(--ink); background:rgba(255,255,255,0.07);
+    border:1px solid var(--rs-line-strong); box-shadow:none;
+  }
+  #resultScreen #resultActions > button:active{ background:rgba(255,255,255,0.13); }
+  /* 主役=連戦。レイドでは「⟳ もう一度」が出ないので、代わりにレイドランキングが主役
+     (canReplayAgain() が false のときだけ #viewRaidRankBtn が出るので同時には並ばない) */
+  #resultScreen #replayAgainBtn,
+  #resultScreen #viewRaidRankBtn{
+    color:#1a1306; background:linear-gradient(180deg, var(--rs-accent), var(--rs-accent2));
+    border:0; font-weight:700;
+  }
+  #resultScreen #resultActions > .share-icon-btn{
+    padding-left:0; padding-right:0; font-size:15px;
+    color:var(--rs-accent); background:rgba(255,255,255,0.07);
+  }
+  #resultScreen #resultActions > .share-icon-btn .share-ico{ background:var(--rs-accent); }
+  /* 登録の帯の中も同じ規則(塗りは「登録する」1つだけ) */
+  #resultScreen #mastermonRegisterSkipBtn{
+    color:var(--ink); background:rgba(255,255,255,0.07); border:1px solid var(--rs-line-strong);
+  }
+  #resultScreen #mastermonRegisterConfirmBtn{
+    color:#1a1306; background:linear-gradient(180deg, var(--rs-accent), var(--rs-accent2)); border:0;
+  }
   /* ページの現在地。**操作の一部なので見える大きさにする** ―― 3pxの点では
      「今どちらのページか」が読めず、置いてある意味がなかった。
      縦は削ったままで、横に伸ばして今いるほうだけ長く・明るくする。 */

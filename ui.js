@@ -6358,11 +6358,24 @@ function resultGoPage(idx, opts){
   const pager = document.getElementById('resultPager');
   if(!pager) return;
   const instant = !!(opts && opts.instant);
-  if(instant) pager.classList.add('no-anim');
+  const pages = pager.querySelectorAll('.result-page');
+  /* 【.no-anim だけではスライドが止まらない】`#resultPager.page2 #resultPage2` の
+     transition 指定は `#resultPager.no-anim .result-page` よりID1つぶん強いので、
+     **今から見せる側のページだけが0.25秒かけて滑る。** instant は「スライドを見せない」
+     約束(前の試合の残像を出さない・検査や撮影を待たせない)なので、
+     クラスの強さ比べに勝たせるのではなく、要素側(インライン)で確実に止める。 */
+  if(instant){
+    pager.classList.add('no-anim');
+    pages.forEach(p=>{ p.style.transition = 'none'; });
+  }
   pager.classList.toggle('page2', resultPageIdx===1);
   document.querySelectorAll('#resultPageNav .result-dot')
     .forEach((d,i)=> d.classList.toggle('on', i===resultPageIdx));
-  if(instant){ void pager.offsetWidth; pager.classList.remove('no-anim'); }
+  if(instant){
+    void pager.offsetWidth;
+    pages.forEach(p=>{ p.style.transition = ''; });
+    pager.classList.remove('no-anim');
+  }
   /* 2枚目の演出は**送ったときに**走らせる(最初から走らせない)。
      instant は検査・撮影ツールやページの初期化からの切替なので、待たずに完成形にする。 */
   if(resultPageIdx === 1){
@@ -6907,6 +6920,10 @@ function renderResultExpBar(){
   const next = document.getElementById('rsNextRewardBody');
   if(!val || !fill || !lv || !lvN) return;
   const d = _rsExp;
+  /* 参戦したマスモンの名前はここの見出しで出す。**行を1つ足さずに名前を残すため**
+     ―― 下のEXPの表は「ラベル+数値」だけにしたいので、名前を行の中へ混ぜない。 */
+  { const lblEl = document.querySelector('#rsExpBar .rs-exp-lbl');
+    if(lblEl) lblEl.textContent = (d && d.name) ? (d.name + ' の経験値') : 'マスモン経験値'; }
   const setFinal = (pct)=>{ fill.dataset.rsFinal = pct.toFixed(1) + '%'; fill.style.width = fill.dataset.rsFinal; };
   if(!d){
     // 値が無い欄も消さず「--」で残す(APEXから)
@@ -6930,6 +6947,58 @@ function renderResultExpBar(){
   setFinal(rsExpPct(d.toExp, d.toNeed));
   // 「次の報酬」を先に見せる(APEXから)。次のレベルで貰えるのはトレーニングチケット1枚
   if(next) next.textContent = '🎟️ トレーニングチケット +1（Lv' + (d.toLevel + 1) + '）';
+}
+/* =====================================================================
+   EXPの結果を「小さいラベル + 数値」の行にする(#mastermonResultInfo)
+
+   以前はここが1つの文だった:
+     `ほのお EXP+7698(うちマスモン撃破ボーナス+40) Lv.31に上昇！トレーニングチケット+19`
+   3つの数字が全部**文の中に埋もれて**いて、詰まった画面では2行に折り返して塊になる。
+   左カラムの台帳で「数字は文の一部でなく数字として立たせる」と決めたのに、
+   右カラムだけがそれに反していた(批評の指摘)。
+
+   **使うのは台帳と同じ .rs-led-row / .rs-led-name / .rs-led-val で、新しいCSSは足していない。**
+   帯の見た目(左の罫・2行で切る -webkit-line-clamp)は行を並べると中身を切ってしまうので、
+   `mastermon-result-info` のクラスを外して素の箱として使う。**idは残す**
+   (検査ツールとレイドの noRecord 経路が id で掴んでいる)。
+   ※ 専用のCSS(上の細い罫・行間)が付くまでの間だけ、縮んで行が重ならないよう
+     flex と上余白の2つだけインラインで留めている。余白の刻みはA班のトークンを読むだけ。
+===================================================================== */
+function renderResultExpInfo(){
+  const el = document.getElementById('mastermonResultInfo');
+  if(!el) return;
+  el.innerHTML = '';
+  const d = _rsExp;
+  if(!d){
+    el.className = 'mastermon-result-info rs-in hidden';
+    el.style.flex = ''; el.style.marginTop = '';
+    return;
+  }
+  el.className = 'rs-in';
+  el.style.flex = '0 0 auto';
+  el.style.marginTop = 'var(--rs-gap-s)';
+  const row = (label, value, off)=>{
+    const r = document.createElement('div');
+    r.className = 'rs-led-row';
+    const n = document.createElement('span');
+    n.className = 'rs-led-name';
+    n.textContent = label;
+    const v = document.createElement('span');
+    v.className = 'rs-led-val' + (off ? ' rs-led-off' : '');
+    v.textContent = value;
+    r.appendChild(n); r.appendChild(v);
+    el.appendChild(r);
+  };
+  if(d.capped){
+    // 最高レベルなのでEXPは入らない。代わりのゴールドは台帳の「Lv上限ボーナス」に出ている
+    row('獲得EXP', '--', true);
+  } else {
+    row('獲得EXP', d.expGain.toLocaleString());
+    // 値が無い欄も消さずに「--」で残す(台帳と同じ流儀。次に何を狙えばいいかが分かる)
+    row('撃破ボーナス', d.bonusExp > 0 ? ('+' + d.bonusExp.toLocaleString()) : '--', !(d.bonusExp > 0));
+    // チケットは上がった試合だけ(上がらない試合は「次の報酬」の欄が同じことを教えている)
+    if(d.levelsGained > 0) row('トレーニングチケット', '+' + d.levelsGained);
+  }
 }
 /* EXPバーを伸ばす演出。**登録の対話のあとにも単独で呼ぶ** ――
    mastermonRegisterConfirmBtn は演出が終わってからEXPを付けるので、
@@ -6961,6 +7030,7 @@ function playExpBarSequence(){
 function renderResultRewards(){
   renderResultLedger();
   renderResultExpBar();
+  renderResultExpInfo();
 }
 /* 登録/スキップのあと、中身を描き直してから測り直す。
    fitResultScreen() だけを呼んでいた頃は、EXP欄が増えたあとの高さで測れていなかった。 */
@@ -7045,7 +7115,7 @@ function playResultPage2Sequence(){
     }
   });
   rsStep(t + 420, ()=>{ rsShow('#rsExpBar'); playExpBarSequence(); });
-  rsStep(t + 700, ()=> rsShow('#mastermonResultInfo, #rsNextReward'));
+  rsStep(t + 700, ()=> rsShow('#mastermonResultInfo, #rsProgress .rs-lead-record, #rsNextReward'));
   rsStep(t + 800, ()=> rsShow('#resultBadges'));
   rsStep(t + 950, ()=> finishResultSequence());
 }
@@ -7091,41 +7161,81 @@ function rankOnMatchEnd(o){
 /* 段位のチップを作る関数はここにあったが、**ヘッダーから段位を外したので消した**
    (2026-08-15。ヘッダーが詰まって名前が省略されるため)。
    段位はロビーの #lobbyRankPanel が自前の作りで大きく出している。 */
-// リザルトの自己ベスト更新バッジ＆獲得称号バッジを描画する
+/* この試合の主役(自己ベスト更新・段位アップ)を、チップより一段上の1行へ格上げする。
+
+   **見た目は「次の報酬」と同じ札(.rs-next)を借りている。** バッジ棚(#resultBadges)は
+   段の高さを --rs-badge-row で決め打ちしてあり、棚の中に大きい物を作ると
+   その計算がその場で崩れる。だから主役は棚の外へ出す。
+   専用のクラスが要るならA班へ(ここでは新しいCSSを足していない)。
+   クラス名は `rs-` 接頭辞。**`rank` の単独名は使わない**
+   (`.resultScreen .rank` = 順位の巨大文字と衝突して46pxになった事故がある)。 */
+function rsRenderLeadRecord(list){
+  const col = document.getElementById('rsProgress');
+  const anchor = document.getElementById('rsNextReward');
+  let el = col ? col.querySelector('.rs-lead-record') : null;
+  if(!col || !anchor) return;
+  if(!list || !list.length){ if(el) el.remove(); return; }   // 祝いごとが無い試合は札ごと出さない
+  if(!el){
+    el = document.createElement('div');
+    el.className = 'rs-next rs-lead-record rs-in';
+    col.insertBefore(el, anchor);   // 「この試合の記録」→「次の報酬」→ チップ の順
+  }
+  el.innerHTML = '';
+  const lbl = document.createElement('span');
+  lbl.className = 'rs-next-lbl';
+  lbl.textContent = 'この試合の記録';
+  const body = document.createElement('span');
+  body.className = 'rs-next-body';
+  // 1行きりの札なので、いちばん大きい1件だけ出して残りは件数に畳む(切れた文字を残さない)
+  body.textContent = list[0] + (list.length > 1 ? `　他${list.length - 1}` : '');
+  el.appendChild(lbl); el.appendChild(body);
+}
+/* リザルトの記録バッジ。
+   **平坦にしない。** 以前は「自己ベスト」も「称号獲得」も同じ大きさ・同じ枠のチップで
+   7個並び、この試合で一番嬉しい事実(自己ベスト)と15件のうちの1つ(称号)が同格だった。
+   さらに `称号獲得「◯◯」` という同じ4文字+カギカッコが5〜6回反復して、
+   値(称号名)より飾りのほうが長かった(批評の指摘)。
+     ・主役(自己ベスト更新・段位アップ) … 棚の外の札へ格上げ(rsRenderLeadRecord)
+     ・称号                             … **1つのチップに畳む**(`🎖️ 称号 +17`)
+     ・シーズンSP・段位RP               … 素のチップのまま
+   返すのは「SEを鳴らすべきか」だけ(鳴らすのは演出のバッジ段)。 */
 function renderResultBadges(o){
   const el = document.getElementById('resultBadges');
-  if(!el) return;
-  const badges = [];
-  let rainbow = false; // 自己ベスト更新 or 称号獲得(=虹色バッジ)が出たか
-  if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
-  if(o.rank && o.rank.delta !== 0){
-    const sign = o.rank.delta > 0 ? '+' : '';
-    /* クラス名に `rank` を使わないこと。リザルト画面には順位表示用の
-       `.resultScreen .rank{ font-size:clamp(40px,12vw,80px) }` があり、
-       `result-badge rank` にすると巨大な文字になる(実機で発生・実測46px)。 */
-    badges.push(`<span class="result-badge rankrp">${o.rank.after.icon} ${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
-  }
-  if(o.rank && o.rank.promoted){ badges.push(`<span class="result-badge best">🎉 段位アップ「${o.rank.after.icon} ${o.rank.after.name}」</span>`); rainbow = true; }
+  if(!el) return null;
+  const leads = [];    // 棚の外の札へ上げるもの
+  const badges = [];   // 棚のチップ
   const globalKillsBest = o.kills>0 && o.kills > o.prevBestKills;
   const globalDamageBest = o.damage>0 && o.damage > o.prevBestDamage;
-  if(globalKillsBest){ badges.push(`<span class="result-badge best">🏆 自己ベスト キル数 ${o.kills}!</span>`); rainbow = true; }
-  if(globalDamageBest){ badges.push(`<span class="result-badge best">🏆 自己ベスト ダメージ ${o.damage}!</span>`); rainbow = true; }
   // モンスター毎の最高記録更新(全体ベストと重複しない場合のみ)
   const elemLabel = o.elementLabel || 'このモンスター';
   const monsterKillsBest = !globalKillsBest && o.kills>0 && o.kills > (o.prevElemBestKills||0);
   const monsterDamageBest = !globalDamageBest && o.damage>0 && o.damage > (o.prevElemBestDamage||0);
-  if(monsterKillsBest){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 キル数 ${o.kills}!</span>`); rainbow = true; }
-  if(monsterDamageBest){ badges.push(`<span class="result-badge best">🏆 ${elemLabel}の最高記録 ダメージ ${o.damage}!</span>`); rainbow = true; }
-  let titleGot = false;
-  for(const t of (o.newTitles||[])){ badges.push(`<span class="result-badge title">🎖️ 称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; titleGot = true; }
-  // モンスター毎の新称号(全体の新称号に含まれないもの)
+  const num = (v)=> Math.round(v||0).toLocaleString();
+  if(globalKillsBest)  leads.push(`🏆 自己ベスト 撃破 ${num(o.kills)}`);
+  if(globalDamageBest) leads.push(`🏆 自己ベスト ダメージ ${num(o.damage)}`);
+  if(monsterKillsBest)  leads.push(`🏆 ${elemLabel}の最高 撃破 ${num(o.kills)}`);
+  if(monsterDamageBest) leads.push(`🏆 ${elemLabel}の最高 ダメージ ${num(o.damage)}`);
+  if(o.rank && o.rank.promoted) leads.push(`${o.rank.after.icon} 段位アップ ${o.rank.after.name}`);
+  rsRenderLeadRecord(leads);
+
+  // 称号は1つに畳む。**`称号獲得「」` を繰り返さない** ―― 少ないうちは名前そのものを出す
   const globalNewIds = new Set((o.newTitles||[]).map(t=>t.id));
-  for(const t of (o.elemNewTitles||[])){
-    if(globalNewIds.has(t.id)) continue;
-    badges.push(`<span class="result-badge title">🎖️ ${elemLabel}で称号獲得「${t.emoji} ${t.name}」</span>`); rainbow = true; titleGot = true;
+  const titles = (o.newTitles||[]).slice();
+  for(const t of (o.elemNewTitles||[])){ if(!globalNewIds.has(t.id)) titles.push(t); }
+  const titleGot = titles.length > 0;
+  if(titles.length === 1){
+    badges.push(`<span class="result-badge title">🎖️ ${titles[0].emoji} ${titles[0].name}</span>`);
+  } else if(titles.length === 2){
+    badges.push(`<span class="result-badge title">🎖️ ${titles[0].emoji}${titles[0].name}・${titles[1].emoji}${titles[1].name}</span>`);
+  } else if(titles.length > 2){
+    badges.push(`<span class="result-badge title">🎖️ 称号 +${titles.length}</span>`);
   }
-  /* 6件を超えたら残りを「+他N件」に畳む。称号ラッシュ時にバッジ列が画面下端から
-     はみ出して最下段が見切れていた(批評指摘)。称号自体はマイページで一覧できる */
+  if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
+  if(o.rank && o.rank.delta !== 0){
+    const sign = o.rank.delta > 0 ? '+' : '';
+    badges.push(`<span class="result-badge rankrp">${o.rank.after.icon} ${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
+  }
+  /* 畳んだので通常は3個以内に収まるが、上限は残しておく(棚の段数は決め打ちのため) */
   const MAX_RESULT_BADGES = 6;
   const shown = badges.length > MAX_RESULT_BADGES
     ? badges.slice(0, MAX_RESULT_BADGES).concat(`<span class="result-badge more">+他${badges.length-MAX_RESULT_BADGES}件</span>`)
@@ -11020,8 +11130,8 @@ function handleMastermonPostMatch(isWin, overrides){
         toLevel: mm.level, toExp: mm.exp, toNeed: mastermonExpToNext(mm),
         levelsGained: result.levelsGained, expGain: result.expGain,
         capped: result.goldGain > 0, goldGain: result.goldGain,
+        name: mm.name, bonusExp: killExpBonus,
       };
-      let resultText;
       if(result.goldGain>0){
         // レベル上限に達したマスモンは経験値の代わりにゴールドを獲得
         addWallet(result.goldGain, 0);
@@ -11030,14 +11140,9 @@ function handleMastermonPostMatch(isWin, overrides){
            1行として置く(合計 = 小計×倍率 + ボーナス)。台帳の外で財布だけ増えると、
            合計と実際の増えかたが食い違って見える。 */
         if(_rsLedger) _rsLedger.bonus.push({ label:'Lv上限ボーナス', gold: result.goldGain, dia: 0 });
-        resultText = `${mm.name} は最高レベル！ EXPの代わりに 🪙+${result.goldGain}`;
-      } else {
-        resultText = `${mm.name} EXP+${result.expGain}`;
-        if(killExpBonus>0) resultText += `(うちマスモン撃破ボーナス+${killExpBonus})`;
-        if(result.levelsGained>0) resultText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
       }
-      infoEl.textContent = resultText;
-      infoEl.classList.remove('hidden');
+      /* 【文を組み立てない】EXPの見せ方は renderResultExpInfo() が
+         「ラベル + 数値」の行にする。ここは値を控えるだけ(同じ数字を2か所で作らない)。 */
     }
     return;
   }
@@ -11081,15 +11186,12 @@ document.getElementById('mastermonRegisterConfirmBtn').addEventListener('click',
       toLevel: mm.level, toExp: mm.exp, toNeed: mastermonExpToNext(mm),
       levelsGained: result.levelsGained, expGain: result.expGain,
       capped: result.goldGain > 0, goldGain: result.goldGain,
+      name: mm.name, bonusExp: Math.round(st.bonusExp || 0),
     };
     // 戦歴(あゆみ): 登録のきっかけになった試合も1試合として記録する
     mmRecordMatch(mm, { kills: st.kills, damage: st.damage, isWin: st.champion });
     toastExpText = ` EXP+${result.expGain}`;
-    let infoText = `${mm.name} EXP+${result.expGain}`;
-    if(result.levelsGained>0) infoText += ` Lv.${mm.level}に上昇！トレーニングチケット+${result.levelsGained}`;
-    const infoEl = document.getElementById('mastermonResultInfo');
-    infoEl.textContent = infoText;
-    infoEl.classList.remove('hidden');
+    // 画面の見せ方は下の relayoutResult() → renderResultExpInfo() が「ラベル + 数値」の行で作る
   }
   saveMastermons(data);
   // あゆみの記録遡り③登録直後(登録前に遊んでいた分をこの1体のrecへ取り込む)
