@@ -6961,22 +6961,16 @@ function renderResultExpBar(){
    帯の見た目(左の罫・2行で切る -webkit-line-clamp)は行を並べると中身を切ってしまうので、
    `mastermon-result-info` のクラスを外して素の箱として使う。**idは残す**
    (検査ツールとレイドの noRecord 経路が id で掴んでいる)。
-   ※ 専用のCSS(上の細い罫・行間)が付くまでの間だけ、縮んで行が重ならないよう
-     flex と上余白の2つだけインラインで留めている。余白の刻みはA班のトークンを読むだけ。
+   箱の見た目(左の罫・行の高さ・入る行数)は style.css の `#resultScreen #mastermonResultInfo`
+   がID起点で持っている。**ここから寸法をインラインで書かない**(2か所で1つの寸法を持たない)。
 ===================================================================== */
 function renderResultExpInfo(){
   const el = document.getElementById('mastermonResultInfo');
   if(!el) return;
   el.innerHTML = '';
   const d = _rsExp;
-  if(!d){
-    el.className = 'mastermon-result-info rs-in hidden';
-    el.style.flex = ''; el.style.marginTop = '';
-    return;
-  }
+  if(!d){ el.className = 'mastermon-result-info rs-in hidden'; return; }
   el.className = 'rs-in';
-  el.style.flex = '0 0 auto';
-  el.style.marginTop = 'var(--rs-gap-s)';
   const row = (label, value, off)=>{
     const r = document.createElement('div');
     r.className = 'rs-led-row';

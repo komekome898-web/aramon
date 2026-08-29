@@ -2204,7 +2204,12 @@
   #resultPager:not(.page2) #resultPage1,
   #resultPager.page2 #resultPage2{ visibility:visible; transition:transform 0.25s ease, visibility 0s; }
   #resultPager.page2 .result-page{ transform:translateX(-100%); }
-  /* showResultNow が1枚目へ戻すときはスライドを見せない(前の試合の残像になる) */
+  /* showResultNow が1枚目へ戻すときはスライドを見せない(前の試合の残像になる)。
+     【詳細度をそろえること】上の `#resultPager.page2 #resultPage2`(ID2つ)のほうが強く、
+     `#resultPager.no-anim .result-page`(ID1つ)では transition を消せずに
+     0.25秒かけて滑っていた(撮影で2枚目が90pxずれて右端が切れた)。 */
+  #resultPager.no-anim:not(.page2) #resultPage1,
+  #resultPager.no-anim.page2 #resultPage2,
   #resultPager.no-anim .result-page{ transition:none; }
 
   /* ---------- パネル(4隅を45°で落とす。丸角にしない) ----------
@@ -2249,8 +2254,12 @@
   #rsHero{ flex:1.05 1 0; }
   #rsPerf{ flex:1 1 0; }
   #rsLedger{ flex:1.2 1 0; }
-  /* 中身の下が大きく空くのを止める。段の間に余りを分ける */
-  #rsProgress{ flex:1 1 0; justify-content:space-between; }
+  #rsProgress{ flex:1 1 0; }
+  /* 【詳細度に注意】justify-content は .rs-col(#resultScreen .rs-col = 1,1,0)が
+     持っているので、#rsProgress だけ(1,0,0)では**負ける**。ID2つで書く。
+     中身の下が大きく空くのを止めて、余りを段の間へ分ける。 */
+  #resultScreen #rsProgress,
+  #resultScreen #rsLedger{ justify-content:space-between; }
   /* 列の見出し(小さい灰・字間広め)。APEXの「XP内訳」に当たる段 */
   #resultScreen .rs-col-head{
     flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
@@ -2406,11 +2415,15 @@
   }
   #resultScreen .resultStats div{ text-align:left; }
   #resultScreen .resultStats .lbl{
+    flex:0 0 auto;
     font-size:8.5px; letter-spacing:1.6px; color:var(--rs-dim); margin:0 0 1px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  /* 【縮ませない】overflow:hidden を持つので flex の自動最小が0になり、
+     詰まると行の途中で字が切れる(実測2px)。切るより溢れて検査に出るほうがよい */
   #resultScreen .resultStats .num{
-    font-family:'Share Tech Mono',monospace; font-size:clamp(15px, calc(5.6 * var(--vh)), 26px);
+    flex:0 0 auto;
+    font-family:'Share Tech Mono',monospace; font-size:clamp(15px, calc(6.4 * var(--vh)), 30px);
     /* 行送りを字の高さぎりぎりにしない(1.06 だと overflow:hidden が2px削る) */
     line-height:1.25; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
@@ -2449,11 +2462,14 @@
      【上詰め】行も小計も合計も見出しのすぐ下へ詰める。余りは列の下に1つの塊で残す
      ―― margin-top:auto で合計を下端へ飛ばすと、行と合計の間に大きな穴があく。 */
   #resultScreen .rs-ledger-rows{
-    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+    flex:0 1 auto; min-height:0; display:flex; flex-direction:column;
     overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
-  /* 行が高さを分け合う。min-height を割らないので、行が増えれば枠の中だけを送る */
-  #resultScreen .rs-ledger-rows > .rs-led-row{ flex:1 1 auto; min-height:20px; align-items:center; }
+  /* 行は少し伸びて余白を吸うが、**伸びすぎない**(上限を切らないと、3行のときに
+     1行100pxの帯になって表に見えなくなる)。残りは列側の space-between が段の間へ配る */
+  #resultScreen .rs-ledger-rows > .rs-led-row{
+    flex:1 1 auto; min-height:20px; max-height:34px; align-items:center;
+  }
   #resultScreen .rs-led-row{
     display:flex; align-items:baseline; gap:var(--rs-gap-m);
     font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px;
@@ -2565,8 +2581,11 @@
     border-radius:0; background:linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0));
     max-height:calc(3 * 14px); overflow:hidden;   /* 3行ぶん。行の境目で止まる */
   }
+  /* 行の高さは height で決め打ち。baseline そろえのままだと大きいほうの字に
+     引っぱられて1pxずつ伸び、max-height の「行の整数倍」がずれる(実測45px/42px) */
   #resultScreen #mastermonResultInfo .rs-led-row{
-    flex:0 0 auto; padding:0; font-size:10px; line-height:14px; background:none;
+    flex:0 0 auto; height:14px; align-items:center;
+    padding:0; font-size:10px; line-height:14px; background:none;
   }
   #resultScreen #mastermonResultInfo .rs-led-val{ color:var(--rs-accent); font-size:10.5px; }
   #resultScreen #mastermonResultInfo.hidden{ display:none !important; }
@@ -2593,6 +2612,21 @@
     flex:1 1 auto; min-width:0; text-align:right; font-family:'Rajdhani',sans-serif; font-weight:700;
     font-size:11px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  /* ---------- この試合の主役の記録(.rs-lead-record) ----------
+     「自己ベスト 撃破12」と「称号1件」がバッジ棚の中で同格に並んでいて、
+     どれがこの試合いちばん嬉しい事実なのか読めなかった(批評の指摘)。
+     ui.js が棚の**外**へ出したこの札を、面と字の大きさで一段上に見せる。
+     **棚の段の高さ(--rs-badge-row)には触らない** ―― 棚の外なので計算に関わらない。
+     祝いごとが無い試合は ui.js が札ごと出さないので、そのときは縦を1pxも使わない。 */
+  #resultScreen .rs-lead-record{
+    margin-top:var(--rs-gap-s);
+    background:linear-gradient(90deg, rgba(255,215,106,0.22), rgba(255,215,106,0.05));
+  }
+  #resultScreen .rs-lead-record .rs-next-lbl{ color:var(--rs-accent); }
+  #resultScreen .rs-lead-record .rs-next-body{
+    font-size:13px; font-weight:800; color:var(--rs-accent);
+  }
+  #resultScreen .rs-lead-record:empty{ display:none; }
   /* ---------- バッジ棚 ----------
      **台帳と並んでここだけスクロールしてよい**。
      【高さは必ず「段の整数倍」】flexに任せて縮ませると、最後の段が上半分だけ見える
@@ -2620,7 +2654,7 @@
   #resultScreen .result-badges.hidden{ display:none !important; }
   /* 1行きり。**縮めない**(縮めると行の途中で切れて壊れて見える) */
   #resultScreen #scoreSubmitStatus{
-    flex:0 0 auto; margin-top:var(--rs-gap-m); min-height:0; font-size:9px; text-align:left;
+    flex:0 0 auto; margin-top:var(--rs-gap-s); min-height:0; font-size:9px; text-align:left;
     color:var(--rs-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   /* 【登録の対話が出ている間は送信状態の行を出さない】
