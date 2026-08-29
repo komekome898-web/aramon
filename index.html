@@ -729,6 +729,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
          @keyframes resultIconHappyBounce が infinite で掛かっていて、
          CSSアニメーションはインラインの transform より強い(ui.js:6218 に同じ罠の記録)。 -->
     <div id="rsHero" class="rs-panel rs-col">
+      <!-- 試合の素性(モード/マップ/人数)の1行。中身は ui.js が書く。
+           空のままなら :empty で消えるので、書かれなくても崩れない -->
+      <div id="rsMatchMeta" class="rs-meta rs-in"></div>
       <!-- 順位も同じ理由で親を1枚かませる(#resultRank には winPulse が掛かっている) -->
       <div class="rs-rank-wrap rs-in">
         <div class="rank" id="resultRank">#1</div>
@@ -748,7 +751,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <!-- 右: 自分の統計3つ + 小隊。
          統計は箱で囲まない(小さい灰のラベル + 大きい数値 + 下に細い罫) -->
     <div id="rsPerf" class="rs-panel rs-col">
-      <div class="rs-col-head">MATCH STATS</div>
+      <div class="rs-col-head">戦績</div>
       <div class="resultStatsRow">
         <div class="resultStats">
           <div class="rs-in"><div class="num" id="statKills">0</div><div class="lbl">撃破数</div></div>
@@ -795,7 +798,7 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
 
     <!-- 右: マスモンEXPバー・次の報酬・バッジ棚 -->
     <div id="rsProgress" class="rs-panel rs-col">
-      <div class="rs-col-head">PROGRESS</div>
+      <div class="rs-col-head">育成と記録</div>
       <!-- EXPバー。伸ばすのは B班(#rsExpFill の style.width)。下の 38% は見本 -->
       <div id="rsExpBar" class="rs-exp rs-in">
         <div class="rs-exp-head">
