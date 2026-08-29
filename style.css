@@ -2524,15 +2524,24 @@
   }
   /* ---------- バッジ棚 ----------
      **台帳と並んでここだけスクロールしてよい**。
-     【1段は必ず見せる】min-height はバッジ1段ぶん(21px)。付けないと、いちばん詰まった
-     場面で3pxまで潰れ、**バッジの上端だけが見えて切れている**状態になる(実測)。
-     切れた見た目を残すのは「中身が入っていないことが目に見えなくなる」のと同じ事故。
-     【flex-basis は auto】列のほかの行は全部 flex-shrink:0 なので、縮むのはここだけ。
-     中身が入る高さがあればそのぶんだけ取り(上詰め)、足りなければ21pxまで縮んで送る。 */
+     【高さは必ず「段の整数倍」】flexに任せて縮ませると、最後の段が上半分だけ見える
+     **中途半端に切れた見た目**が必ず出る(実測。667×320で毎回出ていた)。
+     そこで棚の高さを段数で決め打ちし、flex-shrink:0 で誰にも縮ませない。
+     ・ふだん      … 4段(89px)。667×320でも右列に105px残るので必ず入る
+     ・登録の対話中 … 2段(43px)。同じ場面で右列に残るのは53pxなのでこれが上限
+     入りきらないぶんは棚の中だけを送る(段の境目で止まるので切れて見えない)。
+     段の高さを固定するために **.result-badge に line-height を明示する**
+     ―― 書体のぶら下がりで段の高さが変わると、この計算がその場でずれる。 */
+  #resultScreen{ --rs-badge-row:20px; }   /* line-height14 + 上下padding4 + 枠2 */
   #resultScreen .result-badges{
-    flex:0 1 auto; min-height:21px; margin-top:var(--rs-gap-s); max-width:100%;
+    flex:0 0 auto; margin-top:var(--rs-gap-s); max-width:100%;
+    height:calc(4 * var(--rs-badge-row) + 3 * var(--rs-gap-s));
     justify-content:flex-start; align-content:flex-start; gap:var(--rs-gap-s);
     overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  /* 登録の対話が出ている間は右列が53pxしか残らないので2段に落とす */
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) .result-badges{
+    height:calc(2 * var(--rs-badge-row) + var(--rs-gap-s));
   }
   #resultScreen .result-badges.hidden{ display:none !important; }
   /* 1行きり。**縮めない**(縮めると行の途中で切れて壊れて見える) */
@@ -2617,6 +2626,10 @@
      ID起点で上書きする(基のクラスは触らない)。 */
   #resultScreen .result-badge{
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; letter-spacing:0.5px;
+    /* 【line-height は必ず数値で固定】棚の高さを段数で決め打ちしているので、
+       書体のぶら下がり任せにすると段の高さがずれて計算が合わなくなる。
+       ここを変えたら --rs-badge-row も直す(2か所で1つの寸法を持っている) */
+    line-height:14px;
     padding:2px var(--rs-gap-m); border-radius:0;
     color:var(--ink-dim); background:rgba(255,255,255,0.06);
     border:1px solid var(--rs-line); text-shadow:none;
