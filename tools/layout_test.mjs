@@ -103,14 +103,18 @@ const MODES = [
 const SCREENS = [
   { id:'lobbyScreen',    name:'待機部屋', variants:['host','guest','few'], scrollIds:['lobbyScreen','lobbyInner'] },
   { id:'roomListScreen', name:'部屋一覧', variants:['few','many','empty'], scrollIds:['roomListScreen','roomListInner'] },
-  /* リザルトはスクロール量で見ない。fitResultScreen() が入り切らない中身を
-     transform:scale で丸ごと縮めて収めるが、**transform はレイアウトの寸法を変えない**ので
-     scrollHeight は縮む前のままになり、実際には収まっているのに「溢れている」と出てしまう。
-     収まっているかは外接矩形で見る「見切れ」が担当し、ここは押せる大きさ(縮小の巻き添え)を見る。
-     2ページのスライド式なので、**-p2 付きは resultGoPage(1) で2枚目へ切り替えてから測る**
+  /* 【リザルトは2ページ×2列】-p2 付きは resultGoPage(1) で2枚目へ切り替えてから測る
      (1枚目・2枚目の両方を必ず見る。出ていない側のページは visibility:hidden なので
-      検査の対象から自然に外れる)。 */
-  { id:'resultScreen',   name:'リザルト', variants:['plain','full','plain-p2','full-p2'], scrollIds:[] },
+      検査の対象から自然に外れる)。
+
+     **スクロールしてよいのは台帳の行(#rsLedgerRows)とバッジ棚(#resultBadges)だけ。**
+     それ以外の枠に送れる余地が出たら失敗にする ―― ここが長らく `scrollIds:[]` で、
+     リザルトのスクロールを1件も見ていなかった。以前は fitResultScreen() が
+     入り切らない中身を transform:scale で丸ごと縮めており、transform は寸法を変えないので
+     scrollHeight が縮む前のままになって誤検知したが、**2列化で縮小そのものが
+     発火しなくなった**(33場面で0件)ので、素直に測れるようになった。 */
+  { id:'resultScreen',   name:'リザルト', variants:['plain','full','plain-p2','full-p2','raid','register','team','lose'],
+    scrollIds:['resultInner','rsHero','rsPerf','rsLedger','rsProgress','resultActions'] },
 ];
 
 /* ===== 画面ごとの方針(この表が正) =====
@@ -684,21 +688,46 @@ for(const dev of DEVICES){
       document.getElementById('scoreSubmitStatus').textContent = 'スコアを送信しました';
       document.getElementById('resultCurrencyLine').textContent = '💰 320 コイン ／ 💎 4 ジェム を獲得';
       document.getElementById('resultMonsterIcon').src = 'monsters/phoenix.png';
-      // full = 出るものを全部出した状態(死因・ハイライト・小隊・バッジ・マスモン・登録の勧め)
-      const full = (variant === 'full');
-      const put = (id, html)=>{
-        const el = document.getElementById(id); if(!el) return;
-        el.classList.toggle('hidden', !full);
-        if(full && html != null) el.innerHTML = html;
+      /* 出す物の組み合わせは場面ごとに決める。**「全部出す(full)」だけでは足りない** ――
+         レイドは操作バーの中身が入れ替わり、登録の対話は帯が1本増え、
+         チーム戦は小隊の行が増える。どれも縦の使い方が変わるので、別々に見る。 */
+      const SHOW = {
+        plain:    { death:0, hl:0, squad:0, badges:0, mmInfo:0, reg:0, raid:0 },
+        full:     { death:1, hl:1, squad:1, badges:1, mmInfo:1, reg:1, raid:0 },
+        lose:     { death:1, hl:0, squad:0, badges:1, mmInfo:1, reg:0, raid:0 },
+        team:     { death:0, hl:1, squad:1, badges:1, mmInfo:1, reg:0, raid:0 },
+        register: { death:1, hl:0, squad:0, badges:0, mmInfo:0, reg:1, raid:0 },
+        raid:     { death:0, hl:0, squad:0, badges:1, mmInfo:1, reg:0, raid:1 },
       };
-      put('resultDeathCause', `⚔ ${LONG_NAME} に倒された`);
-      put('resultHighlight', '🔥 自己ベスト更新！ 12キル');
-      put('resultSquadInfo', `<div>小隊: あなた 12撃破 ／ ${LONG_NAME} 3撃破 ／ なかま ダウン</div>`);
-      put('resultBadges', '<span class="result-badge season">🎫 シーズン +12 SP</span><span class="result-badge">🏆 自己ベスト更新</span>');
-      put('mastermonResultInfo', '<div>マスモン「ほのお」が Lv12 → Lv13 になりました</div>');
-      put('mastermonRegisterPrompt', null);   // 中に入力欄とボタンがあるので中身は書き換えない
-      if(typeof setResultButtonsForRaid==='function') setResultButtonsForRaid(false);
+      const on = SHOW[variant] || SHOW.plain;
+      if(variant === 'lose' || variant === 'register'){
+        document.getElementById('resultRank').textContent = '#7';
+        document.getElementById('resultSub').textContent = '撃破された';
+      }
+      if(variant === 'raid'){
+        document.getElementById('resultRank').textContent = '🐉 討伐成功';
+        document.getElementById('resultSub').textContent = '与えたダメージ 128,400';
+      }
+      const put = (id, want, html)=>{
+        const el = document.getElementById(id); if(!el) return;
+        el.classList.toggle('hidden', !want);
+        if(want && html != null) el.innerHTML = html;
+      };
+      put('resultDeathCause', on.death, `⚔ ${LONG_NAME} に倒された`);
+      put('resultHighlight', on.hl, '🔥 自己ベスト更新！ 12キル');
+      put('resultSquadInfo', on.squad, `<div>小隊: あなた 12撃破 ／ ${LONG_NAME} 3撃破 ／ なかま ダウン</div>`);
+      put('resultBadges', on.badges, '<span class="result-badge season">🎫 シーズン +12 SP</span><span class="result-badge">🏆 自己ベスト更新</span>');
+      put('mastermonResultInfo', on.mmInfo, '<div>マスモン「ほのお」が Lv12 → Lv13 になりました</div>');
+      put('mastermonRegisterPrompt', on.reg, null);   // 中に入力欄とボタンがあるので中身は書き換えない
+      if(typeof setResultButtonsForRaid==='function') setResultButtonsForRaid(!!on.raid);
       if(typeof resultGoPage==='function') resultGoPage(page2 ? 1 : 0, { instant:true });
+      /* 【演出を必ず終わらせてから測る】入場の演出は要素を opacity:0 から出すが、
+         下の vis() は opacity==='0' を不可視として飛ばす。演出を走らせないまま測ると
+         **台帳もバッジも「見えていない要素」として検査対象から丸ごと消える**
+         ―― 合格したのに壊れている、が起きる。ここで最後まで進めた姿にする。 */
+      if(typeof playResultSequence==='function') playResultSequence();
+      if(typeof playResultPage2Sequence==='function' && page2) playResultPage2Sequence();
+      if(typeof finishResultSequence==='function') finishResultSequence();
       if(typeof fitResultScreen==='function') fitResultScreen();
     };
   });
