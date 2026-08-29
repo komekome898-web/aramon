@@ -3557,11 +3557,18 @@
   .resultStats div{ text-align:center; }
   .resultStats .num{ font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--ink); }
   .resultStats .lbl{ font-size:10px; color:var(--ink-dim); letter-spacing:2px; margin-top:2px;}
-  #replayBtn, #replayAgainBtn, #viewMastermonBtn, #viewRankingBtn, #viewMyStatsBtn, #closeRankingBtn, #closeMyStatsBtn, #rankingMonsterFilterCloseBtn{
+  /* 【リザルトのボタンの見た目は「行」で決める】以前はIDを並べて色を当てていたので、
+     ボタンを1つ足すたびに**その列挙から漏れて、ブラウザ素のままの白いボタン**が出た
+     (2026-08-28「詳細 ›」「‹ もどる」で実際に発生)。基準をここに置けば、
+     行へ足したボタンは何もしなくても他とそろう。**違う色にしたい物だけ下でIDを書く。** */
+  .resultBtnRow button,
+  #closeRankingBtn, #closeMyStatsBtn, #rankingMonsterFilterCloseBtn{
     margin-top:0; padding:13px 16px; font-family:'Russo One',sans-serif; font-size:13px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffd76a,#f4c430); border:none; border-radius:6px; cursor:pointer;
   }
-  #viewRankingBtn, #viewMyStatsBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
+  /* 控えめな導線(記録を見る/ページを送る)は金色にしない。主役は「もう一度」と「トップ画面へ」 */
+  #viewRankingBtn, #viewMyStatsBtn, #resultDetailBtn, #resultBackBtn{
+    background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   /* 連戦(⟳ もう一度)はいちばん押す物なので、緑で「進む」側だと分かるようにする */
   #replayAgainBtn{ background:linear-gradient(180deg,#8ff0a8,#3fd06a); }
   .resultBtnRow{ display:flex; gap:10px; margin-top:26px; flex-wrap:nowrap; width:100%; max-width:640px; }
@@ -4631,11 +4638,16 @@
   }
   .mastermon-confirm-text{ font-size:14px; color:var(--ink); line-height:1.7; margin-bottom:18px; }
   .mastermon-confirm-btnrow{ display:flex; gap:12px; }
+  /* 【ボタンの見た目は「行」で決める】色をIDの列挙だけで当てていたので、この行へボタンを
+     足すたびに**列挙から漏れて、ブラウザ素のままの白いボタン**が出た(視点設定の
+     「初期値に戻す」「閉じる」で実際に起きていた)。基準の色をここに置けば、
+     行へ足したボタンは何もしなくても他とそろう。**違う色にしたい物だけ下でIDを書く。** */
   .mastermon-confirm-btnrow button{
     flex:1 1 auto; padding:10px 0; border-radius:6px; cursor:pointer;
     font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px;
+    background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line);
   }
-  #closeAudioSettingsBtn{ background:var(--amber); color:#1a1306; border:none; }
+  #closeAudioSettingsBtn, #closeLookSettingsBtn{ background:var(--amber); color:#1a1306; border:none; }
   #mastermonDeleteNoBtn{ background:rgba(255,255,255,0.08); color:var(--ink); border:1px solid var(--panel-line); }
   #mastermonDeleteYesBtn{ background:#e0473f; color:#fff; border:none; }
   .mastermon-detail-body{ display:flex; gap:14px; align-items:stretch; flex-wrap:nowrap; flex:1 1 auto; min-height:0; }
