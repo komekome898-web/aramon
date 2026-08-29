@@ -1670,10 +1670,19 @@
   .daily-progress-num{ font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--amber); }
   /* ミッション(デイリー+シーズン1をタブで統合)。中身がシーズントラックを含むぶん、
      season-boxと同じ広い幅を使う */
+  /* 【見出しとタブはスクロールの外】枠そのものはスクロールさせず(overflow:hidden)、
+     中の #missionPanes だけが送れる(R2: スクロールするのは「読む物」だけ)。
+     枠ごと送っていたので、下まで見ると見出しもタブも画面から消えていた(2026-08-28 発注者指摘)。 */
   .mastermon-confirm-box.mission-box{ position:relative;
     max-width:min(1100px, calc(99 * var(--vw))); width:min(1100px, calc(99 * var(--vw)));
     max-height:calc(99 * var(--vh)); padding:8px 10px; border-radius:10px;
-    overflow-y:auto; }
+    display:flex; flex-direction:column; overflow:hidden; }
+  .mission-box > .mastermon-confirm-text, .mission-box > .mission-tabs{ flex:0 0 auto; }
+  /* スクロールする欄は「入れ物(.mission-scroll-wrap)」の中。バーは入れ物の側に置く
+     (欄そのものに position を足さない ―― bag-scroll-wrap と同じ流儀)。 */
+  .mission-scroll-wrap{ flex:1 1 auto; min-height:0; width:100%; }
+  .mission-panes{ flex:1 1 auto; min-width:0; min-height:0; overflow-y:auto;
+    touch-action:pan-y; -webkit-overflow-scrolling:touch; padding-right:14px; }
   #missionOverlay{ padding:0; }
   .mission-box > .mastermon-confirm-text{ padding-right:var(--overlay-close-gap); }
   .mission-tabs{ display:flex; gap:8px; justify-content:center; margin-bottom:8px; }

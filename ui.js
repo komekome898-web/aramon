@@ -7469,6 +7469,7 @@ function renderDailyMissions(){
         renderDailyMissions();
         updateDailyBadge();
         updateAccountBar();
+        refreshMissionScrollbar();
         if(typeof pushToast==='function') pushToast(`報酬 ${rewardText(m.reward)} を受け取った！`);
       }
     });
@@ -7592,6 +7593,7 @@ function renderAccountMissions(){
       if(typeof pushToast==='function') pushToast(`報酬 ${rewardText(tier.reward)} を受け取った！${titleTxt}`);
       renderLifetimeMissions();
       updateLifetimeBadge();
+      refreshMissionScrollbar();
     });
   });
 }
@@ -7606,8 +7608,9 @@ function renderLifetimeMissions(){
   if(!el || typeof LIFETIME_MISSIONS==='undefined') return;
   /* 受け取りのたびに丸ごと描き直すので、スクロール位置を控えて戻す。
      戻さないと、下のカードで受け取った瞬間に一覧の先頭へ飛ばされる。
-     スクロールする箱はパネル(.mission-box)側。 */
-  const scrollBox = el.closest('.mission-box');
+     **スクロールする箱は #missionPanes**(枠=.mission-box は見出しとタブを
+     動かさないためにスクロールさせない。2026-08-28)。 */
+  const scrollBox = document.getElementById('missionPanes');
   const savedScroll = scrollBox ? scrollBox.scrollTop : 0;
   renderAccountMissions();   // 最上部のプレイヤー累計(アコーディオンの外・常時展開)
   const data = loadMastermons();
@@ -7680,6 +7683,7 @@ function renderLifetimeMissions(){
       newly.forEach(t=>{ if(typeof pushToast==='function') pushToast(`👑 称号「${t.name}」を獲得！`); });
       renderLifetimeMissions();
       updateLifetimeBadge();
+      refreshMissionScrollbar();
     });
   });
 }
@@ -7703,6 +7707,19 @@ function missionShowTab(tab){
   if(tab==='daily'){ renderDailyLoginTrack(); renderDailyMissions(); }
   else if(tab==='season'){ renderSeasonOverlay(); }
   else if(tab==='lifetime'){ renderLifetimeMissions(); }
+  const panes = document.getElementById('missionPanes');
+  if(panes) panes.scrollTop = 0;   // タブを変えたら先頭から
+  refreshMissionScrollbar();
+}
+/* ミッション画面のスクロールバーを、いまの中身の高さに合わせ直す。
+   **中身を描き直したあとに呼ぶ**(タブ切替・報酬の受け取り)。
+   attachVisibleScrollbar は同じ組み合わせなら描き直すだけなので、何度呼んでもよい。
+   ※ 見張り(ResizeObserver)は枠と最初の子しか見ないので、隠れているタブの中身が
+     変わった場合は拾えない。だから描いた側から知らせる。 */
+function refreshMissionScrollbar(){
+  const panes = document.getElementById('missionPanes');
+  const bar = document.getElementById('missionScrollbar');
+  if(panes && bar) attachVisibleScrollbar(panes, bar);
 }
 document.querySelectorAll('.mission-tab').forEach(tab=>{
   tab.addEventListener('click', ()=> missionShowTab(tab.dataset.tab));
