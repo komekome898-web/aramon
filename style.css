@@ -2159,9 +2159,9 @@
     --rs-gap-s:3px; --rs-gap-m:6px; --rs-gap-l:12px;   /* 余白はこの3つだけ */
     /* 【行の刻みは固定値】表の行は縦の余りで伸び縮みさせない(伸ばすと行間が散って
        表が浮島に分解する。2026-08-29の失敗)。足りないときだけ全行が同じ割合で縮む。 */
-    --rs-row-h:22px;    /* 台帳の1行(明細・小計) */
-    --rs-stat-h:64px;   /* 戦績の1行(ラベル+大きい数値+罫)。中身は約48pxなので上に16pxの空き */
-    --rs-squad-h:24px;  /* 小隊の1行 */
+    --rs-row-h:24px;    /* 表の1行。台帳(明細・小計)と小隊で**同じ刻み**を使う */
+    --rs-stat-h:72px;   /* 戦績の1行(ラベル+大きい数値+罫)= --rs-row-h の3つぶん。
+                           中身は約48pxなので、上に24px(1行ぶん)の空きが乗る */
     padding:var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-r))
             var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-l));
     /* 地=濃紺〜黒の放射グラデ。ビネットと微細グレインは ::before / ::after(**静的**) */
@@ -2253,6 +2253,24 @@
   #resultScreen{ --rs-face:rgba(3,6,11,0.62); --rs-face-top:rgba(255,255,255,0.05); }
   #rsHero, #rsLedger{ --rs-face:rgba(18,27,44,0.66); --rs-face-top:rgba(255,255,255,0.10); }
   #resultScreen .rs-panel > *{ position:relative; z-index:1; }
+
+  /* ---------- リザルトのアイコン(.rs-ico) ----------
+     絵は data.js の `RS_ICONS` が返すインラインSVG(viewBox 0 0 24 24 / fill:currentColor /
+     id・defs・gradient なし)。**色は使う側の color、大きさは使う側の font-size に乗る。**
+     寸法と間隔は**この1か所**が正 ―― data.js 側はいまインラインstyleで同じ値を持っているが、
+     それが外れてもここで同じ見た目になるようにしてある(CLAUDE.md「同じ意味の数字を2か所に書かない」)。
+     インラインstyleがある間はそちらが勝つので、この節は「外れたとき用の受け皿」でもある。 */
+  #resultScreen .rs-ico{
+    width:1em; height:1em; flex:0 0 auto;
+    vertical-align:-0.14em;      /* 文字の中に置いたときの座り。行の高さは変えない */
+    margin-right:0.3em;          /* アイコンと数字の間。ここが唯一の出どころ */
+  }
+  /* 【小さい所だけ一回り大きく】10〜11pxで出る台帳の行・チップ・札では、
+     24pxの升目で描いた自己ベスト(トロフィー)が砂時計寄りに見える瞬間がある。
+     大きく出る所(合計=23px)は等倍のままにして、小さい所だけ1.15倍にする。 */
+  #resultScreen .rs-led-row .rs-ico,
+  #resultScreen .rs-next .rs-ico,
+  #resultScreen .result-badge .rs-ico{ width:1.15em; height:1.15em; }
   /* 【左そろえ・上詰め】.resultScreen{text-align:center} を継いでいるので明示的に左へ戻す。
      justify-content は flex-start(上詰め)。余った縦は下に1つの塊で残す。 */
   #resultScreen .rs-col{
@@ -2456,7 +2474,8 @@
   }
   /* 小隊(チーム戦のときだけ)。行は「名前 … 撃破n 状態」で左右に振る。
      【行に高さを分け合わせない】以前は flex:1 1 0 で3人が高さを分け合い、
-     行間が135pxになって「同じ小隊に見えない」と言われた。行は --rs-squad-h の決め打ち。 */
+     行間が135pxになって「同じ小隊に見えない」と言われた。行は --rs-row-h の決め打ちで、
+     **台帳の明細と同じ刻み**にしてある(画面に表の刻みを2種類作らない)。 */
   #resultScreen .result-squad-info{
     flex:0 1 auto; min-height:0; margin-top:var(--rs-gap-m); align-items:stretch; gap:0;
   }
@@ -2466,7 +2485,7 @@
   }
   /* 人数が3人でも4人でも同じ刻み(高さは固定。足りないときだけ同じ割合で縮む) */
   #resultScreen .result-squad-row{
-    flex:0 1 auto; min-height:0; height:var(--rs-squad-h);
+    flex:0 1 auto; min-height:0; height:var(--rs-row-h);
     display:flex; align-items:center; gap:var(--rs-gap-m); font-size:10.5px; letter-spacing:0;
     padding:0; border-bottom:1px solid rgba(255,255,255,0.06);
   }
@@ -2819,7 +2838,9 @@
      【色でばらけさせない】以前は シーズン=青 / 段位=灰 / 自己ベスト=虹 / 称号=虹 と
      4系統の色が並んで、棚だけが騒がしくなっていた。APEXの2枚はどちらも
      **ほぼモノクロ + アクセント1色**で、それが「よく設計されている」印象の芯になっている。
-     **種類の違いは色ではなく、先頭の絵文字(🎫🏆🎖️)と枠の強さで表す。**
+     **種類の違いは色ではなく、先頭の単色アイコン(data.js の RS_ICONS)と枠の強さで表す。**
+     【絵文字を足し戻さない】この画面のアイコンはカラー絵文字をやめて単色SVGにしてある。
+     チップに絵文字を1つ混ぜると、SVGと既製の絵で線の太さも色数も揃わず台無しになる。
      `.result-badge` はリザルトでしか使わないが、他画面を巻き込まないよう
      ID起点で上書きする(基のクラスは触らない)。 */
   #resultScreen .result-badge{
