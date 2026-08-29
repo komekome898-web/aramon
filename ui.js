@@ -5894,6 +5894,14 @@ function raidShowResult(defeated, dmg, prevBest){
   /* 【必須】前の試合の演出を断つ(showResultNow の頭と同じ理由) */
   rsClearSequence();
   _rsLedger = null; _rsExp = null; _rsPlainReward = null;
+  /* 記録更新の印は**前の試合のぶんを必ず消す**。残すと、更新していない試合で
+     数字が虹色のままになり「詳細 ›」も強いままになる(レイドもここを通る)。 */
+  { const scr = document.getElementById('resultScreen');
+    if(scr) scr.dataset.newbest = 'off';
+    for(const id of ['statKills','statDamage']){
+      const el = document.getElementById(id);
+      if(el && el.parentElement) el.parentElement.classList.remove('rs-best');
+    } }
   game.over = true;
   game.started = false;
   joinInProgress = false;
@@ -6485,6 +6493,14 @@ function showResultNow(isWin, placement){
      (後始末はここ / raidShowResult / ⟳もう一度 / トップ画面へ / raidExit の5か所) */
   rsClearSequence();
   _rsLedger = null; _rsExp = null; _rsPlainReward = null;
+  /* 記録更新の印は**前の試合のぶんを必ず消す**。残すと、更新していない試合で
+     数字が虹色のままになり「詳細 ›」も強いままになる(レイドもここを通る)。 */
+  { const scr = document.getElementById('resultScreen');
+    if(scr) scr.dataset.newbest = 'off';
+    for(const id of ['statKills','statDamage']){
+      const el = document.getElementById(id);
+      if(el && el.parentElement) el.parentElement.classList.remove('rs-best');
+    } }
   game.over=true;
   game.started=false;
   joinInProgress = false;
@@ -6639,6 +6655,23 @@ function showResultNow(isWin, placement){
   const _rank = rankOnMatchEnd({ placement, total: entities.length, kills: player.kills,
                                  mode: netState.mode==='multi' ? 'multi' : 'solo',
                                  element: player.element });
+  /* 【記録を更新した数字に虹の印を付ける】発注者指定 ―― 勝ち負けに関わらず、
+     自己ベストを更新したスコアは虹色で強調する。
+     判定はバッジと**同じ材料**(記録を書き込む前に控えた自己ベスト)を使う。
+     ここで印だけ付けて、見た目は style.css の `#resultScreen .rs-in.rs-best` が持つ。
+     ※ 全体の自己ベストだけを見る(モンスター毎の記録はバッジのほうが伝える)。 */
+  {
+    const mark = (id, on)=>{
+      const el = document.getElementById(id);
+      if(el && el.parentElement) el.parentElement.classList.toggle('rs-best', !!on);
+    };
+    mark('statKills',  player.kills > 0 && player.kills > _prevBestKills);
+    mark('statDamage', _dmg > 0 && _dmg > _prevBestDamage);
+    // 1枚目の「詳細 ›」を更に強めるための印(記録を更新した試合だけ)
+    { const scr = document.getElementById('resultScreen');
+      if(scr) scr.dataset.newbest =
+        ((player.kills > 0 && player.kills > _prevBestKills) || (_dmg > 0 && _dmg > _prevBestDamage)) ? 'on' : 'off'; }
+  }
   // SEは鳴らさずに「鳴らすべきか」だけ受け取る(鳴らすのは演出のバッジ段)
   _rsBadgeSe = renderResultBadges({
     kills: player.kills, damage: _dmg, rank: _rank,
@@ -7055,7 +7088,6 @@ function renderResultExpBar(){
   const fill = document.getElementById('rsExpFill');
   const lv   = document.getElementById('rsExpLv');
   const lvN  = document.getElementById('rsExpLvNext');
-  const next = document.getElementById('rsNextRewardBody');
   if(!val || !fill || !lv || !lvN) return;
   const d = _rsExp;
   /* 参戦したマスモンの名前はここの見出しで出す。**行を1つ足さずに名前を残すため**
@@ -7071,7 +7103,6 @@ function renderResultExpBar(){
     // 値が無い欄も消さず「--」で残す(APEXから)
     val.textContent = '--'; lv.textContent = 'Lv --'; lvN.textContent = 'Lv --';
     setFinal(0);
-    if(next) next.textContent = 'マスモンに登録すると経験値がたまります';
     return;
   }
   if(d.capped){
@@ -7080,15 +7111,12 @@ function renderResultExpBar(){
     lv.textContent = 'Lv ' + d.toLevel;
     lvN.textContent = 'MAX';
     setFinal(100);
-    if(next) next.innerHTML = '最高レベル 経験値は ' + rsIconHtml('coin') + 'に変わります';
     return;
   }
   val.textContent = rsNum(d.toExp) + ' / ' + rsNum(d.toNeed);
   lv.textContent  = 'Lv ' + d.toLevel;
   lvN.textContent = 'Lv ' + (d.toLevel + 1);
   setFinal(rsExpPct(d.toExp, d.toNeed));
-  // 「次の報酬」を先に見せる(APEXから)。次のレベルで貰えるのはトレーニングチケット1枚
-  if(next) next.innerHTML = rsIconHtml('ticket') + 'トレーニングチケット +1（Lv' + (d.toLevel + 1) + '）';
 }
 /* =====================================================================
    EXPの結果を「小さいラベル + 数値」の行にする(#mastermonResultInfo)
@@ -7115,9 +7143,11 @@ function renderResultExpInfo(){
   el.className = 'rs-in';
   /* lead=true の1行だけ「この列の大」にする(見た目は style.css の .rs-exp-gain)。
      左カードの「合計」と同じ字高で、右カードにも対になる大を1つ置くため。 */
-  const row = (label, value, off, lead)=>{
+  /* strong=true は「左のラベル側を立たせる行」。上がったレベル(`Lv+2`)は
+     ラベルの位置にあるが**この試合で起きたこと**なので、灰色の小さい字では弱い。 */
+  const row = (label, value, off, lead, strong)=>{
     const r = document.createElement('div');
-    r.className = 'rs-led-row' + (lead ? ' rs-exp-gain' : '');
+    r.className = 'rs-led-row' + (lead ? ' rs-exp-gain' : '') + (strong ? ' rs-exp-lvup' : '');
     const n = document.createElement('span');
     n.className = 'rs-led-name';
     n.textContent = label;
@@ -7134,8 +7164,14 @@ function renderResultExpInfo(){
     row('獲得EXP', rsNum(d.expGain), false, true);
     // 値が無い欄も消さずに「--」で残す(台帳と同じ流儀。次に何を狙えばいいかが分かる)
     row('撃破ボーナス', d.bonusExp > 0 ? ('+' + rsNum(d.bonusExp)) : '--', !(d.bonusExp > 0));
-    // チケットは上がった試合だけ(上がらない試合は「次の報酬」の欄が同じことを教えている)
-    if(d.levelsGained > 0) row('トレーニングチケット', '+' + rsNum(d.levelsGained));
+    /* 【いくつ上がったかを左に出す】以前は「トレーニングチケット +2」だけで、
+       **レベルがいくつ上がったのかが画面のどこにも出ていなかった**(バーは上がった後の
+       位置しか見せない)。チケットの枚数=上がったレベル数なので、同じ行の左を
+       `Lv+2`(この列の主役の次に強い)、右を `トレーニングチケット2枚` にする。
+       レベルが上がらなかった試合は行ごと出さない ―― 「Lv+0」は伝える中身が無い。 */
+    if(d.levelsGained > 0){
+      row('Lv+' + rsNum(d.levelsGained), 'トレーニングチケット' + rsNum(d.levelsGained) + '枚', false, false, true);
+    }
   }
 }
 /* EXPバーを伸ばす演出。**登録の対話のあとにも単独で呼ぶ** ――
@@ -7253,7 +7289,7 @@ function playResultPage2Sequence(){
     }
   });
   rsStep(t + 420, ()=>{ rsShow('#rsExpBar'); playExpBarSequence(); });
-  rsStep(t + 700, ()=> rsShow('#mastermonResultInfo, #rsProgress .rs-lead-record, #rsNextReward'));
+  rsStep(t + 700, ()=> rsShow('#mastermonResultInfo, #rsProgress .rs-lead-record'));
   rsStep(t + 800, ()=> rsShow('#resultBadges'));
   rsStep(t + 950, ()=> finishResultSequence());
 }
@@ -7317,14 +7353,17 @@ function rankOnMatchEnd(o){
    札は主役1件、棚がその他 ―― もともとこの画面が持っている段付けにそのまま乗る。 */
 function rsRenderLeadRecord(list){
   const col = document.getElementById('rsProgress');
-  const anchor = document.getElementById('rsNextReward');
+  /* 差し込み先はバッジ棚。**以前は「次の報酬」の欄を目印にしていた**が、
+     その欄は発注者判断で無くなった(レベルアップの報酬はチケットだけなので、
+     EXPの行が実際にもらった数で同じことを言っている)。 */
+  const anchor = document.getElementById('resultBadges');
   let el = col ? col.querySelector('.rs-lead-record') : null;
   if(!col || !anchor) return [];
   if(!list || !list.length){ if(el) el.remove(); return []; }   // 祝いごとが無い試合は札ごと出さない
   if(!el){
     el = document.createElement('div');
     el.className = 'rs-next rs-lead-record rs-in';
-    col.insertBefore(el, anchor);   // 「この試合の記録」→「次の報酬」→ チップ の順
+    col.insertBefore(el, anchor);   // 「この試合の記録」→ チップ の順
   }
   el.innerHTML = '';
   const lbl = document.createElement('span');

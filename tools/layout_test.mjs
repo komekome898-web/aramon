@@ -509,6 +509,11 @@ for(const dev of DEVICES){
       {
         for(const b of cand){
           if(!seen(b)) continue;
+          /* 【シェアだけは数えない】共有の印は世の中で見慣れた顔(白地に黒のマーク)が
+             決まっていて、発注者の指定で勝敗にもトーンにも左右されない固定色にしてある。
+             操作の主役ではなく「決まった顔を持つ物」なので、塗りの数え上げから外す。
+             ここを外さないと、2枚目が常に「主役が2つ」で落ちる。 */
+          if(b.id === 'shareResultBtn') continue;
           const cs = getComputedStyle(b);
           const hasArt = cs.backgroundImage && cs.backgroundImage !== 'none';
           const m = (cs.backgroundColor||'').match(/rgba?\(([^)]+)\)/);
