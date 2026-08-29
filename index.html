@@ -848,11 +848,11 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       </div>
       <!-- EXPの1行(「Lv12 → Lv13」など)。中身は handleMastermonPostMatch が書く -->
       <div id="mastermonResultInfo" class="mastermon-result-info rs-in hidden"></div>
-      <!-- 「次の報酬」。中身は B班が書く。下は見本 -->
-      <div id="rsNextReward" class="rs-next rs-in">
-        <span class="rs-next-lbl">次の報酬</span>
-        <span class="rs-next-body" id="rsNextRewardBody">--</span>
-      </div>
+      <!-- 【「次の報酬」の欄は置かない】発注者判断。レベルアップでもらえるのは
+           トレーニングチケットだけなので、先に見せる意味がない ―― 上のEXPの行が
+           「Lv+2 / トレーニングチケット2枚」と実際にもらった数で同じことを言っている。
+           ※ `.rs-next` の見た目は「この試合の記録」の札(ui.js の rsRenderLeadRecord)が
+             借りているので、style.css の `.rs-next` の節は残っている。 -->
       <div id="resultBadges" class="result-badges rs-in hidden"></div>
       <div id="scoreSubmitStatus"></div>
     </div>

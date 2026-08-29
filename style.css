@@ -2322,6 +2322,17 @@
      チップの高さ20px=--rs-badge-row が狂って棚の段数の計算が合わなくなる。
      ここを触ったら **チップの高さが20pxのまま**か必ず測ること。 */
   #resultScreen .result-badge .rs-ico{ width:1.28em; height:1.28em; }
+  /* 【通貨の絵だけ色を決め打ちする】発注者指定 ―― コインは銀、ダイヤは光沢のある水色。
+     ほかの絵(トロフィー・称号・シーズン・チケット・段位)は今までどおり使う側の
+     文字色に乗り、勝ちなら金・負けなら銀になる。**通貨だけは勝敗で色が変わらない。**
+     「色を決め打ちしない」の例外なので、理由をここに残す ―― お金とダイヤは
+     ゲームを通じて同じ物であり、勝った試合と負けた試合で違う色に見えてはいけない。
+     光沢は2枚目の path の透け具合で作る(絵の中に gradient を持たない ―― 同じ絵が
+     台帳に何行も並ぶので、id を持つと衝突する)。 */
+  #resultScreen .rs-ico-coin{ color:#cdd6e2; }
+  #resultScreen .rs-ico-coin path:last-child{ opacity:0.72; }
+  #resultScreen .rs-ico-dia{ color:#7fd8f5; filter:drop-shadow(0 0 2px rgba(127,216,245,0.55)); }
+  #resultScreen .rs-ico-dia path:last-child{ opacity:0.45; }
   /* 【左そろえ・上詰め】.resultScreen{text-align:center} を継いでいるので明示的に左へ戻す。
      justify-content は flex-start(上詰め)。余った縦は下に1つの塊で残す。 */
   /* 【高さは中身なり・上限だけ画面から】max-height:100% が唯一の「画面から決める」箇所。
@@ -2947,9 +2958,11 @@
     transition:width 0.24s ease;
   }
   /* 左右のLv = APEXの菱形の札に当たる部材。斜め切りは小さい札と同じ --rs-cut-s */
+  /* 【Lvの札は大きく ―― 2026-08-29 発注者指定】9pxでは実機で読めなかった。
+     字を上げるとバーの行の高さが変わるので、**バーの高さは触らず札の字だけ**上げる。 */
   #resultScreen .rs-exp-lv{
-    flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:9px;
-    color:var(--rs-dim); white-space:nowrap;
+    flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:13px; font-weight:700;
+    color:var(--ink); white-space:nowrap;
     padding:1px var(--rs-gap-m); background:rgba(255,255,255,0.07);
     box-shadow:inset 0 0 0 1px var(--rs-line);
     clip-path:polygon(
@@ -3013,6 +3026,24 @@
     font-family:'Russo One',sans-serif; font-size:clamp(15px, calc(3.2 * var(--vw)), 23px);
     line-height:1.3; color:var(--rs-accent);
     filter:drop-shadow(0 0 8px var(--rs-glow));
+  }
+  /* 【Lvがいくつ上がったか ―― 2026-08-29 発注者指定】
+     以前は「トレーニングチケット +2」だけで、**レベルが何段上がったのかが画面に無かった**
+     (バーは上がった後の位置しか見せない)。左のラベルの位置に `Lv+2` を置くが、
+     これは分類名ではなく**この試合で起きたこと**なので、ラベルの灰色ではなく
+     アクセント色の数字として立たせる。右は何をもらったか(チケット◯枚)。 */
+  #resultScreen #mastermonResultInfo .rs-exp-lvup .rs-led-name{
+    /* 左は短い数字(`Lv+19`)なので中身なりの幅にする。残りは右の文へ渡す */
+    flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-weight:700;
+    font-size:12px; letter-spacing:0; color:var(--rs-accent);
+    filter:drop-shadow(0 0 6px var(--rs-glow));
+  }
+  /* 【この行の右だけ幅を固定しない】ほかの行の右は数字なので 58px で桁をそろえているが、
+     ここは「トレーニングチケット19枚」という**文**が入る。58pxのままだと
+     `トレーニン…` と切れる(実際に切れていた)。左が短いぶんを全部もらう。 */
+  #resultScreen #mastermonResultInfo .rs-exp-lvup .rs-led-val{
+    flex:1 1 auto; width:auto; min-width:0; color:var(--ink);
+    font-family:'Rajdhani',sans-serif; font-size:10px; letter-spacing:0.4px;
   }
   #resultScreen #mastermonResultInfo.hidden{ display:none !important; }
   /* 登録の帯が出ている間は右列が164pxしかないので内訳を1行に落とす(大の1行は残す) */
@@ -3207,13 +3238,51 @@
      ID2つ+要素1つで、`#resultScreen #replayBtn`(ID2つ)より**強い**。
      ID2つで書くと後ろに置いても負けて、**塗りが0個の画面**になる
      (2026-08-29に実際にそうなっていた ―― 金の指定は書いてあるのに1つも塗られていなかった)。 */
-  #resultScreen #resultActions > #replayBtn,
+  /* 【1枚目の塗りは「詳細 ›」―― 2026-08-29 発注者指定】
+     以前は「トップ画面へ」を塗っていたが、それは**リザルトを閉じる道**であって、
+     この画面でいちばん見てほしいのは2枚目(報酬の内訳と育ちの記録)。
+     塗りを「詳細 ›」へ移すと、1枚目=次のページへ / 2枚目=マスモンへ と
+     **塗りが常に「まだ先がある」方向**を指すようになる。塗りは1画面に1つのまま。 */
+  #resultScreen #resultActions > #resultDetailBtn,
   #resultScreen #resultActions > #viewMastermonBtn{
     color:var(--rs-fill-ink); border:0; font-weight:700;
     /* 上に重ねる --rs-fill-shade は勝ちでは透明・負けでは暗い層(#resultScreen の変数) */
     background-color:transparent;
     background-image:var(--rs-fill-shade), linear-gradient(180deg, var(--rs-accent), var(--rs-accent2));
   }
+  /* 【記録を更新した試合はさらに強める】発注者指定。虹の縁と脈で「見に行く価値がある」と伝える。
+     数字側(戦績の虹)と同じ出来事を指しているので、**同じ虹の並び**を使う。
+     打ち消される側にならないよう、上の指定(ID3つ+子)より強い ID3つ+子+属性 で書く。 */
+  #resultScreen[data-newbest="on"] #resultActions > #resultDetailBtn{
+    box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 0 14px 2px rgba(255,180,90,0.75);
+    animation:rsBestPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes rsBestPulse{
+    0%,100%{ box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 0 10px 1px rgba(255,180,90,0.6); }
+    50%    { box-shadow:0 0 0 2px rgba(255,255,255,1),   0 0 20px 4px rgba(255,140,220,0.85); }
+  }
+  /* 【記録を更新した数字は虹色】勝ち負けに関わらず(発注者指定)。
+     背景を虹のグラデにして文字で抜く ―― 塗りつぶしの面を増やさないので、
+     「塗りは1画面に1つ」の決まりとぶつからない。 */
+  #resultScreen .rs-in.rs-best .num{
+    /* 【虹は必ず1文字の中で1周させる】以前 `background-size:220%` + `background-position:%`
+       で流していたが、**背景の大きさが文字の箱に対する割合**なので、
+       「12」のような短い数字では虹のほんの一部(=単色)しか乗らず、
+       実機では緑一色に見えていた。px の帯を敷いて px で動かせば、
+       文字が何桁でも同じ見え方になる。 */
+    background-image:linear-gradient(100deg,
+      #ff8a8a,#ffd76a,#8ff0a8,#7fd8f5,#c9a6ff,#ff8ad2,
+      #ff8a8a,#ffd76a,#8ff0a8,#7fd8f5,#c9a6ff,#ff8ad2);
+    background-size:180px 100%;
+    background-repeat:repeat-x;
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+    animation:rsBestFlow 3s linear infinite;
+    filter:drop-shadow(0 0 6px rgba(255,255,255,0.35));
+  }
+  @keyframes rsBestFlow{ 0%{ background-position:0 0; } 100%{ background-position:90px 0; } }
+  /* ラベル側も少しだけ持ち上げて「この行が更新された」と分かるようにする */
+  #resultScreen .rs-in.rs-best .lbl{ color:var(--ink); }
   /* ---------- 塗りの居場所は「その画面でいちばん大事な操作」 ----------
      【決まり】**塗りは1画面に1つ**:
        1枚目 = トップ画面へ / 2枚目 = マスモン(勝ち負け・レイドを問わず同じ)
@@ -3228,16 +3297,21 @@
      :has() が効かない環境では**従来どおり操作バーが塗られる**(塗り0個にはならない)。 */
   /* 登録待ち … こちらは「登録する」が塗りで立っているので、操作バーは完全に控えめへ。
      ここでアクセントの枠を残すと、答えるべき操作と competing する。 */
-  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #replayBtn,
+  #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #resultDetailBtn,
   #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #viewMastermonBtn{
     color:var(--ink); background:rgba(255,255,255,0.07);
     border:1px solid var(--rs-line-strong); font-weight:700;
   }
+  /* 【シェアは白塗り・黒マークで固定 ―― 2026-08-29 発注者指定】
+     勝ち負けでもトーンでも色を変えない。共有の印は世の中で見慣れた形と色があり、
+     ここだけは「この画面の色」ではなく「共有そのもの」を表す物にする。
+     ※ これは**塗りの数には入れない**(操作の主役ではなく、決まった顔を持つ物)。
+       検査(tools/layout_test.mjs の主役の数え上げ)でも除外してある。 */
   #resultScreen #resultActions > .share-icon-btn{
     padding-left:0; padding-right:0; font-size:15px;
-    color:var(--rs-accent); background:rgba(255,255,255,0.07);
+    color:#0b0d12; background:#fff; border:0;
   }
-  #resultScreen #resultActions > .share-icon-btn .share-ico{ background:var(--rs-accent); }
+  #resultScreen #resultActions > .share-icon-btn .share-ico{ background:#0b0d12; }
   /* 登録の帯。**ここには塗りを置かない。**
      【なぜ「登録する」ではなく「トップ画面へ」を塗るのか】塗りは1画面に1つと決めたので、
      登録の帯が出ている間はどちらか一方を落とす必要がある。落とすのは登録の帯のほうにした:
