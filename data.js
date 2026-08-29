@@ -3340,12 +3340,16 @@ const TITLES_BY_ID = {}; TITLES.forEach(t=>{ TITLES_BY_ID[t.id]=t; });
    文言は遊ぶ人向けの短い日本語。ここに1行足せば増える。
 ===================================================================== */
 const HIGHLIGHT_CLUTCH_HP = 0.15;   // 「残りHPわずかで勝利」とみなす割合
+/* 【文言に絵文字を入れない】この1行が出るのはリザルトの1枚目だけで、そこは
+   `#resultScreen .result-highlight` が**左のアクセント罫 + アクセント色の文字**を
+   既に持っている。飾りは罫と色が受け持つので、頭に絵文字を足すと
+   金1色の画面に既製の絵が1つだけ浮く(2026-08-29 批評の指摘)。 */
 const HIGHLIGHT_DEFS = [
-  { id:'firstWin',  test:(c)=> c.isWin && c.mmFirstWin,                    text:(c)=> '🌟 この子と初めてのチャンピオン！' },
-  { id:'bestKills', test:(c)=> c.kills>0 && c.kills>c.bestKills,           text:(c)=> `🔥 自己ベスト更新！ ${c.kills}キル` },
-  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `💥 自己ベスト更新！ ${c.damage.toLocaleString()}ダメージ` },
-  { id:'streak3',   test:(c)=> c.maxStreak>=3,                             text:(c)=> `⚡ ${c.maxStreak}連続キル！` },
-  { id:'clutch',    test:(c)=> c.isWin && c.hpRatio<=HIGHLIGHT_CLUTCH_HP,  text:(c)=> '🛡️ 残りHPわずかからの大逆転！' },
+  { id:'firstWin',  test:(c)=> c.isWin && c.mmFirstWin,                    text:(c)=> 'この子と初めてのチャンピオン！' },
+  { id:'bestKills', test:(c)=> c.kills>0 && c.kills>c.bestKills,           text:(c)=> `自己ベスト更新！ ${c.kills}キル` },
+  { id:'bestDmg',   test:(c)=> c.damage>0 && c.damage>c.bestDamage,        text:(c)=> `自己ベスト更新！ ${c.damage.toLocaleString()}ダメージ` },
+  { id:'streak3',   test:(c)=> c.maxStreak>=3,                             text:(c)=> `${c.maxStreak}連続キル！` },
+  { id:'clutch',    test:(c)=> c.isWin && c.hpRatio<=HIGHLIGHT_CLUTCH_HP,  text:(c)=> '残りHPわずかからの大逆転！' },
 ];
 function pickHighlight(ctx){
   for(const d of HIGHLIGHT_DEFS){ try{ if(d.test(ctx)) return d.text(ctx); }catch(e){} }
@@ -4048,6 +4052,51 @@ function matchRewardBreakdown(o){
   }
   return { rows, gold: Math.round(gold), dia: Math.round(dia) };
 }
+
+/* =====================================================================
+   リザルト画面のアイコン(SVG)。**使うのはリザルトの中だけ。**
+
+   なぜ絵文字をやめたか: 端末が描く既製の絵文字は線の太さ・彩度・光沢がどれもばらばらで、
+   「暗い面 + 金1色」のこの画面に7種類が同時に並ぶと、そこだけ別の絵を貼ったように浮く
+   (批評の指摘)。ヘッダー・ショップ・バッグ・ミッション・ガチャ・遠征・ロビーは
+   **絵文字のまま据え置き**(発注者決定。不統一は承知のうえ)。ここを他画面へ広げない。
+
+   作りの決まり(レイド限定アイテムのアイコンと同じ流儀):
+   ・**単色。fill は currentColor** ―― 色は使う側が決める。台帳(白)・合計(金)・
+     値なし(灰)が同じ絵で通り、**style.css を1行も足さずに済む**。
+   ・**id / defs / gradient を一切使わない。** 台帳では同じ絵が何行にも出るので、
+     idを持つと画面内で衝突して塗りが化ける。
+   ・viewBox は `0 0 24 24` に統一。**角はすべて45°で落とす**(画面の斜め切りと同じ言語)。
+     面の太さも24基準で約3.2〜3.4にそろえてあるので、並べても線幅が揃って見える。
+     ゴールドだけ円なのは「硬貨は丸い」という一点だけの例外で、中心の菱形で45°に乗せる。
+   ・大きさは `1em`。**使う側の font-size と色にそのまま乗る**ので、
+     台帳の11pxから合計の23pxまで同じ文字列で通る(寸法を2か所に持たない)。
+===================================================================== */
+const RS_ICON_ATTRS = 'class="rs-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"'
+  + ' style="width:1em;height:1em;vertical-align:-0.14em;margin-right:0.3em;flex:0 0 auto"';
+const RS_ICONS = {
+  // ゴールド: 縁のある硬貨(輪 + 中心の菱形)
+  coin: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M12 2.2a9.8 9.8 0 1 0 0 19.6 9.8 9.8 0 0 0 0-19.6zm0 3.4a6.4 6.4 0 1 1 0 12.8 6.4 6.4 0 0 1 0-12.8z"/><path d="M12 8.6l3.4 3.4-3.4 3.4L8.6 12z"/></svg>`,
+  // ダイヤ: 上面と下面を帯で切った宝石
+  dia: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M8 3h8l5 6-9 12L3 9z M4.6 8h14.8v2.4H4.6z"/></svg>`,
+  /* 自己ベスト: トロフィー(浅い鉢・短い脚・広い台)。
+     **鉢を深く絞って台を細くすると砂時計に見える**(最初の形で実際にそうなった)。
+     鉢の底を広く、台の上辺を脚の近くまで広げて、上下の塊を「杯と台」に読ませる。 */
+  best: `<svg ${RS_ICON_ATTRS}><path d="M5 2.6h14v3.4l-2.6 2.6H7.6L5 6z"/><path d="M10.6 8.6h2.8v5.6h-2.8z"/><path d="M8.2 14.2h7.6v1.8H8.2z"/><path d="M5.2 16h13.6l1.6 1.6v2.8H3.6v-2.8z"/></svg>`,
+  // 称号: 帯から下がった八角の勲章(中心を菱形で抜く)
+  title: `<svg ${RS_ICON_ATTRS}><path d="M6.5 2h11v2l-3.2 3.2H9.7L6.5 4z"/><path fill-rule="evenodd" d="M9.2 6.2h5.6l4.8 4.8v5.6l-4.8 4.8H9.2l-4.8-4.8V11z M12 10.8l3 3-3 3-3-3z"/></svg>`,
+  // シーズン: 角を落とした通行証(しおり形)
+  season: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M4.5 2.5h11l4 4v15L12 17.1 4.5 21.5z M7.7 6.2h8.6v2.6H7.7z"/></svg>`,
+  /* トレーニングチケット: 両端を浅く切り欠いた券 + 中央の穴。
+     切り欠きを深くすると蝶ネクタイに見えるので、深さは高さの1/6までにする。 */
+  ticket: `<svg ${RS_ICON_ATTRS}><path fill-rule="evenodd" d="M1.6 5.4h20.8v4l-2 2 2 2v4H1.6v-4l2-2-2-2z M12 9.4l2 2-2 2-2-2z"/></svg>`,
+  /* 段位: 山形2段の記章。**段位ごとの絵は作らない** ―― RANKS の絵文字(🌱🪨🥉…)は
+     ロビーやランキングでも使う共通の表で、リザルトのためにあの表を書き換えない。
+     段位の別は隣に出る名前(見習い/石/銅…)が持っているので、印は1種類でよい。 */
+  rank: `<svg ${RS_ICON_ATTRS}><path d="M12 2l7 7-2.4 2.4L12 6.8 7.4 11.4 5 9z"/><path d="M12 11.6l7 7-2.4 2.4L12 16.4l-4.6 4.6L5 18.6z"/></svg>`,
+};
+// アイコンはHTMLとして埋める(textContent に入れると生タグが出る)
+function rsIconHtml(key){ return RS_ICONS[key] || ''; }
 
 /* レイド限定アイテムのアイコン(SVG)。
    絵文字だと「実」と見分けが付かず、貴重さも伝わらないので専用の絵にする。

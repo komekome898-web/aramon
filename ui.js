@@ -5920,10 +5920,14 @@ function raidShowResult(defeated, dmg, prevBest){
     if(meta) meta.textContent = ['レイド', (netState.mode==='multi' ? 'みんなで挑戦' : 'ソロ')].join(' · '); }
   // 前のチーム戦の小隊欄を持ち越さない(レイドはチーム戦と排他)
   { const sq = document.getElementById('resultSquadInfo'); if(sq){ sq.classList.add('hidden'); sq.innerHTML=''; } }
+  /* 【順位の欄に絵文字を足さない】通常の試合(#1 / 撃破された)と同じ決まりをレイドにも通す。
+     ここは画面でいちばん大きい文字なので、既製の絵文字を1つ置くだけで
+     線の太さも彩度もこの画面(暗い面 + 金1色)と揃わず、そこだけ別の絵に見える。
+     文言だけで何が起きたかは伝わる。 */
   document.getElementById('resultRank').textContent =
-    defeated ? '🐉 討伐成功' :
-    newBest  ? '🔥 自己ベスト更新' :
-    died     ? '💀 力尽きた' : '⏱ 時間切れ';
+    defeated ? '討伐成功' :
+    newBest  ? '自己ベスト更新' :
+    died     ? '力尽きた' : '時間切れ';
   let sub = `与えたダメージ ${d.toLocaleString()}`;
   if(newBest && prevBest>0) sub += `（これまでの最高 ${Math.round(prevBest).toLocaleString()}）`;
   if(noRecord) sub += '（記録は残りません）';
@@ -6530,7 +6534,7 @@ function showResultNow(isWin, placement){
     addWallet(bd.gold, bd.dia);
     /* 射撃訓練場は勝敗が無い画面なので**内訳**は出さない(付与そのものは従来どおり)。
        ただし額まで消すと、もらえているのに画面に一切出なくなる。
-       内訳の代わりに従来の1行(「報酬 🪙+N 💎+N」)だけ残す。 */
+       内訳の代わりに従来の1行(「報酬 〈金貨〉+N 〈ダイヤ〉+N」)だけ残す。 */
     _rsLedger = game.trainingRange ? null : { bd, note:'', bonus:[] };
     _rsPlainReward = game.trainingRange ? { gold: bd.gold, dia: bd.dia } : null;
     updateAccountBar();
@@ -6795,14 +6799,31 @@ function rsCountStats(){
    ・マスモンが最高レベルのときのゴールドは倍率の**後**で財布へ入る額なので、
      倍率の下に「Lv上限ボーナス」の行として置く(合計 = 小計×倍率 + ボーナス)。
 ===================================================================== */
-function rsLedgerValSpan(v, icon){
+/* 値の欄 = 「アイコン + 数字」。**アイコンはSVGなので数字だけを別のspan(.rs-led-num)へ入れる。**
+   カウントアップは textContent を書き換えるので、同じ要素へ混ぜるとSVGが毎フレーム消える。
+   アイコンの定義は data.js の RS_ICONS 1か所(kind = 'coin' / 'dia')。 */
+function rsLedgerValSpan(v, kind){
   const s = document.createElement('span');
   s.className = 'rs-led-val';
   if(!v){ s.classList.add('rs-led-off'); s.textContent = '--'; return s; }
   s.dataset.rsTo = String(v);
-  s.dataset.rsIcon = icon;
-  s.textContent = icon + ' ' + v.toLocaleString();
+  s.innerHTML = rsIconHtml(kind);
+  const n = document.createElement('span');
+  n.className = 'rs-led-num';
+  n.textContent = v.toLocaleString();
+  s.appendChild(n);
   return s;
+}
+// 数字を持っている中身の要素。アイコンを入れる前の形(数字だけ)でも壊れないようにしておく
+function rsValNumEl(el){ return (el && el.querySelector('.rs-led-num')) || el; }
+// 「アイコン + 数字」を1つの欄へ書き込む(合計欄・値なしの「--」で使う)
+function rsSetIconVal(el, kind, text){
+  if(!el) return;
+  el.innerHTML = rsIconHtml(kind);
+  const n = document.createElement('span');
+  n.className = 'rs-led-num';
+  n.textContent = text;
+  el.appendChild(n);
 }
 function rsLedgerRow(label, gold, dia, animate){
   const d = document.createElement('div');
@@ -6811,8 +6832,8 @@ function rsLedgerRow(label, gold, dia, animate){
   n.className = 'rs-led-name';
   n.textContent = label;
   d.appendChild(n);
-  d.appendChild(rsLedgerValSpan(gold, '🪙'));
-  d.appendChild(rsLedgerValSpan(dia, '💎'));
+  d.appendChild(rsLedgerValSpan(gold, 'coin'));
+  d.appendChild(rsLedgerValSpan(dia, 'dia'));
   return d;
 }
 // 行の中の数値欄をカウントアップさせる(値が無い「--」の欄は触らない)
@@ -6820,8 +6841,7 @@ function rsCountLedgerRow(row){
   if(!row) return;
   row.querySelectorAll('.rs-led-val[data-rs-to]').forEach(sp=>{
     const to = parseInt(sp.dataset.rsTo, 10) || 0;
-    const icon = sp.dataset.rsIcon || '';
-    rsCountUp(sp, to, v=> icon + ' ' + Math.round(v).toLocaleString());
+    rsCountUp(rsValNumEl(sp), to, v=> Math.round(v).toLocaleString());
   });
 }
 function rsFmtMult(m){
@@ -6850,9 +6870,11 @@ function renderResultLedger(){
     totEl.classList.add('hidden');
     /* 内訳は出さないが額は出す(射撃訓練場)。ここを消すと、もらえているのに
        画面のどこにも出ない状態になる。 */
-    if(lineEl && _rsPlainReward) lineEl.textContent = `報酬　🪙 +${_rsPlainReward.gold}　💎 +${_rsPlainReward.dia}`;
-    if(goldEl){ delete goldEl.dataset.rsTo; goldEl.textContent = '🪙 --'; }
-    if(diaEl){  delete diaEl.dataset.rsTo;  diaEl.textContent  = '💎 --'; }
+    if(lineEl && _rsPlainReward) lineEl.innerHTML =
+      '報酬　' + rsIconHtml('coin') + '+' + (_rsPlainReward.gold|0)
+      + '　'  + rsIconHtml('dia')  + '+' + (_rsPlainReward.dia|0);
+    if(goldEl){ delete goldEl.dataset.rsTo; rsSetIconVal(goldEl, 'coin', '--'); }
+    if(diaEl){  delete diaEl.dataset.rsTo;  rsSetIconVal(diaEl,  'dia',  '--'); }
     return;
   }
 
@@ -6882,8 +6904,8 @@ function renderResultLedger(){
   subName.className = 'rs-led-name';
   subName.textContent = '小計';
   subEl.appendChild(subName);
-  subEl.appendChild(rsLedgerValSpan(subGold, '🪙'));
-  subEl.appendChild(rsLedgerValSpan(subDia, '💎'));
+  subEl.appendChild(rsLedgerValSpan(subGold, 'coin'));
+  subEl.appendChild(rsLedgerValSpan(subDia, 'dia'));
 
   for(const r of mults){
     const d = document.createElement('div');
@@ -6893,7 +6915,10 @@ function renderResultLedger(){
     x.textContent = rsFmtMult(r.mult);
     const n = document.createElement('span');
     n.className = 'rs-led-mult-name';
-    n.textContent = r.label + (r.on === 'gold' ? '（🪙のみ）' : r.on === 'dia' ? '（💎のみ）' : '');
+    n.textContent = r.label;   // 名前は文字として入れる(アイコンだけHTMLで足す)
+    if(r.on === 'gold' || r.on === 'dia'){
+      n.insertAdjacentHTML('beforeend', '（' + rsIconHtml(r.on === 'gold' ? 'coin' : 'dia') + 'のみ）');
+    }
     d.appendChild(x); d.appendChild(n);
     mulEl.appendChild(d);
   }
@@ -6906,8 +6931,8 @@ function renderResultLedger(){
   }
   const totGold = (bd.gold || 0) + bonusGold;
   const totDia  = (bd.dia  || 0) + bonusDia;
-  if(goldEl){ goldEl.dataset.rsTo = String(totGold); goldEl.dataset.rsIcon = '🪙'; goldEl.textContent = '🪙 ' + totGold.toLocaleString(); }
-  if(diaEl){  diaEl.dataset.rsTo  = String(totDia);  diaEl.dataset.rsIcon  = '💎'; diaEl.textContent  = '💎 ' + totDia.toLocaleString(); }
+  if(goldEl){ goldEl.dataset.rsTo = String(totGold); rsSetIconVal(goldEl, 'coin', totGold.toLocaleString()); }
+  if(diaEl){  diaEl.dataset.rsTo  = String(totDia);  rsSetIconVal(diaEl,  'dia',  totDia.toLocaleString()); }
 }
 /* =====================================================================
    マスモンのEXPバー
@@ -6925,9 +6950,13 @@ function renderResultExpBar(){
   if(!val || !fill || !lv || !lvN) return;
   const d = _rsExp;
   /* 参戦したマスモンの名前はここの見出しで出す。**行を1つ足さずに名前を残すため**
-     ―― 下のEXPの表は「ラベル+数値」だけにしたいので、名前を行の中へ混ぜない。 */
+     ―― 下のEXPの表は「ラベル+数値」だけにしたいので、名前を行の中へ混ぜない。
+     【「の」でつながない】以前は `名前 + ' の経験値'` だった。名前は遊ぶ人が付けるので
+     「の」で終わる名前だと `とてもながいなまえの の経験値` と助詞が二重になる
+     (既定の「ほのお」でも `ほのお の経験値` と の が続いて読みにくい)。
+     見出しは助詞を使わず全角空白で区切る = どんな名前でも壊れない。 */
   { const lblEl = document.querySelector('#rsExpBar .rs-exp-lbl');
-    if(lblEl) lblEl.textContent = (d && d.name) ? (d.name + ' の経験値') : 'マスモン経験値'; }
+    if(lblEl) lblEl.textContent = (d && d.name) ? (d.name + '　経験値') : 'マスモン経験値'; }
   const setFinal = (pct)=>{ fill.dataset.rsFinal = pct.toFixed(1) + '%'; fill.style.width = fill.dataset.rsFinal; };
   if(!d){
     // 値が無い欄も消さず「--」で残す(APEXから)
@@ -6942,7 +6971,7 @@ function renderResultExpBar(){
     lv.textContent = 'Lv ' + d.toLevel;
     lvN.textContent = 'MAX';
     setFinal(100);
-    if(next) next.textContent = '最高レベル 経験値は 🪙 に変わります';
+    if(next) next.innerHTML = '最高レベル 経験値は ' + rsIconHtml('coin') + 'に変わります';
     return;
   }
   val.textContent = d.toExp.toLocaleString() + ' / ' + d.toNeed.toLocaleString();
@@ -6950,7 +6979,7 @@ function renderResultExpBar(){
   lvN.textContent = 'Lv ' + (d.toLevel + 1);
   setFinal(rsExpPct(d.toExp, d.toNeed));
   // 「次の報酬」を先に見せる(APEXから)。次のレベルで貰えるのはトレーニングチケット1枚
-  if(next) next.textContent = '🎟️ トレーニングチケット +1（Lv' + (d.toLevel + 1) + '）';
+  if(next) next.innerHTML = rsIconHtml('ticket') + 'トレーニングチケット +1（Lv' + (d.toLevel + 1) + '）';
 }
 /* =====================================================================
    EXPの結果を「小さいラベル + 数値」の行にする(#mastermonResultInfo)
@@ -7103,13 +7132,13 @@ function playResultPage2Sequence(){
   rsStep(t + 110, ()=> rsShow('#rsLedgerMults, #rsLedgerMults .rs-in'));
   rsStep(t + 230, ()=>{
     rsShow('#rsLedgerTotal');
-    // 🪙💎 は最後にまとめて回る(合計が主役)
+    // ゴールドとダイヤは最後にまとめて回る(合計が主役)
     const g = document.getElementById('rsTotalGold');
     const d = document.getElementById('rsTotalDia');
     for(const el of [g, d]){
       if(!el || !el.dataset.rsTo) continue;
-      const icon = el.dataset.rsIcon || '';
-      rsCountUp(el, parseInt(el.dataset.rsTo, 10) || 0, v=> icon + ' ' + Math.round(v).toLocaleString());
+      // 回すのは数字だけ。アイコン(SVG)は消さない
+      rsCountUp(rsValNumEl(el), parseInt(el.dataset.rsTo, 10) || 0, v=> Math.round(v).toLocaleString());
     }
   });
   rsStep(t + 420, ()=>{ rsShow('#rsExpBar'); playExpBarSequence(); });
@@ -7184,8 +7213,10 @@ function rsRenderLeadRecord(list){
   lbl.textContent = 'この試合の記録';
   const body = document.createElement('span');
   body.className = 'rs-next-body';
-  // 1行きりの札なので、いちばん大きい1件だけ出して残りは件数に畳む(切れた文字を残さない)
-  body.textContent = list[0] + (list.length > 1 ? `　他${list.length - 1}` : '');
+  /* 1行きりの札なので、いちばん大きい1件だけ出して残りは件数に畳む(切れた文字を残さない)。
+     **list の中身はHTML**(先頭に RS_ICONS のSVGが付く)。組み立てるのは
+     renderResultBadges だけで、中身は定数の文言と数字しか通していない。 */
+  body.innerHTML = list[0] + (list.length > 1 ? `　他${list.length - 1}` : '');
   el.appendChild(lbl); el.appendChild(body);
 }
 /* リザルトの記録バッジ。
@@ -7194,8 +7225,9 @@ function rsRenderLeadRecord(list){
    さらに `称号獲得「◯◯」` という同じ4文字+カギカッコが5〜6回反復して、
    値(称号名)より飾りのほうが長かった(批評の指摘)。
      ・主役(自己ベスト更新・段位アップ) … 棚の外の札へ格上げ(rsRenderLeadRecord)
-     ・称号                             … **1つのチップに畳む**(`🎖️ 称号 +17`)
+     ・称号                             … **1つのチップに畳む**(`〈記章〉称号 +17`)
      ・シーズンSP・段位RP               … 素のチップのまま
+   アイコンは data.js の RS_ICONS(単色SVG)。**絵文字は使わない**(2026-08-29)。
    返すのは「SEを鳴らすべきか」だけ(鳴らすのは演出のバッジ段)。 */
 function renderResultBadges(o){
   const el = document.getElementById('resultBadges');
@@ -7209,11 +7241,16 @@ function renderResultBadges(o){
   const monsterKillsBest = !globalKillsBest && o.kills>0 && o.kills > (o.prevElemBestKills||0);
   const monsterDamageBest = !globalDamageBest && o.damage>0 && o.damage > (o.prevElemBestDamage||0);
   const num = (v)=> Math.round(v||0).toLocaleString();
-  if(globalKillsBest)  leads.push(`🏆 自己ベスト 撃破 ${num(o.kills)}`);
-  if(globalDamageBest) leads.push(`🏆 自己ベスト ダメージ ${num(o.damage)}`);
-  if(monsterKillsBest)  leads.push(`🏆 ${elemLabel}の最高 撃破 ${num(o.kills)}`);
-  if(monsterDamageBest) leads.push(`🏆 ${elemLabel}の最高 ダメージ ${num(o.damage)}`);
-  if(o.rank && o.rank.promoted) leads.push(`${o.rank.after.icon} 段位アップ ${o.rank.after.name}`);
+  /* 【絵文字を使わない】札もチップもアイコンは data.js の RS_ICONS(単色SVG)から取る。
+     色は使う側のCSSが決めるので、金の札でも灰のチップでも同じ文字列が使える。
+     **段位は RANKS の絵文字(o.rank.after.icon)を使わない** ―― あの表はロビーと
+     ランキングでも読むので書き換えず、リザルトでだけ共通の記章に差し替える。 */
+  const icoBest = rsIconHtml('best'), icoRank = rsIconHtml('rank');
+  if(globalKillsBest)  leads.push(`${icoBest}自己ベスト 撃破 ${num(o.kills)}`);
+  if(globalDamageBest) leads.push(`${icoBest}自己ベスト ダメージ ${num(o.damage)}`);
+  if(monsterKillsBest)  leads.push(`${icoBest}${elemLabel}の最高 撃破 ${num(o.kills)}`);
+  if(monsterDamageBest) leads.push(`${icoBest}${elemLabel}の最高 ダメージ ${num(o.damage)}`);
+  if(o.rank && o.rank.promoted) leads.push(`${icoRank}段位アップ ${o.rank.after.name}`);
   rsRenderLeadRecord(leads);
 
   // 称号は1つに畳む。**`称号獲得「」` を繰り返さない** ―― 少ないうちは名前そのものを出す
@@ -7221,17 +7258,21 @@ function renderResultBadges(o){
   const titles = (o.newTitles||[]).slice();
   for(const t of (o.elemNewTitles||[])){ if(!globalNewIds.has(t.id)) titles.push(t); }
   const titleGot = titles.length > 0;
+  /* **称号ごとの絵文字(TITLES.emoji)もここでは出さない。** 出すと1つのチップの中で
+     記章(SVG)と既製の絵文字が並び、絵文字を外した意味が無くなる。TITLES の表は
+     称号画面などで使うので触らない ―― リザルトで出さないだけ。 */
+  const icoTitle = rsIconHtml('title');
   if(titles.length === 1){
-    badges.push(`<span class="result-badge title">🎖️ ${titles[0].emoji} ${titles[0].name}</span>`);
+    badges.push(`<span class="result-badge title">${icoTitle}${titles[0].name}</span>`);
   } else if(titles.length === 2){
-    badges.push(`<span class="result-badge title">🎖️ ${titles[0].emoji}${titles[0].name}・${titles[1].emoji}${titles[1].name}</span>`);
+    badges.push(`<span class="result-badge title">${icoTitle}${titles[0].name}・${titles[1].name}</span>`);
   } else if(titles.length > 2){
-    badges.push(`<span class="result-badge title">🎖️ 称号 +${titles.length}</span>`);
+    badges.push(`<span class="result-badge title">${icoTitle}称号 +${titles.length}</span>`);
   }
-  if(o.seasonSp>0) badges.push(`<span class="result-badge season">🎫 シーズン +${o.seasonSp} SP</span>`);
+  if(o.seasonSp>0) badges.push(`<span class="result-badge season">${rsIconHtml('season')}シーズン +${o.seasonSp} SP</span>`);
   if(o.rank && o.rank.delta !== 0){
     const sign = o.rank.delta > 0 ? '+' : '';
-    badges.push(`<span class="result-badge rankrp">${o.rank.after.icon} ${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
+    badges.push(`<span class="result-badge rankrp">${icoRank}${o.rank.after.name} ${sign}${o.rank.delta} RP</span>`);
   }
   /* 畳んだので通常は3個以内に収まるが、上限は残しておく(棚の段数は決め打ちのため) */
   const MAX_RESULT_BADGES = 6;
