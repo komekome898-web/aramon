@@ -799,15 +799,17 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
     <!-- 右: マスモンEXPバー・次の報酬・バッジ棚 -->
     <div id="rsProgress" class="rs-panel rs-col">
       <div class="rs-col-head">育成と記録</div>
-      <!-- EXPバー。伸ばすのは B班(#rsExpFill の style.width)。下の 38% は見本 -->
+      <!-- EXPバー。伸ばすのは B班(#rsExpFill の style.width)。下の 38% は見本。
+           【2段で組む】Lvはバーの左右へ置く(APEXのレベルバーと同じ)。
+           3段にすると 667×320 でバッジ棚に1段ぶんの高さが残らない -->
       <div id="rsExpBar" class="rs-exp rs-in">
         <div class="rs-exp-head">
           <span class="rs-exp-lbl">マスモン経験値</span>
           <span class="rs-exp-val" id="rsExpVal">--</span>
         </div>
-        <div class="rs-exp-track"><div class="rs-exp-fill" id="rsExpFill" style="width:38%"></div></div>
-        <div class="rs-exp-foot">
+        <div class="rs-exp-bar">
           <span class="rs-exp-lv" id="rsExpLv">Lv --</span>
+          <div class="rs-exp-track"><div class="rs-exp-fill" id="rsExpFill" style="width:38%"></div></div>
           <span class="rs-exp-lv" id="rsExpLvNext">Lv --</span>
         </div>
       </div>
