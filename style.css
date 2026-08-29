@@ -2504,14 +2504,42 @@
        ・見出しは勝ちも負けも同じ「光る大きな字 + 斜めの帯」
        ・塗りは操作バーの1つへ戻す(#resultActions の節。APEXも明るいバーは「次へ進む」だけ)
      負けの画面で最初に目に入るのは、縦いっぱいの札に入った特大の順位のほう。 */
+  /* 【順位の札が出ている画面では主役は順位ひとつ ―― 2026-08-29(7巡目)】
+     勝ちの画面は「WINNER」と札の「1」が**同じ金・同じ級**で左右に並び、視線の着地点が
+     2つあった(批評)。負けは「灰の敗北 + 白く明るい7」で既に主役が1つなので、
+     **勝ちも負けと同じ扱い = 順位が主役**へそろえる(勝ち負けで主役の場所が入れ替わらない)。
+     直し方は3つとも「見出しを一段落とす」側だけ:
+       ・字高 … 順位の 1.5倍 → 見出しは 0.72倍(順位 > 見出し > 統計の数値 の3段になる)
+       ・色  … トーンのアクセント(勝ち=金)ではなく、この画面の地の文字色
+               **負けの見出し「敗北」の言葉は1文字も触っていない**(色と級だけ)
+       ・光  … 脈打つ光を見出しから外し、札の数字へ移す(光る物も1つ)
+     **レイド(順位が無い=札を畳む場面)では従来どおり見出しが主役のまま。**
+     判定の出どころは ui.js の setResultPlacement() 1か所で、そこが #resultScreen へ
+     data-rankcard を書く(className は毎回総入れ替えされるので属性で持つ)。 */
+  #resultScreen[data-rankcard="on"] .rank{
+    font-size:calc(0.72 * var(--rs-rank-fs));
+    color:var(--ink-dim);
+  }
+  #resultScreen[data-rankcard="on"] .rs-rank-wrap{
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,0.75)); animation:none;
+  }
+  /* 光の脈は札の数字へ。数字自身の text-shadow はそのまま(色は順位帯の色) */
+  #resultScreen[data-tone="win"][data-rankcard="on"] .rs-rank-num,
+  #resultScreen.win[data-rankcard="on"] .rs-rank-num{
+    animation:rsRankPulse 1.7s ease-in-out infinite;
+  }
   /* 【1行で省略する ―― 2026-08-29(6巡目)】チーム戦の「小隊の勝利！ A・B・C」は
      2行クランプにしてあったが、実際に出たのは**2行目に「や」1文字だけ**落ちた姿だった
      (実測: 幅277pxに対して文の幅が少し足りないだけで折り返す)。
      顔ぶれは右列の「小隊メンバー」が名前・撃破・生死まで並べているので、ここは
      **1行で省略**にする ―― この画面の他の1行(素性・死因・次の報酬)と同じ流儀にそろう。
      切るのは**この文字要素自身**の役目(枠では隠さない)。 */
+  /* 【副題は記録の帯より1段小さく ―― 2026-08-29(7巡目)】副題(生き残った!…)と
+     記録の帯(この子と初めてのチャンピオン!)が**ほぼ同じ級で2行続き**、
+     見出しから下が「大→中→中」になっていた(批評)。副題を1段落として
+     **中位に立つのは記録の帯だけ**にする(帯は下の .result-highlight で12pxへ上げる)。 */
   #resultScreen .sub{
-    flex:0 0 auto; margin-top:var(--rs-gap-s); font-size:11.5px; letter-spacing:1.4px;
+    flex:0 0 auto; margin-top:var(--rs-gap-s); font-size:10px; letter-spacing:1.4px;
     line-height:1.32; color:var(--ink-dim); text-align:left; max-width:100%;
     display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
@@ -2600,9 +2628,11 @@
     max-width:min(92 * var(--vw), 560px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .result-highlight.hidden{ display:none !important; }
   /* リザルトでは列の幅に収める。丸角をやめて斜め切りの言語にそろえる */
+  /* 【この帯がこのカードの中位 ―― 2026-08-29(7巡目)】副題を10pxへ落としたぶん、
+     記録の帯はここで12pxに上げて「見出し(大)→ 記録の帯(中)→ 副題(小)」の3段にする。 */
   #resultScreen .result-highlight{
     flex:0 0 auto; margin-top:var(--rs-gap-m); padding:var(--rs-gap-s) var(--rs-gap-m);
-    font-size:11px; letter-spacing:0.5px;
+    font-size:12px; font-weight:700; letter-spacing:0.5px;
     max-width:100%; border-radius:0; color:var(--rs-accent);
     background:linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,255,255,0));
     border:0; border-left:2px solid var(--rs-accent);
@@ -2644,8 +2674,10 @@
      そのままだと中の .resultStats は「縦は align-items:stretch で決まる=中身より小さくならない」
      ふるまいになり、縦が足りない端末で行が縮まず5〜7px溢れる(実測)。
      縦のflexにしておけば、足りないぶんがそのまま行の縮みへ伝わる。 */
+  /* 【伸ばさない ―― 2026-08-29(7巡目)】ここが伸びると、余りが**統計と小隊の間**へ
+     入って穴になる(小隊はこの箱の後ろに来る)。余りはカードの下へ1回だけ落とす。 */
   #resultScreen .resultStatsRow{
-    flex:1 1 auto; min-height:0; margin-top:0; gap:0;
+    flex:0 1 auto; min-height:0; margin-top:0; gap:0;
     display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
   }
   /* 【justify-content を必ず書く】共通の .resultStats(1つ下の節・classだけの指定)が
@@ -2656,22 +2688,22 @@
      行の高さを決め打ち(下の height:--rs-stat-h)にしてから、縦が足りない端末では
      ここで上限を切らないと3行ぶん(216px)のまま5〜7px溢れる(実測)。 */
   #resultScreen .resultStats{
-    flex:1 1 auto; min-width:0; min-height:0; max-height:100%; justify-content:flex-start;
+    flex:0 1 auto; min-width:0; min-height:0; max-height:100%; justify-content:flex-start;
     display:flex; flex-direction:column; flex-wrap:nowrap; gap:0; width:100%;
   }
   /* 【column-reverse を使わない】DOMを「ラベル→数値」の順に並べ替えて素直な column にした。
      column-reverse は中身が枠に入りきらないときの溢れ方が逆向きになり、
      どの端末でも9pxぶん行が溢れて見えた(実測)。並び順はHTML側で作る。 */
-  /* 【行は --rs-stat-h を基準に、余りを同じ割合で分け合う ―― 2026-08-29(6巡目)】
-     カードが左右そろって段いっぱいになったので、余りの受け先をここにした。
-     **3行が同じだけ伸びる**ので刻みは崩れず、罫が等間隔に並ぶ。
-     以前ここを height の決め打ちにしていたときは、余りが全部**1行目の上**(=見出し罫の
-     直下)に無地の帯として溜まり、逆にカードの下端は左カードより手前で終わっていた。
-     ・伸びる … flex-grow:1(3行で等分。カードは段の高さ止まりなので青天井にはならない)
-     ・縮む  … flex-shrink:1(縦が足りない端末では3行が同じ割合で縮む。従来どおり)
-     中身は下寄せのままなので、余りは「数値と次のラベルの間」に等間隔で入る。 */
+  /* 【行の高さは中身から決めた固定値・余りは行へ配らない ―― 2026-08-29(7巡目)】
+     6巡目は「余りを行そのものの高さに引き受けさせる」形にしたが、それは
+     **同じ部品が場面ごとに違う寸法になる**という別の崩れを生んだ(実測: 報酬の行が
+     勝ちの2枚目で44px・敗北の2枚目で60px。行の数が少ない場面ほど行が太る)。
+     行の高さは中身が決めるものなので --rs-stat-h の決め打ちへ戻し、
+     **余った縦はカードの下に1回だけ無地で落とす**(行間へも行の高さへも配らない)。
+     ・伸びない … flex-grow:0(どの場面でも同じ刻み)
+     ・縮む    … flex-shrink:1(縦が足りない端末では3行が同じ割合で縮む。従来どおり) */
   #resultScreen .resultStats > div{
-    flex:1 1 var(--rs-stat-h); min-height:0; min-width:0; height:auto; text-align:left;
+    flex:0 1 var(--rs-stat-h); min-height:0; min-width:0; height:var(--rs-stat-h); text-align:left;
     /* column-reverse は使わない(溢れ方が逆になる)。並びはHTML側で作ってある。
        【中身は行の中央 ―― 2026-08-29(6巡目)】以前は下寄せで、余りが**全部その行の上**へ
        乗っていた。行が伸びると1行目の余り(=見出し罫の直下の無地の帯)だけが目立つ。
@@ -2726,29 +2758,31 @@
   #resultScreen .result-squad-row .sq-mark{ font-size:7.5px; color:var(--rs-dim); flex:0 0 auto; }
   #resultScreen .result-squad-name{ flex:1 1 auto; min-width:0; max-width:none; text-align:left; }
   #resultScreen .result-squad-row.sq-me .result-squad-name{ color:var(--rs-accent); }
-  #resultScreen .result-squad-kills{ flex:0 0 auto; font-size:10.5px; }
+  /* 【小隊の数字も「小さいラベル + 大きい数字」にする ―― 2026-08-29(7巡目)】
+     「撃破 12 生存」は語も数字も同じ級・同じ色で、**数字が文に埋もれていた**(批評)。
+     右列の統計(ラベル8.5px灰 + 大きい数値)と同じ扱いへ寄せる。
+     **行の高さ(--rs-row-h)は増やさない** ―― 数字は13pxまで(24pxの行に収まる)。 */
+  #resultScreen .result-squad-kills{
+    flex:0 0 auto; display:inline-flex; align-items:baseline; gap:var(--rs-gap-s);
+  }
+  #resultScreen .rs-sq-lbl{ font-size:8.5px; letter-spacing:1.6px; color:var(--rs-dim); }
+  #resultScreen .rs-sq-num{
+    font-family:'Share Tech Mono',monospace; font-size:13px; line-height:1; color:var(--ink);
+  }
   #resultScreen .result-squad-state{ flex:0 0 auto; font-size:9px; }
   /* 【小隊が出ているときは統計を横1行へ畳む】
      縦積みの統計(約111px)と小隊(約72px)と見出しは、667×320で登録の対話も出ている
      いちばん詰まった場面(147px)に同時には入らない ―― 実測で16px溢れた。
      R3の「縦が足りないときは情報の密度を上げる」をここで効かせる。
      :has() が効かない環境では縦積みのままになるだけで、壊れ方は増えない。 */
-  /* 【余りは統計の1行と小隊の行で分け合う ―― 2026-08-29(6巡目)】
-     カードが左右そろって段いっぱいになったぶんの余りを、チーム戦ではどこで吸うか。
-     ・統計の1行 … 伸びる(中身は行の中央なので、余りは上下へ半分ずつ入る)
-     ・小隊の3行 … 伸びる(受け取る量は統計の1行の2倍。行の数が多いぶんこちらを厚く配る)
-     **どちらにも頭打ちを付けない** ―― 頭打ちにすると余った残りが行き場を失い、
-     最後の行とカードの下端の間に無地の穴として溜まる(それが今回直した現れ方そのもの)。
+  /* 【余りは行へ配らない ―― 2026-08-29(7巡目)】6巡目は統計の1行と小隊の行に余りを
+     分け合わせたが、それだと**同じ行が場面ごとに違う高さ**になる(行の数が少ない場面ほど
+     太る)。チーム戦でも刻みは他の場面と同じにして、余りはカードの下へ1回だけ落とす。
      【数値の大きさは戻す】3等分した幅では「18,420」が31pxだと入りきらない。 */
-  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStatsRow{ flex:1 1 var(--rs-stat-h); }
   #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats{ flex-direction:row; gap:var(--rs-gap-m); }
-  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats > div{ flex:1 1 0; height:auto; }
+  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats > div{ flex:1 1 0; height:var(--rs-stat-h); }
   #rsPerf:has(> #resultSquadInfo:not(.hidden)) .resultStats .num{
     font-size:clamp(15px, calc(6.6 * var(--vh)), 29px);
-  }
-  #rsPerf:has(> #resultSquadInfo:not(.hidden)) #resultSquadInfo{ flex:2 1 auto; }
-  #rsPerf:has(> #resultSquadInfo:not(.hidden)) .result-squad-row{
-    flex:1 1 var(--rs-row-h); height:auto;
   }
 
   /* ---------- 2枚目 左: 報酬の台帳 ----------
@@ -2759,16 +2793,17 @@
      ゼブラの帯が続けて並ぶようにする。**罫は「小計の上」に1本だけ。**
      合計だけは margin-top:auto でカードの下端へ固定し、余った縦はその1か所へまとめる
      (行間へ配ると表が浮島に分解する。2026-08-29の失敗)。 */
+  /* 【伸ばさない ―― 2026-08-29(7巡目)】ここが伸びると余りが明細の行へ配られ、
+     行の数が少ない場面ほど行が太る(実測: 勝ちの2枚目44px / 敗北の2枚目60px)。
+     余りはカードの下に1回だけ無地で落とす。入りきらないときだけ中を送る。 */
   #resultScreen .rs-ledger-rows{
-    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+    flex:0 1 auto; min-height:0; display:flex; flex-direction:column;
     overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
-  /* 【余りは行が同じだけ引き受ける ―― 2026-08-29(6巡目)】高さの基準は --rs-row-h。
-     カードが段いっぱいになったぶんの余りは、**全行が同じだけ伸びて**引き受ける
-     (行間へ配らない=ゼブラの帯は隙間なく続いたまま)。残りは下の合計の面が受ける。
+  /* 【行の高さは場面によらず --rs-row-h ―― 2026-08-29(7巡目)】
      **縮ませない**(flex-shrink:0)―― 足りないときは従来どおり明細の中だけを送る。 */
   #resultScreen .rs-ledger-rows > .rs-led-row{
-    flex:1 0 var(--rs-row-h); height:auto; align-items:center;
+    flex:0 0 var(--rs-row-h); height:var(--rs-row-h); align-items:center;
   }
   #resultScreen .rs-led-row{
     display:flex; align-items:center; gap:var(--rs-gap-m);
@@ -2812,14 +2847,12 @@
   /* 【合計は特大で単独で立たせる】APEXの「総合獲得XP」に当たる主役。
      **カードの下端に固定**(上の #rsLedgerTotal{margin-top:auto})。明細の塊から切り離した
      別ブロックにして、「どれが集計行か」を位置でも読めるようにする。 */
-  /* 【余った縦はここが引き受ける ―― 2026-08-29(6巡目)】2枚目のカードも1枚目と同じ枠
-     (段いっぱい)になったので、明細の少ない試合ではカードの下に無地が残る。
-     受け先をこの合計の面にした ―― APEXの「総合獲得XP」も、罫の下の広い場に数字が
-     ひとつ置かれている。**行間へ配らない**(表が浮島に分解する。2026-08-29の失敗)し、
-     **下端へ飛ばして穴を作らない**(margin-top:auto は使わない)。
-     伸びるのはこの面そのもので、中の「合計/額」は面の縦中央に座る。 */
+  /* 【この面も伸ばさない ―― 2026-08-29(7巡目)】6巡目は余りをこの面に引き受けさせたが、
+     明細の少ない試合では「小計」と「合計」の間が90px空いて、そこが穴に見えた(批評)。
+     **余った縦はカードの下に1回だけ無地で落とす**(行間へも行の高さへもこの面へも配らない)。
+     **下端へ飛ばして穴を作らない**(margin-top:auto は使わない)。 */
   #resultScreen .rs-led-total{
-    flex:1 0 auto; min-height:0; display:flex; align-items:center; justify-content:space-between;
+    flex:0 0 auto; min-height:0; display:flex; align-items:center; justify-content:space-between;
     gap:var(--rs-gap-m);
     padding:var(--rs-gap-m) var(--rs-gap-s) 0; border-top:1px solid var(--rs-line-strong);
   }
@@ -3033,12 +3066,11 @@
   /* 1行きり。**縮めない**(縮めると行の途中で切れて壊れて見える) */
   /* この列の最終行。**カードの下端へ固定**して、余った縦をこの1か所へまとめる
      (段の間へ配ると育成の3ブロックが離れ小島になる。2026-08-29の失敗) */
-  /* 【余った縦はここが引き受ける ―― 2026-08-29(6巡目)】左カードの「合計」と同じ扱い。
-     カードが段いっぱいになったぶんの余りを**この列の最終行が面として受け**、
-     中の1行は面の縦中央に座る。**棚や行間へ配らない**(棚の中に穴ができる/表が散る)。
-     左右のカードで受け先の位置がそろうので、下半分に同じ高さの静かな場ができる。 */
+  /* 【この行も伸ばさない ―― 2026-08-29(7巡目)】左カードの「合計」と同じ扱いにそろえる。
+     余りは**カードの下に1回だけ無地で落とす**(この行・棚・行間のどれにも配らない)。
+     左右のカードで余りの落ち方がそろうので、下半分に同じ高さの静かな場ができる。 */
   #resultScreen #scoreSubmitStatus{
-    flex:1 0 auto; margin-top:0; padding-top:var(--rs-gap-s);
+    flex:0 0 auto; margin-top:0; padding-top:var(--rs-gap-s);
     display:flex; align-items:center;
     min-height:0; font-size:9px; line-height:1.35; text-align:left;
     /* 縦中央にするため flex にした。中の文字は無名のflex項目になり
@@ -3076,23 +3108,30 @@
   }
   /* 【名前欄とボタンも45°で落とす ―― 2026-08-29(6巡目)】この3つだけが角の切れていない
      ただの長方形で、画面の他の押せる物(操作バー)と言語が違っていた(批評)。
-     切り欠きは操作バーのボタンと**同じ --rs-cut**(同じ高さの物は同じ長さで落とす)。 */
-  #resultScreen .mastermon-register-prompt input{
-    flex:0 1 160px; width:auto; min-width:0; padding:7px 10px; border-radius:0; font-size:12px;
+     切り欠きは操作バーのボタンと**同じ --rs-cut**(同じ高さの物は同じ長さで落とす)。
+     【3つの寸法をそろえる ―― 2026-08-29(7巡目)】6巡目は角度だけそろって、
+     **大きさと高さがそろっていなかった**(実測: 名前欄は高さ30px・切り欠きが短く見え、
+     ボタンは高さ約48px。1本の帯の中に高さの違う3つが並び、間隔も 12px と 6px で不揃い)。
+     切り欠きは「同じ長さを掛けても、箱の高さが違えば違う形に見える」ので、**まず高さを
+     1つにする** ―― 押せる物の高さの出どころは操作バーと同じ --result-btn-h 1つ
+     (この画面の押せる物はすべてこの高さ。**新しい高さの数字を作らない**)。
+     間隔も帯の gap 1つ(--rs-gap-l)へそろえ、名前欄↔スキップ↔登録する を等間隔にする。 */
+  #resultScreen .mastermon-register-prompt input,
+  #resultScreen .mastermon-register-btnrow button{
+    height:var(--result-btn-h); min-height:var(--result-btn-h); flex-shrink:0;
+    border-radius:0;
     clip-path:polygon(
       var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
       100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
       calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
       0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
   }
-  #resultScreen .mastermon-register-btnrow{ flex:0 0 auto; width:auto; gap:var(--rs-gap-m); }
+  #resultScreen .mastermon-register-prompt input{
+    flex:0 1 160px; width:auto; min-width:0; padding:0 var(--rs-gap-l); font-size:12px;
+  }
+  #resultScreen .mastermon-register-btnrow{ flex:0 0 auto; width:auto; gap:var(--rs-gap-l); }
   #resultScreen .mastermon-register-btnrow button{
-    flex:0 0 auto; min-width:84px; padding:var(--rs-gap-m) var(--rs-gap-l); border-radius:0; font-size:11.5px;
-    clip-path:polygon(
-      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
-      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
-      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
-      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+    flex:0 0 auto; min-width:84px; padding:0 var(--rs-gap-l); font-size:11.5px;
   }
 
   /* ---------- 操作バー(両ページ共通の1本) ----------

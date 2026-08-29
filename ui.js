@@ -5933,9 +5933,13 @@ function raidShowResult(defeated, dmg, prevBest){
     newBest  ? '自己ベスト更新' :
     died     ? '力尽きた' : '時間切れ';
   setResultPlacement(null);   // レイドに順位は無い。順位の札ごと畳む(見出しが左カードの全幅を使う)
-  let sub = `与えたダメージ ${rsNum(d)}`;
-  if(newBest && prevBest>0) sub += `（これまでの最高 ${rsNum(prevBest)}）`;
-  if(noRecord) sub += '（記録は残りません）';
+  /* 【副題に数字を出さない ―― 2026-08-29(7巡目)】以前はここに「与えたダメージ 128,450
+     (これまでの最高 96,000)」と書いていたが、**右の戦績の「与ダメージ」とまったく同じ数字**が
+     2か所に出て、どちらが主か決まっていなかった(批評)。**数字は右の戦績が持つ。**
+     ここは「この試合が何だったか」だけを言う一言にする(見出しが既に言っている場合は空)。
+     額や記録の計算はこの下のまま。1文字も変えていない。 */
+  let sub = (defeated && newBest) ? '自己ベスト更新！' : '';
+  if(noRecord) sub = sub ? (sub + '（記録は残りません）') : '記録は残りません';
   document.getElementById('resultSub').textContent = sub;
   setResultDeathCause(true);   // レイドに「誰に倒された」は無い。前の試合ぶんを必ず消す
   // ハイライトはバトロワ用なのでレイドでは出さない。前の試合ぶんを必ず消す
@@ -6363,6 +6367,13 @@ function setResultPlacement(o){
   if(!card) return;
   const place = o ? Math.round(o.placement || 0) : 0;
   card.classList.toggle('hidden', !(place > 0));
+  /* 【主役が順位か見出しかを画面へ伝える】札が出ている場面では順位が主役なので、
+     見出し(WINNER / 敗北)は一段落ちた級・地の文字色になる(CSSの
+     #resultScreen[data-rankcard="on"] .rank)。札が無いレイドでは見出しが主役のまま。
+     className は showResultNow / raidShowResult が毎回総入れ替えするので**属性**で持つ
+     (data-tone と同じ理由)。判定はこの1か所だけ。 */
+  { const scr = document.getElementById('resultScreen');
+    if(scr) scr.dataset.rankcard = (place > 0) ? 'on' : 'off'; }
   if(!(place > 0)) return;
   const total = Math.max(place, Math.round((o && o.total) || 0));
   const band = place === 1 ? 'gold' : (place <= RS_RANK_SILVER_MAX ? 'silver' : 'none');
@@ -6538,7 +6549,7 @@ function showResultNow(isWin, placement){
           <div class="result-squad-row${m===player?' sq-me':''}">
             <span class="sq-mark">▽</span>
             <span class="result-squad-name">${displayNameFor(m)}${m===player?'(あなた)':''}</span>
-            <span class="result-squad-kills">撃破 ${m.kills}</span>
+            <span class="result-squad-kills"><span class="rs-sq-lbl">撃破</span><span class="rs-sq-num">${m.kills}</span></span>
             <span class="result-squad-state">${m.alive?'生存':'倒れた'}</span>
           </div>`).join('');
       }
