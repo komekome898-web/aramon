@@ -732,19 +732,39 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <!-- 試合の素性(モード/マップ/人数)の1行。中身は ui.js が書く。
            空のままなら :empty で消えるので、書かれなくても崩れない -->
       <div id="rsMatchMeta" class="rs-meta rs-in"></div>
-      <!-- 順位も同じ理由で親を1枚かませる(#resultRank には winPulse が掛かっている) -->
-      <div class="rs-rank-wrap rs-in">
-        <div class="rank" id="resultRank">#1</div>
-      </div>
-      <div class="sub rs-in" id="resultSub">勝利</div>
-      <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
-           setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
-      <div id="resultDeathCause" class="result-death-cause rs-in hidden"></div>
-      <!-- 試合ハイライト(1試合1つだけ)。定義表は data.js の HIGHLIGHT_DEFS、
-           中身は showResultNow が pickHighlight() で書く。無い試合とレイドでは hidden -->
-      <div id="resultHighlight" class="result-highlight rs-in hidden"></div>
-      <div class="rs-hero-art rs-in">
-        <img id="resultMonsterIcon" class="result-monster-icon" alt="" data-variant="player" data-ext-idx="0" onerror="handleResultIconError(this)">
+      <!-- 【順位の札 + 見出し】左端に縦いっぱいの札(順位)、その右に見出し以下を積む。
+           札を縦いっぱいにするのは、順位がこの画面の主役だから ―― 以前は小さな角丸の
+           チップで、右の統計(与ダメージ)より字が小さく、階層が逆転していた。 -->
+      <div class="rs-hero-body">
+        <!-- 順位の札。**中身と順位帯(金/銀/無彩)を書くのは ui.js の setResultPlacement() 1か所。**
+             レイドには順位が無いので、そこだけ札ごと畳む(見出しは従来どおり全幅で出る)。 -->
+        <div id="rsRankCard" class="rs-rank-card rs-in" data-band="gold">
+          <div class="rs-rank-cap" id="rsRankCap">順位</div>
+          <div class="rs-rank-mid">
+            <!-- 字高は見出し(WINNER)と同じ --rs-rank-fs。右の統計より必ず大きい -->
+            <div class="rs-rank-num" id="rsPlaceNum">1</div>
+            <!-- 母数。「7人中7位」なのか「20人中7位」なのかが読めないと順位の意味が出ない -->
+            <div class="rs-rank-of" id="rsPlaceOf">/ 7</div>
+          </div>
+          <!-- 順位帯の名前(2〜3位のときだけ出る)。空なら :empty で消える -->
+          <div class="rs-rank-band" id="rsRankBand"></div>
+        </div>
+        <div class="rs-hero-main">
+          <!-- 見出しも同じ理由で親を1枚かませる(#resultRank には winPulse が掛かっている) -->
+          <div class="rs-rank-wrap rs-in">
+            <div class="rank" id="resultRank">WINNER</div>
+          </div>
+          <div class="sub rs-in" id="resultSub">勝利</div>
+          <!-- 敗北時だけ出す死因の1行(「⚔ 〇〇 に倒された」/安置外/溶岩)。中身は ui.js の
+               setResultDeathCause() が書く。勝利・レイドでは必ず空にして持ち越さない -->
+          <div id="resultDeathCause" class="result-death-cause rs-in hidden"></div>
+          <!-- 試合ハイライト(1試合1つだけ)。定義表は data.js の HIGHLIGHT_DEFS、
+               中身は showResultNow が pickHighlight() で書く。無い試合とレイドでは hidden -->
+          <div id="resultHighlight" class="result-highlight rs-in hidden"></div>
+          <div class="rs-hero-art rs-in">
+            <img id="resultMonsterIcon" class="result-monster-icon" alt="" data-variant="player" data-ext-idx="0" onerror="handleResultIconError(this)">
+          </div>
+        </div>
       </div>
     </div>
 

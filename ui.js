@@ -5924,7 +5924,7 @@ function raidShowResult(defeated, dmg, prevBest){
     if(meta) meta.textContent = ['レイド', (netState.mode==='multi' ? 'みんなで挑戦' : 'ソロ')].join(' · '); }
   // 前のチーム戦の小隊欄を持ち越さない(レイドはチーム戦と排他)
   { const sq = document.getElementById('resultSquadInfo'); if(sq){ sq.classList.add('hidden'); sq.innerHTML=''; } }
-  /* 【順位の欄に絵文字を足さない】通常の試合(#1 / 撃破された)と同じ決まりをレイドにも通す。
+  /* 【見出しに絵文字を足さない】通常の試合(WINNER / 敗北)と同じ決まりをレイドにも通す。
      ここは画面でいちばん大きい文字なので、既製の絵文字を1つ置くだけで
      線の太さも彩度もこの画面(暗い面 + 金1色)と揃わず、そこだけ別の絵に見える。
      文言だけで何が起きたかは伝わる。 */
@@ -5932,6 +5932,7 @@ function raidShowResult(defeated, dmg, prevBest){
     defeated ? '討伐成功' :
     newBest  ? '自己ベスト更新' :
     died     ? '力尽きた' : '時間切れ';
+  setResultPlacement(null);   // レイドに順位は無い。順位の札ごと畳む(見出しが左カードの全幅を使う)
   let sub = `与えたダメージ ${rsNum(d)}`;
   if(newBest && prevBest>0) sub += `（これまでの最高 ${rsNum(prevBest)}）`;
   if(noRecord) sub += '（記録は残りません）';
@@ -6342,6 +6343,36 @@ function setResultDeathCause(isWin){
   el.appendChild(span);
   el.classList.remove('hidden');
 }
+/* 順位帯の境目。2〜3位を「銀」にする(1位=金 / 4位以下=無彩)。
+   **順位帯の判定はこの定数と下の setResultPlacement() の1か所だけ。**
+   色はCSS(#rsRankCard[data-band])が data-band を見て決める ―― JSは色を持たない。 */
+const RS_RANK_SILVER_MAX = 3;
+/* =====================================================================
+   順位の札(#rsRankCard)
+
+   この画面の主役。**中身も順位帯もここ1か所で書く。**
+     ・数字 … 順位。字高は見出し(WINNER)と同じ(CSSの --rs-rank-fs)
+     ・母数 … 「7人中7位」なのか「20人中7位」なのかが読めないと順位の意味が出ない。
+              チーム戦は順位がチーム単位なので、母数もチーム数を渡すこと。
+     ・順位帯 … 1位=金 / 2〜3位=銀 / それ以下=無彩。2〜3位だけ帯の名前(TOP 3)も出す
+                (1位は見出しの WINNER が言っているので入れない)。
+   o を渡さない(または順位が無い)ときは札ごと畳む ―― レイドには順位が無いので、
+   そこだけ見出しが左カードの全幅を使う。 */
+function setResultPlacement(o){
+  const card = document.getElementById('rsRankCard');
+  if(!card) return;
+  const place = o ? Math.round(o.placement || 0) : 0;
+  card.classList.toggle('hidden', !(place > 0));
+  if(!(place > 0)) return;
+  const total = Math.max(place, Math.round((o && o.total) || 0));
+  const band = place === 1 ? 'gold' : (place <= RS_RANK_SILVER_MAX ? 'silver' : 'none');
+  card.dataset.band = band;
+  const put = (id, text)=>{ const el = document.getElementById(id); if(el) el.textContent = text; };
+  put('rsRankCap', (o && o.team) ? 'チーム順位' : '順位');
+  put('rsPlaceNum', String(place));
+  put('rsPlaceOf', total > 1 ? ('/ ' + total) : '');
+  put('rsRankBand', band === 'silver' ? 'TOP 3' : '');
+}
 const RESULT_EMOTE_DELAY_MS = 320;   // リザルトが出てからエモートを始めるまで
 /* 【リザルトだけ粒の出どころを下げる】「よろこぶ」の粒(✨)は EMOTES の既定だと
    絵の上のほう(at:0.17)から出て58px上がるので、リザルトでは**立ち絵の板を突き抜けて
@@ -6473,24 +6504,35 @@ function showResultNow(isWin, placement){
       meta.textContent = parts.join(' · ');
     }
   }
-  /* 【順位に絵文字を足さない】王冠の絵文字は端末が描く既製の絵なので、線の太さも彩度も
+  /* 【見出しは勝敗の言葉・順位は左の札】順位の数字は setResultPlacement() が札へ書く。
+     ここに「#7」を出すと札と二重になるので出さない。
+     【絵文字を足さない】王冠の絵文字は端末が描く既製の絵なので、線の太さも彩度も
      この画面(暗い面 + 金1色)と揃わず、いちばん大きい文字の隣で一点だけ浮く。
-     勝ちであることは特大の金文字・グロー・立ち絵の板の色で既に伝わっている。
      ※ シェア画像(下の headline)は白地の別物なので、そちらは王冠を残す。 */
-  document.getElementById('resultRank').textContent = isWin ? 'WINNER' : ('#'+placement);
-  document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '撃破された';
+  /* 【負けの見出しは短い言葉にする】以前の「撃破された」は5文字で、順位の札を置いた
+     左カードの幅(667pxの端末で189px)に46pxでは入らず「撃破さ…」と切れていた。
+     何に倒されたかは下の1行が言うので、見出しは勝敗そのものだけを短く言う。 */
+  document.getElementById('resultRank').textContent = isWin ? 'WINNER' : '敗北';
+  document.getElementById('resultSub').textContent = isWin ? '生き残った！今夜はモン勝ちだ！' : '';
   setResultDeathCause(isWin);   // 敗北時だけ「⚔ 〇〇 に倒された」/安置外/溶岩 の1行を添える
-  /* チーム戦: 順位はチーム単位なので文言を「チーム順位」にし、小隊メンバー(名前・キル)を
-     1行ずつ出す。個人戦では小隊欄を必ず隠す(前の試合の中身を持ち越さない)。 */
+  /* チーム戦: 順位はチーム単位。**札の見出しが「チーム順位」になり母数もチーム数になる**ので、
+     ここで「チーム順位 #N」と書くと二重になる。添える1行は小隊の顔ぶれにする。
+     個人戦では小隊欄を必ず隠す(前の試合の中身を持ち越さない)。 */
   {
     const sqInfoEl = document.getElementById('resultSquadInfo');
     const teamMatch = (typeof isTeamMatch==='function') && isTeamMatch() && player && player.teamId!=null;
     if(sqInfoEl){ sqInfoEl.classList.toggle('hidden', !teamMatch); sqInfoEl.innerHTML=''; }
+    /* 順位の札。母数はソロ=参加体数、チーム戦=チーム数(順位がチーム単位なので) */
+    setResultPlacement({
+      placement,
+      total: teamMatch ? new Set(entities.filter(e=> e.teamId!=null).map(e=> e.teamId)).size : entities.length,
+      team: teamMatch,
+    });
     if(teamMatch){
       const mates = teamMembers(player.teamId);
       document.getElementById('resultSub').textContent = isWin
         ? `小隊の勝利！ ${mates.map(m=>displayNameFor(m)).join('・')}`
-        : `チーム順位 #${placement}`;
+        : `小隊 ${mates.map(m=>displayNameFor(m)).join('・')}`;
       if(sqInfoEl){
         sqInfoEl.innerHTML = `<div class="result-squad-title">小隊メンバー</div>` + mates.map(m=>`
           <div class="result-squad-row${m===player?' sq-me':''}">
@@ -7113,7 +7155,7 @@ function playResultSequence(){
   _rsSeqOn = true;
   _rsPage2Done = false;
   rsStep(0,   ()=> scr.classList.add('rs-panels-in'));
-  rsStep(120, ()=> rsShow('#rsHero .rs-rank-wrap'));
+  rsStep(120, ()=> rsShow('#rsRankCard, #rsHero .rs-rank-wrap'));   // 順位の札と見出しは同時に入る
   rsStep(320, ()=> rsShow('#rsMatchMeta, #resultSub, #resultDeathCause, #resultHighlight'));
   rsStep(480, ()=> rsShow('#rsHero .rs-hero-art'));
   // 統計3つは左から順に。数字は 260ms でカウントアップする

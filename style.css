@@ -2175,6 +2175,14 @@
     --rs-row-h:24px;    /* 表の1行。台帳(明細・小計)と小隊で**同じ刻み**を使う */
     --rs-stat-h:72px;   /* 戦績の1行(ラベル+大きい数値+罫)= --rs-row-h の3つぶん。
                            中身は約48pxなので、上に24px(1行ぶん)の空きが乗る */
+    /* 【この画面でいちばん大きい字】見出し(WINNER / 撃破された / 討伐成功)と
+       順位の札の数字が**同じ字高**で並ぶための出どころ。ここ1か所が正で、
+       .rank と .rs-rank-num の両方がこれを読む(同じ意味の数字を2か所に書かない)。
+       札の幅もこれから決める = 字が小さくなる端末では札も細くなる。 */
+    --rs-rank-fs:clamp(24px, calc(6.6 * var(--vw)), 46px);
+    /* 順位の数字だけは見出しより一段大きい = この画面の主役。
+       札の幅もこの字から決まる(中身の文字数からではない)。 */
+    --rs-rank-num-fs:calc(1.5 * var(--rs-rank-fs));
     padding:var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-r))
             var(--rs-gap-m) calc(var(--rs-gap-l) + var(--safe-l));
     /* 地=濃紺〜黒の放射グラデ。ビネットと微細グレインは ::before / ::after(**静的**) */
@@ -2344,6 +2352,100 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #resultScreen .rs-meta:empty{ display:none; }
+
+  /* ---------- 順位の札(#rsRankCard)と見出しの2列 ----------
+     【なぜ札にしたか】以前の順位は 65×60px の角丸チップで、灰の地に灰の字だった。
+     字の大きさで並べると右の統計(与ダメージ)より小さく、**画面の主役が順位でない**
+     状態になっていた。しかも #3 と #7 が同じ見た目・同じ「撃破された」で、
+     **上位と下位が見分けられない**(色の問題ではなく情報が落ちている)。
+     直し方は1つ:**左端に縦いっぱいの札を立て、そこへ順位を主役として置く。**
+       ・字高は見出し(WINNER)と同じ --rs-rank-fs。右の統計より必ず大きい。
+       ・母数(/20)を添える。「7人中7位」なのか「20人中7位」なのかが読める。
+       ・順位帯で**縁の色**を変える(1位=金 / 2〜3位=銀 / それ以下=無彩)。
+     【札は塗らない】APEXも順位は「暗い面 + 明るい縁 + 色の付いた数字」で、塗りは
+     「次へ進む」ボタン1つだけ。**塗りは操作バーに1つ**という約束(#resultActions の節)を
+     そのまま守れるので、面ではなく縁と字で主役を作る。
+     【判定は1か所】金/銀/無彩の切り分けは ui.js の setResultPlacement() だけが持ち、
+     ここは data-band を色に置き換えるだけ。 */
+  #resultScreen .rs-hero-body{
+    flex:1 1 auto; min-height:0; min-width:0;
+    display:flex; flex-direction:row; align-items:stretch; gap:var(--rs-gap-l);
+  }
+  #resultScreen .rs-hero-main{
+    flex:1 1 auto; min-width:0; min-height:0;
+    display:flex; flex-direction:column; justify-content:flex-start;
+  }
+  /* 札の幅は字の大きさから決める(中身の文字数からではない)。2桁+左右の余白が入る比。
+     【縦いっぱい】align-items:stretch の子なので、高さは左カードの残り全部になる。 */
+  #resultScreen .rs-rank-card{
+    position:relative; flex:0 0 auto; width:calc(1.45 * var(--rs-rank-num-fs));
+    display:flex; flex-direction:column; align-items:center;
+    padding:var(--rs-gap-m) var(--rs-gap-s);
+    /* 既定(無彩)= 順位帯を持たない4位以下。**数字は明るいまま**にする ――
+       以前の失敗は「灰色地に灰色の字」で、順位がいちばん弱い要素になっていたこと。
+       順位帯の差は縁と上明かりの色で出し、数字の読みやすさは落とさない。 */
+    --rs-band:#c6d3e6; --rs-band2:#47576d; --rs-band-glow:rgba(150,170,200,0.20);
+  }
+  #resultScreen .rs-rank-card[data-band="gold"]{
+    --rs-band:#ffd76a; --rs-band2:#f4c430; --rs-band-glow:rgba(255,183,3,0.50);
+  }
+  #resultScreen .rs-rank-card[data-band="silver"]{
+    --rs-band:#eef4ff; --rs-band2:#8fa6c4; --rs-band-glow:rgba(196,219,255,0.40);
+  }
+  /* 面と縁はパネルと同じ二枚重ね(::before=縁の色 / ::after=中の面)。
+     **縁は2px**にしてある ―― 1pxだと順位帯の色が細すぎて金と銀が並んでも差が読めない。 */
+  #resultScreen .rs-rank-card::before,
+  #resultScreen .rs-rank-card::after{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    clip-path:polygon(
+      var(--rs-cut) 0, calc(100% - var(--rs-cut)) 0,
+      100% var(--rs-cut), 100% calc(100% - var(--rs-cut)),
+      calc(100% - var(--rs-cut)) 100%, var(--rs-cut) 100%,
+      0 calc(100% - var(--rs-cut)), 0 var(--rs-cut));
+  }
+  #resultScreen .rs-rank-card::before{
+    background:linear-gradient(180deg, var(--rs-band), var(--rs-band2));
+  }
+  #resultScreen .rs-rank-card::after{
+    inset:2px;
+    background-image:
+      linear-gradient(180deg, var(--rs-band-glow), rgba(0,0,0,0) 46%),
+      linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.42));
+    background-color:rgba(5,9,15,0.88);
+  }
+  #resultScreen .rs-rank-card > *{ position:relative; z-index:1; max-width:100%; }
+  /* 「順位」/「チーム順位」。列の見出し(戦績・獲得報酬)と同じ小さい灰+罫にそろえる */
+  #resultScreen .rs-rank-cap{
+    flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:8.5px; letter-spacing:2.4px; color:var(--rs-dim); text-align:center;
+    align-self:stretch; padding-bottom:var(--rs-gap-s);
+    border-bottom:1px solid var(--rs-line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 数字と母数は札の中で縦中央。余りは上下に均等に残す(札の中に穴を1か所作らない) */
+  #resultScreen .rs-rank-mid{
+    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+  }
+  #resultScreen .rs-rank-num{
+    font-family:'Russo One',sans-serif; font-size:var(--rs-rank-num-fs);
+    line-height:1.1; letter-spacing:0; color:var(--rs-band);
+    text-shadow:0 0 14px var(--rs-band-glow), 0 1px 2px rgba(0,0,0,0.8);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  #resultScreen .rs-rank-of{
+    font-family:'Share Tech Mono',monospace; font-size:11px; letter-spacing:0.5px;
+    color:var(--rs-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  /* 順位帯の名前。2〜3位のときだけ入る(1位は見出しの WINNER が言っている) */
+  #resultScreen .rs-rank-band{
+    flex:0 0 auto; align-self:stretch; text-align:center;
+    font-family:'Rajdhani',sans-serif; font-weight:700;
+    font-size:9px; letter-spacing:2.4px; color:var(--rs-band);
+    padding-top:var(--rs-gap-s); border-top:1px solid var(--rs-line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #resultScreen .rs-rank-band:empty{ display:none; }
   /* 【グローは text-shadow で掛けない】順位の文字列には絵文字(👑)が入る。
      絵文字はカラーグリフなので text-shadow が**字形ではなく四角い枠の影**になり、
      「WINNER」の後ろに灰色の箱が出る(実際に出た)。字形どおりに光らせるには
@@ -2369,37 +2471,19 @@
   /* 2列にしたので上限は「列の幅」から決める(1列時の46pxのままだと折り返す)。
      【line-height を字の高さぎりぎりにしない】Russo One は字の高さが行送りより大きく、
      1.04 だと overflow:hidden が上下を2〜3px削る(layout_test の「文字が切れる」で検出)。 */
+  /* 見出し = 勝敗の言葉(WINNER / 撃破された / 討伐成功…)。**順位そのものは左の札**。
+     字高は札の数字と同じ --rs-rank-fs(出どころは #resultScreen の変数1か所)。 */
   #resultScreen .rank{
-    font-size:clamp(24px, calc(6.6 * var(--vw)), 46px); line-height:1.25; letter-spacing:1px;
+    font-size:var(--rs-rank-fs); line-height:1.25; letter-spacing:1px;
     color:var(--rs-accent); text-shadow:none; animation:none;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
   }
-  /* 【負けの画面でいちばん明るいのは順位】勝ちは「WINNER」の字そのものが主役になるが、
-     負けは順位が細い枠なし文字だったので、下の「トップ画面へ」の塗りのほうが明るく、
-     **画面の主役がボタンになっていた**(批評)。APEXも敗北画面で順位だけは専用の枠で出す。
-     そこで負けのときだけ順位を**塗った札**にして、操作バーの塗りは外す
-     (外す指定は #resultActions の節。塗りの総数は1画面1つのまま)。
-     札にすると下の斜めの帯は同じ色が続くだけなので消し、間隔だけ札の余白で持つ。 */
-  #resultScreen[data-tone="lose"] .rank,
-  #resultScreen.lose .rank{
-    display:inline-block; padding:0 var(--rs-gap-m) 2px;
-    color:#0d141d; background:linear-gradient(180deg, var(--rs-accent), var(--rs-accent2));
-    clip-path:polygon(
-      var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
-      100% var(--rs-cut-s), 100% calc(100% - var(--rs-cut-s)),
-      calc(100% - var(--rs-cut-s)) 100%, var(--rs-cut-s) 100%,
-      0 calc(100% - var(--rs-cut-s)), 0 var(--rs-cut-s));
-  }
-  #resultScreen[data-tone="lose"] .rs-rank-wrap::after,
-  #resultScreen.lose .rs-rank-wrap::after{ display:none; }
-  /* 登録の帯が出ている間は「登録する」が塗りを持つので、順位は面なしへ戻す
-     (**塗りが2つある画面を作らない**)。 */
-  #resultScreen[data-tone="lose"]:has(#mastermonRegisterPrompt:not(.hidden)) .rank,
-  #resultScreen.lose:has(#mastermonRegisterPrompt:not(.hidden)) .rank{
-    display:block; padding:0; color:var(--rs-accent); background:none; clip-path:none;
-  }
-  #resultScreen[data-tone="lose"]:has(#mastermonRegisterPrompt:not(.hidden)) .rs-rank-wrap::after,
-  #resultScreen.lose:has(#mastermonRegisterPrompt:not(.hidden)) .rs-rank-wrap::after{ display:block; }
+  /* 【勝ちと負けを「同じ枠の中身違い」にする ―― 2026-08-29(5巡目)】
+     以前は負けのときだけ順位を**塗った札**にして、操作バーの塗りを外していた。
+     順位が左の札(縁の色 = 順位帯)へ移ったので、その特例は無くなった:
+       ・見出しは勝ちも負けも同じ「光る大きな字 + 斜めの帯」
+       ・塗りは操作バーの1つへ戻す(#resultActions の節。APEXも明るいバーは「次へ進む」だけ)
+     負けの画面で最初に目に入るのは、縦いっぱいの札に入った特大の順位のほう。 */
   /* チーム勝利で「小隊の勝利！ A・B・C」と長くなるので2行でクランプ+省略。
      切るのは**この文字要素自身**の役目(枠では隠さない) */
   #resultScreen .sub{
@@ -2407,6 +2491,8 @@
     line-height:1.32; color:var(--ink-dim); text-align:left; max-width:100%;
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
+  /* 添える言葉が無い場面(ソロの敗北)では行ごと消す。空の行は余白として残さない */
+  #resultScreen .sub:empty{ display:none; }
   /* 立ち絵。**枠自身を正方形にして、絵は inset:0 でぴったり埋める。**
      こうすると絵が枠より大きくなる余地が消える ―― 以前は絵に height:100% や
      max-height:100% を掛けていて、flexで縮んだ枠に対して割合が解けきらず
@@ -2955,28 +3041,18 @@
     color:#1a1306; background:linear-gradient(180deg, var(--rs-accent), var(--rs-accent2));
     border:0; font-weight:700;
   }
-  /* ---------- 塗りの居場所は「その画面でいちばん大事な物」へ移す ----------
-     【なぜ動かすか】塗りの場所を固定していたら、実際の画面では2つ問題が出た(批評):
-       ・敗北の1枚目 … 画面でいちばん明るい面が下中央の「トップ画面へ」で、**順位より目立つ**。
-         負けの画面で最初に目に入るのが順位でないのはおかしい(APEXは順位を専用の枠で出す)。
-       ・登録の帯が出ている画面 … プレイヤーが**答えなければいけない「登録する」**が、
-         答えなくてよい「トップ画面へ」より弱かった。隣の「スキップ」のほうが面が明るく、
-         **捨てる側が主役**に見えていた。
-     【新しい決まり】**塗りは1画面に1つ・それは「その画面で一番大事な操作/事実」**:
-       勝ちの1枚目 = トップ画面へ / 2枚目 = マスモン
-       負けの1枚目 = **順位**(ボタンは面なしへ落とす)。2枚目は順位が見えないのでマスモン。
+  /* ---------- 塗りの居場所は「その画面でいちばん大事な操作」 ----------
+     【決まり】**塗りは1画面に1つ**:
+       1枚目 = トップ画面へ / 2枚目 = マスモン(勝ち負け・レイドを問わず同じ)
        登録の帯が出ている間 = **登録する**(両ページとも操作バーの塗りを落とす)。
+     【負けの特例はやめた ―― 2026-08-29(5巡目)】以前は「敗北の1枚目だけ順位を塗り、
+     操作バーの塗りを外す」ようにしていた。順位が左の縦いっぱいの札(特大の数字 + 順位帯の縁)
+     へ移り、面を塗らなくても画面でいちばん強い要素になったので特例を畳んだ。
+     APEXも順位は「暗い面 + 明るい縁」で、明るいバーは「SPACE 次に進む」の1本だけ。
+     **勝ちと負けで塗りの居場所が入れ替わらない**ぶん、画面の読み方も1つになる。
      【詳細度】上の指定は `#resultScreen #resultActions > #replayBtn`(ID3つ+子)なので、
-     打ち消す側は必ずそれより強く書く。属性/:has() を足して勝たせてある。
+     打ち消す側は必ずそれより強く書く。:has() を足して勝たせてある。
      :has() が効かない環境では**従来どおり操作バーが塗られる**(塗り0個にはならない)。 */
-  /* 負けの1枚目 … 面は落とすが、**どれを押すかは残す**。塗りではなくアクセントの枠と字にして、
-     順位の札(塗り)より必ず一段暗くする。全部同じ暗い面にすると
-     「次にどこへ行くのか」が画面から消える(その事故を避けるための約束が元の指定)。 */
-  #resultScreen[data-tone="lose"] #resultActions > #replayBtn,
-  #resultScreen.lose #resultActions > #replayBtn{
-    color:var(--rs-accent); background:rgba(255,255,255,0.10);
-    border:1px solid var(--rs-accent); font-weight:700;
-  }
   /* 登録待ち … こちらは「登録する」が塗りで立っているので、操作バーは完全に控えめへ。
      ここでアクセントの枠を残すと、答えるべき操作と competing する。 */
   #resultInner:has(> #mastermonRegisterPrompt:not(.hidden)) #resultActions > #replayBtn,
