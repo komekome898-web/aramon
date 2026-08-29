@@ -754,9 +754,12 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
       <div class="rs-col-head">戦績</div>
       <div class="resultStatsRow">
         <div class="resultStats">
-          <div class="rs-in"><div class="num" id="statKills">0</div><div class="lbl">撃破数</div></div>
-          <div class="rs-in"><div class="num" id="statDamage">0</div><div class="lbl">与ダメージ</div></div>
-          <div class="rs-in"><div class="num" id="statTime">00:00</div><div class="lbl">生存時間</div></div>
+          <!-- 【ラベルが先・数値があと】小さい灰のラベルの下に大きい数値、その下に細い罫
+               (APEXの並び)。CSSの column-reverse で入れ替えると、入りきらないときの
+               溢れ方が逆向きになって行が溢れるので、**並び順はここで作る。** -->
+          <div class="rs-in"><div class="lbl">撃破数</div><div class="num" id="statKills">0</div></div>
+          <div class="rs-in"><div class="lbl">与ダメージ</div><div class="num" id="statDamage">0</div></div>
+          <div class="rs-in"><div class="lbl">生存時間</div><div class="num" id="statTime">00:00</div></div>
         </div>
       </div>
       <!-- チーム戦のときだけ出す小隊の成績(名前・キル・状態)。中身は showResultNow が書く -->

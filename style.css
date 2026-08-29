@@ -2213,7 +2213,7 @@
      【4隅そろえる】1か所だけ落とすと「少しだけ斜め」に見えて中途半端になる。
      同じ形を帯・ボタン・札にも使って、画面ぜんぶの共通言語にする。 */
   #resultScreen .rs-panel{ position:relative; min-width:0; min-height:0;
-    padding:var(--rs-gap-m) var(--rs-gap-l); text-align:left; }
+    padding:var(--rs-gap-s) var(--rs-gap-l); text-align:left; }
   #resultScreen .rs-panel::before,
   #resultScreen .rs-panel::after{
     content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
@@ -2308,14 +2308,21 @@
      2〜6px はみ出していた(枠に overflow:hidden を足した瞬間に角が切れる形)。
      枠は縦の余りを吸い、足りなければ最初に縮む(R3の「装飾がいちばん先に削れる」)。 */
   #resultScreen .rs-hero-art{
-    flex:1 1 auto; min-height:0; margin-top:var(--rs-gap-m);
-    align-self:center; position:relative;
-    aspect-ratio:1 / 1;                                   /* 高さが決まれば幅も決まる */
-    max-height:clamp(48px, calc(34 * var(--vh)), 148px);  /* 大きくなりすぎない上限 */
-    max-width:100%;
+    /* 【枠に aspect-ratio も割合の高さも持たせない】どちらも「幅から高さ」「高さから幅」の
+       行き来ができてしまい、flexが決めた高さを絵が押し返して列ごと数十px溢れた(実測)。
+       枠は**縦の列**にして、縮むのは絵そのものに任せる。 */
+    flex:0 1 auto; min-height:0; margin-top:var(--rs-gap-m);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
   }
+  /* 大きさは高さだけで決め、幅は aspect-ratio に任せる。
+     縦の列の中で flex:0 1 auto + min-height:0 なので、詰まれば絵自身が縮む。 */
   #resultScreen .result-monster-icon{
-    position:absolute; inset:0; width:100%; height:100%;
+    flex:0 1 auto; min-height:0;
+    height:clamp(44px, calc(30 * var(--vh)), 130px);
+    /* 枠が縮んだときに絵も一緒に縮む止め。これが無いと枠だけ縮んで絵が数px残り、
+       枠に overflow:hidden を足した瞬間に丸い縁が切れる形になる(実測3〜5px) */
+    max-height:100%;
+    width:auto; aspect-ratio:1 / 1; max-width:100%;
     margin:0; border-width:2px;
   }
   /* 試合ハイライト(1試合1つだけ)。長い文言は自分で「…」に切る */
@@ -2341,16 +2348,19 @@
      【APEXから取る】統計は**箱で囲まない**。小さい灰のラベル + 大きい数値 + 下に細い罫。
      【行を伸ばして余りを吸わせない】各行は中身ぶんの高さのまま上に詰め、
      余った縦は列の下に1つの塊で残す(APEXのXP内訳の表と同じ)。 */
-  #resultScreen .resultStatsRow{
-    flex:0 0 auto; margin-top:0; gap:0;
-    display:flex; align-items:stretch; justify-content:flex-start;
-  }
+  /* 【入れ子のflexを増やさない】共通の .resultStatsRow は align-items:center の
+     row-flex で、そのままだと中の縦積みの高さが決まらず3行が0pxに潰れた(実際に消えた)。
+     ここでは素のブロックに戻し、縦積みは .resultStats 1枚だけで作る。 */
+  #resultScreen .resultStatsRow{ flex:0 0 auto; display:block; margin-top:0; gap:0; }
   #resultScreen .resultStats{
-    flex:1 1 auto; min-width:0; display:flex; flex-direction:column; flex-wrap:nowrap; gap:0; width:100%;
+    display:flex; flex-direction:column; flex-wrap:nowrap; gap:0; width:100%;
   }
+  /* 【column-reverse を使わない】DOMを「ラベル→数値」の順に並べ替えて素直な column にした。
+     column-reverse は中身が枠に入りきらないときの溢れ方が逆向きになり、
+     どの端末でも9pxぶん行が溢れて見えた(実測)。並び順はHTML側で作る。 */
   #resultScreen .resultStats > div{
     flex:0 0 auto; min-width:0; text-align:left;
-    display:flex; flex-direction:column-reverse;   /* DOMは数値→ラベルの順。見た目はラベルが上 */
+    display:flex; flex-direction:column;
     padding:var(--rs-gap-s) 0; border-bottom:1px solid var(--rs-line);
   }
   #resultScreen .resultStats div{ text-align:left; }
@@ -2414,7 +2424,7 @@
   }
   #resultScreen .rs-led-val.rs-led-off{ color:var(--rs-dim); opacity:0.6; }
   #resultScreen .rs-led-sub{
-    flex:0 0 auto; margin-top:var(--rs-gap-m); padding-top:var(--rs-gap-s);
+    flex:0 0 auto; margin-top:var(--rs-gap-s); padding-top:var(--rs-gap-s);
     border-top:1px solid var(--rs-line); background:none;
   }
   #resultScreen .rs-led-sub .rs-led-name{ color:var(--rs-dim); letter-spacing:1.4px; font-size:10px; }
@@ -2433,8 +2443,8 @@
   /* 【合計は特大で単独で立たせる】APEXの「総合獲得XP」に当たる主役 */
   #resultScreen .rs-led-total{
     flex:0 0 auto; display:flex; align-items:baseline; justify-content:space-between;
-    gap:var(--rs-gap-m); margin-top:var(--rs-gap-m);
-    padding:var(--rs-gap-m) var(--rs-gap-s) 0; border-top:1px solid var(--rs-line-strong);
+    gap:var(--rs-gap-m); margin-top:var(--rs-gap-s);
+    padding:var(--rs-gap-s) var(--rs-gap-s) 0; border-top:1px solid var(--rs-line-strong);
   }
   #resultScreen .rs-led-total-lbl{
     flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-weight:700;
@@ -2487,7 +2497,7 @@
      「壊れている」ように見えるので、高さは2行ぶんに固定し(-webkit-line-clamp)、
      縦が足りないときに譲るのはバッジ棚のほう(R3で小隊/バッジのほうが下)。 */
   #resultScreen .mastermon-result-info{
-    flex:0 0 auto; margin-top:var(--rs-gap-m); padding:var(--rs-gap-s) var(--rs-gap-m);
+    flex:0 0 auto; margin-top:var(--rs-gap-s); padding:var(--rs-gap-s) var(--rs-gap-m);
     font-size:10px; text-align:left;
     border-radius:0; border:0; border-left:2px solid var(--rs-accent);
     color:var(--rs-accent); background:linear-gradient(90deg, rgba(255,255,255,0.09), rgba(255,255,255,0));
@@ -2495,7 +2505,7 @@
   }
   /* 【APEXから取る】「次の報酬」を先に見せる */
   #resultScreen .rs-next{
-    flex:0 0 auto; margin-top:var(--rs-gap-m); padding:var(--rs-gap-s) var(--rs-gap-m);
+    flex:0 0 auto; margin-top:var(--rs-gap-s); padding:var(--rs-gap-s) var(--rs-gap-m);
     display:flex; align-items:baseline; gap:var(--rs-gap-m);
     background:rgba(255,255,255,0.045);
     clip-path:polygon(
@@ -2520,7 +2530,7 @@
      【flex-basis は auto】列のほかの行は全部 flex-shrink:0 なので、縮むのはここだけ。
      中身が入る高さがあればそのぶんだけ取り(上詰め)、足りなければ21pxまで縮んで送る。 */
   #resultScreen .result-badges{
-    flex:0 1 auto; min-height:21px; margin-top:var(--rs-gap-m); max-width:100%;
+    flex:0 1 auto; min-height:21px; margin-top:var(--rs-gap-s); max-width:100%;
     justify-content:flex-start; align-content:flex-start; gap:var(--rs-gap-s);
     overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
@@ -2639,7 +2649,10 @@
      opacity:0 を既定にすると、ui.js側の演出が入るまで画面が真っ白になり、
      layout_test の vis() が opacity==='0' を不可視として飛ばすので**検査からも消える**。
      使い方: #resultScreen に .rs-seq-run を付けてから、出したい要素に .rs-shown を足す。 */
-  #resultScreen.rs-seq-run .rs-in{ opacity:0; transform:translateY(9px); }
+  /* 【ずらすのは「上」へ】下へずらすと、まだ出していない要素の transform が
+     枠の下側へはみ出したぶんとして数えられ、演出の途中だけ列がスクロールする
+     (実測で全端末・全場面に9pxの溢れが出た)。上へのはみ出しは数えられない。 */
+  #resultScreen.rs-seq-run .rs-in{ opacity:0; transform:translateY(-9px); }
   #resultScreen.rs-seq-run .rs-in.rs-shown{
     opacity:1; transform:none;
     transition:opacity 0.26s ease, transform 0.3s cubic-bezier(0.18,0.84,0.28,1);

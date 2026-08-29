@@ -5889,7 +5889,7 @@ document.getElementById('raidFindRoomBtn').addEventListener('click', ()=>{
 function raidShowResult(defeated, dmg, prevBest){
   /* 【必須】前の試合の演出を断つ(showResultNow の頭と同じ理由) */
   rsClearSequence();
-  _rsLedger = null; _rsExp = null;
+  _rsLedger = null; _rsExp = null; _rsPlainReward = null;
   game.over = true;
   game.started = false;
   joinInProgress = false;
@@ -6366,7 +6366,7 @@ function resultGoPage(idx, opts){
   /* 2枚目の演出は**送ったときに**走らせる(最初から走らせない)。
      instant は検査・撮影ツールやページの初期化からの切替なので、待たずに完成形にする。 */
   if(resultPageIdx === 1){
-    if(instant) finishResultSequence();
+    if(instant){ _rsPage2Done = true; finishResultSequence(); }
     else playResultPage2Sequence();
   }
 }
@@ -6401,7 +6401,7 @@ function showResultNow(isWin, placement){
   /* 【必須】前の試合の演出を断つ。残っていると2試合目で前のタイマーが走り出す
      (後始末はここ / raidShowResult / ⟳もう一度 / トップ画面へ / raidExit の5か所) */
   rsClearSequence();
-  _rsLedger = null; _rsExp = null;
+  _rsLedger = null; _rsExp = null; _rsPlainReward = null;
   game.over=true;
   game.started=false;
   joinInProgress = false;
@@ -6511,8 +6511,11 @@ function showResultNow(isWin, placement){
       arena: !!game.arena,
     });
     addWallet(bd.gold, bd.dia);
-    // 射撃訓練場は勝敗が無い画面なので台帳を出さない(付与そのものは従来どおり)
+    /* 射撃訓練場は勝敗が無い画面なので**内訳**は出さない(付与そのものは従来どおり)。
+       ただし額まで消すと、もらえているのに画面に一切出なくなる。
+       内訳の代わりに従来の1行(「報酬 🪙+N 💎+N」)だけ残す。 */
     _rsLedger = game.trainingRange ? null : { bd, note:'', bonus:[] };
+    _rsPlainReward = game.trainingRange ? { gold: bd.gold, dia: bd.dia } : null;
     updateAccountBar();
   }
   setResultMonsterIcon(player.element, { win: !!isWin });
@@ -6630,6 +6633,9 @@ let _rsRaf = 0;
 let _rsSeqOn = false;         // #resultScreen に .rs-seq-run を付けているか
 let _rsPage2Done = true;      // 2枚目の演出を済ませたか(送ったときに1回だけ走らせる)
 let _rsLedger = null;         // いま出している報酬の内訳({ bd, noRecord, note, bonus })。null=台帳を出さない
+/* 台帳を出さない画面(射撃訓練場)でも、もらった額だけは1行で出す。
+   ここが null だと「もらえているのに画面のどこにも出ない」状態になる。 */
+let _rsPlainReward = null;    // { gold, dia } または null
 let _rsExp = null;            // EXPバーに出す値(handleMastermonPostMatch が控える)
 let _rsBadgeSe = null;        // バッジのSEを鳴らすか('best' / 'celebrate' / null)
 let _rsIsRaid = false;        // 操作バーの出し分けに使う「レイドか」の1軸
@@ -6662,9 +6668,17 @@ function rsCountUp(el, to, fmt){
   const f = fmt || (v=> String(Math.round(v)));
   const set = v=>{ el.textContent = f(v); };
   const now = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-  _rsCounters.push({ t0:now, ms:RS_COUNT_MS, from:0, to, set });
+  const c = { t0:now, ms:RS_COUNT_MS, from:0, to, set };
+  _rsCounters.push(c);
   set(0);
   if(!_rsRaf) _rsRaf = requestAnimationFrame(rsTick);
+  /* 【保険】requestAnimationFrame が1度も来ない場面がある(裏に回ったタブ、
+     フレームを描かないヘッドレス)。来なければ数字が0のまま残るので、
+     時間で必ず最終値へ着かせる。**演出の失敗が「値が消える」に化けないための線。** */
+  _rsTimers.push(setTimeout(()=>{
+    const i = _rsCounters.indexOf(c);
+    if(i >= 0){ c.set(c.to); _rsCounters.splice(i, 1); }
+  }, RS_COUNT_MS + 160));
 }
 /* 段を1つ予約する。予約と同時に「中身」も控えておき、早送り(finishResultSequence)では
    残っている中身をその場で順番に実行する。時間を待たずに同じ完成形へ着く。 */
@@ -6705,6 +6719,8 @@ function rsExpFillToFinal(){
 /* タップで早送り。残っている段をその場で全部実行し、カウントアップも最終値にする。
    .rs-seq-run を外すので、まだ出していない .rs-in も全部見える状態になる。 */
 function finishResultSequence(){
+  // 何も走っていないときは触らない(タップのたびに再レイアウトを起こさない)
+  if(!_rsSeqOn && !_rsSteps.length && !_rsCounters.length) return;
   for(const t of _rsTimers) clearTimeout(t);
   _rsTimers.length = 0;
   const steps = _rsSteps.slice();
@@ -6722,7 +6738,9 @@ function finishResultSequence(){
   const scr = document.getElementById('resultScreen');
   if(scr) scr.classList.remove('rs-seq-run', 'rs-panels-in');
   _rsSeqOn = false;
-  _rsPage2Done = true;
+  /* 【_rsPage2Done はここで立てない】早送りは「今走っている段」を終わらせるだけ。
+     立ててしまうと、2枚目へ送る操作(詳細›のタップ・横スワイプ)そのものが
+     pointerdown で早送りを起こすので、**2枚目の演出が一度も走らなくなる。** */
 }
 /* 「時間 12:34」のような既に書かれている文字から、カウントアップの目標値を読む。
    showResultNow / raidShowResult が書いた値をそのまま使うので、
@@ -6813,6 +6831,9 @@ function renderResultLedger(){
     // 台帳を出さない試合。**前の試合の合計を残さない**(次に出したとき一瞬だけ古い額が見える)
     subEl.classList.add('hidden');
     totEl.classList.add('hidden');
+    /* 内訳は出さないが額は出す(射撃訓練場)。ここを消すと、もらえているのに
+       画面のどこにも出ない状態になる。 */
+    if(lineEl && _rsPlainReward) lineEl.textContent = `報酬　🪙 +${_rsPlainReward.gold}　💎 +${_rsPlainReward.dia}`;
     if(goldEl){ delete goldEl.dataset.rsTo; goldEl.textContent = '🪙 --'; }
     if(diaEl){  delete diaEl.dataset.rsTo;  diaEl.textContent  = '💎 --'; }
     return;
@@ -6988,11 +7009,19 @@ function playResultSequence(){
      (設計の「バッジ段」から1つ手前へ ―― 鳴らない経路を作らないための判断)。 */
   rsStep(1000, ()=> rsPlayBadgeSe());
 }
-/* 2枚目の演出。台帳の行を順に出し、合計とEXPバーで締める。 */
+/* 2枚目の演出。台帳の行を順に出し、合計とEXPバーで締める。
+   **1枚目の演出が早送りで終わっていても走る** ―― 2枚目へ送る操作(詳細›のタップ・
+   横スワイプ)自体が早送りを起こすので、ここで演出の下ごしらえをやり直す。
+   1枚目はもう見せ終わっているので .rs-shown を付けたままにし、2枚目だけ外す。 */
 function playResultPage2Sequence(){
   if(_rsPage2Done) return;
   _rsPage2Done = true;
-  if(!_rsSeqOn) return;   // 演出をしていない(検査/撮影ツール)ならもう完成形が入っている
+  const scr = document.getElementById('resultScreen');
+  if(!scr || scr.classList.contains('hidden')) return;
+  document.querySelectorAll('#resultPage1 .rs-in').forEach(el=> el.classList.add('rs-shown'));
+  document.querySelectorAll('#resultPage2 .rs-in').forEach(el=> el.classList.remove('rs-shown'));
+  scr.classList.add('rs-seq-run', 'rs-panels-in');
+  _rsSeqOn = true;
   const rows = Array.prototype.slice.call(document.querySelectorAll('#rsLedgerRows .rs-led-row'));
   rows.forEach((row, i)=> rsStep(60 + i*RS_ROW_STAGGER, ()=>{
     row.classList.add('rs-shown');
