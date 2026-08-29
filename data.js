@@ -3998,6 +3998,57 @@ const GOLD_MULTI_MULT = 2;       // マルチプレイはゴールド2倍
 const DIA_MATCH_BASE = 8;        // 参加報酬
 const DIA_CHAMPION_BONUS = 15;   // チャンピオンボーナス
 
+/* 試合報酬の内訳。**額の式はここ1か所だけに置く。**
+   通常の試合とレイドでそれぞれ別に書いていたせいで、内訳が画面に残らず、
+   片方だけ直す事故も起きうる形だった。リザルトは rows をそのまま並べ、
+   財布へ入れるのは gold / dia をそのまま渡す(表示と加算を2か所に書かない)。
+
+   rows の作り:
+   - 素点の行 = { label, gold, dia }。**倍率を掛ける前の額**を持つ。
+   - 倍率の行 = { label, mult, on }。on は倍率が効く側('gold' / 'dia' / 'both')。
+     ゴールドだけ2倍・ダイヤは等倍、といった差が実際にあるので効く側を持たせる。
+   合計は「素点の合計に、rows の順で倍率を掛けて最後に丸める」。
+   掛ける順番は元の式と同じにしてあるので、額は1の位まで変わらない。 */
+function matchRewardBreakdown(o){
+  o = o || {};
+  const kind    = o.kind === 'raid' ? 'raid' : 'br';
+  const kills   = Math.max(0, Math.round(o.kills || 0));
+  const damage  = Math.max(0, o.damage || 0);
+  const isWin   = !!o.isWin;
+  const mutMult = (typeof o.mutMult === 'number' && isFinite(o.mutMult)) ? o.mutMult : 1;
+  // レイドのデモなど「記録が残らない試合」は報酬なし。内訳も出さない
+  if(o.noRecord) return { rows: [], gold: 0, dia: 0 };
+
+  const rows = [];
+  rows.push({ label:'参加', gold: GOLD_MATCH_BASE, dia: DIA_MATCH_BASE });
+
+  if(kind === 'raid'){
+    const goldFromDmg = Math.min(RAID_RUN_GOLD_MAX, Math.round(damage * RAID_RUN_GOLD_PER_DMG));
+    const diaFromDmg  = Math.min(RAID_RUN_DIA_MAX,  Math.round(damage * RAID_RUN_DIA_PER_DMG));
+    if(goldFromDmg || diaFromDmg) rows.push({ label:'与えたダメージ', gold: goldFromDmg, dia: diaFromDmg });
+    if(o.defeated) rows.push({ label:'討伐成功', gold: GOLD_CHAMPION_BONUS, dia: DIA_CHAMPION_BONUS });
+    if(o.isMulti) rows.push({ label:'みんなで挑戦', mult: GOLD_MULTI_MULT, on:'gold' });
+    if(mutMult !== 1) rows.push({ label:'報酬アップ中', mult: mutMult, on:'both' });
+  } else {
+    if(kills > 0) rows.push({ label:`撃破 ×${kills}`, gold: kills * GOLD_PER_KILL });
+    if(isWin) rows.push({ label:'チャンピオン', gold: GOLD_CHAMPION_BONUS, dia: DIA_CHAMPION_BONUS });
+    if(o.isMulti) rows.push({ label:'みんなで対戦', mult: GOLD_MULTI_MULT, on:'gold' });
+    if(o.realMap) rows.push({ label:'リアルマップ', mult: REAL_MAP_REWARD_MULT, on:'both' });
+    if(mutMult !== 1) rows.push({ label:'報酬アップ中', mult: mutMult, on:'both' });
+    if(o.arena) rows.push({ label:'アリーナ', mult: GOLD_ARENA_MULT, on:'gold' });
+  }
+
+  let gold = 0, dia = 0;
+  for(const r of rows){ if(r.mult === undefined){ gold += (r.gold||0); dia += (r.dia||0); } }
+  // 倍率は rows に並んだ順で掛ける(元の式と同じ順番。順番を変えると端数がずれる)
+  for(const r of rows){
+    if(r.mult === undefined) continue;
+    if(r.on !== 'dia')  gold *= r.mult;
+    if(r.on !== 'gold') dia  *= r.mult;
+  }
+  return { rows, gold: Math.round(gold), dia: Math.round(dia) };
+}
+
 /* レイド限定アイテムのアイコン(SVG)。
    絵文字だと「実」と見分けが付かず、貴重さも伝わらないので専用の絵にする。
    複数個が同時に画面へ出る(バッグの一覧・説明・ガチャ・報酬行)ので、
