@@ -2396,8 +2396,9 @@
        以前の失敗は「灰色地に灰色の字」で、順位がいちばん弱い要素になっていたこと。
        順位帯の差は縁と上明かりの色で出し、数字の読みやすさは落とさない。
        【2026-08-29(6巡目)に一段明るくした】負けの画面で「トップ画面へ」の塗りより
-       主役の順位が暗かった(批評)。塗りの明度を落とすのと対で、こちらは上げる。 */
-    --rs-band:#e2ebf7; --rs-band2:#5a6c85; --rs-band-glow:rgba(175,200,235,0.36);
+       主役の順位が暗かった(批評)。塗りの明度を落とすのと対で、こちらは上げる。
+       **銀より必ず一段暗く保つこと**(近づけると金/銀/無彩の3段が読めなくなる)。 */
+    --rs-band:#d3deee; --rs-band2:#4e5f76; --rs-band-glow:rgba(160,185,220,0.28);
   }
   #resultScreen .rs-rank-card[data-band="gold"]{
     --rs-band:#ffd76a; --rs-band2:#f4c430; --rs-band-glow:rgba(255,183,3,0.50);
@@ -2759,13 +2760,15 @@
      合計だけは margin-top:auto でカードの下端へ固定し、余った縦はその1か所へまとめる
      (行間へ配ると表が浮島に分解する。2026-08-29の失敗)。 */
   #resultScreen .rs-ledger-rows{
-    flex:0 1 auto; min-height:0; display:flex; flex-direction:column;
+    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
     overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
-  /* 【行を伸ばさない】高さは --rs-row-h の決め打ち。縦が余っても行間は広がらない。
-     足りないときだけ全行が同じ割合で縮む(flex-shrink 側だけ生かす)。 */
+  /* 【余りは行が同じだけ引き受ける ―― 2026-08-29(6巡目)】高さの基準は --rs-row-h。
+     カードが段いっぱいになったぶんの余りは、**全行が同じだけ伸びて**引き受ける
+     (行間へ配らない=ゼブラの帯は隙間なく続いたまま)。残りは下の合計の面が受ける。
+     **縮ませない**(flex-shrink:0)―― 足りないときは従来どおり明細の中だけを送る。 */
   #resultScreen .rs-ledger-rows > .rs-led-row{
-    flex:0 0 auto; height:var(--rs-row-h); align-items:center;
+    flex:1 0 var(--rs-row-h); height:auto; align-items:center;
   }
   #resultScreen .rs-led-row{
     display:flex; align-items:center; gap:var(--rs-gap-m);
@@ -2816,7 +2819,7 @@
      **下端へ飛ばして穴を作らない**(margin-top:auto は使わない)。
      伸びるのはこの面そのもので、中の「合計/額」は面の縦中央に座る。 */
   #resultScreen .rs-led-total{
-    flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:space-between;
+    flex:1 0 auto; min-height:0; display:flex; align-items:center; justify-content:space-between;
     gap:var(--rs-gap-m);
     padding:var(--rs-gap-m) var(--rs-gap-s) 0; border-top:1px solid var(--rs-line-strong);
   }
@@ -3013,6 +3016,8 @@
      ―― チップの中の単色SVG(1.28em=11.5px)が行箱をわずかに押し広げて実測20.27pxになる。
      段の高さを実測より小さく見積もると、3段目が0.8pxだけ切れて「中途半端に切れた棚」になる。 */
   #resultScreen{ --rs-badge-row:21px; }
+  /* 【棚に余りを吸わせない】flex:1 1 auto にすると棚だけが高くなり、チップの最終段と
+     棚の下端の間に無地が入る(=棚の中に穴)。余りを受けるのはこの列の最終行のほう。 */
   #resultScreen .result-badges{
     flex:0 1 auto; margin-top:var(--rs-gap-s); max-width:100%;
     max-height:calc(3 * var(--rs-badge-row) + 2 * var(--rs-gap-s));
@@ -3028,10 +3033,17 @@
   /* 1行きり。**縮めない**(縮めると行の途中で切れて壊れて見える) */
   /* この列の最終行。**カードの下端へ固定**して、余った縦をこの1か所へまとめる
      (段の間へ配ると育成の3ブロックが離れ小島になる。2026-08-29の失敗) */
+  /* 【余った縦はここが引き受ける ―― 2026-08-29(6巡目)】左カードの「合計」と同じ扱い。
+     カードが段いっぱいになったぶんの余りを**この列の最終行が面として受け**、
+     中の1行は面の縦中央に座る。**棚や行間へ配らない**(棚の中に穴ができる/表が散る)。
+     左右のカードで受け先の位置がそろうので、下半分に同じ高さの静かな場ができる。 */
   #resultScreen #scoreSubmitStatus{
-    flex:0 0 auto; margin-top:0; padding-top:var(--rs-gap-s);
-    min-height:0; font-size:9px; text-align:left;
-    color:var(--rs-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    flex:1 0 auto; margin-top:0; padding-top:var(--rs-gap-s);
+    display:flex; align-items:center;
+    min-height:0; font-size:9px; line-height:1.35; text-align:left;
+    /* 縦中央にするため flex にした。中の文字は無名のflex項目になり
+       text-overflow が効かないので、**1行で切らずに折り返す**(場は広いので入る)。 */
+    color:var(--rs-dim); white-space:normal; overflow:hidden;
   }
   /* 【登録の対話が出ている間は送信状態の行を出さない】
      667×320 で登録の帯が出ると右列は147pxしかなく、この1行(18px)を残すと
