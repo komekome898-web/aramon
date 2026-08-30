@@ -749,8 +749,12 @@ const SIGNATURE_MOVES = {
   zan: [
     { name:'ソニックナイフ', tier:1, color:'#8fa0c8', range:680, dmg:20, cooldown:0.8, gutsCost:8, projSpeed:640, hitR:11, splash:64, icon:'🗡️' },
     { name:'フォルターブリッツ', tier:2, color:'#8fa0c8', range:1250, dmg:11, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:6, burst:3, burstGap:0.1, icon:'🗡️' },
+    /* burstSpread: 連射の広がり(1発ごとの角度差・rad)。既定の0.05のままだと
+       発数を増やしたぶんだけ扇が広がってしまうので、**発数が増えても扇の幅が
+       同じくらいになる**値を明示する(7発 × 0.035 = 約12度)。
+       疾風(zan_ssr)は10発なので、同じ幅になるよう SSR_SKIN_TIER3 側で 0.026 にしてある。 */
     { name:'ダークホウスト', tier:3, color:'#2a2d40', dmg:24, cooldown:2.0, gutsCost:24, projSpeed:900,
-      range:1340, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent', icon:'🌙', seStyle:'darkHoust' },
+      range:1340, hitR:22, burst:7, burstGap:0.09, burstSpread:0.035, projStyle:'crescent', icon:'🌙', seStyle:'darkHoust' },
   ],
   // ピクシー: 特性で移動速度1.2倍・被ダメ1.2倍(高機動・低耐久のグラスキャノン)
   pixie: [
@@ -1085,7 +1089,10 @@ const SSR_SKIN_TIER3 = {
   /* バジリスエゾー: 技の絵は素の「サイコキネシス」のまま。**睨む赤い眼を上へ重ねるだけ**の印。
      描くのは render.js の drawGlareEyesFx 1か所(画像は images/fx_glare_eyes.png)。 */
   suezo_ssr:      { name:'真瞳術', dmgMult:1.15, move:{ glareEyes:true } }, /*@suezo_ssr*/
-  zan_ssr:        { name:'月光ノ刻', dmgMult:1.15 }, /*@zan_ssr*/
+  /* 疾風: 素の「ダークホウスト」(7連射)を10連射にする。広がりは素と同じ幅に見えるよう
+     0.035→0.026 へ下げる(10発 × 0.026 = 約13度で、素の7発とほぼ同じ扇)。
+     **威力・射程・弾速は素のまま**(dmgMult 1.15 は従来どおり別途掛かる)。 */
+  zan_ssr:        { name:'月光ノ刻', dmgMult:1.15, move:{ burst:10, burstSpread:0.026 } }, /*@zan_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1272,7 +1279,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-30', items:[
-    { t:'✨ SSRスキン「疾風」が登場しました！', g:['feature','monster'] },
+    { t:'✨ SSRスキン「疾風」が登場しました！ tier3「月光ノ刻」は10連射。あわせてザンの「ダークホウスト」も5連射→7連射になりました。どちらも1発ごとに少しだけ横へ広がって飛びます(扇の幅は約12度で、発数が違っても広がりは同じくらいです)', g:['feature','monster','balance'] },
   ]},
   { date:'2026-08-29', items:[
     { t:'🏆 リザルト画面を作り直しました。順位は左端の大きな札に出て、何人中何位か(チーム戦はチーム順位)まで分かります。1位は金、2〜3位は銀に札の色が変わります。これまでは入り切らないぶんを画面ごと縮めていました', g:['general'] },
