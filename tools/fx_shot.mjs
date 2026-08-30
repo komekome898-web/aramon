@@ -78,6 +78,11 @@ const VIEW = opt('view', 'front');
 const SKIN = opt('skin', '');
 // --variant <番号>: 確率で見た目と効果が変わる技(真瞳術)の、どの当たりを撮るか
 const VARIANT = opt('variant', '');
+/* --dist / --pitch: カメラの引きと見下ろし角。**批評のときは既定のまま**にする
+   (技どうしを同じ条件で比べられなくなる)。トレーラー用に技を画面いっぱいへ
+   寄せたいときだけ使う。dist を小さくすると近づき、pitch を大きくすると見下ろす。 */
+const CDIST  = opt('dist', '');
+const CPITCH = opt('pitch', '');
 /* --shake: カメラのピン留めを外して撮る。
    通常はコマごとにカメラを固定して「技の見え方以外の差」を消しているが、
    その副作用で**技が起こした画面揺れも必ず打ち消される**(採点表8が原理的に測れない)。
@@ -247,6 +252,7 @@ const DRIVER = `(function(){
        撃つ向き(facingAngle)は常に +x のまま。カメラだけを回す。            */
     camState.yaw = (o.view === 'side') ? Math.PI/2 : 0;
     camState.pitch = (o.pitch==null) ? 0.16 : o.pitch;
+    if(o.dist != null) camState.distBehind = o.dist;
     if(typeof updateCamera === 'function') updateCamera();
     camPos.x = me.x - Math.cos(camState.yaw)*camState.distBehind;
     camPos.y = me.y - Math.sin(camState.yaw)*camState.distBehind;
@@ -449,8 +455,10 @@ for(const [el, tiers] of byElement){
   for(const tier of tiers){
     try {
       await freshPage();
-      const setup = await page.evaluate(([e,m,s,v,sk,np])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v, skin:sk, noPin:np }),
-                                        [el, MAP, SEED, VIEW, SKIN, NOPIN]);
+      const setup = await page.evaluate(([e,m,s,v,sk,np,di,pi])=> window.__fx.setup({ element:e, mapKey:m, seed:s, view:v, skin:sk, noPin:np,
+                                                                                      dist:di, pitch:pi }),
+                                        [el, MAP, SEED, VIEW, SKIN, NOPIN,
+                                         CDIST ? parseFloat(CDIST) : null, CPITCH ? parseFloat(CPITCH) : null]);
       if(!setup || !setup.ok){ errors.push(`${el}:t${tier} setup失敗`); continue; }
       report.setups = report.setups || {};
       report.setups[`${el}_t${tier}`] = setup;
