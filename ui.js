@@ -7091,6 +7091,17 @@ function renderResultLedger(){
    呼ぶ前のレベルとEXPは handleMastermonPostMatch 側で控えてもらい、ここは表示だけを持つ。
 ===================================================================== */
 function rsExpPct(exp, need){ return (need > 0) ? Math.max(0, Math.min(100, exp / need * 100)) : 0; }
+/* 【上限に達しているか】`capped` は **試合前から上限だった**ときにしか立たない
+   (awardMastermonExp が経験値の代わりにゴールドを返した=goldGain>0 の場合)。
+   **この試合で上限に達した**とき(例 94→100)は capped が false のままなので、
+   バーが「Lv100 → Lv101」と存在しないレベルを出し、しかも次のレベルぶんが
+   0/5,530 になって空のまま残っていた(実機報告)。
+   **見せ方の判定はレベルそのもので決める。** 判定はこの1か所だけ。 */
+function rsAtCap(d){
+  if(!d) return false;
+  if(d.capped) return true;
+  return (typeof MASTERMON_LEVEL_CAP === 'number') && d.toLevel >= MASTERMON_LEVEL_CAP;
+}
 function renderResultExpBar(){
   const val  = document.getElementById('rsExpVal');
   const fill = document.getElementById('rsExpFill');
@@ -7113,8 +7124,10 @@ function renderResultExpBar(){
     setFinal(0);
     return;
   }
-  if(d.capped){
-    // レベル上限。バーは満タン固定にして、EXPの代わりにゴールドが入ったことを添える
+  if(rsAtCap(d)){
+    /* レベル上限。バーは満タン固定。**この試合で到達した場合もここへ来る**
+       (次のレベルは存在しないので `Lv 101` を出さない)。
+       もらった経験値そのものは下の表(renderResultExpInfo)が出す。 */
     val.textContent = 'MAX';
     lv.textContent = 'Lv ' + d.toLevel;
     lvN.textContent = 'MAX';
@@ -7189,22 +7202,27 @@ function playExpBarSequence(){
   const fill = document.getElementById('rsExpFill');
   const val  = document.getElementById('rsExpVal');
   const d = _rsExp;
+  // 試合前から上限だった場合は動かす物が無い。**この試合で到達した場合は動かす**(下で満タンに着地させる)
   if(!fill || !d || d.capped) return;
+  const atCap = rsAtCap(d);
   const setW = (p)=>{ fill.style.width = Math.max(0, Math.min(100, p)).toFixed(1) + '%'; };
   // 伸び始めは「試合前の位置」から
   fill.style.transition = 'none';
   setW(rsExpPct(d.fromExp, d.fromNeed));
   void fill.offsetWidth;
   fill.style.transition = '';
-  if(d.levelsGained > 0){
+  /* 上限に達した試合は**満タンで終わる**。次のレベルは無いので 0 へ戻さない
+     (戻すとバーが空のまま残り、上限に着いたのに何も伸びていないように見える)。 */
+  const finalPct = atCap ? 100 : rsExpPct(d.toExp, d.toNeed);
+  if(d.levelsGained > 0 && !atCap){
     // レベルアップは満タンまで伸ばして弾け、0から次のレベルぶんを続けて伸ばす
     rsStep(20,  ()=> setW(100));
     rsStep(300, ()=>{ fill.style.transition = 'none'; setW(0); void fill.offsetWidth; fill.style.transition = ''; });
-    rsStep(340, ()=> setW(rsExpPct(d.toExp, d.toNeed)));
+    rsStep(340, ()=> setW(finalPct));
   } else {
-    rsStep(20, ()=> setW(rsExpPct(d.toExp, d.toNeed)));
+    rsStep(20, ()=> setW(finalPct));
   }
-  if(val) rsCountUp(val, d.toExp, v=> rsNum(v) + ' / ' + rsNum(d.toNeed));
+  if(val && !atCap) rsCountUp(val, d.toExp, v=> rsNum(v) + ' / ' + rsNum(d.toNeed));
 }
 /* 2枚目(獲得したもの)を丸ごと描き直す。**呼ぶのは showResultNow / raidShowResult の
    終わり際と relayoutResult の3か所だけ。** handleMastermonPostMatch がEXPと
