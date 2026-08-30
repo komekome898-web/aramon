@@ -6665,12 +6665,20 @@ function showResultNow(isWin, placement){
       const el = document.getElementById(id);
       if(el && el.parentElement) el.parentElement.classList.toggle('rs-best', !!on);
     };
-    mark('statKills',  player.kills > 0 && player.kills > _prevBestKills);
-    mark('statDamage', _dmg > 0 && _dmg > _prevBestDamage);
+    /* 【「記録」は全体の自己ベストだけではない】バッジ(renderResultBadges)は
+       **全体の自己ベスト**と**そのモンスターの最高**の2つを記録として扱っている。
+       ここで全体だけを見ていたので、「スエゾーの最高 ダメージ」を更新した試合で
+       画面が「記録更新」と言っているのに数字もボタンも光らなかった(実機報告)。
+       **バッジと同じ材料・同じ条件で判定する**(片方だけ直すとまたずれる)。 */
+    const killsBest = player.kills > 0 &&
+      (player.kills > _prevBestKills || player.kills > (_preElem.bestKills || 0));
+    const dmgBest = _dmg > 0 &&
+      (_dmg > _prevBestDamage || _dmg > (_preElem.bestDamage || 0));
+    mark('statKills',  killsBest);
+    mark('statDamage', dmgBest);
     // 1枚目の「詳細 ›」を更に強めるための印(記録を更新した試合だけ)
     { const scr = document.getElementById('resultScreen');
-      if(scr) scr.dataset.newbest =
-        ((player.kills > 0 && player.kills > _prevBestKills) || (_dmg > 0 && _dmg > _prevBestDamage)) ? 'on' : 'off'; }
+      if(scr) scr.dataset.newbest = (killsBest || dmgBest) ? 'on' : 'off'; }
   }
   // SEは鳴らさずに「鳴らすべきか」だけ受け取る(鳴らすのは演出のバッジ段)
   _rsBadgeSe = renderResultBadges({
