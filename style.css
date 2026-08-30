@@ -2651,8 +2651,14 @@
   /* リザルトでは列の幅に収める。丸角をやめて斜め切りの言語にそろえる */
   /* 【この帯がこのカードの中位 ―― 2026-08-29(7巡目)】副題を10pxへ落としたぶん、
      記録の帯はここで12pxに上げて「見出し(大)→ 記録の帯(中)→ 副題(小)」の3段にする。 */
+  /* 【ここも1行に押し込まない】`自己ベスト更新！ 12,013ダメージ` が
+     `…12,013ダメ…` と切れていた(実機報告)。左の列は順位の札のぶん幅が狭いので、
+     長い文言は必ず入り切らない。2行まで折り返す。 */
   #resultScreen .result-highlight{
     flex:0 0 auto; margin-top:var(--rs-gap-m); padding:var(--rs-gap-s) var(--rs-gap-m);
+    white-space:normal; line-height:1.35;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+    overflow-wrap:anywhere;
     font-size:12px; font-weight:700; letter-spacing:0.5px;
     max-width:100%; border-radius:0; color:var(--rs-accent);
     background:linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,255,255,0));
@@ -3060,9 +3066,13 @@
     max-height:calc(var(--rs-exp-lead) + var(--rs-exp-row));
   }
   /* 【APEXから取る】「次の報酬」を先に見せる */
+  /* 【1行に押し込まない】以前は本文を nowrap + 省略記号にしていたので、
+     「スエゾーの最高 ダメージ 12,013」のような長い記録が
+     `スエゾーの最高 ダメー…` と切れて**何を更新したのか読めなかった**(実機報告)。
+     この列は下に余裕があるので、札は中身なりの高さになってよい(align-items も上そろえへ)。 */
   #resultScreen .rs-next{
     flex:0 0 auto; margin-top:var(--rs-gap-s); padding:var(--rs-gap-s) var(--rs-gap-m);
-    display:flex; align-items:baseline; gap:var(--rs-gap-m);
+    display:flex; align-items:flex-start; gap:var(--rs-gap-m);
     background:rgba(255,255,255,0.045);
     clip-path:polygon(
       var(--rs-cut-s) 0, calc(100% - var(--rs-cut-s)) 0,
@@ -3081,7 +3091,10 @@
   }
   #resultScreen .rs-next-body{
     flex:1 1 auto; min-width:0; text-align:right; font-family:'Rajdhani',sans-serif; font-weight:700;
-    font-size:10px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-size:10px; color:var(--ink-dim); line-height:1.35;
+    /* 2行まで。3行を超えるほど長い記録は無い(いちばん長い「◯◯の最高 ダメージ 999,999」で2行) */
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+    overflow-wrap:anywhere;
   }
   /* ---------- この試合の主役の記録(.rs-lead-record) ----------
      「自己ベスト 撃破12」と「称号1件」がバッジ棚の中で同格に並んでいて、
