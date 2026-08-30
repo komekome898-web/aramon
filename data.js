@@ -329,6 +329,9 @@ const WALK_ANIM = {
   },
   zan: {
     base: { front:_loadWalk('zan_walk_f'), back:_loadWalk('zan_walk_b') },                // ザン(色スキン対応)
+    ssr: [
+      { skinId:'zan_ssr', front:_loadWalk('zan_ssr_walk_f'), back:_loadWalk('zan_ssr_walk_b') }, /*@zan_ssr*/
+    ],
   },
   fox: {
     base: { front:_loadWalk('fox_walk_f'), back:_loadWalk('fox_walk_b') },                // キュービ(色スキン対応)
@@ -849,6 +852,7 @@ const SSR_SKIN_AURA = {
   leaf_ssr:       'white', /*@leaf_ssr*/
   narga_ssr:      'green', /*@narga_ssr*/
   suezo_ssr:      'red', /*@suezo_ssr*/
+  zan_ssr:        'blue', /*@zan_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1081,6 +1085,7 @@ const SSR_SKIN_TIER3 = {
   /* バジリスエゾー: 技の絵は素の「サイコキネシス」のまま。**睨む赤い眼を上へ重ねるだけ**の印。
      描くのは render.js の drawGlareEyesFx 1か所(画像は images/fx_glare_eyes.png)。 */
   suezo_ssr:      { name:'真瞳術', dmgMult:1.15, move:{ glareEyes:true } }, /*@suezo_ssr*/
+  zan_ssr:        { name:'月光ノ刻', dmgMult:1.15 }, /*@zan_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1266,6 +1271,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-30', items:[
+    { t:'✨ SSRスキン「疾風」が登場しました！', g:['feature','monster'] },
+  ]},
   { date:'2026-08-29', items:[
     { t:'🏆 リザルト画面を作り直しました。順位は左端の大きな札に出て、何人中何位か(チーム戦はチーム順位)まで分かります。1位は金、2〜3位は銀に札の色が変わります。これまでは入り切らないぶんを画面ごと縮めていました', g:['general'] },
     { t:'📊 リザルトの戦績が5項目になりました。撃破数・与ダメージ・生存時間に加えて、続けざまに倒した最高数(連続撃破)と、試合を終えたときの残りHPが出ます。チーム戦は小隊の欄があるので3項目のままです', g:['general'] },
@@ -4344,6 +4352,7 @@ const SSR_SKINS = {
   leaf_ssr:       { element:'leaf', name:'メカビオギドラ', iconImg:'leaf_ssr', playerImg:'leaf_player_ssr' }, /*@leaf_ssr*/
   narga_ssr:      { element:'narga', name:'ゴッドエンペラー', iconImg:'narga_ssr', playerImg:'narga_player_ssr' }, /*@narga_ssr*/
   suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
+  zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
