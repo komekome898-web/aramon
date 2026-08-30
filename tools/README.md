@@ -251,6 +251,7 @@ iPhone版はコミット時に自動で上げます。
 | `node tools/measure_layout.mjs` | 画面の寸法・スクロール量・持ち方での文字サイズ差 |
 | `node tools/changelog_check.mjs` | 更新履歴(`UPDATE_HISTORY`)の形・日付・同じ話題の重複 |
 | `node tools/ghost_team_test.mjs` | チーム戦のゴーストが**ホストとゲストで完全に一致**するか・味方側に入らないか |
+| `node tools/fx_shot.mjs --video --moves zan:3` | **技の録画**(トレーラーの素材づくり)。コマ撮りと同じ駆動部を使い、1/fpsずつ均等に撮って mp4 にする。`--secs`(発射後の秒数)`--lead`(発射前)`--fps` `--quality` `-w -h` `--map` `--skin`。**キャンバスが3枚重なる**ので合成は page.screenshot で撮る。mp4 にするffmpegは `imageio-ffmpeg` 同梱のものを使う(PATHには無い) |
 | `node tools/team_test.mjs` | チーム戦の土台(割当・隣接スポーン・味方に当たらない・ダウン→蘇生・順位)と60体の負荷 |
 
 ## `changelog_check.mjs`(更新履歴)
