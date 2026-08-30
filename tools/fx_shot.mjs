@@ -13,6 +13,13 @@
      node tools/fx_shot.mjs --out shots/x --contact             着弾の瞬間だけを撮る
      node tools/fx_shot.mjs --out shots/x --sheet               1技を1枚の連番シートにまとめる
 
+   録画(トレーラーの素材づくり):
+     node tools/fx_shot.mjs --video --moves zan:3 --out shots/clip
+     node tools/fx_shot.mjs --video --moves zan:3 --skin zan_ssr --map wild_real --secs 2.5 --fps 30
+     --secs 発射後に撮る秒数(既定2.2) / --lead 発射前(既定0.3) / --fps(既定30)
+     --quality JPEGの品質(既定92) / -w -h で画の大きさ
+     出力: <out>/<属性>_t<段>/f0000.jpg… と、それをまとめた <属性>_t<段>.mp4
+
    出力: <out>/<element>_t<tier>_<秒>.png と <out>/report.json
 
    決まりごと:
@@ -76,6 +83,19 @@ const VARIANT = opt('variant', '');
    その副作用で**技が起こした画面揺れも必ず打ち消される**(採点表8が原理的に測れない)。
    揺れを見たいときだけこれを付ける。技の比較には使わない。 */
 const NOPIN = flag('shake');
+/* ===== 録画モード(--video) =====
+   トレーラー用に「1つの技を頭から終わりまで」通しで撮る。批評用のコマ撮り(FRAMES)は
+   「決めた時刻だけ」を撮るのに対し、こちらは 1/fps ずつ均等に撮って動画にする。
+   **駆動部(setup / step / draw / fire とカメラの固定)はコマ撮りと同じものを使う** ――
+   同じ意味の仕掛けを2つ持たないため、別ファイルにはしない。
+   合成は page.screenshot で撮る。**キャンバスが3枚重なっている**ので
+   (glCanvas=リアルマップ / gameCanvas=2D / fxCanvas=技のWebGL層)、
+   1枚だけ toDataURL しても他の層が写らない。 */
+const VIDEO = flag('video');
+const FPS   = Math.max(1, parseInt(opt('fps', '30'), 10));
+const SECS  = Math.max(0.1, parseFloat(opt('secs', '2.2')));
+const LEAD  = Math.max(0, parseFloat(opt('lead', '0.3')));   // 発射前に写す秒数(溜めの間)
+const QUAL  = Math.max(1, Math.min(100, parseInt(opt('quality', '92'), 10)));
 
 fs.mkdirSync(OUT, { recursive:true });
 
@@ -446,6 +466,34 @@ for(const [el, tiers] of byElement){
       await page.waitForTimeout(120);
       await page.evaluate(()=> window.__fx.draw());
       await page.waitForTimeout(60);
+      /* --video: 発射の前後を通しで撮る。撮った連番は encodeClip() が動画にする。 */
+      if(VIDEO){
+        const dir = path.join(OUT, `${el}_t${tier}`);
+        fs.mkdirSync(dir, { recursive:true });
+        const clipBox = CROP
+          ? { x: Math.max(0, (W-CROP.w)/2|0), y: Math.max(0, (H-CROP.h)/2|0),
+              width: Math.min(W, CROP.w), height: Math.min(H, CROP.h) }
+          : { x:0, y:0, width:W, height:H };
+        const dt = 1/FPS;
+        const leadN = Math.round(LEAD*FPS), mainN = Math.round(SECS*FPS);
+        let n = 0, info = null;
+        const shoot = async ()=>{
+          await page.evaluate(()=> window.__fx.draw());
+          await page.waitForTimeout(30);   // 描いた内容が画面へ出るのを待つ(1コマ目が黒くなるのを防ぐ)
+          await page.screenshot({ path: path.join(dir, `f${String(n).padStart(4,'0')}.jpg`),
+                                  type:'jpeg', quality:QUAL, clip:clipBox });
+          n++;
+        };
+        for(let i=0;i<leadN;i++){ await page.evaluate(([d])=> window.__fx.step(d, d, true), [dt]); await shoot(); }
+        info = await page.evaluate((a)=> window.__fx.fire(a.t, a.v), { t: tier, v: VARIANT!=='' ? +VARIANT : null });
+        for(let i=0;i<mainN;i++){ await page.evaluate(([d])=> window.__fx.step(d, d, true), [dt]); await shoot(); }
+        report.clips = report.clips || [];
+        report.clips.push({ el, tier, move:info && info.name, skin:SKIN||null, map:MAP,
+                            fps:FPS, frames:n, secs:+(n/FPS).toFixed(2),
+                            dir: path.relative(ROOT, dir) });
+        console.log(`  ${el} t${tier}: ${n}コマ (${(n/FPS).toFixed(2)}秒) → ${path.relative(ROOT, dir)}`);
+        continue;
+      }
       const info = await page.evaluate((a)=> window.__fx.fire(a.t, a.v), { t: tier, v: VARIANT!=='' ? +VARIANT : null });
       let prev = 0;
       for(const at of FRAMES){
@@ -531,7 +579,40 @@ fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 2))
 await browser.close();
 server.close();
 
-console.log(`\n出力: ${OUT}  (${report.shots.length}枚)`);
+/* 連番を動画にする。**ffmpeg はPATHに無い**ので、音声作業で使っている
+   imageio-ffmpeg 同梱の実体を Python 経由で引く(aramon-audio スキルと同じやり方)。
+   見つからないときは連番のまま置いて、その旨だけ伝える(撮り直しは高くつくので消さない)。 */
+if(VIDEO && (report.clips||[]).length){
+  const { execFileSync } = await import('child_process');
+  let ff = null;
+  try {
+    ff = execFileSync('python3', ['-c', 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())'],
+                      { encoding:'utf8' }).trim();
+    if(!fs.existsSync(ff)) ff = null;
+  } catch { ff = null; }
+  if(!ff){
+    console.log('\nffmpeg が見つからないので連番のままにした(pip install imageio-ffmpeg で入る)');
+  } else {
+    for(const c of report.clips){
+      const dir = path.join(ROOT, c.dir);
+      const mp4 = path.join(dir + '.mp4');
+      try {
+        execFileSync(ff, ['-y', '-framerate', String(c.fps), '-i', path.join(dir, 'f%04d.jpg'),
+                          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18',
+                          // 幅・高さを偶数へ丸める(奇数だと yuv420p で失敗する)
+                          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', mp4],
+                     { stdio:'pipe' });
+        c.mp4 = path.relative(ROOT, mp4);
+        console.log(`  動画: ${c.mp4}`);
+      } catch(e){
+        console.log(`  動画にできなかった: ${c.dir} — ${String(e.message||e).split('\n')[0]}`);
+      }
+    }
+    fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 2));
+  }
+}
+
+console.log(`\n出力: ${OUT}  (${VIDEO ? (report.clips||[]).length + '本' : report.shots.length + '枚'})`);
 if(errors.length){
   console.log('エラー:');
   for(const e of errors.slice(0, 15)) console.log('  ' + e);
