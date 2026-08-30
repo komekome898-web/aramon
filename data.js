@@ -4465,6 +4465,11 @@ const SKIN_MEDIA = {
           tier3hit:'audio/se_suezo_ssr_tier3hit.mp3',   // 真瞳術を当てたとき
           kill:'audio/se_suezo_ssr_kill.mp3' },
   },
+  zan_ssr: { /*@zan_ssr*/
+    promote: { video:'video/zan_ssr_promote', audio:'audio/zan_ssr_promote_audio.m4a', safetyMs:21313, bgmOnReveal:'lastBattle' },
+    bgm: { battle:'audio/bgm_zan_ssr_battle.m4a', final5:'audio/bgm_zan_ssr_final5.m4a', lastBattle:'audio/bgm_zan_ssr_lastbattle.m4a' },
+    se: { summon:'audio/se_zan_ssr_summon.m4a', tier3:'audio/se_zan_ssr_tier3.m4a', kill:'audio/se_zan_ssr_kill.m4a', win:'audio/se_zan_ssr_win.m4a' },
+  },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
 /* 【覚醒スキンは元のSSRの専用BGM・専用SEをそのまま受け継ぐ】
