@@ -1101,8 +1101,7 @@ function tryNonHostPlayerFireVisual(dt){
     };
     let firstLife = 0;
     for(let i=0;i<burstCount;i++){
-      const spreadStep = (mv.burstSpread!=null ? mv.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
-      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
+      const spreadOffset = burstSpreadOffset(mv, i, burstCount);   // 式は data.js に1つだけ
       const ang = aimAngle + spreadOffset;
       if(i===0){
         const ae = buildVisualAe(ang);
@@ -1161,8 +1160,7 @@ function tryNonHostPlayerFireVisual(dt){
     const sideStep = mv.burstSideStep || 0;
     const sideX = -Math.sin(aimAngle), sideY = Math.cos(aimAngle);
     for(let i=0;i<burstCount;i++){
-      const spreadStep = (mv.burstSpread!=null ? mv.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
-      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
+      const spreadOffset = burstSpreadOffset(mv, i, burstCount);   // 式は data.js に1つだけ
       const ang = aimAngle + spreadOffset;
       const sideOff = (burstCount>1 ? (i-(burstCount-1)/2) : 0) * sideStep;
       projectiles.push({

@@ -260,8 +260,7 @@ function fireMove(attacker, target, move){
     };
     let firstAe = null;
     for(let i=0;i<burstCount;i++){
-      const spreadStep = (move.burstSpread!=null ? move.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
-      const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
+      const spreadOffset = burstSpreadOffset(move, i, burstCount);   // 式は data.js に1つだけ
       const aimAngle = aimAngleBase + spreadOffset;
       if(i===0){
         firstAe = buildAe(aimAngle);
@@ -359,8 +358,7 @@ function fireMove(attacker, target, move){
   const sideStep = move.burstSideStep || 0;
   const sideX = -Math.sin(baseAng), sideY = Math.cos(baseAng);
   for(let i=0;i<burstCount;i++){
-    const spreadStep = (move.burstSpread!=null ? move.burstSpread : 0.05); // 技ごとに連射の広がりを変えられる
-    const spreadOffset = burstCount>1 ? (i-(burstCount-1)/2)*spreadStep : 0;
+    const spreadOffset = burstSpreadOffset(move, i, burstCount);   // 式は data.js に1つだけ
     // 横並びのときは進行方向をそろえたいので、狙いのぶれを乗せない
     const jitter = sideStep ? 0 : rand(-1,1)*(attacker.isPlayer?0.02:0.07);
     const ang = baseAng + jitter + spreadOffset;
