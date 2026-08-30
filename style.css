@@ -3275,13 +3275,18 @@
   /* 【記録を更新した試合はさらに強める】発注者指定。虹の縁と脈で「見に行く価値がある」と伝える。
      数字側(戦績の虹)と同じ出来事を指しているので、**同じ虹の並び**を使う。
      打ち消される側にならないよう、上の指定(ID3つ+子)より強い ID3つ+子+属性 で書く。 */
+  /* 【box-shadow は使えない】このボタンには45°の clip-path が掛かっていて、
+     **clip-path は box-shadow を切り落とす**。指定は当たっているのに光が1pxも
+     描かれず、「強調されていない」と実機で報告された。
+     `filter:drop-shadow()` は**切り抜いた後の絵に掛かる**ので、45°の形に沿って
+     外へ光が出る。中の面も一段明るくして、消えた縁のぶんを補う。 */
   #resultScreen[data-newbest="on"] #resultActions > #resultDetailBtn{
-    box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 0 14px 2px rgba(255,180,90,0.75);
-    animation:rsBestPulse 1.5s ease-in-out infinite;
+    background-image:var(--rs-fill-shade), linear-gradient(180deg,#fff2c4,var(--rs-accent));
+    animation:rsBestPulse 1.4s ease-in-out infinite;
   }
   @keyframes rsBestPulse{
-    0%,100%{ box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 0 10px 1px rgba(255,180,90,0.6); }
-    50%    { box-shadow:0 0 0 2px rgba(255,255,255,1),   0 0 20px 4px rgba(255,140,220,0.85); }
+    0%,100%{ filter:drop-shadow(0 0 4px rgba(255,200,120,0.85)) drop-shadow(0 0 10px rgba(255,150,90,0.5)); }
+    50%    { filter:drop-shadow(0 0 8px rgba(255,255,255,0.95)) drop-shadow(0 0 20px rgba(255,140,220,0.8)); }
   }
   /* 【記録を更新した数字は虹色】勝ち負けに関わらず(発注者指定)。
      背景を虹のグラデにして文字で抜く ―― 塗りつぶしの面を増やさないので、

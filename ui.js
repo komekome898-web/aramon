@@ -7241,7 +7241,14 @@ function rsPlayBadgeSe(){
    ・2枚目はページを送ったときに1回だけ走らせる(最初から走らせない)。
 ===================================================================== */
 function playResultSequence(){
+  /* 【鳴らす音を消さずに持ち越す】rsClearSequence() は「予約を全部捨てる」後始末で、
+     その中で _rsBadgeSe(記録更新の音)も null にする。**その掃除をこの関数の頭で
+     呼んでいるので、showResultNow が控えたばかりの音が鳴る前に消えていた**
+     (自己ベストを更新しても音が鳴らない、として実機で報告された)。
+     掃除は状態を作り直すために要るので、音だけ持ち越す。 */
+  const keepSe = _rsBadgeSe;
   rsClearSequence();
+  _rsBadgeSe = keepSe;
   const scr = document.getElementById('resultScreen');
   if(!scr || scr.classList.contains('hidden')) return;
   scr.classList.add('rs-seq-run');
