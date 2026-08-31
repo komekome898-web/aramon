@@ -1,0 +1,74 @@
+{
+  "key": "joker",
+  "label": "ジョーカー",
+  "color": "#4d1d7c",
+  "dark": "#2e114a",
+  "speed": 196,
+  "hp": 115,
+  "trait": "joker",
+  "traitDesc": "技ダメ1.2倍、ダメージの20%ガッツダメージ",
+  "traitEffects": {
+    "dmgDealtMod": 1.2
+  },
+  "aura": "black",
+  "aptitude": {
+    "life": "C",
+    "power": "C",
+    "wisdom": "A",
+    "accuracy": "A",
+    "evasion": "D",
+    "vitality": "D"
+  },
+  "skin": {
+    "colors": [
+      "white",
+      "red",
+      "blue",
+      "yellow",
+      "green"
+    ],
+    "source": {
+      "type": "chroma",
+      "hue": 265,
+      "window": 60
+    }
+  },
+  "moves": [
+    {
+      "name": "デスエナジー",
+      "icon": "🔥"
+    },
+    {
+      "name": "デスカッター",
+      "icon": "🔥"
+    },
+    {
+      "name": "デスファイル",
+      "template": "crescent"
+    }
+  ],
+  "walk": {
+    "front": "assets/joker/front.mp4",
+    "back": "assets/joker/back.mp4",
+    "source": "video",
+    "mode": "chroma"
+  },
+  "images": {
+    "icon": "assets/joker/icon.png"
+  },
+  "dmgDealtMod": 1.2,
+  "accent": "#f5ec00",
+  "stateChange": {
+    "name": "本気",
+    "duration": 30,
+    "cooldown": 120,
+    "trigger": "onKill",
+    "triggerValue": null,
+    "effects": {
+      "dmgMult": 1.2,
+      "dmgTakenMult": 0.8,
+      "gutsRegenMult": 2,
+      "speedMult": 1.5
+    }
+  }
+}

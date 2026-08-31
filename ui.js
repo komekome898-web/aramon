@@ -18,6 +18,7 @@ const TRAIT_DESC = {
   cent:       '技の射程が長く、弾速が速い', /*@centaur*/
   // 「技の威力が高い」の効きは SIGNATURE_MOVES.narga の数字そのもの(倍率ではない)。data.js のコメント参照
   narga:      '技の威力が高い。技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', /*@narga*/
+  joker:      '技ダメ1.2倍、ダメージの20%ガッツダメージ', /*@joker*/
   // <<AUTO:TRAIT_DESC>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 function stateTriggerText(sc){

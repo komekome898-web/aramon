@@ -199,6 +199,7 @@ const ELEMENTS = {
   ogre:    { label:'キジン', color:'#e0ad7b', dark:'#86684a', speed:185, hp:130, trait:'ogre', dmgDealtMod:1.2 }, /*@ogre*/
   centaur: { label:'ケンタウロス', color:'#7fb236', dark:'#4f6f1f', speed:190, hp:110, trait:'cent' }, /*@centaur*/
   narga:   { label:'ナーガ', color:'#7a2fc6', dark:'#491c77', speed:185, hp:130, trait:'narga' }, /*@narga*/
+  joker:   { label:'ジョーカー', color:'#4d1d7c', dark:'#2e114a', accent:'#f5ec00', speed:196, hp:115, trait:'joker', dmgDealtMod:1.2 }, /*@joker*/
   // <<AUTO:ELEMENTS>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -426,6 +427,9 @@ const WALK_ANIM = {
     ssr: [
       { skinId:'narga_ssr', front:_loadWalk('narga_ssr_walk_f'), back:_loadWalk('narga_ssr_walk_b') }, /*@narga_ssr*/
     ],
+  },
+  joker:   { /*@joker*/
+    base: { front:_loadWalk('joker_walk_f'), back:_loadWalk('joker_walk_b') },
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -824,6 +828,11 @@ const SIGNATURE_MOVES = {
     // pierce: 遮蔽物で止まらず射程いっぱいまで貫く(判定は combat.js の moveReachDistance 1か所)
     { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:83, cooldown:2.1, gutsCost:24, projSpeed:1900, aoeShape:'rect', aoeStyle:'sakura', rectWidth:80, pierce:true }
   ],
+  joker:   [ /*@joker*/
+    { name:'デスエナジー', tier:1, color:'#4d1d7c', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
+    { name:'デスカッター', tier:2, color:'#4d1d7c', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
+    { name:'デスファイル', tier:3, color:'#f5ec00', range:1340, dmg:21, cooldown:2, gutsCost:24, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' }
+  ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -872,6 +881,7 @@ const MONSTER_AURA = {
   ogre:    'yellow', /*@ogre*/
   centaur: 'green', /*@centaur*/
   narga:   'black', /*@narga*/
+  joker:   'black', /*@joker*/
   // <<AUTO:MONSTER_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技のオーラ(技名→オーラ。エフェクト色由来で初期設定)
@@ -896,6 +906,7 @@ const MOVE_AURA = {
   '殴打':'yellow','阿修羅':'red','羅生門':'yellow', /*@ogre*/
   'スロウランサー':'green','マインドフレア':'green','メテオドライブ':'green', /*@centaur*/
   '真空弾':'black','連続真空弾':'black','アイビーム':'black', /*@narga*/
+  'デスエナジー':'black','デスカッター':'black','デスファイル':'black', /*@joker*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1281,6 +1292,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-08-31', items:[
+    { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ', g:['feature','monster'] },
+  ]},
   { date:'2026-08-30', items:[
     { t:'✨ SSRスキン「疾風」が登場しました！ tier3「月光ノ刻」は10連射。あわせてザンの「ダークホウスト」も5連射→7連射になりました。どちらも1発ごとに少しだけ横へブレて飛びます(ブレる幅は左右に約6度で、発数が違っても同じくらい。並びは毎回変わります)', g:['feature','monster','balance'] },
   ]},
@@ -1884,6 +1898,10 @@ const STATE_CHANGES = {
     name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,
     effects:{ gutsRegenMult:2, speedMult:1.5 },
   },
+  joker:   { /*@joker*/
+    name:'本気', duration:30, cooldown:120, trigger:'onKill', triggerValue:null,
+    effects:{ dmgMult:1.2, dmgTakenMult:0.8, gutsRegenMult:2, speedMult:1.5 },
+  },
   // <<AUTO:STATE_CHANGES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 
@@ -1928,6 +1946,7 @@ const APTITUDE = {
   ogre:    { life:'C', power:'A', wisdom:'D', accuracy:'C', evasion:'B', vitality:'B' }, /*@ogre*/
   centaur: { life:'C', power:'C', wisdom:'B', accuracy:'A', evasion:'D', vitality:'D' }, /*@centaur*/
   narga:   { life:'C', power:'B', wisdom:'E', accuracy:'B', evasion:'D', vitality:'C' }, /*@narga*/
+  joker:   { life:'C', power:'C', wisdom:'A', accuracy:'A', evasion:'D', vitality:'D' }, /*@joker*/
   // <<AUTO:APTITUDE>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 /* 特性の「技を当てたときに相手へ起きること」。
@@ -4336,6 +4355,7 @@ const SKIN_CONFIG = {
   ogre:    { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:30, window:60} }, /*@ogre*/
   centaur: { colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:190, window:60} }, /*@centaur*/
   narga:   { colors:['white','red','blue','yellow','green'], source:{type:'chroma', hue:275, window:60} }, /*@narga*/
+  joker:   { colors:['white','red','blue','yellow','green'], source:{type:'chroma', hue:265, window:60} }, /*@joker*/
   // <<AUTO:SKIN_CONFIG>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 各モンスターが持てる色スキン(5色)
