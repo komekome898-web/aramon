@@ -840,11 +840,11 @@ const SIGNATURE_MOVES = {
     { name:'デスカッター', tier:2, color:'#2a2d40', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,
       burst:3, burstGap:0.1, burstSpread:0.035, burstSpreadRandom:true,
       projStyle:'crescent', projVisR:17, icon:'🌙', seStyle:'darkHoust' },
-    /* デスファイル: 5連射×3方向の15連射。burstDirs が「方向の束」の数で、
+    /* デスファイナル: 5連射×3方向の15連射。burstDirs が「方向の束」の数で、
        束は順番でなく**交互に**選ぶので、左右と正面へ同時に散り続ける(=無数に飛んでくる)。
        広がりはザン(7発×0.035 ≒ 左右12度)に対し、束の間隔0.30 + 束の中0.075 で
        **左右およそ52度**。全弾を1体へ当てることは実質できない広さ。 */
-    { name:'デスファイル', tier:3, color:'#141018', range:1340, dmg:21, cooldown:2, gutsCost:24, projSpeed:820, hitR:22,
+    { name:'デスファイナル', tier:3, color:'#141018', range:1340, dmg:21, cooldown:2, gutsCost:24, projSpeed:820, hitR:22,
       burst:15, burstDirs:3, burstDirSpread:0.30, burstGap:0.07, burstSpread:0.075, burstSpreadRandom:true,
       projStyle:'scythe', icon:'🌙' }
   ],
@@ -922,7 +922,7 @@ const MOVE_AURA = {
   '殴打':'yellow','阿修羅':'red','羅生門':'yellow', /*@ogre*/
   'スロウランサー':'green','マインドフレア':'green','メテオドライブ':'green', /*@centaur*/
   '真空弾':'black','連続真空弾':'black','アイビーム':'black', /*@narga*/
-  'デスエナジー':'black','デスカッター':'black','デスファイル':'black', /*@joker*/
+  'デスエナジー':'black','デスカッター':'black','デスファイナル':'black', /*@joker*/
   // <<AUTO:MOVE_AURA>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
 // 技オブジェクトにauraを付与(技名で引く。調整はMOVE_AURAを編集)
@@ -1310,8 +1310,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-31', items:[
-    { t:'✨ SSRスキン「あるるかん」が登場しました！', g:['feature','monster'] },
-    { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
+    { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイナル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
   ]},
   { date:'2026-08-30', items:[
     { t:'✨ SSRスキン「疾風」が登場しました！ tier3「月光ノ刻」は10連射。あわせてザンの「ダークホウスト」も5連射→7連射になりました。どちらも1発ごとに少しだけ横へブレて飛びます(ブレる幅は左右に約6度で、発数が違っても同じくらい。並びは毎回変わります)', g:['feature','monster','balance'] },
@@ -3241,7 +3240,7 @@ const rand = (a,b)=>a+Math.random()*(b-a);
 function burstSpreadOffset(move, i, burstCount){
   if(!move || burstCount <= 1) return 0;
   const step = (move.burstSpread != null) ? move.burstSpread : 0.05;
-  /* burstDirs = 連射を「方向の束」に分ける数(ジョーカーのデスファイル = 5連射×3方向)。
+  /* burstDirs = 連射を「方向の束」に分ける数(ジョーカーのデスファイナル = 5連射×3方向)。
      束どうしは burstDirSpread ぶん離し、束の中の広がりは今までどおり burstSpread が決める。
      **束は順番でなく交互に選ぶ**(i%dirs)。順番に撃つと左を撃ち終えてから正面…と
      掃くように見えるが、交互だと左右と正面へ同時に散り続けて「無数に飛んでくる」になる。
@@ -4433,7 +4432,7 @@ const SSR_SKINS = {
   narga_ssr:      { element:'narga', name:'ゴッドエンペラー', iconImg:'narga_ssr', playerImg:'narga_player_ssr' }, /*@narga_ssr*/
   suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
   zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
-  joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr' }, /*@joker_ssr*/
+  joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr', raidClearOnly:true }, /*@joker_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
