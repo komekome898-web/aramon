@@ -2274,7 +2274,7 @@ function fxStyleCrescent(pr, r){
   ctx.strokeStyle = 'rgba(120,140,200,0.5)'; ctx.lineWidth = rr*0.14; ctx.stroke();
   ctx.restore();
 }
-/* デスファイル(ジョーカー): 回転する鋭い鎌。
+/* デスファイナル(ジョーカー): 回転する鋭い鎌。
    三日月(crescent)との違いは「柄がある」「切っ先が長く尖る」「血飛沫が散る」の3点。
    **黒を主にするので、刃の本体は通常合成で塗る。** 加算合成の層には黒が置けないので、
    加算にするのは刃筋の光と血飛沫だけ(暗い技が加算で灰色に洗われる事故を避ける)。
@@ -2872,7 +2872,7 @@ function drawProjectile(pr,p){
     return;
   }
   if(pr.projStyle==='scythe'){
-    // デスファイル(ジョーカー): 回転する黒い鎌。血飛沫だけ赤を差す
+    // デスファイナル(ジョーカー): 回転する黒い鎌。血飛沫だけ赤を差す
     const r = (pr.visR || pr.hitR || 20)*1.6;
     const spin = matchTime*17 + (pr.id||0)*1.7;
     if(!renderHeavyLoad){ ctx.shadowBlur=12; ctx.shadowColor='#8a1020'; }
