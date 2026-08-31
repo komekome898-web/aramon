@@ -430,6 +430,9 @@ const WALK_ANIM = {
   },
   joker:   { /*@joker*/
     base: { front:_loadWalk('joker_walk_f'), back:_loadWalk('joker_walk_b') },
+    ssr: [
+      { skinId:'joker_ssr', front:_loadWalk('joker_ssr_walk_f'), back:_loadWalk('joker_ssr_walk_b') }, /*@joker_ssr*/
+    ],
   },
   // <<AUTO:WALK_ANIM>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -881,6 +884,7 @@ const SSR_SKIN_AURA = {
   narga_ssr:      'green', /*@narga_ssr*/
   suezo_ssr:      'red', /*@suezo_ssr*/
   zan_ssr:        'blue', /*@zan_ssr*/
+  joker_ssr:      'white', /*@joker_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1119,6 +1123,7 @@ const SSR_SKIN_TIER3 = {
      0.035→0.026 へ下げる(10発 × 0.026 = 約13度で、素の7発とほぼ同じ扇)。
      **威力・射程・弾速は素のまま**(dmgMult 1.15 は従来どおり別途掛かる)。 */
   zan_ssr:        { name:'月光ノ刻', dmgMult:1.15, move:{ burst:10, burstSpread:0.026, burstSpreadRandom:true } }, /*@zan_ssr*/
+  joker_ssr:      { name:'聖ジョージの剣', dmgMult:1.15 }, /*@joker_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1305,6 +1310,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-31', items:[
+    { t:'✨ SSRスキン「あるるかん」が登場しました！', g:['feature','monster'] },
     { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
   ]},
   { date:'2026-08-30', items:[
@@ -2946,7 +2952,7 @@ const RAID_PREVIEW_ACCOUNTS = ['おりょう', 'さびょう'];
 const RAID_ACTIVE = true;                 // レイド機能そのものの有効/無効
 /* レイド最終報酬(参加者全員へ配布)のスキン。**版の報酬表から参照するのでここで先に定義する。**
    (モンスター作成スタジオはこの行を行頭一致で書き換えるので、位置が変わっても差し支えない) */
-const RAID_CLEAR_SKIN = 'zod_ssr';
+const RAID_CLEAR_SKIN = 'joker_ssr';
 
 /* ===== 開催ごとの「版(edition)」 =====
    開催のたびに動かす数字だけをここへ집め、**RAID_EDITION の1行を変えるだけで次回開催へ切り替わる**。
@@ -4427,6 +4433,7 @@ const SSR_SKINS = {
   narga_ssr:      { element:'narga', name:'ゴッドエンペラー', iconImg:'narga_ssr', playerImg:'narga_player_ssr' }, /*@narga_ssr*/
   suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
   zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
+  joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr' }, /*@joker_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
