@@ -3,7 +3,7 @@ const MOVE_SE_BY_STYLE = {
   inferno:'fireRoar', lava:'fireRoar', crystal:'iceCrack',
   psychic:'beam', sakura:'beam', flower:'beam', galaxy:'beam',
   tornado:'tornado', shell:'spin', holy:'bell', requiem:'whoosh',
-  godorb:'godRising', crescent:'zashu', voidOrb:'voidLaunch',
+  godorb:'godRising', crescent:'zashu', scythe:'zashu', voidOrb:'voidLaunch',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
 const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite',
@@ -324,7 +324,7 @@ function fireMove(attacker, target, move){
       landX, landY, arcHeight: move.arcHeight||120,
       flightTime: Math.max(0.05, flightTime), flightT:0,
       dmg:effDmg, color:effColor, hitR:move.hitR*hbMult, splash:(move.splash||0)*hbMult,
-      icon:move.icon, shape:move.shape, projStyle:move.projStyle||null, moveAura,
+      icon:move.icon, shape:move.shape, projStyle:move.projStyle||null, visR:move.projVisR||0, moveAura,
     });
     lockMoveFacing(attacker, ang, Math.max(0.05, flightTime));
     return;
@@ -371,6 +371,9 @@ function fireMove(attacker, target, move){
       traveled:0, maxRange:move.range, delay: i*burstGap, icon:move.icon,
       growWithDistance: move.growWithDistance||false, baseHitR: move.hitR*hbMult,
       projStyle: move.projStyle||null, projVariant: move.projVariant||null, moveAura,
+      // projVisR は当たり判定と切り離した「絵の大きさ」。下位tierの当たり判定のまま
+      // 上位tierと同じ絵を出したいときに使う(ジョーカーのデスカッター)
+      visR: move.projVisR||0,
       // burstTints があれば連射の何発目かで色を変える(轟金剛の青→赤→青)
       auraTint: (move.burstTints && move.burstTints[i % move.burstTints.length]) || auraTint,
       auraAccent,
