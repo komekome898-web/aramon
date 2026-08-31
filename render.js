@@ -2274,6 +2274,73 @@ function fxStyleCrescent(pr, r){
   ctx.strokeStyle = 'rgba(120,140,200,0.5)'; ctx.lineWidth = rr*0.14; ctx.stroke();
   ctx.restore();
 }
+/* デスファイル(ジョーカー): 回転する鋭い鎌。
+   三日月(crescent)との違いは「柄がある」「切っ先が長く尖る」「血飛沫が散る」の3点。
+   **黒を主にするので、刃の本体は通常合成で塗る。** 加算合成の層には黒が置けないので、
+   加算にするのは刃筋の光と血飛沫だけ(暗い技が加算で灰色に洗われる事故を避ける)。
+   飛沫の位置は弾のidから作る固定の並びにする。毎コマ乱数を引くとちらついて汚れに見える。 */
+const SCYTHE_BLOOD = '#c0142a';
+function fxStyleScythe(pr, r){
+  const rr = r;
+  const spin = matchTime*17 + (pr.id||0)*1.7;
+  /* 残像は**短く細い弧**にする。三日月と同じ長さ(1.35π)・太さ(0.16)で描いたら、
+     刃の外を1周する赤い輪になり、鎌ではなく円盤に見えた(実写で確認)。 */
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const tg = ctx.createLinearGradient(-rr, 0, rr, 0);
+  tg.addColorStop(0, _hexA(SCYTHE_BLOOD, 0));
+  tg.addColorStop(1, _hexA(SCYTHE_BLOOD, 0.5));
+  ctx.beginPath(); ctx.arc(0, 0, rr*1.02, spin*0.7, spin*0.7 + Math.PI*0.35);
+  ctx.strokeStyle = tg; ctx.lineWidth = rr*0.05; ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.rotate(spin);
+  ctx.beginPath();                                   // 柄。刃の反対側へ長く伸ばして鎌に見せる
+  ctx.moveTo(rr*0.92, rr*0.09); ctx.lineTo(-rr*0.10, rr*0.05);
+  ctx.lineTo(-rr*0.10, -rr*0.05); ctx.lineTo(rr*0.92, -rr*0.06);
+  ctx.closePath();
+  ctx.fillStyle = '#1b1620'; ctx.fill();
+  ctx.strokeStyle = 'rgba(150,120,130,0.45)'; ctx.lineWidth = Math.max(1, rr*0.03); ctx.stroke();
+  /* 刃。三日月と同じ「外円の弧を、ずらした内円の弧で刳る」形。
+     この形は画面上で小さくても輪郭が読めることが分かっているので流用し、
+     鎌らしさは**柄と切っ先の赤い光**で出す。 */
+  const R = rr, R2 = rr*1.02, off = rr*0.62;
+  ctx.beginPath();
+  ctx.arc(0, 0, R, Math.PI*0.55, Math.PI*1.45, false);
+  ctx.arc(off, 0, R2, Math.PI*1.28, Math.PI*0.72, true);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(-R, -R*0.6, R*0.4, R*0.6);
+  g.addColorStop(0,    '#2b2431');
+  g.addColorStop(0.45, '#0d0b11');
+  g.addColorStop(1,    '#040305');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.beginPath();                                   // 刃筋(白)とその内側の血の帯
+  ctx.arc(0, 0, R*0.96, Math.PI*0.58, Math.PI*1.42, false);
+  ctx.strokeStyle = 'rgba(240,206,214,0.55)'; ctx.lineWidth = rr*0.04; ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, R*0.88, Math.PI*0.70, Math.PI*1.30, false);
+  ctx.strokeStyle = _hexA(SCYTHE_BLOOD, 0.5); ctx.lineWidth = rr*0.055; ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+
+  ctx.save();                                        // 血飛沫
+  ctx.globalCompositeOperation = 'lighter';
+  const seed = ((pr.id||1)*2.399963) % 1;
+  for(let i=0;i<3;i++){
+    // 刃の後ろ側(進行方向の逆)へだけ散らす。一周に置くと15枚ぶんが輪になって見えた
+    const a = spin + Math.PI*(0.75 + 0.5*((i*0.41 + seed) % 1));
+    const d = rr*(0.85 + 0.45*((i*0.37 + seed) % 1));
+    const s = rr*(0.08 + 0.06*((i*0.71 + seed) % 1));
+    ctx.globalAlpha = 0.35 + 0.25*Math.sin(spin*0.8 + i);
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a)*d, Math.sin(a)*d, s, s*0.5, a, 0, Math.PI*2);
+    ctx.fillStyle = SCYTHE_BLOOD; ctx.fill();
+  }
+  ctx.restore();
+}
 // 竜巻アタック: 地面に立つ本物の漏斗。輪の潰れ方をカメラに合わせて立体にする
 /* 「電撃の7」(轟金剛の超番長ボーナス)。図柄は用意した画像そのものを使い、
    竜巻の色に合わせて**色相だけ差し替えた版**を1色につき1回だけ作って使い回す
@@ -2675,6 +2742,7 @@ const REAL_STYLE_FX = {
   // 西野ピかさ専用。輪と電撃はビッグバンのまま、球だけ赤いいちごに差し替える
   strawberry: (pr, r)=> fxStyleVoidOrb(pr, r, fxBerry),
   crescent: fxStyleCrescent,
+  scythe:   fxStyleScythe,
   tornado:  fxStyleTornado,
   holy:     fxStyleHoly,
   shell:    fxStyleShell,
@@ -2727,7 +2795,7 @@ function drawProjectile(pr,p){
   }
   // tier3の専用弾も立体的に描き直す(従来の平面描画は下の分岐に残してある)
   if(pr.projStyle && real3dFx() && REAL_STYLE_FX[pr.projStyle]){
-    REAL_STYLE_FX[pr.projStyle](pr, Math.max(8, pr.hitR||14));
+    REAL_STYLE_FX[pr.projStyle](pr, Math.max(8, pr.visR || pr.hitR || 14));
     ctx.restore();
     return;
   }
@@ -2803,9 +2871,33 @@ function drawProjectile(pr,p){
     ctx.restore();
     return;
   }
+  if(pr.projStyle==='scythe'){
+    // デスファイル(ジョーカー): 回転する黒い鎌。血飛沫だけ赤を差す
+    const r = (pr.visR || pr.hitR || 20)*1.6;
+    const spin = matchTime*17 + (pr.id||0)*1.7;
+    if(!renderHeavyLoad){ ctx.shadowBlur=12; ctx.shadowColor='#8a1020'; }
+    ctx.save();
+    ctx.rotate(spin);
+    ctx.beginPath();                                   // 柄
+    ctx.moveTo(-r*0.84, r*0.11); ctx.lineTo(r*0.18, r*0.03);
+    ctx.lineTo(r*0.18, -r*0.05); ctx.lineTo(-r*0.84, -r*0.03);
+    ctx.closePath(); ctx.fillStyle='#1b1620'; ctx.fill();
+    ctx.beginPath();                                   // 刃
+    ctx.arc(0, 0, r, Math.PI*0.98, Math.PI*1.64, false);
+    ctx.lineTo(r*0.20, -r*0.09);
+    ctx.arc(0, 0, r*0.40, Math.PI*1.64, Math.PI*0.98, true);
+    ctx.closePath(); ctx.fillStyle='#0e0c12'; ctx.fill();
+    ctx.strokeStyle='rgba(238,200,208,0.85)'; ctx.lineWidth=1.6; ctx.stroke();
+    ctx.beginPath();                                   // 刃筋の血
+    ctx.arc(0, 0, r*0.89, Math.PI*1.04, Math.PI*1.58, false);
+    ctx.strokeStyle='rgba(192,20,42,0.8)'; ctx.lineWidth=r*0.10; ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
   if(pr.projStyle==='crescent'){
     // ダークホウスト(ザン): 回転する黒い三日月型の斬撃
-    const r = (pr.hitR||20)*1.6;
+    const r = (pr.visR || pr.hitR || 20)*1.6;
     const spin = matchTime*15 + (pr.id||0);
     if(!renderHeavyLoad){ ctx.shadowBlur=12; ctx.shadowColor='#7a80a8'; }
     ctx.rotate(spin);

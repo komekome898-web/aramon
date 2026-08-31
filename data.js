@@ -830,8 +830,20 @@ const SIGNATURE_MOVES = {
   ],
   joker:   [ /*@joker*/
     { name:'デスエナジー', tier:1, color:'#4d1d7c', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },
-    { name:'デスカッター', tier:2, color:'#4d1d7c', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },
-    { name:'デスファイル', tier:3, color:'#f5ec00', range:1340, dmg:21, cooldown:2, gutsCost:24, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' }
+    /* デスカッター: 見た目はザンのtier3「ダークホウスト」と同じ回転する黒い三日月。
+       **性能はtier2のまま**(射程1400・威力13・ガッツ16・当たり判定7)。
+       projVisR は当たり判定と切り離した「絵の大きさ」。これが無いと当たり判定7に
+       合わせて刃が8pxまで縮み、三日月の形が画面上で読めない。 */
+    { name:'デスカッター', tier:2, color:'#2a2d40', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7,
+      burst:3, burstGap:0.1, burstSpread:0.035, burstSpreadRandom:true,
+      projStyle:'crescent', projVisR:17, icon:'🌙', seStyle:'darkHoust' },
+    /* デスファイル: 5連射×3方向の15連射。burstDirs が「方向の束」の数で、
+       束は順番でなく**交互に**選ぶので、左右と正面へ同時に散り続ける(=無数に飛んでくる)。
+       広がりはザン(7発×0.035 ≒ 左右12度)に対し、束の間隔0.30 + 束の中0.075 で
+       **左右およそ52度**。全弾を1体へ当てることは実質できない広さ。 */
+    { name:'デスファイル', tier:3, color:'#141018', range:1340, dmg:21, cooldown:2, gutsCost:24, projSpeed:820, hitR:22,
+      burst:15, burstDirs:3, burstDirSpread:0.30, burstGap:0.07, burstSpread:0.075, burstSpreadRandom:true,
+      projStyle:'scythe', icon:'🌙' }
   ],
   // <<AUTO:SIGNATURE_MOVES>> ここから上へ tools/monster_add.py が新モンスターの行を追記する
 };
@@ -1293,7 +1305,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-08-31', items:[
-    { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ', g:['feature','monster'] },
+    { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
   ]},
   { date:'2026-08-30', items:[
     { t:'✨ SSRスキン「疾風」が登場しました！ tier3「月光ノ刻」は10連射。あわせてザンの「ダークホウスト」も5連射→7連射になりました。どちらも1発ごとに少しだけ横へブレて飛びます(ブレる幅は左右に約6度で、発数が違っても同じくらい。並びは毎回変わります)', g:['feature','monster','balance'] },
@@ -3223,9 +3235,22 @@ const rand = (a,b)=>a+Math.random()*(b-a);
 function burstSpreadOffset(move, i, burstCount){
   if(!move || burstCount <= 1) return 0;
   const step = (move.burstSpread != null) ? move.burstSpread : 0.05;
-  if(!step) return 0;
-  const half = (burstCount - 1) / 2 * step;   // 等間隔のときの端までの幅
-  return move.burstSpreadRandom ? rand(-half, half) : (i - (burstCount - 1) / 2) * step;
+  /* burstDirs = 連射を「方向の束」に分ける数(ジョーカーのデスファイル = 5連射×3方向)。
+     束どうしは burstDirSpread ぶん離し、束の中の広がりは今までどおり burstSpread が決める。
+     **束は順番でなく交互に選ぶ**(i%dirs)。順番に撃つと左を撃ち終えてから正面…と
+     掃くように見えるが、交互だと左右と正面へ同時に散り続けて「無数に飛んでくる」になる。
+     ここに置くのは、発射側(ボット・プレイヤー・範囲技)が全部この関数だけを呼ぶため。 */
+  const dirs = Math.max(1, move.burstDirs || 1);
+  let dirOff = 0, k = i, n = burstCount;
+  if(dirs > 1){
+    n = Math.ceil(burstCount / dirs);                     // 1束あたりの発数
+    k = Math.floor(i / dirs);                             // 束の中で何発目か
+    const gap = (move.burstDirSpread != null) ? move.burstDirSpread : 0.30;
+    dirOff = ((i % dirs) - (dirs - 1) / 2) * gap;
+  }
+  if(!step) return dirOff;
+  const half = (n - 1) / 2 * step;   // 等間隔のときの端までの幅
+  return dirOff + (move.burstSpreadRandom ? rand(-half, half) : (k - (n - 1) / 2) * step);
 }
 const randInt = (a,b)=>Math.floor(rand(a,b+1));
 const clamp = (v,lo,hi)=>Math.max(lo,Math.min(hi,v));
