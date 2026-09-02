@@ -61,10 +61,12 @@ const REQUIRED = [
   'MOVE_NUM_COMMON', 'MOVE_NUM_TIER', 'MOVE_BOOL_TIER', 'MOVE_BLAST_TIER',
   // 見せ方(残り時間の式は1つ / 失敗の言い方は1つの表)
   'etaText', 'etaByRate', 'errorText', 'modelErrorText', 'ERROR_RULES',
+  // 推論の進捗の文面。残り時間は etaText に載っているので (j) がここも見る
+  'modelRunText', 'modelState',
   // 段階バーと下書き(入力の自動保存)
-  'STAGES', 'refreshStages', 'stageGo', 'buildStageBar',
-  'DRAFT_KEY', 'DRAFT_PANELS', 'DRAFT_SKIP', 'draftFields', 'saveDraft', 'readDraft',
-  'draftRestore', 'draftDiscard', 'draftDismiss',
+  'STAGES', 'refreshStages', 'stageGo', 'buildStageBar', 'moveHasBadInput',
+  'DRAFT_KEY', 'DRAFT_PREV_KEY', 'DRAFT_PANELS', 'DRAFT_SKIP', 'DRAFT_RERUN', 'draftFields',
+  'saveDraft', 'readDraft', 'draftRestore', 'draftDiscard', 'draftDismiss',
   // 更新履歴の注意2判定(changelog_check.mjs と二重に持つ)
   'changelogWarnings', 'changelogWords', 'changelogSimilarity',
   'CHANGELOG_SIMILAR', 'CHANGELOG_INTERNAL',

@@ -47,29 +47,50 @@ const DEVICES = [
   { name:'iPhone XR 縦持ち', w:414, h:896 },
 ];
 
-const TAP_MIN = 44;   // 押せる物の最小の高さ(iOSのガイドラインと同じ)
+/* 押せる物の最小の高さ(iOSのガイドラインと同じ)。
+   **studio_web.html の `button,select{ min-height:44px }` と同じ値**を二重に持っている
+   (検査側が本文の CSS を読まないため)。**片方を変えたら必ず両方直す。** */
+const TAP_MIN = 44;
+
+/* 押せる物として数えるもの。**`button,select` だけでは足りない**(§指摘9) ――
+   色見本・候補コマの札・パレットの升目は `onclick` を持つ div なので、
+   button で絞ると「指で押す物なのに一度も測られない」ままになる。 */
+const TAP_SEL = 'button,select,[onclick],[role=button]';
 
 /* ===== パネルごとの方針(この表が正) =====
-   id    … パネルの要素id
-   name  … 報告に出す名前
-   kind  … そのパネルが出る「登録の種類」(regKind の値)。null = どの種類でも出る
-   open  … 測る前に開いておく要素id(データが無いと出ない箱。中身が空でも寸法は測れる)
-   small … わざと TAP_MIN より小さくしてある物のセレクタ(**理由を必ず添える**) */
+   id     … パネルの要素id
+   name   … 報告に出す名前
+   kind   … そのパネルが出る「登録の種類」(regKind の値)。null = どの種類でも出る
+   open   … 測る前に開いておく要素id。**そのパネルの子だけ**を書く(§指摘8) ――
+            別のパネルの子を書いても、その行では測られないので「測ったつもり」になる
+   small  … わざと TAP_MIN より小さくしてある物のセレクタ(**理由を必ず添える**)
+   noClip … 省略記号を付けてあるが**切れてはいけない**物(1b の除外の外で実測する) */
 const PANELS = [
-  // 段階バーは画面のいちばん上に貼り付く帯。**7段が横に並びきるか**をここで見る
-  { id:'stageWrap',     name:'0 段階バー',     kind:null,       open:[] },
+  /* 段階バーは画面のいちばん上に貼り付く帯。**7段が横に並びきるか**をここで見る。
+     段は自分で省略記号を出すので 1b の網に掛からない ―― 切れた瞬間に ✓/! の印まで
+     消えて「いまどの段階か」が読めなくなるので、noClip で実測する(§指摘3)。 */
+  { id:'stageWrap',     name:'0 段階バー',     kind:null,       open:[],
+    noClip:['#stageBar button'] },
   { id:'draftBar',      name:'0 前回の続き',   kind:null,       open:['draftBar'] },
   { id:'ghPanel',       name:'1 GitHub設定',   kind:null,       open:[] },
-  { id:'kindPanel',     name:'2 登録の種類',   kind:null,       open:['editForm','e_chWrap'] },
+  /* 登録の種類のパネルは**種類ごとに別の姿**になる(ssrForm / assetsForm / awakenForm /
+     editForm はどれも kindPanel の子)。1行にまとめていたときは editForm しか開いておらず、
+     残り3つは一度も測られていなかった(§指摘8)。 */
+  { id:'kindPanel',     name:'2 種類(新規)',     kind:'monster', open:[] },
+  { id:'kindPanel',     name:'2 種類(SSR)',      kind:'ssr',     open:['ssrForm'] },
+  { id:'kindPanel',     name:'2 種類(差し替え)', kind:'assets',  open:['assetsForm'] },
+  { id:'kindPanel',     name:'2 種類(覚醒)',     kind:'awaken',  open:['awakenForm'] },
+  { id:'kindPanel',     name:'2 種類(開いて直す)', kind:'edit',  open:['editForm','e_chWrap'] },
   { id:'mediaPanel',    name:'M 専用メディア', kind:'ssrmedia', open:[] },
   { id:'walkPanel',     name:'3 歩行',         kind:'monster',
     open:['candWrap','walkDiag','modelAbortWrap','walkModelTime'],
-    // 候補16コマの札は「絵を選ぶ枠」。4列に並べて一覧できることが大事で、押しやすさより優先する
-    small:['.cell'] },
+    /* 候補16コマの札は「絵を選ぶ枠」。4列に並べて一覧できることが大事で、押しやすさより優先する。
+       札は動画を読まないと出ないので、**測るために16枚ぶんの枠だけ**入れる
+       (入れないとこの例外は当たる相手がおらず、書いてあるだけの設定になる)。 */
+    cells:['candStrip', 16], small:['.cell'] },
   { id:'portraitPanel', name:'4 静止画',       kind:'monster',  open:[] },
-  { id:'specPanel',     name:'5 仕様',         kind:'monster',
-    open:['ssrForm','assetsForm','awakenForm','editSkinBox'],
-    // 色見本は9列の一覧。縦を44pxにすると3行で画面の半分を食うので、幅(9列)で押しやすさを稼ぐ
+  { id:'specPanel',     name:'5 仕様',         kind:'monster',  open:['editSkinBox'],
+    // 色見本は**見て選ぶ物**なので例外。9列の一覧で、縦を44pxにすると3行で画面の半分を食う
     small:['.sw'] },
   { id:'movePanel',     name:'6 技',           kind:'monster',  open:[] },
   { id:'sendPanel',     name:'7 送信',         kind:null,       open:[] },
@@ -91,7 +112,7 @@ const browser = await chromium.launch({ executablePath: EXEC, args:['--no-sandbo
 const errors = [], rows = [];
 
 /* 1画面ぶんの測定。ブラウザの中で完結させる(戻すのは数字と名前だけ)。 */
-const MEASURE = ({ panel, tapMin })=>{
+const MEASURE = ({ panel, tapMin, tapSel })=>{
   const root = document.getElementById(panel.id);
   if(!root) return { err:`パネル ${panel.id} が見つかりません` };
   const vis = el =>{
@@ -105,7 +126,8 @@ const MEASURE = ({ panel, tapMin })=>{
     return (el.id ? '#'+el.id : (el.className || el.tagName)) + (t ? ' « '+t : '');
   };
   const W = document.documentElement.clientWidth;
-  const out = { over:[], small:[], overlap:[], cut:[], panelH: Math.round(root.getBoundingClientRect().height) };
+  const out = { over:[], small:[], overlap:[], cut:[], clip:[],
+                panelH: Math.round(root.getBoundingClientRect().height) };
   // 1. 横へのはみ出し(パネルの中の全要素)
   for(const el of root.querySelectorAll('*')){
     if(!vis(el)) continue;
@@ -125,8 +147,17 @@ const MEASURE = ({ panel, tapMin })=>{
     if(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
       out.cut.push(`${name(el)}  中身${el.scrollWidth}x${el.scrollHeight} / 枠${el.clientWidth}x${el.clientHeight}`);
   }
+  /* 1c. **省略記号の除外の外**で見る物(§指摘3)。ellipsis を付けてある要素は 1b を
+     素通りするが、段階バーの段のように「切れたら意味が失われる」物はここで実測する。 */
+  for(const sel of (panel.noClip || [])){
+    for(const el of root.querySelectorAll(sel)){
+      if(!vis(el)) continue;
+      if(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+        out.clip.push(`${name(el)}  中身${el.scrollWidth}x${el.scrollHeight} / 枠${el.clientWidth}x${el.clientHeight}`);
+    }
+  }
   // 2. 押せる物の大きさ。small に当たる物は「わざと小さい」ので数えない
-  const taps = Array.from(root.querySelectorAll('button,select')).filter(vis)
+  const taps = Array.from(root.querySelectorAll(tapSel)).filter(vis)
     .filter(el => !(panel.small || []).some(sel => el.matches(sel)));
   for(const el of taps){
     const r = el.getBoundingClientRect();
@@ -161,12 +192,25 @@ for(const dev of DEVICES){
       document.getElementById(panel.id).style.display = 'block';
       for(const id of panel.open || []){ const e = document.getElementById(id); if(e) e.style.display = 'block'; }
       document.querySelectorAll('details').forEach(d => d.open = true);
+      /* 段階バーは「印(✓ / !)が出ている状態」がいちばん幅を食う。印が出た瞬間に
+         切れるのでは意味が無いので、その姿にしてから測る(§指摘3)。 */
+      if(panel.id === 'stageWrap')
+        document.querySelectorAll('#stageBar .mk').forEach(m => m.textContent = '✓');
+      /* 候補コマの札(renderCand と同じ形)。**絵を入れないと高さが 0 になる**
+         (`.cell img{ width:100% }` = 高さは絵の縦横比で決まる)ので、1×1の透明PNGを入れる。 */
+      if(panel.cells){
+        const [id, n] = panel.cells, box = document.getElementById(id);
+        const px = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        if(box) box.innerHTML = new Array(n).fill(0).map((_, i)=>
+          `<div class="cell sel" onclick="void 0"><img src="${px}"><span class="n">${i+1}</span></div>`).join('');
+      }
     }, { panel });
-    const m = await page.evaluate(MEASURE, { panel, tapMin: TAP_MIN });
+    const m = await page.evaluate(MEASURE, { panel, tapMin: TAP_MIN, tapSel: TAP_SEL });
     if(m.err){ errors.push(`${dev.name} / ${panel.name}: ${m.err}`); continue; }
     rows.push({ dev:dev.name, panel:panel.name, ...m });
     for(const s of m.over)    errors.push(`${dev.name} / ${panel.name}: 横へはみ出し — ${s}`);
     for(const s of m.cut)     errors.push(`${dev.name} / ${panel.name}: 中身が切れている — ${s}`);
+    for(const s of m.clip)    errors.push(`${dev.name} / ${panel.name}: 切れてはいけない字が切れている — ${s}`);
     for(const s of m.small)   errors.push(`${dev.name} / ${panel.name}: 押しにくい(${TAP_MIN}px未満) — ${s}`);
     for(const s of m.overlap) errors.push(`${dev.name} / ${panel.name}: 重なり — ${s}`);
   }

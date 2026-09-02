@@ -835,7 +835,9 @@ function runSe(){
      ・etaText は**実測から**出す(固定値を返さない)。1件も終わっていない・
        終わっているときは黙る(嘘の残り時間を出さない)。
      ・errorText は英語の例外を必ず日本語にし、**自前の日本語はそのまま通す**。
-       ここが逆になると「動画を選んでください」まで丸められて意味が消える。          */
+       ここが逆になると「動画を選んでください」まで丸められて意味が消える。
+     ・modelRunText は残り時間を etaText に載せたうえで、**出せないときの言い方**を持つ。
+       文面が変わる2通り(1秒未満 / 90秒以上)をここで押さえる。                     */
 function runWording(){
   const now = Date.now();
   // ① 実測から出ているか(同じ done/total でも、掛かった時間が倍なら残りも倍)
@@ -849,24 +851,46 @@ function runWording(){
   // ③ 出せないときは黙る(0件目・終わった後・時刻なし)
   for(const [d, t, st] of [[0, 8, now-1000], [8, 8, now-1000], [1, 8, 0]])
     if(S.etaText(d, t, st) !== '') fail('wording', `etaText(${d},${t}) が黙りません: ${S.etaText(d, t, st)}`);
-  // ④ 1件あたりの実測から出す道(モデルの推論)も同じ式に載っている
-  if(S.etaByRate(1000, 4) !== S.etaText(1, 5, now - 1000))
-    fail('wording', 'etaByRate が etaText と違う式になっています');
-  // ⑤ 失敗の言い方。英語は日本語へ、自前の日本語はそのまま
+  /* ④ 1件あたりの実測から出す道(モデルの推論)も同じ式に載っている。
+     **返り値そのものを見る**(§指摘13) —— 2つの呼び出しの結果を突き合わせる書き方は、
+     間に1ミリ秒でも挟まると別の文字列になるので、たまに落ちる検査になっていた。 */
+  if(!/残り約4秒/.test(S.etaByRate(1000, 4)))
+    fail('wording', `etaByRate(1秒/件, 残り4件)が「${S.etaByRate(1000, 4)}」です(残り約4秒のはず)`);
+  /* ⑤ 推論の進捗の文面。**残り時間が出せないとき/長いとき**で言い方が変わるので両方見る。
+     lastRunMs は「直前の1枚にかかった時間」。1秒未満は嘘になるので黙り、代わりに
+     「しばらくお待ちください」と言う。90秒以上は分でまとめる(§指摘13)。 */
+  const keepRun = S.modelState.lastRunMs;
+  S.modelState.lastRunMs = 500;          // 1件0.5秒 = 残り0.5秒 → 秒では言わない
+  if(!/しばらくお待ちください/.test(S.modelRunText({ i:1, n:1 })))
+    fail('wording', `modelRunText(1秒未満)が「${S.modelRunText({ i:1, n:1 })}」です`);
+  S.modelState.lastRunMs = 120000;       // 1件120秒 = 残り2分 → 分でまとめる
+  if(!/約2分/.test(S.modelRunText({ i:1, n:1 })))
+    fail('wording', `modelRunText(90秒以上)が「${S.modelRunText({ i:1, n:1 })}」です`);
+  if(!/2\/16/.test(S.modelRunText({ i:2, n:16 })))
+    fail('wording', `modelRunText が何枚目かを言いません: ${S.modelRunText({ i:2, n:16 })}`);
+  S.modelState.lastRunMs = keepRun;
+  // ⑥ 失敗の言い方。英語は日本語へ、自前の日本語はそのまま
   const cases = [
     [new Error('GitHub 401: Bad credentials'), /トークンが切れています/],
     [new Error('GitHub 403: Resource not accessible by personal access token'), /権限/],
+    /* 送りすぎの 403 は**権限の話にしない**(§指摘11)。待てば通るので、
+       「権限を確かめてください」と言われると直しようのないことをさせてしまう。 */
+    [new Error('GitHub 403: You have exceeded a secondary rate limit'), /1分ほど待って/],
     [new Error('GitHub 404: Not Found'), /リポジトリ名とブランチ名/],
     [new Error('GitHub 422: Update is not a fast forward'), /やり直して/],
     [new Error('Failed to fetch'), /通信できませんでした/],
     [new Error('The source image could not be decoded'), /読み取れませんでした/],
+    /* `ERR_` を裸で拾っていた頃は、動画のデコード失敗まで「電波の届く所で」になっていた。
+       通信の失敗として拾うのは**ブラウザのネットワークエラー名の頭**だけ(§指摘11)。 */
+    [new Error('MEDIA_ERR_DECODE'), /読み取れませんでした/],
+    [new Error('net::ERR_CONNECTION_RESET'), /通信できませんでした/],
     [new Error('動画を選んでください'), /^動画を選んでください$/],
     [new Error('被写体を検出できませんでした'), /^被写体を検出できませんでした$/],
     [new Error('Something totally unknown'), /うまくいきませんでした.*Something totally unknown/],
   ];
   for(const [e, re] of cases)
     if(!re.test(S.errorText(e))) fail('wording', `errorText(${e.message}) が「${S.errorText(e)}」です`);
-  // ⑥ モデル経路の言い方は今までどおり(呼び名 modelErrorText は残す)
+  // ⑦ モデル経路の言い方は今までどおり(呼び名 modelErrorText は残す)
   const mk = (code, msg)=>{ const e = new Error(msg); e.__modelCode = code; return e; };
   const model = [
     [mk('abort', '中断しました'), /^中断しました。/],
@@ -879,7 +903,7 @@ function runWording(){
   ];
   for(const [e, re] of model)
     if(!re.test(S.modelErrorText(e))) fail('wording', `modelErrorText(${e.message}) が「${S.modelErrorText(e)}」です`);
-  return `残り時間 6通り / 失敗の言い方 ${cases.length + model.length}通り`;
+  return `残り時間 6通り + 推論の進捗 3通り / 失敗の言い方 ${cases.length + model.length}通り`;
 }
 
 /* ============================================================ (g) 更新履歴の注意2判定

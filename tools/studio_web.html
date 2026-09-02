@@ -812,7 +812,10 @@ const state = { walk:{f:null, b:null}, portraits:null, hue:null,
                 scPresets:null, pickup:{ skin:null, raid:null },
                 // 登録済みを開いて直す: 読み込んだ data.js とその sha・読み取った今の設定
                 // editFilled = 共通の欄(仕様・技・SSR)へ値を入れたか(切り替え時に戻すため)
-                edit:null, editFilled:false };
+                edit:null, editFilled:false,
+                /* 送信の段だけが見る印(§指摘2)。#log は全画面で1つなので、
+                   段が log の色を読むと他パネルの失敗まで送信の失敗に見えてしまう。 */
+                sendNg:false };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){
@@ -860,6 +863,11 @@ const ERROR_RULES = [
   // 認証が切れた・権限が足りない(GitHub API は `GitHub 401: ...` の形で投げてある)
   { re:/GitHub 401|Bad credentials|Requires authentication/,
     jp:'GitHubのトークンが切れています。「GitHub設定」で新しいトークンを保存してください' },
+  /* 短時間に送りすぎたときの 403(secondary rate limit)。**権限の話と混ぜない**(§指摘11) ――
+     「権限を確かめてください」と言われても直しようがなく、実際は待てば通る。
+     403 の一般規則より**先に**置く(あちらが先に当たると待てば直る話を権限の話にしてしまう)。 */
+  { re:/secondary rate limit|abuse detection/i,
+    jp:'GitHubへの送信が立て込んでいます。1分ほど待ってから、もう一度お試しください' },
   { re:/GitHub 403|rate limit|Resource not accessible/,
     jp:'GitHubに断られました。トークンの権限(Contents: Read and write)と対象リポジトリを確かめてください' },
   { re:/GitHub 404/,
@@ -871,12 +879,16 @@ const ERROR_RULES = [
   { code:'net', jp:'電波が切れました。電波の届く所でもう一度お試しください' },
   { name:'AbortError', jp:'電波が切れました。電波の届く所でもう一度お試しください' },
   { re:/aborted|The operation was aborted/i, jp:'電波が切れました。電波の届く所でもう一度お試しください' },
-  { re:/Failed to fetch|NetworkError|Load failed|ERR_/i,
-    jp:'通信できませんでした。電波の届く所でもう一度お試しください',
-    model:'モデルを取得できませんでした。電波の届く所でもう一度お試しください' },
-  // 動画・画像が読めない(iOS が対応していない形式・壊れたファイル)
+  /* 動画・画像が読めない(iOS が対応していない形式・壊れたファイル)。
+     **通信の規則より先に置く**(§指摘11) —— `MEDIA_ERR_DECODE` のような名前が
+     通信側の網に先に掛かると「電波の届く所で」と言ってしまう。 */
   { re:/decode|decoding|MEDIA_ERR|not supported|unsupported|createImageBitmap|InvalidStateError/i,
     jp:'この動画(画像)を読み取れませんでした。mp4かPNGに変換してからお試しください' },
+  /* `ERR_` は**ブラウザのネットワークエラー名の頭**だけを拾う(`\bERR_[A-Z]`。§指摘11)。
+     裸の `ERR_` だと `MEDIA_ERR_DECODE` や `AudioContext ERR_x` まで通信の失敗にしてしまう。 */
+  { re:/Failed to fetch|NetworkError|Load failed|\bERR_[A-Z]/,
+    jp:'通信できませんでした。電波の届く所でもう一度お試しください',
+    model:'モデルを取得できませんでした。電波の届く所でもう一度お試しください' },
   { re:/wasm|WebAssembly|backend|memory|allocation|QuotaExceeded/i,
     jp:'この端末では処理しきれませんでした。ほかのタブを閉じてからもう一度お試しください',
     model:'この端末ではモデルを動かせませんでした。別の抜き方をお選びください' },
@@ -928,31 +940,58 @@ const STAGES = [
     : 'ok' },
   { id:'walkPanel',     jp:'歩行',   st: ()=> metaNg('walkMeta') ? 'ng'
                                            : (state.walk.f && state.walk.b) ? 'ok' : 'todo' },
-  { id:'portraitPanel', jp:'静止画', st: ()=> metaNg('portraitMeta') ? 'ng'
+  // 名前は2文字まで。「静止画」は 375px で切れて ✓/! の印まで消えた(§指摘3)
+  { id:'portraitPanel', jp:'静止',   st: ()=> metaNg('portraitMeta') ? 'ng'
                                            : state.portraits ? 'ok' : 'todo' },
   { id:'specPanel',     jp:'仕様',   st: ()=> ($('f_key').value.trim() && $('f_label').value.trim())
                                            ? 'ok' : 'todo' },
   /* 技の段は**赤い欄(数字として読めない欄)があるかどうか**をそのまま出す。
-     判定は moveInputErrors() 1か所(送信を止めるのと同じ関数)。 */
-  { id:'movePanel',     jp:'技',     st: ()=> moveInputErrors() ? 'ng'
+     **読むだけ**の moveHasBadInput() を通す(§指摘4) —— moveInputErrors() は
+     collectSpec() を通して欄に赤を塗るので、段を出し直すだけで入力中の欄が赤くなっていた。 */
+  { id:'movePanel',     jp:'技',     st: ()=> moveHasBadInput() ? 'ng'
                                            : ($('m0_name').value.trim() && $('m1_name').value.trim()
                                               && $('m2_name').value.trim()) ? 'ok' : 'todo' },
-  // 送信の段が読むのは、このパネル自身が出している log の色(差分の確認の結果そのもの)
-  { id:'sendPanel',     jp:'送信',   st: ()=> state.files ? 'ok' : metaNg('log') ? 'ng' : 'todo' },
+  /* 送信の段が読むのは**送信の結果だけ**(§指摘2)。#log は全画面で1つなので、
+     歩行や静止画の失敗で赤くなった log を読むと、送っていないのに送信段が赤くなっていた。 */
+  { id:'sendPanel',     jp:'送信',   st: ()=> state.files ? 'ok' : state.sendNg ? 'ng' : 'todo' },
 ];
+/* 送信段の赤はこの1か所だけが立てる。preflight / doCommit の失敗で立て、成功で消す。 */
+function sendFail(msg){ state.sendNg = true; log(msg, 'ng'); }
 const STAGE_MARK = { ok:'✓', ng:'!', todo:'', off:'' };
 // そのパネルを今使うか。**出し分けは regKind の onchange が正**なので、判定を書き写さず実物を見る
 function stageOn(id){ const e = $(id); return !!e && e.style.display !== 'none'; }
+/* 出し直しは**1フレームに1回**へ束ねる(§指摘12)。log() は取得・抜きのループから
+   数千回呼ばれ、段の判定は7段ぶん DOM を読むので、そのたびにやると本来の処理が遅くなる。
+   ただし**最初の1回はその場で**やる —— 押した直後に段が変わらないと、束ねたぶんが遅れに見える。
+   束ねている間に来た呼び出しは、最後の1回だけ次のフレームで流す。
+   rAF が止まる場面(背面のタブ)でも取り残されないよう、時間の保険を並べて掛ける。 */
+const STAGE_COALESCE_MS = 50;
+let stageRaf = 0, stageTimer = 0, stagePending = false;
 function refreshStages(){
+  if(stageTimer){ stagePending = true; return; }
+  refreshStagesNow();
+  const flush = ()=>{
+    if(!stageTimer) return;
+    clearTimeout(stageTimer); stageTimer = 0;
+    if(stageRaf && window.cancelAnimationFrame) cancelAnimationFrame(stageRaf);
+    stageRaf = 0;
+    if(stagePending){ stagePending = false; refreshStages(); }
+  };
+  stageTimer = setTimeout(flush, STAGE_COALESCE_MS);
+  stageRaf = window.requestAnimationFrame ? requestAnimationFrame(flush) : 0;
+}
+function refreshStagesNow(){
   const bar = $('stageBar');
   if(!bar || !bar.children.length) return;      // boot 前(と検査のスタブ)では何もしない
   STAGES.forEach((s, i)=>{
     const b = bar.children[i];
     if(!b) return;
     /* **段の判定で落ちてもバーだけの問題で済ませる。** log() から呼ばれるので、
-       ここで投げると「失敗の理由を出そうとして別の失敗で消える」ことになる。 */
+       ここで投げると「失敗の理由を出そうとして別の失敗で消える」ことになる。
+       ただし**黙らない** —— 段がいつまでも「未」のままになる原因はここにしか残らない。 */
     let st = 'todo';
-    try{ st = stageOn(s.id) ? s.st() : 'off'; }catch(e){}
+    try{ st = stageOn(s.id) ? s.st() : 'off'; }
+    catch(e){ console.warn('段階バー: ' + s.jp + ' の判定に失敗しました', e); }
     b.className = st;
     b.querySelector('.mk').textContent = STAGE_MARK[st];
   });
@@ -960,6 +999,8 @@ function refreshStages(){
 /* タップしたらそのパネルの頭へ。**段階バーのぶんだけ余分に上へ寄せる**
    (貼り付いている帯の下にパネルの見出しが潜り込むため)。 */
 function stageGo(id){
+  // 今の「登録の種類」で使わない段(薄い段)は押しても飛ばない ―― 隠れたパネルの位置は0
+  if(!stageOn(id)) return;
   const el = $(id), wrap = $('stageWrap');
   if(!el) return;
   const off = (wrap ? wrap.getBoundingClientRect().height : 0) + 6;
@@ -984,15 +1025,28 @@ function buildStageBar(){
      ・GitHubの設定(`aramon_gh_*`。トークンは別管理のままにする)
      ・「どれを開くか」の選択(e_target / a_target / aw_base。md_skin は mediaPanel ごと対象外)
        —— 相手は GitHub から読み直さないと中身が入らないので、欄だけ戻すと嘘になる
-     ・技プレビューの保存データ退避(班Cが IndexedDB に持つ。性質が違うので混ぜない)      */
+     ・技プレビューの保存データ退避(班Cが IndexedDB に持つ。性質が違うので混ぜない)
+     ・**「登録済みを開いて直す」中の入力すべて**(下の draftKindOk)                       */
 const DRAFT_KEY = 'aramon_studio_draft_v1';
+// 「使わずに新しく始めます」で消す前の1世代。取り違えて打ち始めても手で戻せるように残す(§指摘6)
+const DRAFT_PREV_KEY = 'aramon_studio_draft_prev_v1';
 const DRAFT_PANELS = ['kindPanel','walkPanel','portraitPanel','specPanel','movePanel'];
 const DRAFT_SKIP = ['e_target','e_chText','e_chMode','e_chTarget','a_target','aw_base','seedPrompt'];
 /* 戻したあとに「出し分け」をやり直す欄。値を入れただけでは、その値に連動して
    出たり隠れたりする欄が前のままになる(抜き方のしきい値・色拾い・技の薄字)。
    **f_scPreset は入れない** —— あれは選ぶと状態変化の中身を上書きするので、
-   戻した中身が消える。                                                        */
-const DRAFT_RERUN = ['mode','pmode','walkSrc','m2_tpl','f_scTrigger','aw_mode'];
+   戻した中身が消える。
+   s_raidEffect は addEventListener で出し分けを登録しているので、
+   **`.onchange` の直呼びでは拾えない**(§指摘7。下の fireChange を参照)。   */
+const DRAFT_RERUN = ['mode','pmode','walkSrc','m2_tpl','f_scTrigger','aw_mode','s_raidEffect'];
+/* 「登録済みを開いて直す」は下書きの対象外(§指摘5)。**保存も復元もしない。**
+   相手(e_target)は GitHub から読み直さないと中身が入らないので戻せず、
+   欄の値だけ戻すと state.editFilled が立たないまま値が残る ――
+   そうなると「種類を切り替えたら欄を既定へ戻す」が効かず、開いた体の数字が
+   そのまま新しいモンスターの登録へ混ざる。判定はこの1か所。 */
+const draftKindOk = kind => kind !== 'edit';
+// 出し分けのやり直しは**イベントを起こす**(`.onchange` 直呼びでは addEventListener 登録を拾えない)
+const fireChange = el => el.dispatchEvent(new Event('change', { bubbles:true }));
 let draftTimer = 0, draftAsking = false;
 function draftFields(){
   const out = [];
@@ -1008,6 +1062,7 @@ function draftFields(){
 }
 function saveDraft(){
   if(draftAsking) return;          // まだ「戻すか捨てるか」を聞いている最中は上書きしない
+  if(!draftKindOk($('regKind').value)) return;   // 「開いて直す」中は残さない(§指摘5)
   const f = {};
   for(const el of draftFields()) f[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
   try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ v:1, at:Date.now(), kind:$('regKind').value, f })); }
@@ -1018,7 +1073,8 @@ function saveDraftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(save
 function readDraft(){
   try{
     const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
-    return (d && d.v === 1 && d.f) ? d : null;
+    // 「開いて直す」の下書きは戻さない(§指摘5)。聞く側・戻す側の両方がここを通る
+    return (d && d.v === 1 && d.f && draftKindOk(d.kind)) ? d : null;
   }catch(e){ return null; }
 }
 function draftAgeText(at){
@@ -1044,29 +1100,54 @@ function draftRestore(){
   $('draftBar').style.display = 'none';
   if(!d) return;
   // 登録の種類を先に当てる(出すパネルがここで決まる)
-  if(d.kind && $('regKind')){ $('regKind').value = d.kind; $('regKind').onchange(); }
-  for(const el of draftFields()){
-    const v = d.f[el.id];
-    if(v === undefined) continue;
-    if(el.type === 'checkbox') el.checked = !!v; else el.value = v;
-  }
-  for(const id of DRAFT_RERUN) if($(id) && $(id).onchange) $(id).onchange();
+  if(d.kind && $('regKind')){ $('regKind').value = d.kind; fireChange($('regKind')); }
+  const put = ()=>{
+    for(const el of draftFields()){
+      const v = d.f[el.id];
+      if(v === undefined) continue;
+      if(el.type === 'checkbox') el.checked = !!v; else el.value = v;
+    }
+  };
+  put();
+  /* 値に連動して出し入れされる欄をやり直す。**`.onchange` を直に呼ばない**(§指摘7) ――
+     addEventListener で登録した出し分け(レイド特効の倍率の行)を拾えないうえ、
+     班A' の「動画なら抜き方の既定は色で抜く」は**イベント引数の有無**で
+     「人が選んだか」を見分けているので、直呼びだと戻した抜き方が既定に負ける。 */
+  for(const id of DRAFT_RERUN) if($(id)) fireChange($(id));
+  // 種類の出し分けは**値を全部入れ終えてから**もう一度通す(欄の値を見て出し入れするため)
+  if($('regKind')) fireChange($('regKind'));
+  /* 出し分けの中には**別の欄を既定へ戻す**ものがある(抜き方を変えるとしきい値が既定に戻る)。
+     戻した値が消えてしまうので、出し分けのあとにもう一度入れ直す。
+     順は「入れる → 出し分け → 入れ直す」で、出し分けは正しい値を見たまま動く。 */
+  put();
   log('前回の続きを入れました。絵と動画だけ選び直してください。', 'ok');
 }
 function draftDiscard(){
   draftAsking = false;
   $('draftBar').style.display = 'none';
+  draftKeepPrev();
   try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
   log('前回の入力を捨てました。');
 }
+/* 捨てる前に**1世代だけ**別キーへ退避する(§指摘6)。押し間違い・触り間違いで
+   前回の続きが消えたとき、手で戻せる余地を残すため。溜め込まない(1つだけ)。 */
+function draftKeepPrev(){
+  try{
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if(raw) localStorage.setItem(DRAFT_PREV_KEY, raw);
+  }catch(e){ /* 容量いっぱい・プライベートブラウズ。退避できなくても作業は続けられる */ }
+}
 /* 問いに答えないまま欄を触りはじめたら、その入力を**保存できる状態に戻す**。
    答えるまで保存を止めたままだと、10分打ち込んだぶんが1文字も残らない。
-   打ち始めた時点で「新しく始める」を選んだのと同じなので、問いも引っ込める
-   (残っている下書きは、次の自動保存で上書きされる)。 */
+   打ち始めた時点で「新しく始める」を選んだのと同じなので、問いも引っ込める。
+   **黙って捨てない**(§指摘6) —— 残っている下書きは次の自動保存で上書きされるので、
+   何が起きたかを言い、上書きされる前に1世代だけ退避しておく。 */
 function draftDismiss(){
   if(!draftAsking) return;
   draftAsking = false;
   $('draftBar').style.display = 'none';
+  draftKeepPrev();
+  log('前回の入力は使わずに新しく始めます(前回の続きは消えました)');
 }
 
 /* ---------------------------------------------------------- 連結成分 */
@@ -2097,7 +2178,23 @@ function detectPeriod(grays, n){ return periodDiag(grays, n).period; }
 function periodFound(p){ return !!p && p.peak >= PERIOD_PEAK_MIN; }
 
 // 動画 -> 8コマの RGBA ImageData(320x320)
-const walkStep = (t)=>{ const e = $('walkMeta'); if(e) e.textContent = t; };
+/* 進捗の書き出し。**16コマのループから何百回も呼ばれる**ので、書く頻度をここで間引く
+   (§指摘15。呼び出し側は数え方を知らなくていい)。間引くのは
+   「… 3 / 16」のように**数字だけが変わる続き**で、**文言が変わったら必ず書く** ――
+   段が切り替わったこと(切り出し → 抜き → 整え)まで落とすと、止まったように見える。 */
+const WALK_STEP_EVERY = 4;          // 同じ文言の続きは4回に1回だけ書く
+let walkStepN = 0, walkStepHead = '';
+const walkStep = (t)=>{
+  const e = $('walkMeta');
+  if(!e) return;
+  const head = String(t).split('…')[0];        // 「…」より前 = その段の名前
+  if(head === walkStepHead){
+    if(walkStepN++ % WALK_STEP_EVERY) return;
+  }else{
+    walkStepHead = head; walkStepN = 1;
+  }
+  e.textContent = t;
+};
 /* 外周の色。**四隅だけでなく辺の中央も足した8点**を見る。
    四隅だけだと、角に透かし(PowerDirectorのロゴ)や枠飾りが乗っている動画で
    背景でない色を拾ってしまう。8点あれば1〜2点が外れても中央値が耐える。 */
@@ -2757,6 +2854,7 @@ async function useFrames(side, frames, note){
          : '<span class="ok"> 問題は見つかりませんでした。</span>') +
     `<br>保持中: 正面${state.walk.f?'○':'—'} / 後ろ${state.walk.b?'○':'—'}`;
   startWalkAnim();
+  refreshStages();   // 成功経路は log() を通らない(§指摘1)。ここで段を出し直す
 }
 /* 動画の診断を表示する。**数字を作るのは buildWalkFrames、見せるのはここだけ。**
    ここで作る文字はすべてこのツール自身が作った数字なので innerHTML でよい
@@ -3194,13 +3292,16 @@ async function buildPortraits(){
     $('portraitMeta').innerHTML = state.hue!=null
       ? `<span class="ok">整えました。色相=${state.hue} を自動で入れました。</span>`
       : '<span class="ok">整えました。</span>彩度の高い部分が少ないので、色スキンは light にしました。';
+    refreshStages();   // 成功経路は log() を通らない(§指摘1)。ここで段を出し直す
   }catch(e){
     /* **「整えています…」のまま止めない**(§指摘27)。log だけに出していたので、
        静止画パネルを見ている人には何が起きたのか分からなかった。歩行側(preview)と同じく
-       その場にも理由を出す。日本語へ丸めるのは modelErrorText の1か所で、
+       その場にも理由を出す。日本語へ丸めるのは errorText の1か所で、
        自前の日本語の例外(「被写体を検出できませんでした」など)はそのまま返る。
+       **モデルの言い方に丸めるのは、静止画をモデルで抜いているときだけ**(§指摘10) ――
+       白背景で抜いているのに「別の抜き方をお選びください」と言っても行き先が無い。
        例外の文面をそのまま入れるので innerHTML は使わない。 */
-    const m = modelErrorText(e);
+    const m = errorText(e, $('pmode').value === 'model' ? 'model' : '');
     $('portraitMeta').textContent = m;
     $('portraitMeta').className = 'hint ng';
     log(m, 'ng');
@@ -3515,6 +3616,11 @@ function moveNumValue(i, key){
   if(bad) moveBadFields.add(id); else moveBadFields.delete(id);
   return bad || !v ? null : n;
 }
+/* **塗った結果を読むだけ**の判定(§指摘4)。段階バーはこちらを通る ――
+   moveInputErrors() は collectSpec() を通して欄へ赤(.badnum)を塗るので、
+   段を出し直すたびに画面が書き換わっていた。塗るのは「入力したとき」と
+   「差分を確認する」ときだけでよい。 */
+function moveHasBadInput(){ return moveBadFields.size > 0; }
 /* 読めない欄の一覧(送信を止める理由)。**collectSpec を1回通してから呼ぶ** ――
    赤くするのは moveNumValue なので、全欄を読んだ後でないと最新にならない。 */
 function moveInputErrors(){
@@ -5604,11 +5710,12 @@ function textsSyntaxError(texts){
 
 async function preflight(){
   try{
-    if(!tok()) return log('先にトークンを保存してください', 'ng');
+    if(!tok()) return sendFail('先にトークンを保存してください');
     /* **数字として読めない欄があるうちは送らせない。** 黙って「触っていない」ことにすると、
-       書いたはずの値がテンプレートのまま本番へ出る(赤い欄がその場所)。 */
+       書いたはずの値がテンプレートのまま本番へ出る(赤い欄がその場所)。
+       赤を**塗る**のはここと入力のときだけ(段階バーは塗った結果を読むだけ。§指摘4)。 */
     const bad = isSsr() || isSsrMedia() || isAssets() || isAwaken() ? null : moveInputErrors();
-    if(bad){ $('commitBtn').disabled = true; return log(bad.join('\n'), 'ng'); }
+    if(bad){ $('commitBtn').disabled = true; return sendFail(bad.join('\n')); }
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
     /* sha も一緒に控える。「開いて直す」の送信直前の照合が、**書き戻すファイル全部**を
        見られるようにするため(本文と sha を別々に取りに行くと食い違う)。 */
@@ -5628,13 +5735,14 @@ async function preflight(){
     const syn = textsSyntaxError(plan.texts);
     if(syn) throw new Error(syn);
     state.files = plan;
+    state.sendNg = false;          // この確認は通った(送信の段の赤を落とす)
     $('commitBtn').disabled = false;
     log(lines.join('\n'), 'ok');
-  }catch(e){ log(errorText(e), 'ng'); }
+  }catch(e){ sendFail(errorText(e)); }
 }
 
 async function doCommit(){
-  if(!state.files) return log('先に「差分を確認する」を押してください', 'ng');
+  if(!state.files) return sendFail('先に「差分を確認する」を押してください');
   const { texts: texts2, images: files, message, guard } = state.files;
   try{
     $('commitBtn').disabled = true;
@@ -5685,6 +5793,7 @@ async function doCommit(){
     });
     setProg(null);
     state.files = null;
+    state.sendNg = false;          // 送れた(次は「まだ」から始まる)
     // 送ったら控えた sha が古くなる。続けて直すときは読み直してもらう
     if(state.edit){ state.edit = null; if($('e_chText')) $('e_chText').value = ''; }
     log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
@@ -5696,7 +5805,7 @@ async function doCommit(){
                       : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
   }catch(e){
     setProg(null); $('commitBtn').disabled = false;
-    log('コミットに失敗しました:\n' + errorText(e), 'ng');
+    sendFail('コミットに失敗しました:\n' + errorText(e));
   }
 }
 
@@ -7209,6 +7318,9 @@ function boot(){
       if(el && el.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.type !== 'file'){
         draftDismiss();          // 問いを出したまま打ち始めたら、その入力を保存できるようにする
         saveDraftSoon();
+        /* 数字として読めない欄を赤くするのは**入力したとき**と「差分を確認する」ときだけ(§指摘4)。
+           段階バーは塗った結果(moveBadFields)を読むだけなので、塗り直しはここで1回やる。 */
+        if(/^m[012]_/.test(el.id || '')) moveInputErrors();
       }
       refreshStages();
     });
