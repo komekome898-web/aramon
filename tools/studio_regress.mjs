@@ -399,8 +399,14 @@ function runRoundTrip(){
   if(S.pickEntry(src, 'EMOTE_FRAMES', 'guts_ssr') !== null)
     fail('roundtrip', 'EMOTE_FRAMES のコメント行(// 例: guts_ssr: …)を項目として掴んでいます');
 
-  notes.push(`MONSTER_AURA は行頭にある ${maReach}/${keys.length} 体だけ pickEntry で取れる(1行に複数項目を書く表のため)`);
-  return `${keys.length}体 × 4通り`;
+  /* 取れなかった体の数を**必ず出力の末尾に出す**。以前は notes に1行流すだけだったので、
+     「9体しか取れていない」のに検査は緑のまま通り、見落とせる状態だった(§指摘21)。
+     TODO(波3で錨を広げたら failures へ): 走査器が1行に複数項目を書く表を掴めるようになったら、
+     ここは notes ではなく fail('roundtrip', …) にして、取れない体が残ったら落とす。 */
+  const miss = keys.length - maReach;
+  notes.push(`MONSTER_AURA は行頭にある ${maReach}/${keys.length} 体だけ pickEntry で取れる`
+    + `(1行に複数項目を書く表のため。**取れなかった体: ${miss}**)`);
+  return `${keys.length}体 × 4通り(MONSTER_AURA は ${miss}体が取れず)`;
 }
 
 /* ============================================================ (e) HTML属性から呼ばれる名前
@@ -550,13 +556,16 @@ for(const n of notes) console.log('注意: ' + n);
 if(UPDATE){
   console.log('ゴールデンを作りました: ' + done.join(' / '));
   console.log('置き場所: ' + path.relative(ROOT, GOLDEN));
-  process.exit(0);
 }
-// diffJson と compare で同じ項目を二重に出すので、同じ行はまとめる
+/* diffJson と compare で同じ項目を二重に出すので、同じ行はまとめる。
+   **--update でもここは必ず通す。** ゴールデン以外の判定(往復・属性・技名・更新履歴・
+   keepMajor など、比較の相手を持たない本物の不合格)は --update と関係なく起きるのに、
+   以前は --update だと何も見ずに exit 0 していた。ゴールデンは書いたうえで、落ちる(§指摘7)。 */
 const uniq = [...new Set(failures)];
 if(uniq.length){
   console.log(`違いが ${uniq.length} 件あります:`);
   for(const f of uniq) console.log('  - ' + f);
   process.exit(1);
 }
-console.log('スタジオ回帰検査: 変化なし(' + done.join(' / ') + ')');
+console.log(UPDATE ? 'ゴールデン以外の判定はすべて通りました'
+                   : 'スタジオ回帰検査: 変化なし(' + done.join(' / ') + ')');

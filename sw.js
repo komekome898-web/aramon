@@ -1,10 +1,15 @@
 // ファイルを更新するたびに、このバージョン番号を必ず上げてください。
 // (例: v2 -> v3 -> v4 ...) 番号を上げないと、ユーザーの端末に古いキャッシュが
 // 残り続け、更新した内容が反映されません。
-const CACHE_NAME = 'aramon-cache-v745';
+const CACHE_NAME = 'aramon-cache-v746';
 // 画像と音は「別のキャッシュ」に入れ、バージョンを上げても消さない。
 // コード(html/js/css)だけが毎回入れ替わり、11MBの画像と5.7MBの音は貯めたまま使える。
 const MEDIA_CACHE = 'aramon-media';
+/* モンスター作成スタジオ(tools/studio_web.html)が背景抜きのモデル(約44MB)を入れるキャッシュ。
+   スタジオも同じオリジンに置いてあるので、下の activate が「知らないキャッシュ」として
+   消してしまうと、**ゲームを更新するたびに44MBを取り直す**ことになる(ゲーム本体は使わない)。
+   **この名前は tools/studio_web.html の MODEL_CACHE と二重に持っている。直すときは両方直す。** */
+const STUDIO_MODEL_CACHE = 'aramon-studio-model-v1';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -74,8 +79,9 @@ self.addEventListener('message', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      // 画像・音のキャッシュ(MEDIA_CACHE)は世代交代で消さない
-      Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== MEDIA_CACHE).map((k) => caches.delete(k)))
+      // 画像・音のキャッシュ(MEDIA_CACHE)とスタジオのモデル(STUDIO_MODEL_CACHE)は世代交代で消さない
+      Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== MEDIA_CACHE && k !== STUDIO_MODEL_CACHE)
+        .map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });

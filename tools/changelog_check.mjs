@@ -64,7 +64,12 @@ for(const [bi, b] of HISTORY.entries()){
    過去の日付は公開済みで、似た語が並ぶのは自然(「歩行アニメーションを追加」等)。
    直すべきなのは「今日の分に、同じ話題の行を2つ作った」場合だけ。 */
 /* 文字の並びではなく「出てくる言葉」で比べる。日本語は言い回しを変えると
-   文字の並びがまるごと変わるので、漢字・カタカナの語で見たほうが同じ話題を拾える。 */
+   文字の並びがまるごと変わるので、漢字・カタカナの語で見たほうが同じ話題を拾える。
+
+   **この判定(語の切り出し・類似度・しきい値)は tools/studio_web.html の
+   changelogWarnings / changelogWords / changelogSimilarity / CHANGELOG_SIMILAR と
+   二重に持っている**(スタジオは data.js を読まずに端末の中だけで判定するため)。
+   直すときは必ず両方直すこと。同じ結果になることは studio_regress.mjs の (g) が毎回突き合わせる。 */
 const words = (s)=> new Set(s.match(/[゠-ヿ]{2,}|[一-鿿]{2,}/g) || []);
 const similarity = (a, b)=>{
   const A = words(a), B = words(b);
@@ -86,8 +91,10 @@ for(const b of HISTORY.slice(0, 1)){
   }
 }
 
-/* --- 遊ぶ人に関係のない言葉 --- */
-const INTERNAL = ['リファクタ', 'キャッシュ', 'CACHE_NAME', 'Service Worker', 'localStorage', 'コミット',
+/* --- 遊ぶ人に関係のない言葉 ---
+   **この一覧は tools/studio_web.html の CHANGELOG_INTERNAL と二重に持っている。
+   語を足す・減らすときは必ず両方直す**(studio_regress.mjs の (g) が一致を検査する)。 */
+const INTERNAL =['リファクタ', 'キャッシュ', 'CACHE_NAME', 'Service Worker', 'localStorage', 'コミット',
                   'プルリク', 'リポジトリ', '関数', '変数', 'CSS', 'DOM', 'API', 'デプロイ', 'ソースコード'];
 for(const b of HISTORY){
   if(!Array.isArray(b.items)) continue;

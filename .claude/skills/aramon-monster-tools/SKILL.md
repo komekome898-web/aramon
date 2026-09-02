@@ -85,11 +85,16 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 ### 学習済みモデルで抜く(`segmentModel()`・2026-09-02)
 
 - **モデル = RMBG-1.4(量子化・約44MB)+ onnxruntime-web 1.19.2(WASM 単スレッド)。** GitHub Pages は COOP/COEP を付けられないので多スレッドは使えない。取得元は`MODEL_SRC`の**1か所**。「モデルで抜く」を初めて使ったときだけ取りに行き、Cache API に保存(2回目からは端末内)。無通信30秒で中断、ライブラリ読み込みは20秒上限。
-- **入口は`resolveAlpha(img, seg, prog)`の1か所。** `segment()`を直接呼んでいた3か所(`imageAlphaFor` / `buildWalkFrames` / `makePortrait`)はすべてここを通る。モデルで抜けなかったら**必ず`blackopen`へ落として理由と次の手を`log`に出す**(処理を止めない)。
+- **`MODEL_CACHE`の名前は`sw.js`の`STUDIO_MODEL_CACHE`と二重に持つ。** スタジオも本番と同じオリジンなので、SWの`activate`が「知らないキャッシュ」として消してしまい、**ゲームを更新するたびに44MBを取り直していた**。片方を変えたら必ず両方直す。
+- **欠けた物を保存しない。** `content-length`と届いた量が違う/最低の大きさ(`MODEL_MIN_BYTES`)に満たないときは投げて**キャッシュしない**。保存物も読み出すときに大きさを見て、小さければ捨てる。`InferenceSession.create`に失敗したらそのキャッシュ項目を消す(**1度だけ**取り直しの機会を与え、2度目に「この端末では動かない」と決める=`MODEL_CREATE_TRIES`)。
+- **`modelState.err`(=もう試さない)にするのは「端末で動かない」ときだけ。** 取得の失敗(圏外・CDN・途中で切れた)は毎回やり直せる。`releaseSegmentModel()`はこの記憶も消す(**async。`release()`を await する。WASMヒープはこれでもOSへは返らない**)。
+- **入口は`resolveAlpha(img, seg, prog)`の1か所。** `segment()`を直接呼んでいた3か所(`imageAlphaFor` / `buildWalkFrames` / `makePortrait`)はすべてここを通る。**「すでに半透明の画素がある絵はその透過をそのまま使う」判定もここが持つ**(これが無いと、透過済みPNGに既定の「モデルで抜く」が当たって44MBを取りに行き、圏外だと黒背景で抜き直してしまう)。モデルで抜けなかったら**必ず`blackopen`へ落として理由と次の手を`log`に出す**(処理を止めない)。**例外を日本語へ丸めるのは`modelErrorText()`の1か所。**
+- **「中断」だけは`blackopen`へ落とさない**(黒背景で16コマ作り直しても意味がない)。`modelState.abort`(AbortController)を`segmentModel`の入口で見る。取得中の44MBも一緒に止まる。
+- **`.modelNote`は呼び出し元のパネルだけ書き換える**(`modelNote(text, 'walk'|'portrait')`)。歩行の結果で静止画の説明を消さない。**例外の文面を出すので`innerHTML`は使わない。**
 - 後処理の順は `dropSpecks(bg)` → 反転 → `keepMajor(8%)` → `tightenEdge`。逆順だと keepMajor が落とした粒を dropSpecks が拾い直す。**`keepMajor`(最大成分の8%以上は残す)はモデル経路だけ**。JS経路の`keepLargest`は不変。縁の締めの式は`tightenEdge()`に1つだけ置き、`segment()`からも`segmentModel()`からも呼ぶ。
 - **入力は 1024×1024 固定**(量子化版の制約。512 を入れると onnxruntime が撥ねる)。「512で試して粗ければ1024」はできない。抜き終わりに「取得○秒 / 推論○秒 / 縁のやわらかさ○%」を`.modelNote`へ出す(次にモデルを替えるときの判断材料)。
-- 動画の16コマは`segmentModel`を1コマずつ呼ぶ(1コマ約13秒/このサーバー。iPhone は数倍速い見込み)。技プレビューを開く前は`releaseSegmentModel()`で解放する。
-- 検査: `node tools/studio_regress.mjs --only model`(呼び分けの一致36通り+keepMajor)/ `node tools/studio_model_test.mjs`(ヘッドレスで IoU・キャッシュ・落ち方)。
+- 動画の16コマは`segmentModel`を1コマずつ呼ぶ(1コマ約13秒/このサーバー。iPhone は数倍速い見込み)。**歩行側には所要時間の断りと「中断」ボタンを出す。** 1024²のcanvas4枚は終わりに`width=height=0`で捨てる(16コマぶん積み上がる)。技プレビューを開く前は`await releaseSegmentModel()`で解放する。
+- 検査: `node tools/studio_regress.mjs --only model`(呼び分けの一致36通り+keepMajor)/ `node tools/studio_model_test.mjs`(ヘッドレスで IoU・キャッシュ・落ち方・途中で切れた応答・再試行・素通し・中断)。
 
 ### 登録済みの表を1項目だけ書き換える(走査器・2026-09-02)
 

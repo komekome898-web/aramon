@@ -354,6 +354,12 @@
   <div class="hint modelNote">
     「モデルで抜く」は初回だけ約44MBを取得します(次回から端末内)。どんな背景でもそのまま抜けます。
   </div>
+  <!-- 歩行は16コマぶん推論するので静止画の16倍かかる。押す前に分かるよう、
+       この行は modelNote() で上書きされない別の行として置く(上の行は結果の表示に使われる)。 -->
+  <div class="hint" id="walkModelTime" style="display:none">
+    <b>動画・複数枚から作るときは時間がかかります</b>(1コマ約10〜15秒 × 16コマ)。
+    進捗の横の「中断」でいつでも止められます。
+  </div>
   <div id="thWrap">
     <label>しきい値 <span id="thVal">14</span> — 大きくすると背景を多く抜きます</label>
     <input id="th" type="range" min="4" max="120" value="14">
@@ -367,6 +373,10 @@
     <button onclick="preview('b')">後ろをプレビュー</button>
   </div>
   <progress id="prog" value="0" max="100" style="display:none"></progress>
+  <!-- モデルで16コマを抜いている間だけ出す。押すと今のコマの手前で止まる(黒背景へは落ちない) -->
+  <div class="btns" id="modelAbortWrap" style="display:none">
+    <button id="modelAbortBtn" onclick="abortModelRun()">中断</button>
+  </div>
   <div id="candWrap" style="display:none">
     <label>候補の16コマ — タップして<b>使う8コマ</b>を選びます <span id="candCount" class="badge">8 / 8</span></label>
     <div class="strip cand" id="candStrip"></div>
@@ -1150,7 +1160,11 @@ const MODEL_SRC = {
   wasm: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/',   // wasm も同じCDNから
   onnx: 'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx',
 };
-const MODEL_CACHE = 'aramon-studio-model-v1';  // Cache API の名前(モデルを替えたら上げる)
+/* Cache API の名前(モデルを替えたら上げる)。
+   **この名前は sw.js の STUDIO_MODEL_CACHE と二重に持っている。** スタジオも本番と同じ
+   オリジンに置いてあるので、sw.js の activate が「知らないキャッシュ」として消してしまう。
+   名前を変えるときは sw.js 側も必ず一緒に直すこと(直さないとゲームを更新するたびに44MBを取り直す)。 */
+const MODEL_CACHE = 'aramon-studio-model-v1';
 /* 入力の大きさ。**量子化版の RMBG-1.4 は 1024×1024 固定**で、512 を入れると
    onnxruntime が「Expected: 1024」で撥ねる(2026-09-02 に実測)。だから
    「512で試して粗ければ1024」はこのモデルでは成り立たない。1024の1回だけ走らせ、
@@ -1163,15 +1177,71 @@ const MODEL_KEEP_RATIO = 0.08; // 最大の塊のこの割合以上なら残す(
 const MODEL_FALLBACK = 'blackopen';   // 失敗したときに落ちる先(JSの既定の抜き方)
 const MODEL_LOAD_MS = 20000;   // 推論ライブラリの読み込みを待つ上限
 const MODEL_STALL_MS = 30000;  // モデルの取得が固まったとみなす無通信の時間
+/* 「明らかに途中で切れた応答」の下限。量子化版 RMBG-1.4 は約44MB なので、その半分を
+   下回るものはモデルではない。**44MB という実寸は決め打ちしない**(モデルを替えても効くように、
+   下限だけを持つ)。content-length がある場合は下の got!==total の照合が本命で、これは保険。 */
+const MODEL_MIN_BYTES = 20*1024*1024;
+/* セッション作成に何回失敗したら「この端末では動かない」と決めるか。
+   1回目は**壊れた保存物を掴んでいる**可能性があるので、キャッシュを捨てて取り直す機会を1度与える。
+   2回続けて作れないなら端末側(WASM非対応・メモリ不足)なので、そこで初めてラッチする。 */
+const MODEL_CREATE_TRIES = 2;
 // 取得・推論の実測値。**残り時間は決め打ちせず、直前の実測から出す**(端末で10倍違う)
+// err = 「この端末では動かない」と分かったときだけ入る(取得の失敗では入れない・§指摘3)
 const modelState = { lib:null, ort:null, sess:null, bytes:null, size:0,
-                     fetchMs:0, cached:false, lastRunMs:0, err:null };
+                     fetchMs:0, cached:false, lastRunMs:0, err:null,
+                     createFails:0, abort:null };
 
-// 実機で測ってもらう「取得時間・推論時間」の置き場。歩行と静止画の両方に同じ文を出す
-function modelNote(html){
-  const els = document.querySelectorAll ? document.querySelectorAll('.modelNote') : [];
-  for(const e of els) e.innerHTML = html;
+/* 実機で測ってもらう「取得時間・推論時間」の置き場。
+   **例外の文面をそのまま差し込むので innerHTML は使わない**(< や & で画面が壊れる)。
+   panel を渡すと**そのパネルの行だけ**を書き換える(歩行の結果で静止画の説明を消さない)。 */
+function modelNote(text, panel, cls){
+  if(!document.querySelectorAll) return;
+  const sel = panel === 'walk' ? '#walkPanel .modelNote'
+            : panel === 'portrait' ? '#portraitPanel .modelNote'
+            : '.modelNote';        // 呼び出し元が分からないときだけ両方(検査からの直接呼び出し)
+  for(const e of document.querySelectorAll(sel)){
+    e.textContent = text;
+    e.className = 'hint modelNote' + (cls ? ' ' + cls : '');
+  }
 }
+/* **例外を遊ぶ人の言葉へ丸めるのはここ1か所。** 理由と「次に何をすればよいか」を必ず並べる。
+   自分で投げた物は e.__modelCode で見分け、ORT や fetch の英語の例外は名前と文面で拾う。 */
+function modelErrorText(e){
+  const code = e && e.__modelCode || '';
+  const name = e && e.name || '';
+  const raw  = String(e && (e.message || e) || '');
+  if(code === 'abort')    return '中断しました。もう一度試すときは「プレビュー」を押してください';
+  if(code === 'truncated')return 'モデルの取得が途中で切れました。電波の届く所でもう一度お試しください';
+  if(code === 'device')   return 'この端末ではモデルを動かせませんでした。別の抜き方をお選びください';
+  if(code === 'net' || name === 'AbortError' || /aborted|The operation was aborted/i.test(raw))
+    return '電波が切れました。電波の届く所でもう一度お試しください';
+  if(/Failed to fetch|NetworkError|Load failed|ERR_/i.test(raw))
+    return 'モデルを取得できませんでした。電波の届く所でもう一度お試しください';
+  if(/wasm|WebAssembly|backend|no available backend|memory|allocation/i.test(raw))
+    return 'この端末ではモデルを動かせませんでした。別の抜き方をお選びください';
+  return 'モデルの読み込みに失敗しました。もう一度試すか、別の抜き方をお選びください';
+}
+// 自分で投げる例外に「どの種類か」を付ける(上の丸め方が文面の当て推量にならないように)
+function modelError(code, msg){ const e = new Error(msg); e.__modelCode = code; return e; }
+
+/* ---- 中断(歩行の16コマは1コマ十数秒かかるので、押した人が止められるようにする) ----
+   AbortController を modelState に持ち、segmentModel の入口で確認する。
+   中断したときは **blackopen へ落とさず**その場で止める(黒背景で16コマ作り直しても意味がない)。 */
+function beginModelRun(use){
+  modelState.abort = (use && typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const w = $('modelAbortWrap'); if(w) w.style.display = modelState.abort ? '' : 'none';
+}
+function endModelRun(){
+  modelState.abort = null;
+  const w = $('modelAbortWrap'); if(w) w.style.display = 'none';
+}
+function abortModelRun(){
+  if(!modelState.abort) return;
+  modelState.abort.abort();          // 取得中なら fetch も一緒に止まる(下の fetchModelBytes)
+  log('中断します(いま抜いているコマが終わったら止まります)');
+}
+function modelAborted(){ return !!(modelState.abort && modelState.abort.signal.aborted); }
+function throwIfAborted(){ if(modelAborted()) throw modelError('abort', '中断しました'); }
 const modelMB = n => (n/1048576).toFixed(1);
 // 推論の進捗。prog={i,n} が来たら「1/16」と残り時間を出す(残りは直前の実測×残り枚数)
 function modelRunText(prog){
@@ -1201,7 +1271,12 @@ async function modelCacheGet(){
     if(typeof caches === 'undefined') return null;
     const c = await caches.open(MODEL_CACHE);
     const r = await c.match(MODEL_SRC.onnx);
-    return r ? new Uint8Array(await r.arrayBuffer()) : null;
+    if(!r) return null;
+    const b = new Uint8Array(await r.arrayBuffer());
+    /* **保存物も必ず大きさを確かめる。** 途中で切れた物が一度でも入ると、
+       ここで捨てない限り「端末内にあるのに毎回失敗する」状態が永久に続く。 */
+    if(b.length < MODEL_MIN_BYTES){ await modelCacheDelete(); return null; }
+    return b;
   }catch(e){ return null; }
 }
 async function modelCachePut(bytes){
@@ -1211,6 +1286,15 @@ async function modelCachePut(bytes){
     await c.put(MODEL_SRC.onnx, new Response(bytes, { headers:{ 'Content-Type':'application/octet-stream' } }));
     return true;
   }catch(e){ return false; }   // 保存できなくても抜ける。次回また取りに行くだけ
+}
+/* 保存した物を捨てる。**捨てられる道を必ず持つ**のがここの肝で、
+   壊れた44MBを掴んだまま「次回も端末内から読んで、また失敗する」を断ち切るために要る。 */
+async function modelCacheDelete(){
+  try{
+    if(typeof caches === 'undefined') return false;
+    const c = await caches.open(MODEL_CACHE);
+    return await c.delete(MODEL_SRC.onnx);
+  }catch(e){ return false; }
 }
 /* モデル(44MB)を取る。進捗は ReadableStream で MB/MB を出し、
    **一定時間なにも届かなければ諦める**(「取得中」のまま固まらせない)。 */
@@ -1222,10 +1306,13 @@ async function fetchModelBytes(){
   if(!bytes){
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     let stall = ctl ? setTimeout(()=> ctl.abort(), MODEL_STALL_MS) : 0;
+    // 「中断」を押したら取得中の44MBもその場で止める(押してから30秒待たせない)
+    const onAbort = ()=> { try{ ctl && ctl.abort(); }catch(e){} };
+    if(ctl && modelState.abort) modelState.abort.signal.addEventListener('abort', onAbort);
     try{
       log('モデルを取得しています…');   // 大きさは content-length を見てから出す
       const res = await fetch(MODEL_SRC.onnx, ctl ? { signal: ctl.signal } : {});
-      if(!res || !res.ok) throw new Error(`モデルを取得できませんでした(${res ? res.status : '通信不可'})`);
+      if(!res || !res.ok) throw modelError('net', `モデルを取得できませんでした(${res ? res.status : '通信不可'})`);
       const total = +(res.headers.get('content-length') || 0);
       if(res.body && res.body.getReader){
         const reader = res.body.getReader();
@@ -1238,6 +1325,12 @@ async function fetchModelBytes(){
           if(total) setProg(Math.round(got/total*100));
           log(`モデルを取得中 ${modelMB(got)}/${modelMB(total||got)}MB`);
         }
+        /* **content-length と実際に届いた量が違うなら、それは途中で切れた応答。**
+           ここで投げずに先へ進むと、欠けた44MBを Cache API へ保存してしまい、
+           次からは「端末内にある」と判断して取り直しもせず、永久に直らなくなる(§指摘1)。 */
+        if(total && got !== total)
+          throw modelError('truncated',
+            `モデルの取得が途中で切れました(${modelMB(got)}/${modelMB(total)}MB)`);
         bytes = new Uint8Array(got);
         let at = 0;
         for(const c of chunks){ bytes.set(c, at); at += c.length; }
@@ -1245,8 +1338,15 @@ async function fetchModelBytes(){
       }else{
         bytes = new Uint8Array(await res.arrayBuffer());   // ReadableStream が無い端末
       }
-      setProg(null);
-    }finally{ if(stall) clearTimeout(stall); }
+      // content-length が無い経路(圧縮・古い端末)はここが唯一の歯止め
+      if(bytes.length < MODEL_MIN_BYTES)
+        throw modelError('truncated', `モデルが小さすぎます(${modelMB(bytes.length)}MB)`);
+    }finally{
+      setProg(null);                 // 途中で投げても進捗の帯を残さない
+      if(stall) clearTimeout(stall);
+      if(ctl && modelState.abort) modelState.abort.signal.removeEventListener('abort', onAbort);
+    }
+    // ここまで来たものだけを保存する(欠けた物は上で投げているので保存されない)
     if(!await modelCachePut(bytes)) log('モデルを端末に保存できませんでした(次回もう一度取得します)');
   }
   modelState.bytes = bytes;
@@ -1255,29 +1355,52 @@ async function fetchModelBytes(){
   return bytes;
 }
 // 推論の入れ物。1つだけ持ち回す(作り直すと44MBを読み直すことになる)
+/* ラッチするのは「この端末では動かない」ときだけ(§指摘3)。
+   取得の失敗(圏外・CDNの不調・途中で切れた)は**次に押せばやり直せる**ので覚えない。
+   ここを一律に覚えていたため、一度失敗したら同じページでは二度と取り直せなかった。 */
 async function modelSession(){
   if(modelState.sess) return modelState.sess;
-  if(modelState.err) throw modelState.err;      // 一度失敗したら取りに行き直さない
+  if(modelState.err) throw modelState.err;      // 端末で動かないと分かっているときだけ即やめる
+  // WASM が無い端末はここで確定(何度押しても同じなので覚える)
+  if(typeof WebAssembly === 'undefined'){
+    modelState.err = modelError('device', 'この端末は推論に対応していません');
+    throw modelState.err;
+  }
+  const ort = await loadOrtLib();               // 失敗しても覚えない(loadOrtLib が自分で作り直す)
+  modelState.ort = ort;
+  ort.env.wasm.wasmPaths = MODEL_SRC.wasm;
+  ort.env.wasm.numThreads = 1;                  // SharedArrayBuffer が無い前提(§B1)
+  ort.env.wasm.simd = true;
+  const bytes = await fetchModelBytes();        // 失敗しても覚えない(電波の問題)
+  log('モデルを用意しています…');
   try{
-    const ort = await loadOrtLib();
-    modelState.ort = ort;
-    ort.env.wasm.wasmPaths = MODEL_SRC.wasm;
-    ort.env.wasm.numThreads = 1;                // SharedArrayBuffer が無い前提(§B1)
-    ort.env.wasm.simd = true;
-    const bytes = await fetchModelBytes();
-    log('モデルを用意しています…');
     modelState.sess = await ort.InferenceSession.create(bytes, { executionProviders:['wasm'] });
+    modelState.createFails = 0;
     modelState.bytes = null;                    // セッションに移したら44MBのコピーは捨てる
     return modelState.sess;
   }catch(e){
-    modelState.err = e instanceof Error ? e : new Error(String(e));
-    throw modelState.err;
+    /* 作れなかった理由は2つ ——「掴んでいる44MBが壊れている」か「端末で動かない」。
+       見分けられないので、まず**保存した物を捨てて**取り直す機会を1度だけ与える。
+       それでも作れなければ端末側なので、そこで初めてラッチする(§指摘1・3)。 */
+    modelState.bytes = null;
+    await modelCacheDelete();
+    modelState.createFails++;
+    const err = modelError('device', `モデルを用意できませんでした(${String(e && e.message || e)})`);
+    if(modelState.createFails >= MODEL_CREATE_TRIES) modelState.err = err;
+    throw err;
   }
 }
-// 技のプレビュー(iframeでゲームを動かす)の前に呼ぶ。推論の入れ物を手放してメモリを空ける
-function releaseSegmentModel(){
-  try{ modelState.sess && modelState.sess.release && modelState.sess.release(); }catch(e){}
+/* 技のプレビュー(iframeでゲームを動かす)の前に呼ぶ。推論の入れ物を手放してメモリを空ける。
+   **release() は非同期**なので await する(投げっぱなしだと、解放し終わる前に
+   iframe がゲームを読み込み始めて、いちばん重い瞬間が重なる)。
+   なお **WASM のヒープ(44MBぶん)はこれでも OS へは返らない** —— onnxruntime は
+   ページ内の WebAssembly.Memory を使い回すため、本当に返すには Worker ごと捨てるしかない。
+   今回は Worker 化はしない(§指摘11)。ここで返るのはセッションが握っている重みの参照だけ。 */
+async function releaseSegmentModel(){
+  try{ if(modelState.sess && modelState.sess.release) await modelState.sess.release(); }catch(e){}
   modelState.sess = null; modelState.bytes = null;
+  // 「もう一度試す」を押せる状態に戻す(端末で動かないという判定も持ち越さない)
+  modelState.err = null; modelState.createFails = 0;
 }
 /* 最大の塊の ratio 倍以上ある塊を残す。**モデル経路専用。**
    keepLargest(最大の1つだけ)だと、体から切り離して描かれた武器・尻尾・翼が消える。
@@ -1296,99 +1419,126 @@ function keepMajor(fg, w, h, ratio){
 /* **モデルで抜く本体。ImageData を1枚受けて alpha(Uint8Array)を返す。**
    動画の16コマへ掛け直す側(§A4)も、この関数を1枚ずつ呼ぶ。
    prog={i,n} を渡すと「1/16・残り約40秒」の進捗を出す。 */
-async function segmentModel(img, prog){
+async function segmentModel(img, prog, panel){
   const w = img.width, h = img.height, N = w*h, S = MODEL_INPUT;
+  throwIfAborted();                     // 重い処理へ入る前に「中断」を確認する(§指摘19)
   const sess = await modelSession();
+  throwIfAborted();                     // 取得に何分もかかることがあるので、終わった所でもう一度
   log(modelRunText(prog));
   await sleep(0);                       // 進捗の文字を描いてから重い処理へ入る
-  // 入力: 正方形(S×S)へ詰める。戻すときも同じ比で伸ばすので、縦横比の崩れは打ち消される
-  const ic = document.createElement('canvas'); ic.width = S; ic.height = S;
-  const ix = ic.getContext('2d', { willReadFrequently:true });
-  const src = document.createElement('canvas'); src.width = w; src.height = h;
-  src.getContext('2d', { willReadFrequently:true }).putImageData(img, 0, 0);
-  ix.imageSmoothingEnabled = true; ix.imageSmoothingQuality = 'high';
-  ix.drawImage(src, 0, 0, w, h, 0, 0, S, S);
-  const d = ix.getImageData(0, 0, S, S).data;
-  let inp = new Float32Array(3*S*S);
-  for(let i=0;i<S*S;i++){
-    inp[i]         = (d[i*4]  /255 - MODEL_MEAN)/MODEL_STD;
-    inp[S*S+i]     = (d[i*4+1]/255 - MODEL_MEAN)/MODEL_STD;
-    inp[2*S*S+i]   = (d[i*4+2]/255 - MODEL_MEAN)/MODEL_STD;
+  /* 1024²のcanvasは1枚4MB。16コマぶん回すと使い終わった物が積み上がるので、
+     **終わりに必ず width=height=0 にして捨てる**(§指摘12)。iOSは画像用メモリの
+     総量に上限があり、超えるとcanvasが白いまま返る(=真っ白なコマができる)。 */
+  const scratch = [];
+  const mkCanvas = (cw, ch)=>{ const c = document.createElement('canvas');
+                               c.width = cw; c.height = ch; scratch.push(c); return c; };
+  try{
+    // 入力: 正方形(S×S)へ詰める。戻すときも同じ比で伸ばすので、縦横比の崩れは打ち消される
+    const ic = mkCanvas(S, S);
+    const ix = ic.getContext('2d', { willReadFrequently:true });
+    const src = mkCanvas(w, h);
+    src.getContext('2d', { willReadFrequently:true }).putImageData(img, 0, 0);
+    ix.imageSmoothingEnabled = true; ix.imageSmoothingQuality = 'high';
+    ix.drawImage(src, 0, 0, w, h, 0, 0, S, S);
+    const d = ix.getImageData(0, 0, S, S).data;
+    let inp = new Float32Array(3*S*S);
+    for(let i=0;i<S*S;i++){
+      inp[i]         = (d[i*4]  /255 - MODEL_MEAN)/MODEL_STD;
+      inp[S*S+i]     = (d[i*4+1]/255 - MODEL_MEAN)/MODEL_STD;
+      inp[2*S*S+i]   = (d[i*4+2]/255 - MODEL_MEAN)/MODEL_STD;
+    }
+    const t0 = Date.now();
+    const feeds = {}; feeds[sess.inputNames[0]] = new modelState.ort.Tensor('float32', inp, [1,3,S,S]);
+    const res = await sess.run(feeds);
+    modelState.lastRunMs = Date.now() - t0;
+    const o = res[sess.outputNames[0]].data;
+    inp = null; feeds[sess.inputNames[0]] = null;   // 12MBの入力はここで手放す
+    // 出力を min-max で 0〜255 のアルファへ直す(モデルの出す値は 0〜1 に収まっていない)
+    let mn = Infinity, mx = -Infinity;
+    for(let i=0;i<o.length;i++){ if(o[i]<mn) mn=o[i]; if(o[i]>mx) mx=o[i]; }
+    const span = Math.max(1e-6, mx-mn);
+    const oc = mkCanvas(S, S);
+    const ox = oc.getContext('2d', { willReadFrequently:true });
+    const od = ox.createImageData(S, S);
+    let soft = 0;
+    for(let i=0;i<S*S;i++){
+      const v = Math.round((o[i]-mn)/span*255);
+      if(v > 0 && v < 255) soft++;
+      od.data[i*4] = od.data[i*4+1] = od.data[i*4+2] = 255;   // 色は白。alphaだけを使う
+      od.data[i*4+3] = v;
+    }
+    ox.putImageData(od, 0, 0);
+    for(const k of Object.keys(res)) { try{ res[k].dispose && res[k].dispose(); }catch(e){} }
+    // 元の大きさへ戻す
+    const rc = mkCanvas(w, h);
+    const rx = rc.getContext('2d', { willReadFrequently:true });
+    rx.imageSmoothingEnabled = true; rx.imageSmoothingQuality = 'high';
+    rx.drawImage(oc, 0, 0, S, S, 0, 0, w, h);
+    const back = rx.getImageData(0, 0, w, h).data;
+    let a = new Uint8Array(N);
+    for(let i=0;i<N;i++) a[i] = back[i*4+3];
+    /* 後処理は既存の関数で。**順番は segment() と同じ**:
+       背景の小さな成分(=本体の中の穴)を前景へ戻してから、大きな塊だけを残す。
+       逆にすると、keepMajor が落とした粒を dropSpecks が拾い直してしまう。 */
+    const bg0 = new Uint8Array(N);
+    for(let i=0;i<N;i++) bg0[i] = a[i] < MODEL_FG_MIN ? 1 : 0;
+    const bg = dropSpecks(bg0, w, h, Math.max(8, SEG_SPECK*w*h));
+    let fg = new Uint8Array(N);
+    for(let i=0;i<N;i++) fg[i] = bg[i] ? 0 : 1;
+    fg = keepMajor(fg, w, h, MODEL_KEEP_RATIO);
+    a = tightenEdge(a, fg, w, h);      // 縁の締めは segment() と同じ式(デスピルは掛けない)
+    const softPct = Math.round(soft/(S*S)*1000)/10;
+    modelNote(`モデルで抜きました — 取得 ${(modelState.fetchMs/1000).toFixed(1)}秒` +
+      `${modelState.cached ? '(端末内から)' : `(${modelMB(modelState.size)}MB・次回から端末内)`}` +
+      ` / 推論 ${(modelState.lastRunMs/1000).toFixed(1)}秒(${S}px)・縁のやわらかさ ${softPct}%` +
+      `${softPct < MODEL_SOFT_MIN*100 ? '(粗め)' : ''}`, panel);
+    return a;
+  }finally{
+    for(const c of scratch){ c.width = 0; c.height = 0; }   // 途中で投げても必ず捨てる
   }
-  const t0 = Date.now();
-  const feeds = {}; feeds[sess.inputNames[0]] = new modelState.ort.Tensor('float32', inp, [1,3,S,S]);
-  const res = await sess.run(feeds);
-  modelState.lastRunMs = Date.now() - t0;
-  const o = res[sess.outputNames[0]].data;
-  inp = null; feeds[sess.inputNames[0]] = null;   // 12MBの入力はここで手放す
-  // 出力を min-max で 0〜255 のアルファへ直す(モデルの出す値は 0〜1 に収まっていない)
-  let mn = Infinity, mx = -Infinity;
-  for(let i=0;i<o.length;i++){ if(o[i]<mn) mn=o[i]; if(o[i]>mx) mx=o[i]; }
-  const span = Math.max(1e-6, mx-mn);
-  const oc = document.createElement('canvas'); oc.width = S; oc.height = S;
-  const ox = oc.getContext('2d', { willReadFrequently:true });
-  const od = ox.createImageData(S, S);
-  let soft = 0;
-  for(let i=0;i<S*S;i++){
-    const v = Math.round((o[i]-mn)/span*255);
-    if(v > 0 && v < 255) soft++;
-    od.data[i*4] = od.data[i*4+1] = od.data[i*4+2] = 255;   // 色は白。alphaだけを使う
-    od.data[i*4+3] = v;
-  }
-  ox.putImageData(od, 0, 0);
-  for(const k of Object.keys(res)) { try{ res[k].dispose && res[k].dispose(); }catch(e){} }
-  // 元の大きさへ戻す
-  const rc = document.createElement('canvas'); rc.width = w; rc.height = h;
-  const rx = rc.getContext('2d', { willReadFrequently:true });
-  rx.imageSmoothingEnabled = true; rx.imageSmoothingQuality = 'high';
-  rx.drawImage(oc, 0, 0, S, S, 0, 0, w, h);
-  const back = rx.getImageData(0, 0, w, h).data;
-  let a = new Uint8Array(N);
-  for(let i=0;i<N;i++) a[i] = back[i*4+3];
-  /* 後処理は既存の関数で。**順番は segment() と同じ**:
-     背景の小さな成分(=本体の中の穴)を前景へ戻してから、大きな塊だけを残す。
-     逆にすると、keepMajor が落とした粒を dropSpecks が拾い直してしまう。 */
-  const bg0 = new Uint8Array(N);
-  for(let i=0;i<N;i++) bg0[i] = a[i] < MODEL_FG_MIN ? 1 : 0;
-  const bg = dropSpecks(bg0, w, h, Math.max(8, SEG_SPECK*w*h));
-  let fg = new Uint8Array(N);
-  for(let i=0;i<N;i++) fg[i] = bg[i] ? 0 : 1;
-  fg = keepMajor(fg, w, h, MODEL_KEEP_RATIO);
-  a = tightenEdge(a, fg, w, h);        // 縁の締めは segment() と同じ式(デスピルは掛けない)
-  const softPct = Math.round(soft/(S*S)*1000)/10;
-  modelNote(`モデルで抜きました — 取得 ${(modelState.fetchMs/1000).toFixed(1)}秒` +
-    `${modelState.cached ? '(端末内から)' : `(${modelMB(modelState.size)}MB・次回から端末内)`}` +
-    ` / 推論 ${(modelState.lastRunMs/1000).toFixed(1)}秒(${S}px)・縁のやわらかさ ${softPct}%` +
-    `${softPct < MODEL_SOFT_MIN*100 ? '(粗め)' : ''}`);
-  return a;
 }
-// 画面で選ばれている抜き方(歩行 / 静止画)
+// 画面で選ばれている抜き方(歩行 / 静止画)。panel は結果の表示先(§指摘14)
 function walkSeg(){
-  return { mode: $('mode').value, th: +$('th').value, chroma: state.chroma };
+  return { mode: $('mode').value, th: +$('th').value, chroma: state.chroma, panel:'walk' };
 }
-/* **抜き方を実際に適用する唯一の場所。** モデルとJSの呼び分けも、モデルが駄目だったときに
-   JSの既定へ落とすのも、ここだけに書く(segment() を直接呼ぶ所を残さない)。
-   prog={i,n} は「16コマ中の何枚目か」の進捗表示用。 */
+/* **抜き方を実際に適用する唯一の場所。** 透過済みの素通しも、モデルとJSの呼び分けも、
+   モデルが駄目だったときにJSの既定へ落とすのも、ここだけに書く
+   (segment() を直接呼ぶ所を残さない)。prog={i,n} は「16コマ中の何枚目か」の進捗表示用。 */
 async function resolveAlpha(img, seg, prog){
+  const N = img.width*img.height;
+  /* **すでに半透明の画素がある絵は、その透過をそのまま使う。**
+     ここに置かないと、透過済みPNGに「モデルで抜く」(既定)が当たったときだけ
+     44MBを取りに行き、圏外なら黒背景で抜き直すことになる(§指摘4)。
+     判定はこの1か所だけ(imageAlphaFor はここへ委ねる)。 */
+  const own = new Uint8Array(N);
+  let has = false;
+  for(let i=0;i<N;i++){ own[i] = img.data[i*4+3]; if(own[i] < 250) has = true; }
+  if(has){
+    log('透過済みの画像なので、その透過をそのまま使いました。');
+    return own;
+  }
   if(seg.mode === 'model'){
-    try{ return await segmentModel(img, prog); }
+    try{ return await segmentModel(img, prog, seg.panel); }
     catch(e){
-      const why = String(e && e.message || e);
-      log(`モデルで抜けませんでした(${why})。いつもの抜き方(黒背景)で続けます。` +
-          '電波の届く所でもう一度試すか、抜き方を選び直してください。', 'ng');
-      modelNote(`<span class="ng">モデルは使えませんでした: ${why}</span>`);
+      // 「中断」は落とし先を用意しない —— 黒背景で16コマ作り直しても意味がない(§指摘19)
+      if((e && e.__modelCode === 'abort') || modelAborted()){
+        const stop = modelError('abort', '中断しました');
+        log(modelErrorText(stop), 'ng');
+        modelNote(modelErrorText(stop), seg.panel, 'ng');
+        throw stop;
+      }
+      const why = modelErrorText(e);      // 日本語へ丸めるのは modelErrorText の1か所(§指摘13)
+      log(`モデルで抜けませんでした — ${why}。いつもの抜き方(黒背景)で続けます。`, 'ng');
+      modelNote(`モデルは使えませんでした — ${why}`, seg.panel, 'ng');
       return segment(img, MODEL_FALLBACK, seg.th, seg.chroma);
     }
   }
   return segment(img, seg.mode, seg.th, seg.chroma);
 }
-// 透過済みの画像はその透過をそのまま使い、そうでなければ抜く
+/* 透過済みの画像はその透過をそのまま使い、そうでなければ抜く。
+   **判定は resolveAlpha が持つ**(分岐を2か所に置かない)。既存の呼び出し名を残すための入口。 */
 async function imageAlphaFor(img, seg, prog){
-  const N = img.width*img.height;
-  const a = new Uint8Array(N);
-  let has = false;
-  for(let i=0;i<N;i++){ a[i] = img.data[i*4+3]; if(a[i] < 250) has = true; }
-  return has ? a : await resolveAlpha(img, seg, prog);
+  return await resolveAlpha(img, seg, prog);
 }
 // {img, alpha, box} -> 切り抜いた RGBA の canvas
 function cropCanvas(cut){
@@ -2265,6 +2415,7 @@ async function useFrames(side, frames, note){
        <img src="${u}"><span class="n">${i+1}</span>
        ${issues[i]?`<span class="why">${issues[i]}</span>`:''}</div>`).join('');
   const bad = issues.filter(Boolean).length;
+  $('walkMeta').className = 'hint';
   $('walkMeta').innerHTML = `${side==='f'?'正面':'後ろ'}の8コマができました(${note})。` +
     (bad ? `<span class="ng"> ${bad}コマに問題あり。抜き方やしきい値を変えて再プレビューしてください。</span>`
          : '<span class="ok"> 問題は見つかりませんでした。</span>') +
@@ -2274,8 +2425,10 @@ async function useFrames(side, frames, note){
 async function preview(side){
   try{
     assertChroma($('mode').value, state.chroma);
+    beginModelRun($('mode').value === 'model');   // モデルのときだけ「中断」を出す(§指摘19)
     setProg(0);
     $('walkMeta').textContent = 'コマを作っています…';
+    $('walkMeta').className = 'hint';        // 前回の失敗の赤字を残さない
     if($('walkSrc').value === 'video'){
       const file = (side==='f' ? $('vidF') : $('vidB')).files[0];
       if(!file) throw new Error('動画を選んでください');
@@ -2296,10 +2449,14 @@ async function preview(side){
     setProg(null);
   }catch(e){
     setProg(null);
-    const m = String(e.message||e);
+    const m = e && e.__modelCode ? modelErrorText(e) : String(e.message||e);
     // 「コマを作っています」のまま止まったように見えないよう、その場にも理由を出す
-    $('walkMeta').innerHTML = `<span class="ng">${m}</span>`;
+    // (例外の文面をそのまま出すので innerHTML は使わない・§指摘14)
+    $('walkMeta').textContent = m;
+    $('walkMeta').className = 'hint ng';
     log(m, 'ng');
+  }finally{
+    endModelRun();                 // 中断ボタンを片付ける(成功しても失敗しても)
   }
 }
 
@@ -2443,13 +2600,16 @@ async function makePortrait(file){
   const w = img.width, h = img.height;
   const pm = $('pmode').value;
   let alpha;
-  if(pm === 'keep'){                       // 画像の透過をそのまま使う
+  if(pm === 'keep'){                       // 画像の透過をそのまま使う(抜かないと決めた道)
     alpha = new Uint8Array(w*h);
     for(let i=0;i<w*h;i++) alpha[i] = img.data[i*4+3];
-  }else if(pm === 'auto'){                 // 透過済みならそのまま / それ以外は歩行と同じ設定
-    alpha = await imageAlphaFor(img, walkSeg());
-  }else{                                   // 静止画だけの抜き方を明示指定(モデルもここ)
-    alpha = await resolveAlpha(img, { mode:pm, th:+$('pth').value, chroma:state.chromaP });
+  }else{
+    /* 「自動」も、静止画だけの抜き方の明示指定(モデルを含む)も、行き先は resolveAlpha。
+       透過済みの絵を素通しする判定も resolveAlpha が持っているので、
+       ここで imageAlphaFor と使い分ける必要はない(§指摘4)。 */
+    const seg = pm === 'auto' ? walkSeg()
+              : { mode:pm, th:+$('pth').value, chroma:state.chromaP };
+    alpha = await resolveAlpha(img, Object.assign({}, seg, { panel:'portrait' }));
   }
   const b = bboxOf(alpha, w, h, 8);
   if(!b) throw new Error('被写体を検出できませんでした');
@@ -4910,9 +5070,12 @@ function boot(){
     const m = $('mode').value;
     $('thWrap').style.display = usesTh(m) ? 'block' : 'none';
     $('chromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
+    // 16コマぶんの所要時間の断りは、モデルを選んだときだけ出す(§指摘19)
+    $('walkModelTime').style.display = m === 'model' ? 'block' : 'none';
     if(usesTh(m)){ $('th').value = defTh(m); $('thVal').textContent = $('th').value; }
     if(m === 'chroma') fillPicker('w');
   };
+  $('mode').onchange();          // 開いた時の選択(ブラウザが覚えている場合もある)に合わせる
   $('pth').oninput = ()=> $('pthVal').textContent = $('pth').value;
   $('pmode').onchange = ()=>{
     const m = $('pmode').value, own = (m !== 'auto' && m !== 'keep' && usesTh(m));
