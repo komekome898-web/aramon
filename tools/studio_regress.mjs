@@ -5,11 +5,16 @@
      (a) 行生成   monsters/specs/*.json すべてで buildMoves → renderRows / renderSsrRows の出力を文字列比較
      (b) 背景抜き 既知の合成画像に segment() を掛けた alpha(と、デスピルで書き換わる色)のハッシュ
      (c) 周期検出 合成した周期信号を detectPeriod() に入れて返る周期
+     (d) 往復     data.js の全21体で pickEntry の取り出しが元と一致し、1項目だけ変えると
+                  変わる行がその1行だけ・評価した値が意図どおり(設計仕様 §11 [11][12][13][27])
+     (e) 属性     studio_web.html の onclick= 等から呼ばれる関数がすべて定義されている(§11 [17])
+     (f) 技名     data.js の全技名が MOVE_AURA のキーにある(§11 [14])
+     (g) 更新履歴 changelogWarnings(ツール側)と changelog_check.mjs が同じ警告を出す(§11 [39])
 
    使い方:
      node tools/studio_regress.mjs --update   ゴールデン(tools/_golden/)を作り直す
      node tools/studio_regress.mjs            ゴールデンと比べる(違えば終了コード1)
-     node tools/studio_regress.mjs --only rows|segment|period   項目を絞る
+     node tools/studio_regress.mjs --only rows|segment|period|roundtrip|handlers|moveaura|changelog   項目を絞る
 
    決まりごと:
      ・ゴールデンは生成物だが**比較の相手なので git で追跡する**(.gitignore に入れない)。
@@ -18,6 +23,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import vm from 'vm';
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -29,6 +35,7 @@ const GOLDEN = path.join(__dirname, '_golden');
 
 const args   = process.argv.slice(2);
 const UPDATE = args.includes('--update');
+const SHOW   = args.includes('--diff');       // (d) の必須ケースの変更行を実際に並べる
 const ONLY   = (()=>{ const i = args.indexOf('--only'); return i >= 0 ? args[i+1] : null; })();
 const want   = name => !ONLY || ONLY === name;
 
@@ -207,11 +214,298 @@ function compareJson(item, file, obj){
     fail(item, 'ゴールデンと違います(並び順)');
 }
 
+/* ============================================================ (d) 往復と1項目変更
+
+   守りたいこと(設計仕様 §5 D4・§11 [11][12][13][27]):
+     ・登録済みを開いて直すとき、**触った項目だけ**が変わる。
+       行内コメント・未知のキー・並び順が消えたら、それは失敗。
+     ・書き戻した data.js が本当に評価でき、その値が意図どおりになる。
+   なぜ「変わった行が1行だけ」で見るか:
+     行を作り直す実装(正規表現で行ごと置換)だと、値が1つ変わっただけでも
+     コメントや空白が落ちて何行も動く。1行だけという条件がそれを機械的に弾く。 */
+
+/* data.js を丸ごと評価して表を取り出す。
+   ゲーム本体のファイルなので DOM を触る。**最小のスタブで足りる**ことを確かめてある。 */
+function evalDataJs(text, label){
+  const s = { console: { log(){}, warn(){}, error(){} }, Math, JSON, Date, RegExp };
+  s.window = s; s.self = s; s.globalThis = s;
+  s.document = {
+    getElementById: ()=> null,
+    createElement: ()=> ({ getContext: ()=> ({}), style:{}, appendChild(){}, setAttribute(){} }),
+    querySelector: ()=> null, querySelectorAll: ()=> [],
+    addEventListener(){}, body:{ appendChild(){} },
+  };
+  s.Image = class { constructor(){ this.src=''; this.width=0; this.height=0; } addEventListener(){} };
+  s.localStorage = { getItem: ()=> null, setItem(){}, removeItem(){} };
+  s.navigator = { userAgent:'studio_regress' };
+  s.location = { href:'', search:'', origin:'null' };
+  s.setTimeout = ()=> 0; s.clearTimeout = ()=> {};
+  s.requestAnimationFrame = ()=> 0;
+  s.performance = { now: ()=> 0 };
+  const tail = ';({ELEMENTS,SIGNATURE_MOVES,SKIN_CONFIG,MOVE_AURA,MONSTER_AURA,SSR_SKIN_TIER3,SSR_SKIN_AURA,UPDATE_HISTORY,CHANGELOG_TAGS});';
+  try { return vm.runInContext(text + '\n' + tail, vm.createContext(s), { filename: label || 'data.js' }); }
+  catch(e){ throw new Error(`data.js の評価に失敗(${label || '元'}): ${e && e.message}`); }
+}
+
+// 行単位の差分(git diff 相当)。行数が変わったらそれ自体を差分として返す
+function changedLines(a, b){
+  const A = a.split('\n'), B = b.split('\n');
+  if(A.length !== B.length) return [{ n:0, before:`(${A.length}行)`, after:`(${B.length}行)` }];
+  const out = [];
+  for(let i=0;i<A.length;i++) if(A[i] !== B[i]) out.push({ n:i+1, before:A[i], after:B[i] });
+  return out;
+}
+// 変えた1か所を元に戻したうえで全体を比べる(意図した差分以外がゼロであることの確認)
+function sameExcept(base, now, undo){
+  const copy = JSON.parse(JSON.stringify(now));
+  undo(copy);
+  return JSON.stringify(copy) === JSON.stringify(base);
+}
+
+// この5つは「これが通らないと方式ごと駄目」という必須ケース(設計仕様 §11 [27])
+const MUST = {
+  fire:    '技の中にコメント行',
+  rock:    '閉じ括弧と同じ行から始まるコメント',
+  phoenix: 'cooldownMod:1/1.5(式で書かれた値)',
+  zan:     '未知キー burstSpreadRandom',
+  joker:   '未知キー burstDirs・projVisR',
+  mocchi:  'SKIN_CONFIG の source:{…}',
+};
+const shown = [];
+
+function runRoundTrip(){
+  const file = path.join(ROOT, 'data.js');
+  const src = fs.readFileSync(file, 'utf8');
+  const base = evalDataJs(src);
+  const keys = Object.keys(base.ELEMENTS);
+  if(keys.length < 21) fail('roundtrip', `ELEMENTS が ${keys.length} 体しかありません(21体以上のはず)`);
+  let maReach = 0;
+
+  for(const key of keys){
+    const note = MUST[key] ? `(必須ケース: ${MUST[key]})` : '';
+    const at = (what)=> `${key}${note} の${what}`;
+
+    /* ① 何も変えずに取り出す → 取り出した範囲を戻すと元の1文字も動かない */
+    for(const table of ['ELEMENTS', 'SIGNATURE_MOVES', 'SKIN_CONFIG']){
+      const e = S.pickEntry(src, table, key);
+      if(!e){ fail('roundtrip', `${at(table)}が pickEntry で取れません`); continue; }
+      if(src.slice(0, e.start) + e.valueText + src.slice(e.end) !== src)
+        fail('roundtrip', `${at(table)}の取り出し位置がずれています`);
+    }
+    /* MONSTER_AURA は1行に何項目も書く表なので、行頭の錨(^  key:)では
+       **行の先頭にある項目しか取れない**(取れないこと自体は今の書き戻しの対象外なので許す)。
+       取れたときに位置が正しいことだけを見る。 */
+    const ma = S.pickEntry(src, 'MONSTER_AURA', key);
+    if(ma){
+      if(src.slice(0, ma.start) + ma.valueText + src.slice(ma.end) !== src)
+        fail('roundtrip', `${at('MONSTER_AURA')}の取り出し位置がずれています`);
+      if(ma.valueText.replace(/'/g, '') !== base.MONSTER_AURA[key])
+        fail('roundtrip', `${at('MONSTER_AURA')}の値が違います(${ma.valueText})`);
+      maReach++;
+    }
+    // 値を「今と同じ文字列」で置き換えても1文字も動かない(範囲の当て方の確認)
+    for(const [table, field] of [['ELEMENTS','hp'], ['SKIN_CONFIG','source'], ['SKIN_CONFIG','colors']]){
+      const e = S.pickEntry(src, table, key);
+      if(!e) continue;
+      const f = S.findFieldInObject(src, e.start, e.end, field);
+      if(!f){ fail('roundtrip', `${at(table + '.' + field)}が見つかりません`); continue; }
+      const same = S.replaceField(src, table, key, field, src.slice(f.valueStart, f.valueEnd));
+      if(same !== src) fail('roundtrip', `${at(table + '.' + field)}を同じ値で置き換えたのに文字が動きました`);
+    }
+
+    /* ② ELEMENTS の hp を +1 */
+    const hp = base.ELEMENTS[key].hp;
+    const t1 = S.replaceField(src, 'ELEMENTS', key, 'hp', S.jsNum(hp + 1));
+    const d1 = changedLines(src, t1);
+    if(d1.length !== 1) fail('roundtrip', `${at('hp')}を+1したのに ${d1.length} 行変わりました`);
+    else if(SHOW) shown.push(`${key} ELEMENTS.hp ${hp}→${hp+1}  ${d1[0].n}行目\n      - ${d1[0].before}\n      + ${d1[0].after}`);
+    const v1 = evalDataJs(t1, `${key}/hp`);
+    if(v1.ELEMENTS[key].hp !== hp + 1)
+      fail('roundtrip', `${at('hp')}が ${hp+1} になっていません(${v1.ELEMENTS[key].hp})`);
+    if(!sameExcept(base.ELEMENTS, v1.ELEMENTS, o=>{ o[key].hp = hp; }))
+      fail('roundtrip', `${at('hp')}以外の ELEMENTS まで変わりました`);
+
+    /* ③ SIGNATURE_MOVES の tier3(3番目)の dmg を +1 */
+    const moves = base.SIGNATURE_MOVES[key];
+    if(!moves || moves.length < 3){ fail('roundtrip', `${key} の技が3つありません`); continue; }
+    const dmg = moves[2].dmg;
+    const t2 = S.replaceMoveField(src, key, 2, 'dmg', S.jsNum(dmg + 1));
+    const d2 = changedLines(src, t2);
+    if(d2.length !== 1) fail('roundtrip', `${at('tier3 dmg')}を+1したのに ${d2.length} 行変わりました`);
+    else if(SHOW) shown.push(`${key} SIGNATURE_MOVES[2].dmg ${dmg}→${dmg+1}  ${d2[0].n}行目\n      - ${d2[0].before}\n      + ${d2[0].after}`);
+    const v2 = evalDataJs(t2, `${key}/dmg`);
+    if(v2.SIGNATURE_MOVES[key][2].dmg !== dmg + 1)
+      fail('roundtrip', `${at('tier3 dmg')}が ${dmg+1} になっていません(${v2.SIGNATURE_MOVES[key][2].dmg})`);
+    if(!sameExcept(base.SIGNATURE_MOVES, v2.SIGNATURE_MOVES, o=>{ o[key][2].dmg = dmg; }))
+      fail('roundtrip', `${at('tier3 dmg')}以外の技まで変わりました`);
+
+    /* ④ SKIN_CONFIG に無いキーを足す(末尾へ足す経路。行末コメントが残るか) */
+    const t3 = S.replaceField(src, 'SKIN_CONFIG', key, 'note', S.jsStr('検査'));
+    const d3 = changedLines(src, t3);
+    if(d3.length !== 1) fail('roundtrip', `${at('SKIN_CONFIG.note')}を足したのに ${d3.length} 行変わりました`);
+    else {
+      const tail = /\/\/[^\n]*$/.exec(d3[0].before);       // 行末コメント(例 「// ピンクの部分」)
+      if(tail && !d3[0].after.endsWith(tail[0]))
+        fail('roundtrip', `${at('SKIN_CONFIG.note')}で行末コメントが消えました`);
+      if(SHOW) shown.push(`${key} SKIN_CONFIG.note 追加  ${d3[0].n}行目\n      - ${d3[0].before}\n      + ${d3[0].after}`);
+    }
+    const v3 = evalDataJs(t3, `${key}/note`);
+    if(v3.SKIN_CONFIG[key].note !== '検査')
+      fail('roundtrip', `${at('SKIN_CONFIG.note')}が読み戻せません`);
+    if(!sameExcept(base.SKIN_CONFIG, v3.SKIN_CONFIG, o=>{ delete o[key].note; }))
+      fail('roundtrip', `${at('SKIN_CONFIG.note')}以外の色スキン設定まで変わりました`);
+  }
+
+  /* コメント行を掴んでいないこと。data.js の EMOTE_FRAMES は
+     `  // 例: guts_ssr: { … },` の1行だけを持つ空の表(実例)。 */
+  if(S.pickEntry(src, 'EMOTE_FRAMES', 'guts_ssr') !== null)
+    fail('roundtrip', 'EMOTE_FRAMES のコメント行(// 例: guts_ssr: …)を項目として掴んでいます');
+
+  notes.push(`MONSTER_AURA は行頭にある ${maReach}/${keys.length} 体だけ pickEntry で取れる(1行に複数項目を書く表のため)`);
+  return `${keys.length}体 × 4通り`;
+}
+
+/* ============================================================ (e) HTML属性から呼ばれる名前
+
+   なぜ要るか(設計仕様 §11 [17]): onclick="doCommit()" は HTML の属性なので、
+   関数を消したり名前を変えても JS の側では何も起きず、**押した瞬間に初めて壊れる**。 */
+const HANDLER_ATTRS = new Set(['onclick','onchange','oninput','onsubmit','onkeydown','onkeyup',
+  'onkeypress','onload','onerror','onfocus','onblur','ondblclick','oncontextmenu','onwheel','onscroll',
+  'onmousedown','onmouseup','onmousemove','onpointerdown','onpointerup','onpointermove',
+  'ontouchstart','ontouchmove','ontouchend','onpaste','oncopy','oncut']);
+
+function handlerNames(html){
+  const names = new Map();                       // 名前 → どの属性から
+  for(const m of html.matchAll(/\s(on[a-z]+)\s*=\s*(["'])([\s\S]*?)\2/g)){
+    if(!HANDLER_ATTRS.has(m[1])) continue;       // content= のような紛れを弾く
+    const body = m[3];
+    for(const c of body.matchAll(/([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g)){
+      if(body[c.index-1] === '.') continue;      // this.foo() のようなメソッド呼び出し
+      if(!names.has(c[1])) names.set(c[1], `${m[1]}="${body.slice(0,40)}"`);
+    }
+  }
+  return names;
+}
+function runHandlers(){
+  const html = fs.readFileSync(S.__file, 'utf8');
+  const names = handlerNames(html);
+  if(!names.size){ fail('handlers', 'onclick= 等が1つも見つかりません(集め方が壊れていませんか)'); return '0個'; }
+  const probe = loadStudio({ extra: [...names.keys()] });
+  for(const n of probe.__missingExtra)
+    fail('handlers', `HTML の ${names.get(n)} が呼ぶ ${n}() が定義されていません`);
+  return `${names.size}個`;
+}
+
+/* ============================================================ (f) 技名とオーラ
+
+   なぜ要るか(設計仕様 §11 [14]): 技のオーラは**技名で引く**ので、
+   技名を変えて MOVE_AURA を直し忘れると、その技のオーラが黙って消える。
+   ※ SSR専用tier3(SSR_SKIN_TIER3)の技名はここに入らないのが正しい。
+      装備中のオーラは SSR_SKIN_AURA から来る(data.js の getMoveAura / skinTier3Aura)。 */
+function runMoveAura(){
+  const d = evalDataJs(fs.readFileSync(path.join(ROOT, 'data.js'), 'utf8'));
+  const auraKeys = new Set(Object.keys(d.MOVE_AURA));
+  let n = 0;
+  for(const key of Object.keys(d.SIGNATURE_MOVES)) for(const mv of d.SIGNATURE_MOVES[key]){
+    n++;
+    if(!auraKeys.has(mv.name)) fail('moveaura', `SIGNATURE_MOVES.${key} の「${mv.name}」が MOVE_AURA にありません`);
+  }
+  // SSR側は別経路。抜けていても止めないが、数だけ出しておく
+  const ssrMissing = Object.keys(d.SSR_SKIN_TIER3 || {}).filter(id => !d.SSR_SKIN_AURA[id]);
+  if(ssrMissing.length) fail('moveaura', `SSR_SKIN_AURA が無いSSR専用tier3: ${ssrMissing.join(', ')}`);
+  return `${n}技`;
+}
+
+/* ============================================================ (g) 更新履歴の注意2判定
+
+   studio_web.html の changelogWarnings は tools/changelog_check.mjs と**二重に持つ**箇所
+   (設計仕様 §11 [39])。ここで同じ data.js に対して同じ警告が出ることを毎回突き合わせる。
+   突き合わせるのは「どの行が・なぜ」だけ(文面はそれぞれの画面に合わせてよい)。 */
+// changelog_check.mjs の「注意」から、どの行がなぜ警告されたかだけを取り出す(文面は比べない)
+function warnKeysOf(stdout){
+  const out = [];
+  for(const line of String(stdout || '').split('\n')){
+    let m = /^\s*-\s*(\d{4}-\d{2}-\d{2}) の(\d+)行目と(\d+)行目が似ている\((\d+)%\)/.exec(line);
+    if(m){ out.push(`similar ${m[1]} ${m[2]} ${m[3]} ${m[4]}`); continue; }
+    m = /^\s*-\s*(\d{4}-\d{2}-\d{2}) の(\d+)行目に内部の言葉: (.+)$/.exec(line);
+    if(m) out.push(`internal ${m[1]} ${m[2]} ${m[3].trim()}`);
+  }
+  return out;
+}
+// ツール側(studio_web.html の changelogWarnings)で同じ並びを作る
+// changelog_check の順:「似た行」は最新の日付のブロックだけ → そのあと全ブロックの「内部の言葉」
+function warnKeysFromTool(H){
+  const out = [];
+  for(const w of S.changelogWarnings(H[0].items, { internal:false }))
+    out.push(`similar ${H[0].date} ${w.i} ${w.j} ${w.percent}`);
+  for(const b of H) for(const w of S.changelogWarnings(b.items, { similar:false }))
+    out.push(`internal ${b.date} ${w.i} ${w.words.join('・')}`);
+  return out;
+}
+/* changelog_check.mjs は ROOT/data.js を読む作りなので、差し替えた data.js で走らせたいときは
+   一時フォルダに同じ形(tmp/tools/changelog_check.mjs と tmp/data.js)を作って呼ぶ。 */
+function runCheckOn(dataText){
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio_regress-cl-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'tools'));
+    fs.copyFileSync(path.join(__dirname, 'changelog_check.mjs'), path.join(tmp, 'tools', 'changelog_check.mjs'));
+    fs.writeFileSync(path.join(tmp, 'data.js'), dataText);
+    return spawnSync(process.execPath, [path.join(tmp, 'tools', 'changelog_check.mjs')], { encoding:'utf8' });
+  } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
+}
+/* 警告が出る状態でも一致するかを見るための、合成した1日ぶん。
+   ・1行目と2行目 = 同じ話題(似た行として拾われるはず)
+   ・3行目 = 内部の言葉(キャッシュ・リファクタ)
+   日付は未来にして「最新の日付のブロック」になるようにする。 */
+const CHANGELOG_PROBE = `  { date:'2099-12-31', items:[
+    { t:'安全圏の縮小が全体的にゆっくりになりました', g:['balance'] },
+    { t:'安全圏の縮小の速さをさらに調整しました', g:['balance'] },
+    { t:'キャッシュの持ち方をリファクタしました', g:['general'] },
+  ]},
+`;
+function runChangelog(){
+  const src = fs.readFileSync(path.join(ROOT, 'data.js'), 'utf8');
+  let n = 0;
+  // ① 今の data.js そのまま
+  const r0 = spawnSync(process.execPath, [path.join(__dirname, 'changelog_check.mjs')], { encoding:'utf8' });
+  if(r0.status !== 0){ fail('changelog', 'changelog_check.mjs がエラーで終わりました:\n' + (r0.stdout || r0.stderr)); return '—'; }
+  const H0 = evalDataJs(src).UPDATE_HISTORY;
+  const a0 = warnKeysOf(r0.stdout), b0 = warnKeysFromTool(H0);
+  if(a0.join('\n') !== b0.join('\n'))
+    fail('changelog', '今の data.js で changelog_check とツール側の警告が違います'
+      + `\n      changelog_check: ${JSON.stringify(a0)}\n      studio_web     : ${JSON.stringify(b0)}`);
+  n += a0.length;
+
+  /* ② わざと警告が出る1日ぶんを足した data.js。
+     ①だけだと「両方とも0件」で通ってしまい、判定が同じかどうかを見たことにならない。 */
+  const probeSrc = src.replace('const UPDATE_HISTORY = [\n', 'const UPDATE_HISTORY = [\n' + CHANGELOG_PROBE);
+  if(probeSrc === src){ fail('changelog', 'UPDATE_HISTORY の書き出しが見つかりません(検査用の差し込みができない)'); return '—'; }
+  const r1 = runCheckOn(probeSrc);
+  if(r1.status !== 0){ fail('changelog', '検査用の data.js で changelog_check がエラーになりました:\n' + (r1.stdout || r1.stderr)); return '—'; }
+  const H1 = evalDataJs(probeSrc, '検査用 data.js').UPDATE_HISTORY;
+  const a1 = warnKeysOf(r1.stdout), b1 = warnKeysFromTool(H1);
+  if(!a1.length) fail('changelog', '検査用の1日ぶんで警告が1件も出ませんでした(判定を比べられていない)');
+  if(a1.join('\n') !== b1.join('\n'))
+    fail('changelog', '検査用の data.js で changelog_check とツール側の警告が違います'
+      + `\n      changelog_check: ${JSON.stringify(a1)}\n      studio_web     : ${JSON.stringify(b1)}`);
+
+  return `${H0.length}ブロック(今:注意${n}件 / 検査用:注意${a1.length}件で一致)`;
+}
+
 /* ------------------------------------------------------------ 実行 */
 const done = [];
-if(want('rows'))    done.push('行生成 ' + runRows());
-if(want('segment')) done.push('背景抜き ' + runSegment());
-if(want('period'))  done.push('周期検出 ' + runPeriod());
+if(want('rows'))      done.push('行生成 ' + runRows());
+if(want('segment'))   done.push('背景抜き ' + runSegment());
+if(want('period'))    done.push('周期検出 ' + runPeriod());
+if(want('roundtrip')) done.push('往復 ' + runRoundTrip());
+if(want('handlers'))  done.push('属性 ' + runHandlers());
+if(want('moveaura'))  done.push('技名 ' + runMoveAura());
+if(want('changelog')) done.push('更新履歴 ' + runChangelog());
+if(shown.length){
+  console.log('往復(1項目変更)の変更行:');
+  for(const s of shown) console.log('  - ' + s);
+  console.log('');
+}
 
 for(const n of notes) console.log('注意: ' + n);
 if(UPDATE){

@@ -42,6 +42,12 @@ const REQUIRED = [
   // data.js を読む側
   'pickObjText', 'pickStr', 'pickNum', 'numExpr', 'parseSkinMedia', 'parseStateChanges',
   'skinMediaRange', 'removeSkinMediaEntry',
+  // 値の走査器(登録済みを開いて直す・書き戻しの土台。置換はすべてここを通る)
+  'skipDeadAt', 'inDeadZone', 'skipGapAt', 'scanValue', 'pickEntry',
+  'findFieldInObject', 'replaceFieldInObject', 'replaceField', 'moveObjectRange', 'replaceMoveField',
+  // 更新履歴の注意2判定(changelog_check.mjs と二重に持つ)
+  'changelogWarnings', 'changelogWords', 'changelogSimilarity',
+  'CHANGELOG_SIMILAR', 'CHANGELOG_INTERNAL',
   // 定数(検査側で二重に持たないため、必ずここから読む)
   'MOVE_T1', 'MOVE_T2', 'TIER3', 'JS_ORDER', 'TABLES', 'TABLE_FILE',
   'SEG_SOFT', 'SEG_SPECK', 'ANALYZE_N', 'CAND_N', 'WORK_H', 'CANVAS', 'TARGET_H', 'FEET_Y',
@@ -195,7 +201,11 @@ export function loadStudio(opt = {}){
   sandbox.globalThis = sandbox;
   const ctx = vm.createContext(sandbox);
 
-  const names = REQUIRED.concat(OPTIONAL);
+  /* opt.extra = 「あるかどうかを知りたいだけ」の名前(欠けても止めない)。
+     HTML の onclick= 等から呼ばれる関数が本当に定義されているかを検査するために使う
+     (名前は HTML から集めるので、REQUIRED に固定で書けない)。 */
+  const extra = (opt.extra || []).filter(n => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(n));
+  const names = REQUIRED.concat(OPTIONAL, extra);
   // 名前を1つずつ「あれば入れる」形で集める(未定義でも ReferenceError にならないように)
   const collect = names.map(n =>
     `  try{ __picked[${JSON.stringify(n)}] = ${n}; }catch(e){}`).join('\n');
@@ -213,6 +223,7 @@ export function loadStudio(opt = {}){
   const out = {};
   for(const n of names) if(picked[n] !== undefined) out[n] = picked[n];
   out.__missing = missingOpt;   // OPTIONAL のうち今の studio_web.html に無かった名前
+  out.__missingExtra = extra.filter(n => picked[n] === undefined);   // opt.extra のうち定義が無かった名前
   out.__file = file;
   out.__document = document;    // 検査から $() の掴んだ要素を覗きたいとき用
   out.__sandbox = sandbox;

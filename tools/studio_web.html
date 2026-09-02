@@ -3793,6 +3793,256 @@ function numExpr(s){
   try{ const v = Function('return (' + s + ')')(); return typeof v === 'number' && isFinite(v) ? v : null; }
   catch(e){ return null; }
 }
+
+/* ================================================================
+   値の走査器(登録済みを開いて直すときの土台・純関数)
+
+   なぜ要るか:
+     data.js の1項目だけを書き換えたいのに、正規表現で「その行ごと」掴んで作り直すと、
+     行内コメント・未知のキー・並び順が消える。data.js は実際に
+       ・技オブジェクトの中に説明のコメント行がある(fire の tier3)
+       ・閉じ括弧と同じ行からコメントが始まる(rock の tier3)
+       ・`cooldownMod:1/1.5` のような式で書かれた値がある(phoenix)
+       ・ツールが知らないキーがある(zan の burstSpreadRandom / joker の burstDirs・projVisR)
+     という書き方をしているので、行を作り直す方式ではどれも壊れる。
+     ここでは「値の始まりから終わりまで」を数えるだけの関数を土台にし、
+     置換はすべてこれを通す。**触った値の文字だけが動き、他は1文字も動かない。**
+   決まりごと:
+     ・DOM に触らない純関数。node の検査(tools/studio_regress.mjs)から直接呼ぶ。
+     ・位置は「終わりの次の添字」で返す(text.slice(start, end) がその値になる)。 */
+
+/* text[j] が文字列/コメントの始まりならその終わりの次の添字を、そうでなければ j を返す。
+   行コメントは改行そのものを残す(「改行で値が終わる」判定に要るため)。 */
+function skipDeadAt(text, j){
+  const c = text[j];
+  if(c === "'" || c === '"' || c === '`'){
+    for(let k = j+1; k < text.length; k++){
+      if(text[k] === '\\'){ k++; continue; }              // エスケープの次の1文字は数えない
+      if(text[k] === c) return k + 1;
+    }
+    return text.length;
+  }
+  if(c === '/' && text[j+1] === '/'){
+    const e = text.indexOf('\n', j);
+    return e < 0 ? text.length : e;
+  }
+  if(c === '/' && text[j+1] === '*'){
+    const e = text.indexOf('*/', j+2);
+    return e < 0 ? text.length : e + 2;
+  }
+  return j;
+}
+// pos が from 以降のどこかの文字列/コメントの中に入っているか(錨の空振りを弾くため)
+function inDeadZone(text, from, pos){
+  for(let j = from; j < pos; ){
+    const k = skipDeadAt(text, j);
+    if(k !== j){ if(pos < k) return true; j = k; }
+    else j++;
+  }
+  return false;
+}
+// 空白と行内コメントだけを読み飛ばす(値の始まりを探すため。文字列は飛ばさない)
+function skipGapAt(text, p){
+  for(;;){
+    if(p < text.length && /\s/.test(text[p])){ p++; continue; }
+    if(text[p] === '/' && (text[p+1] === '/' || text[p+1] === '*')){ p = skipDeadAt(text, p); continue; }
+    return p;
+  }
+}
+
+/* text[i] から始まる JS の値の**終わりの位置**を返す。
+   ・{ } [ ] で始まる → 対応が閉じた次の位置
+   ・' " ` で始まる  → 閉じ引用符の次の位置
+   ・それ以外(数値・true/false・識別子・`1/1.5` のような式)
+       → 対応が閉じた状態で , } ] ) か改行かコメントの始まりに出会う直前(末尾の空白は含めない)
+   いずれも文字列の中の括弧・エスケープ・コメントは読み飛ばす。 */
+function scanValue(text, i){
+  const n = text.length;
+  i = skipGapAt(text, i);
+  const c = text[i];
+  if(c === undefined) return i;
+  if(c === "'" || c === '"' || c === '`') return skipDeadAt(text, i);
+  if(c === '{' || c === '['){
+    let depth = 0;
+    for(let j = i; j < n; j++){
+      const k = skipDeadAt(text, j);
+      if(k !== j){ j = k - 1; continue; }
+      const ch = text[j];
+      if(ch === '{' || ch === '[') depth++;
+      else if(ch === '}' || ch === ']'){ depth--; if(depth === 0) return j + 1; }
+    }
+    return -1;                                   // 閉じていない(呼ぶ側で例外にする)
+  }
+  let depth = 0, j = i;
+  for(; j < n; j++){
+    if(text[j] === '/' && (text[j+1] === '/' || text[j+1] === '*')) break;   // 値の後ろのコメント
+    const k = skipDeadAt(text, j);
+    if(k !== j){ j = k - 1; continue; }          // 文字列(式の中に混ざることがある)
+    const ch = text[j];
+    if(ch === '(' || ch === '[' || ch === '{') depth++;
+    else if(ch === ')' || ch === ']' || ch === '}'){ if(depth === 0) break; depth--; }
+    else if(depth === 0 && (ch === ',' || ch === '\n')) break;
+  }
+  while(j > i && /\s/.test(text[j-1])) j--;
+  return j;
+}
+
+/* 表(const TABLE = { … })の中の key の値を取り出す。表に無ければ null。
+   範囲を「表の始まり 〜 目印 <<AUTO:表名>>(無ければ表の閉じ)」に限る理由:
+     同じ key が複数の表にいる(mocchi は ELEMENTS にも SKIN_CONFIG にもいる)ため。
+   錨は行頭の `  key:`(インデント2)。コメント行の中の `// 例: guts_ssr: {…` のような
+   書き方(data.js の EMOTE_FRAMES)を掴まないよう、当たりが文字列/コメントの中なら捨てる。 */
+function pickEntry(text, table, key){
+  const head = new RegExp('const\\s+' + table + '\\s*=\\s*[{\\[]').exec(text);
+  if(!head) return null;
+  const open = head.index + head[0].length - 1;
+  const tableEnd = scanValue(text, open);
+  if(tableEnd < 0) return null;
+  let rangeEnd = tableEnd;
+  const mark = text.indexOf('// <<AUTO:' + table + '>>', open);
+  if(mark >= 0 && mark < tableEnd) rangeEnd = mark;
+
+  const esc = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rx = new RegExp('^  ' + esc + '[ \\t]*:', 'gm');
+  const region = text.slice(open, rangeEnd);
+  let m;
+  while((m = rx.exec(region))){
+    const at = open + m.index;
+    if(inDeadZone(text, open, at)) continue;      // コメント/文字列の中の見た目だけの一致
+    const start = skipGapAt(text, at + m[0].length);
+    const end = scanValue(text, start);
+    if(end < 0) return null;
+    const c = text[start];
+    return { start, end, valueText: text.slice(start, end),
+             type: c === '{' ? 'object' : c === '[' ? 'array'
+                 : (c === "'" || c === '"' || c === '`') ? 'string' : 'value' };
+  }
+  return null;
+}
+
+/* オブジェクト(objStart='{' の位置 / objEnd='}' の次)の**直下**にある field を探す。
+   直下に限る理由: `blast:{ … color:'#fff' }` のような入れ子の同名キーを掴まないため。 */
+function findFieldInObject(text, objStart, objEnd, field){
+  let depth = 0;
+  for(let j = objStart; j < objEnd; j++){
+    const k = skipDeadAt(text, j);
+    if(k !== j){ j = k - 1; continue; }
+    const ch = text[j];
+    if(ch === '{' || ch === '[' || ch === '('){ depth++; continue; }
+    if(ch === '}' || ch === ']' || ch === ')'){ depth--; continue; }
+    if(depth !== 1) continue;
+    if(!/[A-Za-z_$]/.test(ch)) continue;
+    if(j > objStart && /[A-Za-z0-9_$]/.test(text[j-1])) continue;
+    let e = j;
+    while(e < objEnd && /[A-Za-z0-9_$]/.test(text[e])) e++;
+    if(text.slice(j, e) !== field){ j = e - 1; continue; }
+    const colon = skipGapAt(text, e);
+    if(text[colon] !== ':'){ j = e - 1; continue; }   // 値として出てきた同名の識別子
+    const valueStart = skipGapAt(text, colon + 1);
+    const valueEnd = scanValue(text, valueStart);
+    if(valueEnd < 0) return null;
+    return { keyStart: j, valueStart, valueEnd };
+  }
+  return null;
+}
+
+/* オブジェクトの中の field の値だけを差し替える。無ければ末尾(閉じ括弧の直前)へ足す。
+   足すときの末尾カンマは周囲の流儀に合わせる(`{ a:1 }` → `{ a:1, b:2 }` /
+   `{ a:1, }` → `{ a:1, b:2, }`)。行を作り直さないので、行内コメントも並び順も残る。 */
+function replaceFieldInObject(text, objStart, objEnd, field, newValueText){
+  const f = findFieldInObject(text, objStart, objEnd, field);
+  if(f) return text.slice(0, f.valueStart) + newValueText + text.slice(f.valueEnd);
+  let p = objEnd - 2;                               // objEnd-1 は '}'。その手前から後ろ向きに空白を飛ばす
+  while(p > objStart && /\s/.test(text[p])) p--;
+  const at = p + 1;
+  const ins = text[p] === '{' ? `${field}:${newValueText} `
+            : text[p] === ',' ? ` ${field}:${newValueText},`
+            :                   `, ${field}:${newValueText}`;
+  return text.slice(0, at) + ins + text.slice(at);
+}
+
+/* 表のその key のオブジェクトの中の field だけを置き換える(ELEMENTS / SKIN_CONFIG など)。 */
+function replaceField(text, table, key, field, newValueText){
+  const e = pickEntry(text, table, key);
+  if(!e) throw new Error(`${table} に ${key} がありません`);
+  if(e.type !== 'object') throw new Error(`${table} の ${key} はオブジェクトではありません`);
+  return replaceFieldInObject(text, e.start, e.end, field, newValueText);
+}
+
+// 配列(arrStart='[' / arrEnd=']' の次)の直下にある index 番目のオブジェクトの範囲
+function moveObjectRange(text, arrStart, arrEnd, index){
+  let depth = 0, seen = 0;
+  for(let j = arrStart; j < arrEnd; j++){
+    const k = skipDeadAt(text, j);
+    if(k !== j){ j = k - 1; continue; }
+    const ch = text[j];
+    if(ch === '['){ depth++; continue; }
+    if(ch === ']'){ depth--; continue; }
+    if(depth === 1 && ch === '{'){
+      const end = scanValue(text, j);
+      if(end < 0) return null;
+      if(seen === index) return { start: j, end };
+      seen++; j = end - 1;
+    }
+  }
+  return null;
+}
+
+/* SIGNATURE_MOVES[key] の tierIndex 番目(0=tier1)の技の field だけを置き換える。
+   技オブジェクトは**作り直さない**(jsMove は新規登録専用)。 */
+function replaceMoveField(text, key, tierIndex, field, newValueText){
+  const e = pickEntry(text, 'SIGNATURE_MOVES', key);
+  if(!e) throw new Error(`SIGNATURE_MOVES に ${key} がありません`);
+  if(e.type !== 'array') throw new Error(`SIGNATURE_MOVES の ${key} が配列ではありません`);
+  const el = moveObjectRange(text, e.start, e.end, tierIndex);
+  if(!el) throw new Error(`SIGNATURE_MOVES の ${key} に ${tierIndex+1}番目の技がありません`);
+  return replaceFieldInObject(text, el.start, el.end, field, newValueText);
+}
+
+/* ---------------------------------------------------------------
+   更新履歴の「注意」2判定(似た行・内部の言葉)
+
+   **二重に持つ箇所**: tools/changelog_check.mjs と同じ判定をここにも置く。
+   ツールは data.js を読み込まずに単体で動く(送信前にブラウザの中で判定したい)ため。
+   **片方を変えたら必ず両方直すこと。** 同じ結果になることは
+   tools/studio_regress.mjs の (g) が毎回突き合わせる。
+
+   items = [{t:'本文', g:['タグid',…]}, …](1日ぶん)。
+   返り値 = [{type:'similar', i, j, percent} | {type:'internal', i, words:[…]}](i/j は1始まり)。 */
+const CHANGELOG_SIMILAR = 0.34;
+const CHANGELOG_INTERNAL = ['リファクタ', 'キャッシュ', 'CACHE_NAME', 'Service Worker', 'localStorage', 'コミット',
+                            'プルリク', 'リポジトリ', '関数', '変数', 'CSS', 'DOM', 'API', 'デプロイ', 'ソースコード'];
+// 文字の並びではなく「出てくる言葉」で比べる(日本語は言い回しを変えると並びがまるごと変わる)
+function changelogWords(s){ return new Set(String(s).match(/[゠-ヿ]{2,}|[一-鿿]{2,}/g) || []); }
+function changelogSimilarity(a, b){
+  const A = changelogWords(a), B = changelogWords(b);
+  if(!A.size || !B.size) return 0;
+  let hit = 0; for(const x of A) if(B.has(x)) hit++;
+  return hit / Math.min(A.size, B.size);
+}
+function changelogWarnings(items, opt){
+  const o = opt || {};
+  const wantSimilar  = o.similar  !== false;
+  const wantInternal = o.internal !== false;
+  const list = Array.isArray(items) ? items : [];
+  const out = [];
+  if(wantSimilar){
+    for(let i = 0; i < list.length; i++) for(let j = i+1; j < list.length; j++){
+      const s = changelogSimilarity(list[i] && list[i].t, list[j] && list[j].t);
+      if(s >= CHANGELOG_SIMILAR) out.push({ type:'similar', i:i+1, j:j+1, percent: Math.round(s*100) });
+    }
+  }
+  if(wantInternal){
+    for(let i = 0; i < list.length; i++){
+      const t = list[i] && list[i].t;
+      if(typeof t !== 'string') continue;
+      const hit = CHANGELOG_INTERNAL.filter(w => t.includes(w));
+      if(hit.length) out.push({ type:'internal', i:i+1, words: hit });
+    }
+  }
+  return out;
+}
+
 function parseSkinMedia(dataJs){
   const out = {};
   let block;
