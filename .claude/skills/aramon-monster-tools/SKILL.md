@@ -231,9 +231,18 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
     `state.files` と送信専用の印 `state.sendNg` だけ(`sendFail()` が立て、
     `preflight`/`doCommit` の成功が消す)。パネルごとの赤は、そのパネル自身の
     `#walkMeta`/`#portraitMeta` の色を読む。
+    - **見る順は `sendNg` が先、`state.files` が後。** `doCommit` がしくじっても
+      `state.files` は残る(押し直せるように残してある)ので、`state.files` を先に見ると
+      **一度 `preflight` が通ったあとの送信の失敗が全部「済」のまま**になる。
+      この順なら、直して「差分を確認する」を押し直す(= `preflight` が `sendNg` を落とす)まで赤が残る。
   - **段の判定は画面を書き換えない。** 技の段は `moveInputErrors()`(`collectSpec()` を通して
     欄に赤を塗る)ではなく、**塗った結果を読むだけ**の `moveHasBadInput()` を通す。
     塗るのは入力したときと「差分を確認する」ときだけ。
+    - **塗り直すのは「数字の欄を触ったとき」だけ**(boot の `moveNumTouched`)。赤い印を持つのは
+      `moveNumValue` が見る数字の欄(`type=number` / `inputmode=decimal`)だけなので、
+      技名を1文字打つたび・色を1回ドラッグするたびに `collectSpec()` を丸ごと走らせても結果は変わらない。
+      **形(`m2_tpl`)だけは通す** —— 形を変えると効かない欄が隠れ、
+      **隠れた欄の赤を消せるのは `moveNumValue` だけ**なので、通さないと段に「!」が居残る。
   - 出し直しは `log()` の中と画面全体の `input`/`change`、**それに成功経路の終わり**
     (`useFrames()` と `buildPortraits()` の成功)から呼ぶ —— 歩行と静止画は log を通らずに
     終わるので、log 頼みにすると8コマができても段が「未」のままになる。
@@ -255,13 +264,31 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
     `addEventListener` で登録した出し分け(`s_raidEffect`)を拾えず、班A' の「動画なら抜き方の既定は
     色で抜く」は**イベント引数の有無**で「人が選んだか」を見分けているので、直呼びだと戻した値が既定に負ける。
     `dispatchEvent(new Event('change',{bubbles:true}))` で入れる(`fireChange`)。
+    - **`DRAFT_RERUN` の並びは意味がある。並べ替えない。** `mode` は必ず `walkSrc` より前 ——
+      `mode` を `fireChange` で通すと `modeTouched` が立ち、そのあとの `walkSrc` の出し分け
+      (`applyWalkModeDefault()`)が戻した抜き方を上書きしなくなる。逆順だと**戻した抜き方が既定に負ける**。
+      検査は `studio_draft_test` の②(復元後の `#mode` と `#th` が下書きの値であること)。
   - 順は **「入れる → 出し分け → 入れ直す」**。出し分けの中には**別の欄を既定へ戻す**もの
     (抜き方を変えるとしきい値が既定に戻る)があるので、最後にもう一度入れ直さないと戻した値が消える。
     `regKind` の出し分けは**値を全部入れ終えてから**もう一度通す。
   - **問いに答えずに欄を触ったら、黙って捨てない。** log に「前回の入力は使わずに新しく始めます」と出し、
-    上書きされる前に1世代だけ `aramon_studio_draft_prev_v1` へ退避する(`draftKeepPrev`)。
+    1世代だけ `aramon_studio_draft_prev_v1` へ退避してから(`draftKeepPrev`)、
+    **その場で `DRAFT_KEY` を消す**(`draftDismiss`)。「次の自動保存が上書きするから」では足りない ——
+    **`regKind='edit'` 中は `saveDraft` が早期 return する**ので上書きは起きず、
+    次に開くと同じ下書きをまた聞かれ、「消えました」が嘘になっていた。
+  - **退避には読み手を用意する。** 退避があるときだけ `draftBar` に「もっと前の入力に戻す」
+    (`draftRestorePrev`)を出し、**戻したら退避は消す**(溜め込まない・二度出さない)。
+    出すのは `draftBar` の中だけ —— 退避は消すまで残るので、単独で出すと毎回ずっと居座る。
+    中身の検査は `parseDraft` **1か所**で、今の下書きも退避も同じ目(`draftKindOk` を含む)で見る。
+    欄へ入れる本体も `draftApply` **1つ**(戻し方を2か所に書かない)。
   **下書きを戻すのは `captureFormDefaults()` のあと** —— 先に戻すと、戻した値が「既定」として撮られ、
   登録の種類を切り替えても消えなくなる。
+- **歩行の進捗(`walkStep`)の間引きは「回数」と「時間」の両方で解く。** 同じ文言の続きは
+  `WALK_STEP_EVERY`(4回に1回)へ間引くが、**前に書いてから `WALK_STEP_MAX_MS`(2秒)経っていたら
+  必ず書く**。回数だけで見ていたころは、数(`walkStepN`)が関数の外にあるので**実行をまたいで持ち越し**、
+  前のプレビューが「3回目」で終わっていると次のプレビューの頭が間引かれて
+  **押したのに前回の文言のまま止まって見えた**。時間で見れば新しい実行は必ず2秒以上あいているので
+  1回目がそのまま出る —— **呼び出し側(`preview()`/`recutWithModel()`)に「やり直し」の1行を足さずに済む。**
 - **残り時間の式は `etaText(done, total, startedAt)` 1つだけ。** done/total は件数でも秒でもよい。
   **固定値を書かない**(端末で10倍違う)。1件も終わっていない/終わったときは空文字を返す(嘘を出さない)。
   1件あたりの実測から出す道(モデルの推論)も `etaByRate(msPer, remain)` が**同じ式に載せている**。
@@ -300,7 +327,9 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
   帯の下に潜り込む。**見出しまで一緒に貼らない**(1画面の1割以上が常時ふさがる)。
 - 検査: `node tools/studio_draft_test.mjs`(下書きと段階バー。**受け入れ条件は「保存→読み込み直す→復元で
   `preflight` の文が一致」**。埋める値は `draftFields()` から作るので**欄を足しても目が届く**。
-  段は `useFrames` / `buildPortraits` の直後に **`log()` を挟まず**読む)/
+  段は `useFrames` / `buildPortraits` の直後に **`log()` を挟まず**読む。
+  ⑦「もっと前の入力に戻す」・⑧**コミットの失敗(409)で送信の段が赤くなり、確認し直すと緑へ戻る**
+  も見る)/
   `node tools/studio_layout_test.mjs`(縦持ち3端末×全パネル)/
   `node tools/studio_regress.mjs --only wording`(残り時間が実測から出ているか・
   推論の進捗の文面が変わる2通り・失敗の言い方)。

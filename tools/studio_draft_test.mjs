@@ -21,6 +21,10 @@
      ⑥ 「登録済みを開いて直す」中の入力は下書きに入らない・戻さない(§指摘5)。
         相手(e_target)は GitHubから読み直さないと中身が入らないので欄だけ戻しても嘘になり、
         しかも state.editFilled が立たないまま値が残るので、新規へ切り替えても既定に戻らない。
+     ⑦ 1世代前の退避に**読み手がいる**(§指摘20)。退避があるときだけ
+        「もっと前の入力に戻す」を出し、戻したら退避は消える
+     ⑧ 送信の段は**送信の失敗を先に見る**(§指摘17)。doCommit がしくじっても
+        state.files は残るので、state.files を先に見ると失敗が「済」のままだった
 
    使い方: node tools/studio_draft_test.mjs [--json]                              */
 import fs from 'fs';
@@ -244,6 +248,36 @@ if(saved.cls === 'ng') errors.push('差分の確認で止まりました:\n' + s
 if(saved.stages.join(',') !== 'ok,ok,ok,ok,ok,ok,ok')
   errors.push(`段階バーが全部「済」になりません: ${saved.stages.join(',')}`);
 
+/* ---------------------------------------------------------------- ⑧ 送信の失敗で赤くなるか
+   doCommit がしくじっても state.files は残る(押し直せるように残してある)ので、
+   段が state.files を先に見ていると、**一度 preflight が通ったあとの送信の失敗が
+   全部「済」のまま**になっていた(§指摘17)。直したら「差分を確認する」を
+   押し直して緑へ戻ることまで見る(409 = 送信先が先に進んだ、の直し方そのもの)。 */
+const sendFailCase = await page.evaluate(async ()=>{
+  const real = window.gh;
+  // コミットの API(/git/…)だけ 409 を返す。取得(/contents/…)は今までどおり通す
+  window.gh = async (p, o)=>{
+    if(/\/git\//.test(p)) throw new Error('GitHub 409: Update is not a fast forward');
+    return real(p, o);
+  };
+  await doCommit();
+  window.gh = real;
+  return { said: document.getElementById('log').textContent,
+           files: !!state.files, sendNg: !!state.sendNg };
+});
+await settle();
+const stageSendNg = await readStages();
+if(stageSendNg[STAGE_IX.送信] !== 'ng')
+  errors.push(`コミットに失敗しても「送信」の段が ${stageSendNg[STAGE_IX.送信]} です`
+    + `(state.files=${sendFailCase.files} / sendNg=${sendFailCase.sendNg} / log: `
+    + `${JSON.stringify((sendFailCase.said || '').split('\n')[0])})`);
+// 直す = もう一度「差分を確認する」。通ったら段は緑へ戻る
+await page.evaluate(async ()=> { await preflight(); });
+await settle();
+const stageSendBack = await readStages();
+if(stageSendBack[STAGE_IX.送信] !== 'ok')
+  errors.push(`確認し直しても「送信」の段が ${stageSendBack[STAGE_IX.送信]} のままです`);
+
 // ---------------------------------------------------------------- ② 読み込み直して復元
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
@@ -263,6 +297,7 @@ const restored = await page.evaluate(async ({ fake })=>{
   return { asked, askText, cleanKey, stagesBefore, now,
            key: document.getElementById('f_key').value,
            mode: document.getElementById('mode').value,
+           th: document.getElementById('th').value,
            after: document.getElementById('log').textContent,
            cls: document.getElementById('log').className,
            left: localStorage.getItem(DRAFT_KEY) != null };
@@ -273,6 +308,19 @@ if(restored.cleanKey) errors.push(`聞く前に欄へ入れています(f_key=${
 if(restored.stagesBefore.slice(2).join(',') === 'ok,ok,ok,ok,ok')
   errors.push('復元する前から段階バーが「済」です(state を読んでいません)');
 if(restored.key !== FILL_FIX.f_key) errors.push(`復元しても f_key が ${restored.key} です`);
+/* DRAFT_RERUN の並びが効いていることを名指しで見る(§指摘22)。
+   ・#mode … `walkSrc` より前に通していないと、applyWalkModeDefault() が
+     戻した抜き方を既定(色で抜く)へ上書きしてしまう
+   ・#th  … `mode` の出し分けは**しきい値を既定へ戻す**ので、
+     「入れる → 出し分け → 入れ直す」の最後の入れ直しが無いと消える
+   下の一括の突き合わせでも見えるが、並べ替えたときに**どちらが壊れたか**が
+   一目で分かるように、この2つは名指しで出す。 */
+if(restored.mode !== saved.want.mode)
+  errors.push(`復元しても #mode が ${restored.mode} です(下書きは ${saved.want.mode}`
+    + ' / DRAFT_RERUN で mode を walkSrc より前に置いているか)');
+if(String(restored.th) !== String(saved.want.th))
+  errors.push(`復元しても #th(しきい値)が ${restored.th} です(下書きは ${saved.want.th}`
+    + ' / 出し分けのあとに入れ直しているか)');
 {
   const back = Object.keys(saved.want).filter(k => String(restored.now[k]) !== String(saved.want[k]));
   if(back.length)
@@ -313,6 +361,55 @@ if(typed.key !== 'typedmon')
 if(!/前回の入力は使わず/.test(typed.said || ''))
   errors.push(`前回の下書きを捨てたことを知らせません(log: ${JSON.stringify(typed.said)})`);
 if(!typed.prev) errors.push('捨てる前の下書きが1世代も退避されていません');
+
+/* ---------------------------------------------------------------- ⑦ もっと前の入力に戻す
+   1世代の退避は置くだけで**読み手がいなかった**(§指摘20)。取り違えて打ち始めた人の
+   逃げ道なので、退避があるときだけ draftBar に道を出し、戻したら退避は消す。
+   ここまでで 今の下書き=typedmon / 退避=①で入れたぶん(draftmon)になっている。 */
+await page.reload({ waitUntil:'load' });
+await page.waitForFunction(()=> typeof window.boot === 'function');
+const prevBack = await page.evaluate(async ()=>{
+  const btn = document.getElementById('draftPrevBtn');
+  const shownBefore = !!btn && btn.style.display !== 'none';
+  draftRestorePrev();
+  await new Promise(r => setTimeout(r, 600));      // saveDraftSoon(400ms)が新しい下書きを書くまで
+  return { shownBefore, key: document.getElementById('f_key').value,
+           shownAfter: !!btn && btn.style.display !== 'none',
+           prevLeft: localStorage.getItem(DRAFT_PREV_KEY) != null,
+           said: document.getElementById('log').textContent };
+});
+if(!prevBack.shownBefore) errors.push('退避があるのに「もっと前の入力に戻す」が出ません(§指摘20)');
+if(prevBack.key !== FILL_FIX.f_key)
+  errors.push(`「もっと前の入力に戻す」で戻りません(f_key=${prevBack.key} / 退避は ${FILL_FIX.f_key})`);
+if(prevBack.prevLeft) errors.push('戻したのに退避が残っています(同じものを二度出してしまう)');
+if(prevBack.shownAfter) errors.push('戻したあとも「もっと前の入力に戻す」が出たままです');
+
+/* ---------------------------------------------------------------- ③'' 「消えました」は本当か
+   draftDismiss は「前回の続きは消えました」と言うのに下書きを消していなかった(§指摘19)。
+   ふつうは次の自動保存が上書きするので気づけないが、**「登録済みを開いて直す」中は
+   saveDraft が早期 return する**ので上書きすら起きず、次に開くと同じ問いがまた出る。
+   種類を切り替える操作そのものが「答えずに触った」に当たるので、それで再現する。 */
+await page.reload({ waitUntil:'load' });
+await page.waitForFunction(()=> typeof window.boot === 'function');
+const dismissed = await page.evaluate(async ()=>{
+  const raw = localStorage.getItem(DRAFT_KEY);
+  const asked = document.getElementById('draftBar').style.display !== 'none';
+  const k = document.getElementById('regKind');
+  k.value = 'edit';
+  k.dispatchEvent(new Event('change', { bubbles:true }));   // 人が種類を切り替えたのと同じ
+  await new Promise(r => setTimeout(r, 700));               // saveDraftSoon(400ms)より後まで待つ
+  return { raw, asked, left: localStorage.getItem(DRAFT_KEY) };
+});
+if(!dismissed.asked) errors.push('③\'\' の入口で「前回の続き」を聞かれていません');
+if(dismissed.left)
+  errors.push('「前回の続きは消えました」と言ったのに下書きが残っています(§指摘19): '
+    + String(dismissed.left).slice(0, 80));
+await page.reload({ waitUntil:'load' });
+await page.waitForFunction(()=> typeof window.boot === 'function');
+const askedAgain = await page.evaluate(()=> document.getElementById('draftBar').style.display !== 'none');
+if(askedAgain) errors.push('「消えました」と言われた下書きを、次に開いてもまた聞かれます(§指摘19)');
+// このあとの ③ が使う下書きを戻す(ここで見たいのは「消えること」だけ)
+await page.evaluate(raw => raw && localStorage.setItem(DRAFT_KEY, raw), dismissed.raw);
 
 // ---------------------------------------------------------------- ③ 捨てる
 await page.reload({ waitUntil:'load' });
@@ -375,7 +472,11 @@ console.log(`     差分の確認の文: ${saved.before === restored.after ? '�
   + `(${(saved.before||'').split('\n').length}行)`);
 console.log(`  ③ 答えずに打ち始めた: 問いは${typed.shown ? '出たまま' : '引っ込む'} / 保存された値 ${typed.key}`
   + ` / 退避${typed.prev ? 'あり' : 'なし'}`);
+console.log(`  ⑦ もっと前の入力に戻す: 出${prevBack.shownBefore ? 'る' : 'ない'} / 戻した f_key ${prevBack.key}`
+  + ` / 退避${prevBack.prevLeft ? '残り' : 'なし'}`);
+console.log(`     打ち始めて消した後: 残り${dismissed.left ? 'あり' : 'なし'} / 次に開いて聞かれ${askedAgain ? 'る' : 'ない'}`);
 console.log(`     捨てる: 残り${discarded.left ? 'あり' : 'なし'} / 次に開いて聞かれ${afterDiscard ? 'る' : 'ない'}`);
+console.log(`  ⑧ 送信の失敗: 段は ${stageSendNg[STAGE_IX.送信]} → 確認し直して ${stageSendBack[STAGE_IX.送信]}`);
 console.log(`  ④ 段階バー: 復元前 ${restored.stagesBefore.join(',')} → 用意後 ${saved.stages.join(',')}`);
 console.log(`     歩行の成功直後 ${stageWalk.join(',')} / 静止画の成功直後 ${stagePortrait.join(',')}`);
 console.log(`  ⑤ 他パネルが失敗したとき: ${stageOtherNg.join(',')}(送信の段は ${stageOtherNg[STAGE_IX.送信]})`);

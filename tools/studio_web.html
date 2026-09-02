@@ -145,6 +145,8 @@
   <div class="btns">
     <button class="primary" onclick="draftRestore()">前回の続きから始める</button>
     <button onclick="draftDiscard()">捨てて新しく始める</button>
+    <!-- 1世代前の退避へ戻る道。**退避があるときだけ** refreshDraftPrevBtn() が出す -->
+    <button id="draftPrevBtn" style="display:none" onclick="draftRestorePrev()">もっと前の入力に戻す</button>
   </div>
 </div>
 
@@ -952,8 +954,12 @@ const STAGES = [
                                            : ($('m0_name').value.trim() && $('m1_name').value.trim()
                                               && $('m2_name').value.trim()) ? 'ok' : 'todo' },
   /* 送信の段が読むのは**送信の結果だけ**(§指摘2)。#log は全画面で1つなので、
-     歩行や静止画の失敗で赤くなった log を読むと、送っていないのに送信段が赤くなっていた。 */
-  { id:'sendPanel',     jp:'送信',   st: ()=> state.files ? 'ok' : state.sendNg ? 'ng' : 'todo' },
+     歩行や静止画の失敗で赤くなった log を読むと、送っていないのに送信段が赤くなっていた。
+     **失敗(sendNg)を「済」より先に見る**(§指摘17) —— doCommit がしくじっても
+     state.files は残る(押し直せるように残してある)ので、state.files を先に見ると、
+     一度 preflight が通ったあとの送信の失敗が**全部「済」のまま**になっていた。
+     この並びなら、直して確認し直す(preflight が sendNg を落とす)まで赤が残る。 */
+  { id:'sendPanel',     jp:'送信',   st: ()=> state.sendNg ? 'ng' : state.files ? 'ok' : 'todo' },
 ];
 /* 送信段の赤はこの1か所だけが立てる。preflight / doCommit の失敗で立て、成功で消す。 */
 function sendFail(msg){ state.sendNg = true; log(msg, 'ng'); }
@@ -1037,7 +1043,18 @@ const DRAFT_SKIP = ['e_target','e_chText','e_chMode','e_chTarget','a_target','aw
    **f_scPreset は入れない** —— あれは選ぶと状態変化の中身を上書きするので、
    戻した中身が消える。
    s_raidEffect は addEventListener で出し分けを登録しているので、
-   **`.onchange` の直呼びでは拾えない**(§指摘7。下の fireChange を参照)。   */
+   **`.onchange` の直呼びでは拾えない**(§指摘7。下の fireChange を参照)。
+
+   **【並べ替え禁止】この順に意味がある**(§指摘22):
+     ・`mode` は必ず `walkSrc` より前。`mode` の出し分けは**イベント引数の有無**で
+       「人が選んだか」を見ており、fireChange で起こすと modeTouched が立つ。
+       `walkSrc` の出し分けは applyWalkModeDefault() を呼んで
+       「動画なら抜き方の既定は色で抜く」を当てるが、modeTouched が立っていれば
+       上書きしない —— つまり `mode` を先に通しておかないと、**戻した抜き方が
+       既定に負けて消える**(班A' の作りに乗っている)。
+     ・`mode` の出し分けは**しきい値(th)を既定へ戻す**ので、戻した th はここで一度消える。
+       最後にもう一度 put() する「入れる → 出し分け → 入れ直す」の順(下)が要るのはこのため。
+   検査は studio_draft_test の②(復元後の #mode と #th が下書きの値であること)。 */
 const DRAFT_RERUN = ['mode','pmode','walkSrc','m2_tpl','f_scTrigger','aw_mode','s_raidEffect'];
 /* 「登録済みを開いて直す」は下書きの対象外(§指摘5)。**保存も復元もしない。**
    相手(e_target)は GitHub から読み直さないと中身が入らないので戻せず、
@@ -1070,12 +1087,29 @@ function saveDraft(){
 }
 // 入力のたびに書かない(打っている間ずっと保存すると重い)。手が止まってから1回
 function saveDraftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); }
-function readDraft(){
+/* 下書きの中身の検査は**この1か所**。今の下書き(readDraft)も1世代前(readPrevDraft)も
+   同じ目で見る —— 退避のほうだけ検査を緩めると、「開いて直す」の下書きが
+   1世代前からよみがえって新規登録の欄に混ざる(§指摘5・§指摘20)。 */
+function parseDraft(raw){
   try{
-    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    const d = JSON.parse(raw || 'null');
     // 「開いて直す」の下書きは戻さない(§指摘5)。聞く側・戻す側の両方がここを通る
     return (d && d.v === 1 && d.f && draftKindOk(d.kind)) ? d : null;
   }catch(e){ return null; }
+}
+function readDraft(){
+  try{ return parseDraft(localStorage.getItem(DRAFT_KEY)); }catch(e){ return null; }
+}
+// 1世代前の退避(draftKeepPrev が置いたもの)。読み方は今の下書きとまったく同じ
+function readPrevDraft(){
+  try{ return parseDraft(localStorage.getItem(DRAFT_PREV_KEY)); }catch(e){ return null; }
+}
+/* 「もっと前の入力に戻す」を出すかどうか(§指摘20)。**退避があるときだけ**出す。
+   出す場所を draftBar の中に限るのは、退避は消えるまで残り続けるので、
+   単独で出すと毎回ずっと「もっと前の入力に戻す」が居座るため。 */
+function refreshDraftPrevBtn(){
+  const b = $('draftPrevBtn');
+  if(b) b.style.display = readPrevDraft() ? '' : 'none';
 }
 function draftAgeText(at){
   const m = Math.round((Date.now() - at)/60000);
@@ -1092,13 +1126,25 @@ function draftAsk(){
   draftAsking = true;
   $('draftWhen').textContent =
     `${draftAgeText(d.at)}の入力が残っています(${diff.length}項目)。絵と動画は入っていないので、選び直しが要ります。`;
+  refreshDraftPrevBtn();          // 1世代前の退避があるときだけ「もっと前の入力に戻す」も出す
   $('draftBar').style.display = 'block';
 }
-function draftRestore(){
-  const d = readDraft();
+// 聞くのをやめて今の下書きを入れる
+function draftRestore(){ draftApply(readDraft(), '前回の続きを入れました。絵と動画だけ選び直してください。'); }
+/* 1世代前の退避へ戻す(§指摘20)。退避は draftKeepPrev が置くだけで**読み手がいなかった** ――
+   取り違えて打ち始めたときの逃げ道なので、押せる形で出しておく。
+   **戻したら退避は消す**(溜め込まない・同じ物を二度出さない)。 */
+function draftRestorePrev(){
+  if(draftApply(readPrevDraft(), 'もっと前の入力を入れました。絵と動画だけ選び直してください。'))
+    try{ localStorage.removeItem(DRAFT_PREV_KEY); }catch(e){}
+  refreshDraftPrevBtn();
+}
+/* 欄へ入れる処理の本体。今の下書きも1世代前も**同じ道**を通る(戻し方を2か所に書かない)。
+   入れられたら true。 */
+function draftApply(d, doneMsg){
   draftAsking = false;
   $('draftBar').style.display = 'none';
-  if(!d) return;
+  if(!d) return false;
   // 登録の種類を先に当てる(出すパネルがここで決まる)
   if(d.kind && $('regKind')){ $('regKind').value = d.kind; fireChange($('regKind')); }
   const put = ()=>{
@@ -1120,7 +1166,8 @@ function draftRestore(){
      戻した値が消えてしまうので、出し分けのあとにもう一度入れ直す。
      順は「入れる → 出し分け → 入れ直す」で、出し分けは正しい値を見たまま動く。 */
   put();
-  log('前回の続きを入れました。絵と動画だけ選び直してください。', 'ok');
+  log(doneMsg, 'ok');
+  return true;
 }
 function draftDiscard(){
   draftAsking = false;
@@ -1140,13 +1187,16 @@ function draftKeepPrev(){
 /* 問いに答えないまま欄を触りはじめたら、その入力を**保存できる状態に戻す**。
    答えるまで保存を止めたままだと、10分打ち込んだぶんが1文字も残らない。
    打ち始めた時点で「新しく始める」を選んだのと同じなので、問いも引っ込める。
-   **黙って捨てない**(§指摘6) —— 残っている下書きは次の自動保存で上書きされるので、
-   何が起きたかを言い、上書きされる前に1世代だけ退避しておく。 */
+   **黙って捨てない**(§指摘6) —— 何が起きたかを言い、消す前に1世代だけ退避しておく。
+   **言ったとおりにその場で消す**(§指摘19) —— 「次の自動保存が上書きするから」で
+   済ませていたが、**「登録済みを開いて直す」中は saveDraft が早期 return する**ので
+   上書きは起きず、次に開くと同じ下書きをまた聞かれた(「消えました」が嘘になる)。 */
 function draftDismiss(){
   if(!draftAsking) return;
   draftAsking = false;
   $('draftBar').style.display = 'none';
   draftKeepPrev();
+  try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
   log('前回の入力は使わずに新しく始めます(前回の続きは消えました)');
 }
 
@@ -2183,16 +2233,24 @@ function periodFound(p){ return !!p && p.peak >= PERIOD_PEAK_MIN; }
    「… 3 / 16」のように**数字だけが変わる続き**で、**文言が変わったら必ず書く** ――
    段が切り替わったこと(切り出し → 抜き → 整え)まで落とすと、止まったように見える。 */
 const WALK_STEP_EVERY = 4;          // 同じ文言の続きは4回に1回だけ書く
-let walkStepN = 0, walkStepHead = '';
+/* **ただし前に書いてから2秒経っていたら、数え方に関わらず必ず書く**(§指摘21)。
+   数(walkStepN)は関数の外に持っているので**実行をまたいで持ち越す** —— 前の
+   プレビューが「3回目」で終わっていると、次のプレビューの1回目・2回目・3回目が
+   間引かれ、**押したのに前回の文言のまま止まって見える**。時間で見れば、
+   新しい実行は必ず2秒以上あいているので1回目がそのまま出る(呼び出し側は何も知らなくていい)。 */
+const WALK_STEP_MAX_MS = 2000;
+let walkStepN = 0, walkStepHead = '', walkStepAt = 0;
 const walkStep = (t)=>{
   const e = $('walkMeta');
   if(!e) return;
   const head = String(t).split('…')[0];        // 「…」より前 = その段の名前
-  if(head === walkStepHead){
+  const now = Date.now();
+  if(head === walkStepHead && now - walkStepAt < WALK_STEP_MAX_MS){
     if(walkStepN++ % WALK_STEP_EVERY) return;
   }else{
     walkStepHead = head; walkStepN = 1;
   }
+  walkStepAt = now;
   e.textContent = t;
 };
 /* 外周の色。**四隅だけでなく辺の中央も足した8点**を見る。
@@ -7437,6 +7495,19 @@ function boot(){
   /* ---- 段階バーと下書き(E1/E2)。**欄の既定値を撮ったあとに置く**
      ―― 先に下書きを戻すと、戻した値が「既定」として撮られ、種類を切り替えても消えなくなる。 */
   buildStageBar();
+  /* 「赤くし直す価値がある技の欄か」(§指摘24)。赤い印(.badnum)を持つのは
+     moveNumValue が見る**数字の欄だけ**なので、名前・色・SE を触ったときに
+     moveInputErrors()(= collectSpec() を丸ごと1回)を走らせても結果は変わらない。
+     形(m2_tpl)だけは例外で通す —— 形を変えると効かない欄が隠れ、
+     **隠れた欄の赤を消せるのは moveNumValue だけ**なので、
+     ここを通さないと段階バーに「!」が居残る。 */
+  const moveNumTouched = el =>{
+    const id = el.id || '';
+    if(!/^m[012]_/.test(id)) return false;
+    if(id === 'm2_tpl') return true;
+    const im = String(el.inputMode || el.getAttribute('inputmode') || '').toLowerCase();
+    return el.tagName === 'INPUT' && (el.type === 'number' || im === 'decimal');
+  };
   /* 欄を触るたびに下書きを保存し、段階バーを出し直す。**個々のパネルの関数には触らない**
      ―― 画面全体で1回受ければ済む(input も change も上まで上がってくる)。 */
   for(const ev of ['input','change']){
@@ -7446,8 +7517,11 @@ function boot(){
         draftDismiss();          // 問いを出したまま打ち始めたら、その入力を保存できるようにする
         saveDraftSoon();
         /* 数字として読めない欄を赤くするのは**入力したとき**と「差分を確認する」ときだけ(§指摘4)。
-           段階バーは塗った結果(moveBadFields)を読むだけなので、塗り直しはここで1回やる。 */
-        if(/^m[012]_/.test(el.id || '')) moveInputErrors();
+           段階バーは塗った結果(moveBadFields)を読むだけなので、塗り直しはここで1回やる。
+           塗り直すのは**数字の欄を触ったときだけ**(§指摘24) —— 技名を1文字打つたび、
+           色を1回ドラッグするたびに collectSpec() が丸ごと走っていた(赤い印を持つのは
+           数字の欄だけなので、他の欄では結果が変わらない)。 */
+        if(moveNumTouched(el)) moveInputErrors();
       }
       refreshStages();
     });
