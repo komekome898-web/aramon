@@ -47,6 +47,10 @@
     if(!preview) window.requestAnimationFrame = function(){ return 0; };
     seedRandom(o.seed);
     if(silent) muteAudio();
+    /* 未登録のキー(スタジオで作りかけのモンスター)は先に defineElement を送ってもらう。
+       createMonster が ELEMENTS[key].speed を読むので、無いとここで落ちる。 */
+    if(o.element && typeof ELEMENTS !== 'undefined' && !ELEMENTS[o.element])
+      return { ok:false, reason:'「' + o.element + '」がゲームの表にありません(先に defineElement を送ってください)' };
     game.selectedElement = o.element || 'fire';
     game.selectedMastermonKey = null;
     /* スキンを装備させる。getEquippedSkin() が読む所に直接書く
@@ -59,6 +63,13 @@
     game.selectedMap = (o.mapKey||'wild').replace(/_real$/,'');
     game.realMapMode = /_real$/.test(o.mapKey||'');
     startGame({});
+    /* 【プレビューだけ】安置を止める入口は game.trainingRange 1つ(combat.js:2551)。
+       これを立てないと updateZone が回り、phaseIndex 0 の holdTime(61秒)を過ぎた所で
+       安置が縮み始め、外に置いた自機が焼かれて死ぬ ―― 技を見ている最中に画面が止まる。
+       アイテムの湧き(advanceZonePhase の spawnLoot)も同時に止まるので絵が汚れない。
+       **startGame が false へ戻すので、必ずその後で立てる。**
+       コマ撮り(shot)は数秒しか回さないので今までどおり触らない。 */
+    if(preview) game.trainingRange = true;
     // 召喚演出(5秒のカウントダウン)は撮影の邪魔なので即座に終わらせる。
     // 消さないとプレイヤーがまだ降下中で、技が円盤石の上から出る。
     if(typeof endSummonIntro === 'function') endSummonIntro();
@@ -158,10 +169,21 @@
       : { x:camPos.x, y:camPos.y, z:camPos.z, yaw:camState.yaw, pitch:camState.pitch };
     api._me = me; api._tgt = tgt;
     return { ok:true, x:me.x, y:me.y, map:game.activeMapKey, el:me.element,
-             mode:api._mode, silent:silent,
+             mode:api._mode, silent:silent, zone:api.zone(),
              view:o.view||'front', yaw:camState.yaw, skin:o.skin||null,
              move:(function(){ try{ const mv=activeMove(player); return mv&&mv.name; }catch(e){ return null; } })(),
              cam:{ x:Math.round(camPos.x), y:Math.round(camPos.y), z:Math.round(camPos.z) } };
+  };
+  /* 安置とアイテムの様子。**「61秒たっても縮んでいない」ことを外から検査する**ための返事。
+     zonePhase が 0 のまま・shrinking が false・loot が 0 なら、安置は止まっている。 */
+  api.zone = function(){
+    const z = (typeof zoneState !== 'undefined' && zoneState) ? zoneState : {};
+    return { zonePhase: z.phaseIndex == null ? null : z.phaseIndex,
+             zoneTimer: z.timer == null ? null : +z.timer.toFixed(1),
+             shrinking: !!z.shrinking, training: !!game.trainingRange,
+             loot: (typeof lootItems !== 'undefined') ? lootItems.length : null,
+             alive: !!(api._me && api._me.alive), hp: api._me ? Math.round(api._me.hp) : null,
+             matchTime: (typeof matchTime === 'number') ? +matchTime.toFixed(1) : null };
   };
   /* 指定tierの技を1発撃つ。撃つのは「プレイヤー本人が撃つ」経路そのもの。 */
   api.fire = function(tier, seVariant){
@@ -289,15 +311,58 @@
     if(!element || !Array.isArray(moves) || !moves.length) return { ok:false, reason:'技がありません' };
     if(typeof SIGNATURE_MOVES === 'undefined') return { ok:false, reason:'SIGNATURE_MOVES がありません' };
     SIGNATURE_MOVES[element] = moves;
-    /* 技名でオーラの色を引く表(MOVE_AURA)は名前が変わると外れる。
-       プレビューでだけ、モンスターのオーラ色を当てておく(本番の表は触らない)。 */
+    /* 技のオーラは**技オブジェクトの mv.aura** が正(実行時は getMoveAura が move.aura を見る)。
+       data.js:929 は読み込み時に一度だけ MOVE_AURA を焼き込むので、**あとから MOVE_AURA へ
+       書いても誰も読み直さない**(ここに書いていた前の版は死にコードで、差し替えた技の
+       オーラが毎回 null になっていた)。**data.js:929 と同じ式をここに二重に持つ。
+       片方を変えたら両方直すこと。** */
     try{
-      if(typeof MOVE_AURA !== 'undefined' && typeof MONSTER_AURA !== 'undefined'){
-        const a = MONSTER_AURA[element];
-        if(a) for(const mv of moves) if(mv && mv.name && MOVE_AURA[mv.name] == null) MOVE_AURA[mv.name] = a;
-      }
+      const ma = (typeof MOVE_AURA !== 'undefined') ? MOVE_AURA : {};
+      const def = (typeof MONSTER_AURA !== 'undefined') ? MONSTER_AURA[element] : null;
+      for(const mv of moves) if(mv) mv.aura = ma[mv.name] || def || null;
     }catch(e){}
-    return { ok:true, count: moves.length, names: moves.map(m=> m && m.name) };
+    return { ok:true, count: moves.length, names: moves.map(m=> m && m.name),
+             auras: moves.map(m=> m && m.aura) };
+  };
+
+  /* ============================================================ 未登録のモンスターを名乗らせる
+     スタジオで作りかけのキー(まだ data.js に無い)でプレビューを開くための入口。
+     **createMonster は ELEMENTS[key] を読む**ので、これを先に通さないと
+     "Cannot read properties of undefined (reading 'speed')" で落ちる。
+     既に本物の表にあるキーは**触らない**(本物の性能でプレビューしたいので)。 */
+  api.defineElement = function(key, def, aura, aptitude){
+    if(!key) return { ok:false, reason:'キーがありません' };
+    if(typeof ELEMENTS === 'undefined') return { ok:false, reason:'ELEMENTS がありません' };
+    const existed = !!ELEMENTS[key];
+    if(!existed){
+      const d = def || {};
+      ELEMENTS[key] = {
+        label: d.label || key, color: d.color || '#ffffff', dark: d.dark || '#666666',
+        speed: +d.speed || 190, hp: +d.hp || 110, trait: d.trait || '',
+      };
+      if(d.accent) ELEMENTS[key].accent = d.accent;
+      // 常時の倍率(特性の効果)も、書いてあるものだけ入れる
+      for(const k of ['speedMod','cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
+        if(d[k] != null) ELEMENTS[key][k] = +d[k];
+    }
+    if(typeof MONSTER_AURA !== 'undefined' && aura && MONSTER_AURA[key] == null) MONSTER_AURA[key] = aura;
+    /* 適正(APTITUDE)も要る。試合の入口が mastermonInitialStats(キー) を呼び、
+       その中で APTITUDE[キー].life を読むので、無いと「life が読めない」で落ちる。
+       **順番も名前もゲームの表(data.js の APTITUDE)に合わせる。** */
+    if(typeof APTITUDE !== 'undefined' && !APTITUDE[key]){
+      const a = aptitude || {};
+      APTITUDE[key] = {};
+      for(const s of ['life','power','wisdom','accuracy','evasion','vitality'])
+        APTITUDE[key][s] = a[s] || 'C';
+    }
+    /* 技が1つも無いと render.js:7772 の SIGNATURE_MOVES[element] が undefined になって
+       毎フレーム落ちる。**本物の技はこのすぐ後の override が入れる**ので、
+       ここでは「形だけそろえる」ために既存の1体をそのまま借りる。 */
+    if(typeof SIGNATURE_MOVES !== 'undefined' && !SIGNATURE_MOVES[key]){
+      const donor = SIGNATURE_MOVES[Object.keys(SIGNATURE_MOVES)[0]];
+      SIGNATURE_MOVES[key] = JSON.parse(JSON.stringify(donor));
+    }
+    return { ok:true, key, existed, label: ELEMENTS[key].label, aura: (typeof MONSTER_AURA!=='undefined') ? MONSTER_AURA[key] : null };
   };
 
   /* ============================================================ 語彙を集める
@@ -320,8 +385,12 @@
     out.projStyles = uniq(out.projStyles);
     out.aoeStyles = uniq(aoe);
     try{ se.push(...Object.values(MOVE_SE_BY_STYLE)); }catch(e){}
-    out.seStyles = uniq(se);
     try{ if(typeof SE_TEST_LABELS !== 'undefined') out.seLabels = Object.assign({}, SE_TEST_LABELS); }catch(e){}
+    /* SEは**鳴らせる音すべて**から選ばせる。技の表に今使われている値だけを集めると18件しか
+       出ず、「ジャキーン」も「ズバシュ」も選べなかった。SE_TEST_LABELS(管理者画面のSE試聴の表)が
+       ゲームの持っている音の正なので、そちらを土台にして、表に無い値だけを足す。 */
+    if(out.seLabels) se.push(...Object.keys(out.seLabels));
+    out.seStyles = uniq(se);
     /* いま動かしている版。タイトルの版表示(#versionTag)は sw.js を読んで入るので、
        まだ入っていなければ自分で読む(どちらも同じ CACHE_NAME を見ている)。 */
     try{
@@ -351,20 +420,32 @@
      **cmd を増やすときは api に関数を足してここへ1行**(処理の本体をここに書かない)。 */
   const CMDS = {
     setup:    o => api.setup(o),
+    defineElement: o => api.defineElement(o.key, o.def, o.aura, o.aptitude),
     override: o => api.override(o.element, o.moves),
     fire:     o => api.fire(o.tier, o.seVariant),
+    zone:     () => api.zone(),
     vocab:    () => api.vocab(),
     audio:    () => api.audio(),
     hideHud:  () => { api.hideHud(); return { ok:true }; },
     ready:    () => ({ ok: api.ready(), harnessOk: !!window.__harnessOk, shim: !!window.__harnessShim }),
   };
+  /* 受け取ってよいのは**同じオリジンの、親ページか自分自身**からのものだけ。
+     ここはゲームの中身を書き換えられる口なので、素性の分からない窓からの指示は受けない
+     (スタジオは同一オリジンの親、fx_shot/harness_test は自分自身から投げている)。
+     file:// で開いたときは origin が 'null' になるので、そのときは相手の窓だけで見る。 */
+  const NULL_ORIGIN = (location.origin === 'null' || !location.origin);
+  function trusted(ev){
+    if(!NULL_ORIGIN && ev.origin !== location.origin) return false;
+    return ev.source === window || ev.source === window.parent;
+  }
   window.addEventListener('message', async (ev)=>{
+    if(!trusted(ev)) return;
     const d = ev.data;
     if(!d || typeof d !== 'object' || !d.cmd || !CMDS[d.cmd]) return;
     let msg;
     try{ msg = { __fx:true, id:d.id, ok:true, result: await CMDS[d.cmd](d) }; }
     catch(e){ msg = { __fx:true, id:d.id, ok:false, error: String(e && e.message || e).slice(0, 300) }; }
-    try{ (ev.source || window.parent).postMessage(msg, '*'); }catch(e){}
+    try{ (ev.source || window.parent).postMessage(msg, NULL_ORIGIN ? '*' : location.origin); }catch(e){}
   });
 
   window.__fx = api;

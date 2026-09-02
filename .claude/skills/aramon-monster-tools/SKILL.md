@@ -96,6 +96,36 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 - 動画の16コマは`segmentModel`を1コマずつ呼ぶ(1コマ約13秒/このサーバー。iPhone は数倍速い見込み)。**歩行側には所要時間の断りと「中断」ボタンを出す。** 1024²のcanvas4枚は終わりに`width=height=0`で捨てる(16コマぶん積み上がる)。技プレビューを開く前は`await releaseSegmentModel()`で解放する。
 - 検査: `node tools/studio_regress.mjs --only model`(呼び分けの一致36通り+keepMajor)/ `node tools/studio_model_test.mjs`(ヘッドレスで IoU・キャッシュ・落ち方・途中で切れた応答・再試行・素通し・中断)。
 
+### 技パネルと「撃ってみる」(本物の描画でのプレビュー・2026-09-02)
+
+- **既定値を持つのはテンプレート(`MOVE_T1`/`MOVE_T2`/`TIER3`)だけ。** 入力欄は空 = 「テンプレートのまま」で、
+  薄字(placeholder)に既定を出す。触っていない項目は `spec.moves` に入らないので、**何も触らなければ出来る行は従来と1文字も同じ**。
+- **弾か範囲かの判定は `TIER3` の `kind:'proj'|'aoe'` 1か所。** `applyMoveKindVisibility()` が効かない欄を隠し、
+  `collectMoveEdits` は**隠れている欄の値を集めない**(形を替える前に書いた爆風の数字が黙って焼かれるのを防ぐ)。
+  根拠は combat.js の `fireMove`: `aoeShape` を持つ技は範囲の枝へ行くので `blast`/`projVisR`/`hitR`/`projStyle`/`splash`/
+  `growWithDistance` を読まない。**逆に `burst`系と `projSpeed` は範囲技でも効く**(連射の輪と伸びる速さ `fillSpeed`)ので隠さない。
+- **特性の倍率(`rangeMult`/`projSpeedMult`/`gutsCostMult`)は式を `traitBakedValue()` 1つに置く。**
+  `buildMoves` が焼く側、`refreshMoveBakeNotes()` が「630 になります」と見せる側、両方がこれを通る。
+- **数字として読めない欄は赤くして送信を止める**(`moveNumValue` → `moveInputErrors` → `preflight`)。黙って
+  「触っていない」ことにすると、書いたはずの値がテンプレートのまま本番へ出る。
+- `JS_ORDER` の連射まわりは **data.js の手書き(デスファイナル)と同じ並び** —
+  `burst → burstDirs → burstDirSpread → burstGap → burstSpread → burstSpreadRandom`。
+- **プレビューは iframe に本物の `index.html?harness=1` を読み込み、`tools/fx_driver.js` を注入して `postMessage` で操る。**
+  手順は `defineElement`(まだ data.js に無いキーを名乗らせる)→ `override`(技を入れる)→ `setup` → `fire` の順。
+  **`defineElement` を飛ばすと `createMonster` が `ELEMENTS[key].speed` を読んで必ず落ちる。**
+  `ELEMENTS` のほかに `MONSTER_AURA` と `APTITUDE`(`mastermonInitialStats` が `.life` を読む)も要る。
+  `override` は **`mv.aura` を技オブジェクトへ直接入れる** — data.js:929 の焼き込みは読み込み時の1回きりなので、
+  あとから `MOVE_AURA` へ書いても誰も読み直さない(**同じ式を二重に持つ箇所。片方を直したら両方直す**)。
+- **プレビューでは `setup` が `game.trainingRange` を立てる(分岐はこの1か所)。** 立てないと 61 秒
+  (`ZONE_PHASES[0].holdTime`)で安置が縮み始め、アイテムが湧き、やがて自機が死ぬ(実測: 175秒でHP0)。
+  コマ撮り(`mode:'shot'`)は数秒しか回さないので従来どおり触らない。
+- **保存データの保険(IndexedDB への退避)は自動で書き戻さない。** 印は開いた瞬間に置かれるので、
+  自動で戻すと**そのあと普通に遊んだ記録を巻き戻す**。`harnessOk` を確かめた直後に印と退避を消し、
+  それでも残っていたときだけ「○分前の退避があります。戻す/捨てる」を人に選ばせる。
+- `postMessage` は**同一オリジンの親か自分自身からのものだけ**受ける(driver 側・スタジオ側の両方で確認する)。
+- プレビューを開く前に `releaseVideo` と **`await releaseSegmentModel()`** を必ず通す(メモリ)。
+- 検査は `node tools/harness_test.mjs`(⑥ 未登録キー・⑦ オーラ・⑧ 安置が縮まない を含む)。
+
 ### 登録済みの表を1項目だけ書き換える(走査器・2026-09-02)
 
 - **`scanValue(text,i)`** = `{}` `[]` `''` `""` の対応を数えて値の終わりを返す純関数。**`pickEntry(text, table, key)`** = 表の開始〜`// <<AUTO:表名>>`に範囲を限り、`entryAnchors()`の錨を**当てる順に**試す。**`replaceField` / `replaceMoveField` / `replaceEntryValue` / `renameEntryKey`** = そのオブジェクトの**直下の**1項目だけ置換(無ければ末尾へ追加。末尾カンマの流儀は周囲に合わせる)。**置換はすべてこれを通す。技オブジェクトを再生成しない**(`jsMove`は新規登録専用)。

@@ -35,7 +35,12 @@
   button.danger{ border-color:#7a3630; background:#2a1614; }
   button:disabled{ opacity:0.45; }
   .btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  .btns button{ flex:1 1 auto; min-width:120px; }
+  /* 押せる物には最小の高さを付ける(flexに縮められて文字が消えるのを防ぐ) */
+  .btns button{ flex:1 1 auto; flex-shrink:0; min-width:120px; min-height:44px; }
+  /* 効かない欄はJSが hidden を立てて隠す(テンプレートが弾か範囲かで変わる) */
+  [hidden]{ display:none !important; }
+  /* 数字として読めない欄。送信を止める理由になるので、はっきり赤くする */
+  input.badnum{ border-color:var(--ng); background:#2a1614; }
   .strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:10px; }
   .cell{ position:relative; border:1px solid var(--line); border-radius:5px; overflow:hidden;
     background-color:#4e545f;
@@ -599,6 +604,7 @@
         <div><label>当たり半径</label><input id="m0_hitR" inputmode="decimal"></div>
         <div><label>爆風半径</label><input id="m0_splash" inputmode="decimal"></div>
       </div>
+      <div class="hint" id="m0_bake"></div>
       <label>エフェクト色(空=モンスターの色)</label>
       <div class="cpick"><input type="color" id="m0_colorSw"><input id="m0_color" placeholder="#rrggbb"></div>
       <label>SE</label><select id="m0_seStyle"></select>
@@ -623,6 +629,7 @@
         <div><label>連射の間</label><input id="m1_burstGap" inputmode="decimal"></div>
         <div><label>広がり</label><input id="m1_burstSpread" inputmode="decimal"></div>
       </div>
+      <div class="hint" id="m1_bake"></div>
       <label>広がりをばらつかせる</label><select id="m1_burstSpreadRandom"></select>
       <label>エフェクト色(空=モンスターの色)</label>
       <div class="cpick"><input type="color" id="m1_colorSw"><input id="m1_color" placeholder="#rrggbb"></div>
@@ -658,6 +665,8 @@
         <div><label>爆風の半径</label><input id="m2_blastRadius" inputmode="decimal"></div>
         <div><label>爆風の威力</label><input id="m2_blastDmg" inputmode="decimal"></div>
       </div>
+      <div class="hint" id="m2_bake"></div>
+      <div class="hint" id="m2_kindNote"></div>
       <div class="r2">
         <div><label>広がりをばらつかせる</label><select id="m2_burstSpreadRandom"></select></div>
         <div><label>飛ぶほど大きくなる</label><select id="m2_growWithDistance"></select></div>
@@ -666,6 +675,15 @@
       <div class="cpick"><input type="color" id="m2_colorSw"><input id="m2_color" placeholder="#rrggbb"></div>
       <label>SE</label><select id="m2_seStyle"></select>
     </details>
+  </div>
+
+  <!-- 前回のプレビューの退避が残っていたときだけ出す。自動では戻さない(消える事故があった) -->
+  <div class="movebox" id="fxLeftover" hidden>
+    <div class="hint ng" id="fxLeftoverNote"></div>
+    <div class="btns">
+      <button onclick="fxLeftoverRestore()">退避を書き戻す</button>
+      <button onclick="fxLeftoverDiscard()">捨てる(いまのままにする)</button>
+    </div>
   </div>
 
   <!-- ---- 本物の描画で撃ってみる(ゲーム本体を読み込んだプレビュー) ---- -->
@@ -686,7 +704,8 @@
       <button id="fxSoundBtn" onclick="fxUnlockAudio()" disabled>🔊 音を出す</button>
       <button id="fxCloseBtn" onclick="closeFxPreview()" disabled>プレビューを閉じる</button>
     </div>
-    <div class="hint" id="fxStat">ゲーム本体をそのまま読み込んで、いまの数字で技を撃ちます(3秒ごとに撃ち直し)。</div>
+    <!-- 撃ち直す間隔は FX_FIRE_MS が正。文言は boot() が埋める(数字を2か所に書かない) -->
+    <div class="hint" id="fxStat"></div>
     <div id="fxHost" class="fxhost"></div>
     <div class="hint">
       音が鳴らないときは<b>「🔊 音を出す」を押す</b>か、プレビューの絵を1回タップしてください
@@ -2737,21 +2756,39 @@ async function buildPortraits(){
 // monster_spec.py の TIER3_TEMPLATES / MOVE_T1 / MOVE_T2 と同じ値
 const MOVE_T1 = { tier:1, range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70 };
 const MOVE_T2 = { tier:2, range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1 };
+/* kind は「弾(proj)か範囲(aoe)か」。**この1か所だけで判定する。**
+   弾にしか効かない項目(爆風・弾の絵の大きさ・当たり半径・弾の見た目・飛ぶほど大きく)と
+   範囲にしか効かない項目(範囲の見た目)を、画面から出し入れするのに使う。
+   **書き出す行には入れない**(buildMoves が delete する)。 */
 const TIER3 = {
-  fan:     { tier:3, dmg:55, cooldown:2.1, gutsCost:24, aoeShape:'fan', range:800, fanAngleDeg:45, aoeStyle:'inferno' },
-  wave:    { tier:3, dmg:47, cooldown:2.0, gutsCost:24, aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava' },
-  crystal: { tier:3, dmg:42, cooldown:1.9, gutsCost:24, aoeShape:'rect', range:900, rectWidth:260, aoeStyle:'crystal' },
-  beam:    { tier:3, dmg:46, cooldown:2.1, gutsCost:24, aoeShape:'rect', range:1000, rectWidth:120, projSpeed:1400, aoeStyle:'sakura' },
-  river:   { tier:3, dmg:48, cooldown:2.1, gutsCost:24, aoeShape:'rect', range:2200, rectWidth:160, aoeStyle:'galaxy' },
-  beams3:  { tier:3, dmg:44, cooldown:2.2, gutsCost:24, aoeShape:'beams', range:1200, beamWidth:100, beamCount:3, beamSpreadDeg:40, aoeStyle:'flower' },
-  thunder: { tier:3, dmg:40, cooldown:1.9, gutsCost:24, aoeShape:'zigzag', range:1400, zigzagWidth:110, aoeStyle:'thunder' },
-  psychic: { tier:3, dmg:45, cooldown:2.0, gutsCost:24, aoeShape:'fanZigzag', range:1300, fanAngleDeg:30, aoeStyle:'psychic' },
-  orb:     { tier:3, dmg:20, cooldown:2.3, gutsCost:24, range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮', blast:{ radius:330, dmg:60, expandTime:0.5 } },
-  tornado: { tier:3, dmg:62, cooldown:2.4, gutsCost:24, range:1600, projSpeed:520, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true },
-  sword:   { tier:3, dmg:58, cooldown:2.0, gutsCost:24, range:1850, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' },
-  shell:   { tier:3, dmg:56, cooldown:2.1, gutsCost:24, range:1750, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell' },
-  crescent:{ tier:3, dmg:21, cooldown:2.0, gutsCost:24, range:1340, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' },
-  spear:   { tier:3, dmg:22, cooldown:2.2, gutsCost:24, range:1350, projSpeed:1150, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5 } },
+  fan:     { kind:'aoe', tier:3, dmg:55, cooldown:2.1, gutsCost:24, aoeShape:'fan', range:800, fanAngleDeg:45, aoeStyle:'inferno' },
+  wave:    { kind:'aoe', tier:3, dmg:47, cooldown:2.0, gutsCost:24, aoeShape:'rect', range:1000, rectWidth:220, aoeStyle:'lava' },
+  crystal: { kind:'aoe', tier:3, dmg:42, cooldown:1.9, gutsCost:24, aoeShape:'rect', range:900, rectWidth:260, aoeStyle:'crystal' },
+  beam:    { kind:'aoe', tier:3, dmg:46, cooldown:2.1, gutsCost:24, aoeShape:'rect', range:1000, rectWidth:120, projSpeed:1400, aoeStyle:'sakura' },
+  river:   { kind:'aoe', tier:3, dmg:48, cooldown:2.1, gutsCost:24, aoeShape:'rect', range:2200, rectWidth:160, aoeStyle:'galaxy' },
+  beams3:  { kind:'aoe', tier:3, dmg:44, cooldown:2.2, gutsCost:24, aoeShape:'beams', range:1200, beamWidth:100, beamCount:3, beamSpreadDeg:40, aoeStyle:'flower' },
+  thunder: { kind:'aoe', tier:3, dmg:40, cooldown:1.9, gutsCost:24, aoeShape:'zigzag', range:1400, zigzagWidth:110, aoeStyle:'thunder' },
+  psychic: { kind:'aoe', tier:3, dmg:45, cooldown:2.0, gutsCost:24, aoeShape:'fanZigzag', range:1300, fanAngleDeg:30, aoeStyle:'psychic' },
+  orb:     { kind:'proj', tier:3, dmg:20, cooldown:2.3, gutsCost:24, range:1500, projSpeed:640, hitR:28, splash:0, projStyle:'voidOrb', icon:'🔮', blast:{ radius:330, dmg:60, expandTime:0.5 } },
+  tornado: { kind:'proj', tier:3, dmg:62, cooldown:2.4, gutsCost:24, range:1600, projSpeed:520, hitR:34, splash:60, projStyle:'tornado', growWithDistance:true },
+  sword:   { kind:'proj', tier:3, dmg:58, cooldown:2.0, gutsCost:24, range:1850, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' },
+  shell:   { kind:'proj', tier:3, dmg:56, cooldown:2.1, gutsCost:24, range:1750, projSpeed:500, hitR:34, splash:58, shape:'sphere', projStyle:'shell' },
+  crescent:{ kind:'proj', tier:3, dmg:21, cooldown:2.0, gutsCost:24, range:1340, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' },
+  spear:   { kind:'proj', tier:3, dmg:22, cooldown:2.2, gutsCost:24, range:1350, projSpeed:1150, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5 } },
+};
+/* テンプレートの kind ごとに**効かないので隠す欄**(キー = 入力欄の id の後半)。
+   根拠は combat.js の fireMove: aoeShape を持つ技は buildAe(範囲)の枝へ行くので、
+   弾を組み立てる所でしか読まれない blast / projVisR / hitR / projStyle / splash /
+   growWithDistance が一切効かない。逆に弾の枝は aoeStyle を読まない。
+   **burst / burstGap / burstSpread / burstSpreadRandom / burstDirs / burstDirSpread /
+   projSpeed は範囲技でも効く**(連射は burstCount の輪、projSpeed は伸びる速さ fillSpeed)ので隠さない。 */
+const MOVE_HIDE_BY_KIND = {
+  aoe:  ['hitR','splash','projStyle','projVisR','growWithDistance','blastRadius','blastDmg'],
+  proj: ['aoeStyle'],
+};
+const KIND_NOTE = {
+  aoe:  '範囲の技なので、当たり半径・弾の見た目・弾の絵の大きさ・爆風・飛ぶほど大きく の欄は出しません(効きません)。',
+  proj: '弾の技なので、範囲の見た目の欄は出しません(効きません)。',
 };
 const TPL_HINT = {
   fan:'炎の扇(インフェルノ型)', wave:'炎の壁が前進(ファイアウェーブ型)',
@@ -2790,9 +2827,12 @@ function jsValue(v){
 }
 /* 技オブジェクトのキーを書き出す順番。**ここに無いキーは後ろへ回るだけで、消えはしない。**
    burstSpreadRandom / burstDirs / burstDirSpread / projVisR は技パネルから触れるようにしたぶん。
-   既存の spec(これらのキーを持たない)では `k in mv` が false になるので出力は変わらない。 */
+   既存の spec(これらのキーを持たない)では `k in mv` が false になるので出力は変わらない。
+   連射まわりの並びは **data.js の手書き(デスファイナル・848行)にそろえてある** ――
+   burst → burstDirs → burstDirSpread → burstGap → burstSpread → burstSpreadRandom。
+   手で書いた行とツールが書いた行が同じ形になるので、後から読むとき迷わない。 */
 const JS_ORDER = ['name','tier','color','range','dmg','cooldown','gutsCost','projSpeed','hitR','hitW',
-  'splash','burst','burstGap','burstSpread','burstSpreadRandom','burstDirs','burstDirSpread',
+  'splash','burst','burstDirs','burstDirSpread','burstGap','burstSpread','burstSpreadRandom',
   'icon','shape','projStyle','projVisR','aoeShape','aoeStyle','rectWidth',
   'beamWidth','zigzagWidth','fanAngleDeg','beamCount','beamSpreadDeg','seStyle','growWithDistance',
   'gutsDrainRatio','melee','blast'];
@@ -2812,6 +2852,7 @@ function buildMoves(spec){
     for(const k in mv){ if(k !== 'template') base[k] = mv[k]; }
     if(base.blast && typeof base.blast === 'object' && base.blast.color == null) base.blast.color = base.color;
     delete base.key;
+    delete base.kind;      // 画面の出し分けにだけ使う目印。書き出す行には入れない
     return base;
   });
   out[0].tier = 1; out[1].tier = 2; out[2].tier = 3;
@@ -2819,12 +2860,18 @@ function buildMoves(spec){
      ガリの godrange・ハムの hum と同じやり方で、エンジン側に分岐を足さない。
      範囲技(aoeShape)には projSpeed が無いので、あるものだけ掛ける。 */
   const ef = spec.traitEffects || {};
-  for(const mv of out){
-    if(ef.rangeMult     && mv.range)     mv.range     = Math.round(mv.range * ef.rangeMult);
-    if(ef.projSpeedMult && mv.projSpeed) mv.projSpeed = Math.round(mv.projSpeed * ef.projSpeedMult);
-    if(ef.gutsCostMult  && mv.gutsCost)  mv.gutsCost  = Math.round(mv.gutsCost * ef.gutsCostMult);
-  }
+  for(const mv of out)
+    for(const k in TRAIT_MULT_KEYS) if(mv[k] != null) mv[k] = traitBakedValue(k, mv[k], ef);
   return out;
+}
+/* 特性の倍率が掛かる技の項目 → その倍率の名前。**式はこの下の1つだけ。**
+   焼き込む側(buildMoves)と、画面に「630 になります」と出す側(refreshMoveBakeNotes)の
+   両方がここを通るので、片方だけ直して食い違うことがない。 */
+const TRAIT_MULT_KEYS = { range:'rangeMult', projSpeed:'projSpeedMult', gutsCost:'gutsCostMult' };
+function traitBakedValue(key, value, ef){
+  const m = ef && ef[TRAIT_MULT_KEYS[key]];
+  if(!m || !value) return value;
+  return Math.round(value * m);
 }
 
 /* ---------------------------------------------------------- 技パネル(段ごとの調整)
@@ -2857,6 +2904,12 @@ function moveBaseFor(i){
 }
 function moveNumKeys(i){ return MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[i] || []); }
 function moveField(i, key){ return $('m' + i + '_' + key); }
+/* その欄が「効かないので隠してある」か。**隠した欄の値は集めない** ――
+   形を替える前に書いた爆風の数字が、隠れたまま行へ焼かれるのを防ぐ。 */
+function moveFieldHidden(i, key){
+  const el = moveField(i, key);
+  return !!(el && el.parentElement && el.parentElement.hidden);
+}
 
 /* 入力欄の薄字(既定)を、いまのテンプレートから貼り直す。
    tier3 は「形」を変えると既定が丸ごと変わるので、そのたびに呼ぶ。 */
@@ -2869,13 +2922,54 @@ function refreshMoveDefaults(){
     }
     for(const k of (MOVE_BOOL_TIER[i] || [])){
       const el = moveField(i, k);
-      if(el) el.innerHTML = boolOptionsHtml(base[k]);
+      if(!el) continue;
+      /* **選んである値を控えてから作り直す。** 形(m2_tpl)を変えるたびにここを通るので、
+         そのまま innerHTML を差し替えると tier1/2 の選択まで「テンプレートのまま」へ
+         戻っていた(fillVocabSelects と同じ直し方)。 */
+      const cur = el.value;
+      el.innerHTML = boolOptionsHtml(base[k]);
+      if(cur) el.value = cur;
     }
     if(i === MOVE_BLAST_TIER){
       const b = base.blast || {};
       if($('m2_blastRadius')) $('m2_blastRadius').placeholder = b.radius == null ? '(無し)' : String(b.radius);
       if($('m2_blastDmg'))    $('m2_blastDmg').placeholder    = b.dmg    == null ? '(無し)' : String(b.dmg);
     }
+  }
+  applyMoveKindVisibility();
+  refreshMoveBakeNotes();
+}
+/* テンプレートが弾か範囲かで、効かない欄を隠す。**判定は TIER3 の kind 1か所。**
+   隠すのは欄を囲む <div>(ラベルごと消したいため)。 */
+function applyMoveKindVisibility(){
+  const kind = (TIER3[$('m2_tpl') ? $('m2_tpl').value : ''] || {}).kind || null;
+  const hide = MOVE_HIDE_BY_KIND[kind] || [];
+  for(const list of Object.values(MOVE_HIDE_BY_KIND)) for(const k of list){
+    const el = moveField(2, k);
+    if(el && el.parentElement) el.parentElement.hidden = hide.indexOf(k) >= 0;
+  }
+  if($('m2_kindNote')) $('m2_kindNote').textContent = KIND_NOTE[kind] || '';
+}
+/* 「入力した数字が、特性の倍率で最終的にいくつになるか」を欄の下に出す。
+   計算は traitBakedValue(buildMoves と同じ関数)なので、表示と実際の行が食い違わない。 */
+function refreshMoveBakeNotes(){
+  const ef = (typeof collectTraitEffects === 'function') ? collectTraitEffects() : {};
+  const jp = { range:'射程', projSpeed:'弾速', gutsCost:'消費ガッツ' };
+  for(let i = 0; i < 3; i++){
+    const note = $('m' + i + '_bake');
+    if(!note) continue;
+    const base = moveBaseFor(i), parts = [];
+    for(const k in TRAIT_MULT_KEYS){
+      const mult = ef[TRAIT_MULT_KEYS[k]];
+      if(!mult) continue;
+      const el = moveField(i, k);
+      if(el && el.parentElement && el.parentElement.hidden) continue;   // 隠した欄の話はしない
+      const now = moveNumValue(i, k);
+      const v = (now != null) ? now : base[k];
+      if(v == null) continue;
+      parts.push(`${jp[k]} ${v} → ${traitBakedValue(k, v, ef)}(特性の倍率 ×${mult})`);
+    }
+    note.textContent = parts.length ? '書き出すときはこうなります: ' + parts.join(' / ') : '';
   }
 }
 // 「する/しない」の3択。1つ目が「テンプレートのまま」で、その中身を括弧で見せる
@@ -2884,14 +2978,33 @@ function boolOptionsHtml(def){
   return `<option value="">テンプレートのまま(${now})</option>` +
          `<option value="1">する</option><option value="0">しない</option>`;
 }
-// 数字の欄。空なら null(=触っていない)。数字として読めなければ null
+/* 数字の欄。空なら null(=触っていない)。
+   **数字として読めないときは欄を赤くして覚えておく。** 黙って null を返していたので
+   「abc」と書いても「触っていない」ことになり、テンプレートの値のまま送られていた。 */
+const moveBadFields = new Set();
 function moveNumValue(i, key){
   const el = moveField(i, key);
   if(!el) return null;
+  const id = 'm' + i + '_' + key;
+  if(moveFieldHidden(i, key)){ el.classList.remove('badnum'); moveBadFields.delete(id); return null; }
   const v = el.value.trim();
-  if(!v) return null;
-  const n = numExpr(v);
-  return (n == null || isNaN(n)) ? null : n;
+  const n = v ? numExpr(v) : null;
+  const bad = !!v && (n == null || isNaN(n));
+  el.classList.toggle('badnum', bad);
+  if(bad) moveBadFields.add(id); else moveBadFields.delete(id);
+  return bad || !v ? null : n;
+}
+/* 読めない欄の一覧(送信を止める理由)。**collectSpec を1回通してから呼ぶ** ――
+   赤くするのは moveNumValue なので、全欄を読んだ後でないと最新にならない。 */
+function moveInputErrors(){
+  collectSpec();
+  if(!moveBadFields.size) return null;
+  const jp = { 0:'tier1', 1:'tier2', 2:'tier3' };
+  return Array.from(moveBadFields).map(id=>{
+    const [i, key] = [id[1], id.slice(3)];
+    const el = $(id);
+    return `${jp[i]} の「${key}」に数字として読めない値があります: ${el ? el.value.trim() : ''}`;
+  });
 }
 /* その段で**実際に触られた項目だけ**を集める。触っていない項目は入れない
    (入れると spec が今までと変わり、行の並びが動く恐れがある)。 */
@@ -2904,7 +3017,7 @@ function collectMoveEdits(i){
   }
   for(const k of (MOVE_BOOL_TIER[i] || [])){
     const el = moveField(i, k);
-    if(!el || !el.value) continue;
+    if(!el || !el.value || moveFieldHidden(i, k)) continue;
     const b = (el.value === '1');
     if(b !== !!base[k]) out[k] = b;
   }
@@ -2919,7 +3032,13 @@ function collectMoveEdits(i){
       if(r != null) b.radius = r;
       if(d != null) b.dmg = d;
       if(b.radius != null){                                // 半径が無ければ爆風にならない
-        if(b.dmg == null) b.dmg = (out.dmg != null) ? out.dmg : base.dmg;
+        if(b.dmg == null){
+          b.dmg = (out.dmg != null) ? out.dmg : base.dmg;
+          /* **補った威力は欄へ書き戻す。** 書き戻さないと画面は空欄のままで、
+             送られる行にだけ知らない数字が入る(なぜその威力なのか分からなくなる)。 */
+          const dEl = moveField(i, 'blastDmg');
+          if(dEl && !dEl.value.trim() && b.dmg != null) dEl.value = String(b.dmg);
+        }
         out.blast = b;
       }
     }
@@ -2927,6 +3046,7 @@ function collectMoveEdits(i){
   // 見た目とSE。空(=「テンプレートのまま」)なら入れない
   for(const k of ['projStyle','aoeStyle','seStyle']){
     const el = moveField(i, k);
+    if(moveFieldHidden(i, k)) continue;
     if(el && el.value && el.value !== base[k]) out[k] = el.value;
   }
   const col = moveField(i, 'color');
@@ -2939,6 +3059,19 @@ function collectMoveEdits(i){
    driver が同じ実行環境で集めて送ってくる(const は window に出ないのでこの道しかない)。
    届く前は、このツールが既に持っているテンプレートの値だけで動かす。 */
 const fxVocab = { projStyles:null, aoeStyles:null, seStyles:null, seLabels:null, cacheName:null };
+/* SEの名前の固定一覧。**ゲーム側(ui.js の SE_TEST_LABELS / combat.js の MOVE_SE_BY_STYLE /
+   data.js の技の seStyle)と二重に持っている。** プレビューを1度開けば本物の一覧
+   (日本語名つき・全SE)に置き換わるが、**開く前でも選べるようにする**ためにここに置く。
+   ゲーム側に音を足したらここへも足すこと。 */
+const SE_FALLBACK = [
+  // 技の形から自動で決まるぶん(combat.js の MOVE_SE_BY_STYLE の値)
+  'fireRoar','iceCrack','beam','tornado','spin','bell','whoosh','godRising','zashu','voidLaunch',
+  // data.js の技が名指ししているぶん
+  'assaultArrow','crystalRain','darkHoust','fireWave','mocchiBeam','monta','requiemEnd','venomEdge',
+  // 技に使える汎用の音(ui.js の SE_TEST_LABELS より)
+  'fire','hitDealt','hitTaken','miss','kill','jakiin','chupiin','shuwaa','buy','pickup',
+  'amphitrite','amphitriteBlast','requiemBlast','gokongo','rize','gutsTier3',
+];
 function vocabFallback(){
   const proj = [], aoe = [];
   for(const k of Object.keys(TIER3)){
@@ -2946,12 +3079,14 @@ function vocabFallback(){
     if(TIER3[k].aoeStyle)  aoe.push(TIER3[k].aoeStyle);
   }
   const uniq = a => Array.from(new Set(a)).sort();
-  // SEの一覧はツール側に持っていない(持つと data.js と二重になる)。プレビューを開くと埋まる
-  return { projStyles: uniq(proj), aoeStyles: uniq(aoe), seStyles: [] };
+  return { projStyles: uniq(proj), aoeStyles: uniq(aoe), seStyles: uniq(SE_FALLBACK) };
 }
 function fillVocabSelects(){
   const fb = vocabFallback();
-  const list = (k, keep) => (fxVocab[k] && fxVocab[k].length ? fxVocab[k] : fb[k]);
+  /* 届いていればゲームの一覧、届く前は上の固定一覧。**SEを「鳴らせる音すべて」に
+     広げるのは driver 側(api.vocab)の役目**で、こちらは受け取るだけにする
+     (同じ寄せ集めを2か所に書かない)。 */
+  const list = k => (fxVocab[k] && fxVocab[k].length ? fxVocab[k] : fb[k]);
   const opt = (el, values, head, labels)=>{
     if(!el) return;
     const cur = el.value;
@@ -3021,15 +3156,41 @@ function fxRestoreSnapshot(snap){
   for(const k of Object.keys(fxStorageSnapshot())) if(!(k in snap)) localStorage.removeItem(k);
   for(const k of Object.keys(snap)) localStorage.setItem(k, snap[k]);
 }
-/* 起動時: 前回プレビュー中に閉じられていたら(タブごと落ちた等)保存データを戻す。 */
+/* 起動時: 前回プレビュー中に閉じられていたら(タブごと落ちた等)退避が残っている。
+   **勝手に書き戻さない。** 印は開いた瞬間に置かれるので、そのまま自動で戻すと
+   「差し替えが効いていて何も汚れていないのに、そのあと普通に遊んだ記録を
+   何時間も前の状態へ巻き戻す」ことになる(実際に消える作りだった)。
+   いつの退避かを出して、戻すか捨てるかを人に選んでもらう。 */
+let fxLeftover = null;      // 起動時に見つかった退避(人が選ぶまで持っておく)
 async function fxRestoreIfLeft(){
   try{
-    if(!(await fxIdbGet(FX_MARK_KEY))) return;
+    const at = await fxIdbGet(FX_MARK_KEY);
+    if(!at) return;
     const snap = await fxIdbGet(FX_BACKUP_KEY);
-    if(snap) fxRestoreSnapshot(snap);
-    await fxIdbDel(FX_MARK_KEY);
-    log('前回のプレビューが途中で終わっていたので、保存データを元に戻しました。');
+    if(!snap){ await fxIdbDel(FX_MARK_KEY); return; }
+    const mins = Math.max(0, Math.round((Date.now() - (+at || 0)) / 60000));
+    fxLeftover = snap;
+    $('fxLeftover').hidden = false;
+    $('fxLeftoverNote').textContent =
+      `前回のプレビューの退避が残っています(${mins}分前・${Object.keys(snap).length}件)。` +
+      `遊んだ記録を巻き戻してしまうことがあるので、自動では戻しません。`;
   }catch(e){ /* IndexedDB が使えなくても本来の作業は続けられる */ }
+}
+function fxLeftoverDone(msg){
+  fxLeftover = null;
+  $('fxLeftover').hidden = true;
+  fxIdbDel(FX_MARK_KEY).catch(()=>{});
+  fxIdbDel(FX_BACKUP_KEY).catch(()=>{});
+  log(msg);
+}
+function fxLeftoverRestore(){
+  if(!fxLeftover) return;
+  fxRestoreSnapshot(fxLeftover);
+  fxLeftoverDone('前回のプレビューの退避を書き戻しました。');
+}
+function fxLeftoverDiscard(){
+  if(!fxLeftover) return;
+  fxLeftoverDone('前回のプレビューの退避を捨てました(いまの保存データはそのままです)。');
 }
 
 function fxStat(t, cls){ const e = $('fxStat'); if(e){ e.textContent = t; e.className = 'hint ' + (cls||''); } }
@@ -3041,13 +3202,15 @@ function fxAsk(msg, ms){
     const id = 'p' + (++fxPreview.seq);
     const to = setTimeout(()=>{ window.removeEventListener('message', on); rej(new Error(msg.cmd + ' の返事がありません')); }, ms || 20000);
     function on(ev){
+      // **返事を受けるのは、自分が作った iframe から来た同一オリジンのものだけ。**
+      if(ev.source !== f.contentWindow || ev.origin !== location.origin) return;
       const d = ev.data;
       if(!d || !d.__fx || d.id !== id) return;
       clearTimeout(to); window.removeEventListener('message', on);
       d.ok ? res(d.result) : rej(new Error(d.error));
     }
     window.addEventListener('message', on);
-    f.contentWindow.postMessage(Object.assign({ id }, msg), '*');
+    f.contentWindow.postMessage(Object.assign({ id }, msg), location.origin);
   });
 }
 // いま画面に入っている3技を、ゲームが読む形(buildMoves の出力)に焼く
@@ -3061,6 +3224,9 @@ async function openFxPreview(){
     /* ① 動画を必ず手放す(§11 [37])。動画のデコーダを抱えたままゲームを1本
        読み込むと、iPhone ではメモリが足りずタブごと落ちる。 */
     document.querySelectorAll('video').forEach(releaseVideo);
+    /* 同じ理由で、背景を抜くモデル(44MB + 推論の入れ物)も手放す(§11 [37]・§B)。
+       **別班が非同期化しているので、返り値が Promise でもそうでなくても待てる形で呼ぶ。** */
+    if(typeof releaseSegmentModel === 'function') await releaseSegmentModel();
     // ② 退避して「プレビュー中」の印を残す
     fxPreview.before = fxStorageSnapshot();
     try{
@@ -3099,16 +3265,33 @@ async function openFxPreview(){
       fxStat('保存データを守れないのでプレビューを開きません(この端末では入れ替えが効きません)。', 'ng');
       return;
     }
+    /* 差し替えが効いていることを確かめられたので、**保険の退避と印はここで捨てる。**
+       残しておくと、次に開いたとき「遊んだ記録を巻き戻しますか」と聞く羽目になる。 */
+    try{ await fxIdbDel(FX_MARK_KEY); await fxIdbDel(FX_BACKUP_KEY); }catch(e){}
     /* ⑥ 音を出せるようにする。**iOS は「画面を触った流れの中」でしか AudioContext を
        起こせない。** 「撃ってみる」のタップの効力は数秒だけ残る(transient activation)ので、
        読み込みが速ければここで間に合う。間に合わなかったときのために
        「🔊 音を出す」ボタン(fxUnlockAudio)を置いてある ―― あちらは**タップの同期処理**なので必ず効く。 */
     fxAsk({ cmd:'audio' }).catch(()=>{});
     $('fxSoundBtn').disabled = false;
-    // ⑦ 舞台を作る → 語彙を貰う → 技を差し替える → 撃つ
+    /* ⑦ **まだ登録していないキーをゲームに名乗らせる。**
+       createMonster は ELEMENTS[キー] を読むので、これを先に送らないと
+       新しいモンスターでは必ず「speed が読めない」で落ちる(実測)。
+       既に本物の表にあるキーなら driver 側が何もしない(本物の性能で見たいので)。 */
     const el = $('f_key').value.trim() || 'zan';
-    await fxAsk({ cmd:'setup', element: el, mapKey: $('fx_map').value, view: $('fx_view').value,
+    const spec = collectSpec();
+    await fxAsk({ cmd:'defineElement', key: el, aura: spec.aura, aptitude: spec.aptitude, def: {
+      label: spec.label || el, color: spec.color, dark: spec.dark, accent: spec.accent,
+      speed: spec.speed, hp: spec.hp, trait: spec.trait,
+      speedMod: spec.speedMod, cooldownMod: spec.cooldownMod, dmgDealtMod: spec.dmgDealtMod,
+      dmgTakenMod: spec.dmgTakenMod, gutsRegenMod: spec.gutsRegenMod, hitboxMult: spec.hitboxMult,
+    } });
+    // ⑧ 技を先に入れてから舞台を作る(描画が SIGNATURE_MOVES[キー] を毎フレーム読むため)
+    await fxAsk({ cmd:'override', element: el, moves: buildMoves(spec) });
+    // ⑨ 舞台を作る → 語彙を貰う → 技を差し替える → 撃つ
+    const st = await fxAsk({ cmd:'setup', element: el, mapKey: $('fx_map').value, view: $('fx_view').value,
                   mode:'preview', silent:false, seed: Date.now() & 0x7fffffff }, 40000);
+    if(st && st.ok === false) throw new Error(st.reason || '舞台を作れませんでした');
     await fxAsk({ cmd:'hideHud' }).catch(()=>{});
     try{
       const v = await fxAsk({ cmd:'vocab' });
@@ -3119,8 +3302,10 @@ async function openFxPreview(){
     fxPreview.timer = setInterval(()=> fxFire().catch(()=>{}), FX_FIRE_MS);
     $('fxCloseBtn').disabled = false;
   }catch(e){
-    fxStat('開けませんでした: ' + (e.message || e), 'ng');
+    /* **片付けを先、理由の表示を後。** 逆にすると closeFxPreview の
+       「保存データ: 変更なし」が理由を上書きして、何が起きたのか分からなくなる。 */
     await closeFxPreview();
+    fxStat('開けませんでした: ' + (e.message || e), 'ng');
   }
 }
 /* いまの数字で撃つ。**毎回 override してから撃つ**ので、入力を直したら次の発射で効く。 */
@@ -3139,7 +3324,7 @@ async function fxFire(){
    (await を1つでも挟むとタップの効力が切れて、静かなままになる)。 */
 function fxUnlockAudio(){
   if(!fxPreview.frame || !fxPreview.frame.contentWindow) return;
-  fxPreview.frame.contentWindow.postMessage({ id:'audio-' + (++fxPreview.seq), cmd:'audio' }, '*');
+  fxPreview.frame.contentWindow.postMessage({ id:'audio-' + (++fxPreview.seq), cmd:'audio' }, location.origin);
   fxStat('音を出せるようにしました。次の発射から鳴ります。');
 }
 async function closeFxPreview(){
@@ -4521,6 +4706,10 @@ async function planEdit(dataJs, swJs, lines){
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
+    /* **数字として読めない欄があるうちは送らせない。** 黙って「触っていない」ことにすると、
+       書いたはずの値がテンプレートのまま本番へ出る(赤い欄がその場所)。 */
+    const bad = isSsr() || isSsrMedia() || isAssets() || isAwaken() ? null : moveInputErrors();
+    if(bad){ $('commitBtn').disabled = true; return log(bad.join('\n'), 'ng'); }
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
     const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
     const lines = [];
@@ -5848,6 +6037,12 @@ function boot(){
   };
   $('m2_tpl').onchange();
   fillVocabSelects();
+  // 撃ち直す間隔は FX_FIRE_MS が正。文言はここで埋める(同じ数字をHTMLへ書かない)
+  fxStat(`ゲーム本体をそのまま読み込んで、いまの数字で技を撃ちます(${FX_FIRE_MS/1000}秒ごとに撃ち直し)。`);
+  /* 特性の倍率が掛かる欄と、倍率そのものの欄。どちらを触っても「焼かれる値」を出し直す。 */
+  for(const id of ['m0_range','m0_projSpeed','m0_gutsCost','m1_range','m1_projSpeed','m1_gutsCost',
+                   'm2_range','m2_projSpeed','m2_gutsCost','f_efRange','f_efProjSpeed','f_efGutsCost'])
+    if($(id)) $(id).addEventListener('input', refreshMoveBakeNotes);
   /* マップと向きを変えたら開き直す。**iframe は開くときに作り閉じるときに壊す**ので、
      開いたまま作り直さない(startGame を1つの iframe で2度呼ばない)。 */
   for(const id of ['fx_map','fx_view'])
