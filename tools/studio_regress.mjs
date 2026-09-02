@@ -1018,8 +1018,9 @@ function runEditRound(){
   if(tagsOf(both) !== '["monster","balance"]')
     fail('edit', `技名と数字の両方を変えたときのタグが両方になりません(${tagsOf(both)})`);
 
-  /* 更新履歴の「書き直す行」の選び方(§指摘1)。**同じ表示名を含む行だけが候補。**
-     「威力」が共通なだけで別の体の行を書き直すと、その体の告知が消える。 */
+  /* 更新履歴の「書き直す行」の選び方(§指摘1)。**候補はこのツールが書いた形の行だけ。**
+     changelogSimilarity の分母は短いほうの語数なので、「ジョーカー」を含む行は
+     告知でも 1.00 になる。絞らないと**その日の告知(🆕・✵)を書き直して消す。** */
   const chItems = [{ t:'ザン: 威力30→40・連射5→7', g:['balance'] },
                    { t:'ジョーカー: 威力21→34', g:['balance'] }];
   if(S.editRewriteIndex(chItems, 'ジョーカー', 'ジョーカー: 威力21→50') !== 1)
@@ -1028,6 +1029,56 @@ function runEditRound(){
     fail('edit', '別の体の行(ザン)を「似た行」として書き直そうとしています');
   if(S.editRewriteIndex(chItems, '', 'ジョーカー: 威力21→50') !== -1)
     fail('edit', '表示名が無いのに書き直す行を選んでいます');
+  // 告知の行(🆕 新モンスター / ✵ 覚醒 / ✨)は、同じ体でも書き直さない
+  const announce = [{ t:'🆕 新モンスター「ジョーカー」が登場しました!闇の技で切り裂きます', g:['feature','monster'] },
+                    { t:'✵ ジョーカーに覚醒の姿が追加されました', g:['feature'] },
+                    { t:'✨ ジョーカーのSSRスキンが登場しました', g:['feature'] }];
+  for(let i = 0; i < announce.length; i++){
+    if(S.changelogSimilarity(announce[i].t, 'ジョーカー: HP115→120') < S.CHANGELOG_SIMILAR)
+      fail('edit', `検査の前提が崩れています(${announce[i].t} が似た行と判定されない)`);
+    if(S.editRewritableLine(announce[i].t, 'ジョーカー'))
+      fail('edit', `告知の行を書き直しの候補にしています: ${announce[i].t}`);
+  }
+  if(S.editRewriteIndex(announce, 'ジョーカー', 'ジョーカー: HP115→120') !== -1)
+    fail('edit', '同じ体の告知の行を書き直そうとしています(その日の告知が消えます)');
+  if(S.editRewriteIndex(announce.concat([{ t:'ジョーカー: 威力21→34', g:['balance'] }]),
+                        'ジョーカー', 'ジョーカー: HP115→120') !== 3)
+    fail('edit', '告知に混じったツールの形の行を選べていません');
+  // 「表示名を含む」だけでは足りない(体の名前が本文の途中に出る行も候補にしない)
+  if(S.editRewritableLine('レイドのボスにジョーカーが登場します', 'ジョーカー'))
+    fail('edit', '本文の途中に表示名がある行を書き直しの候補にしています');
+
+  /* 更新履歴の突き合わせは**項目ごとに t と g で**見る(§指摘15)。
+     丸ごと JSON.stringify だと `{t,g}` と `{g,t}` の並びの違いだけで止まっていた。 */
+  const hA = [{ date:'2026-09-02', items:[{ t:'あ', g:['balance'] }] }];
+  const hB = [{ date:'2026-09-02', items:[{ g:['balance'], t:'あ' }] }];
+  if(S.historyDiffers(hA, hB)) fail('edit', 'キーの並びが違うだけで更新履歴を「変わった」と言っています');
+  if(!S.historyDiffers(hA, [{ date:'2026-09-02', items:[{ t:'い', g:['balance'] }] }]))
+    fail('edit', '更新履歴の本文が変わったのに見逃しています');
+  if(!S.historyDiffers(hA, [{ date:'2026-09-02', items:[{ t:'あ', g:['monster'] }] }]))
+    fail('edit', '更新履歴のタグが変わったのに見逃しています');
+  if(!S.historyDiffers(hA, [{ date:'2026-09-03', items:[{ t:'あ', g:['balance'] }] }]))
+    fail('edit', '更新履歴の日付が変わったのに見逃しています');
+  if(!S.historyDiffers(hA, hA.concat(hA)))
+    fail('edit', '更新履歴の行が増えたのに見逃しています');
+
+  /* 送るファイルは**全部**構文として読めること(§指摘11)。data.js だけを評価していた頃は、
+     壊れた特性idで ui.js を壊しても「差分を確認する」が ok と言っていた。 */
+  if(S.textsSyntaxError({ 'ui.js':"const A = { ok:'1' };", 'data.js':'const B = 1;' }))
+    fail('edit', '正しいファイルを「読めない」と言っています');
+  const broken = S.textsSyntaxError({ 'data.js':'const B = 1;', 'ui.js':"const A = { bad-id:'x' };" });
+  if(!broken || !/ui\.js/.test(broken))
+    fail('edit', `構文の壊れた ui.js を素通ししています(${broken})`);
+  if(S.textsSyntaxError({ 'monsters/specs/x.json': '{ "a": 1 }' }))
+    fail('edit', 'JSON を JS として評価しています');
+  // 特性idの判定は key と同じ1つ(idOk)。裸のキーとして書き出せる形だけを通す
+  for(const ng of ['bad-id', '1abc', 'Abc', 'a b', '', "a':'x'//"])
+    if(S.idOk(ng)) fail('edit', `使えない特性id を通しています: ${JSON.stringify(ng)}`);
+  for(const ok of ['guts', 'god_range', 'a1'])
+    if(!S.idOk(ok)) fail('edit', `使える特性id を弾いています: ${ok}`);
+  // 使えない形の特性idでは、正規表現を組み立てずに false を返す(ui.js を読みに行かない)
+  if(S.traitExistsIn(fs.readFileSync(path.join(ROOT, 'ui.js'), 'utf8'), '.*') !== false)
+    fail('edit', 'traitExistsIn が使えない形の特性idで真を返しています');
 
   /* 「意図した差分がすべて出ているか」の判定(§指摘4)。
      出ていない/値が違うときに、それを見落とさないこと。 */

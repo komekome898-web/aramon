@@ -12,10 +12,14 @@
      ② 1体を直すと、書き戻した data.js の変わる行が**その2行で、中身も期待どおり**(文字列で見る)
      ③ 送信前の検証(空の iframe で data.js を評価)が通り、意図した差分だけが出る
      ④ 読んだあとに data.js が他所で変わっていたら、送信直前の sha 照合が止める
-     ⑤ 開いた直後の技3が**いまの技そのもの**(「撃ってみる」が別の技を撃たない)
+     ⑤ 開いた直後の3技が**いまの技そのもの**(「撃ってみる」が別の技を撃たない)。**全モンスター**を
+        buildMoves(collectSpec()) と data.js の技で丸ごと突き合わせる
      ⑥ 開いて直す → 新規モンスターへ切り替えると、欄が既定へ戻る(collectSpec が元どおり)
-     ⑦ 同じ日に**別の体**の行があるとき、その行を書き直さない(書き足しになり、元の行が残る)
-     ⑧ 特性idを変えたら新規登録と同じ判定を通り、ui.js も書き戻す(その sha も照合する)
+     ⑥b 種類を往復しても、覚醒の「継承の断り」が新規SSR登録に残らず、直す相手の選択も消えない
+     ⑦ 更新履歴の書き直す行: 別の体の行と**同じ体の告知の行**は書き直さない(書き足す)/
+        ツールが書いた形の同じ体の行は書き直す(行が増えない)
+     ⑧ 特性idを変えたら新規登録と同じ判定を通り、ui.js も書き戻す(その sha も照合する)。
+        使えない形の特性id(bad-id)では止まる
      ①の中で: 覚醒スキンの tier3 は元スキンから継承なので書けない
 
    GitHub へは出さない。window.gh を差し替えて手元の data.js / ui.js / sw.js を返す。
@@ -103,27 +107,43 @@ const openAll = await page.evaluate(async (only)=>{
   await loadElementList();
   const sel = document.getElementById('e_target');
   const targets = Array.from(sel.options).map(o=>o.value).filter(v => !only || v.endsWith(':' + only));
-  const bad = [], awaken = [];
+  const bad = [], awaken = [], fired = [];
   for(const v of targets){
     sel.value = v; sel.onchange();
     await loadExisting();
     if(!state.edit){ bad.push(`${v}: ${document.getElementById('log').textContent.split('\n').join(' / ')}`); continue; }
+    /* ⑤ 開いた直後に「撃ってみる」が焼く3技を控える(全モンスター)。
+       焼くのは画面の欄そのもの(buildMoves(collectSpec()))なので、
+       これが data.js の技と違えば**別の中身の技を撃っている**ことになる。 */
+    if(state.edit.kind === 'monster')
+      fired.push({ key: state.edit.key,
+                   formKey: document.getElementById('f_key').value.trim(),
+                   tpl: document.getElementById('m2_tpl').value,
+                   baked: buildMoves(collectSpec()),
+                   cur: state.edit.cur.moves });
     /* 覚醒スキン(awakenOf 付き)の tier3 は元スキンから継承する。
        書けてしまうと SSR_SKIN_TIER3 に覚醒idの行ができて継承が切れる。 */
     if(state.edit.kind === 'ssr' && state.edit.cur.ssr && state.edit.cur.ssr.awakenOf)
       awaken.push({ id: state.edit.key,
+                    baseId: state.edit.cur.ssr.awakenOf,
                     name: document.getElementById('s_t3name').disabled,
                     mult: document.getElementById('s_t3mult').disabled,
-                    note: document.getElementById('s_t3InheritNote').style.display !== 'none' });
+                    note: document.getElementById('s_t3InheritNote').style.display !== 'none',
+                    noteText: document.getElementById('s_t3InheritNote').textContent });
   }
-  return { n: targets.length, bad, awaken };
+  return { n: targets.length, bad, awaken, fired };
 }, ONLY);
 for(const b of openAll.bad) errors.push('開けません — ' + b);
 if(!ONLY && !openAll.awaken.length) errors.push('覚醒スキンが1つも一覧にありません(⑧を確かめられていません)');
-for(const a of openAll.awaken)
+for(const a of openAll.awaken){
   if(!a.name || !a.mult || !a.note)
     errors.push(`覚醒スキン ${a.id} の tier3 の欄が書ける状態です`
       + `(技名 disabled=${a.name} / 倍率 disabled=${a.mult} / 継承の断り=${a.note})`);
+  /* 断りの文面は**表示名**で書く。生のid(guts_ssr)がそのまま出ていたら、
+     読む人にはどのスキンのことか分からない。 */
+  if(a.noteText && a.noteText.indexOf(a.baseId) >= 0)
+    errors.push(`覚醒スキン ${a.id} の継承の断りに生のid(${a.baseId})が出ています: ${a.noteText}`);
+}
 
 // ---------------------------------------------------------------- ②③⑤ 1体を直して送信直前まで
 const edited = await page.evaluate(async ()=>{
@@ -180,27 +200,46 @@ else {
   if(!/^ジョーカー: /.test(edited.hist)) errors.push('更新履歴の1行ができていません: ' + edited.hist);
 }
 
-/* ⑤ 開いた直後に「撃ってみる」が焼く技3が、data.js の技そのものか。
-   f_key が空だとザンで撃ち、形が既定(fan)のままだと扇の範囲技になっていた。 */
+/* ⑤ 開いた直後に「撃ってみる」が焼く技が、data.js の技そのものか(**全モンスター**)。
+   f_key が空だとザンで撃ち、tier3 の「形」の逆引きが当たると土台がテンプレートに
+   すり替わって、欄の無いキー(endBlast / pierce / selfSpeedBuffOnHit / burstSideStep /
+   rectWidth / zigzagWidth / icon …)がテンプレートの値に化けていた(21体中15体で逆引きが当たる)。
+   だから**丸ごと**突き合わせる(ツールに正解を書き写さない)。 */
 {
-  const mv = edited.fired.move || {}, cur = edited.fired.cur || {};
-  if(edited.fired.key !== 'joker')
-    errors.push(`開いても key の欄が joker になりません(${JSON.stringify(edited.fired.key)})。`
-      + '「撃ってみる」が別のモンスターで撃ちます');
-  // 名指しの3つ(デスファイナルの特徴)
+  /* 比べ方: `aura` は「撃ってみる」が別に渡すので見ない(driver の override の auras)。
+     色は欄を通ると小文字になるだけなので、#RRGGBB は小文字にそろえてから比べる。 */
+  const norm = v => {
+    if(typeof v === 'string') return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v.toLowerCase() : v;
+    if(Array.isArray(v)) return v.map(norm);
+    if(v && typeof v === 'object'){ const o = {}; for(const k of Object.keys(v).sort()) o[k] = norm(v[k]); return o; }
+    return v;
+  };
+  const same = (a, b) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+  const jp = ['技1','技2','技3'];
+  for(const f of openAll.fired){
+    if(f.formKey !== f.key)
+      errors.push(`${f.key}: 開いても key の欄が ${JSON.stringify(f.formKey)} です。`
+        + '「撃ってみる」が別のモンスターで撃ちます');
+    for(let i = 0; i < 3; i++){
+      const mv = f.baked[i] || {}, cur = f.cur[i] || {};
+      for(const k of Object.keys(cur)){
+        if(k === 'aura') continue;
+        if(!same(mv[k], cur[k]))
+          errors.push(`${f.key} の${jp[i]}: 焼いた ${k} が ${JSON.stringify(mv[k])} です`
+            + `(data.js は ${JSON.stringify(cur[k])})`);
+      }
+      for(const k of Object.keys(mv))
+        if(k !== 'aura' && !(k in cur))
+          errors.push(`${f.key} の${jp[i]}: data.js に無いキー ${k}(${JSON.stringify(mv[k])})が増えています`);
+    }
+  }
+  // 名指しの3つ(デスファイナルの特徴)。逆引きが当たらない技の代表として残す
+  const mvJ = edited.fired.move || {};
   const wantMove = { burst:15, burstDirs:3, projStyle:'scythe' };
   for(const k of Object.keys(wantMove))
-    if(mv[k] !== wantMove[k])
-      errors.push(`開いた直後の技3の ${k} が ${JSON.stringify(mv[k])} です`
+    if(mvJ[k] !== wantMove[k])
+      errors.push(`開いた直後の技3の ${k} が ${JSON.stringify(mvJ[k])} です`
         + `(デスファイナルの ${JSON.stringify(wantMove[k])} のはず)`);
-  /* 読み込んだ技と**丸ごと**突き合わせる(ツールに正解を書き写さない)。
-     テンプレートが混ざると、こちらに無いキー(aoeShape・fanAngleDeg)が増え、
-     あるキー(icon)が消える。 */
-  for(const k of Object.keys(cur))
-    if(JSON.stringify(mv[k]) !== JSON.stringify(cur[k]))
-      errors.push(`焼いた技3の ${k} が ${JSON.stringify(mv[k])} です(data.js は ${JSON.stringify(cur[k])})`);
-  for(const k of Object.keys(mv))
-    if(!(k in cur)) errors.push(`焼いた技3に data.js に無いキー ${k}(${JSON.stringify(mv[k])})が増えています`);
 }
 
 // ---------------------------------------------------------------- ④ 送信直前の sha 照合
@@ -229,42 +268,118 @@ if(switched.spec !== specBefore)
 if(switched.t3mult) errors.push('SSRの威力倍率の欄が止まったままです(disabled が戻っていません)');
 if(switched.adhoc)  errors.push(`開いて直すで足した選択肢が ${switched.adhoc} 個残っています`);
 
-/* ---------------------------------------------------------------- ⑦ 別の体の行を消さない
-   同じ日に別のモンスターの行があるとき、「威力」が共通なだけでその行を
-   書き直してしまうと、その体の告知が黙って消える。
-   **ここは似ていると判定される組み合わせを選ぶ**(そうでないと、判定を外しても
-   「書き足す」になって検査が通ってしまう)。「ザン: 威力30→40」と
-   「ジョーカー: デスファイナルの威力21→34」は共通の言葉が「威力」だけでも 50%。 */
-const OTHER = 'ザン: 威力30→40';
-const changelog = await page.evaluate(async ({ other })=>{
-  window.__shaMoved = false;
-  // 今日のかたまりに「別の体の行」だけがある data.js を作って読み直させる
-  const ymd = todayYmd();
-  const block = `  { date:'${ymd}', items:[\n    { t:'${other}', g:['balance'] },\n  ]},\n`;
-  window.__files['data.js'] = window.__files['data.js']
-    .replace('const UPDATE_HISTORY = [\n', 'const UPDATE_HISTORY = [\n' + block);
-  const kind = document.getElementById('regKind');
+/* ---------------------------------------------------------------- ⑥b 種類を往復する
+   ・覚醒スキンを開いて出した「継承の断り」は、新規SSR登録の画面に残ってはいけない。
+     **表示の有無は captureFormDefaults が撮れない**(撮るのは value/checked/disabled だけ)ので、
+     戻す一覧(EDIT_ONLY_NOTES)に入っていないと、覚醒でもないスキンの画面に断りが出る。
+   ・「開いて直す」へ戻ったとき、相手の一覧(e_target)の選択が消えてはいけない。
+     この一覧は接続後に作られるので、撮った値('')を書き戻すと selectedIndex=-1 になる。 */
+const roundTrip = await page.evaluate(async (awakenId)=>{
+  const kind = document.getElementById('regKind'), sel = document.getElementById('e_target');
   kind.value = 'edit'; kind.onchange();
-  const sel = document.getElementById('e_target');
-  sel.value = 'mon:joker'; sel.onchange();
+  sel.value = 'ssr:' + awakenId; sel.onchange();
   await loadExisting();
-  const dmg = document.getElementById('m2_dmg');       // 「威力」を含む1行になるように直す
-  dmg.value = String(+dmg.value + 7);
-  await preflight();
-  const text = state.files ? state.files.texts['data.js'] : null;
-  return { mode: document.getElementById('e_chMode').value,
-           hist: document.getElementById('e_chText').value,
-           cls: document.getElementById('log').className,
-           log: document.getElementById('log').textContent,
-           items: text ? JSON.stringify(updateHistoryItems(text, ymd)) : null };
-}, { other: OTHER });
-if(changelog.cls === 'ng') errors.push('別の体の行があるときに差分の確認で止まりました:\n' + changelog.log);
-if(changelog.mode !== 'append')
-  errors.push(`別の体の行しか無いのに「${changelog.mode}」を選びました(書き足すはず)`);
-if(!changelog.items || !changelog.items.includes(OTHER))
-  errors.push(`別の体の行(${OTHER})が消えました: ${changelog.items}`);
-if(!changelog.items || !changelog.items.includes('ジョーカー'))
-  errors.push(`ジョーカーの行が入っていません: ${changelog.items}`);
+  const opened = { note: document.getElementById('s_t3InheritNote').style.display !== 'none',
+                   target: sel.value };
+  kind.value = 'ssr'; kind.onchange();                 // 新規SSR登録へ
+  const asSsr = { note: document.getElementById('s_t3InheritNote').style.display !== 'none' };
+  kind.value = 'edit'; kind.onchange();                // 開いて直すへ戻る
+  return { opened, asSsr,
+           back: { value: sel.value, index: sel.selectedIndex, n: sel.options.length } };
+}, (openAll.awaken[0] || {}).id);
+if(!roundTrip.opened.note)
+  errors.push('覚醒スキンを開いても継承の断りが出ていません(⑥bの前提が崩れています)');
+if(roundTrip.asSsr.note)
+  errors.push('新規SSR登録の画面に、覚醒スキンの「継承の断り」が残っています');
+if(roundTrip.back.index < 0 || !roundTrip.back.value)
+  errors.push('種類を往復すると、直す相手の選択が消えます'
+    + `(選択 ${roundTrip.back.index} / 選択肢 ${roundTrip.back.n}個)`);
+
+/* ---------------------------------------------------------------- ⑦ 書き直す行の選び方
+   同じ日の行のうち、書き直してよいのは**このツールが書いた形の、その体の行**だけ。
+   ・別のモンスターの行を書き直すと、その体の告知が黙って消える。
+     **似ていると判定される組み合わせを選ぶ**(そうでないと、判定を外しても
+     「書き足す」になって検査が通ってしまう)。「ザン: 威力30→40」と
+     「ジョーカー: デスファイナルの威力21→28」は共通の言葉が「威力」だけでも 50%。
+   ・**同じ体の告知の行(🆕・✵)はもっと危ない** —— changelogSimilarity の分母は
+     短いほうの語数なので「ジョーカー」を含むだけで 100% になり、既定で消えていた。
+   ・逆に、ツールが書いた形の行は**書き直す**(2行あると古いほうが嘘になる)。 */
+const OTHER = 'ザン: 威力30→40';
+const PROMO = '🆕 新モンスター「ジョーカー」が登場しました!闇の技で切り裂きます';
+const AWAKE = '✵ ジョーカーに覚醒の姿が追加されました';
+const TOOL_LINE = 'ジョーカー: HP115→118';
+const changelog = await page.evaluate(async ({ cases })=>{
+  window.__shaMoved = false;
+  const ymd = todayYmd();
+  /* 今日のかたまりを差し替えて、ジョーカーの1項目を直し、差分を確認するところまで。
+     素の data.js から作り直すので、前の回の行が混ざらない。
+     **どの欄を直すかで自動の1行の言葉数が変わり、似ている度合いも変わる**ので、
+     場合ごとに指定する(威力=「威力」を含む3語 / HP=「ジョーカー」1語)。 */
+  const run = async (c)=>{
+    const block = `  { date:'${ymd}', items:[\n`
+      + c.lines.map(t=>`    { t:'${t}', g:['balance'] },\n`).join('') + '  ]},\n';
+    window.__files['data.js'] = window.__baseData
+      .replace('const UPDATE_HISTORY = [\n', 'const UPDATE_HISTORY = [\n' + block);
+    const kind = document.getElementById('regKind');
+    kind.value = 'edit'; kind.onchange();
+    const sel = document.getElementById('e_target');
+    sel.value = 'mon:joker'; sel.onchange();
+    await loadExisting();
+    const el = document.getElementById(c.field);
+    el.value = String(+el.value + c.add);
+    await preflight();
+    const text = state.files ? state.files.texts['data.js'] : null;
+    return { mode: document.getElementById('e_chMode').value,
+             hist: document.getElementById('e_chText').value,
+             cls: document.getElementById('log').className,
+             log: document.getElementById('log').textContent,
+             items: text ? JSON.stringify(updateHistoryItems(text, ymd)) : null };
+  };
+  const out = {};
+  for(const k of Object.keys(cases)) out[k] = await run(cases[k]);
+  return out;
+}, { cases: {
+  // 別の体の行(「威力」だけが共通で 50% 似ている)
+  other:    { lines:[OTHER], field:'m2_dmg', add:7 },
+  /* 同じ体の告知の行。**1語しかない本文と比べると 100% 似ている**ので、
+     候補を絞っていないと既定でこの行が書き直され、告知が消える。 */
+  announce: { lines:[PROMO, AWAKE, OTHER], field:'f_hp', add:5 },
+  // ツールが書いた形の同じ体の行(これは書き直す)
+  tool:     { lines:[PROMO, OTHER, TOOL_LINE], field:'f_hp', add:5 },
+} });
+// ⑦-1 別の体の行は書き直さない(書き足しになり、その体の行が残る)
+{
+  const c = changelog.other;
+  if(c.cls === 'ng') errors.push('別の体の行があるときに差分の確認で止まりました:\n' + c.log);
+  if(c.mode !== 'append') errors.push(`別の体の行しか無いのに「${c.mode}」を選びました(書き足すはず)`);
+  if(!c.items || !c.items.includes(OTHER)) errors.push(`別の体の行(${OTHER})が消えました: ${c.items}`);
+  if(!c.items || !c.items.includes('威力21→28')) errors.push(`ジョーカーの行が入っていません: ${c.items}`);
+}
+// ⑦-2 同じ体でも**告知の行**は書き直さない。元の3行は全部残り、4行になる
+{
+  const c = changelog.announce;
+  if(c.cls === 'ng') errors.push('告知の行があるときに差分の確認で止まりました:\n' + c.log);
+  if(c.mode !== 'append') errors.push(`書き直せる行が無いのに「${c.mode}」を選びました(書き足すはず)`);
+  for(const t of [PROMO, AWAKE, OTHER])
+    if(!c.items || !c.items.includes(t)) errors.push(`書き直してはいけない行が消えました(${t}): ${c.items}`);
+  if(!c.items || !c.items.includes('HP115→120')) errors.push(`ジョーカーの行が書き足されていません: ${c.items}`);
+  if(c.items && JSON.parse(c.items).length !== 4)
+    errors.push(`告知の行があるときに行数が合いません(4行のはず): ${c.items}`);
+}
+// ⑦-3 ツールが書いた形の同じ体の行があれば、それを**書き直す**(行は増えない)
+{
+  const c = changelog.tool;
+  if(c.cls === 'ng') errors.push('ツールの形の行があるときに差分の確認で止まりました:\n' + c.log);
+  if(c.mode !== 'rewrite')
+    errors.push(`ツールが書いた同じ体の行があるのに「${c.mode}」を選びました(書き直すはず)`);
+  if(!c.items || c.items.includes(TOOL_LINE))
+    errors.push(`古い行(${TOOL_LINE})が書き直されずに残っています: ${c.items}`);
+  if(!c.items || !c.items.includes('HP115→120')) errors.push(`書き直した行が入っていません: ${c.items}`);
+  for(const t of [OTHER, PROMO])
+    if(!c.items || !c.items.includes(t)) errors.push(`書き直しで別の行まで消えました(${t}): ${c.items}`);
+  if(c.items && JSON.parse(c.items).length !== 3)
+    errors.push(`書き直したのに行が増減しました: ${c.items}`);
+}
 
 /* ---------------------------------------------------------------- ⑧ 特性idを変える
    新規登録と同じ判定(traitExistsIn)を通す。ui.js の TRAIT_DESC に無い特性idなら
@@ -278,6 +393,15 @@ const trait = await page.evaluate(async ()=>{
   const sel = document.getElementById('e_target');
   sel.value = 'mon:joker'; sel.onchange();
   await loadExisting();
+  /* 使えない形の特性id。**裸のキーとして ui.js へ書き出す**ので、通すと
+     `bad-id:'…'` という構文エラーの ui.js を送れてしまう(前は preflight が ok と言った)。 */
+  document.getElementById('f_trait').value = 'bad-id';
+  document.getElementById('f_traitDesc').value = '検査用の特性です';
+  await preflight();
+  const badId = { cls: document.getElementById('log').className,
+                  log: document.getElementById('log').textContent,
+                  files: state.files ? Object.keys(state.files.texts) : null,
+                  commit: document.getElementById('commitBtn').disabled };
   document.getElementById('f_trait').value = 'testtrait';
   document.getElementById('f_traitDesc').value = '';
   await preflight();
@@ -293,8 +417,12 @@ const trait = await page.evaluate(async ()=>{
   // ui.js だけが他所で変わっていたら止まるか(data.js は動かさない)
   window.__shaMovedFiles = ['ui.js'];
   ok.guard = state.files ? await state.files.guard() : 'ERR プランがありません';
-  return { stopped, ok };
+  return { badId, stopped, ok };
 });
+if(trait.badId.cls !== 'ng' || !/特性id/.test(trait.badId.log))
+  errors.push('使えない形の特性id(bad-id)でも送信しようとしました:\n' + trait.badId.log);
+if(trait.badId.files) errors.push(`使えない特性idで送信内容ができました: ${JSON.stringify(trait.badId.files)}`);
+if(trait.badId.commit === false) errors.push('使えない特性idなのに「この内容でコミット」が押せます');
 if(trait.stopped.cls !== 'ng' || !/TRAIT_DESC/.test(trait.stopped.log))
   errors.push('説明の無い新しい特性idでも送信しようとしました:\n' + trait.stopped.log);
 if(trait.ok.cls === 'ng') errors.push('説明を書いても通りませんでした:\n' + trait.ok.log);
@@ -315,11 +443,18 @@ console.log(`  ① 開いて入れ直すだけ: ${openAll.n}件(モンスター+
 console.log(`  ②③ ジョーカーを直す: HP${edited.before.hp}→+5 / 威力${edited.before.dmg}→+13 / ${edited.sw}`);
 console.log(`      更新履歴の1行: ${edited.hist}`);
 console.log(`  ④ 送信直前の sha 照合: ${guard}`);
-console.log(`  ⑤ 開いた直後の技3: 形=${JSON.stringify(edited.fired.tpl)} / key=${edited.fired.key}`
+console.log(`  ⑤ 開いた直後の3技が data.js と一致: ${openAll.fired.length}体`
+  + `(形の逆引きが当たる体 ${openAll.fired.filter(f=>f.tpl).length}体を含む)`);
+console.log(`     ジョーカー: 形=${JSON.stringify(edited.fired.tpl)} / key=${edited.fired.key}`
   + ` / burst=${edited.fired.move.burst} burstDirs=${edited.fired.move.burstDirs} projStyle=${edited.fired.move.projStyle}`);
 console.log(`  ⑥ 新規モンスターへ切り替え: 欄は既定へ${switched.spec === specBefore ? '戻った' : '戻っていない'}`);
-console.log(`  ⑦ 同じ日に別の体の行: ${changelog.mode} / ${changelog.items}`);
-console.log(`  ⑧ 特性idを変える: 説明が無いと止まる / 書けば ${JSON.stringify(trait.ok.files)} を送る`);
+console.log(`  ⑥b 種類を往復: 継承の断りは新規SSRで${roundTrip.asSsr.note ? '残る' : '消える'}`
+  + ` / 直す相手の選択 ${JSON.stringify(roundTrip.back.value)}(${roundTrip.back.n}件中)`);
+console.log(`  ⑦ 別の体の行: ${changelog.other.mode} / 同じ体の告知: ${changelog.announce.mode}`
+  + ` / ツールの形の行: ${changelog.tool.mode}`);
+console.log(`     告知のとき: ${changelog.announce.items}`);
+console.log(`     書き直したとき: ${changelog.tool.items}`);
+console.log(`  ⑧ 特性idを変える: bad-id は止まる / 説明が無いと止まる / 書けば ${JSON.stringify(trait.ok.files)} を送る`);
 console.log(`      ui.js だけ他所で変わったとき: ${trait.ok.guard}`);
 if(errors.length){
   console.log(`\n問題が ${errors.length} 件あります:`);

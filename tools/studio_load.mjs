@@ -54,8 +54,9 @@ const REQUIRED = [
   'readExisting', 'editChangesFor', 'applyEditChanges',
   'evalEntryValue', 'readEntryValue', 'fieldSourceTexts', 'editSame', 'editRound',
   'editHistoryLine', 'updateHistoryItems', 'rewriteUpdateHistory',
-  'jsonDiffPaths', 'editExpectedPaths', 'editRewriteIndex', 'editExpectedHistory',
-  'editMissingChanges', 'valueAtPath', 'tier3TemplateOf',
+  'jsonDiffPaths', 'editExpectedPaths', 'editRewriteIndex', 'editRewritableLine', 'editExpectedHistory',
+  'historyDiffers', 'editMissingChanges', 'valueAtPath', 'tier3TemplateOf',
+  'moveBaseInfo', 'textsSyntaxError', 'idOk', 'CHANGELOG_ANNOUNCE',
   'EDIT_ELEMENT_FIELDS', 'EDIT_SSR_FIELDS', 'EDIT_MOVE_KEYS', 'EDIT_MOVE_JP', 'EDIT_VERIFY_TABLES',
   'MOVE_NUM_COMMON', 'MOVE_NUM_TIER', 'MOVE_BOOL_TIER', 'MOVE_BLAST_TIER',
   // 見せ方(残り時間の式は1つ / 失敗の言い方は1つの表)

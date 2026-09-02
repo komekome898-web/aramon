@@ -201,7 +201,7 @@
         <div><label>書き直す行</label><select id="e_chTarget"></select></div>
       </div>
       <label>本文(空にすると更新履歴には入れません)</label>
-      <textarea id="e_chText" placeholder="「差分を確認する」を押すと自動で入ります"></textarea>
+      <textarea id="e_chText" placeholder="最初に「差分を確認する」を押したときだけ自動で入ります(消せば入りません)"></textarea>
       <div class="hint" id="e_chNote"></div>
     </div>
   </div>
@@ -3191,14 +3191,28 @@ function jsMove(mv){
 function buildMoves(spec){
   const t3col = spec.tier3Color || spec.accent || spec.color;
   const out = spec.moves.map((mv, i)=>{
-    let base;
-    if(i===0){ base = Object.assign({}, MOVE_T1, { color: spec.color }); if(mv.icon) base.icon = mv.icon; }
-    else if(i===1){ base = Object.assign({}, MOVE_T2, { color: spec.color }); if(mv.icon) base.icon = mv.icon; }
-    /* テンプレートが無い(「開いて直す」の“テンプレート無し”)ときは空の土台。
-       中身は collectMoveEdits が読み込んだ技ごと渡してくるので、下の for で全部入る。 */
-    else { const t = TIER3[mv.template]; base = t ? JSON.parse(JSON.stringify(t)) : {}; base.color = t3col; }
+    /* 土台の決め方は **moveBaseInfo 1か所**(テンプレートか「開いて直す」で読み込んだ技か)。
+       ここで別に組み立てていた頃は、tier1/2 が必ずテンプレート土台だったので、
+       「撃ってみる」が読み込んだ技ではなくテンプレートの数字で撃っていた。
+       段の形(テンプレート名)は spec が持っているものを渡す —— 画面のない検査
+       (studio_regress の行生成)からも同じ土台になるようにするため。 */
+    const info = moveBaseInfo(i, mv.template);
+    const base = info.base;
+    /* 色はテンプレートを土台にしたときだけ入れる。読み込んだ技が土台なら
+       その技が持っている色が正(色を持たない技に色を足さない)。 */
+    if(!info.fromLoaded) base.color = (i === MOVE_TPL_TIER) ? t3col : spec.color;
+    /* 絵文字は名前より先に入れる。**書き出す行の並びは JS_ORDER が決める**ので出力は
+       変わらないが、回帰のゴールデンは技オブジェクトを「入れた順」で書き出すため、
+       ここを入れ替えると「行は同じなのにゴールデンだけ違う」になる。 */
+    if(mv.icon) base.icon = mv.icon;
     base.name = mv.name;
-    for(const k in mv){ if(k !== 'template') base[k] = mv[k]; }
+    for(const k in mv){
+      if(k === 'template') continue;
+      /* 空欄の絵文字で土台の絵文字を消さない(空欄 = 触っていない)。
+         読み込んだ技が絵文字を持たないときに欄が空になり、icon:'' が焼かれていた。 */
+      if(k === 'icon' && mv[k] === '') continue;
+      base[k] = mv[k];
+    }
     if(base.blast && typeof base.blast === 'object' && base.blast.color == null) base.blast.color = base.color;
     delete base.key;
     delete base.kind;      // 画面の出し分けにだけ使う目印。書き出す行には入れない
@@ -3301,12 +3315,15 @@ function refreshMoveDefaults(){
    ③どちらも無いときだけ、欄に入っている見た目から推す。どれでもなければ隠さない
      ―― 隠して嘘を出すより、効かない欄が出ているほうがまだ害が小さい。 */
 function moveKindNow(){
+  const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
+  /* ⓪ 人が形を選び直したなら、そのテンプレートが技そのもの。**土台も
+     そちらへ移る(moveBaseInfo)ので、ここだけ読み込んだ技を見ると食い違う。** */
+  if(t && tplPickedByHuman) return t.kind || null;
   /* ② 開いて直しているなら読み込んだ技が正。**テンプレートより先に見る** ――
-     班D' が「テンプレート無し」を足すまで、形の欄は人が選んだとは限らないため。 */
+     形の欄には逆引きで入れた形が出ているだけで、人が選んだとは限らないため。 */
   const mv = editedMove(MOVE_KIND_TIER);
   if(mv) return mv.aoeShape ? 'aoe' : 'proj';
   // ① 新規登録。テンプレートが技そのもの
-  const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
   if(t) return t.kind || null;
   // ③ 欄の見た目から推す(テンプレート無しで、読み込んだ技も取れないとき)
   const aoe = $('m2_aoeStyle'), proj = $('m2_projStyle');
@@ -4013,7 +4030,18 @@ function revertRows(texts, key){
   }
   return { out, counts };
 }
+/* JS の裸のキーとして書き出してよい id(モンスターの key・特性id)。**判定はこの1つ。**
+   新規登録の validate も「開いて直す」の特性idもここを通す —— 別々に見ていたときは、
+   開いて直すから `bad-id` のような特性idを送れてしまい、`bad-id:'…'` という
+   構文エラーの行を ui.js へ書き込めた(preflight は ok と言っていた)。 */
+const ID_RE = /^[a-z][a-z0-9_]*$/;
+function idOk(s){ return ID_RE.test(String(s == null ? '' : s)); }
+// 断り文句も1か所(新規登録と「開いて直す」で同じ言い方にする)
+const TRAIT_ID_NG = '特性idは英小文字で始まる英数字(と _)にしてください';
 function traitExistsIn(uiText, trait){
+  /* **正規表現に生の文字を入れない。** 使えない形の特性idはここで false ではなく
+     「見に行かない」= 呼ぶ側(validate / planEdit)が先に idOk で止める決まり。 */
+  if(!idOk(trait)) return false;
   const m = /^const TRAIT_DESC\s*=\s*\{/m.exec(uiText);
   if(!m) return false;
   const end = uiText.indexOf('\n};', m.index);
@@ -4356,14 +4384,19 @@ function editTarget(){
   const hit = list.find(x => x[0] === key);
   return { kind, key, label: hit ? hit[1] : key };
 }
+/* スキンidの表示名。**引くのはこの1か所**(接続前や知らないidでは id をそのまま返す)。
+   画面に出す文字に生のid(guts_ssr)を出さないため。 */
+function skinLabel(id){
+  const hit = (state.skins || []).find(s => s[0] === id);
+  return (hit && hit[1]) || id;
+}
 function awakenIsFxMode(){ return $('aw_mode').value === 'fx'; }
 /* 覚醒スキンの作成対象。**画像名は元スキンのIDから機械的に決める**ので、
    入れ先を間違えることがない(元 guts_ssr → guts_ssr_awake / guts_player_ssr_awake)。 */
 function awakenTarget(){
   const baseId = $('aw_base').value;
   if(!baseId) return null;
-  const meta = (state.skins || []).find(s=>s[0]===baseId);
-  const baseName = meta ? meta[1] : baseId;
+  const baseName = skinLabel(baseId);
   const el = (state.ssrMeta && state.ssrMeta[baseId] && state.ssrMeta[baseId].element) || '';
   const basePrefix = baseId.replace(/_ssr$/, '');
   const id = `${baseId}_awake`;
@@ -4465,9 +4498,11 @@ function validateSsr(ss){
   return null;
 }
 function validate(spec){
-  if(!/^[a-z][a-z0-9_]*$/.test(spec.key)) return 'key は英小文字で始まる英数字にしてください';
+  if(!idOk(spec.key)) return 'key は英小文字で始まる英数字にしてください';
   for(const [k, n] of [['label','表示名'],['trait','特性id'],['traitDesc','特性の説明']])
     if(!spec[k]) return n + 'を入れてください';
+  // 特性idも key と**同じ判定**(裸のキーとして ui.js へ書き出すため)
+  if(!idOk(spec.trait)) return TRAIT_ID_NG;
   for(const k of ['color','dark'])
     if(!/^#[0-9a-fA-F]{6}$/.test(spec[k])) return k + ' は #rrggbb 形式にしてください';
   for(let i=0;i<3;i++) if(!spec.moves[i].name) return `tier${i+1} の技名を入れてください`;
@@ -4847,14 +4882,25 @@ function renderEditTargets(){
    撮っておき、種類を切り替えるたびにそこへ戻す。
    ここに「既定値」を書き写さない —— 正は HTML の value 属性と boot が入れた選択肢。 */
 const FORM_RESET_PANELS = ['specPanel','movePanel','ssrForm','editForm'];
+/* 既定へ戻さない欄。**中身が接続後に作られる一覧**はここに入れる ――
+   既定を撮った時点では選択肢が1つも無いので、撮った値('')を書き戻すと
+   どの行も選ばれていない状態(selectedIndex=-1)になり、
+   「開いて直す」へ戻ったときに相手が消えて見える。 */
+const FORM_RESET_SKIP = ['e_target'];
+/* 「開いて直す」でだけ見せる注記。**戻すときはこの一覧を隠す。**
+   value / checked / disabled と違って表示の有無は formDefaults に写らないので、
+   覚醒スキンの「継承の断り」が新規SSR登録の画面に残っていた。 */
+const EDIT_ONLY_NOTES = ['s_t3InheritNote'];
 let formDefaults = null;
 function captureFormDefaults(){
   formDefaults = [];
   for(const id of FORM_RESET_PANELS){
     const root = $(id);
     if(!root) continue;
-    for(const el of root.querySelectorAll('input,select,textarea'))
+    for(const el of root.querySelectorAll('input,select,textarea')){
+      if(FORM_RESET_SKIP.indexOf(el.id) >= 0) continue;
       formDefaults.push({ el, value: el.value, checked: el.checked, disabled: el.disabled });
+    }
   }
 }
 function restoreFormDefaults(){
@@ -4863,7 +4909,9 @@ function restoreFormDefaults(){
      残すと、新規登録の一覧に見覚えのない選択肢が並ぶ。 */
   document.querySelectorAll('option[data-adhoc]').forEach(o=> o.remove());
   for(const d of formDefaults){ d.el.value = d.value; d.el.checked = d.checked; d.el.disabled = d.disabled; }
+  for(const id of EDIT_ONLY_NOTES) if($(id)) $(id).style.display = 'none';
   editLoadedMoves = null;
+  tplPickedByHuman = false;
   if($('m2_tpl')) $('m2_tpl').onchange();     // 薄字(既定)と説明を貼り直す
 }
 
@@ -4875,6 +4923,14 @@ function restoreFormDefaults(){
    テンプレートの技を撃っていた**(デスファイナルのつもりでインフェルノが出る)。 */
 // 「開いて直す」で読み込んだ3技。欄と同じ寿命(restoreFormDefaults で一緒に捨てる)
 let editLoadedMoves = null;
+/* 「形」(テンプレート)を**人が選び直した**か。
+   立っているときだけ、読み込んだ技ではなくテンプレートが土台になる(moveBaseInfo)。
+   プログラムから形を入れ直す経路(setTier3Template / restoreFormDefaults)では立てない
+   —— こちらは `onchange()` を直接呼ぶので、印は change イベント側(boot)で立てる。 */
+let tplPickedByHuman = false;
+/* テンプレート(「形」)を選べる段は tier3 だけ。**段の数字は MOVE_KIND_TIER が正**で、
+   ここは読むだけ(同じ数字を2か所に書かない)。 */
+const MOVE_TPL_TIER = MOVE_KIND_TIER;
 // tier3 の「形」の選択肢に足す「テンプレート無し」。値は空文字(TIER3 にこの名前は無い)
 const TPL_NONE = '';
 const TPL_NONE_LABEL = 'テンプレート無し(いまの技のまま)';
@@ -4895,14 +4951,26 @@ function tier3TemplateOf(mv){
    fromLoaded = 「buildMoves がこの土台を作り直せない」= 読み込んだ技そのもの。
    テンプレートなら buildMoves が同じ表(MOVE_T1/MOVE_T2/TIER3)から作り直せるが、
    読み込んだ技は作り直せないので、collectMoveEdits が土台ごと返す。
-   新規登録では editLoadedMoves が null なので、今までどおりテンプレートだけを見る。 */
-function moveBaseInfo(i){
-  if(i === MOVE_BLAST_TIER){
-    const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
+   新規登録では editLoadedMoves が null なので、今までどおりテンプレートだけを見る。
+
+   【読み込んだ技を、逆引きしたテンプレートで置き換えない】
+   tier3TemplateOf が当たるのは21体中15体だが、逆引きは「**形の欄に何を表示するか**」
+   だけの話で、土台を差し替える根拠にはならない。差し替えていた頃は、欄の無いキー
+   (endBlast / pierce / selfSpeedBuffOnHit / burstSideStep / rectWidth / zigzagWidth / icon …)
+   がテンプレートの値に化け、「撃ってみる」が**中身の違う技**を撃っていた。
+   テンプレートが土台になるのは、**人が形を選び直したとき**(tplPickedByHuman)だけ。
+
+   tpl = 使うテンプレート名。省略すると画面の「形」の欄を見る
+   (spec から呼ぶ buildMoves は spec の値を渡す。画面のない検査でも同じ土台になる)。 */
+function moveBaseInfo(i, tpl){
+  const loaded = editLoadedMoves && editLoadedMoves[i];
+  if(loaded && !(i === MOVE_TPL_TIER && tplPickedByHuman))
+    return { base: JSON.parse(JSON.stringify(loaded)), fromLoaded:true };
+  if(i === MOVE_TPL_TIER){
+    const name = (tpl === undefined) ? ($('m2_tpl') ? $('m2_tpl').value : '') : tpl;
+    const t = TIER3[name];
     if(t) return { base: JSON.parse(JSON.stringify(t)), fromLoaded:false };
   }
-  const loaded = editLoadedMoves && editLoadedMoves[i];
-  if(loaded) return { base: JSON.parse(JSON.stringify(loaded)), fromLoaded:true };
   if(i === 0) return { base: Object.assign({}, MOVE_T1), fromLoaded:false };
   if(i === 1) return { base: Object.assign({}, MOVE_T2), fromLoaded:false };
   return { base:{}, fromLoaded:false };
@@ -4970,9 +5038,12 @@ function fillEditForm(cur){
     $('s_t3name').disabled = inherit;
     // 数値を直接持つ専用tier3(ちょこ・ペルセポネ)は倍率で書き換えられない
     $('s_t3mult').disabled = inherit || !!(cur.tier3 && cur.tier3.move);
+    /* 注記は「開いて直す」でだけ出す。**消すのは restoreFormDefaults(EDIT_ONLY_NOTES)**
+       —— 表示の有無は formDefaults に写らないので、ここで出したままにすると
+       新規SSR登録の画面に覚醒の断りが残る。文面には生のid を出さず表示名を使う。 */
     $('s_t3InheritNote').style.display = inherit ? 'block' : 'none';
     $('s_t3InheritNote').textContent =
-      `この姿は「${s.awakenOf}」の覚醒後なので、tier3の専用技名と威力倍率は元スキンから継承します(ここでは変えられません)。`;
+      `この姿は「${skinLabel(s.awakenOf)}」の覚醒後なので、tier3の専用技名と威力倍率は元スキンから継承します(ここでは変えられません)。`;
     return;
   }
   const e = cur.elements || {}, tx = cur.elementsText || {};
@@ -4998,8 +5069,10 @@ function fillEditForm(cur){
 function fillMoveForm(moves, texts){
   /* 土台を「テンプレート」から「読み込んだ技」へ切り替える(moveBaseInfo が見る)。
      これを入れる前は、tier3 の形が既定(fan)のままだったので
-     「撃ってみる」がインフェルノを撃っていた。 */
+     「撃ってみる」がインフェルノを撃っていた。
+     読み込み直したら「人が形を選んだ」印も落とす(前の体で選んだ形を持ち越さない)。 */
   editLoadedMoves = moves || null;
+  tplPickedByHuman = false;
   /* tier3 の形を既存の技から逆引きして選び直す。合うものが無ければ
      「テンプレート無し」を1つ足して選ぶ(手書きの技はここに来る)。 */
   setTier3Template(tier3TemplateOf((moves || [])[2]));
@@ -5116,9 +5189,14 @@ function fillEditChangelog(dataJs){
   sel.disabled = !has;
   $('e_chMode').value = has ? 'rewrite' : 'append';
   $('e_chMode').disabled = !has;
+  /* **押し直しても選び直さない**ことを書いておく(自動で入れるのは最初の1回だけ。
+     毎回入れ直すと「空にすると入れません」が嘘になるため)。
+     選ぶ相手も「似た行」ではなく**このツールが書いた同じ体の行**(editRewritableLine)。 */
   $('e_chNote').textContent = has
     ? `今日(${todayYmd()})はすでに ${items.length} 行あります。同じ話題なら書き直してください`
-      + '(2行あると古いほうが嘘になります)。「差分を確認する」を押すと、似た行があればそれを選びます。'
+      + '(2行あると古いほうが嘘になります)。最初に「差分を確認する」を押したとき、'
+      + 'このツールが書いた同じ相手の行があればそれを選びます(告知の行は選びません)。'
+      + 'あとから自分で選び直せます。'
     : `今日(${todayYmd()})の行はまだありません。書き足しになります。`;
   $('e_chWrap').style.display = 'block';
 }
@@ -5183,9 +5261,29 @@ async function verifyEditedDataJs(origText, newText, changes, hist){
   /* 更新履歴は道すじで見ても意味が無い(書き足すと後ろの行が全部ずれる)。
      **元の履歴から「意図した1行だけ」を当てた姿を作り直して丸ごと突き合わせる。** */
   const histWant = editExpectedHistory(a.UPDATE_HISTORY, hist);
-  const histBad = JSON.stringify(b.UPDATE_HISTORY) !== JSON.stringify(histWant);
+  const histBad = historyDiffers(b.UPDATE_HISTORY, histWant);
   return { diffs, unexpected: diffs.filter(d => !ok(d.path)),
            histBad, missing: editMissingChanges(changes, diffs, b) };
+}
+/* 更新履歴が「意図した姿」と違うか。**項目ごとに本文 t とタグ g を比べる。**
+   丸ごと JSON.stringify で比べていたときは、`{ t:…, g:… }` と `{ g:…, t:… }` のような
+   **キーの並びの違いだけ**で「意図した1行以外も変わりました」と言って送信を止めていた
+   (手で書いた行の並びがツールの並びと同じとは限らない)。 */
+function historyDiffers(got, want){
+  const A = Array.isArray(got) ? got : [], B = Array.isArray(want) ? want : [];
+  if(A.length !== B.length) return true;
+  for(let i = 0; i < A.length; i++){
+    const a = A[i] || {}, b = B[i] || {};
+    if(a.date !== b.date) return true;
+    const ai = a.items || [], bi = b.items || [];
+    if(ai.length !== bi.length) return true;
+    for(let j = 0; j < ai.length; j++){
+      const x = ai[j] || {}, y = bi[j] || {};
+      if(String(x.t) !== String(y.t)) return true;
+      if(JSON.stringify(x.g || []) !== JSON.stringify(y.g || [])) return true;
+    }
+  }
+  return false;
 }
 /* 更新履歴に「意図したこと」だけを当てた姿。addUpdateHistory / rewriteUpdateHistory と
    **同じ置き場所の決まり**(今日のかたまりの先頭へ足す / 無ければ一番上に作る)。 */
@@ -5224,15 +5322,30 @@ function editMissingChanges(changes, diffs, tables){
   return out;
 }
 
+/* 告知の行の目印(先頭の記号)。**これで始まる行は書き直さない** ――
+   新モンスターの登場・SSRスキンの追加・覚醒の姿は「その日の事実」の告知なので、
+   同じ体の性能を直したからといって消してよいものではない。 */
+const CHANGELOG_ANNOUNCE = ['🆕', '✨', '✵'];
+/* その行が「このツールが書いた形」か。形は `表示名: 変更点`(例 `ジョーカー: 威力21→34`)。
+   **書き直してよいのはこの形の行だけ。**
+   なぜ「似ているか」で選んではいけないか: changelogSimilarity の分母は
+   **短いほうの語数**なので、`ジョーカー: HP115→120` は「ジョーカー」を含む行と
+   **どれでも 1.00** になる。表示名を含む行に限っただけでは
+   「🆕 新モンスター「ジョーカー」が登場…」や「✵ ジョーカーに覚醒の姿が追加…」が
+   既定で選ばれ、**その日の告知が黙って消えていた**。 */
+function editRewritableLine(t, label){
+  const s = String((t == null) ? '' : t);
+  if(CHANGELOG_ANNOUNCE.some(mark => s.startsWith(mark))) return false;
+  return !!label && s.startsWith(label + ': ');
+}
 /* 更新履歴の「今日のかたまり」から**書き直す行**を選ぶ。**判定はこの1か所。**
-   似ているかどうかだけで選ぶと、「威力」「連射」のような言葉が共通なだけで
-   **別のモンスターの行**を書き直して消してしまう(実際にそうなる)。
-   だから候補は「その表示名を含む行」に限る。無ければ -1(=書き足す)。 */
+   候補は editRewritableLine が通した行(=このツールが書いた、その体の行)だけで、
+   その中から一番似ている行を選ぶ。無ければ -1(=書き足す)。 */
 function editRewriteIndex(items, label, text){
   let best = -1, bestS = CHANGELOG_SIMILAR;
   (items || []).forEach((it, i)=>{
     const t = String((it && it.t) || '');
-    if(!label || t.indexOf(label) < 0) return;      // 別の体の行は書き直さない
+    if(!editRewritableLine(t, label)) return;       // 別の体の行・告知の行は書き直さない
     const s = changelogSimilarity(t, text);
     if(s >= bestS){ bestS = s; best = i; }
   });
@@ -5294,6 +5407,9 @@ async function planEdit(dataJs, uiJs, swJs, lines, metas){
      すでにある特性idなら何も足さない(同じ特性を持つ既存モンスターの説明を書き換えないため)。 */
   const traitCh = changes.find(c => c.op === 'field' && c.table === 'ELEMENTS' && c.field === 'trait');
   let traitRow = null;
+  /* **形の判定を先に通す。** 特性idは ui.js へ裸のキーとして書き出すので、
+     `bad-id` のような字が入ると ui.js が構文エラーのまま本番へ出る。 */
+  if(traitCh && !idOk(traitCh.after)) throw new Error(TRAIT_ID_NG + `(いま「${traitCh.after}」)`);
   if(traitCh && !traitExistsIn(uiJs, traitCh.after)){
     const desc = $('f_traitDesc').value.trim();
     if(!desc)
@@ -5356,6 +5472,22 @@ async function planEdit(dataJs, uiJs, swJs, lines, metas){
            } };
 }
 
+/* 送るファイルを**全部**「構文として読めるか」確かめる。**new Function は読むだけで走らせない**
+   (画像もネットワークも動かない)。読めなければ理由を返す。
+
+   なぜ data.js だけでは足りないか: 「開いて直す」は ui.js・sw.js も書き戻すのに、
+   評価していたのは data.js だけだった。**壊れた特性id で ui.js を壊しても
+   「差分を確認する」は ok と言い、モンスター一覧が丸ごと落ちる data を送れた。**
+   .js 以外(specs の JSON)は JS ではないので見ない。 */
+function textsSyntaxError(texts){
+  for(const p of Object.keys(texts || {})){
+    if(!/\.js$/.test(p)) continue;
+    try{ new Function(String(texts[p])); }
+    catch(e){ return `${p} が構文として読めません(送信しません):\n  ` + String((e && e.message) || e); }
+  }
+  return null;
+}
+
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
@@ -5378,6 +5510,9 @@ async function preflight(){
                : isAwaken()   ? await planAwaken(dataJs, swJs, lines)
                : isSsr()      ? await planSsr(dataJs, swJs, lines)
                               : await planMonster(dataJs, uiJs, swJs, lines);
+    /* 送る前の最後の関門。**書き戻すファイル全部**を構文として読む(どの登録の種類でも通る)。 */
+    const syn = textsSyntaxError(plan.texts);
+    if(syn) throw new Error(syn);
     state.files = plan;
     $('commitBtn').disabled = false;
     log(lines.join('\n'), 'ok');
@@ -6722,6 +6857,11 @@ function boot(){
     $('tplHint').textContent = TPL_HINT[v] || (v === TPL_NONE ? TPL_NONE_HINT : '');
     refreshMoveDefaults();
   };
+  /* 「人が形を選び直した」印。**change イベントで受ける** ―― プログラムから
+     形を入れ直す経路(setTier3Template / restoreFormDefaults)は onchange() を
+     直接呼ぶだけなのでここは通らない。おかげで「開いて直す」で逆引きした形が
+     読み込んだ技の土台を上書きしない(moveBaseInfo)。 */
+  $('m2_tpl').addEventListener('change', ()=>{ tplPickedByHuman = true; });
   $('m2_tpl').onchange();
   fillVocabSelects();
   // 撃ち直す間隔は FX_FIRE_MS が正。文言はここで埋める(同じ数字をHTMLへ書かない)
