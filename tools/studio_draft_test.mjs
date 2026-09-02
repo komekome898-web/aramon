@@ -22,9 +22,17 @@
         相手(e_target)は GitHubから読み直さないと中身が入らないので欄だけ戻しても嘘になり、
         しかも state.editFilled が立たないまま値が残るので、新規へ切り替えても既定に戻らない。
      ⑦ 1世代前の退避に**読み手がいる**(§指摘20)。退避があるときだけ
-        「もっと前の入力に戻す」を出し、戻したら退避は消える
+        「もっと前の入力に戻す」を出す。**戻すのは入れ替え**(§指摘30) —— 戻したあと
+        退避には元の下書きが入り、もう一度押すと行き来できる(黙って上書きしない)。
+        今の下書きが無いときだけ「移動」になり退避は空になる(§指摘31)
      ⑧ 送信の段は**送信の失敗を先に見る**(§指摘17)。doCommit がしくじっても
-        state.files は残るので、state.files を先に見ると失敗が「済」のままだった
+        state.files は残るので、state.files を先に見ると失敗が「済」のままだった。
+        **「本当に失敗した状態か」まで見る**(§指摘36) —— state.files が残っていること・
+        log の1行目が「コミットに失敗しました」であることを確かめないと、
+        送信が別の理由で止まっただけでも⑧が通ってしまう
+     ⑨ **下書きに入らない欄を触っても捨てない**(§指摘29)。GitHubのトークンのように
+        下書きと関係ない欄を1文字直しただけで前回の続きが消え、問いも一緒に消えて
+        取り戻す道が無くなっていた
 
    使い方: node tools/studio_draft_test.mjs [--json]                              */
 import fs from 'fs';
@@ -117,6 +125,13 @@ const REAL_IMAGES = `
     return out;
   };`;
 
+/* 「いま**今の下書きについて聞いている**か」。§指摘31 でバーは「退避だけの姿」
+   (=「もっと前の入力に戻す」だけ)でも出るようになったので、draftBar の display だけでは
+   問いの有無を見分けられない。問いが出ている印は「前回の続きから始める」が押せること。 */
+const askShown = ()=> page.evaluate(()=>
+  document.getElementById('draftBar').style.display !== 'none'
+  && document.getElementById('draftRestoreBtn').style.display !== 'none');
+
 // 段階バーの並び(STAGES と同じ順)。読むときに番号を数え間違えないように名前で引く
 const STAGE_IX = { 接続:0, 種類:1, 歩行:2, 静止:3, 仕様:4, 技:5, 送信:6 };
 const readStages = ()=> page.evaluate(()=>
@@ -129,7 +144,12 @@ const settle = ()=> page.waitForTimeout(150);
    欄を足したときに検査の目が届かない欄が黙って増える。型ごとに「今と違う値」を作り、
    形の決まっている欄(key・特性id・色)だけ FILL_FIX で上書きする。
    FILL_SKIP は「選ぶと**別の欄の中身を上書きする**」欄(下書き側の DRAFT_RERUN と同じ理由)。 */
-const FILL_FIX = { f_key:'draftmon', f_trait:'drafttrait',
+/* mode は**わざと「boot が既定として当てた値」と同じ 'chroma'** にする(§波4-36)。
+   一般の made() は「今と違う値」を作るので、この組(復元値=既定値)だけは通らない。
+   walkSrc は made() が 'image' にするので、復元は
+   「抜き方=色で抜く / 素材=画像」= 画像の既定 'auto' と食い違う組になり、
+   `walkSrc` の出し分けが「まだ触っていない」と誤読して 'auto' へ戻す道が通る。 */
+const FILL_FIX = { f_key:'draftmon', f_trait:'drafttrait', mode:'chroma',
                    f_color:'#123456', f_dark:'#0a1b2c', f_accent:'#fedcba' };
 const FILL_SKIP = ['regKind', 'f_scPreset'];
 
@@ -267,10 +287,19 @@ const sendFailCase = await page.evaluate(async ()=>{
 });
 await settle();
 const stageSendNg = await readStages();
+const sendFailLine = (sendFailCase.said || '').split('\n')[0];
+/* **「本当に送信で失敗した状態か」を先に確かめる**(§指摘36)。段が赤いことだけを見ていると、
+   送信まで行かずに別の理由で止まった場合(state.files が消えて「まだ」になっただけ、
+   確認の段で弾かれただけ)でも⑧が通ってしまい、見たかった「files は残るのに赤い」を見ていない。 */
+if(sendFailCase.files !== true)
+  errors.push('コミットに失敗したのに state.files が残っていません'
+    + '(押し直せるように残す作りのはず。⑧が見たい状態になっていません)');
+if(!/^コミットに失敗しました/.test(sendFailLine))
+  errors.push(`コミットの失敗が log の1行目に出ていません: ${JSON.stringify(sendFailLine)}`);
 if(stageSendNg[STAGE_IX.送信] !== 'ng')
   errors.push(`コミットに失敗しても「送信」の段が ${stageSendNg[STAGE_IX.送信]} です`
     + `(state.files=${sendFailCase.files} / sendNg=${sendFailCase.sendNg} / log: `
-    + `${JSON.stringify((sendFailCase.said || '').split('\n')[0])})`);
+    + `${JSON.stringify(sendFailLine)})`);
 // 直す = もう一度「差分を確認する」。通ったら段は緑へ戻る
 await page.evaluate(async ()=> { await preflight(); });
 await settle();
@@ -297,6 +326,8 @@ const restored = await page.evaluate(async ({ fake })=>{
   return { asked, askText, cleanKey, stagesBefore, now,
            key: document.getElementById('f_key').value,
            mode: document.getElementById('mode').value,
+           // 「色で抜く」を戻したなら背景色の欄も出ていること(§波4-36。値だけ戻して出し分けが置いていかれる)
+           chromaShown: getComputedStyle(document.getElementById('chromaWrap')).display !== 'none',
            th: document.getElementById('th').value,
            after: document.getElementById('log').textContent,
            cls: document.getElementById('log').className,
@@ -308,16 +339,22 @@ if(restored.cleanKey) errors.push(`聞く前に欄へ入れています(f_key=${
 if(restored.stagesBefore.slice(2).join(',') === 'ok,ok,ok,ok,ok')
   errors.push('復元する前から段階バーが「済」です(state を読んでいません)');
 if(restored.key !== FILL_FIX.f_key) errors.push(`復元しても f_key が ${restored.key} です`);
-/* DRAFT_RERUN の並びが効いていることを名指しで見る(§指摘22)。
-   ・#mode … `walkSrc` より前に通していないと、applyWalkModeDefault() が
-     戻した抜き方を既定(色で抜く)へ上書きしてしまう
+/* 抜き方まわりは**下の一括の突き合わせでも見えるが、壊れたときにどこが壊れたかが
+   一目で分かるように名指しで出す**(§指摘33 / §波4-36)。
+   ・#mode … 「まだ既定のままか」は**画面の値**で見る(walkModeUntouched)ので、
+     DRAFT_RERUN の並びには依存しない。ここが違うなら、戻した値そのものが
+     どこかで既定に上書きされている
+   ・#chromaWrap … 値は戻っているのに**出し分けが置いていかれる**道がある。
+     戻した抜き方が boot の当てた既定と同じ値だと、`walkSrc` の出し分けが
+     「まだ触っていない」と読んで 'auto' へ戻し、最後の put() は値だけ戻す(イベントが飛ばない)
    ・#th  … `mode` の出し分けは**しきい値を既定へ戻す**ので、
-     「入れる → 出し分け → 入れ直す」の最後の入れ直しが無いと消える
-   下の一括の突き合わせでも見えるが、並べ替えたときに**どちらが壊れたか**が
-   一目で分かるように、この2つは名指しで出す。 */
+     「入れる → 出し分け → 入れ直す」の**最後の入れ直し(put)**が無いと消える */
 if(restored.mode !== saved.want.mode)
   errors.push(`復元しても #mode が ${restored.mode} です(下書きは ${saved.want.mode}`
-    + ' / DRAFT_RERUN で mode を walkSrc より前に置いているか)');
+    + ' / 戻した抜き方が既定に上書きされていないか)');
+if(restored.mode === 'chroma' && !restored.chromaShown)
+  errors.push('「色で抜く」を戻したのに背景色の欄(#chromaWrap)が出ていません'
+    + '(§波4-36 / 最後の put() のあとに #mode の出し分けを通しているか)');
 if(String(restored.th) !== String(saved.want.th))
   errors.push(`復元しても #th(しきい値)が ${restored.th} です(下書きは ${saved.want.th}`
     + ' / 出し分けのあとに入れ直しているか)');
@@ -335,6 +372,32 @@ if(saved.before !== restored.after){
     if(a[i] !== b[i]) diff.push(`  ${i+1}行目\n   前: ${a[i]}\n   後: ${b[i]}`);
   errors.push('復元しても差分の確認の文が一致しません(E2の受け入れ条件):\n' + diff.slice(0, 6).join('\n'));
 }
+
+/* ---------------------------------------------------------------- ⑨ 関係ない欄では捨てない
+   「触ったら前回の続きを捨てる」を**画面のどの欄でも**やっていたので(§指摘29)、
+   GitHubのトークンのように下書きに入らない欄を1文字直しただけで前回の続きが消え、
+   しかも問いまで引っ込むので**取り戻す道が画面から無くなっていた**。
+   捨ててよいのは「下書きに入る欄を触ったとき」だけ(判定は draftFields と同じ根)。 */
+await page.reload({ waitUntil:'load' });
+await page.waitForFunction(()=> typeof window.boot === 'function');
+const otherField = await page.evaluate(()=>{
+  const asked = document.getElementById('draftBar').style.display !== 'none';
+  const t = document.getElementById('tok');          // GitHubのトークン = 下書きに入らない欄
+  t.value = 'github_pat_touched';
+  t.dispatchEvent(new Event('input', { bubbles:true }));
+  return { asked, shown: document.getElementById('draftBar').style.display !== 'none',
+           left: localStorage.getItem(DRAFT_KEY) != null,
+           said: document.getElementById('log').textContent };
+});
+await page.waitForTimeout(600);       // 400ms後の自動保存より後まで待つ(消えたのが遅れて出ないか)
+const otherLeft = await page.evaluate(()=> localStorage.getItem(DRAFT_KEY) != null);
+if(!otherField.asked) errors.push('⑨ の入口で「前回の続き」を聞かれていません');
+if(!otherField.left || !otherLeft)
+  errors.push('下書きに入らない欄(#tok)を触っただけで前回の続きが消えます(§指摘29)');
+if(!otherField.shown)
+  errors.push('下書きに入らない欄(#tok)を触っただけで問いが引っ込みます(§指摘29 / 取り戻す道が無くなる)');
+if(/前回の入力は使わず/.test(otherField.said || ''))
+  errors.push('下書きに入らない欄(#tok)を触っただけで「前回の入力は使わず…」と言います(§指摘29)');
 
 /* ---------------------------------------------------------------- ③' 答えずに打ち始めたら
    問いを出したまま保存を止め続けると、打ち込んだぶんが1文字も残らない。
@@ -364,25 +427,41 @@ if(!typed.prev) errors.push('捨てる前の下書きが1世代も退避され�
 
 /* ---------------------------------------------------------------- ⑦ もっと前の入力に戻す
    1世代の退避は置くだけで**読み手がいなかった**(§指摘20)。取り違えて打ち始めた人の
-   逃げ道なので、退避があるときだけ draftBar に道を出し、戻したら退避は消す。
+   逃げ道なので、退避があるときだけ draftBar に道を出す。
+   **戻すのは「入れ替え」**(§指摘30) —— 黙って上書きしていたので、押し間違えると
+   今度は**いま打ち込んだぶん**が取り戻せなくなっていた(逃げ道が次の事故を作る)。
    ここまでで 今の下書き=typedmon / 退避=①で入れたぶん(draftmon)になっている。 */
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
+const keyOf = raw => { try{ const d = JSON.parse(raw || 'null'); return d && d.f && d.f.f_key; }catch(e){ return null; } };
 const prevBack = await page.evaluate(async ()=>{
   const btn = document.getElementById('draftPrevBtn');
   const shownBefore = !!btn && btn.style.display !== 'none';
   draftRestorePrev();
   await new Promise(r => setTimeout(r, 600));      // saveDraftSoon(400ms)が新しい下書きを書くまで
-  return { shownBefore, key: document.getElementById('f_key').value,
-           shownAfter: !!btn && btn.style.display !== 'none',
-           prevLeft: localStorage.getItem(DRAFT_PREV_KEY) != null,
-           said: document.getElementById('log').textContent };
+  const after = { key: document.getElementById('f_key').value,
+                  cur: localStorage.getItem(DRAFT_KEY), prev: localStorage.getItem(DRAFT_PREV_KEY),
+                  said: document.getElementById('log').textContent };
+  draftRestorePrev();                               // もう一度押す = 入れ替えて元へ戻る
+  await new Promise(r => setTimeout(r, 600));
+  return { shownBefore, ...after,
+           backKey: document.getElementById('f_key').value,
+           backPrev: localStorage.getItem(DRAFT_PREV_KEY) };
 });
 if(!prevBack.shownBefore) errors.push('退避があるのに「もっと前の入力に戻す」が出ません(§指摘20)');
 if(prevBack.key !== FILL_FIX.f_key)
   errors.push(`「もっと前の入力に戻す」で戻りません(f_key=${prevBack.key} / 退避は ${FILL_FIX.f_key})`);
-if(prevBack.prevLeft) errors.push('戻したのに退避が残っています(同じものを二度出してしまう)');
-if(prevBack.shownAfter) errors.push('戻したあとも「もっと前の入力に戻す」が出たままです');
+if(keyOf(prevBack.cur) !== FILL_FIX.f_key)
+  errors.push(`戻したのに今の下書きが入れ替わっていません(f_key=${keyOf(prevBack.cur)})`);
+// **入れ替え**: 戻したあと、退避には「いま入っていた下書き」が入っている(§指摘30)
+if(keyOf(prevBack.prev) !== 'typedmon')
+  errors.push('戻したときに、いま入っていた下書きが退避へ入りません(§指摘30 / 黙って上書きしている): '
+    + `退避の f_key=${JSON.stringify(keyOf(prevBack.prev))}`);
+if(!/1つ前として控え/.test(prevBack.said || ''))
+  errors.push(`入れ替えたことを知らせません(log: ${JSON.stringify((prevBack.said||'').split('\n').slice(-2).join(' / '))})`);
+// もう一度押せば行き来できる(2つを往復するだけで、どちらも失わない)
+if(prevBack.backKey !== 'typedmon' || keyOf(prevBack.backPrev) !== FILL_FIX.f_key)
+  errors.push(`もう一度押しても行き来できません(f_key=${prevBack.backKey} / 退避=${keyOf(prevBack.backPrev)})`);
 
 /* ---------------------------------------------------------------- ③'' 「消えました」は本当か
    draftDismiss は「前回の続きは消えました」と言うのに下書きを消していなかった(§指摘19)。
@@ -406,27 +485,41 @@ if(dismissed.left)
     + String(dismissed.left).slice(0, 80));
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
-const askedAgain = await page.evaluate(()=> document.getElementById('draftBar').style.display !== 'none');
+const askedAgain = await askShown();
 if(askedAgain) errors.push('「消えました」と言われた下書きを、次に開いてもまた聞かれます(§指摘19)');
 // このあとの ③ が使う下書きを戻す(ここで見たいのは「消えること」だけ)
 await page.evaluate(raw => raw && localStorage.setItem(DRAFT_KEY, raw), dismissed.raw);
 
-// ---------------------------------------------------------------- ③ 捨てる
+/* ---------------------------------------------------------------- ③ 捨てる
+   **捨てた直後こそ退避へ行く道がいちばん要る**(§指摘31)。「捨てて新しく始める」の
+   押し間違いはここでしか起きないのに、バーごと閉じていたので画面から道が消えていた。
+   問い(「前回の続きから始める」)は消え、退避があるなら道だけが残るのが正しい姿。 */
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
 const discarded = await page.evaluate(()=>{
   const asked = document.getElementById('draftBar').style.display !== 'none';
   draftDiscard();
   return { asked, left: localStorage.getItem(DRAFT_KEY) != null,
-           shown: document.getElementById('draftBar').style.display !== 'none' };
+           askShown: document.getElementById('draftRestoreBtn').style.display !== 'none',
+           barShown: document.getElementById('draftBar').style.display !== 'none',
+           prevShown: document.getElementById('draftPrevBtn').style.display !== 'none',
+           prevLeft: localStorage.getItem(DRAFT_PREV_KEY) != null,
+           text: document.getElementById('draftWhen').textContent };
 });
-if(!discarded.asked) errors.push('2回目の読み込みで「前回の続き」を聞かれません');
-if(discarded.left)   errors.push('「捨てて新しく始める」を押しても下書きが残っています');
-if(discarded.shown)  errors.push('「捨てて新しく始める」を押しても問いが消えません');
+if(!discarded.asked)    errors.push('2回目の読み込みで「前回の続き」を聞かれません');
+if(discarded.left)      errors.push('「捨てて新しく始める」を押しても下書きが残っています');
+if(discarded.askShown)  errors.push('「捨てて新しく始める」を押しても問いが消えません');
+if(!discarded.prevLeft) errors.push('③ の「捨てる」で退避が作られていません(§指摘6)');
+else {
+  if(!discarded.barShown || !discarded.prevShown)
+    errors.push('捨てた直後に「もっと前の入力に戻す」が出ません(§指摘31 / 押し間違いを取り戻せない)');
+  if(!/1つ前の入力が残っています/.test(discarded.text || ''))
+    errors.push(`捨てた直後の文言が違います: ${JSON.stringify(discarded.text)}`);
+}
 
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
-const afterDiscard = await page.evaluate(()=> document.getElementById('draftBar').style.display !== 'none');
+const afterDiscard = await askShown();
 if(afterDiscard) errors.push('捨てたあとにも「前回の続き」を聞かれます');
 
 /* ---------------------------------------------------------------- ⑥ 開いて直すは対象外
@@ -450,7 +543,9 @@ if(edited.raw || editedRaw)
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
 const afterEdit = await page.evaluate(()=>{
-  const asked = document.getElementById('draftBar').style.display !== 'none';
+  // 問いの有無はバーの display ではなく「前回の続きから始める」で見る(退避だけの姿があるため)
+  const asked = document.getElementById('draftBar').style.display !== 'none'
+             && document.getElementById('draftRestoreBtn').style.display !== 'none';
   const k = document.getElementById('regKind');
   k.value = 'monster'; k.onchange();      // 新規へ切り替える
   return { asked, hp: document.getElementById('f_hp').value };
@@ -469,14 +564,18 @@ console.log(`  ① 自動保存: ${saved.raw ? saved.raw.length : 0}バイト / 
   + '(画像なし・GitHubの設定なし)');
 console.log(`  ② 復元: ${restored.askText}`);
 console.log(`     差分の確認の文: ${saved.before === restored.after ? '一致' : '不一致'}`
-  + `(${(saved.before||'').split('\n').length}行)`);
+  + `(${(saved.before||'').split('\n').length}行)`
+  + ` / 抜き方 ${restored.mode}・背景色の欄は${restored.chromaShown ? '出る' : '出ない'}`);
 console.log(`  ③ 答えずに打ち始めた: 問いは${typed.shown ? '出たまま' : '引っ込む'} / 保存された値 ${typed.key}`
   + ` / 退避${typed.prev ? 'あり' : 'なし'}`);
 console.log(`  ⑦ もっと前の入力に戻す: 出${prevBack.shownBefore ? 'る' : 'ない'} / 戻した f_key ${prevBack.key}`
-  + ` / 退避${prevBack.prevLeft ? '残り' : 'なし'}`);
+  + ` / 退避は ${keyOf(prevBack.prev)} へ入れ替え / もう一度押して ${prevBack.backKey}`);
 console.log(`     打ち始めて消した後: 残り${dismissed.left ? 'あり' : 'なし'} / 次に開いて聞かれ${askedAgain ? 'る' : 'ない'}`);
-console.log(`     捨てる: 残り${discarded.left ? 'あり' : 'なし'} / 次に開いて聞かれ${afterDiscard ? 'る' : 'ない'}`);
-console.log(`  ⑧ 送信の失敗: 段は ${stageSendNg[STAGE_IX.送信]} → 確認し直して ${stageSendBack[STAGE_IX.送信]}`);
+console.log(`     捨てる: 残り${discarded.left ? 'あり' : 'なし'} / 次に開いて聞かれ${afterDiscard ? 'る' : 'ない'}`
+  + ` / 捨てた直後の戻る道${discarded.prevShown ? 'あり' : 'なし'}`);
+console.log(`  ⑨ 下書きに入らない欄(#tok): 下書き${otherLeft ? '残る' : '消えた'} / 問い${otherField.shown ? '残る' : '消えた'}`);
+console.log(`  ⑧ 送信の失敗: 段は ${stageSendNg[STAGE_IX.送信]} → 確認し直して ${stageSendBack[STAGE_IX.送信]}`
+  + ` / ${JSON.stringify(sendFailLine)}(state.files ${sendFailCase.files ? '残る' : '消えた'})`);
 console.log(`  ④ 段階バー: 復元前 ${restored.stagesBefore.join(',')} → 用意後 ${saved.stages.join(',')}`);
 console.log(`     歩行の成功直後 ${stageWalk.join(',')} / 静止画の成功直後 ${stagePortrait.join(',')}`);
 console.log(`  ⑤ 他パネルが失敗したとき: ${stageOtherNg.join(',')}(送信の段は ${stageOtherNg[STAGE_IX.送信]})`);

@@ -143,8 +143,9 @@
   <h2>前回の続き</h2>
   <div class="hint" id="draftWhen"></div>
   <div class="btns">
-    <button class="primary" onclick="draftRestore()">前回の続きから始める</button>
-    <button onclick="draftDiscard()">捨てて新しく始める</button>
+    <!-- 「今の下書き」への2つ。退避だけがあるときは showDraftBar() が引っ込める(§指摘31) -->
+    <button class="primary" id="draftRestoreBtn" onclick="draftRestore()">前回の続きから始める</button>
+    <button id="draftDiscardBtn" onclick="draftDiscard()">捨てて新しく始める</button>
     <!-- 1世代前の退避へ戻る道。**退避があるときだけ** refreshDraftPrevBtn() が出す -->
     <button id="draftPrevBtn" style="display:none" onclick="draftRestorePrev()">もっと前の入力に戻す</button>
   </div>
@@ -973,6 +974,15 @@ const STAGES = [
 ];
 /* 送信段の赤はこの1か所だけが立てる。preflight / doCommit の失敗で立て、成功で消す。 */
 function sendFail(msg){ state.sendNg = true; log(msg, 'ng'); }
+/* 「送る中身」を白紙に戻すのは**この1か所**(§指摘35)。中身が変わったら確認をやり直す、
+   という同じ操作が6か所に手書きで散っていて、**そのどれも state.sendNg を落としていなかった** ――
+   送信段は sendNg を先に見る(上)ので、一度送信に失敗したあと素材を選び直すと、
+   まだ何も送っていないのに赤が居残り、「差分を確認する」を押すまで消えなかった。 */
+function clearPlan(){
+  state.files = null;
+  state.sendNg = false;
+  $('commitBtn').disabled = true;
+}
 const STAGE_MARK = { ok:'✓', ng:'!', todo:'', off:'' };
 // そのパネルを今使うか。**出し分けは regKind の onchange が正**なので、判定を書き写さず実物を見る
 function stageOn(id){ const e = $(id); return !!e && e.style.display !== 'none'; }
@@ -1055,16 +1065,19 @@ const DRAFT_SKIP = ['e_target','e_chText','e_chMode','e_chTarget','a_target','aw
    s_raidEffect は addEventListener で出し分けを登録しているので、
    **`.onchange` の直呼びでは拾えない**(§指摘7。下の fireChange を参照)。
 
-   **【並べ替え禁止】この順に意味がある**(§指摘22):
-     ・`mode` は必ず `walkSrc` より前。`mode` の出し分けは**イベント引数の有無**で
-       「人が選んだか」を見ており、fireChange で起こすと modeTouched が立つ。
-       `walkSrc` の出し分けは applyWalkModeDefault() を呼んで
-       「動画なら抜き方の既定は色で抜く」を当てるが、modeTouched が立っていれば
-       上書きしない —— つまり `mode` を先に通しておかないと、**戻した抜き方が
-       既定に負けて消える**(班A' の作りに乗っている)。
-     ・`mode` の出し分けは**しきい値(th)を既定へ戻す**ので、戻した th はここで一度消える。
-       最後にもう一度 put() する「入れる → 出し分け → 入れ直す」の順(下)が要るのはこのため。
-   検査は studio_draft_test の②(復元後の #mode と #th が下書きの値であること)。 */
+   **並び順には依存しない**(§指摘33。かつて「並べ替え禁止」と書いてあったが、
+   その根拠だった `modeTouched` はもう無い):
+     ・「まだ既定のままか」は **いまの画面の値**で見る(`walkModeUntouched()` =
+       `#mode` の値が `walkModeAuto` と同じか)。復元は put() で `#mode` に値を入れるので、
+       下書きの抜き方が既定と違えばその時点で「人が選んだ」と同じ扱いになり、
+       あとから `walkSrc` を通しても applyWalkModeDefault() は上書きしない。
+       イベントの順に関係なく効くので、この表は並べ替えてよい。
+       (**戻した抜き方が既定と同じ値**のときだけは上書きされるが、その始末は
+        draftApply の末尾でしている。§波4-36)
+     ・**戻した `th`(しきい値)を守っているのは最後の put()。** `mode` の出し分けが
+       th を既定へ戻すので、「入れる → 出し分け → 入れ直す」の最後の put() が無いと消える。
+   検査は studio_draft_test の②(復元後の #mode と #th が下書きの値で、
+   「色で抜く」なら背景色の欄も出ていること)。 */
 const DRAFT_RERUN = ['mode','pmode','walkSrc','m2_tpl','f_scTrigger','aw_mode','s_raidEffect'];
 /* 「登録済みを開いて直す」は下書きの対象外(§指摘5)。**保存も復元もしない。**
    相手(e_target)は GitHub から読み直さないと中身が入らないので戻せず、
@@ -1087,6 +1100,11 @@ function draftFields(){
   }
   return out;
 }
+/* その欄は**下書きに入る欄か**(§指摘29)。判定は draftFields() と同じ根から作る ――
+   「触ったから前回の続きを捨てる」を別の条件で書くと、下書きと関係ない欄
+   (GitHubのトークン・「どれを開くか」・DRAFT_SKIP に入れた欄)を触っただけで
+   前回の続きが消え、しかも問いも引っ込むので取り戻す道が画面から無くなる。 */
+function draftHasField(el){ return !!el && draftFields().indexOf(el) >= 0; }
 function saveDraft(){
   if(draftAsking) return;          // まだ「戻すか捨てるか」を聞いている最中は上書きしない
   if(!draftKindOk($('regKind').value)) return;   // 「開いて直す」中は残さない(§指摘5)
@@ -1121,6 +1139,30 @@ function refreshDraftPrevBtn(){
   const b = $('draftPrevBtn');
   if(b) b.style.display = readPrevDraft() ? '' : 'none';
 }
+// 「今の下書き」についてのボタン。退避だけがあるときは引っ込める(下の showDraftBar)
+const DRAFT_CUR_BTNS = ['draftRestoreBtn','draftDiscardBtn'];
+/* **draftBar の姿を決めるのはこの1か所**(§指摘31)。
+     ・ask あり … 今の下書きについて聞く(続ける / 捨てる。退避もあれば戻る道も)
+     ・ask なし … **今の下書きが無く退避だけある**なら「もっと前の入力に戻す」だけを出す。
+       「捨てる」の押し間違いの直後がまさにこれで、ここでバーを閉じてしまうと
+       **退避へ行ける道が、いちばん必要な場面で画面から消える**。
+     ・どちらでもない … 出さない(今の下書きがあるうちは居座らせない)
+   打ち始めて問いを引っ込めるとき(draftDismiss)だけは、この直後に自動保存が
+   新しい下書きを書くので「今の下書きが無い」が崩れる。**あちらは hide を渡して必ず閉じる**
+   (道は次に開いたときの ask で出る)。 */
+function showDraftBar(ask){
+  const asking  = !!ask && ask !== 'hide';
+  const prevOnly = !asking && ask !== 'hide' && !readDraft() && !!readPrevDraft();
+  const on = asking || prevOnly;
+  draftAsking = asking;                    // 自動保存を止めるのは「聞いている間」だけ
+  for(const id of DRAFT_CUR_BTNS) if($(id)) $(id).style.display = prevOnly ? 'none' : '';
+  refreshDraftPrevBtn();
+  if(on) $('draftWhen').textContent = prevOnly
+    ? '1つ前の入力が残っています。「もっと前の入力に戻す」で戻せます。'
+    : `${draftAgeText(ask.at)}の入力が残っています(${ask.n}項目)。`
+      + '絵と動画は入っていないので、選び直しが要ります。';
+  $('draftBar').style.display = on ? 'block' : 'none';
+}
 function draftAgeText(at){
   const m = Math.round((Date.now() - at)/60000);
   return m < 1 ? 'さっき' : m < 60 ? `${m}分前` : m < 60*24 ? `${Math.round(m/60)}時間前` : `${Math.round(m/1440)}日前`;
@@ -1128,32 +1170,43 @@ function draftAgeText(at){
 // 「前回の続き」を聞く。**中身が既定と同じなら聞かない**(押す必要のない問いを出さない)
 function draftAsk(){
   const d = readDraft();
-  if(!d) return;
-  const now = {};
-  for(const el of draftFields()) now[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
-  const diff = Object.keys(d.f).filter(k => now[k] !== undefined && String(now[k]) !== String(d.f[k]));
-  if(!diff.length){ localStorage.removeItem(DRAFT_KEY); return; }
-  draftAsking = true;
-  $('draftWhen').textContent =
-    `${draftAgeText(d.at)}の入力が残っています(${diff.length}項目)。絵と動画は入っていないので、選び直しが要ります。`;
-  refreshDraftPrevBtn();          // 1世代前の退避があるときだけ「もっと前の入力に戻す」も出す
-  $('draftBar').style.display = 'block';
+  let ask = null;
+  if(d){
+    const now = {};
+    for(const el of draftFields()) now[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
+    const diff = Object.keys(d.f).filter(k => now[k] !== undefined && String(now[k]) !== String(d.f[k]));
+    if(diff.length) ask = { at:d.at, n:diff.length };
+    else try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+  }
+  // 聞く物が無くても、退避だけあるならバーは道を出す(判定は showDraftBar の1か所)
+  showDraftBar(ask);
 }
 // 聞くのをやめて今の下書きを入れる
 function draftRestore(){ draftApply(readDraft(), '前回の続きを入れました。絵と動画だけ選び直してください。'); }
 /* 1世代前の退避へ戻す(§指摘20)。退避は draftKeepPrev が置くだけで**読み手がいなかった** ――
    取り違えて打ち始めたときの逃げ道なので、押せる形で出しておく。
-   **戻したら退避は消す**(溜め込まない・同じ物を二度出さない)。 */
+   **今の下書きがあるときは「入れ替え」にする**(§指摘30) —— 黙って上書きしていたので、
+   押し間違えると今度は**いま打ち込んだぶん**が取り戻せなくなっていた(逃げ道が次の事故を作る)。
+   入れ替えなら押すたびに2つを行き来できる。
+   今の下書きが無いときは預ける物が無いので「移動」になり、**退避は空になる**
+   (= 一度戻したら消える。§指摘31)。 */
 function draftRestorePrev(){
-  if(draftApply(readPrevDraft(), 'もっと前の入力を入れました。絵と動画だけ選び直してください。'))
-    try{ localStorage.removeItem(DRAFT_PREV_KEY); }catch(e){}
-  refreshDraftPrevBtn();
+  const d = readPrevDraft();
+  if(!d) return showDraftBar(null);
+  const swap = !!readDraft();      // 今の下書きがある = 入れ替え / 無い = 移動
+  draftKeepPrev();                 // 今の下書きを退避側へ預ける(無ければ何も起きない)
+  if(!swap) try{ localStorage.removeItem(DRAFT_PREV_KEY); }catch(e){}
+  draftApply(d, 'もっと前の入力を入れました。絵と動画だけ選び直してください。'
+    + (swap ? '\nいま入っていた入力は1つ前として控えました(もう一度押すと入れ替えて戻せます)。' : ''));
+  /* 戻した値をその場で下書きへ書く(入れ替えのもう片側)。400ms後の自動保存に任せると、
+     その前に読み込み直したときだけ**両方が同じ中身**のまま残り、行き来できなくなる。 */
+  saveDraft();
+  showDraftBar(null);
 }
 /* 欄へ入れる処理の本体。今の下書きも1世代前も**同じ道**を通る(戻し方を2か所に書かない)。
    入れられたら true。 */
 function draftApply(d, doneMsg){
-  draftAsking = false;
-  $('draftBar').style.display = 'none';
+  showDraftBar('hide');            // 問いは答え終わり(バーの姿は showDraftBar の1か所で決める)
   if(!d) return false;
   // 登録の種類を先に当てる(出すパネルがここで決まる)
   if(d.kind && $('regKind')){ $('regKind').value = d.kind; fireChange($('regKind')); }
@@ -1172,19 +1225,32 @@ function draftApply(d, doneMsg){
   for(const id of DRAFT_RERUN) if($(id)) fireChange($(id));
   // 種類の出し分けは**値を全部入れ終えてから**もう一度通す(欄の値を見て出し入れするため)
   if($('regKind')) fireChange($('regKind'));
+  /* **抜き方だけは、ほかの出し分けが全部終わってから「値を戻して → 出し分けを通す」**(§波4-36)。
+     戻した抜き方が**boot が当てた既定と同じ値**('chroma')だと、`walkSrc` の出し分けが
+     「まだ触っていない」と読んで 'auto' へ戻してしまう。値は下の put() が戻すけれど、
+     put() はイベントを飛ばさないので**背景色の欄(chromaWrap)が隠れたまま**になる。
+     いちばん後ろでこれをやれば、DRAFT_RERUN の並びにも、誰があとから戻すかにも依存しない。 */
+  const modeEl = $('mode');
+  if(modeEl && d.f.mode !== undefined){ modeEl.value = d.f.mode; fireChange(modeEl); }
   /* 出し分けの中には**別の欄を既定へ戻す**ものがある(抜き方を変えるとしきい値が既定に戻る)。
      戻した値が消えてしまうので、出し分けのあとにもう一度入れ直す。
      順は「入れる → 出し分け → 入れ直す」で、出し分けは正しい値を見たまま動く。 */
   put();
+  /* 最後の put() は**値を入れ直すだけでイベントを飛ばさない**ので、値と別に持っている印は
+     ここで明示的に塗り直す(§指摘34)。「数字として読めない」の赤は欄の値ではなく
+     moveBadFields が覚えているので、値を戻しただけでは前の赤が居残る/消えるべき赤が消えない。
+     いまは m2_tpl が DRAFT_RERUN にあるおかげで**たまたま**塗り直されているだけで、
+     表を1行削った日に黙って壊れる作りだった。 */
+  moveInputErrors();
   log(doneMsg, 'ok');
   return true;
 }
 function draftDiscard(){
-  draftAsking = false;
-  $('draftBar').style.display = 'none';
   draftKeepPrev();
   try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
   log('前回の入力を捨てました。');
+  // 退避が残っているなら、バーは「もっと前の入力に戻す」だけの姿で開いたままにする(§指摘31)
+  showDraftBar(null);
 }
 /* 捨てる前に**1世代だけ**別キーへ退避する(§指摘6)。押し間違い・触り間違いで
    前回の続きが消えたとき、手で戻せる余地を残すため。溜め込まない(1つだけ)。 */
@@ -1203,8 +1269,10 @@ function draftKeepPrev(){
    上書きは起きず、次に開くと同じ下書きをまた聞かれた(「消えました」が嘘になる)。 */
 function draftDismiss(){
   if(!draftAsking) return;
-  draftAsking = false;
-  $('draftBar').style.display = 'none';
+  /* ここだけは**必ず閉じる**(§指摘31)。打っている最中なので、直後の自動保存が
+     新しい下書きを書いて「今の下書きが無い」が崩れる ―― 退避だけの姿で開くと
+     そのまま居座る。退避へ戻る道は、次に開いたときの問いの中に出る。 */
+  showDraftBar('hide');
   draftKeepPrev();
   try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
   log('前回の入力は使わずに新しく始めます(前回の続きは消えました)');
@@ -5563,7 +5631,7 @@ async function loadExisting(){
     state.edit = { kind:t.kind, key:t.key, label:t.label, sha:meta.sha, text:meta.text, cur };
     fillEditChangelog(meta.text, t.label);   // 既定の「書き直す行」は相手の名前で決まる
     $('regKind').onchange();          // モンスターかSSRかで出すパネルが変わる(判定は1か所)
-    state.files = null; $('commitBtn').disabled = true;
+    clearPlan();
     const miss = cur.unknown.length ? `\n読めなかった表: ${cur.unknown.join(' / ')}(この画面からは触りません)` : '';
     $('e_cur').textContent = `${t.label}(${t.key})を読み込みました。触った欄だけを書き戻します。` + miss;
     log(`${t.label} を読み込みました。直したい欄だけを書き換えて「差分を確認する」を押してください。${miss}`, 'ok');
@@ -6228,8 +6296,7 @@ async function doCommit(){
                  'Content-Type':'application/json' },
     });
     setProg(null);
-    state.files = null;
-    state.sendNg = false;          // 送れた(次は「まだ」から始まる)
+    clearPlan();                   // 送れた(次は「まだ」から始まる。押せる状態も戻さない)
     // 送ったら控えた sha が古くなる。続けて直すときは読み直してもらう
     if(state.edit){ state.edit = null; if($('e_chText')) $('e_chText').value = ''; }
     log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
@@ -6532,7 +6599,7 @@ function setMediaResult(key, blob, ext, note){
   $('md_pv_' + k).innerHTML = it.kind === 'promote'
     ? promotePreviewHtml(url) : mediaPreviewHtml(it.kind, url);
   mediaStatus(key, note, 'ok');
-  state.files = null; $('commitBtn').disabled = true;
+  clearPlan();
 }
 const AUDIO_MIMES = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/aac',
                      'audio/webm;codecs=opus', 'audio/webm', 'audio/mpeg'];
@@ -7597,7 +7664,7 @@ function boot(){
     state.media.next = {}; state.media.urls = {};
     MEDIA_ITEMS.forEach(it=>{ $('md_pv_' + idsafe(it.key)).innerHTML = ''; });
     renderMediaCurrent();
-    state.files = null; $('commitBtn').disabled = true;
+    clearPlan();
   };
   $('md_gachaKind').onchange = updatePickupNote;
   $('md_pickup').onchange = updatePickupNote;
@@ -7726,16 +7793,16 @@ function boot(){
                                 : awaken ? 'この覚醒スキンの登録を取り消す'
                                 : ssr   ? 'このSSRスキンの登録を取り消す'
                                         : 'このモンスターの登録を取り消す';
-    state.files = null; $('commitBtn').disabled = true;
+    clearPlan();
     if((ssr || media || assets || awaken || edit) && !state.elements) loadElementList();
     if(awaken) renderAwakenCurrent();
   };
-  $('a_target').onchange = ()=>{ renderAssetCurrent(); state.files = null; $('commitBtn').disabled = true; };
+  $('a_target').onchange = ()=>{ renderAssetCurrent(); clearPlan(); };
   // 開いて直す: 色スキンの色のチェック欄と、相手を選び直したときの片付け
   $('e_colors').innerHTML = SKIN_COLOR_ORDER.map(c=>
     `<label><input type="checkbox" id="e_col_${c}">${SKIN_COLOR_JP[c] || c}</label>`).join('');
   $('e_target').onchange = ()=>{
-    state.edit = null; state.files = null; $('commitBtn').disabled = true;
+    state.edit = null; clearPlan();
     $('e_chText').value = ''; $('e_chWrap').style.display = 'none';
     $('e_cur').textContent = '「この内容を読み込む」を押すと、いまの data.js の中身が下の欄に入ります。';
     $('regKind').onchange();     // モンスターかSSRかで出すパネルが変わる
@@ -7746,7 +7813,7 @@ function boot(){
   $('e_chTarget').addEventListener('change', ()=>{ chTargetPickedByHuman = true; });
   // 覚醒: 作り方を変えると使うパネルが変わるので出し分けをやり直す
   $('aw_mode').onchange = ()=>{ $('regKind').onchange(); };
-  $('aw_base').onchange = ()=>{ state.awaken = null; state.files = null; $('commitBtn').disabled = true;
+  $('aw_base').onchange = ()=>{ state.awaken = null; clearPlan();
                                 $('aw_preview').innerHTML = ''; renderAwakenCurrent(); };
   opts($('aw_aura'), AURAS);
   // スライダーの数値表示。**値の持ち方は awakenFxSettings 1か所**で、ここは見せるだけ
@@ -7770,23 +7837,30 @@ function boot(){
   /* 「赤くし直す価値がある技の欄か」(§指摘24)。赤い印(.badnum)を持つのは
      moveNumValue が見る**数字の欄だけ**なので、名前・色・SE を触ったときに
      moveInputErrors()(= collectSpec() を丸ごと1回)を走らせても結果は変わらない。
-     形(m2_tpl)だけは例外で通す —— 形を変えると効かない欄が隠れ、
-     **隠れた欄の赤を消せるのは moveNumValue だけ**なので、
-     ここを通さないと段階バーに「!」が居残る。 */
-  const moveNumTouched = el =>{
-    const id = el.id || '';
-    if(!/^m[012]_/.test(id)) return false;
-    if(id === 'm2_tpl') return true;
-    const im = String(el.inputMode || el.getAttribute('inputmode') || '').toLowerCase();
-    return el.tagName === 'INPUT' && (el.type === 'number' || im === 'decimal');
-  };
+     **相手は表から組み立てる**(§指摘37) —— DOM の属性(type=number / inputmode)を
+     見ていたころは、欄の書き方を変えただけで塗り直しが黙って止まった(赤が居残る)。
+     正は moveNumValue が読む表そのもの: moveNumKeys(段) と、入れ子の爆風の2キー
+     (blast:{radius,dmg} は表に載らず、id だけ m<MOVE_BLAST_TIER>_blastRadius / _blastDmg)。 */
+  const MOVE_NUM_IDS = new Set();
+  for(let i = 0; i < 3; i++)
+    for(const k of moveNumKeys(i)) MOVE_NUM_IDS.add('m' + i + '_' + k);
+  for(const k of ['blastRadius','blastDmg']) MOVE_NUM_IDS.add('m' + MOVE_BLAST_TIER + '_' + k);
+  /* 形(tier3 のテンプレート)だけは数字の欄でないのに通す —— 形を変えると効かない欄が隠れ、
+     **隠れた欄の赤を消せるのは moveNumValue だけ**なので、通さないと段に「!」が居残る。 */
+  const MOVE_TPL_ID = 'm' + MOVE_KIND_TIER + '_tpl';
+  const moveNumTouched = el => MOVE_NUM_IDS.has(el.id) || el.id === MOVE_TPL_ID;
   /* 欄を触るたびに下書きを保存し、段階バーを出し直す。**個々のパネルの関数には触らない**
      ―― 画面全体で1回受ければ済む(input も change も上まで上がってくる)。 */
   for(const ev of ['input','change']){
     document.addEventListener(ev, e=>{
       const el = e.target;
       if(el && el.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.type !== 'file'){
-        draftDismiss();          // 問いを出したまま打ち始めたら、その入力を保存できるようにする
+        /* 問いを出したまま打ち始めたら、その入力を保存できるようにする。
+           **下書きに入る欄を触ったときだけ**(§指摘29。判定は draftHasField=draftFields と同じ根)
+           —— どの欄でも捨てていたので、GitHubのトークンや「どれを開くか」のように
+           **下書きと関係ない欄**を触っただけで前回の続きが消え、問いも一緒に消えて
+           取り戻す道が無くなっていた。 */
+        if(draftHasField(el)) draftDismiss();
         saveDraftSoon();
         /* 数字として読めない欄を赤くするのは**入力したとき**と「差分を確認する」ときだけ(§指摘4)。
            段階バーは塗った結果(moveBadFields)を読むだけなので、塗り直しはここで1回やる。

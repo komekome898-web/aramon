@@ -74,7 +74,9 @@ const PANELS = [
      消えて「いまどの段階か」が読めなくなるので、noClip で実測する(§指摘3)。 */
   { id:'stageWrap',     name:'0 段階バー',     kind:null,       open:[],
     noClip:['#stageBar button'] },
-  { id:'draftBar',      name:'0 前回の続き',   kind:null,       open:['draftBar'] },
+  /* 「もっと前の入力に戻す」は**退避があるときだけ**出る(=ふつうは display:none)ので、
+     open に挙げないと一度も測られない(§指摘32)。3つ並んだ姿がこのバーの最大の幅。 */
+  { id:'draftBar',      name:'0 前回の続き',   kind:null,       open:['draftBar','draftPrevBtn'] },
   { id:'ghPanel',       name:'1 GitHub設定',   kind:null,       open:[] },
   /* 登録の種類のパネルは**種類ごとに別の姿**になる(ssrForm / assetsForm / awakenForm /
      editForm はどれも kindPanel の子)。1行にまとめていたときは editForm しか開いておらず、
