@@ -279,7 +279,108 @@ function runPeriod(){
   // 動きがまったく無い(周期が出ない)入力も、返り値が変わらないことを見る
   out.flat_n48 = S.detectPeriod(makeGrays(48, 16, 0), 48);
   compareJson('period', path.join(GOLDEN, 'period.json'), out);
-  return `${Object.keys(out).length}通り`;
+
+  /* --- 周期の診断(A2')。**periodDiag は detectPeriod と同じ周期を返す**のが前提。
+     ここがずれると「診断は周期ありと言うのに、切り出しは周期なしで動く」ことになる。 */
+  const diag = {};
+  for(const n of [48, 32]) for(const P of [12, 16, 20]) for(const amp of [40, 8]){
+    const g = makeGrays(n, P, amp);
+    const d = S.periodDiag(g, n);
+    const k = `n${n}_p${P}_a${amp}`;
+    if(d.period !== out[k]) fail('period', `${k}: periodDiag の周期 ${d.period} が detectPeriod ${out[k]} と違います`);
+    diag[k] = { how:d.how, peak:Math.round(d.peak*1000)/1000, peakLag:d.peakLag };
+  }
+  /* 動きがまったく無い入力は「歩行の周期が見つからない」と言えること。
+     ここが 'none' 以外を返すと、揺れているだけの動画で黙って周期を採ってしまう。 */
+  const flat = S.periodDiag(makeGrays(48, 16, 0), 48);
+  if(flat.how !== 'none')
+    fail('period', `動きの無い入力で周期あり(${flat.how})と判定しました。歩行の周期は見つからないはずです`);
+  if(flat.peak >= S.PERIOD_PEAK_MIN)
+    fail('period', `動きの無い入力の周期の強さが ${flat.peak}(${S.PERIOD_PEAK_MIN} 未満のはず)`);
+  diag.flat_n48 = { how:flat.how, peak:Math.round(flat.peak*1000)/1000, peakLag:flat.peakLag };
+  compareJson('perioddiag', path.join(GOLDEN, 'perioddiag.json'), diag);
+
+  /* --- 抜いた後の8コマの隣接差(§11 [25])。
+     **同じ絵が8枚なら止める**のがここの目的。今までは黙って「問題なし」と言っていた。 */
+  const W = S.DIAG_W;
+  const same = [], moving = [];
+  for(let k=0;k<8;k++){
+    const a = new Float32Array(W*W), b = new Float32Array(W*W);
+    for(let i=0;i<W*W;i++){ a[i] = 100; b[i] = 100 + 30*Math.sin(i*0.05 + k); }
+    same.push(a); moving.push(b);
+  }
+  const dSame = S.diffStat(S.adjacentDiffs(same));
+  const dMove = S.diffStat(S.adjacentDiffs(moving));
+  if(dSame.min >= S.FRAME_SAME_DIFF)
+    fail('period', `同じ絵8枚の隣接差が ${dSame.min}(${S.FRAME_SAME_DIFF} 未満で「同じ絵」と判定するはず)`);
+  if(dMove.min < S.FRAME_SAME_DIFF)
+    fail('period', `動いている8枚を「同じ絵」と判定しました(最小 ${dMove.min})`);
+
+  /* --- 「コマが変わっていない」の判定は**2つの見方**で見る(隣 と 時間をおいて)。
+     隣だけで見ると、ゆっくり動く素材(発注者のSeedance動画は隣接差 1.1〜2.8)を
+     「1コマも進んでいない」と誤って弾く。止まっている動画は**どちらも0**。 */
+  const mkRun = (n, f)=>{
+    const out = [];
+    for(let i=0;i<n;i++){ const g = new Float32Array(W*W);
+      for(let j=0;j<W*W;j++) g[j] = f(i, j); out.push(g); }
+    return out;
+  };
+  const judge = run => {
+    let mv = 0, sp = 0;
+    for(let i=1;i<run.length;i++){
+      mv = Math.max(mv, S.grayDiff(run[i], run[i-1]));
+      sp = Math.max(sp, S.grayDiff(run[i], run[0]));
+    }
+    return { mv, sp, stop: mv < S.MOVE_MIN_DIFF && sp < S.MOVE_SPAN_MIN_DIFF };
+  };
+  // ① 完全に止まっている動画 → 止める(2026-08-11 の守りが効いたまま)
+  const stuck = judge(mkRun(30, (i,j)=> 100 + 20*Math.sin(j*0.05)));
+  if(!stuck.stop) fail('period', `止まっている動画を通しました(隣 ${stuck.mv} / 時間 ${stuck.sp})`);
+  // ② 隣は小さいが時間をおくと動く動画(AI動画) → 通す
+  const slow = judge(mkRun(30, (i,j)=> 100 + 20*Math.sin(j*0.05 + i*0.02)));
+  if(slow.mv >= S.MOVE_MIN_DIFF)
+    fail('period', `検査用の「ゆっくり動く」入力の隣接差が大きすぎます(${slow.mv})`);
+  if(slow.stop) fail('period', `ゆっくり動く動画を弾きました(隣 ${slow.mv} / 時間 ${slow.sp})`);
+
+  /* --- 第2手(動きが最大の窓)。前半だけが動く並びで、窓が前半に来ること。 */
+  const rawT = [], raw = [];
+  for(let i=0;i<40;i++){
+    rawT.push(i*0.1);
+    const g = new Float32Array(W*W);
+    for(let j=0;j<W*W;j++) g[j] = 100 + (i < 20 ? 40*Math.sin(j*0.05 + i*1.3) : 0);
+    raw.push(g);
+  }
+  const win = S.bestMoveWindow(rawT, raw, 1.0);
+  if(win.t0 > 1.1) fail('period', `動きが最大の窓が ${win.t0} 秒から(前半のはず)`);
+  if(!(win.sum > 0)) fail('period', '動きが最大の窓の動き量が0です');
+
+  /* --- 足元の影(A3)。影の無い絵では**1画素も変わらない**ことが要。 */
+  const SW = 40, sImg = { width:SW, height:SW, data:new Uint8ClampedArray(SW*SW*4) };
+  const sAlpha = new Uint8Array(SW*SW);
+  const put = (x, y, r, g, b)=>{ const i = y*SW+x;
+    sImg.data[i*4]=r; sImg.data[i*4+1]=g; sImg.data[i*4+2]=b; sImg.data[i*4+3]=255; sAlpha[i]=255; };
+  // 体(明るい・彩度あり)+ 2本の脚。影はまだ置かない
+  for(let y=6;y<28;y++) for(let x=14;x<26;x++) put(x, y, 230, 90, 60);
+  for(let y=28;y<36;y++) for(let x=16;x<19;x++) put(x, y, 220, 80, 50);
+  for(let y=28;y<36;y++) for(let x=22;x<25;x++) put(x, y, 220, 80, 50);
+  const noShadow = new Uint8Array(sAlpha);
+  const box0 = S.bboxOf(noShadow, SW, SW);
+  if(S.dropFootShadow(sImg, noShadow, SW, SW, box0) !== 0)
+    fail('period', '影の無い絵で足元の影を落としました(何も変わってはいけない)');
+  if(!noShadow.every((v,i)=> v === sAlpha[i]))
+    fail('period', '影の無い絵でアルファが変わりました');
+  // 足元に「暗くて灰色で横長」の帯を足すと、その帯だけが消えること
+  for(let y=34;y<37;y++) for(let x=8;x<32;x++) put(x, y, 45, 44, 46);
+  const withShadow = new Uint8Array(sAlpha);
+  const dropped = S.dropFootShadow(sImg, withShadow, SW, SW, S.bboxOf(withShadow, SW, SW));
+  if(dropped <= 0) fail('period', '足元の影を落とせませんでした');
+  for(let y=0;y<SW;y++) for(let x=0;x<SW;x++){
+    const i = y*SW+x;
+    const isShadow = (y >= 34 && y < 37 && x >= 8 && x < 32);
+    if(isShadow && withShadow[i] !== 0) fail('period', `影の画素 (${x},${y}) が残っています`);
+    if(!isShadow && withShadow[i] !== sAlpha[i]) fail('period', `影ではない画素 (${x},${y}) まで消しました`);
+  }
+  return `${Object.keys(out).length}通り + 診断${Object.keys(diag).length}通り + 隣接差 + 動きの判定 + 第2手 + 足元の影`;
 }
 
 /* どの項目がどう違うかを短く出す(項目ごとの表になっているゴールデン用) */

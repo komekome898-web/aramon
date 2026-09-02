@@ -40,8 +40,9 @@ const REQUIRED = [
   // 背景の抜き方(モデル)。呼び分けは resolveAlpha 1か所
   'segmentModel', 'resolveAlpha', 'imageAlphaFor', 'keepMajor', 'releaseSegmentModel',
   'MODEL_SRC', 'MODEL_CACHE', 'MODEL_INPUT', 'MODEL_FG_MIN', 'MODEL_KEEP_RATIO', 'MODEL_FALLBACK',
-  // 動画・周期
-  'detectPeriod', 'grayDiff',
+  // 動画・周期・診断(周期の自己相関は bandAutocorr 1か所で作る)
+  'detectPeriod', 'periodDiag', 'bandAutocorr', 'grayDiff', 'adjacentDiffs', 'diffStat',
+  'bestMoveWindow', 'dropFootShadow', 'stripScale', 'medianOf', 'SEED_PROMPT',
   // data.js を読む側
   'pickObjText', 'pickStr', 'pickNum', 'numExpr', 'parseSkinMedia', 'parseStateChanges',
   'skinMediaRange', 'removeSkinMediaEntry',
@@ -63,17 +64,20 @@ const REQUIRED = [
   // 定数(検査側で二重に持たないため、必ずここから読む)
   'MOVE_T1', 'MOVE_T2', 'TIER3', 'JS_ORDER', 'TABLES', 'TABLE_FILE',
   'SEG_SOFT', 'SEG_SPECK', 'ANALYZE_N', 'CAND_N', 'WORK_H', 'CANVAS', 'TARGET_H', 'FEET_Y',
-  'WALK_FRAME_DUR', 'PERIOD_BAND', 'PERIOD_PEAK_MIN', 'PERIOD_DIP_MAX', 'MOVE_MIN_DIFF',
+  'WALK_FRAME_DUR', 'PERIOD_BAND', 'PERIOD_PEAK_MIN', 'PERIOD_DIP_MAX',
+  'MOVE_MIN_DIFF', 'MOVE_SPAN_MIN_DIFF',
+  'DIAG_W', 'FRAME_SAME_DIFF', 'ALIGN_DROP_PX', 'MOVE_WIN_SEC',
+  'SHADOW_BAND', 'SHADOW_DARK', 'SHADOW_SAT', 'SHADOW_WIDE', 'SHADOW_MIN_W',
   'ICONS', 'AURAS', 'RANKS', 'STATS', 'SKIN_COLOR_ORDER', 'SC_TRIGGERS', 'SC_EFFECTS',
   'SE_FALLBACK', 'MOVE_HIDE_BY_KIND', 'MOVE_KIND_TIER',
   'MEDIA_ITEMS', 'state',
 ];
-/* 将来の改修(設計仕様 §2 A5 の「1枚の絵から動かす」削除)で消える予定のもの。
-   欠けても止めないが、戻り値の `__missing` に名前が残る。 */
+/* あってもなくても検査が回るもの。欠けても止めないが、戻り値の `__missing` に名前が残る。
+   ※「1枚の絵から動かす」(detectParts / synthWalkFrames など)は 2026-09-02 に削除した。
+     もう存在しないので、ここにも書かない。 */
 const OPTIONAL = [
   'renderSsrRows', 'applySsrWalk', 'applyRaidConsts', 'skinMediaLines',
-  'fitScale', 'sampleHue', 'chamferDist', 'detectParts', 'protrusionsAt', 'partMotion',
-  'MOT', 'PART_SCALES', 'PART_MIN_ELONG', 'RIG_GROW', 'RIG_PATCH', 'BORDER_INSETS',
+  'fitScale', 'sampleHue', 'BORDER_INSETS',
   'TPL_HINT', 'AWAKEN_FX_DEFAULT', 'TRAIT_ON_HIT_KEYS',
 ];
 
