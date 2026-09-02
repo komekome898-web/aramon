@@ -18,3 +18,6 @@ shots_agent/
 
 # APEXリザルトの参考画像(発注者支給。他社の著作物なのでリポジトリへ入れない)
 .claude/apex-ref/
+
+# Claude Code の端末ごとの許可設定(共有しない)
+.claude/settings.local.json
