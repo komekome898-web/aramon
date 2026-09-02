@@ -334,6 +334,37 @@ async function runPeriod(){
       fail('period', `${k}: periodFound が強さ以外で決まっています(強さ ${d.peak} / 判定 ${d.found})`);
   compareJson('perioddiag', path.join(GOLDEN, 'perioddiag.json'), diag);
 
+  /* --- 「歩いていると言えるか」と「周期を信用して切ってよいか」は**別の判定**(§指摘27)。
+     1つの数字で両方を決めていたころは、谷から正しい周期が取れている素材まで
+     強さ不足だけで第2手へ落ち、1周期に足りない所で切って継ぎ目が飛んでいた。 */
+  for(const [k, d] of [['zoom_n48', zoom], ['flat_n48', flat]].concat(
+        [['peak', S.periodDiag(makeGrays(48, 16, 40), 48)]])){
+    if(S.periodUsable(d) !== (d.how !== 'none'))
+      fail('period', `${k}: periodUsable が how 以外で決まっています(how ${d.how})`);
+  }
+  // ズームだけの入力は「歩行ではない」が「周期の長さは取れている」= 2つの答えが割れる場合
+  if(S.periodFound(zoom) || !S.periodUsable(zoom))
+    fail('period', 'ズームだけの入力で「歩行ではないが周期は取れている」を表せていません' +
+                   `(歩行 ${S.periodFound(zoom)} / 周期 ${S.periodUsable(zoom)})`);
+
+  /* --- どちらの手で切るかは**測った動きで決める**(§指摘28)。強さでは決めない。
+     人が選んだときはそのまま、周期の長さが取れていなければ第2手、
+     どちらも使えるなら**並ぶ8コマの隣接差の最小が大きいほう**。 */
+  const scLo = { period:{ min:2.62, avg:3.22 }, move:{ min:3.45, avg:4.13 } };  // front.webm の実測
+  const scHi = { period:{ min:5.0,  avg:6.0  }, move:{ min:1.0,  avg:2.0  } };
+  const strong = S.periodDiag(makeGrays(48, 16, 40), 48);
+  if(!S.periodFound(strong))
+    fail('period', '検査の入力が弱すぎます(強い周期のつもりの入力で periodFound が false)');
+  if(S.cutHowFor('auto', strong, scLo) !== 'move')
+    fail('period', '自動が、周期が強くても動きの大きい第2手を採っていません(§指摘28)');
+  if(S.cutHowFor('auto', strong, scHi) !== 'period')
+    fail('period', '自動が、周期のほうがよく動くのに第2手を採りました');
+  if(S.cutHowFor('auto', flat, scHi) !== 'move')
+    fail('period', '周期の長さが取れていない(none)のに周期で切ろうとしています(§指摘27)');
+  for(const want of ['period', 'move'])
+    if(S.cutHowFor(want, strong, scLo) !== want)
+      fail('period', `人が「${want}」を選んだのに自動の判定で上書きしました`);
+
   /* --- 抜いた後の8コマの隣接差(§11 [25])。
      **同じ絵が8枚なら止める**のがここの目的。今までは黙って「問題なし」と言っていた。 */
   const W = S.DIAG_W;
@@ -416,26 +447,36 @@ async function runPeriod(){
   }
   const real = await runRealAssets();
   return `${Object.keys(out).length}通り + 診断${Object.keys(diag).length}通り + 隣接差 + ` +
-         `動きの判定 + 第2手 + 足元の影 + ${real}`;
+         `動きの判定 + 第2手 + 歩行かどうかと周期の使えるかを分ける + 切り方は測った動きで決める + ` +
+         `足元の影 + ${real}`;
 }
 
-/* ------------------------------------------- (c2) 実素材(monsters/*.png)で見る2つ
+/* ------------------------------------------- (c2) 実素材(monsters/*.png)で見る3つ
 
-   合成した絵だけでは通ってしまい、実素材で初めて出た不具合が2つある。
+   合成した絵だけでは通ってしまい、実素材で初めて出た不具合がある。
 
    ① **足元の影の誤爆**(§批評10): ゲームに入っている静止画は**もう整えてある**ので、
       足元の影として消える画素は1つも無いのが正。それでも illumine(479画素)・
       mocchi_ssr(2322画素)が消えていた —— 絵の下に引いてある**細い線画**が
-      「暗い・灰色・横に長い」の3つに当たっていたため。線画は枠の中がすかすか(3〜5%)、
-      落ち影は塊なので、詰まり具合(`SHADOW_FILL`)で分かれる。
-      **歩行コマ(`_walk_`)は別扱い** —— 影が焼き込まれている絵が実在し、そちらは消えるのが正。
-   ② **透過済みPNGの素通し**(§批評1): 「画像から並べる」は抜き方を明示していないので、
-      透過済みの絵はその透過をそのまま使う。`makeCut` に素通しの印を渡し忘れていたころは
+      「暗い・灰色・横に長い」の3つに当たっていたため。
+   ② **同じ歩行系列の中で判定が割れる**(§再批評26): 詰まり具合(`SHADOW_FILL`=0.35)が
+      最後の分かれ目になっていたため、`iblees_ssr_walk_b1..b8` は詰まりが 0.298〜0.385 と
+      閾値をまたぎ、**8コマ中6コマだけ蹄が消えて**足元合わせの基準(box.y1)が
+      293〜299 で跳ねた(`phoenix_ssr_walk_b8` も1コマだけ足が消えた)。
+      いまは形の条件(左右幅いっぱい・帯の上端で切れていない)で分け、さらに
+      **系列でそろわなければ1コマも落とさない**(`settleFootShadow`)。
+      **歩行704枚を系列ごとに通し、割れたまま落としていないことを見る。**
+   ③ **透過済みPNGの素通し**(§批評1): 「自動」は抜き方を明示していないので、
+      透過済みの絵はその透過をそのまま使う。素通しの印を渡し忘れていたころは
       白抜き・色抜きが当たり、**透明な所まで前景**になっていた。                        */
 const REAL_WALK = /_walk_/;                         // 歩行コマ(影が焼き込まれている絵がある)
 const REAL_SHADOW_ONE = 'illumine_walk_f1.png';     // 本物の落ち影が焼き込まれている1枚
 const REAL_ALPHA_ONE  = 'joker.png';                // 素通しを見る透過済みPNG
+// 再批評26で「同じ系列の中で判定が割れた」と名指しされた系列(誤爆が戻っていないかを直に見る)
+const REAL_SPLIT_WAS = ['iblees_ssr_walk_b', 'phoenix_ssr_walk_b'];
 const REAL_CHUNK = 16;                              // 生バイトを一度に置く枚数(1024²は1枚4MB)
+// 歩行コマの系列名(末尾の番号を落とす。iblees_ssr_walk_b3.png -> iblees_ssr_walk_b)
+const walkSeriesOf = name => name.replace(/\d+\.png$/, '');
 // PNG のデコードは python3(Pillow)に任せる(node 側に自前のデコーダを置かない)
 function decodePngs(names, outDir){
   const py = `
@@ -480,7 +521,10 @@ async function runRealAssets(){
         checked++;
       }
     }
-    // ① の逆: 影が焼き込まれている歩行コマでは、ちゃんと落ちる(締めすぎていないこと)
+    /* ① の逆: 影が焼き込まれている1枚では、ちゃんと落ちる(形の条件を締めすぎていないこと)。
+       **1コマだけを見る入口(`dropFootShadow`)で見る。** この絵の系列(illumine_walk_f*)は
+       f1 にしか影のかたまりが出ないので、16コマの道(`settleFootShadow`)では
+       「割れた」として1コマも落とさない —— それは②で見る。 */
     if(all.includes(REAL_SHADOW_ONE)){
       const meta = decodePngs([REAL_SHADOW_ONE], tmp);
       const [w, h] = meta[REAL_SHADOW_ONE];
@@ -493,35 +537,110 @@ async function runRealAssets(){
         fail('period', `${REAL_SHADOW_ONE}: 焼き込まれた落ち影を落とせませんでした(本物の影は落ちるはず)`);
       fs.rmSync(path.join(tmp, REAL_SHADOW_ONE + '.raw'), { force:true });
     }
-    // ② 透過済みPNG → 画像から並べる道(auto)は素通し。明示した抜き方は素通しにしない
+    // ② 歩行704枚を**系列ごと**に通す(§再批評26c)
+    const series = walkSeriesCheck(all.filter(f => REAL_WALK.test(f)), tmp);
+    // ③ 透過済みPNG → 「自動」は素通し。明示した抜き方は素通しにしない
     if(all.includes(REAL_ALPHA_ONE)){
       const meta = decodePngs([REAL_ALPHA_ONE], tmp);
       const [w, h] = meta[REAL_ALPHA_ONE];
       const raw = fs.readFileSync(path.join(tmp, REAL_ALPHA_ONE + '.raw'));
       const own = new Uint8Array(w*h);
       for(let k=0;k<w*h;k++) own[k] = raw[k*4+3];
-      const seg = { mode:'white', th:20, chroma:null };
       const mk = ()=> ({ width:w, height:h, data:new Uint8ClampedArray(raw) });
-      // makeCut(auto:true) が通る道。**前景画素が元のアルファと一致する**のが素通し
-      const pass = await S.imageAlphaFor(mk(), seg);
+      /* 「自動」は抜き方を明示していない道なので素通しする(§指摘31)。
+         **素通しかどうかを決めるのは resolveAlpha 1か所**なので、検査もそこを通す。
+         th/chroma は素通しに関係ないが、落とし先(blackopen)へ行ったときのために渡す。 */
+      const autoSeg = { mode:'auto', th:14, chroma:null };
+      const pass = await S.resolveAlpha(mk(), autoSeg);
       if(!own.every((v,i)=> v === pass[i]))
-        fail('period', `${REAL_ALPHA_ONE}: 透過済みPNGが素通しになっていません(画像から並べる道)`);
-      // 素通しの印が無い呼び方(=批評1の壊れ方)では、透明な所まで前景になる
-      const cut = await S.resolveAlpha(mk(), seg);
+        fail('period', `${REAL_ALPHA_ONE}: 透過済みPNGが「自動」で素通しになっていません`);
+      // 静止画の「自動」(歩行の設定を借りる道)も同じ結果になる
+      const passP = await S.imageAlphaFor(mk(), { mode:'blackopen', th:14, chroma:null });
+      if(!own.every((v,i)=> v === passP[i]))
+        fail('period', `${REAL_ALPHA_ONE}: 静止画の「自動」で素通しになっていません`);
+      // 人が選んだ抜き方(=批評1の壊れ方)では、透明な所まで前景になる
+      const cut = await S.resolveAlpha(mk(), { mode:'white', th:20, chroma:null });
       let fgInClear = 0;
       for(let k=0;k<w*h;k++) if(own[k] === 0 && cut[k] > 0) fgInClear++;
       if(fgInClear === 0)
         fail('period', '検査の前提が崩れています(明示した抜き方でも素通しと同じ結果になりました)');
-      // makeCut の呼び分けが imageAlphaFor と同じ枠を返すこと(引数1つで切り替わる)
-      const cutAuto = await S.makeCut(mk(), seg, null, { auto:true, shadow:false });
+      /* makeCut が「自動」で同じ枠を返すこと。**影ONでも通す**(§指摘33) ——
+         素通しの絵に足元の影の検出が当たって枠が変わってはいけない。 */
       const boxOwn = S.bboxOf(own, w, h);
-      if(JSON.stringify(cutAuto.box) !== JSON.stringify(boxOwn))
-        fail('period', `${REAL_ALPHA_ONE}: makeCut(auto) の枠 ${JSON.stringify(cutAuto.box)} が` +
-                       ` 元のアルファの枠 ${JSON.stringify(boxOwn)} と違います`);
+      for(const shadow of [false, true]){
+        const cutAuto = await S.makeCut(mk(), autoSeg, null, { shadow });
+        S.settleFootShadow([cutAuto]);      // 1枚だけの系列(そろっているので落ちるなら落ちる)
+        if(JSON.stringify(cutAuto.box) !== JSON.stringify(boxOwn))
+          fail('period', `${REAL_ALPHA_ONE}: makeCut(自動・影${shadow?'ON':'OFF'}) の枠 ` +
+                         `${JSON.stringify(cutAuto.box)} が元のアルファの枠 ` +
+                         `${JSON.stringify(boxOwn)} と違います`);
+      }
       fs.rmSync(path.join(tmp, REAL_ALPHA_ONE + '.raw'), { force:true });
     }
+    return `静止画 ${checked}枚(影0)+ ${series} + 透過済みPNGの素通し(自動・影ON/OFF)`;
   } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
-  return `実素材 ${checked}枚(影0)+ 焼き込み影1枚 + 透過済みPNGの素通し`;
+}
+
+/* 歩行コマを**系列ごと**に通し、「1つの系列の中で判定が割れたまま落としていない」ことを見る
+   (§再批評26c)。落とすかどうかを決めるのは `settleFootShadow` の1か所なので、
+   検査もその関数をそのまま呼ぶ(判定を検査側に写さない)。
+   見るのは3つ:
+     ・系列の中で**落ちたコマと落ちないコマが混ざらない**(混ざると足元合わせの基準が跳ねる)
+     ・検出が割れた系列では**1画素も落ちない**
+     ・再批評で名指しされた系列(iblees / phoenix)で**誤爆が1コマも出ない**、かつ
+       その系列の box.y1 が全コマでそろう                                              */
+function walkSeriesCheck(names, tmp){
+  const bySeries = {};
+  for(const n of names) (bySeries[walkSeriesOf(n)] = bySeries[walkSeriesOf(n)] || []).push(n);
+  // 名指しの系列が消えていたら黙って検査が減るので、そこで気づけるようにする
+  for(const k of REAL_SPLIT_WAS)
+    if(!bySeries[k]) fail('period', `${k}*.png が見つかりません(再批評26の回帰が空回りしています)`);
+  let frames = 0, split = 0, dropped = 0;
+  for(const [key, list] of Object.entries(bySeries)){
+    const cuts = [];
+    for(let i=0;i<list.length;i+=REAL_CHUNK){
+      const chunk = list.slice(i, i+REAL_CHUNK);
+      const meta = decodePngs(chunk, tmp);
+      for(const name of chunk){
+        const [w, h] = meta[name];
+        const file = path.join(tmp, name + '.raw');
+        const raw = fs.readFileSync(file);
+        fs.rmSync(file, { force:true });
+        const img = { width:w, height:h, data:new Uint8ClampedArray(raw) };
+        const alpha = new Uint8Array(w*h);
+        for(let k=0;k<w*h;k++) alpha[k] = raw[k*4+3];
+        const box = S.bboxOf(alpha, w, h);
+        // makeCut と同じ持ち方(切り抜きは要らないので box と shadow だけ)
+        const f = box ? S.findFootShadow(img, alpha, w, h, box) : null;
+        const cut = { name, box, drop:0 };
+        if(f) cut.shadow = { px:f.idx.length, box:f.box, gray:null, idx:f.idx };
+        cuts.push(cut);
+        frames++;
+      }
+    }
+    const found = cuts.filter(c => c.shadow).length;
+    const out = S.settleFootShadow(cuts);
+    if(found && found !== cuts.length) split++;
+    dropped += out.px;
+    // 系列の中で「落ちた/落ちない」が混ざっていないこと
+    const on = cuts.filter(c => c.drop > 0).length;
+    if(on !== 0 && on !== cuts.length)
+      fail('period', `${key}: 系列 ${cuts.length}コマのうち ${on}コマだけ足元の影を落としました` +
+                     '(混ざると足元合わせの基準が跳ねます)');
+    if(found !== cuts.length && out.px !== 0)
+      fail('period', `${key}: 判定が ${found}/${cuts.length}コマで割れているのに ${out.px}画素を落としました`);
+    // 再批評で名指しされた系列は、誤爆が1コマも出ず box.y1 がそろうこと
+    if(REAL_SPLIT_WAS.includes(key)){
+      if(found !== 0)
+        fail('period', `${key}: 誤爆が ${found}/${cuts.length}コマで戻っています(0のはず)`);
+      const ys = new Set(cuts.map(c => c.box && c.box.y1));
+      if(ys.size !== 1)
+        fail('period', `${key}: 足元合わせの基準 box.y1 が系列の中でそろっていません` +
+                       `(${[...ys].join(', ')})`);
+    }
+  }
+  return `歩行 ${frames}枚/${Object.keys(bySeries).length}系列` +
+         `(判定が割れた系列 ${split} — いずれも落とさない / 落とした画素 ${dropped})`;
 }
 
 /* どの項目がどう違うかを短く出す(項目ごとの表になっているゴールデン用) */

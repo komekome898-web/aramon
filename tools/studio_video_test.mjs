@@ -2,15 +2,20 @@
    (開発用・ゲームには読み込まない)。
 
    何を見るか(設計仕様 §2 A2'・§11 A [10][22][23][25]):
-     ① 周期の強さを数字で出し、**弱ければ「歩行の周期が見つかりません」とはっきり言う**。
-        並べたコマがほぼ同じなのに「問題は見つかりませんでした」と言わない
-        (今までは黙って周期18を採り「問題は見つかりませんでした」と報告していた)。
+     ① **2つの問いを分けて言う。** 「歩いていると言えるか」(周期の強さ)と
+        「周期の長さを信用して切ってよいか」(山か谷から出ているか)は別物なので、
+        強さが足りなくても周期が取れていれば「周期は取れていますが歩行とは断定できません」と出る。
+        並べたコマがほぼ同じなのに「問題は見つかりませんでした」と言わない。
         **強くても「歩いている」と断定しない** —— 自己相関は歩きと揺れを区別できないので、
         画面には「周期らしさ」と出し、並べた後の隣接差と「目で確かめてください」を常に添える。
-     ② その動画で **第2手(動きが最大の窓)の8コマの隣接差が、第1手(周期)より大きい**
+     ② その動画で **第2手(動きが最大の窓)の8コマの隣接差が、第1手(周期)より大きい**。
+        さらに ②' **既定(自動)がその「よく動くほう」を実際に出している**
+        (自動は両方を測って隣接差の最小が大きいほうを採る。周期の強さでは決めない)。
      ③ 診断の3段(候補16コマ / 抜いた後 / 並べた後)の数字が出る
      ④ **既定のまま(タップ0回)で抜ける** —— 動画を選んだら「背景の抜き方」は
         色で抜く(§3 B2)、背景色は外周8点から自動(A1)。検査は #mode を触らない。
+     ⑤ static は、門番の文言を見る**前に**「解析コマが十分取れた」を別に確かめる
+        (再生できていないのを「止まっているから弾いた」と読み違えない)。
 
    使い方:
      node tools/studio_video_test.mjs <動画のパス> [種類]
@@ -135,6 +140,8 @@ async function runAttempt(how){
     if(st.done || st.err) break;
     await page.waitForTimeout(500);
   }
+  // 門番が見た数字(止まったときも読める)。「解析コマが取れたか」を文言と別に確かめる
+  const probe = await page.evaluate(()=> state.probe);
   const r = await page.evaluate(async ()=>{
     const c = state.cand.f, w = state.walk.f;
     if(!c || !w) return { ok:false, meta:(document.getElementById('walkMeta')||{}).textContent };
@@ -154,6 +161,7 @@ async function runAttempt(how){
   });
   r.chroma = chroma;
   r.K = K;
+  r.probe = probe;
   return r;
   }finally{ await browser.close(); }
 }
@@ -163,9 +171,23 @@ async function runAttempt(how){
 if(KIND === 'static'){
   const stop = await runOnce('auto', true);
   if(stop.ok) fail('static: 止まっている動画から8コマを作ってしまいました(門番が効いていません)');
-  else if(!STOPPED.test(stop.meta || ''))
-    fail('static: 止まっている動画を別の理由で弾きました: ' + stop.meta);
-  else console.log('止まっている動画: 門番で止まりました — ' + stop.meta);
+  else {
+    /* **文言を見る前に「解析コマが十分取れた」を別に確かめる**(§指摘32)。
+       「止まっているから弾いた」と「そもそも再生できなかった」は、画面のエラーだけでは
+       同じに見える。解析コマが取れていないなら、門番が効いた証拠にならない。 */
+    const p = stop.probe;
+    if(!p || !(p.rawN >= 4))
+      fail(`static: 解析コマが ${p ? p.rawN : '不明'}枚しか取れていません` +
+           '(動画を再生できていないので、門番が効いたかどうかを判定できません)');
+    else if(!(p.gmax - p.gmin >= 3))
+      fail(`static: コマが描けていません(明るさの幅 ${(p.gmax-p.gmin).toFixed(1)})。` +
+           '止まっているかどうか以前に、動画が読めていません');
+    else if(!STOPPED.test(stop.meta || ''))
+      fail('static: 止まっている動画を別の理由で弾きました: ' + stop.meta);
+    else console.log(`止まっている動画: 解析コマ ${p.rawN}枚・明るさの幅 ` +
+                     `${(p.gmax-p.gmin).toFixed(1)}(=読めている)/ 動き 隣 ${p.moved.toFixed(2)}・` +
+                     `時間をおいて ${p.movedSpan.toFixed(2)} → 門番で止まりました — ${stop.meta}`);
+  }
   server.close();
   if(failures.length){
     console.log(`不合格 ${failures.length} 件:`);
@@ -176,10 +198,12 @@ if(KIND === 'static'){
   process.exit(0);
 }
 
-/* 「自動」で回して、**切り出し方の切り替えが判定どおりか**を見る(§批評3)。
-   周期の強さが足りなければ第2手(動きが最大の窓)へ行くのが正。
-   how の枝(peak / dip / none)で決めていたころは、谷の枝だと強さ 0.06 でも
-   周期で切り出したまま「見つかりました」と言っていた。 */
+/* 「自動」で回して、**2つの問いが分かれているか**を見る(§指摘27)。
+     ① 歩いていると言えるか      … 周期の強さ(`periodFound`)。画面の言い方がこれと合う
+     ② 周期を信用して切ってよいか … `periodUsable`(山か谷から出ているか)
+   1つの数字で両方を決めていたころは、谷から正しい周期が取れている素材まで第2手へ落ち、
+   1周期に足りない所で切って継ぎ目が飛んでいた。
+   **どちらの手で切るかは強さでは決めない**(§指摘28。下の ② で見る)。 */
 const auto = await runOnce('auto');
 if(!auto.ok) fail('自動でプレビューできませんでした: ' + auto.meta);
 if(auto.chroma){
@@ -191,12 +215,18 @@ if(auto.chroma){
 }
 if(auto.ok){
   const K = auto.K, ap = auto.diag.period;
-  const weakAuto = ap.peak < K.peakMin;
-  if(weakAuto && auto.diag.pickHow !== 'move')
-    fail(`① 周期らしさ ${ap.peak.toFixed(3)} が ${K.peakMin} 未満なのに第2手へ切り替わっていません` +
-         `(切り出し方 ${auto.diag.pickHow} / 周期の求め方 ${ap.how})`);
-  if(!weakAuto && auto.diag.pickHow !== 'period')
-    fail(`① 周期らしさ ${ap.peak.toFixed(3)} が足りているのに周期で切り出していません`);
+  const weakAuto = ap.peak < K.peakMin;      // ① 歩いていると言えるか
+  const usable = ap.how !== 'none';          // ② 周期の長さを信用して切ってよいか
+  /* ①と②を分けて言えているか。強さが足りないのに周期は取れている素材では
+     「周期は取れていますが歩行とは断定できません」と出るのが正。 */
+  if(weakAuto && usable && !/周期は取れていますが歩行とは断定できません/.test(auto.diagText || ''))
+    fail(`① 周期らしさ ${ap.peak.toFixed(3)}(<${K.peakMin})で周期は ${ap.how} から取れているのに、` +
+         '「周期は取れていますが歩行とは断定できません」と分けて言えていません');
+  if(weakAuto && !usable && !/歩行の周期が見つかりません/.test(auto.diagText || ''))
+    fail('① 山も谷も出ていないのに「歩行の周期が見つかりません」と言っていません');
+  // 周期そのものが取れていないなら、比べるまでもなく第2手
+  if(!usable && auto.diag.pickHow !== 'move')
+    fail(`① 周期の長さが取れていない(${ap.how})のに周期で切り出しています`);
   // 「歩いている」と断定しない = 並べた後の数字と目で見る案内を**常に**添える
   if(!/8コマを目で確かめてください/.test(auto.diagText || ''))
     fail('② 「8コマを目で確かめてください」が出ていません(周期の強さで断定している)');
@@ -208,14 +238,29 @@ if(auto.ok){
     fail('③ 周期が弱いのに定型文(A6)への案内がありません');
 }
 
-/* ズーム・フェードだけの動画はここまで(周期なし・第2手・案内が出ていれば合格)。
-   第1手と第2手の比べ合いは、歩いている素材でしか意味を持たない。 */
+/* ズーム・フェードだけの動画はここまで。
+   第1手と第2手の比べ合いは、歩いている素材でしか意味を持たない。
+
+   **見るのは「歩いていると言わないこと」だけ。** どちらの手で切ったかは見ない ——
+   切り方は測った動きで決まるようになった(§指摘28)ので、歩いていない動画でも
+   周期の区間のほうがよく動くことはあり、それは間違いではない。
+   周期の**長さ**が取れているか(`how`)は素材次第なので、言い方は2通りのどちらかを許す
+   (どちらも「歩行とは言えない」と言っている・§指摘27)。 */
 if(KIND === 'nomotion'){
   if(auto.ok){
     const p = auto.diag.period;
     console.log(`周期らしさ ${p.peak.toFixed(3)}(求め方 ${p.how}) / 切り出し方 ${auto.diag.pickHow}`);
-    if(!/歩行の周期が見つかりません/.test(auto.diagText || ''))
-      fail('① 揺れ・ズームだけの動画で「歩行の周期が見つかりません」と言っていません');
+    if(p.peak >= auto.K.peakMin)
+      fail(`① 揺れ・ズームだけの動画の周期らしさが ${p.peak.toFixed(3)} で` +
+           `${auto.K.peakMin} 以上あります(検査の入力を見直してください)`);
+    const saysNoWalk = /歩行の周期が見つかりません/.test(auto.diagText || '') ||
+                       /周期は取れていますが歩行とは断定できません/.test(auto.diagText || '');
+    if(!saysNoWalk)
+      fail('① 揺れ・ズームだけの動画で「歩行とは言えない」と言っていません' +
+           `(周期の求め方 ${p.how})`);
+    // 周期の長さが取れていないなら、比べるまでもなく第2手(§指摘27)
+    if(p.how === 'none' && auto.diag.pickHow !== 'move')
+      fail(`① 周期の長さが取れていない(${p.how})のに周期で切り出しています`);
   }
   server.close();
   if(failures.length){
@@ -223,7 +268,7 @@ if(KIND === 'nomotion'){
     for(const f of failures) console.log('  - ' + f);
     process.exit(1);
   }
-  console.log('AI動画の受け入れ(nomotion): 合格(周期なしと言い、第2手へ切り替わり、定型文へ案内する)');
+  console.log('AI動画の受け入れ(nomotion): 合格(歩行とは言えないと言い、定型文へ案内する)');
   process.exit(0);
 }
 
@@ -270,6 +315,28 @@ if(period.ok && move.ok){
   if(!(move.eight.avg > period.eight.avg))
     fail(`② 第2手の隣接差 ${move.eight.avg.toFixed(2)} が第1手 ${period.eight.avg.toFixed(2)} を超えていません`);
 
+  /* ②' **既定(自動)が「よく動くほう」を出す**(§11 [10] の受け入れ・§指摘28)。
+     周期の強さで決めていたころは、強さが足りているこの素材で第1手を採り、
+     **動きの少ないほうの8コマ**を出していた(第1手 最小 2.62 / 第2手 最小 3.45)。
+     見るのは2つ: 並べた後の8コマの隣接差の最小が `FRAME_SAME_DIFF` 以上であること、
+     そして**採った手が、実際に最小の大きいほうと一致している**こと。 */
+  if(auto.ok){
+    const better = move.eight.min > period.eight.min ? 'move' : 'period';
+    console.log(`  自動が採った手: ${auto.diag.pickHow}(実測でよく動くのは ${better})` +
+                ` / 自動の8コマ 平均 ${auto.eight.avg.toFixed(2)} 最小 ${auto.eight.min.toFixed(2)}`);
+    if(auto.eight.min < K.frameSame)
+      fail(`②' 自動で並べた8コマの隣接差の最小が ${auto.eight.min.toFixed(2)}` +
+           `(${K.frameSame} 以上でないと「同じ絵が並んでいる」)`);
+    if(auto.diag.pickHow !== better)
+      fail(`②' 自動が ${auto.diag.pickHow} を採りましたが、よく動くのは ${better} です` +
+           `(第1手 最小 ${period.eight.min.toFixed(2)} / 第2手 最小 ${move.eight.min.toFixed(2)})`);
+    /* 「自動の8コマそのものが第2手ぶんの数字か」は見ない —— 回すたびに動画の復号が
+       わずかに揺れるので、同じ手でも小数点以下が動く。見るべきは**採った手が正しいか**。 */
+    // 判断の根拠(両方の数字)を画面へ常時出しているか
+    if(!/見積もった8コマの隣接差の最小/.test(auto.diagText || ''))
+      fail('②\' 第1手・第2手を測った数字が画面に出ていません(なぜその手を採ったのか分からない)');
+  }
+
   // ③ 診断の3段が数字で出る
   if(!d.stages || d.stages.length !== 3) fail('③ 診断が3段ではありません');
   else for(const s of d.stages){
@@ -289,4 +356,4 @@ if(failures.length){
   process.exit(1);
 }
 console.log('AI動画の受け入れ(walk): すべて合格(既定のまま抜ける / 周期らしさと言い方が一致 / ' +
-            '断定せず目で確かめる案内 / 第2手のほうが動く / 診断3段)');
+            '断定せず目で確かめる案内 / 第2手のほうが動く / 自動がよく動くほうを採る / 診断3段)');
