@@ -14,7 +14,7 @@
    使い方:
      node tools/studio_regress.mjs --update   ゴールデン(tools/_golden/)を作り直す
      node tools/studio_regress.mjs            ゴールデンと比べる(違えば終了コード1)
-     node tools/studio_regress.mjs --only rows|segment|period|roundtrip|handlers|moveaura|changelog   項目を絞る
+     node tools/studio_regress.mjs --only rows|segment|model|period|roundtrip|handlers|moveaura|changelog   項目を絞る
 
    決まりごと:
      ・ゴールデンは生成物だが**比較の相手なので git で追跡する**(.gitignore に入れない)。
@@ -162,6 +162,44 @@ function runSegment(){
   } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
   compareJson('segment', path.join(GOLDEN, 'segment.json'), out);
   return `${SEG_IMAGES.length}枚 × ${Object.keys(SEG_BACKS).length}背景 × ${SEG_CASES.length}通り`;
+}
+
+/* ------------------------------------------------- (b2) モデル経路の骨組み
+   モデル本体(44MB・推論)はブラウザでしか動かないので、node では
+   **「モデルを使わないときの道が今までと同じか」**と**モデル専用の後処理**だけを見る。
+   推論そのものの精度は tools/studio_model_test.mjs(ヘッドレスChromium)で測る。   */
+async function runModel(){
+  const out = {};
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio_regress-model-'));
+  try{
+    composeInputs(tmp);
+    // ① resolveAlpha に通しても JS の抜き方の出力が1bitも変わらないこと(呼び分けを1か所へ寄せた)
+    for(const name of SEG_IMAGES) for(const bg of Object.keys(SEG_BACKS)){
+      const raw = fs.readFileSync(path.join(tmp, `${name}_${bg}.raw`));
+      for(const [mode, th] of SEG_CASES){
+        const chroma = mode === 'chroma' ? SEG_BACKS[bg] : null;
+        const a1 = S.segment({ width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) }, mode, th, chroma);
+        const a2 = await S.resolveAlpha({ width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) }, { mode, th, chroma });
+        const same = a1.length === a2.length && a1.every((v,i)=> v === a2[i]);
+        if(!same) fail('model', `resolveAlpha が segment と違う結果を返しました(${name}_${bg}.${mode})`);
+      }
+    }
+  } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
+  /* ② keepMajor: 体から切り離された武器・尻尾を残す。
+     16x16 の中に「大きな塊(6x6=36)」と「小さな塊(2x2=4・最大の11%)」を置くと、
+     keepLargest は小さい方を消し、keepMajor(8%)は残す。 */
+  const W = 16, fg = new Uint8Array(W*W);
+  for(let y=2;y<8;y++) for(let x=2;x<8;x++) fg[y*W+x] = 1;      // 本体
+  for(let y=12;y<14;y++) for(let x=12;x<14;x++) fg[y*W+x] = 1;  // 切り離された武器
+  const sum = m => m.reduce((a,b)=>a+b, 0);
+  out.keepLargest = sum(S.keepLargest(new Uint8Array(fg), W, W));
+  out.keepMajor   = sum(S.keepMajor(new Uint8Array(fg), W, W, S.MODEL_KEEP_RATIO));
+  if(out.keepLargest !== 36) fail('model', `keepLargest が本体だけを残していません(${out.keepLargest})`);
+  if(out.keepMajor !== 40)   fail('model', `keepMajor が切り離された部分を残していません(${out.keepMajor})`);
+  // ③ 取得先とモデルの入力の大きさは1か所で持つ(検査側に写さず、読むだけ)
+  out.src = S.MODEL_SRC; out.input = S.MODEL_INPUT; out.fallback = S.MODEL_FALLBACK;
+  compareJson('model', path.join(GOLDEN, 'model.json'), out);
+  return `resolveAlpha の一致 ${SEG_IMAGES.length*Object.keys(SEG_BACKS).length*SEG_CASES.length}通り / keepMajor`;
 }
 
 /* ------------------------------------------------------------ (c) 周期検出 */
@@ -496,6 +534,7 @@ function runChangelog(){
 const done = [];
 if(want('rows'))      done.push('行生成 ' + runRows());
 if(want('segment'))   done.push('背景抜き ' + runSegment());
+if(want('model'))     done.push('モデル経路 ' + await runModel());
 if(want('period'))    done.push('周期検出 ' + runPeriod());
 if(want('roundtrip')) done.push('往復 ' + runRoundTrip());
 if(want('handlers'))  done.push('属性 ' + runHandlers());

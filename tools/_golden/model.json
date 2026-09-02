@@ -1,0 +1,11 @@
+{
+ "keepLargest": 36,
+ "keepMajor": 40,
+ "src": {
+  "ort": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js",
+  "wasm": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/",
+  "onnx": "https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx"
+ },
+ "input": 1024,
+ "fallback": "blackopen"
+}

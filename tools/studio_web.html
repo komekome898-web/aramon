@@ -341,7 +341,11 @@
     <option value="black">黒背景・本体に黒い部分がある</option>
     <option value="white">白背景</option>
     <option value="chroma">色で抜く(背景をタップして色を拾う)</option>
+    <option value="model">モデルで抜く(おすすめ)</option>
   </select>
+  <div class="hint modelNote">
+    「モデルで抜く」は初回だけ約44MBを取得します(次回から端末内)。どんな背景でもそのまま抜けます。
+  </div>
   <div id="thWrap">
     <label>しきい値 <span id="thVal">14</span> — 大きくすると背景を多く抜きます</label>
     <input id="th" type="range" min="4" max="120" value="14">
@@ -393,6 +397,7 @@
   </div>
   <label>背景の抜き方</label>
   <select id="pmode">
+    <option value="model">モデルで抜く(おすすめ)</option>
     <option value="auto">自動(透過済みならそのまま・それ以外は歩行と同じ設定)</option>
     <option value="keep">そのまま使う(透過済みの画像)</option>
     <option value="blackopen">黒背景・本体に黒い部分が無い</option>
@@ -400,6 +405,9 @@
     <option value="white">白背景</option>
     <option value="chroma">色で抜く(背景をタップして色を拾う)</option>
   </select>
+  <div class="hint modelNote">
+    「モデルで抜く」は初回だけ約44MBを取得します(次回から端末内)。どんな背景でもそのまま抜けます。
+  </div>
   <div id="pthWrap" style="display:none">
     <label>しきい値 <span id="pthVal">14</span> — 大きくすると背景を多く抜きます</label>
     <input id="pth" type="range" min="4" max="120" value="14">
@@ -551,6 +559,8 @@
      同じ目印方式(<<AUTO:表名>> / 行末の @key コメント)を使うので、
      Mac版のCLIで作っても結果は同じになる。
    ・重い処理はすべてブラウザのcanvasで行い、外部ライブラリは使わない。
+     **唯一の例外が「モデルで抜く」(MODEL_SRC)。** 使うと決めたときだけ読み込み、
+     取れなければ今までのJSの抜き方へ落ちるので、オフラインでも全機能が動く。
 =================================================================== */
 const $ = id => document.getElementById(id);
 const TARGET_H = 250, CANVAS = 320, FEET_Y = 0.94;   // build_walk.py と同じ
@@ -933,6 +943,18 @@ function despillInPlace(img, mode, chroma, alpha){
     if(d[p+ch] > lim) d[p+ch] = lim;
   }
 }
+/* 縁を1pxぶん締める(背景色の線が残るのを防ぐ)。
+   **JSの抜き方(segment)とモデルの抜き方(segmentModel)で同じ式を使う**ので、
+   混ぜる割合の数字はここ1か所にしかない。alpha を書き換え、fg の外は 0 にして返す。 */
+const SEG_EDGE_MIN = 0.35;     // min3(締めたalpha)を混ぜる割合。残りが元のalpha
+function tightenEdge(a, fg, w, h){
+  const N = w*h;
+  const mn = min3(a, w, h);
+  for(let i=0;i<N;i++) a[i] = Math.round(a[i]*(1-SEG_EDGE_MIN) + mn[i]*SEG_EDGE_MIN);
+  a = blur3(a, w, h);
+  for(let i=0;i<N;i++) if(!fg[i]) a[i] = 0;
+  return a;
+}
 /* ImageData -> alpha(Uint8Array)。**img.data の色も書き換える**(デスピル)。
    呼び出し側はどこも「img と 戻り値の alpha」をすぐ一緒に使うので、
    色を直してから渡すのがいちばん漏れがない。 */
@@ -974,11 +996,8 @@ function segment(img, mode, th, chroma){
     if(!fg[i]){ a[i] = 0; continue; }
     a[i] = band[i] ? Math.max(0, Math.min(255, Math.round((dist[i]-lo)/span*255))) : 255;
   }
-  // 縁を1pxぶん締める(背景色の線が残るのを防ぐ)
-  const mn = min3(a, w, h);
-  for(let i=0;i<N;i++) a[i] = Math.round(a[i]*0.65 + mn[i]*0.35);
-  a = blur3(a, w, h);
-  for(let i=0;i<N;i++) if(!fg[i]) a[i] = 0;
+  // 縁を1pxぶん締める(背景色の線が残るのを防ぐ)。式は tightenEdge に1か所だけ置く
+  a = tightenEdge(a, fg, w, h);
   despillInPlace(img, mode, chroma, a);
   return a;
 }
@@ -1003,17 +1022,269 @@ function bboxOf(alpha, w, h, thr){
   }
   return x1<0 ? null : {x0,x1,y0,y1};
 }
+/* ---------------------------------------------------- モデルで抜く(RMBG-1.4)
+
+   なぜ入れるか:
+     色の距離だけで決める segment() は、影・グラデーション背景・体に近い背景色が苦手で、
+     発注者は毎回「ChatGPTで透過 → PowerDirectorでグリーンバック」という前処理をしていた。
+     学習済みの切り抜きモデルを端末の中で走らせれば、その2手が要らなくなる。
+     試験(2026-09-02・既存モンスター4体 × 難しい背景3種)で IoU 平均 0.970、
+     下の後処理まで通して 0.979(`node tools/studio_model_test.mjs --only iou --all`)。
+
+   決まりごと:
+     ・**segment() は変えない。** モデルは抜き方の選択肢が1つ増えただけで、JSの経路
+       (blackopen/black/white/chroma)の出力は1bitも変わらない(tools/studio_regress.mjs)。
+     ・**GitHub Pages に COOP/COEP は付けられない**ので SharedArrayBuffer が使えない。
+       → onnxruntime-web は**単スレッドWASM+SIMD**で動かす(numThreads=1)。SIMDは iOS 16.4+。
+     ・**取得先は MODEL_SRC の1か所。** 検査ではここへ出る通信だけを同一オリジンへ差し替える。
+     ・44MBのモデルは **Cache API** に入れ、2回目からはネットに出ない(機内でも動く)。
+       取りに行くのは「モデルで抜く」を初めて使ったときだけ(ページを開いただけでは取らない)。
+     ・**失敗したら必ず JS の既定(blackopen)へ落ちる。** 取れない・古いiOS・メモリ不足でも
+       ツール全体は今までどおり使える。分かれ道は resolveAlpha() の1か所。            */
+const MODEL_SRC = {
+  ort:  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js',
+  wasm: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/',   // wasm も同じCDNから
+  onnx: 'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx',
+};
+const MODEL_CACHE = 'aramon-studio-model-v1';  // Cache API の名前(モデルを替えたら上げる)
+/* 入力の大きさ。**量子化版の RMBG-1.4 は 1024×1024 固定**で、512 を入れると
+   onnxruntime が「Expected: 1024」で撥ねる(2026-09-02 に実測)。だから
+   「512で試して粗ければ1024」はこのモデルでは成り立たない。1024の1回だけ走らせ、
+   縁のやわらかさは測って画面に出す(次にモデルを替えるときの判断材料)。 */
+const MODEL_INPUT = 1024;
+const MODEL_SOFT_MIN = 0.03;   // 0/255以外(=やわらかい縁)の割合。これ未満なら縁が粗い
+const MODEL_MEAN = 0.5, MODEL_STD = 1.0;   // RMBG-1.4 の正規化 (x/255-0.5)/1.0
+const MODEL_FG_MIN = 128;      // 後処理で「本体」とみなすアルファの下限
+const MODEL_KEEP_RATIO = 0.08; // 最大の塊のこの割合以上なら残す(切り離された武器・尻尾を消さない)
+const MODEL_FALLBACK = 'blackopen';   // 失敗したときに落ちる先(JSの既定の抜き方)
+const MODEL_LOAD_MS = 20000;   // 推論ライブラリの読み込みを待つ上限
+const MODEL_STALL_MS = 30000;  // モデルの取得が固まったとみなす無通信の時間
+// 取得・推論の実測値。**残り時間は決め打ちせず、直前の実測から出す**(端末で10倍違う)
+const modelState = { lib:null, ort:null, sess:null, bytes:null, size:0,
+                     fetchMs:0, cached:false, lastRunMs:0, err:null };
+
+// 実機で測ってもらう「取得時間・推論時間」の置き場。歩行と静止画の両方に同じ文を出す
+function modelNote(html){
+  const els = document.querySelectorAll ? document.querySelectorAll('.modelNote') : [];
+  for(const e of els) e.innerHTML = html;
+}
+const modelMB = n => (n/1048576).toFixed(1);
+// 推論の進捗。prog={i,n} が来たら「1/16」と残り時間を出す(残りは直前の実測×残り枚数)
+function modelRunText(prog){
+  const i = prog && prog.i || 1, n = prog && prog.n || 1;
+  const rest = modelState.lastRunMs ? `・残り約${Math.max(1, Math.round(modelState.lastRunMs*(n-i+1)/1000))}秒` : '';
+  return n > 1 ? `抜いています(${i}/${n}${rest})` : `抜いています(${rest ? rest.slice(1) : 'しばらくお待ちください'})`;
+}
+/* 推論ライブラリを読む。**使うと決めた時に <script src> を1本足すだけ**にして、
+   ページを開いただけでは何も取りに行かない(オフラインでも起動が止まらない)。 */
+function loadOrtLib(){
+  if(window.ort) return Promise.resolve(window.ort);
+  if(modelState.lib) return modelState.lib;
+  modelState.lib = new Promise((res, rej)=>{
+    const s = document.createElement('script');
+    const to = setTimeout(()=> rej(new Error('推論ライブラリの読み込みが終わりません。電波の届く所でもう一度お試しください')), MODEL_LOAD_MS);
+    s.onload = ()=>{ clearTimeout(to);
+      window.ort ? res(window.ort) : rej(new Error('推論ライブラリを読み込めませんでした')); };
+    s.onerror = ()=>{ clearTimeout(to); rej(new Error('推論ライブラリを取得できませんでした(通信を確認してください)')); };
+    s.src = MODEL_SRC.ort;
+    document.head.appendChild(s);
+  }).catch(e=>{ modelState.lib = null; throw e; });   // 次に押したときは取り直せるようにする
+  return modelState.lib;
+}
+// Cache API は使えない環境(古いSafari・非HTTPS)もあるので、無くても取得だけで動くようにする
+async function modelCacheGet(){
+  try{
+    if(typeof caches === 'undefined') return null;
+    const c = await caches.open(MODEL_CACHE);
+    const r = await c.match(MODEL_SRC.onnx);
+    return r ? new Uint8Array(await r.arrayBuffer()) : null;
+  }catch(e){ return null; }
+}
+async function modelCachePut(bytes){
+  try{
+    if(typeof caches === 'undefined') return false;
+    const c = await caches.open(MODEL_CACHE);
+    await c.put(MODEL_SRC.onnx, new Response(bytes, { headers:{ 'Content-Type':'application/octet-stream' } }));
+    return true;
+  }catch(e){ return false; }   // 保存できなくても抜ける。次回また取りに行くだけ
+}
+/* モデル(44MB)を取る。進捗は ReadableStream で MB/MB を出し、
+   **一定時間なにも届かなければ諦める**(「取得中」のまま固まらせない)。 */
+async function fetchModelBytes(){
+  if(modelState.bytes) return modelState.bytes;
+  const t0 = Date.now();
+  let bytes = await modelCacheGet();
+  modelState.cached = !!bytes;
+  if(!bytes){
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let stall = ctl ? setTimeout(()=> ctl.abort(), MODEL_STALL_MS) : 0;
+    try{
+      log('モデルを取得しています…');   // 大きさは content-length を見てから出す
+      const res = await fetch(MODEL_SRC.onnx, ctl ? { signal: ctl.signal } : {});
+      if(!res || !res.ok) throw new Error(`モデルを取得できませんでした(${res ? res.status : '通信不可'})`);
+      const total = +(res.headers.get('content-length') || 0);
+      if(res.body && res.body.getReader){
+        const reader = res.body.getReader();
+        const chunks = []; let got = 0;
+        for(;;){
+          const step = await reader.read();
+          if(step.done) break;
+          if(ctl){ clearTimeout(stall); stall = setTimeout(()=> ctl.abort(), MODEL_STALL_MS); }
+          chunks.push(step.value); got += step.value.length;
+          if(total) setProg(Math.round(got/total*100));
+          log(`モデルを取得中 ${modelMB(got)}/${modelMB(total||got)}MB`);
+        }
+        bytes = new Uint8Array(got);
+        let at = 0;
+        for(const c of chunks){ bytes.set(c, at); at += c.length; }
+        chunks.length = 0;                       // 連結できたら元の切れ端は捨てる
+      }else{
+        bytes = new Uint8Array(await res.arrayBuffer());   // ReadableStream が無い端末
+      }
+      setProg(null);
+    }finally{ if(stall) clearTimeout(stall); }
+    if(!await modelCachePut(bytes)) log('モデルを端末に保存できませんでした(次回もう一度取得します)');
+  }
+  modelState.bytes = bytes;
+  modelState.size = bytes.length;      // 表示に使う大きさは決め打ちせず実物から取る
+  modelState.fetchMs = Date.now() - t0;
+  return bytes;
+}
+// 推論の入れ物。1つだけ持ち回す(作り直すと44MBを読み直すことになる)
+async function modelSession(){
+  if(modelState.sess) return modelState.sess;
+  if(modelState.err) throw modelState.err;      // 一度失敗したら取りに行き直さない
+  try{
+    const ort = await loadOrtLib();
+    modelState.ort = ort;
+    ort.env.wasm.wasmPaths = MODEL_SRC.wasm;
+    ort.env.wasm.numThreads = 1;                // SharedArrayBuffer が無い前提(§B1)
+    ort.env.wasm.simd = true;
+    const bytes = await fetchModelBytes();
+    log('モデルを用意しています…');
+    modelState.sess = await ort.InferenceSession.create(bytes, { executionProviders:['wasm'] });
+    modelState.bytes = null;                    // セッションに移したら44MBのコピーは捨てる
+    return modelState.sess;
+  }catch(e){
+    modelState.err = e instanceof Error ? e : new Error(String(e));
+    throw modelState.err;
+  }
+}
+// 技のプレビュー(iframeでゲームを動かす)の前に呼ぶ。推論の入れ物を手放してメモリを空ける
+function releaseSegmentModel(){
+  try{ modelState.sess && modelState.sess.release && modelState.sess.release(); }catch(e){}
+  modelState.sess = null; modelState.bytes = null;
+}
+/* 最大の塊の ratio 倍以上ある塊を残す。**モデル経路専用。**
+   keepLargest(最大の1つだけ)だと、体から切り離して描かれた武器・尻尾・翼が消える。
+   JS経路の keepLargest は今までどおり(出力を変えないため触らない)。 */
+function keepMajor(fg, w, h, ratio){
+  const { lbl, n } = label4(fg, w, h);
+  if(n < 1) return fg;
+  const size = new Int32Array(n+1);
+  for(let i=0;i<w*h;i++) if(lbl[i]) size[lbl[i]]++;
+  let max = 0; for(let i=1;i<=n;i++) if(size[i] > max) max = size[i];
+  const keep = max*ratio;
+  const out = new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) if(lbl[i] && size[lbl[i]] >= keep) out[i] = 1;
+  return out;
+}
+/* **モデルで抜く本体。ImageData を1枚受けて alpha(Uint8Array)を返す。**
+   動画の16コマへ掛け直す側(§A4)も、この関数を1枚ずつ呼ぶ。
+   prog={i,n} を渡すと「1/16・残り約40秒」の進捗を出す。 */
+async function segmentModel(img, prog){
+  const w = img.width, h = img.height, N = w*h, S = MODEL_INPUT;
+  const sess = await modelSession();
+  log(modelRunText(prog));
+  await sleep(0);                       // 進捗の文字を描いてから重い処理へ入る
+  // 入力: 正方形(S×S)へ詰める。戻すときも同じ比で伸ばすので、縦横比の崩れは打ち消される
+  const ic = document.createElement('canvas'); ic.width = S; ic.height = S;
+  const ix = ic.getContext('2d', { willReadFrequently:true });
+  const src = document.createElement('canvas'); src.width = w; src.height = h;
+  src.getContext('2d', { willReadFrequently:true }).putImageData(img, 0, 0);
+  ix.imageSmoothingEnabled = true; ix.imageSmoothingQuality = 'high';
+  ix.drawImage(src, 0, 0, w, h, 0, 0, S, S);
+  const d = ix.getImageData(0, 0, S, S).data;
+  let inp = new Float32Array(3*S*S);
+  for(let i=0;i<S*S;i++){
+    inp[i]         = (d[i*4]  /255 - MODEL_MEAN)/MODEL_STD;
+    inp[S*S+i]     = (d[i*4+1]/255 - MODEL_MEAN)/MODEL_STD;
+    inp[2*S*S+i]   = (d[i*4+2]/255 - MODEL_MEAN)/MODEL_STD;
+  }
+  const t0 = Date.now();
+  const feeds = {}; feeds[sess.inputNames[0]] = new modelState.ort.Tensor('float32', inp, [1,3,S,S]);
+  const res = await sess.run(feeds);
+  modelState.lastRunMs = Date.now() - t0;
+  const o = res[sess.outputNames[0]].data;
+  inp = null; feeds[sess.inputNames[0]] = null;   // 12MBの入力はここで手放す
+  // 出力を min-max で 0〜255 のアルファへ直す(モデルの出す値は 0〜1 に収まっていない)
+  let mn = Infinity, mx = -Infinity;
+  for(let i=0;i<o.length;i++){ if(o[i]<mn) mn=o[i]; if(o[i]>mx) mx=o[i]; }
+  const span = Math.max(1e-6, mx-mn);
+  const oc = document.createElement('canvas'); oc.width = S; oc.height = S;
+  const ox = oc.getContext('2d', { willReadFrequently:true });
+  const od = ox.createImageData(S, S);
+  let soft = 0;
+  for(let i=0;i<S*S;i++){
+    const v = Math.round((o[i]-mn)/span*255);
+    if(v > 0 && v < 255) soft++;
+    od.data[i*4] = od.data[i*4+1] = od.data[i*4+2] = 255;   // 色は白。alphaだけを使う
+    od.data[i*4+3] = v;
+  }
+  ox.putImageData(od, 0, 0);
+  for(const k of Object.keys(res)) { try{ res[k].dispose && res[k].dispose(); }catch(e){} }
+  // 元の大きさへ戻す
+  const rc = document.createElement('canvas'); rc.width = w; rc.height = h;
+  const rx = rc.getContext('2d', { willReadFrequently:true });
+  rx.imageSmoothingEnabled = true; rx.imageSmoothingQuality = 'high';
+  rx.drawImage(oc, 0, 0, S, S, 0, 0, w, h);
+  const back = rx.getImageData(0, 0, w, h).data;
+  let a = new Uint8Array(N);
+  for(let i=0;i<N;i++) a[i] = back[i*4+3];
+  /* 後処理は既存の関数で。**順番は segment() と同じ**:
+     背景の小さな成分(=本体の中の穴)を前景へ戻してから、大きな塊だけを残す。
+     逆にすると、keepMajor が落とした粒を dropSpecks が拾い直してしまう。 */
+  const bg0 = new Uint8Array(N);
+  for(let i=0;i<N;i++) bg0[i] = a[i] < MODEL_FG_MIN ? 1 : 0;
+  const bg = dropSpecks(bg0, w, h, Math.max(8, SEG_SPECK*w*h));
+  let fg = new Uint8Array(N);
+  for(let i=0;i<N;i++) fg[i] = bg[i] ? 0 : 1;
+  fg = keepMajor(fg, w, h, MODEL_KEEP_RATIO);
+  a = tightenEdge(a, fg, w, h);        // 縁の締めは segment() と同じ式(デスピルは掛けない)
+  const softPct = Math.round(soft/(S*S)*1000)/10;
+  modelNote(`モデルで抜きました — 取得 ${(modelState.fetchMs/1000).toFixed(1)}秒` +
+    `${modelState.cached ? '(端末内から)' : `(${modelMB(modelState.size)}MB・次回から端末内)`}` +
+    ` / 推論 ${(modelState.lastRunMs/1000).toFixed(1)}秒(${S}px)・縁のやわらかさ ${softPct}%` +
+    `${softPct < MODEL_SOFT_MIN*100 ? '(粗め)' : ''}`);
+  return a;
+}
 // 画面で選ばれている抜き方(歩行 / 静止画)
 function walkSeg(){
   return { mode: $('mode').value, th: +$('th').value, chroma: state.chroma };
 }
+/* **抜き方を実際に適用する唯一の場所。** モデルとJSの呼び分けも、モデルが駄目だったときに
+   JSの既定へ落とすのも、ここだけに書く(segment() を直接呼ぶ所を残さない)。
+   prog={i,n} は「16コマ中の何枚目か」の進捗表示用。 */
+async function resolveAlpha(img, seg, prog){
+  if(seg.mode === 'model'){
+    try{ return await segmentModel(img, prog); }
+    catch(e){
+      const why = String(e && e.message || e);
+      log(`モデルで抜けませんでした(${why})。いつもの抜き方(黒背景)で続けます。` +
+          '電波の届く所でもう一度試すか、抜き方を選び直してください。', 'ng');
+      modelNote(`<span class="ng">モデルは使えませんでした: ${why}</span>`);
+      return segment(img, MODEL_FALLBACK, seg.th, seg.chroma);
+    }
+  }
+  return segment(img, seg.mode, seg.th, seg.chroma);
+}
 // 透過済みの画像はその透過をそのまま使い、そうでなければ抜く
-function imageAlphaFor(img, seg){
+async function imageAlphaFor(img, seg, prog){
   const N = img.width*img.height;
   const a = new Uint8Array(N);
   let has = false;
   for(let i=0;i<N;i++){ a[i] = img.data[i*4+3]; if(a[i] < 250) has = true; }
-  return has ? a : segment(img, seg.mode, seg.th, seg.chroma);
+  return has ? a : await resolveAlpha(img, seg, prog);
 }
 // {img, alpha, box} -> 切り抜いた RGBA の canvas
 function cropCanvas(cut){
@@ -1390,7 +1661,7 @@ async function buildWalkFrames(file, onProgress){
     const cuts = [];
     for(let k=0;k<CAND_N;k++){
       const img = shots[k];
-      const a = segment(img, seg.mode, seg.th, seg.chroma);
+      const a = await resolveAlpha(img, seg, { i:k+1, n:CAND_N });
       cuts.push({ img, alpha:a, box: bboxOf(a, w, h) });
       if(onProgress) onProgress(80 + Math.round((k+1)/CAND_N*20));
       walkStep(`絵を抜いています… ${k+1} / ${CAND_N}`);
@@ -1424,7 +1695,7 @@ async function cutForSide(side){
   const fs = imageFilesFor(side);
   if(!fs.length) throw new Error('画像を選んでください');
   const img = await fileToImageData(fs[0]);
-  const a = imageAlphaFor(img, walkSeg());
+  const a = await imageAlphaFor(img, walkSeg());
   return { img, alpha:a, box: bboxOf(a, img.width, img.height) };
 }
 async function ensureRig(side){
@@ -1474,7 +1745,7 @@ async function buildWalkFromImages(files, onProgress, side){
   const cuts = [];
   for(let i=0;i<files.length;i++){
     const img = await fileToImageData(files[i]);
-    const a = imageAlphaFor(img, seg);
+    const a = await imageAlphaFor(img, seg, { i:i+1, n:files.length });
     cuts.push({ img, alpha:a, box: bboxOf(a, img.width, img.height) });
     if(onProgress) onProgress(Math.round((i+1)/files.length*70));
   }
@@ -2072,9 +2343,9 @@ async function makePortrait(file){
     alpha = new Uint8Array(w*h);
     for(let i=0;i<w*h;i++) alpha[i] = img.data[i*4+3];
   }else if(pm === 'auto'){                 // 透過済みならそのまま / それ以外は歩行と同じ設定
-    alpha = imageAlphaFor(img, walkSeg());
-  }else{                                   // 静止画だけの抜き方を明示指定
-    alpha = segment(img, pm, +$('pth').value, state.chromaP);
+    alpha = await imageAlphaFor(img, walkSeg());
+  }else{                                   // 静止画だけの抜き方を明示指定(モデルもここ)
+    alpha = await resolveAlpha(img, { mode:pm, th:+$('pth').value, chroma:state.chromaP });
   }
   const b = bboxOf(alpha, w, h, 8);
   if(!b) throw new Error('被写体を検出できませんでした');
@@ -4144,18 +4415,19 @@ function boot(){
   $('md_gachaKind').onchange = updatePickupNote;
   $('md_pickup').onchange = updatePickupNote;
   const defTh = m => m === 'white' ? 20 : (m === 'chroma' ? 60 : 14);
+  // モデルで抜くときは、しきい値も背景色も使わない(判定はここ1か所)
+  const usesTh = m => m !== 'model';
   $('th').oninput = ()=> $('thVal').textContent = $('th').value;
   $('mode').onchange = ()=>{
     const m = $('mode').value;
-    $('thWrap').style.display = 'block';
+    $('thWrap').style.display = usesTh(m) ? 'block' : 'none';
     $('chromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
-    $('th').value = defTh(m);
-    $('thVal').textContent = $('th').value;
+    if(usesTh(m)){ $('th').value = defTh(m); $('thVal').textContent = $('th').value; }
     if(m === 'chroma') fillPicker('w');
   };
   $('pth').oninput = ()=> $('pthVal').textContent = $('pth').value;
   $('pmode').onchange = ()=>{
-    const m = $('pmode').value, own = (m !== 'auto' && m !== 'keep');
+    const m = $('pmode').value, own = (m !== 'auto' && m !== 'keep' && usesTh(m));
     $('pthWrap').style.display = own ? 'block' : 'none';
     $('pchromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
     if(own){ $('pth').value = defTh(m); $('pthVal').textContent = $('pth').value; }

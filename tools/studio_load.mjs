@@ -36,7 +36,10 @@ const REQUIRED = [
   // 背景の抜き方
   'segment', 'keyDistance', 'segLowThreshold', 'despillInPlace', 'keepLargest', 'dropSpecks',
   'fillSmallHoles', 'borderConnected', 'label4', 'blur3', 'min3', 'erode2', 'dilate2', 'bboxOf',
-  'cornerRgbs', 'cornerRgb', 'cornerHint',
+  'cornerRgbs', 'cornerRgb', 'cornerHint', 'tightenEdge', 'SEG_EDGE_MIN',
+  // 背景の抜き方(モデル)。呼び分けは resolveAlpha 1か所
+  'segmentModel', 'resolveAlpha', 'imageAlphaFor', 'keepMajor', 'releaseSegmentModel',
+  'MODEL_SRC', 'MODEL_CACHE', 'MODEL_INPUT', 'MODEL_FG_MIN', 'MODEL_KEEP_RATIO', 'MODEL_FALLBACK',
   // 動画・周期
   'detectPeriod', 'grayDiff',
   // data.js を読む側
