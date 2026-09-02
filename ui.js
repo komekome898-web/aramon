@@ -12667,6 +12667,10 @@ function renderAdminRaidAnalysis(){
       期間の序盤ほど予測はぶれるので、<b>終盤に見た数字を採用してください。</b></div>`;
 }
 // 管理者画面: SE確認グリッド(全SEをタップで再生)
+/* **このうち技に使える音は tools/studio_web.html の SE_FALLBACK にも写してある。**
+   スタジオはゲームを読み込まずに単体で動くので、プレビューを開く前でもSEを選べるように
+   一覧を持っている(開いたあとは driver がこの表そのものを送るので日本語名つきに変わる)。
+   技に使える音をここへ足したら、あちらへも足すか検討すること。 */
 const SE_TEST_LABELS = {
   tap:'ボタン ポン', cardSwipe:'カード送り シュッ', jakiin:'開始/状態変化 ジャキーン', train:'トレーニング ポワポワ', pickup:'取得 ピュイン',
   fire:'技発射 バァン', hitTaken:'被弾 ドスッ', noGuts:'ガッツ不足 ピピピ', fireRoar:'炎 ボオオオ',

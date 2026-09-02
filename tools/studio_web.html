@@ -2862,16 +2862,22 @@ const TIER3 = {
   crescent:{ kind:'proj', tier:3, dmg:21, cooldown:2.0, gutsCost:24, range:1340, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' },
   spear:   { kind:'proj', tier:3, dmg:22, cooldown:2.2, gutsCost:24, range:1350, projSpeed:1150, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5 } },
 };
-/* テンプレートの kind ごとに**効かないので隠す欄**(キー = 入力欄の id の後半)。
+/* 技が「弾(proj)」か「範囲(aoe)」かで**効かないので隠す欄**(キー = 入力欄の id の後半)。
    根拠は combat.js の fireMove: aoeShape を持つ技は buildAe(範囲)の枝へ行くので、
-   弾を組み立てる所でしか読まれない blast / projVisR / hitR / projStyle / splash /
+   弾を組み立てる所でしか読まれない blast / projVisR / hitR / projStyle /
    growWithDistance が一切効かない。逆に弾の枝は aoeStyle を読まない。
    **burst / burstGap / burstSpread / burstSpreadRandom / burstDirs / burstDirSpread /
-   projSpeed は範囲技でも効く**(連射は burstCount の輪、projSpeed は伸びる速さ fillSpeed)ので隠さない。 */
+   projSpeed は範囲技でも効く**(連射は burstCount の輪、projSpeed は伸びる速さ fillSpeed)ので隠さない。
+   splash は範囲技でも読まれないが**tier3 に入力欄が無い**(tier1 だけ)ので、ここには書かない
+   —— 欄の無いキーを並べても何も起きず、読む人に「そういう欄がある」と誤解させるだけ。 */
 const MOVE_HIDE_BY_KIND = {
-  aoe:  ['hitR','splash','projStyle','projVisR','growWithDistance','blastRadius','blastDmg'],
+  aoe:  ['hitR','projStyle','projVisR','growWithDistance','blastRadius','blastDmg'],
   proj: ['aoeStyle'],
 };
+/* 弾か範囲かで欄が変わるのは tier3 だけ(tier1/tier2 は必ず弾)。
+   **この段以外の欄をこの規則で隠さない** —— hitR は tier1/2 にもあるので、
+   段を見ずに当てると tier3 が範囲のときに tier1 の当たり半径まで黙って捨てる。 */
+const MOVE_KIND_TIER = 2;
 const KIND_NOTE = {
   aoe:  '範囲の技なので、当たり半径・弾の見た目・弾の絵の大きさ・爆風・飛ぶほど大きく の欄は出しません(効きません)。',
   proj: '弾の技なので、範囲の見た目の欄は出しません(効きません)。',
@@ -2989,11 +2995,13 @@ const MOVE_BLAST_TIER = 2;
 function moveBaseFor(i){ return moveBaseInfo(i).base; }
 function moveNumKeys(i){ return MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[i] || []); }
 function moveField(i, key){ return $('m' + i + '_' + key); }
-/* その欄が「効かないので隠してある」か。**隠した欄の値は集めない** ――
-   形を替える前に書いた爆風の数字が、隠れたまま行へ焼かれるのを防ぐ。 */
+/* その欄が「いまの技には効かない」か。**効かない欄の値は集めない** ――
+   形を替える前に書いた爆風の数字が、そのまま行へ焼かれるのを防ぐ。
+   **画面の hidden を見ない**(見ていた前の版は、欄を出し直す前に読むと
+   前の形の隠し方で判断していた)。規則は moveKindNow + MOVE_HIDE_BY_KIND の1組が正。 */
 function moveFieldHidden(i, key){
-  const el = moveField(i, key);
-  return !!(el && el.parentElement && el.parentElement.hidden);
+  if(i !== MOVE_KIND_TIER) return false;
+  return (MOVE_HIDE_BY_KIND[moveKindNow()] || []).indexOf(key) >= 0;
 }
 
 /* 入力欄の薄字(既定)を、いまのテンプレートから貼り直す。
@@ -3024,19 +3032,56 @@ function refreshMoveDefaults(){
   applyMoveKindVisibility();
   refreshMoveBakeNotes();
 }
-/* テンプレートが弾か範囲かで、効かない欄を隠す。**判定は TIER3 の kind 1か所。**
+/* **いま tier3 の欄に入っている技が「弾」か「範囲」か。判定はこの関数1つ。**
+   正は combat.js の fireMove の分かれ道そのもの = その技が aoeShape を持つかどうか。
+
+   【なぜテンプレートだけで決めないか】「登録済みを開いて直す」ではテンプレートを選ばない。
+   形の欄には前に見ていた形が残っているだけなので、それで決めると
+   **開いた技の実値を隠して嘘の説明を出す** —— ジョーカー(弾・scythe)を開いたのに
+   「範囲の技なので当たり半径…は効きません」と出て、hitR:22 と projStyle:'scythe' が
+   消えていた(欄が隠れると collectMoveEdits も値を捨てる)。
+
+   ①テンプレートを選んで作る新規登録では、テンプレートが技そのもの。
+   ②開いて直すときは、読み込んだ技(aoeShape を持つか)が正。
+   ③どちらも無いときだけ、欄に入っている見た目から推す。どれでもなければ隠さない
+     ―― 隠して嘘を出すより、効かない欄が出ているほうがまだ害が小さい。 */
+function moveKindNow(){
+  /* ② 開いて直しているなら読み込んだ技が正。**テンプレートより先に見る** ――
+     班D' が「テンプレート無し」を足すまで、形の欄は人が選んだとは限らないため。 */
+  const mv = editedMove(MOVE_KIND_TIER);
+  if(mv) return mv.aoeShape ? 'aoe' : 'proj';
+  // ① 新規登録。テンプレートが技そのもの
+  const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
+  if(t) return t.kind || null;
+  // ③ 欄の見た目から推す(テンプレート無しで、読み込んだ技も取れないとき)
+  const aoe = $('m2_aoeStyle'), proj = $('m2_projStyle');
+  if(aoe && aoe.value) return 'aoe';
+  if(proj && proj.value) return 'proj';
+  return null;
+}
+/* 「開いて直す」で読み込んだ i 段目の技。**置き場所を知っているのはここだけ。**
+   (班D' が state.edit.moves を足す見込みなので、そちらも見る) */
+function editedMove(i){
+  if(typeof isEdit !== 'function' || !isEdit()) return null;   // 新規登録では読み込んだ技を見ない
+  const e = (typeof state !== 'undefined' && state) ? state.edit : null;
+  if(!e || e.kind === 'ssr') return null;
+  const list = e.moves || (e.cur && e.cur.moves);
+  return (list && list[i]) || null;
+}
+/* 弾か範囲かで、効かない欄を隠す。判定は moveKindNow 1か所。
    隠すのは欄を囲む <div>(ラベルごと消したいため)。 */
 function applyMoveKindVisibility(){
-  const kind = (TIER3[$('m2_tpl') ? $('m2_tpl').value : ''] || {}).kind || null;
+  const kind = moveKindNow();
   const hide = MOVE_HIDE_BY_KIND[kind] || [];
   for(const list of Object.values(MOVE_HIDE_BY_KIND)) for(const k of list){
-    const el = moveField(2, k);
+    const el = moveField(MOVE_KIND_TIER, k);
     if(el && el.parentElement) el.parentElement.hidden = hide.indexOf(k) >= 0;
   }
   if($('m2_kindNote')) $('m2_kindNote').textContent = KIND_NOTE[kind] || '';
 }
-/* 「入力した数字が、特性の倍率で最終的にいくつになるか」を欄の下に出す。
-   計算は traitBakedValue(buildMoves と同じ関数)なので、表示と実際の行が食い違わない。 */
+/* 「入力した数字が、書き出すときに最終的にどうなるか」を欄の下に出す。
+   計算は traitBakedValue / moveBlastNow(集める側とまったく同じ関数)なので、
+   表示と実際に焼かれる行が食い違わない。**書き換えるのは説明の1行だけで、入力欄には触らない。** */
 function refreshMoveBakeNotes(){
   const ef = (typeof collectTraitEffects === 'function') ? collectTraitEffects() : {};
   const jp = { range:'射程', projSpeed:'弾速', gutsCost:'消費ガッツ' };
@@ -3047,13 +3092,18 @@ function refreshMoveBakeNotes(){
     for(const k in TRAIT_MULT_KEYS){
       const mult = ef[TRAIT_MULT_KEYS[k]];
       if(!mult) continue;
-      const el = moveField(i, k);
-      if(el && el.parentElement && el.parentElement.hidden) continue;   // 隠した欄の話はしない
+      if(moveFieldHidden(i, k)) continue;                 // 効かない欄の話はしない
       const now = moveNumValue(i, k);
       const v = (now != null) ? now : base[k];
       if(v == null) continue;
       parts.push(`${jp[k]} ${v} → ${traitBakedValue(k, v, ef)}(特性の倍率 ×${mult})`);
     }
+    /* 爆風の威力を書いていないときに何が入るかを**ここで知らせる**。
+       以前は collectMoveEdits が欄へ書き戻していたが、あれは3秒ごと(プレビューの撃ち直し)に
+       呼ばれるので、打っている途中の欄が勝手に埋まり、そのあと形や威力を変えても
+       追従しなくなっていた。**集める関数は画面を書き換えない。** */
+    const bl = (i === MOVE_BLAST_TIER) ? moveBlastNow(i) : null;
+    if(bl && bl.autoDmg != null) parts.push(`爆風の威力は技の威力(${bl.autoDmg})になります`);
     note.textContent = parts.length ? '書き出すときはこうなります: ' + parts.join(' / ') : '';
   }
 }
@@ -3091,8 +3141,33 @@ function moveInputErrors(){
     return `${jp[i]} の「${key}」に数字として読めない値があります: ${el ? el.value.trim() : ''}`;
   });
 }
+/* 爆風(blast:{radius,dmg})の作り方。**式はここ1つ**で、集める側(collectMoveEdits)と
+   見せる側(refreshMoveBakeNotes)の両方がこれを通る。
+   ・「テンプレートの爆風 + 触った所」にする(丸ごと置き換えると expandTime が消える)。
+   ・**半径と威力は両方そろえる。** 半径だけ書くと spawnGroundBlast の既定で威力0の爆風になり、
+     「爆風を足したのに何も起きない」と見える(音も光も出るので気づけない)。
+     威力を書いていなければその技の威力を使い、そのことを autoDmg で知らせる。
+   触っていなければ null。**画面は書き換えない。** */
+function moveBlastNow(i){
+  const r = moveNumValue(i, 'blastRadius'), d = moveNumValue(i, 'blastDmg');
+  if(r == null && d == null) return null;              // 爆風の欄を触っていない
+  const base = moveBaseFor(i);
+  const b = Object.assign({}, base.blast || {});
+  if(r != null) b.radius = r;
+  if(d != null) b.dmg = d;
+  if(b.radius == null) return null;                    // 半径が無ければ爆風にならない
+  let autoDmg = null;
+  if(b.dmg == null){
+    const own = moveNumValue(i, 'dmg');
+    b.dmg = (own != null) ? own : base.dmg;
+    autoDmg = b.dmg;
+  }
+  return { blast:b, autoDmg };
+}
 /* その段で**実際に触られた項目だけ**を集める。触っていない項目は入れない
-   (入れると spec が今までと変わり、行の並びが動く恐れがある)。 */
+   (入れると spec が今までと変わり、行の並びが動く恐れがある)。
+   **この関数は画面を書き換えない** ―― プレビュー中は3秒ごとに呼ばれるので、
+   ここで欄を埋めると打っている途中の入力を奪い、そのあとの変更にも追従しなくなる。 */
 function collectMoveEdits(i){
   const out = {};
   const info = moveBaseInfo(i);
@@ -3107,27 +3182,10 @@ function collectMoveEdits(i){
     const b = (el.value === '1');
     if(b !== !!base[k]) out[k] = b;
   }
-  /* 爆風は「テンプレートの爆風 + 触った所」。丸ごと置き換えると expandTime が消える。
-     **半径と威力は両方そろえる。** 半径だけ書くと spawnGroundBlast の既定で
-     威力0の爆風になり、「爆風を足したのに何も起きない」と見える(音も光も出るので気づけない)。
-     テンプレートに爆風が無いときは、その技の威力を爆風の威力にする。 */
+  /* 爆風。作り方は moveBlastNow が持つ(見せる側の refreshMoveBakeNotes も同じ関数を通る)。 */
   if(i === MOVE_BLAST_TIER){
-    const r = moveNumValue(i, 'blastRadius'), d = moveNumValue(i, 'blastDmg');
-    if(r != null || d != null){
-      const b = Object.assign({}, base.blast || {});
-      if(r != null) b.radius = r;
-      if(d != null) b.dmg = d;
-      if(b.radius != null){                                // 半径が無ければ爆風にならない
-        if(b.dmg == null){
-          b.dmg = (out.dmg != null) ? out.dmg : base.dmg;
-          /* **補った威力は欄へ書き戻す。** 書き戻さないと画面は空欄のままで、
-             送られる行にだけ知らない数字が入る(なぜその威力なのか分からなくなる)。 */
-          const dEl = moveField(i, 'blastDmg');
-          if(dEl && !dEl.value.trim() && b.dmg != null) dEl.value = String(b.dmg);
-        }
-        out.blast = b;
-      }
-    }
+    const bl = moveBlastNow(i);
+    if(bl) out.blast = bl.blast;
   }
   // 見た目とSE。空(=「テンプレートのまま」)なら入れない
   for(const k of ['projStyle','aoeStyle','seStyle']){
@@ -3205,7 +3263,9 @@ const FX_STORE = 'backup';
 const FX_BACKUP_KEY = 'localStorage';    // 退避した中身
 const FX_MARK_KEY = 'previewing';        // 「プレビュー中」の印。次回起動時にこれがあれば戻す
 const FX_FIRE_MS = 3000;                 // 撃ち直す間隔
-const fxPreview = { frame:null, timer:null, seq:0, before:null, open:false };
+/* note = 「性能は編集中の値で見ています」の断り。撃つたびに fxStat を書き直すので、
+   1か所に持って毎回くっつける(消えると何の数字で見ているのか分からなくなる)。 */
+const fxPreview = { frame:null, timer:null, seq:0, before:null, open:false, note:'' };
 
 function fxIdb(){
   return new Promise((res, rej)=>{
@@ -3303,11 +3363,45 @@ function fxAsk(msg, ms){
   });
 }
 // いま画面に入っている3技を、ゲームが読む形(buildMoves の出力)に焼く
-function fxMovesNow(){ const spec = collectSpec(); return buildMoves(spec); }
+function fxMovesNow(){
+  const spec = collectSpec();
+  const moves = buildMoves(spec);
+  return { spec, moves, auras: fxAurasNow(spec, moves) };
+}
+/* 技のオーラ(技名 → 色)。**プレビューでも本番と同じ色を出すために driver へ渡す。**
+   ゲーム側の焼き込み(data.js:929)は読み込みのときの1回きりなので、差し替えた技の色は
+   こちらが決めて渡すしかない。値の出どころは登録の種類で分かれる:
+     ・開いて直す = data.js の MOVE_AURA に**今入っている**値(技名を変えても色は引き継ぐ)
+     ・新規登録   = これから MOVE_AURA へ書く値。renderRows と同じ spec.moveAura || spec.aura
+   **どちらも「登録後に生成される MOVE_AURA」と同じ値**になる。 */
+function fxAurasNow(spec, moves){
+  const out = {};
+  const cur = (typeof isEdit === 'function' && isEdit() && state.edit
+               && state.edit.kind !== 'ssr') ? state.edit.cur : null;
+  moves.forEach((mv, i)=>{
+    if(!mv || !mv.name) return;
+    const a = cur ? ((cur.moveAura || [])[i]) : (spec.moveAura || spec.aura);
+    if(a) out[mv.name] = a;
+  });
+  return out;
+}
+/* force で上書きした仕様の項目名(画面に出すためだけ。キーは ELEMENTS のものが正)。 */
+const FX_FORCE_JP = { label:'名前', color:'色', dark:'暗い色', accent:'差し色', speed:'速度', hp:'HP',
+  trait:'特性', speedMod:'速さ倍率', cooldownMod:'クールタイム倍率', dmgDealtMod:'与ダメージ倍率',
+  dmgTakenMod:'被ダメージ倍率', gutsRegenMod:'ガッツ回復倍率', hitboxMult:'当たりの大きさ' };
 
 async function openFxPreview(){
   if(fxPreview.open) return;
+  /* 【いちばん先に片付ける】前回の退避のパネルが出たまま開かせない。
+     開くと下の②が退避を上書きし、⑤の直後に消してしまうので、パネルに残った
+     **古い snapshot を「書き戻す」と、そのあと遊んだ記録まで巻き戻す**。
+     どちらにするかを人に決めてもらってから開く。 */
+  if(fxLeftover){
+    fxStat('先に上の「前回のプレビューの退避」を、戻すか捨てるか決めてください。', 'ng');
+    return;
+  }
   fxPreview.open = true;
+  fxPreview.note = '';
   $('fxOpenBtn').disabled = true;
   try{
     /* ① 動画を必ず手放す(§11 [37])。動画のデコーダを抱えたままゲームを1本
@@ -3368,15 +3462,26 @@ async function openFxPreview(){
        新しいモンスターでは必ず「speed が読めない」で落ちる(実測)。
        既に本物の表にあるキーなら driver 側が何もしない(本物の性能で見たいので)。 */
     const el = $('f_key').value.trim() || 'zan';
-    const spec = collectSpec();
-    await fxAsk({ cmd:'defineElement', key: el, aura: spec.aura, aptitude: spec.aptitude, def: {
+    const { spec, moves, auras } = fxMovesNow();
+    const def = {
       label: spec.label || el, color: spec.color, dark: spec.dark, accent: spec.accent,
       speed: spec.speed, hp: spec.hp, trait: spec.trait,
       speedMod: spec.speedMod, cooldownMod: spec.cooldownMod, dmgDealtMod: spec.dmgDealtMod,
       dmgTakenMod: spec.dmgTakenMod, gutsRegenMod: spec.gutsRegenMod, hitboxMult: spec.hitboxMult,
-    } });
+    };
+    /* **「開いて直す」では上書きさせる(force)。** 既に本物の表にあるキーなので、
+       上書きしないと仕様パネルで直した速度・HP・当たりの大きさ・クールタイムの倍率が
+       プレビューに出ず、**本番の値のまま**見ることになる(直したのに変わらない、と見える)。
+       新規登録は表に無いキーなので force は要らない。 */
+    const de = await fxAsk({ cmd:'defineElement', key: el, aura: spec.aura, aptitude: spec.aptitude,
+                             force: (typeof isEdit === 'function') && isEdit(), def });
+    /* 何の数字で見ているのかを画面に出す。分からないまま数字を比べるのがいちばん危ない。 */
+    const ov = (de && de.overrode) || [];
+    fxPreview.note = ov.length
+      ? ` 性能は編集中の値(${ov.map(k=> (FX_FORCE_JP[k] || k) + def[k]).join('・')})で見ています。`
+      : '';
     // ⑧ 技を先に入れてから舞台を作る(描画が SIGNATURE_MOVES[キー] を毎フレーム読むため)
-    await fxAsk({ cmd:'override', element: el, moves: buildMoves(spec) });
+    await fxAsk({ cmd:'override', element: el, moves, auras });
     // ⑨ 舞台を作る → 語彙を貰う → 技を差し替える → 撃つ
     const st = await fxAsk({ cmd:'setup', element: el, mapKey: $('fx_map').value, view: $('fx_view').value,
                   mode:'preview', silent:false, seed: Date.now() & 0x7fffffff }, 40000);
@@ -3401,12 +3506,13 @@ async function openFxPreview(){
 async function fxFire(){
   if(!fxPreview.frame) return;
   const el = $('f_key').value.trim() || 'zan';
-  const moves = fxMovesNow();
-  await fxAsk({ cmd:'override', element: el, moves });
+  const { moves, auras } = fxMovesNow();
+  await fxAsk({ cmd:'override', element: el, moves, auras });
   const r = await fxAsk({ cmd:'fire', tier: +$('fx_tier').value });
   fxStat(`「${r.name}」を撃ちました(出た弾 ${r.added}発 / 範囲 ${r.addedAe})。` +
          `${FX_FIRE_MS/1000}秒ごとに撃ち直します。` +
-         (fxVocab.cacheName ? ` 読み込んだ版: ${fxVocab.cacheName}` : ''));
+         (fxVocab.cacheName ? ` 読み込んだ版: ${fxVocab.cacheName}` : '') +
+         fxPreview.note);
   return r;
 }
 /* 「🔊 音を出す」。**タップの同期処理のまま** iframe へ頼むので iOS でも必ず通る
@@ -3429,6 +3535,7 @@ async function closeFxPreview(){
   $('fxSoundBtn').disabled = true;
   $('fxOpenBtn').disabled = false;
   fxPreview.open = false;
+  fxPreview.note = '';
   // 退避を戻す(差し替えが効いていれば中身は同じなので、実質なにも起きない)
   let msg = '';
   if(fxPreview.before){
@@ -3441,7 +3548,10 @@ async function closeFxPreview(){
       : '保存データ: 変更なし';
     fxPreview.before = null;
   }
-  try{ await fxIdbDel(FX_MARK_KEY); }catch(e){}
+  /* **印と退避の両方を消す。** 印だけ消していたので、⑤(harnessOk の確認)より手前で
+     落ちたときに退避だけが IndexedDB に残り、印が無いので fxRestoreIfLeft も拾えず、
+     誰も見ない古い保存データが端末に居座っていた。 */
+  try{ await fxIdbDel(FX_MARK_KEY); await fxIdbDel(FX_BACKUP_KEY); }catch(e){}
   fxStat(msg || 'プレビューを閉じました。');
 }
 /* 画面が裏へ回ったら撃ち直しを止める(電池と、戻ったときの音の積み残し対策)。 */
@@ -6358,9 +6468,12 @@ function boot(){
   fillVocabSelects();
   // 撃ち直す間隔は FX_FIRE_MS が正。文言はここで埋める(同じ数字をHTMLへ書かない)
   fxStat(`ゲーム本体をそのまま読み込んで、いまの数字で技を撃ちます(${FX_FIRE_MS/1000}秒ごとに撃ち直し)。`);
-  /* 特性の倍率が掛かる欄と、倍率そのものの欄。どちらを触っても「焼かれる値」を出し直す。 */
+  /* 特性の倍率が掛かる欄と、倍率そのものの欄。どちらを触っても「焼かれる値」を出し直す。
+     爆風と tier3 の威力も入れる —— 半径だけ書いたときに「爆風の威力は技の威力(21)に
+     なります」と出す説明が、打ったその場で更新されるようにするため。 */
   for(const id of ['m0_range','m0_projSpeed','m0_gutsCost','m1_range','m1_projSpeed','m1_gutsCost',
-                   'm2_range','m2_projSpeed','m2_gutsCost','f_efRange','f_efProjSpeed','f_efGutsCost'])
+                   'm2_range','m2_projSpeed','m2_gutsCost','f_efRange','f_efProjSpeed','f_efGutsCost',
+                   'm2_dmg','m2_blastRadius','m2_blastDmg'])
     if($(id)) $(id).addEventListener('input', refreshMoveBakeNotes);
   /* マップと向きを変えたら開き直す。**iframe は開くときに作り閉じるときに壊す**ので、
      開いたまま作り直さない(startGame を1つの iframe で2度呼ばない)。 */
@@ -6514,6 +6627,11 @@ function boot(){
     /* 技パネルごと隠れるときはプレビューも閉じる。
        隠れた iframe の中でゲームが回り続けると、見えないまま電池とメモリを食う。 */
     if($('movePanel').style.display === 'none' && fxPreview.open) closeFxPreview();
+    /* 技パネルを出すときは、弾か範囲かの出し分けもやり直す。**loadExisting は
+       技を読み込んだ最後にここを通る**ので、開いた技に合わせて欄が出る
+       ―― やり直さないと、読み込む前の形の隠し方が残ったままになる
+       (ジョーカーを開いても「範囲の技なので…」の説明が消えなかった)。 */
+    else if($('movePanel').style.display !== 'none') applyMoveKindVisibility();
     $('regHint').textContent = edit
       ? '登録済みのモンスター・SSRスキンを開いて直します。**触った欄だけ**を書き戻すので、'
         + '手書きのコメントも、この画面に無い設定もそのまま残ります。'

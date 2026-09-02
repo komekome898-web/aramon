@@ -10,8 +10,13 @@
         実値と同じ数を混ぜると「差し替えが効いていない」ときも合格してしまう。
      ⑥ **まだ data.js に無いキー**でも、defineElement → setup → override → fire で弾が出るか
         (スタジオで作りかけのモンスターを撃つ道。createMonster が ELEMENTS[key] を読む)
-     ⑦ プレビューでは**安置が縮まない**か — 61秒(ZONE_PHASES[0].holdTime)を超えて回しても
+     ⑦ 技のオーラは**呼ぶ側が渡した色**が乗るか — MOVE_AURA に無い技名でも、
+        override に auras を渡せばその色になる。**渡さなければ data.js:929 と同じで付かない**
+        (前は MONSTER_AURA へ落としていて、data.js と食い違っていた)
+     ⑧ プレビューでは**安置が縮まない**か — 61秒(ZONE_PHASES[0].holdTime)を超えて回しても
         phaseIndex が 0 のまま・アイテムが湧かない・自機が生きている
+     ⑨ defineElement の force — 既にある本物のキーでも、force を付けたときだけ性能が入れ替わり、
+        付けなければ本物のまま(スタジオの「開いて直す」で直した数字を見るための道)
 
    使い方:
      node tools/harness_test.mjs              index.html 側の harness=1 だけで検査(既定)
@@ -52,6 +57,9 @@ const BURSTS    = [3, 9];
 /* まだ data.js に無いキーでのプレビュー(スタジオで作りかけのモンスター)。
    ELEMENTS にも SIGNATURE_MOVES にも無いので、defineElement を通さないと落ちる。 */
 const NEW_EL    = 'studio_probe_x';
+/* オーラは**呼ぶ側が渡した色**が乗る。zan の MONSTER_AURA(black)とも
+   MOVE_AURA のどの値とも取り違えないよう、渡す色は 'green' にしておく。 */
+const AURA_WANT = 'green';
 /* 安置を回してみる長さ。**phaseIndex 0 の holdTime(data.js の ZONE_PHASES = 61秒)を超える**
    ことだけが条件なので、余裕を見て70秒ぶん進める。 */
 const ZONE_SEC  = 70;
@@ -180,11 +188,22 @@ const ran = await page.evaluate(async (a)=>{
       await new Promise(r2=> setTimeout(r2, 400));
     }
     out.matchTime = +matchTime.toFixed(2);
-    /* ⑦ 安置。**61秒の壁を越えて回す。** プレビューは rAF が生きているので実時間でも
+    /* ⑧ 安置。**61秒の壁を越えて回す。** プレビューは rAF が生きているので実時間でも
        進むが、それだけだと70秒待つことになるので step() でまとめて進める
        (update(dt) を回す = updateZone / updateTrainingRange のどちらを通るかの検査そのもの)。 */
     window.__fx.step(a.zoneSec, 1/30, false);
     out.zone = await ask({ cmd:'zone' });
+    /* ⑨ defineElement の force。**本物の表にあるキー**の性能を入れ替えられるか。
+       force を付けないときは触らない(本物の性能で見る従来の道)ことも一緒に見る。
+       **ELEMENTS を書き換えるので、弾と安置の検査を全部終えた最後にやる。** */
+    const hp0 = ELEMENTS[a.el].hp, sp0 = ELEMENTS[a.el].speed;
+    out.forceWant = { hp: hp0 + 77, speed: sp0 + 55 };
+    await ask({ cmd:'defineElement', key:a.el, def: out.forceWant });
+    out.forceOff = { hp: ELEMENTS[a.el].hp, speed: ELEMENTS[a.el].speed };
+    const fd = await ask({ cmd:'defineElement', key:a.el, force:true, def: out.forceWant });
+    out.forceOn = { hp: ELEMENTS[a.el].hp, speed: ELEMENTS[a.el].speed,
+                    overrode: fd.overrode, forced: fd.forced };
+    out.forceBase = { hp: hp0, speed: sp0 };
   }catch(e){ out.error = String(e && e.message || e).slice(0, 300); }
   return out;
 }, { el:TEST_EL, tier:TEST_TIER, bursts:BURSTS, zoneSec:ZONE_SEC });
@@ -219,14 +238,24 @@ const ranNew = await page.evaluate(async (a)=>{
     // 技はスタジオが作る形(いま画面にある3技)と同じ「素の3技」を渡す
     const moves = JSON.parse(JSON.stringify(SIGNATURE_MOVES[a.donor]));
     moves[a.tier-1].burst = a.burst;
-    moves[a.tier-1].name = 'けんさの技';       // MOVE_AURA に無い名前(オーラの落ち先を見る)
+    moves[a.tier-1].name = 'けんさの技';       // MOVE_AURA に無い名前(オーラの決まり方を見る)
+    /* 借りてきた技には data.js:929 が焼いた aura が既に入っている。**消してから見る** ――
+       消さないと「渡さなくても色が付く」ことになり、落とし方の検査にならない。 */
+    delete moves[a.tier-1].aura;
+    /* ⑦ オーラ。まず auras を渡さずに差し替える —— MOVE_AURA に無い技名なので
+       **付かない**のが正しい(data.js:929 とまったく同じ扱い)。 */
     await ask({ cmd:'override', element:a.el, moves });
+    out.auraBare = SIGNATURE_MOVES[a.el][a.tier-1].aura || null;
+    /* 次に auras を渡す。スタジオはここへ「MOVE_AURA に今入っている値」または
+       「これから MOVE_AURA へ書く値」を入れるので、本番と同じ色でプレビューできる。 */
+    const moves2 = JSON.parse(JSON.stringify(moves));
+    await ask({ cmd:'override', element:a.el, moves:moves2, auras:{ 'けんさの技': a.wantAura } });
+    out.aura = SIGNATURE_MOVES[a.el][a.tier-1].aura;
     projectiles.length = 0;
     out.fire = await ask({ cmd:'fire', tier:a.tier });
-    out.aura = SIGNATURE_MOVES[a.el][a.tier-1].aura;
   }catch(e){ out.error = String(e && e.message || e).slice(0, 300); }
   return out;
-}, { el:NEW_EL, donor:TEST_EL, tier:TEST_TIER, burst:BURSTS[1] });
+}, { el:NEW_EL, donor:TEST_EL, tier:TEST_TIER, burst:BURSTS[1], wantAura:AURA_WANT });
 if(SHOT) await page.screenshot({ path: SHOT });
 
 // 本物の localStorage が変わっていないか(別ページで素の状態を読む)
@@ -243,6 +272,7 @@ const burstOk = fired.length === BURSTS.length && fired.every((f, i)=> f.spawned
 const vocab = ran.vocab || {};
 const zone = ran.zone || {};
 const nf = ranNew.fire || {};
+const fw = ran.forceWant || null;
 const checks = [
   ['① 起動できた', ran.player === true && !ran.error, ran.error || (ran.player ? '' : 'プレイヤーが出ませんでした')],
   ['② 保存データ不変', changed.length === 0, changed.length ? '変わった鍵: ' + changed.join(', ') : ''],
@@ -264,12 +294,24 @@ const checks = [
   ['⑥ 未登録のキーでも撃てた', !ranNew.error && ranNew.known === false && nf.spawned === BURSTS[1],
     ranNew.error || `知らないキー: ${ranNew.known === false} / 名乗らせた: ${(ranNew.define||{}).ok}` +
       ` / 撃った弾 ${nf.spawned}発(狙い ${BURSTS[1]})`],
-  ['⑦ 技のオーラが乗った', ranNew.aura != null,
-    `差し替えた技の aura = ${ranNew.aura == null ? '(null=消えている)' : ranNew.aura}`],
+  /* 渡した色がそのまま乗り、渡さなければ付かない(data.js:929 と同じ)。
+     **両方見る。** 片方だけだと「いつも MONSTER_AURA へ落ちている」古い作りでも合格する。 */
+  ['⑦ 技のオーラは渡した色になる', ranNew.aura === AURA_WANT && ranNew.auraBare === null,
+    `渡したとき ${ranNew.aura} (狙い ${AURA_WANT}) / 渡さないとき ` +
+    `${ranNew.auraBare === null ? '付かない(data.js と同じ)' : ranNew.auraBare}`],
   ['⑧ プレビューでは安置が縮まない', zone.zonePhase === 0 && zone.shrinking === false
       && zone.loot === 0 && zone.alive === true && (zone.matchTime||0) > 61,
     `${zone.matchTime}秒回して phase ${zone.zonePhase} / 縮小 ${zone.shrinking}` +
     ` / アイテム ${zone.loot}個 / 自機 ${zone.alive ? '生存' : '死亡'}(HP ${zone.hp})`],
+  ['⑨ force のときだけ性能を上書きする', fw != null
+      && ran.forceOff && ran.forceOff.hp === (ran.forceBase||{}).hp
+      && ran.forceOff.speed === (ran.forceBase||{}).speed
+      && ran.forceOn && ran.forceOn.hp === fw.hp && ran.forceOn.speed === fw.speed
+      && (ran.forceOn.overrode||[]).length === 2,
+    fw ? `force なし HP${(ran.forceOff||{}).hp}/速度${(ran.forceOff||{}).speed}(本物のまま)` +
+         ` → force あり HP${(ran.forceOn||{}).hp}/速度${(ran.forceOn||{}).speed}` +
+         `(狙い HP${fw.hp}/速度${fw.speed}・上書き ${((ran.forceOn||{}).overrode||[]).join('・')})`
+       : '試せませんでした'],
 ];
 console.log(`ハーネス検査(${SHIM ? '--shim: 検査側でも差し替え' : 'index.html の harness=1 だけ'})`);
 console.log(`  差し替え: ${shim.installed ? '入った' : '入っていない'}` +

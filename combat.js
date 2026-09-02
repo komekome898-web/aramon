@@ -1,4 +1,8 @@
 // tier3技のエフェクトスタイル → 専用SE名の対応表
+/* **この表の値は tools/studio_web.html の SE_FALLBACK にも同じものを持っている。**
+   スタジオはゲームを読み込まずに単体で動くので、プレビューを開く前でもSEを選べるように
+   一覧を写してある。ここへ音を足したらあちらへも足すこと(ずれていないことは
+   `node tools/studio_regress.mjs --only se` が毎回見る)。 */
 const MOVE_SE_BY_STYLE = {
   inferno:'fireRoar', lava:'fireRoar', crystal:'iceCrack',
   psychic:'beam', sakura:'beam', flower:'beam', galaxy:'beam',

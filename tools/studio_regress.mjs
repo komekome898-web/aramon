@@ -12,11 +12,13 @@
      (g) 更新履歴 changelogWarnings(ツール側)と changelog_check.mjs が同じ警告を出す(§11 [39])
      (h) 開いて直す 全21体+全SSRを「開く→1項目だけ変える→書き戻す」で、変わる行がその行だけ・
                   評価した値が意図どおり・意図しない差分がゼロ(§5 D・§11 D [27])
+     (i) SE       combat.js の MOVE_SE_BY_STYLE の値と data.js の seStyle が全部
+                  スタジオの SE_FALLBACK に入っている(二重に持っている一覧のずれ)
 
    使い方:
      node tools/studio_regress.mjs --update   ゴールデン(tools/_golden/)を作り直す
      node tools/studio_regress.mjs            ゴールデンと比べる(違えば終了コード1)
-     node tools/studio_regress.mjs --only rows|segment|model|period|roundtrip|handlers|moveaura|changelog|edit   項目を絞る
+     node tools/studio_regress.mjs --only rows|segment|model|period|roundtrip|handlers|moveaura|changelog|edit|se   項目を絞る
 
    決まりごと:
      ・ゴールデンは生成物だが**比較の相手なので git で追跡する**(.gitignore に入れない)。
@@ -562,6 +564,28 @@ function runMoveAura(){
   return `${n}技`;
 }
 
+/* ============================================================ (i) SEの一覧のずれ
+
+   スタジオの SE_FALLBACK は、combat.js の MOVE_SE_BY_STYLE と ui.js の SE_TEST_LABELS を
+   **二重に持っている**箇所(プレビューを開く前でもSEを選べるようにするため)。
+   ゲーム側に音を足してこちらへ足し忘れると、その音は技パネルの選択肢に一生出てこない。
+   最低限「技が実際に鳴らす音」= MOVE_SE_BY_STYLE の値 + data.js の seStyle は全部入れる。 */
+function runSe(){
+  const combat = fs.readFileSync(path.join(ROOT, 'combat.js'), 'utf8');
+  const i = combat.indexOf('const MOVE_SE_BY_STYLE');
+  const open = combat.indexOf('{', i);
+  if(i < 0 || open < 0){ fail('se', 'combat.js に MOVE_SE_BY_STYLE が見つかりません'); return '—'; }
+  const table = new Function('return ' + combat.slice(open, S.scanValue(combat, open)))();
+  const d = evalDataJs(fs.readFileSync(path.join(ROOT, 'data.js'), 'utf8'));
+  const need = new Set(Object.values(table));
+  for(const key of Object.keys(d.SIGNATURE_MOVES))
+    for(const mv of d.SIGNATURE_MOVES[key]) if(mv && mv.seStyle) need.add(mv.seStyle);
+  const have = new Set(S.SE_FALLBACK);
+  for(const se of need) if(!have.has(se))
+    fail('se', `SE「${se}」がスタジオの SE_FALLBACK にありません(ゲーム側にだけある)`);
+  return `${need.size}種`;
+}
+
 /* ============================================================ (g) 更新履歴の注意2判定
 
    studio_web.html の changelogWarnings は tools/changelog_check.mjs と**二重に持つ**箇所
@@ -900,6 +924,7 @@ if(want('handlers'))  done.push('属性 ' + runHandlers());
 if(want('moveaura'))  done.push('技名 ' + runMoveAura());
 if(want('changelog')) done.push('更新履歴 ' + runChangelog());
 if(want('edit'))      done.push('開いて直す ' + runEditRound());
+if(want('se'))        done.push('SEの一覧 ' + runSe());
 if(shownEdit.length){
   console.log('開いて直す(1項目変更)の変更行:');
   for(const s of shownEdit) console.log('  - ' + s);

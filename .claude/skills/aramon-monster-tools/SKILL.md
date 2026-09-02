@@ -101,31 +101,65 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 
 - **既定値を持つのはテンプレート(`MOVE_T1`/`MOVE_T2`/`TIER3`)だけ。** 入力欄は空 = 「テンプレートのまま」で、
   薄字(placeholder)に既定を出す。触っていない項目は `spec.moves` に入らないので、**何も触らなければ出来る行は従来と1文字も同じ**。
-- **弾か範囲かの判定は `TIER3` の `kind:'proj'|'aoe'` 1か所。** `applyMoveKindVisibility()` が効かない欄を隠し、
-  `collectMoveEdits` は**隠れている欄の値を集めない**(形を替える前に書いた爆風の数字が黙って焼かれるのを防ぐ)。
-  根拠は combat.js の `fireMove`: `aoeShape` を持つ技は範囲の枝へ行くので `blast`/`projVisR`/`hitR`/`projStyle`/`splash`/
+- **弾か範囲かの判定は `moveKindNow()` 1か所。** 効かない欄を隠すのも(`applyMoveKindVisibility`)、
+  値を集めないのも(`moveFieldHidden` → `collectMoveEdits`)ここを通る。
+  根拠は combat.js の `fireMove`: `aoeShape` を持つ技は範囲の枝へ行くので `blast`/`projVisR`/`hitR`/`projStyle`/
   `growWithDistance` を読まない。**逆に `burst`系と `projSpeed` は範囲技でも効く**(連射の輪と伸びる速さ `fillSpeed`)ので隠さない。
+  - **テンプレートの `kind` だけで決めない。** 「登録済みを開いて直す」ではテンプレートを選ばず、形の欄には
+    前に見ていた形が残っているだけなので、それで決めると**開いた技の実値を隠して嘘の説明を出す**
+    (ジョーカー=弾を開いて「範囲の技なので当たり半径は効きません」と出し、`hitR:22`・`projStyle:'scythe'` が
+    欄からも `collectMoveEdits` からも消えた)。順番は ①読み込んだ技の `aoeShape` の有無 →
+    ②テンプレートの `kind`(新規登録) → ③欄に入っている見た目、で、どれでもなければ**隠さない**。
+  - **隠す規則が効くのは tier3 だけ**(`MOVE_KIND_TIER`)。`hitR` は tier1/2 にもあるので、段を見ずに当てると
+    tier3 が範囲のときに tier1 の当たり半径まで黙って捨てる。
+  - `splash` は範囲技でも読まれないが tier3 に入力欄が無いので `MOVE_HIDE_BY_KIND` に**書かない**。
+  - **欄の出し直しは `regKind` の出し分けが呼ぶ。** `loadExisting` は技を読み込んだ最後にそこを通る。
 - **特性の倍率(`rangeMult`/`projSpeedMult`/`gutsCostMult`)は式を `traitBakedValue()` 1つに置く。**
   `buildMoves` が焼く側、`refreshMoveBakeNotes()` が「630 になります」と見せる側、両方がこれを通る。
 - **数字として読めない欄は赤くして送信を止める**(`moveNumValue` → `moveInputErrors` → `preflight`)。黙って
   「触っていない」ことにすると、書いたはずの値がテンプレートのまま本番へ出る。
+- **爆風の作り方は `moveBlastNow()` 1つ。** 集める側(`collectMoveEdits`)と見せる側(`refreshMoveBakeNotes`)が
+  同じ関数を通る。半径だけ書くと威力0の爆風になるので**技の威力で補う**が、**欄には書き戻さない** ――
+  `collectMoveEdits` はプレビュー中3秒ごとに呼ばれるので、書き戻すと打っている途中の入力を奪い、
+  そのあと形や威力を変えても追従しなくなる。**集める関数は画面を書き換えない**(補ったことは
+  `m2_bake` の行に「爆風の威力は技の威力(21)になります」と出す)。
 - `JS_ORDER` の連射まわりは **data.js の手書き(デスファイナル)と同じ並び** —
   `burst → burstDirs → burstDirSpread → burstGap → burstSpread → burstSpreadRandom`。
 - **プレビューは iframe に本物の `index.html?harness=1` を読み込み、`tools/fx_driver.js` を注入して `postMessage` で操る。**
   手順は `defineElement`(まだ data.js に無いキーを名乗らせる)→ `override`(技を入れる)→ `setup` → `fire` の順。
   **`defineElement` を飛ばすと `createMonster` が `ELEMENTS[key].speed` を読んで必ず落ちる。**
   `ELEMENTS` のほかに `MONSTER_AURA` と `APTITUDE`(`mastermonInitialStats` が `.life` を読む)も要る。
-  `override` は **`mv.aura` を技オブジェクトへ直接入れる** — data.js:929 の焼き込みは読み込み時の1回きりなので、
-  あとから `MOVE_AURA` へ書いても誰も読み直さない(**同じ式を二重に持つ箇所。片方を直したら両方直す**)。
+  - **「開いて直す」では `force:true` を付ける。** そのキーは既に本物の表にあるので、付けないと
+    仕様パネルで直した速度・HP・当たりの大きさ・クールタイムの倍率が**プレビューに出ない**
+    (本番の値のまま見えるので「直したのに変わらない」となる)。上書きするのは**送った項目だけ**で、
+    driver が返す `overrode` をそのまま `#fxStat` に「性能は編集中の値(HP120・速度…)で見ています」と出す。
+    新規登録と `fx_shot`(コマ撮り)は `force` を渡さない。
+  - **技のオーラ(`mv.aura`)は呼ぶ側が渡す**(`override` の `auras` = 技名→オーラ)。data.js:929 の焼き込みは
+    読み込みのときの1回きりなので、あとから `MOVE_AURA` へ書いても誰も読み直さない。渡す値は
+    「開いて直す」なら `MOVE_AURA` に**今入っている**値、新規なら `spec.moveAura || spec.aura` ――
+    どちらも**登録後に生成される `MOVE_AURA` と同じ値**になる。渡さなかった技は data.js:929 と同じ扱いで、
+    `MOVE_AURA` にその名前が無ければ**付けない**(`MONSTER_AURA` へ落とすと data.js と食い違う)。
 - **プレビューでは `setup` が `game.trainingRange` を立てる(分岐はこの1か所)。** 立てないと 61 秒
   (`ZONE_PHASES[0].holdTime`)で安置が縮み始め、アイテムが湧き、やがて自機が死ぬ(実測: 175秒でHP0)。
   コマ撮り(`mode:'shot'`)は数秒しか回さないので従来どおり触らない。
+  **副作用も一緒に入る**: 自機のガッツ毎秒+6(`RANGE_GUTS_REGEN`)・HP毎秒5%回復・難易度の手加減が外れる
+  (`matchDifficultyApplies` が false)。**プレビューで確かめられるのは技であって試合の手応えではない。**
 - **保存データの保険(IndexedDB への退避)は自動で書き戻さない。** 印は開いた瞬間に置かれるので、
   自動で戻すと**そのあと普通に遊んだ記録を巻き戻す**。`harnessOk` を確かめた直後に印と退避を消し、
   それでも残っていたときだけ「○分前の退避があります。戻す/捨てる」を人に選ばせる。
+  - **退避のパネルが出ている間はプレビューを開かせない。** 開くと退避が上書き→削除されるのに、
+    パネルは古い snapshot を抱えたままなので、「書き戻す」を押すと遊んだ記録を巻き戻せてしまう。
+  - **閉じるときは印と退避の両方を消す。** 印だけ消していたので、`harnessOk` の確認より手前で落ちると
+    退避だけが残り、印が無いので誰も拾えない孤児になっていた。
 - `postMessage` は**同一オリジンの親か自分自身からのものだけ**受ける(driver 側・スタジオ側の両方で確認する)。
 - プレビューを開く前に `releaseVideo` と **`await releaseSegmentModel()`** を必ず通す(メモリ)。
-- 検査は `node tools/harness_test.mjs`(⑥ 未登録キー・⑦ オーラ・⑧ 安置が縮まない を含む)。
+- **SEの一覧(`SE_FALLBACK`)は `combat.js` の `MOVE_SE_BY_STYLE` と `ui.js` の `SE_TEST_LABELS` と二重に持つ**
+  (プレビューを開く前でも選べるようにするため。開いたあとは driver がゲームの表そのものを送る)。
+  ゲーム側に足してこちらへ足し忘れるとその音は選択肢に一生出てこないので、
+  **`node tools/studio_regress.mjs --only se`** が「技が実際に鳴らす音が全部入っているか」を毎回見る。
+  ゲーム側の2つの表にも「スタジオにも同じ一覧がある」旨のコメントを置いてある。
+- 検査は `node tools/harness_test.mjs`(⑥ 未登録キー・⑦ オーラは渡した色・⑧ 安置が縮まない・
+  ⑨ `force` のときだけ性能を上書き を含む)。
 
 ### 登録済みの表を1項目だけ書き換える(走査器・2026-09-02)
 

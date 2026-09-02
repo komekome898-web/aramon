@@ -68,7 +68,14 @@
        安置が縮み始め、外に置いた自機が焼かれて死ぬ ―― 技を見ている最中に画面が止まる。
        アイテムの湧き(advanceZonePhase の spawnLoot)も同時に止まるので絵が汚れない。
        **startGame が false へ戻すので、必ずその後で立てる。**
-       コマ撮り(shot)は数秒しか回さないので今までどおり触らない。 */
+       コマ撮り(shot)は数秒しか回さないので今までどおり触らない。
+
+       **この1つで一緒に入る副作用**(技の絵と数字には関わらないが、遊びの手応えは本番と違う):
+         ・自機のガッツが毎秒 +6(combat.js の RANGE_GUTS_REGEN)
+         ・自機のHPが毎秒 5% 回復する(combat.js の updateTrainingRange)
+         ・難易度の手加減が外れる(data.js の matchDifficultyApplies が false を返す)
+       つまりプレビューで確かめられるのは**技そのもの**であって、
+       「ガッツが足りなくて撃てない」「削られて死ぬ」といった試合の手応えではない。 */
     if(preview) game.trainingRange = true;
     // 召喚演出(5秒のカウントダウン)は撮影の邪魔なので即座に終わらせる。
     // 消さないとプレイヤーがまだ降下中で、技が円盤石の上から出る。
@@ -307,19 +314,30 @@
   /* ============================================================ 編集した技を当てる
      スタジオが作った3技をそのまま SIGNATURE_MOVES[属性] へ置く。
      activeMove() は毎回この表を引き直すので、次に撃つ弾から新しい数字になる。 */
-  api.override = function(element, moves){
+  api.override = function(element, moves, auras){
     if(!element || !Array.isArray(moves) || !moves.length) return { ok:false, reason:'技がありません' };
     if(typeof SIGNATURE_MOVES === 'undefined') return { ok:false, reason:'SIGNATURE_MOVES がありません' };
     SIGNATURE_MOVES[element] = moves;
     /* 技のオーラは**技オブジェクトの mv.aura** が正(実行時は getMoveAura が move.aura を見る)。
-       data.js:929 は読み込み時に一度だけ MOVE_AURA を焼き込むので、**あとから MOVE_AURA へ
-       書いても誰も読み直さない**(ここに書いていた前の版は死にコードで、差し替えた技の
-       オーラが毎回 null になっていた)。**data.js:929 と同じ式をここに二重に持つ。
-       片方を変えたら両方直すこと。** */
+       data.js:929 の焼き込みは**読み込みのときの1回きり**なので、あとから MOVE_AURA へ
+       書いても誰も読み直さない(そこへ書いていた前の版は死にコードで、差し替えた技の
+       オーラが毎回消えていた)。
+
+       **どの色になるかを決めるのは呼ぶ側**(auras = 技名 → オーラ)。スタジオは
+         ・登録済みを開いて直すとき = data.js の MOVE_AURA に**今入っている**値
+         ・新しく登録するとき       = これから MOVE_AURA へ書く値(spec.moveAura || spec.aura)
+       を渡すので、**新規登録後に生成される MOVE_AURA と同じ値**でプレビューできる
+       (技名を変えても、その名前に付くはずの色で見える)。
+       渡されなかった技は data.js:929 とまったく同じ扱い —— MOVE_AURA にその技名が
+       あればその色、無ければ**付けない**。MONSTER_AURA へ落としていた前の版は
+       data.js と食い違っていて、名前を変えた技が本番と違う色で見えていた。 */
     try{
       const ma = (typeof MOVE_AURA !== 'undefined') ? MOVE_AURA : {};
-      const def = (typeof MONSTER_AURA !== 'undefined') ? MONSTER_AURA[element] : null;
-      for(const mv of moves) if(mv) mv.aura = ma[mv.name] || def || null;
+      for(const mv of moves){
+        if(!mv) continue;
+        const a = (auras && auras[mv.name] != null) ? auras[mv.name] : ma[mv.name];
+        if(a) mv.aura = a;
+      }
     }catch(e){}
     return { ok:true, count: moves.length, names: moves.map(m=> m && m.name),
              auras: moves.map(m=> m && m.aura) };
@@ -329,21 +347,36 @@
      スタジオで作りかけのキー(まだ data.js に無い)でプレビューを開くための入口。
      **createMonster は ELEMENTS[key] を読む**ので、これを先に通さないと
      "Cannot read properties of undefined (reading 'speed')" で落ちる。
-     既に本物の表にあるキーは**触らない**(本物の性能でプレビューしたいので)。 */
-  api.defineElement = function(key, def, aura, aptitude){
+     既に本物の表にあるキーは**触らない**(本物の性能でプレビューしたいので)。
+     ただし force を渡されたときだけは上書きする —— スタジオの「登録済みを開いて直す」では
+     ELEMENTS[key] が既にあり、上書きしないと**仕様パネルで直した速度・HP・当たりの大きさ・
+     クールタイムの倍率がプレビューに出ない**(直したのに何も変わらない、と見える)。
+     新規登録と fx_shot(コマ撮り)は force を渡さないので従来どおり。 */
+  api.defineElement = function(key, def, aura, aptitude, force){
     if(!key) return { ok:false, reason:'キーがありません' };
     if(typeof ELEMENTS === 'undefined') return { ok:false, reason:'ELEMENTS がありません' };
     const existed = !!ELEMENTS[key];
-    if(!existed){
-      const d = def || {};
-      ELEMENTS[key] = {
-        label: d.label || key, color: d.color || '#ffffff', dark: d.dark || '#666666',
-        speed: +d.speed || 190, hp: +d.hp || 110, trait: d.trait || '',
-      };
-      if(d.accent) ELEMENTS[key].accent = d.accent;
-      // 常時の倍率(特性の効果)も、書いてあるものだけ入れる
-      for(const k of ['speedMod','cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
-        if(d[k] != null) ELEMENTS[key][k] = +d[k];
+    const d = def || {};
+    /* 書き込む値の作り方は**ここ1か所**(新しく作るときも force で上書きするときも同じ)。 */
+    const want = {
+      label: d.label || key, color: d.color || '#ffffff', dark: d.dark || '#666666',
+      speed: +d.speed || 190, hp: +d.hp || 110, trait: d.trait || '',
+    };
+    if(d.accent) want.accent = d.accent;
+    // 常時の倍率(特性の効果)も、書いてあるものだけ入れる
+    for(const k of ['speedMod','cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
+      if(d[k] != null) want[k] = +d[k];
+    const overrode = [];
+    if(!existed) ELEMENTS[key] = want;
+    else if(force){
+      /* **送られてきた項目だけ**を上書きする。空の欄まで既定値(速度190・HP110)で
+         塗ると、直していない項目がプレビューだけ別物になる。 */
+      for(const k of Object.keys(want)){
+        if(d[k] == null || d[k] === '') continue;
+        if(ELEMENTS[key][k] === want[k]) continue;
+        ELEMENTS[key][k] = want[k];
+        overrode.push(k);
+      }
     }
     if(typeof MONSTER_AURA !== 'undefined' && aura && MONSTER_AURA[key] == null) MONSTER_AURA[key] = aura;
     /* 適正(APTITUDE)も要る。試合の入口が mastermonInitialStats(キー) を呼び、
@@ -362,7 +395,10 @@
       const donor = SIGNATURE_MOVES[Object.keys(SIGNATURE_MOVES)[0]];
       SIGNATURE_MOVES[key] = JSON.parse(JSON.stringify(donor));
     }
-    return { ok:true, key, existed, label: ELEMENTS[key].label, aura: (typeof MONSTER_AURA!=='undefined') ? MONSTER_AURA[key] : null };
+    /* overrode = 上書きした項目名。スタジオはこれを見て「性能は編集中の値で見ています」と
+       画面に出す —— 何の数字で見ているのか分からないまま比べるのがいちばん危ない。 */
+    return { ok:true, key, existed, forced: !!(existed && force), overrode,
+             label: ELEMENTS[key].label, aura: (typeof MONSTER_AURA!=='undefined') ? MONSTER_AURA[key] : null };
   };
 
   /* ============================================================ 語彙を集める
@@ -420,8 +456,8 @@
      **cmd を増やすときは api に関数を足してここへ1行**(処理の本体をここに書かない)。 */
   const CMDS = {
     setup:    o => api.setup(o),
-    defineElement: o => api.defineElement(o.key, o.def, o.aura, o.aptitude),
-    override: o => api.override(o.element, o.moves),
+    defineElement: o => api.defineElement(o.key, o.def, o.aura, o.aptitude, o.force),
+    override: o => api.override(o.element, o.moves, o.auras),
     fire:     o => api.fire(o.tier, o.seVariant),
     zone:     () => api.zone(),
     vocab:    () => api.vocab(),
