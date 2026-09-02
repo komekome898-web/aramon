@@ -46,8 +46,16 @@ const REQUIRED = [
   'pickObjText', 'pickStr', 'pickNum', 'numExpr', 'parseSkinMedia', 'parseStateChanges',
   'skinMediaRange', 'removeSkinMediaEntry',
   // 値の走査器(登録済みを開いて直す・書き戻しの土台。置換はすべてここを通る)
-  'skipDeadAt', 'inDeadZone', 'skipGapAt', 'scanValue', 'pickEntry',
-  'findFieldInObject', 'replaceFieldInObject', 'replaceField', 'moveObjectRange', 'replaceMoveField',
+  'skipDeadAt', 'inDeadZone', 'skipGapAt', 'scanValue', 'entryAnchors', 'pickEntry',
+  'findFieldInObject', 'lastCodeEndInObject', 'replaceFieldInObject', 'replaceField',
+  'moveObjectRange', 'replaceMoveField', 'replaceEntryValue', 'renameEntryKey', 'tableScanRisk',
+  // 登録済みを開いて直す(読み取り → 差分 → 書き戻し。UI を通さず呼べる3つ)
+  'readExisting', 'editChangesFor', 'applyEditChanges',
+  'evalEntryValue', 'readEntryValue', 'fieldSourceTexts', 'editSame', 'editRound',
+  'editHistoryLine', 'updateHistoryItems', 'rewriteUpdateHistory',
+  'jsonDiffPaths', 'editExpectedPaths',
+  'EDIT_ELEMENT_FIELDS', 'EDIT_SSR_FIELDS', 'EDIT_MOVE_KEYS', 'EDIT_MOVE_JP', 'EDIT_VERIFY_TABLES',
+  'MOVE_NUM_COMMON', 'MOVE_NUM_TIER', 'MOVE_BOOL_TIER', 'MOVE_BLAST_TIER',
   // 更新履歴の注意2判定(changelog_check.mjs と二重に持つ)
   'changelogWarnings', 'changelogWords', 'changelogSimilarity',
   'CHANGELOG_SIMILAR', 'CHANGELOG_INTERNAL',

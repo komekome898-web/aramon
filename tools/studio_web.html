@@ -97,6 +97,11 @@
   .now{ font-size:11px; color:var(--dim); margin-top:4px; word-break:break-all; }
   /* 昇格演出のプレビューは「共通 → 専用」の2本を並べるので、どちらか分かる見出しを付ける */
   .promote-stage{ font-size:11px; color:var(--dim); margin-top:8px; }
+  /* 「開いて直す」の操作。flexに縮められて文字が消えないよう、最小の高さを決めて縮小を止める */
+  #editForm .btns button{ min-height:44px; flex-shrink:0; }
+  #editForm .r6 label{ font-size:10.5px; }
+  #e_colors label{ display:flex; align-items:center; justify-content:center; gap:4px; }
+  #e_colors input{ width:auto; }
 </style></head>
 <body>
 
@@ -135,7 +140,33 @@
     <option value="ssrmedia">SSRスキン専用(演出・BGM・SE・ガチャ)</option>
     <option value="assets">既存の素材を差し替える(歩行・静止画)</option>
     <option value="awaken">覚醒スキンを作る(育て込んだマスモン用)</option>
+    <option value="edit">登録済みを開いて直す(仕様・技・色・SSR設定)</option>
   </select>
+  <!-- 登録済みを開いて直す。**触った欄だけ**を data.js へ書き戻す(行は作り直さない) -->
+  <div id="editForm" style="display:none">
+    <label>直すもの</label>
+    <select id="e_target"><option value="">先にGitHubへ接続してください</option></select>
+    <div class="btns"><button class="primary" onclick="loadExisting()">この内容を読み込む</button></div>
+    <div class="hint" id="e_cur">
+      いまの <code>data.js</code> の中身を下の欄に入れます。<b>触った欄だけ</b>を書き戻すので、
+      手書きのコメントも、この画面に無い設定も、そのまま残ります。
+      絵の差し替えは「既存の素材を差し替える」で行ってください。
+    </div>
+    <div id="e_chWrap" style="display:none">
+      <label>更新履歴 — 性能の数字を変えたときだけ入れます(見た目の変更は入れません)</label>
+      <div class="r2">
+        <div><label>今日のぶんの書き方</label>
+          <select id="e_chMode">
+            <option value="rewrite">今日の行を書き直す(既定)</option>
+            <option value="append">今日の行に書き足す</option>
+          </select></div>
+        <div><label>書き直す行</label><select id="e_chTarget"></select></div>
+      </div>
+      <label>本文(空にすると更新履歴には入れません)</label>
+      <textarea id="e_chText" placeholder="「差分を確認する」を押すと自動で入ります"></textarea>
+      <div class="hint" id="e_chNote"></div>
+    </div>
+  </div>
   <div id="assetsForm" style="display:none">
     <label>どれの素材を差し替えるか</label>
     <select id="a_target"><option value="">先にGitHubへ接続してください</option></select>
@@ -225,7 +256,7 @@
       <input id="s_season" type="checkbox" style="width:auto"> シーズンパス限定にする(ガチャ・カタログに出さない)
     </label>
     <!-- レイド関連。特効にするとレイド中だけ倍率が掛かり、ピックアップにするとレイドガチャのSSR枠に入る -->
-    <label style="display:flex;align-items:center;gap:7px;margin-top:8px">
+    <label style="display:flex;align-items:center;gap:7px;margin-top:8px" id="s_raidEffectWrap">
       <input id="s_raidEffect" type="checkbox" style="width:auto"> レイド特効スキンにする(レイドのボス戦だけ倍率が掛かる)
     </label>
     <div class="r2" id="s_raidRow" style="display:none">
@@ -238,7 +269,7 @@
     <label style="display:flex;align-items:center;gap:7px;margin-top:8px">
       <input id="s_raidClear" type="checkbox" style="width:auto"> レイドの討伐達成報酬(参加者全員に配布)にする
     </label>
-    <div class="hint">
+    <div class="hint" id="s_addHint">
       画像名はスキンidから決まります(<code>mymon_ssr</code> → アイコン <code>mymon_ssr.png</code> /
       試合用 <code>mymon_player_ssr.png</code> / 歩行 <code>mymon_ssr_walk_f1..8</code>)。
       SSRだけの特典は<b>tier3の技名と威力</b>です。素体の技・特性・適性は変わりません。
@@ -523,9 +554,24 @@
   </div>
   <label>育成適性(S〜E)</label>
   <div class="r6" id="aptRow"></div>
-  <div class="hint">
+  <div class="hint" id="skinAutoHint">
     色スキンは<b>オーラの色以外の5色</b>を自動でつけます。塗り替える部分(主役の色)も
     アイコン画像から自動で決めるので、入力するところはありません。
+  </div>
+  <!-- 「開いて直す」のときだけ出す。新規登録では色スキンは自動なので欄を持たない -->
+  <div id="editSkinBox" style="display:none">
+    <label>色スキンの色 — このモンスターが持てる色(ふつうはオーラの色以外の5色)</label>
+    <div class="r6" id="e_colors"></div>
+    <div class="r3">
+      <div><label>塗り替える部分</label>
+        <select id="e_srcType">
+          <option value="chroma">色相で選ぶ</option>
+          <option value="light">明るい部分</option>
+        </select></div>
+      <div><label>色相(0〜359)</label><input id="e_srcHue" type="number"></div>
+      <div><label>色相の幅</label><input id="e_srcWindow" type="number"></div>
+    </div>
+    <div class="hint">色スキンは見た目だけなので、変えても更新履歴には入れません。</div>
   </div>
 </div>
 
@@ -690,7 +736,9 @@ const state = { walk:{f:null, b:null}, portraits:null, hue:null,
                 cand:{f:null, b:null}, candSide:'f',
                 // SSRスキン専用メディア: cur=リポジトリの今の設定 / next=この画面で作ったもの
                 skins:null, media:{ cur:{}, next:{}, urls:{} },
-                scPresets:null, pickup:{ skin:null, raid:null } };
+                scPresets:null, pickup:{ skin:null, raid:null },
+                // 登録済みを開いて直す: 読み込んだ data.js とその sha・読み取った今の設定
+                edit:null };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -2720,6 +2768,8 @@ const AURAS = ['red','blue','yellow','green','white','black'];
    (このツールは data.js を読み込まずに単体で動くため)。**片方を変えたら必ず両方直すこと。**
    モンスターが持てるのはこのうちオーラ色を除いた5色。 */
 const SKIN_COLOR_ORDER = ['black','white','red','blue','yellow','green'];
+// 色の日本語(画面に出すためだけ。data.js の SKIN_COLORS の name と同じ言葉)
+const SKIN_COLOR_JP = { black:'黒', white:'白', red:'赤', blue:'青', yellow:'黄', green:'緑' };
 const RANKS = ['S','A','B','C','D','E'];
 const STATS = ['life','power','wisdom','accuracy','evasion','vitality'];
 
@@ -3452,6 +3502,7 @@ function loadSsrList(dataJs){
   state.ssrWalk = parseSsrWalkIds(dataJs);
   renderAssetTargets();
   renderAwakenBaseOptions();
+  renderEditTargets();
   state.media.cur = parseSkinMedia(dataJs);
   /* スキンガチャのピックアップは**配列**(複数体のダブルピックアップに対応)。
      この画面は1体を選ぶ作りなので、表示には先頭を使う。 */
@@ -3556,16 +3607,17 @@ function loadScPresets(dataJs){
 function onElementChange(){
   if(!$('s_id').value.trim()) $('s_id').placeholder = `${$('s_element').value}_ssr`;
 }
-async function getFileBytes(path){
+/* 取得の入口はここ1か所。**blob の sha も一緒に返す**(「開いて直す」で、読んだときと
+   送る直前の sha を照合して、他所で変わっていたら中止するため)。 */
+async function getFileMeta(path){
   const j = await gh(`/repos/${repo()}/contents/${path}?ref=${branch()}`);
   const bin = atob(j.content.replace(/\n/g,''));
   const bytes = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
+  return { bytes, sha: j.sha, text: new TextDecoder('utf-8').decode(bytes) };
 }
-async function getFile(path){
-  return new TextDecoder('utf-8').decode(await getFileBytes(path));
-}
+async function getFileBytes(path){ return (await getFileMeta(path)).bytes; }
+async function getFile(path){ return (await getFileMeta(path)).text; }
 // リポジトリにある画像を <img> として読む(覚醒スキンの合成で元の絵を取りに行くのに使う)
 async function getRepoImage(path){
   const bytes = await getFileBytes(path);
@@ -3652,6 +3704,19 @@ function isSsr(){ return regKind() === 'ssr'; }
 function isSsrMedia(){ return regKind() === 'ssrmedia'; }
 function isAssets(){ return regKind() === 'assets'; }
 function isAwaken(){ return regKind() === 'awaken'; }
+function isEdit(){ return regKind() === 'edit'; }
+/* 「開いて直す」で選んでいる相手。値は "mon:<素体key>" か "ssr:<スキンid>"。
+   **この1か所だけが「モンスターかSSRか」を決める**(判定を2か所に書かない)。 */
+function editTarget(){
+  const v = ($('e_target') && $('e_target').value) || '';
+  const i = v.indexOf(':');
+  if(i < 0) return null;
+  const kind = v.slice(0, i) === 'ssr' ? 'ssr' : 'monster';
+  const key = v.slice(i+1);
+  const list = kind === 'ssr' ? (state.skins || []) : (state.elements || []);
+  const hit = list.find(x => x[0] === key);
+  return { kind, key, label: hit ? hit[1] : key };
+}
 function awakenIsFxMode(){ return $('aw_mode').value === 'fx'; }
 /* 覚醒スキンの作成対象。**画像名は元スキンのIDから機械的に決める**ので、
    入れ先を間違えることがない(元 guts_ssr → guts_ssr_awake / guts_player_ssr_awake)。 */
@@ -4113,13 +4178,354 @@ async function planAwaken(dataJs, swJs, lines){
   if(!t.t3name) lines.push('※ tier3の技名が空なので SSR_SKIN_TIER3 には入れません(技名・威力は元スキンのままです)。');
   return { texts, images, message: `覚醒スキン「${t.name}」を追加した(スタジオ)` };
 }
+/* =====================================================================
+   登録済みを開いて直す(機能D)— 画面まわり
+
+   流れ: 一覧から選ぶ → 「読み込む」で data.js を取得(sha を控える)→ 欄に入れる →
+         直す → 「差分を確認する」で **触った欄だけ**を書き戻し、**書き戻した data.js を
+         本当に評価して**意図した差分以外がゼロかを確かめる → コミット(直前に sha を照合)。
+   ===================================================================== */
+
+// 一覧は取得した data.js から作る(ツールの中に書き写さない)。ELEMENTS 全体+SSR_SKINS 全体
+function renderEditTargets(){
+  const el = $('e_target');
+  if(!el) return;
+  const mon = (state.elements || []).map(([k,l])=>`<option value="mon:${k}">${l}(${k})</option>`).join('');
+  const ssr = (state.skins   || []).map(([k,l])=>`<option value="ssr:${k}">${l}(${k})</option>`).join('');
+  if(!mon && !ssr) return;
+  const cur = el.value;
+  el.innerHTML = (mon ? `<optgroup label="モンスター">${mon}</optgroup>` : '')
+               + (ssr ? `<optgroup label="SSRスキン">${ssr}</optgroup>` : '');
+  if(cur && el.querySelector(`option[value="${cur}"]`)) el.value = cur;
+}
+
+/* 選んだ相手の今の設定を data.js から読んで欄に入れる。**正は常に data.js。** */
+async function loadExisting(){
+  const t = editTarget();
+  if(!t) return log('直すものを選んでください(先にGitHubへ接続すると一覧が出ます)', 'ng');
+  try{
+    log(`${t.label} の設定を data.js から読んでいます…`);
+    const meta = await getFileMeta('data.js');
+    const cur = readExisting(meta.text, t.kind, t.key);
+    if(cur.risk.length) throw new Error('走査器が扱えない書き方が表にあります:\n  ' + cur.risk.join('\n  '));
+    state.edit = { kind:t.kind, key:t.key, label:t.label, sha:meta.sha, text:meta.text, cur };
+    fillEditForm(cur);
+    /* **入れ直しただけで差分が出ないこと**をその場で確かめる。
+       欄への入れ方(fillEditForm)と読み方(readEditForm)がずれると、
+       触っていない項目まで書き換わる —— 実際に色の欄で起きた(引用符ごと入れていた)。
+       ここで気づけないと、送信の直前まで分からない。 */
+    const ghost = editChangesFor(cur, readEditForm(cur));
+    if(ghost.length)
+      throw new Error('欄に入れ直しただけで差分が出ました(このまま送ると触っていない項目まで変わります):\n  '
+        + ghost.map(c=>`${c.jp}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`).join('\n  '));
+    fillEditChangelog(meta.text);
+    $('regKind').onchange();          // モンスターかSSRかで出すパネルが変わる(判定は1か所)
+    state.files = null; $('commitBtn').disabled = true;
+    const miss = cur.unknown.length ? `\n読めなかった表: ${cur.unknown.join(' / ')}(この画面からは触りません)` : '';
+    $('e_cur').textContent = `${t.label}(${t.key})を読み込みました。触った欄だけを書き戻します。` + miss;
+    log(`${t.label} を読み込みました。直したい欄だけを書き換えて「差分を確認する」を押してください。${miss}`, 'ok');
+  }catch(e){ log('読み込めませんでした:\n' + String(e.message||e), 'ng'); }
+}
+
+// 読み取った値を欄へ入れる。数字は**元の書き方のまま**入れる(1/1.5 を 0.666… にしない)
+function fillEditForm(cur){
+  if(cur.kind === 'ssr'){
+    const s = cur.ssr || {}, t3 = cur.tier3 || {};
+    if(s.element) $('s_element').value = s.element;
+    $('s_id').value = cur.key;
+    $('s_name').value = s.name || '';
+    if(cur.aura) $('s_aura').value = cur.aura;
+    $('s_season').checked = !!s.seasonExclusive;
+    $('s_raidClear').checked = !!s.raidClearOnly;
+    $('s_t3name').value = t3.name || '';
+    $('s_t3mult').value = (t3.dmgMult == null) ? '' : String(t3.dmgMult);
+    // 数値を直接持つ専用tier3(ちょこ・ペルセポネ)は倍率で書き換えられない
+    $('s_t3mult').disabled = !!(cur.tier3 && cur.tier3.move);
+    return;
+  }
+  const e = cur.elements || {}, tx = cur.elementsText || {};
+  for(const f of EDIT_ELEMENT_FIELDS){
+    const el = $(f.id);
+    if(!el) continue;
+    el.value = (e[f.field] == null) ? ''
+             : (f.type === 'num' && tx[f.field] != null) ? tx[f.field] : String(e[f.field]);
+  }
+  for(const w of ['color','dark','accent']){
+    const v = $('f_' + w).value.trim();
+    if(/^#[0-9a-fA-F]{6}$/.test(v)) $('f_' + w + 'Sw').value = v.toLowerCase();
+  }
+  if(cur.aura) $('f_aura').value = cur.aura;
+  fillMoveForm(cur.moves || [], cur.movesText || []);
+  fillEditSkinForm(cur.skin || {});
+}
+/* 技パネルへ流し込む。**テンプレートに無い値もそのまま欄へ入れる**
+   (語彙に無い projStyle / aoeStyle / SE は選択肢を足して見せる。消したら書き戻しで消える)。 */
+function fillMoveForm(moves, texts){
+  for(let i = 0; i < 3; i++){
+    const mv = moves[i] || {}, tx = (texts && texts[i]) || {};
+    // 元の書き方をそのまま戻すのは**数字の欄だけ**(文字列は引用符ごと入ってしまう)
+    const nums = MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[i] || []);
+    const nm = moveField(i, 'name'); if(nm) nm.value = mv.name || '';
+    for(const k of (EDIT_MOVE_KEYS[i] || [])){
+      const el = moveField(i, k);
+      if(!el) continue;
+      if((MOVE_BOOL_TIER[i] || []).indexOf(k) >= 0){ el.value = (mv[k] == null) ? '' : (mv[k] ? '1' : '0'); continue; }
+      if(el.tagName === 'SELECT'){
+        const v = mv[k] == null ? '' : String(mv[k]);
+        if(v && !Array.from(el.options).some(o => o.value === v))
+          el.insertAdjacentHTML('beforeend', `<option value="${v}">${v}(いまの値)</option>`);
+        el.value = v;
+        continue;
+      }
+      el.value = (mv[k] == null) ? ''
+               : (nums.indexOf(k) >= 0 && tx[k] != null) ? tx[k] : String(mv[k]);
+    }
+    const col = moveField(i, 'color'), sw = $('m' + i + '_colorSw');
+    if(col && sw && /^#[0-9a-fA-F]{6}$/.test(col.value.trim())) sw.value = col.value.trim().toLowerCase();
+    if(i === MOVE_BLAST_TIER){
+      const b = mv.blast || {};
+      if($('m2_blastRadius')) $('m2_blastRadius').value = (b.radius == null) ? '' : String(b.radius);
+      if($('m2_blastDmg'))    $('m2_blastDmg').value    = (b.dmg    == null) ? '' : String(b.dmg);
+    }
+  }
+}
+function fillEditSkinForm(skin){
+  const colors = skin.colors || [];
+  SKIN_COLOR_ORDER.forEach(c=>{ const el = $('e_col_' + c); if(el) el.checked = colors.indexOf(c) >= 0; });
+  const s = skin.source || {};
+  $('e_srcType').value = s.type || 'chroma';
+  $('e_srcHue').value    = (s.hue    == null) ? '' : String(s.hue);
+  $('e_srcWindow').value = (s.window == null) ? '' : String(s.window);
+}
+
+/* 欄の値を読む。**空欄 = 触っていない**(元のまま)。キーを消す操作はここに持たせない。 */
+function readEditForm(cur){
+  const next = { kind: cur.kind, key: cur.key };
+  const raw = id => { const el = $(id); return el ? String(el.value).trim() : ''; };
+  const strOr = id => { const v = raw(id); return v === '' ? undefined : v; };
+  const numOr = id => { const v = raw(id); if(v === '') return undefined;
+                        const n = numExpr(v); return (n == null || isNaN(n)) ? undefined : n; };
+  if(cur.kind === 'ssr'){
+    next.ssr = {};
+    for(const f of EDIT_SSR_FIELDS){
+      const el = $(f.id);
+      if(!el) continue;
+      next.ssr[f.field] = f.type === 'bool' ? !!el.checked : strOr(f.id);
+    }
+    next.aura = $('s_aura').value || undefined;
+    next.tier3 = { name: strOr('s_t3name'),
+                   dmgMult: $('s_t3mult').disabled ? undefined : numOr('s_t3mult') };
+    return next;
+  }
+  next.elements = {};
+  for(const f of EDIT_ELEMENT_FIELDS)
+    next.elements[f.field] = (f.type === 'num') ? numOr(f.id) : strOr(f.id);
+  next.aura = $('f_aura').value || undefined;
+  next.moves = [0,1,2].map(readMoveForm);
+  next.skin = readEditSkinForm(cur);
+  return next;
+}
+function readMoveForm(i){
+  const out = {};
+  const nm = moveField(i, 'name');
+  if(nm && nm.value.trim()) out.name = nm.value.trim();
+  const nums = MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[i] || []);
+  for(const k of (EDIT_MOVE_KEYS[i] || [])){
+    const el = moveField(i, k);
+    if(!el) continue;
+    if((MOVE_BOOL_TIER[i] || []).indexOf(k) >= 0){ if(el.value) out[k] = (el.value === '1'); continue; }
+    const v = String(el.value).trim();
+    if(v === '') continue;
+    if(nums.indexOf(k) >= 0){ const n = numExpr(v); if(n != null && !isNaN(n)) out[k] = n; }
+    else out[k] = (k === 'color') ? v.toLowerCase() : v;
+  }
+  if(i === MOVE_BLAST_TIER){
+    const r = moveNumValue(i, 'blastRadius'), d = moveNumValue(i, 'blastDmg');
+    if(r != null) out.blastRadius = r;
+    if(d != null) out.blastDmg = d;
+  }
+  return out;
+}
+/* 色スキンの色。**元の並び順を守る**(ark は白が最後にいる。並べ替えると触っていないのに差分が出る)。 */
+function readEditSkinForm(cur){
+  const on = c => { const el = $('e_col_' + c); return !!(el && el.checked); };
+  const was = ((cur && cur.skin && cur.skin.colors) || []);
+  const colors = was.filter(on).concat(SKIN_COLOR_ORDER.filter(c => on(c) && was.indexOf(c) < 0));
+  const type = $('e_srcType').value;
+  const source = { type };
+  if(type === 'chroma'){
+    const h = numExpr($('e_srcHue').value), w = numExpr($('e_srcWindow').value);
+    if(h != null) source.hue = h;
+    if(w != null) source.window = w;
+  }
+  return { colors, source };
+}
+
+// 更新履歴の「今日のかたまり」を欄に出す。無ければ「書き足す」しかできない
+function fillEditChangelog(dataJs){
+  const items = updateHistoryItems(dataJs, todayYmd()) || [];
+  const sel = $('e_chTarget');
+  sel.innerHTML = items.map((it, i)=>
+    `<option value="${i}">${i+1}. ${String(it && it.t || '').slice(0, 40)}</option>`).join('');
+  const has = items.length > 0;
+  sel.disabled = !has;
+  $('e_chMode').value = has ? 'rewrite' : 'append';
+  $('e_chMode').disabled = !has;
+  $('e_chNote').textContent = has
+    ? `今日(${todayYmd()})はすでに ${items.length} 行あります。同じ話題なら書き直してください`
+      + '(2行あると古いほうが嘘になります)。「差分を確認する」を押すと、似た行があればそれを選びます。'
+    : `今日(${todayYmd()})の行はまだありません。書き足しになります。`;
+  $('e_chWrap').style.display = 'block';
+}
+
+/* 書き戻した data.js を**本当に評価して**確かめる(設計仕様 §11 [15])。
+   空の同一オリジン iframe に3本のスクリプトを入れる:
+     ① 画像を読みに行かせないスタブ(data.js は読み込み時に何百枚も Image を作る)
+     ② data.js そのもの(classic script)
+     ③ 表を JSON にして window へ置く1行
+   **`const` は window に出ない**ので、③のように「同じグローバルの後続スクリプト」から
+   拾うしか道がない(iframe.contentWindow.ELEMENTS では取れない)。 */
+const EDIT_VERIFY_TABLES = ['ELEMENTS','SIGNATURE_MOVES','SKIN_CONFIG','MONSTER_AURA','MOVE_AURA',
+                            'SSR_SKINS','SSR_SKIN_AURA','SSR_SKIN_TIER3'];
+const EDIT_VERIFY_MS = 30000;
+function evalDataJsInFrame(dataText){
+  return new Promise((res, rej)=>{
+    const url = URL.createObjectURL(new Blob([dataText], { type:'text/javascript' }));
+    const f = document.createElement('iframe');
+    f.setAttribute('aria-hidden', 'true');
+    f.style.cssText = 'position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;';
+    let done = false;
+    const finish = (err, val)=>{
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      try{ f.remove(); }catch(e){}
+      URL.revokeObjectURL(url);
+      err ? rej(err) : res(val);
+    };
+    const timer = setTimeout(()=> finish(new Error('data.js の評価が終わりません(30秒)')), EDIT_VERIFY_MS);
+    const pick = EDIT_VERIFY_TABLES.map(t=>`${t}:(typeof ${t}==='undefined'?null:${t})`).join(',');
+    /* 閉じタグを文字列にそのまま書くと、**コメントの中でもこの HTML のスクリプトが
+       そこで終わってしまう。** だから「<」と残りを足し算で組む。 */
+    const s = '<' + 'script>', sSrc = v => '<' + 'script src="' + v + '">', e = '<' + '/script>';
+    f.srcdoc =
+      s + 'window.Image=function(){this.src="";this.decoding="";' +
+          'this.addEventListener=function(){};this.removeEventListener=function(){};};' + e +
+      sSrc(url) + e +
+      s + `try{ window.__ok=1; window.__tables=JSON.stringify({${pick}}); }` +
+          `catch(err){ window.__ok=0; window.__err=String(err&&err.message||err); }` + e;
+    f.onload = ()=>{
+      try{
+        const w = f.contentWindow;
+        if(!w || !w.__ok) return finish(new Error('data.js を評価できません: ' + ((w && w.__err) || '原因不明')));
+        finish(null, JSON.parse(w.__tables));
+      }catch(err){ finish(new Error('評価した data.js を読み出せません: ' + String((err&&err.message)||err))); }
+    };
+    f.onerror = ()=> finish(new Error('data.js の評価用の枠を作れません'));
+    document.body.appendChild(f);
+  });
+}
+/* 元と書き戻し後を両方評価し、差分の一覧と「意図しない差分」を返す。 */
+async function verifyEditedDataJs(origText, newText, changes){
+  const [a, b] = [await evalDataJsInFrame(origText), await evalDataJsInFrame(newText)];
+  const diffs = jsonDiffPaths(a, b);
+  const want = editExpectedPaths(changes);
+  const ok = p => want.some(w => p === w || p.indexOf(w + '.') === 0);
+  return { diffs, unexpected: diffs.filter(d => !ok(d.path)) };
+}
+
+/* 「開いて直す」の送信内容を作る。**変わった項目だけ**を書き戻し、評価して確かめる。 */
+async function planEdit(dataJs, swJs, lines){
+  const st = state.edit;
+  if(!st || !st.cur) throw new Error('先に「この内容を読み込む」を押してください');
+  const t = editTarget();
+  if(!t || t.key !== st.key) throw new Error('選び直した相手が読み込んだものと違います。もう一度「この内容を読み込む」を押してください');
+  if(dataJs !== st.text)
+    throw new Error('読み込んだあとに data.js が他所で変わりました。もう一度「この内容を読み込む」を押してください');
+
+  const changes = editChangesFor(st.cur, readEditForm(st.cur));
+  if(!changes.length) throw new Error('変わった項目がありません。直したい欄を書き換えてから押してください');
+  let text = applyEditChanges(dataJs, changes);
+
+  // 更新履歴。性能の数字が変わったときだけ入れる(見た目・色スキンは入れない)
+  const auto = editHistoryLine(st.label, changes);
+  const box = $('e_chText');
+  /* 自動で入れるのは**読み込んでから1回だけ。** 毎回入れ直すと、
+     「空にすると入れません」と書いてあるのに空にできない(押すたびに戻ってくる)。 */
+  if(box && auto && !st.histFilled){
+    st.histFilled = true;
+    box.value = auto.text;
+    /* 初回だけ「どの行を書き直すか」も決める。**同じ話題の行があればそれ、無ければ書き足す。**
+       いつも1行目を書き直す作りだと、関係のない行を消してしまう。 */
+    const items = updateHistoryItems(dataJs, todayYmd()) || [];
+    let best = -1, bestS = CHANGELOG_SIMILAR;
+    items.forEach((it, i)=>{
+      const s = changelogSimilarity(it && it.t, auto.text);
+      if(s >= bestS){ bestS = s; best = i; }
+    });
+    $('e_chMode').value = best >= 0 ? 'rewrite' : 'append';
+    if(best >= 0) $('e_chTarget').value = String(best);
+  }
+  const histText = box ? box.value.trim() : '';
+  const tags = auto ? auto.tags : ['balance'];
+  let histNote = '更新履歴には入れません(性能の数字は変わっていません)';
+  const histWarn = [];
+  if(histText){
+    const items = updateHistoryItems(text, todayYmd()) || [];
+    const idx = +(($('e_chTarget') && $('e_chTarget').value) || 0);
+    const rewrite = $('e_chMode').value === 'rewrite' && items.length > 0;
+    const uh = rewrite ? rewriteUpdateHistory(text, todayYmd(), idx, histText, tags)
+                       : addUpdateHistory(text, histText, tags);
+    text = uh.text; histNote = uh.note;
+    // 送信前に「注意」を出す(changelog_check.mjs と同じ2判定)
+    for(const w of changelogWarnings(updateHistoryItems(text, todayYmd()) || []))
+      histWarn.push(w.type === 'similar'
+        ? `※ 注意: 今日の${w.i}行目と${w.j}行目が似ています(${w.percent}%)。1行にまとめられませんか`
+        : `※ 注意: 今日の${w.i}行目に内部の言葉があります: ${w.words.join('・')}`);
+  }
+
+  // 書き戻した data.js を本当に評価して、意図した差分以外がゼロかを見る(ここが最後の砦)
+  log('書き戻した data.js を評価して確かめています…');
+  const v = await verifyEditedDataJs(dataJs, text, changes);
+  if(v.unexpected.length)
+    throw new Error('意図しない差分が出ました(送信しません):\n'
+      + v.unexpected.slice(0, 12).map(d=> `  ${d.path}: ${JSON.stringify(d.before)} → ${JSON.stringify(d.after)}`).join('\n'));
+
+  const texts = { 'data.js': text, 'sw.js': bumpCache(swJs) };
+  lines.length = 0;                              // ここまでは途中経過。表示は下で作り直す
+  lines.push(`■ ${st.label}(${st.key})の変更 ${changes.length}件`);
+  for(const c of changes)
+    lines.push(`  ${c.jp}: ${JSON.stringify(c.before === undefined ? null : c.before)} → ${JSON.stringify(c.after)}`);
+  lines.push('');
+  lines.push('■ 評価して確かめた差分(これ以外はゼロ)');
+  for(const d of v.diffs) lines.push(`  ${d.path}: ${JSON.stringify(d.before)} → ${JSON.stringify(d.after)}`);
+  lines.push('');
+  lines.push('■ 送信されるファイル');
+  lines.push('  data.js  (触った項目だけを書き換え)');
+  lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(texts['sw.js'])||[])[1]} へ)`);
+  lines.push('  ' + histNote);
+  if(histWarn.length){ lines.push(''); histWarn.forEach(w=> lines.push(w)); }
+  const renamed = changes.filter(c=>c.op === 'renameKey');
+  if(renamed.length) lines.push(`※ 技名を変えたので MOVE_AURA の見出しも直しました(${renamed.map(c=>c.before+'→'+c.after).join(' / ')})`);
+  if(st.cur.unknown.length) lines.push('※ 読めなかった表: ' + st.cur.unknown.join(' / ') + '(触っていません)');
+  return { texts, images: [],
+           message: `${st.label}の設定を直した(スタジオ)`,
+           // 送る直前に sha を照合する。読んだあとに誰かが data.js を変えていたら中止
+           guard: async ()=>{
+             const m = await getFileMeta('data.js');
+             return m.sha === st.sha ? null
+               : 'data.js が他所で変わっています。もう一度「この内容を読み込む」を押して読み直してください';
+           } };
+}
+
 async function preflight(){
   try{
     if(!tok()) return log('先にトークンを保存してください', 'ng');
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
     const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
     const lines = [];
-    const plan = isSsrMedia() ? await planSkinMedia(dataJs, swJs, lines)
+    const plan = isEdit()      ? await planEdit(dataJs, swJs, lines)
+               : isSsrMedia() ? await planSkinMedia(dataJs, swJs, lines)
                : isAssets()   ? await planAssets(dataJs, swJs, lines)
                : isAwaken()   ? await planAwaken(dataJs, swJs, lines)
                : isSsr()      ? await planSsr(dataJs, swJs, lines)
@@ -4132,11 +4538,18 @@ async function preflight(){
 
 async function doCommit(){
   if(!state.files) return log('先に「差分を確認する」を押してください', 'ng');
-  const { texts: texts2, images: files, message } = state.files;
+  const { texts: texts2, images: files, message, guard } = state.files;
   try{
     $('commitBtn').disabled = true;
     const R = repo(), B = branch();
 
+    /* 送る直前の見張り(いまは「開いて直す」だけが持つ)。読んだときの blob の sha と
+       照合し、違えば中止する ―― 他所の変更を上書きしないため。 */
+    if(guard){
+      log('送信前の確認をしています…');
+      const stop = await guard();
+      if(stop) throw new Error(stop);
+    }
     log('コミットを作っています… (1/4) 画像を送信');
     const tree = [];
     let done = 0;
@@ -4172,9 +4585,12 @@ async function doCommit(){
     });
     setProg(null);
     state.files = null;
+    // 送ったら控えた sha が古くなる。続けて直すときは読み直してもらう
+    if(state.edit){ state.edit = null; if($('e_chText')) $('e_chText').value = ''; }
     log(`コミットしました: ${commit.sha.slice(0,7)}\n` +
         `数分後に本番へ反映されます(GitHub Actions の Pages デプロイ)。\n` +
-        (isSsrMedia() ? '反映されたら演出・BGM・SE・ガチャ画面に出ます(端末のキャッシュが入れ替わるまで少しかかります)。'
+        (isEdit()      ? '反映されたら試合とロビーに新しい設定で出ます(端末のキャッシュが入れ替わるまで少しかかります)。'
+         : isSsrMedia() ? '反映されたら演出・BGM・SE・ガチャ画面に出ます(端末のキャッシュが入れ替わるまで少しかかります)。'
          : isAssets() ? '反映されたら新しい絵に入れ替わります(端末のキャッシュが入れ替わるまで少しかかります)。'
          : isSsr()    ? '反映されたらガチャとSSRカタログに出ます(シーズン限定にした場合を除く)。'
                       : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
@@ -4749,7 +5165,16 @@ function skipGapAt(text, p){
    ・' " ` で始まる  → 閉じ引用符の次の位置
    ・それ以外(数値・true/false・識別子・`1/1.5` のような式)
        → 対応が閉じた状態で , } ] ) か改行かコメントの始まりに出会う直前(末尾の空白は含めない)
-   いずれも文字列の中の括弧・エスケープ・コメントは読み飛ばす。 */
+   いずれも文字列の中の括弧・エスケープ・コメントは読み飛ばす。
+
+   **扱えない書き方(承知のうえで対応しない)**:
+     ・正規表現リテラル(`{ a:/a,b/ }`)。`/` をコメントか割り算としてしか見ないので、
+       中の `,` や `}` で値が切れる。`/it's/` のような引用符入りだと以降が丸ごとずれる。
+     ・テンプレートリテラルの `${…}` の中にさらに引用符・バッククォートがある書き方。
+   どちらも data.js の書き戻し対象の表(ELEMENTS / SIGNATURE_MOVES / SKIN_CONFIG /
+   MONSTER_AURA / MOVE_AURA / SSR_*)には**1つも無い**。将来入ったときに黙って壊れないよう、
+   tableScanRisk() が表の中を見て理由を返し、ツールは log に出して書き戻しを止める
+   (回帰 tools/studio_regress.mjs の (d) が、今も入っていないことを毎回確かめる)。 */
 function scanValue(text, i){
   const n = text.length;
   i = skipGapAt(text, i);
@@ -4781,11 +5206,29 @@ function scanValue(text, i){
   return j;
 }
 
+/* 表の中の key を指す錨(正規表現)を、当てる順に返す。
+   ① 行頭の `  key:`(インデント2)。data.js のほとんどの表はこの書き方。
+   ② `,` か `{` の直後の `key:`。**1行に複数項目を書く表**(`MONSTER_AURA` の
+      `mocchi:'red', suezo:'yellow',` / `MOVE_AURA` の `'ファイア':'red','ファイアブレス':'red',`)
+      は①では行頭の1つしか取れないので、こちらで拾う。
+   **必ず①を先に当てる。** ②は「値の中のたまたま同じ名前」を掴む余地があるぶん弱い錨なので、
+   ①で見つかる表(ELEMENTS / SIGNATURE_MOVES / SKIN_CONFIG …)の挙動を変えないため。
+   どちらも key は裸でも引用符付き('…' / "…")でもよい(MOVE_AURA の技名は引用符付き)。
+   1つ目の括弧 = key の手前(位置を数えるため)/ 2つ目 = key そのもの。 */
+function entryAnchors(key){
+  const esc = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const k = `(${esc}|'${esc}'|"${esc}")`;
+  return [ new RegExp('^(  )' + k + '[ \\t]*:', 'gm'),
+           new RegExp('([,{][ \\t]*)' + k + '[ \\t]*:', 'g') ];
+}
+
 /* 表(const TABLE = { … })の中の key の値を取り出す。表に無ければ null。
    範囲を「表の始まり 〜 目印 <<AUTO:表名>>(無ければ表の閉じ)」に限る理由:
      同じ key が複数の表にいる(mocchi は ELEMENTS にも SKIN_CONFIG にもいる)ため。
-   錨は行頭の `  key:`(インデント2)。コメント行の中の `// 例: guts_ssr: {…` のような
-   書き方(data.js の EMOTE_FRAMES)を掴まないよう、当たりが文字列/コメントの中なら捨てる。 */
+   錨は entryAnchors(key)。コメント行の中の `// 例: guts_ssr: {…` のような
+   書き方(data.js の EMOTE_FRAMES)を掴まないよう、当たりが文字列/コメントの中なら捨てる。
+   返り値の keyStart/keyEnd は key そのもの(引用符を含む)の範囲。技名を変えたときに
+   `MOVE_AURA` の見出しを書き換えるのに使う。 */
 function pickEntry(text, table, key){
   const head = new RegExp('const\\s+' + table + '\\s*=\\s*[{\\[]').exec(text);
   if(!head) return null;
@@ -4796,31 +5239,95 @@ function pickEntry(text, table, key){
   const mark = text.indexOf('// <<AUTO:' + table + '>>', open);
   if(mark >= 0 && mark < tableEnd) rangeEnd = mark;
 
-  const esc = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rx = new RegExp('^  ' + esc + '[ \\t]*:', 'gm');
   const region = text.slice(open, rangeEnd);
-  let m;
-  while((m = rx.exec(region))){
-    const at = open + m.index;
-    if(inDeadZone(text, open, at)) continue;      // コメント/文字列の中の見た目だけの一致
-    const start = skipGapAt(text, at + m[0].length);
-    const end = scanValue(text, start);
-    if(end < 0) return null;
-    const c = text[start];
-    return { start, end, valueText: text.slice(start, end),
-             type: c === '{' ? 'object' : c === '[' ? 'array'
-                 : (c === "'" || c === '"' || c === '`') ? 'string' : 'value' };
+  for(const rx of entryAnchors(key)){
+    let m;
+    rx.lastIndex = 0;
+    while((m = rx.exec(region))){
+      const at = open + m.index;
+      if(inDeadZone(text, open, at)) continue;      // コメント/文字列の中の見た目だけの一致
+      const keyStart = at + m[1].length;
+      const start = skipGapAt(text, at + m[0].length);
+      const end = scanValue(text, start);
+      if(end < 0) return null;
+      const c = text[start];
+      return { start, end, keyStart, keyEnd: keyStart + m[2].length,
+               valueText: text.slice(start, end),
+               type: c === '{' ? 'object' : c === '[' ? 'array'
+                   : (c === "'" || c === '"' || c === '`') ? 'string' : 'value' };
+    }
   }
   return null;
 }
 
+/* 走査器が扱えない書き方(scanValue の注釈)が表の中にあれば理由を返す。無ければ null。
+   **黙って null を返さないための見張り。** 正規表現リテラルは「`/` の直後が空白でも
+   `*` でも `/` でもない」ところを見て拾う(割り算 `1/1.5` は右が数字なので当たらない)。 */
+function tableScanRisk(text, table){
+  const head = new RegExp('const\\s+' + table + '\\s*=\\s*[{\\[]').exec(text);
+  if(!head) return null;
+  const open = head.index + head[0].length - 1;
+  const end = scanValue(text, open);
+  if(end < 0) return `${table} の閉じ括弧が見つかりません`;
+  let prev = '';                                   // 直前の「コードの」1文字(空白とコメントは数えない)
+  for(let j = open; j < end; j++){
+    const k = skipDeadAt(text, j);
+    if(k !== j){
+      if(text[j] === '`') return `${table} にテンプレートリテラル(\`…\`)があります`;
+      if(text[j] === "'" || text[j] === '"') prev = text[j];
+      j = k - 1; continue;                          // コメントは prev を動かさない
+    }
+    const ch = text[j];
+    // 値として書かれた正規表現リテラル。割り算(`1/1.5`)は直前が数字や `)` なので当たらない
+    if(ch === '/' && /[:[(,=]/.test(prev))
+      return `${table} に正規表現リテラル(/…/)があります`;
+    if(/\S/.test(ch)) prev = ch;
+  }
+  return null;
+}
+
+/* 表のその key の**値まるごと**を置き換える(`MONSTER_AURA` / `SSR_SKIN_AURA` のような
+   1項目=1つの値の表)。オブジェクトの中の1項目を直すのは replaceField の担当。 */
+function replaceEntryValue(text, table, key, newValueText){
+  const e = pickEntry(text, table, key);
+  if(!e) throw new Error(`${table} に ${key} がありません`);
+  return text.slice(0, e.start) + newValueText + text.slice(e.end);
+}
+/* 表の見出し(key そのもの)を書き換える。技名を変えたときの `MOVE_AURA` 用。
+   元が引用符付きなら同じ流儀で書く(MOVE_AURA の技名は日本語なので必ず引用符付き)。 */
+function renameEntryKey(text, table, key, newKey){
+  const e = pickEntry(text, table, key);
+  if(!e) throw new Error(`${table} に ${key} がありません`);
+  const q = text[e.keyStart];
+  const t = q === '"' ? JSON.stringify(String(newKey))
+          : q === "'" ? jsStr(newKey)
+          :             String(newKey);
+  return text.slice(0, e.keyStart) + t + text.slice(e.keyEnd);
+}
+
 /* オブジェクト(objStart='{' の位置 / objEnd='}' の次)の**直下**にある field を探す。
-   直下に限る理由: `blast:{ … color:'#fff' }` のような入れ子の同名キーを掴まないため。 */
+   直下に限る理由: `blast:{ … color:'#fff' }` のような入れ子の同名キーを掴まないため。
+   キーは裸(`dmg:1`)でも引用符付き(`'dmg':1`)でもよい。引用符付きを見落とすと
+   「見つからない」→ 末尾へ追加、となって同じキーが2つ並ぶ(後ろが勝つので古い記述が残る)。 */
 function findFieldInObject(text, objStart, objEnd, field){
   let depth = 0;
   for(let j = objStart; j < objEnd; j++){
     const k = skipDeadAt(text, j);
-    if(k !== j){ j = k - 1; continue; }
+    if(k !== j){
+      /* 引用符付きのキー。文字列のすぐ後ろが `:` ならキー、そうでなければ値。
+         中身のエスケープは見ない(表のキーにエスケープが要る文字は使わない)。 */
+      const q = text[j];
+      if(depth === 1 && (q === "'" || q === '"') && text.slice(j+1, k-1) === field){
+        const colon = skipGapAt(text, k);
+        if(text[colon] === ':'){
+          const valueStart = skipGapAt(text, colon + 1);
+          const valueEnd = scanValue(text, valueStart);
+          if(valueEnd < 0) return null;
+          return { keyStart: j, valueStart, valueEnd };
+        }
+      }
+      j = k - 1; continue;
+    }
     const ch = text[j];
     if(ch === '{' || ch === '[' || ch === '('){ depth++; continue; }
     if(ch === '}' || ch === ']' || ch === ')'){ depth--; continue; }
@@ -4840,18 +5347,39 @@ function findFieldInObject(text, objStart, objEnd, field){
   return null;
 }
 
-/* オブジェクトの中の field の値だけを差し替える。無ければ末尾(閉じ括弧の直前)へ足す。
+/* オブジェクトの中の「最後のコードの終わり」の位置を返す(閉じ括弧の手前)。
+   **後ろ向きに空白だけ飛ばしてはいけない。** `{ x:1, // メモ`(改行)`}` のように
+   最後の項目のうしろに行コメントがあると、コメント本文の末尾へ挿してしまい、
+   足した項目がコメントに飲まれて消える(構文は通るので気づけない)。
+   前から読んでコメントを飛ばし、**本当のコードの終わり**だけを覚える。 */
+function lastCodeEndInObject(text, objStart, objEnd){
+  let depth = 0, last = objStart + 1;
+  for(let j = objStart; j < objEnd; j++){
+    const k = skipDeadAt(text, j);
+    if(k !== j){
+      const q = text[j];
+      if(q === "'" || q === '"' || q === '`') last = k;   // 文字列は中身もコード
+      j = k - 1; continue;                                // コメントは飛ばすだけ
+    }
+    const ch = text[j];
+    if(ch === '{' || ch === '[' || ch === '(') depth++;
+    else if(ch === '}' || ch === ']' || ch === ')'){ depth--; if(depth === 0) break; }
+    if(/\S/.test(ch)) last = j + 1;
+  }
+  return last;
+}
+
+/* オブジェクトの中の field の値だけを差し替える。無ければ末尾(最後のコードの直後)へ足す。
    足すときの末尾カンマは周囲の流儀に合わせる(`{ a:1 }` → `{ a:1, b:2 }` /
    `{ a:1, }` → `{ a:1, b:2, }`)。行を作り直さないので、行内コメントも並び順も残る。 */
 function replaceFieldInObject(text, objStart, objEnd, field, newValueText){
   const f = findFieldInObject(text, objStart, objEnd, field);
   if(f) return text.slice(0, f.valueStart) + newValueText + text.slice(f.valueEnd);
-  let p = objEnd - 2;                               // objEnd-1 は '}'。その手前から後ろ向きに空白を飛ばす
-  while(p > objStart && /\s/.test(text[p])) p--;
-  const at = p + 1;
-  const ins = text[p] === '{' ? `${field}:${newValueText} `
-            : text[p] === ',' ? ` ${field}:${newValueText},`
-            :                   `, ${field}:${newValueText}`;
+  const at = lastCodeEndInObject(text, objStart, objEnd);
+  const prev = text[at-1];
+  const ins = prev === '{' ? `${field}:${newValueText} `
+            : prev === ',' ? ` ${field}:${newValueText},`
+            :                `, ${field}:${newValueText}`;
   return text.slice(0, at) + ins + text.slice(at);
 }
 
@@ -4933,6 +5461,319 @@ function changelogWarnings(items, opt){
       const hit = CHANGELOG_INTERNAL.filter(w => t.includes(w));
       if(hit.length) out.push({ type:'internal', i:i+1, words: hit });
     }
+  }
+  return out;
+}
+
+/* ================================================================
+   登録済みを開いて直す(機能D)— 読み取り・差分・書き戻しの中身
+
+   なぜこの形か:
+     ・**正は常に data.js。** specs JSON(ツール製の6体ぶんしかない)は素材パスのような
+       コードに現れない情報にしか使わない。手書きの古い15体も同じ道で開ける。
+     ・読み取りは pickEntry で**その項目の文字列だけ**を取り出し、`new Function` で
+       そこだけ評価する。data.js を丸ごと動かさないので、画像の読み込みも走らない。
+     ・書き戻しは editChangesFor が出した**変わった項目だけ**を走査器で置換する。
+       技オブジェクトは作り直さない(jsMove は新規登録専用)。コメント・未知のキー・
+       並び順が自然に残るのはこのため。
+   ここは DOM に触らない(UI は下の loadExisting / planEdit が担当)。
+   tools/studio_regress.mjs の (h) が、この3つ(readExisting → editChangesFor →
+   applyEditChanges)を UI 抜きで21体ぶん回して守る。                          */
+
+// ELEMENTS の中で扱う項目。id = 仕様パネルの入力欄 / field = data.js のキー
+const EDIT_ELEMENT_FIELDS = [
+  { id:'f_label',       field:'label',        type:'str', jp:'表示名' },
+  { id:'f_color',       field:'color',        type:'str', jp:'明るい色' },
+  { id:'f_dark',        field:'dark',         type:'str', jp:'暗い色' },
+  { id:'f_accent',      field:'accent',       type:'str', jp:'差し色' },
+  { id:'f_speed',       field:'speed',        type:'num', jp:'移動速度',   perf:true },
+  { id:'f_hp',          field:'hp',           type:'num', jp:'HP',         perf:true },
+  { id:'f_trait',       field:'trait',        type:'str', jp:'特性id' },
+  { id:'f_efDmgTaken',  field:'dmgTakenMod',  type:'num', jp:'被ダメ倍率',       perf:true },
+  { id:'f_efDmgDealt',  field:'dmgDealtMod',  type:'num', jp:'与ダメ倍率',       perf:true },
+  { id:'f_efCooldown',  field:'cooldownMod',  type:'num', jp:'クールタイム倍率', perf:true },
+  { id:'f_efGutsRegen', field:'gutsRegenMod', type:'num', jp:'ガッツ回復倍率',   perf:true },
+  { id:'f_efSpeed',     field:'speedMod',     type:'num', jp:'移動速度倍率',     perf:true },
+  { id:'f_efHitbox',    field:'hitboxMult',   type:'num', jp:'当たり判定倍率',   perf:true },
+];
+// SSR_SKINS の中で扱う項目(オーラと専用tier3は別の表なので下で扱う)
+const EDIT_SSR_FIELDS = [
+  { id:'s_name',      field:'name',            type:'str',  jp:'表示名' },
+  { id:'s_season',    field:'seasonExclusive', type:'bool', jp:'シーズン限定' },
+  { id:'s_raidClear', field:'raidClearOnly',   type:'bool', jp:'レイド討伐報酬限定' },
+];
+/* 段ごとに「開いて直す」で扱う技のキー。数字は moveNumKeys と同じ表から作る
+   (技パネル(§C)の入力欄と1対1。ここに無いキーは読むだけで触らない=元のまま残る)。 */
+const EDIT_MOVE_KEYS = {
+  0: MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[0], MOVE_BOOL_TIER[0], ['icon','color','seStyle']),
+  1: MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[1], MOVE_BOOL_TIER[1], ['icon','color','seStyle']),
+  2: MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[2], MOVE_BOOL_TIER[2],
+                            ['projStyle','aoeStyle','color','seStyle']),
+};
+// 更新履歴に「前→後」で出す項目の日本語。ここに無いキーは履歴に出さない(見た目・内部の設定)
+const EDIT_MOVE_JP = {
+  dmg:'威力', range:'射程', projSpeed:'弾速', cooldown:'クールタイム', gutsCost:'消費ガッツ',
+  hitR:'当たり半径', splash:'爆風', burst:'連射', burstGap:'連射の間', burstSpread:'広がり',
+  burstDirs:'方向の本数', burstDirSpread:'方向の広がり',
+};
+
+// その項目が「性能の数字」か(=更新履歴に出す)。技は EDIT_MOVE_JP に載っているものだけ
+function editIsPerfMove(field){ return Object.prototype.hasOwnProperty.call(EDIT_MOVE_JP, field); }
+// 表示用に丸める(0.6666666666666666 を履歴に出さない)。欄へ入れる値は丸めない
+function editRound(v){ return (typeof v === 'number') ? Math.round(v*1000)/1000 : v; }
+// 値を JSON で比べる(undefined は「無い」として null と同じに扱う)
+function editSame(a, b){
+  const n = v => (v === undefined ? null : v);
+  return JSON.stringify(n(a)) === JSON.stringify(n(b));
+}
+
+// pickEntry で取り出した1項目だけを評価する(data.js を丸ごと動かさない)
+function evalEntryValue(valueText){ return new Function('return (' + valueText + ');')(); }
+function readEntryValue(dataJs, table, key){
+  if(key == null || key === '') return { found:false, value:null };
+  const e = pickEntry(dataJs, table, key);
+  if(!e) return { found:false, value:null };
+  try{ return { found:true, value: evalEntryValue(e.valueText), entry:e }; }
+  catch(err){ return { found:true, value:null, entry:e, error:String((err && err.message) || err) }; }
+}
+/* オブジェクトの中の各項目の**元の書き方(文字列)**を集める。
+   `cooldownMod:1/1.5` のような式をそのまま欄へ戻すために要る
+   (0.6666666666666666 を入れ直すと、触っていないのに値が書き換わったように見える)。 */
+function fieldSourceTexts(dataJs, objStart, objEnd, fields){
+  const out = {};
+  for(const f of fields){
+    const fd = findFieldInObject(dataJs, objStart, objEnd, f);
+    if(fd) out[f] = dataJs.slice(fd.valueStart, fd.valueEnd);
+  }
+  return out;
+}
+
+/* data.js から1体ぶん(または1スキンぶん)の今の設定を読む。
+   kind = 'monster' | 'ssr'。読めなかった表は unknown に名前が残り、**触らない限り書き戻さない**。 */
+function readExisting(dataJs, kind, key){
+  const out = { kind, key, unknown:[], risk:[] };
+  const tables = kind === 'ssr' ? ['SSR_SKINS','SSR_SKIN_AURA','SSR_SKIN_TIER3']
+                                : ['ELEMENTS','MONSTER_AURA','SIGNATURE_MOVES','SKIN_CONFIG','MOVE_AURA'];
+  for(const t of tables){ const r = tableScanRisk(dataJs, t); if(r) out.risk.push(r); }
+  const take = (table, optional)=>{
+    const r = readEntryValue(dataJs, table, key);
+    if(r.found && r.error) out.unknown.push(`${table}(読めません: ${r.error})`);
+    else if(!r.found && !optional) out.unknown.push(table);
+    return (r.found && !r.error) ? r.value : null;
+  };
+  if(kind === 'ssr'){
+    out.ssr   = take('SSR_SKINS') || {};
+    out.aura  = take('SSR_SKIN_AURA');
+    out.tier3 = take('SSR_SKIN_TIER3', true);       // 専用tier3が無いスキンのほうが多い
+    return out;
+  }
+  out.elements = take('ELEMENTS') || {};
+  out.aura     = take('MONSTER_AURA');
+  out.moves    = take('SIGNATURE_MOVES') || [];
+  out.skin     = take('SKIN_CONFIG') || {};
+  // 元の書き方を控える(欄へ戻すため)
+  const ee = pickEntry(dataJs, 'ELEMENTS', key);
+  out.elementsText = ee ? fieldSourceTexts(dataJs, ee.start, ee.end,
+                            EDIT_ELEMENT_FIELDS.map(f=>f.field)) : {};
+  out.movesText = [];
+  const me = pickEntry(dataJs, 'SIGNATURE_MOVES', key);
+  for(let i=0; i<out.moves.length; i++){
+    const el = (me && me.type === 'array') ? moveObjectRange(dataJs, me.start, me.end, i) : null;
+    out.movesText.push(el ? fieldSourceTexts(dataJs, el.start, el.end, EDIT_MOVE_KEYS[i] || []) : {});
+  }
+  /* 技のオーラは**技名で引く**。技名を変えたら MOVE_AURA の見出しも直さないと
+     その技のオーラが黙って消える(§11 [14])。無い技名は null。 */
+  out.moveAura = out.moves.map(mv=>{
+    const r = readEntryValue(dataJs, 'MOVE_AURA', mv && mv.name);
+    return (r.found && !r.error) ? r.value : null;
+  });
+  return out;
+}
+
+/* 「元の値(cur = readExisting の返り値)」と「いまの欄の値(next)」を比べて、
+   **変わった項目だけ**の並びを返す純関数。next の中で undefined の項目は「触っていない」。
+   **欄を空にしてもキーは消さない**(消す操作はここに持たせない。事故の幅が広がるため)。 */
+function editChangesFor(cur, next){
+  const out = [];
+  const key = cur.key;
+  const push = c => { out.push(c); return c; };
+
+  if(cur.kind === 'ssr'){
+    const c = cur.ssr || {}, n = (next.ssr || {});
+    for(const f of EDIT_SSR_FIELDS){
+      if(n[f.field] === undefined) continue;
+      const cv = f.type === 'bool' ? !!c[f.field] : c[f.field];
+      const nv = f.type === 'bool' ? !!n[f.field] : n[f.field];
+      if(editSame(cv, nv)) continue;
+      push({ op:'field', table:'SSR_SKINS', key, field:f.field, valueText: jsValue(nv),
+             jp:f.jp, histJp:f.jp, before:cv, after:nv, perf:false });
+    }
+    if(next.aura !== undefined && !editSame(next.aura, cur.aura))
+      push({ op:'entry', table:'SSR_SKIN_AURA', key, valueText: jsStr(next.aura),
+             jp:'オーラ', before:cur.aura, after:next.aura, perf:false });
+    const t3 = next.tier3 || {};
+    if(cur.tier3){
+      /* 専用tier3が「倍率(dmgMult)」ではなく「数値そのもの(move:{…})」で書かれている
+         スキンがある(ちょこ・ペルセポネ)。そのときは倍率を書き足さない。 */
+      if(t3.name !== undefined && !editSame(t3.name, cur.tier3.name))
+        push({ op:'field', table:'SSR_SKIN_TIER3', key, field:'name', valueText: jsStr(t3.name),
+               jp:'専用tier3の技名', histJp:'専用技名', before:cur.tier3.name, after:t3.name, perf:false });
+      if(t3.dmgMult !== undefined && cur.tier3.move == null && !editSame(t3.dmgMult, cur.tier3.dmgMult))
+        push({ op:'field', table:'SSR_SKIN_TIER3', key, field:'dmgMult', valueText: jsNum(t3.dmgMult),
+               jp:'専用tier3の威力倍率', histJp:'専用技の威力倍率',
+               before:cur.tier3.dmgMult, after:t3.dmgMult, perf:true });
+    }else if(t3.name){
+      // 専用tier3がまだ無いスキンに足す。行の作りは新規登録(renderSsrRows)と同じ
+      const mult = (t3.dmgMult == null) ? 1.15 : t3.dmgMult;
+      push({ op:'addRow', table:'SSR_SKIN_TIER3', key,
+             rowText: `  ${pad(key,16)}{ name:${jsStr(t3.name)}, dmgMult:${mult} }, /*@${key}*/`,
+             jp:'専用tier3', histJp:'専用技', before:'(なし)', after:t3.name, perf:false });
+    }
+    return out;
+  }
+
+  /* ---- モンスター ---- */
+  const ce = cur.elements || {}, ne = next.elements || {};
+  for(const f of EDIT_ELEMENT_FIELDS){
+    if(ne[f.field] === undefined || editSame(ne[f.field], ce[f.field])) continue;
+    push({ op:'field', table:'ELEMENTS', key, field:f.field,
+           valueText: f.type === 'num' ? jsNum(ne[f.field]) : jsStr(ne[f.field]),
+           jp:f.jp, histJp:f.jp, before:ce[f.field], after:ne[f.field], perf:!!f.perf });
+  }
+  if(next.aura !== undefined && !editSame(next.aura, cur.aura))
+    push({ op:'entry', table:'MONSTER_AURA', key, valueText: jsStr(next.aura),
+           jp:'オーラ', before:cur.aura, after:next.aura, perf:false });
+
+  for(let i = 0; i < 3; i++){
+    const c = (cur.moves || [])[i] || {}, n = (next.moves || [])[i] || {};
+    const tierJp = `技${i+1}`;
+    if(n.name !== undefined && n.name !== '' && n.name !== c.name){
+      push({ op:'moveField', table:'SIGNATURE_MOVES', key, moveIndex:i, field:'name',
+             valueText: jsStr(n.name), jp:`${tierJp}の技名`, histJp:'技名',
+             before:c.name, after:n.name, perf:false, rename:true });
+      if(cur.moveAura && cur.moveAura[i] != null)
+        push({ op:'renameKey', table:'MOVE_AURA', key:c.name, newKey:n.name,
+               jp:'技のオーラの見出し', before:c.name, after:n.name, perf:false });
+    }
+    for(const f of (EDIT_MOVE_KEYS[i] || [])){
+      if(n[f] === undefined || editSame(n[f], c[f])) continue;
+      push({ op:'moveField', table:'SIGNATURE_MOVES', key, moveIndex:i, field:f,
+             valueText: jsValue(n[f]), jp:`${tierJp}の${EDIT_MOVE_JP[f] || f}`,
+             histJp: `${c.name || tierJp}の${EDIT_MOVE_JP[f] || f}`,
+             before:c[f], after:n[f], perf: editIsPerfMove(f) });
+    }
+    /* 爆風は入れ子(blast:{radius,dmg,…})。**丸ごと置き換えず元の中身へ重ねる**
+       (expandTime・color・se といったツールが知らないキーを落とさないため)。 */
+    if(n.blastRadius !== undefined || n.blastDmg !== undefined){
+      const b = Object.assign({}, c.blast || {});
+      if(n.blastRadius !== undefined) b.radius = n.blastRadius;
+      if(n.blastDmg    !== undefined) b.dmg    = n.blastDmg;
+      if(!editSame(b, c.blast))
+        push({ op:'moveField', table:'SIGNATURE_MOVES', key, moveIndex:i, field:'blast',
+               valueText: jsValue(b), jp:`${tierJp}の爆風`,
+               histJp: `${c.name || tierJp}の爆風`,
+               before:(c.blast||{}).dmg, after:b.dmg, perf:false });
+    }
+  }
+
+  const cs = cur.skin || {}, ns = next.skin || {};
+  for(const f of ['colors','source']){
+    if(ns[f] === undefined || editSame(ns[f], cs[f])) continue;
+    push({ op:'field', table:'SKIN_CONFIG', key, field:f, valueText: jsValue(ns[f]),
+           jp: f === 'colors' ? '色スキンの色' : '色スキンの塗り替える部分',
+           before:cs[f], after:ns[f], perf:false });
+  }
+  return out;
+}
+
+/* 差分を data.js へ書き戻す。**書き換えの入口はこの1か所だけ**(経路を2つ作らない)。
+   1件ずつ現在のテキストへ当て直すので、前の置換で位置がずれても正しく当たる。 */
+function applyEditChanges(dataJs, changes){
+  let text = dataJs;
+  for(const c of changes){
+    if(c.op === 'moveField')      text = replaceMoveField(text, c.key, c.moveIndex, c.field, c.valueText);
+    else if(c.op === 'field')     text = replaceField(text, c.table, c.key, c.field, c.valueText);
+    else if(c.op === 'entry')     text = replaceEntryValue(text, c.table, c.key, c.valueText);
+    else if(c.op === 'renameKey') text = renameEntryKey(text, c.table, c.key, c.newKey);
+    else if(c.op === 'addRow'){
+      const rows = {}; rows[c.table] = [c.rowText];
+      text = applyRows({ 'data.js': text }, rows)['data.js'];
+    }
+    else throw new Error('知らない書き戻しの種類: ' + c.op);
+  }
+  return text;
+}
+
+/* 更新履歴の1行を作る。**性能の数字が変わったときだけ。**
+   見た目(色・エフェクト・色スキン)や内部の設定は遊ぶ人が気づかないので載せない。
+   1体につき1行 =「ジョーカー: 威力21→34・連射5→7」。 */
+function editHistoryLine(label, changes){
+  const parts = [];
+  for(const c of changes){
+    if(c.op === 'renameKey') continue;                       // 技名の変更は下でまとめて1つ
+    if(c.rename){ parts.push(`技名を「${c.before}」から「${c.after}」へ`); continue; }
+    if(!c.perf) continue;
+    parts.push(`${c.histJp || c.jp}${editRound(c.before)}→${editRound(c.after)}`);
+  }
+  if(!parts.length) return null;
+  const renamed = changes.some(c=>c.rename);
+  return { text: `${label}: ${parts.join('・')}`, tags: renamed ? ['monster'] : ['balance'] };
+}
+
+/* 更新履歴の「今日のかたまり」を読む(既存の行を出して『書き足す/書き直す』を選ばせるため)。 */
+function updateHistoryItems(dataJs, ymd){
+  const head = new RegExp(`^  \\{ date:'${ymd}', items:\\[[ \\t]*$`, 'm').exec(dataJs);
+  if(!head) return null;
+  const arrStart = dataJs.lastIndexOf('[', head.index + head[0].length);
+  const arrEnd = scanValue(dataJs, arrStart);
+  if(arrStart < 0 || arrEnd < 0) return null;
+  try{ return evalEntryValue(dataJs.slice(arrStart, arrEnd)); }catch(e){ return null; }
+}
+/* 今日のかたまりの index 番目の行を**書き直す**(t と g を入れ替える)。
+   同じ話題を2行書かないための道。走査器で t/g だけを置き換えるので他の行は動かない。 */
+function rewriteUpdateHistory(dataJs, ymd, index, text, tags){
+  const head = new RegExp(`^  \\{ date:'${ymd}', items:\\[[ \\t]*$`, 'm').exec(dataJs);
+  if(!head) return { text: dataJs, note:`更新履歴に ${ymd} のかたまりが無いので書き直せません` };
+  const arrStart = dataJs.lastIndexOf('[', head.index + head[0].length);
+  let arrEnd = scanValue(dataJs, arrStart);
+  const el = moveObjectRange(dataJs, arrStart, arrEnd, index);
+  if(!el) return { text: dataJs, note:`更新履歴(${ymd})の${index+1}行目が見つかりません` };
+  let out = replaceFieldInObject(dataJs, el.start, el.end, 't', jsStr(text));
+  // g を置き換えるぶん長さが変わるので、範囲を取り直してから2度目を当てる
+  arrEnd = scanValue(out, arrStart);
+  const el2 = moveObjectRange(out, arrStart, arrEnd, index);
+  const g = '[' + ((tags && tags.length) ? tags : ['balance']).map(jsStr).join(',') + ']';
+  out = replaceFieldInObject(out, el2.start, el2.end, 'g', g);
+  return { text: out, note:`更新履歴(${ymd})の${index+1}行目を書き直し` };
+}
+
+/* JSON にした2つの表を突き合わせ、違う所を「道すじ・前・後」で並べる。
+   送信前の検証(下の verifyEditedDataJs)で「意図した差分以外がゼロ」を確かめるのに使う。 */
+function jsonDiffPaths(a, b, prefix, out){
+  out = out || []; prefix = prefix || '';
+  const kind = v => (v === null || v === undefined) ? 'none' : Array.isArray(v) ? 'array' : typeof v;
+  const ka = kind(a), kb = kind(b);
+  if(ka === kb && (ka === 'object' || ka === 'array')){
+    const keys = {};
+    for(const k of Object.keys(a)) keys[k] = 1;
+    for(const k of Object.keys(b)) keys[k] = 1;
+    for(const k of Object.keys(keys)) jsonDiffPaths(a[k], b[k], prefix ? prefix + '.' + k : k, out);
+    return out;
+  }
+  if(JSON.stringify(a === undefined ? null : a) !== JSON.stringify(b === undefined ? null : b))
+    out.push({ path: prefix, before: a, after: b });
+  return out;
+}
+/* 差分の道すじが「その変更で当然変わる所」かどうか。
+   blast のように入れ子ごと変えるものがあるので、**前方一致**で見る。 */
+function editExpectedPaths(changes){
+  const out = [];
+  for(const c of changes){
+    if(c.op === 'moveField')      out.push(`SIGNATURE_MOVES.${c.key}.${c.moveIndex}.${c.field}`);
+    else if(c.op === 'field')     out.push(`${c.table}.${c.key}.${c.field}`);
+    else if(c.op === 'entry')     out.push(`${c.table}.${c.key}`);
+    else if(c.op === 'renameKey'){ out.push(`${c.table}.${c.key}`); out.push(`${c.table}.${c.newKey}`); }
+    else if(c.op === 'addRow')     out.push(`${c.table}.${c.key}`);
   }
   return out;
 }
@@ -5115,10 +5956,17 @@ function boot(){
   $('s_element').innerHTML = '<option value="">先にGitHubへ接続してください</option>';
   $('s_element').onchange = onElementChange;
   $('regKind').onchange = ()=>{
-    const ssr = isSsr(), media = isSsrMedia(), assets = isAssets(), awaken = isAwaken();
+    const ssr = isSsr(), media = isSsrMedia(), assets = isAssets(), awaken = isAwaken(), edit = isEdit();
     // 覚醒の「エフェクト合成」は元の絵から作るので、歩行・静止画のパネルは要らない
     const awakenFx = awaken && awakenIsFxMode();
-    $('ssrForm').style.display = ssr ? 'block' : 'none';
+    /* 「開いて直す」は絵を触らないので歩行・静止画は使わない。
+       仕様・技のパネルは**モンスターを選んだときだけ**、SSRの欄はSSRを選んだときだけ出す
+       (どちらかは editTarget() の1か所で決まる)。 */
+    const t = edit ? editTarget() : null;
+    const editMon = edit && (!t || t.kind === 'monster');
+    const editSsr = edit && !!t && t.kind === 'ssr';
+    $('editForm').style.display = edit ? 'block' : 'none';
+    $('ssrForm').style.display = (ssr || editSsr) ? 'block' : 'none';
     $('assetsForm').style.display = assets ? 'block' : 'none';
     $('awakenForm').style.display = awaken ? 'block' : 'none';
     $('mediaPanel').style.display = media ? 'block' : 'none';
@@ -5126,14 +5974,29 @@ function boot(){
     $('aw_fxWrap').style.display = awakenFx ? 'block' : 'none';
     $('aw_drawWrap').style.display = (awaken && !awakenFx) ? 'block' : 'none';
     // 専用メディアの登録では歩行・静止画・仕様・技は使わない
-    $('walkPanel').style.display = (media || awakenFx) ? 'none' : 'block';
-    $('portraitPanel').style.display = (media || awakenFx) ? 'none' : 'block';
-    $('specPanel').style.display = (ssr || media || assets || awaken) ? 'none' : 'block';
-    $('movePanel').style.display = (ssr || media || assets || awaken) ? 'none' : 'block';
+    $('walkPanel').style.display = (media || awakenFx || edit) ? 'none' : 'block';
+    $('portraitPanel').style.display = (media || awakenFx || edit) ? 'none' : 'block';
+    const specOff = (ssr || media || assets || awaken || editSsr);
+    $('specPanel').style.display = specOff ? 'none' : 'block';
+    $('movePanel').style.display = specOff ? 'none' : 'block';
+    // 色スキンの欄と「自動でつけます」の注意は、開いて直すときだけ入れ替わる
+    $('editSkinBox').style.display = editMon ? 'block' : 'none';
+    $('skinAutoHint').style.display = editMon ? 'none' : 'block';
+    /* 新規のSSR登録にしか無い項目は「開いて直す」では触らない。
+       素体とidは変えられない(画像名が変わってしまう)。レイド特効とピックアップは
+       別の表・別の定数なので、それぞれの登録画面が正。 */
+    $('s_element').disabled = editSsr; $('s_id').disabled = editSsr;
+    for(const id of ['s_raidEffectWrap','s_raidPickupWrap','s_addHint'])
+      $(id).style.display = editSsr ? 'none' : '';
+    if(editSsr) $('s_raidRow').style.display = 'none';
+    else $('s_raidRow').style.display = $('s_raidEffect').checked ? '' : 'none';
     /* 技パネルごと隠れるときはプレビューも閉じる。
        隠れた iframe の中でゲームが回り続けると、見えないまま電池とメモリを食う。 */
     if($('movePanel').style.display === 'none' && fxPreview.open) closeFxPreview();
-    $('regHint').textContent = media
+    $('regHint').textContent = edit
+      ? '登録済みのモンスター・SSRスキンを開いて直します。**触った欄だけ**を書き戻すので、'
+        + '手書きのコメントも、この画面に無い設定もそのまま残ります。'
+      : media
       ? 'すでにいるSSRスキンに、昇格演出・専用BGM・専用SE・宣伝画像・ガチャのピックアップを設定します。'
       : assets
       ? 'すでにいるモンスター・SSRスキンの絵だけを作り直して差し替えます。'
@@ -5144,17 +6007,26 @@ function boot(){
       : ssr
       ? 'SSRスキンは「素体の見た目替え+tier3の技名と威力」です。技・特性・適性は素体のものを使います。'
       : '新しいモンスターとして9つの表すべてに登録します。';
-    // 素材の差し替えは登録行を触らないので「取り消す」対象が無い
-    $('revertBtn').style.display = assets ? 'none' : '';
+    // 素材の差し替えと「開いて直す」は登録行を足さないので「取り消す」対象が無い
+    $('revertBtn').style.display = (assets || edit) ? 'none' : '';
     $('revertBtn').textContent = media ? 'このスキンの専用メディア設定を取り消す'
                                 : awaken ? 'この覚醒スキンの登録を取り消す'
                                 : ssr   ? 'このSSRスキンの登録を取り消す'
                                         : 'このモンスターの登録を取り消す';
     state.files = null; $('commitBtn').disabled = true;
-    if((ssr || media || assets || awaken) && !state.elements) loadElementList();
+    if((ssr || media || assets || awaken || edit) && !state.elements) loadElementList();
     if(awaken) renderAwakenCurrent();
   };
   $('a_target').onchange = ()=>{ renderAssetCurrent(); state.files = null; $('commitBtn').disabled = true; };
+  // 開いて直す: 色スキンの色のチェック欄と、相手を選び直したときの片付け
+  $('e_colors').innerHTML = SKIN_COLOR_ORDER.map(c=>
+    `<label><input type="checkbox" id="e_col_${c}">${SKIN_COLOR_JP[c] || c}</label>`).join('');
+  $('e_target').onchange = ()=>{
+    state.edit = null; state.files = null; $('commitBtn').disabled = true;
+    $('e_chText').value = ''; $('e_chWrap').style.display = 'none';
+    $('e_cur').textContent = '「この内容を読み込む」を押すと、いまの data.js の中身が下の欄に入ります。';
+    $('regKind').onchange();     // モンスターかSSRかで出すパネルが変わる
+  };
   // 覚醒: 作り方を変えると使うパネルが変わるので出し分けをやり直す
   $('aw_mode').onchange = ()=>{ $('regKind').onchange(); };
   $('aw_base').onchange = ()=>{ state.awaken = null; state.files = null; $('commitBtn').disabled = true;

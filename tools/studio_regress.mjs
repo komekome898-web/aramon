@@ -8,13 +8,15 @@
      (d) 往復     data.js の全21体で pickEntry の取り出しが元と一致し、1項目だけ変えると
                   変わる行がその1行だけ・評価した値が意図どおり(設計仕様 §11 [11][12][13][27])
      (e) 属性     studio_web.html の onclick= 等から呼ばれる関数がすべて定義されている(§11 [17])
-     (f) 技名     data.js の全技名が MOVE_AURA のキーにある(§11 [14])
+     (f) 技名     data.js の全技名が MOVE_AURA のキーにあり、pickEntry で取れる(§11 [14])
      (g) 更新履歴 changelogWarnings(ツール側)と changelog_check.mjs が同じ警告を出す(§11 [39])
+     (h) 開いて直す 全21体+全SSRを「開く→1項目だけ変える→書き戻す」で、変わる行がその行だけ・
+                  評価した値が意図どおり・意図しない差分がゼロ(§5 D・§11 D [27])
 
    使い方:
      node tools/studio_regress.mjs --update   ゴールデン(tools/_golden/)を作り直す
      node tools/studio_regress.mjs            ゴールデンと比べる(違えば終了コード1)
-     node tools/studio_regress.mjs --only rows|segment|model|period|roundtrip|handlers|moveaura|changelog   項目を絞る
+     node tools/studio_regress.mjs --only rows|segment|model|period|roundtrip|handlers|moveaura|changelog|edit   項目を絞る
 
    決まりごと:
      ・ゴールデンは生成物だが**比較の相手なので git で追跡する**(.gitignore に入れない)。
@@ -280,7 +282,7 @@ function evalDataJs(text, label){
   s.setTimeout = ()=> 0; s.clearTimeout = ()=> {};
   s.requestAnimationFrame = ()=> 0;
   s.performance = { now: ()=> 0 };
-  const tail = ';({ELEMENTS,SIGNATURE_MOVES,SKIN_CONFIG,MOVE_AURA,MONSTER_AURA,SSR_SKIN_TIER3,SSR_SKIN_AURA,UPDATE_HISTORY,CHANGELOG_TAGS});';
+  const tail = ';({ELEMENTS,SIGNATURE_MOVES,SKIN_CONFIG,MOVE_AURA,MONSTER_AURA,SSR_SKINS,SSR_SKIN_TIER3,SSR_SKIN_AURA,UPDATE_HISTORY,CHANGELOG_TAGS});';
   try { return vm.runInContext(text + '\n' + tail, vm.createContext(s), { filename: label || 'data.js' }); }
   catch(e){ throw new Error(`data.js の評価に失敗(${label || '元'}): ${e && e.message}`); }
 }
@@ -330,15 +332,17 @@ function runRoundTrip(){
       if(src.slice(0, e.start) + e.valueText + src.slice(e.end) !== src)
         fail('roundtrip', `${at(table)}の取り出し位置がずれています`);
     }
-    /* MONSTER_AURA は1行に何項目も書く表なので、行頭の錨(^  key:)では
-       **行の先頭にある項目しか取れない**(取れないこと自体は今の書き戻しの対象外なので許す)。
-       取れたときに位置が正しいことだけを見る。 */
+    /* MONSTER_AURA は1行に何項目も書く表。錨を「行頭 または `,`/`{` の直後」へ広げたので
+       **21体すべて**取れるはず(取れないのは錨が狭まった=書き戻しが届かなくなった証拠)。 */
     const ma = S.pickEntry(src, 'MONSTER_AURA', key);
-    if(ma){
+    if(!ma) fail('roundtrip', `${at('MONSTER_AURA')}が pickEntry で取れません(1行に複数項目を書く表の錨)`);
+    else {
       if(src.slice(0, ma.start) + ma.valueText + src.slice(ma.end) !== src)
         fail('roundtrip', `${at('MONSTER_AURA')}の取り出し位置がずれています`);
       if(ma.valueText.replace(/'/g, '') !== base.MONSTER_AURA[key])
         fail('roundtrip', `${at('MONSTER_AURA')}の値が違います(${ma.valueText})`);
+      if(src.slice(ma.keyStart, ma.keyEnd).replace(/'/g, '') !== key)
+        fail('roundtrip', `${at('MONSTER_AURA')}の見出しの範囲がずれています(${src.slice(ma.keyStart, ma.keyEnd)})`);
       maReach++;
     }
     // 値を「今と同じ文字列」で置き換えても1文字も動かない(範囲の当て方の確認)
@@ -398,15 +402,32 @@ function runRoundTrip(){
      `  // 例: guts_ssr: { … },` の1行だけを持つ空の表(実例)。 */
   if(S.pickEntry(src, 'EMOTE_FRAMES', 'guts_ssr') !== null)
     fail('roundtrip', 'EMOTE_FRAMES のコメント行(// 例: guts_ssr: …)を項目として掴んでいます');
+  if(maReach !== keys.length)
+    fail('roundtrip', `MONSTER_AURA から取れたのは ${maReach}/${keys.length} 体です(全部取れないと書き戻しが届きません)`);
 
-  /* 取れなかった体の数を**必ず出力の末尾に出す**。以前は notes に1行流すだけだったので、
-     「9体しか取れていない」のに検査は緑のまま通り、見落とせる状態だった(§指摘21)。
-     TODO(波3で錨を広げたら failures へ): 走査器が1行に複数項目を書く表を掴めるようになったら、
-     ここは notes ではなく fail('roundtrip', …) にして、取れない体が残ったら落とす。 */
-  const miss = keys.length - maReach;
-  notes.push(`MONSTER_AURA は行頭にある ${maReach}/${keys.length} 体だけ pickEntry で取れる`
-    + `(1行に複数項目を書く表のため。**取れなかった体: ${miss}**)`);
-  return `${keys.length}体 × 4通り(MONSTER_AURA は ${miss}体が取れず)`;
+  /* 末尾へ追加する経路: 最後の項目のうしろに行コメントがあると、後ろ向きに空白だけ飛ばす
+     作りでは**コメント本文の末尾へ挿してしまい、足した項目が消える**(構文は通る)。
+     ここで小さな実例を通して、足したキーが本当に評価結果へ出ることを見る。 */
+  for(const [obj, why] of [['{ x:1, // メモ\n  }', '最後の項目のうしろに行コメント'],
+                           ['{ x:1 /* 中 */ }',   '最後の項目のうしろにブロックコメント'],
+                           ['{ x:1, }',           '末尾カンマあり'],
+                           ['{ }',                '空のオブジェクト']]){
+    const t = S.replaceFieldInObject(obj, 0, obj.length, 'y', '2');
+    let v = null;
+    try{ v = vm.runInNewContext('(' + t + ')'); }catch(e){ fail('roundtrip', `追加経路(${why})で構文が壊れました: ${t}`); continue; }
+    if(v.y !== 2) fail('roundtrip', `追加経路(${why})で足したキーが評価に出ません: ${JSON.stringify(t)}`);
+    if(obj.includes('x:1') && v.x !== 1)
+      fail('roundtrip', `追加経路(${why})で元のキーが消えました: ${JSON.stringify(t)}`);
+    for(const c of ['// メモ', '/* 中 */'])
+      if(obj.includes(c) && !t.includes(c))
+        fail('roundtrip', `追加経路(${why})でコメント「${c}」が消えました: ${JSON.stringify(t)}`);
+  }
+  // 引用符付きのキーを見つけられること(見つけられないと同じキーが2つ並ぶ)
+  const q = "{ 'dmg':1, b:2 }";
+  if(S.replaceFieldInObject(q, 0, q.length, 'dmg', '9') !== "{ 'dmg':9, b:2 }")
+    fail('roundtrip', `引用符付きのキー('dmg':1)を書き換えられません: ${S.replaceFieldInObject(q, 0, q.length, 'dmg', '9')}`);
+
+  return `${keys.length}体 × 4通り`;
 }
 
 /* ============================================================ (e) HTML属性から呼ばれる名前
@@ -447,13 +468,23 @@ function runHandlers(){
    ※ SSR専用tier3(SSR_SKIN_TIER3)の技名はここに入らないのが正しい。
       装備中のオーラは SSR_SKIN_AURA から来る(data.js の getMoveAura / skinTier3Aura)。 */
 function runMoveAura(){
-  const d = evalDataJs(fs.readFileSync(path.join(ROOT, 'data.js'), 'utf8'));
+  const src = fs.readFileSync(path.join(ROOT, 'data.js'), 'utf8');
+  const d = evalDataJs(src);
   const auraKeys = new Set(Object.keys(d.MOVE_AURA));
-  let n = 0;
+  let n = 0, reach = 0;
   for(const key of Object.keys(d.SIGNATURE_MOVES)) for(const mv of d.SIGNATURE_MOVES[key]){
     n++;
     if(!auraKeys.has(mv.name)) fail('moveaura', `SIGNATURE_MOVES.${key} の「${mv.name}」が MOVE_AURA にありません`);
+    /* 技名を変えたら MOVE_AURA の見出しも書き換える(§11 [14])。**書き換えるには
+       まず取れないといけない。** MOVE_AURA は1行3項目・キーが引用符付きなので、
+       錨が行頭だけだと 1/3 しか届かない。全部の技名で取れることをここで見る。 */
+    const e = S.pickEntry(src, 'MOVE_AURA', mv.name);
+    if(!e) fail('moveaura', `MOVE_AURA の「${mv.name}」が pickEntry で取れません(見出しを書き換えられない)`);
+    else if(src.slice(e.keyStart, e.keyEnd) !== `'${mv.name}'`)
+      fail('moveaura', `MOVE_AURA の「${mv.name}」の見出しの範囲がずれています(${src.slice(e.keyStart, e.keyEnd)})`);
+    else reach++;
   }
+  if(reach !== n) fail('moveaura', `MOVE_AURA から取れたのは ${reach}/${n} 技です`);
   // SSR側は別経路。抜けていても止めないが、数だけ出しておく
   const ssrMissing = Object.keys(d.SSR_SKIN_TIER3 || {}).filter(id => !d.SSR_SKIN_AURA[id]);
   if(ssrMissing.length) fail('moveaura', `SSR_SKIN_AURA が無いSSR専用tier3: ${ssrMissing.join(', ')}`);
@@ -536,6 +567,198 @@ function runChangelog(){
   return `${H0.length}ブロック(今:注意${n}件 / 検査用:注意${a1.length}件で一致)`;
 }
 
+/* ============================================================ (h) 開いて直す(機能D)
+
+   何を守るか(設計仕様 §5 D・§11 D [27]):
+     登録済みを開いて **1項目だけ**直したとき、変わる行がその1行だけで、評価した値が
+     意図どおりで、それ以外の差分がゼロであること。**UI を通さない** —— 実装の3つ
+     (readExisting → editChangesFor → applyEditChanges)をそのまま呼ぶ。
+   必須ケース(§11 [27]): fire(技の中のコメント行)/ rock(閉じ括弧と同じ行のコメント)/
+     phoenix(1/1.5 の式)/ zan・joker(未知キー)/ mocchi(SKIN_CONFIG の source:{…})/
+     技名を変えたら MOVE_AURA の見出しも変わる。                                   */
+
+// 評価した data.js から、突き合わせに使う表だけを JSON で取り出す
+function tablesJson(v){
+  const o = {};
+  for(const t of S.EDIT_VERIFY_TABLES) o[t] = v[t];
+  return JSON.parse(JSON.stringify(o));
+}
+/* 「読み取った値をそのまま欄へ入れ直した状態」の next を作る。
+   何も触らなければ差分ゼロ、というのがこの機能の土台なので、ここを起点に1項目だけ動かす。 */
+function formLike(cur){
+  const pick = (src, fields)=>{ const o = {}; for(const f of fields) o[f] = (src || {})[f]; return o; };
+  if(cur.kind === 'ssr')
+    return { kind:'ssr', key:cur.key,
+             ssr: pick(cur.ssr, S.EDIT_SSR_FIELDS.map(f=>f.field)),
+             aura: cur.aura,
+             tier3: cur.tier3 ? { name:cur.tier3.name, dmgMult:cur.tier3.dmgMult } : {} };
+  return { kind:'monster', key:cur.key,
+           elements: pick(cur.elements, S.EDIT_ELEMENT_FIELDS.map(f=>f.field)),
+           aura: cur.aura,
+           moves: (cur.moves || []).map((mv, i)=>{
+             const o = pick(mv, S.EDIT_MOVE_KEYS[i] || []);
+             o.name = mv.name;
+             if(i === S.MOVE_BLAST_TIER && mv.blast){ o.blastRadius = mv.blast.radius; o.blastDmg = mv.blast.dmg; }
+             return o;
+           }),
+           skin: { colors: (cur.skin.colors || []).slice(), source: cur.skin.source } };
+}
+const shownEdit = [];
+/* 1件ぶんの「開く→直す→書き戻す」を通し、変わった行数・評価した値・意図しない差分を見る。 */
+function editCase(label, src, baseTables, changes, wantLines, checkValue){
+  if(!changes.length){ fail('edit', `${label}: 変更が1件も作られませんでした`); return null; }
+  let text;
+  try{ text = S.applyEditChanges(src, changes); }
+  catch(e){ fail('edit', `${label}: 書き戻しで例外 — ${e.message}`); return null; }
+  const d = changedLines(src, text);
+  if(d.length !== wantLines) fail('edit', `${label}: 変わった行が ${d.length} 行(${wantLines}行のはず)`);
+  else if(SHOW) for(const one of d) shownEdit.push(`${label}  ${one.n}行目\n      - ${one.before}\n      + ${one.after}`);
+  let now;
+  try{ now = evalDataJs(text, label); }
+  catch(e){ fail('edit', `${label}: 書き戻した data.js を評価できません — ${e.message}`); return null; }
+  const want = S.editExpectedPaths(changes);
+  const diffs = S.jsonDiffPaths(baseTables, tablesJson(now));
+  const un = diffs.filter(x => !want.some(w => x.path === w || x.path.indexOf(w + '.') === 0));
+  if(un.length) fail('edit', `${label}: 意図しない差分 — ` + un.slice(0,4).map(x=>x.path).join(', '));
+  if(!diffs.length) fail('edit', `${label}: 評価しても値が変わっていません`);
+  const why = checkValue && checkValue(now, text);
+  if(why) fail('edit', `${label}: ${why}`);
+  return { text, now };
+}
+
+function runEditRound(){
+  const src = fs.readFileSync(path.join(ROOT, 'data.js'), 'utf8');
+  const base = evalDataJs(src);
+  const baseTables = tablesJson(base);
+  // 走査器が扱えない書き方(正規表現リテラル・テンプレートリテラル)が入っていないこと
+  for(const t of S.EDIT_VERIFY_TABLES){
+    const risk = S.tableScanRisk(src, t);
+    if(risk) fail('edit', `${risk} — 走査器はこの書き方を扱えません(scanValue の注釈)`);
+  }
+
+  const keys = Object.keys(base.ELEMENTS);
+  let n = 0;
+  for(const key of keys){
+    const note = MUST[key] ? `(必須: ${MUST[key]})` : '';
+    const cur = S.readExisting(src, 'monster', key);
+    if(cur.unknown.length) fail('edit', `${key}${note}: 読めなかった表 ${cur.unknown.join(' / ')}`);
+    if(cur.risk.length)    fail('edit', `${key}${note}: ${cur.risk.join(' / ')}`);
+    // 読み取った値(pickEntry + new Function)が、data.js を丸ごと評価したものと一致する
+    if(JSON.stringify(cur.elements) !== JSON.stringify(base.ELEMENTS[key]))
+      fail('edit', `${key}${note}: ELEMENTS の読み取りが data.js の評価と違います`);
+    if(cur.aura !== base.MONSTER_AURA[key])
+      fail('edit', `${key}${note}: MONSTER_AURA の読み取りが違います(${cur.aura})`);
+    if(cur.moves.length !== 3) fail('edit', `${key}${note}: 技が3つ読めません(${cur.moves.length})`);
+
+    // ① 読んだ値をそのまま入れ直したら差分ゼロ(=触らなければ1文字も動かない)
+    const same = S.editChangesFor(cur, formLike(cur));
+    if(same.length)
+      fail('edit', `${key}${note}: 何も触っていないのに ${same.length} 件の差分が出ました(`
+        + same.map(c=>c.jp).join(', ') + ')');
+
+    // ② ELEMENTS の hp を +1
+    let next = formLike(cur);
+    next.elements.hp = cur.elements.hp + 1;
+    editCase(`${key}${note} ELEMENTS.hp`, src, baseTables, S.editChangesFor(cur, next), 1,
+      now => now.ELEMENTS[key].hp === cur.elements.hp + 1 ? null : `hp が ${now.ELEMENTS[key].hp} です`);
+    n++;
+
+    /* ③ tier3 の威力を +1。fire は技の中にコメント行、rock は閉じ括弧と同じ行から
+       コメントが始まる。zan・joker はツールが知らないキーを持つ。全部そのまま残るはず。 */
+    next = formLike(cur);
+    next.moves[2].dmg = cur.moves[2].dmg + 1;
+    editCase(`${key}${note} 技3の威力`, src, baseTables, S.editChangesFor(cur, next), 1,
+      (now, text) => {
+        if(now.SIGNATURE_MOVES[key][2].dmg !== cur.moves[2].dmg + 1) return '威力が入っていません';
+        // 未知のキーが消えていないこと(zan の burstSpreadRandom / joker の burstDirs・projVisR)
+        for(const k of Object.keys(cur.moves[2]))
+          if(now.SIGNATURE_MOVES[key][2][k] === undefined) return `技3の ${k} が消えました`;
+        return null;
+      });
+    n++;
+
+    // ④ 色スキンの塗り替える部分(mocchi は source:{…} が必須ケース)
+    next = formLike(cur);
+    next.skin = { colors: next.skin.colors.slice(),
+                  source: Object.assign({}, cur.skin.source,
+                            cur.skin.source.type === 'chroma' ? { window: (cur.skin.source.window || 55) + 1 }
+                                                              : { type:'chroma', hue:0, window:55 }) };
+    editCase(`${key}${note} SKIN_CONFIG.source`, src, baseTables, S.editChangesFor(cur, next), 1,
+      now => now.SKIN_CONFIG[key].source.window === next.skin.source.window ? null : '色相の幅が入っていません');
+    n++;
+
+    // ⑤ オーラ(1行に複数項目を書く表。錨を広げていないとここで落ちる)
+    next = formLike(cur);
+    next.aura = (cur.aura === 'red') ? 'blue' : 'red';
+    editCase(`${key}${note} MONSTER_AURA`, src, baseTables, S.editChangesFor(cur, next), 1,
+      now => now.MONSTER_AURA[key] === next.aura ? null : `オーラが ${now.MONSTER_AURA[key]} です`);
+    n++;
+
+    /* ⑥ 技名を変える。**SIGNATURE_MOVES と MOVE_AURA の2行**が変わり、
+       その技のオーラ(技名で引く)が消えないこと。 */
+    next = formLike(cur);
+    const oldName = cur.moves[0].name, newName = oldName + 'X';
+    next.moves[0].name = newName;
+    const ch6 = S.editChangesFor(cur, next);
+    if(!ch6.some(c => c.op === 'renameKey'))
+      fail('edit', `${key}${note}: 技名を変えたのに MOVE_AURA の見出しを直していません`);
+    editCase(`${key}${note} 技1の技名`, src, baseTables, ch6, 2, now => {
+      if(now.SIGNATURE_MOVES[key][0].name !== newName) return '技名が入っていません';
+      if(now.MOVE_AURA[newName] !== base.MOVE_AURA[oldName]) return 'MOVE_AURA に新しい技名がありません';
+      if(now.MOVE_AURA[oldName] !== undefined) return 'MOVE_AURA に古い技名が残っています';
+      if(now.SIGNATURE_MOVES[key][0].aura !== base.SIGNATURE_MOVES[key][0].aura) return '技のオーラが変わりました';
+      return null;
+    });
+    n++;
+  }
+
+  /* SSRスキンも同じ道で開いて直せる(表示名・オーラ・専用tier3)。
+     SSR_SKIN_AURA の先頭は1行に4項目あるので、ここでも広げた錨が要る。 */
+  const ssrIds = Object.keys(base.SSR_SKINS);
+  for(const id of ssrIds){
+    const cur = S.readExisting(src, 'ssr', id);
+    if(cur.unknown.length) fail('edit', `${id}: 読めなかった表 ${cur.unknown.join(' / ')}`);
+    if(S.editChangesFor(cur, formLike(cur)).length)
+      fail('edit', `${id}: 何も触っていないのに差分が出ました`);
+    let next = formLike(cur);
+    next.ssr.name = cur.ssr.name + '改';
+    editCase(`${id} SSR_SKINS.name`, src, baseTables, S.editChangesFor(cur, next), 1,
+      now => now.SSR_SKINS[id].name === next.ssr.name ? null : '表示名が入っていません');
+    next = formLike(cur);
+    next.aura = (cur.aura === 'red') ? 'blue' : 'red';
+    editCase(`${id} SSR_SKIN_AURA`, src, baseTables, S.editChangesFor(cur, next), 1,
+      now => now.SSR_SKIN_AURA[id] === next.aura ? null : `オーラが ${now.SSR_SKIN_AURA[id]} です`);
+    n += 2;
+  }
+
+  /* 更新履歴: 今日のかたまりの1行を**書き直す**(書き足さない)。
+     日付は実行日によって有る/無いが変わるので、検査用の1日ぶんを差し込んで確かめる。 */
+  const ymd = S.todayYmd();
+  const probe = `  { date:'${ymd}', items:[\n    { t:'検査用の行', g:['balance'] },\n  ]},\n`;
+  const withDay = src.replace('const UPDATE_HISTORY = [\n', 'const UPDATE_HISTORY = [\n' + probe);
+  const items = S.updateHistoryItems(withDay, ymd);
+  if(!items || items.length !== 1) fail('edit', '更新履歴の今日のかたまりを読めません');
+  else {
+    const r = S.rewriteUpdateHistory(withDay, ymd, 0, 'ジョーカー: 威力21→34', ['balance','monster']);
+    const d = changedLines(withDay, r.text);
+    if(d.length !== 1) fail('edit', `更新履歴の書き直しで ${d.length} 行変わりました(1行のはず)`);
+    const got = (S.updateHistoryItems(r.text, ymd) || [])[0];
+    if(!got || got.t !== 'ジョーカー: 威力21→34' || JSON.stringify(got.g) !== '["balance","monster"]')
+      fail('edit', `更新履歴の書き直しが入っていません(${JSON.stringify(got)})`);
+  }
+  // 更新履歴の1行は「性能の数字」からしか作らない(見た目だけの変更では作らない)
+  const line = S.editHistoryLine('ジョーカー', [
+    { perf:true, histJp:'威力', before:21, after:34 },
+    { perf:true, histJp:'連射', before:5,  after:7 },
+    { perf:false, histJp:'エフェクト色', before:'#000', after:'#fff' }]);
+  if(!line || line.text !== 'ジョーカー: 威力21→34・連射5→7')
+    fail('edit', `更新履歴の1行の作り方が違います(${line && line.text})`);
+  if(S.editHistoryLine('ジョーカー', [{ perf:false, histJp:'色', before:'a', after:'b' }]) !== null)
+    fail('edit', '見た目だけの変更でも更新履歴の行を作っています');
+
+  return `${keys.length}体 × 5通り + SSR ${ssrIds.length}体 × 2通り(${n}件)`;
+}
+
 /* ------------------------------------------------------------ 実行 */
 const done = [];
 if(want('rows'))      done.push('行生成 ' + runRows());
@@ -546,6 +769,12 @@ if(want('roundtrip')) done.push('往復 ' + runRoundTrip());
 if(want('handlers'))  done.push('属性 ' + runHandlers());
 if(want('moveaura'))  done.push('技名 ' + runMoveAura());
 if(want('changelog')) done.push('更新履歴 ' + runChangelog());
+if(want('edit'))      done.push('開いて直す ' + runEditRound());
+if(shownEdit.length){
+  console.log('開いて直す(1項目変更)の変更行:');
+  for(const s of shownEdit) console.log('  - ' + s);
+  console.log('');
+}
 if(shown.length){
   console.log('往復(1項目変更)の変更行:');
   for(const s of shown) console.log('  - ' + s);
