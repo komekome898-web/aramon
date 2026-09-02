@@ -687,6 +687,60 @@ function runSe(){
   return `${need.size}種`;
 }
 
+/* ============================================================ (j) 見せ方(残り時間・失敗の言い方)
+
+   E3/E4 で「見積もりの式」と「よくある失敗→日本語」をそれぞれ1か所へ寄せた。
+   どちらも純粋な関数なので、ブラウザを起こさずここで毎回確かめる。
+     ・etaText は**実測から**出す(固定値を返さない)。1件も終わっていない・
+       終わっているときは黙る(嘘の残り時間を出さない)。
+     ・errorText は英語の例外を必ず日本語にし、**自前の日本語はそのまま通す**。
+       ここが逆になると「動画を選んでください」まで丸められて意味が消える。          */
+function runWording(){
+  const now = Date.now();
+  // ① 実測から出ているか(同じ done/total でも、掛かった時間が倍なら残りも倍)
+  const a = S.etaText(1, 5, now - 1000), b = S.etaText(1, 5, now - 2000);
+  if(!/残り約4秒/.test(a)) fail('wording', `etaText(1,5,-1秒)が「${a}」です(残り約4秒のはず)`);
+  if(!/残り約8秒/.test(b)) fail('wording', `etaText(1,5,-2秒)が「${b}」です(残り約8秒のはず)`);
+  if(a === b) fail('wording', 'etaText が実測を見ていません(固定値になっています)');
+  // ② 分まで伸びたら分で言う(44MBの取得は電波次第で分単位)
+  if(!/残り約2分/.test(S.etaText(1, 3, now - 60000)))
+    fail('wording', 'etaText が長い待ちを分で言いません: ' + S.etaText(1, 3, now - 60000));
+  // ③ 出せないときは黙る(0件目・終わった後・時刻なし)
+  for(const [d, t, st] of [[0, 8, now-1000], [8, 8, now-1000], [1, 8, 0]])
+    if(S.etaText(d, t, st) !== '') fail('wording', `etaText(${d},${t}) が黙りません: ${S.etaText(d, t, st)}`);
+  // ④ 1件あたりの実測から出す道(モデルの推論)も同じ式に載っている
+  if(S.etaByRate(1000, 4) !== S.etaText(1, 5, now - 1000))
+    fail('wording', 'etaByRate が etaText と違う式になっています');
+  // ⑤ 失敗の言い方。英語は日本語へ、自前の日本語はそのまま
+  const cases = [
+    [new Error('GitHub 401: Bad credentials'), /トークンが切れています/],
+    [new Error('GitHub 403: Resource not accessible by personal access token'), /権限/],
+    [new Error('GitHub 404: Not Found'), /リポジトリ名とブランチ名/],
+    [new Error('GitHub 422: Update is not a fast forward'), /やり直して/],
+    [new Error('Failed to fetch'), /通信できませんでした/],
+    [new Error('The source image could not be decoded'), /読み取れませんでした/],
+    [new Error('動画を選んでください'), /^動画を選んでください$/],
+    [new Error('被写体を検出できませんでした'), /^被写体を検出できませんでした$/],
+    [new Error('Something totally unknown'), /うまくいきませんでした.*Something totally unknown/],
+  ];
+  for(const [e, re] of cases)
+    if(!re.test(S.errorText(e))) fail('wording', `errorText(${e.message}) が「${S.errorText(e)}」です`);
+  // ⑥ モデル経路の言い方は今までどおり(呼び名 modelErrorText は残す)
+  const mk = (code, msg)=>{ const e = new Error(msg); e.__modelCode = code; return e; };
+  const model = [
+    [mk('abort', '中断しました'), /^中断しました。/],
+    [mk('truncated', 'x'), /途中で切れました/],
+    [mk('retry', 'x'), /^モデルを用意できませんでした/],
+    [mk('device', 'x'), /この端末ではモデルを動かせませんでした/],
+    [new Error('Failed to fetch'), /^モデルを取得できませんでした/],
+    [new Error('no available backend found'), /この端末ではモデルを動かせませんでした/],
+    [new Error('Whatever'), /^モデルの読み込みに失敗しました/],
+  ];
+  for(const [e, re] of model)
+    if(!re.test(S.modelErrorText(e))) fail('wording', `modelErrorText(${e.message}) が「${S.modelErrorText(e)}」です`);
+  return `残り時間 6通り / 失敗の言い方 ${cases.length + model.length}通り`;
+}
+
 /* ============================================================ (g) 更新履歴の注意2判定
 
    studio_web.html の changelogWarnings は tools/changelog_check.mjs と**二重に持つ**箇所
@@ -1026,6 +1080,7 @@ if(want('moveaura'))  done.push('技名 ' + runMoveAura());
 if(want('changelog')) done.push('更新履歴 ' + runChangelog());
 if(want('edit'))      done.push('開いて直す ' + runEditRound());
 if(want('se'))        done.push('SEの一覧 ' + runSe());
+if(want('wording'))   done.push('見せ方 ' + runWording());
 if(shownEdit.length){
   console.log('開いて直す(1項目変更)の変更行:');
   for(const s of shownEdit) console.log('  - ' + s);

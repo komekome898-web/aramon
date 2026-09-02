@@ -10,10 +10,26 @@
   body{ margin:0; background:var(--bg); color:var(--ink); font-size:15px;
         font-family:system-ui,-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif;
         padding:0 0 60px; }
-  header{ position:sticky; top:0; z-index:9; background:#0e121a; border-bottom:1px solid var(--line);
+  header{ background:#0e121a; border-bottom:1px solid var(--line);
           padding:10px 14px; padding-top:max(10px, env(safe-area-inset-top)); }
   header h1{ margin:0; font-size:15px; letter-spacing:1px; }
   header .sub{ font-size:11px; color:var(--dim); margin-top:2px; }
+  /* 【段階バー】画面のいちばん上に貼り付いて「いまどの段階か」を出す。
+     **貼り付くのはこの帯だけ**(見出しは一緒に貼らない) —— 7パネルを縦に積む画面なので、
+     見出しまで貼ると1画面の1割以上が常時ふさがる。 */
+  #stageWrap{ position:sticky; top:0; z-index:9; background:#0e121a;
+              border-bottom:1px solid var(--line); padding:6px 8px; }
+  #stageBar{ display:flex; gap:3px; }
+  /* 段は7つ。**横に送らせない**(送ると「いまどの段階か」が画面の外に隠れて意味が無い)ので、
+     7等分して幅を画面から決める。入りきらない字はその要素自身が省略記号で切る。 */
+  #stageBar button{ flex:1 1 0; min-width:0; padding:0 2px; font-size:10px; line-height:1.2;
+                    border-radius:8px; background:#1b2130; color:var(--dim);
+                    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  #stageBar button.ok{ color:var(--ok); border-color:var(--ok); }
+  #stageBar button.ng{ color:var(--ng); border-color:var(--ng); }
+  /* 今の登録の種類では使わない段。消さずに薄く残す(段の数が変わると位置を見失う) */
+  #stageBar button.off{ opacity:0.32; }
+  #stageBar .mk{ font-size:10px; margin-left:3px; }
   .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px;
           margin:12px; padding:12px; }
   .panel h2{ font-size:13px; margin:0 0 10px; color:var(--amber); letter-spacing:1px; }
@@ -37,6 +53,10 @@
   .btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
   /* 押せる物には最小の高さを付ける(flexに縮められて文字が消えるのを防ぐ) */
   .btns button{ flex:1 1 auto; flex-shrink:0; min-width:120px; min-height:44px; }
+  /* **押せる物はすべて44px以上**(iPhoneで指が当たる大きさ)。select は高さが中身で
+     決まるので、放っておくと40pxで止まる(縦持ち3端末で34か所。studio_layout_test.mjs)。
+     flex の中に置かれても縮められないように shrink も止める。 */
+  button,select{ min-height:44px; flex-shrink:0; }
   /* 効かない欄はJSが hidden を立てて隠す(テンプレートが弾か範囲かで変わる) */
   [hidden]{ display:none !important; }
   /* 数字として読めない欄。送信を止める理由になるので、はっきり赤くする */
@@ -82,8 +102,13 @@
   progress{ width:100%; height:6px; margin-top:8px; }
   .cpick{ display:flex; gap:6px; align-items:center; }
   .cpick input[type=color]{ width:42px; height:38px; flex:0 0 auto; padding:2px; }
+  /* 16進の欄は色見本と横並びで3列に入るので、7文字(#rrggbb)が入る大きさまで字を落とす
+     (既定の15pxだと 375px の端末で最後の1〜2文字が見えない) */
+  .cpick input:not([type=color]){ font-size:13px; padding:9px 6px; min-width:0; }
   .swatches{ display:grid; grid-template-columns:repeat(9,1fr); gap:5px; margin-top:6px; }
-  .sw{ height:26px; border-radius:6px; border:1px solid var(--line); padding:0; }
+  /* 色見本だけは9列の一覧なので小さいまま(縦44pxにすると3行で画面の半分を食う)。
+     押しやすさは横幅で稼ぐ。**わざと小さい物は studio_layout_test.mjs の small に書く。** */
+  .sw{ height:30px; min-height:0; border-radius:6px; border:1px solid var(--line); padding:0; }
   .seg button.on{ border-color:var(--amber); color:var(--amber); }
   .effrow{ display:grid; grid-template-columns:auto 1fr 84px; gap:8px; align-items:center;
     margin-top:6px; font-size:12px; }
@@ -110,8 +135,21 @@
   <div class="sub">iPhoneだけで 撮影 → 背景透過 → 登録 → 本番反映 まで完結します</div>
 </header>
 
+<!-- 段階バー(いまどの段階か / 済・未・エラー)。中身は refreshStages() が作る -->
+<div id="stageWrap"><div id="stageBar"></div></div>
+
+<!-- 前回の続き(下書きの復元)。入力だけを localStorage に自動保存してある -->
+<div class="panel" id="draftBar" style="display:none">
+  <h2>前回の続き</h2>
+  <div class="hint" id="draftWhen"></div>
+  <div class="btns">
+    <button class="primary" onclick="draftRestore()">前回の続きから始める</button>
+    <button onclick="draftDiscard()">捨てて新しく始める</button>
+  </div>
+</div>
+
 <!-- ============================================================ 1. GitHub -->
-<div class="panel">
+<div class="panel" id="ghPanel">
   <h2><span class="step">1</span>GitHub設定 <span id="authBadge" class="badge">未接続</span></h2>
   <label>アクセストークン(fine-grained / Contents: Read and write)</label>
   <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
@@ -132,7 +170,7 @@
 </div>
 
 <!-- ============================================================ 2. 登録の種類 -->
-<div class="panel">
+<div class="panel" id="kindPanel">
   <h2><span class="step">2</span>登録の種類</h2>
   <select id="regKind">
     <option value="monster">新しいモンスターを追加する</option>
@@ -726,7 +764,7 @@
 </div>
 
 <!-- ============================================================ 7. 送信 -->
-<div class="panel">
+<div class="panel" id="sendPanel">
   <h2><span class="step">7</span>登録して本番へ反映</h2>
   <div class="btns">
     <button onclick="preflight()">差分を確認する</button>
@@ -773,10 +811,259 @@ const state = { walk:{f:null, b:null}, portraits:null, hue:null,
                 edit:null, editFilled:false };
 
 /* ---------------------------------------------------------- 汎用 */
-function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
+function log(t, cls){
+  const e=$('log'); e.textContent=t; e.className=cls||'';
+  /* 段階バーの出し直しはここ1か所に載せる。重い処理の終わりはほぼ必ず log を通るので、
+     **各パネルの関数に refreshStages() を足して回らなくて済む**(他班のロジックを触らない)。 */
+  refreshStages();
+}
 function setProg(v){ const p=$('prog'); if(v==null){ p.style.display='none'; return; }
   p.style.display='block'; p.value=v; }
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* ---------------------------------------------------------- 残り時間(E3)
+   時間のかかる処理(モデルの取得・推論・動画の再生・16コマの抜き・送信)の
+   「あと何秒か」は**この式1つ**だけで出す。**固定値は書かない** ―― 端末で10倍違うので、
+   直前までの実測(startedAt からの経過)から1件あたりを出して残りに掛ける。
+   done/total は件数でも秒数でもよい(動画は秒、コマは枚数で呼ぶ)。
+   まだ1件も終わっていない/もう終わっているときは**空文字**を返す(嘘の数字を出さない)。 */
+function etaText(done, total, startedAt){
+  if(!startedAt || !(done > 0) || !(total > done)) return '';
+  const ms = (Date.now() - startedAt) / done * (total - done);
+  if(!(ms >= 1000)) return '';          // 1秒未満は出さない(毎回変わって落ち着かない)
+  const s = Math.round(ms/1000);
+  return s >= 90 ? `・残り約${Math.round(s/60)}分` : `・残り約${s}秒`;
+}
+/* 「1件を msPer で終えたところ」とみなして**同じ式**に載せる(2つ目の見積もり式を作らない)。
+   1件ずつ時間を測っている所(モデルの推論)から使う。 */
+function etaByRate(msPer, remain){ return etaText(1, remain + 1, Date.now() - msPer); }
+
+/* ---------------------------------------------------------- 失敗の見せ方(E4)
+   **「よくある失敗 → 日本語」の対応はこの表1か所。** どのパネルの catch も errorText(e) を
+   通すので、log に英語の例外がそのまま出ることがない。書き方は「理由 + 次にやること」。
+
+   ・自分で日本語で投げた例外(「動画を選んでください」など)は**そのまま通す**。
+     丸めるのは ORT・fetch・GitHub API が返す英語だけ。
+   ・「被写体が見つかりません」「背景を見つけられませんでした」も自前の日本語なのでここは通り道。
+   ・ctx='model' のときだけ最後の受け皿の文面が変わる(別の抜き方を勧める)。
+   e.__modelCode は自分で付けた種別(当て推量にしないため。modelError() を参照)。          */
+const ERROR_RULES = [
+  { code:'abort',     jp:'中断しました。もう一度試すときは「プレビュー」を押してください' },
+  { code:'truncated', jp:'モデルの取得が途中で切れました。電波の届く所でもう一度お試しください' },
+  // 用意に1回失敗しただけ。壊れた保存物を捨てたところなので、まだ端末のせいと言い切らない(§指摘26)
+  { code:'retry',     jp:'モデルを用意できませんでした。もう一度お試しください' },
+  { code:'device',    jp:'この端末ではモデルを動かせませんでした。別の抜き方をお選びください' },
+  // 認証が切れた・権限が足りない(GitHub API は `GitHub 401: ...` の形で投げてある)
+  { re:/GitHub 401|Bad credentials|Requires authentication/,
+    jp:'GitHubのトークンが切れています。「GitHub設定」で新しいトークンを保存してください' },
+  { re:/GitHub 403|rate limit|Resource not accessible/,
+    jp:'GitHubに断られました。トークンの権限(Contents: Read and write)と対象リポジトリを確かめてください' },
+  { re:/GitHub 404/,
+    jp:'GitHubにそのファイルがありません。「GitHub設定」のリポジトリ名とブランチ名を確かめてください' },
+  /* 送信の sha 不一致。ref の更新は 409/422 で返る(「読んだときと違う」= 誰かが先に進めた)。
+     読む前に気づける分は state.files.guard() が日本語で止めるので、ここは最後の砦。 */
+  { re:/GitHub 409|GitHub 422|not a fast forward|is at .* but expected/,
+    jp:'送信先が先に進んでいます。もう一度「差分を確認する」からやり直してください' },
+  { code:'net', jp:'電波が切れました。電波の届く所でもう一度お試しください' },
+  { name:'AbortError', jp:'電波が切れました。電波の届く所でもう一度お試しください' },
+  { re:/aborted|The operation was aborted/i, jp:'電波が切れました。電波の届く所でもう一度お試しください' },
+  { re:/Failed to fetch|NetworkError|Load failed|ERR_/i,
+    jp:'通信できませんでした。電波の届く所でもう一度お試しください',
+    model:'モデルを取得できませんでした。電波の届く所でもう一度お試しください' },
+  // 動画・画像が読めない(iOS が対応していない形式・壊れたファイル)
+  { re:/decode|decoding|MEDIA_ERR|not supported|unsupported|createImageBitmap|InvalidStateError/i,
+    jp:'この動画(画像)を読み取れませんでした。mp4かPNGに変換してからお試しください' },
+  { re:/wasm|WebAssembly|backend|memory|allocation|QuotaExceeded/i,
+    jp:'この端末では処理しきれませんでした。ほかのタブを閉じてからもう一度お試しください',
+    model:'この端末ではモデルを動かせませんでした。別の抜き方をお選びください' },
+];
+function errorText(e, ctx){
+  const code = e && e.__modelCode || '';
+  const name = e && e.name || '';
+  const raw  = String(e && (e.message || e) || '');
+  const jp = r => (ctx === 'model' && r.model) || r.jp;
+  // ① 自分で種別を付けて投げた物(当て推量にしない)
+  if(code){ const r = ERROR_RULES.find(x => x.code === code); if(r) return jp(r); }
+  /* ② **自前の日本語はそのまま出す。** 英語の当て推量より先に見ないと
+     「動画を選んでください」まで「モデルの読み込みに失敗しました」に化ける(§指摘27)。 */
+  if(!code && /[ぁ-んァ-ヶ一-龥]/.test(raw)) return raw;
+  // ③ ORT・fetch・GitHub API が返す英語
+  for(const r of ERROR_RULES){
+    if(r.code) continue;
+    if(r.name ? r.name === name : r.re.test(raw)) return jp(r);
+  }
+  if(ctx === 'model') return 'モデルの読み込みに失敗しました。もう一度試すか、別の抜き方をお選びください';
+  /* 表に無い英語の例外。**英語だけを出さない** —— まず日本語で次にやることを言い、
+     手がかりとして元の文面を括弧で添える(実機から原因を伝えてもらうときに要る)。 */
+  return raw ? `うまくいきませんでした。もう一度お試しください(${raw})`
+             : 'うまくいきませんでした。もう一度お試しください';
+}
+
+/* ---------------------------------------------------------- 段階バー(E1)
+   「いまどの段階か」を画面の上に貼り付けて出す。タップでそのパネルへ飛ぶ。
+   **この表は状態を持たない。** 各パネルが既に持っている印(state.* と、そのパネル自身が
+   出している文字の色)を読むだけなので、二重管理にならない。
+     ok   … 用意できた
+     ng   … そのパネルが今エラーを出している
+     todo … まだ
+     off  … 今の「登録の種類」ではこの段を使わない(パネルが出ていない)  */
+const AUTH_NG = '接続できません';        // saveToken と段階バーで同じ文字を見る(2か所に書かない)
+const badgeOk = ()=> /\bon\b/.test($('authBadge').className);
+const metaNg = id => { const e = $(id); return !!e && /\bng\b/.test(e.className); };
+const STAGES = [
+  // 名前は7段が 375px に入りきる長さにする(長いと省略記号で切れる。段階バーのCSSを参照)
+  { id:'ghPanel',       jp:'接続',   st: ()=> badgeOk() ? 'ok'
+                                           : $('authBadge').textContent === AUTH_NG ? 'ng' : 'todo' },
+  /* 種類の段は「何を作るか決まったか」。決め方は種類ごとに違うので、
+     それぞれの入口(editTarget / a_target / md_skin / aw_base)をそのまま読む。 */
+  { id:'kindPanel',     jp:'種類',   st: ()=>
+      isEdit()     ? (state.edit ? 'ok' : 'todo')
+    : isSsrMedia() ? ($('md_skin').value ? 'ok' : 'todo')
+    : isAssets()   ? ($('a_target').value ? 'ok' : 'todo')
+    : isAwaken()   ? ($('aw_base').value ? 'ok' : 'todo')
+    : 'ok' },
+  { id:'walkPanel',     jp:'歩行',   st: ()=> metaNg('walkMeta') ? 'ng'
+                                           : (state.walk.f && state.walk.b) ? 'ok' : 'todo' },
+  { id:'portraitPanel', jp:'静止画', st: ()=> metaNg('portraitMeta') ? 'ng'
+                                           : state.portraits ? 'ok' : 'todo' },
+  { id:'specPanel',     jp:'仕様',   st: ()=> ($('f_key').value.trim() && $('f_label').value.trim())
+                                           ? 'ok' : 'todo' },
+  /* 技の段は**赤い欄(数字として読めない欄)があるかどうか**をそのまま出す。
+     判定は moveInputErrors() 1か所(送信を止めるのと同じ関数)。 */
+  { id:'movePanel',     jp:'技',     st: ()=> moveInputErrors() ? 'ng'
+                                           : ($('m0_name').value.trim() && $('m1_name').value.trim()
+                                              && $('m2_name').value.trim()) ? 'ok' : 'todo' },
+  // 送信の段が読むのは、このパネル自身が出している log の色(差分の確認の結果そのもの)
+  { id:'sendPanel',     jp:'送信',   st: ()=> state.files ? 'ok' : metaNg('log') ? 'ng' : 'todo' },
+];
+const STAGE_MARK = { ok:'✓', ng:'!', todo:'', off:'' };
+// そのパネルを今使うか。**出し分けは regKind の onchange が正**なので、判定を書き写さず実物を見る
+function stageOn(id){ const e = $(id); return !!e && e.style.display !== 'none'; }
+function refreshStages(){
+  const bar = $('stageBar');
+  if(!bar || !bar.children.length) return;      // boot 前(と検査のスタブ)では何もしない
+  STAGES.forEach((s, i)=>{
+    const b = bar.children[i];
+    if(!b) return;
+    /* **段の判定で落ちてもバーだけの問題で済ませる。** log() から呼ばれるので、
+       ここで投げると「失敗の理由を出そうとして別の失敗で消える」ことになる。 */
+    let st = 'todo';
+    try{ st = stageOn(s.id) ? s.st() : 'off'; }catch(e){}
+    b.className = st;
+    b.querySelector('.mk').textContent = STAGE_MARK[st];
+  });
+}
+/* タップしたらそのパネルの頭へ。**段階バーのぶんだけ余分に上へ寄せる**
+   (貼り付いている帯の下にパネルの見出しが潜り込むため)。 */
+function stageGo(id){
+  const el = $(id), wrap = $('stageWrap');
+  if(!el) return;
+  const off = (wrap ? wrap.getBoundingClientRect().height : 0) + 6;
+  const y = el.getBoundingClientRect().top + (window.pageYOffset || 0) - off;
+  try{ window.scrollTo({ top: Math.max(0, y), behavior:'smooth' }); }
+  catch(e){ window.scrollTo(0, Math.max(0, y)); }
+}
+function buildStageBar(){
+  const bar = $('stageBar');
+  if(!bar) return;
+  bar.innerHTML = STAGES.map((s, i)=>
+    `<button onclick="stageGo('${s.id}')">${i+1} ${s.jp}<span class="mk"></span></button>`).join('');
+  refreshStages();
+}
+
+/* ---------------------------------------------------------- 入力の下書き(E2)
+   仕様・技・色・登録の種類・抜き方の設定を localStorage へ自動保存し、
+   次に開いたとき「前回の続きから始める」を選べるようにする。
+
+   入れない物:
+     ・絵と動画(localStorage は数MBしか入らない。file 欄はそもそも値を戻せない)
+     ・GitHubの設定(`aramon_gh_*`。トークンは別管理のままにする)
+     ・「どれを開くか」の選択(e_target / a_target / aw_base。md_skin は mediaPanel ごと対象外)
+       —— 相手は GitHub から読み直さないと中身が入らないので、欄だけ戻すと嘘になる
+     ・技プレビューの保存データ退避(班Cが IndexedDB に持つ。性質が違うので混ぜない)      */
+const DRAFT_KEY = 'aramon_studio_draft_v1';
+const DRAFT_PANELS = ['kindPanel','walkPanel','portraitPanel','specPanel','movePanel'];
+const DRAFT_SKIP = ['e_target','e_chText','e_chMode','e_chTarget','a_target','aw_base','seedPrompt'];
+/* 戻したあとに「出し分け」をやり直す欄。値を入れただけでは、その値に連動して
+   出たり隠れたりする欄が前のままになる(抜き方のしきい値・色拾い・技の薄字)。
+   **f_scPreset は入れない** —— あれは選ぶと状態変化の中身を上書きするので、
+   戻した中身が消える。                                                        */
+const DRAFT_RERUN = ['mode','pmode','walkSrc','m2_tpl','f_scTrigger','aw_mode'];
+let draftTimer = 0, draftAsking = false;
+function draftFields(){
+  const out = [];
+  for(const id of DRAFT_PANELS){
+    const root = $(id);
+    if(!root || !root.querySelectorAll) continue;
+    for(const el of root.querySelectorAll('input,select,textarea')){
+      if(!el.id || el.type === 'file' || DRAFT_SKIP.indexOf(el.id) >= 0) continue;
+      out.push(el);
+    }
+  }
+  return out;
+}
+function saveDraft(){
+  if(draftAsking) return;          // まだ「戻すか捨てるか」を聞いている最中は上書きしない
+  const f = {};
+  for(const el of draftFields()) f[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
+  try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ v:1, at:Date.now(), kind:$('regKind').value, f })); }
+  catch(e){ /* 保存できなくても作業は続けられる(容量いっぱい・プライベートブラウズ) */ }
+}
+// 入力のたびに書かない(打っている間ずっと保存すると重い)。手が止まってから1回
+function saveDraftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); }
+function readDraft(){
+  try{
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    return (d && d.v === 1 && d.f) ? d : null;
+  }catch(e){ return null; }
+}
+function draftAgeText(at){
+  const m = Math.round((Date.now() - at)/60000);
+  return m < 1 ? 'さっき' : m < 60 ? `${m}分前` : m < 60*24 ? `${Math.round(m/60)}時間前` : `${Math.round(m/1440)}日前`;
+}
+// 「前回の続き」を聞く。**中身が既定と同じなら聞かない**(押す必要のない問いを出さない)
+function draftAsk(){
+  const d = readDraft();
+  if(!d) return;
+  const now = {};
+  for(const el of draftFields()) now[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
+  const diff = Object.keys(d.f).filter(k => now[k] !== undefined && String(now[k]) !== String(d.f[k]));
+  if(!diff.length){ localStorage.removeItem(DRAFT_KEY); return; }
+  draftAsking = true;
+  $('draftWhen').textContent =
+    `${draftAgeText(d.at)}の入力が残っています(${diff.length}項目)。絵と動画は入っていないので、選び直しが要ります。`;
+  $('draftBar').style.display = 'block';
+}
+function draftRestore(){
+  const d = readDraft();
+  draftAsking = false;
+  $('draftBar').style.display = 'none';
+  if(!d) return;
+  // 登録の種類を先に当てる(出すパネルがここで決まる)
+  if(d.kind && $('regKind')){ $('regKind').value = d.kind; $('regKind').onchange(); }
+  for(const el of draftFields()){
+    const v = d.f[el.id];
+    if(v === undefined) continue;
+    if(el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  }
+  for(const id of DRAFT_RERUN) if($(id) && $(id).onchange) $(id).onchange();
+  log('前回の続きを入れました。絵と動画だけ選び直してください。', 'ok');
+}
+function draftDiscard(){
+  draftAsking = false;
+  $('draftBar').style.display = 'none';
+  try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+  log('前回の入力を捨てました。');
+}
+/* 問いに答えないまま欄を触りはじめたら、その入力を**保存できる状態に戻す**。
+   答えるまで保存を止めたままだと、10分打ち込んだぶんが1文字も残らない。
+   打ち始めた時点で「新しく始める」を選んだのと同じなので、問いも引っ込める
+   (残っている下書きは、次の自動保存で上書きされる)。 */
+function draftDismiss(){
+  if(!draftAsking) return;
+  draftAsking = false;
+  $('draftBar').style.display = 'none';
+}
 
 /* ---------------------------------------------------------- 連結成分 */
 // 4近傍ラベリング。mask は Uint8Array(1=対象)。ラベル配列と個数を返す
@@ -1116,29 +1403,9 @@ function modelNote(text, panel, cls){
     e.className = 'hint modelNote' + (cls ? ' ' + cls : '');
   }
 }
-/* **例外を遊ぶ人の言葉へ丸めるのはここ1か所。** 理由と「次に何をすればよいか」を必ず並べる。
-   自分で投げた物は e.__modelCode で見分け、ORT や fetch の英語の例外は名前と文面で拾う。 */
-function modelErrorText(e){
-  const code = e && e.__modelCode || '';
-  const name = e && e.name || '';
-  const raw  = String(e && (e.message || e) || '');
-  if(code === 'abort')    return '中断しました。もう一度試すときは「プレビュー」を押してください';
-  if(code === 'truncated')return 'モデルの取得が途中で切れました。電波の届く所でもう一度お試しください';
-  // 用意に1回失敗しただけ。壊れた保存物を捨てたところなので、まだ端末のせいと言い切らない(§指摘26)
-  if(code === 'retry')    return 'モデルを用意できませんでした。もう一度お試しください';
-  if(code === 'device')   return 'この端末ではモデルを動かせませんでした。別の抜き方をお選びください';
-  /* **こちらが日本語で投げた例外はそのまま出す。**(§指摘27)
-     丸めるのは ORT や fetch が返す英語の例外だけ。ここを通さないと
-     「動画を選んでください」まで「モデルの読み込みに失敗しました」に化ける。 */
-  if(!code && /[ぁ-んァ-ヶ一-龥]/.test(raw)) return raw;
-  if(code === 'net' || name === 'AbortError' || /aborted|The operation was aborted/i.test(raw))
-    return '電波が切れました。電波の届く所でもう一度お試しください';
-  if(/Failed to fetch|NetworkError|Load failed|ERR_/i.test(raw))
-    return 'モデルを取得できませんでした。電波の届く所でもう一度お試しください';
-  if(/wasm|WebAssembly|backend|no available backend|memory|allocation/i.test(raw))
-    return 'この端末ではモデルを動かせませんでした。別の抜き方をお選びください';
-  return 'モデルの読み込みに失敗しました。もう一度試すか、別の抜き方をお選びください';
-}
+/* モデル抜きの言い方。**中身は errorText(e,'model') 1か所**へ寄せてある(E4)。
+   ここに残しているのは呼び名だけ —— モデル経路の呼び出し元と検査がこの名前を使うため。 */
+function modelErrorText(e){ return errorText(e, 'model'); }
 // 自分で投げる例外に「どの種類か」を付ける(上の丸め方が文面の当て推量にならないように)
 function modelError(code, msg){ const e = new Error(msg); e.__modelCode = code; return e; }
 
@@ -1167,10 +1434,11 @@ function abortModelRun(){
 function modelAborted(){ return !!(modelState.abort && modelState.abort.signal.aborted); }
 function throwIfAborted(){ if(modelAborted()) throw modelError('abort', '中断しました'); }
 const modelMB = n => (n/1048576).toFixed(1);
-// 推論の進捗。prog={i,n} が来たら「1/16」と残り時間を出す(残りは直前の実測×残り枚数)
+/* 推論の進捗。prog={i,n} が来たら「1/16」と残り時間を出す。
+   残りは**直前の1枚の実測**(lastRunMs)から。見積もりの式は etaText 1つに寄せてある(E3)。 */
 function modelRunText(prog){
   const i = prog && prog.i || 1, n = prog && prog.n || 1;
-  const rest = modelState.lastRunMs ? `・残り約${Math.max(1, Math.round(modelState.lastRunMs*(n-i+1)/1000))}秒` : '';
+  const rest = modelState.lastRunMs ? etaByRate(modelState.lastRunMs, n-i+1) : '';
   return n > 1 ? `抜いています(${i}/${n}${rest})` : `抜いています(${rest ? rest.slice(1) : 'しばらくお待ちください'})`;
 }
 /* 推論ライブラリを読む。**使うと決めた時に <script src> を1本足すだけ**にして、
@@ -1247,7 +1515,8 @@ async function fetchModelBytes(){
           if(ctl){ clearTimeout(stall); stall = setTimeout(()=> ctl.abort(), MODEL_STALL_MS); }
           chunks.push(step.value); got += step.value.length;
           if(total) setProg(Math.round(got/total*100));
-          log(`モデルを取得中 ${modelMB(got)}/${modelMB(total||got)}MB`);
+          // 残りは実測から(44MBは電波次第で分単位になる。見積もりの式は etaText 1つ・E3)
+          log(`モデルを取得中 ${modelMB(got)}/${modelMB(total||got)}MB${etaText(got, total, t0)}`);
         }
         /* **content-length より届いた量が少ないなら、それは途中で切れた応答。**
            ここで投げずに先へ進むと、欠けた44MBを Cache API へ保存してしまい、
@@ -1992,6 +2261,8 @@ async function cutFramesFromVideo(file, plan, seg, onProgress){
     const shotG = new Array(CAND_N).fill(null);
     let slot = 0;
     walkStep('コマを切り出しています…');
+    // 切り出しも抜きも「待たせる処理」。残り時間は etaText 1か所で出す(E3)
+    const playT0 = Date.now();
     /* **元動画に同じコマが2枚続いていたら飛ばす。** 編集ソフトが書き出した動画には
        コマが重複していることがあり(発注者の素材で実在)、そのまま採ると
        「隣り合う2コマが同じ絵」になる。動きのある次のコマまで待つ。 */
@@ -2008,6 +2279,7 @@ async function cutFramesFromVideo(file, plan, seg, onProgress){
       shotG[slot] = gray;
       slot++;
       if(onProgress) onProgress(50 + Math.round(slot/CAND_N*30));
+      walkStep(`コマを切り出しています… ${slot} / ${CAND_N}` + etaText(slot, CAND_N, playT0));
     });
     // 取りこぼした枠は、いちばん近い取れたコマで埋める(黙って抜けを作らない)
     for(let k=0;k<CAND_N;k++){
@@ -2020,11 +2292,13 @@ async function cutFramesFromVideo(file, plan, seg, onProgress){
     // 抜けなかったときの案内は、先頭のコマの色から先に作っておく(あとで img を手放すので)
     const hint = cornerHint(shots[0]);
     const cuts = [];
+    const cutT0 = Date.now();
     for(let k=0;k<CAND_N;k++){
       cuts.push(await makeCut(shots[k], seg, { i:k+1, n:CAND_N }));
       shots[k] = null;                    // 抜き終わったコマから順に手放す
       if(onProgress) onProgress(80 + Math.round((k+1)/CAND_N*20));
-      walkStep(`絵を抜いています… ${k+1} / ${CAND_N}`);
+      // モデルで抜くと1コマ十数秒。残りが分かるように実測から出す(E3)
+      walkStep(`絵を抜いています… ${k+1} / ${CAND_N}` + etaText(k+1, CAND_N, cutT0));
     }
     return { cuts, shotT, shotG, hint, w, h };
   }finally{
@@ -2079,10 +2353,15 @@ async function buildWalkFrames(file, onProgress){
     const span = Math.min(dur*0.96, 4.0);          // 長い動画は先頭4秒だけ見る
     const t0 = dur*0.02;
     const raw = [], rawT = [];
+    /* 動画は**実時間で再生しながら**1コマずつ拾う(シークだと同じ絵が並ぶ)。
+       5秒の動画なら5秒かかるので、待たせるぶんは残り時間を出す(E3。式は etaText 1つ)。 */
     walkStep('歩き方を調べています…');
+    const playT0 = Date.now();
     await playThrough(v, t0, t0+span, (t)=>{
       raw.push(grayOfDrawable(gc, v)); rawT.push(t);
       if(onProgress) onProgress(Math.round(Math.min(1,(t-t0)/span)*50));
+      walkStep(`歩き方を調べています… ${Math.round(Math.min(1,(t-t0)/span)*100)}%`
+               + etaText(t-t0, span, playT0));
     });
     if(raw.length < 4)
       throw new Error('動画を再生できませんでした(端末がこの動画に対応していません)。' +
@@ -2200,10 +2479,12 @@ async function buildWalkFromImages(files, onProgress){
     throw new Error('画像は2枚以上選んでください(1枚から歩かせる機能はありません)。' +
                     '1枚しか無いときは、その絵をAIで動画にしてから「動画から作る」をお使いください。');
   const cuts = [];
+  const cutT0 = Date.now();               // 残り時間は実測から(E3。式は etaText 1つ)
   for(let i=0;i<files.length;i++){
     const img = await fileToImageData(files[i]);
     cuts.push(await makeCut(img, seg, { i:i+1, n:files.length }));
     if(onProgress) onProgress(Math.round((i+1)/files.length*70));
+    walkStep(`絵を抜いています… ${i+1} / ${files.length}` + etaText(i+1, files.length, cutT0));
   }
   const pick = [];
   for(let k=0;k<8;k++) pick.push(cuts[Math.min(cuts.length-1, Math.floor(k*cuts.length/8))]);
@@ -2477,7 +2758,9 @@ async function preview(side){
     setProg(null);
   }catch(e){
     setProg(null);
-    const m = e && e.__modelCode ? modelErrorText(e) : String(e.message||e);
+    /* 理由の日本語化は errorText 1か所(E4)。抜き方がモデルのときだけ
+       「別の抜き方をお選びください」の言い方になる。 */
+    const m = errorText(e, walkSeg().mode === 'model' ? 'model' : '');
     // 「コマを作っています」のまま止まったように見えないよう、その場にも理由を出す
     // (例外の文面をそのまま出すので innerHTML は使わない・§指摘14)
     $('walkMeta').textContent = m;
@@ -2567,7 +2850,7 @@ async function recutWithModel(){
     setProg(null);
   }catch(e){
     setProg(null);
-    const m = e && e.__modelCode ? modelErrorText(e) : String(e.message||e);
+    const m = errorText(e, 'model');   // ここは必ずモデルで抜き直す道
     $('walkMeta').textContent = m;
     $('walkMeta').className = 'hint ng';
     log(m, 'ng');
@@ -2689,7 +2972,7 @@ async function fillPicker(which){
     const cur  = which === 'w' ? state.chroma : state.chromaP;
     if(auto || !cur) setChroma(which, cornerRgb(pcx.getImageData(0, 0, W, H)), true);
   }catch(e){
-    log(String(e.message||e), 'ng');
+    log(errorText(e), 'ng');
   }finally{
     releaseVideo(vid);
   }
@@ -3471,7 +3754,7 @@ async function openFxPreview(){
     /* **片付けを先、理由の表示を後。** 逆にすると closeFxPreview の
        「保存データ: 変更なし」が理由を上書きして、何が起きたのか分からなくなる。 */
     await closeFxPreview();
-    fxStat('開けませんでした: ' + (e.message || e), 'ng');
+    fxStat('開けませんでした: ' + errorText(e), 'ng');
   }
 }
 /* いまの数字で撃つ。**毎回 override してから撃つ**ので、入力を直したら次の発射で効く。 */
@@ -3801,9 +4084,9 @@ async function saveToken(){
     log('接続できました。トークンはこの端末に保存されました。', 'ok');
     loadElementList();
   }catch(e){
-    $('authBadge').textContent = '接続できません';
+    $('authBadge').textContent = AUTH_NG;   // 段階バーもこの文字を見る(2か所に書かない)
     $('authBadge').className = 'badge';
-    log(String(e.message||e), 'ng');
+    log(errorText(e), 'ng');
   }
 }
 function forgetToken(){
@@ -4127,7 +4410,7 @@ async function awakenPreview(){
     $('aw_preview').innerHTML = urls.map((u,i)=>
       `<div class="cell"><img src="${u}"><span class="n">${files[i].path.split('/').pop()}</span></div>`).join('');
     log(`合成しました(${files.length}枚)。よければ下の「差分を確認する」へ進んでください。`, 'ok');
-  }catch(e){ log(String(e.message||e), 'ng'); }
+  }catch(e){ log(errorText(e), 'ng'); }
 }
 function activeKey(){
   if(isSsrMedia()) return $('md_skin').value;
@@ -4662,7 +4945,7 @@ async function loadExisting(){
     const miss = cur.unknown.length ? `\n読めなかった表: ${cur.unknown.join(' / ')}(この画面からは触りません)` : '';
     $('e_cur').textContent = `${t.label}(${t.key})を読み込みました。触った欄だけを書き戻します。` + miss;
     log(`${t.label} を読み込みました。直したい欄だけを書き換えて「差分を確認する」を押してください。${miss}`, 'ok');
-  }catch(e){ log('読み込めませんでした:\n' + String(e.message||e), 'ng'); }
+  }catch(e){ log('読み込めませんでした:\n' + errorText(e), 'ng'); }
 }
 
 // 読み取った値を欄へ入れる。数字は**元の書き方のまま**入れる(1/1.5 を 0.666… にしない)
@@ -5098,7 +5381,7 @@ async function preflight(){
     state.files = plan;
     $('commitBtn').disabled = false;
     log(lines.join('\n'), 'ok');
-  }catch(e){ log(String(e.message||e), 'ng'); }
+  }catch(e){ log(errorText(e), 'ng'); }
 }
 
 async function doCommit(){
@@ -5118,12 +5401,15 @@ async function doCommit(){
     log('コミットを作っています… (1/4) 画像を送信');
     const tree = [];
     let done = 0;
+    /* 画像は1枚ずつ base64 にして送る。18枚あると電波次第で分単位になるので、
+       **1枚目が終わった時点の実測**から残りを出す(E3。式は etaText 1つ)。 */
+    const sendT0 = Date.now();
     for(const f of files){
       const b64 = await blobToBase64(f.blob);
       const r = await ghPost(`/repos/${R}/git/blobs`, { content: b64, encoding: 'base64' });
       tree.push({ path: f.path, mode: '100644', type: 'blob', sha: r.sha });
       done++; setProg(Math.round(done/files.length*60));
-      log(`コミットを作っています… (1/4) 画像 ${done}/${files.length}`);
+      log(`コミットを作っています… (1/4) 画像 ${done}/${files.length}` + etaText(done, files.length, sendT0));
     }
     log('コミットを作っています… (2/4) テキストを送信');
     for(const path of Object.keys(texts2)){
@@ -5161,7 +5447,7 @@ async function doCommit(){
                       : '反映されたらロビーのモンスター選択に出ます。'), 'ok');
   }catch(e){
     setProg(null); $('commitBtn').disabled = false;
-    log('コミットに失敗しました:\n' + String(e.message||e), 'ng');
+    log('コミットに失敗しました:\n' + errorText(e), 'ng');
   }
 }
 
@@ -5207,7 +5493,7 @@ async function doRevert(){
                  'Content-Type':'application/json' } });
     log(`取り消しました(${total}か所)。コミット: ${commit.sha.slice(0,7)}\n` +
         `素材ファイルは残ります(参照されないので害はありません)。`, 'ok');
-  }catch(e){ log(String(e.message||e), 'ng'); }
+  }catch(e){ log(errorText(e), 'ng'); }
 }
 
 /* =====================================================================
@@ -5577,7 +5863,7 @@ async function runMedia(key){
       setMediaResult(key, r.audio.blob, r.audio.ext,
         `音声を取り出しました(${Math.round(r.audio.blob.size/1024)}KB・約${r.dur.toFixed(1)}秒)`);
     }
-  }catch(e){ mediaStatus(key, String(e.message || e), 'ng'); }
+  }catch(e){ mediaStatus(key, errorText(e), 'ng'); }
 }
 // ピックアップにしたときの見え方(タイトルと画像)を出す
 function updatePickupNote(){
@@ -6653,6 +6939,22 @@ function boot(){
   if(t){ $('tok').value = t; saveToken(); }
   const r = localStorage.getItem('aramon_gh_repo'); if(r) $('repo').value = r;
   const b = localStorage.getItem('aramon_gh_branch'); if(b) $('branch').value = b;
+  /* ---- 段階バーと下書き(E1/E2)。**欄の既定値を撮ったあとに置く**
+     ―― 先に下書きを戻すと、戻した値が「既定」として撮られ、種類を切り替えても消えなくなる。 */
+  buildStageBar();
+  /* 欄を触るたびに下書きを保存し、段階バーを出し直す。**個々のパネルの関数には触らない**
+     ―― 画面全体で1回受ければ済む(input も change も上まで上がってくる)。 */
+  for(const ev of ['input','change']){
+    document.addEventListener(ev, e=>{
+      const el = e.target;
+      if(el && el.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.type !== 'file'){
+        draftDismiss();          // 問いを出したまま打ち始めたら、その入力を保存できるようにする
+        saveDraftSoon();
+      }
+      refreshStages();
+    });
+  }
+  draftAsk();
 }
 boot();
 </script>
