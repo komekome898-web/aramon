@@ -15,11 +15,14 @@
      ⑤ 開いた直後の3技が**いまの技そのもの**(「撃ってみる」が別の技を撃たない)。**全モンスター**を
         buildMoves(collectSpec()) と data.js の技で丸ごと突き合わせる
      ⑥ 開いて直す → 新規モンスターへ切り替えると、欄が既定へ戻る(collectSpec が元どおり)
-     ⑥b 種類を往復しても、覚醒の「継承の断り」が新規SSR登録に残らず、直す相手の選択も消えない
+     ⑥b 種類を往復しても、覚醒の「継承の断り」が新規SSR登録に残らず、
+        **開いたスキンの素体・状態変化のプリセットが新規登録へ混ざらない**(嘘の案内も出ない)
      ⑦ 更新履歴の書き直す行: 別の体の行と**同じ体の告知の行**は書き直さない(書き足す)/
         ツールが書いた形の同じ体の行は書き直す(行が増えない)/
         **見た目だけの変更 + 本文を手書き**でも告知の行が残る(既定は書き足し)/
-        同じ相手の行が2つある日は「どちらを直すか」を人に聞く
+        同じ相手の行が2つある日は**どの行が書き変わったか**を見る(既定の行だけが新しい値)/
+        人が選び直した行を機械が上書きしない / 同点は先頭を選ぶ /
+        表示名を付け替えたら新しい名前で1行書く
      ⑧ 特性idを変えたら新規登録と同じ判定を通り、ui.js も書き戻す(その sha も照合する)。
         使えない形の特性id(bad-id)では止まる
      ⑨ 「形」の欄は表示専用(選び直しても保存内容は変えられないため)。止まった欄では
@@ -197,8 +200,12 @@ const edited = await page.evaluate(async ()=>{
   const tplNone = { fromLoaded: info.fromLoaded, dmg: info.base && info.base.dmg,
                     picked: tplPickedByHuman };
   tplPickedByHuman = false;
+  /* 止めた欄には**止めた理由**を出す(灰色の欄だけでは「壊れている」と読まれる)。 */
+  const noteEl = document.getElementById('tplEditNote');
   return { before, hist, fired, tplEvent, tplNone,
            tplDisabled: tplSel.disabled,
+           tplNote: { shown: !!noteEl && noteEl.style.display !== 'none',
+                      text: noteEl ? noteEl.textContent : '' },
            log: document.getElementById('log').textContent,
            cls: document.getElementById('log').className,
            dataJs: state.files ? state.files.texts['data.js'] : null,
@@ -231,6 +238,9 @@ else {
   if(!/^ジョーカー: /.test(edited.hist)) errors.push('更新履歴の1行ができていません: ' + edited.hist);
 }
 if(!edited.tplDisabled) errors.push('ジョーカーを開いても「形」の欄が選び直せます(表示専用のはず)');
+if(!edited.tplNote.shown || !/形は変えられません/.test(edited.tplNote.text))
+  errors.push('「形」の欄を止めた理由がその場に出ていません: '
+    + `${edited.tplNote.shown ? '' : '(非表示)'}${JSON.stringify(edited.tplNote.text)}`);
 if(edited.tplEvent.picked)
   errors.push('止まっている「形」の欄で change を受けて「人が選び直した」印を立てています');
 if(!edited.tplEvent.fromLoaded)
@@ -328,6 +338,8 @@ const switched = await page.evaluate(()=>{
            tplDisabled: document.getElementById('m2_tpl').disabled,
            key: document.getElementById('f_key').value,
            t3mult: document.getElementById('s_t3mult').disabled,
+           // 「開いて直す」でだけ出す注記は、新規登録の画面に残ってはいけない
+           tplNote: document.getElementById('tplEditNote').style.display !== 'none',
            adhoc: document.querySelectorAll('option[data-adhoc]').length };
 });
 if(switched.spec !== specBefore)
@@ -338,6 +350,8 @@ if(switched.adhoc)  errors.push(`開いて直すで足した選択肢が ${switc
 // 新規登録では形を選び直せる(表示専用にするのは「開いて直す」だけ)
 if(switched.tplDisabled)
   errors.push('新規モンスターへ切り替えても「形」の欄が止まったままです(選び直せません)');
+if(switched.tplNote)
+  errors.push('新規モンスターの画面に「形は変えられません」の断りが残っています');
 {
   const b = switched.bad;
   if(!b.marked0) errors.push('検査の前提が崩れています(読めない値を入れても赤くなりません)');
@@ -353,19 +367,27 @@ if(switched.tplDisabled)
    ・覚醒スキンを開いて出した「継承の断り」は、新規SSR登録の画面に残ってはいけない。
      **表示の有無は captureFormDefaults が撮れない**(撮るのは value/checked/disabled だけ)ので、
      戻す一覧(EDIT_ONLY_NOTES)に入っていないと、覚醒でもないスキンの画面に断りが出る。
-   ・「開いて直す」へ戻ったとき、相手の一覧(e_target)の選択が消えてはいけない。
-     この一覧は接続後に作られるので、撮った値('')を書き戻すと selectedIndex=-1 になる。
-   ・**素体の一覧(s_element)も同じ**。開いて直す → 新規SSR登録と進んだときに戻されると、
-     選ばれている素体が消えて「素体を選んでください(先にGitHubへ接続すると…)」という
-     嘘の案内が出る(接続もしているし素体も一覧にある)。 */
+   ・**開いたスキンの素体を新規SSR登録へ持ち越さない。** 「撮った時点で選べる中身が
+     0個だった select は戻さない」という規則を持っていたころは、接続後に中身ができる
+     select(s_element・f_scPreset)が丸ごと戻らず、開いたスキンの素体がそのまま
+     新規登録の欄に残っていた(= 別の素体でSSRスキンを登録できてしまう)。
+     いまは**全 select を戻し**、撮った値が今の選択肢に無ければ先頭(見出し)へ寄せる。
+   ・そのうえで、案内の文が**嘘にならない**こと。一覧は出ているのだから
+     「先にGitHubへ接続すると一覧が出ます」と言ってはいけない(選び忘れているだけ)。
+   ・「開いて直す」へ戻ったときも、相手の一覧(e_target)は選ばれた状態に落ちる
+     (selectedIndex=-1 =「画面には残って見えるのに読むと空」を作らない)。 */
 const roundTrip = await page.evaluate(async (awakenId)=>{
   const kind = document.getElementById('regKind'), sel = document.getElementById('e_target');
-  const elSel = document.getElementById('s_element');
+  const elSel = document.getElementById('s_element'), scSel = document.getElementById('f_scPreset');
   kind.value = 'edit'; kind.onchange();
   sel.value = 'ssr:' + awakenId; sel.onchange();
   await loadExisting();
+  /* 状態変化のプリセットも「接続後に中身ができる select」。既定へ戻るかを見るために、
+     いま選べる中で既定('' = つけない)と違うものを選んでおく。 */
+  const scOther = Array.from(scSel.options).map(o=>o.value).find(v => v && v !== 'custom');
+  if(scOther) scSel.value = scOther;
   const opened = { note: document.getElementById('s_t3InheritNote').style.display !== 'none',
-                   target: sel.value };
+                   target: sel.value, element: elSel.value, sc: scSel.value };
   kind.value = 'ssr'; kind.onchange();                 // 新規SSR登録へ
   /* 実際に登録しようとしたときの言い方を見る。**id を先に埋める** ――
      validateSsr は id → 素体 の順に見るので、埋めないと素体まで進まず
@@ -373,6 +395,8 @@ const roundTrip = await page.evaluate(async (awakenId)=>{
   document.getElementById('s_id').value = 'testmon_ssr';
   const asSsr = { note: document.getElementById('s_t3InheritNote').style.display !== 'none',
                   element: { value: elSel.value, index: elSel.selectedIndex, n: elSel.options.length },
+                  collected: collectSsr().element,
+                  sc: { value: scSel.value, index: scSel.selectedIndex, n: scSel.options.length },
                   ng: validateSsr(collectSsr()) };
   kind.value = 'edit'; kind.onchange();                // 開いて直すへ戻る
   return { opened, asSsr,
@@ -382,16 +406,33 @@ if(!roundTrip.opened.note)
   errors.push('覚醒スキンを開いても継承の断りが出ていません(⑥bの前提が崩れています)');
 if(roundTrip.asSsr.note)
   errors.push('新規SSR登録の画面に、覚醒スキンの「継承の断り」が残っています');
-if(roundTrip.back.index < 0 || !roundTrip.back.value)
-  errors.push('種類を往復すると、直す相手の選択が消えます'
+if(roundTrip.back.index < 0)
+  errors.push('種類を往復すると、直す相手の欄がどれも選ばれていない状態になります'
     + `(選択 ${roundTrip.back.index} / 選択肢 ${roundTrip.back.n}個)`);
 {
   const e = roundTrip.asSsr.element;
-  if(e.index < 0 || !e.value)
-    errors.push('開いて直す → 新規SSR登録と進むと、素体の選択が消えます'
-      + `(選択 ${e.index} / 選択肢 ${e.n}個)`);
-  if(roundTrip.asSsr.ng && /素体/.test(roundTrip.asSsr.ng))
-    errors.push('素体は一覧にあり接続もしているのに、嘘の案内が出ます: ' + roundTrip.asSsr.ng);
+  // 前提: 開いたときには素体が入っていた(入っていなければ「混ざる」を確かめられない)
+  if(!roundTrip.opened.element)
+    errors.push('覚醒スキンを開いても素体の欄が空です(⑥bの前提が崩れています)');
+  if(e.index < 0)
+    errors.push(`素体の欄がどれも選ばれていない状態です(選択 ${e.index} / 選択肢 ${e.n}個)`);
+  /* **開いたスキンの素体が新規SSR登録へ混ざらない。** 戻したあとは見出し(空)。 */
+  if(roundTrip.asSsr.collected !== '')
+    errors.push('開いて直す → 新規SSR登録と進むと、開いたスキンの素体が残ります: '
+      + JSON.stringify(roundTrip.asSsr.collected));
+  // 一覧は出ているのだから「先にGitHubへ接続すると…」は嘘
+  if(roundTrip.asSsr.ng && /接続/.test(roundTrip.asSsr.ng))
+    errors.push('素体の一覧は出ているのに、接続を促す嘘の案内が出ます: ' + roundTrip.asSsr.ng);
+  if(!/素体を選んでください/.test(roundTrip.asSsr.ng || ''))
+    errors.push('素体が空なのに「素体を選んでください」と言いません: ' + roundTrip.asSsr.ng);
+}
+{
+  const sc = roundTrip.asSsr.sc;
+  if(!roundTrip.opened.sc)
+    errors.push('状態変化のプリセットに選べる中身がありません(⑥bの前提が崩れています)');
+  if(sc.value !== '')
+    errors.push('開いて直す → 新規SSR登録と進むと、状態変化のプリセットが既定へ戻りません: '
+      + `${JSON.stringify(sc.value)}(既定は "")`);
 }
 
 /* ---------------------------------------------------------------- ⑦ 書き直す行の選び方
@@ -432,13 +473,24 @@ const changelog = await page.evaluate(async ({ cases })=>{
     if(c.pick){
       const other = Array.from(el.options).map(o=>o.value).find(v => v && v !== el.value);
       el.value = other;
-    } else el.value = String(+el.value + c.add);
+    } else if(c.set != null) el.value = c.set;      // 文字の欄(表示名の付け替え)
+    else el.value = String(+el.value + c.add);
     // 本文を手で書く道(自動で入らない=見た目だけの変更でも、人は履歴を書ける)
     const mode0 = document.getElementById('e_chMode').value;
+    const target0 = document.getElementById('e_chTarget').value;
+    /* 人が「書き直す行」を選び直す道。**本物の change イベントを投げる** ――
+       `.onchange()` の直呼びではプログラムからの入れ直しと区別が付かない
+       (印を立てるのは addEventListener 側)。 */
+    if(c.pickTarget != null){
+      const ts = document.getElementById('e_chTarget');
+      ts.value = String(c.pickTarget);
+      ts.dispatchEvent(new Event('change', { bubbles:true }));
+    }
     if(c.hist != null) document.getElementById('e_chText').value = c.hist;
     await preflight();
     const text = state.files ? state.files.texts['data.js'] : null;
-    return { mode: document.getElementById('e_chMode').value, mode0,
+    return { mode: document.getElementById('e_chMode').value, mode0, target0,
+             target: document.getElementById('e_chTarget').value,
              note: document.getElementById('e_chNote').textContent,
              opts: Array.from(document.getElementById('e_chTarget').options).map(o=>o.textContent),
              hist: document.getElementById('e_chText').value,
@@ -461,8 +513,16 @@ const changelog = await page.evaluate(async ({ cases })=>{
      planEdit の「初回の選び直し」を通らない。既定が「書き直す・1行目」だと、
      今日の1行目(🆕 の告知)を黙って消してしまう。 */
   look:     { lines:[PROMO, OTHER], field:'f_aura', pick:true, hist:HAND_LINE },
-  // 同じ相手のツールの形の行が2つある日(どちらを直すかは人にしか決められない)
+  /* 同じ相手のツールの形の行が2つある日(どちらを直すかは人にしか決められない)。
+     **1行目も3行目も「ジョーカー」を含むので、自動の本文との似ている度合いは同点 1.00。**
+     機械が選び直すと同点の勝ち方しだいで**既定と違う行**が消える。 */
   twoLines: { lines:[TOOL_LINE, OTHER, TOOL_LINE2], field:'f_hp', add:5 },
+  /* 人が「書き直す行」を選び直した日。候補は2行目だけなので、機械に任せると
+     2行目へ戻される。**人の選択(1行目)を上書きしない**ことを見る。 */
+  humanPick:{ lines:[PROMO, TOOL_LINE], field:'f_hp', add:5, pickTarget:0 },
+  /* 表示名を付け替えた日。履歴は**新しい名前**で書き、改名そのものも本文へ入れる
+     (旧名のままだと、遊ぶ人には「もうゲームに無い名前」の行になる)。 */
+  rename:   { lines:[OTHER], field:'f_label', set:'ジョーカーX' },
 } });
 // ⑦-1 別の体の行は書き直さない(書き足しになり、その体の行が残る)
 {
@@ -517,17 +577,92 @@ const changelog = await page.evaluate(async ({ cases })=>{
   if(!c.opts.every(t => /🔒/.test(t)))
     errors.push(`書き直せない行に印が付いていません: ${JSON.stringify(c.opts)}`);
 }
-// ⑦-5 同じ日に同じ相手のツールの形の行が2つあるときは、人に選ばせる注意を出す
+/* ⑦-5 同じ日に同じ相手のツールの形の行が2つある日。
+   **見るのは「どの行が書き変わったか」。** 行数と注意文だけを数えていたころは、
+   planEdit の選び直しが**既定と違う行**(似ている度合いが同点で後ろが勝つ)を選んでも
+   検査は緑のままだった —— 実際には3行目「ジョーカー: 威力21→28」が消え、
+   1行目「ジョーカー: HP115→118」が古い値のまま残っていた。
+   正しい姿: 読み込み時に決めた既定(候補の先頭=1行目)が書き変わり、3行目はそのまま。 */
 {
   const c = changelog.twoLines;
+  const items = c.items ? JSON.parse(c.items) : null;
   if(c.cls === 'ng') errors.push('同じ相手の行が2つあるときに差分の確認が止まりました:\n' + c.log);
   if(!/2 つあります|2つあります/.test(c.note))
     errors.push('同じ相手の行が2つあるのに、どちらを直すかの注意が出ていません: ' + c.note);
   if(c.mode !== 'rewrite') errors.push(`ツールの形の行が2つあるのに「${c.mode}」を選びました`);
-  if(!c.items || !c.items.includes(OTHER))
-    errors.push(`別の体の行が消えました: ${c.items}`);
-  if(c.items && JSON.parse(c.items).length !== 3)
+  if(c.target !== c.target0)
+    errors.push('同じ相手の行が2つある日に、押しただけで書き直す行が変わりました'
+      + `(${c.target0}行目 → ${c.target}行目)。どちらを直すかは人が選ぶ`);
+  if(!items || items.length !== 3)
     errors.push(`2行あるうち1行を書き直したのに行数が変わりました: ${c.items}`);
+  else {
+    // 選んだ行(既定=1行目)だけが新しい値になる
+    if(items[0].t !== 'ジョーカー: HP115→120')
+      errors.push(`選んだ1行目が書き変わっていません: ${JSON.stringify(items[0].t)}`);
+    if(items[1].t !== OTHER) errors.push(`別の体の行が変わりました: ${JSON.stringify(items[1].t)}`);
+    // 選んでいない同じ相手の行は**そのまま残る**(ここが消えていたのが今回の壊れ方)
+    if(items[2].t !== TOOL_LINE2)
+      errors.push(`選んでいない3行目(${TOOL_LINE2})が書き変わりました: ${JSON.stringify(items[2].t)}`);
+    // 直した行が古い値のまま居残っていないか(1行目が書き変わっていれば起きない)
+    if(c.items.includes(TOOL_LINE))
+      errors.push(`直したはずの行が古い値(${TOOL_LINE})のまま残っています: ${c.items}`);
+  }
+}
+/* ⑦-6 人が「書き直す行」を選び直したら、planEdit はそれを上書きしない。
+   候補(🔒の付かない行)は2行目だけなので、機械に任せると2行目へ戻る。
+   人が1行目(🔒 付き=告知)をあえて選んだのなら、**その行を**書き直す
+   (消えることは注意文で知らせてある)。 */
+{
+  const c = changelog.humanPick;
+  const items = c.items ? JSON.parse(c.items) : null;
+  if(c.cls === 'ng') errors.push('人が行を選び直したときに差分の確認が止まりました:\n' + c.log);
+  if(c.target !== '0')
+    errors.push(`人が選んだ行(1行目)が ${c.target}行目 に上書きされました`);
+  if(!/🔒/.test(c.note))
+    errors.push('🔒 の付いた行を選んでいるのに注意が出ていません: ' + c.note);
+  if(!items || items.length !== 2)
+    errors.push(`選んだ行を書き直したのに行数が変わりました: ${c.items}`);
+  else {
+    if(items[0].t !== 'ジョーカー: HP115→120')
+      errors.push(`人が選んだ1行目が書き変わっていません: ${JSON.stringify(items[0].t)}`);
+    if(items[1].t !== TOOL_LINE)
+      errors.push(`選んでいない2行目が書き変わりました: ${JSON.stringify(items[1].t)}`);
+  }
+}
+/* ⑦-7 同点のときの向きを**既定(fillEditChangelog)と揃える**。
+   どちらも「候補の先頭」を選ぶ。逆向きだと、押した瞬間に既定と違う行へ移る。 */
+const tieIndex = await page.evaluate(({ lines, label, text })=>
+  editRewriteIndex(lines.map(t=>({ t, g:['balance'] })), label, text),
+  { lines:[TOOL_LINE, OTHER, TOOL_LINE2], label:'ジョーカー', text:'ジョーカー: HP115→120' });
+if(tieIndex !== 0)
+  errors.push(`似ている度合いが同点のとき ${tieIndex}番目を選びました(先頭=0のはず)`);
+/* ⑦-9 「書き直す行」の選択肢は**本文をそのまま**見出しに出すので HTML エスケープする。
+   `<b>` のような並びが本文に混ざると、エスケープしていない側では見出しから消える
+   (最悪は選択肢そのものが壊れて行が選べなくなる)。 */
+const escOpts = await page.evaluate(()=>{
+  const lines = ['ジョーカー: <b>威力</b>21→34', 'ザン: HP100→110'];
+  const block = `  { date:'${todayYmd()}', items:[\n`
+    + lines.map(t=>`    { t:'${t}', g:['balance'] },\n`).join('') + '  ]},\n';
+  fillEditChangelog('const UPDATE_HISTORY = [\n' + block + '];\n', 'ジョーカー');
+  return Array.from(document.getElementById('e_chTarget').options).map(o=>o.textContent);
+});
+if(escOpts.length !== 2 || !escOpts[0].includes('<b>威力</b>'))
+  errors.push(`選択肢の見出しが HTML として読まれています: ${JSON.stringify(escOpts)}`);
+/* ⑦-8 表示名を付け替えたときの1行。**新しい名前で書き、改名も本文に入れる。**
+   載せる項目が「性能の数字と技名」だけだった頃は、改名が履歴に一言も出ず、
+   出たとしても主語が旧名のままだった。タグは monster。 */
+{
+  const c = changelog.rename;
+  const items = c.items ? JSON.parse(c.items) : null;
+  if(c.cls === 'ng') errors.push('表示名を変えたときに差分の確認が止まりました:\n' + c.log);
+  if(!/^ジョーカーX: /.test(c.hist))
+    errors.push(`改名の1行が新しい名前で始まっていません: ${JSON.stringify(c.hist)}`);
+  if(!c.hist.includes('名前が「ジョーカー」から「ジョーカーX」へ'))
+    errors.push(`改名の1行に「◯◯から△△へ」がありません: ${JSON.stringify(c.hist)}`);
+  const line = items && items.find(it => /^ジョーカーX: /.test(it.t));
+  if(!line) errors.push(`改名の行が更新履歴に入っていません: ${c.items}`);
+  else if((line.g || []).indexOf('monster') < 0)
+    errors.push(`改名の行のタグが ${JSON.stringify(line.g)} です(monster のはず)`);
 }
 
 /* ---------------------------------------------------------------- ⑧ 特性idを変える
@@ -598,16 +733,25 @@ console.log(`     ジョーカー: 形=${JSON.stringify(edited.fired.tpl)} / key
   + ` / burst=${edited.fired.move.burst} burstDirs=${edited.fired.move.burstDirs} projStyle=${edited.fired.move.projStyle}`);
 console.log(`  ⑥ 新規モンスターへ切り替え: 欄は既定へ${switched.spec === specBefore ? '戻った' : '戻っていない'}`);
 console.log(`  ⑥b 種類を往復: 継承の断りは新規SSRで${roundTrip.asSsr.note ? '残る' : '消える'}`
-  + ` / 直す相手の選択 ${JSON.stringify(roundTrip.back.value)}(${roundTrip.back.n}件中)`);
+  + ` / 素体 ${JSON.stringify(roundTrip.opened.element)}→${JSON.stringify(roundTrip.asSsr.collected)}`
+  + ` / 状態変化 ${JSON.stringify(roundTrip.opened.sc)}→${JSON.stringify(roundTrip.asSsr.sc.value)}`
+  + ` / 案内「${roundTrip.asSsr.ng}」`);
 console.log(`  ⑦ 別の体の行: ${changelog.other.mode} / 同じ体の告知: ${changelog.announce.mode}`
   + ` / ツールの形の行: ${changelog.tool.mode}`
   + ` / 見た目だけ+手書き: ${changelog.look.mode0}→${changelog.look.mode}`
-  + ` / 同じ相手が2行: ${changelog.twoLines.mode}`);
+  + ` / 同じ相手が2行: ${changelog.twoLines.mode}(${changelog.twoLines.target0}行目のまま`
+  + `${changelog.twoLines.target === changelog.twoLines.target0 ? '' : ` → ${changelog.twoLines.target}行目へ移った`})`
+  + ` / 人が選び直した行: ${changelog.humanPick.target}(選んだのは 0)`
+  + ` / 同点の選び方: ${tieIndex}番目`);
 console.log(`     告知のとき: ${changelog.announce.items}`);
 console.log(`     書き直したとき: ${changelog.tool.items}`);
 console.log(`     見た目だけ+手書きのとき: ${changelog.look.items}`);
+console.log(`     同じ相手が2行のとき: ${changelog.twoLines.items}`);
 console.log(`     同じ相手が2行のときの注意: ${changelog.twoLines.note}`);
+console.log(`     人が行を選び直したとき: ${changelog.humanPick.items}`);
+console.log(`     表示名を付け替えたとき: ${changelog.rename.hist}`);
 console.log(`  ⑨⑩⑪ 形の欄=${edited.tplDisabled ? '表示専用' : '選び直せる'}`
+  + ` / 断り「${edited.tplNote.text}」(新規登録では${switched.tplNote ? '残る' : '消える'})`
   + ` / change で印は${edited.tplEvent.picked ? '立つ' : '立たない'}`
   + ` / テンプレート無しの土台=${edited.tplNone.fromLoaded ? '読み込んだ技' : '空'}`
   + ` / 足した選択肢の最大 ${Math.max(0, ...openAll.fired.map(f=>Math.max(0, ...Object.values(f.adhoc))))}個`);

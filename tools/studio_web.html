@@ -702,6 +702,10 @@
       <div><label>形</label><select id="m2_tpl"></select></div>
     </div>
     <div class="hint" id="tplHint"></div>
+    <!-- 「開いて直す」で形の欄を止めている理由。**出すのは fillMoveForm・消すのは
+         restoreFormDefaults(EDIT_ONLY_NOTES)**(表示の有無は formDefaults に写らない)。
+         文面は TPL_EDIT_NOTE が正なので、ここには書かない。 -->
+    <div class="hint" id="tplEditNote" style="display:none"></div>
     <details class="mvmore">
       <summary>tier3 の細かい調整</summary>
       <div class="r2">
@@ -4650,7 +4654,11 @@ async function loadElementList(){
     if(out.length){
       state.elements = out;
       const cur = $('s_element').value;
-      $('s_element').innerHTML = out.map(([k,l])=>`<option value="${k}">${l}(${k})</option>`).join('');
+      /* **先頭は必ず見出し(値は空)。** 一覧を作った瞬間に1体目が選ばれた形になると、
+         選び忘れに気づけないまま別の素体でSSRスキンを登録できてしまう。
+         欄を既定へ戻すとき(restoreFormDefaults)の寄せ先もここ。 */
+      $('s_element').innerHTML = '<option value="">素体を選んでください</option>'
+        + out.map(([k,l])=>`<option value="${k}">${l}(${k})</option>`).join('');
       if(cur && out.some(([k])=>k===cur)) $('s_element').value = cur;
       onElementChange();
     }
@@ -4784,7 +4792,9 @@ function loadScPresets(dataJs){
 }
 // 素体を選んだらスキンidの雛形を入れる(すでに入力済みなら触らない)
 function onElementChange(){
-  if(!$('s_id').value.trim()) $('s_id').placeholder = `${$('s_element').value}_ssr`;
+  // 見出し(空)のときは雛形を出さない(`_ssr` とだけ書いた薄字は意味が読めない)
+  if(!$('s_id').value.trim())
+    $('s_id').placeholder = $('s_element').value ? `${$('s_element').value}_ssr` : '';
 }
 /* 取得の入口はここ1か所。**blob の sha も一緒に返す**(「開いて直す」で、読んだときと
    送る直前の sha を照合して、他所で変わっていたら中止するため)。 */
@@ -5002,9 +5012,20 @@ function collectSsr(){
 $('s_raidEffect').addEventListener('change', ()=>{
   $('s_raidRow').style.display = $('s_raidEffect').checked ? '' : 'none';
 });
+/* その select に「選べる中身」があるか(値が空の見出しは数えない)。
+   **案内の言い方を分けるのはこの1つだけ** —— 一覧が空なら接続を促し、
+   出ているなら選び忘れとして言う。 */
+function selectHasChoices(id){
+  const el = $(id);
+  return !!el && Array.from(el.options).some(o => o.value !== '');
+}
 function validateSsr(ss){
   if(!/^[a-z][a-z0-9_]*_ssr$/.test(ss.id)) return 'スキンidは英小文字で始まり _ssr で終える形にしてください';
-  if(!ss.element) return '素体を選んでください(先にGitHubへ接続すると一覧が出ます)';
+  /* 「先にGitHubへ接続すると一覧が出ます」は**一覧が空のときだけ**。
+     一覧が出ているのにこれを言うと、接続もしていて素体も並んでいる人に
+     **嘘の案内**をすることになる(実際にそう出ていた)。 */
+  if(!ss.element) return selectHasChoices('s_element')
+    ? '素体を選んでください' : '素体を選んでください(先にGitHubへ接続すると一覧が出ます)';
   if(!ss.name) return '表示名を入れてください';
   if(!state.portraits) return '静止画を整えてください';
   return null;
@@ -5394,33 +5415,25 @@ function renderEditTargets(){
    撮っておき、種類を切り替えるたびにそこへ戻す。
    ここに「既定値」を書き写さない —— 正は HTML の value 属性と boot が入れた選択肢。 */
 const FORM_RESET_PANELS = ['specPanel','movePanel','ssrForm','editForm'];
-/* 既定へ戻さない欄の**規則**(名前を並べた表ではなく、撮るときに見る性質1つ):
-   **撮った時点で選べる中身が1つも無かった select は戻さない。**
-   中身が接続後に作られる一覧(直すもの e_target・素体 s_element・書き直す行 e_chTarget)が
-   これに当たる。撮った値('')を書き戻すと、選択肢が入れ替わったあとでは
-   どれも選ばれていない状態(selectedIndex=-1)になり、**選んでいたものが消えて見える**。
-   名前を並べる形だった頃は s_element の書き足しを忘れていて、開いて直す → SSR登録と
-   進むと「素体を選んでください(先にGitHubへ接続すると一覧が出ます)」という
-   **嘘の案内**が出た(素体は選ばれているのに selectedIndex が -1 だった)。
-   「先にGitHubへ接続してください」の1つだけが入っている select も「選べる中身は0個」と
-   数える —— 値が空の見出しだけの選択肢は、選び直しの対象ではないため。 */
-function formResetSkip(el){
-  return el.tagName === 'SELECT' && !Array.from(el.options).some(o => o.value !== '');
-}
 /* 「開いて直す」でだけ見せる注記。**戻すときはこの一覧を隠す。**
    value / checked / disabled と違って表示の有無は formDefaults に写らないので、
-   覚醒スキンの「継承の断り」が新規SSR登録の画面に残っていた。 */
-const EDIT_ONLY_NOTES = ['s_t3InheritNote'];
+   覚醒スキンの「継承の断り」が新規SSR登録の画面に残っていた。
+   tplEditNote = 形の欄を止めている理由(下の fillMoveForm で出す)。 */
+const EDIT_ONLY_NOTES = ['s_t3InheritNote', 'tplEditNote'];
 let formDefaults = null;
+/* **撮るのは全部の欄。除外の規則を持たない。**
+   「撮った時点で選べる中身が0個だった select は戻さない」という規則を持っていたが、
+   これは広すぎた —— 中身が接続後に作られる select(f_scPreset・s_element・
+   e_target・e_chTarget)が丸ごと戻らなくなり、**開いた体・開いたスキンの値が
+   そのまま新規登録へ混ざる**(素体が残ったまま新規SSR登録の画面へ行けた)。
+   戻したあとに「撮った値が今の選択肢に無い」ことは restoreFormDefaults が引き受ける。 */
 function captureFormDefaults(){
   formDefaults = [];
   for(const id of FORM_RESET_PANELS){
     const root = $(id);
     if(!root) continue;
-    for(const el of root.querySelectorAll('input,select,textarea')){
-      if(formResetSkip(el)) continue;
+    for(const el of root.querySelectorAll('input,select,textarea'))
       formDefaults.push({ el, value: el.value, checked: el.checked, disabled: el.disabled });
-    }
   }
 }
 function restoreFormDefaults(){
@@ -5428,7 +5441,15 @@ function restoreFormDefaults(){
   /* 「開いて直す」で足した選択肢(いまの値・テンプレート無し)も消す。
      残すと、新規登録の一覧に見覚えのない選択肢が並ぶ。 */
   document.querySelectorAll('option[data-adhoc]').forEach(o=> o.remove());
-  for(const d of formDefaults){ d.el.value = d.value; d.el.checked = d.checked; d.el.disabled = d.disabled; }
+  for(const d of formDefaults){
+    d.el.value = d.value; d.el.checked = d.checked; d.el.disabled = d.disabled;
+    /* 接続後に中身が入れ替わる一覧では、撮った値('')が今の選択肢に無い。
+       value を入れただけだと **selectedIndex=-1(どれも選ばれていない)** になり、
+       画面には前の選択が残って見えるのに collect… は空を読む、という食い違いが起きる。
+       そのときは**先頭(見出し)**へ寄せて「まだ選んでいない」を目に見える形にする。 */
+    if(d.el.tagName === 'SELECT' && d.el.selectedIndex < 0 && d.el.options.length)
+      d.el.selectedIndex = 0;
+  }
   for(const id of EDIT_ONLY_NOTES) if($(id)) $(id).style.display = 'none';
   editLoadedMoves = null;
   tplPickedByHuman = false;
@@ -5458,6 +5479,9 @@ const MOVE_TPL_TIER = MOVE_KIND_TIER;
 const TPL_NONE = '';
 const TPL_NONE_LABEL = 'テンプレート無し(いまの技のまま)';
 const TPL_NONE_HINT = 'どのテンプレートにも当てはまらない技です。いまの技をそのまま土台にします。';
+/* 「開いて直す」で形の欄を止めている理由。**止める側(fillMoveForm)と同じ場所に文面を置く**
+   —— 欄が灰色になっているだけでは「壊れている」のか「わざと止めてある」のか読めない。 */
+const TPL_EDIT_NOTE = 'この画面では形は変えられません(いまの技に近い形を見せているだけです)';
 /* 既存の tier3 から「形(テンプレート)」を逆引きする。見分けは `projStyle`(弾)と
    `aoeStyle`(範囲)—— TIER3 の中でどちらも重複しないので、これで1つに決まる。
    合うものが無ければ null =「テンプレート無し」(手書きの技はここに来る)。 */
@@ -5615,8 +5639,14 @@ function fillMoveForm(moves, texts){
      欄も持たないので、範囲の形を選び直しても data.js には書き戻らない。
      止めておかないと「撃ってみる」だけがテンプレートの技に変わり、
      **撃った物と保存される物が食い違う**。選び直しは新規登録の側で行う。
-     止まった欄は「触っていない」= tplPickedByHuman も立たない(印は boot の change)。 */
+     止まった欄は「触っていない」= tplPickedByHuman も立たない(印は boot の change)。
+     **止めた理由をその場に出す** —— 灰色の欄だけでは「壊れている」と読まれる。
+     消すのは restoreFormDefaults(EDIT_ONLY_NOTES に tplEditNote を入れてある)。 */
   if($('m2_tpl')) $('m2_tpl').disabled = true;
+  if($('tplEditNote')){
+    $('tplEditNote').textContent = TPL_EDIT_NOTE;
+    $('tplEditNote').style.display = 'block';
+  }
   for(let i = 0; i < 3; i++){
     const mv = moves[i] || {}, tx = (texts && texts[i]) || {};
     // 元の書き方をそのまま戻すのは**数字の欄だけ**(文字列は引用符ごと入ってしまう)
@@ -5722,6 +5752,18 @@ function readEditSkinForm(cur){
 
 /* 書き直してよくない行に付ける印。選ぶこと自体は人に許すが、**目で見て分かるように**する。 */
 const CHANGELOG_LOCK = '🔒';
+/* 選択肢の見出しへ**人の書いた本文をそのまま**出すので、HTML として読まれないようにする。
+   `<` や `&` を含む1行があると、その選択肢から先が丸ごと消える(黙って行が減る)。 */
+function htmlEsc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+/* 「書き直す行」を**人が選び直した**か。立っているときは planEdit が選び直さない
+   —— 人の選択を機械が上書きすると、直したい行と違う行が消える。
+   プログラムから入れ直す経路(fillEditChangelog / planEdit)は `onchange()` を直接呼ぶだけで
+   change イベントを投げないので、印は boot の addEventListener 側で立てる
+   (形の欄の tplPickedByHuman と同じ作り)。 */
+let chTargetPickedByHuman = false;
 /* 更新履歴の「今日のかたまり」を欄に出す。**既定は editRewriteCandidates が通した行**
    (=このツールが書いた、その相手の行)。無ければ「書き足す」。
 
@@ -5733,10 +5775,12 @@ function fillEditChangelog(dataJs, label){
   const items = updateHistoryItems(dataJs, todayYmd()) || [];
   const cand = editRewriteCandidates(items, label);
   const sel = $('e_chTarget');
+  // 読み込み直したら「人が選び直した」印も落とす(前の相手で選んだ行を持ち越さない)
+  chTargetPickedByHuman = false;
   sel.innerHTML = items.map((it, i)=>{
     // 🔒 = このツールが書いた形ではない行(告知・別の相手の行)
     const mark = cand.indexOf(i) >= 0 ? '' : CHANGELOG_LOCK + ' ';
-    return `<option value="${i}">${i+1}. ${mark}${String(it && it.t || '').slice(0, 40)}</option>`;
+    return `<option value="${i}">${i+1}. ${mark}${htmlEsc(String(it && it.t || '').slice(0, 40))}</option>`;
   }).join('');
   const has = items.length > 0;
   sel.disabled = !has;
@@ -5922,12 +5966,18 @@ function editRewriteCandidates(items, label){
   return out;
 }
 /* 更新履歴の「今日のかたまり」から**自動の本文に一番近い行**を選ぶ。
-   候補は editRewriteCandidates が通した行だけ。無ければ -1(=書き足す)。 */
+   候補は editRewriteCandidates が通した行だけ。無ければ -1(=書き足す)。
+
+   **同点は先頭が勝つ**(`s > bestS`)。similarity の分母は短いほうの語数なので、
+   `ジョーカー: HP115→120` は「ジョーカー」を含む候補と**どれでも 1.00** になり、
+   同点は普通に起きる。後ろが勝つ向きだった頃は、既定(fillEditChangelog の先頭)と
+   選び直し(ここ)の向きが逆で、**既定と違う行が黙って選ばれていた**。
+   しきい値(CHANGELOG_SIMILAR)は今までどおり「以上」で見る。 */
 function editRewriteIndex(items, label, text){
-  let best = -1, bestS = CHANGELOG_SIMILAR;
+  let best = -1, bestS = -1;
   for(const i of editRewriteCandidates(items, label)){
     const s = changelogSimilarity(String((items[i] && items[i].t) || ''), text);
-    if(s >= bestS){ bestS = s; best = i; }
+    if(s >= CHANGELOG_SIMILAR && s > bestS){ bestS = s; best = i; }
   }
   return best;
 }
@@ -5957,13 +6007,24 @@ async function planEdit(dataJs, uiJs, swJs, lines, metas){
     box.value = auto.text;
     /* 初回だけ「どの行を書き直すか」を**自動の本文に一番近い行**へ寄せ直す。
        候補は fillEditChangelog の既定と同じ(editRewriteCandidates)で、
-       ここはその中から話題の近さで選び直すだけ。無ければ書き足す。 */
+       ここはその中から話題の近さで選び直すだけ。無ければ書き足す。
+
+       **選び直さない場合が2つある。** どちらも「機械が選ぶと、直したい行と違う行を
+       消してしまう」場面:
+         ・人が「書き直す行」を選び直したとき —— 人の選択を機械が上書きしない。
+         ・その相手の候補が2つ以上ある日 —— どちらを直すかは機械には決められない
+           (similarity は「ジョーカー」を含むだけで 1.00 になり、同点で決まらない)。
+           このときは読み込み時に決めた既定(fillEditChangelog の先頭)をそのまま使い、
+           注意の文「どちらを直すか選んでください」で人に選ばせる。 */
     const items = updateHistoryItems(dataJs, todayYmd()) || [];
-    const best = editRewriteIndex(items, st.label, auto.text);
-    $('e_chMode').value = best >= 0 ? 'rewrite' : 'append';
-    if(best >= 0) $('e_chTarget').value = String(best);
-    // 注意の文も選び直しに合わせる(文面は editChangelogNote 1か所)
-    if($('e_chTarget').onchange) $('e_chTarget').onchange();
+    const cand = editRewriteCandidates(items, st.label);
+    if(!chTargetPickedByHuman && cand.length < 2){
+      const best = editRewriteIndex(items, st.label, auto.text);
+      $('e_chMode').value = best >= 0 ? 'rewrite' : 'append';
+      if(best >= 0) $('e_chTarget').value = String(best);
+      // 注意の文も選び直しに合わせる(文面は editChangelogNote 1か所)
+      if($('e_chTarget').onchange) $('e_chTarget').onchange();
+    }
   }
   const histText = box ? box.value.trim() : '';
   const tags = auto ? auto.tags : ['balance'];
@@ -7308,24 +7369,32 @@ function applyEditChanges(dataJs, changes){
   return text;
 }
 
-/* 更新履歴の1行を作る。**性能の数字が変わったときと、技名を変えたときだけ。**
+/* 更新履歴の1行を作る。**性能の数字が変わったとき・技名を変えたとき・
+   モンスターの表示名を変えたときだけ。**
    載せないもの: オーラ・エフェクト色・色スキンといった**見た目**(遊ぶ人が
    「何が変わったか」を読み取れないうえ、履歴が見た目の告知で埋まる)と、内部の設定。
    1体につき1行 =「ジョーカー: 威力21→34・連射5→7」。
-   タグ: 技名を変えたら `monster` / 数字を変えたら `balance` / **両方なら両方**。 */
+   タグ: 技名・表示名を変えたら `monster` / 数字を変えたら `balance` / **両方なら両方**。 */
 function editHistoryLine(label, changes){
+  /* 表示名(ELEMENTS.label)を変えたら、**行の主語は新しい名前**で書く。
+     旧名のままだと、遊ぶ人には「もうゲームに無い名前」の行になる。
+     改名そのものも本文へ入れる —— 名前が変わったことは遊ぶ人がいちばん気づく変化なのに、
+     載せる項目が「性能の数字と技名」だけだった頃は履歴に一言も出なかった。 */
+  const ren = changes.find(c => c.op === 'field' && c.table === 'ELEMENTS' && c.field === 'label');
+  const shown = ren ? String(ren.after) : label;
   const parts = [];
   for(const c of changes){
     if(c.op === 'renameKey') continue;                       // 技名の変更は下でまとめて1つ
+    if(c === ren){ parts.push(`名前が「${c.before}」から「${c.after}」へ`); continue; }
     if(c.rename){ parts.push(`技名を「${c.before}」から「${c.after}」へ`); continue; }
     if(!c.perf) continue;
     parts.push(`${c.histJp || c.jp}${editRound(c.before)}→${editRound(c.after)}`);
   }
   if(!parts.length) return null;
   const tags = [];
-  if(changes.some(c=>c.rename)) tags.push('monster');
-  if(changes.some(c=>c.perf))   tags.push('balance');
-  return { text: `${label}: ${parts.join('・')}`, tags: tags.length ? tags : ['balance'] };
+  if(ren || changes.some(c=>c.rename)) tags.push('monster');
+  if(changes.some(c=>c.perf))          tags.push('balance');
+  return { text: `${shown}: ${parts.join('・')}`, tags: tags.length ? tags : ['balance'] };
 }
 
 /* 更新履歴の「今日のかたまり」を読む(既存の行を出して『書き足す/書き直す』を選ばせるため)。 */
@@ -7671,6 +7740,10 @@ function boot(){
     $('e_cur').textContent = '「この内容を読み込む」を押すと、いまの data.js の中身が下の欄に入ります。';
     $('regKind').onchange();     // モンスターかSSRかで出すパネルが変わる
   };
+  /* 「書き直す行」を**人が選び直した**印。**change イベントで受ける** ―― プログラムから
+     入れ直す経路(fillEditChangelog / planEdit)は `onchange()` を直接呼ぶだけなので
+     ここは通らない。おかげで planEdit の選び直しが人の選択を上書きしない。 */
+  $('e_chTarget').addEventListener('change', ()=>{ chTargetPickedByHuman = true; });
   // 覚醒: 作り方を変えると使うパネルが変わるので出し分けをやり直す
   $('aw_mode').onchange = ()=>{ $('regKind').onchange(); };
   $('aw_base').onchange = ()=>{ state.awaken = null; state.files = null; $('commitBtn').disabled = true;

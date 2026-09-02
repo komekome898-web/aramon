@@ -64,7 +64,10 @@ const TAP_SEL = 'button,select,[onclick],[role=button]';
    open   … 測る前に開いておく要素id。**そのパネルの子だけ**を書く(§指摘8) ――
             別のパネルの子を書いても、その行では測られないので「測ったつもり」になる
    small  … わざと TAP_MIN より小さくしてある物のセレクタ(**理由を必ず添える**)
-   noClip … 省略記号を付けてあるが**切れてはいけない**物(1b の除外の外で実測する) */
+   noClip … 省略記号を付けてあるが**切れてはいけない**物(1b の除外の外で実測する)
+   changelog … 更新履歴の欄を**いちばん字が多い姿**にしてから測る({ label, lines })。
+            空のまま測ると、実際に画面へ出る注意文と 🔒 付きの選択肢を一度も測っていない
+            ことになる。中身は本物の fillEditChangelog に作らせる(検査に文言を書き写さない) */
 const PANELS = [
   /* 段階バーは画面のいちばん上に貼り付く帯。**7段が横に並びきるか**をここで見る。
      段は自分で省略記号を出すので 1b の網に掛からない ―― 切れた瞬間に ✓/! の印まで
@@ -80,7 +83,14 @@ const PANELS = [
   { id:'kindPanel',     name:'2 種類(SSR)',      kind:'ssr',     open:['ssrForm'] },
   { id:'kindPanel',     name:'2 種類(差し替え)', kind:'assets',  open:['assetsForm'] },
   { id:'kindPanel',     name:'2 種類(覚醒)',     kind:'awaken',  open:['awakenForm'] },
-  { id:'kindPanel',     name:'2 種類(開いて直す)', kind:'edit',  open:['editForm','e_chWrap'] },
+  /* 「開いて直す」は更新履歴の欄を持つ。**いちばん字が多いのは
+     「同じ相手のツールの形の行が2つある日に、🔒 の付いた行を選んでいる」姿**
+     ―― 注意が4つ並び、選択肢には 🔒 と本文40字が入る。 */
+  { id:'kindPanel',     name:'2 種類(開いて直す)', kind:'edit',  open:['editForm','e_chWrap'],
+    changelog:{ label:'ジョーカー', pick:0, lines:[
+      '🆕 新モンスター「ジョーカー」が登場しました!闇の技で切り裂きます',
+      'ジョーカー: HP115→120・移動速度2.9→3.1・クールタイム倍率0.9→0.8',
+      'ジョーカー: デスファイナルの威力21→34・連射15→18']} },
   { id:'mediaPanel',    name:'M 専用メディア', kind:'ssrmedia', open:[] },
   { id:'walkPanel',     name:'3 歩行',         kind:'monster',
     open:['candWrap','walkDiag','modelAbortWrap','walkModelTime'],
@@ -198,6 +208,21 @@ for(const dev of DEVICES){
         document.querySelectorAll('#stageBar .mk').forEach(m => m.textContent = '✓');
       /* 候補コマの札(renderCand と同じ形)。**絵を入れないと高さが 0 になる**
          (`.cell img{ width:100% }` = 高さは絵の縦横比で決まる)ので、1×1の透明PNGを入れる。 */
+      /* 更新履歴の欄。**本物の fillEditChangelog に作らせる**(注意文と 🔒 を
+         検査側へ書き写すと、画面の文言を変えたときに測る姿だけ古くなる)。
+         渡すのは「今日のかたまりだけを持つ data.js」の形の文字列。 */
+      if(panel.changelog){
+        const ymd = todayYmd();
+        const block = `  { date:'${ymd}', items:[\n`
+          + panel.changelog.lines.map(t=>`    { t:'${t}', g:['balance'] },\n`).join('') + '  ]},\n';
+        fillEditChangelog('const UPDATE_HISTORY = [\n' + block + '];\n', panel.changelog.label);
+        // 🔒 の付いた行を選んだ姿(注意が1つ増える)。人の操作ではないので印は立てない
+        if(panel.changelog.pick != null){
+          const sel = document.getElementById('e_chTarget');
+          sel.value = String(panel.changelog.pick);
+          if(sel.onchange) sel.onchange();
+        }
+      }
       if(panel.cells){
         const [id, n] = panel.cells, box = document.getElementById(id);
         const px = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
