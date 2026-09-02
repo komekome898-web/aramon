@@ -38,11 +38,11 @@ const REQUIRED = [
   'fillSmallHoles', 'borderConnected', 'label4', 'blur3', 'min3', 'erode2', 'dilate2', 'bboxOf',
   'cornerRgbs', 'cornerRgb', 'cornerHint', 'tightenEdge', 'SEG_EDGE_MIN',
   // 背景の抜き方(モデル)。呼び分けは resolveAlpha 1か所
-  'segmentModel', 'resolveAlpha', 'imageAlphaFor', 'keepMajor', 'releaseSegmentModel',
+  'segmentModel', 'resolveAlpha', 'imageAlphaFor', 'makeCut', 'keepMajor', 'releaseSegmentModel',
   'MODEL_SRC', 'MODEL_CACHE', 'MODEL_INPUT', 'MODEL_FG_MIN', 'MODEL_KEEP_RATIO', 'MODEL_FALLBACK',
   // 動画・周期・診断(周期の自己相関は bandAutocorr 1か所で作る)
-  'detectPeriod', 'periodDiag', 'bandAutocorr', 'grayDiff', 'adjacentDiffs', 'diffStat',
-  'bestMoveWindow', 'dropFootShadow', 'stripScale', 'medianOf', 'SEED_PROMPT',
+  'detectPeriod', 'periodDiag', 'periodFound', 'bandAutocorr', 'grayDiff', 'adjacentDiffs',
+  'diffStat', 'bestMoveWindow', 'dropFootShadow', 'stripScale', 'medianOf', 'SEED_PROMPT',
   // data.js を読む側
   'pickObjText', 'pickStr', 'pickNum', 'numExpr', 'parseSkinMedia', 'parseStateChanges',
   'skinMediaRange', 'removeSkinMediaEntry',
@@ -74,7 +74,7 @@ const REQUIRED = [
   'WALK_FRAME_DUR', 'PERIOD_BAND', 'PERIOD_PEAK_MIN', 'PERIOD_DIP_MAX',
   'MOVE_MIN_DIFF', 'MOVE_SPAN_MIN_DIFF',
   'DIAG_W', 'FRAME_SAME_DIFF', 'ALIGN_DROP_PX', 'MOVE_WIN_SEC',
-  'SHADOW_BAND', 'SHADOW_DARK', 'SHADOW_SAT', 'SHADOW_WIDE', 'SHADOW_MIN_W',
+  'SHADOW_BAND', 'SHADOW_DARK', 'SHADOW_SAT', 'SHADOW_WIDE', 'SHADOW_MIN_W', 'SHADOW_FILL',
   'ICONS', 'AURAS', 'RANKS', 'STATS', 'SKIN_COLOR_ORDER', 'SC_TRIGGERS', 'SC_EFFECTS',
   'SE_FALLBACK', 'MOVE_HIDE_BY_KIND', 'MOVE_KIND_TIER',
   'MEDIA_ITEMS', 'state',

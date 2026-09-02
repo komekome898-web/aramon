@@ -271,7 +271,23 @@ function makeGrays(n, P, amp){
   }
   return grays;
 }
-function runPeriod(){
+/* ズームしているだけの入力(歩行は無い)。同じ模様が少しずつ大きくなるだけなので、
+   自己相関に山は立たないが**谷は立つ** —— つまり「谷から周期を求める枝(how='dip')」を
+   通る。ここが「歩行の周期あり」と判定されていたのが批評3。 */
+function makeZoomGrays(n, k){
+  const W = 48, out = [];
+  for(let i=0;i<n;i++){
+    const g = new Float32Array(W*W);
+    const s = 1 + k*i/n;                                   // だんだん拡大
+    for(let y=0;y<W;y++) for(let x=0;x<W;x++){
+      const u = (x-24)/s + 24, v = (y-24)/s + 24;
+      g[y*W+x] = 110 + 40*Math.sin(u*0.5)*Math.cos(v*0.4);
+    }
+    out.push(g);
+  }
+  return out;
+}
+async function runPeriod(){
   const out = {};
   for(const n of [48, 32]) for(const P of [12, 16, 20]) for(const amp of [40, 8]){
     out[`n${n}_p${P}_a${amp}`] = S.detectPeriod(makeGrays(n, P, amp), n);
@@ -288,8 +304,19 @@ function runPeriod(){
     const d = S.periodDiag(g, n);
     const k = `n${n}_p${P}_a${amp}`;
     if(d.period !== out[k]) fail('period', `${k}: periodDiag の周期 ${d.period} が detectPeriod ${out[k]} と違います`);
-    diag[k] = { how:d.how, peak:Math.round(d.peak*1000)/1000, peakLag:d.peakLag };
+    diag[k] = { how:d.how, peak:Math.round(d.peak*1000)/1000, peakLag:d.peakLag,
+                found:S.periodFound(d) };
   }
+  /* ズームだけの入力: 谷から周期を求める枝(how='dip')を通るが、強さは 0.05 しかない。
+     ここを how で見ていたころは「歩行の周期が見つかりました」と言い、
+     「自動」でも第2手(動きが最大の窓)へ切り替わらなかった。 */
+  const zoom = S.periodDiag(makeZoomGrays(48, 1.5), 48);
+  if(zoom.how !== 'dip')
+    fail('period', `ズームだけの入力が谷の枝を通っていません(how=${zoom.how})。検査の入力を見直してください`);
+  if(S.periodFound(zoom))
+    fail('period', `ズームだけの入力を「歩行の周期あり」と判定しました(強さ ${zoom.peak})`);
+  diag.zoom_n48 = { how:zoom.how, peak:Math.round(zoom.peak*1000)/1000, peakLag:zoom.peakLag,
+                    found:S.periodFound(zoom) };
   /* 動きがまったく無い入力は「歩行の周期が見つからない」と言えること。
      ここが 'none' 以外を返すと、揺れているだけの動画で黙って周期を採ってしまう。 */
   const flat = S.periodDiag(makeGrays(48, 16, 0), 48);
@@ -297,7 +324,14 @@ function runPeriod(){
     fail('period', `動きの無い入力で周期あり(${flat.how})と判定しました。歩行の周期は見つからないはずです`);
   if(flat.peak >= S.PERIOD_PEAK_MIN)
     fail('period', `動きの無い入力の周期の強さが ${flat.peak}(${S.PERIOD_PEAK_MIN} 未満のはず)`);
-  diag.flat_n48 = { how:flat.how, peak:Math.round(flat.peak*1000)/1000, peakLag:flat.peakLag };
+  diag.flat_n48 = { how:flat.how, peak:Math.round(flat.peak*1000)/1000, peakLag:flat.peakLag,
+                    found:S.periodFound(flat) };
+  /* 「歩行の周期があるか」を決めるのは **periodFound 1か所**で、見るのは強さだけ(§批評3)。
+     how(peak / dip / none)で決めると、谷から周期を求めた枝で強さが足りなくても
+     「見つかりました」になる。全ケースで「強さだけで決まっている」ことを見る。 */
+  for(const [k, d] of Object.entries(diag))
+    if(d.found !== (d.peak >= S.PERIOD_PEAK_MIN))
+      fail('period', `${k}: periodFound が強さ以外で決まっています(強さ ${d.peak} / 判定 ${d.found})`);
   compareJson('perioddiag', path.join(GOLDEN, 'perioddiag.json'), diag);
 
   /* --- 抜いた後の8コマの隣接差(§11 [25])。
@@ -380,7 +414,114 @@ function runPeriod(){
     if(isShadow && withShadow[i] !== 0) fail('period', `影の画素 (${x},${y}) が残っています`);
     if(!isShadow && withShadow[i] !== sAlpha[i]) fail('period', `影ではない画素 (${x},${y}) まで消しました`);
   }
-  return `${Object.keys(out).length}通り + 診断${Object.keys(diag).length}通り + 隣接差 + 動きの判定 + 第2手 + 足元の影`;
+  const real = await runRealAssets();
+  return `${Object.keys(out).length}通り + 診断${Object.keys(diag).length}通り + 隣接差 + ` +
+         `動きの判定 + 第2手 + 足元の影 + ${real}`;
+}
+
+/* ------------------------------------------- (c2) 実素材(monsters/*.png)で見る2つ
+
+   合成した絵だけでは通ってしまい、実素材で初めて出た不具合が2つある。
+
+   ① **足元の影の誤爆**(§批評10): ゲームに入っている静止画は**もう整えてある**ので、
+      足元の影として消える画素は1つも無いのが正。それでも illumine(479画素)・
+      mocchi_ssr(2322画素)が消えていた —— 絵の下に引いてある**細い線画**が
+      「暗い・灰色・横に長い」の3つに当たっていたため。線画は枠の中がすかすか(3〜5%)、
+      落ち影は塊なので、詰まり具合(`SHADOW_FILL`)で分かれる。
+      **歩行コマ(`_walk_`)は別扱い** —— 影が焼き込まれている絵が実在し、そちらは消えるのが正。
+   ② **透過済みPNGの素通し**(§批評1): 「画像から並べる」は抜き方を明示していないので、
+      透過済みの絵はその透過をそのまま使う。`makeCut` に素通しの印を渡し忘れていたころは
+      白抜き・色抜きが当たり、**透明な所まで前景**になっていた。                        */
+const REAL_WALK = /_walk_/;                         // 歩行コマ(影が焼き込まれている絵がある)
+const REAL_SHADOW_ONE = 'illumine_walk_f1.png';     // 本物の落ち影が焼き込まれている1枚
+const REAL_ALPHA_ONE  = 'joker.png';                // 素通しを見る透過済みPNG
+const REAL_CHUNK = 16;                              // 生バイトを一度に置く枚数(1024²は1枚4MB)
+// PNG のデコードは python3(Pillow)に任せる(node 側に自前のデコーダを置かない)
+function decodePngs(names, outDir){
+  const py = `
+import sys, os, json
+from PIL import Image
+root, out = sys.argv[1], sys.argv[2]
+meta = {}
+for name in sys.argv[3:]:
+    im = Image.open(os.path.join(root, 'monsters', name)).convert('RGBA')
+    meta[name] = im.size
+    with open(os.path.join(out, name + '.raw'), 'wb') as f:
+        f.write(im.tobytes())
+print(json.dumps(meta))
+`;
+  const r = spawnSync('python3', ['-c', py, ROOT, outDir, ...names],
+                      { encoding:'utf8', maxBuffer:1<<28 });
+  if(r.status !== 0) throw new Error('python3(Pillow)でPNGを読めませんでした: ' + (r.stderr || r.error));
+  return JSON.parse(r.stdout.trim().split('\n').pop());
+}
+async function runRealAssets(){
+  const dir = path.join(ROOT, 'monsters');
+  const all = fs.readdirSync(dir).filter(f => f.endsWith('.png')).sort();
+  const still = all.filter(f => !REAL_WALK.test(f));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio_regress-real-'));
+  let checked = 0;
+  try{
+    // ① 静止画は1画素も消えない。枚数が多いので少しずつ生バイトへ直しては捨てる
+    for(let i=0;i<still.length;i+=REAL_CHUNK){
+      const chunk = still.slice(i, i+REAL_CHUNK);
+      const meta = decodePngs(chunk, tmp);
+      for(const name of chunk){
+        const [w, h] = meta[name];
+        const file = path.join(tmp, name + '.raw');
+        const raw = fs.readFileSync(file);
+        fs.rmSync(file, { force:true });
+        const img = { width:w, height:h, data:new Uint8ClampedArray(raw) };
+        const alpha = new Uint8Array(w*h);
+        for(let k=0;k<w*h;k++) alpha[k] = raw[k*4+3];
+        const drop = S.dropFootShadow(img, alpha, w, h, S.bboxOf(alpha, w, h));
+        if(drop !== 0)
+          fail('period', `${name}: 整えてある絵から足元の影として ${drop} 画素を消しました(0 のはず)`);
+        checked++;
+      }
+    }
+    // ① の逆: 影が焼き込まれている歩行コマでは、ちゃんと落ちる(締めすぎていないこと)
+    if(all.includes(REAL_SHADOW_ONE)){
+      const meta = decodePngs([REAL_SHADOW_ONE], tmp);
+      const [w, h] = meta[REAL_SHADOW_ONE];
+      const raw = fs.readFileSync(path.join(tmp, REAL_SHADOW_ONE + '.raw'));
+      const img = { width:w, height:h, data:new Uint8ClampedArray(raw) };
+      const alpha = new Uint8Array(w*h);
+      for(let k=0;k<w*h;k++) alpha[k] = raw[k*4+3];
+      const drop = S.dropFootShadow(img, alpha, w, h, S.bboxOf(alpha, w, h));
+      if(drop <= 0)
+        fail('period', `${REAL_SHADOW_ONE}: 焼き込まれた落ち影を落とせませんでした(本物の影は落ちるはず)`);
+      fs.rmSync(path.join(tmp, REAL_SHADOW_ONE + '.raw'), { force:true });
+    }
+    // ② 透過済みPNG → 画像から並べる道(auto)は素通し。明示した抜き方は素通しにしない
+    if(all.includes(REAL_ALPHA_ONE)){
+      const meta = decodePngs([REAL_ALPHA_ONE], tmp);
+      const [w, h] = meta[REAL_ALPHA_ONE];
+      const raw = fs.readFileSync(path.join(tmp, REAL_ALPHA_ONE + '.raw'));
+      const own = new Uint8Array(w*h);
+      for(let k=0;k<w*h;k++) own[k] = raw[k*4+3];
+      const seg = { mode:'white', th:20, chroma:null };
+      const mk = ()=> ({ width:w, height:h, data:new Uint8ClampedArray(raw) });
+      // makeCut(auto:true) が通る道。**前景画素が元のアルファと一致する**のが素通し
+      const pass = await S.imageAlphaFor(mk(), seg);
+      if(!own.every((v,i)=> v === pass[i]))
+        fail('period', `${REAL_ALPHA_ONE}: 透過済みPNGが素通しになっていません(画像から並べる道)`);
+      // 素通しの印が無い呼び方(=批評1の壊れ方)では、透明な所まで前景になる
+      const cut = await S.resolveAlpha(mk(), seg);
+      let fgInClear = 0;
+      for(let k=0;k<w*h;k++) if(own[k] === 0 && cut[k] > 0) fgInClear++;
+      if(fgInClear === 0)
+        fail('period', '検査の前提が崩れています(明示した抜き方でも素通しと同じ結果になりました)');
+      // makeCut の呼び分けが imageAlphaFor と同じ枠を返すこと(引数1つで切り替わる)
+      const cutAuto = await S.makeCut(mk(), seg, null, { auto:true, shadow:false });
+      const boxOwn = S.bboxOf(own, w, h);
+      if(JSON.stringify(cutAuto.box) !== JSON.stringify(boxOwn))
+        fail('period', `${REAL_ALPHA_ONE}: makeCut(auto) の枠 ${JSON.stringify(cutAuto.box)} が` +
+                       ` 元のアルファの枠 ${JSON.stringify(boxOwn)} と違います`);
+      fs.rmSync(path.join(tmp, REAL_ALPHA_ONE + '.raw'), { force:true });
+    }
+  } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
+  return `実素材 ${checked}枚(影0)+ 焼き込み影1枚 + 透過済みPNGの素通し`;
 }
 
 /* どの項目がどう違うかを短く出す(項目ごとの表になっているゴールデン用) */
@@ -1124,7 +1265,7 @@ const done = [];
 if(want('rows'))      done.push('行生成 ' + runRows());
 if(want('segment'))   done.push('背景抜き ' + runSegment());
 if(want('model'))     done.push('モデル経路 ' + await runModel());
-if(want('period'))    done.push('周期検出 ' + runPeriod());
+if(want('period'))    done.push('周期検出 ' + await runPeriod());
 if(want('roundtrip')) done.push('往復 ' + runRoundTrip());
 if(want('handlers'))  done.push('属性 ' + runHandlers());
 if(want('moveaura'))  done.push('技名 ' + runMoveAura());

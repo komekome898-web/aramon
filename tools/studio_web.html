@@ -377,19 +377,9 @@
     <div class="hint">
       正面向きの動画は半周期の絵が似ているため、周期を半分で拾って<b>片足しか上がらない</b>ことがあります。
       そのときは「周期の2倍」にしてプレビューし直してください。変えたらプレビューし直しが要ります。
+      <b>見るのは動画の先頭4秒だけです</b>(「動きが最大の窓」もこの中から探します)。
+      歩いている所が後ろにある動画は、その部分だけを切り出してから読み込ませてください。
     </div>
-    <label>コマの揃え方</label>
-    <select id="alignMode">
-      <option value="center">横中心+足元(既定)</option>
-      <option value="foot">足元だけ — 体が左右に揺れる動画はこちら</option>
-    </select>
-    <div class="hint">
-      既定は毎コマを横の中心へ寄せ直します。<b>体が左右に揺れるだけの動画では、その揺れが消えて
-      止まって見えます。</b>下の診断で「揃え直しで捨てた横のぶれ」が大きいときは「足元だけ」にしてください。
-    </div>
-    <!-- AI動画は足元に落ち影が出る。影ごと抜くと足元合わせの基準が影の下端になって跳ねる -->
-    <label class="effrow"><input id="dropShadow" type="checkbox" checked>
-      <span>足元の影を落とす(既定ON)</span></label>
     <details id="seedGuide">
       <summary>AIで歩く動画を作るときの文(コピーして使えます)</summary>
       <div class="hint">
@@ -414,12 +404,26 @@
       透過済みの画像はそのまま使い、そうでなければ下の抜き方で抜きます。
     </div>
   </div>
+  <!-- 揃え方と影は動画・画像のどちらの道でも効くので、**両方から見える所に置く**。
+       動画のときだけ出していたころは、画像から並べたときに画面に無い設定が効いていた -->
+  <label>コマの揃え方</label>
+  <select id="alignMode">
+    <option value="center">横中心+足元(既定)</option>
+    <option value="foot">足元だけ — 体が左右に揺れる動画はこちら</option>
+  </select>
+  <div class="hint">
+    既定は毎コマを横の中心へ寄せ直します。<b>体が左右に揺れるだけの動画では、その揺れが消えて
+    止まって見えます。</b>下の診断で「揃え直しで捨てた横のぶれ」が大きいときは「足元だけ」にしてください。
+  </div>
+  <!-- AI動画は足元に落ち影が出る。影ごと抜くと足元合わせの基準が影の下端になって跳ねる -->
+  <label class="effrow"><input id="dropShadow" type="checkbox" checked>
+    <span>足元の影を落とす(既定ON)</span></label>
   <label>背景の抜き方</label>
   <select id="mode">
-    <option value="blackopen">黒背景・本体に黒い部分が無い(既定)</option>
+    <option value="blackopen">黒背景・本体に黒い部分が無い(画像の既定)</option>
     <option value="black">黒背景・本体に黒い部分がある</option>
     <option value="white">白背景</option>
-    <option value="chroma">色で抜く(背景をタップして色を拾う)</option>
+    <option value="chroma">色で抜く(動画の既定・背景色は自動で決まります)</option>
     <option value="model">モデルで抜く(おすすめ)</option>
   </select>
   <div class="hint modelNote">
@@ -1723,6 +1727,20 @@ async function segmentModel(img, prog, panel){
 function walkSeg(){
   return { mode: $('mode').value, th: +$('th').value, chroma: state.chroma, panel:'walk' };
 }
+/* **素材ごとの「背景の抜き方」の既定はこの表だけ。**
+   動画は色で抜く(§3 B2) —— AI動画は単色背景なので、背景色は A1 が外周8点から
+   自動で決める = **タップ0回**で抜ける。画像は今までどおり黒背景。
+   人が「背景の抜き方」を選び直した後は上書きしない —— その印は modeTouched の1つだけ
+   (「人が触ったか」を2か所で数えると、片方だけ立って既定が復活する)。 */
+const WALK_MODE_DEFAULT = { video:'chroma', image:'blackopen' };
+let modeTouched = false;
+function applyWalkModeDefault(){
+  if(modeTouched) return;
+  const want = WALK_MODE_DEFAULT[$('walkSrc').value];
+  if(!want || $('mode').value === want) return;
+  $('mode').value = want;
+  $('mode').onchange();      // 表示の出し分けを合わせる(引数なし = 人が触った印は立てない)
+}
 /* 「この絵はもう透過済みか」。**1画素でも欠ければ透過済み、では緩すぎる**(§指摘22)。
    保存し直したPNGや縁のアンチエイリアスで数画素だけ半透明になっている絵はいくらでもあり、
    それを素通しにすると背景が付いたまま通ってしまう。**割合**で見て、透過済みなら
@@ -1801,28 +1819,33 @@ function fitScale(scale, cw, limit){
   const nw = cw*scale;
   return nw > limit ? scale*limit/nw : scale;
 }
-// 高さの中央値で決める倍率。**診断でも「揃え直しで捨てる横のぶれ」を測るのに使う**ので切り出してある
-function stripScale(cuts){
-  const hs = cuts.filter(c=>c.box).map(c=>c.box.y1-c.box.y0).sort((a,b)=>a-b);
-  if(!hs.length) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
-  const medh = hs.length%2 ? hs[(hs.length-1)/2] : (hs[hs.length/2-1]+hs[hs.length/2])/2;
-  const widest = Math.max(...cuts.filter(c=>c.box).map(c=>c.box.x1-c.box.x0+1));
-  return fitScale(TARGET_H/medh, widest, CANVAS);
-}
-// 数の並びの中央値(揃え直しの基準に使う)
+/* 数の並びの中央値。**中央値を取る式はこの1か所だけ。**
+   倍率(stripScale)・揃え直しの基準(composeStrip)・外周8点の色(cornerRgb)・
+   コマの検査(inspectFrames)が同じ式を使う。書き写すと片方だけ直したときに食い違う。 */
 function medianOf(list){
   const s = [...list].sort((a,b)=>a-b);
   if(!s.length) return 0;
   return s.length%2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2;
 }
-/* コマの揃え方。**分岐はこの1か所。**
+// 高さの中央値で決める倍率。**診断でも「揃え直しで捨てる横のぶれ」を測るのに使う**ので切り出してある
+function stripScale(cuts){
+  const boxes = cuts.filter(c=>c.box);
+  if(!boxes.length) throw new Error('被写体を検出できませんでした(抜き方やしきい値を変えてください)');
+  const medh = medianOf(boxes.map(c=>c.box.y1-c.box.y0));
+  const widest = Math.max(...boxes.map(c=>c.box.x1-c.box.x0+1));
+  return fitScale(TARGET_H/medh, widest, CANVAS);
+}
+/* コマの揃え方。**画面から読むのはこの1か所。**
    既定(center)は横中心+足元。横中心へ寄せ直すと、体が左右に揺れるぶんの動きが
    コマ間から消えるので、揺れで見せたい素材のために「足元だけ」を選べるようにしてある。 */
 function walkAlign(){ const e = $('alignMode'); return e ? e.value : 'center'; }
-// 倍率を決め、320x320 に足元合わせで並べる(build_walk.py と同じ)
-async function composeStrip(cuts){
+/* 倍率を決め、320x320 に足元合わせで並べる。
+   倍率と足元合わせは build_walk.py の compose と同じ規則だが、**「足元だけ」(align='foot')は
+   Python 版に無い**(体の横揺れを残すためにこちらだけで足した道)。
+   `align` は引数で受ける —— 画面から読むと「16コマをモデルで抜き直す」だけが
+   今の値で並び直し、抜いたときと違う揃え方になる(§批評9)。 */
+async function composeStrip(cuts, align){
   const scale = stripScale(cuts);
-  const align = walkAlign();
   // 「足元だけ」のときは、コマごとの横位置を**中央値からのずれ**として残す
   const cx0 = align === 'foot'
     ? medianOf(cuts.filter(c=>c.box).map(c=>(c.box.x0+c.box.x1)/2)) : 0;
@@ -1950,9 +1973,11 @@ function playThrough(v, from, to, onFrame){
     v.onended = fin;
     // 再生できない端末でも「コマを作っています」で固まらないよう上限を付ける
     /* 上限は**先頭から `to` まで**で見る(`to - from` ではない)。再生は必ず 0 秒から
-       始まるので、切り出す区間が動画の後ろのほうにあると(第2手=動きが最大の窓)、
-       差だけで測った上限では**そこへ着く前に打ち切ってしまう**。
-       from が先頭に近い今までの使い方では、この値はほとんど変わらない。 */
+       始まるので、`from` が 0 でない呼び方では、差だけで測った上限では
+       **そこへ着く前に打ち切ってしまう**。
+       今の呼び方では `from` はどれも先頭4秒の中にある(解析も、第2手の窓も
+       `bestMoveWindow` が先頭4秒の解析コマからしか探せない)ので、この値は
+       ほとんど変わらない。**長い動画の後ろを切り出せるようにしたときに効いてくる。** */
     setTimeout(fin, Math.max(4000, (to + 1.5)*1000*1.8));
     try{ v.currentTime = 0; }catch(e){}
     const p = v.play();
@@ -2027,9 +2052,10 @@ function bandAutocorr(grays, n){
 /* 周期と、**その周期がどれくらい確かか**を一緒に返す。
    how = 'peak'(はっきりした山があった) / 'dip'(半周期の谷から求めた) /
          'none'(どちらも出ず、いちばん高い所を仕方なく採った)
-   'none' は「歩行の周期が見つからなかった」ということ。今までは黙って
-   その値を周期として使っていたので、揺れているだけの動画でも
-   「問題は見つかりませんでした」と報告していた(2026-09-02の診断)。   */
+   **how は「周期の長さをどうやって求めたか」であって、歩行があるかどうかではない。**
+   歩行があるかどうかは periodFound()(強さだけを見る)が決める —— how で決めていた頃は、
+   谷から求めた枝('dip')だと強さ 0.06 でも「見つかりました」と言い、第2手にも
+   切り替わらなかった(2026-09-02の批評3)。                              */
 function periodDiag(grays, n){
   const ac = bandAutocorr(grays, n);
   const hi = Math.min(n-1, Math.floor(n*0.95));
@@ -2063,6 +2089,12 @@ function periodDiag(grays, n){
 }
 // 周期だけが欲しいときの入口(返す値は今までと1つも変わらない)
 function detectPeriod(grays, n){ return periodDiag(grays, n).period; }
+/* 「この動画に歩行の周期があるか」の判定は**この関数1つだけ。**
+   切り出しを第2手へ切り替える側(buildWalkFrames)も、画面へ言い方を出す側
+   (renderWalkDiag)も、検査もここを読む。2か所に式を書くと、
+   「画面は見つかりましたと言うのに第2手で切り出す」ようなちぐはぐが起きる。
+   **見るのは強さだけ**(how は長さの求め方であって歩行の有無ではない)。 */
+function periodFound(p){ return !!p && p.peak >= PERIOD_PEAK_MIN; }
 
 // 動画 -> 8コマの RGBA ImageData(320x320)
 const walkStep = (t)=>{ const e = $('walkMeta'); if(e) e.textContent = t; };
@@ -2077,13 +2109,10 @@ function cornerRgbs(img){
     const i = (y*w+x)*4; return [d[i], d[i+1], d[i+2]];
   });
 }
-// 8点の**中央値**。平均だと外れた1点にそのまま引きずられる
+// 8点の**中央値**(式は medianOf 1か所)。平均だと外れた1点にそのまま引きずられる
 function cornerRgb(img){
   const cs = cornerRgbs(img);
-  return [0,1,2].map(k=>{
-    const s = cs.map(v=>v[k]).sort((a,b)=>a-b);
-    return Math.round(s.length%2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2);
-  });
+  return [0,1,2].map(k=> Math.round(medianOf(cs.map(v=>v[k]))));
 }
 // 抜けなかったとき、外周の色から「どの抜き方を試すとよいか」を伝える(色の判定は cornerRgb 1か所)
 function cornerHint(img){
@@ -2152,12 +2181,19 @@ function bestMoveWindow(rawT, raw, winSec){
    **判定はこの関数1つだけ。** 「被写体のいちばん下の帯」の中で
      ① 暗い(その絵の明るさの中央値より暗い) ② 彩度が低い(灰色) ③ 横に長い
    の3つがそろったかたまりを影とみなす。脚は縦に長いので③で残り、
-   影が無い絵では候補が1つも出ないので**何も変わらない**。                  */
+   影が無い絵では候補が1つも出ないので何も変わらない。
+
+   **④「詰まっている」が要る**(2026-09-02の批評10)。①〜③だけだと、絵の下のほうに
+   引いてある**細い黒い線画**が誤爆する —— 実素材で illumine(0.14%)・mocchi_ssr(0.45%)の
+   画素を消していた。線画は横には長いが**枠の中がすかすか**(実測 3〜5%)で、
+   落ち影は塊なので枠が詰まる。ここを見れば、暗さや幅の閾値を締めずに分けられる
+   (締めると本物の影まで残る)。                                              */
 const SHADOW_BAND  = 0.12;   // 被写体の高さの下から12%だけを見る
 const SHADOW_DARK  = 0.55;   // 明るさが被写体の中央値のこの割合より暗い画素だけ
 const SHADOW_SAT   = 40;     // 彩度(最大成分-最小成分)がこれ未満 = 灰色っぽい
 const SHADOW_WIDE  = 2.0;    // 幅/高さがこれ以上のかたまりだけを影とみなす
 const SHADOW_MIN_W = 0.35;   // 被写体の幅に対してこれ以上に広がっているもの
+const SHADOW_FILL  = 0.35;   // かたまりの枠がこれ以上埋まっていること(線画は3〜5%)
 function dropFootShadow(img, alpha, w, h, box){
   if(!box) return 0;
   const bh = box.y1-box.y0+1, bw = box.x1-box.x0+1;
@@ -2188,11 +2224,12 @@ function dropFootShadow(img, alpha, w, h, box){
   const { lbl, n } = label4(cand, w, h);
   if(!n) return 0;
   const bb = [];
-  for(let k=0;k<=n;k++) bb.push({ x0:w, x1:-1, y0:h, y1:-1 });
+  for(let k=0;k<=n;k++) bb.push({ x0:w, x1:-1, y0:h, y1:-1, area:0 });
   for(let i=0;i<w*h;i++){
     const L = lbl[i]; if(!L) continue;
     const x = i%w, y = (i-x)/w, k = bb[L];
     if(x<k.x0)k.x0=x; if(x>k.x1)k.x1=x; if(y<k.y0)k.y0=y; if(y>k.y1)k.y1=y;
+    k.area++;
   }
   const kill = new Uint8Array(n+1);
   let hit = 0;
@@ -2201,6 +2238,7 @@ function dropFootShadow(img, alpha, w, h, box){
     if(k.y1 < box.y1 - 1) continue;        // 被写体のいちばん下に接していない
     if(cw < bw*SHADOW_MIN_W) continue;     // 狭い = 脚・靴
     if(cw < ch*SHADOW_WIDE) continue;      // 横長でない
+    if(k.area < cw*ch*SHADOW_FILL) continue;   // すかすか = 影ではなく線画(批評10)
     kill[L] = 1; hit++;
   }
   if(!hit) return 0;
@@ -2208,18 +2246,36 @@ function dropFootShadow(img, alpha, w, h, box){
   for(let i=0;i<w*h;i++) if(lbl[i] && kill[lbl[i]]){ alpha[i] = 0; dropped++; }
   return dropped;
 }
-// 足元の影を落とすかどうか(既定ON・発注者承認)。読むのはこの1か所
+// 足元の影を落とすかどうか(既定ON・発注者承認)。画面から読むのはこの1か所
 function dropShadowOn(){ const e = $('dropShadow'); return e ? e.checked : true; }
+/* 抜き方(seg)以外の「コマの作り方」の設定を、**画面から1回だけ読んで控える**。
+   控えた値は plan と一緒に持ち歩き、「16コマをモデルで抜き直す」でもそのまま使う。
+   抜き直しのときだけ画面を読み直すと、区間は古いのに揃え方と影だけ今の値になり、
+   診断の見出しと出来上がりが食い違う(§批評9)。                            */
+function walkOpts(){ return { align: walkAlign(), shadow: dropShadowOn() }; }
 
 /* 1コマぶんの「抜いた結果」を作る。**大きな ImageData はここで手放し**、
    composeStrip に要るぶん(切り抜いた小さなcanvasと枠)だけを残す。
-   16コマぶんの 640x640 を抱えたままにしないので、モデルで抜き直すときも保つ。 */
-async function makeCut(img, seg, prog){
+   16コマぶんの 640x640 を抱えたままにしないので、モデルで抜き直すときも保つ。
+
+   opt.auto = 「抜き方を明示していない」= 透過済みの絵は素通しでよい(画像から並べる道)。
+   **画像経路が resolveAlpha を素通しの印なしで呼んでいたため、透過済みPNGを
+   white/chroma で抜き直して全画素が前景になっていた**(§批評1)。
+   素通しの印を付けるのは imageAlphaFor 1か所なので、ここは呼び分けるだけ。
+   opt.shadow = 足元の影を落とすか(walkOpts が控えた値)。                     */
+async function makeCut(img, seg, prog, opt){
   const w = img.width, h = img.height;
-  const alpha = await resolveAlpha(img, seg, prog);
-  // 影を落としてから枠を取り直す(影ごと枠に入れると足元合わせが影の下端になる)
-  const drop = dropShadowOn() ? dropFootShadow(img, alpha, w, h, bboxOf(alpha, w, h)) : 0;
-  const cut = { img, alpha, box: bboxOf(alpha, w, h), drop };
+  opt = opt || {};
+  const alpha = await (opt.auto ? imageAlphaFor : resolveAlpha)(img, seg, prog);
+  // 影を落としてから枠を取り直す(影ごと枠に入れると足元合わせが影の下端になる)。
+  // 影を落とさないなら枠は1回でよい(2回取るのは影で下端が変わったときだけ)
+  let box = bboxOf(alpha, w, h);
+  let drop = 0;
+  if(opt.shadow){
+    drop = dropFootShadow(img, alpha, w, h, box);
+    if(drop) box = bboxOf(alpha, w, h);
+  }
+  const cut = { img, alpha, box, drop };
   cut.crop = cut.box ? cropCanvas(cut) : null;
   cut.gray = grayOfCut(img, alpha, w, h);
   cut.img = null; cut.alpha = null;      // ここから先は crop と box しか使わない
@@ -2227,11 +2283,16 @@ async function makeCut(img, seg, prog){
 }
 /* 診断②「抜いた後」は**元のコマと同じ枠のまま**測る。切り抜いてから測ると、
    コマごとに違う大きさを同じ升目へ伸ばすことになり、動いていなくても差が出てしまう
-   (①と③は元の枠・320の枠でそろっているので、②だけ物差しが違うと比べられない)。 */
+   (①と③は元の枠・320の枠でそろっているので、②だけ物差しが違うと比べられない)。
+   **渡された img は書き換えない。** 呼び側は同じ ImageData を使い続けるので、
+   ここでアルファ面を上書きすると「診断のためだけの加工」が元のコマに残る。 */
 function grayOfCut(img, alpha, w, h){
-  for(let i=0;i<w*h;i++) img.data[i*4+3] = alpha[i];   // 抜いた結果をアルファ面へ写す
   const c = document.createElement('canvas'); c.width=w; c.height=h;
-  c.getContext('2d', { willReadFrequently:true }).putImageData(img, 0, 0);
+  const cc = c.getContext('2d', { willReadFrequently:true });
+  const shown = cc.createImageData(w, h);      // 写しへ書く(元の img はそのまま)
+  shown.data.set(img.data);
+  for(let i=0;i<w*h;i++) shown.data[i*4+3] = alpha[i];
+  cc.putImageData(shown, 0, 0);
   const gv = document.createElement('canvas'); gv.width=DIAG_W; gv.height=DIAG_W;
   const g = grayOfDrawable(gv.getContext('2d', { willReadFrequently:true }), c);
   c.width = c.height = 0; gv.width = gv.height = 0;
@@ -2243,8 +2304,9 @@ function releaseCuts(cuts){
 }
 
 /* 動画から候補の16コマを取り出して抜く(2周目)。
-   **抜き方(seg)と切り出す区間(plan)を引数で受ける**ので、
-   「16コマをモデルで抜き直す」はこの関数をもう一度呼ぶだけで済む。 */
+   **抜き方(seg)と切り出す区間+コマの作り方(plan)を引数で受ける**ので、
+   「16コマをモデルで抜き直す」はこの関数をもう一度呼ぶだけで済む。
+   plan は控えた値をそのまま使う(画面を読み直さない)。 */
 async function cutFramesFromVideo(file, plan, seg, onProgress){
   const { t0, cycle, frameDt, w, h } = plan;
   const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
@@ -2294,7 +2356,7 @@ async function cutFramesFromVideo(file, plan, seg, onProgress){
     const cuts = [];
     const cutT0 = Date.now();
     for(let k=0;k<CAND_N;k++){
-      cuts.push(await makeCut(shots[k], seg, { i:k+1, n:CAND_N }));
+      cuts.push(await makeCut(shots[k], seg, { i:k+1, n:CAND_N }, { shadow: plan.shadow }));
       shots[k] = null;                    // 抜き終わったコマから順に手放す
       if(onProgress) onProgress(80 + Math.round((k+1)/CAND_N*20));
       // モデルで抜くと1コマ十数秒。残りが分かるように実測から出す(E3)
@@ -2306,8 +2368,8 @@ async function cutFramesFromVideo(file, plan, seg, onProgress){
     cv.width = cv.height = 0; gv.width = gv.height = 0;
   }
 }
-// 抜いた後の16コマを 320x320 へ並べ、①②③の3段の数字を作る
-async function composeAndDiag(r, stage1){
+// 抜いた後の16コマを 320x320 へ並べ、①②③の3段の数字を作る(揃え方は控えた値を受け取る)
+async function composeAndDiag(r, stage1, align){
   const gv = document.createElement('canvas'); gv.width=DIAG_W; gv.height=DIAG_W;
   const gc = gv.getContext('2d', { willReadFrequently:true });
   try{
@@ -2317,7 +2379,7 @@ async function composeAndDiag(r, stage1){
     const scale = stripScale(r.cuts);
     const cxs = r.cuts.filter(c=>c.box).map(c=>(c.box.x0+c.box.x1)/2);
     const alignDropPx = cxs.length ? (Math.max(...cxs) - Math.min(...cxs))*scale : 0;
-    const frames = await composeStrip(r.cuts);
+    const frames = await composeStrip(r.cuts, align);
     // ③ composeStrip 後
     const outG = [];
     for(const b of frames){
@@ -2418,7 +2480,9 @@ async function buildWalkFrames(file, onProgress){
     const mul = +($('spanMul').value) || 1;
     const minLen = Math.max(2*dt, CAND_N*frameDt);
     const howWant = $('cycleHow').value;
-    const useMove = (howWant === 'move') || (howWant === 'auto' && diag.how === 'none');
+    /* 自動のときの判定は periodFound() **1か所**。ここを diag.how で見ていたころは、
+       谷から周期を求めた枝で強さ 0.06 でも第2手へ切り替わらなかった(§批評3)。 */
+    const useMove = (howWant === 'move') || (howWant === 'auto' && !periodFound(diag));
     let pickT0 = t0, cycle, pickHow;
     if(useMove){
       const winLen = Math.min(span, Math.max(minLen, MOVE_WIN_SEC));
@@ -2433,30 +2497,33 @@ async function buildWalkFrames(file, onProgress){
 
     // ---- 2パス目: 候補の16コマを作業解像度で取り直して背景を抜く
     releaseVideo(v); v = null;       // 2周目は必ず先頭から始めるため読み直す
-    const plan = { t0: pickT0, cycle, frameDt, w, h };
+    /* **画面の設定を読むのはここまで。** 区間も、揃え方も、影も、抜き方も1回で控え、
+       この先(と「16コマをモデルで抜き直す」)は控えた値だけで動く(§批評9)。 */
+    const opts = walkOpts();
+    const plan = { t0: pickT0, cycle, frameDt, w, h, align: opts.align, shadow: opts.shadow };
     const seg = walkSeg();
     const r = await cutFramesFromVideo(file, plan, seg, onProgress);
-    // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
-    // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
-    const full = r.cuts.filter(c => c.box &&
-      (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
-    if(full >= CAND_N*0.75){
-      releaseCuts(r.cuts);
-      throw new Error('背景を見つけられませんでした。' + r.hint);
-    }
-    walkStep('絵を整えています…');
-    const built = await composeAndDiag(r, r.shotG);
-    releaseCuts(r.cuts);
-    const dropped = r.cuts.reduce((s,c)=> s + (c.drop||0), 0);
-    return { frames: built.frames, shotT: r.shotT,
-             // 「もう一度抜き直す」ために、素材と切り出した区間だけを控える(絵は持たない)
-             re: { file, plan },
-             diag: { period: diag, pickHow, mul, frameDt, rawN: raw.length, moved, movedSpan,
-                     stages: built.stages, alignDropPx: built.alignDropPx,
-                     shadowPx: dropped, align: walkAlign() },
-             note: pickHow === 'move'
-               ? `動きが最大の${cycle.toFixed(1)}秒から`
-               : `周期=${diag.period}${mul!==1 ? ` ×${mul}` : ''}` };
+    // 中断・例外でも 16コマぶんの切り抜きを必ず手放す(§批評15)
+    try{
+      // 背景が1つも見つからないと被写体の枠がコマ全体になる。そのまま進めると
+      // 「コマ全体を切り抜いた絵」ができるので、抜き方の見直しを促して止める
+      const full = r.cuts.filter(c => c.box &&
+        (c.box.x1-c.box.x0+1)*(c.box.y1-c.box.y0+1) > w*h*0.98).length;
+      if(full >= CAND_N*0.75)
+        throw new Error('背景を見つけられませんでした。' + r.hint);
+      walkStep('絵を整えています…');
+      const built = await composeAndDiag(r, r.shotG, plan.align);
+      const dropped = r.cuts.reduce((s,c)=> s + (c.drop||0), 0);
+      return { frames: built.frames, shotT: r.shotT,
+               // 「もう一度抜き直す」ために、素材と控えた設定だけを持つ(絵は持たない)
+               re: { file, plan, seg },
+               diag: { period: diag, pickHow, mul, frameDt, rawN: raw.length, moved, movedSpan,
+                       stages: built.stages, alignDropPx: built.alignDropPx,
+                       shadowPx: dropped, align: plan.align },
+               note: pickHow === 'move'
+                 ? `動きが最大の${cycle.toFixed(1)}秒から`
+                 : `周期=${diag.period}${mul!==1 ? ` ×${mul}` : ''}` };
+    }finally{ releaseCuts(r.cuts); }
   }finally{
     releaseVideo(v);   // 途中で失敗しても必ず片付ける
   }
@@ -2475,23 +2542,29 @@ function imageFilesFor(side){
    歩きは動画(AIで動画化してから動画経路)で作る。                               */
 async function buildWalkFromImages(files, onProgress){
   const seg = walkSeg();
+  const opts = walkOpts();          // 画面を読むのは1回だけ(動画経路と同じ持ち方)
   if(files.length < 2)
     throw new Error('画像は2枚以上選んでください(1枚から歩かせる機能はありません)。' +
                     '1枚しか無いときは、その絵をAIで動画にしてから「動画から作る」をお使いください。');
   const cuts = [];
   const cutT0 = Date.now();               // 残り時間は実測から(E3。式は etaText 1つ)
-  for(let i=0;i<files.length;i++){
-    const img = await fileToImageData(files[i]);
-    cuts.push(await makeCut(img, seg, { i:i+1, n:files.length }));
-    if(onProgress) onProgress(Math.round((i+1)/files.length*70));
-    walkStep(`絵を抜いています… ${i+1} / ${files.length}` + etaText(i+1, files.length, cutT0));
-  }
-  const pick = [];
-  for(let k=0;k<8;k++) pick.push(cuts[Math.min(cuts.length-1, Math.floor(k*cuts.length/8))]);
-  if(onProgress) onProgress(80);
-  const frames = await composeStrip(pick);
-  releaseCuts(cuts);
-  return { frames, note: `${cuts.length}枚から` };
+  try{
+    for(let i=0;i<files.length;i++){
+      const img = await fileToImageData(files[i]);
+      /* **auto:true = 「抜き方を明示していない」。** 選んだ絵が透過済みならその透過を
+         そのまま使う(素通し)。ここを付け忘れていたため、透過済みPNGに白抜き・色抜きが
+         当たって全画素が前景になっていた(§批評1)。 */
+      cuts.push(await makeCut(img, seg, { i:i+1, n:files.length },
+                              { auto:true, shadow: opts.shadow }));
+      if(onProgress) onProgress(Math.round((i+1)/files.length*70));
+      walkStep(`絵を抜いています… ${i+1} / ${files.length}` + etaText(i+1, files.length, cutT0));
+    }
+    const pick = [];
+    for(let k=0;k<8;k++) pick.push(cuts[Math.min(cuts.length-1, Math.floor(k*cuts.length/8))]);
+    if(onProgress) onProgress(80);
+    const frames = await composeStrip(pick, opts.align);
+    return { frames, note: `${cuts.length}枚から` };
+  }finally{ releaseCuts(cuts); }   // 途中で失敗しても切り抜きを手放す(§批評15)
 }
 
 function canvasToBlobPng(c){
@@ -2644,9 +2717,8 @@ async function inspectFrames(blobs){
     if(im.close) im.close();
   }
   gv.width = gv.height = 0;
-  const med = a => { const s=[...a].sort((x,y)=>x-y);
-    return s.length%2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2; };
-  const ma=med(areas), mt=med(tops), mf=med(foots);
+  // 中央値の式は medianOf 1か所(倍率・揃え直し・外周の色と同じ物を使う)
+  const ma=medianOf(areas), mt=medianOf(tops), mf=medianOf(foots);
   /* **隣のコマとの差**。ここを見ていなかったので、8コマが同じ絵でも
      「問題は見つかりませんでした」と報告していた(2026-09-02の診断)。
      最後のコマは先頭へつながるので、輪になるように見る(8コマは繰り返し再生される)。 */
@@ -2688,18 +2760,25 @@ async function useFrames(side, frames, note){
 }
 /* 動画の診断を表示する。**数字を作るのは buildWalkFrames、見せるのはここだけ。**
    ここで作る文字はすべてこのツール自身が作った数字なので innerHTML でよい
-   (例外の文面はここへ入れない)。                                          */
+   (例外の文面はここへ入れない)。
+
+   **周期の強さを「歩いている」の看板にしない**(§批評2)。自己相関は
+   「その場の揺れ」でも山が立つ(実物のSeedance動画で 0.47)ので、強くても
+   歩いているとは言えない。断定に使える最後の拠り所は**並べた後の隣接差**と
+   人の目なので、その2つを常に添え、緑(ok)では出さない。                 */
+const WALK_EYE_NOTE = '<b>8コマを目で確かめてください</b>(脚が交互に出ているか)。';
+const SEED_GUIDE_NOTE = '上の「AIで歩く動画を作るときの文」で作り直すのがいちばん確かです。';
 function renderWalkDiag(d){
   const e = $('walkDiag');
   if(!e) return;
   if(!d){ e.style.display = 'none'; e.innerHTML = ''; return; }
   const p = d.period;
   const f = n => (Math.round(n*100)/100).toFixed(2);
-  const found = p.how !== 'none';
+  const found = periodFound(p);      // 判定は periodFound 1か所(§批評3)
   const head = found
-    ? `<span class="ok">歩行の周期が見つかりました</span>(強さ ${f(p.peak)} / 周期 ${p.period}コマ` +
-      `${p.how === 'dip' ? '・半周期の谷から' : ''})`
-    : `<span class="ng">歩行の周期が見つかりません</span>(強さ ${f(p.peak)}。` +
+    ? `周期らしさ ${f(p.peak)}(周期 ${p.period}コマ${p.how === 'dip' ? '・半周期の谷から' : ''})。` +
+      '<b>歩きと揺れは区別できません</b> — その場で揺れているだけでもこの数字は上がります。'
+    : `<span class="ng">歩行の周期が見つかりません</span>(周期らしさ ${f(p.peak)}。` +
       `${f(PERIOD_PEAK_MIN)} 以上でないと歩行とはみなせません)`;
   const used = d.pickHow === 'move'
     ? '<b>動きが最も大きい窓から8コマ</b>を選びました(第2手)'
@@ -2708,13 +2787,19 @@ function renderWalkDiag(d){
     `<tr><td>${s.name}</td><td>最小 ${f(s.min)}</td><td>平均 ${f(s.avg)}</td></tr>`).join('');
   const warn = [];
   const last = d.stages[d.stages.length-1];
-  if(last && last.min < FRAME_SAME_DIFF){
+  // 出来上がった8コマの動きは**常に**出す。周期の強さより、こちらのほうが確か
+  const flat = !!last && last.min < FRAME_SAME_DIFF;
+  if(last)
+    warn.push(`並べた後の隣り合うコマの差 最小 ${f(last.min)} / 平均 ${f(last.avg)}。` +
+              WALK_EYE_NOTE);
+  if(flat){
     warn.push('<span class="ng">隣り合うコマがほぼ同じ絵です。</span>' +
       (d.pickHow === 'period'
         ? '「切り出し方」を<b>「動きが最大の窓から選ぶ」</b>にすると動きが増えることがあります。'
-        : '元の動画に動きがありません。') +
-      '上の「AIで歩く動画を作るときの文」で作り直すのがいちばん確かです。');
+        : '元の動画に動きがありません。'));
   }
+  // 周期が弱いときも定型文へ案内する(A6)。歩きは動画の側でしか作れない
+  if(flat || !found) warn.push(SEED_GUIDE_NOTE);
   const dropStage = d.stages.findIndex((s,i)=> i>0 && d.stages[i-1].avg > 0 &&
                                                s.avg < d.stages[i-1].avg*0.5);
   if(dropStage > 0) warn.push(`「${d.stages[dropStage].name}」で動きが半分以下に減っています。`);
@@ -2778,13 +2863,17 @@ function candDefault(kind){
     sel.push(kind==='first' ? k : kind==='last' ? CAND_N-8+k : k*2);
   return sel;
 }
+/* 「16コマをモデルで抜き直す」を走らせている最中かどうか。**読むのは renderCand だけ。**
+   ボタンより前に置く(let は巻き上がらないので、使う所より後ろに書くと初期化前に触れる)。 */
+let recutBusy = false;
 function renderCand(){
   const c = state.cand[state.candSide];
   if(!c){ $('candWrap').style.display = 'none'; renderWalkDiag(null); return; }
   $('candWrap').style.display = 'block';
   renderWalkDiag(c.diag);
-  // 動画から作った候補だけが「もう一度抜き直す」ための素材(re)を持っている
-  $('recutBtn').disabled = !c.re;
+  // 動画から作った候補だけが「もう一度抜き直す」ための素材(re)を持っている。
+  // 抜き直している間は押せない(1コマ十数秒かかるので二度押しが起きる・§批評16)
+  $('recutBtn').disabled = !c.re || recutBusy;
   const rank = {};
   c.sel.forEach((v,i)=> rank[v] = i+1);
   $('candStrip').innerHTML = c.urls.map((u,i)=>
@@ -2822,20 +2911,27 @@ async function applySelection(side){
 /* JSで抜いた縁が汚いときだけ押す。**同じ区間をもう一度再生して**、
    1コマずつモデルで抜き直す。絵は持ち歩かず素材と区間だけを控えてあるので、
    16コマぶんの大きな画像を抱えたまま待たせることがない(§指摘34)。
-   1コマ十数秒かかるので「中断」を出す(押すと今のコマの手前で止まる)。      */
+   1コマ十数秒かかるので「中断」を出す(押すと今のコマの手前で止まる)。
+
+   **控えた設定をそのまま使う**(切り出し方・長さ・揃え方・影・抜き方のすべて)。
+   区間だけ古くて揃え方と影だけ今の値、という混ざり方をさせない(§批評9)。
+   設定を変えたときは「プレビュー」を押し直す道が正。                        */
 async function recutWithModel(){
   const side = state.candSide, c = state.cand[side];
   if(!c || !c.re){ log('先に動画からプレビューしてください。', 'ng'); return; }
+  if(recutBusy) return;
+  recutBusy = true;
+  $('recutBtn').disabled = true;
+  let r = null;
   try{
     beginModelRun(true);
     setProg(0);
     walkStep('モデルで抜き直しています…');
     $('walkMeta').className = 'hint';
-    const seg = Object.assign(walkSeg(), { mode:'model' });
-    const r = await cutFramesFromVideo(c.re.file, c.re.plan, seg, p=>setProg(p));
+    const seg = Object.assign({}, c.re.seg, { mode:'model' });
+    r = await cutFramesFromVideo(c.re.file, c.re.plan, seg, p=>setProg(p));
     walkStep('絵を整えています…');
-    const built = await composeAndDiag(r, r.shotG);
-    releaseCuts(r.cuts);
+    const built = await composeAndDiag(r, r.shotG, c.re.plan.align);
     c.frames = built.frames;
     c.urls = await Promise.all(built.frames.map(blobToDataUrl));
     c.note = (c.note || '') + '・モデルで抜き直し';
@@ -2843,7 +2939,7 @@ async function recutWithModel(){
       c.diag.stages = built.stages;
       c.diag.alignDropPx = built.alignDropPx;
       c.diag.shadowPx = r.cuts.reduce((s,x)=> s + (x.drop||0), 0);
-      c.diag.align = walkAlign();
+      c.diag.align = c.re.plan.align;      // 見出しも控えた値から出す
     }
     renderCand();
     await applySelection(side);
@@ -2855,7 +2951,10 @@ async function recutWithModel(){
     $('walkMeta').className = 'hint ng';
     log(m, 'ng');
   }finally{
+    if(r) releaseCuts(r.cuts);    // 中断・例外でも切り抜きを手放す(§批評15)
+    recutBusy = false;
     endModelRun();
+    renderCand();                 // ボタンの有効/無効を戻す(候補があるときだけ押せる)
   }
 }
 
@@ -2875,12 +2974,20 @@ const SEED_PROMPT = [
   'no shadow, no floor, no props. The character stays centered, full body in frame.',
   'Do not hide the legs behind clothing; cloth sway alone is not enough.',
 ].join('\n');
+/* **タップの同期処理の中で先に文を選んでおく。**
+   iOS は「利用者の操作の中」でしか選択も書き込みも許さない。writeText の返事を
+   待ってから選ぼうとすると、そのときにはもう操作の中ではないので、
+   クリップボードが使えない端末で**何も起きない**(§批評6)。
+   先に選んでおけば、書き込みに失敗しても長押しコピーができる。
+   成功したときだけ選択を外す(選ばれたままだと画面が青くなる)。          */
 function copySeedPrompt(){
   const t = $('seedPrompt');
-  const done = ()=> log('定型文をコピーしました。動画を作るAIに貼ってください。');
-  if(navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(SEED_PROMPT).then(done, ()=> selectSeedPrompt(t));
-  else selectSeedPrompt(t);
+  selectSeedPrompt(t);
+  if(!(navigator.clipboard && navigator.clipboard.writeText)) return;
+  navigator.clipboard.writeText(SEED_PROMPT).then(()=>{
+    try{ t.setSelectionRange(0, 0); t.blur(); }catch(e){}
+    log('定型文をコピーしました。動画を作るAIに貼ってください。');
+  }, ()=>{ /* 選択済みなので、そのまま長押しでコピーしてもらう */ });
 }
 // クリップボードが使えない端末では、選択状態にして「コピー」を押してもらう
 function selectSeedPrompt(t){
@@ -2927,8 +3034,14 @@ function setChroma(which, rgb, auto){
   b.style.background = hex; b.style.color = '#000';
   b.style.borderColor = hex;
 }
-// 素材が変わったので、次に下絵を描いたときは自動で拾い直す
-function resetChromaAuto(){ state.chromaAuto = true; state.chromaAutoP = true; }
+/* 素材が変わったので、次に下絵を描いたときは自動で拾い直す。
+   **パネルごとに分ける**('w'=歩行 / 'p'=静止画)。両方まとめて戻していたため、
+   静止画の素材を選び直すだけで歩行側の「手で拾った色」まで自動へ戻っていた
+   (歩行の下絵を描き直した瞬間に、拾った色が黙って上書きされる・§批評11)。 */
+function resetChromaAuto(which){
+  if(which === 'w') state.chromaAuto = true;
+  else state.chromaAutoP = true;
+}
 function pickFromCanvas(cv, ev, which){
   if(!cv.width) return;
   const r = cv.getBoundingClientRect();
@@ -3021,7 +3134,8 @@ async function makePortrait(file){
   }
   tctx.putImageData(crop, 0, 0);
   const S = PORTRAIT_SIZE;
-  const k = fitScale((S*PORTRAIT_H)/ch, cw, S);   // 幅がはみ出すなら縮める(3か所で同じ規則)
+  // 幅がはみ出すなら縮める(makePortrait と composeStrip の2か所で同じ規則。A5 で1か所減った)
+  const k = fitScale((S*PORTRAIT_H)/ch, cw, S);
   const nw = Math.max(1, Math.round(cw*k)), nh = Math.max(1, Math.round(ch*k));
   const oc = document.createElement('canvas'); oc.width=S; oc.height=S;
   const octx = oc.getContext('2d', { willReadFrequently:true });
@@ -6932,7 +7046,10 @@ function boot(){
   // モデルで抜くときは、しきい値も背景色も使わない(判定はここ1か所)
   const usesTh = m => m !== 'model';
   $('th').oninput = ()=> $('thVal').textContent = $('th').value;
-  $('mode').onchange = ()=>{
+  $('mode').onchange = (ev)=>{
+    // 引数があるとき = 人が選び直した(プログラムから呼ぶときは引数なし)。§3 B2 の既定は
+    // これ以降上書きしない。印は modeTouched の1つだけ
+    if(ev) modeTouched = true;
     const m = $('mode').value;
     $('thWrap').style.display = usesTh(m) ? 'block' : 'none';
     $('chromaWrap').style.display = m === 'chroma' ? 'block' : 'none';
@@ -6942,6 +7059,7 @@ function boot(){
     if(m === 'chroma') fillPicker('w');
   };
   $('mode').onchange();          // 開いた時の選択(ブラウザが覚えている場合もある)に合わせる
+  applyWalkModeDefault();        // 開いた直後は「動画から作る」なので、既定を色で抜くにする
   $('pth').oninput = ()=> $('pthVal').textContent = $('pth').value;
   $('pmode').onchange = ()=>{
     const m = $('pmode').value, own = (m !== 'auto' && m !== 'keep' && usesTh(m));
@@ -6954,6 +7072,7 @@ function boot(){
     const v = $('walkSrc').value === 'video';
     $('walkVideoWrap').style.display = v ? 'block' : 'none';
     $('walkImageWrap').style.display = v ? 'none' : 'block';
+    applyWalkModeDefault();        // 動画を選んだら既定は色で抜く(人が触った後は動かない)
     state.cand = { f:null, b:null }; renderCand();
     if($('mode').value === 'chroma') fillPicker('w');
   };
@@ -6962,12 +7081,12 @@ function boot(){
   // 素材を選び直したら色拾いの下絵も入れ替え、背景色も自動で拾い直す
   for(const id of ['vidF','vidB','imgF','imgB'])
     $(id).addEventListener('change', ()=>{
-      resetChromaAuto();
+      resetChromaAuto('w');          // 歩行の素材なので歩行側だけ自動へ戻す
       if($('mode').value === 'chroma') fillPicker('w');
     });
   for(const id of ['imgIcon','imgPlayer'])
     $(id).addEventListener('change', ()=>{
-      resetChromaAuto();
+      resetChromaAuto('p');          // 静止画の素材なので静止画側だけ
       if($('pmode').value === 'chroma') fillPicker('p');
     });
   $('pickW').addEventListener('click', e=> pickFromCanvas($('pickW'), e, 'w'));
