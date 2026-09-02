@@ -257,6 +257,8 @@
       <div><label>tier3の専用技名(空なら付けない)</label><input id="s_t3name"></div>
       <div><label>威力倍率</label><input id="s_t3mult" type="number" step="0.05" value="1.15"></div>
     </div>
+    <!-- 覚醒スキンを開いたときだけ出る。tier3は元スキンから継承するので書かせない -->
+    <div class="hint" id="s_t3InheritNote" style="display:none"></div>
     <label style="display:flex;align-items:center;gap:7px;margin-top:10px">
       <input id="s_season" type="checkbox" style="width:auto"> シーズンパス限定にする(ガチャ・カタログに出さない)
     </label>
@@ -765,7 +767,8 @@ const state = { walk:{f:null, b:null}, portraits:null, hue:null,
                 skins:null, media:{ cur:{}, next:{}, urls:{} },
                 scPresets:null, pickup:{ skin:null, raid:null },
                 // 登録済みを開いて直す: 読み込んだ data.js とその sha・読み取った今の設定
-                edit:null };
+                // editFilled = 共通の欄(仕様・技・SSR)へ値を入れたか(切り替え時に戻すため)
+                edit:null, editFilled:false };
 
 /* ---------------------------------------------------------- 汎用 */
 function log(t, cls){ const e=$('log'); e.textContent=t; e.className=cls||''; }
@@ -2930,7 +2933,9 @@ function buildMoves(spec){
     let base;
     if(i===0){ base = Object.assign({}, MOVE_T1, { color: spec.color }); if(mv.icon) base.icon = mv.icon; }
     else if(i===1){ base = Object.assign({}, MOVE_T2, { color: spec.color }); if(mv.icon) base.icon = mv.icon; }
-    else { base = JSON.parse(JSON.stringify(TIER3[mv.template])); base.color = t3col; }
+    /* テンプレートが無い(「開いて直す」の“テンプレート無し”)ときは空の土台。
+       中身は collectMoveEdits が読み込んだ技ごと渡してくるので、下の for で全部入る。 */
+    else { const t = TIER3[mv.template]; base = t ? JSON.parse(JSON.stringify(t)) : {}; base.color = t3col; }
     base.name = mv.name;
     for(const k in mv){ if(k !== 'template') base[k] = mv[k]; }
     if(base.blast && typeof base.blast === 'object' && base.blast.color == null) base.blast.color = base.color;
@@ -2977,14 +2982,11 @@ const MOVE_BOOL_TIER = { 0: [], 1: ['burstSpreadRandom'], 2: ['burstSpreadRandom
 // 爆風だけは入れ子(blast:{radius,dmg})。id は m2_blastRadius / m2_blastDmg
 const MOVE_BLAST_TIER = 2;
 
-/* その段の「テンプレートの中身」。buildMoves が土台にするものと**同じ作り方**にする
-   (ここで別の既定値を書くと、画面の薄字と実際に焼かれる値がずれる)。 */
-function moveBaseFor(i){
-  if(i === 0) return Object.assign({}, MOVE_T1);
-  if(i === 1) return Object.assign({}, MOVE_T2);
-  const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
-  return t ? JSON.parse(JSON.stringify(t)) : {};
-}
+/* その段の「土台の中身」。buildMoves が土台にするものと**同じ作り方**にする
+   (ここで別の既定値を書くと、画面の薄字と実際に焼かれる値がずれる)。
+   中身は moveBaseInfo(「開いて直す」の節)が決める —— 土台がテンプレートか
+   「読み込んだ技」かの分かれ道を2か所に書かないため。 */
+function moveBaseFor(i){ return moveBaseInfo(i).base; }
 function moveNumKeys(i){ return MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[i] || []); }
 function moveField(i, key){ return $('m' + i + '_' + key); }
 /* その欄が「効かないので隠してある」か。**隠した欄の値は集めない** ――
@@ -3093,7 +3095,8 @@ function moveInputErrors(){
    (入れると spec が今までと変わり、行の並びが動く恐れがある)。 */
 function collectMoveEdits(i){
   const out = {};
-  const base = moveBaseFor(i);
+  const info = moveBaseInfo(i);
+  const base = info.base;
   for(const k of moveNumKeys(i)){
     const n = moveNumValue(i, k);
     if(n != null && n !== base[k]) out[k] = n;
@@ -3134,7 +3137,10 @@ function collectMoveEdits(i){
   }
   const col = moveField(i, 'color');
   if(col && /^#[0-9a-fA-F]{6}$/.test(col.value.trim())) out.color = col.value.trim().toLowerCase();
-  return out;
+  /* 土台が「読み込んだ技」のときは buildMoves がそれを作り直せない(テンプレート表に無い)。
+     **土台ごと返す**ので、「撃ってみる」は開いている技そのものを撃つ。
+     新規登録では editLoadedMoves が null なので、ここは今までどおり触った項目だけを返す。 */
+  return info.fromLoaded ? Object.assign({}, base, out) : out;
 }
 
 /* ---------------------------------------------------------- 語彙(ゲームから貰う)
@@ -4467,6 +4473,86 @@ function renderEditTargets(){
   if(cur && el.querySelector(`option[value="${cur}"]`)) el.value = cur;
 }
 
+/* ---------------------------------------------------------------
+   欄の既定値(**1か所で持つ**)
+
+   「開いて直す」は仕様パネル・技パネル・SSRの欄を**使い回す**ので、入れた値と
+   止めた欄(disabled)が残ったまま登録の種類を切り替えると、新規モンスターの
+   collectSpec() や SSR 登録に他所の値が混ざる。boot が組み立て終えた直後の姿を
+   撮っておき、種類を切り替えるたびにそこへ戻す。
+   ここに「既定値」を書き写さない —— 正は HTML の value 属性と boot が入れた選択肢。 */
+const FORM_RESET_PANELS = ['specPanel','movePanel','ssrForm','editForm'];
+let formDefaults = null;
+function captureFormDefaults(){
+  formDefaults = [];
+  for(const id of FORM_RESET_PANELS){
+    const root = $(id);
+    if(!root) continue;
+    for(const el of root.querySelectorAll('input,select,textarea'))
+      formDefaults.push({ el, value: el.value, checked: el.checked, disabled: el.disabled });
+  }
+}
+function restoreFormDefaults(){
+  if(!formDefaults) return;
+  /* 「開いて直す」で足した選択肢(いまの値・テンプレート無し)も消す。
+     残すと、新規登録の一覧に見覚えのない選択肢が並ぶ。 */
+  document.querySelectorAll('option[data-adhoc]').forEach(o=> o.remove());
+  for(const d of formDefaults){ d.el.value = d.value; d.el.checked = d.checked; d.el.disabled = d.disabled; }
+  editLoadedMoves = null;
+  if($('m2_tpl')) $('m2_tpl').onchange();     // 薄字(既定)と説明を貼り直す
+}
+
+/* ---------------------------------------------------------------
+   技パネルの土台を「テンプレート」から「いま開いている技」へ切り替える
+
+   なぜ要るか: 「撃ってみる」は画面の欄を buildMoves で焼いて撃つ。開いて直すで
+   読み込んだだけだと tier3 の形が既定(fan)のままなので、**開いた技ではなく
+   テンプレートの技を撃っていた**(デスファイナルのつもりでインフェルノが出る)。 */
+// 「開いて直す」で読み込んだ3技。欄と同じ寿命(restoreFormDefaults で一緒に捨てる)
+let editLoadedMoves = null;
+// tier3 の「形」の選択肢に足す「テンプレート無し」。値は空文字(TIER3 にこの名前は無い)
+const TPL_NONE = '';
+const TPL_NONE_LABEL = 'テンプレート無し(いまの技のまま)';
+const TPL_NONE_HINT = 'どのテンプレートにも当てはまらない技です。いまの技をそのまま土台にします。';
+/* 既存の tier3 から「形(テンプレート)」を逆引きする。見分けは `projStyle`(弾)と
+   `aoeStyle`(範囲)—— TIER3 の中でどちらも重複しないので、これで1つに決まる。
+   合うものが無ければ null =「テンプレート無し」(手書きの技はここに来る)。 */
+function tier3TemplateOf(mv){
+  if(!mv) return null;
+  for(const k of Object.keys(TIER3)){
+    const t = TIER3[k];
+    if(mv.projStyle && t.projStyle === mv.projStyle) return k;
+    if(mv.aoeStyle  && t.aoeStyle  === mv.aoeStyle)  return k;
+  }
+  return null;
+}
+/* その段の土台と、その出どころ。**土台の決め方はこの1か所。**
+   fromLoaded = 「buildMoves がこの土台を作り直せない」= 読み込んだ技そのもの。
+   テンプレートなら buildMoves が同じ表(MOVE_T1/MOVE_T2/TIER3)から作り直せるが、
+   読み込んだ技は作り直せないので、collectMoveEdits が土台ごと返す。
+   新規登録では editLoadedMoves が null なので、今までどおりテンプレートだけを見る。 */
+function moveBaseInfo(i){
+  if(i === MOVE_BLAST_TIER){
+    const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
+    if(t) return { base: JSON.parse(JSON.stringify(t)), fromLoaded:false };
+  }
+  const loaded = editLoadedMoves && editLoadedMoves[i];
+  if(loaded) return { base: JSON.parse(JSON.stringify(loaded)), fromLoaded:true };
+  if(i === 0) return { base: Object.assign({}, MOVE_T1), fromLoaded:false };
+  if(i === 1) return { base: Object.assign({}, MOVE_T2), fromLoaded:false };
+  return { base:{}, fromLoaded:false };
+}
+/* tier3 の「形」を選び直す。tpl が null なら「テンプレート無し」を足して選ぶ。
+   薄字(既定)と説明の貼り直しは `m2_tpl` の onchange 1か所に任せる。 */
+function setTier3Template(tpl){
+  const sel = $('m2_tpl');
+  if(!sel) return;
+  if(!tpl && !Array.from(sel.options).some(o => o.value === TPL_NONE))
+    sel.insertAdjacentHTML('beforeend', `<option value="${TPL_NONE}" data-adhoc="1">${TPL_NONE_LABEL}</option>`);
+  sel.value = tpl || TPL_NONE;
+  sel.onchange();
+}
+
 /* 選んだ相手の今の設定を data.js から読んで欄に入れる。**正は常に data.js。** */
 async function loadExisting(){
   const t = editTarget();
@@ -4474,18 +4560,20 @@ async function loadExisting(){
   try{
     log(`${t.label} の設定を data.js から読んでいます…`);
     const meta = await getFileMeta('data.js');
+    state.edit = null;                 // 読み込みに失敗した状態を残さない(下で初めて確定する)
     const cur = readExisting(meta.text, t.kind, t.key);
     if(cur.risk.length) throw new Error('走査器が扱えない書き方が表にあります:\n  ' + cur.risk.join('\n  '));
-    state.edit = { kind:t.kind, key:t.key, label:t.label, sha:meta.sha, text:meta.text, cur };
     fillEditForm(cur);
     /* **入れ直しただけで差分が出ないこと**をその場で確かめる。
        欄への入れ方(fillEditForm)と読み方(readEditForm)がずれると、
        触っていない項目まで書き換わる —— 実際に色の欄で起きた(引用符ごと入れていた)。
-       ここで気づけないと、送信の直前まで分からない。 */
+       **この自己点検は state.edit を確定する前に行う。** あとに置くと、差分が出ても
+       state.edit が残ってしまい、そのまま「差分を確認する」まで進めてしまった。 */
     const ghost = editChangesFor(cur, readEditForm(cur));
     if(ghost.length)
-      throw new Error('欄に入れ直しただけで差分が出ました(このまま送ると触っていない項目まで変わります):\n  '
+      throw new Error('欄に入れ直しただけで差分が出ました(読み込みを取り消しました):\n  '
         + ghost.map(c=>`${c.jp}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`).join('\n  '));
+    state.edit = { kind:t.kind, key:t.key, label:t.label, sha:meta.sha, text:meta.text, cur };
     fillEditChangelog(meta.text);
     $('regKind').onchange();          // モンスターかSSRかで出すパネルが変わる(判定は1か所)
     state.files = null; $('commitBtn').disabled = true;
@@ -4497,6 +4585,9 @@ async function loadExisting(){
 
 // 読み取った値を欄へ入れる。数字は**元の書き方のまま**入れる(1/1.5 を 0.666… にしない)
 function fillEditForm(cur){
+  /* 欄を汚したことを覚えておく。**登録の種類を切り替えたら必ず既定へ戻す**ため
+     (戻さないと、新規モンスターの collectSpec() にここで入れた値が混ざる)。 */
+  state.editFilled = true;
   if(cur.kind === 'ssr'){
     const s = cur.ssr || {}, t3 = cur.tier3 || {};
     if(s.element) $('s_element').value = s.element;
@@ -4505,13 +4596,24 @@ function fillEditForm(cur){
     if(cur.aura) $('s_aura').value = cur.aura;
     $('s_season').checked = !!s.seasonExclusive;
     $('s_raidClear').checked = !!s.raidClearOnly;
-    $('s_t3name').value = t3.name || '';
-    $('s_t3mult').value = (t3.dmgMult == null) ? '' : String(t3.dmgMult);
+    /* 覚醒スキン(awakenOf 付き)の tier3 は**元スキンから継承する**
+       (data.js の skinTier3Def が awakenOf をたどる)。ここに書くと SSR_SKIN_TIER3 に
+       覚醒idの行ができて継承が切れ、元の専用技が消える。欄ごと止めて「継承」と見せる。 */
+    const inherit = !!s.awakenOf;
+    $('s_t3name').value = inherit ? '' : (t3.name || '');
+    $('s_t3mult').value = (inherit || t3.dmgMult == null) ? '' : String(t3.dmgMult);
+    $('s_t3name').disabled = inherit;
     // 数値を直接持つ専用tier3(ちょこ・ペルセポネ)は倍率で書き換えられない
-    $('s_t3mult').disabled = !!(cur.tier3 && cur.tier3.move);
+    $('s_t3mult').disabled = inherit || !!(cur.tier3 && cur.tier3.move);
+    $('s_t3InheritNote').style.display = inherit ? 'block' : 'none';
+    $('s_t3InheritNote').textContent =
+      `この姿は「${s.awakenOf}」の覚醒後なので、tier3の専用技名と威力倍率は元スキンから継承します(ここでは変えられません)。`;
     return;
   }
   const e = cur.elements || {}, tx = cur.elementsText || {};
+  /* key は「撃ってみる」がどの体で撃つかを決める欄。空だと zan で撃ってしまう
+     (この画面から key は変えないので、読み込んだ key をそのまま入れる)。 */
+  $('f_key').value = cur.key;
   for(const f of EDIT_ELEMENT_FIELDS){
     const el = $(f.id);
     if(!el) continue;
@@ -4529,6 +4631,13 @@ function fillEditForm(cur){
 /* 技パネルへ流し込む。**テンプレートに無い値もそのまま欄へ入れる**
    (語彙に無い projStyle / aoeStyle / SE は選択肢を足して見せる。消したら書き戻しで消える)。 */
 function fillMoveForm(moves, texts){
+  /* 土台を「テンプレート」から「読み込んだ技」へ切り替える(moveBaseInfo が見る)。
+     これを入れる前は、tier3 の形が既定(fan)のままだったので
+     「撃ってみる」がインフェルノを撃っていた。 */
+  editLoadedMoves = moves || null;
+  /* tier3 の形を既存の技から逆引きして選び直す。合うものが無ければ
+     「テンプレート無し」を1つ足して選ぶ(手書きの技はここに来る)。 */
+  setTier3Template(tier3TemplateOf((moves || [])[2]));
   for(let i = 0; i < 3; i++){
     const mv = moves[i] || {}, tx = (texts && texts[i]) || {};
     // 元の書き方をそのまま戻すのは**数字の欄だけ**(文字列は引用符ごと入ってしまう)
@@ -4540,8 +4649,9 @@ function fillMoveForm(moves, texts){
       if((MOVE_BOOL_TIER[i] || []).indexOf(k) >= 0){ el.value = (mv[k] == null) ? '' : (mv[k] ? '1' : '0'); continue; }
       if(el.tagName === 'SELECT'){
         const v = mv[k] == null ? '' : String(mv[k]);
+        // data-adhoc = 「開いて直す」で足した選択肢。欄を既定へ戻すときにまとめて消す目印
         if(v && !Array.from(el.options).some(o => o.value === v))
-          el.insertAdjacentHTML('beforeend', `<option value="${v}">${v}(いまの値)</option>`);
+          el.insertAdjacentHTML('beforeend', `<option value="${v}" data-adhoc="1">${v}(いまの値)</option>`);
         el.value = v;
         continue;
       }
@@ -4581,7 +4691,9 @@ function readEditForm(cur){
       next.ssr[f.field] = f.type === 'bool' ? !!el.checked : strOr(f.id);
     }
     next.aura = $('s_aura').value || undefined;
-    next.tier3 = { name: strOr('s_t3name'),
+    /* 止めてある欄は「触っていない」。覚醒スキンの tier3(元スキンから継承)と、
+       数値を直接持つ専用tier3がここに来る。**判定は disabled の1か所。** */
+    next.tier3 = { name:    $('s_t3name').disabled ? undefined : strOr('s_t3name'),
                    dmgMult: $('s_t3mult').disabled ? undefined : numOr('s_t3mult') };
     return next;
   }
@@ -4653,8 +4765,10 @@ function fillEditChangelog(dataJs){
      ③ 表を JSON にして window へ置く1行
    **`const` は window に出ない**ので、③のように「同じグローバルの後続スクリプト」から
    拾うしか道がない(iframe.contentWindow.ELEMENTS では取れない)。 */
+/* 比べる表。**UPDATE_HISTORY を必ず入れる**(この画面は更新履歴も書き換えるので、
+   ここに無いと「書き直しが別の行を消した」を誰も見ていないことになる)。 */
 const EDIT_VERIFY_TABLES = ['ELEMENTS','SIGNATURE_MOVES','SKIN_CONFIG','MONSTER_AURA','MOVE_AURA',
-                            'SSR_SKINS','SSR_SKIN_AURA','SSR_SKIN_TIER3'];
+                            'SSR_SKINS','SSR_SKIN_AURA','SSR_SKIN_TIER3','UPDATE_HISTORY'];
 const EDIT_VERIFY_MS = 30000;
 function evalDataJsInFrame(dataText){
   return new Promise((res, rej)=>{
@@ -4693,17 +4807,77 @@ function evalDataJsInFrame(dataText){
     document.body.appendChild(f);
   });
 }
-/* 元と書き戻し後を両方評価し、差分の一覧と「意図しない差分」を返す。 */
-async function verifyEditedDataJs(origText, newText, changes){
+/* 元と書き戻し後を両方評価し、差分の一覧・意図しない差分・**出ていない意図した差分**を返す。
+   hist = 更新履歴に何をするつもりか({ymd, rewrite, index, text, tags})。null なら「触らない」。 */
+async function verifyEditedDataJs(origText, newText, changes, hist){
   const [a, b] = [await evalDataJsInFrame(origText), await evalDataJsInFrame(newText)];
   const diffs = jsonDiffPaths(a, b);
   const want = editExpectedPaths(changes);
-  const ok = p => want.some(w => p === w || p.indexOf(w + '.') === 0);
-  return { diffs, unexpected: diffs.filter(d => !ok(d.path)) };
+  const isHist = p => p === 'UPDATE_HISTORY' || p.indexOf('UPDATE_HISTORY.') === 0;
+  const ok = p => isHist(p) || want.some(w => p === w || p.indexOf(w + '.') === 0);
+  /* 更新履歴は道すじで見ても意味が無い(書き足すと後ろの行が全部ずれる)。
+     **元の履歴から「意図した1行だけ」を当てた姿を作り直して丸ごと突き合わせる。** */
+  const histWant = editExpectedHistory(a.UPDATE_HISTORY, hist);
+  const histBad = JSON.stringify(b.UPDATE_HISTORY) !== JSON.stringify(histWant);
+  return { diffs, unexpected: diffs.filter(d => !ok(d.path)),
+           histBad, missing: editMissingChanges(changes, diffs, b) };
+}
+/* 更新履歴に「意図したこと」だけを当てた姿。addUpdateHistory / rewriteUpdateHistory と
+   **同じ置き場所の決まり**(今日のかたまりの先頭へ足す / 無ければ一番上に作る)。 */
+function editExpectedHistory(orig, hist){
+  const H = JSON.parse(JSON.stringify(orig || []));
+  if(!hist) return H;
+  const item = { t: hist.text, g: (hist.tags && hist.tags.length) ? hist.tags.slice() : ['balance'] };
+  const at = H.findIndex(b => b && b.date === hist.ymd);
+  if(hist.rewrite && at >= 0){ H[at].items[hist.index] = item; return H; }
+  if(at >= 0) H[at].items.unshift(item);
+  else H.unshift({ date: hist.ymd, items:[item] });
+  return H;
+}
+// 道すじをたどって値を1つ取る(jsonDiffPaths が作る道すじと同じ書き方)
+function valueAtPath(obj, path){
+  let v = obj;
+  for(const k of String(path).split('.')){ if(v == null) return undefined; v = v[k]; }
+  return v;
+}
+/* 「意図した差分(項目・前→後)」が評価結果に**本当に出ているか**。
+   出ていなければ書き戻しが空振りしている(置換が別の所へ当たった・当たらなかった)ので送らない。
+   入れ子ごと替える blast と、見出しの付け替え(renameKey)・行の追加は道すじだけを見る。 */
+function editMissingChanges(changes, diffs, tables){
+  const out = [];
+  for(const c of changes){
+    const paths = editExpectedPaths([c]);
+    if(!diffs.some(d => paths.some(p => d.path === p || d.path.indexOf(p + '.') === 0))){
+      out.push(`${c.jp}: 書き戻しても値が変わっていません`);
+      continue;
+    }
+    if(c.op === 'renameKey' || c.op === 'addRow' || c.field === 'blast') continue;
+    const got = valueAtPath(tables, paths[0]);
+    if(JSON.stringify(got) !== JSON.stringify(c.after))
+      out.push(`${c.jp}: ${JSON.stringify(c.after)} になるはずが ${JSON.stringify(got)} です`);
+  }
+  return out;
 }
 
-/* 「開いて直す」の送信内容を作る。**変わった項目だけ**を書き戻し、評価して確かめる。 */
-async function planEdit(dataJs, swJs, lines){
+/* 更新履歴の「今日のかたまり」から**書き直す行**を選ぶ。**判定はこの1か所。**
+   似ているかどうかだけで選ぶと、「威力」「連射」のような言葉が共通なだけで
+   **別のモンスターの行**を書き直して消してしまう(実際にそうなる)。
+   だから候補は「その表示名を含む行」に限る。無ければ -1(=書き足す)。 */
+function editRewriteIndex(items, label, text){
+  let best = -1, bestS = CHANGELOG_SIMILAR;
+  (items || []).forEach((it, i)=>{
+    const t = String((it && it.t) || '');
+    if(!label || t.indexOf(label) < 0) return;      // 別の体の行は書き直さない
+    const s = changelogSimilarity(t, text);
+    if(s >= bestS){ bestS = s; best = i; }
+  });
+  return best;
+}
+
+/* 「開いて直す」の送信内容を作る。**変わった項目だけ**を書き戻し、評価して確かめる。
+   metas = preflight が取ってきた各ファイルの {text, sha}。**書き戻すファイル全部の
+   sha を控える**ため(特性idを変えたときは ui.js も書く)。 */
+async function planEdit(dataJs, uiJs, swJs, lines, metas){
   const st = state.edit;
   if(!st || !st.cur) throw new Error('先に「この内容を読み込む」を押してください');
   const t = editTarget();
@@ -4723,14 +4897,10 @@ async function planEdit(dataJs, swJs, lines){
   if(box && auto && !st.histFilled){
     st.histFilled = true;
     box.value = auto.text;
-    /* 初回だけ「どの行を書き直すか」も決める。**同じ話題の行があればそれ、無ければ書き足す。**
-       いつも1行目を書き直す作りだと、関係のない行を消してしまう。 */
+    /* 初回だけ「どの行を書き直すか」も決める。**同じ体の・同じ話題の行があればそれ、
+       無ければ書き足す。** 判定は editRewriteIndex 1か所。 */
     const items = updateHistoryItems(dataJs, todayYmd()) || [];
-    let best = -1, bestS = CHANGELOG_SIMILAR;
-    items.forEach((it, i)=>{
-      const s = changelogSimilarity(it && it.t, auto.text);
-      if(s >= bestS){ bestS = s; best = i; }
-    });
+    const best = editRewriteIndex(items, st.label, auto.text);
     $('e_chMode').value = best >= 0 ? 'rewrite' : 'append';
     if(best >= 0) $('e_chTarget').value = String(best);
   }
@@ -4738,10 +4908,12 @@ async function planEdit(dataJs, swJs, lines){
   const tags = auto ? auto.tags : ['balance'];
   let histNote = '更新履歴には入れません(性能の数字は変わっていません)';
   const histWarn = [];
+  let histPlan = null;
   if(histText){
     const items = updateHistoryItems(text, todayYmd()) || [];
     const idx = +(($('e_chTarget') && $('e_chTarget').value) || 0);
     const rewrite = $('e_chMode').value === 'rewrite' && items.length > 0;
+    histPlan = { ymd: todayYmd(), rewrite, index: idx, text: histText, tags };
     const uh = rewrite ? rewriteUpdateHistory(text, todayYmd(), idx, histText, tags)
                        : addUpdateHistory(text, histText, tags);
     text = uh.text; histNote = uh.note;
@@ -4752,14 +4924,36 @@ async function planEdit(dataJs, swJs, lines){
         : `※ 注意: 今日の${w.i}行目に内部の言葉があります: ${w.words.join('・')}`);
   }
 
+  /* 特性idを変えたときは、**新規登録とまったく同じ判定(traitExistsIn)**を通す。
+     ui.js の TRAIT_DESC に無い特性idにすると、モンスター一覧の説明が空になる。
+     すでにある特性idなら何も足さない(同じ特性を持つ既存モンスターの説明を書き換えないため)。 */
+  const traitCh = changes.find(c => c.op === 'field' && c.table === 'ELEMENTS' && c.field === 'trait');
+  let traitRow = null;
+  if(traitCh && !traitExistsIn(uiJs, traitCh.after)){
+    const desc = $('f_traitDesc').value.trim();
+    if(!desc)
+      throw new Error(`特性id「${traitCh.after}」は ui.js の TRAIT_DESC にありません。`
+        + '「特性の説明」を書いてください(新規登録と同じ扱いで1行足します)。');
+    const tkey = traitCh.after + ':';
+    traitRow = `  ${tkey}${' '.repeat(Math.max(0, 12 - tkey.length))}${jsStr(desc)}, /*@${st.key}*/`;
+  }
+
   // 書き戻した data.js を本当に評価して、意図した差分以外がゼロかを見る(ここが最後の砦)
   log('書き戻した data.js を評価して確かめています…');
-  const v = await verifyEditedDataJs(dataJs, text, changes);
+  const v = await verifyEditedDataJs(dataJs, text, changes, histPlan);
   if(v.unexpected.length)
     throw new Error('意図しない差分が出ました(送信しません):\n'
       + v.unexpected.slice(0, 12).map(d=> `  ${d.path}: ${JSON.stringify(d.before)} → ${JSON.stringify(d.after)}`).join('\n'));
+  if(v.histBad)
+    throw new Error('更新履歴が意図した1行以外も変わりました(送信しません)。'
+      + 'もう一度「この内容を読み込む」を押して読み直してください');
+  /* 意図した差分が**出ていない**のも止める理由。書き戻しが空振りしていると、
+     「変更3件」と表示したまま何も変わっていない data.js を送ってしまう。 */
+  if(v.missing.length)
+    throw new Error('意図した変更が書き戻せていません(送信しません):\n  ' + v.missing.join('\n  '));
 
   const texts = { 'data.js': text, 'sw.js': bumpCache(swJs) };
+  if(traitRow) texts['ui.js'] = applyRows({ 'ui.js': uiJs }, { TRAIT_DESC:[traitRow] })['ui.js'];
   lines.length = 0;                              // ここまでは途中経過。表示は下で作り直す
   lines.push(`■ ${st.label}(${st.key})の変更 ${changes.length}件`);
   for(const c of changes)
@@ -4770,19 +4964,30 @@ async function planEdit(dataJs, swJs, lines){
   lines.push('');
   lines.push('■ 送信されるファイル');
   lines.push('  data.js  (触った項目だけを書き換え)');
+  if(traitRow) lines.push(`  ui.js  (TRAIT_DESC へ ${traitCh.after} の説明を1行追加)`);
   lines.push(`  sw.js  (キャッシュ番号を v${(/aramon-cache-v(\d+)/.exec(texts['sw.js'])||[])[1]} へ)`);
   lines.push('  ' + histNote);
   if(histWarn.length){ lines.push(''); histWarn.forEach(w=> lines.push(w)); }
   const renamed = changes.filter(c=>c.op === 'renameKey');
   if(renamed.length) lines.push(`※ 技名を変えたので MOVE_AURA の見出しも直しました(${renamed.map(c=>c.before+'→'+c.after).join(' / ')})`);
+  if(traitRow) lines.push(`--- TRAIT_DESC (ui.js)\n+${traitRow}`);
   if(st.cur.unknown.length) lines.push('※ 読めなかった表: ' + st.cur.unknown.join(' / ') + '(触っていません)');
+  /* 送る直前に照合する sha。**書き戻すファイル全部**を控える —— data.js だけを見ていると、
+     特性を足したときの ui.js を他所の変更ごと上書きしてしまう。
+     data.js は「読み込んだとき」の sha、ほかは preflight が取ってきたときの sha。 */
+  const guardShas = { 'data.js': st.sha };
+  for(const p of Object.keys(texts))
+    if(p !== 'data.js') guardShas[p] = metas && metas[p] ? metas[p].sha : null;
   return { texts, images: [],
            message: `${st.label}の設定を直した(スタジオ)`,
-           // 送る直前に sha を照合する。読んだあとに誰かが data.js を変えていたら中止
            guard: async ()=>{
-             const m = await getFileMeta('data.js');
-             return m.sha === st.sha ? null
-               : 'data.js が他所で変わっています。もう一度「この内容を読み込む」を押して読み直してください';
+             for(const p of Object.keys(guardShas)){
+               if(!guardShas[p]) return `${p} の版が分からないので送信を中止しました。もう一度「差分を確認する」を押してください`;
+               const m = await getFileMeta(p);
+               if(m.sha !== guardShas[p])
+                 return `${p} が他所で変わっています。もう一度「この内容を読み込む」を押して読み直してください`;
+             }
+             return null;
            } };
 }
 
@@ -4794,9 +4999,15 @@ async function preflight(){
     const bad = isSsr() || isSsrMedia() || isAssets() || isAwaken() ? null : moveInputErrors();
     if(bad){ $('commitBtn').disabled = true; return log(bad.join('\n'), 'ng'); }
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
-    const [dataJs, uiJs, swJs] = await Promise.all(['data.js','ui.js','sw.js'].map(getFile));
+    /* sha も一緒に控える。「開いて直す」の送信直前の照合が、**書き戻すファイル全部**を
+       見られるようにするため(本文と sha を別々に取りに行くと食い違う)。 */
+    const names = ['data.js','ui.js','sw.js'];
+    const got = await Promise.all(names.map(getFileMeta));
+    const metas = {};
+    names.forEach((n, i)=> metas[n] = got[i]);
+    const [dataJs, uiJs, swJs] = got.map(m => m.text);
     const lines = [];
-    const plan = isEdit()      ? await planEdit(dataJs, swJs, lines)
+    const plan = isEdit()      ? await planEdit(dataJs, uiJs, swJs, lines, metas)
                : isSsrMedia() ? await planSkinMedia(dataJs, swJs, lines)
                : isAssets()   ? await planAssets(dataJs, swJs, lines)
                : isAwaken()   ? await planAwaken(dataJs, swJs, lines)
@@ -5414,15 +5625,25 @@ function skipDeadAt(text, j){
   }
   return j;
 }
-// pos が from 以降のどこかの文字列/コメントの中に入っているか(錨の空振りを弾くため)
-function inDeadZone(text, from, pos){
+/* from から pos までの括弧の対応を数え、pos の**深さ**を返す。
+   pos が文字列/コメントの中なら -1(= 錨の空振り)。
+   なぜ深さまで要るか: 錨②(`,` か `{` の直後)は値の中でも当たるので、
+   `blast:{ dmg:26 }` の dmg を表の項目として掴んでしまう。表の直下(深さ1)に
+   限るための数えを、空振り判定と**同じ1回の走査**で済ませる。 */
+function entryDepthAt(text, from, pos){
+  let depth = 0;
   for(let j = from; j < pos; ){
     const k = skipDeadAt(text, j);
-    if(k !== j){ if(pos < k) return true; j = k; }
-    else j++;
+    if(k !== j){ if(pos < k) return -1; j = k; continue; }
+    const ch = text[j];
+    if(ch === '{' || ch === '[' || ch === '(') depth++;
+    else if(ch === '}' || ch === ']' || ch === ')') depth--;
+    j++;
   }
-  return false;
+  return depth;
 }
+// pos が from 以降のどこかの文字列/コメントの中に入っているか(錨の空振りを弾くため)
+function inDeadZone(text, from, pos){ return entryDepthAt(text, from, pos) < 0; }
 // 空白と行内コメントだけを読み飛ばす(値の始まりを探すため。文字列は飛ばさない)
 function skipGapAt(text, p){
   for(;;){
@@ -5485,6 +5706,8 @@ function scanValue(text, i){
       は①では行頭の1つしか取れないので、こちらで拾う。
    **必ず①を先に当てる。** ②は「値の中のたまたま同じ名前」を掴む余地があるぶん弱い錨なので、
    ①で見つかる表(ELEMENTS / SIGNATURE_MOVES / SKIN_CONFIG …)の挙動を変えないため。
+   **②はさらに「表の直下(深さ1)」で絞る**(pickEntry の entryDepthAt)。絞らないと
+   `blast:{ dmg:26 }` の dmg を掴む。
    どちらも key は裸でも引用符付き('…' / "…")でもよい(MOVE_AURA の技名は引用符付き)。
    1つ目の括弧 = key の手前(位置を数えるため)/ 2つ目 = key そのもの。 */
 function entryAnchors(key){
@@ -5512,13 +5735,21 @@ function pickEntry(text, table, key){
   if(mark >= 0 && mark < tableEnd) rangeEnd = mark;
 
   const region = text.slice(open, rangeEnd);
-  for(const rx of entryAnchors(key)){
+  const anchors = entryAnchors(key);
+  for(let ai = 0; ai < anchors.length; ai++){
+    const rx = anchors[ai];
     let m;
     rx.lastIndex = 0;
     while((m = rx.exec(region))){
       const at = open + m.index;
-      if(inDeadZone(text, open, at)) continue;      // コメント/文字列の中の見た目だけの一致
       const keyStart = at + m[1].length;
+      const depth = entryDepthAt(text, open, keyStart);
+      if(depth < 0) continue;                      // コメント/文字列の中の見た目だけの一致
+      /* 錨②(`,`/`{` の直後)は値の中でも当たるので、**表の直下(深さ1)**だけ採る。
+         これが無いと `blast:{ dmg:26 }` の dmg を「表の項目 dmg」として掴む
+         (ジョーカー・アムピトリテの技に実在する形)。錨①(行頭)はそれ自体が
+         強い錨なので、深さで絞ると今まで取れていた表の挙動を変えかねない ―― 触らない。 */
+      if(ai > 0 && depth !== 1) continue;
       const start = skipGapAt(text, at + m[0].length);
       const end = scanValue(text, start);
       if(end < 0) return null;
@@ -5976,9 +6207,11 @@ function applyEditChanges(dataJs, changes){
   return text;
 }
 
-/* 更新履歴の1行を作る。**性能の数字が変わったときだけ。**
-   見た目(色・エフェクト・色スキン)や内部の設定は遊ぶ人が気づかないので載せない。
-   1体につき1行 =「ジョーカー: 威力21→34・連射5→7」。 */
+/* 更新履歴の1行を作る。**性能の数字が変わったときと、技名を変えたときだけ。**
+   載せないもの: オーラ・エフェクト色・色スキンといった**見た目**(遊ぶ人が
+   「何が変わったか」を読み取れないうえ、履歴が見た目の告知で埋まる)と、内部の設定。
+   1体につき1行 =「ジョーカー: 威力21→34・連射5→7」。
+   タグ: 技名を変えたら `monster` / 数字を変えたら `balance` / **両方なら両方**。 */
 function editHistoryLine(label, changes){
   const parts = [];
   for(const c of changes){
@@ -5988,8 +6221,10 @@ function editHistoryLine(label, changes){
     parts.push(`${c.histJp || c.jp}${editRound(c.before)}→${editRound(c.after)}`);
   }
   if(!parts.length) return null;
-  const renamed = changes.some(c=>c.rename);
-  return { text: `${label}: ${parts.join('・')}`, tags: renamed ? ['monster'] : ['balance'] };
+  const tags = [];
+  if(changes.some(c=>c.rename)) tags.push('monster');
+  if(changes.some(c=>c.perf))   tags.push('balance');
+  return { text: `${label}: ${parts.join('・')}`, tags: tags.length ? tags : ['balance'] };
 }
 
 /* 更新履歴の「今日のかたまり」を読む(既存の行を出して『書き足す/書き直す』を選ばせるため)。 */
@@ -6115,7 +6350,8 @@ function boot(){
   opts($('m2_tpl'), Object.keys(TIER3));
   /* 形を変えると tier3 の既定値が丸ごと入れ替わるので、説明と薄字を同時に貼り直す。 */
   $('m2_tpl').onchange = ()=>{
-    $('tplHint').textContent = TPL_HINT[$('m2_tpl').value] || '';
+    const v = $('m2_tpl').value;
+    $('tplHint').textContent = TPL_HINT[v] || (v === TPL_NONE ? TPL_NONE_HINT : '');
     refreshMoveDefaults();
   };
   $('m2_tpl').onchange();
@@ -6235,6 +6471,13 @@ function boot(){
   $('s_element').onchange = onElementChange;
   $('regKind').onchange = ()=>{
     const ssr = isSsr(), media = isSsrMedia(), assets = isAssets(), awaken = isAwaken(), edit = isEdit();
+    /* 「開いて直す」で欄へ入れた値と止めた欄は、種類を切り替えたら**必ず**既定へ戻す。
+       戻さないと、そのまま新規モンスターを登録したときに開いていた体の数字が混ざる。 */
+    if(!edit && state.editFilled){
+      restoreFormDefaults();
+      state.editFilled = false;
+      state.edit = null;
+    }
     // 覚醒の「エフェクト合成」は元の絵から作るので、歩行・静止画のパネルは要らない
     const awakenFx = awaken && awakenIsFxMode();
     /* 「開いて直す」は絵を触らないので歩行・静止画は使わない。
@@ -6318,6 +6561,8 @@ function boot(){
     const sync = ()=>{ $(out).textContent = div===1 ? $(id).value : (+$(id).value/div).toFixed(2); };
     $(id).addEventListener('input', sync); sync();
   });
+  // 欄の既定値は**ここで1回だけ**撮る(選択肢を入れ終えた直後の姿が正)
+  captureFormDefaults();
   $('regKind').onchange();
   const t = localStorage.getItem('aramon_gh_token');
   if(t){ $('tok').value = t; saveToken(); }

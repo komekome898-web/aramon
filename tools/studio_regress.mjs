@@ -475,6 +475,29 @@ function runRoundTrip(){
   if(S.replaceFieldInObject(q, 0, q.length, 'dmg', '9') !== "{ 'dmg':9, b:2 }")
     fail('roundtrip', `引用符付きのキー('dmg':1)を書き換えられません: ${S.replaceFieldInObject(q, 0, q.length, 'dmg', '9')}`);
 
+  /* 入れ子の同名キーを掴まないこと。**錨②(`,`/`{` の直後)にも深さの検査が要る。**
+     錨②は1行に何項目も書く表(MONSTER_AURA / MOVE_AURA)のために足したものだが、
+     深さを見ないと `blast:{ dmg:26 }` の dmg を「表の項目 dmg」として掴む。
+     ①行頭の錨で取れない書き方(全部1行)にして、②だけが働く形で確かめる。 */
+  const nested = "const NEST = { a:{ blast:{ dmg:1 } }, dmg:'top' };\n";
+  const hitNest = S.pickEntry(nested, 'NEST', 'dmg');
+  if(!hitNest) fail('roundtrip', '錨②: 表の直下の dmg を取れません(深さの検査が強すぎます)');
+  else if(hitNest.valueText !== "'top'")
+    fail('roundtrip', `錨②: 入れ子(blast:{ dmg })を掴んでいます(${hitNest.valueText})`);
+  // 表の直下に無いなら「無い」と答える(入れ子で代用しない)
+  const onlyNested = "const NEST2 = { a:{ blast:{ dmg:1 } } };\n";
+  if(S.pickEntry(onlyNested, 'NEST2', 'dmg') !== null)
+    fail('roundtrip', '錨②: 入れ子の中にしかない dmg を表の項目として掴んでいます');
+  // 深さ数え(entryDepthAt)そのもの: コメント/文字列の中は -1
+  const depthSrc = "{ a:{ b:1 }, c:2 }";
+  if(S.entryDepthAt(depthSrc, 0, depthSrc.indexOf('b:')) !== 2)
+    fail('roundtrip', 'entryDepthAt: 入れ子の深さが 2 になりません');
+  if(S.entryDepthAt(depthSrc, 0, depthSrc.indexOf('c:')) !== 1)
+    fail('roundtrip', 'entryDepthAt: 直下の深さが 1 になりません');
+  const deadSrc = "{ a:1, /* c:2 */ d:3 }";
+  if(S.entryDepthAt(deadSrc, 0, deadSrc.indexOf('c:')) !== -1)
+    fail('roundtrip', 'entryDepthAt: コメントの中を -1 と答えません');
+
   return `${keys.length}体 × 4通り`;
 }
 
@@ -801,8 +824,67 @@ function runEditRound(){
     { perf:false, histJp:'エフェクト色', before:'#000', after:'#fff' }]);
   if(!line || line.text !== 'ジョーカー: 威力21→34・連射5→7')
     fail('edit', `更新履歴の1行の作り方が違います(${line && line.text})`);
+  if(JSON.stringify(line && line.tags) !== '["balance"]')
+    fail('edit', `数字だけ変えたときのタグが balance ではありません(${JSON.stringify(line && line.tags)})`);
   if(S.editHistoryLine('ジョーカー', [{ perf:false, histJp:'色', before:'a', after:'b' }]) !== null)
     fail('edit', '見た目だけの変更でも更新履歴の行を作っています');
+  // オーラ(見た目)だけの変更では行を作らない。オーラは perf:false なのでここに落ちる
+  if(S.editHistoryLine('ジョーカー', [{ op:'entry', perf:false, jp:'オーラ', before:'black', after:'red' }]) !== null)
+    fail('edit', 'オーラ(見た目)だけの変更で更新履歴の行を作っています');
+  // 技名を変えたら monster / 数字なら balance / **両方なら両方**
+  const tagsOf = ch => JSON.stringify((S.editHistoryLine('X', ch) || {}).tags);
+  if(tagsOf([{ rename:true, before:'A', after:'B' }]) !== '["monster"]')
+    fail('edit', `技名の変更のタグが monster ではありません(${tagsOf([{ rename:true, before:'A', after:'B' }])})`);
+  const both = [{ rename:true, before:'A', after:'B' }, { perf:true, histJp:'威力', before:1, after:2 }];
+  if(tagsOf(both) !== '["monster","balance"]')
+    fail('edit', `技名と数字の両方を変えたときのタグが両方になりません(${tagsOf(both)})`);
+
+  /* 更新履歴の「書き直す行」の選び方(§指摘1)。**同じ表示名を含む行だけが候補。**
+     「威力」が共通なだけで別の体の行を書き直すと、その体の告知が消える。 */
+  const chItems = [{ t:'ザン: 威力30→40・連射5→7', g:['balance'] },
+                   { t:'ジョーカー: 威力21→34', g:['balance'] }];
+  if(S.editRewriteIndex(chItems, 'ジョーカー', 'ジョーカー: 威力21→50') !== 1)
+    fail('edit', '同じ体の行を書き直しません');
+  if(S.editRewriteIndex([chItems[0]], 'ジョーカー', 'ジョーカー: 威力21→50') !== -1)
+    fail('edit', '別の体の行(ザン)を「似た行」として書き直そうとしています');
+  if(S.editRewriteIndex(chItems, '', 'ジョーカー: 威力21→50') !== -1)
+    fail('edit', '表示名が無いのに書き直す行を選んでいます');
+
+  /* 「意図した差分がすべて出ているか」の判定(§指摘4)。
+     出ていない/値が違うときに、それを見落とさないこと。 */
+  const chg = [{ op:'field', table:'ELEMENTS', key:'joker', field:'hp', jp:'HP', after:120 }];
+  const tbl = { ELEMENTS:{ joker:{ hp:120 } } };
+  if(S.editMissingChanges(chg, [{ path:'ELEMENTS.joker.hp', before:115, after:120 }], tbl).length)
+    fail('edit', '意図どおりの差分を「出ていない」と言っています');
+  if(!S.editMissingChanges(chg, [], tbl).length)
+    fail('edit', '差分が1件も出ていないのに見逃しています');
+  if(!S.editMissingChanges(chg, [{ path:'ELEMENTS.joker.hp', before:115, after:999 }],
+                           { ELEMENTS:{ joker:{ hp:999 } } }).length)
+    fail('edit', '意図と違う値になっているのに見逃しています');
+
+  /* 更新履歴の「意図した姿」の作り方(§指摘4)。addUpdateHistory と同じ置き場所になること。 */
+  const H = [{ date:'2026-09-02', items:[{ t:'古い行', g:['balance'] }] }];
+  const app = S.editExpectedHistory(H, { ymd:'2026-09-02', rewrite:false, index:0, text:'新', tags:['balance'] });
+  if(JSON.stringify(app[0].items.map(x=>x.t)) !== '["新","古い行"]')
+    fail('edit', `更新履歴の「書き足す」の置き場所が違います(${JSON.stringify(app[0].items)})`);
+  const rw = S.editExpectedHistory(H, { ymd:'2026-09-02', rewrite:true, index:0, text:'新', tags:['balance'] });
+  if(JSON.stringify(rw[0].items.map(x=>x.t)) !== '["新"]')
+    fail('edit', `更新履歴の「書き直す」の当て方が違います(${JSON.stringify(rw[0].items)})`);
+  const nb = S.editExpectedHistory(H, { ymd:'2026-09-03', rewrite:false, index:0, text:'新', tags:['balance'] });
+  if(nb.length !== 2 || nb[0].date !== '2026-09-03')
+    fail('edit', '今日のかたまりが無いときに一番上へ作りません');
+  if(JSON.stringify(S.editExpectedHistory(H, null)) !== JSON.stringify(H))
+    fail('edit', '更新履歴を触らないときに履歴が変わっています');
+
+  /* tier3 の「形」の逆引き(§指摘2)。projStyle / aoeStyle から1つに決まること。
+     デスファイナル(projStyle:'scythe')はどのテンプレートにも当てはまらない。 */
+  for(const k of Object.keys(S.TIER3))
+    if(S.tier3TemplateOf(S.TIER3[k]) !== k)
+      fail('edit', `tier3 の形の逆引きが ${k} で ${S.tier3TemplateOf(S.TIER3[k])} になります`);
+  if(S.tier3TemplateOf(base.SIGNATURE_MOVES.joker[2]) !== null)
+    fail('edit', 'デスファイナル(scythe)にテンプレートを当ててしまっています');
+  if(S.tier3TemplateOf(base.SIGNATURE_MOVES.zan[2]) !== 'crescent')
+    fail('edit', `ザンの tier3 の形が crescent になりません(${S.tier3TemplateOf(base.SIGNATURE_MOVES.zan[2])})`);
 
   return `${keys.length}体 × 5通り + SSR ${ssrIds.length}体 × 2通り(${n}件)`;
 }
