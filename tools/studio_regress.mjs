@@ -1212,6 +1212,24 @@ function runEditRound(){
   // 「表示名を含む」だけでは足りない(体の名前が本文の途中に出る行も候補にしない)
   if(S.editRewritableLine('レイドのボスにジョーカーが登場します', 'ジョーカー'))
     fail('edit', '本文の途中に表示名がある行を書き直しの候補にしています');
+  /* 候補の判定は**先頭が `表示名: ` かどうかの1本**(§指摘20)。告知の行は記号で始まるので
+     この1本だけで落ちる —— 先頭の記号を並べた表(CHANGELOG_ANNOUNCE)は
+     この1本を通り抜けられず、**一度も効かない枝**だったので消した。
+     消したことで挙動が変わっていないことを、記号側と本文側の両方から見る。 */
+  if(S.editRewritableLine('🆕 ジョーカー: 新しく登場しました', 'ジョーカー'))
+    fail('edit', '記号で始まる行を候補にしています(先頭が「表示名: 」ではありません)');
+  if(!S.editRewritableLine('ジョーカー: 威力21→34', 'ジョーカー'))
+    fail('edit', 'このツールが書いた形の行を候補から外しています');
+  // 既定の選び方が読む候補の一覧(fillEditChangelog と editRewriteIndex が同じここを読む)
+  if(JSON.stringify(S.editRewriteCandidates(announce, 'ジョーカー')) !== '[]')
+    fail('edit', '告知しか無い日に書き直せる行があると言っています');
+  const mixed = [{ t:'ザン: 威力30→40', g:['balance'] }, announce[0],
+                 { t:'ジョーカー: 威力21→34', g:['balance'] },
+                 { t:'ジョーカー: HP115→120', g:['balance'] }];
+  if(JSON.stringify(S.editRewriteCandidates(mixed, 'ジョーカー')) !== '[2,3]')
+    fail('edit', `書き直せる行の並びが違います(${JSON.stringify(S.editRewriteCandidates(mixed, 'ジョーカー'))})`);
+  if(S.editRewriteCandidates(mixed, '').length)
+    fail('edit', '表示名が無いのに書き直せる行があると言っています');
 
   /* 更新履歴の突き合わせは**項目ごとに t と g で**見る(§指摘15)。
      丸ごと JSON.stringify だと `{t,g}` と `{g,t}` の並びの違いだけで止まっていた。 */
@@ -1242,8 +1260,33 @@ function runEditRound(){
   for(const ok of ['guts', 'god_range', 'a1'])
     if(!S.idOk(ok)) fail('edit', `使える特性id を弾いています: ${ok}`);
   // 使えない形の特性idでは、正規表現を組み立てずに false を返す(ui.js を読みに行かない)
-  if(S.traitExistsIn(fs.readFileSync(path.join(ROOT, 'ui.js'), 'utf8'), '.*') !== false)
+  const uiSrc = fs.readFileSync(path.join(ROOT, 'ui.js'), 'utf8');
+  if(S.traitExistsIn(uiSrc, '.*') !== false)
     fail('edit', 'traitExistsIn が使えない形の特性idで真を返しています');
+  /* 見出しの書き方のゆれ(§指摘21)。引用符付き・字下げ違いも「有る」と読む ——
+     読み落とすと「無い」と判断して TRAIT_DESC へ2つ目の同じキーを足し、
+     **後ろの説明が前を黙って上書きする**。 */
+  for(const form of ["  guts: 'a',", "    guts:'a',", "  'guts': 'a',", '  "guts":"a",'])
+    if(!S.traitExistsIn(`const TRAIT_DESC = {\n${form}\n};`, 'guts'))
+      fail('edit', `TRAIT_DESC の見出しを読み落としています: ${form}`);
+  if(S.traitExistsIn("const TRAIT_DESC = {\n  gutsy: 'a',\n};", 'guts'))
+    fail('edit', 'TRAIT_DESC の別の見出し(gutsy)を guts と読んでいます');
+  /* 許したぶん「同じキーが2つ」も起こりうるので、送る前に見る。
+     JS としては合法なので textsSyntaxError では捕まらない種類の壊れ方。 */
+  if(S.traitDescDupKeys(uiSrc).length)
+    fail('edit', `いまの ui.js の TRAIT_DESC にキーの重複があります: ${S.traitDescDupKeys(uiSrc).join(' / ')}`);
+  if(JSON.stringify(S.traitDescDupKeys("const TRAIT_DESC = {\n  guts: 'a',\n  'guts': 'b',\n  other: 'c',\n};"))
+     !== '["guts"]')
+    fail('edit', '書き方の違う同じ見出し(guts と \'guts\')を重複と見ていません');
+  const dupUi = "const TRAIT_DESC = {\n  guts: 'a',\n  guts: 'b',\n};";
+  if(S.textsSyntaxError({ 'ui.js': dupUi }))
+    fail('edit', '重複したキーは構文としては読める前提が崩れています');
+  if(!/TRAIT_DESC/.test(S.textsTraitDupError({ 'ui.js': dupUi }) || ''))
+    fail('edit', '同じ特性idが2つある ui.js を素通ししています');
+  if(S.textsTraitDupError({ 'ui.js': uiSrc, 'data.js':'const A = 1;' }))
+    fail('edit', 'いまの ui.js を「重複あり」と言っています');
+  if(S.textsTraitDupError({ 'data.js':'const A = 1;' }))
+    fail('edit', 'ui.js を書き戻さない登録でも重複を見に行っています');
 
   /* 「意図した差分がすべて出ているか」の判定(§指摘4)。
      出ていない/値が違うときに、それを見落とさないこと。 */
