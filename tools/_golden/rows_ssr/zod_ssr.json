@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr' }, /*@zod_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  zod_ssr:        'black', /*@zod_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  zod_ssr:        { name:'言葉は無粋', dmgMult:1.15 }, /*@zod_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'不死のゾッド', tag:'レイド討伐限定', img:'monsters/zod_ssr.png', size:'150%', pos:'50% 20%', open:'raid' }, /*@zod_ssr*/"
+ ]
+}

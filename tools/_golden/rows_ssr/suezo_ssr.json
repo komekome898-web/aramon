@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  suezo_ssr:      'red', /*@suezo_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  suezo_ssr:      { name:'真瞳術', dmgMult:1.15 }, /*@suezo_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'バジリスエゾー', tag:'新登場・ガチャ', img:'monsters/suezo_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@suezo_ssr*/"
+ ]
+}

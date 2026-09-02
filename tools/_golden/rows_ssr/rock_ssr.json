@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr', seasonExclusive:true }, /*@rock_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  rock_ssr:       'blue', /*@rock_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  rock_ssr:       { name:'超番長ボーナス', dmgMult:1.15 }, /*@rock_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'轟金剛', tag:'シーズンパス', img:'monsters/rock_ssr.png', size:'150%', pos:'50% 20%', open:'season' }, /*@rock_ssr*/"
+ ]
+}

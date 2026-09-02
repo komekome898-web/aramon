@@ -1,0 +1,17 @@
+{
+ "SSR_SKINS": [
+  "  guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr' }, /*@guts_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  guts_ssr:       'black', /*@guts_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  guts_ssr:       { name:'ドラゴンころし', dmgMult:1.15 }, /*@guts_ssr*/"
+ ],
+ "RAID_EFFECT_SKINS": [
+  "  guts_ssr:       { dmgDealt:1.5, dmgTaken:0.75, name:'狂戦士ガッツ' }, /*@guts_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'狂戦士ガッツ', tag:'レイドガチャ限定', img:'monsters/guts_ssr.png', size:'150%', pos:'50% 20%', open:'raid' }, /*@guts_ssr*/"
+ ]
+}

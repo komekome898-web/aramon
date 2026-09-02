@@ -1,0 +1,87 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 350,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 1040,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#e0ad7b",
+   "icon": "👊🏿",
+   "name": "正拳"
+  },
+  {
+   "tier": 2,
+   "range": 700,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 1000,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#e0ad7b",
+   "icon": "👊🏿",
+   "name": "ワンツー"
+  },
+  {
+   "tier": 3,
+   "dmg": 20,
+   "cooldown": 2.3,
+   "gutsCost": 24,
+   "range": 750,
+   "projSpeed": 1280,
+   "hitR": 28,
+   "splash": 0,
+   "projStyle": "voidOrb",
+   "icon": "🔮",
+   "blast": {
+    "radius": 330,
+    "dmg": 60,
+    "expandTime": 0.5,
+    "color": "#e07be0"
+   },
+   "color": "#e07be0",
+   "name": "暗けい"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  hum:     { label:'ハム', color:'#e0ad7b', dark:'#86684a', accent:'#e07be0', speed:210, hp:90, trait:'hum' }, /*@hum*/"
+  ],
+  "WALK_ANIM": [
+   "  hum:     { /*@hum*/",
+   "    base: { front:_loadWalk('hum_walk_f'), back:_loadWalk('hum_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  hum:     [ /*@hum*/",
+   "    { name:'正拳', tier:1, color:'#e0ad7b', range:350, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:1040, hitR:12, splash:70, icon:'👊🏿' },\n    { name:'ワンツー', tier:2, color:'#e0ad7b', range:700, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:1000, hitR:7, burst:3, burstGap:0.1, icon:'👊🏿' },\n    { name:'暗けい', tier:3, color:'#e07be0', range:750, dmg:20, cooldown:2.3, gutsCost:24, projSpeed:1280, hitR:28, splash:0, icon:'🔮', projStyle:'voidOrb', blast:{ radius:330, dmg:60, expandTime:0.5, color:'#e07be0' } }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  hum:     'yellow', /*@hum*/"
+  ],
+  "MOVE_AURA": [
+   "  '正拳':'yellow','ワンツー':'yellow','暗けい':'yellow', /*@hum*/"
+  ],
+  "STATE_CHANGES": [
+   "  hum:     { /*@hum*/",
+   "    name:'余裕', duration:20, cooldown:120, trigger:'hpBelow', triggerValue:0.5,",
+   "    effects:{ dmgTakenMult:1.5, gutsRegenMult:2, speedMult:1.5 },",
+   "  },"
+  ],
+  "APTITUDE": [
+   "  hum:     { life:'C', power:'A', wisdom:'E', accuracy:'C', evasion:'A', vitality:'E' }, /*@hum*/"
+  ],
+  "SKIN_CONFIG": [
+   "  hum:     { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:15, window:60} }, /*@hum*/"
+  ],
+  "TRAIT_DESC": [
+   "  hum:        '技の弾速が速く、射程が短い', /*@hum*/"
+  ]
+ }
+}

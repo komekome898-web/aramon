@@ -1,0 +1,82 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 700,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 520,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#e0ad7b",
+   "icon": "👊🏿",
+   "name": "殴打"
+  },
+  {
+   "tier": 2,
+   "range": 1400,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 500,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#e0ad7b",
+   "icon": "👊🏿",
+   "name": "阿修羅"
+  },
+  {
+   "tier": 3,
+   "dmg": 47,
+   "cooldown": 2,
+   "gutsCost": 24,
+   "aoeShape": "rect",
+   "range": 1000,
+   "rectWidth": 220,
+   "aoeStyle": "lava",
+   "color": "#e0ad7b",
+   "name": "羅生門"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  ogre:    { label:'キジン', color:'#e0ad7b', dark:'#86684a', speed:185, hp:130, trait:'ogre', dmgDealtMod:1.2 }, /*@ogre*/"
+  ],
+  "WALK_ANIM": [
+   "  ogre:    { /*@ogre*/",
+   "    base: { front:_loadWalk('ogre_walk_f'), back:_loadWalk('ogre_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  ogre:    [ /*@ogre*/",
+   "    { name:'殴打', tier:1, color:'#e0ad7b', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'👊🏿' },\n    { name:'阿修羅', tier:2, color:'#e0ad7b', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'👊🏿' },\n    { name:'羅生門', tier:3, color:'#e0ad7b', range:1000, dmg:47, cooldown:2, gutsCost:24, aoeShape:'rect', aoeStyle:'lava', rectWidth:220 }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  ogre:    'yellow', /*@ogre*/"
+  ],
+  "MOVE_AURA": [
+   "  '殴打':'yellow','阿修羅':'yellow','羅生門':'yellow', /*@ogre*/"
+  ],
+  "STATE_CHANGES": [
+   "  ogre:    { /*@ogre*/",
+   "    name:'闘魂', duration:20, cooldown:120, trigger:'gutsBelow', triggerValue:0.5,",
+   "    effects:{ gutsRegenMult:2, cooldownMult:0.667 },",
+   "  },"
+  ],
+  "APTITUDE": [
+   "  ogre:    { life:'C', power:'A', wisdom:'D', accuracy:'C', evasion:'B', vitality:'B' }, /*@ogre*/"
+  ],
+  "SKIN_CONFIG": [
+   "  ogre:    { colors:['black','white','red','blue','green'], source:{type:'chroma', hue:30, window:60} }, /*@ogre*/"
+  ],
+  "TRAIT_DESC": [
+   "  ogre:       '与ダメ1.2倍、技が当たった相手を10秒間やけど状態にする', /*@ogre*/"
+  ],
+  "TRAIT_ON_HIT": [
+   "  ogre:       { burnSec:10 }, /*@ogre*/"
+  ]
+ }
+}

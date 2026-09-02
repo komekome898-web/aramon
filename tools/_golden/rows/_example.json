@@ -1,0 +1,81 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 700,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 520,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#7fb236",
+   "icon": "🍃",
+   "name": "サンプル1"
+  },
+  {
+   "tier": 2,
+   "range": 1400,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 500,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#7fb236",
+   "icon": "🍃",
+   "name": "サンプル2"
+  },
+  {
+   "tier": 3,
+   "dmg": 44,
+   "cooldown": 2.2,
+   "gutsCost": 24,
+   "aoeShape": "beams",
+   "range": 1200,
+   "beamWidth": 100,
+   "beamCount": 3,
+   "beamSpreadDeg": 40,
+   "aoeStyle": "flower",
+   "color": "#d8ff9a",
+   "name": "サンプル3"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  _example:{ label:'サンプル', color:'#7fb236', dark:'#4f6f1f', accent:'#d8ff9a', speed:190, hp:120, trait:'burn' }, /*@_example*/"
+  ],
+  "WALK_ANIM": [
+   "  _example:{ /*@_example*/",
+   "    base: { front:_loadWalk('_example_walk_f'), back:_loadWalk('_example_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  _example:[ /*@_example*/",
+   "    { name:'サンプル1', tier:1, color:'#7fb236', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🍃' },\n    { name:'サンプル2', tier:2, color:'#7fb236', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🍃' },\n    { name:'サンプル3', tier:3, color:'#d8ff9a', range:1200, dmg:44, cooldown:2.2, gutsCost:24, aoeShape:'beams', aoeStyle:'flower', beamWidth:100, beamCount:3, beamSpreadDeg:40 }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  _example:'green', /*@_example*/"
+  ],
+  "MOVE_AURA": [
+   "  'サンプル1':'green','サンプル2':'green','サンプル3':'green', /*@_example*/"
+  ],
+  "STATE_CHANGES": [
+   "  _example:{ /*@_example*/",
+   "    name:'奮起', duration:20, cooldown:90, trigger:'hpBelow', triggerValue:0.4,",
+   "    effects:{ dmgMult:1.2, speedMult:1.2 },",
+   "  },"
+  ],
+  "APTITUDE": [
+   "  _example:{ life:'B', power:'B', wisdom:'C', accuracy:'C', evasion:'C', vitality:'C' }, /*@_example*/"
+  ],
+  "SKIN_CONFIG": [
+   "  _example:{ colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:0, window:60} }, /*@_example*/   // 主役の色の部分"
+  ],
+  "TRAIT_DESC": [
+   "  burn:       '攻撃命中で相手をやけど状態に(10秒間 被ダメ1.5倍)', /*@_example*/"
+  ]
+ }
+}

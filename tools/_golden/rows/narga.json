@@ -1,0 +1,83 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 700,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 520,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#7a2fc6",
+   "icon": "🔥",
+   "name": "真空弾"
+  },
+  {
+   "tier": 2,
+   "range": 1400,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 500,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#7a2fc6",
+   "icon": "🔥",
+   "name": "連続真空弾"
+  },
+  {
+   "tier": 3,
+   "dmg": 46,
+   "cooldown": 2.1,
+   "gutsCost": 24,
+   "aoeShape": "rect",
+   "range": 1000,
+   "rectWidth": 120,
+   "projSpeed": 1400,
+   "aoeStyle": "sakura",
+   "color": "#7a2fc6",
+   "name": "アイビーム"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  narga:   { label:'ナーガ', color:'#7a2fc6', dark:'#491c77', speed:185, hp:130, trait:'narga' }, /*@narga*/"
+  ],
+  "WALK_ANIM": [
+   "  narga:   { /*@narga*/",
+   "    base: { front:_loadWalk('narga_walk_f'), back:_loadWalk('narga_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  narga:   [ /*@narga*/",
+   "    { name:'真空弾', tier:1, color:'#7a2fc6', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },\n    { name:'連続真空弾', tier:2, color:'#7a2fc6', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },\n    { name:'アイビーム', tier:3, color:'#7a2fc6', range:1000, dmg:46, cooldown:2.1, gutsCost:24, projSpeed:1400, aoeShape:'rect', aoeStyle:'sakura', rectWidth:120 }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  narga:   'black', /*@narga*/"
+  ],
+  "MOVE_AURA": [
+   "  '真空弾':'black','連続真空弾':'black','アイビーム':'black', /*@narga*/"
+  ],
+  "STATE_CHANGES": [
+   "  narga:   { /*@narga*/",
+   "    name:'逆上', duration:20, cooldown:60, trigger:'onHitTakenChance', triggerValue:0.2,",
+   "    effects:{ gutsRegenMult:2, speedMult:1.5 },",
+   "  },"
+  ],
+  "APTITUDE": [
+   "  narga:   { life:'C', power:'B', wisdom:'E', accuracy:'B', evasion:'D', vitality:'C' }, /*@narga*/"
+  ],
+  "SKIN_CONFIG": [
+   "  narga:   { colors:['white','red','blue','yellow','green'], source:{type:'chroma', hue:275, window:60} }, /*@narga*/"
+  ],
+  "TRAIT_DESC": [
+   "  narga:      '技の威力が高い。技命中で相手をどく状態に(10秒間1秒毎に5ダメージ、どくではHPは1残る)', /*@narga*/"
+  ],
+  "TRAIT_ON_HIT": [
+   "  narga:      { poisonSec:10 }, /*@narga*/"
+  ]
+ }
+}

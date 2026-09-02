@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  aqua_ssr:       'red', /*@aqua_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  aqua_ssr:       { name:'鱗赫', dmgMult:1.15 }, /*@aqua_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'大喰いの利世', tag:'シーズンパス', img:'monsters/aqua_ssr.png', size:'150%', pos:'50% 20%', open:'season' }, /*@aqua_ssr*/"
+ ]
+}
