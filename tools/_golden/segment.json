@@ -439,5 +439,54 @@
    "y0": 16,
    "y1": 154
   }
+ },
+ "joker_white_soft.input": "2aed5e2ec2759f30eb67a58577480eb4",
+ "joker_white_soft.blackopen": {
+  "alpha": "e917371fc566f6523dd4091003f1fc65",
+  "rgba": "2aed5e2ec2759f30eb67a58577480eb4",
+  "opaque": 25600,
+  "soft": 0,
+  "box": {
+   "x0": 0,
+   "x1": 159,
+   "y0": 0,
+   "y1": 159
+  }
+ },
+ "joker_white_soft.black": {
+  "alpha": "e917371fc566f6523dd4091003f1fc65",
+  "rgba": "2aed5e2ec2759f30eb67a58577480eb4",
+  "opaque": 25600,
+  "soft": 0,
+  "box": {
+   "x0": 0,
+   "x1": 159,
+   "y0": 0,
+   "y1": 159
+  }
+ },
+ "joker_white_soft.white": {
+  "alpha": "9da900ce017add5dbcdc605262cd2276",
+  "rgba": "2aed5e2ec2759f30eb67a58577480eb4",
+  "opaque": 6784,
+  "soft": 2350,
+  "box": {
+   "x0": 14,
+   "x1": 145,
+   "y0": 12,
+   "y1": 154
+  }
+ },
+ "joker_white_soft.chroma": {
+  "alpha": "0bce27241e01bf125ed1e23c01d5c991",
+  "rgba": "b25f0a55fc3241d0e44a99c03395fb9b",
+  "opaque": 5386,
+  "soft": 2585,
+  "box": {
+   "x0": 14,
+   "x1": 137,
+   "y0": 23,
+   "y1": 154
+  }
  }
 }

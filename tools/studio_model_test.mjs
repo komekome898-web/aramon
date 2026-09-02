@@ -8,7 +8,8 @@
    使い方:
      node tools/studio_model_test.mjs                 精度(IoU)+ 静止画パネルの通し + 失敗時の落ち方
      node tools/studio_model_test.mjs --only iou      項目を絞る
-                                                     (iou / e2e / cache / fallback / truncated / retry / passthrough / abort)
+                                                     (iou / e2e / cache / fallback / truncated / retry /
+                                                      passthrough / abort / device)
      node tools/studio_model_test.mjs --only iou --all  in/ の全部(影・グラデーション・近い色)を測る
      node tools/studio_model_test.mjs --assets <dir>  素材の置き場(既定は下の ASSETS)
 
@@ -82,6 +83,8 @@ const browser = await chromium.launch({
      blockModel … モデルの取得だけを失敗させる(落ち方の検査)
      cutModel   … **content-length は本物のまま、中身だけ途中で切って返す**
                   (途中で切れた応答を保存してしまわないかの検査・§指摘1)
+     gzipModel  … **中身は本物のまま、content-length だけ小さく名乗る**
+                  (gzip で返す CDN の見え方。got > total を弾いていないかの検査・§指摘24)
      hits       … 呼び出し側が渡すと、モデルへ実際に出た通信の回数を数えて入れてくれる */
 async function openStudio(opts = {}){
   // ctx を渡さなければ新しく作る = Cache API がまっさらな「初めて使う端末」になる
@@ -108,7 +111,9 @@ async function openStudio(opts = {}){
                   'Content-Length': String(buf.length),   // 本物の大きさを名乗ったまま切る
                   'Access-Control-Allow-Origin':'*' } });
     await route.fulfill({ body: buf, headers:{ 'Content-Type':'application/octet-stream',
-      'Content-Length': String(buf.length), 'Access-Control-Allow-Origin':'*' } });
+      // gzip で返る CDN では content-length が圧縮後の大きさになる(届く量のほうが多い)
+      'Content-Length': String(opts.gzipModel ? Math.floor(buf.length/2) : buf.length),
+      'Access-Control-Allow-Origin':'*' } });
   });
   await page.goto(`${ORIGIN}/tools/studio_web.html`, { waitUntil:'load' });
   return { ctx, page, errs };
@@ -252,6 +257,18 @@ if(want('truncated')){
   say(r2.iou >= IOU_MIN, '次に開いたときは取り直して抜けた(永久に直らない状態にならない)');
   say(!cut.errs.length && !ok.errs.length, 'ページの例外なし');
   await ctx.close();
+
+  /* 逆に「届いた量のほうが多い」= gzip で返る CDN。以前は got!==total で毎回弾いていた(§指摘24)。
+     大きさの本命は期待の実寸(MODEL_SRC.onnxBytes)との突き合わせなので、これは通るのが正しい。 */
+  const gz = await browser.newContext();
+  const g = await openStudio({ ctx:gz, gzipModel:true });
+  const rg = await measure(g.page, 'model');
+  const gkept = await cachedBytes(g.page);
+  console.log(`\n[content-length が小さい] gzip で返る CDN の見え方 — IoU ${rg.iou.toFixed(3)}`);
+  console.log('       log: ' + rg.log);
+  say(rg.iou >= IOU_MIN, '弾かずに抜けた(got > total は異常ではない)');
+  say(gkept > 0, `端末内へ保存した(${gkept}バイト)`);
+  await gz.close();
 }
 
 /* ------------- (6) 一度失敗しても同じページでやり直せる(err の永久ラッチ)・§指摘3 */
@@ -279,27 +296,49 @@ if(want('retry')){
   await ctx.close();
 }
 
-/* --------- (7) 透過済みPNGは素通し(通信が無くてもモデルへ行かない)・§指摘4 */
+/* --------- (7) 透過済みPNGは素通し(通信が無くてもモデルへ行かない)・§指摘4
+   ただし**素通しするのは「抜き方を明示していないとき」だけ**(§指摘22)。
+   white を選んだのなら、透過済みでも必ず抜く ―― ここが素通しになっていた頃は、
+   明示した抜き方が黙って捨てられて全面前景(=背景ごと)が返っていた。 */
 if(want('passthrough')){
   const hits = { n:0 };
   // モデルの取得は失敗させる = 圏外の端末。素通しならそもそも取りに行かない
   const { ctx, page, errs } = await openStudio({ blockModel:true, hits });
   const r = await page.evaluate(async url => {
     const img = await fileToImageData(await (await fetch(url)).blob());
-    // 抜き方は既定の「モデルで抜く」。透過済みなら resolveAlpha が素通しするはず
-    const a = await resolveAlpha(img, { mode:'model', th:14, chroma:null, panel:'portrait' });
-    let same = true, soft = 0;
-    for(let i=0;i<a.length;i++){
-      if(a[i] !== img.data[i*4+3]) same = false;
-      if(a[i] > 0 && a[i] < 255) soft++;
+    /* 入力は「白背景に合成したが、透過はそのまま残っている絵」。
+       色だけを見れば白背景の絵、アルファだけを見れば透過済みの絵 ——
+       素通しと明示指定のどちらが勝つかを、同じ1枚で見分けられる。 */
+    const own = new Uint8Array(img.width*img.height);
+    let trans = 0;
+    for(let i=0;i<own.length;i++){
+      const a = img.data[i*4+3], k = a/255;
+      for(let c=0;c<3;c++) img.data[i*4+c] = Math.round(img.data[i*4+c]*k + 255*(1-k));
+      own[i] = a;
+      if(a < 250) trans++;
     }
-    return { same, soft, log: document.getElementById('log').textContent.trim() };
+    const run = async seg => {
+      // segment() は img.data(色)も書き換えるので、毎回作り直した入れ物を渡す
+      const copy = { width:img.width, height:img.height, data:new Uint8ClampedArray(img.data) };
+      const a = await resolveAlpha(copy, Object.assign({ th:14, chroma:null, panel:'portrait' }, seg));
+      let same = true, full = 0;
+      for(let i=0;i<a.length;i++){ if(a[i] !== own[i]) same = false; if(a[i] === 255) full++; }
+      return { same, full };
+    };
+    // 抜き方は既定の「モデルで抜く」。透過済みなら resolveAlpha が素通しするはず
+    const model = await run({ mode:'model' });
+    // 白背景を**明示**したら、透過済みでも抜く(素通しに負けない)
+    const white = await run({ mode:'white' });
+    return { trans, pct: Math.round(trans/own.length*1000)/10, n: own.length, model, white,
+             log: document.getElementById('log').textContent.trim() };
   }, `${ORIGIN}/monsters/joker.png`);
-  console.log('\n[素通し] 透過済みPNG × 圏外 × 抜き方=モデル');
-  console.log('       log: ' + r.log);
-  say(r.same, '画像の透過をそのまま返した');
+  console.log('\n[素通し] 透過済みPNG × 圏外');
+  console.log(`       透けている画素 ${r.trans}/${r.n}(${r.pct}%) / log: ${r.log}`);
+  say(r.model.same, 'モデル: 画像の透過をそのまま返した');
   say(hits.n === 0, `モデルを取りに行かなかった(通信 ${hits.n}回)`);
   say(!/黒背景/.test(r.log), 'blackopen へ落ちていない');
+  say(!r.white.same, `明示指定(white): 透過済みでも抜いた(素通ししていない)`);
+  say(r.white.full !== r.n, `明示指定(white): 全面前景になっていない(不透明 ${r.white.full}/${r.n})`);
   say(!errs.length, 'ページの例外なし' + (errs.length ? ': ' + errs[0].slice(0,160) : ''));
   await ctx.close();
 }
@@ -326,6 +365,44 @@ if(want('abort')){
   say(hits.n === 0, `モデルを取りに行かなかった(通信 ${hits.n}回)`);
   say(/中断/.test(r.log), 'log に中断が出ている');
   say(r.hidden === 'none', '中断ボタンを片付けた');
+  say(!errs.length, 'ページの例外なし' + (errs.length ? ': ' + errs[0].slice(0,160) : ''));
+  await ctx.close();
+}
+
+/* --- (9) 用意できなかったときの言い方と、端末の判定の持ち越し・§指摘25/26 ---
+   InferenceSession.create だけを失敗させる(取得は成功させる)。
+     1回目 … まだ「端末では動かせません」と言い切らない(壊れた保存物を捨てたところ)
+     2回目 … ここで初めて端末と言い切り、「もう一度試す」を出す
+   そのあと releaseSegmentModel()(技のプレビューを開くたびに通る)で判定が消えないこと。 */
+if(want('device')){
+  const { ctx, page, errs } = await openStudio();
+  const r = await page.evaluate(async ()=>{
+    // 推論ライブラリの代わりを置く。読み込みは飛ばし、create だけが必ず失敗する
+    window.ort = { env:{ wasm:{} }, Tensor: function(){},
+                   InferenceSession:{ create: async ()=>{ throw new Error('memory allocation failed'); } } };
+    const img = { width:2, height:2, data:new Uint8ClampedArray(16) };
+    const tries = [];
+    for(let k=0;k<2;k++){
+      try{ await segmentModel(img, null, 'portrait'); }
+      catch(e){ tries.push({ code:e.__modelCode || '', jp: modelErrorText(e) }); }
+    }
+    const shownWhenLatched = document.querySelector('.modelRetryWrap').style.display;
+    await releaseSegmentModel();                 // 技のプレビューを開く前に必ず通る道
+    const keptAfterRelease = !!modelState.err;
+    resetModelDevice();                          // 人が「もう一度試す」を押した
+    return { tries, shownWhenLatched, keptAfterRelease,
+             clearedAfterReset: !modelState.err,
+             hiddenAfterReset: document.querySelector('.modelRetryWrap').style.display };
+  });
+  console.log('\n[用意できない] create だけを失敗させる');
+  for(const [i, t] of r.tries.entries()) console.log(`       ${i+1}回目 (${t.code}) ${t.jp}`);
+  say(r.tries.length === 2 && r.tries[0].code === 'retry', '1回目は端末のせいと言い切らない');
+  say(!!r.tries[0] && !/この端末では/.test(r.tries[0].jp), '1回目の文面は「もう一度お試しください」');
+  say(!!r.tries[1] && r.tries[1].code === 'device', '2回目で端末と決めた');
+  say(!!r.tries[1] && /この端末では/.test(r.tries[1].jp), '2回目の文面で初めて端末と言い切る');
+  say(r.shownWhenLatched !== 'none', '「もう一度試す」ボタンを出した');
+  say(r.keptAfterRelease, '解放しても端末の判定を持ち越す(開くたび44MBを取り直さない)');
+  say(r.clearedAfterReset && r.hiddenAfterReset === 'none', '「もう一度試す」で判定を白紙に戻した');
   say(!errs.length, 'ページの例外なし' + (errs.length ? ': ' + errs[0].slice(0,160) : ''));
   await ctx.close();
 }

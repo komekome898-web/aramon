@@ -390,6 +390,11 @@
   <div class="hint modelNote">
     「モデルで抜く」は初回だけ約44MBを取得します(次回から端末内)。どんな背景でもそのまま抜けます。
   </div>
+  <!-- 「この端末では動かせません」と決めたときだけ出す。押した人の明示の操作でだけ判定をやり直す
+       (プレビューを開くたびに白紙へ戻すと44MBを取っては捨てるを繰り返す・§指摘25) -->
+  <div class="btns modelRetryWrap" style="display:none">
+    <button onclick="resetModelDevice()">モデルをもう一度試す</button>
+  </div>
   <!-- 歩行は16コマぶん推論するので静止画の16倍かかる。押す前に分かるよう、
        この行は modelNote() で上書きされない別の行として置く(上の行は結果の表示に使われる)。 -->
   <div class="hint" id="walkModelTime" style="display:none">
@@ -461,6 +466,9 @@
   </select>
   <div class="hint modelNote">
     「モデルで抜く」は初回だけ約44MBを取得します(次回から端末内)。どんな背景でもそのまま抜けます。
+  </div>
+  <div class="btns modelRetryWrap" style="display:none">
+    <button onclick="resetModelDevice()">モデルをもう一度試す</button>
   </div>
   <div id="pthWrap" style="display:none">
     <label>しきい値 <span id="pthVal">14</span> — 大きくすると背景を多く抜きます</label>
@@ -1226,7 +1234,15 @@ const MODEL_SRC = {
   ort:  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js',
   wasm: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/',   // wasm も同じCDNから
   onnx: 'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx',
+  /* **取得先と同じ1か所に「期待する大きさ」を持つ**(2026-09-02 実測 44,403,226バイト=42.3MB)。
+     モデルを差し替えるときは URL と一緒にここも直す。
+     以前は「20MBを下回ったら異常」という下限だけを見ていたが、実寸が42.3MBなので
+     **半分に切れた応答が素通りしていた**(§指摘23)。下限ではなく実寸との差で見る。 */
+  onnxBytes: 44403226,
 };
+// 期待の大きさとの差がこの割合以内なら本物とみなす(CDNの再圧縮・付帯情報のぶれを吸う)
+const MODEL_SIZE_TOL = 0.03;
+const modelBytesOk = n => Math.abs(n - MODEL_SRC.onnxBytes) <= MODEL_SRC.onnxBytes*MODEL_SIZE_TOL;
 /* Cache API の名前(モデルを替えたら上げる)。
    **この名前は sw.js の STUDIO_MODEL_CACHE と二重に持っている。** スタジオも本番と同じ
    オリジンに置いてあるので、sw.js の activate が「知らないキャッシュ」として消してしまう。
@@ -1244,10 +1260,6 @@ const MODEL_KEEP_RATIO = 0.08; // 最大の塊のこの割合以上なら残す(
 const MODEL_FALLBACK = 'blackopen';   // 失敗したときに落ちる先(JSの既定の抜き方)
 const MODEL_LOAD_MS = 20000;   // 推論ライブラリの読み込みを待つ上限
 const MODEL_STALL_MS = 30000;  // モデルの取得が固まったとみなす無通信の時間
-/* 「明らかに途中で切れた応答」の下限。量子化版 RMBG-1.4 は約44MB なので、その半分を
-   下回るものはモデルではない。**44MB という実寸は決め打ちしない**(モデルを替えても効くように、
-   下限だけを持つ)。content-length がある場合は下の got!==total の照合が本命で、これは保険。 */
-const MODEL_MIN_BYTES = 20*1024*1024;
 /* セッション作成に何回失敗したら「この端末では動かない」と決めるか。
    1回目は**壊れた保存物を掴んでいる**可能性があるので、キャッシュを捨てて取り直す機会を1度与える。
    2回続けて作れないなら端末側(WASM非対応・メモリ不足)なので、そこで初めてラッチする。 */
@@ -1279,7 +1291,13 @@ function modelErrorText(e){
   const raw  = String(e && (e.message || e) || '');
   if(code === 'abort')    return '中断しました。もう一度試すときは「プレビュー」を押してください';
   if(code === 'truncated')return 'モデルの取得が途中で切れました。電波の届く所でもう一度お試しください';
+  // 用意に1回失敗しただけ。壊れた保存物を捨てたところなので、まだ端末のせいと言い切らない(§指摘26)
+  if(code === 'retry')    return 'モデルを用意できませんでした。もう一度お試しください';
   if(code === 'device')   return 'この端末ではモデルを動かせませんでした。別の抜き方をお選びください';
+  /* **こちらが日本語で投げた例外はそのまま出す。**(§指摘27)
+     丸めるのは ORT や fetch が返す英語の例外だけ。ここを通さないと
+     「動画を選んでください」まで「モデルの読み込みに失敗しました」に化ける。 */
+  if(!code && /[ぁ-んァ-ヶ一-龥]/.test(raw)) return raw;
   if(code === 'net' || name === 'AbortError' || /aborted|The operation was aborted/i.test(raw))
     return '電波が切れました。電波の届く所でもう一度お試しください';
   if(/Failed to fetch|NetworkError|Load failed|ERR_/i.test(raw))
@@ -1297,13 +1315,19 @@ function modelError(code, msg){ const e = new Error(msg); e.__modelCode = code; 
 function beginModelRun(use){
   modelState.abort = (use && typeof AbortController !== 'undefined') ? new AbortController() : null;
   const w = $('modelAbortWrap'); if(w) w.style.display = modelState.abort ? '' : 'none';
+  // 前回の「中断しています…」を持ち越さない(押せる状態に戻す)
+  const b = $('modelAbortBtn'); if(b){ b.disabled = false; b.textContent = '中断'; }
 }
 function endModelRun(){
   modelState.abort = null;
   const w = $('modelAbortWrap'); if(w) w.style.display = 'none';
 }
+/* 中断は**押した手応えを返す**(§指摘28)。1コマ十数秒かかるので、押しても見た目が
+   変わらないと「効いていない」と思って何度も押される。押した時点で押せなくし、
+   文言で「受け付けた・いま止めている」ことを見せる。押下済みならそのまま返る。 */
 function abortModelRun(){
-  if(!modelState.abort) return;
+  if(!modelState.abort || modelState.abort.signal.aborted) return;
+  const b = $('modelAbortBtn'); if(b){ b.disabled = true; b.textContent = '中断しています…'; }
   modelState.abort.abort();          // 取得中なら fetch も一緒に止まる(下の fetchModelBytes)
   log('中断します(いま抜いているコマが終わったら止まります)');
 }
@@ -1342,7 +1366,7 @@ async function modelCacheGet(){
     const b = new Uint8Array(await r.arrayBuffer());
     /* **保存物も必ず大きさを確かめる。** 途中で切れた物が一度でも入ると、
        ここで捨てない限り「端末内にあるのに毎回失敗する」状態が永久に続く。 */
-    if(b.length < MODEL_MIN_BYTES){ await modelCacheDelete(); return null; }
+    if(!modelBytesOk(b.length)){ await modelCacheDelete(); return null; }
     return b;
   }catch(e){ return null; }
 }
@@ -1392,10 +1416,13 @@ async function fetchModelBytes(){
           if(total) setProg(Math.round(got/total*100));
           log(`モデルを取得中 ${modelMB(got)}/${modelMB(total||got)}MB`);
         }
-        /* **content-length と実際に届いた量が違うなら、それは途中で切れた応答。**
+        /* **content-length より届いた量が少ないなら、それは途中で切れた応答。**
            ここで投げずに先へ進むと、欠けた44MBを Cache API へ保存してしまい、
-           次からは「端末内にある」と判断して取り直しもせず、永久に直らなくなる(§指摘1)。 */
-        if(total && got !== total)
+           次からは「端末内にある」と判断して取り直しもせず、永久に直らなくなる(§指摘1)。
+           **多い(got > total)は異常ではない。** gzip で返ってくると content-length は
+           圧縮後の大きさなので、展開後は必ずそれより大きくなる。`!==` で見ていたときは
+           そういうCDNから毎回弾かれていた(§指摘24)。大きさの本命は下の modelBytesOk。 */
+        if(total && got < total)
           throw modelError('truncated',
             `モデルの取得が途中で切れました(${modelMB(got)}/${modelMB(total)}MB)`);
         bytes = new Uint8Array(got);
@@ -1405,9 +1432,11 @@ async function fetchModelBytes(){
       }else{
         bytes = new Uint8Array(await res.arrayBuffer());   // ReadableStream が無い端末
       }
-      // content-length が無い経路(圧縮・古い端末)はここが唯一の歯止め
-      if(bytes.length < MODEL_MIN_BYTES)
-        throw modelError('truncated', `モデルが小さすぎます(${modelMB(bytes.length)}MB)`);
+      /* 最後に**期待の大きさと突き合わせる**(content-length が無い経路・gzip 経路でも効く)。
+         下限だけを見ていた頃は、実寸42.3MBのモデルに対して20MBでも通っていた(§指摘23)。 */
+      if(!modelBytesOk(bytes.length))
+        throw modelError('truncated',
+          `モデルの大きさが違います(${modelMB(bytes.length)}/${modelMB(MODEL_SRC.onnxBytes)}MB)`);
     }finally{
       setProg(null);                 // 途中で投げても進捗の帯を残さない
       if(stall) clearTimeout(stall);
@@ -1429,10 +1458,8 @@ async function modelSession(){
   if(modelState.sess) return modelState.sess;
   if(modelState.err) throw modelState.err;      // 端末で動かないと分かっているときだけ即やめる
   // WASM が無い端末はここで確定(何度押しても同じなので覚える)
-  if(typeof WebAssembly === 'undefined'){
-    modelState.err = modelError('device', 'この端末は推論に対応していません');
-    throw modelState.err;
-  }
+  if(typeof WebAssembly === 'undefined')
+    throw latchModelDevice(modelError('device', 'この端末は推論に対応していません'));
   const ort = await loadOrtLib();               // 失敗しても覚えない(loadOrtLib が自分で作り直す)
   modelState.ort = ort;
   ort.env.wasm.wasmPaths = MODEL_SRC.wasm;
@@ -1452,9 +1479,13 @@ async function modelSession(){
     modelState.bytes = null;
     await modelCacheDelete();
     modelState.createFails++;
-    const err = modelError('device', `モデルを用意できませんでした(${String(e && e.message || e)})`);
-    if(modelState.createFails >= MODEL_CREATE_TRIES) modelState.err = err;
-    throw err;
+    /* **1回目は「端末では動かせません」と言い切らない**(§指摘26)。
+       この時点でいちばん疑わしいのは掴んでいた44MBのほうで、実際いま捨てたところ。
+       言い切ってしまうと、電波のせいで壊れた1回のために「別の抜き方を」と案内してしまう。 */
+    const last = modelState.createFails >= MODEL_CREATE_TRIES;
+    const err = modelError(last ? 'device' : 'retry',
+                           `モデルを用意できませんでした(${String(e && e.message || e)})`);
+    throw last ? latchModelDevice(err) : err;
   }
 }
 /* 技のプレビュー(iframeでゲームを動かす)の前に呼ぶ。推論の入れ物を手放してメモリを空ける。
@@ -1466,8 +1497,30 @@ async function modelSession(){
 async function releaseSegmentModel(){
   try{ if(modelState.sess && modelState.sess.release) await modelState.sess.release(); }catch(e){}
   modelState.sess = null; modelState.bytes = null;
-  // 「もう一度試す」を押せる状態に戻す(端末で動かないという判定も持ち越さない)
+  /* **解放と「端末の判定のやり直し」は別物**(§指摘25)。ここは技のプレビューを開くたびに
+     通るので、err/createFails まで消すと「この端末では動かない」と分かった直後に白紙へ戻り、
+     次にプレビューを開くたび44MBを取り直しては捨てる、を繰り返す。
+     やり直すのは人が「もう一度試す」を押したときだけ(resetModelDevice)。 */
+}
+/* 「もう一度試す」= 端末の判定だけを白紙に戻す**明示の**操作(ボタンからのみ呼ぶ)。
+   取得したモデル本体には触らない(端末内に正しく入っているなら、それはそのまま使う)。 */
+function resetModelDevice(){
   modelState.err = null; modelState.createFails = 0;
+  showModelRetry(false);
+  modelNote('もう一度モデルを試します。「プレビュー」または「背景を抜いて整える」を押してください。');
+  log('モデルの判定をやり直します。');
+}
+// 「この端末では動かない」と決めたときだけ出すボタン(両方のパネルに同じ物がある)
+function showModelRetry(on){
+  if(!document.querySelectorAll) return;
+  for(const e of document.querySelectorAll('.modelRetryWrap')) e.style.display = on ? '' : 'none';
+}
+/* 「この端末では動かない」と決める**唯一の場所**。ここを通らずに modelState.err へ
+   直接入れない(入れると「もう一度試す」が出ないまま二度と試せなくなる)。 */
+function latchModelDevice(err){
+  modelState.err = err;
+  showModelRetry(true);
+  return err;
 }
 /* 最大の塊の ratio 倍以上ある塊を残す。**モデル経路専用。**
    keepLargest(最大の1つだけ)だと、体から切り離して描かれた武器・尻尾・翼が消える。
@@ -1568,21 +1621,36 @@ async function segmentModel(img, prog, panel){
 function walkSeg(){
   return { mode: $('mode').value, th: +$('th').value, chroma: state.chroma, panel:'walk' };
 }
+/* 「この絵はもう透過済みか」。**1画素でも欠ければ透過済み、では緩すぎる**(§指摘22)。
+   保存し直したPNGや縁のアンチエイリアスで数画素だけ半透明になっている絵はいくらでもあり、
+   それを素通しにすると背景が付いたまま通ってしまう。**割合**で見て、透過済みなら
+   そのアルファを、そうでなければ null を返す(素通しするかどうかは呼び側=resolveAlpha が決める)。
+   実測: monsters/*.png の透けている画素は 70〜90%(下の割合をはるかに超える)。 */
+const ALPHA_KEEP_MAX   = 250;    // これ未満のアルファを「透けている画素」と数える
+const ALPHA_KEEP_RATIO = 0.02;   // 透けている画素が全体のこの割合以上なら「透過済みの絵」
+function ownAlphaIfTransparent(img){
+  const N = img.width*img.height;
+  const a = new Uint8Array(N);
+  let n = 0;
+  for(let i=0;i<N;i++){ a[i] = img.data[i*4+3]; if(a[i] < ALPHA_KEEP_MAX) n++; }
+  return n >= N*ALPHA_KEEP_RATIO ? a : null;
+}
 /* **抜き方を実際に適用する唯一の場所。** 透過済みの素通しも、モデルとJSの呼び分けも、
    モデルが駄目だったときにJSの既定へ落とすのも、ここだけに書く
    (segment() を直接呼ぶ所を残さない)。prog={i,n} は「16コマ中の何枚目か」の進捗表示用。 */
 async function resolveAlpha(img, seg, prog){
-  const N = img.width*img.height;
-  /* **すでに半透明の画素がある絵は、その透過をそのまま使う。**
-     ここに置かないと、透過済みPNGに「モデルで抜く」(既定)が当たったときだけ
-     44MBを取りに行き、圏外なら黒背景で抜き直すことになる(§指摘4)。
-     判定はこの1か所だけ(imageAlphaFor はここへ委ねる)。 */
-  const own = new Uint8Array(N);
-  let has = false;
-  for(let i=0;i<N;i++){ own[i] = img.data[i*4+3]; if(own[i] < 250) has = true; }
-  if(has){
-    log('透過済みの画像なので、その透過をそのまま使いました。');
-    return own;
+  /* **素通しを許すのは「抜き方を明示していないとき」だけ。**(§指摘22)
+     ・seg.mode==='model' … 透過済みなら44MBを取りに行く前に済ませたい
+     ・seg.auto / seg.mode==='auto' … 歩行の画像入力と静止画の「自動」(imageAlphaFor 経由)
+     白背景・色で抜く・黒背景を**人が選んだ**のなら、透過が付いていても必ず抜く。
+     ここを無条件の素通しにしていたため、選んだ抜き方が黙って捨てられ、
+     縁が半透明なだけの絵が全面前景で返っていた(af777c4 以前の挙動へ戻す)。 */
+  if(seg.mode === 'model' || seg.mode === 'auto' || seg.auto){
+    const own = ownAlphaIfTransparent(img);
+    if(own){
+      log('透過済みの画像なので、その透過をそのまま使いました。');
+      return own;
+    }
   }
   if(seg.mode === 'model'){
     try{ return await segmentModel(img, prog, seg.panel); }
@@ -1602,10 +1670,11 @@ async function resolveAlpha(img, seg, prog){
   }
   return segment(img, seg.mode, seg.th, seg.chroma);
 }
-/* 透過済みの画像はその透過をそのまま使い、そうでなければ抜く。
-   **判定は resolveAlpha が持つ**(分岐を2か所に置かない)。既存の呼び出し名を残すための入口。 */
+/* 透過済みの画像はその透過をそのまま使い、そうでなければ抜く**「自動」の入口**。
+   歩行の画像入力と静止画の「自動」がここを通る。**判定そのものは resolveAlpha が持つ**
+   (分岐を2か所に置かない)。ここは「抜き方を明示していない」という印を付けるだけ。 */
 async function imageAlphaFor(img, seg, prog){
-  return await resolveAlpha(img, seg, prog);
+  return await resolveAlpha(img, Object.assign({}, seg, { auto:true }), prog);
 }
 // {img, alpha, box} -> 切り抜いた RGBA の canvas
 function cropCanvas(cut){
@@ -2670,13 +2739,16 @@ async function makePortrait(file){
   if(pm === 'keep'){                       // 画像の透過をそのまま使う(抜かないと決めた道)
     alpha = new Uint8Array(w*h);
     for(let i=0;i<w*h;i++) alpha[i] = img.data[i*4+3];
+  }else if(pm === 'auto'){                 // 透過済みならそのまま / それ以外は歩行と同じ設定
+    /* 「自動」は**抜き方を明示していない**ので素通しの余地がある。その印を付けるのは
+       imageAlphaFor で、判定そのものは resolveAlpha が持つ(§指摘22)。 */
+    alpha = await imageAlphaFor(img, Object.assign({}, walkSeg(), { panel:'portrait' }));
   }else{
-    /* 「自動」も、静止画だけの抜き方の明示指定(モデルを含む)も、行き先は resolveAlpha。
-       透過済みの絵を素通しする判定も resolveAlpha が持っているので、
-       ここで imageAlphaFor と使い分ける必要はない(§指摘4)。 */
-    const seg = pm === 'auto' ? walkSeg()
-              : { mode:pm, th:+$('pth').value, chroma:state.chromaP };
-    alpha = await resolveAlpha(img, Object.assign({}, seg, { panel:'portrait' }));
+    /* 静止画だけの抜き方の**明示指定**(モデルもここ)。white/chroma などを選んだのなら、
+       縁が半透明の絵でも素通しにせず必ず抜く。「モデルで抜く」だけは resolveAlpha が
+       透過済みを素通しする(44MBを取りに行く前に済ませる)。 */
+    alpha = await resolveAlpha(img, { mode:pm, th:+$('pth').value,
+                                      chroma:state.chromaP, panel:'portrait' });
   }
   const b = bboxOf(alpha, w, h, 8);
   if(!b) throw new Error('被写体を検出できませんでした');
@@ -2736,6 +2808,7 @@ async function buildPortraits(){
     const pm = $('pmode').value;
     assertChroma(pm, state.chromaP);
     if(pm === 'auto') assertChroma($('mode').value, state.chroma);
+    $('portraitMeta').className = 'hint';    // 前回の失敗の赤字を残さない
     $('portraitMeta').textContent = '整えています…';
     const icon = await makePortrait(fi);
     const pf = $('imgPlayer').files[0];
@@ -2749,7 +2822,17 @@ async function buildPortraits(){
     $('portraitMeta').innerHTML = state.hue!=null
       ? `<span class="ok">整えました。色相=${state.hue} を自動で入れました。</span>`
       : '<span class="ok">整えました。</span>彩度の高い部分が少ないので、色スキンは light にしました。';
-  }catch(e){ log(String(e.message||e), 'ng'); }
+  }catch(e){
+    /* **「整えています…」のまま止めない**(§指摘27)。log だけに出していたので、
+       静止画パネルを見ている人には何が起きたのか分からなかった。歩行側(preview)と同じく
+       その場にも理由を出す。日本語へ丸めるのは modelErrorText の1か所で、
+       自前の日本語の例外(「被写体を検出できませんでした」など)はそのまま返る。
+       例外の文面をそのまま入れるので innerHTML は使わない。 */
+    const m = modelErrorText(e);
+    $('portraitMeta').textContent = m;
+    $('portraitMeta').className = 'hint ng';
+    log(m, 'ng');
+  }
 }
 
 /* ---------------------------------------------------------- 技テンプレート */

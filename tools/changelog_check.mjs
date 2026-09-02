@@ -94,7 +94,7 @@ for(const b of HISTORY.slice(0, 1)){
 /* --- 遊ぶ人に関係のない言葉 ---
    **この一覧は tools/studio_web.html の CHANGELOG_INTERNAL と二重に持っている。
    語を足す・減らすときは必ず両方直す**(studio_regress.mjs の (g) が一致を検査する)。 */
-const INTERNAL =['リファクタ', 'キャッシュ', 'CACHE_NAME', 'Service Worker', 'localStorage', 'コミット',
+const INTERNAL = ['リファクタ', 'キャッシュ', 'CACHE_NAME', 'Service Worker', 'localStorage', 'コミット',
                   'プルリク', 'リポジトリ', '関数', '変数', 'CSS', 'DOM', 'API', 'デプロイ', 'ソースコード'];
 for(const b of HISTORY){
   if(!Array.isArray(b.items)) continue;

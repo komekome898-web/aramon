@@ -117,6 +117,12 @@ const SEG_IMAGES = ['joker', 'zan_ssr', 'narga'];
 const SEG_BACKS = { black:[0,0,0], white:[255,255,255], green:[0,255,0] };
 // 検査の入力値。UI の既定値と同じである必要はない(ここは「決まった入力」であることだけが要る)
 const SEG_CASES = [['blackopen', 14], ['black', 14], ['white', 20], ['chroma', 60]];
+/* **縁が半透明の1枚**(素通しの枝を通すための入力・§指摘22)。
+   `<name>_<bg>_soft.raw` は RGB が `<name>_<bg>.raw` と1bitも同じで、アルファだけが
+   元の絵の透過を持つ。segment() はアルファを見ないので (b) のハッシュは opaque 側と一致し、
+   (b2) では「明示した抜き方は入ってきた透過に負けない」ことを見るのに使う。 */
+const SEG_SOFT_IN = { name:'joker', bg:'white' };
+const softKey = `${SEG_SOFT_IN.name}_${SEG_SOFT_IN.bg}_soft`;
 
 // PNG は python3(Pillow)にデコードさせ、RGBA の生バイトで受け取る
 function composeInputs(outDir){
@@ -130,40 +136,50 @@ for name in sys.argv[4:]:
     im = im.resize((size, size), Image.NEAREST)   # 乱数も補間の揺れも入れない
     for bg, rgb in backs.items():
         base = Image.new('RGBA', (size, size), rgb + (255,))
+        flat = Image.alpha_composite(base, im)
         with open(os.path.join(out, name + '_' + bg + '.raw'), 'wb') as f:
-            f.write(Image.alpha_composite(base, im).tobytes())
+            f.write(flat.tobytes())
+        # 縁が半透明の1枚: 色は同じまま、アルファだけ元の絵の透過を残す
+        soft = flat.copy()
+        soft.putalpha(im.getchannel('A'))
+        with open(os.path.join(out, name + '_' + bg + '_soft.raw'), 'wb') as f:
+            f.write(soft.tobytes())
 print('ok')
 `;
   const r = spawnSync('python3', ['-c', py, ROOT, outDir, String(SEG_SIZE), ...SEG_IMAGES], { encoding:'utf8' });
   if(r.status !== 0) throw new Error('python3(Pillow)で合成画像を作れませんでした: ' + (r.stderr || r.error));
 }
 
+// 1つの入力に SEG_CASES を掛けてゴールデンへ入れる(opaque 版と soft 版で同じ手順を使う)
+function segCases(out, key, raw, bg){
+  out[`${key}.input`] = sha(raw);
+  for(const [mode, th] of SEG_CASES){
+    // segment() は img.data も書き換える(デスピル)ので、毎回作り直した入れ物を渡す
+    const img = { width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) };
+    const chroma = mode === 'chroma' ? SEG_BACKS[bg] : null;
+    const alpha = S.segment(img, mode, th, chroma);
+    const box = S.bboxOf(alpha, SEG_SIZE, SEG_SIZE, 40);
+    let opaque = 0, soft = 0;
+    for(const v of alpha){ if(v === 255) opaque++; else if(v > 0) soft++; }
+    out[`${key}.${mode}`] = {
+      alpha: sha(Buffer.from(alpha.buffer, alpha.byteOffset, alpha.length)),
+      rgba:  sha(Buffer.from(img.data.buffer, img.data.byteOffset, img.data.length)),
+      opaque, soft, box,
+    };
+  }
+}
 function runSegment(){
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio_regress-'));
   const out = {};
   try {
     composeInputs(tmp);
-    for(const name of SEG_IMAGES) for(const bg of Object.keys(SEG_BACKS)){
-      const raw = fs.readFileSync(path.join(tmp, `${name}_${bg}.raw`));
-      out[`${name}_${bg}.input`] = sha(raw);
-      for(const [mode, th] of SEG_CASES){
-        // segment() は img.data も書き換える(デスピル)ので、毎回作り直した入れ物を渡す
-        const img = { width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) };
-        const chroma = mode === 'chroma' ? SEG_BACKS[bg] : null;
-        const alpha = S.segment(img, mode, th, chroma);
-        const box = S.bboxOf(alpha, SEG_SIZE, SEG_SIZE, 40);
-        let opaque = 0, soft = 0;
-        for(const v of alpha){ if(v === 255) opaque++; else if(v > 0) soft++; }
-        out[`${name}_${bg}.${mode}`] = {
-          alpha: sha(Buffer.from(alpha.buffer, alpha.byteOffset, alpha.length)),
-          rgba:  sha(Buffer.from(img.data.buffer, img.data.byteOffset, img.data.length)),
-          opaque, soft, box,
-        };
-      }
-    }
+    for(const name of SEG_IMAGES) for(const bg of Object.keys(SEG_BACKS))
+      segCases(out, `${name}_${bg}`, fs.readFileSync(path.join(tmp, `${name}_${bg}.raw`)), bg);
+    // 縁が半透明の1枚。RGB が同じなので、既存36通りと同じ結果になるのが正しい
+    segCases(out, softKey, fs.readFileSync(path.join(tmp, softKey + '.raw')), SEG_SOFT_IN.bg);
   } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
   compareJson('segment', path.join(GOLDEN, 'segment.json'), out);
-  return `${SEG_IMAGES.length}枚 × ${Object.keys(SEG_BACKS).length}背景 × ${SEG_CASES.length}通り`;
+  return `${SEG_IMAGES.length}枚 × ${Object.keys(SEG_BACKS).length}背景 × ${SEG_CASES.length}通り + 縁が半透明の1枚`;
 }
 
 /* ------------------------------------------------- (b2) モデル経路の骨組み
@@ -173,6 +189,8 @@ function runSegment(){
 async function runModel(){
   const out = {};
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio_regress-model-'));
+  const mk = raw => ({ width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) });
+  const eq = (a, b) => a.length === b.length && a.every((v,i)=> v === b[i]);
   try{
     composeInputs(tmp);
     // ① resolveAlpha に通しても JS の抜き方の出力が1bitも変わらないこと(呼び分けを1か所へ寄せた)
@@ -180,11 +198,33 @@ async function runModel(){
       const raw = fs.readFileSync(path.join(tmp, `${name}_${bg}.raw`));
       for(const [mode, th] of SEG_CASES){
         const chroma = mode === 'chroma' ? SEG_BACKS[bg] : null;
-        const a1 = S.segment({ width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) }, mode, th, chroma);
-        const a2 = await S.resolveAlpha({ width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) }, { mode, th, chroma });
-        const same = a1.length === a2.length && a1.every((v,i)=> v === a2[i]);
-        if(!same) fail('model', `resolveAlpha が segment と違う結果を返しました(${name}_${bg}.${mode})`);
+        const a1 = S.segment(mk(raw), mode, th, chroma);
+        const a2 = await S.resolveAlpha(mk(raw), { mode, th, chroma });
+        if(!eq(a1, a2)) fail('model', `resolveAlpha が segment と違う結果を返しました(${name}_${bg}.${mode})`);
+        // 透過が無い絵は「自動」(imageAlphaFor 経由)でも素通しにならず、同じ結果になる
+        const a3 = await S.resolveAlpha(mk(raw), { mode, th, chroma, auto:true });
+        if(!eq(a1, a3)) fail('model', `自動でも同じ結果になりません(${name}_${bg}.${mode})`);
       }
+    }
+    /* ② 縁が半透明の絵。**明示した抜き方は素通しに負けない**(§指摘22)。
+       ここが素通しになっていた頃は white/chroma が262144画素=全面前景で返っていた。 */
+    const rawSoft = fs.readFileSync(path.join(tmp, softKey + '.raw'));
+    const own = new Uint8Array(SEG_SIZE*SEG_SIZE);
+    let trans = 0;
+    for(let i=0;i<own.length;i++){ own[i] = rawSoft[i*4+3]; if(own[i] < 250) trans++; }
+    out.softTransparentPct = Math.round(trans/own.length*1000)/10;   // 素通しの判定を超えている入力か
+    for(const [mode, th] of SEG_CASES){
+      const chroma = mode === 'chroma' ? SEG_BACKS[SEG_SOFT_IN.bg] : null;
+      const js  = S.segment(mk(rawSoft), mode, th, chroma);
+      const got = await S.resolveAlpha(mk(rawSoft), { mode, th, chroma });
+      if(!eq(js, got))  fail('model', `縁が半透明の絵で ${mode} が素通しに負けました(明示指定は必ず抜く)`);
+      if(eq(got, own))  fail('model', `${mode} が画像の透過をそのまま返しました(明示指定は必ず抜く)`);
+    }
+    // 明示していない道(モデル・自動)だけが素通しする
+    for(const seg of [{ mode:'model' }, { mode:'auto' }, { mode:'white', auto:true }]){
+      const got = await S.resolveAlpha(mk(rawSoft), Object.assign({ th:20, chroma:null }, seg));
+      if(!eq(got, own))
+        fail('model', `${JSON.stringify(seg)} で透過済みの絵を素通ししていません(モデルへ44MBを取りに行く道)`);
     }
   } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
   /* ② keepMajor: 体から切り離された武器・尻尾を残す。
@@ -198,10 +238,18 @@ async function runModel(){
   out.keepMajor   = sum(S.keepMajor(new Uint8Array(fg), W, W, S.MODEL_KEEP_RATIO));
   if(out.keepLargest !== 36) fail('model', `keepLargest が本体だけを残していません(${out.keepLargest})`);
   if(out.keepMajor !== 40)   fail('model', `keepMajor が切り離された部分を残していません(${out.keepMajor})`);
-  // ③ 取得先とモデルの入力の大きさは1か所で持つ(検査側に写さず、読むだけ)
+  // ④ 取得先とモデルの入力の大きさは1か所で持つ(検査側に写さず、読むだけ)
   out.src = S.MODEL_SRC; out.input = S.MODEL_INPUT; out.fallback = S.MODEL_FALLBACK;
+  /* ⑤ 端末内の置き場の名前は sw.js と studio_web.html に**二重に持っている**(§指摘29)。
+     ずれると SW の activate が「知らないキャッシュ」としてモデルを消し、
+     ゲームを更新するたびに44MBを取り直すことになる。両方から抜いて突き合わせる。 */
+  const swName = (/STUDIO_MODEL_CACHE\s*=\s*'([^']+)'/.exec(fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8')) || [])[1];
+  if(swName !== S.MODEL_CACHE)
+    fail('model', `sw.js の STUDIO_MODEL_CACHE(${swName})と studio_web.html の MODEL_CACHE(${S.MODEL_CACHE})が違います`);
+  out.cache = S.MODEL_CACHE;
   compareJson('model', path.join(GOLDEN, 'model.json'), out);
-  return `resolveAlpha の一致 ${SEG_IMAGES.length*Object.keys(SEG_BACKS).length*SEG_CASES.length}通り / keepMajor`;
+  return `resolveAlpha の一致 ${SEG_IMAGES.length*Object.keys(SEG_BACKS).length*SEG_CASES.length*2}通り`
+       + ` / 縁が半透明 ${SEG_CASES.length+3}通り / keepMajor / キャッシュ名`;
 }
 
 /* ------------------------------------------------------------ (c) 周期検出 */
