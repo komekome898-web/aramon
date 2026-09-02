@@ -253,9 +253,11 @@ iPhone版はコミット時に自動で上げます。
 | `node tools/ghost_team_test.mjs` | チーム戦のゴーストが**ホストとゲストで完全に一致**するか・味方側に入らないか |
 | `node tools/fx_shot.mjs --video --moves zan:3` | **技の録画**(トレーラーの素材づくり)。コマ撮りと同じ駆動部を使い、1/fpsずつ均等に撮って mp4 にする。`--secs`(発射後の秒数)`--lead`(発射前)`--fps` `--quality` `-w -h` `--map` `--skin`。**キャンバスが3枚重なる**ので合成は page.screenshot で撮る。mp4 にするffmpegは `imageio-ffmpeg` 同梱のものを使う(PATHには無い) |
 | `node tools/team_test.mjs` | チーム戦の土台(割当・隣接スポーン・味方に当たらない・ダウン→蘇生・順位)と60体の負荷 |
-| `node tools/studio_regress.mjs` | **スタジオ(`studio_web.html`)の出力が変わっていないか** — 行生成(`monsters/specs/*.json` 全部)・背景抜き(合成画像の alpha)・周期検出。ゴールデンは `tools/_golden/`(`--update` で作り直す。`--only rows\|segment\|period` で絞る) |
-| `node tools/studio_load.mjs` | スタジオの `<script>` から node へ取り出せる関数の一覧(検査の土台。他の検査は `loadStudio()` を import して使う) |
-| `node tools/harness_test.mjs` | 技プレビュー用ハーネス — 本物の `index.html` を起動して**保存データが1件も変わらない**か・発射で弾が出るか(`--noshim` で index.html 側の `harness=1` だけで成立するかを見る) |
+| `node tools/studio_regress.mjs` | **スタジオ(`studio_web.html`)の出力が変わっていないか** — 行生成(`monsters/specs/*.json` 全部)・背景抜き(合成画像の alpha)・モデル経路(`resolveAlpha` の呼び分けと `keepMajor`)・周期検出・**往復と1項目変更**(全21体×4通り。`pickEntry`/`replaceField` で1項目だけ変えて data.js を評価し、変更行が1行だけか)・HTML属性から呼ばれる関数の定義・全技名 ⊆ `MOVE_AURA`・更新履歴の注意判定が `changelog_check.mjs` と一致するか。ゴールデンは `tools/_golden/`(`--update` で作り直す。`--only rows\|segment\|model\|period\|roundtrip\|handlers\|moveaura\|changelog` で絞る。`--diff` で往復の差分行を出す) |
+| `node tools/studio_load.mjs` | スタジオの `<script>` から node へ取り出せる関数の一覧(検査の土台。他の検査は `loadStudio()` を import して使う。`opt.extra` で「定義があるかだけ知りたい名前」を渡せる) |
+| `node tools/studio_model_test.mjs` | **モデル抜き(RMBG-1.4)のヘッドレス実証** — CDN/HF への通信を手元のファイルへ振り替えて、精度(IoU)・端末内キャッシュ(2回目は取得なし)・落ち方(取得失敗→`blackopen` へ戻る)を見る。`--all` で12枚の平均。モデルとランタイムはこのセッションの scratchpad(`ml/`)にある前提 |
+| `node tools/harness_test.mjs` | 技プレビュー用ハーネス — 本物の `index.html` を `?harness=1` で起動して**保存データが1件も変わらない**か / 技を差し替えると弾数が変わるか(burst 3→7)/ 語彙が取れるか。**既定で index.html 側の枝だけを見る**(`--shim` で検査側の差し替えも足す) |
+| `tools/fx_driver.js` | ページ側で動く駆動コード(`window.__fx`)。**`fx_shot.mjs` とスタジオの技プレビューが同じこの1本を読む。** `setup({mode:'shot'\|'preview', silent})` の1か所だけが2つの使い方の違い(rAF停止・カメラ固定・step / 音)。`postMessage` で `setup`/`override`/`fire`/`vocab`/`audio`/`hideHud` を受ける。**index.html に `<script src>` で足さないこと**(sw.js の precache に載って本番へ配られる) |
 
 ## `changelog_check.mjs`(更新履歴)
 

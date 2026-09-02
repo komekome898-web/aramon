@@ -19,12 +19,53 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<!-- ===== プレビュー用ハーネス(?harness=1)。**このページで最初に動くスクリプト。** =====
+     モンスター作成スタジオ(tools/studio_web.html)が、技の見た目を確かめるために
+     このページを iframe で開く。スタジオも本番も同じオリジンなので、**そのまま開くと
+     プレビューが本物の保存データ(aramon_*)を書き換えてしまう**(装備スキン・所持金など)。
+     そこで harness=1 のときだけ localStorage をメモリ上の入れ物へ差し替える。
+     **必ず他のどのスクリプトより前に置くこと。** 後ろに置くと、先に走ったスクリプトが
+     素の localStorage を掴んだままになり、差し替えをすり抜けて本物へ書く。
+     harness=1 が付いていないとき(=遊ぶ人の起動)は、ここは何もしない。 -->
+<script>
+(function(){
+  /* 「外へ出ない起動」の判定は**ここ1か所だけ**に置く。
+     netprobe=1(通信の計測)と harness=1(技のプレビュー)のどちらも、
+     firebase を読まず Service Worker も登録しない。読む側は下の2か所。 */
+  window.__aramonOffline = /[?&](netprobe|harness)=1/.test(location.search);
+  if(!/[?&]harness=1/.test(location.search)) return;   // 通常の起動では1文字も効かない
+  var raw = null;
+  try{ raw = window.localStorage; }catch(e){}          // 素の入れ物(差し替える前に控える)
+  var mem = new Map();
+  var shim = {
+    getItem: function(k){ k = String(k); return mem.has(k) ? mem.get(k) : null; },
+    setItem: function(k, v){ mem.set(String(k), String(v)); },
+    removeItem: function(k){ mem.delete(String(k)); },
+    clear: function(){ mem.clear(); },
+    key: function(i){ var a = Array.from(mem.keys()); return i in a ? a[i] : null; },
+    get length(){ return mem.size; },
+  };
+  try{ Object.defineProperty(window, 'localStorage', { value: shim, configurable:true }); }
+  catch(e){ window.__harnessShimFailed = String(e); }
+  window.__harnessShim = true;
+  /* 効いたかを自分で確かめる(Safari で defineProperty が通らない場合の保険)。
+     シムへ書いた鍵が素の入れ物に見えなければ、本物の保存データは守られている。
+     スタジオはこの値が false ならプレビューを開かない。 */
+  var probe = '__harness_probe__';
+  try{
+    window.localStorage.setItem(probe, '1');
+    window.__harnessOk = !!raw && raw.getItem(probe) === null;
+    window.localStorage.removeItem(probe);
+  }catch(e){ window.__harnessOk = false; }
+})();
+</script>
 <!-- 計測ハーネス(tools/net_probe.html)は ?netprobe=1 付きで開く。その時だけfirebase.jsを読み込まず、
-     親ページが注入する window.__aramon* スタブ(ローカルバス)が通信の橋を担う。通常時は従来どおり。 -->
+     親ページが注入する window.__aramon* スタブ(ローカルバス)が通信の橋を担う。通常時は従来どおり。
+     技プレビュー(?harness=1)でも同じく外へ出ない(通信も更新も要らない)。 -->
 <script type="module">
 // 読み込み失敗はcatchで握る(Firebaseへ届かない環境=オフライン/開発でも
 // 未処理拒否をコンソールへ出さずソロで遊べる。従来のstatic読み込みと同じ扱い)
-if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{});
+if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 </script>
 </head>
 <body>
@@ -1890,8 +1931,9 @@ if(!/[?&]netprobe=1/.test(location.search)) import('./firebase.js').catch(()=>{}
   }).catch(()=>{});
 </script>
 <script>
-  // ?netprobe=1(計測ハーネス)の時はService Workerを登録しない(SWのキャッシュが計測に混ざるのを防ぐ)
-  if('serviceWorker' in navigator && !/[?&]netprobe=1/.test(location.search)){
+  // 計測ハーネス(?netprobe=1)と技プレビュー(?harness=1)ではService Workerを登録しない
+  // (SWのキャッシュが計測に混ざる/プレビューが古い版を掴むのを防ぐ。判定は先頭の1か所)
+  if('serviceWorker' in navigator && !window.__aramonOffline){
     /* ===== 更新は「試合中でないとき」に黙って済ませる =====
        **プレイヤーに何も押させない。** 防ぎたいのは「試合中に予告なく読み込み直される」ことだけで、
        ロビーや各画面では今までどおり自動で新しくなる。

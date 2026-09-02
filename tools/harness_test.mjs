@@ -1,21 +1,23 @@
 /* 技プレビュー用ハーネスの成立確認(開発用・ゲームには読み込まない)。
 
-   何を見るか(設計仕様 §4 C1・§7):
+   何を見るか(設計仕様 §4 C1 / §11 [28][35]・§7):
      ① 本物の index.html を、localStorage を差し替えた状態で起動できるか
      ② 起動〜試合開始〜発射まで進めても、**本物の保存データが1件も変わらない**か
      ③ rAF を止めずに(=動くプレビューとして)技が撃てるか — 弾が出る
+     ④ スタジオと同じ道(fx_driver.js への postMessage)で技を差し替えられるか
+        — zan の tier3 を burst:3 / burst:7 にして撃つと、返事の spawned が 3 / 7 になる
 
    使い方:
-     node tools/harness_test.mjs              addInitScript で localStorage を差し替えて検査
-     node tools/harness_test.mjs --noshim     差し替えを入れずに検査(index.html 側の harness=1 を見る)
+     node tools/harness_test.mjs              index.html 側の harness=1 だけで検査(既定)
+     node tools/harness_test.mjs --noshim     同上(既定と同じ。旧い呼び方)
+     node tools/harness_test.mjs --shim       addInitScript でも差し替えを入れて検査
      node tools/harness_test.mjs --shot <png> 撮った画面を保存する
      node tools/harness_test.mjs --json       生の測定値も出す
 
-   --noshim について:
-     いまは差し替えをこのファイルの addInitScript が入れている。将来 index.html の
-     最初の <script> より前に harness=1 の枝が入ったら、addInitScript は要らなくなる。
-     その日に「本体側だけで成立しているか」を確かめるための経路が --noshim。
-     本体側にまだ枝が無いうちは②が落ちる(それが正しい結果)。                        */
+   既定が「本体側だけ」なのはなぜか(§11 [35]):
+     実機(iPhone Safari)で効くのは index.html の先頭インラインスクリプトであって、
+     検査ツールが注入する差し替えではない。**検査は本番と同じものを通す。**
+     --shim は「本体側が壊れたときに、検査の道具側が生きているか」を切り分ける用。   */
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -28,9 +30,17 @@ const ROOT = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
 const opt  = (n, d)=>{ const i = args.indexOf('--'+n); return i>=0 && args[i+1] && !args[i+1].startsWith('--') ? args[i+1] : d; };
 const flag = n => args.includes('--'+n);
-const NOSHIM = flag('noshim');
+/* 既定は入れない(本体側の harness=1 だけを見る)。--noshim はその既定の別名で、
+   付けても外しても同じ ―― 昔の呼び方が黙って別の意味にならないように受けておく。 */
+const SHIM   = flag('shim') && !flag('noshim');
 const SHOT   = opt('shot', null);
 const EXEC   = opt('chromium', process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium');
+
+/* 検査で使う技。**data.js の値を当てにしない**(バランス調整で変わるため)。
+   burst をこちらから2通り与えて、差し替えが効いたかを弾の本数で見る。 */
+const TEST_EL   = 'zan';
+const TEST_TIER = 3;
+const BURSTS    = [3, 7];
 
 // playwright の探し方は fx_shot.mjs と同じ
 let chromium = null;
@@ -56,7 +66,9 @@ const server = http.createServer((req, res)=>{
 await new Promise(r=> server.listen(0, '127.0.0.1', r));
 const ORIGIN = `http://127.0.0.1:${server.address().port}`;
 
-const browser = await chromium.launch({ executablePath: EXEC, args:['--no-sandbox','--use-gl=swiftshader'] });
+const browser = await chromium.launch({
+  executablePath: EXEC,
+  args:['--no-sandbox','--use-gl=swiftshader','--mute-audio'] });
 const ctx = await browser.newContext({ viewport:{ width:1280, height:720 } });
 const page = await ctx.newPage();
 const errors = [];
@@ -72,9 +84,9 @@ await page.evaluate(()=>{
 const dump = ()=> JSON.stringify(Object.fromEntries(Object.keys(localStorage).sort().map(k=>[k, localStorage.getItem(k)])));
 const before = await page.evaluate(dump);
 
-/* ハーネス本体: 最初のスクリプトより前で localStorage をメモリ上の入れ物へ差し替える。
-   --noshim ではこれを入れない(index.html 側の harness=1 の枝だけで成立するかを見る)。 */
-if(!NOSHIM){
+/* --shim: 検査の道具側でも差し替えを入れる(既定では入れない)。
+   本体側と二重になるが、後から入るこちらは何もしない(既に差し替わっている)。 */
+if(SHIM){
   await page.addInitScript(()=>{
     if(!/[?&]harness=1/.test(location.search)) return;
     const mem = new Map();
@@ -92,38 +104,68 @@ if(!NOSHIM){
   });
 }
 
-await page.goto(`${ORIGIN}/index.html?netprobe=1&harness=1`, { waitUntil:'load' });
+/* **harness=1 だけで開く**(netprobe=1 は付けない)。
+   これで「harness=1 でも firebase を読まず Service Worker も登録しない」ことまで一緒に見る。 */
+await page.goto(`${ORIGIN}/index.html?harness=1`, { waitUntil:'load' });
 await page.waitForTimeout(1500);
 // 差し替えが効いていれば、退避しておいた鍵はページ側から見えない
 const shim = await page.evaluate(()=> ({
   installed: !!window.__harnessShim,
+  ok: window.__harnessOk === true,
   failed: window.__harnessShimFailed || null,
   markerHidden: localStorage.getItem('aramon_probe_marker') === null,
+  offline: window.__aramonOffline === true,
+  sw: navigator.serviceWorker ? navigator.serviceWorker.controller !== undefined : null,
 }));
 
-// ゲームを進める: 属性を選び、試合を始め、技を撃つ(fx_shot と同じ関数を直接呼ぶ。rAF は止めない)
-const ran = await page.evaluate(async ()=>{
-  const out = {};
+/* スタジオとまったく同じ駆動コードを注入する(コピーを持たない)。 */
+const DRIVER = fs.readFileSync(path.join(__dirname, 'fx_driver.js'), 'utf8');
+await page.evaluate(DRIVER);
+await page.waitForFunction(()=> window.__fx && window.__fx.ready(), null, { timeout:30000 }).catch(()=>{});
+
+/* ゲームを進めて技を撃つ。**スタジオが使う道(postMessage)をそのまま通す** ――
+   検査だけ別経路にすると、受け口が壊れていても合格してしまう。 */
+const ran = await page.evaluate(async (a)=>{
+  const out = { fires:[] };
   out.fns = ['startGame','update','render','fireMove','createMonster'].map(n=> typeof window[n]);
+  // driver の postMessage 受け口へ投げて返事を待つ(スタジオ側と同じ手順)
+  let seq = 0;
+  const ask = (msg, ms)=> new Promise((res, rej)=>{
+    const id = 'h' + (++seq);
+    const to = setTimeout(()=>{ window.removeEventListener('message', on); rej(new Error(msg.cmd+' の返事がありません')); }, ms || 15000);
+    function on(ev){
+      const d = ev.data;
+      if(!d || !d.__fx || d.id !== id) return;
+      clearTimeout(to); window.removeEventListener('message', on);
+      d.ok ? res(d.result) : rej(new Error(d.error));
+    }
+    window.addEventListener('message', on);
+    window.postMessage(Object.assign({ id }, msg), '*');
+  });
   try{
-    game.selectedElement = 'zan'; game.selectedMastermonKey = null;
-    game.selectedMap = 'wild'; game.realMapMode = false;
-    startGame({});
-    await new Promise(r=> setTimeout(r, 1200));
-    const me = entities.find(e=>e.isPlayer);
-    out.player = !!me;
-    // 撃つ側の技をその場で差し替える(保存していない編集をプレビューする経路)
-    SIGNATURE_MOVES.zan[2].burst = 15;
-    me.moveTierSelected = 3; me.moveTierUnlocked = 3; me.guts = me.maxGuts; me.fireCooldown = 0;
-    const mv = activeMove(me);
-    const n0 = projectiles.length;
-    fireMove(me, { x: me.x + Math.cos(me.facingAngle)*2000, y: me.y + Math.sin(me.facingAngle)*2000 }, mv);
-    await new Promise(r=> setTimeout(r, 900));
-    out.projectilesSpawned = projectiles.length - n0;
+    /* mode:'preview' = rAF を止めない・カメラを固定しない・step() を使わない。
+       silent は検査では true(ヘッドレスで音は無意味。スタジオは false で本物を鳴らす)。 */
+    out.setup = await ask({ cmd:'setup', element:a.el, mapKey:'wild', mode:'preview',
+                            silent:true, seed:20260902, view:'front' }, 30000);
+    out.vocab = await ask({ cmd:'vocab' }, 20000);
+    await new Promise(r=> setTimeout(r, 800));
+    out.player = !!(entities.find(e=> e.isPlayer));
+    // 素の3技を土台に、tier3 の burst だけを差し替えて撃つ(2通り)
+    const base = JSON.parse(JSON.stringify(SIGNATURE_MOVES[a.el]));
+    for(const b of a.bursts){
+      const moves = JSON.parse(JSON.stringify(base));
+      moves[a.tier-1].burst = b;
+      await ask({ cmd:'override', element:a.el, moves });
+      // 直前の弾を消して数えやすくする(spawned は「撃った直後の総数」なので)
+      projectiles.length = 0;
+      const r = await ask({ cmd:'fire', tier:a.tier });
+      out.fires.push({ burst:b, spawned:r.spawned, added:r.added, name:r.name, style:r.style });
+      await new Promise(r2=> setTimeout(r2, 400));
+    }
     out.matchTime = +matchTime.toFixed(2);
-  }catch(e){ out.error = String(e).slice(0, 200); }
+  }catch(e){ out.error = String(e && e.message || e).slice(0, 300); }
   return out;
-});
+}, { el:TEST_EL, tier:TEST_TIER, bursts:BURSTS });
 if(SHOT) await page.screenshot({ path: SHOT });
 
 // 本物の localStorage が変わっていないか(別ページで素の状態を読む)
@@ -135,21 +177,28 @@ await browser.close(); server.close();
 /* ------------------------------------------------------------ 合否 */
 const A = JSON.parse(before), B = JSON.parse(after);
 const changed = [...new Set([...Object.keys(A), ...Object.keys(B)])].filter(k => A[k] !== B[k]);
+const fired = ran.fires || [];
+const burstOk = fired.length === BURSTS.length && fired.every((f, i)=> f.spawned === BURSTS[i]);
+const vocab = ran.vocab || {};
 const checks = [
   ['① 起動できた', ran.player === true && !ran.error, ran.error || (ran.player ? '' : 'プレイヤーが出ませんでした')],
   ['② 保存データ不変', changed.length === 0, changed.length ? '変わった鍵: ' + changed.join(', ') : ''],
-  ['③ 発射で弾が出た', (ran.projectilesSpawned || 0) > 0, `出た弾: ${ran.projectilesSpawned}`],
+  ['③ 差し替えが効いている', shim.ok && shim.markerHidden,
+    shim.ok ? (shim.markerHidden ? '' : 'ページから本物の鍵が見えます') : '__harnessOk が false'],
+  ['④ 技の差し替えが弾数に出た', burstOk,
+    fired.length ? fired.map(f=> `burst${f.burst}→${f.spawned}発`).join(' / ') : '撃てませんでした'],
+  ['⑤ 語彙が取れた', (vocab.projStyles||[]).length > 0 && (vocab.aoeStyles||[]).length > 0,
+    `弾の形 ${(vocab.projStyles||[]).length} / 範囲の形 ${(vocab.aoeStyles||[]).length} / SE ${(vocab.seStyles||[]).length}` +
+    ` / 版 ${vocab.cacheName || '(取れず)'}`],
 ];
-console.log(`ハーネス検査(${NOSHIM ? '--noshim: index.html 側の harness=1 を見る' : 'addInitScript で差し替え'})`);
-console.log(`  localStorage の差し替え: ${shim.installed ? '入れた' : '入れていない'}` +
-            `${shim.failed ? ' / 失敗: ' + shim.failed : ''} / ページから本物が見える: ${shim.markerHidden ? 'いいえ' : 'はい'}`);
+console.log(`ハーネス検査(${SHIM ? '--shim: 検査側でも差し替え' : 'index.html の harness=1 だけ'})`);
+console.log(`  差し替え: ${shim.installed ? '入った' : '入っていない'}` +
+            `${shim.failed ? ' / 失敗: ' + shim.failed : ''}` +
+            ` / __harnessOk: ${shim.ok} / 外へ出ない起動: ${shim.offline}`);
+if(fired.length) console.log('  撃った技: ' + fired.map(f=> `${f.name}(${f.style}) burst${f.burst}→${f.spawned}発`).join(' / '));
 for(const [name, ok, note] of checks) console.log(`  ${ok ? '合格' : '不合格'} ${name}${note ? ' — ' + note : ''}`);
 if(errors.length) console.log('  ページの例外: ' + errors.slice(0, 5).join(' / '));
 if(flag('json')) console.log(JSON.stringify({ shim, ran, changed, errors: errors.slice(0, 5) }, null, 1));
 const ng = checks.filter(c => !c[1]);
-if(ng.length){
-  if(NOSHIM && changed.length)
-    console.log('  ※ --noshim は index.html 側に harness=1 の枝が入るまで②が落ちます(想定どおり)');
-  process.exit(1);
-}
+if(ng.length) process.exit(1);
 console.log('  すべて合格');

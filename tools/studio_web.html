@@ -68,6 +68,14 @@
     border:1px solid var(--line); color:var(--dim); }
   .badge.on{ color:var(--ok); border-color:var(--ok); }
   .movebox{ border:1px solid var(--line); border-radius:9px; padding:9px; margin-top:9px; }
+  /* 技の細かい数字は畳んでおく。開いたときだけ縦に伸びる(iPhoneで一覧性を保つため) */
+  .mvmore{ margin-top:8px; }
+  .mvmore summary{ font-size:11.5px; color:var(--amber); cursor:pointer; padding:3px 0; }
+  .mvmore .r3 label,.mvmore .r2 label{ margin-top:7px; }
+  /* プレビューは画面の幅いっぱい・16:9。iframe の中はゲームそのもの */
+  .fxhost{ margin-top:9px; }
+  .fxhost iframe{ width:100%; aspect-ratio:16/9; border:1px solid var(--line);
+    border-radius:8px; background:#05070c; display:block; }
   .step{ display:inline-block; width:19px; height:19px; line-height:19px; text-align:center;
     border-radius:50%; background:var(--amber); color:#1a1a1a; font-size:11px; font-weight:700;
     margin-right:6px; }
@@ -514,24 +522,120 @@
 <!-- ============================================================ 6. 技 -->
 <div class="panel" id="movePanel">
   <h2><span class="step">6</span>技</h2>
+  <div class="hint">
+    数字の欄は<b>空にしておくと形(テンプレート)の値のまま</b>です。薄い字がその値なので、
+    変えたいものだけ書いてください。単位はゲーム内と同じ(クールタイムと連射の間は秒、広がりはラジアン)。
+  </div>
+
   <div class="movebox">
     <div class="r2">
       <div><label>tier1 技名</label><input id="m0_name"></div>
       <div><label>弾</label><select id="m0_icon"></select></div>
     </div>
+    <details class="mvmore">
+      <summary>tier1 の細かい調整</summary>
+      <div class="r3">
+        <div><label>威力</label><input id="m0_dmg" inputmode="decimal"></div>
+        <div><label>射程</label><input id="m0_range" inputmode="decimal"></div>
+        <div><label>弾速</label><input id="m0_projSpeed" inputmode="decimal"></div>
+        <div><label>クールタイム</label><input id="m0_cooldown" inputmode="decimal"></div>
+        <div><label>消費ガッツ</label><input id="m0_gutsCost" inputmode="decimal"></div>
+        <div><label>当たり半径</label><input id="m0_hitR" inputmode="decimal"></div>
+        <div><label>爆風半径</label><input id="m0_splash" inputmode="decimal"></div>
+      </div>
+      <label>エフェクト色(空=モンスターの色)</label>
+      <div class="cpick"><input type="color" id="m0_colorSw"><input id="m0_color" placeholder="#rrggbb"></div>
+      <label>SE</label><select id="m0_seStyle"></select>
+    </details>
   </div>
+
   <div class="movebox">
     <div class="r2">
       <div><label>tier2 技名(連射)</label><input id="m1_name"></div>
       <div><label>弾</label><select id="m1_icon"></select></div>
     </div>
+    <details class="mvmore">
+      <summary>tier2 の細かい調整</summary>
+      <div class="r3">
+        <div><label>威力</label><input id="m1_dmg" inputmode="decimal"></div>
+        <div><label>射程</label><input id="m1_range" inputmode="decimal"></div>
+        <div><label>弾速</label><input id="m1_projSpeed" inputmode="decimal"></div>
+        <div><label>クールタイム</label><input id="m1_cooldown" inputmode="decimal"></div>
+        <div><label>消費ガッツ</label><input id="m1_gutsCost" inputmode="decimal"></div>
+        <div><label>当たり半径</label><input id="m1_hitR" inputmode="decimal"></div>
+        <div><label>連射数</label><input id="m1_burst" inputmode="decimal"></div>
+        <div><label>連射の間</label><input id="m1_burstGap" inputmode="decimal"></div>
+        <div><label>広がり</label><input id="m1_burstSpread" inputmode="decimal"></div>
+      </div>
+      <label>広がりをばらつかせる</label><select id="m1_burstSpreadRandom"></select>
+      <label>エフェクト色(空=モンスターの色)</label>
+      <div class="cpick"><input type="color" id="m1_colorSw"><input id="m1_color" placeholder="#rrggbb"></div>
+      <label>SE</label><select id="m1_seStyle"></select>
+    </details>
   </div>
+
   <div class="movebox">
     <div class="r2">
       <div><label>tier3 技名</label><input id="m2_name"></div>
       <div><label>形</label><select id="m2_tpl"></select></div>
     </div>
     <div class="hint" id="tplHint"></div>
+    <details class="mvmore">
+      <summary>tier3 の細かい調整</summary>
+      <div class="r2">
+        <div><label>弾の見た目(projStyle)</label><select id="m2_projStyle"></select></div>
+        <div><label>範囲の見た目(aoeStyle)</label><select id="m2_aoeStyle"></select></div>
+      </div>
+      <div class="r3">
+        <div><label>威力</label><input id="m2_dmg" inputmode="decimal"></div>
+        <div><label>射程</label><input id="m2_range" inputmode="decimal"></div>
+        <div><label>弾速</label><input id="m2_projSpeed" inputmode="decimal"></div>
+        <div><label>クールタイム</label><input id="m2_cooldown" inputmode="decimal"></div>
+        <div><label>消費ガッツ</label><input id="m2_gutsCost" inputmode="decimal"></div>
+        <div><label>当たり半径</label><input id="m2_hitR" inputmode="decimal"></div>
+        <div><label>連射数</label><input id="m2_burst" inputmode="decimal"></div>
+        <div><label>連射の間</label><input id="m2_burstGap" inputmode="decimal"></div>
+        <div><label>広がり</label><input id="m2_burstSpread" inputmode="decimal"></div>
+        <div><label>方向の本数</label><input id="m2_burstDirs" inputmode="decimal"></div>
+        <div><label>方向の広がり</label><input id="m2_burstDirSpread" inputmode="decimal"></div>
+        <div><label>弾の絵の大きさ</label><input id="m2_projVisR" inputmode="decimal"></div>
+        <div><label>爆風の半径</label><input id="m2_blastRadius" inputmode="decimal"></div>
+        <div><label>爆風の威力</label><input id="m2_blastDmg" inputmode="decimal"></div>
+      </div>
+      <div class="r2">
+        <div><label>広がりをばらつかせる</label><select id="m2_burstSpreadRandom"></select></div>
+        <div><label>飛ぶほど大きくなる</label><select id="m2_growWithDistance"></select></div>
+      </div>
+      <label>エフェクト色(空=差し色)</label>
+      <div class="cpick"><input type="color" id="m2_colorSw"><input id="m2_color" placeholder="#rrggbb"></div>
+      <label>SE</label><select id="m2_seStyle"></select>
+    </details>
+  </div>
+
+  <!-- ---- 本物の描画で撃ってみる(ゲーム本体を読み込んだプレビュー) ---- -->
+  <div class="movebox" id="fxPreviewBox">
+    <div class="r3">
+      <div><label>撃つ段</label><select id="fx_tier">
+        <option value="1">tier1</option><option value="2">tier2</option><option value="3" selected>tier3</option>
+      </select></div>
+      <div><label>マップ</label><select id="fx_map">
+        <option value="wild">荒野</option><option value="wild_real">リアル</option>
+      </select></div>
+      <div><label>向き</label><select id="fx_view">
+        <option value="front">正面</option><option value="side">真横</option>
+      </select></div>
+    </div>
+    <div class="btns">
+      <button class="primary" id="fxOpenBtn" onclick="openFxPreview()">撃ってみる</button>
+      <button id="fxSoundBtn" onclick="fxUnlockAudio()" disabled>🔊 音を出す</button>
+      <button id="fxCloseBtn" onclick="closeFxPreview()" disabled>プレビューを閉じる</button>
+    </div>
+    <div class="hint" id="fxStat">ゲーム本体をそのまま読み込んで、いまの数字で技を撃ちます(3秒ごとに撃ち直し)。</div>
+    <div id="fxHost" class="fxhost"></div>
+    <div class="hint">
+      音が鳴らないときは<b>「🔊 音を出す」を押す</b>か、プレビューの絵を1回タップしてください
+      (iPhone は画面を触った流れの中でしか音を出せません)。
+    </div>
   </div>
 </div>
 
@@ -2474,8 +2578,12 @@ function jsValue(v){
   if(typeof v === 'string') return jsStr(v);
   return jsNum(v);
 }
+/* 技オブジェクトのキーを書き出す順番。**ここに無いキーは後ろへ回るだけで、消えはしない。**
+   burstSpreadRandom / burstDirs / burstDirSpread / projVisR は技パネルから触れるようにしたぶん。
+   既存の spec(これらのキーを持たない)では `k in mv` が false になるので出力は変わらない。 */
 const JS_ORDER = ['name','tier','color','range','dmg','cooldown','gutsCost','projSpeed','hitR','hitW',
-  'splash','burst','burstGap','burstSpread','icon','shape','projStyle','aoeShape','aoeStyle','rectWidth',
+  'splash','burst','burstGap','burstSpread','burstSpreadRandom','burstDirs','burstDirSpread',
+  'icon','shape','projStyle','projVisR','aoeShape','aoeStyle','rectWidth',
   'beamWidth','zigzagWidth','fanAngleDeg','beamCount','beamSpreadDeg','seStyle','growWithDistance',
   'gutsDrainRatio','melee','blast'];
 function jsMove(mv){
@@ -2508,6 +2616,359 @@ function buildMoves(spec){
   }
   return out;
 }
+
+/* ---------------------------------------------------------- 技パネル(段ごとの調整)
+   決まりごと:
+   ・**既定値はテンプレート(MOVE_T1 / MOVE_T2 / TIER3)だけが持つ。** 画面には薄字(placeholder)で
+     出すだけで、入力欄には入れない。空欄 = 「テンプレートのまま」。
+     こうしておくと、何も触らなかったときの spec.moves が今までとまったく同じ形になり、
+     出来上がる行も1文字も変わらない(回帰検査で守っている所)。
+   ・下の3つの表へ1行足せば、入力欄(HTML側の id)さえ用意すれば読み書きがつながる。 */
+// 段によらず共通の数字(id は m<段>_<キー>)
+const MOVE_NUM_COMMON = ['dmg','range','projSpeed','cooldown','gutsCost','hitR'];
+// 段ごとの数字
+const MOVE_NUM_TIER = {
+  0: ['splash'],
+  1: ['burst','burstGap','burstSpread'],
+  2: ['burst','burstGap','burstSpread','burstDirs','burstDirSpread','projVisR'],
+};
+// 段ごとの「する/しない」(空欄=テンプレートのまま の3択にする)
+const MOVE_BOOL_TIER = { 0: [], 1: ['burstSpreadRandom'], 2: ['burstSpreadRandom','growWithDistance'] };
+// 爆風だけは入れ子(blast:{radius,dmg})。id は m2_blastRadius / m2_blastDmg
+const MOVE_BLAST_TIER = 2;
+
+/* その段の「テンプレートの中身」。buildMoves が土台にするものと**同じ作り方**にする
+   (ここで別の既定値を書くと、画面の薄字と実際に焼かれる値がずれる)。 */
+function moveBaseFor(i){
+  if(i === 0) return Object.assign({}, MOVE_T1);
+  if(i === 1) return Object.assign({}, MOVE_T2);
+  const t = TIER3[$('m2_tpl') ? $('m2_tpl').value : ''];
+  return t ? JSON.parse(JSON.stringify(t)) : {};
+}
+function moveNumKeys(i){ return MOVE_NUM_COMMON.concat(MOVE_NUM_TIER[i] || []); }
+function moveField(i, key){ return $('m' + i + '_' + key); }
+
+/* 入力欄の薄字(既定)を、いまのテンプレートから貼り直す。
+   tier3 は「形」を変えると既定が丸ごと変わるので、そのたびに呼ぶ。 */
+function refreshMoveDefaults(){
+  for(let i = 0; i < 3; i++){
+    const base = moveBaseFor(i);
+    for(const k of moveNumKeys(i)){
+      const el = moveField(i, k);
+      if(el) el.placeholder = (base[k] == null) ? '(無し)' : String(base[k]);
+    }
+    for(const k of (MOVE_BOOL_TIER[i] || [])){
+      const el = moveField(i, k);
+      if(el) el.innerHTML = boolOptionsHtml(base[k]);
+    }
+    if(i === MOVE_BLAST_TIER){
+      const b = base.blast || {};
+      if($('m2_blastRadius')) $('m2_blastRadius').placeholder = b.radius == null ? '(無し)' : String(b.radius);
+      if($('m2_blastDmg'))    $('m2_blastDmg').placeholder    = b.dmg    == null ? '(無し)' : String(b.dmg);
+    }
+  }
+}
+// 「する/しない」の3択。1つ目が「テンプレートのまま」で、その中身を括弧で見せる
+function boolOptionsHtml(def){
+  const now = def ? 'する' : 'しない';
+  return `<option value="">テンプレートのまま(${now})</option>` +
+         `<option value="1">する</option><option value="0">しない</option>`;
+}
+// 数字の欄。空なら null(=触っていない)。数字として読めなければ null
+function moveNumValue(i, key){
+  const el = moveField(i, key);
+  if(!el) return null;
+  const v = el.value.trim();
+  if(!v) return null;
+  const n = numExpr(v);
+  return (n == null || isNaN(n)) ? null : n;
+}
+/* その段で**実際に触られた項目だけ**を集める。触っていない項目は入れない
+   (入れると spec が今までと変わり、行の並びが動く恐れがある)。 */
+function collectMoveEdits(i){
+  const out = {};
+  const base = moveBaseFor(i);
+  for(const k of moveNumKeys(i)){
+    const n = moveNumValue(i, k);
+    if(n != null && n !== base[k]) out[k] = n;
+  }
+  for(const k of (MOVE_BOOL_TIER[i] || [])){
+    const el = moveField(i, k);
+    if(!el || !el.value) continue;
+    const b = (el.value === '1');
+    if(b !== !!base[k]) out[k] = b;
+  }
+  /* 爆風は「テンプレートの爆風 + 触った所」。丸ごと置き換えると expandTime が消える。
+     **半径と威力は両方そろえる。** 半径だけ書くと spawnGroundBlast の既定で
+     威力0の爆風になり、「爆風を足したのに何も起きない」と見える(音も光も出るので気づけない)。
+     テンプレートに爆風が無いときは、その技の威力を爆風の威力にする。 */
+  if(i === MOVE_BLAST_TIER){
+    const r = moveNumValue(i, 'blastRadius'), d = moveNumValue(i, 'blastDmg');
+    if(r != null || d != null){
+      const b = Object.assign({}, base.blast || {});
+      if(r != null) b.radius = r;
+      if(d != null) b.dmg = d;
+      if(b.radius != null){                                // 半径が無ければ爆風にならない
+        if(b.dmg == null) b.dmg = (out.dmg != null) ? out.dmg : base.dmg;
+        out.blast = b;
+      }
+    }
+  }
+  // 見た目とSE。空(=「テンプレートのまま」)なら入れない
+  for(const k of ['projStyle','aoeStyle','seStyle']){
+    const el = moveField(i, k);
+    if(el && el.value && el.value !== base[k]) out[k] = el.value;
+  }
+  const col = moveField(i, 'color');
+  if(col && /^#[0-9a-fA-F]{6}$/.test(col.value.trim())) out.color = col.value.trim().toLowerCase();
+  return out;
+}
+
+/* ---------------------------------------------------------- 語彙(ゲームから貰う)
+   弾・範囲の見た目とSEの一覧は**ゲーム本体が正**。プレビューを1度開くと
+   driver が同じ実行環境で集めて送ってくる(const は window に出ないのでこの道しかない)。
+   届く前は、このツールが既に持っているテンプレートの値だけで動かす。 */
+const fxVocab = { projStyles:null, aoeStyles:null, seStyles:null, seLabels:null, cacheName:null };
+function vocabFallback(){
+  const proj = [], aoe = [];
+  for(const k of Object.keys(TIER3)){
+    if(TIER3[k].projStyle) proj.push(TIER3[k].projStyle);
+    if(TIER3[k].aoeStyle)  aoe.push(TIER3[k].aoeStyle);
+  }
+  const uniq = a => Array.from(new Set(a)).sort();
+  // SEの一覧はツール側に持っていない(持つと data.js と二重になる)。プレビューを開くと埋まる
+  return { projStyles: uniq(proj), aoeStyles: uniq(aoe), seStyles: [] };
+}
+function fillVocabSelects(){
+  const fb = vocabFallback();
+  const list = (k, keep) => (fxVocab[k] && fxVocab[k].length ? fxVocab[k] : fb[k]);
+  const opt = (el, values, head, labels)=>{
+    if(!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">${head}</option>` + values.map(v=>{
+      const jp = labels && labels[v] ? ` — ${labels[v]}` : '';
+      return `<option value="${v}">${v}${jp}</option>`;
+    }).join('');
+    if(cur && values.indexOf(cur) >= 0) el.value = cur;   // 選び直しで消えないように
+  };
+  opt($('m2_projStyle'), list('projStyles'), 'テンプレートのまま');
+  opt($('m2_aoeStyle'),  list('aoeStyles'),  'テンプレートのまま');
+  for(let i = 0; i < 3; i++)
+    opt(moveField(i, 'seStyle'), list('seStyles'), '自動(形から決まる)', fxVocab.seLabels);
+}
+
+/* ---------------------------------------------------------- 本物の描画でプレビュー
+   ゲーム本体(../index.html)を iframe で読み込み、いま画面に入っている技を
+   その中の SIGNATURE_MOVES へ差し替えて撃たせる。**絵はゲームそのもの。**
+
+   保存データを守る仕掛けは二段構え(設計仕様 §4 C1・§11 [20][21][35]):
+     一段目 index.html の `?harness=1` が localStorage をメモリへ差し替える(本命)。
+     二段目 開く前に `aramon_*` を IndexedDB へ退避し、閉じたら戻す(Safari で
+            差し替えが効かなかったときの保険)。効いていれば戻しても何も変わらない。
+   さらに、開いた直後に iframe 側の `__harnessOk` を確かめ、false なら**何もせず閉じる**。 */
+const FX_DB = 'aramon_studio_preview';   // 退避先(IndexedDB)
+const FX_STORE = 'backup';
+const FX_BACKUP_KEY = 'localStorage';    // 退避した中身
+const FX_MARK_KEY = 'previewing';        // 「プレビュー中」の印。次回起動時にこれがあれば戻す
+const FX_FIRE_MS = 3000;                 // 撃ち直す間隔
+const fxPreview = { frame:null, timer:null, seq:0, before:null, open:false };
+
+function fxIdb(){
+  return new Promise((res, rej)=>{
+    const r = indexedDB.open(FX_DB, 1);
+    r.onupgradeneeded = ()=> r.result.createObjectStore(FX_STORE);
+    r.onsuccess = ()=> res(r.result);
+    r.onerror   = ()=> rej(r.error);
+  });
+}
+function fxIdbDo(mode, fn){
+  return fxIdb().then(db => new Promise((res, rej)=>{
+    const t = db.transaction(FX_STORE, mode);
+    let out;
+    const req = fn(t.objectStore(FX_STORE));
+    if(req) req.onsuccess = ()=> { out = req.result; };
+    t.oncomplete = ()=> { db.close(); res(out); };
+    t.onerror = ()=> { db.close(); rej(t.error); };
+  }));
+}
+const fxIdbPut = (k, v)=> fxIdbDo('readwrite', s=> s.put(v, k));
+const fxIdbGet = k     => fxIdbDo('readonly',  s=> s.get(k));
+const fxIdbDel = k     => fxIdbDo('readwrite', s=> s.delete(k));
+
+/* いまの保存データ(ゲームの鍵だけ)。**`aramon_gh_*`(GitHubのトークン)は触らない。**
+   退避にも比較にも同じこの関数を使う ―― 対象の決め方を2か所に書かないため。 */
+function fxStorageSnapshot(){
+  const out = {};
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf('aramon_') !== 0 || k.indexOf('aramon_gh_') === 0) continue;
+    out[k] = localStorage.getItem(k);
+  }
+  return out;
+}
+function fxRestoreSnapshot(snap){
+  // いまある鍵のうち、退避に無いもの(プレビューが増やしたもの)を消してから戻す
+  for(const k of Object.keys(fxStorageSnapshot())) if(!(k in snap)) localStorage.removeItem(k);
+  for(const k of Object.keys(snap)) localStorage.setItem(k, snap[k]);
+}
+/* 起動時: 前回プレビュー中に閉じられていたら(タブごと落ちた等)保存データを戻す。 */
+async function fxRestoreIfLeft(){
+  try{
+    if(!(await fxIdbGet(FX_MARK_KEY))) return;
+    const snap = await fxIdbGet(FX_BACKUP_KEY);
+    if(snap) fxRestoreSnapshot(snap);
+    await fxIdbDel(FX_MARK_KEY);
+    log('前回のプレビューが途中で終わっていたので、保存データを元に戻しました。');
+  }catch(e){ /* IndexedDB が使えなくても本来の作業は続けられる */ }
+}
+
+function fxStat(t, cls){ const e = $('fxStat'); if(e){ e.textContent = t; e.className = 'hint ' + (cls||''); } }
+/* iframe の driver へ1つ頼んで返事を待つ。返事は {__fx:true, id, ok, result|error}。 */
+function fxAsk(msg, ms){
+  return new Promise((res, rej)=>{
+    const f = fxPreview.frame;
+    if(!f || !f.contentWindow) return rej(new Error('プレビューが開いていません'));
+    const id = 'p' + (++fxPreview.seq);
+    const to = setTimeout(()=>{ window.removeEventListener('message', on); rej(new Error(msg.cmd + ' の返事がありません')); }, ms || 20000);
+    function on(ev){
+      const d = ev.data;
+      if(!d || !d.__fx || d.id !== id) return;
+      clearTimeout(to); window.removeEventListener('message', on);
+      d.ok ? res(d.result) : rej(new Error(d.error));
+    }
+    window.addEventListener('message', on);
+    f.contentWindow.postMessage(Object.assign({ id }, msg), '*');
+  });
+}
+// いま画面に入っている3技を、ゲームが読む形(buildMoves の出力)に焼く
+function fxMovesNow(){ const spec = collectSpec(); return buildMoves(spec); }
+
+async function openFxPreview(){
+  if(fxPreview.open) return;
+  fxPreview.open = true;
+  $('fxOpenBtn').disabled = true;
+  try{
+    /* ① 動画を必ず手放す(§11 [37])。動画のデコーダを抱えたままゲームを1本
+       読み込むと、iPhone ではメモリが足りずタブごと落ちる。 */
+    document.querySelectorAll('video').forEach(releaseVideo);
+    // ② 退避して「プレビュー中」の印を残す
+    fxPreview.before = fxStorageSnapshot();
+    try{
+      await fxIdbPut(FX_BACKUP_KEY, fxPreview.before);
+      await fxIdbPut(FX_MARK_KEY, Date.now());
+    }catch(e){ /* 退避できなくても harness=1 の差し替えが本命なので続ける */ }
+
+    fxStat('ゲームを読み込んでいます…');
+    // ③ iframe を作る。**CACHE_NAME 由来の一意クエリ**を付けて古い版を掴まないようにする
+    const uniq = (fxVocab.cacheName || 'v') + '-' + Date.now();
+    const f = document.createElement('iframe');
+    f.setAttribute('allow', 'autoplay');
+    f.src = '../index.html?harness=1&v=' + encodeURIComponent(uniq);
+    $('fxHost').innerHTML = '';
+    $('fxHost').appendChild(f);
+    fxPreview.frame = f;
+    await new Promise((res, rej)=>{
+      const to = setTimeout(()=> rej(new Error('ゲームを読み込めませんでした(時間切れ)')), 30000);
+      f.onload = ()=> { clearTimeout(to); res(); };
+      f.onerror = ()=> { clearTimeout(to); rej(new Error('ゲームを読み込めませんでした')); };
+    });
+    // ④ driver を注入する。**index.html には <script src> を足さない**(本番の全端末へ
+    //    配られてしまうため)。同一オリジンなのでここから取って流し込める。
+    const src = await fetch('fx_driver.js', { cache:'no-store' }).then(r=>{
+      if(!r.ok) throw new Error('fx_driver.js を読めません(' + r.status + ')');
+      return r.text();
+    });
+    const doc = f.contentDocument;
+    const s = doc.createElement('script');
+    s.textContent = src;
+    doc.head.appendChild(s);
+    // ⑤ 差し替えが効いているか。効いていなければ**何もせずに閉じる**
+    const rdy = await fxAsk({ cmd:'ready' });
+    if(!rdy.harnessOk){
+      await closeFxPreview();
+      fxStat('保存データを守れないのでプレビューを開きません(この端末では入れ替えが効きません)。', 'ng');
+      return;
+    }
+    /* ⑥ 音を出せるようにする。**iOS は「画面を触った流れの中」でしか AudioContext を
+       起こせない。** 「撃ってみる」のタップの効力は数秒だけ残る(transient activation)ので、
+       読み込みが速ければここで間に合う。間に合わなかったときのために
+       「🔊 音を出す」ボタン(fxUnlockAudio)を置いてある ―― あちらは**タップの同期処理**なので必ず効く。 */
+    fxAsk({ cmd:'audio' }).catch(()=>{});
+    $('fxSoundBtn').disabled = false;
+    // ⑦ 舞台を作る → 語彙を貰う → 技を差し替える → 撃つ
+    const el = $('f_key').value.trim() || 'zan';
+    await fxAsk({ cmd:'setup', element: el, mapKey: $('fx_map').value, view: $('fx_view').value,
+                  mode:'preview', silent:false, seed: Date.now() & 0x7fffffff }, 40000);
+    await fxAsk({ cmd:'hideHud' }).catch(()=>{});
+    try{
+      const v = await fxAsk({ cmd:'vocab' });
+      Object.assign(fxVocab, v);
+      fillVocabSelects();
+    }catch(e){ /* 語彙が取れなくても固定一覧のまま使える */ }
+    await fxFire();
+    fxPreview.timer = setInterval(()=> fxFire().catch(()=>{}), FX_FIRE_MS);
+    $('fxCloseBtn').disabled = false;
+  }catch(e){
+    fxStat('開けませんでした: ' + (e.message || e), 'ng');
+    await closeFxPreview();
+  }
+}
+/* いまの数字で撃つ。**毎回 override してから撃つ**ので、入力を直したら次の発射で効く。 */
+async function fxFire(){
+  if(!fxPreview.frame) return;
+  const el = $('f_key').value.trim() || 'zan';
+  const moves = fxMovesNow();
+  await fxAsk({ cmd:'override', element: el, moves });
+  const r = await fxAsk({ cmd:'fire', tier: +$('fx_tier').value });
+  fxStat(`「${r.name}」を撃ちました(出た弾 ${r.added}発 / 範囲 ${r.addedAe})。` +
+         `${FX_FIRE_MS/1000}秒ごとに撃ち直します。` +
+         (fxVocab.cacheName ? ` 読み込んだ版: ${fxVocab.cacheName}` : ''));
+  return r;
+}
+/* 「🔊 音を出す」。**タップの同期処理のまま** iframe へ頼むので iOS でも必ず通る
+   (await を1つでも挟むとタップの効力が切れて、静かなままになる)。 */
+function fxUnlockAudio(){
+  if(!fxPreview.frame || !fxPreview.frame.contentWindow) return;
+  fxPreview.frame.contentWindow.postMessage({ id:'audio-' + (++fxPreview.seq), cmd:'audio' }, '*');
+  fxStat('音を出せるようにしました。次の発射から鳴ります。');
+}
+async function closeFxPreview(){
+  if(fxPreview.timer){ clearInterval(fxPreview.timer); fxPreview.timer = null; }
+  if(fxPreview.frame){
+    // 開くときに作り、閉じるときに壊す(iframe を残すとメモリを抱えたままになる)
+    try{ fxPreview.frame.src = 'about:blank'; }catch(e){}
+    try{ fxPreview.frame.remove(); }catch(e){}
+    fxPreview.frame = null;
+  }
+  $('fxHost').innerHTML = '';
+  $('fxCloseBtn').disabled = true;
+  $('fxSoundBtn').disabled = true;
+  $('fxOpenBtn').disabled = false;
+  fxPreview.open = false;
+  // 退避を戻す(差し替えが効いていれば中身は同じなので、実質なにも起きない)
+  let msg = '';
+  if(fxPreview.before){
+    const mid = fxStorageSnapshot();
+    const changed = [...new Set([...Object.keys(fxPreview.before), ...Object.keys(mid)])]
+      .filter(k => fxPreview.before[k] !== mid[k]);
+    fxRestoreSnapshot(fxPreview.before);
+    msg = changed.length
+      ? `保存データ: ${changed.length}件が変わったので元に戻しました(${changed.join(', ')})`
+      : '保存データ: 変更なし';
+    fxPreview.before = null;
+  }
+  try{ await fxIdbDel(FX_MARK_KEY); }catch(e){}
+  fxStat(msg || 'プレビューを閉じました。');
+}
+/* 画面が裏へ回ったら撃ち直しを止める(電池と、戻ったときの音の積み残し対策)。 */
+document.addEventListener('visibilitychange', ()=>{
+  if(!fxPreview.open) return;
+  if(document.hidden){
+    if(fxPreview.timer){ clearInterval(fxPreview.timer); fxPreview.timer = null; }
+  } else if(!fxPreview.timer){
+    fxPreview.timer = setInterval(()=> fxFire().catch(()=>{}), FX_FIRE_MS);
+  }
+});
 
 /* ---------------------------------------------------------- 9表への行 */
 function pad(k, w){ w = w||9; const s = k + ':'; return s + ' '.repeat(Math.max(0, w - s.length)); }
@@ -3007,9 +3468,11 @@ function collectSpec(){
     skin: { colors,
             source: state.hue == null ? { type:'light' }
                   : { type:'chroma', hue: state.hue, window:60 } },
-    moves: [ { name: $('m0_name').value.trim(), icon: $('m0_icon').value },
-             { name: $('m1_name').value.trim(), icon: $('m1_icon').value },
-             { name: $('m2_name').value.trim(), template: $('m2_tpl').value } ],
+    /* 技は「名前と弾(形)」+ **触った項目だけ**。触っていなければ今までと同じ2キーになり、
+       buildMoves が焼く行も従来どおりになる(collectMoveEdits が空を返す)。 */
+    moves: [ Object.assign({ name: $('m0_name').value.trim(), icon: $('m0_icon').value }, collectMoveEdits(0)),
+             Object.assign({ name: $('m1_name').value.trim(), icon: $('m1_icon').value }, collectMoveEdits(1)),
+             Object.assign({ name: $('m2_name').value.trim(), template: $('m2_tpl').value }, collectMoveEdits(2)) ],
     walk: { front: `assets/${$('f_key').value.trim()}/front.${$('walkSrc').value==='video'?'mp4':'png'}`,
             back:  `assets/${$('f_key').value.trim()}/back.${$('walkSrc').value==='video'?'mp4':'png'}`,
             source: $('walkSrc').value, mode: $('mode').value },
@@ -4377,8 +4840,33 @@ function boot(){
   opts($('f_aura'), AURAS);
   opts($('m0_icon'), ICONS); opts($('m1_icon'), ICONS);
   opts($('m2_tpl'), Object.keys(TIER3));
-  $('m2_tpl').onchange = ()=> $('tplHint').textContent = TPL_HINT[$('m2_tpl').value] || '';
+  /* 形を変えると tier3 の既定値が丸ごと入れ替わるので、説明と薄字を同時に貼り直す。 */
+  $('m2_tpl').onchange = ()=>{
+    $('tplHint').textContent = TPL_HINT[$('m2_tpl').value] || '';
+    refreshMoveDefaults();
+  };
   $('m2_tpl').onchange();
+  fillVocabSelects();
+  /* マップと向きを変えたら開き直す。**iframe は開くときに作り閉じるときに壊す**ので、
+     開いたまま作り直さない(startGame を1つの iframe で2度呼ばない)。 */
+  for(const id of ['fx_map','fx_view'])
+    $(id).addEventListener('change', async ()=>{
+      if(!fxPreview.open) return;
+      await closeFxPreview();
+      openFxPreview();
+    });
+  // 前回プレビュー中に閉じられていたら保存データを戻す(印が残っているときだけ)
+  fxRestoreIfLeft();
+  // 技ごとのエフェクト色。仕様パネルの色欄と同じ双方向の同期にする
+  for(let i = 0; i < 3; i++){
+    const sw = $('m' + i + '_colorSw'), tx = $('m' + i + '_color');
+    if(!sw || !tx) continue;
+    sw.addEventListener('input', ()=>{ tx.value = sw.value; });
+    tx.addEventListener('change', ()=>{
+      const v = tx.value.trim();
+      if(/^#[0-9a-fA-F]{6}$/.test(v)) sw.value = v.toLowerCase();
+    });
+  }
   $('aptRow').innerHTML = STATS.map(s=>
     `<div><label>${s.slice(0,4)}</label><select id="apt_${s}">${
       RANKS.map(r=>`<option${r==='C'?' selected':''}>${r}</option>`).join('')}</select></div>`).join('');
@@ -4479,6 +4967,9 @@ function boot(){
     $('portraitPanel').style.display = (media || awakenFx) ? 'none' : 'block';
     $('specPanel').style.display = (ssr || media || assets || awaken) ? 'none' : 'block';
     $('movePanel').style.display = (ssr || media || assets || awaken) ? 'none' : 'block';
+    /* 技パネルごと隠れるときはプレビューも閉じる。
+       隠れた iframe の中でゲームが回り続けると、見えないまま電池とメモリを食う。 */
+    if($('movePanel').style.display === 'none' && fxPreview.open) closeFxPreview();
     $('regHint').textContent = media
       ? 'すでにいるSSRスキンに、昇格演出・専用BGM・専用SE・宣伝画像・ガチャのピックアップを設定します。'
       : assets

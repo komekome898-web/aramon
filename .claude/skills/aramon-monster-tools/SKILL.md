@@ -80,7 +80,22 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 - **`despillInPlace()`が縁に残った背景色を抜く**(背景でいちばん強い成分を他の2成分の最大値まで下げる)。**残さない** —— 15%でも残すと緑の線が見える。`segment()`は**`img.data`の色も書き換える**ので、呼び出し側は必ず`img`と戻り値の`alpha`を一緒に使う。
 - 背景の中の極小の粒(`SEG_SPECK`未満)は圧縮ノイズとみなして背景から外す。**本当の隙間は残す。**
 
-- **背景の抜き方は歩行と静止画で別々**(`walkSeg()` / `#pmode`)。静止画の既定は`auto`=透過済みならそのまま・それ以外は歩行と同じ設定。「色で抜く」の色は下絵をタップして拾い`state.chroma`(歩行)/`state.chromaP`(静止画)に持つ。**色を拾っていないまま抜くと黒背景として処理されてしまうので`assertChroma()`で止める。**
+- **背景の抜き方は歩行と静止画で別々**(`walkSeg()` / `#pmode`)。静止画の既定は`model`(下記)、歩行の既定は据え置き。「色で抜く」の色は下絵をタップして拾い`state.chroma`(歩行)/`state.chromaP`(静止画)に持つ。**色を拾っていないまま抜くと黒背景として処理されてしまうので`assertChroma()`で止める。**
+
+### 学習済みモデルで抜く(`segmentModel()`・2026-09-02)
+
+- **モデル = RMBG-1.4(量子化・約44MB)+ onnxruntime-web 1.19.2(WASM 単スレッド)。** GitHub Pages は COOP/COEP を付けられないので多スレッドは使えない。取得元は`MODEL_SRC`の**1か所**。「モデルで抜く」を初めて使ったときだけ取りに行き、Cache API に保存(2回目からは端末内)。無通信30秒で中断、ライブラリ読み込みは20秒上限。
+- **入口は`resolveAlpha(img, seg, prog)`の1か所。** `segment()`を直接呼んでいた3か所(`imageAlphaFor` / `buildWalkFrames` / `makePortrait`)はすべてここを通る。モデルで抜けなかったら**必ず`blackopen`へ落として理由と次の手を`log`に出す**(処理を止めない)。
+- 後処理の順は `dropSpecks(bg)` → 反転 → `keepMajor(8%)` → `tightenEdge`。逆順だと keepMajor が落とした粒を dropSpecks が拾い直す。**`keepMajor`(最大成分の8%以上は残す)はモデル経路だけ**。JS経路の`keepLargest`は不変。縁の締めの式は`tightenEdge()`に1つだけ置き、`segment()`からも`segmentModel()`からも呼ぶ。
+- **入力は 1024×1024 固定**(量子化版の制約。512 を入れると onnxruntime が撥ねる)。「512で試して粗ければ1024」はできない。抜き終わりに「取得○秒 / 推論○秒 / 縁のやわらかさ○%」を`.modelNote`へ出す(次にモデルを替えるときの判断材料)。
+- 動画の16コマは`segmentModel`を1コマずつ呼ぶ(1コマ約13秒/このサーバー。iPhone は数倍速い見込み)。技プレビューを開く前は`releaseSegmentModel()`で解放する。
+- 検査: `node tools/studio_regress.mjs --only model`(呼び分けの一致36通り+keepMajor)/ `node tools/studio_model_test.mjs`(ヘッドレスで IoU・キャッシュ・落ち方)。
+
+### 登録済みの表を1項目だけ書き換える(走査器・2026-09-02)
+
+- **`scanValue(text,i)`** = `{}` `[]` `''` `""` の対応を数えて値の終わりを返す純関数。**`pickEntry(text, table, key)`** = 表の開始〜`// <<AUTO:表名>>`に範囲を限り `^  key\s*:` に錨を打つ。**`replaceField` / `replaceMoveField`** = そのオブジェクトの**直下の**1項目だけ置換(無ければ末尾へ追加。末尾カンマの流儀は周囲に合わせる)。**置換はすべてこれを通す。技オブジェクトを再生成しない**(`jsMove`は新規登録専用)。
+- 落とし穴: `MONSTER_AURA`のように**1行に複数項目を書く表は行頭の項目しか取れない**(21体中9体)。書き戻しの対象にするときは錨を広げる。
+- 更新履歴の注意2判定(最新日の似た行・内部の言葉)は`changelogWarnings()`として**`tools/changelog_check.mjs`と二重に持つ**。片方を直したら両方直す(回帰 (g) が一致を検査する)。
 
 ## 特性の効果・色スキン・更新履歴(スタジオ)
 
