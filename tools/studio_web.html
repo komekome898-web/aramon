@@ -1112,6 +1112,10 @@ function saveDraft(){
   for(const el of draftFields()) f[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
   try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ v:1, at:Date.now(), kind:$('regKind').value, f })); }
   catch(e){ /* 保存できなくても作業は続けられる(容量いっぱい・プライベートブラウズ) */ }
+  /* 下書きが変わったらバーの姿も出し直す(§波5-39)。姿を「状態から決める」と言いながら
+     状態が変わったときに通していなかったので、入れ替えの直後だけ古い姿が残っていた。
+     ここは**聞いている最中には来ない**(上で return する)ので、問いを踏み潰さない。 */
+  showDraftBar(null);
 }
 // 入力のたびに書かない(打っている間ずっと保存すると重い)。手が止まってから1回
 function saveDraftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); }
@@ -1141,18 +1145,23 @@ function refreshDraftPrevBtn(){
 }
 // 「今の下書き」についてのボタン。退避だけがあるときは引っ込める(下の showDraftBar)
 const DRAFT_CUR_BTNS = ['draftRestoreBtn','draftDiscardBtn'];
-/* **draftBar の姿を決めるのはこの1か所**(§指摘31)。
+/* **draftBar の姿を決めるのはこの1か所**(§指摘31)。姿は**渡された ask と、いまの
+   localStorage の中身だけ**から決める —— 呼び手が「今はこう見せたい」を持ち込まないので、
+   どこから呼んでも同じ状態からは同じ姿になる(§波5-39)。
      ・ask あり … 今の下書きについて聞く(続ける / 捨てる。退避もあれば戻る道も)
-     ・ask なし … **今の下書きが無く退避だけある**なら「もっと前の入力に戻す」だけを出す。
-       「捨てる」の押し間違いの直後がまさにこれで、ここでバーを閉じてしまうと
-       **退避へ行ける道が、いちばん必要な場面で画面から消える**。
-     ・どちらでもない … 出さない(今の下書きがあるうちは居座らせない)
-   打ち始めて問いを引っ込めるとき(draftDismiss)だけは、この直後に自動保存が
-   新しい下書きを書くので「今の下書きが無い」が崩れる。**あちらは hide を渡して必ず閉じる**
-   (道は次に開いたときの ask で出る)。 */
+     ・ask なし … **退避があるなら**「もっと前の入力に戻す」だけを出す。
+       「捨てる」の押し間違いの直後も、入れ替えて戻した直後もこれで、
+       ここで閉じると**退避へ行ける道が、いちばん必要な場面で画面から消える**(§波5-38。
+       「もう一度押すと入れ替えて戻せます」と言った当のボタンが消えていた)。
+     ・退避も問いも無い … 出さない
+   **居座らない理由**: 退避は「今の下書きが無いときに戻す」と空になる(移動)ので、
+   このバーは退避を使い切れば自然に消える。逆に退避があるうちは、押し間違い1回で
+   取り戻せなくなる入力が端末に残っているということなので、道は出したままにする。
+   打ち始めて問いを引っ込めるとき(draftDismiss)だけは hide を渡して必ず閉じる。 */
 function showDraftBar(ask){
-  const asking  = !!ask && ask !== 'hide';
-  const prevOnly = !asking && ask !== 'hide' && !readDraft() && !!readPrevDraft();
+  const asking = !!ask && ask !== 'hide';
+  const hasPrev = !!readPrevDraft();
+  const prevOnly = !asking && ask !== 'hide' && hasPrev;
   const on = asking || prevOnly;
   draftAsking = asking;                    // 自動保存を止めるのは「聞いている間」だけ
   for(const id of DRAFT_CUR_BTNS) if($(id)) $(id).style.display = prevOnly ? 'none' : '';
@@ -1200,8 +1209,7 @@ function draftRestorePrev(){
     + (swap ? '\nいま入っていた入力は1つ前として控えました(もう一度押すと入れ替えて戻せます)。' : ''));
   /* 戻した値をその場で下書きへ書く(入れ替えのもう片側)。400ms後の自動保存に任せると、
      その前に読み込み直したときだけ**両方が同じ中身**のまま残り、行き来できなくなる。 */
-  saveDraft();
-  showDraftBar(null);
+  saveDraft();                     // 末尾で showDraftBar(null) を通すので、姿もここでそろう(§波5-39)
 }
 /* 欄へ入れる処理の本体。今の下書きも1世代前も**同じ道**を通る(戻し方を2か所に書かない)。
    入れられたら true。 */
@@ -1219,9 +1227,9 @@ function draftApply(d, doneMsg){
   };
   put();
   /* 値に連動して出し入れされる欄をやり直す。**`.onchange` を直に呼ばない**(§指摘7) ――
-     addEventListener で登録した出し分け(レイド特効の倍率の行)を拾えないうえ、
-     班A' の「動画なら抜き方の既定は色で抜く」は**イベント引数の有無**で
-     「人が選んだか」を見分けているので、直呼びだと戻した抜き方が既定に負ける。 */
+     レイド特効の倍率の行(`s_raidEffect`)の出し分けは addEventListener で登録してあり、
+     `.onchange` の直呼びでは拾えないため。理由はこの1点(§波5-40。かつて並べていた
+     「イベント引数の有無で人の操作を見分ける」は §指摘33 でもう無い)。 */
   for(const id of DRAFT_RERUN) if($(id)) fireChange($(id));
   // 種類の出し分けは**値を全部入れ終えてから**もう一度通す(欄の値を見て出し入れするため)
   if($('regKind')) fireChange($('regKind'));
@@ -1229,9 +1237,13 @@ function draftApply(d, doneMsg){
      戻した抜き方が**boot が当てた既定と同じ値**('chroma')だと、`walkSrc` の出し分けが
      「まだ触っていない」と読んで 'auto' へ戻してしまう。値は下の put() が戻すけれど、
      put() はイベントを飛ばさないので**背景色の欄(chromaWrap)が隠れたまま**になる。
-     いちばん後ろでこれをやれば、DRAFT_RERUN の並びにも、誰があとから戻すかにも依存しない。 */
-  const modeEl = $('mode');
-  if(modeEl && d.f.mode !== undefined){ modeEl.value = d.f.mode; fireChange(modeEl); }
+     いちばん後ろでこれをやれば、DRAFT_RERUN の並びにも、誰があとから戻すかにも依存しない。
+     **入れるのは setWalkMode**(§波5-42)。`#mode` を直に書き換えていたので、
+     このツールが既定として入れた印(`walkModeAuto`)が古いまま残り、
+     動画×「色で抜く」を戻したあと素材を画像へ切り替えると
+     applyWalkModeDefault() が「まだ既定のままだ」と誤読して上書きしていた。
+     `byDefault` は渡さない = 復元した値は人が選んだのと同じ扱いで守られる。 */
+  if(d.f.mode !== undefined) setWalkMode(d.f.mode);
   /* 出し分けの中には**別の欄を既定へ戻す**ものがある(抜き方を変えるとしきい値が既定に戻る)。
      戻した値が消えてしまうので、出し分けのあとにもう一度入れ直す。
      順は「入れる → 出し分け → 入れ直す」で、出し分けは正しい値を見たまま動く。 */
@@ -6296,7 +6308,10 @@ async function preflight(){
        書いたはずの値がテンプレートのまま本番へ出る(赤い欄がその場所)。
        赤を**塗る**のはここと入力のときだけ(段階バーは塗った結果を読むだけ。§指摘4)。 */
     const bad = isSsr() || isSsrMedia() || isAssets() || isAwaken() ? null : moveInputErrors();
-    if(bad){ $('commitBtn').disabled = true; return sendFail(bad.join('\n')); }
+    /* **止まったら「送る中身」も捨てる**(§波5-41)。ボタンを止めるだけだと、一度通した
+       古い計画が state.files に残ったままで、あとで別の経路(段の表示・押し直し)から
+       **直す前の中身**を本番へ送れてしまう。白紙に戻すのは clearPlan() の1か所。 */
+    if(bad){ clearPlan(); return sendFail(bad.join('\n')); }
     log('GitHub から data.js / ui.js / sw.js を取得しています…');
     /* sha も一緒に控える。「開いて直す」の送信直前の照合が、**書き戻すファイル全部**を
        見られるようにするため(本文と sha を別々に取りに行くと食い違う)。 */
@@ -6319,7 +6334,8 @@ async function preflight(){
     state.sendNg = false;          // この確認は通った(送信の段の赤を落とす)
     $('commitBtn').disabled = false;
     log(lines.join('\n'), 'ok');
-  }catch(e){ sendFail(errorText(e)); }
+  // 途中で落ちたら作りかけの計画は信用できない。同じく白紙へ戻してから知らせる(§波5-41)
+  }catch(e){ clearPlan(); sendFail(errorText(e)); }
 }
 
 async function doCommit(){

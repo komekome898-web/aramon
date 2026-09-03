@@ -307,6 +307,45 @@ const stageSendBack = await readStages();
 if(stageSendBack[STAGE_IX.送信] !== 'ok')
   errors.push(`確認し直しても「送信」の段が ${stageSendBack[STAGE_IX.送信]} のままです`);
 
+/* ⑧' **確認に失敗したら「送る中身」を捨てる**(§波5-41)。preflight が途中で止まる2経路
+   (取得などの例外 / 数字として読めない欄)は state.files を消していなかったので、
+   一度通した**古い計画**がそのまま残り、コミットのボタンも押せるままだった
+   —— 直したつもりの中身ではなく、前の中身を本番へ送れてしまう。 */
+const preflightFail = await page.evaluate(async ()=>{
+  const out = {};
+  const real = window.gh;
+  // (a) 取得で落ちる経路(catch)
+  window.gh = async (p, o)=>{
+    if(/\/contents\//.test(p)) throw new Error('GitHub 500: 検査');
+    return real(p, o);
+  };
+  await preflight();
+  window.gh = real;
+  out.errFiles = !!state.files;
+  out.errDisabled = document.getElementById('commitBtn').disabled;
+  await preflight();                       // いったん通し直して「送る中身」を作り直す
+  out.okFiles = !!state.files;
+  // (b) 数字として読めない欄で止まる経路(bad)
+  const dmg = document.getElementById('m0_dmg');
+  const keep = dmg.value;
+  dmg.value = 'あ';
+  await preflight();
+  out.badFiles = !!state.files;
+  out.badDisabled = document.getElementById('commitBtn').disabled;
+  dmg.value = keep;
+  await preflight();                       // あとの検査のために元へ戻す
+  return out;
+});
+await settle();
+if(preflightFail.okFiles !== true)
+  errors.push('⑧\' の途中で「差分を確認する」が通りません(この検査が見たい状態になっていません)');
+if(preflightFail.errFiles || !preflightFail.errDisabled)
+  errors.push('確認が例外で止まったのに前の「送る中身」が残っています(§波5-41): '
+    + `state.files=${preflightFail.errFiles} / commitBtn.disabled=${preflightFail.errDisabled}`);
+if(preflightFail.badFiles || !preflightFail.badDisabled)
+  errors.push('数字として読めない欄で止めたのに前の「送る中身」が残っています(§波5-41): '
+    + `state.files=${preflightFail.badFiles} / commitBtn.disabled=${preflightFail.badDisabled}`);
+
 // ---------------------------------------------------------------- ② 読み込み直して復元
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
@@ -441,7 +480,10 @@ const prevBack = await page.evaluate(async ()=>{
   await new Promise(r => setTimeout(r, 600));      // saveDraftSoon(400ms)が新しい下書きを書くまで
   const after = { key: document.getElementById('f_key').value,
                   cur: localStorage.getItem(DRAFT_KEY), prev: localStorage.getItem(DRAFT_PREV_KEY),
-                  said: document.getElementById('log').textContent };
+                  said: document.getElementById('log').textContent,
+                  /* 「もう一度押すと入れ替えて戻せます」と言った直後に、そのボタンが
+                     **画面に出ているか**(§波5-38)。display だけでなく親ごと隠れていないかを見る */
+                  stillShown: btn.offsetParent !== null };
   draftRestorePrev();                               // もう一度押す = 入れ替えて元へ戻る
   await new Promise(r => setTimeout(r, 600));
   return { shownBefore, ...after,
@@ -457,6 +499,8 @@ if(keyOf(prevBack.cur) !== FILL_FIX.f_key)
 if(keyOf(prevBack.prev) !== 'typedmon')
   errors.push('戻したときに、いま入っていた下書きが退避へ入りません(§指摘30 / 黙って上書きしている): '
     + `退避の f_key=${JSON.stringify(keyOf(prevBack.prev))}`);
+if(!prevBack.stillShown)
+  errors.push('「もう一度押すと入れ替えて戻せます」と言いながら、そのボタンが画面から消えます(§波5-38)');
 if(!/1つ前として控え/.test(prevBack.said || ''))
   errors.push(`入れ替えたことを知らせません(log: ${JSON.stringify((prevBack.said||'').split('\n').slice(-2).join(' / '))})`);
 // もう一度押せば行き来できる(2つを往復するだけで、どちらも失わない)
@@ -554,6 +598,36 @@ if(afterEdit.asked) errors.push('「開いて直す」中の入力について�
 if(afterEdit.hp !== edited.def)
   errors.push(`新規へ切り替えても HP が既定に戻りません(${afterEdit.hp} / 既定 ${edited.def})`);
 
+/* ---------------------------------------------------------------- ⑩ 復元した抜き方は守られる
+   復元は `#mode` を直に書き換えていたので、**このツールが既定として入れた印(walkModeAuto)が
+   古いまま残った**(§波5-42)。動画×「色で抜く」を戻したあと画像へ切り替えると、
+   applyWalkModeDefault() が「まだ既定のままだ」と誤読して画像の既定('auto')で
+   上書きしてしまう。#mode へ値を入れるのは setWalkMode 1か所、が守られているかを見る。 */
+await page.evaluate(()=>{
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({ v:1, at:Date.now(), kind:'monster',
+    f: { f_key:'dvmon', walkSrc:'video', mode:'chroma' } }));
+});
+await page.reload({ waitUntil:'load' });
+await page.waitForFunction(()=> typeof window.boot === 'function');
+const modeKept = await page.evaluate(()=>{
+  draftRestore();
+  const restoredMode = document.getElementById('mode').value;
+  const src = document.getElementById('walkSrc');
+  src.value = 'image';                                     // 人が素材を画像へ切り替えたのと同じ
+  src.dispatchEvent(new Event('change', { bubbles:true }));
+  return { restoredMode, after: document.getElementById('mode').value };
+});
+if(modeKept.restoredMode !== 'chroma')
+  errors.push(`⑩ 復元した抜き方が入っていません(#mode=${modeKept.restoredMode})`);
+if(modeKept.after !== 'chroma')
+  errors.push('復元した抜き方が、素材を画像へ切り替えると既定で上書きされます(§波5-42): '
+    + `#mode=${modeKept.after}`
+    /* 復元は setWalkMode(値) で入れている(直の代入はもう無い)。それでも赤いなら、
+       残っているのは setWalkMode 側 —— **すでに同じ値なら何もせず返る**ため
+       `walkModeAuto` が古いまま残る。そこは班A''' が直している最中(こちらは触らない)。 */
+    + '(復元側は setWalkMode 経由。setWalkMode が「同じ値なら即 return」で '
+    + 'walkModeAuto を落とさないのが残りで、班A\'\'\' の修正待ち)');
+
 await browser.close();
 server.close();
 
@@ -581,6 +655,9 @@ console.log(`     歩行の成功直後 ${stageWalk.join(',')} / 静止画の成
 console.log(`  ⑤ 他パネルが失敗したとき: ${stageOtherNg.join(',')}(送信の段は ${stageOtherNg[STAGE_IX.送信]})`);
 console.log(`  ⑥ 開いて直す: 下書きに入ら${(edited.raw || editedRaw) ? 'れた' : 'ない'}`
   + ` / 新規へ切り替えた HP ${afterEdit.hp}(既定 ${edited.def})`);
+console.log(`  ⑧' 確認の失敗: 例外 files=${preflightFail.errFiles}/止${preflightFail.errDisabled}`
+  + ` / 赤い欄 files=${preflightFail.badFiles}/止${preflightFail.badDisabled}`);
+console.log(`  ⑩ 復元した抜き方: ${modeKept.restoredMode} → 画像へ切り替えて ${modeKept.after}`);
 if(errors.length){
   console.log(`\n問題が ${errors.length} 件あります:`);
   for(const e of errors) console.log('  - ' + e);
