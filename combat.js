@@ -1296,7 +1296,15 @@ function raidSkinMult(entity, kind){
    ・味方への攻撃は applyDamage の入口(teamFriendlyFireBlocked)1か所で止める。
    ・ダウン→蘇生・全滅・チーム順位はホスト(=ソロでは自分)だけが確定し、
      ゲストへは authState の dw(ダウン残り秒)/ rv(蘇生の進み)で伝わる。
-   ・レイドとは排他(レイドでは teamSize=1 のまま)。
+   ・【2026-09-03 レイド第3回】レイドも挑戦者全員を1チーム(teamSize=RAID_CAPACITY)にして
+     この土台に乗せた(味方HP表示・ダウン・蘇生・bot AIの蘇生行動をそのまま使うため)。
+     割当は raidStart()(ソロ)/ beginMultiplayerMatchInner() の game.raid ブロック(マルチ)が
+     それぞれ assignTeams(RAID_CAPACITY) を呼ぶ ―― ボスは isRaidBoss なので teamId は付かない。
+     一方、**チーム戦の「決着・順位・共有ランキング」寄りの副作用はレイドに不都合**なので
+     game.raid で個別に除外してある(1か所ずつ): checkWin() は isTeamMatch() より先に
+     game.raid を見て checkRaidEnd() へ抜ける/ teamNoteDeath() の「自チーム全滅→即リザルト」は
+     game.raid のときは通さない(レイドの全滅は checkRaidEnd() の担当)/ shareModeLabel() の
+     「チーム戦」表記・render.js のピンボタン表示も game.raid では出さない。
    ===================================================================== */
 let teamMembersById = new Map();   // teamId -> メンバー配列。assignTeams()が試合開始時に作る
 function isTeamMatch(){ return (game.teamSize||1) > 1; }
@@ -1551,8 +1559,13 @@ function teamNoteDeath(victim, killer){
   if(!isTeamMatch() || victim.teamId==null) return;
   const members = teamMembers(victim.teamId);
   if(members.some(m=> m.alive && !entityDowned(m))) return;   // まだ立っている味方がいる
-  // 全滅: ダウン中の味方も死亡確定(killEntity内のtryEnterDownedは既ダウンなので通らない)
+  // 全滅: ダウン中の味方も死亡確定(killEntity内のtryEnterDownedは既ダウンなので通らない)。
+  // レイドの「挑戦者全滅」もこれで全員alive:falseになり、checkRaidEnd()がそれを拾う。
   for(const m of members){ if(m.alive) killEntity(m, killer||null); }
+  /* 【レイドはここで打ち切り】この先(チーム順位・小隊全滅フィード・ソロの即リザルト)は
+     チーム戦BR/アリーナ向けの決着処理。素通りさせると、レイドの決着(討伐/時間切れ/全滅)を
+     持つ checkRaidEnd()→finishRaid() より先に通常のリザルト画面が出てしまう。 */
+  if(game.raid) return;
   // チーム順位=残っているチーム数+1(全員に同じ順位。再帰しても同じ値になる冪等な代入)
   const place = countAliveTeams() + 1;
   for(const m of members){ m.placement = place; }
@@ -1742,7 +1755,9 @@ function raidFireBossAttack(b){
       dmg: move.dmg, color: move.color, range, width:0,
       fanAngleDeg: move.fanAngleDeg||45, beamCount:0, beamSpreadDeg:0,
       fillSpeed: Math.max(700, range/0.55), telegraphTime:0,
-      spawnAt: matchTime, hitIds:new Set(), resolved:false, style:null,
+      spawnAt: matchTime, hitIds:new Set(), resolved:false,
+      style: move.style||null,   // 版ごとの技を描画側が見分けるための印(第3回=jokerGear等)
+      bindSec: (move.bind && move.bind.freezeSec) || 0,   // 命中で動きを封じる秒数(第3回の羽の舞踏)
       moveAura:'red', auraTint: move.color, raidBossAttack:true,
     };
     ae.life = range/ae.fillSpeed + 0.35;
@@ -1769,7 +1784,7 @@ function raidFireBossAttack(b){
         angle:Math.round(ae.angle*1000)/1000, color:ae.color, range:Math.round(ae.range), width:0,
         fanAngleDeg:ae.fanAngleDeg, beamCount:0, beamSpreadDeg:0,
         life:Math.round(ae.life*100)/100, fillSpeed:Math.round(ae.fillSpeed),
-        telegraphTime:0, style:null, auraTint:ae.auraTint||null, auraAccent:ae.auraAccent||null, moveAura:ae.moveAura||null,
+        telegraphTime:0, style:ae.style||null, auraTint:ae.auraTint||null, auraAccent:ae.auraAccent||null, moveAura:ae.moveAura||null,
       });
     }
   }
@@ -2755,6 +2770,11 @@ function updateAreaEffects(dt){
           applyDamage(ent, ae.dmg*dmgMult, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe, healRatio: ae.healRatio||0,
                                             lifestealMult: ae.lifestealMult||1 });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
+          // レイドボスの拘束技(第3回「羽の舞踏」等): 命中した相手の動きを封じる。
+          // 凍結は既存のfreezeUntil(アクア属性と同じ変数)に乗せるので、状態を新設しない
+          if(ae.raidBossAttack && ae.bindSec>0){
+            ent.freezeUntil = Math.max(ent.freezeUntil||0, matchTime+ae.bindSec);
+          }
           // ワームtier3/電王ライナーtier3: 範囲技が命中した瞬間にも同じ移動速度バフを掛ける
           if(ae.selfSpeedBuffOnHit){
             applySelfSpeedBuffOnHit(ae.ownerId);

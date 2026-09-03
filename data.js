@@ -1329,7 +1329,10 @@ const UPDATE_HISTORY = [
   { date:'2026-09-04', items:[
     { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされ、シーズンパスの最終報酬は近日発表です', g:['feature','general'] },
     { t:'✨ 前シーズンの最終報酬だったSSRスキン「大喰いの利世」が、ガチャとSSRカタログで手に入るようになりました', g:['feature','monster'] },
-    { t:'🐉 レイド「あるるかん討伐」を開催中です(9/4〜9/17)。全員の与ダメージ累計が目標に届くとSSR「あるるかん」がもらえます', g:['feature','multi'] },
+    { t:'🐉 レイド「あるるかん討伐」を開催中です(9/4〜9/17)。舞台はジョーカーの雪山、全員の与ダメージ累計が目標に届くとSSR「あるるかん」がもらえます', g:['feature','multi'] },
+    { t:'⚔ あるるかんの技が4つの新技に一新され、威力も全体的に上がりました', g:['monster','balance'] },
+    { t:'👥 レイドで仲間の体力が見えるようになり、倒れても近くにいる仲間が助け起こせば復活できます(チーム戦と同じ仕組み)', g:['feature','multi'] },
+    { t:'レイドの「1人で挑む」を廃止しました。「部屋を作る」は1人でもそのままスタートでき、空いた枠はマスモン・botが埋めます', g:['multi'] },
     { t:'レイドガチャは機械モンスターピックアップです(電王ライナー・メカビオギドラ・メタルグレイモン。装備するとレイドで特効)', g:['feature','monster'] },
     { t:'レイドガチャの累計回数はレイドごとに数え直します。前回100回引いた人も、今回また100回でSSRレイドカタログがもらえます', g:['feature','general'] },
   ]},
@@ -3088,22 +3091,45 @@ const RAID_EDITIONS = {
     // この回のレイド限定スキン。最新の版のものだけがレイドガチャ・SSRレイドカタログ限定になり、
     // 古い版のものは通常ガチャ・SSRカタログへ自動で解放される
     exclusiveSkins: ['warm_ssr'],
-    // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す。第2回の値をそのまま引き継ぐ)
-    moveDmg: { nova:105, ring:98, meteor:78 },
+    // ボス専用の技4つ(第1回の6技とは総入れ替え。moveDmgでの上書きは使わない=キーを持たない)。
+    // style=描画側(render.js/fx_moves.js)が絵を見分けるための印。bind.freezeSec=命中で動きを封じる秒数。
+    // 威力の根拠: 第1回の同種と比べて tail56→72(+29%) / breath64→80(+25%) /
+    //   meteor86→95(+10%、拘束が付くぶん控えめ) / nova130→160(+23%)
+    bossMoves: [
+      { key:'gear',    tier:1, name:'虎乱(コラン)',              shape:'circle', range:1150, dmg:72,  telegraph:1.10, color:'#f5ec00', selfCentered:true, style:'jokerGear',
+        warn:'⚠ 虎乱 — 歯車が回る！あるるかんから離れろ！' },
+      { key:'arrow',   tier:1, name:'炎の矢(フレッシュ・アンフラメ)', shape:'fan',    range:2200, fanAngleDeg:30, dmg:80, telegraph:1.20, color:'#ff5a2e', style:'jokerPiston',
+        warn:'⚠ 炎の矢 — 正面の細い帯から外れろ！' },
+      { key:'feather', tier:2, name:'羽の舞踏(ラ・ダンス・ダン・ヴオラン)', shape:'meteor', range:520, dmg:95, telegraph:1.50, color:'#c98cff', count:4, style:'jokerFeather', bind:{ freezeSec:1.6 },
+        warn:'⚠ 羽の舞踏 — 羽根の輪から逃げろ！動きを封じられる！' },
+      { key:'sword',   tier:3, name:'聖ジョージの剣',              shape:'fan',    range:3000, fanAngleDeg:150, dmg:160, telegraph:2.10, color:'#ffd400', style:'jokerSword',
+        warn:'☠ 聖ジョージの剣 — 剣の外側、背後へ回り込め！' },
+    ],
+    // 舞台をリアルマップの雪山(パパス)に変える。ラベル・アイコンも版ごとに切り替わる
+    // (直後の Object.assign(MAPS.raid, RAID_ED.map) で MAPS.raid へ合流させる)
+    map: {
+      label:'ジョーカーの雪山', real3dTerrain:'drift', real3dTheme:'papas',
+      mountainStyle:'snow', groundColor:'#dbe8f2',
+      previewIcon:'🃏', previewColors:['#dce8f2','#8fa9be'],
+      desc:'雪山を背にあるるかんが待ち構える円形の闘技場。逃げ場は狭い。',
+    },
     // ボスの見た目・名前・入口画面の文言(版ごと)。
     // element はあえて 'joker' にせず 'fire' のまま据え置く: ELEMENTS.joker は dmgDealtMod:1.2
     // を持ち(ELEMENTS.fire は無し)、ボスの与ダメ計算はダメージ元(=ボス)の element から
     // 直接この倍率を掛ける(combat.js のapplyDamage、target.isRaidBoss等の条件無し)ため、
-    // element だけ変えると上のmoveDmgで調整済みの威力にさらに20%乗ってしまう。
+    // element だけ変えると上のbossMovesで調整済みの威力にさらに20%乗ってしまう。
     // 一方スキンの表示(getDisplayImage→skinnedImageForEntity)は entity.element と
     // SSR_SKINS[skinId].element の一致を見ておらず skinId だけで絵を出すので、
     // 見た目はSSRスキン「あるるかん」のまま素体は据え置き(=fire)で問題ない。
-    boss: { element:'fire', skinId:'joker_ssr', name:'あるるかん', lead:'ジョーカー<b>あるるかん</b>が火口に現れた。' },
+    boss: { element:'fire', skinId:'joker_ssr', name:'あるるかん', lead:'ジョーカー<b>あるるかん</b>が雪山に現れた。' },
   },
 };
 // 版は日付で自動選択(開催前後で自動的に切り替わる)。手で固定したいときはここへ id の文字列を書く
 const RAID_EDITION = editionByDate(RAID_EDITIONS, 'r1');
 const RAID_ED = RAID_EDITIONS[RAID_EDITION] || RAID_EDITIONS.r1;
+// 版が舞台(map)を持てば MAPS.raid へ合流させる(第1回は map を持たないので竜の火口のまま)。
+// MAPS.raid 自体は RAID_EDITIONS より前で定義済みなので、ここで上書きする形にしてある
+Object.assign(MAPS.raid, RAID_ED.map || {});
 // レイド限定スキンの判定用: 開催日を待たず「一番新しく定義された版」を指す。
 // 次回ぶんの版を先に足しておけば、その時点で今回の版の限定スキンが通常ガチャへ解放される。
 const RAID_LATEST_EDITION = latestEditionId(RAID_EDITIONS, 'r1');
@@ -3182,7 +3208,8 @@ const RAID_ALLY_GUTS_REGEN_MULT = 2;
 // 予告から発動までを、各技のtelegraphより少し長くする(「見えたのに間に合わなかった」を減らす)
 const RAID_TELEGRAPH_EXTRA = 0.4;
 function raidTelegraphTime(move){ return (move && move.telegraph || 0) + RAID_TELEGRAPH_EXTRA; }
-const RAID_BOSS_MOVES = [
+// 既定(第1回)の技6つ。版が独自の技(bossMoves)を持たない場合はこちらを使う
+const RAID_BOSS_MOVES_DEFAULT = [
   { key:'breath',  tier:1, name:'灼熱のブレス', shape:'fan',    range:1900, fanAngleDeg:78, dmg:64, telegraph:1.30, color:'#ff6b35',
     warn:'⚠ 灼熱のブレス — 正面から離れろ！' },
   { key:'tail',    tier:1, name:'尾薙ぎ',       shape:'circle', range:900,  dmg:56, telegraph:1.10, color:'#ff9a5a', selfCentered:true,
@@ -3196,9 +3223,11 @@ const RAID_BOSS_MOVES = [
   { key:'ring',    tier:3, name:'業火の輪',     shape:'circle', range:2100, dmg:118, telegraph:2.00, color:'#ff5d5d', selfCentered:true,
     warn:'☠ 業火の輪 — 全力で外周へ！' },
 ];
+// 版が独自の技を持てば(第3回など)それを使う。style=描画の見分け、bind=命中で動きを封じる
+const RAID_BOSS_MOVES = RAID_ED.bossMoves || RAID_BOSS_MOVES_DEFAULT;
 /* 版ごとの威力の上書き(RAID_EDITIONS[].moveDmg)。表そのものを版ごとに複製すると
    範囲・予告・文言まで二重管理になるので、**変える数字(dmg)だけを差し替える**。
-   指定の無い技は上の既定値のまま。 */
+   指定の無い技は上の既定値のまま。bossMovesを独自に持つ版はmoveDmgを使わない(キー不一致で何も起きない)。 */
 Object.keys(RAID_ED.moveDmg || {}).forEach(key=>{
   const mv = RAID_BOSS_MOVES.find(m=>m.key===key);
   if(mv) mv.dmg = RAID_ED.moveDmg[key];

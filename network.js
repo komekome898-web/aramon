@@ -580,7 +580,10 @@ async function beginMultiplayerMatchInner(){
   arenaResetState();         // アリーナの状態も入口で消す
   netState.raid = wantRaid;
   game.raid = wantRaid;
-  if(game.raid){ matchTeamSize = 1; matchSub = null; }   // レイドとチーム戦は排他
+  /* ここでの matchTeamSize は「20チームBR/アリーナ」のbot埋め・スポーン割当だけの話で、
+     レイドとは無関係のまま1に固定する(排他)。挑戦者を1チームにする味方HP表示・ダウン・
+     蘇生は、この下の game.raid ブロックで assignTeams(RAID_CAPACITY) を別に呼んで作る。 */
+  if(game.raid){ matchTeamSize = 1; matchSub = null; }
   netState.sub = matchSub;   // 確定したサブモードを部屋の状態にも反映(ホスト/ゲストで一致する)
   if(game.raid) mapKey = 'raid';
   /* この試合がバトルアリーナかは**部屋のサブモード(netState.sub==='arena')が正**。
@@ -775,6 +778,10 @@ async function beginMultiplayerMatchInner(){
     boss.raidHomeX = cx; boss.raidHomeY = bossY;
     boss.facingAngle = Math.PI/2;
     entities.push(boss);
+    /* 【2026-09-03】挑戦者(人間・bot・マスモン問わず)を1チームにして、チーム戦の
+       味方HP表示・ダウン・蘇生をそのまま使う。entities の並びはホスト/ゲストで一致するので
+       assignTeams()が作るteamIdも両側で必ず一致する(ボスはisRaidBossなので付かない)。 */
+    assignTeams(RAID_CAPACITY);
     raidState = { bossId: boss.id, nextAttackAt: 3.0, pending:null, marks:[],
                   repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT,
                   nextLootAt: RAID_LOOT_REFILL_EVERY };

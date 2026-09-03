@@ -151,6 +151,9 @@ const PANELS = [
   { id:'monsterListScreen', name:'モンスター一覧', open:[{call:['openMonsterListScreen']}], noScroll:[] },
   /* るすばん報告: 一覧(#ghostNewsList)だけがスクロールする作りなので、overlay本体は送れてはいけない */
   { id:'ghostNewsOverlay',  name:'るすばん報告',   open:[{call:['openGhostNewsOverlay']}], noScroll:['ghostNewsOverlay'] },
+  /* レイド入口。「部屋を作る」の2行化(注釈付き)で .raid-actions が見切れないかを見る。
+     開き方は __raidTestOpen(上で定義)。中身の一覧(#raidScroll)だけがスクロールしてよい。 */
+  { id:'raidOverlay',       name:'レイド入口',     open:[{call:['__raidTestOpen']}], noScroll:['raidOverlay'] },
   /* マスモン詳細の4タブ。**丈夫さが実行ボタンの下敷きになっていた画面**(2026-08-26)。
      タブごとに中身の作りが違うので4つとも見る。 */
   { id:'mastermonScreen', name:'マスモン詳細(詳細情報)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','info']}], noScroll:['mastermonDetailPanel'] },
@@ -612,6 +615,14 @@ for(const dev of DEVICES){
       }).map(a=> a.finished.catch(()=>{}));
       await Promise.race([ Promise.all(finite), new Promise(r=> setTimeout(r, 800)) ]);
       await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
+    };
+    /* レイド入口(#raidOverlay)専用の開き方。実際の導線(openRaidBtn→raidGuardReady)は
+       開催期間・モンスター選択済みかどうかで弾かれ、実行日によって開けたり開けなかったり
+       するため測定が安定しない。ここではその前提だけ整えて openRaidOverlay() を直接呼ぶ
+       (中身の組み立て自体は本物の renderRaidOverlay を通るので画面としては本物と同じ)。 */
+    window.__raidTestOpen = async ()=>{
+      if(!game.selectedElement) game.selectedElement = 'dullahan';
+      if(typeof openRaidOverlay==='function') await openRaidOverlay();
     };
     /* 【R2の検査】操作がスクロールの中で貼り付いていないか。
        スクロールする箱の中に position:sticky/fixed の押せる物があると、

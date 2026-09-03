@@ -5346,7 +5346,7 @@ function raidStart(multi, demo){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();          // いったん初期化してから立て直す
-  teamResetState();          // レイドとチーム戦は排他(レイドでは常にteamSize=1)
+  teamResetState();          // 一旦個人戦に戻し、entities が揃ってから下の assignTeams(RAID_CAPACITY) で立て直す
   arenaResetState();         // アリーナの状態も持ち越さない(レイドとアリーナも排他)
   game.trainingRange = false;
   game.raid = true;
@@ -5408,6 +5408,11 @@ function raidStart(multi, demo){
   boss.facingAngle = Math.PI/2;
   entities.push(boss);
 
+  /* 【2026-09-03】挑戦者(自分・味方bot・マスモン)を1チームにして、チーム戦の
+     味方HP表示・ダウン・蘇生をそのまま使う(combat.jsのassignTeams。ボスはisRaidBossなので
+     teamIdは付かない=teamResetStateの直後にここで立て直す)。 */
+  assignTeams(RAID_CAPACITY);
+
   raidState = { bossId: boss.id, nextAttackAt: 3.0, pending:null, marks:[],
                 repositionAt: RAID_BOSS.repositionEvery, endsAt: RAID_TIME_LIMIT,
                 nextLootAt: RAID_LOOT_REFILL_EVERY };
@@ -5425,7 +5430,8 @@ function raidStart(multi, demo){
   // 盛り上がりは常に「残り2人」相当(bgmUpdateBattleIntensityがレイドを固定する)。
   bgmSetTrack('battle');
   bgmUpdateBattleIntensity(2);
-  pushToast(demo ? '🐉 デモプレイ:記録は残りません' : '🐉 レイド開始！ 竜に総力戦を挑め');
+  // ボス名は版ごと(RAID_BOSS.name)に変わる。「竜」を決め打ちしない
+  pushToast(demo ? '🐉 デモプレイ:記録は残りません' : `🐉 レイド開始！ ${RAID_BOSS.name}に総力戦を挑め`);
 }
 
 // レイドHUDの更新(毎フレーム。render側のHUD更新から呼ぶ)
@@ -5538,7 +5544,8 @@ function updateRaidModePanel(){
     phase==='preview' ? (ok ? '準備中のため、バトルが終わっても記録・報酬は残りません。'
                             : '準備中です。もうしばらくお待ちください。') :
     phase==='open'    ? '開催中です。挑んだぶんだけ全プレイヤーの累計に加算されます。' :
-    phase==='before'  ? `${raidStartDateLabel()}開幕。全プレイヤーで累計ダメージを稼いで巨竜を討伐しよう。` :
+    // ボス名は版ごと(RAID_BOSS.name)に変わる。「巨竜」を決め打ちしない
+    phase==='before'  ? `${raidStartDateLabel()}開幕。全プレイヤーで累計ダメージを稼いで${RAID_BOSS.name}を討伐しよう。` :
                         '今回の開催は終了しました。次回をお待ちください。';
   btn.disabled = !ok;
   btn.textContent =
@@ -5876,14 +5883,12 @@ document.getElementById('adminRaidDemoBtn').addEventListener('click', ()=>{
   raidStart(false, true);
 });
 document.getElementById('raidCloseBtn').addEventListener('click', ()=> document.getElementById('raidOverlay').classList.add('hidden'));
-/* レイド入口の3つのボタンは、押した時点で**ロビーの選択もレイドへ揃える**。
+/* レイド入口の2つのボタンは、押した時点で**ロビーの選択もレイドへ揃える**。
    こうしないとタブが「みんなと対戦」のままレイドが始まり、戻ってきたときに
-   表示と実際のモードが食い違う(それが「つもりと違うモードで始まる」の原因だった)。 */
-document.getElementById('raidSoloBtn').addEventListener('click', ()=>{
-  if(!raidGuardReady()) return;
-  setLobbyMode('raid');
-  raidStart(false, false);
-});
+   表示と実際のモードが食い違う(それが「つもりと違うモードで始まる」の原因だった)。
+   【1人で挑む廃止】専用ボタンは削除し、「部屋を作る」に注釈を添えて案内する
+   (部屋はホスト1人でもスタートでき、空いた枠はbotが埋まる=挙動は変わらない)。
+   raidStart(false,false) 自体は部屋の作成に失敗したときの1人プレイ経路として残す。 */
 // みんなで挑む: 通常のマルチと同じ部屋の作成→ロビー→開始の流れに乗せる。
 // 違いは定員が3人チーム固定で、部屋のモードが 'raid' になることだけ。
 // (定員も setLobbyMode→sync が RAID_CAPACITY で作り直すので、ここでは何も書かない)
@@ -7720,7 +7725,9 @@ function shareMapLabel(){
   return (MAPS[key] || MAPS.wild).label;
 }
 function shareModeLabel(){
-  if(typeof isTeamMatch==='function' && isTeamMatch()) return 'チーム戦';
+  // 【2026-09-03】レイドも挑戦者を1チームにしたので isTeamMatch() が真になるが、
+  // buildRaidShare() がこれを呼ぶときに「チーム戦」と出ると「レイドバトル」と二重表記になるため除外する。
+  if(typeof isTeamMatch==='function' && isTeamMatch() && !game.raid) return 'チーム戦';
   return netState.mode==='multi' ? 'マルチプレイ' : 'ソロ';
 }
 // 参戦しているマスモンの名前(登録していなければモンスター名)
@@ -9126,7 +9133,8 @@ function submitScoreToRanking(isWin, placement){
     elementLabel: ELEMENTS[player.element].label,
     /* 【集計先の振り分け】チーム戦(20チームBR・バトルアリーナ)は**マップを問わず**チーム戦の記録へ。
        仲間と分け合う試合のキル数をシングルと同じ土俵で並べると比べ物にならないため(発注者決定 2026-08-14)。
-       レイドは teamSize=1 のままなので、ここでは従来どおり通常/リアルへ入る。 */
+       レイドは自前の集計(__aramonAddRaidDamage/raidRecordRun)を持ち、そもそもこの
+       submitScoreToRanking() 自体を通らない(raidShowResultが別経路)ので、ここには来ない。 */
     mapType: (typeof isTeamMatch==='function' && isTeamMatch()) ? 'team'
            : (currentMap && currentMap.real3d) ? 'real' : 'normal',
     skin: equippedSkin,               // その試合で装備していたスキン(ランキングアイコンに反映)

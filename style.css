@@ -5367,7 +5367,12 @@
   .raid-bonus-note{ margin-top:5px; font-family:'Rajdhani',sans-serif; font-weight:600;
     font-size:10.5px; line-height:1.4; color:var(--ink-dim); }
   .raid-actions{ display:flex; gap:10px; justify-content:center; flex-shrink:0; }
-  .raid-go-btn{ padding:8px 20px; border-radius:9px; cursor:pointer; border:1px solid #e0af1e;
+  /* 【1人で挑む廃止】「部屋を作る」だけ2行(本文+注釈)になるので、押しやすさ
+     (--tap-main)を割り込ませない min-height を必ず持たせる(潰れ防止の原則)。
+     縦に積むレイアウトはボタン共通にしておく ―― 注釈が無いボタンも1行のまま中央寄せされる。 */
+  .raid-go-btn{ display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; min-height:var(--tap-main); flex-shrink:0; padding:6px 20px; border-radius:9px; cursor:pointer;
+    border:1px solid #e0af1e;
     font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
     color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 0 14px -3px rgba(255,206,120,0.9); }
   .raid-go-btn.raid-go-multi{ color:#fff; border-color:#c9401f;
@@ -5375,6 +5380,8 @@
   /* 部屋を探すだけ紫(レイド画面・レイドランキングと同じ色)にして「作る」と見分ける */
   .raid-go-btn.raid-go-find{ color:#efe2ff; border-color:rgba(190,130,255,0.85);
     background:linear-gradient(180deg,#8b4fd8,#5f2ba8); box-shadow:0 0 14px -4px rgba(170,110,255,0.9); }
+  /* 「部屋を作る」の2行目の注釈(1人でも始められます)。本文より小さく控えめに */
+  .raid-go-note{ font-size:9px; font-weight:600; letter-spacing:0.3px; opacity:0.85; }
 
   /* --- ガチャの切替タブ / 近日公開 --- */
   /* タブと右側のボタンはタイトルの長さに関係なく1行を保つ(縮ませない・折り返さない) */

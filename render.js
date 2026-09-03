@@ -4799,14 +4799,17 @@ function fx3dBoltDown(x, y, topZ, color, seed, fade){
 /* ---------- 種類ごとの立体エフェクト ---------- */
 
 // 扇(インフェルノ): 地面の焦げ跡+ゆらめく炎の火炎放射
-function fx3dFlameFan(ae, curReach, fade){
+// density: 立てる炎の本数の倍率(既定1=今まで通り)。
+// jokerPiston(発注者指摘: 矢が炎柱の海に埋もれて読めない)専用に薄める。他の呼び出しは変えない
+function fx3dFlameFan(ae, curReach, fade, density){
   const half = (ae.fanAngleDeg||45)*Math.PI/360;
   const col = ae.auraTint || ae.color;
   const ramp = fx3dFireRamp(col);
   const scorch = fanOutlinePoints(ae.x, ae.y, ae.angle, curReach, half, 16);
   if(scorch) fx3dFill(scorch, ramp.smoke, 0.42*fade, 0);
+  const flameN = Math.max(1, Math.round(FX3D_FLAME_N*(density!=null?density:1)));
   const cols = [];
-  for(let i=0;i<FX3D_FLAME_N;i++){
+  for(let i=0;i<flameN;i++){
     const h1 = fxHash01(ae.id*11.3 + i*5.7), h2 = fxHash01(ae.id*7.7 + i*3.1), h3 = fxHash01(ae.id*4.1 + i*9.3);
     const a = ae.angle + (h1*2-1)*half*0.95;
     const rr = curReach*(0.12 + 0.88*h2);
@@ -5622,7 +5625,9 @@ function fx3dPsychicWall(ae, curReach, fade){
    ・中身の詰まった球に見せるため、上へ積む輪を「濃いまま」重ねる
      (薄くすると地面の色が透けて煙にしか見えない)                          */
 const FX3D_DOME_NEAR = 200;   // カメラがこの距離まで近ければ胴体を塗らない(輪郭と地面の輪は残す)
-function fx3dDomeBurst(ae, curReach, fade){
+// apexScale: 天辺の白い芯玉だけの大きさ倍率(既定1=今まで通り)。
+// jokerFeather(発注者指摘: 「ドームの明るい球は小さく」)専用に0<1を渡す。他の呼び出しは変えない
+function fx3dDomeBurst(ae, curReach, fade, apexScale){
   const R = curReach;
   /* **カメラがドームの中に入っているときは胴体を塗らない。**
      半径420を術者の足元に出す技(デュラハン最終奥義)は、カメラが術者の145後ろに居るので
@@ -5680,7 +5685,7 @@ function fx3dDomeBurst(ae, curReach, fade){
     ctx.globalAlpha = Math.min(1, 0.8*fade);
     ctx.globalCompositeOperation = 'lighter';
     // 天辺の芯が半径330の爆風に対して小さすぎた(26px固定)。半径に比例させる
-    const rr = Math.max(6, Math.min(R*0.25, 120)*apex.scale);
+    const rr = Math.max(6, Math.min(R*0.25, 120)*apex.scale)*(apexScale!=null?apexScale:1);
     const g = ctx.createRadialGradient(apex.x, apex.y, 0, apex.x, apex.y, rr);
     g.addColorStop(0, 'rgba(255,255,255,0.95)');   // 天辺の芯。暗い技でもここは白く抜く
     g.addColorStop(0.45, _hexA(sh.spark, 0.7));
@@ -5708,6 +5713,373 @@ function fx3dHeartBurstFx(ae, curReach, fade){
     fx3dFillHeartScreen(p.x, p.y, size, SATSUKI_HEART_COLOR, fade*(1-phase)*0.9, 10);
   }
 }
+/* ===================================================================
+   レイド第3回「ジョーカーあるるかん」新技4つの見た目(tools/season_specs/raid3_boss_spec.md B節)。
+   ae.style('jokerGear'/'jokerPiston'/'jokerFeather'/'jokerSword')で分岐する。
+   既存の円/扇の描画(点線予告+fx3dDomeBurst/fx3dFlameFan)は残したまま、
+   heartBlast(北大路さつキジン)と同じやり方でその上に重ねるだけにする。
+   ボスは通常モンスターの13倍(RAID_BOSS.radius=288)なので、飾りの高さ・大きさは
+   FX3D_MON_H ではなく RAID_BOSS.radius から作る(この技専用の基準として1か所に置く)。 */
+const JOKER_BODY_H    = RAID_BOSS.radius*0.95; // ボスの胴体まわりに飾りを置く高さの基準
+const JOKER_GEAR_N    = 3;   // せり出す歯車の枚数(発注者指定2〜3枚)
+const JOKER_GEAR_TEETH = 9;  // 歯数(発注者指定8〜10)
+const JOKER_FEATHER_N = 6;   // 輪を描く羽根の枚数(発注者指定4〜6枚)
+
+// 歯車1枚をスクリーン座標へ描く(常にカメラへ正対するビルボード。回転はrotで与える)
+function _fx3dGearPath(cx, cy, r, teeth, rot){
+  const innerR = r*0.78;
+  ctx.beginPath();
+  for(let i=0;i<teeth*2;i++){
+    const a = rot + (i/(teeth*2))*Math.PI*2;
+    const rr = (i%2===0) ? r : innerR;
+    const x = cx+Math.cos(a)*rr, y = cy+Math.sin(a)*rr;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+}
+function fx3dGearDisc(wx, wy, dz, r, teeth, rot, color, alpha){
+  if(alpha<=0.01) return;
+  const p = fx3dPoint(wx, wy, dz);
+  if(!p) return;
+  const rr = r*p.scale;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
+  _fx3dGearPath(p.x, p.y, rr, teeth, rot);
+  ctx.fillStyle = color;
+  if(!renderHeavyLoad){ ctx.shadowBlur = 10; ctx.shadowColor = color; }
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = Math.max(1, rr*0.05); ctx.stroke();
+  // 中心の軸(暗い穴)。歯車らしさを出す
+  ctx.beginPath(); ctx.arc(p.x, p.y, rr*0.22, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+  ctx.restore();
+}
+/* 【予告のタイミングについて】combat.js raidFireBossAttack の mk() は ae.telegraphTime を
+   常に0で作る(予告は ae が生まれる**前**の raidState.pending が別に持っている)。
+   そのため ae 側の inTelegraph はほぼ一瞬しか真にならず、予告の演出(歯車がせり出す・
+   ピストン腕・羽根の輪・剣の振りかぶり)は ae 単位では出せない。
+   予告はここではなく drawRaidTelegraph()(raidState.pending を見る側)から、
+   位置(x,y)と発動までの残り秒数(left)を渡して呼ぶ。ae 単位で呼ぶのは発動後(fill)の
+   演出(fx3dJokerXxxFx)だけにする。
+   emerge(0→1)は「発動まであと何秒か」から作る共通の立ち上がり。技ごとの正確な予告時間を
+   ここへ持ち込まない(pending には秒数しか無いので、既存のblink演出と同じ考え方に合わせる)。 */
+const JOKER_TELE_RAMP = 1.2; // 発動のこれだけ前から徐々にせり出す
+function jokerTeleEmerge(left){ return clamp(1 - left/JOKER_TELE_RAMP, 0, 1); }
+
+/* 虎乱(コラン)= jokerGear。予告: ボスの胴体まわりに歯車が2〜3枚せり出して回転を始める。
+   発動: 歯車が高速旋回し、外周へ火花とギザギザの衝撃線が走る。
+   上体の旋回は「半透明の黄色い回転ブレード(扇形3枚)」を1回転させて表す。
+   【発注者レビュー2026-09-03で修正】歯車が空高くに巨大に浮いて見えた
+   (胴の高さの目安ではなく、軌道半径・歯車自体の半径の両方が小さすぎた上に
+   高さも背丈の0.85倍まで上げていたため)。歯車は**胴の高さ(z=JOKER_BODY_H×0.5)**で
+   胴を囲む軌道(半径=RAID_BOSS.radius×1.1)を回り、歯車自体の半径もRAID_BOSS.radius×0.55へ。
+   「胴体から出る」ベルトに見えるよう、軌道半径・歯車半径ともfixedにして、emergeは
+   透明度と自転速度だけへ効かせる(半径を0から伸ばすと最初は点にしか見えないため)。 */
+const JOKER_GEAR_ORBIT_R = RAID_BOSS.radius*1.1;  // 歯車の軌道半径(胴を囲む)
+const JOKER_GEAR_R       = RAID_BOSS.radius*0.55; // 歯車自体の半径
+const JOKER_GEAR_Z       = JOKER_BODY_H*0.5;      // 胴の高さ
+function fx3dJokerGearOrbit(x, y, emerge, spin, fade){
+  for(let i=0;i<JOKER_GEAR_N;i++){
+    const a = spin*0.35 + (i/JOKER_GEAR_N)*Math.PI*2;
+    const wx = x+Math.cos(a)*JOKER_GEAR_ORBIT_R, wy = y+Math.sin(a)*JOKER_GEAR_ORBIT_R;
+    fx3dGearDisc(wx, wy, JOKER_GEAR_Z, JOKER_GEAR_R, JOKER_GEAR_TEETH, spin*1.7+i*2.1, '#f5ec00', fade*0.9*emerge);
+  }
+}
+// pending(予告)側から呼ぶ。x,y=ボスの位置、left=発動まで残り秒
+function fx3dJokerGearTelegraphAt(x, y, left, fade){
+  const emerge = jokerTeleEmerge(left);
+  if(emerge<=0.01) return;
+  fx3dJokerGearOrbit(x, y, emerge, matchTime*(1.2+emerge*3.2), fade);
+}
+function fx3dJokerGearFx(ae, curReach, fade){
+  fx3dJokerGearOrbit(ae.x, ae.y, 1, matchTime*9.5, fade); // 発動後は高速旋回に切り替え
+  /* 上体の旋回=半透明の回転ブレード(扇形3枚)。**胴の高さ(歯車と同じZ)**で外周(curReach)
+     まで届く刃を1回転させる(以前は地面すれすれの高さで、宙に浮いた歯車と繋がって
+     見えなかった)。fanOutlinePoints は地面(z=0)専用なので使わず、高さ付きで組む。 */
+  const bladeRot = (matchTime-ae.spawnAt)*3.4;
+  const bladeHalf = 16*Math.PI/180;
+  for(let i=0;i<3;i++){
+    const a = bladeRot + (i/3)*Math.PI*2;
+    const center = fx3dPoint(ae.x, ae.y, JOKER_GEAR_Z);
+    if(!center) continue;
+    const arc = [center];
+    for(let s=0;s<=10;s++){
+      const aa = a - bladeHalf + (s/10)*bladeHalf*2;
+      const p = fx3dPoint(ae.x+Math.cos(aa)*curReach, ae.y+Math.sin(aa)*curReach, JOKER_GEAR_Z);
+      if(p) arc.push(p);
+    }
+    if(arc.length>=3) fillShape(arc, '#f5ec00', 0.32*fade);
+  }
+  if(renderHeavyLoad) return;
+  // 外周へ走るギザギザの衝撃線+火花
+  const n = 5;
+  for(let i=0;i<n;i++){
+    const baseA = (i/n)*Math.PI*2 + fxHash01(ae.id+i*3.1)*0.4;
+    const jseed = Math.floor(matchTime*10) + i*7;
+    const pts = [];
+    for(let s=0;s<=6;s++){
+      const f = s/6, r = curReach*f;
+      const jitter = (fxHash01(jseed*13.1+s*5.3)-0.5)*0.05*(1-f*0.4);
+      const wx = ae.x+Math.cos(baseA+jitter)*r, wy = ae.y+Math.sin(baseA+jitter)*r;
+      const p = fx3dPoint(wx, wy, 4+curReach*0.02*Math.sin(f*7+matchTime*20));
+      if(p) pts.push(p);
+    }
+    fx3dStroke(pts, '#fff6b0', 2.4, 0.75*fade, 10);
+  }
+  for(let i=0;i<8;i++){
+    const h1=fxHash01(ae.id*4.7+i*3.3), h2=fxHash01(ae.id*8.9+i*6.1);
+    const a=h1*Math.PI*2, r=curReach*(0.7+0.3*h2);
+    const p=fx3dPoint(ae.x+Math.cos(a)*r, ae.y+Math.sin(a)*r, 8);
+    if(p) drawGroundSpark(p, 'star', '#fff6b0', fade*0.85, ae.id+i);
+  }
+}
+
+/* 炎の矢(フレッシュ・アンフラメ)= jokerPiston。予告: 帯の両脇に赤いピストン腕が前後に伸縮する。
+   発動: 帯の中を細長い炎の矢が3〜4本、ボスから先端へ順に貫く。先端で小さな火花。 */
+// pending(予告)側から呼ぶ。x,y=ボスの位置、angle/fanAngleDeg=帯の向きと角度、left=発動まで残り秒
+function fx3dJokerPistonTelegraphAt(x, y, angle, fanAngleDeg, left, fade){
+  const emerge = jokerTeleEmerge(left);
+  if(emerge<=0.01) return;
+  const half = (fanAngleDeg||30)*Math.PI/360;
+  const osc = 0.5+0.5*Math.sin(matchTime*6);
+  const baseD = RAID_BOSS.radius*0.55;
+  const armLen = RAID_BOSS.radius*(0.7+0.5*osc)*emerge;
+  for(const side of [-1,1]){
+    const a = angle + half*1.4*side; // 帯の少し外側
+    const x0=x+Math.cos(a)*baseD, y0=y+Math.sin(a)*baseD;
+    const x1=x+Math.cos(a)*(baseD+armLen), y1=y+Math.sin(a)*(baseD+armLen);
+    const p0=fx3dPoint(x0,y0,JOKER_BODY_H*0.5), p1=fx3dPoint(x1,y1,JOKER_BODY_H*0.5);
+    if(!p0||!p1) continue;
+    const w = Math.max(4, RAID_BOSS.radius*0.16*((p0.scale+p1.scale)*0.5));
+    fx3dStroke([p0,p1], '#c0281c', w, 0.55*fade*emerge, 8);      // ピストン本体(影)
+    fx3dStroke([p0,p1], '#ff5a2e', w*0.45, 0.7*fade*emerge, 10); // 縁の熱(これから来る合図)
+  }
+}
+/* 【発注者レビュー2026-09-03で修正】以前は先端/後方で高さが3段に散らばる菱形(=炎の三角錐に
+   見える)を、帯の中でも左右にばらけさせて撃っていた。「細長い矢が帯の中心を一直線に飛ぶ」
+   に直す: 高さは1つに固定(平たい板として見える)・横のブレを無くし、
+   矢柄(細い帯)+矢じり(三角形)の2部品だけで組む。長さ・太さはRAID_BOSS.radius基準。
+   【再レビューで再修正】最初の数値(radius×0.9・半幅0.045)は爆風ドームや歯車と並べると
+   小さすぎて、彗星の尾(fx3dFireGlow)に埋もれてほぼ点にしか見えなかった。
+   歯車(radius×0.55〜1.1)と同じ土俵に立てる大きさへ引き上げる。 */
+const JOKER_ARROW_LEN = RAID_BOSS.radius*1.3;    // 矢の全長
+const JOKER_ARROW_HW  = RAID_BOSS.radius*0.09;   // 矢柄の半幅
+const JOKER_ARROW_HEAD_HW = JOKER_ARROW_HW*2.8;  // 矢じりの半幅
+const JOKER_ARROW_HEAD_LEN = JOKER_ARROW_LEN*0.3;// 矢じりの長さ
+// 矢1本。along=帯の中心線上での位置(ae.angle方向。横のブレは持たせない=帯の外へ出ない)
+function fx3dJokerPistonArrow(ae, along, fade){
+  const a = ae.angle, fx=Math.cos(a), fy=Math.sin(a), rx=-Math.sin(a), ry=Math.cos(a);
+  const dz = JOKER_BODY_H*0.4; // 矢全体で高さを揃える(段差を付けない=板のまま見える)
+  const shaftLen = JOKER_ARROW_LEN - JOKER_ARROW_HEAD_LEN;
+  const backD = along - shaftLen*0.5, midD = along + shaftLen*0.5, tipD = along + shaftLen*0.5 + JOKER_ARROW_HEAD_LEN;
+  const at = (d, lat)=> fx3dPoint(ae.x+fx*d+rx*lat, ae.y+fy*d+ry*lat, dz);
+  const tailL=at(backD,JOKER_ARROW_HW), tailR=at(backD,-JOKER_ARROW_HW);
+  const headL=at(midD,JOKER_ARROW_HW),  headR=at(midD,-JOKER_ARROW_HW);
+  const arrowL=at(midD,JOKER_ARROW_HEAD_HW), arrowR=at(midD,-JOKER_ARROW_HEAD_HW), tip=at(tipD,0);
+  if(!tailL||!tailR||!headL||!headR||!arrowL||!arrowR||!tip) return;
+  fx3dFill([tailL,headL,headR,tailR], '#ff6a1a', 0.92*fade, 14);      // 矢柄
+  fx3dFill([arrowL,tip,arrowR], '#ffd27a', 0.95*fade, 16);            // 矢じり
+  fx3dCore([arrowL,tip,arrowR], '#fff6dd', 0.4*fade, 6);              // 先端だけ控えめに白熱(全体を白飛びさせない)
+  if(!renderHeavyLoad){
+    // 尾に流れる炎(彗星の尾)。1点の丸い光だけだと矢の向きが読めないので3つ並べて流す
+    for(let s=0;s<3;s++){
+      const bd = backD - shaftLen*0.22*(s+1);
+      const bx = ae.x+fx*bd, by = ae.y+fy*bd;
+      fx3dFireGlow(bx, by, groundZAt(bx,by), 30-s*7, '#ff8a3d', fade*(0.55-s*0.14));
+    }
+  }
+}
+function fx3dJokerPistonFx(ae, curReach, fade, fillDist){
+  const N = 4;
+  for(let i=0;i<N;i++){
+    const h1=fxHash01(ae.id*5.3+i*7.1);
+    const speed = 0.85+0.3*h1;
+    const phase = ((matchTime-ae.spawnAt)*speed + i/N) % 1;
+    const along = curReach*phase;
+    // 矢の全長ぶんの余裕を持たせて撃つ(帯の始端で尾が突き出ない/終端で頭が突き抜けない)
+    if(along>JOKER_ARROW_LEN*0.5 && along<curReach-JOKER_ARROW_LEN*0.5) fx3dJokerPistonArrow(ae, along, fade);
+  }
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  fx3dAoeEndPop(ae.x+fx*ae.range, ae.y+fy*ae.range, fillDist-ae.range, '#ff5a2e', fade, 90);
+}
+
+/* 羽の舞踏(ラ・ダンス・ダン・ヴオラン)= jokerFeather。各円(count=4体)ごとに同じ見た目。
+   予告: 円周に紫の羽根(細長い葉形)が立つ(6枚)。
+   発動: 立った羽根が内側へ倒れ込みながら中心へ絞られる(紫の糸)+凍結の氷の粒。
+   【発注者レビュー2026-09-03で修正】以前はカメラ正対のビルボードを「点」として動かすだけで、
+   紫のドーム(fx3dDomeBurst)に埋もれて羽根と読めなかった。**羽根はワールド座標の
+   root(円周・地面)→tip(先端)の2点を結ぶ葉形**で描く: 予告は tip が真上(立つ)、
+   発動は tip が中心・低い高さへ倒れ込む(root は円周のまま動かさない=倒れ込んで見える)。 */
+// 葉形1枚。rootP=根元(円周・地面)、tipP=葉先(立つ/倒れるで動く)。太さと透明度は呼び出し側から
+function _fx3dFeatherBlade(rootP, tipP, width, alpha){
+  if(!rootP || !tipP || alpha<=0.01) return;
+  const dx=tipP.x-rootP.x, dy=tipP.y-rootP.y;
+  const len = Math.hypot(dx,dy);
+  if(len<1) return;
+  const nx=-dy/len, ny=dx/len;
+  const bulge = Math.min(len*0.5, width*0.5); // 葉の膨らみ(細すぎ/太すぎを両方防ぐ)
+  const midx=(rootP.x+tipP.x)/2, midy=(rootP.y+tipP.y)/2;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.beginPath();
+  ctx.moveTo(rootP.x, rootP.y);
+  ctx.quadraticCurveTo(midx+nx*bulge, midy+ny*bulge, tipP.x, tipP.y);
+  ctx.quadraticCurveTo(midx-nx*bulge, midy-ny*bulge, rootP.x, rootP.y);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(rootP.x, rootP.y, tipP.x, tipP.y);
+  g.addColorStop(0, '#8c4fd9'); g.addColorStop(1, '#f5ecff'); // 根元=紫 → 先端=白(先が尖る)
+  ctx.fillStyle = g;
+  if(!renderHeavyLoad){ ctx.shadowBlur=10; ctx.shadowColor='#c98cff'; }
+  ctx.fill();
+  // 縁取り(発注者レビューで追加: 爆風ドームの紫と混じって輪郭が読めなかったため、
+  // 白で縁を締めて「ドームの上に立つ別の飾り」だと分かるようにする)
+  ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=2.4;
+  ctx.beginPath();
+  ctx.moveTo(rootP.x, rootP.y);
+  ctx.quadraticCurveTo(midx+nx*bulge, midy+ny*bulge, tipP.x, tipP.y);
+  ctx.quadraticCurveTo(midx-nx*bulge, midy-ny*bulge, rootP.x, rootP.y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(rootP.x,rootP.y); ctx.lineTo(tipP.x,tipP.y); ctx.stroke(); // 羽根の芯
+  ctx.restore();
+}
+/* 【再レビューで再修正】葉が爆風ドーム(fx3dDomeBurst。同じ紫〜白系統の色で、輪と稜線と
+   天辺の光をまとった球)に埋もれて見分けられなかった。高さ・太さを大きく上げ、
+   縁取りも入れて「ドームの上に立つ、はっきりした別の飾り」にする。 */
+const JOKER_FEATHER_STAND_H = 0.95; // 「立っている」ときの高さ(円の半径に対する比)
+const JOKER_FEATHER_W       = 0.30; // 葉の太さ(円の半径に対する比)
+// pending(予告)側から呼ぶ。x,y=円の中心、range=円の半径、left=発動まで残り秒
+function fx3dJokerFeatherTelegraphAt(x, y, range, left, fade){
+  const emerge = jokerTeleEmerge(left);
+  if(emerge<=0.01) return;
+  const standH = range*JOKER_FEATHER_STAND_H;
+  for(let i=0;i<JOKER_FEATHER_N;i++){
+    const a = (i/JOKER_FEATHER_N)*Math.PI*2 + matchTime*0.35; // ゆっくり回りながら立つ
+    const bx=x+Math.cos(a)*range, by=y+Math.sin(a)*range;
+    const rootP = fx3dPoint(bx, by, 6);
+    const tipP  = fx3dPoint(bx, by, Math.max(6, standH*emerge)); // 根元は動かさず、真上へ立ち上がる
+    _fx3dFeatherBlade(rootP, tipP, range*JOKER_FEATHER_W, fade*0.9*emerge);
+  }
+}
+/* 【再レビューで再修正】絞り(0.5秒固定)がドームの展開(curReach。半径520/充填速度945で
+   約0.55秒かかる)より速く終わるため、ドームがまだ小さいうち(=画面上でも小さいうち)に
+   羽根はもう中心へ畳まれきっていた(実測: 撮影時刻を合わせても常にどちらかが不自然な
+   縮尺で写る)。**根元は「今のドームの縁(curReach)」に一致させ**、畳み込みは
+   「ドームが全開になってから」の別タイマーにする(全開までは羽根も一緒に育つ =
+   standH*curReach/range で背丈も追従、根元がcurReachにあるので同じ縁の上に立つ)。 */
+function fx3dJokerFeatherFx(ae, curReach, fade){
+  const reachT = ae.range/(ae.fillSpeed||945);         // ドームが全開になるまでの時間
+  const elapsed = matchTime-ae.spawnAt;
+  // combat.js の life = range/fillSpeed + 0.35 なので、全開後ちょうど0.35秒で絞りきる計算になる
+  const foldProg = clamp((elapsed-reachT)/0.32, 0, 1);
+  const growProg = clamp(curReach/Math.max(ae.range,1), 0, 1); // 展開中は根元・背丈をこれで追従させる
+  const standH = ae.range*JOKER_FEATHER_STAND_H*growProg;
+  for(let i=0;i<JOKER_FEATHER_N;i++){
+    const a = (i/JOKER_FEATHER_N)*Math.PI*2 + matchTime*0.35;
+    const bx = ae.x+Math.cos(a)*curReach, by = ae.y+Math.sin(a)*curReach; // 根元=今のドームの縁
+    const rootP = fx3dPoint(bx, by, 6);
+    // 葉先が「立っていた高い位置」→「中心の低い位置」へ内側へ倒れ込む(全開後のみ進む)
+    const tipWx = bx + (ae.x-bx)*foldProg, tipWy = by + (ae.y-by)*foldProg;
+    const tipP = fx3dPoint(tipWx, tipWy, Math.max(6, standH*(1-foldProg*0.85)));
+    _fx3dFeatherBlade(rootP, tipP, ae.range*JOKER_FEATHER_W*(1-foldProg*0.3), fade*0.9);
+  }
+  if(renderHeavyLoad) return;
+  // 紫の糸(絞りが進んでから見せる。序盤から出すと羽根の形と重なって煩雑になるため)
+  if(foldProg>0.15){
+    const c = fx3dPoint(ae.x, ae.y, 4);
+    for(let i=0;i<JOKER_FEATHER_N;i++){
+      const a = (i/JOKER_FEATHER_N)*Math.PI*2 + matchTime*0.35;
+      const bx = ae.x+Math.cos(a)*curReach, by = ae.y+Math.sin(a)*curReach;
+      const rootP = fx3dPoint(bx, by, 4);
+      if(rootP && c) fx3dStroke([rootP,c], '#c98cff', 1.4, 0.4*fade*foldProg, 4);
+    }
+  }
+  for(let i=0;i<10;i++){ // 凍結の氷の粒
+    const h1=fxHash01(ae.id*6.1+i*3.7), h2=fxHash01(ae.id*2.3+i*8.9);
+    const rr = curReach*0.5*h1*(1-foldProg*0.6);
+    const a = h2*Math.PI*2;
+    const p = fx3dPoint(ae.x+Math.cos(a)*rr, ae.y+Math.sin(a)*rr, 6+14*h1);
+    if(p) drawGroundSpark(p, 'diamond', '#cfe9ff', fade*0.8, ae.id+i);
+  }
+}
+
+/* 聖ジョージの剣 = jokerSword。予告: ボスの上に金色の大剣(柄は赤・刃は白金)が現れ振りかぶる。
+   発動: 剣が扇の範囲を薙ぎ払う(刃の残像=黄白の円弧をfillの進みに合わせて回す)。先端で光の破片。 */
+function _fx3dSwordScreen(p, rot, size, alpha){
+  if(alpha<=0.01 || !p) return;
+  ctx.save();
+  ctx.translate(p.x, p.y); ctx.rotate(rot);
+  ctx.globalAlpha = Math.min(1, alpha);
+  const bw = size*0.16, bl = size;
+  const bg = ctx.createLinearGradient(-bw,0,bw,0);
+  bg.addColorStop(0,'#8f97a8'); bg.addColorStop(0.5,'#ffffff'); bg.addColorStop(1,'#c9d3e0');
+  ctx.beginPath();
+  ctx.moveTo(0,-bl); ctx.lineTo(bw,-bl*0.15); ctx.lineTo(bw*0.7,0);
+  ctx.lineTo(-bw*0.7,0); ctx.lineTo(-bw,-bl*0.15); ctx.closePath();
+  ctx.fillStyle = bg;
+  if(!renderHeavyLoad){ ctx.shadowBlur=14; ctx.shadowColor='#ffe9a0'; }
+  ctx.fill();
+  ctx.fillStyle = '#ffd400'; ctx.fillRect(-bw*1.8, 0, bw*3.6, size*0.05);   // 鍔
+  ctx.fillStyle = '#a01818'; ctx.fillRect(-bw*0.35, size*0.05, bw*0.7, size*0.3); // 柄
+  ctx.restore();
+}
+// pending(予告)側から呼ぶ。x,y=ボスの位置、angle=扇の向き、left=発動まで残り秒
+function fx3dJokerSwordTelegraphAt(x, y, angle, left, fade){
+  const emerge = jokerTeleEmerge(left);
+  if(emerge<=0.01) return;
+  const liftH = JOKER_BODY_H*(1.15+0.35*emerge);
+  const tilt = -0.15-0.55*emerge; // だんだん後ろへ振りかぶる
+  const p = fx3dPoint(x-Math.cos(angle)*RAID_BOSS.radius*0.2, y-Math.sin(angle)*RAID_BOSS.radius*0.2, liftH);
+  if(p) _fx3dSwordScreen(p, tilt, 220*p.scale, fade*emerge);
+}
+/* 【発注者レビュー2026-09-03で修正】発動が「黄色い炎の三角錐の輪」にしか見えなかった
+   (fx3dFlameFanの炎柱まかせで、剣そのものを一度も描いていなかったため)。
+   予告と同じ _fx3dSwordScreen(白金の刃+赤の柄+金の鍔)を、fillの進みに合わせて
+   扇の始端→終端へ実際に回して見せる主役にする。剣はボスの近く(判定の射程3000ぶん
+   離すと豆粒になるため)に置いたまま角度だけ振り、軌跡は円弧の残像(既存のまま)+
+   薙いだ跡のうっすらした金色の塗り(炎の代わり)で見せる。 */
+const JOKER_SWORD_ORBIT_R = RAID_BOSS.radius*1.8; // 剣を振る位置(ボスからの距離)
+function fx3dJokerSwordFx(ae, curReach, fade){
+  const half = (ae.fanAngleDeg||150)*Math.PI/360;
+  const progress = clamp(curReach/Math.max(ae.range,1), 0, 1);
+  const startA = ae.angle - half;
+  const sweepA = startA + progress*half*2; // fillの進み=薙ぎ払う角度(始端→終端)
+
+  // 既に薙いだ範囲だけをうっすら金色に(炎の柱をやめた代わりの「切った跡」)
+  if(progress>0.02){
+    const doneHalf = (sweepA-startA)/2, doneMid = startA + doneHalf;
+    const wash = fanOutlinePoints(ae.x, ae.y, doneMid, curReach, doneHalf, 20);
+    if(wash) fillShape(wash, '#ffd400', 0.16*fade);
+  }
+
+  // 刃の残像(黄白の円弧)
+  for(let k=0;k<3;k++){
+    const a = sweepA - k*half*0.13;
+    if(a < startA) continue;
+    const arc = [];
+    for(let i=0;i<=16;i++){
+      const f = i/16, rr = curReach*(0.35+0.65*f);
+      const p = fx3dPoint(ae.x+Math.cos(a)*rr, ae.y+Math.sin(a)*rr, JOKER_BODY_H*0.7*f);
+      if(p) arc.push(p);
+    }
+    fx3dStroke(arc, k===0?'#ffffff':'#ffe066', k===0?7:4, (1-k*0.32)*fade, 16);
+  }
+
+  // 剣そのもの。射程まで飛ばさず、ボスの近くで角度だけ sweepA へ振る
+  const sx = ae.x+Math.cos(sweepA)*JOKER_SWORD_ORBIT_R, sy = ae.y+Math.sin(sweepA)*JOKER_SWORD_ORBIT_R;
+  const sp = fx3dPoint(sx, sy, JOKER_BODY_H*0.75);
+  // +90°: 刃の先が進行方向(接線方向)を指すようにする(そのままだと刃先が地面を向いて見えた)
+  if(sp) _fx3dSwordScreen(sp, sweepA - camState.yaw + Math.PI/2, 260*sp.scale, fade);
+
+  if(renderHeavyLoad) return;
+  for(let i=0;i<3;i++){ // 先端の光の破片
+    const h1=fxHash01(ae.id*4.1+i*7.3);
+    const rr = curReach*(0.6+0.4*h1);
+    const p = fx3dPoint(ae.x+Math.cos(sweepA)*rr, ae.y+Math.sin(sweepA)*rr, 20+30*h1);
+    if(p) drawGroundSpark(p, 'diamond', '#ffe066', fade*0.85, ae.id+i);
+  }
+}
 // リアルマップでの範囲技の描画。ここで描いたらtrueを返し、2Dの描画は行わない
 function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   // 爆風ドームだけは濃いまま、それ以外は半透明にして技以外を見やすくする
@@ -5725,6 +6097,10 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   if(ae.kind==='circle'){
     const ring = fx3dRingPts(ae.x, ae.y, ae.range, 2);
     if(ring) strokeDashedShape(ring, '#000000', 0.45*fadeAlpha);
+    /* レイド新技の「予告」演出(歯車せり出し・羽根の輪など)はここへは足さない。
+       combat.js の mk() は ae.telegraphTime を常に0で作る(予告は ae が生まれる前の
+       raidState.pending 側にある)ので、ここの inTelegraph はほぼ一瞬しか真にならない。
+       予告は drawRaidTelegraph() 側(raidState.pending を見る)で出す。 */
   } else if(ae.kind==='fan' || ae.kind==='fanZigzag'){
     const half = (ae.fanAngleDeg||45)*Math.PI/360;
     const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
@@ -5750,12 +6126,25 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   const curReach = Math.min(ae.range, fillDist);
   if(curReach<=2) return true;
   const progress = clamp(curReach/Math.max(ae.range,1), 0, 1);
-  if(ae.kind==='fan')            fx3dFlameFan(ae, curReach, fade);
+  if(ae.kind==='fan'){
+    /* jokerSwordは「剣で薙ぎ払う」技で炎ではないので、炎の柱(fx3dFlameFan)は
+       焚かない(発注者指摘2026-09-03: 黄色い炎の三角錐の輪にしか見えなかった)。
+       jokerPistonは矢が主役なので炎柱を薄める(発注者指摘: 矢が炎柱の海に埋もれた)。
+       それ以外の既存の炎系はいままで通りの密度。 */
+    if(ae.style==='jokerSword'){ /* 炎なし */ }
+    else if(ae.style==='jokerPiston') fx3dFlameFan(ae, curReach, fade, 0.3);
+    else fx3dFlameFan(ae, curReach, fade);
+    if(ae.style==='jokerPiston') fx3dJokerPistonFx(ae, curReach, fade, fillDist);
+    else if(ae.style==='jokerSword') fx3dJokerSwordFx(ae, curReach, fade);
+  }
   else if(ae.kind==='zigzag')    fx3dThunder(ae, curReach, fade);
   else if(ae.kind==='fanZigzag') fx3dPsychicWall(ae, curReach, fade);
   else if(ae.kind==='circle'){
-    fx3dDomeBurst(ae, curReach, fade);
+    // jokerFeatherは羽根が主役なので、爆風の天辺の白い球は小さく(発注者指摘2026-09-03)
+    fx3dDomeBurst(ae, curReach, fade, ae.style==='jokerFeather' ? 0.4 : 1);
     if(ae.style==='heartBlast') fx3dHeartBurstFx(ae, curReach, fade); // 発注者依頼(2026-08-12): 爆風にハートを纏わせる
+    else if(ae.style==='jokerGear') fx3dJokerGearFx(ae, curReach, fade);
+    else if(ae.style==='jokerFeather') fx3dJokerFeatherFx(ae, curReach, fade);
   }
   else if(ae.kind==='rect'){
     if(ae.style==='crystal')   fx3dCrystalRain(ae, curReach, fade, progress);
@@ -6070,6 +6459,12 @@ function raidTelegraphMarks(){
       fillAlpha: blink * (soon ? 0.42 : 0.24),
       arc: (m.fanDeg!=null) ? { from:m.angle-half, to:m.angle+half } : null,
       inner: (m.fanDeg==null),
+      /* jokerGear/jokerPiston/jokerFeather/jokerSword等の見分け。
+         real3d_zone.js(3D側の描画)は現状これを読まず色のみの輪のままなので、
+         リアルマップでは予告の飾り(歯車・ピストン腕等)は出ない。**このB節の担当外**
+         (real3d_zone.jsはB節の対象ファイルに含まれない)。ここは将来そちらが
+         対応するときのために値だけ渡しておく。 */
+      style: p.move.style || null,
     });
   }
   return out;
@@ -6121,6 +6516,20 @@ function drawRaidTelegraph(){
   }
   ctx.restore();
   ctx.setLineDash([]);
+  /* レイド第3回ジョーカーあるるかんの新技4つの予告演出(B節)。
+     ae がまだ無いこの段階(raidState.pending)でしか「予告中」を表せないので、
+     ここで p.move.style を見て重ねる(fx3dJokerXxxFxは発動後にaeから呼ばれる別物)。
+     fade=1固定(この関数自体が既にblink込みの見た目を描いているので、上に足す飾りは
+     等倍の濃さで重ね、飾り自身のemergeだけで立ち上がりを作る)。 */
+  const style = p.move.style;
+  if(style){
+    for(const m of p.marks){
+      if(style==='jokerGear') fx3dJokerGearTelegraphAt(m.x, m.y, left, 1);
+      else if(style==='jokerFeather') fx3dJokerFeatherTelegraphAt(m.x, m.y, m.r, left, 1);
+      else if(style==='jokerPiston') fx3dJokerPistonTelegraphAt(m.x, m.y, m.angle||0, m.fanDeg, left, 1);
+      else if(style==='jokerSword') fx3dJokerSwordTelegraphAt(m.x, m.y, m.angle||0, left, 1);
+    }
+  }
 }
 function groundCirclePoints(cx, cy, radius, segs){
   const pts = [];
@@ -7868,7 +8277,9 @@ function updateHUD(){
   {
     const pingBtnEl = document.getElementById('pingBtn');
     if(pingBtnEl){
-      const showPing = (typeof isTeamMatch==='function') && isTeamMatch() &&
+      // 【2026-09-03】レイドも挑戦者を1チームにしたので isTeamMatch() が真になるが、
+      // ピンはコメントどおりレイドでは出さないため game.raid を個別に除外する。
+      const showPing = (typeof isTeamMatch==='function') && isTeamMatch() && !game.raid &&
         game.started && !game.over && player.alive;
       pingBtnEl.classList.toggle('hidden', !showPing);
     }

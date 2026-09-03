@@ -1749,9 +1749,9 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <div class="raid-scroll" id="raidScroll"></div>
       <div class="mm-scrollbar hidden" id="raidScrollbar"><div class="mm-scrollbar-thumb"></div></div>
     </div>
+    <!-- 【1人で挑む廃止】部屋を作る=1人でも開始できるので、専用ボタンは持たず注釈で案内する -->
     <div class="raid-actions">
-      <button id="raidSoloBtn" class="raid-go-btn">⚔ 1人で挑む</button>
-      <button id="raidMultiBtn" class="raid-go-btn raid-go-multi">👥 部屋を作る</button>
+      <button id="raidMultiBtn" class="raid-go-btn raid-go-multi">👥 部屋を作る<span class="raid-go-note">1人でも始められます</span></button>
       <button id="raidFindRoomBtn" class="raid-go-btn raid-go-find">🔍 部屋を探す</button>
     </div>
   </div>
