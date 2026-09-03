@@ -269,7 +269,7 @@ Object.keys(ELEMENTS).forEach(key=>{
 const summonDiskImg = loadMonsterImage('images/summon_disk');
 const summonDiskThickImg = loadMonsterImage('images/summon_disk_thick');
 // ガチャ画面のidle演出用(ピックアップ告知画像)。実際のURLは SKIN_MEDIA から決まるので、
-// ピックアップの定数(GACHA_PICKUP_SSR / RAID_GACHA_PICKUP)を読める位置まで src の代入は遅らせる。
+// ピックアップの定数(GACHA_PICKUP_SSR_IDS / RAID_GACHA_PICKUP_IDS)を読める位置まで src の代入は遅らせる。
 function loadPromoImage(url){
   const img = new Image();
   img.loaded = false; img.failed = false; img.decoding = 'async';
@@ -1279,16 +1279,17 @@ function ssrTier3DmgMult(move, attacker){
 // 更新履歴(プレイに関わる大きな機能の追加・変更・調整のみ。日付降順で表示する)。
 // 該当する作業をしたら、このリストの先頭日付にも追記すること(CLAUDE.md参照)。
 // トップ画面左下のバナー。3秒ごとに切り替わってループする。最大5件(古いものから落ちる)。
-// open は押したときに開く画面('gacha' / 'season' / 'shop')。
+// open は押したときに開く画面('gacha' / 'season' / 'shop' / 'raid')。
 // 【自動更新】tools/studio_web.html のSSRスキン追加(<<AUTO:LOBBY_BANNERS>>)が新しい1件を
 // 先頭へ足し、5件を超えたら末尾を落とす。手動で増やすときもこの形式に合わせること。
 const LOBBY_BANNERS = [
   // 先頭が起動直後に表示される(lobbyBannerIdx=0 から始まる)。新しい順。
+  // レイド第3回「あるるかん討伐」の告知(2026-09-04)。5件超のため末尾のバジリスエゾーを落とした
+  { rar:'SSR', name:'あるるかん討伐', tag:'レイド', img:'images/promo_raid_s2.jpg', size:'cover', pos:'50% 40%', open:'raid' },
   { rar:'SSR', name:'西野ピかさ', tag:'新登場・ガチャ', img:'monsters/tsukasa_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@tsukasa_ssr*/
   { rar:'SSR', name:'秦の怪鳥', tag:'新登場・ガチャ', img:'monsters/oki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@oki_ssr*/
   { rar:'SSR', name:'メカビオギドラ', tag:'新登場・ガチャ', img:'monsters/leaf_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@leaf_ssr*/
   { rar:'SSR', name:'ゴッドエンペラー', tag:'新登場・ガチャ', img:'monsters/narga_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@narga_ssr*/
-  { rar:'SSR', name:'バジリスエゾー', tag:'新登場・ガチャ', img:'monsters/suezo_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@suezo_ssr*/
   // <<AUTO:LOBBY_BANNERS>> ここから下へ tools/studio_web.html が新しいSSRの行を先頭挿入する(5件超は末尾を削除)
 ];
 const LOBBY_BANNER_MS = 3000;
@@ -1314,6 +1315,12 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-09-04', items:[
+    { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされ、シーズンパスの最終報酬は近日発表です', g:['feature','general'] },
+    { t:'✨ 前シーズンの最終報酬だったSSRスキン「大喰いの利世」が、ガチャとSSRカタログで手に入るようになりました', g:['feature','monster'] },
+    { t:'🐉 レイド「あるるかん討伐」を開催中です(9/4〜9/17)。全員の与ダメージ累計が目標に届くとSSR「あるるかん」がもらえます', g:['feature','multi'] },
+    { t:'レイドガチャは機械モンスターピックアップです(電王ライナー・メカビオギドラ・メタルグレイモン。装備するとレイドで特効)', g:['feature','monster'] },
+  ]},
   { date:'2026-09-03', items:[
     { t:'✨ SSRスキン「電王ライナー」が登場しました！', g:['feature','monster'] },
   ]},
@@ -2961,8 +2968,27 @@ const RAID_ACTIVE = true;                 // レイド機能そのものの有�
    (モンスター作成スタジオはこの行を行頭一致で書き換えるので、位置が変わっても差し支えない) */
 const RAID_CLEAR_SKIN = 'joker_ssr';
 
+/* 日付で「版」を選ぶ共通関数(シーズン・レイド共通、1か所。編集はここだけでよい)。
+   端末のローカル日付(YYYY-MM-DD)を作り、startDate<=today の版のうち startDate が
+   一番遅いものの id を返す(該当が無ければ fallbackId)。日付の作り方は dailyTodayStr()と
+   同じ new Date()+getFullYear/getMonth/getDate の組み合わせだが、startDate の文字列は
+   ゼロ埋めなので、こちらもゼロ埋めして辞書順で正しく比較できるようにしてある。
+   ページ読み込み時に一度だけ決まる(開きっぱなしの端末は次に開いたときに切り替わる)。
+   手で固定したいときは、呼び出し側の引数を渡さず id の文字列を直接書けばよい。 */
+function editionByDate(editions, fallbackId){
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  let bestId = null, bestStart = null;
+  Object.keys(editions).forEach(id=>{
+    const start = editions[id].startDate;
+    if(start && start <= today && (bestStart===null || start > bestStart)){ bestId = id; bestStart = start; }
+  });
+  return bestId || fallbackId;
+}
+
 /* ===== 開催ごとの「版(edition)」 =====
-   開催のたびに動かす数字だけをここへ집め、**RAID_EDITION の1行を変えるだけで次回開催へ切り替わる**。
+   開催のたびに動かす数字だけをここへ集め、**RAID_EDITION(実体は editionByDate による
+   日付の自動選択)を変えるだけで次回開催へ切り替わる**。
    期間・ボスHP・報酬しきい値は互いに噛み合っているので(aramon-season-raid 参照)、
    別々の場所に置くと片方だけ直して食い違う。版ごとに1組で持つ。
 
@@ -2972,7 +2998,6 @@ const RAID_CLEAR_SKIN = 'joker_ssr';
 
    数字の決め方は管理者画面「プレイ状況 → レイド分析」が実測から推奨値を出すので、
    次の版を確定させる前に必ずそれを見る(勘で決めない)。                        */
-const RAID_EDITION = 'r1';
 const RAID_EDITIONS = {
   /* 第1回(2026-08-07〜)。**開催済み/開催中なので数字を動かさない。** */
   r1: {
@@ -2998,41 +3023,54 @@ const RAID_EDITIONS = {
     repeatPersonal: { step:  100000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
     repeatTotal:    { step: 1000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
     moveDmg: {},               // ボスの技の威力は既定値のまま
+    // ボスの見た目・名前・入口画面の文言(版ごと)。RAID_BOSS が下でここを読む
+    boss: { element:'fire', skinId:'zod_ssr', name:'不死のゾッド', lead:'不死身の巨竜<b>ゾッド</b>が火口に降り立った。' },
   },
-  /* 第2回。**まだ有効にしていない**(RAID_EDITION を 'r2' にした時点で切り替わる)。
-     第1回からの変更点と理由:
-     ・ボスの大技(tier3)の威力を下げた。素のHPは70〜200で、旧値130は12/17体を
-       育成なしで即死させていた。105なら即死するのはピクシー(70)/スエゾー(76)/
-       ライガー(78)/ウンディーネ(88)/ハム(90)/ザン(95)だけになり、
-       「マスモンを育てていないと参加できない」状態を緩める。
-     ・全体/個人のしきい値は**開催後に実測から確定させる**。下の値は第1回の進行が
-       想定より速かった(繰り返し報酬を後付けする対応が要った)ことを踏まえた暫定値で、
-       管理者画面「レイド分析」の推奨値で必ず上書きすること。                     */
-  r2: {
-    label: '第2回',
-    startDate: '2026-08-21',
-    durationDays: 7,
-    baseHp: 24000,
+  /* 第2回(r2)は 2026-08-21 開始で用意していたが、一度も有効にしないまま終了日を迎えた
+     ため削除し、第3回(r3)に置き換えた(2026-09-04)。moveDmg の暫定値(nova/ring/meteor)は
+     育成なしの体を即死させない調整として r3 でそのまま引き継いでいる。 */
+  /* 第3回「あるるかん討伐」(2026-09-04〜、2週間)。
+     ・baseHp を24,000→40,000へ引き上げ(1回の与ダメと報酬もそのぶん上がる)。
+     ・全体最終段=10,000,000(討伐達成で全員に限定SSR「あるるかん」)。
+     ・答え合わせ: 個人最終段600,000 ÷ 1回の上限(3人で baseHp×人数ぶん=約84,000)≒8回。
+       全体10,000,000は「1日あたり715,000 = 1回8万なら9回/日」。 */
+  r3: {
+    label: '第3回',
+    startDate: '2026-09-04',
+    durationDays: 14,          // 開催期間(2週間)
+    baseHp: 40000,
+    keyImg: 'images/raid_arurukan.jpg',  // レイド画面の絵(既定は images/raid_key.jpg)
     totalTiers: [
-      { at:  80000, gold:1500, dia:20 },
-      { at: 300000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
-      { at: 800000, gold:5000, dia:60, item:'moveTicket', n:3 },
-      { at:1800000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-      { at:3500000, gold:12000, dia:150, skin:RAID_CLEAR_SKIN },
+      { at:  200000, gold:1500, dia:20 },
+      { at:  800000, gold:3000, dia:40, item:'freeTrainTicket', n:3 },
+      { at: 2000000, gold:5000, dia:60, item:'moveTicket', n:3 },
+      { at: 4800000, gold:8000, dia:100, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at:10000000, gold:15000, dia:200, skin:RAID_CLEAR_SKIN },   // 討伐達成: 全員に限定SSR
     ],
     personalTiers: [
-      { at:   4000, gold:500,  dia:5 },
-      { at:  16000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
-      { at:  50000, gold:2500, dia:20, item:'moveTicket', n:1 },
-      { at: 120000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
-      { at: 300000, gold:7000, dia:60, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at:   8000, gold:500,  dia:5 },
+      { at:  32000, gold:1200, dia:10, item:'freeTrainTicket', n:1 },
+      { at: 100000, gold:2500, dia:20, item:'moveTicket', n:1 },
+      { at: 240000, gold:4000, dia:35, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
+      { at: 600000, gold:8000, dia:80, items:[{key:'fruit_life',n:1},{key:'accel_elixir',n:1}] },
     ],
-    repeatPersonal: { step:  100000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
-    repeatTotal:    { step: 1000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
-    // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す)
+    repeatPersonal: { step:  200000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
+    repeatTotal:    { step: 2000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
+    // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す。第2回の値をそのまま引き継ぐ)
     moveDmg: { nova:105, ring:98, meteor:78 },
+    // ボスの見た目・名前・入口画面の文言(版ごと)。
+    // element はあえて 'joker' にせず 'fire' のまま据え置く: ELEMENTS.joker は dmgDealtMod:1.2
+    // を持ち(ELEMENTS.fire は無し)、ボスの与ダメ計算はダメージ元(=ボス)の element から
+    // 直接この倍率を掛ける(combat.js のapplyDamage、target.isRaidBoss等の条件無し)ため、
+    // element だけ変えると上のmoveDmgで調整済みの威力にさらに20%乗ってしまう。
+    // 一方スキンの表示(getDisplayImage→skinnedImageForEntity)は entity.element と
+    // SSR_SKINS[skinId].element の一致を見ておらず skinId だけで絵を出すので、
+    // 見た目はSSRスキン「あるるかん」のまま素体は据え置き(=fire)で問題ない。
+    boss: { element:'fire', skinId:'joker_ssr', name:'あるるかん', lead:'ジョーカー<b>あるるかん</b>が火口に現れた。' },
   },
 };
+// 版は日付で自動選択(開催前後で自動的に切り替わる)。手で固定したいときはここへ id の文字列を書く
+const RAID_EDITION = editionByDate(RAID_EDITIONS, 'r1');
 const RAID_ED = RAID_EDITIONS[RAID_EDITION] || RAID_EDITIONS.r1;
 
 const RAID_START_DATE = RAID_ED.startDate;
@@ -3081,10 +3119,12 @@ const RAID_LOOT_SPREAD = 0.20; // 撒く範囲(ワールドの短辺に対する
    一定間隔で追加を撒いて補給が途切れないようにする(マルチではホストが撒いて配信する)。 */
 const RAID_LOOT_REFILL_EVERY = 14;  // 追加を撒く間隔(秒)
 const RAID_LOOT_REFILL_COUNT = 12;  // 1回に撒く数
+// ボスの見た目・名前は版ごと(RAID_EDITIONS[版].boss)。無い版はr1にフォールバック
+const RAID_BOSS_DEF = RAID_ED.boss || RAID_EDITIONS.r1.boss;
 const RAID_BOSS = {
-  element:'fire',            // 素体はドラゴン
-  skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
-  name:'不死のゾッド',
+  element: RAID_BOSS_DEF.element,   // 素体(ステータス・与ダメ倍率などの元になる種族)。版が変わっても既定はドラゴン
+  skinId:  RAID_BOSS_DEF.skinId,    // 見た目はSSRスキン。歩行コマもこのスキンのものが出る
+  name:    RAID_BOSS_DEF.name,
   radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
   baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。3人で50,400)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す
@@ -3163,11 +3203,21 @@ function raidBossMaxHp(playerCount){
 const RAID_EFFECT_SKINS = {
   guts_ssr:       { dmgDealt:1.5, dmgTaken:0.75, name:'狂戦士ガッツ' }, /*@guts_ssr*/
   warm_ssr:       { dmgDealt:1.5, dmgTaken:0.75, name:'電王ライナー' }, /*@warm_ssr*/
+  // レイド第3回ピックアップの残り2体。電王ライナー(1.5/0.75)より弱い特効にしてある
+  metag_ssr:      { dmgDealt:1.3, dmgTaken:0.85, name:'メタルグレイモン' },
+  leaf_ssr:       { dmgDealt:1.3, dmgTaken:0.85, name:'メカビオギドラ' },
   // <<AUTO:RAID_EFFECT_SKINS>> ここから上へ tools/studio_web.html がレイド特効スキンの行を追記する
 };
 function raidSkinBonus(skinId){ return (skinId && RAID_EFFECT_SKINS[skinId]) || null; }
-// レイドガチャのピックアップ(=レイド特効スキン)。ツールで追加したIDをここへ入れる
-const RAID_GACHA_PICKUP = 'warm_ssr';
+/* レイドガチャのピックアップ(=レイド特効スキン)。**複数体を並べられる**
+   (スキンガチャの GACHA_PICKUP_SSR_IDS と同じ形。2026-09-04導入)。
+   ピックアップ全体でSSR枠の1%を等分し、残りは他SSRで等分する(pickRaidGachaSsrSkinId)。 */
+const RAID_GACHA_PICKUP_IDS = ['warm_ssr', 'metag_ssr', 'leaf_ssr']; /*@raidpickup*/
+// PICK UPの札に出す文字。null なら1体目のスキン名をそのまま出す(GACHA_PICKUP_LABELと同じ扱い)
+const RAID_GACHA_PICKUP_LABEL = '機械モンスター';
+// ガチャ画面・記念ポップアップに出す告知画像。null なら1体目のスキンのpromoImgを使う
+const RAID_GACHA_PROMO_IMG = 'images/promo_raid_s2.jpg';
+function isRaidGachaPickup(id){ return RAID_GACHA_PICKUP_IDS.indexOf(id) >= 0; }
 // ※ RAID_CLEAR_SKIN は版の報酬表から参照するため、このファイルの前の方で定義してある
 
 /* --- 報酬 ---
@@ -3852,42 +3902,62 @@ function expeditionTimeLabel(sec){
       切替時に「どのスキンをガチャへ解放するか」を探さずに済む)
    2. 前の版の prevFinalSkin が指す SSR_SKINS のエントリから seasonExclusive:true を外し、
       ガチャ・SSRカタログへ解放する(2026-08-12、ラガモッチーで実施した対応と同じ)。
-      次回はこのシーズン(s1)の最終報酬 aqua_ssr が対象になる
+      次回(s2→s3)はs2の最終報酬が対象になる(今はtbdなので、rewards の25段目を
+      決まったスキンへ差し替えてから同じ手順を行うこと)
    3. LOBBY_BANNERS を見直す(解放したスキンを「新登場・ガチャ」枠へ足すか検討)
-   4. SEASON_EDITION を新しい版の id へ切り替える(SEASON_RESET_EPOCH は変更不要。
-      SEASON_ID が変われば seasonStateKey() が自動で変わり、SP・受取状況は全員リセットされる。
-      段位のRPも同じ鍵を使っているので一緒にリセットされる)
+   4. SEASON_EDITION は editionByDate() で日付から自動選択される(startDate<=today の
+      最新の版が選ばれる)。手で固定したいときだけ呼び出し側を id の文字列に書き換える。
+      SEASON_ID が変われば seasonStateKey() が自動で変わり、SP・受取状況は全員リセットされる
+      (段位のRPも同じ鍵を使っているので一緒にリセットされる。SEASON_RESET_EPOCH は変更不要)
    5. UPDATE_HISTORY に告知を1行、sw.js の CACHE_NAME を上げる
 ===================================================================== */
+/* 曜日ごとのミューテーター設定(表示は月始まり。dayはDate.getDay()準拠 0=日〜6=土)。
+   **配列を版ごとに複製しない**: シーズン2もs1と同じ曜日周期なので、両方の版がこの1つを参照する。 */
+const WEEKDAY_MUTATORS = [
+  { day:1, label:'月曜日', tier:true,  reward:false, spawn:false },
+  { day:2, label:'火曜日', tier:false, reward:true,  spawn:false },
+  { day:3, label:'水曜日', tier:false, reward:false, spawn:true  },
+  { day:4, label:'木曜日', tier:true,  reward:false, spawn:false },
+  { day:5, label:'金曜日', tier:false, reward:true,  spawn:false },
+  { day:6, label:'土曜日', tier:true,  reward:true,  spawn:true  },
+  { day:0, label:'日曜日', tier:true,  reward:true,  spawn:true  },
+];
+/* シーズンパス1〜24段の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬。
+   ゴールドは100から始めて100単位で上がっていき、最後のゴールド報酬(24段階目)が1000になる。
+   **25段目(最終報酬)は版ごとに違うので、この配列には含めない**(各版が
+   [...SEASON_REWARDS_BASE24, 最終段] の形で組み立てる。配列を版ごとに複製しない)。 */
+const SEASON_REWARDS_BASE24 = [
+  { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },      // 1-5
+  { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },           // 6-10
+  { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },           // 11-15
+  { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },      // 16-20
+  { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 },                   // 21-24
+];
 const SEASON_EDITIONS = {
   s1: {
     id:'s1',
     startDate:'2026-08-07', // ミューテーター適用開始日(この日の前はSEASON1_ACTIVE=trueでも発動しない)
-    // 曜日ごとのミューテーター設定(表示は月始まり。dayはDate.getDay()準拠 0=日〜6=土)
-    mutators:[
-      { day:1, label:'月曜日', tier:true,  reward:false, spawn:false },
-      { day:2, label:'火曜日', tier:false, reward:true,  spawn:false },
-      { day:3, label:'水曜日', tier:false, reward:false, spawn:true  },
-      { day:4, label:'木曜日', tier:true,  reward:false, spawn:false },
-      { day:5, label:'金曜日', tier:false, reward:true,  spawn:false },
-      { day:6, label:'土曜日', tier:true,  reward:true,  spawn:true  },
-      { day:0, label:'日曜日', tier:true,  reward:true,  spawn:true  },
-    ],
-    // 各段階の報酬(1段階目=index0)。5の倍数はダイヤの節目報酬。
-    // ゴールドは100から始めて100単位で上がっていき、最後のゴールド報酬(24段階目)が1000になる。
-    rewards:[
-      { gold:100 }, { gold:200 }, { item:'freeTrainTicket', n:1 }, { gold:300 }, { dia:15 },      // 1-5
-      { gold:300 }, { gold:400 }, { item:'seed_power', n:1 }, { gold:400 }, { dia:25 },           // 6-10
-      { gold:500 }, { item:'moveTicket', n:1 }, { gold:500 }, { gold:600 }, { dia:30 },           // 11-15
-      { gold:600 }, { item:'freeTrainTicket', n:1 }, { gold:700 }, { gold:700 }, { dia:40 },      // 16-20
-      { gold:800 }, { item:'seed_vitality', n:1 }, { gold:900 }, { gold:1000 }, { skin:'aqua_ssr' }, // 21-25(最終=限定SSRスキン「大喰いの利世」)
-    ],
+    endDate:'2026-09-03',   // 表示にだけ使う(2026-09-04にs2追記に合わせて追加)
+    mutators: WEEKDAY_MUTATORS,
+    rewards: [...SEASON_REWARDS_BASE24, { skin:'aqua_ssr' }], // 25(最終=限定SSRスキン「大喰いの利世」)
     // 前シーズン(このシーズンより前)の最終報酬。すでにガチャへ解放済み(2026-08-12)
     prevFinalSkin:'mocchi_ssr',
   },
-  // s2: 次のシーズンはここへ追記(内容が決まるまでは s1 のまま)
+  s2: {
+    id:'s2',
+    startDate:'2026-09-04',
+    endDate:'2026-10-01',   // 表示にだけ使う
+    mutators: WEEKDAY_MUTATORS,   // s1と同じ曜日周期(配列は複製しない)
+    // 25段目(最終報酬)は未定。tbd:true の段はシーズンパス画面で「？」表示にし、
+    // 受け取りボタンも出さない(renderSeasonOverlay/seasonClaim)。決まり次第この行を
+    // 実際のスキン報酬({skin:'xxx_ssr'})へ差し替える。
+    rewards: [...SEASON_REWARDS_BASE24, { tbd:true, label:'？' }],
+    // 前シーズン(s1)の最終報酬。2026-09-04にseasonExclusiveを外してガチャ・SSRカタログへ解放済み
+    prevFinalSkin:'aqua_ssr',
+  },
 };
-const SEASON_EDITION = 's1'; // 開催中の版を切り替える1行
+// 版は日付で自動選択(開催前後で自動的に切り替わる)。手で固定したいときはここへ id の文字列を書く
+const SEASON_EDITION = editionByDate(SEASON_EDITIONS, 's1');
 
 /* =====================================================================
    シーズン1 準備(非公開・管理者プレビューのみ): ミューテーター(日替わり変則ルール)
@@ -4425,7 +4495,9 @@ const SSR_SKINS = {
   // ペルセポネ: イルミネのオリジナルSSR。ガチャ・SSRカタログにも出る
   persephone_ssr: { element:'illumine', name:'ペルセポネ', iconImg:'persephone_ssr', playerImg:'persephone_player_ssr' },
   rock_ssr:       { element:'rock', name:'轟金剛', iconImg:'rock_ssr', playerImg:'rock_player_ssr' }, /*@rock_ssr*/
-  aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr', seasonExclusive:true }, /*@aqua_ssr*/
+  // 大喰いの利世: シーズン1の最終報酬だったオリジナルSSR。シーズン2切り替え(2026-09-04)の
+  // 運用に沿ってseasonExclusiveを外し、ガチャ・SSRカタログへ解放済み(上のSEASON_EDITIONS参照)
+  aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr' }, /*@aqua_ssr*/
   // 狂戦士ガッツ: レイドガチャ限定。スキンガチャとSSRカタログには出さない(レイドSSRカタログには出る)
   guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr', raidGachaOnly:true }, /*@guts_ssr*/
   // 不死のゾッド: レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
@@ -4773,7 +4845,11 @@ function gachaPickupPromoImgUrl(){
   return GACHA_PICKUP_PROMO_IMG || skinPromoImgUrl(GACHA_PICKUP_SSR_IDS[0]) || 'images/promo_rock_ssr.jpeg';
 }
 gachaPickupPromoImg.src = gachaPickupPromoImgUrl();
-const raidGachaPickupPromoImg = loadPromoImage(skinPromoImgUrl(RAID_GACHA_PICKUP));
+// レイドガチャの告知画像のURL(キャンペーンの絵=RAID_GACHA_PROMO_IMGが無ければ1体目のpromoImg)
+function raidGachaPickupPromoImgUrl(){
+  return RAID_GACHA_PROMO_IMG || skinPromoImgUrl(RAID_GACHA_PICKUP_IDS[0]) || 'images/promo_rock_ssr.jpeg';
+}
+const raidGachaPickupPromoImg = loadPromoImage(raidGachaPickupPromoImgUrl());
 // ガチャのタブ(スキン/レイド)に応じた告知画像を返す
 function gachaPromoImgFor(mode){
   const img = (mode==='raid') ? raidGachaPickupPromoImg : gachaPickupPromoImg;
@@ -4903,14 +4979,14 @@ function saveRaidGachaCount(c){
   try{ localStorage.setItem(RAID_GACHA_COUNT_KEY, JSON.stringify(c)); }catch(err){}
   if(typeof accountMarkDirty==='function') accountMarkDirty();
 }
-// レイドガチャのSSR枠。ピックアップ(レイド特効)が半分、残りは通常SSRから均等
+// レイドガチャのSSR枠。ピックアップ(レイド特効。複数体を等分)が半分、残りは通常SSRから均等
 function pickRaidGachaSsrSkinId(){
   const ids = raidGachaSsrSkinIds();
-  const pickup = ids.indexOf(RAID_GACHA_PICKUP)>=0 ? RAID_GACHA_PICKUP : null;
-  const others = ids.filter(id=>id!==RAID_GACHA_PICKUP);
-  if(!pickup) return others.length ? pickRandom(others) : ids[0];
-  if(!others.length) return pickup;
-  return Math.random()<0.5 ? pickup : pickRandom(others);
+  const pickup = ids.filter(isRaidGachaPickup);
+  const others = ids.filter(id=>!isRaidGachaPickup(id));
+  if(!pickup.length) return others.length ? pickRandom(others) : ids[0];
+  if(!others.length) return pickRandom(pickup);
+  return Math.random()<0.5 ? pickRandom(pickup) : pickRandom(others);
 }
 // 提供割合表(レイドガチャ版)。SSRの内訳だけ差し替えて、他は通常ガチャと同じ
 function raidGachaRateTable(){
@@ -4918,10 +4994,12 @@ function raidGachaRateTable(){
   const ssrRow = rows.find(r=>r.rarity==='SSR');
   if(ssrRow){
     const ids = raidGachaSsrSkinIds();
-    const others = ids.filter(id=>id!==RAID_GACHA_PICKUP);
+    const pickupIds = ids.filter(isRaidGachaPickup);
+    const otherIds = ids.filter(id=>!isRaidGachaPickup(id));
     ssrRow.items = ids.map(id=>({
-      label: skinMeta(id).name + (id===RAID_GACHA_PICKUP ? '(ピックアップ)' : ''),
-      pct: id===RAID_GACHA_PICKUP ? RARITIES.SSR.rate/2 : (others.length ? RARITIES.SSR.rate/2/others.length : 0),
+      label: skinMeta(id).name + (isRaidGachaPickup(id) ? '(ピックアップ)' : ''),
+      pct: isRaidGachaPickup(id) ? (pickupIds.length ? RARITIES.SSR.rate/2/pickupIds.length : 0)
+                                  : (otherIds.length ? RARITIES.SSR.rate/2/otherIds.length : 0),
     }));
   }
   return rows;

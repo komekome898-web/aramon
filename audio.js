@@ -42,10 +42,11 @@ function audioInit(){
   ensureTitleStartSeBuffer();
   ensureSsrPromoteSeBuffer();
   // ピックアップは出る確率が高いので先読みする(スキンガチャ・レイドガチャの両方)。
-  // スキンガチャのピックアップは複数体並ぶことがあるので全部読む
+  // どちらも複数体並ぶことがあるので全部読む
   if(typeof GACHA_PICKUP_SSR_IDS!=='undefined')
     GACHA_PICKUP_SSR_IDS.forEach(id=> ensureSkinPromoteSe(id));
-  ensureSkinPromoteSe(typeof RAID_GACHA_PICKUP!=='undefined' ? RAID_GACHA_PICKUP : null);
+  if(typeof RAID_GACHA_PICKUP_IDS!=='undefined')
+    RAID_GACHA_PICKUP_IDS.forEach(id=> ensureSkinPromoteSe(id));
   ensureProvidedSeBuffers();
   ensureBgmLobbyBuffer();
 }
