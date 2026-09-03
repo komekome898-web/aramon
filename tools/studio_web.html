@@ -1105,6 +1105,23 @@ function draftFields(){
    (GitHubのトークン・「どれを開くか」・DRAFT_SKIP に入れた欄)を触っただけで
    前回の続きが消え、しかも問いも引っ込むので取り戻す道が画面から無くなる。 */
 function draftHasField(el){ return !!el && draftFields().indexOf(el) >= 0; }
+/* その欄を直したら「送る中身」が古くなるか(§波5-43)。判定はこの1関数。
+   根は draftHasField と同じ(= コミットの中身を組み立てる欄)で、そこに
+   **「開いて直す」の欄**(editForm。相手・更新履歴の書き方と本文)を足すだけ ――
+   あちらは下書きの対象外(draftKindOk)なので draftFields には入らないが、
+   書き戻す中身も更新履歴の1行もこの欄から作るので、触れば計画は古くなる。
+   これが無かったころは、HPを 111 で確認して緑にしたあと 999 に直しても
+   ボタンは押せたままで、**画面に出ている値ではなく確認したときの値**が本番へ出ていた
+   (doCommit が途中でしくじったあと、直して押し直したときも同じ)。 */
+function planHasField(el){
+  /* **止まっている欄は数えない。** 人には変えられない(= 送る中身は古くならない)ので、
+     ここで数えると「開いて直す」の形の欄のように**表示専用で止めてある欄**が
+     イベントを受けただけで確認をやり直させる。読み方は disabled の1か所。 */
+  if(!el || el.disabled) return false;
+  if(draftHasField(el)) return true;
+  const f = $('editForm');
+  return !!f && !!f.contains && f.contains(el);
+}
 function saveDraft(){
   if(draftAsking) return;          // まだ「戻すか捨てるか」を聞いている最中は上書きしない
   if(!draftKindOk($('regKind').value)) return;   // 「開いて直す」中は残さない(§指摘5)
@@ -1112,10 +1129,11 @@ function saveDraft(){
   for(const el of draftFields()) f[el.id] = el.type === 'checkbox' ? !!el.checked : el.value;
   try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ v:1, at:Date.now(), kind:$('regKind').value, f })); }
   catch(e){ /* 保存できなくても作業は続けられる(容量いっぱい・プライベートブラウズ) */ }
-  /* 下書きが変わったらバーの姿も出し直す(§波5-39)。姿を「状態から決める」と言いながら
-     状態が変わったときに通していなかったので、入れ替えの直後だけ古い姿が残っていた。
-     ここは**聞いている最中には来ない**(上で return する)ので、問いを踏み潰さない。 */
-  showDraftBar(null);
+  /* 下書きが変わったらバーの姿も出し直す(§波5-39)。ただし**すでに出ているバーだけ**
+     (§波5-44)—— ここは打ち終わりの400ms後にも走るので、showDraftBar(null) を直に呼ぶと
+     draftDismiss で引っ込めた問いが「もっと前の入力に戻す」の姿で開き直し、
+     打っている最中に画面が押し下がっていた。**開ける/閉じるを決めるのは呼び手**。 */
+  refreshDraftBarIfOpen();
 }
 // 入力のたびに書かない(打っている間ずっと保存すると重い)。手が止まってから1回
 function saveDraftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); }
@@ -1157,7 +1175,10 @@ const DRAFT_CUR_BTNS = ['draftRestoreBtn','draftDiscardBtn'];
    **居座らない理由**: 退避は「今の下書きが無いときに戻す」と空になる(移動)ので、
    このバーは退避を使い切れば自然に消える。逆に退避があるうちは、押し間違い1回で
    取り戻せなくなる入力が端末に残っているということなので、道は出したままにする。
-   打ち始めて問いを引っ込めるとき(draftDismiss)だけは hide を渡して必ず閉じる。 */
+   打ち始めて問いを引っ込めるとき(draftDismiss)だけは hide を渡して必ず閉じる。
+   **開けてよいのは、人の操作を受けた呼び手だけ**(draftAsk / draftDiscard /
+   draftRestorePrev / draftDismiss)。自動保存のような裏で走る側は、閉じているバーを
+   開けないよう下の refreshDraftBarIfOpen() を通す(§波5-44)。 */
 function showDraftBar(ask){
   const asking = !!ask && ask !== 'hide';
   const hasPrev = !!readPrevDraft();
@@ -1171,6 +1192,15 @@ function showDraftBar(ask){
     : `${draftAgeText(ask.at)}の入力が残っています(${ask.n}項目)。`
       + '絵と動画は入っていないので、選び直しが要ります。';
   $('draftBar').style.display = on ? 'block' : 'none';
+}
+/* **すでに出ているバーの姿を出し直すだけ**(§波5-44)。閉じているバーは開かない。
+   姿を決めるのは showDraftBar の1か所のままで、ここが決めるのは「出し直すかどうか」だけ。
+   裏で走る側(自動保存)から showDraftBar(null) を直に呼ぶと、退避が残っているぶん
+   「もっと前の入力に戻す」の姿でバーが開き、**問いを引っ込めた400ms後に戻ってきて**
+   打っている最中の画面が押し下がる。 */
+function refreshDraftBarIfOpen(){
+  const bar = $('draftBar');
+  if(bar && bar.style.display !== 'none') showDraftBar(null);
 }
 function draftAgeText(at){
   const m = Math.round((Date.now() - at)/60000);
@@ -1209,7 +1239,12 @@ function draftRestorePrev(){
     + (swap ? '\nいま入っていた入力は1つ前として控えました(もう一度押すと入れ替えて戻せます)。' : ''));
   /* 戻した値をその場で下書きへ書く(入れ替えのもう片側)。400ms後の自動保存に任せると、
      その前に読み込み直したときだけ**両方が同じ中身**のまま残り、行き来できなくなる。 */
-  saveDraft();                     // 末尾で showDraftBar(null) を通すので、姿もここでそろう(§波5-39)
+  saveDraft();
+  /* 戻したあとの姿はここで出し直す(§波5-39)。draftApply が問いを閉じるので、
+     **押した人に向けて開け直すのはこの呼び手の仕事**(自動保存は閉じたバーを開かない。§波5-44)。
+     入れ替えなら退避が残っているので「もっと前の入力に戻す」だけの姿で開き、
+     もう一度押して行き来できる道が画面に残る(§波5-38)。 */
+  showDraftBar(null);
 }
 /* 欄へ入れる処理の本体。今の下書きも1世代前も**同じ道**を通る(戻し方を2か所に書かない)。
    入れられたら true。 */
@@ -1281,9 +1316,10 @@ function draftKeepPrev(){
    上書きは起きず、次に開くと同じ下書きをまた聞かれた(「消えました」が嘘になる)。 */
 function draftDismiss(){
   if(!draftAsking) return;
-  /* ここだけは**必ず閉じる**(§指摘31)。打っている最中なので、直後の自動保存が
-     新しい下書きを書いて「今の下書きが無い」が崩れる ―― 退避だけの姿で開くと
-     そのまま居座る。退避へ戻る道は、次に開いたときの問いの中に出る。 */
+  /* ここだけは**必ず閉じ、閉じたままにする**(§指摘31 / §波5-44)。打っている最中なので、
+     退避だけの姿(「もっと前の入力に戻す」)で開き直すと、そのまま居座って画面を押し下げる。
+     閉じたあとに走る自動保存が開け直さないのは、あちらが refreshDraftBarIfOpen() を通すため。
+     退避へ戻る道は、次に開いたときの問いの中に出る。 */
   showDraftBar('hide');
   draftKeepPrev();
   try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
@@ -8020,6 +8056,12 @@ function boot(){
            **下書きと関係ない欄**を触っただけで前回の続きが消え、問いも一緒に消えて
            取り戻す道が無くなっていた。 */
         if(draftHasField(el)) draftDismiss();
+        /* 計画に効く欄を直したら「送る中身」を白紙に戻す(§波5-43。判定は planHasField 1か所)。
+           確認(preflight)が作った state.files は**そのときの欄の中身**なので、
+           あとから欄を直しても作り直さないと、直す前の中身を本番へ送れてしまう。
+           白紙に戻すのは clearPlan() の1か所 —— 送信の段は「まだ」へ戻り、
+           確認し直すまでコミットのボタンは押せない。 */
+        if(planHasField(el)) clearPlan();
         saveDraftSoon();
         /* 数字として読めない欄を赤くするのは**入力したとき**と「差分を確認する」ときだけ(§指摘4)。
            段階バーは塗った結果(moveBadFields)を読むだけなので、塗り直しはここで1回やる。

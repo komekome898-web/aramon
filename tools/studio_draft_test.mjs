@@ -33,6 +33,11 @@
      ⑨ **下書きに入らない欄を触っても捨てない**(§指摘29)。GitHubのトークンのように
         下書きと関係ない欄を1文字直しただけで前回の続きが消え、問いも一緒に消えて
         取り戻す道が無くなっていた
+     ⑪ **確認を通したあと欄を直したら「送る中身」も作り直す**(§波5-43)。
+        HP=111 で確認 → 999 に直しても押せたままだったので、画面に出ている値ではなく
+        **確認したときの値**が本番へ出ていた。直したら送信の段は「まだ」へ戻る
+     ⑫ **引っ込めた問いが打っている最中に戻ってこない**(§波5-44)。
+        自動保存がバーの姿を出し直すときに、閉じているバーまで開き直していた
 
    使い方: node tools/studio_draft_test.mjs [--json]                              */
 import fs from 'fs';
@@ -346,6 +351,50 @@ if(preflightFail.badFiles || !preflightFail.badDisabled)
   errors.push('数字として読めない欄で止めたのに前の「送る中身」が残っています(§波5-41): '
     + `state.files=${preflightFail.badFiles} / commitBtn.disabled=${preflightFail.badDisabled}`);
 
+/* ---------------------------------------------------------------- ⑪ 確認のあとに欄を直したら
+   確認を通したあと欄を直しても「送る中身」が作り直されていなかった(§波5-43)。
+   HP=111 で確認 → 緑 → 999 に直す、でボタンは押せたままなので、**画面には 999 が出ているのに
+   111 が本番へ出る**。doCommit の途中失敗のあと直して押し直したときも同じ道を通る。
+   直したら、送信の段は「まだ」へ戻り、確認し直すまで押せない。 */
+const planStale = await page.evaluate(async ()=>{
+  await preflight();                                   // まずこの欄の中身で「送る中身」を作る
+  const ok = { files: !!state.files, disabled: document.getElementById('commitBtn').disabled };
+  const hp = document.getElementById('f_hp');
+  const before = hp.value;
+  hp.value = String((+before || 100) + 888);
+  hp.dispatchEvent(new Event('input', { bubbles:true }));   // 人が欄を直したのと同じ
+  return { ok, before, now: hp.value,
+           files: !!state.files, disabled: document.getElementById('commitBtn').disabled };
+});
+await settle();
+const stagePlanStale = await readStages();
+if(!planStale.ok.files || planStale.ok.disabled)
+  errors.push('⑪ の入口で「差分を確認する」が通っていません(この検査が見たい状態になっていません): '
+    + `state.files=${planStale.ok.files} / commitBtn.disabled=${planStale.ok.disabled}`);
+if(planStale.files || !planStale.disabled)
+  errors.push(`確認のあとに欄を直しても「送る中身」が残っています(§波5-43 / HP ${planStale.before}→${planStale.now} `
+    + `で確認前の中身を本番へ送れる): state.files=${planStale.files} / commitBtn.disabled=${planStale.disabled}`);
+if(stagePlanStale[STAGE_IX.送信] !== 'todo')
+  errors.push(`確認のあとに欄を直しても「送信」の段が ${stagePlanStale[STAGE_IX.送信]} のままです(§波5-43)`);
+/* 直した中身で確認し直せば、また押せるようになる(止めたままにしない)。
+   ついでに **HP を元へ戻してから**確認する —— このあとの②は「①で入れた値がそのまま戻るか」と
+   「差分の確認の文が1文字も変わらないか」を見るので、⑪が触った 888 を下書きに残せない。 */
+const planAgain = await page.evaluate(async (before)=>{
+  const hp = document.getElementById('f_hp');
+  hp.value = before;
+  hp.dispatchEvent(new Event('input', { bubbles:true }));
+  await preflight();
+  saveDraft();                       // 打ち終わりを待たずにその場で書き戻す(検査なので)
+  return { files: !!state.files, disabled: document.getElementById('commitBtn').disabled,
+           hp: hp.value };
+}, planStale.before);
+await page.waitForTimeout(600);      // 400ms後の自動保存も同じ値で通り過ぎるまで待つ
+if(planAgain.hp !== planStale.before)
+  errors.push(`⑪ のあと HP が元に戻っていません(${planAgain.hp} / 元は ${planStale.before})`);
+if(!planAgain.files || planAgain.disabled)
+  errors.push('確認し直しても「送る中身」が作り直されません(§波5-43): '
+    + `state.files=${planAgain.files} / commitBtn.disabled=${planAgain.disabled}`);
+
 // ---------------------------------------------------------------- ② 読み込み直して復元
 await page.reload({ waitUntil:'load' });
 await page.waitForFunction(()=> typeof window.boot === 'function');
@@ -463,6 +512,18 @@ if(typed.key !== 'typedmon')
 if(!/前回の入力は使わず/.test(typed.said || ''))
   errors.push(`前回の下書きを捨てたことを知らせません(log: ${JSON.stringify(typed.said)})`);
 if(!typed.prev) errors.push('捨てる前の下書きが1世代も退避されていません');
+
+/* ⑫ **引っ込めた問いは、打っている最中に戻ってこない**(§波5-44)。
+   自動保存(打ち終わりの400ms後)がバーの姿を出し直すのに showDraftBar(null) を直に呼んでいたので、
+   退避が残っているぶん「もっと前の入力に戻す」の姿で**閉じたバーが開き直し**、
+   打っている最中に画面が押し下がっていた。姿の出し直しは「すでに出ているバー」に限る。 */
+await page.waitForTimeout(700);      // 400ms後の自動保存より後まで待つ
+const barBack = await page.evaluate(()=> ({
+  shown: document.getElementById('draftBar').style.display !== 'none',
+  text: document.getElementById('draftWhen').textContent }));
+if(barBack.shown)
+  errors.push('問いを引っ込めたあと、自動保存でバーが戻ってきます(§波5-44 / 打っている最中に画面が押し下がる): '
+    + JSON.stringify(barBack.text));
 
 /* ---------------------------------------------------------------- ⑦ もっと前の入力に戻す
    1世代の退避は置くだけで**読み手がいなかった**(§指摘20)。取り違えて打ち始めた人の
@@ -622,11 +683,10 @@ if(modeKept.restoredMode !== 'chroma')
 if(modeKept.after !== 'chroma')
   errors.push('復元した抜き方が、素材を画像へ切り替えると既定で上書きされます(§波5-42): '
     + `#mode=${modeKept.after}`
-    /* 復元は setWalkMode(値) で入れている(直の代入はもう無い)。それでも赤いなら、
-       残っているのは setWalkMode 側 —— **すでに同じ値なら何もせず返る**ため
-       `walkModeAuto` が古いまま残る。そこは班A''' が直している最中(こちらは触らない)。 */
-    + '(復元側は setWalkMode 経由。setWalkMode が「同じ値なら即 return」で '
-    + 'walkModeAuto を落とさないのが残りで、班A\'\'\' の修正待ち)');
+    /* 復元が #mode へ値を入れるのは setWalkMode の1か所(直の代入はもう無い)。
+       赤いときに見るのはそこ —— このツールが既定として入れた印(walkModeAuto)を
+       落とさずに値だけ変えると、applyWalkModeDefault() が「まだ既定のままだ」と誤読する。 */
+    + '(#mode へ入れるのは setWalkMode 1か所。walkModeAuto が古いまま残っていないか)');
 
 await browser.close();
 server.close();
@@ -657,6 +717,10 @@ console.log(`  ⑥ 開いて直す: 下書きに入ら${(edited.raw || editedRaw
   + ` / 新規へ切り替えた HP ${afterEdit.hp}(既定 ${edited.def})`);
 console.log(`  ⑧' 確認の失敗: 例外 files=${preflightFail.errFiles}/止${preflightFail.errDisabled}`
   + ` / 赤い欄 files=${preflightFail.badFiles}/止${preflightFail.badDisabled}`);
+console.log(`  ⑪ 確認のあとに HP ${planStale.before}→${planStale.now}: files=${planStale.files}`
+  + `/止${planStale.disabled} / 送信の段 ${stagePlanStale[STAGE_IX.送信]}`
+  + ` → 確認し直して files=${planAgain.files}/止${planAgain.disabled}`);
+console.log(`  ⑫ 引っ込めた問いの700ms後: バーは${barBack.shown ? '戻ってくる' : '出ない'}`);
 console.log(`  ⑩ 復元した抜き方: ${modeKept.restoredMode} → 画像へ切り替えて ${modeKept.after}`);
 if(errors.length){
   console.log(`\n問題が ${errors.length} 件あります:`);
