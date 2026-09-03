@@ -45,6 +45,8 @@ const REQUIRED = [
   'diffStat', 'bestMoveWindow', 'stripScale', 'medianOf', 'SEED_PROMPT',
   // 足元の影(探す / 系列でそろえる / 1コマだけの入口)と、切り出す手の選び方
   'findFootShadow', 'settleFootShadow', 'dropFootShadow', 'periodUsable', 'cutHowFor',
+  // 影の結果の言い方(1か所)と、「歩きかどうかをどこで確かめるか」の言い分け(1か所)
+  'footShadowNote', 'walkJudgeNote',
   // data.js を読む側
   'pickObjText', 'pickStr', 'pickNum', 'numExpr', 'parseSkinMedia', 'parseStateChanges',
   'skinMediaRange', 'removeSkinMediaEntry',
@@ -79,7 +81,7 @@ const REQUIRED = [
   'MOVE_MIN_DIFF', 'MOVE_SPAN_MIN_DIFF',
   'DIAG_W', 'FRAME_SAME_DIFF', 'ALIGN_DROP_PX', 'MOVE_WIN_SEC',
   'SHADOW_BAND', 'SHADOW_DARK', 'SHADOW_SAT', 'SHADOW_WIDE', 'SHADOW_MIN_W', 'SHADOW_FILL',
-  'SHADOW_TOP_GAP',
+  'SHADOW_MIN_H', 'SHADOW_ABOVE_ROWS', 'SHADOW_ABOVE_FILL',
   'ICONS', 'AURAS', 'RANKS', 'STATS', 'SKIN_COLOR_ORDER', 'SC_TRIGGERS', 'SC_EFFECTS',
   'SE_FALLBACK', 'MOVE_HIDE_BY_KIND', 'MOVE_KIND_TIER',
   'MEDIA_ITEMS', 'state',

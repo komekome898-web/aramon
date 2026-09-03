@@ -445,10 +445,24 @@ async function runPeriod(){
     if(isShadow && withShadow[i] !== 0) fail('period', `影の画素 (${x},${y}) が残っています`);
     if(!isShadow && withShadow[i] !== sAlpha[i]) fail('period', `影ではない画素 (${x},${y}) まで消しました`);
   }
+  /* 影の結果の言い方(footShadowNote)。**見つからなかったときに黙らない**こと(§指摘35c) ——
+     ONなのに何も起きなければ、影が無いのか検出が効いていないのかを画面から区別できない。
+     文言そのものは変わりうるので、**言っているかどうか**だけを見る。 */
+  if(S.footShadowNote({ px:0, split:0, found:0, n:16 }, false) !== '')
+    fail('period', '「影を落とす」がOFFなのに影の話をしています');
+  const noteNone = S.footShadowNote({ px:0, split:0, found:0, n:16 }, true);
+  if(!noteNone || !/見つから/.test(noteNone))
+    fail('period', `影が1コマも見つからなかったときに黙っています(「${noteNone}」)`);
+  const noteSplit = S.footShadowNote({ px:0, split:6, found:6, n:16 }, true);
+  if(!/6コマ/.test(noteSplit) || !/16コマ/.test(noteSplit))
+    fail('period', `判定が割れたときに「何コマ中何コマ」を出していません(「${noteSplit}」)`);
+  const noteDrop = S.footShadowNote({ px:1234, split:0, found:16, n:16 }, true);
+  if(!/1234/.test(noteDrop)) fail('period', `落とした画素数を出していません(「${noteDrop}」)`);
+
   const real = await runRealAssets();
   return `${Object.keys(out).length}通り + 診断${Object.keys(diag).length}通り + 隣接差 + ` +
          `動きの判定 + 第2手 + 歩行かどうかと周期の使えるかを分ける + 切り方は測った動きで決める + ` +
-         `足元の影 + ${real}`;
+         `足元の影 + 影の言い方4通り + ${real}`;
 }
 
 /* ------------------------------------------- (c2) 実素材(monsters/*.png)で見る3つ
@@ -468,13 +482,33 @@ async function runPeriod(){
       **歩行704枚を系列ごとに通し、割れたまま落としていないことを見る。**
    ③ **透過済みPNGの素通し**(§批評1): 「自動」は抜き方を明示していないので、
       透過済みの絵はその透過をそのまま使う。素通しの印を渡し忘れていたころは
-      白抜き・色抜きが当たり、**透明な所まで前景**になっていた。                        */
+      白抜き・色抜きが当たり、**透明な所まで前景**になっていた。
+   ④ **本物の落ち影がある16コマでは、全コマ落ちる**(§指摘35c): ①〜③は「落としすぎない」
+      側しか見ていないので、締めすぎて**1画素も落ちなくなっても気づけなかった**。
+      ゲームの絵はもう整えてあって落ち影が無いから、**焼き込んで作る**(下記)。       */
 const REAL_WALK = /_walk_/;                         // 歩行コマ(影が焼き込まれている絵がある)
 const REAL_SHADOW_ONE = 'illumine_walk_f1.png';     // 本物の落ち影が焼き込まれている1枚
 const REAL_ALPHA_ONE  = 'joker.png';                // 素通しを見る透過済みPNG
 // 再批評26で「同じ系列の中で判定が割れた」と名指しされた系列(誤爆が戻っていないかを直に見る)
 const REAL_SPLIT_WAS = ['iblees_ssr_walk_b', 'phoenix_ssr_walk_b'];
 const REAL_CHUNK = 16;                              // 生バイトを一度に置く枚数(1024²は1枚4MB)
+/* ④ 焼き込み影を作る材料(§指摘35c)。
+   ・落ち影 … 足元の帯の中の被写体幅 × `BURN_FOOT_MUL` の暗い横長の楕円を、
+     被写体の**すぐ下**へ置く(AI動画の落ち影と同じ出方。被写体の画素は塗り替えない)。
+     大きさは**系列で1つ**にする —— 地面は動かないので、コマごとに変えると
+     「足元合わせの基準がそろうか」を見ている意味が無くなる。
+   ・武器 … 上半身の高さに**画面の端まで伸びる明るい帯**を足して枠の幅を広げる。
+     これで影の幅/枠の幅が 0.43〜0.63 まで落ち、**幅を「枠の幅」で比べていた作りなら
+     いまのしきい値(`SHADOW_MIN_W`)でも1画素も落ちない**形になる(§指摘35a)。
+     検査はそれも確かめる —— 確かめないと「張り出しのある絵」を通したつもりで
+     通していない検査になる。                                                      */
+const BURN_SERIES   = ['zan_walk_', 'joker_walk_'];  // 武器・外套が横へ張り出す体
+const BURN_FOOT_MUL = 1.25;            // 影の幅 = 足元の帯の中の被写体幅のこの倍
+const BURN_H_RATIO  = 0.05;            // 影の高さ = 被写体の高さのこの割合
+const BURN_RGB      = [10, 10, 12];    // 暗い灰色(どの絵でも明るさの中央値より十分暗い)
+const BURN_ARM_Y    = 0.30;            // 「武器」の高さ(被写体の上端からの割合)
+const BURN_ARM_H    = 0.04;            // 「武器」の太さ(被写体の高さの割合)
+const BURN_ARM_RGB  = [240, 190, 60];  // 明るく彩度がある = 影の候補にならない色
 // 歩行コマの系列名(末尾の番号を落とす。iblees_ssr_walk_b3.png -> iblees_ssr_walk_b)
 const walkSeriesOf = name => name.replace(/\d+\.png$/, '');
 // PNG のデコードは python3(Pillow)に任せる(node 側に自前のデコーダを置かない)
@@ -577,8 +611,102 @@ async function runRealAssets(){
       }
       fs.rmSync(path.join(tmp, REAL_ALPHA_ONE + '.raw'), { force:true });
     }
-    return `静止画 ${checked}枚(影0)+ ${series} + 透過済みPNGの素通し(自動・影ON/OFF)`;
+    // ④ 焼き込み影のある16コマでは全コマ落ちる(§指摘35c)
+    const burnt = burntShadowCheck(tmp);
+    return `静止画 ${checked}枚(影0)+ ${series} + 透過済みPNGの素通し(自動・影ON/OFF) + ${burnt}`;
   } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
+}
+
+// 足元の帯の中の被写体の幅(= 落ち影の大きさの元。findFootShadow が分母に使うものと同じ見方)
+function footBandWidth(alpha, w, box){
+  const bh = box.y1-box.y0+1;
+  const bandH = Math.max(1, Math.round(bh*S.SHADOW_BAND));
+  const yTop = Math.max(box.y0, box.y1 - bandH + 1);
+  let x0 = Infinity, x1 = -1;
+  for(let y=yTop;y<=box.y1;y++) for(let x=box.x0;x<=box.x1;x++)
+    if(alpha[y*w+x] >= 8){ if(x < x0) x0 = x; if(x > x1) x1 = x; }
+  return x1 >= x0 ? x1-x0+1 : box.x1-box.x0+1;
+}
+// 1画素を塗る(色もアルファも入れる)
+function paint(img, alpha, i, rgb){
+  const p = i*4;
+  img.data[p] = rgb[0]; img.data[p+1] = rgb[1]; img.data[p+2] = rgb[2]; img.data[p+3] = 255;
+  alpha[i] = 255;
+}
+/* ④ 焼き込み影のある16コマ(§指摘35c)。見るのは4つ:
+     ・**全コマ落ちる**(`settleFootShadow` が found=n・split=0・px>0)
+     ・落とす前の足元は**影の底**になっている(=落とさなければ基準が影に乗る)
+     ・落とした後の box.y1 が**元の絵の足元へ戻る**(コマ間でそろう)
+     ・影の幅/枠の幅が `SHADOW_MIN_W` 未満(=枠の幅で比べる作りなら落ちない形を通している) */
+function burntShadowCheck(tmp){
+  let series = 0, frames = 0, px = 0;
+  for(const key of BURN_SERIES){
+    const names = [];
+    for(const side of ['f','b']) for(let i=1;i<=8;i++) names.push(`${key}${side}${i}.png`);
+    const missing = names.filter(n => !fs.existsSync(path.join(ROOT, 'monsters', n)));
+    if(missing.length){
+      fail('period', `${key}*.png が足りません(${missing.length}枚。焼き込み影の回帰が空回りしています)`);
+      continue;
+    }
+    const meta = decodePngs(names, tmp);
+    // まず素の絵を読み、影の大きさを**系列で1つ**決める(地面は動かない)
+    const list = [];
+    for(const name of names){
+      const [w, h] = meta[name];
+      const file = path.join(tmp, name + '.raw');
+      const raw = fs.readFileSync(file);
+      fs.rmSync(file, { force:true });
+      const img = { width:w, height:h, data:new Uint8ClampedArray(raw) };
+      const alpha = new Uint8Array(w*h);
+      for(let k=0;k<w*h;k++) alpha[k] = raw[k*4+3];
+      const box = S.bboxOf(alpha, w, h);
+      list.push({ name, img, alpha, w, h, box, foot: footBandWidth(alpha, w, box) });
+    }
+    const sw = Math.round(Math.max(...list.map(f => f.foot)) * BURN_FOOT_MUL);
+    const sh = Math.max(3, Math.round(Math.max(...list.map(f => f.box.y1-f.box.y0+1)) * BURN_H_RATIO));
+    const cuts = [];
+    for(const f of list){
+      const { img, alpha, w, h, box } = f;
+      // 落ち影(暗い横長の楕円)を被写体の**すぐ下**へ。被写体の画素は塗り替えない
+      const cx = (box.x0+box.x1)/2, cy = box.y1 + sh/2;
+      for(let y=Math.max(0, Math.round(cy-sh/2)); y<=Math.min(h-1, Math.round(cy+sh/2)); y++)
+        for(let x=Math.max(0, Math.round(cx-sw/2)); x<=Math.min(w-1, Math.round(cx+sw/2)); x++){
+          const dx = (x-cx)/(sw/2), dy = (y-cy)/(sh/2);
+          if(dx*dx + dy*dy > 1) continue;
+          const i = y*w+x;
+          if(alpha[i] >= 8) continue;
+          paint(img, alpha, i, BURN_RGB);
+        }
+      // 横へ張り出す「武器」(上半身の高さ・画面の端まで)
+      const bh = box.y1-box.y0+1;
+      const ay0 = box.y0 + Math.round(bh*BURN_ARM_Y);
+      const ay1 = Math.min(h-1, ay0 + Math.max(2, Math.round(bh*BURN_ARM_H)));
+      for(let y=ay0;y<=ay1;y++) for(let x=0;x<w;x++) paint(img, alpha, y*w+x, BURN_ARM_RGB);
+      const nb = S.bboxOf(alpha, w, h);
+      const frameW = nb.x1-nb.x0+1;
+      if(!(sw < frameW*S.SHADOW_MIN_W))
+        fail('period', `${f.name}: 影の幅 ${sw} が枠の幅 ${frameW} の ${S.SHADOW_MIN_W} 倍未満に` +
+                       'なっていません(張り出しのある形を通せていない検査です)');
+      if(!(nb.y1 > box.y1))
+        fail('period', `${f.name}: 焼き込んだ影が足元より下に出ていません(検査の前提が崩れています)`);
+      // makeCut と同じ持ち方(切り抜きは要らないので box と shadow だけ)
+      const g = S.findFootShadow(img, alpha, w, h, nb);
+      const cut = { name:f.name, box:nb, drop:0, y1Feet:box.y1, y1Burnt:nb.y1 };
+      if(g) cut.shadow = { px:g.idx.length, box:g.box, gray:null, idx:g.idx };
+      cuts.push(cut);
+      f.img = f.alpha = null;      // 1コマずつ手放す(16コマぶんを抱えない)
+    }
+    const out = S.settleFootShadow(cuts);
+    if(out.found !== out.n || out.split !== 0 || !(out.px > 0))
+      fail('period', `${key}: 焼き込んだ落ち影を ${out.found}/${out.n}コマでしか見つけられず、` +
+                     `${out.px}画素しか落としていません(全コマ落ちるはず)`);
+    for(const c of cuts)
+      if(c.box.y1 !== c.y1Feet)
+        fail('period', `${c.name}: 影を落とした後の足元 ${c.box.y1} が元の絵の足元 ${c.y1Feet} と` +
+                       `違います(落とす前は ${c.y1Burnt} = 影の底)`);
+    series++; frames += cuts.length; px += out.px;
+  }
+  return `焼き込み影 ${frames}枚/${series}系列(全コマ落ちる・足元が影の底から元へ戻る / ${px}画素)`;
 }
 
 /* 歩行コマを**系列ごと**に通し、「1つの系列の中で判定が割れたまま落としていない」ことを見る

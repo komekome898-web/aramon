@@ -236,6 +236,18 @@ if(auto.ok){
     fail('② 「歩行の周期が見つかりました」と断定しています(自己相関は揺れと区別できません)');
   if(weakAuto && !/AIで歩く動画を作るときの文/.test(auto.diagText || ''))
     fail('③ 周期が弱いのに定型文(A6)への案内がありません');
+  /* ④ **足元の影は結果を必ず言う**(§指摘35c)。ONなのに黙ると、落ち影が無いのか
+     検出が効いていないのかを画面から区別できない。この検査は #dropShadow を触らない
+     (既定ON)。落ち影の無い動画では「見つからず」が出るのが正。 */
+  if(auto.diag.shadowOn){
+    const s = auto.diag.shadow || {};
+    console.log(`足元の影: 見つかった ${s.found}/${s.n}コマ / 落とした ${s.px}画素` +
+                (s.split ? `(判定が ${s.split}コマで割れたので落としていません)` : ''));
+    if(!/足元の影/.test(auto.diagText || ''))
+      fail('④ 「影を落とす」がONなのに、足元の影の結果が画面に出ていません');
+    if(!s.px && !s.split && !/見つから/.test(auto.diagText || ''))
+      fail('④ 足元の影が1コマも見つからなかったのに「見つからず」と言っていません');
+  }
 }
 
 /* ズーム・フェードだけの動画はここまで。
@@ -286,7 +298,8 @@ if(period.ok && move.ok){
               `元動画の動き 隣 ${d.moved.toFixed(2)}・時間をおいて ${d.movedSpan.toFixed(2)}`);
   for(const s of d.stages)
     console.log(`  ${s.name}: 最小 ${s.min.toFixed(2)} / 平均 ${s.avg.toFixed(2)}`);
-  console.log(`  揃え直しで捨てた横のぶれ ${d.alignDropPx.toFixed(1)}px / 落とした影 ${d.shadowPx}画素`);
+  console.log(`  揃え直しで捨てた横のぶれ ${d.alignDropPx.toFixed(1)}px / ` +
+              `落とした影 ${d.shadow.px}画素(見つかった ${d.shadow.found}/${d.shadow.n}コマ)`);
   console.log(`  8コマの隣接差: 第2手 平均 ${move.eight.avg.toFixed(2)} 最小 ${move.eight.min.toFixed(2)}` +
               ` / 第1手 平均 ${period.eight.avg.toFixed(2)} 最小 ${period.eight.min.toFixed(2)}`);
   console.log('------------');
