@@ -5398,7 +5398,7 @@ function raidStart(multi, demo){
   // ボス本体。素体はドラゴンで、見た目(スキン)・半径・HP・速さだけレイド用に差し替える
   const boss = createMonster(RAID_BOSS.element, false, RAID_BOSS.name, { spawnPoint:{x:cx, y:bossY} });
   boss.isRaidBoss = true;
-  boss.skinId = RAID_BOSS.skinId;   // 「不死のゾッド」。歩行コマもこのスキンのものが使われる
+  boss.skinId = RAID_BOSS.skinId;   // 版ごとのボス(RAID_BOSS_DEF)。歩行コマもこのスキンのものが使われる
   boss.radius = RAID_BOSS.radius;
   boss.speed = RAID_BOSS.speed;
   boss.maxHp = raidBossMaxHp(RAID_CAPACITY);
@@ -5580,7 +5580,7 @@ function raidHasClaimable(){
   for(let i=0;i<RAID_PERSONAL_TIERS.length;i++) if(r.dmg>=RAID_PERSONAL_TIERS[i].at && !r.claimedPersonal[i]) return true;
   return false;
 }
-// 入口画面に出すボスの姿。スキン(不死のゾッド)の画像を使う
+// 入口画面に出すボスの姿。版ごとのボス(RAID_BOSS)のスキン画像を使う
 function raidBossImgTag(){
   const url = (typeof skinnedIconDataUrl==='function') ? skinnedIconDataUrl(RAID_BOSS.skinId) : null;
   if(url) return `<img src="${url}" alt="${RAID_BOSS.name}">`;
@@ -5662,18 +5662,20 @@ function renderRaidOverlay(){
   const days = Math.floor(left/86400), hours = Math.floor((left%86400)/3600);
   document.getElementById('raidTitleSub').textContent = raidOpenNow()
     ? `残り ${days}日${hours}時間 ／ ${RAID_BOSS.name}` : '開催前';
+  document.getElementById('raidTitleDash').textContent = `〜${RAID_BOSS.name}〜`;
   // ピックアップ全体ぶんの特効を並べる(2026-09-04以降は複数体になっている)
   const skinBonuses = (typeof RAID_GACHA_PICKUP_IDS!=='undefined' ? RAID_GACHA_PICKUP_IDS : [])
     .map(id=> RAID_EFFECT_SKINS[id]).filter(Boolean);
   const preview = raidRecordsDisabled();
   // レイド画面の絵は版ごとに持てる(RAID_EDITIONS[].keyImg)。無ければ既定の不死のゾッドの絵
   const keyImg = RAID_ED.keyImg || 'images/raid_key.jpg';
+  const bossLead = (RAID_ED.boss || RAID_EDITIONS.r1.boss).lead;
   box.innerHTML = `
     <div class="raid-head-cols">
       <div class="raid-key"><img src="${keyImg}" alt="${RAID_BOSS.name}"></div>
       <div class="raid-head-text">
         <div class="raid-lead">
-          不死身の巨竜<b>ゾッド</b>が火口に降り立った。ひとりでは到底届かない相手だ。
+          ${bossLead}ひとりでは到底届かない相手だ。
           3人チームで挑み、<b>与えたダメージは全プレイヤーぶんが累計</b>される。倒しきれなくても、
           刻んだダメージはすべて残る。
         </div>

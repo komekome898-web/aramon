@@ -3023,6 +3023,8 @@ const RAID_EDITIONS = {
     repeatPersonal: { step:  100000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
     repeatTotal:    { step: 1000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
     moveDmg: {},               // ボスの技の威力は既定値のまま
+    // ボスの見た目・名前・入口画面の文言(版ごと)。RAID_BOSS が下でここを読む
+    boss: { element:'fire', skinId:'zod_ssr', name:'不死のゾッド', lead:'不死身の巨竜<b>ゾッド</b>が火口に降り立った。' },
   },
   /* 第2回(r2)は 2026-08-21 開始で用意していたが、一度も有効にしないまま終了日を迎えた
      ため削除し、第3回(r3)に置き換えた(2026-09-04)。moveDmg の暫定値(nova/ring/meteor)は
@@ -3056,6 +3058,15 @@ const RAID_EDITIONS = {
     repeatTotal:    { step: 2000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
     // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す。第2回の値をそのまま引き継ぐ)
     moveDmg: { nova:105, ring:98, meteor:78 },
+    // ボスの見た目・名前・入口画面の文言(版ごと)。
+    // element はあえて 'joker' にせず 'fire' のまま据え置く: ELEMENTS.joker は dmgDealtMod:1.2
+    // を持ち(ELEMENTS.fire は無し)、ボスの与ダメ計算はダメージ元(=ボス)の element から
+    // 直接この倍率を掛ける(combat.js のapplyDamage、target.isRaidBoss等の条件無し)ため、
+    // element だけ変えると上のmoveDmgで調整済みの威力にさらに20%乗ってしまう。
+    // 一方スキンの表示(getDisplayImage→skinnedImageForEntity)は entity.element と
+    // SSR_SKINS[skinId].element の一致を見ておらず skinId だけで絵を出すので、
+    // 見た目はSSRスキン「あるるかん」のまま素体は据え置き(=fire)で問題ない。
+    boss: { element:'fire', skinId:'joker_ssr', name:'あるるかん', lead:'ジョーカー<b>あるるかん</b>が火口に現れた。' },
   },
 };
 // 版は日付で自動選択(開催前後で自動的に切り替わる)。手で固定したいときはここへ id の文字列を書く
@@ -3108,10 +3119,12 @@ const RAID_LOOT_SPREAD = 0.20; // 撒く範囲(ワールドの短辺に対する
    一定間隔で追加を撒いて補給が途切れないようにする(マルチではホストが撒いて配信する)。 */
 const RAID_LOOT_REFILL_EVERY = 14;  // 追加を撒く間隔(秒)
 const RAID_LOOT_REFILL_COUNT = 12;  // 1回に撒く数
+// ボスの見た目・名前は版ごと(RAID_EDITIONS[版].boss)。無い版はr1にフォールバック
+const RAID_BOSS_DEF = RAID_ED.boss || RAID_EDITIONS.r1.boss;
 const RAID_BOSS = {
-  element:'fire',            // 素体はドラゴン
-  skinId:'zod_ssr',          // 見た目はSSRスキン「不死のゾッド」。歩行コマもこのスキンのものが出る
-  name:'不死のゾッド',
+  element: RAID_BOSS_DEF.element,   // 素体(ステータス・与ダメ倍率などの元になる種族)。版が変わっても既定はドラゴン
+  skinId:  RAID_BOSS_DEF.skinId,    // 見た目はSSRスキン。歩行コマもこのスキンのものが出る
+  name:    RAID_BOSS_DEF.name,
   radius: 288,               // 通常のモンスター(22前後)の13倍。画面を覆うほどの巨体
   baseHp: RAID_ED.baseHp,    // 1人あたりの基準HP。人数ぶん増える(raidBossMaxHp。3人で50,400)
   hpPerExtraPlayer: 0.55,    // 2人目以降1人につきこの割合ぶんHPを足す

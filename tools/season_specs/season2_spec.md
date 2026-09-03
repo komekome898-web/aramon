@@ -45,3 +45,12 @@
 
 ## 6. レイド画面の絵(発注者指定)
 - `RAID_EDITIONS.r3.keyImg = 'images/raid_arurukan.jpg'`(配置済み)。ui.js の `.raid-key` の img は `RAID_ED.keyImg || 'images/raid_key.jpg'` を1か所で読む(r1 は今の絵のまま)。見出しが版ごとに持てるなら r3 は「あるるかん討伐」。
+
+## 7. ボスを版ごとに持つ(2026-09-03 追記・第3回はボスが「あるるかん」)
+- `RAID_EDITIONS.r1.boss = { element:'fire', skinId:'zod_ssr', name:'不死のゾッド', lead:'不死身の巨竜<b>ゾッド</b>が火口に降り立った。' }`、
+  `RAID_EDITIONS.r3.boss = { element:'joker', skinId:'joker_ssr', name:'あるるかん', lead:'ジョーカー<b>あるるかん</b>が火口に現れた。' }`。
+- `RAID_BOSS` の `element/skinId/name` は `RAID_ED.boss` から読む(`RAID_BOSS` は `RAID_ED` の後で定義されているので読める。無ければ r1 の値)。
+  element を変えると `MONSTERS[element]` の trait / dmgDealtMod が乗るか確認し、乗るなら **ボスは fire のまま skinId だけ替える**(スキンが素体の属性を見て弾く場合だけ joker にする)。どちらにしたかコメントに書く。
+- index.html の `〜不死のゾッド〜`(`.raid-title-dash`)に id を付け、ui.js のレイド画面描画で `'〜'+RAID_BOSS.name+'〜'` を入れる。
+  `raid-lead` の1文目は `RAID_ED.boss.lead` から。「🐉 」の絵文字(raidBossName)は版ごとの絵文字にしない(そのまま)。
+- CACHE_NAME +1、`node --check`、`node tools/undef_check.mjs`。
