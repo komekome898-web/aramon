@@ -7873,6 +7873,11 @@ function boot(){
     if(usesTh(m)){ $('th').value = defTh(m); $('thVal').textContent = $('th').value; }
     if(m === 'chroma') fillPicker('w');
   };
+  /* **人が抜き方を選び直したら「触った」扱いにする**(§波4-39)。`onchange` は出し分けだけで
+     印を触らない(setWalkMode が直呼びするため)。本物の change イベントは人のタップ・
+     フォーム復元・下書きの復元(setWalkMode 経由)でしか飛ばないので、ここで印を落とせば
+     既定と同じ「色で抜く」を選び直しても、素材を画像へ替えたときに auto へ戻らない。 */
+  $('mode').addEventListener('change', ()=>{ walkModeAuto = null; });
   /* **既定の印は「HTMLに書いてある値」から始める。** ブラウザのフォーム復元が効いていれば
      画面の値はこれと食い違うので、その値は人が前に選んだ物として上書きしない(§指摘29)。 */
   walkModeAuto = domDefaultValue($('mode'));
