@@ -18,6 +18,8 @@ description: 荒野モン動のシーズン切替・レイド開催・レイド�
 | 前シーズン最終報酬の解放 | aqua_ssr | `prevFinalSkin` + `SSR_SKINS` から `seasonExclusive` を外す |
 | レイド id / 期間 / 総HP | r3 / 2026-09-04 から14日 / 10,000,000 | `RAID_EDITIONS.<id>`(`startDate/durationDays`、`totalTiers` 最終段の `at`) |
 | 討伐報酬スキン | あるるかん | `RAID_CLEAR_SKIN`(印は `raidClearOnly`) |
+| レイド限定スキン(レイドガチャ・SSRレイドカタログだけ) | 電王ライナー | `RAID_EDITIONS.<id>.exclusiveSkins`。**最新の版のものだけ**が限定になり、前の版のもの(狂戦士ガッツ等)は通常ガチャ・SSRカタログへ自動で解放。`raidGachaOnly` の印は廃止 |
+| レイドガチャ累計のリセット | 自動 | `loadRaidGachaCount` が版(`ed`)で数え直す。何もしない |
 | ボス1回のHP・段の報酬 | 総HPと期間から比例で | `baseHp` / `totalTiers` / `personalTiers` / `repeat*`(答え合わせ=必要な挑戦回数をコメントに) |
 | レイド特効 | 電王ライナー 1.5/0.75、他2体 1.3/0.85 | `RAID_EFFECT_SKINS` |
 | レイドガチャのピックアップ | 3体・ラベル・絵 | `RAID_GACHA_PICKUP_IDS` / `RAID_GACHA_PICKUP_LABEL` / `RAID_GACHA_PROMO_IMG`(絵は `images/promo_*.jpg` 1280px 以下) |

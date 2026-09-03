@@ -5321,6 +5321,204 @@ function fx3dKagune(ae, curReach, fade, progress){
     }
   }
 }
+/* 電王ライナー「俺、参上」(SSRスキンwarm_ssr専用tier3・射程2600・充填3200/s)。
+   予告0.6秒でレール(枕木つき)を敷き、そのレールの上を赤い新幹線が curReach まで走る。
+   レールは cast() ではなくここ(drawReal3dAreaEffect)から予告〜寿命の最後まで毎フレーム
+   呼ばれ続けるので、状態を持たずに ae.range いっぱいへ毎回引き直すだけでよい。 */
+const SHINKANSEN_SLEEPER_GAP = 60;   // 枕木の間隔(ワールド単位。発注者指摘2026-09-03で70→60)
+const SHINKANSEN_GAUGE_R     = 0.17; // レール幅(rectWidthに対する比率。当たり幅よりだいぶ内側の細い2本)
+const SHINKANSEN_RAIL_DARK   = '#5b6570'; // 鋼のレール(暗め)。発注者指摘: 薄い黄土色に見えていた反省で技色を混ぜない
+const SHINKANSEN_RAIL_LIGHT  = '#9aa4b0'; // 鋼の照り返し
+const SHINKANSEN_SLEEPER_COL = '#3d2f22'; // 枕木(暗い茶)
+const SHINKANSEN_RED         = '#e8232a'; // 車体の赤(auraTintを混ぜても常にこの赤が主役)
+/* レールは技色(auraTint)を混ぜない鋼色+暗い茶の枕木で描く。予告中(pulse:true)だけ
+   「これから来る」合図として赤く脈動させる(実際の充填中は脈動させない=鋼のまま)。 */
+function fx3dShinkansenRails(ae, fade, pulse){
+  if(fade<=0.01) return;
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const gaugeHalf = (ae.width||150)*SHINKANSEN_GAUGE_R;
+  const segs = Math.max(6, Math.round(ae.range/90));
+  const pulseAmt = pulse ? (0.35+0.35*Math.sin(matchTime*7)) : 0;
+  const darkCol  = pulseAmt>0 ? _mixHex(SHINKANSEN_RAIL_DARK,  '#ff3b30', pulseAmt) : SHINKANSEN_RAIL_DARK;
+  const lightCol = pulseAmt>0 ? _mixHex(SHINKANSEN_RAIL_LIGHT, '#ff8a7a', pulseAmt) : SHINKANSEN_RAIL_LIGHT;
+  for(const side of [-1,1]){
+    const pts=[];
+    for(let i=0;i<=segs;i++){
+      const along = ae.range*(i/segs);
+      const x = ae.x+fx*along+rx*gaugeHalf*side, y = ae.y+fy*along+ry*gaugeHalf*side;
+      const p = fx3dPoint(x, y, 3);
+      if(p) pts.push(p);
+    }
+    if(pts.length<2) continue;
+    fx3dStroke(pts, darkCol, 4.4, 0.9*fade, 3);      // 鋼のレール本体(暗め・太め)
+    fx3dStroke(pts, lightCol, 1.7, 0.85*fade, 6);    // 上面の照り返し
+  }
+  // 枕木。判定の幅そのものを跨いで置く(レールの内側=判定域だと分かるように)
+  const sleeperHalf = (ae.width||150)*0.5*0.9;
+  const sleeperN = Math.max(4, Math.round(ae.range/SHINKANSEN_SLEEPER_GAP));
+  for(let i=0;i<=sleeperN;i++){
+    const along = ae.range*(i/sleeperN);
+    const x = ae.x+fx*along, y = ae.y+fy*along;
+    const a = fx3dPoint(x+rx*sleeperHalf, y+ry*sleeperHalf, 1.5);
+    const b = fx3dPoint(x-rx*sleeperHalf, y-ry*sleeperHalf, 1.5);
+    if(a && b) fx3dStroke([a,b], SHINKANSEN_SLEEPER_COL, 5.2, 0.7*fade, 0);
+  }
+}
+// 先端が届いた/通り過ぎた量に応じて広がって消える衝撃の輪(新幹線の到達・シェルの跳ね返り、共通で使う)
+function fx3dAoeEndPop(x, y, overflow, color, fade, maxR){
+  if(overflow<=0) return;
+  const gz = groundZAt(x,y);
+  const t = clamp(overflow/(maxR||130), 0, 1);
+  const ring = fx3dRingPts(x, y, (maxR||130)*Math.min(1,t*1.4), 4);
+  if(ring) fx3dStroke(ring, color, 5, (1-t)*fade, 16, true);
+}
+/* 赤い新幹線の車体。**不透明な赤(SHINKANSEN_RED主体・auraTintは少しだけ混ぜる)の箱**にする。
+   平行な側面(近い側=明るい/奥側=暗い)+天井(さらに明るい)+丸めた鼻先(幅を残したまま
+   タップ状に絞る2段テーパー)の3面で立体を作る。先端の光は控えめにして車体を白飛びさせない。 */
+function fx3dShinkansenBody(ae, headD, tailD, halfW, fade){
+  const col = ae.auraTint || ae.color;
+  const bodyCol = _mixHex(SHINKANSEN_RED, col, 0.16); // 赤が主役(スキン色は少しだけ)
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const midD = (headD+tailD)/2;
+  const gz = groundZAt(ae.x+fx*midD, ae.y+fy*midD);
+  const h = halfW*1.5;         // 車体の高さ(rectWidth×0.6。halfW=rectWidth×0.4なので1.5倍)
+  const bz0 = h*0.1, bz1 = h;  // 底(レールよりわずかに浮かせる)〜天井
+  const noseLen  = halfW*0.7;  // 鼻先の絞りの長さ
+  const taperW   = halfW*0.55; // 絞った先での幅(0にしない=丸めた印象を出す)
+  const at = (along, lat, dz)=>fx3dPoint(ae.x+fx*along+rx*lat, ae.y+fy*along+ry*lat, dz, gz);
+  const midHeadD = headD - noseLen;
+  const pts = {
+    tailTopL:at(tailD,halfW,bz1),        tailTopR:at(tailD,-halfW,bz1),
+    tailBotL:at(tailD,halfW,bz0),        tailBotR:at(tailD,-halfW,bz0),
+    bodyTopL:at(midHeadD,halfW,bz1),     bodyTopR:at(midHeadD,-halfW,bz1),
+    bodyBotL:at(midHeadD,halfW,bz0),     bodyBotR:at(midHeadD,-halfW,bz0),
+    noseTopL:at(headD,taperW,bz1*0.85),  noseTopR:at(headD,-taperW,bz1*0.85),
+    noseBotL:at(headD,taperW,bz0+(bz1-bz0)*0.12), noseBotR:at(headD,-taperW,bz0+(bz1-bz0)*0.12),
+    tip:at(headD+halfW*0.35, 0, (bz0+bz1)*0.5*0.95),
+  };
+  if(Object.values(pts).some(p=>!p)) return;
+  const { tailTopL,tailTopR,tailBotL,tailBotR,bodyTopL,bodyTopR,bodyBotL,bodyBotR,
+          noseTopL,noseTopR,noseBotL,noseBotR,tip } = pts;
+  const nearCol = _mixHex(bodyCol,'#000000',0.04); // 近い側(明るい赤)
+  const farCol  = _mixHex(bodyCol,'#000000',0.38); // 奥側(暗い赤)
+  const topCol  = _mixHex(bodyCol,'#ffffff',0.3);  // 天井(明るい赤)
+  const A = Math.min(1, fade); // 遠くからでも不透明な赤に見えるよう、この技だけ薄めない
+  fx3dFill([tailBotL, bodyBotL, noseBotL, tip, noseTopL, bodyTopL, tailTopL], nearCol, A, 0);
+  fx3dFill([tailBotR, bodyBotR, noseBotR, tip, noseTopR, bodyTopR, tailTopR], farCol,  A*0.94, 0);
+  fx3dFill([tailTopL, bodyTopL, noseTopL, tip, noseTopR, bodyTopR, tailTopR], topCol,  A*0.92, 0);
+  // 側面中央の白いストライプ(近い側のみ・1本)
+  const stripeZ = bz0 + (bz1-bz0)*0.55;
+  const s0 = at(tailD, halfW*0.98, stripeZ), s1 = at(midHeadD*0.9+tailD*0.1, halfW*0.98, stripeZ);
+  if(s0 && s1) fx3dStroke([s0,s1], '#ffffff', Math.max(3, halfW*0.09), A*0.95, 3);
+  /* 先端の発光。**半径・明るさをどちらも半分未満に抑える**(車体の赤が白い塊に負けないように)。 */
+  fx3dFireGlow(ae.x+fx*headD, ae.y+fy*headD, gz, halfW*0.7, '#ffd9d9', fade*0.35);
+  const tipLight = at(headD, 0, (bz0+bz1)/2);
+  if(tipLight){
+    const r = Math.max(3, halfW*0.14);
+    const tg = ctx.createRadialGradient(tipLight.x, tipLight.y, 0, tipLight.x, tipLight.y, r);
+    tg.addColorStop(0, 'rgba(255,255,255,0.85)');
+    tg.addColorStop(1, _hexA(bodyCol, 0));
+    fx3dCore([{x:tipLight.x-r,y:tipLight.y-r},{x:tipLight.x+r,y:tipLight.y-r},
+              {x:tipLight.x+r,y:tipLight.y+r},{x:tipLight.x-r,y:tipLight.y+r}], tg, 0.65, 6);
+  }
+}
+function fx3dShinkansenTrain(ae, curReach, fade, fillDist){
+  fx3dShinkansenRails(ae, fade, false);   // 充填中は脈動させず鋼のまま(赤い脈動は予告だけ)
+  const halfW = (ae.width||150)*0.5*0.8;
+  const bodyLen = (ae.width||150)*5.5;    // rectWidthの5.5倍=長い車体として画面上でも読める長さ
+  const headD = curReach, tailD = Math.max(0, curReach - bodyLen);
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  if(!renderHeavyLoad){
+    // 後方へ抜ける速度線(風切り)。**車体より目立たせない**ので先に描いて車体の下に潜らせる
+    const col = ae.auraTint || ae.color;
+    const streakCol = _mixHex(SHINKANSEN_RED, '#ffffff', 0.5);
+    for(let i=0;i<5;i++){
+      const h1 = fxHash01(ae.id*7.1+i*3.3), h2 = fxHash01(ae.id*4.9+i*8.7);
+      const along = Math.max(0, tailD - halfW*(0.4+1.6*h1));
+      const lat = (h2*2-1)*halfW*0.85;
+      const a = fx3dPoint(ae.x+fx*along+rx*lat, ae.y+fy*along+ry*lat, halfW*0.5*1.05);
+      const b = fx3dPoint(ae.x+fx*(along-halfW*1.4)+rx*lat, ae.y+fy*(along-halfW*1.4)+ry*lat, halfW*0.5*1.05);
+      if(a && b) fx3dStroke([a,b], streakCol, 1.6, 0.35*fade*(1-h1*0.4), 6);
+    }
+  }
+  fx3dShinkansenBody(ae, headD, tailD, halfW, fade); // 車体は速度線の上に描いて必ず目立たせる
+  if(!renderHeavyLoad){
+    // レールから跳ねる火花(先頭付近)
+    for(let i=0;i<4;i++){
+      const h1 = fxHash01(ae.id*11.3+i*5.1);
+      const along = headD - halfW*0.3*h1;
+      const p = fx3dPoint(ae.x+fx*along+rx*(ae.width*SHINKANSEN_GAUGE_R)*(i%2?1:-1), ae.y+fy*along+ry*(ae.width*SHINKANSEN_GAUGE_R)*(i%2?1:-1), 6);
+      if(p) drawGroundSpark(p, 'ember', '#fff2d8', fade*0.8, ae.id+i);
+    }
+  }
+  // 先端が最大射程まで届いたら、短い赤い衝撃の輪を残して消える
+  fx3dAoeEndPop(ae.x+fx*ae.range, ae.y+fy*ae.range, fillDist-ae.range, '#ff3b30', fade, 150);
+}
+/* シェルアタック(ワームtier3・範囲技版)。速い球体(黄色く発光・回転する縞)が地面を
+   転がりながら curReach まで進む。回転角は「進んだ距離÷半径」で出すので、
+   実際に転がっているように見える。色の作り(黄+紫の電撃)は旧・弾のprojStyle:'shell'を踏襲。 */
+function fx3dRollingShellBall(ae, curReach, fade, fillDist){
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const R = Math.max(14, (ae.width||120)*0.45);
+  const cx = ae.x+fx*curReach, cy = ae.y+fy*curReach;
+  const gz = groundZAt(cx, cy);
+  /* 接地影。**球の中心はz=Rちょうど(底が地面z=0に触れる高さ)で、跳ねる上下動は付けない**
+     (発注者指摘2026-09-03: 影が無いと地面から浮いて見える)。影はカメラの実際の扁平率
+     (fxFlatten)で潰した暗い楕円を、球の真下(z≈2)へ1枚敷くだけ。 */
+  const shadowP = fx3dPoint(cx, cy, 2, gz);
+  if(shadowP){
+    const srx = R*1.1*shadowP.scale, sry = srx*fxFlatten();
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, 0.45*fade);
+    ctx.beginPath(); ctx.ellipse(shadowP.x, shadowP.y, srx, sry, 0, 0, Math.PI*2);
+    ctx.fillStyle = '#000000'; ctx.fill();
+    ctx.restore();
+  }
+  const center = fx3dPoint(cx, cy, R, gz);
+  if(center){
+    const rr = R*center.scale;
+    const g = ctx.createRadialGradient(center.x-rr*0.3, center.y-rr*0.35, rr*0.08, center.x, center.y, rr);
+    g.addColorStop(0, '#fffbe0');
+    g.addColorStop(0.45, '#ffd93d');
+    g.addColorStop(1, '#e8a00c');
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, fade);
+    if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = '#ffd93d'; }
+    ctx.beginPath(); ctx.arc(center.x, center.y, rr, 0, Math.PI*2); ctx.fillStyle = g; ctx.fill();
+    ctx.restore();
+    // 回転する暗い縞(転がった距離÷半径=回転角)。手前側(cosA>0)だけ描いて裏の縞を見せない
+    const rot = curReach / R;
+    const stripeN = 5;
+    ctx.save();
+    ctx.globalAlpha = 0.6*fade;
+    ctx.fillStyle = '#7a4d00';
+    for(let i=0;i<stripeN;i++){
+      const a = rot + (i/stripeN)*Math.PI*2;
+      const cosA = Math.cos(a);
+      if(cosA < 0.12) continue;
+      const sx = center.x + Math.sin(a)*rr*0.92;
+      const w = Math.max(1, rr*0.17*cosA);
+      ctx.beginPath();
+      ctx.ellipse(sx, center.y, w, rr*0.97, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  if(!renderHeavyLoad){
+    // 通ってきた跡に残る土ぼこり
+    for(let i=0;i<4;i++){
+      const h1 = fxHash01(ae.id*3.1+i*7.3);
+      const back = curReach*(0.2+0.75*h1);
+      const bx = ae.x+fx*back, by = ae.y+fy*back;
+      fx3dFireGlow(bx, by, groundZAt(bx,by), R*1.5, '#d8d2c4', fade*0.22);
+    }
+  }
+  // 射程いっぱいまで転がりきったら、短く跳ねる紫の弾け(毒の弾)を残す
+  fx3dAoeEndPop(ae.x+fx*ae.range, ae.y+fy*ae.range, fillDist-ae.range, '#b45cff', fade, R*3.2);
+}
 // 帯(モッチ砲・ラガモッチ砲・熱視線・天河天翔): ビームは色以外すべて共通の見た目
 function fx3dRectBeam(ae, curReach, fade){
   const col = ae.auraTint || ae.color;
@@ -5531,6 +5729,18 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
     const half = (ae.fanAngleDeg||45)*Math.PI/360;
     const outline = fanOutlinePoints(ae.x, ae.y, ae.angle, ae.range, half, 16);
     if(outline) strokeDashedShape(outline, ae.color, 0.5*fadeAlpha);
+  } else if(ae.style==='shinkansen'){
+    // 電王ライナー「俺、参上」: 予告中だけここでレールを赤く脈動させて敷く。
+    // 充填中(inTelegraph=false)は fx3dShinkansenTrain が鋼のレールを描くので、ここでは重複させない
+    if(inTelegraph) fx3dShinkansenRails(ae, fade, true);
+  } else if(ae.style==='rollingShell'){
+    // シェルアタック: ごく短い地面の帯(薄い黄色)だけを予告として見せる。
+    // **予告のあいだだけ**(充填中まで残すと、球より低い位置に線が残り続けて浮いて見える原因になる)
+    if(inTelegraph){
+      const stripLen = Math.min(ae.range, (ae.width||120)*1.3);
+      const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, stripLen, (ae.width||110)/2);
+      if(outline) strokeDashedShape(outline, '#ffe066', 0.4*fadeAlpha);
+    }
   } else {
     const outline = rectOutlinePoints(ae.x, ae.y, ae.angle, ae.range, (ae.width||110)/2);
     if(outline) strokeDashedShape(outline, ae.color, 0.45*fadeAlpha);
@@ -5552,6 +5762,8 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
     else if(ae.style==='kagune') fx3dKagune(ae, curReach, fade, progress);
     else if(ae.style==='lava') fx3dFireWave(ae, curReach, fade);
     else if(ae.style==='zangetsu') fx3dZangetsu(ae, curReach, fade, progress);
+    else if(ae.style==='shinkansen') fx3dShinkansenTrain(ae, curReach, fade, fillDist);
+    else if(ae.style==='rollingShell') fx3dRollingShellBall(ae, curReach, fade, fillDist);
     else                       fx3dRectBeam(ae, curReach, fade);   // モッチ砲/天河天翔/熱視線
   } else return false;
   return true;

@@ -1074,6 +1074,8 @@ function tryNonHostPlayerFireVisual(dt){
   if(mv.aoeShape){
     const width = (mv.rectWidth||mv.beamWidth||mv.zigzagWidth||0) * hbMult;
     const fillSpeed = Math.max(200, effProjSpeed||900);
+    // combat.jsのfireMoveと同じく、move側の指定を優先する(電王ライナー「俺、参上」は0.6秒)
+    const telegraphTime = mv.telegraphTime!=null ? mv.telegraphTime : 0.18;
     // combat.jsのfireMoveと同じく、連射(burst)ぶんを角度をずらして順番に出す。
     // 1発しか出していなかったため、ライトニング等の連射技がゲストだけ1発に見えていた。
     const burstCount = mv.burst || 1;
@@ -1092,8 +1094,8 @@ function tryNonHostPlayerFireVisual(dt){
         id:nextId++, ownerId:player.id, kind:mv.aoeShape, x:player.x, y:player.y, z:player.z,
         angle:ang, color:effColor, range: beamRanges ? mv.range : reach, width,
         fanAngleDeg:mv.fanAngleDeg||45, beamCount:mv.beamCount||3, beamSpreadDeg:mv.beamSpreadDeg||40,
-        beamRanges, fillSpeed, telegraphTime:0.18,
-        spawnAt:matchTime, life: 0.18 + reach/fillSpeed + 0.25,
+        beamRanges, fillSpeed, telegraphTime,
+        spawnAt:matchTime, life: telegraphTime + reach/fillSpeed + 0.25,
         style:mv.aoeStyle||null, moveAura, auraTint, auraAccent,
         glareEyes: !!mv.glareEyes,   // 睨む眼(ホスト側の buildAe と同じ印)
         glareTint: (seVar && seVar.color) || null,

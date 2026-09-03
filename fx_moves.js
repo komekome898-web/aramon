@@ -1561,10 +1561,67 @@ function fxForwardRing(fx, p, c, o){
   }
 }
 
-/* ---- ワーム(毒): シェルアタック ----
-   splash58 の直撃。**命中で自分に移動速度バフが乗る**技なので、
-   当たった手応えと「自分が速くなった」の両方を絵にする。 */
+/* ---- ワーム(毒): 毒ガス/毒噴射(tier1/2、弾のまま)+ シェルアタック/俺、参上(tier3、範囲技) ----
+   tier1/2は今までどおり fly/impact(弾)。tier3は2026-09-03に範囲技(aoeShape)へ変わったので
+   cast/sustain を新たに持つ。**命中で自分に移動速度バフが乗る**技なので、
+   弾(旧tier3・現tier1/2)は当たった瞬間、範囲技(現tier3)は combat.js が立てる
+   `ae.selfSpeedBuffFxAt` を見て、どちらも「自分が速くなった」ことを同じ筋の絵で見せる。 */
 FX_MOVES.warm = {
+  cast(fx, ae, c){
+    if(ae.style==='shinkansen'){
+      // 電王ライナー「俺、参上」: レール上に発車の光が灯る
+      fx.ring({ x:ae.x, y:ae.y, r0:8, r1:70, life:0.55, color:c, width:9, bright:1.1 });
+    } else if(ae.style==='rollingShell'){
+      // シェルアタック(範囲技版): 転がり出す合図の土煙の輪
+      fx.ring({ x:ae.x, y:ae.y, r0:6, r1:46, life:0.4, color:c, width:7, bright:0.8 });
+    }
+  },
+  sustain(fx, ae, c, dt){
+    const reach = fxAeReach(ae, dt);
+    const fwx = Math.cos(ae.angle||0), fwy = Math.sin(ae.angle||0);
+    if(reach > 2){
+      const hx = ae.x + fwx*reach, hy = ae.y + fwy*reach;
+      if(ae.style==='shinkansen'){
+        const viv = fxVivid(c);
+        // 走る新幹線の後ろに伸びる白熱の芯(速度線)
+        fx.trail('trainCore'+ae.id, hx, hy, fxGroundZ(hx,hy)+30,
+                 { color:viv, width:18, bright:1.6, whiten:0.55 });
+        // レールから散る火花
+        for(let i=fxSpawnN(dt, 40); i>0; i--){
+          const along = reach*Math.random();
+          const x = ae.x+fwx*along, y = ae.y+fwy*along;
+          fx.emit({ x, y, z: fxGroundZ(x,y)+4,
+                    vx:-fwx*50+(Math.random()*2-1)*70, vy:-fwy*50+(Math.random()*2-1)*70,
+                    vz:10+Math.random()*28, az:-180, r:viv[0], g:viv[1], b:viv[2], bright:1.3,
+                    life:0.22+Math.random()*0.15, size0:4+Math.random()*4, size1:0.5,
+                    turb:6, turbFreq:2, spin:2 });
+        }
+      } else if(ae.style==='rollingShell'){
+        // 転がる殻のまわりを回る毒の霧(flyの霧と同じ作り)+ 転がった跡の土ぼこり
+        for(let i=fxSpawnN(dt, 24); i>0; i--){
+          const a = Math.random()*Math.PI*2, rr = (ae.width||120)*0.42;
+          const x = hx+Math.cos(a)*rr, y = hy+Math.sin(a)*rr;
+          fx.emit({ x, y, z: fxGroundZ(x,y)+10, vx:-fwx*30, vy:-fwy*30, vz:8+Math.random()*20,
+                    az:-60, r:c[0], g:c[1], b:c[2], bright:0.85, hot:0,
+                    life:0.6+Math.random()*0.4, size0:12+Math.random()*8, size1:24,
+                    turb:22, turbFreq:0.6, spin:1 });
+        }
+      }
+    }
+    /* 命中で乗る移動速度バフを絵にする(旧・弾のimpactと同じ筋)。
+       combat.jsのupdateAreaEffectsが命中した瞬間に一度だけ ae.selfSpeedBuffFxAt を立てるので、
+       ここで拾って1回だけ出す(_sbFxDoneで再生成を防ぐ)。 */
+    if(ae.selfSpeedBuffOnHit && ae.selfSpeedBuffFxAt!=null && !ae._sbFxDone){
+      ae._sbFxDone = true;
+      const me = (typeof getEntity==='function' && ae.ownerId!=null) ? getEntity(ae.ownerId) : null;
+      if(me && me.alive){
+        const viv = fxVivid(c);
+        fx.burst({ x:me.x, y:me.y, z:(me.z||0)+16, count:12, speed:210, jitter:10, jitterZ:14,
+                   elev:0.15, elevSpread:0.5, r:viv[0], g:viv[1], b:viv[2], bright:1.2,
+                   life:0.35, size0:11, size1:1, az:-120, turb:6, turbFreq:2, spin:3, stretch:1.0 });
+      }
+    }
+  },
   fly(fx, p, c, dt){
     if(p.delay > 0) return;
     const viv = fxVivid(c);

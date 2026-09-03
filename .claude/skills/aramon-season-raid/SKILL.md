@@ -153,7 +153,7 @@ description: 荒野モン動のシーズン運用とレイドバトルの手順�
 - SSRの入手経路は`SSR_SKINS`の印で決まる(印が無ければどこでも出る)
   - `seasonExclusive` … シーズンパス報酬限定
   - `raidClearOnly` … レイド討伐報酬限定(どのガチャ・カタログにも出さない)
-  - `raidGachaOnly` … レイドガチャとレイドカタログにだけ出す
+  - `raidGachaOnly(廃止 2026-09-03: 今は `RAID_EDITIONS[版].exclusiveSkins`。最新の版のものだけ限定)` … レイドガチャとレイドカタログにだけ出す
 - 一覧は`gachaSsrSkinIds()`(スキンガチャ・SSRカタログ)と`raidGachaSsrSkinIds()`(レイドガチャ・SSRレイドカタログ)の2つを通す。**印を直接読む場所を増やさない**
 - カタログは`sr`/`ssr`/`raidSsr`の3種。中身は`catalogSkinIds(kind)`、名前は`CATALOG_LABEL` 1か所
 - レイドガチャは100連で`raidSsr`を1回だけ付与(`RAID_GACHA_CATALOG_AT`)。ピックアップは`RAID_GACHA_PICKUP`
