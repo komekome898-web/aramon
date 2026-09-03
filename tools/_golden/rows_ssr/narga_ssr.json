@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  narga_ssr:      { element:'narga', name:'ゴッドエンペラー', iconImg:'narga_ssr', playerImg:'narga_player_ssr' }, /*@narga_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  narga_ssr:      'green', /*@narga_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  narga_ssr:      { name:'デスレーザー', dmgMult:1.15 }, /*@narga_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'ゴッドエンペラー', tag:'新登場・ガチャ', img:'monsters/narga_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@narga_ssr*/"
+ ]
+}

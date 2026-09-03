@@ -1,0 +1,88 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 840,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 624,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#7fb236",
+   "icon": "🏹",
+   "name": "スロウランサー"
+  },
+  {
+   "tier": 2,
+   "range": 1680,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 600,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#7fb236",
+   "icon": "🔥",
+   "name": "マインドフレア"
+  },
+  {
+   "tier": 3,
+   "dmg": 22,
+   "cooldown": 2.2,
+   "gutsCost": 24,
+   "range": 1620,
+   "projSpeed": 1380,
+   "hitR": 34,
+   "burst": 3,
+   "burstGap": 0.12,
+   "burstSpread": 0.11,
+   "projStyle": "seaSpear",
+   "blast": {
+    "radius": 325,
+    "dmg": 26,
+    "expandTime": 0.5,
+    "color": "#7fb236"
+   },
+   "color": "#7fb236",
+   "name": "メテオドライブ"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  centaur: { label:'ケンタウロス', color:'#7fb236', dark:'#4f6f1f', speed:190, hp:110, trait:'cent' }, /*@centaur*/"
+  ],
+  "WALK_ANIM": [
+   "  centaur: { /*@centaur*/",
+   "    base: { front:_loadWalk('centaur_walk_f'), back:_loadWalk('centaur_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  centaur: [ /*@centaur*/",
+   "    { name:'スロウランサー', tier:1, color:'#7fb236', range:840, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:624, hitR:12, splash:70, icon:'🏹' },\n    { name:'マインドフレア', tier:2, color:'#7fb236', range:1680, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:600, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },\n    { name:'メテオドライブ', tier:3, color:'#7fb236', range:1620, dmg:22, cooldown:2.2, gutsCost:24, projSpeed:1380, hitR:34, burst:3, burstGap:0.12, burstSpread:0.11, projStyle:'seaSpear', blast:{ radius:325, dmg:26, expandTime:0.5, color:'#7fb236' } }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  centaur: 'green', /*@centaur*/"
+  ],
+  "MOVE_AURA": [
+   "  'スロウランサー':'green','マインドフレア':'green','メテオドライブ':'green', /*@centaur*/"
+  ],
+  "STATE_CHANGES": [
+   "  centaur: { /*@centaur*/",
+   "    name:'憤怒', duration:30, cooldown:120, trigger:'hpBelow', triggerValue:0.5,",
+   "    effects:{ dmgMult:1.2, gutsRegenMult:2, cooldownMult:0.667, speedMult:1.5 },",
+   "  },"
+  ],
+  "APTITUDE": [
+   "  centaur: { life:'C', power:'C', wisdom:'B', accuracy:'A', evasion:'D', vitality:'D' }, /*@centaur*/"
+  ],
+  "SKIN_CONFIG": [
+   "  centaur: { colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:190, window:60} }, /*@centaur*/"
+  ],
+  "TRAIT_DESC": [
+   "  cent:       '技の射程が長く、弾速が速い', /*@centaur*/"
+  ]
+ }
+}

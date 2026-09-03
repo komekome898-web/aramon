@@ -1,0 +1,81 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 700,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 520,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#4d1d7c",
+   "icon": "🔥",
+   "name": "デスエナジー"
+  },
+  {
+   "tier": 2,
+   "range": 1400,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 500,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#4d1d7c",
+   "icon": "🔥",
+   "name": "デスカッター"
+  },
+  {
+   "tier": 3,
+   "dmg": 21,
+   "cooldown": 2,
+   "gutsCost": 24,
+   "range": 1340,
+   "projSpeed": 820,
+   "hitR": 22,
+   "burst": 5,
+   "burstGap": 0.09,
+   "projStyle": "crescent",
+   "color": "#f5ec00",
+   "name": "デスファイナル"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  joker:   { label:'ジョーカー', color:'#4d1d7c', dark:'#2e114a', accent:'#f5ec00', speed:196, hp:115, trait:'joker', dmgDealtMod:1.2 }, /*@joker*/"
+  ],
+  "WALK_ANIM": [
+   "  joker:   { /*@joker*/",
+   "    base: { front:_loadWalk('joker_walk_f'), back:_loadWalk('joker_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  joker:   [ /*@joker*/",
+   "    { name:'デスエナジー', tier:1, color:'#4d1d7c', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🔥' },\n    { name:'デスカッター', tier:2, color:'#4d1d7c', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🔥' },\n    { name:'デスファイナル', tier:3, color:'#f5ec00', range:1340, dmg:21, cooldown:2, gutsCost:24, projSpeed:820, hitR:22, burst:5, burstGap:0.09, projStyle:'crescent' }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  joker:   'black', /*@joker*/"
+  ],
+  "MOVE_AURA": [
+   "  'デスエナジー':'black','デスカッター':'black','デスファイナル':'black', /*@joker*/"
+  ],
+  "STATE_CHANGES": [
+   "  joker:   { /*@joker*/",
+   "    name:'本気', duration:30, cooldown:120, trigger:'onKill', triggerValue:null,",
+   "    effects:{ dmgMult:1.2, dmgTakenMult:0.8, gutsRegenMult:2, speedMult:1.5 },",
+   "  },"
+  ],
+  "APTITUDE": [
+   "  joker:   { life:'C', power:'C', wisdom:'A', accuracy:'A', evasion:'D', vitality:'D' }, /*@joker*/"
+  ],
+  "SKIN_CONFIG": [
+   "  joker:   { colors:['white','red','blue','yellow','green'], source:{type:'chroma', hue:265, window:60} }, /*@joker*/"
+  ],
+  "TRAIT_DESC": [
+   "  joker:      '技ダメ1.2倍、ダメージの20%ガッツダメージ', /*@joker*/"
+  ]
+ }
+}

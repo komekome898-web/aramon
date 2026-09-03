@@ -1,0 +1,75 @@
+{
+ "moves": [
+  {
+   "tier": 1,
+   "range": 700,
+   "dmg": 24,
+   "cooldown": 0.85,
+   "gutsCost": 8,
+   "projSpeed": 520,
+   "hitR": 12,
+   "splash": 70,
+   "color": "#7fb236",
+   "icon": "🗡️",
+   "name": "まっぷたつ"
+  },
+  {
+   "tier": 2,
+   "range": 1400,
+   "dmg": 13,
+   "cooldown": 1.05,
+   "gutsCost": 16,
+   "projSpeed": 500,
+   "hitR": 7,
+   "burst": 3,
+   "burstGap": 0.1,
+   "color": "#7fb236",
+   "icon": "🗡️",
+   "name": "ダッシュ斬り"
+  },
+  {
+   "tier": 3,
+   "dmg": 58,
+   "cooldown": 2,
+   "gutsCost": 24,
+   "range": 1850,
+   "projSpeed": 560,
+   "hitR": 30,
+   "splash": 55,
+   "shape": "triangle",
+   "projStyle": "holy",
+   "color": "#7fb236",
+   "name": "最終奥義"
+  }
+ ],
+ "rows": {
+  "ELEMENTS": [
+   "  dullahan:{ label:'デュラハン', color:'#7fb236', dark:'#4f6f1f', speed:160, hp:120, trait:'dullahan' }, /*@dullahan*/"
+  ],
+  "WALK_ANIM": [
+   "  dullahan:{ /*@dullahan*/",
+   "    base: { front:_loadWalk('dullahan_walk_f'), back:_loadWalk('dullahan_walk_b') },",
+   "  },"
+  ],
+  "SIGNATURE_MOVES": [
+   "  dullahan:[ /*@dullahan*/",
+   "    { name:'まっぷたつ', tier:1, color:'#7fb236', range:700, dmg:24, cooldown:0.85, gutsCost:8, projSpeed:520, hitR:12, splash:70, icon:'🗡️' },\n    { name:'ダッシュ斬り', tier:2, color:'#7fb236', range:1400, dmg:13, cooldown:1.05, gutsCost:16, projSpeed:500, hitR:7, burst:3, burstGap:0.1, icon:'🗡️' },\n    { name:'最終奥義', tier:3, color:'#7fb236', range:1850, dmg:58, cooldown:2, gutsCost:24, projSpeed:560, hitR:30, splash:55, shape:'triangle', projStyle:'holy' }",
+   "  ],"
+  ],
+  "MONSTER_AURA": [
+   "  dullahan:'white', /*@dullahan*/"
+  ],
+  "MOVE_AURA": [
+   "  'まっぷたつ':'white','ダッシュ斬り':'white','最終奥義':'white', /*@dullahan*/"
+  ],
+  "APTITUDE": [
+   "  dullahan:{ life:'C', power:'B', wisdom:'C', accuracy:'C', evasion:'E', vitality:'A' }, /*@dullahan*/"
+  ],
+  "SKIN_CONFIG": [
+   "  dullahan:{ colors:['black','white','red','blue','yellow'], source:{type:'chroma', hue:30, window:60} }, /*@dullahan*/"
+  ],
+  "TRAIT_DESC": [
+   "  dullahan:   '被ダメ0.8倍、相手に近いほど技ダメが上がる', /*@dullahan*/"
+  ]
+ }
+}

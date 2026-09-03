@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  oki_ssr:        { element:'centaur', name:'秦の怪鳥', iconImg:'oki_ssr', playerImg:'oki_player_ssr' }, /*@oki_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  oki_ssr:        'blue', /*@oki_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  oki_ssr:        { name:'大将軍の矛', dmgMult:1.15 }, /*@oki_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'秦の怪鳥', tag:'新登場・ガチャ', img:'monsters/oki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@oki_ssr*/"
+ ]
+}

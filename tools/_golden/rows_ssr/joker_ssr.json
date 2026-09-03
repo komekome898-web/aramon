@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr' }, /*@joker_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  joker_ssr:      'white', /*@joker_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  joker_ssr:      { name:'聖ジョージの剣', dmgMult:1.15 }, /*@joker_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'あるるかん', tag:'レイド討伐限定', img:'monsters/joker_ssr.png', size:'150%', pos:'50% 20%', open:'raid' }, /*@joker_ssr*/"
+ ]
+}

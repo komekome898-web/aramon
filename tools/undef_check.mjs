@@ -52,7 +52,7 @@ Intl globalThis NaN Infinity undefined eval isNaN isFinite parseInt parseFloat e
 decodeURI decodeURIComponent escape unescape structuredClone queueMicrotask console arguments`.split(/\s+/);
 
 const DOM_GLOBALS = `
-window document navigator location history screen alert confirm prompt localStorage sessionStorage indexedDB
+window document navigator location history screen alert confirm prompt localStorage sessionStorage indexedDB caches
 setTimeout clearTimeout setInterval clearInterval requestAnimationFrame cancelAnimationFrame requestIdleCallback
 fetch Request Response Headers FormData URL URLSearchParams Blob File FileReader AbortController AbortSignal
 Image Audio Video HTMLElement HTMLCanvasElement HTMLImageElement HTMLInputElement Element Node NodeList Text
@@ -354,11 +354,16 @@ for(const f of files){
   const env = rel === 'sw.js' ? 'sw' : (rel.startsWith('tools' + path.sep) ? 'node' : 'web');
   sources.push({ rel, ast, sourceType, env });
 }
-const htmlPath = path.join(ROOT, 'index.html');
-if(fs.existsSync(htmlPath)){
+/* index.html に加えて tools/studio_web.html(スタジオ本体・1枚のHTMLに全部書いてある)も読む。
+   スタジオの関数は tools/*.mjs の検査(page.evaluate の中)からも呼ばれるので、ここで集めないと
+   その名前が「未定義」に見えてしまう。同時にスタジオ自身の打ち間違いもここで捕まる。 */
+const HTML_SOURCES = ['index.html', path.join('tools', 'studio_web.html')];
+for(const relHtml of HTML_SOURCES){
+  const htmlPath = path.join(ROOT, relHtml);
+  if(!fs.existsSync(htmlPath)) continue;
   const html = fs.readFileSync(htmlPath, 'utf8');
   for(const s of inlineScripts(html)){
-    const label = `index.html:${s.line}`;
+    const label = `${relHtml}:${s.line}`;
     const { ast, sourceType } = parseSource(s.code, label);
     sources.push({ rel: label, ast, sourceType: s.module ? 'module' : sourceType, env:'web', lineBase: s.line - 1 });
   }
@@ -401,7 +406,7 @@ const list = [...grouped.values()].sort((a,b)=> a.file.localeCompare(b.file) || 
 
 console.log(extra.length
   ? `未定義チェック(指定された${extra.length}ファイルのみ。グローバルはリポジトリ全体から収集)`
-  : `未定義チェック: ${sources.length}個のスクリプト(${files.length}ファイル + index.html内)`);
+  : `未定義チェック: ${sources.length}個のスクリプト(${files.length}ファイル + index.html / tools/studio_web.html 内)`);
 console.log('  ※ 外から差し込まれる名前として通しているもの: ' + Object.keys(INJECTED).join(', '));
 if(!list.length){ console.log('\n== どのスコープからも解決できない識別子は 0 件 =='); process.exit(0); }
 console.log(`\n== 解決できない識別子 ${list.length}件 ==`);

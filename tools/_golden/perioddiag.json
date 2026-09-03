@@ -1,0 +1,86 @@
+{
+ "n48_p12_a40": {
+  "how": "peak",
+  "peak": 0.753,
+  "peakLag": 12,
+  "found": true
+ },
+ "n48_p12_a8": {
+  "how": "peak",
+  "peak": 0.734,
+  "peakLag": 12,
+  "found": true
+ },
+ "n48_p16_a40": {
+  "how": "peak",
+  "peak": 0.663,
+  "peakLag": 16,
+  "found": true
+ },
+ "n48_p16_a8": {
+  "how": "peak",
+  "peak": 0.644,
+  "peakLag": 16,
+  "found": true
+ },
+ "n48_p20_a40": {
+  "how": "peak",
+  "peak": 0.571,
+  "peakLag": 20,
+  "found": true
+ },
+ "n48_p20_a8": {
+  "how": "peak",
+  "peak": 0.555,
+  "peakLag": 20,
+  "found": true
+ },
+ "n32_p12_a40": {
+  "how": "peak",
+  "peak": 0.623,
+  "peakLag": 12,
+  "found": true
+ },
+ "n32_p12_a8": {
+  "how": "peak",
+  "peak": 0.608,
+  "peakLag": 12,
+  "found": true
+ },
+ "n32_p16_a40": {
+  "how": "peak",
+  "peak": 0.479,
+  "peakLag": 16,
+  "found": true
+ },
+ "n32_p16_a8": {
+  "how": "peak",
+  "peak": 0.465,
+  "peakLag": 16,
+  "found": true
+ },
+ "n32_p20_a40": {
+  "how": "peak",
+  "peak": 0.374,
+  "peakLag": 20,
+  "found": true
+ },
+ "n32_p20_a8": {
+  "how": "peak",
+  "peak": 0.364,
+  "peakLag": 20,
+  "found": true
+ },
+ "zoom_n48": {
+  "how": "dip",
+  "peak": 0.05,
+  "peakLag": 31,
+  "found": false
+ },
+ "flat_n48": {
+  "how": "none",
+  "peak": 0.113,
+  "peakLag": 6,
+  "found": false
+ }
+}

@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  metag_ssr:      { element:'fire', name:'メタルグレイモン', iconImg:'metag_ssr', playerImg:'metag_player_ssr' }, /*@metag_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  metag_ssr:      'yellow', /*@metag_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  metag_ssr:      { name:'ギガデストロイヤー', dmgMult:1.15 }, /*@metag_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'メタルグレイモン', tag:'新登場・ガチャ', img:'monsters/metag_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@metag_ssr*/"
+ ]
+}

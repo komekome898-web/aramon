@@ -1,0 +1,14 @@
+{
+ "SSR_SKINS": [
+  "  satsuki_ssr:    { element:'ogre', name:'北大路さつキジン', iconImg:'satsuki_ssr', playerImg:'satsuki_player_ssr' }, /*@satsuki_ssr*/"
+ ],
+ "SSR_SKIN_AURA": [
+  "  satsuki_ssr:    'yellow', /*@satsuki_ssr*/"
+ ],
+ "SSR_SKIN_TIER3": [
+  "  satsuki_ssr:    { name:'2人でもっと熱くなろ', dmgMult:1.15 }, /*@satsuki_ssr*/"
+ ],
+ "LOBBY_BANNERS": [
+  "  { rar:'SSR', name:'北大路さつキジン', tag:'新登場・ガチャ', img:'monsters/satsuki_ssr.png', size:'150%', pos:'50% 20%', open:'gacha' }, /*@satsuki_ssr*/"
+ ]
+}
