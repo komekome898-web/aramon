@@ -2928,15 +2928,15 @@ function setGachaMode(mode){
   document.querySelectorAll('.gacha-tab').forEach(t=>t.classList.toggle('active', t.dataset.gacha===gachaMode));
   const raid = gachaMode==='raid';
   /* ピックアップの名前は両タブともピックアップの定数から作る
-     (data.js の GACHA_PICKUP_SSR_IDS / GACHA_PICKUP_LABEL / RAID_GACHA_PICKUP を
-      変えればここも追従する)。
+     (data.js の GACHA_PICKUP_SSR_IDS / GACHA_PICKUP_LABEL / RAID_GACHA_PICKUP_IDS /
+      RAID_GACHA_PICKUP_LABEL を変えればここも追従する)。
      **入れるのは名前だけ。** 「PICK UP」の札はHTML側に固定で置いてあるので、
      ここで飾りの文字を混ぜない(名前が長いときに札ごと切れてしまう)。
-     スキンガチャは2体以上並ぶことがあり、名前を連結すると札の幅で切れるので、
-     キャンペーン名(GACHA_PICKUP_LABEL)があればそれを出す。 */
+     どちらも2体以上並ぶことがあり、名前を連結すると札の幅で切れるので、
+     キャンペーン名(GACHA_PICKUP_LABEL/RAID_GACHA_PICKUP_LABEL)があればそれを出す。 */
   const pickupName = (id, alt)=> SSR_SKINS[id] ? skinMeta(id).name : alt;
   document.getElementById('gachaTitlePickup').textContent = raid
-    ? pickupName(RAID_GACHA_PICKUP, 'レイド特効')
+    ? (RAID_GACHA_PICKUP_LABEL || pickupName(RAID_GACHA_PICKUP_IDS[0], 'レイド特効'))
     : (GACHA_PICKUP_LABEL || pickupName(GACHA_PICKUP_SSR_IDS[0], 'SSR'));
   // 開催前は引けない。ボタンとゲージの上に「近日公開」を被せる
   const locked = raid && !raidGachaOpenNow();
@@ -3068,10 +3068,11 @@ const ROCK_SSR_PROMO_DIA = 500;
 /* ポップアップに出すピックアップ。レイド開催期間中はレイドガチャのピックアップに
    切り替える(画像は SKIN_MEDIA.promoImg から引くので、ツールで差し替えれば自動で入れ替わる)。 */
 function promoIsRaidPickup(){ return typeof raidOpenNow==='function' && raidOpenNow(); }
-// ポップアップに出す絵。レイド期間中はそのスキンの宣伝画像、それ以外はキャンペーンの絵
+// ポップアップに出す絵。レイド期間中はレイドガチャの告知画像(RAID_GACHA_PROMO_IMG)、それ以外はキャンペーンの絵
 function promoPickupImgUrl(){
   if(promoIsRaidPickup())
-    return (typeof skinPromoImgUrl==='function') ? skinPromoImgUrl(RAID_GACHA_PICKUP) : null;
+    return (typeof RAID_GACHA_PROMO_IMG!=='undefined' && RAID_GACHA_PROMO_IMG)
+      || ((typeof skinPromoImgUrl==='function' && typeof RAID_GACHA_PICKUP_IDS!=='undefined') ? skinPromoImgUrl(RAID_GACHA_PICKUP_IDS[0]) : null);
   return (typeof gachaPickupPromoImgUrl==='function') ? gachaPickupPromoImgUrl() : null;
 }
 // 画像の下に出す宣伝文。レイドのピックアップには無い(キャンペーンの文言なので)
@@ -3080,8 +3081,11 @@ function promoPickupLines(){
   return (typeof GACHA_PICKUP_PROMO_LINES!=='undefined' && GACHA_PICKUP_PROMO_LINES) || [];
 }
 function gachaPickupName(){
-  if(promoIsRaidPickup())
-    return (typeof SSR_SKINS!=='undefined' && SSR_SKINS[RAID_GACHA_PICKUP]) ? skinMeta(RAID_GACHA_PICKUP).name : 'SSR';
+  if(promoIsRaidPickup()){
+    if(typeof RAID_GACHA_PICKUP_LABEL!=='undefined' && RAID_GACHA_PICKUP_LABEL) return RAID_GACHA_PICKUP_LABEL;
+    const rid = (typeof RAID_GACHA_PICKUP_IDS!=='undefined') ? RAID_GACHA_PICKUP_IDS[0] : null;
+    return (typeof SSR_SKINS!=='undefined' && rid && SSR_SKINS[rid]) ? skinMeta(rid).name : 'SSR';
+  }
   if(typeof GACHA_PICKUP_LABEL!=='undefined' && GACHA_PICKUP_LABEL) return GACHA_PICKUP_LABEL;
   const id = (typeof GACHA_PICKUP_SSR_IDS!=='undefined') ? GACHA_PICKUP_SSR_IDS[0] : null;
   return (typeof SSR_SKINS!=='undefined' && id && SSR_SKINS[id]) ? skinMeta(id).name : 'SSR';
@@ -3110,8 +3114,10 @@ function showRockSsrPromoPopup(){
 /* この告知の署名。**今のピックアップそのもの**を署名にしてあるので、
    ピックアップを差し替えれば自動的に「新しい告知」として1回だけ出る(対応表を手で持たない)。 */
 function rockSsrPromoSignature(){
-  if(promoIsRaidPickup())
-    return 'raid:' + ((typeof RAID_GACHA_PICKUP!=='undefined' && RAID_GACHA_PICKUP) || '');
+  if(promoIsRaidPickup()){
+    const rids = (typeof RAID_GACHA_PICKUP_IDS!=='undefined' && RAID_GACHA_PICKUP_IDS) ? RAID_GACHA_PICKUP_IDS.join(',') : '';
+    return 'raid:' + rids;
+  }
   const ids = (typeof GACHA_PICKUP_SSR_IDS!=='undefined' && GACHA_PICKUP_SSR_IDS) ? GACHA_PICKUP_SSR_IDS.join(',') : '';
   return 'gacha:' + ids;
 }
@@ -5656,11 +5662,15 @@ function renderRaidOverlay(){
   const days = Math.floor(left/86400), hours = Math.floor((left%86400)/3600);
   document.getElementById('raidTitleSub').textContent = raidOpenNow()
     ? `残り ${days}日${hours}時間 ／ ${RAID_BOSS.name}` : '開催前';
-  const skinBonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
+  // ピックアップ全体ぶんの特効を並べる(2026-09-04以降は複数体になっている)
+  const skinBonuses = (typeof RAID_GACHA_PICKUP_IDS!=='undefined' ? RAID_GACHA_PICKUP_IDS : [])
+    .map(id=> RAID_EFFECT_SKINS[id]).filter(Boolean);
   const preview = raidRecordsDisabled();
+  // レイド画面の絵は版ごとに持てる(RAID_EDITIONS[].keyImg)。無ければ既定の不死のゾッドの絵
+  const keyImg = RAID_ED.keyImg || 'images/raid_key.jpg';
   box.innerHTML = `
     <div class="raid-head-cols">
-      <div class="raid-key"><img src="images/raid_key.jpg" alt="${RAID_BOSS.name}"></div>
+      <div class="raid-key"><img src="${keyImg}" alt="${RAID_BOSS.name}"></div>
       <div class="raid-head-text">
         <div class="raid-lead">
           不死身の巨竜<b>ゾッド</b>が火口に降り立った。ひとりでは到底届かない相手だ。
@@ -5696,10 +5706,11 @@ function renderRaidOverlay(){
     </div>
     ${preview ? '' : raidRepeatSectionHtml(r)}
     <div class="raid-cols">
-      ${skinBonus ? `<div class="raid-sec raid-sec-bonus">
+      ${skinBonuses.length ? `<div class="raid-sec raid-sec-bonus">
         <div class="raid-sec-title">✦ レイド特効スキン</div>
-        <div class="raid-bonus-text">「${skinBonus.name}」を装備してレイドに挑むと、
-        ボスへの<b>与ダメージ×${skinBonus.dmgDealt}</b>・ボスからの<b>被ダメージ×${skinBonus.dmgTaken}</b>。レイドガチャで手に入ります。</div>
+        <div class="raid-bonus-text">${skinBonuses.map(b=>
+          `「${b.name}」装備で、ボスへの<b>与ダメージ×${b.dmgDealt}</b>・ボスからの<b>被ダメージ×${b.dmgTaken}</b>`
+        ).join('<br>')}。レイドガチャで手に入ります。</div>
       </div>` : ''}
       <div class="raid-sec raid-sec-bonus">
         <div class="raid-sec-title">✦ レイドでしか手に入らないアイテム</div>
@@ -8997,9 +9008,12 @@ function updateMissionBadge(){
 }
 function seasonClaim(t){
   const s = loadSeason();
+  const reward = SEASON_REWARDS[t-1];
+  // 最終報酬「？」(tbd)の段は、決まるまで受け取れない。SPは貯まったままにし、あとで
+  // 報酬を入れたら(rewardsのその段を差し替えたら)受け取れるようにする
+  if(reward && reward.tbd) return;
   if(seasonTierForSp(s.sp) >= t && !s.claimed[t]){
     s.claimed[t] = true;
-    const reward = SEASON_REWARDS[t-1];
     const rewardSkinAlreadyOwned = (reward && reward.skin && typeof isSkinOwned==='function') ? isSkinOwned(reward.skin) : false;
     grantReward(reward);
     saveSeason(s);
@@ -9044,14 +9058,21 @@ function renderSeasonOverlay(){
       const claimed = !!s.claimed[t];
       const milestone = (t%5===0);
       let action;
-      if(claimed) action = `<span class="season-claimed">受取済</span>`;
+      // 最終報酬が未定(tbd)の段は、SPが貯まっていても受け取れない扱いにする(seasonClaim側も同じ判定)
+      if(r.tbd) action = `<span class="season-locked">近日発表</span>`;
+      else if(claimed) action = `<span class="season-claimed">受取済</span>`;
       else if(reached) action = `<button class="season-claim-btn" data-t="${t}">受け取る</button>`;
       else action = `<span class="season-locked">🔒</span>`;
       // 限定SSRスキン報酬は虹色背景のアイコンで表示(タップで正面/後ろ姿プレビュー)
       const rewardMid = r.skin
         ? `<div class="season-skin-reward" data-skin="${r.skin}"><img class="season-skin-img" src="${skinPreviewSrc(r.skin,'front')}" alt=""><span class="season-skin-name">${skinMeta(r.skin).name}</span></div>`
-        : `<div class="season-tier-reward">${rewardText(r)}</div>`;
-      return `<div class="season-tier ${reached&&!claimed?'ready':''} ${milestone?'milestone':''} ${r.skin?'season-tier-final':''}">
+        : r.tbd
+          ? `<div class="season-tier-reward" style="flex-direction:column;gap:1px;">
+               <div style="font-size:20px;font-weight:800;line-height:1;">${r.label||'？'}</div>
+               <div style="font-size:8px;color:var(--ink-dim);line-height:1.15;">最終報酬は<br>近日発表</div>
+             </div>`
+          : `<div class="season-tier-reward">${rewardText(r)}</div>`;
+      return `<div class="season-tier ${reached&&!claimed&&!r.tbd?'ready':''} ${milestone?'milestone':''} ${(r.skin||r.tbd)?'season-tier-final':''}">
         <div class="season-tier-num">T${t}</div>
         ${rewardMid}
         <div class="season-tier-action">${action}</div>
@@ -12552,14 +12573,23 @@ function renderAdminRaidAnalysis(){
     .map(([k,label])=>({ label, count: resultCount(k) })).sort((a,b)=>b.count-a.count);
 
   // --- ③ 特効スキン(装備率と、実測の与ダメージ倍率) ---
-  const bonus = RAID_EFFECT_SKINS[RAID_GACHA_PICKUP];
-  const withSkin = logs.filter(r=> r.skin===RAID_GACHA_PICKUP && typeof r.raidDamage==='number');
-  const withoutSkin = logs.filter(r=> r.skin!==RAID_GACHA_PICKUP && typeof r.raidDamage==='number');
+  // 2026-09-04以降ピックアップは複数体(RAID_GACHA_PICKUP_IDS)なので、
+  // 「特効スキンのどれか」を装備 vs していないで比べる。設定倍率はどれを装備したかで
+  // 変わる(電王ライナー1.5 / メタルグレイモン・メカビオギドラ1.3)ので、
+  // withSkin側の平均を「設定」として実測と突き合わせる。
+  const withSkin = logs.filter(r=> isRaidGachaPickup(r.skin) && typeof r.raidDamage==='number');
+  const withoutSkin = logs.filter(r=> !isRaidGachaPickup(r.skin) && typeof r.raidDamage==='number');
   const avgWith = withSkin.length ? Math.round(withSkin.reduce((a,r)=>a+r.raidDamage,0)/withSkin.length) : 0;
   const avgWithout = withoutSkin.length ? Math.round(withoutSkin.reduce((a,r)=>a+r.raidDamage,0)/withoutSkin.length) : 0;
   // 実測倍率は「両方に十分な件数がある」ときだけ意味を持つ(片方1件では比べられない)
   const skinRatioOk = withSkin.length>=5 && withoutSkin.length>=5 && avgWithout>0;
   const skinRatio = skinRatioOk ? (avgWith/avgWithout) : null;
+  // 「設定」側は装備されたスキンごとの倍率の平均(全部同じ体なら普通の平均と同じ結果になる)
+  const expectedDealt = withSkin.length
+    ? withSkin.reduce((a,r)=> a + ((RAID_EFFECT_SKINS[r.skin] && RAID_EFFECT_SKINS[r.skin].dmgDealt) || 1), 0) / withSkin.length
+    : null;
+  const bonusNames = (typeof RAID_GACHA_PICKUP_IDS!=='undefined' ? RAID_GACHA_PICKUP_IDS : [])
+    .map(id=> RAID_EFFECT_SKINS[id] && RAID_EFFECT_SKINS[id].name).filter(Boolean).join('・');
 
   // --- ④ 報酬(1回あたりの実入りと、到達に要る挑戦回数) ---
   const runGold = Math.min(RAID_RUN_GOLD_MAX, Math.round(avg*RAID_RUN_GOLD_PER_DMG));
@@ -12599,8 +12629,8 @@ function renderAdminRaidAnalysis(){
   else findings.push(['ok', `全体目標は期間終了あたりで到達する見込みです(予測 ${adminNum(projected)} / 目標 ${adminNum(lastTotal)})。`]);
 
   if(skinRatioOk){
-    const lv = Math.abs(skinRatio - bonus.dmgDealt) <= 0.35 ? 'ok' : 'warn';
-    findings.push([lv, `特効スキンの実測倍率は<b>×${skinRatio.toFixed(2)}</b>(設定 ×${bonus.dmgDealt})。装備率は${adminPct(withSkin.length, logs.length)}%です。`]);
+    const lv = Math.abs(skinRatio - expectedDealt) <= 0.35 ? 'ok' : 'warn';
+    findings.push([lv, `特効スキンの実測倍率は<b>×${skinRatio.toFixed(2)}</b>(設定 ×${expectedDealt.toFixed(2)})。装備率は${adminPct(withSkin.length, logs.length)}%です。`]);
   } else {
     findings.push(['warn', `特効スキンの実測倍率は母数不足で出せません(装備${withSkin.length}件 / 非装備${withoutSkin.length}件。各5件以上必要)。`]);
   }
@@ -12648,12 +12678,12 @@ function renderAdminRaidAnalysis(){
         max*RAID_RUN_GOLD_PER_DMG < RAID_RUN_GOLD_MAX ? '最大記録でも上限に届いていない(実質無効)' : '上限に掛かっている'],
     ])}
 
-    <div class="admin-col-title" style="margin-top:16px;">⑤ 特効スキン「${bonus ? bonus.name : '—'}」の評価</div>
+    <div class="admin-col-title" style="margin-top:16px;">⑤ 特効スキン「${bonusNames || '—'}」の評価</div>
     ${adminStatRowsHtml([
       ['装備率', `${adminPct(withSkin.length, logs.length)}%`, `${withSkin.length} / ${logs.length}回`],
       ['装備時の平均与ダメージ', withSkin.length ? adminNum(avgWith) : '—'],
       ['非装備の平均与ダメージ', withoutSkin.length ? adminNum(avgWithout) : '—'],
-      ['実測倍率', skinRatioOk ? `×${skinRatio.toFixed(2)}` : '—', `設定 ×${bonus ? bonus.dmgDealt : '—'}`],
+      ['実測倍率', skinRatioOk ? `×${skinRatio.toFixed(2)}` : '—', `設定 ×${expectedDealt!=null ? expectedDealt.toFixed(2) : '—'}`],
     ])}
 
     <div class="admin-col-title" style="margin-top:16px;">⑥ 次回の版への推奨値</div>

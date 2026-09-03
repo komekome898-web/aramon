@@ -4632,9 +4632,9 @@ function capLobbyBanners(dataJs, max){
 function applyRaidConsts(dataJs, ss){
   let text = dataJs, notes = [];
   if(ss.raidPickup){
-    const rx = /^const RAID_GACHA_PICKUP = .*$/m;
-    if(rx.test(text)){ text = text.replace(rx, `const RAID_GACHA_PICKUP = ${jsStr(ss.id)};`); notes.push('レイドガチャのピックアップに設定'); }
-    else notes.push('RAID_GACHA_PICKUP が見つかりません');
+    const rx = /^const RAID_GACHA_PICKUP_IDS = \[.*?\];/m;
+    if(rx.test(text)){ text = text.replace(rx, `const RAID_GACHA_PICKUP_IDS = [${jsStr(ss.id)}];`); notes.push('レイドガチャのピックアップに設定'); }
+    else notes.push('RAID_GACHA_PICKUP_IDS が見つかりません');
   }
   if(ss.raidClear){
     const rx = /^const RAID_CLEAR_SKIN = .*$/m;
@@ -4889,7 +4889,7 @@ function loadSsrList(dataJs){
   const _pk = (/^const GACHA_PICKUP_SSR_IDS = \[([^\]]*)\]/m.exec(dataJs) || [])[1] || '';
   state.pickup.skin = (/'([^']+)'/.exec(_pk) || [])[1] || null;
   state.pickup.skinCount = (_pk.match(/'[^']+'/g) || []).length;
-  state.pickup.raid = (/^const RAID_GACHA_PICKUP = '([^']*)'/m.exec(dataJs) || [])[1] || null;
+  state.pickup.raid = (/^const RAID_GACHA_PICKUP_IDS = \['([^']*)'/m.exec(dataJs) || [])[1] || null;
   const cur = $('md_skin').value;
   $('md_skin').innerHTML = out.map(([k,l])=>{
     const has = state.media.cur[k] ? ' ●設定あり' : '';
@@ -5409,12 +5409,12 @@ async function planSkinMedia(dataJs, swJs, lines){
   if(pickupOn){
     const raid = $('md_gachaKind').value === 'raid';
     if(raid){
-      const rx = /^const RAID_GACHA_PICKUP = .*$/m;
+      const rx = /^const RAID_GACHA_PICKUP_IDS = \[.*?\];/m;
       if(rx.test(texts['data.js'])){
-        texts['data.js'] = texts['data.js'].replace(rx, `const RAID_GACHA_PICKUP = ${jsStr(id)};`);
+        texts['data.js'] = texts['data.js'].replace(rx, `const RAID_GACHA_PICKUP_IDS = [${jsStr(id)}];`);
         notes.push('レイドガチャのピックアップに設定(タイトルとガチャ画面・ポップアップの画像が切り替わります)');
         if(!cfg.promoImg) notes.push('※ 宣伝画像が未設定なので、画像は今のものが出ます');
-      }else notes.push('RAID_GACHA_PICKUP が見つかりません');
+      }else notes.push('RAID_GACHA_PICKUP_IDS が見つかりません');
     }else{
       /* スキンガチャのピックアップは配列。この画面は1体を選ぶ作りなので、
          **ダブルピックアップ中に設定するとこの1体だけになる。**
