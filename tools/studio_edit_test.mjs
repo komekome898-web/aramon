@@ -21,8 +21,9 @@
         ツールが書いた形の同じ体の行は書き直す(行が増えない)/
         **見た目だけの変更 + 本文を手書き**でも告知の行が残る(既定は書き足し)/
         同じ相手の行が2つある日は**どの行が書き変わったか**を見る(既定の行だけが新しい値)/
-        人が選び直した行を機械が上書きしない / 同点は先頭を選ぶ /
-        表示名を付け替えたら新しい名前で1行書く
+        人が選び直した行を機械が上書きしない / **人が選んだ「書き足す」を rewrite に戻さない** /
+        同点は先頭を選ぶ / 表示名を付け替えたら新しい名前で1行書く(**SSRスキンも同じ**)/
+        改名した日にもう一度直しても改名の一言が消えない
      ⑧ 特性idを変えたら新規登録と同じ判定を通り、ui.js も書き戻す(その sha も照合する)。
         使えない形の特性id(bad-id)では止まる
      ⑨ 「形」の欄は表示専用(選び直しても保存内容は変えられないため)。止まった欄では
@@ -115,7 +116,9 @@ const openAll = await page.evaluate(async (only)=>{
   document.getElementById('regKind').onchange();
   await loadElementList();
   const sel = document.getElementById('e_target');
-  const targets = Array.from(sel.options).map(o=>o.value).filter(v => !only || v.endsWith(':' + only));
+  /* 先頭は「直すものを選んでください」の見出し(値は空)なので開く相手から外す。 */
+  const targets = Array.from(sel.options).map(o=>o.value)
+    .filter(v => v && (!only || v.endsWith(':' + only)));
   const bad = [], awaken = [], fired = [];
   for(const v of targets){
     sel.value = v; sel.onchange();
@@ -374,8 +377,11 @@ if(switched.tplNote)
      いまは**全 select を戻し**、撮った値が今の選択肢に無ければ先頭(見出し)へ寄せる。
    ・そのうえで、案内の文が**嘘にならない**こと。一覧は出ているのだから
      「先にGitHubへ接続すると一覧が出ます」と言ってはいけない(選び忘れているだけ)。
-   ・「開いて直す」へ戻ったときも、相手の一覧(e_target)は選ばれた状態に落ちる
-     (selectedIndex=-1 =「画面には残って見えるのに読むと空」を作らない)。 */
+   ・「開いて直す」へ戻ったときの相手は**見出し(値は空)**。開いたときの相手と突き合わせる
+     —— 見出しが無かったころは、値だけ '' に戻して selectedIndex=-1(どれも選ばれていない)
+     になり、値を読む側は**黙って1体目**へ移っていた(画面と読む値が食い違う)。
+   ・そのとき「◯◯を読み込みました」の文と更新履歴の欄も残ってはいけない
+     (相手は見出しなのに、読み込み済みの案内だけが前の相手のまま残る)。 */
 const roundTrip = await page.evaluate(async (awakenId)=>{
   const kind = document.getElementById('regKind'), sel = document.getElementById('e_target');
   const elSel = document.getElementById('s_element'), scSel = document.getElementById('f_scPreset');
@@ -387,7 +393,9 @@ const roundTrip = await page.evaluate(async (awakenId)=>{
   const scOther = Array.from(scSel.options).map(o=>o.value).find(v => v && v !== 'custom');
   if(scOther) scSel.value = scOther;
   const opened = { note: document.getElementById('s_t3InheritNote').style.display !== 'none',
-                   target: sel.value, element: elSel.value, sc: scSel.value };
+                   target: sel.value, element: elSel.value, sc: scSel.value,
+                   cur: document.getElementById('e_cur').textContent,
+                   ch: document.getElementById('e_chWrap').style.display };
   kind.value = 'ssr'; kind.onchange();                 // 新規SSR登録へ
   /* 実際に登録しようとしたときの言い方を見る。**id を先に埋める** ――
      validateSsr は id → 素体 の順に見るので、埋めないと素体まで進まず
@@ -400,15 +408,35 @@ const roundTrip = await page.evaluate(async (awakenId)=>{
                   ng: validateSsr(collectSsr()) };
   kind.value = 'edit'; kind.onchange();                // 開いて直すへ戻る
   return { opened, asSsr,
-           back: { value: sel.value, index: sel.selectedIndex, n: sel.options.length } };
+           back: { value: sel.value, index: sel.selectedIndex, n: sel.options.length,
+                   head: (sel.options[0] || {}).value,
+                   cur: document.getElementById('e_cur').textContent,
+                   ch: document.getElementById('e_chWrap').style.display } };
 }, (openAll.awaken[0] || {}).id);
 if(!roundTrip.opened.note)
   errors.push('覚醒スキンを開いても継承の断りが出ていません(⑥bの前提が崩れています)');
 if(roundTrip.asSsr.note)
   errors.push('新規SSR登録の画面に、覚醒スキンの「継承の断り」が残っています');
+// 前提: 開いたときは相手が入っていた(入っていなければ「移る」を確かめられない)
+if(!roundTrip.opened.target)
+  errors.push('覚醒スキンを開いても直す相手の欄が空です(⑥bの前提が崩れています)');
+if(roundTrip.back.head !== '')
+  errors.push('直すものの一覧の先頭が見出し(値は空)ではありません: '
+    + JSON.stringify(roundTrip.back.head));
 if(roundTrip.back.index < 0)
   errors.push('種類を往復すると、直す相手の欄がどれも選ばれていない状態になります'
     + `(選択 ${roundTrip.back.index} / 選択肢 ${roundTrip.back.n}個)`);
+/* **開いたときの相手と、戻ったときの相手を突き合わせる。** 戻り先は見出し('')で、
+   開いた相手にも1体目にも居てはいけない(黙って別の相手へ移らない)。 */
+if(roundTrip.back.value !== '')
+  errors.push('種類を往復したあと、直す相手が見出しに戻っていません: '
+    + `${JSON.stringify(roundTrip.opened.target)} → ${JSON.stringify(roundTrip.back.value)}`);
+if(/読み込みました/.test(roundTrip.back.cur))
+  errors.push('相手は見出しに戻ったのに「読み込みました」の案内が残っています: ' + roundTrip.back.cur);
+if(roundTrip.opened.ch === 'none')
+  errors.push('覚醒スキンを開いても更新履歴の欄が出ていません(⑥bの前提が崩れています)');
+if(roundTrip.back.ch !== 'none')
+  errors.push('相手は見出しに戻ったのに更新履歴の欄が出たままです');
 {
   const e = roundTrip.asSsr.element;
   // 前提: 開いたときには素体が入っていた(入っていなければ「混ざる」を確かめられない)
@@ -451,6 +479,11 @@ const TOOL_LINE = 'ジョーカー: HP115→118';
 const TOOL_LINE2 = 'ジョーカー: 威力21→28';
 // 見た目だけの変更で人が手書きする本文(自動では入らない)
 const HAND_LINE = 'ジョーカー: 技のオーラの色を変えました';
+/* 今日すでに改名を告知した行(いまの表示名=ジョーカーで書かれている)。
+   同じ日にもう一度その体を直すとこの行を**書き直す**ので、改名の一言を持ち越さないと
+   「名前が変わった」ことが履歴から消える。 */
+const RENAMED_LINE = 'ジョーカー: 名前が「ジョーカーZ」から「ジョーカー」へ・HP115→118';
+const RENAME_PART = '名前が「ジョーカーZ」から「ジョーカー」へ';
 const changelog = await page.evaluate(async ({ cases })=>{
   window.__shaMoved = false;
   const ymd = todayYmd();
@@ -466,7 +499,7 @@ const changelog = await page.evaluate(async ({ cases })=>{
     const kind = document.getElementById('regKind');
     kind.value = 'edit'; kind.onchange();
     const sel = document.getElementById('e_target');
-    sel.value = 'mon:joker'; sel.onchange();
+    sel.value = c.target || 'mon:joker'; sel.onchange();      // 既定はジョーカー(SSRの回だけ差し替える)
     await loadExisting();
     const el = document.getElementById(c.field);
     /* 見た目だけの変更(オーラ)は数字を足せないので、いまと違う選択肢を選ぶ。 */
@@ -485,6 +518,13 @@ const changelog = await page.evaluate(async ({ cases })=>{
       const ts = document.getElementById('e_chTarget');
       ts.value = String(c.pickTarget);
       ts.dispatchEvent(new Event('change', { bubbles:true }));
+    }
+    /* 人が「書き足す/書き直す」のほうを選び直す道。行の欄と**同じ扱い**でなければ
+       ならない(印は片方の欄にしか無かった)。ここも本物の change を投げる。 */
+    if(c.pickMode != null){
+      const ms = document.getElementById('e_chMode');
+      ms.value = c.pickMode;
+      ms.dispatchEvent(new Event('change', { bubbles:true }));
     }
     if(c.hist != null) document.getElementById('e_chText').value = c.hist;
     await preflight();
@@ -523,6 +563,16 @@ const changelog = await page.evaluate(async ({ cases })=>{
   /* 表示名を付け替えた日。履歴は**新しい名前**で書き、改名そのものも本文へ入れる
      (旧名のままだと、遊ぶ人には「もうゲームに無い名前」の行になる)。 */
   rename:   { lines:[OTHER], field:'f_label', set:'ジョーカーX' },
+  /* 人が「書き足す」を選び直した日。候補は1行あるので機械に任せると rewrite に戻り、
+     **今日の行が消える。** 印が行の欄(e_chTarget)にしか無かったころの壊れ方。 */
+  humanMode:{ lines:[TOOL_LINE], field:'f_hp', add:5, pickMode:'append' },
+  /* SSRスキンの表示名を付け替えた日。モンスターと**同じように**履歴へ1行入る
+     (「どれが名前の欄か」を表の印で持たず editHistoryLine で名指ししていたころは、
+     SSR の改名だけ履歴に一言も出なかった)。 */
+  ssrRename:{ lines:[OTHER], target:'ssr:phoenix_ssr', field:'s_name', set:'フェニックスX' },
+  /* 改名した日に、同じ体をもう一度直す。その日の行を**書き直す**ので、
+     改名の一言を先頭へ残さないと「名前が変わった」ことが履歴から消える。 */
+  renameKeep:{ lines:[RENAMED_LINE], field:'f_hp', add:5 },
 } });
 // ⑦-1 別の体の行は書き直さない(書き足しになり、その体の行が残る)
 {
@@ -665,6 +715,60 @@ if(escOpts.length !== 2 || !escOpts[0].includes('<b>威力</b>'))
     errors.push(`改名の行のタグが ${JSON.stringify(line.g)} です(monster のはず)`);
 }
 
+/* ⑦-10 人が「書き足す」を選び直したら、planEdit はそれを rewrite へ戻さない。
+   候補は1行あるので、機械に任せるとその行を書き直す ―― 人が「書き足す」を選んだのに
+   今日の行が消える、という壊れ方(印が行の欄にしか無かった)。 */
+{
+  const c = changelog.humanMode;
+  const items = c.items ? JSON.parse(c.items) : null;
+  if(c.cls === 'ng') errors.push('人が書き方を選び直したときに差分の確認が止まりました:\n' + c.log);
+  if(c.mode !== 'append')
+    errors.push(`人が選んだ「書き足す」が「${c.mode}」に上書きされました`);
+  if(!items || items.length !== 2)
+    errors.push(`書き足したのに行数が2行になりません: ${c.items}`);
+  else {
+    // 書き足しなので今日の行はそのまま残る(書き直されると TOOL_LINE が消える)
+    if(!items.some(it => it.t === TOOL_LINE))
+      errors.push(`人が「書き足す」を選んだのに今日の行が書き変わりました: ${c.items}`);
+    if(!items.some(it => /HP115→120/.test(it.t)))
+      errors.push(`書き足した行が入っていません: ${c.items}`);
+  }
+}
+/* ⑦-11 SSRスキンの表示名を付け替えたときも、モンスターと同じ1行が入る。 */
+{
+  const c = changelog.ssrRename;
+  const items = c.items ? JSON.parse(c.items) : null;
+  if(c.cls === 'ng') errors.push('SSRスキンの表示名を変えたときに差分の確認が止まりました:\n' + c.log);
+  if(!/^フェニックスX: /.test(c.hist))
+    errors.push(`SSRの改名の1行が新しい名前で始まっていません: ${JSON.stringify(c.hist)}`);
+  if(!c.hist.includes('名前が「フェニックス」から「フェニックスX」へ'))
+    errors.push(`SSRの改名の1行に「◯◯から△△へ」がありません: ${JSON.stringify(c.hist)}`);
+  const line = items && items.find(it => /^フェニックスX: /.test(it.t));
+  if(!line) errors.push(`SSRの改名の行が更新履歴に入っていません: ${c.items}`);
+  else if((line.g || []).indexOf('monster') < 0)
+    errors.push(`SSRの改名の行のタグが ${JSON.stringify(line.g)} です(monster のはず)`);
+}
+/* ⑦-12 改名した日に同じ体をもう一度直しても、改名の一言が消えない。
+   書き直す先の行から拾って本文の先頭へ残す(タグの monster も落とさない)。 */
+{
+  const c = changelog.renameKeep;
+  const items = c.items ? JSON.parse(c.items) : null;
+  if(c.cls === 'ng') errors.push('改名した日にもう一度直すと差分の確認が止まりました:\n' + c.log);
+  if(c.mode !== 'rewrite') errors.push(`今日のその体の行があるのに「${c.mode}」を選びました`);
+  if(!c.hist.includes(RENAME_PART))
+    errors.push(`書き直す本文から改名の一言が消えました: ${JSON.stringify(c.hist)}`);
+  if(!c.hist.includes('HP115→120'))
+    errors.push(`書き直す本文に今回の変更が入っていません: ${JSON.stringify(c.hist)}`);
+  if(!items || items.length !== 1)
+    errors.push(`書き直したのに行数が変わりました: ${c.items}`);
+  else {
+    if(!items[0].t.includes(RENAME_PART))
+      errors.push(`書き直した行から改名の一言が消えました: ${JSON.stringify(items[0].t)}`);
+    if((items[0].g || []).indexOf('monster') < 0)
+      errors.push(`改名を残した行のタグが ${JSON.stringify(items[0].g)} です(monster を含むはず)`);
+  }
+}
+
 /* ---------------------------------------------------------------- ⑧ 特性idを変える
    新規登録と同じ判定(traitExistsIn)を通す。ui.js の TRAIT_DESC に無い特性idなら
    説明が要り、書いたら ui.js へ1行足す。**書き戻すファイルが増えたら sha もそのぶん見る。** */
@@ -742,6 +846,7 @@ console.log(`  ⑦ 別の体の行: ${changelog.other.mode} / 同じ体の告知
   + ` / 同じ相手が2行: ${changelog.twoLines.mode}(${changelog.twoLines.target0}行目のまま`
   + `${changelog.twoLines.target === changelog.twoLines.target0 ? '' : ` → ${changelog.twoLines.target}行目へ移った`})`
   + ` / 人が選び直した行: ${changelog.humanPick.target}(選んだのは 0)`
+  + ` / 人が選んだ書き方: ${changelog.humanMode.mode}(選んだのは append)`
   + ` / 同点の選び方: ${tieIndex}番目`);
 console.log(`     告知のとき: ${changelog.announce.items}`);
 console.log(`     書き直したとき: ${changelog.tool.items}`);
@@ -749,7 +854,10 @@ console.log(`     見た目だけ+手書きのとき: ${changelog.look.items}`);
 console.log(`     同じ相手が2行のとき: ${changelog.twoLines.items}`);
 console.log(`     同じ相手が2行のときの注意: ${changelog.twoLines.note}`);
 console.log(`     人が行を選び直したとき: ${changelog.humanPick.items}`);
+console.log(`     人が「書き足す」を選んだとき: ${changelog.humanMode.items}`);
 console.log(`     表示名を付け替えたとき: ${changelog.rename.hist}`);
+console.log(`     SSRスキンの表示名を付け替えたとき: ${changelog.ssrRename.hist}`);
+console.log(`     改名した日にもう一度直したとき: ${changelog.renameKeep.hist}`);
 console.log(`  ⑨⑩⑪ 形の欄=${edited.tplDisabled ? '表示専用' : '選び直せる'}`
   + ` / 断り「${edited.tplNote.text}」(新規登録では${switched.tplNote ? '残る' : '消える'})`
   + ` / change で印は${edited.tplEvent.picked ? '立つ' : '立たない'}`

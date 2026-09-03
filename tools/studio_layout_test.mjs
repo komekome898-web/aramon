@@ -65,6 +65,9 @@ const TAP_SEL = 'button,select,[onclick],[role=button]';
             別のパネルの子を書いても、その行では測られないので「測ったつもり」になる
    small  … わざと TAP_MIN より小さくしてある物のセレクタ(**理由を必ず添える**)
    noClip … 省略記号を付けてあるが**切れてはいけない**物(1b の除外の外で実測する)
+   moveForm … 技パネルを「開いて直す」の姿にしてから測る({ moves })。**本物の fillMoveForm**
+            へ手書きの技を流し込むので、止めた欄の断り・「(いまの値)」の長い選択肢・
+            テンプレート無しの薄字が、実際に画面へ出るとおりに出る
    changelog … 更新履歴の欄を**いちばん字が多い姿**にしてから測る({ label, lines })。
             空のまま測ると、実際に画面へ出る注意文と 🔒 付きの選択肢を一度も測っていない
             ことになる。中身は本物の fillEditChangelog に作らせる(検査に文言を書き写さない) */
@@ -105,6 +108,21 @@ const PANELS = [
     // 色見本は**見て選ぶ物**なので例外。9列の一覧で、縦を44pxにすると3行で画面の半分を食う
     small:['.sw'] },
   { id:'movePanel',     name:'6 技',           kind:'monster',  open:[] },
+  /* 「開いて直す」の技パネルは**新規登録とは別の姿**になる: 形の欄が止まって断り
+     (`#tplEditNote`)が1行増え、テンプレートに無い値は「◯◯(いまの値)」という
+     長い選択肢として足され、薄字も `TPL_NONE_HINT` の長い文へ変わる。
+     測る姿は**本物の fillMoveForm に作らせる**(検査側に画面の文言を書き写さない)。 */
+  { id:'movePanel',     name:'6 技(開いて直す)', kind:'edit', open:[],
+    moveForm:{ moves:[
+      { name:'ダークネイル', dmg:9, range:180, projSpeed:520, cooldown:0.35, gutsCost:0,
+        icon:'🗡️', color:'#7c3aed', seStyle:'slash' },
+      { name:'シャドウバースト', dmg:16, range:320, projSpeed:600, cooldown:3.2, gutsCost:12,
+        icon:'💥', color:'#4c1d95', seStyle:'blast' },
+      // 手書きの技(デスファイナル)。projStyle がテンプレートに無いので「テンプレート無し」になる
+      { name:'デスファイナル', dmg:21, range:520, projSpeed:700, cooldown:12, gutsCost:40,
+        projStyle:'scythe', aoeStyle:'', color:'#111827', seStyle:'slash',
+        burst:15, burstDirs:3 },
+    ]} },
   { id:'sendPanel',     name:'7 送信',         kind:null,       open:[] },
 ];
 
@@ -213,6 +231,10 @@ for(const dev of DEVICES){
       /* 更新履歴の欄。**本物の fillEditChangelog に作らせる**(注意文と 🔒 を
          検査側へ書き写すと、画面の文言を変えたときに測る姿だけ古くなる)。
          渡すのは「今日のかたまりだけを持つ data.js」の形の文字列。 */
+      /* 技パネルを「開いて直す」の姿にする。**本物の fillMoveForm**へ流し込むので、
+         止めた欄の断りも「(いまの値)」の選択肢も画面に出るとおりになる。
+         元の書き方(texts)は無いので渡さない(数字はそのまま欄へ入る)。 */
+      if(panel.moveForm) fillMoveForm(panel.moveForm.moves, []);
       if(panel.changelog){
         const ymd = todayYmd();
         const block = `  { date:'${ymd}', items:[\n`

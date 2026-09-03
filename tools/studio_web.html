@@ -5558,9 +5558,24 @@ function renderEditTargets(){
   const ssr = (state.skins   || []).map(([k,l])=>`<option value="ssr:${k}">${l}(${k})</option>`).join('');
   if(!mon && !ssr) return;
   const cur = el.value;
-  el.innerHTML = (mon ? `<optgroup label="モンスター">${mon}</optgroup>` : '')
+  /* **先頭は必ず見出し(値は空)**。素体の一覧(loadElementList)と同じ形。
+     見出しが無いと、欄を既定('')へ戻したときに **selectedIndex=-1**(どれも選ばれていない)
+     になり、次に値を読む側は 1体目に落ちる —— 画面には「まだ選んでいない」ように見えるのに
+     パネルの出し分けは1体目で決まる、という食い違いが起きていた。 */
+  el.innerHTML = '<option value="">直すものを選んでください</option>'
+               + (mon ? `<optgroup label="モンスター">${mon}</optgroup>` : '')
                + (ssr ? `<optgroup label="SSRスキン">${ssr}</optgroup>` : '');
   if(cur && el.querySelector(`option[value="${cur}"]`)) el.value = cur;
+}
+/* 「開いて直す」の欄を**読み込む前**の姿へ片付ける。**片付けはこの1か所**で、
+   相手を選び直したとき(e_target)と種類を離れるとき(regKind)の両方から呼ぶ ――
+   前は e_target 側にしか無かったので、種類を往復すると「◯◯を読み込みました」の文と
+   更新履歴の欄が前の相手のまま画面に残り、実際の選択(見出し)と食い違っていた。 */
+function resetEditPanel(){
+  state.edit = null;
+  $('e_chText').value = '';
+  $('e_chWrap').style.display = 'none';
+  $('e_cur').textContent = '「この内容を読み込む」を押すと、いまの data.js の中身が下の欄に入ります。';
 }
 
 /* ---------------------------------------------------------------
@@ -5603,7 +5618,9 @@ function restoreFormDefaults(){
     /* 接続後に中身が入れ替わる一覧では、撮った値('')が今の選択肢に無い。
        value を入れただけだと **selectedIndex=-1(どれも選ばれていない)** になり、
        画面には前の選択が残って見えるのに collect… は空を読む、という食い違いが起きる。
-       そのときは**先頭(見出し)**へ寄せて「まだ選んでいない」を目に見える形にする。 */
+       そのときは**先頭**へ寄せて「まだ選んでいない」を目に見える形にする。
+       寄せ先が見出しになるように、**一覧を作る側**(loadElementList の素体・
+       renderEditTargets の直すもの)が先頭へ値の空な見出しを置く決まりにしてある。 */
     if(d.el.tagName === 'SELECT' && d.el.selectedIndex < 0 && d.el.options.length)
       d.el.selectedIndex = 0;
   }
@@ -5915,12 +5932,17 @@ function htmlEsc(s){
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-/* 「書き直す行」を**人が選び直した**か。立っているときは planEdit が選び直さない
+/* 「更新履歴の選び方」(書き足す/書き直す = e_chMode と、書き直す行 = e_chTarget)を
+   **人が選び直した**か。立っているときは planEdit が選び直さない
    —— 人の選択を機械が上書きすると、直したい行と違う行が消える。
+   **2つの欄で1つの印**にしてある: 行だけを見ていたころは、候補が1つの日に人が
+   「書き足す」を選んでも初回の「差分を確認する」で rewrite に戻され、今日の行が消えた。
    プログラムから入れ直す経路(fillEditChangelog / planEdit)は `onchange()` を直接呼ぶだけで
    change イベントを投げないので、印は boot の addEventListener 側で立てる
    (形の欄の tplPickedByHuman と同じ作り)。 */
-let chTargetPickedByHuman = false;
+let chPlanPickedByHuman = false;
+// 印を立てるのはこの1か所(e_chMode と e_chTarget の change から呼ぶ)
+function markChPlanPickedByHuman(){ chPlanPickedByHuman = true; }
 /* 更新履歴の「今日のかたまり」を欄に出す。**既定は editRewriteCandidates が通した行**
    (=このツールが書いた、その相手の行)。無ければ「書き足す」。
 
@@ -5932,8 +5954,8 @@ function fillEditChangelog(dataJs, label){
   const items = updateHistoryItems(dataJs, todayYmd()) || [];
   const cand = editRewriteCandidates(items, label);
   const sel = $('e_chTarget');
-  // 読み込み直したら「人が選び直した」印も落とす(前の相手で選んだ行を持ち越さない)
-  chTargetPickedByHuman = false;
+  // 読み込み直したら「人が選び直した」印も落とす(前の相手で選んだ選び方を持ち越さない)
+  chPlanPickedByHuman = false;
   sel.innerHTML = items.map((it, i)=>{
     // 🔒 = このツールが書いた形ではない行(告知・別の相手の行)
     const mark = cand.indexOf(i) >= 0 ? '' : CHANGELOG_LOCK + ' ';
@@ -5952,11 +5974,23 @@ function fillEditChangelog(dataJs, label){
   note();
   $('e_chWrap').style.display = 'block';
 }
+/* いま画面が選んでいる「更新履歴の書き方」。**欄を読むのはこの1か所**で、
+   注意の文・送信内容・書き直す先の拾い直しが同じ答えを見る。
+   今日の行が1つも無い日は書き直せない(rewrite にならない)。 */
+function editChPlan(items){
+  return { idx: +(($('e_chTarget') && $('e_chTarget').value) || 0),
+           rewrite: $('e_chMode').value === 'rewrite' && (items || []).length > 0 };
+}
+// 書き直す先の行の本文(書き足すときは空)。改名の一言を拾い直すのに使う
+function editRewriteTargetText(items){
+  const p = editChPlan(items);
+  const it = p.rewrite ? (items || [])[p.idx] : null;
+  return it ? String(it.t || '') : '';
+}
 /* 更新履歴の欄の注意。**文面はここ1か所**(既定の説明・選び方の注意・同じ相手が2行ある話)。 */
 function editChangelogNote(items, cand, label){
   const has = items.length > 0;
-  const idx = +(($('e_chTarget') && $('e_chTarget').value) || 0);
-  const rewrite = $('e_chMode').value === 'rewrite' && has;
+  const { idx, rewrite } = editChPlan(items);
   const out = [];
   out.push(has
     ? `今日(${todayYmd()})はすでに ${items.length} 行あります。同じ話題なら書き直してください`
@@ -6155,33 +6189,38 @@ async function planEdit(dataJs, uiJs, swJs, lines, metas){
   let text = applyEditChanges(dataJs, changes);
 
   // 更新履歴。性能の数字が変わったときだけ入れる(見た目・色スキンは入れない)
-  const auto = editHistoryLine(st.label, changes);
+  let auto = editHistoryLine(st.label, changes);
   const box = $('e_chText');
   /* 自動で入れるのは**読み込んでから1回だけ。** 毎回入れ直すと、
      「空にすると入れません」と書いてあるのに空にできない(押すたびに戻ってくる)。 */
   if(box && auto && !st.histFilled){
     st.histFilled = true;
-    box.value = auto.text;
     /* 初回だけ「どの行を書き直すか」を**自動の本文に一番近い行**へ寄せ直す。
        候補は fillEditChangelog の既定と同じ(editRewriteCandidates)で、
        ここはその中から話題の近さで選び直すだけ。無ければ書き足す。
 
        **選び直さない場合が2つある。** どちらも「機械が選ぶと、直したい行と違う行を
        消してしまう」場面:
-         ・人が「書き直す行」を選び直したとき —— 人の選択を機械が上書きしない。
+         ・人が更新履歴の選び方(書き足す/書き直す・どの行)を選び直したとき
+           —— 人の選択を機械が上書きしない。
          ・その相手の候補が2つ以上ある日 —— どちらを直すかは機械には決められない
            (similarity は「ジョーカー」を含むだけで 1.00 になり、同点で決まらない)。
            このときは読み込み時に決めた既定(fillEditChangelog の先頭)をそのまま使い、
            注意の文「どちらを直すか選んでください」で人に選ばせる。 */
     const items = updateHistoryItems(dataJs, todayYmd()) || [];
     const cand = editRewriteCandidates(items, st.label);
-    if(!chTargetPickedByHuman && cand.length < 2){
+    if(!chPlanPickedByHuman && cand.length < 2){
       const best = editRewriteIndex(items, st.label, auto.text);
       $('e_chMode').value = best >= 0 ? 'rewrite' : 'append';
       if(best >= 0) $('e_chTarget').value = String(best);
       // 注意の文も選び直しに合わせる(文面は editChangelogNote 1か所)
       if($('e_chTarget').onchange) $('e_chTarget').onchange();
     }
+    /* **書き直す先が決まってから本文を作り直す。** 行選びは素の本文との近さで見る
+       (順番を逆にすると、拾った改名の一言が似ている度合いを動かす)ので、
+       ①素の本文で行を決める → ②その行に残る改名の一言を拾って入れ直す、の2段。 */
+    auto = editHistoryLine(st.label, changes, editRewriteTargetText(items)) || auto;
+    box.value = auto.text;
   }
   const histText = box ? box.value.trim() : '';
   const tags = auto ? auto.tags : ['balance'];
@@ -6190,8 +6229,7 @@ async function planEdit(dataJs, uiJs, swJs, lines, metas){
   let histPlan = null;
   if(histText){
     const items = updateHistoryItems(text, todayYmd()) || [];
-    const idx = +(($('e_chTarget') && $('e_chTarget').value) || 0);
-    const rewrite = $('e_chMode').value === 'rewrite' && items.length > 0;
+    const { idx, rewrite } = editChPlan(items);      // 欄の読み方は editChPlan 1か所
     histPlan = { ymd: todayYmd(), rewrite, index: idx, text: histText, tags };
     const uh = rewrite ? rewriteUpdateHistory(text, todayYmd(), idx, histText, tags)
                        : addUpdateHistory(text, histText, tags);
@@ -7306,8 +7344,12 @@ function changelogWarnings(items, opt){
    applyEditChanges)を UI 抜きで21体ぶん回して守る。                          */
 
 // ELEMENTS の中で扱う項目。id = 仕様パネルの入力欄 / field = data.js のキー
+/* isLabel = **画面に出る名前**の欄。この印だけで「改名を更新履歴へ入れる/行の主語を
+   新しい名前にする」が決まる(editHistoryLine)。モンスターとSSRで表もキーも違うので、
+   判定を editHistoryLine 側に書くと**表ごとに2か所**になり、実際 SSR の改名が履歴に
+   一言も出ていなかった。**印は表に持たせ、読むのは1か所。** */
 const EDIT_ELEMENT_FIELDS = [
-  { id:'f_label',       field:'label',        type:'str', jp:'表示名' },
+  { id:'f_label',       field:'label',        type:'str', jp:'表示名', isLabel:true },
   { id:'f_color',       field:'color',        type:'str', jp:'明るい色' },
   { id:'f_dark',        field:'dark',         type:'str', jp:'暗い色' },
   { id:'f_accent',      field:'accent',       type:'str', jp:'差し色' },
@@ -7323,7 +7365,7 @@ const EDIT_ELEMENT_FIELDS = [
 ];
 // SSR_SKINS の中で扱う項目(オーラと専用tier3は別の表なので下で扱う)
 const EDIT_SSR_FIELDS = [
-  { id:'s_name',      field:'name',            type:'str',  jp:'表示名' },
+  { id:'s_name',      field:'name',            type:'str',  jp:'表示名', isLabel:true },
   { id:'s_season',    field:'seasonExclusive', type:'bool', jp:'シーズン限定' },
   { id:'s_raidClear', field:'raidClearOnly',   type:'bool', jp:'レイド討伐報酬限定' },
 ];
@@ -7430,8 +7472,9 @@ function editChangesFor(cur, next){
       const cv = f.type === 'bool' ? !!c[f.field] : c[f.field];
       const nv = f.type === 'bool' ? !!n[f.field] : n[f.field];
       if(editSame(cv, nv)) continue;
+      // isLabel は表(EDIT_SSR_FIELDS)から運ぶ。改名かどうかを editHistoryLine で判定し直さない
       push({ op:'field', table:'SSR_SKINS', key, field:f.field, valueText: jsValue(nv),
-             jp:f.jp, histJp:f.jp, before:cv, after:nv, perf:false });
+             jp:f.jp, histJp:f.jp, before:cv, after:nv, perf:false, isLabel: !!f.isLabel });
     }
     if(next.aura !== undefined && !editSame(next.aura, cur.aura))
       push({ op:'entry', table:'SSR_SKIN_AURA', key, valueText: jsStr(next.aura),
@@ -7463,7 +7506,9 @@ function editChangesFor(cur, next){
     if(ne[f.field] === undefined || editSame(ne[f.field], ce[f.field])) continue;
     push({ op:'field', table:'ELEMENTS', key, field:f.field,
            valueText: f.type === 'num' ? jsNum(ne[f.field]) : jsStr(ne[f.field]),
-           jp:f.jp, histJp:f.jp, before:ce[f.field], after:ne[f.field], perf:!!f.perf });
+           jp:f.jp, histJp:f.jp, before:ce[f.field], after:ne[f.field], perf:!!f.perf,
+           // isLabel は表(EDIT_ELEMENT_FIELDS)から運ぶ(SSR側と同じ形)
+           isLabel: !!f.isLabel });
   }
   if(next.aura !== undefined && !editSame(next.aura, cur.aura))
     push({ op:'entry', table:'MONSTER_AURA', key, valueText: jsStr(next.aura),
@@ -7535,26 +7580,41 @@ function applyEditChanges(dataJs, changes){
    「何が変わったか」を読み取れないうえ、履歴が見た目の告知で埋まる)と、内部の設定。
    1体につき1行 =「ジョーカー: 威力21→34・連射5→7」。
    タグ: 技名・表示名を変えたら `monster` / 数字を変えたら `balance` / **両方なら両方**。 */
-function editHistoryLine(label, changes){
-  /* 表示名(ELEMENTS.label)を変えたら、**行の主語は新しい名前**で書く。
+function editHistoryLine(label, changes, prevText){
+  /* 表示名を変えたら、**行の主語は新しい名前**で書く。
      旧名のままだと、遊ぶ人には「もうゲームに無い名前」の行になる。
      改名そのものも本文へ入れる —— 名前が変わったことは遊ぶ人がいちばん気づく変化なのに、
-     載せる項目が「性能の数字と技名」だけだった頃は履歴に一言も出なかった。 */
-  const ren = changes.find(c => c.op === 'field' && c.table === 'ELEMENTS' && c.field === 'label');
+     載せる項目が「性能の数字と技名」だけだった頃は履歴に一言も出なかった。
+     **「どれが名前の欄か」は表の印(isLabel)が正**。ここで表とキーを名指ししていたころは
+     モンスター(ELEMENTS.label)しか見ておらず、SSRスキンの改名は履歴に出なかった。 */
+  const ren = changes.find(c => c.isLabel);
   const shown = ren ? String(ren.after) : label;
   const parts = [];
   for(const c of changes){
     if(c.op === 'renameKey') continue;                       // 技名の変更は下でまとめて1つ
-    if(c === ren){ parts.push(`名前が「${c.before}」から「${c.after}」へ`); continue; }
+    if(c === ren){ parts.push(renamePart(c.before, c.after)); continue; }
     if(c.rename){ parts.push(`技名を「${c.before}」から「${c.after}」へ`); continue; }
     if(!c.perf) continue;
     parts.push(`${c.histJp || c.jp}${editRound(c.before)}→${editRound(c.after)}`);
   }
   if(!parts.length) return null;
+  /* **書き直す先の行に残っている改名の一言を先頭へ残す。** 改名した日に同じ相手を
+     もう一度直すと、その日の行を書き直すので「名前が『…』から『…』へ」が消えていた
+     (遊ぶ人には、その日いちばん気づく変化が履歴から消える)。
+     拾う形は書く形と同じ1か所(renamePart / RENAME_PART_RE)。 */
+  const kept = ren ? null : renamePartIn(prevText);
+  if(kept) parts.unshift(kept);
   const tags = [];
-  if(ren || changes.some(c=>c.rename)) tags.push('monster');
-  if(changes.some(c=>c.perf))          tags.push('balance');
+  if(ren || kept || changes.some(c=>c.rename)) tags.push('monster');
+  if(changes.some(c=>c.perf))                  tags.push('balance');
   return { text: `${shown}: ${parts.join('・')}`, tags: tags.length ? tags : ['balance'] };
+}
+// 改名の一言。**書く形と読む形をここ1か所**に置く(片方だけ直すと拾えなくなる)
+function renamePart(before, after){ return `名前が「${before}」から「${after}」へ`; }
+const RENAME_PART_RE = /名前が「[^」]*」から「[^」]*」へ/;
+function renamePartIn(text){
+  const m = RENAME_PART_RE.exec(String(text == null ? '' : text));
+  return m ? m[0] : null;
 }
 
 /* 更新履歴の「今日のかたまり」を読む(既存の行を出して『書き足す/書き直す』を選ばせるため)。 */
@@ -7823,7 +7883,10 @@ function boot(){
     if(!edit && state.editFilled){
       restoreFormDefaults();
       state.editFilled = false;
-      state.edit = null;
+      /* 欄だけでなく**「開いて直す」の画面そのもの**も片付ける(片付けは resetEditPanel 1か所)。
+         欄の値だけ戻していたころは、相手の欄は見出しへ戻るのに
+         「◯◯を読み込みました」の文と更新履歴の欄が前の相手のまま残り、画面が食い違った。 */
+      resetEditPanel();
     }
     // 覚醒の「エフェクト合成」は元の絵から作るので、歩行・静止画のパネルは要らない
     const awakenFx = awaken && awakenIsFxMode();
@@ -7895,15 +7958,18 @@ function boot(){
   $('e_colors').innerHTML = SKIN_COLOR_ORDER.map(c=>
     `<label><input type="checkbox" id="e_col_${c}">${SKIN_COLOR_JP[c] || c}</label>`).join('');
   $('e_target').onchange = ()=>{
-    state.edit = null; clearPlan();
-    $('e_chText').value = ''; $('e_chWrap').style.display = 'none';
-    $('e_cur').textContent = '「この内容を読み込む」を押すと、いまの data.js の中身が下の欄に入ります。';
+    resetEditPanel(); clearPlan();
     $('regKind').onchange();     // モンスターかSSRかで出すパネルが変わる
   };
-  /* 「書き直す行」を**人が選び直した**印。**change イベントで受ける** ―― プログラムから
+  /* 「更新履歴の選び方」を**人が選び直した**印。**change イベントで受ける** ―― プログラムから
      入れ直す経路(fillEditChangelog / planEdit)は `onchange()` を直接呼ぶだけなので
-     ここは通らない。おかげで planEdit の選び直しが人の選択を上書きしない。 */
-  $('e_chTarget').addEventListener('change', ()=>{ chTargetPickedByHuman = true; });
+     ここは通らない。おかげで planEdit の選び直しが人の選択を上書きしない。
+     **書き足す/書き直す(e_chMode)と行(e_chTarget)の両方で立てる** ―― 印が行の欄に
+     しか無かったころは、候補が1つの日に人が「書き足す」を選んでも、初回の
+     「差分を確認する」が rewrite へ戻して**その日の行を消していた**。
+     立てるのはこの1つの関数(chPlanPickedByHuman を書く場所を2つ作らない)。 */
+  for(const id of ['e_chTarget', 'e_chMode'])
+    $(id).addEventListener('change', markChPlanPickedByHuman);
   // 覚醒: 作り方を変えると使うパネルが変わるので出し分けをやり直す
   $('aw_mode').onchange = ()=>{ $('regKind').onchange(); };
   $('aw_base').onchange = ()=>{ state.awaken = null; clearPlan();
