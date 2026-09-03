@@ -657,6 +657,7 @@ function getDisplayImage(entity){
 }
 
 // ワームtier3「シェルアタック」: 相手に命中した時、自分の移動速度にかかるバフ
+// (2026-09-03: 弾から範囲技(rollingShell)に変更。バフの数値・効果はそのまま)
 const WARM_SHELL_SPEED_BUFF_MULT = 1.5;   // 移動速度倍率
 const WARM_SHELL_SPEED_BUFF_DURATION = 10; // 効果時間(秒)
 
@@ -715,7 +716,12 @@ const SIGNATURE_MOVES = {
   warm: [
     { name:'毒ガス',       tier:1, color:'#9b5fd1', range:700,  dmg:23, cooldown:0.85, gutsCost:8, projSpeed:500, hitR:12, splash:75, icon:'☠️' },
     { name:'毒噴射',   tier:2, color:'#9b5fd1', range:1400, dmg:12, cooldown:1.1, gutsCost:16, projSpeed:470, hitR:7,  burst:3, burstGap:0.12, icon:'☠️' },
-    { name:'シェルアタック', tier:3, color:'#9b5fd1', range:1750, dmg:70, cooldown:2.1, gutsCost:24, projSpeed:760, hitR:34, splash:58, shape:'sphere', projStyle:'shell', selfSpeedBuffOnHit:true },
+    /* 範囲技(rollingShell)に変更(発注者依頼・2026-09-03): 速い球体が地面を転がっていく。
+       射程・威力・命中時の自分の移動速度バフはそのまま。projSpeedは充填の速さとして働く
+       (combat.jsのfillSpeed=Math.max(200, effProjSpeed||900))。 */
+    { name:'シェルアタック', tier:3, color:'#9b5fd1', dmg:70, cooldown:2.1, gutsCost:24,
+      aoeShape:'rect', range:1750, rectWidth:120, projSpeed:1400, telegraphTime:0.18,
+      aoeStyle:'rollingShell', selfSpeedBuffOnHit:true },
   ],
   illumine: [
     { name:'ヴェノムエッジ', tier:1, color:'#8b2fc9', range:700,  dmg:25, cooldown:0.85, gutsCost:8, projSpeed:540, hitR:12, splash:70, icon:'🗡️', seStyle:'venomEdge' },
@@ -1128,7 +1134,12 @@ const SSR_SKIN_TIER3 = {
      **威力・射程・弾速は素のまま**(dmgMult 1.15 は従来どおり別途掛かる)。 */
   zan_ssr:        { name:'月光ノ刻', dmgMult:1.15, move:{ burst:10, burstSpread:0.026, burstSpreadRandom:true } }, /*@zan_ssr*/
   joker_ssr:      { name:'聖ジョージの剣', dmgMult:1.15 }, /*@joker_ssr*/
-  warm_ssr:       { name:'俺、参上', dmgMult:1.15 }, /*@warm_ssr*/
+  /* 電王ライナー: 赤い新幹線をイメージした最長(2600)・最速(3200/s)の範囲技(発注者依頼・2026-09-03)。
+     予告0.6秒でレールを敷き、そのレールの上を赤い新幹線が走り抜ける(pierce:trueで岩・山を貫通)。
+     素のシェルアタック(hitR/splash/shape/projStyle)はaoeShapeへ完全に上書きされるので残っていても無害。 */
+  warm_ssr:       { name:'俺、参上', dmgMult:1.15,
+    move:{ aoeShape:'rect', range:2600, rectWidth:150, projSpeed:3200, telegraphTime:0.6,
+           aoeStyle:'shinkansen', pierce:true, selfSpeedBuffOnHit:true } }, /*@warm_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1324,6 +1335,9 @@ const UPDATE_HISTORY = [
   ]},
   { date:'2026-09-03', items:[
     { t:'✨ SSRスキン「電王ライナー」が登場しました！ レイドガチャとSSRレイドカタログだけで手に入ります(通常のガチャ・SSRカタログには出ません)', g:['feature','monster'] },
+    { t:'✨ 前回のレイド限定だったSSRスキン「狂戦士ガッツ」が、通常のガチャとSSRカタログで手に入るようになりました', g:['feature','monster'] },
+    { t:'⚡ 電王ライナーの専用技「俺、参上」が、レールを敷いて赤い新幹線を走らせる最長・最速の範囲技になりました(射程1750→2600)', g:['monster','balance','av'] },
+    { t:'🐛 ワーム「シェルアタック」が、速い球体が地面を転がっていく範囲技になりました(威力70・射程1750はそのまま。命中で自分が速くなる効果も同じ)', g:['monster','balance','av'] },
   ]},
   { date:'2026-08-31', items:[
     { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイナル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
@@ -2986,6 +3000,17 @@ function editionByDate(editions, fallbackId){
   });
   return bestId || fallbackId;
 }
+// editionByDate と違い「今日」を見ず、startDateが一番新しい版を無条件に返す。
+// レイド限定スキンの判定(raidExclusiveSkinIds)は「次に開催される回」の分から
+// 先に切り替えたいので、開催日を待つ editionByDate ではなくこちらを使う。
+function latestEditionId(editions, fallbackId){
+  let bestId = null, bestStart = null;
+  Object.keys(editions).forEach(id=>{
+    const start = editions[id].startDate;
+    if(start && (bestStart===null || start > bestStart)){ bestId = id; bestStart = start; }
+  });
+  return bestId || fallbackId;
+}
 
 /* ===== 開催ごとの「版(edition)」 =====
    開催のたびに動かす数字だけをここへ集め、**RAID_EDITION(実体は editionByDate による
@@ -3023,6 +3048,9 @@ const RAID_EDITIONS = {
     ],
     repeatPersonal: { step:  100000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
     repeatTotal:    { step: 1000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
+    // この回のレイド限定スキン。最新の版のものだけがレイドガチャ・SSRレイドカタログ限定になり、
+    // 古い版のものは通常ガチャ・SSRカタログへ自動で解放される
+    exclusiveSkins: ['guts_ssr'],
     moveDmg: {},               // ボスの技の威力は既定値のまま
     // ボスの見た目・名前・入口画面の文言(版ごと)。RAID_BOSS が下でここを読む
     boss: { element:'fire', skinId:'zod_ssr', name:'不死のゾッド', lead:'不死身の巨竜<b>ゾッド</b>が火口に降り立った。' },
@@ -3057,6 +3085,9 @@ const RAID_EDITIONS = {
     ],
     repeatPersonal: { step:  200000, gold:1000, dia:30, item:'freeTrainTicket', n:1 },
     repeatTotal:    { step: 2000000, gold:5000, dia:70, item:'freeTrainTicket', n:5 },
+    // この回のレイド限定スキン。最新の版のものだけがレイドガチャ・SSRレイドカタログ限定になり、
+    // 古い版のものは通常ガチャ・SSRカタログへ自動で解放される
+    exclusiveSkins: ['warm_ssr'],
     // 大技だけ威力を下げる(通常技は据え置き。歯ごたえは残す。第2回の値をそのまま引き継ぐ)
     moveDmg: { nova:105, ring:98, meteor:78 },
     // ボスの見た目・名前・入口画面の文言(版ごと)。
@@ -3073,6 +3104,13 @@ const RAID_EDITIONS = {
 // 版は日付で自動選択(開催前後で自動的に切り替わる)。手で固定したいときはここへ id の文字列を書く
 const RAID_EDITION = editionByDate(RAID_EDITIONS, 'r1');
 const RAID_ED = RAID_EDITIONS[RAID_EDITION] || RAID_EDITIONS.r1;
+// レイド限定スキンの判定用: 開催日を待たず「一番新しく定義された版」を指す。
+// 次回ぶんの版を先に足しておけば、その時点で今回の版の限定スキンが通常ガチャへ解放される。
+const RAID_LATEST_EDITION = latestEditionId(RAID_EDITIONS, 'r1');
+// 「今のレイド限定」のSSRスキンID一覧(=最新の版のexclusiveSkinsだけ)
+function raidExclusiveSkinIds(){
+  return (RAID_EDITIONS[RAID_LATEST_EDITION] || {}).exclusiveSkins || [];
+}
 
 const RAID_START_DATE = RAID_ED.startDate;
 const RAID_DURATION_DAYS = RAID_ED.durationDays;
@@ -4499,8 +4537,9 @@ const SSR_SKINS = {
   // 大喰いの利世: シーズン1の最終報酬だったオリジナルSSR。シーズン2切り替え(2026-09-04)の
   // 運用に沿ってseasonExclusiveを外し、ガチャ・SSRカタログへ解放済み(上のSEASON_EDITIONS参照)
   aqua_ssr:       { element:'aqua', name:'大喰いの利世', iconImg:'aqua_ssr', playerImg:'aqua_player_ssr' }, /*@aqua_ssr*/
-  // 狂戦士ガッツ: レイドガチャ限定。スキンガチャとSSRカタログには出さない(レイドSSRカタログには出る)
-  guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr', raidGachaOnly:true }, /*@guts_ssr*/
+  // 狂戦士ガッツ: 第1回レイド限定だったが、第3回(r3)への切り替えでRAID_EDITIONS.r1.exclusiveSkins
+  // から外れ、通常のガチャ・SSRカタログへ自動で解放された(2026-09-03)
+  guts_ssr:       { element:'dullahan', name:'狂戦士ガッツ', iconImg:'guts_ssr', playerImg:'guts_player_ssr' }, /*@guts_ssr*/
   // 不死のゾッド: レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
   zod_ssr:        { element:'fire', name:'不死のゾッド', iconImg:'zod_ssr', playerImg:'zod_player_ssr', raidClearOnly:true }, /*@zod_ssr*/
   garurumon_ssr:  { element:'spark', name:'ガルルモン', iconImg:'garurumon_ssr', playerImg:'garurumon_player_ssr' }, /*@garurumon_ssr*/
@@ -4515,7 +4554,7 @@ const SSR_SKINS = {
   suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
   zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
   joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr', raidClearOnly:true }, /*@joker_ssr*/
-  warm_ssr:       { element:'warm', name:'電王ライナー', iconImg:'warm_ssr', playerImg:'warm_player_ssr', raidGachaOnly:true }, /*@warm_ssr*/ // 2026-09-03 レイドガチャ・SSRレイドカタログ限定に(発注者指示)
+  warm_ssr:       { element:'warm', name:'電王ライナー', iconImg:'warm_ssr', playerImg:'warm_player_ssr' }, /*@warm_ssr*/ // レイドガチャ・SSRレイドカタログ限定かどうかは RAID_EDITIONS[版].exclusiveSkins で決まる(r3=最新の版に指定済み)
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
@@ -4746,19 +4785,21 @@ function allColorSkinIds(){
   const out=[]; for(const el of Object.keys(ELEMENTS)) for(const c of monsterSkinColors(el)) out.push(colorSkinId(el,c)); return out;
 }
 function allSsrSkinIds(){ return Object.keys(SSR_SKINS); }
-/* SSRスキンの入手経路は4つの印で決まる(印が無ければ「どこでも出る」)。
+/* SSRスキンの入手経路は3つの印+1つの表で決まる(何も無ければ「どこでも出る」)。
      seasonExclusive : シーズンパス報酬限定。ガチャにもカタログにも出さない
      raidClearOnly   : レイド討伐達成の報酬限定。どのガチャ・どのカタログにも出さない
-     raidGachaOnly   : レイドガチャ限定。スキンガチャとSSRカタログには出さず、
-                       レイドガチャとレイドSSRカタログにだけ出す
      awakenOf        : 覚醒後の姿。元のスキンを装備したマスモンが覚醒したときだけ手に入るので、
                        どのガチャ・どのカタログにも出さない
+     raidGachaOnly の印は廃止。レイドガチャ限定かどうかは印を個別に付けるのではなく、
+     RAID_EDITIONS[版].exclusiveSkins(最新の版だけ有効。raidExclusiveSkinIds()で参照)で
+     決める。版が切り替わると、古い版のexclusiveSkinsは自動的にこの除外から外れる。
    一覧を作るときは必ず下の2つの関数を通す(印を直接読む場所を増やさない)。 */
 // スキンガチャ・SSRスキンカタログに出るSSR
 function gachaSsrSkinIds(){
+  const raidOnly = raidExclusiveSkinIds();
   return Object.keys(SSR_SKINS).filter(id=>{
     const s = SSR_SKINS[id];
-    return !s.seasonExclusive && !s.raidClearOnly && !s.raidGachaOnly && !s.awakenOf;
+    return !s.seasonExclusive && !s.raidClearOnly && !s.awakenOf && !raidOnly.includes(id);
   });
 }
 // レイドガチャ・レイドSSRスキンカタログに出るSSR(シーズンパス報酬と討伐報酬だけを除く)

@@ -8,6 +8,12 @@ const MOVE_SE_BY_STYLE = {
   psychic:'beam', sakura:'beam', flower:'beam', galaxy:'beam',
   tornado:'tornado', shell:'spin', holy:'bell', requiem:'whoosh',
   godorb:'godRising', crescent:'zashu', scythe:'zashu', voidOrb:'voidLaunch',
+  // ワーム「シェルアタック」が範囲技(rollingShell)になったので、旧・弾のprojStyle:'shell'が
+  // 使っていた音をそのまま引き継ぐ(shellキー自体はもう技から参照されない=実質死んでいるが、
+  // 値のずれを防ぐため残してある)
+  rollingShell:'spin',
+  // 電王ライナー「俺、参上」: ファイアウェーブ/インフェルノと同じ轟音を新幹線の発車音に流用
+  shinkansen:'fireRoar',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
 const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite',
@@ -227,8 +233,11 @@ function fireMove(attacker, target, move){
         id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
         angle:aimAngle, dmg:effDmg, color:effColor, range:move.range, width,
         fanAngleDeg:move.fanAngleDeg||45, beamCount:move.beamCount||3, beamSpreadDeg:move.beamSpreadDeg||40,
-        fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime:0.18,
+        // telegraphTime: 技ごとに変えたい(電王ライナー「俺、参上」は0.6秒でレールを敷く)ので
+        // move側の指定を優先し、無指定の技は従来どおり0.18秒に落ちる
+        fillSpeed: Math.max(200, effProjSpeed||900), telegraphTime: move.telegraphTime!=null ? move.telegraphTime : 0.18,
         spawnAt:matchTime, hitIds:new Set(), resolved:false, style:move.aoeStyle||null, moveAura, auraTint, auraAccent,
+        selfSpeedBuffOnHit: move.selfSpeedBuffOnHit||false, // 命中で自分の移動速度が上がる技(ワームtier3等)。適用はapplySelfSpeedBuffOnHit
         gutsDrain: move.gutsDrainRatio||0, // 技単位のガッツ削り
         hitSe, // 当てたときの専用SE(applyDamageのoptsへそのまま渡す)
         healRatio: (seVar && seVar.healRatio) || 0, // 当たり: 与えたダメージのこの割合を回復
@@ -2207,14 +2216,7 @@ function updateProjectiles(dt){
           const dmgMult = closeRangeDmgMult(p.closeBonusMax, p.traveled, p.maxRange); // 命中距離が短いほど威力アップ(デュラハン)
           applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
-          if(p.selfSpeedBuffOnHit){
-            const owner = getEntity(p.ownerId);
-            if(owner && owner.alive){
-              owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
-              owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
-              if(owner.isPlayer) pushToast(`命中！移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
-            }
-          }
+          if(p.selfSpeedBuffOnHit) applySelfSpeedBuffOnHit(p.ownerId);
           if(p.splash>0){
             for(const o of entities){
               if(o===e || !o.alive || o.id===p.ownerId) continue;
@@ -2655,6 +2657,17 @@ function updatePendingAoeCasts(){
     areaEffects.push(pc.build(pc.aimAngle));
   }
 }
+/* 命中した瞬間に撃った本人の移動速度へバフを掛ける(ワームtier3「シェルアタック」・
+   電王ライナー「俺、参上」共通)。弾(projectiles)と範囲技(areaEffects)の両方の
+   命中処理から呼ぶので、数値(WARM_SHELL_SPEED_BUFF_MULT/DURATION)はここ1か所だけで持つ。 */
+function applySelfSpeedBuffOnHit(ownerId){
+  const owner = getEntity(ownerId);
+  if(owner && owner.alive){
+    owner.speedBuffMult = WARM_SHELL_SPEED_BUFF_MULT;
+    owner.speedBuffUntil = matchTime + WARM_SHELL_SPEED_BUFF_DURATION;
+    if(owner.isPlayer) pushToast(`命中${'！'}移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒)`);
+  }
+}
 function updateAreaEffects(dt){
   for(let i=areaEffects.length-1;i>=0;i--){
     const ae = areaEffects[i];
@@ -2742,6 +2755,11 @@ function updateAreaEffects(dt){
           applyDamage(ent, ae.dmg*dmgMult, owner, { moveAura: ae.moveAura, gutsDrain: ae.gutsDrain||0, hitSe: ae.hitSe, healRatio: ae.healRatio||0,
                                             lifestealMult: ae.lifestealMult||1 });
           spawnHit(ent.x, ent.y, ent.z, ae.color);
+          // ワームtier3/電王ライナーtier3: 範囲技が命中した瞬間にも同じ移動速度バフを掛ける
+          if(ae.selfSpeedBuffOnHit){
+            applySelfSpeedBuffOnHit(ae.ownerId);
+            ae.selfSpeedBuffFxAt = matchTime; // 演出(fx_moves.js)が1回だけ足の筋を出すための印
+          }
         }
       }
       if(curReach >= ae.range){

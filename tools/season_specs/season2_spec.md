@@ -54,3 +54,9 @@
 - index.html の `〜不死のゾッド〜`(`.raid-title-dash`)に id を付け、ui.js のレイド画面描画で `'〜'+RAID_BOSS.name+'〜'` を入れる。
   `raid-lead` の1文目は `RAID_ED.boss.lead` から。「🐉 」の絵文字(raidBossName)は版ごとの絵文字にしない(そのまま)。
 - CACHE_NAME +1、`node --check`、`node tools/undef_check.mjs`。
+
+## 8. レイド限定スキンの自動切替(2026-09-03 追記)
+- `RAID_EDITIONS.<id>.exclusiveSkins = ['…']`。`RAID_LATEST_EDITION`(startDate が最も遅い版。当日前でも有効)のものだけが
+  レイドガチャ・SSRレイドカタログ限定(`gachaSsrSkinIds()` から除外)。古い版のものは自動で通常ガチャ・SSRカタログへ。
+- `raidGachaOnly` の印は廃止。レイドガチャ累計は `loadRaidGachaCount` が版(`ed`)ごとに数え直す。
+- 次回の作業: 新しい版に `exclusiveSkins` を書くだけ。
