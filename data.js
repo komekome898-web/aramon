@@ -1320,9 +1320,10 @@ const UPDATE_HISTORY = [
     { t:'✨ 前シーズンの最終報酬だったSSRスキン「大喰いの利世」が、ガチャとSSRカタログで手に入るようになりました', g:['feature','monster'] },
     { t:'🐉 レイド「あるるかん討伐」を開催中です(9/4〜9/17)。全員の与ダメージ累計が目標に届くとSSR「あるるかん」がもらえます', g:['feature','multi'] },
     { t:'レイドガチャは機械モンスターピックアップです(電王ライナー・メカビオギドラ・メタルグレイモン。装備するとレイドで特効)', g:['feature','monster'] },
+    { t:'レイドガチャの累計回数はレイドごとに数え直します。前回100回引いた人も、今回また100回でSSRレイドカタログがもらえます', g:['feature','general'] },
   ]},
   { date:'2026-09-03', items:[
-    { t:'✨ SSRスキン「電王ライナー」が登場しました！', g:['feature','monster'] },
+    { t:'✨ SSRスキン「電王ライナー」が登場しました！ レイドガチャとSSRレイドカタログだけで手に入ります(通常のガチャ・SSRカタログには出ません)', g:['feature','monster'] },
   ]},
   { date:'2026-08-31', items:[
     { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイナル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
@@ -4514,7 +4515,7 @@ const SSR_SKINS = {
   suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
   zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
   joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr', raidClearOnly:true }, /*@joker_ssr*/
-  warm_ssr:       { element:'warm', name:'電王ライナー', iconImg:'warm_ssr', playerImg:'warm_player_ssr' }, /*@warm_ssr*/
+  warm_ssr:       { element:'warm', name:'電王ライナー', iconImg:'warm_ssr', playerImg:'warm_player_ssr', raidGachaOnly:true }, /*@warm_ssr*/ // 2026-09-03 レイドガチャ・SSRレイドカタログ限定に(発注者指示)
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 
@@ -4971,11 +4972,18 @@ const RAID_GACHA_CATALOG_AT = 100;
 const RAID_GACHA_COUNT_KEY = 'aramon_raidgachacount_v1';
 // 引けるようになるのはレイド開催と同時(終了後も引けるようにしておく)
 function raidGachaOpenNow(){ return RAID_ACTIVE && Date.now() >= raidStartAt().getTime(); }
+// 累計はレイドの版(RAID_EDITION)ごとに数え直す(2026-09-03)。前回100連でカタログを受け取った人も、
+// 次のレイドでまた100連で受け取れる。ed が無い古い保存は第1回のものとして扱う。
 function loadRaidGachaCount(){
-  try{ const c=JSON.parse(localStorage.getItem(RAID_GACHA_COUNT_KEY))||{}; return { count:c.count||0, done:!!c.done }; }
-  catch(err){ return { count:0, done:false }; }
+  try{
+    const c=JSON.parse(localStorage.getItem(RAID_GACHA_COUNT_KEY))||{};
+    if((c.ed||'r1')!==RAID_EDITION) return { count:0, done:false, ed:RAID_EDITION };
+    return { count:c.count||0, done:!!c.done, ed:RAID_EDITION };
+  }
+  catch(err){ return { count:0, done:false, ed:RAID_EDITION }; }
 }
 function saveRaidGachaCount(c){
+  c.ed = RAID_EDITION;
   try{ localStorage.setItem(RAID_GACHA_COUNT_KEY, JSON.stringify(c)); }catch(err){}
   if(typeof accountMarkDirty==='function') accountMarkDirty();
 }
