@@ -391,6 +391,9 @@ const WALK_ANIM = {
   },
   warm: {
     base: { front:_loadWalk('warm_walk_f'), back:_loadWalk('warm_walk_b') },              // ワーム(色スキン対応)
+    ssr: [
+      { skinId:'warm_ssr', front:_loadWalk('warm_ssr_walk_f'), back:_loadWalk('warm_ssr_walk_b') }, /*@warm_ssr*/
+    ],
   },
   pixie: {
     base: { front:_loadWalk('pixie_walk_f'), back:_loadWalk('pixie_walk_b') },            // ピクシー(色スキン対応)
@@ -885,6 +888,7 @@ const SSR_SKIN_AURA = {
   suezo_ssr:      'red', /*@suezo_ssr*/
   zan_ssr:        'blue', /*@zan_ssr*/
   joker_ssr:      'white', /*@joker_ssr*/
+  warm_ssr:       'red', /*@warm_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1124,6 +1128,7 @@ const SSR_SKIN_TIER3 = {
      **威力・射程・弾速は素のまま**(dmgMult 1.15 は従来どおり別途掛かる)。 */
   zan_ssr:        { name:'月光ノ刻', dmgMult:1.15, move:{ burst:10, burstSpread:0.026, burstSpreadRandom:true } }, /*@zan_ssr*/
   joker_ssr:      { name:'聖ジョージの剣', dmgMult:1.15 }, /*@joker_ssr*/
+  warm_ssr:       { name:'俺、参上', dmgMult:1.15 }, /*@warm_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1309,6 +1314,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-09-03', items:[
+    { t:'✨ SSRスキン「電王ライナー」が登場しました！', g:['feature','monster'] },
+  ]},
   { date:'2026-08-31', items:[
     { t:'🆕 新モンスター「ジョーカー」が登場しました！ 技ダメ1.2倍、ダメージの20%ガッツダメージ。tier2「デスカッター」は回転する黒い刃を3連射します。tier3「デスファイナル」は黒い鎌を3方向へ5発ずつ、合わせて15連射。ブレる幅は左右に約26度で、ザンの約6度よりずっと広く散ります', g:['feature','monster'] },
   ]},
@@ -3154,11 +3162,12 @@ function raidBossMaxHp(playerCount){
    ツールでスキンを追加したあと1行足すだけで効く(判定は raidSkinBonus 1か所)。 */
 const RAID_EFFECT_SKINS = {
   guts_ssr:       { dmgDealt:1.5, dmgTaken:0.75, name:'狂戦士ガッツ' }, /*@guts_ssr*/
+  warm_ssr:       { dmgDealt:1.5, dmgTaken:0.75, name:'電王ライナー' }, /*@warm_ssr*/
   // <<AUTO:RAID_EFFECT_SKINS>> ここから上へ tools/studio_web.html がレイド特効スキンの行を追記する
 };
 function raidSkinBonus(skinId){ return (skinId && RAID_EFFECT_SKINS[skinId]) || null; }
 // レイドガチャのピックアップ(=レイド特効スキン)。ツールで追加したIDをここへ入れる
-const RAID_GACHA_PICKUP = 'guts_ssr';
+const RAID_GACHA_PICKUP = 'warm_ssr';
 // ※ RAID_CLEAR_SKIN は版の報酬表から参照するため、このファイルの前の方で定義してある
 
 /* --- 報酬 ---
@@ -4433,6 +4442,7 @@ const SSR_SKINS = {
   suezo_ssr:      { element:'suezo', name:'バジリスエゾー', iconImg:'suezo_ssr', playerImg:'suezo_player_ssr' }, /*@suezo_ssr*/
   zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
   joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr', raidClearOnly:true }, /*@joker_ssr*/
+  warm_ssr:       { element:'warm', name:'電王ライナー', iconImg:'warm_ssr', playerImg:'warm_player_ssr' }, /*@warm_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 

@@ -1,0 +1,17 @@
+{
+  "id": "warm_ssr",
+  "element": "warm",
+  "name": "電王ライナー",
+  "aura": "red",
+  "seasonExclusive": false,
+  "iconImg": "warm_ssr",
+  "playerImg": "warm_player_ssr",
+  "walkPrefix": "warm_ssr_walk_",
+  "t3name": "俺、参上",
+  "t3mult": 1.15,
+  "raidEffect": true,
+  "raidDealt": 1.5,
+  "raidTaken": 0.75,
+  "raidPickup": true,
+  "raidClear": false
+}
