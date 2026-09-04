@@ -37,9 +37,8 @@ const REQUIRED = [
   'segment', 'keyDistance', 'segLowThreshold', 'despillInPlace', 'keepLargest', 'dropSpecks',
   'fillSmallHoles', 'borderConnected', 'label4', 'blur3', 'min3', 'erode2', 'dilate2', 'bboxOf',
   'cornerRgbs', 'cornerRgb', 'cornerHint', 'tightenEdge', 'SEG_EDGE_MIN',
-  // 背景の抜き方(モデル)。呼び分けは resolveAlpha 1か所
-  'segmentModel', 'resolveAlpha', 'imageAlphaFor', 'makeCut', 'keepMajor', 'releaseSegmentModel',
-  'MODEL_SRC', 'MODEL_CACHE', 'MODEL_INPUT', 'MODEL_FG_MIN', 'MODEL_KEEP_RATIO', 'MODEL_FALLBACK',
+  // 素通し・自動判定の呼び分け(1か所)
+  'resolveAlpha', 'imageAlphaFor', 'makeCut', 'AUTO_FALLBACK',
   // 動画・周期・診断(周期の自己相関は bandAutocorr 1か所で作る)
   'detectPeriod', 'periodDiag', 'periodFound', 'bandAutocorr', 'grayDiff', 'adjacentDiffs',
   'diffStat', 'bestMoveWindow', 'stripScale', 'medianOf', 'SEED_PROMPT',
@@ -64,9 +63,7 @@ const REQUIRED = [
   'EDIT_ELEMENT_FIELDS', 'EDIT_SSR_FIELDS', 'EDIT_MOVE_KEYS', 'EDIT_MOVE_JP', 'EDIT_VERIFY_TABLES',
   'MOVE_NUM_COMMON', 'MOVE_NUM_TIER', 'MOVE_BOOL_TIER', 'MOVE_BLAST_TIER',
   // 見せ方(残り時間の式は1つ / 失敗の言い方は1つの表)
-  'etaText', 'etaByRate', 'errorText', 'modelErrorText', 'ERROR_RULES',
-  // 推論の進捗の文面。残り時間は etaText に載っているので (j) がここも見る
-  'modelRunText', 'modelState',
+  'etaText', 'etaByRate', 'errorText', 'ERROR_RULES',
   // 段階バーと下書き(入力の自動保存)
   'STAGES', 'refreshStages', 'stageGo', 'buildStageBar', 'moveHasBadInput',
   'DRAFT_KEY', 'DRAFT_PREV_KEY', 'DRAFT_PANELS', 'DRAFT_SKIP', 'DRAFT_RERUN', 'draftFields',

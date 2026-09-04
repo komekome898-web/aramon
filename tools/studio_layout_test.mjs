@@ -98,7 +98,7 @@ const PANELS = [
       'ジョーカー: デスファイナルの威力21→34・連射15→18']} },
   { id:'mediaPanel',    name:'M 専用メディア', kind:'ssrmedia', open:[] },
   { id:'walkPanel',     name:'3 歩行',         kind:'monster',
-    open:['candWrap','walkDiag','modelAbortWrap','walkModelTime'],
+    open:['candWrap','walkDiag'],
     /* 候補16コマの札は「絵を選ぶ枠」。4列に並べて一覧できることが大事で、押しやすさより優先する。
        札は動画を読まないと出ないので、**測るために16枚ぶんの枠だけ**入れる
        (入れないとこの例外は当たる相手がおらず、書いてあるだけの設定になる)。 */
