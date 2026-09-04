@@ -1330,8 +1330,8 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-09-04', items:[
-    { t:'✨ SSRスキン「怨霊ガノン鳥」が登場しました！', g:['feature','monster'] },
-    { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされ、シーズンパスの最終報酬は近日発表です', g:['feature','general'] },
+    { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされます', g:['feature','general'] },
+    { t:'✨ シーズン2パスの最終報酬はSSRスキン「怨霊ガノン鳥」です。25段目まで進めると受け取れます(このシーズン限定)', g:['feature','monster'] },
     { t:'✨ 前シーズンの最終報酬だったSSRスキン「大喰いの利世」が、ガチャとSSRカタログで手に入るようになりました', g:['feature','monster'] },
     { t:'🐉 レイド「あるるかん討伐」を開催中です(9/4〜9/17)。舞台はジョーカーの雪山、全員の与ダメージ累計が目標に届くとSSR「あるるかん」がもらえます', g:['feature','multi'] },
     { t:'⚔ あるるかんの技が4つの新技に一新され、威力も全体的に上がりました', g:['monster','balance'] },
@@ -3975,8 +3975,7 @@ function expeditionTimeLabel(sec){
       切替時に「どのスキンをガチャへ解放するか」を探さずに済む)
    2. 前の版の prevFinalSkin が指す SSR_SKINS のエントリから seasonExclusive:true を外し、
       ガチャ・SSRカタログへ解放する(2026-08-12、ラガモッチーで実施した対応と同じ)。
-      次回(s2→s3)はs2の最終報酬が対象になる(今はtbdなので、rewards の25段目を
-      決まったスキンへ差し替えてから同じ手順を行うこと)
+      次回(s2→s3)はs2の最終報酬「怨霊ガノン鳥」(ganon_ssr)が対象になる
    3. LOBBY_BANNERS を見直す(解放したスキンを「新登場・ガチャ」枠へ足すか検討)
    4. SEASON_EDITION は editionByDate() で日付から自動選択される(startDate<=today の
       最新の版が選ばれる)。手で固定したいときだけ呼び出し側を id の文字列に書き換える。
@@ -4021,10 +4020,10 @@ const SEASON_EDITIONS = {
     startDate:'2026-09-04',
     endDate:'2026-10-01',   // 表示にだけ使う
     mutators: WEEKDAY_MUTATORS,   // s1と同じ曜日周期(配列は複製しない)
-    // 25段目(最終報酬)は未定。tbd:true の段はシーズンパス画面で「？」表示にし、
-    // 受け取りボタンも出さない(renderSeasonOverlay/seasonClaim)。決まり次第この行を
-    // 実際のスキン報酬({skin:'xxx_ssr'})へ差し替える。
-    rewards: [...SEASON_REWARDS_BASE24, { tbd:true, label:'？' }],
+    // 25段目(最終報酬)=シーズン2限定SSRスキン「怨霊ガノン鳥」(2026-09-04に決定。
+    // それまでは { tbd:true } で「？」表示にしていた)。次の版へ移るときは
+    // s3 の prevFinalSkin にこのidを書き、seasonExclusive を外して解放する。
+    rewards: [...SEASON_REWARDS_BASE24, { skin:'ganon_ssr' }],
     // 前シーズン(s1)の最終報酬。2026-09-04にseasonExclusiveを外してガチャ・SSRカタログへ解放済み
     prevFinalSkin:'aqua_ssr',
   },
