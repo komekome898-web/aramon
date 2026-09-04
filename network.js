@@ -592,8 +592,15 @@ async function beginMultiplayerMatchInner(){
      レイドとは排他。アリーナは常に3v3=6体で、余った枠はbotが埋める。 */
   game.arena = !game.raid && netState.sub==='arena';
   if(game.arena) matchTeamSize = ARENA_TEAM_SIZE;
-  // 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す
-  else if(MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
+  /* 逆向きの保険: レイドでない試合にレイド専用マップが紛れ込んだら通常マップへ戻す。
+     【バグの実体だった箇所】この else-if は「アリーナでなければ」としか見ておらず、
+     レイド自身(game.raid===true)のときも通ってしまっていた。上の行で
+     `if(game.raid) mapKey='raid'` と確定させた直後にここで mapKey が
+     'wild' へ巻き戻され、**マルチの「部屋を作る」経由のレイドが必ず荒野で
+     始まっていた**(game.raidはtrueのままなのでレイドHUD・ボスは出るが、
+     地面と3D地形だけ通常マップになる、という食い違いが実機で発生)。
+     保険は「レイドでない試合」にだけ効かせる。 */
+  else if(!game.raid && MAPS[mapKey] && MAPS[mapKey].raidOnly) mapKey = 'wild';
   game.activeMapKey = MAPS[mapKey] ? mapKey : 'wild';
   currentMap = MAPS[mapKey] || MAPS.wild;
   if(typeof applyStartPitchForMap==='function') applyStartPitchForMap(); // マップが決まってから視点の初期角度を決める
