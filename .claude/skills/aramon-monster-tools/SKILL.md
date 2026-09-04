@@ -34,6 +34,10 @@ description: 荒野モン動のモンスター追加ツール(tools/)。studio_w
 - **色は3つ(明るい色/暗い色/差し色)ともパレットから選べる。** 入れる場所を選んでから色をタップする方式で、`<input type="color">`と16進の入力欄は双方向に同期する。
 - **状態変化の選択肢は`data.js`の`STATE_CHANGES`をその場で読んで作る**(`parseStateChanges`)。`1/1.5`のような書き方も読めるように、数字と四則だけを通す`numExpr()`で評価している。**条件`SC_TRIGGERS`と効果`SC_EFFECTS`の一覧だけはツール側にも持っている**(data.jsの表の書式そのもの)。増やしたら両方直す。
 
+- **絵の大きさ `drawScale` の入力欄がある(新規モンスター `f_drawScale` / SSRスキン `s_drawScale`)。空欄=自動**(data.js側が立ち絵の縦横比から決める)。書けば `ELEMENTS[key].drawScale` / `SSR_SKINS[id].drawScale` として書き出す。当たり判定は変わらない見た目だけの値なので、更新履歴には載せない。
+- **`drawScale` は「撃ってみる」プレビューにも渡る。** `fx_driver.js` の `defineElement` は「数値のときだけ `want` へ足す」形にしてあり、`force` 上書きの判定(`Object.keys(want)`)にそのまま乗る。**新しい任意項目を足すときはこの1行の形をなぞれば新規登録・上書きの両方に効く。** SSRスキンの `drawScale` を試し撃ちする経路は無い(SSRスキンの登録・編集では技パネルごと隠れるため)。
+- 「開いて直す」の SSR 側に数値項目を足すときは `readEditForm` の分岐に注意(以前 `num` を文字列で書き出す不具合があり修正済み)。
+
 ## SSRスキン専用メディア(「SSRスキン専用」の登録)
 
 - **行き先は`data.js`の`SKIN_MEDIA`1か所だけ。** 昇格演出(無音動画+音声)・試合中BGM3曲・専用SE4種・宣伝画像をここへ書けば、audio.js / combat.js / ui.js が表を読んで動く。**ゲーム側のコードは1行も足さない。**

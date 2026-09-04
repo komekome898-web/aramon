@@ -4356,7 +4356,8 @@ function fxAurasNow(spec, moves){
 /* force で上書きした仕様の項目名(画面に出すためだけ。キーは ELEMENTS のものが正)。 */
 const FX_FORCE_JP = { label:'名前', color:'色', dark:'暗い色', accent:'差し色', speed:'速度', hp:'HP',
   trait:'特性', speedMod:'速さ倍率', cooldownMod:'クールタイム倍率', dmgDealtMod:'与ダメージ倍率',
-  dmgTakenMod:'被ダメージ倍率', gutsRegenMod:'ガッツ回復倍率', hitboxMult:'当たりの大きさ' };
+  dmgTakenMod:'被ダメージ倍率', gutsRegenMod:'ガッツ回復倍率', hitboxMult:'当たりの大きさ',
+  drawScale:'絵の大きさ' };
 
 async function openFxPreview(){
   if(fxPreview.open) return;
@@ -4436,6 +4437,9 @@ async function openFxPreview(){
       speed: spec.speed, hp: spec.hp, trait: spec.trait,
       speedMod: spec.speedMod, cooldownMod: spec.cooldownMod, dmgDealtMod: spec.dmgDealtMod,
       dmgTakenMod: spec.dmgTakenMod, gutsRegenMod: spec.gutsRegenMod, hitboxMult: spec.hitboxMult,
+      // 絵の大きさ(見た目だけの倍率)。空欄なら spec.drawScale が undefined なので渡さない
+      // (defineElement 側が「数値のときだけ入れる」の判定を持つ)。
+      drawScale: spec.drawScale,
     };
     /* **「開いて直す」では上書きさせる(force)。** 既に本物の表にあるキーなので、
        上書きしないと仕様パネルで直した速度・HP・当たりの大きさ・クールタイムの倍率が
