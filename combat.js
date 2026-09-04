@@ -14,6 +14,8 @@ const MOVE_SE_BY_STYLE = {
   rollingShell:'spin',
   // 電王ライナー「俺、参上」: ファイアウェーブ/インフェルノと同じ轟音を新幹線の発車音に流用
   shinkansen:'fireRoar',
+  // 怨霊ガノン鳥「魔神炎」: 黒紫の炎も同じ轟音系(fireRoar)を流用(新しい音源は作らない)
+  ganonHellfire:'fireRoar',
 };
 // SSRスキン装備時にtier3技を専用SEへ差し替える対応表(スキンID → SE名)
 const SKIN_TIER3_SE = { zeus_ssr:'zeusTier3', choco_ssr:'chocoVanish', persephone_ssr:'amphitrite',
@@ -228,6 +230,10 @@ function fireMove(attacker, target, move){
     // 技本体と同じ倍率(訓練・状態異常・SSR tier3威力アップ)を先端の爆風にも掛ける。
     // SSRスキン装備時は本体もこちらも一緒に強くなる(dmgMultをここだけ素通しにしない)
     const endBlastDmgMult = (move.endBlast && move.dmg) ? effDmg/move.dmg : 1;
+    // waveBlast(怨霊ガノン鳥「魔神炎」等): endBlastDmgMultと同じ考え方で、進行中に連続で出す爆風にも同じ倍率を掛ける
+    const waveBlastDmgMult = (move.waveBlast && move.dmg) ? effDmg/move.dmg : 1;
+    // 発動後しばらく自分の移動速度を落とす代償技(魔神炎)。既存のslowUntil(0.5倍固定)をそのまま使う
+    if(move.selfSlowSec) attacker.slowUntil = matchTime + move.selfSlowSec;
     const buildAe = (aimAngle)=>{
       const ae = {
         id:nextId++, ownerId:attacker.id, kind:move.aoeShape, x:attacker.x, y:attacker.y, z:attacker.z,
@@ -248,6 +254,10 @@ function fireMove(attacker, target, move){
         // 扇/帯の技が届いた先端に出す仕上げの爆風ドーム(インフェルノ等)。
         // ae.rangeは遮蔽物で短くなった実際の到達距離なので、途中で途切れてもそこで爆発する
         endBlast: move.endBlast ? Object.assign({}, move.endBlast, { dmg: move.endBlast.dmg*endBlastDmgMult }) : null,
+        // 炎の進行に合わせて途中の位置に連続で出す爆風(魔神炎)。ae.rangeを等分した位置に出すので、
+        // ae.rangeが遮蔽物で短くなっていれば段の間隔もそれに合わせて自動で縮む
+        waveBlast: move.waveBlast ? Object.assign({}, move.waveBlast, { dmg: move.waveBlast.dmg*waveBlastDmgMult }) : null,
+        waveBlastDone: 0, // 何段目まで出したか(updateAreaEffectsが二重発火を防ぐのに使う)
       };
       if(move.aoeShape==='beams'){
         const spread = (move.beamSpreadDeg||40)*Math.PI/180;
@@ -2264,6 +2274,8 @@ function spawnGroundBlast(x, y, blast, ownerId, moveAura, auraTint, auraAccent){
     fanAngleDeg:0, beamCount:0, beamSpreadDeg:0,
     fillSpeed: radius/expandTime, telegraphTime,
     spawnAt: matchTime, hitIds:new Set(), resolved:false, style: blast.style||null, moveAura, auraTint: auraTint||null, auraAccent: auraAccent||null,
+    // 爆風で当たった相手を中心の反対方向へ強制移動させる(魔神炎のwaveBlast)。無指定の技は従来どおり0=吹っ飛ばさない
+    knockDist: blast.knockDist||0, knockSec: blast.knockSec||0.28,
   };
   ae.life = telegraphTime + expandTime + 0.25;
   areaEffects.push(ae);
@@ -2780,6 +2792,34 @@ function updateAreaEffects(dt){
             applySelfSpeedBuffOnHit(ae.ownerId);
             ae.selfSpeedBuffFxAt = matchTime; // 演出(fx_moves.js)が1回だけ足の筋を出すための印
           }
+          /* 爆風ドームの吹っ飛ばし(魔神炎のwaveBlast): 中心(ae.x,ae.y)から見て反対方向へ
+             knockDistだけknockSec秒かけて強制移動する。**既存のpulledUntil/pulledX/pulledY/
+             pulledSpeed(羅生門の引き寄せと同じ仕組み)をそのまま使う**ので、壁・岩・ワールド外への
+             めり込みはresolveMovementのpulledUntil分岐→tryMoveAxisの当たり判定にそのまま乗る。
+             レイドボス(巨体)はダメージは受けるが吹っ飛ばさない(自分・味方は上のcontinueで対象外)。 */
+          if(ae.knockDist > 0 && !ent.isRaidBoss){
+            const kdx = ent.x - ae.x, kdy = ent.y - ae.y;
+            const kd = Math.hypot(kdx, kdy) || 1;
+            const knockSec = ae.knockSec || 0.28;
+            ent.pulledUntil = matchTime + knockSec;
+            ent.pulledX = ent.x + (kdx/kd)*ae.knockDist;
+            ent.pulledY = ent.y + (kdy/kd)*ae.knockDist;
+            ent.pulledSpeed = ae.knockDist / knockSec;
+          }
+        }
+      }
+      /* 炎の進行に合わせた連続爆風(魔神炎のwaveBlast)。ae.rangeを等分した位置(1/3,2/3,3/3)を
+         curReachが通過するたびに1段ずつ出す。whileにしてあるのは、1フレームでcurReachが
+         複数段を一気に追い越した場合(フレーム落ち等)でも取りこぼさないため。 */
+      if(ae.waveBlast){
+        const wb = ae.waveBlast, stages = wb.count||3;
+        while(ae.waveBlastDone < stages && curReach >= ae.range*(ae.waveBlastDone+1)/stages){
+          const stageDist = ae.range*(ae.waveBlastDone+1)/stages;
+          spawnGroundBlast(ae.x+Math.cos(ae.angle)*stageDist, ae.y+Math.sin(ae.angle)*stageDist, {
+            radius:wb.radius, dmg:wb.dmg, color:wb.color, expandTime:wb.expandTime, style:wb.style,
+            knockDist:wb.knockDist, knockSec:wb.knockSec, se:wb.se,
+          }, ae.ownerId, ae.moveAura, ae.auraTint, ae.auraAccent);
+          ae.waveBlastDone++;
         }
       }
       if(curReach >= ae.range){
