@@ -1927,11 +1927,29 @@
   .season-claimed{ font-size:10px; color:var(--ink-dim); }
   .season-locked{ font-size:12px; color:var(--ink-dim); }
   .season-note{ font-size:10px; color:var(--ink-dim); margin:0 0 10px; line-height:1.35; }
-  /* シーズン最終報酬: 限定SSRスキン(虹色背景アイコン・タップでプレビュー) */
-  .season-tier.season-tier-final{ border-color:transparent;
-    background:linear-gradient(135deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
-    background-size:200% 200%; animation:seasonFinalRainbow 4s linear infinite; }
-  @keyframes seasonFinalRainbow{ from{ background-position:0 0; } to{ background-position:200% 200%; } }
+  /* 流れる虹の中身は変数へ1つだけ持つ(シーズンパス最終カード・管理者プレビュー・
+     マスモンの最上位ランクバッジ apt-M が同じ「流れる虹」を使うと決めている。3か所に
+     直書きしない。直すときはこの変数だけ直せば全部に反映される)。
+     以前は135degの斜めへ200%×200%引き伸ばしていて、実機では色の間が急に変わって
+     4ブロックに割れて見えた(発注者スクショ)。色数が少ない(7色)ままRGBで直線補間すると、
+     離れた色同士(黄→緑、青→紫など)の中間が濁って暗く沈み、そこが「境目」に見えるのが原因。
+     直し方: 同じ彩度・明度のHSLで色相を30度刻みに13点取り(0度と360度で同じ色に閉じる)、
+     横方向(90deg)だけに流す。色相刻みが細かいぶん隣接色の差が小さく、直線補間でも
+     濁った中間色ができない。縦方向は動かさない(斜めに引き伸ばさないので小さいカードでも
+     角が欠けたり帯が偏ったりしない)。 */
+  :root{ --rainbow-flow: linear-gradient(90deg,
+      hsl(0,90%,58%), hsl(30,90%,58%), hsl(60,90%,58%), hsl(90,85%,52%),
+      hsl(120,85%,48%), hsl(150,85%,48%), hsl(180,85%,48%), hsl(210,85%,58%),
+      hsl(240,85%,64%), hsl(270,80%,64%), hsl(300,80%,60%), hsl(330,85%,58%), hsl(360,90%,58%)); }
+  /* background-size は横だけ300%とし、背景位置をぴったり1タイルぶん(=150%)だけ動かして
+     無限ループの継ぎ目を消す(位置pxの差=幅×(1-3)×移動%÷100 が、タイル幅(=幅×3)と
+     一致する移動%を解くと150%)。 */
+  @keyframes seasonFinalRainbowFlow{ from{ background-position:0% 50%; } to{ background-position:150% 50%; } }
+  /* シーズン最終報酬: 限定SSRスキン(虹色背景アイコン・タップでプレビュー)。
+     管理者プレビュー(.s1prev-card-final)も同じ見た目なので、ここ1か所にまとめて両方へ当てる。 */
+  .season-tier.season-tier-final, .s1prev-card.s1prev-card-final{ border-color:transparent;
+    background:var(--rainbow-flow);
+    background-size:300% 100%; animation:seasonFinalRainbowFlow 6s linear infinite; }
   /* 最終報酬のカードだけ画像を持つ。ここが高いと全カードが引き伸ばされるので小さく保つ */
   .season-skin-reward{ display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; min-height:20px;
     justify-content:center; padding:0; }
@@ -1948,9 +1966,7 @@
   .s1prev-card.milestone{ border-color:rgba(244,196,48,0.55); background:rgba(244,196,48,0.07); }
   .s1prev-card-num{ font-family:'Russo One',sans-serif; font-size:11px; color:var(--amber); }
   .s1prev-card-reward{ font-size:10px; color:var(--ink); text-align:center; line-height:1.25; }
-  .s1prev-card.s1prev-card-final{ border-color:transparent;
-    background:linear-gradient(135deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
-    background-size:200% 200%; animation:seasonFinalRainbow 4s linear infinite; }
+  /* .s1prev-card-final の虹色は上の .season-tier.season-tier-final と同じ1つのルールへ統合済み */
   .s1prev-card-skin{ width:40px; height:40px; object-fit:contain; border-radius:6px; background:rgba(0,0,0,0.25); }
   .s1prev-calendar{ display:flex; flex-direction:column; width:100%; }
   .s1prev-cal-month{ font-size:10px; color:var(--ink-dim); margin-bottom:4px; line-height:1.35; }
@@ -5161,11 +5177,12 @@
     background:linear-gradient(160deg,#e6f0ff,#7fb0ff 45%,#2f5fd8);
     color:#04122e; box-shadow:0 0 10px rgba(120,170,255,0.95);
   }
-  /* 最上位M: 虹色。シーズンパス最終報酬のカードと同じ流れる虹を使う */
+  /* 最上位M: 虹色。シーズンパス最終報酬のカードと同じ変数(--rainbow-flow)・
+     同じ流れ方(seasonFinalRainbowFlow)を使う(style.css:1930付近参照。二重に持たない) */
   .mm-stat-apt-badge.apt-M{
     color:#1a0a24; font-weight:900;
-    background:linear-gradient(135deg,#ff004c,#ff8a00,#ffe600,#00e15a,#00b3ff,#a24bff,#ff004c);
-    background-size:220% 220%; animation:seasonFinalRainbow 3s linear infinite;
+    background:var(--rainbow-flow);
+    background-size:300% 100%; animation:seasonFinalRainbowFlow 6s linear infinite;
     box-shadow:0 0 11px rgba(255,255,255,0.85);
   }
   .mm-stat-apt-badge.apt-A{ background:#ff5a5a; }

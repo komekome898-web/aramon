@@ -1299,7 +1299,7 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
     <div class="mastermon-confirm-text" style="margin-bottom:8px;">🎯 ミッション</div>
     <div class="mission-tabs">
       <button class="mission-tab active" data-tab="daily">デイリー<span id="missionTabDailyDot" class="notif-dot hidden"></span></button>
-      <button class="mission-tab" data-tab="season">シーズン1<span id="missionTabSeasonDot" class="notif-dot hidden"></span></button>
+      <button id="missionTabSeasonBtn" class="mission-tab" data-tab="season">シーズン1<span id="missionTabSeasonDot" class="notif-dot hidden"></span></button>
       <button class="mission-tab" data-tab="lifetime">累計<span id="missionTabLifetimeDot" class="notif-dot hidden"></span></button>
     </div>
     <!-- 【見出しとタブはスクロールの外】ここから下だけが指で送れる枠(R2)。
@@ -1320,7 +1320,7 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
         <div id="seasonNextText" class="season-next-text"></div>
       </div>
       <div id="seasonTrack" class="season-track"></div>
-      <div class="s1prev-sub-title">📅 シーズン1スケジュール</div>
+      <div id="seasonScheduleTitle" class="s1prev-sub-title">📅 シーズン1スケジュール</div>
       <div id="seasonCalendar" class="s1prev-calendar"></div>
       <div class="s1prev-sub-title">ℹ️ 曜日ごとの変則ルール</div>
       <div id="seasonLegend" class="s1prev-legend"></div>
@@ -1379,11 +1379,11 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <div id="season1PreviewOverlay" class="mastermon-confirm-overlay hidden">
   <div class="mastermon-confirm-box s1prev-box">
     <button id="closeSeason1PreviewBtn" class="overlay-close-btn">✕</button>
-    <div class="mastermon-confirm-text" style="margin-bottom:6px;">🗓️ シーズン1 プレビュー(非公開・管理者確認用)</div>
+    <div id="season1PreviewTitle" class="mastermon-confirm-text" style="margin-bottom:6px;">🗓️ シーズン1 プレビュー(非公開・管理者確認用)</div>
     <div class="season-note">公開前の確認用です。数値・報酬は仮のもの。この画面はプレイヤーには表示されません。</div>
     <div class="s1prev-sub-title">🎫 SP報酬(仮)</div>
     <div id="season1PreviewTrack" class="s1prev-track"></div>
-    <div class="s1prev-sub-title">📅 シーズン1スケジュール</div>
+    <div id="season1PreviewScheduleTitle" class="s1prev-sub-title">📅 シーズン1スケジュール</div>
     <div id="season1PreviewCalendar" class="s1prev-calendar"></div>
     <div class="s1prev-sub-title">ℹ️ ミューテーターの説明</div>
     <div id="season1PreviewLegend" class="s1prev-legend"></div>
@@ -1518,7 +1518,7 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       </div>
       <div class="gacha-milestone-note" id="gachaMsNote">100回で<b class="rar-SR">SRスキンカタログ</b>、200回で<b class="rar-SSR">SSRスキンカタログ</b>を付与！</div>
       <!-- レイドガチャが開催前のときに被せる「近日公開」 -->
-      <div id="gachaSoonMask" class="gacha-soon hidden"><span>🐉 レイドガチャ<b>近日公開</b>シーズン1開始と同時に引けるようになります</span></div>
+      <div id="gachaSoonMask" class="gacha-soon hidden"><span>🐉 レイドガチャ<b>近日公開</b><span id="gachaSoonMaskSeason">シーズン1</span>開始と同時に引けるようになります</span></div>
     </div>
   </div>
 
