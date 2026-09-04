@@ -4027,6 +4027,12 @@ const SEASON_EDITIONS = {
 // 版は日付で自動選択(開催前後で自動的に切り替わる)。手で固定したいときはここへ id の文字列を書く
 const SEASON_EDITION = editionByDate(SEASON_EDITIONS, 's1');
 
+// 版は読み込み時の日付で凍結される。開きっぱなしの端末が日付を跨いだかを見る(下のリロード判定で使う)
+function editionsChangedSinceLoad(){
+  return editionByDate(SEASON_EDITIONS, 's1') !== SEASON_EDITION
+      || editionByDate(RAID_EDITIONS, 'r1') !== RAID_EDITION;
+}
+
 /* =====================================================================
    シーズン1 準備(非公開・管理者プレビューのみ): ミューテーター(日替わり変則ルール)
    SEASON1_ACTIVE を true にするまでゲームプレイに一切影響しない。

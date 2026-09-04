@@ -1931,6 +1931,47 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
   }).catch(()=>{});
 </script>
 <script>
+  /* いま読み込み直してよいか。**試合中は絶対に不可。**
+     あわせて「途中の入力・演出」も守る ―― 消えると打ち直し/見逃しになるもの。
+     SWの更新適用とシーズン/レイドの「版」切り替え検知の両方から使う共通の判定なので、
+     ここ1か所だけに置く(同じ判定を2か所目に書かない)。 */
+  window.__aramonSafeToReload = function(){
+    if(typeof game!=='undefined' && game && (game.started || game.trainingRange)) return false;
+    for(const id of ['textInputOverlay','gachaOverlay','ssrPromoteOverlay','ssrRevealOverlay',
+                     'rebirthAnimOverlay','awakenAnimOverlay','matchFinishOverlay']){
+      const e = document.getElementById(id);
+      if(e && !e.classList.contains('hidden')) return false;
+    }
+    return true;
+  };
+</script>
+<script>
+  /* ===== シーズン/レイドの「版」はページ読み込み時の日付で凍結される =====
+     開きっぱなしの端末が日付を跨いでも読み直すまでは古い版のまま(data.jsのeditionByDate参照)。
+     Service Workerの有無に関係なく起きる問題なので、下のSWブロックの外に置き、
+     前面へ戻ったときと10分ごとのタイマーの両方で確認する。安全なとき(__aramonSafeToReload)
+     だけ黙って読み込み直す。安全になるまでの見張り方はSWの更新適用(armRecheck)と同じ考え方。 */
+  let editionReloadPending = false; // 1回の起動で読み込み直すのは1度だけ
+  let editionRecheck = 0;           // 安全になるのを待っている間だけ回す見張り
+  function checkEditionReload(){
+    if(editionReloadPending) return;
+    if(typeof editionsChangedSinceLoad!=='function' || !editionsChangedSinceLoad()) return;
+    if(!window.__aramonSafeToReload()){ armEditionRecheck(); return; } // いまは危ない。安全になったら当てる
+    editionReloadPending = true;
+    if(editionRecheck){ clearInterval(editionRecheck); editionRecheck = 0; }
+    if(typeof pushToast==='function') pushToast('シーズンが切り替わりました。読み込み直します');
+    location.reload();
+  }
+  function armEditionRecheck(){
+    if(editionRecheck) return;
+    editionRecheck = setInterval(checkEditionReload, 3000);
+  }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible') checkEditionReload();
+  });
+  setInterval(checkEditionReload, 10*60*1000); // 10分ごと(前面に戻らないまま日付を跨ぐ端末の保険)
+</script>
+<script>
   // 計測ハーネス(?netprobe=1)と技プレビュー(?harness=1)ではService Workerを登録しない
   // (SWのキャッシュが計測に混ざる/プレビューが古い版を掴むのを防ぐ。判定は先頭の1か所)
   if('serviceWorker' in navigator && !window.__aramonOffline){
@@ -1952,13 +1993,7 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
        あわせて「途中の入力・演出」も守る ―― 消えると打ち直し/見逃しになるもの。 */
     const safeToApply = ()=>{
       if(applied) return false;
-      if(typeof game!=='undefined' && game && (game.started || game.trainingRange)) return false;
-      for(const id of ['textInputOverlay','gachaOverlay','ssrPromoteOverlay','ssrRevealOverlay',
-                       'rebirthAnimOverlay','awakenAnimOverlay','matchFinishOverlay']){
-        const e = document.getElementById(id);
-        if(e && !e.classList.contains('hidden')) return false;
-      }
-      return true;
+      return window.__aramonSafeToReload();
     };
     const applyWaiting = ()=>{
       if(!swReg || !swReg.waiting || applied) return;

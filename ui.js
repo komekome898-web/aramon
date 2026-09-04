@@ -5562,6 +5562,13 @@ document.getElementById('raidModeOpenBtn').addEventListener('click', ()=>{
 /* レイドへ進む前の共通チェック。モンスター未選択・開催期間外はここで止めて、
    必ずメッセージを出してロビーへ戻す(押しても何も起きない状態を作らない)。 */
 function raidGuardReady(){
+  // 版(SEASON_EDITION/RAID_EDITION)は読み込み時の日付で凍結される。開きっぱなしの端末が
+  // 日付を跨いだままレイドへ入ると古い版のまま遊べてしまうので、入る直前にここで弾いて読み込み直す
+  if(typeof editionsChangedSinceLoad==='function' && editionsChangedSinceLoad()){
+    pushToast('シーズンが切り替わりました。読み込み直します');
+    location.reload();
+    return false;
+  }
   if(!raidPlayable(raidMyAccountName())){
     const phase = raidPhase();
     raidBackToLobby(
