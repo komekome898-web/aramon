@@ -4137,6 +4137,25 @@ var pendingLoginBonusPopup = null;
 if(typeof dailyCheckLogin==='function') dailyCheckLogin(); // 起動時にログインボーナス＆ミッション更新
 backfillMastermonRecs(); // あゆみの記録遡り①起動時(local→server。冪等なので毎回実行してよい)
 if(typeof updateSeasonBadge==='function') updateSeasonBadge(); // シーズンの受取可能ドット
+/* 「シーズン1」固定文字を現在の版(SEASON_LABEL)に差し替える。一度きりの静的DOM
+   (タブ・見出し・管理者ボタン)なのでここで1回だけ入れる。毎回作り直す
+   カレンダー本文(season1CalendarHtml)側はそちらの中で直接 SEASON_LABEL を読む。
+   過去の更新履歴(data.js UPDATE_HISTORY)の告知文はここでは触らない(過去の事実として残す)。 */
+(function applySeasonLabelStatics(){
+  if(typeof SEASON_LABEL==='undefined' || !SEASON_LABEL) return;
+  const setText = (id, text)=>{ const el = document.getElementById(id); if(el) el.textContent = text; };
+  const missionTabBtn = document.getElementById('missionTabSeasonBtn');
+  if(missionTabBtn){
+    const dot = document.getElementById('missionTabSeasonDot');
+    missionTabBtn.textContent = SEASON_LABEL;
+    if(dot) missionTabBtn.appendChild(dot); // textContent代入で消えた子(受取可能ドット)を戻す
+  }
+  setText('seasonScheduleTitle', `📅 ${SEASON_LABEL}スケジュール`);
+  setText('season1PreviewTitle', `🗓️ ${SEASON_LABEL} プレビュー(非公開・管理者確認用)`);
+  setText('season1PreviewScheduleTitle', `📅 ${SEASON_LABEL}スケジュール`);
+  setText('gachaSoonMaskSeason', SEASON_LABEL);
+  setText('adminSeason1Btn', `🗓️ ${SEASON_LABEL}(準備プレビュー・非公開)`);
+})();
 updateChangelogBadge(); // 更新履歴の未読「new」バッジ
 
 /* 遊び方ガイドを開く。**入口は2つ(⚙️設定 → 遊び方説明 / ❓ヘルプ → 遊び方ガイド)あるが
@@ -12870,7 +12889,8 @@ function season1CalendarHtml(){
     if(t < raidFrom || t >= raidTo) return null;
     return { first: t===raidFrom, last: t+86400000>=raidTo };
   };
-  let html = `<div class="s1prev-cal-month">${start.getFullYear()}年${start.getMonth()+1}月〜(シーズン1開始 ${start.getMonth()+1}/${start.getDate()}・以降は同じ曜日パターンで毎週繰り返し)</div>`;
+  const seasonLabel = (typeof SEASON_LABEL!=='undefined' && SEASON_LABEL) ? SEASON_LABEL : 'シーズン1';
+  let html = `<div class="s1prev-cal-month">${start.getFullYear()}年${start.getMonth()+1}月〜(${seasonLabel}開始 ${start.getMonth()+1}/${start.getDate()}・以降は同じ曜日パターンで毎週繰り返し)</div>`;
   html += `<div class="s1prev-cal-grid s1prev-cal-head">${dow.map(d=>`<div class="s1prev-cal-dow">${d}</div>`).join('')}</div>`;
   weeks.forEach(week=>{
     html += `<div class="s1prev-cal-grid">` + week.map(date=>{

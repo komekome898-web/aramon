@@ -4008,6 +4008,7 @@ const SEASON_REWARDS_BASE24 = [
 const SEASON_EDITIONS = {
   s1: {
     id:'s1',
+    label:'シーズン1',      // プレイヤーに見える表示名。ここが正。2か所目に書かない
     startDate:'2026-08-07', // ミューテーター適用開始日(この日の前はSEASON1_ACTIVE=trueでも発動しない)
     endDate:'2026-09-03',   // 表示にだけ使う(2026-09-04にs2追記に合わせて追加)
     mutators: WEEKDAY_MUTATORS,
@@ -4017,6 +4018,7 @@ const SEASON_EDITIONS = {
   },
   s2: {
     id:'s2',
+    label:'シーズン2',      // プレイヤーに見える表示名。ここが正。2か所目に書かない
     startDate:'2026-09-04',
     endDate:'2026-10-01',   // 表示にだけ使う
     mutators: WEEKDAY_MUTATORS,   // s1と同じ曜日周期(配列は複製しない)
@@ -4078,6 +4080,7 @@ function mutatorBadgeLabels(m){
 ===================================================================== */
 const SEASON_STORAGE_KEY = 'aramon_season_v1';
 const SEASON_ID = SEASON_EDITIONS[SEASON_EDITION].id;   // シーズン識別子
+const SEASON_LABEL = SEASON_EDITIONS[SEASON_EDITION].label; // プレイヤーに見える表示名(「シーズン1」等)。画面側はここだけを読む
 /* SPと受取状況をリセットしたいときに1つ上げる(シーズンの途中でも効く)。
    シーズンの切り替わり(SEASON_IDの変更)でも同じようにリセットされる。
    判定は保存側の seasonId と seasonStateKey() の食い違いを見るだけなので、
