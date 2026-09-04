@@ -771,7 +771,7 @@ async function beginMultiplayerMatchInner(){
       e.y = cy0RaidSpawnY();
       e.z = baseTerrainHeightAt(e.x, e.y);
       e.moveTierUnlocked = 3;      // レイドは最初から全技を使える
-      e.moveTierSelected = 1;
+      e.moveTierSelected = 3;      // 解放済みなので最初から大技を選んだ状態で始める
       e.raidDamage = 0;
     });
     const boss = createMonster(RAID_BOSS.element, false, RAID_BOSS.name, { id: idCounter++, spawnPoint:{x:cx, y:bossY} });
