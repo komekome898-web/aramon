@@ -18,7 +18,7 @@
    使い方:
      node tools/studio_regress.mjs --update   ゴールデン(tools/_golden/)を作り直す
      node tools/studio_regress.mjs            ゴールデンと比べる(違えば終了コード1)
-     node tools/studio_regress.mjs --only rows|segment|model|period|roundtrip|handlers|moveaura|changelog|edit|se   項目を絞る
+     node tools/studio_regress.mjs --only rows|segment|period|roundtrip|handlers|moveaura|changelog|edit|se   項目を絞る
 
    決まりごと:
      ・ゴールデンは生成物だが**比較の相手なので git で追跡する**(.gitignore に入れない)。
@@ -182,76 +182,6 @@ function runSegment(){
   } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
   compareJson('segment', path.join(GOLDEN, 'segment.json'), out);
   return `${SEG_IMAGES.length}枚 × ${Object.keys(SEG_BACKS).length}背景 × ${SEG_CASES.length}通り + 縁が半透明の1枚`;
-}
-
-/* ------------------------------------------------- (b2) モデル経路の骨組み
-   モデル本体(44MB・推論)はブラウザでしか動かないので、node では
-   **「モデルを使わないときの道が今までと同じか」**と**モデル専用の後処理**だけを見る。
-   推論そのものの精度は tools/studio_model_test.mjs(ヘッドレスChromium)で測る。   */
-async function runModel(){
-  const out = {};
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio_regress-model-'));
-  const mk = raw => ({ width:SEG_SIZE, height:SEG_SIZE, data:new Uint8ClampedArray(raw) });
-  const eq = (a, b) => a.length === b.length && a.every((v,i)=> v === b[i]);
-  try{
-    composeInputs(tmp);
-    // ① resolveAlpha に通しても JS の抜き方の出力が1bitも変わらないこと(呼び分けを1か所へ寄せた)
-    for(const name of SEG_IMAGES) for(const bg of Object.keys(SEG_BACKS)){
-      const raw = fs.readFileSync(path.join(tmp, `${name}_${bg}.raw`));
-      for(const [mode, th] of SEG_CASES){
-        const chroma = mode === 'chroma' ? SEG_BACKS[bg] : null;
-        const a1 = S.segment(mk(raw), mode, th, chroma);
-        const a2 = await S.resolveAlpha(mk(raw), { mode, th, chroma });
-        if(!eq(a1, a2)) fail('model', `resolveAlpha が segment と違う結果を返しました(${name}_${bg}.${mode})`);
-        // 透過が無い絵は「自動」(imageAlphaFor 経由)でも素通しにならず、同じ結果になる
-        const a3 = await S.resolveAlpha(mk(raw), { mode, th, chroma, auto:true });
-        if(!eq(a1, a3)) fail('model', `自動でも同じ結果になりません(${name}_${bg}.${mode})`);
-      }
-    }
-    /* ② 縁が半透明の絵。**明示した抜き方は素通しに負けない**(§指摘22)。
-       ここが素通しになっていた頃は white/chroma が262144画素=全面前景で返っていた。 */
-    const rawSoft = fs.readFileSync(path.join(tmp, softKey + '.raw'));
-    const own = new Uint8Array(SEG_SIZE*SEG_SIZE);
-    let trans = 0;
-    for(let i=0;i<own.length;i++){ own[i] = rawSoft[i*4+3]; if(own[i] < 250) trans++; }
-    out.softTransparentPct = Math.round(trans/own.length*1000)/10;   // 素通しの判定を超えている入力か
-    for(const [mode, th] of SEG_CASES){
-      const chroma = mode === 'chroma' ? SEG_BACKS[SEG_SOFT_IN.bg] : null;
-      const js  = S.segment(mk(rawSoft), mode, th, chroma);
-      const got = await S.resolveAlpha(mk(rawSoft), { mode, th, chroma });
-      if(!eq(js, got))  fail('model', `縁が半透明の絵で ${mode} が素通しに負けました(明示指定は必ず抜く)`);
-      if(eq(got, own))  fail('model', `${mode} が画像の透過をそのまま返しました(明示指定は必ず抜く)`);
-    }
-    // 明示していない道(モデル・自動)だけが素通しする
-    for(const seg of [{ mode:'model' }, { mode:'auto' }, { mode:'white', auto:true }]){
-      const got = await S.resolveAlpha(mk(rawSoft), Object.assign({ th:20, chroma:null }, seg));
-      if(!eq(got, own))
-        fail('model', `${JSON.stringify(seg)} で透過済みの絵を素通ししていません(モデルへ44MBを取りに行く道)`);
-    }
-  } finally { fs.rmSync(tmp, { recursive:true, force:true }); }
-  /* ② keepMajor: 体から切り離された武器・尻尾を残す。
-     16x16 の中に「大きな塊(6x6=36)」と「小さな塊(2x2=4・最大の11%)」を置くと、
-     keepLargest は小さい方を消し、keepMajor(8%)は残す。 */
-  const W = 16, fg = new Uint8Array(W*W);
-  for(let y=2;y<8;y++) for(let x=2;x<8;x++) fg[y*W+x] = 1;      // 本体
-  for(let y=12;y<14;y++) for(let x=12;x<14;x++) fg[y*W+x] = 1;  // 切り離された武器
-  const sum = m => m.reduce((a,b)=>a+b, 0);
-  out.keepLargest = sum(S.keepLargest(new Uint8Array(fg), W, W));
-  out.keepMajor   = sum(S.keepMajor(new Uint8Array(fg), W, W, S.MODEL_KEEP_RATIO));
-  if(out.keepLargest !== 36) fail('model', `keepLargest が本体だけを残していません(${out.keepLargest})`);
-  if(out.keepMajor !== 40)   fail('model', `keepMajor が切り離された部分を残していません(${out.keepMajor})`);
-  // ④ 取得先とモデルの入力の大きさは1か所で持つ(検査側に写さず、読むだけ)
-  out.src = S.MODEL_SRC; out.input = S.MODEL_INPUT; out.fallback = S.MODEL_FALLBACK;
-  /* ⑤ 端末内の置き場の名前は sw.js と studio_web.html に**二重に持っている**(§指摘29)。
-     ずれると SW の activate が「知らないキャッシュ」としてモデルを消し、
-     ゲームを更新するたびに44MBを取り直すことになる。両方から抜いて突き合わせる。 */
-  const swName = (/STUDIO_MODEL_CACHE\s*=\s*'([^']+)'/.exec(fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8')) || [])[1];
-  if(swName !== S.MODEL_CACHE)
-    fail('model', `sw.js の STUDIO_MODEL_CACHE(${swName})と studio_web.html の MODEL_CACHE(${S.MODEL_CACHE})が違います`);
-  out.cache = S.MODEL_CACHE;
-  compareJson('model', path.join(GOLDEN, 'model.json'), out);
-  return `resolveAlpha の一致 ${SEG_IMAGES.length*Object.keys(SEG_BACKS).length*SEG_CASES.length*2}通り`
-       + ` / 縁が半透明 ${SEG_CASES.length+3}通り / keepMajor / キャッシュ名`;
 }
 
 /* ------------------------------------------------------------ (c) 周期検出 */
@@ -1082,9 +1012,7 @@ function runSe(){
      ・etaText は**実測から**出す(固定値を返さない)。1件も終わっていない・
        終わっているときは黙る(嘘の残り時間を出さない)。
      ・errorText は英語の例外を必ず日本語にし、**自前の日本語はそのまま通す**。
-       ここが逆になると「動画を選んでください」まで丸められて意味が消える。
-     ・modelRunText は残り時間を etaText に載せたうえで、**出せないときの言い方**を持つ。
-       文面が変わる2通り(1秒未満 / 90秒以上)をここで押さえる。                     */
+       ここが逆になると「動画を選んでください」まで丸められて意味が消える。            */
 function runWording(){
   const now = Date.now();
   // ① 実測から出ているか(同じ done/total でも、掛かった時間が倍なら残りも倍)
@@ -1098,25 +1026,12 @@ function runWording(){
   // ③ 出せないときは黙る(0件目・終わった後・時刻なし)
   for(const [d, t, st] of [[0, 8, now-1000], [8, 8, now-1000], [1, 8, 0]])
     if(S.etaText(d, t, st) !== '') fail('wording', `etaText(${d},${t}) が黙りません: ${S.etaText(d, t, st)}`);
-  /* ④ 1件あたりの実測から出す道(モデルの推論)も同じ式に載っている。
+  /* ④ 1件あたりの実測から出す道(etaByRate)も同じ式に載っている。
      **返り値そのものを見る**(§指摘13) —— 2つの呼び出しの結果を突き合わせる書き方は、
      間に1ミリ秒でも挟まると別の文字列になるので、たまに落ちる検査になっていた。 */
   if(!/残り約4秒/.test(S.etaByRate(1000, 4)))
     fail('wording', `etaByRate(1秒/件, 残り4件)が「${S.etaByRate(1000, 4)}」です(残り約4秒のはず)`);
-  /* ⑤ 推論の進捗の文面。**残り時間が出せないとき/長いとき**で言い方が変わるので両方見る。
-     lastRunMs は「直前の1枚にかかった時間」。1秒未満は嘘になるので黙り、代わりに
-     「しばらくお待ちください」と言う。90秒以上は分でまとめる(§指摘13)。 */
-  const keepRun = S.modelState.lastRunMs;
-  S.modelState.lastRunMs = 500;          // 1件0.5秒 = 残り0.5秒 → 秒では言わない
-  if(!/しばらくお待ちください/.test(S.modelRunText({ i:1, n:1 })))
-    fail('wording', `modelRunText(1秒未満)が「${S.modelRunText({ i:1, n:1 })}」です`);
-  S.modelState.lastRunMs = 120000;       // 1件120秒 = 残り2分 → 分でまとめる
-  if(!/約2分/.test(S.modelRunText({ i:1, n:1 })))
-    fail('wording', `modelRunText(90秒以上)が「${S.modelRunText({ i:1, n:1 })}」です`);
-  if(!/2\/16/.test(S.modelRunText({ i:2, n:16 })))
-    fail('wording', `modelRunText が何枚目かを言いません: ${S.modelRunText({ i:2, n:16 })}`);
-  S.modelState.lastRunMs = keepRun;
-  // ⑥ 失敗の言い方。英語は日本語へ、自前の日本語はそのまま
+  // ⑤ 失敗の言い方。英語は日本語へ、自前の日本語はそのまま
   const cases = [
     [new Error('GitHub 401: Bad credentials'), /トークンが切れています/],
     [new Error('GitHub 403: Resource not accessible by personal access token'), /権限/],
@@ -1137,20 +1052,7 @@ function runWording(){
   ];
   for(const [e, re] of cases)
     if(!re.test(S.errorText(e))) fail('wording', `errorText(${e.message}) が「${S.errorText(e)}」です`);
-  // ⑦ モデル経路の言い方は今までどおり(呼び名 modelErrorText は残す)
-  const mk = (code, msg)=>{ const e = new Error(msg); e.__modelCode = code; return e; };
-  const model = [
-    [mk('abort', '中断しました'), /^中断しました。/],
-    [mk('truncated', 'x'), /途中で切れました/],
-    [mk('retry', 'x'), /^モデルを用意できませんでした/],
-    [mk('device', 'x'), /この端末ではモデルを動かせませんでした/],
-    [new Error('Failed to fetch'), /^モデルを取得できませんでした/],
-    [new Error('no available backend found'), /この端末ではモデルを動かせませんでした/],
-    [new Error('Whatever'), /^モデルの読み込みに失敗しました/],
-  ];
-  for(const [e, re] of model)
-    if(!re.test(S.modelErrorText(e))) fail('wording', `modelErrorText(${e.message}) が「${S.modelErrorText(e)}」です`);
-  return `残り時間 6通り + 推論の進捗 3通り / 失敗の言い方 ${cases.length + model.length}通り`;
+  return `残り時間 5通り / 失敗の言い方 ${cases.length}通り`;
 }
 
 /* ============================================================ (g) 更新履歴の注意2判定
@@ -1578,7 +1480,6 @@ function runEditRound(){
 const done = [];
 if(want('rows'))      done.push('行生成 ' + runRows());
 if(want('segment'))   done.push('背景抜き ' + runSegment());
-if(want('model'))     done.push('モデル経路 ' + await runModel());
 if(want('period'))    done.push('周期検出 ' + await runPeriod());
 if(want('roundtrip')) done.push('往復 ' + runRoundTrip());
 if(want('handlers'))  done.push('属性 ' + runHandlers());
