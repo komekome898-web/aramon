@@ -5373,7 +5373,7 @@ function raidStart(multi, demo){
   player = createMonster(game.selectedElement, true, getDisplayNameFromInput()||'あなた', { spawnPoint:{x:cx, y:cy+WORLD.h*0.18} });
   applyMastermonToPlayer();
   player.moveTierUnlocked = 3;      // レイドは最初から全技を使える(ボスに火力を出すため)
-  player.moveTierSelected = 1;
+  player.moveTierSelected = 3;      // 解放済みなので最初から大技を選んだ状態で始める
   player.raidDamage = 0;
   entities.push(player);
 
