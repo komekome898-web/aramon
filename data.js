@@ -350,6 +350,7 @@ const WALK_ANIM = {
     base: { front:_loadWalk('phoenix_walk_f'),     back:_loadWalk('phoenix_walk_b') },     // ヒノトリ(色スキン対応)
     ssr: [
       { skinId:'phoenix_ssr', front:_loadWalk('phoenix_ssr_walk_f'), back:_loadWalk('phoenix_ssr_walk_b') }, // SSRフェニックス
+      { skinId:'ganon_ssr', front:_loadWalk('ganon_ssr_walk_f'), back:_loadWalk('ganon_ssr_walk_b') }, /*@ganon_ssr*/
     ],
   },
   ark: {
@@ -895,6 +896,7 @@ const SSR_SKIN_AURA = {
   zan_ssr:        'blue', /*@zan_ssr*/
   joker_ssr:      'white', /*@joker_ssr*/
   warm_ssr:       'red', /*@warm_ssr*/
+  ganon_ssr:      'black', /*@ganon_ssr*/
   // <<AUTO:SSR_SKIN_AURA>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキンなし時のモンスターのデフォルトオーラ(体色由来)
@@ -1140,6 +1142,7 @@ const SSR_SKIN_TIER3 = {
   warm_ssr:       { name:'俺、参上', dmgMult:1.15,
     move:{ aoeShape:'rect', range:2600, rectWidth:150, projSpeed:3200, telegraphTime:0.6,
            aoeStyle:'shinkansen', pierce:true, selfSpeedBuffOnHit:true } }, /*@warm_ssr*/
+  ganon_ssr:      { name:'魔神炎', dmgMult:1.15 }, /*@ganon_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1327,6 +1330,7 @@ const CHANGELOG_TAGS = [
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
   { date:'2026-09-04', items:[
+    { t:'✨ SSRスキン「怨霊ガノン鳥」が登場しました！', g:['feature','monster'] },
     { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされ、シーズンパスの最終報酬は近日発表です', g:['feature','general'] },
     { t:'✨ 前シーズンの最終報酬だったSSRスキン「大喰いの利世」が、ガチャとSSRカタログで手に入るようになりました', g:['feature','monster'] },
     { t:'🐉 レイド「あるるかん討伐」を開催中です(9/4〜9/17)。舞台はジョーカーの雪山、全員の与ダメージ累計が目標に届くとSSR「あるるかん」がもらえます', g:['feature','multi'] },
@@ -4591,6 +4595,7 @@ const SSR_SKINS = {
   zan_ssr:        { element:'zan', name:'疾風', iconImg:'zan_ssr', playerImg:'zan_player_ssr' }, /*@zan_ssr*/
   joker_ssr:      { element:'joker', name:'あるるかん', iconImg:'joker_ssr', playerImg:'joker_player_ssr', raidClearOnly:true }, /*@joker_ssr*/
   warm_ssr:       { element:'warm', name:'電王ライナー', iconImg:'warm_ssr', playerImg:'warm_player_ssr' }, /*@warm_ssr*/ // レイドガチャ・SSRレイドカタログ限定かどうかは RAID_EDITIONS[版].exclusiveSkins で決まる(r3=最新の版に指定済み)
+  ganon_ssr:      { element:'phoenix', name:'怨霊ガノン鳥', iconImg:'ganon_ssr', playerImg:'ganon_player_ssr', seasonExclusive:true }, /*@ganon_ssr*/
   // <<AUTO:SSR_SKINS>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 

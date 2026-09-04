@@ -1,0 +1,17 @@
+{
+  "id": "ganon_ssr",
+  "element": "phoenix",
+  "name": "怨霊ガノン鳥",
+  "aura": "black",
+  "seasonExclusive": true,
+  "iconImg": "ganon_ssr",
+  "playerImg": "ganon_player_ssr",
+  "walkPrefix": "ganon_ssr_walk_",
+  "t3name": "魔神炎",
+  "t3mult": 1.15,
+  "raidEffect": false,
+  "raidDealt": 1.5,
+  "raidTaken": 0.75,
+  "raidPickup": false,
+  "raidClear": false
+}
