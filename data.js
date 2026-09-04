@@ -4723,7 +4723,8 @@ const SKIN_MEDIA = {
   ganon_ssr: { /*@ganon_ssr*/
     promote: { video:'video/ganon_ssr_promote', audio:'audio/ganon_ssr_promote_audio.m4a', safetyMs:56122, bgmOnReveal:'lastBattle' },
     bgm: { final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
-    se: { kill:'audio/se_ganon_ssr_kill.m4a' },
+    se: { tier3:'audio/se_ganon_ssr_tier3.m4a', hit:'audio/se_ganon_ssr_hit.m4a', kill:'audio/se_ganon_ssr_kill.m4a' },
+    promoImg: 'images/promo_ganon_ssr.png',
   },
   // <<AUTO:SKIN_MEDIA>> ここから上へ tools/studio_web.html がSSRスキン専用メディアの行を追記する
 };
