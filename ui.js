@@ -2983,6 +2983,7 @@ function maybeFlushPendingPromoPopups(){
   if(localStorage.getItem(SKIN_PROMO_PENDING_KEY)==='1'){ showSkinPromoPopup(); return; }
   if(localStorage.getItem(ROCK_SSR_PROMO_PENDING_KEY)==='1'){ showRockSsrPromoPopup(); return; }
   if(localStorage.getItem(METAG_GARURU_PROMO_PENDING_KEY)==='1'){ showMetagGaruruPromoPopup(); return; }
+  if(localStorage.getItem(GANON_PROMO_PENDING_KEY)==='1'){ showGanonPromoPopup(); return; }
 }
 /* 告知の既読管理。更新履歴の未読判定(CHANGELOG_SEEN_KEY)と同じ作りで、
    **署名(=その告知の中身)が既読と違うときだけ出す。**
@@ -2995,6 +2996,7 @@ function maybeShowLoginPromos(){
   maybeShowSkinGachaPromo();
   maybeShowRockSsrPromo();
   maybeShowMetagGaruruPromo();
+  maybeShowGanonPromo();
 }
 // ===== スキンガチャ実装記念ポップアップ =====
 // このバージョン以降にログインしたアカウントに一度だけ、ダイヤ500個付与+誘導ポップアップ
@@ -3182,6 +3184,39 @@ document.getElementById('metagGaruruPromoCloseBtn').addEventListener('click', ()
 document.getElementById('metagGaruruPromoGachaBtn').addEventListener('click', ()=>{
   dismissMetagGaruruPromoPopup();
   openGachaScreen();
+});
+// SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
+
+/* ===== SSR怨霊ガノン鳥(シーズン2パス最終報酬)実装記念ポップアップ =====
+   ダイヤ等の付与は無い告知だけ。**一度閉じたら二度と出さない。**
+   ガチャではなくシーズンパスへ誘導する(ミッション画面のシーズンタブを開く)。
+   告知の中身が固定なので署名も固定の文字列にしてある。**中身を作り直したら署名を上げる**と、
+   新しい告知として1回だけ出る(メタルグレイモン・ガルルモンの告知と同じ作り)。 */
+const GANON_PROMO_PENDING_KEY = 'aramon_promo_ganon_pending_v1'; // 未確認=表示中
+const GANON_PROMO_SEEN_KEY = 'aramon_promo_ganon_seen_v1';       // 既読の署名
+const GANON_PROMO_SIG = 'ganon_v1';                              // 告知の中身を変えたら上げる
+function showGanonPromoPopup(){
+  const el = document.getElementById('ganonPromoOverlay');
+  if(el) el.classList.remove('hidden');
+}
+function dismissGanonPromoPopup(){
+  markPromoSeen(GANON_PROMO_SEEN_KEY, GANON_PROMO_SIG);   // 閉じた=既読
+  try{ localStorage.removeItem(GANON_PROMO_PENDING_KEY); }catch(e){}
+  const el = document.getElementById('ganonPromoOverlay');
+  if(el) el.classList.add('hidden');
+}
+function maybeShowGanonPromo(){
+  if(promoSeen(GANON_PROMO_SEEN_KEY, GANON_PROMO_SIG)) return;  // 一度閉じた告知は出さない
+  try{ localStorage.setItem(GANON_PROMO_PENDING_KEY,'1'); }catch(e){}  // ボタンを押すまで表示を維持
+  maybeFlushPendingPromoPopups();
+}
+document.getElementById('ganonPromoCloseBtn').addEventListener('click', ()=>{
+  dismissGanonPromoPopup();
+});
+document.getElementById('ganonPromoSeasonBtn').addEventListener('click', ()=>{
+  dismissGanonPromoPopup();
+  document.getElementById('openMissionBtn').click();
+  missionShowTab('season');
 });
 // SW自動リロード等で消えても、未確認(保留中)ならロビー表示時に再表示する(maybeFlushPendingPromoPopups)
 
@@ -5558,7 +5593,13 @@ function updateRaidModePanel(){
   if(!note || !btn) return;
   const ok = raidPlayable(raidMyAccountName());
   const phase = raidPhase();
-  if(pop) pop.classList.toggle('hidden', phase!=='preview');
+  // タブ右上の小さな札。準備中=琥珀色「準備中」、開催中=緑色「開催中」、それ以外は出さない
+  if(pop){
+    pop.classList.toggle('hidden', phase!=='preview' && phase!=='open');
+    pop.classList.toggle('raid-pop-open', phase==='open');
+    if(phase==='preview') pop.textContent = '準備中';
+    else if(phase==='open') pop.textContent = '開催中';
+  }
   note.textContent =
     phase==='preview' ? (ok ? '準備中のため、バトルが終わっても記録・報酬は残りません。'
                             : '準備中です。もうしばらくお待ちください。') :

@@ -5318,8 +5318,14 @@
     font-family:'Rajdhani',sans-serif; font-weight:800; font-size:9px; letter-spacing:0.5px;
     color:#1a1306; background:linear-gradient(180deg,#ffe7a8,#f4c430); box-shadow:0 1px 4px rgba(0,0,0,0.5); }
   .raid-soon-pop.hidden{ display:none; }
+  /* 開催中は準備中(琥珀)と見分けが付くよう緑にする。位置・大きさは.raid-soon-popのまま(色だけ差し替え) */
+  .raid-soon-pop.raid-pop-open{ color:#062e12; background:linear-gradient(180deg,#8effc2,#22c55e);
+    box-shadow:0 1px 4px rgba(0,0,0,0.5), 0 0 8px -1px rgba(34,197,94,0.8); }
   .raid-mode-note{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; line-height:1.45;
     color:var(--ink-dim); }
+  /* 「🐉 レイドバトルへ」を中央寄せ。幅をfit-contentにして margin:auto で中央へ寄せる
+     (widthがautoのままだとmargin:autoは効かない)。min-height/flex-shrinkは.raid-go-btnが持つ */
+  #raidModeOpenBtn{ width:fit-content; margin:8px auto 0; }
   .raid-title-sub{ display:block; margin-top:3px; font-family:'Rajdhani',sans-serif; font-weight:600;
     font-size:11px; letter-spacing:0.3px; color:var(--ink-dim); text-shadow:none; }
   .raid-scroll-wrap{ position:relative; flex:1 1 auto; min-height:0; display:flex; }
