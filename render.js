@@ -804,22 +804,117 @@ function whiteMaskFor(img){
   _whiteMaskCache.set(img, { canvas:c, w, h });
   return c;
 }
-function drawMonsterPortrait(e, img, flash){
-  const r = e.radius;
-  // 丸めクリップ・縁取りは廃止し、モンスター画像をそのまま(透過付きで)描画する
+/* 画像の不透明部分の外接矩形(元画像のピクセル単位)。モンスター1枚につき1回だけ測ってキャッシュする。
+   縮小して測る(全身の輪郭さえ分かれば十分。原寸でやると被弾のたびに新しい絵を測るコストが乗る)。
+   getContext差の負荷が乗る処理なので、必ずキャッシュ経由でしか呼ばない。 */
+const BBOX_MEASURE_MAX = 160;
+const _bboxCache = new WeakMap();   // img -> {iw,ih,x0,y0,x1,y1,w,h}(元画像のピクセル単位)
+function opaqueBBoxFor(img){
   const iw = _imgW(img), ih = _imgH(img);
-  const scale = Math.max((r*2)/iw, (r*2)/ih);
+  const cached = _bboxCache.get(img);
+  if(cached && cached.iw===iw && cached.ih===ih) return cached;
+  let mw=iw, mh=ih;
+  if(Math.max(iw,ih) > BBOX_MEASURE_MAX){ const k=BBOX_MEASURE_MAX/Math.max(iw,ih); mw=Math.max(1,Math.round(iw*k)); mh=Math.max(1,Math.round(ih*k)); }
+  let x0=0, y0=0, x1=mw, y1=mh;   // 測れなかった時は「画像全体が本体」扱い(従来どおりの見た目にフォールバック)
+  try{
+    const c = document.createElement('canvas'); c.width=mw; c.height=mh;
+    const mcx = c.getContext('2d', { willReadFrequently:true });
+    mcx.drawImage(img, 0, 0, mw, mh);
+    const data = mcx.getImageData(0, 0, mw, mh).data;
+    let minX=mw, minY=mh, maxX=-1, maxY=-1;
+    const ATH = 16; // 縮小時ににじんだ縁のノイズを本体と誤認しないための閾値
+    for(let y=0; y<mh; y++){
+      for(let x=0; x<mw; x++){
+        if(data[(y*mw+x)*4+3] > ATH){
+          if(x<minX) minX=x; if(x>maxX) maxX=x;
+          if(y<minY) minY=y; if(y>maxY) maxY=y;
+        }
+      }
+    }
+    if(maxX>=minX && maxY>=minY){ x0=minX; y0=minY; x1=maxX+1; y1=maxY+1; }
+  }catch(err){ /* CORS等で測れない場合は全体を本体扱いにする */ }
+  const kx = iw/mw, ky = ih/mh;
+  const result = { iw, ih, x0:x0*kx, y0:y0*ky, x1:x1*kx, y1:y1*ky, w:(x1-x0)*kx, h:(y1-y0)*ky };
+  _bboxCache.set(img, result);
+  return result;
+}
+// エンティティの「立ち絵」(装備中スキンのiconImg、無ければ素のmonsterImages)を返す。
+// drawScale自動計算の代表画像に使う。歩行コマは使わない(姿勢でアスペクト比が変わるため)
+function _drawScaleRepresentativeArt(isSsr, key){
+  if(isSsr){
+    const s = SSR_SKINS[key];
+    if(!s) return null;
+    const icon = ssrSkinImages[s.iconImg];
+    if(imgIsReady(icon)) return icon;
+    const alt = ssrSkinImages[s.playerImg];
+    return imgIsReady(alt) ? alt : null;
+  }
+  const base = monsterImages[key];
+  if(imgIsReady(base)) return base;
+  const alt = playerMonsterImages[key];
+  return imgIsReady(alt) ? alt : null;
+}
+/* 見た目だけの倍率(当たり判定radiusには一切効かない)。読む順はdata.jsのコメント参照。
+   自動値はモンスター/スキンごとに1回測ったら固定する(フレームごとに測り直さない)。 */
+const _drawScaleAutoCache = {};   // 'base:element' | 'ssr:skinId' -> 自動倍率
+function entityDrawScale(e){
+  if(!e) return 1;
+  const skin = (typeof _entityDisplaySkinId==='function') ? _entityDisplaySkinId(e) : (e.skinId||null);
+  const ssr = (skin && typeof SSR_SKINS!=='undefined') ? SSR_SKINS[skin] : null;
+  if(ssr && typeof ssr.drawScale==='number') return ssr.drawScale;
+  const el = (typeof ELEMENTS!=='undefined') ? ELEMENTS[e.element] : null;
+  if(el && typeof el.drawScale==='number') return el.drawScale;
+  const isSsr = !!ssr;
+  const cacheKey = isSsr ? ('ssr:'+skin) : ('base:'+e.element);
+  const cached = _drawScaleAutoCache[cacheKey];
+  if(cached != null) return cached;
+  const art = _drawScaleRepresentativeArt(isSsr, isSsr ? skin : e.element);
+  if(!art) return 1;   // 立ち絵が未ロードの間は等倍(読み込み次第この関数が測ってキャッシュする)
+  const bb = opaqueBBoxFor(art);
+  if(!bb || bb.w<=0 || bb.h<=0) return 1;
+  const ratio = bb.w / bb.h;
+  const auto = Math.min(WIDE_DRAW_MAX, 1 + WIDE_DRAW_BOOST * clamp(ratio-1, 0, 10));
+  _drawScaleAutoCache[cacheKey] = auto;
+  return auto;
+}
+/* この関数が「同じ絵の大きさ」の基準を1か所にまとめる。drawMonsterPortrait(実際に描く)と
+   drawMonster(影・HPバー・名前などを絵の大きさに追従させる)の両方がここを読む。
+   核心: 画像全体の縦横比ではなく「体(不透明部分)」の高さを基準にする。
+   これにより、静止画→歩行コマの切り替わりで体が縮んで見える現象と、
+   翼・尻尾で余白が多い横長の絵が小さく見える現象を同じ式で直す。 */
+function portraitLayoutFor(e, img){
+  const r = e.radius;
+  const iw = _imgW(img), ih = _imgH(img);
+  const bb = opaqueBBoxFor(img);
+  const bodyH0 = (bb && bb.h>0) ? bb.h : ih;
+  const bodyW0 = (bb && bb.w>0) ? bb.w : iw;
+  const ds = entityDrawScale(e);
+  let scale = (2*r*BODY_H_RATIO*ds) / bodyH0;
+  const maxBodyW = 2*r*BODY_W_MAX;
+  if(bodyW0*scale > maxBodyW) scale = maxBodyW / bodyW0;   // 翼などで幅が出すぎるのを防ぐ保険
   const dw = iw*scale, dh = ih*scale;
-  // 画面上での実ピクセル数に合う縮小版を使う(投影スケール×描画解像度)
-  const need = Math.max(dw, dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
+  const bodyH = bodyH0*scale;
+  // 体の下端(足)を、旧描画で歩行コマが実際に接地していた位置(FOOT_Y_RATIO)へ揃える
+  const bodyBottomLocal = -dh/2 + (bb ? bb.y1*scale : dh);
+  const footY = r*FOOT_Y_RATIO;
+  const dy = footY - bodyBottomLocal;
+  // 影・頭上表示が追従する倍率。幅で頭打ちにならない限りdsと一致する
+  const uiMult = clamp(bodyH / (2*r*BODY_H_RATIO), 0.5, WIDE_DRAW_MAX);
+  return { img, iw, ih, scale, dw, dh, dy, bodyH, footY, uiMult };
+}
+function drawMonsterPortrait(e, img, flash, precomputedLayout){
+  const L = (precomputedLayout && precomputedLayout.img===img) ? precomputedLayout : portraitLayoutFor(e, img);
+  // 画面上での実ピクセル数に合う縮小版を使う(投影スケール×描画解像度。倍率を掛けたあとの値で選ぶ)
+  const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
   const spr = scaledSpriteFor(img, need);
-  ctx.drawImage(spr, -dw/2, -dh/2, dw, dh);
+  ctx.drawImage(spr, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
   if(flash){
     ctx.save();
     ctx.globalAlpha = 0.55;
-    ctx.drawImage(whiteMaskFor(spr), -dw/2, -dh/2, dw, dh);
+    ctx.drawImage(whiteMaskFor(spr), -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
     ctx.restore();
   }
+  return L;
 }
 function drawMonsterShape(e, color, dark){
   const r = e.radius;
@@ -1107,15 +1202,21 @@ function drawMonster(e,p){
   _monDrawScale = p.scale;
   ctx.translate(0,-e.radius*0.85);
 
-  ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9, e.radius*0.4, 0,0,Math.PI*2);
+  /* 表示する画像とその描画レイアウトはここで1回だけ求める(ダッシュ残像・本体で使い回す)。
+     影・頭上表示(HPバー/名前/状態リング等)の追従倍率(uiMult)もここから取る ―― 絵より先に
+     決まる必要があるので影のすぐ上、影より先に計算する。画像が無ければ等倍(uiMult=1)。 */
+  const displayImg = getDisplayImage(e);
+  const portraitLayout = displayImg ? portraitLayoutFor(e, displayImg) : null;
+  const uiMult = portraitLayout ? portraitLayout.uiMult : 1;
+
+  ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
 
   if(e.dashTimer>0){
     ctx.save(); ctx.globalAlpha=0.35;
     ctx.translate(-e.dashDirX*16,-e.dashDirY*16);
-    const dashImg = getDisplayImage(e);
-    if(dashImg){
-      drawMonsterPortrait(e, dashImg);
+    if(displayImg){
+      drawMonsterPortrait(e, displayImg, false, portraitLayout);
     } else {
       drawMonsterShape(e, el.color, el.dark);
     }
@@ -1126,9 +1227,8 @@ function drawMonster(e,p){
   // スプライトだけ回し、この後の状態リング・HPゲージは回さない
   const downedPose = (typeof entityDowned==='function') && entityDowned(e);
   if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
-  const displayImg = getDisplayImage(e);
   if(displayImg){
-    drawMonsterPortrait(e, displayImg, e.hitFlash>0);
+    drawMonsterPortrait(e, displayImg, e.hitFlash>0, portraitLayout);
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
 
@@ -1162,28 +1262,28 @@ function drawMonster(e,p){
     ctx.save();
     ctx.globalAlpha = 0.5 + 0.3*Math.sin(matchTime*8);
     ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.15, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.15*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.slowUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.strokeStyle = '#7fa0ff'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.3, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.3*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.freezeUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.2, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.2*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.poisonUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.45 + 0.25*Math.sin(matchTime*5);
     ctx.strokeStyle = '#9b5fd1'; ctx.lineWidth = 2.5; ctx.setLineDash([2,5]);
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.42, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.42*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
@@ -1194,10 +1294,10 @@ function drawMonster(e,p){
     ctx.strokeStyle = '#ffd76a';
     ctx.lineWidth = 2.6;
     if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = '#ffe9a8'; }
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.55, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.55*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.globalAlpha = pulse*0.6;
     ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.75, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0, e.radius*1.75*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
@@ -1207,10 +1307,10 @@ function drawMonster(e,p){
   // barYはこの下の状態変化ラベルも参照するので、必ず関数のスコープに置く
   // (レイドのボス判定のブロックに入れるとボス以外でも参照できず落ちる)
   const selfBar = !!e.isPlayer;
-  const barY = selfBar ? -e.radius*1.08-5 : -e.radius*1.55-9;
+  const barY = selfBar ? -e.radius*1.08*uiMult-5 : -e.radius*1.55*uiMult-9;
   // レイドのボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
   if(!e.isRaidBoss){
-    const barW = e.radius*2.1;
+    const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
        巨大なバーが操作UIへ被っていた=批評指摘。敵は従来どおり=撃ち合いの的。
@@ -1236,10 +1336,10 @@ function drawMonster(e,p){
     ctx.save();
     ctx.globalAlpha = pulse;
     ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, e.radius*0.55, e.radius*1.35, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, e.radius*0.55*uiMult, e.radius*1.35*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.globalAlpha = pulse*0.5;
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(0, e.radius*0.55, e.radius*1.7, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, e.radius*0.55*uiMult, e.radius*1.7*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
     /* ラベルとゲージは自分には出さない(自分のダウンは画面下の帯が唯一の表示。
        二重に出すと重なって読めない=批評指摘)。頭上要素はスケール上限を掛けて
@@ -1312,15 +1412,15 @@ function drawMonster(e,p){
     ctx.textAlign='center';
     if((isAllyOfPlayer || e.isMastermonBot) && !renderHeavyLoad){ ctx.shadowBlur=6; ctx.shadowColor = isAllyOfPlayer ? '#2fd35a' : '#ffb703'; }
     // キルリーダーは名前の頭に👑(★マスモン印と同じ作法。スケール上限・近距離フェードも同じものが効く)
-    ctx.fillText(((typeof isKillLeader==='function' && isKillLeader(e))?'👑 ':'')+(e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55-13);
+    ctx.fillText(((typeof isKillLeader==='function' && isKillLeader(e))?'👑 ':'')+(e.isMastermonBot?'★ ':'')+displayNameFor(e), 0, -e.radius*1.55*uiMult-13);
     ctx.shadowBlur = 0;
     // ゴースト(他の人が育てたマスモン)は、誰の子かを小さく添える
     if(e.ghostOwner){
       ctx.font="9px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(255,215,106,0.75)';
-      ctx.fillText(e.ghostOwner+' の', 0, -e.radius*1.55-24);
+      ctx.fillText(e.ghostOwner+' の', 0, -e.radius*1.55*uiMult-24);
     }
     if(isAllyOfPlayer){
-      const my = -e.radius*1.55 - (e.ghostOwner ? 38 : 28);   // 名前(とゴースト表記)の上
+      const my = -e.radius*1.55*uiMult - (e.ghostOwner ? 38 : 28);   // 名前(とゴースト表記)の上
       const bob = Math.sin(matchTime*3 + e.id)*1.5;           // ふわふわ上下して目に留まるように
       ctx.save();
       ctx.globalAlpha = 0.95*allyFade;   // 近距離フェードを▽にも効かせる(上書きしない)

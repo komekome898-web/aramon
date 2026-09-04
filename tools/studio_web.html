@@ -294,6 +294,13 @@
     </div>
     <!-- 覚醒スキンを開いたときだけ出る。tier3は元スキンから継承するので書かせない -->
     <div class="hint" id="s_t3InheritNote" style="display:none"></div>
+    <!-- 絵の見た目の大きさ(任意)。素体側と同じ扱いで、書けばスキン優先・空欄なら素体か自動 -->
+    <label>絵の大きさ(任意)</label>
+    <input id="s_drawScale" type="number" step="0.05" placeholder="自動(素体の設定 or 縦横比)">
+    <div class="hint">
+      空欄=自動。横長の絵で小さく見えるときだけ 1.1〜1.4 くらいを入れてください(素体の設定より優先されます)。
+      当たり判定は変わりません。
+    </div>
     <label style="display:flex;align-items:center;gap:7px;margin-top:10px">
       <input id="s_season" type="checkbox" style="width:auto"> シーズンパス限定にする(ガチャ・カタログに出さない)
     </label>
@@ -568,6 +575,14 @@
     <div><label>移動速度</label><input id="f_speed" type="number" value="190"></div>
     <div><label>HP</label><input id="f_hp" type="number" value="120"></div>
     <div><label>オーラ</label><select id="f_aura"></select></div>
+  </div>
+  <!-- 絵の見た目の大きさ(任意)。当たり判定(radius)は変えない。
+       空欄=自動(縦横比から計算、上限1.4倍)。書いた数値をそのまま drawScale として書き出す -->
+  <label>絵の大きさ(任意)</label>
+  <input id="f_drawScale" type="number" step="0.05" placeholder="自動(縦横比から計算)">
+  <div class="hint" id="f_drawScaleHint">
+    空欄=自動。横長の絵(ヒノトリ・ドラゴンなど)で小さく見えるときだけ 1.1〜1.4 くらいを入れてください。
+    当たり判定(ヒット判定)は変わらず、見た目の大きさだけが変わります。
   </div>
   <label>特性id(既存と同じidなら説明は追加されません)</label>
   <input id="f_trait" placeholder="burn">
@@ -4535,6 +4550,8 @@ function renderRows(spec, moves, traitExists){
   el.push(`trait:${jsStr(spec.trait)}`);
   for(const opt of ['cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
     if(spec[opt]) el.push(`${opt}:${spec[opt]}`);
+  // 絵の見た目の大きさ(任意)。当たり判定は radius のまま。空欄(undefined)なら書き出さない
+  if(spec.drawScale != null) el.push(`drawScale:${spec.drawScale}`);
   const rows = {};
   rows.ELEMENTS = [`  ${pad(k)}{ ${el.join(', ')} }, ${mark}`];
   const w = spec.walk || {};
@@ -4598,6 +4615,8 @@ function renderSsrRows(ss){
   const f = [`element:${jsStr(ss.element)}`, `name:${jsStr(ss.name)}`,
              `iconImg:${jsStr(ss.iconImg)}`, `playerImg:${jsStr(ss.playerImg)}`];
   if(ss.seasonExclusive) f.push('seasonExclusive:true');
+  // 絵の見た目の大きさ(任意)。書けば素体より優先(data.js側の規則)。空欄なら出さない
+  if(ss.drawScale != null) f.push(`drawScale:${ss.drawScale}`);
   const rows = {};
   rows.SSR_SKINS = [`  ${pad(ss.id,16)}{ ${f.join(', ')} }, ${mark}`];
   rows.SSR_SKIN_AURA = [`  ${pad(ss.id,16)}${jsStr(ss.aura)}, ${mark}`];
@@ -5044,6 +5063,22 @@ function traitOnHitOf(ef){
   for(const k of TRAIT_ON_HIT_KEYS) if(ef[k]) o[k] = ef[k];
   return Object.keys(o).length ? o : null;
 }
+/* 絵の見た目の大きさ(任意)。空欄なら undefined(=このモンスター/スキンでは書き出さない
+   → data.js 側は縦横比から自動で決める)。範囲(0.5〜2.0)の注意は drawScaleWarning が別に見る
+   (ここで弾かない。「注意は出すが送信は止めない」という指示に合わせるため)。 */
+function drawScaleOf(id){
+  const el = $(id);
+  const v = el ? String(el.value).trim() : '';
+  if(v === '') return undefined;
+  const n = Number(v);
+  return isNaN(n) ? undefined : n;
+}
+// 0.5未満/2.0超のときだけ注意文を返す(null=注意なし)。呼び出し側が preflight の行へ足す
+function drawScaleWarning(v){
+  if(v == null) return null;
+  if(v < 0.5 || v > 2.0) return `※ 絵の大きさ ${v} は目安(0.5〜2.0)の外です。極端な値は当たり判定と見た目がずれて見えます。`;
+  return null;
+}
 function collectSpec(){
   const apt = {}; STATS.forEach(s=> apt[s] = $('apt_'+s).value);
   const ef = collectTraitEffects();
@@ -5079,6 +5114,8 @@ function collectSpec(){
   if(acc) spec.accent = acc;
   const sc = collectStateChange();
   if(sc) spec.stateChange = sc;
+  const ds = drawScaleOf('f_drawScale');
+  if(ds != null) spec.drawScale = ds;
   return spec;
 }
 function regKind(){ return $('regKind').value; }
@@ -5187,7 +5224,7 @@ function assetsTarget(){
 function collectSsr(){
   const id = $('s_id').value.trim();
   const base = id.replace(/_ssr$/, '');
-  return {
+  const ss = {
     id, element: $('s_element').value, name: $('s_name').value.trim(),
     aura: $('s_aura').value, seasonExclusive: $('s_season').checked,
     iconImg: `${base}_ssr`, playerImg: `${base}_player_ssr`,
@@ -5200,6 +5237,10 @@ function collectSsr(){
     raidPickup: $('s_raidPickup').checked,
     raidClear: $('s_raidClear').checked,
   };
+  // 絵の見た目の大きさ(任意)。空欄なら書かない(素体の設定か自動へフォールバック)
+  const ds = drawScaleOf('s_drawScale');
+  if(ds != null) ss.drawScale = ds;
+  return ss;
 }
 // 「レイド特効にする」を押した時だけ倍率の入力欄を出す
 $('s_raidEffect').addEventListener('change', ()=>{
@@ -5292,6 +5333,8 @@ async function planMonster(dataJs, uiJs, swJs, lines){
   lines.push('■ data.js / ui.js への追記');
   rowLines(rows, lines);
   walkIssueLines(lines);
+  const dsw = drawScaleWarning(spec.drawScale);
+  if(dsw){ lines.push(''); lines.push(dsw); }
   return { texts, images, message: `モンスター「${spec.label}」を追加した(スタジオ)` };
 }
 // 既存モンスターのSSRスキン
@@ -5358,6 +5401,8 @@ async function planSsr(dataJs, swJs, lines){
   }
   if(walkNote){ lines.push(''); lines.push('※ ' + walkNote + '。'); }
   walkIssueLines(lines);
+  const dsw = drawScaleWarning(ss.drawScale);
+  if(dsw){ lines.push(''); lines.push(dsw); }
   return { texts, images, message: `SSRスキン「${ss.name}」を追加した(スタジオ)` };
 }
 /* SSRスキン専用メディア(演出・BGM・SE・宣伝画像・ガチャのピックアップ)
@@ -5793,6 +5838,9 @@ function fillEditForm(cur){
     if(cur.aura) $('s_aura').value = cur.aura;
     $('s_season').checked = !!s.seasonExclusive;
     $('s_raidClear').checked = !!s.raidClearOnly;
+    // 絵の見た目の大きさ(任意)。元の書き方(小数の丸め)を控えていないので String(値) をそのまま入れる
+    // (t3mult と同じ扱い。drawScale は最初から人が打ち込む数値なので式の書き方は持たない)
+    $('s_drawScale').value = (s.drawScale == null) ? '' : String(s.drawScale);
     /* 覚醒スキン(awakenOf 付き)の tier3 は**元スキンから継承する**
        (data.js の skinTier3Def が awakenOf をたどる)。ここに書くと SSR_SKIN_TIER3 に
        覚醒idの行ができて継承が切れ、元の専用技が消える。欄ごと止めて「継承」と見せる。 */
@@ -5907,7 +5955,9 @@ function readEditForm(cur){
     for(const f of EDIT_SSR_FIELDS){
       const el = $(f.id);
       if(!el) continue;
-      next.ssr[f.field] = f.type === 'bool' ? !!el.checked : strOr(f.id);
+      next.ssr[f.field] = f.type === 'bool' ? !!el.checked
+                         : f.type === 'num'  ? numOr(f.id)
+                         : strOr(f.id);
     }
     next.aura = $('s_aura').value || undefined;
     /* 止めてある欄は「触っていない」。覚醒スキンの tier3(元スキンから継承)と、
@@ -6328,6 +6378,8 @@ async function planEdit(dataJs, uiJs, swJs, lines, metas){
   if(renamed.length) lines.push(`※ 技名を変えたので MOVE_AURA の見出しも直しました(${renamed.map(c=>c.before+'→'+c.after).join(' / ')})`);
   if(traitRow) lines.push(`--- TRAIT_DESC (ui.js)\n+${traitRow}`);
   if(st.cur.unknown.length) lines.push('※ 読めなかった表: ' + st.cur.unknown.join(' / ') + '(触っていません)');
+  const dsCh = changes.find(c => c.field === 'drawScale');
+  if(dsCh){ const dsw = drawScaleWarning(dsCh.after); if(dsw){ lines.push(''); lines.push(dsw); } }
   /* 送る直前に照合する sha。**書き戻すファイル全部**を控える —— data.js だけを見ていると、
      特性を足したときの ui.js を他所の変更ごと上書きしてしまう。
      data.js は「読み込んだとき」の sha、ほかは preflight が取ってきたときの sha。 */
@@ -7478,12 +7530,16 @@ const EDIT_ELEMENT_FIELDS = [
   { id:'f_efGutsRegen', field:'gutsRegenMod', type:'num', jp:'ガッツ回復倍率',   perf:true },
   { id:'f_efSpeed',     field:'speedMod',     type:'num', jp:'移動速度倍率',     perf:true },
   { id:'f_efHitbox',    field:'hitboxMult',   type:'num', jp:'当たり判定倍率',   perf:true },
+  // 絵の見た目の大きさ(任意)。当たり判定は変わらないので性能(perf)には含めない(見た目の扱い)
+  { id:'f_drawScale',   field:'drawScale',    type:'num', jp:'絵の大きさ' },
 ];
 // SSR_SKINS の中で扱う項目(オーラと専用tier3は別の表なので下で扱う)
 const EDIT_SSR_FIELDS = [
-  { id:'s_name',      field:'name',            type:'str',  jp:'表示名', isLabel:true },
-  { id:'s_season',    field:'seasonExclusive', type:'bool', jp:'シーズン限定' },
-  { id:'s_raidClear', field:'raidClearOnly',   type:'bool', jp:'レイド討伐報酬限定' },
+  { id:'s_name',       field:'name',            type:'str',  jp:'表示名', isLabel:true },
+  { id:'s_season',     field:'seasonExclusive', type:'bool', jp:'シーズン限定' },
+  { id:'s_raidClear',  field:'raidClearOnly',   type:'bool', jp:'レイド討伐報酬限定' },
+  // 絵の見た目の大きさ(任意)。当たり判定は変わらないので性能(perf)には含めない(見た目の扱い)
+  { id:'s_drawScale',  field:'drawScale',       type:'num',  jp:'絵の大きさ' },
 ];
 /* 段ごとに「開いて直す」で扱う技のキー。数字は moveNumKeys と同じ表から作る
    (技パネル(§C)の入力欄と1対1。ここに無いキーは読むだけで触らない=元のまま残る)。 */
