@@ -6642,6 +6642,7 @@ function collectStateChange(){
 const MEDIA_ITEMS = [
   { key:'promote',        jp:'ガチャ専用ムービー(昇格演出)', kind:'promote',
     hint:'添付した動画から「音の無い動画」と「音声」を作って、両方を送ります。'
+       + '音声だけ別のファイルを使えます(下の「音声ファイル」に添付してください)。'
        + '本番では共通の昇格演出(ssr_promote)が先に流れてから、この動画に切り替わります。' },
   { key:'bgm.battle',     jp:'専用BGM 残り6人以上', kind:'audio' },
   { key:'bgm.final5',     jp:'専用BGM 残り5人以下', kind:'audio' },
@@ -6675,19 +6676,36 @@ function mediaPath(item, skinId, ext){
   if(a === 'se')      return `audio/se_${skinId}_${b}.${ext}`;
   return `images/promo_${skinId}.${ext}`;
 }
+// 昇格演出のボタン文言(音声ファイルを別で選んでいるかで変わる。唯一の判定箇所)
+function mediaButtonLabel(it){
+  if(it.kind !== 'promote') return '動画から音声を取り出す';
+  const pa = $('md_promoteAudio');
+  return (pa && pa.files && pa.files[0]) ? '無音動画を作る(音声は選んだファイルを使う)' : '無音動画と音声に分ける';
+}
+/* accept は MIME のワイルドカードだけでなく拡張子も並べる。
+   iOSのSafariは accept が "video/*,audio/*" のように複数のワイルドカードだけだと、
+   ファイルアプリ内で音声ファイルが灰色(選べない扱い)になることがある実機報告があるため
+   (フォトライブラリの動画・写真は選べるのに mp3/m4a だけ選べない、という形で症状が出る)。
+   拡張子を一緒に並べると Safari 側の判定がゆるくなり選べるようになる。ここが唯一の accept 定義。 */
+const AUDIO_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.wav,.ogg';
+const VIDEO_ACCEPT = 'video/*,.mp4,.mov,.m4v,.webm';
 function renderMediaItems(){
   $('md_items').innerHTML = MEDIA_ITEMS.map(it=>{
     const k = idsafe(it.key);
     const accept = it.kind === 'image' ? 'image/*'
-                 : it.kind === 'promote' ? 'video/*' : 'video/*,audio/*';
+                 : it.kind === 'promote' ? VIDEO_ACCEPT : (VIDEO_ACCEPT + ',' + AUDIO_ACCEPT);
     const btn = it.kind === 'image' ? ''
-      : `<div class="btns"><button onclick="runMedia('${it.key}')">${
-           it.kind === 'promote' ? '無音動画と音声に分ける' : '動画から音声を取り出す'}</button></div>`;
+      : `<div class="btns"><button id="md_btn_${k}" onclick="runMedia('${it.key}')">${mediaButtonLabel(it)}</button></div>`;
+    const promoteAudio = it.kind === 'promote'
+      ? `<label>音声ファイル(任意・動画と別の音声素材をそのまま使う場合)</label>
+         <input id="md_promoteAudio" type="file" accept="${AUDIO_ACCEPT}">`
+      : '';
     return `<div class="mediaitem">
       <h3>${it.jp}</h3>
       <div class="now" id="md_now_${k}">—</div>
       <div id="md_cpv_${k}"></div>
       <input id="md_f_${k}" type="file" accept="${accept}">
+      ${promoteAudio}
       ${btn}
       <div class="hint" id="md_st_${k}">${it.hint || ''}</div>
       <div id="md_pv_${k}"></div>
@@ -6697,10 +6715,28 @@ function renderMediaItems(){
     const k = idsafe(it.key);
     $('md_f_' + k).addEventListener('change', ()=>{
       if(it.kind === 'image') useImageFile(it.key);
-      else mediaStatus(it.key, '「' + (it.kind === 'promote' ? '無音動画と音声に分ける' :
-        '動画から音声を取り出す') + '」を押してください(音声ファイルを選んだ場合はそのまま使います)。');
+      else if(it.kind === 'promote') mediaStatus(it.key, '「' + mediaButtonLabel(it) + '」を押してください。');
+      else {
+        // 音声ファイルは「動画から取り出す」ボタンを押さなくても、選んだ時点でそのまま採用する
+        // (ボタンの文言が動画前提なので、音声を選んだ人が押す理由に気づけなかった)
+        const f = $('md_f_' + k).files[0];
+        if(f && isAudioFile(f)) runMedia(it.key);   // 音声ファイルは選んだ時点でそのまま採用する
+        else mediaStatus(it.key, '「動画から音声を取り出す」を押してください。');
+      }
     });
   }
+  const pa = $('md_promoteAudio');
+  if(pa) pa.addEventListener('change', ()=>{
+    updatePromoteBtn();
+    const af = pa.files[0];
+    mediaStatus('promote', af
+      ? `「${mediaButtonLabel(MEDIA_ITEMS.find(x=>x.key === 'promote'))}」を押してください。音声は選んだファイル(${af.name})をそのまま使います。` + audioFormatWarn(audioExtFromFile(af))
+      : '「無音動画と音声に分ける」を押してください(音声ファイルを選んでいないので動画から音声を取り出します)。');
+  });
+}
+function updatePromoteBtn(){
+  const b = $('md_btn_promote');
+  if(b) b.textContent = mediaButtonLabel(MEDIA_ITEMS.find(x=>x.key === 'promote'));
 }
 function mediaStatus(key, text, cls){
   const el = $('md_st_' + idsafe(key));
@@ -6784,6 +6820,29 @@ function extOfMime(m){
   return m.indexOf('video') === 0 ? 'mp4' : 'm4a';
 }
 function isAudioFile(f){ return /^audio\//.test(f.type || '') || /\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name); }
+// 音声ファイルの拡張子(ファイル名から。既定は m4a。既存の kind:'audio' の扱いと同じ書き方)
+function audioExtFromFile(f){ return (f.name.split('.').pop() || 'm4a').toLowerCase().replace(/[^a-z0-9]/g, '') || 'm4a'; }
+// iPhoneで鳴らない可能性がある拡張子への注意(実際に鳴らすのはaudio.jsの実音源経路なのでmp3/m4aが無難)
+function audioFormatWarn(ext){
+  return (ext === 'wav' || ext === 'ogg')
+    ? `<br><span style="color:var(--amber)">⚠ .${ext} はiPhoneで鳴らない可能性があります。mp3 か m4a を選び直すことをおすすめします。</span>`
+    : '';
+}
+// ファイルの再生時間を <audio>/<video> の loadedmetadata から読む。取れなくても0を返すだけで投げない
+function fileDuration(file, tag){
+  return new Promise(resolve=>{
+    let done = false;
+    const el = document.createElement(tag === 'video' ? 'video' : 'audio');
+    el.preload = 'metadata';
+    el.muted = true;
+    let url = '';
+    const finish = v=>{ if(done) return; done = true; if(url) try{ URL.revokeObjectURL(url); }catch(e){} resolve(v); };
+    el.addEventListener('loadedmetadata', ()=> finish(el.duration && isFinite(el.duration) ? el.duration : 0));
+    el.addEventListener('error', ()=> finish(0));
+    setTimeout(()=> finish(0), 4000);
+    try{ url = URL.createObjectURL(file); el.src = url; }catch(e){ finish(0); }
+  });
+}
 /* 動画を1回だけ実時間で再生しながら、音声と(必要なら)映像だけを録り直す。
    ・音声は MediaElementSource → MediaStreamDestination へ流す。スピーカーへは繋がないので
      録っている間、端末からは音が出ない。
@@ -6795,7 +6854,9 @@ async function captureFromVideo(file, want, onProg){
   const v = await loadVideo(file);
   let ac = null, raf = 0;
   try{
-    v.muted = false; v.removeAttribute('muted'); v.volume = 1;
+    // 音声を録らない(=映像だけ)ときは端末のスピーカーへ音を出さないようミュートのままにする
+    if(want.audio){ v.muted = false; v.removeAttribute('muted'); v.volume = 1; }
+    else v.muted = true;
     const dur = v.duration || 0;
     if(!dur) throw new Error('動画の長さが取れませんでした');
     if(typeof MediaRecorder === 'undefined')
@@ -6869,8 +6930,27 @@ async function runMedia(key){
   try{
     // すでに音声ファイルなら取り出す必要はない(そのまま送る)
     if(it.kind === 'audio' && isAudioFile(f)){
-      const ext = (f.name.split('.').pop() || 'm4a').toLowerCase().replace(/[^a-z0-9]/g, '') || 'm4a';
-      setMediaResult(key, f, ext, `音声ファイルをそのまま送ります(${Math.round(f.size/1024)}KB)`);
+      const ext = audioExtFromFile(f);
+      setMediaResult(key, f, ext, `音声ファイルをそのまま送ります(${Math.round(f.size/1024)}KB)` + audioFormatWarn(ext));
+      return;
+    }
+    const promoteAudio = it.kind === 'promote' && $('md_promoteAudio') && $('md_promoteAudio').files[0];
+    if(promoteAudio){
+      // 音声は選んだファイルをそのまま使う。動画からは映像だけを録る(音声トラックが無い動画でもよい)
+      mediaStatus(key, '無音の動画を作っています… 0%');
+      const r = await captureFromVideo(f, { video:true }, p=> mediaStatus(key, `無音の動画を作っています… ${p}%`));
+      const aext = audioExtFromFile(promoteAudio);
+      const adur = await fileDuration(promoteAudio, 'audio');
+      setMediaResult(key, r.video.blob, r.video.ext,
+        `無音の動画(${Math.round(r.video.blob.size/1024)}KB)ができました。音声は選んだファイル(${Math.round(promoteAudio.size/1024)}KB)をそのまま使います` +
+        audioFormatWarn(aext));
+      // 演出が終わらないときの保険は、映像と音声の長さの大きいほう+4秒にしておく
+      state.media.next[key].dur = Math.max(r.dur || 0, adur || 0);
+      if(state.media.urls['promote.audio']) URL.revokeObjectURL(state.media.urls['promote.audio']);
+      const au = URL.createObjectURL(promoteAudio);
+      state.media.urls['promote.audio'] = au;
+      state.media.next['promote.audio'] = { blob: promoteAudio, ext: aext };
+      $('md_pv_promote').innerHTML += mediaPreviewHtml('audio', au);
       return;
     }
     mediaStatus(key, '動画を再生しながら取り出しています… 0%');
