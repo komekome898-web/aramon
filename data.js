@@ -1142,7 +1142,34 @@ const SSR_SKIN_TIER3 = {
   warm_ssr:       { name:'俺、参上', dmgMult:1.15,
     move:{ aoeShape:'rect', range:2600, rectWidth:150, projSpeed:3200, telegraphTime:0.6,
            aoeStyle:'shinkansen', pierce:true, selfSpeedBuffOnHit:true } }, /*@warm_ssr*/
-  ganon_ssr:      { name:'魔神炎', dmgMult:1.15 }, /*@ganon_ssr*/
+  /* 怨霊ガノン鳥(フェニックス): 素の「ファイアウェーブ」(rect/lava)を、黒紫の禍々しい炎+
+     3連続のドーム爆風に差し替える専用tier3(発注者依頼・2026-09-04)。
+     ・炎の先端(fillDist)が射程1000を3等分した位置(約333/667/1000)を通過するたびに、
+       その位置へ半径170のドーム爆風を1つ出す(waveBlast。updateAreaEffectsのwaveBlastDoneで
+       二重発火を防ぐ)。ドーム同士の間隔は約333、直径は170×2=340なので重なり幅は約7しかなく、
+       **同じ場所に立ち止まっていても普通は1発しか当たらない**(重ねすぎると射程1000が
+       実質「1回のデカい爆風」になり3連続に見えなくなるため、間隔と半径をほぼ隙間なしに揃えた)。
+     ・爆風に当たった相手は中心から見て反対方向へ260だけ0.28秒かけて強制移動する
+       (waveBlast.knockDist/knockSec。既存のpulledUntil/pulledX/pulledY/pulledSpeedをそのまま使う)。
+     ・威力の答え合わせ: 単体は「炎58 + ドーム1発50 = 108」。SSR倍率1.15で 108*1.15≈124。
+       既存tier3の最高は超雷撃64(×1.15で74)なので、消費ガッツ28・発動後0.5秒の鈍足という
+       代償付きで全モンスター中最高水準になる(発注者方針: 技のエフェクトは負荷が高くても
+       簡略化しない/威力は消費と代償に見合わせる)。
+     ・selfSlowSec:0.5 → fireMoveで attacker.slowUntil = matchTime+0.5 を立てるだけ。
+       既存のslowUntilは速度0.5倍にする(combat.js entityMoveSpeed)ので要求の「0.5倍」と一致する。
+     ・keepBaseColor:true → 素のままだと getMoveEffectColor が本体色を装備オーラの色
+       (ganon_ssrのオーラは'black')へ置き換えてしまい、指定の黒紫#7a18c9が出ない。
+       choco_ssr「ヴァニッシュ」と同じ扱いで本体色を固定する(色の決め打ちは発注者指定の例外)。
+       黒(achromatic)オーラの「外周に煤をまとわせる」演出はkeepBaseColorでも変わらず乗る。
+     ・waveBlast.style:'ganonHellfireBlast' はrender.jsが「黒紫の球体+赤い衝撃輪」の
+       専用描画を選ぶための目印(heartBlast等と同じ仕組み)。 */
+  ganon_ssr:      { name:'魔神炎', dmgMult:1.15, move:{
+    aoeShape:'rect', range:1000, rectWidth:240, dmg:58, cooldown:2.3, gutsCost:28,
+    color:'#7a18c9', aoeStyle:'ganonHellfire', keepBaseColor:true,
+    waveBlast:{ count:3, radius:170, dmg:50, expandTime:0.32, color:'#ff2a2a', knockDist:260, knockSec:0.28,
+                style:'ganonHellfireBlast' },
+    selfSlowSec:0.5,
+  } }, /*@ganon_ssr*/
   // <<AUTO:SSR_SKIN_TIER3>> ここから上へ tools/studio_web.html が新しいSSRスキンの行を追記する
 };
 // スキン装備時の技を「専用技」に解決する(名前と、moveがあれば数値も上書き)。
@@ -1340,6 +1367,7 @@ const UPDATE_HISTORY = [
     { t:'レイドの「1人で挑む」を廃止しました。「部屋を作る」は1人でもそのままスタートでき、空いた枠はマスモン・botが埋めます', g:['multi'] },
     { t:'レイドガチャは機械モンスターピックアップです(電王ライナー・メカビオギドラ・メタルグレイモン。装備するとレイドで特効)', g:['feature','monster'] },
     { t:'レイドガチャの累計回数はレイドごとに数え直します。前回100回引いた人も、今回また100回でSSRレイドカタログがもらえます', g:['feature','general'] },
+    { t:'✨ SSRスキン「怨霊ガノン鳥」の専用技「魔神炎」を追加しました。黒紫の炎が進むのに合わせて爆風が3連続で起こり、当たった相手を吹き飛ばします(消費ガッツ24→28、撃った直後0.5秒は移動が遅くなります)', g:['monster','balance','av'] },
   ]},
   { date:'2026-09-03', items:[
     { t:'✨ SSRスキン「電王ライナー」が登場しました！ レイドガチャとSSRレイドカタログだけで手に入ります(通常のガチャ・SSRカタログには出ません)', g:['feature','monster'] },
@@ -4722,7 +4750,8 @@ const SKIN_MEDIA = {
   },
   ganon_ssr: { /*@ganon_ssr*/
     promote: { video:'video/ganon_ssr_promote', audio:'audio/ganon_ssr_promote_audio.m4a', safetyMs:56122, bgmOnReveal:'lastBattle' },
-    bgm: { final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
+    // 残り6人以上はロビー既定の「いちか」をそのまま流す(発注者指定。専用曲は用意しない)
+    bgm: { battle:'audio/bgm_lobby.mp3', final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
     se: { tier3:'audio/se_ganon_ssr_tier3.m4a', hit:'audio/se_ganon_ssr_hit.m4a', kill:'audio/se_ganon_ssr_kill.m4a' },
     promoImg: 'images/promo_ganon_ssr.png',
   },

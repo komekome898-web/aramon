@@ -4860,6 +4860,67 @@ function fx3dFireWave(ae, curReach, fade){
   for(const c of cols) fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
   fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
 }
+/* 怨霊ガノン鳥「魔神炎」専用の配色(黒紫ベース+赤の禍々しい炎)。**色は決め打ちしない原則の例外**
+   (発注者指定・2026-09-04。rock_ssrのburstTints/satsuki_ssrのハート色と同様の扱い)。
+   getMoveEffectColorはtier3を装備オーラの色(ganon_ssrは'black')へ置き換えてしまうので、
+   data.jsのmove側に keepBaseColor:true を付けて本体色(#7a18c9)を固定してある。
+   ここでは炎の色を auraTint/ae.color からではなく固定値から作るので、その固定は問われない。
+   【レビュー差し戻し 2回目(2026-09-04)】1回目の直しでも根元(body)が明るい紫のままで、
+   fx3dFlameField は3層とも同じ(x,y)の根元を通るため、根元では必ず
+   「k0=body(normal) → k1=hot(加算) → k2=core(加算)」が重なる。紫(青みを持つ)へ赤を
+   加算すると必ず赤紫=マゼンタになる ―― これは配色ではなく**この重なりの算数の帰結**
+   なので、根元の紫(body/smoke)を「ほぼ無彩色に近い暗さ」まで落とし、中間の輝き(hot)も
+   紫ではなく「暗い赤」にして、加算しても色相が0°(赤)寄りに寄るようにした
+   (実際に (body,hot,core) の加算結果をNode側で検算し、根元hue≈260°(暗い紫)・
+   中間hue≈351°(暗い赤)・芯hue≈354°(明るい赤)に収まることを確認済み。300〜340°の
+   マゼンタ域を通らない)。**中間を紫のまま(#5a12a0)にする案は、この重なり方の下では
+   数式的にマゼンタを避けられないため採用しなかった**(発注者提示の#5a12a0は
+   爆風ドーム側=加算されない通常合成の球体色にのみ使う)。 */
+const GANON_HELLFIRE_PURPLE      = '#4a0f80'; // 爆風ドームの球体色(通常合成なので加算の問題が無い。少し暗い紫)
+const GANON_HELLFIRE_RED         = '#ff2a2a'; // 芯・衝撃輪の明るい赤(暗くしすぎない)
+const GANON_HELLFIRE_FLAME_DARK  = '#0a0210'; // 炎の根元の外側。ほぼ黒の紫(いちばん暗い)
+const GANON_HELLFIRE_FLAME_BODY  = '#140a16'; // 炎の根元。ほぼ黒に近い紫(発注者指定範囲相当)
+const GANON_HELLFIRE_FLAME_HOT   = '#9c0e16'; // 中間(root+加算1枚)。暗い赤
+function fx3dGanonHellfireRamp(){
+  // 白寄りの色は一切混ぜない(「芯がピンクに見える」原因だったため)。
+  // body/smokeはほぼ無彩色の暗い紫、hotは暗い赤、明るい赤はcore(芯)だけに絞る。
+  return { smoke:GANON_HELLFIRE_FLAME_DARK, body:GANON_HELLFIRE_FLAME_BODY,
+           hot:GANON_HELLFIRE_FLAME_HOT, core:GANON_HELLFIRE_RED };
+}
+// 帯(魔神炎): fx3dFireWaveと同じ構造(先端の炎の壁+後方の残り火)で、色だけ黒紫+赤に固定する
+function fx3dGanonHellfire(ae, curReach, fade){
+  const ramp = fx3dGanonHellfireRamp();
+  const band = rectOutlinePoints(ae.x, ae.y, ae.angle, curReach, ae.width/2);
+  if(band) fx3dFill(band, ramp.smoke, 0.46*fade, 0);
+  const fx=Math.cos(ae.angle), fy=Math.sin(ae.angle);
+  const rx=-Math.sin(ae.angle), ry=Math.cos(ae.angle);
+  const cols = [];
+  const push=(along, lateral, h, seed)=>{
+    const x = ae.x+fx*along+rx*lateral, y = ae.y+fy*along+ry*lateral;
+    const p = fx3dPoint(x, y, 0);
+    cols.push({ x, y, gz:groundZAt(x,y), h, seed, depth:p?p.depth:0 });
+  };
+  const wallN = 7;
+  for(let i=0;i<wallN;i++){                       // 先端の炎の壁
+    const lat = (i/(wallN-1)-0.5)*ae.width*0.92;
+    push(curReach - ae.width*0.12, lat, FX3D_FLAME_H*(1.0+0.25*fxHash01(ae.id+i*3.7)), ae.id+i);
+  }
+  for(let i=0;i<FX3D_FLAME_N;i++){                // 後方の残り火
+    const h1 = fxHash01(ae.id*5.1 + i*7.3), h2 = fxHash01(ae.id*2.7 + i*11.9);
+    push(curReach*(0.05+0.8*h1), (h2*2-1)*ae.width*0.42, FX3D_FLAME_H*(0.4+0.4*h2), ae.id+i*3);
+  }
+  cols.sort((a,b)=>b.depth-a.depth);
+  for(const c of cols) fx3dFireGlow(c.x, c.y, c.gz, FX3D_FLAME_R*2.2, ramp.hot, fade*0.5);
+  fx3dFlameField(cols, FX3D_FLAME_R*0.9, fade, ramp);
+}
+// 魔神炎の爆風(kind:'circle', style:'ganonHellfireBlast'専用): ドーム本体を黒紫で塗り、
+// 外周に赤い衝撃輪を纏わせる。fx3dDomeBurstの色を上書きするだけで胴体の形は共通のまま
+function fx3dGanonBlastRing(ae, curReach, fade){
+  const rim = fx3dRingPts(ae.x, ae.y, curReach, 3);
+  if(!rim) return;
+  fx3dStroke(rim, GANON_HELLFIRE_RED, 6, 0.9*fade, 40, true);
+  fx3dStroke(rim, '#ffffff', 1.8, 0.6*fade, 41, true);
+}
 /* 柱の太さ。52では柱の外端が通路(=当たり幅)の1.47倍、笠木を入れると2.9倍になり、
    門の開口部ではなく建物全体を当たり範囲と読み違える(実測で柱間隔が判定の1.9倍)。
    通路(halfSpan)は当たり幅そのままで触らず、外へ張り出す量だけ詰める。 */
@@ -5627,7 +5688,9 @@ function fx3dPsychicWall(ae, curReach, fade){
 const FX3D_DOME_NEAR = 200;   // カメラがこの距離まで近ければ胴体を塗らない(輪郭と地面の輪は残す)
 // apexScale: 天辺の白い芯玉だけの大きさ倍率(既定1=今まで通り)。
 // jokerFeather(発注者指摘: 「ドームの明るい球は小さく」)専用に0<1を渡す。他の呼び出しは変えない
-function fx3dDomeBurst(ae, curReach, fade, apexScale){
+// colorOverride: 呼び出し側が色を固定したいとき(魔神炎の黒紫ドーム)に ae.auraTint/ae.color より優先する。
+// 無指定なら従来どおり ae.auraTint||ae.color を読む(既存の呼び出しはすべて非破壊)
+function fx3dDomeBurst(ae, curReach, fade, apexScale, colorOverride){
   const R = curReach;
   /* **カメラがドームの中に入っているときは胴体を塗らない。**
      半径420を術者の足元に出す技(デュラハン最終奥義)は、カメラが術者の145後ろに居るので
@@ -5642,7 +5705,7 @@ function fx3dDomeBurst(ae, curReach, fade, apexScale){
   const camIn = (typeof camPos !== 'undefined' && camPos)
     && Math.hypot(camPos.x - ae.x, camPos.y - ae.y) < R + FX3D_DOME_NEAR;
   const H = Math.max(FX3D_DOME_H_MIN, R*FX3D_DOME_H_RATIO);
-  const col = ae.auraTint || ae.color || '#ffffff';
+  const col = colorOverride || ae.auraTint || ae.color || '#ffffff';
   const sh = auraShades(col);
   const rings = 6;
   // 下から上へ、輪を重ねて塊にする。上の輪ほど明るくして丸みを出す
@@ -6140,16 +6203,23 @@ function drawReal3dAreaEffect(ae, fillDist, fadeAlpha, inTelegraph){
   else if(ae.kind==='zigzag')    fx3dThunder(ae, curReach, fade);
   else if(ae.kind==='fanZigzag') fx3dPsychicWall(ae, curReach, fade);
   else if(ae.kind==='circle'){
-    // jokerFeatherは羽根が主役なので、爆風の天辺の白い球は小さく(発注者指摘2026-09-03)
-    fx3dDomeBurst(ae, curReach, fade, ae.style==='jokerFeather' ? 0.4 : 1);
-    if(ae.style==='heartBlast') fx3dHeartBurstFx(ae, curReach, fade); // 発注者依頼(2026-08-12): 爆風にハートを纏わせる
-    else if(ae.style==='jokerGear') fx3dJokerGearFx(ae, curReach, fade);
-    else if(ae.style==='jokerFeather') fx3dJokerFeatherFx(ae, curReach, fade);
+    if(ae.style==='ganonHellfireBlast'){
+      // 魔神炎の爆風: ドーム本体を黒紫で固定し、外周に赤い衝撃輪を纏わせる
+      fx3dDomeBurst(ae, curReach, fade, 1, GANON_HELLFIRE_PURPLE);
+      fx3dGanonBlastRing(ae, curReach, fade);
+    } else {
+      // jokerFeatherは羽根が主役なので、爆風の天辺の白い球は小さく(発注者指摘2026-09-03)
+      fx3dDomeBurst(ae, curReach, fade, ae.style==='jokerFeather' ? 0.4 : 1);
+      if(ae.style==='heartBlast') fx3dHeartBurstFx(ae, curReach, fade); // 発注者依頼(2026-08-12): 爆風にハートを纏わせる
+      else if(ae.style==='jokerGear') fx3dJokerGearFx(ae, curReach, fade);
+      else if(ae.style==='jokerFeather') fx3dJokerFeatherFx(ae, curReach, fade);
+    }
   }
   else if(ae.kind==='rect'){
     if(ae.style==='crystal')   fx3dCrystalRain(ae, curReach, fade, progress);
     else if(ae.style==='kagune') fx3dKagune(ae, curReach, fade, progress);
     else if(ae.style==='lava') fx3dFireWave(ae, curReach, fade);
+    else if(ae.style==='ganonHellfire') fx3dGanonHellfire(ae, curReach, fade);
     else if(ae.style==='zangetsu') fx3dZangetsu(ae, curReach, fade, progress);
     else if(ae.style==='shinkansen') fx3dShinkansenTrain(ae, curReach, fade, fillDist);
     else if(ae.style==='rollingShell') fx3dRollingShellBall(ae, curReach, fade, fillDist);

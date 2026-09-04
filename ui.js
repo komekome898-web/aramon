@@ -10791,12 +10791,15 @@ function describeMoveFeatureText(mv){
   // 羅生門は「先端」ではなく「門」に届いた瞬間の1回だけなので、通常のendBlast説明とは分ける
   if(mv.aoeShape==='gate' && mv.endBlast) parts.push(`炎が門に届くと半径${mv.endBlast.radius}のドーム状の爆風${mv.endBlast.dmg}でダメージ`);
   else if(mv.endBlast) parts.push(`技の先端に半径${mv.endBlast.radius}の爆風ドーム×${mv.endBlast.count||3}(各${mv.endBlast.dmg})`);
+  // 魔神炎: 炎の進行に合わせて連続で出る爆風。間隔と半径の関係上、普通は1発しか当たらないので合計ではなく1発ぶんの威力を書く
+  if(mv.waveBlast) parts.push(`炎の進行に合わせて半径${mv.waveBlast.radius}のドーム状の爆風が${mv.waveBlast.count||3}回発生(各${mv.waveBlast.dmg})し、当たった相手を反対方向へ吹き飛ばす`);
   if(mv.warheads) parts.push(`黒い核弾頭${mv.warheads.count||1}発を発射し、直撃${mv.warheads.dmg}+着弾点から半径${mv.warheads.blast.radius}へドーム状の爆風${mv.warheads.blast.dmg}`);
   if(mv.gutsDrainRatio) parts.push(`与えたダメージの${Math.round(mv.gutsDrainRatio*100)}%ぶん相手のガッツを削る`);
   if(mv.growWithDistance) parts.push('飛距離が長いほど威力上昇');
   if(mv.closeBonusMax && mv.closeBonusMax>1) parts.push(`命中距離が近いほど威力上昇(最大+${Math.round((mv.closeBonusMax-1)*100)}%)`);
   if(mv.selfMoveWithProjectile) parts.push('発動中は技と同じ速度で自分も前進する移動技');
   if(mv.selfSpeedBuffOnHit) parts.push(`命中時 自分の移動速度${WARM_SHELL_SPEED_BUFF_MULT}倍(${WARM_SHELL_SPEED_BUFF_DURATION}秒間)`);
+  if(mv.selfSlowSec) parts.push(`発動後${mv.selfSlowSec}秒間 自分の移動速度が0.5倍になる`);
   if(mv.multiOrb) parts.push('赤青黄緑のオーラ球体を発射');
   if(!parts.length) parts.push('単体に直撃');
   return parts.join('・');
@@ -10862,8 +10865,10 @@ function buildMastermonMovesHtml(key, opts){
     /* 羅生門(aoeShape:'gate')は「吸い込む炎(mv.dmg)」と「門の爆風(endBlast)」の2段構え。
        **炎のダメージは combat.js の kind==='gate' で実際に applyDamage している**ので、
        ここでも合計に入れる(以前は0扱いで、技一覧だけ炎のぶんが抜けていた。2026-08-19) */
+    // waveBlast(魔神炎)は間隔と半径の関係上、普通は1発しか当たらないので×countはしない(重複はするが同時に全弾は当たらない前提の表示)
     const baseDmg = mv.dmg + (mv.blast ? (mv.blast.dmg||0) : 0)
       + (mv.endBlast ? (mv.endBlast.dmg||0)*(mv.endBlast.count||1) : 0)
+      + (mv.waveBlast ? (mv.waveBlast.dmg||0) : 0)
       + (mv.warheads ? ((mv.warheads.dmg||0) + (mv.warheads.blast ? mv.warheads.blast.dmg||0 : 0)) * (mv.warheads.count||1) : 0);
     const dispDmg = Math.round(baseDmg * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mv, pseudo) : 1));
     /* 覚醒で上がった数字は「前 → 後」で出し、その1項目だけ光らせる。
@@ -10873,6 +10878,7 @@ function buildMastermonMovesHtml(key, opts){
     const plainDmg = mvPlain ? Math.round(
       (mvPlain.dmg + (mvPlain.blast ? (mvPlain.blast.dmg||0) : 0)
        + (mvPlain.endBlast ? (mvPlain.endBlast.dmg||0)*(mvPlain.endBlast.count||1) : 0)
+       + (mvPlain.waveBlast ? (mvPlain.waveBlast.dmg||0) : 0)
        + (mvPlain.warheads ? ((mvPlain.warheads.dmg||0) + (mvPlain.warheads.blast ? mvPlain.warheads.blast.dmg||0 : 0)) * (mvPlain.warheads.count||1) : 0))
       * ((typeof ssrTier3DmgMult==='function') ? ssrTier3DmgMult(mvPlain, pseudoNoBoost) : 1)) : null;
     const plainSpeed = mvPlain ? (isAoe ? Math.max(200, mvPlain.projSpeed||900) : mvPlain.projSpeed) : null;
