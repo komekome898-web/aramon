@@ -433,7 +433,7 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <div id="raidModeOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">週替わりの巨大ボスに挑む協力バトル(3人チーム)</div>
         <div id="raidModeNote" class="raid-mode-note"></div>
-        <button id="raidModeOpenBtn" class="raid-go-btn" style="margin-top:8px;">🐉 レイドバトルへ</button>
+        <button id="raidModeOpenBtn" class="raid-go-btn">🐉 レイドバトルへ</button>
       </div>
       <div id="multiOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBot・マスモンで補完)</div>
@@ -1611,6 +1611,22 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
     <div class="skin-promo-btnrow">
       <button id="metagGaruruPromoCloseBtn" class="skin-promo-close">閉じる</button>
       <button id="metagGaruruPromoGachaBtn" class="skin-promo-gacha">今すぐガチャ</button>
+    </div>
+  </div>
+</div>
+
+<!-- SSR怨霊ガノン鳥(シーズン2パス最終報酬)実装記念ポップアップ。ガチャではなくシーズンパス
+     (ミッション画面のシーズンタブ)へ誘導する。ダイヤ等の付与は無い告知のみ -->
+<div id="ganonPromoOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="skin-promo-box">
+    <img class="skin-promo-img skin-promo-img-caption" src="images/promo_ganon_ssr.png" alt="SSRガノン鳥実装記念">
+    <div class="skin-promo-caption">
+      <div>シーズンパス報酬SSRスキン「怨霊ガノン鳥」登場！</div>
+      <div>シーズン2パスを25段まで進めて手に入れよう</div>
+    </div>
+    <div class="skin-promo-btnrow">
+      <button id="ganonPromoCloseBtn" class="skin-promo-close">閉じる</button>
+      <button id="ganonPromoSeasonBtn" class="skin-promo-gacha">シーズンパスへ</button>
     </div>
   </div>
 </div>

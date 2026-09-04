@@ -151,6 +151,10 @@ const PANELS = [
   { id:'monsterListScreen', name:'モンスター一覧', open:[{call:['openMonsterListScreen']}], noScroll:[] },
   /* るすばん報告: 一覧(#ghostNewsList)だけがスクロールする作りなので、overlay本体は送れてはいけない */
   { id:'ghostNewsOverlay',  name:'るすばん報告',   open:[{call:['openGhostNewsOverlay']}], noScroll:['ghostNewsOverlay'] },
+  { id:'modePickOverlay',  name:'プレイモード',         open:[{btn:'openModePickBtn'}], noScroll:['modePickOverlay'] },
+  /* レイドタブ選択時。「開催中」ポップと「🐉 レイドバトルへ」ボタンの中央寄せをここで見る */
+  { id:'modePickOverlay',  name:'プレイモード(レイド)', open:[{btn:'openModePickBtn'},{sel:'.mode-tab',idx:2}], noScroll:['modePickOverlay'] },
+  { id:'ganonPromoOverlay', name:'ガノン記念ポップ',    open:[{call:['showGanonPromoPopup']}], noScroll:['ganonPromoOverlay'] },
   /* レイド入口。「部屋を作る」の2行化(注釈付き)で .raid-actions が見切れないかを見る。
      開き方は __raidTestOpen(上で定義)。中身の一覧(#raidScroll)だけがスクロールしてよい。 */
   { id:'raidOverlay',       name:'レイド入口',     open:[{call:['__raidTestOpen']}], noScroll:['raidOverlay'] },

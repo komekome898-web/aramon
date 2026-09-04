@@ -346,6 +346,7 @@ const SCROLL_LOCK_EXEMPT_IDS = [
   "bagOverlay", "galleryOverlay", "missionOverlay", "expeditionOverlay",
   "expeditionPickOverlay", "loginBonusPopup", "season1PreviewOverlay", "gachaOverlay",
   "ssrPromoteOverlay", "skinPromoOverlay", "rockSsrPromoOverlay", "metagGaruruPromoOverlay",
+  "ganonPromoOverlay",
   "skinPreviewOverlay", "shopOverlay", "changelogOverlay", "rankingScreen",
   "myStatsScreen", "howToPlayScreen", "mastermonScreen", "resultScreen",
   "monsterListScreen", "adminPassScreen", "adminScreen", "lobbyScreen",
