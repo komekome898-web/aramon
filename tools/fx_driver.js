@@ -363,6 +363,11 @@
       speed: +d.speed || 190, hp: +d.hp || 110, trait: d.trait || '',
     };
     if(d.accent) want.accent = d.accent;
+    /* 見た目だけの倍率(render.js の entityDrawScale が ELEMENTS[key].drawScale として読む。
+       当たり判定radiusには効かない)。**数値のときだけ**入れる ―― 空欄・非数値のままキーを
+       作ると entityDrawScale の `typeof===\'number\'` 判定に落ちて自動計算に化けるだけで実害は
+       無いが、ここで弾いておけば「数値でないものは無視」の意図が動きからも読み取れる。 */
+    if(d.drawScale != null && d.drawScale !== '' && isFinite(+d.drawScale)) want.drawScale = +d.drawScale;
     // 常時の倍率(特性の効果)も、書いてあるものだけ入れる
     for(const k of ['speedMod','cooldownMod','dmgDealtMod','dmgTakenMod','gutsRegenMod','hitboxMult'])
       if(d[k] != null) want[k] = +d[k];
