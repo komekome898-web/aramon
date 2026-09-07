@@ -1389,6 +1389,8 @@ const UPDATE_HISTORY = [
   { date:'2026-09-07', items:[
     { t:'🌱 難易度「やさしい」で、敵に狙いが自動で合うようになりました(タップした敵を追い続け、照準の近くの敵へ少し引き寄せます)', g:['feature','solo'] },
     { t:'🏅 段位ランキングを「今シーズン」と「通算」で切り替えられるようにしました。既定は今シーズンです', g:['feature','general'] },
+    { t:'🔥 難易度「ハード」を追加しました。上位プレイヤーが育てたモンスターが敵として出てきます。段位RPと経験値が増える代わりに、負けたときの下がり幅も大きくなります', g:['feature','solo','balance'] },
+    { t:'🎰 ガチャのピックアップが日替わりになりました。日によって出やすいSSRスキンが変わります', g:['feature','general'] },
   ]},
   { date:'2026-09-04', items:[
     { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされます', g:['feature','general'] },
@@ -4244,7 +4246,9 @@ function rankRpForMatch(o){
   }
   const killRp = Math.min(RANK_RP_KILL_MAX, Math.max(0, Math.round(o.kills||0)) * RANK_RP_PER_KILL);
   const mult = RANK_RP_MULT[o.mode] != null ? RANK_RP_MULT[o.mode] : RANK_RP_MULT.multi;
-  return Math.round((base + killRp) * mult);
+  // 難易度「ハード」は増減とも倍率を掛ける(ハイリスク・ハイリターン。matchRankRpMult()が正)
+  const hardMult = (typeof matchRankRpMult==='function') ? matchRankRpMult() : 1;
+  return Math.round((base + killRp) * mult * hardMult);
 }
 function loadRank(){
   const key = seasonStateKey();
@@ -4964,7 +4968,19 @@ function weightedPickRarity(guaranteedSRplus){
    【複数体を並べられる】2026-08-17のダブルピックアップから配列にした。
    ピックアップ側の1%は並べた体数で等分するので、2体なら各0.5%になる。
    ここを1行変えるだけで、抽選・提供割合の表・ガチャ画面の札・記念ポップアップが
-   まとめて追従する(手書きの対応表を増やさない)。 */
+   まとめて追従する(手書きの対応表を増やさない)。
+
+   【2026-09-07 日替わりピックアップ】下の4定数は「今のピックアップ」を直接持つのを
+   やめ、GACHA_DAILY_PICKUPS(曜日ごとの表)から gachaPickupOfToday() が毎回選ぶ形に
+   した。この4定数は**そのまま残してある**——tools/studio_web.html が行頭一致
+   (`/^const GACHA_PICKUP_SSR_IDS = .*$/m` 等)でこの行そのものを書き換えるため、形を
+   崩すとスタジオの「ピックアップに設定」が動かなくなる。
+   ただし今は「日替わりを止めて固定したいときの上書き値」という役目に変わっている。
+   GACHA_PICKUP_ROTATION_ENABLED が既定の true のあいだはこの4定数は読まれない。
+   スタジオでピックアップを書き込んだあと、それを実際に効かせたい(=日替わりを止めて
+   固定する)ときは、GACHA_PICKUP_ROTATION_ENABLED を手で false にすること
+   ——スタジオの書き換え自体はこの行を触らないので、書き込むだけでは自動では効かない。
+   これは書き換えを壊さない範囲での妥協で、完全な自動優先はできていない。 */
 const GACHA_PICKUP_SSR_IDS = ['satsuki_ssr', 'tsukasa_ssr']; /*@pickup*/
 /* PICK UPの札に出す文字。**2体以上のときは名前を並べると札(画面の46%)で切れる**
    ので、キャンペーンの短い名前を置く。null なら1体目のスキン名をそのまま出す。 */
@@ -4979,7 +4995,43 @@ const GACHA_PICKUP_PROMO_LINES = [
   'セクシーvsプリティー　あなたはどっち派？',
   '専用技&ボイス&BGM&ムービー搭載',
 ];
-function isGachaPickupSsr(id){ return GACHA_PICKUP_SSR_IDS.indexOf(id) >= 0; }
+// true(既定)= 日替わり優先。false = 上の4定数(スタジオの固定書き込み)を使う
+const GACHA_PICKUP_ROTATION_ENABLED = true;
+/* 曜日(Date#getDay の 0=日〜6=土)ごとのピックアップ表。**曜日にした理由**:
+   循環配列だと「何日目か」を出すのに導入日(エポック)をどこかに持たないといけないが、
+   曜日は new Date().getDay() だけで決まり、起点日を持たずに済む。7日で一巡するので
+   「今日は何の日」も定着しやすい。
+   各枠の ids は必ず gachaSsrSkinIds() が返すもの(=通常のスキンガチャに出るSSR)から
+   選ぶこと。シーズン限定・レイド限定・覚醒後のスキンは入れない(入れてもピックアップ
+   としては機能せず、gachaRateTable 側で「その他SSR」に混ざるだけになる)。
+   label/promoImg/promoLines は null で構わない(それぞれ1体目の名前・promoImg・
+   宣伝文なしにフォールバックする。gachaPickupOfToday() 参照)。
+   月曜(1)は導入時点で動いていたキャンペーン(荒モン100%)をそのまま据えてある。 */
+const GACHA_DAILY_PICKUPS = {
+  0: { ids:['rock_ssr','guts_ssr','aqua_ssr'],        label:null, promoImg:null, promoLines:null },
+  1: { ids:['satsuki_ssr','tsukasa_ssr'], label:'荒モン100%', promoImg:'images/promo_aramon100.jpg',
+       promoLines:['荒モン100%ダブルピックアップ！','セクシーvsプリティー　あなたはどっち派？','専用技&ボイス&BGM&ムービー搭載'] },
+  2: { ids:['garurumon_ssr','metag_ssr','mocchi_ssr'], label:null, promoImg:null, promoLines:null },
+  3: { ids:['phoenix_ssr','tamamo_ssr','iblees_ssr'],  label:null, promoImg:null, promoLines:null },
+  4: { ids:['zeus_ssr','choco_ssr','persephone_ssr'],  label:null, promoImg:null, promoLines:null },
+  5: { ids:['oki_ssr','leaf_ssr','narga_ssr'],         label:null, promoImg:null, promoLines:null },
+  6: { ids:['suezo_ssr','zan_ssr'],                    label:null, promoImg:null, promoLines:null },
+};
+/* 今日のピックアップ({ids, label, promoImg, promoLines})を返す。呼ぶたびに端末の
+   ローカル日付で判定する(editionByDate と同じ「端末のローカル日付」だが、こちらは
+   開きっぱなしでも呼ぶたびに再判定する。ガチャ抽選・画面表示のたびに呼ばれる軽い処理
+   なので、読み込み時に一度だけ決める必要が無い)。
+   ガチャ画面・記念ポップアップ・提供割合表・抽選(isGachaPickupSsr)は必ずこの関数を
+   通す(GACHA_PICKUP_SSR_IDS 等を直接読まない。手書きの対応表を増やさない)。 */
+function gachaPickupOfToday(){
+  if(!GACHA_PICKUP_ROTATION_ENABLED){
+    return { ids:GACHA_PICKUP_SSR_IDS, label:GACHA_PICKUP_LABEL,
+             promoImg:GACHA_PICKUP_PROMO_IMG, promoLines:GACHA_PICKUP_PROMO_LINES };
+  }
+  const day = new Date().getDay();
+  return GACHA_DAILY_PICKUPS[day] || GACHA_DAILY_PICKUPS[0];
+}
+function isGachaPickupSsr(id){ return gachaPickupOfToday().ids.indexOf(id) >= 0; }
 function pickGachaSsrSkinId(){
   const ids    = gachaSsrSkinIds();
   const pickup = ids.filter(isGachaPickupSsr);
@@ -4996,9 +5048,24 @@ function skinPromoImgUrl(skinId){
   const m = skinMediaOf(skinId);
   return (m && m.promoImg) || null;
 }
-// スキンガチャの告知画像のURL(キャンペーンの絵が無ければ1体目のスキンの promoImg)
+/* スキンガチャの告知画像のURL。
+   1. 今日のピックアップにキャンペーンの絵(today.promoImg)があればそれ
+   2. 無ければ、今日のピックアップの中で SKIN_MEDIA[id].promoImg を持つものを探す(先頭優先)
+   3. **それも無ければ、他のスキンの絵(轟金剛の既定画像など)へは絶対に逃がさない。**
+      「今日のピックアップに入っていないスキンの絵が出る」のは告知として嘘になるため
+      (2026-09-08に発注者指摘。以前はここで 'images/promo_rock_ssr.jpeg' へ落としていた)。
+      代わりに今日のピックアップ1体目の見た目(iconImg=正面)を使う。専用の告知画像では
+      ないが、少なくとも「今日のピックアップの絵」ではある。iconImgのURLの作り方は
+      ssrSkinImagesの読み込みと同じ imgSrcFor() を使う(新しい対応表を作らない)。 */
 function gachaPickupPromoImgUrl(){
-  return GACHA_PICKUP_PROMO_IMG || skinPromoImgUrl(GACHA_PICKUP_SSR_IDS[0]) || 'images/promo_rock_ssr.jpeg';
+  const today = gachaPickupOfToday();
+  if(today.promoImg) return today.promoImg;
+  for(const id of today.ids){
+    const url = skinPromoImgUrl(id);
+    if(url) return url;
+  }
+  const first = SSR_SKINS[today.ids[0]];
+  return first ? imgSrcFor(`monsters/${first.iconImg}`) : null;
 }
 gachaPickupPromoImg.src = gachaPickupPromoImgUrl();
 // レイドガチャの告知画像のURL(キャンペーンの絵=RAID_GACHA_PROMO_IMGが無ければ1体目のpromoImg)
@@ -5427,6 +5494,10 @@ const TUTORIAL_REWARD = { dia: 60, items: [{ key:'freeTrainTicket', n: 3 }] };
      ranked:false ではランキング送信と段位RPを止めるが、**ダイヤ・EXPは従来どおり入る**
      (発注者決定 2026-08-22)。
    ===================================================================== */
+// ハードの段位RP・経験値の倍率(増える方も減る方も同じ倍率。発注者決定「ハイリスク・ハイリターン」)。
+// 名前付き定数にしてこの表のすぐ上に置く(発注者が実機で調整する用)。
+const MATCH_HARD_RP_MULT  = 1.5;   // 段位RPの増減(勝ちも負けも)に掛ける
+const MATCH_HARD_EXP_MULT = 1.5;   // 経験値に掛ける
 const MATCH_DIFFICULTIES = [
   { id:'normal', label:'ふつう',   icon:'⚔️', ranked:true,
     note:'記録に残る本番。ランキングと段位RPが動く',
@@ -5436,6 +5507,12 @@ const MATCH_DIFFICULTIES = [
     botPowerMult: TUTORIAL_MATCH.botPowerMult,   // 正は TUTORIAL_MATCH(ここは読むだけ)
     botThinkMult: TUTORIAL_MATCH.botThinkMult,   // 同上
     autoAim: true },   // オートエイム(継続ロックオン+弱い引き寄せ)。normalには付けない
+  { id:'hard',   label:'ハード',   icon:'🔥', ranked:true,
+    note:'上位プレイヤーが育てたモンスターが敵として出てくる。段位RPと経験値が増える代わりに、負けたときの下がり幅も大きい',
+    botPowerMult: 1.3,   // 敵(ゴーストで埋まらない分の強化bot)のステータス上限を3割増しにする
+    botThinkMult: 0.7,   // botの考え直す間隔を3割縮める(反応が速くなる)
+    rpMult: MATCH_HARD_RP_MULT,
+    expMult: MATCH_HARD_EXP_MULT },
 ];
 const MATCH_DIFFICULTY_DEFAULT = 'normal';                   // 既定は今までどおりの試合
 const MATCH_DIFFICULTY_KEY = 'aramon_match_difficulty_v1';   // 端末ごとの選択(localStorage)
@@ -5481,19 +5558,30 @@ function matchDifficultyRanked(){
 }
 
 /* ===== 手加減の倍率(チュートリアルの練習試合と難易度をまとめた1つの入口) =====
-   両方が効く場面(練習試合を「やさしい」のまま遊ぶ)では**掛け算にせず、手加減が強いほうだけ**を採る。
-   掛けると 0.6×0.6=0.36 / 2.2×2.2=4.84 と、どちらの設計値でもない別物になるうえ、
+   練習試合(tutorialMatch)の間だけは**掛け算にせず、手加減が強いほう(=より弱いbot)**を採る。
+   掛けると 0.6×0.6=0.36 と、どちらの設計値でもない別物になるうえ、
    **練習試合の手応えが難易度の選択で変わってしまう**(練習試合は1ミリも変えない、が条件)。
-   やさしいの係数は TUTORIAL_MATCH と同じ値なので、練習試合は選択に関係なく従来どおり。 */
-function matchBotPowerMult(){   // bot のステータス合計の上限に掛ける(小さいほど弱い)
-  const tut = (typeof game!=='undefined' && game && game.tutorialMatch) ? TUTORIAL_MATCH.botPowerMult : 1;
+   やさしいの係数は TUTORIAL_MATCH と同じ値なので、練習試合は選択に関係なく従来どおり
+   ―― ハード(1を超える強化)を選んでいても、練習試合はTUTORIAL_MATCHより強くならない。
+   **練習試合でないときは難易度の値をそのまま返す**(ハードの「1を超える」強化がここで
+   1に丸められてしまわないように)。 */
+function matchBotPowerMult(){   // bot のステータス合計の上限に掛ける(小さいほど弱い、大きいほど強い)
   const dif = matchDifficultyApplies() ? matchDifficulty().botPowerMult : 1;
-  return Math.min(tut, dif);
+  if(!(typeof game!=='undefined' && game && game.tutorialMatch)) return dif;
+  return Math.min(TUTORIAL_MATCH.botPowerMult, dif);
 }
-function matchBotThinkMult(){   // bot が考え直す間隔に掛ける(大きいほど反応が鈍い)
-  const tut = (typeof game!=='undefined' && game && game.tutorialMatch) ? TUTORIAL_MATCH.botThinkMult : 1;
+function matchBotThinkMult(){   // bot が考え直す間隔に掛ける(大きいほど反応が鈍い、小さいほど速い)
   const dif = matchDifficultyApplies() ? matchDifficulty().botThinkMult : 1;
-  return Math.max(tut, dif);
+  if(!(typeof game!=='undefined' && game && game.tutorialMatch)) return dif;
+  return Math.max(TUTORIAL_MATCH.botThinkMult, dif);
+}
+/* 段位RP・経験値の倍率(ハードだけ1以外になる)。**呼ぶ側は id で分岐せず、この2関数だけ見る。**
+   表(MATCH_DIFFICULTIES)に rpMult/expMult が無い行は1(倍率なし)として扱う。 */
+function matchRankRpMult(){
+  return (matchDifficultyApplies() && matchDifficulty().rpMult) ? matchDifficulty().rpMult : 1;
+}
+function matchExpMult(){
+  return (matchDifficultyApplies() && matchDifficulty().expMult) ? matchDifficulty().expMult : 1;
 }
 
 /* ===== オートエイム(難易度「やさしい」限定。スマホ操作が苦手な人向け・発注者要望 2026-09-07) =====
