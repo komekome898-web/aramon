@@ -273,6 +273,7 @@ window.addEventListener('pointermove', (e)=>{
   // タップ位置の記録だけは続け(スワイプ扱いでタップ判定を弾くため)、視点操作だけ止める。
   if(typeof spectatingNow==='function' && spectatingNow()) { lookDrag.lastX=e.clientX; lookDrag.lastY=e.clientY; return; }
   camSnap.active = false;
+  autoAimLockId = null;   // 自分でドラッグしたらオートエイムの継続ロックオンも即解除
   const dx = e.clientX-lookDrag.lastX, dy = e.clientY-lookDrag.lastY;
   lookDrag.lastX = e.clientX; lookDrag.lastY = e.clientY;
   applyLookDelta(dx, dy);
@@ -384,6 +385,7 @@ window.addEventListener('pointermove', (e)=>{
   // 観戦中は見ている本体の向きへ自動追従する(canvas側のドラッグと同じ扱い)
   if(typeof spectatingNow==='function' && spectatingNow()) return;
   camSnap.active = false;                          // 自分で狙い始めたら敵タップのスナップは解除
+  autoAimLockId = null;                            // オートエイムの継続ロックオンも即解除
   applyLookDelta(dx, dy);
 });
 /* 離す。捕まえた指と同じIDのときだけ効かせる ── IDを見ないと、離した直後に

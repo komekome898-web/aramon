@@ -1932,6 +1932,7 @@ function updateCamera(dt){
   camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
   camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
   camPos.z = v.z + camState.height;
+  applyAutoAimAssist(dt);   // オートエイム「弱い引き寄せ」。効かない試合・観戦中は関数内で何もしない
   updateMatchSignals();
 }
 /* 試合中に毎フレーム出す「自機まわりの合図」。
@@ -1964,13 +1965,21 @@ function playerGutsShort(){
   const mv = activeMove(player);
   return !!mv && player.guts < effectiveGutsCost(player, mv);
 }
+/* オートエイム(やさしい限定)の継続ロックオン対象。**idで持つ**(直接参照だと、
+   死んで別のエンティティに差し替わっても古いオブジェクトを握り続けてしまうため。
+   getEntity(id)で毎フレーム引き直す)。書くのは startCameraSnap() / updateAutoAimLock() /
+   beginSummonIntro()(試合開始時のリセット)/ input.js の視点ドラッグ解除処理だけ。 */
+let autoAimLockId = null;
 function updateCameraSnap(dt){
-  if(!camSnap.active) return;
-  camSnap.t += dt;
-  const t = clamp(camSnap.t/camSnap.duration, 0, 1);
-  const eased = 1 - Math.pow(1-t, 3);
-  camState.yaw = lerp(camSnap.fromYaw, camSnap.toYaw, eased);
-  if(t>=1) camSnap.active=false;
+  if(camSnap.active){
+    camSnap.t += dt;
+    const t = clamp(camSnap.t/camSnap.duration, 0, 1);
+    const eased = 1 - Math.pow(1-t, 3);
+    camState.yaw = lerp(camSnap.fromYaw, camSnap.toYaw, eased);
+    if(t>=1) camSnap.active=false;
+    return;
+  }
+  updateAutoAimLock(dt);   // 一発スナップが終わったあとの継続追従(オートエイムが効くときだけ動く)
 }
 function startCameraSnap(target){
   const desired = angTo(player, target);
@@ -1982,7 +1991,53 @@ function startCameraSnap(target){
   camSnap.toYaw = camState.yaw + diff;
   camSnap.t = 0;
   camSnap.duration = 0.28;
+  // オートエイムが効くときだけ、このタップを継続ロックオンへ引き継ぐ(それ以外は従来どおり一発きり)
+  autoAimLockId = autoAimEnabled() ? target.id : null;
   pushToast(`${target.name} に視点を合わせた`);
+}
+/* 【オートエイム: 射程判定】継続ロックオン・弱い引き寄せの両方が使う共通の距離判定。
+   角度(視野・照準の範囲)の判定は目的ごとに広さが違うので呼び出し側でそれぞれ行う。 */
+function autoAimInRange(ent){
+  if(!player || !ent) return false;
+  const mv = activeMove(player);
+  const range = (mv && mv.range) || AUTO_AIM_FALLBACK_RANGE;
+  return dist(player, ent) <= range;
+}
+/* 【オートエイム: 継続ロックオン】敵タップ後、その敵が生きていて射程・視野に入っているあいだ、
+   視点をこの関数でゆるく追い続ける(1秒あたり AUTO_AIM_LOCK_TURN_DEG_PER_SEC 度までしか回さない
+   速度制限つきなので、対象が急に動いても視点はワープしない)。
+   プレイヤーが自分でドラッグしたら input.js 側で autoAimLockId=null にして即解除する。 */
+function updateAutoAimLock(dt){
+  if(!autoAimLockId) return;
+  if(!game.started || game.over || !autoAimEnabled() || !player || !player.alive){ autoAimLockId = null; return; }
+  const t = getEntity(autoAimLockId);
+  if(!t || !t.alive || !autoAimInRange(t)){ autoAimLockId = null; return; }
+  const desired = angTo(player, t);
+  const halfFov = FOV_V/2;   // 視野=視点設定の視野角(lookSettings.fovDeg。real3d側と共通のFOV_V)
+  if(Math.abs(angleDiff(desired, camState.yaw)) > halfFov){ autoAimLockId = null; return; }
+  const diff = angleDiff(desired, camState.yaw);
+  const maxStep = AUTO_AIM_LOCK_TURN_DEG_PER_SEC*Math.PI/180*(dt||0);
+  camState.yaw += clamp(diff, -maxStep, maxStep);
+}
+/* 【オートエイム: 弱い引き寄せ】ロックオンの有無に関わらず毎フレーム働く。
+   照準の中心付近(±AUTO_AIM_ASSIST_CONE_DEG)にいちばん近い敵へ、
+   1秒あたり AUTO_AIM_ASSIST_MAX_DEG_PER_SEC 度だけ視点を寄せる。
+   **プレイヤーの入力を上書きしない**(camState.yawへ足すだけで、ドラッグやジョイスティックの
+   処理は一切触らない。継続ロックオン中は既にその敵を向いているので実質的に無効化される)。 */
+function applyAutoAimAssist(dt){
+  if(!game.started || game.over || !autoAimEnabled() || !player || !player.alive || spectatingNow()) return;
+  const halfCone = AUTO_AIM_ASSIST_CONE_DEG*Math.PI/180;
+  let best=null, bestDiff=Infinity;
+  for(const e of entities){
+    if(!e.alive || e===player || e.isPlayer) continue;
+    if(!autoAimInRange(e)) continue;
+    const diff = Math.abs(angleDiff(angTo(player, e), camState.yaw));
+    if(diff <= halfCone && diff < bestDiff){ bestDiff = diff; best = e; }
+  }
+  if(!best) return;
+  const diff = angleDiff(angTo(player, best), camState.yaw);
+  const maxStep = AUTO_AIM_ASSIST_MAX_DEG_PER_SEC*Math.PI/180*(dt||0);
+  camState.yaw += clamp(diff, -maxStep, maxStep);
 }
 function turnCameraByDegrees(deg){
   camSnap.active = true;
@@ -2516,6 +2571,7 @@ function beginSummonIntro(){
   introState.shuwaaPlayed = false;
   introState.impactDone = false;
   camSnap.active = false;
+  autoAimLockId = null;   // 前の試合のロックオン先(idが同じでも別の敵)を持ち越さない
   updateCamera();
   updateHUD();
   bgmSetTrack(null);      // 演出中はBGMを止めて神々しさを際立たせる

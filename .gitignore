@@ -21,3 +21,4 @@ shots_agent/
 
 # Claude Code の端末ごとの許可設定(共有しない)
 .claude/settings.local.json
+node_modules/

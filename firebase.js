@@ -97,6 +97,10 @@
                集計は端末側(loadRank().elem)が正で、ここは最新値を上書きするだけ。
                `|| null` も使わない(0 と 未記録 を区別する必要がないうえ、負の値が消える)。 */
             rankRpSum: entry.rankRpSum != null ? entry.rankRpSum : 0,
+            /* この行を書いたときのシーズン(entry.season = ui.js の seasonStateKey())。
+               「今シーズン」ランキングはこれで絞り込む(ui.js側)。この行が無い/違うシーズンの
+               ときは rankPoint も持ち越さない(すぐ下のコメント参照)。 */
+            season: entry.season || null,
             /* キル数・ダメージ数の集計先。**シングルとチーム戦を混ぜない。**
                シングルは通常マップ/リアルマップで分け、チーム戦(スクワッド・20チームBR・
                アリーナ)はマップを問わずTeamへ入れる。1人で戦う記録とチームで積んだ記録は
@@ -118,6 +122,13 @@
         const damageReal = cur.damageReal||0;
         const killsTeam = cur.killsTeam||0;
         const damageTeam = cur.damageTeam||0;
+        /* 【段位ランキングがシーズンをまたいで前シーズンの値のまま】の原因はここ。
+           rankPointは通常Math.maxで積み上げる(同シーズン内で下振れした再送に負けないため)が、
+           そのままだとシーズンが変わって entry.rankPoint が0から積み直しても
+           前シーズンの高い値がずっと残り続ける。**保存済みの行のシーズン(cur.season)が
+           今回のシーズン(entry.season)と違う/そもそも無い(この対応より前の記録)ときは、
+           前シーズンぶんを持ち越さず今回の値をそのまま採用する**(同シーズン内はこれまで通りmax)。 */
+        const sameSeason = !!entry.season && cur.season === entry.season;
         return {
           name: entry.name, element: entry.element, elementLabel: entry.elementLabel,
           skin: entry.skin || cur.skin || null,  // 直近の装備スキンを優先(未装備なら従来値を維持)
@@ -125,8 +136,9 @@
           mastermonLevel: Math.max(cur.mastermonLevel||0, entry.mastermonLevel||0) || null,
           mastermonRebirth: Math.max(cur.mastermonRebirth||0, entry.mastermonRebirth||0) || null,
           mastermonStatTotal: Math.max(cur.mastermonStatTotal||0, entry.mastermonStatTotal||0) || null,
-          rankPoint: Math.max(cur.rankPoint||0, entry.rankPoint||0) || null,
+          rankPoint: (sameSeason ? Math.max(cur.rankPoint||0, entry.rankPoint||0) : (entry.rankPoint||0)) || null,
           rankRpSum: entry.rankRpSum != null ? entry.rankRpSum : (cur.rankRpSum||0),
+          season: entry.season || null,
           killsNormal: (isReal||isTeam) ? killsNormal : Math.max(killsNormal, entry.kills||0),
           damageNormal: (isReal||isTeam) ? damageNormal : Math.max(damageNormal, entry.damage||0),
           killsReal: isReal ? Math.max(killsReal, entry.kills||0) : killsReal,
