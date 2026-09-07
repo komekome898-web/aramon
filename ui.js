@@ -2927,17 +2927,30 @@ function setGachaMode(mode){
   gachaMode = (mode==='raid') ? 'raid' : 'skin';
   document.querySelectorAll('.gacha-tab').forEach(t=>t.classList.toggle('active', t.dataset.gacha===gachaMode));
   const raid = gachaMode==='raid';
-  /* ピックアップの名前は両タブともピックアップの定数から作る
-     (data.js の GACHA_PICKUP_SSR_IDS / GACHA_PICKUP_LABEL / RAID_GACHA_PICKUP_IDS /
-      RAID_GACHA_PICKUP_LABEL を変えればここも追従する)。
+  /* ピックアップの名前は両タブともピックアップの定数から作る(スキン側は日替わり。
+     data.js の gachaPickupOfToday() / RAID_GACHA_PICKUP_IDS / RAID_GACHA_PICKUP_LABEL
+     を変えればここも追従する)。
      **入れるのは名前だけ。** 「PICK UP」の札はHTML側に固定で置いてあるので、
      ここで飾りの文字を混ぜない(名前が長いときに札ごと切れてしまう)。
      どちらも2体以上並ぶことがあり、名前を連結すると札の幅で切れるので、
-     キャンペーン名(GACHA_PICKUP_LABEL/RAID_GACHA_PICKUP_LABEL)があればそれを出す。 */
+     キャンペーン名(label/RAID_GACHA_PICKUP_LABEL)があればそれを出す。 */
   const pickupName = (id, alt)=> SSR_SKINS[id] ? skinMeta(id).name : alt;
+  const todayPickup = (typeof gachaPickupOfToday==='function') ? gachaPickupOfToday() : null;
+  // 今日のピックアップが2体以上でキャンペーン名も無いときは「◯◯ほか」で複数いることが分かるようにする
+  const todayTitle = ()=>{
+    if(!todayPickup) return 'SSR';
+    if(todayPickup.label) return todayPickup.label;
+    const name = pickupName(todayPickup.ids[0], 'SSR');
+    return todayPickup.ids.length > 1 ? `${name}ほか` : name;
+  };
   document.getElementById('gachaTitlePickup').textContent = raid
     ? (RAID_GACHA_PICKUP_LABEL || pickupName(RAID_GACHA_PICKUP_IDS[0], 'レイド特効'))
-    : (GACHA_PICKUP_LABEL || pickupName(GACHA_PICKUP_SSR_IDS[0], 'SSR'));
+    : todayTitle();
+  /* 【日替わりの一言】「PICK UP」の札そのものへ日替わりであることを添える。
+     レイドは日替わりではない(RAID_GACHA_PICKUP_IDSは版で固定)ので変えない。
+     新しい要素は足さず、HTML側に既にある札(.gacha-pickup-tag)の文字を差し替えるだけ。 */
+  const tagEl = document.querySelector('.gacha-pickup-tag');
+  if(tagEl) tagEl.textContent = raid ? 'PICK UP' : '本日のPICK UP';
   // 開催前は引けない。ボタンとゲージの上に「近日公開」を被せる
   const locked = raid && !raidGachaOpenNow();
   document.getElementById('gachaSoonMask').classList.toggle('hidden', !locked);
@@ -3060,9 +3073,12 @@ maybeFlushPendingPromoPopups();
    **一度閉じたら出さない。ピックアップが変わったときだけ新しい告知として1回出す。**
    (以前はログインのたび毎回出していたため、起動の初手が広告を閉じる作業になっていた)
    ダイヤ500個の付与は1アカウント1回のみ。
-   出す画像・文言はスキンガチャのピックアップ(GACHA_PICKUP_SSR_IDS まわりの定数)から
-   作るので、ピックアップを差し替えるとポップアップの絵も宣伝文も自動で入れ替わる
-   (要素のIDは轟金剛のときのまま)。 */
+   出す画像・文言はスキンガチャのピックアップ(data.js の gachaPickupOfToday())から
+   作るので、ピックアップが変わるとポップアップの絵も宣伝文も自動で入れ替わる
+   (要素のIDは轟金剛のときのまま)。
+   【2026-09-07】ピックアップが日替わりになったので、**署名(rockSsrPromoSignature)は
+   「今のピックアップの中身」から切り離してある。** 今のピックアップそのものを署名に
+   すると、日替わりのたびに「新しい告知」として毎日ポップアップが出てしまうため。 */
 const ROCK_SSR_PROMO_KEY = 'aramon_promo_rockssr_v1';       // ダイヤ受け取り済み(アカウント同期)
 const ROCK_SSR_PROMO_PENDING_KEY = 'aramon_promo_rockssr_pending_v1'; // 未確認=表示中(端末ローカル)
 const ROCK_SSR_PROMO_SEEN_KEY = 'aramon_promo_rockssr_seen_v1';       // 既読の署名(端末ローカル)
@@ -3077,10 +3093,12 @@ function promoPickupImgUrl(){
       || ((typeof skinPromoImgUrl==='function' && typeof RAID_GACHA_PICKUP_IDS!=='undefined') ? skinPromoImgUrl(RAID_GACHA_PICKUP_IDS[0]) : null);
   return (typeof gachaPickupPromoImgUrl==='function') ? gachaPickupPromoImgUrl() : null;
 }
-// 画像の下に出す宣伝文。レイドのピックアップには無い(キャンペーンの文言なので)
+// 画像の下に出す宣伝文。レイドのピックアップには無い(キャンペーンの文言なので)。
+// スキン側は今日のピックアップ(gachaPickupOfToday)の promoLines を出す(無い日は何も出さない)
 function promoPickupLines(){
   if(promoIsRaidPickup()) return [];
-  return (typeof GACHA_PICKUP_PROMO_LINES!=='undefined' && GACHA_PICKUP_PROMO_LINES) || [];
+  const today = (typeof gachaPickupOfToday==='function') ? gachaPickupOfToday() : null;
+  return (today && today.promoLines) || [];
 }
 function gachaPickupName(){
   if(promoIsRaidPickup()){
@@ -3088,9 +3106,13 @@ function gachaPickupName(){
     const rid = (typeof RAID_GACHA_PICKUP_IDS!=='undefined') ? RAID_GACHA_PICKUP_IDS[0] : null;
     return (typeof SSR_SKINS!=='undefined' && rid && SSR_SKINS[rid]) ? skinMeta(rid).name : 'SSR';
   }
-  if(typeof GACHA_PICKUP_LABEL!=='undefined' && GACHA_PICKUP_LABEL) return GACHA_PICKUP_LABEL;
-  const id = (typeof GACHA_PICKUP_SSR_IDS!=='undefined') ? GACHA_PICKUP_SSR_IDS[0] : null;
-  return (typeof SSR_SKINS!=='undefined' && id && SSR_SKINS[id]) ? skinMeta(id).name : 'SSR';
+  const today = (typeof gachaPickupOfToday==='function') ? gachaPickupOfToday() : null;
+  if(!today) return 'SSR';
+  if(today.label) return today.label;
+  const id = today.ids[0];
+  // 2体以上のときは「◯◯ほか」で複数いることが分かるようにする(名前を並べると札で切れるため)
+  const first = (typeof SSR_SKINS!=='undefined' && id && SSR_SKINS[id]) ? skinMeta(id).name : 'SSR';
+  return today.ids.length > 1 ? `${first}ほか` : first;
 }
 function showRockSsrPromoPopup(){
   const el = document.getElementById('rockSsrPromoOverlay');
@@ -3113,15 +3135,22 @@ function showRockSsrPromoPopup(){
   if(img) img.classList.toggle('skin-promo-img-caption', !!lines.length);
   el.classList.remove('hidden');
 }
-/* この告知の署名。**今のピックアップそのもの**を署名にしてあるので、
-   ピックアップを差し替えれば自動的に「新しい告知」として1回だけ出る(対応表を手で持たない)。 */
+/* この告知の署名。レイド側は今までどおり**今のピックアップそのもの**を署名にしてある
+   ので、レイドガチャのピックアップを差し替えれば自動的に「新しい告知」として1回だけ出る
+   (対応表を手で持たない。この挙動は変えない)。
+   スキン側は【2026-09-07】ピックアップが日替わりになったのに合わせて、署名を今日の
+   ピックアップの中身から切り離した固定値にした。中身そのものを署名にしてしまうと、
+   曜日が変わるたびに「新しい告知」としてポップアップが毎日出てしまうため。
+   「日替わりピックアップというローテーションが始まったこと」自体を1つの告知として扱う
+   ——**中身を作り直したら署名を上げる**と、新しい告知として1回だけ出る
+   (メタルグレイモン・ガルルモンの固定署名と同じ考え方)。 */
+const GACHA_PICKUP_ROTATION_PROMO_SIG = 'gacha:daily-rotation-v1';
 function rockSsrPromoSignature(){
   if(promoIsRaidPickup()){
     const rids = (typeof RAID_GACHA_PICKUP_IDS!=='undefined' && RAID_GACHA_PICKUP_IDS) ? RAID_GACHA_PICKUP_IDS.join(',') : '';
     return 'raid:' + rids;
   }
-  const ids = (typeof GACHA_PICKUP_SSR_IDS!=='undefined' && GACHA_PICKUP_SSR_IDS) ? GACHA_PICKUP_SSR_IDS.join(',') : '';
-  return 'gacha:' + ids;
+  return GACHA_PICKUP_ROTATION_PROMO_SIG;
 }
 function dismissRockSsrPromoPopup(){
   markPromoSeen(ROCK_SSR_PROMO_SEEN_KEY, rockSsrPromoSignature());   // 閉じた=既読。同じ告知は二度と出さない
@@ -11233,14 +11262,41 @@ async function publishMyGhosts(){
       { owner: getDisplayNameFromInput(), at: Date.now(), list });
   }catch(err){}
 }
-/* この試合に出すゴーストを選ぶ。
-   ・自分は除く / レベル差が離れすぎているものは使わない
-   ・**同じ人からは1体まで**(同じ名前が並ぶと嘘くさい)
+/* この試合に出すゴーストを選ぶ。**難易度の分岐はここ1か所**(呼び出し側では見ない)。
+   ・自分は除く / **同じ人からは1体まで**(同じ名前が並ぶと嘘くさい)
    ・**転生回数は自分の回数で頭打ち**(上限+100/回がそのまま乗ると差が付きすぎる)
-   ・マスモン未選択のときは出さない(比べる基準が無く、強さが釣り合わないため) */
+   ・マスモン未選択のときは出さない(比べる基準が無く、強さが釣り合わないため)
+   ・**ふつう**: レベル差が離れすぎているものは使わず、使える中からランダムに選ぶ(従来どおり)
+   ・**ハード**: レベル差は見ず、**育っている順(レベル→転生回数の高い順)に優先して選ぶ**
+     (発注者決定「上位プレイヤーの育てたモンスターが入り乱れる」)。人ごとに一番育った1体を出し、
+     その中から強い順に上限まで採る。 */
 function pickGhostsForMatch(playerMmLevel, playerRebirth){
   if(!playerMmLevel || !ghostCache.list.length) return [];
   const myKey = accountState.loggedIn ? accountState.key : null;
+  const hard = (typeof matchDifficultyApplies==='function') && matchDifficultyApplies()
+             && (typeof matchDifficultyId==='function') && matchDifficultyId()==='hard';
+  const finish = (g, m)=> Object.assign({}, m, {
+    owner: g.owner || '',
+    srcKey: g.key,   // 持ち主のアカウントキー(るすばん報告の宛先。ghostsノードで公開済みの値)
+    rebirth: Math.min(Math.round(m.rebirth||0), playerRebirth),
+  });
+  if(hard){
+    // 人ごとに一番育った1体(レベル→転生回数の高い順)を選び、それを強い順に並べる
+    const picks = [];
+    for(const g of ghostCache.list){
+      if(myKey && g.key === myKey) continue;
+      const usable = (g.list||[]).filter(m=>m && m.element && ELEMENTS[m.element] && m.stats);
+      if(!usable.length) continue;
+      let best = usable[0];
+      for(const m of usable){
+        if((m.level||1) > (best.level||1) ||
+           ((m.level||1) === (best.level||1) && (m.rebirth||0) > (best.rebirth||0))) best = m;
+      }
+      picks.push({ g, m: best });
+    }
+    picks.sort((a,b)=> (b.m.level||1)-(a.m.level||1) || (b.m.rebirth||0)-(a.m.rebirth||0));
+    return picks.slice(0, GHOST_BOT_MAX).map(p=> finish(p.g, p.m));
+  }
   const out = [];
   for(const g of shuffle(ghostCache.list.slice())){
     if(myKey && g.key === myKey) continue;
@@ -11248,11 +11304,7 @@ function pickGhostsForMatch(playerMmLevel, playerRebirth){
       Math.abs((m.level||1) - playerMmLevel) <= GHOST_LEVEL_RANGE);
     if(!usable.length) continue;
     const m = usable[Math.floor(Math.random()*usable.length)];
-    out.push(Object.assign({}, m, {
-      owner: g.owner || '',
-      srcKey: g.key,   // 持ち主のアカウントキー(るすばん報告の宛先。ghostsノードで公開済みの値)
-      rebirth: Math.min(Math.round(m.rebirth||0), playerRebirth),
-    }));
+    out.push(finish(g, m));
     if(out.length >= GHOST_BOT_MAX) break;
   }
   return out;
@@ -11461,10 +11513,12 @@ function handleMastermonPostMatch(isWin, overrides){
       /* 【awardMastermonExp は mm を書き換えてから返す】ので、EXPバーに出す
          「試合前の位置」は**呼ぶ前に**控える。後から読むと伸び始めが伸び終わりと同じになる。 */
       const _expFromLevel = mm.level, _expFromExp = mm.exp, _expFromNeed = mastermonExpToNext(mm);
+      // 難易度「ハード」は経験値も倍率が乗る(matchExpMult()が正。data.js)
+      const hardExpMult = (typeof matchExpMult==='function') ? matchExpMult() : 1;
       const result = awardMastermonExp(mm, {
         kills: player.kills, damage: dmgForExp,
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
-        xpMult: (netState.mode==='multi' ? 5 : 1) * mutRewardMultExp, // マルチプレイは獲得経験値5倍
+        xpMult: (netState.mode==='multi' ? 5 : 1) * mutRewardMultExp * hardExpMult, // マルチプレイは獲得経験値5倍
         bonusExp: killExpBonus, // マスモン撃破ボーナス(相手レベル×係数の積み立て)
       });
       saveMastermons(data);
@@ -11502,7 +11556,8 @@ function handleMastermonPostMatch(isWin, overrides){
       pendingRegisterMatchStats = {
         kills: player.kills, damage: dmgForExp,
         survivalSec: Math.round(player.deathAt||matchTime), champion: !!isWin,
-        xpMult: (netState.mode==='multi' ? 5 : 1) * ((typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1),
+        xpMult: (netState.mode==='multi' ? 5 : 1) * ((typeof mutatorRewardMult==='function') ? mutatorRewardMult() : 1)
+              * ((typeof matchExpMult==='function') ? matchExpMult() : 1),   // ハードの経験値倍率
         bonusExp: Math.round(player.mastermonKillExpBonus||0),
       };
     }

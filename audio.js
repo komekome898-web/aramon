@@ -41,10 +41,15 @@ function audioInit(){
   ensureChocoSeBuffers();
   ensureTitleStartSeBuffer();
   ensureSsrPromoteSeBuffer();
-  // ピックアップは出る確率が高いので先読みする(スキンガチャ・レイドガチャの両方)。
-  // どちらも複数体並ぶことがあるので全部読む
-  if(typeof GACHA_PICKUP_SSR_IDS!=='undefined')
-    GACHA_PICKUP_SSR_IDS.forEach(id=> ensureSkinPromoteSe(id));
+  /* ピックアップは出る確率が高いので先読みする(スキンガチャ・レイドガチャの両方)。
+     どちらも複数体並ぶことがあるので全部読む。
+     スキン側は【2026-09-07】日替わりになったので、静的な GACHA_PICKUP_SSR_IDS ではなく
+     gachaPickupOfToday()(data.js)を通す ―― 直接読むと曜日が変わったときにここだけ
+     古いままになる(2026-09-08 発注者指摘)。audioInit() は初回のユーザー操作まで走らない
+     ので、読み込み順(data.js→audio.js)的にこの関数は必ず定義済み。 */
+  const todaySkinPickup = (typeof gachaPickupOfToday==='function') ? gachaPickupOfToday().ids : null;
+  (todaySkinPickup || (typeof GACHA_PICKUP_SSR_IDS!=='undefined' ? GACHA_PICKUP_SSR_IDS : []))
+    .forEach(id=> ensureSkinPromoteSe(id));
   if(typeof RAID_GACHA_PICKUP_IDS!=='undefined')
     RAID_GACHA_PICKUP_IDS.forEach(id=> ensureSkinPromoteSe(id));
   ensureProvidedSeBuffers();

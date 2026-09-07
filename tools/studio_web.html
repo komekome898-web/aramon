@@ -349,7 +349,8 @@
       <div><label>ピックアップ</label>
         <select id="md_pickup">
           <option value="0">しない(今のままにする)</option>
-          <option value="1">する</option>
+          <option value="1">する(このスキンで固定・日替わりは止まります)</option>
+          <option value="2">日替わりへ戻す(固定ピックアップをやめる)</option>
         </select>
       </div>
     </div>
@@ -4370,6 +4371,12 @@ function loadSsrList(dataJs){
   state.pickup.skin = (/'([^']+)'/.exec(_pk) || [])[1] || null;
   state.pickup.skinCount = (_pk.match(/'[^']+'/g) || []).length;
   state.pickup.raid = (/^const RAID_GACHA_PICKUP_IDS = \['([^']*)'/m.exec(dataJs) || [])[1] || null;
+  /* 【2026-09-07 日替わりピックアップ】GACHA_PICKUP_ROTATION_ENABLED が true(既定)の間は
+     スキンガチャのピックアップは曜日ごとの表(GACHA_DAILY_PICKUPS)から毎日自動で選ばれる
+     ―― つまり state.pickup.skin(上のGACHA_PICKUP_SSR_IDSの中身)は「日替わりを止めたときの
+     固定値」でしかなく、今の画面表示とは限らない。ここで読んで注記に出す。 */
+  const _rot = /^const GACHA_PICKUP_ROTATION_ENABLED\s*=\s*(true|false)/m.exec(dataJs);
+  state.pickup.rotationEnabled = _rot ? _rot[1] === 'true' : true;   // 見つからない古い data.js では既定true扱い
   const cur = $('md_skin').value;
   $('md_skin').innerHTML = out.map(([k,l])=>{
     const has = state.media.cur[k] ? ' ●設定あり' : '';
@@ -4901,9 +4908,13 @@ async function planSkinMedia(dataJs, swJs, lines){
   // 専用BGMを入れたスキンは、獲得画面のBGMをそのスキンのラストバトルにする
   if(cfg.bgm && cfg.bgm.lastBattle && cfg.promote && cfg.promote.video && !cfg.promote.bgmOnReveal)
     cfg.promote.bgmOnReveal = 'lastBattle';
-  const pickupOn = $('md_pickup').value === '1';
-  if(!changed.length && !pickupOn)
-    throw new Error('差し替えるものがありません。素材を添付するか、ピックアップを「する」にしてください');
+  const pickupVal = $('md_pickup').value;
+  const pickupOn = pickupVal === '1';
+  const raid = $('md_gachaKind').value === 'raid';
+  // 「日替わりへ戻す」はスキンガチャだけの概念(レイドガチャに日替わりは無い)
+  const pickupRotate = pickupVal === '2' && !raid;
+  if(!changed.length && !pickupOn && !pickupRotate)
+    throw new Error('差し替えるものがありません。素材を添付するか、ピックアップを「する」か「日替わりへ戻す」にしてください');
   const rm = removeSkinMediaEntry(dataJs, id);
   const rows = { SKIN_MEDIA: skinMediaLines(id, cfg) };
   const texts = applyRows({ 'data.js': rm.text }, rows);
@@ -4913,7 +4924,6 @@ async function planSkinMedia(dataJs, swJs, lines){
     notes.push('管理者画面の「機能」タブに、この演出を確認するボタンが自動で増えます(SKIN_MEDIAから生成)');
   }
   if(pickupOn){
-    const raid = $('md_gachaKind').value === 'raid';
     if(raid){
       const rx = /^const RAID_GACHA_PICKUP_IDS = \[.*?\];/m;
       if(rx.test(texts['data.js'])){
@@ -4924,7 +4934,11 @@ async function planSkinMedia(dataJs, swJs, lines){
     }else{
       /* スキンガチャのピックアップは配列。この画面は1体を選ぶ作りなので、
          **ダブルピックアップ中に設定するとこの1体だけになる。**
-         あわせてキャンペーンの札・絵・宣伝文も外す(2体ぶんの文言が残ると嘘になる)。 */
+         あわせてキャンペーンの札・絵・宣伝文も外す(2体ぶんの文言が残ると嘘になる)。
+         【2026-09-07 日替わりピックアップ】GACHA_PICKUP_ROTATION_ENABLED も
+         あわせて false に書き換える。これを書き換えないと、この4定数へ書き込んでも
+         日替わり表(GACHA_DAILY_PICKUPS)側が優先されたままで、**黙って反映されない**
+         (発注者指摘・2026-09-07)。 */
       const rx = /^const GACHA_PICKUP_SSR_IDS = .*$/m;
       if(rx.test(texts['data.js'])){
         const was = state.pickup.skinCount || 1;
@@ -4932,11 +4946,23 @@ async function planSkinMedia(dataJs, swJs, lines){
           .replace(rx, `const GACHA_PICKUP_SSR_IDS = [${jsStr(id)}]; /*@pickup*/`)
           .replace(/^const GACHA_PICKUP_LABEL = .*$/m, 'const GACHA_PICKUP_LABEL = null;')
           .replace(/^const GACHA_PICKUP_PROMO_IMG = .*$/m, 'const GACHA_PICKUP_PROMO_IMG = null;')
-          .replace(/^const GACHA_PICKUP_PROMO_LINES = \[[\s\S]*?\n\];$/m, 'const GACHA_PICKUP_PROMO_LINES = [];');
+          .replace(/^const GACHA_PICKUP_PROMO_LINES = \[[\s\S]*?\n\];$/m, 'const GACHA_PICKUP_PROMO_LINES = [];')
+          .replace(/^const GACHA_PICKUP_ROTATION_ENABLED\s*=\s*(?:true|false);$/m, 'const GACHA_PICKUP_ROTATION_ENABLED = false;');
         notes.push('スキンガチャのピックアップに設定(タイトルとガチャ画面・ポップアップの画像が切り替わります)');
+        notes.push('日替わりを止めて、このスキンで固定しました。日替わりへ戻すには、ここで「日替わりへ戻す」を選んでもう一度送信してください');
         if(was > 1) notes.push(`※ 今は${was}体のピックアップ中です。このスキン1体だけになり、キャンペーンの札・絵・宣伝文も外れます`);
         if(!cfg.promoImg) notes.push('※ 宣伝画像が未設定なので、画像は今のものが出ます');
       }else notes.push('GACHA_PICKUP_SSR_IDS が見つかりません');
+    }
+  }else if(pickupRotate){
+    /* 固定ピックアップをやめて日替わり表へ戻すだけの操作。SSR_IDS等の4定数はそのまま
+       (次にスタジオで固定設定したときにまた使われる)残し、フラグだけ書き換える。 */
+    const rx = /^const GACHA_PICKUP_ROTATION_ENABLED\s*=\s*(?:true|false);$/m;
+    if(!rx.test(texts['data.js'])) notes.push('GACHA_PICKUP_ROTATION_ENABLED が見つかりません');
+    else if(state.pickup.rotationEnabled) notes.push('すでに日替わり中です(変更していません)');
+    else{
+      texts['data.js'] = texts['data.js'].replace(rx, 'const GACHA_PICKUP_ROTATION_ENABLED = true;');
+      notes.push('日替わりピックアップ(曜日ごとの表 GACHA_DAILY_PICKUPS)へ戻しました。固定ピックアップの表示はやめます');
     }
   }
   texts['sw.js'] = bumpCache(swJs);
@@ -6489,14 +6515,32 @@ async function runMedia(key){
 // ピックアップにしたときの見え方(タイトルと画像)を出す
 function updatePickupNote(){
   const id = $('md_skin').value;
-  const on = $('md_pickup').value === '1';
+  const val = $('md_pickup').value;
+  const on = val === '1';
+  const rotate = val === '2';
   const raid = $('md_gachaKind').value === 'raid';
   const nm = (state.skins && state.skins.find(s=>s[0] === id));
   const name = nm ? nm[1] : id;
   const now = raid ? state.pickup.raid : state.pickup.skin;
   const nowNm = (state.skins && state.skins.find(s=>s[0] === now));
+  // スキンガチャだけ「日替わり中かどうか」を添える(レイドガチャは日替わりの概念が無い)
+  const rotNote = (!raid && state.pickup.rotationEnabled)
+    ? '(今は日替わり中。曜日ごとに自動で入れ替わっています)'
+    : (!raid ? `(今は固定: ${nowNm ? nowNm[1] : (now || '未設定')})` : '');
+  if(rotate){
+    if(raid){
+      $('md_pickupNote').innerHTML = '<span class="ng">レイドガチャに日替わりの概念はありません。「しない」のままにしてください</span>';
+      $('md_pickupPrev').innerHTML = '';
+      return;
+    }
+    $('md_pickupNote').innerHTML = state.pickup.rotationEnabled
+      ? 'すでに日替わり中です(変更しません)。'
+      : '日替わりピックアップ(曜日ごとの表 GACHA_DAILY_PICKUPS)へ戻します。固定ピックアップの表示はやめます。';
+    $('md_pickupPrev').innerHTML = '';
+    return;
+  }
   if(!on){
-    $('md_pickupNote').innerHTML = `今のピックアップは <b>${nowNm ? nowNm[1] : (now || '未設定')}</b> です(変更しません)。`;
+    $('md_pickupNote').innerHTML = `今のピックアップは <b>${nowNm ? nowNm[1] : (now || '未設定')}</b> です(変更しません)。${rotNote}`;
     $('md_pickupPrev').innerHTML = '';
     return;
   }
@@ -6505,9 +6549,10 @@ function updatePickupNote(){
   const cur = cfgGet((state.media.cur && state.media.cur[id]) || {}, 'promoImg');
   const url = next ? state.media.urls['promoImg'] : (cur ? '../' + cur + '?v=' + Date.now() : null);
   $('md_pickupNote').innerHTML =
-    `タイトルは <b>${title}</b> になります(今は ${nowNm ? nowNm[1] : (now || '未設定')})。` +
-    (url ? 'ポップアップ・ガチャ画面の画像は下のものになります。'
-         : '<span class="ng">宣伝画像がまだありません。上の「宣伝・ガチャ画面画像」を添付してください</span>');
+    `タイトルは <b>${title}</b> になります(今は ${nowNm ? nowNm[1] : (now || '未設定')})。${rotNote}` +
+    (raid ? '' : ' <b>日替わりを止めて、このスキンで固定します。</b>') +
+    (url ? ' ポップアップ・ガチャ画面の画像は下のものになります。'
+         : ' <span class="ng">宣伝画像がまだありません。上の「宣伝・ガチャ画面画像」を添付してください</span>');
   $('md_pickupPrev').innerHTML = url ? `<img src="${url}" style="width:100%;border-radius:8px;margin-top:6px">` : '';
 }
 
