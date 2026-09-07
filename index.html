@@ -414,12 +414,6 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
           </div>
         </div>
         <div class="team-size-note" id="singleSubNote">総勢30体のバトルロイヤル。1人ですぐに遊べます</div>
-        <!-- 難易度(30人バトロワのときだけ出す)。中身は data.js の MATCH_DIFFICULTIES から作る -->
-        <div id="difficultyRow" class="hidden">
-          <div class="pick-label" style="margin-top:10px;">難易度</div>
-          <div id="difficultyTabs" class="sub-mode-tabs"></div>
-          <div class="team-size-note" id="difficultyNote"></div>
-        </div>
       </div>
       <div id="teamSubRow" class="hidden">
         <div class="pick-label" style="margin-top:10px;">遊び方</div>
@@ -428,6 +422,15 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
           <button class="sub-tab" data-sub="arena">バトルアリーナ</button>
         </div>
         <div class="team-size-note" id="teamSubNote">3人1組×20チーム=総勢60体のバトルロイヤル。倒れても仲間が近くにいれば蘇生できます</div>
+      </div>
+      <!-- 難易度(個人戦30人バトロワ・チーム戦20チームバトロワのときだけ出す。2026-09-07 チーム戦にも対応)。
+           singleSubRow/teamSubRowのどちらにも属さない共有の行にする ―― 中に置くとサブ行ごと
+           hidden化されて出し分けが効かない。中身は data.js の MATCH_DIFFICULTIES から作る。
+           出す/出さないの判定は data.js の matchDifficultyModeOk() 1か所(ui.js から読む)。 -->
+      <div id="difficultyRow" class="hidden">
+        <div class="pick-label" style="margin-top:10px;">難易度</div>
+        <div id="difficultyTabs" class="sub-mode-tabs"></div>
+        <div class="team-size-note" id="difficultyNote"></div>
       </div>
       <!-- レイドを選んだときだけ出す案内(準備中は開発アカウント以外は入れない) -->
       <div id="raidModeOptions" class="hidden">
@@ -571,6 +574,9 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
          状態の行は文が長いので折り返す(.lobby-note。1行固定だと画面に入らない) -->
     <div class="lobby-sub" id="lobbySubText">部屋を検索中</div>
     <div class="lobby-note" id="lobbyStateText"></div>
+    <!-- チーム戦(br20)で他の人間が部屋に入っているときだけ出す注記。空文字なら何も出ない
+         (書くのは ui.js の updateLobbyWaitState() 1か所だけ。#lobbyStateText と同じ理由で分けてある) -->
+    <div class="lobby-note" id="lobbyDifficultyNote"></div>
     <div id="lobbyPlayerList"></div>
     <div id="lobbyCountdown"></div>
     <button id="lobbyCancelBtn">キャンセル</button>

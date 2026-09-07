@@ -4337,9 +4337,11 @@ function setLobbySubMode(sub, opts){
 }
 /* モード選択オーバーレイと右カラムのボタンの出し分けを1か所で行う(setLobbyMode/
    setLobbySubMode の両方から呼ばれる。ここ以外でこれらの表示を切り替えない)。 */
-/* 難易度(やさしい/ふつう)。**表(MATCH_DIFFICULTIES)から作る**ので、1行足せば選べる物が増える。
-   出すのは30人バトロワのときだけ ―― マルチで自分だけ手加減すると、他の人の試合のbotまで
-   弱くなってしまう(効くかどうかの判定は data.js の matchDifficultyApplies が正)。 */
+/* 難易度(やさしい/ふつう/ハード)。**表(MATCH_DIFFICULTIES)から作る**ので、1行足せば選べる物が増える。
+   出すのは「個人戦30人バトロワ」と「チーム戦20チームバトロワ」だけ ―― 出す/出さないの規則は
+   data.js の matchDifficultyModeOk() 1か所(matchDifficultyApplies() と同じ関数を読む。
+   条件をここへ書き足さない)。マルチPvP・アリーナ・レイドでは出さない
+  (実際に効くかどうかの判定は matchDifficultyApplies が正)。 */
 function renderDifficultyTabs(show){
   const row = document.getElementById('difficultyRow');
   const tabs = document.getElementById('difficultyTabs');
@@ -4370,7 +4372,7 @@ function updateModePickPanels(){
   document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
   // 人数タブ(2〜4人)はシングル>マルチPvPのときだけ
   document.getElementById('multiOptions').classList.toggle('hidden', !isPvp4);
-  renderDifficultyTabs(!isTeam && !isRaid && lobbySubMode==='br30');
+  renderDifficultyTabs(!isRaid && (typeof matchDifficultyModeOk==='function') && matchDifficultyModeOk(isTeam, lobbySubMode));
   // 部屋のボタン: マルチPvPと、部屋でも遊べるチーム戦に出す
   document.getElementById('multiActionRow').classList.toggle('hidden', !(isPvp4 || isTeam));
   // バトル開始(部屋を使わない入口): 30人バトロワだけ(チーム戦のソロ出撃は廃止・2026-08-19)
@@ -4690,6 +4692,16 @@ function updateLobbyWaitState(){
   const humans = Object.keys(netState.humanPlayers||{}).length;
   const cap = netState.capacity || 0;
   const full = cap > 0 && humans >= cap;
+  /* 難易度の注記(発注者決定 2026-09-07)。チーム戦(20チームバトロワ)は「部屋に自分以外の
+     人間がいないときだけ」難易度が効く(data.js の matchDifficultyApplies 参照)。実際に効くか
+     どうかは試合開始時の人数で決まり待機画面では変わりうるので、**新しい画面は作らず**
+     ここへ一言だけ足す。人数の数え方は上の humans をそのまま使う(新しい数え方を作らない)。 */
+  const diffNoteEl = document.getElementById('lobbyDifficultyNote');
+  if(diffNoteEl){
+    const isTeamBr20 = (netState.teamSize||1) > 1 && netState.sub==='br20';
+    diffNoteEl.textContent = (isTeamBr20 && humans >= 2)
+      ? '他の人がいる部屋では難易度は「ふつう」になります' : '';
+  }
   // 「押していい」を光らせて伝える(自動開始の代わり)。相手が居ないうちと開始待ちの間は光らせない
   const startBtn = document.getElementById('lobbyStartBtn');
   if(startBtn) startBtn.classList.toggle('is-ready', !!(netState.isHost && humans >= 2 && !hostCountdownSnapshot));
@@ -11313,7 +11325,12 @@ function pickGhostsForMatch(playerMmLevel, playerRebirth){
    選び方も強さの縮め方もソロと同じ関数を通す(pickGhostsForMatch / capMastermonToLimit)ので、
    「同じ人から1体まで」「レベル差が離れすぎたら使わない」といった決まりが1か所のままになる。
    ここで作った一覧を部屋のシードへ載せて配るため、**全員が同じ相手を同じ強さで見る**
-   (各自が引きに行くと相手も強さもバラバラになり、ホストとゲストで世界が食い違う)。 */
+   (各自が引きに行くと相手も強さもバラバラになり、ホストとゲストで世界が食い違う)。
+   【2026-09-07】難易度のbotPowerMult(ハードで1.3)もここで上限に掛ける。**ゴーストは
+   「人間が1人もいないチームだけ」に入る=誰から見ても必ず敵**(pickGhostsForMatch/この関数の
+   呼び出し元のコメント参照)なので、ここに掛けても自チーム(味方)の強さには一切触れない。
+   自分の他のマスモン(hostMastermonBots。自チームの空き枠を優先的に埋める=味方になりうる)には
+   意図的に掛けない ―― 掛けると難易度で味方まで強く/弱くなってしまう(発注者方針)。 */
 function ghostBotsForRoom(){
   if(typeof pickGhostsForMatch!=='function') return [];
   const own = loadMastermons();
@@ -11322,6 +11339,8 @@ function ghostBotsForRoom(){
   if(!ghosts.length) return [];
   // 縮める基準はホスト自身(hostMastermonBots と同じ。受け取ってから各自で縮めない)
   const limit = battleStatLimitOf(myMm, game.selectedElement);
+  const botPowerMult = (typeof matchBotPowerMult==='function') ? matchBotPowerMult() : 1;
+  if(botPowerMult !== 1) limit.total = Math.max(1, Math.round(limit.total * botPowerMult));
   // srcKey = 持ち主のアカウントキー(るすばん報告の宛先)。部屋のmetaへ載るが、ghostsノードで公開済みの値
   return ghosts.map(g=> Object.assign({}, capMastermonToLimit(g, limit), { owner: g.owner || '', srcKey: g.srcKey || '' }));
 }

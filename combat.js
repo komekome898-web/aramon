@@ -1328,6 +1328,12 @@ function teamResetState(){
   game.teamSize = 1;
   teamMembersById = new Map();
   pingResetState();   // ピンとキルリーダーも試合をまたいで持ち越さない(「入口で必ず消す」の決まり)
+  /* 難易度がマルチで効くかどうかの元になる値も、ここで一旦false(=自分だけ扱い)に戻す。
+     【2026-09-07】beginMultiplayerMatchInner() だけが、この直後に netState.humanPlayers から
+     「試合開始時点で自分以外の人間がいたか」を測って立て直す(data.js の matchDifficultyApplies
+     参照)。ソロ入口(startGame/raidStart/startShootingRange)はここで false のまま残るが、
+     どれも netState.mode を'solo'に潰すので実際には読まれない。 */
+  game.matchOtherHumansPresent = false;
 }
 /* エンティティ生成順に teamSize ずつ区切ってチームを割り当てる。
    entities の並びだけから決まるので、同じ並びを作る2者(ホスト/ゲスト)で必ず一致する。 */
