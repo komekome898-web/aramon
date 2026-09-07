@@ -4789,8 +4789,7 @@ const SKIN_MEDIA = {
   },
   ganon_ssr: { /*@ganon_ssr*/
     promote: { video:'video/ganon_ssr_promote', audio:'audio/ganon_ssr_promote_audio.m4a', safetyMs:56122, bgmOnReveal:'lastBattle' },
-    // 残り6人以上はロビー既定の「いちか」をそのまま流す(発注者指定。専用曲は用意しない)
-    bgm: { battle:'audio/bgm_lobby.mp3', final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
+    bgm: { battle:'audio/bgm_ganon_ssr_battle.mp3', final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
     se: { tier3:'audio/se_ganon_ssr_tier3.m4a', hit:'audio/se_ganon_ssr_hit.m4a', kill:'audio/se_ganon_ssr_kill.m4a' },
     promoImg: 'images/promo_ganon_ssr.png',
   },
