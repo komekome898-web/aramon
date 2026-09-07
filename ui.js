@@ -9212,6 +9212,10 @@ function submitScoreToRanking(isWin, placement){
     rankPoint: (typeof loadRank==='function') ? loadRank().rp : 0,   // 段位(地形で分けない)
     // このモンスターで稼いだRPの合計。**送るのは端末側の集計そのもの**(サーバで足し込まない)
     rankRpSum: (typeof rankElemRp==='function') ? rankElemRp(player.element) : 0,
+    /* この行がどのシーズンのものかを既存のseasonStateKey()で持たせる(新しい期間の概念は作らない)。
+       段位RP自身がこの鍵でシーズンごとにリセットされる値なので、rankPoint/rankRpSumと同じ鍵で
+       タグ付けするのが自然(SEASON_IDだけだとSEASON_RESET_EPOCHでの途中リセットを区別できない)。 */
+    season: (typeof seasonStateKey==='function') ? seasonStateKey() : null,
     kills: player.kills,
     damage: Math.round(player.damageDealt),
     placement: isWin ? 1 : placement,
@@ -11816,6 +11820,10 @@ document.getElementById('replayBtn').addEventListener('click', async ()=>{
 });
 
 let currentRankingMode = 'kills';
+/* 段位ランキングだけの「今シーズン/通算」切り替え。既定は今シーズン(発注者決定)。
+   対象は rank カテゴリ(rankPoint・rankRpSumの両サブタブ)。他のサブタブ切り替えと同じく
+   切り替えたら loadRankingList() を呼び直す(絞り込みは renderRankRankingList 側)。 */
+let currentRankingSeasonScope = 'season'; // 'season' | 'all'
 let currentRankingMonster = 'all';
 let currentRankingMapType = 'normal'; // 通常マップ / リアルマップ / チーム戦 / マスモン / 段位(タブの名前を流用しているだけで地形ではない)
 // マスモン自身の記録(通常/リアルのどちらで遊んでも同じ値)。フィールド名がFirebase側の記録名そのもの。
@@ -11849,6 +11857,47 @@ function renderRankingModeTabs(){
   if(!list.some(([m])=>m===currentRankingMode)) currentRankingMode = list[0][0];
   wrap.innerHTML = list.map(([m,label])=>
     `<button class="rank-tab${m===currentRankingMode?' active':''}" data-mode="${m}">${label}</button>`).join('');
+  // 「今シーズン/通算」は段位カテゴリだけに出す(他のカテゴリはシーズンで分ける記録がない)
+  const scopeWrap = ensureRankingSeasonScopeEl();
+  scopeWrap.classList.toggle('hidden', currentRankingMapType !== 'rank');
+}
+/* 段位カテゴリだけに出す「今シーズン/通算」の切り替え。index.html/style.cssは触らず、
+   既存のモンスターフィルター(#rankingMonsterFilterWrap)と同じ .custom-select の作りを
+   そのままJSで組み立てて #rankingTabs の直後へ差し込む(新しい見た目を発明しない)。
+   一度だけ組み立てる(2回目以降は既存の要素をそのまま返す)。 */
+function ensureRankingSeasonScopeEl(){
+  let wrap = document.getElementById('rankingSeasonScopeWrap');
+  if(wrap) return wrap;
+  wrap = document.createElement('div');
+  wrap.id = 'rankingSeasonScopeWrap';
+  wrap.className = 'custom-select hidden';
+  wrap.innerHTML = `<button type="button" class="custom-select-btn" id="rankingSeasonScopeBtn"></button>` +
+    `<div class="custom-select-menu hidden" id="rankingSeasonScopeMenu"></div>`;
+  const tabsEl = document.getElementById('rankingTabs');
+  tabsEl.parentNode.insertBefore(wrap, tabsEl.nextSibling);
+  const btn = document.getElementById('rankingSeasonScopeBtn');
+  const menu = document.getElementById('rankingSeasonScopeMenu');
+  // 「今シーズン」がどのシーズンかは SEASON_LABEL(data.js)で示す。「シーズン2」等を直書きしない
+  const seasonLabel = `今シーズン(${typeof SEASON_LABEL!=='undefined' ? SEASON_LABEL : ''})`;
+  const options = [['season', seasonLabel], ['all', '通算']];
+  menu.innerHTML = options.map(([v,l])=>
+    `<div class="custom-select-item${v===currentRankingSeasonScope?' active':''}" data-value="${v}">${l}</div>`).join('');
+  btn.textContent = (options.find(([v])=>v===currentRankingSeasonScope) || options[0])[1];
+  const closeMenu = ()=>menu.classList.add('hidden');
+  btn.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); });
+  menu.querySelectorAll('.custom-select-item').forEach(item=>{
+    item.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu.querySelectorAll('.custom-select-item').forEach(i=>i.classList.remove('active'));
+      item.classList.add('active');
+      currentRankingSeasonScope = item.dataset.value;
+      btn.textContent = item.textContent;
+      closeMenu();
+      loadRankingList(currentRankingMode);
+    });
+  });
+  document.addEventListener('click', (e)=>{ if(!wrap.contains(e.target)) closeMenu(); });
+  return wrap;
 }
 let rankingOpenedFrom = 'result';
 function populateRankingMonsterFilter(){
@@ -12055,9 +12104,17 @@ function rankRowsHtml(items, valueOf, bodyOf, nameOf, me){
 function renderRankRankingList(listEl, mode, rows){
   const me = rankMyIdentity();            // 誤検出しない照合のしかたは rankMyIdentity 参照
   const SHOWN = 50;                       // 一覧に並べる件数(圏外の自分は末尾に固定で足す)
+  /* 「今シーズン/通算」の絞り込み。行のseasonはfirebase.jsの送信時にseasonStateKey()で
+     付けている。**シーズンを持たない古い行(この対応より前の記録)は「今シーズン」には
+     含めない**(いつのシーズンか分からない=過去の記録として扱う)。「通算」は従来どおり
+     全部を対象にする(rowsをそのまま使う)。 */
+  const seasonNow = (typeof seasonStateKey==='function') ? seasonStateKey() : null;
+  const scopedRows = currentRankingSeasonScope==='season'
+    ? (rows||[]).filter(r=>r.season && r.season===seasonNow)
+    : (rows||[]);
   let mine = null, built, tail = null;
   if(mode === 'rankPoint'){
-    let users = aggregateRankRows(rows).filter(u=>u.rp > 0);
+    let users = aggregateRankRows(scopedRows).filter(u=>u.rp > 0);
     if(currentRankingMonster !== 'all'){
       users = users.filter(u=>u.elems.some(e=>e.element===currentRankingMonster));
     }
@@ -12078,7 +12135,7 @@ function renderRankRankingList(listEl, mode, rows){
     tail = rankMineTail(users, SHOWN, nameOf, valueOf, bodyOf, me);
   } else {
     // モンスター別RP: 「ユーザー名 × モンスター」の取り分そのままを並べる
-    let recs = (rows||[]).filter(r=>r.element && r.rankRpSum);
+    let recs = scopedRows.filter(r=>r.element && r.rankRpSum);
     if(currentRankingMonster !== 'all') recs = recs.filter(r=>r.element===currentRankingMonster);
     recs = recs.slice().sort((a,b)=>(b.rankRpSum||0)-(a.rankRpSum||0));
     const nameOf = (r)=> r.name || RANK_DEFAULT_NAME;
@@ -12228,7 +12285,7 @@ document.querySelectorAll('.rank-map-tab').forEach(tab=>{
        ここに種類を列挙していたため、後から足した `rank` が 'normal' に落ちて
        段位タブでキル数ランキングが出ていた(実機で報告あり)。表を見るだけにする。 */
     currentRankingMapType = RANKING_TABS_BY_CATEGORY[t] ? t : 'normal';
-    renderRankingModeTabs();   // サブタブの中身をカテゴリに合わせて作り直す
+    renderRankingModeTabs();   // サブタブの中身をカテゴリに合わせて作り直す(今シーズン/通算の表示切替もここで行う)
     loadRankingList(currentRankingMode);
   });
 });

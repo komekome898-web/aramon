@@ -1386,6 +1386,10 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-09-07', items:[
+    { t:'🌱 難易度「やさしい」で、敵に狙いが自動で合うようになりました(タップした敵を追い続け、照準の近くの敵へ少し引き寄せます)', g:['feature','solo'] },
+    { t:'🏅 段位ランキングを「今シーズン」と「通算」で切り替えられるようにしました。既定は今シーズンです', g:['feature','general'] },
+  ]},
   { date:'2026-09-04', items:[
     { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされます', g:['feature','general'] },
     { t:'✨ シーズン2パスの最終報酬はSSRスキン「怨霊ガノン鳥」です。25段目まで進めると受け取れます(このシーズン限定)', g:['feature','monster'] },
@@ -5428,9 +5432,10 @@ const MATCH_DIFFICULTIES = [
     note:'記録に残る本番。ランキングと段位RPが動く',
     botPowerMult: 1, botThinkMult: 1 },
   { id:'easy',   label:'やさしい', icon:'🌱', ranked:false,
-    note:'敵が弱く、動き出しも遅い。ダイヤと経験値は入るが、ランキングと段位RPには残らない',
+    note:'敵が弱く、動き出しも遅い。狙いも自動で補助する。ダイヤと経験値は入るが、ランキングと段位RPには残らない',
     botPowerMult: TUTORIAL_MATCH.botPowerMult,   // 正は TUTORIAL_MATCH(ここは読むだけ)
-    botThinkMult: TUTORIAL_MATCH.botThinkMult }, // 同上
+    botThinkMult: TUTORIAL_MATCH.botThinkMult,   // 同上
+    autoAim: true },   // オートエイム(継続ロックオン+弱い引き寄せ)。normalには付けない
 ];
 const MATCH_DIFFICULTY_DEFAULT = 'normal';                   // 既定は今までどおりの試合
 const MATCH_DIFFICULTY_KEY = 'aramon_match_difficulty_v1';   // 端末ごとの選択(localStorage)
@@ -5489,6 +5494,27 @@ function matchBotThinkMult(){   // bot が考え直す間隔に掛ける(大き�
   const tut = (typeof game!=='undefined' && game && game.tutorialMatch) ? TUTORIAL_MATCH.botThinkMult : 1;
   const dif = matchDifficultyApplies() ? matchDifficulty().botThinkMult : 1;
   return Math.max(tut, dif);
+}
+
+/* ===== オートエイム(難易度「やさしい」限定。スマホ操作が苦手な人向け・発注者要望 2026-09-07) =====
+   効果は2つ(実装はcombat.js/input.js)。**強さの数字は全部ここにまとめる**(発注者が実機で調整するため)。
+   ・継続ロックオン: 敵タップ後のスナップ(startCameraSnap)を、その敵が生きていて
+     射程・視野に入っているあいだ、この速度で追い続ける(combat.jsのupdateAutoAimLock)。
+   ・弱い引き寄せ: 照準の近くの敵へ毎フレームこの速度だけ寄せる。プレイヤーの入力は上書きしない
+     (combat.jsのapplyAutoAimAssist。入力に足すだけ)。 */
+const AUTO_AIM_LOCK_TURN_DEG_PER_SEC   = 260; // 継続ロックオン: 視点を追わせる最大回転速度(1秒あたり度)
+const AUTO_AIM_ASSIST_MAX_DEG_PER_SEC  = 16;  // 弱い引き寄せ: 1秒あたり最大何度視点を寄せるか(既定は控えめ)
+const AUTO_AIM_ASSIST_CONE_DEG         = 9;   // 弱い引き寄せの対象範囲(照準中心から±この角度以内の敵だけ)
+const AUTO_AIM_FALLBACK_RANGE          = 900; // 技の射程が取れないとき(技未選択など)の距離判定の既定値
+
+/* オートエイムが効く試合か。**判定はここ1か所**(呼ぶ側に書き足さない)。
+   ・難易度が効く試合かどうかは matchDifficultyApplies() をそのまま読む(レイド・訓練場・アリーナ・
+     マルチ・チーム戦は元からここで弾かれるので二重に書かない)。
+   ・チュートリアルの練習試合だけは追加で無効にする(自分専用の手順で敵タップの狙い方を教える場面なので、
+     まだ操作説明が済んでいない段階でカメラが勝手に動く挙動を混ぜない)。 */
+function autoAimEnabled(){
+  if(typeof game!=='undefined' && game && game.tutorialMatch) return false;
+  return matchDifficultyApplies() && !!matchDifficulty().autoAim;
 }
 
 /* =====================================================================
