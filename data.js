@@ -1391,6 +1391,7 @@ const UPDATE_HISTORY = [
     { t:'🏅 段位ランキングを「今シーズン」と「通算」で切り替えられるようにしました。既定は今シーズンです', g:['feature','general'] },
     { t:'🔥 難易度「ハード」を追加しました。上位プレイヤーが育てたモンスターが敵として出てきます。段位RPと経験値が増える代わりに、負けたときの下がり幅も大きくなります', g:['feature','solo','balance'] },
     { t:'🎰 ガチャのピックアップが日替わりになりました。日によって出やすいSSRスキンが変わります', g:['feature','general'] },
+    { t:'⚔️ チーム戦(20チームバトロワ)でも難易度を選べるようにしました。他の人がいる部屋では「ふつう」になります', g:['feature','multi'] },
   ]},
   { date:'2026-09-04', items:[
     { t:'🎉 シーズン2が始まりました(9/4〜10/1)。段位RPがリセットされます', g:['feature','general'] },
@@ -4789,8 +4790,7 @@ const SKIN_MEDIA = {
   },
   ganon_ssr: { /*@ganon_ssr*/
     promote: { video:'video/ganon_ssr_promote', audio:'audio/ganon_ssr_promote_audio.m4a', safetyMs:56122, bgmOnReveal:'lastBattle' },
-    // 残り6人以上はロビー既定の「いちか」をそのまま流す(発注者指定。専用曲は用意しない)
-    bgm: { battle:'audio/bgm_lobby.mp3', final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
+    bgm: { battle:'audio/bgm_ganon_ssr_battle.mp3', final5:'audio/bgm_ganon_ssr_final5.mp3', lastBattle:'audio/bgm_ganon_ssr_lastbattle.mp3' },
     se: { tier3:'audio/se_ganon_ssr_tier3.m4a', hit:'audio/se_ganon_ssr_hit.m4a', kill:'audio/se_ganon_ssr_kill.m4a' },
     promoImg: 'images/promo_ganon_ssr.png',
   },
@@ -5541,14 +5541,41 @@ function setMatchDifficulty(id){
   return d;
 }
 
-/* 難易度が効く試合か。**「シングル・30人バトロワ」(部屋を使わないソロの個人戦)だけ**に効かせる。
-   マルチ・チーム戦・レイド・アリーナ・射撃訓練場まで効かせると、他の人と同じ部屋の試合や
-   勝敗の無い場所にまで手加減が漏れる。**この判定はここ1か所**(呼ぶ側に書き足さない)。 */
+/* 難易度が効く「試合の種類」かどうかの規則を1か所にまとめる。対象は
+   「個人戦30人バトロワ」と「チーム戦20チームバトロワ」の2つだけ ―― レイド・
+   チームのアリーナ・シングルのマルチPvP(pvp4)・射撃訓練場は対象外。
+   **ロビーの出し分け(ui.js の renderDifficultyTabs 呼び出し側)と matchDifficultyApplies()
+   の両方がここを読む**(条件を2か所に書き分けない)。前者は選ぶ前の lobbyMode/lobbySubMode を
+   isTeam/sub にそのまま渡し、後者は試合中の isTeamMatch()/game.arena から同じ形を作って渡す。
+   マルチPvP(部屋を使う対戦かどうか)はここでは見ない ―― ロビーの時点ではまだ確定しない
+   (部屋を作っても後で誰も来ないかもしれない)ため、呼び出し側がそれぞれ別に見る。 */
+function matchDifficultyModeOk(isTeam, sub){
+  return isTeam ? (sub==='br20') : (sub==='br30');
+}
+/* 難易度が効く試合か。
+   【2026-09-07 チーム戦(20チームバトロワ)にも難易度を導入】isTeamMatch() による除外を外した。
+   ただし以下はそのまま除外する:
+   ・game.trainingRange / game.raid / game.arena ―― 射撃訓練場・レイド・チームのアリーナは対象外
+     (アリーナは matchDifficultyModeOk 側の sub==='br20' にも該当しないので二重に守られる)
+   ・マルチ(部屋を使う対戦)は、**部屋に自分以外の人間が1人でもいたら**除外する(発注者決定
+     2026-09-07「部屋に人間が自分だけのときだけ効かせる」)。個人戦のマルチ(pvp4)は
+     人数に関係なく従来どおり常に除外 ―― sub を 'pvp4' として matchDifficultyModeOk() 側で
+     弾く(pvp4はマルチでしか遊べないので、ここで弾けば下の人数チェックへは来ない)。
+     チーム戦(br20)だけ、**試合開始時点で自分以外の人間がいなかった場合に限り**効かせる。
+     マルチは実際に他のプレイヤーがいると、端末ごとに違う手加減(bot強さ・自動照準)を
+     混ぜるとフェアでないため ―― 自分1人だけの部屋(残りはbot/ゴースト)ならこの心配がない。
+     **人数は試合開始時点で1回だけ判定し、試合中に人が抜けても変えない**(判定・持ち場は
+     network.js の beginMultiplayerMatchInner が game.matchOtherHumansPresent へ控える。
+     数え方は新しく作らず、ui.js の exitEndsMatchForOthers() と同じ「自分以外の人間がいるか」
+     の式をそのまま使う)。 */
 function matchDifficultyApplies(){
   if(typeof game==='undefined' || !game) return false;
   if(game.trainingRange || game.raid || game.arena) return false;
-  if(typeof isTeamMatch==='function' && isTeamMatch()) return false;
-  if(typeof netState!=='undefined' && netState && netState.mode==='multi') return false;
+  const isMulti = typeof netState!=='undefined' && netState && netState.mode==='multi';
+  const isTeam = (typeof isTeamMatch==='function') && isTeamMatch();
+  const sub = isTeam ? 'br20' : (isMulti ? 'pvp4' : 'br30');
+  if(!matchDifficultyModeOk(isTeam, sub)) return false;
+  if(isMulti && game.matchOtherHumansPresent) return false;
   return true;
 }
 /* この試合の成績をランキング・段位RPへ登録してよいか。**可否はこの1関数で決める。**

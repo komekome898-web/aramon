@@ -578,6 +578,14 @@ async function beginMultiplayerMatchInner(){
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
   teamResetState();          // チーム戦の状態も入口で消す(必要ならこの後assignTeamsで立て直す)
   arenaResetState();         // アリーナの状態も入口で消す
+  /* 難易度がマルチでも効く条件(発注者決定 2026-09-07)。
+     「部屋に自分以外の人間がいないときだけ」効かせる ―― **試合開始時点で1回だけ決め、試合中に
+     人が抜けても変えない**(この試合の難易度が抜け際で変わるのは不公平・分かりにくいため)。
+     人数の数え方は新しく作らず、既存の「自分以外の人間がいるか」の式(ui.jsのexitEndsMatchForOthers()
+     と同じ形。netState.humanPlayersは直前でfixedPlayersから確定済み)をそのまま使う。
+     持ち場は game.matchOtherHumansPresent(teamResetState()が入口でfalseへ戻す。試合ごとに
+     作り直されるgameオブジェクトなので、次の試合には絶対に持ち越らない)。 */
+  game.matchOtherHumansPresent = Object.keys(netState.humanPlayers||{}).filter(id=>id!==netState.myPlayerId).length > 0;
   netState.raid = wantRaid;
   game.raid = wantRaid;
   /* ここでの matchTeamSize は「20チームBR/アリーナ」のbot埋め・スポーン割当だけの話で、
