@@ -11406,7 +11406,9 @@ async function refreshGhostNews(){
 function ghostNewsItemHtml(r){
   const esc = roomListEscape;
   const d = new Date(r.at||0);
-  const date = (r.at ? `${d.getMonth()+1}/${d.getDate()} ` : '');
+  const p2 = (n)=> String(n).padStart(2,'0');
+  // 日付だけだと同じ日の報告が並んだときに前後が分からないので、時刻(時:分)まで出す
+  const date = (r.at ? `${d.getMonth()+1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())} ` : '');
   const mm = esc(r.mm||'あなたの子');
   const vs = esc(r.vs||'だれか');
   const deed = (r.k>0) ? `<b>${mm}</b>が ${Math.round(r.k)}体たおした！` : `<b>${mm}</b>が出撃した`;
