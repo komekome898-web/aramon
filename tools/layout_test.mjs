@@ -96,6 +96,7 @@ const MODES = [
   { name:'チーム戦20',   mode:'team',   sub:'br20' },
   { name:'アリーナ',     mode:'team',   sub:'arena' },
   { name:'レイド',       mode:'raid',   sub:null },
+  { name:'探検',         mode:'explore', sub:null },   // 右下の出撃ボタンが「探検へ出発」になる
 ];
 
 /* #startScreen 以外の3画面。中身の出方で壊れ方が変わるので、それぞれ「起きうる姿」を並べる。
@@ -154,6 +155,11 @@ const PANELS = [
   { id:'modePickOverlay',  name:'プレイモード',         open:[{btn:'openModePickBtn'}], noScroll:['modePickOverlay'] },
   /* レイドタブ選択時。「開催中」ポップと「🐉 レイドバトルへ」ボタンの中央寄せをここで見る */
   { id:'modePickOverlay',  name:'プレイモード(レイド)', open:[{btn:'openModePickBtn'},{sel:'.mode-tab',idx:2}], noScroll:['modePickOverlay'] },
+  /* 探検タブ選択時。サブ選択の行が消えて案内文だけになる */
+  { id:'modePickOverlay',  name:'プレイモード(探検)', open:[{btn:'openModePickBtn'},{sel:'.mode-tab',idx:3}], noScroll:['modePickOverlay'] },
+  /* 探検の結果。素材の一覧(#exploreResultList)だけがスクロールしてよい。
+     開き方は __exploreTestResult(下で定義。素材を多めに並べた集計を本物の exploreShowResult へ渡す) */
+  { id:'exploreResultOverlay', name:'探検の結果', open:[{call:['__exploreTestResult']}], noScroll:['exploreResultOverlay','exploreResultBox'] },
   { id:'ganonPromoOverlay', name:'ガノン記念ポップ',    open:[{call:['showGanonPromoPopup']}], noScroll:['ganonPromoOverlay'] },
   /* レイド入口。「部屋を作る」の2行化(注釈付き)で .raid-actions が見切れないかを見る。
      開き方は __raidTestOpen(上で定義)。中身の一覧(#raidScroll)だけがスクロールしてよい。 */
@@ -624,6 +630,15 @@ for(const dev of DEVICES){
        開催期間・モンスター選択済みかどうかで弾かれ、実行日によって開けたり開けなかったり
        するため測定が安定しない。ここではその前提だけ整えて openRaidOverlay() を直接呼ぶ
        (中身の組み立て自体は本物の renderRaidOverlay を通るので画面としては本物と同じ)。 */
+    /* 探検の結果画面。試合を回さずに「持ち帰った後」の集計だけを作って本物の表示関数へ渡す。
+       素材は全種類を並べる(一覧が一番長くなる姿 = スクロールの外に出した見出しとボタンが守られるかを見る) */
+    window.__exploreTestResult = ()=>{
+      if(typeof exploreShowResult!=='function' || typeof EXPLORE_MATERIALS==='undefined') return;
+      const items = Object.keys(EXPLORE_MATERIALS).map((k, i)=>({ key:k, got:3+i, kept:i%3 ? 3+i : 0, lost:i%3 ? 0 : 3+i,
+                                                                  toBag: EXPLORE_MATERIALS[k].toBag || null }));
+      exploreShowResult({ reason:'faint', full:false, ratio:0.5, items, gold:1234, goldRows:[],
+                          timeSec:754, kills:23, faints:3 });
+    };
     window.__raidTestOpen = async ()=>{
       if(!game.selectedElement) game.selectedElement = 'dullahan';
       if(typeof openRaidOverlay==='function') await openRaidOverlay();

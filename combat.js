@@ -533,6 +533,8 @@ function applyDamage(target, dmg, source, opts){
   if(raidFriendlyFireBlocked(target, source)) return;
   // チーム戦のフレンドリーファイア無しも同じ1か所で止める(状態異常・ガッツ削りも入口がここ)
   if(teamFriendlyFireBlocked(target, source)) return;
+  // 探検モード: 復活直後の無敵と、野生どうしの同士討ち無し(explore.js。探検以外では常に false)
+  if(exploreDamageBlocked(target, source)) return;
   // ダウン直後2秒は無敵(とどめが刺せない。TEAM_DOWN_INVULN_SEC。発注者要望 2026-08-19)
   if(entityDowned(target) && target.downedInvulnUntil > matchTime) return;
   if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
@@ -737,6 +739,8 @@ function playerMaxKillStreak(windowSec){
 }
 function killEntity(victim, killer){
   if(!victim.alive) return;
+  // 探検モード: プレイヤーは死なずに「力尽きた」扱い(キャンプで復活/上限で終了)。通常の敗北処理へ進めない
+  if(game.explore && victim.isPlayer){ exploreOnPlayerFaint(victim, killer); return; }
   // 安全圏外ダメージや溶岩などキラー不在の死亡は、直前に攻撃していた相手にキルを付与する
   if(!killer){
     const lastAtk = entities.find(o=>o.id===victim.lastAttackerId);
@@ -816,6 +820,7 @@ function killEntity(victim, killer){
 function checkWin(){
   if(game.trainingRange) return; // 射撃訓練場は勝敗なし(的は倒しても復活する)
   if(game.raid){ checkRaidEnd(); return; }  // レイドは「ボス撃破 or 時間切れ」で決着する
+  if(game.explore) return;  // 探検は勝敗なし(帰還・力尽き・時間切れで終わる。explore.js の checkExploreEnd)
   if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
   if(game.over) return;
   if(isTeamMatch()){ checkTeamWin(); return; }  // チーム戦は「自チーム以外の全チーム全滅」で決着
@@ -935,6 +940,7 @@ function updateBotAI(b, dt){
   b.aiTimer = rand(0.22,0.4) * matchBotThinkMult();
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
   if(b.isRaidBoss){ updateRaidBossAI(b); return; }
+  if(b.isExploreWild){ exploreWildAI(b); return; }   // 探検モードの野生(縄張り・気づく・戻る。explore.js)
 
   // ===== チーム戦: ダウン中は戦えない。立っている味方の方へ這って寄る(蘇生されやすい位置へ) =====
   if(isTeamMatch() && entityDowned(b)){
@@ -1548,7 +1554,7 @@ function isKillLeader(e){ return !!(e && killLeaderCurId!=null && e.id===killLea
 /* 毎フレーム呼ぶ(updateHUD経由=ソロ・ホスト・ゲスト全員)。交代のフィード行は
    ホスト/ソロだけが確定し、ゲストへは既存のkillイベント(textだけ)を流用して配る。 */
 function updateKillLeader(){
-  if(!game.started || game.over || game.raid || game.trainingRange){ killLeaderCurId = null; return; }
+  if(!game.started || game.over || game.raid || game.trainingRange || game.explore){ killLeaderCurId = null; return; }
   const id = computeKillLeaderId();
   if(id === killLeaderCurId) return;
   killLeaderCurId = id;
@@ -2646,7 +2652,9 @@ function update(dt){
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
   else if(game.raid) updateRaidZone(dt);          // レイドは制限時間に合わせて線形に縮める
   else if(game.arena) updateArenaZone(dt);        // アリーナは中央固定の小さい安置を1段階だけ縮める
+  else if(game.explore) updateExplore(dt);        // 探検は安置なし。野生・帰還ビーコン・時間切れ(explore.js)
   else updateZone(dt);
+  if(game.explore && game.over) return;           // 探検の帰還・時間切れはこのフレームで終わる
   if(game.raid) updateRaid(dt);                   // ボスの予告→発動と、決着の判定
   updateArena(dt);                                // アリーナ: 時間切れの決着(アリーナ以外では何もしない)
   updateTeamStates(dt);                           // チーム戦: 出血タイマーと蘇生の進行(個人戦では何もしない)

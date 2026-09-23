@@ -795,7 +795,7 @@ document.getElementById('closeHelpImageBtn').addEventListener('click', ()=>{
    モードごとに選べる値は LOBBY_SUB_MODES が正(レイドはサブ無し)。
    【宣言はここ】updateLobbyPickLabels が起動時のトップレベル初期化から呼ばれるため、
    netState(ui.js中盤)の近くに置くとTDZで落ちる。 */
-const LOBBY_SUB_MODES = { single:['br30','pvp4'], team:['br20','arena'], raid:[] };
+const LOBBY_SUB_MODES = { single:['br30','pvp4'], team:['br20','arena'], raid:[], explore:[] };
 let lobbySubMode = 'br30';
 /* マルチPvP(2〜4人)の人数。書くのは人数タブと復元だけ。
    netState.capacity へは syncNetStateToLobbyMode() が写す(部屋に入っている間は部屋の実値が正)。 */
@@ -804,7 +804,9 @@ let lobbyCapacity = 3;
 // ---- 右カラムの「マップ」「プレイモード」の表示値を更新 ----
 function updateLobbyPickLabels(){
   const mapEl = document.getElementById('lobbyMapValue');
-  if(mapEl){
+  // 探検はマップ選択に関係なく専用のフィールドへ出る(表示もそれに合わせる)
+  if(mapEl && lobbyMode==='explore') mapEl.textContent = `${(MAPS.explore && MAPS.explore.previewIcon) || '🧭'} 探検フィールド`;
+  else if(mapEl){
     const realTag = game.realMapMode ? '⛰️リアル ' : '';
     if(game.selectedMap==='random') mapEl.textContent = realTag+'🎲 ランダム';
     else {
@@ -817,6 +819,7 @@ function updateLobbyPickLabels(){
     // 表示は「ロビーで選んだもの(lobbyMode/lobbySubMode)」が正。試合中の netState を見ない
     modeEl.textContent =
       lobbyMode==='raid' ? `レイドバトル (${RAID_CAPACITY}人チーム)`
+      : lobbyMode==='explore' ? '探検モード (1人)'
       : lobbyMode==='team' ? (lobbySubMode==='arena' ? 'チーム戦・アリーナ' : 'チーム戦・20チームバトロワ')
       : (lobbySubMode==='pvp4' ? `シングル・マルチPvP (${netState.capacity}人)` : 'シングル・30人バトロワ');
   }
@@ -887,7 +890,7 @@ function restoreLobbyPrefsInner(){
   let mode = p.mode, sub = p.sub;
   if(mode==='solo'){ mode = 'single'; sub = 'br30'; }
   else if(mode==='multi'){ mode = 'single'; sub = 'pvp4'; }
-  if(mode!=='single' && mode!=='team' && mode!=='raid') mode = 'single';
+  if(mode!=='single' && mode!=='team' && mode!=='raid' && mode!=='explore') mode = 'single';
   // レイドは開催が終わっていることがあるのでシングルへ落とす
   if(mode==='raid' && !(typeof raidPlayable==='function' && raidPlayable(raidMyAccountName()))) mode = 'single';
   setLobbyMode(mode, { save:false });   // 復元中は保存し返さない
@@ -1932,6 +1935,8 @@ const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramo
   'aramon_tutorial_gift_v1',
   // プレイヤー累計ミッション(ミッション「累計」タブ最上部)の受け取り状況
   'aramon_acct_missions_v1',
+  // 探検モードの保管(持ち帰ったボス素材など。data.js の EXPLORE_STASH_STORAGE_KEY)
+  'aramon_explore_stash_v1',
   /* ===== ここから設定系(2026-08-23に追加) =====
      「機種変してログインしたら、感度も音量も全部やり直しになった」への対応。
      **入れる基準は「画面の大きさに関係しない好みか」**。関係しないものだけ入れる。
@@ -4302,7 +4307,8 @@ let lobbyMode = 'single';
    チーム戦とレイドは「部屋あり」を既定にし、部屋を使わない入口(startGame・ソロレイド・
    射撃訓練場)が自分で netState.mode を 'solo' に潰す(ソロレイドと同じ扱い)。 */
 function syncNetStateToLobbyMode(){
-  netState.mode = (lobbyMode==='single' && lobbySubMode!=='pvp4') ? 'solo' : 'multi';
+  // 探検は部屋を使わない1人用なので常にソロ
+  netState.mode = ((lobbyMode==='single' && lobbySubMode!=='pvp4') || lobbyMode==='explore') ? 'solo' : 'multi';
   netState.raid = (lobbyMode==='raid');
   // 部屋のチーム人数もロビーの選択から作り直す(チーム戦は常に3人1組。レイドは小隊なし=1)
   netState.teamSize = (lobbyMode==='team') ? TEAM_BR_SQUAD_SIZE : 1;
@@ -4311,12 +4317,13 @@ function syncNetStateToLobbyMode(){
   // 定員: マルチPvPだけ人数タブの選択(2〜4)。チーム戦は人間1小隊=3、レイドは3人チーム
   netState.capacity = (lobbyMode==='raid') ? RAID_CAPACITY
                     : (lobbyMode==='team') ? TEAM_BR_SQUAD_SIZE
+                    : (lobbyMode==='explore') ? 1
                     : lobbyCapacity;
 }
 /* ロビーの最上位の選択を変える唯一の入口。タブの見た目・パネルの出し分け・ラベル・保存まで
    面倒を見る。opts.save=false のときだけ保存しない(復元中に上書きし返さないため)。 */
 function setLobbyMode(mode, opts){
-  lobbyMode = (mode==='team' || mode==='raid') ? mode : 'single';
+  lobbyMode = (mode==='team' || mode==='raid' || mode==='explore') ? mode : 'single';
   // サブ選択はモードに属する。モードを変えたら、そのモードで有効な値へ丸める(既定=先頭)
   const subs = LOBBY_SUB_MODES[lobbyMode] || [];
   if(subs.length && !subs.includes(lobbySubMode)) lobbySubMode = subs[0];
@@ -4363,20 +4370,26 @@ function renderDifficultyTabs(show){
 function updateModePickPanels(){
   const isRaid = lobbyMode==='raid';
   const isTeam = lobbyMode==='team';
+  const isExplore = lobbyMode==='explore';
   const isPvp4 = lobbyMode==='single' && lobbySubMode==='pvp4';
   document.querySelectorAll('.mode-tab').forEach(t=> t.classList.toggle('active', t.dataset.mode===lobbyMode));
-  document.querySelectorAll('#singleSubTabs .sub-tab').forEach(t=> t.classList.toggle('active', !isTeam && !isRaid && t.dataset.sub===lobbySubMode));
+  document.querySelectorAll('#singleSubTabs .sub-tab').forEach(t=> t.classList.toggle('active', !isTeam && !isRaid && !isExplore && t.dataset.sub===lobbySubMode));
   document.querySelectorAll('#teamSubTabs .sub-tab').forEach(t=> t.classList.toggle('active', isTeam && t.dataset.sub===lobbySubMode));
-  document.getElementById('singleSubRow').classList.toggle('hidden', isTeam || isRaid);
+  document.getElementById('singleSubRow').classList.toggle('hidden', isTeam || isRaid || isExplore);
   document.getElementById('teamSubRow').classList.toggle('hidden', !isTeam);
   document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
+  document.getElementById('exploreModeOptions').classList.toggle('hidden', !isExplore);
   // 人数タブ(2〜4人)はシングル>マルチPvPのときだけ
   document.getElementById('multiOptions').classList.toggle('hidden', !isPvp4);
-  renderDifficultyTabs(!isRaid && (typeof matchDifficultyModeOk==='function') && matchDifficultyModeOk(isTeam, lobbySubMode));
+  // 探検はサブ選択が無く lobbySubMode が前のモードの値のまま残るので、難易度の判定に通さない
+  renderDifficultyTabs(!isRaid && !isExplore && (typeof matchDifficultyModeOk==='function') && matchDifficultyModeOk(isTeam, lobbySubMode));
   // 部屋のボタン: マルチPvPと、部屋でも遊べるチーム戦に出す
   document.getElementById('multiActionRow').classList.toggle('hidden', !(isPvp4 || isTeam));
-  // バトル開始(部屋を使わない入口): 30人バトロワだけ(チーム戦のソロ出撃は廃止・2026-08-19)
-  document.getElementById('joinBtn').classList.toggle('hidden', !(lobbyMode==='single' && lobbySubMode==='br30'));
+  // バトル開始(部屋を使わない入口): 30人バトロワと探検(チーム戦のソロ出撃は廃止・2026-08-19)。
+  // 探検のときは同じボタンを「探検へ出発」として使う(押した先の分岐は joinBtn のハンドラ1か所)
+  document.getElementById('joinBtn').classList.toggle('hidden', !((lobbyMode==='single' && lobbySubMode==='br30') || isExplore));
+  { const jl = document.querySelector('#joinBtn .join-label');
+    if(jl) jl.textContent = isExplore ? '探検へ出発' : 'バトル開始'; }
   // サブ選択の説明文(選んでいるものに合わせて差し替える)
   const singleNote = document.getElementById('singleSubNote');
   if(singleNote) singleNote.textContent = isPvp4
@@ -5202,6 +5215,7 @@ function startGame(opts){
   game.tutorialMatch = !!(opts && opts.tutorial)
                     || ((typeof tutorialWantsShortMatch==='function') && tutorialWantsShortMatch());
   raidResetState();             // レイドの状態も持ち越さない(下記コメント参照)
+  exploreResetState();          // 探検モードの状態も持ち越さない(explore.js)
   teamResetState();             // 前の試合(マルチのチーム戦など)のチーム状態を持ち越さない
   arenaResetState();            // 同じくアリーナの状態も持ち越さない
   game.arena = false;           // このソロ入口はアリーナを扱わない
@@ -5371,6 +5385,7 @@ function startShootingRange(){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();             // レイドの状態を持ち越さない
+  exploreResetState();          // 探検モードの状態も持ち越さない
   teamResetState();             // チーム戦の状態も持ち越さない
   arenaResetState();            // アリーナの状態も持ち越さない
   game.trainingRange = true;
@@ -5441,6 +5456,7 @@ function raidStart(multi, demo){
   joyKnobEl.style.transform='translate(0,0)';
 
   raidResetState();          // いったん初期化してから立て直す
+  exploreResetState();       // 探検モードの状態も持ち越さない(レイドと探検は排他)
   teamResetState();          // 一旦個人戦に戻し、entities が揃ってから下の assignTeams(RAID_CAPACITY) で立て直す
   arenaResetState();         // アリーナの状態も持ち越さない(レイドとアリーナも排他)
   game.trainingRange = false;
@@ -6148,6 +6164,70 @@ function raidShowResult(defeated, dmg, prevBest){
   playResultSequence();
 }
 
+/* =====================================================================
+   探検モードの結果画面(#exploreResultOverlay)
+   ・進行と報酬の計算は explore.js の exploreFinish。ここは受け取った集計を並べるだけ
+   ・順位も勝敗も無いので、通常のリザルト(#resultScreen)は使わない
+   ・箱は画面から決める(R1)。見出し・数字・ボタンはスクロールの外、素材の一覧だけが送れる(R2)。
+     縦が足りないときに削る順番(R3): 素材の一覧(縮んでも指で送れる) > 数字の行 > 見出し。ボタンは削らない
+   ===================================================================== */
+const EXPLORE_RESULT_TEXT = {
+  return:  { title:'帰還成功',     tone:'win',  sub:()=> '持ち帰った素材をすべて受け取りました' },
+  faint:   { title:'力尽きた',     tone:'lose', sub:(r)=> `力尽きて探検が終わりました。持ち帰れたのは${Math.round(r*100)}%です` },
+  timeup:  { title:'時間切れ',     tone:'lose', sub:(r)=> `制限時間になりました。持ち帰れたのは${Math.round(r*100)}%です` },
+  abandon: { title:'探検を中断',   tone:'lose', sub:(r)=> `途中でやめたので、持ち帰れたのは${Math.round(r*100)}%です` },
+};
+function exploreShowResult(res){
+  const ov = document.getElementById('exploreResultOverlay');
+  if(!ov || !res) return;
+  const t = EXPLORE_RESULT_TEXT[res.reason] || EXPLORE_RESULT_TEXT.abandon;
+  ov.dataset.tone = t.tone;
+  document.getElementById('exploreResultTitle').textContent = t.title;
+  document.getElementById('exploreResultSub').textContent = t.sub(res.ratio);
+  const stat = (label, val)=> `<div class="exr-stat"><span class="exr-stat-label">${label}</span><span class="exr-stat-val">${val}</span></div>`;
+  document.getElementById('exploreResultStats').innerHTML =
+      stat('探索時間', fmtTime(res.timeSec))
+    + stat('倒した野生', `${res.kills}体`)
+    + stat('力尽き', `${res.faints}/${EXPLORE_MAX_FAINTS}`)
+    + stat('ゴールド', `+${res.gold.toLocaleString()}`);
+  const list = document.getElementById('exploreResultList');
+  const items = res.items || [];
+  if(!items.length){
+    list.innerHTML = '<div class="exr-empty">持ち帰った素材はありません</div>';
+  } else {
+    list.innerHTML = items.map(it=>{
+      const m = EXPLORE_MATERIALS[it.key];
+      const rar = EXPLORE_RARITY[m.rarity] || EXPLORE_RARITY.common;
+      const dest = (it.toBag && PLAYER_ITEMS[it.toBag]) ? `→ ${PLAYER_ITEMS[it.toBag].name}` : '→ 保管';
+      const lost = it.lost > 0 ? `<span class="exr-lost">落とした ${it.lost}</span>` : '';
+      return `<div class="exr-item${it.kept<=0?' is-lost':''}" style="--rc:${rar.color}">`
+        + `<span class="exr-ico">${m.icon}</span>`
+        + `<span class="exr-main"><span class="exr-name">${m.name}</span>`
+        + `<span class="exr-dest"><span class="exr-rar">${rar.label}</span>${lost}${it.kept>0 ? dest : ''}</span></span>`
+        + `<span class="exr-n">×${it.kept}</span></div>`;
+    }).join('');
+  }
+  list.scrollTop = 0;
+  ov.classList.remove('hidden');
+}
+/* 結果画面からロビーへ戻る(raidExit / exitShootingRange と同じ後始末) */
+function exploreExit(){
+  game.started = false; game.over = false;
+  exploreResetState();       // HUD・結果画面も閉じる
+  joinInProgress = false;
+  // 探検は netState をソロへ潰しているので、ロビーの選択から作り直す
+  syncNetStateToLobbyMode();
+  if(typeof setAutoRun==='function') setAutoRun(false);
+  if(window.__aramonReal3D) window.__aramonReal3D.setActive(false);
+  if(window.__aramonFxGl) window.__aramonFxGl.setActive(false);
+  document.getElementById('resultScreen').classList.add('hidden');
+  document.getElementById('startScreen').classList.remove('hidden');
+  bgmSetTrack('title');
+  if(typeof renderSelectorCards==='function') renderSelectorCards();
+  updatePlayButtonsEnabled();
+}
+document.getElementById('exploreResultBackBtn').addEventListener('click', exploreExit);
+
 function exitShootingRange(){
   game.started = false;
   game.trainingRange = false;
@@ -6229,6 +6309,8 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   document.getElementById('joinBtn').disabled = true;
   requestFullscreenSafe();
   requestOrientationLockSafe();
+  // 探検モードは同じボタンから探検へ出発する(explore.js)
+  if(lobbyMode==='explore'){ exploreStart(); return; }
   // バトル開始(部屋を使わない入口)。30人バトロワの個人戦専用(チーム戦のソロ出撃は廃止・2026-08-19)
   startGame();
 });
@@ -11718,10 +11800,12 @@ function requestMatchExit(){
   if(!canExitMatchNow()) return;
   const warnHost = exitEndsMatchForOthers();
   showConfirmDialog({
-    text: warnHost
+    text: game.explore
+      ? `探検を途中でやめます。持ち帰れる素材は半分(${Math.round(EXPLORE_FAIL_KEEP_RATIO*100)}%)になります。全部持ち帰るにはベースキャンプの帰還ビーコンへ。`
+      : warnHost
       ? 'あなたはホストです。抜けると参加中のプレイヤー全員の試合も終わります。ここまでの戦績と報酬は記録されます。'
       : 'この試合を抜けてリザルトへ進みます。ここまでの戦績と報酬はそのまま記録されます。',
-    yes: '🚪 リザルトへ抜ける', no: '続ける', danger: warnHost,
+    yes: game.explore ? '🚪 探検をやめる' : '🚪 リザルトへ抜ける', no: '続ける', danger: warnHost,
     onYes: doMatchExit,
   });
 }
@@ -11730,6 +11814,8 @@ function doMatchExit(){
   // レイドはリザルトの作り方が別(与ダメの記録もここが持つ)。ホストが落ちたときにゲストが
   // 通るのと同じ finishRaid(false) をそのまま使う
   if(game.raid){ if(typeof finishRaid==='function') finishRaid(false); return; }
+  // 探検は途中で抜けると「力尽き/時間切れ」と同じ持ち帰り半分(帰還ビーコンで帰った扱いにはしない)
+  if(game.explore){ exploreFinish('abandon'); return; }
   if(exitEndsMatchForOthers()){
     /* ホストが抜けると配信が止まる。何も言わずに止めるとゲストは
        HOST_SILENCE_TIMEOUT(5秒)の沈黙のあと「ホストとの接続が切れました」で終わる。

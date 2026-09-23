@@ -396,6 +396,7 @@ iPhone版はコミット時に自動で上げます。
 | `node tools/undef_check.mjs` | **どのスコープからも解決できない識別子**(引数の渡し忘れ・打ち間違い) |
 | `node tools/layout_test.mjs` | **全画面**の 見切れ・押しやすさ・文字切れ・重なり・スクロール・横への広がり・操作の貼り付き |
 | `node tools/result_shot.mjs` | リザルト画面の**スクリーンショット**(8場面 × 端末3種)。批評エージェントが目で見て採点するための絵を撮る。`--out <dir>` `--only <場面>` `--delay <ms>`(演出が終わった状態を撮るための待ち)。`#resultInner` の縮小(`fitResultScreen`)が発火した場面も一覧で出す |
+| `node tools/explore_shot.mjs` | 探検モードの**スクリーンショット**(ロビー・ベースキャンプ・各地域・野生・結果 × 横持ち1624x750/縦持ち375x812)。批評家が見た目を採点するための絵。`--out <dir>` `--cuts <カット,…>` `--vps land,port` `--list`(カット一覧)。カットはファイル冒頭の `CUTS` へ1行足せば増える |
 | `node tools/tutorial_test.mjs` | 初回チュートリアルを最後まで通せるか |
 | `node tools/measure_layout.mjs` | 画面の寸法・スクロール量・持ち方での文字サイズ差 |
 | `node tools/changelog_check.mjs` | 更新履歴(`UPDATE_HISTORY`)の形・日付・同じ話題の重複 |

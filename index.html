@@ -401,6 +401,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
           <button class="mode-tab mode-tab-raid" data-mode="raid">レイドバトル</button>
           <span class="raid-soon-pop" id="raidModePop">準備中</span>
         </div>
+        <!-- 探検モード(1人用・部屋なし)。押した先は joinBtn(「探検へ出発」)→ exploreStart() -->
+        <button class="mode-tab mode-tab-explore" data-mode="explore">探検</button>
       </div>
       <!-- サブ選択(モードごとの中身)。選択は setLobbySubMode() だけが書く。
            出し分け・active・説明文は updateModePickPanels() が面倒を見る -->
@@ -438,6 +440,11 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
         <div id="raidModeNote" class="raid-mode-note"></div>
         <button id="raidModeOpenBtn" class="raid-go-btn">🐉 レイドバトルへ</button>
       </div>
+      <!-- 探検を選んだときだけ出す案内。出発はロビー右下のボタン(探検へ出発) -->
+      <div id="exploreModeOptions" class="hidden">
+        <div class="pick-label" style="margin-top:10px;">広いフィールドを探検して素材を集める(1人用)</div>
+        <div class="team-size-note" id="exploreModeNote">4つの地域で野生モンスターを倒して素材を集め、ベースキャンプの帰還ビーコンで持ち帰ります。力尽きるのは3回まで。制限時間があります</div>
+      </div>
       <div id="multiOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBot・マスモンで補完)</div>
         <div id="capacityTabs">
@@ -446,6 +453,21 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
           <button class="cap-tab" data-cap="4">4人</button>
         </div>
       </div>
+  </div>
+</div>
+
+<!-- 探検モードの結果(持ち帰った素材)。中身は ui.js の exploreShowResult。
+     見出し・数字・ボタンはスクロールの外、素材の一覧(#exploreResultList)だけが送れる -->
+<div id="exploreResultOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box explore-result-box" id="exploreResultBox">
+    <div class="exr-head">
+      <div class="exr-title" id="exploreResultTitle">帰還成功</div>
+      <div class="exr-sub" id="exploreResultSub"></div>
+    </div>
+    <div class="exr-stats" id="exploreResultStats"></div>
+    <div class="exr-list-label">持ち帰った素材</div>
+    <div class="exr-list" id="exploreResultList"></div>
+    <div class="exr-actions"><button id="exploreResultBackBtn" class="exr-back-btn">ロビーへ戻る</button></div>
   </div>
 </div>
 
@@ -692,6 +714,14 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <span id="raidMyDmg">与ダメ 0</span>
       <span class="raid-hud-rage" id="raidRage">怒り 0%</span>
     </div>
+  </div>
+  <!-- 探検モード中だけ出す最小のHUD(残り時間・力尽き・所持数・今いる地域)。中身は explore.js の exploreUpdateHud。
+       触る要素が無いので pointer-events は付けない(スクロールロック除外は不要) -->
+  <div id="exploreHud" class="hidden">
+    <span class="exh-time" id="exploreHudTime">15:00</span>
+    <span class="exh-chip" id="exploreHudFaint">💫 0/3</span>
+    <span class="exh-chip" id="exploreHudBag">🎒 0</span>
+    <span class="exh-where" id="exploreHudWhere">⛺ ベースキャンプ周辺</span>
   </div>
   <div id="autoRunLabel" class="hidden">🏃 オートラン中</div>
   <div id="spectateBar" class="hidden">
@@ -1927,6 +1957,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <script src="audio.js"></script>
 <script src="world.js"></script>
 <script src="combat.js"></script>
+<!-- 探検モードの進行(game.explore)。combat.js の関数を使い、render.js/ui.js から呼ばれるのでこの位置 -->
+<script src="explore.js"></script>
 <!-- 技ごとのVFXの注文書。render.jsが window.__aramonFxMoves を読むので先に置く -->
 <script src="fx_moves.js"></script>
 <script src="render.js"></script>

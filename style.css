@@ -4491,6 +4491,9 @@
   #hud.raid-mode #statsPanel{ display:none; }
   /* レイドHUDのぶんだけミニマップを下げる */
   #hud.raid-mode #topRight{ top:calc(6 * var(--vh)); }
+  /* 探検モードは安置も残り人数も無い。その欄と Kill/Damage を隠し、上部中央は #exploreHud が使う */
+  #hud.explore-mode #counterPanel{ display:none; }
+  #hud.explore-mode #statsPanel{ display:none; }
   /* ---- 試合中のトレーニングカード(**試合は止まらない**) ----
      置き場所: **画面の下寄り・技パネルの上**。以前は top:58px で、最大約129pxの高さと
      合わせて y=58〜187 を占め、375px高の端末では**照準(50%=187)まで届き**、
@@ -5207,7 +5210,9 @@
      **#hpPanel や #minimapWrap の幅を変えたらここも直す**(片方だけ直すと再び重なる)。
        左 = #topLeft left:14 + #hpPanel 210 + すきま8
        右 = #topRight right:14 + #minimapWrap 120 + すきま8                            */
-  #raidHud{ --raid-hud-left:232px; --raid-hud-right:142px;
+  /* 探検モードのHUD(#exploreHud)も同じ居場所(左右の先客のぶんを空けた上部中央)を使う。
+     空ける幅の数字はここ1か所。見た目(色)は下の探検モードの節で上書きする */
+  #raidHud, #exploreHud{ --raid-hud-left:232px; --raid-hud-right:142px;
     position:absolute; top:8px; z-index:24;
     left:var(--raid-hud-left); right:var(--raid-hud-right); margin:0 auto;
     width:auto; max-width:560px; padding:5px 10px; border-radius:12px;
@@ -6126,7 +6131,7 @@
   html.narrow-screen #killFeed{ width:170px; }
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
   /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */
-  html.narrow-screen #raidHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
+  html.narrow-screen #raidHud, html.narrow-screen #exploreHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
   html.narrow-screen #movePanel{ gap:8px; padding:8px 12px;}
   html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
@@ -6463,3 +6468,58 @@ body.self-noguts #fireBtn{ opacity:0.42; filter:grayscale(0.7); }
 
 /* リザルトのバッジ集約チップ(6件を超えたぶん) */
 .result-badge.more{ background:rgba(255,255,255,0.12); color:#cfd6de; }
+
+/* =====================================================================
+   探検モード
+   ①試合中の最小HUD(#exploreHud。段2のHUD担当が作り直す前提)
+   ②結果画面(#exploreResultOverlay)
+   レア度の色は data.js の EXPLORE_RARITY が正。ここでは --rc(JSが渡す)を読むだけ
+   ===================================================================== */
+#exploreHud{ display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:nowrap;
+  min-width:0; white-space:nowrap;
+  background:linear-gradient(180deg, rgba(8,20,16,0.88), rgba(4,10,8,0.88));
+  border-color:rgba(125,255,176,0.45); }
+#exploreHud .exh-time{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:14px; color:#7dffb0; }
+#exploreHud.is-low .exh-time{ color:#ff6b5a; }
+#exploreHud .exh-chip{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); }
+#exploreHud .exh-where{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  font-weight:700; font-size:11px; color:var(--ink-dim); }
+
+/* ---- 結果画面 ----
+   箱は画面から決める(R1): 幅は画面の比、高さは上限だけ持ち、素材の一覧(.exr-list)が縮んで吸う。
+   見出し・数字・ボタンはスクロールの外(R2)。削る順(R3): 一覧 > 数字 > 見出し。ボタンは削らない */
+.mastermon-confirm-box.explore-result-box{
+  position:relative; max-width:min(640px, calc(95 * var(--vw))); width:min(640px, calc(95 * var(--vw)));
+  max-height:calc(92 * var(--vh)); overflow:visible; display:flex; flex-direction:column; gap:8px;
+  padding:14px 18px; text-align:left; border-top:3px solid #7dffb0; }
+#exploreResultOverlay[data-tone="lose"] .explore-result-box{ border-top-color:#ff8a5a; }
+.exr-head{ flex:0 0 auto; min-width:0; }
+.exr-title{ font-family:'Russo One',sans-serif; font-size:22px; letter-spacing:1px; color:#7dffb0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#exploreResultOverlay[data-tone="lose"] .exr-title{ color:#ffb08a; }
+.exr-sub{ font-size:11px; line-height:1.5; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-stats{ flex:0 0 auto; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:6px; }
+.exr-stat{ min-width:0; padding:5px 8px; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid var(--panel-line); }
+.exr-stat-label{ display:block; font-size:9px; letter-spacing:1px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-stat-val{ display:block; font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--amber); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-list-label{ flex:0 0 auto; font-size:10px; letter-spacing:2px; color:var(--ink-dim); }
+.exr-list{ flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); grid-auto-rows:46px; gap:6px; }
+.exr-item{ --rc:#e8e8e8; min-width:0; display:flex; align-items:center; gap:8px; padding:0 10px;
+  border-radius:8px; border:1px solid var(--rc); border-left-width:4px;
+  background:linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); }
+.exr-item.is-lost{ opacity:0.55; }
+.exr-ico{ flex:0 0 auto; font-size:20px; line-height:1; }
+.exr-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+.exr-name{ font-weight:700; font-size:12px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-dest{ font-size:9px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-rar{ color:var(--rc); font-weight:700; margin-right:5px; }
+.exr-lost{ color:#ff8a5a; margin-right:5px; }
+.exr-n{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--rc); }
+.exr-empty{ grid-column:1 / -1; font-size:12px; line-height:1.7; color:var(--ink-dim); padding:6px 2px; }
+.exr-actions{ flex:0 0 auto; display:flex; justify-content:center; }
+.exr-back-btn{ min-height:var(--tap-main); flex-shrink:0; padding:0 34px; border-radius:9px; cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; letter-spacing:1px;
+  color:#062e18; background:linear-gradient(180deg,#b6ffd4,#3fdc8a); border:1px solid #3fdc8a;
+  box-shadow:0 0 14px -3px rgba(80,230,150,0.85); }
+.mode-tab-explore.active{ color:#062e18; background:linear-gradient(180deg,#b6ffd4,#3fdc8a); border-color:#3fdc8a; }

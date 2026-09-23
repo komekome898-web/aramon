@@ -3032,7 +3032,8 @@ MAPS.raid = {
    マップを増やすときに除外の条件を書き足す場所は、必ずここ1つにする。            */
 function isSelectableMap(key){
   const m = MAPS[key];
-  return !!m && !m.testOnly && !m.raidOnly;
+  // exploreOnly = 探検モード専用のフィールド(explore.js が必ず立てる)。通常の抽選には出さない
+  return !!m && !m.testOnly && !m.raidOnly && !m.exploreOnly;
 }
 const UPWARD_BLOCK_THRESHOLD = 35;
 
@@ -5791,6 +5792,160 @@ const GLOSSARY = [
 ];
 function glossaryText(e){ return e ? (typeof e.desc === 'function' ? e.desc() : (e.desc || '')) : ''; }
 function glossaryEntries(catId){ return catId ? GLOSSARY.filter(g=> g.cat === catId) : GLOSSARY.slice(); }
+
+/* =====================================================================
+   探検モード(内部名 explore)の定数・表
+   ・**既存の「遠征」(放置で報酬が来る仕組み)とは別物。名前を混ぜない。**
+   ・モードの進行(開始・力尽き・帰還・終了・報酬)は explore.js。ここは数値と表だけ。
+   ・分岐の入口は game.explore 1つ(game.raid と同じ方式)。通常の試合はここを読まない。
+   ・数値は発注者が実機で調整する前提の名前付き定数。
+   ・MAPS.explore / REAL3D_TERRAIN_SETS.explore / REAL3D_THEMES.explore はフィールド担当の持ち物で、
+     このブロックでは触らない(地域の位置と色のヒントは下の EXPLORE_REGIONS が正)。
+   ===================================================================== */
+const EXPLORE_TIME_LIMIT          = 900;   // 制限時間(秒)。過ぎたら「時間切れ」で持ち帰り半分
+const EXPLORE_MAX_FAINTS          = 3;     // 力尽きてよい回数。この回数に達したら終了(持ち帰り半分)
+const EXPLORE_FAIL_KEEP_RATIO     = 0.5;   // 力尽き/時間切れで持ち帰れる割合(素材ごとに切り捨て)
+const EXPLORE_WORLD_SCALE         = 1;     // フィールドの広さ(通常試合と同じ 18100 四方)
+const EXPLORE_RESPAWN_INVULN_SEC  = 3;     // ベースキャンプで復活した直後の無敵(秒)
+/* ベースキャンプ。ワールドに対する比で置く(フィールド生成もここを読んで平らに空ける)。
+   radius の内側は野生モンスターを置かない・湧かせない安全地帯。 */
+const EXPLORE_CAMP = { xr:0.5, yr:0.5, radius:760 };
+const EXPLORE_CAMP_SPAWN_OFFSET   = { dx:0, dy:240 };    // キャンプ中心から見た出発地点(復活地点も同じ)
+const EXPLORE_BEACON_OFFSET       = { dx:0, dy:-300 };   // キャンプ中心から見た帰還ビーコンの位置
+const EXPLORE_BEACON_RADIUS       = 120;   // ビーコンの輪の半径。この中にとどまると帰還が進む
+const EXPLORE_BEACON_HOLD_SEC     = 3;     // 輪の中に何秒とどまれば帰還するか
+const EXPLORE_BEACON_ARM_SEC      = 4;     // 出発直後はビーコンを効かせない(秒。うっかり帰還しない)
+// 野生モンスター(仮)。段2で本実装に置き換わる前提で、数と縄張りの広さだけ持つ
+const EXPLORE_WILD_PER_REGION     = 6;     // 1地域あたりの頭数
+const EXPLORE_WILD_RESPAWN_SEC    = 45;    // 倒してから同じ縄張りに湧き直すまで(秒)
+const EXPLORE_WILD_RESPAWN_HIDE   = 900;   // プレイヤーがこの距離より近いと湧き直さない(目の前に湧かせない)
+const EXPLORE_WILD_AGGRO_RANGE    = 620;   // この距離に入ると気づいて襲ってくる
+const EXPLORE_WILD_CHASE_RANGE    = 1000;  // 一度気づいたら、この距離まで追い続ける
+const EXPLORE_WILD_LEASH          = 1500;  // 縄張りの中心からこれ以上離れたら追うのをやめて戻る
+const EXPLORE_WILD_WANDER         = 420;   // 普段うろつく範囲(縄張りの中心から)
+const EXPLORE_WILD_GUTS_REGEN     = 3;     // 野生の追加ガッツ回復(毎秒)。技を撃てずに棒立ちになるのを防ぐ
+const EXPLORE_WILD_HP_PER_DANGER  = 0.25;  // 危険度★1つ増えるごとの体力の上乗せ(★1=1倍、★4=1.75倍)
+// 地面に撒く回復・ガッツ(仮。段2の補給箱が入るまでの繋ぎ)
+const EXPLORE_CAMP_LOOT_COUNT     = 18;    // ベースキャンプの周り
+const EXPLORE_REGION_LOOT_COUNT   = 26;    // 各地域
+// ゴールド報酬(持ち帰ったぶんで計算する)
+const EXPLORE_GOLD_BASE           = 30;    // 参加ぶん
+const EXPLORE_GOLD_PER_KILL       = 4;     // 野生を1体倒すごと
+const EXPLORE_GOLD_RETURN_BONUS   = 60;    // 帰還ビーコンで帰ったときの上乗せ
+const EXPLORE_GOLD_PER_RARITY     = { common:2, rare:6, epic:18, legendary:50 };   // 持ち帰った素材1個ごと
+const EXPLORE_STASH_STORAGE_KEY   = 'aramon_explore_stash_v1';   // 探検専用の保管(ボス素材など)。アカウント同期する
+
+/* レア度。色は APEX の白・青・紫・金。光の柱・通知・結果画面の枠はすべてここを読む(決め打ちしない) */
+const EXPLORE_RARITY = {
+  common:    { label:'コモン',     color:'#e8e8e8', order:0 },
+  rare:      { label:'レア',       color:'#4fa3ff', order:1 },
+  epic:      { label:'エピック',   color:'#b36bff', order:2 },
+  legendary: { label:'レジェンド', color:'#ffc93c', order:3 },
+};
+
+/* 4つの地域(ベースキャンプを囲む)。**地域の位置・広さ・色のヒントはこの表が正。**
+   フィールド生成(world.js の exploreGenWorld)・3Dの見た目(real3d_explore.js)・野生の配置・
+   HUDの地域名は、すべてここを読む。1行足せば地域が増える作りにしておく。
+     xr/yr = 中心(ワールドに対する比)、rr = 半径(ワールド幅に対する比)
+     danger = 危険度★(1〜4)。野生の強さと落とす物の良さが上がる
+     wild   = 出る野生モンスターの属性(ELEMENTS のキー)
+     theme  = 色のヒント(ground=地面 / grass=植生 / fog=霞 / sky=空 / accent=目印の光) */
+const EXPLORE_REGIONS = [
+  { id:'meadow',  name:'草原の盆地', icon:'🌾', xr:0.27, yr:0.72, rr:0.19, danger:1,
+    wild:['mocchi','suezo','hum','centaur'],
+    theme:{ ground:'#6f9a3e', grass:'#8fc44f', fog:'#d8ecc4', sky:'#9fd3ff', accent:'#c8f27a' } },
+  { id:'frost',   name:'凍った高地', icon:'❄️', xr:0.26, yr:0.27, rr:0.19, danger:2,
+    wild:['aqua','ark','fox','god'],
+    theme:{ ground:'#dfe9f2', grass:'#9fb8c9', fog:'#e8f2fb', sky:'#b9d8f2', accent:'#8fe6ff' } },
+  { id:'volcano', name:'火山の峡谷', icon:'🌋', xr:0.74, yr:0.26, rr:0.19, danger:3,
+    wild:['fire','phoenix','rock','ogre'],
+    theme:{ ground:'#4a2a1a', grass:'#6b3b22', fog:'#8a5a44', sky:'#e0906a', accent:'#ff6b2e' } },
+  { id:'jungle',  name:'密林の遺跡', icon:'🗿', xr:0.74, yr:0.74, rr:0.19, danger:4,
+    wild:['leaf','warm','narga','zan','pixie'],
+    theme:{ ground:'#23421f', grass:'#2f6b2a', fog:'#6f8f6a', sky:'#8fb8a0', accent:'#7dffb0' } },
+];
+function exploreRegion(id){ return EXPLORE_REGIONS.find(r=> r.id === id) || null; }
+// 地域の中心と半径(ワールド座標)。WORLD は試合ごとに applyWorldScale で変わるので、その都度計算する
+function exploreRegionCircle(r){
+  return { x: WORLD.w * r.xr, y: WORLD.h * r.yr, r: WORLD.w * r.rr };
+}
+// その地点がどの地域か(どこにも入っていなければ null)。HUDの地域名・ミニマップが読む
+function exploreRegionAt(x, y){
+  let best = null, bestK = Infinity;
+  for(const r of EXPLORE_REGIONS){
+    const c = exploreRegionCircle(r);
+    const k = Math.hypot(x - c.x, y - c.y) / c.r;   // 半径に対する比。1未満=中
+    if(k < 1 && k < bestK){ bestK = k; best = r; }
+  }
+  return best;
+}
+
+/* 素材。**レア度・行き先・説明はこの表が正**(結果画面・通知・保管の一覧はすべてここから作る)。
+     region = 落ちる地域(ボス素材は 'boss')
+     toBag  = 持ち帰ったときに換わる PLAYER_ITEMS のキー。無いものは探検専用の保管へ入る
+              (ボス素材は工房で装備に使う ―― 工房は段2で作る) */
+const EXPLORE_MATERIALS = {
+  // 草原の盆地
+  meadow_fiber:  { name:'草原の繊維',   icon:'🌾', rarity:'common', region:'meadow',  desc:'盆地の草から取れるしなやかな繊維。装備の下地になる' },
+  meadow_honey:  { name:'盆地の蜜',     icon:'🍯', rarity:'rare',   region:'meadow',  toBag:'seed_life',     desc:'持ち帰るとライフの実になる' },
+  meadow_plume:  { name:'風切り羽',     icon:'🪶', rarity:'rare',   region:'meadow',  toBag:'seed_evasion',  desc:'持ち帰ると回避の実になる' },
+  // 凍った高地
+  frost_shard:   { name:'氷晶のかけら', icon:'❄️', rarity:'common', region:'frost',   desc:'溶けない氷。冷気をまとう装備の材料' },
+  frost_dew:     { name:'オーロラの雫', icon:'💧', rarity:'rare',   region:'frost',   toBag:'seed_wisdom',   desc:'持ち帰るとかしこさの実になる' },
+  frost_hide:    { name:'霜の毛皮',     icon:'🧥', rarity:'rare',   region:'frost',   toBag:'seed_vitality', desc:'持ち帰ると丈夫さの実になる' },
+  // 火山の峡谷
+  volcano_ore:   { name:'灼熱鉱石',     icon:'🪨', rarity:'common', region:'volcano', desc:'熱を帯びた鉱石。武器の芯になる' },
+  volcano_heart: { name:'炎の核',       icon:'🔥', rarity:'rare',   region:'volcano', toBag:'seed_power',    desc:'持ち帰るとちからの実になる' },
+  // 密林の遺跡
+  jungle_vine:   { name:'古代の蔓',     icon:'🌿', rarity:'common', region:'jungle',  desc:'遺跡に絡みつく丈夫な蔓' },
+  jungle_relic:  { name:'遺跡の欠片',   icon:'🗿', rarity:'rare',   region:'jungle',  toBag:'seed_accuracy', desc:'持ち帰ると命中の実になる' },
+  // ボス素材(段2のボスが落とす)
+  boss_horn:     { name:'大角',         icon:'🦴', rarity:'epic',      region:'boss', desc:'地域の主の角。工房で装備に使う' },
+  boss_scale:    { name:'紅蓮の鱗',     icon:'🐉', rarity:'epic',      region:'boss', desc:'炎に焼かれない鱗。工房で装備に使う' },
+  boss_fang:     { name:'氷河の牙',     icon:'🦷', rarity:'epic',      region:'boss', desc:'凍てつく牙。工房で装備に使う' },
+  apex_core:     { name:'頂点の心核',   icon:'💠', rarity:'legendary', region:'boss', desc:'頂点に立つ者の心臓。最上級の装備に使う' },
+  life_crystal:  { name:'生命の結晶',   icon:'💎', rarity:'legendary', region:'boss', toBag:'fruit_life', desc:'持ち帰ると生命の果実になる' },
+};
+// 野生を倒したときの仮の落とし物(地域のコモン/レアから抽選)。段2で本実装に置き換わる
+const EXPLORE_WILD_RARE_CHANCE = 0.22;   // レアが出る確率(危険度★1つごとに +0.04)
+function exploreRollWildDrop(regionId){
+  const keys = Object.keys(EXPLORE_MATERIALS).filter(k=> EXPLORE_MATERIALS[k].region === regionId);
+  if(!keys.length) return null;
+  const reg = exploreRegion(regionId);
+  const rareChance = EXPLORE_WILD_RARE_CHANCE + ((reg ? reg.danger : 1) - 1) * 0.04;
+  const want = Math.random() < rareChance ? 'rare' : 'common';
+  const pool = keys.filter(k=> EXPLORE_MATERIALS[k].rarity === want);
+  const list = pool.length ? pool : keys;
+  return list[Math.floor(Math.random() * list.length)];
+}
+function exploreMaterialColor(key){
+  const m = EXPLORE_MATERIALS[key];
+  return (m && EXPLORE_RARITY[m.rarity]) ? EXPLORE_RARITY[m.rarity].color : EXPLORE_RARITY.common.color;
+}
+
+/* 探検専用の保管(toBag を持たない素材の置き場)。形は { 素材キー: 個数 }。
+   **アカウント同期する**(ui.js の ACCOUNT_SYNC_KEYS に入れてある)。知らないキー・壊れた値は読み捨てる。 */
+function loadExploreStash(){
+  try{
+    const d = JSON.parse(localStorage.getItem(EXPLORE_STASH_STORAGE_KEY)) || {};
+    const out = {};
+    for(const k of Object.keys(d)){
+      const n = Math.max(0, Math.floor(Number(d[k]) || 0));
+      if(EXPLORE_MATERIALS[k] && n > 0) out[k] = n;
+    }
+    return out;
+  }catch(err){ return {}; }
+}
+function saveExploreStash(s){
+  try{ localStorage.setItem(EXPLORE_STASH_STORAGE_KEY, JSON.stringify(s || {})); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+function addExploreStash(key, n){
+  if(!EXPLORE_MATERIALS[key]) return;
+  const s = loadExploreStash();
+  s[key] = (s[key] || 0) + Math.max(0, Math.floor(n || 0));
+  saveExploreStash(s);
+}
 
 /* =====================================================================
    GAME STATE

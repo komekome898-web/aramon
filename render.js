@@ -7334,7 +7334,8 @@ function render(){
       shrinking: zoneState.shrinking, hasNext: zoneState.hasNext,
       snow: !!(currentMap && currentMap.mountainStyle === 'snow'),
     },
-    marks: raidTelegraphMarks(),
+    // 探検モードの帰還ビーコンの輪も同じ口で渡す(レイドと探検は同時に起きない。探検以外では null)
+    marks: raidTelegraphMarks() || exploreGroundMarks(),
   }));
   if(perfOn) perfGl(performance.now() - _glT0);
   real3dActive = gl3d;
