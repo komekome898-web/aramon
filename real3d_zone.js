@@ -51,6 +51,9 @@ const RING_STYLES = {
   // strokeProjectedRing(arc, col, 4, [12,9], {blur:14, color:col}) / inner は 2, [7,7], glowなし
   mark:      { css:'#ffffff', width:4, dash:[12,9], glow:{ blur:14, alpha:1.0 } },
   markInner: { css:'#ffffff', width:2, dash:[7,7],  glow:null },
+  /* 暗い太い外縁(mark.outline を渡したときだけ出す。探検のボスの予告)。明るい内線(mark)の下に敷くと、
+     雪原でも溶岩の上でも縁が読める。2D版には無い(探検はリアルマップ専用なので写しは不要) */
+  markOutline: { css:'#000000', width:13, dash:null, glow:{ blur:6, alpha:0.6 } },
 };
 /* 2Dの塗り。drawRaidTelegraph は fillAlpha = blink*(soon?0.42:0.24) で塗っていた。
    呼び出し側が mark.fillAlpha を渡さなかったときの既定値(0.24と0.42の間)。 */
@@ -73,7 +76,10 @@ const MIN_FORE    = 0.18;  // 帯を真横から見たときの太さ補正の�
    補正なしの半幅は距離の0.06倍程度なので、この上限は真横から見たときだけ効く。 */
 const MAX_HALF_R  = 0.25;
 const MARK_SLOTS  = 8;     // 同時に出せる技の地面円の数(レイドの予告は多くて数個)
-const FILL_RINGS  = 5, FILL_SEGS = 40;   // 塗りの分割(地形に沿わせるので粗いと浮く)
+/* 塗りの分割(地形に沿わせるので粗いと浮く・地面に潜って縁がギザギザに欠ける)。
+   半径方向は大きさに合わせて FILL_RINGS_MIN〜FILL_RINGS まで(地形の頂点間隔50程度)、周方向は固定 */
+const FILL_RINGS  = 24, FILL_SEGS = 64, FILL_RINGS_MIN = 5, FILL_RING_STEP = 60;
+const MARK_RING_CAP = 128;   // 地面の印の輪郭1本の最大点数(大きな扇の弧をなめらかに)
 
 /* ---- シェーダー ----
    帯(輪)は1本の折れ線を頂点シェーダーで左右へ広げて作る。広げる向き aNrm は
@@ -128,21 +134,31 @@ const RIBBON_FRAG = `
     gl_FragColor = vec4(uColor, al);
   }`;
 const FILL_VERT = `
+  attribute float aT;      // 中心(0)→縁(1)。帯(rect)は根元(0)→先(1)
   uniform float uFadeNear, uFadeFar;
-  varying float vFade;
+  varying float vFade, vT;
   void main(){
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
     float d = max(length(cameraPosition - wp), 1.0);
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
+    vT = aT;
     gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
   }`;
+/* uProg < 0 なら一様な塗り(従来どおり。レイドの予告・帰還ビーコン)。
+   0〜1 なら「中心から縁へ満ちる」塗り: 満ちた内側は濃く、外側は薄く、満ちている先端に明るい線 */
 const FILL_FRAG = `
-  uniform vec3 uColor; uniform float uAlpha;
-  varying float vFade;
+  uniform vec3 uColor; uniform float uAlpha, uProg;
+  varying float vFade, vT;
   void main(){
     float al = uAlpha * vFade;
+    if(uProg >= 0.0){
+      float w = max(fwidth(vT), 1e-4) * 1.5;
+      float inside = 1.0 - smoothstep(uProg - w, uProg + w, vT);
+      float front = exp(-abs(vT - uProg) / max(w*3.0, 0.012)) * step(0.01, uProg);
+      al = vFade * (uAlpha*(0.28 + 0.72*inside) + 0.55*front);
+    }
     if(al < 0.004) discard;
-    gl_FragColor = vec4(uColor, al);
+    gl_FragColor = vec4(uColor, min(al, 1.0));
   }`;
 
 /* 画面の大きさから決まる値は全マテリアルで共有する(同じ {value:} を参照させるので、
@@ -218,6 +234,7 @@ function fillMaterial(){
     uniforms: Object.assign({}, uShared, {
       uColor: { value: new THREE.Vector3(1,1,1) },
       uAlpha: { value: 0 },
+      uProg:  { value: -1 },
     }),
     vertexShader: FILL_VERT,
     fragmentShader: FILL_FRAG,
@@ -227,6 +244,7 @@ function fillMaterial(){
     side: THREE.DoubleSide,
   });
   mat.toneMapped = false;
+  mat.extensions = { derivatives: true };   // fwidth(満ちる先端の線)
   return mat;
 }
 
@@ -305,6 +323,7 @@ function makeFill(){
   const V = (FILL_RINGS+1)*(FILL_SEGS+1);
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(V*3);
+  const tt = new Float32Array(V);
   const idx = new Uint16Array(FILL_RINGS*FILL_SEGS*6);
   const stride = FILL_SEGS+1;
   let o = 0;
@@ -314,29 +333,56 @@ function makeFill(){
     idx[o++]=a; idx[o++]=e; idx[o++]=d;
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aT', new THREE.BufferAttribute(tt, 1));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
   const mesh = new THREE.Mesh(geo, fillMaterial());
   mesh.frustumCulled = false;
   mesh.renderOrder = 3;      // 輪より先(下)に塗る
   mesh.visible = false;
-  return { geo, mesh, pos };
+  return { geo, mesh, pos, tt };
 }
+// 半径方向の分割数(大きい円ほど細かく。地形の起伏に沿わせて縁が地面に潜らないように)
+function fillRingsFor(len){ return Math.max(FILL_RINGS_MIN, Math.min(FILL_RINGS, Math.ceil(len / FILL_RING_STEP))); }
 // from/to は絶対角(rad)。null なら全周
 function setFillDisc(fl, cx, cy, radius, from, to){
   const a0 = (from == null) ? 0 : from;
   const span = (from == null) ? Math.PI*2 : (to - from);
   const stride = FILL_SEGS+1;
-  for(let r=0;r<=FILL_RINGS;r++){
-    const t = r/FILL_RINGS;
+  const rings = fillRingsFor(radius);
+  for(let r=0;r<=rings;r++){
+    const t = r/rings;
     for(let c=0;c<=FILL_SEGS;c++){
       const a = a0 + span*(c/FILL_SEGS);
       const x = cx + Math.cos(a)*radius*t, y = cy + Math.sin(a)*radius*t;
       const k = (r*stride+c)*3;
       fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
+      fl.tt[r*stride+c] = t;
     }
   }
   fl.geo.attributes.position.needsUpdate = true;
+  fl.geo.attributes.aT.needsUpdate = true;
+  fl.geo.setDrawRange(0, rings*FILL_SEGS*6);
+  fl.mesh.visible = true;
+}
+// 帯(突進の通り道)。根元(cx,cy)から ang の向きへ len、幅 ±halfW。aT は根元0→先1
+function setFillRect(fl, cx, cy, ang, len, halfW){
+  const stride = FILL_SEGS+1;
+  const rings = fillRingsFor(len);
+  const dx = Math.cos(ang), dy = Math.sin(ang), nx = -dy, ny = dx;
+  for(let r=0;r<=rings;r++){
+    const t = r/rings;
+    for(let c=0;c<=FILL_SEGS;c++){
+      const u = (c/FILL_SEGS)*2 - 1;
+      const x = cx + dx*len*t + nx*halfW*u, y = cy + dy*len*t + ny*halfW*u;
+      const k = (r*stride+c)*3;
+      fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
+      fl.tt[r*stride+c] = t;
+    }
+  }
+  fl.geo.attributes.position.needsUpdate = true;
+  fl.geo.attributes.aT.needsUpdate = true;
+  fl.geo.setDrawRange(0, rings*FILL_SEGS*6);
   fl.mesh.visible = true;
 }
 
@@ -398,11 +444,13 @@ function ensureBuilt(){
   for(let i=0;i<MARK_SLOTS;i++){
     const m = {
       fill:  makeFill(),
-      ring:  makeRibbon(64, RING_STYLES.mark),        // 円 or 扇の輪郭
+      ring:  makeRibbon(MARK_RING_CAP, RING_STYLES.mark),          // 円 or 扇の輪郭(明るい内線)
+      outline: makeRibbon(MARK_RING_CAP, RING_STYLES.markOutline), // 暗い太い外縁(mark.outline のときだけ)
       inner: makeRibbon(40, RING_STYLES.markInner),   // 中心の小さい輪
       key: '',
     };
-    group.add(m.fill.mesh, m.ring.mesh, m.inner.mesh);
+    m.ring.mesh.renderOrder = 5;   // 外縁(4)の上に明るい内線を重ねる
+    group.add(m.fill.mesh, m.outline.mesh, m.ring.mesh, m.inner.mesh);
     marks.push(m);
   }
 }
@@ -460,6 +508,9 @@ export function buildZoneLayer(scene){
            (null のときは安置なし = 射撃訓練場・リアルマップ以外)
    marks = 技の地面円の配列 [{ x, y, r, color, alpha, arc:{from,to}|null, inner, fillAlpha? }, ...]
            arc は絶対角(rad, Math.atan2と同じ向き)。fillAlpha 省略時は alpha*0.28。
+           探検のボスの予告だけが使う追加(省略すると従来どおり):
+             outline  = 暗い太い外縁の色 / solid = 内線を破線にしない
+             progress = 0〜1。塗りが中心(帯は根元)から縁へ満ちる / rect = { angle, len, halfW } 帯の形(r は並べ替え用に>0) 
    camPos= window.camPos({x,y,z}) と同じもの。省略時は window.camPos を見る。       */
 export function updateZoneLayer(zone, markList, camPos){
   if(!group) return;
@@ -488,14 +539,17 @@ export function updateZoneLayer(zone, markList, camPos){
     if(!m || !(m.r > 0)){
       slot.fill.mesh.visible = false;
       slot.ring.mesh.visible = false;
+      slot.outline.mesh.visible = false;
       slot.inner.mesh.visible = false;
       slot.key = '';
       continue;
     }
     const arc = m.arc || null;
+    const rc = m.rect || null;
     const key = [Math.round(m.x), Math.round(m.y), Math.round(m.r),
                  arc ? Math.round(arc.from*100) : 'c', arc ? Math.round(arc.to*100) : 'c',
-                 m.inner ? 1 : 0].join(',');
+                 rc ? [Math.round(rc.angle*100), Math.round(rc.len), Math.round(rc.halfW)].join('/') : '-',
+                 m.inner ? 1 : 0, m.outline ? 1 : 0].join(',');
     if(key !== slot.key){
       slot.key = key;
       buildMark(slot, m, arc);
@@ -506,10 +560,21 @@ export function updateZoneLayer(zone, markList, camPos){
     const fu = slot.fill.mesh.material.uniforms;
     fu.uColor.value.copy(col.rgb);
     fu.uAlpha.value = (m.fillAlpha == null) ? alpha*MARK_FILL_RATIO : m.fillAlpha;
+    fu.uProg.value = (m.progress == null) ? -1 : Math.max(0, Math.min(1, m.progress));
     for(const rb of [slot.ring, slot.inner]){
       const u = rb.mesh.material.uniforms;
       u.uColor.value.copy(col.rgb);
       u.uAlpha.value = alpha;
+    }
+    // solid = 破線にしない(探検のボスの予告)。破線の間隔は画素比込みの値へ戻す
+    slot.ring.mesh.material.uniforms.uDashLen.value = m.solid ? 0 : slot.ring.mesh.material.userData.px.dash * (lastPx || 1);
+    // 外縁があるときは内線のにじみ(光)を弱める。強いままだと外縁の黒を塗りつぶして2重線に見えない
+    slot.ring.mesh.material.uniforms.uGlowA.value = m.outline ? 0.12 : RING_STYLES.mark.glow.alpha;
+    if(m.outline){
+      const oc = parseColor(m.outline);
+      const ou = slot.outline.mesh.material.uniforms;
+      ou.uColor.value.copy(oc.rgb);
+      ou.uAlpha.value = Math.min(1, 0.85 * oc.a * (m.alpha == null ? 1 : Math.max(0.6, m.alpha)));
     }
   }
 }
@@ -520,6 +585,7 @@ export function updateZoneLayer(zone, markList, camPos){
           (2D版は弧を[12,9]・両側の線を[10,8]で描き分けていたが、
            見た目の差が出ないのでひと続きにしてある)                     */
 function buildMark(slot, m, arc){
+  if(m.rect){ buildRectMark(slot, m); return; }
   const from = arc ? arc.from : 0;
   let to = arc ? arc.to : Math.PI*2;
   if(arc && to < from) to += Math.PI*2;
@@ -545,6 +611,8 @@ function buildMark(slot, m, arc){
     sx[n-1] = sx[0]; sy[n-1] = sy[0];
     setRibbonPath(slot.ring, sx, sy, n, true);
   }
+  if(m.outline) setRibbonPath(slot.outline, sx, sy, n, true);
+  else slot.outline.mesh.visible = false;
   // 塗り
   setFillDisc(slot.fill, m.x, m.y, m.r, arc ? from : null, arc ? to : null);
   // 中心の小さい輪(2D版と同じ 0.35 倍)
@@ -564,6 +632,36 @@ function buildMark(slot, m, arc){
   }
 }
 
+/* 帯(rect)の印。m.rect = { angle, len, halfW }、根元は (m.x, m.y)。
+   輪郭は四角を RING_STEP ごとに刻んで地形に沿わせる */
+function buildRectMark(slot, m){
+  const r = m.rect;
+  const dx = Math.cos(r.angle), dy = Math.sin(r.angle), nx = -dy, ny = dx;
+  const cs = [
+    [m.x + nx*r.halfW, m.y + ny*r.halfW],
+    [m.x + dx*r.len + nx*r.halfW, m.y + dy*r.len + ny*r.halfW],
+    [m.x + dx*r.len - nx*r.halfW, m.y + dy*r.len - ny*r.halfW],
+    [m.x - nx*r.halfW, m.y - ny*r.halfW],
+  ];
+  let n = 0;
+  const cap = slot.ring.cap - 2;
+  for(let e=0; e<4; e++){
+    const a = cs[e], b = cs[(e+1)%4];
+    const L = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    const steps = Math.max(1, Math.min(Math.round(L/RING_STEP), Math.floor(cap/4) - 1));
+    for(let i=0; i<steps; i++){
+      const t = i/steps;
+      sx[n] = a[0] + (b[0]-a[0])*t; sy[n] = a[1] + (b[1]-a[1])*t; n++;
+    }
+  }
+  sx[n] = sx[0]; sy[n] = sy[0]; n++;
+  setRibbonPath(slot.ring, sx, sy, n, true);
+  if(m.outline) setRibbonPath(slot.outline, sx, sy, n, true);
+  else slot.outline.mesh.visible = false;
+  setFillRect(slot.fill, m.x, m.y, r.angle, r.len, r.halfW);
+  slot.inner.mesh.visible = false;
+}
+
 function hideAll(){
   if(!group) return;
   ringMain.mesh.visible = false; ringMain.key = '';
@@ -571,6 +669,7 @@ function hideAll(){
   for(const s of marks){
     s.fill.mesh.visible = false;
     s.ring.mesh.visible = false;
+    s.outline.mesh.visible = false;
     s.inner.mesh.visible = false;
     s.key = '';
   }

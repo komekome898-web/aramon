@@ -6123,7 +6123,7 @@ const EXPLORE_BEACON_ARM_SEC      = 4;     // 出発直後はビーコンを効�
 const EXPLORE_WILD_PACKS_PER_REGION = 3;     // 1地域あたりの群れの数
 const EXPLORE_WILD_PACK_SIZE      = { min:3, max:5 };   // 1つの群れの頭数(リーダー込み)
 const EXPLORE_WILD_PACK_SPREAD    = 170;   // 取り巻きがリーダーの周りに寄り添う距離
-const EXPLORE_WILD_LEADER         = { hp:1.5, radius:1.25, dmg:1.15 };   // リーダーだけ一回り大きく・硬い
+const EXPLORE_WILD_LEADER         = { hp:1.5, radius:1.4, dmg:1.15 };    // リーダーだけ一回り大きく・硬い(足元の金の輪でも区別)
 // 危険度★ごとの強さ(種族の素の値に掛ける)。tier=使える技の段(1〜3)
 const EXPLORE_WILD_DANGER = {
   1: { hp:0.85, dmg:0.60, speed:0.88, tier:1 },
@@ -6187,6 +6187,10 @@ function exploreWildNature(elKey){ return EXPLORE_WILD_NATURE[elKey] || EXPLORE_
 
 /* ===== ボス(地域ボス3体+頂点ボス1体。進行は explore.js の exploreUpdateBosses) =====
    **1行足せばボスが増える。** 見た目は既存のSSRスキン(skinId)をそのまま巨大化して使う。
+   **人型のスキンは使わない**(「岩鎧の獣」がコートの人間に見えた=批評指摘)。獣・竜・怪鳥に見える物だけ。
+   element はスキンの素体と同じにする(歩行コマが素体ごとの表 WALK_ANIM にあるため)。
+   プレイヤーが同じスキンを着ていても「巨大な自分」に見えないよう、ボスには常時 color の色味と輪郭の光が掛かる
+   (explore.js の exploreDrawMonsterUnder / exploreDrawMonsterTint)。
      region  = 巣を置く地域(EXPLORE_REGIONS の id)。巣の位置は exploreBossNest(region) が決める
      apex    = 頂点ボス(名前の札・討伐の演出が一段豪華になる)
      hp/radius/speed = 体力・体の半径(通常のモンスターは22前後。レイドのボスは288)・歩く速さ
@@ -6198,21 +6202,21 @@ function exploreWildNature(elKey){ return EXPLORE_WILD_NATURE[elKey] || EXPLORE_
      breakRatio = 部位破壊に要る弱点ダメージ(最大HPに対する比)
      drops / breakDrops = EXPLORE_DROP_TABLES のキー(討伐 / 部位破壊) */
 const EXPLORE_BOSSES = [
-  { id:'gandrock', region:'meadow', apex:false, name:'ガンドロック', title:'盆地を揺るがす岩鎧',
-    element:'rock', skinId:'rock_ssr', color:'#e8a857', hp:2200, radius:190, speed:125, dmg:1.0,
-    gap:[2.8, 4.2], moves:['swipe','stomp','charge','meteor','rain'], partName:'岩角', breakRatio:0.14,
+  { id:'gandrock', region:'meadow', apex:false, name:'ガンドレイク', title:'盆地を統べる鋼角の竜',
+    element:'fire', skinId:'metag_ssr', color:'#ffa04a', hp:2200, radius:190, speed:125, dmg:1.0,
+    gap:[2.8, 4.2], moves:['swipe','stomp','charge','meteor','rain'], partName:'鋼の角', breakRatio:0.14,
     drops:'boss_gandrock', breakDrops:'break_gandrock' },
   { id:'galvark', region:'frost', apex:false, name:'ガルヴァルク', title:'吹雪を裂く白き牙',
     element:'spark', skinId:'garurumon_ssr', color:'#8fe6ff', hp:2800, radius:170, speed:170, dmg:1.1,
     gap:[2.4, 3.8], moves:['swipe','breath','charge','meteor','rain'], partName:'氷牙', breakRatio:0.14,
     drops:'boss_galvark', breakDrops:'break_galvark' },
-  { id:'volgreim', region:'volcano', apex:false, name:'ヴォルグレイム', title:'峡谷に棲む灼熱の王',
-    element:'fire', skinId:'metag_ssr', color:'#ff6a2e', hp:3400, radius:210, speed:140, dmg:1.25,
-    gap:[2.4, 3.6], moves:['breath','stomp','charge','meteor','rain','nova'], partName:'紅蓮の頭殻', breakRatio:0.15,
+  { id:'volgreim', region:'volcano', apex:false, name:'ヴォルガルーダ', title:'火口を舞う業火の翼',
+    element:'phoenix', skinId:'ganon_ssr', color:'#ff5a22', hp:3400, radius:210, speed:140, dmg:1.25,
+    gap:[2.4, 3.6], moves:['breath','stomp','charge','meteor','rain','nova'], partName:'炎の冠羽', breakRatio:0.15,
     drops:'boss_volgreim', breakDrops:'break_volgreim' },
-  { id:'gidravers', region:'jungle', apex:true, name:'ギドラヴァース', title:'密林の頂点に君臨する三界龍',
-    element:'leaf', skinId:'leaf_ssr', color:'#b8ff5c', hp:5200, radius:250, speed:150, dmg:1.5,
-    gap:[2.0, 3.2], moves:['swipe','breath','stomp','charge','meteor','rain','nova'], partName:'三つ首の冠', breakRatio:0.13,
+  { id:'gidravers', region:'jungle', apex:true, name:'ゾルディオス', title:'密林の頂点に君臨する黒き魔獣',
+    element:'fire', skinId:'zod_ssr', color:'#c86bff', hp:5200, radius:250, speed:150, dmg:1.5,
+    gap:[2.0, 3.2], moves:['swipe','breath','stomp','charge','meteor','rain','nova'], partName:'双角', breakRatio:0.13,
     drops:'boss_gidravers', breakDrops:'break_gidravers' },
 ];
 /* ボスの大技。予告(地面の印)→発動の2段。形は4つ:
@@ -6260,6 +6264,15 @@ const EXPLORE_BOSS_WEAK_POINT     = { from:0.62, to:1.0, mult:1.5 };
 const EXPLORE_BOSS_KILL_SLOWMO    = { scale:0.2, holdSec:0.9, easeSec:0.6 };   // 討伐の瞬間の間(実時間の秒)
 const EXPLORE_BOSS_DYING_SEC      = 3.2;   // 倒れてから姿が消えるまで(試合内の秒)
 const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバーを出す距離
+/* 登場の視点演出(咆哮 intro のときだけ)。turnSec でボスへ向き直り、zoomSec のあいだ zoom 倍に寄る。
+   上下の黒帯は画面の高さ×bar。寄せは world.js の setViewZoom(狙撃と同じ入口)で、構え中は狙撃を優先する */
+const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.8, bar:0.1, dimSec:1.6 };
+/* 大技の予告の見え方(real3d_zone.js の地面の印へ渡す)。
+   outline = 暗い太い外縁の色 / minContrast = 地面との明るさの差がこれ未満なら白(暗い地面)か赤(明るい地面)へ寄せる */
+const EXPLORE_TELEGRAPH           = { outline:'#160806', minContrast:0.35, towardLight:'#ffffff', pushLight:0.6, towardDark:'#d0101e', pushDark:0.85 };
+const EXPLORE_METEOR_FALL_H       = 620;   // 流星群・岩石落としの岩が落ち始める高さ(予告の間に降ってくる)
+const EXPLORE_BOSS_RAGE_STEP_SHAKE= 0.22;  // 怒り中の一歩ごとの画面の揺れ(近いほど強い)
+const EXPLORE_BOSS_BREATH_EVERY   = 2.4;   // 怒り中に口元から白い息を吐く間隔(秒)
 
 /* ===== 落とし物(倒したときに何を落とすか)。落とす処理は explore.js の exploreDropLoot 1つを通す =====
    形: { rolls:抽選回数, items:[{ key, w:重み, n:[最小,最大] }], always:[{ key, n:[最小,最大] }] }

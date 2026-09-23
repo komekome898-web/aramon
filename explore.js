@@ -42,12 +42,19 @@
                 updateBotAI()      … 眠っている個体(exploreAsleep)は考えない / ボスは exploreBossAI
                 resolveMovement()  … 眠っている個体は動かない / 野生とボスの歩き方は exploreResolveMove
                 tryFire()          … 眠っている個体は撃たない
-                applyDamage()      … exploreDmgTakenMult(弱点・転倒・眠り)と exploreOnDamaged(気づき・部位破壊)
+                applyDamage()      … exploreResolveHit(命中の高さ opts.hitZ で弱点を判定・数字を当たった高さに)/
+                                     exploreDmgTakenMult(弱点・転倒・眠り)と exploreOnDamaged(気づき・部位破壊)
                 killEntity()       … ボスは exploreOnBossFelled(倒れる演出→消える)
                 projHeightHits()   … 背の高い相手(ent.hitHeight。探検のボスだけが持つ)は頭まで当たる
-     render.js  drawMonster()      … exploreLying(転倒・討伐で横倒し)/ ボスは頭上のHPと名前を出さない /
-                                     exploreDrawMonsterUnder・Tint・Marks(オーラ・怒りの色・頭上の「!」「?」)
-                render()           … exploreDrawScreen(ボスのHPバー・名前の札・咆哮・討伐完了・弾ける素材)
+                updateProjectiles()… 直撃の applyDamage に hitZ(弾の高さ)を渡す
+     render.js  drawMonster()      … exploreBeginPose(転倒で潰れて傾く・崩れ落ちる・足を引きずる・草を食む。回転しない)/
+                                     ボスは頭上のHPと名前を出さない・群れの取り巻きは名前無し /
+                                     exploreDrawMonsterUnder・Tint・Marks(足元の輪・輪郭の光・怒りの目・頭上の「!」「?」)
+                render()           … exploreCineFrame(登場の寄り。setViewZoom)/
+                                     exploreDrawScreen(黒帯・落ちてくる岩・ボスのHPバー・名前の札・咆哮・討伐完了)
+                showHitMarker()    … 弱点命中は×印の色を替える(hm-weak)
+     real3d_zone.js 地面の印 … outline / solid / progress / rect(探検のボスの予告だけが使う。省略時は従来どおり)
+     公開: exploreBossScreenRect(b) … ボスの画面上の矩形(HUD担当が札をボスの外へ逃がすのに使う)
    ===================================================================== */
 
 /* MAPS.explore はフィールド担当が data.js に作る。まだ無いとき(または読み込み順の都合)に備えて、
@@ -78,6 +85,8 @@ function exploreEmptyState(){
     slowmo:null,        // ボス討伐の瞬間の間(実時間で進む。exploreTimeScale)
     lastPlayerCd:0,     // プレイヤーの技の待ち時間(増えた=撃った=音を立てた)
     engagedBossId:null, // いま戦っているボス(exploreBossEngaged が入れる。HUD・音が読む)
+    rawClock:0,         // スローモーションの影響を受けない時計(討伐完了の札の動き。updateExplore が進める)
+    cine:null,          // ボス登場の視点演出(向き直り・寄り・黒帯。exploreUpdateCine / exploreCineFrame)
     endsAt:0,
     finished:null,      // 終わったときの集計(exploreFinish が入れる。結果画面と撮影ハーネスが読む)
     hudSig:'',          // HUDの文字を書き換えるのは中身が変わったときだけ
@@ -97,6 +106,7 @@ function exploreResetState(){
   const ov = document.getElementById('exploreResultOverlay');
   if(ov) ov.classList.add('hidden');
   exploreLootReset();        // 拾った通知の行を消す(explore_loot.js)
+  document.body.classList.remove('explore-cine');   // ボス登場の暗転を持ち越さない
 }
 
 // 出発するモンスターの名前(マスモンならその名前)
@@ -592,6 +602,10 @@ function exploreUpdateWild(dt){
       if(e.exploreAsleep){ if(d < EXPLORE_WILD_ACTIVE_RADIUS - EXPLORE_WILD_SLEEP_HYST) e.exploreAsleep = false; }
       else if(d > EXPLORE_WILD_ACTIVE_RADIUS && e.exState !== 'chase') e.exploreAsleep = true;
       if(e.exploreAsleep) continue;
+      // 今の歩く速さ(姿勢の判定用。止まって草を食む/歩く)
+      const mvd = Math.hypot(e.x - (e.exLastX != null ? e.exLastX : e.x), e.y - (e.exLastY != null ? e.exLastY : e.y));
+      e.exLastX = e.x; e.exLastY = e.y;
+      e.exSpd = (e.exSpd || 0)*0.8 + (mvd/Math.max(dt, 1e-3))*0.2;
       // 技を撃てずに棒立ちにならないよう、野生だけガッツを多めに戻す
       if(e.guts < e.maxGuts) e.guts = Math.min(e.maxGuts, e.guts + EXPLORE_WILD_GUTS_REGEN*dt);
       // 縄張りへ戻る間は回復する
@@ -756,6 +770,9 @@ function exploreBossStartRoar(b, kind){
   if(kind === 'intro'){
     exploreBanner('plate', { bossId:b.id, name:def.name, title:def.title, apex:!!def.apex, color:def.color, dur:3.4 });
     exploreBossEngaged(b);
+    // 視点演出: ボスへ向き直り(背後で咆哮されても必ず見える)・寄り・黒帯・操作ボタンを暗く
+    if(player) exploreState.cine = { bossId:b.id, t0:now, yaw0:camState.yaw, pitch0:camState.pitch };
+    document.body.classList.add('explore-cine');
   } else if(kind === 'rage'){
     exploreBanner('rage', { text:`${def.name}が怒り状態になった！`, color:'#ff4a3a', dur:2.0 });
   }
@@ -806,12 +823,8 @@ function exploreBossBeginAttack(b, def, t, forceKey){
     const ang = angTo(b, t);
     b.facingAngle = ang;
     const len = Math.max(260, Math.min(mv.length, raycastObstacleDistance(b.x, b.y, ang, mv.length) - b.radius*0.6));
-    // 予告は通り道に並ぶ円(体の幅)。突進は体ごと動くので、当たり判定はこの帯と同じ幅になる
-    const n = clamp(Math.round(len / (b.radius*1.4)), 3, 6);
-    for(let i=1; i<=n; i++){
-      const f = i/n;
-      marks.push({ x:b.x + Math.cos(ang)*len*f, y:b.y + Math.sin(ang)*len*f, r:b.radius + 26, fireAt:now+tele });
-    }
+    // 予告は通り道の帯1枚(体の幅)。突進は体ごと動くので、当たり判定はこの帯と同じ幅になる
+    marks.push({ x:b.x, y:b.y, r:len, rect:{ angle:ang, len: len + b.radius, halfW: b.radius + 26 }, fireAt:now+tele });
     charge = { ang, len };
   }
   b.exPending = { key:pick.k, mv, marks, color, charge, startAt:now, fireAt:now+tele,
@@ -911,6 +924,11 @@ function exploreBossTopple(b){
   b.exStateUntil = matchTime + EXPLORE_BOSS_TOPPLE_SEC;
   b.exPending = null; b.exCharge = null; b.moveWithMoveUntil = 0;
   b.exploreLying = true;
+  b.exPoseAt = matchTime;
+  b.exTiltSign = Math.random() < 0.5 ? -1 : 1;
+  // 足元に土煙の輪と地面の揺れ(巨体が崩れた重さ)
+  exploreFxGroundSlam(b, 1);
+  if(typeof fxPunch==='function' && player) fxPunch(0.75 * (1 - clamp(dist(b, player)/2600, 0, 1)));
 }
 // 倒れた(combat.js の killEntity から。ボスは死なずにここへ来て、倒れる演出のあと消える)
 function exploreOnBossFelled(b, killer){
@@ -927,11 +945,15 @@ function exploreOnBossFelled(b, killer){
   exploreState.bossKills++;
   // スローモーション風の間(実時間で進む。update() の dt に exploreTimeScale() が掛かる)
   exploreState.slowmo = { t0: performance.now() };
-  exploreBanner('hunt', { name:def ? def.name : b.name, apex: !!(def && def.apex), color: def ? def.color : '#ffd35a', dur:4.2 });
+  b.exPoseAt = now;
+  b.exTiltSign = Math.random() < 0.5 ? -1 : 1;
   pushKillFeed(`${def ? def.name : b.name} を討伐した`);
   playSe('kill'); playSe('fanfare');
   exploreFxFelled(b, def ? def.color : '#ffd35a');
-  exploreDropLoot(b, exploreDropTable(b, 'kill'));
+  exploreFxGroundSlam(b, 1.3);
+  // 落とし物はスローの影響を受けずに(実時間で)すぐ跳ねる。獲得した物は討伐完了の札の下に並べる
+  const got = exploreDropLoot(b, exploreDropTable(b, 'kill'), { realTime:true });
+  exploreBanner('hunt', { name:def ? def.name : b.name, apex: !!(def && def.apex), color: def ? def.color : '#ffd35a', dur:4.6, items:got });
   exploreBossDisengaged(b, 'defeated');
 }
 // 毎フレームのボスの進行
@@ -1038,7 +1060,23 @@ function exploreUpdateBosses(dt){
         if(nestD < 90) b.exState = 'dormant';
         break;
     }
-    if(b.exRage) exploreFxRage(b, dt);
+    // 怒り中: 一歩ごとに画面が小さく揺れ、口元から白い息を吐く
+    const moved = Math.hypot(b.x - (b.exLastX != null ? b.exLastX : b.x), b.y - (b.exLastY != null ? b.exLastY : b.y));
+    b.exLastX = b.x; b.exLastY = b.y;
+    if(b.exRage && b.alive && b.exState !== 'dying'){
+      exploreFxRage(b, dt);
+      const near = 1 - clamp(d / 2400, 0, 1);
+      b.exStepAcc = (b.exStepAcc || 0) + moved;
+      if(b.exStepAcc > b.radius*0.9){
+        b.exStepAcc = 0;
+        if(typeof fxPunch==='function' && near > 0) fxPunch(EXPLORE_BOSS_RAGE_STEP_SHAKE*near);
+        exploreFxDust(b, def.color);
+      }
+      if(now >= (b.exBreathAt || 0)){
+        b.exBreathAt = now + EXPLORE_BOSS_BREATH_EVERY*rand(0.8, 1.2);
+        exploreFxBreath(b);
+      }
+    }
   }
 }
 // ボスの歩き方(exploreResolveMove から)。予告中・咆哮中・転倒中・眠り中は動かない
@@ -1083,6 +1121,39 @@ function exploreBossMove(b, dt, effSpeed){
 }
 
 /* ===== 被弾の出入口(combat.js の applyDamage から) ===== */
+/* 命中の高さで弱点かを決める(applyDamage の入口。探検以外では呼ばれない)。
+   ・opts.hitZ = 当たった高さ(弾の z。combat.js の直撃が渡す)。無ければ範囲技とみなして体の高さ×0.5
+   ・opts.weakPoint が既に決まっていれば(狙撃は自分で判定する)そのまま使う
+   ・opts.dmgZ = ダメージの数字を出す高さ(当たった所。今までは足元に出ていた)
+   返すのは写し(呼び出し側の opts は書き換えない) */
+function exploreResolveHit(target, source, opts){
+  if(!target || !target.isExploreBoss) return opts;
+  const o = opts ? { ...opts } : {};
+  const h = exploreBodyHeight(target), base = target.z || 0;
+  const z = (o.hitZ != null) ? o.hitZ : base + h*0.5;
+  o.dmgZ = clamp(z, base + 10, base + h);
+  if(o.weakPoint === undefined){
+    o.weakPoint = exploreIsWeakPointHit(target, z);
+    if(o.weakPoint) o.weakAuto = true;
+  }
+  return o;
+}
+/* 予告の色。地面との明るさの差が EXPLORE_TELEGRAPH.minContrast 未満なら、
+   暗い地面では白へ、明るい地面(雪)では赤へ寄せる。地面の明るさは地域の色(REAL3D_THEMES)から */
+function exploreLum(hex){ const c = exploreRgb(hex); return 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]; }
+function exploreGroundLum(regionId){
+  const th = (typeof REAL3D_THEMES !== 'undefined' && REAL3D_THEMES.explore && REAL3D_THEMES.explore.regions)
+    ? REAL3D_THEMES.explore.regions[regionId] : null;
+  if(!th) return 0.35;
+  const toL = (n)=> 0.2126*((n>>16)&255)/255 + 0.7152*((n>>8)&255)/255 + 0.0722*(n&255)/255;
+  return (toL(th.low) + toL(th.high)) / 2;
+}
+function exploreTelegraphColor(color, regionId){
+  const T = EXPLORE_TELEGRAPH;
+  const gl = exploreGroundLum(regionId);
+  if(Math.abs(exploreLum(color) - gl) >= T.minContrast) return color;
+  return gl > 0.5 ? exploreMixHex(color, T.towardDark, T.pushDark) : exploreMixHex(color, T.towardLight, T.pushLight);
+}
 /* 受けるダメージの倍率(applyDamage が HP を減らす直前に掛ける。探検以外では呼ばれない)。
    ・弱点: opts.weakPoint が真で相手が weakPoint を持つ → weakPoint.mult(**倍率はここ1か所だけで掛ける**)
    ・眠っているボスへの最初の一撃 → EXPLORE_BOSS_SLEEP_DMG_MULT / 転倒中 → EXPLORE_BOSS_TOPPLE_DMG_MULT */
@@ -1116,7 +1187,12 @@ function exploreOnDamaged(target, dmg, source, opts){
     const def = exploreBossDef(target);
     target.exploreAsleep = false;
     const weak = !!(opts && opts.weakPoint);
-    if(weak) spawnDmgText(target.x, target.y, (target.z||0) + exploreBodyHeight(target)*0.85, '弱点！', '#ffd35a', true);
+    if(weak){
+      const wz = (opts && opts.dmgZ != null) ? opts.dmgZ + 40 : (target.z||0) + exploreBodyHeight(target)*0.85;
+      spawnDmgText(target.x, target.y, wz, '弱点！', '#ffd35a', true);
+      // 技の弾で頭に当てた(狙撃は自分で音を出す)。APEXのヘッドショット相当の別の音
+      if(opts.weakAuto) playSe('sniper', { kind:'crit' });
+    }
     if(!target.exBroken && def){
       target.exBreakDmg += dmg * (weak ? 1 : EXPLORE_BOSS_BREAK_BODY_RATIO);
       if(target.exBreakDmg >= def.breakRatio * target.maxHp && target.hp > 0){ exploreBossBreakPart(target, def); return; }
@@ -1157,16 +1233,25 @@ function exploreTimeScale(){
    素材は地面へ弾けて落ち、レア度の光の柱が立つ(explore_loot.js の exploreSpawnDrop)。拾いに行くと入手。
    遠くから狙撃で倒しても、光の柱を目印に取りに行ける(APEX)。火花(fx_gl)だけはここで出す。
    ===================================================================== */
-function exploreDropLoot(ent, table){
+function exploreDropLoot(ent, table, opts){
   if(!ent || !table || !game.explore || game.over) return [];
   const list = exploreRollDropTable(table);
   const big = !!ent.isExploreBoss;
   const z0 = big ? exploreBodyHeight(ent)*0.5 : 30;
+  /* realTime: 討伐のスローモーション中でも実時間の速さで跳ねさせる。品の飛ぶ時間は試合の時間で
+     決まっている(explore_loot.js)ので、スローの倍率ぶん短くしておけば画面上は普段の速さになる */
+  const k = (opts && opts.realTime && exploreState.slowmo) ? EXPLORE_BOSS_KILL_SLOWMO.scale : 1;
+  const now = matchTime;
   list.forEach((it, i)=>{
     const a = rand(0, Math.PI*2);
     const r0 = big ? ent.radius*0.9 : 30, r1 = big ? ent.radius*1.9 : 110;
     if(typeof exploreSpawnDrop==='function'){
-      exploreSpawnDrop(ent.x, ent.y, it.key, null, { n:it.n, fromZ:z0, dist:[r0, r1], delay:i*0.06, angle:a });
+      const d = exploreSpawnDrop(ent.x, ent.y, it.key, null, { n:it.n, fromZ:z0, dist:[r0, r1], delay:i*0.06, angle:a });
+      if(d && k !== 1){
+        const born = now + (d.bornAt - now)*k;
+        d.landAt = born + (d.landAt - d.bornAt)*k;
+        d.bornAt = born;
+      }
     } else {
       exploreGainMaterial(it.key, it.n, ent.x + Math.cos(a)*r0, ent.y + Math.sin(a)*r0);
     }
@@ -1214,7 +1299,7 @@ function exploreBanner(kind, o){
   // 同じ種類の札は差し替える(重ねて読めなくしない)。小さい札(怒り・部位破壊・逃走)は同じ場所なので1枚だけ
   const small = (k)=> k !== 'plate' && k !== 'hunt';
   for(let i=list.length-1; i>=0; i--) if(list[i].kind === kind || (small(kind) && small(list[i].kind))) list.splice(i, 1);
-  list.push({ kind, t0:matchTime, dur:o.dur || 2, ...o });
+  list.push({ kind, t0:matchTime, raw0:exploreState.rawClock, dur:o.dur || 2, ...o });
 }
 
 /* ===== WebGL層(fx_gl.js)への演出。層が無い端末では何もしない(2Dの札と揺れだけで成立する) ===== */
@@ -1283,6 +1368,26 @@ function exploreFxVanish(b, color){
   fx.burst({ x:b.x, y:b.y, z:(b.z||0)+20, count:36, speed:160, elev:0.9, elevSpread:0.5, jitter:b.radius*1.2,
              r:0.7, g:0.66, b:0.6, bright:0.5, life:1.8, size0:60, hot:0, az:40, turb:40 });
 }
+// 巨体が崩れた・倒れた: 足元の土煙の輪
+function exploreFxGroundSlam(b, k){
+  const fx = exploreFxLayer();
+  if(!fx) return;
+  const dust = [0.58, 0.5, 0.4];
+  fx.ring({ x:b.x, y:b.y, r0:b.radius*0.7, r1:b.radius*2.6*k, life:0.9, color:dust, width:22, bright:0.45 });
+  fx.ring({ x:b.x, y:b.y, r0:b.radius*0.5, r1:b.radius*1.7*k, life:0.6, color:dust, width:14, bright:0.35 });
+  fx.burst({ x:b.x, y:b.y, z:(b.z||0) + 12, count:Math.round(30*k), speed:260, elev:0.25, elevSpread:0.3, jitter:b.radius*1.3,
+             r:dust[0], g:dust[1], b:dust[2], bright:0.55, life:1.4, size0:70, hot:0, az:30, turb:40 });
+}
+// 怒り中: 口元から白い息(煙)を吐く
+function exploreFxBreath(b){
+  const fx = exploreFxLayer();
+  if(!fx) return;
+  const h = exploreBodyHeight(b);
+  const fa = b.facingAngle;
+  fx.burst({ x:b.x + Math.cos(fa)*b.radius*0.4, y:b.y + Math.sin(fa)*b.radius*0.4, z:(b.z||0) + h*0.72,
+             count:12, angle:fa, spread:0.7, elev:0.15, elevSpread:0.4, speed:120, jitter:b.radius*0.15,
+             r:0.92, g:0.92, b:0.95, bright:0.45, life:1.3, size0:46, size1:90, hot:0, az:50, turb:26, delaySpread:0.35 });
+}
 // 怒り中: 赤い火の粉が体から立ちのぼる(間引いて出す)
 function exploreFxRage(b, dt){
   const fx = exploreFxLayer();
@@ -1301,40 +1406,89 @@ function exploreFxRage(b, dt){
    ・怒りの赤いオーラ / 赤い色味       … exploreDrawMonsterUnder / exploreDrawMonsterTint(同上)
    ・ボスのHPバー・名前の札・咆哮の文字・討伐完了・弾ける素材 … exploreDrawScreen(render.js の render から)
    ===================================================================== */
-// 足元のオーラ(drawMonster の座標系=体の中心付近が原点、ワールド単位)
-function exploreDrawMonsterUnder(e, uiMult){
-  if(!e.isExploreBoss || !e.exRage || e.exState === 'dying') return;
-  const pulse = 0.55 + 0.3*Math.sin(matchTime*6);
-  // 体の輪郭に沿った赤いオーラ(絵の形の赤を少し大きく、ぼかして後ろに敷く)
+/* ---- 描画の座標の決まり ----
+   drawMonster の座標系は「足元の投影点から上へ 0.85×半径 ずらした所が原点、単位はワールド」。
+   足元は y = +0.85×半径、高さ z(足元から)の点は y = 0.85×半径 − z。 */
+function exploreFootY(e){ return e.radius*0.85; }
+/* 足元より下(絵より先)に描く物(render.js の drawMonster から)。
+   ・野生: 敵の赤い輪(自分と同じ種でも一目で敵と分かる)。群れの長は金の二重の輪
+   ・ボス: 輪郭の外側の光(常時はボスの色。怒り中は赤黒い光)+足元の赤い熱 */
+function exploreDrawMonsterUnder(e, uiMult, p){
+  if(!e.alive) return;
+  if(e.isExploreWild && p) exploreDrawFootRing(e, p);
+  if(!e.isExploreBoss || e.exState === 'dying' || e.exState === 'stagger' || e.exState === 'sleep') return;
+  const def = exploreBossDef(e);
   const img = (typeof getDisplayImage==='function') ? getDisplayImage(e) : null;
-  if(img && !e.exploreLying){
-    const L = portraitLayoutFor(e, img);
-    const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
-    const tint = exploreTintSprite(scaledSpriteFor(img, need), '#ff2a14');
-    if(tint){
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const k = 1.07 + 0.03*Math.sin(matchTime*9);
-      for(let i=0; i<2; i++){
-        ctx.globalAlpha = (i ? 0.28 : 0.45) * pulse;
-        const kk = i ? k*1.06 : k;
-        ctx.drawImage(tint, -L.dw*kk/2, L.dy - L.dh*kk/2, L.dw*kk, L.dh*kk);   // 絵の中心を基準に広げる
-      }
-      ctx.restore();
-    }
-  }
-  const rx = e.radius*1.5*uiMult, ry = e.radius*0.55*uiMult;
+  if(!img) return;
+  const L = portraitLayoutFor(e, img);
+  const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
+  const spr = scaledSpriteFor(img, need);
+  const draw = (tint, k, alpha, op)=>{
+    if(!tint) return;
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = op;
+    ctx.drawImage(tint, -L.dw*k/2, L.dy - L.dh*k/2, L.dw*k, L.dh*k);   // 絵の中心を基準に広げる
+  };
   ctx.save();
-  ctx.translate(0, e.radius*0.7);
-  ctx.scale(1, ry/rx);
-  const g = ctx.createRadialGradient(0, 0, rx*0.2, 0, 0, rx);
-  g.addColorStop(0, `rgba(255,60,40,${0.55*pulse})`);
-  g.addColorStop(1, 'rgba(255,40,20,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI*2); ctx.fill();
+  if(e.exRage){
+    // 赤黒い光: 暗い赤の縁を大きめに敷き、その内側に明るい赤を足す(体の色は変えない)
+    const pulse = 0.7 + 0.3*Math.sin(matchTime*7);
+    draw(exploreTintSprite(spr, '#2a0000'), 1.10 + 0.02*Math.sin(matchTime*9), 0.62, 'source-over');
+    draw(exploreTintSprite(spr, '#ff2410'), 1.06, 0.55*pulse, 'lighter');
+    draw(exploreTintSprite(spr, '#ff6a2a'), 1.03, 0.30*pulse, 'lighter');
+  } else if(def){
+    // 常時: ボスの色の輪郭の光(同じスキンを着たプレイヤーの「巨大な自分」に見せない)
+    draw(exploreTintSprite(spr, def.color), 1.05, 0.40 + 0.08*Math.sin(matchTime*2.2), 'lighter');
+  }
+  ctx.restore();
+  if(e.exRage){
+    const rx = e.radius*1.5*uiMult, ry = e.radius*0.55*uiMult;
+    const pulse = 0.55 + 0.3*Math.sin(matchTime*6);
+    ctx.save();
+    ctx.translate(0, e.radius*0.7);
+    ctx.scale(1, ry/rx);
+    const g = ctx.createRadialGradient(0, 0, rx*0.2, 0, 0, rx);
+    g.addColorStop(0, `rgba(255,50,30,${0.5*pulse})`);
+    g.addColorStop(1, 'rgba(255,40,20,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+// 野生の足元の輪。地面の円は1点ずつ投影する(画面上の楕円を決め打ちしない)
+const EXPLORE_RING_SEG = 20;
+function exploreDrawFootRing(e, p){
+  const s = Math.max(0.01, p.scale);
+  const fy = exploreFootY(e);
+  const z = e.z || 0;
+  const ring = (rad)=>{
+    ctx.beginPath();
+    let first = true;
+    for(let i=0; i<=EXPLORE_RING_SEG; i++){
+      const a = i/EXPLORE_RING_SEG*Math.PI*2;
+      const q = project(e.x + Math.cos(a)*rad, e.y + Math.sin(a)*rad, z);
+      if(!q){ first = true; continue; }
+      const lx = (q.x - p.x)/s, ly = (q.y - p.y)/s + fy;   // 足元の投影点 p が y=fy
+      if(first){ ctx.moveTo(lx, ly); first = false; } else ctx.lineTo(lx, ly);
+    }
+  };
+  ctx.save();
+  if(e.exLeader){
+    ctx.strokeStyle = 'rgba(40,20,0,0.7)'; ctx.lineWidth = 5.5/s;
+    ring(e.radius*1.35); ctx.stroke();
+    ctx.strokeStyle = '#ffd35a'; ctx.lineWidth = 2.6/s;
+    ring(e.radius*1.35); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,90,70,0.85)'; ctx.lineWidth = 1.8/s;
+    ring(e.radius*1.62); ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(30,0,0,0.55)'; ctx.lineWidth = 4/s;
+    ring(e.radius*1.2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,70,55,0.9)'; ctx.lineWidth = 2/s;
+    ring(e.radius*1.2); ctx.stroke();
+  }
   ctx.restore();
 }
-// 怒り中の赤い色味(絵の形に合わせた赤を乗算で重ねる)。縮小版ごとに1回だけ作ってキャッシュする
+// 絵の形の単色の影絵(光・色味に使う)。縮小版ごとに1回だけ作ってキャッシュする
 const _exploreTintCache = new WeakMap();
 function exploreTintSprite(spr, color){
   let byColor = _exploreTintCache.get(spr);
@@ -1352,20 +1506,122 @@ function exploreTintSprite(spr, color){
   byColor[color] = c;
   return c;
 }
+/* 絵の直後に重ねる物(姿勢の変形の内側。render.js の drawMonster から)。
+   ・ボス: 常時の色味(ボスの色を薄く乗算)/ 討伐で崩れ落ちたあと色が抜ける / 怒り中は赤い目の光と尾 */
 function exploreDrawMonsterTint(e, img, L){
-  if(!e.isExploreBoss || !e.exRage || !img || !L || e.exState === 'dying') return;
+  if(!e.isExploreBoss || !img || !L) return;
+  const def = exploreBossDef(e);
   const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
   const spr = scaledSpriteFor(img, need);
-  const tint = exploreTintSprite(spr, '#ff3a2a');
-  if(!tint) return;
   ctx.save();
-  ctx.globalAlpha = 0.5 + 0.12*Math.sin(matchTime*6);
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.drawImage(tint, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.10 + 0.06*Math.sin(matchTime*6);
-  ctx.drawImage(tint, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+  if(def){
+    const t = exploreTintSprite(spr, exploreMixHex(def.color, '#ffffff', 0.45));
+    if(t){ ctx.globalAlpha = 0.38; ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(t, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh); }
+  }
+  if(e.exState === 'dying'){
+    // 崩れ落ち(0.8秒)のあと、色が抜けていく
+    const k = clamp((matchTime - (e.exPoseAt || matchTime) - 0.8) / 1.2, 0, 1);
+    const g = exploreTintSprite(spr, '#808080');
+    if(g && k > 0){
+      ctx.globalCompositeOperation = 'saturation'; ctx.globalAlpha = k;
+      ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+      ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.45*k;
+      ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+    }
+  }
   ctx.restore();
+  if(e.exRage && e.exState !== 'dying') exploreDrawRageEyes(e);
+}
+// 怒りの目: 弱点の高さに赤い光点2つと、動きと逆へ流れる光の尾(こちらを向いているときだけ)
+function exploreDrawRageEyes(e){
+  if(Math.cos(e.facingAngle - camState.yaw) > 0.35) return;   // 背を向けている
+  const h = exploreBodyHeight(e), wp = e.weakPoint || EXPLORE_BOSS_WEAK_POINT;
+  const ey = exploreFootY(e) - h*((wp.from + wp.to)/2 + 0.02);
+  const ex = e.radius*0.13;
+  // 動きの向き(画面の左右)。止まっていれば尾は上へ揺らめく
+  const lat = -(e._mwDirX||0)*Math.sin(camState.yaw) + (e._mwDirY||0)*Math.cos(camState.yaw);
+  const moving = (e._mwSpeed||0) > 20;
+  const tx = moving ? -Math.sign(lat)*e.radius*0.5 : Math.sin(matchTime*5)*e.radius*0.06;
+  const ty = moving ? -e.radius*0.05 : -e.radius*0.28;
+  const flick = 0.8 + 0.2*Math.sin(matchTime*23);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(const sx of [-ex, ex]){
+    const g = ctx.createLinearGradient(sx, ey, sx + tx, ey + ty);
+    g.addColorStop(0, 'rgba(255,60,40,0.9)'); g.addColorStop(1, 'rgba(255,20,0,0)');
+    ctx.strokeStyle = g; ctx.lineWidth = e.radius*0.05; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, ey); ctx.quadraticCurveTo(sx + tx*0.5, ey + ty*0.2, sx + tx, ey + ty); ctx.stroke();
+    const r = e.radius*0.075*flick;
+    const rg = ctx.createRadialGradient(sx, ey, 0, sx, ey, r*2.2);
+    rg.addColorStop(0, 'rgba(255,255,230,1)'); rg.addColorStop(0.25, 'rgba(255,60,40,0.95)'); rg.addColorStop(1, 'rgba(255,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(sx, ey, r*2.2, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+/* 姿勢(render.js の drawMonster が絵を描く直前に呼ぶ。true を返したら save 済みで、絵のあと restore される)。
+   回転の板にしない: 足元を軸に「縦に潰す・傾ける・上下に揺らす」だけで倒れ方を見せる。
+   ・ボスの転倒: 縦0.55倍に潰れて沈み、10〜20°傾いてぐらぐら揺れる(ひるみ)
+   ・ボスの討伐: 縦1→0.4へ0.8秒で崩れ落ち、最後に薄れて消える
+   ・ボスの眠り: 低く伏せて、ゆっくり息をする / 逃走: 片側へ傾いて上下する(足を引きずる)
+   ・野生の逃走: 左右に傾いて跳ねる / うろつきの立ち止まり: 頭を下げて草を食む(縦0.9倍) */
+function exploreBeginPose(e){
+  if(!(e.isExploreBoss || e.isExploreWild) || !e.alive) return false;
+  const now = matchTime, r = e.radius;
+  let sy = 1, sx = 1, tilt = 0, bob = 0, alpha = 1;
+  const st = e.exState;
+  if(e.isExploreBoss){
+    const t = now - (e.exPoseAt || now), sign = e.exTiltSign || 1;
+    if(st === 'stagger'){
+      const w = clamp(t/0.22, 0, 1) * clamp((e.exStateUntil - now)/0.35, 0, 1);
+      sy = 1 - 0.45*w + 0.05*Math.sin(t*13)*w;
+      sx = 1 + 0.10*w;
+      tilt = sign*(0.24 + 0.08*Math.sin(t*8))*w;
+      bob = Math.abs(Math.sin(t*8))*r*0.05*w;
+    } else if(st === 'dying'){
+      const k = clamp(t/0.8, 0, 1), ek = 1 - (1-k)*(1-k);
+      sy = 1 - 0.6*ek; sx = 1 + 0.14*ek;
+      tilt = sign*0.2*ek;
+      alpha = clamp((e.exStateUntil - now)/0.7, 0, 1);
+    } else if(st === 'sleep'){
+      sy = 0.6 + 0.02*Math.sin(now*1.6); sx = 1.08; tilt = 0.1;
+    } else if(st === 'flee'){
+      const ph = now*3.4;
+      tilt = 0.12 + 0.09*Math.sin(ph);
+      bob = -Math.abs(Math.sin(ph))*r*0.07;
+      sy = 0.94 + 0.05*Math.abs(Math.sin(ph));
+    } else return false;
+  } else {
+    if(st === 'flee'){
+      const ph = now*10 + e.id;
+      tilt = 0.2*Math.sin(ph);
+      bob = -Math.abs(Math.sin(ph))*r*0.3;
+    } else if(st === 'wander' && (e.exSpd || 0) < 12){
+      const ph = (now + e.id*0.37) % 3.4;
+      const down = ph < 1.4 ? Math.sin(ph/1.4*Math.PI) : 0;
+      if(down <= 0.01) return false;
+      sy = 1 - 0.1*down;
+      tilt = 0.07*down*((e.id % 2) ? 1 : -1);
+    } else return false;
+  }
+  ctx.save();
+  const fy = exploreFootY(e);
+  ctx.translate(0, fy + bob);
+  if(tilt) ctx.rotate(tilt);
+  ctx.scale(sx, sy);
+  ctx.translate(0, -fy);
+  if(alpha < 1) ctx.globalAlpha *= alpha;
+  return true;
+}
+/* ボスの画面上の矩形(頭と足を project で投影)。HUD担当が札・文字をボスの外へ逃がすのに使う。
+   { x, y, w, h, cx, top, bottom } を画面の画素で返す。画面の後ろ・投影できないときは null */
+function exploreBossScreenRect(b){
+  if(!b || !b.alive) return null;
+  const h = exploreBodyHeight(b);
+  const f = project(b.x, b.y, b.z || 0), t = project(b.x, b.y, (b.z || 0) + h);
+  if(!f || !t) return null;
+  const w = b.radius * 2 * BODY_W_MAX * 0.7 * f.scale;
+  return { x: f.x - w/2, y: t.y, w, h: f.y - t.y, cx: f.x, top: t.y, bottom: f.y };
 }
 // 頭上の印。画面上の大きさは距離によらず一定(遠くの群れの「!」も読める)
 function exploreDrawMonsterMarks(e, barY, uiMult){
@@ -1386,10 +1642,15 @@ function exploreDrawMonsterMarks(e, barY, uiMult){
   }
   if(e.isExploreBoss && e.exBroken && !e.exploreLying) exploreDrawBrokenMark(e, uiMult);
   if(!mark) return;
-  const topY = e.isExploreBoss ? -(exploreBodyHeight(e)*(e.exploreLying ? 0.3 : 0.9)) : (barY - 22);
+  const lowPose = e.exState === 'stagger' || e.exState === 'sleep';
+  const topY = e.isExploreBoss ? -(exploreBodyHeight(e)*(lowPose ? 0.4 : 0.9)) : (barY - 22);
+  // 印の大きさは本体の画面上の高さに比例(遠くの小さい群れに大きな札が浮かないように)。上限・下限つき
+  const bodyPx = exploreBodyHeight(e) * s;
+  const mk = e.isExploreBoss ? 1 : clamp(bodyPx / 58, 0.5, 1.15);
   ctx.save();
   ctx.translate(0, topY);
   ctx.scale(1/s, 1/s);            // ここから先は画面の画素
+  ctx.scale(mk, mk);
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   if(mark.kind === '!'){
     // 気づいた: 赤い丸の札に白い「!」(はじけるように出て、少し跳ねる)
@@ -1478,10 +1739,122 @@ function exploreDrawBrokenMark(e, uiMult){
 // 画面の上に重ねる物(render.js の render() から。探検以外では何もしない)
 function exploreDrawScreen(){
   if(!game.explore) return;
+  exploreDrawMeteors();
+  exploreDrawCineBars();
   exploreDrawMaterialFx();
   exploreDrawRoarText();
   exploreDrawBossHud();
   exploreDrawBanners();
+}
+// 流星群・岩石落としの予告の間、上空から岩が落ちてくる(光の筋+岩+だんだん濃く大きくなる影)
+function exploreDrawMeteors(){
+  const now = matchTime;
+  for(const rec of exploreState.bosses){
+    const b = getEntity(rec.id);
+    const pend = b && b.alive ? b.exPending : null;
+    if(!pend || pend.mv.shape !== 'meteor') continue;
+    const col = pend.color || '#ff8a3a';
+    pend.marks.forEach((m, i)=>{
+      if(m.fired) return;
+      const k = clamp((now - pend.startAt) / Math.max(0.05, m.fireAt - pend.startAt), 0, 1);
+      const zg = baseTerrainHeightAt(m.x, m.y);
+      // 影(地面に1点ずつ投影した円。落ちてくるほど濃く・大きく)
+      const sr = m.r*(0.15 + 0.45*k);
+      ctx.save();
+      ctx.beginPath();
+      let ok = false;
+      for(let j=0; j<=18; j++){
+        const a = j/18*Math.PI*2;
+        const q = project(m.x + Math.cos(a)*sr, m.y + Math.sin(a)*sr, zg + 2);
+        if(!q) continue;
+        if(!ok){ ctx.moveTo(q.x, q.y); ok = true; } else ctx.lineTo(q.x, q.y);
+      }
+      if(ok){ ctx.fillStyle = `rgba(10,5,0,${0.10 + 0.35*k})`; ctx.fill(); }
+      // 岩(少し斜めに落ちる)と光の筋
+      const fall = Math.pow(1 - k, 1.5);
+      // 落ちてくる向き: カメラの奥側から手前へ(手前の上空は画面の外なので、奥から斜めに降らせて画面に入れる)
+      const sa = camState.yaw + (i%3 - 1)*0.35;
+      const drift = 700*fall;
+      const rx = m.x + Math.cos(sa)*drift, ry = m.y + Math.sin(sa)*drift, rz = zg + 30 + EXPLORE_METEOR_FALL_H*fall;
+      const tf = Math.pow(1 - Math.max(0, k - 0.12), 1.5);
+      const tx = m.x + Math.cos(sa)*700*tf, ty = m.y + Math.sin(sa)*700*tf, tz = zg + 30 + EXPLORE_METEOR_FALL_H*tf + 180;
+      const P = project(rx, ry, rz), T = project(tx, ty, tz);
+      if(P && T){
+        const rad = clamp(46*P.scale, 3, 34);
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createLinearGradient(T.x, T.y, P.x, P.y);
+        g.addColorStop(0, 'rgba(255,200,120,0)'); g.addColorStop(1, col);
+        ctx.strokeStyle = g; ctx.lineCap = 'round';
+        ctx.lineWidth = rad*1.4; ctx.globalAlpha = 0.55;
+        ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke();
+        ctx.lineWidth = rad*0.45; ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+        const rg = ctx.createRadialGradient(P.x - rad*0.3, P.y - rad*0.3, rad*0.1, P.x, P.y, rad);
+        rg.addColorStop(0, '#6a4a36'); rg.addColorStop(0.7, '#2a1a12'); rg.addColorStop(1, '#120a06');
+        ctx.fillStyle = rg;
+        ctx.beginPath(); ctx.arc(P.x, P.y, rad, 0, Math.PI*2); ctx.fill();
+        ctx.lineWidth = Math.max(1.5, rad*0.18); ctx.strokeStyle = col; ctx.globalAlpha = 0.85;
+        ctx.beginPath(); ctx.arc(P.x, P.y, rad*0.92, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+}
+// 登場の視点演出(咆哮 intro)。ボスへ向き直る・寄る・黒帯・操作ボタンを暗く(毎フレーム updateExplore から)
+function exploreUpdateCine(){
+  const c = exploreState.cine;
+  if(!c) return;
+  const C = EXPLORE_BOSS_CINE;
+  const t = matchTime - c.t0;
+  const b = getEntity(c.bossId);
+  if(t >= C.dimSec) document.body.classList.remove('explore-cine');
+  if(!b || !player || t > Math.max(C.zoomSec, C.dimSec) + 0.3){
+    exploreState.cine = null;
+    document.body.classList.remove('explore-cine');
+    return;
+  }
+  // 背後で咆哮されても必ず見えるよう、turnSec でボスへ向き直る(その後はプレイヤーの操作に返す)
+  if(t <= C.turnSec + 0.05){
+    const e = sniperEaseLocal(t / C.turnSec);
+    camState.yaw = c.yaw0 + angleDiff(angTo(player, b), c.yaw0) * e;
+  }
+  // 寄っている間は巨体が頭まで入るよう見上げ、寄りが終わったら元の角度へ戻す
+  const h = exploreBodyHeight(b);
+  const look = -Math.atan2((b.z || 0) + h*0.5 - camPos.z, Math.max(200, Math.hypot(b.x - camPos.x, b.y - camPos.y)));
+  const pT = clamp(Math.min(look, c.pitch0), -0.3, 0.5);
+  if(t <= C.zoomSec){
+    camState.pitch = c.pitch0 + (pT - c.pitch0) * sniperEaseLocal(t / C.turnSec);
+  } else if(t <= C.zoomSec + 0.3){
+    camState.pitch = pT + (c.pitch0 - pT) * sniperEaseLocal((t - C.zoomSec) / 0.3);
+  }
+}
+function sniperEaseLocal(t){ t = clamp(t, 0, 1); return t*t*(3 - 2*t); }
+// 描画の直前(render.js。狙撃の構えの後)。寄りは setViewZoom の1か所の入口で、構え中は狙撃を優先する
+function exploreCineFrame(){
+  const c = exploreState.cine;
+  if(!c) return;
+  if(typeof sniperView === 'object' && sniperView && sniperView.blend > 0.02) return;
+  const C = EXPLORE_BOSS_CINE;
+  const t = matchTime - c.t0;
+  if(t < 0 || t > C.zoomSec) return;
+  const e = t < 0.3 ? sniperEaseLocal(t/0.3) : (t > C.zoomSec - 0.4 ? sniperEaseLocal((C.zoomSec - t)/0.4) : 1);
+  setViewZoom(1 + (C.zoom - 1)*e);
+}
+// 上下の黒帯
+function exploreDrawCineBars(){
+  const c = exploreState.cine;
+  if(!c) return;
+  const C = EXPLORE_BOSS_CINE;
+  const t = matchTime - c.t0, end = C.dimSec;
+  const e = t < 0.2 ? t/0.2 : (t > end - 0.3 ? Math.max(0, (end - t)/0.3) : 1);
+  if(e <= 0) return;
+  const h = viewH*C.bar*e;
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, viewW, h);
+  ctx.fillRect(0, viewH - h, viewW, h);
+  ctx.restore();
 }
 function exploreDrawMaterialFx(){
   const list = exploreState.fx;
@@ -1625,9 +1998,11 @@ function exploreDrawBossHud(){
 // 画面の札(名前の札・怒り・部位破壊・逃走・討伐完了)
 function exploreDrawBanners(){
   const list = exploreState.banners;
-  for(let i=list.length-1; i>=0; i--) if(matchTime - list[i].t0 > list[i].dur) list.splice(i, 1);
+  // 討伐完了はスローモーション中も普段の速さで動く(実時間に近い rawClock で測る)
+  const ageOf = (bn)=> bn.kind === 'hunt' ? exploreState.rawClock - bn.raw0 : matchTime - bn.t0;
+  for(let i=list.length-1; i>=0; i--) if(ageOf(list[i]) > list[i].dur) list.splice(i, 1);
   for(const bn of list){
-    const age = matchTime - bn.t0;
+    const age = ageOf(bn);
     const a = age < 0.2 ? age/0.2 : (age > bn.dur - 0.45 ? Math.max(0, (bn.dur - age)/0.45) : 1);
     if(bn.kind === 'plate' || bn.kind === 'hunt') exploreDrawBigBanner(bn, age, a);
     else exploreDrawSmallBanner(bn, age, a);
@@ -1644,17 +2019,18 @@ function exploreDrawBigBanner(bn, age, a){
   ctx.globalAlpha = a;
   ctx.textBaseline = 'middle';
   if(hunt){
-    const cy = Math.max(120, viewH*0.21), bandH = 82;
+    const items = (bn.items || []).slice(0, 8);
+    const cy = Math.max(120, viewH*0.21), bandH = 82, extra = items.length ? 36 : 0;
     const g = ctx.createLinearGradient(0, 0, viewW, 0);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.22, 'rgba(10,8,4,0.74)');
     g.addColorStop(0.78, 'rgba(10,8,4,0.74)'); g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, cy - bandH/2, viewW, bandH);
+    ctx.fillRect(0, cy - bandH/2, viewW, bandH + extra);
     const lg = ctx.createLinearGradient(0, 0, viewW, 0);
     lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(0.5, '#ffd35a'); lg.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = lg;
     ctx.fillRect(0, cy - bandH/2, viewW, 2);
-    ctx.fillRect(0, cy + bandH/2 - 2, viewW, 2);
+    ctx.fillRect(0, cy + bandH/2 - 2 + extra, viewW, 2);
     ctx.textAlign = 'center';
     const pop = age < 0.18 ? 1.35 - age/0.18*0.35 : 1;
     ctx.save();
@@ -1675,6 +2051,8 @@ function exploreDrawBigBanner(bn, age, a){
     ctx.strokeText(sub, viewW/2, cy + 26);
     ctx.fillStyle = 'rgba(248,242,226,0.96)';
     ctx.fillText(sub, viewW/2, cy + 26);
+    // 獲得: 素材のアイコン×数(レア度の色)。1つずつ順に出る
+    if(items.length) exploreDrawGainRow(items, viewW/2, cy + 56, age);
   } else {
     const cy = viewH*0.54, bandH = 98;   // 左上の自分の欄・左下のスティックの間
     const x0 = Math.max(18, viewW*0.05) - slide*80;
@@ -1705,6 +2083,45 @@ function exploreDrawBigBanner(bn, age, a){
     ctx.fillStyle = bn.apex ? '#ffd35a' : 'rgba(235,230,215,0.92)';
     ctx.fillText(tag, x0, cy + 36);
   }
+  ctx.restore();
+}
+// 討伐完了の札の下の「獲得」の行。レア度の色の枠に素材のアイコンと数
+function exploreDrawGainRow(items, cx, y, age){
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.font = "bold 13px 'Rajdhani', sans-serif";
+  const label = '獲得';
+  const lw = ctx.measureText(label).width + 10;
+  const cell = 58, gap = 6;
+  const total = lw + items.length*(cell + gap);
+  let x = cx - total/2;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,232,170,0.95)';
+  ctx.fillText(label, x, y);
+  x += lw;
+  items.forEach((it, i)=>{
+    const m = EXPLORE_MATERIALS[it.key];
+    if(!m) return;
+    const t = age - 0.25 - i*0.09;          // 1つずつはじけるように出る
+    if(t < 0) return;
+    const pop = t < 0.14 ? 1.3 - t/0.14*0.3 : 1;
+    const col = exploreMaterialColor(it.key);
+    ctx.save();
+    ctx.translate(x + cell/2, y);
+    ctx.scale(pop, pop);
+    exploreRoundRect(-cell/2, -14, cell, 28, 6);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke();
+    if(!renderHeavyLoad && m.rarity !== 'common'){ ctx.shadowBlur = 10; ctx.shadowColor = col; ctx.stroke(); ctx.shadowBlur = 0; }
+    ctx.textAlign = 'center';
+    ctx.font = "17px sans-serif";
+    ctx.fillText(m.icon, -11, 1);
+    ctx.font = "bold 13px 'Rajdhani', sans-serif";
+    ctx.fillStyle = col;
+    ctx.fillText('×' + it.n, 14, 1);
+    ctx.restore();
+    x += cell + gap;
+  });
   ctx.restore();
 }
 function exploreDrawSmallBanner(bn, age, a){
@@ -1807,18 +2224,22 @@ function exploreGroundMarks(){
     const bo = getEntity(rec.id);
     const pend = bo && bo.alive ? bo.exPending : null;
     if(!pend) continue;
-    // 予告はボスの色(スキン・地域の色)のまま、塗りを濃くして地面の色に紛れないようにする
-    // (赤へ寄せると青いボスの予告が薄桃色になって、かえって読めなくなった)
-    const col = pend.color || '#ff5d5d';
+    /* 予告の見え方:
+       ・暗い太い外縁+明るい内線の2重線(outline / solid)。どんな地面の上でも縁が読める
+       ・地面との明るさの差が足りなければ白(暗い地面)か赤(明るい地面)へ寄せる(exploreTelegraphColor)
+       ・塗りは中心から縁へ満ちる(progress = 予告の進み)。満ちきった瞬間に当たる */
+    const col = exploreTelegraphColor(pend.color || '#ff5d5d', bo.exploreRegion);
     for(const m of pend.marks){
       if(m.fired) continue;
-      const left = Math.max(0, m.fireAt - matchTime);
-      const soon = left < 0.5;
-      const blink = 0.45 + 0.45*Math.abs(Math.sin(matchTime*(soon ? 18 : 9)));
+      const t0 = m.startAt != null ? m.startAt : pend.startAt;
+      const prog = clamp((matchTime - t0) / Math.max(0.05, m.fireAt - t0), 0, 1);
+      const soon = prog > 0.8;
+      const blink = soon ? 0.75 + 0.25*Math.abs(Math.sin(matchTime*18)) : 1;
       const half = (m.fanDeg != null) ? (m.fanDeg*Math.PI/180)/2 : 0;
-      out.push({ x:m.x, y:m.y, r:m.r, color:col, alpha:0.55 + 0.45*blink, fillAlpha: (soon ? 0.36 : 0.22) + blink*0.2,
+      out.push({ x:m.x, y:m.y, r:m.r, color:col, alpha:blink, fillAlpha:0.5,
+                 outline:EXPLORE_TELEGRAPH.outline, solid:true, progress:prog, rect:m.rect || null,
                  arc: (m.fanDeg != null) ? { from:m.angle-half, to:m.angle+half } : null,
-                 inner: m.fanDeg == null && pend.mv.shape !== 'charge' });
+                 inner:false });
     }
   }
   const b = exploreState.beacon;
@@ -1855,8 +2276,10 @@ function exploreUpdateHud(){
 // 毎フレームの進行(combat.js の update() から。安置の update の代わり)
 function updateExplore(dt){
   if(!game.explore || game.over) return;
+  exploreState.rawClock += dt / (exploreState.slowmo ? EXPLORE_BOSS_KILL_SLOWMO.scale : 1);
   exploreUpdateWild(dt);
   exploreUpdateBosses(dt);
+  exploreUpdateCine();
   exploreUpdateFx(dt);
   exploreLootUpdate(dt);     // 補給箱を開ける・品が落ちる・拾う(explore_loot.js)
   exploreUpdateBeacon(dt);

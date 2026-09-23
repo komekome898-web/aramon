@@ -4465,6 +4465,11 @@
   #hitMarker::before{ transform:rotate(45deg); }
   #hitMarker::after{ transform:rotate(-45deg); }
   #hitMarker.hm-show{ animation:hmPop 0.15s ease-out forwards; }
+  /* 探検: ボスの弱点(頭)に当たった×印は赤と金(APEXのヘッドショット相当)。combat.js が showHitMarker(false, true) */
+  #hitMarker.hm-weak::before, #hitMarker.hm-weak::after{ background:#ff3b30; box-shadow:0 0 10px #ffd23c, 0 0 3px #fff; }
+  /* 探検: ボス登場の視点演出の間だけ操作ボタンを暗くする(explore.js が body に explore-cine を付け外しする) */
+  body.explore-cine #joystickBase, body.explore-cine #fireBtn, body.explore-cine #dashBtn,
+  body.explore-cine #sniperAdsBtn, body.explore-cine #movePanel{ filter:brightness(0.35) saturate(0.4); transition:filter 0.2s; }
   @keyframes hmPop{ 0%{ opacity:1; transform:scale(1.3); } 70%{ opacity:0.9; transform:scale(1); } 100%{ opacity:0; transform:scale(0.92); } }
 
   #joystickBase{

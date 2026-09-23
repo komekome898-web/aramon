@@ -1214,7 +1214,7 @@ function drawMonster(e,p){
 
   ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
-  if(game.explore) exploreDrawMonsterUnder(e, uiMult);   // 探検のボスの怒りのオーラ(explore.js)
+  if(game.explore) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
   if(e.dashTimer>0){
     ctx.save(); ctx.globalAlpha=0.35;
@@ -1229,13 +1229,14 @@ function drawMonster(e,p){
 
   // チーム戦のダウン中は倒れ姿勢(横倒し)で最低限の見分けを付ける(詳しい演出は別担当)。
   // スプライトだけ回し、この後の状態リング・HPゲージは回さない
-  // 探検のボスが転倒・討伐で倒れている間(exploreLying)も同じ横倒しにする
-  const downedPose = ((typeof entityDowned==='function') && entityDowned(e)) || !!e.exploreLying;
-  // 探検のボスは巨体なので、横倒しの体が宙に浮かないよう少し下げて地面に寝かせる
-  if(downedPose){ ctx.save(); if(e.exploreLying) ctx.translate(0, e.radius*0.45); ctx.rotate(Math.PI/2); }
+  const downedPose = (typeof entityDowned==='function') && entityDowned(e);
+  if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
+  // 探検の野生・ボスの姿勢(転倒で潰れて傾く・崩れ落ちる・足を引きずる・草を食む)。
+  // 回転の板にしないため、足元を軸に縦に潰して傾ける(explore.js。true のときだけ save 済み)
+  const explorePose = game.explore && exploreBeginPose(e);
   if(displayImg){
     drawMonsterPortrait(e, displayImg, e.hitFlash>0, portraitLayout);
-    if(game.explore) exploreDrawMonsterTint(e, displayImg, portraitLayout);   // 探検のボスの怒りの赤い色味
+    if(game.explore) exploreDrawMonsterTint(e, displayImg, portraitLayout);   // 探検のボスの色味・怒りの目・討伐で色が抜ける
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
 
@@ -1263,6 +1264,7 @@ function drawMonster(e,p){
       [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*eyeOff+Math.cos(e.facingAngle)*2,-e.radius*0.05+Math.sin(e.facingAngle)*2,e.radius*0.07,0,Math.PI*2); ctx.fill(); });
     }
   }
+  if(explorePose) ctx.restore();
   if(downedPose) ctx.restore();   // 倒れ姿勢の回転はスプライトまで
 
   if(e.burnUntil > matchTime){
@@ -1411,7 +1413,8 @@ function drawMonster(e,p){
   const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
   const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
   if(game.explore) exploreDrawMonsterMarks(e, barY, uiMult);   // 探検: 頭上の「!」「?」・眠り・転倒の印(explore.js)
-  if(!e.isPlayer && !entIsDowned && !e.isExploreBoss && (isAllyOfPlayer || dist(e,player)<700)){
+  // 探検: ボスは画面上部のHPバーで、群れの取り巻きは名前無し(HPバーだけ)。名前は「群れの長」の1枚だけ
+  if(!e.isPlayer && !entIsDowned && !e.isExploreBoss && !(e.isExploreWild && !e.exLeader) && (isAllyOfPlayer || dist(e,player)<700)){
     // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
     ctx.save();
     { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
@@ -7327,6 +7330,7 @@ function render(){
      最後の sniperFrameEnd() で必ず元へ戻す。探検モード以外では何もしない。
      **2DのprojectもWebGL層も、この後に読むので同じ視野角・同じカメラになる。** */
   if(typeof sniperFrame === 'function') safeDraw(sniperFrame);
+  if(game.explore) safeDraw(exploreCineFrame);   // 探検: ボス登場の寄り(狙撃の構え中は狙撃を優先。倍率は sniperFrameEnd が1へ戻す)
   /* 当たった衝撃でカメラをずらす。2DのprojectもWebGL層も同じcamPosを読むので、
      ここで1回ずらせば両方の層が一緒に揺れる。**必ず fxPunchRestore() で戻す。** */
   fxPunchApply(_fxGlPrevMs ? Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000) : 0.016);
@@ -8424,9 +8428,10 @@ function updateSquadPanel(){
    inline の opacity と喧嘩する(アニメーションが勝つ/!importantにすると消えなくなる)。 */
 const HIT_MARKER_PRED_DIM = 0.55;   // 予測の×印の濃さ(1=確定と同じ)
 let hitMarkerTimer = null;
-function showHitMarker(predicted){
+function showHitMarker(predicted, weak){
   const el = document.getElementById('hitMarker');
   if(!el) return;
+  el.classList.toggle('hm-weak', !!weak);   // 弱点(探検のボスの頭)への命中は×印の色を替える
   el.style.filter = predicted ? `opacity(${HIT_MARKER_PRED_DIM})` : '';
   el.classList.remove('hm-show');
   void el.offsetWidth;   // アニメーションを毎回最初から再生する

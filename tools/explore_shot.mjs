@@ -118,13 +118,29 @@ const CUTS = [
           mem.filter(e=> e!==L).forEach((e, i)=>{ e.exState='wander'; e.exCallAt=null; e.exAlertAt=-99; e.exAware = 0.35 + i*0.25; e.facingAngle = Math.atan2(player.y-e.y, player.x-e.x); });
         } };
     } },
+  { name:'wild_flee', kind:'field', desc:'弱って逃げる野生(片側へ傾いて跳ねる・💦)',
+    at: ()=>{
+      const pk = exploreState.packs.find(q=> exploreWildNature(q.element).temper==='docile') || exploreState.packs[0];
+      if(!pk) return null;
+      const mem = exploreState.wild.filter(w=> w.pack===pk.id).map(w=> getEntity(w.id)).filter(Boolean);
+      const L = mem.find(e=> e.exLeader) || mem[0];
+      const a = Math.atan2(exploreState.camp.y - L.y, exploreState.camp.x - L.x);
+      const p = clearObstaclePoint(L.x + Math.cos(a)*420, L.y + Math.sin(a)*420, 60);
+      return { x:p.x, y:p.y, yaw:Math.atan2(L.y-p.y, L.x-p.x), pitch:0.12, warm:0.3, lookAt:L.id, vuln:true,
+        after: ()=>{ mem.forEach(e=>{ e.exState='flee'; e.exFleeUntil = matchTime + 9; e.hp = e.maxHp*0.2; }); for(let i=0;i<9;i++) update(1/30); } };
+    } },
   ...[
-    { name:'boss_intro', boss:'gandrock', dist:1150, desc:'ボス登場(咆哮・名前の札・画面揺れ)',
-      after: `exploreBossStartRoar(B, 'intro'); for(let i=0;i<14;i++) update(1/30);` },
+    { name:'boss_intro', boss:'gandrock', dist:1150, keepCam:true,
+      desc:'ボス登場(背を向けていても向き直る・寄り・黒帯・咆哮・名前の札)',
+      after: `camState.yaw = Math.atan2(player.y-B.y, player.x-B.x) + 0.4; B.exState='dormant'; exploreBossStartRoar(B, 'intro'); for(let i=0;i<16;i++) update(1/30);` },
+    { name:'boss_charge', boss:'volgreim', dist:1000, desc:'ボスの突進の予告(通り道の帯。根元から先へ満ちる)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'charge'); for(let i=0;i<18;i++) update(1/30);` },
     { name:'boss_telegraph', boss:'volgreim', dist:1100, desc:'ボスの大技の予告(扇のブレス。地面の印とHPバーの技名)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'breath'); for(let i=0;i<8;i++) update(1/30);` },
     { name:'boss_meteor', boss:'galvark', dist:1000, desc:'ボスの大技の予告(流星群。時間差で落ちる円)',
-      after: `exploreBossEngaged(B); B.exState='fight'; B.exRage=true; B.hp=B.maxHp*0.42; B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'rain'); for(let i=0;i<14;i++) update(1/30);` },
+      after: `exploreBossEngaged(B); B.exState='fight'; B.exRage=true; B.hp=B.maxHp*0.42; B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'rain'); for(let i=0;i<22;i++) update(1/30);` },
+    { name:'boss_weak', boss:'galvark', dist:700, desc:'技の弾が弱点(頭)に当たった瞬間(当たった高さに黄色の大きい数字・弱点！)',
+      after: `exploreBossEngaged(B); B.exState='fight'; const H = exploreBodyHeight(B); applyDamage(B, 40, player, { hitZ:(B.z||0)+H*0.3 }); for(let i=0;i<5;i++) update(1/30); applyDamage(B, 60, player, { hitZ:(B.z||0)+H*0.82 }); for(let i=0;i<3;i++) update(1/30);` },
     { name:'boss_rage', boss:'galvark', dist:900, desc:'怒り状態(赤いオーラ・色味・咆哮・「怒り」の札)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.46; B.exHpLag=0.62; B.exRage=true; exploreBossStartRoar(B, 'rage'); for(let i=0;i<12;i++) update(1/30);` },
     { name:'boss_break', boss:'gandrock', dist:1000, desc:'部位破壊の瞬間(転倒・星・ひびの印・素材が弾ける)',
@@ -140,7 +156,7 @@ const CUTS = [
       const p = clearObstaclePoint(B.x + Math.cos(a)*${c.dist}, B.y + Math.sin(a)*${c.dist}, 60);
       B.exState = 'fight'; B.exploreAsleep = false; B.facingAngle = Math.atan2(p.y-B.y, p.x-B.x);
       exploreState.banners.length = 0; exploreState.fx.length = 0;   // 前のカットの札を持ち越さない
-      return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true,
+      return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true, keepCam:${!!c.keepCam},
                after: ()=>{ ${c.after} } };`),
   })),
   /* ===== ルート(explore_loot.js)。補給箱は地域の中に散っているので、撮る前にキャンプの箱を選び、
@@ -331,7 +347,8 @@ function pageTools(){
       player.x = at.x; player.y = at.y; player.z = baseTerrainHeightAt(at.x, at.y);
       if(at.lookAt!=null){ const t = getEntity(at.lookAt); if(t) at.yaw = Math.atan2(t.y-player.y, t.x-player.x); }
     }
-    camState.yaw = at.yaw; camState.pitch = at.pitch;
+    // keepCam: ゲーム自身が動かしたカメラのまま撮る(ボス登場の向き直り・寄りを写すため)
+    if(!at.keepCam){ camState.yaw = at.yaw; camState.pitch = at.pitch; }
     camSnap.active = false;
     updateCamera();
     const realNow = performance.now.bind(performance);

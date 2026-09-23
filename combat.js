@@ -536,6 +536,8 @@ function applyDamage(target, dmg, source, opts){
   if(teamFriendlyFireBlocked(target, source)) return;
   // 探検モード: 復活直後の無敵と、野生どうしの同士討ち無し(explore.js。探検以外では常に false)
   if(exploreDamageBlocked(target, source)) return;
+  // 探検モード: ボスへの命中の高さ(opts.hitZ。範囲技は体の半分)で弱点かを決める(explore.js)
+  if(game.explore) opts = exploreResolveHit(target, source, opts);
   // ダウン直後2秒は無敵(とどめが刺せない。TEAM_DOWN_INVULN_SEC。発注者要望 2026-08-19)
   if(entityDowned(target) && target.downedInvulnUntil > matchTime) return;
   if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
@@ -602,15 +604,18 @@ function applyDamage(target, dmg, source, opts){
      ゲストがnetwork.jsの見た目命中で出す×印と二重にはならない。
      範囲技は1フレームに何体も当たるため、×印(=DOMのリフロー)とSEはselfHitFxGateで間引く。 */
   if(source && source===player && source.id!==target.id && selfHitFxGate()){
-    if(typeof showHitMarker==='function') showHitMarker();
+    if(typeof showHitMarker==='function') showHitMarker(false, !!(opts && opts.weakPoint));
     playSe((opts && opts.hitSe) || 'hitDealt');
   }
   // 計測ハーネス用: ダメージ確定(HP減少)の時刻を記録(通常は__netProbe未定義で素通り)
   if(window.__netProbe) __netProbe.mark('dmg', { id: target.id, src: source?source.id:null, dmg: Math.round(finalDmg), hp: Math.round(target.hp), ts: Date.now() });
   // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
-  if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
-  else if(auraResult==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#5aa6ff', true);
-  else                        spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
+  // 数字を出す高さ。探検のボスは当たった高さ(opts.dmgZ。explore.js の exploreResolveHit が入れる)、他は足元
+  const dmgZ = (opts && opts.dmgZ != null) ? opts.dmgZ : target.z;
+  if(auraResult==='adv')      spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#ff5555', true);
+  else if(auraResult==='dis') spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#5aa6ff', true);
+  else if(game.explore && opts && opts.weakPoint) spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#ffd23c', true);   // 探検: 弱点は黄色の大きい数字
+  else                        spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg));
   if(source && source.id!==target.id){
     target.recentAttackers[source.id] = matchTime;
     target.lastAttackerId = source.id;
@@ -2328,7 +2333,8 @@ function updateProjectiles(dt){
         if(hitNow){
           // blast付き(ビッグバン等)も球体の直撃ダメージを与える。着弾後の爆風ダメージは別途spawnGroundBlastで判定
           const dmgMult = closeRangeDmgMult(p.closeBonusMax, p.traveled, p.maxRange); // 命中距離が短いほど威力アップ(デュラハン)
-          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
+          // hitZ = 当たった高さ(探検のボスの弱点の判定だけが読む。他のモードでは使わない)
+          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio, hitZ: p.z });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit) applySelfSpeedBuffOnHit(p.ownerId);
           if(p.splash>0){
