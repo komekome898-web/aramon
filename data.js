@@ -6464,9 +6464,9 @@ const EXPLORE_FIELD_ITEMS = {
   heal_l:  { kind:'heal',   ref:'oilL',    icon:'🧴', rarity:'epic' },
   guts:    { kind:'guts',                  icon:'🍬', rarity:'common' },
   longbow: { kind:'weapon', ref:'longbow', icon:'🏹', rarity:'rare',   name:'ロングボウ(狙撃銃)' },
-  scope2x: { kind:'scope',  ref:'scope2x', icon:'🔭', rarity:'common', name:'2倍スコープ' },
-  scope4x: { kind:'scope',  ref:'scope4x', icon:'🔭', rarity:'rare',   name:'4倍スコープ' },
-  scope8x: { kind:'scope',  ref:'scope8x', icon:'🔭', rarity:'epic',   name:'8倍スコープ' },
+  scope2x: { kind:'scope',  ref:'x2', icon:'🔭', name:'2倍スコープ' },   // レア度は SNIPER_SCOPES が正
+  scope4x: { kind:'scope',  ref:'x4', icon:'🔭', name:'4倍スコープ' },   // レア度は SNIPER_SCOPES が正
+  scope8x: { kind:'scope',  ref:'x8', icon:'🔭', name:'8倍スコープ' },   // レア度は SNIPER_SCOPES が正
 };
 /* 補給箱の中身(箱のレア度ごと・重み付き)。
      mat:'<レア度>' … そのレア度の素材を「箱のある地域」から引く。epic/legendary はボス素材(region:'boss')

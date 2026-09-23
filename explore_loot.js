@@ -34,7 +34,10 @@ function exploreItemInfo(key){
   let name = f.name || key;
   if(f.kind==='heal' && HEAL_ITEMS[f.ref]) name = HEAL_ITEMS[f.ref].name;
   else if(f.kind==='guts') name = GUTS_ITEM.name;
-  return { key, kind:f.kind, ref:f.ref, name, icon:f.icon, rarity:f.rarity };
+  // スコープのレア度は狙撃の表(SNIPER_SCOPES)が正。ここで二重に持たない
+  let rarity = f.rarity;
+  if(f.kind==='scope' && typeof SNIPER_SCOPES==='object' && SNIPER_SCOPES[f.ref]) rarity = SNIPER_SCOPES[f.ref].rarity;
+  return { key, kind:f.kind, ref:f.ref, name, icon:f.icon, rarity: rarity || 'common' };
 }
 function exploreRarityColor(r){ return (EXPLORE_RARITY[r] || EXPLORE_RARITY.common).color; }
 function exploreRarityOrder(r){ return (EXPLORE_RARITY[r] || EXPLORE_RARITY.common).order; }
@@ -217,11 +220,21 @@ function exploreTakeDrop(d){
       note = `ガッツ+${Math.round(r)}`;
       spawnDmgText(p.x, p.y, p.z, note, '#ffd9e3');
     } else if(info.kind==='weapon'){
-      if(typeof window.sniperGive==='function'){ try{ window.sniperGive(p, info.ref); }catch(err){} }
-      note = '装備した';
+      /* 今の狙撃銃(工房で作った物を含む)より弱い物は持ち替えない。弾の補充だけにする */
+      const cur = (typeof sniperWeapon==='function') ? sniperWeapon(p) : null;
+      const nw = (typeof SNIPER_WEAPONS==='object') ? SNIPER_WEAPONS[info.ref] : null;
+      if(cur && nw && nw.dmg <= cur.dmg){
+        p.sniper.ammo = cur.mag; p.sniper.reloadLeft = 0;
+        note = '弾を補充(今の武器のほうが強い)';
+      } else if(typeof window.sniperGive==='function' && window.sniperGive(p, info.ref) !== false){
+        note = '装備した';
+      }
     } else if(info.kind==='scope'){
-      if(typeof window.sniperAttachScope==='function'){ try{ window.sniperAttachScope(p, info.ref); }catch(err){} }
-      note = '取り付けた';
+      /* 今より低い倍率のスコープには付け替えない */
+      const cur = (typeof SNIPER_SCOPES==='object' && p.sniperScope) ? SNIPER_SCOPES[p.sniperScope] : null;
+      const ns = (typeof SNIPER_SCOPES==='object') ? SNIPER_SCOPES[info.ref] : null;
+      if(cur && ns && ns.mag <= cur.mag) note = '今のスコープのほうが高倍率';
+      else if(typeof window.sniperAttachScope==='function' && window.sniperAttachScope(p, info.ref)) note = '取り付けた';
     }
     exploreLootNotify(d.key, d.n, note);
     exploreLootPickupSe(info.rarity);
