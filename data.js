@@ -6705,10 +6705,12 @@ const SNIPER_SCOPES = {
      reticle : 照準の絵('iron'=照門と照星 / 'chevron'=2倍 / 'mildot'=4倍 / 'bdc'=8倍の落下補正はしご)
      aperture: スコープ窓の半径(画面の高さに対する割合。0=窓なし)
      rarity  : ルートの色分け(common白/rare青/epic紫/legendary金)。拾う側が使う */
-  iron: { name:'アイアンサイト', label:'1×', mag:1.25, sway:0.6,  reticle:'iron',    aperture:0,    rarity:'common' },
-  x2:   { name:'2倍スコープ',   label:'2×', mag:2,    sway:0.8,  reticle:'chevron', aperture:0.47, rarity:'rare' },
-  x4:   { name:'4倍スコープ',   label:'4×', mag:4,    sway:1.0,  reticle:'mildot',  aperture:0.46, rarity:'epic' },
-  x8:   { name:'8倍スコープ',   label:'8×', mag:8,    sway:1.3,  reticle:'bdc',     aperture:0.45, rarity:'legendary' },
+  /* sway は「画面の上で見える揺れ」がおおむね アイアン4px / 2倍8px / 4倍11px / 8倍20px(高さ750)になる値。
+     低い倍率でも少しは動かないと、揺れがあること自体が伝わらない(批評の指摘) */
+  iron: { name:'アイアンサイト', label:'1.25×', mag:1.25, sway:1.8,  reticle:'iron',    aperture:0,    rarity:'common' },
+  x2:   { name:'2倍スコープ',   label:'2×',    mag:2,    sway:2.0,  reticle:'chevron', aperture:0.47, rarity:'rare' },
+  x4:   { name:'4倍スコープ',   label:'4×',    mag:4,    sway:1.4,  reticle:'mildot',  aperture:0.46, rarity:'epic' },
+  x8:   { name:'8倍スコープ',   label:'8×',    mag:8,    sway:1.3,  reticle:'bdc',     aperture:0.45, rarity:'legendary' },
 };
 const SNIPER_ADS_IN_SEC         = 0.22;  // 構えに入るまでの秒数(カメラの寄せと窓の開き)
 const SNIPER_ADS_OUT_SEC        = 0.15;  // 構えを解くまでの秒数
@@ -6727,3 +6729,17 @@ const SNIPER_BODY_H_PER_RADIUS  = 2.0;   // 当たりの背の高さ = 半径×�
 const SNIPER_HIT_RADIUS_MULT    = 0.95;  // 当たりの横幅 = 半径×これ
 const SNIPER_WEAK_FROM          = 0.62;  // ent.weakPoint に from が無いときの弱点の下端(背の高さに対する割合)
 const SNIPER_DROP_MARKS_M       = [150, 200, 250, 300];   // 落下補正の目盛り(m)
+const SNIPER_SWAY_NOISE         = 0.55;  // 揺れに混ぜるなめらかなノイズの割合(周期を読めなくする)
+const SNIPER_HEARTBEAT_HZ       = 1.15;  // 心拍の細かい揺れの速さ(回/秒)
+const SNIPER_HEARTBEAT_AMP      = 0.22;  // 心拍の揺れの大きさ(揺れ全体に対する割合。息止め中も残る)
+const SNIPER_RECOIL_KEEP        = 0.10;  // 反動の跳ね上がりのうち戻らない割合(撃つたびに少し上がる)
+const SNIPER_SHOT_SHAKE         = 0.035; // 撃った瞬間の画面の揺れ(視野の半分に対する割合)
+const SNIPER_SHOT_ZOOM_KICK     = -0.05; // 撃った瞬間の視野の弾み(倍率の変化の割合。マイナス=一瞬広がる)
+const SNIPER_CRIT_ZOOM_KICK     = 0.07;  // 弱点命中の倍率の弾み
+const SNIPER_HITSTOP_SEC        = 0.07;  // 弱点命中のヒットストップ(秒)
+const SNIPER_HITSTOP_SCALE      = 0.04;  // ヒットストップ中の時間の速さ
+const SNIPER_TRACER_CONVERGE    = 1600;  // 弾道の光が銃口(画面の右下)から照準の線へ合流する距離(ワールド単位=160m)
+const SNIPER_SHOT_RANGE_SEC     = 1.0;   // 撃った瞬間の距離を残して見せる秒数
+const SNIPER_FIRE_CANCEL_MARGIN = 0.6;   // FIREを離した場所がボタンの外(大きさのこの割合より外)なら撃たない
+const SNIPER_SCOPE_PIXEL_BOOST  = 1.5;   // 構え中、スコープの窓の範囲だけ3Dの描画解像度をこの倍にする(上限3)
+const SNIPER_VEG_CONE_MIN_ZOOM  = 1.9;   // この倍率以上で、草・低木を「視線の先の扇」へ並べ替えて遠くまで出す

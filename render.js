@@ -1185,7 +1185,6 @@ function drawMonsterShape(e, color, dark){
 /* 頭上ラベル(名前・▽・ダウン・蘇生ゲージ)の画面上の拡大上限。
    p.scaleのまま描くとカメラ至近で文字が画面の半分を覆う(縦持ち実測で発生)。 */
 const TEAM_LABEL_MAX_SCALE = 2.2;
-const HP_BAR_ZOOM_MAX_PX = 5;   // スコープのズーム中の頭上HPバーの太さの上限(画面px)
 /* カメラ至近ではラベルごと消す(上限で止めても位置が画面中央へ来て操作UIへ被る)。
    スケール2.0から薄れはじめ3.0で完全に消える。荒野行動の近距離マーカーと同じ挙動 */
 function teamLabelFade(){
@@ -1318,7 +1317,10 @@ function drawMonster(e,p){
   const selfBar = !!e.isPlayer;
   const barY = selfBar ? -e.radius*1.08*uiMult-5 : -e.radius*1.55*uiMult-9;
   // レイドのボス・探検のボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
-  if(!e.isRaidBoss && !e.isExploreBoss){
+  /* 狙撃スコープで構えている間(探検モードだけ)は頭上のゲージを出さない。倍率ぶん太くなって照準を横切るため。
+     照準の先の1体だけ、スコープの距離表示の横に小さな帯で出す(sniper.js) */
+  const scopeHidesBar = (typeof sniperHidesOverhead === 'function') && sniperHidesOverhead();
+  if(!e.isRaidBoss && !e.isExploreBoss && !scopeHidesBar){
     const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
@@ -1330,12 +1332,9 @@ function drawMonster(e,p){
       ctx.save();
       if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
       else if(allyBarFade < 1) ctx.globalAlpha = allyBarFade;
-      /* 狙撃スコープのズーム中(viewZoom>1。探検モードだけ)は、バーの太さを画面上で細いまま保つ
-         (倍率ぶん太くなって的を隠すため)。倍率1では従来と同じ6 */
-      const barH = viewZoom > 1 ? 6 * Math.min(1, HP_BAR_ZOOM_MAX_PX / (6*Math.max(0.01, p.scale))) : 6;
-      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, barH);
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
       ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
-      ctx.fillRect(-barW/2, barY, barW*hpPct, barH);
+      ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
       ctx.restore();
     }
   }
@@ -7361,6 +7360,8 @@ function render(){
   if(perfOn) perfGl(performance.now() - _glT0);
   real3dActive = gl3d;
   prepareMountainOccluders();
+  // 狙撃スコープの中の遠景の霞(探検モードで構えている間だけ。モンスターより下に塗る。sniper.js)
+  if(gl3d && typeof drawSniperHaze === 'function') safeDraw(drawSniperHaze);
   if(!gl3d){
     drawSkyAndGround();
     // しみは起伏に沿わせる必要があるためリアルマップでは3D側が描く
@@ -7438,7 +7439,10 @@ function render(){
     if(d.kind==='volcano'){ for(const v of d.obj){ if(v.radius>r) r=v.radius; } }
     // 3Dの障害物は木のように背が高いものがある。足元が画面外でも上は見えるので高さぶん広げる
     else if(d.kind==='rock' || d.kind==='crystal'){ r = (d.obj.radius||0) * (real3dActive ? obstShapeOf(d.obj, d.kind).h : 1); }
-    else if(d.kind==='ae'){ r = d.obj.range||0; } // 発生地点(自分の足元)が画面外でも、射程が長い技は画面内まで届くため
+    else if(d.kind==='ae'){ r = d.obj.range||0; }
+    /* スコープのズーム中(viewZoom>1。探検モードだけ)は、足元が画面の下へ外れても体は見えている
+       (巨体のボスで実際に消えた)。体の高さぶん余白を足す。倍率1では従来どおり0 */
+    else if(d.kind==='mon' && viewZoom > 1){ r = (typeof sniperBodyH === 'function') ? sniperBodyH(d.obj) : (d.obj.radius||0)*2; } // 発生地点(自分の足元)が画面外でも、射程が長い技は画面内まで届くため
     return 150 + r*d.p.scale*1.2;
   };
   for(const d of drawables){

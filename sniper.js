@@ -17,6 +17,9 @@
      sniperFrameEnd() で1へ戻す。2Dの project() と real3d / fx_gl の3Dカメラは同じ値を読む。
      ユーザーの視点設定(lookSettings.fovDeg)は書き換えない。構えのカメラ(目の位置)・揺れ・反動も
      同じく描画の間だけ camPos / camState に足して、終わったら戻す(試合の状態は汚さない)。
+     例外は反動の「戻らない1割」(SNIPER_RECOIL_KEEP)だけで、これは撃つたびに実際に照準が上がる。
+   ■ 3D側へは描画の間だけ window.__aramonSniperScope を渡す(スコープの窓の矩形・見ている距離)。
+     real3d.js がその範囲だけ解像度を上げ、影の範囲を見ている先へ寄せ、real3d_props.js が草を視線の先へ並べる。
    ■ 弾は既存の projectiles に積む(ホスト権威・配信の形は既存の弾と同じ項目を持つ)。
      高速なので進め方と当たりだけ sniperStepProjectile() が受け持つ(combat.js の updateProjectiles から)。
      落下は既存の弾道: 重力 = projGravityFor(射程, 弾速) × 武器の drop、ゼロインは ballisticSlope。
@@ -31,16 +34,19 @@ function sniperModeOn(){
 }
 
 const SNIPER_SUBSTEP      = 18;    // 弾を進める刻み(ワールド単位)。体(半径20〜)をすり抜けない細かさ
-const SNIPER_TRAIL_KEEP   = 24;    // 光の筋に残す点の数(約3刻みごとに1点)
-const SNIPER_GUN_OFFSET   = { right:7, down:9, converge:320 };   // 見た目の銃口のずれ(右・下)。この距離で照準の線へ寄る
+const SNIPER_TRAIL_GAP    = 45;    // 弾道の光に残す点の間隔(ワールド単位)。撃ってから今までの弧を全部残す
+const SNIPER_TRAIL_MAX    = 110;
+const SNIPER_GUN_OFFSET   = { right:9, down:11 };   // 見た目の銃口のずれ(右・下)。SNIPER_TRACER_CONVERGE で照準の線へ寄る
 const SNIPER_AIM_STEP     = 18;    // 距離計の地形探索の刻み
+const SNIPER_PREDICT_STEP = 1/90;  // 弱点表示のための弾道の先読みの刻み(秒)
 
 const sniperView = {
-  ads:false, blend:0, logMag:0,
+  ads:false, blend:0, logMag:0, zoomKick:0,
   breathHeld:false, holding:false, breath:1, spent:false,
   amp:0, swayT:0, offYaw:0, offPitch:0,
-  recoil:0, recoilV:0, recoilX:0, recoilXV:0,
-  flash:0, smoke:[], fx:[], aim:null,
+  recoil:0, recoilV:0, recoilX:0, recoilXV:0, recoilPeak:0.01,
+  shake:0, shakeAmp:0, hitStopUntil:0,
+  flash:0, smoke:[], fx:[], aim:null, pred:null, lastShot:null,
   prevHeld:false, lastMs:0, saved:null, dirty:false,
   domSig:'', ringReload:-1, ringBreath:-1, bodyAds:false, canvasOn:false,
 };
@@ -64,12 +70,14 @@ function sniperEyeZ(ent){ return (ent.z||0) + AIM_MUZZLE_Z; }   // 目の高さ=
 
 function sniperResetState(){
   const v = sniperView;
-  v.ads = false; v.blend = 0; v.logMag = 0;
+  v.ads = false; v.blend = 0; v.logMag = 0; v.zoomKick = 0;
   v.breathHeld = false; v.holding = false; v.breath = 1; v.spent = false;
   v.amp = 0; v.offYaw = 0; v.offPitch = 0;
   v.recoil = 0; v.recoilV = 0; v.recoilX = 0; v.recoilXV = 0;
-  v.flash = 0; v.smoke.length = 0; v.fx.length = 0; v.aim = null; v.prevHeld = false;
+  v.shake = 0; v.hitStopUntil = 0;
+  v.flash = 0; v.smoke.length = 0; v.fx.length = 0; v.aim = null; v.pred = null; v.lastShot = null; v.prevHeld = false;
   v.dirty = false;
+  window.__aramonSniperScope = null;
   if(typeof setViewZoom === 'function') setViewZoom(1);
   sniperSyncDom(false);
 }
@@ -99,11 +107,16 @@ function sniperLookSensMult(){
   return Math.min(1, SNIPER_ADS_SENS_BASE / Math.pow(m, SNIPER_ADS_SENS_EXP));
 }
 function sniperHidesSelf(){ return sniperModeOn() && sniperView.blend > 0.35; }
+// 頭上のHPバーを隠すか(render.js の drawMonster から)。照準の先の1体だけスコープの中の帯で見せる
+function sniperHidesOverhead(){ return sniperModeOn() && sniperView.blend > 0.35; }
+// 弱点命中のヒットストップ(combat.js の update が dt に掛ける)。実時間で必ず1へ戻る
+function sniperTimeScale(){ return performance.now() < sniperView.hitStopUntil ? SNIPER_HITSTOP_SCALE : 1; }
 
 /* ---------- 引き金(combat.js の tryPlayerFire から毎フレーム) ----------
    構え中は FIRE = 狙撃銃の引き金。**押して(滑らせて狙い)離した瞬間に撃つ。**
    FIREを押した指を滑らせると視点が動く(fireDragAim)ので、押した瞬間に撃つと狙う暇が無い。
-   タップでも「押す→離す」で1発出るので、素早く撃ちたいときも困らない。 */
+   タップでも「押す→離す」で1発出るので、素早く撃ちたいときも困らない。
+   **ボタンから大きく外れた所で離したら撃たない**(input.js の fireReleasedOutside。撃つのをやめる逃げ道) */
 function sniperOwnsTrigger(dt){
   if(!sniperModeOn() || !player) return false;
   const me = player, s = me.sniper, w = sniperWeapon(me);
@@ -120,7 +133,7 @@ function sniperOwnsTrigger(dt){
   const held = !!(fireBtnHeld || keys['f']);
   const released = sniperView.prevHeld && !held;
   sniperView.prevHeld = held;
-  if(released){
+  if(released && !(typeof fireReleasedOutside !== 'undefined' && fireReleasedOutside && !keys['f'])){
     if(sniperCanShoot(me)) sniperFire(me);
     else playSe('sniper', { kind:'dry' });
   }
@@ -139,12 +152,14 @@ function sniperBallistics(w){
   const zero = ballisticSlope(0, SNIPER_ZERO_M * PING_UNITS_PER_M, w.speed, grav);
   return { grav, zero };
 }
+// いまの倍率での視野の半分(ラジアン)。倍率は描画の間しか掛かっていないので出し直す
+function sniperHalfFov(){ return Math.atan(Math.tan(lookSettings.fovDeg*Math.PI/360) / Math.exp(sniperView.logMag)); }
 function sniperFire(me){
-  const w = sniperWeapon(me), s = me.sniper;
+  const w = sniperWeapon(me), s = me.sniper, v = sniperView;
   s.ammo -= 1; s.cycleLeft = w.cycleSec;
   // 狙点は画面の中心(照準)= 見えていた視線そのもの(揺れ・反動を含む)
-  const yaw = camState.yaw + sniperView.offYaw;
-  const pitch = camState.pitch + sniperView.offPitch;
+  const yaw = camState.yaw + v.offYaw;
+  const pitch = camState.pitch + v.offPitch;
   const b = sniperBallistics(w);
   const slope = clamp(-Math.tan(pitch) + b.zero, -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
   const z = sniperEyeZ(me);
@@ -157,42 +172,58 @@ function sniperFire(me){
   });
   // 銃声は遠くまで届く(野生・ボスが気づく)
   if(typeof exploreMakeNoise==='function') exploreMakeNoise(me.x, me.y, SNIPER_NOISE_RANGE);
-  // 反動: 視野の半分に対する割合で跳ね上げる(倍率が違っても画面上の跳ね方は同じ)
-  // (倍率は描画の間しか掛かっていないので、いまの倍率から視野の半分を出し直す)
-  const halfFov = Math.atan(Math.tan(lookSettings.fovDeg*Math.PI/360) / Math.exp(sniperView.logMag));
+  // 撃った瞬間の距離(1秒残して見せる)
+  v.lastShot = { m: v.aim && v.aim.m != null ? Math.round(v.aim.m) : null, t:0 };
+  // 反動: 視野の半分に対する割合で跳ね上げる(倍率が違っても画面上の跳ね方は同じ)。
+  // **1割は戻さない**(本当に照準が上がる=連射すると少しずつ上へずれる)。残り9割はばねで戻る
+  const halfFov = sniperHalfFov();
   const peak = w.recoil * halfFov;
+  camState.pitch = clamp(camState.pitch - peak*SNIPER_RECOIL_KEEP, camPitchMin(), CAM_PITCH_MAX);
   const W = SNIPER_RECOIL_RETURN;
-  sniperView.recoilV += peak * W * Math.E;                       // 臨界減衰ばねの山がちょうど peak になる初速
-  sniperView.recoilXV += (Math.random()*2-1) * peak * 0.25 * W * Math.E;
-  sniperView.flash = 1;
-  // 硝煙(窓の下から湧いて上へ流れる。単位は窓の半径)
-  for(let i=0;i<6;i++) sniperView.smoke.push({ x:(Math.random()-0.5)*0.7, y:0.45+Math.random()*0.35,
-    vx:(Math.random()-0.5)*0.3, vy:-0.28-Math.random()*0.25, r:0.2+Math.random()*0.16, t:0, life:0.6+Math.random()*0.4 });
+  v.recoilPeak = peak;
+  v.recoilV += peak * (1-SNIPER_RECOIL_KEEP) * W * Math.E;       // 臨界減衰ばねの山がちょうど peak になる初速
+  v.recoilXV += (Math.random()*2-1) * peak * 0.25 * W * Math.E;
+  // 撃った瞬間の2フレームの視野の弾みと画面の揺れ
+  v.zoomKick = SNIPER_SHOT_ZOOM_KICK;
+  v.shake = 1; v.shakeAmp = halfFov * SNIPER_SHOT_SHAKE;
+  v.flash = 1;
+  // 硝煙(窓の下の縁から湧いて上へ流れる。単位は窓の半径)
+  for(let i=0;i<6;i++) v.smoke.push({ x:(Math.random()-0.5)*0.9, y:0.62+Math.random()*0.25,
+    vx:(Math.random()-0.5)*0.3, vy:-0.22-Math.random()*0.22, r:0.2+Math.random()*0.16, t:0, life:0.7+Math.random()*0.5 });
   playSe('sniper', { kind:'shot', cycle:w.cycleSec });
 }
 
 /* ---------- 弾の進め方と当たり(combat.js の updateProjectiles から) ---------- */
-function sniperTrailPush(p){
+function sniperTrailPush(p, force){
+  const last = p.trail[p.trail.length-1];
+  if(!force && last && p.traveled - last.d < SNIPER_TRAIL_GAP) return;
   p.trail.push({ x:p.x, y:p.y, z:p.z, d:p.traveled });
-  if(p.trail.length > SNIPER_TRAIL_KEEP) p.trail.shift();
+  if(p.trail.length > SNIPER_TRAIL_MAX) p.trail.shift();
 }
 function sniperStepProjectile(p, dt){
   const hs = Math.hypot(p.vx, p.vy);
   const n = Math.max(1, Math.min(60, Math.ceil(hs*dt / SNIPER_SUBSTEP)));
   const h = dt / n;
   const owner = getEntity(p.ownerId) || null;
+  const end = (kind, hit)=>{
+    sniperTrailPush(p, true);
+    // 消えたあとも弧を少しのあいだ残す(スコープの中で「どこを通ったか」が読める)
+    if(owner && owner === player) sniperView.fx.push({ kind:'trail', pts:p.trail.slice(), color:p.color, t:0, life:0.55 });
+    if(kind === 'hit') sniperOnHit(p, hit, owner);
+    else if(kind) sniperImpact(p, kind);
+    return true;
+  };
   for(let k=0;k<n;k++){
     const x0 = p.x, y0 = p.y, z0 = p.z;
     p.x += p.vx*h; p.y += p.vy*h; p.z += p.vz*h; p.vz -= (p.grav||0)*h; p.traveled += hs*h;
     const hit = sniperSegmentHit(p, x0, y0, z0, p.x, p.y, p.z);
-    if(hit){ p.x = hit.x; p.y = hit.y; p.z = hit.z; sniperTrailPush(p); sniperOnHit(p, hit, owner); return true; }
+    if(hit){ p.x = hit.x; p.y = hit.y; p.z = hit.z; return end('hit', hit); }
     const gz = terrainZAt(p.x, p.y);
-    if(p.z <= gz){ p.z = gz; sniperTrailPush(p); sniperImpact(p, 'ground'); return true; }
-    if(sniperHitsObstacle(p)){ sniperTrailPush(p); sniperImpact(p, 'rock'); return true; }
-    if(p.traveled >= p.maxRange || p.x<0 || p.x>WORLD.w || p.y<0 || p.y>WORLD.h) return true;
-    if(k % 3 === 2) sniperTrailPush(p);
+    if(p.z <= gz){ p.z = gz; return end('ground'); }
+    if(sniperHitsObstacle(p)) return end('rock');
+    if(p.traveled >= p.maxRange || p.x<0 || p.x>WORLD.w || p.y<0 || p.y>WORLD.h) return end(null);
+    sniperTrailPush(p);
   }
-  sniperTrailPush(p);
   return false;
 }
 // 岩・山(判定の式は updateProjectiles と同じ)
@@ -214,6 +245,14 @@ function sniperBodyH(e){
   // 探検では描いている絵の高さ(弱点の高さの基準と同じ)を当たりの背にする
   if(game.explore && typeof exploreBodyHeight==='function') return exploreBodyHeight(e);
   return (e.radius||26) * SNIPER_BODY_H_PER_RADIUS;
+}
+// 高さ z の命中が弱点か(当たりの判定と撃つ前の表示の両方がここを通る)
+function sniperIsWeakHit(e, z, H){
+  const wp = e && e.weakPoint;
+  if(!wp) return false;
+  if(game.explore && typeof exploreIsWeakPointHit === 'function') return exploreIsWeakPointHit(e, z);
+  const ratio = (z - (e.z||0)) / (H || sniperBodyH(e));
+  return ratio >= (wp.from != null ? wp.from : SNIPER_WEAK_FROM) && ratio <= (wp.to != null ? wp.to : 1.05);
 }
 /* 線分(弾の1刻み)と、立った円柱(体)の交わり。いちばん手前の1体を返す。
    上下も見るので、頭の上を越えた弾・足元の地面に刺さった弾は当たらない。 */
@@ -253,7 +292,7 @@ function sniperSegmentHit(p, x0, y0, z0, x1, y1, z1){
 function sniperOnHit(p, hit, owner){
   const e = hit.e, wp = e.weakPoint;
   const ratio = clamp(((hit.z - (e.z||0)) / hit.H), 0, 1);
-  const crit = !!(wp && ratio >= (wp.from != null ? wp.from : SNIPER_WEAK_FROM) && ratio <= (wp.to != null ? wp.to : 1.05));
+  const crit = sniperIsWeakHit(e, hit.z, hit.H);
   // 弱点の倍率(wp.mult)は探検では exploreDmgTakenMult が opts.weakPoint を見て掛ける(二重に掛けない)
   const mult = crit ? (p.critMult || 1) * (game.explore ? 1 : (wp.mult || 1)) : 1;
   const hp0 = e.hp;
@@ -271,34 +310,43 @@ function sniperOnHit(p, hit, owner){
     try{ wp.onHit(e, { dmg:dealt, ratio, x:hit.x, y:hit.y, z:hit.z, source:owner }); }catch(_){}
   }
   spawnHit(hit.x, hit.y, hit.z, crit ? '#ffb02e' : '#fff0d0');
-  for(let i=0;i<(crit?12:5);i++){
-    const a = Math.random()*Math.PI*2, sp = 60 + Math.random()*(crit?220:120);
+  for(let i=0;i<(crit?14:6);i++){
+    const a = Math.random()*Math.PI*2, sp = 60 + Math.random()*(crit?240:130);
     addParticle({ type:'spark', x:hit.x, y:hit.y, z:hit.z, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
-                  life:0.45, maxLife:0.45, color: crit ? (i%2 ? '#ff5a3a' : '#ffd24a') : '#ffe6b8', size:2+Math.random()*3 });
+                  life:0.5, maxLife:0.5, color: crit ? (i%2 ? '#ff5a3a' : '#ffd24a') : '#ffe6b8', size:2+Math.random()*3 });
   }
   if(owner && owner === player){
-    if(dealt > 0) sniperView.fx.push({ kind:'hit', x:hit.x, y:hit.y, z:hit.z, dmg:dealt, crit, kill:!e.alive, t:0, life:1.15 });
+    if(dealt > 0) sniperView.fx.push({ kind:'hit', x:hit.x, y:hit.y, z:hit.z, dmg:dealt, crit, kill:!e.alive, t:0, life:1.25 });
+    if(crit){
+      // 弱点: 一瞬の止め(60〜80ms)と倍率の弾み
+      sniperView.hitStopUntil = performance.now() + SNIPER_HITSTOP_SEC*1000;
+      sniperView.zoomKick = SNIPER_CRIT_ZOOM_KICK;
+    }
     playSe('sniper', { kind: crit ? 'crit' : 'hit' });
   }
 }
 function sniperImpact(p, kind){
   const dust = kind === 'rock' ? '#b9b2a6' : '#cbb792';
-  for(let i=0;i<7;i++){
-    const a = Math.random()*Math.PI*2, sp = 30 + Math.random()*80;
-    addParticle({ type:'spark', x:p.x, y:p.y, z:p.z+2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
-                  life:0.55, maxLife:0.55, color:dust, size:3+Math.random()*4 });
+  for(let i=0;i<16;i++){
+    const a = Math.random()*Math.PI*2, sp = 40 + Math.random()*140;
+    addParticle({ type:'spark', x:p.x, y:p.y, z:p.z+2+Math.random()*10, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+                  life:1.0, maxLife:1.0, color:dust, size:4+Math.random()*6 });
   }
   const owner = getEntity(p.ownerId);
-  if(owner && owner === player) sniperView.fx.push({ kind:'impact', x:p.x, y:p.y, z:p.z, t:0, life:0.7, rock: kind === 'rock' });
+  if(owner && owner === player) sniperView.fx.push({ kind:'impact', x:p.x, y:p.y, z:p.z, t:0, life:1.7, rock: kind === 'rock' });
 }
 
 /* ---------- 毎フレーム(render.js の render() の最初と最後) ---------- */
 function sniperEase(t){ t = clamp(t, 0, 1); return t*t*(3-2*t); }
+// なめらかな1次元ノイズ(-1〜1)。揺れの周期を読めなくするために8の字へ混ぜる
+function snHash(i){ const s = Math.sin(i*127.1 + 311.7)*43758.5453; return (s - Math.floor(s))*2 - 1; }
+function snNoise(t){ const i = Math.floor(t), f = t - i, u = f*f*(3-2*f); return snHash(i)*(1-u) + snHash(i+1)*u; }
 function sniperFrame(){
   const now = performance.now();
   const dt = sniperView.lastMs ? Math.min(0.05, Math.max(0, (now - sniperView.lastMs)/1000)) : 0.016;
   sniperView.lastMs = now;
   sniperView.saved = null;
+  window.__aramonSniperScope = null;
   if(!sniperModeOn()){
     if(sniperView.dirty) sniperResetState();
     setViewZoom(1);
@@ -314,6 +362,7 @@ function sniperFrame(){
   const logT = Math.log(v.ads ? sc.mag : 1);
   v.logMag += (logT - v.logMag) * (1 - Math.exp(-dt*SNIPER_ZOOM_RATE));
   if(Math.abs(v.logMag - logT) < 0.002) v.logMag = logT;
+  v.zoomKick *= Math.exp(-dt*22);   // 約2フレームで消える弾み
   // 息止め(数秒で限界→使い切ると息が半分戻るまで揺れが大きい)
   v.holding = !!(v.ads && v.breathHeld && !v.spent && v.breath > 0);
   if(v.holding){
@@ -323,25 +372,31 @@ function sniperFrame(){
     v.breath = Math.min(1, v.breath + dt / SNIPER_BREATH_RECOVER_SEC);
     if(v.spent && v.breath >= 0.5) v.spent = false;
   }
-  // 8の字の揺れ(倍率が高いほど大きい。息止めで収まり、歩くと増える)
-  let ampT = w ? w.sway * sc.sway : 0;
+  // 揺れ: 8の字 + なめらかなノイズ(周期を読めなくする) + 心拍の細かい揺れ(息止め中も残る)
+  const base = w ? w.sway * sc.sway : 0;
+  let ampT = base;
   if(v.holding) ampT *= SNIPER_BREATH_SWAY;
   else if(v.spent) ampT *= SNIPER_EXHAUST_SWAY;
   const moving = (typeof joystick === 'object' && Math.hypot(joystick.nx, joystick.ny) > 0.25) || game.autoRun;
   if(moving) ampT *= SNIPER_MOVE_SWAY_MULT;
   v.amp += (ampT - v.amp) * (1 - Math.exp(-dt*(v.holding ? 5 : 2.5)));
   v.swayT += dt;
-  const ph = v.swayT * Math.PI*2 / SNIPER_SWAY_PERIOD;
+  const T = v.swayT, ph = T * Math.PI*2 / SNIPER_SWAY_PERIOD, N = SNIPER_SWAY_NOISE;
   const e = sniperEase(v.blend);
-  const sx = Math.sin(ph) + 0.16*Math.sin(ph*2.7 + 1.3);
-  const sy = 0.5*Math.sin(ph*2) + 0.14*Math.sin(ph*3.3 + 0.4);
-  // 反動のばね(臨界減衰。跳ね上がって戻る)
+  const sx = (1-N)*Math.sin(ph) + N*snNoise(T*0.55 + 3.1) + 0.12*Math.sin(ph*2.7 + 1.3);
+  const sy = (1-N)*0.5*Math.sin(ph*2) + N*0.7*snNoise(T*0.63 + 17.9);
+  const beat = (T*SNIPER_HEARTBEAT_HZ) % 1;
+  const hb = Math.exp(-beat*14) * Math.sin(beat*Math.PI*9) * base * SNIPER_HEARTBEAT_AMP;
+  // 反動のばね(臨界減衰。跳ね上がって戻る)と撃った瞬間の揺れ
   const W = SNIPER_RECOIL_RETURN;
   v.recoilV += (-W*W*v.recoil - 2*W*v.recoilV) * dt;  v.recoil += v.recoilV * dt;
   v.recoilXV += (-W*W*v.recoilX - 2*W*v.recoilXV) * dt;  v.recoilX += v.recoilXV * dt;
-  v.offYaw = v.amp * sx * e + v.recoilX;
-  v.offPitch = v.amp * sy * e - v.recoil;
-  v.flash = Math.max(0, v.flash - dt*9);
+  v.shake = Math.max(0, v.shake - dt/0.12);
+  const sk = v.shake*v.shake*v.shakeAmp;
+  v.offYaw = (v.amp * sx) * e + v.recoilX + (Math.random()*2-1)*sk;
+  v.offPitch = (v.amp * sy + hb) * e - v.recoil + (Math.random()*2-1)*sk;
+  v.flash = Math.max(0, v.flash - dt*11);
+  if(v.lastShot){ v.lastShot.t += dt; if(v.lastShot.t > SNIPER_SHOT_RANGE_SEC) v.lastShot = null; }
   for(let i=v.smoke.length-1;i>=0;i--){ const s = v.smoke[i]; s.t += dt; s.x += s.vx*dt; s.y += s.vy*dt; if(s.t >= s.life) v.smoke.splice(i,1); }
   for(let i=v.fx.length-1;i>=0;i--){ v.fx[i].t += dt; if(v.fx[i].t >= v.fx[i].life) v.fx.splice(i,1); }
   // この1フレームだけカメラを構えの位置へ(描き終わったら sniperFrameEnd で戻す)
@@ -354,10 +409,20 @@ function sniperFrame(){
   }
   camState.yaw += v.offYaw;
   camState.pitch += v.offPitch;
-  setViewZoom(Math.exp(v.logMag));
+  setViewZoom(Math.exp(v.logMag) * (1 + v.zoomKick * e));
   // 撮影・計測用の控え: この描画で2D(FOV_V)と3D(__aramonLook.fovDeg)が読む視野角
   v.fov2d = FOV_V*180/Math.PI; v.fov3d = window.__aramonLook.fovDeg;
-  v.aim =(v.blend > 0.05 && w) ? sniperAimRay(w) : null;
+  v.aim = (v.blend > 0.05 && w) ? sniperAimRay(w) : null;
+  v.pred = (v.blend > 0.5 && w) ? sniperPredict(w) : null;
+  // 3D側への連絡(描画の間だけ): 窓の矩形(CSS px)と見ている距離。完全に構えたときだけ窓の外を描かない
+  if(v.blend > 0.05){
+    const R = viewH * sc.aperture, full = v.blend >= 0.999 && sc.aperture > 0;
+    const focus = v.aim && v.aim.m != null ? v.aim.m*PING_UNITS_PER_M : 1800;
+    window.__aramonSniperScope = { full, x0:viewW/2 - R*1.08, y0:viewH/2 - R*1.08, x1:viewW/2 + R*1.08, y1:viewH/2 + R*1.25,
+                                   w:viewW, h:viewH, focus, zoom:Math.exp(v.logMag), boost:SNIPER_SCOPE_PIXEL_BOOST, veg: full && Math.exp(v.logMag) >= SNIPER_VEG_CONE_MIN_ZOOM,
+                                   yaw:camState.yaw, pitch:camState.pitch, eyeZ:camPos.z,
+                                   halfFovH:Math.atan(Math.tan(FOV_V/2)*viewW/viewH), halfFovV:FOV_V/2 };
+  }
   sniperSyncDom(true);
 }
 function sniperFrameEnd(){
@@ -367,6 +432,7 @@ function sniperFrameEnd(){
     camState.yaw = s.yaw; camState.pitch = s.pitch;
     sniperView.saved = null;
   }
+  window.__aramonSniperScope = null;
   setViewZoom(1);
 }
 // 照準の先(画面中心の視線)にある物までの距離。体 → 地形の順に、近いほうを採る
@@ -390,6 +456,24 @@ function sniperAimRay(w){
   if(eh) return { m: eh.t*tEnd / PING_UNITS_PER_M, ent: eh.e };
   if(tHit != null) return { m: tHit / PING_UNITS_PER_M, ent:null };
   return { m:null, ent:null };
+}
+/* 撃ったら弾がどこに当たるか(落下込みの本物の弾道を先読みする)。弱点の表示に使う。
+   撃つときと同じ式で進め、同じ当たりの関数を通すので、表示と実際の当たりが食い違わない。 */
+function sniperPredict(w){
+  const b = sniperBallistics(w);
+  const yaw = camState.yaw, slope = clamp(-Math.tan(camState.pitch) + b.zero, -AIM_SLOPE_LIMIT, AIM_SLOPE_LIMIT);
+  const p = { ownerId: player.id, hitR: w.hitR };
+  let x = camPos.x, y = camPos.y, z = camPos.z, vz = slope*w.speed, trav = 0;
+  const vx = Math.cos(yaw)*w.speed, vy = Math.sin(yaw)*w.speed, h = SNIPER_PREDICT_STEP, step = w.speed*h;
+  while(trav < w.range){
+    const x1 = x + vx*h, y1 = y + vy*h, z1 = z + vz*h;
+    vz -= b.grav*h; trav += step;
+    const hit = sniperSegmentHit(p, x, y, z, x1, y1, z1);
+    if(hit) return { ent:hit.e, z:hit.z, weak: sniperIsWeakHit(hit.e, hit.z, hit.H) };
+    if(z1 <= terrainZAt(x1, y1)) return null;
+    x = x1; y = y1; z = z1;
+  }
+  return null;
 }
 
 /* ---------- HUDのボタン(DOM。中身が変わったときだけ触る) ---------- */
@@ -432,41 +516,62 @@ function sniperSyncDom(show){
   }
   const bodyAds = vis && v.blend > 0.5;
   if(bodyAds !== v.bodyAds){ v.bodyAds = bodyAds; document.body.classList.toggle('sniper-ads', bodyAds); }
+  // 窓のあるスコープでは倍率と残弾を窓の中に出すので、HUDの札は隠す(アイアンは札が唯一の表示)
+  const bodyWin = bodyAds && sc && sc.aperture > 0;
+  if(bodyWin !== v.bodyWin){ v.bodyWin = bodyWin; document.body.classList.toggle('sniper-window', bodyWin); }
 }
 
-/* ---------- 弾道の光の筋(render.js の drawProjectile から。2Dの世界の中に描く) ---------- */
-function drawSniperTracer(pr){
-  const pts = pr.trail;
-  if(!pts || pts.length < 2) return;
+/* ---------- 弾道の光(render.js の drawProjectile から。2Dの世界の中に描く) ----------
+   撃ってから今までの弧を全部持っていて、見た目だけ銃口(画面の右下)から出して
+   SNIPER_TRACER_CONVERGE(160m)で照準の線に合流させる。スコープの中では
+   「右下から伸びて照準へ吸い込まれ、先で落ちていく光の筋」に見える(当たりは本物の弾道)。 */
+function sniperTracerPoints(pts){
   const G = SNIPER_GUN_OFFSET;
   const rx = -Math.sin(camState.yaw), ry = Math.cos(camState.yaw);   // 画面の右
-  const sp = [];
+  const out = [];
   for(const q of pts){
-    // 見た目だけ銃口(右下)から出して、少し先で照準の線に合流させる(当たりは本物の弾道)
-    const k = Math.max(0, 1 - (q.d||0) / G.converge);
-    const P = project(q.x + rx*G.right*k, q.y + ry*G.right*k, q.z - G.down*k);
-    if(P) sp.push(P);
+    const k = Math.max(0, 1 - (q.d||0) / SNIPER_TRACER_CONVERGE);
+    const kk = k*k*(3-2*k);
+    const P = project(q.x + rx*G.right*kk, q.y + ry*G.right*kk, q.z - G.down*kk);
+    if(P && P.depth > 3) out.push(P);
   }
+  return out;
+}
+function drawTracerPath(g, sp, fade, headGlow){
   if(sp.length < 2) return;
-  const head = sp[sp.length-1], tail = sp[0];
+  const head = sp[sp.length-1];
   const s = Math.max(0.35, Math.min(4, head.scale));
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const grad = (a0, a1, rgb)=>{
-    const g = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
-    g.addColorStop(0, `rgba(${rgb},${a0})`); g.addColorStop(1, `rgba(${rgb},${a1})`);
-    return g;
-  };
-  const path = ()=>{ ctx.beginPath(); ctx.moveTo(sp[0].x, sp[0].y); for(let i=1;i<sp.length;i++) ctx.lineTo(sp[i].x, sp[i].y); };
-  path(); ctx.strokeStyle = grad(0, 0.22, '255,140,50'); ctx.lineWidth = Math.max(5, 14*s); ctx.stroke();
-  path(); ctx.strokeStyle = grad(0, 0.45, '255,170,80'); ctx.lineWidth = Math.max(2.5, 6*s); ctx.stroke();
-  path(); ctx.strokeStyle = grad(0.05, 1, '255,240,210'); ctx.lineWidth = Math.max(1.3, 2.2*s); ctx.stroke();
-  const r = Math.max(2.5, 5*s);
-  const hg = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, r*2.4);
-  hg.addColorStop(0, 'rgba(255,250,235,0.95)'); hg.addColorStop(0.35, 'rgba(255,200,120,0.55)'); hg.addColorStop(1, 'rgba(255,140,40,0)');
-  ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(head.x, head.y, r*2.4, 0, Math.PI*2); ctx.fill();
-  ctx.restore();
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  // 古い所ほど薄く(尾)。区間ごとに透明度を変えて描く
+  const n = sp.length;
+  for(let pass=0; pass<3; pass++){
+    const col = pass===0 ? '255,140,50' : (pass===1 ? '255,175,85' : '255,240,210');
+    const wmax = pass===0 ? Math.max(4, 11*s) : (pass===1 ? Math.max(2.2, 5*s) : Math.max(1.2, 2*s));
+    const amax = (pass===0 ? 0.20 : (pass===1 ? 0.42 : 0.95)) * fade;
+    for(let i=1;i<n;i++){
+      const u = i/(n-1);
+      const a = amax * Math.pow(u, 1.6);
+      if(a < 0.01) continue;
+      g.strokeStyle = `rgba(${col},${a})`;
+      g.lineWidth = Math.max(0.8, wmax * (0.35 + 0.65*u));
+      g.beginPath(); g.moveTo(sp[i-1].x, sp[i-1].y); g.lineTo(sp[i].x, sp[i].y); g.stroke();
+    }
+  }
+  if(headGlow){
+    const r = Math.max(2.5, 5*s);
+    const hg = g.createRadialGradient(head.x, head.y, 0, head.x, head.y, r*2.4);
+    hg.addColorStop(0, `rgba(255,250,235,${0.95*fade})`); hg.addColorStop(0.35, `rgba(255,200,120,${0.55*fade})`); hg.addColorStop(1, 'rgba(255,140,40,0)');
+    g.fillStyle = hg; g.beginPath(); g.arc(head.x, head.y, r*2.4, 0, Math.PI*2); g.fill();
+  }
+  g.restore();
+}
+function drawSniperTracer(pr){
+  const pts = pr.trail;
+  if(!pts || pts.length < 1) return;
+  const all = pts.concat([{ x:pr.x, y:pr.y, z:pr.z, d:pr.traveled }]);
+  drawTracerPath(ctx, sniperTracerPoints(all), 1, true);
 }
 
 /* ---------- スコープの画(#sniperCanvas。技のWebGL層より上・HUDより下) ---------- */
@@ -477,6 +582,15 @@ function sniperCanvas(){
     _snCtx = _snCanvas ? _snCanvas.getContext('2d') : null;
   }
   return _snCtx;
+}
+// 照明色(琥珀)。暗い空でも明るい砂地でも読めるよう、黒の縁取りと合わせて使う
+const SN_AMBER = '#ffb347';
+function snText(g, str, x, y, size, color, align, weight){
+  g.font = `${weight || 'bold'} ${Math.round(size)}px 'Share Tech Mono', 'Rajdhani', monospace`;
+  g.textAlign = align || 'left'; g.textBaseline = 'middle';
+  g.lineJoin = 'round'; g.lineWidth = Math.max(2.5, size*0.28); g.strokeStyle = 'rgba(0,0,0,0.82)';
+  g.strokeText(str, x, y);
+  g.fillStyle = color; g.fillText(str, x, y);
 }
 function drawSniperScope(){
   const g = sniperCanvas();
@@ -499,24 +613,61 @@ function drawSniperScope(){
   const me = player, w = sniperWeapon(me), sc = sniperScope(me);
   const a = sniperEase(v.blend);
   const cx = viewW/2, cy = viewH/2;
-  // 窓は銃と一緒に動く: 反動で少し沈んで戻る
-  const recoilPx = FOCAL * Math.tan(Math.max(0, v.recoil)) * 0.35;
-  const W = sc.aperture > 0 ? { x:cx + FOCAL*Math.tan(v.recoilX)*0.3, y:cy + recoilPx, R:viewH*sc.aperture*(0.8 + 0.2*a) } : null;
+  // 反動の山の強さ(0〜1)。窓は銃と一緒に沈み、鏡筒の影が窓の一部を黒く欠けさせる
+  const rk = clamp(v.recoil / Math.max(1e-5, v.recoilPeak), 0, 1);
+  const W = sc.aperture > 0 ? { x:cx + FOCAL*Math.tan(v.recoilX)*0.3, y:cy + rk*viewH*sc.aperture*0.16,
+                                R:viewH*sc.aperture*(0.8 + 0.2*a)*(1 - 0.05*rk), eclipse:rk } : null;
   g.save();
   g.globalAlpha = a;
   if(W) drawScopeBody(g, W, sc); else drawIronSight(g, cx, cy, a);
   // 照準(弾が飛ぶ先=画面の中心)
   if(W){ g.save(); g.beginPath(); g.arc(W.x, W.y, W.R, 0, Math.PI*2); g.clip(); }
-  const onTarget = !!(v.aim && v.aim.ent);
-  if(sc.reticle === 'chevron') drawReticleChevron(g, cx, cy, W, onTarget);
-  else if(sc.reticle === 'mildot') drawReticleMildot(g, cx, cy, W, onTarget, w);
-  else if(sc.reticle === 'bdc') drawReticleBdc(g, cx, cy, W, onTarget, w);
-  drawScopeHits(g, cx, cy);
+  const aimMode = v.pred && v.pred.weak ? 'weak' : ((v.pred && v.pred.ent) || (v.aim && v.aim.ent) ? 'body' : null);
+  if(sc.reticle === 'chevron') drawReticleChevron(g, cx, cy, W, aimMode);
+  else if(sc.reticle === 'mildot') drawReticleMildot(g, cx, cy, W, aimMode, w);
+  else if(sc.reticle === 'bdc') drawReticleBdc(g, cx, cy, W, aimMode, w);
+  drawScopeTrails(g);
+  drawScopeImpacts(g);
   drawScopeSmoke(g, W || { x:cx, y:cy, R:viewH*0.45 });
-  if(W) g.restore();
+  if(W){ drawMuzzleFlame(g, W); g.restore(); }
   if(W) drawLensGlass(g, W);
   drawScopeInfo(g, cx, cy, W, sc, w);
+  drawScopeHits(g, cx, cy, W);
   g.restore();
+}
+/* 遠景の空気の霞(render.js が3Dの地面を描いた直後・モンスターを描く前に呼ぶ=ゲーム画面の2Dキャンバス)。
+   地平線のまわりをテーマの霞の色で薄く包み、倍率で引き伸ばされた遠い山と空のにじみを「空気」に見せる。
+   モンスターより下に塗るので、的そのものは霞まない。 */
+function drawSniperHaze(){
+  const v = sniperView;
+  if(!sniperModeOn() || v.blend <= 0.05 || !player) return;
+  const sc = sniperScope(player);
+  const k = clamp((Math.exp(v.logMag) - 1.5) / 2.5, 0, 1) * sniperEase(v.blend);   // 2倍から効き始め、4倍で全部
+  if(sc.aperture <= 0 || k <= 0.01) return;
+  const W = { x:viewW/2, y:viewH/2, R:viewH*sc.aperture };
+  ctx.save();
+  ctx.globalAlpha = k;
+  ctx.beginPath(); ctx.arc(W.x, W.y, W.R*1.1, 0, Math.PI*2); ctx.clip();
+  drawScopeHaze(ctx, W);
+  ctx.restore();
+}
+function drawScopeHaze(g, W){
+  const th = window.__aramonRealTheme;
+  const hz = (th && typeof th.haze === 'number') ? th.haze : 0xcfc2a6;
+  const rgb = `${(hz>>16)&255},${(hz>>8)&255},${hz&255}`;
+  // 地平線(目の高さの遠い点)の画面上の高さ
+  const far = 6000, P = project(camPos.x + Math.cos(camState.yaw)*far, camPos.y + Math.sin(camState.yaw)*far, camPos.z);
+  const hy = P ? P.y : W.y;
+  // 地平線に濃い帯、その上の空へも薄く伸ばす(拡大された雲の粗い模様を空気で和らげる)
+  const top = Math.min(hy - W.R*0.2, W.y - W.R*1.1), bot = hy + W.R*0.25;
+  const u = (y)=> clamp((y - top) / Math.max(1, bot - top), 0, 1);
+  const hg = g.createLinearGradient(0, top, 0, bot);
+  hg.addColorStop(0, `rgba(${rgb},0.16)`);
+  hg.addColorStop(u(hy - W.R*0.3), `rgba(${rgb},0.24)`);
+  hg.addColorStop(u(hy - W.R*0.02), `rgba(${rgb},0.38)`);
+  hg.addColorStop(u(hy + W.R*0.1), `rgba(${rgb},0.16)`);
+  hg.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = hg; g.fillRect(W.x - W.R*1.1, top, W.R*2.2, bot - top);
 }
 function drawScopeBody(g, W, sc){
   const { x, y, R } = W;
@@ -535,8 +686,19 @@ function drawScopeBody(g, W, sc){
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(0.72, 'rgba(0,0,0,0.12)');
   vg.addColorStop(0.92, 'rgba(0,0,0,0.55)'); vg.addColorStop(1, 'rgba(0,0,0,0.92)');
   g.beginPath(); g.arc(x, y, R, 0, Math.PI*2); g.fillStyle = vg; g.fill();
+  // 4. 反動の山: 目がアイボックスから外れて、窓の上側が鏡筒の影で黒く欠ける
+  if(W.eclipse > 0.02){
+    g.save();
+    g.beginPath(); g.arc(x, y, R, 0, Math.PI*2); g.clip();
+    // 窓より少し下に中心を持つ円の外側を黒く塗る=上側が三日月形に欠ける(縁は少しぼかす)
+    const k = W.eclipse, off = R*(0.32 + (1-k)*1.1);
+    const eg = g.createRadialGradient(x, y + off, R*0.98, x, y + off, R*1.12);
+    eg.addColorStop(0, 'rgba(1,2,4,0)'); eg.addColorStop(0.35, `rgba(1,2,4,${0.9*k})`); eg.addColorStop(1, `rgba(1,2,4,${0.98*k})`);
+    g.fillStyle = eg; g.fillRect(x-R, y-R, R*2, R*2);
+    g.restore();
+  }
 }
-// レンズのガラス感: 縁の色収差・コーティングの反射・グリント(照準より上に薄く重ねる)
+// レンズのガラス感: 縁の色収差・コーティングの反射・三日月の映り込み(照準より上に薄く重ねる)
 function drawLensGlass(g, W){
   const { x, y, R } = W;
   g.save();
@@ -545,13 +707,10 @@ function drawLensGlass(g, W){
   g.strokeStyle = 'rgba(255,70,40,0.22)'; g.beginPath(); g.arc(x+1.3, y+0.7, R*0.986, 0, Math.PI*2); g.stroke();
   g.strokeStyle = 'rgba(60,150,255,0.22)'; g.beginPath(); g.arc(x-1.3, y-0.7, R*0.978, 0, Math.PI*2); g.stroke();
   g.beginPath(); g.arc(x, y, R, 0, Math.PI*2); g.clip();
-  // コーティングの淡い反射(左上に広く)
   const gl = g.createRadialGradient(x-R*0.45, y-R*0.52, 0, x-R*0.45, y-R*0.52, R*0.75);
-  gl.addColorStop(0, 'rgba(170,215,255,0.10)'); gl.addColorStop(0.5, 'rgba(120,170,255,0.035)'); gl.addColorStop(1, 'rgba(0,0,0,0)');
+  gl.addColorStop(0, 'rgba(170,215,255,0.09)'); gl.addColorStop(0.5, 'rgba(120,170,255,0.03)'); gl.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = gl; g.fillRect(x-R, y-R, R*2, R*2);
-  // 縁に沿った三日月の映り込み(ずらした2つの円の差。両端が細く消える=線に見えない)
   const crescent = (dx, dy, rgb, amax)=>{
-    // 光る側(三日月の太い側 = ずらした向きの反対)から中心へ向けて薄れる
     const cg = g.createLinearGradient(x - Math.sign(dx)*R, y - Math.sign(dy)*R, x + Math.sign(dx)*R*0.2, y + Math.sign(dy)*R*0.2);
     cg.addColorStop(0, `rgba(${rgb},0)`); cg.addColorStop(0.35, `rgba(${rgb},${amax})`); cg.addColorStop(1, `rgba(${rgb},0)`);
     g.beginPath(); g.arc(x, y, R*0.985, 0, Math.PI*2); g.arc(x + dx*R, y + dy*R, R*0.985, 0, Math.PI*2, true);
@@ -559,39 +718,68 @@ function drawLensGlass(g, W){
   };
   crescent(0.035, 0.045, '235,245,255', 0.16);
   crescent(-0.012, -0.016, '255,200,150', 0.05);
-  // 発砲の閃光(レンズの下側が一瞬明るむ)
-  if(sniperView.flash > 0){
-    const f = sniperView.flash;
-    g.fillStyle = `rgba(255,228,190,${0.14*f})`; g.fillRect(x-R, y-R, R*2, R*2);
-    const fg = g.createRadialGradient(x, y+R*0.95, 0, x, y+R*0.95, R*1.0);
-    fg.addColorStop(0, `rgba(255,215,150,${0.85*f})`); fg.addColorStop(0.45, `rgba(255,150,60,${0.32*f})`); fg.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = fg; g.fillRect(x-R, y-R, R*2, R*2);
+  g.restore();
+}
+// 発砲の炎: 窓の下の縁から一瞬だけ舌のような炎が立ち上がる(レンズ全体の色かぶりはしない)
+function drawMuzzleFlame(g, W){
+  const f = sniperView.flash;
+  if(f <= 0.02) return;
+  const { x, y, R } = W;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  // 下の縁から立ち上る柔らかい炎の塊(細長い楕円を重ねる。尖った三角にすると歯のように見える)
+  const tongues = [[-0.3,0.55,-0.25],[-0.13,0.9,-0.1],[0.03,1.0,0.05],[0.18,0.78,0.15],[0.33,0.5,0.3]];
+  for(const [dx, len, tilt] of tongues){
+    const bx = x + dx*R, by = y + Math.sqrt(Math.max(0, 1 - dx*dx))*R;
+    const L = R*0.3*len*(0.55 + 0.45*f), hw = R*0.075*(0.75 + 0.25*len);
+    g.save();
+    g.translate(bx, by); g.rotate(tilt*0.6);
+    const fg = g.createRadialGradient(0, -L*0.15, 0, 0, -L*0.35, L*0.75);
+    fg.addColorStop(0, `rgba(255,248,225,${0.9*f})`); fg.addColorStop(0.3, `rgba(255,200,110,${0.7*f})`);
+    fg.addColorStop(0.65, `rgba(255,120,40,${0.3*f})`); fg.addColorStop(1, 'rgba(255,80,20,0)');
+    g.fillStyle = fg;
+    g.beginPath(); g.ellipse(0, -L*0.35, hw, L*0.6, 0, 0, Math.PI*2); g.fill();
+    g.restore();
   }
+  const gg = g.createRadialGradient(x, y + R, 0, x, y + R, R*0.55);
+  gg.addColorStop(0, `rgba(255,210,140,${0.5*f})`); gg.addColorStop(1, 'rgba(255,140,40,0)');
+  g.fillStyle = gg; g.fillRect(x - R*0.6, y + R*0.4, R*1.2, R*0.6);
   g.restore();
 }
 // 照準の線(黒い線+薄い光の縁取り。明るい空でも暗い森でも読める)
 function retLine(g, x0, y0, x1, y1, w){
   g.lineCap = 'butt';
-  g.strokeStyle = 'rgba(255,255,255,0.20)'; g.lineWidth = w + 1.6;
+  g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = w + 1.6;
   g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
   g.strokeStyle = 'rgba(8,9,11,0.94)'; g.lineWidth = w;
   g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
 }
 function retDot(g, x, y, r){
-  g.fillStyle = 'rgba(255,255,255,0.20)'; g.beginPath(); g.arc(x, y, r+0.9, 0, Math.PI*2); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.22)'; g.beginPath(); g.arc(x, y, r+0.9, 0, Math.PI*2); g.fill();
   g.fillStyle = 'rgba(8,9,11,0.94)'; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
 }
-// 発光する赤い中心(的に乗ると明るく脈打つ)
-function retGlow(g, fn, onTarget){
+/* 発光する中心。mode: null=何も無い / 'body'=撃てば体に当たる(赤く脈打つ) /
+   'weak'=撃てば弱点に当たる(金色の菱形+輪。モンハンの弱点表示の役目) */
+function retGlow(g, fn, mode){
   g.save();
   g.globalCompositeOperation = 'lighter';
-  const k = onTarget ? 0.8 + 0.2*Math.sin(performance.now()*0.018) : 0.6;
-  g.shadowColor = `rgba(255,60,40,${k})`; g.shadowBlur = onTarget ? 10 : 6;
-  g.strokeStyle = g.fillStyle = onTarget ? '#ff5a3c' : '#ff3b2e';
+  const k = mode ? 0.8 + 0.2*Math.sin(performance.now()*0.018) : 0.6;
+  const col = mode === 'weak' ? '#ffc93a' : (mode === 'body' ? '#ff5a3c' : '#ff3b2e');
+  g.shadowColor = mode === 'weak' ? `rgba(255,190,40,${k})` : `rgba(255,60,40,${k})`; g.shadowBlur = mode ? 10 : 6;
+  g.strokeStyle = g.fillStyle = col;
   fn();
   g.restore();
 }
-function drawReticleChevron(g, cx, cy, W, onTarget){
+function drawWeakMark(g, cx, cy, s){
+  retGlow(g, ()=>{
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx, cy - s); g.lineTo(cx + s, cy); g.lineTo(cx, cy + s); g.lineTo(cx - s, cy); g.closePath(); g.stroke();
+    g.lineWidth = 1.4;
+    g.beginPath(); g.arc(cx, cy, s*1.9, 0, Math.PI*2); g.stroke();
+  }, 'weak');
+  snText(g, '弱点', cx + s*2.3, cy - s*2.1, 12, '#ffd46a', 'left', 'bold');
+}
+function drawReticleChevron(g, cx, cy, W, mode){
   const R = W.R;
   g.lineWidth = 1.3; g.strokeStyle = 'rgba(8,9,11,0.9)';
   g.beginPath(); g.arc(cx, cy, R*0.34, 0, Math.PI*2); g.stroke();
@@ -604,7 +792,8 @@ function drawReticleChevron(g, cx, cy, W, onTarget){
   retGlow(g, ()=>{
     g.lineWidth = 2.2; g.lineJoin = 'miter';
     g.beginPath(); g.moveTo(cx - c, cy + c*1.05); g.lineTo(cx, cy); g.lineTo(cx + c, cy + c*1.05); g.stroke();
-  }, onTarget);
+  }, mode === 'weak' ? null : mode);
+  if(mode === 'weak') drawWeakMark(g, cx, cy, Math.max(6, R*0.03));
 }
 // 落下補正の目盛りの画面上の高さ(実際の弾道と同じ式で、この視線から project で求める)
 function sniperDropMarks(w){
@@ -621,23 +810,32 @@ function sniperDropMarks(w){
   }
   return out;
 }
-function drawReticleMildot(g, cx, cy, W, onTarget, w){
+// 目盛りの数字の大きさは窓の半径から決める(縦持ちの小さな窓でも潰れない下限つき)
+function dropLabelSize(R){ return Math.max(11, Math.min(14, R*0.045)); }
+function drawReticleMildot(g, cx, cy, W, mode, w){
   const R = W.R, gap = R*0.035;
   for(const [dx, dy] of [[-1,0],[1,0],[0,1],[0,-1]]){
     retLine(g, cx + dx*R, cy + dy*R, cx + dx*R*0.5, cy + dy*R*0.5, 4);
     retLine(g, cx + dx*R*0.5, cy + dy*R*0.5, cx + dx*gap, cy + dy*gap, 1.2);
     for(let i=1;i<=4;i++) retDot(g, cx + dx*R*0.1*i, cy + dy*R*0.1*i, 1.9);
   }
-  // 落下補正の小さな横線(下の縦線に。数字は100m単位)
-  g.font = "bold 10px 'Share Tech Mono', monospace"; g.textAlign = 'left'; g.textBaseline = 'middle';
+  // 落下補正: 下の縦線に琥珀の短い横線、数字は右の柱寄りに揃える
+  const fs = dropLabelSize(R), col = cx + R*0.2;
+  let lastLabelY = -1e9;
   for(const mk of sniperDropMarks(w)){
     if(mk.y <= cy + gap*1.5 || mk.y > cy + R*0.48) continue;
-    retLine(g, cx - R*0.035, mk.y, cx + R*0.035, mk.y, 1.2);
-    if(mk.m % 100 === 0){ g.fillStyle = 'rgba(8,9,11,0.85)'; g.fillText(String(mk.m/100), cx + R*0.05, mk.y); }
+    g.strokeStyle = SN_AMBER; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(cx - R*0.04, mk.y); g.lineTo(cx + R*0.04, mk.y); g.stroke();
+    if(mk.y - lastLabelY < fs*1.05) continue;
+    g.setLineDash([2,3]); g.strokeStyle = 'rgba(255,179,71,0.55)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(cx + R*0.05, mk.y); g.lineTo(col - 3, mk.y); g.stroke(); g.setLineDash([]);
+    snText(g, String(mk.m), col, mk.y, fs, SN_AMBER);
+    lastLabelY = mk.y;
   }
-  retGlow(g, ()=>{ g.beginPath(); g.arc(cx, cy, 2.3, 0, Math.PI*2); g.fill(); }, onTarget);
+  retGlow(g, ()=>{ g.beginPath(); g.arc(cx, cy, 2.3, 0, Math.PI*2); g.fill(); }, mode === 'weak' ? null : mode);
+  if(mode === 'weak') drawWeakMark(g, cx, cy, Math.max(6, R*0.03));
 }
-function drawReticleBdc(g, cx, cy, W, onTarget, w){
+function drawReticleBdc(g, cx, cy, W, mode, w){
   const R = W.R, gap = R*0.028;
   // 太い柱(外周)+細い十字
   retLine(g, cx - R, cy, cx - R*0.62, cy, 4.5);
@@ -649,18 +847,28 @@ function drawReticleBdc(g, cx, cy, W, onTarget, w){
   retLine(g, cx, cy - R*0.62, cx, cy - gap, 1.1);
   // 横の風読みの目盛り
   for(let i=1;i<=5;i++) for(const s of [-1,1]) retLine(g, cx + s*R*0.1*i, cy - (i%5===0?6:3.5), cx + s*R*0.1*i, cy + (i%5===0?6:3.5), 1.1);
-  // 落下補正のはしご(距離ごとの横線+数字。実際の弾道から毎フレーム引く)
+  // 落下補正のはしご(距離ごとの横線+数字。実際の弾道から毎フレーム引く)。
+  // 線は照明色(琥珀)で光らせ、数字は右の柱寄りの1列に揃える(暗い空でも明るい地面でも読める)
   const marks = sniperDropMarks(w);
-  let lastY = cy;
-  g.font = "bold 11px 'Share Tech Mono', monospace"; g.textBaseline = 'middle';
+  const fs = dropLabelSize(R), col = cx + R*0.26;
+  let lastY = cy, lastLabelY = -1e9;
   marks.forEach((mk, i)=>{
     if(mk.y <= cy + gap*1.5 || mk.y > cy + R*0.6) return;
     const hw = R*(0.085 - i*0.012);
-    retLine(g, cx - hw, mk.y, cx + hw, mk.y, 1.3);
-    retDot(g, cx - hw - 5, mk.y, 1.5); retDot(g, cx + hw + 5, mk.y, 1.5);
-    g.textAlign = 'left';
-    g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillText(String(mk.m), cx + hw + 11 + 0.8, mk.y + 0.8);
-    g.fillStyle = 'rgba(10,10,12,0.95)'; g.fillText(String(mk.m), cx + hw + 11, mk.y);
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.shadowColor = 'rgba(255,150,40,0.8)'; g.shadowBlur = 4;
+    g.strokeStyle = SN_AMBER; g.lineWidth = 1.7;
+    g.beginPath(); g.moveTo(cx - hw, mk.y); g.lineTo(cx + hw, mk.y); g.stroke();
+    g.fillStyle = SN_AMBER;
+    for(const s of [-1,1]){ g.beginPath(); g.arc(cx + s*(hw + 5), mk.y, 1.8, 0, Math.PI*2); g.fill(); }
+    g.restore();
+    // 数字は重ならないときだけ(小さい窓では目盛りが詰まるので1つおきになる)
+    if(mk.y - lastLabelY >= fs*1.05){
+      g.setLineDash([2,3]); g.strokeStyle = 'rgba(255,179,71,0.5)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(cx + hw + 9, mk.y); g.lineTo(col - 4, mk.y); g.stroke(); g.setLineDash([]);
+      snText(g, String(mk.m), col, mk.y, fs, SN_AMBER);
+      lastLabelY = mk.y;
+    }
     lastY = mk.y;
   });
   // 細い縦線をはしごの下まで
@@ -668,88 +876,168 @@ function drawReticleBdc(g, cx, cy, W, onTarget, w){
   retGlow(g, ()=>{
     g.beginPath(); g.arc(cx, cy, 2.1, 0, Math.PI*2); g.fill();
     g.lineWidth = 1.1; g.beginPath(); g.arc(cx, cy, R*0.022 + 3, 0, Math.PI*2); g.stroke();
-  }, onTarget);
+  }, mode === 'weak' ? null : mode);
+  if(mode === 'weak') drawWeakMark(g, cx, cy, Math.max(6, R*0.03));
 }
-// アイアンサイト: 照門(ぼけた輪)と照星(先端が狙点)、下に銃の影
+/* アイアンサイト: 手前にある銃そのもの。照門(くっきりした金属の輪)・照星(フードの中の柱)・機関部。
+   倍率は data.js の iron.mag(1.25)がそのまま掛かり、札も「1.25×」(HUD の札に出す。空中には描かない) */
 function drawIronSight(g, cx, cy, a){
-  const H = viewH;
-  // 画面の縁をわずかに落とす
+  const H = viewH, v = sniperView;
+  // 画面の縁をわずかに落とす(目の前に銃がある暗さ)
   const vg = g.createRadialGradient(cx, cy, H*0.35, cx, cy, Math.max(viewW, H)*0.75);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.42)');
   g.fillStyle = vg; g.fillRect(0, 0, viewW, H);
-  // 銃身と機関部(ピントの外なので柔らかく)
-  const bodyTop = cy + H*0.12;
-  const bg = g.createLinearGradient(0, bodyTop, 0, H);
-  bg.addColorStop(0, 'rgba(24,25,28,0.0)'); bg.addColorStop(0.15, 'rgba(24,25,28,0.86)'); bg.addColorStop(1, 'rgba(10,10,12,0.95)');
-  g.fillStyle = bg;
+  const metal = (x0, y0, x1, y1, lite)=>{
+    const mg = g.createLinearGradient(x0, y0, x1, y1);
+    mg.addColorStop(0, lite ? '#5d626b' : '#3b3f46'); mg.addColorStop(0.45, '#1b1d21'); mg.addColorStop(1, '#0b0c0e');
+    return mg;
+  };
+  // 機関部と銃身(下から伸びる。上面に鈍い照り返し、側面は暗い)
+  const Ri = H*0.11, Ro = H*0.158;
+  const topY = cy + Ro*1.35, baseW = H*0.2;
+  g.fillStyle = metal(cx - baseW, topY, cx + baseW, H, true);
   g.beginPath();
-  g.moveTo(cx - H*0.035, bodyTop); g.lineTo(cx + H*0.035, bodyTop);
-  g.lineTo(cx + H*0.19, H); g.lineTo(cx - H*0.19, H); g.closePath(); g.fill();
-  // 銃身の上面の鈍い照り返し
-  const hl = g.createLinearGradient(0, bodyTop, 0, H);
-  hl.addColorStop(0, 'rgba(160,170,185,0)'); hl.addColorStop(0.3, 'rgba(160,170,185,0.10)'); hl.addColorStop(1, 'rgba(160,170,185,0.02)');
+  g.moveTo(cx - H*0.045, topY); g.lineTo(cx + H*0.045, topY);
+  g.lineTo(cx + baseW, H); g.lineTo(cx - baseW, H); g.closePath(); g.fill();
+  const hl = g.createLinearGradient(0, topY, 0, H);
+  hl.addColorStop(0, 'rgba(190,200,215,0.30)'); hl.addColorStop(1, 'rgba(190,200,215,0.05)');
   g.fillStyle = hl;
-  g.beginPath();
-  g.moveTo(cx - H*0.008, bodyTop); g.lineTo(cx + H*0.008, bodyTop);
-  g.lineTo(cx + H*0.05, H); g.lineTo(cx - H*0.05, H); g.closePath(); g.fill();
-  // 照門(ぼけた輪)
-  const Ro = H*0.17, Ri = H*0.085;
-  const rg = g.createRadialGradient(cx, cy, Ri*0.85, cx, cy, Ro*1.25);
-  rg.addColorStop(0, 'rgba(10,10,12,0)'); rg.addColorStop(0.12, 'rgba(10,10,12,0.88)');
-  rg.addColorStop(0.7, 'rgba(10,10,12,0.9)'); rg.addColorStop(1, 'rgba(10,10,12,0)');
-  g.fillStyle = rg; g.beginPath(); g.arc(cx, cy, Ro*1.25, 0, Math.PI*2); g.fill();
-  // 照星(柱の先端=狙点)と両脇の耳
-  g.fillStyle = 'rgba(14,14,16,0.97)';
-  const pw = Math.max(3, H*0.011);
-  g.beginPath(); g.moveTo(cx - pw, cy + 1); g.lineTo(cx + pw, cy + 1); g.lineTo(cx + pw*1.8, cy + H*0.085); g.lineTo(cx - pw*1.8, cy + H*0.085); g.closePath(); g.fill();
-  g.lineWidth = Math.max(2.5, H*0.008); g.strokeStyle = 'rgba(14,14,16,0.95)';
-  for(const s of [-1,1]){ g.beginPath(); g.arc(cx, cy + H*0.02, H*0.04, s<0 ? Math.PI*0.62 : Math.PI*0.08, s<0 ? Math.PI*0.92 : Math.PI*0.38); g.stroke(); }
-  // 集光ファイバーの点(照星の先)
-  retGlow(g, ()=>{ g.beginPath(); g.arc(cx, cy + 2, Math.max(1.8, H*0.005), 0, Math.PI*2); g.fill(); }, !!(sniperView.aim && sniperView.aim.ent));
+  g.beginPath(); g.moveTo(cx - H*0.01, topY); g.lineTo(cx + H*0.01, topY); g.lineTo(cx + H*0.045, H); g.lineTo(cx - H*0.045, H); g.closePath(); g.fill();
+  // 上面のレール(横の溝)
+  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1.2;
+  for(let i=1;i<7;i++){
+    const yy = topY + (H - topY)*(i/7)*(i/7);
+    const hw = H*0.045 + (baseW - H*0.045)*((yy - topY)/(H - topY));
+    g.beginPath(); g.moveTo(cx - hw*0.3, yy); g.lineTo(cx + hw*0.3, yy); g.stroke();
+  }
+  // 照星(遠くにあるので小さい。細い柱+フードの輪+銃身へ降りる細い台)。柱の先端=狙点
+  const hoodR = H*0.03, hoodY = cy + hoodR*0.25;
+  g.fillStyle = metal(cx - hoodR, hoodY, cx + hoodR, cy + Ri, false);
+  g.beginPath(); g.moveTo(cx - hoodR*0.55, hoodY + hoodR*0.7); g.lineTo(cx + hoodR*0.55, hoodY + hoodR*0.7);
+  g.lineTo(cx + hoodR*0.9, cy + Ri*1.05); g.lineTo(cx - hoodR*0.9, cy + Ri*1.05); g.closePath(); g.fill();
+  g.lineWidth = Math.max(2.5, H*0.006);
+  g.strokeStyle = '#26292f';
+  g.beginPath(); g.arc(cx, hoodY, hoodR, Math.PI*0.08, Math.PI*0.92, true); g.stroke();
+  g.strokeStyle = 'rgba(200,210,225,0.25)'; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, hoodY, hoodR + 1.2, Math.PI*1.15, Math.PI*1.5); g.stroke();
+  const pw = Math.max(1.8, H*0.0045);
+  g.fillStyle = '#121317';
+  g.beginPath(); g.moveTo(cx - pw, cy + 1); g.lineTo(cx + pw, cy + 1); g.lineTo(cx + pw*1.4, hoodY + hoodR*0.75); g.lineTo(cx - pw*1.4, hoodY + hoodR*0.75); g.closePath(); g.fill();
+  // 照門: 手前(目の近く)の金属の輪。内側の縁はくっきり、左上に照り返し
+  g.save();
+  g.beginPath(); g.arc(cx, cy, Ro, 0, Math.PI*2); g.arc(cx, cy, Ri, 0, Math.PI*2, true);
+  const rg = g.createLinearGradient(cx - Ro, cy - Ro, cx + Ro, cy + Ro);
+  rg.addColorStop(0, '#50555e'); rg.addColorStop(0.45, '#202329'); rg.addColorStop(1, '#0a0b0d');
+  g.fillStyle = rg; g.fill();
+  g.lineWidth = 1.5; g.strokeStyle = 'rgba(215,225,240,0.32)';
+  g.beginPath(); g.arc(cx, cy, Ri + 0.8, Math.PI*1.05, Math.PI*1.75); g.stroke();
+  g.beginPath(); g.arc(cx, cy, Ro - 0.8, Math.PI*1.1, Math.PI*1.6); g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,0.85)';
+  g.beginPath(); g.arc(cx, cy, Ri + 0.8, Math.PI*0.1, Math.PI*0.9); g.stroke();
+  // 照門の首(輪の下から機関部へつながる細い台)
+  g.fillStyle = metal(cx - Ro*0.4, cy + Ro*0.8, cx + Ro*0.4, topY, false);
+  g.beginPath(); g.moveTo(cx - Ro*0.32, cy + Ro*0.9); g.lineTo(cx + Ro*0.32, cy + Ro*0.9);
+  g.lineTo(cx + H*0.05, topY + 2); g.lineTo(cx - H*0.05, topY + 2); g.closePath(); g.fill();
+  g.restore();
+  // 息のゲージは照門の輪の上(黒い所)に弧で出す
+  if(v.breath < 0.999 || v.holding) drawBreathArc(g, cx, cy, (Ri + Ro)/2, Math.PI*0.72, Math.PI*1.28);
+  // 集光ファイバーの点(照星の先)。弱点に乗ると金色に
+  const aimMode = v.pred && v.pred.weak ? 'weak' : ((v.pred && v.pred.ent) || (v.aim && v.aim.ent) ? 'body' : null);
+  retGlow(g, ()=>{ g.beginPath(); g.arc(cx, cy + 2, Math.max(1.8, H*0.005), 0, Math.PI*2); g.fill(); }, aimMode);
+  if(aimMode === 'weak') drawWeakMark(g, cx, cy + 2, Math.max(5, H*0.012));
 }
-// 命中の×印・ダメージ数字・着弾の土煙(スコープの中で見えるように画面側に描く)
-function drawScopeHits(g, cx, cy){
-  const fx = sniperView.fx;
-  for(const f of fx){
+function drawBreathArc(g, ox, oy, rr, a0, a1){
+  const v = sniperView;
+  g.save();
+  g.lineCap = 'round';
+  g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 5;
+  g.beginPath(); g.arc(ox, oy, rr, a0, a1); g.stroke();
+  g.strokeStyle = v.spent ? '#ff6e5e' : (v.holding ? '#bfe6ff' : 'rgba(191,230,255,0.65)'); g.lineWidth = 3.5;
+  g.beginPath(); g.arc(ox, oy, rr, a1 - (a1-a0)*v.breath, a1); g.stroke();
+  const lx = ox + Math.cos((a0+a1)/2)*rr, ly = oy + Math.sin((a0+a1)/2)*rr;
+  const label = v.spent ? '息切れ' : (v.holding ? '息止め' : '息');
+  g.font = "bold 12px 'Rajdhani', sans-serif"; g.textAlign = 'right'; g.textBaseline = 'middle';
+  g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(label, lx - 8, ly);
+  g.fillStyle = v.spent ? '#ff8a7a' : '#d8efff'; g.fillText(label, lx - 8, ly);
+  g.restore();
+}
+// 弾が通った弧(当たって消えたあとも少し残す)
+function drawScopeTrails(g){
+  for(const f of sniperView.fx){
+    if(f.kind !== 'trail') continue;
+    const fade = 1 - f.t / f.life;
+    drawTracerPath(g, sniperTracerPoints(f.pts), fade*fade, false);
+  }
+}
+// 外れた所の土煙(大きく、長く。立ち上って横へ流れる)
+function drawScopeImpacts(g){
+  for(const f of sniperView.fx){
+    if(f.kind !== 'impact') continue;
     const P = project(f.x, f.y, f.z);
-    if(f.kind === 'impact'){
-      if(!P) continue;
-      const k = f.t / f.life, r = Math.max(4, 26*P.scale) * (0.4 + k*1.2);
-      const gg = g.createRadialGradient(P.x, P.y, 0, P.x, P.y, r);
-      const col = f.rock ? '190,186,178' : '205,186,146';
-      gg.addColorStop(0, `rgba(${col},${0.55*(1-k)})`); gg.addColorStop(1, `rgba(${col},0)`);
-      g.fillStyle = gg; g.beginPath(); g.arc(P.x, P.y - r*0.3, r, 0, Math.PI*2); g.fill();
-      continue;
+    if(!P) continue;
+    const k = f.t / f.life, sc = Math.max(0.3, P.scale);
+    const col = f.rock ? '190,186,178' : '208,190,150';
+    // 地面に広がる輪
+    const r0 = Math.max(10, 70*sc) * (0.35 + k*1.4);
+    const gg = g.createRadialGradient(P.x, P.y, 0, P.x, P.y, r0);
+    gg.addColorStop(0, `rgba(${col},${0.5*(1-k)})`); gg.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gg; g.beginPath(); g.ellipse(P.x, P.y, r0, r0*0.45, 0, 0, Math.PI*2); g.fill();
+    // 立ち上る柱(3つの塊)
+    for(let i=0;i<3;i++){
+      const rise = (30 + i*26) * sc * (0.3 + k*1.2);
+      const rr = Math.max(6, (22 + i*10)*sc) * (0.5 + k*1.1);
+      const dx = (i-1)*rr*0.5 + k*18*sc;
+      const cg = g.createRadialGradient(P.x + dx, P.y - rise, 0, P.x + dx, P.y - rise, rr);
+      cg.addColorStop(0, `rgba(${col},${0.42*(1-k)})`); cg.addColorStop(1, `rgba(${col},0)`);
+      g.fillStyle = cg; g.beginPath(); g.arc(P.x + dx, P.y - rise, rr, 0, Math.PI*2); g.fill();
     }
+    // 最初の一瞬の閃き
+    if(f.t < 0.1){
+      g.save(); g.globalCompositeOperation = 'lighter';
+      const fl = g.createRadialGradient(P.x, P.y, 0, P.x, P.y, Math.max(6, 20*sc));
+      fl.addColorStop(0, `rgba(255,230,190,${0.8*(1 - f.t/0.1)})`); fl.addColorStop(1, 'rgba(255,200,120,0)');
+      g.fillStyle = fl; g.beginPath(); g.arc(P.x, P.y, Math.max(6, 20*sc), 0, Math.PI*2); g.fill();
+      g.restore();
+    }
+  }
+}
+/* 命中の×印・ダメージ数字。**数字は照準の右上(窓の半径×0.3)に固定**して、的と照準をふさがない。
+   弱点は金色で大きく、弾んで出る(ヒットストップと倍率の弾みは sniperOnHit が起こす) */
+function drawScopeHits(g, cx, cy, W){
+  const R = W ? W.R : viewH*0.3;
+  let slot = 0;
+  for(let i=sniperView.fx.length-1; i>=0; i--){
+    const f = sniperView.fx[i];
+    if(f.kind !== 'hit') continue;
     // ×印(照準の上)
-    const mk = clamp(f.t / 0.32, 0, 1);
+    const mk = clamp(f.t / 0.34, 0, 1);
     if(mk < 1){
-      const s = (f.crit ? 15 : 11) * (1.25 - 0.25*mk), gap = f.crit ? 6 : 5;
+      const s = (f.crit ? 17 : 12) * (1.3 - 0.3*mk), gap = f.crit ? 7 : 5;
       g.save();
       g.globalAlpha *= 1 - mk*mk;
       g.lineCap = 'round';
       const col = f.kill ? '#ff3030' : (f.crit ? '#ffb020' : '#ffffff');
       for(const [dx, dy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
-        g.strokeStyle = 'rgba(0,0,0,0.65)'; g.lineWidth = f.crit ? 5 : 4;
+        g.strokeStyle = 'rgba(0,0,0,0.65)'; g.lineWidth = f.crit ? 5.5 : 4;
         g.beginPath(); g.moveTo(cx + dx*gap, cy + dy*gap); g.lineTo(cx + dx*(gap+s), cy + dy*(gap+s)); g.stroke();
-        g.strokeStyle = col; g.lineWidth = f.crit ? 3 : 2.2;
+        g.strokeStyle = col; g.lineWidth = f.crit ? 3.2 : 2.2;
         g.beginPath(); g.moveTo(cx + dx*gap, cy + dy*gap); g.lineTo(cx + dx*(gap+s), cy + dy*(gap+s)); g.stroke();
       }
       g.restore();
     }
-    // ダメージ数字(当たった所から浮き上がる。弱点はクリティカルの札と金色)
-    if(!P) continue;
+    if(slot > 1) continue;
     const k = f.t / f.life;
-    const rise = 24 + k*38, alpha = k < 0.75 ? 1 : 1 - (k-0.75)/0.25;
-    const pop = f.t < 0.12 ? 1 + (0.12 - f.t)*4 : 1;
-    const x = P.x + 18, y = P.y - rise;
+    const alpha = k < 0.72 ? 1 : 1 - (k-0.72)/0.28;
+    const pop = f.t < 0.14 ? 1 + (0.14 - f.t)*(f.crit ? 5 : 2.5) : 1;
+    const x = cx + R*0.3, y = cy - R*0.3 + slot*R*0.2 - k*10;
+    slot++;
     g.save();
     g.globalAlpha *= alpha;
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-    const size = Math.round((f.crit ? 30 : 22) * pop);
+    const size = Math.round((f.crit ? 34 : 24) * pop);
     g.font = `${size}px 'Russo One', 'Rajdhani', sans-serif`;
     g.lineJoin = 'round';
-    g.lineWidth = f.crit ? 6 : 5; g.strokeStyle = f.crit ? 'rgba(120,14,0,0.92)' : 'rgba(0,0,0,0.85)';
+    g.lineWidth = f.crit ? 6 : 5; g.strokeStyle = f.crit ? 'rgba(110,12,0,0.95)' : 'rgba(0,0,0,0.85)';
     g.strokeText(String(f.dmg), x, y);
     if(f.crit){
       const tg = g.createLinearGradient(0, y - size, 0, y);
@@ -759,7 +1047,7 @@ function drawScopeHits(g, cx, cy){
     g.fillText(String(f.dmg), x, y);
     if(f.crit || f.kill){
       const label = f.kill ? (f.crit ? 'クリティカル撃破' : '撃破') : 'クリティカル';
-      g.font = "bold 13px 'Rajdhani', sans-serif";
+      g.font = "bold 14px 'Rajdhani', sans-serif";
       g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.85)';
       g.strokeText(label, x + 2, y - size - 2);
       g.fillStyle = f.kill ? '#ff5a4a' : '#ffd24a';
@@ -777,23 +1065,56 @@ function drawScopeSmoke(g, W){
     g.fillStyle = sg; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
   }
 }
-// 距離・残弾・装填・倍率・息(窓の中の決まった場所に。窓の無いアイアンは照準の右下)
+/* 距離・照準の先の1体・撃った距離・倍率・残弾・装填・息。
+   窓のあるスコープは窓の中の決まった場所と鏡筒の黒い所へ、アイアンは照準の右に小さく
+   (倍率と残弾はHUDの札が出すので、アイアンでは空中に描かない) */
 function drawScopeInfo(g, cx, cy, W, sc, w){
   const v = sniperView, s = player.sniper;
   const R = W ? W.R : viewH*0.3;
   const ox = W ? W.x : cx, oy = W ? W.y : cy;
-  const txt = (str, x, y, font, color, align)=>{
-    g.font = font; g.textAlign = align || 'left'; g.textBaseline = 'middle';
-    g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(str, x, y);
-    g.fillStyle = color; g.fillText(str, x, y);
-  };
-  // 距離計
+  // 距離計(撃った直後の1秒は、撃った瞬間の距離を琥珀で残す)
   const m = v.aim && v.aim.m != null ? Math.round(v.aim.m) : null;
-  const dx = ox + R*0.42, dy = oy + R*0.14;
-  txt('RANGE', dx, dy - 11, "bold 9px 'Share Tech Mono', monospace", 'rgba(255,214,150,0.8)');
-  txt(m != null ? `${m} m` : '--- m', dx, dy + 4, "bold 17px 'Share Tech Mono', monospace", v.aim && v.aim.ent ? '#ff8a6a' : '#ffe9c4');
+  // 目盛りの数字の列(窓の半径×0.26+数字の幅)より右に置く
+  const dx = W ? ox + Math.max(R*0.42, R*0.26 + dropLabelSize(R)*2.4 + 8) : cx + viewH*0.24, dy = W ? oy + R*0.16 : cy + viewH*0.02;
+  const fsm = W ? Math.max(15, Math.min(20, R*0.07)) : 15;
+  snText(g, 'RANGE', dx, dy - fsm*0.8, Math.max(9, fsm*0.55), 'rgba(255,214,150,0.85)');
+  snText(g, m != null ? `${m} m` : '--- m', dx, dy + 3, fsm, (v.aim && v.aim.ent) ? '#ff9a7a' : '#ffe9c4');
+  let infoY = dy + fsm*1.2;
+  if(v.lastShot && v.lastShot.m != null){
+    const ka = 1 - Math.max(0, v.lastShot.t - SNIPER_SHOT_RANGE_SEC*0.7) / (SNIPER_SHOT_RANGE_SEC*0.3);
+    g.save(); g.globalAlpha *= ka;
+    snText(g, `SHOT ${v.lastShot.m} m`, dx, infoY, Math.max(10, fsm*0.66), SN_AMBER);
+    g.restore();
+    infoY += fsm*0.95;
+  }
+  // 照準の先の1体(名前と体力の細い帯)。頭上のゲージは構え中は消している
+  const t = v.aim && v.aim.ent;
+  if(t && t.alive){
+    const bw = W ? R*0.3 : viewH*0.18, bh = 4;
+    // 名前は帯の幅に収める(長い名前は末尾を「…」)。窓の外のHUDの札へはみ出さない
+    let name = String(t.exploreName || t.name || '');
+    const nfs = Math.max(10, fsm*0.62);
+    g.font = `600 ${Math.round(nfs)}px 'Share Tech Mono', 'Rajdhani', monospace`;
+    const maxW = W ? Math.max(40, (W.x + W.R*0.92) - dx) : viewH*0.3;
+    while(name.length > 1 && g.measureText(name).width > maxW) name = name.slice(0, -2) + '…';
+    snText(g, name, dx, infoY + 2, nfs, '#f3eadb', 'left', '600');
+    const by = infoY + fsm*0.62;
+    const pct = clamp(t.hp / Math.max(1, t.maxHp), 0, 1);
+    g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(dx - 1, by - 1, bw + 2, bh + 2);
+    g.fillStyle = pct > 0.5 ? '#5fe07c' : (pct > 0.22 ? '#f4c430' : '#ff5d5d');
+    g.fillRect(dx, by, bw*pct, bh);
+  }
+  if(!W){
+    // アイアン: 装填の進みだけ照準の下に細く(倍率と残弾はHUDの札)
+    if(s.reloadLeft > 0){
+      const p = 1 - s.reloadLeft / w.reloadSec, bw = viewH*0.18;
+      g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(cx - bw/2 - 2, cy - viewH*0.06 - 2, bw + 4, 8);
+      g.fillStyle = '#ffb45a'; g.fillRect(cx - bw/2, cy - viewH*0.06, bw*p, 4);
+    }
+    return;
+  }
   // 倍率(左下)
-  txt(sc.label || (sc.mag+'×'), ox - R*0.62, oy + R*0.52, "bold 15px 'Share Tech Mono', monospace", 'rgba(255,214,150,0.85)', 'center');
+  snText(g, sc.label || (sc.mag+'×'), ox - R*0.62, oy + R*0.52, Math.max(13, R*0.06), 'rgba(255,214,150,0.9)', 'center');
   // 残弾(右下): 弾の形の小さな柱
   const bx = ox + R*0.34, by = oy + R*0.56;
   for(let i=0;i<w.mag;i++){
@@ -808,23 +1129,14 @@ function drawScopeInfo(g, cx, cy, W, sc, w){
     const bw = R*0.5, bxx = ox - bw/2, byy = oy + R*0.78;
     g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(bxx - 2, byy - 2, bw + 4, 8);
     g.fillStyle = '#ffb45a'; g.fillRect(bxx, byy, bw*p, 4);
-    txt('装填中', ox, byy - 12, "bold 12px 'Rajdhani', sans-serif", '#ffcf8a', 'center');
+    snText(g, '装填中', ox, byy - 12, 13, '#ffcf8a', 'center');
   } else if(s.cycleLeft > 0){
     const p = 1 - s.cycleLeft / w.cycleSec;
     g.strokeStyle = 'rgba(255,215,150,0.75)'; g.lineWidth = 2.5;
     g.beginPath(); g.arc(bx + w.mag*8 + 10, by, 6, -Math.PI/2, -Math.PI/2 + p*Math.PI*2); g.stroke();
   }
-  // 息(左の縁に沿った弧)。止めている間と戻っている間だけ
-  if(v.breath < 0.999 || v.holding){
-    const a0 = Math.PI*0.80, a1 = Math.PI*1.20, rr = R*0.9;
-    g.lineCap = 'round';
-    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 5;
-    g.beginPath(); g.arc(ox, oy, rr, a0, a1); g.stroke();
-    g.strokeStyle = v.spent ? '#ff6e5e' : (v.holding ? '#bfe6ff' : 'rgba(191,230,255,0.6)'); g.lineWidth = 3;
-    g.beginPath(); g.arc(ox, oy, rr, a1 - (a1-a0)*v.breath, a1); g.stroke();
-    txt(v.spent ? '息切れ' : (v.holding ? '息止め' : '息'), ox + Math.cos(Math.PI)*rr + 14, oy, "bold 11px 'Rajdhani', sans-serif",
-        v.spent ? '#ff8a7a' : '#d8efff');
-  }
+  // 息(窓の外=鏡筒の黒い所に弧)。止めている間と戻っている間だけ
+  if(v.breath < 0.999 || v.holding) drawBreathArc(g, ox, oy, R*1.17, Math.PI*0.80, Math.PI*1.20);
 }
 
 /* 開発用: 探検モードが無い状態でも、今の試合の自機に狙撃銃とスコープを持たせる(撮影ハーネス用)。

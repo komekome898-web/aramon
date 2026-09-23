@@ -371,6 +371,7 @@ let fireDrag = { pointerId:null, lastX:0, lastY:0 };
 fireBtnEl.addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   fireBtnHeld = true;
+  fireReleasedOutside = false;
   fireDrag.pointerId = e.pointerId; fireDrag.lastX = e.clientX; fireDrag.lastY = e.clientY;
   try{ fireBtnEl.setPointerCapture(e.pointerId); }catch(_){}
 });
@@ -392,8 +393,17 @@ window.addEventListener('pointermove', (e)=>{
 });
 /* 離す。捕まえた指と同じIDのときだけ効かせる ── IDを見ないと、離した直後に
    遅れて届くlostpointercaptureが「次に押した指」のfireBtnHeldまで落としてしまう。 */
+/* FIREを離した場所がボタンから大きく外れていたか(sniper.js が「撃つのをやめた」と読む。狙撃の構え中だけ効く)。
+   座標の無い解除(画面から離れた・OSに指を取られた)は外れた扱い=撃たない */
+let fireReleasedOutside = false;
 function releaseFireBtn(e){
   if(e.pointerId !== fireDrag.pointerId) return;
+  fireReleasedOutside = true;
+  if(e.clientX != null && fireBtnEl.getBoundingClientRect){
+    const r = fireBtnEl.getBoundingClientRect();
+    const mx = r.width*SNIPER_FIRE_CANCEL_MARGIN, my = r.height*SNIPER_FIRE_CANCEL_MARGIN;
+    fireReleasedOutside = !(e.clientX >= r.left - mx && e.clientX <= r.right + mx && e.clientY >= r.top - my && e.clientY <= r.bottom + my);
+  }
   fireBtnHeld = false;
   fireDrag.pointerId = null;
   try{ if(fireBtnEl.hasPointerCapture && fireBtnEl.hasPointerCapture(e.pointerId)) fireBtnEl.releasePointerCapture(e.pointerId); }catch(_){}

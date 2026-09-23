@@ -255,6 +255,18 @@ const api = {
       scene.fog.far  = fogBase.far  + (Math.max(fogBase.far,  FOG_ZOOM_FAR)  - fogBase.far)  * t;
       if(zoom <= 1) fogBase = null;   // 構えを解いたら元の値のまま手放す(他の誰かが霞を変えても邪魔しない)
     }
+    /* 狙撃スコープ(探検モードだけ。sniper.js が描画の間だけ window.__aramonSniperScope を入れる)。
+       完全に構えている間は、窓の外は黒く塗られて見えないので**窓の矩形だけ**を描き(scissor)、
+       そのぶん解像度を上げる(8倍で引き伸ばされた遠景のにじみを減らす)。窓の矩形は画面の約37%なので、
+       1.5倍(画素数2.25倍)にしても塗る画素は元の約0.84倍に収まる。構えていなければ何も変えない。 */
+    const scope = window.__aramonSniperScope || null;
+    const basePR = window.__aramonRenderScale || Math.min(window.devicePixelRatio || 1, 2);
+    const wantPR = (scope && scope.full) ? Math.min(3, basePR * (scope.boost || 1)) : basePR;
+    if(Math.abs(renderer.getPixelRatio() - wantPR) > 0.01) renderer.setPixelRatio(wantPR);
+    if(scope && scope.full){
+      renderer.setScissorTest(true);
+      renderer.setScissor(scope.x0, scope.h - scope.y1, scope.x1 - scope.x0, scope.y1 - scope.y0);
+    } else renderer.setScissorTest(false);
     updateTerrain(cp.x, cp.y);
     updateWorldObjects(world);
     updateObstacles(scene, obstacles, world && world.crystals, cp.x, cp.y);
@@ -278,8 +290,10 @@ const api = {
     // 影の計算範囲はカメラの少し前方に置く。ワールド全体を1枚の影で覆うと
     // 解像度が足りずガビガビになるので、プレイヤー周辺だけを高い密度で覆う
     if(sun){
-      const fx = cp.x + Math.cos(cs.yaw)*SHADOW_AHEAD;
-      const fy = cp.y + Math.sin(cs.yaw)*SHADOW_AHEAD;
+      // スコープで遠くを覗いている間は、影の範囲を見ている先(距離計の距離)へ寄せる(遠くの地面にも影が落ちる)
+      const ahead = (scope && scope.zoom >= 2) ? Math.max(SHADOW_AHEAD, Math.min(3000, scope.focus || SHADOW_AHEAD)) : SHADOW_AHEAD;
+      const fx = cp.x + Math.cos(cs.yaw)*ahead;
+      const fy = cp.y + Math.sin(cs.yaw)*ahead;
       const fz = heightAt(fx, fy);
       sun.target.position.set(fx, fz, fy);
       sun.position.set(fx + SUN_DIR.x*2200, fz + SUN_DIR.y*2200, fy + SUN_DIR.z*2200);

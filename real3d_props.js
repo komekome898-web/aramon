@@ -2176,6 +2176,9 @@ function updateObstacleInstances(cx, cy){
 
 const WIND_DIR = { x:0.86, y:0.36 };     // 風の向き(ワールドのx,z)
 const windTime = { value:0 };            // 全ての植生の材質で共有する時刻
+/* 遠くを縮めて消す距離の倍率(全ての植生・接地影で共有)。ふだんは1。
+   狙撃スコープで草を「視線の先の扇」へ並べ替えている間だけ、扇の長さに合わせて伸ばす(updateVegetation) */
+const vegFadeK = { value:1 };
 
 /* 風で揺らし、遠くを縮めて消す頂点シェーダーを材質へ差し込む。
    amp=揺れ幅(モデルの高さに対する比) stiff=しなり具合 fade=縮め始め/消える距離 */
@@ -2185,7 +2188,8 @@ function applyWind(mat, amp, stiff, fadeNear, fadeFar, ambient){
     sh.uniforms.uTime = windTime;
     sh.uniforms.uWind = { value: new THREE.Vector3(amp*WIND_DIR.x, amp*WIND_DIR.y, stiff) };
     sh.uniforms.uFade = { value: new THREE.Vector2(fadeNear, fadeFar) };
-    sh.vertexShader = 'uniform float uTime;\nuniform vec3 uWind;\nuniform vec2 uFade;\n' + sh.vertexShader;
+    sh.uniforms.uFadeK = vegFadeK;
+    sh.vertexShader = 'uniform float uTime;\nuniform vec3 uWind;\nuniform vec2 uFade;\nuniform float uFadeK;\n' + sh.vertexShader;
     sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', [
       '#include <begin_vertex>',
       '#ifdef USE_INSTANCING',
@@ -2201,7 +2205,7 @@ function applyWind(mat, amp, stiff, fadeNear, fadeFar, ambient){
       '  transformed.x += vgS * vgB * uWind.x;',
       '  transformed.z += vgS * vgB * uWind.y;',
       // 遠くは縮めて地面へ沈める(草の生え際に線が出ない)
-      '  transformed *= 1.0 - smoothstep(uFade.x, uFade.y, distance(vgO.xz, cameraPosition.xz));',
+      '  transformed *= 1.0 - smoothstep(uFade.x*uFadeK, uFade.y*uFadeK, distance(vgO.xz, cameraPosition.xz));',
       '',
     ].join('\n'));
     /* 空からの回り込み光。このシーンには環境光(アンビエントライト)が置かれておらず、
@@ -2606,7 +2610,9 @@ function vegDensity(x, y){
 
 const _vm = new THREE.Matrix4(), _vq = new THREE.Quaternion();
 const _vv = new THREE.Vector3(), _vs = new THREE.Vector3(), _vc = new THREE.Color(), _vex = new THREE.Color();
-function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
+/* cone(狙撃スコープの間だけ): { yaw, half, far, near, eyeZ, tanP } = カメラから視線の向きへ開いた扇にだけ並べる。
+   扇の面積を円(view)と同じにしてあるので、並べる数とマス目の細かさ(=密度)は変わらず、遠くまで届く。 */
+function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio, cone){
   const conf = layer.conf, vars = layer.vars;
   const view = conf.view, target = conf.n;
   for(const m of vars) m.count = 0;
@@ -2615,17 +2621,27 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
   // 円の中に target/VEG_FILL 個の格子が入るようにマス目の大きさを決める
   const cells = target / VEG_FILL;
   const cell = Math.max(12, view * Math.sqrt(Math.PI / cells));
-  const R = Math.ceil(view / cell);
-  const view2 = view*view;
+  const reach = cone ? cone.far : view;
+  const view2 = reach*reach;
   /* 【重要】草を撒く範囲(view)と同じ広さで水・溶岩を集めること。
      ここに 0 を渡していたため、「カメラがその中に立っている水域」しか集まらず、
      少し離れた川の上に草と石が生えていた(トーブル海岸で発生)。 */
-  const hz = collectHazards(cx, cy, view);
+  const hz = collectHazards(cx, cy, reach);
   const gx0 = Math.round(cx / cell), gy0 = Math.round(cy / cell);
+  // 並べるマス目の範囲(円=正方形 / 扇=扇を囲む矩形)
+  let ix0 = -Math.ceil(view / cell), ix1 = -ix0, iy0 = ix0, iy1 = ix1;
+  let cdx = 0, cdy = 0, cosH = -1;
+  if(cone){
+    cdx = Math.cos(cone.yaw); cdy = Math.sin(cone.yaw); cosH = Math.cos(cone.half);
+    const xs = [0, Math.cos(cone.yaw-cone.half)*reach, Math.cos(cone.yaw+cone.half)*reach, cdx*reach];
+    const ys = [0, Math.sin(cone.yaw-cone.half)*reach, Math.sin(cone.yaw+cone.half)*reach, cdy*reach];
+    ix0 = Math.floor(Math.min(...xs)/cell) - 1; ix1 = Math.ceil(Math.max(...xs)/cell) + 1;
+    iy0 = Math.floor(Math.min(...ys)/cell) - 1; iy1 = Math.ceil(Math.max(...ys)/cell) + 1;
+  }
   const hLo = conf.h[0], hSpan = conf.h[1] - conf.h[0];
   const patch = (conf.patch == null) ? 0.6 : conf.patch;
-  for(let iy=-R; iy<=R; iy++){
-    for(let ix=-R; ix<=R; ix++){
+  for(let iy=iy0; iy<=iy1; iy++){
+    for(let ix=ix0; ix<=ix1; ix++){
       const gx = gx0 + ix, gy = gy0 + iy;
       const h1 = hash2(gx*1.37 + seedOff, gy*2.71 - seedOff);
       const h2 = hash2(gx*3.11 - seedOff, gy*1.53 + seedOff);
@@ -2634,6 +2650,8 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       const dx = wx - cx, dy = wy - cy;
       const d2 = dx*dx + dy*dy;
       if(d2 > view2) continue;
+      if(cone && d2 > 1 && (dx*cdx + dy*cdy) < Math.sqrt(d2)*cosH) continue;
+      if(cone && d2 < cone.near*cone.near) continue;   // 目の前の草は倍率で壁になるので置かない
       // 粗密。patch=0で一様、1で「生えている所と裸地」がはっきり分かれる
       const dens = vegDensity(wx, wy);
       let p = VEG_FILL * (1 - patch + patch*2*dens);
@@ -2660,6 +2678,9 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       if(idx >= layer.cap) continue;
       const sz = hLo + hSpan*hash2(gx*9.31 + seedOff, gy*4.19 - seedOff);
       const gh = heightAt(wx, wy);
+      /* 扇のときは、照準の横線(目の高さの視線)より上へ穂先が出る株を置かない。
+         倍率で拡大された手前の草が照準と的を横切って隠すため(視線より下の草はそのまま残る) */
+      if(cone && gh + sz*(1 - sinkRatio) > cone.eyeZ - cone.tanP*Math.sqrt(d2) - 3) continue;
       _vv.set(wx, gh - sz*sinkRatio, wy);
       if(rotate) _vq.setFromAxisAngle(UP_AXIS, h2*6.2831);
       else _vq.identity();
@@ -2700,22 +2721,46 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
   }
 }
 
+/* 狙撃スコープ(探検モードだけ)で遠くを覗いている間は、草と低木を「視線の先の扇」へ並べ替える
+   (window.__aramonSniperScope.veg。sniper.js が描画の間だけ入れる)。ふだんの円は草900・低木1500までしか
+   生えておらず、8倍で250m先を見ると地面が平らな砂色だけになっていた。扇は視野(の少し外)だけを覆い、
+   面積を円と同じにするので数は増えない。扇の長さは霞の先(VEG_CONE_FAR)で頭打ち。 */
+const VEG_CONE_FAR = 3500;
+let vegMode = 'disk', vegYaw = 0, vegPitch = 0, vegConeFar = 0;
 function updateVegetation(scene, cx, cy){
   if(vegTheme !== R3.theme || !vegGroup){
     vegTheme = R3.theme;
     buildVegetation(scene);
+    vegMode = 'disk';
   }
   // 風は毎フレーム進める(CPUの仕事はこの1行だけ)
   windTime.value = performance.now()*0.001;
-  if(vegCX != null && Math.abs(cx-vegCX) + Math.abs(cy-vegCY) < VEG_STEP) return;
-  vegCX = cx; vegCY = cy;
+  const sc = window.__aramonSniperScope;
+  const coneOn = !!(sc && sc.veg);
+  const mode = coneOn ? 'cone' : 'disk';
+  const turned = coneOn && (Math.abs(Math.atan2(Math.sin(sc.yaw - vegYaw), Math.cos(sc.yaw - vegYaw))) > sc.halfFovH*0.3
+                            || Math.abs(sc.pitch - vegPitch) > sc.halfFovV*0.3);
+  if(mode === vegMode && !turned && vegCX != null && Math.abs(cx-vegCX) + Math.abs(cy-vegCY) < VEG_STEP) return;
+  vegCX = cx; vegCY = cy; vegMode = mode;
+  let coneFor = ()=> undefined;
+  vegFadeK.value = 1;
+  if(coneOn){
+    vegYaw = sc.yaw; vegPitch = sc.pitch;
+    const half = Math.min(1.3, sc.halfFovH*1.15);
+    const near = 90 * sc.zoom, eyeZ = sc.eyeZ, tanP = Math.tan(sc.pitch);
+    const farOf = (view)=> Math.min(VEG_CONE_FAR, view*Math.sqrt(Math.PI/half));
+    const base = (vegKinds.grass || Object.values(vegKinds)[0]).conf.view;
+    vegConeFar = farOf(base);
+    vegFadeK.value = vegConeFar / base;
+    coneFor = (view)=> ({ yaw:sc.yaw, half, far:farOf(view), near, eyeZ, tanP });
+  }
   if(R3.theme && R3.theme.explore){
     let k = 0;
-    for(const name in vegKinds){ k++; placeLayer(vegKinds[name], cx, cy, 1.7 + k*2.3, false, vegKinds[name].sink); }
+    for(const name in vegKinds){ k++; const L = vegKinds[name]; placeLayer(L, cx, cy, 1.7 + k*2.3, false, L.sink, coneFor(L.conf.view)); }
     return;
   }
-  placeLayer(vegKinds.grass, cx, cy, 1.7,  false, VEG_SINK.grass);
-  placeLayer(vegKinds.shrub, cx, cy, 5.3,  false, VEG_SINK.shrub);
+  placeLayer(vegKinds.grass, cx, cy, 1.7,  false, VEG_SINK.grass, coneFor(vegKinds.grass.conf.view));
+  placeLayer(vegKinds.shrub, cx, cy, 5.3,  false, VEG_SINK.shrub, coneFor(vegKinds.shrub.conf.view));
 }
 
 /* 探検フィールドの植生。地域ごとに生える物が違うので、層を種類ごとに持ち、

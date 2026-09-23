@@ -208,6 +208,22 @@ const CUTS = [
       const yaw = c ? Math.atan2(c.y - s.y, c.x - s.x) : -Math.PI/2;
       return { x:s.x, y:s.y, yaw, pitch:0.12, warm:0 };
     } },
+  /* ===== 狙撃銃とスコープ(sniper.js)。的は野生モンスターとボス。舞台は __shotSnipe が作る ===== */
+  ...[
+    { name:'sniper_hud',    desc:'狙撃銃を持った普段のHUD(狙撃ボタン・残弾と倍率の札)', o:{ target:'wild', dist:900, scope:null } },
+    { name:'sniper_iron',   desc:'アイアンサイト(1.25倍)で野生を覗く', o:{ target:'wild', dist:900, scope:'iron', ratio:0.6 } },
+    { name:'sniper_x2',     desc:'2倍スコープで野生を覗く', o:{ target:'wild', dist:1300, scope:'x2', ratio:0.6, sway:0.7 } },
+    { name:'sniper_x4',     desc:'4倍スコープで野生を覗く(照準の先の1体の帯)', o:{ target:'wild', dist:1900, scope:'x4', ratio:0.55, sway:1.3 } },
+    { name:'sniper_x8',     desc:'8倍スコープで240m先の野生を覗く(草が遠くまで・霞・照準の先の帯)', o:{ target:'wild', dist:2400, scope:'x8', ratio:0.55, sway:2.1 } },
+    { name:'sniper_x8_boss',desc:'8倍スコープで遠くのボスを覗く', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.45, sway:0.4 } },
+    { name:'sniper_weak',   desc:'8倍で弱点(頭)に狙いが乗った(中心が金+輪+「弱点」)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true } },
+    { name:'sniper_breath', desc:'8倍で息止め中(揺れが収まり、鏡筒に息のゲージ)', o:{ target:'boss:volgreim', dist:3000, scope:'x8', ratio:0.6, breath:true, sway:1.1 } },
+    { name:'sniper_muzzle', desc:'撃った瞬間(跳ね上がり・窓の欠け・下の縁の炎)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true, fire:'muzzle' } },
+    { name:'sniper_tracer', desc:'弾道の光(銃口=右下から照準へ吸い込まれて落ちる弧)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true, fire:'tracer' } },
+    { name:'sniper_hit',    desc:'弱点に当たった直後(クリティカル・右上の数字・撃った距離)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true, fire:'hit' } },
+    { name:'sniper_miss',   desc:'外れた所の土煙', o:{ target:'wild', dist:2400, scope:'x8', ratio:-0.6, ballistic:true, fire:'miss' } },
+  ].map(c=>({ name:c.name, kind:'field', desc:c.desc,
+              at: new Function(`return window.__shotSnipe(${JSON.stringify(c.o)});`) })),
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',
     prep: ()=>{
       const pick = ['meadow_fiber','meadow_honey','frost_shard','volcano_heart','jungle_relic','boss_horn','apex_core'];
@@ -321,6 +337,92 @@ function pageTools(){
     return { ok: !!game.explore, map: game.activeMapKey, wild: exploreState.wild.length,
              real3d: !!(window.__aramonReal3D), camp: exploreState.camp };
   };
+  /* ===== 狙撃(sniper.js)のカット用。的(野生/ボス)から dist 離れた「視線の通る」立ち位置を探し、
+     狙撃銃とスコープを持たせて構えた状態で返す(__shotField がそのまま撮る)。
+       o.target : 'boss:<bossId>' / 'wild'      o.dist : 的までの距離(ワールド単位)
+       o.scope  : 'iron'|'x2'|'x4'|'x8'|null(null=構えない普段のHUD)
+       o.ratio  : 照準を置く高さ(0=足元〜1=頭のてっぺん) o.ballistic : 落下を見越して弾がその高さに届く向きにする
+       o.fire   : null | 'muzzle'(撃った45ms後) | 'tracer'(飛んでいる途中) | 'hit'(当たった直後) | 'miss'(外れて土煙)
+       o.breath : 息止め中にする   o.sway : 揺れの位相(秒)                                          */
+  window.__shotSnipe = (o)=>{
+    let T = null;
+    if(String(o.target).startsWith('boss:')){
+      const rec = exploreState.bosses.find(r=> r.bossId === o.target.slice(5));
+      T = rec && getEntity(rec.id);
+    } else {
+      const cands = exploreState.wild.map(r=> getEntity(r.id)).filter(e=> e && e.alive);
+      cands.sort((a,b)=> (b.radius||0) - (a.radius||0));
+      T = cands[0];
+    }
+    if(!T) return null;
+    const gz = (x,y)=> baseTerrainHeightAt(x,y);
+    const H = sniperBodyH(T);
+    const los = (x0,y0,z0,x1,y1,z1)=>{
+      for(let i=1;i<80;i++){ const t=i/80; if(z0+(z1-z0)*t < gz(x0+(x1-x0)*t, y0+(y1-y0)*t) + 4) return false; }
+      const dx=x1-x0, dy=y1-y0, L2=dx*dx+dy*dy;
+      for(const q of rocks){
+        const t = clamp(((q.x-x0)*dx+(q.y-y0)*dy)/L2, 0, 0.97);
+        if(Math.hypot(x0+dx*t-q.x, y0+dy*t-q.y) < q.radius+20 && z0+(z1-z0)*t < gz(q.x,q.y)+q.height) return false;
+      }
+      for(const v of volcanoObstacles){
+        const t = clamp(((v.x-x0)*dx+(v.y-y0)*dy)/L2, 0, 1);
+        if(Math.hypot(x0+dx*t-v.x, y0+dy*t-v.y) < (v.radius||0)) return false;
+      }
+      return true;
+    };
+    let best = null;
+    const base = Math.atan2(exploreState.camp.y - T.y, exploreState.camp.x - T.x);
+    for(let k=0;k<48 && !best;k++){
+      const a = base + (k%2 ? 1 : -1) * Math.ceil(k/2) * (Math.PI/24);
+      const x = T.x + Math.cos(a)*o.dist, y = T.y + Math.sin(a)*o.dist;
+      if(x<400||y<400||x>WORLD.w-400||y>WORLD.h-400) continue;
+      const p = clearObstaclePoint(x, y, 40);
+      const ez = gz(p.x,p.y) + AIM_MUZZLE_Z;
+      if(los(p.x,p.y,ez, T.x,T.y,(T.z||gz(T.x,T.y)) + H*0.55) && los(p.x,p.y,ez, T.x,T.y,(T.z||gz(T.x,T.y)) + H*0.9)) best = p;
+    }
+    if(!best) best = clearObstaclePoint(T.x + Math.cos(base)*o.dist, T.y + Math.sin(base)*o.dist, 40);
+    const at = { x:best.x, y:best.y, yaw:Math.atan2(T.y-best.y, T.x-best.x), pitch:0.08, warm:0 };
+    at.after = ()=>{
+      const me = player;
+      T.exploreAsleep = true; T.exState = T.isExploreBoss ? 'sleep' : T.exState;
+      const tx = T.x, ty = T.y;
+      sniperGive(me, 'longbow');
+      sniperAttachScope(me, o.scope || 'x8');
+      projectiles.length = 0; particles.length = 0;
+      sniperResetState();
+      const w = SNIPER_WEAPONS.longbow, sc = SNIPER_SCOPES[o.scope || 'x8'];
+      const eyeZ = me.z + AIM_MUZZLE_Z, d = Math.hypot(tx-me.x, ty-me.y), tz = (T.z||0) + H*(o.ratio==null ? 0.6 : o.ratio);
+      at.yaw = Math.atan2(ty-me.y, tx-me.x);
+      if(o.ballistic){
+        const b = sniperBallistics(w), tt = d / w.speed;
+        at.pitch = Math.atan(b.zero - ((tz - eyeZ + 0.5*b.grav*tt*tt) / d));
+      } else at.pitch = -Math.atan2(tz - eyeZ, d);
+      if(!o.scope){ at.pitch = 0.12; return; }
+      sniperView.ads = true; sniperView.blend = 1; sniperView.logMag = Math.log(sc.mag);
+      sniperView.swayT = o.sway || 0;
+      if(o.breath){ sniperView.breathHeld = true; sniperView.breath = 0.55; }
+      if(o.fire){
+        camState.yaw = at.yaw; camState.pitch = at.pitch;
+        sniperView.offYaw = 0; sniperView.offPitch = 0; sniperView.amp = 0;
+        // 撃つ前の1コマ(距離計・弱点の先読みが入った状態で撃つ=実際の遊びと同じ)
+        sniperView.lastMs = performance.now(); sniperFrame(); sniperFrameEnd();
+        sniperView.amp = 0; sniperView.offYaw = 0; sniperView.offPitch = 0;
+        sniperFire(me);
+        const N = o.fire === 'muzzle' ? 2 : (o.fire === 'tracer' ? 26 : 90);
+        for(let i=0;i<N;i++){
+          update(1/60); T.x = tx; T.y = ty; me.x = at.x; me.y = at.y;
+          if((o.fire === 'hit' || o.fire === 'miss') && sniperView.fx.some(f=> f.kind==='hit' || f.kind==='impact')){ for(let j=0;j<8;j++){ update(1/60); T.x=tx; T.y=ty; } break; }
+        }
+        // 撮影は1枚に時間がかかるので、演出の時計はこちらで決める(muzzle=45ms後 / それ以外=落ち着いた後)
+        // muzzle は 15ms×3コマ(=45ms)だけ反動のばね・閃光を進めてから撮る
+        if(o.fire === 'muzzle'){ for(let i=0;i<3;i++){ sniperView.lastMs = performance.now() - 15; sniperFrame(); sniperFrameEnd(); } }
+        sniperView.lastMs = 1234.5;
+        if(o.fire !== 'muzzle'){ sniperView.flash = 0; sniperView.smoke.length = 0; sniperView.recoil = sniperView.recoilV = 0; sniperView.recoilX = sniperView.recoilXV = 0; }
+        at.yaw = camState.yaw; at.pitch = camState.pitch;
+      } else sniperView.lastMs = 1234.5;
+    };
+    return at;
+  };
   /* 1カットぶんの舞台を整える。プレイヤーを置き、warm 秒だけ時間を進め、カメラを据えて描く */
   window.__shotField = (atSrc)=>{
     const at = (new Function('return (' + atSrc + ')'))()();
@@ -374,6 +476,8 @@ for(const vpName of vpNames){
     deviceScaleFactor:vp.dsf, isMobile:vp.isMobile, hasTouch:vp.isMobile,
   });
   const errs = [];
+  // ソフトウェア描画では1コマの描画・撮影に30秒を超えることがある(スコープの2倍の解像度の窓など)
+  page.setDefaultTimeout(180000);
   page.on('pageerror', e=> errs.push(String(e)));
   await page.addInitScript(()=>{
     try{ localStorage.setItem('aramon_tutorial_v1', JSON.stringify({ state:'done' })); }catch(e){}

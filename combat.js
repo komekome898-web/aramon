@@ -2677,6 +2677,8 @@ function update(dt){
   if(typeof matchFinishFreezeActive==='function' && matchFinishFreezeActive()) return;
   // 探検モード: ボス討伐の瞬間だけ時間をゆっくりにする(実時間で必ず1へ戻る。explore.js)
   if(game.explore) dt *= exploreTimeScale();
+  // 探検モード: 狙撃の弱点命中の一瞬の止め(ヒットストップ。実時間で必ず戻る。sniper.js)
+  if(game.explore && typeof sniperTimeScale === 'function') dt *= sniperTimeScale();
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る

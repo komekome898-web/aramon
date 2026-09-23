@@ -4807,20 +4807,22 @@
   #pingBtn:active{ filter:brightness(1.4); }
 
   /* ---- 狙撃銃(探検モードで持っているときだけ。sniper.js が hidden を付け外しする) ----
-     【居場所】「狙撃」= FIREの真上(右親指がFIREとの往復で届く)。FIRE上端(22+88=110)と
-     回転ボタン下端(--turn-bottom 185)の間に置く(120〜180)。残弾の札はその左隣。
+     【居場所】「狙撃」= DASHの真上(FIREの左上。右親指がFIREから斜めに届く)。
+     FIREの真上に置いていた頃は FIRE・回転ボタンとの間が5〜8pxしかなく、縦持ちで3つが密集していた(批評)。
+     DASH上端(42+56=98)から12px上・回転ボタン下端(--turn-bottom 185)から15px下(110〜170)。
+     残弾と倍率の札はその左隣。構え中は回転ボタンを隠す。
      「息止め」= ジョイスティックの右隣(左親指で押さえる。技パネルは中央なので当たらない)。
      寸法は FIRE/DASH と同じく px で持つ(HUDのボタンはすべて指の大きさが基準)。 */
   #sniperAdsBtn{
-    position:absolute; right:30px; bottom:120px; width:60px; height:60px; min-height:60px; flex-shrink:0;
+    position:absolute; right:120px; bottom:110px; width:60px; height:60px; min-height:60px; flex-shrink:0;
     border-radius:50%; pointer-events:auto; cursor:pointer; touch-action:none; z-index:9;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
     background:radial-gradient(circle at 35% 30%, rgba(255,226,160,0.22), rgba(16,22,32,0.86));
     border:2px solid rgba(255,214,140,0.45); color:#ffe2a6;
     box-shadow:0 0 14px -4px rgba(255,190,90,0.55);
   }
-  #sniperAdsBtn .sn-ico{ width:26px; height:26px; position:relative; z-index:1; }
-  #sniperAdsBtn .sn-lbl, #sniperBreathBtn .sn-lbl{ position:relative; z-index:1; font-size:10px; font-weight:700;
+  #sniperAdsBtn .sn-ico{ width:24px; height:24px; position:relative; z-index:1; }
+  #sniperAdsBtn .sn-lbl, #sniperBreathBtn .sn-lbl{ position:relative; z-index:1; font-size:12px; font-weight:700;
     letter-spacing:0.5px; line-height:1; white-space:nowrap; }
   #sniperAdsBtn.on{ border-color:#ffd36e; color:#fff4d8; background:radial-gradient(circle at 35% 30%, rgba(255,210,120,0.5), rgba(120,70,10,0.88));
     box-shadow:0 0 18px -2px rgba(255,190,80,0.85); }
@@ -4828,7 +4830,7 @@
   #sniperAdsBtn:active{ filter:brightness(1.3); }
   #sniperReloadRing{ stroke:#ffd36e; }
   #sniperAmmoChip{
-    position:absolute; right:98px; bottom:136px; height:26px; padding:0 10px; border-radius:13px;
+    position:absolute; right:188px; bottom:127px; height:26px; padding:0 10px; border-radius:13px;
     display:flex; align-items:center; gap:6px; pointer-events:none; white-space:nowrap; z-index:9;
     background:rgba(8,12,20,0.66); border:1px solid rgba(255,214,140,0.28);
     font-family:'Share Tech Mono',monospace; font-size:12px; color:#f3e6c8;
@@ -4852,6 +4854,13 @@
   /* 構えている間(body.sniper-ads)は、照準・×印・操作ヒントをスコープの絵に任せる。
      FIREはこの間は狙撃銃の引き金なので、技のガッツ不足で沈ませない */
   body.sniper-ads #crosshair, body.sniper-ads #hitMarker, body.sniper-ads #tipBox{ display:none; }
+  /* 覗いている間は、周りの情報(上の帯・探検の帯・安置/残り時間・ミニマップ・キルフィード・拾った通知)を弱める。
+     消さずに薄くするのは、覗いたままでも残り時間や体力は目の端で読めるようにするため。
+     回転ボタンは構え中は使わない(視点はFIREを滑らせて合わせる)ので隠す */
+  body.sniper-ads #statsPanel, body.sniper-ads #topRight, body.sniper-ads #exploreHud,
+  body.sniper-ads #killFeed, body.sniper-ads #expLootFeed, body.sniper-ads #topLeft{ opacity:0.32; transition:opacity .15s; }
+  body.sniper-ads #turnLeftBtn, body.sniper-ads #turnRightBtn{ visibility:hidden; }
+  body.sniper-window #sniperAmmoChip{ visibility:hidden; }
   /* 構え中は技を撃てない(FIREが引き金)ので、技の欄はスコープの窓の下から退かす */
   body.sniper-ads #movePanel{ visibility:hidden; }
   body.sniper-ads.self-noguts #fireBtn{ opacity:1; filter:none; }
@@ -6193,9 +6202,9 @@
   html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
   html.narrow-screen #pingBtn{ right:162px; bottom:36px; width:44px; height:44px; }
-  /* 狙撃: FIRE上端(16+78=94)と回転ボタン下端(162)の間 / 息止め: ジョイスティック右端(16+112=128)の右 */
-  html.narrow-screen #sniperAdsBtn{ right:24px; bottom:102px; width:54px; height:54px; min-height:54px; }
-  html.narrow-screen #sniperAmmoChip{ right:86px; bottom:116px; }
+  /* 狙撃: DASH上端(34+50=84)から12px上・回転ボタン下端(162)から12px下 / 息止め: ジョイスティック右端(16+112=128)の右 */
+  html.narrow-screen #sniperAdsBtn{ right:100px; bottom:96px; width:54px; height:54px; min-height:54px; }
+  html.narrow-screen #sniperAmmoChip{ right:160px; bottom:110px; }
   html.narrow-screen #sniperBreathBtn{ left:140px; bottom:26px; width:54px; height:54px; min-height:54px; }
   html.narrow-screen #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
   html.narrow-screen #autoRunLabel{ left:16px; bottom:134px; width:112px; }
