@@ -7,6 +7,7 @@
      node tools/explore_shot.mjs --out shots/x --cuts camp,wild  カットを絞る
      node tools/explore_shot.mjs --out shots/x --vps land        横持ちだけ(land / port)
      node tools/explore_shot.mjs --list                          カットの一覧を出して終わる
+     node tools/explore_shot.mjs --measure                       探検のHUDを縦持ち3サイズ+横持ちで実測(撮らない)
    その他: --seed <数>(配置の乱数。既定 20260923) / --element <属性>(出発するモンスター。既定 fire)
 
    出力: <out>/<cut>_<vp>.png と <out>/report.json(撮れた枚数・カメラ位置・失敗)
@@ -224,6 +225,56 @@ const CUTS = [
     { name:'sniper_miss',   desc:'外れた所の土煙', o:{ target:'wild', dist:2400, scope:'x8', ratio:-0.6, ballistic:true, fire:'miss' } },
   ].map(c=>({ name:c.name, kind:'field', desc:c.desc,
               at: new Function(`return window.__shotSnipe(${JSON.stringify(c.o)});`) })),
+  /* ===== HUD(explore_hud.js)。方位バー・目標パネル・探検のミニマップ・全体地図・ボス戦の帯 =====
+     拾った通知の行は消してから撮る(HUDそのものを見るカット) */
+  { name:'hud', kind:'field', desc:'通常の画面: 方位バー(巣・箱・ビーコン)・目標パネル・地域の札・ミニマップ', waitMs:700,
+    at: ()=>{
+      const reg = exploreRegion('meadow'), c = exploreRegionCircle(reg);
+      ['meadow_fiber','meadow_honey','frost_dew','boss_fang','meadow_fiber'].forEach(k=> exploreGainMaterial(k, 2, null, null));
+      document.querySelectorAll('#expLootFeed .exp-feed-row').forEach(r=>{ clearTimeout(r._expTimer); r.remove(); });
+      matchTime = 312; exploreState.faints = 1;
+      _expHud.region.id = null;   // キャンプから草原へ入った扱いにして、地域の名前の札を出す
+      const p = clearObstaclePoint(c.x + c.r*0.3, c.y + c.r*0.05, 80);
+      const nest = exploreState.bosses.find(r=> r.bossId==='gandrock');
+      return { x:p.x, y:p.y, yaw:Math.atan2(nest.nestY - p.y, nest.nestX - p.x) + 0.3, pitch:0.1, warm:0.2,
+               after: ()=>{
+                 exploreUpdateHud();
+                 // 地域の札は実時間で2.8秒の動き。撮影(ソフトウェア描画)が遅いと撮る前に消えるので、出きった所で止める
+                 document.getElementById('expRegionCard').getAnimations().forEach(a=>{ a.pause(); a.currentTime = 1000; });
+               } };
+    } },
+  { name:'hud_boss', kind:'field', desc:'ボス戦のHUD: 怒り・予告中の大技・方位バーの脈打つ印・目標が討伐に切り替わる',
+    at: ()=>{
+      const rec = exploreState.bosses.find(r=> r.bossId==='volgreim');
+      const B = rec && getEntity(rec.id); if(!B) return null;
+      const a = Math.atan2(exploreState.camp.y - B.y, exploreState.camp.x - B.x);
+      const p = clearObstaclePoint(B.x + Math.cos(a)*1050, B.y + Math.sin(a)*1050, 60);
+      B.exState = 'fight'; B.exploreAsleep = false; B.facingAngle = Math.atan2(p.y-B.y, p.x-B.x);
+      exploreState.banners.length = 0; exploreState.fx.length = 0;
+      return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true,
+        after: ()=>{
+          exploreBossEngaged(B); B.exState='fight'; B.exRage=true; B.hp=B.maxHp*0.38; B.exHpLag=0.5; B.exBroken=true;
+          B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'breath');
+          for(let i=0;i<6;i++) update(1/30);
+          exploreState.banners.length = 0;
+          exploreUpdateHud();
+        } };
+    } },
+  { name:'hud_beacon', kind:'field', desc:'帰還ビーコンの輪の中(目標パネルの帰還の進み・方位バー)',
+    at: ()=>{
+      const b = exploreState.beacon, s = exploreState.spawn;
+      matchTime = 700;
+      const p = { x:b.x + (s.x - b.x)*0.25, y:b.y + (s.y - b.y)*0.25 };
+      return { x:p.x, y:p.y, yaw:Math.atan2(b.y - p.y, b.x - p.x) + 0.6, pitch:0.12, warm:0,
+               after: ()=>{ exploreState.beaconInside = true; exploreState.beaconHold = EXPLORE_BEACON_HOLD_SEC*0.55; exploreUpdateHud(); } };
+    } },
+  { name:'map', kind:'field', desc:'全体地図(ミニマップをタップ。地域・尾根・峠・道・ボスの巣・近くの補給箱)',
+    at: ()=>{
+      const reg = exploreRegion('frost'), c = exploreRegionCircle(reg);
+      const rec = exploreState.bosses.find(r=> r.bossId==='gandrock'); if(rec) rec.defeated = true;
+      const p = clearObstaclePoint(c.x - c.r*0.2, c.y + c.r*0.25, 80);
+      return { x:p.x, y:p.y, yaw:-0.8, pitch:0.1, warm:0.1, after: ()=>{ exploreUpdateHud(); exploreOpenMap(); } };
+    } },
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',
     prep: ()=>{
       const pick = ['meadow_fiber','meadow_honey','frost_shard','volcano_heart','jungle_relic','boss_horn','apex_core'];
@@ -245,7 +296,11 @@ const CUTS = [
 const VIEWPORTS = {
   land: { w:1624, h:750, isMobile:false, dsf:1 },
   port: { w:375,  h:812, isMobile:true,  dsf:2 },
+  // 横持ちのスマホ(実画面の幅が520より広い=narrow-screen が付かない。回転ボタンがミニマップのすぐ下に来る低い形)。
+  // 既定では撮らない(--vps phone で指定)
+  phone: { w:812, h:375, isMobile:true, dsf:2 },
 };
+const DEFAULT_VPS = ['land', 'port'];
 
 /* ===== 引数 ===== */
 const args = process.argv.slice(2);
@@ -259,7 +314,7 @@ const OUT = path.resolve(opt('out', path.join(ROOT, 'shots', 'explore')));
 const SEED = parseInt(opt('seed', '20260923'), 10);
 const ELEMENT = opt('element', 'fire');
 const cutNames = opt('cuts', '') ? opt('cuts','').split(',').map(s=>s.trim()).filter(Boolean) : CUTS.map(c=>c.name);
-const vpNames  = opt('vps', '')  ? opt('vps','').split(',').map(s=>s.trim()).filter(Boolean)  : Object.keys(VIEWPORTS);
+const vpNames  = opt('vps', '')  ? opt('vps','').split(',').map(s=>s.trim()).filter(Boolean)  : DEFAULT_VPS;
 const cuts = cutNames.map(n=>{ const c = CUTS.find(x=>x.name===n); if(!c) console.warn(`知らないカット: ${n}(--list で一覧)`); return c; }).filter(Boolean);
 fs.mkdirSync(OUT, { recursive:true });
 
@@ -427,6 +482,7 @@ function pageTools(){
   window.__shotField = (atSrc)=>{
     const at = (new Function('return (' + atSrc + ')'))()();
     if(!at) return { ok:false, reason:'そのカットの対象が無い' };
+    if(typeof exploreCloseMap==='function') exploreCloseMap();   // 前のカットで開いた全体地図を持ち越さない
     player.x = at.x; player.y = at.y; player.z = baseTerrainHeightAt(at.x, at.y);
     player.hp = player.maxHp; player.alive = true;
     player.exploreInvulnUntil = matchTime + 99;   // 撮影中に倒れないように(見た目には出ない)
@@ -464,8 +520,107 @@ function pageTools(){
 }
 
 async function shoot(page, file, vp){
-  await page.screenshot({ path:file });
-  if(vp.isMobile) await unrotateShot(file, vp.w, vp.h, vp.dsf);
+  await page.screenshot({ path:file, timeout:180000 });   // ソフトウェア描画で重い画は30秒を超えることがある
+  if(vp.isMobile && vp.h > vp.w) await unrotateShot(file, vp.w, vp.h, vp.dsf);   // 縦持ちだけ回して戻す
+}
+
+/* ===== --measure: 探検のHUDの実測(撮影はしない) =====
+   縦持ち 375x667 / 375x812 / 414x896 と横持ち 667x375 / 812x375 / 1624x750 で探検を始め、
+   通常(hud)・ボス戦(hud_boss)・全体地図(map) の3つの状態で次を数字で出す:
+     ①探検のHUDの各欄の位置と大きさ(#appRoot の論理座標)と、#appRoot の外へ出ていないか
+     ②探検のHUDが他のHUD(自分の欄・ミニマップ・回転・狙撃・FIRE…)に重なっていないか
+     ③文字サイズ(縦持ちと横持ちで同じ論理サイズの組を突き合わせる。跳ねていたら不具合)
+     ④ボスの帯(キャンバスに描く)の下端とボス本体の上端 */
+if(flag('measure')){
+  const SIZES = [
+    { name:'port667', w:375, h:667, mob:true }, { name:'port812', w:375, h:812, mob:true }, { name:'port896', w:414, h:896, mob:true },
+    { name:'land667', w:667, h:375, mob:false }, { name:'land812', w:812, h:375, mob:false }, { name:'land1624', w:1624, h:750, mob:false },
+  ];
+  const MINE = ['exploreHud','expObjPanel','expRegionCard','killFeed','expMapBox','expMapCanvas','expMapSide','expMapCloseBtn'];
+  const OTHERS = ['topLeft','topRight','expLootFeed','turnLeftBtn','turnRightBtn','sniperAdsBtn','sniperAmmoChip','fireBtn','dashBtn','movePanel','joystickBase','pingBtn'];
+  const FONTS = ['.exp-obj-time','.exp-obj-text','.exp-obj-sub','.exp-obj-bag','.exp-rc-name','.exp-map-title','.exp-lg-row','.exp-map-close'];
+  const all = {};
+  let bad = 0;
+  for(const sz of SIZES){
+    const page = await browser.newPage({ viewport:{ width:sz.w, height:sz.h }, screen:{ width:sz.w, height:sz.h },
+      deviceScaleFactor:2, isMobile:sz.mob, hasTouch:sz.mob });
+    const errs = [];
+    page.on('pageerror', e=> errs.push(String(e)));
+    await page.addInitScript(()=>{ try{ localStorage.setItem('aramon_tutorial_v1', JSON.stringify({ state:'done' })); }catch(e){} });
+    await page.goto(`${ORIGIN}/index.html`, { waitUntil:'load' });
+    await page.waitForFunction(()=> typeof exploreStart==='function', null, { timeout:30000 });
+    await page.waitForFunction(()=>{ const t=document.getElementById('titleTapStart'); return t && !t.classList.contains('hidden'); }, null, { timeout:30000 });
+    await page.evaluate(()=> document.getElementById('titleScreen').click());
+    await page.waitForTimeout(500);
+    await page.evaluate(pageTools);
+    await page.evaluate(([s, el])=> window.__shotStartExplore(s, el), [SEED, ELEMENT]);
+    // 狙撃銃を持った状態(右列に「狙撃」ボタンが出る=いちばん詰まった形)
+    await page.evaluate(()=>{ if(typeof sniperGive==='function') try{ sniperGive(player, 'longbow'); }catch(e){} });
+    const res = {};
+    for(const cutName of ['hud','hud_boss','map']){
+      const c = CUTS.find(x=> x.name === cutName);
+      await page.evaluate((src)=> window.__shotField(src), c.at.toString());
+      await page.waitForTimeout(250);
+      res[cutName] = await page.evaluate(([mine, others, fonts])=>{
+        const root = document.getElementById('appRoot');
+        const rectOf = (el)=>{ let x=0, y=0, n=el; while(n && n!==root){ x+=n.offsetLeft; y+=n.offsetTop; n=n.offsetParent; } return { x, y, w:el.offsetWidth, h:el.offsetHeight }; };
+        const vis = (el)=>{ if(!el) return false; if(el.offsetWidth===0 || el.offsetHeight===0) return false;
+          for(let n=el; n && n!==document.body; n=n.parentElement){ const cs=getComputedStyle(n); if(cs.display==='none' || cs.visibility==='hidden' || +cs.opacity===0) return false; } return true; };
+        const RW = root.offsetWidth, RH = root.offsetHeight;
+        const out = { root:[RW, RH], rects:{}, outside:[], overlap:[], fonts:{} };
+        const R = {};
+        for(const id of [...mine, ...others]){ const el = document.getElementById(id); if(vis(el)) R[id] = rectOf(el); }
+        for(const id of mine){ if(!R[id]) continue; const r = R[id]; out.rects[id] = [r.x, r.y, r.w, r.h].map(Math.round).join(',');
+          const over = Math.max(-r.x, -r.y, r.x + r.w - RW, r.y + r.h - RH);
+          if(over > 0.5) out.outside.push(`${id} ${Math.round(over)}px`); }
+        const hit = (a, b)=> Math.min(a.x+a.w, b.x+b.w) - Math.max(a.x, b.x) > 1 && Math.min(a.y+a.h, b.y+b.h) - Math.max(a.y, b.y) > 1;
+        const mapOpen = !!R.expMapBox;
+        for(const a of mine){ if(!R[a] || a.startsWith('expMap')) continue;
+          for(const b of [...mine, ...others]){ if(a===b || !R[b] || b.startsWith('expMap')) continue;
+            if(mine.indexOf(b) >= 0 && mine.indexOf(b) < mine.indexOf(a)) continue;
+            if(hit(R[a], R[b])) out.overlap.push(`${a}×${b}`); } }
+        for(const f of fonts){ const el = document.querySelector(f); if(vis(el)) out.fonts[f] = parseFloat(getComputedStyle(el).fontSize); }
+        // ボスの帯(キャンバス)とボス本体
+        const fb = (typeof exploreFocusBoss==='function') ? exploreFocusBoss() : null;
+        if(fb && !mapOpen){ const g = exploreBossHudGeom(fb), r = exploreBossRect(fb);
+          out.boss = { hudBottom:Math.round(g.bottom), full:g.full, bodyTop: r ? Math.round(r.y) : null, bodyBottom: r ? Math.round(r.y + r.h) : null }; }
+        out.objRows = document.querySelectorAll('#expObjRows .exp-obj-row').length;
+        out.objSub = !!document.querySelector('#expObjRows .exp-obj-sub');
+        out.killFeedOff = document.getElementById('hud').classList.contains('exp-kf-off');
+        return out;
+      }, [MINE, OTHERS, FONTS]);
+      if(cutName === 'map') await page.evaluate(()=> exploreCloseMap());
+    }
+    if(errs.length) res.errors = errs.slice(0, 3);
+    all[sz.name] = res;
+    await page.close();
+  }
+  // 表にして出す
+  for(const [name, res] of Object.entries(all)){
+    console.log(`\n== ${name} (論理 ${res.hud ? res.hud.root.join('x') : '?'}) ==`);
+    for(const [cut, r] of Object.entries(res)){
+      if(cut === 'errors'){ console.log('  JSエラー:', r.join(' / ')); bad++; continue; }
+      console.log(`  [${cut}] 目標の行=${r.objRows}${r.objSub ? '(2行目あり)' : ''} 撃破ログ=${r.killFeedOff ? '出さない' : '出す'}`);
+      for(const [id, v] of Object.entries(r.rects)) console.log(`    ${id.padEnd(15)} ${v}`);
+      if(r.boss) console.log(`    ボスの帯の下端=${r.boss.hudBottom} (${r.boss.full ? 'ふつう' : '詰めた形'}) / ボス本体 y=${r.boss.bodyTop}〜${r.boss.bodyBottom}`);
+      if(r.outside.length){ bad++; console.log(`    ✗ #appRoot の外: ${r.outside.join(', ')}`); } else console.log('    ✓ #appRoot の外へ出ていない');
+      if(r.overlap.length){ bad++; console.log(`    ✗ 重なり: ${r.overlap.join(', ')}`); } else console.log('    ✓ 他のHUDと重なっていない');
+      console.log(`    文字: ${Object.entries(r.fonts).map(([k, v])=> `${k}=${v}px`).join(' ')}`);
+    }
+  }
+  // 持ち方で文字サイズが変わっていないか(同じ論理サイズの 縦持ち↔横持ち)
+  for(const [p, l] of [['port667','land667'], ['port812','land812']]){
+    for(const cut of ['hud','map']){
+      const a = all[p] && all[p][cut], b = all[l] && all[l][cut];
+      if(!a || !b) continue;
+      const diff = Object.keys(a.fonts).filter(k=> b.fonts[k] != null && Math.abs(a.fonts[k] - b.fonts[k]) > 0.01);
+      if(diff.length){ bad++; console.log(`✗ 文字サイズが持ち方で違う ${p}↔${l} [${cut}]: ${diff.map(k=> `${k} ${a.fonts[k]}↔${b.fonts[k]}`).join(', ')}`); }
+      else console.log(`✓ 文字サイズは持ち方で同じ ${p}↔${l} [${cut}](${Object.keys(a.fonts).length}種)`);
+    }
+  }
+  await browser.close(); server.close();
+  console.log(bad ? `\n== 指摘 ${bad} 件 ==` : '\n== HUDの実測: 指摘なし ==');
+  process.exit(bad ? 1 : 0);
 }
 
 for(const vpName of vpNames){

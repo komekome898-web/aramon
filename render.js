@@ -8211,8 +8211,14 @@ const MINIMAP_ZOOM_RADIUS = 2000;   // 近距離ズーム時にミニマップ�
    既定を勝手に近距離へ変えると、同じ画面が黙って別物になる(2026-08-23に戻した)。
    近距離へ寄せたい人はミニマップをタップして切り替える。 */
 let minimapZoomed = false;
-function toggleMinimapZoom(){ minimapZoomed = !minimapZoomed; return minimapZoomed; }
+function toggleMinimapZoom(){
+  // 探検モードはタップで全体地図を開く(ミニマップは常に自分中心の近距離。explore_hud.js)
+  if(game.explore && typeof exploreToggleMap==='function'){ exploreToggleMap(); return minimapZoomed; }
+  minimapZoomed = !minimapZoomed; return minimapZoomed;
+}
 function renderMinimap(){
+  // 探検モードだけ別の描き方(地域の色・尾根・道・ボスの巣・補給箱。explore_hud.js)。他のモードはここから下のまま
+  if(game.explore && typeof exploreRenderMinimap==='function'){ exploreRenderMinimap(); return; }
   // 観戦中は見ている本体を基準にする(自分表示・敵味方色分けの両方。2026-08-19)
   const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
   const w = miniCanvas.width, h = miniCanvas.height;

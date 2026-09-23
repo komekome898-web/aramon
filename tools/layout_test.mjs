@@ -176,6 +176,10 @@ const PANELS = [
   { id:'mastermonScreen', name:'マスモン詳細(編集)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','edit']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(着せ替え)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','dressup']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(あゆみ)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','ayumi']}], noScroll:['mastermonDetailPanel'] },
+  /* 探検の全体地図(試合中にミニマップをタップで開く)。押す物は✕だけ・スクロールは無い。
+     開き方は __exploreTestMap(下で定義。探検を始めてから本物の exploreOpenMap を呼ぶ)。
+     **試合を始めるので必ずこの表の最後に置く**(後ろの画面の検査に試合のHUDが混ざらないように) */
+  { id:'expMapOverlay', name:'探検の全体地図', open:[{call:['__exploreTestMap']}], noScroll:['expMapOverlay'] },
 ];
 
 /* ===== 例外リスト(意図的に許しているもの) =====
@@ -650,6 +654,13 @@ for(const dev of DEVICES){
       saveExploreGear({ owned:['scout_head','horn_body','horn_arms'], equip:{ head:'scout_head', body:'horn_body', arms:'horn_arms' } });
       exploreForgeState.filter = filter || 'all'; exploreForgeState.sel = sel || null;
       openExploreForge();
+    };
+    window.__exploreTestMap = ()=>{
+      if(typeof exploreStart!=='function' || typeof exploreOpenMap!=='function') return;
+      if(!game.selectedElement) game.selectedElement = 'fire';
+      document.getElementById('startScreen').classList.add('hidden');
+      exploreStart();
+      exploreOpenMap();
     };
     window.__raidTestOpen = async ()=>{
       if(!game.selectedElement) game.selectedElement = 'dullahan';

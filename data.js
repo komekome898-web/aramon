@@ -6200,24 +6200,26 @@ function exploreWildNature(elKey){ return EXPLORE_WILD_NATURE[elKey] || EXPLORE_
      color   = 予告・大技・オーラの色(スキンの色に合わせる)
      partName= 弱点(頭)の部位名。部位破壊の通知に出る
      breakRatio = 部位破壊に要る弱点ダメージ(最大HPに対する比)
-     drops / breakDrops = EXPLORE_DROP_TABLES のキー(討伐 / 部位破壊) */
+     drops / breakDrops = EXPLORE_DROP_TABLES のキー(討伐 / 部位破壊)
+     roar    = 咆哮の音(audio.js の exploreRoar が合成する)。pitch=高さの倍率(1=基準・小さいほど低い) /
+               len=長さ(秒) / grit=うなりのざらつき(0〜1) / heads=首の数(3なら3つの声がずれて重なる) */
 const EXPLORE_BOSSES = [
   { id:'gandrock', region:'meadow', apex:false, name:'ガンドレイク', title:'盆地を統べる鋼角の竜',
     element:'fire', skinId:'metag_ssr', color:'#ffa04a', hp:2200, radius:190, speed:125, dmg:1.0,
     gap:[2.8, 4.2], moves:['swipe','stomp','charge','meteor','rain'], partName:'鋼の角', breakRatio:0.14,
-    drops:'boss_gandrock', breakDrops:'break_gandrock' },
+    drops:'boss_gandrock', breakDrops:'break_gandrock', roar:{ pitch:0.62, len:1.9, grit:0.9 } },
   { id:'galvark', region:'frost', apex:false, name:'ガルヴァルク', title:'吹雪を裂く白き牙',
     element:'spark', skinId:'garurumon_ssr', color:'#8fe6ff', hp:2800, radius:170, speed:170, dmg:1.1,
     gap:[2.4, 3.8], moves:['swipe','breath','charge','meteor','rain'], partName:'氷牙', breakRatio:0.14,
-    drops:'boss_galvark', breakDrops:'break_galvark' },
+    drops:'boss_galvark', breakDrops:'break_galvark', roar:{ pitch:1.35, len:1.4, grit:0.35 } },
   { id:'volgreim', region:'volcano', apex:false, name:'ヴォルガルーダ', title:'火口を舞う業火の翼',
     element:'phoenix', skinId:'ganon_ssr', color:'#ff5a22', hp:3400, radius:210, speed:140, dmg:1.25,
     gap:[2.4, 3.6], moves:['breath','stomp','charge','meteor','rain','nova'], partName:'炎の冠羽', breakRatio:0.15,
-    drops:'boss_volgreim', breakDrops:'break_volgreim' },
+    drops:'boss_volgreim', breakDrops:'break_volgreim', roar:{ pitch:1.15, len:1.8, grit:0.7 } },
   { id:'gidravers', region:'jungle', apex:true, name:'ゾルディオス', title:'密林の頂点に君臨する黒き魔獣',
     element:'fire', skinId:'zod_ssr', color:'#c86bff', hp:5200, radius:250, speed:150, dmg:1.5,
     gap:[2.0, 3.2], moves:['swipe','breath','stomp','charge','meteor','rain','nova'], partName:'双角', breakRatio:0.13,
-    drops:'boss_gidravers', breakDrops:'break_gidravers' },
+    drops:'boss_gidravers', breakDrops:'break_gidravers', roar:{ pitch:0.5, len:2.6, grit:1.0, heads:2 } },
 ];
 /* ボスの大技。予告(地面の印)→発動の2段。形は4つ:
      fan    = 正面の扇(range=奥行き / fanAngleDeg=開き)
@@ -6510,6 +6512,45 @@ const EXPLORE_DROP_ARM_SEC        = 0.25;   // 地面に落ちてから拾える
 const EXPLORE_FEED_MAX            = 4;      // 同時に出す行数(古い行から消える)
 const EXPLORE_FEED_SEC            = 3.4;    // 1行の表示秒数
 const EXPLORE_FEED_MERGE_SEC      = 1.5;    // この秒数以内に同じ品を拾ったら行を増やさず個数をまとめる
+
+/* =====================================================================
+   探検モード: HUD(方位バー・目標・ミニマップ・全体地図・ボスの札)と音(地域の環境曲・ボス戦・環境音)
+   描く・鳴らすのは explore_hud.js / explore.js(ボスの札) / audio.js(探検のBGM)。ここは数字だけ。
+   距離の表示は PING_UNITS_PER_M(ワールド10単位=1m)で換算する。
+   ===================================================================== */
+// 方位バー(画面上部中央。APEX)
+const EXPLORE_COMPASS_SPAN_DEG    = 150;    // バーの端から端までに入る角度(広いほど目盛りが詰まる)
+const EXPLORE_COMPASS_H           = 40;     // バーの高さ(px)。CSS の #exploreHud の高さと同じ値(片方だけ変えない)
+const EXPLORE_COMPASS_CRATE_RANGE = 2600;   // この距離より近い補給箱(未開封)だけバーに出す
+const EXPLORE_COMPASS_CRATE_MAX   = 4;      // バーに出す補給箱の数(近い順)
+const EXPLORE_COMPASS_THREAT_RANGE= 1600;   // 気づいて追ってくる野生をバーに赤い印で出す距離
+const EXPLORE_COMPASS_LABEL_RANGE = 99999;  // 距離(m)の数字を出す上限(ビーコン・ボス・目標は遠くても出す)
+// 目標(クエスト)パネル
+const EXPLORE_OBJ_MATERIAL_GOAL   = 15;     // 「素材を集める」の目安の個数(報酬は無い。HUDの目安だけ)
+const EXPLORE_OBJ_RETURN_WARN_SEC = 120;    // 残り時間がこれを切ったら「帰還」を優先の目標にする
+const EXPLORE_OBJ_DONE_FLASH_SEC  = 2.2;    // 達成した目標を光らせる秒数
+// 地域に入ったときの名前の札
+const EXPLORE_REGION_CARD_SEC     = 2.8;
+// ミニマップ(探検のときだけ)・全体地図
+const EXPLORE_MINIMAP_RADIUS      = 3000;   // ミニマップの中心から縁までのワールド距離(300m)
+const EXPLORE_MINIMAP_CRATE_RANGE = 3000;   // ミニマップに出す補給箱の距離
+const EXPLORE_MAP_BAKE_PX         = 1024;   // 地形を焼いておく画像の一辺(1回だけ描く)
+const EXPLORE_MAP_WASH_PX         = 128;    // 地域の色を焼く粗さ(exploreRegionWeights をこの数×この数だけ呼ぶ)
+const EXPLORE_MAP_CRATE_RANGE     = 5000;   // 全体地図に出す補給箱の距離(遠くの箱は見せない)
+const EXPLORE_MAP_REDRAW_SEC      = 0.2;    // 全体地図を描き直す間隔(点滅のため)
+// ボスの札・HPバーの置き方(縦の割合。R3: 縦が足りないときは 称号の行 → バーの太さ の順に削る)
+const EXPLORE_BOSS_HUD = {
+  fullMinH: 520,     // 画面の縦がこれ以上なら 称号+名前+太いバー。未満なら名前とバーを1行にまとめる
+  barH: [7, 12],     // バーの太さ [詰めた形, ふつう]
+  maxW: 560,         // バーの横幅の上限(px)
+};
+// 音(探検のBGM・環境音)。曲の中身は audio.js(EXPLORE_BGM_*)
+const EXPLORE_BGM_FADE_SEC        = 1.3;    // 地域の曲の切り替え(setTargetAtTime の時定数。約3倍で入れ替わる)
+const EXPLORE_BGM_BOSS_FADE_SEC   = 0.35;   // ボス戦の曲へ切り替える速さ(咆哮で一気に変える)
+const EXPLORE_BGM_FANFARE_SEC     = 4.6;    // 討伐のファンファーレの長さ(その間は環境曲を鳴らさない)
+const EXPLORE_AMB_VOL             = { wind:0.20, insect:0.055, lava:0.34 };   // 環境音の音量(地域の重み1のとき)
+const EXPLORE_AMB_BOSS_DUCK       = 0.35;   // ボス戦の間の環境音の音量(割合)
+const EXPLORE_SPOTTED_SE_GAP      = 3.0;    // 群れに気づかれた音を鳴らす最短の間隔(秒)
 
 /* =====================================================================
    探検モード: 装備と工房(鍛冶屋)

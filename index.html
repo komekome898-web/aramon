@@ -754,13 +754,37 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <span class="raid-hud-rage" id="raidRage">怒り 0%</span>
     </div>
   </div>
-  <!-- 探検モード中だけ出す最小のHUD(残り時間・力尽き・所持数・今いる地域)。中身は explore.js の exploreUpdateHud。
-       触る要素が無いので pointer-events は付けない(スクロールロック除外は不要) -->
-  <div id="exploreHud" class="hidden">
-    <span class="exh-time" id="exploreHudTime">15:00</span>
-    <span class="exh-chip" id="exploreHudFaint">💫 0/3</span>
-    <span class="exh-chip" id="exploreHudBag">🎒 0</span>
-    <span class="exh-where" id="exploreHudWhere">⛺ ベースキャンプ周辺</span>
+  <!-- 探検モード中だけ出すHUD。描くのは explore_hud.js。役割を分けてある:
+       ・#exploreHud … 上部中央の方位バー(APEX)。目盛り・帰還ビーコン・ボスの巣・近くの補給箱・照準の先の方位角。
+                       中身はキャンバス1枚(毎フレーム描くので文字のDOMを持たない)。
+       ・#expObjPanel … 右上(ミニマップの下)の目標パネル。残り時間・力尽き・所持数と、目標の行。
+       ・#expRegionCard … 地域に入ったときの名前の札(方位バーの下に出て消える)
+       どれも触る要素が無いので pointer-events は付けない(スクロールロック除外は不要) -->
+  <div id="exploreHud" class="hidden"><canvas id="expCompassCanvas"></canvas></div>
+  <div id="expObjPanel" class="hidden">
+    <div class="exp-obj-head">
+      <span class="exp-obj-time" id="expObjTime">15:00</span>
+      <span class="exp-obj-faint" id="expObjFaint"></span>
+      <span class="exp-obj-bag" id="expObjBag">🎒 0</span>
+    </div>
+    <div class="exp-obj-rows" id="expObjRows"></div>
+  </div>
+  <div id="expRegionCard" class="hidden">
+    <div class="exp-rc-kicker" id="expRegionKicker">エリア</div>
+    <div class="exp-rc-name" id="expRegionName">-</div>
+    <div class="exp-rc-danger" id="expRegionDanger"></div>
+  </div>
+  <!-- 探検の全体地図。ミニマップをタップで開き、どこを押しても閉じる(試合は止めない)。
+       地形は explore_hud.js が1回だけ焼いた画像を貼り、動く物(自分・ボス・補給箱)だけ描き足す -->
+  <div id="expMapOverlay" class="hidden">
+    <div class="exp-map-box" id="expMapBox">
+      <canvas id="expMapCanvas"></canvas>
+      <div class="exp-map-side" id="expMapSide">
+        <div class="exp-map-title">探検フィールド</div>
+        <div class="exp-map-legend" id="expMapLegend"></div>
+        <button id="expMapCloseBtn" class="exp-map-close">✕ 閉じる</button>
+      </div>
+    </div>
   </div>
   <div id="autoRunLabel" class="hidden">🏃 オートラン中</div>
   <div id="spectateBar" class="hidden">
@@ -2023,6 +2047,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <script src="explore.js"></script>
 <!-- 探検モードのルート(補給箱・光の柱・拾った通知)と装備の適用。explore.js の口を使うのでその直後 -->
 <script src="explore_loot.js"></script>
+<!-- 探検モードのHUD(方位バー・目標・探検のミニマップ・全体地図)と音の橋渡し。explore.js / explore_loot.js の後 -->
+<script src="explore_hud.js"></script>
 <!-- 技ごとのVFXの注文書。render.jsが window.__aramonFxMoves を読むので先に置く -->
 <script src="fx_moves.js"></script>
 <script src="render.js"></script>

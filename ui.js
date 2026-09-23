@@ -13314,6 +13314,8 @@ const BGM_TEST_ITEMS = [
     return Object.keys(SKIN_BGM_SLOTS).filter(slot=>bgm[slot])
       .map(slot=>({ id:`skinBgm:${id}:${slot}`, label:`🎵 ${name}・${SKIN_BGM_SLOTS[slot]}` }));
   }),
+  // 探検モードの曲(地域の環境曲・ボス戦・ファンファーレ)。行は audio.js の EXPLORE_BGM_TEST から作る
+  ...(typeof EXPLORE_BGM_TEST!=='undefined' ? EXPLORE_BGM_TEST : []).map(it=>({ id:`exploreBgm:${it.key}`, label:it.label })),
   { id:'shop',   label:'🎵 ショップ(動画音源)' },
   { id:'lobby',  label:'🎵 ロビー(いちか・実音源)' },
   { id:'training',label:'🎵 トレーニング(実音源)' },
@@ -13337,6 +13339,10 @@ function adminPlayBgm(id){
   if(id==='shop'){
     if(typeof ensureBgmShopBuffer==='function') ensureBgmShopBuffer();
     if(typeof bgmSetTrack==='function') bgmSetTrack('shop');
+    return;
+  }
+  if(id.indexOf('exploreBgm:')===0){
+    if(typeof bgmExploreForce==='function') bgmExploreForce(id.split(':')[1]);
     return;
   }
   if(id.indexOf('skinBgm:')===0){

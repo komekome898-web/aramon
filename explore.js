@@ -107,6 +107,7 @@ function exploreResetState(){
   if(ov) ov.classList.add('hidden');
   exploreLootReset();        // 拾った通知の行を消す(explore_loot.js)
   document.body.classList.remove('explore-cine');   // ボス登場の暗転を持ち越さない
+  exploreHudReset();         // 目標パネル・全体地図を隠し、ミニマップの解像度を戻す(explore_hud.js)
 }
 
 // 出発するモンスターの名前(マスモンならその名前)
@@ -183,8 +184,9 @@ function exploreStart(){
   const ehud = document.getElementById('exploreHud');
   if(ehud) ehud.classList.remove('hidden');
   if(typeof applyHudLayout==='function') applyHudLayout();
+  exploreHudStart();         // 方位バー・目標パネル(explore_hud.js)
   game.started = true;
-  bgmSetTrack('battle');
+  bgmSetTrack('explore');    // 探検の曲(地域の環境曲・ボス戦。audio.js)。通常の試合の曲は使わない
   pushToast('🧭 探検開始！ 素材を集めて、キャンプの帰還ビーコンで持ち帰ろう');
 }
 
@@ -356,6 +358,7 @@ function exploreWildAlert(b, p, pause){
   b.exCallAt = null;
   b.facingAngle = angTo(b, p);
   b.attackTargetId = null; b.aiTargetPoint = null;
+  if(p === player && typeof exploreHudOnSpotted === 'function') exploreHudOnSpotted(b);   // 気づかれた音(explore_hud.js)
   for(const o of exploreWildPackMates(b)){
     if(b.exProvoked) o.exProvoked = true;
     if((o.exState === 'wander' || o.exState === 'watch') && o.exCallAt == null)
@@ -762,7 +765,9 @@ function exploreBossStartRoar(b, kind){
   b.exploreAsleep = false;
   b.aiTargetPoint = null;
   if(player) b.facingAngle = angTo(b, player);
-  playSe('fireRoar');
+  // 咆哮の声はボスごと(data.js の EXPLORE_BOSSES の roar。合成は audio.js の exploreRoar)
+  if(def && def.roar) playSe('exploreRoar', { ...def.roar, rage: kind === 'rage' });
+  else playSe('fireRoar');
   if(kind === 'rage') playSe('godRising');
   // 近くで咆哮を浴びると耳をふさぐ(短い鈍足)
   if(player && dist(b, player) < EXPLORE_BOSS_ROAR_SLOW_RANGE)
@@ -948,7 +953,9 @@ function exploreOnBossFelled(b, killer){
   b.exPoseAt = now;
   b.exTiltSign = Math.random() < 0.5 ? -1 : 1;
   pushKillFeed(`${def ? def.name : b.name} を討伐した`);
-  playSe('kill'); playSe('fanfare');
+  playSe('kill');
+  // 討伐のファンファーレは曲の側で鳴らす(ボス戦の曲を止めて、終わったら地域の曲へ戻る。audio.js)
+  if(typeof bgmExploreFanfare === 'function') bgmExploreFanfare(!!(def && def.apex)); else playSe('fanfare');
   exploreFxFelled(b, def ? def.color : '#ffd35a');
   exploreFxGroundSlam(b, 1.3);
   // 落とし物はスローの影響を受けずに(実時間で)すぐ跳ねる。獲得した物は討伐完了の札の下に並べる
@@ -1741,6 +1748,7 @@ function exploreDrawScreen(){
   if(!game.explore) return;
   exploreDrawMeteors();
   exploreDrawCineBars();
+  exploreHudFrame();          // 方位バー・全体地図(explore_hud.js。DOMのキャンバスへ描く)
   exploreDrawMaterialFx();
   exploreDrawRoarText();
   exploreDrawBossHud();
@@ -1880,27 +1888,42 @@ function exploreDrawMaterialFx(){
   }
   ctx.restore();
 }
-// 咆哮の文字(ボスの頭の上で震える)
+/* =====================================================================
+   ボス戦のHUD(HPバー・名前の札・咆哮の文字・画面の札)の置き方
+   ・横は上部中央の帯(方位バーと同じ幅。explore_hud.js の exploreHudBand)に合わせる。px の決め打ちで置かない
+   ・縦が足りないときに削る順(R3): 称号の行を消し、名前とバーを1行にまとめ、バーを細くする
+     (境目は data.js の EXPLORE_BOSS_HUD.fullMinH)。大きい札は画面の縦に合わせて縮める
+   ・札・咆哮の文字は**ボスの画面上の矩形(exploreBossRect)の外へ逃がす**。縦持ちで本体を隠さないため
+   ===================================================================== */
+// 咆哮の文字。ボスの矩形の右(入らなければ左、それも無理なら足元の下)に出して震わせる
 function exploreDrawRoarText(){
   for(const rec of exploreState.bosses){
     const b = getEntity(rec.id);
     if(!b || !b.alive || b.exState !== 'roar') continue;
-    // 頭の右上に出す(真上だと画面上部の札・HPバーと重なる)
-    const p = project(b.x, b.y, (b.z||0) + exploreBodyHeight(b)*0.88);
-    if(!p) continue;
+    const r = exploreBossRect(b);
+    if(!r) continue;
     const age = matchTime - b.exRoarAt, dur = Math.max(0.1, b.exStateUntil - b.exRoarAt);
     const a = age < 0.12 ? age/0.12 : (age > dur - 0.35 ? Math.max(0, (dur - age)/0.35) : 1);
     const rage = b.exRoarKind === 'rage';
-    const sz = clamp(p.scale*70, 26, 64) * (age < 0.15 ? 1.4 - age/0.15*0.4 : 1);
+    const text = rage ? 'ガアァァッ!!' : 'グオオオオッ!!';
+    const sz = clamp(viewH*0.085, 20, 60) * (age < 0.15 ? 1.4 - age/0.15*0.4 : 1);
     ctx.save();
+    ctx.font = `italic bold ${Math.round(sz)}px 'Russo One', sans-serif`;
+    const tw = ctx.measureText(text).width, th = sz*1.1;
+    const topY = exploreBossHudBottom() + th*0.6;
+    const ty = clamp(r.y + r.h*0.3, topY, viewH*0.62);
+    const blocks = exploreHudObstacles();
+    const fits = (cx, cy)=>{
+      const box = { x:cx - tw/2, y:cy - th/2, w:tw, h:th };
+      return box.x >= 6 && box.x + box.w <= viewW - 6 && !exploreRectsHit(box, r, 4) && !blocks.some(o=> exploreRectsHit(box, o, 2));
+    };
+    let tx = r.x + r.w + 14 + tw/2, yy = ty;
+    if(!fits(tx, yy)){ tx = r.x - 14 - tw/2; }
+    if(!fits(tx, yy)){ tx = clamp(r.x + r.w/2, tw/2 + 6, viewW - tw/2 - 6); yy = Math.min(viewH*0.7, r.y + r.h + th*0.7); }
     ctx.globalAlpha = a;
-    const tx = Math.min(p.x + b.radius*p.scale*0.9 + sz*1.6, viewW - sz*3.4);   // 画面の右端で切れない
-    const ty = Math.max(p.y, 150 + sz*0.5);                                      // 上端のHUD帯・HPバー・札の下
-    ctx.translate(tx + rand(-4, 4), ty + rand(-4, 4));
+    ctx.translate(tx + rand(-4, 4), yy + rand(-4, 4));
     ctx.rotate(-0.08);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `italic bold ${Math.round(sz)}px 'Russo One', sans-serif`;
-    const text = rage ? 'ガアァァッ!!' : 'グオオオオッ!!';
     ctx.lineWidth = Math.max(4, sz*0.14); ctx.strokeStyle = rage ? 'rgba(60,0,0,0.95)' : 'rgba(20,12,0,0.9)';
     ctx.strokeText(text, 0, 0);
     ctx.fillStyle = rage ? '#ff4a3a' : '#fff1d0';
@@ -1926,7 +1949,32 @@ function exploreRoundRect(x, y, w, h, r){
   ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r);
   ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath();
 }
-// ボスのHPバー(画面上部の中央。探検のHUD帯の下)
+// ボスのHUDの寸法(帯の下)。full=称号+名前+太いバー / 詰めた形=名前とバーを1行ずつ・細いバー
+function exploreBossHudGeom(b){
+  const band = exploreHudBand();
+  const H = EXPLORE_BOSS_HUD;
+  const full = viewH >= H.fullMinH;
+  const w = Math.min(band.w, H.maxW);
+  const x = band.x + (band.w - w)/2;
+  const top = band.bottom + 4;
+  const barH = H.barH[full ? 1 : 0];
+  const nameY = full ? top + 27 : top + 11;
+  const barY = full ? top + 33 : top + 17;
+  let bottom = barY + barH + 4;
+  if(full && b && b.exPending) bottom += 20;   // 予告中の技名はバーの下
+  return { full, x, w, top, titleY: top + 9, nameY, barY, barH, bottom };
+}
+// 札・文字を置くときの上端(ボスのHUDが出ていればその下、無ければ方位バーの下)
+function exploreBossHudBottom(){
+  const b = exploreFocusBoss();
+  return b ? exploreBossHudGeom(b).bottom : exploreHudBand().bottom;
+}
+// 斜めに切った帯(HPバーの枠)
+function exploreSlantPath(x, y, w, h, k){
+  ctx.beginPath();
+  ctx.moveTo(x + k, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - k, y + h); ctx.lineTo(x, y + h); ctx.closePath();
+}
+// ボスのHPバー(方位バーの下。MHの大型モンスター/APEXのボスの帯に寄せた、細く上品な帯)
 function exploreDrawBossHud(){
   const b = exploreFocusBoss();
   if(!b) return;
@@ -1934,64 +1982,109 @@ function exploreDrawBossHud(){
   if(!def) return;
   // 名前の札が出ている間は重ねない
   if(exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4)) return;
-  const w = clamp(viewW*0.4, 280, 600), x = (viewW - w)/2, y = 80;   // 探検のHUD帯(上端の時間・地域)の下
+  const G = exploreBossHudGeom(b);
+  const { x, w, barY, barH } = G;
   const hpR = clamp(b.hp/b.maxHp, 0, 1), lag = clamp(b.exHpLag || hpR, hpR, 1);
-  ctx.save();
-  // 名前
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.font = "bold 11px 'Rajdhani', sans-serif";
-  ctx.fillStyle = 'rgba(235,225,200,0.85)';
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-  ctx.strokeText(def.title, x + 2, y - 18); ctx.fillText(def.title, x + 2, y - 18);
-  ctx.font = "bold 17px 'Russo One', sans-serif";
-  const nameText = (def.apex ? '👑 ' : '') + def.name;
-  ctx.lineWidth = 4; ctx.strokeText(nameText, x + 2, y - 3);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(nameText, x + 2, y - 3);
-  // 状態の札(右寄せ)
-  const chips = [];
-  if(b.exRage) chips.push({ t:'怒り', c:'#ff4a3a' });
-  if(b.exBroken) chips.push({ t:'部位破壊', c:'#ffc93c' });
-  if(b.exState === 'flee') chips.push({ t:'瀕死', c:'#ffe08a' });
-  if(b.exState === 'sleep') chips.push({ t:'睡眠', c:'#9fc4ff' });
-  if(b.exState === 'stagger') chips.push({ t:'転倒', c:'#ffe45a' });
-  let cx = x + w;
-  ctx.font = "bold 11px 'Rajdhani', sans-serif";
-  for(const ch of chips){
-    const tw = ctx.measureText(ch.t).width + 12;
-    cx -= tw;
-    exploreRoundRect(cx, y - 17, tw, 16, 4);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
-    ctx.strokeStyle = ch.c; ctx.lineWidth = 1.2; ctx.stroke();
-    ctx.fillStyle = ch.c; ctx.textAlign = 'center';
-    ctx.fillText(ch.t, cx + tw/2, y - 5);
-    ctx.textAlign = 'left';
-    cx -= 5;
-  }
-  // バー
-  const bh = 11;
-  exploreRoundRect(x - 2, y + 2, w + 4, bh + 4, 4);
-  ctx.fillStyle = 'rgba(8,10,16,0.78)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,238,190,0.8)';     // 遅れて減る帯
-  ctx.fillRect(x, y + 4, w*lag, bh);
-  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
   const base = b.exRage ? '#ff3a2a' : def.color;
-  grad.addColorStop(0, exploreMixHex(base, '#000000', 0.35)); grad.addColorStop(1, exploreMixHex(base, '#ffffff', 0.2));
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+  // 名前の行: 紋章 + (称号) + 名前 … 右に状態の札と残り%
+  const iconR = G.full ? 8 : 6;
+  exploreMapBossIcon(ctx, x + iconR + 1, G.nameY - (G.full ? 6 : 4), iconR, def, b.exRage ? 'engaged' : 'alive');
+  const nx = x + iconR*2 + 7;
+  if(G.full){
+    ctx.font = "bold 10px 'Rajdhani', sans-serif";
+    ctx.fillStyle = exploreMixHex(def.color, '#ffffff', 0.45);
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.strokeText(def.title, nx, G.titleY); ctx.fillText(def.title, nx, G.titleY);
+  }
+  ctx.font = G.full ? "bold 17px 'Russo One', sans-serif" : "bold 13px 'Russo One', sans-serif";
+  const nameText = def.name;
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(nameText, nx, G.nameY);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(nameText, nx, G.nameY);
+  const nameEnd = nx + ctx.measureText(nameText).width + 8;
+  // 右端: 残り%(小さく)。予告中(詰めた形)は技名を優先して出す
+  let cx = x + w;
+  ctx.font = "bold 11px 'Share Tech Mono', monospace";
+  const pct = `${Math.max(1, Math.ceil(hpR*100))}%`;
+  const pw = ctx.measureText(pct).width;
+  ctx.textAlign = 'right';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.strokeText(pct, cx, G.nameY); ctx.fillStyle = 'rgba(245,240,228,0.9)'; ctx.fillText(pct, cx, G.nameY);
+  ctx.textAlign = 'left';
+  cx -= pw + 6;
+  const blink = 0.55 + 0.45*Math.abs(Math.sin(matchTime*9));
+  if(b.exPending && !G.full){
+    ctx.font = "bold 12px 'Rajdhani', sans-serif";
+    const t = `⚠ ${b.exPending.mv.name}`;
+    const tw = ctx.measureText(t).width;
+    if(cx - tw > nameEnd){
+      ctx.globalAlpha = blink;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(t, cx - tw, G.nameY);
+      ctx.fillStyle = '#ffcf5a'; ctx.fillText(t, cx - tw, G.nameY);
+      ctx.globalAlpha = 1;
+    }
+  } else {
+    const chips = [];
+    if(b.exRage) chips.push({ t:'怒り', c:'#ff4a3a' });
+    if(b.exBroken) chips.push({ t:'部位破壊', c:'#ffc93c' });
+    if(b.exState === 'flee') chips.push({ t:'瀕死', c:'#ffe08a' });
+    if(b.exState === 'sleep') chips.push({ t:'睡眠', c:'#9fc4ff' });
+    if(b.exState === 'stagger') chips.push({ t:'転倒', c:'#ffe45a' });
+    ctx.font = "bold 10px 'Rajdhani', sans-serif";
+    const ch = G.full ? 15 : 13;
+    for(const c of chips){
+      const tw = ctx.measureText(c.t).width + 10;
+      if(cx - tw < nameEnd) break;   // 名前に重なるなら出さない(札より名前が先)
+      cx -= tw;
+      exploreRoundRect(cx, G.nameY - ch + 3, tw, ch, 3);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fill();
+      ctx.strokeStyle = c.c; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = c.c; ctx.textAlign = 'center';
+      ctx.fillText(c.t, cx + tw/2, G.nameY - 1);
+      ctx.textAlign = 'left';
+      cx -= 4;
+    }
+  }
+  // バー: 斜めに切った枠・遅れて減る帯・本体・10%ごとの刻み・上のつや
+  const k = Math.min(8, barH*0.9);
+  exploreSlantPath(x - 1, barY - 1, w + 2, barH + 2, k);
+  ctx.fillStyle = 'rgba(6,8,12,0.82)'; ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,232,190,0.42)'; ctx.stroke();
+  ctx.save();
+  exploreSlantPath(x, barY, w, barH, k); ctx.clip();
+  ctx.fillStyle = 'rgba(255,238,200,0.75)';
+  ctx.fillRect(x, barY, w*lag, barH);
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, exploreMixHex(base, '#000000', 0.35)); grad.addColorStop(1, exploreMixHex(base, '#ffffff', 0.15));
   ctx.fillStyle = grad;
-  ctx.fillRect(x, y + 4, w*hpR, bh);
-  // 怒り(50%)と逃走(20%)の目安の刻み
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  for(const t of [EXPLORE_BOSS_RAGE_HP, EXPLORE_BOSS_FLEE_HP]) ctx.fillRect(x + w*t - 1, y + 4, 2, bh);
-  // 予告中の大技の名前
-  if(b.exPending){
-    const blink = 0.55 + 0.45*Math.abs(Math.sin(matchTime*9));
+  ctx.fillRect(x, barY, w*hpR, barH);
+  if(b.exRage && !renderHeavyLoad){
+    ctx.fillStyle = `rgba(255,120,80,${0.18 + 0.18*Math.abs(Math.sin(matchTime*5))})`;
+    ctx.fillRect(x, barY, w*hpR, barH);
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillRect(x, barY, w, Math.max(1, barH*0.38));
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  for(let i=1;i<10;i++) ctx.fillRect(x + w*i/10 - 0.5, barY + barH*0.35, 1, barH*0.65);
+  ctx.restore();
+  // 怒り(50%)と逃走(20%)の目安: バーの上の小さな三角
+  ctx.fillStyle = 'rgba(255,214,120,0.9)';
+  for(const t of [EXPLORE_BOSS_RAGE_HP, EXPLORE_BOSS_FLEE_HP]){
+    const tx = x + w*t;
+    ctx.beginPath(); ctx.moveTo(tx, barY + 1); ctx.lineTo(tx - 3, barY - 3); ctx.lineTo(tx + 3, barY - 3); ctx.closePath(); ctx.fill();
+  }
+  // 予告中の大技の名前(ふつうの形はバーの下の中央)
+  if(b.exPending && G.full){
     ctx.globalAlpha = blink;
     ctx.textAlign = 'center';
-    ctx.font = "bold 14px 'Rajdhani', sans-serif";
+    ctx.font = "bold 13px 'Rajdhani', sans-serif";
     const t = `⚠ ${b.exPending.mv.name}`;
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(t, viewW/2, y + bh + 22);
-    ctx.fillStyle = '#ffcf5a'; ctx.fillText(t, viewW/2, y + bh + 22);
+    const ty = barY + barH + 15;
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(t, x + w/2, ty);
+    ctx.fillStyle = '#ffcf5a'; ctx.fillText(t, x + w/2, ty);
   }
   ctx.restore();
 }
@@ -2008,19 +2101,45 @@ function exploreDrawBanners(){
     else exploreDrawSmallBanner(bn, age, a);
   }
 }
-/* 大きい札。
-   ・名前の札(plate): 画面の左寄り・縦の中ほど(MHの登場ムービーの名前と同じ置き方)。
-     中央に置くとボス本体と咆哮の文字を隠す(撮影で確認)
-   ・討伐完了(hunt): 画面の上寄りの中央。ボス本体の上で弾ける光(WebGL層は2Dより手前に重なる)を避ける */
+// 札のボス(名前の札・討伐完了はその札のボス、小さい札は戦っているボス)の画面上の矩形
+function exploreBannerBossRect(bn){
+  const b = (bn && bn.bossId != null) ? getEntity(bn.bossId) : null;
+  return exploreBossRect(b || exploreFocusBoss() || exploreLastFelledBoss());
+}
+// 討伐の札のとき、倒れているボス(dying)
+function exploreLastFelledBoss(){
+  for(const rec of exploreState.bosses){ const b = getEntity(rec.id); if(b && b.alive && b.exState === 'dying') return b; }
+  return null;
+}
+// 候補の中心 y から、ボスの矩形・HUDの欄に重ならない最初のものを選ぶ。どれも重なるなら先頭
+function exploreBannerPick(cands, bw, bh, cx, r){
+  const blocks = exploreHudObstacles();
+  for(const cy of cands){
+    const box = { x:cx - bw/2, y:cy - bh/2, w:bw, h:bh };
+    if(box.y < 0 || box.y + box.h > viewH) continue;
+    if(r && exploreRectsHit(box, r, 6)) continue;
+    if(blocks.some(o=> exploreRectsHit(box, o, 2))) continue;
+    return cy;
+  }
+  return cands[0];
+}
+/* 大きい札。画面の縦に合わせて縮める(R3: 札を小さく)。ボスの矩形に重なるなら置き場を変える
+   ・名前の札(plate): 画面の左寄り・縦の中ほど(MHの登場ムービーの名前と同じ置き方)
+   ・討伐完了(hunt): 画面の上寄りの中央(ボス本体の上で弾ける光を避ける) */
 function exploreDrawBigBanner(bn, age, a){
   const hunt = bn.kind === 'hunt';
   const slide = age < 0.3 ? (1 - age/0.3) : 0;
+  const k = clamp(viewH/560, 0.66, 1);
+  const r = exploreBannerBossRect(bn);
   ctx.save();
   ctx.globalAlpha = a;
   ctx.textBaseline = 'middle';
   if(hunt){
     const items = (bn.items || []).slice(0, 8);
-    const cy = Math.max(120, viewH*0.21), bandH = 82, extra = items.length ? 36 : 0;
+    const bandH = 82*k, extra = items.length ? 36*k : 0;
+    const top = exploreHudBand().bottom + bandH/2 + 6;
+    // 「獲得」の行(extra)まで含めてボスに重ならない高さを選ぶ
+    const cy = exploreBannerPick([Math.max(top, viewH*0.21), r ? r.y + r.h + bandH/2 + 8 : top, viewH*0.5], viewW*0.56, bandH + extra, viewW/2, r);
     const g = ctx.createLinearGradient(0, 0, viewW, 0);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.22, 'rgba(10,8,4,0.74)');
     g.addColorStop(0.78, 'rgba(10,8,4,0.74)'); g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -2034,8 +2153,8 @@ function exploreDrawBigBanner(bn, age, a){
     ctx.textAlign = 'center';
     const pop = age < 0.18 ? 1.35 - age/0.18*0.35 : 1;
     ctx.save();
-    ctx.translate(viewW/2, cy - 8);
-    ctx.scale(pop, pop);
+    ctx.translate(viewW/2, cy - 8*k);
+    ctx.scale(pop*k, pop*k);
     ctx.font = "bold 44px 'Russo One', sans-serif";
     ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(40,20,0,0.92)';
     ctx.strokeText('討伐完了', 0, 0);
@@ -2045,43 +2164,45 @@ function exploreDrawBigBanner(bn, age, a){
     if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = 'rgba(255,190,60,0.85)'; }
     ctx.fillText('討伐完了', 0, 0);
     ctx.restore();
-    ctx.font = "bold 15px 'Rajdhani', sans-serif";
+    ctx.font = `bold ${Math.round(15*k)}px 'Rajdhani', sans-serif`;
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
     const sub = `${bn.apex ? '頂点の主 ' : ''}${bn.name} を討伐した`;
-    ctx.strokeText(sub, viewW/2, cy + 26);
+    ctx.strokeText(sub, viewW/2, cy + 26*k);
     ctx.fillStyle = 'rgba(248,242,226,0.96)';
-    ctx.fillText(sub, viewW/2, cy + 26);
+    ctx.fillText(sub, viewW/2, cy + 26*k);
     // 獲得: 素材のアイコン×数(レア度の色)。1つずつ順に出る
-    if(items.length) exploreDrawGainRow(items, viewW/2, cy + 56, age);
+    if(items.length) exploreDrawGainRow(items, viewW/2, cy + 56*k, age);
   } else {
-    const cy = viewH*0.54, bandH = 98;   // 左上の自分の欄・左下のスティックの間
+    const bandH = 98*k;
+    const bandW = Math.min(viewW*0.62, 620*k);
     const x0 = Math.max(18, viewW*0.05) - slide*80;
-    const bandW = Math.min(viewW*0.62, 620);
+    // 左の自分の欄・左下のスティックの間。ボスに重なるならボスの下、それも無理なら上寄り
+    const cy = exploreBannerPick([viewH*0.54, r ? r.y + r.h + bandH/2 + 6 : viewH*0.54, viewH*0.42], bandW, bandH, bandW/2, r);
     const g = ctx.createLinearGradient(0, 0, bandW, 0);
     g.addColorStop(0, 'rgba(6,6,10,0.80)'); g.addColorStop(0.6, 'rgba(6,6,10,0.55)'); g.addColorStop(1, 'rgba(6,6,10,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, cy - bandH/2, bandW, bandH);
     const col = bn.color || '#ffd35a';
     ctx.fillStyle = col;
-    ctx.fillRect(x0 - 10, cy - bandH/2 + 14, 4, bandH - 28);   // 左の縦線(ボスの色)
+    ctx.fillRect(x0 - 10, cy - bandH/2 + 14*k, 4, bandH - 28*k);   // 左の縦線(ボスの色)
     ctx.textAlign = 'left';
-    ctx.font = "bold 14px 'Rajdhani', sans-serif";
+    ctx.font = `bold ${Math.round(14*k)}px 'Rajdhani', sans-serif`;
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    ctx.strokeText(bn.title, x0, cy - 30);
+    ctx.strokeText(bn.title, x0, cy - 30*k);
     ctx.fillStyle = col;
-    ctx.fillText(bn.title, x0, cy - 30);
-    ctx.font = "bold 42px 'Russo One', sans-serif";
-    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-    ctx.strokeText(bn.name, x0, cy + 4);
+    ctx.fillText(bn.title, x0, cy - 30*k);
+    ctx.font = `bold ${Math.round(42*k)}px 'Russo One', sans-serif`;
+    ctx.lineWidth = 6*k; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.strokeText(bn.name, x0, cy + 4*k);
     ctx.fillStyle = '#ffffff';
     if(!renderHeavyLoad){ ctx.shadowBlur = 16; ctx.shadowColor = col; }
-    ctx.fillText(bn.name, x0, cy + 4);
+    ctx.fillText(bn.name, x0, cy + 4*k);
     ctx.shadowBlur = 0;
-    ctx.font = "bold 13px 'Rajdhani', sans-serif";
+    ctx.font = `bold ${Math.round(13*k)}px 'Rajdhani', sans-serif`;
     const tag = bn.apex ? '頂点ボス 出現' : '大型モンスター 出現';
-    ctx.strokeText(tag, x0, cy + 36);
+    ctx.strokeText(tag, x0, cy + 36*k);
     ctx.fillStyle = bn.apex ? '#ffd35a' : 'rgba(235,230,215,0.92)';
-    ctx.fillText(tag, x0, cy + 36);
+    ctx.fillText(tag, x0, cy + 36*k);
   }
   ctx.restore();
 }
@@ -2124,19 +2245,34 @@ function exploreDrawGainRow(items, cx, y, age){
   });
   ctx.restore();
 }
+/* 小さい札(怒り・部位破壊・逃走)。ボスのHUDの下の中央 → ボスに重なるなら帯の中で左右へずらす →
+   それも無理ならボスの足元の下。縦が低い画面では一回り小さくする */
 function exploreDrawSmallBanner(bn, age, a){
-  // ボスのHPバー(と予告の技名)が出ていればその下、無ければ上端のHUD帯の下。
-  // 縦持ち(画面の縦が375)でもボスの体を隠しすぎないよう、小さく細い札にする
-  const y = exploreFocusBoss() ? 128 : 92;
+  const k = clamp(viewH/560, 0.8, 1);
   ctx.save();
+  ctx.font = `bold ${Math.round(15*k)}px 'Russo One', sans-serif`;
+  const tw = ctx.measureText(bn.text).width + 28*k, th = 26*k;
+  const r = exploreBannerBossRect(bn);
+  const band = exploreHudBand();
+  const y0 = exploreBossHudBottom() + th/2 + 6;
+  const blocks = exploreHudObstacles();
+  const ok = (cx, cy)=>{
+    const box = { x:cx - tw/2, y:cy - th/2, w:tw, h:th };
+    return box.x >= 4 && box.x + box.w <= viewW - 4 && !(r && exploreRectsHit(box, r, 6)) && !blocks.some(o=> exploreRectsHit(box, o, 2));
+  };
+  let cx = viewW/2, cy = y0;
+  if(!ok(cx, cy) && r){
+    const left = r.x - 10 - tw/2, right = r.x + r.w + 10 + tw/2;
+    if(ok(left, cy) && left - tw/2 >= band.x - 4) cx = left;
+    else if(ok(right, cy) && right + tw/2 <= band.x + band.w + 4) cx = right;
+    else if(ok(viewW/2, r.y + r.h + th/2 + 8)) cy = r.y + r.h + th/2 + 8;
+  }
   ctx.globalAlpha = a;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = "bold 15px 'Russo One', sans-serif";
   const pop = age < 0.15 ? 1.2 - age/0.15*0.2 : 1;
-  ctx.translate(viewW/2, y);
+  ctx.translate(cx, cy);
   ctx.scale(pop, pop);
-  const tw = ctx.measureText(bn.text).width + 28;
-  exploreRoundRect(-tw/2, -13, tw, 26, 7);
+  exploreRoundRect(-tw/2, -th/2, tw, th, 7*k);
   ctx.fillStyle = 'rgba(8,8,12,0.66)'; ctx.fill();
   ctx.strokeStyle = bn.color || '#ffd35a'; ctx.lineWidth = 1.2; ctx.stroke();
   ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(bn.text, 0, 1);
@@ -2253,25 +2389,7 @@ function exploreGroundMarks(){
   return out.length ? out : null;
 }
 
-/* 最小のHUD(残り時間・力尽き・所持数・帰還の進み・今いる地域)。HUD担当(段2)が作り直す前提。
-   文字は中身が変わったときだけ書き換える(毎フレームのDOM更新を避ける)。 */
-function exploreUpdateHud(){
-  const el = document.getElementById('exploreHud');
-  if(!el) return;
-  const left = Math.max(0, exploreState.endsAt - matchTime);
-  const reg = player ? exploreRegionAt(player.x, player.y) : null;
-  const where = reg ? `${reg.icon} ${reg.name} ${'★'.repeat(reg.danger)}` : '⛺ ベースキャンプ周辺';
-  const hold = exploreState.beaconInside ? Math.max(0, EXPLORE_BEACON_HOLD_SEC - exploreState.beaconHold) : null;
-  const sig = [Math.ceil(left), exploreState.faints, exploreBagCount(), where, hold==null ? '' : hold.toFixed(1)].join('|');
-  if(sig === exploreState.hudSig) return;
-  exploreState.hudSig = sig;
-  const set = (id, t)=>{ const n = document.getElementById(id); if(n) n.textContent = t; };
-  set('exploreHudTime', fmtTime(left));
-  set('exploreHudFaint', `💫 ${exploreState.faints}/${EXPLORE_MAX_FAINTS}`);
-  set('exploreHudBag', `🎒 ${exploreBagCount()}`);
-  set('exploreHudWhere', hold==null ? where : `🛰️ 帰還まで ${hold.toFixed(1)}秒`);
-  el.classList.toggle('is-low', left <= 60);
-}
+/* HUD(方位バー・目標パネル・地域の札)は explore_hud.js の exploreUpdateHud が持つ(updateExplore から毎フレーム)。 */
 
 // 毎フレームの進行(combat.js の update() から。安置の update の代わり)
 function updateExplore(dt){
@@ -2338,6 +2456,7 @@ function exploreFinish(reason){
   };
   const ehud = document.getElementById('exploreHud');
   if(ehud) ehud.classList.add('hidden');
+  exploreHudHide();
   bgmSetTrack(null);
   playSe(full ? ((typeof skinWinSeName==='function' && skinWinSeName(player)) || 'fanfare') : 'sad');
   setTimeout(()=>{

@@ -5278,7 +5278,9 @@
        右 = #topRight right:14 + #minimapWrap 120 + すきま8                            */
   /* 探検モードのHUD(#exploreHud)も同じ居場所(左右の先客のぶんを空けた上部中央)を使う。
      空ける幅の数字はここ1か所。見た目(色)は下の探検モードの節で上書きする */
-  #raidHud, #exploreHud{ --raid-hud-left:232px; --raid-hud-right:142px;
+  /* 空ける幅の数字はここ1か所(探検の地域の札 #expRegionCard も同じ帯の中に置くので変数だけ共有する) */
+  #raidHud, #exploreHud, #expRegionCard{ --raid-hud-left:232px; --raid-hud-right:142px; }
+  #raidHud, #exploreHud{
     position:absolute; top:8px; z-index:24;
     left:var(--raid-hud-left); right:var(--raid-hud-right); margin:0 auto;
     width:auto; max-width:560px; padding:5px 10px; border-radius:12px;
@@ -6197,7 +6199,7 @@
   html.narrow-screen #killFeed{ width:170px; }
   html.narrow-screen #minimapWrap{ width:96px; height:96px;}
   /* 上の#raidHudと同じ計算(#hpPanel 180 / #minimapWrap 96) */
-  html.narrow-screen #raidHud, html.narrow-screen #exploreHud{ --raid-hud-left:202px; --raid-hud-right:118px; }
+  html.narrow-screen #raidHud, html.narrow-screen #exploreHud, html.narrow-screen #expRegionCard{ --raid-hud-left:202px; --raid-hud-right:118px; }
   html.narrow-screen #movePanel{ gap:8px; padding:8px 12px;}
   html.narrow-screen #fireBtn{ width:78px; height:78px; right:16px; bottom:16px; }
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
@@ -6541,19 +6543,110 @@ body.self-noguts #fireBtn{ opacity:0.42; filter:grayscale(0.7); }
 
 /* =====================================================================
    探検モード
-   ①試合中の最小HUD(#exploreHud。段2のHUD担当が作り直す前提)
+   ①試合中のHUD(方位バー #exploreHud・目標パネル #expObjPanel・地域の札・全体地図 #expMapOverlay)
    ②結果画面(#exploreResultOverlay)
    レア度の色は data.js の EXPLORE_RARITY が正。ここでは --rc(JSが渡す)を読むだけ
    ===================================================================== */
-#exploreHud{ display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:nowrap;
-  min-width:0; white-space:nowrap;
-  background:linear-gradient(180deg, rgba(8,20,16,0.88), rgba(4,10,8,0.88));
-  border-color:rgba(125,255,176,0.45); }
-#exploreHud .exh-time{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:14px; color:#7dffb0; }
-#exploreHud.is-low .exh-time{ color:#ff6b5a; }
-#exploreHud .exh-chip{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink); }
-#exploreHud .exh-where{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
-  font-weight:700; font-size:11px; color:var(--ink-dim); }
+/* ---- ①試合中のHUD(描くのは explore_hud.js) ----
+   方位バー(#exploreHud)… 置き場所(左右の空け方)は上の #raidHud と共有。枠や下地はキャンバスが描くので消す。
+     高さ 40px は data.js の EXPLORE_COMPASS_H と同じ値(片方だけ変えない)。
+   目標パネル(#expObjPanel)… 上端・右端・出す行は explore_hud.js の exploreObjLayout が画面から決める(R1)。
+     行の高さは explore_hud.js の EXP_OBJ_H と同じ値(片方だけ変えない): 上下の余白8 / 見出し15 / 行17 / 2行目12 / すき間1。
+     削る順(R3): 他の目標の行 → 優先の目標の2行目 → 優先の目標 → 見出し(残り時間・力尽き・所持数)。
+   地域の札(#expRegionCard)… 方位バーの下に出て消える。ボス戦の最中は出さない(同じ場所をボスの帯が使う) */
+#exploreHud{ top:6px; height:40px; padding:0; background:none; border:none; box-shadow:none; border-radius:0; }
+#expCompassCanvas{ display:block; width:100%; height:100%; }
+#expObjPanel{ position:absolute; top:142px; right:14px; width:208px; z-index:6; pointer-events:none;
+  box-sizing:border-box; padding:4px 9px 4px 8px;
+  background:linear-gradient(270deg, rgba(6,12,16,0.84), rgba(6,12,16,0.58) 70%, rgba(6,12,16,0.32));
+  border-right:3px solid #7dffb0; border-radius:9px 2px 2px 9px;
+  box-shadow:0 6px 16px -10px rgba(0,0,0,0.9); font-family:'Rajdhani',sans-serif; }
+html.narrow-screen #expObjPanel{ width:188px; }
+/* R3 の最後の段(ミニマップの下に1行も入らない低い横持ち): 方位バーの真下の細い1行にまとめる。
+   位置と幅は explore_hud.js が方位バーから写す。見出し(時間・力尽き・所持数)+優先の目標だけ */
+#expObjPanel.is-strip{ display:flex; align-items:center; gap:10px; height:21px; padding:2px 10px;
+  border-right:none; border-radius:10px; background:linear-gradient(90deg, rgba(6,12,16,0.2), rgba(6,12,16,0.72) 15%, rgba(6,12,16,0.72) 85%, rgba(6,12,16,0.2)); }
+#expObjPanel.is-strip .exp-obj-head{ flex:0 0 auto; }
+#expObjPanel.is-strip .exp-obj-rows{ flex:1 1 auto; min-width:0; margin-top:0; }
+#expObjPanel.is-strip .exp-obj-row.is-prio{ background:none; }
+.exp-obj-head{ height:15px; display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
+.exp-obj-time{ font-family:'Share Tech Mono',monospace; font-size:14px; line-height:15px; color:#7dffb0; letter-spacing:0.5px;
+  text-shadow:0 0 8px rgba(125,255,176,0.45); }
+.exp-obj-time.is-low{ color:#ffd35a; text-shadow:0 0 8px rgba(255,211,90,0.5); }
+.exp-obj-time.is-crit{ color:#ff6b5a; text-shadow:0 0 10px rgba(255,80,60,0.7); animation:expObjCrit 1s ease-in-out infinite; }
+@keyframes expObjCrit{ 50%{ opacity:0.55; } }
+.exp-obj-faint{ display:flex; align-items:center; gap:3px; }
+.exp-obj-faint i{ display:block; width:7px; height:7px; border-radius:50%; box-sizing:border-box; }
+.exp-obj-faint i.on{ background:#ff9a7a; box-shadow:0 0 5px rgba(255,140,110,0.8); }
+.exp-obj-faint i.off{ border:1px solid rgba(255,255,255,0.35); }
+.exp-obj-faint.is-last i.on{ animation:expObjCrit 0.9s ease-in-out infinite; }
+.exp-obj-bag{ font-family:'Share Tech Mono',monospace; font-size:11px; line-height:15px; color:var(--ink); }
+.exp-obj-rows{ display:flex; flex-direction:column; gap:1px; margin-top:1px; }
+.exp-obj-row{ position:relative; border-radius:4px; }
+.exp-obj-row.is-prio{ background:linear-gradient(90deg, rgba(255,211,90,0.16), rgba(255,211,90,0)); }
+.exp-obj-line{ height:17px; display:flex; align-items:center; gap:5px; min-width:0; }
+.exp-obj-mark{ flex:0 0 12px; text-align:center; font-size:10px; line-height:1; color:rgba(230,236,245,0.5); }
+.exp-obj-text{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:12px; font-weight:700; color:rgba(230,236,245,0.7); text-shadow:0 1px 2px rgba(0,0,0,0.8); }
+.exp-obj-count{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:11px; color:rgba(230,236,245,0.7); }
+.exp-obj-row.is-prio .exp-obj-mark{ color:#ffd35a; text-shadow:0 0 6px rgba(255,211,90,0.8); }
+.exp-obj-row.is-prio .exp-obj-text{ color:#ffffff; }
+.exp-obj-row.is-prio .exp-obj-count{ color:#ffe08a; }
+.exp-obj-row.is-urgent.is-prio .exp-obj-text, .exp-obj-row.is-urgent.is-prio .exp-obj-count{ color:#ffb08a; }
+.exp-obj-row.is-done .exp-obj-mark, .exp-obj-row.is-done .exp-obj-count{ color:#8ff0a8; }
+.exp-obj-row.is-done .exp-obj-text{ color:rgba(170,230,185,0.75); }
+.exp-obj-row.is-flash{ animation:expObjDone 0.9s ease-out 2; }
+@keyframes expObjDone{ 0%{ background:rgba(143,240,168,0.55); box-shadow:0 0 14px rgba(143,240,168,0.8); } 100%{ background:rgba(143,240,168,0); box-shadow:none; } }
+.exp-obj-row.is-flash .exp-obj-mark{ animation:expObjTick 0.5s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes expObjTick{ 0%{ transform:scale(2.2); opacity:0; } 100%{ transform:none; opacity:1; } }
+.exp-obj-sub{ height:12px; line-height:12px; padding-left:17px; font-size:10px; color:var(--ink-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exp-obj-hold{ position:absolute; left:17px; right:0; bottom:0; height:2px; background:rgba(255,255,255,0.15); }
+.exp-obj-hold i{ display:block; height:100%; background:#7dffb0; box-shadow:0 0 6px #7dffb0; }
+/* 撃破ログは探検のあいだ目標パネルの下へ(位置はJSが変数で渡す。入らなければ出さない)。
+   カスタマイズで動かしてあれば要素に直接書かれた位置が勝つので、そちらはそのまま */
+#hud.explore-mode #killFeed{ top:var(--exp-kf-top, 140px); right:var(--exp-kf-right, 14px); }
+#hud.explore-mode.exp-kf-off #killFeed{ display:none; }
+#hud.explore-mode #minimapWrap{ border-color:rgba(125,255,176,0.35); box-shadow:0 0 18px -4px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.5); }
+#expRegionCard{ position:absolute; top:var(--exp-rc-top, 50px); left:var(--raid-hud-left); right:var(--raid-hud-right); margin:0 auto;
+  width:auto; max-width:360px; z-index:6; pointer-events:none; text-align:center; --rc:#7dffb0; }
+#expRegionCard.is-on{ animation:expRegionIn var(--exp-rc-dur, 2.8s) ease-out both; }
+@keyframes expRegionIn{ 0%{ opacity:0; transform:translateY(-6px); } 12%{ opacity:1; transform:none; } 78%{ opacity:1; } 100%{ opacity:0; } }
+.exp-rc-kicker{ font-size:10px; font-weight:700; letter-spacing:3px; color:var(--rc); text-shadow:0 1px 3px rgba(0,0,0,0.9);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exp-rc-name{ font-family:'Russo One',sans-serif; font-size:20px; line-height:24px; color:#ffffff; letter-spacing:1px;
+  text-shadow:0 2px 6px rgba(0,0,0,0.9), 0 0 14px rgba(0,0,0,0.6); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exp-rc-name::after{ content:''; display:block; height:2px; margin:2px auto 0; width:60%;
+  background:linear-gradient(90deg, transparent, var(--rc), transparent); }
+.exp-rc-danger{ font-size:11px; font-weight:700; color:var(--rc); text-shadow:0 1px 3px rgba(0,0,0,0.9); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* 狙撃で構えている間(body.sniper-ads)は、探検の上のHUDを弱める(スコープの絵を邪魔しない) */
+body.sniper-ads #exploreHud, body.sniper-ads #expObjPanel, body.sniper-ads #expRegionCard{ opacity:0.3; }
+/* ---- 全体地図(#expMapOverlay)。どこを押しても閉じる(押す物は✕だけ。R2: スクロールは無い)
+   箱は画面から決める(R1): 地図の一辺 = 箱の高さ と (箱の幅 − 横の欄) の小さい方(explore_hud.js の exploreLayoutBigMap)。
+   削る順(R3): 凡例 → 見出し。閉じるボタンは削らない ---- */
+#expMapOverlay{ position:absolute; inset:0; z-index:40; pointer-events:auto; touch-action:none;
+  background:radial-gradient(ellipse at center, rgba(6,10,14,0.62), rgba(2,4,6,0.86)); }
+.exp-map-box{ position:absolute; top:8px; right:8px; bottom:8px; left:8px; display:flex; gap:10px; align-items:stretch; justify-content:center; }
+#expMapCanvas{ flex:0 0 auto; display:block; align-self:center; border-radius:6px;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.18), 0 12px 30px -8px rgba(0,0,0,0.85); }
+.exp-map-side{ flex:0 1 220px; min-width:0; display:flex; flex-direction:column; gap:6px; padding-top:2px; }
+.exp-map-title{ flex:0 0 auto; font-family:'Russo One',sans-serif; font-size:15px; letter-spacing:1px; color:#ffffff;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exp-map-legend{ flex:0 1 auto; min-height:0; display:flex; flex-direction:column; gap:3px; }
+.exp-map-side.is-tight .exp-map-legend{ display:none; }
+.exp-lg-row{ height:16px; display:flex; align-items:center; gap:7px; min-width:0; font-size:11px; font-weight:700; color:var(--ink); }
+.exp-lg-row span{ min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exp-lg-ico{ flex:0 0 12px; width:12px; height:12px; display:block; box-sizing:border-box; }
+.exp-lg-me{ background:#ffffff; clip-path:polygon(50% 0, 100% 100%, 50% 72%, 0 100%); }
+.exp-lg-beacon{ background:rgba(8,40,24,0.95); border:2px solid #7dffb0; transform:rotate(45deg) scale(0.8); }
+.exp-lg-boss{ border-radius:50%; background:#140c0a; border:2px solid #ff8a5a; box-shadow:0 0 0 1px rgba(255,255,255,0.8); }
+.exp-lg-done{ border-radius:50%; background:#2a2e34; border:2px solid #8a939c; }
+.exp-lg-crate{ height:9px; background:#ffc93c; border:1px solid #000; }
+.exp-lg-pass{ width:6px; height:6px; flex-basis:12px; border-radius:50%; background:#ffecbe; margin:0 3px; }
+.exp-lg-region{ border-radius:2px; background:var(--rc); opacity:0.85; }
+.exp-map-close{ flex:0 0 auto; flex-shrink:0; min-height:var(--tap-pick); margin-top:auto; padding:0 16px; border-radius:9px; cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; letter-spacing:1px;
+  color:#062e18; background:linear-gradient(180deg,#b6ffd4,#3fdc8a); border:1px solid #3fdc8a; }
 
 /* ---- 結果画面 ----
    箱は画面から決める(R1): 幅は画面の比、高さは上限だけ持ち、素材の一覧(.exr-list)が縮んで吸う。
