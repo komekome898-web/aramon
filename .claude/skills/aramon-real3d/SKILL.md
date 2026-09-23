@@ -53,6 +53,7 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - テーマの反映は`applyReal3DLayer()`が`window.__aramonRealTheme`に入れ、real3d.jsの`setActive()`→`applyTheme()`が空・霞・頂点色・テクスチャ・遠景の山を差し替える(地形メッシュは使い回す)。
 - **地面だけWebGLで描き、モンスター・弾・エフェクト・HUDは従来の2Dキャンバスが上に重なる**(`#glCanvas` z:0 / `#gameCanvas` z:1)。
 - **2Dの`project()`と3Dカメラを完全に一致させてある**(`FOV_V`=64° / `camPos` / `camState.yaw,pitch`)。**`FOV_V`や`CAM_*`を変えたらreal3d.js側も合わせる。** 丘による遮蔽は2D側に無い(割り切り)。
+- **視野の倍率(探検モードの狙撃スコープ)の入口は `world.js` の `setViewZoom()` 1か所。** 実効の視野角は `effectiveFovDeg()` だけが作り、`FOV_V`(2D)・`window.__aramonLook.fovDeg`(real3d / real3d_zone)・`window.FOV_V`(fx_gl)が同じ値を返す。`window.__aramonLook` は `lookSettings` の**読み取り専用の窓**(書き込みは ui.js が `lookSettings` へ)。`sniper.js` が**描画1フレームの間だけ**倍率・構えのカメラを掛け、`sniperFrameEnd()` で戻す。ズーム中は `project()` のスケール上限も倍率ぶん伸ばし、real3d.js は霞を奥へ押す(`FOG_ZOOM_*`。FARはパッチの半分より手前のまま)。
 - **高さは`data.js`の`real3dHeightAt(x,y)`。純関数なのでホスト/ゲストで自動一致**し、当たり判定(`world.js`の`getTerrainHeightAt`)も同じ関数を使う。
 - **各`REAL3D_TERRAIN_SETS`の最大傾斜は0.3程度まで**(`Σ(amp×freq)/2`)。ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
 - **岩・水晶の「登っているからすり抜ける」判定は`baseTerrainHeightAt`基準**(絶対値`m.z>25`だと起伏だけですり抜ける)。

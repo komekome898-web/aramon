@@ -2166,6 +2166,9 @@ function tryFire(m){
   m.fireCooldown = effectiveCooldown(m, mv);
 }
 function tryPlayerFire(dt){
+  /* 狙撃銃(探検モードだけ。sniper.js)。装填の時間を進め、構えている間はFIREを狙撃銃が受け持つ
+     (trueが返ったら技は撃たない)。探検モード以外では常にfalse=従来どおり。 */
+  if(typeof sniperOwnsTrigger === 'function' && sniperOwnsTrigger(dt)) return;
   if(!player.alive || player.fireCooldown>0) return;
   if(player.freezeUntil > matchTime) return;
   if(entityDowned(player)) return;   // ダウン中は攻撃不可(発射条件はtryNonHostPlayerFireVisual/processRemoteFireEventsと一致させる)
@@ -2217,6 +2220,12 @@ function updateProjectiles(dt){
       continue;
     }
     if(p.delay>0){ p.delay -= dt; continue; }
+    /* 狙撃銃の弾(sniper.js)。高速なので1フレームで体をすり抜けないよう細かく刻んで進め、
+       頭側(ent.weakPoint)の判定もするため進め方と当たりだけ向こうに任せる。trueで消える */
+    if(p.sniper && typeof sniperStepProjectile === 'function'){
+      if(sniperStepProjectile(p, dt)) projectiles.splice(i,1);
+      continue;
+    }
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
     // リアルマップ: 上下にも進み、重力で落ちる(発射時の傾きは落下ぶんを見越してある)

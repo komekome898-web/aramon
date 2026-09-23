@@ -273,7 +273,7 @@ function ensureProvidedSeBuffers(){
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, cardSwipe:0.07, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
-  hitDealt:0.07, miss:0.2, zoneWarn:2,
+  hitDealt:0.07, miss:0.2, zoneWarn:2, sniper:0.03,
   fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6, ssrJackpot:0.9, zeusTier3:0.8,
   chocoSummon:1.5, chocoVanish:0.8, chocoHit:0.5, titleStart:1.2,
   buy:0.2, darkHoust:0.6, requiemEnd:0.3, mocchiBeam:0.5, monta:0.2, crystalRain:0.5, fireWave:0.5,
@@ -441,6 +441,52 @@ const SE_DEFS = {
     seNoise(t, {dur:0.03, vol:0.26, filterType:'highpass', filterFreq:4200});               // 当たりの弾け
     seTone(t,       {freq:2100, freqEnd:1500, dur:0.05,  type:'triangle', vol:0.22, attack:0.002}); // 芯
     seTone(t+0.012, {freq:3000,               dur:0.035, type:'sine',     vol:0.11, attack:0.002}); // 上の倍音でカリッと
+  },
+  /* 狙撃銃(探検モード。sniper.js)。1つの名前で opts.kind ごとに鳴らし分ける:
+     shot   = 発砲。乾いた超音速のクラック+胸に来る低音+山に返る残響、少し遅れてボルトを引く金属音
+              (ボルトの間合いは opts.cycle=連射間隔 に合わせる)
+     hit    = 命中の「ドスッ」(遠くの的に届いた手応え) / crit = 弱点の高い金属音「キィン」
+     reload = 装填(弾倉を抜く→差す→ボルト。opts.dur=装填秒数に合わせる)
+     scope / unscope = 構える・解く(レンズの小さな擦れ) / dry = 撃てないときの空の「カチッ」 */
+  sniper(t, opts){
+    const k = opts.kind || 'shot';
+    if(k === 'shot'){
+      seNoise(t,       {dur:0.035, vol:0.95, filterType:'highpass', filterFreq:2600});                 // 超音速のクラック
+      seNoise(t,       {dur:0.32,  vol:0.62, filterType:'lowpass',  filterFreq:1900, filterEnd:80});   // 銃身の轟き
+      seTone(t,        {freq:118, freqEnd:36, dur:0.36, type:'sine',   vol:0.62});                       // 胸に来る低音
+      seTone(t,        {freq:240, freqEnd:70, dur:0.12, type:'square', vol:0.2});
+      seNoise(t+0.10,  {dur:0.95,  vol:0.12, filterType:'bandpass', filterFreq:760, filterEnd:170});    // 山に返る残響
+      seNoise(t+0.34,  {dur:0.7,   vol:0.06, filterType:'bandpass', filterFreq:520, filterEnd:140});
+      const cyc = Math.max(0.5, opts.cycle || 1.0);
+      const b = t + cyc*0.42;                                                                           // ボルトを引く
+      seNoise(b,       {dur:0.05, vol:0.24, filterType:'bandpass', filterFreq:3400});
+      seTone(b,        {freq:1900, freqEnd:950, dur:0.04, type:'square', vol:0.07, attack:0.002});
+      seNoise(b+cyc*0.28, {dur:0.06, vol:0.3, filterType:'bandpass', filterFreq:2300});                // 押し戻して閉じる
+      seTone(b+cyc*0.28,  {freq:820, freqEnd:460, dur:0.06, type:'triangle', vol:0.14, attack:0.002});
+    } else if(k === 'hit'){
+      seTone(t,  {freq:160, freqEnd:60, dur:0.14, type:'sine', vol:0.42});
+      seNoise(t, {dur:0.06, vol:0.3, filterType:'bandpass', filterFreq:1500});
+    } else if(k === 'crit'){
+      seTone(t,       {freq:2400, freqEnd:2300, dur:0.32, type:'sine',     vol:0.26, attack:0.002});
+      seTone(t,       {freq:3620,               dur:0.22, type:'sine',     vol:0.12, attack:0.002});
+      seTone(t+0.01,  {freq:1200, freqEnd:900,  dur:0.12, type:'triangle', vol:0.2,  attack:0.002});
+      seNoise(t,      {dur:0.04, vol:0.3, filterType:'highpass', filterFreq:5000});
+    } else if(k === 'reload'){
+      const d = Math.max(1, opts.dur || 2.5);
+      seNoise(t+0.05,   {dur:0.06, vol:0.22, filterType:'bandpass', filterFreq:1800});                 // 弾倉を抜く
+      seTone(t+0.05,    {freq:700, freqEnd:420, dur:0.06, type:'triangle', vol:0.1});
+      seNoise(t+d*0.55, {dur:0.07, vol:0.28, filterType:'bandpass', filterFreq:1500});                 // 差し込む
+      seTone(t+d*0.55,  {freq:520, freqEnd:300, dur:0.07, type:'triangle', vol:0.14});
+      seNoise(t+d*0.82, {dur:0.05, vol:0.24, filterType:'bandpass', filterFreq:3400});                 // ボルト
+      seNoise(t+d*0.92, {dur:0.06, vol:0.3,  filterType:'bandpass', filterFreq:2300});
+      seTone(t+d*0.92,  {freq:820, freqEnd:460, dur:0.06, type:'triangle', vol:0.14});
+    } else if(k === 'scope' || k === 'unscope'){
+      seNoise(t, {dur:0.07, vol:0.12, filterType:'bandpass', filterFreq: k === 'scope' ? 2600 : 1900, filterEnd: k === 'scope' ? 1500 : 2600});
+      seTone(t,  {freq: k === 'scope' ? 900 : 700, freqEnd: k === 'scope' ? 1300 : 500, dur:0.05, type:'sine', vol:0.05});
+    } else if(k === 'dry'){
+      seTone(t,  {freq:1500, freqEnd:1100, dur:0.03, type:'square', vol:0.1, attack:0.001});
+      seNoise(t, {dur:0.025, vol:0.14, filterType:'highpass', filterFreq:3000});
+    }
   },
   /* 近接技の空振り「スカッ」。当たらなくてもガッツは減っているので、
      「今の一撃は届いていない」ことだけ小さく知らせる(命中音より明確に弱く・低く) */

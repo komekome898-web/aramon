@@ -77,6 +77,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <!-- 技エフェクトのWebGL層(fx_gl.js)。2Dキャンバスの「上」に重ね、粒・軌跡・地面の輪を
      加算で足す。2D側の技の芯は残るので、この層が動かない端末でも技は消えない -->
 <canvas id="fxCanvas" class="hidden"></canvas>
+<!-- 狙撃スコープの窓・照準(sniper.js。探検モードで構えている間だけ出す)。技のWebGL層より上・HUDより下 -->
+<canvas id="sniperCanvas" class="hidden"></canvas>
 
 <!-- START SCREEN -->
 <!-- TITLE SCREEN(起動直後。読み込みが終わるとTAP STARTでロビーへ) -->
@@ -750,6 +752,29 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
   <!-- ピン(シグナル)。チーム系モードの試合中だけ表示(render.jsのupdateHUDが切替)。
        FIRE/DASHと同じ「pointerdownで完結する押しボタン」なのでスクロールロック除外3か所には入れない -->
   <div id="pingBtn" class="hidden"><span class="btn-label">🎯</span></div>
+  <!-- 狙撃銃(探検モードで持っているときだけ出す。sniper.js が出し入れと中身を書く)。
+       FIRE/DASHと同じ「pointerdownで完結する押しボタン」なのでスクロールロック除外には入れない。
+       #sniperAmmoChip は残弾と倍率の小さな札(pointer-events:none) -->
+  <div id="sniperAdsBtn" class="hidden" aria-label="狙撃">
+    <svg class="cd-ring" viewBox="0 0 100 100">
+      <circle class="cd-ring-bg" cx="50" cy="50" r="46"></circle>
+      <circle id="sniperReloadRing" class="cd-ring-fg" cx="50" cy="50" r="46"></circle>
+    </svg>
+    <svg class="sn-ico" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="2.4"/>
+      <path d="M16 2.5v8M16 21.5v8M2.5 16h8M21.5 16h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="1.9" fill="#ff5a4a"/>
+    </svg>
+    <span class="sn-lbl">狙撃</span>
+  </div>
+  <div id="sniperAmmoChip" class="hidden"><span id="sniperMagText">8×</span><span id="sniperAmmoPips"></span><span id="sniperAmmoText">5/5</span></div>
+  <div id="sniperBreathBtn" class="hidden" aria-label="息止め">
+    <svg class="cd-ring" viewBox="0 0 100 100">
+      <circle class="cd-ring-bg" cx="50" cy="50" r="46"></circle>
+      <circle id="sniperBreathRing" class="cd-ring-fg" cx="50" cy="50" r="46"></circle>
+    </svg>
+    <span class="sn-lbl">息止め</span>
+  </div>
   <div id="turnLeftBtn">◀</div>
   <div id="turnRightBtn">▶</div>
 </div>
@@ -1962,6 +1987,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <!-- 技ごとのVFXの注文書。render.jsが window.__aramonFxMoves を読むので先に置く -->
 <script src="fx_moves.js"></script>
 <script src="render.js"></script>
+<!-- 狙撃銃とスコープ(探検モード専用)。input.js が呼ぶ関数を持つので必ずその前 -->
+<script src="sniper.js"></script>
 <script src="input.js"></script>
 <script src="ui.js"></script>
 <!-- 初回チュートリアル。ui.jsの関数を呼ぶので必ずその後ろ -->

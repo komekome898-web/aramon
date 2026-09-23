@@ -31,6 +31,11 @@ import { buildZoneLayer, updateZoneLayer, resetZoneLayer } from './real3d_zone.j
 // フォグはパッチの半分(3600)より手前で完全に霞ませる。こうしないとパッチの切れ目が見える
 const FOG_NEAR = 700;
 const FOG_FAR  = 3200;
+/* 狙撃スコープのズーム中(探検モードだけ。window.__aramonLook.zoom>1)は霞を奥へ押す。
+   素のままだと250m先(2500)の的が7割霞に溶けてスコープの中が灰色一色になる。
+   **FAR はパッチの半分(3600)より手前に保つ**(切れ目を見せない決まりは同じ)。倍率1では何も変えない */
+const FOG_ZOOM_NEAR = 2300, FOG_ZOOM_FAR = 3550, FOG_ZOOM_FULL = 4;   // この倍率で押し切る
+let fogBase = null;
 const CAM_FAR  = 12000;
 /* ---- PBR(物理ベース描画)の調整値 ----
    環境光は「空をそのままPMREMに通した環境マップ」(=HDRIの代わり。画像ファイルは増やさない)。
@@ -233,6 +238,14 @@ const api = {
     // 視野角は2Dのproject()(world.jsのFOV_V)と必ず同じ値にする。設定で変えられるので毎フレーム見る
     const fovDeg = (window.__aramonLook && window.__aramonLook.fovDeg) || 64;
     if(camera.fov !== fovDeg){ camera.fov = fovDeg; camera.updateProjectionMatrix(); }
+    const zoom = (window.__aramonLook && window.__aramonLook.zoom) || 1;
+    if(scene.fog && (zoom > 1 || fogBase)){
+      if(!fogBase) fogBase = { near:scene.fog.near, far:scene.fog.far };
+      const t = Math.min(1, (zoom - 1) / (FOG_ZOOM_FULL - 1));
+      scene.fog.near = fogBase.near + (Math.max(fogBase.near, FOG_ZOOM_NEAR) - fogBase.near) * t;
+      scene.fog.far  = fogBase.far  + (Math.max(fogBase.far,  FOG_ZOOM_FAR)  - fogBase.far)  * t;
+      if(zoom <= 1) fogBase = null;   // 構えを解いたら元の値のまま手放す(他の誰かが霞を変えても邪魔しない)
+    }
     updateTerrain(cp.x, cp.y);
     updateWorldObjects(world);
     updateObstacles(scene, obstacles, world && world.crystals, cp.x, cp.y);

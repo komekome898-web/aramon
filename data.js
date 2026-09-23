@@ -5950,3 +5950,54 @@ function addExploreStash(key, n){
 /* =====================================================================
    GAME STATE
 ===================================================================== */
+
+/* =====================================================================
+   狙撃銃とスコープ(探検モード専用。本体は sniper.js)
+   **数値はすべてこの表と名前付き定数が正**(発注者が実機で調整する)。
+   ・距離の単位はワールド単位(10単位=1m。PING_UNITS_PER_M と同じ換算)。
+   ・武器を足すときは SNIPER_WEAPONS に1行足すだけ(装備担当が上位の狙撃銃を足す場所)。
+     入手は sniperGive(ent, 'キー') / sniperAttachScope(ent, 'x8') で渡す。
+   ・探検モード以外では何も読まれない(入口の判定は sniper.js の sniperModeOn() 1か所)。
+===================================================================== */
+const SNIPER_WEAPONS = {
+  /* dmg      : 1発の威力(胴体)。弱点(ent.weakPoint)に当たると critMult 倍
+     speed    : 弾速(ワールド単位/秒。水平成分)
+     range    : 最大射程(ワールド単位)。地形パッチ(7200四方)の半分より内側に収める
+     mag      : 装弾数。撃ち切ると自動で装填
+     reloadSec: 装填にかかる秒数 / cycleSec: 1発ごとの連射間隔(ボルトを引く時間)
+     critMult : 弱点命中の倍率(ent.weakPoint.mult があればさらに掛ける)
+     drop     : 落下の強さ。既存の弾道 projGravityFor(range, speed) に掛ける倍率(大きいほど遠くで落ちる)
+     sway     : 構えの揺れの大きさ(ラジアン。スコープの sway 係数を掛ける)
+     recoil   : 反動の跳ね上がり(スコープの視野の半分に対する割合。倍率によらず画面上で同じ量)
+     hitR     : 弾の当たりの太さ / tracer: 弾道の光の色 / defaultScope: スコープ無しで拾ったときの照準 */
+  longbow: { name:'ロングボウ', icon:'🎯', dmg:110, speed:3200, range:3500, mag:5, reloadSec:2.6, cycleSec:1.05,
+             critMult:1.8, drop:2.5, sway:0.0032, recoil:0.42, hitR:5, tracer:'#ffd79a', defaultScope:'iron' },
+};
+const SNIPER_SCOPES = {
+  /* mag     : 倍率(視野角は tan(基準の半分)÷倍率 で狭める。1=ズームしない)
+     sway    : 揺れの係数(倍率が高いほど大きい)
+     reticle : 照準の絵('iron'=照門と照星 / 'chevron'=2倍 / 'mildot'=4倍 / 'bdc'=8倍の落下補正はしご)
+     aperture: スコープ窓の半径(画面の高さに対する割合。0=窓なし)
+     rarity  : ルートの色分け(common白/rare青/epic紫/legendary金)。拾う側が使う */
+  iron: { name:'アイアンサイト', label:'1×', mag:1.25, sway:0.6,  reticle:'iron',    aperture:0,    rarity:'common' },
+  x2:   { name:'2倍スコープ',   label:'2×', mag:2,    sway:0.8,  reticle:'chevron', aperture:0.47, rarity:'rare' },
+  x4:   { name:'4倍スコープ',   label:'4×', mag:4,    sway:1.0,  reticle:'mildot',  aperture:0.46, rarity:'epic' },
+  x8:   { name:'8倍スコープ',   label:'8×', mag:8,    sway:1.3,  reticle:'bdc',     aperture:0.45, rarity:'legendary' },
+};
+const SNIPER_ADS_IN_SEC         = 0.22;  // 構えに入るまでの秒数(カメラの寄せと窓の開き)
+const SNIPER_ADS_OUT_SEC        = 0.15;  // 構えを解くまでの秒数
+const SNIPER_ZOOM_RATE          = 16;    // 倍率が目標へ寄る速さ(大きいほど速い。倍率は対数でなめらかに動く)
+const SNIPER_ADS_SENS_BASE      = 1.05;  // 構え中の視点感度 = BASE ÷ 倍率^EXP(8倍で約0.16倍)
+const SNIPER_ADS_SENS_EXP       = 0.9;
+const SNIPER_SWAY_PERIOD        = 3.6;   // 8の字の揺れが一周する秒数
+const SNIPER_MOVE_SWAY_MULT     = 2.2;   // 歩きながら構えたときの揺れの倍率
+const SNIPER_BREATH_MAX_SEC     = 4.0;   // 息止めが続く秒数
+const SNIPER_BREATH_RECOVER_SEC = 3.0;   // 息が空から満タンに戻る秒数
+const SNIPER_BREATH_SWAY        = 0.10;  // 息止め中の揺れ(通常を1として)
+const SNIPER_EXHAUST_SWAY       = 1.7;   // 息を使い切った直後の揺れ(息が半分戻るまで)
+const SNIPER_RECOIL_RETURN      = 9;     // 反動が戻る速さ(ばねの強さ)
+const SNIPER_ZERO_M             = 100;   // ゼロイン距離(m)。ここより遠いと弾が照準の下へ落ちる
+const SNIPER_BODY_H_PER_RADIUS  = 2.0;   // 当たりの背の高さ = 半径×これ(ent.bodyH があればそちら)
+const SNIPER_HIT_RADIUS_MULT    = 0.95;  // 当たりの横幅 = 半径×これ
+const SNIPER_WEAK_FROM          = 0.62;  // ent.weakPoint に from が無いときの弱点の下端(背の高さに対する割合)
+const SNIPER_DROP_MARKS_M       = [150, 200, 250, 300];   // 落下補正の目盛り(m)

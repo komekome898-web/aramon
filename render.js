@@ -9,7 +9,9 @@ function project(wx, wy, wz){
   const camDepth = depthFlat*Math.cos(camState.pitch) - tz*Math.sin(camState.pitch);
   if(camDepth < 1) return null;
   const camVert = depthFlat*Math.sin(camState.pitch) + tz*Math.cos(camState.pitch);
-  const scale = clamp(FOCAL/camDepth, 0, 6);
+  // 上限6は「カメラ至近で暴れない」ための頭打ち。スコープのズーム中(viewZoom>1)は FOCAL が倍率ぶん
+  // 伸びるので上限も同じだけ伸ばす(伸ばさないと遠くの物まで頭打ちになり3Dの地面とずれる)。倍率1なら従来どおり
+  const scale = clamp(FOCAL/camDepth, 0, 6*viewZoom);
   return { x: viewW/2 + lateral*scale, y: viewH/2 - camVert*scale, scale, depth: camDepth };
 }
 // 巨大な静止オブジェクト(火山・ピラミッド・建物)専用の投影。
@@ -27,7 +29,7 @@ function projectObstacle(wx, wy, wz, objRadius){
   const OBSTACLE_MIN_DEPTH = 80; // これ未満はクランプ(スケールは頭打ち・位置は横移動のみで安定)
   if(camDepth < OBSTACLE_MIN_DEPTH) camDepth = OBSTACLE_MIN_DEPTH;
   const camVert = depthFlat*Math.sin(camState.pitch) + tz*Math.cos(camState.pitch);
-  const scale = clamp(FOCAL/camDepth, 0, 6);
+  const scale = clamp(FOCAL/camDepth, 0, 6*viewZoom);   // 上限の考え方は project() と同じ
   return { x: viewW/2 + lateral*scale, y: viewH/2 - camVert*scale, scale, depth: camDepth };
 }
 
@@ -1183,6 +1185,7 @@ function drawMonsterShape(e, color, dark){
 /* 頭上ラベル(名前・▽・ダウン・蘇生ゲージ)の画面上の拡大上限。
    p.scaleのまま描くとカメラ至近で文字が画面の半分を覆う(縦持ち実測で発生)。 */
 const TEAM_LABEL_MAX_SCALE = 2.2;
+const HP_BAR_ZOOM_MAX_PX = 5;   // スコープのズーム中の頭上HPバーの太さの上限(画面px)
 /* カメラ至近ではラベルごと消す(上限で止めても位置が画面中央へ来て操作UIへ被る)。
    スケール2.0から薄れはじめ3.0で完全に消える。荒野行動の近距離マーカーと同じ挙動 */
 function teamLabelFade(){
@@ -1321,9 +1324,12 @@ function drawMonster(e,p){
       ctx.save();
       if(selfBar) ctx.globalAlpha = SELF_HP_BAR_ALPHA;
       else if(allyBarFade < 1) ctx.globalAlpha = allyBarFade;
-      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, 6);
+      /* 狙撃スコープのズーム中(viewZoom>1。探検モードだけ)は、バーの太さを画面上で細いまま保つ
+         (倍率ぶん太くなって的を隠すため)。倍率1では従来と同じ6 */
+      const barH = viewZoom > 1 ? 6 * Math.min(1, HP_BAR_ZOOM_MAX_PX / (6*Math.max(0.01, p.scale))) : 6;
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-barW/2, barY, barW, barH);
       ctx.fillStyle = hpPct>0.5?'#5fe07c':(hpPct>0.22?'#f4c430':'#ff5d5d');
-      ctx.fillRect(-barW/2, barY, barW*hpPct, 6);
+      ctx.fillRect(-barW/2, barY, barW*hpPct, barH);
       ctx.restore();
     }
   }
@@ -2871,6 +2877,8 @@ function drawSimpleProjectile(pr, r){
   ctx.fillStyle = g; ctx.fill();
 }
 function drawProjectile(pr,p){
+  // 狙撃銃の弾は光の筋(トレーサー)で描く。絵は sniper.js が持つ(弾の仕組みそのものは共通)
+  if(pr.sniper && typeof drawSniperTracer === 'function'){ drawSniperTracer(pr); return; }
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
@@ -7310,6 +7318,10 @@ function safeDraw(fn){ try{ fn(); }catch(err){ reportDrawError(err); } }
 function render(){
   trimParticles();
   ctx.clearRect(0,0,viewW,viewH);
+  /* 狙撃スコープ(探検モードだけ。sniper.js)。この1フレームの間だけ倍率・構えのカメラ・揺れを掛け、
+     最後の sniperFrameEnd() で必ず元へ戻す。探検モード以外では何もしない。
+     **2DのprojectもWebGL層も、この後に読むので同じ視野角・同じカメラになる。** */
+  if(typeof sniperFrame === 'function') safeDraw(sniperFrame);
   /* 当たった衝撃でカメラをずらす。2DのprojectもWebGL層も同じcamPosを読むので、
      ここで1回ずらせば両方の層が一緒に揺れる。**必ず fxPunchRestore() で戻す。** */
   fxPunchApply(_fxGlPrevMs ? Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000) : 0.016);
@@ -7395,7 +7407,9 @@ function render(){
     if(p && p.depth <= LOOT_VIEW) drawables.push({kind:'loot', obj:it, p});
   }
   for(const pr of projectiles){ if(occludedByMountain(pr.x, pr.y, pr.z+20)) continue; const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
-  for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
+  // 狙撃の構え中はカメラが自機の目の位置に入るので、自分の絵は描かない(画面を塞ぐ)
+  const hideSelf = (typeof sniperHidesSelf === 'function') && sniperHidesSelf();
+  for(const e of entities){ if(!e.alive || (hideSelf && e === player)) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
     if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){
     const pz = (pt.z||0)+(pt.type==='text'?42:16);
@@ -7448,10 +7462,13 @@ function render(){
      この層が無くても技は成立する(芯は2D側が描いている)ので、
      初期化に失敗しても何も足さないだけで済む。                         */
   safeDraw(renderFxGlLayer);
+  // スコープの窓・照準・距離・残弾(専用の#sniperCanvasに描く=技のWebGL層より上・HUDより下)
+  if(typeof drawSniperScope === 'function') safeDraw(drawSniperScope);
   fxPunchRestore();
   safeDraw(drawFxFlash);
   safeDraw(drawNetStatusChip);   // 通信の遅延(マルチの試合中・設定でONのときだけ)
   safeDraw(renderMinimap);
+  if(typeof sniperFrameEnd === 'function') safeDraw(sniperFrameEnd);   // 倍率・カメラを元へ戻す(必ず最後)
 }
 /* WebGL VFX層を1フレーム進めて描く。時間は実時間(前フレームからの経過)で進める:
    試合が止まっている間もエフェクトは自然に減衰してほしいため。       */
@@ -7762,6 +7779,7 @@ function fxGlStyleFor(o){
 function fxGlFeed(fx, dt){
   // ---- 飛んでいる弾 ----
   for(const p of projectiles){
+    if(p.sniper) continue;   // 狙撃銃の弾は技ではない(光の筋は sniper.js の drawSniperTracer が描く)
     const st = fxGlStyleFor(p); if(!st) break;
     const c = fxGlTint(p);
     st.fly(fx, p, c, dt);

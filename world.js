@@ -32,12 +32,38 @@ const LOOK_DEFAULTS = { fovDeg:64, sensX:0.0045, sensY:0.0018, fireDragAim:true 
    ── ui.jsのloadLookSettings/スライダーが範囲を引ける数値だけを対象にしているため。 */
 const LOOK_LIMITS   = { fovDeg:[45,85], sensX:[0.0015,0.0090], sensY:[0.0006,0.0045] };
 let lookSettings = { ...LOOK_DEFAULTS };
-window.__aramonLook = lookSettings;
 let FOV_V = LOOK_DEFAULTS.fovDeg*Math.PI/180;
 let FOCAL = 600;
+/* 【視野の倍率(狙撃スコープのズーム)の入口はここ1か所】setViewZoom(倍率)。
+   ・実際に使う視野角は effectiveFovDeg() だけが作る = tan(設定の半分)÷倍率(三角関数で正しく狭める)。
+   ・2Dの project() は FOV_V→FOCAL を、3D(real3d.js / real3d_zone.js)は window.__aramonLook.fovDeg を、
+     技のWebGL層(fx_gl.js)は window.FOV_V を読む。**3つとも下の同じ値を返す**ので絵が食い違わない。
+   ・ユーザーの設定値(lookSettings.fovDeg)は書き換えない=保存もされない。
+   ・呼ぶのは sniper.js だけ(描画1フレームの間だけ掛け、描き終わったら1へ戻す)。倍率1なら従来と同じ。 */
+let viewZoom = 1;
+function effectiveFovDeg(){
+  const half = lookSettings.fovDeg*Math.PI/360;
+  return (viewZoom > 1 ? 2*Math.atan(Math.tan(half)/viewZoom) : half*2) * 180/Math.PI;
+}
+function setViewZoom(m){
+  const v = (isFinite(m) && m > 1) ? m : 1;
+  if(v === viewZoom) return;
+  viewZoom = v;
+  applyLookSettings();
+}
+/* 3D側が読む「視点設定」。**lookSettings の読み取り専用の窓**で、fovDeg だけ倍率込みの実効値を返す。
+   (以前は lookSettings そのものを渡していた。値の書き込みは ui.js が lookSettings へ直接行うので変わらない) */
+window.__aramonLook = Object.create(null);
+Object.defineProperty(window.__aramonLook, 'fovDeg', { get(){ return effectiveFovDeg(); } });
+Object.defineProperty(window.__aramonLook, 'zoom',   { get(){ return viewZoom; } });   // 霞の調整用(real3d.js)
+for(const k of Object.keys(LOOK_DEFAULTS)){
+  if(k !== 'fovDeg') Object.defineProperty(window.__aramonLook, k, { get(){ return lookSettings[k]; } });
+}
+// fx_gl.js(ESモジュール)は window.FOV_V を読む。let は window に載らないので窓を作る
+Object.defineProperty(window, 'FOV_V', { get(){ return FOV_V; }, configurable:true });
 // 設定を変えたら必ず呼ぶ(視野角→FOCAL。3D側は毎フレームwindow.__aramonLookを見る)
 function applyLookSettings(){
-  FOV_V = lookSettings.fovDeg*Math.PI/180;
+  FOV_V = effectiveFovDeg()*Math.PI/180;
   recomputeFocal();
 }
 // TPS視点のカメラ配置。distBehindを小さくすると自分のモンスターが大きく見える。
