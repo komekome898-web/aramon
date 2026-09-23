@@ -448,14 +448,18 @@ const RIDGE_VERT = `
     vCol = aCol; vDet = aDet; vUvR = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`;
+/* uTint/uTintAmt は探検フィールドだけが使う「いま立っている地域の空気」への寄せ。
+   他のマップでは uTintAmt=0 のままなので、出る色は従来と1ビットも変わらない。 */
 const RIDGE_FRAG = `
   uniform sampler2D uRelief;
+  uniform vec3 uTint; uniform float uTintAmt;
   varying vec3 vCol; varying vec2 vDet; varying vec2 vUvR;
   void main(){
     vec3 t = texture2D(uRelief, vUvR).rgb;
     // 横の傾きで陰影(太陽側の符号を掛ける)、縦の落ち込みで谷を暗くする
     float sh = (t.r - 0.5) * 0.95 * vDet.y + (t.b - 0.5) * -0.34 + (t.g - 0.5) * 0.26;
-    gl_FragColor = vec4(max(vCol * (1.0 + sh * vDet.x), 0.0), 1.0);
+    vec3 c = max(vCol * (1.0 + sh * vDet.x), 0.0);
+    gl_FragColor = vec4(mix(c, uTint, uTintAmt), 1.0);
   }`;
 
 // 角度aで必ず2πごとに閉じる周期ノイズ(閉じ目に段差を出さないための約束)
@@ -594,7 +598,7 @@ export function buildDistantRidge(){
   if(!ridgeMat){
     ridgeMat = new THREE.ShaderMaterial({
       fog:false, depthWrite:false,
-      uniforms:{ uRelief:{ value: ensureRidgeTex() } },
+      uniforms:{ uRelief:{ value: ensureRidgeTex() }, uTint:{ value: new THREE.Color() }, uTintAmt:{ value: 0 } },
       vertexShader: RIDGE_VERT, fragmentShader: RIDGE_FRAG,
     });
     // 遠景の山も色を頂点に焼き込んであるので、空と同じくトーンマッピングを通さない

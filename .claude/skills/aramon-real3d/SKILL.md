@@ -131,6 +131,16 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - **影は本物のメッシュが落とす**(影専用ダミー球`updateShadowCasters`は廃止済み)。
 - three本体に`mergeGeometries`は無いので、複数パーツのモデルは`mergeGeos()`(自前・非indexed化して連結)でまとめる。一度も描いていないジオメトリは`dispose()`不要。
 
+## 探検フィールド(MAPS.explore・地域ブレンド)
+
+- **1マップ1テーマの唯一の例外。分岐は `R3.theme.explore`(= `REAL3D_THEMES.explore.explore:true`)の1か所。** 他のマップは印が無いので従来の処理を1ビットも変えない(wild/kaurea の撮影で画素一致を確認済み)。
+- **設計図は `data.js` の `EXPLORE_FIELD_LAYOUT` が唯一の正**(地域・キャンプ・峠・尾根・峡谷・山・水・道・人工物の並び・ランドマーク)。当たり判定のある物は `world.js` の `exploreGenWorld()` が固定の種で作る(Math.randomを使わない=毎回同じ世界)。3Dのランドマークは `real3d_explore.js`。**座標を2か所に書かない。**
+- 地域の重みは `exploreRegionWeights(x,y)`(純関数。[草原,凍った高地,火山,密林,キャンプ])。地面の頂点色・4地域ぶんの近景タイル(チャンネル詰め・頂点属性 `aExW`)・植生の濃さと色・障害物の色・霞/日差し/空/遠景の山並みがこれを読む。地面の高さも地域で変わる(`exploreElevGrad`。解析微分つき・最大傾斜0.17)。
+- 山は `riseK`(高さ/半径)/`shapeP`(輪郭の凹み・1以上)/`mesa`+`dome`(頂を切った台地)/`carveK`(彫りの深さ)を持てる。**どれも判定の円錐の内側にしか効かない**(地面での半径は判定と一致したまま)。`mountainRiseOf()` と `buildMountainMesh` の高さの式は対(riseK を両方が読む)。
+- ランドマークの足元・テント・ビーコンは `noMesh:true` の山として円の判定だけ持つ(3Dの円錐は作らない)。半径は `mountainRadiusForGround(地面での半径)` で逆算する。
+- 描画命令を抑えるため、探検だけ山を「種類×区画」、地面のしみを「材質」、動かないランドマークを「材質×区画」でまとめ、障害物の形の作り分けを2通りにしている。障害物はその地域の霞が完全に掛かる距離で切る。
+- 撮影は `node tools/real3d_shot.mjs --maps explore`(専用のカット。立ち位置は設計図の名前で書く)。
+
 ## 弾道(上下のねらい)
 
 - **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も変わらない。

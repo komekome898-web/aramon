@@ -198,7 +198,12 @@ function exploreSetupCamp(){
   }
   const sp = clearObstaclePoint(cx + EXPLORE_CAMP_SPAWN_OFFSET.dx, cy + EXPLORE_CAMP_SPAWN_OFFSET.dy, 60);
   exploreState.spawn = { x:sp.x, y:sp.y };
-  exploreState.beacon = { x: cx + EXPLORE_BEACON_OFFSET.dx, y: cy + EXPLORE_BEACON_OFFSET.dy, r: EXPLORE_BEACON_RADIUS };
+  /* 帰還ビーコンの位置の正はフィールドの配置表(光の柱が立っている所)。柱には足元の当たり(foot)が
+     あって中心には立てないので、輪は柱の足元の外側に EXPLORE_BEACON_RADIUS だけ広げる */
+  const bc = (typeof EXPLORE_FIELD_LAYOUT!=='undefined' && EXPLORE_FIELD_LAYOUT.camp && EXPLORE_FIELD_LAYOUT.camp.beacon) || null;
+  exploreState.beacon = bc
+    ? { x: bc.x*WORLD.w/WORLD_BASE_SIZE, y: bc.y*WORLD.h/WORLD_BASE_SIZE, r: (bc.foot||0) + EXPLORE_BEACON_RADIUS }
+    : { x: cx + EXPLORE_BEACON_OFFSET.dx, y: cy + EXPLORE_BEACON_OFFSET.dy, r: EXPLORE_BEACON_RADIUS };
 }
 
 /* ルートを置く。主役は補給箱(explore_loot.js。開けると中身が弾けて光の柱が立つ)。
@@ -651,7 +656,7 @@ const _exploreFieldLayoutGetter = new Function("return (typeof EXPLORE_FIELD_LAY
 function exploreBossNest(regionId){
   const L = _exploreFieldLayoutGetter();
   if(L){
-    const n = (L.bossNests && L.bossNests[regionId]) || (L.regions && L.regions[regionId] && L.regions[regionId].bossNest) || null;
+    const n = (L.bossNests && L.bossNests[regionId]) || (L.regions && L.regions[regionId] && (L.regions[regionId].nest || L.regions[regionId].bossNest)) || null;
     if(n && n.x != null && n.y != null) return { x:n.x, y:n.y, r:n.r || EXPLORE_BOSS_NEST_RADIUS, fromLayout:true };
     if(n && n.xr != null && n.yr != null)
       return { x:WORLD.w*n.xr, y:WORLD.h*n.yr, r: n.r || (n.rr ? WORLD.w*n.rr : EXPLORE_BOSS_NEST_RADIUS), fromLayout:true };

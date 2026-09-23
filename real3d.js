@@ -18,6 +18,7 @@
      real3d_terrain.js 地面パッチとPBRテクスチャ
      real3d_water.js   海・川・オアシス・溶岩
      real3d_props.js   山と障害物(岩・木・水晶)
+     real3d_explore.js 探検フィールドのランドマークと地域の空気(R3.theme.explore のときだけ)
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
 import { R3, DEFAULT_THEME, SUN_DIR, heightAt } from './real3d_common.js';
@@ -27,6 +28,7 @@ import { buildZoneMesh, zoneMaterial, buildSeaMesh, buildRiverMesh, splitRivers,
          animateWater, lavaMats, resetDynamicLists, ZONE_LIFT } from './real3d_water.js';
 import { buildMountainMesh, updateObstacles, obstacleCullDist, obstacleDrawn, resetObstacles } from './real3d_props.js';
 import { buildZoneLayer, updateZoneLayer, resetZoneLayer } from './real3d_zone.js';
+import { buildExploreWorld, updateExplore, resetExplore } from './real3d_explore.js';
 
 // フォグはパッチの半分(3600)より手前で完全に霞ませる。こうしないとパッチの切れ目が見える
 const FOG_NEAR = 700;
@@ -143,7 +145,8 @@ function buildWorldObjects(w){
   }
   worldGroup = new THREE.Group();
   resetDynamicLists();   // 溶岩の材質・水面シェーダーの登録をやり直す
-  (w.volcanoes||[]).forEach(v=> worldGroup.add(buildMountainMesh(v)));
+  // noMesh の山は「当たり判定だけ」の印(探検フィールドのランドマークの足元)。形は描かない
+  (w.volcanoes||[]).forEach(v=>{ if(!v.noMesh) worldGroup.add(buildMountainMesh(v)); });
   // オアシスは濡れた砂の縁を先に敷いてから水面を重ねる(2Dと同じ見せ方)
   (w.oasis||[]).forEach(z=>{
     worldGroup.add(buildZoneMesh(z, zoneMaterial('sand'), z.radius*1.12, ZONE_LIFT*0.6));
@@ -157,6 +160,8 @@ function buildWorldObjects(w){
     lavaMats.push(lavaMat);
     w.lava.forEach(z=> worldGroup.add(buildZoneMesh(z, lavaMat, z.radius, ZONE_LIFT)));
   }
+  // 探検フィールドだけ: 山を種類ごとにまとめ、ランドマークを足す(real3d_explore.js)
+  if(R3.theme.explore) buildExploreWorld(worldGroup, w);
   scene.add(worldGroup);
 }
 
@@ -177,6 +182,10 @@ function applyTheme(){
   appliedTheme = R3.theme;
   renderer.setClearColor(R3.theme.skyBot, 1);
   scene.fog.color.setHex(R3.theme.haze);
+  // 探検フィールドは地域ごとに霞の距離と日差しの色を毎フレーム変えるので、ここで元へ戻す
+  // (他のマップは一度も変えないので、この3行は値を書き直すだけで見た目は変わらない)
+  scene.fog.near = FOG_NEAR; scene.fog.far = FOG_FAR;
+  resetExplore({ sun, ridge });
   applySkyTheme(sky);
   applyTerrainTheme();
   applyEnvironment();   // 空の色が変わったので環境光も作り直す
@@ -253,6 +262,8 @@ const api = {
     const tSec = performance.now()*0.001;
     animateWater(tSec);
     animateSky(tSec);   // 雲を風で流す(空のuniformを進めるだけ)
+    // 探検フィールド: いま立っている地域の空気(霞・日差し・空の地平)とランドマークの動き
+    if(R3.theme.explore) updateExplore(tSec, cp, { scene, sun, sky, ridge });
     // 空と遠景はカメラに追従させる。ワールドは18100単位あるので原点固定だと視界から外れる
     if(sky) sky.position.set(cp.x, 0, cp.y);
     if(ridge) ridge.position.set(cp.x, 0, cp.y);

@@ -6,6 +6,7 @@
      node tools/real3d_shot.mjs --out shots/base            全マップ×全カット
      node tools/real3d_shot.mjs --out shots/x --maps wild   マップを絞る
      node tools/real3d_shot.mjs --out shots/x --poses wide,ground --bench
+     node tools/real3d_shot.mjs --out shots/ex --maps explore        探検フィールド(専用のカット)
 
    出力: <out>/<map>_<pose>.png と <out>/report.json(生成数・fps・失敗)
 
@@ -63,8 +64,32 @@ const ALL_POSES = {
   props:   { feature:'rock',  offset:[-330, -260], pitch:0.18 },
 };
 
+/* 探検フィールド(MAPS.explore)。ALL_MAPS には入れず、--maps explore で明示したときだけ撮る。
+   立ち位置と向く先は設計図(data.js の EXPLORE_FIELD_LAYOUT)の名前で書く(座標を二重に持たない)。
+   ex.at=立ち位置の基準 / ex.off=そこからのずれ / ex.look=向く先。lift はカメラを上げる確認用。 */
+const EXPLORE_POSES = {
+  // ベースキャンプ(テント・焚き火・帰還ビーコン)と、その先の草原・雪の尾根
+  camp:          { ex:{ at:'camp', off:[260, 820], look:'beacon' }, pitch:0.06 },
+  // キャンプから密林の参道と遺跡の大門を望む
+  camp_jungle:   { ex:{ at:'camp', off:[-500, 700], look:'landmark:gate' }, pitch:0.06 },
+  // 各地域を見渡す(地域の中から、その地域のランドマークの方へ)
+  meadow_wide:   { ex:{ at:'region:meadow', off:[1500, 300], look:'landmark:arch' }, pitch:0.08 },
+  frost_wide:    { ex:{ at:'region:frost', off:[-1200, 1500], look:'peak:frostMain' }, pitch:0.02 },
+  volcano_wide:  { ex:{ at:'region:volcano', off:[800, -2900], look:'peak:volcanoMain' }, pitch:0.04 },
+  jungle_wide:   { ex:{ at:'region:jungle', off:[-500, -2000], look:'nest:jungle' }, pitch:0.08 },
+  // 入り組み(峡谷・峠・遺跡の回廊・廃村)
+  canyon:        { ex:{ at:'pass:c1', off:[860, -300], look:[12450,15200] }, pitch:0.04 },
+  pass:          { ex:{ at:'region:meadow', off:[3000, 200], look:'pass:n1' }, pitch:0.06 },
+  ruins:         { ex:{ at:'landmark:gate', off:[450, -420], look:[5300,12700] }, pitch:0.10 },
+  village:       { ex:{ at:[7300,7250], look:[5600,5700] }, pitch:0.10 },
+  // ランドマーク
+  arch:          { ex:{ at:'landmark:arch', off:[900, -900], look:'landmark:arch' }, pitch:-0.06 },
+  tower:         { ex:{ at:'landmark:tower', off:[700, 800], look:'landmark:tower' }, pitch:-0.04 },
+  nest:          { ex:{ at:'nest:frost', off:[-700, 600], look:'nest:frost' }, pitch:0.12 },
+};
 const maps  = (opt('maps', '')  ? opt('maps','').split(',')  : ALL_MAPS).map(s=>s.trim()).filter(Boolean);
 const poses = (opt('poses', '') ? opt('poses','').split(',') : Object.keys(ALL_POSES)).map(s=>s.trim()).filter(Boolean);
+const explorePoses = (opt('poses', '') ? poses : Object.keys(EXPLORE_POSES));
 
 fs.mkdirSync(OUT, { recursive:true });
 
@@ -104,7 +129,8 @@ async function freshPage(){
 }
 
 for(const base of maps){
-  const mapKey = base + '_real';
+  const isExplore = (base === 'explore');
+  const mapKey = isExplore ? 'explore' : base + '_real';
   await freshPage();
   await page.goto(`${ORIGIN}/tools/real3d_probe.html`, { waitUntil:'load' });
   await page.waitForFunction(()=> window.__probeModuleReady && window.__probe, null, { timeout:30000 });
@@ -113,11 +139,11 @@ for(const base of maps){
     report.errors.push(`${mapKey}: setActive に失敗(WebGL初期化不可)`);
     continue;
   }
-  for(const name of poses){
-    const pose = ALL_POSES[name];
+  for(const name of (isExplore ? explorePoses : poses)){
+    const pose = isExplore ? EXPLORE_POSES[name] : ALL_POSES[name];
     if(!pose) continue;
     const info = await page.evaluate((p)=> window.__probe.shoot(p), pose);
-    if(!info || !info.ok) continue;    // そのマップに無い見どころ
+    if(!info || !info.ok){ if(isExplore) report.errors.push(`explore: ${name} を撮れませんでした`); continue; }
     const file = path.join(OUT, `${base}_${name}.png`);
     await page.screenshot({ path:file, clip:{ x:0, y:0, width:W, height:H } });
     report.shots.push({ map:base, pose:name, file:path.relative(ROOT, file), cam:info });

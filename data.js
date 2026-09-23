@@ -2839,6 +2839,17 @@ const REAL3D_TERRAIN_SETS = {
     { amp: 22, fx:0.00260, fy:0.00230, ph:1.7 },
     { amp:  8, fx:0.00620, fy:0.00560, ph:4.1 },
   ],
+  /* explore: 探検モードのフィールド。起伏は控えめにして、その上に地域ごとの高さ
+     (exploreElevGrad。凍った高地は高く、草原の盆地は低い)を足す。
+     足したぶんの傾きは最大0.12程度なので、この組の最大傾斜は0.16に抑えてある
+     (合計で0.3を超えると坂を登れなくなる)。 */
+  explore: [
+    { amp:110, fx:0.00040, fy:0.00036, ph:0.7 },
+    { amp: 64, fx:0.00093, fy:0.00082, ph:2.3 },
+    { amp: 30, fx:0.00205, fy:0.00188, ph:4.0 },
+    { amp: 12, fx:0.00510, fy:0.00462, ph:1.2 },
+    { amp:  8, fx:0.00780, fy:0.00700, ph:3.6 },
+  ],
 };
 function real3dLayers(){
   const k = (typeof currentMap!=='undefined' && currentMap && currentMap.real3dTerrain) || 'hills';
@@ -2851,6 +2862,8 @@ function real3dHeightAt(x, y){
     const w = L[i];
     h += w.amp * (Math.sin(x*w.fx + w.ph) * 0.5 + Math.cos(y*w.fy + w.ph*1.3) * 0.5);
   }
+  // 探検フィールドだけ地域ごとの高さを足す(他のマップは表が違うので素通り)
+  if(L === REAL3D_TERRAIN_SETS.explore) h += exploreElevGrad(x, y).h;
   return h;
 }
 /* 高さと傾き(∂h/∂x, ∂h/∂y)を1回の走査でまとめて求める。
@@ -2868,6 +2881,10 @@ function real3dHeightGrad(x, y){
     h  += half * (Math.sin(ax) + Math.cos(ay));
     gx += half * w.fx * Math.cos(ax);
     gy -= half * w.fy * Math.sin(ay);
+  }
+  if(L === REAL3D_TERRAIN_SETS.explore){
+    const e = exploreElevGrad(x, y);
+    h += e.h; gx += e.gx; gy += e.gy;
   }
   _r3grad.h = h; _r3grad.gx = gx; _r3grad.gy = gy;
   return _r3grad;
@@ -2923,6 +2940,45 @@ const REAL3D_THEMES = {
     low:0xc9ab6f, high:0xf2e2ae, steep:0xa08a5c, gravel:0xd8c48c, scrub:0xc0b070,
     ridgeRock:0x8a7a5a, ridgeFoot:0xc8ae7e, ridgeSnow:0xf2ead8, snowLine:0.86,
   },
+  /* 探検フィールド。**1枚のマップの中で地域ごとに見た目を変える**唯一のテーマ。
+     explore:true が目印で、real3d_*.js はこの印があるときだけ地域ブレンドを使う
+     (他のマップは1マップ1テーマのまま。分岐は R3.theme.explore の1か所)。
+     ・上の段(skyTop〜snowLine)は空・遠景・環境光・障害物の地の色に使う「全体の地」。
+       晴れた昼の高原にしてあり、地域の色は下の regions が上から乗せる。
+     ・regions の順番とキーは EXPLORE_FIELD_LAYOUT.regions と同じ(camp=ベースキャンプ)。
+       low〜scrub=地面の頂点色 / tex=地面テクスチャ / sky=天頂の色 / cloud=雲を霞の色(煙)へ寄せる量 / ridgeHaze=遠景の山並みを霞へ寄せる量 /
+       haze=その地域に立ったときの霞 /
+       fog=[霞が始まる距離, 完全に霞む距離] / sun=日差しの色 / rock=障害物の色の掛け率 /
+       grass=草の色 / veg=植生の濃さ(草・花・シダ・枯れ枝・硬い葉)            */
+  explore: {
+    explore:true,
+    tex:'meadow', bump:0.30,
+    skyTop:0x2a5d98, skyBot:0xa7c6dc, haze:0xc3d2d4,
+    low:0x55683a, high:0x8a9a5a, steep:0x4d4a3c, gravel:0x7e7862, scrub:0x5f7f2e,
+    ridgeRock:0x56637a, ridgeFoot:0x7d8c98, ridgeSnow:0xeef3f8, snowLine:0.58,
+    regions: {
+      meadow:  { tex:'meadow',
+                 low:0x44602a, high:0x769838, steep:0x66624c, gravel:0x857d5e, scrub:0x5f8c28,
+                 sky:0x2a5d98, cloud:0.00, ridgeHaze:0.20, haze:0xc6d8cf, fog:[900, 3250], sun:0xfff0d2, rock:[1.04, 1.00, 0.92],
+                 grass:0x6f9a34, veg:{ grass:1.00, flower:1.00, fern:0.35, twig:0.05, blades:0.10 } },
+      frost:   { tex:'snow',
+                 low:0xa7bbcf, high:0xecf3fd, steep:0x56657a, gravel:0xb7c6d8, scrub:0x98afc4,
+                 sky:0x2360ab, cloud:0.00, ridgeHaze:0.15, haze:0xd8e6f2, fog:[850, 3250], sun:0xeef3ff, rock:[0.92, 0.97, 1.06],
+                 grass:0xa9b8a0, veg:{ grass:0.14, flower:0.00, fern:0.00, twig:0.10, blades:1.00 } },
+      volcano: { tex:'volcanic',
+                 low:0x2d1e14, high:0x51392a, steep:0x1b1310, gravel:0x3d2c20, scrub:0x5a3a1e,
+                 sky:0x3b2521, cloud:0.75, ridgeHaze:0.62, haze:0x8e5634, fog:[620, 2900], sun:0xffb57a, rock:[0.50, 0.44, 0.42],
+                 grass:0x7a6a3a, veg:{ grass:0.10, flower:0.00, fern:0.00, twig:1.00, blades:0.10 } },
+      jungle:  { tex:'jungle',
+                 low:0x223c1a, high:0x4a6e2c, steep:0x55462e, gravel:0x5a4b32, scrub:0x5a8a22,
+                 sky:0x356b88, cloud:0.25, ridgeHaze:0.40, haze:0xa9c4ab, fog:[520, 2700], sun:0xfff0c4, rock:[0.80, 0.92, 0.78],
+                 grass:0x4f8a2a, veg:{ grass:0.95, flower:0.05, fern:1.00, twig:0.00, blades:0.15 } },
+      camp:    { tex:'meadow',
+                 low:0x6e5a40, high:0x92805e, steep:0x574c3c, gravel:0x857258, scrub:0x6c7a38,
+                 sky:0x2a5d98, cloud:0.00, ridgeHaze:0.20, haze:0xc8d2cc, fog:[900, 3250], sun:0xfff0d2, rock:[1.00, 0.96, 0.90],
+                 grass:0x7a8a40, veg:{ grass:0.35, flower:0.10, fern:0.00, twig:0.10, blades:0.10 } },
+    },
+  },
 };
 /* リアルマップの障害物の形。real3d.jsが3Dモデルを作り、render.jsが「同じ形」で2Dを
    くり抜く(destination-out)ので、必ずこの1つの表を両方が見る。
@@ -2975,7 +3031,10 @@ window.__aramonObstShapes = OBST_SHAPES;   // ESモジュール(real3d.js)への
    real3d_props.js もこの形で円錐を作る(window.__aramonMountProfile 経由)。
    ===================================================================== */
 const MOUNT_SKIRT = 120;   // 山の裾を地面へ埋める深さ(real3d_props.js と同じ値)
-function mountainRiseOf(v){ return v.radius * (v.isMain ? 1.15 : 0.9); }
+/* 高さ/半径の比。riseK は探検フィールドだけが持つ(なだらかな肩や切り立った崖を作るため)。
+   他のマップの山は riseK を持たないので従来どおり(主峰1.15・それ以外0.9)。
+   **real3d_props.js の buildMountainMesh も同じ式。変えるときは両方直す。** */
+function mountainRiseOf(v){ return v.radius * (v.riseK || (v.isMain ? 1.15 : 0.9)); }
 /* 山の「地面からの高さ zUp」における実際の半径。
    zUp=0 なら地面の高さでの半径。円錐なので上へ行くほど細くなる。 */
 function mountainRadiusAt(v, zUp){
@@ -2986,6 +3045,13 @@ function mountainRadiusAt(v, zUp){
 }
 // 地面の高さでの半径(移動の当たり判定・射線・ミニマップはこれを使う)
 function mountainGroundRadius(v){ return mountainRadiusAt(v, 0); }
+/* mountainGroundRadius の逆(isMain なしの山で、地面での半径が g になる v.radius)。
+   探検フィールドのランドマーク(アーチの脚・監視塔など)の当たり判定を
+   山の仕組みに乗せるときに使う。g = r*rise/(rise+SKIRT), rise=k*r を r について解いたもの。 */
+function mountainRadiusForGround(g, riseK){
+  const k = riseK || 0.9;
+  return (k*g + Math.sqrt(k*k*g*g + 4*k*MOUNT_SKIRT*g)) / (2*k);
+}
 window.__aramonMountProfile = { skirt: MOUNT_SKIRT, riseOf: mountainRiseOf, radiusAt: mountainRadiusAt };
 // 通常マップ → リアルマップの対応。地形の形だけマップごとに変える
 const REAL3D_TERRAIN_OF ={ wild:'hills', kaurea:'crags', papas:'drift', palepale:'jungle', toble:'coast', mandy:'dunes' };
@@ -3022,6 +3088,242 @@ MAPS.raid = {
   volcanoSites:[], lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
   realObstacles:[{ type:'rock', w:0.55 }, { type:'basalt', w:0.45 }],
 };
+/* =====================================================================
+   探検モードのフィールド(MAPS.explore)
+   ・通常の試合とは別の1枚。exploreOnly:true で通常のマップ選択・ランダム抽選から外す
+     (判定は下の isSelectableMap() 1か所)
+   ・中身(山・尾根・水・岩・遺跡)は world.js の exploreGenWorld() が
+     EXPLORE_FIELD_LAYOUT から作る。**毎回同じ形**(固定の種)なので、ホストとゲストで
+     同じ世界になる。genVolcanoAndLava などの通常の生成は使わない
+   ・見た目は REAL3D_THEMES.explore(地域ブレンド)、高さは REAL3D_TERRAIN_SETS.explore
+     + 地域ごとの高さ(exploreElevGrad)                                        */
+MAPS.explore = {
+  key:'explore', label:'探検フィールド', rockCount:0, decorCount:0, hasVolcano:true,
+  mountainStyle:'crag', groundColor:'#3a4a2a',
+  previewIcon:'🧭', previewColors:['#4a6a38','#1c2a14'],
+  desc:'草原・火山・雪原・密林がつながる広大な探検フィールド。',
+  real3d:true, real3dTerrain:'explore', real3dTheme:'explore',
+  exploreOnly:true,
+  volcanoSites:[], lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:18,
+  // 水と水晶は exploreGenWorld が置く。フラグは「その当たり判定を有効にする」ためのもの
+  hasRiver:true, riverCount:0, hasOasis:true, oasisCount:0, hasCrystals:true, crystalCount:0,
+  realObstacles:[{ type:'rock', w:1 }],
+};
+/* 探検フィールドの設計図。**地域・ベースキャンプ・ボスの巣・ランドマークの位置はここが唯一の正。**
+   world.js(当たり判定のある物の生成)と real3d_explore.js(ランドマークの3D)と
+   real3d_*(地域ブレンドの見た目)が全部ここを読む。座標はワールド単位(18100四方。
+   探検は必ず applyWorldScale(1))。x=右 / y=下(ミニマップと同じ向き)。
+   ・regions   4つの地域。x,y,radius=地域の中心と広がり(見た目の混ざり方もこれで決まる)
+               elev=地域の地面の高さ(なだらかに混ぜる) / mountain=その地域の山の種類
+               nest=ボスの巣(周りは空けておく。r=空ける半径)
+   ・camp      ベースキャンプ。clear=何も置かない半径 / blend=見た目がキャンプの色になる半径
+               beacon=帰還ビーコン(光の柱)の位置
+   ・passes    尾根を抜ける峠。ridges の gaps と paths から名前で参照する
+   ・ridges    通れない尾根(円錐の山を線に沿って並べる)。峠の所だけ山を置かない
+   ・canyon    火山の峡谷。中心線から half だけ両側へずらした2本の壁
+   ・peaks     大きな山(isMain=主峰。火山の主峰だけ火口がある)。bumps=周りの小山の数
+   ・lakes / rivers / lava  水辺と溶岩
+   ・paths     踏み分け道(見た目の土の道。岩を置かない)
+   ・structures 人工物の並び(row=線に沿って / ring=円に沿って)。向きは線に合わせる
+   ・scatter   地域ごとの岩・木の数と内訳
+   ・landmarks 遠くから方向が分かる大物(3Dは real3d_explore.js)。foot=当たり判定の半径 */
+const EXPLORE_FIELD_LAYOUT = {
+  seed: 20260923,
+  camp: { x:9050, y:9050, clear:1250, blend:1500, beacon:{ x:9050, y:8790, foot:70 },
+          // テントと焚き火(キャンプ中心からのずれ)。隠れられそうな大きさなので当たり判定を持つ
+          props:[
+            { kind:'tent', dx:-440, dy:-170, rot: 0.35, foot:105 },
+            { kind:'tent', dx: 420, dy:-240, rot:-0.50, foot:105 },
+            { kind:'tent', dx:-380, dy: 400, rot: 2.70, foot:105 },
+            { kind:'tent', dx: 450, dy: 330, rot: 3.75, foot:105 },
+            { kind:'fire', dx:   0, dy: 150, rot: 0,    foot:55 },
+          ] },
+  regions: {
+    meadow:  { label:'草原の盆地', x:4700,  y:4800,  radius:3900, elev:-120, mountain:'crag',
+               nest:{ x:2300, y:4300, r:620 } },
+    frost:   { label:'凍った高地', x:13400, y:4700,  radius:3900, elev: 240, mountain:'snow',
+               nest:{ x:15900, y:5300, r:620 } },
+    volcano: { label:'火山の峡谷', x:13400, y:13400, radius:4000, elev:  30, mountain:'volcano',
+               nest:{ x:12650, y:16550, r:680 } },
+    jungle:  { label:'密林の遺跡', x:4700,  y:13300, radius:3900, elev: -40, mountain:'jungle',
+               nest:{ x:2500, y:15700, r:620 } },
+  },
+  passes: {
+    n1:[9050,5000], n2:[9030,2900], e1:[13300,9070], e2:[15500,9040],
+    s1:[9050,13300], s2:[9040,15400], w1:[4800,9050], w2:[2700,9040],
+    c1:[11830,13380], c2:[13360,12250],
+  },
+  ridges: [
+    // 草原|凍った高地(北)。雪をかぶった尾根
+    { style:'snow',    gaps:['n1','n2'], pts:[[9050,7650],[8850,6100],[9200,4300],[8950,2300],[9100,300]] },
+    // 凍った高地|火山(東)
+    { style:'volcano', gaps:['e1','e2'], pts:[[10450,9050],[12200,8850],[14300,9250],[16300,8900],[17900,9100]] },
+    // 火山|密林(南)
+    { style:'volcano', gaps:['s1','s2'], pts:[[9050,10450],[9250,12200],[8850,14300],[9200,16300],[9000,17900]] },
+    // 密林|草原(西)
+    { style:'jungle',  gaps:['w1','w2'], pts:[[7650,9050],[5900,9250],[3800,8850],[1800,9200],[200,9000]] },
+    // 凍った高地の氷の尾根
+    { style:'snow',    gaps:[], pts:[[14700,7300],[15700,7700],[16600,7500]] },
+  ],
+  // 尾根の山の並べ方。riseK=高さ/半径の幅(低い鞍部〜高い峰) / foothill=前山を足す割合
+  ridgeCone: { r:[600, 900], step:620, jitter:170, mainChance:0.30, gapHalf:400, riseK:[0.50, 1.00], foothill:0.55 },
+  // 峡谷の壁はほとんどを台地(崖)にする(mesa=台地にする割合)
+  canyon: { style:'volcano', half:900, r:[600, 740], step:480, gaps:['c1','c2'], gapHalf:300, riseK:[1.15, 1.50], mesa:0.85,
+            pts:[[11500,10900],[12400,12000],[12700,13400],[12400,14800],[12700,15850]] },
+  rim: { inset:-60, step:1500, r:[1250, 1700], riseK:[0.70, 1.10] },
+  /* 山の種類ごとの形。riseMul=高さの倍率(密林の丘は低く丸く、雪山は高く尖る)/
+     shapeP=輪郭の凹み(1=円錐のまま。大きいほど裾が広く頂が細い。1未満は判定の外へ出るので不可) */
+  mountainShape: {
+    // mesa=[頂を切る割合, 切る高さの下限, 上限](高さに対する比)/ dome=切った上を丸く盛る量(0〜0.5)
+    snow:    { riseMul:1.00, shapeP:[1.20, 1.55], mesa:[0.00, 0.6, 0.8], dome:0.0 },
+    volcano: { riseMul:0.92, shapeP:[1.00, 1.25], mesa:[0.45, 0.55, 0.75], dome:0.10 },
+    jungle:  { riseMul:0.72, shapeP:[1.00, 1.10], mesa:[1.00, 0.50, 0.70], dome:0.45 },
+    crag:    { riseMul:0.85, shapeP:[1.05, 1.25], mesa:[0.50, 0.60, 0.80], dome:0.20 },
+  },
+  peaks: [
+    { id:'frostMain',   x:14900, y:2650,  radius:1500, isMain:true,  style:'snow',    bumps:5 },
+    { id:'frost2',      x:11600, y:1950,  radius:1050, isMain:false, style:'snow',    bumps:3 },
+    { id:'volcanoMain', x:15350, y:15150, radius:1650, isMain:true,  style:'volcano', bumps:6 },
+    { id:'volcano2',    x:16500, y:11700, radius:900,  isMain:false, style:'volcano', bumps:2 },
+    { id:'jungle1',     x:2100,  y:11300, radius:880,  isMain:true,  style:'jungle',  bumps:2 },
+    { id:'jungle2',     x:6950,  y:15250, radius:820,  isMain:false, style:'jungle',  bumps:2 },
+    { id:'jungle3',     x:1500,  y:14700, radius:680,  isMain:false, style:'jungle',  bumps:1 },
+    { id:'meadow1',     x:1850,  y:6650,  radius:780,  isMain:true,  style:'crag',    bumps:2 },
+    { id:'meadow2',     x:6850,  y:2300,  radius:820,  isMain:false, style:'crag',    bumps:2 },
+  ],
+  lakes: [ { x:4300, y:4400, r:650 }, { x:12900, y:5300, r:520 }, { x:2500, y:12650, r:460 } ],
+  rivers: [
+    { r:110, pts:[[1100,1300],[2000,2150],[2700,2900],[3350,3650],[3900,4050]] },
+    { r:100, pts:[[5600,850],[5250,1900],[4900,2900],[4550,3800]] },
+    { r:95,  pts:[[13700,3900],[13350,4500],[13050,4900]] },
+    { r:125, pts:[[700,11650],[1850,12300],[3050,13300],[3750,14500],[4900,15500],[6250,16350],[7500,17500]] },
+  ],
+  lava: [
+    { x:14650, y:11150, r:300 }, { x:15300, y:12050, r:260 }, { x:14250, y:12450, r:230 },
+    { x:15900, y:13100, r:280 }, { x:16800, y:10250, r:230 }, { x:13900, y:14250, r:240 },
+    { x:10300, y:14600, r:210 },
+  ],
+  paths: [
+    { w:120, pts:[[9050,9050],[7900,7900],[6350,6250],[5000,5150],[4700,4800]] },
+    { w:120, pts:[[9050,9050],[10250,7850],[11900,6300],[12900,5900]] },
+    { w:120, pts:[[9050,9050],[10250,10250],[11500,10900],[12400,12000],[12700,13400],[12400,14800],[12700,15850]] },
+    { w:120, pts:[[9050,9050],[7900,10200],[7000,11000],[6150,11850],[5300,12700]] },
+    { w:95,  pts:[[6500,4700],'n1',[11400,4700]] },
+    { w:95,  pts:[[7000,2500],'n2',[11000,3000]] },
+    { w:95,  pts:[[13000,7600],'e1',[14200,10500]] },
+    { w:95,  pts:[[15600,7600],'e2',[15500,10500]] },
+    { w:95,  pts:[[7200,13300],'s1',[10400,13300],'c1',[12700,13400]] },
+    { w:95,  pts:[[7400,15700],'s2',[10600,15600],[12650,16550]] },
+    { w:95,  pts:[[4600,7300],'w1',[4600,10800]] },
+    { w:95,  pts:[[2600,7500],'w2',[2600,10600]] },
+    { w:95,  pts:[[12700,12300],'c2',[14300,12000]] },
+  ],
+  structures: [
+    // 草原の廃村。通り(キャンプ→湖の道)の両側に小屋、裏に崩れた石壁
+    { kind:'row', f:'hut',        a:[5500,5930],  b:[6800,7030],  r:66, skip:0.22 },
+    { kind:'row', f:'hut',        a:[5890,5470],  b:[7190,6570],  r:66, skip:0.22 },
+    { kind:'row', f:'ruinwall',   a:[6950,5350],  b:[7550,5850],  r:56, skip:0.10 },
+    { kind:'row', f:'ruinwall',   a:[5100,6450],  b:[5550,7050],  r:56, skip:0.10 },
+    // 密林の参道。キャンプから遺跡の大門まで石柱が並ぶ
+    { kind:'row', f:'ruinpillar', a:[7884,10484], b:[6700,11668], r:50, spacing:310 },
+    { kind:'row', f:'ruinpillar', a:[7516,10116], b:[6332,11300], r:50, spacing:310 },
+    // 大門の奥の回廊(二重の石壁。入口をずらして回り込ませる)
+    { kind:'row', f:'ruinwall', a:[5300,11850], b:[6150,12700], r:56, gaps:[0.5] },
+    { kind:'row', f:'ruinwall', a:[6150,12700], b:[5300,13550], r:56 },
+    { kind:'row', f:'ruinwall', a:[5300,13550], b:[4450,12700], r:56, gaps:[0.5] },
+    { kind:'row', f:'ruinwall', a:[4450,12700], b:[5300,11850], r:56 },
+    { kind:'row', f:'ruinwall', a:[5300,12350], b:[5650,12700], r:52 },
+    { kind:'row', f:'ruinwall', a:[5650,12700], b:[5300,13050], r:52, gaps:[0.5] },
+    { kind:'row', f:'ruinwall', a:[5300,13050], b:[4950,12700], r:52 },
+    { kind:'row', f:'ruinwall', a:[4950,12700], b:[5300,12350], r:52, gaps:[0.5] },
+    // 凍った高地の打ち捨てられた野営地
+    { kind:'ring', f:'hut', x:15300, y:6700, R:430, n:7, r:64, skip:0.15 },
+    // 火山の峡谷の手前、採掘の前哨(コンテナのバリケード)
+    { kind:'row', f:'container', a:[10300,11750], b:[10380,12800], r:56, skip:0.28 },
+    { kind:'row', f:'container', a:[10050,13900], b:[10500,14250], r:56, skip:0.20 },
+    // ベースキャンプの外周の物資(道の所は自動で空く)
+    { kind:'ring', f:'container', x:9050, y:9050, R:1420, n:16, r:54, skip:0.45 },
+  ],
+  scatter: {
+    meadow:  { n:280, mix:[['rock',0.36],['tree',0.38,[34,58]],['deadtree',0.06],['log',0.11],['ruinwall',0.09]] },
+    frost:   { n:300, mix:[['snowrock',0.40],['pine',0.55,[34,58]],['hut',0.05]] },
+    volcano: { n:270, mix:[['basalt',0.52],['rock',0.40],['deadtree',0.08]] },
+    // 密林は木を大きく・多く(3番目=その種類の半径の幅。省略時は world.js の EXPLORE_FLAVOR_R)
+    jungle:  { n:520, mix:[['tree',0.46,[38,72]],['palm',0.16,[36,56]],['rock',0.08],['log',0.12],['ruinpillar',0.09],['ruinwall',0.07]] },
+  },
+  crystals: { region:'frost', n:170 },
+  landmarks: [
+    { kind:'arch',  region:'meadow', a:[2950,6300], b:[3950,6780], foot:150, h:780 },
+    { kind:'tower', region:'meadow', x:6300,  y:3500,  foot:95, h:560 },
+    { kind:'tower', region:'frost',  x:11300, y:3900,  foot:95, h:560 },
+    { kind:'gate',  region:'jungle', x:6150,  y:11850, toward:[7000,11000], half:360, foot:125, h:660 },
+    { kind:'plume', region:'volcano', peak:'volcanoMain' },
+  ],
+};
+window.__aramonExploreLayout = EXPLORE_FIELD_LAYOUT;   // ESモジュール(real3d_*.js)への橋渡し
+const EXPLORE_REGION_KEYS = ['meadow', 'frost', 'volcano', 'jungle'];   // 地域の並び(重みの配列の順番)
+/* 見た目の混ざり方の鋭さ。大きいほど境目が細い(4.5で約800単位かけて入れ替わる)。
+   高さは別の値(なだらか)で混ぜる。高さの境目を細くすると坂が急になり登れなくなる。 */
+const EXPLORE_BLEND_SHARP = 4.5;
+const EXPLORE_ELEV_SHARP  = 1.2;
+/* ワールド座標 → 地域の重み(純関数)。out[0..3]=EXPLORE_REGION_KEYS の順、out[4]=ベースキャンプ。
+   合計は1。境目は波打たせてあるので直線にならない。毎フレーム数千回呼ばれるので
+   戻り値の配列は使い回す(呼んだ側ですぐ読むこと)。                      */
+const _exW = [0, 0, 0, 0, 0];
+function exploreRegionWeights(x, y, out){
+  const o = out || _exW, L = EXPLORE_FIELD_LAYOUT;
+  const wx = x + 520*Math.sin(y*0.00047 + 1.3) + 240*Math.sin(y*0.00131 + x*0.00043 + 0.4);
+  const wy = y + 520*Math.sin(x*0.00051 + 2.1) + 240*Math.sin(x*0.00127 - y*0.00039 + 1.9);
+  let sum = 0;
+  for(let i=0;i<4;i++){
+    const r = L.regions[EXPLORE_REGION_KEYS[i]];
+    const dx = (wx - r.x)/r.radius, dy = (wy - r.y)/r.radius;
+    const e = Math.exp(-EXPLORE_BLEND_SHARP*(dx*dx + dy*dy));
+    o[i] = e; sum += e;
+  }
+  // ベースキャンプは中心が平らで、縁でなだらかに地域の色へ戻る
+  const c = L.camp;
+  const cq = ((x-c.x)*(x-c.x) + (y-c.y)*(y-c.y)) / (c.blend*c.blend);
+  const cw = Math.exp(-cq*cq*1.6);
+  const k = (1 - cw) / (sum || 1);
+  for(let i=0;i<4;i++) o[i] *= k;
+  o[4] = cw;
+  return o;
+}
+// いちばん重い地域のキー(ベースキャンプは含めない)。生成(world.js)が使う。
+// 地域の定義(名前・危険度)ごと欲しいときは exploreRegionAt(ベースキャンプの中なら null)
+function exploreRegionKeyAt(x, y){
+  const w = exploreRegionWeights(x, y);
+  let best = 0;
+  for(let i=1;i<4;i++) if(w[i] > w[best]) best = i;
+  return EXPLORE_REGION_KEYS[best];
+}
+/* 地域ごとの地面の高さ(なだらかに混ぜたもの)と、その傾き(解析微分)。
+   real3dHeightAt / real3dHeightGrad が探検フィールドのときだけ足す。
+   境目を波打たせない(波打たせると微分が複雑になり、坂も急になる)。       */
+const _exElev = { h:0, gx:0, gy:0 };
+function exploreElevGrad(x, y){
+  const L = EXPLORE_FIELD_LAYOUT, S = EXPLORE_ELEV_SHARP;
+  let se = 0, sh = 0;
+  const e = _exElevE, qx = _exElevQx, qy = _exElevQy;
+  for(let i=0;i<4;i++){
+    const r = L.regions[EXPLORE_REGION_KEYS[i]];
+    const inv = 1/(r.radius*r.radius);
+    const dx = x - r.x, dy = y - r.y;
+    const ei = Math.exp(-S*(dx*dx + dy*dy)*inv);
+    e[i] = ei; qx[i] = 2*dx*inv; qy[i] = 2*dy*inv;
+    se += ei; sh += ei*r.elev;
+  }
+  const H = sh/se;
+  let gx = 0, gy = 0;
+  for(let i=0;i<4;i++){
+    const w = e[i]/se, d = L.regions[EXPLORE_REGION_KEYS[i]].elev - H;
+    gx += w*qx[i]*d; gy += w*qy[i]*d;
+  }
+  _exElev.h = H; _exElev.gx = -S*gx; _exElev.gy = -S*gy;
+  return _exElev;
+}
+const _exElevE = [0,0,0,0], _exElevQx = [0,0,0,0], _exElevQy = [0,0,0,0];
 /* 通常のマップ選択・ランダム抽選に出してよいマップか。**判定はここ1か所だけ。**
 
    【この関数が無かったせいで起きた不具合】
@@ -6002,38 +6304,42 @@ const EXPLORE_RARITY = {
 /* 4つの地域(ベースキャンプを囲む)。**地域の位置・広さ・色のヒントはこの表が正。**
    フィールド生成(world.js の exploreGenWorld)・3Dの見た目(real3d_explore.js)・野生の配置・
    HUDの地域名は、すべてここを読む。1行足せば地域が増える作りにしておく。
-     xr/yr = 中心(ワールドに対する比)、rr = 半径(ワールド幅に対する比)
+     xr/yr/rr = 中心と半径(ワールドに対する比)。**位置の正は EXPLORE_FIELD_LAYOUT.regions**で、
+                ここでは写し取るだけ(exploreRegionFromLayout)。半径は野生・補給箱を撒く範囲なので
+                地域の混ざり半径より内側(EXPLORE_REGION_SCATTER_K)にする
      danger = 危険度★(1〜4)。野生の強さと落とす物の良さが上がる
      wild   = 出る野生モンスターの属性(ELEMENTS のキー)
      theme  = 色のヒント(ground=地面 / grass=植生 / fog=霞 / sky=空 / accent=目印の光) */
+function exploreRegionFromLayout(r){
+  const g = EXPLORE_FIELD_LAYOUT.regions[r.id];
+  return { ...r, xr: g.x/WORLD_BASE_SIZE, yr: g.y/WORLD_BASE_SIZE, rr: g.radius*EXPLORE_REGION_SCATTER_K/WORLD_BASE_SIZE };
+}
+const EXPLORE_REGION_SCATTER_K = 0.8;   // 撒く範囲 = 配置表の地域の半径 × これ
 const EXPLORE_REGIONS = [
-  { id:'meadow',  name:'草原の盆地', icon:'🌾', xr:0.27, yr:0.72, rr:0.19, danger:1,
+  { id:'meadow',  name:'草原の盆地', icon:'🌾', danger:1,
     wild:['mocchi','suezo','hum','centaur'],
     theme:{ ground:'#6f9a3e', grass:'#8fc44f', fog:'#d8ecc4', sky:'#9fd3ff', accent:'#c8f27a' } },
-  { id:'frost',   name:'凍った高地', icon:'❄️', xr:0.26, yr:0.27, rr:0.19, danger:2,
+  { id:'frost',   name:'凍った高地', icon:'❄️', danger:2,
     wild:['aqua','ark','fox','god'],
     theme:{ ground:'#dfe9f2', grass:'#9fb8c9', fog:'#e8f2fb', sky:'#b9d8f2', accent:'#8fe6ff' } },
-  { id:'volcano', name:'火山の峡谷', icon:'🌋', xr:0.74, yr:0.26, rr:0.19, danger:3,
+  { id:'volcano', name:'火山の峡谷', icon:'🌋', danger:3,
     wild:['fire','phoenix','rock','ogre'],
     theme:{ ground:'#4a2a1a', grass:'#6b3b22', fog:'#8a5a44', sky:'#e0906a', accent:'#ff6b2e' } },
-  { id:'jungle',  name:'密林の遺跡', icon:'🗿', xr:0.74, yr:0.74, rr:0.19, danger:4,
+  { id:'jungle',  name:'密林の遺跡', icon:'🗿', danger:4,
     wild:['leaf','warm','narga','zan','pixie'],
     theme:{ ground:'#23421f', grass:'#2f6b2a', fog:'#6f8f6a', sky:'#8fb8a0', accent:'#7dffb0' } },
-];
+].map(exploreRegionFromLayout);
 function exploreRegion(id){ return EXPLORE_REGIONS.find(r=> r.id === id) || null; }
 // 地域の中心と半径(ワールド座標)。WORLD は試合ごとに applyWorldScale で変わるので、その都度計算する
 function exploreRegionCircle(r){
   return { x: WORLD.w * r.xr, y: WORLD.h * r.yr, r: WORLD.w * r.rr };
 }
-// その地点がどの地域か(どこにも入っていなければ null)。HUDの地域名・ミニマップが読む
+// その地点がどの地域か(ベースキャンプの中なら null)。HUDの地域名・ミニマップが読む。
+// 境目の判定はフィールドの見た目と同じ重み(exploreRegionWeights)を使う
 function exploreRegionAt(x, y){
-  let best = null, bestK = Infinity;
-  for(const r of EXPLORE_REGIONS){
-    const c = exploreRegionCircle(r);
-    const k = Math.hypot(x - c.x, y - c.y) / c.r;   // 半径に対する比。1未満=中
-    if(k < 1 && k < bestK){ bestK = k; best = r; }
-  }
-  return best;
+  const w = exploreRegionWeights(x, y);
+  if(w[4] > 0.5) return null;
+  return exploreRegion(exploreRegionKeyAt(x, y));
 }
 
 /* 素材。**レア度・行き先・説明はこの表が正**(結果画面・通知・保管の一覧はすべてここから作る)。

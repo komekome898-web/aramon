@@ -14,7 +14,8 @@
    そのため形を作ったら最後に fitBounds() で枠へ合わせる。
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
-import { R3, DEFAULT_THEME, ENV_INTENSITY, SUN_DIR, heightAt, hash2, tileNoise, fbmTile, makeTexture, mergeGeos } from './real3d_common.js';
+import { R3, DEFAULT_THEME, ENV_INTENSITY, SUN_DIR, heightAt, hash2, tileNoise, fbmTile, makeTexture, mergeGeos,
+         isExplore, exploreWeights, exploreRegionColors, exploreMixColor, exploreMixNum, exploreTrail, EXPLORE_KEYS, EXPLORE_ATMO } from './real3d_common.js';
 import { getGroundMaps, getTerrain } from './real3d_terrain.js';
 import { lavaMats } from './real3d_water.js';
 
@@ -29,7 +30,7 @@ function themeColor(key){
   const v = (t[key] != null) ? t[key] : DEFAULT_THEME[key];
   return new THREE.Color(v);
 }
-function mixColor(a, b, k){ return a.clone().lerp(b, k); }
+export function mixColor(a, b, k){ return a.clone().lerp(b, k); }
 
 /* 樹皮の色。テーマ色だけで作ると寒色のマップで幹が灰色になり「木」に見えないので、
    木材の色を芯にして、そこへテーマの岩肌色を混ぜて場に馴染ませる。
@@ -296,7 +297,7 @@ function fitBounds(geo, rMax, y0, y1){
    真っ黒な板になる(草が黒いカードに見える原因)。面を複製して裏返し、
    両方を表として持たせたうえで法線を上向きへ寄せると、どちらから見ても
    地面と同じ光り方になって馴染む。upBlend=1 で完全に上向き。            */
-function doubleSided(geo, upBlend){
+export function doubleSided(geo, upBlend){
   const front = geo.index ? geo.toNonIndexed() : geo;
   if(!front.attributes.normal) front.computeVertexNormals();
   const back = front.clone();
@@ -328,7 +329,7 @@ function doubleSided(geo, upBlend){
 
 // 葉・草の1枚。根元から先へ細くなり、先が垂れる帯。ヤシの葉・シダ・下草で使い回す
 // frill を渡すと縁が波打ち、羽状(小葉が並んだシダ)の輪郭になる
-function leafGeo(len, wid, droop, segs, frill){
+export function leafGeo(len, wid, droop, segs, frill){
   const s = segs || 4;
   const pos = [], uv = [], idx = [];
   for(let i=0;i<=s;i++){
@@ -428,7 +429,7 @@ function surfaceDetailTexture(){
    bump =凹凸の強さ(倍率。1.0で標準の岩肌。上げすぎると暗い材質が黒く潰れる)
    macro=広いムラの大きさ / crack=割れ目の暗さ / stain=色ムラ / rough=粗さのムラ */
 const SD_DEFAULT = { scale:64, bump:0.4, macro:520, stain:0.26, crack:0.28, rough:0.34 };
-function applySurfaceDetail(mat, opt){
+export function applySurfaceDetail(mat, opt){
   const o = Object.assign({}, SD_DEFAULT, opt || {});
   const tex = surfaceDetailTexture();
   const key = 'aramonSD|' + [o.scale, o.bump, o.macro, o.stain, o.crack, o.rough].join(',');
@@ -585,7 +586,7 @@ function mountainRib(ang, t, seed){
      ラスタライザが面をまたいで滑らかにつなぐ。
    ・境目のギザギザ = 法線マップのかたむき。岩肌の凹凸に沿って線が乱れる。
    sdGrad / vSdN は applySurfaceDetail が用意する(**必ず先に呼ぶこと**)。   */
-function applyMountainCoat(mat, rockColor, lo, hi){
+function applyMountainCoat(mat, rockColor, lo, hi, hazeUniform){
   const prev = mat.onBeforeCompile;
   const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
   const key = 'aramonMC|' + lo + ',' + hi;
@@ -600,7 +601,8 @@ function applyMountainCoat(mat, rockColor, lo, hi){
     if(prev) prev(sh, renderer);
     sh.uniforms.mcRock = { value: rockColor.clone() };
     sh.uniforms.mcA = { value: new THREE.Vector2(lo, hi) };
-    sh.uniforms.mcHaze = { value: new THREE.Color(R3.theme ? R3.theme.haze : DEFAULT_THEME.haze) };
+    // 探検フィールドは「いま立っている地域の空気」を全部の山で共有する(毎フレーム変わる)
+    sh.uniforms.mcHaze = hazeUniform || { value: new THREE.Color(R3.theme ? R3.theme.haze : DEFAULT_THEME.haze) };
     sh.uniforms.mcHazeR = { value: new THREE.Vector2(MOUNT_FOG_NEAR, MOUNT_FOG_FAR) };
     sh.vertexShader = 'attribute float aCoat;\nvarying float vCoat;\n' + sh.vertexShader;
     sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>',
@@ -654,6 +656,14 @@ const MOUNT_COLORS = {
              rough:0.94, relief:0.95, coatLo:0.46, coatHi:0.64, ao:0.22 },
   pyramid: { foot:0x8a6f3f, mid:0xa88a54, top:0xc0a068, rock:0x6a5330,
              rough:0.86, relief:0.00, rockK:0.85, rockLo:0.12, rockHi:-0.08, ao:0.10 },
+  /* 草の乗った灰色の岩山(探検フィールドの草原の盆地だけで使う)。
+     麓は草、上ほど灰色の岩、尾根の背は暗い露岩。 */
+  crag:    { foot:0x4d5e2c, mid:0x5f6250, top:0x7c7a6c, rock:0x2f2d27,
+             rough:0.95, relief:1.10, coatLo:0.40, coatHi:0.58, ao:0.26 },
+  /* 密林の丘(探検フィールドだけ)。森(forest)より明るい湿った緑で、谷筋を深く沈めて
+     木々の塊が重なった丘に見せる。露岩は苔むした暗い土。 */
+  jungle:  { foot:0x4c6e2a, mid:0x3f6b26, top:0x335e22, rock:0x2e3320,
+             rough:0.96, relief:1.15, coatLo:0.52, coatHi:0.68, ao:0.34 },
 };
 
 
@@ -681,9 +691,16 @@ function mountainVertexColor(conf, t, mottle){
    段がないと面が角を斜めに突っ切り、地面での半径が判定より細くなる
    (小さい山ほどひどく、実測で 3.8% 細かった)。1段目をちょうど地面に置き、
    残りの段を見えている部分だけに使う(埋まった裾に段を割かない)。            */
-function shapeToProfile(geo, rad, h, rows, craterR){
+function shapeToProfile(geo, rad, h, rows, craterR, shapeP, mesa, dome){
   const pos = geo.attributes.position;
   const rise = h - MOUNT_SKIRT;
+  const gR = mountProfileR(rad, h, 0);
+  /* mesa/dome(探検フィールドだけ): 頂を mesa*rise の高さで切って台地にし、その上を
+     dome(0〜0.5)ぶんだけ丸く盛る。切った上は円錐の内側なので判定の外へは出ない
+     (dome<=0.5 なら盛り上げも円錐の内側に収まる)。峡谷の崖・密林の丸い丘に使う。 */
+  const zc = mesa ? mesa*rise : 0;
+  const profR = (z)=> (shapeP && z > 0) ? gR*Math.pow(Math.max(0, 1 - z/rise), shapeP) : mountProfileR(rad, h, z);
+  const rTop = mesa ? profR(zc) : 0;
   for(let i=0;i<pos.count;i++){
     const px = pos.getX(i), pz = pos.getZ(i);
     const f = clamp01((pos.getY(i) + h/2) / h);            // 0=最下段 1=最上段
@@ -692,8 +709,21 @@ function shapeToProfile(geo, rad, h, rows, craterR){
                               : (f - 1/rows)/(1 - 1/rows) * rise;
     const py = zUp + MOUNT_SKIRT - h/2;
     const len = Math.hypot(px, pz);
+    if(mesa && zUp > zc){
+      const q = (zUp - zc)/(rise - zc);                     // 0=台地の縁 1=中心
+      const yy = zc + (rise - zc)*dome*(1 - (1-q)*(1-q)) + MOUNT_SKIRT - h/2;
+      const want = rTop*(1 - q);
+      if(len < 1e-4) pos.setY(i, yy);
+      else pos.setXYZ(i, px/len*want, yy, pz/len*want);
+      continue;
+    }
     if(len < 1e-4){ pos.setY(i, py); continue; }
-    const want = Math.max(craterR, mountProfileR(rad, h, zUp));
+    /* shapeP(探検フィールドだけ): 地面から上を「裾が広く頂が細い」凹んだ輪郭にする。
+       地面の高さ(zUp=0)では判定の円と同じ半径のまま、上は必ず円錐の内側に入る
+       (外へは出ない)ので、見えない壁にもめり込みにもならない。 */
+    const want = (shapeP && zUp > 0)
+      ? Math.max(craterR, gR*Math.pow(Math.max(0, 1 - zUp/rise), shapeP))
+      : Math.max(craterR, mountProfileR(rad, h, zUp));
     pos.setXYZ(i, px/len*want, py, pz/len*want);
   }
   return geo;
@@ -706,9 +736,10 @@ function shapeToProfile(geo, rad, h, rows, craterR){
    そこで彫りは必ず「判定の内側 MOUNT_CARVE_MAX の帯の中」だけで行い、
    裾では帯の幅を0へ落として判定とぴったり合わせる。
    縦へ落とすぶんも、その高さでの半径のズレに換算して同じ帯から払う。       */
-function displaceMountain(geo, rad, h, rise, seed, conf, capT){
+function displaceMountain(geo, rad, h, rise, seed, conf, capT, carveK){
   const pos = geo.attributes.position;
-  const rel = Math.min(1, conf.relief);      // 帯の外へ出さないので1で頭打ち
+  // 帯の外へ出さないので1で頭打ち。carveK(探検フィールドだけ)は帯そのものを深くする
+  const rel = Math.min(1, conf.relief) * (carveK || 1);
   if(rel <= 0) return geo;
   for(let i=0;i<pos.count;i++){
     const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
@@ -741,10 +772,11 @@ function displaceMountain(geo, rad, h, rise, seed, conf, capT){
    **式を上の displaceMountain へ寄せてはいけない。** 寄せた版を作ったところ、
    面の傾きが深くなって「緩斜面に雪が乗る」判定(conf.cover)が働かず、
    雪山から雪冠が丸ごと消えた。ここは見た目の基準なので昔の式が正。       */
-function displaceMountainShade(geo, h, rise, seed, conf, capT){
+function displaceMountainShade(geo, h, rise, seed, conf, capT, carveK){
   const pos = geo.attributes.position;
-  const amp = 0.26 * conf.relief;       // 谷を内側へ削る最大量(半径比)
-  const vAmp = 0.13 * conf.relief;      // 谷を下へ掘る最大量(高さ比)
+  const ck = carveK || 1;
+  const amp = 0.26 * conf.relief * ck;       // 谷を内側へ削る最大量(半径比)
+  const vAmp = 0.13 * conf.relief * ck;      // 谷を下へ掘る最大量(高さ比)
   for(let i=0;i<pos.count;i++){
     const px = pos.getX(i), pz = pos.getZ(i), py = pos.getY(i);
     const r = Math.hypot(px, pz);
@@ -809,14 +841,16 @@ function pyramidGeo(rad, h, seed){
 export function buildMountainMesh(v){
   const style = v.style || 'volcano';
   const conf = MOUNT_COLORS[style] || MOUNT_COLORS.volcano;
-  const rise = v.radius * (v.isMain ? 1.15 : 0.9);
+  // 高さ。data.js の mountainRiseOf と同じ式(riseK は探検フィールドの山だけが持つ)
+  const rise = v.radius * (v.riseK || (v.isMain ? 1.15 : 0.9));
   const isPyramid = (style === 'pyramid');
   const hasCrater = (style === 'volcano' && v.isMain);
   const h = rise + MOUNT_SKIRT;
   /* 分割数。稜線のギザギザと谷筋を出すには周方向にも縦方向にも分割が要る。
      山は1マップに数十個だが三角形は数千どまりなので、上げても負荷はほとんど増えない。 */
-  const seg = v.isMain ? 64 : 36;
-  const rows = v.isMain ? 15 : 9;
+  // v.segs/v.rows は探検フィールドの山だけ(種類ごとに1メッシュへまとめるので、細かくしても描画命令は増えない)
+  const seg = v.segs || (v.isMain ? 64 : 36);
+  const rows = v.rows || (v.isMain ? 15 : 9);
   const rad = isPyramid ? v.radius*PYRAMID_FIT : v.radius;
   // 山ごとに違う形にするための種。volcanoObstaclesにseedは無いので位置から作る
   const seed = hash2(v.x*0.013, v.y*0.017) * 10;
@@ -829,11 +863,11 @@ export function buildMountainMesh(v){
     geo = hasCrater
       ? new THREE.CylinderGeometry(craterR, rad, h, seg, rows, true)
       : new THREE.ConeGeometry(rad, h, seg, rows, true);
-    shapeToProfile(geo, rad, h, rows, craterR);   // 判定と同じ円錐へ合わせてから彫る
+    shapeToProfile(geo, rad, h, rows, craterR, v.shapeP, v.mesa, v.dome || 0);   // 判定と同じ円錐へ合わせてから彫る
     const capT = hasCrater ? 0.14 : 0;
     // 陰影用の「深く彫った山」。同じ種・同じノイズなので尾根と谷の位置は形と一致する
-    shadeGeo = displaceMountainShade(geo.clone(), h, rise, seed, conf, capT);
-    displaceMountain(geo, rad, h, rise, seed, conf, capT);
+    shadeGeo = displaceMountainShade(geo.clone(), h, rise, seed, conf, capT, v.carveK);
+    displaceMountain(geo, rad, h, rise, seed, conf, capT, v.carveK);
   }
   /* 頂点カラーは【面ごと】に塗る。見えているのは面の法線なので、
      色も面の傾きで分けないと陰影と模様がずれて「グラデーションを貼った図形」に見える。
@@ -907,8 +941,9 @@ export function buildMountainMesh(v){
     ? { scale:34,  bump:0.65, macro:520,  stain:0.36, crack:0.32, rough:0.30 }
     : { scale:110, bump:0.8, macro:1400, stain:0.40, crack:0.20, rough:0.28 });
   // 露岩は画素ごと(applySurfaceDetail が用意する sdGrad / vSdN を使うので必ずこの順)
-  if(!isPyramid) applyMountainCoat(mat, rockC, conf.coatLo, conf.coatHi);
+  if(!isPyramid) applyMountainCoat(mat, rockC, conf.coatLo, conf.coatHi, isExplore() ? EXPLORE_ATMO.haze : null);
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.mountStyle = style;   // 探検フィールドは同じ種類の山を1つにまとめて描く(real3d_explore.js)
   const base = heightAt(v.x, v.y) - MOUNT_SKIRT;
   mesh.position.set(v.x, base + h/2, v.y);
   if(isPyramid) mesh.rotation.y = Math.PI/4;
@@ -956,11 +991,20 @@ const OBST_SHAPE_FB = { h:1.2, sink:0.2 };
 let obstGroup = null, obstKinds = null, obstSrc = null, obstSig = '', obstShadow = null;
 let obstCX = null, obstCY = null, obstCull = OBST_VIEW, obstDrawn = 0;
 
+/* 探検フィールドは地域の霞(遠い側2700〜3250)の先が見えないので、その少し先で切る
+   (密林は霞が濃く木が多いので、ここで切らないと木だけで数十万三角形になる。実測)。 */
+const OBST_VIEW_EXPLORE = 3300;
+function obstView(cx, cy){
+  if(!isExplore()) return OBST_VIEW;
+  if(cx == null) return OBST_VIEW_EXPLORE;
+  // その場所の霞が完全にかかる距離(地域の fog の遠い側)の少し先まで
+  return Math.min(OBST_VIEW_EXPLORE, exploreMixNum('fog', exploreWeights(cx, cy), 1) + 60);
+}
 export function obstacleCullDist(){ return obstCull; }
 export function obstacleDrawn(){ return obstDrawn; }
 export function resetObstacles(){
   obstSig = '';
-  obstCull = OBST_VIEW;
+  obstCull = obstView();
   vegTheme = null;   // 植生もテーマごとに作り直す(地面の高さも色も変わるため)
 }
 
@@ -970,7 +1014,7 @@ function shapeOf(flavor){
 }
 
 // モデルのローカル高さ(y0→y1)で色を塗る。mottleはワールドではなく形に乗るまだら
-function paintGeo(geo, lo, hi, y0, y1, mottle){
+export function paintGeo(geo, lo, hi, y0, y1, mottle){
   const pos = geo.attributes.position, n = pos.count, col = new Float32Array(n*3);
   const cA = (lo instanceof THREE.Color) ? lo : new THREE.Color(lo);
   const cB = (hi instanceof THREE.Color) ? hi : new THREE.Color(hi);
@@ -987,7 +1031,7 @@ function paintGeo(geo, lo, hi, y0, y1, mottle){
 }
 
 // 上の面だけ別の色を乗せる(岩の雪・倒木の苔)。塗り済みの色に混ぜる
-function tintTop(geo, hex, y0, y1, strength){
+export function tintTop(geo, hex, y0, y1, strength){
   const pos = geo.attributes.position, col = geo.attributes.color;
   if(!col) return geo;
   const w = (hex instanceof THREE.Color) ? hex : new THREE.Color(hex);
@@ -1005,7 +1049,7 @@ function tintTop(geo, hex, y0, y1, strength){
 /* へこみを暗く、上向きの面を明るくする(手描きのアンビエントオクルージョン)。
    単色の面が「プラスチックの塊」に見える最大の原因は陰影が形の凹凸に付いていないこと。
    隣接情報を持たずに済むよう、「重心から見た向き」と法線のズレをへこみとみなす。 */
-function cavityShade(geo, strength, upLight){
+export function cavityShade(geo, strength, upLight){
   const pos = geo.attributes.position, nor = geo.attributes.normal, col = geo.attributes.color;
   if(!col || !nor) return geo;
   let cx = 0, cy = 0, cz = 0;
@@ -1025,7 +1069,7 @@ function cavityShade(geo, strength, upLight){
 
 /* 上を向いた面にまだらな苔・地衣類・砂だまりを乗せる。
    岩が「均一な材質の塊」に見えるのを崩す一番効く手。色はテーマから渡す。 */
-function patchTint(geo, color, strength, seed, scale){
+export function patchTint(geo, color, strength, seed, scale){
   const pos = geo.attributes.position, nor = geo.attributes.normal, col = geo.attributes.color;
   if(!col || !nor) return geo;
   const c = new THREE.Color(), s = scale || 2.2;
@@ -1170,7 +1214,7 @@ function rockSilhouette(variant, s, opt){
 /* 角を1つずつ削った箱。石積みの石・板材に使う。
    まっすぐな箱を並べると「棒グラフ」に見えるが、角を不揃いにすると
    手で割った石に見える。頂点を動かすだけなので三角形は12枚のまま。          */
-function chipBox(w, h, d, seed, amt){
+export function chipBox(w, h, d, seed, amt){
   const g = new THREE.BoxGeometry(w, h, d);
   const pos = g.attributes.position;
   const a = (amt == null) ? 0.15 : amt;
@@ -2005,10 +2049,13 @@ function buildObstacles(scene, list){
   obstKinds = {};
   const flavors = {};
   for(const o of list) flavors[o.flavor || 'rock'] = 1;
+  /* 探検フィールドは障害物の種類が13もあるので、形の作り分けを2通りに絞る
+     (種類×4通りだと描画命令が50を超えた。向き・大きさ・色の個体差は残る) */
+  const nVar = isExplore() ? 2 : OBST_VARIANTS;
   for(const f in flavors){
     const mat = obstacleMaterial(f);
     const vars = [];
-    for(let v=0; v<OBST_VARIANTS; v++){
+    for(let v=0; v<nVar; v++){
       const mesh = new THREE.InstancedMesh(obstacleGeo(f, v), mat, OBST_MAX);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -2035,20 +2082,22 @@ function buildObstacles(scene, list){
 
 const _om = new THREE.Matrix4(), _oq = new THREE.Quaternion(), _oq2 = new THREE.Quaternion();
 const _ov = new THREE.Vector3(), _os = new THREE.Vector3(), _oc = new THREE.Color();
-const _tiltAxis = new THREE.Vector3();
+const _tiltAxis = new THREE.Vector3(), _exTint = new THREE.Color();
 function updateObstacleInstances(cx, cy){
   if(!obstKinds || !obstSrc) return;
   if(obstCX != null && Math.abs(cx-obstCX) + Math.abs(cy-obstCY) < OBST_STEP) return;
   obstCX = cx; obstCY = cy;
+  const exTints = isExplore() ? exploreRegionColors('rock') : null;
+  const view = obstView(cx, cy);
   const near = [];
   for(let i=0;i<obstSrc.length;i++){
     const o = obstSrc[i];
     const dx = o.x-cx, dy = o.y-cy, d2 = dx*dx + dy*dy;
-    if(d2 <= OBST_VIEW*OBST_VIEW) near.push({ o, d2 });
+    if(d2 <= view*view) near.push({ o, d2 });
   }
   near.sort((a,b)=>a.d2 - b.d2);
   // 上限で切ったときは「実際に出している距離」を2D側へ伝える(くり抜きと食い違わせない)
-  obstCull = near.length > OBST_MAX ? Math.sqrt(near[OBST_MAX].d2) : OBST_VIEW;
+  obstCull = near.length > OBST_MAX ? Math.sqrt(near[OBST_MAX].d2) : view;
   if(near.length > OBST_MAX) near.length = OBST_MAX;
   for(const f in obstKinds) for(const m of obstKinds[f]) m.count = 0;
   if(obstShadow) obstShadow.count = 0;
@@ -2058,7 +2107,7 @@ function updateObstacleInstances(cx, cy){
     const vars = obstKinds[flavor] || obstKinds.rock;
     if(!vars) continue;
     const seed = o.seed || 0;
-    const mesh = vars[Math.floor(Math.abs(seed)*4.7) % OBST_VARIANTS];
+    const mesh = vars[Math.floor(Math.abs(seed)*4.7) % vars.length];
     const idx = mesh.count;
     if(idx >= OBST_MAX) continue;
     const sh = shapeOf(flavor);
@@ -2087,6 +2136,8 @@ function updateObstacleInstances(cx, cy){
     mesh.setMatrixAt(idx, _om);
     const tint = 0.82 + ((seed*3.1) % 1)*0.34;
     _oc.setRGB(tint, tint*(0.99 + ((seed*13.1)%1)*0.03), tint*(0.97 + ((seed*17.9)%1)*0.05));
+    // 探検フィールド: 同じ岩でも地域の色に染める(火山では黒く、密林では苔むす)
+    if(exTints) _oc.multiply(exploreMixColor(exTints, exploreWeights(o.x, o.y), _exTint));
     mesh.setColorAt(idx, _oc);
     mesh.count = idx + 1;
     // 接地影。傾きは付けず、中心の地面の高さに沿わせる
@@ -2280,6 +2331,37 @@ function bushTexture(kind){
     g.beginPath(); g.arc(0, 0, 1, 0, Math.PI*2); g.fill();
     g.restore();
   };
+  /* 花(探検フィールドの草原だけ)。他の植生と違い【色つき】で描く。
+     茎と葉は緑、花びらは白・黄・桃・紫を株の中で混ぜる(インスタンス色は明るさの揺れだけ)。
+     花びらは1〜2画素の塊にせず、5枚の丸を並べた「花の形」にする(遠目に粒の点々にならない)。 */
+  if(kind === 'flower'){
+    const petals = ['255,255,255', '255,226,92', '255,150,190', '196,150,255', '255,255,255', '255,200,120'];
+    for(let i=0;i<11;i++){
+      const t = (i + 0.5)/11;
+      const x0 = S*(0.5 + (t-0.5)*0.62) + (rnd(i,7)-0.5)*S*0.06;
+      const lean = (t-0.5)*1.4 + (rnd(i,1)-0.5)*0.5;
+      const len = S*(0.40 + rnd(i,2)*0.46);
+      const ex = x0 + lean*S*0.22, ey = S - len;
+      g.strokeStyle = 'rgba(70,120,40,1)';
+      g.lineWidth = S*0.011;
+      g.beginPath(); g.moveTo(x0, S); g.quadraticCurveTo(x0 + lean*S*0.06, S - len*0.5, ex, ey); g.stroke();
+      // 根元の葉
+      g.fillStyle = 'rgba(62,112,36,1)';
+      g.save(); g.translate(x0, S - len*0.18); g.rotate(-0.6 + lean*0.4); g.scale(S*0.05, S*0.014);
+      g.beginPath(); g.arc(0, 0, 1, 0, Math.PI*2); g.fill(); g.restore();
+      const pc = petals[Math.floor(rnd(i,5)*petals.length)];
+      const pr = S*(0.020 + rnd(i,4)*0.012);
+      g.fillStyle = 'rgba(' + pc + ',1)';
+      for(let k=0;k<5;k++){
+        const a = k*Math.PI*0.4 + rnd(i,9)*2;
+        g.beginPath(); g.arc(ex + Math.cos(a)*pr*0.9, ey + Math.sin(a)*pr*0.9, pr*0.72, 0, Math.PI*2); g.fill();
+      }
+      g.fillStyle = 'rgba(250,200,60,1)';
+      g.beginPath(); g.arc(ex, ey, pr*0.45, 0, Math.PI*2); g.fill();
+    }
+    bushTexCache[kind] = alphaCutTexture(cv);
+    return bushTexCache[kind];
+  }
   const stems = (kind === 'blades') ? 13 : (kind === 'twig' ? 9 : 7);
   for(let i=0;i<stems;i++){
     const t = (i + 0.5)/stems;
@@ -2428,10 +2510,10 @@ function buildVegetation(scene){
   vegConf = VEG_STYLES[theme.tex] || VEG_STYLES.dry;
   const col = vegColors();
 
-  const add = (name, conf, geoFn, mat, shadow, recv, shR, core, mid)=>{
+  const add = (name, conf, geoFn, mat, shadow, recv, shR, core, mid, variants)=>{
     const cap = Math.ceil(conf.n * 0.75) + 8;
     const vars = [];
-    for(let v=0; v<VEG_VARIANTS; v++){
+    for(let v=0; v<(variants || VEG_VARIANTS); v++){
       const m = new THREE.InstancedMesh(geoFn(v), mat, cap);
       m.castShadow = !!shadow;
       m.receiveShadow = !!recv;
@@ -2442,15 +2524,20 @@ function buildVegetation(scene){
     }
     /* 接地影は形の4通りをまたいで1つのInstancedMeshにまとめる(層ごとに+1描画命令)。
        消える距離は層ごとに違うので、層ごとに1つ持つ必要がある。               */
-    const sm = new THREE.InstancedMesh(
-      shadowDiscGeo(6, name.length*0.9 + 1.3, core, mid, 2, 0.60),
-      shadowMaterial(conf.view*0.72, conf.view), cap*VEG_VARIANTS);
-    sm.frustumCulled = false;
-    sm.count = 0;
-    sm.renderOrder = 1;
-    vegGroup.add(sm);
+    // shR=0 の層は接地影を持たない(探検フィールドの花。小さすぎて影が見えない)
+    let sm = null;
+    if(shR > 0){
+      sm = new THREE.InstancedMesh(
+        shadowDiscGeo(6, name.length*0.9 + 1.3, core, mid, 2, 0.60),
+        shadowMaterial(conf.view*0.72, conf.view), cap*VEG_VARIANTS);
+      sm.frustumCulled = false;
+      sm.count = 0;
+      sm.renderOrder = 1;
+      vegGroup.add(sm);
+    }
     vegKinds[name] = { conf, vars, cap, shadow:sm, shR };
   };
+  if(theme.explore){ buildExploreVegetation(add); scene.add(vegGroup); vegCX = vegCY = null; return; }
 
   // 草: アルファ抜きの板。透過の並べ替えを避けるため alphaTest(透明扱いにしない)
   // 空の回り込み光。テーマの空色から作るので、夕焼けの火山でも雪原でも馴染む
@@ -2518,7 +2605,7 @@ function vegDensity(x, y){
 }
 
 const _vm = new THREE.Matrix4(), _vq = new THREE.Quaternion();
-const _vv = new THREE.Vector3(), _vs = new THREE.Vector3(), _vc = new THREE.Color();
+const _vv = new THREE.Vector3(), _vs = new THREE.Vector3(), _vc = new THREE.Color(), _vex = new THREE.Color();
 function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
   const conf = layer.conf, vars = layer.vars;
   const view = conf.view, target = conf.n;
@@ -2549,7 +2636,14 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       if(d2 > view2) continue;
       // 粗密。patch=0で一様、1で「生えている所と裸地」がはっきり分かれる
       const dens = vegDensity(wx, wy);
-      const p = VEG_FILL * (1 - patch + patch*2*dens);
+      let p = VEG_FILL * (1 - patch + patch*2*dens);
+      // 探検フィールド: 地域ごとの濃さ(草原は花、密林はシダ…)。道の上には生やさない
+      let exw = null;
+      if(layer.ex){
+        exw = exploreWeights(wx, wy);
+        p *= layer.ex.dens(exw) * (1 - exploreTrail(wx, wy)*0.92);
+        if(p <= 0.004) continue;
+      }
       if(hash2(gx*5.77 + seedOff*2, gy*7.13 - seedOff*3) > p) continue;
       // 水・溶岩の上には生やさない
       let blocked = false;
@@ -2560,7 +2654,7 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       if(blocked) continue;
       const edge = seaEdgeOf(wy);
       if(edge != null && wx < edge + 90) continue;
-      const vi = Math.floor(h1*VEG_VARIANTS*3.7) % VEG_VARIANTS;
+      const vi = Math.floor(h1*vars.length*3.7) % vars.length;
       const mesh = vars[vi];
       const idx = mesh.count;
       if(idx >= layer.cap) continue;
@@ -2577,6 +2671,7 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
       // 株ごとに明るさと色みをずらす。同じ緑が並ぶと絨毯に見える
       const t = 0.74 + h1*0.54;
       _vc.setRGB(t*(0.94 + h2*0.16), t, t*(0.88 + h1*0.16));
+      if(exw) _vc.multiply(exploreMixColor(layer.ex.colors, exw, _vex));
       mesh.setColorAt(idx, _vc);
       mesh.count = idx + 1;
       // 接地影。株を回さない層でも影だけは回して、同じ輪郭が並ばないようにする
@@ -2596,8 +2691,13 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio){
   for(const m of vars){
     m.instanceMatrix.needsUpdate = true;
     if(m.instanceColor) m.instanceColor.needsUpdate = true;
+    // 探検フィールドは層が多いので、その場に1本も無い層は描画命令ごと止める
+    if(layer.ex) m.visible = m.count > 0;
   }
-  if(layer.shadow) layer.shadow.instanceMatrix.needsUpdate = true;
+  if(layer.shadow){
+    layer.shadow.instanceMatrix.needsUpdate = true;
+    if(layer.ex) layer.shadow.visible = layer.shadow.count > 0;
+  }
 }
 
 function updateVegetation(scene, cx, cy){
@@ -2609,8 +2709,49 @@ function updateVegetation(scene, cx, cy){
   windTime.value = performance.now()*0.001;
   if(vegCX != null && Math.abs(cx-vegCX) + Math.abs(cy-vegCY) < VEG_STEP) return;
   vegCX = cx; vegCY = cy;
+  if(R3.theme && R3.theme.explore){
+    let k = 0;
+    for(const name in vegKinds){ k++; placeLayer(vegKinds[name], cx, cy, 1.7 + k*2.3, false, vegKinds[name].sink); }
+    return;
+  }
   placeLayer(vegKinds.grass, cx, cy, 1.7,  false, VEG_SINK.grass);
   placeLayer(vegKinds.shrub, cx, cy, 5.3,  false, VEG_SINK.shrub);
+}
+
+/* 探検フィールドの植生。地域ごとに生える物が違うので、層を種類ごとに持ち、
+   どこにどれだけ生やすかは「地域の重み × テーマの regions[地域].veg」で決める。
+   色も地域の色(regions[地域].grass / scrub)をインスタンス色で乗せる
+   (形の頂点色は明るさの段だけ = 灰色で塗っておく)。
+   n=その層がいちばん濃い地域での数。層ごとに形の数(variants)を絞って描画命令を抑える。 */
+const VEG_EXPLORE = [
+  { name:'grass',  n:1350, view:900,  h:[16,44], patch:0.60, sink:0.06, kind:'grass',  color:'grass', variants:4, shR:0.62 },
+  { name:'flower', n:520,  view:720,  h:[12,24], patch:0.80, sink:0.05, kind:'flower', color:null,    variants:2, shR:0 },
+  { name:'fern',   n:420,  view:1450, h:[36,96], patch:0.60, sink:0.08, kind:'fern',   color:'scrub', variants:3, shR:0.85 },
+  { name:'twig',   n:130,  view:1300, h:[16,36], patch:0.70, sink:0.08, kind:'twig',   color:'scrub', variants:2, shR:0.85 },
+  { name:'blades', n:140,  view:1350, h:[14,30], patch:0.80, sink:0.08, kind:'blades', color:'grass', variants:2, shR:0.85 },
+];
+function buildExploreVegetation(add){
+  const th = R3.theme;
+  const amb = mixColor(themeColor('skyBot'), themeColor('haze'), 0.5).multiplyScalar(0.88);
+  const gray = new THREE.Color(1, 1, 1);
+  for(const L of VEG_EXPLORE){
+    const conf = { n:L.n, view:L.view, h:L.h, patch:L.patch };
+    const grassy = (L.kind === 'grass');
+    const map = grassy ? grassTexture() : bushTexture(L.kind);
+    const mat = applyWind(new THREE.MeshLambertMaterial({ map, alphaTest:0.42, transparent:false, vertexColors:true }),
+                          grassy ? 0.30 : 0.20, grassy ? 1.0 : 0.9, L.view*0.74, L.view, amb);
+    const geoFn = grassy
+      ? (v)=>{ const g = grassTuftGeo(v); paintGeo(g, gray.clone().multiplyScalar(0.62), gray.clone().multiplyScalar(1.18), -0.55, 1, 0.26); return g; }
+      : (v)=> shrubGeo(L.kind, v, gray.clone().multiplyScalar(0.74), gray.clone().multiplyScalar(1.22));
+    add(L.name, conf, geoFn, mat, !grassy && L.kind !== 'flower', true, L.shR, grassy ? 0.55 : 0.48, grassy ? 0.72 : 0.66, L.variants);
+    const layer = vegKinds[L.name];
+    layer.sink = L.sink;
+    // 地域ごとの濃さ(0〜1)と色
+    const dens = EXPLORE_KEYS.map(k=> (th.regions[k].veg && th.regions[k].veg[L.name]) || 0);
+    const colors = L.color ? exploreRegionColors(L.color).map(c=> liftColor(c.clone(), 0.040))
+                           : EXPLORE_KEYS.map(()=> new THREE.Color(1, 1, 1));
+    layer.ex = { colors, dens:(w)=> w[0]*dens[0] + w[1]*dens[1] + w[2]*dens[2] + w[3]*dens[3] + w[4]*dens[4] };
+  }
 }
 
 export function updateObstacles(scene, rocks, crystals, cx, cy){
