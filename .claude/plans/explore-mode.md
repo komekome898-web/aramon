@@ -88,6 +88,9 @@
 ## 進捗
 
 - [ ] 段1(2026-09-23 着手: 核・フィールド・狙撃の3担当をworktreeで並行起動。計画ファイルは絶対パスで読ませている)
+  - 核: 完了・取り込み済み(4ef684a)。入口 exploreGainMaterial / updateExplore / exploreSpawnWild / exploreWildAI / exploreFinish(reason) / exploreRegionAt。撮影 `node tools/explore_shot.mjs --out shots/explore [--cuts ..] [--vps land,port]`
+  - 段2前倒し: 野生AI・ボス担当とルート・装備・工房担当を起動(核の上から。worktreeは最初に `git reset --hard claude/repo-structure-docs-xfimln` させる=worktreeは古いmainから作られるため)
+  - 統合時に繋ぐ: exploreBossNest→EXPLORE_FIELD_LAYOUT / exploreDropLoot→exploreSpawnDrop / exploreCrateSpots→フィールド配置 / 補給箱→sniperGive
 - /loop について: タイマー式の /loop ではなく「担当→批評家→担当」の周回を統括が回す(担当の完了通知で次の周へ)。
 - [ ] 段2
 - [ ] 段3(批評家ループ)
