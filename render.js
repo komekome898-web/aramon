@@ -1214,6 +1214,7 @@ function drawMonster(e,p){
 
   ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
+  if(game.explore) exploreDrawMonsterUnder(e, uiMult);   // 探検のボスの怒りのオーラ(explore.js)
 
   if(e.dashTimer>0){
     ctx.save(); ctx.globalAlpha=0.35;
@@ -1228,10 +1229,13 @@ function drawMonster(e,p){
 
   // チーム戦のダウン中は倒れ姿勢(横倒し)で最低限の見分けを付ける(詳しい演出は別担当)。
   // スプライトだけ回し、この後の状態リング・HPゲージは回さない
-  const downedPose = (typeof entityDowned==='function') && entityDowned(e);
-  if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
+  // 探検のボスが転倒・討伐で倒れている間(exploreLying)も同じ横倒しにする
+  const downedPose = ((typeof entityDowned==='function') && entityDowned(e)) || !!e.exploreLying;
+  // 探検のボスは巨体なので、横倒しの体が宙に浮かないよう少し下げて地面に寝かせる
+  if(downedPose){ ctx.save(); if(e.exploreLying) ctx.translate(0, e.radius*0.45); ctx.rotate(Math.PI/2); }
   if(displayImg){
     drawMonsterPortrait(e, displayImg, e.hitFlash>0, portraitLayout);
+    if(game.explore) exploreDrawMonsterTint(e, displayImg, portraitLayout);   // 探検のボスの怒りの赤い色味
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
 
@@ -1311,8 +1315,8 @@ function drawMonster(e,p){
   // (レイドのボス判定のブロックに入れるとボス以外でも参照できず落ちる)
   const selfBar = !!e.isPlayer;
   const barY = selfBar ? -e.radius*1.08*uiMult-5 : -e.radius*1.55*uiMult-9;
-  // レイドのボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
-  if(!e.isRaidBoss){
+  // レイドのボス・探検のボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
+  if(!e.isRaidBoss && !e.isExploreBoss){
     const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
@@ -1406,7 +1410,8 @@ function drawMonster(e,p){
      ▽は「味方だけの形」(色覚多様性のため色だけに頼らない。小隊バーのsq-markと同じ記号) */
   const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
   const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
-  if(!e.isPlayer && !entIsDowned && (isAllyOfPlayer || dist(e,player)<700)){
+  if(game.explore) exploreDrawMonsterMarks(e, barY, uiMult);   // 探検: 頭上の「!」「?」・眠り・転倒の印(explore.js)
+  if(!e.isPlayer && !entIsDowned && !e.isExploreBoss && (isAllyOfPlayer || dist(e,player)<700)){
     // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
     ctx.save();
     { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
@@ -7456,6 +7461,7 @@ function render(){
   safeDraw(drawPingMarkers);     // チーム戦: 小隊のピン(旗マーカー)。案内表示なので最前面に出す
   safeDraw(drawZoneCompass);
   safeDraw(drawArenaScoreHud);   // アリーナ: 両チームの生存数と残り時間(アリーナ以外では何も描かない)
+  safeDraw(exploreDrawScreen);   // 探検: ボスのHPバー・名前の札・咆哮・討伐完了・弾ける素材(探検以外では何も描かない)
   if(introState.active) safeDraw(drawSummonCountdown);
   /* 技エフェクトのWebGL層(fx_gl.js)。2Dの技の芯を描き終えたあとに、粒・軌跡・
      地面の輪を加算で重ねる。**2Dの上・ミニマップとHUDの下**。

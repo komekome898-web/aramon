@@ -5815,16 +5815,172 @@ const EXPLORE_BEACON_OFFSET       = { dx:0, dy:-300 };   // キャンプ中心�
 const EXPLORE_BEACON_RADIUS       = 120;   // ビーコンの輪の半径。この中にとどまると帰還が進む
 const EXPLORE_BEACON_HOLD_SEC     = 3;     // 輪の中に何秒とどまれば帰還するか
 const EXPLORE_BEACON_ARM_SEC      = 4;     // 出発直後はビーコンを効かせない(秒。うっかり帰還しない)
-// 野生モンスター(仮)。段2で本実装に置き換わる前提で、数と縄張りの広さだけ持つ
-const EXPLORE_WILD_PER_REGION     = 6;     // 1地域あたりの頭数
-const EXPLORE_WILD_RESPAWN_SEC    = 45;    // 倒してから同じ縄張りに湧き直すまで(秒)
-const EXPLORE_WILD_RESPAWN_HIDE   = 900;   // プレイヤーがこの距離より近いと湧き直さない(目の前に湧かせない)
-const EXPLORE_WILD_AGGRO_RANGE    = 620;   // この距離に入ると気づいて襲ってくる
-const EXPLORE_WILD_CHASE_RANGE    = 1000;  // 一度気づいたら、この距離まで追い続ける
-const EXPLORE_WILD_LEASH          = 1500;  // 縄張りの中心からこれ以上離れたら追うのをやめて戻る
+/* ===== 野生モンスター(群れ・気づき・縄張り。動きは explore.js の exploreWildAI / exploreResolveMove) =====
+   1地域に群れを EXPLORE_WILD_PACKS_PER_REGION 個。群れ=リーダー1体+取り巻き(同じ種)。
+   状態: うろつく → 気づきかけ「?」→ 気づく「!」→ 追う/攻撃 → (弱ると)逃げる → 縄張りへ戻る(戻る間は回復) */
+const EXPLORE_WILD_PACKS_PER_REGION = 3;     // 1地域あたりの群れの数
+const EXPLORE_WILD_PACK_SIZE      = { min:3, max:5 };   // 1つの群れの頭数(リーダー込み)
+const EXPLORE_WILD_PACK_SPREAD    = 170;   // 取り巻きがリーダーの周りに寄り添う距離
+const EXPLORE_WILD_LEADER         = { hp:1.5, radius:1.25, dmg:1.15 };   // リーダーだけ一回り大きく・硬い
+// 危険度★ごとの強さ(種族の素の値に掛ける)。tier=使える技の段(1〜3)
+const EXPLORE_WILD_DANGER = {
+  1: { hp:0.85, dmg:0.60, speed:0.88, tier:1 },
+  2: { hp:1.05, dmg:0.80, speed:0.94, tier:1 },
+  3: { hp:1.30, dmg:1.00, speed:1.00, tier:2 },
+  4: { hp:1.60, dmg:1.20, speed:1.06, tier:3 },
+};
+const EXPLORE_WILD_ACTIVE_RADIUS  = 3600;  // プレイヤーからこの距離より遠い野生・ボスは眠らせる(AI・移動・攻撃を止める)
+const EXPLORE_WILD_SLEEP_HYST     = 400;   // 起きる距離はこれだけ内側(境目で寝起きを繰り返さない)
 const EXPLORE_WILD_WANDER         = 420;   // 普段うろつく範囲(縄張りの中心から)
+const EXPLORE_WILD_WANDER_SPEED   = 0.38;  // うろつくときの速さ(素の速さに対する比。ゆっくり歩く)
+const EXPLORE_WILD_REST_SEC       = { min:1.8, max:5.0 };   // 目的地に着いて立ち止まる時間
+const EXPLORE_WILD_SIGHT_RANGE    = 700;   // 視界の扇の奥行き
+const EXPLORE_WILD_SIGHT_DEG      = 130;   // 視界の扇の開き(度)。背後は見えない
+const EXPLORE_WILD_NEAR_SENSE     = 240;   // 背後でもこの距離まで来れば気配で気づく
+const EXPLORE_WILD_HEAR_RANGE     = 1500;  // プレイヤーの射撃の音が届く距離(視界の外でも気づく)
+const EXPLORE_WILD_NOTICE_SEC     = 0.9;   // 視界の奥で見え続けて気づくまで(近いほど速い。「?」の間)
+const EXPLORE_WILD_FORGET_SEC     = 1.6;   // 見えなくなってから気づきかけ「?」が消えるまで
+const EXPLORE_WILD_ALERT_PAUSE    = 0.55;  // 気づいた瞬間に立ち止まって睨む時間
+const EXPLORE_WILD_ALERT_SHOW     = 1.5;   // 頭上の「!」を出す秒数
+const EXPLORE_WILD_PACK_CALL      = { min:0.2, max:0.65 };  // 仲間が気づいてから自分も気づくまでの遅れ(秒)
+const EXPLORE_WILD_CHASE_RANGE    = 1100;  // 追っている相手がこれより離れたら見失い始める
+const EXPLORE_WILD_LOSE_SEC       = 2.5;   // CHASE_RANGE の外にこの秒数いたら諦める
+const EXPLORE_WILD_LEASH          = 1500;  // 縄張りの中心からこれ以上離れたら追うのをやめて戻る
+const EXPLORE_WILD_RETURN_REGEN   = 0.10;  // 縄張りへ戻る間の回復(最大HPに対する毎秒)
+const EXPLORE_WILD_RETURN_CALM_SEC= 3;     // 戻り終えてから再び気づけるようになるまで(秒)
+const EXPLORE_WILD_FLEE_SEC       = 5;     // 逃げ続ける時間(その後は縄張りへ戻る)
+const EXPLORE_WILD_FLEE_SPEED     = 1.1;   // 逃げる速さ(素の速さに対する比)
 const EXPLORE_WILD_GUTS_REGEN     = 3;     // 野生の追加ガッツ回復(毎秒)。技を撃てずに棒立ちになるのを防ぐ
-const EXPLORE_WILD_HP_PER_DANGER  = 0.25;  // 危険度★1つ増えるごとの体力の上乗せ(★1=1倍、★4=1.75倍)
+const EXPLORE_WILD_RESPAWN_SEC    = 60;    // 倒してから同じ縄張りに湧き直すまで(秒)
+const EXPLORE_WILD_RESPAWN_HIDE   = 2400;  // プレイヤーがこの距離より近いと湧き直さない
+const EXPLORE_WILD_RESPAWN_SEEN   = 4200;  // この距離より近く、しかもカメラの前方なら湧き直さない(見ている前で湧かせない)
+// 保つ間合い(使う技の射程に対する比)。kite=距離を取って撃つ / rush=懐へ突っ込む
+const EXPLORE_WILD_KEEP_DIST      = { kite:0.72, rush:0.30 };
+/* 種ごとの性格(ELEMENTS のキー)。表に無い種は EXPLORE_WILD_NATURE_DEFAULT。
+     temper: 'docile'=おとなしい(先に攻撃されるまで襲わない。気づいても「?」で様子を見るだけ)
+             'aggressive'=好戦的(気づいたら「!」で襲ってくる)
+     style : 'kite'=距離を保って撃つ / 'rush'=突っ込む
+     fleeHp: 体力がこの割合を切ると逃げる(0=逃げない) */
+const EXPLORE_WILD_NATURE = {
+  mocchi:  { temper:'docile',     style:'kite', fleeHp:0.35 },
+  hum:     { temper:'docile',     style:'kite', fleeHp:0.4  },
+  suezo:   { temper:'aggressive', style:'rush', fleeHp:0.2  },
+  centaur: { temper:'aggressive', style:'kite', fleeHp:0    },
+  aqua:    { temper:'docile',     style:'kite', fleeHp:0.3  },
+  fox:     { temper:'docile',     style:'kite', fleeHp:0.35 },
+  ark:     { temper:'aggressive', style:'rush', fleeHp:0    },
+  god:     { temper:'aggressive', style:'kite', fleeHp:0.15 },
+  fire:    { temper:'aggressive', style:'rush', fleeHp:0    },
+  phoenix: { temper:'aggressive', style:'kite', fleeHp:0.2  },
+  rock:    { temper:'docile',     style:'rush', fleeHp:0    },
+  ogre:    { temper:'aggressive', style:'rush', fleeHp:0    },
+  leaf:    { temper:'docile',     style:'kite', fleeHp:0.25 },
+  warm:    { temper:'aggressive', style:'rush', fleeHp:0    },
+  narga:   { temper:'aggressive', style:'kite', fleeHp:0    },
+  zan:     { temper:'aggressive', style:'rush', fleeHp:0.15 },
+  pixie:   { temper:'docile',     style:'kite', fleeHp:0.45 },
+};
+const EXPLORE_WILD_NATURE_DEFAULT = { temper:'aggressive', style:'kite', fleeHp:0 };
+function exploreWildNature(elKey){ return EXPLORE_WILD_NATURE[elKey] || EXPLORE_WILD_NATURE_DEFAULT; }
+
+/* ===== ボス(地域ボス3体+頂点ボス1体。進行は explore.js の exploreUpdateBosses) =====
+   **1行足せばボスが増える。** 見た目は既存のSSRスキン(skinId)をそのまま巨大化して使う。
+     region  = 巣を置く地域(EXPLORE_REGIONS の id)。巣の位置は exploreBossNest(region) が決める
+     apex    = 頂点ボス(名前の札・討伐の演出が一段豪華になる)
+     hp/radius/speed = 体力・体の半径(通常のモンスターは22前後。レイドのボスは288)・歩く速さ
+     dmg     = 大技の威力の倍率(EXPLORE_BOSS_MOVES の dmg に掛ける)
+     gap     = 大技と大技の間隔(秒)[最短, 最長]
+     moves   = 使う大技(EXPLORE_BOSS_MOVES のキー)。rageOnly の技は怒ってから出る
+     color   = 予告・大技・オーラの色(スキンの色に合わせる)
+     partName= 弱点(頭)の部位名。部位破壊の通知に出る
+     breakRatio = 部位破壊に要る弱点ダメージ(最大HPに対する比)
+     drops / breakDrops = EXPLORE_DROP_TABLES のキー(討伐 / 部位破壊) */
+const EXPLORE_BOSSES = [
+  { id:'gandrock', region:'meadow', apex:false, name:'ガンドロック', title:'盆地を揺るがす岩鎧',
+    element:'rock', skinId:'rock_ssr', color:'#e8a857', hp:2200, radius:190, speed:125, dmg:1.0,
+    gap:[2.8, 4.2], moves:['swipe','stomp','charge','meteor','rain'], partName:'岩角', breakRatio:0.14,
+    drops:'boss_gandrock', breakDrops:'break_gandrock' },
+  { id:'galvark', region:'frost', apex:false, name:'ガルヴァルク', title:'吹雪を裂く白き牙',
+    element:'spark', skinId:'garurumon_ssr', color:'#8fe6ff', hp:2800, radius:170, speed:170, dmg:1.1,
+    gap:[2.4, 3.8], moves:['swipe','breath','charge','meteor','rain'], partName:'氷牙', breakRatio:0.14,
+    drops:'boss_galvark', breakDrops:'break_galvark' },
+  { id:'volgreim', region:'volcano', apex:false, name:'ヴォルグレイム', title:'峡谷に棲む灼熱の王',
+    element:'fire', skinId:'metag_ssr', color:'#ff6a2e', hp:3400, radius:210, speed:140, dmg:1.25,
+    gap:[2.4, 3.6], moves:['breath','stomp','charge','meteor','rain','nova'], partName:'紅蓮の頭殻', breakRatio:0.15,
+    drops:'boss_volgreim', breakDrops:'break_volgreim' },
+  { id:'gidravers', region:'jungle', apex:true, name:'ギドラヴァース', title:'密林の頂点に君臨する三界龍',
+    element:'leaf', skinId:'leaf_ssr', color:'#b8ff5c', hp:5200, radius:250, speed:150, dmg:1.5,
+    gap:[2.0, 3.2], moves:['swipe','breath','stomp','charge','meteor','rain','nova'], partName:'三つ首の冠', breakRatio:0.13,
+    drops:'boss_gidravers', breakDrops:'break_gidravers' },
+];
+/* ボスの大技。予告(地面の印)→発動の2段。形は4つ:
+     fan    = 正面の扇(range=奥行き / fanAngleDeg=開き)
+     circle = 自分中心の円(range=半径 / knock=吹き飛ばし距離)
+     meteor = 相手の周りに count 個の円が stagger 秒ずつずれて落ちる(spread=散らばり / range=1個の半径)
+     charge = 相手へ向かって一直線に突進(length=距離 / speed=速さ。予告は通り道に並ぶ円)
+   minDist/maxDist = この技を選ぶ相手との距離 / w=選ばれやすさ / rageOnly=怒ってから使う
+   **fan / circle(自分中心)の range と minDist / maxDist は体の縁から測る**(実際の値 = 表の値 + ボスの半径)。
+   巨体の大きさが違っても「体からどこまで届くか」が同じになるように。 */
+const EXPLORE_BOSS_MOVES = {
+  swipe:  { name:'薙ぎ払い',   shape:'fan',    range:560,  fanAngleDeg:110, dmg:30, telegraph:0.85, maxDist:700,  w:3 },
+  breath: { name:'ブレス',     shape:'fan',    range:1350, fanAngleDeg:34,  dmg:40, telegraph:1.25, minDist:260, maxDist:1400, w:3 },
+  stomp:  { name:'踏み鳴らし', shape:'circle', range:440,  dmg:34, telegraph:1.00, maxDist:560, knock:260, w:3 },
+  meteor: { name:'岩石落とし', shape:'meteor', count:3, spread:240, range:230, dmg:36, telegraph:1.35, stagger:0.25, w:2 },
+  rain:   { name:'流星群',     shape:'meteor', count:6, spread:560, range:200, dmg:32, telegraph:1.40, stagger:0.18, w:2, rageOnly:true },
+  charge: { name:'突進',       shape:'charge', length:1250, speed:1500, dmg:44, telegraph:1.05, minDist:320, maxDist:1500, knock:320, w:3 },
+  nova:   { name:'大爆発',     shape:'circle', range:950,  dmg:58, telegraph:2.00, maxDist:900, knock:420, w:1, rageOnly:true },
+};
+const EXPLORE_BOSS_NEST_RADIUS    = 650;   // 巣の広さ(岩を空ける・眠って回復する範囲)
+const EXPLORE_BOSS_NEST_OFFSET    = 0.5;   // 巣の既定の位置: 地域の中心からキャンプと反対側へ、地域の半径×この比
+const EXPLORE_BOSS_ENGAGE_RANGE   = 1300;  // これより近づくと咆哮して戦いが始まる(攻撃を当てても始まる)
+const EXPLORE_BOSS_LEASH          = 3200;  // 巣からプレイヤーがこれより離れたら諦めて巣へ戻る
+const EXPLORE_BOSS_HOME_REGEN     = 0.02;  // 諦めて巣へ戻る間の回復(最大HPに対する毎秒)
+const EXPLORE_BOSS_ROAR_SEC       = 2.2;   // 登場の咆哮の長さ(大技を撃たない)
+const EXPLORE_BOSS_RAGE_ROAR_SEC  = 1.4;   // 怒ったときの咆哮の長さ
+const EXPLORE_BOSS_ROAR_SLOW_RANGE= 800;   // 咆哮で耳をふさぐ(短い鈍足)範囲
+const EXPLORE_BOSS_ROAR_SLOW_SEC  = 0.9;
+const EXPLORE_BOSS_RAGE_HP        = 0.5;   // この割合を切ると怒る
+const EXPLORE_BOSS_RAGE           = { speed:1.25, gap:0.7, dmg:1.15, telegraph:0.85 };   // 怒り中の倍率
+const EXPLORE_BOSS_FLEE_HP        = 0.2;   // この割合を切ると足を引きずって巣へ逃げる(1回だけ)
+const EXPLORE_BOSS_LIMP_SPEED     = 0.55;  // 足を引きずる速さ(素の速さに対する比)
+const EXPLORE_BOSS_SLEEP_SEC      = 10;    // 巣で眠る長さ(起こされなければ)
+const EXPLORE_BOSS_SLEEP_HEAL     = 0.12;  // 眠って回復する量(最大HPに対する比・眠り全体で)
+const EXPLORE_BOSS_SLEEP_DMG_MULT = 2;     // 眠っているところへの最初の一撃の倍率(起きる)
+const EXPLORE_BOSS_TOPPLE_SEC     = 2.2;   // 部位破壊で転倒している長さ
+const EXPLORE_BOSS_TOPPLE_DMG_MULT= 1.25;  // 転倒中に受けるダメージの倍率
+const EXPLORE_BOSS_BREAK_BODY_RATIO = 0.3; // 弱点以外への命中が部位破壊の蓄積に入る割合(弱点は1)
+/* 弱点(頭)。**狙撃担当(sniper.js)との約束:**
+     ent.weakPoint = { zFrom, zTo, mult } … 体の高さ(exploreBodyHeight(ent))に対する比の範囲と倍率。
+     命中した高さ z が ent.z + zFrom×高さ 〜 ent.z + zTo×高さ に入れば弱点(exploreIsWeakPointHit)。
+     弱点に当たったら applyDamage の opts に weakPoint:true を付ける。**倍率は狙撃側で掛けない**
+     (explore.js の exploreDmgTakenMult が1か所で掛ける。二重に掛けない) */
+const EXPLORE_BOSS_WEAK_POINT     = { zFrom:0.62, zTo:1.0, mult:1.5 };
+const EXPLORE_BOSS_KILL_SLOWMO    = { scale:0.2, holdSec:0.9, easeSec:0.6 };   // 討伐の瞬間の間(実時間の秒)
+const EXPLORE_BOSS_DYING_SEC      = 3.2;   // 倒れてから姿が消えるまで(試合内の秒)
+const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバーを出す距離
+
+/* ===== 落とし物(倒したときに何を落とすか)。落とす処理は explore.js の exploreDropLoot 1つを通す =====
+   形: { rolls:抽選回数, items:[{ key, w:重み, n:[最小,最大] }], always:[{ key, n:[最小,最大] }] }
+   キーの決まり: 'wild_<地域id>' / 'boss_<ボスid>' / 'break_<ボスid>'(部位破壊) */
+const EXPLORE_DROP_TABLES = {
+  wild_meadow:  { rolls:1, items:[ { key:'meadow_fiber', w:74, n:[1,2] }, { key:'meadow_honey', w:13 }, { key:'meadow_plume', w:13 } ] },
+  wild_frost:   { rolls:1, items:[ { key:'frost_shard',  w:70, n:[1,2] }, { key:'frost_dew',    w:15 }, { key:'frost_hide',   w:15 } ] },
+  wild_volcano: { rolls:1, items:[ { key:'volcano_ore',  w:66, n:[1,3] }, { key:'volcano_heart', w:34 } ] },
+  wild_jungle:  { rolls:2, items:[ { key:'jungle_vine',  w:62, n:[1,3] }, { key:'jungle_relic', w:38 } ] },
+  boss_gandrock:  { rolls:3, always:[ { key:'boss_horn', n:[2,3] } ],
+                    items:[ { key:'meadow_fiber', w:40, n:[2,4] }, { key:'meadow_honey', w:25, n:[1,2] }, { key:'meadow_plume', w:25, n:[1,2] }, { key:'boss_horn', w:10 } ] },
+  break_gandrock: { rolls:1, always:[ { key:'boss_horn', n:[1,1] } ], items:[ { key:'meadow_honey', w:1 } ] },
+  boss_galvark:   { rolls:3, always:[ { key:'boss_fang', n:[2,3] } ],
+                    items:[ { key:'frost_shard', w:40, n:[2,4] }, { key:'frost_dew', w:25, n:[1,2] }, { key:'frost_hide', w:25, n:[1,2] }, { key:'boss_fang', w:10 } ] },
+  break_galvark:  { rolls:1, always:[ { key:'boss_fang', n:[1,1] } ], items:[ { key:'frost_dew', w:1 } ] },
+  boss_volgreim:  { rolls:3, always:[ { key:'boss_scale', n:[2,3] } ],
+                    items:[ { key:'volcano_ore', w:45, n:[2,4] }, { key:'volcano_heart', w:40, n:[1,2] }, { key:'boss_scale', w:15 } ] },
+  break_volgreim: { rolls:1, always:[ { key:'boss_scale', n:[1,1] } ], items:[ { key:'volcano_heart', w:1 } ] },
+  boss_gidravers: { rolls:4, always:[ { key:'apex_core', n:[1,1] } ],
+                    items:[ { key:'life_crystal', w:18 }, { key:'boss_horn', w:22 }, { key:'boss_fang', w:22 }, { key:'boss_scale', w:22 }, { key:'jungle_relic', w:16, n:[2,3] } ] },
+  break_gidravers:{ rolls:1, items:[ { key:'life_crystal', w:35 }, { key:'apex_core', w:15 }, { key:'jungle_relic', w:50, n:[2,3] } ] },
+};
+const EXPLORE_DROP_LEADER_ROLLS   = 1;     // 群れのリーダーは抽選が1回多い
 // 地面に撒く回復・ガッツ(仮。段2の補給箱が入るまでの繋ぎ)
 const EXPLORE_CAMP_LOOT_COUNT     = 18;    // ベースキャンプの周り
 const EXPLORE_REGION_LOOT_COUNT   = 26;    // 各地域
@@ -5906,17 +6062,37 @@ const EXPLORE_MATERIALS = {
   apex_core:     { name:'頂点の心核',   icon:'💠', rarity:'legendary', region:'boss', desc:'頂点に立つ者の心臓。最上級の装備に使う' },
   life_crystal:  { name:'生命の結晶',   icon:'💎', rarity:'legendary', region:'boss', toBag:'fruit_life', desc:'持ち帰ると生命の果実になる' },
 };
-// 野生を倒したときの仮の落とし物(地域のコモン/レアから抽選)。段2で本実装に置き換わる
-const EXPLORE_WILD_RARE_CHANCE = 0.22;   // レアが出る確率(危険度★1つごとに +0.04)
-function exploreRollWildDrop(regionId){
-  const keys = Object.keys(EXPLORE_MATERIALS).filter(k=> EXPLORE_MATERIALS[k].region === regionId);
-  if(!keys.length) return null;
-  const reg = exploreRegion(regionId);
-  const rareChance = EXPLORE_WILD_RARE_CHANCE + ((reg ? reg.danger : 1) - 1) * 0.04;
-  const want = Math.random() < rareChance ? 'rare' : 'common';
-  const pool = keys.filter(k=> EXPLORE_MATERIALS[k].rarity === want);
-  const list = pool.length ? pool : keys;
-  return list[Math.floor(Math.random() * list.length)];
+/* 倒した(部位を壊した)相手から、落とし物の表を1つ選ぶ。**何を落とすかの正は EXPLORE_DROP_TABLES。**
+     kind = 'kill'(倒した) / 'break'(部位破壊)
+   野生は地域の表(リーダーは抽選 +EXPLORE_DROP_LEADER_ROLLS)、ボスは表の drops / breakDrops。 */
+function exploreDropTable(ent, kind){
+  if(!ent) return null;
+  if(ent.isExploreBoss){
+    const def = EXPLORE_BOSSES.find(b=> b.id === ent.exBossId);
+    if(!def) return null;
+    return EXPLORE_DROP_TABLES[kind === 'break' ? def.breakDrops : def.drops] || null;
+  }
+  const base = EXPLORE_DROP_TABLES['wild_' + ent.exploreRegion];
+  if(!base) return null;
+  return ent.exLeader ? { ...base, rolls:(base.rolls||1) + EXPLORE_DROP_LEADER_ROLLS } : base;
+}
+// 表を振って [{ key, n }] を返す(同じ素材はまとめる)。表の中身だけで決まる純関数
+function exploreRollDropTable(table){
+  if(!table) return [];
+  const got = {};
+  const add = (e)=>{
+    if(!e || !EXPLORE_MATERIALS[e.key]) return;
+    const n = e.n ? randInt(e.n[0], e.n[1]) : 1;
+    got[e.key] = (got[e.key] || 0) + n;
+  };
+  for(const e of (table.always || [])) add(e);
+  const items = table.items || [];
+  const total = items.reduce((s, e)=> s + (e.w || 0), 0);
+  for(let i=0; i<(table.rolls || 0) && total > 0; i++){
+    let r = Math.random() * total;
+    for(const e of items){ r -= (e.w || 0); if(r <= 0){ add(e); break; } }
+  }
+  return Object.keys(got).map(key=> ({ key, n:got[key] }));
 }
 function exploreMaterialColor(key){
   const m = EXPLORE_MATERIALS[key];

@@ -108,7 +108,8 @@ function projectileMuzzleZ(a){ return (a.z||0) + (isReal3dMap() ? AIM_MUZZLE_Z :
 // 通常マップは従来どおり「相手が自分より大きく上にいるか」だけを見る(挙動そのまま)
 function projHeightHits(p, e){
   if(!p.terrain3d) return !(e.z - p.z > UPWARD_BLOCK_THRESHOLD);
-  return (p.z - e.z <= PROJ_OVERHEAD_MISS) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
+  // 背の高い相手(探検のボスだけが hitHeight を持つ。他は undefined で従来どおり)は頭の高さまで当たる
+  return (p.z - e.z <= Math.max(PROJ_OVERHEAD_MISS, e.hitHeight || 0)) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
 }
 function terrainZAt(x,y){ return (typeof getTerrainHeightAt==='function') ? getTerrainHeightAt(x,y) : 0; }
 // 技ごとの落下加速度。射程いっぱいを飛ぶ時間で PROJ_DROP_Z だけ落ちる強さにする
@@ -590,7 +591,11 @@ function applyDamage(target, dmg, source, opts){
     else if(auraResult==='dis') finalDmg *= AURA_DIS_MULT;
   }
   if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= AURA_MATCH_MULT; // オーラ一致
+  // 探検モード: 弱点(opts.weakPoint)・転倒・眠りの倍率(explore.js。弱点の倍率を掛けるのはここ1か所)
+  if(game.explore) finalDmg *= exploreDmgTakenMult(target, source, opts);
   target.hp -= finalDmg; target.hitFlash = 0.18;
+  // 探検モード: 撃たれた野生が気づく・群れが怒る・ボスが起きる・部位破壊の蓄積(explore.js)
+  if(game.explore) exploreOnDamaged(target, finalDmg, source, opts);
   /* 【命中の手応え】自分が与えたダメージが確定した瞬間に、照準の×印(render.jsのshowHitMarker)と
      命中SEを出す。ここは「ソロ/ホストの確定計算」だけが通る場所で、マルチのゲストは上の
      予測分岐(involvesHuman && !isAuthoritative)で必ずreturn済みなので、
@@ -741,6 +746,8 @@ function killEntity(victim, killer){
   if(!victim.alive) return;
   // 探検モード: プレイヤーは死なずに「力尽きた」扱い(キャンプで復活/上限で終了)。通常の敗北処理へ進めない
   if(game.explore && victim.isPlayer){ exploreOnPlayerFaint(victim, killer); return; }
+  // 探検モード: ボスはすぐには消えず、倒れる演出(スローモーション・討伐完了)のあと消える(explore.js)
+  if(game.explore && victim.isExploreBoss){ exploreOnBossFelled(victim, killer); return; }
   // 安全圏外ダメージや溶岩などキラー不在の死亡は、直前に攻撃していた相手にキルを付与する
   if(!killer){
     const lastAtk = entities.find(o=>o.id===victim.lastAttackerId);
@@ -931,6 +938,7 @@ function updateTargetBotAI(b){
   }
 }
 function updateBotAI(b, dt){
+  if(game.explore && b.exploreAsleep) return;   // 探検モード: プレイヤーから遠い個体は眠らせる(explore.js)
   if(b.attackTargetId){ const t=getEntity(b.attackTargetId); if(!t||!t.alive) b.attackTargetId=null; }
   b.aiTimer -= dt;
   if(b.aiTimer>0) return;
@@ -941,6 +949,7 @@ function updateBotAI(b, dt){
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
   if(b.isRaidBoss){ updateRaidBossAI(b); return; }
   if(b.isExploreWild){ exploreWildAI(b); return; }   // 探検モードの野生(縄張り・気づく・戻る。explore.js)
+  if(b.isExploreBoss){ exploreBossAI(b); return; }   // 探検モードのボス(判断は毎フレーム exploreUpdateBosses)
 
   // ===== チーム戦: ダウン中は戦えない。立っている味方の方へ這って寄る(蘇生されやすい位置へ) =====
   if(isTeamMatch() && entityDowned(b)){
@@ -1122,6 +1131,7 @@ function entityMoveSpeed(m){
   return m.slowUntil > matchTime ? base*0.5 : base;
 }
 function resolveMovement(m, dt){
+  if(game.explore && m.exploreAsleep) return;   // 探検モード: 眠っている個体は動かない
   if(m.freezeUntil > matchTime) return;
   /* 「羅生門」(キジンtier3)に吸い込まれている間は、入力・AIより優先してこちらへ
      強制的に引き寄せる。moveWithMoveUntilと同じ「早期return」の形にしておくと、
@@ -1162,6 +1172,8 @@ function resolveMovement(m, dt){
     if(moveLen>0.05){ m.lastMoveX=m.inputMoveX/moveLen; m.lastMoveY=m.inputMoveY/moveLen; }
     return;
   }
+  // 探検モード: 野生とボスの歩き方(うろつく・距離を保つ・足を引きずる等。explore.js)
+  if(game.explore && exploreResolveMove(m, dt, effSpeed)) return;
   let target = null;
   let mustMove = true;
   const outOfZone = dist(m, zoneState.center) > zoneState.radius - m.radius*0.4;
@@ -2150,6 +2162,7 @@ function effectiveMoveDmg(m, mv){
   return mv.dmg * (m.trainDmgMult || 1) * (eff && eff.dmgMult || 1) * ssrMult;
 }
 function tryFire(m){
+  if(game.explore && m.exploreAsleep) return;   // 探検モード: 眠っている個体は撃たない
   if(m.freezeUntil > matchTime) return;
   if(entityDowned(m)) return;   // ダウン中は攻撃不可(チーム戦のみ)
   if(m.fireCooldown>0) return;
@@ -2656,6 +2669,8 @@ function update(dt){
   // 止めないと敵が動き続け、演出の裏で順位や撃破数が変わってしまう。
   // 時刻で判定しているので、演出が何かの理由で終わらなくても3秒で自動的に再開する。
   if(typeof matchFinishFreezeActive==='function' && matchFinishFreezeActive()) return;
+  // 探検モード: ボス討伐の瞬間だけ時間をゆっくりにする(実時間で必ず1へ戻る。explore.js)
+  if(game.explore) dt *= exploreTimeScale();
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る

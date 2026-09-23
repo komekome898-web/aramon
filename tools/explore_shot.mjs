@@ -66,6 +66,59 @@ const CUTS = [
       const p = clearObstaclePoint(w.x + Math.cos(a)*520, w.y + Math.sin(a)*520, 60);
       return { x:p.x, y:p.y, yaw:Math.atan2(w.y-p.y, w.x-p.x), pitch:0.12, warm:1.2, lookAt:w.id };
     } },
+  /* ---- 野生の群れとボス(段2)。状態を直接作って撮る(遊びの確認ではなく見た目の採点用) ----
+     at() が返す物に after(撮る直前に1回)・vuln(撮影中の無敵を外す)を足せる */
+  { name:'wild_herd', kind:'field', desc:'草原の群れがうろつく所(リーダー+取り巻き。気づかれていない)',
+    at: ()=>{
+      const pk = exploreState.packs.find(q=> q.region==='meadow') || exploreState.packs[0];
+      if(!pk) return null;
+      const mem = exploreState.wild.filter(w=> w.pack===pk.id).map(w=> getEntity(w.id)).filter(Boolean);
+      const L = mem.find(e=> e.exLeader) || mem[0];
+      const a = Math.atan2(exploreState.camp.y - L.y, exploreState.camp.x - L.x);
+      const p = clearObstaclePoint(L.x + Math.cos(a)*460, L.y + Math.sin(a)*460, 60);
+      return { x:p.x, y:p.y, yaw:Math.atan2(L.y-p.y, L.x-p.x), pitch:0.12, warm:4, lookAt:L.id };
+    } },
+  { name:'wild_alert', kind:'field', desc:'好戦的な群れが気づいた瞬間(リーダーに「!」・仲間は「?」)',
+    at: ()=>{
+      const pk = exploreState.packs.find(q=> exploreWildNature(q.element).temper==='aggressive' && q.region==='volcano')
+              || exploreState.packs.find(q=> exploreWildNature(q.element).temper==='aggressive');
+      if(!pk) return null;
+      const mem = exploreState.wild.filter(w=> w.pack===pk.id).map(w=> getEntity(w.id)).filter(Boolean);
+      const L = mem.find(e=> e.exLeader) || mem[0];
+      const a = Math.atan2(exploreState.camp.y - L.y, exploreState.camp.x - L.x);
+      const p = clearObstaclePoint(L.x + Math.cos(a)*520, L.y + Math.sin(a)*520, 60);
+      return { x:p.x, y:p.y, yaw:Math.atan2(L.y-p.y, L.x-p.x), pitch:0.12, warm:1.5, lookAt:L.id, vuln:true,
+        after: ()=>{
+          exploreWildAlert(L, player);
+          L.exAlertAt = matchTime - 0.25;
+          mem.filter(e=> e!==L).forEach((e, i)=>{ e.exState='wander'; e.exCallAt=null; e.exAlertAt=-99; e.exAware = 0.35 + i*0.25; e.facingAngle = Math.atan2(player.y-e.y, player.x-e.x); });
+        } };
+    } },
+  ...[
+    { name:'boss_intro', boss:'gandrock', dist:1150, desc:'ボス登場(咆哮・名前の札・画面揺れ)',
+      after: `exploreBossStartRoar(B, 'intro'); for(let i=0;i<14;i++) update(1/30);` },
+    { name:'boss_telegraph', boss:'volgreim', dist:1100, desc:'ボスの大技の予告(扇のブレス。地面の印とHPバーの技名)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'breath'); for(let i=0;i<8;i++) update(1/30);` },
+    { name:'boss_meteor', boss:'galvark', dist:1000, desc:'ボスの大技の予告(流星群。時間差で落ちる円)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.exRage=true; B.hp=B.maxHp*0.42; B.exPending=null; exploreBossBeginAttack(B, exploreBossDef(B), player, 'rain'); for(let i=0;i<14;i++) update(1/30);` },
+    { name:'boss_rage', boss:'galvark', dist:900, desc:'怒り状態(赤いオーラ・色味・咆哮・「怒り」の札)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.46; B.exHpLag=0.62; B.exRage=true; exploreBossStartRoar(B, 'rage'); for(let i=0;i<12;i++) update(1/30);` },
+    { name:'boss_break', boss:'gandrock', dist:1000, desc:'部位破壊の瞬間(転倒・星・ひびの印・素材が弾ける)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.63; B.exHpLag=0.7; exploreBossBreakPart(B, exploreBossDef(B)); for(let i=0;i<10;i++) update(1/30);` },
+    { name:'boss_hunt', boss:'gidravers', dist:1300, desc:'頂点ボスの討伐の瞬間(スローモーション・討伐完了・大量の素材)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.hp=1; applyDamage(B, 50, player, {}); for(let i=0;i<40;i++) update(1/30);` },
+  ].map(c=>({
+    name:c.name, kind:'field', desc:c.desc,
+    at: new Function(`
+      const rec = exploreState.bosses.find(r=> r.bossId===${JSON.stringify(c.boss)});
+      const B = rec && getEntity(rec.id); if(!B) return null;
+      const a = Math.atan2(exploreState.camp.y - B.y, exploreState.camp.x - B.x);
+      const p = clearObstaclePoint(B.x + Math.cos(a)*${c.dist}, B.y + Math.sin(a)*${c.dist}, 60);
+      B.exState = 'fight'; B.exploreAsleep = false; B.facingAngle = Math.atan2(p.y-B.y, p.x-B.x);
+      exploreState.banners.length = 0; exploreState.fx.length = 0;   // 前のカットの札を持ち越さない
+      return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true,
+               after: ()=>{ ${c.after} } };`),
+  })),
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',
     prep: ()=>{
       const pick = ['meadow_fiber','meadow_honey','frost_shard','volcano_heart','jungle_relic','boss_horn','apex_core'];
@@ -186,6 +239,8 @@ function pageTools(){
     player.x = at.x; player.y = at.y; player.z = baseTerrainHeightAt(at.x, at.y);
     player.hp = player.maxHp; player.alive = true;
     player.exploreInvulnUntil = matchTime + 99;   // 撮影中に倒れないように(見た目には出ない)
+    // ただし無敵のあいだは野生・ボスが相手にしない(気づかない・巣へ戻る)ので、それを撮るカットは外す
+    if(at.vuln) player.exploreInvulnUntil = 0;
     camState.yaw = at.yaw; camState.pitch = at.pitch;
     player.facingAngle = at.yaw;
     const steps = Math.round((at.warm || 0) * 30);
@@ -196,6 +251,12 @@ function pageTools(){
       // 野生の近くを撮るときは相手を画面に入れ続ける(寄ってくるので向きを追い直す)
       if(at.lookAt!=null){ const t = getEntity(at.lookAt); if(t) at.yaw = Math.atan2(t.y-player.y, t.x-player.x); }
       player.x = at.x; player.y = at.y;
+    }
+    // 撮る直前に状態を作る(ボスの咆哮・予告など)。作ったあとに進めた時間ぶんも自機は据え置く
+    if(typeof at.after === 'function'){
+      at.after();
+      player.x = at.x; player.y = at.y; player.z = baseTerrainHeightAt(at.x, at.y);
+      if(at.lookAt!=null){ const t = getEntity(at.lookAt); if(t) at.yaw = Math.atan2(t.y-player.y, t.x-player.x); }
     }
     camState.yaw = at.yaw; camState.pitch = at.pitch;
     camSnap.active = false;
