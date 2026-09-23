@@ -90,7 +90,15 @@
 - [ ] 段1(2026-09-23 着手: 核・フィールド・狙撃の3担当をworktreeで並行起動。計画ファイルは絶対パスで読ませている)
   - 核: 完了・取り込み済み(4ef684a)。入口 exploreGainMaterial / updateExplore / exploreSpawnWild / exploreWildAI / exploreFinish(reason) / exploreRegionAt。撮影 `node tools/explore_shot.mjs --out shots/explore [--cuts ..] [--vps land,port]`
   - 段2前倒し: 野生AI・ボス担当とルート・装備・工房担当を起動(核の上から。worktreeは最初に `git reset --hard claude/repo-structure-docs-xfimln` させる=worktreeは古いmainから作られるため)
+  - 狙撃: 完了・取り込み済み(9e78614)。入口 sniperGive(ent,'longbow') / sniperAttachScope(ent,'iron'|'x2'|'x4'|'x8') / sniperResetState(exploreResetStateから呼ぶ=済) / 弱点 ent.weakPoint={from,to,mult,onHit} / ent.sniperDmgMult / FOVは world.js setViewZoom() 1か所。撮影 tools/sniper_shot.mjs。自己採点E6=7.5。批評家E6第1周を起動
+  - **注意: ボス担当には weakPoint を {zFrom,zTo,mult} で指示したが、狙撃側の正は {from,to,mult,onHit}。統合時に合わせる**
   - 統合時に繋ぐ: exploreBossNest→EXPLORE_FIELD_LAYOUT / exploreDropLoot→exploreSpawnDrop / exploreCrateSpots→フィールド配置 / 補給箱→sniperGive
+  - 段1・段2完了分(2026-09-23): 野生AI・ボス(0dd5e28)、ルート・工房(95ce205)、フィールド(4aeec52)を取り込み。
+    接続済み: 落とし物→exploreSpawnDrop(光の柱。遠くの狙撃キルも拾いに行く) / 弱点 {from,to,mult} に統一(倍率は explore.js 1か所) /
+    装備の狙撃倍率=player.sniperDmgMult / 銃声=exploreMakeNoise(SNIPER_NOISE_RANGE) / 上位狙撃銃 hornbow・glacier・apexbow /
+    **地域の位置の正は EXPLORE_FIELD_LAYOUT**(EXPLORE_REGIONS は写すだけ。exploreRegionAt=地域オブジェクト or キャンプ内null、
+    exploreRegionKeyAt=キー) / ビーコン=配置表の camp.beacon / ボスの巣=regions[id].nest
+  - 周回の状況: E6狙撃=第1周5.0(不合格)→担当へ差し戻し中(第2周)。E1/E2・E3/E4・E5/E8/E9 の批評家第1周を起動。HUD・音担当を起動。
 - /loop について: タイマー式の /loop ではなく「担当→批評家→担当」の周回を統括が回す(担当の完了通知で次の周へ)。
 - [ ] 段2
 - [ ] 段3(批評家ループ)
