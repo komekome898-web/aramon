@@ -65,6 +65,7 @@ let exploreState = exploreEmptyState();
 function exploreResetState(){
   game.explore = false;
   exploreState = exploreEmptyState();
+  if(typeof sniperResetState==='function') sniperResetState();   // 狙撃の構え・倍率を持ち越さない
   const hudEl = document.getElementById('exploreHud');
   if(hudEl) hudEl.classList.add('hidden');
   const el = document.getElementById('hud');
