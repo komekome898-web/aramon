@@ -160,6 +160,11 @@ const PANELS = [
   /* 探検の結果。素材の一覧(#exploreResultList)だけがスクロールしてよい。
      開き方は __exploreTestResult(下で定義。素材を多めに並べた集計を本物の exploreShowResult へ渡す) */
   { id:'exploreResultOverlay', name:'探検の結果', open:[{call:['__exploreTestResult']}], noScroll:['exploreResultOverlay','exploreResultBox'] },
+  /* 探検の工房。装備の一覧(#exploreForgeList)と詳細の本文(#exploreForgeDBody)だけがスクロールしてよい。
+     開き方は __exploreTestForge(下で定義。素材と装備を決まった中身にしてから本物の openExploreForge を呼ぶ)。
+     「すべて」(一覧が一番長い)と「武器・素材不足」(詳細に素材の行が並ぶ)の2つを見る */
+  { id:'exploreForgeOverlay', name:'工房', open:[{call:['__exploreTestForge','all','apex_body']}], noScroll:['exploreForgeOverlay','exploreForgeBox','exploreForgeDetail'] },
+  { id:'exploreForgeOverlay', name:'工房(武器・素材不足)', open:[{call:['__exploreTestForge','weapon','apex_bow']}], noScroll:['exploreForgeOverlay','exploreForgeBox','exploreForgeDetail'] },
   { id:'ganonPromoOverlay', name:'ガノン記念ポップ',    open:[{call:['showGanonPromoPopup']}], noScroll:['ganonPromoOverlay'] },
   /* レイド入口。「部屋を作る」の2行化(注釈付き)で .raid-actions が見切れないかを見る。
      開き方は __raidTestOpen(上で定義)。中身の一覧(#raidScroll)だけがスクロールしてよい。 */
@@ -638,6 +643,13 @@ for(const dev of DEVICES){
                                                                   toBag: EXPLORE_MATERIALS[k].toBag || null }));
       exploreShowResult({ reason:'faint', full:false, ratio:0.5, items, gold:1234, goldRows:[],
                           timeSec:754, kills:23, faints:3 });
+    };
+    window.__exploreTestForge = (filter, sel)=>{
+      if(typeof openExploreForge!=='function' || typeof EXPLORE_GEAR==='undefined') return;
+      saveExploreStash({ meadow_fiber:14, jungle_vine:9, frost_shard:12, volcano_ore:15, boss_horn:5, boss_fang:2, boss_scale:3, apex_core:1 });
+      saveExploreGear({ owned:['scout_head','horn_body','horn_arms'], equip:{ head:'scout_head', body:'horn_body', arms:'horn_arms' } });
+      exploreForgeState.filter = filter || 'all'; exploreForgeState.sel = sel || null;
+      openExploreForge();
     };
     window.__raidTestOpen = async ()=>{
       if(!game.selectedElement) game.selectedElement = 'dullahan';

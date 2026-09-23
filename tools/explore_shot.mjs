@@ -41,6 +41,30 @@ const CUTS = [
     prep: ()=>{ setLobbyMode('explore', { save:false }); refreshLobby(); } },
   { name:'lobby_mode', kind:'lobby', desc:'プレイモード選択で探検を選んだ状態',
     prep: ()=>{ setLobbyMode('explore', { save:false }); refreshLobby(); lobbyOpenOverlay('modePickOverlay'); } },
+  /* 工房(ui.js の renderExploreForge)。保管と装備は撮るたびに同じ中身へ書き直す(前のカットの結果を持ち越さない) */
+  { name:'forge', kind:'lobby', desc:'工房: 装備の一覧(作れる/素材不足/装着中)と詳細',
+    prep: ()=>{
+      saveExploreStash({ meadow_fiber:14, jungle_vine:9, frost_shard:12, volcano_ore:15, boss_horn:5, boss_fang:2, boss_scale:3, apex_core:3 });
+      saveExploreGear({ owned:['scout_head','horn_body','horn_arms'], equip:{ head:'scout_head', body:'horn_body', arms:'horn_arms' } });
+      setLobbyMode('explore', { save:false }); refreshLobby();
+      exploreForgeState.filter = 'all'; exploreForgeState.sel = 'apex_body';
+      openExploreForge();
+    } },
+  { name:'forge_weapon', kind:'lobby', desc:'工房: 武器で絞り込み・素材が足りない武器の詳細',
+    prep: ()=>{
+      saveExploreStash({ meadow_fiber:4, frost_shard:3, volcano_ore:2, boss_fang:1 });
+      saveExploreGear({ owned:['scout_head'], equip:{ head:'scout_head' } });
+      exploreForgeState.filter = 'weapon'; exploreForgeState.sel = 'frost_rifle';
+      openExploreForge();
+    } },
+  { name:'forge_done', kind:'lobby', desc:'工房: 作ったときの演出(槌→火花→完成の光。金)', waitMs:2300,
+    prep: ()=>{
+      saveExploreStash({ apex_core:3, boss_scale:3, volcano_ore:9 });
+      saveExploreGear({ owned:[], equip:{} });
+      exploreForgeState.filter = 'all'; exploreForgeState.sel = 'apex_body';
+      openExploreForge();
+      exploreForgeCraft('apex_body');
+    } },
   { name:'camp', kind:'field', desc:'ベースキャンプの出発地点から帰還ビーコン側を見渡す',
     at: ()=>{ const s = exploreState.spawn, b = exploreState.beacon;
               return { x:s.x, y:s.y, yaw:Math.atan2(b.y-s.y, b.x-s.x), pitch:0.14, warm:0.3 }; } },
@@ -119,6 +143,55 @@ const CUTS = [
       return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true,
                after: ()=>{ ${c.after} } };`),
   })),
+  /* ===== ルート(explore_loot.js)。補給箱は地域の中に散っているので、撮る前にキャンプの箱を選び、
+     撮りたいレア度へ書き換えてから近づく(配置の乱数に左右されない) ===== */
+  { name:'crate_near', kind:'field', desc:'補給箱の近く(閉じている・金の箱。とどまって開ける途中)',
+    at: ()=>{
+      const c = exploreState.crates.find(k=> !k.opened);
+      if(!c) return null;
+      c.rarity = 'legendary';
+      const a = Math.atan2(exploreState.spawn.y - c.y, exploreState.spawn.x - c.x);
+      const p = { x:c.x + Math.cos(a)*230, y:c.y + Math.sin(a)*230 };
+      // 2つ目の箱(紫)も同じ画に入るよう横に寄せる
+      const c2 = exploreState.crates.find(k=> !k.opened && k !== c);
+      if(c2){ c2.rarity = 'epic'; c2.x = c.x + Math.cos(a+Math.PI/2)*170 - Math.cos(a)*90; c2.y = c.y + Math.sin(a+Math.PI/2)*170 - Math.sin(a)*90; c2.z = baseTerrainHeightAt(c2.x, c2.y); }
+      c.hold = EXPLORE_CRATE_OPEN_SEC*0.55;
+      return { x:p.x, y:p.y, yaw:Math.atan2(c.y-p.y, c.x-p.x) + 0.12, pitch:0.16, warm:0 };
+    } },
+  { name:'crate_open', kind:'field', desc:'補給箱が開いた瞬間(蓋が跳ね上がり中身が弾けて散る)',
+    at: ()=>{
+      const c = exploreState.crates.find(k=> !k.opened);
+      if(!c) return null;
+      c.rarity = 'legendary';
+      const a = Math.atan2(exploreState.spawn.y - c.y, exploreState.spawn.x - c.x);
+      const p = { x:c.x + Math.cos(a)*300, y:c.y + Math.sin(a)*300 };
+      exploreOpenCrate(c);
+      return { x:p.x, y:p.y, yaw:Math.atan2(c.y-p.y, c.x-p.x), pitch:0.12, warm:0.62 };
+    } },
+  { name:'pillars', kind:'field', desc:'光の柱が並ぶ遠景(白・青・紫・金)',
+    at: ()=>{
+      const reg = exploreRegion('meadow'), rc = exploreRegionCircle(reg);
+      const cx = WORLD.w*EXPLORE_CAMP.xr, cy = WORLD.h*EXPLORE_CAMP.yr;
+      const dir = Math.atan2(rc.y-cy, rc.x-cx);
+      const p = clearObstaclePoint(rc.x - Math.cos(dir)*rc.r*0.55, rc.y - Math.sin(dir)*rc.r*0.55, 80);
+      const keys = ['meadow_fiber','heal_s','meadow_honey','scope4x','boss_horn','meadow_fiber','guts','apex_core','frost_dew','longbow','scope8x','volcano_ore'];
+      keys.forEach((k, i)=>{
+        const d = 500 + i*230, a = dir + (((i*7)%9)-4)*0.085;
+        exploreSpawnDrop(p.x + Math.cos(a)*d, p.y + Math.sin(a)*d, k, null, { dist:[0, 20], delay:0 });
+      });
+      return { x:p.x, y:p.y, yaw:dir, pitch:0.07, warm:1.4 };
+    } },
+  { name:'loot_feed', kind:'field', desc:'拾った通知が画面の左に積み上がったところ(白・青・紫・金)',
+    waitMs: 700,
+    at: ()=>{
+      const s = exploreState.spawn;
+      ['meadow_fiber','frost_dew','boss_fang','apex_core'].forEach((k, i)=> exploreGainMaterial(k, 1 + (i===0 ? 2 : 0), null, null));
+      // 撮影は1枚に数秒かかる(ソフトウェア描画)ので、行が消える前に撮れるよう消える予約を外す
+      document.querySelectorAll('#expLootFeed .exp-feed-row').forEach(r=> clearTimeout(r._expTimer));
+      const c = exploreState.crates.find(k=> !k.opened);
+      const yaw = c ? Math.atan2(c.y - s.y, c.x - s.x) : -Math.PI/2;
+      return { x:s.x, y:s.y, yaw, pitch:0.12, warm:0 };
+    } },
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',
     prep: ()=>{
       const pick = ['meadow_fiber','meadow_honey','frost_shard','volcano_heart','jungle_relic','boss_horn','apex_core'];
@@ -306,7 +379,7 @@ for(const vpName of vpNames){
   for(const c of cuts.filter(c=>c.kind==='lobby')){
     await page.evaluate(()=> window.__shotCloseOverlays());
     await page.evaluate(`(${c.prep.toString()})()`);
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(c.waitMs || 600);
     const file = path.join(OUT, `${c.name}_${vpName}.png`);
     await shoot(page, file, vp);
     report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file) });
@@ -324,7 +397,7 @@ for(const vpName of vpNames){
     for(const c of fieldCuts){
       const info = await page.evaluate((src)=> window.__shotField(src), c.at.toString());
       if(!info || !info.ok){ report.errors.push(`${c.name}_${vpName}: ${info && info.reason || '失敗'}`); continue; }
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(c.waitMs || 150);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
       report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file), cam:info });
@@ -335,6 +408,17 @@ for(const vpName of vpNames){
       await page.evaluate(([s, el])=> window.__shotStartExplore(s, el), [SEED, ELEMENT]);
       await page.evaluate(()=> window.__shotField(`()=>({ x:exploreState.spawn.x, y:exploreState.spawn.y, yaw:-Math.PI/2, pitch:0.14, warm:0 })`));
       await page.evaluate(`(${c.prep.toString()})()`);
+      /* 結果画面のカードは1枚ずつ順に出る(CSSの動き)。撮影はゲームのループを止めていて
+         動きの進み方が撮るたびに変わるので、終わりのある動きは最後まで進めて「出そろった姿」で撮る
+         (金のカードに光が横切るような繰り返しの動きはそのまま) */
+      await page.evaluate(()=>{
+        const ov = document.getElementById('exploreResultOverlay');
+        if(!ov) return;
+        for(const a of ov.getAnimations({ subtree:true })){
+          const t = a.effect && a.effect.getTiming && a.effect.getTiming();
+          if(t && t.iterations !== Infinity){ try{ a.finish(); }catch(e){} }
+        }
+      });
       await page.waitForTimeout(500);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);

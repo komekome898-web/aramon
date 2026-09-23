@@ -7411,6 +7411,8 @@ function render(){
     const p = project(it.x,it.y,it.z||0);
     if(p && p.depth <= LOOT_VIEW) drawables.push({kind:'loot', obj:it, p});
   }
+  // 探検モードの補給箱・落ちている品(光の柱)。探検以外では何も積まない(explore_loot.js)
+  if(game.explore) exploreLootDrawables(drawables);
   for(const pr of projectiles){ if(occludedByMountain(pr.x, pr.y, pr.z+20)) continue; const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
   // 狙撃の構え中はカメラが自機の目の位置に入るので、自分の絵は描かない(画面を塞ぐ)
   const hideSelf = (typeof sniperHidesSelf === 'function') && sniperHidesSelf();
@@ -7443,6 +7445,7 @@ function render(){
     // 1個が落ちても残りは描き切る(ここで抜けると画面が丸ごと空になる)
     try{
       if(d.kind==='loot') drawLootItem(d.obj,d.p);
+      else if(d.kind==='exl') d.draw(d.obj, d.p, d);   // 探検のルート(描き方はエントリが持つ)
       else if(d.kind==='proj') drawProjectile(d.obj,d.p);
       else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
       else if(d.kind==='mon') drawMonster(d.obj,d.p);

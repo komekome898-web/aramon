@@ -26,7 +26,7 @@
      exploreState.packs   … [{ id, region, element, homeX, homeY }] 群れ(縄張り)の台帳
      exploreState.bosses  … [{ id, bossId, region, nestX, nestY, engaged, broken, defeated }] ボスの台帳
                             (中身の状態は getEntity(id) の exState / exRage / exBroken / exPending を読む)
-     exploreState.crates  … [] 補給箱の台帳(段2が作る)
+     exploreState.crates  … 補給箱の台帳 / exploreState.drops … 落ちている探検の品(どちらも explore_loot.js)
      exploreState.bag     … { 素材キー: 個数 } 今回拾った素材(持ち帰る前)
      exploreState.camp / spawn / beacon … ベースキャンプの中心・出発(復活)地点・帰還ビーコン
      exploreGainMaterial(key, n, x, y) … 素材を拾う入口(通知まで出す)。ボス・補給箱もここを呼ぶ
@@ -71,6 +71,8 @@ function exploreEmptyState(){
     faints:0, kills:0, bossKills:0,
     bag:{},
     wild:[], packs:[], bosses:[], crates:[],
+    drops:[],           // 落ちている探検の品(補給箱・野生・ボスから。explore_loot.js)
+    lootFx:[],          // 箱が開いた・品が落ちたときの地面の輪(explore_loot.js)
     fx:[],              // 弾ける素材のかけら(exploreDropLoot が積み、exploreDrawScreen が描く)
     banners:[],         // 画面の札(ボスの名前・怒り・部位破壊・討伐完了)
     slowmo:null,        // ボス討伐の瞬間の間(実時間で進む。exploreTimeScale)
@@ -94,6 +96,7 @@ function exploreResetState(){
   if(el) el.classList.remove('explore-mode');
   const ov = document.getElementById('exploreResultOverlay');
   if(ov) ov.classList.add('hidden');
+  exploreLootReset();        // 拾った通知の行を消す(explore_loot.js)
 }
 
 // 出発するモンスターの名前(マスモンならその名前)
@@ -146,6 +149,8 @@ function exploreStart(){
 
   player = createMonster(game.selectedElement, true, explorePlayerName(), { spawnPoint: exploreState.spawn });
   applyMastermonToPlayer();
+  // 工房で作った装備の効果(explore_loot.js)。**探検の開始時だけ**掛ける=PvPの力関係は変えない
+  exploreApplyGear(player);
   // 探検は狩りのモード。最初から全部の技を使える(レイドと同じ扱い)
   player.moveTierUnlocked = 3;
   player.moveTierSelected = 1;
@@ -196,7 +201,8 @@ function exploreSetupCamp(){
   exploreState.beacon = { x: cx + EXPLORE_BEACON_OFFSET.dx, y: cy + EXPLORE_BEACON_OFFSET.dy, r: EXPLORE_BEACON_RADIUS };
 }
 
-/* 回復・ガッツを撒く(仮。段2の補給箱が入るまでの繋ぎ)。通常の試合と同じ spawnLoot を使う */
+/* ルートを置く。主役は補給箱(explore_loot.js。開けると中身が弾けて光の柱が立つ)。
+   それとは別に、通常の試合と同じ回復・ガッツ(spawnLoot)を少しだけ地面に撒く(箱の間の小さなご褒美) */
 function exploreSpawnLoot(){
   const c = exploreState.camp;
   spawnLoot(EXPLORE_CAMP_LOOT_COUNT, { x:c.x, y:c.y }, c.r*1.6);
@@ -204,6 +210,7 @@ function exploreSpawnLoot(){
     const rc = exploreRegionCircle(reg);
     spawnLoot(EXPLORE_REGION_LOOT_COUNT, { x:rc.x, y:rc.y }, rc.r*0.9);
   }
+  exploreSpawnCrates();
 }
 
 /* =====================================================================
@@ -1760,9 +1767,9 @@ function exploreGainMaterial(key, n, x, y){
   exploreState.bag[key] = (exploreState.bag[key] || 0) + cnt;
   const col = exploreMaterialColor(key);
   if(x != null && y != null) spawnDmgText(x, y, baseTerrainHeightAt(x, y) + 30, `${m.icon} ${m.name}×${cnt}`, col, m.rarity !== 'common');
-  const rar = EXPLORE_RARITY[m.rarity];
-  pushToast(`${m.icon} ${m.name} ×${cnt} を手に入れた（${rar ? rar.label : ''}）`);
-  playSe('pickup');
+  // 通知は画面左に積み上がるレア度色の行(explore_loot.js)。金は特別な音と光
+  exploreLootNotify(key, cnt);
+  exploreLootPickupSe(m.rarity);
   exploreState.hudSig = '';
   return true;
 }
@@ -1849,6 +1856,7 @@ function updateExplore(dt){
   exploreUpdateWild(dt);
   exploreUpdateBosses(dt);
   exploreUpdateFx(dt);
+  exploreLootUpdate(dt);     // 補給箱を開ける・品が落ちる・拾う(explore_loot.js)
   exploreUpdateBeacon(dt);
   if(game.over) return;
   exploreUpdateHud();

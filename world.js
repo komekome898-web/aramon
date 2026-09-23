@@ -382,6 +382,7 @@ const SCROLL_LOCK_EXEMPT_IDS = [
   "raidRankOverlay", "shareOverlay", "mastermonDeleteConfirm", "tutorialLayer",
   "ghostNewsOverlay",
   "exploreResultOverlay",   // 探検モードの結果(持ち帰った素材の一覧がスクロールする)
+  "exploreForgeOverlay",    // 探検モードの工房(装備の一覧と詳細の本文がスクロールする)
 ];
 /* 1本のセレクタにまとめておく(呼ばれるたびに組み直さない)。
    closest は「,区切りのどれかに当たる最も近い祖先」を返すので、

@@ -1937,6 +1937,8 @@ const ACCOUNT_SYNC_KEYS = ['aramon_mastermons_v1','aramon_local_stats_v1','aramo
   'aramon_acct_missions_v1',
   // 探検モードの保管(持ち帰ったボス素材など。data.js の EXPLORE_STASH_STORAGE_KEY)
   'aramon_explore_stash_v1',
+  // 探検モードの装備(工房で作った物と着けている物。data.js の EXPLORE_GEAR_STORAGE_KEY)
+  'aramon_explore_gear_v1',
   /* ===== ここから設定系(2026-08-23に追加) =====
      「機種変してログインしたら、感度も音量も全部やり直しになった」への対応。
      **入れる基準は「画面の大きさに関係しない好みか」**。関係しないものだけ入れる。
@@ -4379,6 +4381,14 @@ function updateModePickPanels(){
   document.getElementById('teamSubRow').classList.toggle('hidden', !isTeam);
   document.getElementById('raidModeOptions').classList.toggle('hidden', !isRaid);
   document.getElementById('exploreModeOptions').classList.toggle('hidden', !isExplore);
+  /* ロビー左の「工房」は探検を選んでいるときだけ出す(探検を遊ばない人のロビーは今までの並びのまま)。
+     タイルの数が変わるので、升目の割り当て(updateLobbyMenuRows)を組み直す。
+     起動直後の初期化順で升目の側がまだ用意できていないことがあるので、失敗しても止めない */
+  const forgeBtn = document.getElementById('openForgeBtn');
+  if(forgeBtn && forgeBtn.classList.contains('hidden') === isExplore){
+    forgeBtn.classList.toggle('hidden', !isExplore);
+    try{ if(typeof updateLobbyMenuRows==='function') updateLobbyMenuRows(); }catch(err){}
+  }
   // 人数タブ(2〜4人)はシングル>マルチPvPのときだけ
   document.getElementById('multiOptions').classList.toggle('hidden', !isPvp4);
   // 探検はサブ選択が無く lobbySubMode が前のモードの値のまま残るので、難易度の判定に通さない
@@ -6195,12 +6205,14 @@ function exploreShowResult(res){
   if(!items.length){
     list.innerHTML = '<div class="exr-empty">持ち帰った素材はありません</div>';
   } else {
-    list.innerHTML = items.map(it=>{
+    /* レア度の色のカード。金は光り、紫はふちが灯る(data-rar を CSS が読む)。
+       --i で1枚ずつ順に出す(良い物ほど先に並んでいるので、最初に金が弾ける) */
+    list.innerHTML = items.map((it, i)=>{
       const m = EXPLORE_MATERIALS[it.key];
       const rar = EXPLORE_RARITY[m.rarity] || EXPLORE_RARITY.common;
       const dest = (it.toBag && PLAYER_ITEMS[it.toBag]) ? `→ ${PLAYER_ITEMS[it.toBag].name}` : '→ 保管';
       const lost = it.lost > 0 ? `<span class="exr-lost">落とした ${it.lost}</span>` : '';
-      return `<div class="exr-item${it.kept<=0?' is-lost':''}" style="--rc:${rar.color}">`
+      return `<div class="exr-item${it.kept<=0?' is-lost':''}" data-rar="${m.rarity}" style="--rc:${rar.color};--i:${Math.min(i, 12)}">`
         + `<span class="exr-ico">${m.icon}</span>`
         + `<span class="exr-main"><span class="exr-name">${m.name}</span>`
         + `<span class="exr-dest"><span class="exr-rar">${rar.label}</span>${lost}${it.kept>0 ? dest : ''}</span></span>`
@@ -6208,6 +6220,14 @@ function exploreShowResult(res){
     }).join('');
   }
   list.scrollTop = 0;
+  // 工房への導線: 持ち帰った素材で作れるようになった装備の数を添える(素材→装備の流れを見せる)
+  const forgeBtn = document.getElementById('exploreResultForgeBtn');
+  if(forgeBtn){
+    const gear = loadExploreGear(), stash = loadExploreStash();
+    const n = Object.keys(EXPLORE_GEAR).filter(k=> exploreGearStateOf(k, gear, stash)==='craft').length;
+    forgeBtn.textContent = n > 0 ? `⚒️ 工房へ(作れる装備 ${n})` : '⚒️ 工房へ';
+    forgeBtn.classList.toggle('is-ready', n > 0);
+  }
   ov.classList.remove('hidden');
 }
 /* 結果画面からロビーへ戻る(raidExit / exitShootingRange と同じ後始末) */
@@ -6227,6 +6247,237 @@ function exploreExit(){
   updatePlayButtonsEnabled();
 }
 document.getElementById('exploreResultBackBtn').addEventListener('click', exploreExit);
+// 結果画面から工房へ(持ち帰った素材をその場で装備に換える流れ。ロビーへ戻ってから開く)
+document.getElementById('exploreResultForgeBtn').addEventListener('click', ()=>{ exploreExit(); openExploreForge(); });
+
+/* =====================================================================
+   探検モードの工房(#exploreForgeOverlay)
+   ・**表は data.js の EXPLORE_GEAR が正。1行足せばここに並ぶ**(一覧・詳細・セット効果・合計は全部表から作る)
+   ・作る/着ける/外すの保存は data.js の exploreCraftGear / exploreEquipGear / exploreUnequipSlot。
+     効果の合計は exploreGearTotals 1か所(試合の適用 exploreApplyGear と同じ数字を読む)
+   ・入口: ロビー左の「工房」(探検を選んでいるときだけ出る)/ プレイモード「探検」の案内 / 探検の結果画面
+   ・箱は画面から決める(R1)。操作(✕・スロット・作るボタン)と見出しはスクロールの外、
+     装備の一覧と詳細の本文だけが送れる(R2)。縦が足りないときの削る順(R3)は style.css の工房の見出し
+   ===================================================================== */
+const exploreForgeState = { filter:'all', sel:null, busy:false };
+/* 装備のアイコン(インラインSVG。画像ファイルを増やさない)。モンハンの装備アイコンと同じく
+   「部位の形 × セットの色」で見分ける。枠の色(レア度)は外側の CSS が --rc で付ける */
+const EXPLORE_GEAR_ICON_PATHS = {
+  head:   { body:'M8 31C8 17 15 8 24 8s16 9 16 23v4h-6l-2-6H16l-2 6H8z', dark:'M15 29h18l-2 4H17z',
+            hi:'M13 23c1-7 6-12 11-12-4 2-7 6-8 12z', extra:'M24 9c-2-4 2-8 7-7-3 2-4 4-4 8z' },
+  body:   { body:'M12 10l6-2c2 3 10 3 12 0l6 2 6 6-4 6-2-2v20c-6 3-18 3-24 0V20l-2 2-4-6z', dark:'M23 13h2v27h-2zM14 25c6 3 14 3 20 0v2c-6 3-14 3-20 0z',
+            hi:'M15 13l4-2c-1 9-2 18-4 27h-1z', extra:'' },
+  arms:   { body:'M13 44V30h22v14zM12 30V18c0-3 4-3 4 0v-6c0-3 4-3 4 0v-2c0-3 4-3 4 0v1c0-3 4-3 4 0v9c2-3 6-3 7 0l-1 10z', dark:'M12 30h24v4H12z',
+            hi:'M14 29V19c0-1 1-1 1 0v10zM18 29V13c0-1 1-1 1 0v16z', extra:'' },
+  weapon: { body:'M7 36L38 7l4 4-31 29zM4 35l9-7 7 7-9 9-7-3zM16 32l5-5 4 6-4 3z', dark:'M18 20l11-11 4 4-11 11zM27 17l3-3 2 2-3 3z',
+            hi:'M8 36L38 8l1 1-30 28z', extra:'M38 4l6 2-2 6z' },
+};
+function exploreGearIconSvg(gearKey){
+  const g = EXPLORE_GEAR[gearKey];
+  if(!g) return '';
+  const set = EXPLORE_GEAR_SETS[g.set] || {};
+  const col = set.color || '#cccccc';
+  const P = EXPLORE_GEAR_ICON_PATHS[g.slot] || EXPLORE_GEAR_ICON_PATHS.body;
+  return `<svg class="exf-svg" viewBox="0 0 48 48" aria-hidden="true">`
+    + `<path d="${P.body}" fill="${col}" stroke="rgba(0,0,0,0.75)" stroke-width="1.6" stroke-linejoin="round"/>`
+    + (P.extra ? `<path d="${P.extra}" fill="${col}" stroke="rgba(0,0,0,0.75)" stroke-width="1.4" stroke-linejoin="round"/>` : '')
+    + `<path d="${P.dark}" fill="rgba(0,0,0,0.42)"/>`
+    + `<path d="${P.hi}" fill="rgba(255,255,255,0.45)"/>`
+    + `</svg>`;
+}
+function exploreGearIconHtml(gearKey, cls){
+  const g = EXPLORE_GEAR[gearKey];
+  if(!g) return '';
+  const set = EXPLORE_GEAR_SETS[g.set] || {};
+  const rar = EXPLORE_RARITY[g.rarity] || EXPLORE_RARITY.common;
+  return `<span class="exf-ico ${cls||''}" data-rar="${g.rarity}" style="--rc:${rar.color}">${exploreGearIconSvg(gearKey)}`
+    + `<span class="exf-emb">${set.emblem || ''}</span></span>`;
+}
+// 1つの装備の状態(一覧の札・詳細のボタンが同じ判定を読む)
+function exploreGearStateOf(key, gear, stash){
+  if(gear.equip[EXPLORE_GEAR[key].slot] === key) return 'equip';
+  if(gear.owned.includes(key)) return 'owned';
+  return exploreGearCraftCheck(key, stash).ok ? 'craft' : 'lack';
+}
+const EXPLORE_GEAR_STATE_LABEL = { equip:'装着中', owned:'所持', craft:'作れる！', lack:'素材不足' };
+
+function openExploreForge(){
+  exploreForgeState.busy = false;
+  const fx = document.getElementById('exploreForgeFx');
+  if(fx){ fx.classList.add('hidden'); fx.innerHTML = ''; }
+  renderExploreForge();
+  document.getElementById('exploreForgeOverlay').classList.remove('hidden');
+  const list = document.getElementById('exploreForgeList');
+  if(list) list.scrollTop = 0;
+}
+function closeExploreForge(){
+  document.getElementById('exploreForgeOverlay').classList.add('hidden');
+}
+function renderExploreForge(){
+  const gear = loadExploreGear();
+  const stash = loadExploreStash();
+  const keys = Object.keys(EXPLORE_GEAR);
+  // 選択: 無ければ「作れる物 → 装着中 → 先頭」の順で最初の1つ
+  if(!exploreForgeState.sel || !EXPLORE_GEAR[exploreForgeState.sel]){
+    exploreForgeState.sel = keys.find(k=> exploreGearStateOf(k, gear, stash)==='craft')
+      || keys.find(k=> exploreGearStateOf(k, gear, stash)==='equip') || keys[0] || null;
+  }
+  // ---- スロット(絞り込みを兼ねる)。着けている装備のアイコンを出す ----
+  const slotsEl = document.getElementById('exploreForgeSlots');
+  const chip = (id, label, inner)=> `<button class="exf-slot${exploreForgeState.filter===id?' active':''}" data-slot="${id}">`
+    + `<span class="exf-slot-ico">${inner}</span><span class="exf-slot-label">${label}</span></button>`;
+  slotsEl.innerHTML = chip('all', 'すべて', '<span class="exf-slot-all">⚒️</span>')
+    + EXPLORE_GEAR_SLOTS.map(s=>{
+        const k = gear.equip[s.id];
+        return chip(s.id, s.label, k ? exploreGearIconHtml(k, 'is-mini') : '<span class="exf-slot-empty">＋</span>');
+      }).join('');
+  // ---- 効果の合計(セット効果込み。1行で、入らなければ「…」) ----
+  const tot = exploreGearTotals(gear.equip);
+  const fxTxt = exploreGearFxText(tot.fx);
+  const setTxt = tot.sets.filter(s=> s.active.length).map(s=> `${EXPLORE_GEAR_SETS[s.set].name}${s.n}`).join(' ');
+  document.getElementById('exploreForgeTotal').innerHTML = fxTxt
+    ? `<span class="exf-total-label">探検での効果</span><span class="exf-total-val">${fxTxt}</span>${setTxt ? `<span class="exf-total-set">セット ${setTxt}</span>` : ''}`
+    : '<span class="exf-total-label">装備なし</span><span class="exf-total-val is-empty">素材を持ち帰って装備を作ろう</span>';
+  // ---- 一覧 ----
+  const shown = keys.filter(k=> exploreForgeState.filter==='all' || EXPLORE_GEAR[k].slot===exploreForgeState.filter);
+  const listEl = document.getElementById('exploreForgeList');
+  const keepTop = listEl.scrollTop;
+  listEl.innerHTML = shown.map(k=>{
+    const g = EXPLORE_GEAR[k];
+    const st = exploreGearStateOf(k, gear, stash);
+    const rar = EXPLORE_RARITY[g.rarity] || EXPLORE_RARITY.common;
+    return `<button class="exf-card is-${st}${k===exploreForgeState.sel?' is-sel':''}" data-key="${k}" data-rar="${g.rarity}" style="--rc:${rar.color}">`
+      + exploreGearIconHtml(k)
+      + `<span class="exf-cmain"><span class="exf-cname">${g.name}</span>`
+      + `<span class="exf-cstate">${EXPLORE_GEAR_STATE_LABEL[st]}</span></span></button>`;
+  }).join('');
+  listEl.scrollTop = keepTop;
+  renderExploreForgeDetail(gear, stash);
+}
+function renderExploreForgeDetail(gear, stash){
+  const key = exploreForgeState.sel;
+  const g = EXPLORE_GEAR[key];
+  const top = document.getElementById('exploreForgeDTop');
+  const body = document.getElementById('exploreForgeDBody');
+  const btn = document.getElementById('exploreForgeActBtn');
+  if(!g){ top.innerHTML = ''; body.innerHTML = ''; btn.disabled = true; return; }
+  const rar = EXPLORE_RARITY[g.rarity] || EXPLORE_RARITY.common;
+  const set = EXPLORE_GEAR_SETS[g.set] || { name:'', bonus:[] };
+  const slot = EXPLORE_GEAR_SLOTS.find(s=> s.id===g.slot);
+  const st = exploreGearStateOf(key, gear, stash);
+  document.getElementById('exploreForgeDetail').style.setProperty('--rc', rar.color);
+  document.getElementById('exploreForgeDetail').dataset.rar = g.rarity;
+  top.innerHTML = exploreGearIconHtml(key, 'is-big')
+    + `<span class="exf-d-head"><span class="exf-d-name">${g.name}</span>`
+    + `<span class="exf-d-meta"><span class="exf-d-rar">${rar.label}</span>${set.name}セット・${slot ? slot.label : ''}</span></span>`;
+  // 効果
+  const fxRows = Object.keys(EXPLORE_GEAR_STATS).filter(k=> g.fx[k]).map(k=>{
+    const v = g.fx[k];
+    return `<div class="exf-fxrow"><span>${EXPLORE_GEAR_STATS[k].label}</span><b>${v>0?'+':'−'}${Math.round(Math.abs(v)*100)}%</b></div>`;
+  }).join('');
+  // セット効果(着けたら何個になるかで、効く段を光らせる)
+  const eq = { ...gear.equip, [g.slot]: key };
+  const nIf = EXPLORE_GEAR_SLOTS.filter(s=> EXPLORE_GEAR[eq[s.id]] && EXPLORE_GEAR[eq[s.id]].set===g.set).length;
+  const setRows = set.bonus.map(b=> `<div class="exf-setrow${nIf>=b.n?' is-on':''}"><span>${b.n}つ</span><b>${exploreGearFxText(b.fx, false)}</b></div>`).join('');
+  // 必要な素材(手持ち/必要。足りない物は赤)
+  const chk = exploreGearCraftCheck(key, stash);
+  const matRows = chk.rows.map(r=>{
+    const m = EXPLORE_MATERIALS[r.key];
+    const mr = EXPLORE_RARITY[m.rarity] || EXPLORE_RARITY.common;
+    return `<div class="exf-matrow${r.have>=r.need?' is-ok':' is-short'}" style="--mc:${mr.color}">`
+      + `<span class="exf-mat-ico">${m.icon}</span><span class="exf-mat-name">${m.name}</span>`
+      + `<span class="exf-mat-n"><b>${r.have}</b>/${r.need}</span></div>`;
+  }).join('');
+  // 並び: 効果 → 必要な素材(作る前だけ) → セット効果。作れるかどうかを決める素材を先に見せる
+  body.innerHTML = `<div class="exf-sec-label">効果(探検モードの中だけ)</div>${fxRows}`
+    + (st==='equip' || st==='owned' ? '' : `<div class="exf-sec-label">必要な素材(手持ち/必要)</div>${matRows}`)
+    + `<div class="exf-sec-label">${set.name}セット効果</div>${setRows}`;
+  btn.className = 'exf-act-btn is-' + st;
+  btn.disabled = (st==='lack') || exploreForgeState.busy;
+  btn.textContent = st==='craft' ? '⚒️ 作る' : st==='lack' ? '素材が足りません' : st==='owned' ? '装着する' : '外す';
+}
+// 作る → 演出 → 保存済みの状態で描き直す(保存は演出の前に済ませる。途中で閉じても作った物は消えない)
+function exploreForgeCraft(key){
+  if(exploreForgeState.busy) return;
+  if(!exploreCraftGear(key)){ pushToast('素材が足りません'); renderExploreForge(); return; }
+  exploreForgeState.busy = true;
+  renderExploreForge();
+  playExploreForgeFx(key, ()=>{ exploreForgeState.busy = false; renderExploreForge(); });
+}
+/* 完成の演出(槌で3回打つ → 火花 → 光って完成)。尺は EXPLORE_FORGE_FX_MS と style.css のキーフレームで
+   同じ値を持つ(直すときは両方)。素材を1つも使わないCSSアニメーション */
+const EXPLORE_FORGE_FX_MS = 2600;
+let exploreForgeFxTimers = [];
+function playExploreForgeFx(key, onEnd){
+  const fx = document.getElementById('exploreForgeFx');
+  const g = EXPLORE_GEAR[key];
+  if(!fx || !g){ if(onEnd) onEnd(); return; }
+  exploreForgeFxTimers.forEach(t=> clearTimeout(t)); exploreForgeFxTimers = [];
+  const rar = EXPLORE_RARITY[g.rarity] || EXPLORE_RARITY.common;
+  fx.style.setProperty('--rc', rar.color);
+  fx.dataset.rar = g.rarity;
+  // 火花は1粒ずつ飛ぶ向き・距離・大きさを乱す(3回打つのでそれぞれに)
+  let sparks = '';
+  for(let hit=0; hit<3; hit++){
+    for(let i=0;i<12;i++){
+      const a = -Math.PI*(0.1 + 0.8*Math.random()), d = 40 + Math.random()*90;
+      sparks += `<i class="exf-spark" style="--dx:${(Math.cos(a)*d).toFixed(1)}px;--dy:${(Math.sin(a)*d).toFixed(1)}px;`
+        + `--sd:${(0.18 + hit*0.45).toFixed(2)}s;--ss:${(0.6 + Math.random()*0.9).toFixed(2)}"></i>`;
+    }
+  }
+  fx.innerHTML = `<div class="exf-fx-bg"></div><div class="exf-fx-rays"></div>`
+    + `<div class="exf-fx-anvil"><span class="exf-fx-hammer">🔨</span><span class="exf-fx-glow"></span>${sparks}</div>`
+    + `<div class="exf-fx-flash"></div>`
+    + `<div class="exf-fx-item">${exploreGearIconHtml(key, 'is-hero')}</div>`
+    + `<div class="exf-fx-text"><span class="exf-fx-done">完成！</span><span class="exf-fx-name">${g.name}</span>`
+    + `<span class="exf-fx-rar">${rar.label}</span></div>`;
+  fx.classList.remove('hidden');
+  [0.18, 0.63, 1.08].forEach(t=> exploreForgeFxTimers.push(setTimeout(()=> playSe('expForgeHit'), t*1000)));
+  exploreForgeFxTimers.push(setTimeout(()=> playSe(g.rarity==='legendary' ? 'expLootLegend' : 'expForgeDone'), 1450));
+  let done = false;
+  const finish = ()=>{
+    if(done) return; done = true;
+    exploreForgeFxTimers.forEach(t=> clearTimeout(t)); exploreForgeFxTimers = [];
+    fx.classList.add('hidden'); fx.innerHTML = ''; fx.onclick = null;
+    if(onEnd) onEnd();
+  };
+  // 光ったあとはタップで閉じられる。放っておいても尺が来たら閉じる
+  exploreForgeFxTimers.push(setTimeout(()=>{ fx.onclick = finish; }, 1500));
+  exploreForgeFxTimers.push(setTimeout(finish, EXPLORE_FORGE_FX_MS + 700));
+}
+document.getElementById('exploreForgeCloseBtn').addEventListener('click', closeExploreForge);
+document.getElementById('openForgeBtn').addEventListener('click', openExploreForge);
+document.getElementById('exploreForgeOpenBtn').addEventListener('click', ()=>{
+  lobbyCloseOverlay('modePickOverlay');
+  openExploreForge();
+});
+document.getElementById('exploreForgeSlots').addEventListener('click', (e)=>{
+  const b = e.target instanceof Element && e.target.closest('.exf-slot');
+  if(!b) return;
+  exploreForgeState.filter = b.dataset.slot || 'all';
+  // スロットを押したら、そこに着けている物を選ぶ(着けていなければ選択はそのまま)
+  const k = loadExploreGear().equip[exploreForgeState.filter];
+  if(k) exploreForgeState.sel = k;
+  document.getElementById('exploreForgeList').scrollTop = 0;
+  renderExploreForge();
+});
+document.getElementById('exploreForgeList').addEventListener('click', (e)=>{
+  const b = e.target instanceof Element && e.target.closest('.exf-card');
+  if(!b || !EXPLORE_GEAR[b.dataset.key]) return;
+  exploreForgeState.sel = b.dataset.key;
+  renderExploreForge();
+  const d = document.getElementById('exploreForgeDBody');
+  if(d) d.scrollTop = 0;
+});
+document.getElementById('exploreForgeActBtn').addEventListener('click', ()=>{
+  const key = exploreForgeState.sel;
+  const g = EXPLORE_GEAR[key];
+  if(!g || exploreForgeState.busy) return;
+  const st = exploreGearStateOf(key, loadExploreGear(), loadExploreStash());
+  if(st==='craft') exploreForgeCraft(key);
+  else if(st==='owned'){ exploreEquipGear(key); playSe('train'); renderExploreForge(); }
+  else if(st==='equip'){ exploreUnequipSlot(g.slot); renderExploreForge(); }
+});
 
 function exitShootingRange(){
   game.started = false;

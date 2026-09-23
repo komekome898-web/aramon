@@ -180,6 +180,11 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
      <button id="openMastermonBtn" class="lobby-side-btn">
        <span class="lobby-side-icon">🐾</span><span class="lobby-side-label">マスモン</span>
      </button>
+     <!-- ⚒️ 工房(探検モードの装備を作る)。**プレイモードが探検のときだけ出す**(ui.js の updateModePickPanels)。
+          探検を選んでいない人のロビーは今までと同じ並びのまま。末尾なので既存の組はずれない -->
+     <button id="openForgeBtn" class="lobby-side-btn side-btn-forge hidden">
+       <span class="lobby-side-icon">⚒️</span><span class="lobby-side-label">工房</span>
+     </button>
     </div>
      <!-- 左下: SSRバナー(複数枚を3秒ごとに切り替え)。メニューの枠の外に固定する -->
      <div id="lobbyBanner">
@@ -446,6 +451,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <div id="exploreModeOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">広いフィールドを探検して素材を集める(1人用)</div>
         <div class="team-size-note" id="exploreModeNote">4つの地域で野生モンスターを倒して素材を集め、ベースキャンプの帰還ビーコンで持ち帰ります。力尽きるのは3回まで。制限時間があります</div>
+        <!-- 工房(持ち帰ったボス素材で探検用の装備を作る)。ロビー左の「工房」と同じ入口 -->
+        <button id="exploreForgeOpenBtn" class="raid-go-btn exf-open-btn">⚒️ 工房で装備を作る</button>
       </div>
       <div id="multiOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">人数(2〜4人、残りはBot・マスモンで補完)</div>
@@ -469,7 +476,37 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
     <div class="exr-stats" id="exploreResultStats"></div>
     <div class="exr-list-label">持ち帰った素材</div>
     <div class="exr-list" id="exploreResultList"></div>
-    <div class="exr-actions"><button id="exploreResultBackBtn" class="exr-back-btn">ロビーへ戻る</button></div>
+    <div class="exr-actions">
+      <button id="exploreResultForgeBtn" class="exr-forge-btn">⚒️ 工房へ</button>
+      <button id="exploreResultBackBtn" class="exr-back-btn">ロビーへ戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- 探検モードの工房(鍛冶屋)。中身は ui.js の renderExploreForge(表は data.js の EXPLORE_GEAR)。
+     見出し・装着スロット・「作る」ボタンはスクロールの外。装備の一覧(#exploreForgeList)と
+     詳細の本文(#exploreForgeDBody)だけが送れる(R2)。削る順は style.css の工房の見出しに書く(R3) -->
+<div id="exploreForgeOverlay" class="mastermon-confirm-overlay hidden">
+  <div class="mastermon-confirm-box exp-forge-box" id="exploreForgeBox">
+    <button id="exploreForgeCloseBtn" class="overlay-close-btn">✕</button>
+    <div class="exf-head">
+      <div class="exf-title">⚒️ 工房</div>
+      <div class="exf-sub">ボスの素材で探検用の装備を作る(効果は探検モードの中だけ)</div>
+    </div>
+    <div class="exf-bar">
+      <div class="exf-slots" id="exploreForgeSlots"></div>
+      <div class="exf-total" id="exploreForgeTotal"></div>
+    </div>
+    <div class="exf-body">
+      <div class="exf-list" id="exploreForgeList"></div>
+      <div class="exf-detail" id="exploreForgeDetail">
+        <div class="exf-d-top" id="exploreForgeDTop"></div>
+        <div class="exf-d-body" id="exploreForgeDBody"></div>
+        <div class="exf-d-actions"><button id="exploreForgeActBtn" class="exf-act-btn">作る</button></div>
+      </div>
+    </div>
+    <!-- 作ったときの演出(槌→火花→完成の光)。箱の中に重ねて出し、終わったら自分で閉じる -->
+    <div class="exf-fx hidden" id="exploreForgeFx"></div>
   </div>
 </div>
 
@@ -1984,6 +2021,8 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <script src="combat.js"></script>
 <!-- 探検モードの進行(game.explore)。combat.js の関数を使い、render.js/ui.js から呼ばれるのでこの位置 -->
 <script src="explore.js"></script>
+<!-- 探検モードのルート(補給箱・光の柱・拾った通知)と装備の適用。explore.js の口を使うのでその直後 -->
+<script src="explore_loot.js"></script>
 <!-- 技ごとのVFXの注文書。render.jsが window.__aramonFxMoves を読むので先に置く -->
 <script src="fx_moves.js"></script>
 <script src="render.js"></script>
