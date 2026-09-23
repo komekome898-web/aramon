@@ -5950,11 +5950,11 @@ const EXPLORE_BOSS_TOPPLE_SEC     = 2.2;   // 部位破壊で転倒している�
 const EXPLORE_BOSS_TOPPLE_DMG_MULT= 1.25;  // 転倒中に受けるダメージの倍率
 const EXPLORE_BOSS_BREAK_BODY_RATIO = 0.3; // 弱点以外への命中が部位破壊の蓄積に入る割合(弱点は1)
 /* 弱点(頭)。**狙撃担当(sniper.js)との約束:**
-     ent.weakPoint = { zFrom, zTo, mult } … 体の高さ(exploreBodyHeight(ent))に対する比の範囲と倍率。
-     命中した高さ z が ent.z + zFrom×高さ 〜 ent.z + zTo×高さ に入れば弱点(exploreIsWeakPointHit)。
+     ent.weakPoint = { from, to, mult } … 体の高さ(exploreBodyHeight(ent))に対する比の範囲と倍率。
+     命中した高さ z が ent.z + from×高さ 〜 ent.z + to×高さ に入れば弱点(exploreIsWeakPointHit)。
      弱点に当たったら applyDamage の opts に weakPoint:true を付ける。**倍率は狙撃側で掛けない**
      (explore.js の exploreDmgTakenMult が1か所で掛ける。二重に掛けない) */
-const EXPLORE_BOSS_WEAK_POINT     = { zFrom:0.62, zTo:1.0, mult:1.5 };
+const EXPLORE_BOSS_WEAK_POINT     = { from:0.62, to:1.0, mult:1.5 };
 const EXPLORE_BOSS_KILL_SLOWMO    = { scale:0.2, holdSec:0.9, easeSec:0.6 };   // 討伐の瞬間の間(実時間の秒)
 const EXPLORE_BOSS_DYING_SEC      = 3.2;   // 倒れてから姿が消えるまで(試合内の秒)
 const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバーを出す距離
@@ -6371,7 +6371,15 @@ const SNIPER_WEAPONS = {
      hitR     : 弾の当たりの太さ / tracer: 弾道の光の色 / defaultScope: スコープ無しで拾ったときの照準 */
   longbow: { name:'ロングボウ', icon:'🎯', dmg:110, speed:3200, range:3500, mag:5, reloadSec:2.6, cycleSec:1.05,
              critMult:1.8, drop:2.5, sway:0.0032, recoil:0.42, hitR:5, tracer:'#ffd79a', defaultScope:'iron' },
+  // 工房で作る上位の狙撃銃(EXPLORE_GEAR の sniper キー)。威力の上乗せは装備の snipePct とは別に武器そのものが強い
+  hornbow: { name:'大角の剛弓', icon:'🏹', dmg:135, speed:3300, range:3700, mag:5, reloadSec:2.4, cycleSec:1.0,
+             critMult:1.9, drop:2.3, sway:0.0030, recoil:0.44, hitR:5, tracer:'#ffb36a', defaultScope:'iron' },
+  glacier: { name:'氷河の狙撃銃', icon:'❄️', dmg:125, speed:3800, range:4000, mag:6, reloadSec:2.2, cycleSec:0.9,
+             critMult:1.9, drop:1.8, sway:0.0026, recoil:0.38, hitR:5, tracer:'#9fe6ff', defaultScope:'iron' },
+  apexbow: { name:'頂点の魔弾', icon:'🌟', dmg:170, speed:4000, range:4200, mag:4, reloadSec:2.6, cycleSec:1.1,
+             critMult:2.1, drop:1.6, sway:0.0024, recoil:0.50, hitR:6, tracer:'#ffe36a', defaultScope:'iron' },
 };
+const SNIPER_NOISE_RANGE        = 5200;  // 銃声が野生・ボスに届く距離(ワールド単位。exploreMakeNoise へ渡す)
 const SNIPER_SCOPES = {
   /* mag     : 倍率(視野角は tan(基準の半分)÷倍率 で狭める。1=ズームしない)
      sway    : 揺れの係数(倍率が高いほど大きい)

@@ -9,7 +9,8 @@
        sniperResetState()              … 試合の入口で呼ぶ(exploreResetState から)。構え・倍率を全部戻す
        ent.weakPoint = { from:0.62, to:1, mult:1.5, onHit(ent, info){} }
                                        … 弱点(頭側)の約束。当たった高さ÷背の高さ が from〜to なら
-                                         クリティカル(威力 = 武器の critMult × mult)。onHit は部位破壊用
+                                         クリティカル(威力 = 武器の critMult。mult は探検では applyDamage に
+                                         opts.weakPoint:true を渡して explore.js が1か所で掛ける)。onHit は部位破壊用
        ent.bodyH                       … 当たりの背の高さ(ワールド単位)。無ければ 半径×SNIPER_BODY_H_PER_RADIUS
        ent.sniperDmgMult               … 装備などで威力を上げる倍率(無ければ1)
    ■ 視野角(倍率ズーム)の上書きは world.js の setViewZoom() 1か所。**描画1フレームの間だけ**掛けて
@@ -154,6 +155,8 @@ function sniperFire(me){
     traveled:0, maxRange:w.range, delay:0,
     sniper:s.weapon, critMult:w.critMult, trail:[{ x:me.x, y:me.y, z, d:0 }],
   });
+  // 銃声は遠くまで届く(野生・ボスが気づく)
+  if(typeof exploreMakeNoise==='function') exploreMakeNoise(me.x, me.y, SNIPER_NOISE_RANGE);
   // 反動: 視野の半分に対する割合で跳ね上げる(倍率が違っても画面上の跳ね方は同じ)
   // (倍率は描画の間しか掛かっていないので、いまの倍率から視野の半分を出し直す)
   const halfFov = Math.atan(Math.tan(lookSettings.fovDeg*Math.PI/360) / Math.exp(sniperView.logMag));
@@ -206,7 +209,12 @@ function sniperHitsObstacle(p){
   }
   return false;
 }
-function sniperBodyH(e){ return e.bodyH || (e.radius||26) * SNIPER_BODY_H_PER_RADIUS; }
+function sniperBodyH(e){
+  if(e.bodyH) return e.bodyH;
+  // 探検では描いている絵の高さ(弱点の高さの基準と同じ)を当たりの背にする
+  if(game.explore && typeof exploreBodyHeight==='function') return exploreBodyHeight(e);
+  return (e.radius||26) * SNIPER_BODY_H_PER_RADIUS;
+}
 /* 線分(弾の1刻み)と、立った円柱(体)の交わり。いちばん手前の1体を返す。
    上下も見るので、頭の上を越えた弾・足元の地面に刺さった弾は当たらない。 */
 function sniperSegmentHit(p, x0, y0, z0, x1, y1, z1){
@@ -246,10 +254,11 @@ function sniperOnHit(p, hit, owner){
   const e = hit.e, wp = e.weakPoint;
   const ratio = clamp(((hit.z - (e.z||0)) / hit.H), 0, 1);
   const crit = !!(wp && ratio >= (wp.from != null ? wp.from : SNIPER_WEAK_FROM) && ratio <= (wp.to != null ? wp.to : 1.05));
-  const mult = crit ? (p.critMult || 1) * (wp.mult || 1) : 1;
+  // 弱点の倍率(wp.mult)は探検では exploreDmgTakenMult が opts.weakPoint を見て掛ける(二重に掛けない)
+  const mult = crit ? (p.critMult || 1) * (game.explore ? 1 : (wp.mult || 1)) : 1;
   const hp0 = e.hp;
   const n0 = particles.length;
-  applyDamage(e, p.dmg * mult, owner, {});
+  applyDamage(e, p.dmg * mult, owner, { weakPoint:crit });
   /* 数字はスコープの中で大きく出し直すので、applyDamage が出した素の数字だけ取り除く
      (回復・ガッツ削りなど記号付きの数字は残す)。出した値=確定したダメージをそのまま使う。 */
   let shown = null;

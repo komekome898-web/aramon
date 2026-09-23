@@ -22,7 +22,7 @@
      exploreCrateSpots() … 補給箱の置き場所 [{x,y,region,danger}]。**置き場所はこの1つに寄せてある**ので、
          フィールドの配置(ランドマークの横など)に差し替えるときはこの関数だけを書き換える
      exploreApplyGear(player) … 着けている装備の効果をプレイヤーへ掛ける(探検の開始時だけ呼ぶ)
-     player.exploreSnipeDmgMult … 狙撃の威力の倍率(装備の効果。狙撃担当が弾のダメージに掛ける)
+     player.sniperDmgMult … 狙撃の威力の倍率(装備の効果。sniper.js が弾のダメージに掛ける)
    ===================================================================== */
 
 /* ===== 品の情報(名前・アイコン・レア度)。素材と素材以外を1つの形にそろえる ===== */
@@ -802,7 +802,7 @@ function exploreApplyGear(p){
   if(fx.speedPct) p.trainSpeedMult = (p.trainSpeedMult || 1) * (1 + fx.speedPct);
   if(fx.gutsRegenPct) p.mastermonGutsRegenMult = (p.mastermonGutsRegenMult || 1) * (1 + fx.gutsRegenPct);
   if(fx.dmgPct) p.trainDmgMult = (p.trainDmgMult || 1) * (1 + fx.dmgPct);
-  p.exploreSnipeDmgMult = 1 + (fx.snipePct || 0);
+  p.sniperDmgMult = 1 + (fx.snipePct || 0);   // sniper.js が弾の威力に掛ける
   const w = EXPLORE_GEAR[gear.equip.weapon];
   p.exploreGear = { equip:{ ...gear.equip }, fx, weapon: w ? w.sniper : null };
   // 武器: 狙撃担当の口があるときだけ渡す。知らないキーなら標準の狙撃銃

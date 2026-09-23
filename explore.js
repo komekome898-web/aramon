@@ -675,7 +675,7 @@ function exploreIsWeakPointHit(ent, z){
   const wp = ent && ent.weakPoint;
   if(!wp) return false;
   const h = exploreBodyHeight(ent), base = ent.z || 0;
-  return z >= base + wp.zFrom*h && z <= base + wp.zTo*h;
+  return z >= base + wp.from*h && z <= base + wp.to*h;
 }
 function exploreSpawnBosses(){
   for(const def of EXPLORE_BOSSES){
@@ -1149,37 +1149,34 @@ function exploreTimeScale(){
    落とし物(倒した/壊した相手から素材が弾ける)
    **何を落とすかは data.js の exploreDropTable / EXPLORE_DROP_TABLES、落とす処理はこの関数1つ。**
    ルート担当が見た目(光の柱・拾う動き)を差し替えるときはここだけを直す。
-   今は拾う入口 exploreGainMaterial を直接呼び(所持数と通知)、見た目のかけらを弾けさせるだけ。
+   素材は地面へ弾けて落ち、レア度の光の柱が立つ(explore_loot.js の exploreSpawnDrop)。拾いに行くと入手。
+   遠くから狙撃で倒しても、光の柱を目印に取りに行ける(APEX)。火花(fx_gl)だけはここで出す。
    ===================================================================== */
 function exploreDropLoot(ent, table){
   if(!ent || !table || !game.explore || game.over) return [];
   const list = exploreRollDropTable(table);
   const big = !!ent.isExploreBoss;
+  const z0 = big ? exploreBodyHeight(ent)*0.5 : 30;
   list.forEach((it, i)=>{
     const a = rand(0, Math.PI*2);
-    const r = big ? ent.radius*rand(0.8, 1.6) : rand(30, 80);
-    exploreGainMaterial(it.key, it.n, ent.x + Math.cos(a)*r, ent.y + Math.sin(a)*r);
-    const pieces = big ? Math.min(4, it.n + 1) : Math.min(2, it.n);
-    for(let j=0; j<pieces; j++) exploreSpawnMaterialFx(ent, it.key, a + rand(-0.5, 0.5), i*0.05 + j*0.03);
+    const r0 = big ? ent.radius*0.9 : 30, r1 = big ? ent.radius*1.9 : 110;
+    if(typeof exploreSpawnDrop==='function'){
+      exploreSpawnDrop(ent.x, ent.y, it.key, null, { n:it.n, fromZ:z0, dist:[r0, r1], delay:i*0.06, angle:a });
+    } else {
+      exploreGainMaterial(it.key, it.n, ent.x + Math.cos(a)*r0, ent.y + Math.sin(a)*r0);
+    }
+    exploreSpawnMaterialBurst(ent, it.key, z0, i*0.05);
   });
   return list;
 }
-// 弾ける素材のかけら(弧を描いて飛び、地面で跳ね、プレイヤーへ吸い込まれる)
-function exploreSpawnMaterialFx(ent, key, ang, delay){
-  const m = EXPLORE_MATERIALS[key];
-  if(!m) return;
-  const big = !!ent.isExploreBoss;
-  const sp = big ? rand(260, 520) : rand(140, 260);
-  const z0 = (ent.z || 0) + (big ? exploreBodyHeight(ent)*0.5 : 30);
-  exploreState.fx.push({ kind:'mat', icon:m.icon, color:exploreMaterialColor(key), rarity:m.rarity,
-    x:ent.x, y:ent.y, z:z0, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp, vz: big ? rand(520, 760) : rand(360, 480),
-    t:-(delay||0), life: big ? 1.9 : 1.4, bounced:false });
+// 弾けた瞬間の火花(素材の色)。拾う品そのものは exploreSpawnDrop が地面に落とす
+function exploreSpawnMaterialBurst(ent, key, z0, delay){
   const fx = window.__aramonFxGl;
-  if(fx && fx.isActive && fx.isActive()){
-    const c = exploreRgb(exploreMaterialColor(key));
-    fx.burst({ x:ent.x, y:ent.y, z:z0, count: big ? 14 : 6, speed: big ? 320 : 180, elev:0.9, elevSpread:0.8,
-               r:c[0], g:c[1], b:c[2], bright:1.2, life:0.7, size0: big ? 14 : 9, az:-420, delay:delay||0 });
-  }
+  if(!(fx && fx.isActive && fx.isActive())) return;
+  const big = !!ent.isExploreBoss;
+  const c = exploreRgb(exploreMaterialColor(key));
+  fx.burst({ x:ent.x, y:ent.y, z:(ent.z || 0) + z0, count: big ? 14 : 6, speed: big ? 320 : 180, elev:0.9, elevSpread:0.8,
+             r:c[0], g:c[1], b:c[2], bright:1.2, life:0.7, size0: big ? 14 : 9, az:-420, delay:delay||0 });
 }
 function exploreUpdateFx(dt){
   const list = exploreState.fx;
