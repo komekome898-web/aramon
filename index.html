@@ -79,6 +79,11 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
 <canvas id="fxCanvas" class="hidden"></canvas>
 <!-- 狙撃スコープの窓・照準(sniper.js。探検モードで構えている間だけ出す)。技のWebGL層より上・HUDより下 -->
 <canvas id="sniperCanvas" class="hidden"></canvas>
+<!-- 探検: 出発演出の上下黒帯。canvasの中身ではなく別DOMにする(canvasをCSSで拡大しても帯だけは
+     伸びない=一緒に拡大されて上下が非対称になる不具合を避ける)。高さは explore_loot.js の
+     _exlSyncBars が毎フレーム書き換える -->
+<div id="exploreCineBarTop" class="hidden explore-cine-bar explore-cine-bar-top"></div>
+<div id="exploreCineBarBottom" class="hidden explore-cine-bar explore-cine-bar-bottom"></div>
 
 <!-- START SCREEN -->
 <!-- TITLE SCREEN(起動直後。読み込みが終わるとTAP STARTでロビーへ) -->
@@ -516,9 +521,15 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <div class="exf-list" id="exploreForgeList"></div>
       <div class="exf-detail" id="exploreForgeDetail">
         <div class="exf-d-stage" id="exploreForgeDStage"></div>
-        <div class="exf-d-body" id="exploreForgeDBody"></div>
-        <!-- 必要な素材は「作る」ボタンの直上に常時表示(削らない=R3)。能力差分(exf-d-body)側を先に詰める -->
-        <div class="exf-d-need" id="exploreForgeDNeed"></div>
+        <!-- 下段は2列固定(統括の指定): 左=今の装備→これの比較、右=必要な素材(手持ち/必要)+入手先。
+             どちらも丸ごと単位で削る(exploreForgeSnapBody / _exfKeepRows・_exfKeepMatRows)。
+             右列(素材)は絶対に行を削らない。削るなら入手先の2件目からと左列の3行目から(R3) -->
+        <div class="exf-lower" id="exploreForgeDLower">
+          <div class="exf-d-body" id="exploreForgeDBody"></div>
+          <div class="exf-d-need" id="exploreForgeDNeed"></div>
+        </div>
+        <!-- セット効果は下段の一番下に1行だけ(統括の指定)。入らなければ丸ごと省く -->
+        <div class="exf-d-set" id="exploreForgeDSet"></div>
         <div class="exf-d-actions" id="exploreForgeDActions"><button id="exploreForgeActBtn" class="exf-act-btn">作る</button></div>
       </div>
     </div>

@@ -255,6 +255,7 @@ function exploreSpawnDrop(x, y, itemKey, rarity, opts){
     bornAt: matchTime + delay, landAt: matchTime + delay + flight,
     arc: rand(90, 150) + exploreRarityOrder(rar)*20,   // 良い物ほど高く跳ねる
     landed:!!o.placed, bob: rand(0, Math.PI*2),
+    fromCrate: o.fromCrate || null,   // 同じ箱の扇(まだ浮いている品)と札の重なりをそろえて判定するための印
   };
   exploreState.drops.push(d);
   return d;
@@ -345,6 +346,7 @@ function exploreLootUpdate(dt){
      十字が無いほうが見やすいので、開いた瞬間からの窓を少し長めに取る */
   const crateOpening = exploreState.crates.some(cc=> cc.opened && matchTime - cc.openedAt < 1.0);
   document.body.classList.toggle('explore-crate-open', crateOpening);
+  exploreCrateLabelPlan();   // 開いた箱の中身の名前札の重なりを決める(描く前に1回。下のexploreDrawCrateFan/exploreDrawDropが読む)
   // 落ちている品: 着地と拾う
   const drops = exploreState.drops;
   for(let i=drops.length-1;i>=0;i--){
@@ -373,6 +375,59 @@ function exploreLootUpdate(dt){
 function exploreLootFx(f){
   f.t0 = matchTime + (f.delay || 0);
   exploreState.lootFx.push(f);
+}
+/* 開いた箱の中身の名前札どうしが重なる不具合(批評指摘=縦持ちで札が重なる/レジェンドが消えてレアが残る)対策。
+   毎フレーム1回、描く前に呼ぶ(exploreLootUpdate)。開いている箱ごとに「まだ扇に浮いている品」+
+   「同じ箱から直後に地面へ落ちて、近くにいるので名前が出る品」を同じ土俵に集め、レア度の高い順
+   (同じレア度なら扇の真ん中=良い物寄りを優先)に札の四角を確保する。重なる側は it._labelOk=false
+   (扇のexploreDrawCrateFanが読む)/ d._labelOk=false(落ちた品のexploreDrawDropが読む)にする。
+   **同じ判定を2か所に書かない**(以前は扇の中だけで判定していて、直後に落ちた品の札と重なった)。 */
+function exploreCrateLabelPlan(){
+  const F = EXPLORE_CRATE_FAN;
+  const eb = (t)=>{ const k = 1.70158, u = t - 1; return 1 + (k+1)*u*u*u + k*u*u; };
+  for(const c of exploreState.crates){
+    if(!c.opened) continue;
+    const cands = [];
+    if(c.fan){
+      const age = matchTime - c.fan.t0;
+      for(const it of c.fan.items){
+        it._labelOk = true;
+        if(age < 0 || matchTime >= it.launchAt) continue;
+        const t = clamp((age - Math.abs(it.off)*0.05) / F.rise, 0, 1);
+        if(t <= 0) continue;
+        const e = eb(t);
+        const x = c.x + (it.fx - c.x)*Math.min(1, e), y = c.y + (it.fy - c.y)*Math.min(1, e);
+        const q = project(x, y, c.z + EXPLORE_CRATE_SIZE.h*exploreCrateScale(c) + (it.fz - EXPLORE_CRATE_SIZE.h*exploreCrateScale(c))*e);
+        if(!q) continue;
+        const S = clamp(34*q.scale, 22, 58) * (0.5 + 0.5*Math.min(1, e)) * (it.off === 0 ? 1.12 : 1);
+        cands.push({ ref:it, rarity:it.rarity, off:it.off, q, boxY:S/2 });
+      }
+    }
+    for(const d of exploreState.drops){
+      if(d.fromCrate !== c) continue;
+      d._labelOk = true;
+      if(matchTime < d.landAt || !player || Math.hypot(player.x - d.x, player.y - d.y) >= EXPLORE_DROP_LABEL_RANGE) continue;
+      const bob = Math.sin(matchTime*2.6 + d.bob)*5;
+      const q = project(d.x, d.y, d.z + EXPLORE_DROP_FLOAT + bob);
+      if(!q) continue;
+      const badgeR = Math.max(8, (EXPLORE_DROP_BADGE[d.rarity] || 15)*clamp(q.scale, 0.35, 2.2));
+      cands.push({ ref:d, rarity:d.rarity, off:0, q, boxY:-(badgeR + 5 + 12) });
+    }
+    if(!cands.length) continue;
+    // レア度の高い順。同じレア度は扇の真ん中(off=0)寄りを優先(以前の「真ん中が良い物」の並びに合わせる)
+    cands.sort((a, b)=> exploreRarityOrder(b.rarity) - exploreRarityOrder(a.rarity) || Math.abs(a.off) - Math.abs(b.off));
+    const boxes = [];
+    ctx.font = `800 12px 'Rajdhani', sans-serif`;   // 幅の見積もりは名前だけの行(いちばん長い行)で十分
+    for(const p of cands){
+      const info = exploreItemInfo(p.ref.key);
+      if(!info){ p.ref._labelOk = false; continue; }
+      const w = Math.max(ctx.measureText(info.name).width, 40) + 10;
+      const box = { x:p.q.x - w/2, y:p.q.y + Math.min(p.boxY, p.boxY + 30), w, h:30 };
+      const hit = boxes.some(b=> exploreRectsHit(box, b, 2));
+      p.ref._labelOk = !hit;
+      if(!hit) boxes.push(box);
+    }
+  }
 }
 
 /* ===== 描画(render.js の render() から。深度ソートに乗せ、描くのは各エントリの draw) =====
@@ -847,39 +902,9 @@ function exploreDrawCrateFan(c){
   const H0 = c.z;
   const list = f.items.slice().sort((a, b)=> Math.abs(b.off) - Math.abs(a.off));   // 真ん中(良い物)を最後=手前に
   const eb = (t)=>{ const k = 1.70158, u = t - 1; return 1 + (k+1)*u*u*u + k*u*u; };
-  /* 名前の札どうしが重なる不具合(批評指摘=縦持ちで「生命の8倍スコープ」「レジェンドレジェンド」)対策:
-     まず全部の位置だけ求め、レア度の高い順に「札の四角」が既に置いた札と重ならないかを判定する
-     (exploreRectsHit。HUDの札よけと同じ道具)。重なる側(レア度が低いほう)は札を出さない。
-     入りきらない札を丸ごと諦める=文字を欠けさせない(R1/R3と同じ考え方)。 */
-  const plan = [];
-  for(const it of list){
-    if(matchTime >= it.launchAt) continue;
-    const t = clamp((age - Math.abs(it.off)*0.05) / F.rise, 0, 1);
-    if(t <= 0) continue;
-    const e = eb(t);
-    const x = c.x + (it.fx - c.x)*Math.min(1, e), y = c.y + (it.fy - c.y)*Math.min(1, e);
-    const q = project(x, y, H0 + EXPLORE_CRATE_SIZE.h*exploreCrateScale(c) + (it.fz - EXPLORE_CRATE_SIZE.h*exploreCrateScale(c))*e);
-    if(!q) continue;
-    const S = clamp(34*q.scale, 22, 58) * (0.5 + 0.5*Math.min(1, e)) * (it.off === 0 ? 1.12 : 1);
-    plan.push({ it, q, S, showLabel:false });
-  }
-  const labelKeep = new Set();
-  if(plan.length){
-    const boxes = [];
-    const byRarity = plan.slice().sort((a, b)=> exploreRarityOrder(b.it.rarity) - exploreRarityOrder(a.it.rarity));
-    ctx.font = `800 12px 'Rajdhani', sans-serif`;   // 幅の見積もりは名前だけの行(いちばん長い行)で十分
-    for(const p of byRarity){
-      if(p.S < 22) continue;
-      const info = exploreItemInfo(p.it.key);
-      const fs = Math.max(9, Math.round(p.S*0.22));
-      const w = Math.max(ctx.measureText(info.name).width, 40) + 6;
-      const h = fs*2 + fs*0.85 + 6;
-      const box = { x:p.q.x - w/2, y:p.q.y + p.S/2, w, h };
-      if(boxes.some(b=> exploreRectsHit(box, b, 2))) continue;
-      boxes.push(box);
-      labelKeep.add(p.it);
-    }
-  }
+  /* 名前の札どうしが重なる不具合の当たり判定は exploreCrateLabelPlan(1フレームに1回、exploreLootUpdate)
+     がすでに済ませて it._labelOk に入れてある(まだ浮いている品+直後に地面へ落ちた同じ箱の品を
+     同じ土俵で判定。落ちた品の側は exploreDrawDrop が同じ印を見る)。ここは読むだけ。 */
   ctx.save();
   for(const it of list){
     if(matchTime >= it.launchAt) continue;   // 地面へ飛んだ(ここからは落ちている品の絵)
@@ -930,7 +955,7 @@ function exploreDrawCrateFan(c){
        浮いている品と重なりやすく、下はアイコン同士の間にすき間があって読める。
        札どうしが重なるとき(批評指摘=縦持ちで2つの札が同じ場所に出た)は、labelKeep
        (レア度の高い順に事前判定済み)に入っている品だけ出す。入らない品は札を諦める */
-    if(S >= 22 && labelKeep.has(it)){
+    if(S >= 22 && it._labelOk !== false){
       const rar = EXPLORE_RARITY[it.rarity] || EXPLORE_RARITY.common;
       const fs = Math.max(9, Math.round(S*0.22));
       ctx.font = `800 ${fs}px 'Rajdhani', sans-serif`;
@@ -1062,7 +1087,8 @@ function exploreDrawDrop(d, p, entry){
   const q = project(d.x, d.y, d.z + EXPLORE_DROP_FLOAT + bob);
   if(!q) return;
   exploreDrawDropBadge(q, info, d.rarity, 1);
-  if(player && Math.hypot(player.x - d.x, player.y - d.y) < EXPLORE_DROP_LABEL_RANGE){
+  // d._labelOk: 同じ箱から落ちた品どうしの札の重なりをexploreCrateLabelPlanが先に判定済み(未設定=対象外は常に出す)
+  if(d._labelOk !== false && player && Math.hypot(player.x - d.x, player.y - d.y) < EXPLORE_DROP_LABEL_RANGE){
     const fs = clamp(10*q.scale, 9, 13);
     ctx.save();
     ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -1658,6 +1684,7 @@ function exploreApplyGear(p){
    札のあいだは #hud を隠す(.exp-cine。出すときだけふわっと戻す)
    ===================================================================== */
 const EXPLORE_INTRO_SWEEP = 3.4;   // 出発のカメラが回る角度(ラジアン。約195度)
+const EXPLORE_CINE_ZOOM_AMP = 0.35;   // 出発演出の寄り幅(1+この値倍まで)
 const EXPLORE_OUTRO_FLOW_MAX = 8;   // 帰還の札に流す素材の数(それ以上は「ほかN種類」)
 let exploreOutroTimer = null, exploreOutroDone = null;
 function exploreCineNow(){ return Date.now() / 1000; }
@@ -1718,23 +1745,42 @@ function exploreCineGrey(k){
   const gl = document.getElementById('glCanvas');
   if(gl) gl.style.filter = k > 0 ? `saturate(${(1 - 0.85*k).toFixed(2)}) brightness(${(1 - 0.22*k).toFixed(2)})` : '';
 }
-/* 出発の演出用: 画面をじわっと寄せる(カメラがキャンプから竜の背中へ寄る動き)。
-   竜(自分)は3D地形と同じWebGL層(glCanvas)ではなく2D層(gameCanvas)にスプライトで描いているため、
-   WebGLだけを拡大しても竜自身の大きさは変わらなかった(批評指摘=撮影の0.9秒時点でr5とほぼ同じ
-   大きさだった)。gameCanvasも一緒に拡大し、竜がはっきり大きく見えるようにする(帯・文字も
-   同じ画面の一部として一緒に寄る。中心はキャンプ全体を見渡す構図の下寄りに置き、竜が特に大きくなる)。
-   #glCanvas/#gameCanvas/#fxCanvas に transform を使う場所はここだけ(二重に持たない)。 */
-let _exploreZoomK = 0;
+/* 出発の演出用: カメラのズーム(視野角)でじわっと寄せる(キャンプからの見渡しが竜の背中へ寄る動き)。
+   CSSでgameCanvasごと拡大すると、黒帯・文字も同じキャンバスに描いてあるため一緒に拡大されて
+   上下非対称にはみ出した(批評指摘=上の帯が消えた)。**倍率の入口は world.js の setViewZoom() 1つ**
+   (狙撃スコープと同じ仕組み)。狙撃の構え中は狙撃を優先し、演出が終わったら必ず1へ戻す。 */
+function exploreIntroZoomK(age){
+  const t = clamp(age / 1.0, 0, 1);   // 1秒でほぼ寄りきる(2.6秒のカメラ回転より速く)
+  return 1 - (1 - t)*(1 - t);
+}
+/* 出発演出の上下黒帯を、canvasの中身ではなく別DOM(#exploreCineBarTop/Bottom)の高さで出す。
+   canvasごとCSS拡大すると帯も一緒に伸びて上下が非対称になる(批評指摘)ため、帯は常に
+   このDOMだけで管理し、canvas側の拡大(exploreCineZoom)と完全に独立させる。 */
+function _exlSyncBars(px){
+  const h = Math.max(0, px||0);
+  const top = document.getElementById('exploreCineBarTop');
+  const bot = document.getElementById('exploreCineBarBottom');
+  if(top){ top.style.height = h + 'px'; top.classList.toggle('hidden', h <= 0); }
+  if(bot){ bot.style.height = h + 'px'; bot.classList.toggle('hidden', h <= 0); }
+}
+/* 出発演出の寄り。
+   見た目は#glCanvas/#gameCanvas/#fxCanvasをCSSでその場拡大する(黒帯は別DOMなので巻き込まない。
+   CSSはJSのrender()呼び出し順と無関係に即反映されるので、撮影の単発renderでも確実に効く)。
+   カメラのFOV(setViewZoom。狙撃と同じ入口)も合わせて呼ぶが、render.js内でsniperFrameが毎フレーム
+   先頭でsetViewZoom(1)へ戻し、その後にdrawMonsterが投影されるため、この経路だけでは竜の見た目
+   サイズにまだ反映されない(render.js/explore.js側の順序に依存。exploreCineFrameと同じ入口が
+   このcine用にも要る)。見た目の保証はCSS拡大側が担う。 */
 function exploreCineZoom(k){
-  k = Math.round(clamp(k, 0, 1)*40)/40;
-  if(k === _exploreZoomK) return;
-  _exploreZoomK = k;
-  const s = (1 + 0.30*k).toFixed(3);
+  const kk = clamp(k, 0, 1);
+  const s = 1 + EXPLORE_CINE_ZOOM_AMP*kk;
+  const tf = kk > 0.001 ? `scale(${s.toFixed(4)})` : '';
   for(const id of ['glCanvas', 'gameCanvas', 'fxCanvas']){
     const el = document.getElementById(id);
-    if(!el) continue;
-    el.style.transformOrigin = '50% 62%';
-    el.style.transform = k > 0 ? `scale(${s})` : '';
+    if(el) el.style.transform = tf;
+  }
+  if(kk <= 0.001) _exlSyncBars(0);
+  if(typeof setViewZoom === 'function' && !(typeof sniperView === 'object' && sniperView && sniperView.blend > 0.02)){
+    setViewZoom(1 + 0.5*kk);
   }
 }
 // 毎フレーム(exploreLootUpdate から)。カメラを回す・暗転しきったらキャンプへ運ぶ
@@ -1748,12 +1794,8 @@ function exploreCineUpdate(){
     camState.yaw = c.yaw0 - (1 - e) * EXPLORE_INTRO_SWEEP;
     camState.pitch = c.pitch0 + 0.10 * (1 - e);
     if(player) player.facingAngle = camState.yaw;
-    /* カメラが回るだけだと静止画では「動きの途中」と分からなかった(批評指摘。撮影の0.9秒時点で
-       r5とほぼ同じ大きさ・位置だった)。寄りの進み方はカメラの回転(e。2.6秒かけてゆっくり)とは
-       別に、1秒でほぼ寄りきる速い進みにする ―― 撮影の0.9秒時点でもはっきり寄って見えるように */
-    const zProg = clamp(age / 1.0, 0, 1);
-    exploreCineZoom(1 - (1 - zProg)*(1 - zProg));
-    if(age >= c.dur) exploreIntroSkip();
+    exploreCineZoom(exploreIntroZoomK(age));
+    if(age >= c.dur){ exploreCineZoom(0); exploreIntroSkip(); }
   } else if(c.kind === 'faint'){
     const T = exploreFaintTimes();
     if(!c.moved && age >= T.black0){ c.moved = true; exploreFaintRespawn(player); }
@@ -1813,11 +1855,11 @@ function exploreCineDraw(){
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   if(c.kind === 'intro'){
+    // render()の間(狙撃のsniperFrameが毎フレームsetViewZoom(1)へ戻したあと)に寄りを掛け直す(世界.jsのsetViewZoom。二重に持たない)
+    exploreCineZoom(exploreIntroZoomK(age));
     const a = clamp(Math.min(age/0.3, (c.dur - age)/0.45), 0, 1);
-    // シネマの帯(上下)
-    const bar = H*0.11*clamp(Math.min(age/0.35, (c.dur - age)/0.35), 0, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.92)';
-    ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+    // シネマの帯(上下。canvasの外のDOMなのでcanvas拡大に巻き込まれず常に上下対称)
+    _exlSyncBars(H*0.11*clamp(Math.min(age/0.35, (c.dur - age)/0.35), 0, 1));
     ctx.globalAlpha = a;
     const cy = H*0.40, bandH = Math.min(118, H*0.34);
     const g = ctx.createLinearGradient(0, 0, W, 0);
@@ -1833,12 +1875,23 @@ function exploreCineDraw(){
     if(!renderHeavyLoad){ ctx.shadowBlur = 18; ctx.shadowColor = 'rgba(80,255,160,0.7)'; }
     _exlCineText('探検開始', 0, 0, Math.min(42, H*0.11), tg, 'rgba(0,30,14,0.9)');
     ctx.restore();
+    /* 文字は同時に全部出さない(批評指摘)。地名(ベースキャンプ)→目標→ルールの順に、
+       少し間を空けて出す ―― 撮影の0.9秒時点でも「まだ出ている途中」と分かるように */
+    const place = `📍 ${exploreState.camp && exploreState.camp.name || 'ベースキャンプ'}`;
+    const placeA = a * clamp(age/0.35, 0, 1);
+    _exlCineText(place, cx, cy - bandH*0.34, Math.min(12, H*0.032), '#bff5d2', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
+    ctx.globalAlpha = placeA;
     const bosses = (typeof EXPLORE_BOSSES!=='undefined') ? EXPLORE_BOSSES : [];
     const apex = bosses.find(b=> b.apex);
     const goal = `目標：地域の主${bosses.filter(b=> !b.apex).length}体を狩り、頂点${apex ? '「' + apex.name + '」' : ''}に挑む`;
+    const goalA = a * clamp((age - 0.55)/0.5, 0, 1);
+    ctx.globalAlpha = goalA;
     _exlCineText(goal, cx, cy + bandH*0.14, Math.min(15, H*0.042), '#ffffff', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
     const rule = `制限時間 ${fmtTime(EXPLORE_TIME_LIMIT)} ・ 力尽き${EXPLORE_MAX_FAINTS}回まで ・ 帰還ビーコンで持ち帰り`;
+    const ruleA = a * clamp((age - 1.0)/0.5, 0, 1);
+    ctx.globalAlpha = ruleA;
     _exlCineText(rule, cx, cy + bandH*0.34, Math.min(12, H*0.034), '#bff5d2', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
+    ctx.globalAlpha = 1;
   } else if(c.kind === 'faint'){
     const S = EXPLORE_FAINT_SEQ, T = exploreFaintTimes();
     // 倒れた瞬間: 画面の縁が赤く燃える(打たれて崩れた合図)。札が出るまでに引いていく
@@ -2017,82 +2070,59 @@ function _exlReturnBeam(age){
   const flick = 0.9 + 0.1*Math.sin(age*30);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  /* 縁のはっきりした半透明の長方形が竜の正面を塗りつぶし、体が柱の中に完全に隠れていた
-     (批評指摘)。「体を覆う太い帯」をやめ、光は竜の輪郭の"外側"を縁取る2本の柔らかい線
-     (ぼかしたstroke。塗りではないので中心を覆わない)と、足元で中心から外へ溶ける
-     光だまり(radialGradient)だけにする。竜の上にかかる分はごく薄い霧1枚に留め、
-     体の縁の光そのものは explorePlayerTint(既存)に任せる ―― 光は竜の後ろ・上には薄く。 */
-  const bodyHalf = Math.max(16, p.radius*1.0*q0.scale) * eg;
-  const wob = (t)=> Math.sin(age*3.1 + t*7.3)*bodyHalf*0.08;
+  /* 「左右2本の半透明の板」に見えていた(批評指摘。芯が見えない・粒が輪郭のない白い丸)。
+     直線のグラデーションで塗った四角は、どう重ねても板に見える ―― やめて、①足元の輪(地面に貼る、
+     既存のgroundCirclePointsと同じ考え方)②太い芯1本(足元から上まで、放射状グラデーションの
+     "輪切り"を何枚も積んで作る。輪切りはradialGradientなので四角い縁が出ない。中心が明るく外へ溶ける)
+     ③上へ昇る、尾を引く光の粒(点ではなく短い筋)にする。 */
+  // 幅は体の1.05倍では細すぎて竜の白い光にまぎれ、離れて見ると「柱」に見えなかった(批評指摘)。
+  // 2倍まで太くして、頭の上から空へはっきり抜ける柱にする
+  const bodyR = Math.max(16, p.radius*2.0*q0.scale) * eg;
   ctx.globalAlpha = eg;
-  // 足元の光だまり(中心から外へ溶ける。竜の上まではあまり伸ばさない)
-  const poolR = bodyHalf*3.2;
-  const pool = ctx.createRadialGradient(q0.x, q0.y, 0, q0.x, q0.y, poolR);
-  pool.addColorStop(0,   `rgba(255,246,210,${(0.32*flick).toFixed(3)})`);
-  pool.addColorStop(0.5, `rgba(190,255,210,${(0.15*flick).toFixed(3)})`);
-  pool.addColorStop(1,   'rgba(150,255,190,0)');
-  ctx.fillStyle = pool;
-  ctx.beginPath(); ctx.arc(q0.x, q0.y, poolR, 0, Math.PI*2); ctx.fill();
-  // 竜の両脇を昇る、ぼかした縁の光(体そのものは塗らない。左右で揺らして一枚板に見せない)
-  for(const side of [-1, 1]){
-    const a0x = q0.x + (bodyHalf + wob(side))*side, a1x = q1.x + bodyHalf*0.5*side;
-    const g = ctx.createLinearGradient(a0x, q0.y, a1x, q1.y);
-    g.addColorStop(0,    `rgba(255,240,180,${(0.6*flick).toFixed(3)})`);
-    g.addColorStop(0.22, `rgba(220,255,210,${(0.38*flick).toFixed(3)})`);
-    g.addColorStop(0.6,  'rgba(150,255,190,0.14)');
-    g.addColorStop(1,    'rgba(150,255,190,0)');
-    ctx.strokeStyle = g;
-    ctx.lineWidth = Math.max(2, bodyHalf*0.4);
-    if(!renderHeavyLoad){ ctx.shadowBlur = Math.max(6, bodyHalf*1.1); ctx.shadowColor = 'rgba(200,255,210,0.8)'; }
-    ctx.beginPath(); ctx.moveTo(a0x, q0.y); ctx.lineTo(a1x, q1.y); ctx.stroke();
-    ctx.shadowBlur = 0;
-  }
-  // 竜の上にかかる分は、輪郭が最後まで読める濃さのごく薄い霧だけ(白飛びさせない)
+  // 根元の輪(地面に貼る。太い柱ほど大きい)
   {
-    const mg = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
-    mg.addColorStop(0,   `rgba(255,246,210,${(0.14*flick).toFixed(3)})`);
-    mg.addColorStop(0.4, 'rgba(200,255,215,0.07)');
-    mg.addColorStop(1,   'rgba(150,255,190,0)');
-    ctx.fillStyle = mg;
-    ctx.beginPath();
-    ctx.moveTo(q0.x - bodyHalf*0.7, q0.y); ctx.lineTo(q1.x - bodyHalf*0.35, q1.y);
-    ctx.lineTo(q1.x + bodyHalf*0.35, q1.y); ctx.lineTo(q0.x + bodyHalf*0.7, q0.y);
-    ctx.closePath(); ctx.fill();
+    const ring = groundCirclePoints(p.x, p.y, bodyR*1.7, 24);
+    if(ring){
+      _exlPoly(ring);
+      const rg0 = ctx.createRadialGradient(q0.x, q0.y, 0, q0.x, q0.y, bodyR*1.9);
+      rg0.addColorStop(0, `rgba(255,248,220,${(0.55*flick).toFixed(3)})`);
+      rg0.addColorStop(0.6, `rgba(190,255,210,${(0.22*flick).toFixed(3)})`);
+      rg0.addColorStop(1, 'rgba(150,255,190,0)');
+      ctx.fillStyle = rg0; ctx.fill();
+    }
   }
-  /* 昇る輪(水平な円を投影)は、カメラが低い角度からだと真横に潰れて「白い平たい円のシール」に
-     見えた(批評指摘)。輪はやめて、①ぼかした細い芯(柱の中心。shadowBlurで縁を溶かす。
-     竜の輪郭が上にはみ出て見えるよう、うんと薄く)②下から上へ昇る光の粒(輪の代わりに増量)にする。 */
+  // 太い芯1本(輪切りのradialGradientを下から上へ積む。四角い縁が出ない・竜の後ろにあるように中心を強く)
+  {
+    const N = renderHeavyLoad ? 7 : 11;
+    for(let i=0;i<N;i++){
+      const u = i/(N-1);
+      const qi = { x:q0.x + (q1.x-q0.x)*u, y:q0.y + (q1.y-q0.y)*u };
+      const rr = bodyR*(1.05 - u*0.35);
+      // 上ほど淡く(柱の先が空へ溶ける)。根元〜中ほどは太さと明るさを保って「芯」に見せる
+      // (0.75だと頭の上あたりでほぼ消えて柱に見えなかった。0.55にして空との境まで見えるようにする)
+      const top = (1 - u*0.55)*flick;
+      const g = ctx.createRadialGradient(qi.x, qi.y, 0, qi.x, qi.y, rr);
+      g.addColorStop(0,   `rgba(255,250,225,${(0.30*top).toFixed(3)})`);
+      g.addColorStop(0.45,`rgba(230,255,225,${(0.16*top).toFixed(3)})`);
+      g.addColorStop(1,   'rgba(190,255,205,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(qi.x, qi.y, rr, 0, Math.PI*2); ctx.fill();
+    }
+  }
   ctx.globalAlpha = 1;
-  {
-    const coreX = q0.x, coreX1 = q1.x;
-    const cg = ctx.createLinearGradient(coreX, q0.y, coreX1, q1.y);
-    cg.addColorStop(0, `rgba(255,246,210,${(0.10*flick*eg).toFixed(3)})`);
-    cg.addColorStop(0.5, `rgba(220,255,220,${(0.06*flick*eg).toFixed(3)})`);
-    cg.addColorStop(1, 'rgba(200,255,210,0)');
-    ctx.strokeStyle = cg;
-    ctx.lineWidth = Math.max(1.5, bodyHalf*0.22);
-    if(!renderHeavyLoad){ ctx.shadowBlur = Math.max(10, bodyHalf*1.8); ctx.shadowColor = 'rgba(220,255,220,0.55)'; }
-    ctx.beginPath(); ctx.moveTo(coreX, q0.y); ctx.lineTo(coreX1, q1.y); ctx.stroke();
-    ctx.shadowBlur = 0;
-  }
-  // 下から上へ昇る光の粒(輪の代わりに増量。柱の全周にばらける)
-  for(let i=0;i<22;i++){
-    const u = ((age*0.5 + i*0.045) % 1);
+  // 上へ昇る、尾を引く光の粒(点ではなく短い筋。加算で重ねると芯の一部のように見える)
+  for(let i=0;i<20;i++){
+    const u = ((age*0.5 + i*0.05) % 1);
     const a = i*2.11 + age*1.6;
-    const rr = bodyHalf*(1.5 - u*0.5);
-    const q = project(p.x + Math.cos(a)*rr, p.y + Math.sin(a)*rr, z0 + u*280);
-    if(!q) continue;
-    ctx.fillStyle = `rgba(255,244,205,${(0.85*(1 - u)*eg).toFixed(3)})`;
-    ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(1.3, 2.6*q.scale), 0, Math.PI*2); ctx.fill();
-  }
-  // 光の粒(体のすぐ縁を回る、細かい粒)
-  for(let i=0;i<14;i++){
-    const u = ((age*0.55 + i*0.071) % 1);
-    const a = i*2.39 + age*2;
-    const q = project(p.x + Math.cos(a)*p.radius*1.1, p.y + Math.sin(a)*p.radius*1.1, z0 + u*300);
-    if(!q) continue;
-    ctx.fillStyle = `rgba(255,246,200,${(0.9*(1 - u)).toFixed(3)})`;
-    ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(1.5, 3*q.scale), 0, Math.PI*2); ctx.fill();
+    const rr = bodyR*(1.15 - u*0.45);
+    const z = z0 + u*280;
+    const q = project(p.x + Math.cos(a)*rr, p.y + Math.sin(a)*rr, z);
+    const qTail = project(p.x + Math.cos(a)*rr, p.y + Math.sin(a)*rr, Math.max(z0, z - 22));
+    if(!q || !qTail) continue;
+    const al = (0.85*(1 - u)*eg).toFixed(3);
+    ctx.strokeStyle = `rgba(255,246,205,${al})`;
+    ctx.lineWidth = Math.max(1.2, 2.4*q.scale); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(qTail.x, qTail.y); ctx.lineTo(q.x, q.y); ctx.stroke();
   }
   ctx.restore();
 }
