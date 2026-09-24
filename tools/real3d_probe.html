@@ -74,14 +74,14 @@
     if(kind === 'region'){ const r = L.regions[key]; return r ? { x:r.x, y:r.y } : null; }
     if(kind === 'nest'){ const r = L.regions[key]; return r ? { x:r.nest.x, y:r.nest.y } : null; }
     if(kind === 'pass'){ const p = L.passes[key]; return p ? { x:p[0], y:p[1] } : null; }
-    if(kind === 'peak'){ const p = L.peaks.find(q=> q.id === key); return p ? { x:p.x, y:p.y } : null; }
+    if(kind === 'peak'){ const p = L.relief.peaks.find(q=> q.id === key); return p ? { x:p.x, y:p.y } : null; }
     if(kind === 'landmark'){
       const [k2, idx] = key.split('#');
       const list = L.landmarks.filter(q=> q.kind === k2);
       const m = list[+(idx||0)];
       if(!m) return null;
       if(m.a) return { x:(m.a[0]+m.b[0])/2, y:(m.a[1]+m.b[1])/2 };
-      if(m.peak){ const p = L.peaks.find(q=> q.id === m.peak); return p ? { x:p.x, y:p.y } : null; }
+      if(m.peak){ const p = L.relief.peaks.find(q=> q.id === m.peak); return p ? { x:p.x, y:p.y } : null; }
       return { x:m.x, y:m.y };
     }
     return null;

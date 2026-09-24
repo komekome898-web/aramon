@@ -158,7 +158,8 @@ function buildWorldObjects(w){
   if((w.lava||[]).length){
     const lavaMat = zoneMaterial('lava');   // 材質は全部の溶岩で共有(脈動もまとめて効く)
     lavaMats.push(lavaMat);
-    w.lava.forEach(z=> worldGroup.add(buildZoneMesh(z, lavaMat, z.radius, ZONE_LIFT)));
+    // noMesh の溶岩(探検フィールドの溶岩の川)は当たりだけ。帯は real3d_explore.js が描く
+    w.lava.forEach(z=>{ if(!z.noMesh) worldGroup.add(buildZoneMesh(z, lavaMat, z.radius, ZONE_LIFT)); });
   }
   // 探検フィールドだけ: 山を種類ごとにまとめ、ランドマークを足す(real3d_explore.js)
   if(R3.theme.explore) buildExploreWorld(worldGroup, w);
@@ -181,11 +182,11 @@ function applyTheme(){
   if(!scene || appliedTheme === R3.theme) return;
   appliedTheme = R3.theme;
   renderer.setClearColor(R3.theme.skyBot, 1);
+  // 探検フィールドは霧を指数型へ差し替え、日差し・雲も毎フレーム変えるので、ここで元へ戻す
+  // (先に戻してから色と距離を書く。他のマップは一度も変えないので、値を書き直すだけで見た目は変わらない)
+  resetExplore({ scene, sun, ridge, sky });
   scene.fog.color.setHex(R3.theme.haze);
-  // 探検フィールドは地域ごとに霞の距離と日差しの色を毎フレーム変えるので、ここで元へ戻す
-  // (他のマップは一度も変えないので、この3行は値を書き直すだけで見た目は変わらない)
   scene.fog.near = FOG_NEAR; scene.fog.far = FOG_FAR;
-  resetExplore({ sun, ridge });
   applySkyTheme(sky);
   applyTerrainTheme();
   applyEnvironment();   // 空の色が変わったので環境光も作り直す

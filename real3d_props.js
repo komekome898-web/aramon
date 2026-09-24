@@ -991,14 +991,16 @@ const OBST_SHAPE_FB = { h:1.2, sink:0.2 };
 let obstGroup = null, obstKinds = null, obstSrc = null, obstSig = '', obstShadow = null;
 let obstCX = null, obstCY = null, obstCull = OBST_VIEW, obstDrawn = 0;
 
-/* 探検フィールドは地域の霞(遠い側2700〜3250)の先が見えないので、その少し先で切る
+/* 探検フィールドは霞が指数型で遠くまで見えるので、地域の霞の濃さから切る距離を決める
    (密林は霞が濃く木が多いので、ここで切らないと木だけで数十万三角形になる。実測)。 */
-const OBST_VIEW_EXPLORE = 3300;
+const OBST_VIEW_EXPLORE = 4300;
+const OBST_FADE_EXPLORE = 800;   // 切る距離の手前これだけで、地面へ縮めて消す(ぷつっと消えない)
 function obstView(cx, cy){
   if(!isExplore()) return OBST_VIEW;
   if(cx == null) return OBST_VIEW_EXPLORE;
   // その場所の霞が完全にかかる距離(地域の fog の遠い側)の少し先まで
-  return Math.min(OBST_VIEW_EXPLORE, exploreMixNum('fog', exploreWeights(cx, cy), 1) + 60);
+  // 指数の霞が8割ほど掛かる距離(1.3/濃さ)まで。その手前から縮めて消す(下の OBST_FADE)
+  return Math.min(OBST_VIEW_EXPLORE, 1.3/exploreMixNum('fogD', exploreWeights(cx, cy)));
 }
 export function obstacleCullDist(){ return obstCull; }
 export function obstacleDrawn(){ return obstDrawn; }
@@ -2023,12 +2025,15 @@ function obstacleMaterial(flavor){
   /* 表面ディテール。地面用の法線マップを貼るのをやめてこちらへ替えた。
      地面のUVをそのまま流用すると、球・円柱・箱でUVの縮尺がバラバラで
      粒の大きさが物ごとに変わってしまう(貼っても効いていなかった)。 */
-  applySurfaceDetail(mat, conf.sd);
+  /* 探検フィールドは汚れのムラの周期を大きく・濃さを弱くする(小さい周期の濃いムラは
+     人工物が迷彩柄に見えると批評家に指摘された)。他のマップは今までどおり。 */
+  const sd = isExplore() ? Object.assign({}, conf.sd, { macro:conf.sd.macro*3.2, stain:conf.sd.stain*0.45, crack:conf.sd.crack*0.8 }) : conf.sd;
+  applySurfaceDetail(mat, sd);
   /* 水晶だけはわずかに自ら光る。日陰へ入っても水色が残り、
      「氷の結晶」だと分かる(色はテーマ由来なのでマップごとに変わる)。 */
   if(flavor === 'crystal'){
     mat.emissive = crystalColor().multiplyScalar(0.55);
-    mat.emissiveIntensity = 0.22;
+    mat.emissiveIntensity = isExplore() ? 0.75 : 0.22;   // 探検は内側から光る氷(群生させてある)
   }
   return mat;
 }
@@ -2127,11 +2132,19 @@ function updateObstacleInstances(cx, cy){
       _oq2.setFromAxisAngle(_tiltAxis, (((seed*7.3) % 1) - 0.5) * 2 * tilt);
       _oq.multiply(_oq2);
     }
-    const hk = 0.90 + (seed - Math.floor(seed))*0.26;   // 高さだけ個体差を付ける
+    let hk = 0.90 + (seed - Math.floor(seed))*0.26;   // 高さだけ個体差を付ける
+    // 探検フィールド: 切る距離の手前で地面へ縮めて消す
+    let fadeK = 1;
+    if(exTints){
+      const dd = Math.sqrt(near[i].d2);
+      fadeK = 1 - Math.min(1, Math.max(0, (dd - (view - OBST_FADE_EXPLORE))/OBST_FADE_EXPLORE));
+      fadeK = Math.max(0.001, fadeK*fadeK*(3 - 2*fadeK));
+      hk *= fadeK;
+    }
     // 横も個体差を付ける。ただし当たり判定より太くしないため 1.0 を超えない
     const wx = 0.86 + ((seed*5.3) % 1)*0.14;
     const wz = 0.86 + ((seed*11.7) % 1)*0.14;
-    _os.set(r*wx, r*hk, r*wz);
+    _os.set(r*wx*fadeK, r*hk, r*wz*fadeK);
     _om.compose(_ov, _oq, _os);
     mesh.setMatrixAt(idx, _om);
     const tint = 0.82 + ((seed*3.1) % 1)*0.34;

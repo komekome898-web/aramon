@@ -1414,6 +1414,13 @@ function explorePolylineAt(pts, s){
   }
   return null;
 }
+/* 壁の抜け(開口部)か。openings=線の長さに対する位置(0〜1)、幅は WALL_OPEN_W。
+   world.js(当たり)と real3d_explore.js(見た目)が同じ関数を使う(window経由)。 */
+function exploreWallOpen(st, s, total){
+  const w = EXPLORE_FIELD_LAYOUT.wallOpenW;
+  for(const f of (st.openings || [])){ if(Math.abs(s - f*total) < w*0.5) return true; }
+  return false;
+}
 function explorePolylineLen(pts){
   let L = 0;
   for(let i=0;i<pts.length-1;i++) L += Math.hypot(pts[i+1].x-pts[i].x, pts[i+1].y-pts[i].y);
@@ -1440,177 +1447,144 @@ function exploreGenWorld(){
   volcanoObstacles = []; lavaZones = []; riverZones = []; seaZones = []; oasisZones = [];
   rocks = []; crystalObstacles = []; terrainDecor = [];
   const paths = L.paths.map(p=>({ w:p.w, pts:p.pts.map(explorePoint) }));
-  const passes = Object.keys(L.passes).map(k=> explorePoint(k));
   // 何も置かない場所(キャンプ・ボスの巣・ランドマークの周り)
   const clears = [{ x:L.camp.x, y:L.camp.y, r:L.camp.clear }];
   for(const k of EXPLORE_REGION_KEYS){ const n = L.regions[k].nest; clears.push({ x:n.x, y:n.y, r:n.r }); }
   const onPath = (x, y, m)=>{ for(const p of paths){ if(exploreDistToPolyline(x, y, p.pts) < p.w + m) return true; } return false; };
   const inClear = (x, y, m)=>{ for(const c of clears){ if(Math.hypot(x-c.x, y-c.y) < c.r + m) return true; } return false; };
   let complexId = 0;
-  /* riseK=高さ/半径(なだらかな肩〜切り立った崖)。segs/rows は3Dの分割(探検の山は種類ごとに
-     1メッシュへまとめて描くので、通常マップより細かくしても描画命令は増えない)。 */
-  const addMount = (x, y, radius, style, isMain, extra)=>{
-    /* shapeP=輪郭の凹み(裾が広く頂が細い)/ carveK=尾根と谷の彫りの深さ。どちらも
-       判定の円錐の内側にしか効かない(real3d_props.js)。等しい円錐の列に見せないための個体差 */
-    const v = { x, y, radius, isMain:!!isMain, complexId, style, segs:isMain ? 56 : 40, rows:isMain ? 15 : 11 };
+  /* 探検フィールドの山は全部「見えない円の判定」(noMesh)。見た目は地形(exploreRelief)が
+     持っているので、円錐は描かない。extra に見た目の担当(real3d_explore.js)への情報を載せる。 */
+  const block = (x, y, g, tag, extra)=>{
+    complexId++;
+    const v = { x, y, radius:mountainRadiusForGround(g), isMain:false, complexId, style:'crag', noMesh:true, landmark:tag };
     if(extra) Object.assign(v, extra);
-    const shape = !v.noMesh && L.mountainShape[style];
-    if(shape){
-      v.riseK = (v.riseK || (isMain ? 1.15 : 0.9)) * shape.riseMul;
-      v.shapeP = rr(shape.shapeP[0], shape.shapeP[1]);
-      v.carveK = rr(1.3, 1.7);
-      // 台地(頂を切る)。主峰と火口の山は切らない
-      const mc = (extra && extra.mesaChance != null) ? extra.mesaChance : shape.mesa[0];
-      if(!isMain && rng() < mc){ v.mesa = rr(shape.mesa[1], shape.mesa[2]); v.dome = shape.dome; }
-      delete v.mesaChance;
-    }
     volcanoObstacles.push(v);
     return v;
   };
-  // 山を置いてよいか(道・キャンプ・巣・峠をふさがない)
-  const mountOk = (x, y, radius, isMain, riseK)=>{
-    const g = mountainGroundRadius({ radius, isMain, riseK });
-    if(inClear(x, y, g + 120)) return false;
-    if(onPath(x, y, g + 10)) return false;   // 裾が道にかからなければよい(峡谷の壁は道のすぐ脇に立つ)
-    return true;
-  };
-  const regionStyle = (x, y)=> L.regions[exploreRegionKeyAt(x, y)].mountain;
 
-  /* ---- 1) ランドマークの足元(当たり判定だけ。見た目は real3d_explore.js) ---- */
-  const footMount = (x, y, foot, tag)=>{
-    complexId++;
-    addMount(x, y, mountainRadiusForGround(foot), 'crag', false, { noMesh:true, landmark:tag });
-    clears.push({ x, y, r:foot + 140 });
+  /* ---- 1) 起伏を実際に測って、登れない所へ円の判定を並べる ----
+     尾根・峡谷の壁・山の高さは data.js の exploreRelief(見た目と同じ面)。その面が
+     「稜線(壁)の高さの RELIEF_BLOCK 倍」を越える範囲を横断方向に測り、その帯の中心へ
+     帯の半幅の円を置く。=見えている急斜面のすぐ手前で止まる(見えない壁にならない)。 */
+  const RELIEF_BLOCK = 0.34;
+  const extent = (x, y, nx, ny, hRef, from, maxD)=>{
+    // (x,y)+n*d を from から外へ進み、高さが基準を下回る直前の距離を返す
+    let d = from;
+    while(d < maxD && exploreRelief(x + nx*d, y + ny*d) >= hRef*RELIEF_BLOCK) d += 20;
+    return d;
   };
+  const R = L.relief;
+  for(const rd of R.ridges){
+    const pts = rd.pts.map(explorePoint);
+    const total = explorePolylineLen(pts);
+    for(let s = 0; s < total; ){
+      const q = explorePolylineAt(pts, s);
+      const h0 = exploreRelief(q.x, q.y);
+      let step = 160;
+      if(h0 > 140){
+        const nx = -q.dy, ny = q.dx;
+        const e1 = extent(q.x, q.y, nx, ny, h0, 0, rd.w[1]*1.2);
+        const e2 = extent(q.x, q.y, -nx, -ny, h0, 0, rd.w[1]*1.2);
+        const g = (e1 + e2)/2, off = (e1 - e2)/2;
+        const cx = q.x + nx*off, cy = q.y + ny*off;
+        if(g > 60 && cx > -300 && cy > -300 && cx < WORLD.w+300 && cy < WORLD.h+300 && !inClear(cx, cy, g*0.5) && !onPath(cx, cy, g - 40)) block(cx, cy, g, 'ridge');
+        step = Math.max(120, g*0.62);
+      }
+      s += step;
+    }
+  }
+  {
+    const cy = R.canyon, mid = cy.pts.map(explorePoint), total = explorePolylineLen(mid);
+    for(let s = 0; s < total; s += 170){
+      const q = explorePolylineAt(mid, s);
+      for(const side of [1, -1]){
+        const nx = -q.dy*side, ny = q.dx*side;
+        // 壁の上(台地)の高さを測ってから、内側の崖の縁と外側の裾を探す
+        let hW = 0, dW = 0;
+        for(let d = cy.narrow; d < cy.wide + cy.band; d += 40){ const h = exploreRelief(q.x + nx*d, q.y + ny*d); if(h > hW){ hW = h; dW = d; } }
+        if(hW < 140) continue;
+        let e1 = dW; while(e1 > 0 && exploreRelief(q.x + nx*e1, q.y + ny*e1) >= hW*RELIEF_BLOCK) e1 -= 20;
+        const e2 = extent(q.x, q.y, nx, ny, hW, dW, cy.wide + cy.band + 400);
+        const g = (e2 - e1)/2, c = (e1 + e2)/2;
+        if(g > 60) block(q.x + nx*c, q.y + ny*c, g, 'canyon');
+      }
+    }
+  }
+  for(const pk of R.peaks){
+    // 中心に最小の半径の円、方向ごとの張り出しには輪の上に小さな円を足す
+    const reach = [];
+    for(let i=0;i<16;i++){
+      const a = i/16*Math.PI*2, nx = Math.cos(a), ny = Math.sin(a);
+      let d = pk.r*1.35;
+      while(d > 0 && exploreRelief(pk.x + nx*d, pk.y + ny*d) < pk.h*RELIEF_BLOCK) d -= 25;
+      reach.push(d);
+    }
+    const gMin = Math.min(...reach);
+    if(gMin > 60) block(pk.x, pk.y, gMin, 'peak', { peakId:pk.id });
+    reach.forEach((d, i)=>{
+      if(d < gMin*1.12) return;
+      const a = i/16*Math.PI*2;
+      const g = (d - gMin*0.55)/2 + 40, c = d - g;
+      block(pk.x + Math.cos(a)*c, pk.y + Math.sin(a)*c, g, 'peak');
+    });
+  }
+
+  /* ---- 2) ランドマーク・キャンプの当たり(形は real3d_explore.js。ここは足元の円だけ) ---- */
+  const foot = (x, y, g, tag, extra)=>{ block(x, y, g, tag, extra); clears.push({ x, y, r:g + 140 }); };
   for(const lm of L.landmarks){
     if(lm.kind === 'arch'){
-      footMount(lm.a[0], lm.a[1], lm.foot, 'arch');
-      footMount(lm.b[0], lm.b[1], lm.foot, 'arch');
-      clears.push({ x:(lm.a[0]+lm.b[0])/2, y:(lm.a[1]+lm.b[1])/2, r:Math.hypot(lm.b[0]-lm.a[0], lm.b[1]-lm.a[1])*0.5 });
-    }else if(lm.kind === 'tower'){
-      footMount(lm.x, lm.y, lm.foot, 'tower');
+      // 脚は板状(アーチの向きに長い)。1本の脚を向きに沿った2つの円で覆う
+      const dx = lm.b[0]-lm.a[0], dy = lm.b[1]-lm.a[1], dl = Math.hypot(dx, dy) || 1;
+      for(const e of [lm.a, lm.b]) for(const k of [-0.5, 0.5]){
+        foot(e[0] + dx/dl*lm.foot*k, e[1] + dy/dl*lm.foot*k, lm.foot*0.56, 'arch');
+      }
+      clears.push({ x:(lm.a[0]+lm.b[0])/2, y:(lm.a[1]+lm.b[1])/2, r:dl*0.5 });
+    }else if(lm.kind === 'tower' || lm.kind === 'icespire'){
+      foot(lm.x, lm.y, lm.foot, lm.kind);
     }else if(lm.kind === 'gate'){
       const ax = lm.toward[0]-lm.x, ay = lm.toward[1]-lm.y, al = Math.hypot(ax, ay) || 1;
       const px = -ay/al, py = ax/al;
-      footMount(lm.x + px*lm.half, lm.y + py*lm.half, lm.foot, 'gate');
-      footMount(lm.x - px*lm.half, lm.y - py*lm.half, lm.foot, 'gate');
+      foot(lm.x + px*lm.half, lm.y + py*lm.half, lm.foot, 'gate');
+      foot(lm.x - px*lm.half, lm.y - py*lm.half, lm.foot, 'gate');
       clears.push({ x:lm.x, y:lm.y, r:lm.half*0.8 });
     }
   }
-  // ベースキャンプのテント・焚き火・ビーコン(隠れられそうな形なので当たり判定を持たせる)
-  for(const t of (L.camp.props || [])){
-    complexId++;
-    addMount(L.camp.x + t.dx, L.camp.y + t.dy, mountainRadiusForGround(t.foot), 'crag', false, { noMesh:true, landmark:'camp' });
-  }
-  complexId++;
-  addMount(L.camp.beacon.x, L.camp.beacon.y, mountainRadiusForGround(L.camp.beacon.foot), 'crag', false, { noMesh:true, landmark:'beacon' });
+  for(const t of (L.camp.props || [])) block(L.camp.x + t.dx, L.camp.y + t.dy, t.foot, 'camp');
+  block(L.camp.beacon.x, L.camp.beacon.y, L.camp.beacon.foot, 'beacon');
 
-  /* ---- 2) 大きな山と、そのまわりの小山 ---- */
-  for(const p of L.peaks){
-    complexId++;
-    addMount(p.x, p.y, p.radius, p.style, p.isMain, { peakId:p.id });
-    for(let i=0;i<p.bumps;i++){
-      const a = (i/p.bumps)*Math.PI*2 + rr(-0.3, 0.3) + p.x*0.001;
-      const d = p.radius*rr(0.55, 0.85);
-      const x = p.x + Math.cos(a)*d, y = p.y + Math.sin(a)*d, r = p.radius*rr(0.30, 0.46);
-      const k = rr(0.55, 0.95);
-      if(mountOk(x, y, r, false, k)) addMount(x, y, r, p.style, false, { riseK:k });
-    }
-  }
-
-  /* ---- 3) 尾根(峠の所だけ空ける)と、火山の峡谷の壁 ---- */
-  const rc = L.ridgeCone;
-  /* 線に沿って山を並べる。同じ高さの円錐が等間隔に並ぶと「ピラミッドの列」に見えるので、
-     ・高さの比(riseK)を線に沿ってゆっくり波打たせる(高い峰と低い鞍部が交互に来る)
-     ・峰の手前と奥に低い肩(前山)を足して、稜線を1本の鋸歯でなく「山脈の厚み」にする */
-  const coneLine = (pts, style, gaps, rMin, rMax, step, jitter, mainChance, kRange, foot, gapHalf, mesaChance)=>{
-    complexId++;
-    const total = explorePolylineLen(pts);
-    const ph = rng()*Math.PI*2, fq = rr(0.0011, 0.0019);
-    const gh = gapHalf || rc.gapHalf;
-    const gapHit = (x, y, g)=>{ for(const gp of gaps){ if(Math.hypot(x-gp.x, y-gp.y) < gh + g) return true; } return false; };
-    for(let s = step*0.3; s < total; s += step*rr(0.85, 1.15)){
-      const q = explorePolylineAt(pts, s);
-      const j = rr(-jitter, jitter);
-      const x = q.x - q.dy*j, y = q.y + q.dx*j;
-      const st = style === 'auto' ? regionStyle(x, y) : style;
-      const wave = 0.5 + 0.5*Math.sin(s*fq + ph);
-      const k = kRange[0] + (kRange[1]-kRange[0])*Math.min(1, wave*0.8 + rng()*0.35);
-      const isMain = st !== 'volcano' && wave > 0.6 && rng() < mainChance;
-      const r = rr(rMin, rMax) * (isMain ? 0.86 : 1);
-      const kk = isMain ? undefined : k;
-      const g = mountainGroundRadius({ radius:r, isMain, riseK:kk });
-      if(gapHit(x, y, g) || !mountOk(x, y, r, isMain, kk)) continue;
-      if(x < -400 || y < -400 || x > WORLD.w+400 || y > WORLD.h+400) continue;
-      addMount(x, y, r, st, isMain, kk ? { riseK:kk, mesaChance } : { mesaChance });
-      // 前山(峰の脇の低い肩)
-      if(foot && rng() < foot){
-        const side = rng() < 0.5 ? 1 : -1;
-        const fr = r*rr(0.40, 0.58), fk = rr(0.42, 0.62);
-        const off = g*rr(0.65, 0.95);
-        const fx = x - q.dy*off*side + q.dx*rr(-120, 120), fy = y + q.dx*off*side + q.dy*rr(-120, 120);
-        const fg = mountainGroundRadius({ radius:fr, riseK:fk });
-        if(!gapHit(fx, fy, fg) && mountOk(fx, fy, fr, false, fk)) addMount(fx, fy, fr, st, false, { riseK:fk });
-      }
-    }
-  };
-  for(const rd of L.ridges){
-    coneLine(rd.pts.map(explorePoint), rd.style, rd.gaps.map(explorePoint),
-             rc.r[0], rc.r[1], rc.step, rc.jitter, rc.mainChance, rc.riseK, rc.foothill);
-  }
-  {
-    const cy = L.canyon, mid = cy.pts.map(explorePoint);
-    for(const side of [1, -1]){
-      // 中心線を法線方向へ half だけずらした壁
-      const wall = mid.map((p, i)=>{
-        const a = mid[Math.max(0, i-1)], b = mid[Math.min(mid.length-1, i+1)];
-        const dx = b.x-a.x, dy = b.y-a.y, l = Math.hypot(dx, dy) || 1;
-        return { x:p.x - dy/l*cy.half*side, y:p.y + dx/l*cy.half*side };
-      });
-      coneLine(wall, cy.style, cy.gaps.map(explorePoint), cy.r[0], cy.r[1], cy.step, 40, 0, cy.riseK, 0.30, cy.gapHalf, cy.mesa);
-    }
-  }
-
-  /* ---- 4) 世界の縁の山並み(マップの端を「世界の終わり」に見せない) ---- */
-  {
-    const rim = L.rim, W = WORLD.w, H = WORLD.h, e = rim.inset;
-    const loop = [{x:e,y:e},{x:W-e,y:e},{x:W-e,y:H-e},{x:e,y:H-e},{x:e,y:e}];
-    complexId++;
-    const total = explorePolylineLen(loop);
-    for(let s=0; s<total; s += rim.step*rr(0.85, 1.1)){
-      const q = explorePolylineAt(loop, s);
-      const r = rr(rim.r[0], rim.r[1]);
-      const inward = rr(-150, 250);
-      const x = q.x - q.dy*inward, y = q.y + q.dx*inward;
-      if(inClear(x, y, 200)) continue;
-      const st = regionStyle(Math.max(600, Math.min(W-600, x)), Math.max(600, Math.min(H-600, y)));
-      // 火山の主峰(isMain)には火口が付くので、縁の山並みでは主峰にしない
-      const main = st !== 'volcano' && rng() < 0.3;
-      addMount(x, y, r, st, main, main ? null : { riseK:rr(rim.riseK[0], rim.riseK[1]) });
-    }
-  }
-
-  /* ---- 5) 溶岩・湖・川 ---- */
+  /* ---- 3) 溶岩・湖・川 ---- */
   for(const z of L.lava) lavaZones.push({ x:z.x, y:z.y, radius:z.r });
-  for(const z of L.lakes) oasisZones.push({ x:z.x, y:z.y, radius:z.r });
-  for(const rv of L.rivers){
-    const pts = rv.pts.map(explorePoint);
+  // 火山の火口の底にも溶岩(近づけないが、上から覗くと光っている)
+  for(const pk of R.peaks){
+    if(!pk.crater) continue;
+    lavaZones.push({ x:pk.x, y:pk.y, radius:pk.r*pk.crater.r*0.55, crater:true });
+  }
+  const smoothPts = (pts, stepLen)=>{
     // 折れ線の角を丸める(カトマル-ロム)。直線を並べた川は用水路に見える
-    const smooth = [];
+    const out = [];
     for(let i=0;i<pts.length-1;i++){
       const p0 = pts[Math.max(0,i-1)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(pts.length-1,i+2)];
-      const seg = Math.max(2, Math.round(Math.hypot(p2.x-p1.x, p2.y-p1.y)/150));
+      const seg = Math.max(2, Math.round(Math.hypot(p2.x-p1.x, p2.y-p1.y)/stepLen));
       for(let k=0;k<seg;k++){
         const t = k/seg, t2 = t*t, t3 = t2*t;
         const f = (a,b,c,d)=> 0.5*((2*b) + (-a+c)*t + (2*a-5*b+4*c-d)*t2 + (-a+3*b-3*c+d)*t3);
-        smooth.push({ x:f(p0.x,p1.x,p2.x,p3.x), y:f(p0.y,p1.y,p2.y,p3.y) });
+        out.push({ x:f(p0.x,p1.x,p2.x,p3.x), y:f(p0.y,p1.y,p2.y,p3.y) });
       }
     }
-    smooth.push(pts[pts.length-1]);
-    smooth.forEach((p, i)=>{
+    out.push(pts[pts.length-1]);
+    return out;
+  };
+  for(const z of L.lakes) oasisZones.push({ x:z.x, y:z.y, radius:z.r });
+  for(const rv of L.rivers){
+    smoothPts(rv.pts.map(explorePoint), 150).forEach((p, i)=>{
       const wob = Math.sin(i*0.7 + rv.r)*0.10 + rr(-0.06, 0.06);
       riverZones.push({ x:p.x, y:p.y, radius:rv.r*(1 + wob) });
     });
+  }
+  // 溶岩の川: 当たり(ダメージ)は円の列。見た目は real3d_explore.js が1本の帯で描くので noMesh
+  for(const lr of (L.lavaRivers || [])){
+    smoothPts(lr.pts.map(explorePoint), 110).forEach(p=> lavaZones.push({ x:p.x, y:p.y, radius:lr.r, noMesh:true, lavaRiver:true }));
   }
 
   /* ---- 6) 人工物の並び(廃村・参道・回廊・野営地・前哨) ---- */
@@ -1661,6 +1635,38 @@ function exploreGenWorld(){
         const x = st.x + Math.cos(a)*st.R, y = st.y + Math.sin(a)*st.R;
         place(st.f, x, y, st.r*rr(0.95, 1.03), exploreSeedForYaw(a + Math.PI/2, rng), false);
       }
+    }else if(st.kind === 'houseRow' || st.kind === 'houseRing'){
+      /* 家。見た目は real3d_explore.js(石の腰壁+木の上屋+張り出した屋根)。
+         当たりは家の長手方向に並べた2つの円(床面 w×d をほぼ覆う)。 */
+      const spots = [];
+      if(st.kind === 'houseRow'){
+        const ax = st.a[0], ay = st.a[1], bx = st.b[0], by = st.b[1];
+        const len = Math.hypot(bx-ax, by-ay), ang = Math.atan2(by-ay, bx-ax);
+        const n = Math.max(1, Math.floor(len/st.spacing) + 1);
+        for(let i=0;i<n;i++){ const t = n === 1 ? 0.5 : i/(n-1); spots.push({ x:ax + (bx-ax)*t, y:ay + (by-ay)*t, ang, face:st.face }); }
+      }else{
+        for(let i=0;i<st.n;i++){ const a = (i/st.n)*Math.PI*2 + 0.4; spots.push({ x:st.x + Math.cos(a)*st.R, y:st.y + Math.sin(a)*st.R, ang:a + Math.PI/2, face:-1 }); }
+      }
+      for(const sp of spots){
+        if(st.skip && rng() < st.skip) continue;
+        const w = rr(190, 250), d = rr(140, 170), h = rr(150, 190);
+        if(onPath(sp.x, sp.y, d*0.5) || isOnHazard(sp.x, sp.y, w*0.5)) continue;
+        const ux = Math.cos(sp.ang), uy = Math.sin(sp.ang), cr = d*0.52 + 8;
+        const house = { x:sp.x, y:sp.y, ang:sp.ang, face:sp.face, w, d, h, snowy:!!st.snowy, seed:rr(0, 10) };
+        block(sp.x + ux*(w*0.5 - cr), sp.y + uy*(w*0.5 - cr), cr, 'house', { house });
+        block(sp.x - ux*(w*0.5 - cr), sp.y - uy*(w*0.5 - cr), cr, 'house');
+      }
+    }else if(st.kind === 'wall'){
+      /* 一続きの石壁。見た目は real3d_explore.js が同じ折れ線から作る(openings も同じ式)。
+         当たりは壁に沿って並べた小さな円。抜け(openings)の所は円を置かない。 */
+      const pts = st.pts.map(explorePoint);
+      if(st.closed) pts.push(pts[0]);
+      const total = explorePolylineLen(pts);
+      for(let s2 = 0; s2 <= total; s2 += 64){
+        if(exploreWallOpen(st, s2, total)) continue;
+        const q = explorePolylineAt(pts, Math.min(s2, total - 0.01));
+        block(q.x, q.y, 46, 'wall');
+      }
     }
   }
 
@@ -1688,28 +1694,60 @@ function exploreGenWorld(){
       const u = rng();
       const radius = R[0] + (R[1]-R[0])*(u*u);
       if(inClear(x, y, radius + 60)) continue;
+      // 崖や段丘の縁に置かない(浮いて見える)
+      const gr = real3dHeightGrad(x, y);
+      if(Math.hypot(gr.gx, gr.gy) > 0.42) continue;
       if(place(flavor, x, y, radius, rr(0, 10), true)) placed++;
     }
   }
 
-  /* ---- 8) 凍った高地の水晶 ---- */
+  /* ---- 8) 凍った高地の水晶(群生) ---- */
   {
     const cr = L.crystals, reg = L.regions[cr.region];
     let guard = 0;
-    while(crystalObstacles.length < cr.n && guard < cr.n*80){
+    const ok = (x, y, radius)=>{
+      if(exploreRegionKeyAt(x, y) !== cr.region) return false;
+      if(x < 150 || y < 150 || x > WORLD.w-150 || y > WORLD.h-150) return false;
+      if(isOnHazard(x, y, radius + 90) || inClear(x, y, radius + 60) || onPath(x, y, radius + 20)) return false;
+      if(isNearRock(x, y, radius + 25)) return false;
+      if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.15 + radius)) return false;
+      for(const c of crystalObstacles){ if(Math.hypot(x-c.x, y-c.y) < c.radius + radius + 6) return false; }
+      return true;
+    };
+    while(crystalObstacles.length < cr.n && guard < cr.n*40){
       guard++;
       const a = rng()*Math.PI*2, d = reg.radius*1.3*Math.sqrt(rng());
+      const cx = reg.x + Math.cos(a)*d, cy = reg.y + Math.sin(a)*d;
+      const n = Math.round(rr(cr.cluster[0], cr.cluster[1]));
+      for(let i=0;i<n && crystalObstacles.length < cr.n;i++){
+        const r2 = i === 0 ? rr(30, 42) : rr(14, 30);
+        const aa = rng()*Math.PI*2, dd = i === 0 ? 0 : rr(40, 110);
+        const x = cx + Math.cos(aa)*dd, y = cy + Math.sin(aa)*dd;
+        if(ok(x, y, r2)) crystalObstacles.push({ id:nextId++, x, y, radius:r2, height:r2*1.8, seed:rr(0, 10) });
+      }
+    }
+  }
+
+  /* ---- 9) 密林の巨木(幹だけ当たり判定。樹冠は頭上なので判定なし) ---- */
+  {
+    const G = L.giants, reg = L.regions[G.region];
+    const trees = [];
+    let guard = 0;
+    while(trees.length < G.n && guard < G.n*80){
+      guard++;
+      const a = rng()*Math.PI*2, d = reg.radius*1.25*Math.sqrt(rng());
       const x = reg.x + Math.cos(a)*d, y = reg.y + Math.sin(a)*d;
-      const radius = rr(16, 38);
-      if(exploreRegionKeyAt(x, y) !== cr.region) continue;
-      if(x < 150 || y < 150 || x > WORLD.w-150 || y > WORLD.h-150) continue;
-      if(isOnHazard(x, y, radius + 120) || inClear(x, y, radius + 60) || onPath(x, y, radius + 20)) continue;
-      if(isNearRock(x, y, radius + 25)) continue;
-      if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.15 + radius)) continue;
-      let tooClose = false;
-      for(const c of crystalObstacles){ if(Math.hypot(x-c.x, y-c.y) < c.radius + radius + 18){ tooClose = true; break; } }
-      if(tooClose) continue;
-      crystalObstacles.push({ id:nextId++, x, y, radius, height:radius*1.8, seed:rr(0, 10) });
+      if(exploreRegionKeyAt(x, y) !== G.region) continue;
+      const f = rr(G.foot[0], G.foot[1]);
+      if(x < 400 || y < 400 || x > WORLD.w-400 || y > WORLD.h-400) continue;
+      if(isOnHazard(x, y, f + 80) || inClear(x, y, f + 120) || onPath(x, y, f + 60)) continue;
+      if(isNearRock(x, y, f + 30)) continue;
+      if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.2 + f)) continue;
+      if(trees.some(t=> Math.hypot(x-t.x, y-t.y) < G.minGap)) continue;
+      const gr = real3dHeightGrad(x, y);
+      if(Math.hypot(gr.gx, gr.gy) > 0.35) continue;
+      trees.push({ x, y });
+      block(x, y, f, 'giant', { giant:{ h:rr(G.h[0], G.h[1]), foot:f, seed:rr(0, 10) } });
     }
   }
 }

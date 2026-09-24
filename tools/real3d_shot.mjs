@@ -86,6 +86,13 @@ const EXPLORE_POSES = {
   arch:          { ex:{ at:'landmark:arch', off:[900, -900], look:'landmark:arch' }, pitch:-0.06 },
   tower:         { ex:{ at:'landmark:tower', off:[700, 800], look:'landmark:tower' }, pitch:-0.04 },
   nest:          { ex:{ at:'nest:frost', off:[-700, 600], look:'nest:frost' }, pitch:0.12 },
+  icespire:      { ex:{ at:'landmark:icespire', off:[-900, 900], look:'landmark:icespire' }, pitch:-0.04 },
+  // 地形そのもの(尾根・遠景・段丘・湖・巨木・溶岩の川)
+  vantage:       { ex:{ at:'camp', off:[0, 0], look:'peak:volcanoMain' }, pitch:0.10, lift:900 },
+  far_frost:     { ex:{ at:'region:meadow', off:[1800, -1200], look:'peak:frostMain' }, pitch:0.02 },
+  frost_lake:    { ex:{ at:[12200,6100], look:[12900,5300] }, pitch:0.14 },
+  giants:        { ex:{ at:'region:jungle', off:[300, -600], look:'nest:jungle' }, pitch:-0.02 },
+  lava_river:    { ex:{ at:[14200,11200], look:[15250,11600] }, pitch:0.10 },
 };
 const maps  = (opt('maps', '')  ? opt('maps','').split(',')  : ALL_MAPS).map(s=>s.trim()).filter(Boolean);
 const poses = (opt('poses', '') ? opt('poses','').split(',') : Object.keys(ALL_POSES)).map(s=>s.trim()).filter(Boolean);
@@ -145,7 +152,7 @@ for(const base of maps){
     const info = await page.evaluate((p)=> window.__probe.shoot(p), pose);
     if(!info || !info.ok){ if(isExplore) report.errors.push(`explore: ${name} を撮れませんでした`); continue; }
     const file = path.join(OUT, `${base}_${name}.png`);
-    await page.screenshot({ path:file, clip:{ x:0, y:0, width:W, height:H } });
+    await page.screenshot({ path:file, clip:{ x:0, y:0, width:W, height:H }, timeout:120000 });   // 重いカット(密林)はソフト描画で30秒を超える
     report.shots.push({ map:base, pose:name, file:path.relative(ROOT, file), cam:info });
     process.stdout.write(`撮影 ${base}_${name}\n`);
   }

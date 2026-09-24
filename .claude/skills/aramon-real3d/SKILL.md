@@ -136,9 +136,11 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - **1マップ1テーマの唯一の例外。分岐は `R3.theme.explore`(= `REAL3D_THEMES.explore.explore:true`)の1か所。** 他のマップは印が無いので従来の処理を1ビットも変えない(wild/kaurea の撮影で画素一致を確認済み)。
 - **設計図は `data.js` の `EXPLORE_FIELD_LAYOUT` が唯一の正**(地域・キャンプ・峠・尾根・峡谷・山・水・道・人工物の並び・ランドマーク)。当たり判定のある物は `world.js` の `exploreGenWorld()` が固定の種で作る(Math.randomを使わない=毎回同じ世界)。3Dのランドマークは `real3d_explore.js`。**座標を2か所に書かない。**
 - 地域の重みは `exploreRegionWeights(x,y)`(純関数。[草原,凍った高地,火山,密林,キャンプ])。地面の頂点色・4地域ぶんの近景タイル(チャンネル詰め・頂点属性 `aExW`)・植生の濃さと色・障害物の色・霞/日差し/空/遠景の山並みがこれを読む。地面の高さも地域で変わる(`exploreElevGrad`。解析微分つき・最大傾斜0.17)。
-- 山は `riseK`(高さ/半径)/`shapeP`(輪郭の凹み・1以上)/`mesa`+`dome`(頂を切った台地)/`carveK`(彫りの深さ)を持てる。**どれも判定の円錐の内側にしか効かない**(地面での半径は判定と一致したまま)。`mountainRiseOf()` と `buildMountainMesh` の高さの式は対(riseK を両方が読む)。
-- ランドマークの足元・テント・ビーコンは `noMesh:true` の山として円の判定だけ持つ(3Dの円錐は作らない)。半径は `mountainRadiusForGround(地面での半径)` で逆算する。
-- 描画命令を抑えるため、探検だけ山を「種類×区画」、地面のしみを「材質」、動かないランドマークを「材質×区画」でまとめ、障害物の形の作り分けを2通りにしている。障害物はその地域の霞が完全に掛かる距離で切る。
+- **起伏(尾根・峡谷・山・段丘・世界の縁)は地形そのもの。** `EXPLORE_FIELD_LAYOUT.relief` を `exploreRelief(x,y)`(data.js・純関数)が高さにして `real3dHeightAt` へ足す。円錐の山は描かない。**通れない所の当たりは world.js が同じ面を実際に測って `noMesh` の円を並べる**(見た目と判定が必ず一致する。起伏を直したら当たりも自動で追従)。弧長 `u` で形を変えるので、折れ線の最寄り点は角の内側で `u` を混ぜる(`exploreNearest`。混ぜないと段差=垂直の壁が出た)。
+- 地形パッチ(7200四方)の外は `buildFarTerrain()`(マップ全体+縁の山を1枚・描画1回。パッチの内側は捨てる)。遠景の山並み(空のモジュール)は探検では隠す。
+- 空気: 探検のあいだだけ霧を `FogExp2` に差し替え(`resetExplore` が元の `Fog` へ戻す。**applyTheme では霧の色・距離を書く前に呼ぶ**)。地域ごとの `fogD`/`sunK`/`clouds`/`cloudTint` を `updateExplore` が混ぜる。雲は積雲モード(`uCloudMode=1`・`ensureCumulusTex`)で、他マップは 0 のまま。
+- ランドマークの足元・テント・ビーコン・家・石壁・巨木は `noMesh:true` の山として円の判定だけ持つ(家・巨木の形は `v.house`/`v.giant` を real3d_explore.js が読む)。半径は `mountainRadiusForGround(地面での半径)` で逆算する。石壁の抜けは `exploreWallOpen()` と `wallOpenW` を両方が読む。
+- 描画命令を抑えるため、探検だけ地面のしみを「材質」、動かないランドマークを「材質×区画」でまとめ、巨木は区画ごとの InstancedMesh にしている(1つにすると外接球が密林全体になり、どこからでも全部描いた)。障害物はその地域の霞が完全に掛かる距離で切る。
 - 撮影は `node tools/real3d_shot.mjs --maps explore`(専用のカット。立ち位置は設計図の名前で書く)。
 
 ## 弾道(上下のねらい)

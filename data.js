@@ -2862,8 +2862,8 @@ function real3dHeightAt(x, y){
     const w = L[i];
     h += w.amp * (Math.sin(x*w.fx + w.ph) * 0.5 + Math.cos(y*w.fy + w.ph*1.3) * 0.5);
   }
-  // 探検フィールドだけ地域ごとの高さを足す(他のマップは表が違うので素通り)
-  if(L === REAL3D_TERRAIN_SETS.explore) h += exploreElevGrad(x, y).h;
+  // 探検フィールドだけ地域ごとの高さと起伏(尾根・峡谷・山・段丘)を足す(他のマップは表が違うので素通り)
+  if(L === REAL3D_TERRAIN_SETS.explore) h += exploreElevGrad(x, y).h + exploreRelief(x, y);
   return h;
 }
 /* 高さと傾き(∂h/∂x, ∂h/∂y)を1回の走査でまとめて求める。
@@ -2885,6 +2885,13 @@ function real3dHeightGrad(x, y){
   if(L === REAL3D_TERRAIN_SETS.explore){
     const e = exploreElevGrad(x, y);
     h += e.h; gx += e.gx; gy += e.gy;
+    // 起伏は中心差分(max の継ぎ目や地層の段があるので解析微分にしない)
+    const r0 = exploreRelief(x, y), rx = exploreRelief(x + 3, y), ry = exploreRelief(x, y + 3);
+    if(r0 > 0.01 || rx > 0.01 || ry > 0.01){
+      h += r0;
+      gx += (rx - exploreRelief(x - 3, y))/6;
+      gy += (ry - exploreRelief(x, y - 3))/6;
+    }
   }
   _r3grad.h = h; _r3grad.gx = gx; _r3grad.gy = gy;
   return _r3grad;
@@ -2956,26 +2963,40 @@ const REAL3D_THEMES = {
     skyTop:0x2a5d98, skyBot:0xa7c6dc, haze:0xc3d2d4,
     low:0x55683a, high:0x8a9a5a, steep:0x4d4a3c, gravel:0x7e7862, scrub:0x5f7f2e,
     ridgeRock:0x56637a, ridgeFoot:0x7d8c98, ridgeSnow:0xeef3f8, snowLine:0.58,
+    lavaCrust:0x1c130e,   // 溶岩の冷えた殻(探検は全体の地が草原色なので、溶岩だけ火山の黒にする)
+    /* 地域ごと: sky=天頂 / haze=霞=地平の色 / fogD=指数の霞の濃さ(0.00013で約8km先まで形が残る) /
+       sun=日差しの色 / sunK=日差しの強さの倍率 / clouds=[雲の量, 厚さのしきい値, 巻雲, 低い雲] /
+       cloudTint=雲の影の色(火山は下から赤く照らされる) / snowAlt=雪が乗り始める高さ / strata=岩肌の地層の縞 */
     regions: {
       meadow:  { tex:'meadow',
-                 low:0x44602a, high:0x769838, steep:0x66624c, gravel:0x857d5e, scrub:0x5f8c28,
-                 sky:0x2a5d98, cloud:0.00, ridgeHaze:0.20, haze:0xc6d8cf, fog:[900, 3250], sun:0xfff0d2, rock:[1.04, 1.00, 0.92],
+                 low:0x44602a, high:0x769838, steep:0x6a6352, gravel:0x857d5e, scrub:0x5f8c28,
+                 sky:0x2a62a4, haze:0xc9dcd8, fogD:0.00013, sun:0xfff1d6, sunK:1.00,
+                 clouds:[0.62, 0.50, 0.25, 0.95], cloudTint:0x56626e, cloud:0.00, ridgeHaze:0.20,
+                 rock:[1.04, 1.00, 0.92], snowAlt:720, strata:0.55,
                  grass:0x6f9a34, veg:{ grass:1.00, flower:1.00, fern:0.35, twig:0.05, blades:0.10 } },
       frost:   { tex:'snow',
-                 low:0xa7bbcf, high:0xecf3fd, steep:0x56657a, gravel:0xb7c6d8, scrub:0x98afc4,
-                 sky:0x2360ab, cloud:0.00, ridgeHaze:0.15, haze:0xd8e6f2, fog:[850, 3250], sun:0xeef3ff, rock:[0.92, 0.97, 1.06],
+                 low:0xa7bbcf, high:0xecf3fd, steep:0x4e5b6e, gravel:0xb7c6d8, scrub:0x98afc4,
+                 sky:0x16408c, haze:0xd7e5f3, fogD:0.00011, sun:0xf0f5ff, sunK:1.05,
+                 clouds:[0.22, 0.82, 0.85, 0.30], cloudTint:0x5a6c84, cloud:0.00, ridgeHaze:0.15,
+                 rock:[0.92, 0.97, 1.06], snowAlt:140, strata:0.25,
                  grass:0xa9b8a0, veg:{ grass:0.14, flower:0.00, fern:0.00, twig:0.10, blades:1.00 } },
       volcano: { tex:'volcanic',
-                 low:0x2d1e14, high:0x51392a, steep:0x1b1310, gravel:0x3d2c20, scrub:0x5a3a1e,
-                 sky:0x3b2521, cloud:0.75, ridgeHaze:0.62, haze:0x8e5634, fog:[620, 2900], sun:0xffb57a, rock:[0.50, 0.44, 0.42],
+                 low:0x2d1e14, high:0x51392a, steep:0x241913, gravel:0x3d2c20, scrub:0x5a3a1e,
+                 sky:0x2c1c1a, haze:0x7a4a33, fogD:0.00022, sun:0xffa870, sunK:0.80,
+                 clouds:[1.00, 0.22, 0.00, 1.00], cloudTint:0x4a2418, cloud:0.80, ridgeHaze:0.65,
+                 rock:[0.50, 0.44, 0.42], snowAlt:1e9, strata:1.00,
                  grass:0x7a6a3a, veg:{ grass:0.10, flower:0.00, fern:0.00, twig:1.00, blades:0.10 } },
       jungle:  { tex:'jungle',
-                 low:0x223c1a, high:0x4a6e2c, steep:0x55462e, gravel:0x5a4b32, scrub:0x5a8a22,
-                 sky:0x356b88, cloud:0.25, ridgeHaze:0.40, haze:0xa9c4ab, fog:[520, 2700], sun:0xfff0c4, rock:[0.80, 0.92, 0.78],
+                 low:0x223c1a, high:0x4a6e2c, steep:0x4a4230, gravel:0x5a4b32, scrub:0x5a8a22,
+                 sky:0x3d6f80, haze:0x9fbe9c, fogD:0.00030, sun:0xf4f0c4, sunK:0.68,
+                 clouds:[0.78, 0.40, 0.10, 1.00], cloudTint:0x4c5c4a, cloud:0.30, ridgeHaze:0.45,
+                 rock:[0.80, 0.92, 0.78], snowAlt:1e9, strata:0.25,
                  grass:0x4f8a2a, veg:{ grass:0.95, flower:0.05, fern:1.00, twig:0.00, blades:0.15 } },
       camp:    { tex:'meadow',
                  low:0x6e5a40, high:0x92805e, steep:0x574c3c, gravel:0x857258, scrub:0x6c7a38,
-                 sky:0x2a5d98, cloud:0.00, ridgeHaze:0.20, haze:0xc8d2cc, fog:[900, 3250], sun:0xfff0d2, rock:[1.00, 0.96, 0.90],
+                 sky:0x2a62a4, haze:0xc9d6d2, fogD:0.00013, sun:0xfff1d6, sunK:1.00,
+                 clouds:[0.60, 0.50, 0.25, 0.95], cloudTint:0x56626e, cloud:0.00, ridgeHaze:0.20,
+                 rock:[1.00, 0.96, 0.90], snowAlt:1e9, strata:0.0,
                  grass:0x7a8a40, veg:{ grass:0.35, flower:0.10, fern:0.00, twig:0.10, blades:0.10 } },
     },
   },
@@ -3117,15 +3138,15 @@ MAPS.explore = {
                elev=地域の地面の高さ(なだらかに混ぜる) / mountain=その地域の山の種類
                nest=ボスの巣(周りは空けておく。r=空ける半径)
    ・camp      ベースキャンプ。clear=何も置かない半径 / blend=見た目がキャンプの色になる半径
-               beacon=帰還ビーコン(光の柱)の位置
-   ・passes    尾根を抜ける峠。ridges の gaps と paths から名前で参照する
-   ・ridges    通れない尾根(円錐の山を線に沿って並べる)。峠の所だけ山を置かない
-   ・canyon    火山の峡谷。中心線から half だけ両側へずらした2本の壁
-   ・peaks     大きな山(isMain=主峰。火山の主峰だけ火口がある)。bumps=周りの小山の数
-   ・lakes / rivers / lava  水辺と溶岩
+               beacon=帰還ビーコン(緑の灯火の塔)の位置
+   ・passes    尾根・峡谷を抜ける峠。relief の gaps と paths から名前で参照する
+   ・relief    起伏(尾根・峡谷・山・段丘・世界の縁)。地形そのものの高さ(exploreRelief)。
+               通れない所の当たりは world.js がこの面を測って置く(詳しくは relief の上のコメント)
+   ・lakes / rivers / lava / lavaRivers  水辺と溶岩(凍った高地の湖は凍る)
    ・paths     踏み分け道(見た目の土の道。岩を置かない)
-   ・structures 人工物の並び(row=線に沿って / ring=円に沿って)。向きは線に合わせる
-   ・scatter   地域ごとの岩・木の数と内訳
+   ・structures 人工物の並び(row=線に沿って / ring=円に沿って / houseRow・houseRing=家 /
+               wall=折れ線に沿った一続きの石壁。openings=抜け(幅は wallOpenW)・arches=抜けをアーチに)
+   ・scatter   地域ごとの岩・木の数と内訳 / crystals=水晶の群生 / giants=密林の巨木
    ・landmarks 遠くから方向が分かる大物(3Dは real3d_explore.js)。foot=当たり判定の半径 */
 const EXPLORE_FIELD_LAYOUT = {
   seed: 20260923,
@@ -3153,55 +3174,81 @@ const EXPLORE_FIELD_LAYOUT = {
     s1:[9050,13300], s2:[9040,15400], w1:[4800,9050], w2:[2700,9040],
     c1:[11830,13380], c2:[13360,12250],
   },
-  ridges: [
-    // 草原|凍った高地(北)。雪をかぶった尾根
-    { style:'snow',    gaps:['n1','n2'], pts:[[9050,7650],[8850,6100],[9200,4300],[8950,2300],[9100,300]] },
-    // 凍った高地|火山(東)
-    { style:'volcano', gaps:['e1','e2'], pts:[[10450,9050],[12200,8850],[14300,9250],[16300,8900],[17900,9100]] },
-    // 火山|密林(南)
-    { style:'volcano', gaps:['s1','s2'], pts:[[9050,10450],[9250,12200],[8850,14300],[9200,16300],[9000,17900]] },
-    // 密林|草原(西)
-    { style:'jungle',  gaps:['w1','w2'], pts:[[7650,9050],[5900,9250],[3800,8850],[1800,9200],[200,9000]] },
-    // 凍った高地の氷の尾根
-    { style:'snow',    gaps:[], pts:[[14700,7300],[15700,7700],[16600,7500]] },
-  ],
-  // 尾根の山の並べ方。riseK=高さ/半径の幅(低い鞍部〜高い峰) / foothill=前山を足す割合
-  ridgeCone: { r:[600, 900], step:620, jitter:170, mainChance:0.30, gapHalf:400, riseK:[0.50, 1.00], foothill:0.55 },
-  // 峡谷の壁はほとんどを台地(崖)にする(mesa=台地にする割合)
-  canyon: { style:'volcano', half:900, r:[600, 740], step:480, gaps:['c1','c2'], gapHalf:300, riseK:[1.15, 1.50], mesa:0.85,
-            pts:[[11500,10900],[12400,12000],[12700,13400],[12400,14800],[12700,15850]] },
-  rim: { inset:-60, step:1500, r:[1250, 1700], riseK:[0.70, 1.10] },
-  /* 山の種類ごとの形。riseMul=高さの倍率(密林の丘は低く丸く、雪山は高く尖る)/
-     shapeP=輪郭の凹み(1=円錐のまま。大きいほど裾が広く頂が細い。1未満は判定の外へ出るので不可) */
-  mountainShape: {
-    // mesa=[頂を切る割合, 切る高さの下限, 上限](高さに対する比)/ dome=切った上を丸く盛る量(0〜0.5)
-    snow:    { riseMul:1.00, shapeP:[1.20, 1.55], mesa:[0.00, 0.6, 0.8], dome:0.0 },
-    volcano: { riseMul:0.92, shapeP:[1.00, 1.25], mesa:[0.45, 0.55, 0.75], dome:0.10 },
-    jungle:  { riseMul:0.72, shapeP:[1.00, 1.10], mesa:[1.00, 0.50, 0.70], dome:0.45 },
-    crag:    { riseMul:0.85, shapeP:[1.05, 1.25], mesa:[0.50, 0.60, 0.80], dome:0.20 },
+  /* 起伏(地形そのものを盛り上げる。円錐の山は使わない)。高さは exploreRelief() が
+     real3dHeightAt に足す純関数なので、見た目・歩ける高さ・弾の当たりが全部同じ面になる。
+     通れない所(尾根・峡谷の壁・山)は world.js がこの面を実際に測って、その範囲に
+     見えない円の判定(noMesh の山)を並べる(= 見た目と判定が必ず一致する)。
+     ・ridges   尾根。pts=稜線 / w=裾までの幅 / h=稜線の高さ(どちらも範囲。線に沿ってうねる)
+                gaps=峠(そこだけ鞍部まで下がる) / strata=地層の段(0〜1)
+     ・canyon   峡谷。中心線の両側に台地の壁(band)が立つ。通り道の半幅は narrow と wide(部屋)を
+                rooms(中心線の長さに対する位置)で入れ替える=狭い道と広い部屋が交互に来る
+     ・peaks    山。r=裾の半径 / h=高さ / warp=輪郭のゆがみ / round=丸い丘(密林)
+                crater=火口(r=半径比 / depth=深さ比 / breach=崩れた側の向き[rad])
+     ・terraces 段丘・台地。上が平らで、ramp の向き([rad, 半角])だけ緩い坂(傾き0.3未満)で登れる
+     ・rim      世界の縁の外へせり上がる山並み(h=高さ / out=外へ伸ばす幅)            */
+  relief: {
+    gapHalf: 320, gapBlend: 420, ridgeTaper: 1400,
+    ridges: [
+      // 草原|凍った高地(北)。雪をかぶる高い尾根
+      { gaps:['n1','n2'], w:[760,1080], h:[620,980], strata:0.15,
+        pts:[[9050,7650],[8850,6100],[9200,4300],[8950,2300],[9100,300],[9000,-1200]] },
+      // 凍った高地|火山(東)
+      { gaps:['e1','e2'], w:[720,980], h:[520,820], strata:0.45,
+        pts:[[10450,9050],[12200,8850],[14300,9250],[16300,8900],[17900,9100],[19300,9000]] },
+      // 火山|密林(南)
+      { gaps:['s1','s2'], w:[720,980], h:[500,780], strata:0.45,
+        pts:[[9050,10450],[9250,12200],[8850,14300],[9200,16300],[9000,17900],[9100,19300]] },
+      // 密林|草原(西)
+      { gaps:['w1','w2'], w:[700,960], h:[420,660], strata:0.10,
+        pts:[[7650,9050],[5900,9250],[3800,8850],[1800,9200],[200,9000],[-1200,9100]] },
+      // 凍った高地の氷の尾根
+      { gaps:[], w:[520,700], h:[380,560], strata:0.0, pts:[[14700,7300],[15700,7700],[16600,7500]] },
+    ],
+    canyon: { gaps:['c1','c2'], narrow:210, wide:560, rooms:[0.22, 0.52, 0.82], roomLen:700,
+              band:1000, h:[560, 860], strata:0.8, fade:1300,
+              pts:[[11500,10900],[12400,12000],[12700,13400],[12400,14800],[12700,15850]] },
+    peaks: [
+      { id:'frostMain',   x:14900, y:2650,  r:2150, h:2100, warp:0.22 },
+      { id:'frost2',      x:11600, y:1950,  r:1500, h:1350, warp:0.25 },
+      { id:'volcanoMain', x:15350, y:15150, r:2300, h:1750, warp:0.14, strata:0.35,
+        crater:{ r:0.30, depth:0.34, breach:3.6 } },
+      { id:'volcano2',    x:16500, y:11700, r:1200, h:780,  warp:0.28, strata:0.5 },
+      { id:'jungle1',     x:2100,  y:11300, r:1250, h:680,  warp:0.20, round:true },
+      { id:'jungle2',     x:6950,  y:15250, r:1150, h:600,  warp:0.22, round:true },
+      { id:'jungle3',     x:1500,  y:14700, r:950,  h:520,  warp:0.25, round:true },
+      { id:'meadow1',     x:1850,  y:6650,  r:1150, h:760,  warp:0.26, strata:0.2 },
+      { id:'meadow2',     x:6850,  y:2300,  r:1150, h:820,  warp:0.24, strata:0.2 },
+    ],
+    terraces: [
+      // 草原: 監視塔の丘 / アーチ岩の丘
+      { id:'towerHill',  x:6300,  y:3500,  r:420, h:240, cliff:170, ramp:[1.50, 0.55] },
+      { id:'archHill',   x:3450,  y:6540,  r:880, h:190, cliff:200, ramp:[-1.20, 0.60] },
+      // 凍った高地: 氷河の棚(2段)
+      { id:'glacierA',   x:11650, y:5450,  r:620, h:270, cliff:180, ramp:[2.40, 0.50] },
+      { id:'glacierB',   x:16250, y:5150,  r:520, h:330, cliff:170, ramp:[3.05, 0.45] },
+      // 火山: 溶岩の段丘
+      { id:'lavaTerrA',  x:16350, y:13650, r:560, h:230, cliff:160, ramp:[3.14, 0.50], strata:0.6 },
+      { id:'lavaTerrB',  x:10250, y:16700, r:470, h:220, cliff:160, ramp:[-1.57, 0.50], strata:0.6 },
+      // 密林: 遺跡の基壇 / 見晴らしの丘
+      { id:'ruinBase',   x:5300,  y:12700, r:960, h:120, cliff:170, ramp:[-0.785, 0.40] },
+      { id:'jungleKnoll',x:6250,  y:13950, r:420, h:250, cliff:170, ramp:[-1.57, 0.55] },
+    ],
+    rim: { h:1500, out:2800, inner:650 },
   },
-  peaks: [
-    { id:'frostMain',   x:14900, y:2650,  radius:1500, isMain:true,  style:'snow',    bumps:5 },
-    { id:'frost2',      x:11600, y:1950,  radius:1050, isMain:false, style:'snow',    bumps:3 },
-    { id:'volcanoMain', x:15350, y:15150, radius:1650, isMain:true,  style:'volcano', bumps:6 },
-    { id:'volcano2',    x:16500, y:11700, radius:900,  isMain:false, style:'volcano', bumps:2 },
-    { id:'jungle1',     x:2100,  y:11300, radius:880,  isMain:true,  style:'jungle',  bumps:2 },
-    { id:'jungle2',     x:6950,  y:15250, radius:820,  isMain:false, style:'jungle',  bumps:2 },
-    { id:'jungle3',     x:1500,  y:14700, radius:680,  isMain:false, style:'jungle',  bumps:1 },
-    { id:'meadow1',     x:1850,  y:6650,  radius:780,  isMain:true,  style:'crag',    bumps:2 },
-    { id:'meadow2',     x:6850,  y:2300,  radius:820,  isMain:false, style:'crag',    bumps:2 },
-  ],
   lakes: [ { x:4300, y:4400, r:650 }, { x:12900, y:5300, r:520 }, { x:2500, y:12650, r:460 } ],
   rivers: [
     { r:110, pts:[[1100,1300],[2000,2150],[2700,2900],[3350,3650],[3900,4050]] },
     { r:100, pts:[[5600,850],[5250,1900],[4900,2900],[4550,3800]] },
-    { r:95,  pts:[[13700,3900],[13350,4500],[13050,4900]] },
+    { r:95,  pts:[[13450,4200],[13200,4600],[12980,4950]] },   // 山の斜面から始めない(崖を縦に流れて板に見えた)
     { r:125, pts:[[700,11650],[1850,12300],[3050,13300],[3750,14500],[4900,15500],[6250,16350],[7500,17500]] },
   ],
   lava: [
-    { x:14650, y:11150, r:300 }, { x:15300, y:12050, r:260 }, { x:14250, y:12450, r:230 },
-    { x:15900, y:13100, r:280 }, { x:16800, y:10250, r:230 }, { x:13900, y:14250, r:240 },
-    { x:10300, y:14600, r:210 },
+    { x:14650, y:11150, r:300 }, { x:14250, y:12450, r:230 }, { x:16800, y:10250, r:230 },
+    { x:15950, y:12950, r:260 }, { x:10300, y:14600, r:210 },
+  ],
+  // 溶岩の川(峡谷の東の溶岩原を、火山の麓から北へ流れる)。r=半幅。当たりは円の列(noMesh)で持つ
+  lavaRivers: [
+    { r:115, pts:[[14650,13900],[14950,13200],[14800,12400],[15250,11600],[15750,10800],[16150,10150]] },
   ],
   paths: [
     { w:120, pts:[[9050,9050],[7900,7900],[6350,6250],[5000,5150],[4700,4800]] },
@@ -3218,32 +3265,33 @@ const EXPLORE_FIELD_LAYOUT = {
     { w:95,  pts:[[2600,7500],'w2',[2600,10600]] },
     { w:95,  pts:[[12700,12300],'c2',[14300,12000]] },
   ],
+  // 石壁の抜け(openings)の幅。world.js の当たりと real3d_explore.js の石積みが両方ここを読む
+  wallOpenW: 200,
   structures: [
-    // 草原の廃村。通り(キャンプ→湖の道)の両側に小屋、裏に崩れた石壁
-    { kind:'row', f:'hut',        a:[5500,5930],  b:[6800,7030],  r:66, skip:0.22 },
-    { kind:'row', f:'hut',        a:[5890,5470],  b:[7190,6570],  r:66, skip:0.22 },
-    { kind:'row', f:'ruinwall',   a:[6950,5350],  b:[7550,5850],  r:56, skip:0.10 },
-    { kind:'row', f:'ruinwall',   a:[5100,6450],  b:[5550,7050],  r:56, skip:0.10 },
+    // 草原の廃村。通り(キャンプ→湖の道)の両側に石と木の家(face=家の正面の向き。+1=線の左)
+    { kind:'houseRow', a:[5520,5920], b:[6800,7020], spacing:330, face:-1, skip:0.12 },
+    { kind:'houseRow', a:[5900,5480], b:[7180,6580], spacing:330, face: 1, skip:0.12 },
+    // 村の裏の崩れた石垣(一続きの壁。openings=抜けている所。線の長さに対する位置)
+    { kind:'wall', h:[120,210], pts:[[6950,5330],[7560,5860],[7700,6250]], openings:[0.45] },
+    { kind:'wall', h:[110,200], pts:[[5080,6440],[5560,7060],[5900,7320]], openings:[0.55] },
     // 密林の参道。キャンプから遺跡の大門まで石柱が並ぶ
     { kind:'row', f:'ruinpillar', a:[7884,10484], b:[6700,11668], r:50, spacing:310 },
     { kind:'row', f:'ruinpillar', a:[7516,10116], b:[6332,11300], r:50, spacing:310 },
-    // 大門の奥の回廊(二重の石壁。入口をずらして回り込ませる)
-    { kind:'row', f:'ruinwall', a:[5300,11850], b:[6150,12700], r:56, gaps:[0.5] },
-    { kind:'row', f:'ruinwall', a:[6150,12700], b:[5300,13550], r:56 },
-    { kind:'row', f:'ruinwall', a:[5300,13550], b:[4450,12700], r:56, gaps:[0.5] },
-    { kind:'row', f:'ruinwall', a:[4450,12700], b:[5300,11850], r:56 },
-    { kind:'row', f:'ruinwall', a:[5300,12350], b:[5650,12700], r:52 },
-    { kind:'row', f:'ruinwall', a:[5650,12700], b:[5300,13050], r:52, gaps:[0.5] },
-    { kind:'row', f:'ruinwall', a:[5300,13050], b:[4950,12700], r:52 },
-    { kind:'row', f:'ruinwall', a:[4950,12700], b:[5300,12350], r:52, gaps:[0.5] },
-    // 凍った高地の打ち捨てられた野営地
-    { kind:'ring', f:'hut', x:15300, y:6700, R:430, n:7, r:64, skip:0.15 },
+    // 大門の奥の回廊(二重の石壁。入口をずらして回り込ませる。窓とアーチの抜けがある)
+    { kind:'wall', h:[170,300], arches:true, closed:true, openings:[0.125, 0.625],
+      pts:[[5300,11850],[6150,12700],[5300,13550],[4450,12700]] },
+    { kind:'wall', h:[150,250], arches:true, closed:true, openings:[0.375, 0.875],
+      pts:[[5300,12330],[5670,12700],[5300,13070],[4930,12700]] },
+    // 凍った高地の打ち捨てられた野営地(雪をかぶった小屋)
+    { kind:'houseRing', x:15300, y:6700, R:430, n:4, snowy:true },
     // 火山の峡谷の手前、採掘の前哨(コンテナのバリケード)
     { kind:'row', f:'container', a:[10300,11750], b:[10380,12800], r:56, skip:0.28 },
     { kind:'row', f:'container', a:[10050,13900], b:[10500,14250], r:56, skip:0.20 },
     // ベースキャンプの外周の物資(道の所は自動で空く)
     { kind:'ring', f:'container', x:9050, y:9050, R:1420, n:16, r:54, skip:0.45 },
   ],
+  // 密林の巨木。幹だけ当たり判定(foot)、樹冠は頭上で判定なし。空を隠す天井になる
+  giants: { region:'jungle', n:60, foot:[80, 120], h:[950, 1400], minGap:400 },
   scatter: {
     meadow:  { n:280, mix:[['rock',0.36],['tree',0.38,[34,58]],['deadtree',0.06],['log',0.11],['ruinwall',0.09]] },
     frost:   { n:300, mix:[['snowrock',0.40],['pine',0.55,[34,58]],['hut',0.05]] },
@@ -3251,12 +3299,14 @@ const EXPLORE_FIELD_LAYOUT = {
     // 密林は木を大きく・多く(3番目=その種類の半径の幅。省略時は world.js の EXPLORE_FLAVOR_R)
     jungle:  { n:520, mix:[['tree',0.46,[38,72]],['palm',0.16,[36,56]],['rock',0.08],['log',0.12],['ruinpillar',0.09],['ruinwall',0.07]] },
   },
-  crystals: { region:'frost', n:170 },
+  crystals: { region:'frost', n:170, cluster:[3, 7] },   // 群生(1か所に3〜7本)
   landmarks: [
-    { kind:'arch',  region:'meadow', a:[2950,6300], b:[3950,6780], foot:150, h:780 },
-    { kind:'tower', region:'meadow', x:6300,  y:3500,  foot:95, h:560 },
-    { kind:'tower', region:'frost',  x:11300, y:3900,  foot:95, h:560 },
-    { kind:'gate',  region:'jungle', x:6150,  y:11850, toward:[7000,11000], half:360, foot:125, h:660 },
+    // 天然のアーチ岩。アーチの丘(archHill)の上。脚は板状(foot=板の半幅)、断面は2:1、地層入り
+    { kind:'arch',  region:'meadow', a:[2900,6280], b:[4000,6800], foot:230, h:980 },
+    { kind:'tower', region:'meadow', x:6300,  y:3500,  foot:95, h:600 },
+    // 凍った高地の氷の尖塔(塔と被らない形。遠くから青白く光る)
+    { kind:'icespire', region:'frost', x:11300, y:3900, foot:210, h:1050 },
+    { kind:'gate',  region:'jungle', x:6150,  y:11850, toward:[7000,11000], half:380, foot:135, h:820 },
     { kind:'plume', region:'volcano', peak:'volcanoMain' },
   ],
 };
@@ -3324,6 +3374,200 @@ function exploreElevGrad(x, y){
   return _exElev;
 }
 const _exElevE = [0,0,0,0], _exElevQx = [0,0,0,0], _exElevQy = [0,0,0,0];
+
+/* =====================================================================
+   探検フィールドの起伏(EXPLORE_FIELD_LAYOUT.relief)— 地形の高さそのもの
+   ・尾根・峡谷・山・段丘・世界の縁を「高さの関数」として足す(純関数。ホスト/ゲストで一致)。
+     円錐の山を並べる作りをやめたのは、どう彫っても「ピラミッドの列」に見えたため(批評家の指摘)。
+   ・重なった所はいちばん高いものを採る(max)。細部のノイズは三角関数だけで作る(速さのため)。
+   ・毎フレーム何百回も呼ばれるので、特徴の影響範囲を1000単位の格子に登録しておき、
+     その点の升に載っている特徴だけを調べる。
+   ・傾き(real3dHeightGrad)は起伏の部分だけ中心差分で求める(地形パッチの頂点にしか使わない)。
+   ===================================================================== */
+const EXR_CELL = 1000, EXR_ORG = -10000, EXR_N = 39;   // 格子(ワールドの外側10000まで覆う)
+let _exr = null;
+const _exSm = (a, b, x)=>{ const t = x <= a ? 0 : (x >= b ? 1 : (x - a)/(b - a)); return t*t*(3 - 2*t); };
+// 尾根の襞・谷筋に使う安いノイズ(0〜1)。1-|sin| の稜が交差して沢筋の模様になる
+function exploreRidgeNoise(x, y){
+  const a = 1 - Math.abs(Math.sin(x*0.0023 + y*0.0011 + Math.sin(y*0.0017)*1.3));
+  const b = 1 - Math.abs(Math.sin(-x*0.0013 + y*0.0029 + Math.sin(x*0.0021)*1.1));
+  const c = 1 - Math.abs(Math.sin(x*0.0061 - y*0.0043 + Math.sin(x*0.0037 + y*0.0023)*0.8));
+  return a*0.42 + b*0.36 + c*0.22;
+}
+// 地層の段。平らな踏面と急な段差を作る(amt=0で素通り)
+function exploreStrata(h, step, amt){
+  if(!amt || h <= 0) return h;
+  const q = h/step, fl = Math.floor(q), fr = q - fl;
+  // 段の7割は緩い踏面、残り3割で一気に上がる(連続なので段差で歩けなくはならない)
+  const g = fr < 0.7 ? fr*0.25/0.7 : 0.25 + 0.75*_exSm(0.7, 1, fr);
+  return h + ((fl + g)*step - h)*amt;
+}
+function explorePolyPrep(pts, passes){
+  const P = pts.map(p=> (typeof p === 'string') ? { x:passes[p][0], y:passes[p][1] } : { x:p[0], y:p[1] });
+  const segs = []; let s0 = 0;
+  for(let i=0;i<P.length-1;i++){
+    const a = P[i], b = P[i+1], vx = b.x-a.x, vy = b.y-a.y, len = Math.hypot(vx, vy) || 1;
+    segs.push({ ax:a.x, ay:a.y, vx, vy, l2:len*len, len, s0 });
+    s0 += len;
+  }
+  return { segs, total:s0, pts:P };
+}
+// 折れ線への最寄り点(距離 d・弧長 u・u は端の外へはみ出した分も負/超過で返す)。
+// u は近い線分どうしで重みを付けて混ぜる: 最寄りの1本だけで決めると、折れ線の曲がり角の内側で
+// 最寄りの線分が入れ替わる所で u が飛び、u で変わる高さ・部屋の幅が段差(垂直の崖)になった。
+const _exNear = { d:0, u:0 }, _exNd = [], _exNu = [];
+const EXPLORE_NEAR_BLEND = 160;   // この距離差まで隣の線分の弧長を混ぜる
+function exploreNearest(poly, x, y){
+  let best = Infinity;
+  const S = poly.segs, n = S.length;
+  for(let i=0;i<n;i++){
+    const g = S[i];
+    let t = ((x - g.ax)*g.vx + (y - g.ay)*g.vy)/g.l2;
+    const tc = t < 0 ? 0 : (t > 1 ? 1 : t);
+    const dx = x - (g.ax + g.vx*tc), dy = y - (g.ay + g.vy*tc);
+    const d = Math.sqrt(dx*dx + dy*dy);
+    _exNd[i] = d;
+    // 端の外は弧長を伸ばして返す(峡谷の入口を開けるのに使う)
+    _exNu[i] = g.s0 + ((i === 0 && t < 0) || (i === n-1 && t > 1) ? t : tc)*g.len;
+    if(d < best) best = d;
+  }
+  let sw = 0, su = 0;
+  for(let i=0;i<n;i++){
+    const k = 1 - (_exNd[i] - best)/EXPLORE_NEAR_BLEND;
+    if(k <= 0) continue;
+    sw += k*k; su += k*k*_exNu[i];
+  }
+  _exNear.d = best; _exNear.u = su/sw;
+  return _exNear;
+}
+function exploreReliefPrep(){
+  const R = EXPLORE_FIELD_LAYOUT.relief, P = EXPLORE_FIELD_LAYOUT.passes;
+  const feats = [];
+  const gapPts = (g)=> g.map(k=> ({ x:P[k][0], y:P[k][1] }));
+  R.ridges.forEach((r, i)=>{
+    const poly = explorePolyPrep(r.pts, P);
+    feats.push({ type:0, poly, w:r.w, h:r.h, strata:r.strata||0, gaps:gapPts(r.gaps), ph:i*1.73 + 0.4, pad:r.w[1] });
+  });
+  {
+    const c = R.canyon, poly = explorePolyPrep(c.pts, P);
+    feats.push({ type:1, poly, c, gaps:gapPts(c.gaps), rooms:c.rooms.map(f=> f*poly.total), ph:2.9, pad:c.wide + c.band });
+  }
+  R.peaks.forEach((p, i)=> feats.push({ type:2, p, ph:i*2.31 + 1.1, pad:p.r*(1 + (p.warp||0)) }));
+  R.terraces.forEach((t, i)=> feats.push({ type:3, t, ph:i*1.37 + 0.7, pad:t.r*1.15 + Math.max(t.cliff, t.h*6.2) }));
+  // 格子へ登録(特徴の外接矩形 + 影響幅)
+  const grid = new Array(EXR_N*EXR_N);
+  for(let i=0;i<grid.length;i++) grid[i] = [];
+  feats.forEach((f, fi)=>{
+    let x0, y0, x1, y1;
+    if(f.poly){ x0 = Math.min(...f.poly.pts.map(q=>q.x)); x1 = Math.max(...f.poly.pts.map(q=>q.x));
+                y0 = Math.min(...f.poly.pts.map(q=>q.y)); y1 = Math.max(...f.poly.pts.map(q=>q.y)); }
+    else { const o = f.p || f.t; x0 = x1 = o.x; y0 = y1 = o.y; }
+    const cx0 = Math.max(0, Math.floor((x0 - f.pad - EXR_ORG)/EXR_CELL)), cx1 = Math.min(EXR_N-1, Math.floor((x1 + f.pad - EXR_ORG)/EXR_CELL));
+    const cy0 = Math.max(0, Math.floor((y0 - f.pad - EXR_ORG)/EXR_CELL)), cy1 = Math.min(EXR_N-1, Math.floor((y1 + f.pad - EXR_ORG)/EXR_CELL));
+    for(let cy=cy0; cy<=cy1; cy++) for(let cx=cx0; cx<=cx1; cx++) grid[cy*EXR_N + cx].push(fi);
+  });
+  _exr = { feats, grid, R };
+}
+function exploreGapK(gaps, x, y, R){
+  let k = 1;
+  for(const g of gaps){
+    const d = Math.hypot(x - g.x, y - g.y);
+    if(d < R.gapHalf + R.gapBlend) k = Math.min(k, _exSm(R.gapHalf, R.gapHalf + R.gapBlend, d));
+  }
+  return k;
+}
+function exploreFeatureH(f, x, y, R){
+  if(f.type === 0){                                   // 尾根
+    const nr = exploreNearest(f.poly, x, y), u = nr.u;
+    const W = f.w[0] + (f.w[1]-f.w[0])*(0.5 + 0.5*Math.sin(u*0.0013 + f.ph))*(0.82 + 0.18*Math.sin(u*0.0047 + f.ph*2));
+    const t = nr.d/W;
+    if(t >= 1) return 0;
+    const H = f.h[0] + (f.h[1]-f.h[0])*(0.5 + 0.5*Math.sin(u*0.00093 + f.ph*1.7))*(0.78 + 0.22*Math.sin(u*0.0031 + f.ph));
+    let prof = 1 - t*t*(3 - 2*t);
+    prof = prof*(0.72 + 0.28*prof);                   // 稜線を少し尖らせる
+    let h = H*prof*(0.68 + 0.32*exploreRidgeNoise(x, y));
+    h *= _exSm(0, R.ridgeTaper, u);                  // 始点(マップの中央側)は平地から立ち上がる(台形の塊にしない)
+    if(f.gaps.length) h *= exploreGapK(f.gaps, x, y, R);
+    return exploreStrata(h, 110, f.strata);
+  }
+  if(f.type === 1){                                   // 峡谷(中心線の両側に台地の壁)
+    const c = f.c, nr = exploreNearest(f.poly, x, y), u = nr.u;
+    let room = 0;
+    for(const rs of f.rooms){ const q = Math.abs(u - rs)/c.roomLen; if(q < 1) room = Math.max(room, 1 - q*q*(3 - 2*q)); }
+    const half = c.narrow + (c.wide - c.narrow)*room;
+    const ti = (nr.d - half)/c.band;
+    if(ti <= 0 || ti >= 1) return 0;
+    const H = c.h[0] + (c.h[1]-c.h[0])*(0.5 + 0.5*Math.sin(u*0.0021 + f.ph))*(0.8 + 0.2*Math.sin(u*0.0057));
+    // 内側は切り立った崖・上は平ら・外側はやや緩い斜面
+    let h = H*_exSm(0, 0.15, ti)*(1 - _exSm(0.50, 1, ti));
+    h *= 0.86 + 0.14*exploreRidgeNoise(x*1.3, y*1.3);
+    h *= _exSm(0, c.fade, u)*_exSm(0, c.fade, f.poly.total - u);   // 入口と出口は開ける
+    if(f.gaps.length) h *= exploreGapK(f.gaps, x, y, R);
+    return exploreStrata(h, 95, c.strata);
+  }
+  if(f.type === 2){                                   // 山
+    const p = f.p, dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
+    if(d >= p.r*(1 + (p.warp||0))) return 0;
+    const th = Math.atan2(dy, dx), w = p.warp || 0;
+    const rr = p.r*(1 + w*(0.55*Math.sin(3*th + f.ph) + 0.30*Math.sin(5*th + f.ph*2) + 0.15*Math.sin(8*th + f.ph*3)));
+    const t = d/rr;
+    if(t >= 1) return 0;
+    const prof = p.round ? (1 - t*t)*(1 - t*t)
+                         : 0.68*Math.pow(1 - t, 1.6) + 0.32*(1 - t*t)*(1 - t*t);
+    const nK = 0.66 + 0.34*exploreRidgeNoise(x + f.ph*500, y);
+    let h = p.h*prof*nK;
+    if(p.crater){
+      /* 火口。縁の高さは「その点の山の面を火口の半径で測った高さ」なので、縁の内と外で段差が出ない
+         (別の式で縁を作ると、縁の上で高さが飛んで垂直の壁になった)。崩れた側(breach)は縁ごと下げる。 */
+      const cr = p.crater, crR = cr.r*(1 + 0.12*Math.sin(7*th + f.ph) + 0.07*Math.sin(13*th + 1.3));
+      let da = th - cr.breach; da = Math.atan2(Math.sin(da), Math.cos(da));
+      const br = Math.exp(-(da/0.42)*(da/0.42));
+      const B = 1 - 0.36*br;
+      const rimH = p.h*(0.68*Math.pow(1 - crR, 1.6) + 0.32*(1 - crR*crR)*(1 - crR*crR))*nK*B;
+      if(t < crR){
+        // 火口の底は平ら(中心で角度によって高さが変わらないよう、縁の揺らぎ・崩れを含めない高さから測る)
+        const floorH = p.h*(0.68*Math.pow(1 - cr.r, 1.6) + 0.32*(1 - cr.r*cr.r)*(1 - cr.r*cr.r))*nK - p.h*cr.depth;
+        h = floorH + (rimH - floorH)*Math.pow(_exSm(0.45, 1, t/crR), 1.3);
+      }else if(t < crR*1.9){
+        h *= B + (1 - B)*_exSm(crR, crR*1.9, t);
+      }
+    }
+    return exploreStrata(h, 120, p.strata || 0);
+  }
+  // 段丘・台地(上が平ら。ramp の向きだけ緩い坂)
+  const T = f.t, dx = x - T.x, dy = y - T.y, d = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+  let da = th - T.ramp[0]; da = Math.atan2(Math.sin(da), Math.cos(da));
+  const m = Math.exp(-(da/T.ramp[1])*(da/T.ramp[1]));
+  const W = T.cliff + (T.h*6.2 - T.cliff)*m;
+  const edge = T.r*(1 + 0.08*Math.sin(5*th + f.ph) + 0.05*Math.sin(9*th + f.ph*2));
+  const ti = (d - edge)/W;
+  if(ti >= 1) return 0;
+  const prof = ti <= 0 ? 1 : 1 - ti*ti*(3 - 2*ti);
+  const h = T.h*prof*(0.96 + 0.04*exploreRidgeNoise(x, y));
+  return exploreStrata(h, 80, T.strata || 0);
+}
+// 世界の縁: マップの外へせり上がる山並み(内側 inner だけは緩い坂)
+function exploreRimH(x, y, R){
+  const W = WORLD_BASE_SIZE, din = Math.min(x, y, W - x, W - y);
+  const rim = R.rim;
+  if(din > rim.inner) return 0;
+  const t = (rim.inner - din)/(rim.inner + rim.out);
+  const k = t >= 1 ? 1 : t*t*(3 - 2*t);
+  return rim.h*k*(0.62 + 0.38*exploreRidgeNoise(x*0.8 + 300, y*0.8));
+}
+function exploreRelief(x, y){
+  if(!_exr) exploreReliefPrep();
+  const R = _exr.R;
+  let h = exploreRimH(x, y, R);
+  const cx = Math.floor((x - EXR_ORG)/EXR_CELL), cy = Math.floor((y - EXR_ORG)/EXR_CELL);
+  if(cx < 0 || cy < 0 || cx >= EXR_N || cy >= EXR_N) return h;
+  const list = _exr.grid[cy*EXR_N + cx], F = _exr.feats;
+  for(let i=0;i<list.length;i++){
+    const v = exploreFeatureH(F[list[i]], x, y, R);
+    if(v > h) h = v;
+  }
+  return h;
+}
 /* 通常のマップ選択・ランダム抽選に出してよいマップか。**判定はここ1か所だけ。**
 
    【この関数が無かったせいで起きた不具合】

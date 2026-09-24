@@ -758,6 +758,8 @@ uniform vec4 uExRough;
 uniform sampler2D uExMacro;
 uniform float uExMacroScale;
 varying vec4 vExW;
+varying vec3 vExP;
+varying vec3 vExN;
 vec4 exL;
 vec3 exRegion(float L, float w, vec3 ta, vec3 tb){
   vec3 t = (w > 0.0) ? ta : tb;
@@ -778,6 +780,16 @@ const EX_MAP_CHUNK = `
            + exRegion(exL.g, exT.g, uExTA[1], uExTB[1]) * vExW.y
            + exRegion(exL.b, exT.b, uExTA[2], uExTB[2]) * vExW.z
            + exRegion(exL.a, exT.a, uExTA[3], uExTB[3]) * vExW.w;
+  /* 急斜面(崖・尾根の岩肌)は上から貼ったタイルが縦に伸びるので、横から投影した
+     岩の粒(溶岩の殻のチャンネル)に替え、水平の地層の縞を足す(三方向投影の横2面) */
+  float exSteep = smoothstep(0.30, 0.70, 1.0 - abs(vExN.y));
+  if(exSteep > 0.002){
+    vec3 an = abs(vExN);
+    float rx = texture2D(map, vExP.zy / 150.0).b, rz = texture2D(map, vExP.xy / 150.0).b;
+    float rk = mix(rz, rx, an.x / (an.x + an.z + 1e-4));
+    float band = 0.84 + 0.16*sin(vExP.y*0.058 + texture2D(uExMacro, vExP.xz*0.0005).r*7.0);
+    exC = mix(exC, vec3(pow(rk, 2.2)) * band * 1.18, exSteep);
+  }
   diffuseColor.rgb *= exC;
   vec2 mUv = vec2( vMapUv.x*0.7648 - vMapUv.y*0.6442, vMapUv.x*0.6442 + vMapUv.y*0.7648 ) * uExMacroScale;
   diffuseColor.rgb *= mix( vec3(1.0), texture2D( uExMacro, mUv ).rgb * 2.0, ${MACRO_AMT.toFixed(2)} );
@@ -813,8 +825,8 @@ function buildExploreMaterial(){
   mat.onBeforeCompile = (sh)=>{
     Object.assign(sh.uniforms, uni);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 aExW;\nvarying vec4 vExW;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvExW = aExW;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 aExW;\nvarying vec4 vExW;\nvarying vec3 vExP;\nvarying vec3 vExN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvExW = aExW;\nvExP = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvExN = normalize(mat3(modelMatrix) * objectNormal);');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>' + EX_PARS)
       .replace('#include <map_fragment>', EX_MAP_CHUNK)
@@ -836,9 +848,12 @@ function explorePalette(){
     const r = th.regions[k];
     const st = TEX_STYLES[r.tex] || TEX_STYLES.meadow;
     return { low:new THREE.Color(r.low), high:new THREE.Color(r.high), steep:new THREE.Color(r.steep),
-             gravel:new THREE.Color(r.gravel), scrub:new THREE.Color(r.scrub), vert:st.vert };
+             gravel:new THREE.Color(r.gravel), scrub:new THREE.Color(r.scrub), vert:st.vert,
+             grass:new THREE.Color(r.grass).multiplyScalar(0.62), grassK:0.42*((r.veg && r.veg.grass) || 0),
+             snowAlt:(r.snowAlt != null) ? r.snowAlt : 1e9, strata:r.strata || 0 };
   });
   exPal.trail = new THREE.Color(th.regions.camp.gravel).multiplyScalar(0.9);
+  exPal.snow = new THREE.Color(0xeaf1fa);
   return exPal;
 }
 
@@ -999,7 +1014,7 @@ export function updateTerrain(cx, cy){
       const nf = vnW((wx + gx*FLOW_WARP)/BIOME_F, (wy + gy*FLOW_WARP)/BIOME_F, 131);
       const flow = 1 - Math.abs(nf*2 - 1);
       if(ex){
-        exploreVertexColor(pal, wx, wy, t, slope, nb, nm, flow, exw, (d/3)*4);
+        exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, (d/3)*4);
         col[d] = _c.r; col[d+1] = _c.g; col[d+2] = _c.b;
         computed++;
         continue;
@@ -1080,9 +1095,13 @@ export function applyTerrainTheme(){
 /* 探検フィールドの頂点色。地域ごとに「その地域の色で、通常と同じ塗り方」をして重みで混ぜる。
    ノイズ(nb/nm/flow)は地域をまたいで共通なので、境目で模様が切れない。
    結果は _c に入れ、地域の重み(テクスチャの混ぜ具合)を exw[o..o+3] へ書く。 */
-function exploreVertexColor(pal, wx, wy, t, slope, nb, nm, flow, exw, o){
+function exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, o){
   const w = exploreWeights(wx, wy);
   const jit0 = ih(Math.floor(wx*0.02), Math.floor(wy*0.02)) - 0.5;
+  const gm = Math.hypot(gx, gy);
+  // 探検フィールドは尾根・崖が高く急なので、岩肌になる傾きを通常より高く取る
+  const rockK = sstep(0.42, 1.05, gm);
+  const t = clamp01((h + 240) / 700);
   _c.setRGB(0, 0, 0);
   for(let r=0;r<5;r++){
     const k = w[r];
@@ -1090,17 +1109,93 @@ function exploreVertexColor(pal, wx, wy, t, slope, nb, nm, flow, exw, o){
     const P = pal[r], V = P.vert;
     _cTmp.copy(P.low).lerp(P.high, t);
     _cTmp.lerp(P.gravel, sstep(0.42, 0.72, nb) * V.gravel);
-    _cTmp.lerp(P.scrub, sstep(0.40, 0.70, nm) * (1 - slope*0.8) * V.scrub);
+    _cTmp.lerp(P.scrub, sstep(0.40, 0.70, nm) * (1 - rockK) * V.scrub);
     _cTmp.multiplyScalar(1 - flow*flow*V.flow*0.75 + (nb-0.5)*0.26 + (nm-0.5)*0.10 + jit0*V.jitter);
-    _cTmp.lerp(P.steep, slope);
+    // 草が茂っている色(草の株が途切れた先の遠くの地面も、茂った色に見えるように)
+    if(P.grassK > 0) _cTmp.lerp(P.grass, P.grassK*(1 - rockK)*(0.55 + 0.45*nm));
+    // 岩肌。地層の縞(高さで明暗)を乗せる
+    if(rockK > 0){
+      _cRock.copy(P.steep).multiplyScalar(1 + P.strata*(0.20*Math.sin(h*0.055 + nb*4) + 0.08*Math.sin(h*0.17)));
+      _cTmp.lerp(_cRock, rockK);
+    }
+    // 雪。高い所の緩い面にだけ乗る(先端に被せない・崖には付かない)
+    if(h > P.snowAlt){
+      const sk = sstep(P.snowAlt, P.snowAlt + 260, h) * (1 - sstep(0.50, 0.95, gm)) * (0.8 + 0.2*nm);   // 雪は緩い面だけ(急な面は岩が出る)
+      if(sk > 0) _cTmp.lerp(pal.snow, sk);
+    }
     _c.r += _cTmp.r*k; _c.g += _cTmp.g*k; _c.b += _cTmp.b*k;
   }
   // 踏み分け道: 草が剥げて土が出た帯(緩斜面だけ。急斜面は岩肌のまま)
   const tr = exploreTrail(wx, wy);
   if(tr > 0){
-    const k = tr * 0.72 * (1 - slope*0.7);
+    const k = tr * 0.72 * (1 - rockK);
     _cTmp.copy(pal.trail).multiplyScalar(0.92 + (nm-0.5)*0.3);
     _c.lerp(_cTmp, k);
   }
-  exw[o] = w[0] + w[4]; exw[o+1] = w[1]; exw[o+2] = w[2]; exw[o+3] = w[3];
+  if(exw){ exw[o] = w[0] + w[4]; exw[o+1] = w[1]; exw[o+2] = w[2]; exw[o+3] = w[3]; }
+}
+const _cRock = new THREE.Color();
+
+/* =====================================================================
+   探検フィールドの遠景地形(マップ全体+外側の縁の山を1枚・描画1回)
+   地形パッチ(プレイヤーのまわり7200四方)の外を埋める。これが無いと約3.6km先で地面が途切れ、
+   白い霞の上に山が浮いて見えた(批評家の指摘)。高さと色はパッチと同じ関数から作る。
+   パッチと重なる内側は断片シェーダーで捨てる(二重に描いてちらつかせない)。
+   ===================================================================== */
+const FAR_ORG = -9000, FAR_SIZE = 36100, FAR_SEGS = 144;
+let farMesh = null;
+const farUni = { uPatch:{ value:new THREE.Vector3(0, 0, 0) } };
+export function buildFarTerrain(){
+  if(farMesh){ farMesh.geometry.dispose(); }
+  const pal = explorePalette();
+  const geo = new THREE.PlaneGeometry(FAR_SIZE, FAR_SIZE, FAR_SEGS, FAR_SEGS);
+  geo.rotateX(-Math.PI/2);
+  geo.translate(FAR_ORG + FAR_SIZE/2, 0, FAR_ORG + FAR_SIZE/2);
+  const pos = geo.attributes.position, n = pos.count;
+  const col = new Float32Array(n*3), nor = geo.attributes.normal;
+  for(let i=0;i<n;i++){
+    const wx = pos.getX(i), wy = pos.getZ(i);
+    const g = window.real3dHeightGrad ? window.real3dHeightGrad(wx, wy) : { h:heightAt(wx, wy), gx:0, gy:0 };
+    const h = g.h, gx = g.gx, gy = g.gy;
+    pos.setY(i, h);
+    const inv = 1/Math.hypot(gx, 1, gy);
+    nor.setXYZ(i, -gx*inv, inv, -gy*inv);
+    const nb = fbmW(wx/BIOME_L, wy/BIOME_L, 2, 3);
+    const nm = fbmW(wx/BIOME_M + 11.3, wy/BIOME_M - 7.1, 2, 71);
+    exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, 0.3, null, 0);
+    // 近景は地面テクスチャ(明るさ0.6前後)が掛かるので、遠景の色もその分だけ落としてそろえる
+    col[i*3] = _c.r*0.62; col[i*3+1] = _c.g*0.62; col[i*3+2] = _c.b*0.62;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.96, metalness:0,
+                                               envMapIntensity:ENV_INTENSITY, polygonOffset:true,
+                                               polygonOffsetFactor:2, polygonOffsetUnits:4 });
+  const ex = buildExploreMaps();
+  mat.onBeforeCompile = (sh)=>{
+    sh.uniforms.uPatch = farUni.uPatch;
+    sh.uniforms.uFarMacro = { value: ex.macro };
+    sh.vertexShader = 'varying vec3 vFarW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  vFarW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'uniform vec3 uPatch;\nuniform sampler2D uFarMacro;\nvarying vec3 vFarW;\n' + sh.fragmentShader
+      .replace('#include <clipping_planes_fragment>', [
+        '#include <clipping_planes_fragment>',
+        'if(abs(vFarW.x - uPatch.x) < uPatch.z && abs(vFarW.z - uPatch.y) < uPatch.z) discard;',
+      ].join('\n'))
+      .replace('#include <color_fragment>', [
+        '#include <color_fragment>',
+        'diffuseColor.rgb *= mix(vec3(1.0), texture2D(uFarMacro, vFarW.xz / 2400.0).rgb * 2.0, 0.55);',
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = ()=> 'aramonFarTerrain';
+  farMesh = new THREE.Mesh(geo, mat);
+  farMesh.frustumCulled = false;
+  farMesh.receiveShadow = false;
+  farMesh.castShadow = false;
+  farMesh.renderOrder = -0.5;
+  return farMesh;
+}
+// 遠景地形が捨てる範囲(=いま地形パッチが覆っている四角)を毎フレーム渡す
+export function syncFarTerrain(){
+  if(patchCX == null) return;
+  farUni.uPatch.value.set(patchCX, patchCY, PATCH_SIZE/2 - 120);
 }

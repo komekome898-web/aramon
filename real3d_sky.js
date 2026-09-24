@@ -188,6 +188,53 @@ function ensureCloudTex(){
   return cloudTex;
 }
 
+/* 探検フィールドの積雲の濃さ(R=主役の段 / G=上の段)。ゆがめたノイズは渦巻きの筋になるので使わない。
+   丸い塊(ぼかした円)を群れにして積み上げ、細かいノイズで縁だけ崩す = ふくらんだ塊の間に青空。
+   探検に入ったときに1回だけ作る(タイルするので端をまたぐ円は反対側へも描く)。 */
+let cumulusTex = null;
+function puffField(S, seed, clusters, per, rMin, rMax, spread){
+  const out = new Float32Array(S*S);
+  let st = seed*2654435761 >>> 0;
+  const rnd = ()=>{ st = (st*1664525 + 1013904223) >>> 0; return st/4294967296; };
+  for(let c=0;c<clusters;c++){
+    const cx = rnd()*S, cy = rnd()*S, big = 0.6 + rnd()*0.6;
+    for(let k=0;k<per;k++){
+      // 群れの中心ほど大きく高い塊(雲の頭)。横へ平たく並べる
+      const a = rnd()*Math.PI*2, d = Math.sqrt(rnd())*spread*big;
+      const x0 = cx + Math.cos(a)*d*1.6, y0 = cy + Math.sin(a)*d*0.8;
+      const r = (rMin + (rMax - rMin)*rnd())*big*(1 - 0.45*d/(spread*big + 1e-3));
+      const amp = 0.55 + 0.45*rnd();
+      const R = Math.ceil(r*1.6);
+      for(let yy=-R; yy<=R; yy++) for(let xx=-R; xx<=R; xx++){
+        const q = (xx*xx + yy*yy)/(r*r);
+        if(q > 2.56) continue;
+        const px = ((Math.floor(x0) + xx) % S + S) % S, py = ((Math.floor(y0) + yy) % S + S) % S;
+        const v = amp*Math.exp(-q*1.6);
+        const o = py*S + px;
+        out[o] = out[o] + v - out[o]*v*0.55;   // 重なると飽和する足し方(塊の頭が白く丸くなる)
+      }
+    }
+  }
+  return out;
+}
+export function ensureCumulusTex(){
+  if(cumulusTex) return cumulusTex;
+  const S = 256;
+  const A = puffField(S, 71, 9, 16, 12, 26, 30);
+  const B = puffField(S, 83, 12, 9, 8, 16, 18);
+  const N = densityField(S, [ { nx:16, ny:16, amp:0.6 }, { nx:32, ny:32, amp:0.4 } ], 29, 0, false);
+  cumulusTex = makeTexture(S, (px)=>{
+    for(let i=0;i<S*S;i++){
+      const n = N[i] - 0.5;
+      const a = Math.max(0, Math.min(1, A[i]*1.05 + n*0.22*Math.min(1, A[i]*3)));
+      const b = Math.max(0, Math.min(1, B[i]*1.05 + n*0.20*Math.min(1, B[i]*3)));
+      px[i*4] = a*255; px[i*4+1] = b*255; px[i*4+2] = 0; px[i*4+3] = 255;
+    }
+  }, false);
+  cumulusTex.anisotropy = 4;
+  return cumulusTex;
+}
+
 /* ---------------------------------------------------------------------
    空(ドーム)
    --------------------------------------------------------------------- */
@@ -206,6 +253,8 @@ const SKY_FRAG = `
   uniform vec2 uDiscCos;        // x=外側のcos, y=内側のcos(内へ行くほど明るい)
   uniform float uGain, uThr, uCover, uCirrusAmt, uStars, uGlow, uLowAmt;
   uniform sampler2D uCloud;
+  uniform sampler2D uCloud2;    // 探検フィールドの積雲(uCloudMode=1 のときだけ読む)
+  uniform float uCloudMode;
   uniform vec2 uDrift;          // 雲の流れ(風向き×時間)。animateSky()が進める
   varying vec3 vDir;
 
@@ -251,6 +300,30 @@ const SKY_FRAG = `
     // 太陽の真横は光が透ける(縁取り)
     c += uSunCol * pow(max(sunDot, 0.0), 14.0) * (1.0 - core) * cB * 0.9 * lit;
     return vec4(c, cB);
+  }
+
+  /* 探検フィールドの積雲。ゆがめたノイズをしきい値で切った塊で、縁の明るい帯を作らない
+     (従来の雲は縁を光らせるので、見上げるとドーナツ状の渦に見えた)。
+     太陽側へずらした点との濃さの差で、塊の太陽側を明るく・下側を暗く塗る。 */
+  vec4 cumulusLayer(vec3 d, float k, float thr, float sunDot, float drift, float ch){
+    vec2 p = cloudP(d, k, drift);
+    vec4 t0 = texture2D(uCloud2, p);
+    float dB = mix(t0.r, t0.g, ch);
+    // 太陽側へ広めにずらして読む(狭いと縁だけが細く光ってガラス玉の輪に見えた)
+    vec4 t1 = texture2D(uCloud2, p + normalize(uSunDir.xz + vec2(1e-4)) * 0.045);
+    float dS = mix(t1.r, t1.g, ch);
+    float cB = smoothstep(thr, thr + 0.36, dB);
+    float thick = smoothstep(thr, thr + 0.55, dB);
+    // 見上げた積雲: 薄い所は光が抜けて白く、厚い芯は灰色。太陽側はふくらんで明るい
+    float sunSide = clamp((dB - dS) * 2.0, 0.0, 1.0);
+    vec3 c = mix(uCloudLit, uCloudMid, thick * 0.75);
+    c = mix(c, uCloudDark, thick * thick * 0.35);
+    c = mix(c, uCloudLit, sunSide * 0.45);
+    c += uSunCol * pow(max(sunDot, 0.0), 10.0) * (1.0 - thick) * 0.35;
+    // しきい値が低い(=曇天の地域)ほど、塊の下地に一面の暗い雲を敷く(塊だけでは空が埋まらない)
+    float ovc = clamp((0.36 - thr) * 6.0, 0.0, 0.96);
+    c = mix(c, mix(uCloudDark, uCloudMid, 0.25 + 0.55 * thick + 0.2 * sunSide), ovc);
+    return vec4(c, max(cB, ovc));
   }
 
   void main(){
@@ -301,11 +374,13 @@ const SKY_FRAG = `
     col = mix(col, uCirrus + uSunCol * pow(sd, 8.0) * 0.5, cir * uCirrusAmt * vis * (1.0 - far * 0.85));
 
     // 上の雲の段。下の段より小さく見えるので「層」として読める
-    vec4 hi = cloudLayer(d, 1.15, vec4(0.0,1.0,0.0,0.0), uThr + 0.05, det*0.8, 0.9, sd, 0.0, 0.62);
+    vec4 hi = (uCloudMode > 0.5) ? cumulusLayer(d, 1.15, uThr + 0.08, sd, 0.62, 1.0)
+                                 : cloudLayer(d, 1.15, vec4(0.0,1.0,0.0,0.0), uThr + 0.05, det*0.8, 0.9, sd, 0.0, 0.62);
     col = mix(col, mix(hi.rgb, uHorizon, far*0.80), hi.a * uCover * 0.80 * vis);
 
     // 主役の段
-    vec4 lo = cloudLayer(d, 0.58, vec4(1.0,0.0,0.0,0.0), uThr, det, 1.0, sd, 1.0, 1.00);
+    vec4 lo = (uCloudMode > 0.5) ? cumulusLayer(d, 0.58, uThr, sd, 1.00, 0.0)
+                                 : cloudLayer(d, 0.58, vec4(1.0,0.0,0.0,0.0), uThr, det, 1.0, sd, 1.0, 1.00);
     col = mix(col, mix(lo.rgb, uHorizon, far*0.86), lo.a * uCover * uLowAmt * vis);
 
     // 縞(バンディング)止め。滑らかなグラデーションほど段が見えるので少しだけ散らす
@@ -356,6 +431,7 @@ export function buildSky(forEnv){
     uGain:{value:1}, uThr:{value:0.5}, uCover:{value:0.8}, uCirrusAmt:{value:0.3},
     uStars:{value:0}, uGlow:{value:1}, uLowAmt:{value:0.8},
     uCloud:{value:ensureCloudTex()},
+    uCloud2:{value:ensureCloudTex()}, uCloudMode:{value:0},   // 探検フィールドだけ1(積雲)
     uDrift:{value:new THREE.Vector2()},
   };
   setSkyUniforms(uniforms, forEnv);
