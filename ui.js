@@ -6211,9 +6211,17 @@ function exploreShowResult(res){
   // ---- 左: 自分のモンスターと記録 ----
   const el = ELEMENTS[res.element] || {};
   const best = res.best && EXPLORE_RARITY[res.best];
+  const heroGear = res.gear || {};
+  const heroSet = exploreGearMainSet(heroGear);
+  const heroSetDef = heroSet ? EXPLORE_GEAR_SETS[heroSet.set] : null;
+  const gearCol = EXPLORE_GEAR_SLOTS.map(s=> heroGear[s.id] && EXPLORE_GEAR[heroGear[s.id]]
+      ? `<span class="exr-hero-slot" title="${EXPLORE_GEAR[heroGear[s.id]].name}">${exploreGearIconHtml(heroGear[s.id], 'is-mini')}</span>`
+      : `<span class="exr-hero-slot is-empty" title="${s.label}"><span class="exf-slot-empty">${s.label}</span></span>`).join('');
   document.getElementById('exploreResultHero').innerHTML =
-      `<div class="exr-hero-img" style="--rc:${best ? best.color : '#7dffb0'}">${equippedIconImgTag(res.element, el.label || '')}</div>`
-    + `<div class="exr-hero-name">${res.name || el.label || ''}</div>`;
+      `<div class="exr-hero-fig">`
+    + `<div class="exr-hero-img${heroSetDef ? ' has-set' : ''}" style="--rc:${best ? best.color : '#7dffb0'};--sc:${heroSetDef ? heroSetDef.color : 'transparent'}">${equippedIconImgTag(res.element, el.label || '')}</div>`
+    + `<div class="exr-hero-gear">${gearCol}</div></div>`
+    + `<div class="exr-hero-name">${res.name || el.label || ''}${heroSetDef ? `<span class="exr-hero-set" style="--sc:${heroSetDef.color}">${heroSetDef.emblem}${heroSetDef.name}${heroSet.n}</span>` : ''}</div>`;
   const bossDefs = (res.bosses || []).map(id=> (typeof EXPLORE_BOSSES!=='undefined') ? EXPLORE_BOSSES.find(b=> b.id === id) : null).filter(Boolean);
   const rec = (icon, label, val, cls)=> `<div class="exr-rec${cls ? ' ' + cls : ''}"><span class="exr-rec-label">${icon} ${label}</span><span class="exr-rec-val">${val}</span></div>`;
   document.getElementById('exploreResultStats').innerHTML =
@@ -6283,6 +6291,19 @@ function exploreShowResult(res){
     }
   }
   ov.classList.remove('hidden');
+  exploreSnapListRows(list);
+}
+/* 送れる一覧の高さを「札の行の区切り」に合わせる(途中で切れた行を見せない=批評指摘)。
+   使える高さ(R1で決まった箱)から入る行数を数え、その行数ぶんの高さにする。入りきるなら何もしない */
+function exploreSnapListRows(list){
+  if(!list) return;
+  list.style.maxHeight = '';
+  const cs = getComputedStyle(list);
+  const rowH = parseFloat(cs.gridAutoRows), gap = parseFloat(cs.rowGap) || 0;
+  const h = list.clientHeight;
+  if(!(rowH > 0) || !(h > 0) || list.scrollHeight <= h + 1) return;
+  const rows = Math.max(1, Math.floor((h + gap) / (rowH + gap)));
+  list.style.maxHeight = `${rows*(rowH + gap) - gap}px`;
 }
 /* 結果画面からロビーへ戻る(raidExit / exitShootingRange と同じ後始末) */
 function exploreExit(){
@@ -6473,9 +6494,56 @@ function openExploreForge(){
   if(fx){ fx.classList.add('hidden'); fx.innerHTML = ''; }
   renderExploreForge();
   document.getElementById('exploreForgeOverlay').classList.remove('hidden');
+  exploreForgeScrollToSel(true);
+  exploreForgeSnapBody();
+  if(typeof requestAnimationFrame==='function') requestAnimationFrame(()=>{ exploreForgeDrawLines(); exploreForgeSnapBody(); });
+}
+// 選んでいる札を表の見える所へ(center=true なら真ん中へ。見えていれば動かさない)
+function exploreForgeScrollToSel(center){
   const list = document.getElementById('exploreForgeList');
-  if(list) list.scrollTop = 0;
-  if(typeof requestAnimationFrame==='function') requestAnimationFrame(()=> exploreForgeDrawLines());
+  const card = list && list.querySelector('.exf-card.is-sel');
+  if(!list || !card) return;
+  // .exf-list は position:relative(表の offsetTop が一覧の中の位置になる)。札は .exf-tree の中の位置
+  const tree = card.offsetParent;
+  const top = card.offsetTop + (tree && tree !== list ? tree.offsetTop : 0), bot = top + card.offsetHeight;
+  const vh = list.clientHeight;
+  if(!center && top >= list.scrollTop && bot <= list.scrollTop + vh) return;
+  /* 行の区切りに合わせて送る(途中で切れた行を上に見せない): 選んだ行の1つ上の行の上端を表の上端へ。
+     1つ上が無い・選んだ行が下まで入らないときは選んだ行の上端から */
+  const step = card.offsetHeight + (parseFloat(getComputedStyle(card.parentNode).rowGap) || 0);
+  let want = top - step;
+  if(want < step*0.5 || bot - want > vh) want = top;
+  want = want <= card.offsetHeight ? 0 : Math.max(0, want - 2);
+  // 下の方の行は送り切れず(一覧の終わり)上の行が途中で切れるので、表の下に送り代を足して行の区切りで止める
+  const treeEl = list.querySelector('.exf-tree');
+  if(treeEl){
+    treeEl.style.marginBottom = '';
+    const max = list.scrollHeight - list.clientHeight;
+    if(want > max) treeEl.style.marginBottom = `${Math.ceil(want - max)}px`;
+  }
+  list.scrollTop = want;
+}
+/* 詳細の本文(送れる所)の高さを行の区切りに合わせる(比較の行が途中で切れた=批評指摘)。
+   使える高さ(R1)のうち、最後まで入る行の下端までにする。見出しだけが最後に残るなら、その見出しも次へ送る。
+   ボタンは .exf-d-actions の margin-top:auto で下に付いたまま */
+function exploreForgeSnapBody(){
+  const body = document.getElementById('exploreForgeDBody');
+  if(!body) return;
+  body.style.height = ''; body.style.flex = '';
+  const avail = body.clientHeight;
+  if(!(avail > 0) || body.scrollHeight <= avail + 1) return;
+  const kids = Array.from(body.children);
+  let cut = 0;
+  for(let i=0;i<kids.length;i++){
+    const b = kids[i].offsetTop + kids[i].offsetHeight;
+    if(b > avail) break;
+    cut = i;
+  }
+  while(cut > 0 && kids[cut].classList.contains('exf-sec-label')) cut--;
+  const h = kids[cut].offsetTop + kids[cut].offsetHeight + 1;
+  if(h < 24) return;
+  body.style.flex = '0 0 auto';
+  body.style.height = `${h}px`;
 }
 function closeExploreForge(){
   document.getElementById('exploreForgeOverlay').classList.add('hidden');
@@ -6532,7 +6600,10 @@ function renderExploreForge(){
     }
   }
   html += `</div>`;
+  const keepPad = (listEl.querySelector('.exf-tree') || { style:{} }).style.marginBottom || '';
   listEl.innerHTML = html;
+  const newTree = listEl.querySelector('.exf-tree');
+  if(newTree) newTree.style.marginBottom = keepPad;   // 行の区切りで止めるための送り代(exploreForgeScrollToSel)を引き継ぐ
   listEl.scrollTop = keepTop;
   exploreForgeDrawLines();
   renderExploreForgeDetail(gear, stash);
@@ -6582,7 +6653,14 @@ function renderExploreForgeDetail(gear, stash){
   det.dataset.rar = g.rarity;
   // ---- 見た目の欄(大きな絵・名前・レア度・派生元) ----
   const from = exploreGearFromList(key);
-  stage.innerHTML = `<span class="exf-stage-art">${exploreGearIconHtml(key, 'is-stage')}</span>`
+  // 着けたときの姿: 自分のモンスターに、着けた後にいちばん多いセットの色の光と足元の輪(フィールドと同じ見せ方)
+  const wearSet = exploreGearMainSet({ ...gear.equip, [g.slot]: key });
+  const wearDef = wearSet ? EXPLORE_GEAR_SETS[wearSet.set] : null;
+  const figHtml = (typeof equippedIconImgTag==='function' && game && game.selectedElement)
+    ? `<span class="exf-stage-fig${wearSet && wearSet.active ? ' is-lit' : ''}" style="--wc:${wearDef ? wearDef.color : set.color || rar.color}">`
+      + `<span class="exf-fig-ring"></span>${equippedIconImgTag(game.selectedElement, '')}`
+      + `<span class="exf-fig-emb">${wearDef ? wearDef.emblem : ''}</span><span class="exf-fig-cap">着けた姿</span></span>` : '';
+  stage.innerHTML = `<span class="exf-stage-art">${exploreGearIconHtml(key, 'is-stage')}</span>` + figHtml
     + `<span class="exf-stage-text"><span class="exf-d-name">${g.name}</span>`
     + `<span class="exf-d-meta"><span class="exf-d-rar">${rar.label}</span><span class="exf-d-meta-to">${set.name}セット・${slot ? slot.label : ''}${g.shape ? (g.shape==='bow' ? '・弓' : '・銃') : ''}</span></span>`
     + (from.length ? `<span class="exf-d-from">派生元 ${from.map(f=> EXPLORE_GEAR[f].name).join(' / ')}</span>` : '')
@@ -6590,6 +6668,7 @@ function renderExploreForgeDetail(gear, stash){
   if(g.root){
     body.innerHTML = `<div class="exf-note">${g.note || ''}</div>`;
     btn.className = 'exf-act-btn is-root'; btn.disabled = true; btn.textContent = '補給箱で拾う';
+    exploreForgeSnapBody();
     return;
   }
   // ---- 今の装備 → これ(同じ部位)。着けた後の合計 ----
@@ -6610,7 +6689,7 @@ function renderExploreForgeDetail(gear, stash){
   const matRows = chk.rows.map(r=>{
     const m = EXPLORE_MATERIALS[r.key];
     const mr = EXPLORE_RARITY[m.rarity] || EXPLORE_RARITY.common;
-    const src = r.have < r.need ? exploreMaterialSources(r.key, 2) : [];
+    const src = r.have < r.need ? exploreMaterialSources(r.key, 3) : [];
     return `<div class="exf-matrow${r.have>=r.need?' is-ok':' is-short'}" style="--mc:${mr.color}">`
       + `<span class="exf-mat-ico">${m.icon}</span><span class="exf-mat-name">${m.name}</span>`
       + `<span class="exf-mat-n"><b>${r.have}</b>/${r.need}</span></div>`
@@ -6623,13 +6702,16 @@ function renderExploreForgeDetail(gear, stash){
   const nIf = EXPLORE_GEAR_SLOTS.filter(s=> EXPLORE_GEAR[eq[s.id]] && EXPLORE_GEAR[eq[s.id]].set===g.set).length;
   const setRows = set.bonus.map(b=> `<div class="exf-setrow${nIf>=b.n?' is-on':''}"><span>${b.n}つ</span><b>${exploreGearFxText(b.fx, false)}</b></div>`).join('');
   const needMats = !(st==='equip' || st==='owned');
-  body.innerHTML = `<div class="exf-sec-label">${cur ? `今の装備(${exploreGearShortName(gear.equip[g.slot])}) → これ` : '今の装備(空き) → これ'}</div>${cmpRows}`
-    + `<div class="exf-sec-label">着けた後の探検での合計</div>${totRows}`
-    + (needMats ? `<div class="exf-sec-label">必要な素材(手持ち/必要)</div>${fromRow}${matRows}` : '')
+  const cmpHtml = `<div class="exf-sec-label">${cur ? `今の装備(${exploreGearShortName(gear.equip[g.slot])}) → これ` : '今の装備(空き) → これ'}</div>${cmpRows}`
+    + `<div class="exf-sec-label">着けた後の探検での合計</div>${totRows}`;
+  const matHtml = needMats ? `<div class="exf-sec-label${st==='lack' ? ' is-short' : ''}">${st==='lack' ? '足りない素材と入手先' : '必要な素材(手持ち/必要)'}</div>${fromRow}${matRows}` : '';
+  // 素材が足りないときは「何が足りないか・どこで取れるか」を先に(比較は作れるようになってから読めばよい)
+  body.innerHTML = (st==='lack' ? matHtml + cmpHtml : cmpHtml + matHtml)
     + `<div class="exf-sec-label">${set.name}セット効果</div>${setRows}`;
   btn.className = 'exf-act-btn is-' + st;
   btn.disabled = (st==='lack') || exploreForgeState.busy;
   btn.textContent = st==='craft' ? '⚒️ 作る' : st==='lack' ? (chk.fromOk ? '素材が足りません' : '派生元の武器が必要') : st==='owned' ? '装着する' : '外す';
+  exploreForgeSnapBody();
 }
 // 作る → 演出 → 「装備する / あとで」を選ぶ(保存は演出の前に済ませる。途中で閉じても作った物は消えない)
 function exploreForgeCraft(key){
@@ -6706,6 +6788,7 @@ document.getElementById('exploreForgeSlots').addEventListener('click', (e)=>{
   const k = gear.equip[b.dataset.slot] || Object.keys(EXPLORE_GEAR).find(x=> EXPLORE_GEAR[x].slot === b.dataset.slot && !EXPLORE_GEAR[x].root);
   if(k) exploreForgeState.sel = k;
   renderExploreForge();
+  exploreForgeScrollToSel(false);
   const d = document.getElementById('exploreForgeDBody');
   if(d) d.scrollTop = 0;
 });

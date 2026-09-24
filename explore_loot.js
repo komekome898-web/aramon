@@ -389,8 +389,9 @@ function _exlShade(hexBase, n, k){
   const c = hexBase;
   return `rgb(${Math.round(c[0]*f)},${Math.round(c[1]*f)},${Math.round(c[2]*f)})`;
 }
-const EXPLORE_CRATE_METAL = [70, 78, 90];      // 箱の地の金属色(暗い灰)。レア度の色は縁と帯だけに使う
+const EXPLORE_CRATE_METAL = [70, 78, 90];      // 箱の地の金属色(暗い灰)
 const EXPLORE_CRATE_TRIM  = [36, 40, 48];      // 台座・蓋の縁の暗い色
+const EXPLORE_CRATE_TINT  = 0.3;               // 胴の地にレア度の色を混ぜる割合(白=鋼・青=青鋼・紫・金=その色の金属)
 
 /* 補給箱。胴(4面)+蓋(厚みのある板)を立体で描く。蓋は奥の辺を軸に開く。
    白・青の箱はレア度の色を「帯・縁・地面の光」にだけ使う(箱全体を塗るとおもちゃに見える)。
@@ -448,40 +449,66 @@ function exploreDrawCrate(c, p0){
     { n:[-1,0,0], q:[[-W, D],[-W,-D]], c:[-W,0] },
     { n:[ 1,0,0], q:[[W,-D],[W, D]], c:[W, 0] },
   ];
+  const bodyMetal = EXPLORE_CRATE_METAL.map((v, i)=> v*(1 - EXPLORE_CRATE_TINT) + rgb[i]*EXPLORE_CRATE_TINT*0.7);
   const drawBody = ()=>{
     for(const f of bodySides){
       const v = faces(f.n, f.c[0], f.c[1], H/2);
       if(!v.vis) continue;
       const [a, b] = f.q;
+      const at = (t)=> [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t];
+      const quad = (t0, t1, z0, z1)=>{ const A = at(t0), B = at(t1);
+        return _exlPoly([P(A[0],A[1],z0), P(B[0],B[1],z0), P(B[0],B[1],z1), P(A[0],A[1],z1)]); };
       // 面
-      if(_exlPoly([P(a[0],a[1],0), P(b[0],b[1],0), P(b[0],b[1],H), P(a[0],a[1],H)])){
-        ctx.fillStyle = _exlShade(EXPLORE_CRATE_METAL, v.wn); ctx.fill();
+      if(quad(0, 1, 0, H)){
+        ctx.fillStyle = _exlShade(bodyMetal, v.wn); ctx.fill();
         ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
       }
       // 台座(下の暗い帯)
-      if(_exlPoly([P(a[0],a[1],0), P(b[0],b[1],0), P(b[0],b[1],H*0.14), P(a[0],a[1],H*0.14)])){
-        ctx.fillStyle = _exlShade(EXPLORE_CRATE_TRIM, v.wn); ctx.fill();
+      if(quad(0, 1, 0, H*0.14)){ ctx.fillStyle = _exlShade(EXPLORE_CRATE_TRIM, v.wn); ctx.fill(); }
+      if(far) continue;
+      // 板の継ぎ目(横の溝2本。暗い線+下に光を受ける細い線)
+      for(const z of [H*0.4, H*0.68]){
+        const A = at(0.17), B = at(0.83);
+        const q0 = P(A[0], A[1], z), q1 = P(B[0], B[1], z);
+        if(!q0 || !q1) continue;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = Math.max(1, 1.4*q0.scale);
+        ctx.beginPath(); ctx.moveTo(q0.x, q0.y); ctx.lineTo(q1.x, q1.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(q0.x, q0.y + 1.2); ctx.lineTo(q1.x, q1.y + 1.2); ctx.stroke();
       }
-      // 縦の補強材(両端)
-      if(!far) for(const t of [0.08, 0.92]){
-        const lx = a[0] + (b[0]-a[0])*t, ly = a[1] + (b[1]-a[1])*t;
-        const lx2 = a[0] + (b[0]-a[0])*(t + (t<0.5 ? 0.07 : -0.07)), ly2 = a[1] + (b[1]-a[1])*(t + (t<0.5 ? 0.07 : -0.07));
-        if(_exlPoly([P(lx,ly,0), P(lx2,ly2,0), P(lx2,ly2,H), P(lx,ly,H)])){
-          ctx.fillStyle = _exlShade(ribMetal, v.wn, rich ? 1.3 : 1.15); ctx.fill();
-          if(rich){ ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke(); }
+      // 四隅の金具(角当て。上と下)と鋲
+      for(const [t0, t1] of [[0, 0.16], [0.84, 1]]){
+        for(const [z0, z1] of [[0, H*0.32], [H*0.7, H]]){
+          if(quad(t0, t1, z0, z1)){
+            ctx.fillStyle = _exlShade(ribMetal, v.wn, rich ? 1.35 : 1.3); ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+          }
+          const m = at((t0 + t1)/2), q = P(m[0], m[1], (z0 + z1)/2);
+          if(q){
+            const rr = Math.max(0.9, 1.7*q.scale*sc);
+            ctx.fillStyle = rich ? 'rgba(255,255,255,0.75)' : 'rgba(205,214,224,0.7)';
+            ctx.beginPath(); ctx.arc(q.x, q.y, rr, 0, Math.PI*2); ctx.fill();
+          }
         }
       }
-      // レア度の光の帯(真ん中の高さ。補強材の内側だけ)
-      const e0 = [a[0] + (b[0]-a[0])*0.17, a[1] + (b[1]-a[1])*0.17], e1 = [a[0] + (b[0]-a[0])*0.83, a[1] + (b[1]-a[1])*0.83];
-      if(_exlPoly([P(e0[0],e0[1],H*0.46), P(e1[0],e1[1],H*0.46), P(e1[0],e1[1],H*0.6), P(e0[0],e0[1],H*0.6)])){
-        if(!heavy){ ctx.shadowBlur = 8 + ord*4; ctx.shadowColor = col; }
-        ctx.fillStyle = exploreRgba(col, c.opened ? 0.55 : 0.75 + 0.25*pulse); ctx.fill();
-        ctx.shadowBlur = 0;
+      // 正面・背面の紋章(レア度の色の菱形。遠くからでも色が読める・危険表示の帯に見えない)
+      if(f.n[0] === 0){
+        const cz = H*0.53, hz = H*0.25, hw = 0.12;
+        const dia = (k)=>{ const T = at(0.5), Lp = at(0.5 - hw*k), Rp = at(0.5 + hw*k);
+          return _exlPoly([P(T[0],T[1],cz + hz*k), P(Rp[0],Rp[1],cz), P(T[0],T[1],cz - hz*k), P(Lp[0],Lp[1],cz)]); };
+        if(dia(1.18)){ ctx.fillStyle = _exlShade(ribMetal, v.wn, 1.2); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.stroke(); }
+        if(dia(1)){
+          if(!heavy){ ctx.shadowBlur = 8 + ord*4; ctx.shadowColor = col; }
+          ctx.fillStyle = exploreRgba(col, c.opened ? 0.6 : 0.8 + 0.2*pulse); ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+        if(dia(0.62)){ ctx.fillStyle = 'rgba(10,14,20,0.85)'; ctx.fill(); }
+        if(dia(0.3)){ ctx.fillStyle = exploreRgba(ord >= 2 ? '#ffffff' : col, c.opened ? 0.5 : 0.7 + 0.3*pulse); ctx.fill(); }
       }
     }
   };
   // --- 蓋(奥の辺 ly=-D, lz=H を軸に lidA だけ開く) ---
-  const L = S.lid, OV = 2;   // 厚み・はみ出し
+  const L = S.lid, OV = 2.5;   // 厚み・はみ出し
   const lidPt = (lx, ly, lz)=>{
     const dy = ly + D, dz = lz - H;
     const ry = dy*Math.cos(lidA) - dz*Math.sin(lidA), rz = dy*Math.sin(lidA) + dz*Math.cos(lidA);
@@ -508,27 +535,37 @@ function exploreDrawCrate(c, p0){
       ctx.fillStyle = f.under ? _exlShade(EXPLORE_CRATE_TRIM, v.wn, 0.9) : _exlShade(lidMetal, v.wn, f.top ? 1.12 : 0.95);
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+      if(f.under && c.opened){
+        // 開いた蓋の裏(内張り)。中の光を受けてレア度の色に光る
+        const age = matchTime - c.openedAt;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = exploreRgba(col, 0.2 + 0.35*Math.max(0, 1 - age/2.5)); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        const inset = f.pts.map(q=> LP(q[0]*0.8, q[1]*0.78 + (Y0 + Y1)/2*0.22, q[2]));
+        if(_exlPoly(inset)){ ctx.strokeStyle = exploreRgba(col, 0.55); ctx.lineWidth = 1; ctx.stroke(); }
+      }
+      if(!f.top && !f.under && !far){
+        // 側面の厚み: 真ん中に細い光の線(レア度の色)
+        const mid = f.pts.map(q=> [q[0], q[1], q[2] <= H + 0.01 ? H + L*0.42 : H + L*0.58]);
+        if(_exlPoly(mid.map(q=> LP(q[0], q[1], q[2])))){
+          if(!heavy && f.front){ ctx.shadowBlur = 6 + ord*3; ctx.shadowColor = col; }
+          ctx.fillStyle = exploreRgba(col, c.opened ? 0.45 : 0.6 + 0.3*pulse); ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
       if(f.top){
         // 縁の面取り(光を受ける細い線)。箱が「塗った四角」ではなく金属の板に見える
         ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.2; ctx.stroke();
         const inset = f.pts.map(q=> LP(q[0]*0.86, q[1]*0.8, q[2]));
         if(_exlPoly(inset)){ ctx.fillStyle = _exlShade(rich ? EXPLORE_CRATE_METAL : EXPLORE_CRATE_TRIM, v.wn, 1.25); ctx.fill(); }
-        // 蓋の上の印(レア度の色の山形 2本)
-        for(const off of [-0.18, 0.18]){
-          const y0 = off*D*2;
-          const pts = [[-X*0.62, y0 - D*0.10, H+L], [0, y0 + D*0.22, H+L], [X*0.62, y0 - D*0.10, H+L],
-                       [X*0.62, y0 - D*0.24, H+L], [0, y0 + D*0.08, H+L], [-X*0.62, y0 - D*0.24, H+L]];
-          if(_exlPoly(pts.map(q=> LP(q[0], q[1], q[2])))){
-            if(!heavy){ ctx.shadowBlur = 6 + ord*3; ctx.shadowColor = col; }
-            ctx.fillStyle = exploreRgba(col, c.opened ? 0.5 : 0.65 + 0.3*pulse); ctx.fill();
-            ctx.shadowBlur = 0;
-          }
+        // 蓋の上の印(レア度の色の菱形。胴の紋章と同じ形)
+        const dia = (k)=> [[0, -D*0.42*k, H+L], [X*0.34*k, 0, H+L], [0, D*0.42*k, H+L], [-X*0.34*k, 0, H+L]].map(q=> LP(q[0], q[1], q[2]));
+        if(_exlPoly(dia(1))){
+          if(!heavy){ ctx.shadowBlur = 6 + ord*3; ctx.shadowColor = col; }
+          ctx.fillStyle = exploreRgba(col, c.opened ? 0.5 : 0.65 + 0.3*pulse); ctx.fill();
+          ctx.shadowBlur = 0;
         }
-      } else if(f.front && !f.under){
-        // 蓋の前の縁はレア度の色に光る
-        if(!heavy){ ctx.shadowBlur = 10 + ord*4; ctx.shadowColor = col; }
-        ctx.fillStyle = exploreRgba(col, c.opened ? 0.45 : 0.55 + 0.4*pulse); ctx.fill();
-        ctx.shadowBlur = 0;
+        if(_exlPoly(dia(0.55))){ ctx.fillStyle = 'rgba(10,14,20,0.8)'; ctx.fill(); }
       }
     }
   };
@@ -543,9 +580,31 @@ function exploreDrawCrate(c, p0){
     ctx.fillStyle = exploreRgba(col, 0.55*glow); ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
   };
+  // 蓋と胴の継ぎ目から漏れる光(閉じている間。見えている面の上の辺だけ)
+  const drawSeam = ()=>{
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for(const f of bodySides){
+      const v = faces(f.n, f.c[0], f.c[1], H/2);
+      if(!v.vis) continue;
+      const [a, b] = f.q;
+      const q0 = P(a[0]*1.02, a[1]*1.02, H + 0.6), q1 = P(b[0]*1.02, b[1]*1.02, H + 0.6);
+      if(!q0 || !q1) continue;
+      const lw = Math.max(1.2, 2.2*q0.scale*sc);
+      if(!heavy){ ctx.shadowBlur = 10 + ord*4; ctx.shadowColor = col; }
+      ctx.strokeStyle = exploreRgba(col, (0.35 + 0.1*ord)*pulse); ctx.lineWidth = lw*2.4;
+      ctx.beginPath(); ctx.moveTo(q0.x, q0.y); ctx.lineTo(q1.x, q1.y); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = exploreRgba('#ffffff', 0.55 + 0.3*pulse); ctx.lineWidth = lw*0.6;
+      ctx.beginPath(); ctx.moveTo(q0.x, q0.y); ctx.lineTo(q1.x, q1.y); ctx.stroke();
+    }
+    ctx.restore();
+  };
   if(!c.opened){
     drawBody();
     drawLid();
+    if(!far) drawSeam();
     // 角の灯り(蓋の前の2隅。レア度の色で点る)
     for(const sx of [-1, 1]){
       const q = LP(sx*(W+OV-3), D+OV, H+L*0.5);
@@ -629,11 +688,20 @@ function exploreDrawCrate(c, p0){
         ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`;
         ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
         const t1 = `補給箱・${rar.label}`;
-        ctx.strokeText(t1, tp.x, tp.y); ctx.fillStyle = col; ctx.fillText(t1, tp.x, tp.y);
-        if(dp < EXPLORE_CRATE_OPEN_RANGE + 140){
+        const near = dp < EXPLORE_CRATE_OPEN_RANGE + 140;
+        const t2 = c.hold > 0 ? '開けています…' : '近くにとどまると開く';
+        // 箱が画面の端にあっても札は画面の中へ寄せる(右端で切れた=批評指摘)
+        const w1 = ctx.measureText(t1).width;
+        ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
+        const w2 = near ? ctx.measureText(t2).width : 0;
+        const half = Math.max(w1, w2)/2 + 6;
+        const lx = clamp(tp.x, half, Math.max(half, viewW - half));
+        const ly = clamp(tp.y, fs + 4, Math.max(fs + 4, viewH - fs*2 - 8));
+        ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`;
+        ctx.strokeText(t1, lx, ly); ctx.fillStyle = col; ctx.fillText(t1, lx, ly);
+        if(near){
           ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
-          const t2 = c.hold > 0 ? '開けています…' : '近くにとどまると開く';
-          ctx.strokeText(t2, tp.x, tp.y + fs + 2); ctx.fillStyle = 'rgba(240,240,240,0.92)'; ctx.fillText(t2, tp.x, tp.y + fs + 2);
+          ctx.strokeText(t2, lx, ly + fs + 2); ctx.fillStyle = 'rgba(240,240,240,0.92)'; ctx.fillText(t2, lx, ly + fs + 2);
         }
       }
     }
@@ -650,7 +718,7 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
   const col = exploreRarityColor(rarity);
   const ord = exploreRarityOrder(rarity);
   const flick = 0.85 + 0.15*Math.sin(matchTime*5 + x*0.01);
-  const w = Math.max(EXPLORE_PILLAR_MIN_PX, (EXPLORE_PILLAR_WIDTH[rarity] || 8) * pb.scale);
+  const w = Math.max(EXPLORE_PILLAR_MIN_PX[rarity] || 2, (EXPLORE_PILLAR_WIDTH[rarity] || 8) * pb.scale);
   const wt = w * 0.45;
   // 遠いほど少し明るく(細くなって見えなくなるのを防ぐ)
   const far = clamp((depth - 1500) / 4000, 0, 1);
@@ -677,26 +745,38 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
       ctx.beginPath(); ctx.arc(q.x + Math.sin(u*9 + i)*w*0.6, q.y, Math.max(1.2, 2.4*q.scale), 0, Math.PI*2); ctx.fill();
     }
   }
+  // 根元の光だまり(柱が地面から立っていると分かる。太い柱ほど大きい)
+  const rg = ctx.createRadialGradient(pb.x, pb.y, 0, pb.x, pb.y, w*2.6);
+  rg.addColorStop(0, exploreRgba('#ffffff', 0.5*flick)); rg.addColorStop(0.35, exploreRgba(col, 0.4*flick)); rg.addColorStop(1, exploreRgba(col, 0));
+  ctx.fillStyle = rg;
+  ctx.beginPath(); ctx.ellipse(pb.x, pb.y, w*2.6, w*1.1, 0, 0, Math.PI*2); ctx.fill();
   ctx.restore();
-  // 近くでは地面に輪
-  if(depth < EXPLORE_PILLAR_RING_DEPTH){
-    const r = 26 + ord*4 + 4*Math.sin(matchTime*3 + x);
+  // 地面の輪: 紫・金は遠くでも根元に輪(金は二重)。白・青は近いときだけ
+  if(depth < EXPLORE_PILLAR_RING_DEPTH || ord >= 2){
+    const base = (EXPLORE_PILLAR_WIDTH[rarity] || 8)*2.4;
+    const r = base + 4*Math.sin(matchTime*3 + x);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     const ring = groundCirclePoints(x, y, r, 22);
     if(ring){
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
       _exlPoly(ring);
       ctx.fillStyle = exploreRgba(col, 0.12 + 0.04*ord); ctx.fill();
-      ctx.strokeStyle = exploreRgba(col, 0.75); ctx.lineWidth = 1.6; ctx.stroke();
-      ctx.restore();
+      ctx.strokeStyle = exploreRgba(col, 0.8); ctx.lineWidth = Math.max(1.6, 1 + ord*0.6); ctx.stroke();
     }
+    if(ord >= 3){
+      // 金: 外へ広がって消える2本目の輪
+      const k = (matchTime*0.8 + x*0.001) % 1;
+      const ring2 = groundCirclePoints(x, y, base*(1.1 + 0.9*k), 26);
+      if(ring2){ _exlPoly(ring2); ctx.strokeStyle = exploreRgba(col, 0.7*(1 - k)); ctx.lineWidth = 2; ctx.stroke(); }
+    }
+    ctx.restore();
   }
 }
 // 品物のしるし(レア度の色の菱形+アイコン)。画面の大きさは投影のスケールで決まる
 function exploreDrawDropBadge(q, info, rarity, alpha){
   const col = exploreRarityColor(rarity);
   const s = clamp(q.scale, 0.35, 2.2);
-  const R = 12*s;
+  const R = Math.max(8, (EXPLORE_DROP_BADGE[rarity] || 15)*s);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(q.x, q.y);
@@ -708,7 +788,7 @@ function exploreDrawDropBadge(q, info, rarity, alpha){
   ctx.shadowBlur = 0;
   ctx.beginPath(); ctx.moveTo(0, -R*0.78); ctx.lineTo(R*0.78, 0); ctx.lineTo(0, R*0.78); ctx.lineTo(-R*0.78, 0); ctx.closePath();
   ctx.fillStyle = 'rgba(8,12,18,0.88)'; ctx.fill();
-  ctx.font = `${Math.round(R*1.05)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(R*1.12)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(info.icon, 0, R*0.06);
   ctx.restore();
 }
@@ -735,8 +815,8 @@ function exploreDrawDrop(d, p, entry){
   const eo = 1 - Math.pow(1 - grow, 3);
   exploreDrawPillar(d.x, d.y, d.z, d.rarity, eo, p.depth);
   if(p.depth > EXPLORE_DROP_ITEM_VIEW) return;
-  const bob = Math.sin(matchTime*2.6 + d.bob)*4;
-  const q = project(d.x, d.y, d.z + 22 + bob);
+  const bob = Math.sin(matchTime*2.6 + d.bob)*5;
+  const q = project(d.x, d.y, d.z + EXPLORE_DROP_FLOAT + bob);
   if(!q) return;
   exploreDrawDropBadge(q, info, d.rarity, 1);
   if(player && Math.hypot(player.x - d.x, player.y - d.y) < EXPLORE_DROP_LABEL_RANGE){
@@ -744,7 +824,7 @@ function exploreDrawDrop(d, p, entry){
     ctx.save();
     ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     const t = `${info.name}${d.n > 1 ? ' ×'+d.n : ''}`;
-    const ty = q.y - 16*clamp(q.scale, 0.35, 2.2);
+    const ty = q.y - Math.max(8, (EXPLORE_DROP_BADGE[d.rarity] || 15)*clamp(q.scale, 0.35, 2.2)) - 5;
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(t, q.x, ty);
     ctx.fillStyle = col; ctx.fillText(t, q.x, ty);
     ctx.restore();
@@ -899,6 +979,189 @@ function exploreLootReset(){
   document.querySelectorAll('.exp-legend-flash').forEach(e=> e.remove());
 }
 
+/* ===== 自分(プレイヤー)の見た目: 力尽きて倒れる/キャンプで起き上がる/装備のセットの光 =====
+   姿勢はボスの討伐と同じ形(足元を軸に縦に潰して傾ける。回転の板にしない)。explore.js の
+   exploreComputePose / exploreDrawMonsterTint / exploreDrawMonsterUnder が自分のときここへ来る */
+// 力尽きの時間割(札・暗転・明転の区切り)。演出の更新と描画と姿勢が同じ数字を読む
+function exploreFaintTimes(){
+  const S = EXPLORE_FAINT_SEQ;
+  const card0 = S.fall, fade0 = card0 + S.card, black0 = fade0 + S.fadeOut, wake0 = black0 + S.black, end = wake0 + S.fadeIn;
+  return { card0, fade0, black0, wake0, end };
+}
+/* 今の倒れ具合。null = 立っている。
+   phase: 'fall'(崩れ落ちる u=0→1) / 'down'(倒れたまま) / 'rise'(キャンプで起き上がる u=0→1)
+   最後の力尽き(探検終了)は札が実時間(real)なので、そちらの時計で崩れ落ちたままになる */
+function explorePlayerFaintState(){
+  const c = exploreState.card;
+  if(!c || !game.explore) return null;
+  const S = EXPLORE_FAINT_SEQ;
+  if(c.kind === 'faint'){
+    const age = matchTime - c.t0, T = exploreFaintTimes();
+    if(age < S.fall) return { phase:'fall', u:clamp(age / S.fall, 0, 1), sign:(c.n % 2) ? 1 : -1 };
+    if(!c.moved || age < T.wake0) return { phase:'down', u:1, sign:(c.n % 2) ? 1 : -1 };
+    if(age < T.end) return { phase:'rise', u:clamp((age - T.wake0) / S.fadeIn, 0, 1), sign:(c.n % 2) ? 1 : -1 };
+    return null;
+  }
+  if(c.kind === 'outro' && c.reason === 'faint'){
+    const age = exploreCineNow() - c.t0;
+    return { phase: age < S.fall ? 'fall' : 'down', u:clamp(age / S.fall, 0, 1), sign:(c.n % 2) ? 1 : -1 };
+  }
+  return null;
+}
+function explorePlayerPose(e){
+  const st = explorePlayerFaintState();
+  if(!st || !e.alive) return null;
+  const r = e.radius;
+  let sy = 1, sx = 1, tilt = 0, bob = 0;
+  const down = { sy:0.46, sx:1.2, tilt:0.62, bob:r*0.14 };
+  if(st.phase === 'fall'){
+    // 膝が抜けて少し沈む(0〜0.3)→ 横へ崩れ落ちる(0.3〜0.85)→ 地面で小さく弾む
+    const u = st.u;
+    if(u < 0.3){ const q = u/0.3; sy = 1 - 0.12*q; sx = 1 + 0.03*q; tilt = -st.sign*0.08*q; bob = r*0.03*q; }
+    else {
+      const q = clamp((u - 0.3)/0.55, 0, 1), eq = q*q*(3 - 2*q);
+      sy = 0.88 + (down.sy - 0.88)*eq; sx = 1.03 + (down.sx - 1.03)*eq;
+      tilt = st.sign*(-0.08 + (down.tilt + 0.08)*eq); bob = r*0.03 + (down.bob - r*0.03)*eq;
+      if(u > 0.85){ const k = (u - 0.85)/0.15; sy += 0.06*Math.sin(k*Math.PI); }
+    }
+  } else if(st.phase === 'down'){
+    sy = down.sy + 0.012*Math.sin(matchTime*2.2); sx = down.sx; tilt = st.sign*down.tilt; bob = down.bob;
+  } else {
+    // 起き上がる: 手をついて上体を起こす(0〜0.45)→ 立ち上がって少し伸びる(0.45〜0.85)→ 元の姿
+    const u = st.u;
+    if(u < 0.45){ const q = u/0.45, eq = q*q*(3 - 2*q);
+      sy = down.sy + (0.74 - down.sy)*eq; sx = down.sx + (1.08 - down.sx)*eq;
+      tilt = st.sign*(down.tilt + (0.14 - down.tilt)*eq); bob = down.bob*(1 - eq) + r*0.05*eq; }
+    else if(u < 0.85){ const q = (u - 0.45)/0.4, eq = q*q*(3 - 2*q);
+      sy = 0.74 + (1.06 - 0.74)*eq; sx = 1.08 - 0.1*eq; tilt = st.sign*0.14*(1 - eq); bob = r*0.05*(1 - eq); }
+    else { const q = (u - 0.85)/0.15; sy = 1.06 - 0.06*q; sx = 0.98 + 0.02*q; }
+  }
+  return { sx, sy, tilt, bob, shx:0, alpha:1 };
+}
+// 色が抜ける具合(0=元の色 1=灰色)
+function explorePlayerGrey(){
+  const st = explorePlayerFaintState();
+  if(!st) return 0;
+  if(st.phase === 'fall') return clamp(st.u*1.2, 0, 1);
+  if(st.phase === 'down') return 1;
+  return clamp(1 - st.u*1.4, 0, 1);
+}
+function explorePlayerTint(e, img, L){
+  if(!img || !L) return;
+  const st = explorePlayerFaintState();
+  if(!st) return;
+  const k = explorePlayerGrey();
+  const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
+  const spr = scaledSpriteFor(img, need);
+  ctx.save();
+  // 倒れた瞬間は赤く光る(打たれて崩れた合図)
+  if(st.phase === 'fall' && st.u < 0.45){
+    const t = exploreTintSprite(spr, '#ff3a26');
+    if(t){ ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.55*(1 - st.u/0.45); ctx.drawImage(t, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh); }
+  }
+  const g = exploreTintSprite(spr, '#808080');
+  if(g && k > 0){
+    ctx.globalCompositeOperation = 'saturation'; ctx.globalAlpha = k;
+    ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+    ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.5*k;
+    ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+  }
+  // 起き上がるときは体に緑の光が走る(キャンプで回復した合図)
+  if(st.phase === 'rise' && st.u > 0.35){
+    const t = exploreTintSprite(spr, '#7dffb0');
+    const a = Math.sin(clamp((st.u - 0.35)/0.65, 0, 1)*Math.PI);
+    if(t && a > 0){ ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45*a; ctx.drawImage(t, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh); }
+  }
+  ctx.restore();
+}
+/* 装備が見える: 着けている装備でいちばん多いセットの色で、足元の輪・紋章・体の縁の光を出す。
+   セット効果が発動していれば輪が二重になり、光の粒が輪を回る。探検の自分だけ(描画の経路だけ・当たりは変えない) */
+function exploreDrawGearAura(e, p){
+  const gear = e.exploreGear;
+  if(!gear || !p) return;
+  const ms = exploreGearMainSet(gear.equip);
+  if(!ms) return;
+  const def = EXPLORE_GEAR_SETS[ms.set];
+  if(!def) return;
+  const col = def.color;
+  const fade = 1 - explorePlayerGrey();
+  if(fade <= 0.02) return;
+  const s = Math.max(0.01, p.scale), fy = exploreFootY(e), z = e.z || 0;
+  const lit = ms.active > 0;
+  const pulse = 0.75 + 0.25*Math.sin(matchTime*2.4);
+  const R = e.radius*1.15;
+  const ringPts = (rad, a0, a1, seg)=>{
+    const out = [];
+    for(let i=0; i<=seg; i++){
+      const a = a0 + (a1 - a0)*i/seg;
+      const q = project(e.x + Math.cos(a)*rad, e.y + Math.sin(a)*rad, z);
+      if(!q) return null;
+      out.push([(q.x - p.x)/s, (q.y - p.y)/s + fy]);
+    }
+    return out;
+  };
+  const path = (pts)=>{ ctx.beginPath(); pts.forEach((q, i)=> i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); };
+  const full = ringPts(R, 0, Math.PI*2, 28);
+  if(!full) return;
+  ctx.save();
+  ctx.globalAlpha = fade;
+  // 地面の淡い光(円盤)
+  ctx.globalCompositeOperation = 'lighter';
+  path(full); ctx.closePath();
+  ctx.fillStyle = exploreRgba(col, (lit ? 0.16 : 0.10) * pulse); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // 輪: 暗い下線+セットの色の線(どの地面でも縁が読める)
+  path(full); ctx.closePath();
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 4/s; ctx.stroke();
+  if(!renderHeavyLoad){ ctx.shadowBlur = 8; ctx.shadowColor = col; }
+  ctx.strokeStyle = exploreRgba(col, 0.95); ctx.lineWidth = 2/s; ctx.stroke();
+  ctx.shadowBlur = 0;
+  if(lit){
+    // セット効果が出ている: 内側にもう1本+輪を回る光の粒3つ
+    const inner = ringPts(R*0.82, 0, Math.PI*2, 24);
+    if(inner){ path(inner); ctx.closePath(); ctx.strokeStyle = exploreRgba(col, 0.55); ctx.lineWidth = 1.2/s; ctx.stroke(); }
+    ctx.globalCompositeOperation = 'lighter';
+    for(let i=0;i<3;i++){
+      const a0 = matchTime*1.6 + i*Math.PI*2/3;
+      const arc = ringPts(R, a0, a0 + 0.55, 6);
+      if(!arc) continue;
+      path(arc);
+      ctx.strokeStyle = exploreRgba('#ffffff', 0.8); ctx.lineWidth = 2.4/s; ctx.lineCap = 'round'; ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  // 体の縁の光(セットの色)。個数が多いほど強い
+  const img = (typeof getDisplayImage==='function') ? getDisplayImage(e) : null;
+  if(img){
+    const L = portraitLayoutFor(e, img);
+    const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
+    const t = exploreTintSprite(scaledSpriteFor(img, need), col);
+    const P = explorePlayerPose(e);
+    if(t && !P){
+      const k = 1.05;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = fade * (0.14 + 0.06*ms.n + (lit ? 0.08 : 0)) * pulse;
+      ctx.drawImage(t, -L.dw*k/2, L.dy - L.dh*k/2, L.dw*k, L.dh*k);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+  // 紋章: 輪のいちばん手前(カメラ側)に小さな札
+  const af = Math.atan2(camPos.y - e.y, camPos.x - e.x);
+  const fq = project(e.x + Math.cos(af)*R, e.y + Math.sin(af)*R, z);
+  if(fq){
+    const lx = (fq.x - p.x)/s, ly = (fq.y - p.y)/s + fy;
+    const er = Math.max(7, 8.5*Math.min(1.6, s)) / s;
+    ctx.globalAlpha = fade;
+    ctx.beginPath(); ctx.arc(lx, ly, er, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(10,14,20,0.9)'; ctx.fill();
+    ctx.lineWidth = 1.6/s; ctx.strokeStyle = col; ctx.stroke();
+    ctx.font = `${(er*1.15).toFixed(2)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(def.emblem, lx, ly + er*0.06);
+  }
+  ctx.restore();
+}
+
 /* ===== 装備の効果(探検の開始時だけ。**探検以外では呼ばない**=PvPの力関係を変えない) =====
    効果の合計は data.js の exploreGearTotals 1か所(工房の表示と同じ数字)。
    掛ける先は既存の倍率(trainDmgTakenMult / trainSpeedMult / trainDmgMult / mastermonGutsRegenMult)なので、
@@ -995,9 +1258,9 @@ function exploreCineUpdate(){
     if(player) player.facingAngle = camState.yaw;
     if(age >= c.dur) exploreIntroSkip();
   } else if(c.kind === 'faint'){
-    const S = EXPLORE_FAINT_SEQ;
-    if(!c.moved && age >= S.card + S.fadeOut){ c.moved = true; exploreFaintRespawn(player); }
-    if(age >= S.card + S.fadeOut + S.black + S.fadeIn){ exploreState.card = null; exploreCineHud(false); }
+    const T = exploreFaintTimes();
+    if(!c.moved && age >= T.black0){ c.moved = true; exploreFaintRespawn(player); }
+    if(age >= T.end){ exploreState.card = null; exploreCineHud(false); }
   }
 }
 // いちばん良かったレア度(持ち帰った素材と、その場で使った拾い物の両方から)
@@ -1026,6 +1289,16 @@ function _exlCineText(text, x, y, size, fill, stroke, font){
   ctx.lineWidth = Math.max(3, size*0.14); ctx.strokeStyle = stroke || 'rgba(0,0,0,0.85)';
   ctx.strokeText(text, x, y);
   ctx.fillStyle = fill; ctx.fillText(text, x, y);
+}
+// 札の暗い帯(左右が透ける横長の帯+上下の細い光の線)。探検開始・力尽き・帰還成功で同じ形
+function _exlCineBand(cy, bandH, lineCol, fill){
+  const W = viewW;
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.18, fill); g.addColorStop(0.82, fill); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, cy - bandH/2, W, bandH);
+  const lg = ctx.createLinearGradient(0, 0, W, 0);
+  lg.addColorStop(0, exploreRgba(lineCol, 0)); lg.addColorStop(0.5, exploreRgba(lineCol, 0.95)); lg.addColorStop(1, exploreRgba(lineCol, 0));
+  ctx.fillStyle = lg; ctx.fillRect(0, cy - bandH/2, W, 2); ctx.fillRect(0, cy + bandH/2 - 2, W, 2);
 }
 function exploreCineDraw(){
   const c = exploreState.card;
@@ -1062,47 +1335,55 @@ function exploreCineDraw(){
     const rule = `制限時間 ${fmtTime(EXPLORE_TIME_LIMIT)} ・ 力尽き${EXPLORE_MAX_FAINTS}回まで ・ 帰還ビーコンで持ち帰り`;
     _exlCineText(rule, cx, cy + bandH*0.34, Math.min(12, H*0.034), '#bff5d2', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
   } else if(c.kind === 'faint'){
-    const S = EXPLORE_FAINT_SEQ;
-    const t1 = S.card, t2 = t1 + S.fadeOut, t3 = t2 + S.black, t4 = t3 + S.fadeIn;
-    // 赤い縁と札(最初の card 秒)
-    if(age < t2){
-      const a = clamp(Math.min(age/0.2, (t2 - age)/0.3), 0, 1);
+    const S = EXPLORE_FAINT_SEQ, T = exploreFaintTimes();
+    // 倒れる(fall)あいだは札を出さない。体が崩れ落ちるのを見せてから札
+    if(age >= T.card0 && age < T.black0){
+      const a = clamp(Math.min((age - T.card0)/0.2, (T.black0 - age)/0.3), 0, 1);
       ctx.globalAlpha = a;
       const vg = ctx.createRadialGradient(cx, H/2, Math.min(W, H)*0.25, cx, H/2, Math.max(W, H)*0.75);
       vg.addColorStop(0, 'rgba(60,0,0,0.25)'); vg.addColorStop(1, 'rgba(90,0,0,0.85)');
       ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
-      const cy = H*0.42;
-      const pop = age < 0.2 ? 1.3 - age/0.2*0.3 : 1;
-      ctx.save(); ctx.translate(cx, cy); ctx.scale(pop, pop);
+      // 「探検開始」「帰還成功」と同じ暗い帯を敷いてから文字を置く(背景に直接乗せない)
+      const cy = H*0.42, bandH = Math.min(128, H*0.36);
+      _exlCineBand(cy, bandH, '#ff5a44', 'rgba(14,2,2,0.82)');
+      const ft = Math.min(46, H*0.12);
+      const pop = (age - T.card0) < 0.2 ? 1.3 - (age - T.card0)/0.2*0.3 : 1;
+      ctx.save(); ctx.translate(cx, cy - bandH*0.2); ctx.scale(pop, pop);
       const tg = ctx.createLinearGradient(0, -24, 0, 24);
       tg.addColorStop(0, '#ffd0c4'); tg.addColorStop(0.5, '#ff5a44'); tg.addColorStop(1, '#a4160c');
       if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = 'rgba(255,40,20,0.8)'; }
-      _exlCineText('力尽きた', 0, 0, Math.min(46, H*0.12), tg, 'rgba(30,0,0,0.92)');
+      _exlCineText('力尽きた', 0, 0, ft, tg, 'rgba(30,0,0,0.92)');
       ctx.restore();
       // 力尽きた回数(残りを丸で)
-      const r = Math.min(9, H*0.024), gap = r*3.2, y = cy + Math.min(46, H*0.12)*0.95;
+      const r = Math.min(8, H*0.022), gap = r*3.2, y = cy + bandH*0.12;
       for(let i=0;i<c.max;i++){
-        const x = cx + (i - (c.max-1)/2)*gap;
+        const x = cx - 30 + (i - (c.max-1)/2)*gap;
         ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
         if(i < c.n){ ctx.fillStyle = '#ff5a44'; ctx.fill(); }
         ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,220,210,0.9)'; ctx.stroke();
       }
-      _exlCineText(`${c.n} / ${c.max}`, cx + (c.max/2)*gap + 26, y, Math.min(16, H*0.045), '#ffe0d8', 'rgba(0,0,0,0.85)', "'Share Tech Mono', monospace");
-      _exlCineText(`ベースキャンプへ運ばれます(あと${Math.max(0, c.max - c.n)}回で探検終了)`, cx, y + Math.min(26, H*0.07), Math.min(13, H*0.036), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+      _exlCineText(`${c.n} / ${c.max}`, cx - 30 + (c.max/2)*gap + 38, y, Math.min(16, H*0.045), '#ffe0d8', 'rgba(0,0,0,0.85)', "'Share Tech Mono', monospace");
+      _exlCineText(`ベースキャンプへ運ばれます(あと${Math.max(0, c.max - c.n)}回で探検終了)`, cx, cy + bandH*0.34, Math.min(13, H*0.036), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
       ctx.globalAlpha = 1;
     }
-    // 暗転 → 明転
+    // 暗転 → 明転(明転しながら、キャンプで起き上がる)
     let k = 0;
-    if(age >= t1 && age < t2) k = (age - t1)/S.fadeOut;
-    else if(age >= t2 && age < t3) k = 1;
-    else if(age >= t3 && age < t4) k = 1 - (age - t3)/S.fadeIn;
+    if(age >= T.fade0 && age < T.black0) k = (age - T.fade0)/S.fadeOut;
+    else if(age >= T.black0 && age < T.wake0) k = 1;
+    else if(age >= T.wake0 && age < T.end) k = 1 - (age - T.wake0)/S.fadeIn;
     if(k > 0){
       ctx.globalAlpha = clamp(k, 0, 1);
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-      if(age >= t2){
-        ctx.globalAlpha = clamp(k, 0, 1) * 0.9;
-        _exlCineText('⛺ ベースキャンプ', cx, H*0.5, Math.min(18, H*0.05), '#7dffb0', 'rgba(0,0,0,0.9)', "'Rajdhani', sans-serif");
-      }
+    }
+    // 運ばれた先の札(暗転の間〜明転の途中まで)。これも暗い帯の上に置く
+    if(age >= T.black0 && age < T.end){
+      const a = age < T.black0 + 0.15 ? (age - T.black0)/0.15 : clamp((T.end - age)/0.35, 0, 1);
+      ctx.globalAlpha = a;
+      const cy = H*0.3, bandH = Math.min(64, H*0.18);
+      _exlCineBand(cy, bandH, '#7dffb0', 'rgba(2,12,8,0.82)');
+      _exlCineText('⛺ ベースキャンプ', cx, cy - bandH*0.12, Math.min(22, H*0.06), '#7dffb0', 'rgba(0,0,0,0.9)', "'Rajdhani', sans-serif");
+      _exlCineText(`無敵 ${EXPLORE_RESPAWN_INVULN_SEC}秒・体力とガッツは全快`, cx, cy + bandH*0.28, Math.min(12, H*0.034), '#e8fff0', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+      ctx.globalAlpha = 1;
     }
   } else if(c.kind === 'outro'){
     const T = {

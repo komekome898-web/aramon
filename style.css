@@ -6727,7 +6727,8 @@ html.narrow-screen #expLootFeed{ width:184px; }
   border-bottom:1px solid rgba(125,255,176,0.35); }
 #exploreResultOverlay[data-tone="lose"] .exr-head{ border-bottom-color:rgba(255,138,90,0.4); }
 .exr-head-main{ flex:1 1 auto; min-width:0; }
-.exr-title{ font-family:'Russo One',sans-serif; font-size:32px; line-height:1.1; letter-spacing:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+/* 見出しは光(text-shadow)を切らない: overflow で隠さず、上下左右に光の分の余白を持つ。見出しの文は短い決まった語だけ */
+.exr-title{ font-family:'Russo One',sans-serif; font-size:32px; line-height:1.1; letter-spacing:2px; white-space:nowrap; padding:2px 8px 2px 0;
   color:#ffe38a; text-shadow:0 0 16px rgba(255,200,80,0.55), 0 2px 0 rgba(0,0,0,0.6); }
 #exploreResultOverlay[data-tone="lose"] .exr-title{ color:#ffb08a; text-shadow:0 0 16px rgba(255,110,60,0.5), 0 2px 0 rgba(0,0,0,0.6); }
 .exr-sub{ font-size:11px; line-height:1.5; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -6739,9 +6740,22 @@ html.narrow-screen .exr-sub{ display:none; }
 /* 左: モンスターと記録 */
 .exr-left{ min-height:0; min-width:0; display:flex; flex-direction:column; gap:6px; }
 .exr-hero{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; }
-.exr-hero-img{ --rc:#7dffb0; flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:flex-end; justify-content:center;
+.exr-hero-fig{ flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:stretch; gap:6px; }
+.exr-hero-img{ --rc:#7dffb0; --sc:transparent; position:relative; flex:1 1 auto; min-width:0; min-height:0; display:flex; align-items:flex-end; justify-content:center;
   background:radial-gradient(ellipse at 50% 70%, var(--rc) 0%, rgba(0,0,0,0) 62%); background-blend-mode:normal; opacity:1; }
-.exr-hero-img img{ max-height:100%; max-width:100%; min-height:0; object-fit:contain; filter:drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
+.exr-hero-img img{ position:relative; z-index:1; max-height:100%; max-width:100%; min-height:0; object-fit:contain; filter:drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
+/* 着て出た装備のセットの色: 体の縁の光と足元の輪(フィールドの足元の輪と同じ色) */
+.exr-hero-img.has-set img{ filter:drop-shadow(0 0 3px var(--sc)) drop-shadow(0 0 8px var(--sc)) drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
+.exr-hero-img.has-set::after{ content:''; position:absolute; left:14%; right:14%; bottom:0; height:18%; max-height:26px; border-radius:50%; pointer-events:none;
+  border:2px solid var(--sc); box-shadow:0 0 10px var(--sc), inset 0 0 8px var(--sc); opacity:0.85; }
+/* 着て出た装備(4部位を縦に)。空きの部位は点線の枠に部位名 */
+/* 2×2(縦持ちでは絵の欄が80px前後まで縮むので、4つ縦には入らない) */
+.exr-hero-gear{ --gi:clamp(28px, calc(6.5 * var(--vh)), 46px); flex:0 0 auto; display:grid; grid-template-columns:repeat(2, var(--gi)); grid-auto-rows:var(--gi);
+  gap:6px; align-content:center; padding:2px 2px 2px 0; }
+.exr-hero-slot{ width:var(--gi); height:var(--gi); display:flex; align-items:center; justify-content:center; }
+.exr-hero-slot .exf-ico.is-mini{ width:calc(var(--gi) - 2px); height:calc(var(--gi) - 2px); border-radius:7px; }
+.exr-hero-slot .exf-slot-empty{ width:calc(var(--gi) - 4px); height:calc(var(--gi) - 4px); font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); }
+.exr-hero-set{ --sc:#ccc; margin-left:6px; font-size:10px; font-weight:800; color:var(--sc); letter-spacing:0; }
 .exr-hero-name{ flex:0 0 auto; font-weight:800; font-size:13px; color:#fff; letter-spacing:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .exr-records{ flex:0 0 auto; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:4px; }
 .exr-rec{ min-width:0; height:32px; display:flex; flex-direction:column; justify-content:center; padding:0 7px; border-radius:7px;
@@ -6882,23 +6896,23 @@ html.narrow-screen .exr-list{ grid-template-columns:repeat(auto-fill, minmax(176
 .exf-body{ flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(214px, 40%); gap:10px; }
 html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 42%); gap:8px; }
 /* 表(行=セット・列=部位)。列の左の細いすき間は武器の派生の線の通り道 */
-.exf-list{ min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:1px 3px 4px 1px; }
+.exf-list{ position:relative; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:1px 3px 4px 1px; }
 .exf-tree{ position:relative; display:grid; grid-template-columns:54px 12px repeat(4, minmax(0,1fr)); grid-auto-rows:auto; row-gap:5px; column-gap:4px; }
-.exf-th{ height:13px; line-height:13px; font-size:9px; font-weight:700; letter-spacing:1px; color:var(--ink-dim); text-align:center; white-space:nowrap; overflow:hidden; }
+.exf-th{ height:14px; line-height:14px; font-size:11px; font-weight:700; letter-spacing:1px; color:var(--ink-dim); text-align:center; white-space:nowrap; overflow:hidden; }
 .exf-th-gap{ display:block; }
 .exf-lines{ position:absolute; left:0; top:0; pointer-events:none; overflow:visible; z-index:0; }
 .exf-line{ fill:none; stroke:rgba(255,255,255,0.22); stroke-width:2; stroke-dasharray:3 3; }
 .exf-line.is-lit{ stroke:#ffc46b; stroke-dasharray:none; }
 .exf-arrow{ fill:rgba(255,255,255,0.3); }
 .exf-arrow.is-lit{ fill:#ffc46b; }
-.exf-rowhead{ --sc:#ccc; min-width:0; height:62px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+.exf-rowhead{ --sc:#ccc; min-width:0; height:66px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
   border-radius:8px 2px 2px 8px; border-left:3px solid var(--sc); background:linear-gradient(90deg, rgba(255,255,255,0.09), rgba(255,255,255,0.01)); }
 .exf-rh-emb{ font-size:15px; line-height:1; }
 .exf-rh-name{ max-width:100%; font-size:11px; font-weight:800; color:var(--sc); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.exf-rh-n{ font-family:'Share Tech Mono',monospace; font-size:9px; color:var(--ink-dim); }
-.exf-cell-empty{ height:62px; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.18);
+.exf-rh-n{ font-family:'Share Tech Mono',monospace; font-size:11px; line-height:14px; color:var(--ink-dim); }
+.exf-cell-empty{ height:66px; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.18);
   border:1px dashed rgba(255,255,255,0.1); border-radius:8px; font-size:11px; }
-.exf-card{ --rc:#e8e8e8; position:relative; z-index:1; min-width:0; height:62px; min-height:var(--tap-pick); flex-shrink:0; cursor:pointer;
+.exf-card{ --rc:#e8e8e8; position:relative; z-index:1; min-width:0; height:66px; min-height:var(--tap-pick); flex-shrink:0; cursor:pointer;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; padding:2px 2px;
   border-radius:8px; border:1px solid rgba(255,255,255,0.12); border-top:2px solid var(--rc);
   background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.015)); color:var(--ink); }
@@ -6908,14 +6922,21 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-card.is-lack{ opacity:0.6; }
 .exf-card.is-lack .exf-ico{ filter:saturate(0.3) brightness(0.75); }
 .exf-card.is-root{ border-style:dashed; border-top-style:solid; }
-.exf-cname{ flex:0 0 auto; max-width:100%; font-weight:700; font-size:10.5px; line-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.exf-cstate{ flex:0 0 auto; max-width:100%; font-size:8.5px; font-weight:700; line-height:12px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exf-cname{ flex:0 0 auto; max-width:100%; font-weight:700; font-size:11px; line-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exf-cstate{ flex:0 0 auto; max-width:100%; font-size:11px; font-weight:700; line-height:14px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* 状態は字だけに頼らない: 枠の色(作れる=緑・装着中=金・所持=青・素材不足=暗く)と右上の角の印 */
+.exf-card.is-craft{ border-color:rgba(125,255,176,0.75); animation:exfCraftPulse 1.8s ease-in-out infinite; }
 .exf-card.is-craft .exf-cstate{ color:#7dffb0; }
-.exf-card.is-craft{ animation:exfCraftPulse 1.8s ease-in-out infinite; }
 @keyframes exfCraftPulse{ 50%{ box-shadow:0 0 12px -2px rgba(125,255,176,0.85); } }
+.exf-card.is-equip{ border-color:#ffc46b; box-shadow:inset 0 0 12px -5px #ffc46b; }
 .exf-card.is-equip .exf-cstate{ color:#ffc46b; }
-.exf-card.is-equip .exf-cstate::before{ content:'✔ '; }
+.exf-card.is-owned{ border-color:rgba(159,209,255,0.6); }
 .exf-card.is-owned .exf-cstate{ color:#9fd1ff; }
+.exf-card::after{ position:absolute; top:3px; right:3px; width:15px; height:15px; border-radius:50%; pointer-events:none;
+  display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:900; line-height:1; }
+.exf-card.is-equip::after{ content:'✔'; color:#2a1402; background:#ffc46b; }
+.exf-card.is-craft::after{ content:'⚒'; color:#062e18; background:#7dffb0; }
+.exf-card.is-owned::after{ content:''; width:7px; height:7px; top:6px; right:6px; background:#9fd1ff; }
 /* 装備のアイコン(部位の形×セットの色の金属)。枠=レア度。紋章はわざと角の外へ出す飾り */
 .exf-ico{ --rc:#e8e8e8; position:relative; flex:0 0 auto; width:40px; height:40px; border-radius:8px;
   border:2px solid var(--rc); background:radial-gradient(circle at 50% 35%, rgba(255,255,255,0.14), rgba(0,0,0,0.55) 75%), #121823;
@@ -6935,14 +6956,27 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-detail{ --rc:#e8e8e8; --sc:#e8e8e8; position:relative; min-height:0; min-width:0; display:flex; flex-direction:column; gap:6px;
   padding:6px 8px 8px; border-radius:10px; border:1px solid var(--rc);
   background:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.25)); box-shadow:inset 0 0 22px -12px var(--rc); }
-.exf-d-stage{ flex:0 0 auto; position:relative; height:clamp(84px, calc(27 * var(--vh)), 210px); display:flex; align-items:center; gap:10px;
+/* 欄の高さ(--stage-h)を先に決め、装備の絵(正方形)と着けた姿(3:4)の幅はそこから決める。名前の列に最低の幅を残す(R1) */
+.exf-d-stage{ --stage-h:clamp(84px, calc(27 * var(--vh)), 210px); flex:0 0 auto; position:relative; height:var(--stage-h); display:flex; align-items:center; gap:10px;
   padding:6px; border-radius:9px; background:linear-gradient(135deg, rgba(0,0,0,0.45), rgba(0,0,0,0.15)); }
-.exf-stage-art{ position:relative; flex:0 0 auto; height:100%; aspect-ratio:1 / 1; display:flex; align-items:center; justify-content:center; }
+.exf-stage-art{ position:relative; flex:0 0 auto; width:min(38%, calc(var(--stage-h) - 12px)); aspect-ratio:1 / 1; display:flex; align-items:center; justify-content:center; }
 .exf-stage-art::before{ content:''; position:absolute; inset:-10%; border-radius:50%; pointer-events:none;
   background:repeating-conic-gradient(from 0deg, var(--rc) 0deg 4deg, rgba(0,0,0,0) 4deg 18deg);
   -webkit-mask-image:radial-gradient(circle, #000 25%, rgba(0,0,0,0) 70%); mask-image:radial-gradient(circle, #000 25%, rgba(0,0,0,0) 70%);
   opacity:0.28; }
 .exf-stage-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+/* 着けた姿(自分のモンスター+着けた後のセットの色の光と足元の輪。フィールドと同じ見せ方)。
+   見た目の欄の右端。絵の高さは欄から決める(R1)。幅が足りなければ飾りなので縮む */
+.exf-stage-fig{ --wc:#ccc; position:relative; flex:0 0 auto; order:3; width:min(26%, calc((var(--stage-h) - 12px) * 0.75)); aspect-ratio:3 / 4; display:flex; align-items:flex-end; justify-content:center; }
+.exf-stage-fig img{ position:relative; z-index:1; max-width:100%; max-height:84%; min-height:0; object-fit:contain; margin-bottom:6%;
+  filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 7px var(--wc)); }
+.exf-stage-fig.is-lit img{ filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 7px var(--wc)) drop-shadow(0 0 14px var(--wc)); }
+.exf-fig-ring{ position:absolute; left:6%; right:6%; bottom:1%; height:17%; border-radius:50%; pointer-events:none;
+  border:2px solid var(--wc); box-shadow:0 0 9px var(--wc), inset 0 0 7px var(--wc); background:radial-gradient(ellipse, rgba(255,255,255,0.08), transparent 70%); }
+.exf-fig-emb{ position:absolute; z-index:2; left:50%; bottom:-3px; transform:translateX(-50%); width:17px; height:17px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; background:#0a0e14; border:1.5px solid var(--wc); }
+.exf-fig-emb:empty{ display:none; }
+.exf-fig-cap{ position:absolute; top:0; left:0; right:0; text-align:center; font-size:9px; font-weight:700; letter-spacing:1px; color:var(--ink-dim); white-space:nowrap; }
 .exf-d-name{ font-weight:800; font-size:16px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 0 10px var(--rc); }
 .exf-d-meta{ display:flex; min-width:0; font-size:10px; color:var(--ink-dim); white-space:nowrap; }
 .exf-d-meta-to{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
@@ -6953,9 +6987,10 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-d-state.is-equip{ background:#b0621c; }
 .exf-d-state.is-owned{ background:#2d6aa8; }
 .exf-d-state.is-lack{ background:#7a2b25; }
-.exf-d-body{ flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px; }
+.exf-d-body{ position:relative; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px; }
 .exf-sec-label{ margin:5px 0 2px; font-size:9px; letter-spacing:1px; color:#ffb870; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .exf-sec-label:first-child{ margin-top:0; }
+.exf-sec-label.is-short{ color:#ff8a6a; font-weight:800; }
 .exf-cmp, .exf-setrow, .exf-matrow{ display:flex; align-items:center; gap:6px; min-height:19px; font-size:11px; }
 .exf-cmp > span:first-child{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .exf-cmp-v{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--ink-dim); white-space:nowrap; }
@@ -6975,9 +7010,11 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-mat-n{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink-dim); }
 .exf-matrow.is-ok .exf-mat-n b{ color:#7dffb0; }
 .exf-matrow.is-short .exf-mat-n b{ color:#ff6b5a; }
-.exf-src{ margin:-1px 0 3px 24px; font-size:9px; line-height:1.35; color:#ffb870; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* 入手先は11pxで2行まで(1行に詰めて切らない)。それでも入らない分はこの要素自身が「…」で切る */
+.exf-src{ margin:0 0 4px 24px; font-size:11px; line-height:14px; max-height:28px; color:#ffb870; white-space:normal; overflow:hidden;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .exf-note{ font-size:11px; line-height:1.5; color:var(--ink-dim); }
-.exf-d-actions{ flex:0 0 auto; }
+.exf-d-actions{ flex:0 0 auto; margin-top:auto; }
 .exf-act-btn{ width:100%; min-height:var(--tap-main); flex-shrink:0; border-radius:9px; cursor:pointer;
   font-family:'Rajdhani',sans-serif; font-weight:800; font-size:15px; letter-spacing:1px;
   color:#e8eef5; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.3); }
@@ -7019,7 +7056,9 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-fx-text{ position:absolute; left:0; right:0; top:calc(36% + 60px); display:flex; flex-direction:column; align-items:center; gap:1px;
   opacity:0; animation:exfTextIn .5s ease-out 1.65s both; pointer-events:none; }
 @keyframes exfTextIn{ 0%{ opacity:0; transform:translateY(8px); } 100%{ opacity:1; transform:none; } }
-.exf-fx-done{ font-family:'Russo One',sans-serif; font-size:24px; letter-spacing:2px; color:var(--rc); text-shadow:0 0 14px var(--rc); }
+.exf-fx-done{ font-family:'Russo One',sans-serif; font-size:24px; letter-spacing:2px; color:var(--rc); padding:0 16px; border-radius:6px;
+  background:radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0.6), rgba(0,0,0,0) 72%);
+  text-shadow:1px 1px 0 #1e1000, -1px 1px 0 #1e1000, 1px -1px 0 #1e1000, -1px -1px 0 #1e1000, 0 2px 0 #1e1000, 0 0 3px #000, 0 0 16px var(--rc); }
 .exf-fx-name{ font-weight:800; font-size:15px; color:#fff; white-space:nowrap; }
 .exf-fx-rar{ font-size:10px; font-weight:800; letter-spacing:2px; color:var(--rc); }
 .exf-fx-chgs{ margin-top:3px; display:flex; flex-wrap:wrap; justify-content:center; gap:3px 10px; max-width:92%; font-size:11px; color:var(--ink-dim); }

@@ -1623,6 +1623,7 @@ function exploreFootY(e){ return e.radius*0.85; }
    ・ボス: 輪郭の外側の光(常時はボスの色。怒り中は赤黒い光)+足元の赤い熱 */
 function exploreDrawMonsterUnder(e, uiMult, p){
   if(!e.alive) return;
+  if(e.isPlayer){ exploreDrawGearAura(e, p); return; }   // 自分: 着けている装備のセットの色のオーラと足元の紋章(explore_loot.js)
   // 足元の輪は気づいて向かってくる個体だけ(全員に付けると盤上の駒に見える=批評指摘)
   if(e.isExploreWild && p && (e.exState === 'chase' || e.exState === 'alert')) exploreDrawFootRing(e, p);
   if(!e.isExploreBoss || e.exState === 'dying' || e.exState === 'stagger' || e.exState === 'sleep') return;
@@ -1710,6 +1711,7 @@ function exploreTintSprite(spr, color){
 /* 絵の直後に重ねる物(姿勢の変形の内側。render.js の drawMonster から)。
    ・ボス: 常時の色味(ボスの色を薄く乗算)/ 討伐で崩れ落ちたあと色が抜ける / 怒り中は赤い目の光と尾 */
 function exploreDrawMonsterTint(e, img, L){
+  if(e.isPlayer){ explorePlayerTint(e, img, L); return; }   // 自分: 力尽きて色が抜ける(explore_loot.js)
   if(!e.isExploreBoss || !img || !L) return;
   const def = exploreBossDef(e);
   const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
@@ -1820,6 +1822,7 @@ function exploreBeginPose(e){
 }
 // 姿勢の値だけを返す(描画と当たりの背の両方が読む。null = 立った姿勢のまま)
 function exploreComputePose(e){
+  if(e && e.isPlayer && game.explore) return explorePlayerPose(e);   // 自分: 力尽きて倒れる/キャンプで起き上がる(explore_loot.js)
   if(!e || !(e.isExploreBoss || e.isExploreWild) || !e.alive) return null;
   const now = matchTime, r = e.radius;
   let sy = 1, sx = 1, tilt = 0, bob = 0, alpha = 1, shx = 0;
@@ -2585,7 +2588,7 @@ function exploreOnPlayerFaint(p, killer){
      札と暗転は explore_loot.js(exploreFaintStart / exploreCineDraw) */
   p.hp = 1;
   p.exploreAsleep = true;
-  p.exploreInvulnUntil = matchTime + EXPLORE_FAINT_SEQ.card + EXPLORE_FAINT_SEQ.fadeOut + EXPLORE_FAINT_SEQ.black + EXPLORE_RESPAWN_INVULN_SEC;
+  p.exploreInvulnUntil = matchTime + EXPLORE_FAINT_SEQ.fall + EXPLORE_FAINT_SEQ.card + EXPLORE_FAINT_SEQ.fadeOut + EXPLORE_FAINT_SEQ.black + EXPLORE_RESPAWN_INVULN_SEC;
   exploreFaintStart();
   playSe('sad');
 }
@@ -2770,6 +2773,7 @@ function exploreFinish(reason){
     best: exploreBestRarity(items),
     element: player ? player.element : game.selectedElement,
     name: player ? player.name : '',
+    gear: (player && player.exploreGear) ? { ...player.exploreGear.equip } : {},   // 着て出た装備(報酬画面でモンスターの横に並べる)
   };
   const ehud = document.getElementById('exploreHud');
   if(ehud) ehud.classList.add('hidden');

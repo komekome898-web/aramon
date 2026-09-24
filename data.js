@@ -6355,7 +6355,7 @@ const EXPLORE_FAIL_KEEP_MIN       = 1;     // ただし素材の種類ごとに�
 // 演出の尺(秒)。出発の札とカメラの一周 / 終わった直後のフィールドの札 / 力尽き(札→暗転→キャンプで明転)
 const EXPLORE_INTRO_SEC           = 2.6;   // 出発: 「探検開始」の札を出し、カメラがキャンプを回る(この間は動けない)
 const EXPLORE_OUTRO_SEC           = 1.6;   // 終了: フィールドに「帰還成功/時間切れ/力尽きた」の札を出してから報酬画面へ
-const EXPLORE_FAINT_SEQ           = { card:1.1, fadeOut:0.35, black:0.35, fadeIn:0.7 };   // 力尽き: 札→暗転→(キャンプへ運ぶ)→明転
+const EXPLORE_FAINT_SEQ           = { fall:0.5, card:1.1, fadeOut:0.35, black:0.35, fadeIn:0.8 };   // 力尽き: 倒れる→札→暗転→(キャンプへ運ぶ)→明転(起き上がる)
 const EXPLORE_LAST_STORAGE_KEY    = 'aramon_explore_last_v1';   // 前回の持ち帰り(ロビー右列に出す。端末ごとの表示なので同期しない)
 const EXPLORE_WORLD_SCALE         = 1;     // フィールドの広さ(通常試合と同じ 18100 四方)
 const EXPLORE_RESPAWN_INVULN_SEC  = 3;     // ベースキャンプで復活した直後の無敵(秒)
@@ -6719,7 +6719,7 @@ const EXPLORE_CRATE_SCATTER       = [70, 190];     // 中身が散らばる距�
 const EXPLORE_CRATE_FLIGHT_SEC    = [0.55, 0.85];  // 中身が弾けて地面に落ちるまでの秒数(最小・最大)
 const EXPLORE_CRATE_BURST_GAP     = 0.07;   // 中身が1個ずつ飛び出す間隔(秒)
 const EXPLORE_CRATE_ITEMS         = { common:[3,4], rare:[3,4], epic:[4,5], legendary:[5,6] };   // 1箱の中身の数(最小・最大)
-const EXPLORE_CRATE_SIZE          = { w:66, d:46, h:36, lid:9 };   // 箱の寸法(ワールド単位。見た目だけ)
+const EXPLORE_CRATE_SIZE          = { w:66, d:46, h:36, lid:13 };   // 箱の寸法(ワールド単位。見た目だけ)
 const EXPLORE_CRATE_BIG_SCALE     = { epic:1.4, legendary:1.4 };   // 紫・金の箱はこの倍率で大きい(レア度の色の金属の蓋と角飾り)
 const EXPLORE_CRATE_BEACON_H      = { epic:560, legendary:760 };   // 閉じた紫・金の箱の上に立つ光の高さ(1500以上離れても見える)
 /* 地面にそのまま落ちている品(箱の外)。拾う物は補給箱と同じ光の柱とレア度で見せる(exploreSpawnDrop)。
@@ -6762,9 +6762,12 @@ const EXPLORE_CRATE_LOOT = {
 };
 const EXPLORE_CRATE_HEAD = { common:{mat:'common'}, rare:{mat:'rare'}, epic:{mat:'epic'}, legendary:{mat:'legendary'} };
 // 光の柱(落ちている品の上に立つ。遠くから価値が分かる)。高さ・太さはワールド単位
-const EXPLORE_PILLAR_HEIGHT       = { common:150, rare:240, epic:340, legendary:480 };
-const EXPLORE_PILLAR_WIDTH        = { common:7,   rare:9,   epic:11,  legendary:14 };
-const EXPLORE_PILLAR_MIN_PX       = 1.6;    // 遠くでも柱がこの太さ(画面px)より細くならない
+// 光の柱はレア度で段階的に太く高く(金がいちばん太く、根元に輪)。見ただけで価値の順が分かるように
+const EXPLORE_PILLAR_HEIGHT       = { common:210, rare:320, epic:450, legendary:640 };
+const EXPLORE_PILLAR_WIDTH        = { common:8,   rare:12,  epic:17,  legendary:25 };
+const EXPLORE_PILLAR_MIN_PX       = { common:2.2, rare:2.8, epic:3.6, legendary:4.8 };   // 遠くでも柱がこの太さ(画面px)より細くならない
+const EXPLORE_DROP_BADGE          = { common:15, rare:17, epic:20, legendary:25 };   // 落ちている品のしるし(アイコン)の大きさ(ワールド単位の半径)
+const EXPLORE_DROP_FLOAT          = 34;     // しるしを地面から浮かせる高さ(ワールド単位)
 const EXPLORE_PILLAR_VIEW         = 6500;   // 光の柱が見える距離
 const EXPLORE_PILLAR_RING_DEPTH   = 950;    // これより近いと地面に輪を出す
 const EXPLORE_DROP_ITEM_VIEW      = 1700;   // 品物そのもの(アイコン)を描く距離
@@ -7006,6 +7009,18 @@ function exploreGearTotals(equip){
     sets.push({ set:id, n:count[id], active, next: def.bonus.find(b=> count[id] < b.n) || null });
   }
   return { fx, sets };
+}
+/* 着けている装備でいちばん多いセット(見た目の色に使う。フィールドの足元の光・報酬画面・工房の「着けたときの姿」)。
+   同じ数なら発動しているセット効果が多い方、それも同じなら表の先(EXPLORE_GEAR_SLOTS の並び)。何も着けていなければ null
+   返り値: { set, n, active(発動しているセット効果の数) } */
+function exploreGearMainSet(equip){
+  const tot = exploreGearTotals(equip);
+  let best = null;
+  for(const r of tot.sets){
+    const cand = { set:r.set, n:r.n, active:r.active.length };
+    if(!best || cand.n > best.n || (cand.n === best.n && cand.active > best.active)) best = cand;
+  }
+  return best;
 }
 // 効果を「体力+8%・被ダメ-3%」の形の短い文にする(表の並び順)。short=false で長い言葉
 function exploreGearFxText(fx, short){

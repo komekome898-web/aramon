@@ -295,19 +295,28 @@ const CUTS = [
       for(let i=0;i<27;i++) update(1/30);
       render();
     } },
-  { name:'faint_card', kind:'result', desc:'力尽き: 「力尽きた 1/3」の札(暗転する前)', keepOutro:true,
+  { name:'faint_fall', kind:'result', desc:'力尽き: 札の前に倒れる動き(傾いて沈み、色が抜ける。0.35秒時点)', keepOutro:true,
     prep: ()=>{
       player.exploreInvulnUntil = 0;
       exploreOnPlayerFaint(player, null);
-      for(let i=0;i<14;i++) update(1/30);
+      const n = Math.round(EXPLORE_FAINT_SEQ.fall * 0.7 * 30);
+      for(let i=0;i<n;i++) update(1/30);
       render();
     } },
-  { name:'faint_wake', kind:'result', desc:'力尽き: 暗転のあと、ベースキャンプで明転するところ', keepOutro:true,
+  { name:'faint_card', kind:'result', desc:'力尽き: 「力尽きた 1/3」の札(倒れたあと・暗転する前)', keepOutro:true,
+    prep: ()=>{
+      player.exploreInvulnUntil = 0;
+      exploreOnPlayerFaint(player, null);
+      const n = Math.round((EXPLORE_FAINT_SEQ.fall + 0.45) * 30);
+      for(let i=0;i<n;i++) update(1/30);
+      render();
+    } },
+  { name:'faint_wake', kind:'result', desc:'力尽き: 暗転のあと、ベースキャンプで明転しながら起き上がるところ', keepOutro:true,
     prep: ()=>{
       player.exploreInvulnUntil = 0;
       exploreOnPlayerFaint(player, null);
       const S = EXPLORE_FAINT_SEQ;
-      const n = Math.round((S.card + S.fadeOut + S.black + S.fadeIn*0.45) * 30);
+      const n = Math.round((S.fall + S.card + S.fadeOut + S.black + S.fadeIn*0.45) * 30);
       for(let i=0;i<n;i++) update(1/30);
       render();
     } },
@@ -436,6 +445,9 @@ function pageTools(){
     window.__shotSeed(seed);
     window.__shotMute();
     game.selectedElement = element; game.selectedMastermonKey = null;
+    /* 着て出る装備を決めておく(前のカットの工房の結果を持ち越さない)。大角3つ=セット効果が出ている状態。
+       武器は持たせない(狙撃の欄が全カットに出ないように。狙撃のカットは自分で持たせる) */
+    saveExploreGear({ owned:['horn_head','horn_body','horn_arms'], equip:{ head:'horn_head', body:'horn_body', arms:'horn_arms' } });
     exploreStart();
     // 出発の札とカメラの一周(explore_loot.js)は飛ばす。見たいカット(depart)は自分で始め直す
     if(typeof exploreIntroSkip==='function') exploreIntroSkip();
