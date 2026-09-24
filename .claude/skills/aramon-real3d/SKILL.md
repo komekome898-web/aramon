@@ -146,6 +146,7 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - 地図の入り組み: 峠は `{ p, half, blend, floor, slot, tunnel }` で書ける(`exploreGapApply`)。`floor`=そこまでしか下げない尾根越えの道、`slot`+`tunnel`=細い切り通しに岩の天井を架けた洞窟(天井は `buildTunnels`・壁の当たりは world.js が切り通しの両脇に円を並べる)。番号付きのエリアは `EXPLORE_FIELD_LAYOUT.areas` と `exploreAreaAt(x,y)`(HUD の札・地図が読む)。
 - 岩肌と雪は**画素で塗る**(近景 `EX_MAP_CHUNK` / 遠景 `buildFarTerrain`。傾き+低周波ノイズ)。頂点色で塗ると粗い三角形の境目がノコギリ歯の模様になった。遠景の高い所は方角(地域)で塗り分ける(火山=玄武岩+赤い照り返し / 密林=森)。
 - 石壁は角を落とした石4通りの InstancedMesh(全部の壁で描画4回)。溶岩の川は40単位ごとに地形へ沿わせ、溜まり・川の縁に黒い殻の土手(`buildLavaRims`)と陽炎。凍った湖は縁をノイズで透かして雪へ溶かす。
+- 法線マップは常に真上からのUVで作るので、急斜面の縦縞は**世界の傾きでなく見え方**(法線マップの振幅・`normalScale`・視線とのなす角 `exFace`)で抑える。傾きだけで判定すると、緩い丘でも近くから横に見ると同じ縞が出た(2026-09-24)。
 
 ## 弾道(上下のねらい)
 
