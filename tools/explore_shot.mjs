@@ -251,7 +251,9 @@ const CUTS = [
       _expHud.region.id = null;   // キャンプから草原へ入った扱いにして、地域の名前の札を出す
       const p = clearObstaclePoint(c.x + c.r*0.3, c.y + c.r*0.05, 80);
       const nest = exploreState.bosses.find(r=> r.bossId==='gandrock');
-      return { x:p.x, y:p.y, yaw:Math.atan2(nest.nestY - p.y, nest.nestX - p.x) + 0.3, pitch:0.1, warm:0.2,
+      /* pitch 0.2(以前は0.1): 自分の足元の装備オーラの紋章(explore_loot.js)が近すぎて
+         画面の下端で半分切れていた(第3周の指摘)。見下ろす角度を少し増やして足元を画面の内側へ */
+      return { x:p.x, y:p.y, yaw:Math.atan2(nest.nestY - p.y, nest.nestX - p.x) + 0.3, pitch:0.2, warm:0.2,
                after: ()=>{
                  exploreUpdateHud();
                  // 地域の札は実時間で2.8秒の動き。撮影(ソフトウェア描画)が遅いと撮る前に消えるので、出きった所で止める
@@ -280,7 +282,8 @@ const CUTS = [
       const b = exploreState.beacon, s = exploreState.spawn;
       matchTime = 700;
       const p = { x:b.x + (s.x - b.x)*0.25, y:b.y + (s.y - b.y)*0.25 };
-      return { x:p.x, y:p.y, yaw:Math.atan2(b.y - p.y, b.x - p.x) + 0.6, pitch:0.12, warm:0,
+      // pitch 0.22(以前は0.12): 同じ理由(足元の装備オーラの紋章が画面の下端で切れていた)
+      return { x:p.x, y:p.y, yaw:Math.atan2(b.y - p.y, b.x - p.x) + 0.6, pitch:0.22, warm:0,
                after: ()=>{ exploreState.beaconInside = true; exploreState.beaconHold = EXPLORE_BEACON_HOLD_SEC*0.55; exploreUpdateHud(); } };
     } },
   { name:'map', kind:'field', desc:'全体地図(ミニマップをタップ。地域・尾根・峠・道・ボスの巣・近くの補給箱)',
@@ -678,7 +681,7 @@ if(flag('measure')){
     // 狙撃銃を持った状態(右列に「狙撃」ボタンが出る=いちばん詰まった形)
     await page.evaluate(()=>{ if(typeof sniperGive==='function') try{ sniperGive(player, 'longbow'); }catch(e){} });
     const res = {};
-    for(const cutName of ['hud','hud_boss','map']){
+    for(const cutName of ['hud','hud_boss','hud_beacon','map']){
       const c = CUTS.find(x=> x.name === cutName);
       await page.evaluate((src)=> window.__shotField(src), c.at.toString());
       await page.waitForTimeout(250);
@@ -716,6 +719,18 @@ if(flag('measure')){
         out.objRows = document.querySelectorAll('#expObjRows .exp-obj-row').length;
         out.objSub = !!document.querySelector('#expObjRows .exp-obj-sub');
         out.killFeedOff = document.getElementById('hud').classList.contains('exp-kf-off');
+        /* 探検の技パネル(#movePanel。右下へ移した)が自機の外枠(explorePlayerRect。ボス担当の関数)と
+           重なっていないかを数字で出す(第3周の指摘: 縦持ち3サイズで確かめること) */
+        if(R.movePanel && !mapOpen && typeof explorePlayerRect === 'function'){
+          const pr = explorePlayerRect();
+          if(pr){
+            const mp = R.movePanel;
+            const ox = Math.min(mp.x + mp.w, pr.x + pr.w) - Math.max(mp.x, pr.x);
+            const oy = Math.min(mp.y + mp.h, pr.y + pr.h) - Math.max(mp.y, pr.y);
+            out.moveVsSelf = { move:[mp.x, mp.y, mp.w, mp.h].map(Math.round), self:[pr.x, pr.y, pr.w, pr.h].map(Math.round),
+              overlapPx: (ox > 0 && oy > 0) ? Math.round(Math.min(ox, oy)) : 0 };
+          }
+        }
         return out;
       }, [MINE, OTHERS, FONTS]);
       if(cutName === 'map') await page.evaluate(()=> exploreCloseMap());
@@ -734,6 +749,11 @@ if(flag('measure')){
       if(r.boss){
         console.log(`    ボスの帯 y=${r.boss.hudTop}〜${r.boss.hudBottom} (${r.boss.full ? '二つ名あり' : '1行'}) / ボス本体 y=${r.boss.bodyTop}〜${r.boss.bodyBottom}`);
         if(r.boss.over > 0){ bad++; console.log(`    ✗ ボスの帯がボス本体に ${r.boss.over}px 重なっている`); } else console.log('    ✓ ボスの帯はボス本体に重なっていない');
+      }
+      if(r.moveVsSelf){
+        console.log(`    技パネル ${r.moveVsSelf.move.join(',')} / 自機の外枠 ${r.moveVsSelf.self.join(',')}`);
+        if(r.moveVsSelf.overlapPx > 0){ bad++; console.log(`    ✗ 技パネルが自機の外枠に ${r.moveVsSelf.overlapPx}px 重なっている`); }
+        else console.log('    ✓ 技パネルは自機の外枠に重なっていない');
       }
       if(r.outside.length){ bad++; console.log(`    ✗ #appRoot の外: ${r.outside.join(', ')}`); } else console.log('    ✓ #appRoot の外へ出ていない');
       if(r.overlap.length){ bad++; console.log(`    ✗ 重なり: ${r.overlap.join(', ')}`); } else console.log('    ✓ 他のHUDと重なっていない');

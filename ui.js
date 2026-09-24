@@ -6286,20 +6286,22 @@ function exploreShowResult(res){
   const craftEl = document.getElementById('exploreResultCraftable');
   if(forgeBtn || craftEl){
     const gear = loadExploreGear(), stash = loadExploreStash();
-    const ready = Object.keys(EXPLORE_GEAR).filter(k=> exploreGearStateOf(k, gear, stash)==='craft');
-    const n = ready.length;
+    /* この素材で作れる装備: まだ持っていない物のうち、①今すぐ作れる(ok) か ②今回持ち帰った素材を使う、のどちらか。
+       「今すぐ作れる」の数(見出し・ボタン)は必ずこの一覧そのものから出す ―― 別々に数えていたため、
+       ヘッダー/ボタンは「今すぐ作れる1」なのに一覧の全件が「あと〜」になる食い違いがあった(批評指摘)。
+       押すとその装備を選んだ工房が開く(素材→装備の導線)。入るだけ並べ、入らない分は「ほかN件」(exploreFitCraftCards) */
+    const keptKeys = items.filter(it=> it.kept > 0).map(it=> it.key);
+    const cands = Object.keys(EXPLORE_GEAR).filter(k=> !EXPLORE_GEAR[k].root && !gear.owned.includes(k))
+      .map(k=>{
+        const chk = exploreGearCraftCheck(k, stash, gear);
+        const usesKept = Object.keys(EXPLORE_GEAR[k].mats || {}).some(m=> keptKeys.includes(m));
+        const short = chk.rows.filter(r=> r.have < r.need);
+        return { k, ok: chk.ok, fromOk: chk.fromOk, usesKept, short, lack: short.reduce((s2, r)=> s2 + r.need - r.have, 0) + (chk.fromOk ? 0 : 9) };
+      })
+      .filter(c=> c.ok || c.usesKept)
+      .sort((a, b)=> (b.ok - a.ok) || (a.lack - b.lack));
+    const n = cands.filter(c=> c.ok).length;
     if(craftEl){
-      /* この素材で作れる装備: 持ち帰った素材を使う装備(まだ持っていない物)。作れる物が先、次に足りない数の少ない順。
-         押すとその装備を選んだ工房が開く(素材→装備の導線)。入るだけ並べ、入らない分は「ほかN件」(exploreFitCraftCards) */
-      const keptKeys = items.filter(it=> it.kept > 0).map(it=> it.key);
-      const cands = Object.keys(EXPLORE_GEAR).filter(k=> !EXPLORE_GEAR[k].root && !gear.owned.includes(k)
-          && Object.keys(EXPLORE_GEAR[k].mats || {}).some(m=> keptKeys.includes(m)))
-        .map(k=>{
-          const chk = exploreGearCraftCheck(k, stash, gear);
-          const short = chk.rows.filter(r=> r.have < r.need);
-          return { k, ok: chk.ok, fromOk: chk.fromOk, short, lack: short.reduce((s2, r)=> s2 + r.need - r.have, 0) + (chk.fromOk ? 0 : 9) };
-        })
-        .sort((a, b)=> (b.ok - a.ok) || (a.lack - b.lack));
       craftEl.classList.toggle('hidden', !cands.length);
       craftEl.innerHTML = cands.length ? `<div class="exr-craft-label">⚒️ この素材で作れる装備${n ? `<em>今すぐ作れる ${n}</em>` : ''}</div>`
         + `<div class="exr-craft-list" id="exploreResultCraftList">${cands.map(c=>{
@@ -6595,23 +6597,47 @@ function exploreForgeScrollToSel(center){
 }
 /* 詳細の本文(送れる所)の高さを行の区切りに合わせる(比較の行が途中で切れた=批評指摘)。
    使える高さ(R1)のうち、最後まで入る行の下端までにする。見出しだけが最後に残るなら、その見出しも次へ送る。
-   ボタンは .exf-d-actions の margin-top:auto で下に付いたまま */
+   ボタンは .exf-d-actions の margin-top:auto で下に付いたまま。
+   **必要な素材(#exploreForgeDNeed)を先に確保し、能力差分(#exploreForgeDBody)はその残りへ収める**
+   (CSSのflex:0 0 autoだけでは縦の低い端末で箱全体がスクロールに逃げていた=layout_test指摘。
+   ここでJSが実測して両方の高さを明示的に決め、箱(.exf-detail)からあふれさせない=R1)。
+   必要な素材そのものが残りに入りきらないときだけ、その内側でスクロールする(能力差分は0まで詰めてよい)。 */
 function exploreForgeSnapBody(){
+  const det = document.getElementById('exploreForgeDetail');
+  const stage = document.getElementById('exploreForgeDStage');
   const body = document.getElementById('exploreForgeDBody');
-  if(!body) return;
+  const need = document.getElementById('exploreForgeDNeed');
+  const actions = document.getElementById('exploreForgeDActions');
+  if(!det || !body) return;
   body.style.height = ''; body.style.flex = '';
-  const avail = body.clientHeight;
-  if(!(avail > 0) || body.scrollHeight <= avail + 1) return;
+  if(need){ need.style.height = ''; need.style.flex = ''; }
+  const csDet = getComputedStyle(det);
+  // clientHeightはpadding込み(border-box)。flexの子が使える高さはpaddingの内側だけ(+6pxあふれた原因)
+  const total = det.clientHeight - (parseFloat(csDet.paddingTop) || 0) - (parseFloat(csDet.paddingBottom) || 0);
+  if(!(total > 0)) return;
+  const gapPx = parseFloat(csDet.rowGap) || 0;
+  // 空の.exf-d-needは:emptyでdisplay:noneになる(すき間に数えない)
+  const hasNeed = !!(need && need.children.length);
+  const nGaps = 1 + (hasNeed ? 1 : 0) + (actions ? 1 : 0);   // stage-body / body-need / need-actions のうち存在する組
+  const fixed = (stage ? stage.offsetHeight : 0) + (actions ? actions.offsetHeight : 0) + gapPx*nGaps;
+  const avail = Math.max(0, total - fixed);
+  const needNatural = hasNeed ? need.scrollHeight : 0;
+  const needH = Math.min(needNatural, avail);
+  if(hasNeed && needNatural > avail + 1){ need.style.flex = '0 0 auto'; need.style.height = `${needH}px`; }
+  const bodyAvail = Math.max(0, avail - needH - (hasNeed ? 0 : 0));
+  if(body.scrollHeight <= bodyAvail + 1){
+    body.style.flex = '0 0 auto'; body.style.height = `${bodyAvail}px`;
+    return;
+  }
   const kids = Array.from(body.children);
-  let cut = 0;
+  let cut = -1;
   for(let i=0;i<kids.length;i++){
     const b = kids[i].offsetTop + kids[i].offsetHeight;
-    if(b > avail) break;
+    if(b > bodyAvail) break;
     cut = i;
   }
-  while(cut > 0 && kids[cut].classList.contains('exf-sec-label')) cut--;
-  const h = kids[cut].offsetTop + kids[cut].offsetHeight + 1;
-  if(h < 24) return;
+  while(cut >= 0 && kids[cut].classList.contains('exf-sec-label')) cut--;
+  const h = cut >= 0 ? kids[cut].offsetTop + kids[cut].offsetHeight + 1 : 0;
   body.style.flex = '0 0 auto';
   body.style.height = `${h}px`;
 }
@@ -6736,8 +6762,10 @@ function renderExploreForgeDetail(gear, stash){
     + (from.length ? `<span class="exf-d-from">派生元 ${from.map(f=> EXPLORE_GEAR[f].name).join(' / ')}</span>` : '')
     + `<span class="exf-d-state is-${st}">${EXPLORE_GEAR_STATE_LABEL[st]}</span></span>`;
   if(game && game.selectedElement) exploreRenderWornFigure(document.getElementById('exploreForgeFig'), game.selectedElement, { ...gear.equip, [g.slot]: key }, { padX:0.02, top:0.16, bottom:0.1 });
+  const needEl = document.getElementById('exploreForgeDNeed');
   if(g.root){
     body.innerHTML = `<div class="exf-note">${g.note || ''}</div>`;
+    if(needEl) needEl.innerHTML = '';
     btn.className = 'exf-act-btn is-root'; btn.disabled = true; btn.textContent = '補給箱で拾う';
     exploreForgeSnapBody();
     return;
@@ -6776,9 +6804,10 @@ function renderExploreForgeDetail(gear, stash){
   const cmpHtml = `<div class="exf-sec-label">${cur ? `今の装備(${exploreGearShortName(gear.equip[g.slot])}) → これ` : '今の装備(空き) → これ'}</div>${cmpRows}`
     + `<div class="exf-sec-label">着けた後の探検での合計</div>${totRows}`;
   const matHtml = needMats ? `<div class="exf-sec-label${st==='lack' ? ' is-short' : ''}">${st==='lack' ? '足りない素材と入手先' : '必要な素材(手持ち/必要)'}</div>${fromRow}${matRows}` : '';
-  // 素材が足りないときは「何が足りないか・どこで取れるか」を先に(比較は作れるようになってから読めばよい)
-  body.innerHTML = (st==='lack' ? matHtml + cmpHtml : cmpHtml + matHtml)
-    + `<div class="exf-sec-label">${set.name}セット効果</div>${setRows}`;
+  /* 必要な素材は「作る」ボタンの直上(#exploreForgeDNeed)に常時表示し、削らない(R3。批評指摘=縦持ちで消えていた)。
+     能力差分・セット効果(#exploreForgeDBody)は縦が足りないとき先に詰める側 */
+  if(needEl) needEl.innerHTML = matHtml;
+  body.innerHTML = cmpHtml + `<div class="exf-sec-label">${set.name}セット効果</div>${setRows}`;
   btn.className = 'exf-act-btn is-' + st;
   btn.disabled = (st==='lack') || exploreForgeState.busy;
   btn.textContent = st==='craft' ? '⚒️ 作る' : st==='lack' ? (chk.fromOk ? '素材が足りません' : '派生元の武器が必要') : st==='owned' ? '装着する' : '外す';

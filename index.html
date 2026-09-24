@@ -517,7 +517,9 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <div class="exf-detail" id="exploreForgeDetail">
         <div class="exf-d-stage" id="exploreForgeDStage"></div>
         <div class="exf-d-body" id="exploreForgeDBody"></div>
-        <div class="exf-d-actions"><button id="exploreForgeActBtn" class="exf-act-btn">作る</button></div>
+        <!-- 必要な素材は「作る」ボタンの直上に常時表示(削らない=R3)。能力差分(exf-d-body)側を先に詰める -->
+        <div class="exf-d-need" id="exploreForgeDNeed"></div>
+        <div class="exf-d-actions" id="exploreForgeDActions"><button id="exploreForgeActBtn" class="exf-act-btn">作る</button></div>
       </div>
     </div>
     <!-- 作ったときの演出(槌→火花→完成の光→「装備する/あとで」)。箱の中に重ねて出す -->
@@ -688,6 +690,9 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
   <div id="topLeft">
     <div class="hud-panel" id="hpPanel">
       <div class="who">
+        <!-- 顔絵(探検だけ丸く出す。他モードは常にdisplay:noneのまま=見た目は変わらない)。
+             render.js の updateHUD が data-base-path を持たせてから imgSrcFor() で src を入れる -->
+        <img id="hpFaceImg" class="hp-face" alt="" data-ext-idx="0" onerror="handleMonsterImgError(this, this.dataset.basePath)">
         <span class="nm" id="hudName">-</span>
       </div>
       <span class="elTag" id="hudElTag">-</span>
@@ -782,8 +787,9 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
     <!-- 見出し: 残り時間 / 💫力尽きてよい残り / 🎒拾った素材の数 / ◆帰還ビーコンまでの距離(目標の行が削られても残る) -->
     <div class="exp-obj-head">
       <span class="exp-obj-time" id="expObjTime">15:00</span>
-      <span class="exp-obj-chip"><i class="exp-obj-ic">💫</i><span class="exp-obj-faint" id="expObjFaint"></span></span>
-      <span class="exp-obj-chip"><i class="exp-obj-ic">🎒</i><span class="exp-obj-bag" id="expObjBag">0</span></span>
+      <!-- 絵文字は色つきの絵になって単色のHUDから浮くので、色がCSSで決まる記号にする(批評指摘) -->
+      <span class="exp-obj-chip"><i class="exp-obj-ic exp-obj-ic-faint">✦</i><span class="exp-obj-faint" id="expObjFaint"></span></span>
+      <span class="exp-obj-chip"><i class="exp-obj-ic exp-obj-ic-bag">▤</i><span class="exp-obj-bag" id="expObjBag">0</span></span>
       <span class="exp-obj-chip exp-obj-beacon" id="expObjBeaconWrap"><i class="exp-obj-ic exp-obj-ic-beacon"></i><span id="expObjBeacon">0m</span></span>
     </div>
     <div class="exp-obj-rows" id="expObjRows"></div>

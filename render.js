@@ -8814,7 +8814,19 @@ function updateHUD(){
     dot.classList.toggle('unlocked', t<=ve.moveTierUnlocked);
     dot.classList.toggle('selected', t===ve.moveTierSelected);
   }
-  document.getElementById('moveIcon').innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
+  /* 探検だけ、技の色の丸に「技の属性の記号」(mv.icon。技ごとに元から持っている絵文字)を乗せる。
+     以前は色だけの丸で「仮置きの丸」に見えていた(批評指摘)。他モードは今までの丸のまま変えない。 */
+  document.getElementById('moveIcon').innerHTML = game.explore
+    ? `<span class="exp-move-ico" style="background:${moveMarkColor}">${mv.icon || ''}</span>`
+    : `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
+  // 探検だけ: HPパネルの顔絵(静止画を丸く切り抜き)。素の姿で十分(スキンの着せ替えはモンスター一覧側の役目)
+  if(game.explore){
+    const face = document.getElementById('hpFaceImg');
+    if(face && face.dataset.el !== ve.element){
+      face.dataset.el = ve.element; face.dataset.basePath = 'monsters/' + ve.element; face.dataset.extIdx = '0';
+      face.src = imgSrcFor(face.dataset.basePath);
+    }
+  }
 
   // 召喚演出中は操作説明を出さない(演出に被って勿体無いため)。
   // 演出中はupdate()が回らずtipTimerが減らないので、演出後にフル秒数だけ表示される。

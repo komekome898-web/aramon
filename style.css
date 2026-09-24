@@ -4441,6 +4441,29 @@
   .status-pill.freeze{ background:rgba(191,233,255,0.22); color:#bfe9ff; border:1px solid rgba(191,233,255,0.6); }
   .status-pill.poison{ background:rgba(155,95,209,0.22); color:#c9a0ee; border:1px solid rgba(155,95,209,0.6); }
 
+  /* ===== 探検モード: 技パネルを右下へ(#hud.explore-mode のときだけ。他モードは今までのまま) =====
+     前の位置(画面中央下)は自機の脚と足元の紋章(装備セットのオーラ。explore_loot.js)を
+     暗い箱で覆っていた(第3周の指摘)。FIRE の少し上・回転ボタンの下の空きへ右詰めで小さくまとめ、
+     画面の中央下を空ける。**bottomは既存の --spectate-bottom を使う**
+     (「FIREの上8px」という意味は元から同じ数字なので、ここに同じ数字を2つ持たない)。
+     縦の空きが60px前後しかないので、名前+段階点を1行・ガッツ消費をもう1行の2行に詰める。 */
+  #hud.explore-mode #movePanel{
+    left:auto; right:var(--turn-right); bottom:var(--spectate-bottom); transform:none;
+    padding:6px 10px; gap:8px; max-width:calc(100% - 28px);
+  }
+  #hud.explore-mode #moveIcon{ width:28px; height:28px; border-radius:50%; flex-shrink:0; }
+  #hud.explore-mode #moveIcon svg{ width:16px; height:16px; }
+  /* 技の属性の記号(mv.icon。render.jsが探検だけここへ入れる)。仮置きの色丸をやめる(批評指摘) */
+  .exp-move-ico{ width:100%; height:100%; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:15px; line-height:1; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.3); }
+  #hud.explore-mode #moveInfo{ display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; min-width:0; }
+  #hud.explore-mode #moveName{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
+  #hud.explore-mode #tierDots{ margin-top:0; }
+  /* 段階の点は選ばれていても大きさを変えない(以前は選択中だけ15pxで、批評で「同じ大きさに」と指摘された)。
+     選択中は発光と縁の太さだけで示す */
+  #hud.explore-mode .tier-dot, #hud.explore-mode .tier-dot.selected{ width:9px; height:9px; }
+  #hud.explore-mode #gutsCostLabel{ flex:1 0 100%; margin-top:0; font-size:10px; }
+
   /* 【照準は画面の実中心に置く】#hudをセーフエリアぶん縮めたので、#hudの50%は
      もう画面の中心ではない。弾が飛ぶ先(canvasの中心)とズレると狙えなくなるので、
      左右・上下の余白の差の半分だけ戻す。余白が0なら calc は 50% のままで従来と同じ。 */
@@ -6590,6 +6613,9 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
 @keyframes expObjCrit{ 50%{ opacity:0.55; } }
 .exp-obj-chip{ display:flex; align-items:center; gap:calc(2px * var(--k)); font-family:'Share Tech Mono',monospace; font-size:calc(12px * var(--k)); line-height:1; color:var(--ink); }
 .exp-obj-ic{ font-style:normal; font-size:calc(11px * var(--k)); line-height:1; }
+/* 絵文字(💫🎒)は色つきの絵になって単色のHUDから浮くので、色がCSSで決まる記号にした(批評指摘) */
+.exp-obj-ic-faint{ color:#ff9a7a; }
+.exp-obj-ic-bag{ color:#8fe38f; }
 .exp-obj-ic-beacon{ display:block; width:calc(7px * var(--k)); height:calc(7px * var(--k)); margin:0 calc(2px * var(--k));
   border:1.5px solid #7dffb0; background:rgba(8,40,24,0.95); transform:rotate(45deg); }
 .exp-obj-beacon{ color:#b6ffd4; }
@@ -6628,15 +6654,36 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
 #hud.explore-mode.exp-kf-off #killFeed{ display:none; }
 #hud.explore-mode #minimapWrap{ border-color:rgba(125,255,176,0.35); box-shadow:0 0 18px -4px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.5); }
 /* 左上の自分の欄(探検のときだけ): 名前は1行・属性の札を消す・HPとガッツは数字をバーの右へ並べて背を低く。
-   状態の欄は何も無いときは場所を取らない。欄の幅は他の計算(上部の帯の空け方)が読むので変えない */
-#hud.explore-mode #hpPanel{ display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:6px; align-items:center; padding:5px 12px 6px; }
+   状態の欄は何も無いときは場所を取らない。欄の幅は他の計算(上部の帯の空け方)が読むので変えない。
+   縦の大きさは --exp-hud-k(画面の縦から決まる。exploreHudScale())で決める(第3周の指摘:
+   3サイズとも同じ大きさに見えていた=k を使わず px を直書きしていたのが原因)。 */
+#hud.explore-mode #hpPanel{ --k:var(--exp-hud-k, 1); display:grid; grid-template-columns:minmax(0,1fr) auto;
+  column-gap:calc(6px * var(--k)); row-gap:calc(2px * var(--k)); align-items:center;
+  padding:calc(5px * var(--k)) calc(12px * var(--k)) calc(6px * var(--k)); }
 #hud.explore-mode #hpPanel .who, #hud.explore-mode #stateCdTrack, #hud.explore-mode #stateCdLabel,
 #hud.explore-mode #statusIcons, #hud.explore-mode #trainBuffsLine{ grid-column:1 / -1; }
-#hud.explore-mode #hpPanel .who{ margin-bottom:2px; min-width:0; }
-#hud.explore-mode #hpPanel .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+#hud.explore-mode #hpPanel .who{ margin-bottom:calc(2px * var(--k)); min-width:0; display:flex; align-items:center; gap:calc(6px * var(--k)); }
+#hud.explore-mode #hpPanel .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:calc(14px * var(--k)); }
 #hud.explore-mode #hpPanel .elTag{ display:none; }
-#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum{ margin-top:0; }
-#hud.explore-mode #gutsTrack{ margin-top:3px; }
+/* 顔絵(静止画を丸く切り抜き)。名前の左の空白を埋め、誰を操作しているか一目で分かるようにする(批評指摘)。
+   render.js の updateHUD が探検のときだけ src を入れる。他モードは常に display:none(見た目は変わらない) */
+.hp-face{ display:none; }
+#hud.explore-mode .hp-face{ display:block; width:calc(22px * var(--k)); height:calc(22px * var(--k));
+  border-radius:50%; object-fit:cover; flex-shrink:0; border:1.5px solid rgba(255,255,255,0.35); background:rgba(0,0,0,0.3); }
+/* 各バーの左に種類の記号(♥体力/◆ガッツ/⚑状態)。批評指摘:バーだけでは何のバーか一目で分からない。
+   track自身は overflow:hidden(バー本体の角を丸く切るため)なので、記号は margin で空けた外側に置く
+   ―― track の ::before は track の外(marginの中)にあっても track の overflow に切られるため、
+   ここだけ overflow を visible にし、バー本体の角は自前の border-radius で丸めて質感を保つ。 */
+#hud.explore-mode .hpbar-track{ height:calc(7px * var(--k)); position:relative; margin-left:calc(13px * var(--k)); overflow:visible; }
+#hud.explore-mode .hpbar-fill, #hud.explore-mode #gutsFill, #hud.explore-mode #stateCdFill{ border-radius:3px; }
+#hud.explore-mode .hpbar-track::before{ content:'♥'; position:absolute; left:calc(-13px * var(--k)); top:50%; transform:translateY(-50%);
+  font-size:calc(10px * var(--k)); line-height:1; color:#ff7a6e; }
+#hud.explore-mode #gutsTrack::before{ content:'◆'; color:#ffb56b; }
+#hud.explore-mode #stateCdTrack::before{ content:'⚑'; color:#ff8a8a; }
+/* 数字は最低11px(以前は約8pxで批評で「読めない」と指摘された) */
+#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum{ margin-top:0; font-size:calc(11px * var(--k)); }
+#hud.explore-mode #stateCdLabel{ font-size:calc(11px * var(--k)); }
+#hud.explore-mode #gutsTrack{ margin-top:calc(3px * var(--k)); }
 #hud.explore-mode #statusIcons{ min-height:0; }
 #hud.explore-mode #statusIcons:empty{ display:none; }
 /* 地域の札は帯の中央に細く置く(左の拾った通知・右の目標パネルの列に食い込まない幅) */
@@ -6919,8 +6966,10 @@ html.narrow-screen .exr-craftable{ display:none; }
    R2 操作(✕・スロット・作る/着けるボタン)と見出しはスクロールの外。
       送れるのは装備の表(.exf-list)と詳細の本文(.exf-d-body)の2つだけ
    R3 縦が足りないときに削る順番:
-      ①表(縮んで指で送る)②詳細の本文(縮んで指で送る)③見た目の欄(画面の高さの割合で小さくなる・下限84px)
-      ④効果の合計の「セット」(1行の中で「…」)。**操作は削らない**
+      ①表(縮んで指で送る)②詳細の本文=能力差分・セット効果(縮んで指で送る。.exf-d-body)
+      ③見た目の欄(画面の高さの割合で小さくなる・下限84px)。**必要な素材(.exf-d-need)は削らない**
+      ―「作る」ボタンの直上に常時表示(縦持ちで消えて何が要るか分からなくなった=批評指摘)。
+      入りきらない物自身が出たときだけ内側でスクロール(flex:0 0 auto。詳細の本文より先に縮めない)。**操作は削らない**
    色: レア度=--rc / セット=--sc(data.js の表を JS が渡す)。工房の差し色は鍛冶の火の橙
    ===================================================================== */
 #exploreForgeOverlay{ padding:8px; }
@@ -7069,6 +7118,10 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-src{ margin:0 0 4px 24px; font-size:11px; line-height:14px; max-height:28px; color:#ffb870; white-space:normal; overflow:hidden;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .exf-note{ font-size:11px; line-height:1.5; color:var(--ink-dim); }
+/* 必要な素材(「作る」ボタンの直上。R3で削らない側)。.exf-d-body(能力差分)側が先に縮む(flex:0 0 auto = 縮まない)。
+   万一これ自体が入り切らない高さ(素材の種類がとても多い)になったときだけ内側で送る保険 */
+.exf-d-need{ flex:0 0 auto; min-height:0; max-height:46%; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px; }
+.exf-d-need:empty{ display:none; }
 .exf-d-actions{ flex:0 0 auto; margin-top:auto; }
 .exf-act-btn{ width:100%; min-height:var(--tap-main); flex-shrink:0; border-radius:9px; cursor:pointer;
   font-family:'Rajdhani',sans-serif; font-weight:800; font-size:15px; letter-spacing:1px;

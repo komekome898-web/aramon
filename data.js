@@ -6710,7 +6710,7 @@ const EXPLORE_MATERIALS = {
   // 凍った高地
   frost_shard:   { name:'氷晶のかけら', icon:'❄️', rarity:'common', region:'frost',   desc:'溶けない氷。冷気をまとう装備の材料' },
   frost_dew:     { name:'オーロラの雫', icon:'💧', rarity:'rare',   region:'frost',   toBag:'seed_wisdom',   desc:'持ち帰るとかしこさの実になる' },
-  frost_hide:    { name:'霜の毛皮',     icon:'🧥', rarity:'rare',   region:'frost',   toBag:'seed_vitality', desc:'持ち帰ると丈夫さの実になる' },
+  frost_hide:    { name:'霜の毛皮',     icon:'🧶', rarity:'rare',   region:'frost',   toBag:'seed_vitality', desc:'持ち帰ると丈夫さの実になる' },
   // 火山の峡谷
   volcano_ore:   { name:'灼熱鉱石',     icon:'🪨', rarity:'common', region:'volcano', desc:'熱を帯びた鉱石。武器の芯になる' },
   volcano_heart: { name:'炎の核',       icon:'🔥', rarity:'rare',   region:'volcano', toBag:'seed_power',    desc:'持ち帰るとちからの実になる' },
@@ -6885,6 +6885,13 @@ const EXPLORE_COMPASS_CRATE_RANGE = 2600;   // この距離より近い補給箱
 const EXPLORE_COMPASS_CRATE_MAX   = 4;      // バーに出す補給箱の数(近い順)
 const EXPLORE_COMPASS_THREAT_RANGE= 1600;   // 気づいて追ってくる野生をバーに赤い印で出す距離
 const EXPLORE_COMPASS_LABEL_RANGE = 99999;  // 距離(m)の数字を出す上限(ビーコン・ボス・目標は遠くても出す)
+/* 距離の数字を出す印の数(近い順)。以前は「重ならない限り出す」だったため、
+   画面が広いほど数字が増え、3サイズで見える数が揺れていた(第3周の指摘)。
+   3サイズで同じ基準にするため、近い順に必ずこの数だけに絞る(重なり除去は絞ったあとの保険)。 */
+const EXPLORE_COMPASS_LABEL_MAX   = 3;
+const EXPLORE_COMPASS_ICON_GAP_PX = 13;     // ボス戦の詰めた段で、印どうしを離す最小の間隔(px。倍率を掛ける前)
+// ミニマップ・全体地図: 自分の印に重なって見えなくなる近い印を、最低これだけ画面上で離す(px。倍率を掛ける前)
+const EXPLORE_MAP_DECLUTTER_PX    = 9;
 // 目標(クエスト)パネル
 const EXPLORE_OBJ_MATERIAL_GOAL   = 15;     // 「素材を集める」の目安の個数(報酬は無い。HUDの目安だけ)
 const EXPLORE_OBJ_RETURN_WARN_SEC = 120;    // 残り時間がこれを切ったら「帰還」を優先の目標にする

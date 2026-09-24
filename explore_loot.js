@@ -1209,11 +1209,14 @@ function explorePlayerTint(e, img, L){
   if(!img || !L) return;
   const cd = exploreState.card;
   if(cd && cd.kind === 'outro' && cd.reason === 'return'){
-    // 帰還: 光の柱の中で体が白く光っていく
-    const k = clamp((exploreCineNow() - cd.t0)/0.8, 0, 1);
+    /* 帰還: 光の柱の中で体が薄く光る。真っ白に飛んでいた(批評指摘)ので、上限を大きく下げて
+       輪郭が最後まで見えるようにする(0.8秒で立ち上がった後は穏やかに息づく程度で留める) */
+    const age = exploreCineNow() - cd.t0;
+    const rise = clamp(age/0.5, 0, 1), eased = rise*rise*(3 - 2*rise);
+    const k = age < 0.5 ? eased : (0.62 + 0.18*Math.sin(age*2.1));
     const spr = scaledSpriteFor(img, Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1));
     const t = exploreTintSprite(spr, '#fff4c8');
-    if(t && k > 0){ ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45*k; ctx.drawImage(t, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh); ctx.restore(); }
+    if(t && k > 0){ ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.2*k; ctx.drawImage(t, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh); ctx.restore(); }
     return;
   }
   const st = explorePlayerFaintState();
@@ -1247,6 +1250,8 @@ function explorePlayerTint(e, img, L){
 function exploreDrawGearAura(e, p){
   const gear = e.exploreGear;
   if(!gear || !p) return;
+  // 出発・力尽き・帰還などの札の間は足元の装備の印も隠す(黒帯の下に透けて見えた=批評指摘。演出に集中させる)
+  if(exploreState.card) return;
   const ms = exploreGearMainSet(gear.equip);
   if(!ms) return;
   const def = EXPLORE_GEAR_SETS[ms.set];
@@ -1370,12 +1375,46 @@ function exploreGearBaked(key, onReady){
   if(!c.canvas && onReady) c.waiters.push(onReady);
   return c.canvas;
 }
-// 絵を (x,y,w,h) に描いたときの体の矩形(不透明部分)
+/* 頭のてっぺんの高さだけ、絵の中央の狭い帯(半幅10%)で測る。
+   翼を広げた絵は「絵全体の不透明範囲の上端」が翼の先になり、兜がそこに乗って頭から浮いていた
+   (crate_near で発覚。fire_walk_f1 実測: 全体上端=翼の先/中央だけで測ると頭の角の高さ)。
+   中央だけを見れば翼など横に広がる部位を誤って「頭」と数えない。測れなければ null(呼び側が bb.y0 を使う) */
+const _exploreHeadTopCache = new WeakMap();
+function exploreHeadTopFrac(img){
+  if(!img) return null;
+  if(_exploreHeadTopCache.has(img)) return _exploreHeadTopCache.get(img);
+  let frac = null;
+  try{
+    const bb = (typeof opaqueBBoxFor==='function') ? opaqueBBoxFor(img) : null;
+    const iw = _imgW(img), ih = _imgH(img);
+    if(bb && bb.w > 0 && bb.h > 0){
+      const MW = 96, k = Math.min(1, MW / Math.max(iw, ih));
+      const mw = Math.max(1, Math.round(iw*k)), mh = Math.max(1, Math.round(ih*k));
+      const cv = document.createElement('canvas'); cv.width = mw; cv.height = mh;
+      const g = cv.getContext('2d', { willReadFrequently:true });
+      g.drawImage(img, 0, 0, mw, mh);
+      const data = g.getImageData(0, 0, mw, mh).data;
+      const cx = (bb.x0 + bb.x1)/2*k, hw = Math.max(1, (bb.x1 - bb.x0)*k*0.10);
+      const x0 = Math.max(0, Math.round(cx - hw)), x1 = Math.min(mw - 1, Math.round(cx + hw));
+      let topY = -1;
+      for(let y=0; y<mh && topY<0; y++){
+        for(let x=x0; x<=x1; x++){ if(data[(y*mw+x)*4+3] > 24){ topY = y; break; } }
+      }
+      if(topY >= 0) frac = clamp((topY/k - bb.y0) / bb.h, 0, 0.4);
+    }
+  }catch(err){}
+  _exploreHeadTopCache.set(img, frac);
+  return frac;
+}
+// 絵を (x,y,w,h) に描いたときの体の矩形(不透明部分)。headY = 頭のてっぺん(絶対y。無ければ y0)
 function exploreWornBox(img, x, y, w, h){
   const bb = (typeof opaqueBBoxFor==='function') ? opaqueBBoxFor(img) : null;
   const iw = _imgW(img), ih = _imgH(img);
-  if(!bb || !(bb.w > 0) || !(bb.h > 0)) return { x0:x, y0:y, x1:x + w, y1:y + h };
-  return { x0:x + bb.x0/iw*w, y0:y + bb.y0/ih*h, x1:x + bb.x1/iw*w, y1:y + bb.y1/ih*h };
+  if(!bb || !(bb.w > 0) || !(bb.h > 0)) return { x0:x, y0:y, x1:x + w, y1:y + h, headY:y };
+  const box = { x0:x + bb.x0/iw*w, y0:y + bb.y0/ih*h, x1:x + bb.x1/iw*w, y1:y + bb.y1/ih*h };
+  const hf = exploreHeadTopFrac(img);
+  box.headY = box.y0 + (box.y1 - box.y0) * (hf != null ? hf : 0.03);
+  return box;
 }
 /* g に、体の矩形 box へ装備 equip を重ねる。pass='behind'(絵より先)/'front'(絵のあと)。back=後ろ姿 */
 function exploreDrawWornGear(g, equip, box, back, pass, alpha){
@@ -1405,9 +1444,14 @@ function exploreDrawWornGear(g, equip, box, back, pass, alpha){
     else put(equip.weapon, cx + core*w.x, box.y0 + H*w.y, core*w.w, w.rot, false);
   }
   if(pass === 'front'){
-    if(has('body')) put(equip.body, cx + core*C.body.x, box.y0 + H*C.body.y, core*C.body.w, 0, false);
-    if(has('arms')) for(const sd of [-1, 1]) put(equip.arms, cx + sd*core*C.arms.x, box.y0 + H*C.arms.y, core*C.arms.w, sd*0.15, sd < 0);
-    if(has('head')) put(equip.head, cx + core*C.head.x, box.y0 + H*C.head.y, core*C.head.w, 0, false);
+    // 胴・腕(前面の胸当て・籠手)は前向きのときだけ。後ろ姿には前の絵をそのまま出さない
+    // (後ろ姿に前の胸当てが乗って見えた=批評指摘。後ろ用の絵は無いので、後ろ姿は武器と兜だけにする)
+    if(!back){
+      if(has('body')) put(equip.body, cx + core*C.body.x, box.y0 + H*C.body.y, core*C.body.w, 0, false);
+      if(has('arms')) for(const sd of [-1, 1]) put(equip.arms, cx + sd*core*C.arms.x, box.y0 + H*C.arms.y, core*C.arms.w, sd*0.15, sd < 0);
+    }
+    // 頭: box.headY(絵の中央だけで測った頭のてっぺん)を基準に、そこから少しだけ下げて乗せる
+    if(has('head')) put(equip.head, cx + core*C.head.x, (box.headY != null ? box.headY : box.y0) + H*0.012, core*C.head.w, 0, false);
   }
   g.restore();
 }
@@ -1418,7 +1462,12 @@ function exploreDrawWornOnPlayer(e, pass){
   if(!img) return;
   const L = portraitLayoutFor(e, img);
   const box = exploreWornBox(img, -L.dw/2, -L.dh/2 + L.dy, L.dw, L.dh);
-  exploreDrawWornGear(ctx, e.exploreGear.equip, box, !!e._walkBack, pass, 1 - 0.75*explorePlayerGrey());
+  /* フィールドの武器の見え方は sniper.js の sniperDrawSlungRifle(構えていない間、背中に背負う絵)が持つ。
+     ここでも武器を描くと背中に二重に出る(批評指摘)ので、その関数がある間はここでは武器を外す。
+     工房・報酬画面の「着けた姿」(exploreRenderWornFigure。静止画のプレビューで sniper.js は動かない)では武器を出す */
+  const equip = e.exploreGear.equip;
+  const fieldEquip = (typeof sniperDrawSlungRifle === 'function' && equip.weapon) ? { ...equip, weapon:null } : equip;
+  exploreDrawWornGear(ctx, fieldEquip, box, !!e._walkBack, pass, 1 - 0.75*explorePlayerGrey());
 }
 // 画面(工房・報酬画面・完成の演出)用のモンスターの絵(装備中のスキン込み。正面の姿)
 function exploreFigureImage(element){
@@ -1799,10 +1848,34 @@ function _exlFaintEdge(k, age){
   const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W, H)*0.32, W/2, H/2, Math.max(W, H)*0.72);
   vg.addColorStop(0, 'rgba(120,0,0,0)'); vg.addColorStop(0.6, `rgba(170,10,0,${(0.35*k*pulse).toFixed(3)})`); vg.addColorStop(1, `rgba(220,20,10,${(0.9*k).toFixed(3)})`);
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
-  const lw = Math.max(4, Math.min(W, H)*0.018)*k*pulse;
-  if(!renderHeavyLoad){ ctx.shadowBlur = 24; ctx.shadowColor = 'rgba(255,40,20,0.95)'; }
-  ctx.strokeStyle = `rgba(255,60,40,${(0.85*k).toFixed(3)})`; ctx.lineWidth = lw;
-  ctx.strokeRect(lw/2, lw/2, W - lw, H - lw);
+  /* 硬い枠線1本だけでは「四角い枠」に見える(批評指摘=燃えているように見えない)。
+     縁ぞいに輪郭をにじませた帯(枠線を太いぼかしのグラデーションに置き換え)+ 縁から立ち上る炎の粒を重ねる */
+  const bandW = Math.max(10, Math.min(W, H)*0.09)*k*pulse;
+  if(!renderHeavyLoad){ ctx.shadowBlur = 26; ctx.shadowColor = 'rgba(255,40,20,0.95)'; }
+  const edges = [
+    { g:(a)=>{ const gr = ctx.createLinearGradient(0,0,0,bandW); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[0,0,W,bandW] },
+    { g:(a)=>{ const gr = ctx.createLinearGradient(0,H,0,H-bandW); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[0,H-bandW,W,bandW] },
+    { g:(a)=>{ const gr = ctx.createLinearGradient(0,0,bandW,0); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[0,0,bandW,H] },
+    { g:(a)=>{ const gr = ctx.createLinearGradient(W,0,W-bandW,0); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[W-bandW,0,bandW,H] },
+  ];
+  const a = (0.75*k).toFixed(3);
+  ctx.globalCompositeOperation = 'lighter';
+  for(const e of edges){ ctx.fillStyle = e.g(a); ctx.fillRect(e.r[0], e.r[1], e.r[2], e.r[3]); }
+  // 縁から昇る炎の粒(下辺中心に多く、決まった乱数で毎フレーム同じ並びを保つ)
+  const N = renderHeavyLoad ? 10 : 18;
+  for(let i=0;i<N;i++){
+    const h = Math.sin(i*12.9898)*43758.5453; const rnd = h - Math.floor(h);
+    const side = i % 4;   // 0下 1下 2左 3右(下を厚めに)
+    const u = ((rnd + age*0.18 + i*0.083) % 1);
+    const along = ((Math.sin(i*7.13 + 1.7)*0.5 + 0.5) + i*0.61) % 1;
+    let px, py, rise;
+    if(side < 2){ px = along*W; py = H - u*bandW*2.2; rise = u; }
+    else { px = side===2 ? u*bandW*1.6 : W - u*bandW*1.6; py = along*H; rise = u; }
+    const sz = Math.max(1.2, (2.6 - rise*1.8)*k);
+    ctx.fillStyle = `rgba(255,${140 + Math.round(90*rise)},${40 + Math.round(60*rise)},${(k*(1 - rise)).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(px, py, sz, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.restore();
 }
 /* 帰還: 自分が光の柱に包まれて昇っていく(柱の芯・昇る輪・光の粒)。自分の絵も白く光る(explorePlayerTint) */
@@ -1822,14 +1895,27 @@ function _exlReturnBeam(age){
   const flick = 0.9 + 0.1*Math.sin(age*30);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
-  g.addColorStop(0, `rgba(255,236,160,${(0.55*flick).toFixed(3)})`); g.addColorStop(0.5, 'rgba(125,255,176,0.28)'); g.addColorStop(1, 'rgba(125,255,176,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.moveTo(q0.x - w, q0.y); ctx.lineTo(q1.x - w*0.6, q1.y); ctx.lineTo(q1.x + w*0.6, q1.y); ctx.lineTo(q0.x + w, q0.y); ctx.closePath(); ctx.fill();
-  const g2 = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
-  g2.addColorStop(0, 'rgba(255,255,255,0.75)'); g2.addColorStop(0.6, 'rgba(255,248,210,0.25)'); g2.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g2;
-  ctx.beginPath(); ctx.moveTo(q0.x - w*0.3, q0.y); ctx.lineTo(q1.x - w*0.15, q1.y); ctx.lineTo(q1.x + w*0.15, q1.y); ctx.lineTo(q0.x + w*0.3, q0.y); ctx.closePath(); ctx.fill();
+  /* 縁のはっきりした四角に見えていた(批評指摘)。硬い縁の四角を1〜2枚重ねるのではなく、
+     幅の違う柔らかい層を何枚も重ねて縁をにじませる(exploreDrawPillar と同じ考え方。ここは至近距離なので枚数を増やす)。
+     縁は左右で少し揺らして、真っ直ぐな一枚板に見えないようにする(炎のように輪郭が揺れる) */
+  const wob = (t)=> Math.sin(age*3.1 + t*7.3)*w*0.05;
+  const LAYERS = [
+    { wk:1.55, top:0.30*flick, mid:'rgba(125,255,176,0.16)' },
+    { wk:1.05, top:0.42*flick, mid:'rgba(125,255,176,0.22)' },
+    { wk:0.62, top:0.60*flick, mid:'rgba(255,248,210,0.30)' },
+    { wk:0.34, top:0.85*flick, mid:'rgba(255,255,255,0.40)' },
+    { wk:0.14, top:0.95*flick, mid:'rgba(255,255,255,0.55)' },
+  ];
+  for(const L of LAYERS){
+    const lw = w*L.wk;
+    const g = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
+    g.addColorStop(0, `rgba(255,236,160,${L.top.toFixed(3)})`); g.addColorStop(0.55, L.mid); g.addColorStop(1, 'rgba(125,255,176,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(q0.x - lw + wob(0), q0.y); ctx.lineTo(q1.x - lw*0.55 + wob(1), q1.y);
+    ctx.lineTo(q1.x + lw*0.55 + wob(2), q1.y); ctx.lineTo(q0.x + lw + wob(3), q0.y);
+    ctx.closePath(); ctx.fill();
+  }
   // 昇る輪(足元から上へ。1点ずつ投影)
   for(let i=0;i<3;i++){
     const u = ((age*0.7 + i/3) % 1);

@@ -134,6 +134,28 @@ function exploreHudObstacles(){
   _expHudObs.v = out;
   return out;
 }
+/* ===== 他担当が読む公開の口 =====
+   HUDの主なパネルの画面上の四角(キャンバスの座標。project() や地面の落とし物と同じ座標系)。
+   ルート担当(explore_loot.js)が補給箱の札などをここへ重ねないために読む。
+   戻り値: [{ id, x, y, w, h }, …](弾いてよい枠だけ。無ければ空配列。#hud が無い/探検外なら空配列)
+   id は 'topRight'(ミニマップ)/'expObjPanel'(目標)/'exploreHud'(方位バー)/'movePanel'(技) /
+        'bossBand'(ボスの帯。ボス戦の間だけ追加)。**名前と形はここが正**、増やすときもこの配列へ足すだけでよい。 */
+function exploreHudRects(){
+  if(!game.explore) return [];
+  const hud = exploreHudEl('hud');
+  if(!hud) return [];
+  const out = [];
+  for(const id of ['topRight', 'expObjPanel', 'exploreHud', 'movePanel']){
+    const el = exploreHudEl(id);
+    if(!el || el.classList.contains('hidden') || el.offsetWidth === 0) continue;
+    const cs = getComputedStyle(el);
+    if(cs.display === 'none' || cs.visibility === 'hidden') continue;
+    out.push({ id, x: hud.offsetLeft + el.offsetLeft, y: hud.offsetTop + el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
+  }
+  const b = exploreFocusBoss();
+  if(b){ const g = exploreHudBossGeom(b); out.push({ id:'bossBand', x:g.x, y:g.top, w:g.w, h:g.bottom - g.top }); }
+  return out;
+}
 /* ボスの画面上の矩形(札・文字をここから逃がす)。ボス担当の exploreBossScreenRect があればそちらが正 */
 function exploreBossRect(b){
   if(!b) return null;
@@ -183,11 +205,14 @@ function exploreObjectives(){
   const reg = target ? exploreRegion(target.rec.region) : null;
 
   const hunt = { id:'hunt', icon:'⚔', done: done >= recs.length && recs.length > 0,
-    count:`${done}/${recs.length}`, x: target ? target.x : null, y: target ? target.y : null };
+    count:`${done}/${recs.length}`, x: target ? target.x : null, y: target ? target.y : null,
+    targetId: target ? target.rec.id : null };   // 全体地図がこのボスへピンを出す(exploreMapDrawDynamic)
   if(engaged && def){
     // 戦っている最中(体力・怒り・部位破壊はボスの帯が出すので、ここでは二重に出さない)
     hunt.text = `${def.name}を討伐`;
     hunt.sub = reg ? `${reg.name}の主` : '大型モンスター';
+    // 全体の討伐数(0/4)は「4体倒す」に見えて1体と戦っている今の文脈と合わない(批評指摘)。今は進行中とだけ示す
+    hunt.count = '討伐中';
   } else if(target && def){
     hunt.text = '大型モンスター討伐';
     hunt.sub = `次: ${def.name}${reg ? `(${reg.name})` : ''} ${exploreHudMeters(target.d)}m`;
@@ -343,8 +368,13 @@ function exploreUpdateHud(){
         const prio = r.id === ob.prio;
         const cls = ['exp-obj-row', prio ? 'is-prio' : '', r.done ? 'is-done' : '', r.urgent ? 'is-urgent' : '', flashOn(r.id) ? 'is-flash' : ''].filter(Boolean).join(' ');
         const bar = (r.hold > 0) ? `<span class="exp-obj-hold"><i style="width:${Math.round(r.hold*100)}%"></i></span>` : '';
+        /* 「次の目標」の1行は必ず残す(批評指摘)。sub(次:○○)が2行目に出せないほど狭いときは、
+           消さずに本文へ詰めて1行にする(1行=箱の外枠で「…」に切れるので、はみ出す心配はない)。 */
+        const text = (prio && !showSub && r.sub) ? `${r.text}・${r.sub}` : r.text;
+        // 帰還中は見出しの「◇残り秒」と行の数字が同じ内容の二重表示になる(批評指摘)。行側は輪の進みバーだけにする
+        const count = (r.id === 'return' && r.hold > 0) ? '' : r.count;
         return `<div class="${cls}"><div class="exp-obj-line"><span class="exp-obj-mark">${r.done ? '✓' : (prio ? '◆' : '◇')}</span>`
-          + `<span class="exp-obj-text">${exploreHudEsc(r.text)}</span><span class="exp-obj-count">${exploreHudEsc(r.count)}</span></div>`
+          + `<span class="exp-obj-text">${exploreHudEsc(text)}</span><span class="exp-obj-count">${exploreHudEsc(count)}</span></div>`
           + (prio && showSub ? `<div class="exp-obj-sub">${exploreHudEsc(r.sub)}</div>` : '') + bar + `</div>`;
       }).join('');
     }
@@ -633,6 +663,13 @@ function exploreDrawCompass(){
   }
   const rank = (it)=> (it.m.prio ? 3 : 0) + (it.m.kind === 'boss' ? 1 : 0) + (it.m.kind === 'beacon' ? 1 : 0);
   items.sort((a,b)=> rank(a) - rank(b) || b.d - a.d);
+  /* ボス戦の詰めた段(bossBand)は方位バーの中でも特に狭く、方角が近いと印どうしが挟まって
+     見えにくくなる(批評指摘: ビーコンの緑の印がボスの印に挟まれる)。x で並べ、最低間隔を空ける */
+  if(bossBand && items.length > 1){
+    const spaced = items.slice().sort((a,b)=> a.x - b.x);
+    const minGap = EXPLORE_COMPASS_ICON_GAP_PX * k;
+    for(let i=1;i<spaced.length;i++){ if(spaced[i].x - spaced[i-1].x < minGap) spaced[i].x = spaced[i-1].x + minGap; }
+  }
   const labelSpans = [];
   const labels = [];
   const fleeBlink = Math.floor(performance.now()/250) % 2;
@@ -655,6 +692,10 @@ function exploreDrawCompass(){
     }
     if(!bossBand && m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE) labels.unshift({ it, t: exploreHudDist(it.d) });   // 優先の物から場所を取る
   }
+  /* 数字は近い順に最大 EXPLORE_COMPASS_LABEL_MAX 個だけ(第3周の指摘: 幅が広い画面ほど
+     重ならずに増えてしまい、3サイズで見える数が揺れていた)。優先の目標は距離に関係なく必ず残す */
+  labels.sort((a,b)=> (b.it.m.prio?1:0) - (a.it.m.prio?1:0) || a.it.d - b.it.d);
+  if(labels.length > EXPLORE_COMPASS_LABEL_MAX) labels.length = EXPLORE_COMPASS_LABEL_MAX;
   g.font = "bold 11px 'Share Tech Mono', monospace";
   for(const { it, t } of labels){
     const tw = g.measureText(t).width;
@@ -1020,6 +1061,17 @@ function exploreMapDrawDynamic(g, M, opts){
   const st = exploreState, p = player;
   const big = !!opts.big, ms = opts.iconScale || 1;
   const inView = opts.inView || (()=> true);
+  /* 自分のすぐ近く(補給箱・ビーコン)は画面の縮尺で自分の印と同じ画素へ重なって消える
+     (批評指摘: 13m/18mの距離にあるのにミニマップがほぼ無地に見えた)。
+     方角はそのまま保って、画面上の最低距離だけ自分の印から離す(向きの正しさは変えない)。 */
+  const selfQ = p ? M(p.x, p.y) : null;
+  const declutter = (q)=>{
+    if(!selfQ) return q;
+    const minR = EXPLORE_MAP_DECLUTTER_PX*ms, dx = q.x - selfQ.x, dy = q.y - selfQ.y, d = Math.hypot(dx, dy);
+    if(d >= minR) return q;
+    const ang = d > 0.01 ? Math.atan2(dy, dx) : 0;
+    return { x: selfQ.x + Math.cos(ang)*minR, y: selfQ.y + Math.sin(ang)*minR };
+  };
   // ランドマーク・キャンプ
   // ランドマークは全体地図だけ(ミニマップは自分の周りの道・崖・水と動く物だけにする)
   if(big) for(const lm of exploreMapLandmarks()){ const q = M(lm.x, lm.y); if(inView(q, 10)) exploreMapGlyph(g, lm.kind, q.x, q.y, 13*ms); }
@@ -1028,7 +1080,7 @@ function exploreMapDrawDynamic(g, M, opts){
   const cr = big ? EXPLORE_MAP_CRATE_RANGE : EXPLORE_MINIMAP_CRATE_RANGE;
   for(const c of st.crates){
     if(c.opened || !p || Math.hypot(c.x - p.x, c.y - p.y) > cr) continue;
-    const q = M(c.x, c.y);
+    const q = declutter(M(c.x, c.y));
     if(!inView(q, 4)) continue;
     const s = (big ? 4 : 3.2)*ms;
     g.fillStyle = 'rgba(0,0,0,0.85)'; g.fillRect(q.x - s - 1, q.y - s*0.8 - 1, s*2 + 2, s*1.6 + 2);
@@ -1059,7 +1111,7 @@ function exploreMapDrawDynamic(g, M, opts){
   }
   // 帰還ビーコン
   if(st.beacon){
-    const q = M(st.beacon.x, st.beacon.y);
+    const q = declutter(M(st.beacon.x, st.beacon.y));
     if(inView(q, 8)){
       const s = (big ? 7 : 5.5)*ms;
       g.save(); g.translate(q.x, q.y);
@@ -1072,22 +1124,30 @@ function exploreMapDrawDynamic(g, M, opts){
       g.restore();
     }
   }
-  // ボスと巣(大きな縁付きの印。逃走中は点滅・倒したら×)
+  // ボスと巣(大きな縁付きの印。逃走中は点滅・倒したら×)。今追っている目標には金の点滅ピンを立てる(批評指摘)
   const blink = Math.floor(performance.now()/260) % 2;
+  const targetId = _expHud.lastOb && _expHud.lastOb.rows[0] ? _expHud.lastOb.rows[0].targetId : null;
+  const pinPulse = Math.abs(Math.sin(matchTime*3));
   for(const r of st.bosses){
     const def = EXPLORE_BOSSES.find(d=> d.id === r.bossId);
     if(!def) continue;
     const b = getEntity(r.id);
     const nq = M(r.nestX, r.nestY);
     const R = (big ? 9 : 6.5)*ms*(def.apex ? 1.15 : 1);
+    const isTarget = targetId === r.id;
+    const pin = (q)=>{
+      if(!isTarget || r.defeated) return;
+      g.beginPath(); g.arc(q.x, q.y, R + 3 + pinPulse*3, 0, Math.PI*2);
+      g.strokeStyle = `rgba(255,211,90,${0.55 + 0.35*pinPulse})`; g.lineWidth = 1.6; g.stroke();
+    };
     if(r.defeated){ if(inView(nq, R)) exploreMapBossIcon(g, nq.x, nq.y, R, def, 'done'); continue; }
     const live = b && b.alive;
     const bq = live ? M(b.x, b.y) : nq;
     const away = live && Math.hypot(b.x - r.nestX, b.y - r.nestY) > 500;
-    if(away && inView(nq, R)) exploreMapBossIcon(g, nq.x, nq.y, R, def, 'nest');
+    if(away && inView(nq, R)){ pin(nq); exploreMapBossIcon(g, nq.x, nq.y, R, def, 'nest'); }
     const flee = live && b.exState === 'flee';
     if(flee && blink) continue;
-    if(inView(bq, R)) exploreMapBossIcon(g, bq.x, bq.y, R, def, st.engagedBossId === r.id ? 'engaged' : (flee ? 'flee' : 'alive'));
+    if(inView(bq, R)){ pin(bq); exploreMapBossIcon(g, bq.x, bq.y, R, def, st.engagedBossId === r.id ? 'engaged' : (flee ? 'flee' : 'alive')); }
   }
   // 自分(視野の扇+矢印)
   if(p){
@@ -1209,11 +1269,16 @@ function exploreMapLegendRows(){
     { t:'火口の噴煙', d:(g)=> exploreMapGlyph(g, 'plume', 8, 8, 12) },
     { t:'峠(抜け道)', d:(g)=>{ g.fillStyle = '#ffecbe'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc(8, 8, 3, 0, Math.PI*2); g.fill(); g.stroke(); } },
     { t:'道', d:(g)=>{ line('rgba(20,14,8,0.8)', 4)(g); line('#ecd8a8', 2)(g); } },
-    { t:'崖', d:line('#0e1014', 3) },
+    // 崖の見本は地図と同じ暗い縁だけだと、この凡例の暗い下地に沈んで見えない(批評指摘)。
+    // 明るい縁を下に敷いてから暗い線を重ね、地図の「崖の縁が少し明るい」見た目のまま凡例だけ見えるようにする
+    { t:'崖', d:(g)=>{ line('rgba(230,232,238,0.85)', 4)(g); line('#0e1014', 2)(g); } },
     { t:'高い所(明るい)', d:(g)=>{ ['#3b4a2c','#5d6048','#8a8672','#b8b4a2'].forEach((c, i)=>{ g.fillStyle = c; g.fillRect(1 + i*3.5, 3, 3.5, 10); }); } },
     { t:'水辺', d:(g)=>{ g.fillStyle = '#2f76b4'; g.beginPath(); g.arc(8, 8, 5, 0, Math.PI*2); g.fill(); g.strokeStyle = '#8cc8f2'; g.lineWidth = 1; g.stroke(); } },
     { t:'溶岩', d:(g)=>{ g.fillStyle = '#e8521c'; g.beginPath(); g.arc(8, 8, 5, 0, Math.PI*2); g.fill(); g.strokeStyle = '#ffc050'; g.lineWidth = 1; g.stroke(); } },
-    ...EXPLORE_REGIONS.map(r=> ({ t:`${r.name} ★${r.danger}`, d:(g)=>{ g.fillStyle = r.theme.accent; g.fillRect(2, 3, 12, 10); } })),
+    /* 色は地図を焼く式(exploreMapRgbList の ground)と同じ値を読む(第3周の指摘: ここだけ
+       theme.accent(UIの強調色)を使っていたため、凍った高地=水色/密林=薄緑と、実際の地図の
+       灰色/濃い緑が食い違っていた。**同じ数字を2か所に持たない**) */
+    ...EXPLORE_REGIONS.map(r=> ({ t:`${r.name} ★${r.danger}`, d:(g)=>{ g.fillStyle = exploreMapMix(r.theme.ground, '#0d141c', 0.38); g.fillRect(2, 3, 12, 10); } })),
   ];
 }
 function exploreBuildMapLegend(){
@@ -1268,12 +1333,24 @@ function exploreDrawBigMap(){
     const q = M(c.x, c.y);
     const fs = Math.max(11, Math.round(S*0.034));
     g.font = `bold ${fs}px 'Rajdhani', sans-serif`;
+    const nameW = g.measureText(r.name).width;
+    const stars = '★'.repeat(r.danger);
+    g.font = `bold ${Math.round(fs*0.8)}px sans-serif`;
+    const starsW = g.measureText(stars).width;
+    /* 名前+危険度の後ろに薄い下地(批評指摘: 自分の矢印や落とし物の印が重なると読めなくなる)。
+       印より先に(下に)描くので、印そのものは変わらず上に見える(操作系の情報を優先) */
+    const padX = fs*0.55, padY = fs*0.22, boxW = Math.max(nameW, starsW) + padX*2, boxH = fs*1.7 + padY*2;
+    g.fillStyle = 'rgba(6,10,14,0.55)';
+    exploreRoundRect(q.x - boxW/2, q.y - fs*1.05 - padY, boxW, boxH, 6);
+    g.fill();
+    g.font = `bold ${fs}px 'Rajdhani', sans-serif`;
     g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.75)';
     g.strokeText(r.name, q.x, q.y - fs*0.4);
     g.fillStyle = '#ffffff'; g.fillText(r.name, q.x, q.y - fs*0.4);
     g.font = `bold ${Math.round(fs*0.8)}px sans-serif`;
-    const stars = '★'.repeat(r.danger);
-    g.strokeText(stars, q.x, q.y + fs*0.6);
+    // 明るい縁+暗い縁の二重取り(批評指摘: 火山の赤橙の星が茶色の地面と輝度が近く沈んで見える)
+    g.lineWidth = 5; g.strokeStyle = 'rgba(255,255,255,0.5)'; g.strokeText(stars, q.x, q.y + fs*0.6);
+    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(stars, q.x, q.y + fs*0.6);
     g.fillStyle = r.theme.accent; g.fillText(stars, q.x, q.y + fs*0.6);
   }
   exploreMapDrawDynamic(g, M, { big:true, iconScale: clamp(S/360, 0.85, 1.6) });
