@@ -60,22 +60,22 @@ const CUTS = [
     } },
   /* 完成の演出は時間で進むので、決まった時刻で止めて撮る(撮るたびに同じ絵)。
      forge_done = 光って完成が出た直後(2.1秒)/ forge_choice = 合計の変化と「装備する/あとで」(2.6秒) */
-  { name:'forge_done', kind:'lobby', desc:'工房: 作ったときの演出の途中(槌→火花→光って完成。金)',
+  { name:'forge_done', kind:'lobby', desc:'工房: 作ったときの演出(光って完成=装備を着けた竜・着けたときの差・新しく作れる物)',
     prep: ()=>{
-      saveExploreStash({ apex_core:3, boss_scale:3, volcano_ore:9 });
-      saveExploreGear({ owned:['horn_body'], equip:{ body:'horn_body' } });
-      exploreForgeState.sel = 'apex_body';
+      saveExploreStash({ boss_horn:5, volcano_ore:6, meadow_fiber:4, apex_core:2, boss_fang:2, boss_scale:2 });
+      saveExploreGear({ owned:['horn_head','horn_body','horn_arms'], equip:{ head:'horn_head', body:'horn_body', arms:'horn_arms' } });
+      exploreForgeState.sel = 'horn_bow';
       openExploreForge();
-      exploreForgeCraft('apex_body');
+      exploreForgeCraft('horn_bow');
       document.getElementById('exploreForgeFx').getAnimations({ subtree:true }).forEach(a=>{ a.pause(); a.currentTime = 2100; });
     } },
   { name:'forge_choice', kind:'lobby', desc:'工房: 完成のあと(着けると合計がどう変わるか・装備する/あとで)',
     prep: ()=>{
-      saveExploreStash({ apex_core:3, boss_scale:3, volcano_ore:9 });
-      saveExploreGear({ owned:['horn_body'], equip:{ body:'horn_body' } });
-      exploreForgeState.sel = 'apex_body';
+      saveExploreStash({ boss_horn:5, volcano_ore:6, meadow_fiber:4, apex_core:2, boss_fang:2, boss_scale:2 });
+      saveExploreGear({ owned:['horn_head','horn_body','horn_arms'], equip:{ head:'horn_head', body:'horn_body', arms:'horn_arms' } });
+      exploreForgeState.sel = 'horn_bow';
       openExploreForge();
-      exploreForgeCraft('apex_body');
+      exploreForgeCraft('horn_bow');
       document.getElementById('exploreForgeFx').getAnimations({ subtree:true }).forEach(a=>{ a.pause(); a.currentTime = 2700; });
     } },
   { name:'camp', kind:'field', desc:'ベースキャンプの出発地点から帰還ビーコン側を見渡す',
@@ -195,6 +195,7 @@ const CUTS = [
       c.rarity = 'legendary';
       const a = Math.atan2(exploreState.spawn.y - c.y, exploreState.spawn.x - c.x);
       const p = { x:c.x + Math.cos(a)*300, y:c.y + Math.sin(a)*300 };
+      camState.yaw = Math.atan2(c.y-p.y, c.x-p.x);   // 中身の扇はカメラの横向きに並ぶので、開ける前に向きを合わせる
       exploreOpenCrate(c);
       return { x:p.x, y:p.y, yaw:Math.atan2(c.y-p.y, c.x-p.x), pitch:0.12, warm:0.62 };
     } },
@@ -300,6 +301,7 @@ const CUTS = [
     prep: ()=>{
       player.exploreInvulnUntil = 0;
       exploreOnPlayerFaint(player, null);
+      exploreState.slowmo = null;   // 倒れた瞬間の一瞬のスローは実時間で進むので、撮影では外して試合の時計だけで進める
       const n = Math.round(EXPLORE_FAINT_SEQ.fall * 0.7 * 30);
       for(let i=0;i<n;i++) update(1/30);
       render();
@@ -308,6 +310,7 @@ const CUTS = [
     prep: ()=>{
       player.exploreInvulnUntil = 0;
       exploreOnPlayerFaint(player, null);
+      exploreState.slowmo = null;   // 倒れた瞬間の一瞬のスローは実時間で進むので、撮影では外して試合の時計だけで進める
       const n = Math.round((EXPLORE_FAINT_SEQ.fall + 0.45) * 30);
       for(let i=0;i<n;i++) update(1/30);
       render();
@@ -316,6 +319,7 @@ const CUTS = [
     prep: ()=>{
       player.exploreInvulnUntil = 0;
       exploreOnPlayerFaint(player, null);
+      exploreState.slowmo = null;   // 倒れた瞬間の一瞬のスローは実時間で進むので、撮影では外して試合の時計だけで進める
       const S = EXPLORE_FAINT_SEQ;
       const n = Math.round((S.fall + S.card + S.fadeOut + S.black + S.fadeIn*0.45) * 30);
       for(let i=0;i<n;i++) update(1/30);
@@ -323,10 +327,10 @@ const CUTS = [
     } },
   { name:'return_card', kind:'result', desc:'終了直後: フィールドの「帰還成功」の札(報酬画面の前)', keepOutro:true,
     prep: ()=>{
-      ['meadow_fiber','boss_horn','apex_core'].forEach((k, i)=> exploreGainMaterial(k, 1 + i, null, null));
+      ['meadow_fiber','boss_horn','apex_core','frost_shard','meadow_honey','volcano_heart'].forEach((k, i)=> exploreGainMaterial(k, 1 + i, null, null));
       exploreFinish('return');
       clearTimeout(exploreOutroTimer);   // 撮り終えるまで報酬画面へ進ませない(1枚に数秒かかる)
-      exploreState.card.t0 -= 0.6;   // 札が出そろった時刻の絵にする(札は実時間で進む)
+      exploreState.card.t0 -= 1.6;   // 札が出そろい、素材が流れ終わった時刻の絵にする(札は実時間で進む)
       render();
     } },
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',

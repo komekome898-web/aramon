@@ -1625,15 +1625,19 @@ function exploreDamageBlocked(target, source){
   return false;
 }
 // 討伐の瞬間の間(1=通常)。実時間で進むので、試合の時間を遅くしても必ず戻る
+// s.S があればその間の長さ(力尽きた瞬間の一瞬のスロー EXPLORE_FAINT_SLOWMO)。無ければボス討伐の間
 function exploreTimeScale(){
   const s = exploreState.slowmo;
-  if(!s) return 1;
-  const S = EXPLORE_BOSS_KILL_SLOWMO;
-  const t = (performance.now() - s.t0) / 1000;
-  if(t < S.holdSec) return S.scale;
-  if(t < S.holdSec + S.easeSec) return S.scale + (1 - S.scale) * ((t - S.holdSec) / S.easeSec);
-  exploreState.slowmo = null;
-  return 1;
+  let k = 1;
+  if(s){
+    const S = s.S || EXPLORE_BOSS_KILL_SLOWMO;
+    const t = (performance.now() - s.t0) / 1000;
+    if(t < S.holdSec) k = S.scale;
+    else if(t < S.holdSec + S.easeSec) k = S.scale + (1 - S.scale) * ((t - S.holdSec) / S.easeSec);
+    else exploreState.slowmo = null;
+  }
+  exploreState.timeScaleNow = k;   // 実時間の時計(rawClock)が割り戻す値
+  return k;
 }
 
 /* =====================================================================
@@ -1918,7 +1922,7 @@ function exploreTintSprite(spr, color){
 /* 絵の直後に重ねる物(姿勢の変形の内側。render.js の drawMonster から)。
    ・ボス: 常時の色味(ボスの色を薄く乗算)/ 討伐で崩れ落ちたあと色が抜ける / 怒り中は赤い目の光と尾 */
 function exploreDrawMonsterTint(e, img, L){
-  if(e.isPlayer){ explorePlayerTint(e, img, L); return; }   // 自分: 力尽きて色が抜ける(explore_loot.js)
+  if(e.isPlayer){ explorePlayerTint(e, img, L); exploreDrawWornOnPlayer(e, 'front'); return; }   // 自分: 力尽きて色が抜ける・着けた装備を体に重ねる(explore_loot.js)
   if(!e.isExploreBoss || !img || !L) return;
   const def = exploreBossDef(e);
   const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
@@ -2073,7 +2077,10 @@ function exploreDrawRageEyes(e){
    ・野生の逃走: 左右に傾いて跳ねる / うろつきの立ち止まり: 頭を下げて草を食む(縦0.9倍) */
 function exploreBeginPose(e){
   const P = exploreComputePose(e);
-  if(!P) return false;
+  if(!P){
+    if(e && e.isPlayer) exploreDrawWornOnPlayer(e, 'behind');   // 自分: 着けた武器(前向きは体の後ろ)。explore_loot.js
+    return false;
+  }
   ctx.save();
   const fy = exploreFootY(e);
   ctx.translate(P.shx, fy + P.bob);
@@ -2081,6 +2088,7 @@ function exploreBeginPose(e){
   ctx.scale(P.sx, P.sy);
   ctx.translate(0, -fy);
   if(P.alpha < 1) ctx.globalAlpha *= P.alpha;
+  if(e.isPlayer) exploreDrawWornOnPlayer(e, 'behind');
   return true;
 }
 // 姿勢の値だけを返す(描画と当たりの背の両方が読む。null = 立った姿勢のまま)
@@ -3012,7 +3020,7 @@ function exploreGroundMarks(){
 // 毎フレームの進行(combat.js の update() から。安置の update の代わり)
 function updateExplore(dt){
   if(!game.explore || game.over) return;
-  exploreState.rawClock += dt / (exploreState.slowmo ? EXPLORE_BOSS_KILL_SLOWMO.scale : 1);
+  exploreState.rawClock += dt / (exploreState.timeScaleNow || 1);
   exploreUpdateWild(dt);
   exploreUpdateBosses(dt);
   exploreUpdateCine();
@@ -3086,13 +3094,16 @@ function exploreFinish(reason){
   if(ehud) ehud.classList.add('hidden');
   exploreHudHide();
   if(typeof exploreSaveLast==='function') exploreSaveLast(exploreState.finished);
-  bgmSetTrack(null);
-  playSe(full ? ((typeof skinWinSeName==='function' && skinWinSeName(player)) || 'fanfare') : 'sad');
+  /* 帰還成功は探検の曲のファンファーレ(audio.js の bgmExploreFanfare。地域の曲の上で鳴り、終わると静まる)。
+     専用の勝利SEを持つスキンはそのSE。失敗は曲を止めて 'sad' */
+  const skinWin = full && typeof skinWinSeName==='function' ? skinWinSeName(player) : null;
+  if(full && !skinWin && typeof bgmExploreFanfare==='function' && bgmState.current==='explore') bgmExploreFanfare(true);
+  else { bgmSetTrack(null); playSe(full ? (skinWin || 'fanfare') : 'sad'); }
   setTimeout(()=>{
     if(game.started) return;
     if(typeof bgmDesiredTrack==='function' && bgmDesiredTrack()!==null) return;
     bgmSetTrack('title');
-  }, full ? 3800 : 3000);
+  }, full ? 4800 : 3000);   // 帰還はファンファーレ(約4.5秒)を鳴らし切ってからタイトルの曲へ
   /* すぐ報酬画面にせず、フィールドで「帰還成功」などの札を EXPLORE_OUTRO_SEC だけ見せる(explore_loot.js)。
      その間は描画だけ続ける(game.started を立てたまま・game.over で進行は止まっている) */
   game.started = true;

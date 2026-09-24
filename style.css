@@ -6738,8 +6738,11 @@ html.narrow-screen #expLootFeed{ width:184px; }
    画面全体。左=自分のモンスターと記録 / 右=持ち帰った素材とゴールドの内訳
    R1 箱=画面そのもの。見出し・操作の行は決まった高さ、残りを左右の列が分ける
    R2 送れるのは素材の一覧(.exr-list)だけ。見出し・記録・内訳・ボタンはスクロールの外
-   R3 縦が足りないとき削る順: ①素材の一覧(縮んで送る)②モンスターの絵(縮む・消える)
-      ③見出しの説明文(狭い画面では出さない)④内訳の行(小さい字のまま)。ボタンは削らない
+   R3 縦が足りないとき削る順(飾り→情報の順。操作は削らない):
+      ①「この素材で作れる装備」の欄(狭い画面では出さない。工房へのボタンに作れる数が出る)
+      ②モンスターの絵(縮む)③いちばんの収穫の大きな札(狭い画面では見出しの行の小さな札に置き換える=情報は残す)
+      ④素材の一覧(行の区切りで縮み、「▼ 下にあとN件」と下の縁のぼかしで続きを知らせる)。
+      見出しの説明文(持ち帰れたのは50% など)は削らない(狭い画面では見出しの横に並べる)
    ===================================================================== */
 #exploreResultOverlay.exr-full{ padding:0; align-items:stretch; justify-content:stretch;
   background:radial-gradient(ellipse at 28% 45%, rgba(38,86,62,0.55), rgba(3,7,8,0.97) 68%), #04080a; }
@@ -6759,11 +6762,21 @@ html.narrow-screen #expLootFeed{ width:184px; }
   color:#ffe38a; text-shadow:0 0 16px rgba(255,200,80,0.55), 0 2px 0 rgba(0,0,0,0.6); }
 #exploreResultOverlay[data-tone="lose"] .exr-title{ color:#ffb08a; text-shadow:0 0 16px rgba(255,110,60,0.5), 0 2px 0 rgba(0,0,0,0.6); }
 .exr-sub{ font-size:11px; line-height:1.5; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-html.narrow-screen .exr-sub{ display:none; }
+/* 狭い画面: 説明文は見出しの右に2行まで(縦を使わない) */
+html.narrow-screen .exr-head-main{ display:flex; align-items:center; gap:10px; }
+html.narrow-screen .exr-title{ flex:0 0 auto; }
+html.narrow-screen .exr-sub{ flex:1 1 auto; min-width:0; white-space:normal; line-height:14px; max-height:28px;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+/* いちばんの収穫の小さな札(狭い画面だけ。広い画面は右列の大きな札) */
+.exr-topchip{ --rc:#e8e8e8; display:none; }
+html.narrow-screen .exr-topchip{ flex:0 1 auto; min-width:0; max-width:34%; display:flex; flex-direction:column; justify-content:center;
+  padding:3px 10px; border-radius:8px; border:1px solid var(--rc); background:rgba(255,255,255,0.06); box-shadow:0 0 12px -5px var(--rc); }
+.exr-tc-label{ font-size:11px; line-height:14px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-tc-main{ font-size:13px; line-height:17px; font-weight:800; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 0 8px var(--rc); }
 .exr-gold-total{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; }
 .exr-gold-label{ font-size:9px; letter-spacing:2px; color:var(--ink-dim); }
 .exr-gold-val{ font-family:'Share Tech Mono',monospace; font-size:24px; line-height:1; color:#ffd35a; text-shadow:0 0 10px rgba(255,200,60,0.5); }
-.exr-body{ flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(0, 34%) minmax(0, 1fr); gap:16px; }
+.exr-body{ flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(0, 34%) minmax(0, 1fr); grid-template-rows:minmax(0, 1fr); gap:16px; }   /* 行の高さも箱から(中身で伸ばさない=R1) */
 /* 左: モンスターと記録 */
 .exr-left{ min-height:0; min-width:0; display:flex; flex-direction:column; gap:6px; }
 .exr-hero{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; }
@@ -6771,8 +6784,10 @@ html.narrow-screen .exr-sub{ display:none; }
 .exr-hero-img{ --rc:#7dffb0; --sc:transparent; position:relative; flex:1 1 auto; min-width:0; min-height:0; display:flex; align-items:flex-end; justify-content:center;
   background:radial-gradient(ellipse at 50% 70%, var(--rc) 0%, rgba(0,0,0,0) 62%); background-blend-mode:normal; opacity:1; }
 .exr-hero-img img{ position:relative; z-index:1; max-height:100%; max-width:100%; min-height:0; object-fit:contain; filter:drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
+/* 竜に着けた装備を重ねた絵(explore_loot.js の exploreRenderWornFigure。箱いっぱいの canvas に下揃えで描く) */
+.exr-hero-cv{ position:relative; z-index:1; display:block; width:100%; height:100%; filter:drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
 /* 着て出た装備のセットの色: 体の縁の光と足元の輪(フィールドの足元の輪と同じ色) */
-.exr-hero-img.has-set img{ filter:drop-shadow(0 0 3px var(--sc)) drop-shadow(0 0 8px var(--sc)) drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
+.exr-hero-img.has-set img, .exr-hero-img.has-set .exr-hero-cv{ filter:drop-shadow(0 0 3px var(--sc)) drop-shadow(0 0 8px var(--sc)) drop-shadow(0 6px 10px rgba(0,0,0,0.7)); }
 .exr-hero-img.has-set::after{ content:''; position:absolute; left:14%; right:14%; bottom:0; height:18%; max-height:26px; border-radius:50%; pointer-events:none;
   border:2px solid var(--sc); box-shadow:0 0 10px var(--sc), inset 0 0 8px var(--sc); opacity:0.85; }
 /* 着て出た装備(4部位を縦に)。空きの部位は点線の枠に部位名 */
@@ -6815,12 +6830,15 @@ html.narrow-screen .exr-topfind{ display:none; }
 .exr-top-name{ font-weight:800; font-size:18px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 0 10px var(--rc); }
 .exr-top-rar{ flex:0 0 auto; font-size:11px; font-weight:800; padding:1px 8px; border-radius:4px; color:#101418; background:var(--rc); }
 .exr-top-n{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--rc); }
-.exr-list-label{ flex:0 0 auto; font-size:10px; letter-spacing:2px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-list-label{ flex:0 0 auto; font-size:11px; line-height:15px; letter-spacing:2px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #exploreResultCount{ font-family:'Share Tech Mono',monospace; letter-spacing:0; color:#fff; }
 .exr-lost-sum{ font-style:normal; color:#ff6b5a; margin-left:4px; }
-.exr-list{ flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; align-content:start;
-  display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); grid-auto-rows:48px; gap:6px; }
-html.narrow-screen .exr-list{ grid-template-columns:repeat(auto-fill, minmax(176px, 1fr)); grid-auto-rows:44px; }
+.exr-list{ position:relative; flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; align-content:start;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); grid-auto-rows:62px; gap:8px; }
+html.narrow-screen .exr-list{ grid-template-columns:repeat(auto-fill, minmax(176px, 1fr)); grid-auto-rows:46px; gap:6px; }
+/* 続きがあるときは下の縁をぼかす(見出しの行の「▼ 下にあとN件」とセット) */
+.exr-list.has-more{ -webkit-mask-image:linear-gradient(180deg, #000 calc(100% - 16px), rgba(0,0,0,0.35)); mask-image:linear-gradient(180deg, #000 calc(100% - 16px), rgba(0,0,0,0.35)); }
+.exr-list-more{ margin-left:10px; font-size:11px; font-weight:800; letter-spacing:0; color:#ffd35a; }
 .exr-item{ --rc:#e8e8e8; position:relative; min-width:0; display:flex; align-items:center; gap:8px; padding:0 10px;
   border-radius:8px; border:1px solid var(--rc); border-left-width:4px;
   background:linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
@@ -6834,13 +6852,13 @@ html.narrow-screen .exr-list{ grid-template-columns:repeat(auto-fill, minmax(176
   animation:exrGoldSweep 2.4s ease-in-out calc(var(--i, 0) * 0.07s + .3s) infinite; }
 @keyframes exrGoldSweep{ 0%{ transform:translateX(-100%); opacity:0; } 15%{ opacity:1; } 45%,100%{ transform:translateX(290%); opacity:0; } }
 .exr-item[data-rar="legendary"] .exr-ico, .exr-item[data-rar="epic"] .exr-ico{ filter:drop-shadow(0 0 6px var(--rc)); }
-.exr-ico{ flex:0 0 auto; font-size:20px; line-height:1; }
+.exr-ico{ flex:0 0 auto; font-size:24px; line-height:1; }
 .exr-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
-.exr-name{ font-weight:700; font-size:12px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.exr-dest{ display:flex; min-width:0; font-size:9px; color:var(--ink-dim); white-space:nowrap; }
+.exr-name{ font-weight:700; font-size:14px; line-height:18px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-dest{ display:flex; min-width:0; font-size:11px; line-height:14px; color:var(--ink-dim); white-space:nowrap; }
 .exr-dest-to{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .exr-rar{ flex:0 0 auto; color:var(--rc); font-weight:700; margin-right:5px; }
-.exr-n{ flex:0 0 auto; display:flex; align-items:baseline; gap:3px; font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--rc); white-space:nowrap; }
+.exr-n{ flex:0 0 auto; display:flex; align-items:baseline; gap:3px; font-family:'Share Tech Mono',monospace; font-size:18px; color:var(--rc); white-space:nowrap; }
 .exr-n-got{ font-size:11px; color:rgba(255,255,255,0.45); text-decoration-color:#ff6b5a; text-decoration-thickness:2px; }
 .exr-n-lost{ font-style:normal; font-size:11px; font-weight:700; color:#fff; background:#c9302a; border-radius:3px; padding:0 3px; }
 .exr-item.has-lost{ border-right:2px solid rgba(201,48,42,0.8); }
@@ -6850,12 +6868,22 @@ html.narrow-screen .exr-list{ grid-template-columns:repeat(auto-fill, minmax(176
 .exr-grow{ min-width:0; display:flex; align-items:center; gap:6px; height:17px; font-size:10px; color:var(--ink-dim); }
 .exr-grow span{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .exr-grow b{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:12px; font-weight:400; color:#ffd35a; }
-.exr-craftable{ flex:0 0 auto; min-width:0; display:flex; flex-direction:column; gap:4px; padding:6px 8px; border-radius:8px;
-  border:1px solid rgba(255,170,90,0.45); background:linear-gradient(90deg, rgba(255,150,60,0.14), rgba(255,150,60,0.03)); }
-.exr-craft-label{ font-size:10px; font-weight:800; letter-spacing:1px; color:#ffc46b; }
-.exr-craft-list{ display:flex; flex-wrap:wrap; gap:4px 12px; min-width:0; max-height:62px; }
-.exr-craft-item{ display:flex; align-items:center; gap:6px; min-width:0; font-size:11px; font-weight:700; color:#fff; white-space:nowrap; }
-.exr-craft-more{ font-size:10px; color:var(--ink-dim); align-self:center; }
+.exr-craftable{ flex:1 1 0; min-height:0; min-width:0; display:flex; flex-direction:column; gap:6px; padding:8px 10px; border-radius:10px;
+  border:1px solid rgba(255,170,90,0.45); background:linear-gradient(90deg, rgba(255,150,60,0.12), rgba(255,150,60,0.02)); }
+/* 狭い画面では出さない(R3の①。工房へのボタンに作れる数が出る) */
+html.narrow-screen .exr-craftable{ display:none; }
+.exr-craft-label{ flex:0 0 auto; font-size:13px; line-height:17px; font-weight:800; letter-spacing:1px; color:#ffc46b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-craft-label em{ font-style:normal; margin-left:10px; padding:0 7px; border-radius:4px; color:#062e18; background:#7dffb0; letter-spacing:0; }
+.exr-craft-list{ position:relative; flex:1 1 auto; min-height:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); grid-auto-rows:54px; gap:6px; align-content:start; }
+.exr-craft-card{ min-width:0; min-height:var(--tap-pick); flex-shrink:0; display:flex; align-items:center; gap:10px; padding:0 10px; cursor:pointer; text-align:left;
+  font:inherit; color:var(--ink); border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(0,0,0,0.3); }
+.exr-craft-card.is-ok{ border-color:rgba(125,255,176,0.7); box-shadow:0 0 12px -4px rgba(125,255,176,0.9); }
+.exr-craft-card .exf-ico.is-mini{ width:36px; height:36px; }
+.exr-cc-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+.exr-cc-name{ font-size:13px; line-height:17px; font-weight:800; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-cc-ok{ font-size:12px; line-height:16px; color:#7dffb0; }
+.exr-cc-need{ font-size:12px; line-height:16px; color:#ffb870; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exr-craft-more{ align-self:center; font-size:12px; color:var(--ink-dim); }
 .exr-actions{ flex:0 0 auto; display:flex; justify-content:flex-end; gap:10px; }
 .exr-back-btn{ min-height:var(--tap-main); flex-shrink:0; padding:0 34px; border-radius:9px; cursor:pointer;
   font-family:'Rajdhani',sans-serif; font-weight:800; font-size:14px; letter-spacing:1px;
@@ -6878,9 +6906,9 @@ html.narrow-screen .exr-list{ grid-template-columns:repeat(auto-fill, minmax(176
 .lep-top{ display:flex; align-items:center; gap:4px; min-width:0; }
 .lep-slots{ flex:0 0 auto; display:flex; gap:3px; }
 .lep-slots .exf-ico.is-mini, .lep-slots .exf-slot-empty{ width:22px; height:22px; }
-.lep-go{ flex:1 1 auto; min-width:0; text-align:right; font-family:'Rajdhani',sans-serif; font-size:10px; font-weight:800; color:#ffc46b;
+.lep-go{ flex:1 1 auto; min-width:0; text-align:right; font-family:'Rajdhani',sans-serif; font-size:11px; font-weight:800; color:#ffc46b;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.lep-fx, .lep-last{ font-size:10px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lep-fx, .lep-last{ font-size:11px; line-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .lep-fx{ color:#ffe2b8; }
 .lep-last{ color:var(--ink-dim); }
 
@@ -6994,10 +7022,10 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-stage-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
 /* 着けた姿(自分のモンスター+着けた後のセットの色の光と足元の輪。フィールドと同じ見せ方)。
    見た目の欄の右端。絵の高さは欄から決める(R1)。幅が足りなければ飾りなので縮む */
-.exf-stage-fig{ --wc:#ccc; position:relative; flex:0 0 auto; order:3; width:min(26%, calc((var(--stage-h) - 12px) * 0.75)); aspect-ratio:3 / 4; display:flex; align-items:flex-end; justify-content:center; }
-.exf-stage-fig img{ position:relative; z-index:1; max-width:100%; max-height:84%; min-height:0; object-fit:contain; margin-bottom:6%;
-  filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 7px var(--wc)); }
-.exf-stage-fig.is-lit img{ filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 7px var(--wc)) drop-shadow(0 0 14px var(--wc)); }
+.exf-stage-fig{ --wc:#ccc; position:relative; flex:0 0 auto; order:3; width:min(30%, calc((var(--stage-h) - 12px) * 0.85)); aspect-ratio:0.85 / 1; display:flex; align-items:flex-end; justify-content:center; }
+.exf-fig-cv{ position:absolute; z-index:1; left:0; top:0; width:100%; height:100%; display:block;
+  filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 6px var(--wc)); }
+.exf-stage-fig.is-lit .exf-fig-cv{ filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 6px var(--wc)) drop-shadow(0 0 12px var(--wc)); }
 .exf-fig-ring{ position:absolute; left:6%; right:6%; bottom:1%; height:17%; border-radius:50%; pointer-events:none;
   border:2px solid var(--wc); box-shadow:0 0 9px var(--wc), inset 0 0 7px var(--wc); background:radial-gradient(ellipse, rgba(255,255,255,0.08), transparent 70%); }
 .exf-fig-emb{ position:absolute; z-index:2; left:50%; bottom:-3px; transform:translateX(-50%); width:17px; height:17px; border-radius:50%;
@@ -7069,29 +7097,55 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 @keyframes exfSpark{ 0%{ opacity:1; transform:translate(0,0) scale(var(--ss)); }
   100%{ opacity:0; transform:translate(var(--dx), calc(var(--dy) + 30px)) scale(calc(var(--ss) * 0.4)); } }
 .exf-fx-flash{ position:absolute; inset:0; border-radius:12px; pointer-events:none;
-  background:radial-gradient(circle at 50% 36%, #ffffff 0%, var(--rc) 22%, rgba(0,0,0,0) 62%); opacity:0; animation:exfFlash .9s ease-out 1.4s both; }
+  background:radial-gradient(circle at 30% 45%, #ffffff 0%, var(--rc) 22%, rgba(0,0,0,0) 62%); opacity:0; animation:exfFlash .9s ease-out 1.4s both; }
 @keyframes exfFlash{ 0%{ opacity:0; } 18%{ opacity:1; } 100%{ opacity:0; } }
-.exf-fx-rays{ position:absolute; left:50%; top:36%; width:460px; height:460px; margin:-230px 0 0 -230px; pointer-events:none;
+/* 光って完成が出たあとの面: 左=装備を着けた竜(大きく) / 右=完成の札・着けたときの差(大きな▲の数字)・新しく作れる物。
+   箱は演出の枠から決める(下は「装備する/あとで」の段を空ける) */
+.exf-fx-reveal{ position:absolute; left:4%; right:4%; top:5%; bottom:calc(var(--tap-main) + 24px);
+  display:grid; grid-template-columns:minmax(0, 42%) minmax(0, 1fr); gap:18px; align-items:stretch;
+  opacity:0; animation:exfTextIn .5s ease-out 1.45s both; }
+@keyframes exfTextIn{ 0%{ opacity:0; transform:translateY(8px); } 100%{ opacity:1; transform:none; } }
+.exf-fx-figwrap{ --sc:#ffc93c; position:relative; min-width:0; min-height:0; }
+.exf-fx-rays{ position:absolute; left:50%; top:50%; width:150%; aspect-ratio:1 / 1; transform:translate(-50%,-50%); pointer-events:none;
   background:repeating-conic-gradient(from 0deg, var(--rc) 0deg 5deg, rgba(0,0,0,0) 5deg 20deg);
   -webkit-mask-image:radial-gradient(circle, #000 12%, rgba(0,0,0,0) 62%); mask-image:radial-gradient(circle, #000 12%, rgba(0,0,0,0) 62%);
-  opacity:0; animation:exfRaysIn .6s ease-out 1.45s both, exfRaysSpin 12s linear 1.45s infinite; }
-@keyframes exfRaysIn{ 0%{ opacity:0; } 100%{ opacity:.55; } }
+  opacity:.5; animation:exfRaysSpin 12s linear 1.45s infinite; }
 @keyframes exfRaysSpin{ 100%{ rotate:360deg; } }
-.exf-fx-item{ position:absolute; left:50%; top:36%; transform:translate(-50%,-50%) scale(0); animation:exfPop .6s cubic-bezier(.2,1.6,.4,1) 1.45s both; }
-@keyframes exfPop{ 0%{ transform:translate(-50%,-50%) scale(0) rotate(-12deg); } 100%{ transform:translate(-50%,-50%) scale(1) rotate(0); } }
-.exf-fx-item .exf-ico{ box-shadow:0 0 30px 2px var(--rc), inset 0 0 14px rgba(0,0,0,0.6); }
-.exf-fx-text{ position:absolute; left:0; right:0; top:calc(36% + 60px); display:flex; flex-direction:column; align-items:center; gap:1px;
-  opacity:0; animation:exfTextIn .5s ease-out 1.65s both; pointer-events:none; }
-@keyframes exfTextIn{ 0%{ opacity:0; transform:translateY(8px); } 100%{ opacity:1; transform:none; } }
-.exf-fx-done{ font-family:'Russo One',sans-serif; font-size:24px; letter-spacing:2px; color:var(--rc); padding:0 16px; border-radius:6px;
-  background:radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0.6), rgba(0,0,0,0) 72%);
+.exf-fx-fig{ position:absolute; inset:0; width:100%; height:100%; display:block;
+  filter:drop-shadow(0 0 3px var(--sc)) drop-shadow(0 0 12px var(--sc)); animation:exfFigIn .6s cubic-bezier(.2,1.5,.4,1) 1.45s both; }
+@keyframes exfFigIn{ 0%{ transform:scale(.6); } 100%{ transform:none; } }
+.exf-fx-figcap{ position:absolute; left:0; right:0; bottom:0; text-align:center; font-size:11px; font-weight:800; letter-spacing:2px; color:var(--sc);
+  text-shadow:0 0 6px #000, 0 1px 0 #000; }
+.exf-fx-info{ min-width:0; min-height:0; display:flex; flex-direction:column; justify-content:center; gap:10px; }
+.exf-fx-headrow{ flex:0 0 auto; display:flex; align-items:center; gap:14px; min-width:0; }
+.exf-fx-item{ flex:0 0 auto; animation:exfPop .6s cubic-bezier(.2,1.6,.4,1) 1.45s both; }
+@keyframes exfPop{ 0%{ transform:scale(0) rotate(-12deg); } 100%{ transform:scale(1) rotate(0); } }
+.exf-fx-item .exf-ico{ box-shadow:0 0 26px 2px var(--rc), inset 0 0 14px rgba(0,0,0,0.6); }
+.exf-ico.is-fx{ width:clamp(52px, calc(15 * var(--vh)), 84px); height:clamp(52px, calc(15 * var(--vh)), 84px); border-width:3px; border-radius:14px; }
+.exf-ico.is-fx .exf-emb{ font-size:18px; right:-8px; bottom:-8px; }
+.exf-fx-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+.exf-fx-done{ font-family:'Russo One',sans-serif; font-size:32px; line-height:1.1; letter-spacing:2px; color:var(--rc); padding:0 12px 0 0;
   text-shadow:1px 1px 0 #1e1000, -1px 1px 0 #1e1000, 1px -1px 0 #1e1000, -1px -1px 0 #1e1000, 0 2px 0 #1e1000, 0 0 3px #000, 0 0 16px var(--rc); }
-.exf-fx-name{ font-weight:800; font-size:15px; color:#fff; white-space:nowrap; }
-.exf-fx-rar{ font-size:10px; font-weight:800; letter-spacing:2px; color:var(--rc); }
-.exf-fx-chgs{ margin-top:3px; display:flex; flex-wrap:wrap; justify-content:center; gap:3px 10px; max-width:92%; font-size:11px; color:var(--ink-dim); }
-.exf-fx-chg{ white-space:nowrap; font-family:'Share Tech Mono',monospace; }
-.exf-fx-chg em{ font-style:normal; font-family:'Rajdhani',sans-serif; font-weight:700; color:#ffb870; margin-right:4px; }
-.exf-fx-chg b{ font-weight:400; color:#7dffb0; }
+.exf-fx-name{ max-width:100%; font-weight:800; font-size:18px; line-height:22px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exf-fx-rar{ font-size:12px; line-height:15px; font-weight:800; letter-spacing:2px; color:var(--rc); }
+/* 着けたときの差: 項目・前→後・大きな▲の数字 */
+.exf-fx-deltas{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; padding:6px 12px; border-radius:10px;
+  background:rgba(0,0,0,0.42); border:1px solid rgba(255,255,255,0.12); }
+.exf-fx-dhead{ font-size:11px; line-height:14px; letter-spacing:2px; color:#ffb870; }
+.exf-fx-drow{ display:flex; align-items:center; gap:10px; min-height:30px; }
+.exf-fx-dlabel{ flex:1 1 auto; min-width:0; font-size:14px; font-weight:700; color:#e8eef5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exf-fx-dval{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:15px; color:var(--ink-dim); white-space:nowrap; }
+.exf-fx-dval b{ font-weight:400; color:#fff; }
+.exf-fx-dbig{ flex:0 0 auto; min-width:64px; text-align:right; font-family:'Russo One',sans-serif; font-size:26px; line-height:1; }
+.exf-fx-dbig.is-up{ color:#7dffb0; text-shadow:0 0 10px rgba(125,255,176,0.7); }
+.exf-fx-dbig.is-down{ color:#ff6b5a; text-shadow:0 0 10px rgba(255,107,90,0.6); }
+/* 新しく作れるようになった物 */
+.exf-fx-new{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; padding:6px 12px; border-radius:10px;
+  border:1px solid rgba(255,211,90,0.55); background:linear-gradient(90deg, rgba(255,201,60,0.18), rgba(255,201,60,0.03)); }
+.exf-fx-newlabel{ font-size:12px; line-height:15px; font-weight:800; letter-spacing:1px; color:#ffd35a; }
+.exf-fx-newlist{ display:flex; flex-wrap:wrap; gap:4px 14px; min-width:0; }
+.exf-fx-newitem{ display:flex; align-items:center; gap:6px; min-width:0; font-size:13px; font-weight:800; color:#fff; white-space:nowrap; }
+.exf-fx-newmore{ font-size:12px; color:var(--ink-dim); align-self:center; }
 .exf-fx-choice{ position:absolute; left:0; right:0; bottom:12px; display:flex; justify-content:center; gap:12px;
   opacity:0; animation:exfChoiceIn .35s ease-out 2.05s both; }
 @keyframes exfChoiceIn{ 0%{ opacity:0; transform:translateY(10px); } 100%{ opacity:1; transform:none; } }

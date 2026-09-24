@@ -6219,7 +6219,7 @@ function exploreShowResult(res){
       : `<span class="exr-hero-slot is-empty" title="${s.label}"><span class="exf-slot-empty">${s.label}</span></span>`).join('');
   document.getElementById('exploreResultHero').innerHTML =
       `<div class="exr-hero-fig">`
-    + `<div class="exr-hero-img${heroSetDef ? ' has-set' : ''}" style="--rc:${best ? best.color : '#7dffb0'};--sc:${heroSetDef ? heroSetDef.color : 'transparent'}">${equippedIconImgTag(res.element, el.label || '')}</div>`
+    + `<div class="exr-hero-img${heroSetDef ? ' has-set' : ''}" style="--rc:${best ? best.color : '#7dffb0'};--sc:${heroSetDef ? heroSetDef.color : 'transparent'}"><canvas class="exr-hero-cv" id="exploreResultFig"></canvas></div>`
     + `<div class="exr-hero-gear">${gearCol}</div></div>`
     + `<div class="exr-hero-name">${res.name || el.label || ''}${heroSetDef ? `<span class="exr-hero-set" style="--sc:${heroSetDef.color}">${heroSetDef.emblem}${heroSetDef.name}${heroSet.n}</span>` : ''}</div>`;
   const bossDefs = (res.bosses || []).map(id=> (typeof EXPLORE_BOSSES!=='undefined') ? EXPLORE_BOSSES.find(b=> b.id === id) : null).filter(Boolean);
@@ -6237,7 +6237,8 @@ function exploreShowResult(res){
   const list = document.getElementById('exploreResultList');
   const items = res.items || [];
   const keptN = items.reduce((s, it)=> s + it.kept, 0), lostN = items.reduce((s, it)=> s + it.lost, 0);
-  document.getElementById('exploreResultCount').innerHTML = `${keptN}個${lostN > 0 ? ` <em class="exr-lost-sum">落とした −${lostN}</em>` : ''}`;
+  document.getElementById('exploreResultCount').innerHTML = `${keptN}個${lostN > 0 ? ` <em class="exr-lost-sum">落とした −${lostN}</em>` : ''}`
+    + `<span class="exr-list-more hidden" id="exploreResultMore"></span>`;
   if(!items.length){
     list.innerHTML = '<div class="exr-empty">持ち帰った素材はありません</div>';
   } else {
@@ -6269,6 +6270,13 @@ function exploreShowResult(res){
     if(tm && tr) topEl.style.setProperty('--rc', tr.color);
     topEl.innerHTML = (tm && tr) ? `<span class="exr-top-ico">${tm.icon}</span><span class="exr-top-main"><span class="exr-top-label">いちばんの収穫</span>`
       + `<span class="exr-top-name">${tm.name}</span></span><span class="exr-top-rar">${tr.label}</span><span class="exr-top-n">×${topIt.kept}</span>` : '';
+    // 縦持ち(狭い画面)は右列に大きな札の場所が無いので、同じ中身を見出しの行の小さな札で出す(情報は消さない=R3)
+    const chip = document.getElementById('exploreResultTopChip');
+    if(chip){
+      chip.classList.toggle('hidden', !(tm && tr && tr.order >= 1));
+      if(tm && tr) chip.style.setProperty('--rc', tr.color);
+      chip.innerHTML = (tm && tr) ? `<span class="exr-tc-label">いちばんの収穫</span><span class="exr-tc-main">${tm.icon} ${tm.name} ×${topIt.kept}</span>` : '';
+    }
   }
   // ゴールドの内訳(exploreFinish の goldRows。0の行も出す=何で稼げるかが分かる)
   document.getElementById('exploreResultGoldRows').innerHTML = (res.goldRows || []).map(r=>
@@ -6281,9 +6289,27 @@ function exploreShowResult(res){
     const ready = Object.keys(EXPLORE_GEAR).filter(k=> exploreGearStateOf(k, gear, stash)==='craft');
     const n = ready.length;
     if(craftEl){
-      craftEl.classList.toggle('hidden', !n);
-      craftEl.innerHTML = n ? `<span class="exr-craft-label">⚒️ 工房で作れる装備</span><span class="exr-craft-list">${
-        ready.slice(0, 6).map(k=> `<span class="exr-craft-item">${exploreGearIconHtml(k, 'is-mini')}<span>${EXPLORE_GEAR[k].name}</span></span>`).join('')}${n > 6 ? `<span class="exr-craft-more">ほか${n - 6}</span>` : ''}</span>` : '';
+      /* この素材で作れる装備: 持ち帰った素材を使う装備(まだ持っていない物)。作れる物が先、次に足りない数の少ない順。
+         押すとその装備を選んだ工房が開く(素材→装備の導線)。入るだけ並べ、入らない分は「ほかN件」(exploreFitCraftCards) */
+      const keptKeys = items.filter(it=> it.kept > 0).map(it=> it.key);
+      const cands = Object.keys(EXPLORE_GEAR).filter(k=> !EXPLORE_GEAR[k].root && !gear.owned.includes(k)
+          && Object.keys(EXPLORE_GEAR[k].mats || {}).some(m=> keptKeys.includes(m)))
+        .map(k=>{
+          const chk = exploreGearCraftCheck(k, stash, gear);
+          const short = chk.rows.filter(r=> r.have < r.need);
+          return { k, ok: chk.ok, fromOk: chk.fromOk, short, lack: short.reduce((s2, r)=> s2 + r.need - r.have, 0) + (chk.fromOk ? 0 : 9) };
+        })
+        .sort((a, b)=> (b.ok - a.ok) || (a.lack - b.lack));
+      craftEl.classList.toggle('hidden', !cands.length);
+      craftEl.innerHTML = cands.length ? `<div class="exr-craft-label">⚒️ この素材で作れる装備${n ? `<em>今すぐ作れる ${n}</em>` : ''}</div>`
+        + `<div class="exr-craft-list" id="exploreResultCraftList">${cands.map(c=>{
+            const g = EXPLORE_GEAR[c.k];
+            const st = c.ok ? '<b class="exr-cc-ok">作れる！</b>'
+              : !c.fromOk ? '<span class="exr-cc-need">派生元の武器が必要</span>'
+              : `<span class="exr-cc-need">あと ${c.short.map(r=> `${EXPLORE_MATERIALS[r.key].icon}×${r.need - r.have}`).join(' ')}</span>`;
+            return `<button class="exr-craft-card${c.ok ? ' is-ok' : ''}" data-key="${c.k}">${exploreGearIconHtml(c.k, 'is-mini')}`
+              + `<span class="exr-cc-main"><span class="exr-cc-name">${g.name}</span>${st}</span></button>`;
+          }).join('')}</div>` : '';
     }
     if(forgeBtn){
       forgeBtn.textContent = n > 0 ? `⚒️ 工房へ(作れる装備 ${n})` : '⚒️ 工房へ';
@@ -6292,6 +6318,44 @@ function exploreShowResult(res){
   }
   ov.classList.remove('hidden');
   exploreSnapListRows(list);
+  if(exploreFitCraftCards() === false) exploreSnapListRows(list);   // 欄を外したぶん一覧を伸ばし直す
+  exploreListMoreHint(list);
+  list.onscroll = ()=> exploreListMoreHint(list);
+  // 竜に着けた装備を重ねる(フィールドと同じ exploreDrawWornGear)
+  exploreRenderWornFigure(document.getElementById('exploreResultFig'), res.element, heroGear, { padX:0.04, top:0.08, bottom:0.03 });
+}
+/* 一覧の下にまだ札があることを見せる(縦持ちで7つ目以降が黙って見えなかった=批評指摘)。
+   見出しの行に「▼ 下にあとN件」、一覧の下の縁を薄くぼかす。送り切ったら消す */
+function exploreListMoreHint(list){
+  const el = document.getElementById('exploreResultMore');
+  if(!list || !el) return;
+  const bottom = list.scrollTop + list.clientHeight;
+  const hidden = Array.from(list.children).filter(c=> c.offsetTop + c.offsetHeight > bottom + 2).length;
+  el.classList.toggle('hidden', !hidden);
+  el.textContent = hidden ? `▼ 下にあと${hidden}件` : '';
+  list.classList.toggle('has-more', !!hidden);
+}
+/* 作れる装備の札は入るだけ並べる(欄の高さは画面から決まる=R1)。入らない札は外して「ほかN件」にする */
+function exploreFitCraftCards(){
+  const wrap = document.getElementById('exploreResultCraftable');
+  const listEl = document.getElementById('exploreResultCraftList');
+  if(!wrap || !listEl || wrap.classList.contains('hidden')) return;
+  const cards = Array.from(listEl.querySelectorAll('.exr-craft-card'));
+  cards.forEach(c=> c.classList.remove('hidden'));
+  const old = listEl.querySelector('.exr-craft-more'); if(old) old.remove();
+  const maxB = listEl.clientHeight;
+  // 札が1枚も入らない高さなら欄ごと出さない(R3で最初に削る。工房へのボタンに作れる数が出る)
+  if(!(maxB >= (cards[0] ? cards[0].offsetHeight : 54))){ wrap.classList.add('hidden'); return false; }
+  let cut = cards.filter(c=> c.offsetTop + c.offsetHeight > maxB + 1);
+  if(!cut.length) return;
+  // 「ほかN件」を置く場所のために、見えている最後の1枚も外す
+  const vis = cards.filter(c=> !cut.includes(c));
+  if(vis.length) cut = [vis[vis.length - 1], ...cut];
+  cut.forEach(c=> c.classList.add('hidden'));
+  const more = document.createElement('span');
+  more.className = 'exr-craft-more';
+  more.textContent = `ほか${cut.length}件は工房で`;
+  listEl.appendChild(more);
 }
 /* 送れる一覧の高さを「札の行の区切り」に合わせる(途中で切れた行を見せない=批評指摘)。
    使える高さ(R1で決まった箱)から入る行数を数え、その行数ぶんの高さにする。入りきるなら何もしない */
@@ -6325,6 +6389,12 @@ function exploreExit(){
 document.getElementById('exploreResultBackBtn').addEventListener('click', exploreExit);
 // 結果画面から工房へ(持ち帰った素材をその場で装備に換える流れ。ロビーへ戻ってから開く)
 document.getElementById('exploreResultForgeBtn').addEventListener('click', ()=>{ exploreExit(); openExploreForge(); });
+document.getElementById('exploreResultCraftable').addEventListener('click', (e)=>{
+  const b = e.target instanceof Element && e.target.closest('.exr-craft-card');
+  if(!b || !EXPLORE_GEAR[b.dataset.key]) return;
+  exploreForgeState.sel = b.dataset.key;
+  exploreExit(); openExploreForge();
+});
 
 /* =====================================================================
    ロビーで探検を選んでいるあいだの表示(バトロワの言葉を出さない)
@@ -6357,14 +6427,14 @@ function renderLobbyExplorePanel(){
     : `<span class="exf-slot-empty" title="${s.label}">＋</span>`).join('');
   const fxTxt = exploreGearFxText(tot.fx);
   const last = loadExploreLast();
-  let lastTxt = '前回の持ち帰り: まだありません';
+  let lastTxt = '前回の持ち帰り: まだなし';
   if(last){
     const b = last.best && EXPLORE_RARITY[last.best];
     const icons = (last.top || []).map(k=> EXPLORE_MATERIALS[k] ? EXPLORE_MATERIALS[k].icon : '').join('');
     lastTxt = `前回: ${EXPLORE_LAST_REASON_LABEL[last.reason] || ''} ${icons} ${last.kept || 0}個${b ? ` <b style="color:${b.color}">${b.label}</b>` : ''}`;
   }
   ex.innerHTML = `<span class="lep-top"><span class="lep-slots">${slots}</span><span class="lep-go">⚒️ 工房</span></span>`
-    + `<span class="lep-fx">${fxTxt ? '探検での効果 ' + fxTxt : '装備なし(工房でボス素材から作る)'}</span>`
+    + `<span class="lep-fx">${fxTxt ? '効果 ' + fxTxt : '装備なし・工房で作れます'}</span>`
     + `<span class="lep-last">${lastTxt}</span>`;
 }
 document.getElementById('lobbyExplorePanel').addEventListener('click', ()=> openExploreForge());
@@ -6656,15 +6726,16 @@ function renderExploreForgeDetail(gear, stash){
   // 着けたときの姿: 自分のモンスターに、着けた後にいちばん多いセットの色の光と足元の輪(フィールドと同じ見せ方)
   const wearSet = exploreGearMainSet({ ...gear.equip, [g.slot]: key });
   const wearDef = wearSet ? EXPLORE_GEAR_SETS[wearSet.set] : null;
-  const figHtml = (typeof equippedIconImgTag==='function' && game && game.selectedElement)
+  const figHtml = (game && game.selectedElement)
     ? `<span class="exf-stage-fig${wearSet && wearSet.active ? ' is-lit' : ''}" style="--wc:${wearDef ? wearDef.color : set.color || rar.color}">`
-      + `<span class="exf-fig-ring"></span>${equippedIconImgTag(game.selectedElement, '')}`
-      + `<span class="exf-fig-emb">${wearDef ? wearDef.emblem : ''}</span><span class="exf-fig-cap">着けた姿</span></span>` : '';
+      + `<span class="exf-fig-ring"></span><canvas class="exf-fig-cv" id="exploreForgeFig"></canvas>`
+      + `<span class="exf-fig-cap">着けた姿</span></span>` : '';
   stage.innerHTML = `<span class="exf-stage-art">${exploreGearIconHtml(key, 'is-stage')}</span>` + figHtml
     + `<span class="exf-stage-text"><span class="exf-d-name">${g.name}</span>`
     + `<span class="exf-d-meta"><span class="exf-d-rar">${rar.label}</span><span class="exf-d-meta-to">${set.name}セット・${slot ? slot.label : ''}${g.shape ? (g.shape==='bow' ? '・弓' : '・銃') : ''}</span></span>`
     + (from.length ? `<span class="exf-d-from">派生元 ${from.map(f=> EXPLORE_GEAR[f].name).join(' / ')}</span>` : '')
     + `<span class="exf-d-state is-${st}">${EXPLORE_GEAR_STATE_LABEL[st]}</span></span>`;
+  if(game && game.selectedElement) exploreRenderWornFigure(document.getElementById('exploreForgeFig'), game.selectedElement, { ...gear.equip, [g.slot]: key }, { padX:0.02, top:0.16, bottom:0.1 });
   if(g.root){
     body.innerHTML = `<div class="exf-note">${g.note || ''}</div>`;
     btn.className = 'exf-act-btn is-root'; btn.disabled = true; btn.textContent = '補給箱で拾う';
@@ -6717,10 +6788,14 @@ function renderExploreForgeDetail(gear, stash){
 function exploreForgeCraft(key){
   if(exploreForgeState.busy) return;
   const before = exploreGearTotals(loadExploreGear().equip).fx;
+  const readyOf = ()=>{ const gg = loadExploreGear(), ss = loadExploreStash(); return Object.keys(EXPLORE_GEAR).filter(k=> exploreGearStateOf(k, gg, ss)==='craft'); };
+  const ready0 = readyOf();
   if(!exploreCraftGear(key)){ pushToast('素材が足りません'); renderExploreForge(); return; }
+  // これを作ったことで新しく作れるようになった物(武器の派生など)
+  const newly = readyOf().filter(k=> k !== key && !ready0.includes(k));
   exploreForgeState.busy = true;
   renderExploreForge();
-  playExploreForgeFx(key, before, (equip)=>{
+  playExploreForgeFx(key, before, newly, (equip)=>{
     exploreForgeState.busy = false;
     if(equip){ exploreEquipGear(key); playSe('train'); }
     renderExploreForge();
@@ -6731,7 +6806,7 @@ function exploreForgeCraft(key){
 const EXPLORE_FORGE_FX_REVEAL = 1.45;   // 光って完成が出る秒(CSS の exfFlash / exfPop の delay と同じ)
 const EXPLORE_FORGE_FX_CHOICE = 2.05;   // 「装備する/あとで」が押せるようになる秒(CSS の exfChoiceIn の delay と同じ)
 let exploreForgeFxTimers = [];
-function playExploreForgeFx(key, before, onEnd){
+function playExploreForgeFx(key, before, newly, onEnd){
   const fx = document.getElementById('exploreForgeFx');
   const g = EXPLORE_GEAR[key];
   if(!fx || !g){ if(onEnd) onEnd(false); return; }
@@ -6748,20 +6823,40 @@ function playExploreForgeFx(key, before, onEnd){
         + `--sd:${(0.18 + hit*0.45).toFixed(2)}s;--ss:${(0.6 + Math.random()*0.9).toFixed(2)}"></i>`;
     }
   }
-  // 着けたら合計がどう変わるか(同じ部位に今ある物と入れ替えた場合)
+  // 着けたら合計がどう変わるか(同じ部位に今ある物と入れ替えた場合)。差は大きな ▲▼ の数字で
   const gear = loadExploreGear();
-  const after = exploreGearTotals({ ...gear.equip, [g.slot]: key }).fx;
-  const chg = Object.keys(EXPLORE_GEAR_STATS).filter(s=> Math.round((before[s]||0)*100) !== Math.round((after[s]||0)*100))
-    .map(s=> `<span class="exf-fx-chg"><em>${EXPLORE_GEAR_STATS[s].short}</em>${exploreFmtPct(before[s])} → <b>${exploreFmtPct(after[s])}</b></span>`).join('');
-  fx.innerHTML = `<div class="exf-fx-bg"></div><div class="exf-fx-rays"></div>`
+  const eqAfter = { ...gear.equip, [g.slot]: key };
+  const after = exploreGearTotals(eqAfter).fx;
+  const chgKeys = Object.keys(EXPLORE_GEAR_STATS).filter(s=> Math.round((before[s]||0)*100) !== Math.round((after[s]||0)*100));
+  const deltas = chgKeys.map(s=>{
+    const d = Math.round(((after[s]||0) - (before[s]||0))*100);
+    const good = EXPLORE_GEAR_STATS[s].lowerIsBetter ? d < 0 : d > 0;
+    return `<div class="exf-fx-drow"><span class="exf-fx-dlabel">${EXPLORE_GEAR_STATS[s].label}</span>`
+      + `<span class="exf-fx-dval">${exploreFmtPct(before[s])} → <b>${exploreFmtPct(after[s])}</b></span>`
+      + `<span class="exf-fx-dbig ${good ? 'is-up' : 'is-down'}">${good ? '▲' : '▼'}${Math.abs(d)}</span></div>`;
+  }).join('');
+  const wearSet = exploreGearMainSet(eqAfter);
+  const wearDef = wearSet ? EXPLORE_GEAR_SETS[wearSet.set] : null;
+  const newHtml = (newly && newly.length) ? `<div class="exf-fx-new"><span class="exf-fx-newlabel">🔓 新しく作れるようになった</span><span class="exf-fx-newlist">${
+      newly.slice(0, 3).map(k=> `<span class="exf-fx-newitem">${exploreGearIconHtml(k, 'is-mini')}<span>${EXPLORE_GEAR[k].name}</span></span>`).join('')}${newly.length > 3 ? `<span class="exf-fx-newmore">ほか${newly.length - 3}</span>` : ''}</span></div>` : '';
+  fx.innerHTML = `<div class="exf-fx-bg"></div>`
     + `<div class="exf-fx-anvil"><span class="exf-fx-hammer">🔨</span><span class="exf-fx-glow"></span>${sparks}</div>`
     + `<div class="exf-fx-flash"></div>`
-    + `<div class="exf-fx-item">${exploreGearIconHtml(key, 'is-hero')}</div>`
-    + `<div class="exf-fx-text"><span class="exf-fx-done">完成！</span><span class="exf-fx-name">${g.name}</span>`
-    + `<span class="exf-fx-rar">${rar.label}</span>${chg ? `<span class="exf-fx-chgs">着けると ${chg}</span>` : ''}</div>`
+    + `<div class="exf-fx-reveal">`
+    +   `<div class="exf-fx-figwrap" style="--sc:${wearDef ? wearDef.color : rar.color}"><div class="exf-fx-rays"></div>`
+    +     `<canvas class="exf-fx-fig" id="exploreForgeFxFig"></canvas><span class="exf-fx-figcap">着けた姿</span></div>`
+    +   `<div class="exf-fx-info">`
+    +     `<div class="exf-fx-headrow"><span class="exf-fx-item">${exploreGearIconHtml(key, 'is-fx')}</span>`
+    +       `<span class="exf-fx-text"><span class="exf-fx-done">完成！</span><span class="exf-fx-name">${g.name}</span><span class="exf-fx-rar">${rar.label}</span></span></div>`
+    +     (deltas ? `<div class="exf-fx-deltas"><span class="exf-fx-dhead">着けると</span>${deltas}</div>` : '')
+    +     newHtml
+    +   `</div>`
+    + `</div>`
     + `<div class="exf-fx-choice"><button class="exf-fx-later" data-act="later">あとで</button>`
     + `<button class="exf-fx-equip" data-act="equip">装備する</button></div>`;
   fx.classList.remove('hidden');
+  const selEl = (game && game.selectedElement) || 'fire';
+  exploreRenderWornFigure(document.getElementById('exploreForgeFxFig'), selEl, eqAfter, { padX:0.04, top:0.06, bottom:0.04 });
   [0.18, 0.63, 1.08].forEach(t=> exploreForgeFxTimers.push(setTimeout(()=> playSe('expForgeHit'), t*1000)));
   exploreForgeFxTimers.push(setTimeout(()=> playSe(g.rarity==='legendary' ? 'expLootLegend' : 'expForgeDone'), EXPLORE_FORGE_FX_REVEAL*1000));
   let done = false;

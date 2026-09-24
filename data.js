@@ -520,6 +520,7 @@ function entityWalkFrameImage(e){
   }
   let idx = 0; // 停止中は静止(先頭コマ)
   if(moving){ const phase = Math.floor((t + (e.id||0)*0.13)/WALK_FRAME_DUR); idx = ((phase%8)+8)%8; }
+  e._walkBack = back;   // 探検で着けた装備を重ねるとき、後ろ姿なら武器を背中の上に描く(explore_loot.js)
   const baseImg = (back ? set.back : set.front)[idx];
   if(!imgIsReady(baseImg)) return null;
   // SSR専用コマは再着色しない。素体で色スキン(element:colorId)装備時のみ再着色。
@@ -6413,6 +6414,8 @@ const EXPLORE_FAIL_KEEP_MIN       = 1;     // ただし素材の種類ごとに�
 // 演出の尺(秒)。出発の札とカメラの一周 / 終わった直後のフィールドの札 / 力尽き(札→暗転→キャンプで明転)
 const EXPLORE_INTRO_SEC           = 2.6;   // 出発: 「探検開始」の札を出し、カメラがキャンプを回る(この間は動けない)
 const EXPLORE_OUTRO_SEC           = 1.6;   // 終了: フィールドに「帰還成功/時間切れ/力尽きた」の札を出してから報酬画面へ
+const EXPLORE_OUTRO_RETURN_SEC    = 2.8;   // 帰還成功だけ長め(光の柱に包まれ、持ち帰った素材のアイコンが札を流れる)
+const EXPLORE_FAINT_SLOWMO        = { scale:0.35, holdSec:0.3, easeSec:0.35 };   // 力尽きた瞬間の一瞬のスロー(実時間の秒。ボス討伐の間と同じ仕組み)
 const EXPLORE_FAINT_SEQ           = { fall:0.5, card:1.1, fadeOut:0.35, black:0.35, fadeIn:0.8 };   // 力尽き: 倒れる→札→暗転→(キャンプへ運ぶ)→明転(起き上がる)
 const EXPLORE_LAST_STORAGE_KEY    = 'aramon_explore_last_v1';   // 前回の持ち帰り(ロビー右列に出す。端末ごとの表示なので同期しない)
 const EXPLORE_WORLD_SCALE         = 1;     // フィールドの広さ(通常試合と同じ 18100 四方)
@@ -6784,6 +6787,7 @@ const EXPLORE_CRATE_PER_REGION         = { meadow:6, frost:6, volcano:6, jungle:
 const EXPLORE_CRATE_PER_REGION_DEFAULT = 5;
 const EXPLORE_CRATE_CAMP_COUNT    = 2;      // ベースキャンプの中(出発してすぐ目に入る位置。最初の「開ける」を覚える)
 const EXPLORE_CRATE_MIN_GAP       = 520;    // 補給箱どうしの最小の間隔
+const EXPLORE_CRATE_NEST_CLEAR    = 520;    // ボスの巣(半径)のさらにこの外まで補給箱を置かない(ボス戦の場を散らかさない)
 const EXPLORE_CRATE_OPEN_RANGE    = 120;    // 箱の中心からこの距離にとどまると開き始める
 const EXPLORE_CRATE_OPEN_SEC      = 0.6;    // とどまって開くまでの秒数(離れると進みは倍の速さで戻る)
 const EXPLORE_CRATE_LID_SEC       = 0.38;   // 蓋が開ききるまでの秒数
@@ -6836,8 +6840,13 @@ const EXPLORE_CRATE_HEAD = { common:{mat:'common'}, rare:{mat:'rare'}, epic:{mat
 // 光の柱(落ちている品の上に立つ。遠くから価値が分かる)。高さ・太さはワールド単位
 // 光の柱はレア度で段階的に太く高く(金がいちばん太く、根元に輪)。見ただけで価値の順が分かるように
 const EXPLORE_PILLAR_HEIGHT       = { common:210, rare:320, epic:450, legendary:640 };
-const EXPLORE_PILLAR_WIDTH        = { common:8,   rare:12,  epic:17,  legendary:25 };
-const EXPLORE_PILLAR_MIN_PX       = { common:2.2, rare:2.8, epic:3.6, legendary:4.8 };   // 遠くでも柱がこの太さ(画面px)より細くならない
+/* 太さの差は1.5倍まで(金の柱が視界をふさぐ壁になった=批評指摘)。レア度の差は明るさ・周りを舞う粒・根元の輪で付ける */
+const EXPLORE_PILLAR_WIDTH        = { common:10,  rare:11,  epic:13,  legendary:15 };
+const EXPLORE_PILLAR_MIN_PX       = { common:2.6, rare:2.8, epic:3.3, legendary:3.9 };   // 遠くでも柱がこの太さ(画面px)より細くならない
+const EXPLORE_PILLAR_GLOW         = { common:0.42, rare:0.55, epic:0.7, legendary:0.9 };  // 柱の明るさ
+const EXPLORE_PILLAR_MOTES        = { common:0, rare:2, epic:4, legendary:7 };            // 柱の周りを螺旋に昇る光の粒の数
+/* 補給箱を開けた瞬間: 中身がレア度の枠付きアイコンになって箱の上に扇形に並び(rise→hold)、そこから地面へ飛ぶ */
+const EXPLORE_CRATE_FAN           = { rise:0.28, hold:0.85, lift:95, gap:44, arc:18 };   // 秒 / 箱の上の高さ・間隔・弧の反り(ワールド単位)
 const EXPLORE_DROP_BADGE          = { common:15, rare:17, epic:20, legendary:25 };   // 落ちている品のしるし(アイコン)の大きさ(ワールド単位の半径)
 const EXPLORE_DROP_FLOAT          = 34;     // しるしを地面から浮かせる高さ(ワールド単位)
 const EXPLORE_PILLAR_VIEW         = 6500;   // 光の柱が見える距離
@@ -7094,6 +7103,16 @@ function exploreGearTotals(equip){
   }
   return { fx, sets };
 }
+/* 着けた装備を体に重ねる(explore_loot.js の exploreDrawWornGear)。位置と大きさは体の矩形(絵の不透明部分)に対する比。
+   x = 体の中心からの横(芯の幅に対する比)/ y = 頭のてっぺんからの縦(体の高さに対する比)/ w = 大きさ(芯の幅に対する比)
+   core = 芯の幅(翼・尾で横に広い絵でも体の幅で置く。体の高さ×この比を上限にする) */
+const EXPLORE_WORN = {
+  core:0.62,
+  head:   { x:0,     y:0.03, w:0.5 },             // 頭のてっぺんに載せる(顔は隠さない)
+  body:   { x:0,     y:0.48, w:0.66 },
+  arms:   { x:0.40,  y:0.56, w:0.30 },            // 左右に1つずつ(左は裏返す)
+  weapon: { x:0.36,  y:0.42, w:1.15, rot:-0.55, backX:-0.05, backRot:0.6 },   // 前向きは体の後ろ・後ろ姿は背中の上
+};
 /* 着けている装備でいちばん多いセット(見た目の色に使う。フィールドの足元の光・報酬画面・工房の「着けたときの姿」)。
    同じ数なら発動しているセット効果が多い方、それも同じなら表の先(EXPLORE_GEAR_SLOTS の並び)。何も着けていなければ null
    返り値: { set, n, active(発動しているセット効果の数) } */

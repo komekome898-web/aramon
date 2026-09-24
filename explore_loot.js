@@ -69,6 +69,12 @@ function exploreCrateSpots(){
   const camp = exploreState.camp;
   const farFromOthers = (x, y)=> spots.every(s=> Math.hypot(s.x-x, s.y-y) >= EXPLORE_CRATE_MIN_GAP);
   const onHazard = (x, y)=> (typeof isOnHazard==='function') && isOnHazard(x, y, 70);
+  /* ボスの巣とその周り(巣の半径+EXPLORE_CRATE_NEST_CLEAR)には置かない。ボス戦の場に箱があると散らかって見える。
+     巣の位置は exploreBossNest(地域)と、もう置かれたボスの台帳(nestX/nestY)の両方から取る */
+  const nests = [];
+  for(const reg of EXPLORE_REGIONS){ const n = (typeof exploreBossNest==='function') ? exploreBossNest(reg.id) : null; if(n) nests.push(n); }
+  for(const b of (exploreState.bosses || [])) if(b.nestX != null) nests.push({ x:b.nestX, y:b.nestY, r:EXPLORE_BOSS_NEST_RADIUS });
+  const nearNest = (x, y)=> nests.some(n=> Math.hypot(n.x - x, n.y - y) < (n.r || EXPLORE_BOSS_NEST_RADIUS) + EXPLORE_CRATE_NEST_CLEAR);
   // ベースキャンプ: 出発地点の左右前方(出発してすぐ目に入る。最初の「開ける」をここで覚える)
   if(camp && exploreState.spawn){
     const sp = exploreState.spawn, b = exploreState.beacon || camp;
@@ -87,9 +93,9 @@ function exploreCrateSpots(){
       const a = rand(0, Math.PI*2), d = rc.r*0.85*Math.sqrt(rand(0,1));
       const x = clamp(rc.x + Math.cos(a)*d, 240, WORLD.w-240), y = clamp(rc.y + Math.sin(a)*d, 240, WORLD.h-240);
       if(camp && Math.hypot(x-camp.x, y-camp.y) < camp.r + 300) continue;
-      if(onHazard(x, y)) continue;
+      if(onHazard(x, y) || nearNest(x, y)) continue;
       const p = clearObstaclePoint(x, y, 80);
-      if(onHazard(p.x, p.y) || !farFromOthers(p.x, p.y)) continue;
+      if(onHazard(p.x, p.y) || !farFromOthers(p.x, p.y) || nearNest(p.x, p.y)) continue;
       spots.push({ x:p.x, y:p.y, region:reg.id, danger:reg.danger });
       placed++;
     }
@@ -145,13 +151,26 @@ function exploreOpenCrate(c){
   c.opened = true; c.openedAt = matchTime; c.hold = 0;
   const items = exploreRollCrate(c).sort((a,b)=> exploreRarityOrder(exploreItemInfo(a).rarity) - exploreRarityOrder(exploreItemInfo(b).rarity));
   const baseA = rand(0, Math.PI*2);
+  /* 開いた瞬間: 中身がレア度の枠付きアイコンになって箱の上に扇形に並ぶ(いちばん良い物が真ん中)。
+     並んだ所から1つずつ地面へ飛ぶ(良い物ほど後)。扇の絵は exploreDrawCrateFan */
+  const F = EXPLORE_CRATE_FAN, H = EXPLORE_CRATE_SIZE.h*exploreCrateScale(c);
+  const nIt = items.length;
+  // 真ん中から外へ: 良い物(配列の後ろ)ほど真ん中の位置
+  const offs = items.map((k, i)=>{ const r = nIt - 1 - i; return r === 0 ? 0 : (r % 2 ? -1 : 1) * Math.ceil(r/2); });
+  const shift = (Math.max(...offs, 0) + Math.min(...offs, 0)) / 2;
+  const yaw = camState.yaw, rx = -Math.sin(yaw), ry = Math.cos(yaw);
+  const t0 = matchTime + EXPLORE_CRATE_LID_SEC*0.3;
+  c.fan = { t0, items:[] };
   items.forEach((k, i)=>{
     const info = exploreItemInfo(k);
     const n = (info.kind==='mat' && info.rarity==='common') ? 1 + Math.floor(Math.random()*2) : 1;
+    const off = offs[i] - shift;
+    const fx = c.x + rx*off*F.gap, fy = c.y + ry*off*F.gap, fz = H + F.lift - Math.abs(off)*F.arc;
+    const launch = EXPLORE_CRATE_LID_SEC*0.3 + F.rise + F.hold + i*EXPLORE_CRATE_BURST_GAP*1.6;
+    c.fan.items.push({ key:k, rarity:info.rarity, n, off, fx, fy, fz, i, launchAt: matchTime + launch });
     // 周り一周に均等に散らす(重ならない)。少しだけ乱す
-    const a = baseA + (i / items.length) * Math.PI*2 + rand(-0.25, 0.25);
-    exploreSpawnDrop(c.x, c.y, k, null, { n, fromZ:EXPLORE_CRATE_SIZE.h*exploreCrateScale(c), angle:a,
-      delay: EXPLORE_CRATE_LID_SEC*0.45 + i*EXPLORE_CRATE_BURST_GAP });
+    const a = baseA + (i / nIt) * Math.PI*2 + rand(-0.25, 0.25);
+    exploreSpawnDrop(fx, fy, k, null, { n, fromZ:fz, angle:a, delay:launch, fromCrate:c });
   });
   exploreCrateOpenFx(c);
   playSe('expCrateOpen');
@@ -350,7 +369,8 @@ function exploreLootDrawables(list){
   for(const c of exploreState.crates){
     if(Math.hypot(c.x-cx, c.y-cy) > EXPLORE_CRATE_VIEW) continue;
     // 閉じた紫・金の箱は上に立つ光が山の向こうから見えていれば描く
-    const topZ = (!c.opened && EXPLORE_CRATE_BEACON_H[c.rarity]) ? EXPLORE_CRATE_BEACON_H[c.rarity] : EXPLORE_CRATE_SIZE.h*exploreCrateScale(c);
+    const topZ = (!c.opened && EXPLORE_CRATE_BEACON_H[c.rarity]) ? EXPLORE_CRATE_BEACON_H[c.rarity]
+      : EXPLORE_CRATE_SIZE.h*exploreCrateScale(c) + (c.fan ? EXPLORE_CRATE_FAN.lift : 0);
     if(occludedByMountain(c.x, c.y, c.z + topZ)) continue;
     const p = project(c.x, c.y, c.z);
     if(p) list.push({ kind:'exl', obj:c, p, draw:exploreDrawCrate });
@@ -538,13 +558,44 @@ function exploreDrawCrate(c, p0){
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
       if(f.under && c.opened){
-        // 開いた蓋の裏(内張り)。中の光を受けてレア度の色に光る
+        /* 開いた蓋の裏。黒い板のままだと画面(テレビ)に見えた(批評指摘)ので、表と同じ作りにする:
+           金属の地 → 内張りの板 → 四隅の金具と鋲 → 真ん中の紋章。中の光を受けて少しレア度の色を帯びる */
         const age = matchTime - c.openedAt;
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = exploreRgba(col, 0.2 + 0.35*Math.max(0, 1 - age/2.5)); ctx.fill();
-        ctx.globalCompositeOperation = 'source-over';
-        const inset = f.pts.map(q=> LP(q[0]*0.8, q[1]*0.78 + (Y0 + Y1)/2*0.22, q[2]));
-        if(_exlPoly(inset)){ ctx.strokeStyle = exploreRgba(col, 0.55); ctx.lineWidth = 1; ctx.stroke(); }
+        const my = (Y0 + Y1)/2, hy = (Y1 - Y0)/2;
+        const U = (u, v)=> LP(X*u, my + hy*v, H - 0.3);
+        ctx.fillStyle = _exlShade(bodyMetal, [0, 0, 1], 0.95); ctx.fill();
+        if(_exlPoly([U(-0.8,-0.74), U(0.8,-0.74), U(0.8,0.74), U(-0.8,0.74)])){
+          // 内張りも金属の板(蓋の表と同じ地の色)。横の継ぎ目の線で板に見せる
+          ctx.fillStyle = _exlShade(lidMetal, [0, 0, 1], 0.8); ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = exploreRgba(col, 0.06 + 0.22*Math.max(0, 1 - age/2.5)); ctx.fill();
+          ctx.globalCompositeOperation = 'source-over';
+          for(const v of [-0.4, 0.4]){
+            const a0 = U(-0.8, v), a1 = U(0.8, v);
+            if(!a0 || !a1) continue;
+            ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = Math.max(1, 1.4*a0.scale);
+            ctx.beginPath(); ctx.moveTo(a0.x, a0.y); ctx.lineTo(a1.x, a1.y); ctx.stroke();
+            ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(a0.x, a0.y + 1.2); ctx.lineTo(a1.x, a1.y + 1.2); ctx.stroke();
+          }
+        }
+        for(const [su, sv] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
+          if(_exlPoly([U(su, sv), U(su*0.62, sv), U(su, sv*0.5)])){
+            ctx.fillStyle = _exlShade(ribMetal, [0, 0, 1], rich ? 1.35 : 1.3); ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+          }
+          const rq = U(su*0.88, sv*0.8);
+          if(rq){ ctx.fillStyle = 'rgba(225,232,240,0.75)'; ctx.beginPath(); ctx.arc(rq.x, rq.y, Math.max(0.9, 1.7*rq.scale*sc), 0, Math.PI*2); ctx.fill(); }
+        }
+        const dia = (kk)=> [U(0, -0.46*kk), U(0.26*kk, 0), U(0, 0.46*kk), U(-0.26*kk, 0)];
+        if(_exlPoly(dia(1.15))){ ctx.fillStyle = _exlShade(ribMetal, [0, 0, 1], 1.2); ctx.fill(); }
+        if(_exlPoly(dia(1))){
+          if(!heavy){ ctx.shadowBlur = 6 + ord*3; ctx.shadowColor = col; }
+          ctx.fillStyle = exploreRgba(col, 0.85); ctx.fill(); ctx.shadowBlur = 0;
+        }
+        if(_exlPoly(dia(0.55))){ ctx.fillStyle = 'rgba(10,14,20,0.85)'; ctx.fill(); }
+        if(_exlPoly(dia(0.26))){ ctx.fillStyle = exploreRgba(ord >= 2 ? '#ffffff' : col, 0.9); ctx.fill(); }
       }
       if(!f.top && !f.under && !far){
         // 側面の厚み: 真ん中に細い光の線(レア度の色)
@@ -558,8 +609,25 @@ function exploreDrawCrate(c, p0){
       if(f.top){
         // 縁の面取り(光を受ける細い線)。箱が「塗った四角」ではなく金属の板に見える
         ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.2; ctx.stroke();
+        // 表の板: 暗い一枚板にしない(開いた蓋が画面に見えた=批評指摘)。地の金属の板+継ぎ目+四隅の鋲
         const inset = f.pts.map(q=> LP(q[0]*0.86, q[1]*0.8, q[2]));
-        if(_exlPoly(inset)){ ctx.fillStyle = _exlShade(rich ? EXPLORE_CRATE_METAL : EXPLORE_CRATE_TRIM, v.wn, 1.25); ctx.fill(); }
+        if(_exlPoly(inset)){
+          ctx.fillStyle = _exlShade(lidMetal, v.wn, 0.92); ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+          if(!far){
+            const my = (Y0 + Y1)/2, hy = (Y1 - Y0)/2*0.8;
+            for(const v2 of [-0.5, 0.5]){
+              const a0 = LP(-X*0.86, my + hy*v2, H + L), a1 = LP(X*0.86, my + hy*v2, H + L);
+              if(!a0 || !a1) continue;
+              ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = Math.max(1, 1.3*a0.scale);
+              ctx.beginPath(); ctx.moveTo(a0.x, a0.y); ctx.lineTo(a1.x, a1.y); ctx.stroke();
+            }
+            for(const [su, sv] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
+              const rq = LP(su*X*0.78, my + sv*hy*0.86, H + L);
+              if(rq){ ctx.fillStyle = 'rgba(230,236,244,0.8)'; ctx.beginPath(); ctx.arc(rq.x, rq.y, Math.max(0.9, 1.7*rq.scale*sc), 0, Math.PI*2); ctx.fill(); }
+            }
+          }
+        }
         // 蓋の上の印(レア度の色の菱形。胴の紋章と同じ形)
         const dia = (k)=> [[0, -D*0.42*k, H+L], [X*0.34*k, 0, H+L], [0, D*0.42*k, H+L], [-X*0.34*k, 0, H+L]].map(q=> LP(q[0], q[1], q[2]));
         if(_exlPoly(dia(1))){
@@ -647,7 +715,7 @@ function exploreDrawCrate(c, p0){
       const bh = EXPLORE_CRATE_BEACON_H[c.rarity] || 500;
       const b0 = P(0, 0, H + L), b1 = P(0, 0, H + L + bh);
       if(b0 && b1){
-        const w0 = Math.max(2.5, W*0.55*b0.scale), w1 = Math.max(1.2, w0*0.25);
+        const w0 = Math.max(2.5, W*0.3*b0.scale), w1 = Math.max(1.2, w0*0.3);
         const g = ctx.createLinearGradient(b0.x, b0.y, b1.x, b1.y);
         g.addColorStop(0, exploreRgba(col, 0.55*pulse)); g.addColorStop(0.35, exploreRgba(col, 0.22*pulse)); g.addColorStop(1, exploreRgba(col, 0));
         ctx.globalCompositeOperation = 'lighter';
@@ -667,7 +735,8 @@ function exploreDrawCrate(c, p0){
     const db = Math.hypot(camPos.x - c.x, camPos.y - c.y);
     if(dl > db){ drawLid(); drawBody(); drawInside(); }
     else { drawBody(); drawInside(); drawLid(); }
-    // 開いた瞬間の光は WebGL層の火花と衝撃の輪(exploreCrateOpenFx)が受け持つ。ここでは平たい光を描かない
+    // 開いた瞬間の光は WebGL層の火花と衝撃の輪(exploreCrateOpenFx)が受け持つ。中身は扇形の枠付きアイコン
+    exploreDrawCrateFan(c);
   }
 
   // --- 近づいたら名前と開ける進み(地面の弧) ---
@@ -721,6 +790,77 @@ function exploreDrawCrate(c, p0){
   ctx.restore();
 }
 
+/* 開いた箱の上に扇形に並ぶ中身(レア度の色の枠付きアイコン)。枠が「白・青・紫・金」を一目で分ける */
+function exploreDrawCrateFan(c){
+  const f = c.fan;
+  if(!f) return;
+  const F = EXPLORE_CRATE_FAN;
+  const age = matchTime - f.t0;
+  if(age < 0) return;
+  const last = f.items.reduce((m, it)=> Math.max(m, it.launchAt), 0);
+  if(matchTime > last + 0.05){ c.fan = null; return; }
+  const H0 = c.z;
+  const list = f.items.slice().sort((a, b)=> Math.abs(b.off) - Math.abs(a.off));   // 真ん中(良い物)を最後=手前に
+  const eb = (t)=>{ const k = 1.70158, u = t - 1; return 1 + (k+1)*u*u*u + k*u*u; };
+  ctx.save();
+  for(const it of list){
+    if(matchTime >= it.launchAt) continue;   // 地面へ飛んだ(ここからは落ちている品の絵)
+    const t = clamp((age - Math.abs(it.off)*0.05) / F.rise, 0, 1);
+    if(t <= 0) continue;
+    const e = eb(t);
+    const x = c.x + (it.fx - c.x)*Math.min(1, e), y = c.y + (it.fy - c.y)*Math.min(1, e);
+    const q = project(x, y, H0 + EXPLORE_CRATE_SIZE.h*exploreCrateScale(c) + (it.fz - EXPLORE_CRATE_SIZE.h*exploreCrateScale(c))*e);
+    if(!q) continue;
+    const info = exploreItemInfo(it.key);
+    const col = exploreRarityColor(it.rarity), ord = exploreRarityOrder(it.rarity);
+    const S = clamp(34*q.scale, 22, 58) * (0.5 + 0.5*Math.min(1, e)) * (it.off === 0 ? 1.12 : 1);
+    ctx.save();
+    ctx.translate(q.x, q.y);
+    // 金・紫は後ろに回る光
+    if(ord >= 2){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.rotate(matchTime*1.4);
+      const rg = ctx.createRadialGradient(0, 0, S*0.2, 0, 0, S*1.25);
+      rg.addColorStop(0, exploreRgba(col, 0.55)); rg.addColorStop(1, exploreRgba(col, 0));
+      ctx.fillStyle = rg;
+      for(let r=0;r<8;r++){ ctx.rotate(Math.PI/4); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-S*0.16, -S*1.25); ctx.lineTo(S*0.16, -S*1.25); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    }
+    // 枠(レア度の色)と暗い地
+    if(!renderHeavyLoad){ ctx.shadowBlur = 8 + ord*5; ctx.shadowColor = col; }
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-S/2, -S/2, S, S, S*0.2) : ctx.rect(-S/2, -S/2, S, S);
+    ctx.fillStyle = exploreRgba(col, 0.95); ctx.fill();
+    ctx.shadowBlur = 0;
+    const iS = S - Math.max(3, S*0.12);
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-iS/2, -iS/2, iS, iS, iS*0.18) : ctx.rect(-iS/2, -iS/2, iS, iS);
+    const bg = ctx.createLinearGradient(0, -iS/2, 0, iS/2);
+    bg.addColorStop(0, 'rgba(40,46,58,0.97)'); bg.addColorStop(1, 'rgba(8,10,14,0.97)');
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.font = `${Math.round(S*0.58)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(info.icon, 0, S*0.03);
+    // 個数とレア度の帯(下の縁)
+    if(it.n > 1){
+      ctx.font = `800 ${Math.max(11, Math.round(S*0.28))}px 'Share Tech Mono', monospace`;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+      ctx.strokeText('×' + it.n, S/2 - 2, S/2 - 3); ctx.fillStyle = '#fff'; ctx.fillText('×' + it.n, S/2 - 2, S/2 - 3);
+    }
+    // 名前(真ん中の1つだけ。並びが読める大きさのときだけ)
+    if(it.off === 0 && S >= 30){
+      const rar = EXPLORE_RARITY[it.rarity] || EXPLORE_RARITY.common;
+      const t2 = `${rar.label}・${info.name}`;
+      ctx.font = `800 ${Math.max(11, Math.round(S*0.26))}px 'Rajdhani', sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+      ctx.strokeText(t2, 0, -S/2 - 6); ctx.fillStyle = col; ctx.fillText(t2, 0, -S/2 - 6);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 /* 光の柱。地面から上へ淡く消える縦の光(加算)。遠くでは細く(最小 EXPLORE_PILLAR_MIN_PX)、
    近くでは地面に輪を出す。高さ・太さ・色はレア度で決まる */
 function exploreDrawPillar(x, y, z, rarity, grow, depth){
@@ -732,9 +872,9 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
   const flick = 0.85 + 0.15*Math.sin(matchTime*5 + x*0.01);
   const w = Math.max(EXPLORE_PILLAR_MIN_PX[rarity] || 2, (EXPLORE_PILLAR_WIDTH[rarity] || 8) * pb.scale);
   const wt = w * 0.45;
-  // 遠いほど少し明るく(細くなって見えなくなるのを防ぐ)
+  // 遠いほど少し明るく(細くなって見えなくなるのを防ぐ)。レア度の差は太さでなく明るさで付ける
   const far = clamp((depth - 1500) / 4000, 0, 1);
-  const a0 = (0.5 + 0.1*ord + 0.25*far) * flick;
+  const a0 = ((EXPLORE_PILLAR_GLOW[rarity] || 0.45) + 0.22*far) * flick;
   ctx.save();
   // ボス戦の間は縄張りの中の柱を薄くする(技の通り道に刺さって予告が読めない。explore.js)
   if(typeof exploreBossFightFade === 'function') ctx.globalAlpha *= exploreBossFightFade(x, y);
@@ -743,20 +883,24 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
   g.addColorStop(0, exploreRgba(col, a0)); g.addColorStop(0.55, exploreRgba(col, a0*0.35)); g.addColorStop(1, exploreRgba(col, 0));
   ctx.fillStyle = g;
   // 外側のにじみ
-  ctx.beginPath(); ctx.moveTo(pb.x - w*1.8, pb.y); ctx.lineTo(pt.x - wt*1.8, pt.y); ctx.lineTo(pt.x + wt*1.8, pt.y); ctx.lineTo(pb.x + w*1.8, pb.y); ctx.closePath(); ctx.fill();
-  // 芯(白く寄せる)
+  ctx.beginPath(); ctx.moveTo(pb.x - w*1.6, pb.y); ctx.lineTo(pt.x - wt*1.6, pt.y); ctx.lineTo(pt.x + wt*1.6, pt.y); ctx.lineTo(pb.x + w*1.6, pb.y); ctx.closePath(); ctx.fill();
+  // 芯(白く寄せる。良い物ほど白く強い)
   const g2 = ctx.createLinearGradient(pb.x, pb.y, pt.x, pt.y);
-  g2.addColorStop(0, exploreRgba('#ffffff', 0.55*flick)); g2.addColorStop(0.4, exploreRgba(col, 0.35)); g2.addColorStop(1, exploreRgba(col, 0));
+  g2.addColorStop(0, exploreRgba('#ffffff', (0.35 + 0.12*ord)*flick)); g2.addColorStop(0.4, exploreRgba(col, 0.25 + 0.08*ord)); g2.addColorStop(1, exploreRgba(col, 0));
   ctx.fillStyle = g2;
   ctx.beginPath(); ctx.moveTo(pb.x - w*0.4, pb.y); ctx.lineTo(pt.x - wt*0.3, pt.y); ctx.lineTo(pt.x + wt*0.3, pt.y); ctx.lineTo(pb.x + w*0.4, pb.y); ctx.closePath(); ctx.fill();
-  // 金・紫は柱を昇る光の粒
-  if(ord >= 2 && depth < 2600){
-    for(let i=0;i<3;i++){
-      const u = ((matchTime*0.45 + i/3 + x*0.0007) % 1);
-      const q = project(x, y, z + H*u);
+  // 柱の周りを螺旋に昇る光の粒(青2・紫4・金7。近いときだけ)
+  const nMote = EXPLORE_PILLAR_MOTES[rarity] || 0;
+  if(nMote && depth < 3200){
+    const rr = (EXPLORE_PILLAR_WIDTH[rarity] || 10) * 1.9;
+    for(let i=0;i<nMote;i++){
+      const u = ((matchTime*0.32 + i/nMote + x*0.0007) % 1);
+      const a = u*Math.PI*4 + i*2.4 + matchTime*1.1;
+      const q = project(x + Math.cos(a)*rr, y + Math.sin(a)*rr, z + H*u*0.85);
       if(!q) continue;
-      ctx.fillStyle = exploreRgba(col, 0.9*(1-u));
-      ctx.beginPath(); ctx.arc(q.x + Math.sin(u*9 + i)*w*0.6, q.y, Math.max(1.2, 2.4*q.scale), 0, Math.PI*2); ctx.fill();
+      const rad = Math.max(1.3, (2 + ord*0.5)*q.scale);
+      ctx.fillStyle = exploreRgba(ord >= 3 ? '#fff4c8' : col, 0.95*(1 - u));
+      ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, Math.PI*2); ctx.fill();
     }
   }
   // 根元の光だまり(柱が地面から立っていると分かる。太い柱ほど大きい)
@@ -765,9 +909,9 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
   ctx.fillStyle = rg;
   ctx.beginPath(); ctx.ellipse(pb.x, pb.y, w*2.6, w*1.1, 0, 0, Math.PI*2); ctx.fill();
   ctx.restore();
-  // 地面の輪: 紫・金は遠くでも根元に輪(金は二重)。白・青は近いときだけ
-  if(depth < EXPLORE_PILLAR_RING_DEPTH || ord >= 2){
-    const base = (EXPLORE_PILLAR_WIDTH[rarity] || 8)*2.4;
+  // 地面の輪: 紫・金は遠くでも根元に輪(金は外へ広がる2本目も)。白は輪なし・青は近いときだけ
+  if((depth < EXPLORE_PILLAR_RING_DEPTH && ord >= 1) || ord >= 2){
+    const base = 18 + ord*6;
     const r = base + 4*Math.sin(matchTime*3 + x);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -991,6 +1135,7 @@ function exploreLootReset(){
   const el = document.getElementById('expLootFeed');
   if(el){ for(const r of el.children) clearTimeout(r._expTimer); el.innerHTML = ''; el.dataset.hidden = '0'; }
   document.querySelectorAll('.exp-legend-flash').forEach(e=> e.remove());
+  exploreCineGrey(0);
 }
 
 /* ===== 自分(プレイヤー)の見た目: 力尽きて倒れる/キャンプで起き上がる/装備のセットの光 =====
@@ -1062,6 +1207,15 @@ function explorePlayerGrey(){
 }
 function explorePlayerTint(e, img, L){
   if(!img || !L) return;
+  const cd = exploreState.card;
+  if(cd && cd.kind === 'outro' && cd.reason === 'return'){
+    // 帰還: 光の柱の中で体が白く光っていく
+    const k = clamp((exploreCineNow() - cd.t0)/0.8, 0, 1);
+    const spr = scaledSpriteFor(img, Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1));
+    const t = exploreTintSprite(spr, '#fff4c8');
+    if(t && k > 0){ ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45*k; ctx.drawImage(t, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh); ctx.restore(); }
+    return;
+  }
   const st = explorePlayerFaintState();
   if(!st) return;
   const k = explorePlayerGrey();
@@ -1159,21 +1313,153 @@ function exploreDrawGearAura(e, p){
       ctx.globalCompositeOperation = 'source-over';
     }
   }
-  // 紋章: 輪のいちばん手前(カメラ側)に小さな札
+  // 足元の印: 輪のいちばん手前(カメラ側)に、着けた部位の数だけ部品の絵を並べる(何を着ているかが足元で読める)
   const af = Math.atan2(camPos.y - e.y, camPos.x - e.x);
   const fq = project(e.x + Math.cos(af)*R, e.y + Math.sin(af)*R, z);
-  if(fq){
+  const keys = EXPLORE_GEAR_SLOTS.map(sl=> gear.equip[sl.id]).filter(k=> EXPLORE_GEAR[k]);
+  if(fq && keys.length){
     const lx = (fq.x - p.x)/s, ly = (fq.y - p.y)/s + fy;
-    const er = Math.max(7, 8.5*Math.min(1.6, s)) / s;
+    const bs = Math.max(20, 17*Math.min(1.7, s)) / s;       // 1つの大きさ(画面で20px以上)
+    const gap = bs*1.12, x0 = lx - gap*(keys.length - 1)/2;
     ctx.globalAlpha = fade;
-    ctx.beginPath(); ctx.arc(lx, ly, er, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(10,14,20,0.9)'; ctx.fill();
-    ctx.lineWidth = 1.6/s; ctx.strokeStyle = col; ctx.stroke();
-    ctx.font = `${(er*1.15).toFixed(2)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(def.emblem, lx, ly + er*0.06);
+    keys.forEach((k, i)=>{
+      const x = x0 + gap*i, y = ly + bs*0.15;
+      const rc = exploreRarityColor(EXPLORE_GEAR[k].rarity);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - bs/2, y - bs/2, bs, bs, bs*0.22) : ctx.rect(x - bs/2, y - bs/2, bs, bs);
+      ctx.fillStyle = 'rgba(10,14,20,0.88)'; ctx.fill();
+      ctx.lineWidth = 1.6/s; ctx.strokeStyle = rc; ctx.stroke();
+      const cv = exploreGearBaked(k);
+      if(cv){ const kk = bs*1.22; ctx.drawImage(cv, x - kk/2, y - kk/2, kk, kk); }
+    });
   }
   ctx.restore();
+}
+
+/* ===== 着けた装備を体に重ねる(探検だけの描画) =====
+   工房の「着けた姿」・報酬画面の竜・フィールドの自分の3か所が、この exploreDrawWornGear 1つで描く。
+   部品の絵は工房のアイコンと同じ SVG(ui.js の exploreGearIconSvg)を一度だけ画像にし、セットの色の縁の光を焼き込んで使い回す
+   (毎フレームの影のぼかしを掛けない)。置き場所は体の矩形(絵の不透明部分 opaqueBBoxFor)と EXPLORE_WORN の比:
+   頭=てっぺんに兜 / 胴=胸に鎧 / 腕=左右に籠手 / 武器=前向きは体の後ろから覗き、後ろ姿は背中の上 */
+const EXPLORE_WORN_BAKE = 128, EXPLORE_WORN_PAD = 14;   // 焼いた部品の絵の大きさと、縁の光のための余白(画素)
+const _exploreWornCache = {};
+function exploreGearBaked(key, onReady){
+  let c = _exploreWornCache[key];
+  if(!c){
+    c = _exploreWornCache[key] = { canvas:null, waiters:[] };
+    const svg = (typeof exploreGearIconSvg==='function' && EXPLORE_GEAR[key]) ? exploreGearIconSvg(key) : '';
+    if(svg){
+      const img = new Image();
+      img.onload = ()=>{
+        try{
+          const cv = document.createElement('canvas'); cv.width = cv.height = EXPLORE_WORN_BAKE;
+          const g = cv.getContext('2d');
+          const set = EXPLORE_GEAR_SETS[EXPLORE_GEAR[key].set] || {};
+          const pd = EXPLORE_WORN_PAD, sz = EXPLORE_WORN_BAKE - pd*2;
+          g.shadowColor = set.color || '#ffffff'; g.shadowBlur = 11;
+          g.drawImage(img, pd, pd, sz, sz);
+          g.shadowBlur = 4; g.shadowColor = 'rgba(0,0,0,0.9)';
+          g.drawImage(img, pd, pd, sz, sz);
+          c.canvas = cv;
+        }catch(err){}
+        const w = c.waiters; c.waiters = [];
+        w.forEach(f=>{ try{ f(); }catch(err){} });
+      };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" '));
+    }
+  }
+  if(!c.canvas && onReady) c.waiters.push(onReady);
+  return c.canvas;
+}
+// 絵を (x,y,w,h) に描いたときの体の矩形(不透明部分)
+function exploreWornBox(img, x, y, w, h){
+  const bb = (typeof opaqueBBoxFor==='function') ? opaqueBBoxFor(img) : null;
+  const iw = _imgW(img), ih = _imgH(img);
+  if(!bb || !(bb.w > 0) || !(bb.h > 0)) return { x0:x, y0:y, x1:x + w, y1:y + h };
+  return { x0:x + bb.x0/iw*w, y0:y + bb.y0/ih*h, x1:x + bb.x1/iw*w, y1:y + bb.y1/ih*h };
+}
+/* g に、体の矩形 box へ装備 equip を重ねる。pass='behind'(絵より先)/'front'(絵のあと)。back=後ろ姿 */
+function exploreDrawWornGear(g, equip, box, back, pass, alpha){
+  if(!equip || !box) return;
+  const W = box.x1 - box.x0, H = box.y1 - box.y0;
+  if(!(W > 0 && H > 0)) return;
+  const C = EXPLORE_WORN;
+  const cx = (box.x0 + box.x1)/2, core = Math.min(W, H*C.core);
+  const k = EXPLORE_WORN_BAKE / (EXPLORE_WORN_BAKE - EXPLORE_WORN_PAD*2);   // 焼いた絵の余白ぶん
+  const put = (key, x, y, size, rot, flip)=>{
+    const cv = exploreGearBaked(key);
+    if(!cv) return;
+    const sz = size*k;
+    g.save(); g.translate(x, y);
+    if(rot) g.rotate(rot);
+    if(flip) g.scale(-1, 1);
+    g.drawImage(cv, -sz/2, -sz/2, sz, sz);
+    g.restore();
+  };
+  const has = (slot)=> equip[slot] && EXPLORE_GEAR[equip[slot]];
+  g.save();
+  if(alpha != null) g.globalAlpha *= alpha;
+  // 武器: 前向きは体の後ろ(絵より先)、後ろ姿は背中の上(絵のあと)
+  if(has('weapon') && ((pass === 'behind') !== !!back)){
+    const w = C.weapon;
+    if(back) put(equip.weapon, cx + core*w.backX, box.y0 + H*w.y, core*w.w, w.backRot, false);
+    else put(equip.weapon, cx + core*w.x, box.y0 + H*w.y, core*w.w, w.rot, false);
+  }
+  if(pass === 'front'){
+    if(has('body')) put(equip.body, cx + core*C.body.x, box.y0 + H*C.body.y, core*C.body.w, 0, false);
+    if(has('arms')) for(const sd of [-1, 1]) put(equip.arms, cx + sd*core*C.arms.x, box.y0 + H*C.arms.y, core*C.arms.w, sd*0.15, sd < 0);
+    if(has('head')) put(equip.head, cx + core*C.head.x, box.y0 + H*C.head.y, core*C.head.w, 0, false);
+  }
+  g.restore();
+}
+// フィールドの自分(render.js の drawMonster → explore.js の姿勢の入口から。姿勢の変形の内側で描く)
+function exploreDrawWornOnPlayer(e, pass){
+  if(!e || !e.isPlayer || !game.explore || !e.exploreGear) return;
+  const img = (typeof getDisplayImage==='function') ? getDisplayImage(e) : null;
+  if(!img) return;
+  const L = portraitLayoutFor(e, img);
+  const box = exploreWornBox(img, -L.dw/2, -L.dh/2 + L.dy, L.dw, L.dh);
+  exploreDrawWornGear(ctx, e.exploreGear.equip, box, !!e._walkBack, pass, 1 - 0.75*explorePlayerGrey());
+}
+// 画面(工房・報酬画面・完成の演出)用のモンスターの絵(装備中のスキン込み。正面の姿)
+function exploreFigureImage(element){
+  const sk = (typeof getEquippedSkin==='function') ? getEquippedSkin(element) : null;
+  if(sk && typeof skinnedImage==='function'){ const im = skinnedImage(sk, 'icon'); if(im) return im; }
+  return monsterImages[element] || null;
+}
+/* <canvas> に「装備を着けた姿」を描く(工房の「着けた姿」・報酬画面・完成の演出)。
+   箱の大きさは画面側(CSS)が決め、絵はその中に下揃えで収める(R1)。部品と絵の読み込みを待って描き直す */
+function exploreRenderWornFigure(cv, element, equip, opts){
+  if(!cv) return;
+  const o = opts || {};
+  const img = exploreFigureImage(element);
+  const draw = ()=>{
+    const cw = cv.clientWidth, ch = cv.clientHeight;
+    if(!(cw > 0) || !(ch > 0)) return;
+    const d = Math.min(3, window.devicePixelRatio || 1);
+    cv.width = Math.round(cw*d); cv.height = Math.round(ch*d);
+    const g = cv.getContext('2d');
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.clearRect(0, 0, cw, ch);
+    if(!img || !(img instanceof HTMLCanvasElement || imgIsReady(img))) return;
+    const iw = _imgW(img), ih = _imgH(img);
+    const bb = opaqueBBoxFor(img);
+    const bw = bb && bb.w > 0 ? bb.w : iw, bh = bb && bb.h > 0 ? bb.h : ih;
+    const bx0 = bb && bb.w > 0 ? bb.x0 : 0, by1 = bb && bb.h > 0 ? bb.y1 : ih;
+    const padX = o.padX != null ? o.padX : 0.06, top = o.top != null ? o.top : 0.1, bottom = o.bottom != null ? o.bottom : 0.04;
+    const sc = Math.min(cw*(1 - padX*2)/bw, ch*(1 - top - bottom)/bh);
+    const w = iw*sc, h = ih*sc;
+    const x = cw/2 - (bx0 + bw/2)*sc, y = ch*(1 - bottom) - by1*sc;
+    const box = exploreWornBox(img, x, y, w, h);
+    exploreDrawWornGear(g, equip, box, false, 'behind', 1);
+    g.drawImage(img, x, y, w, h);
+    exploreDrawWornGear(g, equip, box, false, 'front', 1);
+  };
+  const keys = Object.values(equip || {}).filter(k=> EXPLORE_GEAR[k]);
+  keys.forEach(k=> exploreGearBaked(k, draw));
+  if(img && !(img instanceof HTMLCanvasElement) && !imgIsReady(img) && img.addEventListener) img.addEventListener('load', draw, { once:true });
+  draw();
+  // 画面が出た直後は大きさが0のことがある(開く前に描いたとき)。次の描画の機会にもう一度
+  if(typeof requestAnimationFrame==='function') requestAnimationFrame(draw);
 }
 
 /* ===== 装備の効果(探検の開始時だけ。**探検以外では呼ばない**=PvPの力関係を変えない) =====
@@ -1193,6 +1479,7 @@ function exploreApplyGear(p){
   p.sniperDmgMult = 1 + (fx.snipePct || 0);   // sniper.js が弾の威力に掛ける
   const w = EXPLORE_GEAR[gear.equip.weapon];
   p.exploreGear = { equip:{ ...gear.equip }, fx, weapon: w ? w.sniper : null };
+  Object.values(gear.equip).forEach(k=> exploreGearBaked(k));   // 体に重ねる部品の絵を先に作っておく
   // 武器: 狙撃担当の口があるときだけ渡す。知らないキーなら標準の狙撃銃
   if(w && typeof window.sniperGive==='function'){
     let ok = false;
@@ -1218,6 +1505,7 @@ function exploreApplyGear(p){
    札のあいだは #hud を隠す(.exp-cine。出すときだけふわっと戻す)
    ===================================================================== */
 const EXPLORE_INTRO_SWEEP = 3.4;   // 出発のカメラが回る角度(ラジアン。約195度)
+const EXPLORE_OUTRO_FLOW_MAX = 8;   // 帰還の札に流す素材の数(それ以上は「ほかN種類」)
 let exploreOutroTimer = null, exploreOutroDone = null;
 function exploreCineNow(){ return Date.now() / 1000; }
 function exploreCineHud(on){
@@ -1242,22 +1530,39 @@ function exploreIntroSkip(){
 function exploreFaintStart(){
   exploreState.card = { kind:'faint', clock:'match', t0:matchTime, n:exploreState.faints, max:EXPLORE_MAX_FAINTS, moved:false };
   exploreCineHud(true);
+  // 倒れた瞬間の一瞬のスロー(ボス討伐の間と同じ仕組み。討伐の間が走っていればそちらを優先)
+  if(!exploreState.slowmo) exploreState.slowmo = { t0:performance.now(), S:EXPLORE_FAINT_SLOWMO };
 }
 function exploreOutroStart(reason, done){
-  const kept = (exploreState.finished && exploreState.finished.items || []).reduce((s, it)=> s + it.kept, 0);
-  exploreState.card = { kind:'outro', clock:'real', t0:exploreCineNow(), dur:EXPLORE_OUTRO_SEC, reason, kept,
+  const fin = exploreState.finished || {};
+  const kept = (fin.items || []).reduce((s, it)=> s + it.kept, 0);
+  const dur = reason === 'return' ? EXPLORE_OUTRO_RETURN_SEC : EXPLORE_OUTRO_SEC;
+  // 帰還の札に流す素材(良い物から。items は exploreFinish がレア度の高い順に並べてある)
+  const flow = (fin.items || []).filter(it=> it.kept > 0).map(it=> ({ key:it.key, n:it.kept }));
+  exploreState.card = { kind:'outro', clock:'real', t0:exploreCineNow(), dur, reason, kept, flow,
                         n:exploreState.faints, max:EXPLORE_MAX_FAINTS };
   exploreCineHud(true);
   clearTimeout(exploreOutroTimer);
   exploreOutroDone = done;
-  exploreOutroTimer = setTimeout(exploreOutroSkip, EXPLORE_OUTRO_SEC * 1000);
+  exploreOutroTimer = setTimeout(exploreOutroSkip, dur * 1000);
 }
 // 札を待たずに報酬画面へ(撮影ハーネスと、札の途中で画面を触ったとき)
 function exploreOutroSkip(){
   clearTimeout(exploreOutroTimer); exploreOutroTimer = null;
   const done = exploreOutroDone; exploreOutroDone = null;
   if(exploreState.card && exploreState.card.kind === 'outro') exploreState.card = null;
+  exploreCineGrey(0);
   if(done) done();
+}
+/* 3Dの景色から色を抜く(力尽きた瞬間〜札のあいだ)。2Dの札・自分の絵は別に描くので赤は残る。
+   #glCanvas の CSS の filter(値が変わったときだけ書く) */
+let _exploreGreyK = 0;
+function exploreCineGrey(k){
+  k = Math.round(clamp(k, 0, 1)*20)/20;
+  if(k === _exploreGreyK) return;
+  _exploreGreyK = k;
+  const gl = document.getElementById('glCanvas');
+  if(gl) gl.style.filter = k > 0 ? `saturate(${(1 - 0.85*k).toFixed(2)}) brightness(${(1 - 0.22*k).toFixed(2)})` : '';
 }
 // 毎フレーム(exploreLootUpdate から)。カメラを回す・暗転しきったらキャンプへ運ぶ
 function exploreCineUpdate(){
@@ -1316,8 +1621,16 @@ function _exlCineBand(cy, bandH, lineCol, fill){
 }
 function exploreCineDraw(){
   const c = exploreState.card;
-  if(!c || !game.explore) return;
+  if(!c || !game.explore){ exploreCineGrey(0); return; }
   const age = c.clock === 'real' ? exploreCineNow() - c.t0 : matchTime - c.t0;
+  {
+    // 力尽き: 倒れる間に景色の色が抜け、札のあいだは灰色のまま。キャンプで明転するときは元の色
+    const S = EXPLORE_FAINT_SEQ, T = exploreFaintTimes();
+    let gk = 0;
+    if(c.kind === 'faint') gk = age < T.black0 ? clamp(age / S.fall, 0, 1) : 0;
+    else if(c.kind === 'outro' && c.reason === 'faint') gk = clamp(age / S.fall, 0, 1);
+    exploreCineGrey(gk);
+  }
   const W = viewW, H = viewH, cx = W/2;
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1350,6 +1663,8 @@ function exploreCineDraw(){
     _exlCineText(rule, cx, cy + bandH*0.34, Math.min(12, H*0.034), '#bff5d2', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
   } else if(c.kind === 'faint'){
     const S = EXPLORE_FAINT_SEQ, T = exploreFaintTimes();
+    // 倒れた瞬間: 画面の縁が赤く燃える(打たれて崩れた合図)。札が出るまでに引いていく
+    if(age < T.card0 + 0.3) _exlFaintEdge(clamp(1 - age/(T.card0 + 0.3), 0, 1), age);
     // 倒れる(fall)あいだは札を出さない。体が崩れ落ちるのを見せてから札
     if(age >= T.card0 && age < T.black0){
       const a = clamp(Math.min((age - T.card0)/0.2, (T.black0 - age)/0.3), 0, 1);
@@ -1403,31 +1718,140 @@ function exploreCineDraw(){
     const T = {
       return:  { t:'帰還成功',   c0:'#fff6c8', c1:'#ffd35a', c2:'#c77a12', glow:'rgba(255,200,80,0.8)', sub:(c)=> `持ち帰った素材 ${c.kept}個` },
       timeup:  { t:'時間切れ',   c0:'#ffe7c8', c1:'#ff9a3c', c2:'#9a4a0c', glow:'rgba(255,140,60,0.7)', sub:(c)=> `持ち帰れるのは半分(種類ごとに1個は残る)` },
-      faint:   { t:'力尽きた',   c0:'#ffd0c4', c1:'#ff5a44', c2:'#a4160c', glow:'rgba(255,40,20,0.8)', sub:(c)=> `${c.n} / ${c.max} ・ 探検終了` },
+      faint:   { t:'力尽きた',   c0:'#ffd0c4', c1:'#ff5a44', c2:'#a4160c', glow:'rgba(255,40,20,0.8)', sub:(c)=> `${c.n} / ${c.max} ・ 探検終了(持ち帰れるのは半分)` },
       abandon: { t:'探検を中断', c0:'#e6ecf2', c1:'#a9b8c6', c2:'#56626e', glow:'rgba(160,190,220,0.5)', sub:(c)=> `持ち帰れるのは半分` },
     }[c.reason] || null;
+    const ret = c.reason === 'return';
+    if(ret) _exlReturnBeam(age);
+    if(c.reason === 'faint' && age < EXPLORE_FAINT_SEQ.fall + 0.3) _exlFaintEdge(clamp(1 - age/(EXPLORE_FAINT_SEQ.fall + 0.3), 0, 1), age);
     if(T){
       const a = clamp(age/0.25, 0, 1);
       ctx.globalAlpha = a;
-      const vg = ctx.createRadialGradient(cx, H/2, Math.min(W, H)*0.2, cx, H/2, Math.max(W, H)*0.7);
-      vg.addColorStop(0, 'rgba(0,0,0,0.15)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)');
-      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
-      const cy = H*0.42, bandH = Math.min(110, H*0.3);
+      if(!ret){
+        const vg = ctx.createRadialGradient(cx, H/2, Math.min(W, H)*0.2, cx, H/2, Math.max(W, H)*0.7);
+        vg.addColorStop(0, 'rgba(0,0,0,0.15)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)');
+        ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+      }
+      // 帰還は札を高めに置き、下の自分(光の柱)を隠さない。素材が流れる段のぶん帯が太い
+      const flowN = ret ? Math.min((c.flow || []).length, EXPLORE_OUTRO_FLOW_MAX) : 0;
+      const cy = ret ? H*0.3 : H*0.42, bandH = ret && flowN ? Math.min(184, H*0.48) : Math.min(110, H*0.3);
       const g = ctx.createLinearGradient(0, 0, W, 0);
-      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.2, 'rgba(8,6,2,0.8)'); g.addColorStop(0.8, 'rgba(8,6,2,0.8)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.2, 'rgba(8,6,2,0.82)'); g.addColorStop(0.8, 'rgba(8,6,2,0.82)'); g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g; ctx.fillRect(0, cy - bandH/2, W, bandH);
       const lg = ctx.createLinearGradient(0, 0, W, 0);
       lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(0.5, T.c1); lg.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = lg; ctx.fillRect(0, cy - bandH/2, W, 2); ctx.fillRect(0, cy + bandH/2 - 2, W, 2);
+      const ft = Math.min(48, H*0.13);
+      const ty = flowN ? cy - bandH/2 + ft*0.75 : cy - bandH*0.1;
       const pop = age < 0.22 ? 1.35 - age/0.22*0.35 : 1;
-      ctx.save(); ctx.translate(cx, cy - bandH*0.1); ctx.scale(pop, pop);
+      ctx.save(); ctx.translate(cx, ty); ctx.scale(pop, pop);
       const tg = ctx.createLinearGradient(0, -24, 0, 24);
       tg.addColorStop(0, T.c0); tg.addColorStop(0.5, T.c1); tg.addColorStop(1, T.c2);
       if(!renderHeavyLoad){ ctx.shadowBlur = 22; ctx.shadowColor = T.glow; }
-      _exlCineText(T.t, 0, 0, Math.min(48, H*0.13), tg, 'rgba(20,10,0,0.92)');
+      _exlCineText(T.t, 0, 0, ft, tg, 'rgba(20,10,0,0.92)');
       ctx.restore();
-      _exlCineText(T.sub(c), cx, cy + bandH*0.3, Math.min(15, H*0.04), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+      if(flowN){
+        // 持ち帰った素材が右から流れてきて並ぶ(レア度の色の枠。良い物が先頭)
+        const S = Math.min(56, H*0.12), gap = S*1.22;
+        const rowY = ty + ft*0.55 + S*0.62;
+        const x0 = cx - gap*(flowN - 1)/2;
+        for(let i=0;i<flowN;i++){
+          const it = c.flow[i], m = EXPLORE_MATERIALS[it.key];
+          if(!m) continue;
+          const t = clamp((age - 0.3 - i*0.11)/0.5, 0, 1);
+          if(t <= 0) continue;
+          const e = 1 - Math.pow(1 - t, 3);
+          const x = x0 + gap*i + (1 - e)*(W*0.6);
+          const col = exploreRarityColor(m.rarity), ord = exploreRarityOrder(m.rarity);
+          ctx.save();
+          ctx.globalAlpha = a*Math.min(1, t*1.6);
+          if(!renderHeavyLoad){ ctx.shadowBlur = 6 + ord*5; ctx.shadowColor = col; }
+          ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - S/2, rowY - S/2, S, S, S*0.2) : ctx.rect(x - S/2, rowY - S/2, S, S);
+          ctx.fillStyle = col; ctx.fill(); ctx.shadowBlur = 0;
+          const iS = S - Math.max(3, S*0.12);
+          ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - iS/2, rowY - iS/2, iS, iS, iS*0.18) : ctx.rect(x - iS/2, rowY - iS/2, iS, iS);
+          ctx.fillStyle = 'rgba(14,16,22,0.96)'; ctx.fill();
+          ctx.font = `${Math.round(S*0.56)}px sans-serif`; ctx.fillStyle = '#fff';
+          ctx.fillText(m.icon, x, rowY + S*0.03);
+          ctx.font = `800 ${Math.max(11, Math.round(S*0.3))}px 'Share Tech Mono', monospace`;
+          ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+          ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+          ctx.strokeText('×' + it.n, x + S/2 + 2, rowY + S/2 - 1); ctx.fillStyle = '#fff'; ctx.fillText('×' + it.n, x + S/2 + 2, rowY + S/2 - 1);
+          ctx.restore();
+        }
+        const more = (c.flow || []).length - flowN;
+        _exlCineText(`${T.sub(c)}${more > 0 ? `(ほか${more}種類)` : ''}`, cx, rowY + S*0.5 + Math.min(16, H*0.045), Math.min(15, H*0.04), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+      } else {
+        _exlCineText(T.sub(c), cx, cy + bandH*0.3, Math.min(15, H*0.04), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+      }
     }
+  }
+  ctx.restore();
+}
+// 画面の縁が赤く燃える(力尽きた瞬間)。k=強さ(1→0)、age で一度だけ脈打つ
+function _exlFaintEdge(k, age){
+  if(k <= 0) return;
+  k = Math.sqrt(k);   // 引き際はゆっくり(倒れている間はしっかり赤い)
+  const W = viewW, H = viewH;
+  const pulse = 1 + 0.35*Math.max(0, 1 - age/0.18);
+  ctx.save();
+  ctx.globalAlpha = 1;
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W, H)*0.32, W/2, H/2, Math.max(W, H)*0.72);
+  vg.addColorStop(0, 'rgba(120,0,0,0)'); vg.addColorStop(0.6, `rgba(170,10,0,${(0.35*k*pulse).toFixed(3)})`); vg.addColorStop(1, `rgba(220,20,10,${(0.9*k).toFixed(3)})`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  const lw = Math.max(4, Math.min(W, H)*0.018)*k*pulse;
+  if(!renderHeavyLoad){ ctx.shadowBlur = 24; ctx.shadowColor = 'rgba(255,40,20,0.95)'; }
+  ctx.strokeStyle = `rgba(255,60,40,${(0.85*k).toFixed(3)})`; ctx.lineWidth = lw;
+  ctx.strokeRect(lw/2, lw/2, W - lw, H - lw);
+  ctx.restore();
+}
+/* 帰還: 自分が光の柱に包まれて昇っていく(柱の芯・昇る輪・光の粒)。自分の絵も白く光る(explorePlayerTint) */
+function _exlReturnBeam(age){
+  const p = player;
+  if(!p) return;
+  const z0 = p.z || 0;
+  // 柱の上端は画面の上の縁まで伸ばす(カメラのすぐ前なので高い点は投影できない。足元と少し上の2点で向きを取る)
+  const q0 = project(p.x, p.y, z0), qa = project(p.x, p.y, z0 + 120);
+  if(!q0 || !qa) return;
+  const dy = qa.y - q0.y;
+  if(!(dy < -1)) return;
+  const kk = (-40 - q0.y) / dy;
+  const q1 = { x:q0.x + (qa.x - q0.x)*kk, y:-40 };
+  const grow = clamp(age/0.35, 0, 1), eg = 1 - Math.pow(1 - grow, 3);
+  const w = Math.max(18, p.radius*1.5*q0.scale) * eg;
+  const flick = 0.9 + 0.1*Math.sin(age*30);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
+  g.addColorStop(0, `rgba(255,236,160,${(0.55*flick).toFixed(3)})`); g.addColorStop(0.5, 'rgba(125,255,176,0.28)'); g.addColorStop(1, 'rgba(125,255,176,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(q0.x - w, q0.y); ctx.lineTo(q1.x - w*0.6, q1.y); ctx.lineTo(q1.x + w*0.6, q1.y); ctx.lineTo(q0.x + w, q0.y); ctx.closePath(); ctx.fill();
+  const g2 = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
+  g2.addColorStop(0, 'rgba(255,255,255,0.75)'); g2.addColorStop(0.6, 'rgba(255,248,210,0.25)'); g2.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g2;
+  ctx.beginPath(); ctx.moveTo(q0.x - w*0.3, q0.y); ctx.lineTo(q1.x - w*0.15, q1.y); ctx.lineTo(q1.x + w*0.15, q1.y); ctx.lineTo(q0.x + w*0.3, q0.y); ctx.closePath(); ctx.fill();
+  // 昇る輪(足元から上へ。1点ずつ投影)
+  for(let i=0;i<3;i++){
+    const u = ((age*0.7 + i/3) % 1);
+    const zz = z0 + u*260, rr = p.radius*(1.6 - u*0.6);
+    ctx.beginPath();
+    let first = true;
+    for(let j=0;j<=20;j++){
+      const a = j/20*Math.PI*2;
+      const q = project(p.x + Math.cos(a)*rr, p.y + Math.sin(a)*rr, zz);
+      if(!q){ first = true; continue; }
+      if(first){ ctx.moveTo(q.x, q.y); first = false; } else ctx.lineTo(q.x, q.y);
+    }
+    ctx.strokeStyle = `rgba(255,236,160,${(0.8*(1 - u)*eg).toFixed(3)})`; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+  // 光の粒
+  for(let i=0;i<14;i++){
+    const u = ((age*0.55 + i*0.071) % 1);
+    const a = i*2.39 + age*2;
+    const q = project(p.x + Math.cos(a)*p.radius*1.1, p.y + Math.sin(a)*p.radius*1.1, z0 + u*300);
+    if(!q) continue;
+    ctx.fillStyle = `rgba(255,246,200,${(0.9*(1 - u)).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(1.5, 3*q.scale), 0, Math.PI*2); ctx.fill();
   }
   ctx.restore();
 }
