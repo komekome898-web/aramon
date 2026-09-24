@@ -155,7 +155,7 @@ const FILL_FRAG = `
       float w = max(fwidth(vT), 1e-4) * 1.5;
       float inside = 1.0 - smoothstep(uProg - w, uProg + w, vT);
       float front = exp(-abs(vT - uProg) / max(w*3.0, 0.012)) * step(0.01, uProg);
-      al = vFade * (uAlpha*(0.28 + 0.72*inside) + 0.55*front);
+      al = vFade * (uAlpha*(0.56 + 0.44*inside) + 0.55*front);   // 満ちていない所も中身が読める濃さ
     }
     if(al < 0.004) discard;
     gl_FragColor = vec4(uColor, min(al, 1.0));
@@ -510,7 +510,8 @@ export function buildZoneLayer(scene){
            arc は絶対角(rad, Math.atan2と同じ向き)。fillAlpha 省略時は alpha*0.28。
            探検のボスの予告だけが使う追加(省略すると従来どおり):
              outline  = 暗い太い外縁の色 / solid = 内線を破線にしない
-             progress = 0〜1。塗りが中心(帯は根元)から縁へ満ちる / rect = { angle, len, halfW } 帯の形(r は並べ替え用に>0) 
+             progress = 0〜1。塗りが中心(帯は根元)から縁へ満ちる / rect = { angle, len, halfW } 帯の形(r は並べ替え用に>0)
+             noRing = 輪郭を描かず塗りだけ 
    camPos= window.camPos({x,y,z}) と同じもの。省略時は window.camPos を見る。       */
 export function updateZoneLayer(zone, markList, camPos){
   if(!group) return;
@@ -549,10 +550,12 @@ export function updateZoneLayer(zone, markList, camPos){
     const key = [Math.round(m.x), Math.round(m.y), Math.round(m.r),
                  arc ? Math.round(arc.from*100) : 'c', arc ? Math.round(arc.to*100) : 'c',
                  rc ? [Math.round(rc.angle*100), Math.round(rc.len), Math.round(rc.halfW)].join('/') : '-',
-                 m.inner ? 1 : 0, m.outline ? 1 : 0].join(',');
+                 m.inner ? 1 : 0, m.outline ? 1 : 0, m.noRing ? 1 : 0].join(',');
     if(key !== slot.key){
       slot.key = key;
       buildMark(slot, m, arc);
+      // noRing = 輪郭を描かない(流星群の「次に落ちる1つ」以外。円が重なる所の線を増やさない)
+      if(m.noRing){ slot.ring.mesh.visible = false; slot.outline.mesh.visible = false; slot.inner.mesh.visible = false; }
     }
     // 色と濃さは毎フレーム変わる(点滅)。uniformの書き換えだけで済む
     const col = parseColor(m.color || '#ff5d5d');

@@ -619,7 +619,8 @@ function exploreDrawCrate(c, p0){
         ctx.shadowBlur = 0; ctx.lineCap = 'butt';
       }
     }
-    if(dp < 420){
+    // 近くに野生がいる間は札を後回しにする(野生の頭上の印と重ねない。explore.js)
+    if(dp < 420 && !(typeof exploreWildNear === 'function' && exploreWildNear(c.x, c.y))){
       const tp = P(0, 0, H + L + 26);
       if(tp){
         const rar = EXPLORE_RARITY[c.rarity] || EXPLORE_RARITY.common;

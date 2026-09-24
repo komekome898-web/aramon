@@ -6275,6 +6275,11 @@ const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバー�
 /* 登場の視点演出(咆哮 intro のときだけ)。turnSec でボスへ向き直り、zoomSec のあいだ zoom 倍に寄る。
    上下の黒帯は画面の高さ×bar。寄せは world.js の setViewZoom(狙撃と同じ入口)で、構え中は狙撃を優先する */
 const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.8, bar:0.1, dimSec:1.6 };
+// 討伐の視点演出(同じ仕組み)。崩れ落ちる0.8秒を画面の中央で見せる。討伐完了の札は崩れ終わってから出る
+const EXPLORE_BOSS_HUNT_CINE      = { turnSec:0.35, zoomSec:2.0, zoom:1.6, bar:0.09, dimSec:2.2, lookZ:0.9 };   // lookZ: 体の高さのどこを画面の中央にするか(高いほどボスが画面の下寄り=上の札と重ならない)
+// 弱点命中の数字(照準の近く。画面の画素で固定サイズ・秒数)。狙撃のスコープ中は狙撃側が出すので出さない
+const EXPLORE_WEAK_POP            = { px:32, sec:1.2, dx:58, dy:-44 };
+const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.8;   // 転倒で縦に潰す割合(小さいほど潰れる。傾きと揺れで倒れた感じを出す)
 /* 大技の予告の見え方(real3d_zone.js の地面の印へ渡す)。
    outline = 暗い太い外縁の色 / minContrast = 地面との明るさの差がこれ未満なら白(暗い地面)か赤(明るい地面)へ寄せる */
 const EXPLORE_TELEGRAPH           = { outline:'#160806', minContrast:0.35, towardLight:'#ffffff', pushLight:0.6, towardDark:'#d0101e', pushDark:0.85 };

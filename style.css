@@ -4466,10 +4466,16 @@
   #hitMarker::after{ transform:rotate(-45deg); }
   #hitMarker.hm-show{ animation:hmPop 0.15s ease-out forwards; }
   /* 探検: ボスの弱点(頭)に当たった×印は赤と金(APEXのヘッドショット相当)。combat.js が showHitMarker(false, true) */
-  #hitMarker.hm-weak::before, #hitMarker.hm-weak::after{ background:#ff3b30; box-shadow:0 0 10px #ffd23c, 0 0 3px #fff; }
+  #hitMarker.hm-weak{ width:68px; height:68px; margin:-34px 0 0 -34px; }
+  #hitMarker.hm-weak::before, #hitMarker.hm-weak::after{ left:30px; width:8px; height:68px; background:#ffd23c; box-shadow:0 0 12px #ffb020, 0 0 3px #fff; }
+  #hitMarker.hm-weak.hm-show{ animation:hmPopWeak 0.42s ease-out forwards; }
+  @keyframes hmPopWeak{ 0%{ opacity:1; transform:scale(1.5); } 25%{ opacity:1; transform:scale(1); } 100%{ opacity:0; transform:scale(0.95); } }
   /* 探検: ボス登場の視点演出の間だけ操作ボタンを暗くする(explore.js が body に explore-cine を付け外しする) */
   body.explore-cine #joystickBase, body.explore-cine #fireBtn, body.explore-cine #dashBtn,
   body.explore-cine #sniperAdsBtn, body.explore-cine #movePanel{ filter:brightness(0.35) saturate(0.4); transition:filter 0.2s; }
+  /* 視点演出の間は自分の欄・ミニマップ・上部の帯・照準を消す(ボスと黒帯だけにする) */
+  body.explore-cine #hpPanel, body.explore-cine #minimapWrap, body.explore-cine #exploreHud,
+  body.explore-cine #crosshair, body.explore-cine #hitMarker{ opacity:0; transition:opacity 0.2s; }
   @keyframes hmPop{ 0%{ opacity:1; transform:scale(1.3); } 70%{ opacity:0.9; transform:scale(1); } 100%{ opacity:0; transform:scale(0.92); } }
 
   #joystickBase{

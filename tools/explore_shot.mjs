@@ -138,9 +138,9 @@ const CUTS = [
       const mem = exploreState.wild.filter(w=> w.pack===pk.id).map(w=> getEntity(w.id)).filter(Boolean);
       const L = mem.find(e=> e.exLeader) || mem[0];
       const a = Math.atan2(exploreState.camp.y - L.y, exploreState.camp.x - L.x);
-      const p = clearObstaclePoint(L.x + Math.cos(a)*420, L.y + Math.sin(a)*420, 60);
+      const p = clearObstaclePoint(L.x + Math.cos(a)*260, L.y + Math.sin(a)*260, 60);
       return { x:p.x, y:p.y, yaw:Math.atan2(L.y-p.y, L.x-p.x), pitch:0.12, warm:0.3, lookAt:L.id, vuln:true,
-        after: ()=>{ mem.forEach(e=>{ e.exState='flee'; e.exFleeUntil = matchTime + 9; e.hp = e.maxHp*0.2; }); for(let i=0;i<9;i++) update(1/30); } };
+        after: ()=>{ mem.forEach(e=>{ e.exState='flee'; e.exFleeUntil = matchTime + 9; e.hp = e.maxHp*0.2; }); for(let i=0;i<12;i++) update(1/30); } };
     } },
   ...[
     { name:'boss_intro', boss:'gandrock', dist:1150, keepCam:true,
@@ -156,10 +156,10 @@ const CUTS = [
       after: `exploreBossEngaged(B); B.exState='fight'; const H = exploreBodyHeight(B); applyDamage(B, 40, player, { hitZ:(B.z||0)+H*0.3 }); for(let i=0;i<5;i++) update(1/30); applyDamage(B, 60, player, { hitZ:(B.z||0)+H*0.82 }); for(let i=0;i<3;i++) update(1/30);` },
     { name:'boss_rage', boss:'galvark', dist:900, desc:'怒り状態(赤いオーラ・色味・咆哮・「怒り」の札)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.46; B.exHpLag=0.62; B.exRage=true; exploreBossStartRoar(B, 'rage'); for(let i=0;i<12;i++) update(1/30);` },
-    { name:'boss_break', boss:'gandrock', dist:1000, desc:'部位破壊の瞬間(転倒・星・ひびの印・素材が弾ける)',
+    { name:'boss_break', boss:'gandrock', dist:850, desc:'部位破壊の瞬間(転倒・星・ひびの印・素材が弾ける)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.63; B.exHpLag=0.7; exploreBossBreakPart(B, exploreBossDef(B)); for(let i=0;i<10;i++) update(1/30);` },
-    { name:'boss_hunt', boss:'gidravers', dist:1300, desc:'頂点ボスの討伐の瞬間(スローモーション・討伐完了・大量の素材)',
-      after: `exploreBossEngaged(B); B.exState='fight'; B.hp=1; applyDamage(B, 50, player, {}); for(let i=0;i<40;i++) update(1/30);` },
+    { name:'boss_hunt', boss:'gidravers', dist:1300, keepCam:true, desc:'頂点ボスの討伐の瞬間(スローモーション・討伐完了・大量の素材)',
+      after: `exploreBossEngaged(B); B.exState='fight'; B.hp=1; applyDamage(B, 50, player, {}); exploreState.slowmo = null; for(let i=0;i<44;i++) update(1/30);` },
   ].map(c=>({
     name:c.name, kind:'field', desc:c.desc,
     at: new Function(`
@@ -169,6 +169,7 @@ const CUTS = [
       const p = clearObstaclePoint(B.x + Math.cos(a)*${c.dist}, B.y + Math.sin(a)*${c.dist}, 60);
       B.exState = 'fight'; B.exploreAsleep = false; B.facingAngle = Math.atan2(p.y-B.y, p.x-B.x);
       exploreState.banners.length = 0; exploreState.fx.length = 0;   // 前のカットの札を持ち越さない
+      exploreState.cine = null; exploreState.pops.length = 0; exploreState.shards.length = 0; document.body.classList.remove('explore-cine');   // 視点演出も持ち越さない
       return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true, keepCam:${!!c.keepCam},
                after: ()=>{ ${c.after} } };`),
   })),
@@ -502,7 +503,9 @@ function pageTools(){
       projectiles.length = 0; particles.length = 0;
       sniperResetState();
       const w = SNIPER_WEAPONS.longbow, sc = SNIPER_SCOPES[o.scope || 'x8'];
-      const eyeZ = me.z + AIM_MUZZLE_Z, d = Math.hypot(tx-me.x, ty-me.y), tz = (T.z||0) + H*(o.ratio==null ? 0.6 : o.ratio);
+      // 狙う高さは的の「今の姿勢」の背で測る(眠らせて伏せた後。立った背で測ると頭の上を狙ってしまう)
+      const Hn = sniperBodyH(T);
+      const eyeZ = me.z + AIM_MUZZLE_Z, d = Math.hypot(tx-me.x, ty-me.y), tz = (T.z||0) + Hn*(o.ratio==null ? 0.6 : o.ratio);
       at.yaw = Math.atan2(ty-me.y, tx-me.x);
       if(o.ballistic){
         const b = sniperBallistics(w), tt = d / w.speed;

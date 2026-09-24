@@ -1324,7 +1324,8 @@ function drawMonster(e,p){
   // レイドのボス・探検のボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
   /* 狙撃スコープで構えている間(探検モードだけ)は頭上のゲージを出さない。倍率ぶん太くなって照準を横切るため。
      照準の先の1体だけ、スコープの距離表示の横に小さな帯で出す(sniper.js) */
-  if(!e.isRaidBoss && !e.isExploreBoss && !scopeUI){
+  // 探検の野生は戦っているとき(気づいた・追う・逃げる・傷ついた)だけゲージを出す(頭上を静かにする)
+  if(!e.isRaidBoss && !e.isExploreBoss && !scopeUI && !(game.explore && e.isExploreWild && !exploreWildShowsBar(e))){
     const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
@@ -1417,7 +1418,8 @@ function drawMonster(e,p){
   const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
   if(game.explore && !scopeUI) exploreDrawMonsterMarks(e, barY, uiMult);   // 探検: 頭上の「!」「?」・眠り・転倒の印(explore.js)
   // 探検: ボスは画面上部のHPバーで、群れの取り巻きは名前無し(HPバーだけ)。名前は「群れの長」の1枚だけ
-  if(!scopeUI && !e.isPlayer && !entIsDowned && !e.isExploreBoss && !(e.isExploreWild && !e.exLeader) && (isAllyOfPlayer || dist(e,player)<700)){
+  // 探検の野生の名前は「群れの長」が気づいた(「!」が出ている)間だけ(exploreWildShowsName)
+  if(!scopeUI && !e.isPlayer && !entIsDowned && !e.isExploreBoss && !(e.isExploreWild && !exploreWildShowsName(e)) && (isAllyOfPlayer || dist(e,player)<700)){
     // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
     ctx.save();
     { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
@@ -1503,7 +1505,7 @@ function drawLootItem(it,p){
     ctx.beginPath(); ctx.ellipse(-2*sz, 1*sz, 1.2*sz, 4*sz, 0,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur=0;
     if(dist(it,player)<160){
-      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
+      ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       // 回復量は最大HPの割合なので、実際に自分が回復する数値を出す(見た目と結果を合わせる)
       ctx.fillText(`${hi.name} (+${healItemAmount(hi, player)})`, 0, -13*sz);
     }
@@ -1523,7 +1525,7 @@ function drawLootItem(it,p){
     ctx.fillText('特訓', -4, 1.5);
     ctx.shadowBlur=0;
     if(dist(it,player)<160){
-      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
+      ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       ctx.fillText(TICKET_ITEM.name, 0, -14);
     }
   } else if(it.kind==='guts'){
@@ -1538,7 +1540,7 @@ function drawLootItem(it,p){
     ctx.beginPath(); ctx.moveTo(9,-3); ctx.lineTo(6,0); ctx.lineTo(9,3); ctx.stroke();
     ctx.shadowBlur=0;
     if(dist(it,player)<160){
-      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
+      ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       ctx.fillText(GUTS_ITEM.name, 0, -14);
     }
   } else if(it.kind==='training'){
@@ -7462,7 +7464,8 @@ function render(){
       else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
       else if(d.kind==='mon') drawMonster(d.obj,d.p);
       // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
-      else if(d.kind==='rock'){ if(real3dActive) eraseObstacle(d.obj,d.p); else drawRock(d.obj,d.p); }
+      // 探検: ボスの登場・討伐の視点演出の間は、カメラとボスの間の木・岩でボスを隠さない(explore.js)
+      else if(d.kind==='rock'){ if(real3dActive){ if(!(game.explore && exploreCineSeeThrough(d.obj))) eraseObstacle(d.obj,d.p); } else drawRock(d.obj,d.p); }
       else if(d.kind==='crystal'){ if(real3dActive) eraseObstacle(d.obj,d.p,'crystal'); else drawCrystal(d.obj,d.p); }
       else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
       else drawParticle(d.obj,d.p);
@@ -8451,7 +8454,8 @@ function showHitMarker(predicted, weak){
   void el.offsetWidth;   // アニメーションを毎回最初から再生する
   el.classList.add('hm-show');
   if(hitMarkerTimer) clearTimeout(hitMarkerTimer);
-  hitMarkerTimer = setTimeout(()=>{ el.classList.remove('hm-show'); el.style.filter=''; }, 170);
+  // 弱点は大きく金色の×印を長めに残す(style.css の hm-weak)
+  hitMarkerTimer = setTimeout(()=>{ el.classList.remove('hm-show'); el.style.filter=''; }, weak ? 420 : 170);
 }
 function updateHUD(){
   if(!player) return;
