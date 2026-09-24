@@ -776,20 +776,30 @@ function exploreDrawCrate(c, p0){
         ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
         const w2 = near ? ctx.measureText(t2).width : 0;
         const half = Math.max(w1, w2)/2 + 6;
-        const lx = clamp(tp.x, half, Math.max(half, viewW - half));
+        let lx = clamp(tp.x, half, Math.max(half, viewW - half));
         let ly = clamp(tp.y, fs + 4, Math.max(fs + 4, viewH - fs*2 - 8));
-        /* HUDの欄(回転ボタン・FIRE/DASH・技パネル・目標パネルなど)へ札を重ねない(ルート担当が
-           打ち切りになった後の引き継ぎ。第4周)。exploreHudRects()がHUD担当の公開の口(正はそちら)。
-           入らなければ2行目(t2)を諦める。それでも重なるなら上へ逃がす */
+        /* HUDの欄(ミニマップ・方位バー・ボスの帯・回転ボタン・FIRE/DASH・技パネル・目標パネルなど)へ
+           札を重ねない(ルート担当が打ち切りになった後の引き継ぎ。第4〜5周)。exploreHudRects()が
+           HUD担当の公開の口(正はそちら)。入らなければ2行目(t2)を諦める。それでも重なるなら
+           **上下左右へ**逃がす(第5周の指摘: 上だけに逃がしていたので、右上のミニマップに
+           重なった札が上へずれても同じミニマップの帯に留まったままだった) */
         let showT2 = near;
         const hudRects = (typeof exploreHudRects === 'function') ? exploreHudRects() : [];
         if(hudRects.length){
-          const boxOf = (withT2)=> ({ x:lx-half, y:ly-fs-4, w:half*2, h: withT2 ? fs*2 + 10 : fs + 8 });
+          const boxAt = (x, y, withT2)=> ({ x:x-half, y:y-fs-4, w:half*2, h: withT2 ? fs*2 + 10 : fs + 8 });
           const hits = (b)=> hudRects.some(r=> exploreRectsHit(b, r, 2));
-          if(hits(boxOf(showT2))){
+          if(hits(boxAt(lx, ly, showT2))){
             showT2 = false;
-            if(hits(boxOf(false))){
-              for(let up=10; up<=140 && hits(boxOf(false)); up+=10) ly = clamp(tp.y - up, fs+4, Math.max(fs+4, viewH-fs*2-8));
+            if(hits(boxAt(lx, ly, false))){
+              const dirs = [[0,1],[0,-1],[-1,0],[1,0],[-1,1],[1,1],[-1,-1],[1,-1]];
+              let found = false;
+              outer: for(let step=14; step<=200 && !found; step+=14){
+                for(const [dx,dy] of dirs){
+                  const tx = clamp(tp.x + dx*step, half, Math.max(half, viewW - half));
+                  const ty = clamp(tp.y + dy*step, fs+4, Math.max(fs+4, viewH-fs*2-8));
+                  if(!hits(boxAt(tx, ty, false))){ lx = tx; ly = ty; found = true; break outer; }
+                }
+              }
             }
           }
         }
@@ -1260,6 +1270,23 @@ function explorePlayerTint(e, img, L){
   }
   ctx.restore();
 }
+/* 着けた部位アイコンの列の画面上の矩形(絶対座標。HPパネルの左下に固定)。
+   ここが正(exploreDrawGearAura の描画も、撮影の実測 tools/explore_shot.mjs もこれを読む=数字を2か所に持たない)。
+   戻り値: { x, y, w, h } または、着けている物が無い/HUDが読めないとき null */
+function exploreGearIconsRect(e){
+  if(!e || !e.exploreGear) return null;
+  const keys = EXPLORE_GEAR_SLOTS.map(sl=> e.exploreGear.equip[sl.id]).filter(k=> EXPLORE_GEAR[k]);
+  if(!keys.length) return null;
+  const hpEl = exploreHudEl('hpPanel'), hudEl = exploreHudEl('hud');
+  const bsAbs = 18;   // 画面上の大きさ(px。固定位置なので倍率は掛けない)
+  let x, y;
+  if(hpEl && hudEl && hpEl.offsetWidth){
+    x = hudEl.offsetLeft + hpEl.offsetLeft + 16;
+    y = hudEl.offsetTop + hpEl.offsetTop + hpEl.offsetHeight + 10;
+  } else { x = 16; y = 190; }   // HPパネルが読めない万一の保険(左上に出す)
+  const gapAbs = bsAbs*1.15;
+  return { x, y, w: gapAbs*(keys.length - 1) + bsAbs, h: bsAbs };
+}
 /* 装備が見える: 着けている装備でいちばん多いセットの色で、足元の輪・紋章・体の縁の光を出す。
    セット効果が発動していれば輪が二重になり、光の粒が輪を回る。探検の自分だけ(描画の経路だけ・当たりは変えない) */
 function exploreDrawGearAura(e, p){
@@ -1333,20 +1360,20 @@ function exploreDrawGearAura(e, p){
       ctx.globalCompositeOperation = 'source-over';
     }
   }
-  // 足元の印: 輪のいちばん手前(カメラ側)に、着けた部位の数だけ部品の絵を並べる(何を着ているかが足元で読める)
-  const af = Math.atan2(camPos.y - e.y, camPos.x - e.x);
-  const fq = project(e.x + Math.cos(af)*R, e.y + Math.sin(af)*R, z);
+  /* 着けた部位の一覧(第5周の指摘: 足元(3D投影)だと胴体で完全に隠れたり尻尾が横切ったりして、
+     縦持ち3サイズのどれでも自機の外接矩形(explorePlayerRect())と重なった)。
+     カメラ・姿勢に関わらず重ならないよう、**画面に固定した位置**(HPパネルの左下)へ移した。
+     置き場所の計算は exploreGearIconsRect() 1つが正(撮影の実測もこれを読む。数字を2か所に持たない)。
+     このctxは既に translate(p)+scale(s) 済みのローカル座標なので、画面固定の絶対座標(sx,sy)は
+     (sx-p.x)/s, (sy-p.y)/s へ変換してから使う。 */
   const keys = EXPLORE_GEAR_SLOTS.map(sl=> gear.equip[sl.id]).filter(k=> EXPLORE_GEAR[k]);
-  if(fq && keys.length){
-    const lx = (fq.x - p.x)/s, ly = (fq.y - p.y)/s + fy;
-    const bs = Math.max(20, 17*Math.min(1.7, s)) / s;       // 1つの大きさ(画面で20px以上)
-    const gap = bs*1.12, x0 = lx - gap*(keys.length - 1)/2;
-    /* 画面内に収める(第4周の指摘: hud_beacon の3サイズで画面の下端に切れていた)。
-       絶対の画面Y = p.y + y*s なので、アイコンの下端(+bs*0.65ぶん)が viewH を超えないよう y を上へ戻す */
-    const yRow = Math.min(ly + bs*0.15, (viewH - 12 - p.y)/s - bs*0.65);
+  const gr = exploreGearIconsRect(e);
+  if(keys.length && gr){
+    const bsAbs = gr.h, gapAbs = bsAbs*1.15, sy0 = gr.y;
     ctx.globalAlpha = fade;
     keys.forEach((k, i)=>{
-      const x = x0 + gap*i, y = yRow;
+      const sx = gr.x + gapAbs*i + bsAbs/2, sy = sy0 + bsAbs/2;
+      const x = (sx - p.x)/s, y = (sy - p.y)/s, bs = bsAbs/s;
       const rc = exploreRarityColor(EXPLORE_GEAR[k].rarity);
       ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - bs/2, y - bs/2, bs, bs, bs*0.22) : ctx.rect(x - bs/2, y - bs/2, bs, bs);
       ctx.fillStyle = 'rgba(10,14,20,0.88)'; ctx.fill();

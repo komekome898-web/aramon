@@ -758,6 +758,19 @@ if(flag('measure')){
               overlapPx: (ox > 0 && oy > 0) ? Math.round(Math.min(ox, oy)) : 0 };
           }
         }
+        /* 足元の装備3枠(exploreGearIconsRect。explore_loot.js)が自機の外枠に重ならないか(第5周の指摘) */
+        if(!mapOpen && typeof exploreGearIconsRect === 'function' && typeof explorePlayerRect === 'function' && typeof player !== 'undefined' && player){
+          const gr = exploreGearIconsRect(player), pr = explorePlayerRect();
+          if(gr && pr){
+            const ox = Math.min(gr.x + gr.w, pr.x + pr.w) - Math.max(gr.x, pr.x);
+            const oy = Math.min(gr.y + gr.h, pr.y + pr.h) - Math.max(gr.y, pr.y);
+            out.gearVsSelf = { gear:[gr.x, gr.y, gr.w, gr.h].map(Math.round), self:[pr.x, pr.y, pr.w, pr.h].map(Math.round),
+              overlapPx: (ox > 0 && oy > 0) ? Math.round(Math.min(ox, oy)) : 0 };
+          }
+        }
+        // HPパネルの高さ(画面の高さに対する割合。第5周の指摘: p667で36%まで伸びていた)
+        { const hp = document.getElementById('hpPanel');
+          if(hp && hp.offsetHeight) out.hpRatio = Math.round(hp.offsetHeight / RH * 1000) / 10; }
         return out;
       }, [MINE, OTHERS, FONTS]);
       if(cutName === 'map') await page.evaluate(()=> exploreCloseMap());
@@ -781,6 +794,16 @@ if(flag('measure')){
         console.log(`    技パネル ${r.moveVsSelf.move.join(',')} / 自機の外枠 ${r.moveVsSelf.self.join(',')}`);
         if(r.moveVsSelf.overlapPx > 0){ bad++; console.log(`    ✗ 技パネルが自機の外枠に ${r.moveVsSelf.overlapPx}px 重なっている`); }
         else console.log('    ✓ 技パネルは自機の外枠に重なっていない');
+      }
+      if(r.gearVsSelf){
+        console.log(`    足元の装備枠 ${r.gearVsSelf.gear.join(',')} / 自機の外枠 ${r.gearVsSelf.self.join(',')}`);
+        if(r.gearVsSelf.overlapPx > 0){ bad++; console.log(`    ✗ 装備枠が自機の外枠に ${r.gearVsSelf.overlapPx}px 重なっている`); }
+        else console.log('    ✓ 装備枠は自機の外枠に重なっていない');
+      }
+      if(r.hpRatio != null){
+        console.log(`    HPパネルの高さ = 画面の高さの ${r.hpRatio}%`);
+        if(r.hpRatio > 25){ bad++; console.log(`    ✗ HPパネルが画面の25%を超えている(${r.hpRatio}%)`); }
+        else console.log('    ✓ HPパネルは画面の25%以下');
       }
       if(r.outside.length){ bad++; console.log(`    ✗ #appRoot の外: ${r.outside.join(', ')}`); } else console.log('    ✓ #appRoot の外へ出ていない');
       if(r.overlap.length){ bad++; console.log(`    ✗ 重なり: ${r.overlap.join(', ')}`); } else console.log('    ✓ 他のHUDと重なっていない');

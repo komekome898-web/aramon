@@ -214,11 +214,10 @@ function exploreObjectives(){
     count:`${done}/${recs.length}`, x: target ? target.x : null, y: target ? target.y : null,
     targetId: target ? target.rec.id : null };   // 全体地図がこのボスへピンを出す(exploreMapDrawDynamic)
   if(engaged && def){
-    // 戦っている最中(体力・怒り・部位破壊はボスの帯が出すので、ここでは二重に出さない)
-    hunt.text = `${def.name}を討伐`;
+    // 戦っている最中(体力・怒り・部位破壊・名前はボスの帯が出すので、ここでは二重に出さない=第5周の指摘でボス名も省いた)
+    hunt.text = '討伐中';
     hunt.sub = reg ? `${reg.name}の主` : '大型モンスター';
-    // 全体の討伐数(0/4)は「4体倒す」に見えて1体と戦っている今の文脈と合わない(批評指摘)。今は進行中とだけ示す
-    hunt.count = '討伐中';
+    hunt.count = '';
   } else if(target && def){
     hunt.text = '大型モンスター討伐';
     // 地域名(かっこ書き)を削って短く(第4周の指摘: 375の幅で丸ごと省略記号に切れていた。地域は札で別に出ている)
@@ -383,7 +382,8 @@ function exploreUpdateHud(){
         const bar = (r.hold > 0) ? `<span class="exp-obj-hold"><i style="width:${Math.round(r.hold*100)}%"></i></span>` : '';
         // 帰還中は見出しの「◇残り秒」と行の数字が同じ内容の二重表示になる(批評指摘)。行側は輪の進みバーだけにする
         const count = (r.id === 'return' && r.hold > 0) ? '' : r.count;
-        return `<div class="${cls}"><div class="exp-obj-line"><span class="exp-obj-mark">${r.done ? '✓' : (prio ? '◆' : '◇')}</span>`
+        // ひし形(◇/◆)は帰還ビーコンの「距離」1つだけの意味にする(第5周の指摘)。行の印は別の形に変える
+        return `<div class="${cls}"><div class="exp-obj-line"><span class="exp-obj-mark">${r.done ? '✓' : (prio ? '▶' : '・')}</span>`
           + `<span class="exp-obj-text">${exploreHudEsc(r.text)}</span><span class="exp-obj-count">${exploreHudEsc(count)}</span></div>`
           + (prio && showSub ? `<div class="exp-obj-sub">${exploreHudEsc(r.sub)}</div>` : '') + bar + `</div>`;
       }).join('');
@@ -579,8 +579,10 @@ function exploreDrawCompassIcon(g, m, x, y, s){
      下の段 = 印(ビーコン・巣・箱・野生)と、その下に距離。優先の目標は金の輪で囲む(上に何も積まない)
    座標は倍率を掛ける前の値で書き、setTransform で倍率(exploreHudScale)を掛ける。文字は最小11px */
 const EXP_CMP = { labelY:9, baseY:21, markY:31, distY:42.5, boxW:34, boxH:14,
-  bossY:25,      // ボス戦の間、ボスの帯が始まる高さ(下の段を譲る)
-  pinY:21 };     // ボス戦の間の印の高さ(基線の上に小さく載せる。距離は出さない)
+  // ボス戦の間、ボスの帯が始まる高さ(下の段を譲る)。第5周の指摘で距離の数字ぶんの余白を足した(25→34)
+  bossY:34,
+  pinY:21,       // ボス戦の間の印の高さ(基線の上に小さく載せる)
+  bossDistY:31 };  // ボス戦の間の距離の数字のY(pinYのすぐ下・bossYの手前に収める)
 function exploreDrawCompass(){
   const C = exploreCompassCanvas();
   if(!C || !player) return;
@@ -663,7 +665,9 @@ function exploreDrawCompass(){
     let rel = exploreHeadingDeg(Math.atan2(m.y - py, m.x - px)) - head;
     rel = ((rel + 540) % 360) - 180;
     let x = cx + rel*ppd, edge = 0;
-    const lim = W/2 - 12;
+    // 画面外の矢印(V字。it.edge*13の位置まで外側へ+最大20px広がる)がバーの外へ半分切れないよう、
+    // 端の少し内側までしか印を寄せない(第5周の指摘: x≈405でV字が半分切れていた)
+    const lim = W/2 - 12 - 20;
     if(Math.abs(rel*ppd) > lim){
       if(!m.always) continue;
       edge = rel < 0 ? -1 : 1;
@@ -721,23 +725,26 @@ function exploreDrawCompass(){
         g.stroke();
       }
     }
-    if(!bossBand && m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE) labels.unshift({ it, t: exploreHudDist(it.d) });   // 優先の物から場所を取る
+    // ボス戦中も距離を出す(第5周の指摘: 印が目盛り線に押し込まれて距離が消えていた)。場所は下で分ける
+    if(m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE) labels.unshift({ it, t: exploreHudDist(it.d) });   // 優先の物から場所を取る
   }
   /* 数字は近い順に最大 EXPLORE_COMPASS_LABEL_MAX 個だけ(第3周の指摘: 幅が広い画面ほど
      重ならずに増えてしまい、3サイズで見える数が揺れていた)。優先の目標は距離に関係なく必ず残す */
   labels.sort((a,b)=> (b.it.m.prio?1:0) - (a.it.m.prio?1:0) || a.it.d - b.it.d);
   if(labels.length > EXPLORE_COMPASS_LABEL_MAX) labels.length = EXPLORE_COMPASS_LABEL_MAX;
-  g.font = "bold 11px 'Share Tech Mono', monospace";
+  // ボス戦中は詰めた段(bossY)に収まる小さめの文字・近いY(bossDistY)にする(距離の数字がボスの帯に食い込まない)
+  const distY = bossBand ? L.bossDistY : L.distY;
+  g.font = bossBand ? "bold 9px 'Share Tech Mono', monospace" : "bold 11px 'Share Tech Mono', monospace";
   for(const { it, t } of labels){
     const tw = g.measureText(t).width;
     const lx = clamp(it.x, tw/2 + 3, W - tw/2 - 3);   // 端に寄せた印の距離もバーの外へ切らさない
     const lx0 = lx - tw/2 - 2, lx1 = lx + tw/2 + 2;
     if(labelSpans.some(([a,b])=> lx0 < b && lx1 > a)) continue;
     labelSpans.push([lx0, lx1]);
-    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.85)';
-    g.strokeText(t, lx, L.distY);
+    g.lineWidth = bossBand ? 2.4 : 3; g.strokeStyle = 'rgba(0,0,0,0.85)';
+    g.strokeText(t, lx, distY);
     g.fillStyle = it.m.prio ? '#ffe08a' : 'rgba(235,240,248,0.95)';
-    g.fillText(t, lx, L.distY);
+    g.fillText(t, lx, distY);
   }
 }
 

@@ -8758,20 +8758,22 @@ function updateHUD(){
     if(ve.stateUntil > matchTime){
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ff6b6b,#ff2b2b)';
-      stateCdLabelEl.textContent = `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
+      /* 探検モードは⚑のバーがHP/ガッツの数字欄と同じ幅の列に収まる(第5周の指摘: バーと同じ行の
+         右に数値だけ戻した)。名前は長さが読めないので出さず、残り秒だけにする(他モードは今までのまま) */
+      stateCdLabelEl.textContent = game.explore
+        ? `残り${Math.ceil(ve.stateUntil-matchTime)}秒`
+        : `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
     } else if(ve.stateCooldownUntil > matchTime){
       const cdPct = clamp(1-((ve.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
       stateCdFillEl.style.width = cdPct+'%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
-      /* 探検モードだけ短く(批評指摘: 375の幅で「クールタイム残り」が長すぎて「秒」だけ2行目に
-         落ちていた)。他モードは今までの文言のまま(game.explore の1か所だけで分岐) */
       stateCdLabelEl.textContent = game.explore
-        ? `${stateSc.name} ${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
+        ? `${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
         : `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
     } else {
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
-      stateCdLabelEl.textContent = `${stateSc.name} 発動可能`;
+      stateCdLabelEl.textContent = game.explore ? '使用可' : `${stateSc.name} 発動可能`;
     }
   }
 

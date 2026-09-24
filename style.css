@@ -6598,7 +6598,8 @@ body.self-noguts #fireBtn{ opacity:0.42; filter:grayscale(0.7); }
 #expBossCanvas{ position:absolute; display:block; z-index:24; pointer-events:none; }
 #expObjPanel{ --k:var(--exp-hud-k, 1); position:absolute; top:142px; right:14px; width:calc(208px * var(--k)); z-index:6; pointer-events:none;
   box-sizing:border-box; padding:calc(4px * var(--k)) calc(9px * var(--k)) calc(4px * var(--k)) calc(8px * var(--k));
-  background:linear-gradient(270deg, rgba(6,12,16,0.86), rgba(6,12,16,0.62) 70%, rgba(6,12,16,0.36));
+  /* 左端を0.36→0.6に(余裕があれば対応: p896の「03:20」の「0」に背後の印が透けていた) */
+  background:linear-gradient(270deg, rgba(6,12,16,0.86), rgba(6,12,16,0.68) 70%, rgba(6,12,16,0.6));
   border-right:3px solid #7dffb0; border-radius:9px 2px 2px 9px;
   box-shadow:0 6px 16px -10px rgba(0,0,0,0.9); font-family:'Rajdhani',sans-serif; }
 html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
@@ -6624,10 +6625,9 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
   border:1.5px solid #7dffb0; background:rgba(8,40,24,0.95); transform:rotate(45deg); }
 .exp-obj-beacon{ color:#b6ffd4; }
 .exp-obj-beacon.is-hold{ color:#7dffb0; text-shadow:0 0 6px #7dffb0; }
-/* 輪の中にいる間(残り秒を出す)は印そのものも変える(第4周の指摘: 距離の「491m」も帰還の
-   「1.3秒」も同じ◇形の印で、何を表しているか区別できなかった)。塗りつぶして脈打たせ、
-   「距離(からっぽの菱形)」と「輪の中の残り秒(塗って脈打つ菱形)」を見た目で分ける */
-.exp-obj-beacon.is-hold .exp-obj-ic-beacon{ background:#7dffb0; animation:expObjBeaconPulse 1s ease-in-out infinite; }
+/* ひし形は「距離」だけの意味にする(第5周の指摘)。輪の中の残り秒は形そのものを丸に変えて、
+   ひし形(距離)と混同しないようにする(第4周は塗りと点滅だけで区別していたが、ひし形のままだった) */
+.exp-obj-beacon.is-hold .exp-obj-ic-beacon{ background:#7dffb0; border-radius:50%; transform:none; animation:expObjBeaconPulse 1s ease-in-out infinite; }
 @keyframes expObjBeaconPulse{ 0%,100%{ box-shadow:0 0 2px #7dffb0; } 50%{ box-shadow:0 0 7px #7dffb0; } }
 .exp-obj-faint{ display:flex; align-items:center; gap:calc(2px * var(--k)); }
 .exp-obj-faint i{ display:block; width:calc(6px * var(--k)); height:calc(6px * var(--k)); border-radius:50%; box-sizing:border-box; }
@@ -6640,7 +6640,10 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
 .exp-obj-row.is-prio{ background:linear-gradient(90deg, rgba(255,211,90,0.16), rgba(255,211,90,0)); }
 .exp-obj-line{ height:calc(17px * var(--k)); display:flex; align-items:center; gap:calc(5px * var(--k)); min-width:0; }
 .exp-obj-mark{ flex:0 0 calc(12px * var(--k)); text-align:center; font-size:calc(11px * var(--k)); line-height:1; color:rgba(230,236,245,0.5); }
-.exp-obj-text{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+/* flex-grow は 0(第5周の指摘: 1のままだと広い画面で本文が残りの幅いっぱいへ伸び、
+   同じ行の数字(.exp-obj-count)との間が大きく空いた=「討伐」と「0/4」が320pxも離れて見えた)。
+   本文の長さぶんだけ取り、数字はすぐ隣へ詰める(帯の余りはただの余白のまま) */
+.exp-obj-text{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   font-size:calc(12px * var(--k)); font-weight:700; color:rgba(230,236,245,0.72); text-shadow:0 1px 2px rgba(0,0,0,0.8); }
 .exp-obj-count{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:calc(12px * var(--k)); color:rgba(230,236,245,0.72); }
 .exp-obj-row.is-prio .exp-obj-mark{ color:#ffd35a; text-shadow:0 0 6px rgba(255,211,90,0.8); }
@@ -6671,13 +6674,11 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
   padding:calc(5px * var(--k)) calc(12px * var(--k)) calc(6px * var(--k));
   /* 不透明寄りに(批評指摘: 背景の景色がアイコンの裏に透けて見づらかった。基本の.hud-panelは0.5) */
   background:rgba(8,13,20,0.84); }
-/* HP・ガッツ・状態(⚑)の3本を同じ長さにそろえる(批評指摘: ⚑だけ列2(auto幅の数字欄)へ
-   食い込まず全幅まで伸び、HP/ガッツは列1止まりで短く見えていた)。3本とも全幅・数字はその下に
-   右寄せの1行(高さは増えるが --k で画面の縦に合わせて縮むので375でも収まる) */
-#hud.explore-mode #hpPanel .who, #hud.explore-mode .hpbar-track, #hud.explore-mode #hpNum,
-#hud.explore-mode #gutsTrack, #hud.explore-mode #gutsNum, #hud.explore-mode #stateCdTrack, #hud.explore-mode #stateCdLabel,
-#hud.explore-mode #statusIcons, #hud.explore-mode #trainBuffsLine{ grid-column:1 / -1; }
-#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum{ text-align:right; }
+/* HP・ガッツ・状態(⚑)の3本を同じ長さにそろえる。**第5周の指摘で数値はバーと同じ行の右へ戻した**
+   (第4周でバー・数値を別行の全幅にしたら高さが画面の36%まで伸びた=R1違反。バーは3本とも
+   列1どまり・数値は3本とも列2(同じauto幅)にそろえれば、同じ行のまま長さもそろう) */
+#hud.explore-mode #hpPanel .who, #hud.explore-mode #statusIcons, #hud.explore-mode #trainBuffsLine{ grid-column:1 / -1; }
+#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum, #hud.explore-mode #stateCdLabel{ text-align:right; white-space:nowrap; }
 #hud.explore-mode #hpPanel .who{ margin-bottom:calc(2px * var(--k)); min-width:0; display:flex; align-items:center; gap:calc(6px * var(--k)); }
 #hud.explore-mode #hpPanel .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:calc(14px * var(--k)); }
 #hud.explore-mode #hpPanel .elTag{ display:none; }
