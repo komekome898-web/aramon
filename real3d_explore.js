@@ -2075,6 +2075,7 @@ export function buildExploreWorld(group, world){
    霧は地面・山・ランドマーク・水がすべて同じ1本の曲線で霞む(探検のあいだだけ FogExp2 に差し替え、
    離れるときに元の Fog へ戻す)。空の元の色は最初のフレームで覚えておき、そこから混ぜる。 */
 let baseSky = null, fogX = null, savedFog = null, sunBase = null, hemi = null;
+const EXPLORE_HEMI_INTENSITY = 1.3;   // 影を地域色へ寄せる半球ライトの強さ(上げすぎると白飛び)
 const _hz = new THREE.Color(), _sun = new THREE.Color(), _tmp = new THREE.Color(), _zen = new THREE.Color();
 const _low = new THREE.Color(), _ct = new THREE.Color();
 const SUN_BASE = new THREE.Color(0xfff1d6);
@@ -2106,9 +2107,11 @@ export function updateExplore(t, cp, ctx){
      火山・峡谷のような暖色の地域でも影だけ青く見えていた(2026-09-24 canyon/volcano_wideの
      「青い影」)。半球ライト(空側=_hz・地側=_low。どちらも今のカメラの地域の重みで
      混ぜた色)を1つだけ足し、影の中の色をその場の地域色へ寄せる。決め打ちにしないため
-     色は毎フレームここで混ぜ直す(環境マップ自体は作り直さない、軽い足し方)。 */
+     色は毎フレームここで混ぜ直す(環境マップ自体は作り直さない、軽い足し方)。
+     強さは EXPLORE_HEMI_INTENSITY。11.0 まで上げると草原・雪原が白飛びして影と起伏が消えた
+     (2026-09-24 批評 E2 5.5)ので 1.3 に戻した。 */
   if(scene){
-    if(!hemi){ hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 11.0); scene.add(hemi); }
+    if(!hemi){ hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, EXPLORE_HEMI_INTENSITY); scene.add(hemi); }
     hemi.color.copy(_hz);
     hemi.groundColor.copy(_low);
   }
