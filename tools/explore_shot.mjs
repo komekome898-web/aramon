@@ -43,28 +43,40 @@ const CUTS = [
   { name:'lobby_mode', kind:'lobby', desc:'プレイモード選択で探検を選んだ状態',
     prep: ()=>{ setLobbyMode('explore', { save:false }); refreshLobby(); lobbyOpenOverlay('modePickOverlay'); } },
   /* 工房(ui.js の renderExploreForge)。保管と装備は撮るたびに同じ中身へ書き直す(前のカットの結果を持ち越さない) */
-  { name:'forge', kind:'lobby', desc:'工房: 装備の一覧(作れる/素材不足/装着中)と詳細',
+  { name:'forge', kind:'lobby', desc:'工房: 表(行=セット・列=部位・武器の派生の線)と詳細(見た目・今の装備との比較・合計)',
     prep: ()=>{
       saveExploreStash({ meadow_fiber:14, jungle_vine:9, frost_shard:12, volcano_ore:15, boss_horn:5, boss_fang:2, boss_scale:3, apex_core:3 });
-      saveExploreGear({ owned:['scout_head','horn_body','horn_arms'], equip:{ head:'scout_head', body:'horn_body', arms:'horn_arms' } });
+      saveExploreGear({ owned:['scout_head','horn_body','horn_arms','horn_bow'], equip:{ head:'scout_head', body:'horn_body', arms:'horn_arms', weapon:'horn_bow' } });
       setLobbyMode('explore', { save:false }); refreshLobby();
-      exploreForgeState.filter = 'all'; exploreForgeState.sel = 'apex_body';
+      exploreForgeState.sel = 'apex_body';
       openExploreForge();
     } },
-  { name:'forge_weapon', kind:'lobby', desc:'工房: 武器で絞り込み・素材が足りない武器の詳細',
+  { name:'forge_weapon', kind:'lobby', desc:'工房: 素材が足りない武器の詳細(足りない素材の入手先)',
     prep: ()=>{
       saveExploreStash({ meadow_fiber:4, frost_shard:3, volcano_ore:2, boss_fang:1 });
       saveExploreGear({ owned:['scout_head'], equip:{ head:'scout_head' } });
-      exploreForgeState.filter = 'weapon'; exploreForgeState.sel = 'frost_rifle';
+      exploreForgeState.sel = 'frost_rifle';
       openExploreForge();
     } },
-  { name:'forge_done', kind:'lobby', desc:'工房: 作ったときの演出(槌→火花→完成の光。金)', waitMs:2300,
+  /* 完成の演出は時間で進むので、決まった時刻で止めて撮る(撮るたびに同じ絵)。
+     forge_done = 光って完成が出た直後(2.1秒)/ forge_choice = 合計の変化と「装備する/あとで」(2.6秒) */
+  { name:'forge_done', kind:'lobby', desc:'工房: 作ったときの演出の途中(槌→火花→光って完成。金)',
     prep: ()=>{
       saveExploreStash({ apex_core:3, boss_scale:3, volcano_ore:9 });
-      saveExploreGear({ owned:[], equip:{} });
-      exploreForgeState.filter = 'all'; exploreForgeState.sel = 'apex_body';
+      saveExploreGear({ owned:['horn_body'], equip:{ body:'horn_body' } });
+      exploreForgeState.sel = 'apex_body';
       openExploreForge();
       exploreForgeCraft('apex_body');
+      document.getElementById('exploreForgeFx').getAnimations({ subtree:true }).forEach(a=>{ a.pause(); a.currentTime = 2100; });
+    } },
+  { name:'forge_choice', kind:'lobby', desc:'工房: 完成のあと(着けると合計がどう変わるか・装備する/あとで)',
+    prep: ()=>{
+      saveExploreStash({ apex_core:3, boss_scale:3, volcano_ore:9 });
+      saveExploreGear({ owned:['horn_body'], equip:{ body:'horn_body' } });
+      exploreForgeState.sel = 'apex_body';
+      openExploreForge();
+      exploreForgeCraft('apex_body');
+      document.getElementById('exploreForgeFx').getAnimations({ subtree:true }).forEach(a=>{ a.pause(); a.currentTime = 2700; });
     } },
   { name:'camp', kind:'field', desc:'ベースキャンプの出発地点から帰還ビーコン側を見渡す',
     at: ()=>{ const s = exploreState.spawn, b = exploreState.beacon;
@@ -275,11 +287,46 @@ const CUTS = [
       const p = clearObstaclePoint(c.x - c.r*0.2, c.y + c.r*0.25, 80);
       return { x:p.x, y:p.y, yaw:-0.8, pitch:0.1, warm:0.1, after: ()=>{ exploreUpdateHud(); exploreOpenMap(); } };
     } },
+  /* 全画面の札(explore_loot.js の exploreCineDraw)。進行の時計を手で進めて途中の絵を撮る */
+  { name:'depart', kind:'result', desc:'出発: 「探検開始」の札(目標・制限時間)とキャンプを回るカメラ(0.9秒時点)', keepOutro:true,
+    prep: ()=>{
+      exploreIntroStart();
+      for(let i=0;i<27;i++) update(1/30);
+      render();
+    } },
+  { name:'faint_card', kind:'result', desc:'力尽き: 「力尽きた 1/3」の札(暗転する前)', keepOutro:true,
+    prep: ()=>{
+      player.exploreInvulnUntil = 0;
+      exploreOnPlayerFaint(player, null);
+      for(let i=0;i<14;i++) update(1/30);
+      render();
+    } },
+  { name:'faint_wake', kind:'result', desc:'力尽き: 暗転のあと、ベースキャンプで明転するところ', keepOutro:true,
+    prep: ()=>{
+      player.exploreInvulnUntil = 0;
+      exploreOnPlayerFaint(player, null);
+      const S = EXPLORE_FAINT_SEQ;
+      const n = Math.round((S.card + S.fadeOut + S.black + S.fadeIn*0.45) * 30);
+      for(let i=0;i<n;i++) update(1/30);
+      render();
+    } },
+  { name:'return_card', kind:'result', desc:'終了直後: フィールドの「帰還成功」の札(報酬画面の前)', keepOutro:true,
+    prep: ()=>{
+      ['meadow_fiber','boss_horn','apex_core'].forEach((k, i)=> exploreGainMaterial(k, 1 + i, null, null));
+      exploreFinish('return');
+      clearTimeout(exploreOutroTimer);   // 撮り終えるまで報酬画面へ進ませない(1枚に数秒かかる)
+      exploreState.cine.t0 -= 0.6;   // 札が出そろった時刻の絵にする(札は実時間で進む)
+      render();
+    } },
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',
     prep: ()=>{
       const pick = ['meadow_fiber','meadow_honey','frost_shard','volcano_heart','jungle_relic','boss_horn','apex_core'];
       pick.forEach((k, i)=> exploreGainMaterial(k, 1 + (i*2)%5, null, null));
       exploreState.kills = 12;
+      // 記録の欄に出る物(狩った主・部位破壊・開けた箱)も入れておく
+      exploreState.bosses.slice(0, 2).forEach(r=> r.defeated = true);
+      if(exploreState.bosses[0]) exploreState.bosses[0].broken = true;
+      exploreState.crates.slice(0, 7).forEach(c=> c.opened = true);
       matchTime = 612;
       exploreFinish('return');
     } },
@@ -389,6 +436,8 @@ function pageTools(){
     window.__shotMute();
     game.selectedElement = element; game.selectedMastermonKey = null;
     exploreStart();
+    // 出発の札とカメラの一周(explore_loot.js)は飛ばす。見たいカット(depart)は自分で始め直す
+    if(typeof exploreIntroSkip==='function') exploreIntroSkip();
     return { ok: !!game.explore, map: game.activeMapKey, wild: exploreState.wild.length,
              real3d: !!(window.__aramonReal3D), camp: exploreState.camp };
   };
@@ -691,6 +740,8 @@ for(const vpName of vpNames){
       await page.evaluate(([s, el])=> window.__shotStartExplore(s, el), [SEED, ELEMENT]);
       await page.evaluate(()=> window.__shotField(`()=>({ x:exploreState.spawn.x, y:exploreState.spawn.y, yaw:-Math.PI/2, pitch:0.14, warm:0 })`));
       await page.evaluate(`(${c.prep.toString()})()`);
+      // 終わりの札(フィールドの「帰還成功」)を待たずに報酬画面へ。札そのものを撮るカットは keepOutro
+      if(!c.keepOutro) await page.evaluate(()=>{ if(typeof exploreOutroSkip==='function') exploreOutroSkip(); });
       /* 結果画面のカードは1枚ずつ順に出る(CSSの動き)。撮影はゲームのループを止めていて
          動きの進み方が撮るたびに変わるので、終わりのある動きは最後まで進めて「出そろった姿」で撮る
          (金のカードに光が横切るような繰り返しの動きはそのまま) */

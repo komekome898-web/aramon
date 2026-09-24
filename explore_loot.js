@@ -150,18 +150,58 @@ function exploreOpenCrate(c){
     const n = (info.kind==='mat' && info.rarity==='common') ? 1 + Math.floor(Math.random()*2) : 1;
     // 周り一周に均等に散らす(重ならない)。少しだけ乱す
     const a = baseA + (i / items.length) * Math.PI*2 + rand(-0.25, 0.25);
-    exploreSpawnDrop(c.x, c.y, k, null, { n, fromZ:EXPLORE_CRATE_SIZE.h, angle:a,
+    exploreSpawnDrop(c.x, c.y, k, null, { n, fromZ:EXPLORE_CRATE_SIZE.h*exploreCrateScale(c), angle:a,
       delay: EXPLORE_CRATE_LID_SEC*0.45 + i*EXPLORE_CRATE_BURST_GAP });
   });
-  const col = exploreRarityColor(c.rarity);
-  exploreLootFx({ type:'ring', x:c.x, y:c.y, z:c.z, color:col, dur:0.7, r0:30, r1:190 });
-  if(c.rarity==='epic' || c.rarity==='legendary') exploreLootFx({ type:'ring', x:c.x, y:c.y, z:c.z, color:col, dur:1.1, r0:20, r1:320, delay:0.12 });
-  for(let i=0;i<12;i++){
-    const a = rand(0, Math.PI*2), sp = rand(80, 240);
-    addParticle({ type:'spark', x:c.x, y:c.y, z:c.z + EXPLORE_CRATE_SIZE.h, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.55, maxLife:0.55, color:col, size:rand(2,4) });
-  }
+  exploreCrateOpenFx(c);
   playSe('expCrateOpen');
   if(c.rarity==='legendary') playSe('expLootLegend');
+}
+function exploreCrateScale(c){ return (c && EXPLORE_CRATE_BIG_SCALE[c.rarity]) || 1; }
+/* 開いた瞬間の光: 箱の口から火花が噴き上がり、地面を衝撃の輪が走る(WebGL層 fx_gl の burst / ring)。
+   地面の輪(2D)も重ねるので、WebGL層が無い端末でも「弾けた」ことは伝わる */
+function exploreCrateOpenFx(c){
+  const col = exploreRarityColor(c.rarity);
+  const ord = exploreRarityOrder(c.rarity);
+  const sc = exploreCrateScale(c);
+  const top = c.z + EXPLORE_CRATE_SIZE.h*sc;
+  exploreLootFx({ type:'ring', x:c.x, y:c.y, z:c.z, color:col, dur:0.55, r0:30*sc, r1:170 + ord*40 });
+  if(ord >= 2) exploreLootFx({ type:'ring', x:c.x, y:c.y, z:c.z, color:col, dur:0.9, r0:20, r1:300 + ord*40, delay:0.1 });
+  const fx = window.__aramonFxGl;
+  if(fx && fx.isActive && fx.isActive()){
+    const rgb = exploreRgb(col), w = exploreRgb('#fff6d8');
+    // 口から真上へ噴く火花(良い箱ほど多く高く)
+    fx.burst({ x:c.x, y:c.y, z:top, count:18 + ord*14, speed:260 + ord*70, elev:1.25, elevSpread:0.55, jitter:EXPLORE_CRATE_SIZE.w*0.5*sc,
+               r:rgb[0], g:rgb[1], b:rgb[2], bright:1.3, life:0.9, size0:11, stretch:0.45, az:-520, delaySpread:0.12 });
+    // 横へ散る白い火花(蓋が弾けた勢い)
+    fx.burst({ x:c.x, y:c.y, z:top, count:10 + ord*4, speed:360, elev:0.35, elevSpread:0.4, r:w[0], g:w[1], b:w[2], bright:1.1, life:0.5, size0:8, stretch:0.6 });
+    // 地面を走る衝撃の輪
+    fx.ring({ x:c.x, y:c.y, r0:24*sc, r1:200 + ord*60, life:0.55, color:rgb, width:10 + ord*2, bright:0.8 });
+    if(ord >= 2) fx.ring({ x:c.x, y:c.y, r0:20, r1:340 + ord*50, life:0.9, color:rgb, width:14, bright:0.6 });
+    // 土ぼこり(光らない)
+    fx.burst({ x:c.x, y:c.y, z:c.z + 6, count:8, speed:140, elev:0.25, jitter:EXPLORE_CRATE_SIZE.w*sc, r:0.5, g:0.46, b:0.4, bright:0.45, life:1.0, size0:36, hot:0, az:-30, turb:20 });
+  }
+  if(ord >= 3 && typeof fxFlashAdd==='function') fxFlashAdd(0.35);
+  for(let i=0;i<10;i++){
+    const a = rand(0, Math.PI*2), sp = rand(80, 240);
+    addParticle({ type:'spark', x:c.x, y:c.y, z:top, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.55, maxLife:0.55, color:col, size:rand(2,4) });
+  }
+}
+/* 地面にそのまま置く品(箱の外。exploreSpawnLoot から)。補給箱の中身と同じ光の柱・レア度で見せる。
+   抽選は EXPLORE_GROUND_LOOT(素材は地域の物)。置き場所は円の中の、障害物と危ない地面の外 */
+function exploreScatterGroundLoot(n, cx, cy, r, region){
+  for(let i=0;i<n;i++){
+    const e = exploreWeightedPick(EXPLORE_GROUND_LOOT);
+    const key = !e ? null : (e.mat ? exploreLootPickMat(e.mat, region) : e.item);
+    if(!key || !exploreItemInfo(key)) continue;
+    let x = cx, y = cy;
+    for(let guard=0; guard<20; guard++){
+      const a = rand(0, Math.PI*2), d = r*Math.sqrt(rand(0,1));
+      x = clamp(cx + Math.cos(a)*d, 60, WORLD.w-60); y = clamp(cy + Math.sin(a)*d, 60, WORLD.h-60);
+      if(!((typeof isOnHazard==='function') && isOnHazard(x, y, 45))) break;
+    }
+    exploreSpawnDrop(x, y, key, null, { placed:true });
+  }
 }
 
 /* ===== 落ちている品 =====
@@ -175,16 +215,18 @@ function exploreSpawnDrop(x, y, itemKey, rarity, opts){
   const a = o.angle != null ? o.angle : rand(0, Math.PI*2);
   const range = Array.isArray(o.dist) ? o.dist : EXPLORE_CRATE_SCATTER;
   const dd = rand(range[0], range[1]);
-  const land = clearObstaclePoint(clamp(x + Math.cos(a)*dd, 40, WORLD.w-40), clamp(y + Math.sin(a)*dd, 40, WORLD.h-40), 30);
-  const delay = o.delay || 0;
-  const flight = rand(EXPLORE_CRATE_FLIGHT_SEC[0], EXPLORE_CRATE_FLIGHT_SEC[1]);
+  // placed:true = 最初から地面に置いてある品(飛ばさない・柱は立ちきっている)
+  const land = o.placed ? clearObstaclePoint(x, y, 30)
+    : clearObstaclePoint(clamp(x + Math.cos(a)*dd, 40, WORLD.w-40), clamp(y + Math.sin(a)*dd, 40, WORLD.h-40), 30);
+  const delay = o.placed ? -2 : (o.delay || 0);
+  const flight = o.placed ? 0.5 : rand(EXPLORE_CRATE_FLIGHT_SEC[0], EXPLORE_CRATE_FLIGHT_SEC[1]);
   const d = {
     id: nextId++, key:itemKey, rarity:rar, n: Math.max(1, Math.floor(o.n || 1)),
     sx:x, sy:y, sz: baseTerrainHeightAt(x, y) + (o.fromZ != null ? o.fromZ : 30),
     x:land.x, y:land.y, z: baseTerrainHeightAt(land.x, land.y),
     bornAt: matchTime + delay, landAt: matchTime + delay + flight,
     arc: rand(90, 150) + exploreRarityOrder(rar)*20,   // 良い物ほど高く跳ねる
-    landed:false, bob: rand(0, Math.PI*2),
+    landed:!!o.placed, bob: rand(0, Math.PI*2),
   };
   exploreState.drops.push(d);
   return d;
@@ -239,6 +281,7 @@ function exploreTakeDrop(d){
     exploreLootNotify(d.key, d.n, note);
     exploreLootPickupSe(info.rarity);
   }
+  if(!exploreState.bestFound || exploreRarityOrder(info.rarity) > exploreRarityOrder(exploreState.bestFound)) exploreState.bestFound = info.rarity;
   const col = exploreRarityColor(d.rarity);
   exploreLootFx({ type:'ring', x:d.x, y:d.y, z:d.z, color:col, dur:0.35, r0:40, r1:8 });
   for(let i=0;i<6;i++){
@@ -256,6 +299,7 @@ function exploreLootPickupSe(rarity){
 /* ===== 毎フレーム(updateExplore から) ===== */
 function exploreLootUpdate(dt){
   if(!game.explore || game.over) return;
+  exploreCineUpdate();   // 出発のカメラ・力尽きの暗転(全画面の札)
   const p = player;
   const pOk = p && p.alive;
   // 補給箱: 近くにとどまると開く(離れると進みは倍の速さで戻る)
@@ -305,7 +349,9 @@ function exploreLootDrawables(list){
   const cx = camPos.x, cy = camPos.y;
   for(const c of exploreState.crates){
     if(Math.hypot(c.x-cx, c.y-cy) > EXPLORE_CRATE_VIEW) continue;
-    if(occludedByMountain(c.x, c.y, c.z + EXPLORE_CRATE_SIZE.h)) continue;
+    // 閉じた紫・金の箱は上に立つ光が山の向こうから見えていれば描く
+    const topZ = (!c.opened && EXPLORE_CRATE_BEACON_H[c.rarity]) ? EXPLORE_CRATE_BEACON_H[c.rarity] : EXPLORE_CRATE_SIZE.h*exploreCrateScale(c);
+    if(occludedByMountain(c.x, c.y, c.z + topZ)) continue;
     const p = project(c.x, c.y, c.z);
     if(p) list.push({ kind:'exl', obj:c, p, draw:exploreDrawCrate });
   }
@@ -347,9 +393,11 @@ const EXPLORE_CRATE_METAL = [70, 78, 90];      // 箱の地の金属色(暗い�
 const EXPLORE_CRATE_TRIM  = [36, 40, 48];      // 台座・蓋の縁の暗い色
 
 /* 補給箱。胴(4面)+蓋(厚みのある板)を立体で描く。蓋は奥の辺を軸に開く。
-   レア度の色は「帯・縁・地面の光」にだけ使う(箱全体を塗るとおもちゃに見える) */
+   白・青の箱はレア度の色を「帯・縁・地面の光」にだけ使う(箱全体を塗るとおもちゃに見える)。
+   紫・金の箱は一回り大きく(EXPLORE_CRATE_BIG_SCALE)、蓋と四隅の飾りがレア度の色の金属になる */
 function exploreDrawCrate(c, p0){
-  const S = EXPLORE_CRATE_SIZE;
+  const sc = exploreCrateScale(c);
+  const S = { w:EXPLORE_CRATE_SIZE.w*sc, d:EXPLORE_CRATE_SIZE.d*sc, h:EXPLORE_CRATE_SIZE.h*sc, lid:EXPLORE_CRATE_SIZE.lid*sc };
   // 遠い箱は細部(補強材・地面の光・影)を省く。その距離では数pxなので見た目は変わらない
   const far = !!(p0 && p0.depth > 2400);
   const W = S.w/2, D = S.d/2, H = S.h;
@@ -367,6 +415,11 @@ function exploreDrawCrate(c, p0){
   const ord = exploreRarityOrder(c.rarity);
   const heavy = renderHeavyLoad;
   const pulse = 0.7 + 0.3*Math.sin(matchTime*3.2 + c.id);
+  // レア度の色の金属(紫・金の箱の蓋と角飾り)。色は EXPLORE_RARITY から作る
+  const rgb = exploreRgb(col).map(v=> v*255);
+  const rich = ord >= 2;
+  const lidMetal = rich ? rgb.map(v=> v*0.78) : EXPLORE_CRATE_METAL;
+  const ribMetal = rich ? rgb.map(v=> v*0.62) : EXPLORE_CRATE_TRIM;
   const openT = c.opened ? clamp((matchTime - c.openedAt) / EXPLORE_CRATE_LID_SEC, 0, 1) : 0;
   // 蓋の角度: 行き過ぎて戻る(easeOutBack)で「バン」と開く
   const eb = (t)=>{ const s = 1.70158; const u = t - 1; return 1 + (s+1)*u*u*u + s*u*u; };
@@ -414,7 +467,8 @@ function exploreDrawCrate(c, p0){
         const lx = a[0] + (b[0]-a[0])*t, ly = a[1] + (b[1]-a[1])*t;
         const lx2 = a[0] + (b[0]-a[0])*(t + (t<0.5 ? 0.07 : -0.07)), ly2 = a[1] + (b[1]-a[1])*(t + (t<0.5 ? 0.07 : -0.07));
         if(_exlPoly([P(lx,ly,0), P(lx2,ly2,0), P(lx2,ly2,H), P(lx,ly,H)])){
-          ctx.fillStyle = _exlShade(EXPLORE_CRATE_TRIM, v.wn, 1.15); ctx.fill();
+          ctx.fillStyle = _exlShade(ribMetal, v.wn, rich ? 1.3 : 1.15); ctx.fill();
+          if(rich){ ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke(); }
         }
       }
       // レア度の光の帯(真ん中の高さ。補強材の内側だけ)
@@ -451,14 +505,14 @@ function exploreDrawCrate(c, p0){
       const v = faces(ln, ctr[0], ctr[1], ctr[2]);
       if(!v.vis) continue;
       if(!_exlPoly(f.pts.map(q=> LP(q[0], q[1], q[2])))) continue;
-      ctx.fillStyle = f.under ? _exlShade(EXPLORE_CRATE_TRIM, v.wn, 0.9) : _exlShade(EXPLORE_CRATE_METAL, v.wn, f.top ? 1.12 : 0.95);
+      ctx.fillStyle = f.under ? _exlShade(EXPLORE_CRATE_TRIM, v.wn, 0.9) : _exlShade(lidMetal, v.wn, f.top ? 1.12 : 0.95);
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
       if(f.top){
         // 縁の面取り(光を受ける細い線)。箱が「塗った四角」ではなく金属の板に見える
         ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.2; ctx.stroke();
         const inset = f.pts.map(q=> LP(q[0]*0.86, q[1]*0.8, q[2]));
-        if(_exlPoly(inset)){ ctx.fillStyle = _exlShade(EXPLORE_CRATE_TRIM, v.wn, 1.25); ctx.fill(); }
+        if(_exlPoly(inset)){ ctx.fillStyle = _exlShade(rich ? EXPLORE_CRATE_METAL : EXPLORE_CRATE_TRIM, v.wn, 1.25); ctx.fill(); }
         // 蓋の上の印(レア度の色の山形 2本)
         for(const off of [-0.18, 0.18]){
           const y0 = off*D*2;
@@ -489,24 +543,6 @@ function exploreDrawCrate(c, p0){
     ctx.fillStyle = exploreRgba(col, 0.55*glow); ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
   };
-  // 開いた瞬間の光の柱(箱の中から上へ)
-  const drawBurstBeam = ()=>{
-    const age = matchTime - c.openedAt;
-    if(age < 0 || age > 1.6) return;
-    const k = age < 0.15 ? age/0.15 : 1 - (age-0.15)/1.45;
-    const b0 = P(0, 0, H), b1 = P(0, 0, H + 260 + ord*60);
-    if(!b0 || !b1) return;
-    const w0 = Math.max(4, W*0.9*b0.scale), w1 = w0*2.2;
-    const g = ctx.createLinearGradient(0, b0.y, 0, b1.y);
-    g.addColorStop(0, exploreRgba(col, 0.75*k)); g.addColorStop(0.35, exploreRgba(col, 0.3*k)); g.addColorStop(1, exploreRgba(col, 0));
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.moveTo(b0.x - w0, b0.y); ctx.lineTo(b1.x - w1, b1.y); ctx.lineTo(b1.x + w1, b1.y); ctx.lineTo(b0.x + w0, b0.y); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = exploreRgba('#ffffff', 0.35*k);
-    ctx.beginPath(); ctx.moveTo(b0.x - w0*0.3, b0.y); ctx.lineTo(b1.x - w0*0.2, b1.y); ctx.lineTo(b1.x + w0*0.2, b1.y); ctx.lineTo(b0.x + w0*0.3, b0.y); ctx.closePath(); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-  };
-
   if(!c.opened){
     drawBody();
     drawLid();
@@ -520,16 +556,36 @@ function exploreDrawCrate(c, p0){
       ctx.fillStyle = exploreRgba(col, 0.85*pulse); ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI*2); ctx.fill();
       ctx.shadowBlur = 0;
     }
-    // 紫・金の箱は上に淡い光が立つ(遠くから「良い箱」だと分かる。品の光の柱よりずっと低く淡い)
+    // 四隅の飾り(紫・金): 蓋の角に被さるレア度の色の金属の角当て
+    if(rich) for(const [sx, sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
+      const cx0 = sx*(W+OV), cy0 = sy*(D+OV), k = W*0.3;
+      const tri = [LP(cx0, cy0, H+L+0.5), LP(cx0 - sx*k, cy0, H+L+0.5), LP(cx0, cy0 - sy*k*0.9, H+L+0.5)];
+      if(_exlPoly(tri)){
+        ctx.fillStyle = _exlShade(rgb, [0,0,1], 1.25); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+      }
+      const post = [LP(cx0, cy0, H), LP(cx0, cy0, H+L+0.5)];
+      if(post[0] && post[1]){
+        ctx.strokeStyle = exploreRgba(col, 0.95); ctx.lineWidth = Math.max(1.5, 3*post[0].scale);
+        ctx.beginPath(); ctx.moveTo(post[0].x, post[0].y); ctx.lineTo(post[1].x, post[1].y); ctx.stroke();
+      }
+    }
+    /* 紫・金の箱は上に光が立つ(遠くから「良い箱」だと分かる)。高さは EXPLORE_CRATE_BEACON_H
+       (1500以上離れても地平線の上に出る)。遠くでも細くなりすぎないよう最小の太さを持つ */
     if(ord >= 2){
-      const b0 = P(0, 0, H + L), b1 = P(0, 0, H + L + 90 + ord*25);
+      const bh = EXPLORE_CRATE_BEACON_H[c.rarity] || 500;
+      const b0 = P(0, 0, H + L), b1 = P(0, 0, H + L + bh);
       if(b0 && b1){
-        const w0 = Math.max(3, W*0.8*b0.scale);
-        const g = ctx.createLinearGradient(0, b0.y, 0, b1.y);
-        g.addColorStop(0, exploreRgba(col, 0.28*pulse)); g.addColorStop(1, exploreRgba(col, 0));
+        const w0 = Math.max(2.5, W*0.55*b0.scale), w1 = Math.max(1.2, w0*0.25);
+        const g = ctx.createLinearGradient(b0.x, b0.y, b1.x, b1.y);
+        g.addColorStop(0, exploreRgba(col, 0.55*pulse)); g.addColorStop(0.35, exploreRgba(col, 0.22*pulse)); g.addColorStop(1, exploreRgba(col, 0));
         ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.moveTo(b0.x - w0, b0.y); ctx.lineTo(b1.x - w0*0.4, b1.y); ctx.lineTo(b1.x + w0*0.4, b1.y); ctx.lineTo(b0.x + w0, b0.y); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(b0.x - w0, b0.y); ctx.lineTo(b1.x - w1, b1.y); ctx.lineTo(b1.x + w1, b1.y); ctx.lineTo(b0.x + w0, b0.y); ctx.closePath(); ctx.fill();
+        const g2 = ctx.createLinearGradient(b0.x, b0.y, b1.x, b1.y);
+        g2.addColorStop(0, exploreRgba('#ffffff', 0.5)); g2.addColorStop(0.5, exploreRgba(col, 0.15)); g2.addColorStop(1, exploreRgba(col, 0));
+        ctx.fillStyle = g2;
+        ctx.beginPath(); ctx.moveTo(b0.x - w0*0.25, b0.y); ctx.lineTo(b1.x - w1*0.3, b1.y); ctx.lineTo(b1.x + w1*0.3, b1.y); ctx.lineTo(b0.x + w0*0.25, b0.y); ctx.closePath(); ctx.fill();
         ctx.globalCompositeOperation = 'source-over';
       }
     }
@@ -540,7 +596,7 @@ function exploreDrawCrate(c, p0){
     const db = Math.hypot(camPos.x - c.x, camPos.y - c.y);
     if(dl > db){ drawLid(); drawBody(); drawInside(); }
     else { drawBody(); drawInside(); drawLid(); }
-    drawBurstBeam();
+    // 開いた瞬間の光は WebGL層の火花と衝撃の輪(exploreCrateOpenFx)が受け持つ。ここでは平たい光を描かない
   }
 
   // --- 近づいたら名前と開ける進み(地面の弧) ---
@@ -707,9 +763,14 @@ function exploreDrawFx(f){
   }
 }
 
-/* ===== 拾った通知(画面の左に積み上がるレア度色の行) =====
+/* ===== 拾った通知(レア度色の行が積み上がる) =====
+   【置き場所】左のスティックの右上(ステータス欄の下〜技の欄の上)。
+     ・右上はミニマップ・目標パネル・撃破ログ(HUD担当 explore_hud.js)、上の中央は方位バーと地域の札が使う
+     ・左上はステータス欄、左下はスティック。その間は縦持ちで85pxしかなく2〜3行で詰まった(批評指摘)
+     ・スティックの右側はステータス欄の下から技の欄(#movePanel)の上まで空いていて縦に余裕がある
+   箱は画面から決める(R1): 左端=スティックの右、上端=ステータス欄の下、下端=横に重なる操作(技の欄など)の上。
    #hud の中に1つだけ作る(pointer-events:none。押す物が無いのでスクロールロック除外は不要)。
-   同じ品を続けて拾ったら行を増やさず個数をまとめる。古い行から消える。 */
+   同じ品を続けて拾ったら行を増やさず個数をまとめる。入りきらない分は黙って消さず「+N件」の1行にまとめる。 */
 function exploreFeedRoot(){
   let el = document.getElementById('expLootFeed');
   if(el) return el;
@@ -720,13 +781,20 @@ function exploreFeedRoot(){
   hud.appendChild(el);
   return el;
 }
+// 色の帯の地色(白い文字が読める濃さへ寄せる。コモンの白・レジェンドの金は明るいので沈める)
+function exploreRarityBand(r){
+  const hex = exploreRarityColor(r);
+  const c = exploreRgb(hex);
+  const L = 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2];
+  return L > 0.55 ? exploreMixHex(hex, '#101418', Math.min(0.6, (L - 0.45)*1.2)) : hex;
+}
 function exploreFeedPush(row){
   const root = exploreFeedRoot();
   if(!root) return;
   const now = performance.now();
   let n = Math.max(1, Math.floor(row.n || 1));
   if(row.key){
-    for(const el of root.children){
+    for(const el of root.querySelectorAll('.exp-feed-row')){
       if(el.dataset.key === row.key && !el.classList.contains('is-out') && now - Number(el.dataset.t) < EXPLORE_FEED_MERGE_SEC*1000){
         n += Number(el.dataset.n) || 0;
         clearTimeout(el._expTimer);
@@ -743,22 +811,23 @@ function exploreFeedPush(row){
   el.dataset.rar = row.rarity || 'common';
   const rc = row.color || exploreRarityColor(row.rarity);
   el.style.setProperty('--rc', rc);
-  el.style.setProperty('--rc-soft', exploreRgba(rc, 0.34));     // CSS 側で色を混ぜない(古い iOS の Safari に color-mix が無い)
+  el.style.setProperty('--rc-soft', exploreRgba(rc, 0.30));     // CSS 側で色を混ぜない(古い iOS の Safari に color-mix が無い)
   el.style.setProperty('--rc-strong', exploreRgba(rc, 0.55));
+  el.style.setProperty('--rc-band', row.band || exploreRarityBand(row.rarity));
   const esc = (s)=> String(s == null ? '' : s).replace(/[&<>"]/g, (ch)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
   el.innerHTML = `<span class="exp-feed-ico">${esc(row.icon)}</span>`
-    + `<span class="exp-feed-main"><span class="exp-feed-name">${esc(row.name)}</span>`
-    + `<span class="exp-feed-sub">${esc(row.sub)}</span></span>`
+    + `<span class="exp-feed-name">${esc(row.name)}</span>`
+    + (row.tag ? `<span class="exp-feed-tag">${esc(row.tag)}</span>` : '')
     + (row.showN === false ? '' : `<span class="exp-feed-n">×${n}</span>`);
+  if(row.sub) el.title = row.sub;
   root.appendChild(el);
-  exploreFeedLayout(root);
   el._expTimer = setTimeout(()=>{
     el.classList.add('is-out');
-    el._expTimer = setTimeout(()=> el.remove(), 420);
+    el._expTimer = setTimeout(()=>{ el.remove(); exploreFeedLayout(root); }, 420);
   }, (row.sec || EXPLORE_FEED_SEC) * 1000);
+  exploreFeedLayout(root);
 }
-/* 箱は画面から決める(R1): 左上のステータス欄の下端〜ジョイスティックの上端が使える縦幅。
-   入らない行は古い方から消す(行数の上限 EXPLORE_FEED_MAX と、使える縦幅の小さい方)。
+/* 置き場所を画面から決め、入らない行は「+N件」にまとめる。
    ステータス欄は試合中に行が増えて背が伸びる(装備・トレーニングの効果)ので、行があるあいだは
    exploreLootUpdate からも測り直す */
 function exploreFeedLayout(root){
@@ -766,23 +835,47 @@ function exploreFeedLayout(root){
   if(!root || !root.parentNode) return;
   const hud = root.parentNode;
   const tl = document.getElementById('topLeft'), js = document.getElementById('joystickBase');
+  const hudH = hud.clientHeight;
+  const left = (js && js.offsetWidth) ? js.offsetLeft + js.offsetWidth + 10 : 160;
   const top = tl ? tl.offsetTop + tl.offsetHeight + 8 : 150;
-  const bottom = (js && js.offsetTop > 0) ? js.offsetTop - 10 : hud.clientHeight - 160;
-  const st = top + 'px', sh = Math.max(30, bottom - top) + 'px';
+  const w = root.offsetWidth || 190;
+  let bottom = hudH - 8;
+  for(const id of ['movePanel','autoRunLabel','sniperAdsBtn','sniperAmmoChip','fireBtn','dashBtn']){
+    const e = document.getElementById(id);
+    if(!e || !e.offsetWidth || e.classList.contains('hidden')) continue;
+    const cs = getComputedStyle(e);
+    if(cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if(e.offsetLeft + e.offsetWidth <= left || e.offsetLeft >= left + w || e.offsetTop < top) continue;
+    bottom = Math.min(bottom, e.offsetTop - 6);
+  }
+  const sl = left + 'px', st = top + 'px', sh = Math.max(24, bottom - top) + 'px';
+  if(root.style.left !== sl) root.style.left = sl;
   if(root.style.top !== st) root.style.top = st;
   if(root.style.height !== sh) root.style.height = sh;
-  const rowsH = ()=>{ let h = 0; for(const r of root.children) h += r.offsetHeight + 4; return h; };
-  while(root.children.length > 1 && (root.children.length > EXPLORE_FEED_MAX || rowsH() > root.clientHeight + 4)){
-    const f = root.firstChild; clearTimeout(f._expTimer); f.remove();
+  // 入る行数(22px + すき間3px)。上限 EXPLORE_FEED_MAX
+  const pitch = 25;
+  const fit = Math.max(1, Math.min(EXPLORE_FEED_MAX, Math.floor((bottom - top + 3) / pitch)));
+  const rows = [...root.querySelectorAll('.exp-feed-row')];
+  let more = root.querySelector('.exp-feed-more');
+  const cap = rows.length > fit ? fit - 1 : fit;   // あふれるときは1行を「+N件」に使う
+  let hidden = Number(root.dataset.hidden || 0);
+  while(rows.length > Math.max(1, cap)){
+    const f = rows.shift(); clearTimeout(f._expTimer); f.remove();
+    hidden += Number(f.dataset.n) || 1;
   }
+  if(!rows.length) hidden = 0;
+  root.dataset.hidden = String(hidden);
+  if(hidden > 0 && fit > 1){
+    if(!more){ more = document.createElement('div'); more.className = 'exp-feed-more'; root.insertBefore(more, root.firstChild); }
+    more.textContent = `＋${hidden}件 ほかにも拾った`;
+  } else if(more){ more.remove(); }
 }
-// 品を拾った通知(素材・回復・狙撃銃…すべてこれ)
+// 品を拾った通知(素材・回復・狙撃銃…すべてこれ)。レア度は色の帯の上の白い文字
 function exploreLootNotify(key, n, note){
   const info = exploreItemInfo(key);
   if(!info) return;
   const rar = EXPLORE_RARITY[info.rarity] || EXPLORE_RARITY.common;
-  exploreFeedPush({ key, n, icon:info.icon, name:info.name, rarity:info.rarity,
-                    sub: note ? `${rar.label}・${note}` : rar.label });
+  exploreFeedPush({ key, n, icon:info.icon, name:info.name, rarity:info.rarity, tag:rar.label, sub:note || '' });
 }
 // 金を拾ったときの画面のふちの金の光(1回きりのCSSアニメーション。自分で消える)
 function exploreLegendFlash(){
@@ -796,8 +889,12 @@ function exploreLegendFlash(){
 }
 // 探検の状態を戻すとき(exploreResetState から)。通知の行を消す
 function exploreLootReset(){
+  // 終わりの札の予約を取り消す(札の途中でロビーへ戻ったときに、あとから報酬画面が出ないように)
+  clearTimeout(exploreOutroTimer); exploreOutroTimer = null; exploreOutroDone = null;
+  const hud = document.getElementById('hud');
+  if(hud) hud.classList.remove('exp-cine');
   const el = document.getElementById('expLootFeed');
-  if(el){ for(const r of el.children) clearTimeout(r._expTimer); el.innerHTML = ''; }
+  if(el){ for(const r of el.children) clearTimeout(r._expTimer); el.innerHTML = ''; el.dataset.hidden = '0'; }
   document.querySelectorAll('.exp-legend-flash').forEach(e=> e.remove());
 }
 
@@ -827,9 +924,216 @@ function exploreApplyGear(p){
   const txt = exploreGearFxText(fx);
   if(txt){
     const n = Object.keys(gear.equip).length;
-    exploreFeedPush({ icon:'⚒️', name:`工房の装備 ${n}部位が効いている`, sub:txt, rarity:'legendary', color:'#ffb347', showN:false, sec:5 });
+    exploreFeedPush({ icon:'⚒️', name:`装備${n}部位 ${txt}`, tag:'工房', rarity:'legendary', color:'#ffb347', band:'#b0621c', showN:false, sec:5 });
   }
   return tot;
+}
+
+/* =====================================================================
+   全画面の札(出発・力尽き・終了)。exploreState.cine に1つだけ持つ
+     intro  … 「探検開始」の札(目標・制限時間)+カメラがキャンプを回る。EXPLORE_INTRO_SEC(この間は動けない)
+     faint  … 「力尽きた n/3」→暗転→(キャンプへ運ぶ)→明転(モンハンの猫車)。尺は EXPLORE_FAINT_SEQ
+     outro  … 終わった直後のフィールドの札(帰還成功/時間切れ/力尽きた/中断)。EXPLORE_OUTRO_SEC ののち報酬画面
+   intro/faint は試合の時計(matchTime)、outro は進行が止まった後なので実時間(Date)で進む。
+   撮影ハーネスは描く間だけ performance.now を止めるので、実時間は Date から取る。
+   描くのは exploreCineDraw(explore.js の exploreDrawScreen の最後=画面の一番手前)。
+   札のあいだは #hud を隠す(.exp-cine。出すときだけふわっと戻す)
+   ===================================================================== */
+const EXPLORE_INTRO_SWEEP = 3.4;   // 出発のカメラが回る角度(ラジアン。約195度)
+let exploreOutroTimer = null, exploreOutroDone = null;
+function exploreCineNow(){ return Date.now() / 1000; }
+function exploreCineHud(on){
+  const hud = document.getElementById('hud');
+  if(hud) hud.classList.toggle('exp-cine', !!on);
+}
+function exploreIntroStart(){
+  if(!player || !game.explore) return;
+  exploreState.cine = { kind:'intro', clock:'match', t0:matchTime, dur:EXPLORE_INTRO_SEC, yaw0:camState.yaw, pitch0:camState.pitch };
+  player.exploreAsleep = true;   // 回っている間は動けない(combat.js が眠っている個体として止める)
+  exploreCineHud(true);
+}
+// 撮影や「すぐ遊びたい」ときの飛ばし口。カメラと操作を出発の姿へ戻す
+function exploreIntroSkip(){
+  const c = exploreState.cine;
+  if(!c || c.kind !== 'intro') return;
+  camState.yaw = c.yaw0; camState.pitch = c.pitch0;
+  if(player) player.exploreAsleep = false;
+  exploreState.cine = null;
+  exploreCineHud(false);
+}
+function exploreFaintStart(){
+  exploreState.cine = { kind:'faint', clock:'match', t0:matchTime, n:exploreState.faints, max:EXPLORE_MAX_FAINTS, moved:false };
+  exploreCineHud(true);
+}
+function exploreOutroStart(reason, done){
+  const kept = (exploreState.finished && exploreState.finished.items || []).reduce((s, it)=> s + it.kept, 0);
+  exploreState.cine = { kind:'outro', clock:'real', t0:exploreCineNow(), dur:EXPLORE_OUTRO_SEC, reason, kept,
+                        n:exploreState.faints, max:EXPLORE_MAX_FAINTS };
+  exploreCineHud(true);
+  clearTimeout(exploreOutroTimer);
+  exploreOutroDone = done;
+  exploreOutroTimer = setTimeout(exploreOutroSkip, EXPLORE_OUTRO_SEC * 1000);
+}
+// 札を待たずに報酬画面へ(撮影ハーネスと、札の途中で画面を触ったとき)
+function exploreOutroSkip(){
+  clearTimeout(exploreOutroTimer); exploreOutroTimer = null;
+  const done = exploreOutroDone; exploreOutroDone = null;
+  if(exploreState.cine && exploreState.cine.kind === 'outro') exploreState.cine = null;
+  if(done) done();
+}
+// 毎フレーム(exploreLootUpdate から)。カメラを回す・暗転しきったらキャンプへ運ぶ
+function exploreCineUpdate(){
+  const c = exploreState.cine;
+  if(!c || c.clock !== 'match') return;
+  const age = matchTime - c.t0;
+  if(c.kind === 'intro'){
+    const t = clamp(age / c.dur, 0, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    camState.yaw = c.yaw0 - (1 - e) * EXPLORE_INTRO_SWEEP;
+    camState.pitch = c.pitch0 + 0.10 * (1 - e);
+    if(player) player.facingAngle = camState.yaw;
+    if(age >= c.dur) exploreIntroSkip();
+  } else if(c.kind === 'faint'){
+    const S = EXPLORE_FAINT_SEQ;
+    if(!c.moved && age >= S.card + S.fadeOut){ c.moved = true; exploreFaintRespawn(player); }
+    if(age >= S.card + S.fadeOut + S.black + S.fadeIn){ exploreState.cine = null; exploreCineHud(false); }
+  }
+}
+// いちばん良かったレア度(持ち帰った素材と、その場で使った拾い物の両方から)
+function exploreBestRarity(items){
+  let best = exploreState.bestFound || null;
+  for(const it of (items || [])){
+    const m = EXPLORE_MATERIALS[it.key];
+    if(m && (!best || exploreRarityOrder(m.rarity) > exploreRarityOrder(best))) best = m.rarity;
+  }
+  return best;
+}
+// 前回の持ち帰り(ロビー右列に出す)
+function exploreSaveLast(fin){
+  if(!fin) return;
+  saveExploreLast({
+    reason:fin.reason, full:!!fin.full, gold:fin.gold || 0, best:fin.best || null,
+    kept:(fin.items || []).reduce((s, it)=> s + it.kept, 0),
+    top:(fin.items || []).filter(it=> it.kept > 0).slice(0, 3).map(it=> it.key),
+    bosses:(fin.bosses || []).length, at:Date.now(),
+  });
+}
+
+// ---- 描く ----
+function _exlCineText(text, x, y, size, fill, stroke, font){
+  ctx.font = `bold ${size}px ${font || "'Russo One', 'Rajdhani', sans-serif"}`;
+  ctx.lineWidth = Math.max(3, size*0.14); ctx.strokeStyle = stroke || 'rgba(0,0,0,0.85)';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = fill; ctx.fillText(text, x, y);
+}
+function exploreCineDraw(){
+  const c = exploreState.cine;
+  if(!c || !game.explore) return;
+  const age = c.clock === 'real' ? exploreCineNow() - c.t0 : matchTime - c.t0;
+  const W = viewW, H = viewH, cx = W/2;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if(c.kind === 'intro'){
+    const a = clamp(Math.min(age/0.3, (c.dur - age)/0.45), 0, 1);
+    // シネマの帯(上下)
+    const bar = H*0.11*clamp(Math.min(age/0.35, (c.dur - age)/0.35), 0, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.92)';
+    ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+    ctx.globalAlpha = a;
+    const cy = H*0.40, bandH = Math.min(118, H*0.34);
+    const g = ctx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, 'rgba(4,12,10,0)'); g.addColorStop(0.2, 'rgba(4,12,10,0.78)'); g.addColorStop(0.8, 'rgba(4,12,10,0.78)'); g.addColorStop(1, 'rgba(4,12,10,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, cy - bandH/2, W, bandH);
+    const lg = ctx.createLinearGradient(0, 0, W, 0);
+    lg.addColorStop(0, 'rgba(125,255,176,0)'); lg.addColorStop(0.5, 'rgba(125,255,176,0.95)'); lg.addColorStop(1, 'rgba(125,255,176,0)');
+    ctx.fillStyle = lg; ctx.fillRect(0, cy - bandH/2, W, 2); ctx.fillRect(0, cy + bandH/2 - 2, W, 2);
+    const pop = age < 0.25 ? 1.25 - age/0.25*0.25 : 1;
+    ctx.save(); ctx.translate(cx, cy - bandH*0.18); ctx.scale(pop, pop);
+    const tg = ctx.createLinearGradient(0, -22, 0, 22);
+    tg.addColorStop(0, '#eafff2'); tg.addColorStop(0.55, '#7dffb0'); tg.addColorStop(1, '#2fae6c');
+    if(!renderHeavyLoad){ ctx.shadowBlur = 18; ctx.shadowColor = 'rgba(80,255,160,0.7)'; }
+    _exlCineText('探検開始', 0, 0, Math.min(42, H*0.11), tg, 'rgba(0,30,14,0.9)');
+    ctx.restore();
+    const bosses = (typeof EXPLORE_BOSSES!=='undefined') ? EXPLORE_BOSSES : [];
+    const apex = bosses.find(b=> b.apex);
+    const goal = `目標：地域の主${bosses.filter(b=> !b.apex).length}体を狩り、頂点${apex ? '「' + apex.name + '」' : ''}に挑む`;
+    _exlCineText(goal, cx, cy + bandH*0.14, Math.min(15, H*0.042), '#ffffff', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
+    const rule = `制限時間 ${fmtTime(EXPLORE_TIME_LIMIT)} ・ 力尽き${EXPLORE_MAX_FAINTS}回まで ・ 帰還ビーコンで持ち帰り`;
+    _exlCineText(rule, cx, cy + bandH*0.34, Math.min(12, H*0.034), '#bff5d2', 'rgba(0,0,0,0.8)', "'Rajdhani', sans-serif");
+  } else if(c.kind === 'faint'){
+    const S = EXPLORE_FAINT_SEQ;
+    const t1 = S.card, t2 = t1 + S.fadeOut, t3 = t2 + S.black, t4 = t3 + S.fadeIn;
+    // 赤い縁と札(最初の card 秒)
+    if(age < t2){
+      const a = clamp(Math.min(age/0.2, (t2 - age)/0.3), 0, 1);
+      ctx.globalAlpha = a;
+      const vg = ctx.createRadialGradient(cx, H/2, Math.min(W, H)*0.25, cx, H/2, Math.max(W, H)*0.75);
+      vg.addColorStop(0, 'rgba(60,0,0,0.25)'); vg.addColorStop(1, 'rgba(90,0,0,0.85)');
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+      const cy = H*0.42;
+      const pop = age < 0.2 ? 1.3 - age/0.2*0.3 : 1;
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(pop, pop);
+      const tg = ctx.createLinearGradient(0, -24, 0, 24);
+      tg.addColorStop(0, '#ffd0c4'); tg.addColorStop(0.5, '#ff5a44'); tg.addColorStop(1, '#a4160c');
+      if(!renderHeavyLoad){ ctx.shadowBlur = 20; ctx.shadowColor = 'rgba(255,40,20,0.8)'; }
+      _exlCineText('力尽きた', 0, 0, Math.min(46, H*0.12), tg, 'rgba(30,0,0,0.92)');
+      ctx.restore();
+      // 力尽きた回数(残りを丸で)
+      const r = Math.min(9, H*0.024), gap = r*3.2, y = cy + Math.min(46, H*0.12)*0.95;
+      for(let i=0;i<c.max;i++){
+        const x = cx + (i - (c.max-1)/2)*gap;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+        if(i < c.n){ ctx.fillStyle = '#ff5a44'; ctx.fill(); }
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,220,210,0.9)'; ctx.stroke();
+      }
+      _exlCineText(`${c.n} / ${c.max}`, cx + (c.max/2)*gap + 26, y, Math.min(16, H*0.045), '#ffe0d8', 'rgba(0,0,0,0.85)', "'Share Tech Mono', monospace");
+      _exlCineText(`ベースキャンプへ運ばれます(あと${Math.max(0, c.max - c.n)}回で探検終了)`, cx, y + Math.min(26, H*0.07), Math.min(13, H*0.036), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+      ctx.globalAlpha = 1;
+    }
+    // 暗転 → 明転
+    let k = 0;
+    if(age >= t1 && age < t2) k = (age - t1)/S.fadeOut;
+    else if(age >= t2 && age < t3) k = 1;
+    else if(age >= t3 && age < t4) k = 1 - (age - t3)/S.fadeIn;
+    if(k > 0){
+      ctx.globalAlpha = clamp(k, 0, 1);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      if(age >= t2){
+        ctx.globalAlpha = clamp(k, 0, 1) * 0.9;
+        _exlCineText('⛺ ベースキャンプ', cx, H*0.5, Math.min(18, H*0.05), '#7dffb0', 'rgba(0,0,0,0.9)', "'Rajdhani', sans-serif");
+      }
+    }
+  } else if(c.kind === 'outro'){
+    const T = {
+      return:  { t:'帰還成功',   c0:'#fff6c8', c1:'#ffd35a', c2:'#c77a12', glow:'rgba(255,200,80,0.8)', sub:(c)=> `持ち帰った素材 ${c.kept}個` },
+      timeup:  { t:'時間切れ',   c0:'#ffe7c8', c1:'#ff9a3c', c2:'#9a4a0c', glow:'rgba(255,140,60,0.7)', sub:(c)=> `持ち帰れるのは半分(種類ごとに1個は残る)` },
+      faint:   { t:'力尽きた',   c0:'#ffd0c4', c1:'#ff5a44', c2:'#a4160c', glow:'rgba(255,40,20,0.8)', sub:(c)=> `${c.n} / ${c.max} ・ 探検終了` },
+      abandon: { t:'探検を中断', c0:'#e6ecf2', c1:'#a9b8c6', c2:'#56626e', glow:'rgba(160,190,220,0.5)', sub:(c)=> `持ち帰れるのは半分` },
+    }[c.reason] || null;
+    if(T){
+      const a = clamp(age/0.25, 0, 1);
+      ctx.globalAlpha = a;
+      const vg = ctx.createRadialGradient(cx, H/2, Math.min(W, H)*0.2, cx, H/2, Math.max(W, H)*0.7);
+      vg.addColorStop(0, 'rgba(0,0,0,0.15)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)');
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+      const cy = H*0.42, bandH = Math.min(110, H*0.3);
+      const g = ctx.createLinearGradient(0, 0, W, 0);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.2, 'rgba(8,6,2,0.8)'); g.addColorStop(0.8, 'rgba(8,6,2,0.8)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, cy - bandH/2, W, bandH);
+      const lg = ctx.createLinearGradient(0, 0, W, 0);
+      lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(0.5, T.c1); lg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = lg; ctx.fillRect(0, cy - bandH/2, W, 2); ctx.fillRect(0, cy + bandH/2 - 2, W, 2);
+      const pop = age < 0.22 ? 1.35 - age/0.22*0.35 : 1;
+      ctx.save(); ctx.translate(cx, cy - bandH*0.1); ctx.scale(pop, pop);
+      const tg = ctx.createLinearGradient(0, -24, 0, 24);
+      tg.addColorStop(0, T.c0); tg.addColorStop(0.5, T.c1); tg.addColorStop(1, T.c2);
+      if(!renderHeavyLoad){ ctx.shadowBlur = 22; ctx.shadowColor = T.glow; }
+      _exlCineText(T.t, 0, 0, Math.min(48, H*0.13), tg, 'rgba(20,10,0,0.92)');
+      ctx.restore();
+      _exlCineText(T.sub(c), cx, cy + bandH*0.3, Math.min(15, H*0.04), '#ffffff', 'rgba(0,0,0,0.85)', "'Rajdhani', sans-serif");
+    }
+  }
+  ctx.restore();
 }
 
 /* ===== 効果音(Web Audio合成。audio.js の SE_DEFS へ足すだけ。playSe の名前で鳴る) ===== */

@@ -8465,7 +8465,8 @@ function updateHUD(){
   // ランキング表示名(名前入力欄)は自分を見ているときだけ。観戦中は観戦対象の名前を出す
   document.getElementById('hudName').textContent = spectating
     ? ((typeof displayNameFor==='function') ? displayNameFor(ve) : (ve.name||'プレイヤー'))
-    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー'));
+    : (game.explore ? (player.name||'プレイヤー')   // 探検: 名前が空なら種族名(explorePlayerName)。「名無しのモンスター」を出さない
+    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー')));
   /* トレーニングで変わった数値を**全部**欄に出す(発注者指示)。観戦中は観戦対象のぶんを出す。
      一覧の作りは matchTrainBoardRows(ui.js)が1か所で持っている ―― カードぶんと
      拾ったアイテムぶんを同じ「元から何%」に揃えて混ぜる。ここは並べるだけ。

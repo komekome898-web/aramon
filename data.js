@@ -6107,6 +6107,12 @@ function glossaryEntries(catId){ return catId ? GLOSSARY.filter(g=> g.cat === ca
 const EXPLORE_TIME_LIMIT          = 900;   // 制限時間(秒)。過ぎたら「時間切れ」で持ち帰り半分
 const EXPLORE_MAX_FAINTS          = 3;     // 力尽きてよい回数。この回数に達したら終了(持ち帰り半分)
 const EXPLORE_FAIL_KEEP_RATIO     = 0.5;   // 力尽き/時間切れで持ち帰れる割合(素材ごとに切り捨て)
+const EXPLORE_FAIL_KEEP_MIN       = 1;     // ただし素材の種類ごとに最低この数は残す(1個しか無い素材が0にならない。統括の判断)
+// 演出の尺(秒)。出発の札とカメラの一周 / 終わった直後のフィールドの札 / 力尽き(札→暗転→キャンプで明転)
+const EXPLORE_INTRO_SEC           = 2.6;   // 出発: 「探検開始」の札を出し、カメラがキャンプを回る(この間は動けない)
+const EXPLORE_OUTRO_SEC           = 1.6;   // 終了: フィールドに「帰還成功/時間切れ/力尽きた」の札を出してから報酬画面へ
+const EXPLORE_FAINT_SEQ           = { card:1.1, fadeOut:0.35, black:0.35, fadeIn:0.7 };   // 力尽き: 札→暗転→(キャンプへ運ぶ)→明転
+const EXPLORE_LAST_STORAGE_KEY    = 'aramon_explore_last_v1';   // 前回の持ち帰り(ロビー右列に出す。端末ごとの表示なので同期しない)
 const EXPLORE_WORLD_SCALE         = 1;     // フィールドの広さ(通常試合と同じ 18100 四方)
 const EXPLORE_RESPAWN_INVULN_SEC  = 3;     // ベースキャンプで復活した直後の無敵(秒)
 /* ベースキャンプ。ワールドに対する比で置く(フィールド生成もここを読んで平らに空ける)。
@@ -6462,6 +6468,11 @@ const EXPLORE_CRATE_FLIGHT_SEC    = [0.55, 0.85];  // 中身が弾けて地面�
 const EXPLORE_CRATE_BURST_GAP     = 0.07;   // 中身が1個ずつ飛び出す間隔(秒)
 const EXPLORE_CRATE_ITEMS         = { common:[3,4], rare:[3,4], epic:[4,5], legendary:[5,6] };   // 1箱の中身の数(最小・最大)
 const EXPLORE_CRATE_SIZE          = { w:66, d:46, h:36, lid:9 };   // 箱の寸法(ワールド単位。見た目だけ)
+const EXPLORE_CRATE_BIG_SCALE     = { epic:1.4, legendary:1.4 };   // 紫・金の箱はこの倍率で大きい(レア度の色の金属の蓋と角飾り)
+const EXPLORE_CRATE_BEACON_H      = { epic:560, legendary:760 };   // 閉じた紫・金の箱の上に立つ光の高さ(1500以上離れても見える)
+/* 地面にそのまま落ちている品(箱の外)。拾う物は補給箱と同じ光の柱とレア度で見せる(exploreSpawnDrop)。
+   キャンプの周りと各地域に EXPLORE_CAMP_LOOT_COUNT / EXPLORE_REGION_LOOT_COUNT 個ずつ */
+const EXPLORE_GROUND_LOOT = [ {w:36, item:'heal_s'}, {w:16, item:'heal_m'}, {w:4, item:'heal_l'}, {w:30, item:'guts'}, {w:14, mat:'common'} ];
 const EXPLORE_CRATE_VIEW          = 3800;   // 補給箱を描く距離
 /* 箱のレア度の抽選(地域の危険度★ごとの重み)。キャンプの箱は 0 の行 */
 const EXPLORE_CRATE_RARITY_BY_DANGER = {
@@ -6509,7 +6520,7 @@ const EXPLORE_DROP_LABEL_RANGE    = 280;    // プレイヤーがこの距離ま
 const EXPLORE_DROP_PICK_RANGE     = 40;     // 拾う距離(モンスターの半径に足す)
 const EXPLORE_DROP_ARM_SEC        = 0.25;   // 地面に落ちてから拾えるようになるまで(飛んでいる途中で吸い込まない)
 // 拾った通知(画面左に積み上がるレア度色の行)
-const EXPLORE_FEED_MAX            = 4;      // 同時に出す行数(古い行から消える)
+const EXPLORE_FEED_MAX            = 6;      // 同時に出す行数の上限(入らない分は「+N件」の1行にまとめる)
 const EXPLORE_FEED_SEC            = 3.4;    // 1行の表示秒数
 const EXPLORE_FEED_MERGE_SEC      = 1.5;    // この秒数以内に同じ品を拾ったら行を増やさず個数をまとめる
 
@@ -6590,17 +6601,22 @@ const EXPLORE_GEAR_SETS = {
   apex:  { name:'頂点',   emblem:'💠', color:'#ffd84a', bonus:[ { n:2, fx:{ hpPct:0.06, dmgPct:0.04 } }, { n:4, fx:{ snipePct:0.15, dmgTakenPct:-0.08 } } ] },
 };
 const EXPLORE_GEAR = {
+  /* 武器の派生の根(補給箱で拾う標準の狙撃銃)。root:true = 工房では作らない・着けない(表の起点として並ぶだけ)。
+     from = 派生元(このキーの装備を持っていると作れる。配列ならどれか1つ)。工房の表の線はここから自動で引く
+     shape = 武器の形('bow' 弓 / 'rifle' 銃)。アイコンの描き分けに使う */
+  longbow:     { slot:'weapon', set:'scout', rarity:'rare', name:'探検者のロングボウ', root:true, shape:'bow', sniper:'longbow', mats:{}, fx:{},
+                 note:'補給箱で拾える標準の狙撃銃。工房の武器はここから派生する' },
   // 探検者(コモン素材だけで作れる入門の一式)
   scout_head:  { slot:'head',   set:'scout', rarity:'rare', name:'探検者の帽子',       mats:{ meadow_fiber:4, jungle_vine:2 },                 fx:{ hpPct:0.04 } },
   scout_body:  { slot:'body',   set:'scout', rarity:'rare', name:'探検者のジャケット', mats:{ meadow_fiber:6, frost_shard:2 },                 fx:{ hpPct:0.06 } },
   scout_arms:  { slot:'arms',   set:'scout', rarity:'rare', name:'探検者のグローブ',   mats:{ jungle_vine:4, volcano_ore:2 },                  fx:{ gutsRegenPct:0.06 } },
   // 大角(草原の主)
-  horn_bow:    { slot:'weapon', set:'horn',  rarity:'epic', name:'大角の剛弓',   sniper:'hornbow', mats:{ boss_horn:3, volcano_ore:6, meadow_fiber:4 }, fx:{ snipePct:0.15 } },
+  horn_bow:    { slot:'weapon', set:'horn',  rarity:'epic', name:'大角の剛弓',   sniper:'hornbow', shape:'bow',   from:'longbow', mats:{ boss_horn:3, volcano_ore:6, meadow_fiber:4 }, fx:{ snipePct:0.15 } },
   horn_head:   { slot:'head',   set:'horn',  rarity:'epic', name:'大角の兜',     mats:{ boss_horn:2, meadow_fiber:6 },                  fx:{ hpPct:0.08 } },
   horn_body:   { slot:'body',   set:'horn',  rarity:'epic', name:'大角の胸当て', mats:{ boss_horn:3, volcano_ore:4 },                   fx:{ hpPct:0.10, dmgTakenPct:-0.03 } },
   horn_arms:   { slot:'arms',   set:'horn',  rarity:'epic', name:'大角の籠手',   mats:{ boss_horn:2, jungle_vine:4 },                   fx:{ dmgPct:0.05 } },
   // 氷河(凍った高地の主)
-  frost_rifle: { slot:'weapon', set:'frost', rarity:'epic', name:'氷河の狙撃銃', sniper:'glacier', mats:{ boss_fang:3, frost_shard:8 },         fx:{ snipePct:0.20 } },
+  frost_rifle: { slot:'weapon', set:'frost', rarity:'epic', name:'氷河の狙撃銃', sniper:'glacier', shape:'rifle', from:'longbow', mats:{ boss_fang:3, frost_shard:8 },         fx:{ snipePct:0.20 } },
   frost_head:  { slot:'head',   set:'frost', rarity:'epic', name:'氷河の頭巾',   mats:{ boss_fang:2, frost_shard:6 },                   fx:{ gutsRegenPct:0.10 } },
   frost_body:  { slot:'body',   set:'frost', rarity:'epic', name:'氷河の外套',   mats:{ boss_fang:3, frost_shard:6, meadow_fiber:3 },   fx:{ hpPct:0.06, speedPct:0.04 } },
   frost_arms:  { slot:'arms',   set:'frost', rarity:'epic', name:'氷河の手甲',   mats:{ boss_fang:2, frost_shard:4 },                   fx:{ speedPct:0.05 } },
@@ -6609,7 +6625,7 @@ const EXPLORE_GEAR = {
   blaze_body:  { slot:'body',   set:'blaze', rarity:'epic', name:'紅蓮の鎧',     mats:{ boss_scale:3, volcano_ore:8 },                  fx:{ dmgTakenPct:-0.08 } },
   blaze_arms:  { slot:'arms',   set:'blaze', rarity:'epic', name:'紅蓮の腕甲',   mats:{ boss_scale:2, volcano_ore:4, jungle_vine:3 },   fx:{ dmgPct:0.06 } },
   // 頂点(頂点ボス)
-  apex_bow:    { slot:'weapon', set:'apex',  rarity:'legendary', name:'頂点の魔弾', sniper:'apexbow', mats:{ apex_core:2, boss_horn:2, boss_fang:2, boss_scale:2 }, fx:{ snipePct:0.30 } },
+  apex_bow:    { slot:'weapon', set:'apex',  rarity:'legendary', name:'頂点の魔弾', sniper:'apexbow', shape:'rifle', from:['horn_bow','frost_rifle'], mats:{ apex_core:2, boss_horn:2, boss_fang:2, boss_scale:2 }, fx:{ snipePct:0.30 } },
   apex_head:   { slot:'head',   set:'apex',  rarity:'legendary', name:'頂点の冠',   mats:{ apex_core:1, boss_horn:2, frost_shard:6 },   fx:{ hpPct:0.10, gutsRegenPct:0.08 } },
   apex_body:   { slot:'body',   set:'apex',  rarity:'legendary', name:'頂点の聖鎧', mats:{ apex_core:2, boss_scale:2, volcano_ore:6 },  fx:{ hpPct:0.12, dmgTakenPct:-0.06 } },
   apex_arms:   { slot:'arms',   set:'apex',  rarity:'legendary', name:'頂点の籠手', mats:{ apex_core:1, boss_fang:2, jungle_vine:6 },   fx:{ dmgPct:0.08, speedPct:0.04 } },
@@ -6620,7 +6636,7 @@ function loadExploreGear(){
   const out = { owned:[], equip:{} };
   try{
     const d = JSON.parse(localStorage.getItem(EXPLORE_GEAR_STORAGE_KEY)) || {};
-    if(Array.isArray(d.owned)) out.owned = d.owned.filter((k, i, a)=> EXPLORE_GEAR[k] && a.indexOf(k) === i);
+    if(Array.isArray(d.owned)) out.owned = d.owned.filter((k, i, a)=> EXPLORE_GEAR[k] && !EXPLORE_GEAR[k].root && a.indexOf(k) === i);
     const eq = d.equip || {};
     for(const s of EXPLORE_GEAR_SLOTS){
       const k = eq[s.id];
@@ -6634,14 +6650,60 @@ function saveExploreGear(g){
   if(typeof accountMarkDirty==='function') accountMarkDirty();
 }
 // 作れるか(足りない素材の一覧も返す)。stash を渡さなければ今の保管を読む
-function exploreGearCraftCheck(key, stash){
+/* 作れるか(足りない素材の一覧も返す)。stash を渡さなければ今の保管を読む。
+   派生(from)があれば、派生元のどれか1つを持っていることも条件(根 root は拾う物なので常に満たす) */
+function exploreGearFromList(key){
   const g = EXPLORE_GEAR[key];
-  if(!g) return { ok:false, lack:[], rows:[] };
+  if(!g || !g.from) return [];
+  return (Array.isArray(g.from) ? g.from : [g.from]).filter(k=> EXPLORE_GEAR[k]);
+}
+function exploreGearCraftCheck(key, stash, gear){
+  const g = EXPLORE_GEAR[key];
+  if(!g || g.root) return { ok:false, lack:[], rows:[], fromOk:true, from:[] };
   const s = stash || loadExploreStash();
   const rows = Object.keys(g.mats).map(k=>({ key:k, need:g.mats[k], have:s[k] || 0 }));
   const lack = rows.filter(r=> r.have < r.need);
-  return { ok: lack.length === 0, lack, rows };
+  const from = exploreGearFromList(key);
+  const owned = (gear || loadExploreGear()).owned;
+  const fromOk = !from.length || from.some(k=> EXPLORE_GEAR[k].root || owned.includes(k));
+  return { ok: lack.length === 0 && fromOk, lack, rows, fromOk, from };
 }
+// 表の中で見せる短い名前(セット名は行の見出しに出すので「大角の剛弓」→「剛弓」)
+function exploreGearShortName(key){
+  const g = EXPLORE_GEAR[key];
+  if(!g) return '';
+  const set = EXPLORE_GEAR_SETS[g.set];
+  const pre = set ? set.name + 'の' : '';
+  return (pre && g.name.startsWith(pre)) ? g.name.slice(pre.length) : g.name;
+}
+/* 素材の入手先(工房で足りないときの案内)。**表から自動で作る**(ボスの落とし物・部位破壊・野生・補給箱)。
+   返り値: ['ガンドロックの討伐(草原の盆地)', …] 多いものから最大 max 件 */
+function exploreMaterialSources(key, max){
+  const out = [];
+  const inTable = (id)=>{
+    const t = (typeof EXPLORE_DROP_TABLES!=='undefined') ? EXPLORE_DROP_TABLES[id] : null;
+    if(!t) return false;
+    return (t.always || []).some(i=> i.key === key) || (t.items || []).some(i=> i.key === key);
+  };
+  const regName = (id)=>{ const r = (typeof exploreRegion==='function') ? exploreRegion(id) : null; return r ? r.name : ''; };
+  if(typeof EXPLORE_BOSSES!=='undefined') for(const b of EXPLORE_BOSSES){
+    const where = regName(b.region);
+    if(inTable(b.drops)) out.push(`${b.name}の討伐${where ? `(${where})` : ''}`);
+    else if(inTable(b.breakDrops)) out.push(`${b.name}の${b.partName || '部位'}破壊${where ? `(${where})` : ''}`);
+  }
+  if(typeof EXPLORE_REGIONS!=='undefined') for(const r of EXPLORE_REGIONS){
+    if(inTable('wild_' + r.id)) out.push(`${r.name}の野生`);
+  }
+  const m = EXPLORE_MATERIALS[key];
+  if(m && m.region && m.region !== 'boss'){ const n = regName(m.region); if(n) out.push(`${n}の補給箱`); }
+  return out.slice(0, max || 3);
+}
+// 前回の持ち帰り(ロビー右列の表示用。壊れていれば null)
+function loadExploreLast(){
+  try{ const d = JSON.parse(localStorage.getItem(EXPLORE_LAST_STORAGE_KEY)); return (d && typeof d === 'object') ? d : null; }
+  catch(err){ return null; }
+}
+function saveExploreLast(d){ try{ localStorage.setItem(EXPLORE_LAST_STORAGE_KEY, JSON.stringify(d || null)); }catch(err){} }
 // 作る(素材を減らして所持に足す)。作れなければ false。持っている物は作らない
 function exploreCraftGear(key){
   const g = EXPLORE_GEAR[key];
@@ -6654,15 +6716,14 @@ function exploreCraftGear(key){
   for(const k of Object.keys(s)) if(!(s[k] > 0)) delete s[k];
   saveExploreStash(s);
   gear.owned.push(key);
-  // その部位が空いていれば、作った物をそのまま着ける(作ってすぐ強くなった実感)
-  if(!gear.equip[g.slot]) gear.equip[g.slot] = key;
+  // 着けるかどうかは完成の画面で選ばせる(装備する/あとで)。ここでは所持に足すだけ
   saveExploreGear(gear);
   return true;
 }
 function exploreEquipGear(key){
   const g = EXPLORE_GEAR[key];
   const gear = loadExploreGear();
-  if(!g || !gear.owned.includes(key)) return false;
+  if(!g || g.root || !gear.owned.includes(key)) return false;
   gear.equip[g.slot] = key;
   saveExploreGear(gear);
   return true;

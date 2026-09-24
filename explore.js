@@ -116,7 +116,11 @@ function explorePlayerName(){
     const mm = loadMastermons()[game.selectedMastermonKey];
     if(mm && mm.name) return mm.name;
   }
-  return (typeof getDisplayNameFromInput==='function' && getDisplayNameFromInput()) || 'あなた';
+  // 名前を入れていないとき(「名無しのモンスター」)は種族名で出る。探検は1人なので呼び名はそれで足りる
+  const raw = (document.getElementById('playerNameInput') || {}).value;
+  if(raw && String(raw).trim()) return String(raw).trim().slice(0, 12);
+  const el = ELEMENTS[game.selectedElement];
+  return el ? el.label : 'あなた';
 }
 
 /* 探検を始める。骨組みはレイド(raidStart)・射撃訓練場と同じ並び。 */
@@ -187,7 +191,8 @@ function exploreStart(){
   exploreHudStart();         // 方位バー・目標パネル(explore_hud.js)
   game.started = true;
   bgmSetTrack('explore');    // 探検の曲(地域の環境曲・ボス戦。audio.js)。通常の試合の曲は使わない
-  pushToast('🧭 探検開始！ 素材を集めて、キャンプの帰還ビーコンで持ち帰ろう');
+  // 出発の見せ場: 「探検開始」の札(目標と制限時間)を出し、カメラがキャンプを回る(explore_loot.js)
+  exploreIntroStart();
 }
 
 /* 安置は使わない。射撃訓練場と同じく「ワールド全体より大きい輪」にして縮めない。
@@ -219,13 +224,14 @@ function exploreSetupCamp(){
 }
 
 /* ルートを置く。主役は補給箱(explore_loot.js。開けると中身が弾けて光の柱が立つ)。
-   それとは別に、通常の試合と同じ回復・ガッツ(spawnLoot)を少しだけ地面に撒く(箱の間の小さなご褒美) */
+   それとは別に、回復・ガッツを少しだけ地面に置く(箱の間の小さなご褒美)。**箱の中身と同じ見せ方**
+   (光の柱とレア度。exploreScatterGroundLoot)にそろえる。通常の試合の spawnLoot は使わない */
 function exploreSpawnLoot(){
   const c = exploreState.camp;
-  spawnLoot(EXPLORE_CAMP_LOOT_COUNT, { x:c.x, y:c.y }, c.r*1.6);
+  exploreScatterGroundLoot(EXPLORE_CAMP_LOOT_COUNT, c.x, c.y, c.r*1.6, null);
   for(const reg of EXPLORE_REGIONS){
     const rc = exploreRegionCircle(reg);
-    spawnLoot(EXPLORE_REGION_LOOT_COUNT, { x:rc.x, y:rc.y }, rc.r*0.9);
+    exploreScatterGroundLoot(EXPLORE_REGION_LOOT_COUNT, rc.x, rc.y, rc.r*0.9, reg.id);
   }
   exploreSpawnCrates();
 }
@@ -1753,6 +1759,7 @@ function exploreDrawScreen(){
   exploreDrawRoarText();
   exploreDrawBossHud();
   exploreDrawBanners();
+  exploreCineDraw();   // 出発・力尽き・終了の全画面の札(explore_loot.js)
 }
 // 流星群・岩石落としの予告の間、上空から岩が落ちてくる(光の筋+岩+だんだん濃く大きくなる影)
 function exploreDrawMeteors(){
@@ -2294,7 +2301,20 @@ function exploreOnPlayerFaint(p, killer){
     exploreFinish('faint');
     return;
   }
+  /* 見せ場(モンハンの猫車): 「力尽きた n/3」の札 → 暗転 → キャンプで明転。
+     札の間はその場で倒れたまま動けず(exploreAsleep)、暗転しきった瞬間に exploreFaintRespawn がキャンプへ運ぶ。
+     札と暗転は explore_loot.js(exploreFaintStart / exploreCineDraw) */
+  p.hp = 1;
+  p.exploreAsleep = true;
+  p.exploreInvulnUntil = matchTime + EXPLORE_FAINT_SEQ.card + EXPLORE_FAINT_SEQ.fadeOut + EXPLORE_FAINT_SEQ.black + EXPLORE_RESPAWN_INVULN_SEC;
+  exploreFaintStart();
+  playSe('sad');
+}
+// 暗転しきったところでキャンプへ運ぶ(explore_loot.js の力尽きの演出から呼ぶ)
+function exploreFaintRespawn(p){
+  if(!p || game.over) return;
   const sp = exploreState.spawn;
+  p.exploreAsleep = false;
   p.hp = p.maxHp; p.guts = p.maxGuts;
   p.x = sp.x; p.y = sp.y; p.z = baseTerrainHeightAt(sp.x, sp.y);
   p.burnUntil = p.slowUntil = p.freezeUntil = p.poisonUntil = 0;
@@ -2308,9 +2328,10 @@ function exploreOnPlayerFaint(p, killer){
       exploreBossDisengaged(e, 'lost');
     }
   }
+  // 帰還ビーコンの方を向いて起き上がる(キャンプに戻ったことが一目で分かる)
+  camState.yaw = angTo(sp, exploreState.beacon); p.facingAngle = camState.yaw;
   updateCamera();
-  playSe('sad');
-  pushToast(`💫 力尽きた… ベースキャンプへ運ばれた（あと${EXPLORE_MAX_FAINTS - exploreState.faints}回で探検終了）`);
+  pushToast(`💫 ベースキャンプへ運ばれた（あと${EXPLORE_MAX_FAINTS - exploreState.faints}回で探検終了）`);
 }
 
 /* 素材を拾う入口。野生・ボス・補給箱のどこから拾ってもここを通す(数え方と通知を1か所にする)。
@@ -2428,7 +2449,8 @@ function exploreFinish(reason){
     .filter(k=> EXPLORE_MATERIALS[k] && exploreState.bag[k] > 0)
     .map(k=>{
       const got = exploreState.bag[k];
-      const kept = full ? got : Math.floor(got*ratio);
+      // 力尽き/時間切れは半分。ただし種類ごとに最低 EXPLORE_FAIL_KEEP_MIN 個は残す(1個しか無い素材を0にしない)
+      const kept = full ? got : Math.min(got, Math.max(EXPLORE_FAIL_KEEP_MIN, Math.floor(got*ratio)));
       return { key:k, got, kept, lost:got-kept, toBag: EXPLORE_MATERIALS[k].toBag || null };
     })
     .sort((a,b)=> rarOrder(b.key) - rarOrder(a.key) || b.kept - a.kept);
@@ -2453,10 +2475,18 @@ function exploreFinish(reason){
     reason, full, ratio, items, gold, goldRows,
     timeSec: Math.min(matchTime, EXPLORE_TIME_LIMIT),
     kills: exploreState.kills, faints: exploreState.faints,
+    // 記録(報酬画面の左): 狩ったボス・部位破壊・開けた箱・いちばん良かったレア度
+    bosses: exploreState.bosses.filter(r=> r.defeated).map(r=> r.bossId),
+    breaks: exploreState.bosses.filter(r=> r.broken).length,
+    crates: exploreState.crates.filter(c=> c.opened).length,
+    best: exploreBestRarity(items),
+    element: player ? player.element : game.selectedElement,
+    name: player ? player.name : '',
   };
   const ehud = document.getElementById('exploreHud');
   if(ehud) ehud.classList.add('hidden');
   exploreHudHide();
+  if(typeof exploreSaveLast==='function') exploreSaveLast(exploreState.finished);
   bgmSetTrack(null);
   playSe(full ? ((typeof skinWinSeName==='function' && skinWinSeName(player)) || 'fanfare') : 'sad');
   setTimeout(()=>{
@@ -2464,5 +2494,11 @@ function exploreFinish(reason){
     if(typeof bgmDesiredTrack==='function' && bgmDesiredTrack()!==null) return;
     bgmSetTrack('title');
   }, full ? 3800 : 3000);
-  if(typeof exploreShowResult==='function') exploreShowResult(exploreState.finished);
+  /* すぐ報酬画面にせず、フィールドで「帰還成功」などの札を EXPLORE_OUTRO_SEC だけ見せる(explore_loot.js)。
+     その間は描画だけ続ける(game.started を立てたまま・game.over で進行は止まっている) */
+  game.started = true;
+  exploreOutroStart(reason, ()=>{
+    game.started = false;
+    if(typeof exploreShowResult==='function') exploreShowResult(exploreState.finished);
+  });
 }
