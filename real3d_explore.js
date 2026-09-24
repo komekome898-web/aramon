@@ -1240,9 +1240,19 @@ function buildHouses(group, world){
 /* ---------------------------------------------------------------------
    洞窟(尾根をくぐる近道)。地形は細い切り通し(data.js の tunnel の峠)で、その上に岩の天井を架ける。
    天井の上面は両脇の尾根の高さへつなぎ(上から見ても尾根が続いて見える)、下面は低いアーチ。
-   入口と出口は岩の断面で閉じる。天井は頭上なので当たり判定は持たない(壁の円は world.js)。
+   入口と出口はアーチ形の口が開いた岩の断面。天井は頭上なので当たり判定は持たない(壁の円は world.js)。
    --------------------------------------------------------------------- */
-const TUNNEL_ROOF_LEN = 700, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 30;
+/* 屋根の長さ。700では尾根(峠の脇で床から高さ350ほど)より長く、端の300単位ぶんは尾根が低すぎて
+   屋根を地面へ沈めるしかなく、入口の真ん中まで地面に下ろして口をふさいでいた(道が岩の器に突き当たる
+   だけに見えた)うえ、尾根の稜線より上へ出た屋根の背が横から「黒い縁の板」に見えた
+   (2026-09-24 tunnel / camp_jungle。ID描画で洞窟の屋根のメッシュと特定)。尾根が十分高い真ん中だけに架ける */
+const TUNNEL_ROOF_LEN = 320, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 30;
+/* 洞窟の奥の暗がり。天井の下に暗い半透明の幕を奥へ3枚並べ、外から覗くと奥ほど暗く、
+   出口の光や空が素通しに見えないようにする(光源を増やさない安い近似)。カメラが入口に近づいたら
+   薄くして消す(中を歩くときに幕を通り抜けて見えないように)。幕は天井の下・切り通しの壁の中に収め、
+   外(上や横)からは天井と尾根に隠れる寸法にする */
+const TUNNEL_GLOOM_N = 3, TUNNEL_GLOOM_OPACITY = 0.55, TUNNEL_GLOOM_COL = 0x0d0b09;
+const TUNNEL_GLOOM_NEAR = 450, TUNNEL_GLOOM_FAR = 900;   // カメラと洞窟の中心の距離: これより近いと消える/遠いと全部
 /* 洞窟の天井は近道(峠)の局所的な飾りで、方向の目印になる塔・門・アーチ・氷の尖塔とは違い
    遠くから見える意味を持たない。焼き込み(bakeStatic)から外して個別のメッシュのまま残し、
    カメラから離れたら隠す(遠い所からは屋根だけが宙に浮いて見えていた。2026-09-24 vantage)。
@@ -1263,6 +1273,16 @@ function buildTunnels(group){
     for(let i=0;i<=na;i++){
       const a = -TUNNEL_ROOF_LEN/2 + i*TUNNEL_STEP;
       const g0 = heightAt(q[0] + ax*a, q[1] + ay*a);
+      /* 屋根の背の上限=この行の尾根の地面(切り通しの両脇)の高さ。これより上へ出ると、尾根に沿って
+         横から見たとき稜線の上へ岩の板が突き出た(2026-09-24 camp_jungle)。ただし口の上の
+         岩の厚み(床から TUNNEL_CEIL+55)は必ず残す */
+      let ridgeTop = Infinity;   // 両脇のうち低いほうの側(どちらの側から見ても稜線の上へ出ないように)
+      for(const s of [-1, 1]){
+        let side = -Infinity;
+        for(const k of [1.0, 1.5]) side = Math.max(side, heightAt(q[0] + ax*a + nx*Wc*k*s, q[1] + ay*a + ny*Wc*k*s));
+        ridgeTop = Math.min(ridgeTop, side);
+      }
+      const crestCap = Math.max(ridgeTop - 10, g0 + TUNNEL_CEIL + 55);
       for(let j=0;j<=TUNNEL_U;j++){
         const u = -1 + 2*j/TUNNEL_U, w = u*Wc;
         const x = q[0] + ax*a + nx*w, y = q[1] + ay*a + ny*w;
@@ -1284,11 +1304,18 @@ function buildTunnels(group){
         const wK = 1 - wT*wT*(3 - 2*wT);
         const wK2 = wK*wK;
         const insideH = TUNNEL_CEIL + 60 + 60*(1 - Math.abs(u)) + 50*tileNoise(x*0.01, y*0.01, 16);
+        /* 端を地面へ沈めるのはアーチの外側(wT>0)だけ。通り道の真上(wT=0)は端でも高さを保ち、
+           入口を「アーチ形の口が開いた岩の断面」にする(前は端の行で通り道の上まで地面へ下ろし、口がふさがっていた) */
+        const endKo = endK2 + (1 - endK2)*(1 - wT);
         /* 余白を6→50に広げる。地形パッチ側は別の三角形分割・頂点ノイズで同じ heightAt() を
            描くため、6だけだと画素単位のかみ合わせで地形の頂が天井よりわずかに高く出て、
            岩に穴が開いたように奥の緑が透けて見えた(2026-09-24 tunnelの3か所の穴)。 */
-        const crest = ground + Math.max(50, (g0 + insideH - ground)*endK2*wK2 + 50*(1 - endK2*wK2));
-        const yt = Math.max(ground + 50, crest);
+        /* 地面からの余白(50)は通り道の上だけ。横の縁(wT→1)では地面の下(-40)まで沈めて尾根の斜面へ埋める。
+           縁まで「地面+50」のままだと、厚さ70の岩の板が尾根の斜面に貼り付いたまま縁で段になって切れ、
+           下から見上げると稜線の上に板が突き出て見えた(2026-09-24 camp_jungle。当たった面の法線が下向き=板の裏) */
+        const edgeT = Math.max(0, Math.min(1, (wT - 0.15)/0.45)), margin = 50 - 90*edgeT*edgeT*(3 - 2*edgeT);
+        const crest = Math.min(crestCap, ground + Math.max(margin, (g0 + insideH - ground)*endKo*wK2 + margin*(1 - endKo*wK2)));
+        const yt = Math.max(ground + margin, crest);
         // 下面: 切り通しの中は低いアーチ、外は地面の中へ
         const t = Math.abs(w)/inner;
         const yb = t < 1 ? g0 + TUNNEL_CEIL + 40*Math.sqrt(1 - t*t) : ground - 20;
@@ -1322,7 +1349,12 @@ function buildTunnels(group){
         const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
         const n1 = tileNoise(x*0.012 + 3.1, z*0.012, 64) - 0.5, n2 = tileNoise(z*0.012 - 1.7, y*0.012, 64) - 0.5, n3 = tileNoise(y*0.012, x*0.012 + 5.3, 64) - 0.5;
         const f1 = tileNoise(x*0.031 - 7.1, y*0.031, 32) - 0.5, f2 = tileNoise(y*0.031 + 2.3, z*0.031, 32) - 0.5, f3 = tileNoise(z*0.031, x*0.031 - 4.9, 32) - 0.5;
-        p.setXYZ(i, x + n1*30 + f1*14, y + n3*20 + f3*10, z + n2*30 + f2*14);
+        const X = x + n1*30 + f1*14, Z = z + n2*30 + f2*14;
+        let Y = y + n3*20 + f3*10;
+        // 地面の中に埋めてあった頂点は、ずらした先でも埋めたままにする(急な尾根の斜面で横へ40ずれると
+        // 地面が80近く下がり、埋めたはずの縁が斜面の上へ板のように出ていた。2026-09-24 camp_jungle)
+        if(y < heightAt(x, z) - 5) Y = Math.min(Y, heightAt(X, Z) - 20);
+        p.setXYZ(i, X, Y, Z);
       }
     }
     geo.computeVertexNormals();
@@ -1351,13 +1383,18 @@ function buildTunnels(group){
        (光源を増やさない安い近似)。前は内側も外側の屋根と同じ明るさで、入口が平らな岩の面に
        見えていた(2026-09-24 tunnelカット)。 */
     {
-      const nrm = geo.attributes.normal, col = geo.attributes.color, dark = new THREE.Color(0x0d0b09), c2 = new THREE.Color();
-      const half = TUNNEL_ROOF_LEN/2;
+      const nrm = geo.attributes.normal, col = geo.attributes.color, dark = new THREE.Color(TUNNEL_GLOOM_COL), c2 = new THREE.Color();
+      const half = TUNNEL_ROOF_LEN/2, ny0 = ny;   // ny0=通り道に直交する向き(下のループの ny は法線)
       for(let i=0;i<pos.count;i++){
         const ny = nrm.getY(i);
         if(ny >= 0.2) continue;   // 上向き(外の屋根)は対象外
         const wx = pos.getX(i), wy = pos.getZ(i);
         const along = (wx - q[0])*ax + (wy - q[1])*ay;
+        // 通り道の上(アーチの内側)だけ。外側の急な面や入口の断面(法線が通り道の向き)まで黒くすると、
+        // 横から見た屋根の縁や入口の岩の面が黒い帯になった(2026-09-24 camp_jungle の「上の縁が黒い板」)
+        const across = (wx - q[0])*nx + (wy - q[1])*ny0;
+        if(Math.abs(across) > inner + 60) continue;
+        if(Math.abs(nrm.getX(i)*ax + nrm.getZ(i)*ay) > 0.7) continue;
         const depthK = 1 - Math.min(1, Math.abs(along)/half);   // 入口寄り=0 / 真ん中=1
         c2.fromBufferAttribute(col, i).lerp(dark, 0.5 + 0.4*depthK);
         col.setXYZ(i, c2.r, c2.g, c2.b);
@@ -1369,14 +1406,39 @@ function buildTunnels(group){
     m.castShadow = true; m.receiveShadow = true;
     m.userData.keep = true;   // 焼き込み(bakeStatic)から外す=個別に距離で隠せる
     group.add(m);
-    tunnels.push({ mesh:m, x:q[0], y:q[1] });
+    // 奥の暗がり(TUNNEL_GLOOM_*)。天井の下から切り通しの壁の中まで覆う板を奥へ並べる
+    let gloom = null;
+    {
+      const GP = [], GI = [], half = TUNNEL_ROOF_LEN/2, hw = inner + 80;
+      for(let k=0;k<TUNNEL_GLOOM_N;k++){
+        const along = -half*0.5 + k*(half/(TUNNEL_GLOOM_N - 1));
+        const cx = q[0] + ax*along, cy = q[1] + ay*along, gA = heightAt(cx, cy);
+        const y0 = gA - 40, y1 = gA + TUNNEL_CEIL + 30;   // 床の下から天井の中まで(屋根の背の下限 +55 より低い)
+        const b = GP.length/3;
+        GP.push(cx - nx*hw, y0, cy - ny*hw,  cx + nx*hw, y0, cy + ny*hw,  cx + nx*hw, y1, cy + ny*hw,  cx - nx*hw, y1, cy - ny*hw);
+        GI.push(b, b+1, b+2, b, b+2, b+3);
+      }
+      const gg = new THREE.BufferGeometry();
+      gg.setAttribute('position', new THREE.Float32BufferAttribute(GP, 3));
+      gg.setIndex(GI);
+      gloom = new THREE.Mesh(gg, new THREE.MeshBasicMaterial({ color:TUNNEL_GLOOM_COL, transparent:true,
+        opacity:TUNNEL_GLOOM_OPACITY, depthWrite:false, side:THREE.DoubleSide }));
+      gloom.userData.keep = true;
+      m.add(gloom);   // 屋根と一緒に距離で隠れる
+    }
+    tunnels.push({ mesh:m, gloom, x:q[0], y:q[1] });
   }
 }
-// カメラから離れたら隠す(updateExplore が毎フレーム呼ぶ)
+// カメラから離れたら隠す(updateExplore が毎フレーム呼ぶ)。奥の暗がりはカメラが入口に近づいたら薄くする
 function updateTunnelCull(cp){
   for(const t of tunnels){
     const d = Math.hypot(cp.x - t.x, cp.y - t.y);
     t.mesh.visible = d < TUNNEL_VIEW + TUNNEL_FADE;
+    if(t.gloom){
+      const k = Math.max(0, Math.min(1, (d - TUNNEL_GLOOM_NEAR)/(TUNNEL_GLOOM_FAR - TUNNEL_GLOOM_NEAR)));
+      t.gloom.material.opacity = TUNNEL_GLOOM_OPACITY*k;
+      t.gloom.visible = k > 0.001;
+    }
   }
 }
 

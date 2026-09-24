@@ -2967,7 +2967,8 @@ const REAL3D_THEMES = {
     lavaCrust:0x1c130e,   // 溶岩の冷えた殻(探検は全体の地が草原色なので、溶岩だけ火山の黒にする)
     /* 地域ごと: sky=天頂 / haze=霞=地平の色 / fogD=指数の霞の濃さ(0.00013で約8km先まで形が残る) /
        sun=日差しの色 / sunK=日差しの強さの倍率 / clouds=[雲の量, 厚さのしきい値, 巻雲, 低い雲] /
-       cloudTint=雲の影の色(火山は下から赤く照らされる) / snowAlt=雪が乗り始める高さ / strata=岩肌の地層の縞 */
+       cloudTint=雲の影の色(火山は下から赤く照らされる) / snowAlt=雪が乗り始める高さ / strata=岩肌の地層の縞 /
+       shade=地面の影の側(直射の当たらない面)を霞の色味へ寄せる強さ(0〜1。省略=0=寄せない。real3d_terrain.js の exShadeTint) */
     regions: {
       meadow:  { tex:'meadow',
                  low:0x44602a, high:0x769838, steep:0x6a6352, gravel:0x857d5e, scrub:0x5f8c28,
@@ -2991,7 +2992,7 @@ const REAL3D_THEMES = {
                  low:0x2d1e14, high:0x51392a, steep:0x241913, gravel:0x3d2c20, scrub:0x5a3a1e,
                  sky:0x2c1c1a, haze:0x7a4a33, fogD:0.00022, sun:0xffa870, sunK:0.80,
                  clouds:[1.00, 0.22, 0.00, 1.00], cloudTint:0x4a2418, cloud:0.80, ridgeHaze:0.65,
-                 rock:[0.50, 0.44, 0.42], snowAlt:1e9, strata:1.00,
+                 rock:[0.50, 0.44, 0.42], snowAlt:1e9, strata:1.00, shade:0.45,
                  grass:0x7a6a3a, veg:{ grass:0.10, flower:0.00, fern:0.00, twig:1.00, blades:0.10 } },
       jungle:  { tex:'jungle',
                  low:0x223c1a, high:0x4a6e2c, steep:0x4a4230, gravel:0x5a4b32, scrub:0x5a8a22,
