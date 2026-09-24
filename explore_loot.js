@@ -724,6 +724,8 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
   const far = clamp((depth - 1500) / 4000, 0, 1);
   const a0 = (0.5 + 0.1*ord + 0.25*far) * flick;
   ctx.save();
+  // ボス戦の間は縄張りの中の柱を薄くする(技の通り道に刺さって予告が読めない。explore.js)
+  if(typeof exploreBossFightFade === 'function') ctx.globalAlpha *= exploreBossFightFade(x, y);
   ctx.globalCompositeOperation = 'lighter';
   const g = ctx.createLinearGradient(pb.x, pb.y, pt.x, pt.y);
   g.addColorStop(0, exploreRgba(col, a0)); g.addColorStop(0.55, exploreRgba(col, a0*0.35)); g.addColorStop(1, exploreRgba(col, 0));

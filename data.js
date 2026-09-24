@@ -6484,11 +6484,11 @@ const EXPLORE_BOSSES = [
    巨体の大きさが違っても「体からどこまで届くか」が同じになるように。 */
 const EXPLORE_BOSS_MOVES = {
   swipe:  { name:'薙ぎ払い',   shape:'fan',    range:560,  fanAngleDeg:110, dmg:30, telegraph:0.85, maxDist:700,  w:3 },
-  breath: { name:'ブレス',     shape:'fan',    range:1350, fanAngleDeg:34,  dmg:40, telegraph:1.25, minDist:260, maxDist:1400, w:3 },
+  breath: { name:'ブレス',     shape:'fan',    range:1350, fanAngleDeg:34,  dmg:40, telegraph:1.25, minDist:260, maxDist:1400, w:3, color:'#ff8a1a' },
   stomp:  { name:'踏み鳴らし', shape:'circle', range:440,  dmg:34, telegraph:1.00, maxDist:560, knock:260, w:3 },
-  meteor: { name:'岩石落とし', shape:'meteor', count:3, spread:240, range:230, dmg:36, telegraph:1.35, stagger:0.25, w:2 },
-  rain:   { name:'流星群',     shape:'meteor', count:6, spread:560, range:200, dmg:32, telegraph:1.40, stagger:0.18, w:2, rageOnly:true },
-  charge: { name:'突進',       shape:'charge', length:1250, speed:1500, dmg:44, telegraph:1.05, minDist:320, maxDist:1500, knock:320, w:3 },
+  meteor: { name:'岩石落とし', shape:'meteor', count:3, spread:240, range:170, dmg:36, telegraph:1.35, stagger:0.25, w:2 },
+  rain:   { name:'流星群',     shape:'meteor', count:6, spread:560, range:150, dmg:32, telegraph:1.40, stagger:0.18, w:2, rageOnly:true },
+  charge: { name:'突進',       shape:'charge', length:1250, speed:1500, dmg:44, telegraph:1.05, minDist:320, maxDist:1500, knock:320, w:3, color:'#ff3a6a', pattern:'arrows' },
   nova:   { name:'大爆発',     shape:'circle', range:950,  dmg:58, telegraph:2.00, maxDist:900, knock:420, w:1, rageOnly:true },
 };
 const EXPLORE_BOSS_NEST_RADIUS    = 650;   // 巣の広さ(岩を空ける・眠って回復する範囲)
@@ -6523,10 +6523,17 @@ const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバー�
    上下の黒帯は画面の高さ×bar。寄せは world.js の setViewZoom(狙撃と同じ入口)で、構え中は狙撃を優先する */
 const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.8, bar:0.1, dimSec:1.6 };
 // 討伐の視点演出(同じ仕組み)。崩れ落ちる0.8秒を画面の中央で見せる。討伐完了の札は崩れ終わってから出る
-const EXPLORE_BOSS_HUNT_CINE      = { turnSec:0.35, zoomSec:2.0, zoom:1.6, bar:0.09, dimSec:2.2, lookZ:0.9 };   // lookZ: 体の高さのどこを画面の中央にするか(高いほどボスが画面の下寄り=上の札と重ならない)
+const EXPLORE_BOSS_HUNT_CINE      = { turnSec:0.35, zoomSec:2.0, zoom:1.15, bar:0.09, dimSec:2.2, lookZ:0.9 };   // lookZ: 体の高さのどこを画面の中央にするか(高いほどボスが画面の下寄り=上の札と重ならない)
 // 弱点命中の数字(照準の近く。画面の画素で固定サイズ・秒数)。狙撃のスコープ中は狙撃側が出すので出さない
 const EXPLORE_WEAK_POP            = { px:32, sec:1.2, dx:58, dy:-44 };
-const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.8;   // 転倒で縦に潰す割合(小さいほど潰れる。傾きと揺れで倒れた感じを出す)
+const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.8;
+/* ボス戦の間の視点の補正: ボスの頭が画面上部のHUD(exploreHudBand の下端)+margin より上に出たら、
+   視点を上げて(見上げて)引く。pitchRate=角度の追従の速さ / backMax=引く最大距離 */
+const EXPLORE_BOSS_FRAME          = { margin:28, pitchRate:5, pitchMax:0.45, backMax:110, backRate:3 };
+const EXPLORE_BOSS_FLAT_TRIES     = 36;    // 巣の中で平らな立ち位置を探す候補の数
+const EXPLORE_BOSS_FIGHT_PILLAR_A = 0.22;  // ボス戦の間、縄張りの中の光の柱の濃さ
+const EXPLORE_BOSS_HUNT_CAM       = { dist:3.6, extra:320, rise:0.55, tries:[0,0.35,-0.35,0.7,-0.7,1.05,-1.05] };   // 討伐の視点: ボスから半径×dist+extra 離れた障害物の無い所
+const EXPLORE_WILD_NAME_PX        = 13;    // 群れの長の名札(画面の画素。最低12)   // 転倒で縦に潰す割合(小さいほど潰れる。傾きと揺れで倒れた感じを出す)
 /* 大技の予告の見え方(real3d_zone.js の地面の印へ渡す)。
    outline = 暗い太い外縁の色 / minContrast = 地面との明るさの差がこれ未満なら白(暗い地面)か赤(明るい地面)へ寄せる */
 const EXPLORE_TELEGRAPH           = { outline:'#160806', minContrast:0.35, towardLight:'#ffffff', pushLight:0.6, towardDark:'#d0101e', pushDark:0.85 };

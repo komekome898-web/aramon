@@ -156,9 +156,9 @@ const CUTS = [
       after: `exploreBossEngaged(B); B.exState='fight'; const H = exploreBodyHeight(B); applyDamage(B, 40, player, { hitZ:(B.z||0)+H*0.3 }); for(let i=0;i<5;i++) update(1/30); applyDamage(B, 60, player, { hitZ:(B.z||0)+H*0.82 }); for(let i=0;i<3;i++) update(1/30);` },
     { name:'boss_rage', boss:'galvark', dist:900, desc:'怒り状態(赤いオーラ・色味・咆哮・「怒り」の札)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.46; B.exHpLag=0.62; B.exRage=true; exploreBossStartRoar(B, 'rage'); for(let i=0;i<12;i++) update(1/30);` },
-    { name:'boss_break', boss:'gandrock', dist:850, desc:'部位破壊の瞬間(転倒・星・ひびの印・素材が弾ける)',
+    { name:'boss_break', boss:'gandrock', dist:1150, desc:'部位破壊の瞬間(転倒・星・ひびの印・素材が弾ける)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.hp=B.maxHp*0.63; B.exHpLag=0.7; exploreBossBreakPart(B, exploreBossDef(B)); for(let i=0;i<10;i++) update(1/30);` },
-    { name:'boss_hunt', boss:'gidravers', dist:1300, keepCam:true, desc:'頂点ボスの討伐の瞬間(スローモーション・討伐完了・大量の素材)',
+    { name:'boss_hunt', boss:'gidravers', dist:1500, keepCam:true, desc:'頂点ボスの討伐の瞬間(スローモーション・討伐完了・大量の素材)',
       after: `exploreBossEngaged(B); B.exState='fight'; B.hp=1; applyDamage(B, 50, player, {}); exploreState.slowmo = null; for(let i=0;i<44;i++) update(1/30);` },
   ].map(c=>({
     name:c.name, kind:'field', desc:c.desc,
@@ -170,7 +170,7 @@ const CUTS = [
       B.exState = 'fight'; B.exploreAsleep = false; B.facingAngle = Math.atan2(p.y-B.y, p.x-B.x);
       exploreState.banners.length = 0; exploreState.fx.length = 0;   // 前のカットの札を持ち越さない
       exploreState.cine = null; exploreState.pops.length = 0; exploreState.shards.length = 0; document.body.classList.remove('explore-cine');   // 視点演出も持ち越さない
-      return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true, keepCam:${!!c.keepCam},
+      return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true, keepCam:${c.keepCam !== false},   // 既定でゲームのカメラのまま(ボス戦の視点の補正を写す)
                after: ()=>{ ${c.after} } };`),
   })),
   /* ===== ルート(explore_loot.js)。補給箱は地域の中に散っているので、撮る前にキャンプの箱を選び、

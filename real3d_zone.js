@@ -135,22 +135,34 @@ const RIBBON_FRAG = `
   }`;
 const FILL_VERT = `
   attribute float aT;      // 中心(0)→縁(1)。帯(rect)は根元(0)→先(1)
+  attribute float aS;      // 帯の横(-1〜1)。円・扇は0
   uniform float uFadeNear, uFadeFar;
-  varying float vFade, vT;
+  varying float vFade, vT, vS;
   void main(){
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
     float d = max(length(cameraPosition - wp), 1.0);
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
-    vT = aT;
+    vT = aT; vS = aS;
     gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
   }`;
 /* uProg < 0 なら一様な塗り(従来どおり。レイドの予告・帰還ビーコン)。
    0〜1 なら「中心から縁へ満ちる」塗り: 満ちた内側は濃く、外側は薄く、満ちている先端に明るい線 */
 const FILL_FRAG = `
-  uniform vec3 uColor; uniform float uAlpha, uProg;
-  varying float vFade, vT;
+  uniform vec3 uColor; uniform float uAlpha, uProg, uArrows, uTime;
+  varying float vFade, vT, vS;
   void main(){
     float al = uAlpha * vFade;
+    vec3 col = uColor;
+    if(uArrows > 0.5){
+      // 突進の帯: 根元から先へ流れる矢印(＞の形)。進む向きが一目で分かる
+      float f = fract(vT*uArrows - abs(vS)*0.9 - uTime*1.6);
+      float arrow = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.32, 0.42, f));
+      al = vFade * (uAlpha*0.55 + 0.45*arrow);
+      col = mix(uColor, vec3(1.0), 0.35*arrow);
+      if(al < 0.004) discard;
+      gl_FragColor = vec4(col, min(al, 1.0));
+      return;
+    }
     if(uProg >= 0.0){
       float w = max(fwidth(vT), 1e-4) * 1.5;
       float inside = 1.0 - smoothstep(uProg - w, uProg + w, vT);
@@ -235,6 +247,8 @@ function fillMaterial(){
       uColor: { value: new THREE.Vector3(1,1,1) },
       uAlpha: { value: 0 },
       uProg:  { value: -1 },
+      uArrows:{ value: 0 },
+      uTime:  { value: 0 },
     }),
     vertexShader: FILL_VERT,
     fragmentShader: FILL_FRAG,
@@ -324,6 +338,7 @@ function makeFill(){
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(V*3);
   const tt = new Float32Array(V);
+  const ss = new Float32Array(V);
   const idx = new Uint16Array(FILL_RINGS*FILL_SEGS*6);
   const stride = FILL_SEGS+1;
   let o = 0;
@@ -334,13 +349,14 @@ function makeFill(){
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aT', new THREE.BufferAttribute(tt, 1));
+  geo.setAttribute('aS', new THREE.BufferAttribute(ss, 1));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
   const mesh = new THREE.Mesh(geo, fillMaterial());
   mesh.frustumCulled = false;
   mesh.renderOrder = 3;      // 輪より先(下)に塗る
   mesh.visible = false;
-  return { geo, mesh, pos, tt };
+  return { geo, mesh, pos, tt, ss };
 }
 // 半径方向の分割数(大きい円ほど細かく。地形の起伏に沿わせて縁が地面に潜らないように)
 function fillRingsFor(len){ return Math.max(FILL_RINGS_MIN, Math.min(FILL_RINGS, Math.ceil(len / FILL_RING_STEP))); }
@@ -357,11 +373,12 @@ function setFillDisc(fl, cx, cy, radius, from, to){
       const x = cx + Math.cos(a)*radius*t, y = cy + Math.sin(a)*radius*t;
       const k = (r*stride+c)*3;
       fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
-      fl.tt[r*stride+c] = t;
+      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = 0;
     }
   }
   fl.geo.attributes.position.needsUpdate = true;
   fl.geo.attributes.aT.needsUpdate = true;
+  fl.geo.attributes.aS.needsUpdate = true;
   fl.geo.setDrawRange(0, rings*FILL_SEGS*6);
   fl.mesh.visible = true;
 }
@@ -377,11 +394,12 @@ function setFillRect(fl, cx, cy, ang, len, halfW){
       const x = cx + dx*len*t + nx*halfW*u, y = cy + dy*len*t + ny*halfW*u;
       const k = (r*stride+c)*3;
       fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
-      fl.tt[r*stride+c] = t;
+      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = u;
     }
   }
   fl.geo.attributes.position.needsUpdate = true;
   fl.geo.attributes.aT.needsUpdate = true;
+  fl.geo.attributes.aS.needsUpdate = true;
   fl.geo.setDrawRange(0, rings*FILL_SEGS*6);
   fl.mesh.visible = true;
 }
@@ -511,7 +529,7 @@ export function buildZoneLayer(scene){
            探検のボスの予告だけが使う追加(省略すると従来どおり):
              outline  = 暗い太い外縁の色 / solid = 内線を破線にしない
              progress = 0〜1。塗りが中心(帯は根元)から縁へ満ちる / rect = { angle, len, halfW } 帯の形(r は並べ替え用に>0)
-             noRing = 輪郭を描かず塗りだけ 
+ noRing = 輪郭を描かず塗りだけ / arrows = 帯(rect)に流れる矢印の模様 / fillAlpha:0 で輪郭だけ 
    camPos= window.camPos({x,y,z}) と同じもの。省略時は window.camPos を見る。       */
 export function updateZoneLayer(zone, markList, camPos){
   if(!group) return;
@@ -564,6 +582,9 @@ export function updateZoneLayer(zone, markList, camPos){
     fu.uColor.value.copy(col.rgb);
     fu.uAlpha.value = (m.fillAlpha == null) ? alpha*MARK_FILL_RATIO : m.fillAlpha;
     fu.uProg.value = (m.progress == null) ? -1 : Math.max(0, Math.min(1, m.progress));
+    // arrows = 帯の長さあたりの矢印の数(突進の予告)。0 なら使わない
+    fu.uArrows.value = (m.rect && m.arrows) ? Math.max(1, m.rect.len / 260) : 0;
+    fu.uTime.value = performance.now() / 1000;
     for(const rb of [slot.ring, slot.inner]){
       const u = rb.mesh.material.uniforms;
       u.uColor.value.copy(col.rgb);
@@ -571,8 +592,15 @@ export function updateZoneLayer(zone, markList, camPos){
     }
     // solid = 破線にしない(探検のボスの予告)。破線の間隔は画素比込みの値へ戻す
     slot.ring.mesh.material.uniforms.uDashLen.value = m.solid ? 0 : slot.ring.mesh.material.userData.px.dash * (lastPx || 1);
-    // 外縁があるときは内線のにじみ(光)を弱める。強いままだと外縁の黒を塗りつぶして2重線に見えない
-    slot.ring.mesh.material.uniforms.uGlowA.value = m.outline ? 0.12 : RING_STYLES.mark.glow.alpha;
+    // 外縁があるときは内線のにじみ(光)を弱め、太く明るくする(探検のボスの予告。縁が読めるように)
+    const ru = slot.ring.mesh.material.uniforms, rpx = slot.ring.mesh.material.userData.px, P = lastPx || 1;
+    ru.uGlowA.value = m.outline ? 0.12 : RING_STYLES.mark.glow.alpha;
+    ru.uCorePx.value = (m.outline ? 6.5 : rpx.core) * P;
+    ru.uHalfPx.value = (m.outline ? 11 : rpx.half) * P;
+    if(m.outline){
+      const ou2 = slot.outline.mesh.material.uniforms, opx = slot.outline.mesh.material.userData.px;
+      ou2.uCorePx.value = 17 * P; ou2.uHalfPx.value = Math.max(opx.half, 17*0.5 + 6) * P;
+    }
     if(m.outline){
       const oc = parseColor(m.outline);
       const ou = slot.outline.mesh.material.uniforms;

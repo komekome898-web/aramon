@@ -1320,7 +1320,8 @@ function drawMonster(e,p){
   // barYはこの下の状態変化ラベルも参照するので、必ず関数のスコープに置く
   // (レイドのボス判定のブロックに入れるとボス以外でも参照できず落ちる)
   const selfBar = !!e.isPlayer;
-  const barY = selfBar ? -e.radius*1.08*uiMult-5 : -e.radius*1.55*uiMult-9;
+  // 探検の野生は描いている絵の頭のすぐ上に付ける(半径からの推定だと小さな絵で50pxほど浮いた)
+  const barY = selfBar ? -e.radius*1.08*uiMult-5 : ((game.explore && e.isExploreWild) ? exploreWildBarY(e) : -e.radius*1.55*uiMult-9);
   // レイドのボス・探検のボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
   /* 狙撃スコープで構えている間(探検モードだけ)は頭上のゲージを出さない。倍率ぶん太くなって照準を横切るため。
      照準の先の1体だけ、スコープの距離表示の横に小さな帯で出す(sniper.js) */
