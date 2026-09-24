@@ -931,7 +931,7 @@ function exploreApplyGear(p){
 }
 
 /* =====================================================================
-   全画面の札(出発・力尽き・終了)。exploreState.cine に1つだけ持つ
+   全画面の札(出発・力尽き・終了)。exploreState.card に1つだけ持つ
      intro  … 「探検開始」の札(目標・制限時間)+カメラがキャンプを回る。EXPLORE_INTRO_SEC(この間は動けない)
      faint  … 「力尽きた n/3」→暗転→(キャンプへ運ぶ)→明転(モンハンの猫車)。尺は EXPLORE_FAINT_SEQ
      outro  … 終わった直後のフィールドの札(帰還成功/時間切れ/力尽きた/中断)。EXPLORE_OUTRO_SEC ののち報酬画面
@@ -949,26 +949,26 @@ function exploreCineHud(on){
 }
 function exploreIntroStart(){
   if(!player || !game.explore) return;
-  exploreState.cine = { kind:'intro', clock:'match', t0:matchTime, dur:EXPLORE_INTRO_SEC, yaw0:camState.yaw, pitch0:camState.pitch };
+  exploreState.card = { kind:'intro', clock:'match', t0:matchTime, dur:EXPLORE_INTRO_SEC, yaw0:camState.yaw, pitch0:camState.pitch };
   player.exploreAsleep = true;   // 回っている間は動けない(combat.js が眠っている個体として止める)
   exploreCineHud(true);
 }
 // 撮影や「すぐ遊びたい」ときの飛ばし口。カメラと操作を出発の姿へ戻す
 function exploreIntroSkip(){
-  const c = exploreState.cine;
+  const c = exploreState.card;
   if(!c || c.kind !== 'intro') return;
   camState.yaw = c.yaw0; camState.pitch = c.pitch0;
   if(player) player.exploreAsleep = false;
-  exploreState.cine = null;
+  exploreState.card = null;
   exploreCineHud(false);
 }
 function exploreFaintStart(){
-  exploreState.cine = { kind:'faint', clock:'match', t0:matchTime, n:exploreState.faints, max:EXPLORE_MAX_FAINTS, moved:false };
+  exploreState.card = { kind:'faint', clock:'match', t0:matchTime, n:exploreState.faints, max:EXPLORE_MAX_FAINTS, moved:false };
   exploreCineHud(true);
 }
 function exploreOutroStart(reason, done){
   const kept = (exploreState.finished && exploreState.finished.items || []).reduce((s, it)=> s + it.kept, 0);
-  exploreState.cine = { kind:'outro', clock:'real', t0:exploreCineNow(), dur:EXPLORE_OUTRO_SEC, reason, kept,
+  exploreState.card = { kind:'outro', clock:'real', t0:exploreCineNow(), dur:EXPLORE_OUTRO_SEC, reason, kept,
                         n:exploreState.faints, max:EXPLORE_MAX_FAINTS };
   exploreCineHud(true);
   clearTimeout(exploreOutroTimer);
@@ -979,12 +979,12 @@ function exploreOutroStart(reason, done){
 function exploreOutroSkip(){
   clearTimeout(exploreOutroTimer); exploreOutroTimer = null;
   const done = exploreOutroDone; exploreOutroDone = null;
-  if(exploreState.cine && exploreState.cine.kind === 'outro') exploreState.cine = null;
+  if(exploreState.card && exploreState.card.kind === 'outro') exploreState.card = null;
   if(done) done();
 }
 // 毎フレーム(exploreLootUpdate から)。カメラを回す・暗転しきったらキャンプへ運ぶ
 function exploreCineUpdate(){
-  const c = exploreState.cine;
+  const c = exploreState.card;
   if(!c || c.clock !== 'match') return;
   const age = matchTime - c.t0;
   if(c.kind === 'intro'){
@@ -997,7 +997,7 @@ function exploreCineUpdate(){
   } else if(c.kind === 'faint'){
     const S = EXPLORE_FAINT_SEQ;
     if(!c.moved && age >= S.card + S.fadeOut){ c.moved = true; exploreFaintRespawn(player); }
-    if(age >= S.card + S.fadeOut + S.black + S.fadeIn){ exploreState.cine = null; exploreCineHud(false); }
+    if(age >= S.card + S.fadeOut + S.black + S.fadeIn){ exploreState.card = null; exploreCineHud(false); }
   }
 }
 // いちばん良かったレア度(持ち帰った素材と、その場で使った拾い物の両方から)
@@ -1028,7 +1028,7 @@ function _exlCineText(text, x, y, size, fill, stroke, font){
   ctx.fillStyle = fill; ctx.fillText(text, x, y);
 }
 function exploreCineDraw(){
-  const c = exploreState.cine;
+  const c = exploreState.card;
   if(!c || !game.explore) return;
   const age = c.clock === 'real' ? exploreCineNow() - c.t0 : matchTime - c.t0;
   const W = viewW, H = viewH, cx = W/2;

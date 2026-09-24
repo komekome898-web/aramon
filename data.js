@@ -6364,6 +6364,9 @@ const EXPLORE_RESPAWN_INVULN_SEC  = 3;     // ベースキャンプで復活し�
 const EXPLORE_CAMP = { xr:0.5, yr:0.5, radius:760 };
 const EXPLORE_CAMP_SPAWN_OFFSET   = { dx:0, dy:240 };    // キャンプ中心から見た出発地点(復活地点も同じ)
 const EXPLORE_BEACON_OFFSET       = { dx:0, dy:-300 };   // キャンプ中心から見た帰還ビーコンの位置
+const EXPLORE_CAM_CLEARANCE       = 40;    // カメラと足元の地面(プレイヤー→カメラの線上)の最小の隙間
+const EXPLORE_CAM_SAMPLES         = [0.35, 0.7, 1.0];   // 地面を調べる位置(プレイヤー=0 / カメラ=1)
+const EXPLORE_CAM_LIFT_DOWN       = 3;     // 持ち上げを戻す速さ(上げるときは即座)
 const EXPLORE_BEACON_RADIUS       = 120;   // ビーコンの輪の半径。この中にとどまると帰還が進む
 const EXPLORE_BEACON_HOLD_SEC     = 3;     // 輪の中に何秒とどまれば帰還するか
 const EXPLORE_BEACON_ARM_SEC      = 4;     // 出発直後はビーコンを効かせない(秒。うっかり帰還しない)

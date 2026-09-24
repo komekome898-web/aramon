@@ -316,7 +316,7 @@ const CUTS = [
       ['meadow_fiber','boss_horn','apex_core'].forEach((k, i)=> exploreGainMaterial(k, 1 + i, null, null));
       exploreFinish('return');
       clearTimeout(exploreOutroTimer);   // 撮り終えるまで報酬画面へ進ませない(1枚に数秒かかる)
-      exploreState.cine.t0 -= 0.6;   // 札が出そろった時刻の絵にする(札は実時間で進む)
+      exploreState.card.t0 -= 0.6;   // 札が出そろった時刻の絵にする(札は実時間で進む)
       render();
     } },
   { name:'result', kind:'result', desc:'帰還(exploreFinish(\'return\'))後の結果画面',
@@ -578,6 +578,15 @@ function pageTools(){
   };
 }
 
+/* カメラが大きく動いた直後(視点演出・カメラの一周・ワープ)の1枚目は、3D層の描画が
+   撮影に間に合わず霞の色一色で写ることがある(ゲームは毎フレーム描き直すので遊びでは起きない)。
+   撮る前にもう1回描いて揃える。時間は止めてあるので絵の中身は変わらない */
+async function settleFrame(page){
+  for(let i=0;i<2;i++){
+    await page.evaluate(()=>{ try{ if(game.started && typeof render==='function') render(); }catch(e){} });
+    await page.waitForTimeout(250);
+  }
+}
 async function shoot(page, file, vp){
   await page.screenshot({ path:file, timeout:180000 });   // ソフトウェア描画で重い画は30秒を超えることがある
   if(vp.isMobile && vp.h > vp.w) await unrotateShot(file, vp.w, vp.h, vp.dsf);   // 縦持ちだけ回して戻す
@@ -733,6 +742,7 @@ for(const vpName of vpNames){
       const info = await page.evaluate((src)=> window.__shotField(src), c.at.toString());
       if(!info || !info.ok){ report.errors.push(`${c.name}_${vpName}: ${info && info.reason || '失敗'}`); continue; }
       await page.waitForTimeout(c.waitMs || 150);
+      await settleFrame(page);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
       report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file), cam:info });
@@ -757,6 +767,7 @@ for(const vpName of vpNames){
         }
       });
       await page.waitForTimeout(500);
+      await settleFrame(page);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
       report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file) });

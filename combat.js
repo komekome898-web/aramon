@@ -1961,6 +1961,7 @@ function updateCamera(dt){
   camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
   camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
   camPos.z = v.z + camState.height;
+  if(game.explore) exploreCameraClearance(v, dt);   // 探検だけ: 崖・尾根にカメラが埋まらないよう持ち上げる
   applyAutoAimAssist(dt);   // オートエイム「弱い引き寄せ」。効かない試合・観戦中は関数内で何もしない
   updateMatchSignals();
 }

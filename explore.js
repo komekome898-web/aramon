@@ -89,6 +89,7 @@ function exploreEmptyState(){
     shards:[],          // 部位破壊で飛ぶ体の破片(exploreBossBreakPart が積む)
     pops:[],            // 弱点命中の数字(照準の近く。exploreWeakPop)
     wildNear:false,     // プレイヤーの近くに起きている野生がいる(補給箱の札を後回しにする)
+    card:null,          // 全画面の札(出発・力尽き・終了。explore_loot.js)。ボスの視点演出(cine)とは別の箱
     cine:null,          // ボス登場の視点演出(向き直り・寄り・黒帯。exploreUpdateCine / exploreCineFrame)
     endsAt:0,
     finished:null,      // 終わったときの集計(exploreFinish が入れる。結果画面と撮影ハーネスが読む)
@@ -2107,6 +2108,22 @@ function exploreUpdateCine(){
   } else if(t <= C.zoomSec + 0.3){
     camState.pitch = pT + (c.pitch0 - pT) * sniperEaseLocal((t - C.zoomSec) / 0.3);
   }
+}
+/* 探検のフィールドは尾根・峡谷の壁が地面の高さそのもの(exploreRelief)なので、肩越しのカメラが
+   背後の崖に埋まると画面が霞の色一色になる。プレイヤー→カメラの線の上の地面より
+   EXPLORE_CAM_CLEARANCE だけ上にカメラを持ち上げる(上げは速く・戻しはゆっくり)。
+   カメラ位置は2Dの project() と3Dの両方が読むので、ここで直せば両方そろう。 */
+function exploreCameraClearance(v, dt){
+  let need = -Infinity;
+  for(const t of EXPLORE_CAM_SAMPLES){
+    const x = v.x + (camPos.x - v.x)*t, y = v.y + (camPos.y - v.y)*t;
+    need = Math.max(need, getTerrainHeightAt(x, y) + EXPLORE_CAM_CLEARANCE);
+  }
+  const lift = Math.max(0, need - camPos.z);
+  const cur = exploreState.camLift || 0;
+  // 上げるときは足りない分をその場で満たす(補間の途中で埋まらない)。下げるときだけゆっくり戻す
+  exploreState.camLift = lift > cur ? lift : cur + (lift - cur)*clamp((dt || 1/60)*EXPLORE_CAM_LIFT_DOWN, 0, 1);
+  camPos.z += exploreState.camLift;
 }
 function sniperEaseLocal(t){ t = clamp(t, 0, 1); return t*t*(3 - 2*t); }
 // 描画の直前(render.js。狙撃の構えの後)。寄りは setViewZoom の1か所の入口で、構え中は狙撃を優先する
