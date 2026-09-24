@@ -26,7 +26,7 @@ import { buildSky, applySkyTheme, buildDistantRidge, buildEnvironment, animateSk
 import { buildTerrain, updateTerrain, applyTerrainTheme, terrainStats, resetPatch } from './real3d_terrain.js';
 import { buildZoneMesh, zoneMaterial, buildSeaMesh, buildRiverMesh, splitRivers,
          animateWater, lavaMats, resetDynamicLists, ZONE_LIFT } from './real3d_water.js';
-import { buildMountainMesh, updateObstacles, obstacleCullDist, obstacleDrawn, resetObstacles } from './real3d_props.js';
+import { buildMountainMesh, updateObstacles, obstacleCullDist, obstacleDrawn, resetObstacles, obstacleFadeAt } from './real3d_props.js';
 import { buildZoneLayer, updateZoneLayer, resetZoneLayer } from './real3d_zone.js';
 import { buildExploreWorld, updateExplore, resetExplore } from './real3d_explore.js';
 
@@ -294,6 +294,8 @@ const api = {
   resize(){ if(active) applySize(); },
   // 障害物を実際に出している距離。2D側はこれより遠い障害物をくり抜かない
   obstacleCullDist,
+  // 探検: 切る距離の手前で縮めている障害物の縮み(1=そのまま)。2D側のくり抜きの大きさを合わせる
+  obstacleFadeAt,
   // 計測用: 直近の地形パッチ再計算(計算した頂点数と所要ms)と、その回数
   stats(){ return { ...terrainStats(), obst:obstacleDrawn() }; },
   // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る。

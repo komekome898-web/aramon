@@ -789,6 +789,51 @@ function scaledSpriteFor(img, needPx){
   set[bucket] = c;
   return c;
 }
+/* 2倍に拡大して輪郭を締めた版(狙撃スコープで大きく覗くときだけ。1枚ごとに一度だけ作って覚える)。
+   ・拡大はなめらかに(高品質)、そのあと輪郭を締めるアンシャープマスク(半径1のぼかしとの差を足す)を掛ける
+   ・色は透明度を掛けた値のまま扱う(ふちに黒い縁が出ない) */
+const SCOPE_SHARPEN_MIN_UPSCALE = 1.3;   // 元画像のこの倍より大きく描くときだけ使う
+const SCOPE_SHARPEN_AMOUNT = 1.1;        // 輪郭の締め具合(アンシャープマスクの強さ)
+const _sharpCache = new WeakMap();
+function sharpenedUpscaleFor(img){
+  const hit = _sharpCache.get(img);
+  if(hit) return hit;
+  const iw = _imgW(img), ih = _imgH(img);
+  const w = iw*2, h = ih*2;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+  cx.drawImage(img, 0, 0, w, h);
+  try{
+    const id = cx.getImageData(0, 0, w, h), d = id.data, n = w*h;
+    // 透明度を掛けた色(0〜255)
+    const pm = new Float32Array(n*4);
+    for(let i=0;i<n;i++){ const a = d[i*4+3]/255; pm[i*4] = d[i*4]*a; pm[i*4+1] = d[i*4+1]*a; pm[i*4+2] = d[i*4+2]*a; pm[i*4+3] = d[i*4+3]; }
+    // 半径1の箱ぼかし(横→縦)
+    const tmp = new Float32Array(n*4), bl = new Float32Array(n*4);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const i = (y*w + x)*4, l = (y*w + Math.max(0, x-1))*4, r = (y*w + Math.min(w-1, x+1))*4;
+      for(let k=0;k<4;k++) tmp[i+k] = (pm[l+k] + pm[i+k] + pm[r+k])/3;
+    }
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const i = (y*w + x)*4, u = (Math.max(0, y-1)*w + x)*4, dn = (Math.min(h-1, y+1)*w + x)*4;
+      for(let k=0;k<4;k++) bl[i+k] = (tmp[u+k] + tmp[i+k] + tmp[dn+k])/3;
+    }
+    const A = SCOPE_SHARPEN_AMOUNT;
+    for(let i=0;i<n;i++){
+      const a = pm[i*4+3];
+      if(a < 1){ d[i*4+3] = 0; continue; }
+      for(let k=0;k<3;k++){
+        // 元(拡大そのまま)に、ぼかしとの差分を足して輪郭を締める
+        const v = pm[i*4+k] + A*(pm[i*4+k] - bl[i*4+k]);
+        d[i*4+k] = Math.max(0, Math.min(255, v*255/a));
+      }
+    }
+    cx.putImageData(id, 0, 0);
+  }catch(_){ /* 読み出せない画像(別オリジン)は拡大しただけの版を使う */ }
+  _sharpCache.set(img, c);
+  return c;
+}
 // 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。
 // (円形クリップを廃したため、矩形の白fillでは背景まで白くなってしまう。
 //  画像のアルファ形状に沿って白くするためにこの手法を使う)
@@ -908,7 +953,11 @@ function drawMonsterPortrait(e, img, flash, precomputedLayout){
   const L = (precomputedLayout && precomputedLayout.img===img) ? precomputedLayout : portraitLayoutFor(e, img);
   // 画面上での実ピクセル数に合う縮小版を使う(投影スケール×描画解像度。倍率を掛けたあとの値で選ぶ)
   const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
-  const spr = scaledSpriteFor(img, need);
+  /* 狙撃スコープで覗いている間(探検)に元画像より大きく引き伸ばすときは、2倍に拡大して輪郭を締めた版を使う
+     (歩行コマは320pxの256色なので、8倍で覗くとぼやけて色の段が出ていた=批評) */
+  const spr = (game.explore && need > Math.max(_imgW(img), _imgH(img))*SCOPE_SHARPEN_MIN_UPSCALE
+               && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead())
+    ? sharpenedUpscaleFor(img) : scaledSpriteFor(img, need);
   ctx.drawImage(spr, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
   if(flash){
     ctx.save();
@@ -1211,11 +1260,23 @@ function drawMonster(e,p){
   const portraitLayout = displayImg ? portraitLayoutFor(e, displayImg) : null;
   const uiMult = portraitLayout ? portraitLayout.uiMult : 1;
 
-  ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
-  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
   /* 狙撃スコープで覗いている間(探検モードだけ)は、頭上の表示(名前・「!」「?」・眠り・状態変化の札)と
      足元の輪を出さない。倍率ぶん大きくなって照準と的を横切るため。的の情報はスコープの右の札が出す(sniper.js) */
   const scopeUI = (typeof sniperHidesOverhead === 'function') && sniperHidesOverhead();
+  if(scopeUI){
+    // 覗いている間は足元の影を「縁のくっきりした灰色の楕円」にしない(8倍で平らな図形が丸見えになる=批評)。
+    // 中心だけ薄く暗い、ふちの消えた接地の陰にする
+    ctx.save();
+    ctx.translate(0, e.radius*0.7); ctx.scale(1, 0.4/0.9);
+    const sr = e.radius*0.9*uiMult;
+    const sg = ctx.createRadialGradient(0, 0, 0, 0, 0, sr);
+    sg.addColorStop(0, 'rgba(0,0,0,0.22)'); sg.addColorStop(0.55, 'rgba(0,0,0,0.12)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, sr, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
+  }
   if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
   if(e.dashTimer>0){
@@ -7079,6 +7140,7 @@ const OBSTACLE_FADE_DIST = 1750;   // ここから薄くしていく
    ・高さの個体差(hk)は3D側と同じ式でseedから作る
    ・接地高さは3D側と同じ「足元4点のいちばん低い高さ」を使う(坂でずれないため) */
 const OBST_ERASE_PAD = 1.02;
+const OBST_ERASE_SCOPE_SHRINK = 0.95;   // 狙撃スコープで覗いている間(探検)のくり抜きの大きさ(丸い塊はふちをぼかすので少しだけ小さく)
 function obstShapeOf(o, fallbackFlavor){
   const t = (typeof OBST_SHAPES!=='undefined') ? OBST_SHAPES : null;
   const key = o.flavor || fallbackFlavor || 'rock';
@@ -7110,23 +7172,44 @@ function eraseObstacle(o, p, fallbackFlavor){
   const seed = o.seed || 0;
   const hk = 0.90 + (seed - Math.floor(seed))*0.26;   // 3D側の高さの個体差と同じ式
   const baseZ = obstacleBaseZ(o) - r*sh.sink;         // モデルの原点(地面より少し下)
+  /* 狙撃スコープで覗いている間(探検)だけ、くり抜きを3Dの見え方に合わせる:
+     ・3Dは切る距離の手前で障害物を地面へ縮めている → くり抜きも同じだけ縮める
+     ・手前の起伏に隠れている部分はくり抜かない。3Dでは丘の陰で見えない木を2Dが全部の高さでくり抜くと、
+       奥の的(先に描いた2D)に木の形(丸+幹=鍵穴)の穴が開き、倍率で大きく見えていた(批評)。隠れた高さより上だけくり抜く */
+  let clipY = null, fk = 1;
+  const scoped = game.explore && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead();
+  if(scoped){
+    const api = window.__aramonReal3D;
+    fk = (api && api.obstacleFadeAt) ? api.obstacleFadeAt(o.x, o.y) : 1;
+    if(fk < 0.03) return;
+  }
   // 高さは決め打ちの縮尺ではなく実際に投影して求める(近くの高い木ほど差が出る)
   const pBot = project(o.x, o.y, baseZ) || p;
-  const pTop = project(o.x, o.y, baseZ + r*sh.h*hk);
+  const pTop = project(o.x, o.y, baseZ + r*sh.h*hk*fk);
   if(!pBot || !pTop) return;
   const hPx = pBot.y - pTop.y;
+  if(scoped){
+    const zv = obstacleVisibleFromZ(o, baseZ, baseZ + r*sh.h*hk*fk);
+    if(zv == null) return;
+    if(zv > baseZ + 1){ const pv = project(o.x, o.y, zv); if(pv) clipY = pv.y; }
+  }
+  /* 輪郭は丸・箱の近似なので、倍率で大きく覗くと3Dの木の凸凹との隙間(奥の的が消えて地面が透ける淡い縁)が
+     目立つ。覗いている間だけ一回り小さくくり抜く(縁は的が少し前に出るだけで、穴には見えない) */
+  const pad = scoped ? OBST_ERASE_PAD*OBST_ERASE_SCOPE_SHRINK : OBST_ERASE_PAD;
   // モデルのローカル高さ(0=原点 h=天辺)と横方向のずれから画面上の点を出す
   const ptX = (ly, lx)=>{
     const f = ly/sh.h;
-    return pBot.x + (pTop.x-pBot.x)*f + lx*r*(pBot.scale + (pTop.scale-pBot.scale)*f)*OBST_ERASE_PAD;
+    return pBot.x + (pTop.x-pBot.x)*f + lx*r*fk*(pBot.scale + (pTop.scale-pBot.scale)*f)*pad;
   };
   const ptY = (ly)=> pBot.y + (pTop.y-pBot.y)*(ly/sh.h);
   // 1フレームに何十回も通るので save/restore は使わず必要な状態だけ戻す
   const prevAlpha = ctx.globalAlpha;
+  if(clipY != null){ ctx.save(); ctx.beginPath(); ctx.rect(-1e5, -1e5, 2e5, clipY + 1e5); ctx.clip(); }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'destination-out';
   ctx.fillStyle = '#000';
   ctx.beginPath();
+  let soft = null;
   for(const s of sh.sil){
     const cy = s[0], rx = s[1], ry = s[2], type = s[3]||0;
     const rxTop = (s[4] != null) ? s[4] : rx;   // 箱の上端の太さ(幹は上ほど細い)
@@ -7147,14 +7230,51 @@ function eraseObstacle(o, p, fallbackFlavor){
       ctx.closePath();
     } else {                 // 楕円(丸い塊)
       const ex = ptX(cy, rx) - ptX(cy, 0);
-      const ey = Math.abs(ry*hPx/sh.h)*OBST_ERASE_PAD;
+      const ey = Math.abs(ry*hPx/sh.h)*pad;
+      // 覗いている間は、丸い塊(木の葉・岩の丸み)のふちをぼかしてくり抜く(下でまとめて描く)
+      if(scoped){ (soft || (soft = [])).push([ptX(cy,0), ptY(cy), Math.max(0.5,ex), Math.max(0.5,ey)]); continue; }
       ctx.moveTo(ptX(cy,0)+ex, ptY(cy));   // 楕円ごとに独立した部分パスにする
       ctx.ellipse(ptX(cy,0), ptY(cy), Math.max(0.5,ex), Math.max(0.5,ey), 0, 0, Math.PI*2);
     }
   }
   ctx.fill();
+  /* 狙撃スコープ: 3Dの葉の凸凹と丸い輪郭の差が、倍率でくっきりした円(泡)に見えていた。
+     ふちの外側3割をぼかしてくり抜き、奥の的が葉のふちで自然に隠れるようにする */
+  if(soft) for(const [x, y, ex, ey] of soft){
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(1, ey/ex);
+    const eg = ctx.createRadialGradient(0, 0, 0, 0, 0, ex);
+    eg.addColorStop(0, 'rgba(0,0,0,1)'); eg.addColorStop(0.68, 'rgba(0,0,0,1)'); eg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(0, 0, ex, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = prevAlpha;
+  if(clipY != null) ctx.restore();
+}
+/* 障害物の中心の柱のうち、目から見えるいちばん低い高さ(全部が起伏に隠れていれば null)。
+   狙撃スコープの間だけ使う。カメラが動かない間は覚えておく(毎フレーム測らない) */
+function obstacleVisibleFromZ(o, z0, z1){
+  const key = Math.round(camPos.x) + ',' + Math.round(camPos.y) + ',' + Math.round(camPos.z);
+  if(o._visKey === key) return o._visZ;
+  const hidden = (z)=>{
+    for(let i=1;i<28;i++){
+      const k = i/28*0.96;
+      const x = camPos.x + (o.x - camPos.x)*k, y = camPos.y + (o.y - camPos.y)*k, zz = camPos.z + (z - camPos.z)*k;
+      if(zz < terrainZAt(x, y)) return true;
+    }
+    return false;
+  };
+  let res;
+  if(hidden(z1)) res = null;
+  else if(!hidden(z0)) res = z0;
+  else {
+    let lo = z0, hi = z1;
+    for(let i=0;i<6;i++){ const m = (lo + hi)/2; if(hidden(m)) lo = m; else hi = m; }
+    res = hi;
+  }
+  o._visKey = key; o._visZ = res;
+  return res;
 }
 function occludedByMountain(x, y, z){
   if(!mountOccluders.length) return false;

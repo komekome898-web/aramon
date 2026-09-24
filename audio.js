@@ -467,6 +467,10 @@ const SE_DEFS = {
       seTone(t,  {freq:160, freqEnd:60, dur:0.14, type:'sine', vol:0.42});
       seNoise(t, {dur:0.06, vol:0.3, filterType:'bandpass', filterFreq:1500});
     } else if(k === 'crit'){
+      // 弱点: 体への命中の「ドスッ」に、金属の「キィン」と一拍遅れの高い「チン」を重ねる(聞いただけで区別できる)
+      seTone(t,       {freq:170, freqEnd:55, dur:0.16, type:'sine', vol:0.34});
+      seTone(t+0.07,  {freq:4200, freqEnd:4100, dur:0.26, type:'sine', vol:0.14, attack:0.002});
+      seTone(t+0.07,  {freq:6300,               dur:0.14, type:'sine', vol:0.05, attack:0.002});
       seTone(t,       {freq:2400, freqEnd:2300, dur:0.32, type:'sine',     vol:0.26, attack:0.002});
       seTone(t,       {freq:3620,               dur:0.22, type:'sine',     vol:0.12, attack:0.002});
       seTone(t+0.01,  {freq:1200, freqEnd:900,  dur:0.12, type:'triangle', vol:0.2,  attack:0.002});

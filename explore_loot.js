@@ -425,10 +425,12 @@ function exploreDrawCrate(c, p0){
   // 蓋の角度: 行き過ぎて戻る(easeOutBack)で「バン」と開く
   const eb = (t)=>{ const s = 1.70158; const u = t - 1; return 1 + (s+1)*u*u*u + s*u*u; };
   const lidA = c.opened ? eb(openT) * 1.95 : 0;   // 約112度
+  // 狙撃スコープで覗いている間(sniper.js): 地面に貼った光の輪・影(平らな図形)は出さず、角の灯りは光のにじみで描く
+  const scoped = typeof sniperHidesOverhead === 'function' && sniperHidesOverhead();
   ctx.save();
 
   // --- 地面の光(レア以上は常に。閉じている間だけ) ---
-  if(!c.opened && ord >= 1 && !far){
+  if(!c.opened && ord >= 1 && !far && !scoped){
     const ring = groundCirclePoints(c.x, c.y, 58 + ord*6, 28);
     if(ring){
       ctx.globalCompositeOperation = 'lighter';
@@ -439,7 +441,7 @@ function exploreDrawCrate(c, p0){
     }
   }
   // --- 接地の影 ---
-  if(!far){ const sh = groundCirclePoints(c.x, c.y, W*1.15, 20);
+  if(!far && !scoped){ const sh = groundCirclePoints(c.x, c.y, W*1.15, 20);
     if(sh){ _exlPoly(sh); ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fill(); } }
 
   // --- 胴の4面 ---
@@ -610,6 +612,16 @@ function exploreDrawCrate(c, p0){
       const q = LP(sx*(W+OV-3), D+OV, H+L*0.5);
       if(!q) continue;
       const r = Math.max(1.5, 3.2*q.scale);
+      if(scoped){
+        // 小さな白い芯+レア度の色のにじみ(ふちは消える)。平らな円盤に見せない
+        ctx.globalCompositeOperation = 'lighter';
+        const lg = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, r*2.6);
+        lg.addColorStop(0, exploreRgba('#ffffff', 0.85)); lg.addColorStop(0.18, exploreRgba(col, 0.7*pulse));
+        lg.addColorStop(0.5, exploreRgba(col, 0.22*pulse)); lg.addColorStop(1, exploreRgba(col, 0));
+        ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(q.x, q.y, r*2.6, 0, Math.PI*2); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        continue;
+      }
       if(!heavy){ ctx.shadowBlur = 8 + ord*3; ctx.shadowColor = col; }
       ctx.fillStyle = exploreRgba('#ffffff', 0.9); ctx.beginPath(); ctx.arc(q.x, q.y, r*0.55, 0, Math.PI*2); ctx.fill();
       ctx.fillStyle = exploreRgba(col, 0.85*pulse); ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI*2); ctx.fill();

@@ -2345,6 +2345,8 @@ function exploreDrawMaterialFx(){
    ===================================================================== */
 // 咆哮の文字。ボスの矩形の右(入らなければ左、それも無理なら足元の下)に出して震わせる
 function exploreDrawRoarText(){
+  // 狙撃スコープを覗いている間は出さない(倍率で大きくなった文字がスコープの表示に重なり、窓の縁で切れる。狙撃担当)
+  if(typeof sniperHidesOverhead === 'function' && sniperHidesOverhead()) return;
   for(const rec of exploreState.bosses){
     const b = getEntity(rec.id);
     if(!b || !b.alive || b.exState !== 'roar') continue;

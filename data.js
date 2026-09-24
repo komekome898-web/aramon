@@ -7105,6 +7105,8 @@ const SNIPER_BODY_H_PER_RADIUS  = 2.0;   // 当たりの背の高さ = 半径×�
 const SNIPER_HIT_RADIUS_MULT    = 0.95;  // 当たりの横幅 = 半径×これ
 const SNIPER_WEAK_FROM          = 0.62;  // ent.weakPoint に from が無いときの弱点の下端(背の高さに対する割合)
 const SNIPER_DROP_MARKS_M       = [150, 200, 250, 300];   // 落下補正の目盛り(m)
+const SNIPER_DROP_LABEL_ORDER   = [200, 300, 150, 250];   // 目盛りの数字が詰まって区別できないとき、残す順(前ほど残る)
+const SNIPER_DROP_LABEL_X       = 0.2;    // 目盛りの数字の列の位置(照準から窓の半径×この割合だけ横)
 const SNIPER_SWAY_NOISE         = 0.55;  // 揺れに混ぜるなめらかなノイズの割合(周期を読めなくする)
 const SNIPER_HEARTBEAT_HZ       = 1.15;  // 心拍の細かい揺れの速さ(回/秒)
 const SNIPER_HEARTBEAT_AMP      = 0.22;  // 心拍の揺れの大きさ(揺れ全体に対する割合。息止め中も残る)
@@ -7121,4 +7123,6 @@ const SNIPER_SCOPE_PIXEL_BOOST  = 1.5;   // 構え中、スコープの窓の範
 const SNIPER_VEG_CONE_MIN_ZOOM  = 1.9;   // この倍率以上で、草・低木を「視線の先の扇」へ並べ替えて遠くまで出す
 const SNIPER_BODY_FLASH_SEC     = 0.0006; // 探検: 狙撃の命中で体が白くなる時間(ゲーム内の秒)。ヒットストップ中(時間の速さ0.04)でも次のフレームで消える=1フレームだけ。光は当たった点の周りだけ
 const SNIPER_TRACER_CLIP        = 0.6;   // 覗いている間、弾道の光を描く範囲(窓の半径に対する割合。右下の残弾の表示に被せない)
-const SNIPER_SCOPE_VEIL         = 0.14;  // 覗いている間の窓の中全体の空気の膜の濃さ(4倍のとき。倍率に比例して8倍で×1.6まで。遠くの岩肌の模様をやわらげる)
+const SNIPER_IMPACT_COLUMN_H    = 60;    // 外れた弾が地面に立てる土柱の高さ(ワールド単位=6m相当。遠くからでも見える大きさ)
+const SNIPER_IMPACT_DEBRIS_G    = 900;   // 土くれ・小石が落ちる重さ(ワールド単位/秒²)
+const SNIPER_CRIT_NUM_SCALE     = 1.5;   // 弱点命中のダメージの数字の大きさ(体への命中の数字に対する倍率)

@@ -1003,6 +1003,15 @@ function obstView(cx, cy){
   return Math.min(OBST_VIEW_EXPLORE, 1.3/exploreMixNum('fogD', exploreWeights(cx, cy)));
 }
 export function obstacleCullDist(){ return obstCull; }
+/* 探検で、切る距離の手前で地面へ縮めている障害物の縮み(1=そのまま・0=消えた)。
+   2D側のくり抜きを3Dの大きさに合わせるために読む(狙撃スコープで大きく覗くと食い違いが見える。狙撃担当が追加) */
+let obstViewNow = OBST_VIEW;
+export function obstacleFadeAt(x, y){
+  if(!isExplore() || obstCX == null) return 1;
+  const dd = Math.hypot(x - obstCX, y - obstCY);
+  let k = 1 - Math.min(1, Math.max(0, (dd - (obstViewNow - OBST_FADE_EXPLORE))/OBST_FADE_EXPLORE));
+  return Math.max(0.001, k*k*(3 - 2*k));
+}
 export function obstacleDrawn(){ return obstDrawn; }
 export function resetObstacles(){
   obstSig = '';
@@ -2094,6 +2103,7 @@ function updateObstacleInstances(cx, cy){
   obstCX = cx; obstCY = cy;
   const exTints = isExplore() ? exploreRegionColors('rock') : null;
   const view = obstView(cx, cy);
+  obstViewNow = view;
   const near = [];
   for(let i=0;i<obstSrc.length;i++){
     const o = obstSrc[i];

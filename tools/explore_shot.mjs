@@ -230,11 +230,12 @@ const CUTS = [
     { name:'sniper_x4',     desc:'4倍スコープで野生を覗く(照準の先の1体の帯)', o:{ target:'wild', dist:1900, scope:'x4', ratio:0.55, sway:1.3 } },
     { name:'sniper_x8',     desc:'8倍スコープで240m先の野生を覗く(草が遠くまで・霞・照準の先の帯)', o:{ target:'wild', dist:2400, scope:'x8', ratio:0.55, sway:2.1 } },
     { name:'sniper_x8_boss',desc:'8倍スコープで遠くのボスを覗く', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.45, sway:0.4 } },
-    { name:'sniper_weak',   desc:'8倍で弱点(頭)に狙いが乗った(中心が金+輪+「弱点」)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true } },
+    { name:'sniper_weak',   desc:'8倍で、伏せて眠るボスの頭に狙いが乗った(姿勢込みの頭。中心が金+輪+「弱点」)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.76, ballistic:true, pose:'sleep' } },
     { name:'sniper_breath', desc:'8倍で息止め中(揺れが収まり、鏡筒に息のゲージ)', o:{ target:'boss:volgreim', dist:3000, scope:'x8', ratio:0.6, breath:true, sway:1.1 } },
-    { name:'sniper_muzzle', desc:'撃った瞬間(跳ね上がり・窓の欠け・下の縁の炎)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true, fire:'muzzle' } },
-    { name:'sniper_tracer', desc:'弾道の光(銃口=右下から照準へ吸い込まれて落ちる弧)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true, fire:'tracer' } },
-    { name:'sniper_hit',    desc:'弱点に当たった直後(クリティカル・右上の数字・撃った距離)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.86, ballistic:true, fire:'hit' } },
+    { name:'sniper_muzzle', desc:'撃った瞬間(跳ね上がり・窓の欠け・下の縁の炎)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.76, ballistic:true, fire:'muzzle' } },
+    { name:'sniper_tracer', desc:'弾道の光(銃口=右下から照準へ吸い込まれて落ちる弧)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.76, ballistic:true, fire:'tracer' } },
+    { name:'sniper_hit',    desc:'体(胸)に当たった直後(白い×・白い数字・撃った距離)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.4, ballistic:true, fire:'hit' } },
+    { name:'sniper_crit',   desc:'弱点(頭)に当たった直後(金の×と広がる輪・1.5倍の黄〜橙の数字・「弱点!」)', o:{ target:'boss:gandrock', dist:3200, scope:'x8', ratio:0.76, ballistic:true, fire:'hit', noBreak:true } },
     { name:'sniper_miss',   desc:'外れた所の土煙', o:{ target:'wild', dist:2400, scope:'x8', ratio:-0.6, ballistic:true, fire:'miss' } },
   ].map(c=>({ name:c.name, kind:'field', desc:c.desc,
               at: new Function(`return window.__shotSnipe(${JSON.stringify(c.o)});`) })),
@@ -460,8 +461,22 @@ function pageTools(){
        o.scope  : 'iron'|'x2'|'x4'|'x8'|null(null=構えない普段のHUD)
        o.ratio  : 照準を置く高さ(0=足元〜1=頭のてっぺん) o.ballistic : 落下を見越して弾がその高さに届く向きにする
        o.fire   : null | 'muzzle'(撃った45ms後) | 'tracer'(飛んでいる途中) | 'hit'(当たった直後) | 'miss'(外れて土煙)
-       o.breath : 息止め中にする   o.sway : 揺れの位相(秒)                                          */
+       o.breath : 息止め中にする   o.sway : 揺れの位相(秒)
+       o.pose   : ボスの姿勢。'sleep'=伏せて眠る / 既定=立ったまま巣でじっとする
+       o.noBreak: 撃っても部位破壊にしない(命中の表示だけを撮る)
+     前のカットで撃ったボスは怒って追ってくるので、毎回すべてのボスを巣へ戻して落ち着かせてから撮る */
   window.__shotSnipe = (o)=>{
+    for(const rec of exploreState.bosses){
+      const b = getEntity(rec.id);
+      if(!b || !b.alive) continue;
+      if(typeof exploreBossDisengaged === 'function') exploreBossDisengaged(b, 'lost');
+      if(b.exNestX != null){ b.x = b.exNestX; b.y = b.exNestY; }
+      b.exState = 'dormant'; b.exStateUntil = 0; b.exPending = null; b.exCharge = null; b.aiTargetPoint = null;
+      b.moveWithMoveUntil = 0; b.hp = b.maxHp; b.exploreAsleep = true;
+      b.exBreakDmg = 0;   // 前のカットの命中で部位破壊の手前まで溜まっていると、このカットで壊れて破片が飛ぶ
+    }
+    exploreState.cine = null;
+    if(exploreState.shards) exploreState.shards.length = 0;
     let T = null;
     if(String(o.target).startsWith('boss:')){
       const rec = exploreState.bosses.find(r=> r.bossId === o.target.slice(5));
@@ -477,9 +492,16 @@ function pageTools(){
     const los = (x0,y0,z0,x1,y1,z1)=>{
       for(let i=1;i<80;i++){ const t=i/80; if(z0+(z1-z0)*t < gz(x0+(x1-x0)*t, y0+(y1-y0)*t) + 4) return false; }
       const dx=x1-x0, dy=y1-y0, L2=dx*dx+dy*dy;
+      // 岩・木・壁・家は見た目の大きさ(3Dの形の高さ・少し太め)で塞ぐかを見る
       for(const q of rocks){
         const t = clamp(((q.x-x0)*dx+(q.y-y0)*dy)/L2, 0, 0.97);
-        if(Math.hypot(x0+dx*t-q.x, y0+dy*t-q.y) < q.radius+20 && z0+(z1-z0)*t < gz(q.x,q.y)+q.height) return false;
+        const vh = Math.max(q.height, q.radius*obstShapeOf(q).h*1.2);
+        if(Math.hypot(x0+dx*t-q.x, y0+dy*t-q.y) < q.radius*1.3+40 && z0+(z1-z0)*t < gz(q.x,q.y)+vh) return false;
+      }
+      // 補給箱も倍率で大きく写って的を隠す
+      for(const c of (exploreState.crates || [])){
+        const t = clamp(((c.x-x0)*dx+(c.y-y0)*dy)/L2, 0, 0.97);
+        if(Math.hypot(x0+dx*t-c.x, y0+dy*t-c.y) < 130 && t < 0.95) return false;
       }
       for(const v of volcanoObstacles){
         const t = clamp(((v.x-x0)*dx+(v.y-y0)*dy)/L2, 0, 1);
@@ -506,7 +528,9 @@ function pageTools(){
     const at = { x:best.x, y:best.y, yaw:Math.atan2(T.y-best.y, T.x-best.x), pitch:0.08, warm:0 };
     at.after = ()=>{
       const me = player;
-      T.exploreAsleep = true; T.exState = T.isExploreBoss ? 'sleep' : T.exState;
+      T.exploreAsleep = true; T.exState = T.isExploreBoss ? (o.pose === 'sleep' ? 'sleep' : 'dormant') : T.exState;
+      // noBreak: この1発で部位破壊にしない(破片の演出=ボス担当 が重なり、弱点命中の表示そのものが見えなくなる)
+      if(o.noBreak) T.exBreakDmg = -1e9;
       if(exploreState.banners) exploreState.banners.length = 0;   // 前のカットの札を持ち越さない
       if(exploreState.fx) exploreState.fx.length = 0;
       const tx = T.x, ty = T.y;
