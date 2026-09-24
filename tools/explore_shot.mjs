@@ -170,6 +170,10 @@ const CUTS = [
       B.exState = 'fight'; B.exploreAsleep = false; B.facingAngle = Math.atan2(p.y-B.y, p.x-B.x);
       exploreState.banners.length = 0; exploreState.fx.length = 0;   // 前のカットの札を持ち越さない
       exploreState.cine = null; exploreState.pops.length = 0; exploreState.shards.length = 0; document.body.classList.remove('explore-cine');   // 視点演出も持ち越さない
+      // 前のカットの大技の予告(流星群など)が消化しきる前だと、次のカットのカメラ位置から見て
+      // 全く無関係な所に落下中の光・輪が写り込む(boss_weak で white飛びの主因と誤認されていた)。
+      // カット同士は無関係なので、ここで必ず打ち切る
+      B.exPending = null; B.exCharge = null;
       return { x:p.x, y:p.y, yaw:Math.atan2(B.y-p.y, B.x-p.x), pitch:0.16, warm:0.4, lookAt:B.id, vuln:true, keepCam:${c.keepCam !== false},   // 既定でゲームのカメラのまま(ボス戦の視点の補正を写す)
                after: ()=>{ ${c.after} } };`),
   })),

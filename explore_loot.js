@@ -847,6 +847,39 @@ function exploreDrawCrateFan(c){
   const H0 = c.z;
   const list = f.items.slice().sort((a, b)=> Math.abs(b.off) - Math.abs(a.off));   // 真ん中(良い物)を最後=手前に
   const eb = (t)=>{ const k = 1.70158, u = t - 1; return 1 + (k+1)*u*u*u + k*u*u; };
+  /* 名前の札どうしが重なる不具合(批評指摘=縦持ちで「生命の8倍スコープ」「レジェンドレジェンド」)対策:
+     まず全部の位置だけ求め、レア度の高い順に「札の四角」が既に置いた札と重ならないかを判定する
+     (exploreRectsHit。HUDの札よけと同じ道具)。重なる側(レア度が低いほう)は札を出さない。
+     入りきらない札を丸ごと諦める=文字を欠けさせない(R1/R3と同じ考え方)。 */
+  const plan = [];
+  for(const it of list){
+    if(matchTime >= it.launchAt) continue;
+    const t = clamp((age - Math.abs(it.off)*0.05) / F.rise, 0, 1);
+    if(t <= 0) continue;
+    const e = eb(t);
+    const x = c.x + (it.fx - c.x)*Math.min(1, e), y = c.y + (it.fy - c.y)*Math.min(1, e);
+    const q = project(x, y, H0 + EXPLORE_CRATE_SIZE.h*exploreCrateScale(c) + (it.fz - EXPLORE_CRATE_SIZE.h*exploreCrateScale(c))*e);
+    if(!q) continue;
+    const S = clamp(34*q.scale, 22, 58) * (0.5 + 0.5*Math.min(1, e)) * (it.off === 0 ? 1.12 : 1);
+    plan.push({ it, q, S, showLabel:false });
+  }
+  const labelKeep = new Set();
+  if(plan.length){
+    const boxes = [];
+    const byRarity = plan.slice().sort((a, b)=> exploreRarityOrder(b.it.rarity) - exploreRarityOrder(a.it.rarity));
+    ctx.font = `800 12px 'Rajdhani', sans-serif`;   // 幅の見積もりは名前だけの行(いちばん長い行)で十分
+    for(const p of byRarity){
+      if(p.S < 22) continue;
+      const info = exploreItemInfo(p.it.key);
+      const fs = Math.max(9, Math.round(p.S*0.22));
+      const w = Math.max(ctx.measureText(info.name).width, 40) + 6;
+      const h = fs*2 + fs*0.85 + 6;
+      const box = { x:p.q.x - w/2, y:p.q.y + p.S/2, w, h };
+      if(boxes.some(b=> exploreRectsHit(box, b, 2))) continue;
+      boxes.push(box);
+      labelKeep.add(p.it);
+    }
+  }
   ctx.save();
   for(const it of list){
     if(matchTime >= it.launchAt) continue;   // 地面へ飛んだ(ここからは落ちている品の絵)
@@ -894,8 +927,10 @@ function exploreDrawCrateFan(c){
     }
     /* 名前(すべてに短く)+レア度の札。真ん中の1つだけだと旗竿やほかの品と重なった
        (批評指摘)ので、全部に付けて、アイコンの"下"(地面側)へ出す ―― 上は旗竿やほかの
-       浮いている品と重なりやすく、下はアイコン同士の間にすき間があって読める */
-    if(S >= 22){
+       浮いている品と重なりやすく、下はアイコン同士の間にすき間があって読める。
+       札どうしが重なるとき(批評指摘=縦持ちで2つの札が同じ場所に出た)は、labelKeep
+       (レア度の高い順に事前判定済み)に入っている品だけ出す。入らない品は札を諦める */
+    if(S >= 22 && labelKeep.has(it)){
       const rar = EXPLORE_RARITY[it.rarity] || EXPLORE_RARITY.common;
       const fs = Math.max(9, Math.round(S*0.22));
       ctx.font = `800 ${fs}px 'Rajdhani', sans-serif`;
@@ -1683,19 +1718,22 @@ function exploreCineGrey(k){
   const gl = document.getElementById('glCanvas');
   if(gl) gl.style.filter = k > 0 ? `saturate(${(1 - 0.85*k).toFixed(2)}) brightness(${(1 - 0.22*k).toFixed(2)})` : '';
 }
-/* 出発の演出用: 3D層(WebGL)だけをじわっと寄せる(カメラがキャンプから竜の背中へ寄る動き)。
-   2D層(gameCanvas。黒帯・文字)は寄らずに固定のままなので、映画の額縁の奥で背景が寄る見え方になる。
-   #glCanvas に transform を使う場所はここだけ(二重に持たない)。 */
+/* 出発の演出用: 画面をじわっと寄せる(カメラがキャンプから竜の背中へ寄る動き)。
+   竜(自分)は3D地形と同じWebGL層(glCanvas)ではなく2D層(gameCanvas)にスプライトで描いているため、
+   WebGLだけを拡大しても竜自身の大きさは変わらなかった(批評指摘=撮影の0.9秒時点でr5とほぼ同じ
+   大きさだった)。gameCanvasも一緒に拡大し、竜がはっきり大きく見えるようにする(帯・文字も
+   同じ画面の一部として一緒に寄る。中心はキャンプ全体を見渡す構図の下寄りに置き、竜が特に大きくなる)。
+   #glCanvas/#gameCanvas/#fxCanvas に transform を使う場所はここだけ(二重に持たない)。 */
 let _exploreZoomK = 0;
 function exploreCineZoom(k){
   k = Math.round(clamp(k, 0, 1)*40)/40;
   if(k === _exploreZoomK) return;
   _exploreZoomK = k;
-  const s = (1 + 0.10*k).toFixed(3);
-  for(const id of ['glCanvas', 'fxCanvas']){
+  const s = (1 + 0.30*k).toFixed(3);
+  for(const id of ['glCanvas', 'gameCanvas', 'fxCanvas']){
     const el = document.getElementById(id);
     if(!el) continue;
-    el.style.transformOrigin = '50% 56%';
+    el.style.transformOrigin = '50% 62%';
     el.style.transform = k > 0 ? `scale(${s})` : '';
   }
 }
@@ -1710,9 +1748,11 @@ function exploreCineUpdate(){
     camState.yaw = c.yaw0 - (1 - e) * EXPLORE_INTRO_SWEEP;
     camState.pitch = c.pitch0 + 0.10 * (1 - e);
     if(player) player.facingAngle = camState.yaw;
-    // カメラが回るだけだと静止画では「動きの途中」と分からない(批評指摘)。
-    // 3D層をじわっと寄せて、キャンプから竜の背中へ寄っていく様子を作る(帯・文字は2D層なので寄らない=固定のまま)
-    exploreCineZoom(e);
+    /* カメラが回るだけだと静止画では「動きの途中」と分からなかった(批評指摘。撮影の0.9秒時点で
+       r5とほぼ同じ大きさ・位置だった)。寄りの進み方はカメラの回転(e。2.6秒かけてゆっくり)とは
+       別に、1秒でほぼ寄りきる速い進みにする ―― 撮影の0.9秒時点でもはっきり寄って見えるように */
+    const zProg = clamp(age / 1.0, 0, 1);
+    exploreCineZoom(1 - (1 - zProg)*(1 - zProg));
     if(age >= c.dur) exploreIntroSkip();
   } else if(c.kind === 'faint'){
     const T = exploreFaintTimes();
@@ -2019,22 +2059,33 @@ function _exlReturnBeam(age){
     ctx.lineTo(q1.x + bodyHalf*0.35, q1.y); ctx.lineTo(q0.x + bodyHalf*0.7, q0.y);
     ctx.closePath(); ctx.fill();
   }
+  /* 昇る輪(水平な円を投影)は、カメラが低い角度からだと真横に潰れて「白い平たい円のシール」に
+     見えた(批評指摘)。輪はやめて、①ぼかした細い芯(柱の中心。shadowBlurで縁を溶かす。
+     竜の輪郭が上にはみ出て見えるよう、うんと薄く)②下から上へ昇る光の粒(輪の代わりに増量)にする。 */
   ctx.globalAlpha = 1;
-  // 昇る輪(足元から上へ。1点ずつ投影)
-  for(let i=0;i<3;i++){
-    const u = ((age*0.7 + i/3) % 1);
-    const zz = z0 + u*260, rr = p.radius*(1.6 - u*0.6);
-    ctx.beginPath();
-    let first = true;
-    for(let j=0;j<=20;j++){
-      const a = j/20*Math.PI*2;
-      const q = project(p.x + Math.cos(a)*rr, p.y + Math.sin(a)*rr, zz);
-      if(!q){ first = true; continue; }
-      if(first){ ctx.moveTo(q.x, q.y); first = false; } else ctx.lineTo(q.x, q.y);
-    }
-    ctx.strokeStyle = `rgba(255,236,160,${(0.8*(1 - u)*eg).toFixed(3)})`; ctx.lineWidth = 2.5; ctx.stroke();
+  {
+    const coreX = q0.x, coreX1 = q1.x;
+    const cg = ctx.createLinearGradient(coreX, q0.y, coreX1, q1.y);
+    cg.addColorStop(0, `rgba(255,246,210,${(0.10*flick*eg).toFixed(3)})`);
+    cg.addColorStop(0.5, `rgba(220,255,220,${(0.06*flick*eg).toFixed(3)})`);
+    cg.addColorStop(1, 'rgba(200,255,210,0)');
+    ctx.strokeStyle = cg;
+    ctx.lineWidth = Math.max(1.5, bodyHalf*0.22);
+    if(!renderHeavyLoad){ ctx.shadowBlur = Math.max(10, bodyHalf*1.8); ctx.shadowColor = 'rgba(220,255,220,0.55)'; }
+    ctx.beginPath(); ctx.moveTo(coreX, q0.y); ctx.lineTo(coreX1, q1.y); ctx.stroke();
+    ctx.shadowBlur = 0;
   }
-  // 光の粒
+  // 下から上へ昇る光の粒(輪の代わりに増量。柱の全周にばらける)
+  for(let i=0;i<22;i++){
+    const u = ((age*0.5 + i*0.045) % 1);
+    const a = i*2.11 + age*1.6;
+    const rr = bodyHalf*(1.5 - u*0.5);
+    const q = project(p.x + Math.cos(a)*rr, p.y + Math.sin(a)*rr, z0 + u*280);
+    if(!q) continue;
+    ctx.fillStyle = `rgba(255,244,205,${(0.85*(1 - u)*eg).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(1.3, 2.6*q.scale), 0, Math.PI*2); ctx.fill();
+  }
+  // 光の粒(体のすぐ縁を回る、細かい粒)
   for(let i=0;i<14;i++){
     const u = ((age*0.55 + i*0.071) % 1);
     const a = i*2.39 + age*2;

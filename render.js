@@ -1349,8 +1349,14 @@ function drawMonster(e,p){
        近づいた(批評指摘)。生き物らしさは姿勢(伸び+浮き)の方で作るので、影はむしろ
        控えめにして「浮いている一瞬は影が薄くなる」効き方にする。 */
     const pinLook = game.explore && e.isExploreWild && typeof EXPLORE_PIN_LOOK_WILD !== 'undefined' && EXPLORE_PIN_LOOK_WILD.includes(e.element);
-    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 0.72 : 0.9)*uiMult, e.radius*(pinLook ? 0.3 : 0.4)*uiMult, 0,0,Math.PI*2);
-    ctx.fillStyle = pinLook ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.35)'; ctx.fill();
+    // 浮いている高さ(姿勢のbob)ぶん、影を少し小さく・薄くして「浮いて小さく揺れる影」にする
+    let shrink = 1;
+    if(pinLook && typeof exploreComputePose === 'function'){
+      const pose = exploreComputePose(e);
+      if(pose) shrink = 1 - 0.3*clamp(Math.abs(pose.bob||0)/(e.radius*0.24), 0, 1);
+    }
+    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 0.72 : 0.9)*uiMult*shrink, e.radius*(pinLook ? 0.3 : 0.4)*uiMult*shrink, 0,0,Math.PI*2);
+    ctx.fillStyle = pinLook ? `rgba(0,0,0,${0.22*shrink})` : 'rgba(0,0,0,0.35)'; ctx.fill();
   }
   if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
@@ -1376,11 +1382,11 @@ function drawMonster(e,p){
   if(snJolt){ ctx.save(); ctx.translate(snJolt.x / p.scale, snJolt.y / p.scale); }
   const explorePose = game.explore && exploreBeginPose(e);
   if(displayImg){
-    /* 探検のボスは弱点命中でここに加えてもう一段白く光る(exploreDrawMonsterTint)ので、両方が
-       同時に乗ると頭が真っ白に飛んで顔が消えて見えた(批評指摘)。弱点の光が出ている一瞬はここを
-       出さず(二重に足さない)、それ以外の通常ヒットは控えめな明るさに留める。 */
+    /* 探検のボスは弱点命中を「体を白く塗る」のではなく当たった場所だけの光にした
+       (exploreDrawWeakGlow。批評指摘: 体を白く塗る方式である限り顔が真っ白に飛んでいた)。
+       弱点の光が出ている間はここの白フラッシュを出さない(二重に白を足さない)。 */
     const exploreWeakFlashing = game.explore && e.isExploreBoss
-      && (exploreState.rawClock - (e.exWeakFlashAt != null ? e.exWeakFlashAt : -9)) < 0.12;
+      && (exploreState.rawClock - (e.exWeakFlashAt != null ? e.exWeakFlashAt : -9)) < 0.32;
     const hitFlashAlpha = exploreWeakFlashing ? 0 : ((game.explore && e.isExploreBoss) ? 0.22 : true);
     drawMonsterPortrait(e, displayImg, e.hitFlash>0 && hitFlashAlpha !== 0 ? hitFlashAlpha : (snJolt && snJolt.flash > 0.01 ? snJolt.flash : false), portraitLayout);
     if(game.explore && e.isPlayer && typeof sniperDrawSlungRifle === 'function') sniperDrawSlungRifle(e, portraitLayout);
