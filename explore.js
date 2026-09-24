@@ -2399,145 +2399,15 @@ function exploreRoundRect(x, y, w, h, r){
   ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r);
   ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath();
 }
-// ボスのHUDの寸法(帯の下)。full=称号+名前+太いバー / 詰めた形=名前とバーを1行ずつ・細いバー
-function exploreBossHudGeom(b){
-  const band = exploreHudBand();
-  const H = EXPLORE_BOSS_HUD;
-  const full = viewH >= H.fullMinH;
-  const w = Math.min(band.w, H.maxW);
-  const x = band.x + (band.w - w)/2;
-  const top = band.bottom + 4;
-  const barH = H.barH[full ? 1 : 0];
-  const nameY = full ? top + 27 : top + 11;
-  const barY = full ? top + 33 : top + 17;
-  let bottom = barY + barH + 4;
-  if(full && b && b.exPending) bottom += 20;   // 予告中の技名はバーの下
-  return { full, x, w, top, titleY: top + 9, nameY, barY, barH, bottom };
-}
-// 札・文字を置くときの上端(ボスのHUDが出ていればその下、無ければ方位バーの下)
+/* ボスの帯(方位バーの真下の1行)の寸法と描き方は explore_hud.js(exploreHudBossGeom / exploreHudBossBand)。
+   #hud の中のキャンバスへ描くので、流星などワールドの演出より必ず手前に出る(第2周の指摘3)。 */
+function exploreBossHudGeom(b){ return exploreHudBossGeom(b); }
+// 札・文字を置くときの上端(ボスの帯が出ていればその下、無ければ方位バーの下)
 function exploreBossHudBottom(){
   const b = exploreFocusBoss();
-  return b ? exploreBossHudGeom(b).bottom : exploreHudBand().bottom;
+  return b ? Math.max(exploreHudBossGeom(b).bottom, exploreHudBand().bottom) : exploreHudBand().bottom;
 }
-// 斜めに切った帯(HPバーの枠)
-function exploreSlantPath(x, y, w, h, k){
-  ctx.beginPath();
-  ctx.moveTo(x + k, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - k, y + h); ctx.lineTo(x, y + h); ctx.closePath();
-}
-// ボスのHPバー(方位バーの下。MHの大型モンスター/APEXのボスの帯に寄せた、細く上品な帯)
-function exploreDrawBossHud(){
-  const b = exploreFocusBoss();
-  if(!b) return;
-  const def = exploreBossDef(b);
-  if(!def) return;
-  // 名前の札が出ている間は重ねない
-  if(exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4)) return;
-  const G = exploreBossHudGeom(b);
-  const { x, w, barY, barH } = G;
-  const hpR = clamp(b.hp/b.maxHp, 0, 1), lag = clamp(b.exHpLag || hpR, hpR, 1);
-  const base = b.exRage ? '#ff3a2a' : def.color;
-  ctx.save();
-  ctx.textBaseline = 'alphabetic';
-  // 名前の行: 紋章 + (称号) + 名前 … 右に状態の札と残り%
-  const iconR = G.full ? 8 : 6;
-  exploreMapBossIcon(ctx, x + iconR + 1, G.nameY - (G.full ? 6 : 4), iconR, def, b.exRage ? 'engaged' : 'alive');
-  const nx = x + iconR*2 + 7;
-  if(G.full){
-    ctx.font = "bold 10px 'Rajdhani', sans-serif";
-    ctx.fillStyle = exploreMixHex(def.color, '#ffffff', 0.45);
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    ctx.strokeText(def.title, nx, G.titleY); ctx.fillText(def.title, nx, G.titleY);
-  }
-  ctx.font = G.full ? "bold 17px 'Russo One', sans-serif" : "bold 13px 'Russo One', sans-serif";
-  const nameText = def.name;
-  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-  ctx.strokeText(nameText, nx, G.nameY);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(nameText, nx, G.nameY);
-  const nameEnd = nx + ctx.measureText(nameText).width + 8;
-  // 右端: 残り%(小さく)。予告中(詰めた形)は技名を優先して出す
-  let cx = x + w;
-  ctx.font = "bold 11px 'Share Tech Mono', monospace";
-  const pct = `${Math.max(1, Math.ceil(hpR*100))}%`;
-  const pw = ctx.measureText(pct).width;
-  ctx.textAlign = 'right';
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-  ctx.strokeText(pct, cx, G.nameY); ctx.fillStyle = 'rgba(245,240,228,0.9)'; ctx.fillText(pct, cx, G.nameY);
-  ctx.textAlign = 'left';
-  cx -= pw + 6;
-  const blink = 0.55 + 0.45*Math.abs(Math.sin(matchTime*9));
-  if(b.exPending && !G.full){
-    ctx.font = "bold 12px 'Rajdhani', sans-serif";
-    const t = `⚠ ${b.exPending.mv.name}`;
-    const tw = ctx.measureText(t).width;
-    if(cx - tw > nameEnd){
-      ctx.globalAlpha = blink;
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(t, cx - tw, G.nameY);
-      ctx.fillStyle = '#ffcf5a'; ctx.fillText(t, cx - tw, G.nameY);
-      ctx.globalAlpha = 1;
-    }
-  } else {
-    const chips = [];
-    if(b.exRage) chips.push({ t:'怒り', c:'#ff4a3a' });
-    if(b.exBroken) chips.push({ t:'部位破壊', c:'#ffc93c' });
-    if(b.exState === 'flee') chips.push({ t:'瀕死', c:'#ffe08a' });
-    if(b.exState === 'sleep') chips.push({ t:'睡眠', c:'#9fc4ff' });
-    if(b.exState === 'stagger') chips.push({ t:'転倒', c:'#ffe45a' });
-    ctx.font = "bold 10px 'Rajdhani', sans-serif";
-    const ch = G.full ? 15 : 13;
-    for(const c of chips){
-      const tw = ctx.measureText(c.t).width + 10;
-      if(cx - tw < nameEnd) break;   // 名前に重なるなら出さない(札より名前が先)
-      cx -= tw;
-      exploreRoundRect(cx, G.nameY - ch + 3, tw, ch, 3);
-      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fill();
-      ctx.strokeStyle = c.c; ctx.lineWidth = 1; ctx.stroke();
-      ctx.fillStyle = c.c; ctx.textAlign = 'center';
-      ctx.fillText(c.t, cx + tw/2, G.nameY - 1);
-      ctx.textAlign = 'left';
-      cx -= 4;
-    }
-  }
-  // バー: 斜めに切った枠・遅れて減る帯・本体・10%ごとの刻み・上のつや
-  const k = Math.min(8, barH*0.9);
-  exploreSlantPath(x - 1, barY - 1, w + 2, barH + 2, k);
-  ctx.fillStyle = 'rgba(6,8,12,0.82)'; ctx.fill();
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,232,190,0.42)'; ctx.stroke();
-  ctx.save();
-  exploreSlantPath(x, barY, w, barH, k); ctx.clip();
-  ctx.fillStyle = 'rgba(255,238,200,0.75)';
-  ctx.fillRect(x, barY, w*lag, barH);
-  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-  grad.addColorStop(0, exploreMixHex(base, '#000000', 0.35)); grad.addColorStop(1, exploreMixHex(base, '#ffffff', 0.15));
-  ctx.fillStyle = grad;
-  ctx.fillRect(x, barY, w*hpR, barH);
-  if(b.exRage && !renderHeavyLoad){
-    ctx.fillStyle = `rgba(255,120,80,${0.18 + 0.18*Math.abs(Math.sin(matchTime*5))})`;
-    ctx.fillRect(x, barY, w*hpR, barH);
-  }
-  ctx.fillStyle = 'rgba(255,255,255,0.16)';
-  ctx.fillRect(x, barY, w, Math.max(1, barH*0.38));
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  for(let i=1;i<10;i++) ctx.fillRect(x + w*i/10 - 0.5, barY + barH*0.35, 1, barH*0.65);
-  ctx.restore();
-  // 怒り(50%)と逃走(20%)の目安: バーの上の小さな三角
-  ctx.fillStyle = 'rgba(255,214,120,0.9)';
-  for(const t of [EXPLORE_BOSS_RAGE_HP, EXPLORE_BOSS_FLEE_HP]){
-    const tx = x + w*t;
-    ctx.beginPath(); ctx.moveTo(tx, barY + 1); ctx.lineTo(tx - 3, barY - 3); ctx.lineTo(tx + 3, barY - 3); ctx.closePath(); ctx.fill();
-  }
-  // 予告中の大技の名前(ふつうの形はバーの下の中央)
-  if(b.exPending && G.full){
-    ctx.globalAlpha = blink;
-    ctx.textAlign = 'center';
-    ctx.font = "bold 13px 'Rajdhani', sans-serif";
-    const t = `⚠ ${b.exPending.mv.name}`;
-    const ty = barY + barH + 15;
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.strokeText(t, x + w/2, ty);
-    ctx.fillStyle = '#ffcf5a'; ctx.fillText(t, x + w/2, ty);
-  }
-  ctx.restore();
-}
+function exploreDrawBossHud(){ exploreHudBossBand(); }
 // 画面の札(名前の札・怒り・部位破壊・逃走・討伐完了)
 function exploreDrawBanners(){
   const list = exploreState.banners;
@@ -2562,15 +2432,21 @@ function exploreLastFelledBoss(){
   return null;
 }
 // 候補の中心 y から、ボスの矩形・HUDの欄に重ならない最初のものを選ぶ。どれも重なるなら先頭
+/* 候補の中心 y から、ボスの矩形・HUDの欄(自分の欄・ミニマップ・目標パネル・下の操作系)に重ならない最初のものを選ぶ。
+   候補が全部だめなら、方位バーの下から画面の下まで 6px ずつ探す → それでも無ければボスとの重なりだけは許す → 先頭 */
 function exploreBannerPick(cands, bw, bh, cx, r){
   const blocks = exploreHudObstacles();
-  for(const cy of cands){
+  const top = exploreHudBand().bottom + 4;
+  const ok = (cy, withBoss)=>{
     const box = { x:cx - bw/2, y:cy - bh/2, w:bw, h:bh };
-    if(box.y < 0 || box.y + box.h > viewH) continue;
-    if(r && exploreRectsHit(box, r, 6)) continue;
-    if(blocks.some(o=> exploreRectsHit(box, o, 2))) continue;
-    return cy;
-  }
+    if(box.y < top || box.y + box.h > viewH) return false;
+    if(withBoss && r && exploreRectsHit(box, r, 6)) return false;
+    return !blocks.some(o=> exploreRectsHit(box, o, 2));
+  };
+  for(const cy of cands) if(ok(cy, true)) return cy;
+  for(let cy = top + bh/2; cy + bh/2 <= viewH; cy += 6) if(ok(cy, true)) return cy;
+  for(const cy of cands) if(ok(cy, false)) return cy;
+  for(let cy = top + bh/2; cy + bh/2 <= viewH; cy += 6) if(ok(cy, false)) return cy;
   return cands[0];
 }
 /* 大きい札。画面の縦に合わせて縮める(R3: 札を小さく)。ボスの矩形に重なるなら置き場を変える

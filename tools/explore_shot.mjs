@@ -357,6 +357,9 @@ const VIEWPORTS = {
   // 横持ちのスマホ(実画面の幅が520より広い=narrow-screen が付かない。回転ボタンがミニマップのすぐ下に来る低い形)。
   // 既定では撮らない(--vps phone で指定)
   phone: { w:812, h:375, isMobile:true, dsf:2 },
+  // 縦持ちの小さい/大きい端末(既定では撮らない。--vps p667,p896)
+  p667:  { w:375, h:667, isMobile:true, dsf:2 },
+  p896:  { w:414, h:896, isMobile:true, dsf:2 },
 };
 const DEFAULT_VPS = ['land', 'port'];
 
@@ -452,6 +455,8 @@ function pageTools(){
     exploreStart();
     // 出発の札とカメラの一周(explore_loot.js)は飛ばす。見たいカット(depart)は自分で始め直す
     if(typeof exploreIntroSkip==='function') exploreIntroSkip();
+    // 地図の地形は本番では数フレームに分けて焼く。撮影はフレームを回さないので、ここで焼き切る
+    if(typeof exploreMapBakeFinish==='function') exploreMapBakeFinish();
     return { ok: !!game.explore, map: game.activeMapKey, wild: exploreState.wild.length,
              real3d: !!(window.__aramonReal3D), camp: exploreState.camp };
   };
@@ -644,9 +649,9 @@ if(flag('measure')){
     { name:'port667', w:375, h:667, mob:true }, { name:'port812', w:375, h:812, mob:true }, { name:'port896', w:414, h:896, mob:true },
     { name:'land667', w:667, h:375, mob:false }, { name:'land812', w:812, h:375, mob:false }, { name:'land1624', w:1624, h:750, mob:false },
   ];
-  const MINE = ['exploreHud','expObjPanel','expRegionCard','killFeed','expMapBox','expMapCanvas','expMapSide','expMapCloseBtn'];
+  const MINE = ['exploreHud','expBossCanvas','expObjPanel','expRegionCard','killFeed','expMapBox','expMapCanvas','expMapSide','expMapCloseBtn'];
   const OTHERS = ['topLeft','topRight','expLootFeed','turnLeftBtn','turnRightBtn','sniperAdsBtn','sniperAmmoChip','fireBtn','dashBtn','movePanel','joystickBase','pingBtn'];
-  const FONTS = ['.exp-obj-time','.exp-obj-text','.exp-obj-sub','.exp-obj-bag','.exp-rc-name','.exp-map-title','.exp-lg-row','.exp-map-close'];
+  const FONTS = ['.exp-obj-time','.exp-obj-text','.exp-obj-sub','.exp-obj-chip','.exp-rc-name','.exp-map-title','.exp-lg-row','.exp-map-close'];
   const all = {};
   let bad = 0;
   for(const sz of SIZES){
@@ -686,12 +691,20 @@ if(flag('measure')){
         for(const a of mine){ if(!R[a] || a.startsWith('expMap')) continue;
           for(const b of [...mine, ...others]){ if(a===b || !R[b] || b.startsWith('expMap')) continue;
             if(mine.indexOf(b) >= 0 && mine.indexOf(b) < mine.indexOf(a)) continue;
+            // ボスの帯はボス戦の間だけ方位バーの下の段に入る(わざと重ねている。方位バーはその段を空けて描く)
+            if((a === 'exploreHud' && b === 'expBossCanvas') || (a === 'expBossCanvas' && b === 'exploreHud')) continue;
             if(hit(R[a], R[b])) out.overlap.push(`${a}×${b}`); } }
         for(const f of fonts){ const el = document.querySelector(f); if(vis(el)) out.fonts[f] = parseFloat(getComputedStyle(el).fontSize); }
         // ボスの帯(キャンバス)とボス本体
         const fb = (typeof exploreFocusBoss==='function') ? exploreFocusBoss() : null;
-        if(fb && !mapOpen){ const g = exploreBossHudGeom(fb), r = exploreBossRect(fb);
-          out.boss = { hudBottom:Math.round(g.bottom), full:g.full, bodyTop: r ? Math.round(r.y) : null, bodyBottom: r ? Math.round(r.y + r.h) : null }; }
+        /* ボスの帯とボス本体(ボス担当の exploreBossScreenRect)が重なっていないか。帯は横に g.x〜g.x+g.w・縦に g.top〜g.bottom */
+        if(fb && !mapOpen){
+          const g = exploreBossHudGeom(fb);
+          const r = (typeof exploreBossScreenRect==='function' ? exploreBossScreenRect(fb) : null) || exploreBossRect(fb);
+          let over = 0;
+          if(r && Math.min(g.x + g.w, r.x + r.w) - Math.max(g.x, r.x) > 1) over = Math.max(0, Math.round(Math.min(g.bottom, r.y + r.h) - Math.max(g.top, r.y)));
+          out.boss = { hudTop:Math.round(g.top), hudBottom:Math.round(g.bottom), full:g.full, bodyTop: r ? Math.round(r.y) : null, bodyBottom: r ? Math.round(r.y + r.h) : null, over };
+        }
         out.objRows = document.querySelectorAll('#expObjRows .exp-obj-row').length;
         out.objSub = !!document.querySelector('#expObjRows .exp-obj-sub');
         out.killFeedOff = document.getElementById('hud').classList.contains('exp-kf-off');
@@ -710,7 +723,10 @@ if(flag('measure')){
       if(cut === 'errors'){ console.log('  JSエラー:', r.join(' / ')); bad++; continue; }
       console.log(`  [${cut}] 目標の行=${r.objRows}${r.objSub ? '(2行目あり)' : ''} 撃破ログ=${r.killFeedOff ? '出さない' : '出す'}`);
       for(const [id, v] of Object.entries(r.rects)) console.log(`    ${id.padEnd(15)} ${v}`);
-      if(r.boss) console.log(`    ボスの帯の下端=${r.boss.hudBottom} (${r.boss.full ? 'ふつう' : '詰めた形'}) / ボス本体 y=${r.boss.bodyTop}〜${r.boss.bodyBottom}`);
+      if(r.boss){
+        console.log(`    ボスの帯 y=${r.boss.hudTop}〜${r.boss.hudBottom} (${r.boss.full ? '二つ名あり' : '1行'}) / ボス本体 y=${r.boss.bodyTop}〜${r.boss.bodyBottom}`);
+        if(r.boss.over > 0){ bad++; console.log(`    ✗ ボスの帯がボス本体に ${r.boss.over}px 重なっている`); } else console.log('    ✓ ボスの帯はボス本体に重なっていない');
+      }
       if(r.outside.length){ bad++; console.log(`    ✗ #appRoot の外: ${r.outside.join(', ')}`); } else console.log('    ✓ #appRoot の外へ出ていない');
       if(r.overlap.length){ bad++; console.log(`    ✗ 重なり: ${r.overlap.join(', ')}`); } else console.log('    ✓ 他のHUDと重なっていない');
       console.log(`    文字: ${Object.entries(r.fonts).map(([k, v])=> `${k}=${v}px`).join(' ')}`);

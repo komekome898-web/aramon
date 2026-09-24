@@ -2436,6 +2436,8 @@ function resolveTrainOfferFor(ent, cardKey){
 }
 function resetTrainOffers(){ trainOffers.length = 0; }
 function lootToast(e, msg){
+  // 探検: 下の中央のトーストではなく、左の拾った通知(レア度色の行)へまとめる(explore_hud.js)
+  if(game.explore && e.isPlayer && typeof exploreHudLootNote === 'function'){ exploreHudLootNote(msg); return; }
   if(e.isPlayer) pushToast(msg);
   else if(netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootToast = msg;
 }

@@ -6851,7 +6851,12 @@ const EXPLORE_FEED_MERGE_SEC      = 1.5;    // この秒数以内に同じ品を
    ===================================================================== */
 // 方位バー(画面上部中央。APEX)
 const EXPLORE_COMPASS_SPAN_DEG    = 150;    // バーの端から端までに入る角度(広いほど目盛りが詰まる)
-const EXPLORE_COMPASS_H           = 40;     // バーの高さ(px)。CSS の #exploreHud の高さと同じ値(片方だけ変えない)
+const EXPLORE_COMPASS_H           = 46;     // バーの高さ(px。倍率 EXPLORE_HUD_SCALE を掛ける前)。CSS は JS が --exp-hud-k から決める
+/* HUDの文字・欄の大きさの倍率。画面の縦(論理px)から決める: 倍率 = 縦 / BASE_H(1〜MAX)。
+   縦持ち・横持ちで同じ端末なら論理の縦は同じなので、持ち方で文字サイズは変わらない(narrow-screen では分けない)。
+   1624x750 のような大きい画面で文字が豆粒にならないようにするためのもの */
+const EXPLORE_HUD_BASE_H          = 375;
+const EXPLORE_HUD_MAX_SCALE       = 1.5;
 const EXPLORE_COMPASS_CRATE_RANGE = 2600;   // この距離より近い補給箱(未開封)だけバーに出す
 const EXPLORE_COMPASS_CRATE_MAX   = 4;      // バーに出す補給箱の数(近い順)
 const EXPLORE_COMPASS_THREAT_RANGE= 1600;   // 気づいて追ってくる野生をバーに赤い印で出す距離
@@ -6866,14 +6871,21 @@ const EXPLORE_REGION_CARD_SEC     = 2.8;
 const EXPLORE_MINIMAP_RADIUS      = 3000;   // ミニマップの中心から縁までのワールド距離(300m)
 const EXPLORE_MINIMAP_CRATE_RANGE = 3000;   // ミニマップに出す補給箱の距離
 const EXPLORE_MAP_BAKE_PX         = 1024;   // 地形を焼いておく画像の一辺(1回だけ描く)
-const EXPLORE_MAP_WASH_PX         = 128;    // 地域の色を焼く粗さ(exploreRegionWeights をこの数×この数だけ呼ぶ)
+const EXPLORE_MAP_HEIGHT_PX       = 384;    // 地面の高さ(real3dHeightAt)を測る格子の数(一辺)。数フレームに分けて焼く
+const EXPLORE_MAP_BAKE_MS         = 6;      // 1フレームで焼きに使ってよい時間(ms)。一瞬の重さを出さない
+const EXPLORE_MAP_BAND_H          = 120;    // 高さの段の幅(ワールド単位)。段ごとに平面の色を1段明るくする
+const EXPLORE_MAP_CLIFF_SLOPE     = 1.8;    // この傾き(高さ/水平距離)を超えた所を崖の線にする
 const EXPLORE_MAP_CRATE_RANGE     = 5000;   // 全体地図に出す補給箱の距離(遠くの箱は見せない)
 const EXPLORE_MAP_REDRAW_SEC      = 0.2;    // 全体地図を描き直す間隔(点滅のため)
 // ボスの札・HPバーの置き方(縦の割合。R3: 縦が足りないときは 称号の行 → バーの太さ の順に削る)
+/* ボスの帯は1行(紋章・名前・状態の札/予告の技名・バー・残り%)。方位バーの真下。
+   R3: 縦が足りないときは 二つ名の行(下の小さな1行。縦 titleMinH 以上のときだけ出す)→ 状態の札 → 名前 の順に削る */
 const EXPLORE_BOSS_HUD = {
-  fullMinH: 520,     // 画面の縦がこれ以上なら 称号+名前+太いバー。未満なら名前とバーを1行にまとめる
-  barH: [7, 12],     // バーの太さ [詰めた形, ふつう]
-  maxW: 560,         // バーの横幅の上限(px)
+  rowH: 18,          // 1行の高さ(px。倍率を掛ける前)
+  barH: 6,           // バーの太さ(px。倍率を掛ける前)
+  titleMinH: 520,    // 画面の縦がこれ以上なら二つ名を帯の下に小さく出す
+  barMinW: 70,       // バーの最小の長さ。これを割るなら札・名前を削る
+  maxW: 620,         // 帯の横幅の上限(px。倍率を掛ける前)
 };
 // 音(探検のBGM・環境音)。曲の中身は audio.js(EXPLORE_BGM_*)
 const EXPLORE_BGM_FADE_SEC        = 1.3;    // 地域の曲の切り替え(setTargetAtTime の時定数。約3倍で入れ替わる)

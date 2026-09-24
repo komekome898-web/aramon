@@ -1433,7 +1433,8 @@ function drawMonster(e,p){
   /* 狙撃スコープで構えている間(探検モードだけ)は頭上のゲージを出さない。倍率ぶん太くなって照準を横切るため。
      照準の先の1体だけ、スコープの距離表示の横に小さな帯で出す(sniper.js) */
   // 探検の野生は戦っているとき(気づいた・追う・逃げる・傷ついた)だけゲージを出す(頭上を静かにする)
-  if(!e.isRaidBoss && !e.isExploreBoss && !scopeUI && !(game.explore && e.isExploreWild && !exploreWildShowsBar(e))){
+  // 探検では自分の頭上のゲージも出さない(左上の欄と同じ情報で、画面の真ん中に緑の板が出るだけになる)
+  if(!e.isRaidBoss && !e.isExploreBoss && !scopeUI && !(game.explore && e.isExploreWild && !exploreWildShowsBar(e)) && !(game.explore && selfBar)){
     const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
@@ -1612,7 +1613,7 @@ function drawLootItem(it,p){
     ctx.fillStyle='rgba(255,255,255,0.3)';
     ctx.beginPath(); ctx.ellipse(-2*sz, 1*sz, 1.2*sz, 4*sz, 0,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
+    if(!game.explore && dist(it,player)<160){   // 探検は名前を出さない(拾った物は左の通知へ)
       ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       // 回復量は最大HPの割合なので、実際に自分が回復する数値を出す(見た目と結果を合わせる)
       ctx.fillText(`${hi.name} (+${healItemAmount(hi, player)})`, 0, -13*sz);
@@ -1632,7 +1633,7 @@ function drawLootItem(it,p){
     ctx.fillStyle='#2a5d80'; ctx.font="bold 7px 'Rajdhani', sans-serif"; ctx.textAlign='center';
     ctx.fillText('特訓', -4, 1.5);
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
+    if(!game.explore && dist(it,player)<160){   // 探検は名前を出さない(拾った物は左の通知へ)
       ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       ctx.fillText(TICKET_ITEM.name, 0, -14);
     }
@@ -1647,7 +1648,7 @@ function drawLootItem(it,p){
     ctx.beginPath(); ctx.moveTo(-9,-3); ctx.lineTo(-6,0); ctx.lineTo(-9,3); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(9,-3); ctx.lineTo(6,0); ctx.lineTo(9,3); ctx.stroke();
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
+    if(!game.explore && dist(it,player)<160){   // 探検は名前を出さない(拾った物は左の通知へ)
       ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       ctx.fillText(GUTS_ITEM.name, 0, -14);
     }
@@ -1663,7 +1664,7 @@ function drawLootItem(it,p){
     ctx.font="24px sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(ti.emoji, 0, 1);
     ctx.shadowBlur=0;
-    if(dist(it,player)<200){
+    if(!game.explore && dist(it,player)<200){   // 探検は名前を出さない(拾った物は左の通知へ)
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=ti.accent; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
       // 効果は拾ったあとのカードで見せるので、地面では名前だけにする(長い説明は読ませない)
       ctx.fillText(ti.name, 0, -26);
@@ -1713,7 +1714,7 @@ function drawLootItem(it,p){
     ctx.strokeStyle = col(0.75*glow); ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(0, 0, R, RY, 0, 0, Math.PI*2); ctx.stroke();
     ctx.shadowBlur = 0;
-    if(dist(it,player)<200){
+    if(!game.explore && dist(it,player)<200){   // 探検は名前を出さない(拾った物は左の通知へ)
       // 中身の個数も添える(拾う前に「何個入っているか」だけは分かるように=批評指摘)
       const n = (it.keys && it.keys.length) || 0;
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=col(1); ctx.textAlign='center';

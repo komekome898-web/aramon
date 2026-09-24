@@ -34,10 +34,28 @@ const _expHud = {
   spottedAt:-99,
 };
 function exploreHudDpr(){ return Math.min(2, window.devicePixelRatio || 1); }
+/* HUDの倍率(文字・欄・方位バー・ボスの帯)。画面の縦(#hud の論理の高さ)から決める。
+   同じ端末なら縦持ち・横持ちで論理の縦は同じ=持ち方で文字サイズは変わらない(narrow-screen では分けない)。
+   CSS は #hud の --exp-hud-k を読むだけ(値の正はこの関数1つ) */
+function exploreHudScale(){
+  const hud = document.getElementById('hud');
+  const h = (hud && hud.clientHeight) || viewH || EXPLORE_HUD_BASE_H;
+  return clamp(h / EXPLORE_HUD_BASE_H, 1, EXPLORE_HUD_MAX_SCALE);
+}
+function exploreHudApplyScale(){
+  const hud = document.getElementById('hud');
+  if(!hud) return 1;
+  const k = exploreHudScale(), v = k.toFixed(3);
+  if(hud.style.getPropertyValue('--exp-hud-k') !== v){ hud.style.setProperty('--exp-hud-k', v); _expHud.band.at = -1; }
+  _expHud.k = k;
+  return k;
+}
 function exploreHudEl(id){ return document.getElementById(id); }
 // ワールドの角度(x右・y下の atan2)→ 北を0とした時計回りの度(0〜360)
 function exploreHeadingDeg(ang){ return ((ang*180/Math.PI + 90) % 360 + 360) % 360; }
 function exploreHudMeters(d){ return Math.max(1, Math.round(d / PING_UNITS_PER_M)); }
+// 距離の文字(1000m 以上は km で短く。狭い欄に入れるため)
+function exploreHudDist(d){ const m = exploreHudMeters(d); return m < 1000 ? `${m}m` : `${(m/1000).toFixed(1)}km`; }
 function exploreHudEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, (ch)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
 /* ===== 始まり・終わり ===== */
@@ -46,6 +64,7 @@ function exploreHudStart(){
   _expHud.obj.lastBossKills = 0; _expHud.obj.lastBagDone = false; _expHud.obj.flash = {};
   _expHud.region.id = undefined; _expHud.region.since = 0;
   _expHud.band.at = -1; _expHud.cmp.sig = '';
+  exploreHudApplyScale();
   _expHud.mini.bake = null; _expHud.mini.bakeKey = '';
   _expHud.spottedAt = -99;
   exploreCloseMap();
@@ -55,7 +74,7 @@ function exploreHudStart(){
 }
 // 結果画面へ移るとき(exploreFinish)。HUDを隠すだけ
 function exploreHudHide(){
-  ['expObjPanel','expRegionCard'].forEach(id=>{ const el = exploreHudEl(id); if(el) el.classList.add('hidden'); });
+  ['expObjPanel','expRegionCard','expBossCanvas'].forEach(id=>{ const el = exploreHudEl(id); if(el) el.classList.add('hidden'); });
   exploreCloseMap();
   const hud = exploreHudEl('hud');
   if(hud) hud.classList.remove('exp-kf-off');
@@ -105,7 +124,8 @@ function exploreHudObstacles(){
   const hud = exploreHudEl('hud');
   const out = [];
   if(hud){
-    for(const id of ['topLeft','topRight','expObjPanel']){
+    // 上の欄に加えて、下の操作系(スティック・技の欄・FIRE・DASH・回転の矢印)にも札を重ねない(操作の上に文字を置かない)
+    for(const id of ['topLeft','topRight','expObjPanel','joystickBase','movePanel','fireBtn','dashBtn','turnLeftBtn','turnRightBtn']){
       const el = exploreHudEl(id);
       if(!el || el.classList.contains('hidden') || el.offsetWidth === 0) continue;
       out.push({ x: hud.offsetLeft + el.offsetLeft, y: hud.offsetTop + el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
@@ -165,10 +185,9 @@ function exploreObjectives(){
   const hunt = { id:'hunt', icon:'⚔', done: done >= recs.length && recs.length > 0,
     count:`${done}/${recs.length}`, x: target ? target.x : null, y: target ? target.y : null };
   if(engaged && def){
-    // 戦っている最中は数を出さず、相手の残りの体力を出す(名前が長くても入るよう「を討伐」まで)
+    // 戦っている最中(体力・怒り・部位破壊はボスの帯が出すので、ここでは二重に出さない)
     hunt.text = `${def.name}を討伐`;
-    hunt.count = `${Math.max(1, Math.ceil(engaged.b.hp/engaged.b.maxHp*100))}%`;
-    hunt.sub = `討伐 ${done}/${recs.length}` + (engaged.b.exRage ? ' ・ 怒り状態' : '') + (engaged.b.exBroken ? ' ・ 部位破壊' : '');
+    hunt.sub = reg ? `${reg.name}の主` : '大型モンスター';
   } else if(target && def){
     hunt.text = '大型モンスター討伐';
     hunt.sub = `次: ${def.name}${reg ? `(${reg.name})` : ''} ${exploreHudMeters(target.d)}m`;
@@ -179,7 +198,7 @@ function exploreObjectives(){
   const gather = { id:'gather', icon:'◈', text:'素材を集める', count:`${Math.min(bag, EXPLORE_OBJ_MATERIAL_GOAL)}/${EXPLORE_OBJ_MATERIAL_GOAL}`,
     done: bag >= EXPLORE_OBJ_MATERIAL_GOAL, sub:`持ち物 ${bag}個 ・ 補給箱や野生から` };
   const ret = { id:'return', icon:'⇪', text: hold > 0 ? '帰還中…' : 'ビーコンで帰還',
-    count: hold > 0 ? `${Math.max(0, EXPLORE_BEACON_HOLD_SEC*(1-hold)).toFixed(1)}秒` : `${exploreHudMeters(beaconD)}m`,
+    count: hold > 0 ? `${Math.max(0, EXPLORE_BEACON_HOLD_SEC*(1-hold)).toFixed(1)}秒` : exploreHudDist(beaconD),
     done:false, urgent, hold, x: beacon ? beacon.x : null, y: beacon ? beacon.y : null,
     sub: hold > 0 ? '輪の中にとどまる' : (urgent ? (lastLife ? 'あと1回力尽きると半分しか持ち帰れない' : '時間切れだと半分しか持ち帰れない') : 'いつでも全部持ち帰れる') };
   let prio = 'hunt';
@@ -196,10 +215,12 @@ function exploreObjectives(){
    上端 = ミニマップ(#topRight)の下端+すき間 / 下端 = その下にある右列の操作(回転・狙撃・FIRE…)の上端−すき間。
    入る縦幅から「出せる行」を決める(R3: 削る順 = 他の目標の行 → 優先の目標の2行目 → 優先の目標 → 見出し)。
    撃破ログ(#killFeed)は探検のあいだパネルの下へ回し、入らなければ出さない(カスタマイズ済みなら触らない) */
-const EXP_OBJ_H = { pad:8, head:15, row:17, sub:12, gap:1 };   // CSS の .exp-obj-* の高さと同じ値(片方だけ変えない)
+const EXP_OBJ_H = { pad:8, head:16, row:17, sub:12, gap:1 };   // CSS の .exp-obj-* の高さ(×倍率)と同じ値(片方だけ変えない)
+function exploreObjH(){ const k = _expHud.k || 1, o = {}; for(const n in EXP_OBJ_H) o[n] = EXP_OBJ_H[n]*k; return o; }
 function exploreObjLayout(){
   const hud = exploreHudEl('hud'), panel = exploreHudEl('expObjPanel'), tr = exploreHudEl('topRight');
   if(!hud || !panel || !tr) return;
+  exploreHudApplyScale();
   const hudW = hud.clientWidth, hudH = hud.clientHeight;
   const gap = 6;
   const top = tr.offsetTop + tr.offsetHeight + gap;
@@ -218,7 +239,7 @@ function exploreObjLayout(){
     if(ex1 <= x0 || ex0 >= x1 || ey1 <= top) continue;   // 横に外れている / パネルの上端より上で終わっている
     bottom = Math.min(bottom, ey0 <= top ? top : ey0 - gap);
   }
-  const H = EXP_OBJ_H;
+  const H = exploreObjH();
   const strip = bottom - top < H.pad + H.head + H.gap + H.row;
   _expHud.obj.strip = strip;
   if(strip){
@@ -235,11 +256,12 @@ function exploreObjLayout(){
     }
     _expHud.obj.avail = 0;
     _expHud.obj.panelBottomLimit = 0;
-    hud.style.setProperty('--exp-rc-top', (cmp ? cmp.offsetTop + cmp.offsetHeight + 26 : 70) + 'px');
+    hud.style.setProperty('--exp-rc-top', (cmp ? cmp.offsetTop + cmp.offsetHeight + 26*(_expHud.k || 1) : 70) + 'px');
     _expHud.band.at = -1;
     return;
   }
-  hud.style.removeProperty('--exp-rc-top');
+  const cmp0 = exploreHudEl('exploreHud');
+  hud.style.setProperty('--exp-rc-top', (cmp0 ? cmp0.offsetTop + cmp0.offsetHeight + 4 : 56) + 'px');
   const st = top + 'px', sr = right + 'px';
   if(panel.style.top !== st) panel.style.top = st;
   if(panel.style.right !== sr) panel.style.right = sr;
@@ -284,7 +306,7 @@ function exploreUpdateHud(){
   const lowCls = left <= 60 ? 'is-crit' : (left <= EXPLORE_OBJ_RETURN_WARN_SEC ? 'is-low' : '');
   const lives = EXPLORE_MAX_FAINTS - exploreState.faints;
   // 入る行を決める(R3)
-  const H = EXP_OBJ_H, avail = O.avail;
+  const H = exploreObjH(), avail = O.avail;
   let used = H.pad + H.head;
   const order = [ob.prio, ...ob.rows.map(r=> r.id).filter(id=> id !== ob.prio)];
   const show = {}; let showSub = false;
@@ -296,7 +318,7 @@ function exploreUpdateHud(){
   // 1段目の優先の目標が入らないほど低いなら、2行目より他の行を先に削った結果になっている(上の順)
   const flashOn = (id)=> O.flash[id] != null && matchTime - O.flash[id] < EXPLORE_OBJ_DONE_FLASH_SEC;
   const rows = ob.rows.filter(r=> show[r.id]);
-  const sig = [O.strip ? 'S' : 'P', Math.ceil(left), exploreState.faints, ob.bag, ob.prio, showSub ? 1 : 0,
+  const sig = [O.strip ? 'S' : 'P', Math.ceil(left), exploreState.faints, ob.bag, ob.prio, showSub ? 1 : 0, ob.rows[2].count,
     rows.map(r=> [r.id, r.text, r.count, r.sub, r.done?1:0, r.urgent?1:0, r.hold ? r.hold.toFixed(2) : '', flashOn(r.id)?1:0].join('~')).join('|')].join('#');
   if(sig !== O.sig && panel){
     O.sig = sig;
@@ -310,7 +332,11 @@ function exploreUpdateHud(){
       f.className = 'exp-obj-faint' + (lives <= 1 ? ' is-last' : '');
     }
     const bg = exploreHudEl('expObjBag');
-    if(bg) bg.textContent = `🎒 ${ob.bag}`;
+    if(bg) bg.textContent = `${ob.bag}`;
+    const bc = exploreHudEl('expObjBeacon');
+    if(bc) bc.textContent = ob.rows[2].count;   // 帰還ビーコンまでの距離(輪の中なら残り秒)。行が削られても見出しに残す
+    const bcw = exploreHudEl('expObjBeaconWrap');
+    if(bcw) bcw.classList.toggle('is-hold', ob.rows[2].hold > 0);
     const box = exploreHudEl('expObjRows');
     if(box){
       box.innerHTML = rows.map(r=>{
@@ -340,7 +366,8 @@ function exploreUpdateRegionCard(){
     const first = R.id === undefined;
     R.id = id; R.since = matchTime;
     const k = exploreHudEl('expRegionKicker'), n = exploreHudEl('expRegionName'), d = exploreHudEl('expRegionDanger');
-    if(k) k.textContent = reg ? 'エリア' : '拠点';
+    // 札は2行(小見出し+地名)。危険度は小見出しの行にまとめる(下の拾った通知の列に届かない高さに収める)
+    if(k) k.textContent = reg ? `エリア ・ 危険度 ${'★'.repeat(reg.danger)}${'☆'.repeat(Math.max(0, 4 - reg.danger))}` : '拠点 ・ 帰還ビーコンで持ち帰れる';
     if(n) n.textContent = reg ? `${reg.icon} ${reg.name}` : '⛺ ベースキャンプ';
     if(d) d.textContent = reg ? `危険度 ${'★'.repeat(reg.danger)}${'☆'.repeat(Math.max(0, 4 - reg.danger))}` : '帰還ビーコンで持ち帰れる';
     card.style.setProperty('--rc', reg ? reg.theme.accent : '#7dffb0');
@@ -353,7 +380,9 @@ function exploreUpdateRegionCard(){
   }
   // ボスの札・HPバーと同じ場所なので、ボス戦の最中と時間切れ後は出さない
   const bossUp = typeof exploreFocusBoss === 'function' && !!exploreFocusBoss();
-  const on = !bossUp && matchTime - R.since < EXPLORE_REGION_CARD_SEC;
+  /* R3: 目標が方位バーの下の1行に入っている低い画面(横持ちのスマホ)では、札は出さない
+     (上部中央の縦がそこで尽きる。地名はミニマップの下端にいつも出ている) */
+  const on = !bossUp && !_expHud.obj.strip && matchTime - R.since < EXPLORE_REGION_CARD_SEC;
   if(!on && !card.classList.contains('hidden')) card.classList.add('hidden');
 }
 
@@ -376,6 +405,21 @@ function exploreHudAudioMood(ob){
   bgmExploreSetMood({ w:_expMoodW, boss, lava });
 }
 // 群れに気づかれた(explore.js の exploreWildAlert から)。短い警告音を間を空けて鳴らす
+/* 通常の試合の拾い物(回復・ガッツ飴・修行チケット)を探検で拾ったとき(combat.js の lootToast から)。
+   下の中央のトーストではなく、左の拾った通知の行へ出す。文言は「名前：効果」/「名前 で 効果」を名前と効果に分ける */
+function exploreHudLootNote(msg){
+  if(typeof exploreFeedPush !== 'function') return;
+  const text = String(msg || '');
+  let icon = '✚', color = '#8fe38f';
+  if(typeof TICKET_ITEM !== 'undefined' && text.indexOf(TICKET_ITEM.name) === 0){ icon = '🎫'; color = TICKET_ITEM.color; }
+  else if(typeof GUTS_ITEM !== 'undefined' && text.indexOf(GUTS_ITEM.name) === 0){ icon = '⚡'; color = GUTS_ITEM.color; }
+  else if(typeof HEAL_ITEMS !== 'undefined'){
+    for(const k in HEAL_ITEMS){ if(text.indexOf(HEAL_ITEMS[k].name) === 0){ icon = '❤'; color = HEAL_ITEMS[k].color; break; } }
+  }
+  const m = text.match(/^(.+?)(?:：|！| で )\s*(.*)$/);
+  const name = m ? m[1] : text, sub = m ? m[2].replace(/^「|」$/g, '') : '';
+  exploreFeedPush({ key:'loot:' + name, icon, name, sub, color, rarity:'common', showN:false });
+}
 function exploreHudOnSpotted(b){
   if(!game.explore || !b || !player) return;
   if(matchTime - _expHud.spottedAt < EXPLORE_SPOTTED_SE_GAP) return;
@@ -434,11 +478,11 @@ function exploreCompassCanvas(){
   if(!host) return null;
   if(!C.cv) C.cv = exploreHudEl('expCompassCanvas');
   if(!C.cv) return null;
-  const cssW = host.clientWidth, dpr = exploreHudDpr();
-  if(cssW <= 0) return null;
-  if(C.cssW !== cssW || C.dpr !== dpr || !C.ctx){
-    C.cssW = cssW; C.dpr = dpr;
-    C.cv.width = Math.round(cssW*dpr); C.cv.height = Math.round(EXPLORE_COMPASS_H*dpr);
+  const cssW = host.clientWidth, cssH = host.clientHeight, dpr = exploreHudDpr();
+  if(cssW <= 0 || cssH <= 0) return null;
+  if(C.cssW !== cssW || C.cssH !== cssH || C.dpr !== dpr || !C.ctx){
+    C.cssW = cssW; C.cssH = cssH; C.dpr = dpr;
+    C.cv.width = Math.round(cssW*dpr); C.cv.height = Math.round(cssH*dpr);
     C.ctx = C.cv.getContext('2d');
     C.sig = '';
   }
@@ -489,53 +533,70 @@ function exploreDrawCompassIcon(g, m, x, y, s){
   }
   g.restore();
 }
+/* 方位バー。段を3つに分けて重ねない(第2周の指摘):
+     上の段 = 方角(N/NE…)と15度ごとの数字。中央は照準の先の方位角の箱(箱の左右の数字は出さない)
+     中の段 = 目盛りの線(基線)
+     下の段 = 印(ビーコン・巣・箱・野生)と、その下に距離。優先の目標は金の輪で囲む(上に何も積まない)
+   座標は倍率を掛ける前の値で書き、setTransform で倍率(exploreHudScale)を掛ける。文字は最小11px */
+const EXP_CMP = { labelY:9, baseY:21, markY:31, distY:42.5, boxW:34, boxH:14,
+  bossY:25,      // ボス戦の間、ボスの帯が始まる高さ(下の段を譲る)
+  pinY:21 };     // ボス戦の間の印の高さ(基線の上に小さく載せる。距離は出さない)
 function exploreDrawCompass(){
   const C = exploreCompassCanvas();
   if(!C || !player) return;
-  const g = C.ctx, W = C.cssW, H = EXPLORE_COMPASS_H;
+  const k = _expHud.k || exploreHudScale();
+  const g = C.ctx, W = C.cssW / k, H = C.cssH / k;
   const yaw = camState.yaw;
   const head = exploreHeadingDeg(yaw);
   const markers = exploreCompassMarkers();
-  const pulse = markers.some(m=> m.engaged) ? Math.floor(performance.now()/50) : 0;
-  const sig = [head.toFixed(1), Math.round(player.x/20), Math.round(player.y/20), pulse, W,
+  // ボス戦の間は下の段(印と距離)をボスの帯に譲る。印は基線の上に小さく載せる
+  const bossBand = typeof exploreFocusBoss === 'function' && !!exploreFocusBoss()
+    && !exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4);
+  const pulse = markers.some(m=> m.engaged || m.flee) ? Math.floor(performance.now()/50) : 0;
+  const sig = [head.toFixed(1), Math.round(player.x/20), Math.round(player.y/20), pulse, W, k, bossBand ? 1 : 0,
     markers.map(m=> m.kind[0] + Math.round(m.x/40) + ':' + Math.round(m.y/40) + (m.prio?'p':'') + (m.flee?'f':'')).join(',')].join('|');
   if(sig === C.sig) return;
   C.sig = sig;
-  const dpr = C.dpr;
-  g.setTransform(dpr,0,0,dpr,0,0);
-  g.clearRect(0,0,W,H);
+  const dpr = C.dpr, L = EXP_CMP;
+  g.setTransform(dpr*k, 0, 0, dpr*k, 0, 0);
+  g.clearRect(0, 0, W, H);
   const span = EXPLORE_COMPASS_SPAN_DEG, ppd = W / span, cx = W/2;
-  const baseY = 22;
-  // 下地(両端へ消えていく帯)
-  const bg = g.createLinearGradient(0,0,W,0);
-  bg.addColorStop(0, 'rgba(6,10,14,0)'); bg.addColorStop(0.14, 'rgba(6,10,14,0.58)');
-  bg.addColorStop(0.86, 'rgba(6,10,14,0.58)'); bg.addColorStop(1, 'rgba(6,10,14,0)');
-  g.fillStyle = bg; g.fillRect(0, 2, W, 26);
-  g.fillStyle = 'rgba(255,255,255,0.28)'; g.fillRect(0, baseY, W, 1);
-  // 目盛り(5度ごと)・数字(15度ごと)・方角(45度ごと)
+  // 下地: 上の2段は濃く、印の段は薄く(両端へ消える)
+  const bgH = bossBand ? L.bossY : H;
+  const bg = g.createLinearGradient(0, 0, 0, bgH);
+  bg.addColorStop(0, 'rgba(6,10,14,0.66)'); bg.addColorStop(0.5, 'rgba(6,10,14,0.5)'); bg.addColorStop(1, bossBand ? 'rgba(6,10,14,0.4)' : 'rgba(6,10,14,0.0)');
+  g.fillStyle = bg; g.fillRect(0, 0, W, bgH);
+  g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(0, L.baseY, W, 1);
+  // 目盛り(5度ごと)・数字(15度ごと)・方角(45度ごと)。中央の箱の左右は数字を出さない
   const NAMES = { 0:'N', 45:'NE', 90:'E', 135:'SE', 180:'S', 225:'SW', 270:'W', 315:'NW' };
   const from = Math.floor((head - span/2)/5)*5, to = Math.ceil((head + span/2)/5)*5;
+  const boxHalf = L.boxW/2 + 12;
   g.textAlign = 'center'; g.textBaseline = 'middle';
   for(let a = from; a <= to; a += 5){
     const x = cx + (a - head)*ppd;
     if(x < -10 || x > W + 10) continue;
     const n = ((a % 360) + 360) % 360;
     const name = NAMES[n];
+    const nearBox = Math.abs(x - cx) < boxHalf;
     if(name){
-      g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(x - 0.75, baseY - 8, 1.5, 8);
-      g.font = n % 90 === 0 ? "bold 12px 'Russo One', sans-serif" : "bold 10px 'Russo One', sans-serif";
-      g.fillStyle = n === 0 ? '#ff7a5a' : (n % 90 === 0 ? '#ffffff' : 'rgba(235,240,248,0.85)');
-      g.fillText(name, x, 9);
+      g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(x - 0.75, L.baseY - 6, 1.5, 6);
+      if(!nearBox){
+        g.font = n % 90 === 0 ? "bold 13px 'Russo One', sans-serif" : "bold 11px 'Russo One', sans-serif";
+        g.fillStyle = n === 0 ? '#ff7a5a' : (n % 90 === 0 ? '#ffffff' : 'rgba(235,240,248,0.88)');
+        g.fillText(name, x, L.labelY);
+      }
     } else if(n % 15 === 0){
-      g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillRect(x - 0.5, baseY - 6, 1, 6);
-      g.font = "9px 'Share Tech Mono', monospace";
-      g.fillStyle = 'rgba(220,228,238,0.55)';
-      g.fillText(String(n), x, 10);
+      g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillRect(x - 0.5, L.baseY - 4, 1, 4);
+      if(!nearBox){
+        g.font = "11px 'Share Tech Mono', monospace";
+        g.fillStyle = 'rgba(220,228,238,0.6)';
+        g.fillText(String(n), x, L.labelY + 0.5);
+      }
     } else {
-      g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(x - 0.5, baseY - 3, 1, 3);
+      g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(x - 0.5, L.baseY - 2, 1, 2);
     }
   }
-  // 両端を溶かす(ここまでの目盛りだけ。印は後から描くので溶けない)
+  // 両端を溶かす(ここまでの目盛りと下地だけ。印は後から描くので溶けない)
   g.save();
   g.globalCompositeOperation = 'destination-in';
   const fade = g.createLinearGradient(0,0,W,0);
@@ -543,7 +604,18 @@ function exploreDrawCompass(){
   fade.addColorStop(0.9, 'rgba(0,0,0,1)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = fade; g.fillRect(0,0,W,H);
   g.restore();
-  // 印(遠い物から描いて、近い物・優先の物を上に)
+  // 照準の先の方位角(上の段の中央の箱)と、基線への刻み
+  const ht = String(Math.round(head) % 360).padStart(3, '0');
+  g.fillStyle = 'rgba(4,8,12,0.92)';
+  g.fillRect(cx - L.boxW/2, 1, L.boxW, L.boxH + 1);
+  g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1;
+  g.strokeRect(cx - L.boxW/2 + 0.5, 1.5, L.boxW - 1, L.boxH);
+  g.font = "bold 12px 'Share Tech Mono', monospace";
+  g.fillStyle = '#ffffff';
+  g.fillText(ht, cx, 1 + L.boxH/2 + 0.5);
+  g.beginPath(); g.moveTo(cx - 4, L.boxH + 2); g.lineTo(cx + 4, L.boxH + 2); g.lineTo(cx, L.baseY + 1); g.closePath();
+  g.fillStyle = '#ffffff'; g.fill();
+  // 印(遠い物から描いて、近い物・優先の物を上に)。下の段だけに置く
   const px = player.x, py = player.y;
   const items = [];
   for(const m of markers){
@@ -551,7 +623,7 @@ function exploreDrawCompass(){
     let rel = exploreHeadingDeg(Math.atan2(m.y - py, m.x - px)) - head;
     rel = ((rel + 540) % 360) - 180;
     let x = cx + rel*ppd, edge = 0;
-    const lim = W/2 - 10;
+    const lim = W/2 - 12;
     if(Math.abs(rel*ppd) > lim){
       if(!m.always) continue;
       edge = rel < 0 ? -1 : 1;
@@ -561,54 +633,183 @@ function exploreDrawCompass(){
   }
   const rank = (it)=> (it.m.prio ? 3 : 0) + (it.m.kind === 'boss' ? 1 : 0) + (it.m.kind === 'beacon' ? 1 : 0);
   items.sort((a,b)=> rank(a) - rank(b) || b.d - a.d);
-  const labelSpans = [[cx - 26, cx + 26]];   // 中央の方位角の数字の場所には距離を書かない
+  const labelSpans = [];
+  const labels = [];
   const fleeBlink = Math.floor(performance.now()/250) % 2;
   for(const it of items){
     const m = it.m;
     if(m.flee && fleeBlink) continue;
-    const s = m.prio ? 1.2 : (m.kind === 'crate' || m.kind === 'threat' ? 0.85 : 1);
-    if(m.prio){
-      // 優先の目標: 金のひし形を上に重ねる
-      g.fillStyle = '#ffd35a';
-      g.beginPath(); g.moveTo(it.x, baseY - 16); g.lineTo(it.x + 3.5, baseY - 12.5); g.lineTo(it.x, baseY - 9); g.lineTo(it.x - 3.5, baseY - 12.5); g.closePath(); g.fill();
+    const my = bossBand ? L.pinY : L.markY;
+    const s = (m.prio ? 1.15 : (m.kind === 'crate' || m.kind === 'threat' ? 0.9 : 1)) * (bossBand ? 0.62 : 1);
+    if(bossBand && Math.abs(it.x - cx) < L.boxW/2 + 4) continue;   // 中央の箱の下の刻みは隠さない
+    if(m.prio){   // 優先の目標: 金の輪で囲む(上に重ねない)
+      g.beginPath(); g.arc(it.x, my, 10.5*(bossBand ? 0.62 : 1), 0, Math.PI*2);
+      g.strokeStyle = '#ffd35a'; g.lineWidth = bossBand ? 1.5 : 2; g.stroke();
     }
-    exploreDrawCompassIcon(g, m, it.x, baseY, s);
+    exploreDrawCompassIcon(g, m, it.x, my, s);
     if(it.edge){
       g.fillStyle = m.prio ? '#ffd35a' : m.color;
       g.beginPath();
-      const ex = it.x + it.edge*10;
-      g.moveTo(ex + it.edge*4, baseY); g.lineTo(ex - it.edge*1, baseY - 4); g.lineTo(ex - it.edge*1, baseY + 4); g.closePath(); g.fill();
+      const ex = it.x + it.edge*11;
+      g.moveTo(ex + it.edge*5, my); g.lineTo(ex - it.edge*1, my - 5); g.lineTo(ex - it.edge*1, my + 5); g.closePath(); g.fill();
     }
-    if(m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE){
-      const t = `${exploreHudMeters(it.d)}m`;
-      g.font = m.prio ? "bold 10px 'Share Tech Mono', monospace" : "9px 'Share Tech Mono', monospace";
-      const tw = g.measureText(t).width;
-      const lx0 = it.x - tw/2 - 2, lx1 = it.x + tw/2 + 2;
-      if(labelSpans.some(([a,b])=> lx0 < b && lx1 > a)) continue;
-      labelSpans.push([lx0, lx1]);
-      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)';
-      g.strokeText(t, it.x, 35);
-      g.fillStyle = m.prio ? '#ffe08a' : 'rgba(235,240,248,0.9)';
-      g.fillText(t, it.x, 35);
-    }
+    if(!bossBand && m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE) labels.unshift({ it, t: exploreHudDist(it.d) });   // 優先の物から場所を取る
   }
-  // 照準の先の方位角(中央)
-  g.fillStyle = '#ffffff';
-  g.beginPath(); g.moveTo(cx, baseY + 1); g.lineTo(cx - 4, baseY + 6); g.lineTo(cx + 4, baseY + 6); g.closePath(); g.fill();
-  const ht = String(Math.round(head) % 360).padStart(3, '0');
   g.font = "bold 11px 'Share Tech Mono', monospace";
-  const hw = g.measureText(ht).width + 10;
-  g.fillStyle = 'rgba(6,10,14,0.85)';
-  g.fillRect(cx - hw/2, baseY + 6, hw, 13);
-  g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1;
-  g.strokeRect(cx - hw/2 + 0.5, baseY + 6.5, hw - 1, 12);
-  g.fillStyle = '#ffffff';
-  g.fillText(ht, cx, baseY + 13);
+  for(const { it, t } of labels){
+    const tw = g.measureText(t).width;
+    const lx = clamp(it.x, tw/2 + 3, W - tw/2 - 3);   // 端に寄せた印の距離もバーの外へ切らさない
+    const lx0 = lx - tw/2 - 2, lx1 = lx + tw/2 + 2;
+    if(labelSpans.some(([a,b])=> lx0 < b && lx1 > a)) continue;
+    labelSpans.push([lx0, lx1]);
+    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.85)';
+    g.strokeText(t, lx, L.distY);
+    g.fillStyle = it.m.prio ? '#ffe08a' : 'rgba(235,240,248,0.95)';
+    g.fillText(t, lx, L.distY);
+  }
+}
+
+/* =====================================================================
+   ボスの帯(方位バーの真下の1行)。#hud の中のキャンバス #expBossCanvas へ描く
+   ・1行 = 紋章・名前・状態の札(予告中は ⚠技名)・HPバー・残り%。縦が高い画面だけ下に二つ名を小さく
+   ・R3(横が足りないとき): 状態の札 → 名前(… で詰める) の順に削り、バーは EXPLORE_BOSS_HUD.barMinW を割らない
+   ・寸法はキャンバス(viewW×viewH)の座標で返す(札・咆哮の置き場所と --measure が読む)
+   ===================================================================== */
+function exploreHudBossGeom(b){
+  const k = _expHud.k || exploreHudScale();
+  const band = exploreHudBand(), H = EXPLORE_BOSS_HUD;
+  const w = Math.min(band.w, H.maxW*k);
+  const x = band.x + (band.w - w)/2;
+  /* ボス戦の間は方位バーの下の段(印と距離の段)をボスの帯に譲る(方位バーは上の2段だけになる)。
+     帯が方位バーの外へ伸びないので、ボス本体に重ならない(第2周の指摘1) */
+  const cmp = exploreHudEl('exploreHud'), hud = exploreHudEl('hud');
+  const inCompass = !!(cmp && hud && !cmp.classList.contains('hidden') && cmp.offsetHeight > 0);
+  const top = inCompass ? hud.offsetTop + cmp.offsetTop + EXP_CMP.bossY*k : band.bottom + 2*k;
+  const rowH = H.rowH*k;
+  const title = viewH >= H.titleMinH;
+  const bottom = top + rowH + (title ? 13*k : 0) + 2*k;
+  return { k, x, w, top, rowH, title, full:title, bottom };
+}
+function exploreBandSlant(g, x, y, w, h, s){
+  g.beginPath(); g.moveTo(x + s, y); g.lineTo(x + w, y); g.lineTo(x + w - s, y + h); g.lineTo(x, y + h); g.closePath();
+}
+function exploreHudBossBand(){
+  const cv = exploreHudEl('expBossCanvas'), hud = exploreHudEl('hud');
+  if(!cv || !hud) return;
+  const b = game.explore ? exploreFocusBoss() : null;
+  const def = b ? exploreBossDef(b) : null;
+  const plateUp = exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4);
+  if(!b || !def || plateUp){ if(!cv.classList.contains('hidden')) cv.classList.add('hidden'); return; }
+  const G = exploreHudBossGeom(b), k = G.k, dpr = exploreHudDpr();
+  const lx = Math.round(G.x - hud.offsetLeft - 4), ly = Math.round(G.top - hud.offsetTop);
+  const cw = Math.round(G.w + 8), ch = Math.round(G.bottom - G.top + 2);
+  if(cv.style.left !== lx + 'px') cv.style.left = lx + 'px';
+  if(cv.style.top !== ly + 'px') cv.style.top = ly + 'px';
+  if(cv.style.width !== cw + 'px') cv.style.width = cw + 'px';
+  if(cv.style.height !== ch + 'px') cv.style.height = ch + 'px';
+  if(cv.width !== Math.round(cw*dpr) || cv.height !== Math.round(ch*dpr)){ cv.width = Math.round(cw*dpr); cv.height = Math.round(ch*dpr); }
+  cv.classList.remove('hidden');
+  const g = cv.getContext('2d');
+  g.setTransform(dpr*k, 0, 0, dpr*k, 0, 0);
+  const W = cw/k, Hh = ch/k;
+  g.clearRect(0, 0, W, Hh);
+  const H = EXPLORE_BOSS_HUD;
+  const rowC = H.rowH/2;               // 1行の縦の中心
+  const x0 = 4/k + 2, x1 = W - 4/k - 2;
+  const hpR = clamp(b.hp/b.maxHp, 0, 1), lag = clamp(b.exHpLag || hpR, hpR, 1);
+  const base = b.exRage ? '#ff3a2a' : def.color;
+  // 下地(行の後ろに薄い帯。両端は消える)
+  const bgG = g.createLinearGradient(0, 0, W, 0);
+  bgG.addColorStop(0, 'rgba(6,8,12,0)'); bgG.addColorStop(0.08, 'rgba(6,8,12,0.62)');
+  bgG.addColorStop(0.92, 'rgba(6,8,12,0.62)'); bgG.addColorStop(1, 'rgba(6,8,12,0)');
+  g.fillStyle = bgG; g.fillRect(0, 0, W, H.rowH);
+  g.textBaseline = 'middle';
+  // 寸法を先に決める(R3)
+  g.font = "bold 13px 'Russo One', sans-serif";
+  let name = def.name, nameW = g.measureText(name).width;
+  g.font = "bold 11px 'Share Tech Mono', monospace";
+  const pct = `${Math.max(1, Math.ceil(hpR*100))}%`, pctW = g.measureText(pct).width;
+  const chips = [];
+  if(b.exPending) chips.push({ t:`⚠ ${b.exPending.mv.name}`, c:'#ffcf5a', warn:true });
+  else {
+    if(b.exRage) chips.push({ t:'怒り', c:'#ff5a44' });
+    if(b.exBroken) chips.push({ t:'部位破壊', c:'#ffc93c' });
+    if(b.exState === 'flee') chips.push({ t:'瀕死', c:'#ffe08a' });
+    if(b.exState === 'sleep') chips.push({ t:'睡眠', c:'#9fc4ff' });
+    if(b.exState === 'stagger') chips.push({ t:'転倒', c:'#ffe45a' });
+  }
+  g.font = "bold 11px 'Rajdhani', sans-serif";
+  chips.forEach(c=> c.w = g.measureText(c.t).width + 10);
+  const iconW = 16, gap = 6;
+  const barFor = ()=> (x1 - x0) - iconW - gap - (nameW ? nameW + gap : 0) - chips.reduce((a, c)=> a + c.w + 4, 0) - (chips.length ? gap - 4 : 0) - pctW - gap;
+  while(barFor() < H.barMinW && chips.length > (chips[0] && chips[0].warn ? 1 : 0)) chips.pop();
+  if(barFor() < H.barMinW){
+    g.font = "bold 13px 'Russo One', sans-serif";
+    while(name.length > 1 && barFor() < H.barMinW){ name = name.slice(0, -1); nameW = g.measureText(name + '…').width; }
+    if(name !== def.name) name += '…';
+  }
+  const barW = Math.max(H.barMinW*0.6, barFor());
+  let cx = x0;
+  // 紋章
+  exploreMapBossIcon(g, cx + 7, rowC, 6, def, 'alive');
+  cx += iconW + gap;
+  // 名前
+  g.font = "bold 13px 'Russo One', sans-serif"; g.textAlign = 'left';
+  g.lineWidth = 3.5; g.strokeStyle = 'rgba(0,0,0,0.8)';
+  g.strokeText(name, cx, rowC + 0.5); g.fillStyle = '#ffffff'; g.fillText(name, cx, rowC + 0.5);
+  cx += nameW + gap;
+  // 状態の札 / 予告の技名
+  const blink = 0.55 + 0.45*Math.abs(Math.sin(matchTime*9));
+  g.font = "bold 11px 'Rajdhani', sans-serif";
+  for(const c of chips){
+    g.globalAlpha = c.warn ? blink : 1;
+    exploreBandSlant(g, cx, rowC - 7, c.w, 14, 3);
+    g.fillStyle = 'rgba(0,0,0,0.65)'; g.fill();
+    g.strokeStyle = c.c; g.lineWidth = 1; g.stroke();
+    g.fillStyle = c.c; g.textAlign = 'center';
+    g.fillText(c.t, cx + c.w/2, rowC + 0.5);
+    g.textAlign = 'left';
+    g.globalAlpha = 1;
+    cx += c.w + 4;
+  }
+  if(chips.length) cx += gap - 4;
+  // バー
+  const bh = H.barH, by = rowC - bh/2, sl = Math.min(5, bh*0.9);
+  exploreBandSlant(g, cx - 1, by - 1, barW + 2, bh + 2, sl);
+  g.fillStyle = 'rgba(6,8,12,0.9)'; g.fill();
+  g.lineWidth = 1; g.strokeStyle = 'rgba(255,232,190,0.45)'; g.stroke();
+  g.save();
+  exploreBandSlant(g, cx, by, barW, bh, sl); g.clip();
+  g.fillStyle = 'rgba(255,238,200,0.75)'; g.fillRect(cx, by, barW*lag, bh);
+  const grad = g.createLinearGradient(cx, 0, cx + barW, 0);
+  grad.addColorStop(0, exploreMixHex(base, '#000000', 0.3)); grad.addColorStop(1, exploreMixHex(base, '#ffffff', 0.15));
+  g.fillStyle = grad; g.fillRect(cx, by, barW*hpR, bh);
+  if(b.exRage){ g.fillStyle = `rgba(255,120,80,${0.18 + 0.18*Math.abs(Math.sin(matchTime*5))})`; g.fillRect(cx, by, barW*hpR, bh); }
+  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(cx, by, barW, bh*0.4);
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  for(let i=1;i<10;i++) g.fillRect(cx + barW*i/10 - 0.5, by + bh*0.4, 1, bh*0.6);
+  g.restore();
+  g.fillStyle = 'rgba(255,214,120,0.95)';   // 怒り(50%)・逃走(20%)の目安
+  for(const t of [EXPLORE_BOSS_RAGE_HP, EXPLORE_BOSS_FLEE_HP]) g.fillRect(cx + barW*t - 0.75, by - 2, 1.5, bh + 4);
+  cx += barW + gap;
+  // 残り%
+  g.font = "bold 11px 'Share Tech Mono', monospace";
+  g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)';
+  g.strokeText(pct, cx, rowC + 0.5); g.fillStyle = 'rgba(245,240,228,0.95)'; g.fillText(pct, cx, rowC + 0.5);
+  // 二つ名(縦が高い画面だけ。帯の下に小さく)
+  if(G.title){
+    g.font = "bold 11px 'Rajdhani', sans-serif";
+    g.fillStyle = exploreMixHex(def.color, '#ffffff', 0.5);
+    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)';
+    const ty = H.rowH + 6.5;
+    g.strokeText(def.title, x0 + iconW + gap, ty); g.fillText(def.title, x0 + iconW + gap, ty);
+  }
 }
 
 /* render() の中(exploreDrawScreen)から毎フレーム */
 function exploreHudFrame(){
   if(!game.explore) return;
+  if(!_expBake.final) exploreMapBakeStep(EXPLORE_MAP_BAKE_MS);   // 地図の地形を少しずつ焼く(一瞬の重さを出さない)
   exploreDrawCompass();
   if(_expHud.map.open){
     const now = performance.now();
@@ -617,186 +818,145 @@ function exploreHudFrame(){
 }
 
 /* =====================================================================
-   地形を焼く(1回だけ)。**形はすべて配置表 EXPLORE_FIELD_LAYOUT から読む**(尾根・峡谷・道・峠・水・溶岩・山)。
-   ワールド全体を EXPLORE_MAP_BAKE_PX 四方に。ミニマップと全体地図はこの1枚から切り出して貼る
+   地形を焼く(1回だけ・数フレームに分けて)。**地面の高さそのもの(real3dHeightAt)から焼く**ので、
+   フィールド担当の起伏(exploreRelief の尾根・峡谷・山・段丘)と地図が必ず一致する。
+   ・平面の色 = 地域の地面の色(暗めに沈める)を、地域の基準の高さからの起伏の段(EXPLORE_MAP_BAND_H)ごとに
+     その地域の岩の色へ寄せる(陰影は付けない。段の境目に細い等高線)
+   ・崖 = 傾きが EXPLORE_MAP_CLIFF_SLOPE を超えた所を暗い線に
+   ・水(湖・川)・溶岩・踏み分け道は配置表(EXPLORE_FIELD_LAYOUT)から細い線で重ねる
+   ミニマップと全体地図はこの1枚から切り出して貼る(毎フレームは貼るだけ)。
+   焼き終わるまでは地域の色だけの粗い絵で代わりにする
    ===================================================================== */
 function exploreMapMix(a, b, t){ return exploreMixHex(a, b, t); }
-const EXPLORE_MAP_RIDGE_STYLE = {   // 地図の上の山の色(地面より明るく/暗く。地域の色とは別に見分ける)
-  snow:    { edge:'#3f4b58', body:'#c9d6e2', crest:'#ffffff' },
-  volcano: { edge:'#1c0f0a', body:'#5a3322', crest:'#b0643c' },
-  jungle:  { edge:'#0f1f0e', body:'#2f4f2a', crest:'#6f9a55' },
-  crag:    { edge:'#23241f', body:'#6a6656', crest:'#b8b09a' },
-};
-function exploreMapBake(){
-  const L = EXPLORE_FIELD_LAYOUT;
-  const N = EXPLORE_MAP_BAKE_PX;
-  const key = N + ':' + WORLD.w;
-  if(_expHud.mini.bake && _expHud.mini.bakeKey === key) return _expHud.mini.bake;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = N;
-  const g = cv.getContext('2d');
-  const s = WORLD.w / WORLD_BASE_SIZE;          // 配置表 → ワールド
-  const k = N / WORLD.w;                        // ワールド → 画素
-  const P = (v)=> v * s * k;                    // 配置表の値 → 画素
-  const pt = (q)=> (typeof q === 'string') ? L.passes[q] : q;
-  // ① 地域の色(粗く焼いて引き伸ばす)。地図は暗めに沈めて、印が浮くようにする
-  const M = EXPLORE_MAP_WASH_PX;
-  const wash = document.createElement('canvas');
-  wash.width = wash.height = M;
-  const wg = wash.getContext('2d');
-  const img = wg.createImageData(M, M);
+// 地図の上の「高い所」の色(地域ごと)。段が上がるほどこの色へ寄る
+const EXPLORE_MAP_ROCK = { meadow:'#cfc6a4', frost:'#ffffff', volcano:'#c98a60', jungle:'#98c682' };
+const _expBake = { key:'', job:null, final:null, quick:null };
+function exploreMapRgbList(){
   const rgb255 = (hex)=> exploreRgb(hex).map(v=> v*255);   // exploreRgb は 0〜1 で返す
-  const cols = EXPLORE_REGION_KEYS.map(id=> rgb255(exploreMapMix(exploreRegion(id).theme.ground, '#0d141c', 0.40)));
-  const campCol = rgb255('#6b5c40');
+  return {
+    ground: EXPLORE_REGION_KEYS.map(id=> rgb255(exploreMapMix(exploreRegion(id).theme.ground, '#0d141c', 0.38))),
+    rock:   EXPLORE_REGION_KEYS.map(id=> rgb255(exploreMapMix(EXPLORE_MAP_ROCK[id] || '#999999', '#0d141c', 0.12))),
+    camp:   rgb255('#6b5c40'),
+  };
+}
+function exploreMapBakeCheckKey(){
+  const key = EXPLORE_MAP_BAKE_PX + ':' + EXPLORE_MAP_HEIGHT_PX + ':' + WORLD.w;
+  if(_expBake.key !== key){ _expBake.key = key; _expBake.job = null; _expBake.final = null; _expBake.quick = null; }
+}
+// 焼き終わるまでの代わり(地域の色だけ。48×48)
+function exploreMapQuick(){
+  if(_expBake.quick) return _expBake.quick;
+  const M = 48, cv = document.createElement('canvas');
+  cv.width = cv.height = M;
+  const g = cv.getContext('2d'), img = g.createImageData(M, M), C = exploreMapRgbList();
   for(let j=0;j<M;j++) for(let i=0;i<M;i++){
-    const lx = (i + 0.5) / M * WORLD_BASE_SIZE, ly = (j + 0.5) / M * WORLD_BASE_SIZE;
-    const w = exploreRegionWeights(lx, ly);
-    let r = campCol[0]*w[4], gg = campCol[1]*w[4], b = campCol[2]*w[4];
-    for(let q=0;q<4;q++){ r += cols[q][0]*w[q]; gg += cols[q][1]*w[q]; b += cols[q][2]*w[q]; }
+    const w = exploreRegionWeights((i + 0.5)/M*WORLD_BASE_SIZE, (j + 0.5)/M*WORLD_BASE_SIZE);
     const o = (j*M + i)*4;
-    img.data[o] = r; img.data[o+1] = gg; img.data[o+2] = b; img.data[o+3] = 255;
+    for(let c=0;c<3;c++){ let v = C.camp[c]*w[4]; for(let q=0;q<4;q++) v += C.ground[q][c]*w[q]; img.data[o+c] = v; }
+    img.data[o+3] = 255;
   }
-  wg.putImageData(img, 0, 0);
+  g.putImageData(img, 0, 0);
+  _expBake.quick = cv;
+  return cv;
+}
+/* 1フレームぶん焼き進める(budgetMs まで)。焼き終わったら true */
+function exploreMapBakeStep(budgetMs){
+  exploreMapBakeCheckKey();
+  if(_expBake.final) return true;
+  const N = EXPLORE_MAP_HEIGHT_PX;
+  let J = _expBake.job;
+  if(!J) J = _expBake.job = { row:0, h:new Float32Array(N*N), rel:new Float32Array(N*N), rgb:new Uint8ClampedArray(N*N*3), rk:new Uint8Array(N*N), C:exploreMapRgbList() };
+  const t0 = performance.now(), cell = WORLD.w / N, s = WORLD_BASE_SIZE / WORLD.w;
+  while(J.row < N){
+    const j = J.row;
+    for(let i=0;i<N;i++){
+      const wx = (i + 0.5)*cell, wy = (j + 0.5)*cell, lx = wx*s, ly = wy*s;
+      const o = j*N + i;
+      const h = real3dHeightAt(wx, wy);
+      J.h[o] = h;
+      J.rel[o] = h - exploreElevGrad(lx, ly).h;   // 地域の基準の高さからの起伏
+      const w = exploreRegionWeights(lx, ly);
+      let best = 0;
+      for(let q=1;q<4;q++) if(w[q] > w[best]) best = q;
+      J.rk[o] = best;
+      for(let c=0;c<3;c++){ let v = J.C.camp[c]*w[4]; for(let q=0;q<4;q++) v += J.C.ground[q][c]*w[q]; J.rgb[o*3+c] = v; }
+    }
+    J.row++;
+    if(performance.now() - t0 > budgetMs) return false;
+  }
+  _expBake.final = exploreMapCompose(J, N, cell);
+  _expBake.job = null;
+  return true;
+}
+function exploreMapBakeFinish(){ exploreMapBakeStep(Infinity); }
+function exploreMapCompose(J, N, cell){
+  // ① 平面の色(段ごと)・等高線・崖の線を N×N に
+  const ras = document.createElement('canvas');
+  ras.width = ras.height = N;
+  const rg = ras.getContext('2d'), img = rg.createImageData(N, N), D = img.data;
+  const BAND = EXPLORE_MAP_BAND_H, CLIFF = EXPLORE_MAP_CLIFF_SLOPE*cell;
+  /* 崖の線は「急な所の縁」だけ細く引く: 急な格子のうち、右か下の隣が急でない所(面で塗らない) */
+  const steep = new Uint8Array(N*N);
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const o = j*N + i, oR = i < N-1 ? o + 1 : o, oD = j < N-1 ? o + N : o;
+    steep[o] = Math.max(Math.abs(J.h[o] - J.h[oR]), Math.abs(J.h[o] - J.h[oD])) > CLIFF ? 1 : 0;
+  }
+  const bandOf = (o)=> Math.max(0, Math.floor(J.rel[o] / BAND));
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const o = j*N + i, b = bandOf(o);
+    const t = Math.min(0.9, b*0.2), rock = J.C.rock[J.rk[o]];
+    let r = J.rgb[o*3] + (rock[0] - J.rgb[o*3])*t, g = J.rgb[o*3+1] + (rock[1] - J.rgb[o*3+1])*t, bl = J.rgb[o*3+2] + (rock[2] - J.rgb[o*3+2])*t;
+    const oR = i < N-1 ? o + 1 : o, oD = j < N-1 ? o + N : o;
+    if(bandOf(oR) !== b || bandOf(oD) !== b){ r *= 0.86; g *= 0.86; bl *= 0.86; }   // 等高線(薄く)
+    if(steep[o] && (!steep[oR] || !steep[oD] || (i > 0 && !steep[o-1]) || (j > 0 && !steep[o-N]))){ r = r*0.35 + 10; g = g*0.35 + 12; bl = bl*0.35 + 16; }   // 崖の縁
+    const q = o*4; D[q] = r; D[q+1] = g; D[q+2] = bl; D[q+3] = 255;
+  }
+  rg.putImageData(img, 0, 0);
+  // ② 引き伸ばして、水・溶岩・道を細い線で重ねる
+  const Np = EXPLORE_MAP_BAKE_PX, cv = document.createElement('canvas');
+  cv.width = cv.height = Np;
+  const g = cv.getContext('2d');
   g.imageSmoothingEnabled = true;
-  g.drawImage(wash, 0, 0, N, N);
-  // 細かい格子(地図らしさ。10×10)
-  g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 1;
-  for(let i=1;i<10;i++){ const v = Math.round(N*i/10) + 0.5; g.beginPath(); g.moveTo(v,0); g.lineTo(v,N); g.moveTo(0,v); g.lineTo(N,v); g.stroke(); }
+  g.drawImage(ras, 0, 0, Np, Np);
+  const L = EXPLORE_FIELD_LAYOUT, P = (v)=> v * (WORLD.w / WORLD_BASE_SIZE) * (Np / WORLD.w);
+  const pt = (q)=> (typeof q === 'string') ? L.passes[q] : q;
   g.lineCap = 'round'; g.lineJoin = 'round';
-  // ② ベースキャンプの地面
   if(L.camp){
-    g.fillStyle = 'rgba(214,186,128,0.22)';
-    g.beginPath(); g.arc(P(L.camp.x), P(L.camp.y), P(L.camp.clear*0.8), 0, Math.PI*2); g.fill();
+    g.strokeStyle = 'rgba(232,200,144,0.55)'; g.lineWidth = 1.5; g.setLineDash([4, 3]);
+    g.beginPath(); g.arc(P(L.camp.x), P(L.camp.y), P(L.camp.clear*0.8), 0, Math.PI*2); g.stroke();
+    g.setLineDash([]);
   }
-  // ③ 道(踏み分け道)
   for(const pa of (L.paths || [])){
     const pts = pa.pts.map(pt).filter(Boolean);
     if(pts.length < 2) continue;
     g.beginPath(); pts.forEach((q, i)=> i ? g.lineTo(P(q[0]), P(q[1])) : g.moveTo(P(q[0]), P(q[1])));
-    g.strokeStyle = 'rgba(40,30,18,0.45)'; g.lineWidth = Math.max(2.5, P(pa.w)*1.6); g.stroke();
-    g.strokeStyle = 'rgba(232,212,164,0.62)'; g.lineWidth = Math.max(1.4, P(pa.w)*0.9); g.stroke();
+    g.strokeStyle = 'rgba(20,14,8,0.55)'; g.lineWidth = 3.2; g.stroke();
+    g.strokeStyle = 'rgba(236,216,168,0.85)'; g.lineWidth = 1.6; g.stroke();
   }
-  // ④ 水(湖・川)と溶岩
   for(const rv of (L.rivers || [])){
     g.beginPath(); rv.pts.forEach((q, i)=> i ? g.lineTo(P(q[0]), P(q[1])) : g.moveTo(P(q[0]), P(q[1])));
-    g.strokeStyle = '#2f6fa8'; g.lineWidth = Math.max(2, P(rv.r)*2.2); g.stroke();
-    g.strokeStyle = '#5fa8e0'; g.lineWidth = Math.max(1, P(rv.r)*1.1); g.stroke();
+    g.strokeStyle = '#3f8fd0'; g.lineWidth = Math.max(2.5, P(rv.r)*1.1); g.stroke();
   }
   for(const lk of (L.lakes || [])){
     g.beginPath(); g.arc(P(lk.x), P(lk.y), P(lk.r), 0, Math.PI*2);
-    g.fillStyle = '#2f6fa8'; g.fill();
-    g.lineWidth = 2; g.strokeStyle = '#7cc0f0'; g.stroke();
+    g.fillStyle = '#2f76b4'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#8cc8f2'; g.stroke();
   }
   for(const lv of (L.lava || [])){
-    const x = P(lv.x), y = P(lv.y), r = P(lv.r);
-    const gr = g.createRadialGradient(x, y, 0, x, y, r*1.25);
-    gr.addColorStop(0, '#ffcf5a'); gr.addColorStop(0.45, '#ff6a1e'); gr.addColorStop(0.8, '#8a1a08'); gr.addColorStop(1, 'rgba(60,10,4,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r*1.25, 0, Math.PI*2); g.fill();
+    g.beginPath(); g.arc(P(lv.x), P(lv.y), P(lv.r), 0, Math.PI*2);
+    g.fillStyle = '#e8521c'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#ffc050'; g.stroke();
   }
-  // ⑤ 山(尾根・峡谷の壁・大きな山・外周)。峠の所は切れ目を空ける
-  /* 尾根 = 円錐の山を線に沿って並べた物(フィールドの作りと同じ考え方)。地図でも山の粒を重ねて描く。
-     影 → 山肌(北西から光) の順に、上(北)の山から描いて手前(南)の山が重なるようにする */
-  let _coneSeed = 1;
-  const strokeRidge = (segs, style, width)=>{
-    const S = EXPLORE_MAP_RIDGE_STYLE[style] || EXPLORE_MAP_RIDGE_STYLE.crag;
-    const r0 = width*0.5, step = r0*0.5;
-    // 山の粒の下に尾根の帯を敷いて、粒の間をつなぐ(数珠に見えないように)
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    g.strokeStyle = S.edge; g.lineWidth = r0*1.7;
-    for(const seg of segs){ if(seg.length < 2) continue; g.beginPath(); seg.forEach((q, i)=> i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.stroke(); }
-    const crest = exploreMixHex(S.body, S.crest, 0.55);
-    const cones = [];
-    for(const seg of segs){   // [[x,y],…] の配列の配列(切れ目で分かれている)
-      if(seg.length < 2) continue;
-      cones.push(seg[0]);
-      let carry = 0;
-      for(let i=0;i<seg.length-1;i++){
-        const a = seg[i], b = seg[i+1], L = Math.hypot(b[0]-a[0], b[1]-a[1]);
-        let pos = step - carry;
-        while(pos <= L){ cones.push([a[0] + (b[0]-a[0])*pos/L, a[1] + (b[1]-a[1])*pos/L]); pos += step; }
-        carry = L - (pos - step);
-      }
-      cones.push(seg[seg.length-1]);
-    }
-    const rr = cones.map(()=>{ const v = Math.sin((_coneSeed++)*12.9898)*43758.5453; return r0*(0.78 + 0.44*(v - Math.floor(v))); });
-    const order = cones.map((q, i)=> i).sort((i, j)=> cones[i][1] - cones[j][1]);
-    g.fillStyle = 'rgba(0,0,0,0.3)';
-    for(const i of order){ const [x, y] = cones[i]; g.beginPath(); g.arc(x + rr[i]*0.18, y + rr[i]*0.22, rr[i]*1.04, 0, Math.PI*2); g.fill(); }
-    for(const i of order){
-      const [x, y] = cones[i], r = rr[i];
-      const gr = g.createRadialGradient(x - r*0.32, y - r*0.38, r*0.04, x, y, r);
-      gr.addColorStop(0, crest); gr.addColorStop(0.5, S.body); gr.addColorStop(1, S.edge);
-      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
-    }
-  };
-  // 線を細かく刻み、峠(gaps)の近くを抜いて、つながっている区間ごとに分ける
-  const cutAtGaps = (pts, gaps, gapHalf, off)=>{
-    const out = []; let cur = [];
-    const gp = (gaps || []).map(pt).filter(Boolean);
-    for(let i=0;i<pts.length-1;i++){
-      const a = pts[i], b = pts[i+1];
-      const len = Math.hypot(b[0]-a[0], b[1]-a[1]);
-      const n = Math.max(1, Math.ceil(len / 80));
-      const nx = -(b[1]-a[1]) / (len || 1), ny = (b[0]-a[0]) / (len || 1);
-      for(let t=0;t<=n;t++){
-        if(t === n && i < pts.length-2) continue;
-        const x = a[0] + (b[0]-a[0])*t/n + nx*(off||0), y = a[1] + (b[1]-a[1])*t/n + ny*(off||0);
-        const inGap = gp.some(q=> Math.hypot(q[0]-x, q[1]-y) < gapHalf);
-        if(inGap){ if(cur.length > 1) out.push(cur); cur = []; continue; }
-        cur.push([P(x), P(y)]);
-      }
-    }
-    if(cur.length > 1) out.push(cur);
-    return out;
-  };
-  const rc = L.ridgeCone || { r:[600, 900], gapHalf:400 };
-  if(L.rim){
-    const inset = P(L.rim.inset || 0), wR = P((L.rim.r ? L.rim.r[0] : 1200))*1.2;
-    const S = EXPLORE_MAP_RIDGE_STYLE.crag;
-    g.strokeStyle = S.edge; g.lineWidth = wR; g.globalAlpha = 0.85;
-    g.strokeRect(inset, inset, N - inset*2, N - inset*2);
-    g.strokeStyle = S.body; g.lineWidth = wR*0.55; g.globalAlpha = 0.6;
-    g.strokeRect(inset, inset, N - inset*2, N - inset*2);
-    g.globalAlpha = 1;
-  }
-  for(const rd of (L.ridges || [])){
-    const pts = rd.pts.map(pt).filter(Boolean);
-    strokeRidge(cutAtGaps(pts, rd.gaps, rc.gapHalf || 400, 0), rd.style, P((rc.r ? rc.r[1] : 900))*1.25);
-  }
-  if(L.canyon && L.canyon.pts){
-    const cn = L.canyon, cpts = cn.pts.map(pt).filter(Boolean);
-    const wv = P((cn.r ? cn.r[1] : 700))*1.2;
-    strokeRidge(cutAtGaps(cpts, cn.gaps, cn.gapHalf || 300,  cn.half || 900), cn.style || 'volcano', wv);
-    strokeRidge(cutAtGaps(cpts, cn.gaps, cn.gapHalf || 300, -(cn.half || 900)), cn.style || 'volcano', wv);
-    // 峡谷の底(道より少し暗い帯)
-    g.globalAlpha = 0.25; g.strokeStyle = '#1a0d08'; g.lineWidth = P(cn.half || 900)*0.9;
-    g.beginPath(); cpts.forEach((q, i)=> i ? g.lineTo(P(q[0]), P(q[1])) : g.moveTo(P(q[0]), P(q[1]))); g.stroke();
-    g.globalAlpha = 1;
-  }
-  for(const pk of (L.peaks || [])){
-    const S = EXPLORE_MAP_RIDGE_STYLE[pk.style] || EXPLORE_MAP_RIDGE_STYLE.crag;
-    const x = P(pk.x), y = P(pk.y), r = P(pk.radius);
-    const gr = g.createRadialGradient(x - r*0.25, y - r*0.3, r*0.05, x, y, r);
-    gr.addColorStop(0, pk.isMain ? S.crest : S.body); gr.addColorStop(0.55, S.body); gr.addColorStop(1, S.edge);
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
-    if(pk.isMain && pk.style === 'volcano'){   // 火口
-      const cg = g.createRadialGradient(x, y, 0, x, y, r*0.3);
-      cg.addColorStop(0, '#ffb040'); cg.addColorStop(0.6, '#c2360e'); cg.addColorStop(1, 'rgba(80,20,8,0)');
-      g.fillStyle = cg; g.beginPath(); g.arc(x, y, r*0.3, 0, Math.PI*2); g.fill();
-    }
-  }
-  // ⑥ 峠(尾根の切れ目)に小さな目印
+  // 峠(尾根の抜け道)に小さな印
   for(const nm of Object.keys(L.passes || {})){
     const q = L.passes[nm];
-    g.fillStyle = 'rgba(255,236,190,0.85)';
-    g.beginPath(); g.arc(P(q[0]), P(q[1]), Math.max(2, N/400), 0, Math.PI*2); g.fill();
+    g.fillStyle = '#ffecbe'; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1;
+    g.beginPath(); g.arc(P(q[0]), P(q[1]), 2.6, 0, Math.PI*2); g.fill(); g.stroke();
   }
-  // ⑦ 周りを少し暗く(地図の縁)
-  const vg = g.createRadialGradient(N/2, N/2, N*0.35, N/2, N/2, N*0.75);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.35)');
-  g.fillStyle = vg; g.fillRect(0, 0, N, N);
-  _expHud.mini.bake = cv; _expHud.mini.bakeKey = key;
   return cv;
+}
+// いま使える地形の絵(焼き終わっていれば本番、まだなら粗い代わり)
+function exploreMapBake(){
+  exploreMapBakeCheckKey();
+  return _expBake.final || exploreMapQuick();
 }
 
 /* ===== 地図の上の印(ミニマップ・全体地図で共通)。M(x,y) = ワールド → 画素 / big = 全体地図 ===== */
@@ -861,7 +1021,8 @@ function exploreMapDrawDynamic(g, M, opts){
   const big = !!opts.big, ms = opts.iconScale || 1;
   const inView = opts.inView || (()=> true);
   // ランドマーク・キャンプ
-  for(const lm of exploreMapLandmarks()){ const q = M(lm.x, lm.y); if(inView(q, 10)) exploreMapGlyph(g, lm.kind, q.x, q.y, (big ? 13 : 10)*ms); }
+  // ランドマークは全体地図だけ(ミニマップは自分の周りの道・崖・水と動く物だけにする)
+  if(big) for(const lm of exploreMapLandmarks()){ const q = M(lm.x, lm.y); if(inView(q, 10)) exploreMapGlyph(g, lm.kind, q.x, q.y, 13*ms); }
   if(st.camp){ const q = M(st.camp.x, st.camp.y); if(inView(q, 10)) exploreMapGlyph(g, 'camp', q.x, q.y, (big ? 13 : 10)*ms); }
   // 補給箱(近いものだけ・レア度の色)
   const cr = big ? EXPLORE_MAP_CRATE_RANGE : EXPLORE_MINIMAP_CRATE_RANGE;
@@ -1027,15 +1188,53 @@ function exploreCloseMap(){
   if(ov) ov.classList.add('hidden');
   _expHud.map.open = false;
 }
+/* 凡例。**地図に出る印はすべてここに載せる**(第2周の指摘)。印は地図と同じ描き方の関数で小さなキャンバスに描く
+   (見た目を二重に持たない)。2列に並べる */
+function exploreMapLegendRows(){
+  const boss = EXPLORE_BOSSES[1] || EXPLORE_BOSSES[0];
+  const line = (col, w, dash)=> (g)=>{ g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; if(dash) g.setLineDash(dash); g.beginPath(); g.moveTo(1.5, 8); g.lineTo(14.5, 8); g.stroke(); g.setLineDash([]); };
+  return [
+    { t:'あなた(向き)', d:(g)=>{ g.save(); g.translate(8, 8); g.beginPath(); g.moveTo(0,-6); g.lineTo(4.5,5); g.lineTo(0,2.5); g.lineTo(-4.5,5); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 1; g.strokeStyle = '#000'; g.stroke(); g.restore(); } },
+    { t:'帰還ビーコン', d:(g)=> exploreDrawCompassIcon(g, { kind:'beacon', color:'#7dffb0' }, 8, 8, 0.95) },
+    { t:'大型モンスター', d:(g)=> exploreMapBossIcon(g, 8, 8.5, 5.5, boss, 'alive') },
+    { t:'討伐済み', d:(g)=> exploreMapBossIcon(g, 8, 8, 5.5, boss, 'done') },
+    { t:'留守の巣', d:(g)=> exploreMapBossIcon(g, 8, 8, 7, boss, 'nest') },
+    { t:'補給箱(近く)', d:(g)=>{ ['common','rare','epic','legendary'].forEach((r, i)=>{ g.fillStyle = '#000'; g.fillRect(i*4, 4, 4, 8); g.fillStyle = exploreRarityColor(r); g.fillRect(i*4 + 0.5, 4.5, 3, 7); }); } },
+    { t:'良い落とし物', d:(g)=>{ g.fillStyle = exploreRarityColor('legendary'); g.beginPath(); g.moveTo(8,3); g.lineTo(13,8); g.lineTo(8,13); g.lineTo(3,8); g.closePath(); g.fill(); } },
+    { t:'野生(赤=気づいた)', d:(g)=>{ g.fillStyle = 'rgba(240,226,200,0.9)'; g.beginPath(); g.arc(5, 8, 2.3, 0, Math.PI*2); g.fill(); g.fillStyle = '#ff4a3a'; g.beginPath(); g.arc(11, 8, 2.8, 0, Math.PI*2); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1; g.stroke(); } },
+    { t:'ベースキャンプ', d:(g)=> exploreMapGlyph(g, 'camp', 8, 8, 12) },
+    { t:'監視塔', d:(g)=> exploreMapGlyph(g, 'tower', 8, 8, 12) },
+    { t:'岩のアーチ', d:(g)=> exploreMapGlyph(g, 'arch', 8, 8, 12) },
+    { t:'遺跡の門', d:(g)=> exploreMapGlyph(g, 'gate', 8, 8, 12) },
+    { t:'火口の噴煙', d:(g)=> exploreMapGlyph(g, 'plume', 8, 8, 12) },
+    { t:'峠(抜け道)', d:(g)=>{ g.fillStyle = '#ffecbe'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc(8, 8, 3, 0, Math.PI*2); g.fill(); g.stroke(); } },
+    { t:'道', d:(g)=>{ line('rgba(20,14,8,0.8)', 4)(g); line('#ecd8a8', 2)(g); } },
+    { t:'崖', d:line('#0e1014', 3) },
+    { t:'高い所(明るい)', d:(g)=>{ ['#3b4a2c','#5d6048','#8a8672','#b8b4a2'].forEach((c, i)=>{ g.fillStyle = c; g.fillRect(1 + i*3.5, 3, 3.5, 10); }); } },
+    { t:'水辺', d:(g)=>{ g.fillStyle = '#2f76b4'; g.beginPath(); g.arc(8, 8, 5, 0, Math.PI*2); g.fill(); g.strokeStyle = '#8cc8f2'; g.lineWidth = 1; g.stroke(); } },
+    { t:'溶岩', d:(g)=>{ g.fillStyle = '#e8521c'; g.beginPath(); g.arc(8, 8, 5, 0, Math.PI*2); g.fill(); g.strokeStyle = '#ffc050'; g.lineWidth = 1; g.stroke(); } },
+    ...EXPLORE_REGIONS.map(r=> ({ t:`${r.name} ★${r.danger}`, d:(g)=>{ g.fillStyle = r.theme.accent; g.fillRect(2, 3, 12, 10); } })),
+  ];
+}
 function exploreBuildMapLegend(){
   const el = exploreHudEl('expMapLegend');
   if(!el) return;
-  const rows = [
-    ['exp-lg-me', 'あなた(向き)'], ['exp-lg-beacon', '帰還ビーコン'], ['exp-lg-boss', '大型モンスター・巣'],
-    ['exp-lg-done', '討伐済み'], ['exp-lg-crate', '補給箱(近く・レア度の色)'], ['exp-lg-pass', '峠(尾根の抜け道)'],
-  ];
-  el.innerHTML = rows.map(([c, t])=> `<div class="exp-lg-row"><i class="exp-lg-ico ${c}"></i><span>${t}</span></div>`).join('')
-    + EXPLORE_REGIONS.map(r=> `<div class="exp-lg-row"><i class="exp-lg-ico exp-lg-region" style="--rc:${r.theme.accent}"></i><span>${exploreHudEsc(r.name)} ${'★'.repeat(r.danger)}</span></div>`).join('');
+  const dpr = exploreHudDpr();
+  el.innerHTML = '';
+  for(const row of exploreMapLegendRows()){
+    const div = document.createElement('div');
+    div.className = 'exp-lg-row';
+    const cv = document.createElement('canvas');
+    cv.className = 'exp-lg-ico';
+    cv.width = cv.height = Math.round(16*dpr);
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    try{ row.d(g); }catch(e){}
+    const sp = document.createElement('span');
+    sp.textContent = row.t;
+    div.appendChild(cv); div.appendChild(sp);
+    el.appendChild(div);
+  }
   _expHud.map.legendBuilt = true;
 }
 // 箱は画面から決める(R1): 地図の一辺 = 箱の高さと (箱の幅 − 横の欄の最小幅) の小さい方
@@ -1043,7 +1242,7 @@ function exploreLayoutBigMap(){
   const box = exploreHudEl('expMapBox'), cv = exploreHudEl('expMapCanvas'), side = exploreHudEl('expMapSide');
   if(!box || !cv) return;
   const bw = box.clientWidth, bh = box.clientHeight;
-  const sideMin = 150;
+  const sideMin = 150*(_expHud.k || 1);   // 横の欄(凡例)の最小幅。文字の倍率と一緒に広げる
   const S = Math.max(120, Math.floor(Math.min(bh, bw - sideMin - 10)));
   cv.style.width = S + 'px'; cv.style.height = S + 'px';
   const dpr = exploreHudDpr();

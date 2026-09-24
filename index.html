@@ -775,11 +775,15 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
        ・#expRegionCard … 地域に入ったときの名前の札(方位バーの下に出て消える)
        どれも触る要素が無いので pointer-events は付けない(スクロールロック除外は不要) -->
   <div id="exploreHud" class="hidden"><canvas id="expCompassCanvas"></canvas></div>
+  <!-- ボスの帯(方位バーの真下の1行)。ワールドの演出(流星など)より手前に出すため、#hud の中のキャンバスへ描く(explore_hud.js) -->
+  <canvas id="expBossCanvas" class="hidden"></canvas>
   <div id="expObjPanel" class="hidden">
+    <!-- 見出し: 残り時間 / 💫力尽きてよい残り / 🎒拾った素材の数 / ◆帰還ビーコンまでの距離(目標の行が削られても残る) -->
     <div class="exp-obj-head">
       <span class="exp-obj-time" id="expObjTime">15:00</span>
-      <span class="exp-obj-faint" id="expObjFaint"></span>
-      <span class="exp-obj-bag" id="expObjBag">🎒 0</span>
+      <span class="exp-obj-chip"><i class="exp-obj-ic">💫</i><span class="exp-obj-faint" id="expObjFaint"></span></span>
+      <span class="exp-obj-chip"><i class="exp-obj-ic">🎒</i><span class="exp-obj-bag" id="expObjBag">0</span></span>
+      <span class="exp-obj-chip exp-obj-beacon" id="expObjBeaconWrap"><i class="exp-obj-ic exp-obj-ic-beacon"></i><span id="expObjBeacon">0m</span></span>
     </div>
     <div class="exp-obj-rows" id="expObjRows"></div>
   </div>
