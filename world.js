@@ -1494,6 +1494,22 @@ function exploreGenWorld(){
       s += step;
     }
   }
+  /* 洞窟(tunnel の峠): 細い切り通しの両側の壁に円を並べる。尾根の円は道に掛かると置かないので、
+     切り通しの脇が抜け道にならないよう、壁の内側の面に沿って小さな円で塞ぐ(見た目の壁と一致) */
+  for(const rd of R.ridges){
+    for(const gp of rd.gaps){
+      if(typeof gp === 'string' || !gp.tunnel) continue;
+      const c = explorePoint(gp.p), ax = Math.cos(gp.slot[0]), ay = Math.sin(gp.slot[0]);
+      const nx = -ay, ny = ax, len = gp.slot[1]/2 + gp.blend;
+      for(let a = -len; a <= len; a += 100){
+        // 壁の面に沿った小さな円 + その外の大きな円(尾根の円が道のせいで置かれなかった所を塞ぐ)
+        for(const side of [1, -1]) for(const [off, g] of [[gp.half + 70, 70], [gp.half + 290, 150]]){
+          const x = c.x + ax*a + nx*off*side, y = c.y + ay*a + ny*off*side;
+          if(exploreRelief(x, y) > 90 && !inClear(x, y, 0)) block(x, y, g, 'tunnel');
+        }
+      }
+    }
+  }
   {
     const cy = R.canyon, mid = cy.pts.map(explorePoint), total = explorePolylineLen(mid);
     for(let s = 0; s < total; s += 170){

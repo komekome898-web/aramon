@@ -220,8 +220,9 @@ function puffField(S, seed, clusters, per, rMin, rMax, spread){
 export function ensureCumulusTex(){
   if(cumulusTex) return cumulusTex;
   const S = 256;
-  const A = puffField(S, 71, 9, 16, 12, 26, 30);
-  const B = puffField(S, 83, 12, 9, 8, 16, 18);
+  // 大きな群れを少しだけ(小さな塊をたくさん散らすと、水滴・ガラス玉を並べたように見えた)
+  const A = puffField(S, 71, 5, 14, 18, 34, 36);
+  const B = puffField(S, 83, 4, 10, 14, 26, 28);
   const N = densityField(S, [ { nx:16, ny:16, amp:0.6 }, { nx:32, ny:32, amp:0.4 } ], 29, 0, false);
   cumulusTex = makeTexture(S, (px)=>{
     for(let i=0;i<S*S;i++){
@@ -308,18 +309,29 @@ const SKY_FRAG = `
   vec4 cumulusLayer(vec3 d, float k, float thr, float sunDot, float drift, float ch){
     vec2 p = cloudP(d, k, drift);
     vec4 t0 = texture2D(uCloud2, p);
-    float dB = mix(t0.r, t0.g, ch);
-    // 太陽側へ広めにずらして読む(狭いと縁だけが細く光ってガラス玉の輪に見えた)
-    vec4 t1 = texture2D(uCloud2, p + normalize(uSunDir.xz + vec2(1e-4)) * 0.045);
-    float dS = mix(t1.r, t1.g, ch);
-    float cB = smoothstep(thr, thr + 0.36, dB);
-    float thick = smoothstep(thr, thr + 0.55, dB);
-    // 見上げた積雲: 薄い所は光が抜けて白く、厚い芯は灰色。太陽側はふくらんで明るい
+    // 縁は細かいノイズで崩す(つるっとした縁がガラス玉・水滴に見えた)
+    float ero = (texture2D(uCloud, p * 2.3 + 0.37).r - 0.5) * 0.16;
+    float dB = mix(t0.r, t0.g, ch) + ero;
+    // 空の上では「地平線の側」が雲の底。少し地平線寄り(=外側)の濃さと比べ、底の側だけを灰色にする
+    vec2 outward = normalize(d.xz + vec2(1e-4)) * 0.05;
+    vec4 t1 = texture2D(uCloud2, p + outward);
+    float dO = mix(t1.r, t1.g, ch) + ero;
+    vec4 t2 = texture2D(uCloud2, p + normalize(uSunDir.xz + vec2(1e-4)) * 0.05);
+    float dS = mix(t2.r, t2.g, ch) + ero;
+    float cB = smoothstep(thr, thr + 0.40, dB);
+    float thick = smoothstep(thr + 0.10, thr + 0.70, dB);
+    float bottom = clamp((dB - dO) * 3.0, 0.0, 1.0);          // 外側(地平線側)が薄い=ここは雲の底
     float sunSide = clamp((dB - dS) * 2.0, 0.0, 1.0);
-    vec3 c = mix(uCloudLit, uCloudMid, thick * 0.75);
-    c = mix(c, uCloudDark, thick * thick * 0.35);
-    c = mix(c, uCloudLit, sunSide * 0.45);
-    c += uSunCol * pow(max(sunDot, 0.0), 10.0) * (1.0 - thick) * 0.35;
+    // 塊の本体は白く、底は平らな灰色。太陽側はわずかに明るい(縁に明暗を集めない)
+    vec3 grey = mix(uCloudMid, uCloudDark, 0.30);
+    vec3 c = mix(uCloudLit, uCloudMid, 0.18 + 0.22 * thick);
+    c = mix(c, grey, smoothstep(0.05, 0.60, bottom) * (0.35 + 0.45 * thick));
+    c = mix(c, uCloudLit, sunSide * 0.15);
+    c += uSunCol * pow(max(sunDot, 0.0), 10.0) * (1.0 - thick) * 0.25;
+    // 地平線に近いほど雲を薄く・霞へ寄せる(遠くの雲は横に潰れて霞に溶ける)
+    float low = smoothstep(0.02, 0.30, d.y);
+    cB *= mix(0.35, 1.0, low);
+    c = mix(uHorizon, c, 0.35 + 0.65 * low);
     // しきい値が低い(=曇天の地域)ほど、塊の下地に一面の暗い雲を敷く(塊だけでは空が埋まらない)
     float ovc = clamp((0.36 - thr) * 6.0, 0.0, 0.96);
     c = mix(c, mix(uCloudDark, uCloudMid, 0.25 + 0.55 * thick + 0.2 * sunSide), ovc);

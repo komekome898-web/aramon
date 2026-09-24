@@ -78,7 +78,7 @@ const EXPLORE_POSES = {
   volcano_wide:  { ex:{ at:'region:volcano', off:[800, -2900], look:'peak:volcanoMain' }, pitch:0.04 },
   jungle_wide:   { ex:{ at:'region:jungle', off:[-500, -2000], look:'nest:jungle' }, pitch:0.08 },
   // 入り組み(峡谷・峠・遺跡の回廊・廃村)
-  canyon:        { ex:{ at:'pass:c1', off:[860, -300], look:[12450,15200] }, pitch:0.04 },
+  canyon:        { ex:{ at:[12470,12380], look:[12700,13500] }, pitch:0.02 },
   pass:          { ex:{ at:'region:meadow', off:[3000, 200], look:'pass:n1' }, pitch:0.06 },
   ruins:         { ex:{ at:'landmark:gate', off:[450, -420], look:[5300,12700] }, pitch:0.10 },
   village:       { ex:{ at:[7300,7250], look:[5600,5700] }, pitch:0.10 },
@@ -90,9 +90,13 @@ const EXPLORE_POSES = {
   // 地形そのもの(尾根・遠景・段丘・湖・巨木・溶岩の川)
   vantage:       { ex:{ at:'camp', off:[0, 0], look:'peak:volcanoMain' }, pitch:0.10, lift:900 },
   far_frost:     { ex:{ at:'region:meadow', off:[1800, -1200], look:'peak:frostMain' }, pitch:0.02 },
-  frost_lake:    { ex:{ at:[12200,6100], look:[12900,5300] }, pitch:0.14 },
+  frost_lake:    { ex:{ at:[12950,6050], look:[12900,5300] }, pitch:0.22 },
   giants:        { ex:{ at:'region:jungle', off:[300, -600], look:'nest:jungle' }, pitch:-0.02 },
   lava_river:    { ex:{ at:[14200,11200], look:[15250,11600] }, pitch:0.10 },
+  // 地図の入り組み: 洞窟(尾根をくぐる近道)の入口 / 全体を横切る川 / 尾根越えの高い道
+  tunnel:        { ex:{ at:[5880,8250], look:'pass:w3' }, pitch:0.02 },
+  river_cross:   { ex:{ at:[7300,5900], look:'pass:n1' }, pitch:0.06 },
+  saddle:        { ex:{ at:[7700,7200], look:'pass:n3' }, pitch:0.02 },
 };
 const maps  = (opt('maps', '')  ? opt('maps','').split(',')  : ALL_MAPS).map(s=>s.trim()).filter(Boolean);
 const poses = (opt('poses', '') ? opt('poses','').split(',') : Object.keys(ALL_POSES)).map(s=>s.trim()).filter(Boolean);

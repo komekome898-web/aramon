@@ -143,6 +143,10 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - 描画命令を抑えるため、探検だけ地面のしみを「材質」、動かないランドマークを「材質×区画」でまとめ、巨木は区画ごとの InstancedMesh にしている(1つにすると外接球が密林全体になり、どこからでも全部描いた)。障害物はその地域の霞が完全に掛かる距離で切る。
 - 撮影は `node tools/real3d_shot.mjs --maps explore`(専用のカット。立ち位置は設計図の名前で書く)。
 
+- 地図の入り組み: 峠は `{ p, half, blend, floor, slot, tunnel }` で書ける(`exploreGapApply`)。`floor`=そこまでしか下げない尾根越えの道、`slot`+`tunnel`=細い切り通しに岩の天井を架けた洞窟(天井は `buildTunnels`・壁の当たりは world.js が切り通しの両脇に円を並べる)。番号付きのエリアは `EXPLORE_FIELD_LAYOUT.areas` と `exploreAreaAt(x,y)`(HUD の札・地図が読む)。
+- 岩肌と雪は**画素で塗る**(近景 `EX_MAP_CHUNK` / 遠景 `buildFarTerrain`。傾き+低周波ノイズ)。頂点色で塗ると粗い三角形の境目がノコギリ歯の模様になった。遠景の高い所は方角(地域)で塗り分ける(火山=玄武岩+赤い照り返し / 密林=森)。
+- 石壁は角を落とした石4通りの InstancedMesh(全部の壁で描画4回)。溶岩の川は40単位ごとに地形へ沿わせ、溜まり・川の縁に黒い殻の土手(`buildLavaRims`)と陽炎。凍った湖は縁をノイズで透かして雪へ溶かす。
+
 ## 弾道(上下のねらい)
 
 - **通常マップに影響を出さないため、分岐はすべて`isReal3dMap()`1か所に寄せる。** 通常マップでは`fireAimSlope()`が0・`projectileMuzzleZ()`が`ent.z`・`projHeightHits()`が従来判定を返すので、弾道も当たり判定も変わらない。

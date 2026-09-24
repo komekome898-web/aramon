@@ -2506,6 +2506,7 @@ const VEG_STYLES = {
 const VEG_VARIANTS = 4;
 const VEG_STEP = 110;        // プレイヤーがこの距離だけ動いたら生やし直す
 const VEG_FILL = 0.55;       // 格子のうち実際に生やす割合(粗密の平均)
+const EX_VEG_CLUMP = 0.34;   // 探検フィールド: この濃さより薄い所には草を生やさない(群生にする)
 /* 地面へ沈める深さ(モデルの高さに対する比)。
    接地影の板をここへ合わせるので、placeLayer の引数と必ず同じ値を使う。 */
 const VEG_SINK = { grass:0.06, shrub:0.08 };
@@ -2682,6 +2683,8 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio, cone){
       let exw = null;
       if(layer.ex){
         exw = exploreWeights(wx, wy);
+        /* 群生: 濃い所に寄せて生やし、間は地面の草色で見せる(一様に撒くと株が水玉模様に並んだ) */
+        p = VEG_FILL * Math.min(1.7, Math.max(0, (dens - EX_VEG_CLUMP)/0.26));
         p *= layer.ex.dens(exw) * (1 - exploreTrail(wx, wy)*0.92);
         if(p <= 0.004) continue;
       }
