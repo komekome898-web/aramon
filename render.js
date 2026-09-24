@@ -8724,7 +8724,12 @@ function updateHUD(){
      **毎フレームinnerHTMLを書き換えない。** 中身が変わったときだけ作り直す。 */
   {
     const line = document.getElementById('trainBuffsLine');
-    const rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(ve) : [];
+    let rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(ve) : [];
+    /* 探検だけ、名前の行の右上へ重ねる小さな枠(#hpPanelは幅210px固定)に収まる数(1つ)まで
+       (第6周の指摘: 2〜3つをこのまま詰めると名前の場所を食いつぶして名前が消えた。
+       名前(誰を操作しているか)のほうが優先度が高いのでバフの札を削る=R3)。
+       他モードは発注者指示どおり全部出す。 */
+    if(game.explore && rows.length > 1) rows = rows.slice(0, 1);
     const sig = rows.map(r=>r.label+r.text).join('|');
     if(line._tbSig !== sig){
       line._tbSig = sig;
@@ -8770,21 +8775,24 @@ function updateHUD(){
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ff6b6b,#ff2b2b)';
       /* 探検モードは⚑のバーがHP/ガッツの数字欄と同じ幅の列に収まる(第5周の指摘: バーと同じ行の
-         右に数値だけ戻した)。名前は長さが読めないので出さず、残り秒だけにする(他モードは今までのまま) */
+         右に数値だけ戻した)。「発動中 残り」などの説明語は落とすが、**名前(2文字。STATE_CHANGESは
+         全属性2文字)は必ず出す**(名前無しで「60秒」だけだと何の残り秒か分からない=批評指摘。
+         以前は長い説明込みの文言でp896だけ折り返したので名前ごと消していたが、
+         nowrap+ellipsis(CSS側)にした今は短い名前だけなら折り返さない) */
       stateCdLabelEl.textContent = game.explore
-        ? `残り${Math.ceil(ve.stateUntil-matchTime)}秒`
+        ? `${stateSc.name} ${Math.ceil(ve.stateUntil-matchTime)}秒`
         : `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
     } else if(ve.stateCooldownUntil > matchTime){
       const cdPct = clamp(1-((ve.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
       stateCdFillEl.style.width = cdPct+'%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
       stateCdLabelEl.textContent = game.explore
-        ? `${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
+        ? `${stateSc.name} ${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
         : `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
     } else {
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
-      stateCdLabelEl.textContent = game.explore ? '使用可' : `${stateSc.name} 発動可能`;
+      stateCdLabelEl.textContent = game.explore ? `${stateSc.name} 使用可` : `${stateSc.name} 発動可能`;
     }
   }
 

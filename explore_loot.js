@@ -835,8 +835,15 @@ function exploreDrawCrate(c, p0){
       }
     }
     // 近くに野生がいる間は札を後回しにする(野生の頭上の印と重ねない。explore.js)
+    c._tagShown = false;   // このフレームは出さなかった扱いにしておく(measure/批評用の公開値)
     if(dp < 420 && !(typeof exploreWildNear === 'function' && exploreWildNear(c.x, c.y))){
-      const tp = P(0, 0, H + L + 26);
+      /* 札の第一候補=本体の真上。**画面上のすき間は画素(pt.scale基準)で決める**(以前はワールド単位で
+       26だけ高い点を投影していたので、近い箱ほど遠近法で画面上の離れ幅が大きく育ち、
+       hud_beacon_p896で札が本体から約300px離れて見えた=第6周の指摘)。本体の上端(H+L)を映してから
+       画面のすき間ぶんだけ引くので、近い/遠いに関わらず本体との見た目の距離がほぼ一定になる */
+      const topP = P(0, 0, H + L);
+      const bodyP = P(0, 0, H/2);   // 本体の中心(画面座標。札との距離を測るときの基準=公開値)
+      const tp = topP ? { x: topP.x, y: topP.y - clamp(16*topP.scale, 10, 26), scale: topP.scale } : null;
       if(tp){
         const rar = EXPLORE_RARITY[c.rarity] || EXPLORE_RARITY.common;
         const fs = clamp(11*tp.scale, 9, 14);
@@ -851,44 +858,64 @@ function exploreDrawCrate(c, p0){
         ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
         const w2 = near ? ctx.measureText(t2).width : 0;
         const half = Math.max(w1, w2)/2 + 6;
+        // 第一候補=本体の真上(tpそのもの)。画面の中へ収めるだけで、まだHUDは見ていない
         let lx = clamp(tp.x, half, Math.max(half, viewW - half));
         let ly = clamp(tp.y, fs + 4, Math.max(fs + 4, viewH - fs*2 - 8));
         /* HUDの欄(ミニマップ・方位バー・ボスの帯・回転ボタン・FIRE/DASH・技パネル・目標パネルなど)へ
            札を重ねない(ルート担当が打ち切りになった後の引き継ぎ。第4〜5周)。exploreHudRects()が
            HUD担当の公開の口(正はそちら)。入らなければ2行目(t2)を諦める。それでも重なるなら
-           **上下左右へ**逃がす(第5周の指摘: 上だけに逃がしていたので、右上のミニマップに
-           重なった札が上へずれても同じミニマップの帯に留まったままだった) */
+           **本体から近い順に**逃がし場所を探す(第6周の指摘: 以前は200pxまで探していたので、
+           見つかった場所が本体から遠く離れ「補給箱と関係ない札」に見えたり、逃げた先が回転ボタンの
+           すぐ上で接して見えたりした。近い所だけを狭く探し、**見つからなければ札そのものを出さない**
+           ―― 遠くに出すより出さないほうが「本体との対応」が壊れない) */
         let showT2 = near;
+        let hidden = false;
         const hudRects = (typeof exploreHudRects === 'function') ? exploreHudRects() : [];
         if(hudRects.length){
           const boxAt = (x, y, withT2)=> ({ x:x-half, y:y-fs-4, w:half*2, h: withT2 ? fs*2 + 10 : fs + 8 });
-          const hits = (b)=> hudRects.some(r=> exploreRectsHit(b, r, 2));
+          // ボタン等との間は目に見える隙間を残す(pad2だと「接して見える」=批評指摘)
+          const PAD = 6;
+          const hits = (b)=> hudRects.some(r=> exploreRectsHit(b, r, PAD));
           if(hits(boxAt(lx, ly, showT2))){
             showT2 = false;
             if(hits(boxAt(lx, ly, false))){
-              const dirs = [[0,1],[0,-1],[-1,0],[1,0],[-1,1],[1,1],[-1,-1],[1,-1]];
+              // 上→斜め上→左右→斜め下の順(本体の真上に近い向きから試す)。半径は本体から近い範囲だけ
+              const dirs = [[0,-1],[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1],[0,1]];
+              /* 単位はキャンバスの論理px(撮影画像は2倍)。目安の150px(画像の画素)は論理75pxぶんなので、
+                 探す半径はそれより少し狭く抑える(見つかった場所自体が本体から離れすぎないように) */
+              const STEP = 10, MAX_R = 64;
               let found = false;
-              outer: for(let step=14; step<=200 && !found; step+=14){
+              outer: for(let step=STEP; step<=MAX_R && !found; step+=STEP){
                 for(const [dx,dy] of dirs){
                   const tx = clamp(tp.x + dx*step, half, Math.max(half, viewW - half));
                   const ty = clamp(tp.y + dy*step, fs+4, Math.max(fs+4, viewH-fs*2-8));
                   if(!hits(boxAt(tx, ty, false))){ lx = tx; ly = ty; found = true; break outer; }
                 }
               }
+              if(!found) hidden = true;   // どこにも入らない: 遠くへ出すより出さない
             }
           }
         }
-        ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`;
-        ctx.strokeText(t1, lx, ly); ctx.fillStyle = col; ctx.fillText(t1, lx, ly);
-        if(showT2){
-          ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
-          ctx.strokeText(t2, lx, ly + fs + 2); ctx.fillStyle = 'rgba(240,240,240,0.92)'; ctx.fillText(t2, lx, ly + fs + 2);
+        if(!hidden){
+          ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`;
+          ctx.strokeText(t1, lx, ly); ctx.fillStyle = col; ctx.fillText(t1, lx, ly);
+          if(showT2){
+            ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
+            ctx.strokeText(t2, lx, ly + fs + 2); ctx.fillStyle = 'rgba(240,240,240,0.92)'; ctx.fillText(t2, lx, ly + fs + 2);
+          }
+          // 計測・批評用に公開(exploreCrateTagRect が読む。表示していないフレームは前の値を上書きしない)
+          c._tagShown = true;
+          c._tagRect = { x:lx - half, y:ly - fs - 4, w:half*2, h: showT2 ? fs*2 + 10 : fs + 8, cx:lx, cy:ly - fs/2 };
+          c._tagBodyPt = bodyP ? { x:bodyP.x, y:bodyP.y } : null;
         }
       }
     }
   }
   ctx.restore();
 }
+/* 補給箱の札の画面上の矩形と本体の中心(--measure・批評用の公開の口)。
+   直近に exploreDrawCrate が描いた値を返す(そのフレームで出していなければ null) */
+function exploreCrateTagRect(c){ return (c && c._tagShown) ? { tag:c._tagRect, body:c._tagBodyPt } : null; }
 
 /* 開いた箱の上に扇形に並ぶ中身(レア度の色の枠付きアイコン)。枠が「白・青・紫・金」を一目で分ける */
 function exploreDrawCrateFan(c){

@@ -4871,8 +4871,12 @@
   }
   #sniperAdsBtn .sn-lbl, #sniperBreathBtn .sn-lbl{ position:relative; z-index:1; font-size:12px; font-weight:700;
     letter-spacing:0.5px; line-height:1; white-space:nowrap; }
-  /* ボタンを60→48pxへ縮めた分だけ文字も少し縮める(sniperBreathBtnは60pxのままなので個別に) */
-  #sniperAdsBtn .sn-lbl{ font-size:10px; }
+  /* 狙撃ボタンは48pxしかなく、輪の中に照準アイコンと文字を両方入れると輪の線が文字を横切って
+     読めなかった(第6周の指摘)。文字は輪の外(下)へ出す ―― 輪の中はアイコンだけにする。
+     地面の上に直接乗るので、ボタン本体と同じ縁取り(text-shadow)を付けて読めるようにする。 */
+  #sniperAdsBtn .sn-lbl{ position:absolute; left:50%; top:100%; transform:translateX(-50%);
+    margin-top:6px; font-size:11px;
+    text-shadow:0 1px 0 #000,0 -1px 0 #000,1px 0 0 #000,-1px 0 0 #000,0 2px 4px rgba(0,0,0,0.85); }
   #sniperAdsBtn.on{ border-color:#ffd36e; color:#fff4d8; background:radial-gradient(circle at 35% 30%, rgba(255,210,120,0.5), rgba(120,70,10,0.88));
     box-shadow:0 0 18px -2px rgba(255,190,80,0.85); }
   #sniperAdsBtn.reloading{ opacity:0.75; }
@@ -6258,9 +6262,11 @@
   html.narrow-screen #dashBtn{ right:104px; bottom:34px; width:50px; height:50px; }
   html.narrow-screen #pingBtn{ right:162px; bottom:36px; width:44px; height:44px; }
   /* 狙撃: 技パネル(探検だけ bottom102〜)と高さが重ならないよう、#pingBtnと同じ高さ(DASHの左隣)へ
-     (批評8巡目)。息止め: ジョイスティック右端(16+112=128)の右 */
-  html.narrow-screen #sniperAdsBtn{ right:162px; bottom:36px; width:44px; height:44px; min-height:44px; }
-  html.narrow-screen #sniperAmmoChip{ right:214px; bottom:45px; }
+     (批評8巡目)。**DASHとの間を12px以上に**(第6周の指摘: 162pxだとDASHの左端154pxとの間が
+     8pxしか無く接して見えた。168pxへ寄せてすき間14pxにする。弾数の札も同じぶんだけ左へずらし、
+     札とボタンの間の8pxは変えない)。息止め: ジョイスティック右端(16+112=128)の右 */
+  html.narrow-screen #sniperAdsBtn{ right:168px; bottom:36px; width:44px; height:44px; min-height:44px; }
+  html.narrow-screen #sniperAmmoChip{ right:220px; bottom:45px; }
   html.narrow-screen #sniperBreathBtn{ left:140px; bottom:26px; width:54px; height:54px; min-height:54px; }
   html.narrow-screen #joystickBase{ left:16px; bottom:16px; width:112px; height:112px; }
   html.narrow-screen #autoRunLabel{ left:16px; bottom:134px; width:112px; }
@@ -6689,23 +6695,31 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
    状態の欄は何も無いときは場所を取らない。欄の幅は他の計算(上部の帯の空け方)が読むので変えない。
    縦の大きさは --exp-hud-k(画面の縦から決まる。exploreHudScale())で決める(第3周の指摘:
    3サイズとも同じ大きさに見えていた=k を使わず px を直書きしていたのが原因)。 */
-#hud.explore-mode #hpPanel{ --k:var(--exp-hud-k, 1); display:grid; grid-template-columns:minmax(0,1fr) auto;
-  column-gap:calc(6px * var(--k)); row-gap:calc(2px * var(--k)); align-items:center;
-  padding:calc(5px * var(--k)) calc(12px * var(--k)) calc(6px * var(--k));
+#hud.explore-mode #hpPanel{ --k:var(--exp-hud-k, 1); position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto;
+  column-gap:calc(6px * var(--k)); row-gap:calc(1px * var(--k)); align-items:center;
+  padding:calc(3px * var(--k)) calc(12px * var(--k)) calc(4px * var(--k));
   /* 不透明寄りに(批評指摘: 背景の景色がアイコンの裏に透けて見づらかった。基本の.hud-panelは0.5) */
   background:rgba(8,13,20,0.84); }
 /* HP・ガッツ・状態(⚑)の3本を同じ長さにそろえる。**第5周の指摘で数値はバーと同じ行の右へ戻した**
    (第4周でバー・数値を別行の全幅にしたら高さが画面の36%まで伸びた=R1違反。バーは3本とも
    列1どまり・数値は3本とも列2(同じauto幅)にそろえれば、同じ行のまま長さもそろう) */
-#hud.explore-mode #hpPanel .who, #hud.explore-mode #statusIcons, #hud.explore-mode #trainBuffsLine{ grid-column:1 / -1; }
-#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum, #hud.explore-mode #stateCdLabel{ text-align:right; white-space:nowrap; }
-#hud.explore-mode #hpPanel .who{ margin-bottom:calc(2px * var(--k)); min-width:0; display:flex; align-items:center; gap:calc(6px * var(--k)); }
-#hud.explore-mode #hpPanel .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:calc(14px * var(--k)); }
+#hud.explore-mode #hpPanel .who, #hud.explore-mode #statusIcons{ grid-column:1 / -1; }
+#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum, #hud.explore-mode #stateCdLabel{ text-align:right; white-space:nowrap; line-height:1; }
+#hud.explore-mode #hpPanel .who{ margin-bottom:calc(1px * var(--k)); min-width:0; display:flex; align-items:center; gap:calc(5px * var(--k));
+  /* バフの札(#trainBuffsLine)を右上に絶対配置で重ねる分の場所をここで確保しておく(名前が伸びても
+     札の場所へ食い込まない。名前は元から省略記号で切れる作りなので、伸びればここで先に切れるだけ)。
+     行を1本増やさずに済ませる=6行→5行(第6周の指摘: HPパネルが画面高の約28%あった)。
+     **#hpPanelは幅210px固定**(narrow-screenは180px。base.hud-panel)なので、ここで確保する幅は
+     小さく保つこと ―― 102px確保すると名前が1文字しか出ず、128pxでは0文字になった(第6周の指摘・再発)。
+     名前(誰を操作しているか)のほうが優先度が高いので、札は1枚だけ(render.jsが2枚目以降を省く)
+     ぶんの58pxだけ確保する。 */
+  padding-right:calc(58px * var(--k)); box-sizing:border-box; }
+#hud.explore-mode #hpPanel .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:calc(13px * var(--k)); line-height:1.15; }
 #hud.explore-mode #hpPanel .elTag{ display:none; }
 /* 顔絵(静止画を丸く切り抜き)。名前の左の空白を埋め、誰を操作しているか一目で分かるようにする(批評指摘)。
    render.js の updateHUD が探検のときだけ src を入れる。他モードは常に display:none(見た目は変わらない) */
 .hp-face{ display:none; }
-#hud.explore-mode .hp-face{ display:block; width:calc(22px * var(--k)); height:calc(22px * var(--k));
+#hud.explore-mode .hp-face{ display:block; width:calc(18px * var(--k)); height:calc(18px * var(--k));
   border-radius:50%; object-fit:cover; flex-shrink:0; border:1.5px solid rgba(255,255,255,0.35); background:rgba(0,0,0,0.3); }
 /* 各バーの左に種類の記号(♥体力/◆ガッツ/⚑状態)。批評指摘:バーだけでは何のバーか一目で分からない。
    track自身は overflow:hidden(バー本体の角を丸く切るため)なので、記号は margin で空けた外側に置く
@@ -6717,10 +6731,18 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
   font-size:calc(10px * var(--k)); line-height:1; color:#ff7a6e; }
 #hud.explore-mode #gutsTrack::before{ content:'◆'; color:#ffb56b; }
 #hud.explore-mode #stateCdTrack::before{ content:'⚑'; color:#ff8a8a; }
-/* 数字は最低11px(以前は約8pxで批評で「読めない」と指摘された) */
+/* 数字は最低11px(以前は約8pxで批評で「読めない」と指摘された)。この11pxは崩さない(第6周の指摘の条件) */
 #hud.explore-mode #hpNum, #hud.explore-mode #gutsNum{ margin-top:0; font-size:calc(11px * var(--k)); }
 #hud.explore-mode #stateCdLabel{ font-size:calc(11px * var(--k)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-#hud.explore-mode #gutsTrack{ margin-top:calc(3px * var(--k)); }
+#hud.explore-mode #gutsTrack{ margin-top:calc(2px * var(--k)); }
+/* バフの札(「技ダメ +5%」等)は行を増やさず、名前の行の右上へ重ねて置く(第6周の指摘:
+   6行(名前・HP・ガッツ・状態・状態異常・バフ)のうち、バフの行だけを名前の行へ同居させて5行にする。
+   position:absoluteでグリッドの行取りから外す(このぶんの高さはHPパネルの外枠に積み上がらない)。
+   何も無ければ:emptyで場所を取らない(元と同じ)。 */
+#hud.explore-mode #trainBuffsLine{ position:absolute; top:calc(3px * var(--k)); right:calc(12px * var(--k));
+  margin:0; max-width:calc(54px * var(--k)); justify-content:flex-end; row-gap:1px; z-index:1; }
+/* 探検の札は既定より一回り小さく(210px固定幅の中に1枚だけ収める。2枚目以降はrender.jsが省く) */
+#hud.explore-mode #trainBuffsLine .tb-chip{ font-size:calc(8px * var(--k)); padding:0 calc(2px * var(--k)); }
 #hud.explore-mode #statusIcons{ min-height:0; }
 #hud.explore-mode #statusIcons:empty{ display:none; }
 /* 地域の札は帯の中央に細く置く(左の拾った通知・右の目標パネルの列に食い込まない幅) */

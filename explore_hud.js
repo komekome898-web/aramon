@@ -91,6 +91,15 @@ function exploreHudReset(){
   _expHud.obj.strip = false;
 }
 
+/* ボスの帯(#expBossCanvas)を実際に描いている最中か(予告の名前の札が出ている間は描かない)。
+   **正はここ1つ**(以前は exploreDrawCompass と exploreHudBossBand に同じ判定を2か所書いていて、
+   目標パネルの横持ち最終形=is-strip の場所取り判定に3か所目を書きそうになった=第6周の指摘)。 */
+function exploreBossBandActive(){
+  if(!game.explore || typeof exploreFocusBoss !== 'function') return false;
+  const b = exploreFocusBoss();
+  if(!b) return false;
+  return !exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4);
+}
 /* ===== 上部中央の帯(方位バー)の位置。キャンバス(viewW×viewH)の座標で返す =====
    ボスの札・HPバー(explore.js)もこの帯の幅と下端を基準に置く。DOMの寸法を読むので0.5秒ごとに測り直す */
 function exploreHudBand(){
@@ -279,7 +288,11 @@ function exploreObjLayout(){
   if(strip){
     /* R3 の最後の段: ミニマップの下に見出し+1行も入らない(横持ちの低い画面では回転ボタンがミニマップの
        すぐ下に来る)。目標は方位バーの真下の細い1行(見出し+優先の目標)にまとめる。
-       ボスの帯・札は exploreHudBand() がこの1行の下端を返すので、その下へ自動でずれる */
+       ボスの帯・札は exploreHudBand() がこの1行の下端を返すので、その下へ自動でずれる。
+       **ボスの帯を描いている間、この1行の場所をボスの帯へ譲って目標パネル側を隠す判定は
+       exploreUpdateHud() が毎フレーム行う**(この関数は0.5秒おきしか呼ばれないので、ここに
+       置くと咆哮の直後〜最大0.5秒は重なって見える=第6周の指摘。位置そのものはここで決めておき、
+       表示/非表示だけ毎フレーム側に任せる)。 */
     const cmp = exploreHudEl('exploreHud');
     panel.classList.add('is-strip');
     if(cmp){
@@ -294,6 +307,7 @@ function exploreObjLayout(){
     _expHud.band.at = -1;
     return;
   }
+  panel.classList.remove('hidden');   // strip+ボスの帯で隠していた場合の戻し忘れ防止(通常の置き場所に戻る)
   const cmp0 = exploreHudEl('exploreHud');
   hud.style.setProperty('--exp-rc-top', (cmp0 ? cmp0.offsetTop + cmp0.offsetHeight + 4 : 56) + 'px');
   const st = top + 'px', sr = right + 'px';
@@ -327,7 +341,20 @@ function exploreUpdateHud(){
   const panel = exploreHudEl('expObjPanel');
   const O = _expHud.obj;
   const nowR = performance.now();
+  /* 目標パネルが避けるべきボタン(回転・狙撃・FIRE/DASH)の見え方(出す/隠す)が変わった直後は、
+     0.5秒の間隔を待たずにすぐ組み直す(第6周の指摘: 狙撃銃を拾ってsniperAdsBtn/sniperAmmoChipが
+     出た直後の1枚が、まだそれらが無かった頃の置き場所のままで、新しいボタンに重なって見えた
+     ―― exploreObjLayoutは重いのでボタンの出/隠れだけの軽い判定を毎フレーム行い、
+     変わっていたときだけ強制的に0.5秒の間隔を無視して組み直す)。 */
+  const obsSig = ['turnLeftBtn','turnRightBtn','sniperAdsBtn','sniperAmmoChip','pingBtn','dashBtn','fireBtn']
+    .map(id=>{ const el = exploreHudEl(id); return (el && !el.classList.contains('hidden') && el.offsetWidth > 0) ? '1' : '0'; }).join('');
+  if(O.obsSig !== obsSig){ O.obsSig = obsSig; O.layoutAt = -1; }
   if(nowR - O.layoutAt > 500 || O.layoutAt < 0){ O.layoutAt = nowR; exploreObjLayout(); }
+  /* strip(横持ちの低い画面。R3の最後の段)でボスの帯を描いている間は、同じ場所を取り合わないよう
+     目標パネルを隠す(毎フレーム。exploreObjLayout の0.5秒おきの間隔を待つと、咆哮の直後は
+     一瞬重なって見える=第6周の指摘)。ボスの状態(名前・体力・怒り)はボスの帯自身が示すので、
+     隠れても情報は失われない。strip でなければ触らない(通常の置き場所はここでは変えない)。 */
+  if(panel && O.strip) panel.classList.toggle('hidden', exploreBossBandActive());
   const ob = exploreObjectives();
   _expHud.lastOb = ob;   // 方位バーが「優先の目標」の印を付けるのに読む
   // 達成の瞬間を覚える(光らせる)
@@ -592,8 +619,7 @@ function exploreDrawCompass(){
   const head = exploreHeadingDeg(yaw);
   const markers = exploreCompassMarkers();
   // ボス戦の間は下の段(印と距離)をボスの帯に譲る。印は基線の上に小さく載せる
-  const bossBand = typeof exploreFocusBoss === 'function' && !!exploreFocusBoss()
-    && !exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4);
+  const bossBand = exploreBossBandActive();
   const pulse = markers.some(m=> m.engaged || m.flee) ? Math.floor(performance.now()/50) : 0;
   const sig = [head.toFixed(1), Math.round(player.x/20), Math.round(player.y/20), pulse, W, k, bossBand ? 1 : 0,
     markers.map(m=> m.kind[0] + Math.round(m.x/40) + ':' + Math.round(m.y/40) + (m.prio?'p':'') + (m.flee?'f':'')).join(',')].join('|');
@@ -729,8 +755,13 @@ function exploreDrawCompass(){
     if(m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE) labels.unshift({ it, t: exploreHudDist(it.d) });   // 優先の物から場所を取る
   }
   /* 数字は近い順に最大 EXPLORE_COMPASS_LABEL_MAX 個だけ(第3周の指摘: 幅が広い画面ほど
-     重ならずに増えてしまい、3サイズで見える数が揺れていた)。優先の目標は距離に関係なく必ず残す */
-  labels.sort((a,b)=> (b.it.m.prio?1:0) - (a.it.m.prio?1:0) || a.it.d - b.it.d);
+     重ならずに増えてしまい、3サイズで見える数が揺れていた)。優先の目標は距離に関係なく必ず残す。
+     **帰還ビーコンは常に最優先で残す**(第6周の指摘: p667だけ、近い補給箱の距離に席を取られて
+     ビーコンの距離が消え、隣の補給箱の「95m」がビーコンの距離に見えた)。他が近くても、
+     ビーコンはこの並べ替えで先頭に来るので①最大数で切られない②重なり判定でも先に場所を取り、
+     ぶつかった側(補給箱)が消える側になる */
+  labels.sort((a,b)=> (b.it.m.kind==='beacon'?1:0) - (a.it.m.kind==='beacon'?1:0)
+    || (b.it.m.prio?1:0) - (a.it.m.prio?1:0) || a.it.d - b.it.d);
   if(labels.length > EXPLORE_COMPASS_LABEL_MAX) labels.length = EXPLORE_COMPASS_LABEL_MAX;
   // ボス戦中は詰めた段(bossY)に収まる小さめの文字・近いY(bossDistY)にする(距離の数字がボスの帯に食い込まない)
   const distY = bossBand ? L.bossDistY : L.distY;
@@ -760,7 +791,13 @@ function exploreHudBossGeom(b){
   const w = Math.min(band.w, H.maxW*k);
   const x = band.x + (band.w - w)/2;
   /* ボス戦の間は方位バーの下の段(印と距離の段)をボスの帯に譲る(方位バーは上の2段だけになる)。
-     帯が方位バーの外へ伸びないので、ボス本体に重ならない(第2周の指摘1) */
+     帯が方位バーの外へ伸びないので、ボス本体に重ならない(第2周の指摘1)。
+     **横持ちの低い画面(R3の最後の段。目標パネルが方位バーの真下の細い1行=is-strip)で
+     ボスの帯を描いている間は、目標パネルの側を隠す**(exploreObjLayout。第6周の指摘: is-stripの帯と
+     ボスの帯が同じ高さを取り合って重なっていた。逆にボスの帯を下へ逃がすと、今度は近い距離のボス
+     本体にかぶる=is-stripは横が低い画面の最後の段で、逃がす先の余白がそもそも無いため)。
+     目標パネルが隠れれば exploreHudBand() の帯の下端は伸びず、ここは今までどおり
+     方位バーに重ねる置き方のままでよい(band.bottom は使わない)。 */
   const cmp = exploreHudEl('exploreHud'), hud = exploreHudEl('hud');
   const inCompass = !!(cmp && hud && !cmp.classList.contains('hidden') && cmp.offsetHeight > 0);
   const top = inCompass ? hud.offsetTop + cmp.offsetTop + EXP_CMP.bossY*k : band.bottom + 2*k;
@@ -777,8 +814,7 @@ function exploreHudBossBand(){
   if(!cv || !hud) return;
   const b = game.explore ? exploreFocusBoss() : null;
   const def = b ? exploreBossDef(b) : null;
-  const plateUp = exploreState.banners.some(bn=> bn.kind === 'plate' && matchTime - bn.t0 < bn.dur - 0.4);
-  if(!b || !def || plateUp){ if(!cv.classList.contains('hidden')) cv.classList.add('hidden'); return; }
+  if(!b || !def || !exploreBossBandActive()){ if(!cv.classList.contains('hidden')) cv.classList.add('hidden'); return; }
   const G = exploreHudBossGeom(b), k = G.k, dpr = exploreHudDpr();
   const lx = Math.round(G.x - hud.offsetLeft - 4), ly = Math.round(G.top - hud.offsetTop);
   const cw = Math.round(G.w + 8), ch = Math.round(G.bottom - G.top + 2);
