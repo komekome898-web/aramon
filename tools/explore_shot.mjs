@@ -427,19 +427,26 @@ function pageTools(){
     };
     let best = null;
     const base = Math.atan2(exploreState.camp.y - T.y, exploreState.camp.x - T.x);
-    for(let k=0;k<48 && !best;k++){
-      const a = base + (k%2 ? 1 : -1) * Math.ceil(k/2) * (Math.PI/24);
+    for(let k=0;k<96 && !best;k++){
+      const a = base + (k%2 ? 1 : -1) * Math.ceil(k/2) * (Math.PI/48);
       const x = T.x + Math.cos(a)*o.dist, y = T.y + Math.sin(a)*o.dist;
       if(x<400||y<400||x>WORLD.w-400||y>WORLD.h-400) continue;
       const p = clearObstaclePoint(x, y, 40);
       const ez = gz(p.x,p.y) + AIM_MUZZLE_Z;
-      if(los(p.x,p.y,ez, T.x,T.y,(T.z||gz(T.x,T.y)) + H*0.55) && los(p.x,p.y,ez, T.x,T.y,(T.z||gz(T.x,T.y)) + H*0.9)) best = p;
+      // 他の野生が立ち位置の近く・視線の途中にいると、倍率で拡大されて画面を塞ぐ(的が見えない)ので避ける
+      const blocked = entities.some(e=> e.alive && e !== T && !e.isPlayer && (
+        Math.hypot(e.x-p.x, e.y-p.y) < 800 ||
+        (()=>{ const dx=T.x-p.x, dy=T.y-p.y, L2=dx*dx+dy*dy, t=clamp(((e.x-p.x)*dx+(e.y-p.y)*dy)/L2, 0, 1);
+               return t < 0.88 && Math.hypot(p.x+dx*t-e.x, p.y+dy*t-e.y) < (e.radius||30) + 90; })()));
+      if(!blocked && los(p.x,p.y,ez, T.x,T.y,(T.z||gz(T.x,T.y)) + H*0.55) && los(p.x,p.y,ez, T.x,T.y,(T.z||gz(T.x,T.y)) + H*0.9)) best = p;
     }
     if(!best) best = clearObstaclePoint(T.x + Math.cos(base)*o.dist, T.y + Math.sin(base)*o.dist, 40);
     const at = { x:best.x, y:best.y, yaw:Math.atan2(T.y-best.y, T.x-best.x), pitch:0.08, warm:0 };
     at.after = ()=>{
       const me = player;
       T.exploreAsleep = true; T.exState = T.isExploreBoss ? 'sleep' : T.exState;
+      if(exploreState.banners) exploreState.banners.length = 0;   // 前のカットの札を持ち越さない
+      if(exploreState.fx) exploreState.fx.length = 0;
       const tx = T.x, ty = T.y;
       sniperGive(me, 'longbow');
       sniperAttachScope(me, o.scope || 'x8');

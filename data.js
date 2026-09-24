@@ -6784,3 +6784,6 @@ const SNIPER_SHOT_RANGE_SEC     = 1.0;   // 撃った瞬間の距離を残して
 const SNIPER_FIRE_CANCEL_MARGIN = 0.6;   // FIREを離した場所がボタンの外(大きさのこの割合より外)なら撃たない
 const SNIPER_SCOPE_PIXEL_BOOST  = 1.5;   // 構え中、スコープの窓の範囲だけ3Dの描画解像度をこの倍にする(上限3)
 const SNIPER_VEG_CONE_MIN_ZOOM  = 1.9;   // この倍率以上で、草・低木を「視線の先の扇」へ並べ替えて遠くまで出す
+const SNIPER_BODY_FLASH_SEC     = 0.0006; // 探検: 狙撃の命中で体が白くなる時間(ゲーム内の秒)。ヒットストップ中(時間の速さ0.04)でも次のフレームで消える=1フレームだけ。光は当たった点の周りだけ
+const SNIPER_TRACER_CLIP        = 0.6;   // 覗いている間、弾道の光を描く範囲(窓の半径に対する割合。右下の残弾の表示に被せない)
+const SNIPER_SCOPE_VEIL         = 0.14;  // 覗いている間の窓の中全体の空気の膜の濃さ(4倍のとき。倍率に比例して8倍で×1.6まで。遠くの岩肌の模様をやわらげる)

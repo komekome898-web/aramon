@@ -1213,7 +1213,10 @@ function drawMonster(e,p){
 
   ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
-  if(game.explore) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
+  /* 狙撃スコープで覗いている間(探検モードだけ)は、頭上の表示(名前・「!」「?」・眠り・状態変化の札)と
+     足元の輪を出さない。倍率ぶん大きくなって照準と的を横切るため。的の情報はスコープの右の札が出す(sniper.js) */
+  const scopeUI = (typeof sniperHidesOverhead === 'function') && sniperHidesOverhead();
+  if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
   if(e.dashTimer>0){
     ctx.save(); ctx.globalAlpha=0.35;
@@ -1266,32 +1269,34 @@ function drawMonster(e,p){
   if(explorePose) ctx.restore();
   if(downedPose) ctx.restore();   // 倒れ姿勢の回転はスプライトまで
 
+  // 状態の輪の線の太さ。スコープで覗いている間は倍率ぶん太い帯にならないよう画面上1.8pxまでに抑える
+  const ringLine = ()=>{ if(scopeUI) ctx.lineWidth = Math.min(ctx.lineWidth, 1.8/Math.max(0.01, p.scale)); };
   if(e.burnUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.5 + 0.3*Math.sin(matchTime*8);
     ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.15*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.15*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.slowUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.strokeStyle = '#7fa0ff'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.3*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.3*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.freezeUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.2*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.2*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.poisonUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.45 + 0.25*Math.sin(matchTime*5);
     ctx.strokeStyle = '#9b5fd1'; ctx.lineWidth = 2.5; ctx.setLineDash([2,5]);
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.42*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.42*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
@@ -1319,8 +1324,7 @@ function drawMonster(e,p){
   // レイドのボス・探検のボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
   /* 狙撃スコープで構えている間(探検モードだけ)は頭上のゲージを出さない。倍率ぶん太くなって照準を横切るため。
      照準の先の1体だけ、スコープの距離表示の横に小さな帯で出す(sniper.js) */
-  const scopeHidesBar = (typeof sniperHidesOverhead === 'function') && sniperHidesOverhead();
-  if(!e.isRaidBoss && !e.isExploreBoss && !scopeHidesBar){
+  if(!e.isRaidBoss && !e.isExploreBoss && !scopeUI){
     const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
@@ -1390,7 +1394,7 @@ function drawMonster(e,p){
     }
   }
 
-  if(e.stateUntil > matchTime){
+  if(e.stateUntil > matchTime && !scopeUI){
     const sc = STATE_CHANGES[e.element];
     if(sc){
       // バトルの邪魔にならないよう、半透明・小さめでHPゲージのすぐ上に出す。
@@ -1411,9 +1415,9 @@ function drawMonster(e,p){
      ▽は「味方だけの形」(色覚多様性のため色だけに頼らない。小隊バーのsq-markと同じ記号) */
   const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
   const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
-  if(game.explore) exploreDrawMonsterMarks(e, barY, uiMult);   // 探検: 頭上の「!」「?」・眠り・転倒の印(explore.js)
+  if(game.explore && !scopeUI) exploreDrawMonsterMarks(e, barY, uiMult);   // 探検: 頭上の「!」「?」・眠り・転倒の印(explore.js)
   // 探検: ボスは画面上部のHPバーで、群れの取り巻きは名前無し(HPバーだけ)。名前は「群れの長」の1枚だけ
-  if(!e.isPlayer && !entIsDowned && !e.isExploreBoss && !(e.isExploreWild && !e.exLeader) && (isAllyOfPlayer || dist(e,player)<700)){
+  if(!scopeUI && !e.isPlayer && !entIsDowned && !e.isExploreBoss && !(e.isExploreWild && !e.exLeader) && (isAllyOfPlayer || dist(e,player)<700)){
     // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
     ctx.save();
     { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
