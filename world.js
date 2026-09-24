@@ -32,12 +32,38 @@ const LOOK_DEFAULTS = { fovDeg:64, sensX:0.0045, sensY:0.0018, fireDragAim:true 
    ── ui.jsのloadLookSettings/スライダーが範囲を引ける数値だけを対象にしているため。 */
 const LOOK_LIMITS   = { fovDeg:[45,85], sensX:[0.0015,0.0090], sensY:[0.0006,0.0045] };
 let lookSettings = { ...LOOK_DEFAULTS };
-window.__aramonLook = lookSettings;
 let FOV_V = LOOK_DEFAULTS.fovDeg*Math.PI/180;
 let FOCAL = 600;
+/* 【視野の倍率(狙撃スコープのズーム)の入口はここ1か所】setViewZoom(倍率)。
+   ・実際に使う視野角は effectiveFovDeg() だけが作る = tan(設定の半分)÷倍率(三角関数で正しく狭める)。
+   ・2Dの project() は FOV_V→FOCAL を、3D(real3d.js / real3d_zone.js)は window.__aramonLook.fovDeg を、
+     技のWebGL層(fx_gl.js)は window.FOV_V を読む。**3つとも下の同じ値を返す**ので絵が食い違わない。
+   ・ユーザーの設定値(lookSettings.fovDeg)は書き換えない=保存もされない。
+   ・呼ぶのは sniper.js だけ(描画1フレームの間だけ掛け、描き終わったら1へ戻す)。倍率1なら従来と同じ。 */
+let viewZoom = 1;
+function effectiveFovDeg(){
+  const half = lookSettings.fovDeg*Math.PI/360;
+  return (viewZoom > 1 ? 2*Math.atan(Math.tan(half)/viewZoom) : half*2) * 180/Math.PI;
+}
+function setViewZoom(m){
+  const v = (isFinite(m) && m > 1) ? m : 1;
+  if(v === viewZoom) return;
+  viewZoom = v;
+  applyLookSettings();
+}
+/* 3D側が読む「視点設定」。**lookSettings の読み取り専用の窓**で、fovDeg だけ倍率込みの実効値を返す。
+   (以前は lookSettings そのものを渡していた。値の書き込みは ui.js が lookSettings へ直接行うので変わらない) */
+window.__aramonLook = Object.create(null);
+Object.defineProperty(window.__aramonLook, 'fovDeg', { get(){ return effectiveFovDeg(); } });
+Object.defineProperty(window.__aramonLook, 'zoom',   { get(){ return viewZoom; } });   // 霞の調整用(real3d.js)
+for(const k of Object.keys(LOOK_DEFAULTS)){
+  if(k !== 'fovDeg') Object.defineProperty(window.__aramonLook, k, { get(){ return lookSettings[k]; } });
+}
+// fx_gl.js(ESモジュール)は window.FOV_V を読む。let は window に載らないので窓を作る
+Object.defineProperty(window, 'FOV_V', { get(){ return FOV_V; }, configurable:true });
 // 設定を変えたら必ず呼ぶ(視野角→FOCAL。3D側は毎フレームwindow.__aramonLookを見る)
 function applyLookSettings(){
-  FOV_V = lookSettings.fovDeg*Math.PI/180;
+  FOV_V = effectiveFovDeg()*Math.PI/180;
   recomputeFocal();
 }
 // TPS視点のカメラ配置。distBehindを小さくすると自分のモンスターが大きく見える。
@@ -355,6 +381,9 @@ const SCROLL_LOCK_EXEMPT_IDS = [
   "hidenOverlay", "rebirthAnimOverlay", "awakenAnimOverlay", "raidOverlay",
   "raidRankOverlay", "shareOverlay", "mastermonDeleteConfirm", "tutorialLayer",
   "ghostNewsOverlay",
+  "exploreResultOverlay",   // 探検モードの結果(持ち帰った素材の一覧がスクロールする)
+  "exploreForgeOverlay",    // 探検モードの工房(装備の一覧と詳細の本文がスクロールする)
+  "expMapOverlay",          // 探検モードの全体地図(試合中に開く。押すと閉じる)
 ];
 /* 1本のセレクタにまとめておく(呼ばれるたびに組み直さない)。
    closest は「,区切りのどれかに当たる最も近い祖先」を返すので、
@@ -1331,6 +1360,431 @@ function seededSpawnOasisBonusLoot(rng){
 }
 // ミューテーター「スポーンアイテム数1.5倍」の倍率(非公開中/未定義時は1)
 function mutSpawnMultSafe(){ return (typeof mutatorSpawnMult==='function') ? mutatorSpawnMult() : 1; }
+
+/* =====================================================================
+   探検モードのフィールド生成(exploreGenWorld)
+   data.js の EXPLORE_FIELD_LAYOUT(設計図)から、当たり判定のある物を一式作る。
+   呼ぶ前に currentMap = MAPS.explore と applyWorldScale(1) を済ませておくこと。
+   ・volcanoObstacles  尾根・峡谷の壁・大きな山・世界の縁の山並み(円錐の山)。
+                       ランドマークの足元の当たり判定も noMesh:true の山として入る
+                       (3Dの円錐は作らず、見た目は real3d_explore.js が描く)
+   ・lavaZones / riverZones / oasisZones(湖)/ seaZones(空)
+   ・rocks             岩・木・遺跡・小屋・コンテナ(flavor は地域の内訳から)
+   ・crystalObstacles  凍った高地の水晶 / terrainDecor は空(地面はWebGLが描く)
+   **Math.random を使わない**(設計図の種から作る)ので毎回同じフィールドになり、
+   マルチでもホストとゲストが同じ世界を持てる。
+   ===================================================================== */
+function exploreRng(seed){
+  let a = seed >>> 0;
+  return ()=>{
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// 設計図の点([x,y] か 峠の名前)を座標にする
+function explorePoint(p){
+  if(typeof p === 'string'){ const q = EXPLORE_FIELD_LAYOUT.passes[p]; return { x:q[0], y:q[1] }; }
+  return { x:p[0], y:p[1] };
+}
+// 点から折れ線までの距離
+function exploreDistToPolyline(x, y, pts){
+  let best = Infinity;
+  for(let i=0;i<pts.length-1;i++){
+    const a = pts[i], b = pts[i+1];
+    const vx = b.x-a.x, vy = b.y-a.y, L2 = vx*vx + vy*vy || 1;
+    const t = Math.max(0, Math.min(1, ((x-a.x)*vx + (y-a.y)*vy)/L2));
+    const d = Math.hypot(x - (a.x + vx*t), y - (a.y + vy*t));
+    if(d < best) best = d;
+  }
+  return best;
+}
+// 折れ線を弧長 s の位置で読む(向きも返す)
+function explorePolylineAt(pts, s){
+  for(let i=0;i<pts.length-1;i++){
+    const a = pts[i], b = pts[i+1];
+    const len = Math.hypot(b.x-a.x, b.y-a.y);
+    if(s <= len || i === pts.length-2){
+      const t = Math.max(0, Math.min(1, s/(len||1)));
+      return { x:a.x + (b.x-a.x)*t, y:a.y + (b.y-a.y)*t, dx:(b.x-a.x)/(len||1), dy:(b.y-a.y)/(len||1) };
+    }
+    s -= len;
+  }
+  return null;
+}
+/* 壁の抜け(開口部)か。openings=線の長さに対する位置(0〜1)、幅は WALL_OPEN_W。
+   world.js(当たり)と real3d_explore.js(見た目)が同じ関数を使う(window経由)。 */
+function exploreWallOpen(st, s, total){
+  const w = EXPLORE_FIELD_LAYOUT.wallOpenW;
+  for(const f of (st.openings || [])){ if(Math.abs(s - f*total) < w*0.5) return true; }
+  return false;
+}
+function explorePolylineLen(pts){
+  let L = 0;
+  for(let i=0;i<pts.length-1;i++) L += Math.hypot(pts[i+1].x-pts[i].x, pts[i+1].y-pts[i].y);
+  return L;
+}
+/* 障害物の向き。real3d_props.js は「seed*1.17」をヨー角にするので、欲しい向きから
+   seed を逆算する。線に沿う向き(ワールドの角度 ang)= ヨー -ang(Threeのz=ワールドのy)。
+   周回ぶん(2π/1.17)ずらすと形の4通りも変わる。                            */
+function exploreSeedForYaw(ang, rng){
+  const TAU = Math.PI*2;
+  let th = (-ang) % TAU; if(th < 0) th += TAU;
+  return (th + TAU*Math.floor(rng()*3)) / 1.17;
+}
+// 種類ごとの大きさ(当たり判定の半径)。人工物と木は幅を狭く取る
+const EXPLORE_FLAVOR_R = {
+  rock:[24,70], snowrock:[24,66], basalt:[26,52], sandrock:[24,60],
+  tree:[30,48], pine:[30,50], palm:[34,54], deadtree:[24,40], log:[30,50],
+  ruinpillar:[42,60], ruinwall:[46,64], hut:[56,72], container:[50,62],
+};
+function exploreGenWorld(){
+  const L = EXPLORE_FIELD_LAYOUT;
+  const rng = exploreRng(L.seed);
+  const rr = (a, b)=> a + (b-a)*rng();
+  volcanoObstacles = []; lavaZones = []; riverZones = []; seaZones = []; oasisZones = [];
+  rocks = []; crystalObstacles = []; terrainDecor = [];
+  const paths = L.paths.map(p=>({ w:p.w, pts:p.pts.map(explorePoint) }));
+  // 何も置かない場所(キャンプ・ボスの巣・ランドマークの周り)
+  const clears = [{ x:L.camp.x, y:L.camp.y, r:L.camp.clear }];
+  for(const k of EXPLORE_REGION_KEYS){ const n = L.regions[k].nest; clears.push({ x:n.x, y:n.y, r:n.r }); }
+  /* 【洞窟の天井を clears に足すのはやめた】乱数を引く前に候補を減らす形の除外を増やすと、
+     そのぶん後続すべての乱数の並びがずれる(2026-09-24 追加周で氷の結晶・大岩・大木が
+     他所へ動いた不具合の主因)。天井の上に物を置かせないのは道(onPath、7)だけで足りる
+     (峠の道は洞窟の真上を通る)ので、ここへは足さない。 */
+  const onPath = (x, y, m)=>{ for(const p of paths){ if(exploreDistToPolyline(x, y, p.pts) < p.w + m) return true; } return false; };
+  const inClear = (x, y, m)=>{ for(const c of clears){ if(Math.hypot(x-c.x, y-c.y) < c.r + m) return true; } return false; };
+  let complexId = 0;
+  /* 探検フィールドの山は全部「見えない円の判定」(noMesh)。見た目は地形(exploreRelief)が
+     持っているので、円錐は描かない。extra に見た目の担当(real3d_explore.js)への情報を載せる。 */
+  const block = (x, y, g, tag, extra)=>{
+    complexId++;
+    const v = { x, y, radius:mountainRadiusForGround(g), isMain:false, complexId, style:'crag', noMesh:true, landmark:tag };
+    if(extra) Object.assign(v, extra);
+    volcanoObstacles.push(v);
+    return v;
+  };
+
+  /* ---- 1) 起伏を実際に測って、登れない所へ円の判定を並べる ----
+     尾根・峡谷の壁・山の高さは data.js の exploreRelief(見た目と同じ面)。その面が
+     「稜線(壁)の高さの RELIEF_BLOCK 倍」を越える範囲を横断方向に測り、その帯の中心へ
+     帯の半幅の円を置く。=見えている急斜面のすぐ手前で止まる(見えない壁にならない)。 */
+  const RELIEF_BLOCK = 0.34;
+  const extent = (x, y, nx, ny, hRef, from, maxD)=>{
+    // (x,y)+n*d を from から外へ進み、高さが基準を下回る直前の距離を返す
+    let d = from;
+    while(d < maxD && exploreRelief(x + nx*d, y + ny*d) >= hRef*RELIEF_BLOCK) d += 20;
+    return d;
+  };
+  const R = L.relief;
+  for(const rd of R.ridges){
+    const pts = rd.pts.map(explorePoint);
+    const total = explorePolylineLen(pts);
+    for(let s = 0; s < total; ){
+      const q = explorePolylineAt(pts, s);
+      const h0 = exploreRelief(q.x, q.y);
+      let step = 160;
+      if(h0 > 140){
+        const nx = -q.dy, ny = q.dx;
+        const e1 = extent(q.x, q.y, nx, ny, h0, 0, rd.w[1]*1.2);
+        const e2 = extent(q.x, q.y, -nx, -ny, h0, 0, rd.w[1]*1.2);
+        const g = (e1 + e2)/2, off = (e1 - e2)/2;
+        const cx = q.x + nx*off, cy = q.y + ny*off;
+        if(g > 60 && cx > -300 && cy > -300 && cx < WORLD.w+300 && cy < WORLD.h+300 && !inClear(cx, cy, g*0.5) && !onPath(cx, cy, g - 40)) block(cx, cy, g, 'ridge');
+        step = Math.max(120, g*0.62);
+      }
+      s += step;
+    }
+  }
+  /* 洞窟(tunnel の峠): 細い切り通しの両側の壁に円を並べる。尾根の円は道に掛かると置かないので、
+     切り通しの脇が抜け道にならないよう、壁の内側の面に沿って小さな円で塞ぐ(見た目の壁と一致) */
+  for(const rd of R.ridges){
+    for(const gp of rd.gaps){
+      if(typeof gp === 'string' || !gp.tunnel) continue;
+      const c = explorePoint(gp.p), ax = Math.cos(gp.slot[0]), ay = Math.sin(gp.slot[0]);
+      const nx = -ay, ny = ax, len = gp.slot[1]/2 + gp.blend;
+      for(let a = -len; a <= len; a += 100){
+        // 壁の面に沿った小さな円 + その外の大きな円(尾根の円が道のせいで置かれなかった所を塞ぐ)
+        for(const side of [1, -1]) for(const [off, g] of [[gp.half + 70, 70], [gp.half + 290, 150]]){
+          const x = c.x + ax*a + nx*off*side, y = c.y + ay*a + ny*off*side;
+          if(exploreRelief(x, y) > 90 && !inClear(x, y, 0)) block(x, y, g, 'tunnel');
+        }
+      }
+    }
+  }
+  {
+    const cy = R.canyon, mid = cy.pts.map(explorePoint), total = explorePolylineLen(mid);
+    for(let s = 0; s < total; s += 170){
+      const q = explorePolylineAt(mid, s);
+      for(const side of [1, -1]){
+        const nx = -q.dy*side, ny = q.dx*side;
+        // 壁の上(台地)の高さを測ってから、内側の崖の縁と外側の裾を探す
+        let hW = 0, dW = 0;
+        for(let d = cy.narrow; d < cy.wide + cy.band; d += 40){ const h = exploreRelief(q.x + nx*d, q.y + ny*d); if(h > hW){ hW = h; dW = d; } }
+        if(hW < 140) continue;
+        let e1 = dW; while(e1 > 0 && exploreRelief(q.x + nx*e1, q.y + ny*e1) >= hW*RELIEF_BLOCK) e1 -= 20;
+        const e2 = extent(q.x, q.y, nx, ny, hW, dW, cy.wide + cy.band + 400);
+        const g = (e2 - e1)/2, c = (e1 + e2)/2;
+        if(g > 60) block(q.x + nx*c, q.y + ny*c, g, 'canyon');
+      }
+    }
+  }
+  for(const pk of R.peaks){
+    // 中心に最小の半径の円、方向ごとの張り出しには輪の上に小さな円を足す
+    const reach = [];
+    for(let i=0;i<16;i++){
+      const a = i/16*Math.PI*2, nx = Math.cos(a), ny = Math.sin(a);
+      let d = pk.r*1.35;
+      while(d > 0 && exploreRelief(pk.x + nx*d, pk.y + ny*d) < pk.h*RELIEF_BLOCK) d -= 25;
+      reach.push(d);
+    }
+    const gMin = Math.min(...reach);
+    if(gMin > 60) block(pk.x, pk.y, gMin, 'peak', { peakId:pk.id });
+    reach.forEach((d, i)=>{
+      if(d < gMin*1.12) return;
+      const a = i/16*Math.PI*2;
+      const g = (d - gMin*0.55)/2 + 40, c = d - g;
+      block(pk.x + Math.cos(a)*c, pk.y + Math.sin(a)*c, g, 'peak');
+    });
+  }
+
+  /* ---- 2) ランドマーク・キャンプの当たり(形は real3d_explore.js。ここは足元の円だけ) ---- */
+  const foot = (x, y, g, tag, extra)=>{ block(x, y, g, tag, extra); clears.push({ x, y, r:g + 140 }); };
+  for(const lm of L.landmarks){
+    if(lm.kind === 'arch'){
+      // 脚は板状(アーチの向きに長い)。1本の脚を向きに沿った2つの円で覆う
+      const dx = lm.b[0]-lm.a[0], dy = lm.b[1]-lm.a[1], dl = Math.hypot(dx, dy) || 1;
+      for(const e of [lm.a, lm.b]) for(const k of [-0.5, 0.5]){
+        foot(e[0] + dx/dl*lm.foot*k, e[1] + dy/dl*lm.foot*k, lm.foot*0.56, 'arch');
+      }
+      clears.push({ x:(lm.a[0]+lm.b[0])/2, y:(lm.a[1]+lm.b[1])/2, r:dl*0.5 });
+    }else if(lm.kind === 'tower' || lm.kind === 'icespire'){
+      foot(lm.x, lm.y, lm.foot, lm.kind);
+    }else if(lm.kind === 'gate'){
+      const ax = lm.toward[0]-lm.x, ay = lm.toward[1]-lm.y, al = Math.hypot(ax, ay) || 1;
+      const px = -ay/al, py = ax/al;
+      foot(lm.x + px*lm.half, lm.y + py*lm.half, lm.foot, 'gate');
+      foot(lm.x - px*lm.half, lm.y - py*lm.half, lm.foot, 'gate');
+      clears.push({ x:lm.x, y:lm.y, r:lm.half*0.8 });
+    }
+  }
+  for(const t of (L.camp.props || [])) block(L.camp.x + t.dx, L.camp.y + t.dy, t.foot, 'camp');
+  block(L.camp.beacon.x, L.camp.beacon.y, L.camp.beacon.foot, 'beacon');
+
+  /* ---- 3) 溶岩・湖・川 ---- */
+  for(const z of L.lava) lavaZones.push({ x:z.x, y:z.y, radius:z.r });
+  // 火山の火口の底にも溶岩(近づけないが、上から覗くと光っている)
+  for(const pk of R.peaks){
+    if(!pk.crater) continue;
+    lavaZones.push({ x:pk.x, y:pk.y, radius:pk.r*pk.crater.r*0.55, crater:true });
+  }
+  const smoothPts = (pts, stepLen)=>{
+    // 折れ線の角を丸める(カトマル-ロム)。直線を並べた川は用水路に見える
+    const out = [];
+    for(let i=0;i<pts.length-1;i++){
+      const p0 = pts[Math.max(0,i-1)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(pts.length-1,i+2)];
+      const seg = Math.max(2, Math.round(Math.hypot(p2.x-p1.x, p2.y-p1.y)/stepLen));
+      for(let k=0;k<seg;k++){
+        const t = k/seg, t2 = t*t, t3 = t2*t;
+        const f = (a,b,c,d)=> 0.5*((2*b) + (-a+c)*t + (2*a-5*b+4*c-d)*t2 + (-a+3*b-3*c+d)*t3);
+        out.push({ x:f(p0.x,p1.x,p2.x,p3.x), y:f(p0.y,p1.y,p2.y,p3.y) });
+      }
+    }
+    out.push(pts[pts.length-1]);
+    return out;
+  };
+  for(const z of L.lakes) oasisZones.push({ x:z.x, y:z.y, radius:z.r });
+  for(const rv of L.rivers){
+    smoothPts(rv.pts.map(explorePoint), 150).forEach((p, i)=>{
+      const wob = Math.sin(i*0.7 + rv.r)*0.10 + rr(-0.06, 0.06);
+      riverZones.push({ x:p.x, y:p.y, radius:rv.r*(1 + wob) });
+    });
+  }
+  // 溶岩の川: 当たり(ダメージ)は円の列。見た目は real3d_explore.js が1本の帯で描くので noMesh
+  for(const lr of (L.lavaRivers || [])){
+    smoothPts(lr.pts.map(explorePoint), 110).forEach(p=> lavaZones.push({ x:p.x, y:p.y, radius:lr.r, noMesh:true, lavaRiver:true }));
+  }
+
+  /* ---- 6) 人工物の並び(廃村・参道・回廊・野営地・前哨) ---- */
+  const grid = new Map(), CELL = 220;
+  const gkey = (cx, cy)=> cx*100003 + cy;
+  const addObst = (o)=>{
+    rocks.push(o);
+    const k = gkey(Math.floor(o.x/CELL), Math.floor(o.y/CELL));
+    if(!grid.has(k)) grid.set(k, []);
+    grid.get(k).push(o);
+  };
+  const spaceOk = (x, y, r, pad)=>{
+    const cx = Math.floor(x/CELL), cy = Math.floor(y/CELL);
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const list = grid.get(gkey(cx+dx, cy+dy));
+      if(!list) continue;
+      for(const o of list){ if(Math.hypot(x-o.x, y-o.y) < r + o.radius + pad) return false; }
+    }
+    return true;
+  };
+  const place = (flavor, x, y, radius, seed, strict)=>{
+    if(x < 120 || y < 120 || x > WORLD.w-120 || y > WORLD.h-120) return false;
+    if(isOnHazard(x, y, radius + (strict ? 90 : 20))) return false;
+    if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.15 + radius)) return false;   // 湖の中に置かない
+    if(onPath(x, y, radius + 20)) return false;
+    if(!spaceOk(x, y, radius, strict ? 26 : 4)) return false;
+    addObst({ id:nextId++, x, y, radius, height:radius*1.3, seed, flavor });
+    return true;
+  };
+  for(const st of L.structures){
+    if(st.kind === 'row'){
+      const ax = st.a[0], ay = st.a[1], bx = st.b[0], by = st.b[1];
+      const len = Math.hypot(bx-ax, by-ay), ang = Math.atan2(by-ay, bx-ax);
+      const spacing = st.spacing || st.r*2.04;
+      const n = Math.max(1, Math.floor(len/spacing) + 1);
+      for(let i=0;i<n;i++){
+        const t = n === 1 ? 0.5 : i/(n-1);
+        if(st.gaps && st.gaps.some(g=> Math.abs(t - g)*len < st.r*1.9)) continue;
+        if(st.skip && rng() < st.skip) continue;
+        const x = ax + (bx-ax)*t, y = ay + (by-ay)*t;
+        const yaw = ang + rr(-0.06, 0.06) + (rng() < 0.5 ? 0 : Math.PI);
+        place(st.f, x, y, st.r*rr(0.95, 1.03), exploreSeedForYaw(yaw, rng), false);
+      }
+    }else if(st.kind === 'ring'){
+      for(let i=0;i<st.n;i++){
+        if(st.skip && rng() < st.skip) continue;
+        const a = (i/st.n)*Math.PI*2 + rr(-0.08, 0.08);
+        const x = st.x + Math.cos(a)*st.R, y = st.y + Math.sin(a)*st.R;
+        place(st.f, x, y, st.r*rr(0.95, 1.03), exploreSeedForYaw(a + Math.PI/2, rng), false);
+      }
+    }else if(st.kind === 'houseRow' || st.kind === 'houseRing'){
+      /* 家。見た目は real3d_explore.js(石の腰壁+木の上屋+張り出した屋根)。
+         当たりは家の長手方向に並べた2つの円(床面 w×d をほぼ覆う)。 */
+      const spots = [];
+      if(st.kind === 'houseRow'){
+        const ax = st.a[0], ay = st.a[1], bx = st.b[0], by = st.b[1];
+        const len = Math.hypot(bx-ax, by-ay), ang = Math.atan2(by-ay, bx-ax);
+        const n = Math.max(1, Math.floor(len/st.spacing) + 1);
+        for(let i=0;i<n;i++){ const t = n === 1 ? 0.5 : i/(n-1); spots.push({ x:ax + (bx-ax)*t, y:ay + (by-ay)*t, ang, face:st.face }); }
+      }else{
+        for(let i=0;i<st.n;i++){ const a = (i/st.n)*Math.PI*2 + 0.4; spots.push({ x:st.x + Math.cos(a)*st.R, y:st.y + Math.sin(a)*st.R, ang:a + Math.PI/2, face:-1 }); }
+      }
+      for(const sp of spots){
+        if(st.skip && rng() < st.skip) continue;
+        const w = rr(190, 250), d = rr(140, 170), h = rr(150, 190);
+        if(onPath(sp.x, sp.y, d*0.5) || isOnHazard(sp.x, sp.y, w*0.5)) continue;
+        const ux = Math.cos(sp.ang), uy = Math.sin(sp.ang), cr = d*0.52 + 8;
+        const house = { x:sp.x, y:sp.y, ang:sp.ang, face:sp.face, w, d, h, snowy:!!st.snowy, seed:rr(0, 10) };
+        block(sp.x + ux*(w*0.5 - cr), sp.y + uy*(w*0.5 - cr), cr, 'house', { house });
+        block(sp.x - ux*(w*0.5 - cr), sp.y - uy*(w*0.5 - cr), cr, 'house');
+      }
+    }else if(st.kind === 'wall'){
+      /* 一続きの石壁。見た目は real3d_explore.js が同じ折れ線から作る(openings も同じ式)。
+         当たりは壁に沿って並べた小さな円。抜け(openings)の所は円を置かない。 */
+      const pts = st.pts.map(explorePoint);
+      if(st.closed) pts.push(pts[0]);
+      const total = explorePolylineLen(pts);
+      for(let s2 = 0; s2 <= total; s2 += 64){
+        if(exploreWallOpen(st, s2, total)) continue;
+        const q = explorePolylineAt(pts, Math.min(s2, total - 0.01));
+        block(q.x, q.y, 46, 'wall');
+      }
+    }
+  }
+
+  /* ---- 6.5) 峡谷の床に転がる大きな崩れ岩(一本道に見えないよう、通り道を細かく分ける目印にもなる) ---- */
+  for(const b of (R.canyon.boulders || [])){
+    place('basalt', b[0], b[1], b[2]*rr(0.92, 1.08), rr(0, 10), true);
+  }
+
+  /* ---- 7) 地域ごとに岩・木を散らす。木は林(かたまり)にする ---- */
+  const grove = (x, y)=>{
+    // 大きなうねりの値ノイズ代わり(林と草地が入れ替わる)
+    return 0.5 + 0.30*Math.sin(x*0.00118 + y*0.00071 + 0.8) + 0.20*Math.sin(x*0.00043 - y*0.00137 + 2.2);
+  };
+  for(const k of EXPLORE_REGION_KEYS){
+    const sc = L.scatter[k], reg = L.regions[k];
+    const total = sc.mix.reduce((s, m)=> s + m[1], 0);
+    let placed = 0, guard = 0;
+    while(placed < sc.n && guard < sc.n*80){
+      guard++;
+      const a = rng()*Math.PI*2, d = reg.radius*1.35*Math.sqrt(rng());
+      const x = reg.x + Math.cos(a)*d, y = reg.y + Math.sin(a)*d;
+      if(exploreRegionKeyAt(x, y) !== k) continue;
+      let pick = rng()*total, ent = sc.mix[sc.mix.length-1];
+      for(const m of sc.mix){ if(pick < m[1]){ ent = m; break; } pick -= m[1]; }
+      const flavor = ent[0];
+      const tree = (flavor === 'tree' || flavor === 'pine');
+      if(tree && rng() > grove(x, y)) continue;
+      if(!tree && flavor !== 'log' && rng() > 1.15 - grove(x, y)*0.6) continue;
+      const R = ent[2] || EXPLORE_FLAVOR_R[flavor] || EXPLORE_FLAVOR_R.rock;
+      const u = rng();
+      const radius = R[0] + (R[1]-R[0])*(u*u);
+      if(inClear(x, y, radius + 60)) continue;
+      // 崖や段丘の縁に置かない(浮いて見える)
+      const gr = real3dHeightGrad(x, y);
+      if(Math.hypot(gr.gx, gr.gy) > 0.42) continue;
+      /* place()に渡す乱数(見た目の個体差)は、道の上かどうかを見る前に引く。
+         ここより後で捨てると、道の上の候補だけ乱数を1つ引かずに次へ進んでしまい、
+         それ以降ずっと配置がずれていく(2026-09-24 追加周で氷の結晶・大岩・大木・枯れ木が
+         ほかの場所へ動いた不具合)。道の判定自体は乱数を使わないので、判定の位置を
+         動かしても「乱数を引く回数」は変わらない=道でなかった候補は前とまったく同じ結果になる。 */
+      const seed = rr(0, 10);
+      // 道の上には置かない(歩く場所に木箱・岩・木が乗って邪魔にならないように)
+      if(onPath(x, y, radius + 40)) continue;
+      if(place(flavor, x, y, radius, seed, true)) placed++;
+    }
+  }
+
+  /* ---- 8) 凍った高地の水晶(群生) ---- */
+  {
+    const cr = L.crystals, reg = L.regions[cr.region];
+    let guard = 0;
+    const ok = (x, y, radius)=>{
+      if(exploreRegionKeyAt(x, y) !== cr.region) return false;
+      if(x < 150 || y < 150 || x > WORLD.w-150 || y > WORLD.h-150) return false;
+      if(isOnHazard(x, y, radius + 90) || inClear(x, y, radius + 60) || onPath(x, y, radius + 20)) return false;
+      if(isNearRock(x, y, radius + 25)) return false;
+      if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.15 + radius)) return false;
+      for(const c of crystalObstacles){ if(Math.hypot(x-c.x, y-c.y) < c.radius + radius + 6) return false; }
+      return true;
+    };
+    while(crystalObstacles.length < cr.n && guard < cr.n*40){
+      guard++;
+      const a = rng()*Math.PI*2, d = reg.radius*1.3*Math.sqrt(rng());
+      const cx = reg.x + Math.cos(a)*d, cy = reg.y + Math.sin(a)*d;
+      const n = Math.round(rr(cr.cluster[0], cr.cluster[1]));
+      for(let i=0;i<n && crystalObstacles.length < cr.n;i++){
+        const r2 = i === 0 ? rr(30, 42) : rr(14, 30);
+        const aa = rng()*Math.PI*2, dd = i === 0 ? 0 : rr(40, 110);
+        const x = cx + Math.cos(aa)*dd, y = cy + Math.sin(aa)*dd;
+        if(ok(x, y, r2)) crystalObstacles.push({ id:nextId++, x, y, radius:r2, height:r2*1.8, seed:rr(0, 10) });
+      }
+    }
+  }
+
+  /* ---- 9) 密林の巨木(幹だけ当たり判定。樹冠は頭上なので判定なし) ---- */
+  {
+    const G = L.giants, reg = L.regions[G.region];
+    const trees = [];
+    let guard = 0;
+    while(trees.length < G.n && guard < G.n*80){
+      guard++;
+      const a = rng()*Math.PI*2, d = reg.radius*1.25*Math.sqrt(rng());
+      const x = reg.x + Math.cos(a)*d, y = reg.y + Math.sin(a)*d;
+      if(exploreRegionKeyAt(x, y) !== G.region) continue;
+      const f = rr(G.foot[0], G.foot[1]);
+      if(x < 400 || y < 400 || x > WORLD.w-400 || y > WORLD.h-400) continue;
+      const cc = G.canopyClr || 0;
+      if(isOnHazard(x, y, f + 80) || inClear(x, y, f + cc) || onPath(x, y, f + Math.max(60, cc*0.7))) continue;
+      if(isNearRock(x, y, f + 30)) continue;
+      if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.2 + f)) continue;
+      if(trees.some(t=> Math.hypot(x-t.x, y-t.y) < G.minGap)) continue;
+      const gr = real3dHeightGrad(x, y);
+      if(Math.hypot(gr.gx, gr.gy) > 0.35) continue;
+      trees.push({ x, y });
+      block(x, y, f, 'giant', { giant:{ h:rr(G.h[0], G.h[1]), foot:f, seed:rr(0, 10) } });
+    }
+  }
+}
 // ===== マルチプレイ用: ホストが生成した障害物をゲストへ配信して同一化する =====
 // (シード再生成に頼るとタイムアウト時の別シードや環境差で食い違い、見えない岩に
 //  ハマる/岩の上にスポーンして動けない等が起きるため、ホストの結果を正とする)

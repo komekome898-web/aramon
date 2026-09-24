@@ -53,6 +53,7 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - テーマの反映は`applyReal3DLayer()`が`window.__aramonRealTheme`に入れ、real3d.jsの`setActive()`→`applyTheme()`が空・霞・頂点色・テクスチャ・遠景の山を差し替える(地形メッシュは使い回す)。
 - **地面だけWebGLで描き、モンスター・弾・エフェクト・HUDは従来の2Dキャンバスが上に重なる**(`#glCanvas` z:0 / `#gameCanvas` z:1)。
 - **2Dの`project()`と3Dカメラを完全に一致させてある**(`FOV_V`=64° / `camPos` / `camState.yaw,pitch`)。**`FOV_V`や`CAM_*`を変えたらreal3d.js側も合わせる。** 丘による遮蔽は2D側に無い(割り切り)。
+- **視野の倍率(探検モードの狙撃スコープ)の入口は `world.js` の `setViewZoom()` 1か所。** 実効の視野角は `effectiveFovDeg()` だけが作り、`FOV_V`(2D)・`window.__aramonLook.fovDeg`(real3d / real3d_zone)・`window.FOV_V`(fx_gl)が同じ値を返す。`window.__aramonLook` は `lookSettings` の**読み取り専用の窓**(書き込みは ui.js が `lookSettings` へ)。`sniper.js` が**描画1フレームの間だけ**倍率・構えのカメラを掛け、`sniperFrameEnd()` で戻す。ズーム中は `project()` のスケール上限も倍率ぶん伸ばし、real3d.js は霞を奥へ押す(`FOG_ZOOM_*`。FARはパッチの半分より手前のまま)。
 - **高さは`data.js`の`real3dHeightAt(x,y)`。純関数なのでホスト/ゲストで自動一致**し、当たり判定(`world.js`の`getTerrainHeightAt`)も同じ関数を使う。
 - **各`REAL3D_TERRAIN_SETS`の最大傾斜は0.3程度まで**(`Σ(amp×freq)/2`)。ダッシュは1フレーム20単位進むので、超えると`CLIMB_TOLERANCE`(12)を越えて坂を登れなくなる。
 - **岩・水晶の「登っているからすり抜ける」判定は`baseTerrainHeightAt`基準**(絶対値`m.z>25`だと起伏だけですり抜ける)。
@@ -129,6 +130,23 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 - モデルは「当たり判定の半径=1・地面=y0」のローカル空間で作り、配置時に`radius`で拡大。**足元4点のいちばん低い高さに合わせてから`sink`ぶん埋める。**
 - **影は本物のメッシュが落とす**(影専用ダミー球`updateShadowCasters`は廃止済み)。
 - three本体に`mergeGeometries`は無いので、複数パーツのモデルは`mergeGeos()`(自前・非indexed化して連結)でまとめる。一度も描いていないジオメトリは`dispose()`不要。
+
+## 探検フィールド(MAPS.explore・地域ブレンド)
+
+- **1マップ1テーマの唯一の例外。分岐は `R3.theme.explore`(= `REAL3D_THEMES.explore.explore:true`)の1か所。** 他のマップは印が無いので従来の処理を1ビットも変えない(wild/kaurea の撮影で画素一致を確認済み)。
+- **設計図は `data.js` の `EXPLORE_FIELD_LAYOUT` が唯一の正**(地域・キャンプ・峠・尾根・峡谷・山・水・道・人工物の並び・ランドマーク)。当たり判定のある物は `world.js` の `exploreGenWorld()` が固定の種で作る(Math.randomを使わない=毎回同じ世界)。3Dのランドマークは `real3d_explore.js`。**座標を2か所に書かない。**
+- 地域の重みは `exploreRegionWeights(x,y)`(純関数。[草原,凍った高地,火山,密林,キャンプ])。地面の頂点色・4地域ぶんの近景タイル(チャンネル詰め・頂点属性 `aExW`)・植生の濃さと色・障害物の色・霞/日差し/空/遠景の山並みがこれを読む。地面の高さも地域で変わる(`exploreElevGrad`。解析微分つき・最大傾斜0.17)。
+- **起伏(尾根・峡谷・山・段丘・世界の縁)は地形そのもの。** `EXPLORE_FIELD_LAYOUT.relief` を `exploreRelief(x,y)`(data.js・純関数)が高さにして `real3dHeightAt` へ足す。円錐の山は描かない。**通れない所の当たりは world.js が同じ面を実際に測って `noMesh` の円を並べる**(見た目と判定が必ず一致する。起伏を直したら当たりも自動で追従)。弧長 `u` で形を変えるので、折れ線の最寄り点は角の内側で `u` を混ぜる(`exploreNearest`。混ぜないと段差=垂直の壁が出た)。
+- 地形パッチ(7200四方)の外は `buildFarTerrain()`(マップ全体+縁の山を1枚・描画1回。パッチの内側は捨てる)。遠景の山並み(空のモジュール)は探検では隠す。
+- 空気: 探検のあいだだけ霧を `FogExp2` に差し替え(`resetExplore` が元の `Fog` へ戻す。**applyTheme では霧の色・距離を書く前に呼ぶ**)。地域ごとの `fogD`/`sunK`/`clouds`/`cloudTint` を `updateExplore` が混ぜる。雲は積雲モード(`uCloudMode=1`・`ensureCumulusTex`)で、他マップは 0 のまま。
+- ランドマークの足元・テント・ビーコン・家・石壁・巨木は `noMesh:true` の山として円の判定だけ持つ(家・巨木の形は `v.house`/`v.giant` を real3d_explore.js が読む)。半径は `mountainRadiusForGround(地面での半径)` で逆算する。石壁の抜けは `exploreWallOpen()` と `wallOpenW` を両方が読む。
+- 描画命令を抑えるため、探検だけ地面のしみを「材質」、動かないランドマークを「材質×区画」でまとめ、巨木は区画ごとの InstancedMesh にしている(1つにすると外接球が密林全体になり、どこからでも全部描いた)。障害物はその地域の霞が完全に掛かる距離で切る。
+- 撮影は `node tools/real3d_shot.mjs --maps explore`(専用のカット。立ち位置は設計図の名前で書く)。
+
+- 地図の入り組み: 峠は `{ p, half, blend, floor, slot, tunnel }` で書ける(`exploreGapApply`)。`floor`=そこまでしか下げない尾根越えの道、`slot`+`tunnel`=細い切り通しに岩の天井を架けた洞窟(天井は `buildTunnels`・壁の当たりは world.js が切り通しの両脇に円を並べる)。番号付きのエリアは `EXPLORE_FIELD_LAYOUT.areas` と `exploreAreaAt(x,y)`(HUD の札・地図が読む)。
+- 岩肌と雪は**画素で塗る**(近景 `EX_MAP_CHUNK` / 遠景 `buildFarTerrain`。傾き+低周波ノイズ)。頂点色で塗ると粗い三角形の境目がノコギリ歯の模様になった。遠景の高い所は方角(地域)で塗り分ける(火山=玄武岩+赤い照り返し / 密林=森)。
+- 石壁は角を落とした石4通りの InstancedMesh(全部の壁で描画4回)。溶岩の川は40単位ごとに地形へ沿わせ、溜まり・川の縁に黒い殻の土手(`buildLavaRims`)と陽炎。凍った湖は縁をノイズで透かして雪へ溶かす。
+- 法線マップは常に真上からのUVで作るので、急斜面の縦縞は**世界の傾きでなく見え方**(法線マップの振幅・`normalScale`・視線とのなす角 `exFace`)で抑える。傾きだけで判定すると、緩い丘でも近くから横に見ると同じ縞が出た(2026-09-24)。
 
 ## 弾道(上下のねらい)
 

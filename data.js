@@ -520,6 +520,7 @@ function entityWalkFrameImage(e){
   }
   let idx = 0; // 停止中は静止(先頭コマ)
   if(moving){ const phase = Math.floor((t + (e.id||0)*0.13)/WALK_FRAME_DUR); idx = ((phase%8)+8)%8; }
+  e._walkBack = back;   // 探検で着けた装備を重ねるとき、後ろ姿なら武器を背中の上に描く(explore_loot.js)
   const baseImg = (back ? set.back : set.front)[idx];
   if(!imgIsReady(baseImg)) return null;
   // SSR専用コマは再着色しない。素体で色スキン(element:colorId)装備時のみ再着色。
@@ -1386,6 +1387,9 @@ const CHANGELOG_TAGS = [
 ];
 // 各項目は { t:本文, g:[タグid...] }。タグは複数付けてよい
 const UPDATE_HISTORY = [
+  { date:'2026-09-24', items:[
+    { t:'🧭 新モード「探検」をプレオープンしました。4つの地域が広がるフィールドで野生モンスターや大型のボスを倒して素材を集め、ベースキャンプの帰還ビーコンで持ち帰ります。持ち帰った素材は工房で探検用の装備になり、フィールドでは狙撃銃とスコープも拾えます。遊んだ感想をもとに調整していきます', g:['feature','solo'] },
+  ]},
   { date:'2026-09-07', items:[
     { t:'🌱 難易度「やさしい」で、敵に狙いが自動で合うようになりました(タップした敵を追い続け、照準の近くの敵へ少し引き寄せます)', g:['feature','solo'] },
     { t:'🏅 段位ランキングを「今シーズン」と「通算」で切り替えられるようにしました。既定は今シーズンです', g:['feature','general'] },
@@ -2839,6 +2843,17 @@ const REAL3D_TERRAIN_SETS = {
     { amp: 22, fx:0.00260, fy:0.00230, ph:1.7 },
     { amp:  8, fx:0.00620, fy:0.00560, ph:4.1 },
   ],
+  /* explore: 探検モードのフィールド。起伏は控えめにして、その上に地域ごとの高さ
+     (exploreElevGrad。凍った高地は高く、草原の盆地は低い)を足す。
+     足したぶんの傾きは最大0.12程度なので、この組の最大傾斜は0.16に抑えてある
+     (合計で0.3を超えると坂を登れなくなる)。 */
+  explore: [
+    { amp:110, fx:0.00040, fy:0.00036, ph:0.7 },
+    { amp: 64, fx:0.00093, fy:0.00082, ph:2.3 },
+    { amp: 30, fx:0.00205, fy:0.00188, ph:4.0 },
+    { amp: 12, fx:0.00510, fy:0.00462, ph:1.2 },
+    { amp:  8, fx:0.00780, fy:0.00700, ph:3.6 },
+  ],
 };
 function real3dLayers(){
   const k = (typeof currentMap!=='undefined' && currentMap && currentMap.real3dTerrain) || 'hills';
@@ -2851,6 +2866,8 @@ function real3dHeightAt(x, y){
     const w = L[i];
     h += w.amp * (Math.sin(x*w.fx + w.ph) * 0.5 + Math.cos(y*w.fy + w.ph*1.3) * 0.5);
   }
+  // 探検フィールドだけ地域ごとの高さと起伏(尾根・峡谷・山・段丘)を足す(他のマップは表が違うので素通り)
+  if(L === REAL3D_TERRAIN_SETS.explore) h += exploreElevGrad(x, y).h + exploreRelief(x, y);
   return h;
 }
 /* 高さと傾き(∂h/∂x, ∂h/∂y)を1回の走査でまとめて求める。
@@ -2868,6 +2885,17 @@ function real3dHeightGrad(x, y){
     h  += half * (Math.sin(ax) + Math.cos(ay));
     gx += half * w.fx * Math.cos(ax);
     gy -= half * w.fy * Math.sin(ay);
+  }
+  if(L === REAL3D_TERRAIN_SETS.explore){
+    const e = exploreElevGrad(x, y);
+    h += e.h; gx += e.gx; gy += e.gy;
+    // 起伏は中心差分(max の継ぎ目や地層の段があるので解析微分にしない)
+    const r0 = exploreRelief(x, y), rx = exploreRelief(x + 3, y), ry = exploreRelief(x, y + 3);
+    if(r0 > 0.01 || rx > 0.01 || ry > 0.01){
+      h += r0;
+      gx += (rx - exploreRelief(x - 3, y))/6;
+      gy += (ry - exploreRelief(x, y - 3))/6;
+    }
   }
   _r3grad.h = h; _r3grad.gx = gx; _r3grad.gy = gy;
   return _r3grad;
@@ -2923,6 +2951,66 @@ const REAL3D_THEMES = {
     low:0xc9ab6f, high:0xf2e2ae, steep:0xa08a5c, gravel:0xd8c48c, scrub:0xc0b070,
     ridgeRock:0x8a7a5a, ridgeFoot:0xc8ae7e, ridgeSnow:0xf2ead8, snowLine:0.86,
   },
+  /* 探検フィールド。**1枚のマップの中で地域ごとに見た目を変える**唯一のテーマ。
+     explore:true が目印で、real3d_*.js はこの印があるときだけ地域ブレンドを使う
+     (他のマップは1マップ1テーマのまま。分岐は R3.theme.explore の1か所)。
+     ・上の段(skyTop〜snowLine)は空・遠景・環境光・障害物の地の色に使う「全体の地」。
+       晴れた昼の高原にしてあり、地域の色は下の regions が上から乗せる。
+     ・regions の順番とキーは EXPLORE_FIELD_LAYOUT.regions と同じ(camp=ベースキャンプ)。
+       low〜scrub=地面の頂点色 / tex=地面テクスチャ / sky=天頂の色 / cloud=雲を霞の色(煙)へ寄せる量 / ridgeHaze=遠景の山並みを霞へ寄せる量 /
+       haze=その地域に立ったときの霞 /
+       fog=[霞が始まる距離, 完全に霞む距離] / sun=日差しの色 / rock=障害物の色の掛け率 /
+       grass=草の色 / veg=植生の濃さ(草・花・シダ・枯れ枝・硬い葉)            */
+  explore: {
+    explore:true,
+    tex:'meadow', bump:0.30,
+    skyTop:0x2a5d98, skyBot:0xa7c6dc, haze:0xc3d2d4,
+    low:0x55683a, high:0x8a9a5a, steep:0x4d4a3c, gravel:0x7e7862, scrub:0x5f7f2e,
+    ridgeRock:0x56637a, ridgeFoot:0x7d8c98, ridgeSnow:0xeef3f8, snowLine:0.58,
+    lavaCrust:0x1c130e,   // 溶岩の冷えた殻(探検は全体の地が草原色なので、溶岩だけ火山の黒にする)
+    /* 地域ごと: sky=天頂 / haze=霞=地平の色 / fogD=指数の霞の濃さ(0.00013で約8km先まで形が残る) /
+       sun=日差しの色 / sunK=日差しの強さの倍率 / clouds=[雲の量, 厚さのしきい値, 巻雲, 低い雲] /
+       cloudTint=雲の影の色(火山は下から赤く照らされる) / snowAlt=雪が乗り始める高さ / strata=岩肌の地層の縞 /
+       shade=地面の影の側(直射の当たらない面)を霞の色味へ寄せる強さ(0〜1。省略=0=寄せない。real3d_terrain.js の exShadeTint) */
+    regions: {
+      meadow:  { tex:'meadow',
+                 low:0x44602a, high:0x769838, steep:0x6a6352, gravel:0x857d5e, scrub:0x5f8c28,
+                 sky:0x2a62a4, haze:0xc9dcd8, fogD:0.00013, sun:0xfff1d6, sunK:1.00,
+                 clouds:[0.62, 0.50, 0.25, 0.95], cloudTint:0x56626e, cloud:0.00, ridgeHaze:0.20,
+                 rock:[1.04, 1.00, 0.92], snowAlt:1250, strata:0.55,
+                 grass:0x6f9a34, veg:{ grass:1.00, flower:1.00, fern:0.35, twig:0.05, blades:0.10 } },
+      frost:   { tex:'snow',
+                 /* high(雪面)は前は0xecf3fdで、この地域のhaze(0xd7e5f3)より明るい値になっていた
+                    (他の3地域はどれもhaze>高台で、凍った高地だけ逆転していた)。地形が自分の霞より
+                    明るいのは筋が通らないので、必ず暗く落とす側へ直す。2026-09-24の調査で
+                    vantageの「半透明の幕」は主に太陽光の映り込み(farTerrainの粗さ0.96・envMapIntensityを
+                    0まで落としても白さがほぼ変わらなかった)と判明し、この直しだけでは幕は大きくは変わらない。
+                    それでも地形-霞の大小関係の乱れ自体は直しておく。 */
+                 low:0xa7bbcf, high:0xcedded, steep:0x4e5b6e, gravel:0xb7c6d8, scrub:0x98afc4,
+                 sky:0x16408c, haze:0xd7e5f3, fogD:0.00011, sun:0xf0f5ff, sunK:1.05,
+                 clouds:[0.22, 0.82, 0.35, 0.30], cloudTint:0x5a6c84, cloud:0.00, ridgeHaze:0.15,
+                 rock:[0.78, 0.92, 1.22], snowAlt:140, strata:0.25,
+                 grass:0xa9b8a0, veg:{ grass:0.14, flower:0.00, fern:0.00, twig:0.10, blades:1.00 } },
+      volcano: { tex:'volcanic',
+                 low:0x2d1e14, high:0x51392a, steep:0x241913, gravel:0x3d2c20, scrub:0x5a3a1e,
+                 sky:0x2c1c1a, haze:0x7a4a33, fogD:0.00022, sun:0xffa870, sunK:0.80,
+                 clouds:[1.00, 0.22, 0.00, 1.00], cloudTint:0x4a2418, cloud:0.80, ridgeHaze:0.65,
+                 rock:[0.50, 0.44, 0.42], snowAlt:1e9, strata:1.00, shade:0.45,
+                 grass:0x7a6a3a, veg:{ grass:0.10, flower:0.00, fern:0.00, twig:1.00, blades:0.10 } },
+      jungle:  { tex:'jungle',
+                 low:0x223c1a, high:0x4a6e2c, steep:0x4a4230, gravel:0x5a4b32, scrub:0x5a8a22,
+                 sky:0x3d6f80, haze:0x9fbe9c, fogD:0.00030, sun:0xf4f0c4, sunK:0.68,
+                 clouds:[0.78, 0.40, 0.10, 1.00], cloudTint:0x4c5c4a, cloud:0.30, ridgeHaze:0.45,
+                 rock:[0.80, 0.92, 0.78], snowAlt:1e9, strata:0.25,
+                 grass:0x4f8a2a, veg:{ grass:0.95, flower:0.05, fern:1.00, twig:0.00, blades:0.15 } },
+      camp:    { tex:'meadow',
+                 low:0x6e5a40, high:0x92805e, steep:0x574c3c, gravel:0x857258, scrub:0x6c7a38,
+                 sky:0x2a62a4, haze:0xc9d6d2, fogD:0.00013, sun:0xfff1d6, sunK:1.00,
+                 clouds:[0.60, 0.50, 0.25, 0.95], cloudTint:0x56626e, cloud:0.00, ridgeHaze:0.20,
+                 rock:[1.00, 0.96, 0.90], snowAlt:1e9, strata:0.0,
+                 grass:0x7a8a40, veg:{ grass:0.35, flower:0.10, fern:0.00, twig:0.10, blades:0.10 } },
+    },
+  },
 };
 /* リアルマップの障害物の形。real3d.jsが3Dモデルを作り、render.jsが「同じ形」で2Dを
    くり抜く(destination-out)ので、必ずこの1つの表を両方が見る。
@@ -2975,7 +3063,10 @@ window.__aramonObstShapes = OBST_SHAPES;   // ESモジュール(real3d.js)への
    real3d_props.js もこの形で円錐を作る(window.__aramonMountProfile 経由)。
    ===================================================================== */
 const MOUNT_SKIRT = 120;   // 山の裾を地面へ埋める深さ(real3d_props.js と同じ値)
-function mountainRiseOf(v){ return v.radius * (v.isMain ? 1.15 : 0.9); }
+/* 高さ/半径の比。riseK は探検フィールドだけが持つ(なだらかな肩や切り立った崖を作るため)。
+   他のマップの山は riseK を持たないので従来どおり(主峰1.15・それ以外0.9)。
+   **real3d_props.js の buildMountainMesh も同じ式。変えるときは両方直す。** */
+function mountainRiseOf(v){ return v.radius * (v.riseK || (v.isMain ? 1.15 : 0.9)); }
 /* 山の「地面からの高さ zUp」における実際の半径。
    zUp=0 なら地面の高さでの半径。円錐なので上へ行くほど細くなる。 */
 function mountainRadiusAt(v, zUp){
@@ -2986,6 +3077,13 @@ function mountainRadiusAt(v, zUp){
 }
 // 地面の高さでの半径(移動の当たり判定・射線・ミニマップはこれを使う)
 function mountainGroundRadius(v){ return mountainRadiusAt(v, 0); }
+/* mountainGroundRadius の逆(isMain なしの山で、地面での半径が g になる v.radius)。
+   探検フィールドのランドマーク(アーチの脚・監視塔など)の当たり判定を
+   山の仕組みに乗せるときに使う。g = r*rise/(rise+SKIRT), rise=k*r を r について解いたもの。 */
+function mountainRadiusForGround(g, riseK){
+  const k = riseK || 0.9;
+  return (k*g + Math.sqrt(k*k*g*g + 4*k*MOUNT_SKIRT*g)) / (2*k);
+}
 window.__aramonMountProfile = { skirt: MOUNT_SKIRT, riseOf: mountainRiseOf, radiusAt: mountainRadiusAt };
 // 通常マップ → リアルマップの対応。地形の形だけマップごとに変える
 const REAL3D_TERRAIN_OF ={ wild:'hills', kaurea:'crags', papas:'drift', palepale:'jungle', toble:'coast', mandy:'dunes' };
@@ -3022,6 +3120,528 @@ MAPS.raid = {
   volcanoSites:[], lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:0,
   realObstacles:[{ type:'rock', w:0.55 }, { type:'basalt', w:0.45 }],
 };
+/* =====================================================================
+   探検モードのフィールド(MAPS.explore)
+   ・通常の試合とは別の1枚。exploreOnly:true で通常のマップ選択・ランダム抽選から外す
+     (判定は下の isSelectableMap() 1か所)
+   ・中身(山・尾根・水・岩・遺跡)は world.js の exploreGenWorld() が
+     EXPLORE_FIELD_LAYOUT から作る。**毎回同じ形**(固定の種)なので、ホストとゲストで
+     同じ世界になる。genVolcanoAndLava などの通常の生成は使わない
+   ・見た目は REAL3D_THEMES.explore(地域ブレンド)、高さは REAL3D_TERRAIN_SETS.explore
+     + 地域ごとの高さ(exploreElevGrad)                                        */
+MAPS.explore = {
+  key:'explore', label:'探検フィールド', rockCount:0, decorCount:0, hasVolcano:true,
+  mountainStyle:'crag', groundColor:'#3a4a2a',
+  previewIcon:'🧭', previewColors:['#4a6a38','#1c2a14'],
+  desc:'草原・火山・雪原・密林がつながる広大な探検フィールド。',
+  real3d:true, real3dTerrain:'explore', real3dTheme:'explore',
+  exploreOnly:true,
+  volcanoSites:[], lavaRingPerVolcano:0, lavaPoolCount:0, lavaDps:18,
+  // 水と水晶は exploreGenWorld が置く。フラグは「その当たり判定を有効にする」ためのもの
+  hasRiver:true, riverCount:0, hasOasis:true, oasisCount:0, hasCrystals:true, crystalCount:0,
+  realObstacles:[{ type:'rock', w:1 }],
+};
+/* 探検フィールドの設計図。**地域・ベースキャンプ・ボスの巣・ランドマークの位置はここが唯一の正。**
+   world.js(当たり判定のある物の生成)と real3d_explore.js(ランドマークの3D)と
+   real3d_*(地域ブレンドの見た目)が全部ここを読む。座標はワールド単位(18100四方。
+   探検は必ず applyWorldScale(1))。x=右 / y=下(ミニマップと同じ向き)。
+   ・regions   4つの地域。x,y,radius=地域の中心と広がり(見た目の混ざり方もこれで決まる)
+               elev=地域の地面の高さ(なだらかに混ぜる) / mountain=その地域の山の種類
+               nest=ボスの巣(周りは空けておく。r=空ける半径)
+   ・camp      ベースキャンプ。clear=何も置かない半径 / blend=見た目がキャンプの色になる半径
+               beacon=帰還ビーコン(緑の灯火の塔)の位置
+   ・passes    尾根・峡谷を抜ける峠。relief の gaps と paths から名前で参照する
+   ・relief    起伏(尾根・峡谷・山・段丘・世界の縁)。地形そのものの高さ(exploreRelief)。
+               通れない所の当たりは world.js がこの面を測って置く(詳しくは relief の上のコメント)
+   ・lakes / rivers / lava / lavaRivers  水辺と溶岩(凍った高地の湖は凍る)
+   ・paths     踏み分け道(見た目の土の道。岩を置かない)
+   ・structures 人工物の並び(row=線に沿って / ring=円に沿って / houseRow・houseRing=家 /
+               wall=折れ線に沿った一続きの石壁。openings=抜け(幅は wallOpenW)・arches=抜けをアーチに)
+   ・scatter   地域ごとの岩・木の数と内訳 / crystals=水晶の群生 / giants=密林の巨木
+   ・areas     番号付きのエリア(モンハン式。exploreAreaAt で引く)。HUD の札・全体地図が名前を読む
+   ・landmarks 遠くから方向が分かる大物(3Dは real3d_explore.js)。foot=当たり判定の半径 */
+const EXPLORE_FIELD_LAYOUT = {
+  seed: 20260923,
+  camp: { x:9050, y:9050, clear:1250, blend:1500, beacon:{ x:9050, y:8680, foot:70 },
+          // テントと焚き火(キャンプ中心からのずれ)。隠れられそうな大きさなので当たり判定を持つ
+          props:[
+            { kind:'tent', dx:-440, dy:-170, rot: 0.35, foot:105 },
+            { kind:'tent', dx: 420, dy:-240, rot:-0.50, foot:105 },
+            { kind:'tent', dx:-380, dy: 400, rot: 2.70, foot:105 },
+            { kind:'tent', dx: 450, dy: 330, rot: 3.75, foot:105 },
+            { kind:'fire', dx:   0, dy: 150, rot: 0,    foot:55 },
+          ] },
+  regions: {
+    meadow:  { label:'草原の盆地', x:4700,  y:4800,  radius:3900, elev:-120, mountain:'crag',
+               nest:{ x:2300, y:4300, r:620 } },
+    frost:   { label:'凍った高地', x:13400, y:4700,  radius:3900, elev: 240, mountain:'snow',
+               nest:{ x:15900, y:5300, r:620 } },
+    volcano: { label:'火山の峡谷', x:13400, y:13400, radius:4000, elev:  30, mountain:'volcano',
+               nest:{ x:12650, y:16550, r:680 } },
+    jungle:  { label:'密林の遺跡', x:4700,  y:13300, radius:3900, elev: -40, mountain:'jungle',
+               nest:{ x:2500, y:15700, r:620 } },
+  },
+  passes: {
+    n1:[9050,5000], n2:[9030,2900], e1:[13300,9070], e2:[15500,9040],
+    s1:[9050,13300], s2:[9040,15400], w1:[4800,9050], w2:[2700,9040],
+    c1:[11830,13380], c2:[13360,12250],
+    // 洞窟(尾根をくぐる近道。細い切り通しに岩の天井)と尾根越えの高い道
+    w3:[5900,9230], e3:[16900,9020], n3:[8960,6650],
+  },
+  /* 起伏(地形そのものを盛り上げる。円錐の山は使わない)。高さは exploreRelief() が
+     real3dHeightAt に足す純関数なので、見た目・歩ける高さ・弾の当たりが全部同じ面になる。
+     通れない所(尾根・峡谷の壁・山)は world.js がこの面を実際に測って、その範囲に
+     見えない円の判定(noMesh の山)を並べる(= 見た目と判定が必ず一致する)。
+     ・ridges   尾根。pts=稜線 / w=裾までの幅 / h=稜線の高さ(どちらも範囲。線に沿ってうねる)
+                gaps=峠(そこだけ鞍部まで下がる)。名前だけなら既定の幅。{ p, half, blend } で幅を変え、
+                  floor=そこまでしか下げない(尾根越えの高い道) / slot=[通る向き(rad), 長さ]=細長い切り通し /
+                  tunnel=切り通しに岩の天井を架ける(洞窟。天井は real3d_explore.js・当たりは world.js)
+                strata=地層の段(0〜1)
+     ・canyon   峡谷。中心線の両側に台地の壁(band)が立つ。通り道の半幅は narrow と wide(部屋)を
+                rooms(中心線の長さに対する位置)で入れ替える=狭い道と広い部屋が交互に来る
+     ・peaks    山。r=裾の半径 / h=高さ / warp=輪郭のゆがみ / round=丸い丘(密林)
+                crater=火口(r=半径比 / depth=深さ比 / breach=崩れた側の向き[rad])
+     ・terraces 段丘・台地。上が平らで、ramp の向き([rad, 半角])だけ緩い坂(傾き0.3未満)で登れる
+     ・rim      世界の縁の外へせり上がる山並み(h=高さ / out=外へ伸ばす幅)            */
+  relief: {
+    gapHalf: 320, gapBlend: 420, ridgeTaper: 1400,
+    ridges: [
+      // 草原|凍った高地(北)。雪をかぶる高い尾根
+      { gaps:[{ p:'n1', half:560, blend:420 },'n2', { p:'n3', half:360, blend:620, floor:230 }], w:[760,1080], h:[620,980], strata:0.15,
+        pts:[[9050,7650],[8850,6100],[9200,4300],[8950,2300],[9100,300],[9000,-1200]] },
+      // 凍った高地|火山(東)
+      { gaps:['e1','e2', { p:'e3', half:150, blend:130, slot:[1.571, 1300], tunnel:true }], w:[720,980], h:[520,820], strata:0.45,
+        pts:[[10450,9050],[12200,8850],[14300,9250],[16300,8900],[17900,9100],[19300,9000]] },
+      // 火山|密林(南)
+      { gaps:['s1','s2'], w:[720,980], h:[500,780], strata:0.45,
+        pts:[[9050,10450],[9250,12200],[8850,14300],[9200,16300],[9000,17900],[9100,19300]] },
+      // 密林|草原(西)
+      { gaps:['w1','w2', { p:'w3', half:150, blend:130, slot:[1.571, 1300], tunnel:true }], w:[700,960], h:[420,660], strata:0.10,
+        pts:[[7650,9050],[5900,9250],[3800,8850],[1800,9200],[200,9000],[-1200,9100]] },
+      // 凍った高地の氷の尾根
+      { gaps:[], w:[520,700], h:[380,560], strata:0.0, pts:[[14700,7300],[15700,7700],[16600,7500]] },
+    ],
+    // S字に2回折り返す(まっすぐな一本道だと奥まで見通せてしまうため)。c1・c2は既存の橋の
+    // 交差点なので位置を変えず、そこを経由点にして東西へ振る。boulders=床に転がる大きな崩れ岩
+    canyon: { gaps:['c1','c2'], narrow:210, wide:560, rooms:[0.22, 0.52, 0.82], roomLen:700,
+              band:1000, h:[560, 860], strata:0.8, fade:1300,
+              pts:[[11500,10900],[11700,12050],[11830,13380],[12750,13020],[13360,12250],[13050,13520],[12700,15850]],
+              boulders:[[12150,12750,150],[11960,13600,120],[13150,12500,160],[12880,14100,135],[12550,15200,145]] },
+    peaks: [
+      { id:'frostMain',   x:14900, y:2650,  r:2150, h:2100, warp:0.22 },
+      { id:'frost2',      x:11600, y:1950,  r:1500, h:1350, warp:0.25 },
+      { id:'volcanoMain', x:15350, y:15150, r:2300, h:1750, warp:0.14, strata:0.35,
+        crater:{ r:0.30, depth:0.34, breach:3.6 } },
+      { id:'volcano2',    x:16500, y:11700, r:1200, h:780,  warp:0.28, strata:0.5 },
+      { id:'jungle1',     x:2100,  y:11300, r:1250, h:680,  warp:0.20, round:true },
+      { id:'jungle2',     x:6950,  y:15250, r:1150, h:600,  warp:0.22, round:true },
+      { id:'jungle3',     x:1500,  y:14700, r:950,  h:520,  warp:0.25, round:true },
+      { id:'meadow1',     x:1850,  y:6650,  r:1150, h:760,  warp:0.26, strata:0.2 },
+      { id:'meadow2',     x:6850,  y:2300,  r:1150, h:820,  warp:0.24, strata:0.2 },
+    ],
+    terraces: [
+      // 草原: 監視塔の丘 / アーチ岩の丘
+      { id:'towerHill',  x:6300,  y:3500,  r:420, h:240, cliff:280, ramp:[1.50, 0.55] },
+      { id:'archHill',   x:3450,  y:6540,  r:880, h:190, cliff:280, ramp:[-1.20, 0.60] },
+      // 凍った高地: 氷河の棚(2段)
+      { id:'glacierA',   x:11650, y:5450,  r:620, h:270, cliff:280, ramp:[2.40, 0.50] },
+      { id:'glacierB',   x:16250, y:5150,  r:520, h:330, cliff:280, ramp:[3.05, 0.45] },
+      // 火山: 溶岩の段丘
+      { id:'lavaTerrA',  x:16350, y:13650, r:560, h:230, cliff:280, ramp:[3.14, 0.50], strata:0.6 },
+      { id:'lavaTerrB',  x:10250, y:16700, r:470, h:220, cliff:280, ramp:[-1.57, 0.50], strata:0.6 },
+      // 密林: 遺跡の基壇 / 見晴らしの丘
+      { id:'ruinBase',   x:5300,  y:12700, r:960, h:120, cliff:280, ramp:[-0.785, 0.40] },
+      { id:'jungleKnoll',x:6250,  y:13950, r:420, h:250, cliff:280, ramp:[-1.57, 0.55] },
+    ],
+    rim: { h:1500, out:2800, inner:650 },
+  },
+  lakes: [ { x:4300, y:4400, r:650 }, { x:12900, y:5300, r:520 }, { x:2500, y:12650, r:460 } ],
+  rivers: [
+    { r:110, pts:[[1100,1300],[2000,2150],[2700,2900],[3350,3650],[3900,4050]] },
+    { r:100, pts:[[5600,850],[5250,1900],[4900,2900],[4550,3800]] },
+    { r:95,  pts:[[13250,4550],[13150,4750],[12980,4950]] },   // 山の斜面から始めない(崖を縦に流れて板に見えた)
+    { r:125, pts:[[700,11650],[1850,12300],[3050,13300],[3750,14500],[4900,15500],[6250,16350],[7500,17500]] },
+    // 全体を横切る大きな川: 西の縁の山の麓→草原の湖→峠(n1)→凍った高地の湖→東の縁の山の麓(縁の坂は登らせない)
+    { r:120, pts:[[750,3250],[1300,3500],[2800,4100],[3700,4350]] },
+    { r:115, pts:[[4950,4650],[6300,5250],[7700,5420],[8400,5380],[9050,5330],[9750,5250],[10050,4450],[11300,4200],[12300,4250],[12560,4880]] },
+    { r:110, pts:[[13420,5350],[14400,5800],[15300,5920],[16500,6050],[17350,6150]] },
+  ],
+  lava: [
+    { x:14650, y:11150, r:300 }, { x:14250, y:12450, r:230 }, { x:17200, y:10500, r:230 },
+    { x:15450, y:12650, r:240 }, { x:10300, y:14600, r:210 },
+    { x:14750, y:12850, r:200 },   // 溶岩の川の湧き口(火山の麓の平らな所。斜面に流すと宙に浮いた帯に見えた)
+  ],
+  // 溶岩の川(峡谷の東の溶岩原を、火山の麓の湧き口から北へ流れる。平らな所だけを通す)。r=半幅。当たりは円の列(noMesh)で持つ
+  lavaRivers: [
+    { r:115, pts:[[14800,12700],[14880,12450],[14800,12000],[15150,11450],[15300,10900],[15100,10350]] },
+  ],
+  paths: [
+    { w:120, pts:[[9050,9050],[7900,7900],[6350,6250],[5000,5150],[4700,4800]] },
+    { w:120, pts:[[9050,9050],[10250,7850],[11900,6300],[12900,5900]] },
+    { w:120, pts:[[9050,9050],[10250,10250],[11500,10900],[12400,12000],[12700,13400],[12400,14800],[12700,15850]] },
+    { w:120, pts:[[9050,9050],[7900,10200],[7000,11000],[6150,11850],[5300,12700]] },
+    { w:95,  pts:[[6500,4700],'n1',[11400,4700]] },
+    { w:95,  pts:[[7000,2500],'n2',[11000,3000]] },
+    { w:95,  pts:[[13000,7600],'e1',[14200,10500]] },
+    { w:95,  pts:[[15600,7600],'e2',[15500,10500]] },
+    { w:95,  pts:[[7200,13300],'s1',[10400,13300],'c1',[12700,13400]] },
+    { w:95,  pts:[[7400,15700],'s2',[10600,15600],[12650,16550]] },
+    { w:95,  pts:[[4600,7300],'w1',[4600,10800]] },
+    { w:95,  pts:[[2600,7500],'w2',[2600,10600]] },
+    { w:95,  pts:[[12700,12300],'c2',[14300,12000]] },
+    // 近道: 廃村→洞窟→遺跡 / 凍った高地の東→洞窟→溶岩原 / キャンプの北の尾根越え
+    { w:85,  pts:[[6300,7400],[5900,8150],'w3',[5900,10300],[5700,11000]] },
+    { w:85,  pts:[[16400,6900],[16900,8100],'e3',[16900,9950],[16000,10900]] },
+    { w:85,  pts:[[7400,7300],'n3',[10300,6300]] },
+  ],
+  /* 番号付きのエリア(モンハン式)。HUD の地域の札・全体地図が名前を読む(exploreAreaAt)。
+     x,y,r=エリアの中心と広さ(いちばん近い中心のエリアに入る。r の外はどのエリアでもない) */
+  areas: [
+    { n:1,  name:'ベースキャンプ',   x:9050,  y:9050,  r:1300 },
+    { n:2,  name:'草原の廃村',       x:6300,  y:6300,  r:1300 },
+    { n:3,  name:'鏡の湖',           x:4300,  y:4400,  r:1300 },
+    { n:4,  name:'アーチ岩の丘',     x:3300,  y:6700,  r:1200 },
+    { n:5,  name:'物見の丘',         x:6300,  y:3300,  r:1200 },
+    { n:6,  name:'北の峠',           x:9050,  y:4000,  r:1100 },
+    { n:7,  name:'氷の尖塔',         x:11300, y:3900,  r:1300 },
+    { n:8,  name:'氷河の湖',         x:12900, y:5500,  r:1200 },
+    { n:9,  name:'竜骨の雪原',       x:15700, y:5300,  r:1400 },
+    { n:10, name:'東の洞窟',         x:16900, y:9000,  r:1000 },
+    { n:11, name:'溶岩原',           x:14900, y:11600, r:1500 },
+    { n:12, name:'火山の峡谷',       x:12500, y:13600, r:1500 },
+    { n:13, name:'火口',             x:15300, y:15100, r:1500 },
+    { n:14, name:'遺跡の大門',       x:5700,  y:12400, r:1400 },
+    { n:15, name:'巨木の森',         x:3500,  y:14200, r:1600 },
+    { n:16, name:'西の洞窟',         x:5900,  y:9250,  r:900 },
+  ],
+  // 石壁の抜け(openings)の幅。world.js の当たりと real3d_explore.js の石積みが両方ここを読む
+  wallOpenW: 200,
+  structures: [
+    // 草原の廃村。通り(キャンプ→湖の道)の両側に石と木の家(face=家の正面の向き。+1=線の左)
+    { kind:'houseRow', a:[5520,5920], b:[6800,7020], spacing:330, face:-1, skip:0.12 },
+    { kind:'houseRow', a:[5900,5480], b:[7180,6580], spacing:330, face: 1, skip:0.12 },
+    // 村の裏の崩れた石垣(一続きの壁。openings=抜けている所。線の長さに対する位置)
+    { kind:'wall', h:[120,210], pts:[[6950,5330],[7560,5860],[7700,6250]], openings:[0.45] },
+    { kind:'wall', h:[110,200], pts:[[5080,6440],[5560,7060],[5900,7320]], openings:[0.55] },
+    // 密林の参道。キャンプから遺跡の大門まで石柱が並ぶ
+    { kind:'row', f:'ruinpillar', a:[7884,10484], b:[6700,11668], r:50, spacing:310 },
+    { kind:'row', f:'ruinpillar', a:[7516,10116], b:[6332,11300], r:50, spacing:310 },
+    // 大門の奥の回廊(二重の石壁。入口をずらして回り込ませる。窓とアーチの抜けがある)
+    { kind:'wall', h:[170,300], arches:true, closed:true, openings:[0.125, 0.625],
+      pts:[[5300,11850],[6150,12700],[5300,13550],[4450,12700]] },
+    { kind:'wall', h:[150,250], arches:true, closed:true, openings:[0.375, 0.875],
+      pts:[[5300,12330],[5670,12700],[5300,13070],[4930,12700]] },
+    // 凍った高地の打ち捨てられた野営地(雪をかぶった小屋)
+    { kind:'houseRing', x:15300, y:6700, R:430, n:4, snowy:true },
+    // 火山の峡谷の手前、採掘の前哨(コンテナのバリケード)
+    { kind:'row', f:'container', a:[10300,11750], b:[10380,12800], r:56, skip:0.28 },
+    { kind:'row', f:'container', a:[10050,13900], b:[10500,14250], r:56, skip:0.20 },
+    // ベースキャンプの外周の物資(道の所は自動で空く)
+    { kind:'ring', f:'container', x:9050, y:9050, R:1420, n:16, r:54, skip:0.45 },
+  ],
+  // 密林の巨木。幹だけ当たり判定(foot)、樹冠は頭上で判定なし。空を隠す天井になる
+  // canopyClr=樹冠の見た目の半径のだいたいの平均(h*0.52ほど)。キャンプ・道からはここまで離す
+  // (幹の当たり判定foot基準だけで除けると、樹冠がキャンプへ食い込んで見えた)
+  giants: { region:'jungle', n:60, foot:[80, 120], h:[950, 1400], minGap:400, canopyClr:660 },
+  scatter: {
+    meadow:  { n:280, mix:[['rock',0.36],['tree',0.38,[34,58]],['deadtree',0.06],['log',0.11],['ruinwall',0.09]] },
+    frost:   { n:300, mix:[['snowrock',0.40],['pine',0.55,[34,58]],['hut',0.05]] },
+    volcano: { n:270, mix:[['basalt',0.52],['rock',0.40],['deadtree',0.08]] },
+    // 密林は木を大きく・多く(3番目=その種類の半径の幅。省略時は world.js の EXPLORE_FLAVOR_R)
+    jungle:  { n:520, mix:[['tree',0.46,[38,72]],['palm',0.16,[36,56]],['rock',0.08],['log',0.12],['ruinpillar',0.09],['ruinwall',0.07]] },
+  },
+  crystals: { region:'frost', n:170, cluster:[3, 7] },   // 群生(1か所に3〜7本)
+  landmarks: [
+    // 天然のアーチ岩。アーチの丘(archHill)の上。脚は板状(foot=板の半幅)、断面は2:1、地層入り
+    { kind:'arch',  region:'meadow', a:[2900,6280], b:[4000,6800], foot:230, h:980 },
+    { kind:'tower', region:'meadow', x:6300,  y:3500,  foot:95, h:600 },
+    // 凍った高地の氷の尖塔(塔と被らない形。遠くから青白く光る)
+    { kind:'icespire', region:'frost', x:11300, y:3900, foot:210, h:1050 },
+    { kind:'gate',  region:'jungle', x:6150,  y:11850, toward:[7000,11000], half:380, foot:135, h:820 },
+    { kind:'plume', region:'volcano', peak:'volcanoMain' },
+  ],
+};
+window.__aramonExploreLayout = EXPLORE_FIELD_LAYOUT;   // ESモジュール(real3d_*.js)への橋渡し
+const EXPLORE_REGION_KEYS = ['meadow', 'frost', 'volcano', 'jungle'];   // 地域の並び(重みの配列の順番)
+/* 見た目の混ざり方の鋭さ。大きいほど境目が細い(4.5で約800単位かけて入れ替わる)。
+   高さは別の値(なだらか)で混ぜる。高さの境目を細くすると坂が急になり登れなくなる。 */
+const EXPLORE_BLEND_SHARP = 4.5;
+const EXPLORE_ELEV_SHARP  = 1.2;
+/* ワールド座標 → 地域の重み(純関数)。out[0..3]=EXPLORE_REGION_KEYS の順、out[4]=ベースキャンプ。
+   合計は1。境目は波打たせてあるので直線にならない。毎フレーム数千回呼ばれるので
+   戻り値の配列は使い回す(呼んだ側ですぐ読むこと)。                      */
+const _exW = [0, 0, 0, 0, 0];
+function exploreRegionWeights(x, y, out){
+  const o = out || _exW, L = EXPLORE_FIELD_LAYOUT;
+  const wx = x + 520*Math.sin(y*0.00047 + 1.3) + 240*Math.sin(y*0.00131 + x*0.00043 + 0.4);
+  const wy = y + 520*Math.sin(x*0.00051 + 2.1) + 240*Math.sin(x*0.00127 - y*0.00039 + 1.9);
+  let sum = 0;
+  for(let i=0;i<4;i++){
+    const r = L.regions[EXPLORE_REGION_KEYS[i]];
+    const dx = (wx - r.x)/r.radius, dy = (wy - r.y)/r.radius;
+    const e = Math.exp(-EXPLORE_BLEND_SHARP*(dx*dx + dy*dy));
+    o[i] = e; sum += e;
+  }
+  // ベースキャンプは中心が平らで、縁でなだらかに地域の色へ戻る
+  const c = L.camp;
+  const cq = ((x-c.x)*(x-c.x) + (y-c.y)*(y-c.y)) / (c.blend*c.blend);
+  const cw = Math.exp(-cq*cq*1.6);
+  const k = (1 - cw) / (sum || 1);
+  for(let i=0;i<4;i++) o[i] *= k;
+  o[4] = cw;
+  return o;
+}
+// いちばん重い地域のキー(ベースキャンプは含めない)。生成(world.js)が使う。
+// 地域の定義(名前・危険度)ごと欲しいときは exploreRegionAt(ベースキャンプの中なら null)
+function exploreRegionKeyAt(x, y){
+  const w = exploreRegionWeights(x, y);
+  let best = 0;
+  for(let i=1;i<4;i++) if(w[i] > w[best]) best = i;
+  return EXPLORE_REGION_KEYS[best];
+}
+/* 地域ごとの地面の高さ(なだらかに混ぜたもの)と、その傾き(解析微分)。
+   real3dHeightAt / real3dHeightGrad が探検フィールドのときだけ足す。
+   境目を波打たせない(波打たせると微分が複雑になり、坂も急になる)。       */
+const _exElev = { h:0, gx:0, gy:0 };
+function exploreElevGrad(x, y){
+  const L = EXPLORE_FIELD_LAYOUT, S = EXPLORE_ELEV_SHARP;
+  let se = 0, sh = 0;
+  const e = _exElevE, qx = _exElevQx, qy = _exElevQy;
+  for(let i=0;i<4;i++){
+    const r = L.regions[EXPLORE_REGION_KEYS[i]];
+    const inv = 1/(r.radius*r.radius);
+    const dx = x - r.x, dy = y - r.y;
+    const ei = Math.exp(-S*(dx*dx + dy*dy)*inv);
+    e[i] = ei; qx[i] = 2*dx*inv; qy[i] = 2*dy*inv;
+    se += ei; sh += ei*r.elev;
+  }
+  const H = sh/se;
+  let gx = 0, gy = 0;
+  for(let i=0;i<4;i++){
+    const w = e[i]/se, d = L.regions[EXPLORE_REGION_KEYS[i]].elev - H;
+    gx += w*qx[i]*d; gy += w*qy[i]*d;
+  }
+  _exElev.h = H; _exElev.gx = -S*gx; _exElev.gy = -S*gy;
+  return _exElev;
+}
+const _exElevE = [0,0,0,0], _exElevQx = [0,0,0,0], _exElevQy = [0,0,0,0];
+
+/* =====================================================================
+   探検フィールドの起伏(EXPLORE_FIELD_LAYOUT.relief)— 地形の高さそのもの
+   ・尾根・峡谷・山・段丘・世界の縁を「高さの関数」として足す(純関数。ホスト/ゲストで一致)。
+     円錐の山を並べる作りをやめたのは、どう彫っても「ピラミッドの列」に見えたため(批評家の指摘)。
+   ・重なった所はいちばん高いものを採る(max)。細部のノイズは三角関数だけで作る(速さのため)。
+   ・毎フレーム何百回も呼ばれるので、特徴の影響範囲を1000単位の格子に登録しておき、
+     その点の升に載っている特徴だけを調べる。
+   ・傾き(real3dHeightGrad)は起伏の部分だけ中心差分で求める(地形パッチの頂点にしか使わない)。
+   ===================================================================== */
+const EXR_CELL = 1000, EXR_ORG = -10000, EXR_N = 39;   // 格子(ワールドの外側10000まで覆う)
+let _exr = null;
+const _exSm = (a, b, x)=>{ const t = x <= a ? 0 : (x >= b ? 1 : (x - a)/(b - a)); return t*t*(3 - 2*t); };
+// 尾根の襞・谷筋に使う安いノイズ(0〜1)。1-|sin| の稜が交差して沢筋の模様になる
+function exploreRidgeNoise(x, y){
+  const a = 1 - Math.abs(Math.sin(x*0.0023 + y*0.0011 + Math.sin(y*0.0017)*1.3));
+  const b = 1 - Math.abs(Math.sin(-x*0.0013 + y*0.0029 + Math.sin(x*0.0021)*1.1));
+  const c = 1 - Math.abs(Math.sin(x*0.0061 - y*0.0043 + Math.sin(x*0.0037 + y*0.0023)*0.8));
+  return a*0.42 + b*0.36 + c*0.22;
+}
+// 地層の段。平らな踏面と急な段差を作る(amt=0で素通り)
+function exploreStrata(h, step, amt){
+  if(!amt || h <= 0) return h;
+  const q = h/step, fl = Math.floor(q), fr = q - fl;
+  // 段の7割は緩い踏面、残り3割で一気に上がる(連続なので段差で歩けなくはならない)
+  const g = fr < 0.7 ? fr*0.25/0.7 : 0.25 + 0.75*_exSm(0.7, 1, fr);
+  return h + ((fl + g)*step - h)*amt;
+}
+function explorePolyPrep(pts, passes){
+  const P = pts.map(p=> (typeof p === 'string') ? { x:passes[p][0], y:passes[p][1] } : { x:p[0], y:p[1] });
+  const segs = []; let s0 = 0;
+  for(let i=0;i<P.length-1;i++){
+    const a = P[i], b = P[i+1], vx = b.x-a.x, vy = b.y-a.y, len = Math.hypot(vx, vy) || 1;
+    segs.push({ ax:a.x, ay:a.y, vx, vy, l2:len*len, len, s0 });
+    s0 += len;
+  }
+  return { segs, total:s0, pts:P };
+}
+// 折れ線への最寄り点(距離 d・弧長 u・u は端の外へはみ出した分も負/超過で返す)。
+// u は近い線分どうしで重みを付けて混ぜる: 最寄りの1本だけで決めると、折れ線の曲がり角の内側で
+// 最寄りの線分が入れ替わる所で u が飛び、u で変わる高さ・部屋の幅が段差(垂直の崖)になった。
+const _exNear = { d:0, u:0 }, _exNd = [], _exNu = [];
+const EXPLORE_NEAR_BLEND = 160;   // この距離差まで隣の線分の弧長を混ぜる
+function exploreNearest(poly, x, y){
+  let best = Infinity;
+  const S = poly.segs, n = S.length;
+  for(let i=0;i<n;i++){
+    const g = S[i];
+    let t = ((x - g.ax)*g.vx + (y - g.ay)*g.vy)/g.l2;
+    const tc = t < 0 ? 0 : (t > 1 ? 1 : t);
+    const dx = x - (g.ax + g.vx*tc), dy = y - (g.ay + g.vy*tc);
+    const d = Math.sqrt(dx*dx + dy*dy);
+    _exNd[i] = d;
+    // 端の外は弧長を伸ばして返す(峡谷の入口を開けるのに使う)
+    _exNu[i] = g.s0 + ((i === 0 && t < 0) || (i === n-1 && t > 1) ? t : tc)*g.len;
+    if(d < best) best = d;
+  }
+  let sw = 0, su = 0;
+  for(let i=0;i<n;i++){
+    const k = 1 - (_exNd[i] - best)/EXPLORE_NEAR_BLEND;
+    if(k <= 0) continue;
+    sw += k*k; su += k*k*_exNu[i];
+  }
+  _exNear.d = best; _exNear.u = su/sw;
+  return _exNear;
+}
+function exploreReliefPrep(){
+  const R = EXPLORE_FIELD_LAYOUT.relief, P = EXPLORE_FIELD_LAYOUT.passes;
+  const feats = [];
+  // 峠は名前だけ('n1')でも、幅や高さを持つ形({ p, half, blend, floor, slot, tunnel })でも書ける
+  const gapPts = (g)=> g.map(k=>{
+    const o = (typeof k === 'string') ? { p:k } : k;
+    const q = P[o.p];
+    return { x:q[0], y:q[1], half:o.half, blend:o.blend, floor:o.floor || 0,
+             sx:o.slot ? Math.cos(o.slot[0]) : 0, sy:o.slot ? Math.sin(o.slot[0]) : 0, len:o.slot ? o.slot[1]/2 : 0 };
+  });
+  R.ridges.forEach((r, i)=>{
+    const poly = explorePolyPrep(r.pts, P);
+    feats.push({ type:0, poly, w:r.w, h:r.h, strata:r.strata||0, gaps:gapPts(r.gaps), ph:i*1.73 + 0.4, pad:r.w[1] });
+  });
+  {
+    const c = R.canyon, poly = explorePolyPrep(c.pts, P);
+    feats.push({ type:1, poly, c, gaps:gapPts(c.gaps), rooms:c.rooms.map(f=> f*poly.total), ph:2.9, pad:c.wide + c.band });
+  }
+  R.peaks.forEach((p, i)=> feats.push({ type:2, p, ph:i*2.31 + 1.1, pad:p.r*(1 + (p.warp||0)) }));
+  R.terraces.forEach((t, i)=> feats.push({ type:3, t, ph:i*1.37 + 0.7, pad:t.r*1.15 + Math.max(t.cliff, t.h*6.2) }));
+  // 格子へ登録(特徴の外接矩形 + 影響幅)
+  const grid = new Array(EXR_N*EXR_N);
+  for(let i=0;i<grid.length;i++) grid[i] = [];
+  feats.forEach((f, fi)=>{
+    let x0, y0, x1, y1;
+    if(f.poly){ x0 = Math.min(...f.poly.pts.map(q=>q.x)); x1 = Math.max(...f.poly.pts.map(q=>q.x));
+                y0 = Math.min(...f.poly.pts.map(q=>q.y)); y1 = Math.max(...f.poly.pts.map(q=>q.y)); }
+    else { const o = f.p || f.t; x0 = x1 = o.x; y0 = y1 = o.y; }
+    const cx0 = Math.max(0, Math.floor((x0 - f.pad - EXR_ORG)/EXR_CELL)), cx1 = Math.min(EXR_N-1, Math.floor((x1 + f.pad - EXR_ORG)/EXR_CELL));
+    const cy0 = Math.max(0, Math.floor((y0 - f.pad - EXR_ORG)/EXR_CELL)), cy1 = Math.min(EXR_N-1, Math.floor((y1 + f.pad - EXR_ORG)/EXR_CELL));
+    for(let cy=cy0; cy<=cy1; cy++) for(let cx=cx0; cx<=cx1; cx++) grid[cy*EXR_N + cx].push(fi);
+  });
+  _exr = { feats, grid, R };
+}
+// 峠で高さを下げる。floor>0 の峠はそこまでしか下げない(尾根越えの道)。slot の峠は通る向きに細長い
+function exploreGapApply(gaps, x, y, R, h){
+  for(const g of gaps){
+    let dx = x - g.x, dy = y - g.y, d;
+    if(g.len){
+      const a = dx*g.sx + dy*g.sy, b = -dx*g.sy + dy*g.sx;   // a=通る向き / b=横
+      d = Math.hypot(Math.max(0, Math.abs(a) - g.len), b);
+    } else d = Math.hypot(dx, dy);
+    const half = g.half != null ? g.half : R.gapHalf, blend = g.blend != null ? g.blend : R.gapBlend;
+    if(d >= half + blend) continue;
+    const k = _exSm(half, half + blend, d);
+    const lo = Math.min(h, g.floor);
+    h = lo + (h - lo)*k;
+  }
+  return h;
+}
+function exploreFeatureH(f, x, y, R){
+  if(f.type === 0){                                   // 尾根
+    const nr = exploreNearest(f.poly, x, y), u = nr.u;
+    const W = f.w[0] + (f.w[1]-f.w[0])*(0.5 + 0.5*Math.sin(u*0.0013 + f.ph))*(0.82 + 0.18*Math.sin(u*0.0047 + f.ph*2));
+    const t = nr.d/W;
+    if(t >= 1) return 0;
+    const H = f.h[0] + (f.h[1]-f.h[0])*(0.5 + 0.5*Math.sin(u*0.00093 + f.ph*1.7))*(0.78 + 0.22*Math.sin(u*0.0031 + f.ph));
+    let prof = 1 - t*t*(3 - 2*t);
+    prof = prof*(0.72 + 0.28*prof);                   // 稜線を少し尖らせる
+    let h = H*prof*(0.68 + 0.32*exploreRidgeNoise(x, y));
+    h *= _exSm(0, R.ridgeTaper, u);                  // 始点(マップの中央側)は平地から立ち上がる(台形の塊にしない)
+    if(f.gaps.length) h = exploreGapApply(f.gaps, x, y, R, h);
+    return exploreStrata(h, 110, f.strata);
+  }
+  if(f.type === 1){                                   // 峡谷(中心線の両側に台地の壁)
+    const c = f.c, nr = exploreNearest(f.poly, x, y), u = nr.u;
+    let room = 0;
+    for(const rs of f.rooms){ const q = Math.abs(u - rs)/c.roomLen; if(q < 1) room = Math.max(room, 1 - q*q*(3 - 2*q)); }
+    const half = c.narrow + (c.wide - c.narrow)*room;
+    const ti = (nr.d - half)/c.band;
+    if(ti <= 0 || ti >= 1) return 0;
+    const H = c.h[0] + (c.h[1]-c.h[0])*(0.5 + 0.5*Math.sin(u*0.0021 + f.ph))*(0.8 + 0.2*Math.sin(u*0.0057));
+    // 内側は切り立った崖・上は平ら・外側はやや緩い斜面
+    let h = H*_exSm(0, 0.15, ti)*(1 - _exSm(0.50, 1, ti));
+    h *= 0.86 + 0.14*exploreRidgeNoise(x*1.3, y*1.3);
+    h *= _exSm(0, c.fade, u)*_exSm(0, c.fade, f.poly.total - u);   // 入口と出口は開ける
+    if(f.gaps.length) h = exploreGapApply(f.gaps, x, y, R, h);
+    return exploreStrata(h, 95, c.strata);
+  }
+  if(f.type === 2){                                   // 山
+    const p = f.p, dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
+    if(d >= p.r*(1 + (p.warp||0))) return 0;
+    const th = Math.atan2(dy, dx), w = p.warp || 0;
+    const rr = p.r*(1 + w*(0.55*Math.sin(3*th + f.ph) + 0.30*Math.sin(5*th + f.ph*2) + 0.15*Math.sin(8*th + f.ph*3)));
+    const t = d/rr;
+    if(t >= 1) return 0;
+    const prof = p.round ? (1 - t*t)*(1 - t*t)
+                         : 0.68*Math.pow(1 - t, 1.6) + 0.32*(1 - t*t)*(1 - t*t);
+    const nK = 0.66 + 0.34*exploreRidgeNoise(x + f.ph*500, y);
+    let h = p.h*prof*nK;
+    if(p.crater){
+      /* 火口。縁の高さは「その点の山の面を火口の半径で測った高さ」なので、縁の内と外で段差が出ない
+         (別の式で縁を作ると、縁の上で高さが飛んで垂直の壁になった)。崩れた側(breach)は縁ごと下げる。 */
+      const cr = p.crater, crR = cr.r*(1 + 0.12*Math.sin(7*th + f.ph) + 0.07*Math.sin(13*th + 1.3));
+      let da = th - cr.breach; da = Math.atan2(Math.sin(da), Math.cos(da));
+      const br = Math.exp(-(da/0.42)*(da/0.42));
+      const B = 1 - 0.36*br;
+      const rimH = p.h*(0.68*Math.pow(1 - crR, 1.6) + 0.32*(1 - crR*crR)*(1 - crR*crR))*nK*B;
+      if(t < crR){
+        // 火口の底は平ら(中心で角度によって高さが変わらないよう、縁の揺らぎ・崩れを含めない高さから測る)
+        const floorH = p.h*(0.68*Math.pow(1 - cr.r, 1.6) + 0.32*(1 - cr.r*cr.r)*(1 - cr.r*cr.r))*nK - p.h*cr.depth;
+        h = floorH + (rimH - floorH)*Math.pow(_exSm(0.45, 1, t/crR), 1.3);
+      }else if(t < crR*1.9){
+        h *= B + (1 - B)*_exSm(crR, crR*1.9, t);
+      }
+    }
+    return exploreStrata(h, 120, p.strata || 0);
+  }
+  // 段丘・台地(上が平ら。ramp の向きだけ緩い坂)
+  const T = f.t, dx = x - T.x, dy = y - T.y, d = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+  let da = th - T.ramp[0]; da = Math.atan2(Math.sin(da), Math.cos(da));
+  const m = Math.exp(-(da/T.ramp[1])*(da/T.ramp[1]));
+  const W = T.cliff + (T.h*6.2 - T.cliff)*m;
+  const edge = T.r*(1 + 0.08*Math.sin(5*th + f.ph) + 0.05*Math.sin(9*th + f.ph*2));
+  const ti = (d - edge)/W;
+  if(ti >= 1) return 0;
+  const prof = ti <= 0 ? 1 : 1 - ti*ti*(3 - 2*ti);
+  const h = T.h*prof*(0.96 + 0.04*exploreRidgeNoise(x, y));
+  return exploreStrata(h, 80, T.strata || 0);
+}
+// 世界の縁: マップの外へせり上がる山並み(内側 inner だけは緩い坂)
+function exploreRimH(x, y, R){
+  const W = WORLD_BASE_SIZE, din = Math.min(x, y, W - x, W - y);
+  const rim = R.rim;
+  if(din > rim.inner) return 0;
+  const t = (rim.inner - din)/(rim.inner + rim.out);
+  const k = t >= 1 ? 1 : t*t*(3 - 2*t);
+  return rim.h*k*(0.62 + 0.38*exploreRidgeNoise(x*0.8 + 300, y*0.8));
+}
+// いま居る番号付きのエリア(EXPLORE_FIELD_LAYOUT.areas)。いちばん近い中心のエリアで、r の外なら null
+function exploreAreaAt(x, y){
+  let best = null, bd = Infinity;
+  for(const a of EXPLORE_FIELD_LAYOUT.areas){
+    const d = Math.hypot(x - a.x, y - a.y);
+    if(d < a.r && d/a.r < bd){ bd = d/a.r; best = a; }
+  }
+  return best;
+}
+function exploreRelief(x, y){
+  if(!_exr) exploreReliefPrep();
+  const R = _exr.R;
+  let h = exploreRimH(x, y, R);
+  const cx = Math.floor((x - EXR_ORG)/EXR_CELL), cy = Math.floor((y - EXR_ORG)/EXR_CELL);
+  if(cx < 0 || cy < 0 || cx >= EXR_N || cy >= EXR_N) return h;
+  const list = _exr.grid[cy*EXR_N + cx], F = _exr.feats;
+  for(let i=0;i<list.length;i++){
+    const v = exploreFeatureH(F[list[i]], x, y, R);
+    if(v > h) h = v;
+  }
+  return h;
+}
 /* 通常のマップ選択・ランダム抽選に出してよいマップか。**判定はここ1か所だけ。**
 
    【この関数が無かったせいで起きた不具合】
@@ -3032,7 +3652,8 @@ MAPS.raid = {
    マップを増やすときに除外の条件を書き足す場所は、必ずここ1つにする。            */
 function isSelectableMap(key){
   const m = MAPS[key];
-  return !!m && !m.testOnly && !m.raidOnly;
+  // exploreOnly = 探検モード専用のフィールド(explore.js が必ず立てる)。通常の抽選には出さない
+  return !!m && !m.testOnly && !m.raidOnly && !m.exploreOnly;
 }
 const UPWARD_BLOCK_THRESHOLD = 35;
 
@@ -5793,5 +6414,868 @@ function glossaryText(e){ return e ? (typeof e.desc === 'function' ? e.desc() : 
 function glossaryEntries(catId){ return catId ? GLOSSARY.filter(g=> g.cat === catId) : GLOSSARY.slice(); }
 
 /* =====================================================================
+   探検モード(内部名 explore)の定数・表
+   ・**既存の「遠征」(放置で報酬が来る仕組み)とは別物。名前を混ぜない。**
+   ・モードの進行(開始・力尽き・帰還・終了・報酬)は explore.js。ここは数値と表だけ。
+   ・分岐の入口は game.explore 1つ(game.raid と同じ方式)。通常の試合はここを読まない。
+   ・数値は発注者が実機で調整する前提の名前付き定数。
+   ・MAPS.explore / REAL3D_TERRAIN_SETS.explore / REAL3D_THEMES.explore はフィールド担当の持ち物で、
+     このブロックでは触らない(地域の位置と色のヒントは下の EXPLORE_REGIONS が正)。
+   ===================================================================== */
+const EXPLORE_TIME_LIMIT          = 900;   // 制限時間(秒)。過ぎたら「時間切れ」で持ち帰り半分
+const EXPLORE_MAX_FAINTS          = 3;     // 力尽きてよい回数。この回数に達したら終了(持ち帰り半分)
+const EXPLORE_FAIL_KEEP_RATIO     = 0.5;   // 力尽き/時間切れで持ち帰れる割合(素材ごとに切り捨て)
+const EXPLORE_FAIL_KEEP_MIN       = 1;     // ただし素材の種類ごとに最低この数は残す(1個しか無い素材が0にならない。統括の判断)
+// 演出の尺(秒)。出発の札とカメラの一周 / 終わった直後のフィールドの札 / 力尽き(札→暗転→キャンプで明転)
+const EXPLORE_INTRO_SEC           = 2.6;   // 出発: 「探検開始」の札を出し、カメラがキャンプを回る(この間は動けない)
+const EXPLORE_OUTRO_SEC           = 1.6;   // 終了: フィールドに「帰還成功/時間切れ/力尽きた」の札を出してから報酬画面へ
+const EXPLORE_OUTRO_RETURN_SEC    = 2.8;   // 帰還成功だけ長め(光の柱に包まれ、持ち帰った素材のアイコンが札を流れる)
+const EXPLORE_FAINT_SLOWMO        = { scale:0.35, holdSec:0.3, easeSec:0.35 };   // 力尽きた瞬間の一瞬のスロー(実時間の秒。ボス討伐の間と同じ仕組み)
+const EXPLORE_FAINT_SEQ           = { fall:0.5, card:1.1, fadeOut:0.35, black:0.35, fadeIn:0.8 };   // 力尽き: 倒れる→札→暗転→(キャンプへ運ぶ)→明転(起き上がる)
+const EXPLORE_LAST_STORAGE_KEY    = 'aramon_explore_last_v1';   // 前回の持ち帰り(ロビー右列に出す。端末ごとの表示なので同期しない)
+const EXPLORE_WORLD_SCALE         = 1;     // フィールドの広さ(通常試合と同じ 18100 四方)
+const EXPLORE_RESPAWN_INVULN_SEC  = 3;     // ベースキャンプで復活した直後の無敵(秒)
+/* ベースキャンプ。ワールドに対する比で置く(フィールド生成もここを読んで平らに空ける)。
+   radius の内側は野生モンスターを置かない・湧かせない安全地帯。 */
+const EXPLORE_CAMP = { xr:0.5, yr:0.5, radius:760 };
+const EXPLORE_CAMP_SPAWN_OFFSET   = { dx:0, dy:240 };    // キャンプ中心から見た出発地点(復活地点も同じ)
+const EXPLORE_BEACON_OFFSET       = { dx:0, dy:-300 };   // キャンプ中心から見た帰還ビーコンの位置
+const EXPLORE_CAM_CLEARANCE       = 40;    // カメラと足元の地面(プレイヤー→カメラの線上)の最小の隙間
+const EXPLORE_CAM_SAMPLES         = [0.35, 0.7, 1.0];   // 地面を調べる位置(プレイヤー=0 / カメラ=1)
+const EXPLORE_CAM_LIFT_DOWN       = 3;     // 持ち上げを戻す速さ(上げるときは即座)
+const EXPLORE_BEACON_RADIUS       = 120;   // ビーコンの輪の半径。この中にとどまると帰還が進む
+const EXPLORE_BEACON_HOLD_SEC     = 3;     // 輪の中に何秒とどまれば帰還するか
+const EXPLORE_BEACON_ARM_SEC      = 4;     // 出発直後はビーコンを効かせない(秒。うっかり帰還しない)
+/* ===== 野生モンスター(群れ・気づき・縄張り。動きは explore.js の exploreWildAI / exploreResolveMove) =====
+   1地域に群れを EXPLORE_WILD_PACKS_PER_REGION 個。群れ=リーダー1体+取り巻き(同じ種)。
+   状態: うろつく → 気づきかけ「?」→ 気づく「!」→ 追う/攻撃 → (弱ると)逃げる → 縄張りへ戻る(戻る間は回復) */
+const EXPLORE_WILD_PACKS_PER_REGION = 3;     // 1地域あたりの群れの数
+const EXPLORE_WILD_PACK_SIZE      = { min:3, max:5 };   // 1つの群れの頭数(リーダー込み)
+const EXPLORE_WILD_PACK_SPREAD    = 170;   // 取り巻きがリーダーの周りに寄り添う距離
+const EXPLORE_WILD_LEADER         = { hp:1.5, radius:1.4, dmg:1.15 };    // リーダーだけ一回り大きく・硬い(足元の金の輪でも区別)
+// 危険度★ごとの強さ(種族の素の値に掛ける)。tier=使える技の段(1〜3)
+const EXPLORE_WILD_DANGER = {
+  1: { hp:0.85, dmg:0.60, speed:0.88, tier:1 },
+  2: { hp:1.05, dmg:0.80, speed:0.94, tier:1 },
+  3: { hp:1.30, dmg:1.00, speed:1.00, tier:2 },
+  4: { hp:1.60, dmg:1.20, speed:1.06, tier:3 },
+};
+const EXPLORE_WILD_ACTIVE_RADIUS  = 3600;  // プレイヤーからこの距離より遠い野生・ボスは眠らせる(AI・移動・攻撃を止める)
+const EXPLORE_WILD_SLEEP_HYST     = 400;   // 起きる距離はこれだけ内側(境目で寝起きを繰り返さない)
+const EXPLORE_WILD_WANDER         = 420;   // 普段うろつく範囲(縄張りの中心から)
+const EXPLORE_WILD_WANDER_SPEED   = 0.38;  // うろつくときの速さ(素の速さに対する比。ゆっくり歩く)
+const EXPLORE_WILD_REST_SEC       = { min:1.8, max:5.0 };   // 目的地に着いて立ち止まる時間
+const EXPLORE_WILD_SIGHT_RANGE    = 700;   // 視界の扇の奥行き
+const EXPLORE_WILD_SIGHT_DEG      = 130;   // 視界の扇の開き(度)。背後は見えない
+const EXPLORE_WILD_NEAR_SENSE     = 240;   // 背後でもこの距離まで来れば気配で気づく
+const EXPLORE_WILD_HEAR_RANGE     = 1500;  // プレイヤーの射撃の音が届く距離(視界の外でも気づく)
+const EXPLORE_WILD_NOTICE_SEC     = 0.9;   // 視界の奥で見え続けて気づくまで(近いほど速い。「?」の間)
+const EXPLORE_WILD_FORGET_SEC     = 1.6;   // 見えなくなってから気づきかけ「?」が消えるまで
+const EXPLORE_WILD_ALERT_PAUSE    = 0.55;  // 気づいた瞬間に立ち止まって睨む時間
+const EXPLORE_WILD_ALERT_SHOW     = 1.5;   // 頭上の「!」を出す秒数
+const EXPLORE_WILD_PACK_CALL      = { min:0.2, max:0.65 };  // 仲間が気づいてから自分も気づくまでの遅れ(秒)
+const EXPLORE_WILD_CHASE_RANGE    = 1100;  // 追っている相手がこれより離れたら見失い始める
+const EXPLORE_WILD_LOSE_SEC       = 2.5;   // CHASE_RANGE の外にこの秒数いたら諦める
+const EXPLORE_WILD_LEASH          = 1500;  // 縄張りの中心からこれ以上離れたら追うのをやめて戻る
+const EXPLORE_WILD_RETURN_REGEN   = 0.10;  // 縄張りへ戻る間の回復(最大HPに対する毎秒)
+const EXPLORE_WILD_RETURN_CALM_SEC= 3;     // 戻り終えてから再び気づけるようになるまで(秒)
+const EXPLORE_WILD_FLEE_SEC       = 5;     // 逃げ続ける時間(その後は縄張りへ戻る)
+const EXPLORE_WILD_FLEE_SPEED     = 1.1;   // 逃げる速さ(素の速さに対する比)
+const EXPLORE_WILD_GUTS_REGEN     = 3;     // 野生の追加ガッツ回復(毎秒)。技を撃てずに棒立ちになるのを防ぐ
+const EXPLORE_WILD_RESPAWN_SEC    = 60;    // 倒してから同じ縄張りに湧き直すまで(秒)
+const EXPLORE_WILD_RESPAWN_HIDE   = 2400;  // プレイヤーがこの距離より近いと湧き直さない
+const EXPLORE_WILD_RESPAWN_SEEN   = 4200;  // この距離より近く、しかもカメラの前方なら湧き直さない(見ている前で湧かせない)
+// 保つ間合い(使う技の射程に対する比)。kite=距離を取って撃つ / rush=懐へ突っ込む
+const EXPLORE_WILD_KEEP_DIST      = { kite:0.72, rush:0.30 };
+/* 種ごとの性格(ELEMENTS のキー)。表に無い種は EXPLORE_WILD_NATURE_DEFAULT。
+     temper: 'docile'=おとなしい(先に攻撃されるまで襲わない。気づいても「?」で様子を見るだけ)
+             'aggressive'=好戦的(気づいたら「!」で襲ってくる)
+     style : 'kite'=距離を保って撃つ / 'rush'=突っ込む
+     fleeHp: 体力がこの割合を切ると逃げる(0=逃げない) */
+const EXPLORE_WILD_NATURE = {
+  mocchi:  { temper:'docile',     style:'kite', fleeHp:0.35 },
+  hum:     { temper:'docile',     style:'kite', fleeHp:0.4  },
+  suezo:   { temper:'aggressive', style:'rush', fleeHp:0.2  },
+  centaur: { temper:'aggressive', style:'kite', fleeHp:0    },
+  aqua:    { temper:'docile',     style:'kite', fleeHp:0.3  },
+  fox:     { temper:'docile',     style:'kite', fleeHp:0.35 },
+  ark:     { temper:'aggressive', style:'rush', fleeHp:0    },
+  god:     { temper:'aggressive', style:'kite', fleeHp:0.15 },
+  fire:    { temper:'aggressive', style:'rush', fleeHp:0    },
+  phoenix: { temper:'aggressive', style:'kite', fleeHp:0.2  },
+  rock:    { temper:'docile',     style:'rush', fleeHp:0    },
+  ogre:    { temper:'aggressive', style:'rush', fleeHp:0    },
+  leaf:    { temper:'docile',     style:'kite', fleeHp:0.25 },
+  warm:    { temper:'aggressive', style:'rush', fleeHp:0    },
+  narga:   { temper:'aggressive', style:'kite', fleeHp:0    },
+  zan:     { temper:'aggressive', style:'rush', fleeHp:0.15 },
+  pixie:   { temper:'docile',     style:'kite', fleeHp:0.45 },
+};
+const EXPLORE_WILD_NATURE_DEFAULT = { temper:'aggressive', style:'kite', fleeHp:0 };
+function exploreWildNature(elKey){ return EXPLORE_WILD_NATURE[elKey] || EXPLORE_WILD_NATURE_DEFAULT; }
+
+/* ===== ボス(地域ボス3体+頂点ボス1体。進行は explore.js の exploreUpdateBosses) =====
+   **1行足せばボスが増える。** 見た目は既存のSSRスキン(skinId)をそのまま巨大化して使う。
+   **人型のスキンは使わない**(「岩鎧の獣」がコートの人間に見えた=批評指摘)。獣・竜・怪鳥に見える物だけ。
+   element はスキンの素体と同じにする(歩行コマが素体ごとの表 WALK_ANIM にあるため)。
+   プレイヤーが同じスキンを着ていても「巨大な自分」に見えないよう、ボスには常時 color の色味と輪郭の光が掛かる
+   (explore.js の exploreDrawMonsterUnder / exploreDrawMonsterTint)。
+     region  = 巣を置く地域(EXPLORE_REGIONS の id)。巣の位置は exploreBossNest(region) が決める
+     apex    = 頂点ボス(名前の札・討伐の演出が一段豪華になる)
+     hp/radius/speed = 体力・体の半径(通常のモンスターは22前後。レイドのボスは288)・歩く速さ
+     dmg     = 大技の威力の倍率(EXPLORE_BOSS_MOVES の dmg に掛ける)
+     gap     = 大技と大技の間隔(秒)[最短, 最長]
+     moves   = 使う大技(EXPLORE_BOSS_MOVES のキー)。rageOnly の技は怒ってから出る
+     color   = 予告・大技・オーラの色(スキンの色に合わせる)
+     partName= 弱点(頭)の部位名。部位破壊の通知に出る
+     breakRatio = 部位破壊に要る弱点ダメージ(最大HPに対する比)
+     drops / breakDrops = EXPLORE_DROP_TABLES のキー(討伐 / 部位破壊)
+     roar    = 咆哮の音(audio.js の exploreRoar が合成する)。pitch=高さの倍率(1=基準・小さいほど低い) /
+               len=長さ(秒) / grit=うなりのざらつき(0〜1) / heads=首の数(3なら3つの声がずれて重なる) */
+const EXPLORE_BOSSES = [
+  { id:'gandrock', region:'meadow', apex:false, name:'ガンドレイク', title:'盆地を統べる鋼角の竜',
+    element:'fire', skinId:'metag_ssr', color:'#ffa04a', hp:2200, radius:190, speed:125, dmg:1.0,
+    gap:[2.8, 4.2], moves:['swipe','stomp','charge','meteor','rain'], partName:'鋼の角', breakRatio:0.14,
+    drops:'boss_gandrock', breakDrops:'break_gandrock', roar:{ pitch:0.62, len:1.9, grit:0.9 } },
+  { id:'galvark', region:'frost', apex:false, name:'ガルヴァルク', title:'吹雪を裂く白き牙',
+    element:'spark', skinId:'garurumon_ssr', color:'#8fe6ff', hp:2800, radius:170, speed:170, dmg:1.1,
+    gap:[2.4, 3.8], moves:['swipe','breath','charge','meteor','rain'], partName:'氷牙', breakRatio:0.14,
+    drops:'boss_galvark', breakDrops:'break_galvark', roar:{ pitch:1.35, len:1.4, grit:0.35 } },
+  { id:'volgreim', region:'volcano', apex:false, name:'ヴォルガルーダ', title:'火口を舞う業火の翼',
+    element:'phoenix', skinId:'ganon_ssr', color:'#ff5a22', hp:3400, radius:210, speed:140, dmg:1.25,
+    gap:[2.4, 3.6], moves:['breath','stomp','charge','meteor','rain','nova'], partName:'炎の冠羽', breakRatio:0.15,
+    drops:'boss_volgreim', breakDrops:'break_volgreim', roar:{ pitch:1.15, len:1.8, grit:0.7 } },
+  { id:'gidravers', region:'jungle', apex:true, name:'ゾルディオス', title:'密林の頂点に君臨する黒き魔獣',
+    element:'fire', skinId:'zod_ssr', color:'#c86bff', hp:5200, radius:250, speed:150, dmg:1.5,
+    gap:[2.0, 3.2], moves:['swipe','breath','stomp','charge','meteor','rain','nova'], partName:'双角', breakRatio:0.13,
+    drops:'boss_gidravers', breakDrops:'break_gidravers', roar:{ pitch:0.5, len:2.6, grit:1.0, heads:2 } },
+];
+/* ボスの大技。予告(地面の印)→発動の2段。形は4つ:
+     fan    = 正面の扇(range=奥行き / fanAngleDeg=開き)
+     circle = 自分中心の円(range=半径 / knock=吹き飛ばし距離)
+     meteor = 相手の周りに count 個の円が stagger 秒ずつずれて落ちる(spread=散らばり / range=1個の半径)
+     charge = 相手へ向かって一直線に突進(length=距離 / speed=速さ。予告は通り道に並ぶ円)
+   minDist/maxDist = この技を選ぶ相手との距離 / w=選ばれやすさ / rageOnly=怒ってから使う
+   **fan / circle(自分中心)の range と minDist / maxDist は体の縁から測る**(実際の値 = 表の値 + ボスの半径)。
+   巨体の大きさが違っても「体からどこまで届くか」が同じになるように。 */
+const EXPLORE_BOSS_MOVES = {
+  swipe:  { name:'薙ぎ払い',   shape:'fan',    range:560,  fanAngleDeg:110, dmg:30, telegraph:0.85, maxDist:700,  w:3 },
+  breath: { name:'ブレス',     shape:'fan',    range:1350, fanAngleDeg:34,  dmg:40, telegraph:1.25, minDist:260, maxDist:1400, w:3, color:'#ff8a1a' },
+  stomp:  { name:'踏み鳴らし', shape:'circle', range:440,  dmg:34, telegraph:1.00, maxDist:560, knock:260, w:3 },
+  meteor: { name:'岩石落とし', shape:'meteor', count:3, spread:240, range:110, dmg:36, telegraph:1.35, stagger:0.25, w:2 },
+  rain:   { name:'流星群',     shape:'meteor', count:6, spread:560, range:90, dmg:32, telegraph:1.40, stagger:0.18, w:2, rageOnly:true },
+  charge: { name:'突進',       shape:'charge', length:1250, speed:1500, dmg:44, telegraph:1.05, minDist:320, maxDist:1500, knock:320, w:3, color:'#c8101c', pattern:'arrows' },
+  nova:   { name:'大爆発',     shape:'circle', range:950,  dmg:58, telegraph:2.00, maxDist:900, knock:420, w:1, rageOnly:true },
+};
+const EXPLORE_BOSS_NEST_RADIUS    = 650;   // 巣の広さ(岩を空ける・眠って回復する範囲)
+const EXPLORE_BOSS_NEST_OFFSET    = 0.5;   // 巣の既定の位置: 地域の中心からキャンプと反対側へ、地域の半径×この比
+const EXPLORE_BOSS_ENGAGE_RANGE   = 1300;  // これより近づくと咆哮して戦いが始まる(攻撃を当てても始まる)
+const EXPLORE_BOSS_LEASH          = 3200;  // 巣からプレイヤーがこれより離れたら諦めて巣へ戻る
+const EXPLORE_BOSS_HOME_REGEN     = 0.02;  // 諦めて巣へ戻る間の回復(最大HPに対する毎秒)
+const EXPLORE_BOSS_ROAR_SEC       = 2.2;   // 登場の咆哮の長さ(大技を撃たない)
+const EXPLORE_BOSS_RAGE_ROAR_SEC  = 1.4;   // 怒ったときの咆哮の長さ
+const EXPLORE_BOSS_ROAR_SLOW_RANGE= 800;   // 咆哮で耳をふさぐ(短い鈍足)範囲
+const EXPLORE_BOSS_ROAR_SLOW_SEC  = 0.9;
+const EXPLORE_BOSS_RAGE_HP        = 0.5;   // この割合を切ると怒る
+const EXPLORE_BOSS_RAGE           = { speed:1.25, gap:0.7, dmg:1.15, telegraph:0.85 };   // 怒り中の倍率
+const EXPLORE_BOSS_FLEE_HP        = 0.2;   // この割合を切ると足を引きずって巣へ逃げる(1回だけ)
+const EXPLORE_BOSS_LIMP_SPEED     = 0.55;  // 足を引きずる速さ(素の速さに対する比)
+const EXPLORE_BOSS_SLEEP_SEC      = 10;    // 巣で眠る長さ(起こされなければ)
+const EXPLORE_BOSS_SLEEP_HEAL     = 0.12;  // 眠って回復する量(最大HPに対する比・眠り全体で)
+const EXPLORE_BOSS_SLEEP_DMG_MULT = 2;     // 眠っているところへの最初の一撃の倍率(起きる)
+const EXPLORE_BOSS_TOPPLE_SEC     = 2.2;   // 部位破壊で転倒している長さ
+const EXPLORE_BOSS_TOPPLE_DMG_MULT= 1.25;  // 転倒中に受けるダメージの倍率
+const EXPLORE_BOSS_BREAK_BODY_RATIO = 0.3; // 弱点以外への命中が部位破壊の蓄積に入る割合(弱点は1)
+/* 弱点(頭)。**狙撃担当(sniper.js)との約束:**
+     ent.weakPoint = { from, to, mult } … 体の高さ(exploreBodyHeight(ent))に対する比の範囲と倍率。
+     命中した高さ z が ent.z + from×高さ 〜 ent.z + to×高さ に入れば弱点(exploreIsWeakPointHit)。
+     弱点に当たったら applyDamage の opts に weakPoint:true を付ける。**倍率は狙撃側で掛けない**
+     (explore.js の exploreDmgTakenMult が1か所で掛ける。二重に掛けない) */
+const EXPLORE_BOSS_WEAK_POINT     = { from:0.62, to:1.0, mult:1.5 };
+const EXPLORE_BOSS_KILL_SLOWMO    = { scale:0.2, holdSec:0.9, easeSec:0.6 };   // 討伐の瞬間の間(実時間の秒)
+const EXPLORE_BOSS_DYING_SEC      = 3.2;   // 倒れてから姿が消えるまで(試合内の秒)
+/* 討伐で倒れた姿(地面に寝た姿。explore.js の exploreLyingGeom)。足元を地面の点として project() し、
+   体(足→頭)を地面に沿って横へ len×体の高さ だけ伸ばす。絵の幅(翼)は上向きの厚み thick×絵の幅 にする。
+   厚みはカメラの高さ×camK を超えない(超えると寝た体が地平線より上へ出る)。fallSec=倒れ込む時間 */
+const EXPLORE_BOSS_LIE            = { len:1.0, thick:0.4, camK:0.8, fallSec:0.6 };
+const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバーを出す距離
+/* 登場の視点演出(咆哮 intro のときだけ)。turnSec でボスへ向き直り、zoomSec のあいだ zoom 倍に寄る。
+   上下の黒帯は画面の高さ×bar。寄せは world.js の setViewZoom(狙撃と同じ入口)で、構え中は狙撃を優先する */
+/* zoom は 1.8 だと巨体の頭が画面上端(HPバー)を突き抜けて見えた(批評指摘)ので弱めてある。
+   モンハンの咆哮のように「ボス全体を収めて引く」側を優先する。 */
+const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.3, bar:0.1, dimSec:1.6 };
+// 討伐の視点演出(同じ仕組み)。崩れ落ちる0.8秒を画面の中央で見せる。討伐完了の札は崩れ終わってから出る
+const EXPLORE_BOSS_HUNT_CINE      = { turnSec:0.35, zoomSec:2.0, zoom:1.15, bar:0.09, dimSec:2.2, lookZ:0.9 };   // lookZ: 体の高さのどこを画面の中央にするか(高いほどボスが画面の下寄り=上の札と重ならない)
+// 弱点命中の数字(照準の近く。画面の画素で固定サイズ・秒数)。狙撃のスコープ中は狙撃側が出すので出さない
+const EXPLORE_WEAK_POP            = { px:32, sec:1.2, dx:58, dy:-44 };
+const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.92;  // 部位破壊のひるみの縦の潰し(潰さず、のけぞりで見せる)
+/* 地面の印(予告)の塗り: カメラに近いほど薄くして縁の線だけ残す [薄くし始める距離, 普通の濃さになる距離]
+   ・急な斜面の塗りも弱める(斜面に板のように貼り付いて見える=批評指摘) */
+const EXPLORE_TELEGRAPH_NEAR      = [220, 900];
+const EXPLORE_TELEGRAPH_NEAR_BAND = [40, 320];   // 突進の帯(細いので手前も濃いまま近くまで見せる)
+// 怒りの咆哮の一瞬の寄り。noPitch(視点を動かさない)ぶん zoom は弱め(頭がHPバーに食い込む=批評指摘)
+const EXPLORE_BOSS_RAGE_CINE      = { turnSec:0, zoomSec:0.7, zoom:1.05, bar:0, dimSec:0, lookZ:0.5, noPitch:true };
+const EXPLORE_BODY_POP_PX         = 22;   // ボスの体に当てた数字(白)の大きさ(画面の画素)
+/* 怒り中の息の煙(explore.js の exploreFxBreath)。色 = ボスの色を grey へ greyMix だけ寄せた色(白にしない)。
+   bright=濃さ / size0→size1=粒の大きさ / az=上下の加速(正で昇る。昇ると頭の上に積もって白い塊になった) */
+const EXPLORE_BOSS_BREATH_SMOKE   = { grey:'#8a939e', greyMix:0.55, bright:0.4, size0:40, size1:90, az:-20 };
+const EXPLORE_ROAR_TEXT_K        = 0.08;  // 咆哮の文字の大きさ = 画面の縦×これ(持ち方で画面に対する割合を変えない)
+const EXPLORE_AIM_CLEAR           = { w:170, h:120 };   // 照準の周りの文字を出さない範囲(画面の画素)
+/* ボス戦の間の視点の補正: ボスの頭が画面上部のHUD(exploreHudBand の下端)+margin より上に出たら、
+   視点を上げて(見上げて)引く。pitchRate=角度の追従の速さ / backMax=引く最大距離 */
+const EXPLORE_BOSS_FRAME          = { margin:28, pitchRate:5, pitchMax:0.45, backMax:110, backRate:3 };
+const EXPLORE_BOSS_FLAT_TRIES     = 36;    // 巣の中で平らな立ち位置を探す候補の数
+const EXPLORE_BOSS_FIGHT_PILLAR_A = 0.22;  // ボス戦の間、縄張りの中の光の柱の濃さ
+const EXPLORE_BOSS_HUNT_CAM       = { dist:3.6, extra:320, rise:0.55, tries:[0,0.35,-0.35,0.7,-0.7,1.05,-1.05] };   // 討伐の視点: ボスから半径×dist+extra 離れた障害物の無い所
+const EXPLORE_WILD_NAME_PX        = 13;    // 群れの長の名札(画面の画素。最低12)   // 転倒で縦に潰す割合(小さいほど潰れる。傾きと揺れで倒れた感じを出す)
+/* 大技の予告の見え方(real3d_zone.js の地面の印へ渡す)。
+   outline = 暗い太い外縁の色 / minContrast = 地面との明るさの差がこれ未満なら白(暗い地面)か赤(明るい地面)へ寄せる */
+const EXPLORE_TELEGRAPH           = { outline:'#160806', minContrast:0.35, towardLight:'#ffffff', pushLight:0.6, towardDark:'#d0101e', pushDark:0.85,
+                                      nearMin:0.9, fill:0.55 };   // 扇・円だけ: nearMin=カメラの近くで塗りを薄める下限(real3d_zone.js の uNearMin。流星群・帯は0.4のまま) / fill=塗りの濃さ(流星群・帯は0.45/0.75のまま)
+const EXPLORE_METEOR_FALL_H       = 620;   // 流星群・岩石落としの岩が落ち始める高さ(予告の間に降ってくる)
+const EXPLORE_BOSS_RAGE_STEP_SHAKE= 0.22;  // 怒り中の一歩ごとの画面の揺れ(近いほど強い)
+const EXPLORE_BOSS_BREATH_EVERY   = 2.4;   // 怒り中に口元から白い息を吐く間隔(秒)
+
+/* ===== 落とし物(倒したときに何を落とすか)。落とす処理は explore.js の exploreDropLoot 1つを通す =====
+   形: { rolls:抽選回数, items:[{ key, w:重み, n:[最小,最大] }], always:[{ key, n:[最小,最大] }] }
+   キーの決まり: 'wild_<地域id>' / 'boss_<ボスid>' / 'break_<ボスid>'(部位破壊) */
+const EXPLORE_DROP_TABLES = {
+  wild_meadow:  { rolls:1, items:[ { key:'meadow_fiber', w:74, n:[1,2] }, { key:'meadow_honey', w:13 }, { key:'meadow_plume', w:13 } ] },
+  wild_frost:   { rolls:1, items:[ { key:'frost_shard',  w:70, n:[1,2] }, { key:'frost_dew',    w:15 }, { key:'frost_hide',   w:15 } ] },
+  wild_volcano: { rolls:1, items:[ { key:'volcano_ore',  w:66, n:[1,3] }, { key:'volcano_heart', w:34 } ] },
+  wild_jungle:  { rolls:2, items:[ { key:'jungle_vine',  w:62, n:[1,3] }, { key:'jungle_relic', w:38 } ] },
+  boss_gandrock:  { rolls:3, always:[ { key:'boss_horn', n:[2,3] } ],
+                    items:[ { key:'meadow_fiber', w:40, n:[2,4] }, { key:'meadow_honey', w:25, n:[1,2] }, { key:'meadow_plume', w:25, n:[1,2] }, { key:'boss_horn', w:10 } ] },
+  break_gandrock: { rolls:1, always:[ { key:'boss_horn', n:[1,1] } ], items:[ { key:'meadow_honey', w:1 } ] },
+  boss_galvark:   { rolls:3, always:[ { key:'boss_fang', n:[2,3] } ],
+                    items:[ { key:'frost_shard', w:40, n:[2,4] }, { key:'frost_dew', w:25, n:[1,2] }, { key:'frost_hide', w:25, n:[1,2] }, { key:'boss_fang', w:10 } ] },
+  break_galvark:  { rolls:1, always:[ { key:'boss_fang', n:[1,1] } ], items:[ { key:'frost_dew', w:1 } ] },
+  boss_volgreim:  { rolls:3, always:[ { key:'boss_scale', n:[2,3] } ],
+                    items:[ { key:'volcano_ore', w:45, n:[2,4] }, { key:'volcano_heart', w:40, n:[1,2] }, { key:'boss_scale', w:15 } ] },
+  break_volgreim: { rolls:1, always:[ { key:'boss_scale', n:[1,1] } ], items:[ { key:'volcano_heart', w:1 } ] },
+  boss_gidravers: { rolls:4, always:[ { key:'apex_core', n:[1,1] } ],
+                    items:[ { key:'life_crystal', w:18 }, { key:'boss_horn', w:22 }, { key:'boss_fang', w:22 }, { key:'boss_scale', w:22 }, { key:'jungle_relic', w:16, n:[2,3] } ] },
+  break_gidravers:{ rolls:1, items:[ { key:'life_crystal', w:35 }, { key:'apex_core', w:15 }, { key:'jungle_relic', w:50, n:[2,3] } ] },
+};
+const EXPLORE_DROP_LEADER_ROLLS   = 1;     // 群れのリーダーは抽選が1回多い
+// 地面にそのまま撒く回復・ガッツ(通常の試合と同じ品)。ルートの主役は補給箱(下の EXPLORE_CRATE_*)なので少なめ
+const EXPLORE_CAMP_LOOT_COUNT     = 10;    // ベースキャンプの周り
+const EXPLORE_REGION_LOOT_COUNT   = 10;    // 各地域
+// ゴールド報酬(持ち帰ったぶんで計算する)
+const EXPLORE_GOLD_BASE           = 30;    // 参加ぶん
+const EXPLORE_GOLD_PER_KILL       = 4;     // 野生を1体倒すごと
+const EXPLORE_GOLD_RETURN_BONUS   = 60;    // 帰還ビーコンで帰ったときの上乗せ
+const EXPLORE_GOLD_PER_RARITY     = { common:2, rare:6, epic:18, legendary:50 };   // 持ち帰った素材1個ごと
+const EXPLORE_STASH_STORAGE_KEY   = 'aramon_explore_stash_v1';   // 探検専用の保管(ボス素材など)。アカウント同期する
+
+/* レア度。色は APEX の白・青・紫・金。光の柱・通知・結果画面の枠はすべてここを読む(決め打ちしない) */
+const EXPLORE_RARITY = {
+  common:    { label:'コモン',     color:'#e8e8e8', order:0 },
+  rare:      { label:'レア',       color:'#4fa3ff', order:1 },
+  epic:      { label:'エピック',   color:'#b36bff', order:2 },
+  legendary: { label:'レジェンド', color:'#ffc93c', order:3 },
+};
+
+/* 4つの地域(ベースキャンプを囲む)。**地域の位置・広さ・色のヒントはこの表が正。**
+   フィールド生成(world.js の exploreGenWorld)・3Dの見た目(real3d_explore.js)・野生の配置・
+   HUDの地域名は、すべてここを読む。1行足せば地域が増える作りにしておく。
+     xr/yr/rr = 中心と半径(ワールドに対する比)。**位置の正は EXPLORE_FIELD_LAYOUT.regions**で、
+                ここでは写し取るだけ(exploreRegionFromLayout)。半径は野生・補給箱を撒く範囲なので
+                地域の混ざり半径より内側(EXPLORE_REGION_SCATTER_K)にする
+     danger = 危険度★(1〜4)。野生の強さと落とす物の良さが上がる
+     wild   = 出る野生モンスターの属性(ELEMENTS のキー)
+     theme  = 色のヒント(ground=地面 / grass=植生 / fog=霞 / sky=空 / accent=目印の光) */
+function exploreRegionFromLayout(r){
+  const g = EXPLORE_FIELD_LAYOUT.regions[r.id];
+  return { ...r, xr: g.x/WORLD_BASE_SIZE, yr: g.y/WORLD_BASE_SIZE, rr: g.radius*EXPLORE_REGION_SCATTER_K/WORLD_BASE_SIZE };
+}
+const EXPLORE_REGION_SCATTER_K = 0.8;   // 撒く範囲 = 配置表の地域の半径 × これ
+const EXPLORE_REGIONS = [
+  { id:'meadow',  name:'草原の盆地', icon:'🌾', danger:1,
+    wild:['mocchi','suezo','hum','centaur'],
+    theme:{ ground:'#6f9a3e', grass:'#8fc44f', fog:'#d8ecc4', sky:'#9fd3ff', accent:'#c8f27a' } },
+  { id:'frost',   name:'凍った高地', icon:'❄️', danger:2,
+    wild:['aqua','ark','fox','god'],
+    theme:{ ground:'#dfe9f2', grass:'#9fb8c9', fog:'#e8f2fb', sky:'#b9d8f2', accent:'#8fe6ff' } },
+  { id:'volcano', name:'火山の峡谷', icon:'🌋', danger:3,
+    wild:['fire','phoenix','rock','ogre'],
+    theme:{ ground:'#4a2a1a', grass:'#6b3b22', fog:'#8a5a44', sky:'#e0906a', accent:'#ff6b2e' } },
+  { id:'jungle',  name:'密林の遺跡', icon:'🗿', danger:4,
+    wild:['leaf','warm','narga','zan','pixie'],
+    theme:{ ground:'#23421f', grass:'#2f6b2a', fog:'#6f8f6a', sky:'#8fb8a0', accent:'#7dffb0' } },
+].map(exploreRegionFromLayout);
+function exploreRegion(id){ return EXPLORE_REGIONS.find(r=> r.id === id) || null; }
+// 地域の中心と半径(ワールド座標)。WORLD は試合ごとに applyWorldScale で変わるので、その都度計算する
+function exploreRegionCircle(r){
+  return { x: WORLD.w * r.xr, y: WORLD.h * r.yr, r: WORLD.w * r.rr };
+}
+// その地点がどの地域か(ベースキャンプの中なら null)。HUDの地域名・ミニマップが読む。
+// 境目の判定はフィールドの見た目と同じ重み(exploreRegionWeights)を使う
+function exploreRegionAt(x, y){
+  const w = exploreRegionWeights(x, y);
+  if(w[4] > 0.5) return null;
+  return exploreRegion(exploreRegionKeyAt(x, y));
+}
+
+/* 素材。**レア度・行き先・説明はこの表が正**(結果画面・通知・保管の一覧はすべてここから作る)。
+     region = 落ちる地域(ボス素材は 'boss')
+     toBag  = 持ち帰ったときに換わる PLAYER_ITEMS のキー。無いものは探検専用の保管へ入る
+              (ボス素材は工房で装備に使う ―― 工房は段2で作る) */
+const EXPLORE_MATERIALS = {
+  // 草原の盆地
+  meadow_fiber:  { name:'草原の繊維',   icon:'🌾', rarity:'common', region:'meadow',  desc:'盆地の草から取れるしなやかな繊維。装備の下地になる' },
+  meadow_honey:  { name:'盆地の蜜',     icon:'🍯', rarity:'rare',   region:'meadow',  toBag:'seed_life',     desc:'持ち帰るとライフの実になる' },
+  meadow_plume:  { name:'風切り羽',     icon:'🪶', rarity:'rare',   region:'meadow',  toBag:'seed_evasion',  desc:'持ち帰ると回避の実になる' },
+  // 凍った高地
+  frost_shard:   { name:'氷晶のかけら', icon:'❄️', rarity:'common', region:'frost',   desc:'溶けない氷。冷気をまとう装備の材料' },
+  frost_dew:     { name:'オーロラの雫', icon:'💧', rarity:'rare',   region:'frost',   toBag:'seed_wisdom',   desc:'持ち帰るとかしこさの実になる' },
+  frost_hide:    { name:'霜の毛皮',     icon:'🦙', rarity:'rare',   region:'frost',   toBag:'seed_vitality', desc:'持ち帰ると丈夫さの実になる' },
+  // 火山の峡谷
+  volcano_ore:   { name:'灼熱鉱石',     icon:'🪨', rarity:'common', region:'volcano', desc:'熱を帯びた鉱石。武器の芯になる' },
+  volcano_heart: { name:'炎の核',       icon:'🔥', rarity:'rare',   region:'volcano', toBag:'seed_power',    desc:'持ち帰るとちからの実になる' },
+  // 密林の遺跡
+  jungle_vine:   { name:'古代の蔓',     icon:'🌿', rarity:'common', region:'jungle',  desc:'遺跡に絡みつく丈夫な蔓' },
+  jungle_relic:  { name:'遺跡の欠片',   icon:'🗿', rarity:'rare',   region:'jungle',  toBag:'seed_accuracy', desc:'持ち帰ると命中の実になる' },
+  // ボス素材(段2のボスが落とす)
+  boss_horn:     { name:'大角',         icon:'🦴', rarity:'epic',      region:'boss', desc:'地域の主の角。工房で装備に使う' },
+  boss_scale:    { name:'紅蓮の鱗',     icon:'🐉', rarity:'epic',      region:'boss', desc:'炎に焼かれない鱗。工房で装備に使う' },
+  boss_fang:     { name:'氷河の牙',     icon:'🦷', rarity:'epic',      region:'boss', desc:'凍てつく牙。工房で装備に使う' },
+  apex_core:     { name:'頂点の心核',   icon:'💠', rarity:'legendary', region:'boss', desc:'頂点に立つ者の心臓。最上級の装備に使う' },
+  life_crystal:  { name:'生命の結晶',   icon:'💎', rarity:'legendary', region:'boss', toBag:'fruit_life', desc:'持ち帰ると生命の果実になる' },
+};
+/* 倒した(部位を壊した)相手から、落とし物の表を1つ選ぶ。**何を落とすかの正は EXPLORE_DROP_TABLES。**
+     kind = 'kill'(倒した) / 'break'(部位破壊)
+   野生は地域の表(リーダーは抽選 +EXPLORE_DROP_LEADER_ROLLS)、ボスは表の drops / breakDrops。 */
+function exploreDropTable(ent, kind){
+  if(!ent) return null;
+  if(ent.isExploreBoss){
+    const def = EXPLORE_BOSSES.find(b=> b.id === ent.exBossId);
+    if(!def) return null;
+    return EXPLORE_DROP_TABLES[kind === 'break' ? def.breakDrops : def.drops] || null;
+  }
+  const base = EXPLORE_DROP_TABLES['wild_' + ent.exploreRegion];
+  if(!base) return null;
+  return ent.exLeader ? { ...base, rolls:(base.rolls||1) + EXPLORE_DROP_LEADER_ROLLS } : base;
+}
+// 表を振って [{ key, n }] を返す(同じ素材はまとめる)。表の中身だけで決まる純関数
+function exploreRollDropTable(table){
+  if(!table) return [];
+  const got = {};
+  const add = (e)=>{
+    if(!e || !EXPLORE_MATERIALS[e.key]) return;
+    const n = e.n ? randInt(e.n[0], e.n[1]) : 1;
+    got[e.key] = (got[e.key] || 0) + n;
+  };
+  for(const e of (table.always || [])) add(e);
+  const items = table.items || [];
+  const total = items.reduce((s, e)=> s + (e.w || 0), 0);
+  for(let i=0; i<(table.rolls || 0) && total > 0; i++){
+    let r = Math.random() * total;
+    for(const e of items){ r -= (e.w || 0); if(r <= 0){ add(e); break; } }
+  }
+  return Object.keys(got).map(key=> ({ key, n:got[key] }));
+}
+function exploreMaterialColor(key){
+  const m = EXPLORE_MATERIALS[key];
+  return (m && EXPLORE_RARITY[m.rarity]) ? EXPLORE_RARITY[m.rarity].color : EXPLORE_RARITY.common.color;
+}
+
+/* 探検専用の保管(toBag を持たない素材の置き場)。形は { 素材キー: 個数 }。
+   **アカウント同期する**(ui.js の ACCOUNT_SYNC_KEYS に入れてある)。知らないキー・壊れた値は読み捨てる。 */
+function loadExploreStash(){
+  try{
+    const d = JSON.parse(localStorage.getItem(EXPLORE_STASH_STORAGE_KEY)) || {};
+    const out = {};
+    for(const k of Object.keys(d)){
+      const n = Math.max(0, Math.floor(Number(d[k]) || 0));
+      if(EXPLORE_MATERIALS[k] && n > 0) out[k] = n;
+    }
+    return out;
+  }catch(err){ return {}; }
+}
+function saveExploreStash(s){
+  try{ localStorage.setItem(EXPLORE_STASH_STORAGE_KEY, JSON.stringify(s || {})); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+function addExploreStash(key, n){
+  if(!EXPLORE_MATERIALS[key]) return;
+  const s = loadExploreStash();
+  s[key] = (s[key] || 0) + Math.max(0, Math.floor(n || 0));
+  saveExploreStash(s);
+}
+
+/* =====================================================================
+   探検モード: ルート(補給箱・落ちている品・光の柱)
+   ・置く/開ける/散らす/拾う/描くのは explore_loot.js。ここは数値と表だけ。
+   ・レア度の色は上の EXPLORE_RARITY が正(光の柱・通知・工房の枠がすべてそこを読む)。
+   ===================================================================== */
+// 補給箱の数(地域ごと。表に無い地域は _DEFAULT)
+const EXPLORE_CRATE_PER_REGION         = { meadow:6, frost:6, volcano:6, jungle:6 };
+const EXPLORE_CRATE_PER_REGION_DEFAULT = 5;
+const EXPLORE_CRATE_CAMP_COUNT    = 2;      // ベースキャンプの中(出発してすぐ目に入る位置。最初の「開ける」を覚える)
+const EXPLORE_CRATE_MIN_GAP       = 520;    // 補給箱どうしの最小の間隔
+const EXPLORE_CRATE_NEST_CLEAR    = 520;    // ボスの巣(半径)のさらにこの外まで補給箱を置かない(ボス戦の場を散らかさない)
+const EXPLORE_CRATE_OPEN_RANGE    = 120;    // 箱の中心からこの距離にとどまると開き始める
+const EXPLORE_CRATE_OPEN_SEC      = 0.6;    // とどまって開くまでの秒数(離れると進みは倍の速さで戻る)
+const EXPLORE_CRATE_LID_SEC       = 0.38;   // 蓋が開ききるまでの秒数
+const EXPLORE_CRATE_SCATTER       = [70, 190];     // 中身が散らばる距離(最小・最大)
+const EXPLORE_CRATE_FLIGHT_SEC    = [0.55, 0.85];  // 中身が弾けて地面に落ちるまでの秒数(最小・最大)
+const EXPLORE_CRATE_BURST_GAP     = 0.07;   // 中身が1個ずつ飛び出す間隔(秒)
+const EXPLORE_CRATE_ITEMS         = { common:[3,4], rare:[3,4], epic:[4,5], legendary:[5,6] };   // 1箱の中身の数(最小・最大)
+const EXPLORE_CRATE_SIZE          = { w:66, d:46, h:36, lid:13 };   // 箱の寸法(ワールド単位。見た目だけ)
+const EXPLORE_CRATE_BIG_SCALE     = { epic:1.4, legendary:1.4 };   // 紫・金の箱はこの倍率で大きい(レア度の色の金属の蓋と角飾り)
+const EXPLORE_CRATE_BEACON_H      = { epic:560, legendary:760 };   // 閉じた紫・金の箱の上に立つ光の高さ(1500以上離れても見える)
+/* 地面にそのまま落ちている品(箱の外)。拾う物は補給箱と同じ光の柱とレア度で見せる(exploreSpawnDrop)。
+   キャンプの周りと各地域に EXPLORE_CAMP_LOOT_COUNT / EXPLORE_REGION_LOOT_COUNT 個ずつ */
+const EXPLORE_GROUND_LOOT = [ {w:36, item:'heal_s'}, {w:16, item:'heal_m'}, {w:4, item:'heal_l'}, {w:30, item:'guts'}, {w:14, mat:'common'} ];
+const EXPLORE_CRATE_VIEW          = 3800;   // 補給箱を描く距離
+/* 箱のレア度の抽選(地域の危険度★ごとの重み)。キャンプの箱は 0 の行 */
+const EXPLORE_CRATE_RARITY_BY_DANGER = {
+  0: { common:80, rare:20, epic:0,  legendary:0 },
+  1: { common:55, rare:35, epic:9,  legendary:1 },
+  2: { common:45, rare:38, epic:14, legendary:3 },
+  3: { common:35, rare:40, epic:20, legendary:5 },
+  4: { common:25, rare:40, epic:27, legendary:8 },
+};
+/* 素材以外の落ちている品。名前は元の表が正(回復=HEAL_ITEMS / ガッツ飴=GUTS_ITEM)なので書かない。
+   狙撃銃・スコープの ref は sniper.js の SNIPER_WEAPONS / SNIPER_SCOPES のキー(拾うと sniperGive / sniperAttachScope)。 */
+const EXPLORE_FIELD_ITEMS = {
+  heal_s:  { kind:'heal',   ref:'oilS',    icon:'🧴', rarity:'common' },
+  heal_m:  { kind:'heal',   ref:'oilM',    icon:'🧴', rarity:'rare' },
+  heal_l:  { kind:'heal',   ref:'oilL',    icon:'🧴', rarity:'epic' },
+  guts:    { kind:'guts',                  icon:'🍬', rarity:'common' },
+  longbow: { kind:'weapon', ref:'longbow', icon:'🏹', rarity:'rare',   name:'ロングボウ(狙撃銃)' },
+  scope2x: { kind:'scope',  ref:'x2', icon:'🔭', name:'2倍スコープ' },   // レア度は SNIPER_SCOPES が正
+  scope4x: { kind:'scope',  ref:'x4', icon:'🔭', name:'4倍スコープ' },   // レア度は SNIPER_SCOPES が正
+  scope8x: { kind:'scope',  ref:'x8', icon:'🔭', name:'8倍スコープ' },   // レア度は SNIPER_SCOPES が正
+};
+/* 補給箱の中身(箱のレア度ごと・重み付き)。
+     mat:'<レア度>' … そのレア度の素材を「箱のある地域」から引く。epic/legendary はボス素材(region:'boss')
+     item:'<キー>'  … EXPLORE_FIELD_ITEMS の品
+   1個目は必ず EXPLORE_CRATE_HEAD(箱と同じレア度の目玉)。残りをこの表から引く。 */
+const EXPLORE_CRATE_LOOT = {
+  common:    [ {w:34, mat:'common'}, {w:10, mat:'rare'}, {w:20, item:'heal_s'}, {w:8, item:'heal_m'}, {w:16, item:'guts'},
+               {w:6, item:'scope2x'}, {w:3, item:'longbow'} ],
+  rare:      [ {w:26, mat:'common'}, {w:22, mat:'rare'}, {w:12, item:'heal_m'}, {w:4, item:'heal_l'}, {w:12, item:'guts'},
+               {w:8, item:'scope4x'}, {w:6, item:'longbow'}, {w:4, item:'scope2x'} ],
+  epic:      [ {w:18, mat:'common'}, {w:26, mat:'rare'}, {w:12, mat:'epic'}, {w:10, item:'heal_l'}, {w:10, item:'guts'},
+               {w:8, item:'scope8x'}, {w:8, item:'scope4x'}, {w:6, item:'longbow'} ],
+  legendary: [ {w:10, mat:'common'}, {w:24, mat:'rare'}, {w:24, mat:'epic'}, {w:6, mat:'legendary'}, {w:10, item:'heal_l'},
+               {w:8, item:'guts'}, {w:10, item:'scope8x'}, {w:6, item:'longbow'} ],
+};
+const EXPLORE_CRATE_HEAD = { common:{mat:'common'}, rare:{mat:'rare'}, epic:{mat:'epic'}, legendary:{mat:'legendary'} };
+// 光の柱(落ちている品の上に立つ。遠くから価値が分かる)。高さ・太さはワールド単位
+// 光の柱はレア度で段階的に太く高く(金がいちばん太く、根元に輪)。見ただけで価値の順が分かるように
+const EXPLORE_PILLAR_HEIGHT       = { common:210, rare:320, epic:450, legendary:640 };
+/* 太さの差は1.5倍まで(金の柱が視界をふさぐ壁になった=批評指摘)。レア度の差は明るさ・周りを舞う粒・根元の輪で付ける */
+const EXPLORE_PILLAR_WIDTH        = { common:11,  rare:12,  epic:14,  legendary:16 };
+const EXPLORE_PILLAR_MIN_PX       = { common:3.4, rare:3.8, epic:4.4, legendary:5.2 };   // 遠くでも柱がこの太さ(画面px)より細くならない(遠景で細く淡い=批評指摘で太らせた)
+const EXPLORE_PILLAR_GLOW         = { common:0.5, rare:0.64, epic:0.8, legendary:0.98 };  // 柱の明るさ
+const EXPLORE_PILLAR_MOTES        = { common:0, rare:2, epic:4, legendary:7 };            // 柱の周りを螺旋に昇る光の粒の数
+/* 補給箱を開けた瞬間: 中身がレア度の枠付きアイコンになって箱の上に扇形に並び(rise→hold)、そこから地面へ飛ぶ */
+const EXPLORE_CRATE_FAN           = { rise:0.28, hold:0.85, lift:95, gap:44, arc:18 };   // 秒 / 箱の上の高さ・間隔・弧の反り(ワールド単位)
+const EXPLORE_DROP_BADGE          = { common:15, rare:17, epic:20, legendary:25 };   // 落ちている品のしるし(アイコン)の大きさ(ワールド単位の半径)
+const EXPLORE_DROP_FLOAT          = 34;     // しるしを地面から浮かせる高さ(ワールド単位)
+const EXPLORE_PILLAR_VIEW         = 6500;   // 光の柱が見える距離
+const EXPLORE_PILLAR_RING_DEPTH   = 950;    // これより近いと地面に輪を出す
+const EXPLORE_DROP_ITEM_VIEW      = 1700;   // 品物そのもの(アイコン)を描く距離
+const EXPLORE_DROP_LABEL_RANGE    = 280;    // プレイヤーがこの距離まで近づくと名前を出す
+const EXPLORE_DROP_PICK_RANGE     = 40;     // 拾う距離(モンスターの半径に足す)
+const EXPLORE_DROP_ARM_SEC        = 0.25;   // 地面に落ちてから拾えるようになるまで(飛んでいる途中で吸い込まない)
+// 拾った通知(画面左に積み上がるレア度色の行)
+const EXPLORE_FEED_MAX            = 6;      // 同時に出す行数の上限(入らない分は「+N件」の1行にまとめる)
+const EXPLORE_FEED_SEC            = 3.4;    // 1行の表示秒数
+const EXPLORE_FEED_MERGE_SEC      = 1.5;    // この秒数以内に同じ品を拾ったら行を増やさず個数をまとめる
+
+/* =====================================================================
+   探検モード: HUD(方位バー・目標・ミニマップ・全体地図・ボスの札)と音(地域の環境曲・ボス戦・環境音)
+   描く・鳴らすのは explore_hud.js / explore.js(ボスの札) / audio.js(探検のBGM)。ここは数字だけ。
+   距離の表示は PING_UNITS_PER_M(ワールド10単位=1m)で換算する。
+   ===================================================================== */
+// 方位バー(画面上部中央。APEX)
+const EXPLORE_COMPASS_SPAN_DEG    = 150;    // バーの端から端までに入る角度(広いほど目盛りが詰まる)
+const EXPLORE_COMPASS_H           = 46;     // バーの高さ(px。倍率 EXPLORE_HUD_SCALE を掛ける前)。CSS は JS が --exp-hud-k から決める
+/* HUDの文字・欄の大きさの倍率。画面の縦(論理px)から決める: 倍率 = 縦 / BASE_H(1〜MAX)。
+   縦持ち・横持ちで同じ端末なら論理の縦は同じなので、持ち方で文字サイズは変わらない(narrow-screen では分けない)。
+   1624x750 のような大きい画面で文字が豆粒にならないようにするためのもの */
+const EXPLORE_HUD_BASE_H          = 375;
+const EXPLORE_HUD_MAX_SCALE       = 1.5;
+const EXPLORE_COMPASS_CRATE_RANGE = 2600;   // この距離より近い補給箱(未開封)だけバーに出す
+const EXPLORE_COMPASS_CRATE_MAX   = 4;      // バーに出す補給箱の数(近い順)
+const EXPLORE_COMPASS_THREAT_RANGE= 1600;   // 気づいて追ってくる野生をバーに赤い印で出す距離
+const EXPLORE_COMPASS_LABEL_RANGE = 99999;  // 距離(m)の数字を出す上限(ビーコン・ボス・目標は遠くても出す)
+/* 距離の数字を出す印の数(近い順)。以前は「重ならない限り出す」だったため、
+   画面が広いほど数字が増え、3サイズで見える数が揺れていた(第3周の指摘)。
+   3サイズで同じ基準にするため、近い順に必ずこの数だけに絞る(重なり除去は絞ったあとの保険)。 */
+const EXPLORE_COMPASS_LABEL_MAX   = 3;
+/* 印そのものの数の上限(第4周の指摘: 数字の札は3件に絞ったのに印は絞っていなかったため、
+   4件目(札なし)がボスの印に重なって見えた)。always(優先の目標・ビーコン)は数えず必ず残す */
+const EXPLORE_COMPASS_ICON_MAX    = 3;
+const EXPLORE_COMPASS_ICON_GAP_PX = 13;     // ボス戦の詰めた段で、印どうしを離す最小の間隔(px。倍率を掛ける前)
+// ミニマップ・全体地図: 自分の印に重なって見えなくなる近い印を、最低これだけ画面上で離す(px。倍率を掛ける前)
+// (第4周の指摘: 9pxでは自分の矢印の光暈に隠れたままだったので広げた)
+const EXPLORE_MAP_DECLUTTER_PX    = 16;
+// 目標(クエスト)パネル
+const EXPLORE_OBJ_MATERIAL_GOAL   = 15;     // 「素材を集める」の目安の個数(報酬は無い。HUDの目安だけ)
+const EXPLORE_OBJ_RETURN_WARN_SEC = 120;    // 残り時間がこれを切ったら「帰還」を優先の目標にする
+const EXPLORE_OBJ_DONE_FLASH_SEC  = 2.2;    // 達成した目標を光らせる秒数
+// 地域に入ったときの名前の札
+const EXPLORE_REGION_CARD_SEC     = 2.8;
+// ミニマップ(探検のときだけ)・全体地図
+const EXPLORE_MINIMAP_RADIUS      = 3000;   // ミニマップの中心から縁までのワールド距離(300m)
+const EXPLORE_MINIMAP_CRATE_RANGE = 3000;   // ミニマップに出す補給箱の距離
+const EXPLORE_MAP_BAKE_PX         = 1024;   // 地形を焼いておく画像の一辺(1回だけ描く)
+const EXPLORE_MAP_HEIGHT_PX       = 384;    // 地面の高さ(real3dHeightAt)を測る格子の数(一辺)。数フレームに分けて焼く
+const EXPLORE_MAP_BAKE_MS         = 6;      // 1フレームで焼きに使ってよい時間(ms)。一瞬の重さを出さない
+const EXPLORE_MAP_BAND_H          = 120;    // 高さの段の幅(ワールド単位)。段ごとに平面の色を1段明るくする
+const EXPLORE_MAP_CLIFF_SLOPE     = 1.8;    // この傾き(高さ/水平距離)を超えた所を崖の線にする
+const EXPLORE_MAP_CRATE_RANGE     = 5000;   // 全体地図に出す補給箱の距離(遠くの箱は見せない)
+const EXPLORE_MAP_REDRAW_SEC      = 0.2;    // 全体地図を描き直す間隔(点滅のため)
+// ボスの札・HPバーの置き方(縦の割合。R3: 縦が足りないときは 称号の行 → バーの太さ の順に削る)
+/* ボスの帯は1行(紋章・名前・状態の札/予告の技名・バー・残り%)。方位バーの真下。
+   R3: 縦が足りないときは 二つ名の行(下の小さな1行。縦 titleMinH 以上のときだけ出す)→ 状態の札 → 名前 の順に削る */
+const EXPLORE_BOSS_HUD = {
+  rowH: 18,          // 1行の高さ(px。倍率を掛ける前)
+  barH: 6,           // バーの太さ(px。倍率を掛ける前)
+  titleMinH: 520,    // 画面の縦がこれ以上なら二つ名を帯の下に小さく出す
+  barMinW: 70,       // バーの最小の長さ。これを割るなら札・名前を削る
+  maxW: 620,         // 帯の横幅の上限(px。倍率を掛ける前)
+};
+// 音(探検のBGM・環境音)。曲の中身は audio.js(EXPLORE_BGM_*)
+const EXPLORE_BGM_FADE_SEC        = 1.3;    // 地域の曲の切り替え(setTargetAtTime の時定数。約3倍で入れ替わる)
+const EXPLORE_BGM_BOSS_FADE_SEC   = 0.35;   // ボス戦の曲へ切り替える速さ(咆哮で一気に変える)
+const EXPLORE_BGM_FANFARE_SEC     = 4.6;    // 討伐のファンファーレの長さ(その間は環境曲を鳴らさない)
+const EXPLORE_AMB_VOL             = { wind:0.20, insect:0.055, lava:0.34 };   // 環境音の音量(地域の重み1のとき)
+const EXPLORE_AMB_BOSS_DUCK       = 0.35;   // ボス戦の間の環境音の音量(割合)
+const EXPLORE_SPOTTED_SE_GAP      = 3.0;    // 群れに気づかれた音を鳴らす最短の間隔(秒)
+
+/* =====================================================================
+   探検モード: 装備と工房(鍛冶屋)
+   ・**効果は探検モードの中だけで効く**(explore_loot.js の exploreApplyGear を exploreStart だけが呼ぶ)。
+     シングル/チーム戦/レイドの力関係は変えない(統括の判断)。
+   ・**表に1行足せば工房に並ぶ。** 画面(ui.js の工房)・効果の足し算・セット効果はすべてこの表から作る。
+     slot   = EXPLORE_GEAR_SLOTS の id
+     set    = EXPLORE_GEAR_SETS のキー(セット効果と色)
+     rarity = EXPLORE_RARITY のキー(枠の色・完成演出の色)
+     mats   = 必要な素材 { EXPLORE_MATERIALS のキー: 個数 }。**保管(toBag を持たない素材)だけ**を使う
+              (toBag を持つ素材は持ち帰った時点でバッグの実に換わっていて保管に残らないため)
+     fx     = 効果(EXPLORE_GEAR_STATS のキー: 割合。0.08 = +8%、被ダメは -0.05 = 5%減る)
+     sniper = 武器だけ。sniper.js の SNIPER_WEAPONS に足す想定のキー。無ければ標準の狙撃銃(longbow)を持つ
+   ===================================================================== */
+const EXPLORE_GEAR_STORAGE_KEY = 'aramon_explore_gear_v1';   // { owned:[キー], equip:{スロット:キー} }。アカウント同期する
+const EXPLORE_GEAR_SLOTS = [
+  { id:'weapon', label:'武器' },
+  { id:'head',   label:'頭' },
+  { id:'body',   label:'胴' },
+  { id:'arms',   label:'腕' },
+];
+// 効果の言葉と並び順(工房の表示・合計・試合開始時の通知はすべてここを読む)
+const EXPLORE_GEAR_STATS = {
+  hpPct:        { label:'体力',           short:'体力' },
+  dmgTakenPct:  { label:'受けるダメージ', short:'被ダメ', lowerIsBetter:true },
+  speedPct:     { label:'移動速度',       short:'速さ' },
+  gutsRegenPct: { label:'ガッツ回復',     short:'ガッツ' },
+  dmgPct:       { label:'技の威力',       short:'技' },
+  snipePct:     { label:'狙撃の威力',     short:'狙撃' },
+};
+// セット(同じセットの装備を n 個以上着けると bonus の効果が上乗せされる)。color = アイコンの地色
+const EXPLORE_GEAR_SETS = {
+  scout: { name:'探検者', emblem:'🧭', color:'#c9a36b', bonus:[ { n:3, fx:{ speedPct:0.04 } } ] },
+  horn:  { name:'大角',   emblem:'🦴', color:'#efe3c2', bonus:[ { n:2, fx:{ hpPct:0.05 } }, { n:4, fx:{ dmgTakenPct:-0.06 } } ] },
+  frost: { name:'氷河',   emblem:'❄️', color:'#8fe6ff', bonus:[ { n:2, fx:{ gutsRegenPct:0.10 } }, { n:4, fx:{ snipePct:0.10 } } ] },
+  blaze: { name:'紅蓮',   emblem:'🔥', color:'#ff7a3c', bonus:[ { n:2, fx:{ dmgPct:0.05 } }, { n:3, fx:{ dmgTakenPct:-0.05 } } ] },
+  apex:  { name:'頂点',   emblem:'💠', color:'#ffd84a', bonus:[ { n:2, fx:{ hpPct:0.06, dmgPct:0.04 } }, { n:4, fx:{ snipePct:0.15, dmgTakenPct:-0.08 } } ] },
+};
+const EXPLORE_GEAR = {
+  /* 武器の派生の根(補給箱で拾う標準の狙撃銃)。root:true = 工房では作らない・着けない(表の起点として並ぶだけ)。
+     from = 派生元(このキーの装備を持っていると作れる。配列ならどれか1つ)。工房の表の線はここから自動で引く
+     shape = 武器の形('bow' 弓 / 'rifle' 銃)。アイコンの描き分けに使う */
+  longbow:     { slot:'weapon', set:'scout', rarity:'rare', name:'探検者のロングボウ', root:true, shape:'bow', sniper:'longbow', mats:{}, fx:{},
+                 note:'補給箱で拾える標準の狙撃銃。工房の武器はここから派生する' },
+  // 探検者(コモン素材だけで作れる入門の一式)
+  scout_head:  { slot:'head',   set:'scout', rarity:'rare', name:'探検者の帽子',       mats:{ meadow_fiber:4, jungle_vine:2 },                 fx:{ hpPct:0.04 } },
+  scout_body:  { slot:'body',   set:'scout', rarity:'rare', name:'探検者のジャケット', mats:{ meadow_fiber:6, frost_shard:2 },                 fx:{ hpPct:0.06 } },
+  scout_arms:  { slot:'arms',   set:'scout', rarity:'rare', name:'探検者のグローブ',   mats:{ jungle_vine:4, volcano_ore:2 },                  fx:{ gutsRegenPct:0.06 } },
+  // 大角(草原の主)
+  horn_bow:    { slot:'weapon', set:'horn',  rarity:'epic', name:'大角の剛弓',   sniper:'hornbow', shape:'bow',   from:'longbow', mats:{ boss_horn:3, volcano_ore:6, meadow_fiber:4 }, fx:{ snipePct:0.15 } },
+  horn_head:   { slot:'head',   set:'horn',  rarity:'epic', name:'大角の兜',     mats:{ boss_horn:2, meadow_fiber:6 },                  fx:{ hpPct:0.08 } },
+  horn_body:   { slot:'body',   set:'horn',  rarity:'epic', name:'大角の胸当て', mats:{ boss_horn:3, volcano_ore:4 },                   fx:{ hpPct:0.10, dmgTakenPct:-0.03 } },
+  horn_arms:   { slot:'arms',   set:'horn',  rarity:'epic', name:'大角の籠手',   mats:{ boss_horn:2, jungle_vine:4 },                   fx:{ dmgPct:0.05 } },
+  // 氷河(凍った高地の主)
+  frost_rifle: { slot:'weapon', set:'frost', rarity:'epic', name:'氷河の狙撃銃', sniper:'glacier', shape:'rifle', from:'longbow', mats:{ boss_fang:3, frost_shard:8 },         fx:{ snipePct:0.20 } },
+  frost_head:  { slot:'head',   set:'frost', rarity:'epic', name:'氷河の頭巾',   mats:{ boss_fang:2, frost_shard:6 },                   fx:{ gutsRegenPct:0.10 } },
+  frost_body:  { slot:'body',   set:'frost', rarity:'epic', name:'氷河の外套',   mats:{ boss_fang:3, frost_shard:6, meadow_fiber:3 },   fx:{ hpPct:0.06, speedPct:0.04 } },
+  frost_arms:  { slot:'arms',   set:'frost', rarity:'epic', name:'氷河の手甲',   mats:{ boss_fang:2, frost_shard:4 },                   fx:{ speedPct:0.05 } },
+  // 紅蓮(火山の峡谷の主)
+  blaze_head:  { slot:'head',   set:'blaze', rarity:'epic', name:'紅蓮の角兜',   mats:{ boss_scale:2, volcano_ore:6 },                  fx:{ dmgPct:0.05 } },
+  blaze_body:  { slot:'body',   set:'blaze', rarity:'epic', name:'紅蓮の鎧',     mats:{ boss_scale:3, volcano_ore:8 },                  fx:{ dmgTakenPct:-0.08 } },
+  blaze_arms:  { slot:'arms',   set:'blaze', rarity:'epic', name:'紅蓮の腕甲',   mats:{ boss_scale:2, volcano_ore:4, jungle_vine:3 },   fx:{ dmgPct:0.06 } },
+  // 頂点(頂点ボス)
+  apex_bow:    { slot:'weapon', set:'apex',  rarity:'legendary', name:'頂点の魔弾', sniper:'apexbow', shape:'rifle', from:['horn_bow','frost_rifle'], mats:{ apex_core:2, boss_horn:2, boss_fang:2, boss_scale:2 }, fx:{ snipePct:0.30 } },
+  apex_head:   { slot:'head',   set:'apex',  rarity:'legendary', name:'頂点の冠',   mats:{ apex_core:1, boss_horn:2, frost_shard:6 },   fx:{ hpPct:0.10, gutsRegenPct:0.08 } },
+  apex_body:   { slot:'body',   set:'apex',  rarity:'legendary', name:'頂点の聖鎧', mats:{ apex_core:2, boss_scale:2, volcano_ore:6 },  fx:{ hpPct:0.12, dmgTakenPct:-0.06 } },
+  apex_arms:   { slot:'arms',   set:'apex',  rarity:'legendary', name:'頂点の籠手', mats:{ apex_core:1, boss_fang:2, jungle_vine:6 },   fx:{ dmgPct:0.08, speedPct:0.04 } },
+};
+
+/* 装備の保管。知らないキー・壊れた値は読み捨てる(表から消した装備を持っていても落ちない) */
+function loadExploreGear(){
+  const out = { owned:[], equip:{} };
+  try{
+    const d = JSON.parse(localStorage.getItem(EXPLORE_GEAR_STORAGE_KEY)) || {};
+    if(Array.isArray(d.owned)) out.owned = d.owned.filter((k, i, a)=> EXPLORE_GEAR[k] && !EXPLORE_GEAR[k].root && a.indexOf(k) === i);
+    const eq = d.equip || {};
+    for(const s of EXPLORE_GEAR_SLOTS){
+      const k = eq[s.id];
+      if(k && EXPLORE_GEAR[k] && EXPLORE_GEAR[k].slot === s.id && out.owned.includes(k)) out.equip[s.id] = k;
+    }
+  }catch(err){}
+  return out;
+}
+function saveExploreGear(g){
+  try{ localStorage.setItem(EXPLORE_GEAR_STORAGE_KEY, JSON.stringify({ owned:(g && g.owned) || [], equip:(g && g.equip) || {} })); }catch(err){}
+  if(typeof accountMarkDirty==='function') accountMarkDirty();
+}
+// 作れるか(足りない素材の一覧も返す)。stash を渡さなければ今の保管を読む
+/* 作れるか(足りない素材の一覧も返す)。stash を渡さなければ今の保管を読む。
+   派生(from)があれば、派生元のどれか1つを持っていることも条件(根 root は拾う物なので常に満たす) */
+function exploreGearFromList(key){
+  const g = EXPLORE_GEAR[key];
+  if(!g || !g.from) return [];
+  return (Array.isArray(g.from) ? g.from : [g.from]).filter(k=> EXPLORE_GEAR[k]);
+}
+function exploreGearCraftCheck(key, stash, gear){
+  const g = EXPLORE_GEAR[key];
+  if(!g || g.root) return { ok:false, lack:[], rows:[], fromOk:true, from:[] };
+  const s = stash || loadExploreStash();
+  const rows = Object.keys(g.mats).map(k=>({ key:k, need:g.mats[k], have:s[k] || 0 }));
+  const lack = rows.filter(r=> r.have < r.need);
+  const from = exploreGearFromList(key);
+  const owned = (gear || loadExploreGear()).owned;
+  const fromOk = !from.length || from.some(k=> EXPLORE_GEAR[k].root || owned.includes(k));
+  return { ok: lack.length === 0 && fromOk, lack, rows, fromOk, from };
+}
+// 表の中で見せる短い名前(セット名は行の見出しに出すので「大角の剛弓」→「剛弓」)
+function exploreGearShortName(key){
+  const g = EXPLORE_GEAR[key];
+  if(!g) return '';
+  const set = EXPLORE_GEAR_SETS[g.set];
+  const pre = set ? set.name + 'の' : '';
+  return (pre && g.name.startsWith(pre)) ? g.name.slice(pre.length) : g.name;
+}
+/* 素材の入手先(工房で足りないときの案内)。**表から自動で作る**(ボスの落とし物・部位破壊・野生・補給箱)。
+   返り値: ['ガンドロックの討伐(草原の盆地)', …] 多いものから最大 max 件 */
+function exploreMaterialSources(key, max){
+  const out = [];
+  const inTable = (id)=>{
+    const t = (typeof EXPLORE_DROP_TABLES!=='undefined') ? EXPLORE_DROP_TABLES[id] : null;
+    if(!t) return false;
+    return (t.always || []).some(i=> i.key === key) || (t.items || []).some(i=> i.key === key);
+  };
+  const regName = (id)=>{ const r = (typeof exploreRegion==='function') ? exploreRegion(id) : null; return r ? r.name : ''; };
+  if(typeof EXPLORE_BOSSES!=='undefined') for(const b of EXPLORE_BOSSES){
+    const where = regName(b.region);
+    if(inTable(b.drops)) out.push(`${b.name}の討伐${where ? `(${where})` : ''}`);
+    else if(inTable(b.breakDrops)) out.push(`${b.name}の${b.partName || '部位'}破壊${where ? `(${where})` : ''}`);
+  }
+  if(typeof EXPLORE_REGIONS!=='undefined') for(const r of EXPLORE_REGIONS){
+    if(inTable('wild_' + r.id)) out.push(`${r.name}の野生`);
+  }
+  const m = EXPLORE_MATERIALS[key];
+  if(m && m.region && m.region !== 'boss'){ const n = regName(m.region); if(n) out.push(`${n}の補給箱`); }
+  return out.slice(0, max || 3);
+}
+// 前回の持ち帰り(ロビー右列の表示用。壊れていれば null)
+function loadExploreLast(){
+  try{ const d = JSON.parse(localStorage.getItem(EXPLORE_LAST_STORAGE_KEY)); return (d && typeof d === 'object') ? d : null; }
+  catch(err){ return null; }
+}
+function saveExploreLast(d){ try{ localStorage.setItem(EXPLORE_LAST_STORAGE_KEY, JSON.stringify(d || null)); }catch(err){} }
+// 作る(素材を減らして所持に足す)。作れなければ false。持っている物は作らない
+function exploreCraftGear(key){
+  const g = EXPLORE_GEAR[key];
+  if(!g) return false;
+  const gear = loadExploreGear();
+  if(gear.owned.includes(key)) return false;
+  const s = loadExploreStash();
+  if(!exploreGearCraftCheck(key, s).ok) return false;
+  for(const k of Object.keys(g.mats)) s[k] = Math.max(0, (s[k] || 0) - g.mats[k]);
+  for(const k of Object.keys(s)) if(!(s[k] > 0)) delete s[k];
+  saveExploreStash(s);
+  gear.owned.push(key);
+  // 着けるかどうかは完成の画面で選ばせる(装備する/あとで)。ここでは所持に足すだけ
+  saveExploreGear(gear);
+  return true;
+}
+function exploreEquipGear(key){
+  const g = EXPLORE_GEAR[key];
+  const gear = loadExploreGear();
+  if(!g || g.root || !gear.owned.includes(key)) return false;
+  gear.equip[g.slot] = key;
+  saveExploreGear(gear);
+  return true;
+}
+function exploreUnequipSlot(slotId){
+  const gear = loadExploreGear();
+  delete gear.equip[slotId];
+  saveExploreGear(gear);
+}
+/* 着けている装備の効果の合計(セット効果込み)。**効果の足し算はここ1か所**(工房の表示と試合の適用が同じ数字を読む)。
+   返り値: { fx:{ 効果キー: 合計 }, sets:[{ set, n, active:[bonus…], next:bonus|null }] } */
+function exploreGearTotals(equip){
+  const fx = {};
+  const add = (src)=>{ for(const k of Object.keys(src || {})) fx[k] = (fx[k] || 0) + src[k]; };
+  const count = {};
+  for(const s of EXPLORE_GEAR_SLOTS){
+    const g = EXPLORE_GEAR[(equip || {})[s.id]];
+    if(!g) continue;
+    add(g.fx);
+    count[g.set] = (count[g.set] || 0) + 1;
+  }
+  const sets = [];
+  for(const id of Object.keys(count)){
+    const def = EXPLORE_GEAR_SETS[id];
+    if(!def) continue;
+    const active = def.bonus.filter(b=> count[id] >= b.n);
+    active.forEach(b=> add(b.fx));
+    sets.push({ set:id, n:count[id], active, next: def.bonus.find(b=> count[id] < b.n) || null });
+  }
+  return { fx, sets };
+}
+/* 着けた装備を体に重ねる(explore_loot.js の exploreDrawWornGear)。位置と大きさは体の矩形(絵の不透明部分)に対する比。
+   x = 体の中心からの横(芯の幅に対する比)/ y = 頭のてっぺんからの縦(体の高さに対する比)/ w = 大きさ(芯の幅に対する比)
+   core = 芯の幅(翼・尾で横に広い絵でも体の幅で置く。体の高さ×この比を上限にする) */
+const EXPLORE_WORN = {
+  core:0.62,
+  head:   { x:0,     y:0.03, w:0.5 },             // 頭のてっぺんに載せる(顔は隠さない)
+  body:   { x:0,     y:0.48, w:0.66 },
+  arms:   { x:0.40,  y:0.56, w:0.30 },            // 左右に1つずつ(左は裏返す)
+  weapon: { x:0.36,  y:0.42, w:1.15, rot:-0.55, backX:-0.05, backRot:0.6 },   // 前向きは体の後ろ・後ろ姿は背中の上
+};
+/* 着けている装備でいちばん多いセット(見た目の色に使う。フィールドの足元の光・報酬画面・工房の「着けたときの姿」)。
+   同じ数なら発動しているセット効果が多い方、それも同じなら表の先(EXPLORE_GEAR_SLOTS の並び)。何も着けていなければ null
+   返り値: { set, n, active(発動しているセット効果の数) } */
+function exploreGearMainSet(equip){
+  const tot = exploreGearTotals(equip);
+  let best = null;
+  for(const r of tot.sets){
+    const cand = { set:r.set, n:r.n, active:r.active.length };
+    if(!best || cand.n > best.n || (cand.n === best.n && cand.active > best.active)) best = cand;
+  }
+  return best;
+}
+// 効果を「体力+8%・被ダメ-3%」の形の短い文にする(表の並び順)。short=false で長い言葉
+function exploreGearFxText(fx, short){
+  const out = [];
+  for(const k of Object.keys(EXPLORE_GEAR_STATS)){
+    const v = fx && fx[k];
+    if(!v) continue;
+    const st = EXPLORE_GEAR_STATS[k];
+    out.push(`${short===false ? st.label : st.short}${v > 0 ? '+' : '−'}${Math.round(Math.abs(v)*100)}%`);
+  }
+  return out.join('・');
+}
+
+/* =====================================================================
    GAME STATE
 ===================================================================== */
+
+/* =====================================================================
+   狙撃銃とスコープ(探検モード専用。本体は sniper.js)
+   **数値はすべてこの表と名前付き定数が正**(発注者が実機で調整する)。
+   ・距離の単位はワールド単位(10単位=1m。PING_UNITS_PER_M と同じ換算)。
+   ・武器を足すときは SNIPER_WEAPONS に1行足すだけ(装備担当が上位の狙撃銃を足す場所)。
+     入手は sniperGive(ent, 'キー') / sniperAttachScope(ent, 'x8') で渡す。
+   ・探検モード以外では何も読まれない(入口の判定は sniper.js の sniperModeOn() 1か所)。
+===================================================================== */
+const SNIPER_WEAPONS = {
+  /* dmg      : 1発の威力(胴体)。弱点(ent.weakPoint)に当たると critMult 倍
+     speed    : 弾速(ワールド単位/秒。水平成分)
+     range    : 最大射程(ワールド単位)。地形パッチ(7200四方)の半分より内側に収める
+     mag      : 装弾数。撃ち切ると自動で装填
+     reloadSec: 装填にかかる秒数 / cycleSec: 1発ごとの連射間隔(ボルトを引く時間)
+     critMult : 弱点命中の倍率(ent.weakPoint.mult があればさらに掛ける)
+     drop     : 落下の強さ。既存の弾道 projGravityFor(range, speed) に掛ける倍率(大きいほど遠くで落ちる)
+     sway     : 構えの揺れの大きさ(ラジアン。スコープの sway 係数を掛ける)
+     recoil   : 反動の跳ね上がり(スコープの視野の半分に対する割合。倍率によらず画面上で同じ量)
+     hitR     : 弾の当たりの太さ / tracer: 弾道の光の色 / defaultScope: スコープ無しで拾ったときの照準 */
+  longbow: { name:'ロングボウ', icon:'🎯', dmg:110, speed:3200, range:3500, mag:5, reloadSec:2.6, cycleSec:1.05,
+             critMult:1.8, drop:2.5, sway:0.0032, recoil:0.42, hitR:5, tracer:'#ffd79a', defaultScope:'iron' },
+  // 工房で作る上位の狙撃銃(EXPLORE_GEAR の sniper キー)。威力の上乗せは装備の snipePct とは別に武器そのものが強い
+  hornbow: { name:'大角の剛弓', icon:'🏹', dmg:135, speed:3300, range:3700, mag:5, reloadSec:2.4, cycleSec:1.0,
+             critMult:1.9, drop:2.3, sway:0.0030, recoil:0.44, hitR:5, tracer:'#ffb36a', defaultScope:'iron' },
+  glacier: { name:'氷河の狙撃銃', icon:'❄️', dmg:125, speed:3800, range:4000, mag:6, reloadSec:2.2, cycleSec:0.9,
+             critMult:1.9, drop:1.8, sway:0.0026, recoil:0.38, hitR:5, tracer:'#9fe6ff', defaultScope:'iron' },
+  apexbow: { name:'頂点の魔弾', icon:'🌟', dmg:170, speed:4000, range:4200, mag:4, reloadSec:2.6, cycleSec:1.1,
+             critMult:2.1, drop:1.6, sway:0.0024, recoil:0.50, hitR:6, tracer:'#ffe36a', defaultScope:'iron' },
+};
+const SNIPER_NOISE_RANGE        = 5200;  // 銃声が野生・ボスに届く距離(ワールド単位。exploreMakeNoise へ渡す)
+const SNIPER_SCOPES = {
+  /* mag     : 倍率(視野角は tan(基準の半分)÷倍率 で狭める。1=ズームしない)
+     sway    : 揺れの係数(倍率が高いほど大きい)
+     reticle : 照準の絵('iron'=照門と照星 / 'chevron'=2倍 / 'mildot'=4倍 / 'bdc'=8倍の落下補正はしご)
+     aperture: スコープ窓の半径(画面の高さに対する割合。0=窓なし)
+     rarity  : ルートの色分け(common白/rare青/epic紫/legendary金)。拾う側が使う */
+  /* sway は「画面の上で見える揺れ」がおおむね アイアン4px / 2倍8px / 4倍11px / 8倍20px(高さ750)になる値。
+     低い倍率でも少しは動かないと、揺れがあること自体が伝わらない(批評の指摘) */
+  iron: { name:'アイアンサイト', label:'1.25×', mag:1.25, sway:1.8,  reticle:'iron',    aperture:0,    rarity:'common' },
+  x2:   { name:'2倍スコープ',   label:'2×',    mag:2,    sway:2.0,  reticle:'chevron', aperture:0.47, rarity:'rare' },
+  x4:   { name:'4倍スコープ',   label:'4×',    mag:4,    sway:1.4,  reticle:'mildot',  aperture:0.46, rarity:'epic' },
+  x8:   { name:'8倍スコープ',   label:'8×',    mag:8,    sway:1.3,  reticle:'bdc',     aperture:0.45, rarity:'legendary' },
+};
+const SNIPER_ADS_IN_SEC         = 0.22;  // 構えに入るまでの秒数(カメラの寄せと窓の開き)
+const SNIPER_ADS_OUT_SEC        = 0.15;  // 構えを解くまでの秒数
+const SNIPER_ZOOM_RATE          = 16;    // 倍率が目標へ寄る速さ(大きいほど速い。倍率は対数でなめらかに動く)
+const SNIPER_ADS_SENS_BASE      = 1.05;  // 構え中の視点感度 = BASE ÷ 倍率^EXP(8倍で約0.16倍)
+const SNIPER_ADS_SENS_EXP       = 0.9;
+const SNIPER_SWAY_PERIOD        = 3.6;   // 8の字の揺れが一周する秒数
+const SNIPER_MOVE_SWAY_MULT     = 2.2;   // 歩きながら構えたときの揺れの倍率
+const SNIPER_BREATH_MAX_SEC     = 4.0;   // 息止めが続く秒数
+const SNIPER_BREATH_RECOVER_SEC = 3.0;   // 息が空から満タンに戻る秒数
+const SNIPER_BREATH_SWAY        = 0.10;  // 息止め中の揺れ(通常を1として)
+const SNIPER_EXHAUST_SWAY       = 1.7;   // 息を使い切った直後の揺れ(息が半分戻るまで)
+const SNIPER_RECOIL_RETURN      = 9;     // 反動が戻る速さ(ばねの強さ)
+const SNIPER_ZERO_M             = 100;   // ゼロイン距離(m)。ここより遠いと弾が照準の下へ落ちる
+const SNIPER_BODY_H_PER_RADIUS  = 2.0;   // 当たりの背の高さ = 半径×これ(ent.bodyH があればそちら)
+const SNIPER_HIT_RADIUS_MULT    = 0.95;  // 当たりの横幅 = 半径×これ
+const SNIPER_WEAK_FROM          = 0.62;  // ent.weakPoint に from が無いときの弱点の下端(背の高さに対する割合)
+const SNIPER_LADDER_LINE_PX     = 1.4;    // 8倍(BDC)のはしごの段の線の太さ(px)。暗い縁を+1.6pxで足す。点は出さない(批評7巡目)
+const SNIPER_DROP_MARKS_M       = [150, 200, 250, 300];   // 落下補正の目盛り(m)
+const SNIPER_DROP_LABEL_ORDER   = [200, 300, 150, 250];   // 目盛りの数字が詰まって区別できないとき、残す順(前ほど残る)
+const SNIPER_DROP_LABEL_X       = 0.2;    // 目盛りの数字の列の位置(照準から窓の半径×この割合だけ横)
+const SNIPER_DROP_LABEL_DIM     = 0.42;   // 目盛りの点線の引き出し線が的の体に掛かるときの濃さ(数字そのものは薄めない。drawDropLabel)
+const SNIPER_DROP_LABELS_NARROW_MAX = 1;  // 縦持ち(html.narrow-screen)で同時に出す落下補正の数字の数。的の体の上で数が並ぶと読めない(批評6巡目)
+const SNIPER_WEAK_LABEL_OFFSET_PX = 14;   // 「弱点」の札を菱形の印の外接円から離す距離(px。8〜24pxの範囲。批評7巡目)
+const SNIPER_WEAK_LABEL_PAD     = 8;      // 「弱点」の札と他の文字(落下補正の数字)の間に空ける余白(px)。0だと隣り合わせで「弱点200」に読めてしまう
+const SNIPER_SWAY_NOISE         = 0.55;  // 揺れに混ぜるなめらかなノイズの割合(周期を読めなくする)
+const SNIPER_HEARTBEAT_HZ       = 1.15;  // 心拍の細かい揺れの速さ(回/秒)
+const SNIPER_HEARTBEAT_AMP      = 0.22;  // 心拍の揺れの大きさ(揺れ全体に対する割合。息止め中も残る)
+const SNIPER_RECOIL_KEEP        = 0.10;  // 反動の跳ね上がりのうち戻らない割合(撃つたびに少し上がる)
+const SNIPER_SHOT_SHAKE         = 0.035; // 撃った瞬間の画面の揺れ(視野の半分に対する割合)
+const SNIPER_SHOT_ZOOM_KICK     = -0.05; // 撃った瞬間の視野の弾み(倍率の変化の割合。マイナス=一瞬広がる)
+const SNIPER_CRIT_ZOOM_KICK     = 0.07;  // 弱点命中の倍率の弾み
+const SNIPER_HITSTOP_SEC        = 0.07;  // 弱点命中のヒットストップ(秒)
+const SNIPER_HITSTOP_SCALE      = 0.04;  // ヒットストップ中の時間の速さ
+const SNIPER_TRACER_CONVERGE    = 1600;  // 弾道の光が銃口(画面の右下)から照準の線へ合流する距離(ワールド単位=160m)
+const SNIPER_SHOT_RANGE_SEC     = 1.0;   // 撃った瞬間の距離を残して見せる秒数
+const SNIPER_FIRE_CANCEL_MARGIN = 0.6;   // FIREを離した場所がボタンの外(大きさのこの割合より外)なら撃たない
+const SNIPER_SCOPE_PIXEL_BOOST  = 1.5;   // 構え中、スコープの窓の範囲だけ3Dの描画解像度をこの倍にする(上限3)
+const SNIPER_VEG_CONE_MIN_ZOOM  = 1.9;   // この倍率以上で、草・低木を「視線の先の扇」へ並べ替えて遠くまで出す
+const SNIPER_BODY_FLASH_SEC     = 0.0006; // 探検: 狙撃の命中で体が白くなる時間(ゲーム内の秒)。ヒットストップ中(時間の速さ0.04)でも次のフレームで消える=1フレームだけ。光は当たった点の周りだけ
+const SNIPER_TRACER_CLIP        = 0.97;  // 覗いている間、弾道の光を描く範囲(窓の半径に対する割合。距離・残弾は窓の外なので窓いっぱい)
+const SNIPER_TRACER_CORE_PX     = [1.6, 4];   // 弾道の光の芯の太さ(画面px)。先=細い〜手前=太い
+const SNIPER_FLASH_LEVELS       = [1, 0.85, 0.6];   // 発砲の閃光の強さ(撃ってから描くコマごと。0.62より上のコマは白い芯つき)
+const SNIPER_HIT_JOLT_SEC       = 0.25;  // 探検: 狙撃の命中で的の絵が揺れる時間(秒)
+const SNIPER_HIT_JOLT_PX        = [3, 5];  // 同じく揺れの幅(画面px。体 / 弱点)
+const SNIPER_IMPACT_COLUMN_H    = 36;    // 外れた弾が地面に立てる土柱の高さ(ワールド単位=3.6m相当)。60だと8倍ズームで的の顔の高さまで浮いて見えた(批評7巡目)。遠くからでも見える大きさは根元の濃い土とSNIPER_IMPACT_SCALE_BOOSTで保つ
+const SNIPER_SPLASH_RING_M0     = 6;     // 水しぶきの輪の初期半径(ワールド単位)
+const SNIPER_SPLASH_RING_GROW   = 70;    // 水しぶきの輪が1秒あたり広がる量(ワールド単位/秒)
+const SNIPER_SPLASH_DEBRIS_UP   = 340;   // 水滴が跳ね上がる初速の係数(SNIPER_IMPACT_DEBRIS_Gで落ちる)
+const SNIPER_IMPACT_DEBRIS_G    = 900;   // 土くれ・小石が落ちる重さ(ワールド単位/秒²)
+const SNIPER_CRIT_NUM_SCALE     = 1.5;   // 弱点命中のダメージの数字の大きさ(体への命中の数字に対する倍率)
+// 批評5巡目(縦持ちでレンズの内側に情報が入り込む/弾道が折れる/弱点の印が浮く)への対応で追加
+const SNIPER_SCOPE_INFO_COL_PX  = 150;   // 情報の札(距離・名前・倍率・残弾)の列に見込む幅。窓の大きさはこれで縛らない(sniperApertureR)
+const SNIPER_SCOPE_MIN_R_RATIO  = 0.40;  // 窓の半径の下限(画面の高さに対する割合。直径で画面の高さの80%。縦持ちでも窓を大きく保つ)
+const SNIPER_TRACER_ANCHOR_DX   = 0.16;  // 弾道の光が「出てくる」画面上の位置(中心から右へ。画面の高さに対する割合)
+const SNIPER_TRACER_ANCHOR_DY   = 0.30;  // 同じく下へ。世界座標でなく画面座標でここへ寄せるので、合流までの弧が必ず滑らかになる
+const SNIPER_IMPACT_SCALE_BOOST = 2.2;   // 着弾の土煙・破片・火花の大きさの倍率(遠距離・高倍率でも見える大きさに)
+const SNIPER_IMPACT_VIS_MIN_PX  = 20;    // 着弾の土煙が画面上で最低限持つ大きさ(px)

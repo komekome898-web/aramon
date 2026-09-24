@@ -9,7 +9,9 @@ function project(wx, wy, wz){
   const camDepth = depthFlat*Math.cos(camState.pitch) - tz*Math.sin(camState.pitch);
   if(camDepth < 1) return null;
   const camVert = depthFlat*Math.sin(camState.pitch) + tz*Math.cos(camState.pitch);
-  const scale = clamp(FOCAL/camDepth, 0, 6);
+  // 上限6は「カメラ至近で暴れない」ための頭打ち。スコープのズーム中(viewZoom>1)は FOCAL が倍率ぶん
+  // 伸びるので上限も同じだけ伸ばす(伸ばさないと遠くの物まで頭打ちになり3Dの地面とずれる)。倍率1なら従来どおり
+  const scale = clamp(FOCAL/camDepth, 0, 6*viewZoom);
   return { x: viewW/2 + lateral*scale, y: viewH/2 - camVert*scale, scale, depth: camDepth };
 }
 // 巨大な静止オブジェクト(火山・ピラミッド・建物)専用の投影。
@@ -27,7 +29,7 @@ function projectObstacle(wx, wy, wz, objRadius){
   const OBSTACLE_MIN_DEPTH = 80; // これ未満はクランプ(スケールは頭打ち・位置は横移動のみで安定)
   if(camDepth < OBSTACLE_MIN_DEPTH) camDepth = OBSTACLE_MIN_DEPTH;
   const camVert = depthFlat*Math.sin(camState.pitch) + tz*Math.cos(camState.pitch);
-  const scale = clamp(FOCAL/camDepth, 0, 6);
+  const scale = clamp(FOCAL/camDepth, 0, 6*viewZoom);   // 上限の考え方は project() と同じ
   return { x: viewW/2 + lateral*scale, y: viewH/2 - camVert*scale, scale, depth: camDepth };
 }
 
@@ -787,6 +789,116 @@ function scaledSpriteFor(img, needPx){
   set[bucket] = c;
   return c;
 }
+/* 拡大して輪郭を締めた版(狙撃スコープで大きく覗くときだけ。1枚ごと・拡大倍率ごとに一度だけ作って覚える)。
+   ・拡大はなめらかに(高品質)、そのあと輪郭を締めるアンシャープマスク(半径1のぼかしとの差を足す)を掛ける
+   ・色は透明度を掛けた値のまま扱う(ふちに黒い縁が出ない)
+   ・**拡大倍率は必要な画面サイズから決める**(固定2倍だと、8倍ズームの近距離で必要な大きさが2倍を超え、
+     この版をさらに`drawImage`で引き伸ばす二度目のぼかしが乗って的がぼやけたまま=批評5巡目)。
+     SCOPE_SHARPEN_BUCKETS の中から実際に必要な倍率以上の最小を選ぶので、キャッシュは1枚あたり最大3版まで */
+const SCOPE_SHARPEN_MIN_UPSCALE = 1.3;   // 元画像のこの倍より大きく描くときだけ使う
+const SCOPE_SHARPEN_AMOUNT = 1.6;        // 輪郭の締め具合(暗い側。アンシャープマスクの強さ)
+const SCOPE_SHARPEN_HILITE_AMOUNT = 0.5; // 明るい側の締め具合。暗い側と同じ強さだと縁がピンク〜白に浮く(ハロー。批評7巡目)ので弱くする
+const SCOPE_SHARPEN_RADIUS_PX = 2;       // ぼかしの半径(拡大後のpx)。絵ごとの差(批評6巡目: ヴォルガルーダ=
+  // ganon_ssrだけ8倍でぼやける)を調べたところ、原因はこのコードではなく**元の歩行コマの絵自体**が
+  // 輪郭のくっきりしたセル画(metag_ssr等)と違い、柔らかいグラデーションで描かれていたため
+  // (monsters/ganon_ssr_walk_f*.png)。半径1pxのアンシャープマスクではその太い(数px幅の)グラデーションに
+  // 締める力が足りなかった。絵は描き直せないので、半径を広げて効きを強くする(線画の絵は元々輪郭が
+  // 1pxに近いので広げても影響は小さい)
+const SCOPE_SHARPEN_BUCKETS = [2, 3, 4]; // 元画像に対する拡大倍率の候補
+const _sharpCache = new WeakMap();
+function sharpenedUpscaleFor(img, needPx){
+  const iw = _imgW(img), ih = _imgH(img), src = Math.max(iw, ih) || 1;
+  const want = needPx ? needPx / src : 2;
+  let factor = SCOPE_SHARPEN_BUCKETS[SCOPE_SHARPEN_BUCKETS.length - 1];
+  for(const b of SCOPE_SHARPEN_BUCKETS){ if(b >= want){ factor = b; break; } }
+  let set = _sharpCache.get(img);
+  if(!set){ set = {}; _sharpCache.set(img, set); }
+  if(set[factor]) return set[factor];
+  const w = Math.round(iw*factor), h = Math.round(ih*factor);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+  cx.drawImage(img, 0, 0, w, h);
+  try{
+    const id = cx.getImageData(0, 0, w, h), d = id.data, n = w*h;
+    // 透明度を掛けた色(0〜255)
+    const pm = new Float32Array(n*4);
+    for(let i=0;i<n;i++){ const a = d[i*4+3]/255; pm[i*4] = d[i*4]*a; pm[i*4+1] = d[i*4+1]*a; pm[i*4+2] = d[i*4+2]*a; pm[i*4+3] = d[i*4+3]; }
+    // 半径 SCOPE_SHARPEN_RADIUS_PX の箱ぼかし(横→縦)
+    const R = SCOPE_SHARPEN_RADIUS_PX, span = R*2 + 1;
+    const tmp = new Float32Array(n*4), bl = new Float32Array(n*4);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const i = (y*w + x)*4;
+      for(let k=0;k<4;k++){
+        let s = 0;
+        for(let dx=-R;dx<=R;dx++) s += pm[(y*w + clamp(x+dx, 0, w-1))*4 + k];
+        tmp[i+k] = s/span;
+      }
+    }
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const i = (y*w + x)*4;
+      for(let k=0;k<4;k++){
+        let s = 0;
+        for(let dy=-R;dy<=R;dy++) s += tmp[(clamp(y+dy, 0, h-1)*w + x)*4 + k];
+        bl[i+k] = s/span;
+      }
+    }
+    /* 明るい側(オーバーシュート)は弱く、暗い側は強く締める。**両側とも同じ強さだと、鶏冠や翼の縁のような
+       明暗差の大きい輪郭でピンク〜白のハロー(縁取りが実際より明るく浮く)が出る**(批評7巡目)。
+       暗い側だけしっかり締めれば、輪郭のコントラスト自体は上がって見た目のシャープさは保てる。 */
+    const A = SCOPE_SHARPEN_AMOUNT, AH = SCOPE_SHARPEN_HILITE_AMOUNT;
+    for(let i=0;i<n;i++){
+      const a = pm[i*4+3];
+      if(a < 1){ d[i*4+3] = 0; continue; }
+      for(let k=0;k<3;k++){
+        // 元(拡大そのまま)に、ぼかしとの差分を足して輪郭を締める
+        const diff = pm[i*4+k] - bl[i*4+k];
+        const v = pm[i*4+k] + (diff > 0 ? AH : A)*diff;
+        d[i*4+k] = Math.max(0, Math.min(255, v*255/a));
+      }
+    }
+    cx.putImageData(id, 0, 0);
+  }catch(_){ /* 読み出せない画像(別オリジン)は拡大しただけの版を使う */ }
+  set[factor] = c;
+  return c;
+}
+/* 狙撃スコープで大きく覗く絵に重ねる「立体の手がかり」(絵ごとに一度だけ作って覚える)。
+   ・環境色と陰: 左上は空の色をうっすら、右下ほど暗く(光は左上から)
+   ・縁の光: 輪郭の左上の縁だけ細く明るく(絵を右下へずらした形で抜く)
+   色は探検の地域の霞(テーマ)から作る。地域が変わったら作り直す */
+const _volCache = new WeakMap();
+function scopeVolumeFor(spr){
+  const th = window.__aramonRealTheme || {};
+  const hz = th.haze != null ? th.haze : 0xcfc2a6;
+  const hit = _volCache.get(spr);
+  if(hit && hit.hz === hz) return hit.c;
+  const w = _imgW(spr), h = _imgH(spr);
+  if(!w || !h) return null;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  const hr = (hz>>16)&255, hg = (hz>>8)&255, hb = hz&255;
+  x.drawImage(spr, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  // 濃さが途中でいったん薄くなって(0.45で0.04)また濃くなる3段は、対称な絵で「縦に割れた線」に見えた(批評5巡目)。
+  // 明→暗の2段だけにして途中の谷を無くす(単調に暗くなるので割れ目が出ない)
+  const gr = x.createLinearGradient(0, 0, w*0.55, h);
+  gr.addColorStop(0, `rgba(${hr},${hg},${hb},0.14)`); gr.addColorStop(1, 'rgba(0,0,0,0.30)');
+  x.fillStyle = gr; x.fillRect(0, 0, w, h);
+  // 縁の光
+  const rim = document.createElement('canvas'); rim.width = w; rim.height = h;
+  const r = rim.getContext('2d');
+  r.drawImage(spr, 0, 0);
+  r.globalCompositeOperation = 'source-in';
+  r.fillStyle = `rgb(${Math.min(255, hr+60)},${Math.min(255, hg+55)},${Math.min(255, hb+40)})`; r.fillRect(0, 0, w, h);
+  r.globalCompositeOperation = 'destination-out';
+  const off = Math.max(2, Math.round(w*0.007));
+  r.drawImage(spr, off, off);
+  x.globalCompositeOperation = 'source-over';
+  x.globalAlpha = 0.6;
+  x.drawImage(rim, 0, 0);
+  _volCache.set(spr, { hz, c });
+  return c;
+}
 // 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。
 // (円形クリップを廃したため、矩形の白fillでは背景まで白くなってしまう。
 //  画像のアルファ形状に沿って白くするためにこの手法を使う)
@@ -906,11 +1018,21 @@ function drawMonsterPortrait(e, img, flash, precomputedLayout){
   const L = (precomputedLayout && precomputedLayout.img===img) ? precomputedLayout : portraitLayoutFor(e, img);
   // 画面上での実ピクセル数に合う縮小版を使う(投影スケール×描画解像度。倍率を掛けたあとの値で選ぶ)
   const need = Math.max(L.dw, L.dh) * _monDrawScale * (typeof dpr!=='undefined' ? dpr : 1);
-  const spr = scaledSpriteFor(img, need);
+  /* 狙撃スコープで覗いている間(探検)に元画像より大きく引き伸ばすときは、2倍に拡大して輪郭を締めた版を使う
+     (歩行コマは320pxの256色なので、8倍で覗くとぼやけて色の段が出ていた=批評) */
+  const spr = (game.explore && need > Math.max(_imgW(img), _imgH(img))*SCOPE_SHARPEN_MIN_UPSCALE
+               && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead())
+    ? sharpenedUpscaleFor(img, need) : scaledSpriteFor(img, need);
+  const scopedBig = spr !== undefined && game.explore && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead() && need > 260;
   ctx.drawImage(spr, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+  // 狙撃スコープで大きく覗いている間だけ: 一枚絵の薄さを隠す陰影(下・右ほど暗い)・左上の縁の光・環境色
+  if(scopedBig){
+    const vol = scopeVolumeFor(spr);
+    if(vol) ctx.drawImage(vol, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+  }
   if(flash){
     ctx.save();
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = (typeof flash === 'number') ? flash : 0.55;   // 数値=探検の狙撃の命中(弱く)
     ctx.drawImage(whiteMaskFor(spr), -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
     ctx.restore();
   }
@@ -1209,8 +1331,37 @@ function drawMonster(e,p){
   const portraitLayout = displayImg ? portraitLayoutFor(e, displayImg) : null;
   const uiMult = portraitLayout ? portraitLayout.uiMult : 1;
 
-  ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
-  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
+  /* 狙撃スコープで覗いている間(探検モードだけ)は、頭上の表示(名前・「!」「?」・眠り・状態変化の札)と
+     足元の輪を出さない。倍率ぶん大きくなって照準と的を横切るため。的の情報はスコープの右の札が出す(sniper.js) */
+  const scopeUI = (typeof sniperHidesOverhead === 'function') && sniperHidesOverhead();
+  if(scopeUI){
+    // 覗いている間は足元の影を「縁のくっきりした灰色の楕円」にしない(8倍で平らな図形が丸見えになる=批評)。
+    // 中心だけ薄く暗い、ふちの消えた接地の陰にする
+    ctx.save();
+    ctx.translate(0, e.radius*0.7); ctx.scale(1, 0.4/0.9);
+    const sr = e.radius*0.9*uiMult;
+    const sg = ctx.createRadialGradient(0, 0, 0, 0, 0, sr);
+    sg.addColorStop(0, 'rgba(0,0,0,0.22)'); sg.addColorStop(0.55, 'rgba(0,0,0,0.12)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, sr, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else {
+    /* 目玉系(スエゾー等)の野生は、影を濃く・大きくすると逆に「刺さったピン」の見え方に
+       近づいた(批評指摘)。生き物らしさは姿勢(伸び+浮き)の方で作るので、影はむしろ
+       控えめにして「浮いている一瞬は影が薄くなる」効き方にする。 */
+    const pinLook = game.explore && e.isExploreWild && typeof EXPLORE_PIN_LOOK_WILD !== 'undefined' && EXPLORE_PIN_LOOK_WILD.includes(e.element);
+    // 浮いている高さ(姿勢のbob)ぶん、影を少し小さく・薄くして「浮いて小さく揺れる影」にする
+    let shrink = 1;
+    if(pinLook && typeof exploreComputePose === 'function'){
+      const pose = exploreComputePose(e);
+      if(pose) shrink = 1 - 0.3*clamp(Math.abs(pose.bob||0)/(e.radius*0.24), 0, 1);
+    }
+    // 探検の帰還の光の中では影を描かない(光の輪の上に暗い楕円が残った。explore_loot.js)
+    if(!(game.explore && typeof exploreReturnGlow === 'function' && exploreReturnGlow(e))){
+      ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 0.72 : 0.9)*uiMult*shrink, e.radius*(pinLook ? 0.3 : 0.4)*uiMult*shrink, 0,0,Math.PI*2);
+      ctx.fillStyle = pinLook ? `rgba(0,0,0,${0.22*shrink})` : 'rgba(0,0,0,0.35)'; ctx.fill();
+    }
+  }
+  if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
   if(e.dashTimer>0){
     ctx.save(); ctx.globalAlpha=0.35;
@@ -1227,8 +1378,22 @@ function drawMonster(e,p){
   // スプライトだけ回し、この後の状態リング・HPゲージは回さない
   const downedPose = (typeof entityDowned==='function') && entityDowned(e);
   if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
+  // 探検の野生・ボスの姿勢(転倒で潰れて傾く・崩れ落ちる・足を引きずる・草を食む)。
+  // 回転の板にしないため、足元を軸に縦に潰して傾ける(explore.js。true のときだけ save 済み)
+  // 探検: 狙撃の命中で絵が数px揺れて一瞬だけ弱く光る(sniper.js)。姿勢(exploreBeginPose)の外側で足し合わせる
+  const snJolt = game.explore && typeof sniperHitJolt === 'function' ? sniperHitJolt(e) : null;
+  if(snJolt){ ctx.save(); ctx.translate(snJolt.x / p.scale, snJolt.y / p.scale); }
+  const explorePose = game.explore && exploreBeginPose(e);
   if(displayImg){
-    drawMonsterPortrait(e, displayImg, e.hitFlash>0, portraitLayout);
+    /* 探検のボスは弱点命中を「体を白く塗る」のではなく当たった場所だけの光にした
+       (exploreDrawWeakGlow。批評指摘: 体を白く塗る方式である限り顔が真っ白に飛んでいた)。
+       弱点の光が出ている間はここの白フラッシュを出さない(二重に白を足さない)。 */
+    const exploreWeakFlashing = game.explore && e.isExploreBoss
+      && (exploreState.rawClock - (e.exWeakFlashAt != null ? e.exWeakFlashAt : -9)) < 0.32;
+    const hitFlashAlpha = exploreWeakFlashing ? 0 : ((game.explore && e.isExploreBoss) ? 0.22 : true);
+    drawMonsterPortrait(e, displayImg, e.hitFlash>0 && hitFlashAlpha !== 0 ? hitFlashAlpha : (snJolt && snJolt.flash > 0.01 ? snJolt.flash : false), portraitLayout);
+    if(game.explore && e.isPlayer && typeof sniperDrawSlungRifle === 'function') sniperDrawSlungRifle(e, portraitLayout);
+    if(game.explore) exploreDrawMonsterTint(e, displayImg, portraitLayout);   // 探検のボスの色味・怒りの目・討伐で色が抜ける
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
 
@@ -1256,34 +1421,39 @@ function drawMonster(e,p){
       [-1,1].forEach(s=>{ ctx.beginPath(); ctx.arc(s*eyeOff+Math.cos(e.facingAngle)*2,-e.radius*0.05+Math.sin(e.facingAngle)*2,e.radius*0.07,0,Math.PI*2); ctx.fill(); });
     }
   }
+  if(explorePose) ctx.restore();
+  if(snJolt) ctx.restore();
   if(downedPose) ctx.restore();   // 倒れ姿勢の回転はスプライトまで
 
-  if(e.burnUntil > matchTime){
+  // 状態の輪の線の太さ。スコープで覗いている間は倍率ぶん太い帯にならないよう画面上1.8pxまでに抑える
+  const ringLine = ()=>{ if(scopeUI) ctx.lineWidth = Math.min(ctx.lineWidth, 1.8/Math.max(0.01, p.scale)); };
+  // 探検のボスには状態の輪を出さない(巨体を囲む細い輪が「狙いの丸」に見える=批評指摘)
+  if(e.burnUntil > matchTime && !(game.explore && e.isExploreBoss)){
     ctx.save();
     ctx.globalAlpha = 0.5 + 0.3*Math.sin(matchTime*8);
     ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.15*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.15*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.slowUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.strokeStyle = '#7fa0ff'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.3*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.3*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.freezeUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.2*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.2*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
   if(e.poisonUntil > matchTime){
     ctx.save();
     ctx.globalAlpha = 0.45 + 0.25*Math.sin(matchTime*5);
     ctx.strokeStyle = '#9b5fd1'; ctx.lineWidth = 2.5; ctx.setLineDash([2,5]);
-    ctx.beginPath(); ctx.arc(0,0, e.radius*1.42*uiMult, 0, Math.PI*2); ctx.stroke();
+    ringLine(); ctx.beginPath(); ctx.arc(0,0, e.radius*1.42*uiMult, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
@@ -1307,9 +1477,14 @@ function drawMonster(e,p){
   // barYはこの下の状態変化ラベルも参照するので、必ず関数のスコープに置く
   // (レイドのボス判定のブロックに入れるとボス以外でも参照できず落ちる)
   const selfBar = !!e.isPlayer;
-  const barY = selfBar ? -e.radius*1.08*uiMult-5 : -e.radius*1.55*uiMult-9;
-  // レイドのボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
-  if(!e.isRaidBoss){
+  // 探検の野生は描いている絵の頭のすぐ上に付ける(半径からの推定だと小さな絵で50pxほど浮いた)
+  const barY = selfBar ? -e.radius*1.08*uiMult-5 : ((game.explore && e.isExploreWild) ? exploreWildBarY(e) : -e.radius*1.55*uiMult-9);
+  // レイドのボス・探検のボスの体力は画面上部の専用バーで見せるので、頭上のゲージは出さない
+  /* 狙撃スコープで構えている間(探検モードだけ)は頭上のゲージを出さない。倍率ぶん太くなって照準を横切るため。
+     照準の先の1体だけ、スコープの距離表示の横に小さな帯で出す(sniper.js) */
+  // 探検の野生は戦っているとき(気づいた・追う・逃げる・傷ついた)だけゲージを出す(頭上を静かにする)
+  // 探検では自分の頭上のゲージも出さない(左上の欄と同じ情報で、画面の真ん中に緑の板が出るだけになる)
+  if(!e.isRaidBoss && !e.isExploreBoss && !scopeUI && !(game.explore && e.isExploreWild && !exploreWildShowsBar(e)) && !(game.explore && selfBar)){
     const barW = e.radius*2.1*uiMult;
     const hpPct = clamp(e.hp/e.maxHp,0,1);
     /* 至近の味方のバーは薄れて消える(常に隣にいるので、カメラに近づくたび
@@ -1379,7 +1554,7 @@ function drawMonster(e,p){
     }
   }
 
-  if(e.stateUntil > matchTime){
+  if(e.stateUntil > matchTime && !scopeUI){
     const sc = STATE_CHANGES[e.element];
     if(sc){
       // バトルの邪魔にならないよう、半透明・小さめでHPゲージのすぐ上に出す。
@@ -1400,7 +1575,10 @@ function drawMonster(e,p){
      ▽は「味方だけの形」(色覚多様性のため色だけに頼らない。小隊バーのsq-markと同じ記号) */
   const isAllyOfPlayer = (typeof sameTeam==='function') && player && sameTeam(player, e);
   const entIsDowned = (typeof entityDowned==='function') && entityDowned(e);
-  if(!e.isPlayer && !entIsDowned && (isAllyOfPlayer || dist(e,player)<700)){
+  if(game.explore && !scopeUI) exploreDrawMonsterMarks(e, barY, uiMult);   // 探検: 頭上の「!」「?」・眠り・転倒の印(explore.js)
+  // 探検: ボスは画面上部のHPバーで、群れの取り巻きは名前無し(HPバーだけ)。名前は「群れの長」の1枚だけ
+  // 探検の野生の名前は「群れの長」が気づいた(「!」が出ている)間だけ(exploreWildShowsName)
+  if(!scopeUI && !e.isPlayer && !entIsDowned && !e.isExploreBoss && !(e.isExploreWild && !exploreWildShowsName(e)) && (isAllyOfPlayer || dist(e,player)<700)){
     // 頭上の名前・▽もスケール上限+近距離フェード(至近の味方でラベルが操作UIへ被る)
     ctx.save();
     { const lblK = Math.min(1, TEAM_LABEL_MAX_SCALE/Math.max(0.01,_monDrawScale)); ctx.scale(lblK,lblK); }
@@ -1485,8 +1663,8 @@ function drawLootItem(it,p){
     ctx.fillStyle='rgba(255,255,255,0.3)';
     ctx.beginPath(); ctx.ellipse(-2*sz, 1*sz, 1.2*sz, 4*sz, 0,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
-      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
+    if(!game.explore && dist(it,player)<160){   // 探検は名前を出さない(拾った物は左の通知へ)
+      ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       // 回復量は最大HPの割合なので、実際に自分が回復する数値を出す(見た目と結果を合わせる)
       ctx.fillText(`${hi.name} (+${healItemAmount(hi, player)})`, 0, -13*sz);
     }
@@ -1505,8 +1683,8 @@ function drawLootItem(it,p){
     ctx.fillStyle='#2a5d80'; ctx.font="bold 7px 'Rajdhani', sans-serif"; ctx.textAlign='center';
     ctx.fillText('特訓', -4, 1.5);
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
-      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
+    if(!game.explore && dist(it,player)<160){   // 探検は名前を出さない(拾った物は左の通知へ)
+      ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       ctx.fillText(TICKET_ITEM.name, 0, -14);
     }
   } else if(it.kind==='guts'){
@@ -1520,8 +1698,8 @@ function drawLootItem(it,p){
     ctx.beginPath(); ctx.moveTo(-9,-3); ctx.lineTo(-6,0); ctx.lineTo(-9,3); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(9,-3); ctx.lineTo(6,0); ctx.lineTo(9,3); ctx.stroke();
     ctx.shadowBlur=0;
-    if(dist(it,player)<160){
-      ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';
+    if(!game.explore && dist(it,player)<160){   // 探検は名前を出さない(拾った物は左の通知へ)
+      ctx.font=(game.explore ? exploreLootLabelPx(p, 10) : 10)+"px 'Rajdhani', sans-serif"; ctx.fillStyle='rgba(230,230,220,0.9)'; ctx.textAlign='center';   // 探検のボス戦中は小さく
       ctx.fillText(GUTS_ITEM.name, 0, -14);
     }
   } else if(it.kind==='training'){
@@ -1536,7 +1714,7 @@ function drawLootItem(it,p){
     ctx.font="24px sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(ti.emoji, 0, 1);
     ctx.shadowBlur=0;
-    if(dist(it,player)<200){
+    if(!game.explore && dist(it,player)<200){   // 探検は名前を出さない(拾った物は左の通知へ)
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=ti.accent; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
       // 効果は拾ったあとのカードで見せるので、地面では名前だけにする(長い説明は読ませない)
       ctx.fillText(ti.name, 0, -26);
@@ -1586,7 +1764,7 @@ function drawLootItem(it,p){
     ctx.strokeStyle = col(0.75*glow); ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(0, 0, R, RY, 0, 0, Math.PI*2); ctx.stroke();
     ctx.shadowBlur = 0;
-    if(dist(it,player)<200){
+    if(!game.explore && dist(it,player)<200){   // 探検は名前を出さない(拾った物は左の通知へ)
       // 中身の個数も添える(拾う前に「何個入っているか」だけは分かるように=批評指摘)
       const n = (it.keys && it.keys.length) || 0;
       ctx.font="10px 'Rajdhani', sans-serif"; ctx.fillStyle=col(1); ctx.textAlign='center';
@@ -2871,6 +3049,8 @@ function drawSimpleProjectile(pr, r){
   ctx.fillStyle = g; ctx.fill();
 }
 function drawProjectile(pr,p){
+  // 狙撃銃の弾は光の筋(トレーサー)で描く。絵は sniper.js が持つ(弾の仕組みそのものは共通)
+  if(pr.sniper && typeof drawSniperTracer === 'function'){ drawSniperTracer(pr); return; }
   ctx.save();
   ctx.translate(p.x,p.y);
   ctx.scale(p.scale,p.scale);
@@ -3349,12 +3529,12 @@ function drawParticle(pt,p){
   if(pt.type==='text'){
     /* 文字は画面上の大きさに上限を付ける。カメラ至近(自分の被弾・出血)だと
        p.scaleが5〜10になり、数字1つが画面の半分を覆っていた(縦持ち実測で発生) */
-    const ts = Math.min(p.scale, 2.0);
+    const ts = pt.fixedPx ? 1 : Math.min(p.scale, 2.0);   // fixedPx=画面の画素で固定(探検のボスの体に当てた数字。遠くでも読める大きさ)
     ctx.scale(ts,ts);
     ctx.textAlign='center'; ctx.globalAlpha=a;
     if(pt.big){
       // オーラ有利/不利の被弾ダメージは大きく縁取りして強調
-      ctx.font="bold 20px 'Share Tech Mono', monospace";
+      ctx.font = pt.fixedPx ? `bold ${pt.fixedPx}px 'Share Tech Mono', monospace` : "bold 20px 'Share Tech Mono', monospace";
       ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else if(pt.pred){
@@ -7024,10 +7204,19 @@ let real3dActive = false;
    (=従来の奥行きソートと同じ見え方に戻す)。                                      */
 const MOUNT_OCCLUDE_STEPS = 10;
 let mountOccluders = [];
+/* 探検フィールドの尾根・峡谷・切り通し・峰(exploreGenWorld の block(...,'ridge'|'canyon'|'tunnel'|'peak'))は
+   「登れない所」を測って並べた当たり判定の円で、見た目は地形そのもの(exploreRelief)。
+   円錐として遮蔽に使うと、実際の地形より大きく(高さは常に半径の0.9倍という決め打ち)隠してしまい、
+   通常戦闘中にもボスが尾根の向こうへ消える不具合になっていた(実機・撮影の両方で確認)。
+   この4種はここでは円錐にせず、occludedByMountain 側で地形の高さ(real3dHeightAt)を実測して判定する。
+   キャンプ・ビーコン・家・石壁・巨木などの実在するランドマークは、これまでどおり円錐で遮る
+   (地形の高さに乗っていない実体物なので、円錐の近似のままでよい)。 */
+const EXPLORE_TERRAIN_LANDMARKS = ['ridge', 'canyon', 'tunnel', 'peak'];
 function prepareMountainOccluders(){
   mountOccluders.length = 0;
   if(!real3dActive) return;
   for(const v of volcanoObstacles){
+    if(game.explore && EXPLORE_TERRAIN_LANDMARKS.includes(v.landmark)) continue;
     /* 遮蔽に使う円錐は「見えている山」と同じ形にする。r に v.radius を入れると
        裾を埋めたぶんだけ実物より太い円錐で隠してしまい、山肌の外にいる相手や技まで
        消える。r は地面の高さでの実半径、rise はそこから頂上までの高さ。 */
@@ -7057,6 +7246,7 @@ const OBSTACLE_FADE_DIST = 1750;   // ここから薄くしていく
    ・高さの個体差(hk)は3D側と同じ式でseedから作る
    ・接地高さは3D側と同じ「足元4点のいちばん低い高さ」を使う(坂でずれないため) */
 const OBST_ERASE_PAD = 1.02;
+const OBST_ERASE_SCOPE_SHRINK = 0.95;   // 狙撃スコープで覗いている間(探検)のくり抜きの大きさ(丸い塊はふちをぼかすので少しだけ小さく)
 function obstShapeOf(o, fallbackFlavor){
   const t = (typeof OBST_SHAPES!=='undefined') ? OBST_SHAPES : null;
   const key = o.flavor || fallbackFlavor || 'rock';
@@ -7088,23 +7278,44 @@ function eraseObstacle(o, p, fallbackFlavor){
   const seed = o.seed || 0;
   const hk = 0.90 + (seed - Math.floor(seed))*0.26;   // 3D側の高さの個体差と同じ式
   const baseZ = obstacleBaseZ(o) - r*sh.sink;         // モデルの原点(地面より少し下)
+  /* 狙撃スコープで覗いている間(探検)だけ、くり抜きを3Dの見え方に合わせる:
+     ・3Dは切る距離の手前で障害物を地面へ縮めている → くり抜きも同じだけ縮める
+     ・手前の起伏に隠れている部分はくり抜かない。3Dでは丘の陰で見えない木を2Dが全部の高さでくり抜くと、
+       奥の的(先に描いた2D)に木の形(丸+幹=鍵穴)の穴が開き、倍率で大きく見えていた(批評)。隠れた高さより上だけくり抜く */
+  let clipY = null, fk = 1;
+  const scoped = game.explore && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead();
+  if(scoped){
+    const api = window.__aramonReal3D;
+    fk = (api && api.obstacleFadeAt) ? api.obstacleFadeAt(o.x, o.y) : 1;
+    if(fk < 0.03) return;
+  }
   // 高さは決め打ちの縮尺ではなく実際に投影して求める(近くの高い木ほど差が出る)
   const pBot = project(o.x, o.y, baseZ) || p;
-  const pTop = project(o.x, o.y, baseZ + r*sh.h*hk);
+  const pTop = project(o.x, o.y, baseZ + r*sh.h*hk*fk);
   if(!pBot || !pTop) return;
   const hPx = pBot.y - pTop.y;
+  if(scoped){
+    const zv = obstacleVisibleFromZ(o, baseZ, baseZ + r*sh.h*hk*fk);
+    if(zv == null) return;
+    if(zv > baseZ + 1){ const pv = project(o.x, o.y, zv); if(pv) clipY = pv.y; }
+  }
+  /* 輪郭は丸・箱の近似なので、倍率で大きく覗くと3Dの木の凸凹との隙間(奥の的が消えて地面が透ける淡い縁)が
+     目立つ。覗いている間だけ一回り小さくくり抜く(縁は的が少し前に出るだけで、穴には見えない) */
+  const pad = scoped ? OBST_ERASE_PAD*OBST_ERASE_SCOPE_SHRINK : OBST_ERASE_PAD;
   // モデルのローカル高さ(0=原点 h=天辺)と横方向のずれから画面上の点を出す
   const ptX = (ly, lx)=>{
     const f = ly/sh.h;
-    return pBot.x + (pTop.x-pBot.x)*f + lx*r*(pBot.scale + (pTop.scale-pBot.scale)*f)*OBST_ERASE_PAD;
+    return pBot.x + (pTop.x-pBot.x)*f + lx*r*fk*(pBot.scale + (pTop.scale-pBot.scale)*f)*pad;
   };
   const ptY = (ly)=> pBot.y + (pTop.y-pBot.y)*(ly/sh.h);
   // 1フレームに何十回も通るので save/restore は使わず必要な状態だけ戻す
   const prevAlpha = ctx.globalAlpha;
+  if(clipY != null){ ctx.save(); ctx.beginPath(); ctx.rect(-1e5, -1e5, 2e5, clipY + 1e5); ctx.clip(); }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'destination-out';
   ctx.fillStyle = '#000';
   ctx.beginPath();
+  let soft = null;
   for(const s of sh.sil){
     const cy = s[0], rx = s[1], ry = s[2], type = s[3]||0;
     const rxTop = (s[4] != null) ? s[4] : rx;   // 箱の上端の太さ(幹は上ほど細い)
@@ -7125,16 +7336,73 @@ function eraseObstacle(o, p, fallbackFlavor){
       ctx.closePath();
     } else {                 // 楕円(丸い塊)
       const ex = ptX(cy, rx) - ptX(cy, 0);
-      const ey = Math.abs(ry*hPx/sh.h)*OBST_ERASE_PAD;
+      const ey = Math.abs(ry*hPx/sh.h)*pad;
+      // 覗いている間は、丸い塊(木の葉・岩の丸み)のふちをぼかしてくり抜く(下でまとめて描く)
+      if(scoped){ (soft || (soft = [])).push([ptX(cy,0), ptY(cy), Math.max(0.5,ex), Math.max(0.5,ey)]); continue; }
       ctx.moveTo(ptX(cy,0)+ex, ptY(cy));   // 楕円ごとに独立した部分パスにする
       ctx.ellipse(ptX(cy,0), ptY(cy), Math.max(0.5,ex), Math.max(0.5,ey), 0, 0, Math.PI*2);
     }
   }
   ctx.fill();
+  /* 狙撃スコープ: 3Dの葉の凸凹と丸い輪郭の差が、倍率でくっきりした円(泡)に見えていた。
+     ふちの外側3割をぼかしてくり抜き、奥の的が葉のふちで自然に隠れるようにする */
+  if(soft) for(const [x, y, ex, ey] of soft){
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(1, ey/ex);
+    const eg = ctx.createRadialGradient(0, 0, 0, 0, 0, ex);
+    eg.addColorStop(0, 'rgba(0,0,0,1)'); eg.addColorStop(0.68, 'rgba(0,0,0,1)'); eg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(0, 0, ex, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = prevAlpha;
+  if(clipY != null) ctx.restore();
+}
+/* 障害物の中心の柱のうち、目から見えるいちばん低い高さ(全部が起伏に隠れていれば null)。
+   狙撃スコープの間だけ使う。カメラが動かない間は覚えておく(毎フレーム測らない) */
+function obstacleVisibleFromZ(o, z0, z1){
+  const key = Math.round(camPos.x) + ',' + Math.round(camPos.y) + ',' + Math.round(camPos.z);
+  if(o._visKey === key) return o._visZ;
+  const hidden = (z)=>{
+    for(let i=1;i<28;i++){
+      const k = i/28*0.96;
+      const x = camPos.x + (o.x - camPos.x)*k, y = camPos.y + (o.y - camPos.y)*k, zz = camPos.z + (z - camPos.z)*k;
+      if(zz < terrainZAt(x, y)) return true;
+    }
+    return false;
+  };
+  let res;
+  if(hidden(z1)) res = null;
+  else if(!hidden(z0)) res = z0;
+  else {
+    let lo = z0, hi = z1;
+    for(let i=0;i<6;i++){ const m = (lo + hi)/2; if(hidden(m)) lo = m; else hi = m; }
+    res = hi;
+  }
+  o._visKey = key; o._visZ = res;
+  return res;
+}
+/* 探検の尾根・峡谷・切り通し・峰は円錐にしていない(prepareMountainOccluders)ので、
+   代わりに地形の高さ(real3dHeightAt。groundZAt経由)そのものを実測して視線を切る。
+   通常のリアルマップは地形が起伏だけ(山は別に円錐で持つ)なのでこの経路には来ない
+   ―― 分岐は既存の game.explore 1つに寄せる。 */
+const EXPLORE_OCCLUDE_STEPS = 10;
+const EXPLORE_OCCLUDE_MAX_DIST = 2600;   // これより遠くは霞んで見えないので判定を省く
+const EXPLORE_OCCLUDE_MARGIN = 22;       // 地形のノイズ・目の高さぶんの余裕(際で誤って隠さないため)
+function exploreOccludedByTerrain(x, y, z){
+  const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
+  const dist = Math.hypot(dx, dy);
+  if(dist < 1 || dist > EXPLORE_OCCLUDE_MAX_DIST) return false;
+  for(let i=1;i<=EXPLORE_OCCLUDE_STEPS;i++){
+    const t = i/(EXPLORE_OCCLUDE_STEPS+1);
+    const lineZ = camPos.z + dz*t;
+    const h = groundZAt(camPos.x+dx*t, camPos.y+dy*t);
+    if(h > lineZ + EXPLORE_OCCLUDE_MARGIN) return true;
+  }
+  return false;
 }
 function occludedByMountain(x, y, z){
+  if(game.explore && exploreOccludedByTerrain(x, y, z)) return true;
   if(!mountOccluders.length) return false;
   const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
   const targetDist = Math.hypot(dx, dy);
@@ -7310,9 +7578,16 @@ function safeDraw(fn){ try{ fn(); }catch(err){ reportDrawError(err); } }
 function render(){
   trimParticles();
   ctx.clearRect(0,0,viewW,viewH);
+  /* 狙撃スコープ(探検モードだけ。sniper.js)。この1フレームの間だけ倍率・構えのカメラ・揺れを掛け、
+     最後の sniperFrameEnd() で必ず元へ戻す。探検モード以外では何もしない。
+     **2DのprojectもWebGL層も、この後に読むので同じ視野角・同じカメラになる。** */
+  if(typeof sniperFrame === 'function') safeDraw(sniperFrame);
+  if(game.explore) safeDraw(exploreCineFrame);   // 探検: ボス登場の寄り(狙撃の構え中は狙撃を優先。倍率は sniperFrameEnd が1へ戻す)
   /* 当たった衝撃でカメラをずらす。2DのprojectもWebGL層も同じcamPosを読むので、
      ここで1回ずらせば両方の層が一緒に揺れる。**必ず fxPunchRestore() で戻す。** */
-  fxPunchApply(_fxGlPrevMs ? Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000) : 0.016);
+  /* 経過時間は 0〜0.05秒に収める。時計が戻ると(撮影台は描く間 performance.now を固定する)負になり、
+     揺れの残り時間が減らずに増え続けて、カメラが何万単位も飛んだまま戻らなかった(3D層が霞一色)。 */
+  fxPunchApply(_fxGlPrevMs ? Math.max(0, Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000)) : 0.016);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = gfxLevel >= 1 || (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
@@ -7334,11 +7609,14 @@ function render(){
       shrinking: zoneState.shrinking, hasNext: zoneState.hasNext,
       snow: !!(currentMap && currentMap.mountainStyle === 'snow'),
     },
-    marks: raidTelegraphMarks(),
+    // 探検モードの帰還ビーコンの輪も同じ口で渡す(レイドと探検は同時に起きない。探検以外では null)
+    marks: raidTelegraphMarks() || exploreGroundMarks(),
   }));
   if(perfOn) perfGl(performance.now() - _glT0);
   real3dActive = gl3d;
   prepareMountainOccluders();
+  // 狙撃スコープの中の遠景の霞(探検モードで構えている間だけ。モンスターより下に塗る。sniper.js)
+  if(gl3d && typeof drawSniperHaze === 'function') safeDraw(drawSniperHaze);
   if(!gl3d){
     drawSkyAndGround();
     // しみは起伏に沿わせる必要があるためリアルマップでは3D側が描く
@@ -7393,8 +7671,12 @@ function render(){
     const p = project(it.x,it.y,it.z||0);
     if(p && p.depth <= LOOT_VIEW) drawables.push({kind:'loot', obj:it, p});
   }
+  // 探検モードの補給箱・落ちている品(光の柱)。探検以外では何も積まない(explore_loot.js)
+  if(game.explore) exploreLootDrawables(drawables);
   for(const pr of projectiles){ if(occludedByMountain(pr.x, pr.y, pr.z+20)) continue; const p = project(pr.x,pr.y,pr.z+20); if(p) drawables.push({kind:'proj', obj:pr, p}); }
-  for(const e of entities){ if(!e.alive) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
+  // 狙撃の構え中はカメラが自機の目の位置に入るので、自分の絵は描かない(画面を塞ぐ)
+  const hideSelf = (typeof sniperHidesSelf === 'function') && sniperHidesSelf();
+  for(const e of entities){ if(!e.alive || (hideSelf && e === player)) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
     if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
   for(const pt of particles){
     const pz = (pt.z||0)+(pt.type==='text'?42:16);
@@ -7412,7 +7694,10 @@ function render(){
     if(d.kind==='volcano'){ for(const v of d.obj){ if(v.radius>r) r=v.radius; } }
     // 3Dの障害物は木のように背が高いものがある。足元が画面外でも上は見えるので高さぶん広げる
     else if(d.kind==='rock' || d.kind==='crystal'){ r = (d.obj.radius||0) * (real3dActive ? obstShapeOf(d.obj, d.kind).h : 1); }
-    else if(d.kind==='ae'){ r = d.obj.range||0; } // 発生地点(自分の足元)が画面外でも、射程が長い技は画面内まで届くため
+    else if(d.kind==='ae'){ r = d.obj.range||0; }
+    /* スコープのズーム中(viewZoom>1。探検モードだけ)は、足元が画面の下へ外れても体は見えている
+       (巨体のボスで実際に消えた)。体の高さぶん余白を足す。倍率1では従来どおり0 */
+    else if(d.kind==='mon' && viewZoom > 1){ r = (typeof sniperBodyH === 'function') ? sniperBodyH(d.obj) : (d.obj.radius||0)*2; } // 発生地点(自分の足元)が画面外でも、射程が長い技は画面内まで届くため
     return 150 + r*d.p.scale*1.2;
   };
   for(const d of drawables){
@@ -7423,11 +7708,13 @@ function render(){
     // 1個が落ちても残りは描き切る(ここで抜けると画面が丸ごと空になる)
     try{
       if(d.kind==='loot') drawLootItem(d.obj,d.p);
+      else if(d.kind==='exl') d.draw(d.obj, d.p, d);   // 探検のルート(描き方はエントリが持つ)
       else if(d.kind==='proj') drawProjectile(d.obj,d.p);
       else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
       else if(d.kind==='mon') drawMonster(d.obj,d.p);
       // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
-      else if(d.kind==='rock'){ if(real3dActive) eraseObstacle(d.obj,d.p); else drawRock(d.obj,d.p); }
+      // 探検: ボスの登場・討伐の視点演出の間は、カメラとボスの間の木・岩でボスを隠さない(explore.js)
+      else if(d.kind==='rock'){ if(real3dActive){ if(!(game.explore && exploreCineSeeThrough(d.obj))) eraseObstacle(d.obj,d.p); } else drawRock(d.obj,d.p); }
       else if(d.kind==='crystal'){ if(real3dActive) eraseObstacle(d.obj,d.p,'crystal'); else drawCrystal(d.obj,d.p); }
       else if(d.kind==='ae') drawSingleAreaEffect(d.obj);
       else drawParticle(d.obj,d.p);
@@ -7441,16 +7728,20 @@ function render(){
   safeDraw(drawPingMarkers);     // チーム戦: 小隊のピン(旗マーカー)。案内表示なので最前面に出す
   safeDraw(drawZoneCompass);
   safeDraw(drawArenaScoreHud);   // アリーナ: 両チームの生存数と残り時間(アリーナ以外では何も描かない)
+  safeDraw(exploreDrawScreen);   // 探検: ボスのHPバー・名前の札・咆哮・討伐完了・弾ける素材(探検以外では何も描かない)
   if(introState.active) safeDraw(drawSummonCountdown);
   /* 技エフェクトのWebGL層(fx_gl.js)。2Dの技の芯を描き終えたあとに、粒・軌跡・
      地面の輪を加算で重ねる。**2Dの上・ミニマップとHUDの下**。
      この層が無くても技は成立する(芯は2D側が描いている)ので、
      初期化に失敗しても何も足さないだけで済む。                         */
   safeDraw(renderFxGlLayer);
+  // スコープの窓・照準・距離・残弾(専用の#sniperCanvasに描く=技のWebGL層より上・HUDより下)
+  if(typeof drawSniperScope === 'function') safeDraw(drawSniperScope);
   fxPunchRestore();
   safeDraw(drawFxFlash);
   safeDraw(drawNetStatusChip);   // 通信の遅延(マルチの試合中・設定でONのときだけ)
   safeDraw(renderMinimap);
+  if(typeof sniperFrameEnd === 'function') safeDraw(sniperFrameEnd);   // 倍率・カメラを元へ戻す(必ず最後)
 }
 /* WebGL VFX層を1フレーム進めて描く。時間は実時間(前フレームからの経過)で進める:
    試合が止まっている間もエフェクトは自然に減衰してほしいため。       */
@@ -7465,7 +7756,8 @@ function renderFxGlLayer(){
      端末でだけ技のエフェクトが出ない**という再現しにくい不具合になる。      */
   if(!fx.isActive() && !fx.setActive(true)) return;
   const now = performance.now();
-  const dt = _fxGlPrevMs ? (now - _fxGlPrevMs)/1000 : 0.016;
+  // 時計が戻っても(撮影台の固定時刻など)負の経過時間で演出を巻き戻さない
+  const dt = _fxGlPrevMs ? Math.max(0, (now - _fxGlPrevMs)/1000) : 0.016;
   _fxGlPrevMs = now;
   fx.begin(dt);
   fxGlFeed(fx, dt);
@@ -7517,8 +7809,8 @@ function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(
 // 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
 function fxPunchApply(dt){
   if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*FX_FLASH_DECAY); return; }
-  _fxPunchT -= dt;
-  const t = Math.max(0, _fxPunchT / FX_PUNCH_MAX_SEC);
+  _fxPunchT = Math.min(FX_PUNCH_MAX_SEC, _fxPunchT - Math.max(0, dt || 0));   // 残り時間は決して伸ばさない
+  const t = Math.max(0, Math.min(1, _fxPunchT / FX_PUNCH_MAX_SEC));
   const amp = _fxPunch * t * t * (viewH * FX_PUNCH_MAX_AMP);
   // 画面のピクセルではなくワールドでずらす。奥行きが変わらないよう横と縦だけ動かす
   const ph = matchTime * 90;
@@ -7761,6 +8053,7 @@ function fxGlStyleFor(o){
 function fxGlFeed(fx, dt){
   // ---- 飛んでいる弾 ----
   for(const p of projectiles){
+    if(p.sniper) continue;   // 狙撃銃の弾は技ではない(光の筋は sniper.js の drawSniperTracer が描く)
     const st = fxGlStyleFor(p); if(!st) break;
     const c = fxGlTint(p);
     st.fly(fx, p, c, dt);
@@ -8175,8 +8468,14 @@ const MINIMAP_ZOOM_RADIUS = 2000;   // 近距離ズーム時にミニマップ�
    既定を勝手に近距離へ変えると、同じ画面が黙って別物になる(2026-08-23に戻した)。
    近距離へ寄せたい人はミニマップをタップして切り替える。 */
 let minimapZoomed = false;
-function toggleMinimapZoom(){ minimapZoomed = !minimapZoomed; return minimapZoomed; }
+function toggleMinimapZoom(){
+  // 探検モードはタップで全体地図を開く(ミニマップは常に自分中心の近距離。explore_hud.js)
+  if(game.explore && typeof exploreToggleMap==='function'){ exploreToggleMap(); return minimapZoomed; }
+  minimapZoomed = !minimapZoomed; return minimapZoomed;
+}
 function renderMinimap(){
+  // 探検モードだけ別の描き方(地域の色・尾根・道・ボスの巣・補給箱。explore_hud.js)。他のモードはここから下のまま
+  if(game.explore && typeof exploreRenderMinimap==='function'){ exploreRenderMinimap(); return; }
   // 観戦中は見ている本体を基準にする(自分表示・敵味方色分けの両方。2026-08-19)
   const ve = (typeof currentViewEntity==='function') ? currentViewEntity() : player;
   const w = miniCanvas.width, h = miniCanvas.height;
@@ -8396,15 +8695,17 @@ function updateSquadPanel(){
    inline の opacity と喧嘩する(アニメーションが勝つ/!importantにすると消えなくなる)。 */
 const HIT_MARKER_PRED_DIM = 0.55;   // 予測の×印の濃さ(1=確定と同じ)
 let hitMarkerTimer = null;
-function showHitMarker(predicted){
+function showHitMarker(predicted, weak){
   const el = document.getElementById('hitMarker');
   if(!el) return;
+  el.classList.toggle('hm-weak', !!weak);   // 弱点(探検のボスの頭)への命中は×印の色を替える
   el.style.filter = predicted ? `opacity(${HIT_MARKER_PRED_DIM})` : '';
   el.classList.remove('hm-show');
   void el.offsetWidth;   // アニメーションを毎回最初から再生する
   el.classList.add('hm-show');
   if(hitMarkerTimer) clearTimeout(hitMarkerTimer);
-  hitMarkerTimer = setTimeout(()=>{ el.classList.remove('hm-show'); el.style.filter=''; }, 170);
+  // 弱点は大きく金色の×印を長めに残す(style.css の hm-weak)
+  hitMarkerTimer = setTimeout(()=>{ el.classList.remove('hm-show'); el.style.filter=''; }, weak ? 420 : 170);
 }
 function updateHUD(){
   if(!player) return;
@@ -8418,7 +8719,8 @@ function updateHUD(){
   // ランキング表示名(名前入力欄)は自分を見ているときだけ。観戦中は観戦対象の名前を出す
   document.getElementById('hudName').textContent = spectating
     ? ((typeof displayNameFor==='function') ? displayNameFor(ve) : (ve.name||'プレイヤー'))
-    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー'));
+    : (game.explore ? (player.name||'プレイヤー')   // 探検: 名前が空なら種族名(explorePlayerName)。「名無しのモンスター」を出さない
+    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー')));
   /* トレーニングで変わった数値を**全部**欄に出す(発注者指示)。観戦中は観戦対象のぶんを出す。
      一覧の作りは matchTrainBoardRows(ui.js)が1か所で持っている ―― カードぶんと
      拾ったアイテムぶんを同じ「元から何%」に揃えて混ぜる。ここは並べるだけ。
@@ -8426,6 +8728,9 @@ function updateHUD(){
   {
     const line = document.getElementById('trainBuffsLine');
     const rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(ve) : [];
+    /* 探検も含め全モード共通で全部出す(発注者指示)。探検は#expGearRow(装備アイコン)の右へ
+       置く場所を移したので、名前の場所を削って1枚に絞る必要が無くなった(第7周の指摘で復元)。
+       置き場所(#expGearRowの右)は explore_hud.js の exploreHudLayoutBuffs が毎フレーム計算する。 */
     const sig = rows.map(r=>r.label+r.text).join('|');
     if(line._tbSig !== sig){
       line._tbSig = sig;
@@ -8470,16 +8775,25 @@ function updateHUD(){
     if(ve.stateUntil > matchTime){
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ff6b6b,#ff2b2b)';
-      stateCdLabelEl.textContent = `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
+      /* 探検モードは⚑のバーがHP/ガッツの数字欄と同じ幅の列に収まる(第5周の指摘: バーと同じ行の
+         右に数値だけ戻した)。「発動中 残り」などの説明語は落とすが、**名前(2文字。STATE_CHANGESは
+         全属性2文字)は必ず出す**(名前無しで「60秒」だけだと何の残り秒か分からない=批評指摘。
+         以前は長い説明込みの文言でp896だけ折り返したので名前ごと消していたが、
+         nowrap+ellipsis(CSS側)にした今は短い名前だけなら折り返さない) */
+      stateCdLabelEl.textContent = game.explore
+        ? `${stateSc.name} ${Math.ceil(ve.stateUntil-matchTime)}秒`
+        : `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
     } else if(ve.stateCooldownUntil > matchTime){
       const cdPct = clamp(1-((ve.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
       stateCdFillEl.style.width = cdPct+'%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
-      stateCdLabelEl.textContent = `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
+      stateCdLabelEl.textContent = game.explore
+        ? `${stateSc.name} ${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
+        : `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
     } else {
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
-      stateCdLabelEl.textContent = `${stateSc.name} 発動可能`;
+      stateCdLabelEl.textContent = game.explore ? `${stateSc.name} 使用可` : `${stateSc.name} 発動可能`;
     }
   }
 
@@ -8561,7 +8875,10 @@ function updateHUD(){
   /* 射程を技パネルに出す(技によって650〜1500と倍以上違うのに、どこにも出ていなかった)。
      DOMは増やさず既存の#gutsCostLabelへ同居させる。距離の換算はピン表示と同じ
      PING_UNITS_PER_M(ワールド10単位=1m)。 */
-  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
+  // 探検モードだけ短く(点のすぐ横に置くための数字だけ。第4周の指摘: 「ガッツ消費 N」の1行が技パネルを広げていた)
+  document.getElementById('gutsCostLabel').textContent = game.explore
+    ? `-${effectiveGutsCost(ve, mv)}`
+    : `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
   const tierMoves = SIGNATURE_MOVES[ve.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
@@ -8572,7 +8889,19 @@ function updateHUD(){
     dot.classList.toggle('unlocked', t<=ve.moveTierUnlocked);
     dot.classList.toggle('selected', t===ve.moveTierSelected);
   }
-  document.getElementById('moveIcon').innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
+  /* 探検だけ、技の色の丸に「技の属性の記号」(mv.icon。技ごとに元から持っている絵文字)を乗せる。
+     以前は色だけの丸で「仮置きの丸」に見えていた(批評指摘)。他モードは今までの丸のまま変えない。 */
+  document.getElementById('moveIcon').innerHTML = game.explore
+    ? `<span class="exp-move-ico" style="background:${moveMarkColor}">${mv.icon || ''}</span>`
+    : `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
+  // 探検だけ: HPパネルの顔絵(静止画を丸く切り抜き)。素の姿で十分(スキンの着せ替えはモンスター一覧側の役目)
+  if(game.explore){
+    const face = document.getElementById('hpFaceImg');
+    if(face && face.dataset.el !== ve.element){
+      face.dataset.el = ve.element; face.dataset.basePath = 'monsters/' + ve.element; face.dataset.extIdx = '0';
+      face.src = imgSrcFor(face.dataset.basePath);
+    }
+  }
 
   // 召喚演出中は操作説明を出さない(演出に被って勿体無いため)。
   // 演出中はupdate()が回らずtipTimerが減らないので、演出後にフル秒数だけ表示される。

@@ -108,7 +108,8 @@ function projectileMuzzleZ(a){ return (a.z||0) + (isReal3dMap() ? AIM_MUZZLE_Z :
 // 通常マップは従来どおり「相手が自分より大きく上にいるか」だけを見る(挙動そのまま)
 function projHeightHits(p, e){
   if(!p.terrain3d) return !(e.z - p.z > UPWARD_BLOCK_THRESHOLD);
-  return (p.z - e.z <= PROJ_OVERHEAD_MISS) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
+  // 背の高い相手(探検のボスだけが hitHeight を持つ。他は undefined で従来どおり)は頭の高さまで当たる
+  return (p.z - e.z <= Math.max(PROJ_OVERHEAD_MISS, e.hitHeight || 0)) && (e.z - p.z <= PROJ_UNDERFOOT_MISS);
 }
 function terrainZAt(x,y){ return (typeof getTerrainHeightAt==='function') ? getTerrainHeightAt(x,y) : 0; }
 // 技ごとの落下加速度。射程いっぱいを飛ぶ時間で PROJ_DROP_Z だけ落ちる強さにする
@@ -533,6 +534,10 @@ function applyDamage(target, dmg, source, opts){
   if(raidFriendlyFireBlocked(target, source)) return;
   // チーム戦のフレンドリーファイア無しも同じ1か所で止める(状態異常・ガッツ削りも入口がここ)
   if(teamFriendlyFireBlocked(target, source)) return;
+  // 探検モード: 復活直後の無敵と、野生どうしの同士討ち無し(explore.js。探検以外では常に false)
+  if(exploreDamageBlocked(target, source)) return;
+  // 探検モード: ボスへの命中の高さ(opts.hitZ。範囲技は体の半分)で弱点かを決める(explore.js)
+  if(game.explore) opts = exploreResolveHit(target, source, opts);
   // ダウン直後2秒は無敵(とどめが刺せない。TEAM_DOWN_INVULN_SEC。発注者要望 2026-08-19)
   if(entityDowned(target) && target.downedInvulnUntil > matchTime) return;
   if(target.isPlayer) playSe(skinHitSeName(target) || 'hitTaken'); // SE: 自分の被弾のみ(スキン専用SEがあれば差し替え)
@@ -588,22 +593,30 @@ function applyDamage(target, dmg, source, opts){
     else if(auraResult==='dis') finalDmg *= AURA_DIS_MULT;
   }
   if(matchAura && source && getMonsterAura(source)===matchAura) finalDmg *= AURA_MATCH_MULT; // オーラ一致
+  // 探検モード: 弱点(opts.weakPoint)・転倒・眠りの倍率(explore.js。弱点の倍率を掛けるのはここ1か所)
+  if(game.explore) finalDmg *= exploreDmgTakenMult(target, source, opts);
   target.hp -= finalDmg; target.hitFlash = 0.18;
+  // 探検モード: 撃たれた野生が気づく・群れが怒る・ボスが起きる・部位破壊の蓄積(explore.js)
+  if(game.explore) exploreOnDamaged(target, finalDmg, source, opts);
   /* 【命中の手応え】自分が与えたダメージが確定した瞬間に、照準の×印(render.jsのshowHitMarker)と
      命中SEを出す。ここは「ソロ/ホストの確定計算」だけが通る場所で、マルチのゲストは上の
      予測分岐(involvesHuman && !isAuthoritative)で必ずreturn済みなので、
      ゲストがnetwork.jsの見た目命中で出す×印と二重にはならない。
      範囲技は1フレームに何体も当たるため、×印(=DOMのリフロー)とSEはselfHitFxGateで間引く。 */
   if(source && source===player && source.id!==target.id && selfHitFxGate()){
-    if(typeof showHitMarker==='function') showHitMarker();
+    if(typeof showHitMarker==='function') showHitMarker(false, !!(opts && opts.weakPoint));
     playSe((opts && opts.hitSe) || 'hitDealt');
   }
   // 計測ハーネス用: ダメージ確定(HP減少)の時刻を記録(通常は__netProbe未定義で素通り)
   if(window.__netProbe) __netProbe.mark('dmg', { id: target.id, src: source?source.id:null, dmg: Math.round(finalDmg), hp: Math.round(target.hp), ts: Date.now() });
   // ダメージ表記: オーラ相性でダメージ増加(有利技)=赤・減少(不利技)=青で強調(オーラ一致の増加分は考慮しない) / それ以外は通常
-  if(auraResult==='adv')      spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#ff5555', true);
-  else if(auraResult==='dis') spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg), '#5aa6ff', true);
-  else                        spawnDmgText(target.x, target.y, target.z, Math.round(finalDmg));
+  // 数字を出す高さ。探検のボスは当たった高さ(opts.dmgZ。explore.js の exploreResolveHit が入れる)、他は足元
+  const dmgZ = (opts && opts.dmgZ != null) ? opts.dmgZ : target.z;
+  if(auraResult==='adv')      spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#ff5555', true);
+  else if(auraResult==='dis') spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#5aa6ff', true);
+  else if(game.explore && opts && opts.weakPoint) exploreWeakPop(target, finalDmg, source);   // 探検: 弱点は照準の近くに金の大きい数字(画面の画素で固定サイズ)
+  else if(game.explore && target.isExploreBoss) exploreBodyPop(target, dmgZ, finalDmg);   // 探検のボスの体: 白い大きい数字
+  else                        spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg));
   if(source && source.id!==target.id){
     target.recentAttackers[source.id] = matchTime;
     target.lastAttackerId = source.id;
@@ -737,6 +750,10 @@ function playerMaxKillStreak(windowSec){
 }
 function killEntity(victim, killer){
   if(!victim.alive) return;
+  // 探検モード: プレイヤーは死なずに「力尽きた」扱い(キャンプで復活/上限で終了)。通常の敗北処理へ進めない
+  if(game.explore && victim.isPlayer){ exploreOnPlayerFaint(victim, killer); return; }
+  // 探検モード: ボスはすぐには消えず、倒れる演出(スローモーション・討伐完了)のあと消える(explore.js)
+  if(game.explore && victim.isExploreBoss){ exploreOnBossFelled(victim, killer); return; }
   // 安全圏外ダメージや溶岩などキラー不在の死亡は、直前に攻撃していた相手にキルを付与する
   if(!killer){
     const lastAtk = entities.find(o=>o.id===victim.lastAttackerId);
@@ -816,6 +833,7 @@ function killEntity(victim, killer){
 function checkWin(){
   if(game.trainingRange) return; // 射撃訓練場は勝敗なし(的は倒しても復活する)
   if(game.raid){ checkRaidEnd(); return; }  // レイドは「ボス撃破 or 時間切れ」で決着する
+  if(game.explore) return;  // 探検は勝敗なし(帰還・力尽き・時間切れで終わる。explore.js の checkExploreEnd)
   if(netState.mode==='multi' && !netState.isHost) return; // 勝敗判定はホストのみ確定させる
   if(game.over) return;
   if(isTeamMatch()){ checkTeamWin(); return; }  // チーム戦は「自チーム以外の全チーム全滅」で決着
@@ -926,6 +944,7 @@ function updateTargetBotAI(b){
   }
 }
 function updateBotAI(b, dt){
+  if(game.explore && b.exploreAsleep) return;   // 探検モード: プレイヤーから遠い個体は眠らせる(explore.js)
   if(b.attackTargetId){ const t=getEntity(b.attackTargetId); if(!t||!t.alive) b.attackTargetId=null; }
   b.aiTimer -= dt;
   if(b.aiTimer>0) return;
@@ -935,6 +954,8 @@ function updateBotAI(b, dt){
   b.aiTimer = rand(0.22,0.4) * matchBotThinkMult();
   if(b.isTargetBot){ updateTargetBotAI(b); return; }
   if(b.isRaidBoss){ updateRaidBossAI(b); return; }
+  if(b.isExploreWild){ exploreWildAI(b); return; }   // 探検モードの野生(縄張り・気づく・戻る。explore.js)
+  if(b.isExploreBoss){ exploreBossAI(b); return; }   // 探検モードのボス(判断は毎フレーム exploreUpdateBosses)
 
   // ===== チーム戦: ダウン中は戦えない。立っている味方の方へ這って寄る(蘇生されやすい位置へ) =====
   if(isTeamMatch() && entityDowned(b)){
@@ -1116,6 +1137,7 @@ function entityMoveSpeed(m){
   return m.slowUntil > matchTime ? base*0.5 : base;
 }
 function resolveMovement(m, dt){
+  if(game.explore && m.exploreAsleep) return;   // 探検モード: 眠っている個体は動かない
   if(m.freezeUntil > matchTime) return;
   /* 「羅生門」(キジンtier3)に吸い込まれている間は、入力・AIより優先してこちらへ
      強制的に引き寄せる。moveWithMoveUntilと同じ「早期return」の形にしておくと、
@@ -1156,6 +1178,8 @@ function resolveMovement(m, dt){
     if(moveLen>0.05){ m.lastMoveX=m.inputMoveX/moveLen; m.lastMoveY=m.inputMoveY/moveLen; }
     return;
   }
+  // 探検モード: 野生とボスの歩き方(うろつく・距離を保つ・足を引きずる等。explore.js)
+  if(game.explore && exploreResolveMove(m, dt, effSpeed)) return;
   let target = null;
   let mustMove = true;
   const outOfZone = dist(m, zoneState.center) > zoneState.radius - m.radius*0.4;
@@ -1548,7 +1572,7 @@ function isKillLeader(e){ return !!(e && killLeaderCurId!=null && e.id===killLea
 /* 毎フレーム呼ぶ(updateHUD経由=ソロ・ホスト・ゲスト全員)。交代のフィード行は
    ホスト/ソロだけが確定し、ゲストへは既存のkillイベント(textだけ)を流用して配る。 */
 function updateKillLeader(){
-  if(!game.started || game.over || game.raid || game.trainingRange){ killLeaderCurId = null; return; }
+  if(!game.started || game.over || game.raid || game.trainingRange || game.explore){ killLeaderCurId = null; return; }
   const id = computeKillLeaderId();
   if(id === killLeaderCurId) return;
   killLeaderCurId = id;
@@ -1938,6 +1962,7 @@ function updateCamera(dt){
   camPos.x = v.x - Math.cos(camState.yaw)*camState.distBehind;
   camPos.y = v.y - Math.sin(camState.yaw)*camState.distBehind;
   camPos.z = v.z + camState.height;
+  if(game.explore) exploreCameraClearance(v, dt);   // 探検だけ: 崖・尾根にカメラが埋まらないよう持ち上げる
   applyAutoAimAssist(dt);   // オートエイム「弱い引き寄せ」。効かない試合・観戦中は関数内で何もしない
   updateMatchSignals();
 }
@@ -2144,6 +2169,7 @@ function effectiveMoveDmg(m, mv){
   return mv.dmg * (m.trainDmgMult || 1) * (eff && eff.dmgMult || 1) * ssrMult;
 }
 function tryFire(m){
+  if(game.explore && m.exploreAsleep) return;   // 探検モード: 眠っている個体は撃たない
   if(m.freezeUntil > matchTime) return;
   if(entityDowned(m)) return;   // ダウン中は攻撃不可(チーム戦のみ)
   if(m.fireCooldown>0) return;
@@ -2160,6 +2186,9 @@ function tryFire(m){
   m.fireCooldown = effectiveCooldown(m, mv);
 }
 function tryPlayerFire(dt){
+  /* 狙撃銃(探検モードだけ。sniper.js)。装填の時間を進め、構えている間はFIREを狙撃銃が受け持つ
+     (trueが返ったら技は撃たない)。探検モード以外では常にfalse=従来どおり。 */
+  if(typeof sniperOwnsTrigger === 'function' && sniperOwnsTrigger(dt)) return;
   if(!player.alive || player.fireCooldown>0) return;
   if(player.freezeUntil > matchTime) return;
   if(entityDowned(player)) return;   // ダウン中は攻撃不可(発射条件はtryNonHostPlayerFireVisual/processRemoteFireEventsと一致させる)
@@ -2211,6 +2240,12 @@ function updateProjectiles(dt){
       continue;
     }
     if(p.delay>0){ p.delay -= dt; continue; }
+    /* 狙撃銃の弾(sniper.js)。高速なので1フレームで体をすり抜けないよう細かく刻んで進め、
+       頭側(ent.weakPoint)の判定もするため進め方と当たりだけ向こうに任せる。trueで消える */
+    if(p.sniper && typeof sniperStepProjectile === 'function'){
+      if(sniperStepProjectile(p, dt)) projectiles.splice(i,1);
+      continue;
+    }
     const step = Math.hypot(p.vx,p.vy)*dt;
     p.x += p.vx*dt; p.y += p.vy*dt; p.traveled += step;
     // リアルマップ: 上下にも進み、重力で落ちる(発射時の傾きは落下ぶんを見越してある)
@@ -2300,7 +2335,8 @@ function updateProjectiles(dt){
         if(hitNow){
           // blast付き(ビッグバン等)も球体の直撃ダメージを与える。着弾後の爆風ダメージは別途spawnGroundBlastで判定
           const dmgMult = closeRangeDmgMult(p.closeBonusMax, p.traveled, p.maxRange); // 命中距離が短いほど威力アップ(デュラハン)
-          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio });
+          // hitZ = 当たった高さ(探検のボスの弱点の判定だけが読む。他のモードでは使わない)
+          applyDamage(e, p.dmg*dmgMult, getEntity(p.ownerId), { moveAura: p.moveAura, matchAura: p.matchAura, gutsDrain: p.gutsDrain, hitSe: p.hitSe, healRatio: p.healRatio, hitZ: p.z });
           // ワームtier3など: 相手に命中したら撃った本人に移動速度バフ
           if(p.selfSpeedBuffOnHit) applySelfSpeedBuffOnHit(p.ownerId);
           if(p.splash>0){
@@ -2401,6 +2437,8 @@ function resolveTrainOfferFor(ent, cardKey){
 }
 function resetTrainOffers(){ trainOffers.length = 0; }
 function lootToast(e, msg){
+  // 探検: 下の中央のトーストではなく、左の拾った通知(レア度色の行)へまとめる(explore_hud.js)
+  if(game.explore && e.isPlayer && typeof exploreHudLootNote === 'function'){ exploreHudLootNote(msg); return; }
   if(e.isPlayer) pushToast(msg);
   else if(netState.mode==='multi' && netState.isHost && e.netPlayerId) pendingLootToast = msg;
 }
@@ -2641,12 +2679,18 @@ function update(dt){
   // 止めないと敵が動き続け、演出の裏で順位や撃破数が変わってしまう。
   // 時刻で判定しているので、演出が何かの理由で終わらなくても3秒で自動的に再開する。
   if(typeof matchFinishFreezeActive==='function' && matchFinishFreezeActive()) return;
+  // 探検モード: ボス討伐の瞬間だけ時間をゆっくりにする(実時間で必ず1へ戻る。explore.js)
+  if(game.explore) dt *= exploreTimeScale();
+  // 探検モード: 狙撃の弱点命中の一瞬の止め(ヒットストップ。実時間で必ず戻る。sniper.js)
+  if(game.explore && typeof sniperTimeScale === 'function') dt *= sniperTimeScale();
   matchTime += dt;
   if(game.tipTimer>0) game.tipTimer -= dt;
   if(game.trainingRange) updateTrainingRange(dt); // 安置は動かさず、的の復活だけ面倒を見る
   else if(game.raid) updateRaidZone(dt);          // レイドは制限時間に合わせて線形に縮める
   else if(game.arena) updateArenaZone(dt);        // アリーナは中央固定の小さい安置を1段階だけ縮める
+  else if(game.explore) updateExplore(dt);        // 探検は安置なし。野生・帰還ビーコン・時間切れ(explore.js)
   else updateZone(dt);
+  if(game.explore && game.over) return;           // 探検の帰還・時間切れはこのフレームで終わる
   if(game.raid) updateRaid(dt);                   // ボスの予告→発動と、決着の判定
   updateArena(dt);                                // アリーナ: 時間切れの決着(アリーナ以外では何もしない)
   updateTeamStates(dt);                           // チーム戦: 出血タイマーと蘇生の進行(個人戦では何もしない)

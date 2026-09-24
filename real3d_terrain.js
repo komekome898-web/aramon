@@ -38,12 +38,14 @@
         高さ・傾き・場所ごとの土質。①②の中間〜大きい模様を担当する。
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
-import { R3, DEFAULT_THEME, ENV_INTENSITY, heightAt, makeTexture } from './real3d_common.js';
+import { R3, DEFAULT_THEME, ENV_INTENSITY, heightAt, makeTexture,
+         EXPLORE_KEYS, isExplore, exploreWeights, exploreTrail } from './real3d_common.js';
 
 // ---- 見た目の調整用定数(プレイテストで触るのはここだけ) ----
 export const PATCH_SIZE = 7200;  // プレイヤー中心に張る地形パッチの一辺(ワールド単位)
 const PATCH_SEGS  = 144;         // パッチの分割数。細かくすると綺麗だが重くなる
 const CELL = PATCH_SIZE / PATCH_SEGS;   // 頂点間隔。この単位でパッチ位置をスナップする
+export const TERRAIN_CELL = CELL;       // real3d_zone.js が探検のボスの予告を地形の折れ面に合わせるのに読む(値の正はここ)
 const DETAIL_TILE = 150;         // ①近景タイルが覆うワールド単位(小さいほど足元が細かい)
 const MACRO_TILE  = 2400;        // ②遠景マクロが覆うワールド単位
 const DETAIL_S    = 512;         // ①の画素数。色・法線・粗さ・AOで共通
@@ -304,7 +306,10 @@ const TEX_STYLES = {
         // 振幅は他のスタイルの半分に留め、残りは色み(青)で見せる
         out[0] = 0.84 + (s1-0.5)*0.075 + (s2-0.5)*0.045 + spark*0.12 + (g-0.5)*0.05 - groove*0.03;
         out[1] = -(s1-0.5)*1.25 - (s2-0.5)*0.5;   // 窪みは空を映して青く、稜は白く
-        out[2] = -groove*0.55 - (s2-0.5)*0.25;
+        // out[2](法線・粗さ・AOの元)は前は0.55/0.25で、風筋のV字(groove)がそのまま
+        // 深い凹凸になり、坂に貼ると縦に伸びたハイライトの筋に見えた(2026-09-24)。
+        // 色み(out[1])はそのまま残し、凹凸だけ弱める(見た目の風筋は色で分かる)
+        out[2] = -groove*0.16 - (s2-0.5)*0.08;
       };
     },
   },
@@ -335,6 +340,37 @@ const TEX_STYLES = {
         out[1] = leaf*(0.50 + lid*1.6) - (1-leaf)*(0.45 + moss*0.55);
         // 葉の隙間(へこみ)と苔のうねりだけ。葉そのものは凹凸に入れない
         out[2] = moss*0.32 - (1-leaf)*0.16 + g*0.14;
+      };
+    },
+  },
+  /* 草原(探検フィールドの草原の盆地・ベースキャンプ)。短い芝と土の地面。
+     芝の葉は「細い筋」(1本が2単位以下)で明るさに出し、芝の濃い所・薄い所・
+     クローバーの群れは色み(out[1])だけで描く(塊を明るさで描かない決まり)。
+     筋の周波数は整数にすること(タイルの継ぎ目で位相が飛ぶ)。              */
+  meadow: {
+    relief:1.00, rough:[0.66,0.98],
+    tintA:[-0.06, 0.20,-0.22], tintB:[ 0.22, 0.02,-0.16],
+    macro:{ amp:0.64, ridge:0.30, tint:0.22 },
+    vert:{ gravel:0.30, scrub:0.70, flow:0.24, jitter:0.05 },
+    make(){
+      const tc = wtable(40,40, 81);
+      const c = [0,0,0];
+      return (u,v,px,py,out)=>{
+        const wu = fbmT(u,v,12,12,2,71) - 0.5, wv = fbmT(u,v,12,12,2,73) - 0.5;
+        const turf = fbmT(u, v, 24, 24, 3, 83);
+        /* 芝の葉は「規則的な波」で描かない(sinの縞は遠目に砂の風紋に見えた)。
+           縦横で周期の違う細かい値ノイズ(1本0.6×3単位)を2向き重ねて、倒れた葉の筋にする */
+        const bA = fbmT(u + wu*0.02, v, 240, 48, 2, 91);
+        const bB = fbmT(u, v + wv*0.02, 56, 250, 2, 97);
+        const blade = Math.max(bA, bB);
+        worley(u*40 + wu*3.0, v*40 + wv*3.0, 40, 40, tc, c);
+        const cid = ih(c[2]+7, 5);
+        const clover = smudge(c[0], 0.36) * (cid > 0.62 ? 1 : 0);
+        const g = ih(px*3+5, py*5+7);
+        out[0] = 0.82 + (blade - 0.5)*0.22 + (g-0.5)*0.10 + (turf-0.5)*0.08;
+        out[1] = (turf-0.5)*1.3 + clover*(0.5 + cid*0.7) + (blade-0.5)*0.9 + wu*0.4;
+        // 葉と葉の間(暗い所)をへこみにする
+        out[2] = (blade - 0.5)*0.30 + turf*0.22 + g*0.10;
       };
     },
   },
@@ -408,7 +444,8 @@ function highPassLum(lum, S){
   const radPx = Math.round(LUMA_GRAIN / DETAIL_TILE * S);
   if(radPx < 2 || radPx*2+1 >= S) return;
   const N = S*S;
-  if(!scratchBlur){ scratchBlur = new Float32Array(N); scratchBlur2 = new Float32Array(N); blurCol = new Float32Array(S); }
+  // 探検フィールドは小さい画素数(EX_S)でも呼ぶので、大きさが変わったら作り直す
+  if(!scratchBlur || scratchBlur.length !== N){ scratchBlur = new Float32Array(N); scratchBlur2 = new Float32Array(N); blurCol = new Float32Array(S); }
   boxBlurWrap(lum, scratchBlur, S, radPx);
   boxBlurWrap(scratchBlur, scratchBlur2, S, radPx);
   let mean = 0;
@@ -617,6 +654,312 @@ function attachMacro(mat){
   mat.customProgramCacheKey = ()=> 'aramonGroundMacro';
 }
 
+/* =====================================================================
+   探検フィールド: 地域ごとに地面の質感を変える(R3.theme.explore のときだけ)
+   ・4地域ぶんの近景タイル(草原/雪/溶岩の殻/密林)を1回で作り、チャンネルに詰める
+       lum  RGBA = 各地域の明るさ / tint RGBA = 各地域の色み
+       nA   RG=地域0の法線 BA=地域1 / nB RG=地域2 BA=地域3
+   ・どの地域の模様をどれだけ出すかは頂点属性 aExW(4つの重み。キャンプは草原に含める)。
+     頂点ごとなのでラスタライザが面をまたいで滑らかにつなぐ(=境目が線にならない)
+   ・画素数は EX_S(256)。1地域あたり通常の1/4なので、4地域でも通常マップ1枚ぶんの生成時間
+   ・他のマップの材質(stdMat)には一切触らない。テーマが変わったら材質ごと差し替える
+   ===================================================================== */
+const EX_S = 256;
+const EX_STYLES = ['meadow', 'snow', 'volcanic', 'jungle'];   // aExW の x,y,z,w の順
+/* 岩肌(崖・尾根)の明るさの下限。地域の岩の色(regions.steep)は頂点色の時代に「地面テクスチャが
+   さらに掛かる」前提で暗く選んであり、画素で塗る今はまわりの地面の2〜4倍暗い。ノイズでぼかした
+   岩の斑がそのまま「黒いしみ」に見えた(2026-09-24 volcano_wide/border_frost_volcano/canyon。
+   地形パッチの岩の塗りを切ると消えることで特定。接地影・影の地図・法線は無関係だった)。
+   岩の色味・縞はそのままに、明るさだけ「その場の地面×EX_ROCK_FLOOR」を下回らないようにする。
+   EX_ROCK_REF / FAR_ROCK_REF は縞・粒を掛けたときの岩の平均の明るさの比(近景 exRockT / 遠景 fBand) */
+const EX_ROCK_FLOOR = 0.70, EX_ROCK_REF = 0.50, FAR_ROCK_REF = 0.68;
+let exMaps = null, exMat = null, stdMat = null;
+let terrainExW = null, scratchExW = null;
+
+function dataTex(data, S){
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.flipY = true;               // キャンバスのテクスチャと同じ向き(法線の緑の符号をそろえる)
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = 8;
+  t.needsUpdate = true;
+  return t;
+}
+function buildExploreMaps(){
+  if(exMaps) return exMaps;
+  const S = EX_S, N = S*S;
+  const lum = new Uint8Array(N*4), tint = new Uint8Array(N*4);
+  const nA = new Uint8Array(N*4), nB = new Uint8Array(N*4);
+  const L = new Float32Array(N), Wm = new Float32Array(N), H = new Float32Array(N);
+  const out = [0,0,0];
+  const tA = [], tB = [], rough = [];
+  let compat = null;
+  EX_STYLES.forEach((name, ch)=>{
+    const st = TEX_STYLES[name];
+    const field = st.make();
+    let hMin = 1e9, hMax = -1e9;
+    for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+      field(x/S, y/S, x*2, y*2, out);      // 画素番号は512画素のときと同じ粒になるよう2倍
+      const i = y*S + x;
+      L[i] = out[0]; Wm[i] = out[1]; H[i] = out[2];
+      if(out[2] < hMin) hMin = out[2];
+      if(out[2] > hMax) hMax = out[2];
+    }
+    const hs = 1/Math.max(1e-4, hMax-hMin);
+    let hSum = 0;
+    for(let i=0;i<N;i++){ H[i] = (H[i]-hMin)*hs; hSum += H[i]; }
+    const mean = hSum/N;
+    for(let i=0;i<N;i++){ if(H[i] > mean) H[i] = mean + (H[i]-mean)*RELIEF_PEAK; }
+    highPassLum(L, S);
+    const bake = 0.20 * st.relief * S/64 * 2;   // 512画素のときと同じ傾きになるよう画素が粗いぶん倍
+    const at = (x, y)=> H[(((y%S)+S)%S)*S + (((x%S)+S)%S)];
+    const nArr = ch < 2 ? nA : nB, o = (ch % 2) * 2;
+    for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+      const i = y*S + x, j = i*4;
+      lum[j+ch]  = Math.round(clamp01(L[i])*255);
+      tint[j+ch] = Math.round(clamp01(Wm[i]*0.25 + 0.5)*255);
+      const dx = (at(x+1,y) - at(x-1,y))*bake, dy = (at(x,y+1) - at(x,y-1))*bake;
+      const len = Math.hypot(dx, dy, 1);
+      nArr[j+o]   = Math.round((-dx/len*0.5 + 0.5)*255);
+      nArr[j+o+1] = Math.round(( dy/len*0.5 + 0.5)*255);
+    }
+    tA.push(new THREE.Vector3(...neutralTint(st.tintA)));
+    tB.push(new THREE.Vector3(...neutralTint(st.tintB)));
+    rough.push((st.rough[0] + st.rough[1])*0.5);
+    /* 地面の色を読む他の担当(障害物の色の基準・水辺の濡れた砂)向けに、
+       草原のぶんだけ従来と同じ形(キャンバスのテクスチャ)でも持っておく。 */
+    if(ch === 0){
+      const A = neutralTint(st.tintA), B = neutralTint(st.tintB);
+      let midSum = 0;
+      const map = makeTexture(S, (d)=>{
+        for(let i=0;i<N;i++){
+          const w = Wm[i], t = w > 0 ? A : B, a0 = Math.abs(w), aw = a0/(1 + a0*TINT_KNEE);
+          const r = clamp01(L[i]*(1 + aw*t[0])), g = clamp01(L[i]*(1 + aw*t[1])), b = clamp01(L[i]*(1 + aw*t[2]));
+          d[i*4] = r*255; d[i*4+1] = g*255; d[i*4+2] = b*255; d[i*4+3] = 255;
+          midSum += 0.2126*srgbLin(r) + 0.7152*srgbLin(g) + 0.0722*srgbLin(b);
+        }
+      }, true);
+      const normalMap = makeTexture(S, (d)=>{
+        for(let i=0;i<N;i++){ d[i*4] = nA[i*4]; d[i*4+1] = nA[i*4+1]; d[i*4+2] = 240; d[i*4+3] = 255; }
+      }, false);
+      compat = { map, normalMap, roughnessMap:map, aoMap:map, midRef: 1/Math.max(0.02, midSum/N) };
+    }
+  });
+  exMaps = {
+    lum: dataTex(lum, S), tint: dataTex(tint, S), nA: dataTex(nA, S), nB: dataTex(nB, S),
+    macro: buildMacroMap(TEX_STYLES.meadow), tA, tB,
+    rough: new THREE.Vector4(rough[0], rough[1], rough[2], rough[3]),
+    compat,
+  };
+  exMaps.compat.macroMap = exMaps.macro;
+  const rep = PATCH_SIZE/DETAIL_TILE;
+  [exMaps.lum, exMaps.tint, exMaps.nA, exMaps.nB].forEach(t=> t.repeat.set(rep, rep));
+  return exMaps;
+}
+
+const EX_PARS = `
+uniform sampler2D uExTint;
+uniform sampler2D uExNB;
+uniform vec3 uExTA[4];
+uniform vec3 uExTB[4];
+uniform vec4 uExRough;
+uniform sampler2D uExMacro;
+uniform float uExMacroScale;
+varying vec4 vExW;
+varying vec3 vExP;
+varying vec3 vExN;
+uniform vec4 uExSnowAlt;
+uniform vec3 uExSnowCol;
+uniform vec3 uExSteep[4];
+vec4 exL;
+float exRk, exSn, exSlopeG;
+vec3 exRockT;
+vec3 exRegion(float L, float w, vec3 ta, vec3 tb){
+  vec3 t = (w > 0.0) ? ta : tb;
+  float a0 = abs(w);
+  float aw = a0 / (1.0 + a0*0.18);
+  vec3 c = clamp(L*(1.0 + aw*t), 0.0, 1.0);
+  return pow(c, vec3(2.2));   // 値はsRGBで持っているのでリニアへ
+}
+`;
+/* 地域ごとの近景タイルを重みで混ぜる(map_fragment の置き換え)。
+   遠景マクロは通常マップと同じ式(MACRO_CHUNK の前半)。 */
+const EX_MAP_CHUNK = `
+#ifdef USE_MAP
+{
+  exL = texture2D(map, vMapUv);
+  vec4 exT = (texture2D(uExTint, vMapUv) - 0.5) * 4.0;
+  vec3 exC = exRegion(exL.r, exT.r, uExTA[0], uExTB[0]) * vExW.x
+           + exRegion(exL.g, exT.g, uExTA[1], uExTB[1]) * vExW.y
+           + exRegion(exL.b, exT.b, uExTA[2], uExTB[2]) * vExW.z
+           + exRegion(exL.a, exT.a, uExTA[3], uExTB[3]) * vExW.w;
+  /* 地面のタイル(map)は上から見た平地むけに、風の吹き筋など**縦横比の違う**模様を
+     焼き込んでいる(雪=u方向2.5・v方向15単位)。平地では正しく見えるが、この模様のまま
+     急斜面(崖・急な丘)に貼ると、筋の向きが画面の縦とほぼ揃って「縦に引き伸ばした模様」に
+     見える(2026-09-24 saddle/frost/canyon)。急斜面ではLを均してから混ぜ、筋を弱める */
+  {
+    float exFlat = 1.0 - smoothstep(0.10, 0.34, 1.0 - clamp(vExN.y, 0.0, 1.0));
+    if(exFlat < 0.999){
+      vec3 exCFlat = exRegion(0.86, exT.r, uExTA[0], uExTB[0]) * vExW.x
+                   + exRegion(0.86, exT.g, uExTA[1], uExTB[1]) * vExW.y
+                   + exRegion(0.86, exT.b, uExTA[2], uExTB[2]) * vExW.z
+                   + exRegion(0.86, exT.a, uExTA[3], uExTB[3]) * vExW.w;
+      exC = mix(exCFlat, exC, exFlat);
+    }
+  }
+  /* 急斜面(崖・尾根の岩肌)と雪は**画素ごと**に決める(頂点色で塗ると、粗い三角形の
+     境目がそのまま出てノコギリ歯の模様になった)。傾き+低周波ノイズで境目を揺らす。
+     岩は横から投影した岩の粒(溶岩の殻のチャンネル)に水平の地層の縞を足す(三方向投影の横2面) */
+  {
+    vec3 an = abs(vExN);
+    // 大小2つのノイズを混ぜる(1つだけだと13000単位に1回しか揺れず、境目が等高線のまま=点線に見えた)
+    float exNzLo = texture2D(uExMacro, vExP.xz * 0.00085).r - 0.5;
+    float exNzHi = texture2D(uExMacro, vExP.xz * 0.0052 + 11.0).r - 0.5;
+    float exNz = exNzLo*0.7 + exNzHi*0.3;
+    float exSlope = 1.0 - clamp(vExN.y, 0.0, 1.0);
+    exSlopeG = exSlope;   // EX_NORMAL_CHUNK(このあと実行される)へ渡す
+    // 緩い丘(exploreRelief最大傾斜0.17≈exSlope0.06)では岩を出さない。本物の崖・尾根だけ岩肌にする
+    exRk = smoothstep(0.38, 0.78, exSlope + exNz * 0.14);
+    exRockT = vec3(0.0);
+    if(exRk > 0.002){   // 岩の粒は岩肌の所だけ読む(平地では読まない)
+      // 面の向きで(Z,Y)/(X,Y)を選ぶ。法線がX方向を向く壁=面はZ-Y平面に沿うのでZ,Yで投影する
+      // (取り違えると、動かない片方の軸だけで縦に引き伸ばした模様になる。canyon/frostの縦筋の原因)
+      float rx = texture2D(map, vExP.zy / 150.0).b, rz = texture2D(map, vExP.xy / 150.0).b;
+      float rk = mix(rx, rz, an.x / (an.x + an.z + 1e-4));
+      /* 【あざのようなしみ→横の地層縞】rkは地面テクスチャの粒(細かい模様)で、
+         そのまま2.2乗すると暗い所がほぼ0まで潰れ、崖に不揃いな黒いあざが浮いた
+         (2026-09-24 volcano_wide/border_frost_volcanoの「崖の黒いしみ」)。
+         粒の寄与(コントラスト)を弱め、高さで作る横縞(band)の寄与を強くして、
+         見た目の主役を「粒のあざ」から「地層の縞」へ入れ替える。 */
+      float band = 0.62 + 0.38*sin(vExP.y*0.058 + exNzLo*5.0) * (0.4 + 0.6*exNzHi);
+      exRockT = vec3(mix(0.72, rk, 0.18)) * band * 1.18;
+    }
+    float exAlt = dot(vExW, uExSnowAlt);
+    // 雪の境目は広めにぼかし、低周波のノイズで大きく揺らす(三角形の形にも、地域の境の等高線にもならないように)
+    exSn = smoothstep(exAlt - 260.0, exAlt + 520.0, vExP.y + exNz * 640.0)
+         * (1.0 - smoothstep(0.30, 0.68, exSlope + exNz * 0.20));
+  }
+  diffuseColor.rgb *= exC;
+  vec2 mUv = vec2( vMapUv.x*0.7648 - vMapUv.y*0.6442, vMapUv.x*0.6442 + vMapUv.y*0.7648 ) * uExMacroScale;
+  diffuseColor.rgb *= mix( vec3(1.0), texture2D( uExMacro, mUv ).rgb * 2.0, ${MACRO_AMT.toFixed(2)} );
+  vec2 m2Uv = vec2( vMapUv.x*0.4067 + vMapUv.y*0.9135, vMapUv.y*0.4067 - vMapUv.x*0.9135 ) * uExMacroScale * 0.31;
+  diffuseColor.rgb *= mix( vec3(1.0), texture2D( uExMacro, m2Uv ).rgb * 2.0, ${MACRO_AMT2.toFixed(2)} );
+}
+#endif
+`;
+const EX_NORMAL_CHUNK = `
+#if defined( USE_NORMALMAP_TANGENTSPACE )
+{
+  vec4 exNa = texture2D( normalMap, vNormalMapUv );
+  vec4 exNb = texture2D( uExNB, vNormalMapUv );
+  vec2 exXY = (exNa.rg*2.0 - 1.0)*vExW.x + (exNa.ba*2.0 - 1.0)*vExW.y
+            + (exNb.rg*2.0 - 1.0)*vExW.z + (exNb.ba*2.0 - 1.0)*vExW.w;
+  // 法線マップは常に真上からのUV(vNormalMapUv)で作っているので、世界の傾き(exSlopeG)
+  // ではなく「今のカメラから見てその面がどれだけ斜めか」で強さを落とす必要がある
+  // (傾きが緩い丘でも、近くからほぼ横に見ると同じ縞が出た。2026-09-24)。
+  // normalはここではまだ「幾何形状そのものの法線」(このチャンクが書き換える前)
+  float exFace = abs(dot(normalize(vViewPosition), normal));
+  exXY *= smoothstep(0.05, 0.45, exFace);
+  vec3 mapN = normalize( vec3( exXY * normalScale, 1.0 ) );
+  normal = normalize( tbn * mapN );
+}
+#endif
+`;
+function buildExploreMaterial(){
+  const m = buildExploreMaps();
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors:true, map: m.lum, normalMap: m.nA,
+    // 探検フィールドは通常マップより起伏が急な地形(尾根・崖・段丘)が多く、真上からのUVで
+    // 作った法線マップをそのまま貼ると、斜めから見た面に縦に伸びたハイライトの縞が出た
+    // (2026-09-24。特に雪の風筋パターンで目立った)。EX_NORMAL_CHUNK の視線角フェードと
+    // 合わせ、地の強さそのものも通常マップの0.15倍に抑える(0.02まで下げると斜面が粘土のようにのっぺりした=2026-09-24 批評)
+    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN*0.15, R3.theme.bump*NORMAL_GAIN*0.15),
+    metalness:0.0, roughness:1.0, envMapIntensity: ENV_INTENSITY, dithering:true,
+  });
+  const uni = {
+    uExTint:{ value:m.tint }, uExNB:{ value:m.nB },
+    uExTA:{ value:m.tA }, uExTB:{ value:m.tB }, uExRough:{ value:m.rough },
+    uExMacro:{ value:m.macro }, uExMacroScale:{ value:DETAIL_TILE/MACRO_TILE },
+    uExSnowAlt:{ value:new THREE.Vector4() }, uExSnowCol:{ value:new THREE.Color() },
+    uExSteep:{ value:[new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color()] },
+    uExShade:{ value:[new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
+  };
+  {
+    // 雪の高さ・岩の色・影の色味は地域ごと(aExW の順。キャンプは草原に含める)。雪の無い地域は十分高い値にする
+    const pal = explorePalette(), alt = (i)=> Math.min(9000, pal[i].snowAlt);
+    uni.uExSnowAlt.value.set(alt(0), alt(1), alt(2), alt(3));
+    uni.uExSnowCol.value.copy(pal.snow);
+    for(let i=0;i<4;i++){ uni.uExSteep.value[i].copy(pal[i].steep); uni.uExShade.value[i].copy(pal[i].shade); }
+  }
+  mat.onBeforeCompile = (sh)=>{
+    Object.assign(sh.uniforms, uni);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aExW;\nvarying vec4 vExW;\nvarying vec3 vExP;\nvarying vec3 vExN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvExW = aExW;\nvExP = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvExN = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>' + EX_PARS)
+      .replace('#include <common>', '#include <common>\nuniform vec3 uExShade[4];')
+      .replace('#include <map_fragment>', EX_MAP_CHUNK)
+      .replace('#include <normal_fragment_maps>', EX_NORMAL_CHUNK)
+      // 岩と雪は頂点色ではなく画素で塗る(上の EX_MAP_CHUNK で決めた exRk / exSn)
+      .replace('#include <color_fragment>', [
+        '#include <color_fragment>',
+        'vec3 exRockC = uExSteep[0]*vExW.x + uExSteep[1]*vExW.y + uExSteep[2]*vExW.z + uExSteep[3]*vExW.w;',
+        // 岩肌がまわりの地面より極端に暗くならないよう、明るさの下限を地面の EX_ROCK_FLOOR 倍にする(色味は岩のまま)
+        `exRockC *= max(1.0, ${EX_ROCK_FLOOR.toFixed(2)} * dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / max(dot(exRockC, vec3(0.2126, 0.7152, 0.0722)) * ${EX_ROCK_REF.toFixed(2)}, 1e-5));`,
+        'diffuseColor.rgb = mix(diffuseColor.rgb, exRockC * exRockT, exRk);',
+        'diffuseColor.rgb = mix(diffuseColor.rgb, uExSnowCol * (0.62 + 0.30*dot(exL, vExW)), exSn);',
+      ].join('\n'))
+      // 粗さは地域ごと。明るい粒ほど少しつやが出る
+      .replace('#include <roughnessmap_fragment>',
+               'float roughnessFactor = clamp(dot(vExW, uExRough) * (1.08 - 0.16*dot(exL, vExW)), 0.2, 1.0);')
+      // 影の側の色味(exShadeTint)。間接光にだけ掛けるので日向はほとんど変わらない
+      .replace('#include <aomap_fragment>', [
+        '#include <aomap_fragment>',
+        'reflectedLight.indirectDiffuse *= uExShade[0]*vExW.x + uExShade[1]*vExW.y + uExShade[2]*vExW.z + uExShade[3]*vExW.w;',
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = ()=> 'aramonGroundExplore';
+  return mat;
+}
+/* 影の側(直射の当たらない面)の色の寄せ。環境光は空(青)から作るので、影は地域に関係なく青灰色になる
+   (2026-09-24 canyon_bend/canyon: 火山・峡谷の影が赤みのない灰色)。全体の光は変えずに、地形の
+   間接光(=影の中の明るさを作る光)にだけ、その地域の霞の色味を掛ける。
+   強さはテーマの regions[key].shade(0=そのまま。data.js)。色は霞の色を明るさ1にそろえたもの
+   (明るさは変えず色味だけ寄せる)。重みの無い地域(草原・雪原・密林)は (1,1,1) で何も変わらない */
+function exShadeTint(r){
+  const s = r.shade || 0;
+  if(!s) return new THREE.Vector3(1, 1, 1);
+  const c = new THREE.Color(r.haze);
+  const lum = Math.max(1e-4, 0.2126*c.r + 0.7152*c.g + 0.0722*c.b);
+  return new THREE.Vector3(1 + (c.r/lum - 1)*s, 1 + (c.g/lum - 1)*s, 1 + (c.b/lum - 1)*s);
+}
+// 地域ごとの頂点色の材料(テーマの regions から1回だけ作る)
+let exPal = null, exPalTheme = null;
+function explorePalette(){
+  if(exPalTheme === R3.theme && exPal) return exPal;
+  exPalTheme = R3.theme;
+  const th = R3.theme;
+  exPal = EXPLORE_KEYS.map(k=>{
+    const r = th.regions[k];
+    const st = TEX_STYLES[r.tex] || TEX_STYLES.meadow;
+    return { low:new THREE.Color(r.low), high:new THREE.Color(r.high), steep:new THREE.Color(r.steep),
+             gravel:new THREE.Color(r.gravel), scrub:new THREE.Color(r.scrub), vert:st.vert,
+             grass:new THREE.Color(r.grass).multiplyScalar(0.62), grassK:0.62*((r.veg && r.veg.grass) || 0),
+             snowAlt:(r.snowAlt != null) ? r.snowAlt : 1e9, strata:r.strata || 0, shade:exShadeTint(r) };
+  });
+  exPal.trail = new THREE.Color(th.regions.camp.gravel).multiplyScalar(0.9);
+  exPal.snow = new THREE.Color(0xeaf1fa);
+  // 遠景の山の方角ごとの色(火山=玄武岩と溶岩の照り返し / 密林=森)。地域の岩・草の色から作る
+  exPal.basalt = new THREE.Color(th.regions.volcano.steep).multiplyScalar(0.9);
+  exPal.ember = new THREE.Color(th.regions.volcano.haze).lerp(new THREE.Color(0xff5a1e), 0.35);   // 溶岩の光の色(温度の色なのでテーマに依らない)
+  exPal.forest = new THREE.Color(th.regions.jungle.low).lerp(new THREE.Color(th.regions.jungle.grass), 0.35);
+  return exPal;
+}
+
 export function buildTerrain(){
   // 平面を作ってからX-Z平面へ倒す。頂点の高さ(y)は毎回 updateTerrain で書き換える
   const geo = new THREE.PlaneGeometry(PATCH_SIZE, PATCH_SIZE, PATCH_SEGS, PATCH_SEGS);
@@ -625,7 +968,8 @@ export function buildTerrain(){
   geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n*3), 3));
   // UVはパッチのローカル座標そのままなので、repeatで「何単位に1回」貼るかを決める。
   // パッチ位置はCELLの倍数にスナップして動かすため、模様がワールドに固定されて見える。
-  groundMaps = groundMapsFor(R3.theme.tex);
+  // 探検フィールドで初めて作るときは、使わない通常の4枚組(512画素)を作らない
+  groundMaps = isExplore() ? buildExploreMaps().compat : groundMapsFor(R3.theme.tex);
   macroUniforms.uMacroMap.value = groundMaps.macroMap;
   macroUniforms.uMidRef.value = groundMaps.midRef;
   vert = (TEX_STYLES[R3.theme.tex] || TEX_STYLES.dry).vert;
@@ -642,6 +986,7 @@ export function buildTerrain(){
     envMapIntensity: ENV_INTENSITY, dithering: true,
   });
   attachMacro(mat);
+  stdMat = mat;
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   // 丘が自分自身へ影を落とす(影を受ける側にもなる)
@@ -725,7 +1070,13 @@ export function updateTerrain(cx, cy){
     reuse = Math.abs(fx-shiftX) < 1e-6 && Math.abs(fy-shiftY) < 1e-6
          && Math.abs(shiftX) < V && Math.abs(shiftY) < V;
   }
-  if(reuse){ scratchPos.set(pos); scratchCol.set(col); scratchNrm.set(nrm); }
+  const ex = isExplore() && terrainExW;
+  const exw = ex ? terrainExW.array : null;
+  const pal = ex ? explorePalette() : null;
+  if(reuse){
+    scratchPos.set(pos); scratchCol.set(col); scratchNrm.set(nrm);
+    if(ex){ if(!scratchExW) scratchExW = new Float32Array(exw.length); scratchExW.set(exw); }
+  }
   patchCX = sx; patchCY = sy;
   const vGravel = vert.gravel, vScrub = vert.scrub, vFlow = vert.flow, vJit = vert.jitter;
   let computed = 0;
@@ -741,6 +1092,8 @@ export function updateTerrain(cx, cy){
           pos[d+1] = scratchPos[s+1];
           col[d]=scratchCol[s]; col[d+1]=scratchCol[s+1]; col[d+2]=scratchCol[s+2];
           nrm[d]=scratchNrm[s]; nrm[d+1]=scratchNrm[s+1]; nrm[d+2]=scratchNrm[s+2];
+          if(ex){ const a = (d/3)*4, b = (s/3)*4;
+                  exw[a]=scratchExW[b]; exw[a+1]=scratchExW[b+1]; exw[a+2]=scratchExW[b+2]; exw[a+3]=scratchExW[b+3]; }
           continue;
         }
       }
@@ -763,6 +1116,12 @@ export function updateTerrain(cx, cy){
       // 斜面を下る向きへ伸ばした筋(雨で流れた跡)
       const nf = vnW((wx + gx*FLOW_WARP)/BIOME_F, (wy + gy*FLOW_WARP)/BIOME_F, 131);
       const flow = 1 - Math.abs(nf*2 - 1);
+      if(ex){
+        exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, (d/3)*4);
+        col[d] = _c.r; col[d+1] = _c.g; col[d+2] = _c.b;
+        computed++;
+        continue;
+      }
       _c.lerp(_cTmp.copy(_cGravel), sstep(0.42, 0.72, nb) * vGravel);
       _c.lerp(_cTmp.copy(_cScrub), sstep(0.40, 0.70, nm) * (1 - slope*0.8) * vScrub);
       // 筋は暗く沈める + 全体をわずかにばらつかせて、のっぺりした面を作らない
@@ -776,6 +1135,12 @@ export function updateTerrain(cx, cy){
   terrainPos.needsUpdate = true;
   terrainCol.needsUpdate = true;
   terrainNrm.needsUpdate = true;
+  if(ex){
+    terrainExW.needsUpdate = true;
+    const ox = sx / DETAIL_TILE, oy = -sy / DETAIL_TILE;
+    exMaps.lum.offset.set(ox, oy); exMaps.tint.offset.set(ox, oy);
+    exMaps.nA.offset.set(ox, oy);  exMaps.nB.offset.set(ox, oy);
+  }
   terrain.position.set(sx, 0, sy);
   // テクスチャの模様をワールドに固定する。これをしないとパッチと一緒に模様が動き、
   // 地面の上を滑っているように見えてしまう(uv.yは回転で反転しているので符号が逆)。
@@ -800,6 +1165,21 @@ export function applyTerrainTheme(){
   _cGravel.setHex(theme.gravel); _cScrub.setHex(theme.scrub);
   const st = TEX_STYLES[theme.tex] || TEX_STYLES.dry;
   vert = st.vert;
+  /* 探検フィールドは材質ごと差し替える(通常の材質 stdMat には触らないので、
+     他のマップへ戻ったときは元の見た目のまま)。 */
+  if(terrain && isExplore()){
+    if(!exMat) exMat = buildExploreMaterial();
+    if(!terrainExW){
+      terrainExW = new THREE.Float32BufferAttribute(new Float32Array(terrainPos.count*4), 4);
+      terrain.geometry.setAttribute('aExW', terrainExW);
+    }
+    groundMaps = exMaps.compat;       // 障害物の色の基準・濡れた砂はこの形で地面を読む
+    macroUniforms.uMacroMap.value = groundMaps.macroMap;
+    terrain.material = exMat;
+    resetPatch();
+    return;
+  }
+  if(terrain && stdMat && terrain.material !== stdMat) terrain.material = stdMat;
   if(terrain){
     groundMaps = groundMapsFor(theme.tex);
     macroUniforms.uMacroMap.value = groundMaps.macroMap;
@@ -813,4 +1193,175 @@ export function applyTerrainTheme(){
     mt.needsUpdate = true;
   }
   resetPatch();   // 頂点カラーを塗り直させる
+}
+
+/* 探検フィールドの頂点色。地域ごとに「その地域の色で、通常と同じ塗り方」をして重みで混ぜる。
+   ノイズ(nb/nm/flow)は地域をまたいで共通なので、境目で模様が切れない。
+   結果は _c に入れ、地域の重み(テクスチャの混ぜ具合)を exw[o..o+3] へ書く。 */
+/* 岩と雪は画素で塗る(近景=EX_MAP_CHUNK / 遠景=buildFarTerrain)。ここでは下地の色だけを作り、
+   その場の地域の岩の色と雪の高さを _exSteep / _exSnowAlt に置く(遠景が頂点属性にする) */
+const _exSteep = new THREE.Color();
+let _exSnowAlt = 9000;
+/* 世界の縁の山並みの重み(0=マップの内側 / 1=縁の山)。縁の形の正は data.js の exploreRimH
+   (EXPLORE_FIELD_LAYOUT.relief.rim と WORLD_BASE_SIZE)。ここは同じ値を読むだけ */
+function exploreRimK(x, y){
+  const lay = window.__aramonExploreLayout;
+  const rim = lay && lay.relief && lay.relief.rim;
+  if(!rim) return 1;
+  const W = (typeof WORLD_BASE_SIZE === 'number') ? WORLD_BASE_SIZE : 18100;
+  const din = Math.min(x, y, W - x, W - y);
+  return 1 - sstep(0, rim.inner + 400, din);
+}
+function exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, o){
+  const w = exploreWeights(wx, wy);
+  const jit0 = ih(Math.floor(wx*0.02), Math.floor(wy*0.02)) - 0.5;
+  const gm = Math.hypot(gx, gy);
+  // 探検フィールドは尾根・崖が高く急なので、岩肌になる傾きを通常より高く取る
+  const rockK = sstep(0.42, 1.05, gm);
+  /* low→high(草地→雪面などの高さの段)の境は高さだけで決めると、なだらかな一枚斜面では
+     等高線がそのまま一直線に出る(2026-09-24 campの雪原の境目・雪の中の一直線の横帯)。
+     位置ノイズ(jit0)で効く高さを±130ほど揺らし、境目を自然にくねらせる。 */
+  /* 位置ノイズの振幅。260では効果が画素にほぼ出なかった(2026-09-24 追加周批評、camp)。
+     jit0は50単位周期の細かいノイズなので、大きくしすぎると境目がガタガタになる
+     (2000で試した所、線はくねったが粗かった)。900で「等高線ではないと分かる」ところまで上げる。 */
+  const t = clamp01((h + 240 + jit0*900) / 700);
+  _c.setRGB(0, 0, 0);
+  _exSteep.setRGB(0, 0, 0); _exSnowAlt = 0;
+  for(let r=0;r<5;r++){
+    const k = w[r];
+    if(k < 0.002) continue;
+    const P = pal[r], V = P.vert;
+    _cTmp.copy(P.low).lerp(P.high, t);
+    _cTmp.lerp(P.gravel, sstep(0.42, 0.72, nb) * V.gravel);
+    _cTmp.lerp(P.scrub, sstep(0.40, 0.70, nm) * (1 - rockK) * V.scrub);
+    _cTmp.multiplyScalar(1 - flow*flow*V.flow*0.75 + (nb-0.5)*0.26 + (nm-0.5)*0.10 + jit0*V.jitter);
+    // 草が茂っている色(草の株が途切れた先の遠くの地面も、茂った色に見えるように)
+    if(P.grassK > 0) _cTmp.lerp(P.grass, P.grassK*(1 - rockK)*(0.55 + 0.45*nm));
+    // 岩肌。地層の縞(高さで明暗)を乗せる
+    // 岩肌の色(地層の縞つき)と雪の高さは、画素で塗るほうへ渡す(頂点で塗るとノコギリ歯になる)
+    _cRock.copy(P.steep).multiplyScalar(1 + P.strata*(0.20*Math.sin(h*0.055 + nb*4) + 0.08*Math.sin(h*0.17)));
+    _exSteep.r += _cRock.r*k; _exSteep.g += _cRock.g*k; _exSteep.b += _cRock.b*k;
+    _exSnowAlt += Math.min(9000, P.snowAlt)*k;
+    _c.r += _cTmp.r*k; _c.g += _cTmp.g*k; _c.b += _cTmp.b*k;
+  }
+  /* 遠景(地形パッチの外)の高い山は方角(地域)で塗り分ける。全方位が同じ白い雪山に見えた。
+     火山の側=黒い玄武岩に下から赤い照り返し / 密林の側=森に覆われた緑。雪は凍った高地(と草原の頂)だけ */
+  if(!exw && h > 250){
+    /* 塗り分けるのは**世界の縁の山並み**(マップの外へせり上がる所)だけ。マップの内側の丘まで
+       玄武岩+赤い照り返し/森の緑で塗ると、同じ丘を近景(地形パッチ)は地域の地面の色で描くので、
+       遠くの丘だけ桃色・薄緑の平たい塗りになり、地域の境目(キャンプから放射状に延びる)で
+       画面に縦の「霞の幕」が立った(2026-09-24 vantage/vantage_back。ID描画で遠景地形と特定)。 */
+    const k = sstep(250, 750, h) * exploreRimK(wx, wy);
+    /* しきい値0.01は緩すぎて、火山・密林から離れた高い尾根にも重みがわずかに残るだけで
+       色が乗り、霞の中に方角と無関係な緑・黒の細い筋が浮いて見えた
+       (2026-09-24 vantage/vantage_back の「宙に浮く帯」)。0.20まで上げて、
+       本当にその地域に近い高台だけを塗り分ける */
+    if(w[2] > 0.20){
+      // 赤い照り返しは薄く(0.55では霞と混ざって縁の山の麓が桃色の幕に見えた。2026-09-24 vantage_back)
+      _cTmp.copy(pal.basalt).multiplyScalar(0.85 + 0.3*nb).lerp(pal.ember, (1 - sstep(300, 1100, h))*0.18);
+      _c.lerp(_cTmp, k*sstep(0.20, 0.5, w[2]));
+    }
+    if(w[3] > 0.20){
+      _cTmp.copy(pal.forest).multiplyScalar(0.8 + 0.4*nm);
+      _c.lerp(_cTmp, k*sstep(0.20, 0.5, w[3])*(1 - 0.5*sstep(1.0, 1.8, gm)));
+    }
+  }
+  // 踏み分け道: 草が剥げて土が出た帯(緩斜面だけ。急斜面は岩肌のまま)
+  const tr0 = exploreTrail(wx, wy);
+  if(tr0 > 0){
+    /* 縁をぼかす: tr0 は距離のsmoothstepなので数値としては既に滑らかだが、
+       白い雪の上では土色とのコントラストが強く、目には縁がくっきりした線に見えた
+       (2026-09-24 vantage_backの「雪原の真っ直ぐな茶色の縦筋」)。中心寄りだけ
+       tr0=1に近づける(≒縁の帯を実質広げる)曲線にして、見た目の縁を柔らかくする。 */
+    const tr = Math.pow(tr0, 1.7);
+    const k = tr * 0.72 * (1 - rockK);
+    _cTmp.copy(pal.trail).multiplyScalar(0.92 + (nm-0.5)*0.3);
+    _c.lerp(_cTmp, k);
+    // 雪を薄く乗せる: 凍った高地では道の上も土がむき出しにならず、薄く雪が積もって見えるように
+    if(w[1] > 0.15) _c.lerp(pal[1].high, 0.22*tr*w[1]);
+  }
+  if(exw){ exw[o] = w[0] + w[4]; exw[o+1] = w[1]; exw[o+2] = w[2]; exw[o+3] = w[3]; }
+}
+const _cRock = new THREE.Color();
+
+/* =====================================================================
+   探検フィールドの遠景地形(マップ全体+外側の縁の山を1枚・描画1回)
+   地形パッチ(プレイヤーのまわり7200四方)の外を埋める。これが無いと約3.6km先で地面が途切れ、
+   白い霞の上に山が浮いて見えた(批評家の指摘)。高さと色はパッチと同じ関数から作る。
+   パッチと重なる内側は断片シェーダーで捨てる(二重に描いてちらつかせない)。
+   ===================================================================== */
+const FAR_ORG = -9000, FAR_SIZE = 36100, FAR_SEGS = 144;
+let farMesh = null;
+const farUni = { uPatch:{ value:new THREE.Vector3(0, 0, 0) } };
+export function buildFarTerrain(){
+  if(farMesh){ farMesh.geometry.dispose(); }
+  const pal = explorePalette();
+  const geo = new THREE.PlaneGeometry(FAR_SIZE, FAR_SIZE, FAR_SEGS, FAR_SEGS);
+  geo.rotateX(-Math.PI/2);
+  geo.translate(FAR_ORG + FAR_SIZE/2, 0, FAR_ORG + FAR_SIZE/2);
+  const pos = geo.attributes.position, n = pos.count;
+  const col = new Float32Array(n*3), nor = geo.attributes.normal;
+  const stp = new Float32Array(n*4);   // 岩の色(rgb)と雪の高さ(a)
+  /* 影の側の色味(exShadeTint)は遠景には掛けない。3.6km より先は霞と混ざり、火山側の丘の影が
+     桃色の幕に見えた(2026-09-24 vantage_back で試して確認。R-G 1.5→12)。近景の地形パッチだけに効かせる */
+  for(let i=0;i<n;i++){
+    const wx = pos.getX(i), wy = pos.getZ(i);
+    const g = window.real3dHeightGrad ? window.real3dHeightGrad(wx, wy) : { h:heightAt(wx, wy), gx:0, gy:0 };
+    const h = g.h, gx = g.gx, gy = g.gy;
+    pos.setY(i, h);
+    const inv = 1/Math.hypot(gx, 1, gy);
+    nor.setXYZ(i, -gx*inv, inv, -gy*inv);
+    const nb = fbmW(wx/BIOME_L, wy/BIOME_L, 2, 3);
+    const nm = fbmW(wx/BIOME_M + 11.3, wy/BIOME_M - 7.1, 2, 71);
+    exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, 0.3, null, 0);
+    // 近景は地面テクスチャ(明るさ0.6前後)が掛かるので、遠景の色もその分だけ落としてそろえる
+    col[i*3] = _c.r*0.62; col[i*3+1] = _c.g*0.62; col[i*3+2] = _c.b*0.62;
+    stp[i*4] = _exSteep.r*0.62; stp[i*4+1] = _exSteep.g*0.62; stp[i*4+2] = _exSteep.b*0.62; stp[i*4+3] = _exSnowAlt;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('aFarRock', new THREE.Float32BufferAttribute(stp, 4));
+  const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.96, metalness:0,
+                                               envMapIntensity:ENV_INTENSITY, polygonOffset:true,
+                                               polygonOffsetFactor:2, polygonOffsetUnits:4 });
+  const ex = buildExploreMaps();
+  mat.onBeforeCompile = (sh)=>{
+    sh.uniforms.uPatch = farUni.uPatch;
+    sh.uniforms.uFarMacro = { value: ex.macro };
+    sh.uniforms.uFarSnow = { value: pal.snow.clone().multiplyScalar(0.62) };
+    sh.vertexShader = 'attribute vec4 aFarRock;\nvarying vec4 vFarRock;\nvarying vec3 vFarW;\nvarying vec3 vFarN;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  vFarW = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vFarN = normalize(mat3(modelMatrix) * objectNormal);\n  vFarRock = aFarRock;');
+    sh.fragmentShader = 'uniform vec3 uPatch;\nuniform sampler2D uFarMacro;\nuniform vec3 uFarSnow;\nvarying vec3 vFarW;\nvarying vec3 vFarN;\nvarying vec4 vFarRock;\n' + sh.fragmentShader
+      .replace('#include <clipping_planes_fragment>', [
+        '#include <clipping_planes_fragment>',
+        'if(abs(vFarW.x - uPatch.x) < uPatch.z && abs(vFarW.z - uPatch.y) < uPatch.z) discard;',
+      ].join('\n'))
+      .replace('#include <color_fragment>', [
+        '#include <color_fragment>',
+        'diffuseColor.rgb *= mix(vec3(1.0), texture2D(uFarMacro, vFarW.xz / 2400.0).rgb * 2.0, 0.55);',
+        // 近景(EX_MAP_CHUNK)と同じ決め方(しきい値も同じ値。両方直す)。傾き+2段のノイズで岩と雪の境目を揺らす
+        'float fNzLo = texture2D(uFarMacro, vFarW.xz * 0.00085).r - 0.5;',
+        'float fNzHi = texture2D(uFarMacro, vFarW.xz * 0.0052 + 11.0).r - 0.5;',
+        'float fNz = fNzLo*0.7 + fNzHi*0.3;',
+        'float fSl = 1.0 - clamp(normalize(vFarN).y, 0.0, 1.0);',
+        // 近景のexRockTを「粒→縞」寄りに直したのに合わせ、縞の振れ幅も同じ比で広げる(両方直す)
+        'float fBand = 0.68 + 0.32*sin(vFarW.y*0.058 + fNzLo*5.0) * (0.4 + 0.6*fNzHi);',
+        // 岩の明るさの下限(近景の EX_MAP_CHUNK と同じ決め方。両方直す)
+        `vec3 fRockC = vFarRock.rgb * max(1.0, ${EX_ROCK_FLOOR.toFixed(2)} * dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / max(dot(vFarRock.rgb, vec3(0.2126, 0.7152, 0.0722)) * ${FAR_ROCK_REF.toFixed(2)}, 1e-5));`,
+        'diffuseColor.rgb = mix(diffuseColor.rgb, fRockC * fBand, smoothstep(0.38, 0.78, fSl + fNz*0.14));',
+        'float fSn = smoothstep(vFarRock.a - 260.0, vFarRock.a + 520.0, vFarW.y + fNz*640.0) * (1.0 - smoothstep(0.30, 0.68, fSl + fNz*0.20));',
+        'diffuseColor.rgb = mix(diffuseColor.rgb, uFarSnow, fSn);',
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = ()=> 'aramonFarTerrain';
+  farMesh = new THREE.Mesh(geo, mat);
+  farMesh.frustumCulled = false;
+  farMesh.receiveShadow = false;
+  farMesh.castShadow = false;
+  farMesh.renderOrder = -0.5;
+  return farMesh;
+}
+// 遠景地形が捨てる範囲(=いま地形パッチが覆っている四角)を毎フレーム渡す
+export function syncFarTerrain(){
+  if(patchCX == null) return;
+  farUni.uPatch.value.set(patchCX, patchCY, PATCH_SIZE/2 - 120);
 }

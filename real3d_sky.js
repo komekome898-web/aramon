@@ -188,6 +188,54 @@ function ensureCloudTex(){
   return cloudTex;
 }
 
+/* 探検フィールドの積雲の濃さ(R=主役の段 / G=上の段)。ゆがめたノイズは渦巻きの筋になるので使わない。
+   丸い塊(ぼかした円)を群れにして積み上げ、細かいノイズで縁だけ崩す = ふくらんだ塊の間に青空。
+   探検に入ったときに1回だけ作る(タイルするので端をまたぐ円は反対側へも描く)。 */
+let cumulusTex = null;
+function puffField(S, seed, clusters, per, rMin, rMax, spread){
+  const out = new Float32Array(S*S);
+  let st = seed*2654435761 >>> 0;
+  const rnd = ()=>{ st = (st*1664525 + 1013904223) >>> 0; return st/4294967296; };
+  for(let c=0;c<clusters;c++){
+    const cx = rnd()*S, cy = rnd()*S, big = 0.6 + rnd()*0.6;
+    for(let k=0;k<per;k++){
+      // 群れの中心ほど大きく高い塊(雲の頭)。横へ平たく並べる
+      const a = rnd()*Math.PI*2, d = Math.sqrt(rnd())*spread*big;
+      const x0 = cx + Math.cos(a)*d*1.6, y0 = cy + Math.sin(a)*d*0.8;
+      const r = (rMin + (rMax - rMin)*rnd())*big*(1 - 0.45*d/(spread*big + 1e-3));
+      const amp = 0.55 + 0.45*rnd();
+      const R = Math.ceil(r*1.6);
+      for(let yy=-R; yy<=R; yy++) for(let xx=-R; xx<=R; xx++){
+        const q = (xx*xx + yy*yy)/(r*r);
+        if(q > 2.56) continue;
+        const px = ((Math.floor(x0) + xx) % S + S) % S, py = ((Math.floor(y0) + yy) % S + S) % S;
+        const v = amp*Math.exp(-q*1.6);
+        const o = py*S + px;
+        out[o] = out[o] + v - out[o]*v*0.55;   // 重なると飽和する足し方(塊の頭が白く丸くなる)
+      }
+    }
+  }
+  return out;
+}
+export function ensureCumulusTex(){
+  if(cumulusTex) return cumulusTex;
+  const S = 256;
+  // 大きな群れを少しだけ(小さな塊をたくさん散らすと、水滴・ガラス玉を並べたように見えた)
+  const A = puffField(S, 71, 5, 14, 18, 34, 36);
+  const B = puffField(S, 83, 4, 10, 14, 26, 28);
+  const N = densityField(S, [ { nx:16, ny:16, amp:0.6 }, { nx:32, ny:32, amp:0.4 } ], 29, 0, false);
+  cumulusTex = makeTexture(S, (px)=>{
+    for(let i=0;i<S*S;i++){
+      const n = N[i] - 0.5;
+      const a = Math.max(0, Math.min(1, A[i]*1.05 + n*0.22*Math.min(1, A[i]*3)));
+      const b = Math.max(0, Math.min(1, B[i]*1.05 + n*0.20*Math.min(1, B[i]*3)));
+      px[i*4] = a*255; px[i*4+1] = b*255; px[i*4+2] = 0; px[i*4+3] = 255;
+    }
+  }, false);
+  cumulusTex.anisotropy = 4;
+  return cumulusTex;
+}
+
 /* ---------------------------------------------------------------------
    空(ドーム)
    --------------------------------------------------------------------- */
@@ -206,6 +254,8 @@ const SKY_FRAG = `
   uniform vec2 uDiscCos;        // x=外側のcos, y=内側のcos(内へ行くほど明るい)
   uniform float uGain, uThr, uCover, uCirrusAmt, uStars, uGlow, uLowAmt;
   uniform sampler2D uCloud;
+  uniform sampler2D uCloud2;    // 探検フィールドの積雲(uCloudMode=1 のときだけ読む)
+  uniform float uCloudMode;
   uniform vec2 uDrift;          // 雲の流れ(風向き×時間)。animateSky()が進める
   varying vec3 vDir;
 
@@ -251,6 +301,41 @@ const SKY_FRAG = `
     // 太陽の真横は光が透ける(縁取り)
     c += uSunCol * pow(max(sunDot, 0.0), 14.0) * (1.0 - core) * cB * 0.9 * lit;
     return vec4(c, cB);
+  }
+
+  /* 探検フィールドの積雲。ゆがめたノイズをしきい値で切った塊で、縁の明るい帯を作らない
+     (従来の雲は縁を光らせるので、見上げるとドーナツ状の渦に見えた)。
+     太陽側へずらした点との濃さの差で、塊の太陽側を明るく・下側を暗く塗る。 */
+  vec4 cumulusLayer(vec3 d, float k, float thr, float sunDot, float drift, float ch){
+    vec2 p = cloudP(d, k, drift);
+    vec4 t0 = texture2D(uCloud2, p);
+    // 縁は細かいノイズで崩す(つるっとした縁がガラス玉・水滴に見えた)
+    float ero = (texture2D(uCloud, p * 2.3 + 0.37).r - 0.5) * 0.16;
+    float dB = mix(t0.r, t0.g, ch) + ero;
+    // 空の上では「地平線の側」が雲の底。少し地平線寄り(=外側)の濃さと比べ、底の側だけを灰色にする
+    vec2 outward = normalize(d.xz + vec2(1e-4)) * 0.05;
+    vec4 t1 = texture2D(uCloud2, p + outward);
+    float dO = mix(t1.r, t1.g, ch) + ero;
+    vec4 t2 = texture2D(uCloud2, p + normalize(uSunDir.xz + vec2(1e-4)) * 0.05);
+    float dS = mix(t2.r, t2.g, ch) + ero;
+    float cB = smoothstep(thr, thr + 0.40, dB);
+    float thick = smoothstep(thr + 0.10, thr + 0.70, dB);
+    float bottom = clamp((dB - dO) * 3.0, 0.0, 1.0);          // 外側(地平線側)が薄い=ここは雲の底
+    float sunSide = clamp((dB - dS) * 2.0, 0.0, 1.0);
+    // 塊の本体は白く、底は平らな灰色。太陽側はわずかに明るい(縁に明暗を集めない)
+    vec3 grey = mix(uCloudMid, uCloudDark, 0.30);
+    vec3 c = mix(uCloudLit, uCloudMid, 0.18 + 0.22 * thick);
+    c = mix(c, grey, smoothstep(0.05, 0.60, bottom) * (0.35 + 0.45 * thick));
+    c = mix(c, uCloudLit, sunSide * 0.15);
+    c += uSunCol * pow(max(sunDot, 0.0), 10.0) * (1.0 - thick) * 0.25;
+    // 地平線に近いほど雲を薄く・霞へ寄せる(遠くの雲は横に潰れて霞に溶ける)
+    float low = smoothstep(0.02, 0.30, d.y);
+    cB *= mix(0.35, 1.0, low);
+    c = mix(uHorizon, c, 0.35 + 0.65 * low);
+    // しきい値が低い(=曇天の地域)ほど、塊の下地に一面の暗い雲を敷く(塊だけでは空が埋まらない)
+    float ovc = clamp((0.36 - thr) * 6.0, 0.0, 0.96);
+    c = mix(c, mix(uCloudDark, uCloudMid, 0.25 + 0.55 * thick + 0.2 * sunSide), ovc);
+    return vec4(c, max(cB, ovc));
   }
 
   void main(){
@@ -301,11 +386,13 @@ const SKY_FRAG = `
     col = mix(col, uCirrus + uSunCol * pow(sd, 8.0) * 0.5, cir * uCirrusAmt * vis * (1.0 - far * 0.85));
 
     // 上の雲の段。下の段より小さく見えるので「層」として読める
-    vec4 hi = cloudLayer(d, 1.15, vec4(0.0,1.0,0.0,0.0), uThr + 0.05, det*0.8, 0.9, sd, 0.0, 0.62);
+    vec4 hi = (uCloudMode > 0.5) ? cumulusLayer(d, 1.15, uThr + 0.08, sd, 0.62, 1.0)
+                                 : cloudLayer(d, 1.15, vec4(0.0,1.0,0.0,0.0), uThr + 0.05, det*0.8, 0.9, sd, 0.0, 0.62);
     col = mix(col, mix(hi.rgb, uHorizon, far*0.80), hi.a * uCover * 0.80 * vis);
 
     // 主役の段
-    vec4 lo = cloudLayer(d, 0.58, vec4(1.0,0.0,0.0,0.0), uThr, det, 1.0, sd, 1.0, 1.00);
+    vec4 lo = (uCloudMode > 0.5) ? cumulusLayer(d, 0.58, uThr, sd, 1.00, 0.0)
+                                 : cloudLayer(d, 0.58, vec4(1.0,0.0,0.0,0.0), uThr, det, 1.0, sd, 1.0, 1.00);
     col = mix(col, mix(lo.rgb, uHorizon, far*0.86), lo.a * uCover * uLowAmt * vis);
 
     // 縞(バンディング)止め。滑らかなグラデーションほど段が見えるので少しだけ散らす
@@ -356,6 +443,7 @@ export function buildSky(forEnv){
     uGain:{value:1}, uThr:{value:0.5}, uCover:{value:0.8}, uCirrusAmt:{value:0.3},
     uStars:{value:0}, uGlow:{value:1}, uLowAmt:{value:0.8},
     uCloud:{value:ensureCloudTex()},
+    uCloud2:{value:ensureCloudTex()}, uCloudMode:{value:0},   // 探検フィールドだけ1(積雲)
     uDrift:{value:new THREE.Vector2()},
   };
   setSkyUniforms(uniforms, forEnv);
@@ -448,14 +536,18 @@ const RIDGE_VERT = `
     vCol = aCol; vDet = aDet; vUvR = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`;
+/* uTint/uTintAmt は探検フィールドだけが使う「いま立っている地域の空気」への寄せ。
+   他のマップでは uTintAmt=0 のままなので、出る色は従来と1ビットも変わらない。 */
 const RIDGE_FRAG = `
   uniform sampler2D uRelief;
+  uniform vec3 uTint; uniform float uTintAmt;
   varying vec3 vCol; varying vec2 vDet; varying vec2 vUvR;
   void main(){
     vec3 t = texture2D(uRelief, vUvR).rgb;
     // 横の傾きで陰影(太陽側の符号を掛ける)、縦の落ち込みで谷を暗くする
     float sh = (t.r - 0.5) * 0.95 * vDet.y + (t.b - 0.5) * -0.34 + (t.g - 0.5) * 0.26;
-    gl_FragColor = vec4(max(vCol * (1.0 + sh * vDet.x), 0.0), 1.0);
+    vec3 c = max(vCol * (1.0 + sh * vDet.x), 0.0);
+    gl_FragColor = vec4(mix(c, uTint, uTintAmt), 1.0);
   }`;
 
 // 角度aで必ず2πごとに閉じる周期ノイズ(閉じ目に段差を出さないための約束)
@@ -594,7 +686,7 @@ export function buildDistantRidge(){
   if(!ridgeMat){
     ridgeMat = new THREE.ShaderMaterial({
       fog:false, depthWrite:false,
-      uniforms:{ uRelief:{ value: ensureRidgeTex() } },
+      uniforms:{ uRelief:{ value: ensureRidgeTex() }, uTint:{ value: new THREE.Color() }, uTintAmt:{ value: 0 } },
       vertexShader: RIDGE_VERT, fragmentShader: RIDGE_FRAG,
     });
     // 遠景の山も色を頂点に焼き込んであるので、空と同じくトーンマッピングを通さない

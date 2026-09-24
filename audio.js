@@ -273,7 +273,7 @@ function ensureProvidedSeBuffers(){
 // ===== SE =====
 // 同じSEの最低再生間隔(秒)。連打・毎フレーム呼び出しでの音割れ防止
 const SE_MIN_GAP = { tap:0.05, cardSwipe:0.07, jakiin:0.25, train:0.3, pickup:0.1, fire:0.06, hitTaken:0.12, noGuts:0.5, kill:0.15, fanfare:1.5, sad:1.5,
-  hitDealt:0.07, miss:0.2, zoneWarn:2,
+  hitDealt:0.07, miss:0.2, zoneWarn:2, sniper:0.03,
   fireRoar:0.3, iceCrack:0.3, tornado:0.3, spin:0.25, beam:0.3, whoosh:0.2, bell:0.3, chupiin:1, shuwaa:1.5, godRising:0.8, zashu:0.6, ssrJackpot:0.9, zeusTier3:0.8,
   chocoSummon:1.5, chocoVanish:0.8, chocoHit:0.5, titleStart:1.2,
   buy:0.2, darkHoust:0.6, requiemEnd:0.3, mocchiBeam:0.5, monta:0.2, crystalRain:0.5, fireWave:0.5,
@@ -441,6 +441,56 @@ const SE_DEFS = {
     seNoise(t, {dur:0.03, vol:0.26, filterType:'highpass', filterFreq:4200});               // 当たりの弾け
     seTone(t,       {freq:2100, freqEnd:1500, dur:0.05,  type:'triangle', vol:0.22, attack:0.002}); // 芯
     seTone(t+0.012, {freq:3000,               dur:0.035, type:'sine',     vol:0.11, attack:0.002}); // 上の倍音でカリッと
+  },
+  /* 狙撃銃(探検モード。sniper.js)。1つの名前で opts.kind ごとに鳴らし分ける:
+     shot   = 発砲。乾いた超音速のクラック+胸に来る低音+山に返る残響、少し遅れてボルトを引く金属音
+              (ボルトの間合いは opts.cycle=連射間隔 に合わせる)
+     hit    = 命中の「ドスッ」(遠くの的に届いた手応え) / crit = 弱点の高い金属音「キィン」
+     reload = 装填(弾倉を抜く→差す→ボルト。opts.dur=装填秒数に合わせる)
+     scope / unscope = 構える・解く(レンズの小さな擦れ) / dry = 撃てないときの空の「カチッ」 */
+  sniper(t, opts){
+    const k = opts.kind || 'shot';
+    if(k === 'shot'){
+      seNoise(t,       {dur:0.035, vol:0.95, filterType:'highpass', filterFreq:2600});                 // 超音速のクラック
+      seNoise(t,       {dur:0.32,  vol:0.62, filterType:'lowpass',  filterFreq:1900, filterEnd:80});   // 銃身の轟き
+      seTone(t,        {freq:118, freqEnd:36, dur:0.36, type:'sine',   vol:0.62});                       // 胸に来る低音
+      seTone(t,        {freq:240, freqEnd:70, dur:0.12, type:'square', vol:0.2});
+      seNoise(t+0.10,  {dur:0.95,  vol:0.12, filterType:'bandpass', filterFreq:760, filterEnd:170});    // 山に返る残響
+      seNoise(t+0.34,  {dur:0.7,   vol:0.06, filterType:'bandpass', filterFreq:520, filterEnd:140});
+      const cyc = Math.max(0.5, opts.cycle || 1.0);
+      const b = t + cyc*0.42;                                                                           // ボルトを引く
+      seNoise(b,       {dur:0.05, vol:0.24, filterType:'bandpass', filterFreq:3400});
+      seTone(b,        {freq:1900, freqEnd:950, dur:0.04, type:'square', vol:0.07, attack:0.002});
+      seNoise(b+cyc*0.28, {dur:0.06, vol:0.3, filterType:'bandpass', filterFreq:2300});                // 押し戻して閉じる
+      seTone(b+cyc*0.28,  {freq:820, freqEnd:460, dur:0.06, type:'triangle', vol:0.14, attack:0.002});
+    } else if(k === 'hit'){
+      seTone(t,  {freq:160, freqEnd:60, dur:0.14, type:'sine', vol:0.42});
+      seNoise(t, {dur:0.06, vol:0.3, filterType:'bandpass', filterFreq:1500});
+    } else if(k === 'crit'){
+      // 弱点: 体への命中の「ドスッ」に、金属の「キィン」と一拍遅れの高い「チン」を重ねる(聞いただけで区別できる)
+      seTone(t,       {freq:170, freqEnd:55, dur:0.16, type:'sine', vol:0.34});
+      seTone(t+0.07,  {freq:4200, freqEnd:4100, dur:0.26, type:'sine', vol:0.14, attack:0.002});
+      seTone(t+0.07,  {freq:6300,               dur:0.14, type:'sine', vol:0.05, attack:0.002});
+      seTone(t,       {freq:2400, freqEnd:2300, dur:0.32, type:'sine',     vol:0.26, attack:0.002});
+      seTone(t,       {freq:3620,               dur:0.22, type:'sine',     vol:0.12, attack:0.002});
+      seTone(t+0.01,  {freq:1200, freqEnd:900,  dur:0.12, type:'triangle', vol:0.2,  attack:0.002});
+      seNoise(t,      {dur:0.04, vol:0.3, filterType:'highpass', filterFreq:5000});
+    } else if(k === 'reload'){
+      const d = Math.max(1, opts.dur || 2.5);
+      seNoise(t+0.05,   {dur:0.06, vol:0.22, filterType:'bandpass', filterFreq:1800});                 // 弾倉を抜く
+      seTone(t+0.05,    {freq:700, freqEnd:420, dur:0.06, type:'triangle', vol:0.1});
+      seNoise(t+d*0.55, {dur:0.07, vol:0.28, filterType:'bandpass', filterFreq:1500});                 // 差し込む
+      seTone(t+d*0.55,  {freq:520, freqEnd:300, dur:0.07, type:'triangle', vol:0.14});
+      seNoise(t+d*0.82, {dur:0.05, vol:0.24, filterType:'bandpass', filterFreq:3400});                 // ボルト
+      seNoise(t+d*0.92, {dur:0.06, vol:0.3,  filterType:'bandpass', filterFreq:2300});
+      seTone(t+d*0.92,  {freq:820, freqEnd:460, dur:0.06, type:'triangle', vol:0.14});
+    } else if(k === 'scope' || k === 'unscope'){
+      seNoise(t, {dur:0.07, vol:0.12, filterType:'bandpass', filterFreq: k === 'scope' ? 2600 : 1900, filterEnd: k === 'scope' ? 1500 : 2600});
+      seTone(t,  {freq: k === 'scope' ? 900 : 700, freqEnd: k === 'scope' ? 1300 : 500, dur:0.05, type:'sine', vol:0.05});
+    } else if(k === 'dry'){
+      seTone(t,  {freq:1500, freqEnd:1100, dur:0.03, type:'square', vol:0.1, attack:0.001});
+      seNoise(t, {dur:0.025, vol:0.14, filterType:'highpass', filterFreq:3000});
+    }
   },
   /* 近接技の空振り「スカッ」。当たらなくてもガッツは減っているので、
      「今の一撃は届いていない」ことだけ小さく知らせる(命中音より明確に弱く・低く) */
@@ -1074,6 +1124,7 @@ function startBgmScheduler(){
   bgmState.timerId = setInterval(bgmScheduler, 90);
 }
 function bgmStepDur(){
+  if(bgmState.current==='explore') return bgmExploreStepDur();   // 探検の曲は地域・ボスごとのテンポ(下の探検の節)
   if(bgmState.current==='title' || bgmState.current==='shop' || bgmState.current==='training' || bgmState.current==='lobbyFile') return 60/92/4;
   const bpm = [116,126,138,126,132][bgmState.intensity] || 126;
   return 60/bpm/4;
@@ -1086,6 +1137,7 @@ function bgmScheduler(){
     bgmState.nextTime = Math.max(bgmState.nextTime, actx.currentTime + 0.08);
   }
   updateBgmFileLoops(); // 動画音源ループ(決戦/ラストバトル/ショップ)の開始・停止を状態に追従させる
+  bgmExploreTick();     // 探検の曲の切り替え(地域・ボス)と環境音。探検の曲でないときは環境音を止めるだけ
   if(!bgmState.current || audioSettings.bgm<=0.005){
     bgmState.nextTime = actx.currentTime + 0.1; // 復帰時にまとめ鳴りしないよう追従だけさせる
     return;
@@ -1097,6 +1149,7 @@ function bgmScheduler(){
     else if(bgmState.current==='shop') bgmTitleStep(bgmState.step, bgmState.nextTime); // ショップ音源未ロード時はタイトル曲で代替
     else if(bgmState.current==='training') bgmTitleStep(bgmState.step, bgmState.nextTime); // トレーニング音源未ロード時も同様
     else if(bgmState.current==='lobbyFile') bgmTitleStep(bgmState.step, bgmState.nextTime); // 管理者確認のロビー曲(未ロード時)
+    else if(bgmState.current==='explore') bgmExploreStep(bgmState.step, bgmState.nextTime);  // 探検モード(地域の環境曲・ボス戦)
     // スキン専用BGMを直接指定したとき(管理者確認)の未ロード時の代替。残り6人以上は通常の
     // 試合曲、決戦・ラストバトルは決戦曲で鳴らす
     else if(typeof bgmState.current==='string' && bgmState.current.indexOf('skinBgm:')===0){
@@ -1306,3 +1359,429 @@ function bgmEpicStep(step, t){
     }
   }
 }
+
+
+/* =====================================================================
+   探検モードの音(トラック 'explore')。**すべてWeb Audio合成**(実音源は使わない)
+   ・地域ごとの環境曲: ベースキャンプ / 草原(穏やかな弦と笛) / 凍った高地(高い鈴と長いパッド) /
+     火山(低い太鼓とうなり) / 密林(打楽器とマリンバ)。今いる地域(探検のHUDが渡す重み)でクロスフェード
+   ・ボス戦: 戦いが始まる(exploreBossEngaged)と緊張感のある戦闘曲へ。怒りでテンポと厚みが上がる
+   ・討伐: 戦闘曲を止めてファンファーレ(bgmExploreFanfare)→ 終わったら地域の曲へ戻る
+   ・環境音: 風・虫・溶岩のうなり(ループするノイズ3本。地域の重みと溶岩への近さで音量が変わる)
+   しくみ: 曲ごとに「バス」(GainNode + やわらげる低域通過フィルタ)を持ち、音はバスへつなぐ。
+     バスの音量を setTargetAtTime で動かしてクロスフェードする。聞こえていないバスの曲は刻まない
+     (=同時に鳴らすノードは「いま聞こえている曲」ぶんだけ。切り替えの数秒だけ2曲ぶん)。
+   **他のトラック(title/battle/shop…)は1音も変えない。** 探検の分岐は bgmState.current==='explore' だけ。
+   数値(フェードの速さ・環境音の音量)は data.js の EXPLORE_BGM_* / EXPLORE_AMB_*。
+   ===================================================================== */
+const EXPLORE_BGM_MOODS = ['camp', 'meadow', 'frost', 'volcano', 'jungle', 'boss'];
+// 管理者画面の音声確認に並べる行(表に足せば確認ボタンも増える)。key = bgmExploreForce に渡す名前
+const EXPLORE_BGM_TEST = [
+  { key:'camp',     label:'🎵 探検・ベースキャンプ' },
+  { key:'meadow',   label:'🎵 探検・草原の盆地' },
+  { key:'frost',    label:'🎵 探検・凍った高地' },
+  { key:'volcano',  label:'🎵 探検・火山の峡谷' },
+  { key:'jungle',   label:'🎵 探検・密林の遺跡' },
+  { key:'boss',     label:'🎵 探検・ボス戦' },
+  { key:'bossRage', label:'🎵 探検・ボス戦(怒り)' },
+  { key:'fanfare',  label:'🎵 探検・討伐ファンファーレ' },
+];
+const EXPLORE_BGM_BPM = { camp:84, meadow:84, frost:72, volcano:90, jungle:104, boss:138, bossRage:150 };
+const exBgm = {
+  ready:false, master:null, echo:null, bus:{}, fanBus:null,
+  level:{}, target:{}, lead:'camp', bpm:84,
+  mood:null, forced:null, fanfareUntil:0, lastTick:0,
+  amb:null, noise:null,
+};
+// 共有のノイズ(毎回バッファを作らない)
+function exNoiseBuf(){
+  if(exBgm.noise) return exBgm.noise;
+  const len = actx.sampleRate*2;
+  const buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
+  exBgm.noise = buf;
+  return buf;
+}
+function exBgmEnsure(){
+  if(exBgm.ready || !actx || !bgmTrackGain) return exBgm.ready;
+  const m = actx.createGain(); m.gain.value = 0.9;
+  // 奥行き: 短いフィードバックの反響(広い野外の響き)
+  const dl = actx.createDelay(1.0); dl.delayTime.value = 0.31;
+  const fb = actx.createGain(); fb.gain.value = 0.28;
+  const wet = actx.createGain(); wet.gain.value = 0.22;
+  const damp = actx.createBiquadFilter(); damp.type = 'lowpass'; damp.frequency.value = 2600;
+  m.connect(bgmTrackGain);
+  m.connect(dl); dl.connect(damp); damp.connect(fb); fb.connect(dl); damp.connect(wet); wet.connect(bgmTrackGain);
+  exBgm.master = m;
+  for(const k of EXPLORE_BGM_MOODS){
+    const g = actx.createGain(); g.gain.value = 0.0001;
+    const soft = actx.createBiquadFilter(); soft.type = 'lowpass';
+    soft.frequency.value = k === 'volcano' ? 700 : (k === 'boss' ? 2400 : 1700); soft.Q.value = 0.4;
+    soft.connect(g); g.connect(m);
+    exBgm.bus[k] = { g, soft };
+    exBgm.level[k] = 0; exBgm.target[k] = 0;
+  }
+  exBgm.fanBus = actx.createGain(); exBgm.fanBus.gain.value = 1; exBgm.fanBus.connect(m);
+  exBgm.ready = true;
+  return true;
+}
+/* 探検のHUD(explore_hud.js)から毎フレーム。{ w:[草原,凍土,火山,密林,キャンプ]の重み, boss:0|1|2, lava:0〜1 } / null=初期化 */
+function bgmExploreSetMood(m){
+  if(!m){ exBgm.mood = null; exBgm.fanfareUntil = 0; exBgm.forced = null; return; }
+  exBgm.mood = m;
+}
+// 管理者画面の確認用。探検を始めずに曲を指定して鳴らす(key は EXPLORE_BGM_TEST)
+function bgmExploreForce(key){
+  exBgm.forced = key || null;
+  bgmSetTrack('explore');
+  if(key === 'fanfare') setTimeout(()=> bgmExploreFanfare(true), 200);
+}
+// いま鳴らしたい曲(地域 or ボス)と、ボスの段階。探検のHUDが渡した重みから決める
+const _exKeyOfIdx = ['meadow', 'frost', 'volcano', 'jungle', 'camp'];
+function exBgmWant(){
+  const f = exBgm.forced;
+  if(f){
+    if(f === 'boss') return { key:'boss', lv:1 };
+    if(f === 'bossRage') return { key:'boss', lv:2 };
+    if(f === 'fanfare') return { key:'camp', lv:0 };
+    return { key:f, lv:0 };
+  }
+  const m = exBgm.mood;
+  if(!m) return { key:'camp', lv:0 };
+  if(m.boss > 0) return { key:'boss', lv:m.boss };
+  // いちばん重い地域。今の曲より少し重くなってから切り替える(境目で行ったり来たりしない)
+  let best = exBgm.lead === 'boss' ? 'camp' : exBgm.lead, bw = m.w[_exKeyOfIdx.indexOf(best)] || 0;
+  for(let i=0;i<5;i++){ if(m.w[i] > bw + 0.12){ bw = m.w[i]; best = _exKeyOfIdx[i]; } }
+  return { key:best, lv:0 };
+}
+// スケジューラの毎tick(90ms)。バスの音量と環境音を今の気分へ寄せる。探検の曲でないときは環境音を止める
+function bgmExploreTick(){
+  const on = bgmState.current === 'explore' && audioSettings.bgm > 0.005;
+  if(!on){
+    if(exBgm.amb) exAmbStop();
+    if(bgmState.current !== 'explore') exBgm.forced = null;   // 確認用の指定は探検の曲を離れたら忘れる
+    return;
+  }
+  if(!exBgmEnsure()) return;
+  const t = actx.currentTime;
+  const dt = Math.min(0.5, exBgm.lastTick ? t - exBgm.lastTick : 0.09);
+  exBgm.lastTick = t;
+  const want = exBgmWant();
+  const fan = t < exBgm.fanfareUntil;
+  exBgm.lead = want.key;
+  exBgm.bossLv = want.lv;
+  exBgm.bpm = want.key === 'boss' ? (want.lv >= 2 ? EXPLORE_BGM_BPM.bossRage : EXPLORE_BGM_BPM.boss) : EXPLORE_BGM_BPM[want.key];
+  for(const k of EXPLORE_BGM_MOODS){
+    const tgt = fan ? 0 : (k === want.key ? 1 : 0);
+    const tc = fan ? 0.12 : ((k === 'boss' || want.key === 'boss') ? EXPLORE_BGM_BOSS_FADE_SEC : EXPLORE_BGM_FADE_SEC);
+    if(exBgm.target[k] !== tgt || !exBgm._armed){
+      const g = exBgm.bus[k].g.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(Math.max(0.0001, exBgm.level[k]), t);
+      g.setTargetAtTime(Math.max(0.0001, tgt), t, tc);
+      exBgm.target[k] = tgt;
+    }
+    // 音量の見積もり(聞こえているバスだけ曲を刻むため。AudioParam.value は環境で当てにならない)
+    exBgm.level[k] += (exBgm.target[k] - exBgm.level[k]) * (1 - Math.exp(-dt/Math.max(0.05, tc)));
+  }
+  exBgm._armed = true;
+  exAmbUpdate(want, fan);
+}
+function bgmExploreStepDur(){ return 60/(exBgm.bpm || 84)/4; }
+/* 1ステップ(16分音符)ぶん。聞こえているバスの曲だけ刻む */
+function bgmExploreStep(step, t){
+  if(!exBgm.ready) return;
+  for(const k of EXPLORE_BGM_MOODS){
+    if(exBgm.level[k] < 0.02 && exBgm.target[k] <= 0) continue;
+    const fn = EX_BGM_STEP[k];
+    if(fn) fn(step, t, exBgm.bus[k], k === 'boss' ? (exBgm.bossLv || 1) : 0);
+  }
+}
+
+/* ---- 発音の道具(バスへつなぐ。envelope: pluck=すぐ減衰 / pad=ゆっくり立ち上がって保つ / swell=膨らんで消える) ---- */
+function exTone(dest, t, freq, dur, type, vol, env, detune){
+  const osc = actx.createOscillator(), g = actx.createGain();
+  osc.type = type || 'triangle';
+  osc.frequency.setValueAtTime(freq, t);
+  if(detune) osc.detune.setValueAtTime(detune, t);
+  g.gain.setValueAtTime(0.0001, t);
+  if(env === 'pad'){
+    const a = Math.min(dur*0.35, 0.9);
+    g.gain.linearRampToValueAtTime(vol, t + a);
+    g.gain.setValueAtTime(vol, t + dur*0.72);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  } else if(env === 'swell'){
+    g.gain.linearRampToValueAtTime(vol, t + dur*0.55);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  } else {
+    g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  }
+  osc.connect(g); g.connect(dest);
+  osc.start(t); osc.stop(t + dur + 0.05);
+  return osc;
+}
+// 笛: 三角波に遅れてかかるビブラート(周波数に曲線を書くだけ。ノードを増やさない)
+function exFlute(dest, t, midi, dur, vol){
+  const f = MIDI(midi);
+  const osc = exTone(dest, t, f, dur, 'triangle', vol, 'pad');
+  if(dur > 0.45){
+    const n = 48, arr = new Float32Array(n), vd = dur - 0.2;
+    for(let i=0;i<n;i++){ const x = i/(n-1); arr[i] = f*(1 + 0.006*Math.min(1, x*2)*Math.sin(x*vd*5.2*Math.PI*2)); }
+    try{ osc.frequency.setValueCurveAtTime(arr, t + 0.18, vd); }catch(e){}
+  }
+  exTone(dest, t, f*2, dur*0.9, 'sine', vol*0.18, 'pad');   // 息の倍音
+}
+// 鈴: 基音+非整数倍音(2.76倍)が長く減衰
+function exBell(dest, t, midi, vol, len){
+  const f = MIDI(midi);
+  exTone(dest, t, f, len || 2.4, 'sine', vol, 'pluck');
+  exTone(dest, t, f*2.76, (len || 2.4)*0.45, 'sine', vol*0.35, 'pluck');
+}
+// マリンバ: 基音+4倍音が短く減衰
+function exMarimba(dest, t, midi, vol){
+  const f = MIDI(midi);
+  exTone(dest, t, f, 0.42, 'sine', vol, 'pluck');
+  exTone(dest, t, f*4, 0.09, 'sine', vol*0.4, 'pluck');
+}
+// 共有ノイズで打つ(フィルタの種類・周波数・長さ)
+function exHit(dest, t, dur, ftype, freq, vol, q){
+  const src = actx.createBufferSource(); src.buffer = exNoiseBuf();
+  const f = actx.createBiquadFilter(); f.type = ftype; f.frequency.setValueAtTime(freq, t); if(q) f.Q.value = q;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  src.connect(f); f.connect(g); g.connect(dest);
+  src.start(t, Math.random()*1.5); src.stop(t + dur + 0.03);
+}
+// 太鼓: 下がる正弦+皮の鳴り
+function exTaiko(dest, t, vol, low){
+  const osc = actx.createOscillator(), g = actx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(low ? 95 : 150, t);
+  osc.frequency.exponentialRampToValueAtTime(low ? 42 : 70, t + 0.28);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + (low ? 0.6 : 0.35));
+  osc.connect(g); g.connect(dest); osc.start(t); osc.stop(t + 0.65);
+  exHit(dest, t, 0.08, 'lowpass', low ? 500 : 900, vol*0.5);
+}
+
+/* ---- 曲(1ステップ=16分音符。s=ステップ番号) ---- */
+// ベースキャンプ: ヘ長調のあたたかい爪弾きとやわらかいパッド(4小節)
+const EXB_CAMP_CHORDS = [[53,57,60],[52,55,60],[50,53,57],[46,50,53]];   // F  C/E  Dm  B♭
+const EXB_CAMP_MEL = [[4,72,4],[8,74,2],[10,72,2],[12,69,4],[20,67,4],[24,69,6],[36,65,4],[40,67,2],[42,69,2],[44,72,6],[52,70,4],[56,69,8]];
+function exbCamp(step, t, bus){
+  const s = step % 64, bar = s >> 4, sb = s & 15, c = EXB_CAMP_CHORDS[bar], d = bgmExploreStepDur();
+  if(sb === 0){ c.forEach(n=> exTone(bus.soft, t, MIDI(n), d*16, 'triangle', 0.035, 'pad')); exTone(bus.soft, t, MIDI(c[0]-24), d*14, 'sine', 0.13, 'pad'); }
+  if(sb % 2 === 0){ const n = [c[0], c[1], c[2], c[1]+12][(sb>>1) % 4]; exTone(bus.g, t, MIDI(n), d*3, 'triangle', 0.05, 'pluck'); }
+  for(const [ms, n, len] of EXB_CAMP_MEL) if(ms === s && (step >> 6) % 2 === 1) exFlute(bus.soft, t, n, d*len*0.95, 0.06);
+}
+// 草原の盆地: ニ長調。弦のパッド+ハープの分散和音+笛の旋律(8小節)
+const EXB_MEADOW_CHORDS = [[50,54,57],[47,50,54],[43,47,50],[45,49,52],[50,54,57],[47,50,54],[43,47,50],[45,49,52,55]];
+const EXB_MEADOW_MEL = [[0,74,6],[6,76,2],[8,78,8],[16,81,6],[22,78,2],[24,76,8],[32,74,4],[36,71,4],[40,74,8],[48,76,12],
+                        [64,78,6],[70,81,2],[72,83,8],[80,81,4],[84,78,4],[88,76,8],[96,74,4],[100,76,4],[104,78,4],[108,76,4],[112,74,14]];
+function exbMeadow(step, t, bus){
+  const s = step % 128, bar = s >> 4, sb = s & 15, c = EXB_MEADOW_CHORDS[bar], d = bgmExploreStepDur();
+  if(sb === 0){
+    c.slice(0,3).forEach(n=>{ exTone(bus.soft, t, MIDI(n), d*16, 'sawtooth', 0.022, 'pad', -7); exTone(bus.soft, t, MIDI(n), d*16, 'sawtooth', 0.022, 'pad', 7); });
+    exTone(bus.soft, t, MIDI(c[0]-24), d*15, 'sine', 0.15, 'pad');
+  }
+  if(sb % 2 === 1 && sb < 14){ const n = c[(sb>>1) % c.length] + 12; exTone(bus.g, t, MIDI(n), d*4, 'triangle', 0.035, 'pluck'); }
+  for(const [ms, n, len] of EXB_MEADOW_MEL) if(ms === s) exFlute(bus.soft, t, n, d*len*0.95, 0.075);
+  if(s === 60 || s === 124){ exTone(bus.g, t, MIDI(98), d, 'sine', 0.025, 'pluck'); exTone(bus.g, t + d, MIDI(100), d, 'sine', 0.02, 'pluck'); }   // 小鳥
+}
+// 凍った高地: ホ短調(リディア寄り)。長いパッドと、高く澄んだ鈴がまばらに鳴る(8小節・ゆっくり)
+const EXB_FROST_CHORDS = [[52,55,59,66],[52,55,59,66],[48,52,55,59],[48,52,55,59],[45,48,52,55],[45,48,52,55],[47,52,54,59],[47,51,54,57]];
+const EXB_FROST_BELLS = [88,91,93,95,98,100,103];
+function exbFrost(step, t, bus){
+  const s = step % 128, bar = s >> 4, sb = s & 15, c = EXB_FROST_CHORDS[bar], d = bgmExploreStepDur();
+  if(sb === 0 && bar % 2 === 0){
+    c.forEach((n, i)=> exTone(bus.soft, t, MIDI(n + 12), d*32, i % 2 ? 'sine' : 'triangle', 0.03, 'pad'));
+    exTone(bus.soft, t, MIDI(c[0] - 12), d*32, 'sine', 0.1, 'pad');
+  }
+  // 鈴: ステップから決まる並び(毎回同じ・でも規則的に聞こえない)
+  const h = (s*37 + bar*11) % 23;
+  if(h < 3 && sb % 2 === 0) exBell(bus.g, t, EXB_FROST_BELLS[(s*5 + bar) % EXB_FROST_BELLS.length], 0.045);
+  if(sb === 8 && bar % 2 === 1) exBell(bus.g, t, c[2] + 36, 0.05, 3.2);
+}
+// 火山の峡谷: ニのフリギア。低い太鼓・うなる持続音・重い金管(4小節)
+const EXB_VOLC_ROOTS = [38, 38, 39, 36];   // D D E♭ C
+function exbVolcano(step, t, bus){
+  const s = step % 64, bar = s >> 4, sb = s & 15, r = EXB_VOLC_ROOTS[bar], d = bgmExploreStepDur();
+  if(sb === 0){
+    exTone(bus.soft, t, MIDI(r - 12), d*16, 'sawtooth', 0.12, 'pad');
+    exTone(bus.soft, t, MIDI(r - 12), d*16, 'sawtooth', 0.08, 'pad', 14);   // わずかにずれた同音でうなる
+    exTone(bus.g, t, MIDI(r - 24), d*16, 'sine', 0.2, 'pad');
+  }
+  if(sb === 0 && (bar === 0 || bar === 2)){ exTone(bus.soft, t, MIDI(r + 12), d*6, 'sawtooth', 0.07, 'swell'); exTone(bus.soft, t, MIDI(r + 19), d*6, 'sawtooth', 0.05, 'swell'); }
+  if(sb === 0 || sb === 3 || sb === 8) exTaiko(bus.g, t, sb === 0 ? 0.42 : 0.3, true);
+  if(bar === 3 && sb >= 12) exTaiko(bus.g, t, 0.18 + (sb - 12)*0.05, false);
+  if(sb === 10 && bar % 2 === 1) exHit(bus.g, t, 0.5, 'bandpass', 2400, 0.05, 6);   // 金属の軋み
+}
+// 密林の遺跡: イ短調ペンタ。マリンバの刻み・丸太太鼓・シェイカー・拍子木(4小節)
+const EXB_JUNGLE_CHORDS = [[57,60,64],[55,59,62],[53,57,60],[55,59,62]];
+const EXB_JUNGLE_PAT = [0,3,6,8,10,13,14];
+function exbJungle(step, t, bus){
+  const s = step % 64, bar = s >> 4, sb = s & 15, c = EXB_JUNGLE_CHORDS[bar], d = bgmExploreStepDur();
+  const pi = EXB_JUNGLE_PAT.indexOf(sb);
+  if(pi >= 0) exMarimba(bus.g, t, c[pi % 3] + (pi % 2 ? 12 : 0), 0.08);
+  if(sb === 0 || sb === 7 || sb === 10) exTone(bus.soft, t, MIDI(c[0] - 24), d*3, 'sine', 0.2, 'pluck');
+  exHit(bus.g, t, 0.04, 'highpass', 7000, sb % 2 ? 0.035 : 0.055);   // シェイカー
+  if([0,3,6,10,12].includes(sb) && bar % 2 === 0) exHit(bus.g, t, 0.05, 'bandpass', 1800, 0.12, 8);   // 拍子木(3-2)
+  if(sb === 4 || sb === 12) exTaiko(bus.g, t, 0.18, false);
+  if(bar === 3 && sb === 14) exTaiko(bus.g, t, 0.22, false);
+}
+// ボス戦: ニ短調。刻む低音・弦の16分・太鼓とスネア・金管の強打。怒り(lv2)でテンポ・厚み・旋律が増える(4小節)
+const EXB_BOSS_CHORDS = [[50,53,57],[46,50,53],[48,52,55],[45,49,52]];   // Dm B♭ C A
+const EXB_BOSS_MEL = [[0,74,6],[6,72,2],[8,74,4],[12,77,4],[16,79,6],[22,77,2],[24,74,8],[32,72,6],[38,74,2],[40,76,4],[44,79,4],[48,81,8],[56,79,4],[60,77,4]];
+function exbBoss(step, t, bus, lv){
+  const s = step % 64, bar = s >> 4, sb = s & 15, c = EXB_BOSS_CHORDS[bar], d = bgmExploreStepDur();
+  const rage = lv >= 2;
+  if(s === 0) exHit(bus.g, t, 1.2, 'highpass', 4200, rage ? 0.14 : 0.1);   // シンバル
+  // 低音: 8分で刻み、小節末でオクターブ跳ね
+  if(sb % 2 === 0) exTone(bus.soft, t, MIDI(c[0] - 24 + (sb === 14 ? 12 : 0)), d*1.7, 'sawtooth', 0.16, 'pluck');
+  // 弦の16分(怒りでは1オクターブ上を足す)
+  exTone(bus.soft, t, MIDI(c[sb % 3] + 12), d*0.95, 'square', 0.028, 'pluck');
+  if(rage) exTone(bus.soft, t, MIDI(c[(sb + 1) % 3] + 24), d*0.9, 'square', 0.018, 'pluck');
+  // 太鼓・スネア・タム
+  if(sb === 0 || sb === 8 || (rage && sb === 11)) exTaiko(bus.g, t, 0.5, true);
+  if(sb === 4 || sb === 12) exHit(bus.g, t, 0.14, 'bandpass', 1900, 0.3, 0.8);
+  if(rage || sb % 2 === 0) exHit(bus.g, t, 0.03, 'highpass', 7500, sb % 4 === 2 ? 0.07 : 0.045);
+  if(bar === 3 && sb >= 12) exTaiko(bus.g, t, 0.28 + (sb - 12)*0.05, false);
+  // 金管の強打(小節頭と裏)
+  if(sb === 0 || sb === 6 || sb === 10){
+    const v = sb === 0 ? 0.07 : 0.05;
+    c.forEach(n=> exTone(bus.soft, t, MIDI(n), d*(sb === 0 ? 3 : 1.6), 'sawtooth', v, 'pluck'));
+  }
+  // 怒り: 英雄的な旋律と合唱のパッド
+  if(rage){
+    for(const [ms, n, len] of EXB_BOSS_MEL) if(ms === s){ exTone(bus.soft, t, MIDI(n), d*len*0.95, 'sawtooth', 0.05, 'pad'); exTone(bus.soft, t, MIDI(n - 12), d*len*0.95, 'triangle', 0.05, 'pad'); }
+    if(sb === 0) c.forEach(n=> exTone(bus.soft, t, MIDI(n + 12), d*16, 'triangle', 0.03, 'pad'));
+  }
+}
+const EX_BGM_STEP = { camp:exbCamp, meadow:exbMeadow, frost:exbFrost, volcano:exbVolcano, jungle:exbJungle, boss:exbBoss };
+
+/* 討伐のファンファーレ(ボス戦の曲を止めて鳴らし、終わったら地域の曲へ戻る。約 EXPLORE_BGM_FANFARE_SEC 秒) */
+function bgmExploreFanfare(apex){
+  if(!actx || !exBgmEnsure()) return;
+  const t0 = actx.currentTime + 0.12;
+  exBgm.fanfareUntil = t0 + EXPLORE_BGM_FANFARE_SEC;
+  // ボス戦の曲はすぐ落とす(次のtickを待たない)
+  const bg = exBgm.bus.boss.g.gain;
+  bg.cancelScheduledValues(actx.currentTime); bg.setValueAtTime(Math.max(0.0001, exBgm.level.boss), actx.currentTime);
+  bg.setTargetAtTime(0.0001, actx.currentTime, 0.08);
+  exBgm.target.boss = 0;
+  const dest = exBgm.fanBus, beat = 60/120;
+  const brass = (t, notes, dur, v)=> notes.forEach(n=>{
+    exTone(dest, t, MIDI(n), dur, 'sawtooth', v, 'pad', -5);
+    exTone(dest, t, MIDI(n), dur, 'square', v*0.5, 'pad', 5);
+  });
+  // 前打ち(三連)→ 主和音 → 下属 → 属 → 主和音(長く)
+  [0, 1/3, 2/3].forEach(k=> brass(t0 + k*beat, [58, 65], beat*0.3, 0.05));
+  brass(t0 + beat, [53, 57, 60, 65], beat*1.5, 0.06);
+  exTaiko(dest, t0 + beat, 0.5, true);
+  exHit(dest, t0 + beat, 1.4, 'highpass', 4200, 0.14);
+  brass(t0 + beat*2.6, [58, 62, 65, 70], beat*0.9, 0.055);
+  brass(t0 + beat*3.6, [60, 64, 67, 72], beat*0.9, 0.055);
+  for(let i=0;i<8;i++) exTaiko(dest, t0 + beat*3.6 + i*beat/8, 0.12 + i*0.03, false);   // ティンパニの連打
+  const fin = apex ? [53, 57, 60, 65, 69, 72] : [53, 57, 60, 65, 69];
+  brass(t0 + beat*4.6, fin, beat*3.4, 0.06);
+  exTaiko(dest, t0 + beat*4.6, 0.6, true);
+  exHit(dest, t0 + beat*4.6, 2.2, 'highpass', 5000, 0.16);
+  [84, 88, 91, 96].forEach((n, i)=> exBell(dest, t0 + beat*4.8 + i*0.09, n, 0.04, 1.6));
+}
+
+/* ---- 環境音(風・虫・溶岩)。共有ノイズのループ3本+揺らぎ。音量は地域の重み・溶岩への近さ ---- */
+function exAmbStart(){
+  if(exBgm.amb || !actx) return;
+  const t = actx.currentTime, buf = exNoiseBuf();
+  const mk = ()=>{ const s = actx.createBufferSource(); s.buffer = buf; s.loop = true; return s; };
+  const out = actx.createGain(); out.gain.value = 1; out.connect(bgmGain);   // 曲の切り替えのフェードに巻き込まない
+  // 風: 帯域通過のノイズ。中心の周波数をゆっくり揺らして「ヒュー」
+  const ws = mk(), wf = actx.createBiquadFilter(); wf.type = 'bandpass'; wf.frequency.value = 520; wf.Q.value = 0.9;
+  const wg = actx.createGain(); wg.gain.value = 0.0001;
+  const wl = actx.createOscillator(); wl.frequency.value = 0.11; const wlg = actx.createGain(); wlg.gain.value = 260;
+  wl.connect(wlg); wlg.connect(wf.frequency);
+  ws.connect(wf); wf.connect(wg); wg.connect(out);
+  // 虫: 高い帯域のノイズを速い矩形波で刻む(ジジジ…)
+  const is = mk(), iff = actx.createBiquadFilter(); iff.type = 'bandpass'; iff.frequency.value = 4600; iff.Q.value = 9;
+  const iam = actx.createGain(); iam.gain.value = 0.5;
+  const il = actx.createOscillator(); il.type = 'square'; il.frequency.value = 17; const ilg = actx.createGain(); ilg.gain.value = 0.5;
+  il.connect(ilg); ilg.connect(iam.gain);
+  const ig = actx.createGain(); ig.gain.value = 0.0001;
+  is.connect(iff); iff.connect(iam); iam.connect(ig); ig.connect(out);
+  // 溶岩: 低域のノイズ+とても低い正弦(ゴォォ)
+  const ls = mk(), lf = actx.createBiquadFilter(); lf.type = 'lowpass'; lf.frequency.value = 170;
+  const lo = actx.createOscillator(); lo.type = 'sine'; lo.frequency.value = 41; const log = actx.createGain(); log.gain.value = 0.35;
+  const lg = actx.createGain(); lg.gain.value = 0.0001;
+  ls.connect(lf); lf.connect(lg); lo.connect(log); log.connect(lg); lg.connect(out);
+  [ws, wl, is, il, ls, lo].forEach(n=> n.start(t));
+  exBgm.amb = { out, wg, ig, lg, srcs:[ws, wl, is, il, ls, lo] };
+}
+function exAmbStop(){
+  const a = exBgm.amb;
+  if(!a || !actx) return;
+  const t = actx.currentTime;
+  a.out.gain.cancelScheduledValues(t); a.out.gain.setValueAtTime(a.out.gain.value, t); a.out.gain.linearRampToValueAtTime(0.0001, t + 0.6);
+  a.srcs.forEach(n=>{ try{ n.stop(t + 0.7); }catch(e){} });
+  exBgm.amb = null;
+}
+function exAmbUpdate(want, fan){
+  if(!exBgm.amb) exAmbStart();
+  const a = exBgm.amb;
+  if(!a) return;
+  let w = exBgm.mood ? exBgm.mood.w : null;
+  if(exBgm.forced){   // 確認用: 選んだ地域だけ
+    w = [0,0,0,0,0];
+    const i = _exKeyOfIdx.indexOf(want.key === 'boss' ? 'volcano' : want.key);
+    if(i >= 0) w[i] = 1;
+  }
+  if(!w) w = [0,0,0,0,1];
+  const lava = Math.max(w[2]*0.45, exBgm.mood ? exBgm.mood.lava || 0 : 0);
+  const duck = (want.key === 'boss' || fan) ? EXPLORE_AMB_BOSS_DUCK : 1;
+  const V = EXPLORE_AMB_VOL, t = actx.currentTime;
+  const set = (p, v)=>{ p.setTargetAtTime(Math.max(0.0001, v*duck), t, 0.8); };
+  set(a.wg.gain, V.wind*(w[1] + w[0]*0.45 + w[2]*0.25 + w[4]*0.3 + w[3]*0.1));
+  set(a.ig.gain, V.insect*(w[3] + w[0]*0.6 + w[4]*0.35));
+  set(a.lg.gain, V.lava*lava);
+}
+
+/* ---- 探検の効果音(SE_DEFS へ足す。playSe の名前で鳴る。管理者画面のSE確認にも自動で並ぶ) ---- */
+Object.assign(SE_DEFS, {
+  /* ボスの咆哮。高さ・長さ・ざらつき・首の数はボスごと(data.js の EXPLORE_BOSSES の roar)。
+     o = { pitch, len, grit, heads, rage }。怒りは少し高く・短く・荒く */
+  exploreRoar(t, o){
+    const pitch = (o.pitch || 1) * (o.rage ? 1.15 : 1);
+    const len = (o.len || 1.8) * (o.rage ? 0.75 : 1);
+    const grit = Math.min(1, (o.grit != null ? o.grit : 0.7) + (o.rage ? 0.2 : 0));
+    const heads = Math.max(1, o.heads || 1);
+    for(let h=0; h<heads; h++){
+      const t0 = t + h*0.13, pm = pitch * [1, 1.14, 0.88][h % 3], L = len * (1 - h*0.08);
+      // 喉のうなり: ノコギリ波の高さを上げて下げる+速い揺れ(ざらつき)
+      const osc = actx.createOscillator(); osc.type = 'sawtooth';
+      const f0 = 62*pm;
+      osc.frequency.setValueAtTime(f0*0.8, t0);
+      osc.frequency.linearRampToValueAtTime(f0*1.35, t0 + L*0.25);
+      osc.frequency.linearRampToValueAtTime(f0*0.62, t0 + L);
+      const lfo = actx.createOscillator(); lfo.frequency.value = 22 + 16*grit;
+      const lg = actx.createGain(); lg.gain.value = f0*0.35*grit;
+      lfo.connect(lg); lg.connect(osc.frequency);
+      const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(700*pm, t0); lp.frequency.linearRampToValueAtTime(1500*pm, t0 + L*0.3); lp.frequency.linearRampToValueAtTime(500*pm, t0 + L);
+      const g = actx.createGain();
+      const v = 0.34 / Math.sqrt(heads);
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(v, t0 + 0.12); g.gain.setValueAtTime(v, t0 + L*0.55); g.gain.exponentialRampToValueAtTime(0.001, t0 + L);
+      osc.connect(lp); lp.connect(g); g.connect(seGain);
+      osc.start(t0); lfo.start(t0); osc.stop(t0 + L + 0.05); lfo.stop(t0 + L + 0.05);
+      // 息: 口の形の帯域(フォルマント)が開いて閉じるノイズ
+      seNoiseLfo(t0, { dur:L, filterType:'bandpass', filterFreq:380*pm, filterEnd:260*pm, volStart:0.22/Math.sqrt(heads), volEnd:0.12/Math.sqrt(heads), lfoFreq:9 + 10*grit, lfoDepth:0.5*grit });
+    }
+    seTone(t, { freq:70*pitch, freqEnd:38*pitch, dur:len*0.8, type:'sine', vol:0.4, attack:0.05 });   // 腹に響く低音
+  },
+  // 群れに気づかれた: 短い不穏な2音(短2度)+低い太鼓+吸い込むノイズ
+  exploreSpotted(t){
+    seNoise(t, { dur:0.18, vol:0.12, filterType:'bandpass', filterFreq:900, filterEnd:3200 });
+    seTone(t+0.1, { freq:659, dur:0.16, type:'square', vol:0.12, attack:0.004 });
+    seTone(t+0.1, { freq:698, dur:0.22, type:'square', vol:0.1, attack:0.004 });
+    seTone(t+0.1, { freq:120, freqEnd:55, dur:0.25, type:'sine', vol:0.35 });
+  },
+});
+SE_MIN_GAP.exploreRoar = 0.8;
+SE_MIN_GAP.exploreSpotted = 1.0;

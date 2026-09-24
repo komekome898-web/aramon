@@ -215,10 +215,12 @@ let lookDrag = { active:false, pointerId:null, lastX:0, lastY:0 };
    入れ替わるので、片方の軸だけ渡すともう一方が0になって動かなくなる。 */
 function applyLookDelta(dx, dy){
   const logical = toLogicalDelta(dx, dy);
+  // 狙撃スコープの構え中は倍率に応じて感度を下げる(sniper.js。構えていなければ常に1=従来どおり)
+  const k = (typeof sniperLookSensMult === 'function') ? sniperLookSensMult() : 1;
   // 感度は視点設定(world.jsのlookSettings。設定 → 視点設定 から変更できる)
-  camState.yaw += logical.x*lookSettings.sensX;
+  camState.yaw += logical.x*lookSettings.sensX*k;
   // 上下の可動範囲はマップ依存(リアルマップだけ空側へ広い。world.jsのcamPitchMin)
-  camState.pitch = clamp(camState.pitch + (invertPitchY ? logical.y : -logical.y)*lookSettings.sensY, camPitchMin(), CAM_PITCH_MAX);
+  camState.pitch = clamp(camState.pitch + (invertPitchY ? logical.y : -logical.y)*lookSettings.sensY*k, camPitchMin(), CAM_PITCH_MAX);
 }
 
 window.addEventListener('keydown', (e)=>{
@@ -369,6 +371,7 @@ let fireDrag = { pointerId:null, lastX:0, lastY:0 };
 fireBtnEl.addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   fireBtnHeld = true;
+  fireReleasedOutside = false;
   fireDrag.pointerId = e.pointerId; fireDrag.lastX = e.clientX; fireDrag.lastY = e.clientY;
   try{ fireBtnEl.setPointerCapture(e.pointerId); }catch(_){}
 });
@@ -390,8 +393,17 @@ window.addEventListener('pointermove', (e)=>{
 });
 /* 離す。捕まえた指と同じIDのときだけ効かせる ── IDを見ないと、離した直後に
    遅れて届くlostpointercaptureが「次に押した指」のfireBtnHeldまで落としてしまう。 */
+/* FIREを離した場所がボタンから大きく外れていたか(sniper.js が「撃つのをやめた」と読む。狙撃の構え中だけ効く)。
+   座標の無い解除(画面から離れた・OSに指を取られた)は外れた扱い=撃たない */
+let fireReleasedOutside = false;
 function releaseFireBtn(e){
   if(e.pointerId !== fireDrag.pointerId) return;
+  fireReleasedOutside = true;
+  if(e.clientX != null && fireBtnEl.getBoundingClientRect){
+    const r = fireBtnEl.getBoundingClientRect();
+    const mx = r.width*SNIPER_FIRE_CANCEL_MARGIN, my = r.height*SNIPER_FIRE_CANCEL_MARGIN;
+    fireReleasedOutside = !(e.clientX >= r.left - mx && e.clientX <= r.right + mx && e.clientY >= r.top - my && e.clientY <= r.bottom + my);
+  }
   fireBtnHeld = false;
   fireDrag.pointerId = null;
   try{ if(fireBtnEl.hasPointerCapture && fireBtnEl.hasPointerCapture(e.pointerId)) fireBtnEl.releasePointerCapture(e.pointerId); }catch(_){}
@@ -424,6 +436,7 @@ function releaseAllHeldInputs(){
   joystick.nx = 0; joystick.ny = 0; joystick.peakUpNy = 0; joystick.downAt = 0;
   if(joyKnobEl) joyKnobEl.style.transform = 'translate(0,0)';
   autoRunFlickTime = 0;                      // 中断をまたいだ2回目の弾きは数えない
+  if(typeof sniperHoldBreath === 'function') sniperHoldBreath(false);   // 息止め(狙撃)も離した扱い
   // オートラン(走り続けたまま戻ってこないように、離れた時点で切る)
   if(typeof game === 'object' && game.autoRun) setAutoRun(false);
   // キーボード: PCで他の窓へ移ると keyup が届かず押しっぱなしになる
@@ -514,6 +527,36 @@ document.getElementById('minimapWrap').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(typeof toggleMinimapZoom==='function') toggleMinimapZoom();
 });
+/* 狙撃銃(探検モードで持っているときだけ見える。sniper.js)。
+   ・「狙撃」はタップで構える/もう一度で解除(トグル)。右親指は FIRE を押したまま滑らせて狙い、
+     離して撃つので、構えのために指を1本押さえ続けると撃てなくなる ―― だからホールドにしない。
+   ・「息止め」は押している間だけ(ホールド)。構え中だけ出る。ジョイスティックの右隣=左親指で押す。
+   どちらもFIRE/DASHと同じ pointerdown で完結する押しボタン(スクロールロック除外は不要)。 */
+{
+  const adsBtn = document.getElementById('sniperAdsBtn');
+  const breathBtn = document.getElementById('sniperBreathBtn');
+  if(adsBtn) adsBtn.addEventListener('pointerdown', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    if(game.started && !game.over && typeof sniperToggleAds === 'function') sniperToggleAds();
+  });
+  let breathPointer = null;
+  const breathUp = (e)=>{
+    if(e.pointerId !== breathPointer) return;
+    breathPointer = null;
+    if(typeof sniperHoldBreath === 'function') sniperHoldBreath(false);
+  };
+  if(breathBtn){
+    breathBtn.addEventListener('pointerdown', (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      breathPointer = e.pointerId;
+      try{ breathBtn.setPointerCapture(e.pointerId); }catch(_){}
+      if(typeof sniperHoldBreath === 'function') sniperHoldBreath(true);
+    });
+    window.addEventListener('pointerup', breathUp);
+    window.addEventListener('pointercancel', breathUp);
+    breathBtn.addEventListener('lostpointercapture', breathUp);
+  }
+}
 document.getElementById('turnLeftBtn').addEventListener('pointerdown', (e)=>{
   e.preventDefault(); e.stopPropagation();
   if(game.started && !game.over) turnCameraByDegrees(-90);

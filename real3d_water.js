@@ -248,8 +248,17 @@ function syncTheme(){
   U.uSkyHi.value.setHex(th.skyTop, SRGB);
   U.uSkyLo.value.setHex(th.skyBot, SRGB);
   // 溶岩の地殻はそのマップの岩の色から。光る色は温度の色なのでマップに依らない
-  LU.uCrustCol.value.setHex(th.steep).multiplyScalar(1.9);
+  LU.uCrustCol.value.setHex(th.lavaCrust != null ? th.lavaCrust : th.steep).multiplyScalar(1.9);   // lavaCrust は探検フィールドだけ
   // 濡れた砂(オアシスの縁)も地面の色から作る
+  if(zoneMatCache && zoneMatCache.sand) zoneMatCache.sand.color.copy(U.uWet.value).multiplyScalar(1.25);
+}
+
+/* 探検フィールドだけ: 水辺の底・濡れた岸の色を「その場の地域の地面色」に差し替える
+   (全体テーマの low から作ると、雪原の池に草原の緑の縁が付いた)。real3d_explore.js が
+   カメラのいる地域の色で毎フレーム呼ぶ。他のマップからは呼ばれない。 */
+export function exploreTintWater(low){
+  U.uBed.value.copy(low).multiplyScalar(0.62).lerp(U.uShallow.value, 0.34);
+  U.uWet.value.copy(low).multiplyScalar(0.42);
   if(zoneMatCache && zoneMatCache.sand) zoneMatCache.sand.color.copy(U.uWet.value).multiplyScalar(1.25);
 }
 

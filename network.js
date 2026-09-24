@@ -576,6 +576,7 @@ async function beginMultiplayerMatchInner(){
      「ランダム+リアルマップ」で竜の火口が当たると通常マルチがレイドに化けていた。 */
   const wantRaid = !!netState.raid || mapKey==='raid';
   raidResetState();          // 前の試合の持ち越しを断ってから立て直す
+  exploreResetState();       // 探検モードの状態も持ち越さない(探検は1人用なのでマルチでは常に偽)
   teamResetState();          // チーム戦の状態も入口で消す(必要ならこの後assignTeamsで立て直す)
   arenaResetState();         // アリーナの状態も入口で消す
   /* 難易度がマルチでも効く条件(発注者決定 2026-09-07)。

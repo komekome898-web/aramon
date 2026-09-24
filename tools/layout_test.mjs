@@ -96,6 +96,7 @@ const MODES = [
   { name:'チーム戦20',   mode:'team',   sub:'br20' },
   { name:'アリーナ',     mode:'team',   sub:'arena' },
   { name:'レイド',       mode:'raid',   sub:null },
+  { name:'探検',         mode:'explore', sub:null },   // 右下の出撃ボタンが「探検へ出発」になる
 ];
 
 /* #startScreen 以外の3画面。中身の出方で壊れ方が変わるので、それぞれ「起きうる姿」を並べる。
@@ -154,6 +155,16 @@ const PANELS = [
   { id:'modePickOverlay',  name:'プレイモード',         open:[{btn:'openModePickBtn'}], noScroll:['modePickOverlay'] },
   /* レイドタブ選択時。「開催中」ポップと「🐉 レイドバトルへ」ボタンの中央寄せをここで見る */
   { id:'modePickOverlay',  name:'プレイモード(レイド)', open:[{btn:'openModePickBtn'},{sel:'.mode-tab',idx:2}], noScroll:['modePickOverlay'] },
+  /* 探検タブ選択時。サブ選択の行が消えて案内文だけになる */
+  { id:'modePickOverlay',  name:'プレイモード(探検)', open:[{btn:'openModePickBtn'},{sel:'.mode-tab',idx:3}], noScroll:['modePickOverlay'] },
+  /* 探検の結果。素材の一覧(#exploreResultList)だけがスクロールしてよい。
+     開き方は __exploreTestResult(下で定義。素材を多めに並べた集計を本物の exploreShowResult へ渡す) */
+  { id:'exploreResultOverlay', name:'探検の結果', open:[{call:['__exploreTestResult']}], noScroll:['exploreResultOverlay','exploreResultBox'] },
+  /* 探検の工房。装備の一覧(#exploreForgeList)と詳細の本文(#exploreForgeDBody)だけがスクロールしてよい。
+     開き方は __exploreTestForge(下で定義。素材と装備を決まった中身にしてから本物の openExploreForge を呼ぶ)。
+     「すべて」(一覧が一番長い)と「武器・素材不足」(詳細に素材の行が並ぶ)の2つを見る */
+  { id:'exploreForgeOverlay', name:'工房', open:[{call:['__exploreTestForge','all','apex_body']}], noScroll:['exploreForgeOverlay','exploreForgeBox','exploreForgeDetail'] },
+  { id:'exploreForgeOverlay', name:'工房(武器・素材不足)', open:[{call:['__exploreTestForge','weapon','apex_bow']}], noScroll:['exploreForgeOverlay','exploreForgeBox','exploreForgeDetail'] },
   { id:'ganonPromoOverlay', name:'ガノン記念ポップ',    open:[{call:['showGanonPromoPopup']}], noScroll:['ganonPromoOverlay'] },
   /* レイド入口。「部屋を作る」の2行化(注釈付き)で .raid-actions が見切れないかを見る。
      開き方は __raidTestOpen(上で定義)。中身の一覧(#raidScroll)だけがスクロールしてよい。 */
@@ -165,6 +176,10 @@ const PANELS = [
   { id:'mastermonScreen', name:'マスモン詳細(編集)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','edit']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(着せ替え)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','dressup']}], noScroll:['mastermonDetailPanel'] },
   { id:'mastermonScreen', name:'マスモン詳細(あゆみ)', open:[{call:['openMastermonScreen']},{call:['openMastermonDetail','suezo']},{call:['mmOpenTab','ayumi']}], noScroll:['mastermonDetailPanel'] },
+  /* 探検の全体地図(試合中にミニマップをタップで開く)。押す物は✕だけ・スクロールは無い。
+     開き方は __exploreTestMap(下で定義。探検を始めてから本物の exploreOpenMap を呼ぶ)。
+     **試合を始めるので必ずこの表の最後に置く**(後ろの画面の検査に試合のHUDが混ざらないように) */
+  { id:'expMapOverlay', name:'探検の全体地図', open:[{call:['__exploreTestMap']}], noScroll:['expMapOverlay'] },
 ];
 
 /* ===== 例外リスト(意図的に許しているもの) =====
@@ -624,6 +639,29 @@ for(const dev of DEVICES){
        開催期間・モンスター選択済みかどうかで弾かれ、実行日によって開けたり開けなかったり
        するため測定が安定しない。ここではその前提だけ整えて openRaidOverlay() を直接呼ぶ
        (中身の組み立て自体は本物の renderRaidOverlay を通るので画面としては本物と同じ)。 */
+    /* 探検の結果画面。試合を回さずに「持ち帰った後」の集計だけを作って本物の表示関数へ渡す。
+       素材は全種類を並べる(一覧が一番長くなる姿 = スクロールの外に出した見出しとボタンが守られるかを見る) */
+    window.__exploreTestResult = ()=>{
+      if(typeof exploreShowResult!=='function' || typeof EXPLORE_MATERIALS==='undefined') return;
+      const items = Object.keys(EXPLORE_MATERIALS).map((k, i)=>({ key:k, got:3+i, kept:i%3 ? 3+i : 0, lost:i%3 ? 0 : 3+i,
+                                                                  toBag: EXPLORE_MATERIALS[k].toBag || null }));
+      exploreShowResult({ reason:'faint', full:false, ratio:0.5, items, gold:1234, goldRows:[],
+                          timeSec:754, kills:23, faints:3 });
+    };
+    window.__exploreTestForge = (filter, sel)=>{
+      if(typeof openExploreForge!=='function' || typeof EXPLORE_GEAR==='undefined') return;
+      saveExploreStash({ meadow_fiber:14, jungle_vine:9, frost_shard:12, volcano_ore:15, boss_horn:5, boss_fang:2, boss_scale:3, apex_core:1 });
+      saveExploreGear({ owned:['scout_head','horn_body','horn_arms'], equip:{ head:'scout_head', body:'horn_body', arms:'horn_arms' } });
+      exploreForgeState.filter = filter || 'all'; exploreForgeState.sel = sel || null;
+      openExploreForge();
+    };
+    window.__exploreTestMap = ()=>{
+      if(typeof exploreStart!=='function' || typeof exploreOpenMap!=='function') return;
+      if(!game.selectedElement) game.selectedElement = 'fire';
+      document.getElementById('startScreen').classList.add('hidden');
+      exploreStart();
+      exploreOpenMap();
+    };
     window.__raidTestOpen = async ()=>{
       if(!game.selectedElement) game.selectedElement = 'dullahan';
       if(typeof openRaidOverlay==='function') await openRaidOverlay();

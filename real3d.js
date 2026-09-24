@@ -18,6 +18,7 @@
      real3d_terrain.js 地面パッチとPBRテクスチャ
      real3d_water.js   海・川・オアシス・溶岩
      real3d_props.js   山と障害物(岩・木・水晶)
+     real3d_explore.js 探検フィールドのランドマークと地域の空気(R3.theme.explore のときだけ)
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
 import { R3, DEFAULT_THEME, SUN_DIR, heightAt } from './real3d_common.js';
@@ -25,12 +26,76 @@ import { buildSky, applySkyTheme, buildDistantRidge, buildEnvironment, animateSk
 import { buildTerrain, updateTerrain, applyTerrainTheme, terrainStats, resetPatch } from './real3d_terrain.js';
 import { buildZoneMesh, zoneMaterial, buildSeaMesh, buildRiverMesh, splitRivers,
          animateWater, lavaMats, resetDynamicLists, ZONE_LIFT } from './real3d_water.js';
-import { buildMountainMesh, updateObstacles, obstacleCullDist, obstacleDrawn, resetObstacles } from './real3d_props.js';
+import { buildMountainMesh, updateObstacles, obstacleCullDist, obstacleDrawn, resetObstacles, obstacleFadeAt } from './real3d_props.js';
 import { buildZoneLayer, updateZoneLayer, resetZoneLayer } from './real3d_zone.js';
+import { buildExploreWorld, updateExplore, resetExplore } from './real3d_explore.js';
 
 // フォグはパッチの半分(3600)より手前で完全に霞ませる。こうしないとパッチの切れ目が見える
 const FOG_NEAR = 700;
 const FOG_FAR  = 3200;
+/* 狙撃スコープのズーム中(探検モードだけ。window.__aramonLook.zoom>1)は霞を奥へ押す。
+   素のままだと250m先(2500)の的が7割霞に溶けてスコープの中が灰色一色になる。
+   **FAR はパッチの半分(3600)より手前に保つ**(切れ目を見せない決まりは同じ)。倍率1では何も変えない */
+const FOG_ZOOM_NEAR = 2300, FOG_ZOOM_FAR = 3550, FOG_ZOOM_FULL = 4;   // この倍率で押し切る
+let fogBase = null;
+/* ---- 描画の入口の守り ----
+   カメラ・霞・日差しに非有限の値(NaN/Infinity)やワールドから桁外れに離れた値が入ると、
+   その1フレームだけでなく以後ずっと画面が霞の色一色になる(三角形が全部カリングされる・
+   影のカメラが壊れる)。2026-09-24: 画面揺れの残り時間が時計の巻き戻りで増え続け、
+   カメラが高さ8万まで飛んだまま戻らなかった。原因側は直したうえで、ここでも受け止める。
+   正常なフレームの値を覚えておき、壊れた値はその場で直前の正常な値へ戻す(正常なら何もしない)。 */
+const VIEW_SANE_XY = 60000;   // ワールド(最大18100)の外へこれ以上離れたカメラは壊れた値とみなす
+const VIEW_SANE_Z  = 30000;   // 同じく高さ(山の最高点は3000未満)
+const viewGuard = { cam:null, quat:null, sunI:null, sunC:null, warned:false };
+const finite = (v)=> typeof v === 'number' && isFinite(v);
+const finiteV3 = (v)=> finite(v.x) && finite(v.y) && finite(v.z);
+function guardWarn(what){
+  if(viewGuard.warned) return;
+  viewGuard.warned = true;
+  console.warn('[aramon] real3d: 壊れた値を直前の正常な値へ戻しました', what);
+}
+// camPos / camState(ゲーム側の値)。壊れていたらその場で直す
+function guardCamera(cp, cs){
+  const ok = finite(cp.x) && finite(cp.y) && finite(cp.z) && finite(cs.yaw) && finite(cs.pitch)
+          && Math.abs(cp.x) < VIEW_SANE_XY && Math.abs(cp.y) < VIEW_SANE_XY && Math.abs(cp.z) < VIEW_SANE_Z;
+  if(ok){
+    const g = viewGuard.cam || (viewGuard.cam = {});
+    g.x = cp.x; g.y = cp.y; g.z = cp.z; g.yaw = cs.yaw; g.pitch = cs.pitch;
+    return;
+  }
+  guardWarn({ x:cp.x, y:cp.y, z:cp.z, yaw:cs.yaw, pitch:cs.pitch });
+  const g = viewGuard.cam || { x:0, y:0, z:200, yaw:0, pitch:0.1 };
+  cp.x = g.x; cp.y = g.y; cp.z = g.z;
+  if(!finite(cs.yaw)) cs.yaw = g.yaw;
+  if(!finite(cs.pitch)) cs.pitch = g.pitch;
+}
+// 霞(線形 Fog / 探検の FogExp2)・日差し・カメラの向き。描く直前に見る
+function guardScene(){
+  const f = scene.fog;
+  if(f){
+    if(f.isFogExp2){ if(!finite(f.density) || f.density < 0){ guardWarn('fog.density'); f.density = 0.0002; } }
+    else if(!finite(f.near) || !finite(f.far)){ guardWarn('fog.near/far'); f.near = FOG_NEAR; f.far = FOG_FAR; fogBase = null; }
+    if(!(finite(f.color.r) && finite(f.color.g) && finite(f.color.b))){ guardWarn('fog.color'); f.color.setHex(R3.theme.haze); }
+  }
+  if(sun){
+    if(finite(sun.intensity) && finite(sun.color.r) && finite(sun.color.g) && finite(sun.color.b)){
+      viewGuard.sunI = sun.intensity;
+      (viewGuard.sunC || (viewGuard.sunC = new THREE.Color())).copy(sun.color);
+    } else {
+      guardWarn('sun');
+      sun.intensity = viewGuard.sunI != null ? viewGuard.sunI : 1;
+      if(viewGuard.sunC) sun.color.copy(viewGuard.sunC); else sun.color.setRGB(1, 1, 1);
+    }
+    if(!finiteV3(sun.position) || !finiteV3(sun.target.position)){
+      guardWarn('sun.position');
+      sun.target.position.copy(camera.position);
+      sun.position.set(camera.position.x + SUN_DIR.x*2200, camera.position.y + SUN_DIR.y*2200, camera.position.z + SUN_DIR.z*2200);
+    }
+  }
+  const q = camera.quaternion;
+  if(finite(q.x) && finite(q.y) && finite(q.z) && finite(q.w)) (viewGuard.quat || (viewGuard.quat = new THREE.Quaternion())).copy(q);
+  else { guardWarn('camera.quaternion'); if(viewGuard.quat) q.copy(viewGuard.quat); else q.identity(); }
+}
 const CAM_FAR  = 12000;
 /* ---- PBR(物理ベース描画)の調整値 ----
    環境光は「空をそのままPMREMに通した環境マップ」(=HDRIの代わり。画像ファイルは増やさない)。
@@ -138,7 +203,8 @@ function buildWorldObjects(w){
   }
   worldGroup = new THREE.Group();
   resetDynamicLists();   // 溶岩の材質・水面シェーダーの登録をやり直す
-  (w.volcanoes||[]).forEach(v=> worldGroup.add(buildMountainMesh(v)));
+  // noMesh の山は「当たり判定だけ」の印(探検フィールドのランドマークの足元)。形は描かない
+  (w.volcanoes||[]).forEach(v=>{ if(!v.noMesh) worldGroup.add(buildMountainMesh(v)); });
   // オアシスは濡れた砂の縁を先に敷いてから水面を重ねる(2Dと同じ見せ方)
   (w.oasis||[]).forEach(z=>{
     worldGroup.add(buildZoneMesh(z, zoneMaterial('sand'), z.radius*1.12, ZONE_LIFT*0.6));
@@ -150,8 +216,11 @@ function buildWorldObjects(w){
   if((w.lava||[]).length){
     const lavaMat = zoneMaterial('lava');   // 材質は全部の溶岩で共有(脈動もまとめて効く)
     lavaMats.push(lavaMat);
-    w.lava.forEach(z=> worldGroup.add(buildZoneMesh(z, lavaMat, z.radius, ZONE_LIFT)));
+    // noMesh の溶岩(探検フィールドの溶岩の川)は当たりだけ。帯は real3d_explore.js が描く
+    w.lava.forEach(z=>{ if(!z.noMesh) worldGroup.add(buildZoneMesh(z, lavaMat, z.radius, ZONE_LIFT)); });
   }
+  // 探検フィールドだけ: 山を種類ごとにまとめ、ランドマークを足す(real3d_explore.js)
+  if(R3.theme.explore) buildExploreWorld(worldGroup, w);
   scene.add(worldGroup);
 }
 
@@ -171,7 +240,11 @@ function applyTheme(){
   if(!scene || appliedTheme === R3.theme) return;
   appliedTheme = R3.theme;
   renderer.setClearColor(R3.theme.skyBot, 1);
+  // 探検フィールドは霧を指数型へ差し替え、日差し・雲も毎フレーム変えるので、ここで元へ戻す
+  // (先に戻してから色と距離を書く。他のマップは一度も変えないので、値を書き直すだけで見た目は変わらない)
+  resetExplore({ scene, sun, ridge, sky });
   scene.fog.color.setHex(R3.theme.haze);
+  scene.fog.near = FOG_NEAR; scene.fog.far = FOG_FAR;
   applySkyTheme(sky);
   applyTerrainTheme();
   applyEnvironment();   // 空の色が変わったので環境光も作り直す
@@ -221,6 +294,8 @@ const api = {
   resize(){ if(active) applySize(); },
   // 障害物を実際に出している距離。2D側はこれより遠い障害物をくり抜かない
   obstacleCullDist,
+  // 探検: 切る距離の手前で縮めている障害物の縮み(1=そのまま)。2D側のくり抜きの大きさを合わせる
+  obstacleFadeAt,
   // 計測用: 直近の地形パッチ再計算(計算した頂点数と所要ms)と、その回数
   stats(){ return { ...terrainStats(), obst:obstacleDrawn() }; },
   // 毎フレーム、2Dの描画より先に呼ぶ。カメラは2Dのproject()と同じ値から作る。
@@ -230,9 +305,33 @@ const api = {
     if(!active || !scene) return false;
     const cp = window.camPos, cs = window.camState;
     if(!cp || !cs) return false;
+    guardCamera(cp, cs);
     // 視野角は2Dのproject()(world.jsのFOV_V)と必ず同じ値にする。設定で変えられるので毎フレーム見る
-    const fovDeg = (window.__aramonLook && window.__aramonLook.fovDeg) || 64;
+    const fovRaw = window.__aramonLook && window.__aramonLook.fovDeg;
+    const fovDeg = (finite(fovRaw) && fovRaw > 1 && fovRaw < 170) ? fovRaw : 64;
     if(camera.fov !== fovDeg){ camera.fov = fovDeg; camera.updateProjectionMatrix(); }
+    const zoomRaw = window.__aramonLook && window.__aramonLook.zoom;
+    const zoom = (finite(zoomRaw) && zoomRaw > 0) ? zoomRaw : 1;
+    // 線形の霞だけ(探検の指数型の霞には near/far が無い。倍率での薄め方は real3d_explore.js)
+    if(scene.fog && scene.fog.isFog && (zoom > 1 || fogBase)){
+      if(!fogBase) fogBase = { near:scene.fog.near, far:scene.fog.far };
+      const t = Math.min(1, (zoom - 1) / (FOG_ZOOM_FULL - 1));
+      scene.fog.near = fogBase.near + (Math.max(fogBase.near, FOG_ZOOM_NEAR) - fogBase.near) * t;
+      scene.fog.far  = fogBase.far  + (Math.max(fogBase.far,  FOG_ZOOM_FAR)  - fogBase.far)  * t;
+      if(zoom <= 1) fogBase = null;   // 構えを解いたら元の値のまま手放す(他の誰かが霞を変えても邪魔しない)
+    }
+    /* 狙撃スコープ(探検モードだけ。sniper.js が描画の間だけ window.__aramonSniperScope を入れる)。
+       完全に構えている間は、窓の外は黒く塗られて見えないので**窓の矩形だけ**を描き(scissor)、
+       そのぶん解像度を上げる(8倍で引き伸ばされた遠景のにじみを減らす)。窓の矩形は画面の約37%なので、
+       1.5倍(画素数2.25倍)にしても塗る画素は元の約0.84倍に収まる。構えていなければ何も変えない。 */
+    const scope = window.__aramonSniperScope || null;
+    const basePR = window.__aramonRenderScale || Math.min(window.devicePixelRatio || 1, 2);
+    const wantPR = (scope && scope.full) ? Math.min(3, basePR * (scope.boost || 1)) : basePR;
+    if(Math.abs(renderer.getPixelRatio() - wantPR) > 0.01) renderer.setPixelRatio(wantPR);
+    if(scope && scope.full){
+      renderer.setScissorTest(true);
+      renderer.setScissor(scope.x0, scope.h - scope.y1, scope.x1 - scope.x0, scope.y1 - scope.y0);
+    } else renderer.setScissorTest(false);
     updateTerrain(cp.x, cp.y);
     updateWorldObjects(world);
     updateObstacles(scene, obstacles, world && world.crystals, cp.x, cp.y);
@@ -240,6 +339,8 @@ const api = {
     const tSec = performance.now()*0.001;
     animateWater(tSec);
     animateSky(tSec);   // 雲を風で流す(空のuniformを進めるだけ)
+    // 探検フィールド: いま立っている地域の空気(霞・日差し・空の地平)とランドマークの動き
+    if(R3.theme.explore) updateExplore(tSec, cp, { scene, sun, sky, ridge });
     // 空と遠景はカメラに追従させる。ワールドは18100単位あるので原点固定だと視界から外れる
     if(sky) sky.position.set(cp.x, 0, cp.y);
     if(ridge) ridge.position.set(cp.x, 0, cp.y);
@@ -254,12 +355,15 @@ const api = {
     // 影の計算範囲はカメラの少し前方に置く。ワールド全体を1枚の影で覆うと
     // 解像度が足りずガビガビになるので、プレイヤー周辺だけを高い密度で覆う
     if(sun){
-      const fx = cp.x + Math.cos(cs.yaw)*SHADOW_AHEAD;
-      const fy = cp.y + Math.sin(cs.yaw)*SHADOW_AHEAD;
+      // スコープで遠くを覗いている間は、影の範囲を見ている先(距離計の距離)へ寄せる(遠くの地面にも影が落ちる)
+      const ahead = (scope && scope.zoom >= 2) ? Math.max(SHADOW_AHEAD, Math.min(3000, scope.focus || SHADOW_AHEAD)) : SHADOW_AHEAD;
+      const fx = cp.x + Math.cos(cs.yaw)*ahead;
+      const fy = cp.y + Math.sin(cs.yaw)*ahead;
       const fz = heightAt(fx, fy);
       sun.target.position.set(fx, fz, fy);
       sun.position.set(fx + SUN_DIR.x*2200, fz + SUN_DIR.y*2200, fy + SUN_DIR.z*2200);
     }
+    guardScene();
     renderer.render(scene, camera);
     return true;
   },
