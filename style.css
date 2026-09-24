@@ -4894,6 +4894,8 @@
   /* 構えている間(body.sniper-ads)は、照準・×印・操作ヒントをスコープの絵に任せる。
      FIREはこの間は狙撃銃の引き金なので、技のガッツ不足で沈ませない */
   body.sniper-ads #crosshair, body.sniper-ads #hitMarker, body.sniper-ads #tipBox{ display:none; }
+  /* 補給箱の蓋が跳ね上がる瞬間だけ照準の十字を隠す(開く演出の邪魔をしない・批評指摘。explore_loot.js) */
+  body.explore-crate-open #crosshair{ opacity:0; transition:opacity .15s; }
   /* 覗いている間は、周りの情報(上の帯・探検の帯・安置/残り時間・ミニマップ・キルフィード・拾った通知)を弱める。
      消さずに薄くするのは、覗いたままでも残り時間や体力は目の端で読めるようにするため。
      回転ボタンは構え中は使わない(視点はFIREを滑らせて合わせる)ので隠す */
@@ -7092,10 +7094,16 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
   background:repeating-conic-gradient(from 0deg, var(--rc) 0deg 4deg, rgba(0,0,0,0) 4deg 18deg);
   -webkit-mask-image:radial-gradient(circle, #000 25%, rgba(0,0,0,0) 70%); mask-image:radial-gradient(circle, #000 25%, rgba(0,0,0,0) 70%);
   opacity:0.28; }
-.exf-stage-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+/* 名前の列(R1: 装備の絵はここから幅を取るが、名前側には最低限を残す)。
+   以前は「着けた姿」の小さな絵が同じ横並びに座り、38%+30%を取られて名前が数文字で切れていた
+   (批評指摘=横持ちで「氷河の狙…」)。着けた姿を名前の横から外し(下の.exf-stage-fig)、
+   名前はここでほぼ全幅を使える。 */
+.exf-stage-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; padding-right:calc((var(--stage-h) - 12px) * 0.46); }
 /* 着けた姿(自分のモンスター+着けた後のセットの色の光と足元の輪。フィールドと同じ見せ方)。
-   見た目の欄の右端。絵の高さは欄から決める(R1)。幅が足りなければ飾りなので縮む */
-.exf-stage-fig{ --wc:#ccc; position:relative; flex:0 0 auto; order:3; width:min(30%, calc((var(--stage-h) - 12px) * 0.85)); aspect-ratio:0.85 / 1; display:flex; align-items:flex-end; justify-content:center; }
+   名前の横に並べて幅を奪うと名前が数文字で切れる(批評指摘)ので、欄の右上に小さく重ねる飾りにする
+   (flexの並びから外す=position:absolute。.exf-stage-textのpadding-rightがこの分の場所をあらかじめ空けておく) */
+.exf-stage-fig{ --wc:#ccc; position:absolute; right:2px; top:2px; z-index:1;
+  width:calc((var(--stage-h) - 12px) * 0.42); aspect-ratio:0.85 / 1; display:flex; align-items:flex-end; justify-content:center; }
 .exf-fig-cv{ position:absolute; z-index:1; left:0; top:0; width:100%; height:100%; display:block;
   filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 6px var(--wc)); }
 .exf-stage-fig.is-lit .exf-fig-cv{ filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 6px var(--wc)) drop-shadow(0 0 12px var(--wc)); }
@@ -7105,7 +7113,9 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
   display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; background:#0a0e14; border:1.5px solid var(--wc); }
 .exf-fig-emb:empty{ display:none; }
 .exf-fig-cap{ position:absolute; top:0; left:0; right:0; text-align:center; font-size:9px; font-weight:700; letter-spacing:1px; color:var(--ink-dim); white-space:nowrap; }
-.exf-d-name{ font-weight:800; font-size:16px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 0 10px var(--rc); }
+/* 名前は1行で切らず、2行まで折り返す(横持ちで4文字だけ見えて「…」になっていた=批評指摘) */
+.exf-d-name{ font-weight:800; font-size:16px; color:#fff; line-height:1.18; text-shadow:0 0 10px var(--rc);
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .exf-d-meta{ display:flex; min-width:0; font-size:10px; color:var(--ink-dim); white-space:nowrap; }
 .exf-d-meta-to{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .exf-d-rar{ flex:0 0 auto; color:var(--rc); font-weight:800; margin-right:6px; }
@@ -7115,7 +7125,10 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-d-state.is-equip{ background:#b0621c; }
 .exf-d-state.is-owned{ background:#2d6aa8; }
 .exf-d-state.is-lack{ background:#7a2b25; }
-.exf-d-body{ position:relative; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px; }
+/* JS(exploreForgeSnapBody)が丸ごと入る行だけの高さを明示するので、はみ出しは隠すだけでよい
+   (overflow:autoのままだと、計算がわずかにずれたときスクロールバー分だけ半端に見えることがある) */
+.exf-d-body{ position:relative; flex:1 1 auto; min-height:0; overflow:hidden; padding-right:4px; }
+.exf-row-hidden{ display:none !important; }
 .exf-sec-label{ margin:5px 0 2px; font-size:9px; letter-spacing:1px; color:#ffb870; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .exf-sec-label:first-child{ margin-top:0; }
 .exf-sec-label.is-short{ color:#ff8a6a; font-weight:800; }
@@ -7138,13 +7151,18 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-mat-n{ flex:0 0 auto; font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--ink-dim); }
 .exf-matrow.is-ok .exf-mat-n b{ color:#7dffb0; }
 .exf-matrow.is-short .exf-mat-n b{ color:#ff6b5a; }
-/* 入手先は11pxで2行まで(1行に詰めて切らない)。それでも入らない分はこの要素自身が「…」で切る */
-.exf-src{ margin:0 0 4px 24px; font-size:11px; line-height:14px; max-height:28px; color:#ffb870; white-space:normal; overflow:hidden;
-  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .exf-note{ font-size:11px; line-height:1.5; color:var(--ink-dim); }
-/* 必要な素材(「作る」ボタンの直上。R3で削らない側)。.exf-d-body(能力差分)側が先に縮む(flex:0 0 auto = 縮まない)。
-   万一これ自体が入り切らない高さ(素材の種類がとても多い)になったときだけ内側で送る保険 */
-.exf-d-need{ flex:0 0 auto; min-height:0; max-height:46%; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px; }
+/* 足りない素材のチップ(1行に詰める。批評指摘=以前は1素材1行+入手先2行でボタンまで食っていた)。
+   複数あれば折り返す。入手先は長いので、押し続けるとtitleで出す(表示上は名前と数だけ) */
+.exf-mat-chips{ display:flex; flex-wrap:wrap; gap:5px 7px; }
+.exf-mat-chip{ --mc:#fff; display:inline-flex; align-items:baseline; gap:4px; max-width:100%; min-width:0;
+  font-size:11px; font-weight:700; color:var(--mc); line-height:1.2; white-space:nowrap;
+  background:rgba(255,255,255,0.05); border:1px solid var(--mc); border-radius:20px; padding:3px 9px; }
+.exf-mat-chip .exf-mat-ico{ width:auto; filter:none; }
+.exf-mat-chip b{ color:#ff8a6a; font-weight:800; margin:0 1px; }
+/* 必要な素材(「作る」ボタンの直上)。.exf-d-body(能力差分)を最優先にし、ここは残りへ丸ごと単位で収める
+   (exploreForgeSnapBody / _exfKeepRows)。中身はいまは「足りない物だけ・1行」で作ってあるので基本は小さい */
+.exf-d-need{ position:relative; flex:0 0 auto; min-height:0; overflow:hidden; padding-right:4px; }
 .exf-d-need:empty{ display:none; }
 .exf-d-actions{ flex:0 0 auto; margin-top:auto; }
 .exf-act-btn{ width:100%; min-height:var(--tap-main); flex-shrink:0; border-radius:9px; cursor:pointer;

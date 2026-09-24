@@ -148,6 +148,15 @@ function exploreRollCrate(c){
    レア度の高い品ほど後に出す(最後にいちばん良い物が飛び出す) */
 function exploreOpenCrate(c){
   if(!c || c.opened) return;
+  /* 蓋の蝶番をどちら向きにするか(exploreDrawCrate の D 反転)。自分から見て奥になる側に
+     蝶番を入れ替える ―― 決め打ち(常に-D)のままだと、逆側から開けたときに表側が
+     こちらを向いたまま浮いて見えた(批評指摘)。c.angle のローカル座標へ自分の方向を変換する */
+  if(player){
+    const dx = player.x - c.x, dy = player.y - c.y;
+    const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
+    const lly = -dx*sa + dy*ca;   // ワールド→ローカルのD成分(逆回転)
+    c.lidFlip = lly < 0;
+  }
   c.opened = true; c.openedAt = matchTime; c.hold = 0;
   const items = exploreRollCrate(c).sort((a,b)=> exploreRarityOrder(exploreItemInfo(a).rarity) - exploreRarityOrder(exploreItemInfo(b).rarity));
   const baseA = rand(0, Math.PI*2);
@@ -331,6 +340,11 @@ function exploreLootUpdate(dt){
       c.hold = Math.max(0, c.hold - dt*2);
     }
   }
+  /* 蓋が跳ね上がる間(開いた瞬間)は照準の十字を隠す(邪魔・批評指摘)。#crosshair.explore-cineと同じ仕組み。
+     蓋の動き(EXPLORE_CRATE_LID_SEC)だけでなく、火花や輪が消えるまで(exploreCrateOpenFx。長い輪は0.9秒)
+     十字が無いほうが見やすいので、開いた瞬間からの窓を少し長めに取る */
+  const crateOpening = exploreState.crates.some(cc=> cc.opened && matchTime - cc.openedAt < 1.0);
+  document.body.classList.toggle('explore-crate-open', crateOpening);
   // 落ちている品: 着地と拾う
   const drops = exploreState.drops;
   for(let i=drops.length-1;i>=0;i--){
@@ -421,7 +435,13 @@ function exploreDrawCrate(c, p0){
   const S = { w:EXPLORE_CRATE_SIZE.w*sc, d:EXPLORE_CRATE_SIZE.d*sc, h:EXPLORE_CRATE_SIZE.h*sc, lid:EXPLORE_CRATE_SIZE.lid*sc };
   // 遠い箱は細部(補強材・地面の光・影)を省く。その距離では数pxなので見た目は変わらない
   const far = !!(p0 && p0.depth > 2400);
-  const W = S.w/2, D = S.d/2, H = S.h;
+  const W = S.w/2, H = S.h;
+  /* 蓋の蝶番は「奥(ly=-D)」に決め打ちしてある。箱の向き(c.angle)は配置時の乱数なので、
+     プレイヤーがたまたま蝶番側から開けると、表側(装飾のある面)がこちらを向いたまま浮いて見えた
+     (批評指摘)。胴は前後対称(紋章はn[0]===0の面=前後どちらにも同じに描く)なので、
+     Dの符号をまるごと反転しても胴の見た目は変わらない ―― これを使って、開けた瞬間に
+     蝶番が自分から見て奥になる側を選び直す(exploreOpenCrate で c.lidFlip を決める)。 */
+  const D = c.lidFlip ? -S.d/2 : S.d/2;
   const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
   const wx = (lx, ly)=> c.x + lx*ca - ly*sa;
   const wy = (lx, ly)=> c.y + lx*sa + ly*ca;
@@ -872,14 +892,19 @@ function exploreDrawCrateFan(c){
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
       ctx.strokeText('×' + it.n, S/2 - 2, S/2 - 3); ctx.fillStyle = '#fff'; ctx.fillText('×' + it.n, S/2 - 2, S/2 - 3);
     }
-    // 名前(真ん中の1つだけ。並びが読める大きさのときだけ)
-    if(it.off === 0 && S >= 30){
+    /* 名前(すべてに短く)+レア度の札。真ん中の1つだけだと旗竿やほかの品と重なった
+       (批評指摘)ので、全部に付けて、アイコンの"下"(地面側)へ出す ―― 上は旗竿やほかの
+       浮いている品と重なりやすく、下はアイコン同士の間にすき間があって読める */
+    if(S >= 22){
       const rar = EXPLORE_RARITY[it.rarity] || EXPLORE_RARITY.common;
-      const t2 = `${rar.label}・${info.name}`;
-      ctx.font = `800 ${Math.max(11, Math.round(S*0.26))}px 'Rajdhani', sans-serif`;
+      const fs = Math.max(9, Math.round(S*0.22));
+      ctx.font = `800 ${fs}px 'Rajdhani', sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-      ctx.strokeText(t2, 0, -S/2 - 6); ctx.fillStyle = col; ctx.fillText(t2, 0, -S/2 - 6);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      const ty = S/2 + fs + 3;
+      ctx.strokeText(info.name, 0, ty); ctx.fillStyle = col; ctx.fillText(info.name, 0, ty);
+      ctx.font = `700 ${Math.max(8, fs-2)}px 'Rajdhani', sans-serif`;
+      ctx.strokeText(rar.label, 0, ty + fs*0.85); ctx.fillStyle = 'rgba(235,235,235,0.92)'; ctx.fillText(rar.label, 0, ty + fs*0.85);
     }
     ctx.restore();
   }
@@ -1161,6 +1186,8 @@ function exploreLootReset(){
   if(el){ for(const r of el.children) clearTimeout(r._expTimer); el.innerHTML = ''; el.dataset.hidden = '0'; }
   document.querySelectorAll('.exp-legend-flash').forEach(e=> e.remove());
   exploreCineGrey(0);
+  exploreCineZoom(0);
+  document.body.classList.remove('explore-crate-open');
 }
 
 /* ===== 自分(プレイヤー)の見た目: 力尽きて倒れる/キャンプで起き上がる/装備のセットの光 =====
@@ -1617,6 +1644,7 @@ function exploreIntroSkip(){
   if(player) player.exploreAsleep = false;
   exploreState.card = null;
   exploreCineHud(false);
+  exploreCineZoom(0);
 }
 function exploreFaintStart(){
   exploreState.card = { kind:'faint', clock:'match', t0:matchTime, n:exploreState.faints, max:EXPLORE_MAX_FAINTS, moved:false };
@@ -1655,6 +1683,22 @@ function exploreCineGrey(k){
   const gl = document.getElementById('glCanvas');
   if(gl) gl.style.filter = k > 0 ? `saturate(${(1 - 0.85*k).toFixed(2)}) brightness(${(1 - 0.22*k).toFixed(2)})` : '';
 }
+/* 出発の演出用: 3D層(WebGL)だけをじわっと寄せる(カメラがキャンプから竜の背中へ寄る動き)。
+   2D層(gameCanvas。黒帯・文字)は寄らずに固定のままなので、映画の額縁の奥で背景が寄る見え方になる。
+   #glCanvas に transform を使う場所はここだけ(二重に持たない)。 */
+let _exploreZoomK = 0;
+function exploreCineZoom(k){
+  k = Math.round(clamp(k, 0, 1)*40)/40;
+  if(k === _exploreZoomK) return;
+  _exploreZoomK = k;
+  const s = (1 + 0.10*k).toFixed(3);
+  for(const id of ['glCanvas', 'fxCanvas']){
+    const el = document.getElementById(id);
+    if(!el) continue;
+    el.style.transformOrigin = '50% 56%';
+    el.style.transform = k > 0 ? `scale(${s})` : '';
+  }
+}
 // 毎フレーム(exploreLootUpdate から)。カメラを回す・暗転しきったらキャンプへ運ぶ
 function exploreCineUpdate(){
   const c = exploreState.card;
@@ -1666,6 +1710,9 @@ function exploreCineUpdate(){
     camState.yaw = c.yaw0 - (1 - e) * EXPLORE_INTRO_SWEEP;
     camState.pitch = c.pitch0 + 0.10 * (1 - e);
     if(player) player.facingAngle = camState.yaw;
+    // カメラが回るだけだと静止画では「動きの途中」と分からない(批評指摘)。
+    // 3D層をじわっと寄せて、キャンプから竜の背中へ寄っていく様子を作る(帯・文字は2D層なので寄らない=固定のまま)
+    exploreCineZoom(e);
     if(age >= c.dur) exploreIntroSkip();
   } else if(c.kind === 'faint'){
     const T = exploreFaintTimes();
@@ -1712,7 +1759,7 @@ function _exlCineBand(cy, bandH, lineCol, fill){
 }
 function exploreCineDraw(){
   const c = exploreState.card;
-  if(!c || !game.explore){ exploreCineGrey(0); return; }
+  if(!c || !game.explore){ exploreCineGrey(0); exploreCineZoom(0); return; }
   const age = c.clock === 'real' ? exploreCineNow() - c.t0 : matchTime - c.t0;
   {
     // 力尽き: 倒れる間に景色の色が抜け、札のあいだは灰色のまま。キャンプで明転するときは元の色
@@ -1879,42 +1926,36 @@ function exploreCineDraw(){
   }
   ctx.restore();
 }
-// 画面の縁が赤く燃える(力尽きた瞬間)。k=強さ(1→0)、age で一度だけ脈打つ
+/* 画面の縁が赤く燃える(力尽きた瞬間)。k=強さ(1→0)、age で一度だけ脈打つ。
+   四角い縁の帯(硬い枠に見えた=批評指摘。角が丸まっただけの太い帯もまだ「四角い枠」)を作らない:
+   中心から外へ溶ける放射状のグラデーション1つだけで暗く・赤くにじませ、炎の粒は画面の矩形に
+   沿わせて(円ではなく縦横で伸ばした位置)全周へばらけさせる ―― 4辺に振り分けない。 */
 function _exlFaintEdge(k, age){
   if(k <= 0) return;
   k = Math.sqrt(k);   // 引き際はゆっくり(倒れている間はしっかり赤い)
-  const W = viewW, H = viewH;
+  const W = viewW, H = viewH, cx = W/2, cy = H/2;
   const pulse = 1 + 0.35*Math.max(0, 1 - age/0.18);
   ctx.save();
   ctx.globalAlpha = 1;
-  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W, H)*0.32, W/2, H/2, Math.max(W, H)*0.72);
-  vg.addColorStop(0, 'rgba(120,0,0,0)'); vg.addColorStop(0.6, `rgba(170,10,0,${(0.35*k*pulse).toFixed(3)})`); vg.addColorStop(1, `rgba(220,20,10,${(0.9*k).toFixed(3)})`);
+  const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H)*0.24, cx, cy, Math.max(W, H)*0.78);
+  vg.addColorStop(0,    'rgba(120,0,0,0)');
+  vg.addColorStop(0.45, `rgba(150,8,0,${(0.16*k*pulse).toFixed(3)})`);
+  vg.addColorStop(0.72, `rgba(185,14,0,${(0.42*k*pulse).toFixed(3)})`);
+  vg.addColorStop(1,    `rgba(225,22,10,${(0.88*k).toFixed(3)})`);
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
-  /* 硬い枠線1本だけでは「四角い枠」に見える(批評指摘=燃えているように見えない)。
-     縁ぞいに輪郭をにじませた帯(枠線を太いぼかしのグラデーションに置き換え)+ 縁から立ち上る炎の粒を重ねる */
-  const bandW = Math.max(10, Math.min(W, H)*0.09)*k*pulse;
-  if(!renderHeavyLoad){ ctx.shadowBlur = 26; ctx.shadowColor = 'rgba(255,40,20,0.95)'; }
-  const edges = [
-    { g:(a)=>{ const gr = ctx.createLinearGradient(0,0,0,bandW); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[0,0,W,bandW] },
-    { g:(a)=>{ const gr = ctx.createLinearGradient(0,H,0,H-bandW); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[0,H-bandW,W,bandW] },
-    { g:(a)=>{ const gr = ctx.createLinearGradient(0,0,bandW,0); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[0,0,bandW,H] },
-    { g:(a)=>{ const gr = ctx.createLinearGradient(W,0,W-bandW,0); gr.addColorStop(0,`rgba(255,90,30,${a})`); gr.addColorStop(1,'rgba(255,60,20,0)'); return gr; }, r:[W-bandW,0,bandW,H] },
-  ];
-  const a = (0.75*k).toFixed(3);
+  // 縁から立ち上る炎の粒(画面の矩形の縁ぞいに散らす。決まった乱数で毎フレーム同じ並びを保つ)
   ctx.globalCompositeOperation = 'lighter';
-  for(const e of edges){ ctx.fillStyle = e.g(a); ctx.fillRect(e.r[0], e.r[1], e.r[2], e.r[3]); }
-  // 縁から昇る炎の粒(下辺中心に多く、決まった乱数で毎フレーム同じ並びを保つ)
-  const N = renderHeavyLoad ? 10 : 18;
+  const N = renderHeavyLoad ? 10 : 20;
   for(let i=0;i<N;i++){
     const h = Math.sin(i*12.9898)*43758.5453; const rnd = h - Math.floor(h);
-    const side = i % 4;   // 0下 1下 2左 3右(下を厚めに)
-    const u = ((rnd + age*0.18 + i*0.083) % 1);
-    const along = ((Math.sin(i*7.13 + 1.7)*0.5 + 0.5) + i*0.61) % 1;
-    let px, py, rise;
-    if(side < 2){ px = along*W; py = H - u*bandW*2.2; rise = u; }
-    else { px = side===2 ? u*bandW*1.6 : W - u*bandW*1.6; py = along*H; rise = u; }
-    const sz = Math.max(1.2, (2.6 - rise*1.8)*k);
-    ctx.fillStyle = `rgba(255,${140 + Math.round(90*rise)},${40 + Math.round(60*rise)},${(k*(1 - rise)).toFixed(3)})`;
+    const ang = rnd*Math.PI*2 + Math.sin(i*3.1 + age*2.1)*0.1;   // 角度も少し揺れる(炎らしい不揃いさ)
+    const u = ((Math.sin(i*7.13 + 1.7)*0.5 + 0.5) + age*0.2 + i*0.041) % 1;   // 0=縁の少し内側 1=縁のすぐ外
+    const ring = 0.74 + 0.30*u;
+    const px = cx + Math.cos(ang)*W*0.5*ring, py = cy + Math.sin(ang)*H*0.5*ring;
+    if(px < -30 || px > W + 30 || py < -30 || py > H + 30) continue;
+    const rise = clamp((ring - 0.74)/0.30, 0, 1);
+    const sz = Math.max(1.2, (2.8 - rise*1.6)*k);
+    ctx.fillStyle = `rgba(255,${140 + Math.round(90*rise)},${40 + Math.round(60*rise)},${(k*(0.4 + 0.6*rise)).toFixed(3)})`;
     ctx.beginPath(); ctx.arc(px, py, sz, 0, Math.PI*2); ctx.fill();
   }
   ctx.globalCompositeOperation = 'source-over';
@@ -1933,31 +1974,52 @@ function _exlReturnBeam(age){
   const kk = (-40 - q0.y) / dy;
   const q1 = { x:q0.x + (qa.x - q0.x)*kk, y:-40 };
   const grow = clamp(age/0.35, 0, 1), eg = 1 - Math.pow(1 - grow, 3);
-  const w = Math.max(18, p.radius*1.5*q0.scale) * eg;
   const flick = 0.9 + 0.1*Math.sin(age*30);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  /* 縁のはっきりした四角に見えていた(批評指摘)。硬い縁の四角を1〜2枚重ねるのではなく、
-     幅の違う柔らかい層を何枚も重ねて縁をにじませる(exploreDrawPillar と同じ考え方。ここは至近距離なので枚数を増やす)。
-     縁は左右で少し揺らして、真っ直ぐな一枚板に見えないようにする(炎のように輪郭が揺れる) */
-  const wob = (t)=> Math.sin(age*3.1 + t*7.3)*w*0.05;
-  const LAYERS = [
-    { wk:1.55, top:0.30*flick, mid:'rgba(125,255,176,0.16)' },
-    { wk:1.05, top:0.42*flick, mid:'rgba(125,255,176,0.22)' },
-    { wk:0.62, top:0.60*flick, mid:'rgba(255,248,210,0.30)' },
-    { wk:0.34, top:0.85*flick, mid:'rgba(255,255,255,0.40)' },
-    { wk:0.14, top:0.95*flick, mid:'rgba(255,255,255,0.55)' },
-  ];
-  for(const L of LAYERS){
-    const lw = w*L.wk;
-    const g = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
-    g.addColorStop(0, `rgba(255,236,160,${L.top.toFixed(3)})`); g.addColorStop(0.55, L.mid); g.addColorStop(1, 'rgba(125,255,176,0)');
-    ctx.fillStyle = g;
+  /* 縁のはっきりした半透明の長方形が竜の正面を塗りつぶし、体が柱の中に完全に隠れていた
+     (批評指摘)。「体を覆う太い帯」をやめ、光は竜の輪郭の"外側"を縁取る2本の柔らかい線
+     (ぼかしたstroke。塗りではないので中心を覆わない)と、足元で中心から外へ溶ける
+     光だまり(radialGradient)だけにする。竜の上にかかる分はごく薄い霧1枚に留め、
+     体の縁の光そのものは explorePlayerTint(既存)に任せる ―― 光は竜の後ろ・上には薄く。 */
+  const bodyHalf = Math.max(16, p.radius*1.0*q0.scale) * eg;
+  const wob = (t)=> Math.sin(age*3.1 + t*7.3)*bodyHalf*0.08;
+  ctx.globalAlpha = eg;
+  // 足元の光だまり(中心から外へ溶ける。竜の上まではあまり伸ばさない)
+  const poolR = bodyHalf*3.2;
+  const pool = ctx.createRadialGradient(q0.x, q0.y, 0, q0.x, q0.y, poolR);
+  pool.addColorStop(0,   `rgba(255,246,210,${(0.32*flick).toFixed(3)})`);
+  pool.addColorStop(0.5, `rgba(190,255,210,${(0.15*flick).toFixed(3)})`);
+  pool.addColorStop(1,   'rgba(150,255,190,0)');
+  ctx.fillStyle = pool;
+  ctx.beginPath(); ctx.arc(q0.x, q0.y, poolR, 0, Math.PI*2); ctx.fill();
+  // 竜の両脇を昇る、ぼかした縁の光(体そのものは塗らない。左右で揺らして一枚板に見せない)
+  for(const side of [-1, 1]){
+    const a0x = q0.x + (bodyHalf + wob(side))*side, a1x = q1.x + bodyHalf*0.5*side;
+    const g = ctx.createLinearGradient(a0x, q0.y, a1x, q1.y);
+    g.addColorStop(0,    `rgba(255,240,180,${(0.6*flick).toFixed(3)})`);
+    g.addColorStop(0.22, `rgba(220,255,210,${(0.38*flick).toFixed(3)})`);
+    g.addColorStop(0.6,  'rgba(150,255,190,0.14)');
+    g.addColorStop(1,    'rgba(150,255,190,0)');
+    ctx.strokeStyle = g;
+    ctx.lineWidth = Math.max(2, bodyHalf*0.4);
+    if(!renderHeavyLoad){ ctx.shadowBlur = Math.max(6, bodyHalf*1.1); ctx.shadowColor = 'rgba(200,255,210,0.8)'; }
+    ctx.beginPath(); ctx.moveTo(a0x, q0.y); ctx.lineTo(a1x, q1.y); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  // 竜の上にかかる分は、輪郭が最後まで読める濃さのごく薄い霧だけ(白飛びさせない)
+  {
+    const mg = ctx.createLinearGradient(q0.x, q0.y, q1.x, q1.y);
+    mg.addColorStop(0,   `rgba(255,246,210,${(0.14*flick).toFixed(3)})`);
+    mg.addColorStop(0.4, 'rgba(200,255,215,0.07)');
+    mg.addColorStop(1,   'rgba(150,255,190,0)');
+    ctx.fillStyle = mg;
     ctx.beginPath();
-    ctx.moveTo(q0.x - lw + wob(0), q0.y); ctx.lineTo(q1.x - lw*0.55 + wob(1), q1.y);
-    ctx.lineTo(q1.x + lw*0.55 + wob(2), q1.y); ctx.lineTo(q0.x + lw + wob(3), q0.y);
+    ctx.moveTo(q0.x - bodyHalf*0.7, q0.y); ctx.lineTo(q1.x - bodyHalf*0.35, q1.y);
+    ctx.lineTo(q1.x + bodyHalf*0.35, q1.y); ctx.lineTo(q0.x + bodyHalf*0.7, q0.y);
     ctx.closePath(); ctx.fill();
   }
+  ctx.globalAlpha = 1;
   // 昇る輪(足元から上へ。1点ずつ投影)
   for(let i=0;i<3;i++){
     const u = ((age*0.7 + i/3) % 1);

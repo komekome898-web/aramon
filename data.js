@@ -6716,7 +6716,7 @@ const EXPLORE_MATERIALS = {
   // 凍った高地
   frost_shard:   { name:'氷晶のかけら', icon:'❄️', rarity:'common', region:'frost',   desc:'溶けない氷。冷気をまとう装備の材料' },
   frost_dew:     { name:'オーロラの雫', icon:'💧', rarity:'rare',   region:'frost',   toBag:'seed_wisdom',   desc:'持ち帰るとかしこさの実になる' },
-  frost_hide:    { name:'霜の毛皮',     icon:'🧶', rarity:'rare',   region:'frost',   toBag:'seed_vitality', desc:'持ち帰ると丈夫さの実になる' },
+  frost_hide:    { name:'霜の毛皮',     icon:'🦙', rarity:'rare',   region:'frost',   toBag:'seed_vitality', desc:'持ち帰ると丈夫さの実になる' },
   // 火山の峡谷
   volcano_ore:   { name:'灼熱鉱石',     icon:'🪨', rarity:'common', region:'volcano', desc:'熱を帯びた鉱石。武器の芯になる' },
   volcano_heart: { name:'炎の核',       icon:'🔥', rarity:'rare',   region:'volcano', toBag:'seed_power',    desc:'持ち帰るとちからの実になる' },
