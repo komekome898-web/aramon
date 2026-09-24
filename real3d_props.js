@@ -2695,11 +2695,6 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio, cone){
         /* 群生: 濃い所に寄せて生やし、間は地面の草色で見せる(一様に撒くと株が水玉模様に並んだ) */
         p = VEG_FILL * Math.min(1.7, Math.max(0, (dens - EX_VEG_CLUMP)/0.26));
         p *= layer.ex.dens(exw) * (1 - exploreTrail(wx, wy)*0.92);
-        /* 急斜面(崖・急な丘)には生やさない。草は必ず真上を向けて立てる作りなので、
-           急な面に生えると斜めの地面から垂直に突き立ち、丸い接地影だけが斜面に
-           貼られて浮いて見えた(2026-09-24 frost_wide)。傾きが増すほど間引く */
-        const gr = window.real3dHeightGrad ? window.real3dHeightGrad(wx, wy) : null;
-        if(gr){ const slope = Math.hypot(gr.gx, gr.gy); p *= Math.max(0, 1 - slope/0.42); }
         if(p <= 0.004) continue;
       }
       if(hash2(gx*5.77 + seedOff*2, gy*7.13 - seedOff*3) > p) continue;

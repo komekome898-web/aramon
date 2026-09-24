@@ -862,8 +862,8 @@ function buildExploreMaterial(){
     // 探検フィールドは通常マップより起伏が急な地形(尾根・崖・段丘)が多く、真上からのUVで
     // 作った法線マップをそのまま貼ると、斜めから見た面に縦に伸びたハイライトの縞が出た
     // (2026-09-24。特に雪の風筋パターンで目立った)。EX_NORMAL_CHUNK の視線角フェードと
-    // 合わせ、地の強さそのものも通常マップの0.02倍に抑える
-    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN*0.02, R3.theme.bump*NORMAL_GAIN*0.02),
+    // 合わせ、地の強さそのものも通常マップの0.15倍に抑える(0.02まで下げると斜面が粘土のようにのっぺりした=2026-09-24 批評)
+    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN*0.15, R3.theme.bump*NORMAL_GAIN*0.15),
     metalness:0.0, roughness:1.0, envMapIntensity: ENV_INTENSITY, dithering:true,
   });
   const uni = {

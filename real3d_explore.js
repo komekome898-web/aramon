@@ -819,9 +819,9 @@ function buildNest(group, key, n){
   const bAng = hash2(n.x*0.001, n.y*0.001)*Math.PI*2;
   for(let i=0;i<7;i++){
     const off = (i - 3)*44;
-    // 前は最大260と高く、遠くから見ると支える丘が霞へ溶けて「宙に浮く細い帯」に見えた
-    // (2026-09-24 vantage/vantage_back)。丈を低くして地物の一部に見えるようにする
-    const hgt = 46 + (3 - Math.abs(i - 3))*8;
+    // 丈は遠くから見える目印の高さ(170〜260)。低くしても vantage の「宙に浮く帯」は消えず、
+    // 肋骨が枯れ枝の山に崩れて見えただけだった(2026-09-24 批評)ので戻した
+    const hgt = 170 + (3 - Math.abs(i - 3))*30;
     for(const side of [1, -1]){
       const pts = [];
       for(let k=0;k<=8;k++){
