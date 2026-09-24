@@ -36,7 +36,6 @@ function sniperModeOn(){
 const SNIPER_SUBSTEP      = 18;    // 弾を進める刻み(ワールド単位)。体(半径20〜)をすり抜けない細かさ
 const SNIPER_TRAIL_GAP    = 45;    // 弾道の光に残す点の間隔(ワールド単位)。撃ってから今までの弧を全部残す
 const SNIPER_TRAIL_MAX    = 110;
-const SNIPER_GUN_OFFSET   = { right:9, down:11 };   // 見た目の銃口のずれ(右・下)。SNIPER_TRACER_CONVERGE で照準の線へ寄る
 const SNIPER_AIM_STEP     = 18;    // 距離計の地形探索の刻み
 const SNIPER_PREDICT_STEP = 1/90;  // 弱点表示のための弾道の先読みの刻み(秒)
 
@@ -105,6 +104,20 @@ function sniperLookSensMult(){
   const m = Math.exp(sniperView.logMag);
   if(m <= 1.001) return 1;
   return Math.min(1, SNIPER_ADS_SENS_BASE / Math.pow(m, SNIPER_ADS_SENS_EXP));
+}
+/* 窓(スコープのレンズ)の半径。既定は画面の高さから決めるが、
+   縦持ちでは右のボタン列(狙撃/DASH/FIRE)が近く、そのままだと情報の札を置く場所が無くなって
+   レンズの内側に入り込む(批評)。**右のボタン列の左端 − SNIPER_SCOPE_GUTTER_PX** を窓の外側の限界にして、
+   その分だけ窓を縮める(横持ちではボタンが遠いので limit のほうが大きく、既定の大きさのまま変わらない)。
+   snHudRects() は sniper.js の下のほうで定義しているが function 宣言はホイストされるので呼べる。 */
+function sniperApertureR(sc){
+  const base = viewH * (sc.aperture > 0 ? sc.aperture : 0.3);
+  if(sc.aperture <= 0) return base;   // アイアンサイトは窓の大きさの制約が無い
+  const cx = viewW/2;
+  let limit = Infinity;
+  for(const r of snHudRects()) if(r[0] > cx) limit = Math.min(limit, r[0]);
+  if(limit === Infinity) return base;
+  return Math.max(viewH*SNIPER_SCOPE_MIN_R_RATIO, Math.min(base, limit - SNIPER_SCOPE_GUTTER_PX - cx));
 }
 function sniperHidesSelf(){ return sniperModeOn() && sniperView.blend > 0.35; }
 // 頭上のHPバーを隠すか(render.js の drawMonster から)。照準の先の1体だけスコープの中の帯で見せる
@@ -484,7 +497,7 @@ function sniperFrame(){
   v.aim = (v.blend > 0.05 && w) ? sniperAimRay(w, v.pred) : null;
   // 3D側への連絡(描画の間だけ): 窓の矩形(CSS px)と見ている距離。完全に構えたときだけ窓の外を描かない
   if(v.blend > 0.05){
-    const R = viewH * sc.aperture, full = v.blend >= 0.999 && sc.aperture > 0;
+    const R = sniperApertureR(sc), full = v.blend >= 0.999 && sc.aperture > 0;
     const focus = v.aim && v.aim.m != null ? v.aim.m*PING_UNITS_PER_M : 1800;
     window.__aramonSniperScope = { full, x0:viewW/2 - R*1.08, y0:viewH/2 - R*1.08, x1:viewW/2 + R*1.08, y1:viewH/2 + R*1.25,
                                    w:viewW, h:viewH, focus, zoom:Math.exp(v.logMag), boost:SNIPER_SCOPE_PIXEL_BOOST, veg: full && Math.exp(v.logMag) >= SNIPER_VEG_CONE_MIN_ZOOM,
@@ -586,7 +599,7 @@ function sniperColumnTarget(w, pred, tHit){
     if(d < lim) return { m: d / PING_UNITS_PER_M, ent: pred.ent, assist:true };
   }
   const sc = sniperScope(me);
-  const cx = viewW/2, cy = viewH/2, R = viewH*(sc.aperture > 0 ? sc.aperture : 0.3);
+  const cx = viewW/2, cy = viewH/2, R = sniperApertureR(sc);
   let best = null, bestX = Infinity;
   for(const e of entities){
     if(!e.alive || e === me || e.isPlayer) continue;
@@ -678,15 +691,21 @@ function sniperSyncDom(show){
    撃ってから今までの弧を全部持っていて、見た目だけ銃口(画面の右下)から出して
    SNIPER_TRACER_CONVERGE(160m)で照準の線に合流させる。スコープの中では
    「右下から伸びて照準へ吸い込まれ、先で落ちていく光の筋」に見える(当たりは本物の弾道)。 */
+/* 銃口(画面の右下)から出て照準の線へ合流する見た目は、**ワールド座標でなく画面座標で寄せる**。
+   以前はワールド側で小さくオフセットしてから投影していたが、近距離ではその小さな量が画面上で
+   大きく見え、遠距離ではほぼ0になるため(遠近感で1/距離に効く)、合流の境目(SNIPER_TRACER_CONVERGE)で
+   弧の傾きが急に変わり「途中で折れて真下へ落ちるL字」に見えていた(批評)。
+   画面座標なら「固定の1点(銃口の見かけの位置)」から「本当の弾道の投影点」へ kk の割合で線形に寄せるだけなので、
+   kk が滑らかに変わる限り折れ目が出ない。 */
 function sniperTracerPoints(pts){
-  const G = SNIPER_GUN_OFFSET;
-  const rx = -Math.sin(camState.yaw), ry = Math.cos(camState.yaw);   // 画面の右
+  const ax = viewW/2 + viewH*SNIPER_TRACER_ANCHOR_DX, ay = viewH/2 + viewH*SNIPER_TRACER_ANCHOR_DY;
   const out = [];
   for(const q of pts){
+    const P = project(q.x, q.y, q.z);
+    if(!P || P.depth <= 3) continue;
     const k = Math.max(0, 1 - (q.d||0) / SNIPER_TRACER_CONVERGE);
     const kk = k*k*(3-2*k);
-    const P = project(q.x + rx*G.right*kk, q.y + ry*G.right*kk, q.z - G.down*kk);
-    if(P && P.depth > 3) out.push(P);
+    out.push({ x:P.x + (ax - P.x)*kk, y:P.y + (ay - P.y)*kk, scale:P.scale, depth:P.depth });
   }
   return out;
 }
@@ -742,7 +761,7 @@ function sniperTracerClip(){
   if(!sniperModeOn() || v.blend < 0.5 || !player) return null;
   const sc = sniperScope(player);
   if(sc.aperture <= 0) return null;
-  return { x:viewW/2, y:viewH/2, r:viewH*sc.aperture*SNIPER_TRACER_CLIP };
+  return { x:viewW/2, y:viewH/2, r:sniperApertureR(sc)*SNIPER_TRACER_CLIP };
 }
 function drawSniperTracer(pr){
   const pts = pr.trail;
@@ -793,8 +812,9 @@ function drawSniperScope(){
   const cx = viewW/2, cy = viewH/2;
   // 反動の山の強さ(0〜1)。窓は銃と一緒に沈み、鏡筒の影が窓の一部を黒く欠けさせる
   const rk = clamp(v.recoil / Math.max(1e-5, v.recoilPeak), 0, 1);
-  const W = sc.aperture > 0 ? { x:cx + FOCAL*Math.tan(v.recoilX)*0.3, y:cy + rk*viewH*sc.aperture*0.16,
-                                R:viewH*sc.aperture*(0.8 + 0.2*a)*(1 - 0.05*rk), eclipse:rk } : null;
+  const apR = sniperApertureR(sc);
+  const W = sc.aperture > 0 ? { x:cx + FOCAL*Math.tan(v.recoilX)*0.3, y:cy + rk*apR*0.16,
+                                R:apR*(0.8 + 0.2*a)*(1 - 0.05*rk), eclipse:rk } : null;
   g.save();
   g.globalAlpha = a;
   if(W) drawScopeBody(g, W, sc); else drawIronSight(g, cx, cy, a);
@@ -822,7 +842,7 @@ function drawSniperHaze(){
   const sc = sniperScope(player);
   const k = clamp((Math.exp(v.logMag) - 1.5) / 2.5, 0, 1) * sniperEase(v.blend);   // 2倍から効き始め、4倍で全部
   if(sc.aperture <= 0 || k <= 0.01) return;
-  const W = { x:viewW/2, y:viewH/2, R:viewH*sc.aperture };
+  const W = { x:viewW/2, y:viewH/2, R:sniperApertureR(sc) };
   ctx.save();
   ctx.globalAlpha = k;
   ctx.beginPath(); ctx.arc(W.x, W.y, W.R*1.1, 0, Math.PI*2); ctx.clip();
@@ -968,12 +988,24 @@ function retGlow(g, fn, mode){
   fn();
   g.restore();
 }
-/* 弱点の印は**撃てば当たる点(弾道の先読みの当たり)**に置く。照準の中心に貼り付けると、撃った後の跳ね上がりで
-   頭がずれても「弱点」と出し続けて嘘になる(批評)。先読みは毎コマ今の視線で出し直すので、外れた瞬間に消える */
-function drawWeakMarkAtPred(g, cx, cy, s){
-  const pr = sniperView.pred;
-  if(!pr || !pr.weak || pr.x == null) return;
-  const P = project(pr.x, pr.y, pr.z);
+/* 弱点の印は2つに分けて出す(批評5巡目)。
+   ① drawWeakOnTarget: **的の実際の頭の位置**に毎フレーム project() で投影して置く「そこが弱点」の印。
+      反動・的の動きでどれだけ照準がずれても、的が画面内にいる限り必ず頭の上に乗る(浮かない)。
+   ② drawDropChevron: 「今撃つと(落下込みで)当たる点」を示す小さな山形の印。弾道の先読み(v.pred)。
+      以前はこの先読み点に①の菱形+輪+文字をまとめて出していたので、反動で先読みが的から外れる/消えると
+      印そのものが宙に浮いて見えた。役目を分けたので①は常に的の上、②は当たり損じても的から外れて見えるだけになる */
+function sniperWeakWorldPos(e){
+  if(!e || !e.alive || !e.weakPoint) return null;
+  const H = sniperBodyH(e);
+  const from = e.weakPoint.from != null ? e.weakPoint.from : SNIPER_WEAK_FROM;
+  const to = Math.min(1.05, e.weakPoint.to != null ? e.weakPoint.to : 1.05);
+  return { x:e.x, y:e.y, z:(e.z||0) + H*((from+to)/2) };
+}
+function drawWeakOnTarget(g, s){
+  const e = (sniperView.aim && sniperView.aim.ent) || (sniperView.pred && sniperView.pred.ent);
+  const pos = sniperWeakWorldPos(e);
+  if(!pos) return;
+  const P = project(pos.x, pos.y, pos.z);
   if(!P) return;
   drawWeakMark(g, P.x, P.y, s);
 }
@@ -985,7 +1017,29 @@ function drawWeakMark(g, cx, cy, s){
     g.beginPath(); g.arc(cx, cy, s*1.9, 0, Math.PI*2); g.stroke();
   }, 'weak');
   // 当たりの×印が出ている間は文字を出さない(×と重なって読めない)
-  if(!sniperView.fx.some(f=> f.kind === 'hit' && f.t < 0.34)) snText(g, '弱点', cx + s*2.3, cy - s*2.1, 12, '#ffd46a', 'left', 'bold');
+  if(sniperView.fx.some(f=> f.kind === 'hit' && f.t < 0.34)) return;
+  // 落下補正の目盛りの数字(200/300など)と重なると「弱点200」に読めてしまう(批評)。
+  // 重なる高さなら文字を少しずつ上へ動かし、それでも空きが無ければ文字を諦める(印そのものは出す)
+  const fs = 12, tw = 38, th = fs*1.35;
+  let ty = cy - s*2.1, ok = false;
+  for(let i=0;i<4;i++){
+    const y0 = ty - fs*0.8;
+    ok = (sniperView.textRects || []).every(r=> !(cx + s*2.3 < r[0]+r[2] && cx + s*2.3+tw > r[0] && y0 < r[1]+r[3] && y0+th > r[1]));
+    if(ok) break;
+    ty -= th;
+  }
+  if(ok) snText(g, '弱点', cx + s*2.3, ty, fs, '#ffd46a', 'left', 'bold');
+}
+// 落下を見込んだ「今撃つと当たる点」の小さな山形の印(的の実際の弱点の印とは別に出す)
+function drawDropChevron(g, cx, cy, s){
+  const pr = sniperView.pred;
+  if(!pr || pr.x == null) return;
+  const P = project(pr.x, pr.y, pr.z);
+  if(!P) return;
+  retGlow(g, ()=>{
+    g.lineWidth = 1.6; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(P.x - s, P.y + s*0.65); g.lineTo(P.x, P.y - s*0.7); g.lineTo(P.x + s, P.y + s*0.65); g.stroke();
+  }, pr.weak ? 'weak' : 'body');
 }
 /* 落下補正の数字の並べ方。
    ・数字は1列にまとめる(左右に振り分けると、縦持ちで左の数字が的に被る=批評)。
@@ -1045,7 +1099,7 @@ function drawReticleChevron(g, cx, cy, W, mode){
     g.lineWidth = 2.2; g.lineJoin = 'miter';
     g.beginPath(); g.moveTo(cx - c, cy + c*1.05); g.lineTo(cx, cy); g.lineTo(cx + c, cy + c*1.05); g.stroke();
   }, mode === 'weak' ? 'body' : mode);
-  if(mode === 'weak') drawWeakMarkAtPred(g, cx, cy, Math.max(6, R*0.03));
+  if(mode === 'weak'){ drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
 }
 // 落下補正の目盛りの画面上の高さ(実際の弾道と同じ式で、この視線から project で求める)
 function sniperDropMarks(w){
@@ -1084,7 +1138,7 @@ function drawReticleMildot(g, cx, cy, W, mode, w){
     if(on) drawDropLabel(g, plan, cx, mk.y, R, fs, cx - R*0.05, cx + R*0.05, String(mk.m));
   }
   retGlow(g, ()=>{ g.beginPath(); g.arc(cx, cy, 2.3, 0, Math.PI*2); g.fill(); }, mode === 'weak' ? 'body' : mode);
-  if(mode === 'weak') drawWeakMarkAtPred(g, cx, cy, Math.max(6, R*0.03));
+  if(mode === 'weak'){ drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
 }
 function drawReticleBdc(g, cx, cy, W, mode, w){
   const R = W.R, gap = R*0.028;
@@ -1124,7 +1178,7 @@ function drawReticleBdc(g, cx, cy, W, mode, w){
     g.beginPath(); g.arc(cx, cy, 2.1, 0, Math.PI*2); g.fill();
     g.lineWidth = 1.1; g.beginPath(); g.arc(cx, cy, R*0.022 + 3, 0, Math.PI*2); g.stroke();
   }, mode === 'weak' ? 'body' : mode);
-  if(mode === 'weak') drawWeakMarkAtPred(g, cx, cy, Math.max(6, R*0.03));
+  if(mode === 'weak'){ drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
 }
 /* アイアンサイト: 手前にある銃そのもの。照門(くっきりした金属の輪)・照星(フードの中の柱)・機関部。
    倍率は data.js の iron.mag(1.25)がそのまま掛かり、札も「1.25×」(HUD の札に出す。空中には描かない) */
@@ -1225,7 +1279,7 @@ function drawIronSight(g, cx, cy, a){
   g.restore();
   g.fillStyle = `rgb(${fc})`; g.beginPath(); g.arc(cx, cy, dotR, 0, Math.PI*2); g.fill();
   g.fillStyle = 'rgba(255,255,245,0.95)'; g.beginPath(); g.arc(cx - dotR*0.25, cy - dotR*0.25, dotR*0.45, 0, Math.PI*2); g.fill();
-  if(aimMode === 'weak') drawWeakMarkAtPred(g, cx, cy + 2, Math.max(5, H*0.012));
+  if(aimMode === 'weak'){ drawDropChevron(g, cx, cy + 2, Math.max(4, H*0.009)); drawWeakOnTarget(g, Math.max(5, H*0.012)); }
 }
 function drawBreathArc(g, ox, oy, rr, a0, a1){
   const v = sniperView;
@@ -1280,15 +1334,16 @@ function drawScopeImpacts(g){
       const hz = hh * (1 - fall*0.55) + fall*6;                          // 頭から崩れて沈む
       const Q = project(f.x + rx*lat, f.y + ry*lat, f.z + hz*0.6);
       if(!Q) continue;
-      const rr = Math.max(3, Math.min(70, (9 + hh*0.35 + k*26) * Q.scale));
+      const rr = Math.max(SNIPER_IMPACT_VIS_MIN_PX*0.7, Math.min(90, (9 + hh*0.35 + k*26) * Q.scale * SNIPER_IMPACT_SCALE_BOOST));
       const al = 0.5 * up * Math.pow(1 - k, 1.1) * (1 - Math.abs(side)*0.3);
       const cg = g.createRadialGradient(Q.x, Q.y, 0, Q.x, Q.y, rr);
-      cg.addColorStop(0, `rgba(${rgb},${al})`); cg.addColorStop(0.5, `rgba(${rgb},${al*0.55})`); cg.addColorStop(1, `rgba(${rgb},0)`);
+      // 芯だけ地面より少し暗い色にする(周りの土そのままの色だと地面と同化して見えない=批評)
+      cg.addColorStop(0, `rgba(${mid},${al})`); cg.addColorStop(0.5, `rgba(${rgb},${al*0.55})`); cg.addColorStop(1, `rgba(${rgb},0)`);
       g.fillStyle = cg; g.beginPath(); g.arc(Q.x, Q.y, rr, 0, Math.PI*2); g.fill();
     }
     // 根元の少し濃い土(ふちはぼかす。黒くしない)
     {
-      const hr = Math.max(3, Math.min(30, 10*P.scale)) * (0.8 + k*0.8);
+      const hr = Math.max(SNIPER_IMPACT_VIS_MIN_PX*0.6, Math.min(40, 10*P.scale*SNIPER_IMPACT_SCALE_BOOST)) * (0.8 + k*0.8);
       const hg = g.createRadialGradient(P.x, P.y - hr*0.25, 0, P.x, P.y - hr*0.25, hr);
       hg.addColorStop(0, `rgba(${mid},${0.5*(1-k)})`); hg.addColorStop(1, `rgba(${rgb},0)`);
       g.fillStyle = hg; g.beginPath(); g.arc(P.x, P.y - hr*0.25, hr, 0, Math.PI*2); g.fill();
@@ -1302,7 +1357,7 @@ function drawScopeImpacts(g){
       x0 = Math.min(x0, Q.x); x1 = Math.max(x1, Q.x); y0 = Math.min(y0, Q.y); y1 = Math.max(y1, Q.y);
     }
     if(ok){
-      const rx = Math.max(4, (x1 - x0)/2), ry = Math.max(1.5, (y1 - y0)/2), ex = (x0 + x1)/2, ey = (y0 + y1)/2;
+      const rx = Math.max(SNIPER_IMPACT_VIS_MIN_PX*0.7, (x1 - x0)/2), ry = Math.max(SNIPER_IMPACT_VIS_MIN_PX*0.25, (y1 - y0)/2), ex = (x0 + x1)/2, ey = (y0 + y1)/2;
       const al = 0.34 * Math.pow(1 - k, 1.3);
       g.save(); g.translate(ex, ey); g.scale(1, ry/rx);
       const eg = g.createRadialGradient(0, 0, 0, 0, 0, rx);
@@ -1326,7 +1381,7 @@ function drawScopeImpacts(g){
     // 4) 最初の一瞬の火花(小さく)
     if(t < 0.06){
       g.save(); g.globalCompositeOperation = 'lighter';
-      const rr = Math.max(4, 9*P.scale);
+      const rr = Math.max(SNIPER_IMPACT_VIS_MIN_PX*0.6, 9*P.scale*SNIPER_IMPACT_SCALE_BOOST);
       const fl = g.createRadialGradient(P.x, P.y, 0, P.x, P.y, rr);
       fl.addColorStop(0, `rgba(255,236,200,${0.8*(1 - t/0.06)})`); fl.addColorStop(1, 'rgba(255,200,120,0)');
       g.fillStyle = fl; g.beginPath(); g.arc(P.x, P.y, rr, 0, Math.PI*2); g.fill();
@@ -1475,100 +1530,69 @@ function snHudRects(){
   v.hudRects = out; v.hudRectsAt = now; v.hudRectsW = viewW;
   return out;
 }
-/* w×h の札を置ける場所を、レンズの外の黒い所から探す。左(レンズの左の縁の外)→右 の順に、
-   レンズの中心の高さから上下へ少しずつずらして、HUDとも先に置いた札とも重ならない最初の所。無ければ null */
-function snFindSlot(w, h, ox, oy, R, taken){
-  const pad = 6, gapL = R*1.24, gapR = R*1.14;
-  const hit = (x0, y0)=>{
-    if(y0 < 6 || y0 + h > viewH - 6 || x0 < 6 || x0 + w > viewW - 6) return true;
-    for(const r of snHudRects()) if(x0 < r[2] + pad && x0 + w > r[0] - pad && y0 < r[3] + pad && y0 + h > r[1] - pad) return true;
-    for(const r of taken) if(x0 < r[2] + pad && x0 + w > r[0] - pad && y0 < r[3] + pad && y0 + h > r[1] - pad) return true;
+/* w×h の札を置ける場所を、**レンズの右の外の黒い列だけ**から探す(批評5巡目: 左右へ分岐すると
+   撮るたびに置き場所が変わって読みにくい)。x は常に「窓の右端+隙間」の1列に固定し、
+   上下だけをHUDとも先に置いた札とも重ならないようにずらす。窓の半径は sniperApertureR() が
+   右のボタン列の手前で止めてあるので、この列の広さ(SNIPER_SCOPE_GUTTER_PX)はどの端末でも確保されている。
+   最後まで空きが無くても、x は右の列のまま(**レンズの内側には絶対に置かない**)。 */
+function snFindSlotRight(w, h, ox, oy, R, taken){
+  const pad = 6, x = ox + R*1.06;
+  const hit = (y0)=>{
+    if(y0 < 6 || y0 + h > viewH - 6) return true;
+    for(const r of snHudRects()) if(x < r[2] + pad && x + w > r[0] - pad && y0 < r[3] + pad && y0 + h > r[1] - pad) return true;
+    for(const r of taken) if(x < r[2] + pad && x + w > r[0] - pad && y0 < r[3] + pad && y0 + h > r[1] - pad) return true;
     return false;
   };
-  for(const side of ['l', 'r']){
-    const x = side === 'l' ? ox - gapL - w : ox + gapR;
-    for(let k=0;k<40;k++){
-      const dy = (k%2 ? 1 : -1) * Math.ceil(k/2) * 8;
-      const y = oy - h*0.5 + dy;
-      if(!hit(x, y)) return [x, y, x + w, y + h];
-    }
+  for(let k=0;k<60;k++){
+    const dy = (k%2 ? 1 : -1) * Math.ceil(k/2) * 8;
+    const y = clamp(oy - h*0.5 + dy, 6, viewH - h - 6);
+    if(!hit(y)) return [x, y, x + w, y + h];
   }
-  return null;
+  // どこにもぶつからない高さが無ければ、レンズの中心の高さのまま(列そのものは右の外を保つ)
+  const y = clamp(oy - h*0.5, 6, viewH - h - 6);
+  return [x, y, x + w, y + h];
 }
-// 名前を幅 cardW に収まるよう2行まで折り返す(それでも長ければ末尾を「…」)
-function snWrapName(g, name, cardW, nfs){
+// 名前を幅 cardW に収まる1行にする(縦持ちの狭い列では2行だと的に近づきすぎる。入らなければ末尾を「…」)
+function snWrapName1(g, name, cardW, nfs){
   g.font = `600 ${Math.round(nfs)}px 'Share Tech Mono', 'Rajdhani', monospace`;
-  const lines = [];
-  let rest = String(name || '');
-  for(let li=0; li<2 && rest; li++){
-    let n = rest.length;
-    while(n > 1 && g.measureText(rest.slice(0, n)).width > cardW) n--;
-    if(li === 1 && n < rest.length){
-      let cut = rest.slice(0, Math.max(1, n-1)) + '…';
-      while(cut.length > 2 && g.measureText(cut).width > cardW) cut = cut.slice(0, -2) + '…';
-      lines.push(cut); rest = '';
-    } else {
-      let brk = n;
-      if(n < rest.length){ const sp = rest.lastIndexOf(' ', n); if(sp > 0) brk = sp; }
-      lines.push(rest.slice(0, brk).trim()); rest = rest.slice(brk).trim();
-    }
-  }
-  return lines;
+  const s = String(name || '');
+  if(g.measureText(s).width <= cardW) return s;
+  let cut = s;
+  while(cut.length > 1 && g.measureText(cut + '…').width > cardW) cut = cut.slice(0, -1);
+  return cut + '…';
 }
 /* 距離・照準の先の1体・撃った距離・倍率・残弾・装填・息。
-   ・窓のあるスコープ: **レンズの中には十字線と目盛りだけ**。距離と名前の札、倍率と残弾の札は
-     レンズの外の黒い所(HUDのボタン・地図を避けた空き)へ置く。どこにも空きが無い端末だけ窓の中の右下・左下へ戻す
+   ・窓のあるスコープ: **レンズの中には十字線と目盛りだけ**。距離・SHOT・名前・体力・倍率・残弾は
+     必ずレンズの右の外の黒い1列(snFindSlotRight。sniperApertureR() が確保した SNIPER_SCOPE_GUTTER_PX 分の
+     幅)へ縦に積む。**レンズの内側へは絶対に戻さない**(批評5巡目: 前は空きが無いと窓の中へ戻していた)。
    ・アイアン: 照門の輪のすぐ下に固定(的の上に乗らない) */
 function drawScopeInfo(g, cx, cy, W, sc, w){
   const v = sniperView, s = player.sniper;
-  const R = W ? W.R : viewH*0.3;
-  const ox = W ? W.x : cx, oy = W ? W.y : cy;
-  const m = v.aim && v.aim.m != null ? Math.round(v.aim.m) : null;
-  const fsm = W ? Math.max(14, Math.min(18, R*0.07)) : 15;
-  const nfs = Math.max(11, fsm*0.66);
-  const t = v.aim && v.aim.ent && v.aim.ent.alive ? v.aim.ent : null;
-  const shot = v.lastShot && v.lastShot.m != null;
-  // 札の大きさ(距離の行・SHOTの行・名前2行・体力の帯)
-  g.font = `${fsm}px 'Russo One', 'Rajdhani', sans-serif`;
-  const wRange = g.measureText(m != null ? `${m} m` : '--- m').width;
-  const cardW = W ? clamp(viewW*0.11, 70, 120) : clamp(viewW*0.15, 96, 190);
-  const lines = t ? snWrapName(g, t.exploreName || t.name, cardW, nfs) : [];
-  const bw0 = Math.max(wRange, t ? cardW : 0) + 4;
-  const bh0 = fsm*0.8 + fsm*1.2 + (shot ? fsm*0.95 : 0) + (t ? lines.length*nfs*1.15 + nfs*0.75 + 6 : 0);
-  let dx, dy, inside = false;
-  const taken = [];
-  // 息のゲージの「息止め」の文字(窓の左の縁の外・中心の高さ)とは重ねない
-  if(W && (v.breath < 0.999 || v.holding)) taken.push([ox - R*1.17 - 62, oy - 10, ox - R*1.1, oy + 10]);
-  if(W){
-    const slot = snFindSlot(bw0, bh0, ox, oy, R, taken);
-    if(slot){ taken.push(slot); dx = slot[0]; dy = slot[1] + fsm*0.8; }
-    else { inside = true; dx = ox + R*0.46; dy = oy + R*0.2; }
-  } else {
-    dx = cx + viewH*0.17; dy = cy + viewH*0.158 + fsm*1.1;
-  }
-  // 窓の外は真っ黒なので、札の下地は要らない(窓の中へ戻したときだけ薄い下地)
-  if(inside){ g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx - 6, dy - fsm*1.2, bw0 + 12, bh0 + 8); }
-  snText(g, 'RANGE', dx, dy - fsm*0.8, Math.max(9, fsm*0.55), 'rgba(255,214,150,0.85)');
-  snText(g, m != null ? `${m} m` : '--- m', dx, dy + 3, fsm, (v.aim && v.aim.ent) ? '#ff9a7a' : '#ffe9c4');
-  let infoY = dy + fsm*1.2;
-  if(shot){
-    const ka = 1 - Math.max(0, v.lastShot.t - SNIPER_SHOT_RANGE_SEC*0.7) / (SNIPER_SHOT_RANGE_SEC*0.3);
-    g.save(); g.globalAlpha *= ka;
-    snText(g, `SHOT ${v.lastShot.m} m`, dx, infoY, Math.max(10, fsm*0.66), SN_AMBER);
-    g.restore();
-    infoY += fsm*0.95;
-  }
-  if(t){
-    lines.forEach((ln, i)=> snText(g, ln, dx, infoY + 2 + i*nfs*1.15, nfs, '#f3eadb', 'left', '600'));
-    const by = infoY + 2 + (lines.length - 1)*nfs*1.15 + nfs*0.75;
-    const pct = clamp(t.hp / Math.max(1, t.maxHp), 0, 1);
-    const bw = cardW*0.85, bh = 4;
-    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(dx - 1, by - 1, bw + 2, bh + 2);
-    g.fillStyle = pct > 0.5 ? '#5fe07c' : (pct > 0.22 ? '#f4c430' : '#ff5d5d');
-    g.fillRect(dx, by, bw*pct, bh);
-  }
+  v.__dbgInfoRect = null; v.__dbgLens = null;
   if(!W){
-    // アイアン: 装填の進みだけ照準の下に細く(倍率と残弾はHUDの札)
+    // アイアン: レンズが無いので元のまま照準の右下に小さく(倍率・残弾はHUDの札が出す)
+    const fsm = 15;
+    const dx = cx + viewH*0.17, dy = cy + viewH*0.158 + fsm*1.1;
+    const m = v.aim && v.aim.m != null ? Math.round(v.aim.m) : null;
+    snText(g, 'RANGE', dx, dy - fsm*0.8, Math.max(9, fsm*0.55), 'rgba(255,214,150,0.85)');
+    snText(g, m != null ? `${m} m` : '--- m', dx, dy + 3, fsm, (v.aim && v.aim.ent) ? '#ff9a7a' : '#ffe9c4');
+    let infoY = dy + fsm*1.2;
+    if(v.lastShot && v.lastShot.m != null){
+      const ka = 1 - Math.max(0, v.lastShot.t - SNIPER_SHOT_RANGE_SEC*0.7) / (SNIPER_SHOT_RANGE_SEC*0.3);
+      g.save(); g.globalAlpha *= ka;
+      snText(g, `SHOT ${v.lastShot.m} m`, dx, infoY, Math.max(10, fsm*0.66), SN_AMBER);
+      g.restore(); infoY += fsm*0.95;
+    }
+    const t = v.aim && v.aim.ent && v.aim.ent.alive ? v.aim.ent : null;
+    if(t){
+      const nfs = Math.max(11, fsm*0.66), cardW = clamp(viewW*0.15, 96, 190);
+      const name = snWrapName1(g, t.exploreName || t.name, cardW, nfs);
+      snText(g, name, dx, infoY + 2, nfs, '#f3eadb', 'left', '600');
+      const by = infoY + 2 + nfs*0.75, pct = clamp(t.hp / Math.max(1, t.maxHp), 0, 1), bh = 4;
+      g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(dx - 1, by - 1, cardW*0.85 + 2, bh + 2);
+      g.fillStyle = pct > 0.5 ? '#5fe07c' : (pct > 0.22 ? '#f4c430' : '#ff5d5d');
+      g.fillRect(dx, by, cardW*0.85*pct, bh);
+    }
     if(s.reloadLeft > 0){
       const p = 1 - s.reloadLeft / w.reloadSec, bw = viewH*0.18;
       g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(cx - bw/2 - 2, cy - viewH*0.06 - 2, bw + 4, 8);
@@ -1576,36 +1600,76 @@ function drawScopeInfo(g, cx, cy, W, sc, w){
     }
     return;
   }
-  // 倍率と残弾の札(1行: 「8×」+弾の柱+ボルトの戻り)。装填中は下に細い帯
-  const fsMag = Math.max(13, Math.min(16, R*0.06));
+  const R = W.R, ox = W.x, oy = W.y;
+  const m = v.aim && v.aim.m != null ? Math.round(v.aim.m) : null;
+  const t = v.aim && v.aim.ent && v.aim.ent.alive ? v.aim.ent : null;
+  const shot = v.lastShot && v.lastShot.m != null;
+  const fsm = Math.max(13, Math.min(17, R*0.075));
+  const nfs = Math.max(11, fsm*0.62);
+  const fsMag = Math.max(12, Math.min(15, R*0.055));
+  // 列の幅は確保した黒い列いっぱいまで(名前は1行のみ。批評: 縦持ちの狭い列で2行だと的に近づきすぎる)
+  const cardW = Math.max(64, SNIPER_SCOPE_GUTTER_PX - 34);
+  g.font = `${fsm}px 'Russo One', 'Rajdhani', sans-serif`;
+  const wRange = g.measureText(m != null ? `${m} m` : '--- m').width;
+  const nameStr = t ? snWrapName1(g, t.exploreName || t.name, cardW, nfs) : '';
   g.font = `${fsMag}px 'Russo One', 'Rajdhani', sans-serif`;
   const magTxt = sc.label || (sc.mag+'×');
   const wMag = g.measureText(magTxt).width;
-  const bwB = wMag + 8 + w.mag*8 + 18, bhB = 20 + (s.reloadLeft > 0 ? 16 : 0);
-  let bx0, by0;
-  const slotB = snFindSlot(bwB, bhB, ox, oy + (inside ? 0 : Math.min(R*0.5, bh0*0.5 + bhB + 10)), R, taken);
-  if(slotB && !inside){ bx0 = slotB[0]; by0 = slotB[1]; }
-  else { bx0 = ox - R*0.62; by0 = oy + R*0.5; }
-  snText(g, magTxt, bx0, by0 + 10, fsMag, 'rgba(255,214,150,0.9)', 'left');
-  const bx = bx0 + wMag + 8, by = by0 + 10;
+  const bwMag = wMag + 8 + w.mag*8 + 18;
+  const bw = Math.max(wRange, t ? cardW : 0, bwMag) + 4;
+  // 縦に積む行の高さを先に合計する(息止め中の弧・「息止め」の文字は窓の左の外なので、この列とは重ならない)
+  const rowGap = fsm*0.3;
+  let bh = fsm*0.85 + fsm*0.7 + rowGap;              // RANGE見出し+値
+  if(shot) bh += fsm*0.7 + rowGap;                    // SHOT
+  if(t) bh += nfs + nfs*0.9 + rowGap;                 // 名前1行+体力帯
+  bh += fsMag*1.9 + rowGap;                           // 倍率+残弾のピップ
+  if(s.reloadLeft > 0) bh += 18;
+  const slot = snFindSlotRight(bw + 8, bh + 8, ox, oy, R, []);
+  // 検査用: 情報の枠とレンズの円(撮影ツールの --snmetrics が読む。ゲームの見た目には出ない)
+  v.__dbgInfoRect = slot; v.__dbgLens = { x:ox, y:oy, r:R };
+  const dx = slot[0] + 4;
+  let y = slot[1] + 4 + fsm*0.85;
+  snText(g, 'RANGE', dx, y - fsm*0.55, Math.max(9, fsm*0.55), 'rgba(255,214,150,0.85)');
+  y += fsm*0.55;
+  snText(g, m != null ? `${m} m` : '--- m', dx, y, fsm, (v.aim && v.aim.ent) ? '#ff9a7a' : '#ffe9c4');
+  y += fsm*0.7 + rowGap;
+  if(shot){
+    const ka = 1 - Math.max(0, v.lastShot.t - SNIPER_SHOT_RANGE_SEC*0.7) / (SNIPER_SHOT_RANGE_SEC*0.3);
+    g.save(); g.globalAlpha *= ka;
+    snText(g, `SHOT ${v.lastShot.m} m`, dx, y, Math.max(10, fsm*0.62), SN_AMBER);
+    g.restore();
+    y += fsm*0.7 + rowGap;
+  }
+  if(t){
+    snText(g, nameStr, dx, y, nfs, '#f3eadb', 'left', '600');
+    y += nfs*0.75;
+    const pct = clamp(t.hp / Math.max(1, t.maxHp), 0, 1), bwHp = cardW*0.9, bhHp = 4;
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(dx - 1, y - 1, bwHp + 2, bhHp + 2);
+    g.fillStyle = pct > 0.5 ? '#5fe07c' : (pct > 0.22 ? '#f4c430' : '#ff5d5d');
+    g.fillRect(dx, y, bwHp*pct, bhHp);
+    y += bhHp + nfs*0.15 + rowGap;
+  }
+  // 倍率と残弾の札(1行: 「8×」+弾の柱)。装填中は下に細い帯
+  snText(g, magTxt, dx, y + fsMag*0.7, fsMag, 'rgba(255,214,150,0.9)', 'left');
+  const bx = dx + wMag + 8, byPip = y + fsMag*0.7;
   for(let i=0;i<w.mag;i++){
     const full = i < s.ammo && s.reloadLeft <= 0;
     g.fillStyle = full ? '#ffd79a' : 'rgba(255,255,255,0.14)';
-    g.fillRect(bx + i*8, by - 8, 5, 16);
-    if(full){ g.fillStyle = '#b07a3a'; g.fillRect(bx + i*8, by + 5, 5, 3); }
+    g.fillRect(bx + i*8, byPip - 8, 5, 16);
+    if(full){ g.fillStyle = '#b07a3a'; g.fillRect(bx + i*8, byPip + 5, 5, 3); }
   }
+  y += fsMag*1.1;
   if(s.reloadLeft > 0){
     const p = 1 - s.reloadLeft / w.reloadSec;
-    const bw = bwB, byy = by0 + 24;
-    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(bx0 - 1, byy - 1, bw + 2, 6);
-    g.fillStyle = '#ffb45a'; g.fillRect(bx0, byy, bw*p, 4);
-    snText(g, '装填中', bx0, byy + 14, 12, '#ffcf8a', 'left');
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(dx - 1, y - 1, bw - 3, 6);
+    g.fillStyle = '#ffb45a'; g.fillRect(dx, y, (bw-4)*p, 4);
+    snText(g, '装填中', dx, y + 14, 12, '#ffcf8a', 'left');
   } else if(s.cycleLeft > 0){
     const p = 1 - s.cycleLeft / w.cycleSec;
     g.strokeStyle = 'rgba(255,215,150,0.75)'; g.lineWidth = 2.5;
-    g.beginPath(); g.arc(bx + w.mag*8 + 8, by, 6, -Math.PI/2, -Math.PI/2 + p*Math.PI*2); g.stroke();
+    g.beginPath(); g.arc(bx + w.mag*8 + 8, byPip, 6, -Math.PI/2, -Math.PI/2 + p*Math.PI*2); g.stroke();
   }
-  // 息(窓の外=鏡筒の黒い所に弧)。止めている間と戻っている間だけ
+  // 息(窓の外=鏡筒の黒い所に弧。左側なので右の情報列とは重ならない)。止めている間と戻っている間だけ
   if(v.breath < 0.999 || v.holding) drawBreathArc(g, ox, oy, R*1.17, Math.PI*0.80, Math.PI*1.20);
 }
 

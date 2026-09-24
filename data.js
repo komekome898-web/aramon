@@ -7232,3 +7232,10 @@ const SNIPER_HIT_JOLT_PX        = [3, 5];  // 同じく揺れの幅(画面px。�
 const SNIPER_IMPACT_COLUMN_H    = 60;    // 外れた弾が地面に立てる土柱の高さ(ワールド単位=6m相当。遠くからでも見える大きさ)
 const SNIPER_IMPACT_DEBRIS_G    = 900;   // 土くれ・小石が落ちる重さ(ワールド単位/秒²)
 const SNIPER_CRIT_NUM_SCALE     = 1.5;   // 弱点命中のダメージの数字の大きさ(体への命中の数字に対する倍率)
+// 批評5巡目(縦持ちでレンズの内側に情報が入り込む/弾道が折れる/弱点の印が浮く)への対応で追加
+const SNIPER_SCOPE_GUTTER_PX    = 150;   // 窓の右に必ず確保する黒い列の幅(ここへ距離・名前・倍率・残弾を積む。縦持ちではこの分だけ窓を縮める)
+const SNIPER_SCOPE_MIN_R_RATIO  = 0.20;  // 窓の半径の下限(画面の高さに対する割合。ボタンが近い端末でも窓が潰れない)
+const SNIPER_TRACER_ANCHOR_DX   = 0.16;  // 弾道の光が「出てくる」画面上の位置(中心から右へ。画面の高さに対する割合)
+const SNIPER_TRACER_ANCHOR_DY   = 0.30;  // 同じく下へ。世界座標でなく画面座標でここへ寄せるので、合流までの弧が必ず滑らかになる
+const SNIPER_IMPACT_SCALE_BOOST = 2.2;   // 着弾の土煙・破片・火花の大きさの倍率(遠距離・高倍率でも見える大きさに)
+const SNIPER_IMPACT_VIS_MIN_PX  = 20;    // 着弾の土煙が画面上で最低限持つ大きさ(px)

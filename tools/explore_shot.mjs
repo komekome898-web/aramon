@@ -574,9 +574,13 @@ function pageTools(){
           if((o.fire === 'hit' || o.fire === 'miss') && sniperView.fx.some(f=> f.kind==='hit' || f.kind==='impact')){ for(let j=0;j<8;j++){ update(1/60); T.x=tx; T.y=ty; } break; }
         }
         // 撮影は1枚に時間がかかるので、演出の時計はこちらで決める(muzzle=45ms後 / それ以外=落ち着いた後)
-        // muzzle は 15ms×3コマ(=45ms)だけ反動のばね・閃光を進めてから撮る
         // muzzle は 15ms×2コマ(閃光の2コマ目=白い芯つき)だけ反動のばね・閃光を進めてから撮る
         if(o.fire === 'muzzle'){ for(let i=0;i<2;i++){ sniperView.lastMs = performance.now() - 15; sniperFrame(); sniperFrameEnd(); } }
+        /* 着弾の土煙(drawScopeImpacts)は`up`(0〜0.07秒で立ち上がる)にアルファを掛けるので、
+           v.fx[].t が一度も進んでいない(sniperFrame は render() の中でしか呼ばれず、update() では進まない)
+           t=0のまま撃った瞬間を撮ると土煙が透明で写る(=批評「外れたときの土煙が見えない」)。
+           miss は 15ms×6コマ(=90ms)だけ進めて、煙が育った所を撮る */
+        if(o.fire === 'miss'){ for(let i=0;i<6;i++){ sniperView.lastMs = performance.now() - 15; sniperFrame(); sniperFrameEnd(); } }
         sniperView.lastMs = 1234.5;
         if(o.fire !== 'muzzle'){ sniperView.flash = 0; sniperView.flashN = null; sniperView.smoke.length = 0; sniperView.recoil = sniperView.recoilV = 0; sniperView.recoilX = sniperView.recoilXV = 0; }
         // 撮るまでに描き直すコマ(__shotField・settleFrame)で演出の時計が進まないよう止める(閃光・命中の数字をその瞬間のまま写す)
@@ -805,7 +809,24 @@ for(const vpName of vpNames){
       await settleFrame(page);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
-      report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file), cam:info });
+      const shotRec = { cut:c.name, vp:vpName, file:path.relative(ROOT, file), cam:info };
+      /* 検査用: 狙撃スコープの情報の枠(sniperView.__dbgInfoRect)がレンズの円(__dbgLens)へ
+         食い込んでいないかを数字で出す(批評5巡目: 「レンズの内側には何も置かない」を検査する)。
+         矩形と円の最短距離 >= 円の半径なら重ならない。ゲームの見た目には出ない値。 */
+      if(c.name.startsWith('sniper_')){
+        shotRec.snMetric = await page.evaluate(()=>{
+          const v = (typeof sniperView === 'object') ? sniperView : null;
+          const r = v && v.__dbgInfoRect, l = v && v.__dbgLens;
+          if(!r || !l) return null;
+          const clampN = (x, a, b)=> Math.max(a, Math.min(b, x));
+          const cx = clampN(l.x, r[0], r[2]), cy = clampN(l.y, r[1], r[3]);
+          const d = Math.hypot(l.x - cx, l.y - cy);
+          return { rect:[Math.round(r[0]),Math.round(r[1]),Math.round(r[2]),Math.round(r[3])],
+                   lens:{ x:Math.round(l.x), y:Math.round(l.y), r:Math.round(l.r) },
+                   dist:Math.round(d), overlapPx: Math.round(l.r - d) };
+        });
+      }
+      report.shots.push(shotRec);
       console.log(`撮影 ${c.name}_${vpName}  (${info.region||'キャンプ'} / 生存${info.alive})`);
     }
     // 結果画面は1回で試合が終わるので、カットごとに探検を始め直す

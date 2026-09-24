@@ -789,17 +789,25 @@ function scaledSpriteFor(img, needPx){
   set[bucket] = c;
   return c;
 }
-/* 2倍に拡大して輪郭を締めた版(狙撃スコープで大きく覗くときだけ。1枚ごとに一度だけ作って覚える)。
+/* 拡大して輪郭を締めた版(狙撃スコープで大きく覗くときだけ。1枚ごと・拡大倍率ごとに一度だけ作って覚える)。
    ・拡大はなめらかに(高品質)、そのあと輪郭を締めるアンシャープマスク(半径1のぼかしとの差を足す)を掛ける
-   ・色は透明度を掛けた値のまま扱う(ふちに黒い縁が出ない) */
+   ・色は透明度を掛けた値のまま扱う(ふちに黒い縁が出ない)
+   ・**拡大倍率は必要な画面サイズから決める**(固定2倍だと、8倍ズームの近距離で必要な大きさが2倍を超え、
+     この版をさらに`drawImage`で引き伸ばす二度目のぼかしが乗って的がぼやけたまま=批評5巡目)。
+     SCOPE_SHARPEN_BUCKETS の中から実際に必要な倍率以上の最小を選ぶので、キャッシュは1枚あたり最大3版まで */
 const SCOPE_SHARPEN_MIN_UPSCALE = 1.3;   // 元画像のこの倍より大きく描くときだけ使う
 const SCOPE_SHARPEN_AMOUNT = 1.1;        // 輪郭の締め具合(アンシャープマスクの強さ)
+const SCOPE_SHARPEN_BUCKETS = [2, 3, 4]; // 元画像に対する拡大倍率の候補
 const _sharpCache = new WeakMap();
-function sharpenedUpscaleFor(img){
-  const hit = _sharpCache.get(img);
-  if(hit) return hit;
-  const iw = _imgW(img), ih = _imgH(img);
-  const w = iw*2, h = ih*2;
+function sharpenedUpscaleFor(img, needPx){
+  const iw = _imgW(img), ih = _imgH(img), src = Math.max(iw, ih) || 1;
+  const want = needPx ? needPx / src : 2;
+  let factor = SCOPE_SHARPEN_BUCKETS[SCOPE_SHARPEN_BUCKETS.length - 1];
+  for(const b of SCOPE_SHARPEN_BUCKETS){ if(b >= want){ factor = b; break; } }
+  let set = _sharpCache.get(img);
+  if(!set){ set = {}; _sharpCache.set(img, set); }
+  if(set[factor]) return set[factor];
+  const w = Math.round(iw*factor), h = Math.round(ih*factor);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const cx = c.getContext('2d');
   cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
@@ -831,7 +839,7 @@ function sharpenedUpscaleFor(img){
     }
     cx.putImageData(id, 0, 0);
   }catch(_){ /* 読み出せない画像(別オリジン)は拡大しただけの版を使う */ }
-  _sharpCache.set(img, c);
+  set[factor] = c;
   return c;
 }
 /* 狙撃スコープで大きく覗く絵に重ねる「立体の手がかり」(絵ごとに一度だけ作って覚える)。
@@ -851,8 +859,10 @@ function scopeVolumeFor(spr){
   const hr = (hz>>16)&255, hg = (hz>>8)&255, hb = hz&255;
   x.drawImage(spr, 0, 0);
   x.globalCompositeOperation = 'source-in';
+  // 濃さが途中でいったん薄くなって(0.45で0.04)また濃くなる3段は、対称な絵で「縦に割れた線」に見えた(批評5巡目)。
+  // 明→暗の2段だけにして途中の谷を無くす(単調に暗くなるので割れ目が出ない)
   const gr = x.createLinearGradient(0, 0, w*0.55, h);
-  gr.addColorStop(0, `rgba(${hr},${hg},${hb},0.16)`); gr.addColorStop(0.45, 'rgba(0,0,0,0.04)'); gr.addColorStop(1, 'rgba(0,0,0,0.34)');
+  gr.addColorStop(0, `rgba(${hr},${hg},${hb},0.14)`); gr.addColorStop(1, 'rgba(0,0,0,0.30)');
   x.fillStyle = gr; x.fillRect(0, 0, w, h);
   // 縁の光
   const rim = document.createElement('canvas'); rim.width = w; rim.height = h;
@@ -992,7 +1002,7 @@ function drawMonsterPortrait(e, img, flash, precomputedLayout){
      (歩行コマは320pxの256色なので、8倍で覗くとぼやけて色の段が出ていた=批評) */
   const spr = (game.explore && need > Math.max(_imgW(img), _imgH(img))*SCOPE_SHARPEN_MIN_UPSCALE
                && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead())
-    ? sharpenedUpscaleFor(img) : scaledSpriteFor(img, need);
+    ? sharpenedUpscaleFor(img, need) : scaledSpriteFor(img, need);
   const scopedBig = spr !== undefined && game.explore && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead() && need > 260;
   ctx.drawImage(spr, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
   // 狙撃スコープで大きく覗いている間だけ: 一枚絵の薄さを隠す陰影(下・右ほど暗い)・左上の縁の光・環境色
