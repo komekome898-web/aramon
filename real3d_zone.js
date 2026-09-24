@@ -73,8 +73,17 @@ const SHAPE_EPS   = 1.5;   // 輪の中心・半径がこれだけ変わった�
 const MIN_FORE    = 0.18;  // 帯を真横から見たときの太さ補正の上限(1/0.18 ≒ 5.5倍まで)
 /* 帯の半幅の上限を「カメラからの距離の何倍まで」で決める。絶対値(例:90単位)で
    止めると、遠くの輪だけ画面上で細くなって2D版と見た目が変わってしまう。
-   補正なしの半幅は距離の0.06倍程度なので、この上限は真横から見たときだけ効く。 */
+   補正なしの半幅は距離の0.06倍程度なので、この上限は真横から見たときだけ効く。
+   探検のボスの予告(nearFade付きの印)だけは EX_MARK_HALF_R へ絞る: 0.25だと真横に近い角度で
+   見た小さい円が局所的に大きく膨らみ、ヘアピン状にねじれて円に見えなくなっていた(批評指摘)。
+   値はマテリアルごとの uniform(uMaxHalfR / uSlopeCap)で持ち、既定は通常のリアルマップと同じ。 */
 const MAX_HALF_R  = 0.25;
+const EX_MARK_HALF_R = 0.05;
+// 探検のボスの予告だけ: 傾き補正(aSlope)による上下ずれの絶対量の上限(ワールド単位)。
+// 無いと崖のように傾きが大きい所で帯がジグザグに折れて見えた(批評指摘)。
+const EX_MARK_SLOPE_CAP = 40;
+const NO_SLOPE_CAP = 1e6;
+const EX_MARK_MIN_SEGS = 28;   // 探検のボスの予告の輪郭の最少分割(急斜面で折れ目が目立つため)。通常は12
 const MARK_SLOTS  = 8;     // 同時に出せる技の地面円の数(レイドの予告は多くて数個)
 /* 塗りの分割(地形に沿わせるので粗いと浮く・地面に潜って縁がギザギザに欠ける)。
    半径方向は大きさに合わせて FILL_RINGS_MIN〜FILL_RINGS まで(地形の頂点間隔50程度)、周方向は固定 */
@@ -89,7 +98,7 @@ const RIBBON_VERT = `
   attribute vec2  aNrm;    // 広げる向き(地面のXZ平面。線と直交)
   attribute float aU;      // 線に沿った長さ(ワールド単位。破線の位相に使う)
   attribute float aSlope;  // aNrm方向の地面の傾き(dh/d距離)
-  uniform float uFocalPx, uHalfPx, uLift, uFadeNear, uFadeFar;
+  uniform float uFocalPx, uHalfPx, uLift, uFadeNear, uFadeFar, uMaxHalfR, uSlopeCap;
   varying float vSide, vU, vFade;
   void main(){
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -101,10 +110,11 @@ const RIBBON_VERT = `
        視線と広げる向きのなす角ぶん(fore)だけ広げ直す(2Dの一定太さに合わせるため)。 */
     float c = dot(n, vdir);
     float fore = sqrt(max(1.0 - c*c, 0.0));
-    float halfW = min(uHalfPx * d / uFocalPx / max(fore, ${MIN_FORE.toFixed(3)}), d * ${MAX_HALF_R.toFixed(3)});
+    float halfW = min(uHalfPx * d / uFocalPx / max(fore, ${MIN_FORE.toFixed(3)}), d * uMaxHalfR);
     vec3 p = wp + n * (aSide * halfW);
-    // 傾きぶん上下させて、坂でも帯が地面と平行に乗るようにする
-    p.y += uLift + aSlope * aSide * halfW;
+    // 傾きぶん上下させて、坂でも帯が地面と平行に乗るようにする(急斜面では上限で止める)
+    float slopeLift = clamp(aSlope * aSide * halfW, -uSlopeCap, uSlopeCap);
+    p.y += uLift + slopeLift;
     vSide = aSide;
     vU = aU;
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
@@ -143,8 +153,10 @@ const FILL_VERT = `
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
     float d = max(length(cameraPosition - wp), 1.0);
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
-    // 探検のボスの予告だけ(uNearB>0): カメラに近いほど塗りを薄く、急な斜面も薄く(縁の線は別の帯なので残る)
-    if(uNearB > 0.0) vFade *= mix(0.3, 1.0, smoothstep(uNearA, uNearB, d)) * aFlat;
+    /* 探検のボスの予告だけ(uNearB>0): カメラに近いほど塗りを薄く、急な斜面も薄く(縁の線は別の帯なので残る)。
+       近い×急斜面が重なると掛け算で0近くまで薄れ、輪郭2本だけで範囲が読めなくなっていた
+       (批評指摘)ので下限を設けてある。 */
+    if(uNearB > 0.0) vFade *= max(0.4, mix(0.3, 1.0, smoothstep(uNearA, uNearB, d)) * aFlat);
     vT = aT; vS = aS;
     gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
   }`;
@@ -227,6 +239,8 @@ function ribbonMaterial(style){
       uDashLen:{ value: period },
       uDuty:   { value: period ? style.dash[0]/period : 1 },
       uLift:   { value: RING_LIFT },
+      uMaxHalfR: { value: MAX_HALF_R },
+      uSlopeCap: { value: NO_SLOPE_CAP },
     }),
     vertexShader: RIBBON_VERT,
     fragmentShader: RIBBON_FRAG,
@@ -609,6 +623,11 @@ export function updateZoneLayer(zone, markList, camPos){
       u.uColor.value.copy(col.rgb);
       u.uAlpha.value = alpha;
     }
+    for(const rb of [slot.ring, slot.inner, slot.outline]){
+      const u = rb.mesh.material.uniforms;
+      u.uMaxHalfR.value = m.nearFade ? EX_MARK_HALF_R : MAX_HALF_R;
+      u.uSlopeCap.value = m.nearFade ? EX_MARK_SLOPE_CAP : NO_SLOPE_CAP;
+    }
     // solid = 破線にしない(探検のボスの予告)。破線の間隔は画素比込みの値へ戻す
     slot.ring.mesh.material.uniforms.uDashLen.value = m.solid ? 0 : slot.ring.mesh.material.userData.px.dash * (lastPx || 1);
     // 外縁があるときは内線のにじみ(光)を弱め、太く明るくする(探検のボスの予告。縁が読めるように)
@@ -640,10 +659,10 @@ function buildMark(slot, m, arc){
   let to = arc ? arc.to : Math.PI*2;
   if(arc && to < from) to += Math.PI*2;
   const span = to - from;
-  // 輪郭
+  // 輪郭。探検のボスの予告は、小さい円ほど荒くなりがちで急斜面では粗いほど折れ目が目立つ(批評指摘)ので下限を上げる
   const outCap = slot.ring.cap;
   let segs = Math.round(Math.abs(span)*m.r/RING_STEP);
-  segs = Math.max(12, Math.min(segs, outCap - 5));
+  segs = Math.max(m.nearFade ? EX_MARK_MIN_SEGS : 12, Math.min(segs, outCap - 5));
   let n = 0;
   if(arc){
     sx[n] = m.x; sy[n] = m.y; n++;                      // 中心

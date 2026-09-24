@@ -6587,7 +6587,9 @@ const EXPLORE_BOSS_DYING_SEC      = 3.2;   // 倒れてから姿が消えるま�
 const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバーを出す距離
 /* 登場の視点演出(咆哮 intro のときだけ)。turnSec でボスへ向き直り、zoomSec のあいだ zoom 倍に寄る。
    上下の黒帯は画面の高さ×bar。寄せは world.js の setViewZoom(狙撃と同じ入口)で、構え中は狙撃を優先する */
-const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.8, bar:0.1, dimSec:1.6 };
+/* zoom は 1.8 だと巨体の頭が画面上端(HPバー)を突き抜けて見えた(批評指摘)ので弱めてある。
+   モンハンの咆哮のように「ボス全体を収めて引く」側を優先する。 */
+const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.3, bar:0.1, dimSec:1.6 };
 // 討伐の視点演出(同じ仕組み)。崩れ落ちる0.8秒を画面の中央で見せる。討伐完了の札は崩れ終わってから出る
 const EXPLORE_BOSS_HUNT_CINE      = { turnSec:0.35, zoomSec:2.0, zoom:1.15, bar:0.09, dimSec:2.2, lookZ:0.9 };   // lookZ: 体の高さのどこを画面の中央にするか(高いほどボスが画面の下寄り=上の札と重ならない)
 // 弱点命中の数字(照準の近く。画面の画素で固定サイズ・秒数)。狙撃のスコープ中は狙撃側が出すので出さない
@@ -6597,7 +6599,8 @@ const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.92;  // 部位破壊のひるみの縦の�
    ・急な斜面の塗りも弱める(斜面に板のように貼り付いて見える=批評指摘) */
 const EXPLORE_TELEGRAPH_NEAR      = [220, 900];
 const EXPLORE_TELEGRAPH_NEAR_BAND = [40, 320];   // 突進の帯(細いので手前も濃いまま近くまで見せる)
-const EXPLORE_BOSS_RAGE_CINE      = { turnSec:0, zoomSec:0.7, zoom:1.18, bar:0, dimSec:0, lookZ:0.5, noPitch:true };   // 怒りの咆哮の一瞬の寄り
+// 怒りの咆哮の一瞬の寄り。noPitch(視点を動かさない)ぶん zoom は弱め(頭がHPバーに食い込む=批評指摘)
+const EXPLORE_BOSS_RAGE_CINE      = { turnSec:0, zoomSec:0.7, zoom:1.05, bar:0, dimSec:0, lookZ:0.5, noPitch:true };
 const EXPLORE_BODY_POP_PX         = 22;   // ボスの体に当てた数字(白)の大きさ(画面の画素)
 const EXPLORE_AIM_CLEAR           = { w:170, h:120 };   // 照準の周りの文字を出さない範囲(画面の画素)
 /* ボス戦の間の視点の補正: ボスの頭が画面上部のHUD(exploreHudBand の下端)+margin より上に出たら、

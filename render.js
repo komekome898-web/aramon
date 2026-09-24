@@ -1325,8 +1325,10 @@ function drawMonster(e,p){
     ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, sr, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   } else {
-    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*0.9*uiMult, e.radius*0.4*uiMult, 0,0,Math.PI*2);
-    ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
+    // 目玉系(スエゾー等)の野生は影を濃く・大きくして接地感を出す(地図のピンに見える=批評指摘)
+    const pinLook = game.explore && e.isExploreWild && typeof EXPLORE_PIN_LOOK_WILD !== 'undefined' && EXPLORE_PIN_LOOK_WILD.includes(e.element);
+    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 1.05 : 0.9)*uiMult, e.radius*(pinLook ? 0.46 : 0.4)*uiMult, 0,0,Math.PI*2);
+    ctx.fillStyle = pinLook ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.35)'; ctx.fill();
   }
   if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
@@ -1352,7 +1354,13 @@ function drawMonster(e,p){
   if(snJolt){ ctx.save(); ctx.translate(snJolt.x / p.scale, snJolt.y / p.scale); }
   const explorePose = game.explore && exploreBeginPose(e);
   if(displayImg){
-    drawMonsterPortrait(e, displayImg, e.hitFlash>0 ? true : (snJolt && snJolt.flash > 0.01 ? snJolt.flash : false), portraitLayout);
+    /* 探検のボスは弱点命中でここに加えてもう一段白く光る(exploreDrawMonsterTint)ので、両方が
+       同時に乗ると頭が真っ白に飛んで顔が消えて見えた(批評指摘)。弱点の光が出ている一瞬はここを
+       出さず(二重に足さない)、それ以外の通常ヒットは控えめな明るさに留める。 */
+    const exploreWeakFlashing = game.explore && e.isExploreBoss
+      && (exploreState.rawClock - (e.exWeakFlashAt != null ? e.exWeakFlashAt : -9)) < 0.12;
+    const hitFlashAlpha = exploreWeakFlashing ? 0 : ((game.explore && e.isExploreBoss) ? 0.22 : true);
+    drawMonsterPortrait(e, displayImg, e.hitFlash>0 && hitFlashAlpha !== 0 ? hitFlashAlpha : (snJolt && snJolt.flash > 0.01 ? snJolt.flash : false), portraitLayout);
     if(game.explore && e.isPlayer && typeof sniperDrawSlungRifle === 'function') sniperDrawSlungRifle(e, portraitLayout);
     if(game.explore) exploreDrawMonsterTint(e, displayImg, portraitLayout);   // 探検のボスの色味・怒りの目・討伐で色が抜ける
   } else {

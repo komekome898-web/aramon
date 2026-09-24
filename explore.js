@@ -861,6 +861,22 @@ function exploreBossPickMove(b, def, d){
   for(const o of pool){ r -= o.w; if(r <= 0) return o; }
   return pool[pool.length-1];
 }
+/* 方向のある大技(ブレスの扇・突進の帯)の予告が尾根を越えて画面の空へ抜けて見える問題(批評指摘)への対策。
+   攻撃の向きへ地形の高さを追跡し、地形なりに登っている間は伸ばしたまま(そこは実際に当たる場所)、
+   尾根を越えて視線が切れる(登り基準の見え方より大きく下がる)距離で予告を止める。 */
+const EXPLORE_TELEGRAPH_SIGHT_STEP = 40;
+const EXPLORE_TELEGRAPH_SIGHT_DROP = 18;   // これより「尾根の向こう」へ下ったら、そこで切る
+function exploreTerrainSightRange(x0, y0, z0, angle, maxRange){
+  const cs = Math.cos(angle), sn = Math.sin(angle);
+  let maxSlope = 0, limit = maxRange;
+  for(let d = EXPLORE_TELEGRAPH_SIGHT_STEP; d <= maxRange; d += EXPLORE_TELEGRAPH_SIGHT_STEP){
+    const h = baseTerrainHeightAt(x0 + cs*d, y0 + sn*d) - z0;
+    const slope = h / d;
+    if(slope >= maxSlope - 1e-4){ maxSlope = Math.max(maxSlope, slope); continue; }
+    if(maxSlope*d - h > EXPLORE_TELEGRAPH_SIGHT_DROP){ limit = d; break; }
+  }
+  return Math.max(80, limit);
+}
 // 予告を出す(地面の印)。実際の範囲攻撃は exploreBossTickPending が時間になったら出す。
 // forceKey は撮影ハーネス用(技を決め打ちする)。ふだんは渡さない
 function exploreBossBeginAttack(b, def, t, forceKey){
@@ -877,7 +893,9 @@ function exploreBossBeginAttack(b, def, t, forceKey){
   if(mv.shape === 'fan'){
     const ang = angTo(b, t);
     b.facingAngle = ang;
-    marks.push({ x:b.x, y:b.y, r:mv.range + b.radius, angle:ang, fanDeg:mv.fanAngleDeg, fireAt:now+tele });
+    // 予告が尾根を越えて空へ抜けて見える問題への対策(批評指摘): 視線が切れる距離までで止める
+    const sightR = exploreTerrainSightRange(b.x, b.y, b.z||0, ang, mv.range);
+    marks.push({ x:b.x, y:b.y, r:Math.min(mv.range, sightR) + b.radius, angle:ang, fanDeg:mv.fanAngleDeg, fireAt:now+tele });
   } else if(mv.shape === 'circle'){
     marks.push({ x:b.x, y:b.y, r:mv.range + b.radius, fireAt:now+tele });
   } else if(mv.shape === 'meteor'){
@@ -889,7 +907,8 @@ function exploreBossBeginAttack(b, def, t, forceKey){
   } else if(mv.shape === 'charge'){
     const ang = angTo(b, t);
     b.facingAngle = ang;
-    const len = Math.max(260, Math.min(mv.length, raycastObstacleDistance(b.x, b.y, ang, mv.length) - b.radius*0.6));
+    const sightR = exploreTerrainSightRange(b.x, b.y, b.z||0, ang, mv.length);
+    const len = Math.max(260, Math.min(mv.length, sightR, raycastObstacleDistance(b.x, b.y, ang, mv.length) - b.radius*0.6));
     // 予告は通り道の帯1枚(体の幅)。突進は体ごと動くので、当たり判定はこの帯と同じ幅になる
     marks.push({ x:b.x, y:b.y, r:len, rect:{ angle:ang, len: len + b.radius, halfW: b.radius + 26 }, fireAt:now+tele });
     charge = { ang, len };
@@ -1849,6 +1868,17 @@ function exploreDrawMonsterUnder(e, uiMult, p){
     ctx.drawImage(tint, -L.dw*k/2, L.dy - L.dh*k/2, L.dw*k, L.dh*k);   // 絵の中心を基準に広げる
   };
   ctx.save();
+  /* 縁取り・発光は本体と同じ位置・同じ大きさで描く(本体を描く変換をそのまま使う)。
+     溜め(構え)の姿勢は縮み・反り・傾きを付けるため、ここで姿勢を掛けないと本体だけが
+     ずれて動き、光だけが元の位置に残る「二重に見える」不具合になる(批評指摘)。 */
+  const underPose = exploreComputePose(e);
+  if(underPose){
+    const fy = exploreFootY(e);
+    ctx.translate(underPose.shx || 0, fy + (underPose.bob || 0));
+    if(underPose.tilt) ctx.rotate(underPose.tilt);
+    ctx.scale(underPose.sx, underPose.sy);
+    ctx.translate(0, -fy);
+  }
   if(e.exRage){
     // 赤黒い光: 暗い赤の縁を大きめに敷き、その内側に明るい赤を足す(体の色は変えない)
     const pulse = 0.7 + 0.3*Math.sin(matchTime*7);
@@ -1943,12 +1973,14 @@ function exploreDrawMonsterTint(e, img, L){
       ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
     }
   }
-  // 技で弱点に当てた瞬間: 本体が一瞬白く光る(exploreWeakPop と組)
+  /* 技で弱点に当てた瞬間: 本体が一瞬白く光る(exploreWeakPop と組)。
+     render.js の一般のヒット白フラッシュ(e.hitFlash)と同時に重なると足し合わさって
+     頭が真っ白に飛び、顔が消えて見えた(批評指摘)ので、上限を下げて輪郭が残るようにする。 */
   const wf = exploreState.rawClock - (e.exWeakFlashAt != null ? e.exWeakFlashAt : -9);
   if(wf >= 0 && wf < 0.12 && typeof whiteMaskFor === 'function'){
     // 純白で上塗り(加算だと下の色味が残って桃色がかって見えた)
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 0.55*(1 - wf/0.12);
+    ctx.globalAlpha = 0.22*(1 - wf/0.12);
     ctx.drawImage(whiteMaskFor(spr), -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
   }
   // 溜めの間は体の色が脈打つ(放つ直前ほど速く・強く)
@@ -2091,6 +2123,10 @@ function exploreBeginPose(e){
   if(e.isPlayer) exploreDrawWornOnPlayer(e, 'behind');
   return true;
 }
+/* 「目玉系」の野生(スエゾー等)は体がしずく形+目1つで、飾りの少なさゆえ立ち止まると
+   地図のピン(目印)にしか見えない(批評指摘)。画像そのものは変えず、絶えずぴょこぴょこ
+   跳ねさせて「生き物」に見せる。他の種は歩行アニメ等で既に動きがあるため対象にしない。 */
+const EXPLORE_PIN_LOOK_WILD = ['suezo'];
 // 姿勢の値だけを返す(描画と当たりの背の両方が読む。null = 立った姿勢のまま)
 function exploreComputePose(e){
   if(e && e.isPlayer && game.explore) return explorePlayerPose(e);   // 自分: 力尽きて倒れる/キャンプで起き上がる(explore_loot.js)
@@ -2117,13 +2153,15 @@ function exploreComputePose(e){
       bob = -(0.1 + Math.abs(Math.sin(t*7))*0.06)*r*w;   // 打たれて体が浮く
       shx = Math.sin(t*31)*r*0.035*w;                           // 打たれて震える
     } else if(st === 'dying'){
-      // 足元を軸に横へ倒れ込み(加速して倒れ、地面で小さく弾む)、沈みながら少し潰れる
-      const k = clamp(t/0.8, 0, 1), ek = k*k;
-      const land = t > 0.8 ? Math.exp(-(t-0.8)*9)*Math.sin((t-0.8)*28)*0.05 : 0;
-      tilt = sign*(1.45*ek + land);
-      // 横たわった体は画面の縦に少し潰れる(ほぼ横倒しなので、絵の横幅=画面の縦を縮める)
-      sx = 1 - 0.35*ek; sy = 1 - 0.06*ek;
-      // 回した後の絵の一番下が地面(足元の高さ)に乗るよう持ち上げる(翼の先が地面を突き抜けないように)
+      /* 崩れ落ち: よろめいて(横へ小さく揺れる)→膝をつくように沈む(縦に潰れつつ下がる)→(土煙は
+         exploreUpdateBosses が別に出す)。以前は板を回して倒すだけだったため紙の切り抜きに見えた
+         (批評指摘)。全身を横倒しにする大きな回転は使わず、縮み(潰れ)だけで沈む重さを見せる。 */
+      const stumble = clamp(t/0.25, 0, 1);
+      const sink = clamp((t - 0.15)/0.65, 0, 1), sk = sink*sink;
+      tilt = sign*0.22*Math.sin(stumble*Math.PI)*(1 - sink*0.65);   // よろめきは沈むにつれ収まる
+      sy = 1 - 0.72*sk;   // 膝をつくように縦へ大きく潰れて沈む
+      sx = 1 + 0.24*sk;   // 潰れたぶん横へ広がる(倒れるのではなく崩れる重さ)
+      // 潰れた絵の一番下が地面(足元の高さ)に乗るよう持ち上げる(翼の先が地面へ潜らないように)
       bob = -exploreLowestAfterPose(e, sx, sy, tilt);
       alpha = clamp((e.exStateUntil - now)/0.7, 0, 1);
     } else if(st === 'sleep'){
@@ -2144,6 +2182,13 @@ function exploreComputePose(e){
       sy = 0.92 + 0.1*Math.abs(Math.sin(ph));
       // 後ろ向きの歩行コマが無い種(正面の1枚絵)は、逃げる向きへ左右反転して「背を向けて駆ける」横顔にする
       if(typeof WALK_ANIM === 'undefined' || !WALK_ANIM[e.element]) sx = (lat >= 0 ? -1 : 1);
+    } else if(EXPLORE_PIN_LOOK_WILD.includes(e.element) && (st === 'wander' || st === 'watch') && (e.exSpd || 0) < 12){
+      // 目玉系はうろつき・見つめ中は途切れず跳ね続ける(止まっている一瞬が無いようにする)
+      const ph = (now + e.id*0.53) % 1.5;
+      const hop = Math.abs(Math.sin(ph/1.5*Math.PI));
+      sy = 1 - 0.18*hop; sx = 1 + 0.09*hop;
+      bob = -hop*r*0.22;
+      tilt = 0.05*Math.sin(now*2.2 + e.id);
     } else if(st === 'wander' && (e.exSpd || 0) < 12){
       const ph = (now + e.id*0.37) % 3.4;
       const down = ph < 1.4 ? Math.sin(ph/1.4*Math.PI) : 0;
@@ -2466,7 +2511,8 @@ function exploreUpdateCine(){
   // 寄っている間は巨体が頭まで入るよう見上げ、寄りが終わったら元の角度へ戻す
   const h = exploreBodyHeight(b);
   const look = -Math.atan2((b.z || 0) + h*(C.lookZ != null ? C.lookZ : 0.5) - camPos.z, Math.max(200, Math.hypot(b.x - camPos.x, b.y - camPos.y)));
-  const pT = clamp(Math.min(look, c.pitch0), -0.3, 0.5);
+  // 見上げの上限は camPitchMin() まで許す(-0.3 止まりだと巨体の頭がHUDに食い込んだ=批評指摘)
+  const pT = clamp(Math.min(look, c.pitch0), camPitchMin(), 0.5);
   if(t <= C.zoomSec){
     camState.pitch = c.pitch0 + (pT - c.pitch0) * sniperEaseLocal(t / C.turnSec);
   } else if(t <= C.zoomSec + 0.3){
@@ -2516,8 +2562,9 @@ function exploreBossCamera(v, dt){
   const b = getEntity(exploreState.engagedBossId);
   if(!b || !b.alive || b.exState === 'dying' || dist(b, v) > EXPLORE_BOSS_HP_BAR_RANGE){ exploreState.camBack = 0; return; }
   const F = EXPLORE_BOSS_FRAME;
-  const band = (typeof exploreHudBand === 'function') ? exploreHudBand() : null;
-  const limit = (band ? band.bottom : 60) + F.margin;
+  // 方位バーだけでなく、ボス自身の名前・HPバーの帯の下端も避ける
+  // (方位バーの下端だけで測っていたため、その下にあるボスの帯に頭がなお食い込んでいた=批評指摘)
+  const limit = (typeof exploreBossHudBottom === 'function' ? exploreBossHudBottom() : 60) + F.margin;
   // 今の引き(前のフレームの値)を掛けた位置で頭の高さを測る
   const back = exploreState.camBack || 0;
   camPos.x -= Math.cos(camState.yaw)*back; camPos.y -= Math.sin(camState.yaw)*back;
@@ -2604,7 +2651,10 @@ function exploreDrawMaterialFx(){
    ・札・咆哮の文字は**ボスの画面上の矩形(exploreBossRect)の外へ逃がす**。縦持ちで本体を隠さないため
    ===================================================================== */
 // 咆哮の文字。ボスの矩形の右(入らなければ左、それも無理なら足元の下)に出して震わせる
+// 咆哮の文字の今の画面上の矩形(小さい札=怒り等がこの上に重なって隠さないよう exploreDrawSmallBanner が読む)
+let _exploreRoarBoxes = [];
 function exploreDrawRoarText(){
+  _exploreRoarBoxes = [];
   // 狙撃スコープを覗いている間は出さない(倍率で大きくなった文字がスコープの表示に重なり、窓の縁で切れる。狙撃担当)
   if(typeof sniperHidesOverhead === 'function' && sniperHidesOverhead()) return;
   for(const rec of exploreState.bosses){
@@ -2624,11 +2674,14 @@ function exploreDrawRoarText(){
     // 置き場所: ボスの右→左→照準の右→照準の左→ボスの下。入らなければ文字を小さくしてもう一度。
     // 照準の周り・自分・HUDには重ねない(重ねると狙えない=批評指摘)
     let tx = 0, yy = 0, sz = 0, found = false;
-    for(const shrink of [1, 0.8, 0.62]){
+    // 縦持ちでHUDの帯が高いと topY が viewH*0.62 を超え、範囲が逆転してどの候補も入らなくなっていた
+    // (咆哮の文字そのものが出ない=批評指摘)。topY 自体を画面の中ほどまでに必ず収める。
+    let fallback = null;
+    for(const shrink of [1, 0.8, 0.62, 0.48]){
       sz = clamp(viewH*0.085, 20, 60) * shrink;
       ctx.font = `italic bold ${Math.round(sz*pop)}px 'Russo One', sans-serif`;
       const tw = ctx.measureText(text).width / pop, th = sz*1.1;
-      const topY = exploreBossHudBottom() + th*0.6;
+      const topY = Math.min(exploreBossHudBottom() + th*0.6, viewH*0.5);
       const ty = clamp(r.y + r.h*0.3, topY, viewH*0.62);
       const fits = (cx, cy)=>{
         const box = { x:cx - tw/2, y:cy - th/2, w:tw, h:th };
@@ -2640,11 +2693,18 @@ function exploreDrawRoarText(){
                      [viewW/2 + A.w/2 + 10 + tw/2, ty], [viewW/2 - A.w/2 - 10 - tw/2, ty],
                      [viewW/2 + A.w/2 + 10 + tw/2, viewH/2 - A.h/2 - th*0.6], [viewW/2 - A.w/2 - 10 - tw/2, viewH/2 - A.h/2 - th*0.6],
                      [clamp(r.x + r.w/2, tw/2 + 6, viewW - tw/2 - 6), Math.min(viewH*0.7, r.y + r.h + th*0.7)]];
+      if(!fallback) fallback = { tx:clamp(cands[6][0], tw/2 + 6, viewW - tw/2 - 6), yy:clamp(cands[6][1], th/2 + 4, viewH - th/2 - 6), sz };
       const c = cands.find(([x, y])=> fits(x, y));
       if(c){ [tx, yy] = c; found = true; break; }
     }
-    if(!found){ ctx.restore(); continue; }   // どこにも入らない一瞬は叫びの文字を出さない(照準を隠すより良い)
+    // どこにも重ならない置き場が無い一瞬は、それでも「出ない」より「ボスの下へ重ねて出す」を選ぶ
+    // (縦持ちでHUDが多く、丁度の空きが無いまま一撃分の咆哮が丸ごと消えていた=批評指摘)
+    if(!found){ tx = fallback.tx; yy = fallback.yy; sz = fallback.sz; }
     ctx.font = `italic bold ${Math.round(sz*pop)}px 'Russo One', sans-serif`;
+    {
+      const tw2 = ctx.measureText(text).width, th2 = sz*1.1;
+      _exploreRoarBoxes.push({ x:tx - tw2/2, y:yy - th2/2, w:tw2, h:th2 });
+    }
     ctx.globalAlpha = a;
     ctx.translate(tx + rand(-4, 4), yy + rand(-4, 4));
     ctx.rotate(-0.08);
@@ -2738,7 +2798,15 @@ function exploreDrawBigBanner(bn, age, a){
   if(hunt){
     const items = (bn.items || []).slice(0, 8);
     // 細い帯。視点演出の黒帯のすぐ下(崩れ落ちたボスを画面の中央に残す)
-    const cy = Math.max(96, viewH*EXPLORE_BOSS_HUNT_CINE.bar + 38), bandH = 54, extra = items.length ? 32 : 0;
+    const bandH = 54, extra = items.length ? 32 : 0, totalH = bandH + extra;
+    const topLimit = viewH*EXPLORE_BOSS_HUNT_CINE.bar + 14;
+    let cy = Math.max(96, viewH*EXPLORE_BOSS_HUNT_CINE.bar + 38);
+    /* ボスにかからない位置へ(縦持ちで帯がボスを丸ごと隠していた=批評指摘): ボスの矩形の上に
+       空きがあればそこへ、無ければボスの下へ。どちらも入らなければ元の位置のまま(重なりは許容)。 */
+    if(r){
+      if(r.y - topLimit >= totalH/2 + 6) cy = topLimit + totalH/2;
+      else if(viewH - (r.y + r.h) >= totalH/2 + 16) cy = r.y + r.h + totalH/2 + 12;
+    }
     const g = ctx.createLinearGradient(0, 0, viewW, 0);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.22, 'rgba(10,8,4,0.74)');
     g.addColorStop(0.78, 'rgba(10,8,4,0.74)'); g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -2854,7 +2922,9 @@ function exploreDrawSmallBanner(bn, age, a){
   const r = exploreBannerBossRect(bn);
   const band = exploreHudBand();
   const y0 = exploreBossHudBottom() + th/2 + 6;
-  const blocks = exploreHudObstacles();
+  // 咆哮の文字(exploreDrawRoarText。この帯より先に描く)にも重ねない。
+  // 重ねて隠すと「怒り状態になった」の帯の真後ろに叫びの文字が隠れて読めなくなる(批評指摘)
+  const blocks = exploreHudObstacles().concat(_exploreRoarBoxes);
   const ok = (cx, cy)=>{
     const box = { x:cx - tw/2, y:cy - th/2, w:tw, h:th };
     return box.x >= 4 && box.x + box.w <= viewW - 4 && !(r && exploreRectsHit(box, r, 6)) && !blocks.some(o=> exploreRectsHit(box, o, 2));
@@ -2865,6 +2935,7 @@ function exploreDrawSmallBanner(bn, age, a){
     if(ok(left, cy) && left - tw/2 >= band.x - 4) cx = left;
     else if(ok(right, cy) && right + tw/2 <= band.x + band.w + 4) cx = right;
     else if(ok(viewW/2, r.y + r.h + th/2 + 8)) cy = r.y + r.h + th/2 + 8;
+    else if(ok(viewW/2, y0 + th + 10)) cy = y0 + th + 10;   // なお重なるなら、もう1段下へ(咆哮の文字の下)
   }
   ctx.globalAlpha = a;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
