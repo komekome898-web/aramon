@@ -478,6 +478,19 @@ function _exlShade(hexBase, n, k){
   const c = hexBase;
   return `rgb(${Math.round(c[0]*f)},${Math.round(c[1]*f)},${Math.round(c[2]*f)})`;
 }
+/* この補給箱の近くに(起きている)野生がいるか。**箱を基準に測る**(第7周の指摘の対応: explore.js の
+   exploreWildNear() は引数を取らず「自機の近くに野生がいるか」のグローバルな1個のフラグを返すだけで、
+   呼び出し側が箱の座標を渡していても無視されていた ―― フィールドに野生がいる間ずっと札が
+   出ない不具合の原因だった。ここでは箱の座標を実際に使う、箱ごとの判定にする)。 */
+function exploreCrateWildNear(c){
+  if(!exploreState.wild) return false;
+  for(const w of exploreState.wild){
+    const e = getEntity(w.id);
+    if(!e || !e.alive || e.exploreAsleep) continue;
+    if(Math.hypot(e.x - c.x, e.y - c.y) < EXPLORE_WILD_NEAR_LABEL) return true;
+  }
+  return false;
+}
 const EXPLORE_CRATE_METAL = [70, 78, 90];      // 箱の地の金属色(暗い灰)
 const EXPLORE_CRATE_TRIM  = [36, 40, 48];      // 台座・蓋の縁の暗い色
 const EXPLORE_CRATE_TINT  = 0.3;               // 胴の地にレア度の色を混ぜる割合(白=鋼・青=青鋼・紫・金=その色の金属)
@@ -834,9 +847,9 @@ function exploreDrawCrate(c, p0){
         ctx.shadowBlur = 0; ctx.lineCap = 'butt';
       }
     }
-    // 近くに野生がいる間は札を後回しにする(野生の頭上の印と重ねない。explore.js)
+    // 近くに野生がいる間は札を後回しにする(野生の頭上の印と重ねない)
     c._tagShown = false;   // このフレームは出さなかった扱いにしておく(measure/批評用の公開値)
-    if(dp < 420 && !(typeof exploreWildNear === 'function' && exploreWildNear(c.x, c.y))){
+    if(dp < 420 && !exploreCrateWildNear(c)){
       /* 札の第一候補=本体の真上。**画面上のすき間は画素(pt.scale基準)で決める**(以前はワールド単位で
        26だけ高い点を投影していたので、近い箱ほど遠近法で画面上の離れ幅が大きく育ち、
        hud_beacon_p896で札が本体から約300px離れて見えた=第6周の指摘)。本体の上端(H+L)を映してから
@@ -864,10 +877,12 @@ function exploreDrawCrate(c, p0){
         /* HUDの欄(ミニマップ・方位バー・ボスの帯・回転ボタン・FIRE/DASH・技パネル・目標パネルなど)へ
            札を重ねない(ルート担当が打ち切りになった後の引き継ぎ。第4〜5周)。exploreHudRects()が
            HUD担当の公開の口(正はそちら)。入らなければ2行目(t2)を諦める。それでも重なるなら
-           **本体から近い順に**逃がし場所を探す(第6周の指摘: 以前は200pxまで探していたので、
-           見つかった場所が本体から遠く離れ「補給箱と関係ない札」に見えたり、逃げた先が回転ボタンの
-           すぐ上で接して見えたりした。近い所だけを狭く探し、**見つからなければ札そのものを出さない**
-           ―― 遠くに出すより出さないほうが「本体との対応」が壊れない) */
+           **本体から近い順・本体の真上より下げない方向だけ**逃がし場所を探す(第7周の指摘の対応:
+           以前は下方向も探していたので、右下が混み合う画面(p896など)では下へ大きく逃げてしまい、
+           本体の下(=本体に食い込む位置)まで動いて「本体との対応」がかえって壊れた。
+           上・斜め上・左右の5方向だけに絞れば、見つかった場所は常に本体の上端に対して
+           自然な第一候補と同じか、それより上にしかならない=見つかりさえすれば上端との間は必ず近い)。
+           見つからなければ札そのものを出さない(遠くへ/下へ出すより出さないほうが「本体との対応」が壊れない) */
         let showT2 = near;
         let hidden = false;
         const hudRects = (typeof exploreHudRects === 'function') ? exploreHudRects() : [];
@@ -879,11 +894,10 @@ function exploreDrawCrate(c, p0){
           if(hits(boxAt(lx, ly, showT2))){
             showT2 = false;
             if(hits(boxAt(lx, ly, false))){
-              // 上→斜め上→左右→斜め下の順(本体の真上に近い向きから試す)。半径は本体から近い範囲だけ
-              const dirs = [[0,-1],[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1],[0,1]];
-              /* 単位はキャンバスの論理px(撮影画像は2倍)。目安の150px(画像の画素)は論理75pxぶんなので、
-                 探す半径はそれより少し狭く抑える(見つかった場所自体が本体から離れすぎないように) */
-              const STEP = 10, MAX_R = 64;
+              // 上→斜め上→左右の順(本体の真上に近い向きから試す。下は探さない=本体との対応を守る)
+              const dirs = [[0,-1],[-1,-1],[1,-1],[-1,0],[1,0]];
+              // 単位はキャンバスの論理px(撮影画像は2倍)。下を探さないぶん、横に少し広く探してよい
+              const STEP = 10, MAX_R = 80;
               let found = false;
               outer: for(let step=STEP; step<=MAX_R && !found; step+=STEP){
                 for(const [dx,dy] of dirs){
@@ -907,6 +921,7 @@ function exploreDrawCrate(c, p0){
           c._tagShown = true;
           c._tagRect = { x:lx - half, y:ly - fs - 4, w:half*2, h: showT2 ? fs*2 + 10 : fs + 8, cx:lx, cy:ly - fs/2 };
           c._tagBodyPt = bodyP ? { x:bodyP.x, y:bodyP.y } : null;
+          c._tagTopPt = topP ? { x:topP.x, y:topP.y } : null;   // 本体の上端(公開値。「札↔箱の上端」の検査はこちらを使う)
         }
       }
     }
@@ -915,7 +930,7 @@ function exploreDrawCrate(c, p0){
 }
 /* 補給箱の札の画面上の矩形と本体の中心(--measure・批評用の公開の口)。
    直近に exploreDrawCrate が描いた値を返す(そのフレームで出していなければ null) */
-function exploreCrateTagRect(c){ return (c && c._tagShown) ? { tag:c._tagRect, body:c._tagBodyPt } : null; }
+function exploreCrateTagRect(c){ return (c && c._tagShown) ? { tag:c._tagRect, body:c._tagBodyPt, top:c._tagTopPt } : null; }
 
 /* 開いた箱の上に扇形に並ぶ中身(レア度の色の枠付きアイコン)。枠が「白・青・紫・金」を一目で分ける */
 function exploreDrawCrateFan(c){

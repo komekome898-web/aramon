@@ -8724,12 +8724,10 @@ function updateHUD(){
      **毎フレームinnerHTMLを書き換えない。** 中身が変わったときだけ作り直す。 */
   {
     const line = document.getElementById('trainBuffsLine');
-    let rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(ve) : [];
-    /* 探検だけ、名前の行の右上へ重ねる小さな枠(#hpPanelは幅210px固定)に収まる数(1つ)まで
-       (第6周の指摘: 2〜3つをこのまま詰めると名前の場所を食いつぶして名前が消えた。
-       名前(誰を操作しているか)のほうが優先度が高いのでバフの札を削る=R3)。
-       他モードは発注者指示どおり全部出す。 */
-    if(game.explore && rows.length > 1) rows = rows.slice(0, 1);
+    const rows = (typeof matchTrainBoardRows==='function') ? matchTrainBoardRows(ve) : [];
+    /* 探検も含め全モード共通で全部出す(発注者指示)。探検は#expGearRow(装備アイコン)の右へ
+       置く場所を移したので、名前の場所を削って1枚に絞る必要が無くなった(第7周の指摘で復元)。
+       置き場所(#expGearRowの右)は explore_hud.js の exploreHudLayoutBuffs が毎フレーム計算する。 */
     const sig = rows.map(r=>r.label+r.text).join('|');
     if(line._tbSig !== sig){
       line._tbSig = sig;

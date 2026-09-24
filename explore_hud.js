@@ -112,9 +112,12 @@ function exploreHudBand(){
   if(hud && el && !el.classList.contains('hidden') && el.offsetWidth > 0){
     const x = hud.offsetLeft + el.offsetLeft, y = hud.offsetTop + el.offsetTop;
     v = { x, w: el.offsetWidth, top: y, bottom: y + el.offsetHeight };
-    // 目標が方位バーの下の1行にまとまっているときは、その1行までを帯とする(ボスの帯・札はその下)
+    /* 目標が方位バーの下の1行にまとまっているときは、その1行までを帯とする(ボスの帯・札はその下)。
+       **ボスの帯を描いている間は延ばさない**(第7周の指摘の対応: ボスの帯を描いている間は目標パネル
+       自身がボスの帯の下端(exploreHudBossGeom)を基準に動くので、ここで延ばすと
+       「帯の下端が目標パネルの位置に依存し、目標パネルの位置が帯の下端に依存する」循環になる)。 */
     const ob = exploreHudEl('expObjPanel');
-    if(_expHud.obj.strip && ob && !ob.classList.contains('hidden')) v.bottom = hud.offsetTop + ob.offsetTop + ob.offsetHeight;
+    if(_expHud.obj.strip && !exploreBossBandActive() && ob && !ob.classList.contains('hidden')) v.bottom = hud.offsetTop + ob.offsetTop + ob.offsetHeight;
   }
   if(!v){
     const w = Math.min(560, viewW*0.45);
@@ -317,6 +320,21 @@ function exploreObjLayout(){
   _expHud.obj.panelBottomLimit = bottom;
   _expHud.band.at = -1;
 }
+/* バフの札(#trainBuffsLine)を #expGearRow(HPパネル直下の装備アイコンの行)の右の空きへ置く
+   (第7周の指摘: 名前の行に重ねたら210px固定幅の中で名前が切れた。装備の行の右は空いているので
+   そちらへ)。#trainBuffsLine は今もDOM上は#hpPanelの中(position:relative)のままなので、
+   置きたい場所(#topLeftの中の#expGearRowの位置)を#hpPanel基準へ変換して書く
+   ―― どちらも#topLeftの直接の子(同じoffsetParent)なので、offsetTop/Leftの差がそのまま変換になる。 */
+function exploreHudLayoutBuffs(){
+  const line = exploreHudEl('trainBuffsLine'), gear = exploreHudEl('expGearRow'), hp = exploreHudEl('hpPanel');
+  if(!line || !gear || !hp) return;
+  const gearOn = !gear.classList.contains('hidden') && gear.offsetWidth > 0;
+  const top = gear.offsetTop - hp.offsetTop;
+  const left = (gearOn ? gear.offsetLeft + gear.offsetWidth + 6 : gear.offsetLeft) - hp.offsetLeft;
+  const lt = top + 'px', ll = left + 'px';
+  if(line.style.top !== lt) line.style.top = lt;
+  if(line.style.left !== ll) line.style.left = ll;
+}
 // 撃破ログをパネルの下へ(パネルの高さが決まった後に呼ぶ)
 function exploreKillFeedLayout(){
   const hud = exploreHudEl('hud'), panel = exploreHudEl('expObjPanel');
@@ -350,11 +368,31 @@ function exploreUpdateHud(){
     .map(id=>{ const el = exploreHudEl(id); return (el && !el.classList.contains('hidden') && el.offsetWidth > 0) ? '1' : '0'; }).join('');
   if(O.obsSig !== obsSig){ O.obsSig = obsSig; O.layoutAt = -1; }
   if(nowR - O.layoutAt > 500 || O.layoutAt < 0){ O.layoutAt = nowR; exploreObjLayout(); }
-  /* strip(横持ちの低い画面。R3の最後の段)でボスの帯を描いている間は、同じ場所を取り合わないよう
-     目標パネルを隠す(毎フレーム。exploreObjLayout の0.5秒おきの間隔を待つと、咆哮の直後は
-     一瞬重なって見える=第6周の指摘)。ボスの状態(名前・体力・怒り)はボスの帯自身が示すので、
-     隠れても情報は失われない。strip でなければ触らない(通常の置き場所はここでは変えない)。 */
-  if(panel && O.strip) panel.classList.toggle('hidden', exploreBossBandActive());
+  /* strip(横持ちの低い画面。R3の最後の段)でボスの帯を描いている間は、目標の文章(討伐中…等)は
+     ボスの帯と同じ場所を取り合うので隠すが、**残り時間・力尽き回数・素材数の見出し行は消さない**
+     (第7周の指摘: 丸ごと隠したらボス戦で時計が消え、モンハン/APEXのどちらとも違う挙動になった)。
+     見出し行だけをボスの帯のすぐ下へ動かして、文章の行(.exp-obj-rows)だけ隠す。
+     strip でなければ触らない(通常の置き場所はここでは変えない)。 */
+  if(panel && O.strip){
+    const bossOn = exploreBossBandActive();
+    panel.classList.toggle('boss-strip', bossOn);
+    if(bossOn){
+      panel.classList.remove('hidden');
+      const b = typeof exploreFocusBoss === 'function' ? exploreFocusBoss() : null;
+      const g = b ? exploreHudBossGeom(b) : null;
+      if(g){
+        const t = (g.bottom + 2) + 'px', l = g.x + 'px', w = g.w + 'px';
+        if(panel.style.top !== t) panel.style.top = t;
+        if(panel.style.left !== l) panel.style.left = l;
+        if(panel.style.width !== w) panel.style.width = w;
+        if(panel.style.right !== 'auto') panel.style.right = 'auto';
+      }
+    } else if(O.bossStripWas){
+      O.layoutAt = -1;   // ボス戦が終わった: 通常のstrip置き場所へ次のフレームで組み直す
+    }
+    O.bossStripWas = bossOn;
+  }
+  exploreHudLayoutBuffs();   // バフの札(#expGearRowの右)。装備の枠数で毎フレーム動くので軽く計算する
   const ob = exploreObjectives();
   _expHud.lastOb = ob;   // 方位バーが「優先の目標」の印を付けるのに読む
   // 達成の瞬間を覚える(光らせる)
