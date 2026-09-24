@@ -862,8 +862,8 @@ function buildExploreMaterial(){
     // 探検フィールドは通常マップより起伏が急な地形(尾根・崖・段丘)が多く、真上からのUVで
     // 作った法線マップをそのまま貼ると、斜めから見た面に縦に伸びたハイライトの縞が出た
     // (2026-09-24。特に雪の風筋パターンで目立った)。EX_NORMAL_CHUNK の視線角フェードと
-    // 合わせ、地の強さそのものも通常マップの0.15倍に抑える
-    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN*0.15, R3.theme.bump*NORMAL_GAIN*0.15),
+    // 合わせ、地の強さそのものも通常マップの0.02倍に抑える
+    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN*0.02, R3.theme.bump*NORMAL_GAIN*0.02),
     metalness:0.0, roughness:1.0, envMapIntensity: ENV_INTENSITY, dithering:true,
   });
   const uni = {
@@ -1198,13 +1198,17 @@ function exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, o){
      火山の側=黒い玄武岩に下から赤い照り返し / 密林の側=森に覆われた緑。雪は凍った高地(と草原の頂)だけ */
   if(!exw && h > 250){
     const k = sstep(250, 750, h);
-    if(w[2] > 0.01){
+    /* しきい値0.01は緩すぎて、火山・密林から離れた高い尾根にも重みがわずかに残るだけで
+       色が乗り、霞の中に方角と無関係な緑・黒の細い筋が浮いて見えた
+       (2026-09-24 vantage/vantage_back の「宙に浮く帯」)。0.20まで上げて、
+       本当にその地域に近い高台だけを塗り分ける */
+    if(w[2] > 0.20){
       _cTmp.copy(pal.basalt).multiplyScalar(0.85 + 0.3*nb).lerp(pal.ember, (1 - sstep(300, 1100, h))*0.55);
-      _c.lerp(_cTmp, k*w[2]);
+      _c.lerp(_cTmp, k*sstep(0.20, 0.5, w[2]));
     }
-    if(w[3] > 0.01){
+    if(w[3] > 0.20){
       _cTmp.copy(pal.forest).multiplyScalar(0.8 + 0.4*nm);
-      _c.lerp(_cTmp, k*w[3]*(1 - 0.5*sstep(1.0, 1.8, gm)));
+      _c.lerp(_cTmp, k*sstep(0.20, 0.5, w[3])*(1 - 0.5*sstep(1.0, 1.8, gm)));
     }
   }
   // 踏み分け道: 草が剥げて土が出た帯(緩斜面だけ。急斜面は岩肌のまま)

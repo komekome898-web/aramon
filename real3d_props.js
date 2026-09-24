@@ -1971,8 +1971,12 @@ function obstacleGeo(flavor, variant){
       cavityShade(g, 0.34, 0.26);
       // 鉱脈のような細かい筋。三角形を増やさずに平らな面の単調さを崩す
       patchTint(g, hi.clone().multiplyScalar(1.45), 0.5, s*5.9, 6.5);
-      // 上面に苔・地衣類(テーマの草色)。乾いたマップでは色も乾く
-      patchTint(g, mixColor(themeColor('scrub'), themeColor('low'), 0.42).multiplyScalar(0.95), 0.34, s*2.7, 2.6);
+      /* 上面に苔・地衣類(テーマの草色)。乾いたマップでは色も乾く。
+         【探検フィールドだけ省く】themeColor()はR3.theme(トップレベル)からしか読めず、
+         地域ごとの色ではないので、火山の岩にも密林と同じ緑の苔が乗って浮いた
+         (2026-09-24)。探検は後段のexTints(exploreRegionColors('rock'))が
+         地域の色を岩ごとに乗せるので、ここでの苔は要らない。 */
+      if(!isExplore()) patchTint(g, mixColor(themeColor('scrub'), themeColor('low'), 0.42).multiplyScalar(0.95), 0.34, s*2.7, 2.6);
       return g;
     }
   }
@@ -2691,6 +2695,11 @@ function placeLayer(layer, cx, cy, seedOff, rotate, sinkRatio, cone){
         /* 群生: 濃い所に寄せて生やし、間は地面の草色で見せる(一様に撒くと株が水玉模様に並んだ) */
         p = VEG_FILL * Math.min(1.7, Math.max(0, (dens - EX_VEG_CLUMP)/0.26));
         p *= layer.ex.dens(exw) * (1 - exploreTrail(wx, wy)*0.92);
+        /* 急斜面(崖・急な丘)には生やさない。草は必ず真上を向けて立てる作りなので、
+           急な面に生えると斜めの地面から垂直に突き立ち、丸い接地影だけが斜面に
+           貼られて浮いて見えた(2026-09-24 frost_wide)。傾きが増すほど間引く */
+        const gr = window.real3dHeightGrad ? window.real3dHeightGrad(wx, wy) : null;
+        if(gr){ const slope = Math.hypot(gr.gx, gr.gy); p *= Math.max(0, 1 - slope/0.42); }
         if(p <= 0.004) continue;
       }
       if(hash2(gx*5.77 + seedOff*2, gy*7.13 - seedOff*3) > p) continue;

@@ -786,18 +786,29 @@ function buildNest(group, key, n){
   const g = new THREE.Group();
   const R = n.r;
   const tint = exploreMixColor(exploreRegionColors('rock'), exploreWeights(n.x, n.y), new THREE.Color());
-  // 巣材: 枝を寝かせて輪に積む(高さ30以下)
+  /* 巣材: 枝を寝かせて積む。前は90本を輪に等間隔で並べたため、遠く・高い所から見ると
+     車輪の輻(スポーク)=マンホールの蓋の模様に見えた(2026-09-24 vantage/vantage_back)。
+     等間隔をやめ、輪の上に**不揃いな束**(9〜13か所)を作り、束の中で角度も高さもばらけさせる */
   const sticks = [];
-  const NS = 90;
-  for(let i=0;i<NS;i++){
-    const a = i/NS*Math.PI*2 + hash2(i, 1.1)*0.3;
-    const rr = R*(0.40 + hash2(i, 2.2)*0.16);
-    const len = 70 + hash2(i, 3.3)*110;
-    const s = new THREE.CylinderGeometry(2.2, 3.4, len, 4);
-    s.rotateZ(Math.PI/2 + (hash2(i, 4.4) - 0.5)*0.35);
-    s.rotateY(-a + Math.PI/2 + (hash2(i, 5.5) - 0.5)*1.2);
-    s.translate(Math.cos(a)*rr, 5 + hash2(i, 6.6)*20, Math.sin(a)*rr);
-    sticks.push(s);
+  const PILES = 11;
+  let sn = 0;
+  for(let pi=0;pi<PILES;pi++){
+    const pa = pi/PILES*Math.PI*2 + hash2(pi, 8.1)*0.5;          // 束の位置(等間隔+ノイズ)
+    const prr = R*(0.32 + hash2(pi, 9.2)*0.30);
+    const pcx = Math.cos(pa)*prr, pcz = Math.sin(pa)*prr;
+    const cnt = 5 + Math.floor(hash2(pi, 10.3)*5);               // 束1つに5〜9本
+    for(let j=0;j<cnt;j++){
+      const i = sn++;
+      const a = pa + (hash2(i, 1.1) - 0.5)*2.2;                  // 束の中は向きがばらける(輪の接線に揃えない)
+      const len = 60 + hash2(i, 3.3)*130;
+      const s = new THREE.CylinderGeometry(2.0, 3.6, len, 4);
+      s.rotateZ(Math.PI/2 + (hash2(i, 4.4) - 0.5)*0.7);          // 傾きも大きくばらけさせる(平らな輪にしない)
+      s.rotateY(a + (hash2(i, 5.5) - 0.5)*2.4);
+      const x = pcx + (hash2(i, 7.7) - 0.5)*70;
+      const z = pcz + (hash2(i, 6.9) - 0.5)*70;
+      s.translate(x, 4 + hash2(i, 6.6)*26, z);
+      sticks.push(s);
+    }
   }
   const sg = mergeGeos(sticks);
   const stickC = new THREE.Color(0x5a4430).multiply(tint);
@@ -808,7 +819,9 @@ function buildNest(group, key, n){
   const bAng = hash2(n.x*0.001, n.y*0.001)*Math.PI*2;
   for(let i=0;i<7;i++){
     const off = (i - 3)*44;
-    const hgt = 170 + (3 - Math.abs(i - 3))*30;
+    // 前は最大260と高く、遠くから見ると支える丘が霞へ溶けて「宙に浮く細い帯」に見えた
+    // (2026-09-24 vantage/vantage_back)。丈を低くして地物の一部に見えるようにする
+    const hgt = 46 + (3 - Math.abs(i - 3))*8;
     for(const side of [1, -1]){
       const pts = [];
       for(let k=0;k<=8;k++){
@@ -1121,7 +1134,7 @@ function buildIceSpire(group, lm){
    --------------------------------------------------------------------- */
 function houseGeo(hs){
   const w = hs.w, d = hs.d, h = hs.h, sd = hs.seed;
-  const stone = [], wood = [], roof = [], dark = [];
+  const stone = [], wood = [], roof = [], dark = [], frame = [];
   const baseH = h*0.48;
   const rows = 4, rowH = baseH/rows;
   for(let r=0;r<rows;r++){
@@ -1156,16 +1169,22 @@ function houseGeo(hs){
   // faceRot=0は+z面のまま、Math.PIは-z面(裏側。板を裏返す)
   const win = (x, y, ww, hh, z, faceRot)=>{
     const q = new THREE.PlaneGeometry(ww, hh); if(faceRot) q.rotateY(faceRot); q.translate(x, y, z); dark.push(q);
-    const fr = 5, zf = z + (faceRot ? -6 : 6);
-    for(const [fx, fy, fw, fh] of [[0, hh/2+fr/2, ww+fr*2, fr], [0, -hh/2-fr/2, ww+fr*2, fr], [ww/2+fr/2, 0, fr, hh], [-ww/2-fr/2, 0, fr, hh]]){
-      const b = new THREE.BoxGeometry(fw, fh, 5); b.translate(x+fx, y+fy, zf); wood.push(b);
+    // 窓枠(木)。壁から少し前(zo)へ出して面で立たせる。frame専用に濃い色を後で塗るので
+    // paintGeoの高さ基準の色に紛れて「枠が見えない」ことがないよう別ジオメトリで作る
+    const fr = 7, zo = (faceRot ? -1 : 1)*8, zf = z + zo;
+    for(const [fx, fy, fw, fh] of [[0, hh/2+fr/2, ww+fr*2, fr], [0, -hh/2-fr/2, ww+fr*2, fr], [ww/2+fr/2, 0, fr, hh+fr*2], [-ww/2-fr/2, 0, fr, hh+fr*2]]){
+      const b = new THREE.BoxGeometry(fw, fh, 6); b.translate(x+fx, y+fy, zf); frame.push(b);
     }
-    // 鎧戸(左右2枚。すこし開いて壁から離す=平らな板が壁に貼り付いただけに見えないように)
+    /* 鎧戸(左右2枚)。窓の脇の枠の位置(ヒンジ)を中心に外へ開く形にする。
+       前は「板をずらしてから原点で回す」でヒンジが窓の中心に来てしまい、
+       回転で板が窓から離れた所へ飛んで浮いて見えた(2026-09-24 meadow_wide)。
+       ヒンジ側の辺を原点(x=0)に合わせてから回し、最後にヒンジの世界座標へ動かす。 */
     for(const sx of [-1, 1]){
-      const sh = new THREE.BoxGeometry(ww*0.62, hh*0.94, 4);
-      sh.translate(sx*ww*0.31, 0, 0);
-      sh.rotateY(sx*0.75*(faceRot ? -1 : 1));
-      sh.translate(x + sx*(ww*0.5 + 2), y, zf + sx*(faceRot ? -8 : 8));
+      const shW = ww*0.56, shH = hh*0.92;
+      const sh = new THREE.BoxGeometry(shW, shH, 4);
+      sh.translate(-sx*shW/2, 0, 0);                       // ヒンジ側の辺をx=0へ(窓に近い側)
+      sh.rotateY(sx*0.85*(faceRot ? -1 : 1));                // ヒンジを軸に外へ開く
+      sh.translate(x + sx*(ww/2 + 1), y, zf);                // ヒンジを窓の脇(枠のすぐ外)の世界座標へ
       wood.push(sh);
     }
   };
@@ -1193,7 +1212,11 @@ function houseGeo(hs){
   const rg = mergeGeos(roof); paintGeo(rg, new THREE.Color(0x5a2e22), new THREE.Color(0x8a4a30), h, h + rise, 0.3);
   if(hs.snowy) tintTop(rg, new THREE.Color(0xf1f6ff), h, h + rise, 1.4);
   const dg = mergeGeos(dark); paintSolid(dg, 0x120d09, 0);
-  return { stone:sg, wood:wg, roof:rg, dark:dg };
+  // 窓枠は壁と混ざって見えない高さ基準の色ではなく、単色の濃い木で塗って輪郭を立たせる
+  // (2026-09-24 meadow_wide: 枠が壁と同じ色に沈んで「窓に枠が無い」に見えた)
+  const fg = frame.length ? mergeGeos(frame) : null;
+  if(fg) paintSolid(fg, 0x2c1c10, 0.10);
+  return { stone:sg, wood:wg, roof:rg, dark:dg, frame:fg };
 }
 function buildHouses(group, world){
   for(const v of (world.volcanoes || [])){
@@ -1205,6 +1228,7 @@ function buildHouses(group, world){
     grp.add(new THREE.Mesh(g.wood, woodMat()));
     grp.add(new THREE.Mesh(g.roof, woodMat()));
     grp.add(new THREE.Mesh(g.dark, clothMat()));
+    if(g.frame) grp.add(new THREE.Mesh(g.frame, woodMat()));
     grp.children.forEach(o=>{ o.castShadow = true; o.receiveShadow = true; });
     // 長手(ローカルx)を並びの向き ang へ、正面(+z)を通りへ向ける
     placeAt(grp, hs.x, hs.y, 8);
@@ -1271,13 +1295,16 @@ function buildTunnels(group){
   }
   if(!geos.length) return;
   const geo = mergeGeos(geos);
-  // 岩のでこぼこ(同じ位置の頂点は同じだけずらす=割れ目を作らない)
+  // 岩のでこぼこ(同じ位置の頂点は同じだけずらす=割れ目を作らない)。
+  // 1つの周波数だけだと700単位の壁面に8〜9回きれいに繰り返し、斜めの縞に見えた
+  // (2026-09-24 tunnel)。周波数の違う2層を混ぜて周期を崩す
   {
     const p = geo.attributes.position;
     for(let i=0;i<p.count;i++){
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
       const n1 = tileNoise(x*0.012 + 3.1, z*0.012, 64) - 0.5, n2 = tileNoise(z*0.012 - 1.7, y*0.012, 64) - 0.5, n3 = tileNoise(y*0.012, x*0.012 + 5.3, 64) - 0.5;
-      p.setXYZ(i, x + n1*38, y + n3*26, z + n2*38);
+      const f1 = tileNoise(x*0.031 - 7.1, y*0.031, 32) - 0.5, f2 = tileNoise(y*0.031 + 2.3, z*0.031, 32) - 0.5, f3 = tileNoise(z*0.031, x*0.031 - 4.9, 32) - 0.5;
+      p.setXYZ(i, x + n1*30 + f1*14, y + n3*20 + f3*10, z + n2*30 + f2*14);
     }
   }
   geo.computeVertexNormals();
@@ -1693,11 +1720,15 @@ function faceUp(g){
 function drapedRing(x0, y0, R, rs, lifts, segs, wob, col){
   const P = [], UV = [], C = [], I = [];
   const n = rs.length;
+  const baseH = heightAt(x0, y0);   // 中心の地面の高さ。崖に乗る所はこれで頭打ちにする
   for(let r=0;r<n;r++) for(let k=0;k<=segs;k++){
     const a = k/segs*Math.PI*2;
     const w = 1 + (wob || 0)*(0.55*Math.sin(a*3 + x0*0.01) + 0.3*Math.sin(a*7 + y0*0.01) + 0.15*Math.sin(a*13));
     const rr = R*rs[r]*w, x = x0 + Math.cos(a)*rr, y = y0 + Math.sin(a)*rr;
-    P.push(x, heightAt(x, y) + lifts[r], y);
+    // 輪が近くの崖・尾根に届くと、地形に沿わせたはずが崖を這い上がってギザギザに浮いた
+    // (2026-09-24 canyon_bend の赤い破片)。中心の高さ+200を超える所は頭打ちにする
+    const gy = Math.min(heightAt(x, y), baseH + 200);
+    P.push(x, gy + lifts[r], y);
     UV.push(0.5 + Math.cos(a)*rs[r]/rs[n-1]*0.5, 0.5 + Math.sin(a)*rs[r]/rs[n-1]*0.5);
     if(col) C.push(...col(r, k, x, y));
   }
@@ -1779,13 +1810,16 @@ function buildLavaRiver(group, world){
   bm.receiveShadow = true;
   group.add(bm);
 }
-/* 溜まりの縁: 冷えて盛り上がった黒い殻の輪(溜まりが地面に貼った板に見えないように) */
+/* 溜まりの縁: 冷えて盛り上がった黒い殻の輪(溜まりが地面に貼った板に見えないように)。
+   縁が崖のすぐそばまで来る溜まりだと、外側の輪(前は半径1.30倍)が崖の地面に沿って
+   持ち上がり、細かい地形のノイズと重なってギザギザの破片に見えた
+   (2026-09-24 volcano_wide)。溜まり本体の近くだけに留める */
 function buildLavaRims(group, world){
   const geos = [];
   for(const z of (world.lava || [])){
     if(z.lavaRiver || z.crater) continue;
     const segs = 48;
-    geos.push(drapedRing(z.x, z.y, z.radius, [0.97, 1.05, 1.15, 1.30], [2.5, 10, 7, 0.5], segs, 0.07,
+    geos.push(drapedRing(z.x, z.y, z.radius, [0.97, 1.03, 1.08, 1.14], [2.0, 8, 5, 0.3], segs, 0.04,
       (r, k, x, y)=> crustColor(r/3, tileNoise(x*0.02, y*0.02, 64)*0.7 + hash2(k, r)*0.3)));
   }
   if(!geos.length) return;
@@ -1824,8 +1858,11 @@ function buildLavaGlow(group, world, anim){
   let k = 0;
   for(const z of (world.lava || [])){
     if(z.lavaRiver && (k++ % 4) !== 0) continue;
-    const r = z.radius*(z.lavaRiver ? 3.0 : 2.3);
-    glow.push(drapedRing(z.x, z.y, r, [0, 0.35, 0.7, 1.0], [6, 6, 5, 4], 32, 0));
+    /* 前は半径を2.3〜3倍まで広げていて、離れた低い角度から見ると平らな円盤の縁が
+       水平線へ伸びる細い光る直線に見えた(2026-09-24 volcano_wide)。範囲を絞り、
+       縁の手前からしっかり暗くして「輪の縁」が遠くまで届かないようにする */
+    const r = z.radius*(z.lavaRiver ? 1.5 : 1.4);
+    glow.push(drapedRing(z.x, z.y, r, [0, 0.45, 0.8, 1.0], [5, 4, 2, 0], 32, 0));
     if(z.crater) continue;
     // 陽炎: 溜まりの幅の縦の板。カメラへ向ける(噴煙と同じ扱い)
     const hw = z.radius*(z.lavaRiver ? 1.3 : 1.1), hh = 140 + z.radius*0.35;
