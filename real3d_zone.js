@@ -136,12 +136,15 @@ const RIBBON_FRAG = `
 const FILL_VERT = `
   attribute float aT;      // 中心(0)→縁(1)。帯(rect)は根元(0)→先(1)
   attribute float aS;      // 帯の横(-1〜1)。円・扇は0
-  uniform float uFadeNear, uFadeFar;
+  attribute float aFlat;   // 地面の平らさ(1=平ら、急な斜面ほど小さい)
+  uniform float uFadeNear, uFadeFar, uNearA, uNearB;
   varying float vFade, vT, vS;
   void main(){
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
     float d = max(length(cameraPosition - wp), 1.0);
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
+    // 探検のボスの予告だけ(uNearB>0): カメラに近いほど塗りを薄く、急な斜面も薄く(縁の線は別の帯なので残る)
+    if(uNearB > 0.0) vFade *= mix(0.3, 1.0, smoothstep(uNearA, uNearB, d)) * aFlat;
     vT = aT; vS = aS;
     gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
   }`;
@@ -156,9 +159,10 @@ const FILL_FRAG = `
     if(uArrows > 0.5){
       // 突進の帯: 根元から先へ流れる矢印(＞の形)。進む向きが一目で分かる
       float f = fract(vT*uArrows - abs(vS)*0.9 - uTime*1.6);
-      float arrow = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.32, 0.42, f));
-      al = vFade * (uAlpha*0.55 + 0.45*arrow);
-      col = mix(uColor, vec3(1.0), 0.35*arrow);
+      float arrow = smoothstep(0.0, 0.06, f) * (1.0 - smoothstep(0.3, 0.38, f));
+      // 地は暗い赤、矢印は明るい橙白(明暗の差で流れる向きが読める)
+      al = vFade * (uAlpha*0.5 + 0.5*arrow);
+      col = mix(uColor*0.5, vec3(1.0, 0.78, 0.25), 0.9*arrow);
       if(al < 0.004) discard;
       gl_FragColor = vec4(col, min(al, 1.0));
       return;
@@ -248,6 +252,8 @@ function fillMaterial(){
       uAlpha: { value: 0 },
       uProg:  { value: -1 },
       uArrows:{ value: 0 },
+      uNearA: { value: 0 },
+      uNearB: { value: 0 },
       uTime:  { value: 0 },
     }),
     vertexShader: FILL_VERT,
@@ -339,6 +345,7 @@ function makeFill(){
   const pos = new Float32Array(V*3);
   const tt = new Float32Array(V);
   const ss = new Float32Array(V);
+  const ff = new Float32Array(V).fill(1);
   const idx = new Uint16Array(FILL_RINGS*FILL_SEGS*6);
   const stride = FILL_SEGS+1;
   let o = 0;
@@ -350,13 +357,21 @@ function makeFill(){
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aT', new THREE.BufferAttribute(tt, 1));
   geo.setAttribute('aS', new THREE.BufferAttribute(ss, 1));
+  geo.setAttribute('aFlat', new THREE.BufferAttribute(ff, 1));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
   const mesh = new THREE.Mesh(geo, fillMaterial());
   mesh.frustumCulled = false;
   mesh.renderOrder = 3;      // 輪より先(下)に塗る
   mesh.visible = false;
-  return { geo, mesh, pos, tt, ss };
+  return { geo, mesh, pos, tt, ss, ff };
+}
+// 地面の平らさ(0.25〜1)。傾き(高さの差/距離)が0.3を超えるほど小さい
+function flatAt(x, y){
+  const d = 30;
+  const gx = (heightAt(x + d, y) - heightAt(x - d, y)) / (2*d), gy = (heightAt(x, y + d) - heightAt(x, y - d)) / (2*d);
+  const sl = Math.hypot(gx, gy);
+  return Math.max(0.25, Math.min(1, 1 - (sl - 0.3) / 0.6));
 }
 // 半径方向の分割数(大きい円ほど細かく。地形の起伏に沿わせて縁が地面に潜らないように)
 function fillRingsFor(len){ return Math.max(FILL_RINGS_MIN, Math.min(FILL_RINGS, Math.ceil(len / FILL_RING_STEP))); }
@@ -373,9 +388,10 @@ function setFillDisc(fl, cx, cy, radius, from, to){
       const x = cx + Math.cos(a)*radius*t, y = cy + Math.sin(a)*radius*t;
       const k = (r*stride+c)*3;
       fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
-      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = 0;
+      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = 0; fl.ff[r*stride+c] = flatAt(x, y);
     }
   }
+  fl.geo.attributes.aFlat.needsUpdate = true;
   fl.geo.attributes.position.needsUpdate = true;
   fl.geo.attributes.aT.needsUpdate = true;
   fl.geo.attributes.aS.needsUpdate = true;
@@ -394,9 +410,10 @@ function setFillRect(fl, cx, cy, ang, len, halfW){
       const x = cx + dx*len*t + nx*halfW*u, y = cy + dy*len*t + ny*halfW*u;
       const k = (r*stride+c)*3;
       fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
-      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = u;
+      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = u; fl.ff[r*stride+c] = flatAt(x, y);
     }
   }
+  fl.geo.attributes.aFlat.needsUpdate = true;
   fl.geo.attributes.position.needsUpdate = true;
   fl.geo.attributes.aT.needsUpdate = true;
   fl.geo.attributes.aS.needsUpdate = true;
@@ -585,6 +602,8 @@ export function updateZoneLayer(zone, markList, camPos){
     // arrows = 帯の長さあたりの矢印の数(突進の予告)。0 なら使わない
     fu.uArrows.value = (m.rect && m.arrows) ? Math.max(1, m.rect.len / 260) : 0;
     fu.uTime.value = performance.now() / 1000;
+    fu.uNearA.value = m.nearFade ? m.nearFade[0] : 0;
+    fu.uNearB.value = m.nearFade ? m.nearFade[1] : 0;
     for(const rb of [slot.ring, slot.inner]){
       const u = rb.mesh.material.uniforms;
       u.uColor.value.copy(col.rgb);

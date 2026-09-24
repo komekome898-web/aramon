@@ -615,6 +615,7 @@ function applyDamage(target, dmg, source, opts){
   if(auraResult==='adv')      spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#ff5555', true);
   else if(auraResult==='dis') spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg), '#5aa6ff', true);
   else if(game.explore && opts && opts.weakPoint) exploreWeakPop(target, finalDmg, source);   // 探検: 弱点は照準の近くに金の大きい数字(画面の画素で固定サイズ)
+  else if(game.explore && target.isExploreBoss) exploreBodyPop(target, dmgZ, finalDmg);   // 探検のボスの体: 白い大きい数字
   else                        spawnDmgText(target.x, target.y, dmgZ, Math.round(finalDmg));
   if(source && source.id!==target.id){
     target.recentAttackers[source.id] = matchTime;

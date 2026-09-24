@@ -1378,7 +1378,8 @@ function drawMonster(e,p){
 
   // 状態の輪の線の太さ。スコープで覗いている間は倍率ぶん太い帯にならないよう画面上1.8pxまでに抑える
   const ringLine = ()=>{ if(scopeUI) ctx.lineWidth = Math.min(ctx.lineWidth, 1.8/Math.max(0.01, p.scale)); };
-  if(e.burnUntil > matchTime){
+  // 探検のボスには状態の輪を出さない(巨体を囲む細い輪が「狙いの丸」に見える=批評指摘)
+  if(e.burnUntil > matchTime && !(game.explore && e.isExploreBoss)){
     ctx.save();
     ctx.globalAlpha = 0.5 + 0.3*Math.sin(matchTime*8);
     ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2.5;
@@ -3479,12 +3480,12 @@ function drawParticle(pt,p){
   if(pt.type==='text'){
     /* 文字は画面上の大きさに上限を付ける。カメラ至近(自分の被弾・出血)だと
        p.scaleが5〜10になり、数字1つが画面の半分を覆っていた(縦持ち実測で発生) */
-    const ts = Math.min(p.scale, 2.0);
+    const ts = pt.fixedPx ? 1 : Math.min(p.scale, 2.0);   // fixedPx=画面の画素で固定(探検のボスの体に当てた数字。遠くでも読める大きさ)
     ctx.scale(ts,ts);
     ctx.textAlign='center'; ctx.globalAlpha=a;
     if(pt.big){
       // オーラ有利/不利の被弾ダメージは大きく縁取りして強調
-      ctx.font="bold 20px 'Share Tech Mono', monospace";
+      ctx.font = pt.fixedPx ? `bold ${pt.fixedPx}px 'Share Tech Mono', monospace` : "bold 20px 'Share Tech Mono', monospace";
       ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.strokeText(pt.text, 0,0);
       ctx.fillStyle = pt.color; ctx.fillText(pt.text, 0,0);
     } else if(pt.pred){

@@ -6544,9 +6544,9 @@ const EXPLORE_BOSS_MOVES = {
   swipe:  { name:'薙ぎ払い',   shape:'fan',    range:560,  fanAngleDeg:110, dmg:30, telegraph:0.85, maxDist:700,  w:3 },
   breath: { name:'ブレス',     shape:'fan',    range:1350, fanAngleDeg:34,  dmg:40, telegraph:1.25, minDist:260, maxDist:1400, w:3, color:'#ff8a1a' },
   stomp:  { name:'踏み鳴らし', shape:'circle', range:440,  dmg:34, telegraph:1.00, maxDist:560, knock:260, w:3 },
-  meteor: { name:'岩石落とし', shape:'meteor', count:3, spread:240, range:170, dmg:36, telegraph:1.35, stagger:0.25, w:2 },
-  rain:   { name:'流星群',     shape:'meteor', count:6, spread:560, range:150, dmg:32, telegraph:1.40, stagger:0.18, w:2, rageOnly:true },
-  charge: { name:'突進',       shape:'charge', length:1250, speed:1500, dmg:44, telegraph:1.05, minDist:320, maxDist:1500, knock:320, w:3, color:'#ff3a6a', pattern:'arrows' },
+  meteor: { name:'岩石落とし', shape:'meteor', count:3, spread:240, range:110, dmg:36, telegraph:1.35, stagger:0.25, w:2 },
+  rain:   { name:'流星群',     shape:'meteor', count:6, spread:560, range:90, dmg:32, telegraph:1.40, stagger:0.18, w:2, rageOnly:true },
+  charge: { name:'突進',       shape:'charge', length:1250, speed:1500, dmg:44, telegraph:1.05, minDist:320, maxDist:1500, knock:320, w:3, color:'#c8101c', pattern:'arrows' },
   nova:   { name:'大爆発',     shape:'circle', range:950,  dmg:58, telegraph:2.00, maxDist:900, knock:420, w:1, rageOnly:true },
 };
 const EXPLORE_BOSS_NEST_RADIUS    = 650;   // 巣の広さ(岩を空ける・眠って回復する範囲)
@@ -6584,7 +6584,14 @@ const EXPLORE_BOSS_CINE           = { turnSec:0.4, zoomSec:1.2, zoom:1.8, bar:0.
 const EXPLORE_BOSS_HUNT_CINE      = { turnSec:0.35, zoomSec:2.0, zoom:1.15, bar:0.09, dimSec:2.2, lookZ:0.9 };   // lookZ: 体の高さのどこを画面の中央にするか(高いほどボスが画面の下寄り=上の札と重ならない)
 // 弱点命中の数字(照準の近く。画面の画素で固定サイズ・秒数)。狙撃のスコープ中は狙撃側が出すので出さない
 const EXPLORE_WEAK_POP            = { px:32, sec:1.2, dx:58, dy:-44 };
-const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.8;
+const EXPLORE_BOSS_TOPPLE_SQUASH  = 0.92;  // 部位破壊のひるみの縦の潰し(潰さず、のけぞりで見せる)
+/* 地面の印(予告)の塗り: カメラに近いほど薄くして縁の線だけ残す [薄くし始める距離, 普通の濃さになる距離]
+   ・急な斜面の塗りも弱める(斜面に板のように貼り付いて見える=批評指摘) */
+const EXPLORE_TELEGRAPH_NEAR      = [220, 900];
+const EXPLORE_TELEGRAPH_NEAR_BAND = [40, 320];   // 突進の帯(細いので手前も濃いまま近くまで見せる)
+const EXPLORE_BOSS_RAGE_CINE      = { turnSec:0, zoomSec:0.7, zoom:1.18, bar:0, dimSec:0, lookZ:0.5, noPitch:true };   // 怒りの咆哮の一瞬の寄り
+const EXPLORE_BODY_POP_PX         = 22;   // ボスの体に当てた数字(白)の大きさ(画面の画素)
+const EXPLORE_AIM_CLEAR           = { w:170, h:120 };   // 照準の周りの文字を出さない範囲(画面の画素)
 /* ボス戦の間の視点の補正: ボスの頭が画面上部のHUD(exploreHudBand の下端)+margin より上に出たら、
    視点を上げて(見上げて)引く。pitchRate=角度の追従の速さ / backMax=引く最大距離 */
 const EXPLORE_BOSS_FRAME          = { margin:28, pitchRate:5, pitchMax:0.45, backMax:110, backRate:3 };
