@@ -891,6 +891,14 @@ for(const vpName of vpNames){
           const clampN = (x, a, b)=> Math.max(a, Math.min(b, x));
           const cx = clampN(l.x, r[0], r[2]), cy = clampN(l.y, r[1], r[3]);
           const d = Math.hypot(l.x - cx, l.y - cy);
+          // 矩形どうしの重なり幅・高さ(px)。0なら重なっていない
+          const rectOverlap = (a, b)=>{
+            const ow = Math.max(0, Math.min(a[0]+a[2], b[0]+b[2]) - Math.max(a[0], b[0]));
+            const oh = Math.max(0, Math.min(a[1]+a[3], b[1]+b[3]) - Math.max(a[1], b[1]));
+            return (ow > 0 && oh > 0) ? Math.round(Math.min(ow, oh)) : 0;
+          };
+          const ba = v.__dbgBreathArc;
+          const wl = v.__dbgWeakLabel;
           return { rect:[Math.round(r[0]),Math.round(r[1]),Math.round(r[2]),Math.round(r[3])],
                    lens:{ x:Math.round(l.x), y:Math.round(l.y), r:Math.round(l.r) },
                    dist:Math.round(d), overlapPx: Math.round(l.r - d),
@@ -898,7 +906,11 @@ for(const vpName of vpNames){
                    // 誤って起こすと付く。批評6巡目でこれが起きた=keepFightで防いでいる)
                    bodyCine: document.body.classList.contains('explore-cine'),
                    cine: (typeof exploreState==='object' && exploreState.cine) ? exploreState.cine.kind : null,
-                   hudRects: (typeof snHudRects === 'function') ? snHudRects() : null };
+                   hudRects: (typeof snHudRects === 'function') ? snHudRects() : null,
+                   // 批評7巡目①: 息止めの弧と情報の枠の重なり(0なら重なりなし)
+                   breathArcInfoOverlapPx: ba ? rectOverlap(ba, r) : null,
+                   // 批評7巡目④: 「弱点」の札の矩形とマーク中心の距離(px。40以下でOK)
+                   weakLabelDistPx: wl ? Math.round(wl.distPx) : null };
         });
       }
       report.shots.push(shotRec);

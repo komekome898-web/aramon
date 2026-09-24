@@ -7225,12 +7225,13 @@ const SNIPER_ZERO_M             = 100;   // ゼロイン距離(m)。ここより
 const SNIPER_BODY_H_PER_RADIUS  = 2.0;   // 当たりの背の高さ = 半径×これ(ent.bodyH があればそちら)
 const SNIPER_HIT_RADIUS_MULT    = 0.95;  // 当たりの横幅 = 半径×これ
 const SNIPER_WEAK_FROM          = 0.62;  // ent.weakPoint に from が無いときの弱点の下端(背の高さに対する割合)
+const SNIPER_LADDER_LINE_PX     = 1.4;    // 8倍(BDC)のはしごの段の線の太さ(px)。暗い縁を+1.6pxで足す。点は出さない(批評7巡目)
 const SNIPER_DROP_MARKS_M       = [150, 200, 250, 300];   // 落下補正の目盛り(m)
 const SNIPER_DROP_LABEL_ORDER   = [200, 300, 150, 250];   // 目盛りの数字が詰まって区別できないとき、残す順(前ほど残る)
 const SNIPER_DROP_LABEL_X       = 0.2;    // 目盛りの数字の列の位置(照準から窓の半径×この割合だけ横)
-const SNIPER_DROP_LABEL_DIM     = 0.42;   // 目盛りの数字が的の体に掛かるときの濃さ(縁取りの黒は薄めない。sniperDropLabelDraw)
+const SNIPER_DROP_LABEL_DIM     = 0.42;   // 目盛りの点線の引き出し線が的の体に掛かるときの濃さ(数字そのものは薄めない。drawDropLabel)
 const SNIPER_DROP_LABELS_NARROW_MAX = 1;  // 縦持ち(html.narrow-screen)で同時に出す落下補正の数字の数。的の体の上で数が並ぶと読めない(批評6巡目)
-const SNIPER_WEAK_LABEL_GAP     = 2.6;    // 「弱点」の札を菱形の印から離す距離(印の半径 s に対する倍率)
+const SNIPER_WEAK_LABEL_OFFSET_PX = 14;   // 「弱点」の札を菱形の印の外接円から離す距離(px。8〜24pxの範囲。批評7巡目)
 const SNIPER_WEAK_LABEL_PAD     = 8;      // 「弱点」の札と他の文字(落下補正の数字)の間に空ける余白(px)。0だと隣り合わせで「弱点200」に読めてしまう
 const SNIPER_SWAY_NOISE         = 0.55;  // 揺れに混ぜるなめらかなノイズの割合(周期を読めなくする)
 const SNIPER_HEARTBEAT_HZ       = 1.15;  // 心拍の細かい揺れの速さ(回/秒)
@@ -7252,7 +7253,10 @@ const SNIPER_TRACER_CORE_PX     = [1.6, 4];   // 弾道の光の芯の太さ(画
 const SNIPER_FLASH_LEVELS       = [1, 0.85, 0.6];   // 発砲の閃光の強さ(撃ってから描くコマごと。0.62より上のコマは白い芯つき)
 const SNIPER_HIT_JOLT_SEC       = 0.25;  // 探検: 狙撃の命中で的の絵が揺れる時間(秒)
 const SNIPER_HIT_JOLT_PX        = [3, 5];  // 同じく揺れの幅(画面px。体 / 弱点)
-const SNIPER_IMPACT_COLUMN_H    = 60;    // 外れた弾が地面に立てる土柱の高さ(ワールド単位=6m相当。遠くからでも見える大きさ)
+const SNIPER_IMPACT_COLUMN_H    = 36;    // 外れた弾が地面に立てる土柱の高さ(ワールド単位=3.6m相当)。60だと8倍ズームで的の顔の高さまで浮いて見えた(批評7巡目)。遠くからでも見える大きさは根元の濃い土とSNIPER_IMPACT_SCALE_BOOSTで保つ
+const SNIPER_SPLASH_RING_M0     = 6;     // 水しぶきの輪の初期半径(ワールド単位)
+const SNIPER_SPLASH_RING_GROW   = 70;    // 水しぶきの輪が1秒あたり広がる量(ワールド単位/秒)
+const SNIPER_SPLASH_DEBRIS_UP   = 340;   // 水滴が跳ね上がる初速の係数(SNIPER_IMPACT_DEBRIS_Gで落ちる)
 const SNIPER_IMPACT_DEBRIS_G    = 900;   // 土くれ・小石が落ちる重さ(ワールド単位/秒²)
 const SNIPER_CRIT_NUM_SCALE     = 1.5;   // 弱点命中のダメージの数字の大きさ(体への命中の数字に対する倍率)
 // 批評5巡目(縦持ちでレンズの内側に情報が入り込む/弾道が折れる/弱点の印が浮く)への対応で追加

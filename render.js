@@ -796,7 +796,8 @@ function scaledSpriteFor(img, needPx){
      この版をさらに`drawImage`で引き伸ばす二度目のぼかしが乗って的がぼやけたまま=批評5巡目)。
      SCOPE_SHARPEN_BUCKETS の中から実際に必要な倍率以上の最小を選ぶので、キャッシュは1枚あたり最大3版まで */
 const SCOPE_SHARPEN_MIN_UPSCALE = 1.3;   // 元画像のこの倍より大きく描くときだけ使う
-const SCOPE_SHARPEN_AMOUNT = 1.6;        // 輪郭の締め具合(アンシャープマスクの強さ)
+const SCOPE_SHARPEN_AMOUNT = 1.6;        // 輪郭の締め具合(暗い側。アンシャープマスクの強さ)
+const SCOPE_SHARPEN_HILITE_AMOUNT = 0.5; // 明るい側の締め具合。暗い側と同じ強さだと縁がピンク〜白に浮く(ハロー。批評7巡目)ので弱くする
 const SCOPE_SHARPEN_RADIUS_PX = 2;       // ぼかしの半径(拡大後のpx)。絵ごとの差(批評6巡目: ヴォルガルーダ=
   // ganon_ssrだけ8倍でぼやける)を調べたところ、原因はこのコードではなく**元の歩行コマの絵自体**が
   // 輪郭のくっきりしたセル画(metag_ssr等)と違い、柔らかいグラデーションで描かれていたため
@@ -842,13 +843,17 @@ function sharpenedUpscaleFor(img, needPx){
         bl[i+k] = s/span;
       }
     }
-    const A = SCOPE_SHARPEN_AMOUNT;
+    /* 明るい側(オーバーシュート)は弱く、暗い側は強く締める。**両側とも同じ強さだと、鶏冠や翼の縁のような
+       明暗差の大きい輪郭でピンク〜白のハロー(縁取りが実際より明るく浮く)が出る**(批評7巡目)。
+       暗い側だけしっかり締めれば、輪郭のコントラスト自体は上がって見た目のシャープさは保てる。 */
+    const A = SCOPE_SHARPEN_AMOUNT, AH = SCOPE_SHARPEN_HILITE_AMOUNT;
     for(let i=0;i<n;i++){
       const a = pm[i*4+3];
       if(a < 1){ d[i*4+3] = 0; continue; }
       for(let k=0;k<3;k++){
         // 元(拡大そのまま)に、ぼかしとの差分を足して輪郭を締める
-        const v = pm[i*4+k] + A*(pm[i*4+k] - bl[i*4+k]);
+        const diff = pm[i*4+k] - bl[i*4+k];
+        const v = pm[i*4+k] + (diff > 0 ? AH : A)*diff;
         d[i*4+k] = Math.max(0, Math.min(255, v*255/a));
       }
     }
