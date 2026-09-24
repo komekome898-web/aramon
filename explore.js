@@ -1815,15 +1815,21 @@ function exploreFxGroundSlam(b, k){
   fx.burst({ x:b.x, y:b.y, z:(b.z||0) + 12, count:Math.round(30*k), speed:260, elev:0.25, elevSpread:0.3, jitter:b.radius*1.3,
              r:dust[0], g:dust[1], b:dust[2], bright:0.55, life:1.4, size0:70, hot:0, az:30, turb:40 });
 }
-// 怒り中: 口元から白い息(煙)を吐く
+/* 怒り中: 口元から息(煙)を吐く。
+   息の煙はほぼ白(0.95)・濃さ0.75・大きさ50→110の粒18個を上向きに流していたため、頭の上に積もって
+   白い塊になり、ボスと一緒に動いて弱点の周りを白飛びさせていた(批評指摘。撮影で息だけを一意の色に
+   塗り分けて特定)。芯(口元の赤熱)は残し、煙はボスの色を灰に混ぜた色付きの薄い煙にして、
+   上へ昇らせず前へ流して散らす(EXPLORE_BOSS_BREATH_SMOKE) */
 function exploreFxBreath(b){
   const fx = exploreFxLayer();
   if(!fx) return;
   const h = exploreBodyHeight(b);
   const fa = b.facingAngle;
+  const def = exploreBossDef(b), S = EXPLORE_BOSS_BREATH_SMOKE;
+  const sc = exploreRgb(exploreMixHex(def ? def.color : '#9aa4b0', S.grey, S.greyMix));
   fx.burst({ x:b.x + Math.cos(fa)*b.radius*0.4, y:b.y + Math.sin(fa)*b.radius*0.4, z:(b.z||0) + h*0.72,
              count:18, angle:fa, spread:0.5, elev:0.1, elevSpread:0.3, speed:190, jitter:b.radius*0.12,
-             r:0.95, g:0.93, b:0.92, bright:0.75, life:1.4, size0:50, size1:110, hot:0, az:50, turb:26, delaySpread:0.35 });
+             r:sc[0], g:sc[1], b:sc[2], bright:S.bright, life:1.4, size0:S.size0, size1:S.size1, hot:0, az:S.az, turb:26, delaySpread:0.35 });
   // 口元の赤熱(息の芯。遠くからでも「吐いている」と分かる)
   fx.burst({ x:b.x + Math.cos(fa)*b.radius*0.45, y:b.y + Math.sin(fa)*b.radius*0.45, z:(b.z||0) + h*0.72,
              count:8, angle:fa, spread:0.35, elev:0.05, elevSpread:0.2, speed:240, r:1, g:0.45, b:0.15, bright:1.1, life:0.5, size0:26 });
@@ -1862,11 +1868,13 @@ function exploreDrawMonsterUnder(e, uiMult, p){
     /* 崩れ落ちる影。地面に平らに貼った横長の楕円のまま(批評指摘: 体と一緒に回すと
        90°回って縦長になり、影として読めなくなっていた)。体が横へ広がる(sx)ぶんだけ
        影も横へ広げるが、回転はさせない。 */
-    const pose = exploreComputePose(e) || { sx:1 };
+    const pose = exploreComputePose(e);
     const fy = exploreFootY(e);
     ctx.save();
-    ctx.translate(0, fy*0.7);
-    const sr = e.radius*1.15*Math.max(1, pose.sx || 1);
+    // 寝た姿(exploreLyingGeom)のときは、体の真ん中(足元から頭の先への半分)の下へ、体の長さに合わせて敷く
+    const G = pose && pose.lie, ek = pose && pose.ek || 0;
+    ctx.translate(G ? G.h.x*0.5*ek : 0, fy*0.7 + (G ? G.h.y*0.5*ek : 0));
+    const sr = G ? Math.max(e.radius*1.15, Math.hypot(G.h.x, G.h.y)*0.62*ek) : e.radius*1.15;
     const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sr);
     g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(0.7, 'rgba(0,0,0,0.28)'); g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
@@ -1988,9 +1996,8 @@ function exploreDrawMonsterTint(e, img, L){
     const k = clamp((matchTime - (e.exPoseAt || matchTime) - 0.8) / 1.2, 0, 1);
     const g = exploreTintSprite(spr, '#808080');
     if(g && k > 0){
-      ctx.globalCompositeOperation = 'saturation'; ctx.globalAlpha = k;
-      ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
-      ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.45*k;
+      // 色を抜くだけにする(灰色を掛けて暗くすると、黒い体のボスが真っ黒の板になり種類が分からなかった=批評指摘)
+      ctx.globalCompositeOperation = 'saturation'; ctx.globalAlpha = 0.8*k;
       ctx.drawImage(g, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
     }
   }
@@ -2128,17 +2135,18 @@ function exploreDrawRageEyes(e){
   const ty = moving ? -e.radius*0.08 : -e.radius*0.5;
   const flick = 0.8 + 0.2*Math.sin(matchTime*23);
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  /* 加算(lighter)は白い毛並み(氷牙など)の上で赤が足されても白のまま飽和し、頭頂が白く光って見えた
+     (撮影で目の光だけ消すと頭の枠の白が約8割減ることで確認)。混ぜる(source-over)で赤い光にし、
+     白い芯は中心のごく小さい点だけにする */
+  ctx.globalCompositeOperation = 'source-over';
   for(const sx of [-ex, ex]){
     const g = ctx.createLinearGradient(sx, ey, sx + tx, ey + ty);
     g.addColorStop(0, 'rgba(255,60,40,0.9)'); g.addColorStop(1, 'rgba(255,20,0,0)');
     ctx.strokeStyle = g; ctx.lineWidth = e.radius*0.07; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(sx, ey); ctx.quadraticCurveTo(sx + tx*0.5, ey + ty*0.2, sx + tx, ey + ty); ctx.stroke();
-    // 弱点の光(exploreDrawWeakGlow)と同じ高さに乗るため、ここが全開alphaだと重なって
-    // 白飛びの主因になっていた(批評指摘)。芯の白を弱めておく
     const r = e.radius*0.06*flick;
     const rg = ctx.createRadialGradient(sx, ey, 0, sx, ey, r*2.2);
-    rg.addColorStop(0, 'rgba(255,255,230,0.45)'); rg.addColorStop(0.25, 'rgba(255,60,40,0.85)'); rg.addColorStop(1, 'rgba(255,0,0,0)');
+    rg.addColorStop(0, 'rgba(255,236,210,0.8)'); rg.addColorStop(0.1, 'rgba(255,70,40,0.85)'); rg.addColorStop(0.45, 'rgba(230,30,20,0.45)'); rg.addColorStop(1, 'rgba(200,0,0,0)');
     ctx.fillStyle = rg;
     ctx.beginPath(); ctx.arc(sx, ey, r*2.2, 0, Math.PI*2); ctx.fill();
   }
@@ -2157,6 +2165,11 @@ function exploreBeginPose(e){
     return false;
   }
   ctx.save();
+  if(P.m){   // 討伐で地面に寝た姿(exploreLyingMatrix)
+    ctx.transform(P.m[0], P.m[1], P.m[2], P.m[3], P.m[4], P.m[5]);
+    if(P.alpha < 1) ctx.globalAlpha *= P.alpha;
+    return true;
+  }
   const fy = exploreFootY(e);
   ctx.translate(P.shx, fy + P.bob);
   if(P.tilt) ctx.rotate(P.tilt);
@@ -2196,16 +2209,16 @@ function exploreComputePose(e){
       bob = -(0.1 + Math.abs(Math.sin(t*7))*0.06)*r*w;   // 打たれて体が浮く
       shx = Math.sin(t*31)*r*0.035*w;                           // 打たれて震える
     } else if(st === 'dying'){
-      /* 崩れ落ち: 横たえる(画面上で幅が高さより広くなる向き)。90°近くまで回すと、姿勢の
-         変形の回転→拡大縮小→平行移動の順の組み方の都合で頭が持ち上がって上の黒帯に
-         届いてしまい、影も体と一緒に90°回って縦長になった(批評指摘)。回転はごく浅く
-         留め、縦に大きく潰す・横に大きく広げることで「幅>高さ」を作る。影は回転させず
-         横長のまま別に描く(exploreDrawMonsterUnder)。 */
-      const k = clamp(t/0.6, 0, 1), ek = 1 - (1-k)*(1-k);
-      tilt = sign*0.4*ek;               // 浅い傾き(倒れ込む気配だけ)
-      sy = 1 - 0.74*ek; sx = 1 + 0.62*ek;   // 縦に大きく潰し、横に大きく広げて「横たわる」形にする
-      // 潰した絵の一番下が地面(足元の高さ)に乗るよう持ち上げる(翼の先が地面へ潜らないように)
-      bob = -exploreLowestAfterPose(e, sx, sy, tilt);
+      /* 崩れ落ち: 地面に寝た姿(exploreLyingGeom)。画面上で絵を回して潰す方式は、回転→拡大縮小の
+         組み方の都合で「足元から斜めに持ち上がった板」になり、地平線より上へ突き出た(批評指摘)。
+         寝た姿は足元・頭の先・厚みの上端を project() で1点ずつ投影して決めるので、体は地面に沿い、
+         カメラより低い厚みは必ず地平線より下に収まる。倒れ込む fallSec の間は立った姿から寝た姿へ回す */
+      const G = exploreLyingGeom(e);
+      if(G){
+        alpha = clamp((e.exStateUntil - now)/0.7, 0, 1);
+        const ek = 1 - Math.pow(1 - clamp(t/EXPLORE_BOSS_LIE.fallSec, 0, 1), 2);
+        return { sx:1, sy:G.thickK, tilt:0, bob:0, shx:0, alpha, lie:G, ek, m:exploreLyingMatrix(G, ek) };
+      }
       alpha = clamp((e.exStateUntil - now)/0.7, 0, 1);
     } else if(st === 'sleep'){
       sy = 0.6 + 0.02*Math.sin(now*1.6); sx = 1.08; tilt = 0.1;
@@ -2248,24 +2261,75 @@ function exploreComputePose(e){
   }
   return { sx, sy, tilt, bob, shx, alpha };
 }
-// 姿勢(縮み sx,sy と傾き tilt)を掛けた後の、絵の体の一番下の点(足元の軸からの下向きの距離。drawMonster の座標)
-function exploreLowestAfterPose(e, sx, sy, tilt){
+/* 討伐で倒れた姿(地面に寝た姿)の形。drawMonster の座標(足元の投影点が (0, fy)・単位はワールド)で返す。
+   ・足元 F = ボスの足元を project()
+   ・頭の先 H = 足元から地面に沿って画面の横向き(カメラの向きに直角)へ 体の高さ×len 進んだ点を project()
+   ・厚みの上端 U = 足元の真上 T(絵の幅×thick。カメラの高さ×camK まで)を project()
+   h = H−F / u = U−F を画面の画素→ワールドへ直した横・上の向き。絵の体の枠 x0..x1(幅)・y0..y1(高さ)も同じ座標で持つ */
+function exploreLyingGeom(e){
   const img = (typeof getDisplayImage==='function') ? getDisplayImage(e) : null;
-  if(!img || typeof portraitLayoutFor !== 'function') return 0;
+  if(!img || typeof portraitLayoutFor !== 'function') return null;
   const L = portraitLayoutFor(e, img), bb = opaqueBBoxFor(img);
-  if(!L || !bb) return 0;
-  const fy = exploreFootY(e);
+  if(!L || !bb) return null;
+  const z = e.z || 0, K = EXPLORE_BOSS_LIE;
+  const F = project(e.x, e.y, z);
+  if(!F || !(F.scale > 0)) return null;
   const x0 = -L.dw/2 + bb.x0*L.scale, x1 = -L.dw/2 + bb.x1*L.scale;
-  const y0 = -L.dh/2 + L.dy + bb.y0*L.scale - fy, y1 = -L.dh/2 + L.dy + bb.y1*L.scale - fy;
-  const s = Math.sin(tilt), c = Math.cos(tilt);
-  let m = -Infinity;
-  for(const x of [x0, x1]) for(const y of [y0, y1]) m = Math.max(m, x*sx*s + y*sy*c);
-  return m;
+  const y0 = -L.dh/2 + L.dy + bb.y0*L.scale, y1 = -L.dh/2 + L.dy + bb.y1*L.scale;
+  const bodyW = Math.max(1, x1 - x0), bodyH = Math.max(1, y1 - y0);
+  const side = e.exTiltSign || 1, yaw = camState.yaw;
+  const len = bodyH*K.len;
+  const H = project(e.x - Math.sin(yaw)*side*len, e.y + Math.cos(yaw)*side*len, z);
+  const camH = (typeof camPos === 'object' && camPos) ? camPos.z - z : Infinity;
+  const T = Math.max(1, Math.min(bodyW*K.thick, camH*K.camK));
+  const U = project(e.x, e.y, z + T);
+  if(!H || !U) return null;
+  const s = F.scale;
+  return { h:{ x:(H.x - F.x)/s, y:(H.y - F.y)/s }, u:{ x:(U.x - F.x)/s, y:(U.y - F.y)/s },
+           x0, x1, y0, y1, bodyW, bodyH, fy:exploreFootY(e), T, thickK: T / exploreBodyHeightRaw(e) || 0, F };
+}
+/* 立った姿(ek=0)から寝た姿(ek=1)への変形。絵の座標 q → fy足元 + M(q − A) を canvas の transform の6値で返す。
+   寝た姿の M: 絵の上向き(足→頭)を h へ、絵の横(翼の幅)を u へ写す。回転の向きが絵を裏返さないよう、
+   頭が画面の右へ伸びるときは絵の右端を、左へ伸びるときは左端を地面(足元の線)に付ける。
+   途中は「頭の向きの回転 × (立った姿→寝た姿の残りの伸び縮み)」で、足元を軸に倒れ込む */
+function exploreLyingMatrix(G, ek){
+  const right = G.h.x >= 0;
+  const c1 = right ? { x:-G.u.x/G.bodyW, y:-G.u.y/G.bodyW } : { x:G.u.x/G.bodyW, y:G.u.y/G.bodyW };   // 絵の x 方向
+  const c2 = { x:-G.h.x/G.bodyH, y:-G.h.y/G.bodyH };                                                      // 絵の y 方向(下向き)
+  const Ax = right ? G.x1 : G.x0, Ay = G.y1;
+  // 回転の角: 立った姿の頭の向き(真上)→ 寝た姿の頭の向き(h)
+  const ang = Math.atan2(G.h.y, G.h.x) + Math.PI/2;
+  const d = Math.atan2(Math.sin(ang), Math.cos(ang));
+  const cr = Math.cos(d), sr = Math.sin(d);
+  // R(−d)·M(回転を除いた伸び縮み)を ek で単位行列から混ぜ、R(d·ek) を掛け直す
+  const ra = cr*c1.x + sr*c1.y, rb = -sr*c1.x + cr*c1.y, rc = cr*c2.x + sr*c2.y, rd = -sr*c2.x + cr*c2.y;
+  const sa = 1 + (ra - 1)*ek, sb = rb*ek, sc = rc*ek, sd = 1 + (rd - 1)*ek;
+  const ce = Math.cos(d*ek), se = Math.sin(d*ek);
+  const a = ce*sa - se*sb, b = se*sa + ce*sb, c = ce*sc - se*sd, dd = se*sc + ce*sd;
+  const ax = Ax*ek, ay = G.fy + (Ay - G.fy)*ek;   // 軸: 立った姿は足元(0,fy)、寝た姿は地面に付く角
+  return [a, b, c, dd, -(a*ax + c*ay), G.fy - (b*ax + dd*ay)];
+}
+// 寝た姿の絵の体の枠(4隅)を画面の画素へ(討伐の札が避ける・検査で測る)
+function exploreLyingScreenBox(e){
+  const P = exploreComputePose(e);
+  if(!P || !P.m || !P.lie) return null;
+  const m = P.m, G = P.lie, s = G.F.scale;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for(const qx of [G.x0, G.x1]) for(const qy of [G.y0, G.y1]){
+    const lx = m[0]*qx + m[2]*qy + m[4], ly = m[1]*qx + m[3]*qy + m[5];
+    const sx = G.F.x + lx*s, sy = G.F.y + (ly - G.fy)*s;
+    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+  }
+  return { x:x0, y:y0, w:x1 - x0, h:y1 - y0, footX:G.F.x, footY:G.F.y };
 }
 /* ボスの画面上の矩形(頭と足を project で投影)。HUD担当が札・文字をボスの外へ逃がすのに使う。
    { x, y, w, h, cx, top, bottom } を画面の画素で返す。画面の後ろ・投影できないときは null */
 function exploreBossScreenRect(b){
   if(!b || !b.alive) return null;
+  if(b.exState === 'dying'){   // 地面に寝た姿は、寝た絵の体の枠そのもの(討伐の札がこれを避ける)
+    const r = exploreLyingScreenBox(b);
+    if(r) return { x:r.x, y:r.y, w:r.w, h:r.h, cx:r.x + r.w/2, top:r.y, bottom:r.y + r.h };
+  }
   const h = exploreBodyHeight(b);
   const f = project(b.x, b.y, b.z || 0), t = project(b.x, b.y, (b.z || 0) + h);
   if(!f || !t) return null;
@@ -2739,6 +2803,20 @@ function exploreDrawMaterialFx(){
 let _exploreRoarBoxes = [];
 // 名前の札(plate)の今の画面上の矩形(咆哮の文字がこれに重ならないよう exploreDrawRoarText が読む)
 let _explorePlateBoxes = [];
+// 討伐完了の札の今の画面上の矩形(検査用: 寝た死骸 exploreLyingScreenBox と重ならないことを測る)
+let _exploreHuntBandBox = null;
+// ボスの足元の輪(半径×1.5 = 怒りの赤い光の広さ)の画面上の矩形。地面の円を project() で1点ずつ投影して囲む
+function exploreBossFootRingRect(b){
+  if(!b) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const rad = b.radius*1.5, z = b.z || 0;
+  for(let i=0; i<16; i++){
+    const a = i/16*Math.PI*2, q = project(b.x + Math.cos(a)*rad, b.y + Math.sin(a)*rad, z);
+    if(!q) continue;
+    x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+  }
+  return x1 >= x0 ? { x:x0, y:y0, w:x1 - x0, h:y1 - y0 } : null;
+}
 function exploreDrawRoarText(){
   _exploreRoarBoxes = [];
   // 狙撃スコープを覗いている間は出さない(倍率で大きくなった文字がスコープの表示に重なり、窓の縁で切れる。狙撃担当)
@@ -2757,6 +2835,7 @@ function exploreDrawRoarText(){
     const blocks = exploreHudObstacles().concat(_explorePlateBoxes);
     const pr = explorePlayerRect();
     const A = EXPLORE_AIM_CLEAR;
+    const ring = exploreBossFootRingRect(b);   // 足元の輪(怒りの赤い光・咆哮の輪の根元)にも重ねない
     ctx.save();
     // 置き場所: ボスの右→左→照準の右→照準の左→ボスの下。入らなければ文字を小さくしてもう一度。
     // 照準の周り・自分・HUDには重ねない(重ねると狙えない=批評指摘)
@@ -2765,10 +2844,10 @@ function exploreDrawRoarText(){
     // (咆哮の文字そのものが出ない=批評指摘)。topY 自体を画面の中ほどまでに必ず収める。
     let fallback = null;
     for(const shrink of [1, 0.8, 0.62, 0.48]){
-      /* 縦持ち(強制横向き)は内部の viewH が横持ちより小さいため、viewH に比例させると
-         港持ちだけ文字が縦持ちより一回り小さくなっていた(約60px→約40px。批評指摘)。
-         下限を引き上げ、縦持ちでも横持ちと同じ上限(60px)まで届くようにする。 */
-      sz = clamp(viewH*0.2, 40, 60) * shrink;
+      /* 大きさは画面の短い辺(縦 viewH)の割合で決める(EXPLORE_ROAR_TEXT_K)。以前は clamp(viewH×0.2, 40, 60) で
+         上限60pxの決め打ちが効き、横持ち(viewH 750)では画面の8%・縦持ち(viewH 375)では16%と、
+         持ち方で画面に対する大きさが2倍違った(批評指摘: 縦持ちで文字がボスの脚・輪・照準を覆う) */
+      sz = viewH*EXPLORE_ROAR_TEXT_K * shrink;
       ctx.font = `italic bold ${Math.round(sz*pop)}px 'Russo One', sans-serif`;
       const tw = ctx.measureText(text).width / pop, th = sz*1.1;
       const topY = Math.min(exploreBossHudBottom() + th*0.6, viewH*0.5);
@@ -2777,14 +2856,24 @@ function exploreDrawRoarText(){
         const box = { x:cx - tw/2, y:cy - th/2, w:tw, h:th };
         return box.x >= 6 && box.x + box.w <= viewW - 6 && box.y >= 4 && box.y + box.h <= viewH - 6
           && !exploreRectsHit(box, r, 4) && !blocks.some(o=> exploreRectsHit(box, o, 2))
+          && !(ring && exploreRectsHit(box, ring, 4))
           && !exploreHitsAimZone(box.x, box.y, box.w, box.h) && !(pr && exploreRectsHit(box, pr, 4));
       };
       const cands = [[r.x + r.w + 14 + tw/2, ty], [r.x - 14 - tw/2, ty],
                      [viewW/2 + A.w/2 + 10 + tw/2, ty], [viewW/2 - A.w/2 - 10 - tw/2, ty],
                      [viewW/2 + A.w/2 + 10 + tw/2, viewH/2 - A.h/2 - th*0.6], [viewW/2 - A.w/2 - 10 - tw/2, viewH/2 - A.h/2 - th*0.6],
                      [clamp(r.x + r.w/2, tw/2 + 6, viewW - tw/2 - 6), Math.min(viewH*0.7, r.y + r.h + th*0.7)]];
-      if(!fallback) fallback = { tx:clamp(cands[6][0], tw/2 + 6, viewW - tw/2 - 6), yy:clamp(cands[6][1], th/2 + 4, viewH - th/2 - 6), sz };
-      const c = cands.find(([x, y])=> fits(x, y));
+      fallback = { tx:clamp(cands[6][0], tw/2 + 6, viewW - tw/2 - 6), yy:clamp(cands[6][1], th/2 + 4, viewH - th/2 - 6), sz };
+      let c = cands.find(([x, y])=> fits(x, y));
+      /* 決め打ちの高さで入らなければ、同じ左右の位置(ボスの右・左・照準の右・左)のまま縦に探してから縮める。
+         縦持ちは照準の枠・ボタンが画面に対して大きく、決め打ちの高さだけでは縮む段が横持ちと変わり、
+         持ち方で文字の大きさが揃わなかった */
+      if(!c){
+        for(const [x] of cands.slice(0, 4)){
+          for(let y = topY + th/2; y + th/2 <= viewH*0.62 && !c; y += 4) if(fits(x, y)) c = [x, y];
+          if(c) break;
+        }
+      }
       if(c){ [tx, yy] = c; found = true; break; }
     }
     // どこにも重ならない置き場が無い一瞬は、それでも「出ない」より「ボスの下へ重ねて出す」を選ぶ
@@ -2894,10 +2983,13 @@ function exploreDrawBigBanner(bn, age, a){
     let cy = Math.max(96, viewH*EXPLORE_BOSS_HUNT_CINE.bar + 38);
     /* ボスにかからない位置へ(縦持ちで帯がボスを丸ごと隠していた=批評指摘): ボスの矩形の上に
        空きがあればそこへ、無ければボスの下へ。どちらも入らなければ元の位置のまま(重なりは許容)。 */
+    /* 帯は cy−bandH/2 〜 cy+bandH/2+extra(獲得の行ぶん下へ伸びる)。以前は空きを totalH/2 で比べていて、
+       帯の下半分がボスの矩形へ食い込んでいた(批評指摘: 死骸が札の帯の中を通る)。帯の上端・下端で比べる */
     if(r){
-      if(r.y - topLimit >= totalH/2 + 6) cy = topLimit + totalH/2;
-      else if(viewH - (r.y + r.h) >= totalH/2 + 16) cy = r.y + r.h + totalH/2 + 12;
+      if(topLimit + totalH + 6 <= r.y) cy = topLimit + bandH/2;
+      else if(r.y + r.h + 12 + totalH <= viewH - viewH*EXPLORE_BOSS_HUNT_CINE.bar) cy = r.y + r.h + 12 + bandH/2;
     }
+    _exploreHuntBandBox = { x:0, y:cy - bandH/2, w:viewW, h:totalH };
     const g = ctx.createLinearGradient(0, 0, viewW, 0);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.22, 'rgba(10,8,4,0.74)');
     g.addColorStop(0.78, 'rgba(10,8,4,0.74)'); g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -3161,10 +3253,14 @@ function exploreGroundMarks(){
       // 次に落ちる流星: 残り時間を示す、縁から中心へ縮む内側の輪
       if(next && m === next) out.push({ x:m.x, y:m.y, r:Math.max(12, m.r*(1 - prog)), color:'#ffffff', alpha:0.95, fillAlpha:0,
                                         solid:true, arc:null, inner:false });
-      out.push({ x:m.x, y:m.y, r:m.r, color:col, alpha:blink, fillAlpha: pend.mv.pattern === 'arrows' ? 0.75 : 0.45, nearFade: pend.mv.pattern === 'arrows' ? EXPLORE_TELEGRAPH_NEAR_BAND : EXPLORE_TELEGRAPH_NEAR,
+      const fanOrCircle = pend.mv.shape === 'fan' || pend.mv.shape === 'circle';
+      out.push({ x:m.x, y:m.y, r:m.r, color:col, alpha:blink, fillAlpha: pend.mv.pattern === 'arrows' ? 0.75 : (fanOrCircle ? EXPLORE_TELEGRAPH.fill : 0.45), nearFade: pend.mv.pattern === 'arrows' ? EXPLORE_TELEGRAPH_NEAR_BAND : EXPLORE_TELEGRAPH_NEAR,
                  outline:EXPLORE_TELEGRAPH.outline, solid:true, progress: pend.mv.pattern === 'arrows' ? null : prog, rect:m.rect || null,
                  arrows: pend.mv.pattern === 'arrows',
                  arc: (m.fanDeg != null) ? { from:m.angle-half, to:m.angle+half } : null,
+                 // 扇・自分中心の円は、手前(自分の足元)でも範囲が読める濃さの下限(批評指摘: 扇の内と外の色の差が約20)。
+                 // 流星群・突進の帯は従来の下限のまま
+                 nearMin: fanOrCircle ? EXPLORE_TELEGRAPH.nearMin : null,
                  inner:false });
     }
   }

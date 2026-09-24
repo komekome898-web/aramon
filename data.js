@@ -6591,6 +6591,10 @@ const EXPLORE_BOSS_BREAK_BODY_RATIO = 0.3; // 弱点以外への命中が部位�
 const EXPLORE_BOSS_WEAK_POINT     = { from:0.62, to:1.0, mult:1.5 };
 const EXPLORE_BOSS_KILL_SLOWMO    = { scale:0.2, holdSec:0.9, easeSec:0.6 };   // 討伐の瞬間の間(実時間の秒)
 const EXPLORE_BOSS_DYING_SEC      = 3.2;   // 倒れてから姿が消えるまで(試合内の秒)
+/* 討伐で倒れた姿(地面に寝た姿。explore.js の exploreLyingGeom)。足元を地面の点として project() し、
+   体(足→頭)を地面に沿って横へ len×体の高さ だけ伸ばす。絵の幅(翼)は上向きの厚み thick×絵の幅 にする。
+   厚みはカメラの高さ×camK を超えない(超えると寝た体が地平線より上へ出る)。fallSec=倒れ込む時間 */
+const EXPLORE_BOSS_LIE            = { len:1.0, thick:0.4, camK:0.8, fallSec:0.6 };
 const EXPLORE_BOSS_HP_BAR_RANGE   = 3400;  // 戦っているボスのHPバーを出す距離
 /* 登場の視点演出(咆哮 intro のときだけ)。turnSec でボスへ向き直り、zoomSec のあいだ zoom 倍に寄る。
    上下の黒帯は画面の高さ×bar。寄せは world.js の setViewZoom(狙撃と同じ入口)で、構え中は狙撃を優先する */
@@ -6609,6 +6613,10 @@ const EXPLORE_TELEGRAPH_NEAR_BAND = [40, 320];   // 突進の帯(細いので手
 // 怒りの咆哮の一瞬の寄り。noPitch(視点を動かさない)ぶん zoom は弱め(頭がHPバーに食い込む=批評指摘)
 const EXPLORE_BOSS_RAGE_CINE      = { turnSec:0, zoomSec:0.7, zoom:1.05, bar:0, dimSec:0, lookZ:0.5, noPitch:true };
 const EXPLORE_BODY_POP_PX         = 22;   // ボスの体に当てた数字(白)の大きさ(画面の画素)
+/* 怒り中の息の煙(explore.js の exploreFxBreath)。色 = ボスの色を grey へ greyMix だけ寄せた色(白にしない)。
+   bright=濃さ / size0→size1=粒の大きさ / az=上下の加速(正で昇る。昇ると頭の上に積もって白い塊になった) */
+const EXPLORE_BOSS_BREATH_SMOKE   = { grey:'#8a939e', greyMix:0.55, bright:0.4, size0:40, size1:90, az:-20 };
+const EXPLORE_ROAR_TEXT_K        = 0.08;  // 咆哮の文字の大きさ = 画面の縦×これ(持ち方で画面に対する割合を変えない)
 const EXPLORE_AIM_CLEAR           = { w:170, h:120 };   // 照準の周りの文字を出さない範囲(画面の画素)
 /* ボス戦の間の視点の補正: ボスの頭が画面上部のHUD(exploreHudBand の下端)+margin より上に出たら、
    視点を上げて(見上げて)引く。pitchRate=角度の追従の速さ / backMax=引く最大距離 */
@@ -6619,7 +6627,8 @@ const EXPLORE_BOSS_HUNT_CAM       = { dist:3.6, extra:320, rise:0.55, tries:[0,0
 const EXPLORE_WILD_NAME_PX        = 13;    // 群れの長の名札(画面の画素。最低12)   // 転倒で縦に潰す割合(小さいほど潰れる。傾きと揺れで倒れた感じを出す)
 /* 大技の予告の見え方(real3d_zone.js の地面の印へ渡す)。
    outline = 暗い太い外縁の色 / minContrast = 地面との明るさの差がこれ未満なら白(暗い地面)か赤(明るい地面)へ寄せる */
-const EXPLORE_TELEGRAPH           = { outline:'#160806', minContrast:0.35, towardLight:'#ffffff', pushLight:0.6, towardDark:'#d0101e', pushDark:0.85 };
+const EXPLORE_TELEGRAPH           = { outline:'#160806', minContrast:0.35, towardLight:'#ffffff', pushLight:0.6, towardDark:'#d0101e', pushDark:0.85,
+                                      nearMin:0.9, fill:0.55 };   // 扇・円だけ: nearMin=カメラの近くで塗りを薄める下限(real3d_zone.js の uNearMin。流星群・帯は0.4のまま) / fill=塗りの濃さ(流星群・帯は0.45/0.75のまま)
 const EXPLORE_METEOR_FALL_H       = 620;   // 流星群・岩石落としの岩が落ち始める高さ(予告の間に降ってくる)
 const EXPLORE_BOSS_RAGE_STEP_SHAKE= 0.22;  // 怒り中の一歩ごとの画面の揺れ(近いほど強い)
 const EXPLORE_BOSS_BREATH_EVERY   = 2.4;   // 怒り中に口元から白い息を吐く間隔(秒)

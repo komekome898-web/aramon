@@ -45,6 +45,7 @@ import { R3, DEFAULT_THEME, ENV_INTENSITY, heightAt, makeTexture,
 export const PATCH_SIZE = 7200;  // プレイヤー中心に張る地形パッチの一辺(ワールド単位)
 const PATCH_SEGS  = 144;         // パッチの分割数。細かくすると綺麗だが重くなる
 const CELL = PATCH_SIZE / PATCH_SEGS;   // 頂点間隔。この単位でパッチ位置をスナップする
+export const TERRAIN_CELL = CELL;       // real3d_zone.js が探検のボスの予告を地形の折れ面に合わせるのに読む(値の正はここ)
 const DETAIL_TILE = 150;         // ①近景タイルが覆うワールド単位(小さいほど足元が細かい)
 const MACRO_TILE  = 2400;        // ②遠景マクロが覆うワールド単位
 const DETAIL_S    = 512;         // ①の画素数。色・法線・粗さ・AOで共通

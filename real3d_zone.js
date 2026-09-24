@@ -39,6 +39,7 @@
    ===================================================================== */
 import * as THREE from './vendor/three.module.min.js';
 import { heightAt } from './real3d_common.js';
+import { TERRAIN_CELL } from './real3d_terrain.js';
 
 /* ---- 見た目の写し(render.js と同じ値。**必ず対で直すこと**) ----
    css/width/dash/glow は render.js の drawZoneRings / drawRaidTelegraph の引数そのもの。 */
@@ -84,10 +85,20 @@ const EX_MARK_HALF_R = 0.05;
 const EX_MARK_SLOPE_CAP = 40;
 const NO_SLOPE_CAP = 1e6;
 const EX_MARK_MIN_SEGS = 28;   // 探検のボスの予告の輪郭の最少分割(急斜面で折れ目が目立つため)。通常は12
+/* 探検のボスの予告だけ: 塗りと帯の頂点を視線に沿ってカメラへ「距離×この割合」だけ寄せる(uPull)。
+   画面上の位置は1画素も変わらず、深度だけが手前になる。地形のメッシュ(頂点間隔50の折れ面)と
+   印(高さを1点ずつ拾った別の折れ面)は凸な所・凹んだ所で互いに数単位食い違い、polygonOffset と
+   持ち上げ1.0では塗りが地面の下に潜って雪面が白く突き抜けていた(批評指摘。深度の判定を切ると
+   欠けが消えることで確認)。距離に比例させるので遠くでも近くでも同じ割合で効き、手前の丘には隠れる */
+const EX_MARK_PULL = 0.05;
 const MARK_SLOTS  = 8;     // 同時に出せる技の地面円の数(レイドの予告は多くて数個)
 /* 塗りの分割(地形に沿わせるので粗いと浮く・地面に潜って縁がギザギザに欠ける)。
    半径方向は大きさに合わせて FILL_RINGS_MIN〜FILL_RINGS まで(地形の頂点間隔50程度)、周方向は固定 */
 const FILL_RINGS  = 24, FILL_SEGS = 64, FILL_RINGS_MIN = 5, FILL_RING_STEP = 60;
+/* 探検のボスの予告だけ: 塗りの高さを「地形のメッシュの折れ面そのもの」(meshHeightAt)から取り、半径方向も
+   EX_FILL_RING_STEP ごと(最大 EX_FILL_RINGS)に細かく刻む。高さの関数を直接拾うと、メッシュの
+   頂点間隔(TERRAIN_CELL)の折れ面とずれて塗りが地面に潜る。容量は FILL_RINGS_CAP で持つ(通常は24のまま) */
+const EX_FILL_RINGS = 64, EX_FILL_RING_STEP = 30, FILL_RINGS_CAP = Math.max(FILL_RINGS, EX_FILL_RINGS);
 const MARK_RING_CAP = 128;   // 地面の印の輪郭1本の最大点数(大きな扇の弧をなめらかに)
 
 /* ---- シェーダー ----
@@ -98,7 +109,7 @@ const RIBBON_VERT = `
   attribute vec2  aNrm;    // 広げる向き(地面のXZ平面。線と直交)
   attribute float aU;      // 線に沿った長さ(ワールド単位。破線の位相に使う)
   attribute float aSlope;  // aNrm方向の地面の傾き(dh/d距離)
-  uniform float uFocalPx, uHalfPx, uLift, uFadeNear, uFadeFar, uMaxHalfR, uSlopeCap;
+  uniform float uFocalPx, uHalfPx, uLift, uFadeNear, uFadeFar, uMaxHalfR, uSlopeCap, uPull;
   varying float vSide, vU, vFade;
   void main(){
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -115,6 +126,8 @@ const RIBBON_VERT = `
     // 傾きぶん上下させて、坂でも帯が地面と平行に乗るようにする(急斜面では上限で止める)
     float slopeLift = clamp(aSlope * aSide * halfW, -uSlopeCap, uSlopeCap);
     p.y += uLift + slopeLift;
+    // 視線に沿ってカメラへ寄せる(画面上の位置は変わらず、深度だけ手前になる)。uPull=0 なら何もしない
+    p = mix(p, cameraPosition, uPull);
     vSide = aSide;
     vU = aU;
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
@@ -147,16 +160,17 @@ const FILL_VERT = `
   attribute float aT;      // 中心(0)→縁(1)。帯(rect)は根元(0)→先(1)
   attribute float aS;      // 帯の横(-1〜1)。円・扇は0
   attribute float aFlat;   // 地面の平らさ(1=平ら、急な斜面ほど小さい)
-  uniform float uFadeNear, uFadeFar, uNearA, uNearB;
+  uniform float uFadeNear, uFadeFar, uNearA, uNearB, uPull, uNearMin;
   varying float vFade, vT, vS;
   void main(){
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
     float d = max(length(cameraPosition - wp), 1.0);
+    wp = mix(wp, cameraPosition, uPull);   // 視線に沿って手前へ(帯と同じ。画面上の位置は変わらない)
     vFade = 1.0 - smoothstep(uFadeNear, uFadeFar, d);
     /* 探検のボスの予告だけ(uNearB>0): カメラに近いほど塗りを薄く、急な斜面も薄く(縁の線は別の帯なので残る)。
        近い×急斜面が重なると掛け算で0近くまで薄れ、輪郭2本だけで範囲が読めなくなっていた
        (批評指摘)ので下限を設けてある。 */
-    if(uNearB > 0.0) vFade *= max(0.4, mix(0.3, 1.0, smoothstep(uNearA, uNearB, d)) * aFlat);
+    if(uNearB > 0.0) vFade *= max(uNearMin, mix(0.3, 1.0, smoothstep(uNearA, uNearB, d)) * aFlat);
     vT = aT; vS = aS;
     gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
   }`;
@@ -243,6 +257,7 @@ function ribbonMaterial(style){
       uLift:   { value: RING_LIFT },
       uMaxHalfR: { value: MAX_HALF_R },
       uSlopeCap: { value: NO_SLOPE_CAP },
+      uPull:     { value: 0 },
     }),
     vertexShader: RIBBON_VERT,
     fragmentShader: RIBBON_FRAG,
@@ -271,6 +286,8 @@ function fillMaterial(){
       uNearA: { value: 0 },
       uNearB: { value: 0 },
       uTime:  { value: 0 },
+      uPull:  { value: 0 },
+      uNearMin: { value: 0.4 },
     }),
     vertexShader: FILL_VERT,
     fragmentShader: FILL_FRAG,
@@ -318,10 +335,12 @@ function makeRibbon(cap, style){
 }
 
 // 折れ線(xs,ys の先頭n点)を帯にする。closed=true のときは末尾に先頭と同じ点が入っている前提
-function setRibbonPath(rb, xs, ys, n, closed){
+// ex = 探検のボスの予告: 高さを地形のメッシュの折れ面(meshHeightAt)から取る(塗りと同じ面に乗せる)
+function setRibbonPath(rb, xs, ys, n, closed, ex){
   if(n < 2){ rb.geo.setDrawRange(0,0); rb.mesh.visible = false; return; }
   if(n > rb.cap) n = rb.cap;
   const grad = window.real3dHeightGrad;
+  const cache = ex ? new Map() : null;
   let acc = 0;
   for(let i=0;i<n;i++){
     const x = xs[i], y = ys[i];
@@ -337,6 +356,7 @@ function setRibbonPath(rb, xs, ys, n, closed){
       const g = grad(x, y);               // 高さと傾きを1回で(戻り値は使い回しなので即読む)
       h = g.h; sl = g.gx*nx + g.gy*ny;
     } else h = heightAt(x, y);
+    if(ex) h = meshHeightAt(x, y, cache).h;
     if(i > 0) acc += Math.hypot(x-xs[i-1], y-ys[i-1]);
     for(let s=0;s<2;s++){
       const k = i*2+s;
@@ -356,16 +376,16 @@ function setRibbonPath(rb, xs, ys, n, closed){
    塗り(技の地面円の内側): 地形に沿った円盤/扇
    ===================================================================== */
 function makeFill(){
-  const V = (FILL_RINGS+1)*(FILL_SEGS+1);
+  const V = (FILL_RINGS_CAP+1)*(FILL_SEGS+1);
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(V*3);
   const tt = new Float32Array(V);
   const ss = new Float32Array(V);
   const ff = new Float32Array(V).fill(1);
-  const idx = new Uint16Array(FILL_RINGS*FILL_SEGS*6);
+  const idx = new Uint16Array(FILL_RINGS_CAP*FILL_SEGS*6);
   const stride = FILL_SEGS+1;
   let o = 0;
-  for(let r=0;r<FILL_RINGS;r++) for(let c=0;c<FILL_SEGS;c++){
+  for(let r=0;r<FILL_RINGS_CAP;r++) for(let c=0;c<FILL_SEGS;c++){
     const a = r*stride+c, b = a+1, d = a+stride, e = d+1;
     idx[o++]=a; idx[o++]=b; idx[o++]=e;
     idx[o++]=a; idx[o++]=e; idx[o++]=d;
@@ -389,22 +409,60 @@ function flatAt(x, y){
   const sl = Math.hypot(gx, gy);
   return Math.max(0.25, Math.min(1, 1 - (sl - 0.3) / 0.6));
 }
+/* 地形のメッシュの上の高さ(探検のボスの予告だけが使う)。real3d_terrain.js の地形は頂点間隔 TERRAIN_CELL の
+   格子(頂点はその倍数のワールド座標に乗る)で、three.js の PlaneGeometry と同じく各マスを
+   (x0,y1)−(x1,y0) の対角で2つの三角に割っている。その三角の平面の高さと傾きを返す。
+   角の高さは1回の組み立ての中で使い回す(cache)。戻り値は使い回しなので即読むこと */
+const _mh = { h:0, gx:0, gy:0 };
+function meshHeightAt(x, y, cache){
+  const C = TERRAIN_CELL;
+  const ix = Math.floor(x / C), iy = Math.floor(y / C), u = x / C - ix, v = y / C - iy;
+  const H = (i, j)=>{
+    const key = i*131071 + j;
+    let h = cache.get(key);
+    if(h === undefined){ h = heightAt(i*C, j*C); cache.set(key, h); }
+    return h;
+  };
+  const h01 = H(ix, iy + 1), h10 = H(ix + 1, iy);
+  if(u + v <= 1){
+    const h00 = H(ix, iy);
+    _mh.gx = (h10 - h00) / C; _mh.gy = (h01 - h00) / C; _mh.h = h00 + u*(h10 - h00) + v*(h01 - h00);
+  } else {
+    const h11 = H(ix + 1, iy + 1);
+    _mh.gx = (h11 - h01) / C; _mh.gy = (h11 - h10) / C; _mh.h = h11 + (1 - u)*(h01 - h11) + (1 - v)*(h10 - h11);
+  }
+  return _mh;
+}
+// 塗りの1点の高さと平らさ。ex=探検のボスの予告(メッシュの折れ面に合わせる)/ それ以外は従来どおり
+function fillGround(x, y, ex, cache, out){
+  if(ex){
+    const g = meshHeightAt(x, y, cache);
+    out.h = g.h; out.flat = Math.max(0.25, Math.min(1, 1 - (Math.hypot(g.gx, g.gy) - 0.3) / 0.6));
+  } else { out.h = heightAt(x, y); out.flat = flatAt(x, y); }
+  return out;
+}
+const _fg = { h:0, flat:1 };
 // 半径方向の分割数(大きい円ほど細かく。地形の起伏に沿わせて縁が地面に潜らないように)
-function fillRingsFor(len){ return Math.max(FILL_RINGS_MIN, Math.min(FILL_RINGS, Math.ceil(len / FILL_RING_STEP))); }
+function fillRingsFor(len, ex){
+  if(ex) return Math.max(FILL_RINGS_MIN, Math.min(EX_FILL_RINGS, Math.ceil(len / EX_FILL_RING_STEP)));
+  return Math.max(FILL_RINGS_MIN, Math.min(FILL_RINGS, Math.ceil(len / FILL_RING_STEP)));
+}
 // from/to は絶対角(rad)。null なら全周
-function setFillDisc(fl, cx, cy, radius, from, to){
+function setFillDisc(fl, cx, cy, radius, from, to, ex){
   const a0 = (from == null) ? 0 : from;
   const span = (from == null) ? Math.PI*2 : (to - from);
   const stride = FILL_SEGS+1;
-  const rings = fillRingsFor(radius);
+  const rings = fillRingsFor(radius, ex);
+  const cache = ex ? new Map() : null;
   for(let r=0;r<=rings;r++){
     const t = r/rings;
     for(let c=0;c<=FILL_SEGS;c++){
       const a = a0 + span*(c/FILL_SEGS);
       const x = cx + Math.cos(a)*radius*t, y = cy + Math.sin(a)*radius*t;
       const k = (r*stride+c)*3;
-      fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
-      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = 0; fl.ff[r*stride+c] = flatAt(x, y);
+      const g = fillGround(x, y, ex, cache, _fg);
+      fl.pos[k] = x; fl.pos[k+1] = g.h + FILL_LIFT; fl.pos[k+2] = y;
+      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = 0; fl.ff[r*stride+c] = g.flat;
     }
   }
   fl.geo.attributes.aFlat.needsUpdate = true;
@@ -415,9 +473,10 @@ function setFillDisc(fl, cx, cy, radius, from, to){
   fl.mesh.visible = true;
 }
 // 帯(突進の通り道)。根元(cx,cy)から ang の向きへ len、幅 ±halfW。aT は根元0→先1
-function setFillRect(fl, cx, cy, ang, len, halfW){
+function setFillRect(fl, cx, cy, ang, len, halfW, ex){
   const stride = FILL_SEGS+1;
-  const rings = fillRingsFor(len);
+  const rings = fillRingsFor(len, ex);
+  const cache = ex ? new Map() : null;
   const dx = Math.cos(ang), dy = Math.sin(ang), nx = -dy, ny = dx;
   for(let r=0;r<=rings;r++){
     const t = r/rings;
@@ -425,8 +484,9 @@ function setFillRect(fl, cx, cy, ang, len, halfW){
       const u = (c/FILL_SEGS)*2 - 1;
       const x = cx + dx*len*t + nx*halfW*u, y = cy + dy*len*t + ny*halfW*u;
       const k = (r*stride+c)*3;
-      fl.pos[k] = x; fl.pos[k+1] = heightAt(x, y) + FILL_LIFT; fl.pos[k+2] = y;
-      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = u; fl.ff[r*stride+c] = flatAt(x, y);
+      const g = fillGround(x, y, ex, cache, _fg);
+      fl.pos[k] = x; fl.pos[k+1] = g.h + FILL_LIFT; fl.pos[k+2] = y;
+      fl.tt[r*stride+c] = t; fl.ss[r*stride+c] = u; fl.ff[r*stride+c] = g.flat;
     }
   }
   fl.geo.attributes.aFlat.needsUpdate = true;
@@ -562,7 +622,9 @@ export function buildZoneLayer(scene){
            探検のボスの予告だけが使う追加(省略すると従来どおり):
              outline  = 暗い太い外縁の色 / solid = 内線を破線にしない
              progress = 0〜1。塗りが中心(帯は根元)から縁へ満ちる / rect = { angle, len, halfW } 帯の形(r は並べ替え用に>0)
- noRing = 輪郭を描かず塗りだけ / arrows = 帯(rect)に流れる矢印の模様 / fillAlpha:0 で輪郭だけ 
+ noRing = 輪郭を描かず塗りだけ / arrows = 帯(rect)に流れる矢印の模様 / fillAlpha:0 で輪郭だけ
+             nearFade = [近, 遠] カメラの近くで塗りを薄める(これがあると探検のボスの予告として uPull 等も効く)
+             nearMin  = その薄め方の下限(省略時0.4)
    camPos= window.camPos({x,y,z}) と同じもの。省略時は window.camPos を見る。       */
 export function updateZoneLayer(zone, markList, camPos){
   if(!group) return;
@@ -625,8 +687,11 @@ export function updateZoneLayer(zone, markList, camPos){
       u.uColor.value.copy(col.rgb);
       u.uAlpha.value = alpha;
     }
+    fu.uPull.value = m.nearFade ? EX_MARK_PULL : 0;
+    fu.uNearMin.value = (m.nearMin != null) ? m.nearMin : 0.4;   // 探検の扇・円だけ下限を上げる(既定0.4=従来)
     for(const rb of [slot.ring, slot.inner, slot.outline]){
       const u = rb.mesh.material.uniforms;
+      u.uPull.value = m.nearFade ? EX_MARK_PULL : 0;
       u.uMaxHalfR.value = m.nearFade ? EX_MARK_HALF_R : MAX_HALF_R;
       u.uSlopeCap.value = m.nearFade ? EX_MARK_SLOPE_CAP : NO_SLOPE_CAP;
     }
@@ -667,25 +732,32 @@ function buildMark(slot, m, arc){
   segs = Math.max(m.nearFade ? EX_MARK_MIN_SEGS : 12, Math.min(segs, outCap - 5));
   let n = 0;
   if(arc){
-    sx[n] = m.x; sy[n] = m.y; n++;                      // 中心
+    /* 探検のボスの予告だけ: 扇の両側の直線(中心→弧の端)も RING_STEP ごとに刻む(帯の印 buildRectMark と同じ)。
+       刻まないと直線は頂点2つだけの1本の四角になり、①高さが両端だけなので途中が地面に潜る/浮く
+       ②帯の太さ(画面で一定にする計算)も両端の距離でしか決まらず、カメラの近くを通る側だけ
+       ワールドの太さのまま画面で何倍にも太る(批評指摘: 左の縁が40〜80pxの帯・右は3〜5px。
+       輪郭・外縁・塗りを一意の色で描き分けて、直線の縁だけが太る/細ることを確認) */
+    const edgeSteps = m.nearFade ? Math.max(1, Math.min(Math.round(m.r/RING_STEP), Math.floor((outCap - segs - 4)/2))) : 1;
+    for(let i=0;i<edgeSteps;i++){ const t = i/edgeSteps; sx[n] = m.x + Math.cos(from)*m.r*t; sy[n] = m.y + Math.sin(from)*m.r*t; n++; }   // 中心→弧の始まり
     for(let i=0;i<=segs;i++){
       const a = from + span*(i/segs);
       sx[n] = m.x + Math.cos(a)*m.r; sy[n] = m.y + Math.sin(a)*m.r; n++;
     }
+    for(let i=1;i<edgeSteps;i++){ const t = 1 - i/edgeSteps; sx[n] = m.x + Math.cos(to)*m.r*t; sy[n] = m.y + Math.sin(to)*m.r*t; n++; }   // 弧の終わり→中心
     sx[n] = m.x; sy[n] = m.y; n++;                      // 中心へ戻る(=閉じる)
-    setRibbonPath(slot.ring, sx, sy, n, true);
+    setRibbonPath(slot.ring, sx, sy, n, true, !!m.nearFade);
   } else {
     for(let i=0;i<=segs;i++){
       const a = (i/segs)*Math.PI*2;
       sx[n] = m.x + Math.cos(a)*m.r; sy[n] = m.y + Math.sin(a)*m.r; n++;
     }
     sx[n-1] = sx[0]; sy[n-1] = sy[0];
-    setRibbonPath(slot.ring, sx, sy, n, true);
+    setRibbonPath(slot.ring, sx, sy, n, true, !!m.nearFade);
   }
-  if(m.outline) setRibbonPath(slot.outline, sx, sy, n, true);
+  if(m.outline) setRibbonPath(slot.outline, sx, sy, n, true, !!m.nearFade);
   else slot.outline.mesh.visible = false;
   // 塗り
-  setFillDisc(slot.fill, m.x, m.y, m.r, arc ? from : null, arc ? to : null);
+  setFillDisc(slot.fill, m.x, m.y, m.r, arc ? from : null, arc ? to : null, !!m.nearFade);
   // 中心の小さい輪(2D版と同じ 0.35 倍)
   if(m.inner){
     const ir = m.r*0.35;
@@ -697,7 +769,7 @@ function buildMark(slot, m, arc){
       sx[k] = m.x + Math.cos(a)*ir; sy[k] = m.y + Math.sin(a)*ir; k++;
     }
     sx[k-1] = sx[0]; sy[k-1] = sy[0];
-    setRibbonPath(slot.inner, sx, sy, k, true);
+    setRibbonPath(slot.inner, sx, sy, k, true, !!m.nearFade);
   } else {
     slot.inner.mesh.visible = false;
   }
@@ -726,10 +798,10 @@ function buildRectMark(slot, m){
     }
   }
   sx[n] = sx[0]; sy[n] = sy[0]; n++;
-  setRibbonPath(slot.ring, sx, sy, n, true);
-  if(m.outline) setRibbonPath(slot.outline, sx, sy, n, true);
+  setRibbonPath(slot.ring, sx, sy, n, true, !!m.nearFade);
+  if(m.outline) setRibbonPath(slot.outline, sx, sy, n, true, !!m.nearFade);
   else slot.outline.mesh.visible = false;
-  setFillRect(slot.fill, m.x, m.y, r.angle, r.len, r.halfW);
+  setFillRect(slot.fill, m.x, m.y, r.angle, r.len, r.halfW, !!m.nearFade);
   slot.inner.mesh.visible = false;
 }
 
