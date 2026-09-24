@@ -2976,7 +2976,13 @@ const REAL3D_THEMES = {
                  rock:[1.04, 1.00, 0.92], snowAlt:1250, strata:0.55,
                  grass:0x6f9a34, veg:{ grass:1.00, flower:1.00, fern:0.35, twig:0.05, blades:0.10 } },
       frost:   { tex:'snow',
-                 low:0xa7bbcf, high:0xecf3fd, steep:0x4e5b6e, gravel:0xb7c6d8, scrub:0x98afc4,
+                 /* high(雪面)は前は0xecf3fdで、この地域のhaze(0xd7e5f3)より明るい値になっていた
+                    (他の3地域はどれもhaze>高台で、凍った高地だけ逆転していた)。地形が自分の霞より
+                    明るいのは筋が通らないので、必ず暗く落とす側へ直す。2026-09-24の調査で
+                    vantageの「半透明の幕」は主に太陽光の映り込み(farTerrainの粗さ0.96・envMapIntensityを
+                    0まで落としても白さがほぼ変わらなかった)と判明し、この直しだけでは幕は大きくは変わらない。
+                    それでも地形-霞の大小関係の乱れ自体は直しておく。 */
+                 low:0xa7bbcf, high:0xcedded, steep:0x4e5b6e, gravel:0xb7c6d8, scrub:0x98afc4,
                  sky:0x16408c, haze:0xd7e5f3, fogD:0.00011, sun:0xf0f5ff, sunK:1.05,
                  clouds:[0.22, 0.82, 0.35, 0.30], cloudTint:0x5a6c84, cloud:0.00, ridgeHaze:0.15,
                  rock:[0.78, 0.92, 1.22], snowAlt:140, strata:0.25,

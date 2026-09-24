@@ -821,8 +821,13 @@ const EX_MAP_CHUNK = `
       // (取り違えると、動かない片方の軸だけで縦に引き伸ばした模様になる。canyon/frostの縦筋の原因)
       float rx = texture2D(map, vExP.zy / 150.0).b, rz = texture2D(map, vExP.xy / 150.0).b;
       float rk = mix(rx, rz, an.x / (an.x + an.z + 1e-4));
-      float band = 0.90 + 0.10*sin(vExP.y*0.058 + exNzLo*5.0) * (0.4 + 0.6*exNzHi);
-      exRockT = vec3(pow(rk, 2.2)) * band * 1.18;
+      /* 【あざのようなしみ→横の地層縞】rkは地面テクスチャの粒(細かい模様)で、
+         そのまま2.2乗すると暗い所がほぼ0まで潰れ、崖に不揃いな黒いあざが浮いた
+         (2026-09-24 volcano_wide/border_frost_volcanoの「崖の黒いしみ」)。
+         粒の寄与(コントラスト)を弱め、高さで作る横縞(band)の寄与を強くして、
+         見た目の主役を「粒のあざ」から「地層の縞」へ入れ替える。 */
+      float band = 0.62 + 0.38*sin(vExP.y*0.058 + exNzLo*5.0) * (0.4 + 0.6*exNzHi);
+      exRockT = vec3(mix(0.72, rk, 0.18)) * band * 1.18;
     }
     float exAlt = dot(vExW, uExSnowAlt);
     // 雪の境目は広めにぼかし、低周波のノイズで大きく揺らす(三角形の形にも、地域の境の等高線にもならないように)
@@ -1174,7 +1179,10 @@ function exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, o){
   const gm = Math.hypot(gx, gy);
   // 探検フィールドは尾根・崖が高く急なので、岩肌になる傾きを通常より高く取る
   const rockK = sstep(0.42, 1.05, gm);
-  const t = clamp01((h + 240) / 700);
+  /* low→high(草地→雪面などの高さの段)の境は高さだけで決めると、なだらかな一枚斜面では
+     等高線がそのまま一直線に出る(2026-09-24 campの雪原の境目・雪の中の一直線の横帯)。
+     位置ノイズ(jit0)で効く高さを±130ほど揺らし、境目を自然にくねらせる。 */
+  const t = clamp01((h + 240 + jit0*260) / 700);
   _c.setRGB(0, 0, 0);
   _exSteep.setRGB(0, 0, 0); _exSnowAlt = 0;
   for(let r=0;r<5;r++){
@@ -1212,11 +1220,18 @@ function exploreVertexColor(pal, wx, wy, h, gx, gy, nb, nm, flow, exw, o){
     }
   }
   // 踏み分け道: 草が剥げて土が出た帯(緩斜面だけ。急斜面は岩肌のまま)
-  const tr = exploreTrail(wx, wy);
-  if(tr > 0){
+  const tr0 = exploreTrail(wx, wy);
+  if(tr0 > 0){
+    /* 縁をぼかす: tr0 は距離のsmoothstepなので数値としては既に滑らかだが、
+       白い雪の上では土色とのコントラストが強く、目には縁がくっきりした線に見えた
+       (2026-09-24 vantage_backの「雪原の真っ直ぐな茶色の縦筋」)。中心寄りだけ
+       tr0=1に近づける(≒縁の帯を実質広げる)曲線にして、見た目の縁を柔らかくする。 */
+    const tr = Math.pow(tr0, 1.7);
     const k = tr * 0.72 * (1 - rockK);
     _cTmp.copy(pal.trail).multiplyScalar(0.92 + (nm-0.5)*0.3);
     _c.lerp(_cTmp, k);
+    // 雪を薄く乗せる: 凍った高地では道の上も土がむき出しにならず、薄く雪が積もって見えるように
+    if(w[1] > 0.15) _c.lerp(pal[1].high, 0.22*tr*w[1]);
   }
   if(exw){ exw[o] = w[0] + w[4]; exw[o+1] = w[1]; exw[o+2] = w[2]; exw[o+3] = w[3]; }
 }
@@ -1279,7 +1294,8 @@ export function buildFarTerrain(){
         'float fNzHi = texture2D(uFarMacro, vFarW.xz * 0.0052 + 11.0).r - 0.5;',
         'float fNz = fNzLo*0.7 + fNzHi*0.3;',
         'float fSl = 1.0 - clamp(normalize(vFarN).y, 0.0, 1.0);',
-        'float fBand = 0.90 + 0.10*sin(vFarW.y*0.058 + fNzLo*5.0) * (0.4 + 0.6*fNzHi);',
+        // 近景のexRockTを「粒→縞」寄りに直したのに合わせ、縞の振れ幅も同じ比で広げる(両方直す)
+        'float fBand = 0.68 + 0.32*sin(vFarW.y*0.058 + fNzLo*5.0) * (0.4 + 0.6*fNzHi);',
         'diffuseColor.rgb = mix(diffuseColor.rgb, vFarRock.rgb * fBand, smoothstep(0.38, 0.78, fSl + fNz*0.14));',
         'float fSn = smoothstep(vFarRock.a - 260.0, vFarRock.a + 520.0, vFarW.y + fNz*640.0) * (1.0 - smoothstep(0.30, 0.68, fSl + fNz*0.20));',
         'diffuseColor.rgb = mix(diffuseColor.rgb, uFarSnow, fSn);',

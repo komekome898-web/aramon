@@ -1243,11 +1243,18 @@ function buildHouses(group, world){
    入口と出口は岩の断面で閉じる。天井は頭上なので当たり判定は持たない(壁の円は world.js)。
    --------------------------------------------------------------------- */
 const TUNNEL_ROOF_LEN = 700, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 18;
+/* 洞窟の天井は近道(峠)の局所的な飾りで、方向の目印になる塔・門・アーチ・氷の尖塔とは違い
+   遠くから見える意味を持たない。焼き込み(bakeStatic)から外して個別のメッシュのまま残し、
+   カメラから離れたら隠す(遠い所からは屋根だけが宙に浮いて見えていた。2026-09-24 vantage)。
+   しきい値は障害物の消える距離(OBST_VIEW_EXPLORE=4300)に合わせる。 */
+const TUNNEL_VIEW = 3600, TUNNEL_FADE = 700;
+let tunnels = [];   // [{mesh, x, y}]
 function buildTunnels(group){
   const lay = L(), Rf = lay.relief;
-  const geos = [];
+  tunnels = [];
   for(const rd of Rf.ridges) for(const gp of rd.gaps){
     if(typeof gp === 'string' || !gp.tunnel) continue;
+    const geos = [];
     const q = lay.passes[gp.p], ax = Math.cos(gp.slot[0]), ay = Math.sin(gp.slot[0]), nx = -ay, ny = ax;
     const Wc = gp.half + gp.blend + 60, inner = gp.half + 18;
     const na = Math.round(TUNNEL_ROOF_LEN/TUNNEL_STEP);
@@ -1266,8 +1273,13 @@ function buildTunnels(group){
         // 浮いて乗っているだけに見えた(継ぎ目が無い)。endK^2で中ほどは高いまま保ち、端だけ速く沈める
         const endK = Math.min(1, (Math.min(i, na - i)*TUNNEL_STEP)/260);
         const endK2 = endK*endK;
+        /* 横方向(u)も同じ理由で沈める。前は幅の端(|u|→1)でも天井が地面よりだいぶ高いままで、
+           峠の斜面に薄い板が突き出て乗っているだけに見えた(2026-09-24 tunnelカットの「ひさし板」)。
+           端(峠の始点・終点)と同じ形の落とし方(2乗で中ほどは高いまま、端だけ速く沈める)にする */
+        const wK = Math.max(0, 1 - Math.abs(u));
+        const wK2 = wK*wK;
         const insideH = TUNNEL_CEIL + 60 + 60*(1 - Math.abs(u)) + 50*tileNoise(x*0.01, y*0.01, 16);
-        const crest = ground + Math.max(6, (g0 + insideH - ground)*endK2 + 6*(1 - endK2));
+        const crest = ground + Math.max(6, (g0 + insideH - ground)*endK2*wK2 + 6*(1 - endK2*wK2));
         const yt = Math.max(ground + 6, crest);
         // 下面: 切り通しの中は低いアーチ、外は地面の中へ
         const t = Math.abs(w)/inner;
@@ -1292,47 +1304,72 @@ function buildTunnels(group){
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
     g.setIndex(I);
     geos.push(g.toNonIndexed());
-  }
-  if(!geos.length) return;
-  const geo = mergeGeos(geos);
-  // 岩のでこぼこ(同じ位置の頂点は同じだけずらす=割れ目を作らない)。
-  // 1つの周波数だけだと700単位の壁面に8〜9回きれいに繰り返し、斜めの縞に見えた
-  // (2026-09-24 tunnel)。周波数の違う2層を混ぜて周期を崩す
-  {
-    const p = geo.attributes.position;
-    for(let i=0;i<p.count;i++){
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const n1 = tileNoise(x*0.012 + 3.1, z*0.012, 64) - 0.5, n2 = tileNoise(z*0.012 - 1.7, y*0.012, 64) - 0.5, n3 = tileNoise(y*0.012, x*0.012 + 5.3, 64) - 0.5;
-      const f1 = tileNoise(x*0.031 - 7.1, y*0.031, 32) - 0.5, f2 = tileNoise(y*0.031 + 2.3, z*0.031, 32) - 0.5, f3 = tileNoise(z*0.031, x*0.031 - 4.9, 32) - 0.5;
-      p.setXYZ(i, x + n1*30 + f1*14, y + n3*20 + f3*10, z + n2*30 + f2*14);
+    const geo = mergeGeos(geos);
+    // 岩のでこぼこ(同じ位置の頂点は同じだけずらす=割れ目を作らない)。
+    // 1つの周波数だけだと700単位の壁面に8〜9回きれいに繰り返し、斜めの縞に見えた
+    // (2026-09-24 tunnel)。周波数の違う2層を混ぜて周期を崩す
+    {
+      const p = geo.attributes.position;
+      for(let i=0;i<p.count;i++){
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        const n1 = tileNoise(x*0.012 + 3.1, z*0.012, 64) - 0.5, n2 = tileNoise(z*0.012 - 1.7, y*0.012, 64) - 0.5, n3 = tileNoise(y*0.012, x*0.012 + 5.3, 64) - 0.5;
+        const f1 = tileNoise(x*0.031 - 7.1, y*0.031, 32) - 0.5, f2 = tileNoise(y*0.031 + 2.3, z*0.031, 32) - 0.5, f3 = tileNoise(z*0.031, x*0.031 - 4.9, 32) - 0.5;
+        p.setXYZ(i, x + n1*30 + f1*14, y + n3*20 + f3*10, z + n2*30 + f2*14);
+      }
     }
-  }
-  geo.computeVertexNormals();
-  const pos = geo.attributes.position;
-  let y0 = Infinity, y1 = -Infinity;
-  for(let i=0;i<pos.count;i++){ y0 = Math.min(y0, pos.getY(i)); y1 = Math.max(y1, pos.getY(i)); }
-  paintGeo(geo, new THREE.Color(0x4a4438), new THREE.Color(0x8a826c), y0, y1, 0.35);
-  cavityShade(geo, 0.4, 0.3);
-  // 丘との継ぎ目を土・草へなじませる(地面すれすれの所ほど、その場の地域の草色を混ぜる。
-  // 岩がそのまま丘に乗っただけに見えないように)。天井の内側(見上げる面)は混ぜない
-  {
-    const col = geo.attributes.color, grassList = exploreRegionColors('grass'), dirt = new THREE.Color(0x5a4a34), gc = new THREE.Color(), c = new THREE.Color();
-    for(let i=0;i<pos.count;i++){
-      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ny = geo.attributes.normal.getY(i);
-      if(ny < 0.2) continue;   // 下向き(洞窟の内側の天井)は土を乗せない
-      const gz = heightAt(x, z), hAbove = Math.max(0, y - gz);
-      const k = 1 - Math.min(1, hAbove/170);
-      if(k <= 0.01) continue;
-      exploreMixColor(grassList, exploreWeights(x, z), gc);
-      c.fromBufferAttribute(col, i).lerp(dirt, k*0.6).lerp(gc, k*0.5*ny);
-      col.setXYZ(i, c.r, c.g, c.b);
+    geo.computeVertexNormals();
+    const pos = geo.attributes.position;
+    let y0 = Infinity, y1 = -Infinity;
+    for(let i=0;i<pos.count;i++){ y0 = Math.min(y0, pos.getY(i)); y1 = Math.max(y1, pos.getY(i)); }
+    paintGeo(geo, new THREE.Color(0x4a4438), new THREE.Color(0x8a826c), y0, y1, 0.35);
+    cavityShade(geo, 0.4, 0.3);
+    // 丘との継ぎ目を土・草へなじませる(地面すれすれの所ほど、その場の地域の草色を混ぜる。
+    // 岩がそのまま丘に乗っただけに見えないように)。天井の内側(見上げる面)は混ぜない
+    {
+      const col = geo.attributes.color, grassList = exploreRegionColors('grass'), dirt = new THREE.Color(0x5a4a34), gc = new THREE.Color(), c = new THREE.Color();
+      for(let i=0;i<pos.count;i++){
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ny = geo.attributes.normal.getY(i);
+        if(ny < 0.2) continue;   // 下向き(洞窟の内側の天井)は土を乗せない
+        const gz = heightAt(x, z), hAbove = Math.max(0, y - gz);
+        const k = 1 - Math.min(1, hAbove/170);
+        if(k <= 0.01) continue;
+        exploreMixColor(grassList, exploreWeights(x, z), gc);
+        c.fromBufferAttribute(col, i).lerp(dirt, k*0.6).lerp(gc, k*0.5*ny);
+        col.setXYZ(i, c.r, c.g, c.b);
+      }
     }
+    /* 洞窟の中(下向きの面=天井の裏側と、真ん中寄りの側壁)を暗く落とす。奥へ行くほど暗く、
+       入口・出口(峠の中心から±半分の端)へ近いほど明るく戻す=「奥が暗い穴、端に光」に見せる
+       (光源を増やさない安い近似)。前は内側も外側の屋根と同じ明るさで、入口が平らな岩の面に
+       見えていた(2026-09-24 tunnelカット)。 */
+    {
+      const nrm = geo.attributes.normal, col = geo.attributes.color, dark = new THREE.Color(0x0d0b09), c2 = new THREE.Color();
+      const half = TUNNEL_ROOF_LEN/2;
+      for(let i=0;i<pos.count;i++){
+        const ny = nrm.getY(i);
+        if(ny >= 0.2) continue;   // 上向き(外の屋根)は対象外
+        const wx = pos.getX(i), wy = pos.getZ(i);
+        const along = (wx - q[0])*ax + (wy - q[1])*ay;
+        const depthK = 1 - Math.min(1, Math.abs(along)/half);   // 入口寄り=0 / 真ん中=1
+        c2.fromBufferAttribute(col, i).lerp(dark, 0.5 + 0.4*depthK);
+        col.setXYZ(i, c2.r, c2.g, c2.b);
+      }
+    }
+    const m = new THREE.Mesh(geo, shared('tunnelRock', ()=> applySurfaceDetail(new THREE.MeshStandardMaterial({
+      vertexColors:true, roughness:0.96, metalness:0, envMapIntensity:ENV_INTENSITY*0.8, side:THREE.DoubleSide,
+    }), { scale:34, bump:0.75, macro:420, stain:0.42, crack:0.30, rough:0.30 })));
+    m.castShadow = true; m.receiveShadow = true;
+    m.userData.keep = true;   // 焼き込み(bakeStatic)から外す=個別に距離で隠せる
+    group.add(m);
+    tunnels.push({ mesh:m, x:q[0], y:q[1] });
   }
-  const m = new THREE.Mesh(geo, shared('tunnelRock', ()=> applySurfaceDetail(new THREE.MeshStandardMaterial({
-    vertexColors:true, roughness:0.96, metalness:0, envMapIntensity:ENV_INTENSITY*0.8, side:THREE.DoubleSide,
-  }), { scale:34, bump:0.75, macro:420, stain:0.42, crack:0.30, rough:0.30 })));
-  m.castShadow = true; m.receiveShadow = true;
-  group.add(m);
+}
+// カメラから離れたら隠す(updateExplore が毎フレーム呼ぶ)
+function updateTunnelCull(cp){
+  for(const t of tunnels){
+    const d = Math.hypot(cp.x - t.x, cp.y - t.y);
+    t.mesh.visible = d < TUNNEL_VIEW + TUNNEL_FADE;
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -2009,7 +2046,7 @@ export function buildExploreWorld(group, world){
     else if(lm.kind === 'gate') buildGate(lg, lm);
     else if(lm.kind === 'plume'){ const p = buildPlume(lg, lm, world); if(p) anim.plumes.push(p); }
   }
- 
+
   for(const k of Object.keys(lay.regions)) buildNest(lg, k, lay.regions[k].nest);
   buildHouses(lg, world);
   buildWalls(lg);
@@ -2029,7 +2066,7 @@ export function buildExploreWorld(group, world){
 /* 地域の空気。カメラの地域の重みで、霞(指数型の霧)・日差し・空・雲を混ぜる。
    霧は地面・山・ランドマーク・水がすべて同じ1本の曲線で霞む(探検のあいだだけ FogExp2 に差し替え、
    離れるときに元の Fog へ戻す)。空の元の色は最初のフレームで覚えておき、そこから混ぜる。 */
-let baseSky = null, fogX = null, savedFog = null, sunBase = null;
+let baseSky = null, fogX = null, savedFog = null, sunBase = null, hemi = null;
 const _hz = new THREE.Color(), _sun = new THREE.Color(), _tmp = new THREE.Color(), _zen = new THREE.Color();
 const _low = new THREE.Color(), _ct = new THREE.Color();
 const SUN_BASE = new THREE.Color(0xfff1d6);
@@ -2055,6 +2092,18 @@ export function updateExplore(t, cp, ctx){
   // 水辺の岸の色は、その場の地域の地面から
   exploreMixColor(exploreRegionColors('low'), w, _low);
   exploreTintWater(_low);
+  /* 影の色を地域から作る。環境マップ(PMREM)は空をそのまま焼いたものだが、探検では
+     マップ切り替え時の1回しか作り直さない(テーマが1つのまま地域だけ混ぜるため)ので、
+     直射日光の届かない面(影)は常にその環境マップの色=晴れた高原の青空へ寄ってしまい、
+     火山・峡谷のような暖色の地域でも影だけ青く見えていた(2026-09-24 canyon/volcano_wideの
+     「青い影」)。半球ライト(空側=_hz・地側=_low。どちらも今のカメラの地域の重みで
+     混ぜた色)を1つだけ足し、影の中の色をその場の地域色へ寄せる。決め打ちにしないため
+     色は毎フレームここで混ぜ直す(環境マップ自体は作り直さない、軽い足し方)。 */
+  if(scene){
+    if(!hemi){ hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1.3); scene.add(hemi); }
+    hemi.color.copy(_hz);
+    hemi.groundColor.copy(_low);
+  }
   const u = ctx.sky && ctx.sky.material && ctx.sky.material.uniforms;
   if(u){
     if(!baseSky){
@@ -2092,6 +2141,7 @@ export function updateExplore(t, cp, ctx){
   // 遠景の山並み(空のモジュールの帯)は、探検では遠景の地形が外周の山まで描くので出さない
   if(ctx.ridge) ctx.ridge.visible = false;
   syncFarTerrain();
+  updateTunnelCull(cp);
   if(!anim) return;
   // 焚き火のゆらぎ
   for(const f of anim.flames){
@@ -2150,9 +2200,10 @@ export function updateExplore(t, cp, ctx){
 }
 // マップを離れるとき(real3d.js の applyTheme)に空気を元へ戻す。霧の差し替えより先に呼ばれる
 export function resetExplore(ctx){
-  anim = null; baseSky = null; farTerrain = null;
+  anim = null; baseSky = null; farTerrain = null; tunnels = [];
   if(ctx && ctx.scene && savedFog && ctx.scene.fog === fogX) ctx.scene.fog = savedFog;
   savedFog = null;
+  if(ctx && ctx.scene && hemi){ ctx.scene.remove(hemi); hemi = null; }
   if(ctx && ctx.sun){
     ctx.sun.color.copy(SUN_BASE);
     if(sunBase != null) ctx.sun.intensity = sunBase;

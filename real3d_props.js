@@ -1393,8 +1393,13 @@ function obstacleGeo(flavor, variant){
       /* 【落とし穴】玄武岩を「テーマの岩色をほぼ黒まで落とした色」で塗ると、
          アルベドが小さすぎて空の映り込み(鏡面反射)のほうが勝ち、赤い世界の中で
          1本だけ無彩色のグレーの柱に見える。黒い岩でも必ずその場の色を混ぜ、
-         明るさの下限を上げておく(材質側の env も下げてある)。               */
-      const lo = coverRock(liftColor(mixColor(themeColor('steep'), themeColor('scrub'), 0.22).multiplyScalar(0.72), 0.007), 0.78);
+         明るさの下限を上げておく(材質側の env も下げてある)。
+         【探検フィールドだけ scrub を使わない】themeColor() は R3.theme(トップレベル。
+         キャンプ/草原相当の既定値)からしか読めず地域の色ではないので、火山・峡谷の
+         玄武岩にも既定の緑(0x5f7f2e)が混ざって浮いていた(2026-09-24 volcano_wide/canyon
+         の「緑の丸岩」)。探検は地域の色を後段の exTints(exploreRegionColors('rock'))が
+         岩ごとに乗せるので、ここは地域に依らない中間色(gravel)を混ぜるだけにする。       */
+      const lo = coverRock(liftColor(mixColor(themeColor('steep'), themeColor(isExplore() ? 'gravel' : 'scrub'), 0.22).multiplyScalar(0.72), 0.007), 0.78);
       const hi = coverRock(liftColor(mixColor(themeColor('gravel'), themeColor('haze'), 0.12).multiplyScalar(0.95), 0.018), 0.86);
       paintGeo(geo, lo, hi, 0, sh.h, 0.30);
       cavityShade(geo, 0.36, 0.26);
@@ -2092,8 +2097,12 @@ function buildObstacles(scene, list){
   /* 接地影は種類をまたいで1つのInstancedMeshにまとめる(描画命令は+1だけ)。
      岩は傾けて置くが影は傾けない。地面の高さも岩の足元4点の最小ではなく
      中心の高さを使うので、影だけは必ず地面に沿う。                          */
+  /* 【探検フィールドだけ】分割数10だと、外周の直線(弦)が10本の多角形になる。
+     地面と同じ色に溶ける普通の地面ではほぼ見えないが、雪原のような白い地面では
+     コントラストが強く、影の縁の角がそのまま四角く見えた(2026-09-24 vantage_backの
+     水晶・岩の影)。他のマップの見た目は変えないので isExplore() のときだけ増やす。 */
   obstShadow = new THREE.InstancedMesh(
-    shadowDiscGeo(10, 1.7, OBST_SHADOW_CORE, OBST_SHADOW_MID, 2, 0.74),
+    shadowDiscGeo(isExplore() ? 22 : 10, 1.7, OBST_SHADOW_CORE, OBST_SHADOW_MID, 2, 0.74),
     shadowMaterial(OBST_SHADOW_FADE[0], OBST_SHADOW_FADE[1]), OBST_MAX);
   obstShadow.frustumCulled = false;
   obstShadow.count = 0;
