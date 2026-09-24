@@ -284,7 +284,14 @@ const CUTS = [
       const p = { x:b.x + (s.x - b.x)*0.25, y:b.y + (s.y - b.y)*0.25 };
       // pitch 0.22(以前は0.12): 同じ理由(足元の装備オーラの紋章が画面の下端で切れていた)
       return { x:p.x, y:p.y, yaw:Math.atan2(b.y - p.y, b.x - p.x) + 0.6, pitch:0.22, warm:0,
-               after: ()=>{ exploreState.beaconInside = true; exploreState.beaconHold = EXPLORE_BEACON_HOLD_SEC*0.55; exploreUpdateHud(); } };
+               after: ()=>{
+                 /* 前の 'hud_boss' カットが exploreBossEngaged() で engagedBossId を立てたまま(カット間で
+                    状態を持ち越す撮影ハーネスの都合)。ここではキャンプで帰還中の場面を撮るので、
+                    ボス戦の状態を明示的に解く(第4周で見つけた: 「ヴォルガルーダを…討伐中」が
+                    帰還中の札と同時に出ていた原因はこれだった。実際のプレイでは離れれば自然に解ける) */
+                 exploreState.engagedBossId = null;
+                 exploreState.beaconInside = true; exploreState.beaconHold = EXPLORE_BEACON_HOLD_SEC*0.55; exploreUpdateHud();
+               } };
     } },
   { name:'map', kind:'field', desc:'全体地図(ミニマップをタップ。地域・尾根・峠・道・ボスの巣・近くの補給箱)',
     at: ()=>{

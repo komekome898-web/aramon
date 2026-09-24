@@ -8763,7 +8763,11 @@ function updateHUD(){
       const cdPct = clamp(1-((ve.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
       stateCdFillEl.style.width = cdPct+'%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
-      stateCdLabelEl.textContent = `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
+      /* 探検モードだけ短く(批評指摘: 375の幅で「クールタイム残り」が長すぎて「秒」だけ2行目に
+         落ちていた)。他モードは今までの文言のまま(game.explore の1か所だけで分岐) */
+      stateCdLabelEl.textContent = game.explore
+        ? `${stateSc.name} ${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
+        : `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
     } else {
       stateCdFillEl.style.width = '100%';
       stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
@@ -8849,7 +8853,10 @@ function updateHUD(){
   /* 射程を技パネルに出す(技によって650〜1500と倍以上違うのに、どこにも出ていなかった)。
      DOMは増やさず既存の#gutsCostLabelへ同居させる。距離の換算はピン表示と同じ
      PING_UNITS_PER_M(ワールド10単位=1m)。 */
-  document.getElementById('gutsCostLabel').textContent = `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
+  // 探検モードだけ短く(点のすぐ横に置くための数字だけ。第4周の指摘: 「ガッツ消費 N」の1行が技パネルを広げていた)
+  document.getElementById('gutsCostLabel').textContent = game.explore
+    ? `-${effectiveGutsCost(ve, mv)}`
+    : `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
   const tierMoves = SIGNATURE_MOVES[ve.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);

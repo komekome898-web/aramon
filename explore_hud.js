@@ -114,6 +114,11 @@ function exploreHudBand(){
   B.v = v;
   return v;
 }
+/* 札・文字を重ねてはいけないHUDの欄のidの一覧(**正はここ1つ**。増やすときはここへ足すだけでよい)。
+   exploreHudObstacles(古い名前。座標だけ)と exploreHudRects(id付き。他担当が読む公開の口)が両方これを読む
+   ―― 同じ一覧を2か所に書かない(第4周: exploreHudRects に回転ボタン・FIRE/DASH が抜けていて、
+   ルート担当が打ち切りになった後の補給箱の札がそこへ乗った)。 */
+const EXPLORE_HUD_RECT_IDS = ['topLeft','topRight','expObjPanel','exploreHud','joystickBase','movePanel','fireBtn','dashBtn','turnLeftBtn','turnRightBtn'];
 /* 画面の上の方にあるHUDの欄(自分の欄・ミニマップ・目標パネル)。キャンバスの座標の矩形の配列。
    キャンバスに描く札・咆哮の文字はここにも重ねない(DOMの欄の下に潜って読めなくなる) */
 const _expHudObs = { at:-1, v:[] };
@@ -124,8 +129,7 @@ function exploreHudObstacles(){
   const hud = exploreHudEl('hud');
   const out = [];
   if(hud){
-    // 上の欄に加えて、下の操作系(スティック・技の欄・FIRE・DASH・回転の矢印)にも札を重ねない(操作の上に文字を置かない)
-    for(const id of ['topLeft','topRight','expObjPanel','joystickBase','movePanel','fireBtn','dashBtn','turnLeftBtn','turnRightBtn']){
+    for(const id of EXPLORE_HUD_RECT_IDS){
       const el = exploreHudEl(id);
       if(!el || el.classList.contains('hidden') || el.offsetWidth === 0) continue;
       out.push({ x: hud.offsetLeft + el.offsetLeft, y: hud.offsetTop + el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
@@ -136,16 +140,16 @@ function exploreHudObstacles(){
 }
 /* ===== 他担当が読む公開の口 =====
    HUDの主なパネルの画面上の四角(キャンバスの座標。project() や地面の落とし物と同じ座標系)。
-   ルート担当(explore_loot.js)が補給箱の札などをここへ重ねないために読む。
+   ルート担当が打ち切りになった後は、補給箱の札・足元の装備アイコンもこれを読んで避ける(第4周)。
    戻り値: [{ id, x, y, w, h }, …](弾いてよい枠だけ。無ければ空配列。#hud が無い/探検外なら空配列)
-   id は 'topRight'(ミニマップ)/'expObjPanel'(目標)/'exploreHud'(方位バー)/'movePanel'(技) /
-        'bossBand'(ボスの帯。ボス戦の間だけ追加)。**名前と形はここが正**、増やすときもこの配列へ足すだけでよい。 */
+   id は EXPLORE_HUD_RECT_IDS の各要素(ミニマップ・目標・方位バー・スティック・技パネル・FIRE/DASH・回転ボタン) +
+        'bossBand'(ボスの帯。ボス戦の間だけ追加)。**名前と形はここが正**、増やすときは EXPLORE_HUD_RECT_IDS へ足すだけでよい。 */
 function exploreHudRects(){
   if(!game.explore) return [];
   const hud = exploreHudEl('hud');
   if(!hud) return [];
   const out = [];
-  for(const id of ['topRight', 'expObjPanel', 'exploreHud', 'movePanel']){
+  for(const id of EXPLORE_HUD_RECT_IDS){
     const el = exploreHudEl(id);
     if(!el || el.classList.contains('hidden') || el.offsetWidth === 0) continue;
     const cs = getComputedStyle(el);
@@ -190,7 +194,9 @@ function exploreObjectives(){
     const b = getEntity(r.id);
     const x = b && b.alive ? b.x : r.nestX, y = b && b.alive ? b.y : r.nestY;
     const d = p ? Math.hypot(x - p.x, y - p.y) : 0;
-    if(st.engagedBossId === r.id && b && b.alive) engaged = { rec:r, b, x, y, d };
+    /* d < EXPLORE_BOSS_LEASH も見る(第4周の指摘: 帰還ビーコンの輪の中にいるのに「討伐中」と出た)。
+       離脱の合図(exploreBossDisengaged)を取りこぼしても、離れていれば表示だけは正しく戻る保険 */
+    if(st.engagedBossId === r.id && b && b.alive && d < EXPLORE_BOSS_LEASH) engaged = { rec:r, b, x, y, d };
     if(d < targetD){ targetD = d; target = { rec:r, b, x, y, d }; }
   }
   if(engaged) target = engaged;
@@ -215,14 +221,15 @@ function exploreObjectives(){
     hunt.count = '討伐中';
   } else if(target && def){
     hunt.text = '大型モンスター討伐';
-    hunt.sub = `次: ${def.name}${reg ? `(${reg.name})` : ''} ${exploreHudMeters(target.d)}m`;
+    // 地域名(かっこ書き)を削って短く(第4周の指摘: 375の幅で丸ごと省略記号に切れていた。地域は札で別に出ている)
+    hunt.sub = `次: ${def.name} ${exploreHudMeters(target.d)}m`;
   } else {
     hunt.text = '大型モンスター討伐';
     hunt.sub = 'すべて討伐した';
   }
   const gather = { id:'gather', icon:'◈', text:'素材を集める', count:`${Math.min(bag, EXPLORE_OBJ_MATERIAL_GOAL)}/${EXPLORE_OBJ_MATERIAL_GOAL}`,
     done: bag >= EXPLORE_OBJ_MATERIAL_GOAL, sub:`持ち物 ${bag}個 ・ 補給箱や野生から` };
-  const ret = { id:'return', icon:'⇪', text: hold > 0 ? '帰還中…' : 'ビーコンで帰還',
+  const ret = { id:'return', icon:'⇪', text: hold > 0 ? '帰還中' : 'ビーコンで帰還',
     count: hold > 0 ? `${Math.max(0, EXPLORE_BEACON_HOLD_SEC*(1-hold)).toFixed(1)}秒` : exploreHudDist(beaconD),
     done:false, urgent, hold, x: beacon ? beacon.x : null, y: beacon ? beacon.y : null,
     sub: hold > 0 ? '輪の中にとどまる' : (urgent ? (lastLife ? 'あと1回力尽きると半分しか持ち帰れない' : '時間切れだと半分しか持ち帰れない') : 'いつでも全部持ち帰れる') };
@@ -265,7 +272,10 @@ function exploreObjLayout(){
     bottom = Math.min(bottom, ey0 <= top ? top : ey0 - gap);
   }
   const H = exploreObjH();
-  const strip = bottom - top < H.pad + H.head + H.gap + H.row;
+  /* 優先の目標の行+その2行目(次の目標・帰還の注意など)をひとかたまりとして扱う(第4周の指摘:
+     行だけ出して2行目が入らないと、本文へ詰めて省略記号で切る羽目になり中身が読めなかった)。
+     この高さが無ければ、詰めた1行の strip へ落とす(中身を削ってでも読める形にする)。 */
+  const strip = bottom - top < H.pad + H.head + H.gap + H.row + H.sub;
   _expHud.obj.strip = strip;
   if(strip){
     /* R3 の最後の段: ミニマップの下に見出し+1行も入らない(横持ちの低い画面では回転ボタンがミニマップの
@@ -330,14 +340,17 @@ function exploreUpdateHud(){
   const left = ob.left;
   const lowCls = left <= 60 ? 'is-crit' : (left <= EXPLORE_OBJ_RETURN_WARN_SEC ? 'is-low' : '');
   const lives = EXPLORE_MAX_FAINTS - exploreState.faints;
-  // 入る行を決める(R3)
+  // 入る行を決める(R3)。優先の目標+2行目は exploreObjLayout が高さを確保済みなので必ずセットで出す
+  // (第4周の指摘: 行だけ出して2行目を本文へ詰めて省略記号で切る運用をやめた。中身は削っても、切って読めなくはしない)
   const H = exploreObjH(), avail = O.avail;
   let used = H.pad + H.head;
   const order = [ob.prio, ...ob.rows.map(r=> r.id).filter(id=> id !== ob.prio)];
   const show = {}; let showSub = false;
-  if(O.strip || used + H.gap + H.row <= avail){ show[ob.prio] = true; used += H.gap + H.row; }
-  if(!O.strip){
-    if(show[ob.prio] && used + H.sub <= avail){ showSub = true; used += H.sub; }
+  if(O.strip){
+    show[ob.prio] = true;
+  } else {
+    show[ob.prio] = true; showSub = true;
+    used += H.gap + H.row + H.sub;
     for(const id of order.slice(1)){ if(used + H.gap + H.row <= avail){ show[id] = true; used += H.gap + H.row; } }
   }
   // 1段目の優先の目標が入らないほど低いなら、2行目より他の行を先に削った結果になっている(上の順)
@@ -368,13 +381,10 @@ function exploreUpdateHud(){
         const prio = r.id === ob.prio;
         const cls = ['exp-obj-row', prio ? 'is-prio' : '', r.done ? 'is-done' : '', r.urgent ? 'is-urgent' : '', flashOn(r.id) ? 'is-flash' : ''].filter(Boolean).join(' ');
         const bar = (r.hold > 0) ? `<span class="exp-obj-hold"><i style="width:${Math.round(r.hold*100)}%"></i></span>` : '';
-        /* 「次の目標」の1行は必ず残す(批評指摘)。sub(次:○○)が2行目に出せないほど狭いときは、
-           消さずに本文へ詰めて1行にする(1行=箱の外枠で「…」に切れるので、はみ出す心配はない)。 */
-        const text = (prio && !showSub && r.sub) ? `${r.text}・${r.sub}` : r.text;
         // 帰還中は見出しの「◇残り秒」と行の数字が同じ内容の二重表示になる(批評指摘)。行側は輪の進みバーだけにする
         const count = (r.id === 'return' && r.hold > 0) ? '' : r.count;
         return `<div class="${cls}"><div class="exp-obj-line"><span class="exp-obj-mark">${r.done ? '✓' : (prio ? '◆' : '◇')}</span>`
-          + `<span class="exp-obj-text">${exploreHudEsc(text)}</span><span class="exp-obj-count">${exploreHudEsc(count)}</span></div>`
+          + `<span class="exp-obj-text">${exploreHudEsc(r.text)}</span><span class="exp-obj-count">${exploreHudEsc(count)}</span></div>`
           + (prio && showSub ? `<div class="exp-obj-sub">${exploreHudEsc(r.sub)}</div>` : '') + bar + `</div>`;
       }).join('');
     }
@@ -663,6 +673,15 @@ function exploreDrawCompass(){
   }
   const rank = (it)=> (it.m.prio ? 3 : 0) + (it.m.kind === 'boss' ? 1 : 0) + (it.m.kind === 'beacon' ? 1 : 0);
   items.sort((a,b)=> rank(a) - rank(b) || b.d - a.d);
+  /* 印そのものの数も最大 EXPLORE_COMPASS_ICON_MAX 個に絞る(第4周の指摘: 数字の札は絞っていたのに
+     印は絞っておらず、4件目が札なしでボスの印に重なって見えた)。always(優先の目標・ビーコン)は必ず残す */
+  if(items.length > EXPLORE_COMPASS_ICON_MAX){
+    const keep = items.filter(it=> it.m.always);
+    const rest = items.filter(it=> !it.m.always).sort((a,b)=> a.d - b.d);
+    for(const it of rest){ if(keep.length >= EXPLORE_COMPASS_ICON_MAX) break; keep.push(it); }
+    items.length = 0; items.push(...keep);
+    items.sort((a,b)=> rank(a) - rank(b) || b.d - a.d);
+  }
   /* ボス戦の詰めた段(bossBand)は方位バーの中でも特に狭く、方角が近いと印どうしが挟まって
      見えにくくなる(批評指摘: ビーコンの緑の印がボスの印に挟まれる)。x で並べ、最低間隔を空ける */
   if(bossBand && items.length > 1){
@@ -684,11 +703,23 @@ function exploreDrawCompass(){
       g.strokeStyle = '#ffd35a'; g.lineWidth = bossBand ? 1.5 : 2; g.stroke();
     }
     exploreDrawCompassIcon(g, m, it.x, my, s);
+    /* 画面外にいる印の「この先」の向き。以前は印の色を塗った小さな三角で、距離の数字と並ぶと
+       「◀38m」のように見えて意味が伝わらなかった(第4周の指摘)。印の色に紛れない白地+黒縁の
+       山形(chevron)2本にして、印そのものの色とは別に「この向きの先」だとひと目で分かる形にする */
     if(it.edge){
-      g.fillStyle = m.prio ? '#ffd35a' : m.color;
-      g.beginPath();
-      const ex = it.x + it.edge*11;
-      g.moveTo(ex + it.edge*5, my); g.lineTo(ex - it.edge*1, my - 5); g.lineTo(ex - it.edge*1, my + 5); g.closePath(); g.fill();
+      const ex = it.x + it.edge*13, ey = my;
+      g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 3; g.lineCap = 'round'; g.lineJoin = 'round';
+      for(const off of [0, 4]){
+        g.beginPath();
+        g.moveTo(ex - it.edge*3 + it.edge*off, ey - 4.5); g.lineTo(ex + it.edge*3 + it.edge*off, ey); g.lineTo(ex - it.edge*3 + it.edge*off, ey + 4.5);
+        g.stroke();
+      }
+      g.strokeStyle = m.prio ? '#ffd35a' : '#f4f6fa'; g.lineWidth = 1.6;
+      for(const off of [0, 4]){
+        g.beginPath();
+        g.moveTo(ex - it.edge*3 + it.edge*off, ey - 4.5); g.lineTo(ex + it.edge*3 + it.edge*off, ey); g.lineTo(ex - it.edge*3 + it.edge*off, ey + 4.5);
+        g.stroke();
+      }
     }
     if(!bossBand && m.label && it.d <= EXPLORE_COMPASS_LABEL_RANGE) labels.unshift({ it, t: exploreHudDist(it.d) });   // 優先の物から場所を取る
   }
@@ -1047,7 +1078,8 @@ function exploreMapBossIcon(g, x, y, r, def, state){
   g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.85)';
   g.beginPath(); g.arc(0, 0, r + g.lineWidth, 0, Math.PI*2); g.stroke();
   if(state === 'done'){
-    g.strokeStyle = '#d8dde2'; g.lineWidth = Math.max(1.5, r*0.26); g.lineCap = 'round';
+    // 討伐済みの×は凡例で見比べたとき暗い塗りに沈みがちだったので、太さと明るさを少し上げる(第4周の指摘)
+    g.strokeStyle = '#eef1f5'; g.lineWidth = Math.max(1.8, r*0.32); g.lineCap = 'round';
     g.beginPath(); g.moveTo(-r*0.45, -r*0.45); g.lineTo(r*0.45, r*0.45); g.moveTo(r*0.45, -r*0.45); g.lineTo(-r*0.45, r*0.45); g.stroke();
   } else {
     g.fillStyle = def.color;
@@ -1071,6 +1103,21 @@ function exploreMapDrawDynamic(g, M, opts){
     if(d >= minR) return q;
     const ang = d > 0.01 ? Math.atan2(dy, dx) : 0;
     return { x: selfQ.x + Math.cos(ang)*minR, y: selfQ.y + Math.sin(ang)*minR };
+  };
+  /* ミニマップの外にいる大事な目標(ビーコン・追っているボス)は、消さずに縁へ矢印で出す(第4周の指摘:
+     ビーコン505m・ボス361mが「無地」に見えていた=印を描かずに諦めていた)。全体地図(big)は世界全体が
+     見えるので使わない(opts.edge を渡さない=何もしない) */
+  const edgeR = opts.edge;
+  const edgeArrow = (wx, wy, color)=>{
+    if(!edgeR) return;
+    const q = M(wx, wy), dx = q.x - edgeR.cx, dy = q.y - edgeR.cy, d = Math.hypot(dx, dy);
+    if(d <= edgeR.r) return;
+    const ang = Math.atan2(dy, dx), rr = edgeR.r - 10*ms;
+    const ex = edgeR.cx + Math.cos(ang)*rr, ey = edgeR.cy + Math.sin(ang)*rr;
+    g.save(); g.translate(ex, ey); g.rotate(ang);
+    g.beginPath(); g.moveTo(7*ms, 0); g.lineTo(-4*ms, -5*ms); g.lineTo(-4*ms, 5*ms); g.closePath();
+    g.fillStyle = color; g.fill(); g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.75)'; g.stroke();
+    g.restore();
   };
   // ランドマーク・キャンプ
   // ランドマークは全体地図だけ(ミニマップは自分の周りの道・崖・水と動く物だけにする)
@@ -1112,6 +1159,7 @@ function exploreMapDrawDynamic(g, M, opts){
   // 帰還ビーコン
   if(st.beacon){
     const q = declutter(M(st.beacon.x, st.beacon.y));
+    if(!inView(q, 8)) edgeArrow(st.beacon.x, st.beacon.y, '#7dffb0');
     if(inView(q, 8)){
       const s = (big ? 7 : 5.5)*ms;
       g.save(); g.translate(q.x, q.y);
@@ -1148,6 +1196,8 @@ function exploreMapDrawDynamic(g, M, opts){
     const flee = live && b.exState === 'flee';
     if(flee && blink) continue;
     if(inView(bq, R)){ pin(bq); exploreMapBossIcon(g, bq.x, bq.y, R, def, st.engagedBossId === r.id ? 'engaged' : (flee ? 'flee' : 'alive')); }
+    // 今追っているボスがミニマップの外にいるなら、印を諦めずに縁へ矢印で出す(ビーコンと同じ扱い。第4周の指摘)
+    else if(isTarget) edgeArrow(live ? b.x : r.nestX, live ? b.y : r.nestY, def.color);
   }
   // 自分(視野の扇+矢印)
   if(p){
@@ -1206,7 +1256,7 @@ function exploreRenderMinimap(){
     c.drawImage(bake, sx, sy, sw, sh, dx, dy, dw, dh);
   }
   const inView = (q, m)=> Math.hypot(q.x - w/2, q.y - w/2) < w/2 + (m || 0);
-  exploreMapDrawDynamic(c, (x, y)=> ({ x:MX(x), y:MY(y) }), { big:false, iconScale: w/120, inView });
+  exploreMapDrawDynamic(c, (x, y)=> ({ x:MX(x), y:MY(y) }), { big:false, iconScale: w/120, inView, edge:{ cx:w/2, cy:w/2, r:w/2 - 2 } });
   // 縁取りと北の印
   c.restore();
   c.lineWidth = 1.5; c.strokeStyle = 'rgba(255,255,255,0.35)';
@@ -1278,7 +1328,11 @@ function exploreMapLegendRows(){
     /* 色は地図を焼く式(exploreMapRgbList の ground)と同じ値を読む(第3周の指摘: ここだけ
        theme.accent(UIの強調色)を使っていたため、凍った高地=水色/密林=薄緑と、実際の地図の
        灰色/濃い緑が食い違っていた。**同じ数字を2か所に持たない**) */
-    ...EXPLORE_REGIONS.map(r=> ({ t:`${r.name} ★${r.danger}`, d:(g)=>{ g.fillStyle = exploreMapMix(r.theme.ground, '#0d141c', 0.38); g.fillRect(2, 3, 12, 10); } })),
+    /* 縁取りを追加(第4周の指摘: 密林・火山の暗い地面色が凡例の暗い下地と同化して読めなかった) */
+    ...EXPLORE_REGIONS.map(r=> ({ t:`${r.name} ★${r.danger}`, d:(g)=>{
+      g.fillStyle = exploreMapMix(r.theme.ground, '#0d141c', 0.38); g.fillRect(2, 3, 12, 10);
+      g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.55)'; g.strokeRect(2.5, 3.5, 11, 9);
+    } })),
   ];
 }
 function exploreBuildMapLegend(){

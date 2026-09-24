@@ -4446,23 +4446,27 @@
      暗い箱で覆っていた(第3周の指摘)。FIRE の少し上・回転ボタンの下の空きへ右詰めで小さくまとめ、
      画面の中央下を空ける。**bottomは既存の --spectate-bottom を使う**
      (「FIREの上8px」という意味は元から同じ数字なので、ここに同じ数字を2つ持たない)。
-     縦の空きが60px前後しかないので、名前+段階点を1行・ガッツ消費をもう1行の2行に詰める。 */
+     縦の空きが60px前後しかない。**第4周の指摘: 454px(横幅の34%)まで広がりFIREと回転ボタンの
+     間を塞いでいた**(原因=ガッツ消費の行をmoveInfoの中で折り返させ、max-widthをほぼ無制限
+     (100%-28px)にしていたため中身の合計で箱が伸びていた=R1違反)。1行にまとめ、
+     アイコン+短い名前+段階点+ガッツ消費の数字だけの小さな板にする。 */
   #hud.explore-mode #movePanel{
     left:auto; right:var(--turn-right); bottom:var(--spectate-bottom); transform:none;
-    padding:6px 10px; gap:8px; max-width:calc(100% - 28px);
+    padding:5px 8px; gap:6px; max-width:calc(44% - 20px);
   }
-  #hud.explore-mode #moveIcon{ width:28px; height:28px; border-radius:50%; flex-shrink:0; }
-  #hud.explore-mode #moveIcon svg{ width:16px; height:16px; }
+  #hud.explore-mode #moveIcon{ width:22px; height:22px; border-radius:50%; flex-shrink:0; }
+  #hud.explore-mode #moveIcon svg{ width:13px; height:13px; }
   /* 技の属性の記号(mv.icon。render.jsが探検だけここへ入れる)。仮置きの色丸をやめる(批評指摘) */
   .exp-move-ico{ width:100%; height:100%; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-size:15px; line-height:1; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.3); }
-  #hud.explore-mode #moveInfo{ display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; min-width:0; }
-  #hud.explore-mode #moveName{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
-  #hud.explore-mode #tierDots{ margin-top:0; }
+    font-size:12px; line-height:1; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.3); }
+  #hud.explore-mode #moveInfo{ display:flex; flex-wrap:nowrap; align-items:center; gap:6px; min-width:0; }
+  #hud.explore-mode #moveName{ font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:56px; flex:0 1 auto; }
+  #hud.explore-mode #tierDots{ margin-top:0; gap:3px; flex:0 0 auto; }
   /* 段階の点は選ばれていても大きさを変えない(以前は選択中だけ15pxで、批評で「同じ大きさに」と指摘された)。
      選択中は発光と縁の太さだけで示す */
-  #hud.explore-mode .tier-dot, #hud.explore-mode .tier-dot.selected{ width:9px; height:9px; }
-  #hud.explore-mode #gutsCostLabel{ flex:1 0 100%; margin-top:0; font-size:10px; }
+  #hud.explore-mode .tier-dot, #hud.explore-mode .tier-dot.selected{ width:7px; height:7px; }
+  /* ガッツ消費は点のすぐ横に短い数字だけ(render.jsが探検だけ「-N」に短縮する) */
+  #hud.explore-mode #gutsCostLabel{ flex:0 0 auto; margin-top:0; font-size:10px; color:#ffb56b; white-space:nowrap; }
 
   /* 【照準は画面の実中心に置く】#hudをセーフエリアぶん縮めたので、#hudの50%は
      もう画面の中心ではない。弾が飛ぶ先(canvasの中心)とズレると狙えなくなるので、
@@ -6620,6 +6624,11 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
   border:1.5px solid #7dffb0; background:rgba(8,40,24,0.95); transform:rotate(45deg); }
 .exp-obj-beacon{ color:#b6ffd4; }
 .exp-obj-beacon.is-hold{ color:#7dffb0; text-shadow:0 0 6px #7dffb0; }
+/* 輪の中にいる間(残り秒を出す)は印そのものも変える(第4周の指摘: 距離の「491m」も帰還の
+   「1.3秒」も同じ◇形の印で、何を表しているか区別できなかった)。塗りつぶして脈打たせ、
+   「距離(からっぽの菱形)」と「輪の中の残り秒(塗って脈打つ菱形)」を見た目で分ける */
+.exp-obj-beacon.is-hold .exp-obj-ic-beacon{ background:#7dffb0; animation:expObjBeaconPulse 1s ease-in-out infinite; }
+@keyframes expObjBeaconPulse{ 0%,100%{ box-shadow:0 0 2px #7dffb0; } 50%{ box-shadow:0 0 7px #7dffb0; } }
 .exp-obj-faint{ display:flex; align-items:center; gap:calc(2px * var(--k)); }
 .exp-obj-faint i{ display:block; width:calc(6px * var(--k)); height:calc(6px * var(--k)); border-radius:50%; box-sizing:border-box; }
 .exp-obj-faint i.on{ background:#ff9a7a; box-shadow:0 0 5px rgba(255,140,110,0.8); }
@@ -6659,9 +6668,16 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
    3サイズとも同じ大きさに見えていた=k を使わず px を直書きしていたのが原因)。 */
 #hud.explore-mode #hpPanel{ --k:var(--exp-hud-k, 1); display:grid; grid-template-columns:minmax(0,1fr) auto;
   column-gap:calc(6px * var(--k)); row-gap:calc(2px * var(--k)); align-items:center;
-  padding:calc(5px * var(--k)) calc(12px * var(--k)) calc(6px * var(--k)); }
-#hud.explore-mode #hpPanel .who, #hud.explore-mode #stateCdTrack, #hud.explore-mode #stateCdLabel,
+  padding:calc(5px * var(--k)) calc(12px * var(--k)) calc(6px * var(--k));
+  /* 不透明寄りに(批評指摘: 背景の景色がアイコンの裏に透けて見づらかった。基本の.hud-panelは0.5) */
+  background:rgba(8,13,20,0.84); }
+/* HP・ガッツ・状態(⚑)の3本を同じ長さにそろえる(批評指摘: ⚑だけ列2(auto幅の数字欄)へ
+   食い込まず全幅まで伸び、HP/ガッツは列1止まりで短く見えていた)。3本とも全幅・数字はその下に
+   右寄せの1行(高さは増えるが --k で画面の縦に合わせて縮むので375でも収まる) */
+#hud.explore-mode #hpPanel .who, #hud.explore-mode .hpbar-track, #hud.explore-mode #hpNum,
+#hud.explore-mode #gutsTrack, #hud.explore-mode #gutsNum, #hud.explore-mode #stateCdTrack, #hud.explore-mode #stateCdLabel,
 #hud.explore-mode #statusIcons, #hud.explore-mode #trainBuffsLine{ grid-column:1 / -1; }
+#hud.explore-mode #hpNum, #hud.explore-mode #gutsNum{ text-align:right; }
 #hud.explore-mode #hpPanel .who{ margin-bottom:calc(2px * var(--k)); min-width:0; display:flex; align-items:center; gap:calc(6px * var(--k)); }
 #hud.explore-mode #hpPanel .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:calc(14px * var(--k)); }
 #hud.explore-mode #hpPanel .elTag{ display:none; }
@@ -6682,7 +6698,7 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
 #hud.explore-mode #stateCdTrack::before{ content:'⚑'; color:#ff8a8a; }
 /* 数字は最低11px(以前は約8pxで批評で「読めない」と指摘された) */
 #hud.explore-mode #hpNum, #hud.explore-mode #gutsNum{ margin-top:0; font-size:calc(11px * var(--k)); }
-#hud.explore-mode #stateCdLabel{ font-size:calc(11px * var(--k)); }
+#hud.explore-mode #stateCdLabel{ font-size:calc(11px * var(--k)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #hud.explore-mode #gutsTrack{ margin-top:calc(3px * var(--k)); }
 #hud.explore-mode #statusIcons{ min-height:0; }
 #hud.explore-mode #statusIcons:empty{ display:none; }
@@ -6711,8 +6727,9 @@ body.explore-cine #autoRunLabel{ opacity:0 !important; transition:opacity 0.2s; 
 /* ---- 全体地図(#expMapOverlay)。どこを押しても閉じる(押す物は✕だけ。R2: スクロールは無い)
    箱は画面から決める(R1): 地図の一辺 = 箱の高さ と (箱の幅 − 横の欄) の小さい方(explore_hud.js の exploreLayoutBigMap)。
    削る順(R3): 凡例 → 見出し。閉じるボタンは削らない。暗幕は濃く(下のHUDが凡例に透けない) ---- */
+/* ほぼ不透明に(批評指摘: 0.9〜0.96では下の目標パネルの明るい文字が透けて凡例の上に重なって見えた) */
 #expMapOverlay{ position:absolute; inset:0; z-index:40; pointer-events:auto; touch-action:none;
-  background:radial-gradient(ellipse at center, rgba(4,7,10,0.9), rgba(2,3,5,0.96)); }
+  background:radial-gradient(ellipse at center, rgba(4,7,10,0.98), rgba(2,3,5,1)); }
 .exp-map-box{ position:absolute; top:8px; right:8px; bottom:8px; left:8px; display:flex; gap:10px; align-items:stretch; justify-content:center; }
 #expMapCanvas{ flex:0 0 auto; display:block; align-self:center; border-radius:6px;
   box-shadow:0 0 0 1px rgba(255,255,255,0.18), 0 12px 30px -8px rgba(0,0,0,0.85); }

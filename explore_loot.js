@@ -777,10 +777,25 @@ function exploreDrawCrate(c, p0){
         const w2 = near ? ctx.measureText(t2).width : 0;
         const half = Math.max(w1, w2)/2 + 6;
         const lx = clamp(tp.x, half, Math.max(half, viewW - half));
-        const ly = clamp(tp.y, fs + 4, Math.max(fs + 4, viewH - fs*2 - 8));
+        let ly = clamp(tp.y, fs + 4, Math.max(fs + 4, viewH - fs*2 - 8));
+        /* HUDの欄(回転ボタン・FIRE/DASH・技パネル・目標パネルなど)へ札を重ねない(ルート担当が
+           打ち切りになった後の引き継ぎ。第4周)。exploreHudRects()がHUD担当の公開の口(正はそちら)。
+           入らなければ2行目(t2)を諦める。それでも重なるなら上へ逃がす */
+        let showT2 = near;
+        const hudRects = (typeof exploreHudRects === 'function') ? exploreHudRects() : [];
+        if(hudRects.length){
+          const boxOf = (withT2)=> ({ x:lx-half, y:ly-fs-4, w:half*2, h: withT2 ? fs*2 + 10 : fs + 8 });
+          const hits = (b)=> hudRects.some(r=> exploreRectsHit(b, r, 2));
+          if(hits(boxOf(showT2))){
+            showT2 = false;
+            if(hits(boxOf(false))){
+              for(let up=10; up<=140 && hits(boxOf(false)); up+=10) ly = clamp(tp.y - up, fs+4, Math.max(fs+4, viewH-fs*2-8));
+            }
+          }
+        }
         ctx.font = `700 ${fs}px 'Rajdhani', sans-serif`;
         ctx.strokeText(t1, lx, ly); ctx.fillStyle = col; ctx.fillText(t1, lx, ly);
-        if(near){
+        if(showT2){
           ctx.font = `600 ${Math.max(9, fs-2)}px 'Rajdhani', sans-serif`;
           ctx.strokeText(t2, lx, ly + fs + 2); ctx.fillStyle = 'rgba(240,240,240,0.92)'; ctx.fillText(t2, lx, ly + fs + 2);
         }
@@ -1326,9 +1341,12 @@ function exploreDrawGearAura(e, p){
     const lx = (fq.x - p.x)/s, ly = (fq.y - p.y)/s + fy;
     const bs = Math.max(20, 17*Math.min(1.7, s)) / s;       // 1つの大きさ(画面で20px以上)
     const gap = bs*1.12, x0 = lx - gap*(keys.length - 1)/2;
+    /* 画面内に収める(第4周の指摘: hud_beacon の3サイズで画面の下端に切れていた)。
+       絶対の画面Y = p.y + y*s なので、アイコンの下端(+bs*0.65ぶん)が viewH を超えないよう y を上へ戻す */
+    const yRow = Math.min(ly + bs*0.15, (viewH - 12 - p.y)/s - bs*0.65);
     ctx.globalAlpha = fade;
     keys.forEach((k, i)=>{
-      const x = x0 + gap*i, y = ly + bs*0.15;
+      const x = x0 + gap*i, y = yRow;
       const rc = exploreRarityColor(EXPLORE_GEAR[k].rarity);
       ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - bs/2, y - bs/2, bs, bs, bs*0.22) : ctx.rect(x - bs/2, y - bs/2, bs, bs);
       ctx.fillStyle = 'rgba(10,14,20,0.88)'; ctx.fill();

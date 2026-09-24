@@ -6895,9 +6895,13 @@ const EXPLORE_COMPASS_LABEL_RANGE = 99999;  // 距離(m)の数字を出す上限
    画面が広いほど数字が増え、3サイズで見える数が揺れていた(第3周の指摘)。
    3サイズで同じ基準にするため、近い順に必ずこの数だけに絞る(重なり除去は絞ったあとの保険)。 */
 const EXPLORE_COMPASS_LABEL_MAX   = 3;
+/* 印そのものの数の上限(第4周の指摘: 数字の札は3件に絞ったのに印は絞っていなかったため、
+   4件目(札なし)がボスの印に重なって見えた)。always(優先の目標・ビーコン)は数えず必ず残す */
+const EXPLORE_COMPASS_ICON_MAX    = 3;
 const EXPLORE_COMPASS_ICON_GAP_PX = 13;     // ボス戦の詰めた段で、印どうしを離す最小の間隔(px。倍率を掛ける前)
 // ミニマップ・全体地図: 自分の印に重なって見えなくなる近い印を、最低これだけ画面上で離す(px。倍率を掛ける前)
-const EXPLORE_MAP_DECLUTTER_PX    = 9;
+// (第4周の指摘: 9pxでは自分の矢印の光暈に隠れたままだったので広げた)
+const EXPLORE_MAP_DECLUTTER_PX    = 16;
 // 目標(クエスト)パネル
 const EXPLORE_OBJ_MATERIAL_GOAL   = 15;     // 「素材を集める」の目安の個数(報酬は無い。HUDの目安だけ)
 const EXPLORE_OBJ_RETURN_WARN_SEC = 120;    // 残り時間がこれを切ったら「帰還」を優先の目標にする
