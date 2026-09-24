@@ -796,7 +796,13 @@ function scaledSpriteFor(img, needPx){
      この版をさらに`drawImage`で引き伸ばす二度目のぼかしが乗って的がぼやけたまま=批評5巡目)。
      SCOPE_SHARPEN_BUCKETS の中から実際に必要な倍率以上の最小を選ぶので、キャッシュは1枚あたり最大3版まで */
 const SCOPE_SHARPEN_MIN_UPSCALE = 1.3;   // 元画像のこの倍より大きく描くときだけ使う
-const SCOPE_SHARPEN_AMOUNT = 1.1;        // 輪郭の締め具合(アンシャープマスクの強さ)
+const SCOPE_SHARPEN_AMOUNT = 1.6;        // 輪郭の締め具合(アンシャープマスクの強さ)
+const SCOPE_SHARPEN_RADIUS_PX = 2;       // ぼかしの半径(拡大後のpx)。絵ごとの差(批評6巡目: ヴォルガルーダ=
+  // ganon_ssrだけ8倍でぼやける)を調べたところ、原因はこのコードではなく**元の歩行コマの絵自体**が
+  // 輪郭のくっきりしたセル画(metag_ssr等)と違い、柔らかいグラデーションで描かれていたため
+  // (monsters/ganon_ssr_walk_f*.png)。半径1pxのアンシャープマスクではその太い(数px幅の)グラデーションに
+  // 締める力が足りなかった。絵は描き直せないので、半径を広げて効きを強くする(線画の絵は元々輪郭が
+  // 1pxに近いので広げても影響は小さい)
 const SCOPE_SHARPEN_BUCKETS = [2, 3, 4]; // 元画像に対する拡大倍率の候補
 const _sharpCache = new WeakMap();
 function sharpenedUpscaleFor(img, needPx){
@@ -817,15 +823,24 @@ function sharpenedUpscaleFor(img, needPx){
     // 透明度を掛けた色(0〜255)
     const pm = new Float32Array(n*4);
     for(let i=0;i<n;i++){ const a = d[i*4+3]/255; pm[i*4] = d[i*4]*a; pm[i*4+1] = d[i*4+1]*a; pm[i*4+2] = d[i*4+2]*a; pm[i*4+3] = d[i*4+3]; }
-    // 半径1の箱ぼかし(横→縦)
+    // 半径 SCOPE_SHARPEN_RADIUS_PX の箱ぼかし(横→縦)
+    const R = SCOPE_SHARPEN_RADIUS_PX, span = R*2 + 1;
     const tmp = new Float32Array(n*4), bl = new Float32Array(n*4);
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
-      const i = (y*w + x)*4, l = (y*w + Math.max(0, x-1))*4, r = (y*w + Math.min(w-1, x+1))*4;
-      for(let k=0;k<4;k++) tmp[i+k] = (pm[l+k] + pm[i+k] + pm[r+k])/3;
+      const i = (y*w + x)*4;
+      for(let k=0;k<4;k++){
+        let s = 0;
+        for(let dx=-R;dx<=R;dx++) s += pm[(y*w + clamp(x+dx, 0, w-1))*4 + k];
+        tmp[i+k] = s/span;
+      }
     }
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
-      const i = (y*w + x)*4, u = (Math.max(0, y-1)*w + x)*4, dn = (Math.min(h-1, y+1)*w + x)*4;
-      for(let k=0;k<4;k++) bl[i+k] = (tmp[u+k] + tmp[i+k] + tmp[dn+k])/3;
+      const i = (y*w + x)*4;
+      for(let k=0;k<4;k++){
+        let s = 0;
+        for(let dy=-R;dy<=R;dy++) s += tmp[(clamp(y+dy, 0, h-1)*w + x)*4 + k];
+        bl[i+k] = s/span;
+      }
     }
     const A = SCOPE_SHARPEN_AMOUNT;
     for(let i=0;i<n;i++){

@@ -105,19 +105,17 @@ function sniperLookSensMult(){
   if(m <= 1.001) return 1;
   return Math.min(1, SNIPER_ADS_SENS_BASE / Math.pow(m, SNIPER_ADS_SENS_EXP));
 }
-/* 窓(スコープのレンズ)の半径。既定は画面の高さから決めるが、
-   縦持ちでは右のボタン列(狙撃/DASH/FIRE)が近く、そのままだと情報の札を置く場所が無くなって
-   レンズの内側に入り込む(批評)。**右のボタン列の左端 − SNIPER_SCOPE_GUTTER_PX** を窓の外側の限界にして、
-   その分だけ窓を縮める(横持ちではボタンが遠いので limit のほうが大きく、既定の大きさのまま変わらない)。
-   snHudRects() は sniper.js の下のほうで定義しているが function 宣言はホイストされるので呼べる。 */
+/* 窓(スコープのレンズ)の半径。画面の高さだけから決める(sc.aperture が正)。
+   **以前は「右のボタン列の左端 − SNIPER_SCOPE_GUTTER_PX」で窓の外側を縛っていたが、これが指示ミスだった**:
+   縦持ちはボタン列が中心に近く、その分だけ毎回窓を縮めてしまい、直径が画面の高さの4割まで潰れていた
+   (批評6巡目)。情報の札(RANGE/SHOT/名前/倍率/残弾)は窓の外(右の黒い列、無ければ左)へ
+   drawScopeInfo が置き場所を探すので、窓の大きさをボタンから逆算する必要はない。
+   下限だけ確保する(SNIPER_SCOPE_MIN_R_RATIO=画面の高さの40%=直径80%。横持ちは各スコープの
+   aperture がもともと45%前後あるのでこの下限には掛からず、これまでどおり高さの90%前後のまま)。 */
 function sniperApertureR(sc){
   const base = viewH * (sc.aperture > 0 ? sc.aperture : 0.3);
   if(sc.aperture <= 0) return base;   // アイアンサイトは窓の大きさの制約が無い
-  const cx = viewW/2;
-  let limit = Infinity;
-  for(const r of snHudRects()) if(r[0] > cx) limit = Math.min(limit, r[0]);
-  if(limit === Infinity) return base;
-  return Math.max(viewH*SNIPER_SCOPE_MIN_R_RATIO, Math.min(base, limit - SNIPER_SCOPE_GUTTER_PX - cx));
+  return Math.max(base, viewH*SNIPER_SCOPE_MIN_R_RATIO);
 }
 function sniperHidesSelf(){ return sniperModeOn() && sniperView.blend > 0.35; }
 // 頭上のHPバーを隠すか(render.js の drawMonster から)。照準の先の1体だけスコープの中の帯で見せる
@@ -222,10 +220,11 @@ function sniperFire(me){
 }
 
 /* ---------- 弾の進め方と当たり(combat.js の updateProjectiles から) ---------- */
-function sniperTrailPush(p, force){
+// final=true … 実際に止まった点(着弾・地面・岩)。sniperTracerPoints はこの点だけ収束させない
+function sniperTrailPush(p, force, final){
   const last = p.trail[p.trail.length-1];
   if(!force && last && p.traveled - last.d < SNIPER_TRAIL_GAP) return;
-  p.trail.push({ x:p.x, y:p.y, z:p.z, d:p.traveled });
+  p.trail.push({ x:p.x, y:p.y, z:p.z, d:p.traveled, final:!!final });
   if(p.trail.length > SNIPER_TRAIL_MAX) p.trail.shift();
 }
 function sniperStepProjectile(p, dt){
@@ -234,7 +233,7 @@ function sniperStepProjectile(p, dt){
   const h = dt / n;
   const owner = getEntity(p.ownerId) || null;
   const end = (kind, hit)=>{
-    sniperTrailPush(p, true);
+    sniperTrailPush(p, true, true);
     // 消えたあとも弧を少しのあいだ残す(スコープの中で「どこを通ったか」が読める)
     if(owner && owner === player) sniperView.fx.push({ kind:'trail', pts:p.trail.slice(), color:p.color, t:0, life:0.9 });
     if(kind === 'hit') sniperOnHit(p, hit, owner);
@@ -696,14 +695,17 @@ function sniperSyncDom(show){
    大きく見え、遠距離ではほぼ0になるため(遠近感で1/距離に効く)、合流の境目(SNIPER_TRACER_CONVERGE)で
    弧の傾きが急に変わり「途中で折れて真下へ落ちるL字」に見えていた(批評)。
    画面座標なら「固定の1点(銃口の見かけの位置)」から「本当の弾道の投影点」へ kk の割合で線形に寄せるだけなので、
-   kk が滑らかに変わる限り折れ目が出ない。 */
+   kk が滑らかに変わる限り折れ目が出ない。
+   ただし**実際に止まった点(q.final)は収束させない**。160m未満で着弾する外れ弾(地面・岩)は
+   まだ収束の途中(kk>0)のまま軌跡の先が止まっていたため、着弾の塵(drawScopeImpacts。真の着弾点を
+   project() でそのまま描く)と最大100px前後ずれ、当たったか外れたか読めなかった(批評6巡目)。 */
 function sniperTracerPoints(pts){
   const ax = viewW/2 + viewH*SNIPER_TRACER_ANCHOR_DX, ay = viewH/2 + viewH*SNIPER_TRACER_ANCHOR_DY;
   const out = [];
   for(const q of pts){
     const P = project(q.x, q.y, q.z);
     if(!P || P.depth <= 3) continue;
-    const k = Math.max(0, 1 - (q.d||0) / SNIPER_TRACER_CONVERGE);
+    const k = q.final ? 0 : Math.max(0, 1 - (q.d||0) / SNIPER_TRACER_CONVERGE);
     const kk = k*k*(3-2*k);
     out.push({ x:P.x + (ax - P.x)*kk, y:P.y + (ay - P.y)*kk, scale:P.scale, depth:P.depth });
   }
@@ -781,11 +783,17 @@ function sniperCanvas(){
 }
 // 照明色(琥珀)。暗い空でも明るい砂地でも読めるよう、黒の縁取りと合わせて使う
 const SN_AMBER = '#ffb347';
-function snText(g, str, x, y, size, color, align, weight){
+// boldOutline: 縁取りだけは今のglobalAlphaを無視して不透明に描く(的の体の上で薄めても数字自体は読める。批評6巡目)
+function snText(g, str, x, y, size, color, align, weight, boldOutline){
   g.font = `${weight || 'bold'} ${Math.round(size)}px 'Share Tech Mono', 'Rajdhani', monospace`;
   g.textAlign = align || 'left'; g.textBaseline = 'middle';
-  g.lineJoin = 'round'; g.lineWidth = Math.max(2.5, size*0.28); g.strokeStyle = 'rgba(0,0,0,0.82)';
-  g.strokeText(str, x, y);
+  g.lineJoin = 'round'; g.lineWidth = Math.max(2.5, size*0.28);
+  if(boldOutline){
+    const a = g.globalAlpha; g.globalAlpha = 1; g.strokeStyle = 'rgba(0,0,0,0.92)';
+    g.strokeText(str, x, y); g.globalAlpha = a;
+  } else {
+    g.strokeStyle = 'rgba(0,0,0,0.82)'; g.strokeText(str, x, y);
+  }
   g.fillStyle = color; g.fillText(str, x, y);
 }
 function drawSniperScope(){
@@ -1001,6 +1009,10 @@ function sniperWeakWorldPos(e){
   const to = Math.min(1.05, e.weakPoint.to != null ? e.weakPoint.to : 1.05);
   return { x:e.x, y:e.y, z:(e.z||0) + H*((from+to)/2) };
 }
+// 十字線の腕・目盛りが集まる中心の帯を、文字を避けさせる矩形として積む(drawWeakMark が読む)
+function snPushCenterBand(cx, cy, halfW, halfH){
+  (sniperView.textRects || (sniperView.textRects = [])).push([cx - halfW, cy - halfH, halfW*2, halfH*2]);
+}
 function drawWeakOnTarget(g, s){
   const e = (sniperView.aim && sniperView.aim.ent) || (sniperView.pred && sniperView.pred.ent);
   const pos = sniperWeakWorldPos(e);
@@ -1018,13 +1030,16 @@ function drawWeakMark(g, cx, cy, s){
   }, 'weak');
   // 当たりの×印が出ている間は文字を出さない(×と重なって読めない)
   if(sniperView.fx.some(f=> f.kind === 'hit' && f.t < 0.34)) return;
-  // 落下補正の目盛りの数字(200/300など)と重なると「弱点200」に読めてしまう(批評)。
-  // 重なる高さなら文字を少しずつ上へ動かし、それでも空きが無ければ文字を諦める(印そのものは出す)
-  const fs = 12, tw = 38, th = fs*1.35;
-  let ty = cy - s*2.1, ok = false;
+  /* 落下補正の目盛りの数字(200/300など)・十字線の目盛りと重なると「弱点200」に読めたり
+     線の上に文字が乗ったりする(批評)。**隙間(pad)を空けて**判定するので、rectと接するだけの
+     近さでも避ける。重なる高さなら文字を少しずつ上へ動かし、それでも空きが無ければ文字を諦める
+     (印そのものは出す)。sniperView.textRects には十字線まわりの目盛り帯(drawReticleBdc/Mildot が
+     drawWeakOnTarget を呼ぶ前に積む)も入っている */
+  const fs = 12, tw = 38, th = fs*1.35, pad = SNIPER_WEAK_LABEL_PAD;
+  let ty = cy - s*SNIPER_WEAK_LABEL_GAP, ok = false;
   for(let i=0;i<4;i++){
     const y0 = ty - fs*0.8;
-    ok = (sniperView.textRects || []).every(r=> !(cx + s*2.3 < r[0]+r[2] && cx + s*2.3+tw > r[0] && y0 < r[1]+r[3] && y0+th > r[1]));
+    ok = (sniperView.textRects || []).every(r=> !(cx + s*2.3 - pad < r[0]+r[2] && cx + s*2.3+tw+pad > r[0] && y0-pad < r[1]+r[3] && y0+th+pad > r[1]));
     if(ok) break;
     ty -= th;
   }
@@ -1047,11 +1062,17 @@ function drawDropChevron(g, cx, cy, s){
    ・目盛りの間隔が文字の高さより狭くて区別できない数字は省く。残す順は 200・300 → 150 → 250
      (4倍では「300」と「250」が同じ高さに重なっていた)。目盛りの線そのものは全部引く。
    返り値: { side:'r'|'l', shown:Set(m), bottom:右の列のいちばん下の数字の高さ(左なら null) } */
+// 縦持ち(html.narrow-screen)かどうか。CLAUDE.md の決まり通り、幅の分岐はこのクラス1つで見る
+function sniperNarrowScreen(){
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('narrow-screen');
+}
 function sniperDropPlan(marks, cx, cy, R, fs){
   const need = fs*1.2;
   const order = [...marks].sort((a, b)=> SNIPER_DROP_LABEL_ORDER.indexOf(a.m) - SNIPER_DROP_LABEL_ORDER.indexOf(b.m));
+  // 縦持ちは同時に出す数字を絞る(批評6巡目: 8倍で的の胴の上に200・300が並んで読めない)
+  const maxLabels = sniperNarrowScreen() ? SNIPER_DROP_LABELS_NARROW_MAX : Infinity;
   const kept = [];
-  for(const mk of order){ if(kept.every(q=> Math.abs(q.y - mk.y) >= need)) kept.push(mk); }
+  for(const mk of order){ if(kept.length >= maxLabels) break; if(kept.every(q=> Math.abs(q.y - mk.y) >= need)) kept.push(mk); }
   const shown = new Set(kept.map(q=> q.m));
   if(!kept.length) return { side:'r', xk:SNIPER_DROP_LABEL_X, shown, dim:false, bottom:null };
   const y0 = Math.min(...kept.map(q=> q.y)) - fs*0.7, y1 = Math.max(...kept.map(q=> q.y)) + fs*0.7;
@@ -1080,7 +1101,8 @@ function drawDropLabel(g, plan, cx, y, R, fs, leftEnd, rightStart, text){
   if(plan.dim) g.globalAlpha *= SNIPER_DROP_LABEL_DIM;
   g.setLineDash([2,3]); g.strokeStyle = 'rgba(255,179,71,0.5)'; g.lineWidth = 1;
   g.beginPath(); g.moveTo(rightStart, y); g.lineTo(colR - 4, y); g.stroke(); g.setLineDash([]);
-  snText(g, text, colR, y, fs, SN_AMBER, 'left');
+  // 的の体に掛かって薄くする(dim)ときも、黒い縁取りだけは薄めない(オレンジの体の上でも数字自体は読める)
+  snText(g, text, colR, y, fs, SN_AMBER, 'left', 'bold', plan.dim);
   g.restore();
   // 弾道の光はこの数字の上に描かない(sniper の drawTracerPath が読む)
   (sniperView.textRects || (sniperView.textRects = [])).push([colR - 2, y - fs*0.7, fs*2.6, fs*1.4]);
@@ -1138,7 +1160,8 @@ function drawReticleMildot(g, cx, cy, W, mode, w){
     if(on) drawDropLabel(g, plan, cx, mk.y, R, fs, cx - R*0.05, cx + R*0.05, String(mk.m));
   }
   retGlow(g, ()=>{ g.beginPath(); g.arc(cx, cy, 2.3, 0, Math.PI*2); g.fill(); }, mode === 'weak' ? 'body' : mode);
-  if(mode === 'weak'){ drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
+  // 十字線の横腕・ドットの帯を避け場所として積む(「弱点」の札が線や目盛りに乗らないように。批評6巡目)
+  if(mode === 'weak'){ snPushCenterBand(cx, cy, R*0.5, 7); drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
 }
 function drawReticleBdc(g, cx, cy, W, mode, w){
   const R = W.R, gap = R*0.028;
@@ -1178,7 +1201,8 @@ function drawReticleBdc(g, cx, cy, W, mode, w){
     g.beginPath(); g.arc(cx, cy, 2.1, 0, Math.PI*2); g.fill();
     g.lineWidth = 1.1; g.beginPath(); g.arc(cx, cy, R*0.022 + 3, 0, Math.PI*2); g.stroke();
   }, mode === 'weak' ? 'body' : mode);
-  if(mode === 'weak'){ drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
+  // 太い横柱・風読みの目盛りの帯を避け場所として積む(「弱点」の札が線や目盛りに乗らないように。批評6巡目)
+  if(mode === 'weak'){ snPushCenterBand(cx, cy, R*0.62, 8); drawDropChevron(g, cx, cy, Math.max(5, R*0.022)); drawWeakOnTarget(g, Math.max(6, R*0.03)); }
 }
 /* アイアンサイト: 手前にある銃そのもの。照門(くっきりした金属の輪)・照星(フードの中の柱)・機関部。
    倍率は data.js の iron.mag(1.25)がそのまま掛かり、札も「1.25×」(HUD の札に出す。空中には描かない) */
@@ -1365,7 +1389,9 @@ function drawScopeImpacts(g){
       g.fillStyle = eg; g.beginPath(); g.arc(0, 0, rx, 0, Math.PI*2); g.fill();
       g.restore();
     }
-    // 3) 破片(土くれ・小石)。ワールドの放物線で飛ばして1個ずつ投影する
+    /* 3) 破片(土くれ・小石)。ワールドの放物線で飛ばして1個ずつ投影する。
+       **平らな四角(fillRect)を回して描くと紙吹雪に見える**(批評6巡目)。輪郭をぼかした小さな楕円の
+       塊にする(縁を透明へ落とすグラデーション。色は地面の色 mid/dark のみで決め打ちしない) */
     const tt = Math.min(t, 1.1);
     for(const q of (f.grains || [])){
       const dz = q.up*260*tt - 0.5*SNIPER_IMPACT_DEBRIS_G*tt*tt;
@@ -1373,9 +1399,12 @@ function drawScopeImpacts(g){
       const Q = project(f.x + Math.cos(q.a)*q.v*70*tt, f.y + Math.sin(q.a)*q.v*70*tt, f.z + dz);
       if(!Q) continue;
       const sz = Math.min(6, Math.max(1.6, q.s*1.7*Q.scale));
-      g.fillStyle = `rgba(${dark},${0.95*(1 - k*0.6)})`;
-      g.save(); g.translate(Q.x, Q.y); g.rotate(q.a*3 + tt*9*q.v);
-      g.fillRect(-sz, -sz*0.7, sz*2, sz*1.4);
+      const al = 0.95*(1 - k*0.6);
+      g.save(); g.translate(Q.x, Q.y); g.rotate(q.a*2.2 + tt*7*q.v);
+      const dg = g.createRadialGradient(0, 0, 0, 0, 0, sz*1.2);
+      dg.addColorStop(0, `rgba(${mid},${al})`); dg.addColorStop(0.6, `rgba(${dark},${al*0.85})`); dg.addColorStop(1, `rgba(${dark},0)`);
+      g.fillStyle = dg;
+      g.beginPath(); g.ellipse(0, 0, sz*1.2, sz*0.8, 0, 0, Math.PI*2); g.fill();
       g.restore();
     }
     // 4) 最初の一瞬の火花(小さく)
@@ -1502,10 +1531,14 @@ function drawScopeSmoke(g, W){
 /* 距離・照準の先の1体・撃った距離・倍率・残弾・装填・息。
    窓のあるスコープは窓の中の決まった場所と鏡筒の黒い所へ、アイアンは照準の右に小さく
    (倍率と残弾はHUDの札が出すので、アイアンでは空中に描かない) */
-/* 画面のHUD(ボタン・札・地図など)の矩形。スコープの情報をレンズの外の黒い所へ置くとき、これを避ける。
-   座標は #appRoot の中の論理座標(=ゲーム画面の座標)。0.5秒ごとに測り直す(毎コマDOMを読まない) */
-const SN_HUD_IDS = ['topLeft','statsPanel','topRight','killFeed','movePanel','joystickBase','exploreHud','expObjPanel','expRegionCard',
-  'expLootFeed','fireBtn','dashBtn','pingBtn','sniperAdsBtn','sniperAmmoChip','sniperBreathBtn','turnLeftBtn','turnRightBtn','autoRunLabel','raidHud'];
+/* 画面のボタン・帯の矩形。スコープの情報をレンズの外の黒い所へ置くとき、これを避ける。
+   座標は #appRoot の中の論理座標(=ゲーム画面の座標)。0.5秒ごとに測り直す(毎コマDOMを読まない)。
+   **`exploreHud`/`expRegionCard`/`expLootFeed`/`autoRunLabel`/`raidHud`は含めない**: これらは
+   絶対配置の入れ物で、実際に文字が乗る場所より当たり判定(offsetWidth/Height)がずっと大きく出ることがあり、
+   避けようとすると左右どちらにも空きが無くなって情報の列がレンズの中心の高さへ戻ってレンズに被る
+   (批評6巡目)。`topRight`(時間・撃破ログ)と`expObjPanel`(目標)は実際の見た目どおりの矩形なので含める。 */
+const SN_HUD_IDS = ['topLeft','topRight','killFeed','expObjPanel','movePanel','joystickBase','fireBtn','dashBtn','pingBtn',
+  'sniperAdsBtn','sniperAmmoChip','sniperBreathBtn','turnLeftBtn','turnRightBtn'];
 function snHudRects(){
   const v = sniperView, now = performance.now();
   if(v.hudRects && now - v.hudRectsAt < 500 && v.hudRectsW === viewW) return v.hudRects;
@@ -1530,13 +1563,16 @@ function snHudRects(){
   v.hudRects = out; v.hudRectsAt = now; v.hudRectsW = viewW;
   return out;
 }
-/* w×h の札を置ける場所を、**レンズの右の外の黒い列だけ**から探す(批評5巡目: 左右へ分岐すると
-   撮るたびに置き場所が変わって読みにくい)。x は常に「窓の右端+隙間」の1列に固定し、
-   上下だけをHUDとも先に置いた札とも重ならないようにずらす。窓の半径は sniperApertureR() が
-   右のボタン列の手前で止めてあるので、この列の広さ(SNIPER_SCOPE_GUTTER_PX)はどの端末でも確保されている。
-   最後まで空きが無くても、x は右の列のまま(**レンズの内側には絶対に置かない**)。 */
-function snFindSlotRight(w, h, ox, oy, R, taken){
-  const pad = 6, x = ox + R*1.06;
+/* w×h の札を置ける場所を、**レンズの外の黒い所だけ**から探す。
+   窓の大きさはもうボタン列から逆算していない(sniperApertureR。批評6巡目)ので、右の列の広さは
+   端末ごとに違う。横持ちは元どおり右優先(右のほうが広く、これまでの見た目を変えない)。
+   縦持ち(html.narrow-screen)は窓が大きくなった分だけ右が時間・撃破ログ・目標・ボタン列で
+   埋まってしまうので、**左を優先**する(左は上=体力/バフの札、下=スティックの間が空いている)。
+   どちらも画面の外へ出る/HUDや先に置いた札とぶつかるときはもう一方を試す。
+   **レンズの内側には絶対に置かない**(批評5巡目)。 */
+function snFindSlotCol(w, h, oy, x, taken){
+  const pad = 6;
+  if(x < 6 || x + w > viewW - 6) return null;
   const hit = (y0)=>{
     if(y0 < 6 || y0 + h > viewH - 6) return true;
     for(const r of snHudRects()) if(x < r[2] + pad && x + w > r[0] - pad && y0 < r[3] + pad && y0 + h > r[1] - pad) return true;
@@ -1548,9 +1584,19 @@ function snFindSlotRight(w, h, ox, oy, R, taken){
     const y = clamp(oy - h*0.5 + dy, 6, viewH - h - 6);
     if(!hit(y)) return [x, y, x + w, y + h];
   }
-  // どこにもぶつからない高さが無ければ、レンズの中心の高さのまま(列そのものは右の外を保つ)
+  return null;
+}
+function snFindSlotRight(w, h, ox, oy, R, taken){
+  const xr = ox + R*1.06, xl = ox - R*1.06 - w;
+  const tryRight = ()=> snFindSlotCol(w, h, oy, xr, taken);
+  const tryLeft = ()=> snFindSlotCol(w, h, oy, xl, taken);
+  const first = sniperNarrowScreen() ? tryLeft() : tryRight();
+  if(first) return first;
+  const second = sniperNarrowScreen() ? tryRight() : tryLeft();
+  if(second) return second;
+  // どちらにも収まる場所が無ければ、右列のレンズ中心の高さのまま(元の保険と同じ。画面の外へは出す)
   const y = clamp(oy - h*0.5, 6, viewH - h - 6);
-  return [x, y, x + w, y + h];
+  return [xr, y, xr + w, y + h];
 }
 // 名前を幅 cardW に収まる1行にする(縦持ちの狭い列では2行だと的に近づきすぎる。入らなければ末尾を「…」)
 function snWrapName1(g, name, cardW, nfs){
@@ -1563,8 +1609,8 @@ function snWrapName1(g, name, cardW, nfs){
 }
 /* 距離・照準の先の1体・撃った距離・倍率・残弾・装填・息。
    ・窓のあるスコープ: **レンズの中には十字線と目盛りだけ**。距離・SHOT・名前・体力・倍率・残弾は
-     必ずレンズの右の外の黒い1列(snFindSlotRight。sniperApertureR() が確保した SNIPER_SCOPE_GUTTER_PX 分の
-     幅)へ縦に積む。**レンズの内側へは絶対に戻さない**(批評5巡目: 前は空きが無いと窓の中へ戻していた)。
+     必ずレンズの外の黒い1列(snFindSlotRight。右を優先し、入らなければ左)へ縦に積む。
+     **レンズの内側へは絶対に戻さない**(批評5巡目: 前は空きが無いと窓の中へ戻していた)。
    ・アイアン: 照門の輪のすぐ下に固定(的の上に乗らない) */
 function drawScopeInfo(g, cx, cy, W, sc, w){
   const v = sniperView, s = player.sniper;
@@ -1607,8 +1653,8 @@ function drawScopeInfo(g, cx, cy, W, sc, w){
   const fsm = Math.max(13, Math.min(17, R*0.075));
   const nfs = Math.max(11, fsm*0.62);
   const fsMag = Math.max(12, Math.min(15, R*0.055));
-  // 列の幅は確保した黒い列いっぱいまで(名前は1行のみ。批評: 縦持ちの狭い列で2行だと的に近づきすぎる)
-  const cardW = Math.max(64, SNIPER_SCOPE_GUTTER_PX - 34);
+  // 列の幅は見込みの黒い列いっぱいまで(名前は1行のみ。批評: 縦持ちの狭い列で2行だと的に近づきすぎる)
+  const cardW = Math.max(64, SNIPER_SCOPE_INFO_COL_PX - 34);
   g.font = `${fsm}px 'Russo One', 'Rajdhani', sans-serif`;
   const wRange = g.measureText(m != null ? `${m} m` : '--- m').width;
   const nameStr = t ? snWrapName1(g, t.exploreName || t.name, cardW, nfs) : '';

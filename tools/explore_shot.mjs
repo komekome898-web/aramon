@@ -541,7 +541,18 @@ function pageTools(){
     const at = { x:best.x, y:best.y, yaw:Math.atan2(T.y-best.y, T.x-best.x), pitch:0.08, warm:0 };
     at.after = ()=>{
       const me = player;
-      T.exploreAsleep = true; T.exState = T.isExploreBoss ? (o.pose === 'sleep' ? 'sleep' : 'dormant') : T.exState;
+      /* o.fire がある(=実際に命中させる)ボスのカットは、的を dormant のままにしない。
+         dormant/home のボスは1発当てるだけで exploreOnDamaged が咆哮(intro)を起こし、
+         body.explore-cine が付いて操作ボタン・スティック・ミニマップ・目標の枠が消える(style.css)。
+         これは狙撃側の不具合ではなく、的の状態を作らずに撃たせているこの撮影ツールの都合なので、
+         既存の boss_* カット(このファイル上部)と同じ約束(exploreBossEngaged+exState='fight')で
+         先に「もう戦闘中」にしてから撃つ(批評6巡目: 撃つとレンズが1.9倍に広がりボタンが消える件)。 */
+      const keepFight = T.isExploreBoss && o.fire && o.pose !== 'sleep';
+      if(keepFight){
+        exploreBossEngaged(T); T.exState = 'fight'; T.exPending = null; T.exCharge = null; T.exploreAsleep = false;
+      } else {
+        T.exploreAsleep = true; T.exState = T.isExploreBoss ? (o.pose === 'sleep' ? 'sleep' : 'dormant') : T.exState;
+      }
       // noBreak: この1発で部位破壊にしない(破片の演出=ボス担当 が重なり、弱点命中の表示そのものが見えなくなる)
       if(o.noBreak) T.exBreakDmg = -1e9;
       if(exploreState.banners) exploreState.banners.length = 0;   // 前のカットの札を持ち越さない
@@ -572,9 +583,18 @@ function pageTools(){
         sniperView.amp = 0; sniperView.offYaw = 0; sniperView.offPitch = 0;
         sniperFire(me);
         const N = o.fire === 'muzzle' ? 2 : (o.fire === 'tracer' ? 26 : 90);
+        /* keepFight: N=90近く進める間、的のボスは巣からのリーシュ判定(fight→home→dormant)や
+           HP割合の怒り・逃走判定が毎フレーム動く。弾が届くころに dormant へ戻っていると、
+           命中の瞬間に exploreOnDamaged が「まだ気づいていなかった的」として咆哮(intro)を起こし、
+           body.explore-cine で操作ボタン・スティック・ミニマップ・目標の枠が消える(批評6巡目)。
+           毎フレーム state を張り直して、この1発の間だけは確実に「もう戦闘中」のままにする。 */
         for(let i=0;i<N;i++){
           update(1/60); T.x = tx; T.y = ty; me.x = at.x; me.y = at.y;
-          if((o.fire === 'hit' || o.fire === 'miss') && sniperView.fx.some(f=> f.kind==='hit' || f.kind==='impact')){ for(let j=0;j<8;j++){ update(1/60); T.x=tx; T.y=ty; } break; }
+          if(keepFight){ T.exState = 'fight'; T.exPending = null; T.exCharge = null; T.exploreAsleep = false; }
+          if((o.fire === 'hit' || o.fire === 'miss') && sniperView.fx.some(f=> f.kind==='hit' || f.kind==='impact')){
+            for(let j=0;j<8;j++){ update(1/60); T.x=tx; T.y=ty; if(keepFight){ T.exState='fight'; T.exPending=null; T.exCharge=null; } }
+            break;
+          }
         }
         // 撮影は1枚に時間がかかるので、演出の時計はこちらで決める(muzzle=45ms後 / それ以外=落ち着いた後)
         // muzzle は 15ms×2コマ(閃光の2コマ目=白い芯つき)だけ反動のばね・閃光を進めてから撮る
@@ -843,7 +863,12 @@ for(const vpName of vpNames){
           const d = Math.hypot(l.x - cx, l.y - cy);
           return { rect:[Math.round(r[0]),Math.round(r[1]),Math.round(r[2]),Math.round(r[3])],
                    lens:{ x:Math.round(l.x), y:Math.round(l.y), r:Math.round(l.r) },
-                   dist:Math.round(d), overlapPx: Math.round(l.r - d) };
+                   dist:Math.round(d), overlapPx: Math.round(l.r - d),
+                   // HUDが消えていないか(body.explore-cine。的をdormantのまま撃ってボスの咆哮を
+                   // 誤って起こすと付く。批評6巡目でこれが起きた=keepFightで防いでいる)
+                   bodyCine: document.body.classList.contains('explore-cine'),
+                   cine: (typeof exploreState==='object' && exploreState.cine) ? exploreState.cine.kind : null,
+                   hudRects: (typeof snHudRects === 'function') ? snHudRects() : null };
         });
       }
       report.shots.push(shotRec);
