@@ -819,8 +819,7 @@ function drawSniperScope(){
   g.clearRect(0,0,viewW,viewH);
   const me = player, w = sniperWeapon(me), sc = sniperScope(me);
   const a = sniperEase(v.blend);
-  v.dropPlan = null; v.textRects = []; v.__dbgSplash = null;
-  snPushTracerRects();
+  v.dropPlan = null; v.textRects = [];
   const cx = viewW/2, cy = viewH/2;
   // 反動の山の強さ(0〜1)。窓は銃と一緒に沈み、鏡筒の影が窓の一部を黒く欠けさせる
   const rk = clamp(v.recoil / Math.max(1e-5, v.recoilPeak), 0, 1);
@@ -1017,30 +1016,6 @@ function sniperWeakWorldPos(e){
 function snPushCenterBand(cx, cy, halfW, halfH){
   (sniperView.textRects || (sniperView.textRects = [])).push([cx - halfW, cy - halfH, halfW*2, halfH*2]);
 }
-/* 曳光弾の光の筋(飛んでいる最中の弾+着弾後も少し残る fx の軌跡)も「弱点」の札を避ける対象に積む
-   (批評8巡目: tracer_port で札が光の筋に接していた)。drawSniperScope が textRects をリセットした
-   直後、照準(レチクル)を描く前に呼ぶ ― 弱点の札は同じフレームのレチクル描画中に候補を選ぶため。 */
-function snPushTracerRects(){
-  const v = sniperView;
-  const segs = [];
-  for(const f of v.fx){ if(f.kind === 'trail' && f.pts && f.pts.length > 1) segs.push(sniperTracerPoints(f.pts)); }
-  if(player){
-    for(const p of projectiles){
-      if(p.sniper && p.ownerId === player.id && p.trail && p.trail.length){
-        segs.push(sniperTracerPoints(p.trail.concat([{ x:p.x, y:p.y, z:p.z, d:p.traveled }])));
-      }
-    }
-  }
-  const pad = 3;
-  for(const sp of segs){
-    for(let i=1;i<sp.length;i++){
-      const a = sp[i-1], b = sp[i];
-      const x0 = Math.min(a.x, b.x) - pad, x1 = Math.max(a.x, b.x) + pad;
-      const y0 = Math.min(a.y, b.y) - pad, y1 = Math.max(a.y, b.y) + pad;
-      v.textRects.push([x0, y0, x1 - x0, y1 - y0]);
-    }
-  }
-}
 function drawWeakOnTarget(g, s){
   const e = (sniperView.aim && sniperView.aim.ent) || (sniperView.pred && sniperView.pred.ent);
   const pos = sniperWeakWorldPos(e);
@@ -1060,17 +1035,16 @@ function drawWeakMark(g, cx, cy, s){
   // 当たりの×印が出ている間は文字を出さない(×と重なって読めない)
   if(sniperView.fx.some(f=> f.kind === 'hit' && f.t < 0.34)) return;
   /* 「弱点」の札。**マークの外接円(ring)から SNIPER_WEAK_LABEL_OFFSET_PX だけ離した位置**を
-     左→右→上→下の順に試し、空いている場所(落下補正の数字・十字線の目盛り帯・曳光弾の光の筋=
-     sniperView.textRects と重ならない)を使う。**落下の数字は必ず右の列**(SNIPER_DROP_LABEL_X>0)
-     なので、**札は既定を左**にして数字と正面衝突しないようにする(批評8巡目: 「200」の真下に
-     接して「200 弱点」と読めていた)。どこも空いていなくても既定(左)を諦めずに描く(批評7巡目)。
-     既定(左)以外を使ったときだけ、マークまで細い引き出し線を足す。 */
+     右→左→上→下の順に試し、空いている場所(落下補正の数字・十字線の目盛り帯=sniperView.textRects
+     と重ならない)を使う。**どこも空いていなくても既定(右)を諦めずに描く**(批評7巡目: 横持ちで
+     4回とも重なると札そのものが消えていた)。既定(右)以外を使ったときだけ、マークまで細い引き出し線を
+     足す(見ただけで「これが弱点の説明」と分かるように)。 */
   const fs = 12, tw = 38, th = fs*1.35, pad = SNIPER_WEAK_LABEL_PAD, off = SNIPER_WEAK_LABEL_OFFSET_PX;
   const rects = sniperView.textRects || [];
   const clear = (x0, y0)=> rects.every(r=> !(x0 - pad < r[0]+r[2] && x0+tw+pad > r[0] && y0-pad < r[1]+r[3] && y0+th+pad > r[1]));
   const cands = [
-    { x: cx - ring - off - tw, cy, align:'left' },               // 左(既定)
-    { x: cx + ring + off,      cy, align:'left' },              // 右
+    { x: cx + ring + off,      cy, align:'left' },              // 右(既定)
+    { x: cx - ring - off - tw, cy, align:'left' },               // 左
     { x: cx - tw/2, cy: cy - ring - off - th*0.5, align:'left' }, // 上
     { x: cx - tw/2, cy: cy + ring + off + th*0.5, align:'left' }, // 下
   ];
@@ -1113,9 +1087,8 @@ function sniperNarrowScreen(){
 function sniperDropPlan(marks, cx, cy, R, fs){
   const need = fs*1.2;
   const order = [...marks].sort((a, b)=> SNIPER_DROP_LABEL_ORDER.indexOf(a.m) - SNIPER_DROP_LABEL_ORDER.indexOf(b.m));
-  // 同時に出す数字を絞る(批評6巡目: 8倍で的の胴の上に200・300が並んで読めない)。
-  // 横持ちも上限を付ける(批評8巡目: crit_land で4つとも詰まって並んでいた=Infinityだった)
-  const maxLabels = sniperNarrowScreen() ? SNIPER_DROP_LABELS_NARROW_MAX : SNIPER_DROP_LABELS_WIDE_MAX;
+  // 縦持ちは同時に出す数字を絞る(批評6巡目: 8倍で的の胴の上に200・300が並んで読めない)
+  const maxLabels = sniperNarrowScreen() ? SNIPER_DROP_LABELS_NARROW_MAX : Infinity;
   const kept = [];
   for(const mk of order){ if(kept.length >= maxLabels) break; if(kept.every(q=> Math.abs(q.y - mk.y) >= need)) kept.push(mk); }
   const shown = new Set(kept.map(q=> q.m));
@@ -1230,23 +1203,12 @@ function drawReticleBdc(g, cx, cy, W, mode, w){
   const plan = sniperDropPlan(marks.filter(mk=> mk.y > cy + gap*1.5 && mk.y <= cy + R*0.6), cx, cy, R, fs);
   sniperView.dropPlan = plan;
   let lastY = cy;
-  // 弱点マークの外接円と、はしごの段が同じ高さで重ならないよう先に位置を求めておく(批評8巡目)
-  let weakP = null, weakRing = 0;
-  if(mode === 'weak'){
-    const we = (sniperView.aim && sniperView.aim.ent) || (sniperView.pred && sniperView.pred.ent);
-    const wp = sniperWeakWorldPos(we);
-    const P = wp && project(wp.x, wp.y, wp.z);
-    if(P){ weakP = P; weakRing = Math.max(6, R*0.03) * 1.9; }
-  }
   /* はしごの段(150/200/250/300m)。**以前は太い光る線+両端に大きな点**で、4段ぶんが密に並ぶと
-     的の胴に黄色い点の塊が乗って見えた(批評7巡目)。その後、半径Rに比例した幅の線にしたが、
-     窓が大きいときは的の脚・胴・弱点の輪を横切る太い横線になっていた(批評8巡目)。
-     **縦線の左右にSNIPER_LADDER_TICK_PXだけ出す固定pxの短い刻み**にして、的の上に横長の線を
-     引かないようにする。弱点マークの輪と高さが重なる段は刻みごと省く(数字の柱は下まで続ける)。 */
-  marks.forEach((mk)=>{
+     的の胴に黄色い点の塊が乗って見えた(批評7巡目)。本家のBDCレチクルどおり、暗い縁付きの
+     細い線(SNIPER_LADDER_LINE_PX)だけにして点は無くす(玉の光り=shadowBlurもやめる)。 */
+  marks.forEach((mk, i)=>{
     if(mk.y <= cy + gap*1.5 || mk.y > cy + R*0.6) return;
-    if(weakP && Math.abs(mk.y - weakP.y) < weakRing + SNIPER_LADDER_TICK_PX){ lastY = mk.y; return; }
-    const hw = SNIPER_LADDER_TICK_PX;
+    const hw = R*(0.085 - i*0.012);
     g.lineCap = 'butt';
     g.strokeStyle = 'rgba(10,7,3,0.85)'; g.lineWidth = SNIPER_LADDER_LINE_PX + 1.6;
     g.beginPath(); g.moveTo(cx - hw, mk.y); g.lineTo(cx + hw, mk.y); g.stroke();
@@ -1420,32 +1382,20 @@ function drawScopeSplash(g, f, P, k, t){
     g.beginPath(); g.arc(0, 0, rx2, 0, Math.PI*2); g.stroke();
     g.restore();
   }
-  /* 2) 曳光弾の終点(=着弾点P)からまっすぐ立つ細い水柱。**以前は破片と同じくワールド座標で360°に
-     散らしていたため(放物線・q.a方向)、8倍ズームで的が近いと僅かなワールド単位のばらつきでも
-     画面上では拡大されて丸い玉が着弾点より60〜150px上の的の顔・体に浮いて見えた(批評8巡目。
-     一度ワールド単位の左右ぶれを±2.5に絞っても、近距離ではズームの拡大率がそのまま掛かって
-     結局100px前後散ることを実測で確認した)。**画面座標(px)で直接ずらす**ことでズーム・距離に
-     関わらず散らばりを一定に保つ。根元(P。i=0)は高さ0のまま=着弾点・曳光弾の終点と画面上で
-     ずれない(批評8巡目④の検査対象)。 */
+  // 2) 跳ねる水滴(地面の破片と同じ放物線を再利用。色を白〜水色にして地面より高く速く上げる)
   const tt = Math.min(t, 0.8);
-  const rise = Math.min(1, t/0.06), settle = clamp((t - 0.15)/0.65, 0, 1);
-  const grains = f.grains || [];
-  for(let i=0;i<7;i++){
-    const q = grains[i % grains.length] || { s:1 };
-    // i=0は水面に触れたままの根元(高さ0固定)。i=1以降だけ上へ伸びて柱になる(画面pxで直接指定)
-    const hPx = i === 0 ? 0 : SNIPER_SPLASH_COLUMN_H * (0.3 + 0.7*(i/6)) * rise * (1 - settle*0.55);
-    const latPx = i === 0 ? 0 : (snHash(f.seed*11 + i) - 0.5) * SNIPER_SPLASH_LAT_PX;
-    const Qx = P.x + latPx, Qy = P.y - hPx;
-    const sz = Math.min(4, Math.max(1.2, (q.s||1)*1.1*(1 - i*0.08)*P.scale));
-    const al = 0.9*(1 - k*0.72)*(1 - i*0.07);
+  for(const q of (f.grains || [])){
+    const dz = q.up*SNIPER_SPLASH_DEBRIS_UP*tt - 0.5*SNIPER_IMPACT_DEBRIS_G*tt*tt;
+    if(dz < -2) continue;
+    const Q = project(f.x + Math.cos(q.a)*q.v*55*tt, f.y + Math.sin(q.a)*q.v*55*tt, f.z + dz);
+    if(!Q) continue;
+    const sz = Math.min(4.5, Math.max(1.2, q.s*1.3*Q.scale));
+    const al = 0.95*(1 - k*0.7);
     g.save(); g.globalCompositeOperation = 'lighter';
-    const dg = g.createRadialGradient(Qx, Qy, 0, Qx, Qy, sz*1.4);
+    const dg = g.createRadialGradient(Q.x, Q.y, 0, Q.x, Q.y, sz*1.4);
     dg.addColorStop(0, `rgba(240,250,255,${al})`); dg.addColorStop(1, 'rgba(210,235,255,0)');
-    g.fillStyle = dg; g.beginPath(); g.arc(Qx, Qy, sz*1.4, 0, Math.PI*2); g.fill();
+    g.fillStyle = dg; g.beginPath(); g.arc(Q.x, Q.y, sz*1.4, 0, Math.PI*2); g.fill();
     g.restore();
-    // 検査用(批評8巡目④): 水柱の根元(最初の1個=最も低い粒)と着弾点=曳光弾の終点の画面上の差(px)。
-    // ゲームの見た目には出ない。tools/explore_shot.mjs が読む
-    if(i === 0) sniperView.__dbgSplash = { end:[Math.round(P.x), Math.round(P.y)], root:[Math.round(Qx), Math.round(Qy)], distPx: Math.round(Math.hypot(P.x - Qx, P.y - Qy)) };
   }
   // 3) 最初の一瞬の白い飛沫(着弾点そのもの)
   if(t < 0.08){

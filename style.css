@@ -6730,7 +6730,10 @@ html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
   background:linear-gradient(90deg, transparent, var(--rc), transparent); }
 .exp-rc-danger{ display:none; font-size:calc(11px * var(--k)); font-weight:700; color:var(--rc); text-shadow:0 1px 3px rgba(0,0,0,0.9); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* 狙撃で構えている間(body.sniper-ads)は、探検の上のHUDを弱める(スコープの絵を邪魔しない) */
-body.sniper-ads #exploreHud, body.sniper-ads #expObjPanel, body.sniper-ads #expRegionCard, body.sniper-ads #expBossCanvas{ opacity:0.3; }
+body.sniper-ads #exploreHud, body.sniper-ads #expRegionCard, body.sniper-ads #expBossCanvas{ opacity:0.3; }
+/* 目標パネルは構えている間は隠す: 縦持ちでスコープの距離の札(RANGE/SHOT/名前)と重なって両方読めなかった
+   (狙撃の批評9巡目)。構えを解けばすぐ戻る。薄くするだけだと文字が札の後ろに透けて残る */
+body.sniper-ads #expObjPanel{ visibility:hidden; }
 /* ボス登場・討伐の視点演出(body.explore-cine。explore.js が付け外し)の間は、黒帯の上下に透けないよう
    下の操作系(スティック・技の欄・FIRE・DASH・回転の矢印・狙撃)と目標パネル・通知・ボスの帯も消す */
 body.explore-cine #joystickBase, body.explore-cine #fireBtn, body.explore-cine #dashBtn, body.explore-cine #movePanel,

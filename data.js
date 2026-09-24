@@ -7227,13 +7227,11 @@ const SNIPER_BODY_H_PER_RADIUS  = 2.0;   // 当たりの背の高さ = 半径×�
 const SNIPER_HIT_RADIUS_MULT    = 0.95;  // 当たりの横幅 = 半径×これ
 const SNIPER_WEAK_FROM          = 0.62;  // ent.weakPoint に from が無いときの弱点の下端(背の高さに対する割合)
 const SNIPER_LADDER_LINE_PX     = 1.4;    // 8倍(BDC)のはしごの段の線の太さ(px)。暗い縁を+1.6pxで足す。点は出さない(批評7巡目)
-const SNIPER_LADDER_TICK_PX     = 7;      // 8倍(BDC)のはしごの段の長さ(縦の十字線の左右にこのpxだけ出す短い刻み)。半径Rに比例させると窓が大きいほど的の胴・弱点の輪に掛かる横長の線になっていた(批評8巡目)。固定pxの短い刻みにする
 const SNIPER_DROP_MARKS_M       = [150, 200, 250, 300];   // 落下補正の目盛り(m)
 const SNIPER_DROP_LABEL_ORDER   = [200, 300, 150, 250];   // 目盛りの数字が詰まって区別できないとき、残す順(前ほど残る)
 const SNIPER_DROP_LABEL_X       = 0.2;    // 目盛りの数字の列の位置(照準から窓の半径×この割合だけ横)
 const SNIPER_DROP_LABEL_DIM     = 0.42;   // 目盛りの点線の引き出し線が的の体に掛かるときの濃さ(数字そのものは薄めない。drawDropLabel)
 const SNIPER_DROP_LABELS_NARROW_MAX = 1;  // 縦持ち(html.narrow-screen)で同時に出す落下補正の数字の数。的の体の上で数が並ぶと読めない(批評6巡目)
-const SNIPER_DROP_LABELS_WIDE_MAX   = 1;  // 横持ちで同時に出す落下補正の数字の数。上限が無いと4つ(150/200/250/300)が縦に詰まって並んだ(批評8巡目crit_land)。縦持ちと同じ基準に揃える
 const SNIPER_WEAK_LABEL_OFFSET_PX = 14;   // 「弱点」の札を菱形の印の外接円から離す距離(px。8〜24pxの範囲。批評7巡目)
 const SNIPER_WEAK_LABEL_PAD     = 8;      // 「弱点」の札と他の文字(落下補正の数字)の間に空ける余白(px)。0だと隣り合わせで「弱点200」に読めてしまう
 const SNIPER_SWAY_NOISE         = 0.55;  // 揺れに混ぜるなめらかなノイズの割合(周期を読めなくする)
@@ -7259,11 +7257,7 @@ const SNIPER_HIT_JOLT_PX        = [3, 5];  // 同じく揺れの幅(画面px。�
 const SNIPER_IMPACT_COLUMN_H    = 36;    // 外れた弾が地面に立てる土柱の高さ(ワールド単位=3.6m相当)。60だと8倍ズームで的の顔の高さまで浮いて見えた(批評7巡目)。遠くからでも見える大きさは根元の濃い土とSNIPER_IMPACT_SCALE_BOOSTで保つ
 const SNIPER_SPLASH_RING_M0     = 6;     // 水しぶきの輪の初期半径(ワールド単位)
 const SNIPER_SPLASH_RING_GROW   = 70;    // 水しぶきの輪が1秒あたり広がる量(ワールド単位/秒)
-const SNIPER_SPLASH_COLUMN_H    = 30;    // 曳光弾の終点(水面の着弾点)からまっすぐ立つ水柱の高さ(**画面px**。
-                                          // ワールド単位で持つと、近距離・高倍率では拡大率がそのまま掛かって
-                                          // 結局60〜150px上の的の顔・体まで浮いて見えた=批評8巡目で一度直した
-                                          // つもりが再発。距離・倍率に関わらず一定の高さにするため画面pxで直接持つ)
-const SNIPER_SPLASH_LAT_PX      = 5;     // 水柱の粒を左右へずらす量の上限(**画面px**。理由は上と同じ)。ほぼ縦一直線に見せる
+const SNIPER_SPLASH_DEBRIS_UP   = 340;   // 水滴が跳ね上がる初速の係数(SNIPER_IMPACT_DEBRIS_Gで落ちる)
 const SNIPER_IMPACT_DEBRIS_G    = 900;   // 土くれ・小石が落ちる重さ(ワールド単位/秒²)
 const SNIPER_CRIT_NUM_SCALE     = 1.5;   // 弱点命中のダメージの数字の大きさ(体への命中の数字に対する倍率)
 // 批評5巡目(縦持ちでレンズの内側に情報が入り込む/弾道が折れる/弱点の印が浮く)への対応で追加
