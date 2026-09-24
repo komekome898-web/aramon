@@ -1242,7 +1242,7 @@ function buildHouses(group, world){
    天井の上面は両脇の尾根の高さへつなぎ(上から見ても尾根が続いて見える)、下面は低いアーチ。
    入口と出口は岩の断面で閉じる。天井は頭上なので当たり判定は持たない(壁の円は world.js)。
    --------------------------------------------------------------------- */
-const TUNNEL_ROOF_LEN = 700, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 18;
+const TUNNEL_ROOF_LEN = 700, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 30;
 /* 洞窟の天井は近道(峠)の局所的な飾りで、方向の目印になる塔・門・アーチ・氷の尖塔とは違い
    遠くから見える意味を持たない。焼き込み(bakeStatic)から外して個別のメッシュのまま残し、
    カメラから離れたら隠す(遠い所からは屋根だけが宙に浮いて見えていた。2026-09-24 vantage)。
@@ -1275,12 +1275,20 @@ function buildTunnels(group){
         const endK2 = endK*endK;
         /* 横方向(u)も同じ理由で沈める。前は幅の端(|u|→1)でも天井が地面よりだいぶ高いままで、
            峠の斜面に薄い板が突き出て乗っているだけに見えた(2026-09-24 tunnelカットの「ひさし板」)。
-           端(峠の始点・終点)と同じ形の落とし方(2乗で中ほどは高いまま、端だけ速く沈める)にする */
-        const wK = Math.max(0, 1 - Math.abs(u));
+           【やり直し】0-|u|の直線で全幅を沈めたら、アーチの内側(|u|<inner/Wc)まで沈んで
+           天井そのものが消え、岩が2枚V字に開いただけになった(2026-09-24 追加周で後退)。
+           板が出ていたのは「アーチの内側から外」なので、そこから外だけを沈める
+           (内側 |u|<inner/Wc は1のまま=前の「板が消える前」の高さを保つ)。 */
+        const uOuter = inner/Wc;
+        const wT = Math.max(0, Math.min(1, (Math.abs(u) - uOuter)/(1 - uOuter)));
+        const wK = 1 - wT*wT*(3 - 2*wT);
         const wK2 = wK*wK;
         const insideH = TUNNEL_CEIL + 60 + 60*(1 - Math.abs(u)) + 50*tileNoise(x*0.01, y*0.01, 16);
-        const crest = ground + Math.max(6, (g0 + insideH - ground)*endK2*wK2 + 6*(1 - endK2*wK2));
-        const yt = Math.max(ground + 6, crest);
+        /* 余白を6→50に広げる。地形パッチ側は別の三角形分割・頂点ノイズで同じ heightAt() を
+           描くため、6だけだと画素単位のかみ合わせで地形の頂が天井よりわずかに高く出て、
+           岩に穴が開いたように奥の緑が透けて見えた(2026-09-24 tunnelの3か所の穴)。 */
+        const crest = ground + Math.max(50, (g0 + insideH - ground)*endK2*wK2 + 50*(1 - endK2*wK2));
+        const yt = Math.max(ground + 50, crest);
         // 下面: 切り通しの中は低いアーチ、外は地面の中へ
         const t = Math.abs(w)/inner;
         const yb = t < 1 ? g0 + TUNNEL_CEIL + 40*Math.sqrt(1 - t*t) : ground - 20;
@@ -2100,7 +2108,7 @@ export function updateExplore(t, cp, ctx){
      混ぜた色)を1つだけ足し、影の中の色をその場の地域色へ寄せる。決め打ちにしないため
      色は毎フレームここで混ぜ直す(環境マップ自体は作り直さない、軽い足し方)。 */
   if(scene){
-    if(!hemi){ hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1.3); scene.add(hemi); }
+    if(!hemi){ hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 11.0); scene.add(hemi); }
     hemi.color.copy(_hz);
     hemi.groundColor.copy(_low);
   }

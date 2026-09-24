@@ -1450,14 +1450,10 @@ function exploreGenWorld(){
   // 何も置かない場所(キャンプ・ボスの巣・ランドマークの周り)
   const clears = [{ x:L.camp.x, y:L.camp.y, r:L.camp.clear }];
   for(const k of EXPLORE_REGION_KEYS){ const n = L.regions[k].nest; clears.push({ x:n.x, y:n.y, r:n.r }); }
-  /* 洞窟の天井(峠のslot+tunnel)の上にも何も置かない。無いと木箱・崩れた石壁のような
-     散らばり物(7)が屋根の上に生成されうる。半径は洞窟の天井の長さ(real3d_explore.js の
-     TUNNEL_ROOF_LEN=700 の半分)+壁の厚みぶん、両ファイルで直すときはそちらも合わせる。 */
-  for(const rd of L.relief.ridges) for(const gp of rd.gaps){
-    if(typeof gp === 'string' || !gp.tunnel) continue;
-    const c = explorePoint(gp.p);
-    clears.push({ x:c.x, y:c.y, r:(gp.half||0) + (gp.blend||0) + 380 });
-  }
+  /* 【洞窟の天井を clears に足すのはやめた】乱数を引く前に候補を減らす形の除外を増やすと、
+     そのぶん後続すべての乱数の並びがずれる(2026-09-24 追加周で氷の結晶・大岩・大木が
+     他所へ動いた不具合の主因)。天井の上に物を置かせないのは道(onPath、7)だけで足りる
+     (峠の道は洞窟の真上を通る)ので、ここへは足さない。 */
   const onPath = (x, y, m)=>{ for(const p of paths){ if(exploreDistToPolyline(x, y, p.pts) < p.w + m) return true; } return false; };
   const inClear = (x, y, m)=>{ for(const c of clears){ if(Math.hypot(x-c.x, y-c.y) < c.r + m) return true; } return false; };
   let complexId = 0;
@@ -1723,12 +1719,18 @@ function exploreGenWorld(){
       const u = rng();
       const radius = R[0] + (R[1]-R[0])*(u*u);
       if(inClear(x, y, radius + 60)) continue;
-      // 道の上には置かない(歩く場所に木箱・岩・木が乗って邪魔にならないように)
-      if(onPath(x, y, radius + 40)) continue;
       // 崖や段丘の縁に置かない(浮いて見える)
       const gr = real3dHeightGrad(x, y);
       if(Math.hypot(gr.gx, gr.gy) > 0.42) continue;
-      if(place(flavor, x, y, radius, rr(0, 10), true)) placed++;
+      /* place()に渡す乱数(見た目の個体差)は、道の上かどうかを見る前に引く。
+         ここより後で捨てると、道の上の候補だけ乱数を1つ引かずに次へ進んでしまい、
+         それ以降ずっと配置がずれていく(2026-09-24 追加周で氷の結晶・大岩・大木・枯れ木が
+         ほかの場所へ動いた不具合)。道の判定自体は乱数を使わないので、判定の位置を
+         動かしても「乱数を引く回数」は変わらない=道でなかった候補は前とまったく同じ結果になる。 */
+      const seed = rr(0, 10);
+      // 道の上には置かない(歩く場所に木箱・岩・木が乗って邪魔にならないように)
+      if(onPath(x, y, radius + 40)) continue;
+      if(place(flavor, x, y, radius, seed, true)) placed++;
     }
   }
 
