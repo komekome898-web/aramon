@@ -1325,10 +1325,12 @@ function drawMonster(e,p){
     ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, sr, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   } else {
-    // 目玉系(スエゾー等)の野生は影を濃く・大きくして接地感を出す(地図のピンに見える=批評指摘)
+    /* 目玉系(スエゾー等)の野生は、影を濃く・大きくすると逆に「刺さったピン」の見え方に
+       近づいた(批評指摘)。生き物らしさは姿勢(伸び+浮き)の方で作るので、影はむしろ
+       控えめにして「浮いている一瞬は影が薄くなる」効き方にする。 */
     const pinLook = game.explore && e.isExploreWild && typeof EXPLORE_PIN_LOOK_WILD !== 'undefined' && EXPLORE_PIN_LOOK_WILD.includes(e.element);
-    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 1.05 : 0.9)*uiMult, e.radius*(pinLook ? 0.46 : 0.4)*uiMult, 0,0,Math.PI*2);
-    ctx.fillStyle = pinLook ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.35)'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 0.72 : 0.9)*uiMult, e.radius*(pinLook ? 0.3 : 0.4)*uiMult, 0,0,Math.PI*2);
+    ctx.fillStyle = pinLook ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.35)'; ctx.fill();
   }
   if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 
@@ -7173,10 +7175,19 @@ let real3dActive = false;
    (=従来の奥行きソートと同じ見え方に戻す)。                                      */
 const MOUNT_OCCLUDE_STEPS = 10;
 let mountOccluders = [];
+/* 探検フィールドの尾根・峡谷・切り通し・峰(exploreGenWorld の block(...,'ridge'|'canyon'|'tunnel'|'peak'))は
+   「登れない所」を測って並べた当たり判定の円で、見た目は地形そのもの(exploreRelief)。
+   円錐として遮蔽に使うと、実際の地形より大きく(高さは常に半径の0.9倍という決め打ち)隠してしまい、
+   通常戦闘中にもボスが尾根の向こうへ消える不具合になっていた(実機・撮影の両方で確認)。
+   この4種はここでは円錐にせず、occludedByMountain 側で地形の高さ(real3dHeightAt)を実測して判定する。
+   キャンプ・ビーコン・家・石壁・巨木などの実在するランドマークは、これまでどおり円錐で遮る
+   (地形の高さに乗っていない実体物なので、円錐の近似のままでよい)。 */
+const EXPLORE_TERRAIN_LANDMARKS = ['ridge', 'canyon', 'tunnel', 'peak'];
 function prepareMountainOccluders(){
   mountOccluders.length = 0;
   if(!real3dActive) return;
   for(const v of volcanoObstacles){
+    if(game.explore && EXPLORE_TERRAIN_LANDMARKS.includes(v.landmark)) continue;
     /* 遮蔽に使う円錐は「見えている山」と同じ形にする。r に v.radius を入れると
        裾を埋めたぶんだけ実物より太い円錐で隠してしまい、山肌の外にいる相手や技まで
        消える。r は地面の高さでの実半径、rise はそこから頂上までの高さ。 */
@@ -7342,7 +7353,27 @@ function obstacleVisibleFromZ(o, z0, z1){
   o._visKey = key; o._visZ = res;
   return res;
 }
+/* 探検の尾根・峡谷・切り通し・峰は円錐にしていない(prepareMountainOccluders)ので、
+   代わりに地形の高さ(real3dHeightAt。groundZAt経由)そのものを実測して視線を切る。
+   通常のリアルマップは地形が起伏だけ(山は別に円錐で持つ)なのでこの経路には来ない
+   ―― 分岐は既存の game.explore 1つに寄せる。 */
+const EXPLORE_OCCLUDE_STEPS = 10;
+const EXPLORE_OCCLUDE_MAX_DIST = 2600;   // これより遠くは霞んで見えないので判定を省く
+const EXPLORE_OCCLUDE_MARGIN = 22;       // 地形のノイズ・目の高さぶんの余裕(際で誤って隠さないため)
+function exploreOccludedByTerrain(x, y, z){
+  const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
+  const dist = Math.hypot(dx, dy);
+  if(dist < 1 || dist > EXPLORE_OCCLUDE_MAX_DIST) return false;
+  for(let i=1;i<=EXPLORE_OCCLUDE_STEPS;i++){
+    const t = i/(EXPLORE_OCCLUDE_STEPS+1);
+    const lineZ = camPos.z + dz*t;
+    const h = groundZAt(camPos.x+dx*t, camPos.y+dy*t);
+    if(h > lineZ + EXPLORE_OCCLUDE_MARGIN) return true;
+  }
+  return false;
+}
 function occludedByMountain(x, y, z){
+  if(game.explore && exploreOccludedByTerrain(x, y, z)) return true;
   if(!mountOccluders.length) return false;
   const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
   const targetDist = Math.hypot(dx, dy);

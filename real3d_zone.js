@@ -169,8 +169,10 @@ const FILL_FRAG = `
     float al = uAlpha * vFade;
     vec3 col = uColor;
     if(uArrows > 0.5){
-      // 突進の帯: 根元から先へ流れる矢印(＞の形)。進む向きが一目で分かる
-      float f = fract(vT*uArrows - abs(vS)*0.9 - uTime*1.6);
+      /* 突進の帯: 根元(ボス)から先(狙う方)へ流れる矢印(＞の形)。進む向きが一目で分かる。
+         abs(vS) の符号を+にすることで、矢印の先端(帯の中心)が先側へ、両肩(帯の端)が
+         根元側へ流れる=矢先がボスの方を指していた不具合(批評指摘)を直してある。 */
+      float f = fract(vT*uArrows + abs(vS)*0.9 - uTime*1.6);
       float arrow = smoothstep(0.0, 0.06, f) * (1.0 - smoothstep(0.3, 0.38, f));
       // 地は暗い赤、矢印は明るい橙白(明暗の差で流れる向きが読める)
       al = vFade * (uAlpha*0.5 + 0.5*arrow);

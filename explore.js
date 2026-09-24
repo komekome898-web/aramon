@@ -893,8 +893,16 @@ function exploreBossBeginAttack(b, def, t, forceKey){
   if(mv.shape === 'fan'){
     const ang = angTo(b, t);
     b.facingAngle = ang;
-    // 予告が尾根を越えて空へ抜けて見える問題への対策(批評指摘): 視線が切れる距離までで止める
-    const sightR = exploreTerrainSightRange(b.x, b.y, b.z||0, ang, mv.range);
+    /* 予告が尾根を越えて空へ抜けて見える問題への対策(批評指摘): 視線が切れる距離までで止める。
+       中心だけで測ると、扇の片側の縁がその内側で尾根に当たっていても伸びたままになり、
+       描画側(3D)の深度で切られて「欠けて」見えた。両端の縁でも測り、狭い方を扇全体に使う
+       (どの辺も、実際に地面が見えている範囲の内側にしか描かれないことを保証する)。 */
+    const half = (mv.fanAngleDeg*Math.PI/180)/2;
+    const sightR = Math.min(
+      exploreTerrainSightRange(b.x, b.y, b.z||0, ang, mv.range),
+      exploreTerrainSightRange(b.x, b.y, b.z||0, ang - half, mv.range),
+      exploreTerrainSightRange(b.x, b.y, b.z||0, ang + half, mv.range)
+    );
     marks.push({ x:b.x, y:b.y, r:Math.min(mv.range, sightR) + b.radius, angle:ang, fanDeg:mv.fanAngleDeg, fireAt:now+tele });
   } else if(mv.shape === 'circle'){
     marks.push({ x:b.x, y:b.y, r:mv.range + b.radius, fireAt:now+tele });
@@ -1350,12 +1358,14 @@ function exploreWeakPop(target, dmg, source){
   if(document.body.classList.contains('sniper-ads') || (typeof sniperView === 'object' && sniperView && sniperView.ads)) return;
   // 本体を一瞬白く光らせて数字と組にする(狙撃は当たった点だけ光らせるのでここを通らない)
   target.exWeakFlashAt = exploreState.rawClock;
-  // 頭に火花(黄と白)
+  /* 頭に火花(黄と白)。以前はここが大きく明るすぎて、顔の位置に重なると
+     輪郭が見えなくなるほどの白い塊になっていた(批評指摘。本体の白フラッシュを
+     絞ってもここが支配的で改善しなかった)。粒を小さく・数を減らし、明るさも抑える。 */
   const fx = exploreFxLayer();
   if(fx){
     const hz = (target.z||0) + exploreBodyHeight(target)*0.85;
-    fx.burst({ x:target.x, y:target.y, z:hz, count:18, speed:380, elev:0.3, elevSpread:1.4, r:1, g:0.86, b:0.3, bright:1.3, life:0.45, size0:9, stretch:0.6 });
-    fx.burst({ x:target.x, y:target.y, z:hz, count:8, speed:220, elev:0.5, elevSpread:1.2, r:1, g:1, b:1, bright:1.4, life:0.3, size0:12 });
+    fx.burst({ x:target.x, y:target.y, z:hz, count:14, speed:380, elev:0.3, elevSpread:1.4, r:1, g:0.86, b:0.3, bright:0.9, life:0.4, size0:6, stretch:0.6 });
+    fx.burst({ x:target.x, y:target.y, z:hz, count:5, speed:220, elev:0.5, elevSpread:1.2, r:1, g:1, b:1, bright:0.85, life:0.26, size0:6 });
   }
   exploreState.pops.push({ dmg: Math.round(dmg), raw0: exploreState.rawClock, id: target.id });
   if(exploreState.pops.length > 3) exploreState.pops.shift();
@@ -1756,7 +1766,13 @@ function exploreFxRoar(b, kind){
   const def = exploreBossDef(b);
   const c = exploreRgb(kind === 'rage' ? '#ff3a2a' : (def ? def.color : '#fff1d0'));
   const head = (b.z||0) + exploreBodyHeight(b)*0.8;
-  for(let i=0; i<3; i++) fx.ring({ x:b.x, y:b.y, r0:b.radius*1.1, r1:b.radius*(2.6 + i*1.1), life:0.7 + i*0.25, color:c, width:12, bright:0.55 });
+  /* fx.ring は地面の高さへ1点ずつ沿わせる共通の輪(他の技とも共有)なので、
+     急な斜面では輪の遠い側だけ大きく持ち上がり「V字に地面を這う」ように見えていた
+     (批評指摘)。咆哮はここだけ、地形に沿わせない「ボスの周りに留まる粒子の輪」に置き換える。 */
+  for(let i=0; i<3; i++){
+    fx.burst({ x:b.x, y:b.y, z:(b.z||0) + 8 + i*6, count:14, speed:220 + i*60, elev:0.02, elevSpread:0.12,
+               jitter:b.radius*0.3, r:c[0], g:c[1], b:c[2], bright:0.65, life:0.5 + i*0.15, size0:20, az:-30, hot:0 });
+  }
   if(fx.distort) for(let i=0; i<3; i++) fx.distort({ x:b.x, y:b.y, z:head, radius:b.radius*(2.2 + i), life:0.6 + i*0.2, strength:0.02, kind:'shock' });
   fx.burst({ x:b.x, y:b.y, z:(b.z||0) + 10, count:26, speed:260, elev:0.25, elevSpread:0.3, jitter:b.radius,
              r:0.55, g:0.48, b:0.40, bright:0.6, life:1.1, size0:34, az:-60, hot:0, turb:30 });
@@ -1854,7 +1870,22 @@ function exploreDrawMonsterUnder(e, uiMult, p){
   if(e.isPlayer){ exploreDrawGearAura(e, p); return; }   // 自分: 着けている装備のセットの色のオーラと足元の紋章(explore_loot.js)
   // 足元の輪は気づいて向かってくる個体だけ(全員に付けると盤上の駒に見える=批評指摘)
   if(e.isExploreWild && p && (e.exState === 'chase' || e.exState === 'alert')) exploreDrawFootRing(e, p);
-  if(!e.isExploreBoss || e.exState === 'dying' || e.exState === 'stagger' || e.exState === 'sleep') return;
+  if(e.isExploreBoss && e.exState === 'dying'){
+    // 崩れ落ちる影。横倒しになった体の向き(tilt)に合わせて伸ばす(丸い影のままだと板が浮いて見える)
+    const pose = exploreComputePose(e) || { tilt:0 };
+    const fy = exploreFootY(e);
+    ctx.save();
+    ctx.translate(0, fy*0.7);
+    ctx.rotate(pose.tilt || 0);
+    const sr = e.radius*1.15;
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sr);
+    g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(0.7, 'rgba(0,0,0,0.28)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(0, 0, sr, sr*0.36, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if(!e.isExploreBoss || e.exState === 'stagger' || e.exState === 'sleep') return;
   const def = exploreBossDef(e);
   const img = (typeof getDisplayImage==='function') ? getDisplayImage(e) : null;
   if(!img) return;
@@ -1885,8 +1916,9 @@ function exploreDrawMonsterUnder(e, uiMult, p){
     // 太い赤黒の光: 外側ほど暗く大きく重ね、内側に明るい赤(体の色は変えない)
     draw(exploreTintSprite(spr, '#1a0000'), 1.2 + 0.03*Math.sin(matchTime*9), 0.5, 'source-over');
     draw(exploreTintSprite(spr, '#5a0000'), 1.13, 0.6, 'source-over');
-    draw(exploreTintSprite(spr, '#ff2410'), 1.08, 0.7*pulse, 'lighter');
-    draw(exploreTintSprite(spr, '#ff6a2a'), 1.04, 0.4*pulse, 'lighter');
+    // 弱点ヒットの白フラッシュ・火花と重なると顔の周りがさらに明るくなりすぎていた(批評指摘)ので少し弱める
+    draw(exploreTintSprite(spr, '#ff2410'), 1.08, 0.55*pulse, 'lighter');
+    draw(exploreTintSprite(spr, '#ff6a2a'), 1.04, 0.3*pulse, 'lighter');
   } else if(def){
     // 常時: ボスの色の輪郭の光(同じスキンを着たプレイヤーの「巨大な自分」に見せない)
     draw(exploreTintSprite(spr, def.color), 1.05, 0.40 + 0.08*Math.sin(matchTime*2.2), 'lighter');
@@ -1980,7 +2012,7 @@ function exploreDrawMonsterTint(e, img, L){
   if(wf >= 0 && wf < 0.12 && typeof whiteMaskFor === 'function'){
     // 純白で上塗り(加算だと下の色味が残って桃色がかって見えた)
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 0.22*(1 - wf/0.12);
+    ctx.globalAlpha = 0.14*(1 - wf/0.12);
     ctx.drawImage(whiteMaskFor(spr), -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
   }
   // 溜めの間は体の色が脈打つ(放つ直前ほど速く・強く)
@@ -2153,15 +2185,15 @@ function exploreComputePose(e){
       bob = -(0.1 + Math.abs(Math.sin(t*7))*0.06)*r*w;   // 打たれて体が浮く
       shx = Math.sin(t*31)*r*0.035*w;                           // 打たれて震える
     } else if(st === 'dying'){
-      /* 崩れ落ち: よろめいて(横へ小さく揺れる)→膝をつくように沈む(縦に潰れつつ下がる)→(土煙は
-         exploreUpdateBosses が別に出す)。以前は板を回して倒すだけだったため紙の切り抜きに見えた
-         (批評指摘)。全身を横倒しにする大きな回転は使わず、縮み(潰れ)だけで沈む重さを見せる。 */
-      const stumble = clamp(t/0.25, 0, 1);
-      const sink = clamp((t - 0.15)/0.65, 0, 1), sk = sink*sink;
-      tilt = sign*0.22*Math.sin(stumble*Math.PI)*(1 - sink*0.65);   // よろめきは沈むにつれ収まる
-      sy = 1 - 0.72*sk;   // 膝をつくように縦へ大きく潰れて沈む
-      sx = 1 + 0.24*sk;   // 潰れたぶん横へ広がる(倒れるのではなく崩れる重さ)
-      // 潰れた絵の一番下が地面(足元の高さ)に乗るよう持ち上げる(翼の先が地面へ潜らないように)
+      /* 崩れ落ち: 横倒し(体の軸を90°近くまで倒し、地面に沿わせる)+着地の弾み+わずかな潰れ。
+         回転だけ(1周目)は紙の切り抜きに、潰しだけ(2周目)は立ち姿を押しつぶした板に見えた
+         (どちらも批評指摘)。回転と軽い潰しを両方使い、着地でわずかに弾んで重さを出す。
+         影は exploreDrawMonsterUnder が体の向きに合わせて別に描く。 */
+      const k = clamp(t/0.7, 0, 1), ek = 1 - (1-k)*(1-k);
+      const land = t > 0.7 ? Math.exp(-(t-0.7)*8)*Math.sin((t-0.7)*24)*0.04 : 0;
+      tilt = sign*(1.48*ek + land);   // 90°近くまで倒す(1.48rad≈85°)
+      sy = 1 - 0.16*ek; sx = 1 + 0.12*ek;   // 倒れる重さで少しだけ潰れる(潰しは主役にしない)
+      // 倒した絵の一番下が地面(足元の高さ)に乗るよう持ち上げる(翼の先が地面へ潜らないように)
       bob = -exploreLowestAfterPose(e, sx, sy, tilt);
       alpha = clamp((e.exStateUntil - now)/0.7, 0, 1);
     } else if(st === 'sleep'){
@@ -2183,12 +2215,14 @@ function exploreComputePose(e){
       // 後ろ向きの歩行コマが無い種(正面の1枚絵)は、逃げる向きへ左右反転して「背を向けて駆ける」横顔にする
       if(typeof WALK_ANIM === 'undefined' || !WALK_ANIM[e.element]) sx = (lat >= 0 ? -1 : 1);
     } else if(EXPLORE_PIN_LOOK_WILD.includes(e.element) && (st === 'wander' || st === 'watch') && (e.exSpd || 0) < 12){
-      // 目玉系はうろつき・見つめ中は途切れず跳ね続ける(止まっている一瞬が無いようにする)
-      const ph = (now + e.id*0.53) % 1.5;
-      const hop = Math.abs(Math.sin(ph/1.5*Math.PI));
-      sy = 1 - 0.18*hop; sx = 1 + 0.09*hop;
-      bob = -hop*r*0.22;
-      tilt = 0.05*Math.sin(now*2.2 + e.id);
+      /* 目玉系はうろつき・見つめ中、途切れず「縦に伸びて少し浮く」瞬間を繰り返す(止まって
+         見えない)。前回は縮めて跳ねさせたが、影も濃く・大きくした結果「刺さったピン」に
+         近い見え方になった(批評指摘)ので、縮めではなく伸び+浮きにし、影は控えめに戻す。 */
+      const ph = (now + e.id*0.53) % 1.2;
+      const rise = Math.sin(ph/1.2*Math.PI);   // 0→1→0
+      sy = 1 + 0.16*rise; sx = 1 - 0.07*rise;
+      bob = -rise*r*0.16;
+      tilt = 0.04*Math.sin(now*2.2 + e.id);
     } else if(st === 'wander' && (e.exSpd || 0) < 12){
       const ph = (now + e.id*0.37) % 3.4;
       const down = ph < 1.4 ? Math.sin(ph/1.4*Math.PI) : 0;
@@ -2349,9 +2383,11 @@ function exploreDrawScreen(){
   exploreHudFrame();          // 方位バー・全体地図(explore_hud.js。DOMのキャンバスへ描く)
   exploreDrawWeakPops();
   exploreDrawMaterialFx();
-  exploreDrawRoarText();
   exploreDrawBossHud();
+  // 名前の札(plate)を咆哮の文字より先に描く。咆哮の文字側がこの札の矩形を避けられるように
+  // する(先に文字を描くと札が後から覆って「文字が帯の裏に隠れる」ことになっていた=批評指摘)
   exploreDrawBanners();
+  exploreDrawRoarText();
   exploreCineDraw();   // 出発・力尽き・終了の全画面の札(explore_loot.js)
 }
 // 地面に1点ずつ投影した影の円
@@ -2653,6 +2689,8 @@ function exploreDrawMaterialFx(){
 // 咆哮の文字。ボスの矩形の右(入らなければ左、それも無理なら足元の下)に出して震わせる
 // 咆哮の文字の今の画面上の矩形(小さい札=怒り等がこの上に重なって隠さないよう exploreDrawSmallBanner が読む)
 let _exploreRoarBoxes = [];
+// 名前の札(plate)の今の画面上の矩形(咆哮の文字がこれに重ならないよう exploreDrawRoarText が読む)
+let _explorePlateBoxes = [];
 function exploreDrawRoarText(){
   _exploreRoarBoxes = [];
   // 狙撃スコープを覗いている間は出さない(倍率で大きくなった文字がスコープの表示に重なり、窓の縁で切れる。狙撃担当)
@@ -2667,7 +2705,8 @@ function exploreDrawRoarText(){
     const rage = b.exRoarKind === 'rage';
     const text = rage ? 'ガアァァッ!!' : 'グオオオオッ!!';
     const pop = age < 0.15 ? 1.4 - age/0.15*0.4 : 1;
-    const blocks = exploreHudObstacles();
+    // 名前の札(plate)にも重ねない(重ねると札が後で覆って文字の下半分が暗く隠れて見えた=批評指摘)
+    const blocks = exploreHudObstacles().concat(_explorePlateBoxes);
     const pr = explorePlayerRect();
     const A = EXPLORE_AIM_CLEAR;
     ctx.save();
@@ -2745,6 +2784,7 @@ function exploreBossHudBottom(){
 function exploreDrawBossHud(){ exploreHudBossBand(); }
 // 画面の札(名前の札・怒り・部位破壊・逃走・討伐完了)
 function exploreDrawBanners(){
+  _explorePlateBoxes = [];
   const list = exploreState.banners;
   // 討伐完了はスローモーション中も普段の速さで動く(実時間に近い rawClock で測る)
   const ageOf = (bn)=> bn.kind === 'hunt' ? exploreState.rawClock - bn.raw0 : matchTime - bn.t0;
@@ -2845,6 +2885,8 @@ function exploreDrawBigBanner(bn, age, a){
     const x0 = Math.max(18, viewW*0.05) - slide*80;
     // 左の自分の欄・左下のスティックの間。ボスに重なるならボスの下、それも無理なら上寄り
     const cy = exploreBannerPick([viewH*0.54, r ? r.y + r.h + bandH/2 + 6 : viewH*0.54, viewH*0.42], bandW, bandH, bandW/2, r);
+    // 咆哮の文字がこの札に重ならないよう覚えておく(exploreDrawRoarText が読む。批評指摘)
+    _explorePlateBoxes.push({ x:0, y:cy - bandH/2, w:bandW, h:bandH });
     const g = ctx.createLinearGradient(0, 0, bandW, 0);
     g.addColorStop(0, 'rgba(6,6,10,0.80)'); g.addColorStop(0.6, 'rgba(6,6,10,0.55)'); g.addColorStop(1, 'rgba(6,6,10,0)');
     ctx.fillStyle = g;
