@@ -305,7 +305,10 @@ const TEX_STYLES = {
         // 振幅は他のスタイルの半分に留め、残りは色み(青)で見せる
         out[0] = 0.84 + (s1-0.5)*0.075 + (s2-0.5)*0.045 + spark*0.12 + (g-0.5)*0.05 - groove*0.03;
         out[1] = -(s1-0.5)*1.25 - (s2-0.5)*0.5;   // 窪みは空を映して青く、稜は白く
-        out[2] = -groove*0.55 - (s2-0.5)*0.25;
+        // out[2](法線・粗さ・AOの元)は前は0.55/0.25で、風筋のV字(groove)がそのまま
+        // 深い凹凸になり、坂に貼ると縦に伸びたハイライトの筋に見えた(2026-09-24)。
+        // 色み(out[1])はそのまま残し、凹凸だけ弱める(見た目の風筋は色で分かる)
+        out[2] = -groove*0.16 - (s2-0.5)*0.08;
       };
     },
   },
@@ -764,7 +767,7 @@ uniform vec4 uExSnowAlt;
 uniform vec3 uExSnowCol;
 uniform vec3 uExSteep[4];
 vec4 exL;
-float exRk, exSn;
+float exRk, exSn, exSlopeG;
 vec3 exRockT;
 vec3 exRegion(float L, float w, vec3 ta, vec3 tb){
   vec3 t = (w > 0.0) ? ta : tb;
@@ -785,25 +788,46 @@ const EX_MAP_CHUNK = `
            + exRegion(exL.g, exT.g, uExTA[1], uExTB[1]) * vExW.y
            + exRegion(exL.b, exT.b, uExTA[2], uExTB[2]) * vExW.z
            + exRegion(exL.a, exT.a, uExTA[3], uExTB[3]) * vExW.w;
+  /* 地面のタイル(map)は上から見た平地むけに、風の吹き筋など**縦横比の違う**模様を
+     焼き込んでいる(雪=u方向2.5・v方向15単位)。平地では正しく見えるが、この模様のまま
+     急斜面(崖・急な丘)に貼ると、筋の向きが画面の縦とほぼ揃って「縦に引き伸ばした模様」に
+     見える(2026-09-24 saddle/frost/canyon)。急斜面ではLを均してから混ぜ、筋を弱める */
+  {
+    float exFlat = 1.0 - smoothstep(0.10, 0.34, 1.0 - clamp(vExN.y, 0.0, 1.0));
+    if(exFlat < 0.999){
+      vec3 exCFlat = exRegion(0.86, exT.r, uExTA[0], uExTB[0]) * vExW.x
+                   + exRegion(0.86, exT.g, uExTA[1], uExTB[1]) * vExW.y
+                   + exRegion(0.86, exT.b, uExTA[2], uExTB[2]) * vExW.z
+                   + exRegion(0.86, exT.a, uExTA[3], uExTB[3]) * vExW.w;
+      exC = mix(exCFlat, exC, exFlat);
+    }
+  }
   /* 急斜面(崖・尾根の岩肌)と雪は**画素ごと**に決める(頂点色で塗ると、粗い三角形の
      境目がそのまま出てノコギリ歯の模様になった)。傾き+低周波ノイズで境目を揺らす。
      岩は横から投影した岩の粒(溶岩の殻のチャンネル)に水平の地層の縞を足す(三方向投影の横2面) */
   {
     vec3 an = abs(vExN);
-    float exNz = texture2D(uExMacro, vExP.xz * 0.00047).r - 0.5;
+    // 大小2つのノイズを混ぜる(1つだけだと13000単位に1回しか揺れず、境目が等高線のまま=点線に見えた)
+    float exNzLo = texture2D(uExMacro, vExP.xz * 0.00085).r - 0.5;
+    float exNzHi = texture2D(uExMacro, vExP.xz * 0.0052 + 11.0).r - 0.5;
+    float exNz = exNzLo*0.7 + exNzHi*0.3;
     float exSlope = 1.0 - clamp(vExN.y, 0.0, 1.0);
-    exRk = smoothstep(0.075, 0.30, exSlope + exNz * 0.09);
+    exSlopeG = exSlope;   // EX_NORMAL_CHUNK(このあと実行される)へ渡す
+    // 緩い丘(exploreRelief最大傾斜0.17≈exSlope0.06)では岩を出さない。本物の崖・尾根だけ岩肌にする
+    exRk = smoothstep(0.38, 0.78, exSlope + exNz * 0.14);
     exRockT = vec3(0.0);
     if(exRk > 0.002){   // 岩の粒は岩肌の所だけ読む(平地では読まない)
+      // 面の向きで(Z,Y)/(X,Y)を選ぶ。法線がX方向を向く壁=面はZ-Y平面に沿うのでZ,Yで投影する
+      // (取り違えると、動かない片方の軸だけで縦に引き伸ばした模様になる。canyon/frostの縦筋の原因)
       float rx = texture2D(map, vExP.zy / 150.0).b, rz = texture2D(map, vExP.xy / 150.0).b;
-      float rk = mix(rz, rx, an.x / (an.x + an.z + 1e-4));
-      float band = 0.84 + 0.16*sin(vExP.y*0.058 + exNz*7.0);
+      float rk = mix(rx, rz, an.x / (an.x + an.z + 1e-4));
+      float band = 0.90 + 0.10*sin(vExP.y*0.058 + exNzLo*5.0) * (0.4 + 0.6*exNzHi);
       exRockT = vec3(pow(rk, 2.2)) * band * 1.18;
     }
     float exAlt = dot(vExW, uExSnowAlt);
-    // 雪の境目は広めにぼかし、低周波のノイズで大きく揺らす(三角形の形が境目に出ないように)
-    exSn = smoothstep(exAlt, exAlt + 320.0, vExP.y + exNz * 420.0)
-         * (1.0 - smoothstep(0.06, 0.36, exSlope + exNz * 0.22));
+    // 雪の境目は広めにぼかし、低周波のノイズで大きく揺らす(三角形の形にも、地域の境の等高線にもならないように)
+    exSn = smoothstep(exAlt - 260.0, exAlt + 520.0, vExP.y + exNz * 640.0)
+         * (1.0 - smoothstep(0.30, 0.68, exSlope + exNz * 0.20));
   }
   diffuseColor.rgb *= exC;
   vec2 mUv = vec2( vMapUv.x*0.7648 - vMapUv.y*0.6442, vMapUv.x*0.6442 + vMapUv.y*0.7648 ) * uExMacroScale;
@@ -820,6 +844,12 @@ const EX_NORMAL_CHUNK = `
   vec4 exNb = texture2D( uExNB, vNormalMapUv );
   vec2 exXY = (exNa.rg*2.0 - 1.0)*vExW.x + (exNa.ba*2.0 - 1.0)*vExW.y
             + (exNb.rg*2.0 - 1.0)*vExW.z + (exNb.ba*2.0 - 1.0)*vExW.w;
+  // 法線マップは常に真上からのUV(vNormalMapUv)で作っているので、世界の傾き(exSlopeG)
+  // ではなく「今のカメラから見てその面がどれだけ斜めか」で強さを落とす必要がある
+  // (傾きが緩い丘でも、近くからほぼ横に見ると同じ縞が出た。2026-09-24)。
+  // normalはここではまだ「幾何形状そのものの法線」(このチャンクが書き換える前)
+  float exFace = abs(dot(normalize(vViewPosition), normal));
+  exXY *= smoothstep(0.05, 0.45, exFace);
   vec3 mapN = normalize( vec3( exXY * normalScale, 1.0 ) );
   normal = normalize( tbn * mapN );
 }
@@ -829,7 +859,11 @@ function buildExploreMaterial(){
   const m = buildExploreMaps();
   const mat = new THREE.MeshStandardMaterial({
     vertexColors:true, map: m.lum, normalMap: m.nA,
-    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN, R3.theme.bump*NORMAL_GAIN),
+    // 探検フィールドは通常マップより起伏が急な地形(尾根・崖・段丘)が多く、真上からのUVで
+    // 作った法線マップをそのまま貼ると、斜めから見た面に縦に伸びたハイライトの縞が出た
+    // (2026-09-24。特に雪の風筋パターンで目立った)。EX_NORMAL_CHUNK の視線角フェードと
+    // 合わせ、地の強さそのものも通常マップの0.15倍に抑える
+    normalScale: new THREE.Vector2(R3.theme.bump*NORMAL_GAIN*0.15, R3.theme.bump*NORMAL_GAIN*0.15),
     metalness:0.0, roughness:1.0, envMapIntensity: ENV_INTENSITY, dithering:true,
   });
   const uni = {
@@ -1236,12 +1270,14 @@ export function buildFarTerrain(){
       .replace('#include <color_fragment>', [
         '#include <color_fragment>',
         'diffuseColor.rgb *= mix(vec3(1.0), texture2D(uFarMacro, vFarW.xz / 2400.0).rgb * 2.0, 0.55);',
-        // 近景(EX_MAP_CHUNK)と同じ決め方: 傾き+低周波ノイズで岩と雪の境目を揺らす
-        'float fNz = texture2D(uFarMacro, vFarW.xz * 0.00047).r - 0.5;',
+        // 近景(EX_MAP_CHUNK)と同じ決め方(しきい値も同じ値。両方直す)。傾き+2段のノイズで岩と雪の境目を揺らす
+        'float fNzLo = texture2D(uFarMacro, vFarW.xz * 0.00085).r - 0.5;',
+        'float fNzHi = texture2D(uFarMacro, vFarW.xz * 0.0052 + 11.0).r - 0.5;',
+        'float fNz = fNzLo*0.7 + fNzHi*0.3;',
         'float fSl = 1.0 - clamp(normalize(vFarN).y, 0.0, 1.0);',
-        'float fBand = 0.86 + 0.14*sin(vFarW.y*0.058 + fNz*7.0);',
-        'diffuseColor.rgb = mix(diffuseColor.rgb, vFarRock.rgb * fBand, smoothstep(0.075, 0.30, fSl + fNz*0.09));',
-        'float fSn = smoothstep(vFarRock.a, vFarRock.a + 320.0, vFarW.y + fNz*420.0) * (1.0 - smoothstep(0.06, 0.36, fSl + fNz*0.22));',
+        'float fBand = 0.90 + 0.10*sin(vFarW.y*0.058 + fNzLo*5.0) * (0.4 + 0.6*fNzHi);',
+        'diffuseColor.rgb = mix(diffuseColor.rgb, vFarRock.rgb * fBand, smoothstep(0.38, 0.78, fSl + fNz*0.14));',
+        'float fSn = smoothstep(vFarRock.a - 260.0, vFarRock.a + 520.0, vFarW.y + fNz*640.0) * (1.0 - smoothstep(0.30, 0.68, fSl + fNz*0.20));',
         'diffuseColor.rgb = mix(diffuseColor.rgb, uFarSnow, fSn);',
       ].join('\n'));
   };

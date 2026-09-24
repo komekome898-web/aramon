@@ -2,6 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<!-- このページは tools/ 配下から配るので、data.js などが img.src='monsters/x.png' のような
+     相対パスで読む物は、何もしないと「今のページのURL(/tools/)」基準で解決されて
+     /tools/monsters/x.png という無い場所を読みにいく(撮影のたびに約300件の404が出ていた)。
+     本番(index.htmlはルート直下)では起きない、この撮影ページだけの事情。
+     <base>でルート基準に直す。下のスクリプトの相対パスも合わせてルート基準へ書き換え済み。 -->
+<base href="/">
 <title>real3d probe</title>
 <style>
   html,body{margin:0;padding:0;background:#000;overflow:hidden}
@@ -18,8 +24,8 @@
 <canvas id="glCanvas"></canvas>
 <!-- world.js が起動時に触るDOM。2D描画は使わないが、無いと読み込みで落ちる -->
 <div id="appRoot"><canvas id="gameCanvas" class="hidden"></canvas><canvas id="minimapCanvas" class="hidden"></canvas></div>
-<script src="../data.js"></script>
-<script src="../world.js"></script>
+<script src="data.js"></script>
+<script src="world.js"></script>
 <script>
 /* ---- 撮影用のセットアップ(classic script なので world.js の変数へ直接触れる) ---- */
 (function(){
@@ -234,7 +240,7 @@
 })();
 </script>
 <script type="module">
-import './../real3d.js';
+import './real3d.js';
 window.__probeModuleReady = true;
 </script>
 </body>

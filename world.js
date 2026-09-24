@@ -1686,6 +1686,11 @@ function exploreGenWorld(){
     }
   }
 
+  /* ---- 6.5) 峡谷の床に転がる大きな崩れ岩(一本道に見えないよう、通り道を細かく分ける目印にもなる) ---- */
+  for(const b of (R.canyon.boulders || [])){
+    place('basalt', b[0], b[1], b[2]*rr(0.92, 1.08), rr(0, 10), true);
+  }
+
   /* ---- 7) 地域ごとに岩・木を散らす。木は林(かたまり)にする ---- */
   const grove = (x, y)=>{
     // 大きなうねりの値ノイズ代わり(林と草地が入れ替わる)
@@ -1756,7 +1761,8 @@ function exploreGenWorld(){
       if(exploreRegionKeyAt(x, y) !== G.region) continue;
       const f = rr(G.foot[0], G.foot[1]);
       if(x < 400 || y < 400 || x > WORLD.w-400 || y > WORLD.h-400) continue;
-      if(isOnHazard(x, y, f + 80) || inClear(x, y, f + 120) || onPath(x, y, f + 60)) continue;
+      const cc = G.canopyClr || 0;
+      if(isOnHazard(x, y, f + 80) || inClear(x, y, f + cc) || onPath(x, y, f + Math.max(60, cc*0.7))) continue;
       if(isNearRock(x, y, f + 30)) continue;
       if(oasisZones.some(z=> Math.hypot(x-z.x, y-z.y) < z.radius*1.2 + f)) continue;
       if(trees.some(t=> Math.hypot(x-t.x, y-t.y) < G.minGap)) continue;

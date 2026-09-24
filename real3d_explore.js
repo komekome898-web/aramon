@@ -1152,11 +1152,27 @@ function houseGeo(hs){
     const beam = chipBox(w + 16, 12, 14, cz*5, 0.04); beam.translate(0, h, cz*d/2); wood.push(beam);
     const beam2 = chipBox(w + 12, 10, 12, cz*7, 0.04); beam2.translate(0, baseH, cz*d/2 + cz*4); wood.push(beam2);
   }
-  const win = (x, y, ww, hh, z)=>{ const q = new THREE.PlaneGeometry(ww, hh); q.translate(x, y, z); dark.push(q); };
-  win(0, baseH*0.45, 38, baseH*0.9, d/2 + 10);
-  win(-w*0.30, baseH + (h - baseH)*0.5, 30, 30, d/2 + 6);
-  win( w*0.30, baseH + (h - baseH)*0.5, 30, 30, d/2 + 6);
-  { const q = new THREE.PlaneGeometry(30, 30); q.rotateY(Math.PI); q.translate(w*0.1, baseH + (h - baseH)*0.5, -d/2 - 6); dark.push(q); }
+  // 窓: 暗い凹みだけだと黒い穴に見えたので、木の枠+開いた鎧戸(片開き2枚)を付ける。
+  // faceRot=0は+z面のまま、Math.PIは-z面(裏側。板を裏返す)
+  const win = (x, y, ww, hh, z, faceRot)=>{
+    const q = new THREE.PlaneGeometry(ww, hh); if(faceRot) q.rotateY(faceRot); q.translate(x, y, z); dark.push(q);
+    const fr = 5, zf = z + (faceRot ? -6 : 6);
+    for(const [fx, fy, fw, fh] of [[0, hh/2+fr/2, ww+fr*2, fr], [0, -hh/2-fr/2, ww+fr*2, fr], [ww/2+fr/2, 0, fr, hh], [-ww/2-fr/2, 0, fr, hh]]){
+      const b = new THREE.BoxGeometry(fw, fh, 5); b.translate(x+fx, y+fy, zf); wood.push(b);
+    }
+    // 鎧戸(左右2枚。すこし開いて壁から離す=平らな板が壁に貼り付いただけに見えないように)
+    for(const sx of [-1, 1]){
+      const sh = new THREE.BoxGeometry(ww*0.62, hh*0.94, 4);
+      sh.translate(sx*ww*0.31, 0, 0);
+      sh.rotateY(sx*0.75*(faceRot ? -1 : 1));
+      sh.translate(x + sx*(ww*0.5 + 2), y, zf + sx*(faceRot ? -8 : 8));
+      wood.push(sh);
+    }
+  };
+  win(0, baseH*0.45, 38, baseH*0.9, d/2 + 10, 0);
+  win(-w*0.30, baseH + (h - baseH)*0.5, 30, 30, d/2 + 6, 0);
+  win( w*0.30, baseH + (h - baseH)*0.5, 30, 30, d/2 + 6, 0);
+  win(w*0.1, baseH + (h - baseH)*0.5, 30, 30, -d/2 - 6, Math.PI);
   const rise = d*0.55, over = 22;
   const slope = Math.hypot(d/2 + over, rise);
   for(const sg of [1, -1]){
@@ -1202,7 +1218,7 @@ function buildHouses(group, world){
    天井の上面は両脇の尾根の高さへつなぎ(上から見ても尾根が続いて見える)、下面は低いアーチ。
    入口と出口は岩の断面で閉じる。天井は頭上なので当たり判定は持たない(壁の円は world.js)。
    --------------------------------------------------------------------- */
-const TUNNEL_ROOF_LEN = 560, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 18;
+const TUNNEL_ROOF_LEN = 700, TUNNEL_CEIL = 230, TUNNEL_STEP = 40, TUNNEL_U = 18;
 function buildTunnels(group){
   const lay = L(), Rf = lay.relief;
   const geos = [];
@@ -1220,10 +1236,14 @@ function buildTunnels(group){
         const u = -1 + 2*j/TUNNEL_U, w = u*Wc;
         const x = q[0] + ax*a + nx*w, y = q[1] + ay*a + ny*w;
         const ground = heightAt(x, y);
-        // 上面: 両脇は尾根の地面へ埋め、真ん中は天井の厚み(低い所でも尾根の稜線らしく盛る)
-        // 入口と出口へ向けて上面を下げ、なだらかな岩の塊にする(箱の断面にしない)
-        const endK = Math.min(1, (Math.min(i, na - i)*TUNNEL_STEP)/180);
-        const crest = g0 + TUNNEL_CEIL + (60 + 120*endK) + 60*(1 - Math.abs(u))*endK + 50*tileNoise(x*0.01, y*0.01, 16);
+        // 上面: 両脇は尾根の地面へ埋め、真ん中は天井の厚み(低い所でも尾根の稜線らしく盛る)。
+        // 入口と出口(メッシュの端)では**その場の地面の高さ(ground)へ実際に触れる**まで下げる。
+        // g0(峠の中心の高さ)基準のままだと端でも地面よりだいぶ高い所で切れ、丘の上に岩塊が
+        // 浮いて乗っているだけに見えた(継ぎ目が無い)。endK^2で中ほどは高いまま保ち、端だけ速く沈める
+        const endK = Math.min(1, (Math.min(i, na - i)*TUNNEL_STEP)/260);
+        const endK2 = endK*endK;
+        const insideH = TUNNEL_CEIL + 60 + 60*(1 - Math.abs(u)) + 50*tileNoise(x*0.01, y*0.01, 16);
+        const crest = ground + Math.max(6, (g0 + insideH - ground)*endK2 + 6*(1 - endK2));
         const yt = Math.max(ground + 6, crest);
         // 下面: 切り通しの中は低いアーチ、外は地面の中へ
         const t = Math.abs(w)/inner;
@@ -1266,6 +1286,21 @@ function buildTunnels(group){
   for(let i=0;i<pos.count;i++){ y0 = Math.min(y0, pos.getY(i)); y1 = Math.max(y1, pos.getY(i)); }
   paintGeo(geo, new THREE.Color(0x4a4438), new THREE.Color(0x8a826c), y0, y1, 0.35);
   cavityShade(geo, 0.4, 0.3);
+  // 丘との継ぎ目を土・草へなじませる(地面すれすれの所ほど、その場の地域の草色を混ぜる。
+  // 岩がそのまま丘に乗っただけに見えないように)。天井の内側(見上げる面)は混ぜない
+  {
+    const col = geo.attributes.color, grassList = exploreRegionColors('grass'), dirt = new THREE.Color(0x5a4a34), gc = new THREE.Color(), c = new THREE.Color();
+    for(let i=0;i<pos.count;i++){
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ny = geo.attributes.normal.getY(i);
+      if(ny < 0.2) continue;   // 下向き(洞窟の内側の天井)は土を乗せない
+      const gz = heightAt(x, z), hAbove = Math.max(0, y - gz);
+      const k = 1 - Math.min(1, hAbove/170);
+      if(k <= 0.01) continue;
+      exploreMixColor(grassList, exploreWeights(x, z), gc);
+      c.fromBufferAttribute(col, i).lerp(dirt, k*0.6).lerp(gc, k*0.5*ny);
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+  }
   const m = new THREE.Mesh(geo, shared('tunnelRock', ()=> applySurfaceDetail(new THREE.MeshStandardMaterial({
     vertexColors:true, roughness:0.96, metalness:0, envMapIntensity:ENV_INTENSITY*0.8, side:THREE.DoubleSide,
   }), { scale:34, bump:0.75, macro:420, stain:0.42, crack:0.30, rough:0.30 })));
@@ -1479,8 +1514,8 @@ function getDappleTex(){
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
       const u = x/w - 0.5, v = y/h - 0.5, r = Math.hypot(u, v)*2;
       const n = tileNoise(x/16, y/16, 16)*0.6 + tileNoise(x/7, y/7, 37)*0.4;
-      const spot = n > 0.62 ? 1 : 0.58 + (n - 0.3)*0.4;
-      const edge = Math.min(1, Math.max(0, (r - 0.72)/0.28));
+      const spot = n > 0.62 ? 1 : 0.72 + (n - 0.3)*0.35;      // 明暗の差を弱める(平らな円盤に見えないように)
+      const edge = Math.min(1, Math.max(0, (r - 0.45)/0.55));  // 縁を大きく広げて滑らかに白へ抜く(縁の輪が見えないように)
       const k = Math.max(0, Math.min(1, spot + edge*(1 - spot)));
       const i = (y*w + x)*4;
       d[i] = d[i+1] = d[i+2] = Math.round(k*255); d[i+3] = 255;
@@ -1602,7 +1637,7 @@ function buildGiants(group, world){
       const cr = H*(0.46 + (G.seed % 1)*0.12);
       pos.set(v.x, gy + H*0.97, v.y); sc.set(cr, cr*0.62, cr);
       mtx.compose(pos, q, sc); canM.setMatrixAt(i, mtx); vineM.setMatrixAt(i, mtx);
-      decal.push({ v, R:cr*1.15, ox:0.25*cr, oy:0.18*cr, rings:5, segs:20 });
+      decal.push({ v, R:cr*1.15, ox:0.25*cr, oy:0.18*cr, rings:5, segs:32 });   // segsを増やして縁を丸く(20角形が円盤の縁に見えていた)
     });
     [trunkM, canM, vineM].forEach(m=>{ m.instanceMatrix.needsUpdate = true; m.castShadow = true; m.receiveShadow = true; m.computeBoundingSphere(); });
     vineM.castShadow = false;
@@ -1888,14 +1923,28 @@ function buildIceLakes(group, world){
   }
 }
 
-/* 降る灰(火山の上だけ見える)。カメラのまわりの箱の中で落とし、下へ抜けたら上へ戻す */
+/* 降る灰(火山の上だけ見える)。カメラのまわりの箱の中で落とし、下へ抜けたら上へ戻す。
+   テクスチャの無い THREE.Points はGLの素の四角(角の立った黒い点)で描かれるので、
+   必ず丸くぼかしたスプライト(getGlowTex)を貼る。色は暗い灰でなく、燃え残りの
+   オレンジの光る火の粉にして加算合成(遠くの空に黒い四角が浮くのを防ぐ)。 */
 const ASH_N = 300, ASH_BOX = 1400;
 function buildAsh(){
   const g = new THREE.BufferGeometry();
-  const p = new Float32Array(ASH_N*3);
-  for(let i=0;i<ASH_N;i++){ p[i*3] = (hash2(i, 1.7) - 0.5)*ASH_BOX*2; p[i*3+1] = hash2(i, 3.1)*700; p[i*3+2] = (hash2(i, 5.3) - 0.5)*ASH_BOX*2; }
+  const p = new Float32Array(ASH_N*3), sz = new Float32Array(ASH_N);
+  for(let i=0;i<ASH_N;i++){
+    p[i*3] = (hash2(i, 1.7) - 0.5)*ASH_BOX*2; p[i*3+1] = hash2(i, 3.1)*700; p[i*3+2] = (hash2(i, 5.3) - 0.5)*ASH_BOX*2;
+    sz[i] = 4 + hash2(i, 7.9)*7;
+  }
   g.setAttribute('position', new THREE.BufferAttribute(p, 3));
-  const m = new THREE.PointsMaterial({ color:0x2e2622, size:5, sizeAttenuation:true, transparent:true, opacity:0, depthWrite:false });
+  g.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
+  const m = new THREE.PointsMaterial({ color:0xff8a3c, map:getGlowTex(), size:7, sizeAttenuation:true,
+    transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending });
+  m.toneMapped = false;
+  m.onBeforeCompile = (sh)=>{
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', 'attribute float aSize;\n#include <common>')
+      .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize / 7.0;');
+  };
   const pts = new THREE.Points(g, m);
   pts.frustumCulled = false;
   return pts;
@@ -2046,7 +2095,7 @@ export function updateExplore(t, cp, ctx){
     const vk = w[2];
     ash.visible = vk > 0.03;
     if(ash.visible){
-      ash.material.opacity = Math.min(0.85, vk*1.1);
+      ash.material.opacity = Math.min(0.55, vk*0.7);   // 加算合成の光る粉なので薄めに抑える
       const p = ash.geometry.attributes.position, a = p.array;
       const base = cp.z - 420, B2 = ASH_BOX*2;
       for(let i=0;i<ASH_N;i++){

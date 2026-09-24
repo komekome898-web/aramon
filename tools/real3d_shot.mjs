@@ -78,7 +78,8 @@ const EXPLORE_POSES = {
   volcano_wide:  { ex:{ at:'region:volcano', off:[800, -2900], look:'peak:volcanoMain' }, pitch:0.04 },
   jungle_wide:   { ex:{ at:'region:jungle', off:[-500, -2000], look:'nest:jungle' }, pitch:0.08 },
   // 入り組み(峡谷・峠・遺跡の回廊・廃村)
-  canyon:        { ex:{ at:[12470,12380], look:[12700,13500] }, pitch:0.02 },
+  canyon:        { ex:{ at:[11780,12700], look:[11830,13380] }, pitch:0.02 },   // S字の1つ目の折り返し(c1)の手前。奥のもう1つの折り返しまで見通せない
+  canyon_bend:   { ex:{ at:[12550,13100], look:[13360,12250] }, pitch:0.02 },   // 2つ目の折り返し(c2)へ向く側
   pass:          { ex:{ at:'region:meadow', off:[3000, 200], look:'pass:n1' }, pitch:0.06 },
   ruins:         { ex:{ at:'landmark:gate', off:[450, -420], look:[5300,12700] }, pitch:0.10 },
   village:       { ex:{ at:[7300,7250], look:[5600,5700] }, pitch:0.10 },
@@ -89,6 +90,8 @@ const EXPLORE_POSES = {
   icespire:      { ex:{ at:'landmark:icespire', off:[-900, 900], look:'landmark:icespire' }, pitch:-0.04 },
   // 地形そのもの(尾根・遠景・段丘・湖・巨木・溶岩の川)
   vantage:       { ex:{ at:'camp', off:[0, 0], look:'peak:volcanoMain' }, pitch:0.10, lift:900 },
+  vantage_back:  { ex:{ at:'camp', off:[0, 0], look:'peak:frostMain' }, pitch:0.10, lift:900 },   // vantageの反対向き(周ごとの比較用に固定)
+  border_frost_volcano: { ex:{ at:[12900,9070], look:'pass:e1' }, pitch:0.05 },   // 凍った高地→火山の境目を横切る(周ごとの比較用に固定)
   far_frost:     { ex:{ at:'region:meadow', off:[1800, -1200], look:'peak:frostMain' }, pitch:0.02 },
   frost_lake:    { ex:{ at:[12950,6050], look:[12900,5300] }, pitch:0.22 },
   giants:        { ex:{ at:'region:jungle', off:[300, -600], look:'nest:jungle' }, pitch:-0.02 },

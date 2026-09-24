@@ -1819,8 +1819,13 @@ function obstacleGeo(flavor, variant){
       }
       const geo = mergeGeos(parts);
       fitBounds(geo, 1.00, 0, sh.h);
-      // 塗装が褪せた金属。テーマに馴染ませつつ、砂浜より必ず暗くして塊として読ませる
-      const paint = contrastTo(mixColor(CONTAINER_PAINT, themeColor('steep'), 0.34), groundRefColor(), 1.45);
+      // 塗装が褪せた金属。テーマに馴染ませつつ、砂浜より必ず暗くして塊として読ませる。
+      // 探検フィールドだけは、海運コンテナの水色塗装のままだと世界観(狩猟キャンプ)に合わず
+      // 遠目に水色の塊として浮いて見えたので、使い込んだ木箱の色を土台にする
+      // (地域ごとの色は updateObstacleInstances の exTints が個体ごとに後から乗せる)
+      const paint = isExplore()
+        ? contrastTo(new THREE.Color(0x8a7048), groundRefColor(), 1.30)
+        : contrastTo(mixColor(CONTAINER_PAINT, themeColor('steep'), 0.34), groundRefColor(), 1.45);
       paintGeo(geo, paint.clone().multiplyScalar(0.80), paint.clone().multiplyScalar(1.18), 0, sh.h, 0.16);
       cavityShade(geo, 0.30, 0.24);
       // 錆。上面と縁から垂れるように出す
