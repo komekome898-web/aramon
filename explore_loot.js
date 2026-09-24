@@ -1274,23 +1274,42 @@ function explorePlayerTint(e, img, L){
    ここが正(exploreDrawGearAura の描画も、撮影の実測 tools/explore_shot.mjs もこれを読む=数字を2か所に持たない)。
    戻り値: { x, y, w, h } または、着けている物が無い/HUDが読めないとき null */
 function exploreGearIconsRect(e){
-  if(!e || !e.exploreGear) return null;
-  const keys = EXPLORE_GEAR_SLOTS.map(sl=> e.exploreGear.equip[sl.id]).filter(k=> EXPLORE_GEAR[k]);
-  if(!keys.length) return null;
-  const hpEl = exploreHudEl('hpPanel'), hudEl = exploreHudEl('hud');
-  const bsAbs = 18;   // 画面上の大きさ(px。固定位置なので倍率は掛けない)
-  let x, y;
-  if(hpEl && hudEl && hpEl.offsetWidth){
-    x = hudEl.offsetLeft + hpEl.offsetLeft + 16;
-    y = hudEl.offsetTop + hpEl.offsetTop + hpEl.offsetHeight + 10;
-  } else { x = 16; y = 190; }   // HPパネルが読めない万一の保険(左上に出す)
-  const gapAbs = bsAbs*1.15;
-  return { x, y, w: gapAbs*(keys.length - 1) + bsAbs, h: bsAbs };
+  const row = exploreHudEl('expGearRow');
+  if(!row || row.classList.contains('hidden') || !row.offsetWidth) return null;
+  // #hud までの offset を足し上げる(#topLeft の中なので、親1段ぶんの offset だけでは位置がずれた)
+  let x = 0, y = 0;
+  for(let el = row; el && el.id !== 'hud'; el = el.offsetParent){ x += el.offsetLeft; y += el.offsetTop; }
+  const hud = exploreHudEl('hud');
+  if(hud){ x += hud.offsetLeft; y += hud.offsetTop; }
+  return { x, y, w: row.offsetWidth, h: row.offsetHeight };
+}
+/* 着けた部位の一覧は HUD の DOM の行(#expGearRow。#topLeft の縦flexでHPパネルの直下)に出す。
+   キャンバスに描くと DOM の HUD の下になり、HPパネルの背景に沈んで重なった(HUD第5周の批評)。
+   縦flexの中なので位置の計算なしで HPパネル・自機と重ならない(#squadPanel と同じ置き方)。
+   DOM を書き換えるのは装備が変わったときだけ(毎フレームは表示/非表示だけ) */
+let _exploreGearRowKey = null;
+function exploreSyncGearRow(e, show){
+  const row = exploreHudEl('expGearRow');
+  if(!row) return;
+  const keys = (show && e && e.exploreGear) ? EXPLORE_GEAR_SLOTS.map(sl=> e.exploreGear.equip[sl.id]).filter(k=> EXPLORE_GEAR[k]) : [];
+  const on = keys.length > 0;
+  row.classList.toggle('hidden', !on);
+  if(!on) return;
+  const key = keys.join('|');
+  if(key === _exploreGearRowKey) return;
+  _exploreGearRowKey = key;
+  row.innerHTML = keys.map(k=>{
+    const rc = exploreRarityColor(EXPLORE_GEAR[k].rarity);
+    const svg = (typeof exploreGearIconSvg === 'function') ? exploreGearIconSvg(k) : '';
+    return `<span class="exp-gear-ic" style="border-color:${rc}">${svg}</span>`;
+  }).join('');
 }
 /* 装備が見える: 着けている装備でいちばん多いセットの色で、足元の輪・紋章・体の縁の光を出す。
    セット効果が発動していれば輪が二重になり、光の粒が輪を回る。探検の自分だけ(描画の経路だけ・当たりは変えない) */
 function exploreDrawGearAura(e, p){
   const gear = e.exploreGear;
+  // 着けた部位の一覧(DOMの行)。出発・力尽き・帰還などの札の間は隠す
+  if(e === player) exploreSyncGearRow(e, !!gear && !exploreState.card);
   if(!gear || !p) return;
   // 出発・力尽き・帰還などの札の間は足元の装備の印も隠す(黒帯の下に透けて見えた=批評指摘。演出に集中させる)
   if(exploreState.card) return;
@@ -1359,28 +1378,6 @@ function exploreDrawGearAura(e, p){
       ctx.drawImage(t, -L.dw*k/2, L.dy - L.dh*k/2, L.dw*k, L.dh*k);
       ctx.globalCompositeOperation = 'source-over';
     }
-  }
-  /* 着けた部位の一覧(第5周の指摘: 足元(3D投影)だと胴体で完全に隠れたり尻尾が横切ったりして、
-     縦持ち3サイズのどれでも自機の外接矩形(explorePlayerRect())と重なった)。
-     カメラ・姿勢に関わらず重ならないよう、**画面に固定した位置**(HPパネルの左下)へ移した。
-     置き場所の計算は exploreGearIconsRect() 1つが正(撮影の実測もこれを読む。数字を2か所に持たない)。
-     このctxは既に translate(p)+scale(s) 済みのローカル座標なので、画面固定の絶対座標(sx,sy)は
-     (sx-p.x)/s, (sy-p.y)/s へ変換してから使う。 */
-  const keys = EXPLORE_GEAR_SLOTS.map(sl=> gear.equip[sl.id]).filter(k=> EXPLORE_GEAR[k]);
-  const gr = exploreGearIconsRect(e);
-  if(keys.length && gr){
-    const bsAbs = gr.h, gapAbs = bsAbs*1.15, sy0 = gr.y;
-    ctx.globalAlpha = fade;
-    keys.forEach((k, i)=>{
-      const sx = gr.x + gapAbs*i + bsAbs/2, sy = sy0 + bsAbs/2;
-      const x = (sx - p.x)/s, y = (sy - p.y)/s, bs = bsAbs/s;
-      const rc = exploreRarityColor(EXPLORE_GEAR[k].rarity);
-      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - bs/2, y - bs/2, bs, bs, bs*0.22) : ctx.rect(x - bs/2, y - bs/2, bs, bs);
-      ctx.fillStyle = 'rgba(10,14,20,0.88)'; ctx.fill();
-      ctx.lineWidth = 1.6/s; ctx.strokeStyle = rc; ctx.stroke();
-      const cv = exploreGearBaked(k);
-      if(cv){ const kk = bs*1.22; ctx.drawImage(cv, x - kk/2, y - kk/2, kk, kk); }
-    });
   }
   ctx.restore();
 }

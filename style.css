@@ -4213,6 +4213,12 @@
      #topLeft(縦flex・gap8)の中=HPパネルの直下なので、位置の計算なしで構造上重ならない。
      幅はHPパネルと同じ値にそろえる(#hpPanel 210 / narrow-screen 180。変えたら両方直す)。
      タップは素通り(pointer-events:none)なのでスクロールロック除外リストへの追加は不要。 */
+  /* 探検: 着けた装備の一覧(#topLeftの縦flexでHPパネルの直下。explore_loot.js の exploreSyncGearRow) */
+  .exp-gear-row{ display:flex; gap:4px; pointer-events:none; }
+  #hud:not(.explore-mode) .exp-gear-row{ display:none; }
+  .exp-gear-ic{ width:24px; height:24px; flex-shrink:0; border-radius:5px; border:1.5px solid #ccc;
+    background:rgba(10,14,20,0.88); display:flex; align-items:center; justify-content:center; }
+  .exp-gear-ic svg{ width:20px; height:20px; }
   #squadPanel{ width:210px; padding:4px 12px 6px; pointer-events:none; border-top:2px solid #58d47e; }
   .sq-row{ padding:2px 0 1px; }
   .sq-row + .sq-row{ border-top:1px solid rgba(255,255,255,0.08); }

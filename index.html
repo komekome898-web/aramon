@@ -705,6 +705,9 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <div id="statusIcons"></div>
       <div id="trainBuffsLine"></div>
     </div>
+    <!-- 探検: 着けた装備の一覧。#topLeftの縦flexでHPパネルの直下に並ぶので重ならない。
+         中身は explore_loot.js の exploreSyncGearRow() が書く。pointer-events:none(タップは素通り) -->
+    <div id="expGearRow" class="exp-gear-row hidden"></div>
     <!-- チーム戦の小隊バー(味方のHP/状態)。#topLeftは縦flexなのでHPパネルの直下に並び、
          位置計算なしで重ならない。中身は render.js の updateSquadPanel() が書く。
          pointer-events:none(タップは素通り)なのでスクロールロック除外リストへの追加は不要 -->
