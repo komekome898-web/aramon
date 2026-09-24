@@ -417,7 +417,11 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
           <span class="raid-soon-pop" id="raidModePop">準備中</span>
         </div>
         <!-- 探検モード(1人用・部屋なし)。押した先は joinBtn(「探検へ出発」)→ exploreStart() -->
-        <button class="mode-tab mode-tab-explore" data-mode="explore">探検</button>
+        <!-- プレオープン中の印(2026-09-24〜)。正式公開したらこの span を消すだけでよい -->
+        <div class="mode-tab-wrap">
+          <button class="mode-tab mode-tab-explore" data-mode="explore">探検</button>
+          <span class="raid-soon-pop explore-pre-pop">プレオープン</span>
+        </div>
       </div>
       <!-- サブ選択(モードごとの中身)。選択は setLobbySubMode() だけが書く。
            出し分け・active・説明文は updateModePickPanels() が面倒を見る -->
@@ -458,7 +462,7 @@ if(!window.__aramonOffline) import('./firebase.js').catch(()=>{});
       <!-- 探検を選んだときだけ出す案内。出発はロビー右下のボタン(探検へ出発) -->
       <div id="exploreModeOptions" class="hidden">
         <div class="pick-label" style="margin-top:10px;">広いフィールドを探検して素材を集める(1人用)</div>
-        <div class="team-size-note" id="exploreModeNote">4つの地域で野生モンスターを倒して素材を集め、ベースキャンプの帰還ビーコンで持ち帰ります。力尽きるのは3回まで。制限時間があります</div>
+        <div class="team-size-note" id="exploreModeNote">4つの地域で野生モンスターを倒して素材を集め、ベースキャンプの帰還ビーコンで持ち帰ります。力尽きるのは3回まで。制限時間があります。<br>いまはプレオープン中です。遊んだ感想をもとに調整していきます</div>
         <!-- 工房(持ち帰ったボス素材で探検用の装備を作る)。ロビー左の「工房」と同じ入口 -->
         <button id="exploreForgeOpenBtn" class="raid-go-btn exf-open-btn">⚒️ 工房で装備を作る</button>
       </div>
