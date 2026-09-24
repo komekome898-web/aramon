@@ -1310,7 +1310,19 @@ const TEAM_LABEL_MAX_SCALE = 2.2;
 function teamLabelFade(){
   return clamp((3.0 - _monDrawScale)/1.0, 0, 1);
 }
-function drawMonster(e,p){
+/* drawMonster は足元の投影点 p から半径×MON_DRAW_LIFT だけ持ち上げた所を原点に絵を描く。
+   絵(体)の上端・下端の画面 y。**寸法の正は portraitLayoutFor**(探検の地形の稜線で切る判定が読む) */
+const MON_DRAW_LIFT = 0.85;
+function monsterSpriteSpanY(e, p){
+  const img = getDisplayImage(e);
+  const L = img ? portraitLayoutFor(e, img) : null;
+  const r = e.radius;
+  const foot = (L ? L.footY : r*FOOT_Y_RATIO) - r*MON_DRAW_LIFT;
+  const bodyH = L ? L.bodyH : 2*r*BODY_H_RATIO;
+  return { top: p.y + p.scale*(foot - bodyH), bottom: p.y + p.scale*foot };
+}
+// clipY: この画面の y より下を描かない(探検で地形の稜線に隠れている部分。exploreMonsterTerrainClip)。null で切らない
+function drawMonster(e,p,clipY){
   const el = ELEMENTS[e.element];
   // 召喚演出中: せり上がりはせず、光が収束するにつれてその場で姿を現す
   if(introState.active){
@@ -1318,11 +1330,12 @@ function drawMonster(e,p){
     if(reveal <= 0) return; // まだ光に隠れている
   }
   ctx.save();
+  if(clipY != null){ ctx.beginPath(); ctx.rect(-1e5, -1e5, 2e5, clipY + 1e5); ctx.clip(); }
   if(introState.active) ctx.globalAlpha = summonRevealAlpha();
   ctx.translate(p.x, p.y);
   ctx.scale(p.scale,p.scale);
   _monDrawScale = p.scale;
-  ctx.translate(0,-e.radius*0.85);
+  ctx.translate(0,-e.radius*MON_DRAW_LIFT);
 
   /* 表示する画像とその描画レイアウトはここで1回だけ求める(ダッシュ残像・本体で使い回す)。
      影・頭上表示(HPバー/名前/状態リング等)の追従倍率(uiMult)もここから取る ―― 絵より先に
@@ -7217,11 +7230,16 @@ function prepareMountainOccluders(){
   if(!real3dActive) return;
   for(const v of volcanoObstacles){
     if(game.explore && EXPLORE_TERRAIN_LANDMARKS.includes(v.landmark)) continue;
+    /* 探検の建物・門・巨木などの足元の円は実物より太い近似なので、カメラがその円の中に入ると
+       「前にある物すべて」が円錐に隠れて消えた(遺跡の門の柱で、照準の先の野生4体が映らない=
+       2026-09-24 実機の「敵が映らない」)。カメラが円の中にいる間はその円錐で隠さない。 */
+    const vr = mountainGroundRadius(v);
+    if(game.explore && Math.hypot(v.x-camPos.x, v.y-camPos.y) < vr) continue;
     /* 遮蔽に使う円錐は「見えている山」と同じ形にする。r に v.radius を入れると
        裾を埋めたぶんだけ実物より太い円錐で隠してしまい、山肌の外にいる相手や技まで
        消える。r は地面の高さでの実半径、rise はそこから頂上までの高さ。 */
     mountOccluders.push({
-      x:v.x, y:v.y, r: mountainGroundRadius(v),
+      x:v.x, y:v.y, r: vr,
       rise: mountainRiseOf(v),
       baseZ: groundZAt(v.x, v.y),
       camDist: Math.hypot(v.x-camPos.x, v.y-camPos.y),
@@ -7383,26 +7401,126 @@ function obstacleVisibleFromZ(o, z0, z1){
   return res;
 }
 /* 探検の尾根・峡谷・切り通し・峰は円錐にしていない(prepareMountainOccluders)ので、
-   代わりに地形の高さ(real3dHeightAt。groundZAt経由)そのものを実測して視線を切る。
+   代わりに地形の高さ(real3dHeightAt。groundZAt経由)そのものを実測して遮る。
    通常のリアルマップは地形が起伏だけ(山は別に円錐で持つ)なのでこの経路には来ない
-   ―― 分岐は既存の game.explore 1つに寄せる。 */
-const EXPLORE_OCCLUDE_STEPS = 10;
-const EXPLORE_OCCLUDE_MAX_DIST = 2600;   // これより遠くは霞んで見えないので判定を省く
-const EXPLORE_OCCLUDE_MARGIN = 22;       // 地形のノイズ・目の高さぶんの余裕(際で誤って隠さないため)
-function exploreOccludedByTerrain(x, y, z){
-  const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
-  const dist = Math.hypot(dx, dy);
-  if(dist < 1 || dist > EXPLORE_OCCLUDE_MAX_DIST) return false;
-  for(let i=1;i<=EXPLORE_OCCLUDE_STEPS;i++){
-    const t = i/(EXPLORE_OCCLUDE_STEPS+1);
-    const lineZ = camPos.z + dz*t;
-    const h = groundZAt(camPos.x+dx*t, camPos.y+dy*t);
-    if(h > lineZ + EXPLORE_OCCLUDE_MARGIN) return true;
+   ―― 分岐は既存の game.explore 1つに寄せる。
+
+   【稜線】カメラから対象の足元までの地面を点で調べ、目から見ていちばん高く見える地面(=画面でいちばん上に
+   来る地面)を「稜線」とする(exploreTerrainRidge。**判定はこの1つだけ**)。
+   ・点で描く物(弾・火花・補給箱など): 稜線より下に見えるなら隠す(exploreOccludedByTerrain)
+   ・敵の絵: 稜線より下を切って描き、絵の上端まで稜線の下なら丸ごと隠す(exploreMonsterTerrainClip)
+   以前は足元+半径の1点を「全部描く/全部隠す」の二択で見ていたため、小さな起伏の向こうで上半身が
+   見えている敵が丸ごと消え、逆に半分以上丘に隠れた敵が丸ごと描かれていた(実機で報告)。
+   また 2600 より遠い敵は調べておらず、遠くの丘の向こうの群れが丘の上に透けて見えていた。
+   同じ視線の上の点どうしは、画面の上下の順が「目から見た仰ぎ角(高さの差÷水平距離)」の順と一致する
+   (カメラの向き・傾きに依らない)ので、仰ぎ角の最大の点をワールド座標で覚えて毎フレーム投影すればよい。 */
+const EXPLORE_RIDGE_MIN_PTS = 16;      // 1本の視線で調べる地面の点の数(近い対象)
+const EXPLORE_RIDGE_MAX_PTS = 32;      // 同(遠い対象はここで頭打ち)
+/* 覚える場所のない点(火花・弾・落ちている物など。数が多く毎フレーム動く)は点の数をここまでに抑える
+   (以前の二択の判定と同じ10点。敵の絵ほど細かく切る必要がない) */
+const EXPLORE_RIDGE_POINT_MAX_PTS = 10;
+const EXPLORE_RIDGE_SPACING = 30;      // 点の間隔の目安(ワールド単位)。近い対象ほど細かく調べる
+const EXPLORE_RIDGE_NEAR = 20;         // カメラの直下のこれより近い地面は調べない
+const EXPLORE_RIDGE_POINT_SKIP = 20;   // 対象の足元の手前これだけの地面は調べない(自分の足元で自分を隠さない)
+/* 3Dの地形は50単位ごと(real3d_terrain.js の TERRAIN_CELL)の頂点を平面でつないだ面なので、
+   山の頂は式の高さ(groundZAt)よりわずかに低い。そのぶん稜線を下げる(際で誤って切らないため)。
+   パッチの外(遠景地形)は約250単位の粗い網目だが、網目どおりの高さで比べても稜線の差は平均1px未満で、
+   判定が変わるのは 8000 より先の高さ数pxの敵だけだった(2026-09-24 実測)ので、式の高さのまま使う */
+const EXPLORE_RIDGE_SINK = 4;
+const EXPLORE_RIDGE_REUSE_MOVE = 4;    // カメラも対象もこれ以下しか動いていなければ「止まっている」
+const EXPLORE_RIDGE_FAR = 900;         // これより遠い敵は稜線を数フレームごとに調べ直す(遠いほど画面上の差が小さい)
+const EXPLORE_RIDGE_FAR_FRAMES = 4;
+const EXPLORE_RIDGE_STILL_FRAMES = 8;  // 近い敵は、カメラも対象も止まっている間はこのフレーム数ごとに調べ直す
+const EXPLORE_RIDGE_JITTER = 0.618034;   // 調べ直すたびに点の並びをずらす量(点の間隔に対する比。黄金比で満遍なく)
+const EXPLORE_RIDGE_TOP_PAD = 1.15;    // 絵の上端の余裕(伸び上がる姿勢ぶん)。上端まで稜線の下のときだけ丸ごと隠す
+const EXPLORE_RIDGE_OFFSCREEN_W = 1.5; // 画面外かを見るときの絵の半幅(絵の高さに対する比。横長の絵のぶん大きめ)
+const EXPLORE_TERRAIN_HIDDEN = -Infinity;   // exploreMonsterTerrainClip の「丸ごと隠れている」
+let exploreRidgeFrame = 0;             // render() が1フレームに1つ進める(遠い敵の覚えた稜線の古さを数える)
+/* カメラから (x,y) までの地面の稜線(目から見ていちばん高く見える地面の点)を返す。{x,y,z} か null。
+   memo(敵・補給箱など動かない/ゆっくりの物)を渡すと、そこに覚えて使い回す。
+   stopEl(memo を渡さない点だけ): 仰ぎ角(高さの差÷水平距離)がこれを超える地面が見つかった時点で打ち切る
+   (「隠れているか」だけ知りたい点は、それで答えが決まる) */
+function exploreTerrainRidge(x, y, skip, memo, stopEl){
+  const cx = camPos.x, cy = camPos.y, cz = camPos.z;
+  const dx = x - cx, dy = y - cy, D = Math.hypot(dx, dy);
+  const m = memo && memo._exRidge;
+  if(m && m.skip === skip){
+    const still = Math.abs(cx - m.cx) + Math.abs(cy - m.cy) + Math.abs(cz - m.cz) <= EXPLORE_RIDGE_REUSE_MOVE
+      && Math.abs(x - m.tx) + Math.abs(y - m.ty) <= EXPLORE_RIDGE_REUSE_MOVE;
+    const age = exploreRidgeFrame - m.f;
+    /* 遠い敵は動いていてもいなくても数フレームごと、近い敵は動いていれば毎フレーム・止まっていても時々調べ直す
+       (止まっている間も調べ直すのは、下の点の並びのずらしで、取り逃がした細い峰へ寄っていくため) */
+    if(D > EXPLORE_RIDGE_FAR ? age < EXPLORE_RIDGE_FAR_FRAMES : (still && age < EXPLORE_RIDGE_STILL_FRAMES)) return m.r;
   }
-  return false;
+  let r = null;
+  const end = D - skip;
+  if(end > EXPLORE_RIDGE_NEAR){
+    const ux = dx/D, uy = dy/D, span = end - EXPLORE_RIDGE_NEAR;
+    const n = memo ? clamp(Math.ceil(span / EXPLORE_RIDGE_SPACING), EXPLORE_RIDGE_MIN_PTS, EXPLORE_RIDGE_MAX_PTS)
+      : EXPLORE_RIDGE_POINT_MAX_PTS;
+    const step = span / n;
+    let bd = 0, bz = 0, be = -Infinity;
+    const at = (d)=>{
+      const z = groundZAt(cx + ux*d, cy + uy*d) - EXPLORE_RIDGE_SINK;
+      const el = (z - cz) / d;
+      if(el > be){ be = el; bd = d; bz = z; }
+    };
+    const stop = memo ? Infinity : (stopEl == null ? Infinity : stopEl);
+    /* 覚えて使い回す物は、調べ直すたびに点の並びを少しずらし(黄金比ずつ。間隔の中を満遍なく埋める)、
+       前回いちばん高かった所も1点足す。遠い敵は点の間隔が数百になり細い峰を取り逃がすが、
+       点を増やさずに数回の調べ直しで峰へ寄っていく(前回の点は今の視線の上で測り直すので、古い値は使わない) */
+    const off = memo ? ((exploreRidgeFrame * EXPLORE_RIDGE_JITTER) % 1) : 1;
+    for(let i=1;i<=n && be <= stop;i++) at(EXPLORE_RIDGE_NEAR + step*(i - 1 + off));
+    if(m && m.bt > 0){ const d = m.bt * D; if(d > EXPLORE_RIDGE_NEAR && d < end) at(d); }
+    // 頂を点の間で取り逃がさないよう、いちばん高かった点の前後を半歩・四半歩で詰める(4点。覚えて使い回す物だけ)
+    if(memo) for(const h of [step/2, step/4]){
+      const d0 = bd;
+      if(d0 - h > EXPLORE_RIDGE_NEAR) at(d0 - h);
+      if(d0 + h < end) at(d0 + h);
+    }
+    r = { x: cx + ux*bd, y: cy + uy*bd, z: bz };
+  }
+  if(memo) memo._exRidge = { r, skip, f: exploreRidgeFrame, cx, cy, cz, tx:x, ty:y, bt: r ? Math.hypot(r.x - cx, r.y - cy) / D : 0 };
+  return r;
 }
-function occludedByMountain(x, y, z){
-  if(game.explore && exploreOccludedByTerrain(x, y, z)) return true;
+// 点 (x,y,z) が地形の稜線より下に見える(=地形の陰にある)か
+function exploreOccludedByTerrain(x, y, z, memo){
+  const D = Math.hypot(x - camPos.x, y - camPos.y);
+  if(D < 1) return false;
+  const el = (z - camPos.z)/D;   // 目から見た点の仰ぎ角
+  const R = exploreTerrainRidge(x, y, EXPLORE_RIDGE_POINT_SKIP, memo, el);
+  if(!R) return false;
+  const dR = Math.hypot(R.x - camPos.x, R.y - camPos.y);
+  return dR > 0 && el < (R.z - camPos.z)/dR;
+}
+/* 敵の絵を地形の稜線で切る(探検だけ。他のマップ・自分は null)。
+   null=切らない / 数値=この画面の y より下を描かない / EXPLORE_TERRAIN_HIDDEN=丸ごと隠れている。
+   絵の上端・下端は drawMonster が描く寸法(portraitLayoutFor)から求める。
+   頭上の札・HPバー・印・足元の影と輪も drawMonster の中で同じ切り方を受ける(丸ごと隠れたら何も出ない) */
+function exploreMonsterTerrainClip(e, p){
+  if(!game.explore || e.isPlayer || !p) return null;
+  const s = monsterSpriteSpanY(e, p);
+  // 画面の左右・上下の外にいる敵は描いても見えないので調べない(地面を調べる回数を減らす)
+  const halfW = (s.bottom - s.top) * EXPLORE_RIDGE_OFFSCREEN_W;
+  if(p.x + halfW < 0 || p.x - halfW > viewW || s.bottom < 0 || s.top > viewH) return null;
+  const R = exploreTerrainRidge(e.x, e.y, Math.max(EXPLORE_RIDGE_POINT_SKIP, e.radius || 0), e);
+  if(!R) return null;
+  /* 稜線の点そのものではなく、同じ視線を敵の真上まで延ばした高さを投影する(画面上は同じ点)。
+     カメラのすぐ前の起伏が稜線のとき、project の近距離の倍率の頭打ちで y がずれるのを避ける */
+  const dR = Math.hypot(R.x - camPos.x, R.y - camPos.y), D = Math.hypot(e.x - camPos.x, e.y - camPos.y);
+  if(dR <= 0) return null;
+  const q = project(e.x, e.y, camPos.z + (R.z - camPos.z) * D / dR);
+  if(!q) return null;
+  if(q.y >= s.bottom) return null;
+  if(q.y <= s.bottom - (s.bottom - s.top)*EXPLORE_RIDGE_TOP_PAD) return EXPLORE_TERRAIN_HIDDEN;
+  return q.y;
+}
+// 山(円錐)による遮蔽。探検の地形の遮蔽(exploreOccludedByTerrain)はこの外側で足す
+function occludedByMountain(x, y, z, memo){
+  if(game.explore && exploreOccludedByTerrain(x, y, z, memo)) return true;
+  return occludedByMountainCone(x, y, z);
+}
+function occludedByMountainCone(x, y, z){
   if(!mountOccluders.length) return false;
   const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
   const targetDist = Math.hypot(dx, dy);
@@ -7615,6 +7733,7 @@ function render(){
   if(perfOn) perfGl(performance.now() - _glT0);
   real3dActive = gl3d;
   prepareMountainOccluders();
+  exploreRidgeFrame++;
   // 狙撃スコープの中の遠景の霞(探検モードで構えている間だけ。モンスターより下に塗る。sniper.js)
   if(gl3d && typeof drawSniperHaze === 'function') safeDraw(drawSniperHaze);
   if(!gl3d){
@@ -7677,7 +7796,13 @@ function render(){
   // 狙撃の構え中はカメラが自機の目の位置に入るので、自分の絵は描かない(画面を塞ぐ)
   const hideSelf = (typeof sniperHidesSelf === 'function') && sniperHidesSelf();
   for(const e of entities){ if(!e.alive || (hideSelf && e === player)) continue; const p = project(e.x,e.y,e.z); if(p){ // 自分だけは山に隠さない(カメラが山にめり込んだ時に自機が消えるのを防ぐ)
-    if(e.isPlayer || !occludedByMountain(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p}); if(!e.isPlayer) monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale}); } }
+    if(e.isPlayer) drawables.push({kind:'mon', obj:e, p});
+    else {
+      // 探検: 地形の稜線で切る(丸ごと隠れていれば積まない)。山の円錐は従来どおり足元+半径の1点で見る
+      const clipY = exploreMonsterTerrainClip(e, p);
+      if(clipY !== EXPLORE_TERRAIN_HIDDEN && !occludedByMountainCone(e.x, e.y, (e.z||0)+(e.radius||26))) drawables.push({kind:'mon', obj:e, p, clipY});
+      monsterScreenPos.set(e.id, {x:p.x,y:p.y,scale:p.scale});
+    } } }
   for(const pt of particles){
     const pz = (pt.z||0)+(pt.type==='text'?42:16);
     if(occludedByMountain(pt.x, pt.y, pz)) continue;
@@ -7711,7 +7836,7 @@ function render(){
       else if(d.kind==='exl') d.draw(d.obj, d.p, d);   // 探検のルート(描き方はエントリが持つ)
       else if(d.kind==='proj') drawProjectile(d.obj,d.p);
       else if(d.kind==='volcano') drawVolcanoComplex(d.obj,d.p);
-      else if(d.kind==='mon') drawMonster(d.obj,d.p);
+      else if(d.kind==='mon') drawMonster(d.obj,d.p,d.clipY);
       // リアルマップの障害物は3Dが描くので、2Dは輪郭をくり抜くだけ
       // 探検: ボスの登場・討伐の視点演出の間は、カメラとボスの間の木・岩でボスを隠さない(explore.js)
       else if(d.kind==='rock'){ if(real3dActive){ if(!(game.explore && exploreCineSeeThrough(d.obj))) eraseObstacle(d.obj,d.p); } else drawRock(d.obj,d.p); }

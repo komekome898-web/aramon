@@ -503,7 +503,7 @@ function exploreLootDrawables(list){
     // 閉じた紫・金の箱は上に立つ光が山の向こうから見えていれば描く
     const topZ = (!c.opened && EXPLORE_CRATE_BEACON_H[c.rarity]) ? EXPLORE_CRATE_BEACON_H[c.rarity]
       : EXPLORE_CRATE_SIZE.h*exploreCrateScale(c) + (c.fan ? EXPLORE_CRATE_FAN.lift : 0);
-    if(occludedByMountain(c.x, c.y, c.z + topZ)) continue;
+    if(occludedByMountain(c.x, c.y, c.z + topZ, c)) continue;   // 4つ目=地形の稜線を箱に覚えて使い回す(render.js)
     const p = project(c.x, c.y, c.z);
     if(p) list.push({ kind:'exl', obj:c, p, draw:exploreDrawCrate });
   }
@@ -513,7 +513,7 @@ function exploreLootDrawables(list){
     const pos = exploreDropPos(d);
     const H = EXPLORE_PILLAR_HEIGHT[d.rarity] || EXPLORE_PILLAR_HEIGHT.common;
     // 足元が山に隠れても、柱の先が見えていれば柱は出す(遠くから価値が分かるのが柱の役目)
-    if(occludedByMountain(pos.x, pos.y, pos.z + (d.landed ? H : 20))) continue;
+    if(occludedByMountain(pos.x, pos.y, pos.z + (d.landed ? H : 20), d)) continue;
     const p = project(pos.x, pos.y, pos.z);
     if(p) list.push({ kind:'exl', obj:d, p, draw:exploreDrawDrop, pos });
   }
