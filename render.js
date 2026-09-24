@@ -834,6 +834,41 @@ function sharpenedUpscaleFor(img){
   _sharpCache.set(img, c);
   return c;
 }
+/* 狙撃スコープで大きく覗く絵に重ねる「立体の手がかり」(絵ごとに一度だけ作って覚える)。
+   ・環境色と陰: 左上は空の色をうっすら、右下ほど暗く(光は左上から)
+   ・縁の光: 輪郭の左上の縁だけ細く明るく(絵を右下へずらした形で抜く)
+   色は探検の地域の霞(テーマ)から作る。地域が変わったら作り直す */
+const _volCache = new WeakMap();
+function scopeVolumeFor(spr){
+  const th = window.__aramonRealTheme || {};
+  const hz = th.haze != null ? th.haze : 0xcfc2a6;
+  const hit = _volCache.get(spr);
+  if(hit && hit.hz === hz) return hit.c;
+  const w = _imgW(spr), h = _imgH(spr);
+  if(!w || !h) return null;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  const hr = (hz>>16)&255, hg = (hz>>8)&255, hb = hz&255;
+  x.drawImage(spr, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  const gr = x.createLinearGradient(0, 0, w*0.55, h);
+  gr.addColorStop(0, `rgba(${hr},${hg},${hb},0.16)`); gr.addColorStop(0.45, 'rgba(0,0,0,0.04)'); gr.addColorStop(1, 'rgba(0,0,0,0.34)');
+  x.fillStyle = gr; x.fillRect(0, 0, w, h);
+  // 縁の光
+  const rim = document.createElement('canvas'); rim.width = w; rim.height = h;
+  const r = rim.getContext('2d');
+  r.drawImage(spr, 0, 0);
+  r.globalCompositeOperation = 'source-in';
+  r.fillStyle = `rgb(${Math.min(255, hr+60)},${Math.min(255, hg+55)},${Math.min(255, hb+40)})`; r.fillRect(0, 0, w, h);
+  r.globalCompositeOperation = 'destination-out';
+  const off = Math.max(2, Math.round(w*0.007));
+  r.drawImage(spr, off, off);
+  x.globalCompositeOperation = 'source-over';
+  x.globalAlpha = 0.6;
+  x.drawImage(rim, 0, 0);
+  _volCache.set(spr, { hz, c });
+  return c;
+}
 // 画像の白シルエット(被弾フラッシュ用)をオフスクリーンに一度だけ作ってキャッシュする。
 // (円形クリップを廃したため、矩形の白fillでは背景まで白くなってしまう。
 //  画像のアルファ形状に沿って白くするためにこの手法を使う)
@@ -958,10 +993,16 @@ function drawMonsterPortrait(e, img, flash, precomputedLayout){
   const spr = (game.explore && need > Math.max(_imgW(img), _imgH(img))*SCOPE_SHARPEN_MIN_UPSCALE
                && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead())
     ? sharpenedUpscaleFor(img) : scaledSpriteFor(img, need);
+  const scopedBig = spr !== undefined && game.explore && typeof sniperHidesOverhead === 'function' && sniperHidesOverhead() && need > 260;
   ctx.drawImage(spr, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+  // 狙撃スコープで大きく覗いている間だけ: 一枚絵の薄さを隠す陰影(下・右ほど暗い)・左上の縁の光・環境色
+  if(scopedBig){
+    const vol = scopeVolumeFor(spr);
+    if(vol) ctx.drawImage(vol, -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
+  }
   if(flash){
     ctx.save();
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = (typeof flash === 'number') ? flash : 0.55;   // 数値=探検の狙撃の命中(弱く)
     ctx.drawImage(whiteMaskFor(spr), -L.dw/2, -L.dh/2+L.dy, L.dw, L.dh);
     ctx.restore();
   }
@@ -1296,9 +1337,13 @@ function drawMonster(e,p){
   if(downedPose){ ctx.save(); ctx.rotate(Math.PI/2); }
   // 探検の野生・ボスの姿勢(転倒で潰れて傾く・崩れ落ちる・足を引きずる・草を食む)。
   // 回転の板にしないため、足元を軸に縦に潰して傾ける(explore.js。true のときだけ save 済み)
+  // 探検: 狙撃の命中で絵が数px揺れて一瞬だけ弱く光る(sniper.js)。姿勢(exploreBeginPose)の外側で足し合わせる
+  const snJolt = game.explore && typeof sniperHitJolt === 'function' ? sniperHitJolt(e) : null;
+  if(snJolt){ ctx.save(); ctx.translate(snJolt.x / p.scale, snJolt.y / p.scale); }
   const explorePose = game.explore && exploreBeginPose(e);
   if(displayImg){
-    drawMonsterPortrait(e, displayImg, e.hitFlash>0, portraitLayout);
+    drawMonsterPortrait(e, displayImg, e.hitFlash>0 ? true : (snJolt && snJolt.flash > 0.01 ? snJolt.flash : false), portraitLayout);
+    if(game.explore && e.isPlayer && typeof sniperDrawSlungRifle === 'function') sniperDrawSlungRifle(e, portraitLayout);
     if(game.explore) exploreDrawMonsterTint(e, displayImg, portraitLayout);   // 探検のボスの色味・怒りの目・討伐で色が抜ける
   } else {
     drawMonsterShape(e, e.hitFlash>0?'#ffffff':el.color, el.dark);
@@ -1328,6 +1373,7 @@ function drawMonster(e,p){
     }
   }
   if(explorePose) ctx.restore();
+  if(snJolt) ctx.restore();
   if(downedPose) ctx.restore();   // 倒れ姿勢の回転はスプライトまで
 
   // 状態の輪の線の太さ。スコープで覗いている間は倍率ぶん太い帯にならないよう画面上1.8pxまでに抑える

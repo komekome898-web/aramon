@@ -466,6 +466,7 @@ function pageTools(){
        o.noBreak: 撃っても部位破壊にしない(命中の表示だけを撮る)
      前のカットで撃ったボスは怒って追ってくるので、毎回すべてのボスを巣へ戻して落ち着かせてから撮る */
   window.__shotSnipe = (o)=>{
+    if(typeof sniperView === 'object') sniperView.freezeFx = false;
     for(const rec of exploreState.bosses){
       const b = getEntity(rec.id);
       if(!b || !b.alive) continue;
@@ -565,9 +566,12 @@ function pageTools(){
         }
         // 撮影は1枚に時間がかかるので、演出の時計はこちらで決める(muzzle=45ms後 / それ以外=落ち着いた後)
         // muzzle は 15ms×3コマ(=45ms)だけ反動のばね・閃光を進めてから撮る
-        if(o.fire === 'muzzle'){ for(let i=0;i<3;i++){ sniperView.lastMs = performance.now() - 15; sniperFrame(); sniperFrameEnd(); } }
+        // muzzle は 15ms×2コマ(閃光の2コマ目=白い芯つき)だけ反動のばね・閃光を進めてから撮る
+        if(o.fire === 'muzzle'){ for(let i=0;i<2;i++){ sniperView.lastMs = performance.now() - 15; sniperFrame(); sniperFrameEnd(); } }
         sniperView.lastMs = 1234.5;
-        if(o.fire !== 'muzzle'){ sniperView.flash = 0; sniperView.smoke.length = 0; sniperView.recoil = sniperView.recoilV = 0; sniperView.recoilX = sniperView.recoilXV = 0; }
+        if(o.fire !== 'muzzle'){ sniperView.flash = 0; sniperView.flashN = null; sniperView.smoke.length = 0; sniperView.recoil = sniperView.recoilV = 0; sniperView.recoilX = sniperView.recoilXV = 0; }
+        // 撮るまでに描き直すコマ(__shotField・settleFrame)で演出の時計が進まないよう止める(閃光・命中の数字をその瞬間のまま写す)
+        sniperView.freezeFx = true;
         at.yaw = camState.yaw; at.pitch = camState.pitch;
       } else sniperView.lastMs = 1234.5;
     };
