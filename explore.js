@@ -2453,6 +2453,7 @@ function exploreBadge(r, fill, edge){
 // 画面の上に重ねる物(render.js の render() から。探検以外では何もしない)
 function exploreDrawScreen(){
   if(!game.explore) return;
+  exploreDrawCrateLabels();   // 開いた補給箱の中身の名前札(世界の後=旗竿などの立体物より手前。explore_loot.js)
   exploreDrawRageEdge();
   exploreDrawRoarRings();
   exploreDrawMeteors();

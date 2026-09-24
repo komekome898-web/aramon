@@ -6865,9 +6865,9 @@ const EXPLORE_CRATE_HEAD = { common:{mat:'common'}, rare:{mat:'rare'}, epic:{mat
 // 光の柱はレア度で段階的に太く高く(金がいちばん太く、根元に輪)。見ただけで価値の順が分かるように
 const EXPLORE_PILLAR_HEIGHT       = { common:210, rare:320, epic:450, legendary:640 };
 /* 太さの差は1.5倍まで(金の柱が視界をふさぐ壁になった=批評指摘)。レア度の差は明るさ・周りを舞う粒・根元の輪で付ける */
-const EXPLORE_PILLAR_WIDTH        = { common:10,  rare:11,  epic:13,  legendary:15 };
-const EXPLORE_PILLAR_MIN_PX       = { common:2.6, rare:2.8, epic:3.3, legendary:3.9 };   // 遠くでも柱がこの太さ(画面px)より細くならない
-const EXPLORE_PILLAR_GLOW         = { common:0.42, rare:0.55, epic:0.7, legendary:0.9 };  // 柱の明るさ
+const EXPLORE_PILLAR_WIDTH        = { common:11,  rare:12,  epic:14,  legendary:16 };
+const EXPLORE_PILLAR_MIN_PX       = { common:3.4, rare:3.8, epic:4.4, legendary:5.2 };   // 遠くでも柱がこの太さ(画面px)より細くならない(遠景で細く淡い=批評指摘で太らせた)
+const EXPLORE_PILLAR_GLOW         = { common:0.5, rare:0.64, epic:0.8, legendary:0.98 };  // 柱の明るさ
 const EXPLORE_PILLAR_MOTES        = { common:0, rare:2, epic:4, legendary:7 };            // 柱の周りを螺旋に昇る光の粒の数
 /* 補給箱を開けた瞬間: 中身がレア度の枠付きアイコンになって箱の上に扇形に並び(rise→hold)、そこから地面へ飛ぶ */
 const EXPLORE_CRATE_FAN           = { rise:0.28, hold:0.85, lift:95, gap:44, arc:18 };   // 秒 / 箱の上の高さ・間隔・弧の反り(ワールド単位)

@@ -678,6 +678,35 @@ async function shoot(page, file, vp){
   await page.screenshot({ path:file, timeout:180000 });   // ソフトウェア描画で重い画は30秒を超えることがある
   if(vp.isMobile && vp.h > vp.w) await unrotateShot(file, vp.w, vp.h, vp.dsf);   // 縦持ちだけ回して戻す
 }
+/* --probe-player: 同じ瞬間を「自分(player)を描かない」でもう1枚撮る(<cut>_<vp>_noplayer.png)。
+   2枚の差分の外接矩形 = 画面に写った自分の絵の範囲(竜の不透明部分と着けた装備。影・輪・光の柱は含まない)。
+   時計は止めてあるので、差は自分の絵だけから出る。見た目の検査用でゲームには効かない */
+const PROBE_PLAYER = flag('probe-player');
+async function probePlayer(page, file, vp){
+  if(!PROBE_PLAYER) return;
+  // 草の揺れ・焚き火の炎は実時間で動くので、2枚のあいだだけ時計(Date / performance)を止めて同じ瞬間にそろえる
+  await page.evaluate(()=>{
+    if(!window.__shotDrawMonsterOrig){
+      window.__shotDrawMonsterOrig = drawMonster;
+      // 自分の「絵」(drawImage で描く竜の体・色味・着けた装備)だけを消す。足元の影・輪・柱(図形で描く)は残す
+      drawMonster = function(e, p){
+        if(!(window.__shotHidePlayer && e === player)) return window.__shotDrawMonsterOrig(e, p);
+        const di = ctx.drawImage; ctx.drawImage = function(){};
+        try{ return window.__shotDrawMonsterOrig(e, p); } finally { delete ctx.drawImage; if(ctx.drawImage !== di) ctx.drawImage = di; }
+      };
+    }
+    const d = Date.now(), pn = performance.now();
+    window.__shotClockSave = [Date.now, performance.now];
+    Date.now = ()=> d; performance.now = ()=> pn;
+  });
+  await settleFrame(page);
+  await shoot(page, file.replace(/\.png$/, '_probe.png'), vp);
+  await page.evaluate(()=>{ window.__shotHidePlayer = true; });
+  await settleFrame(page);
+  await shoot(page, file.replace(/\.png$/, '_noplayer.png'), vp);
+  await page.evaluate(()=>{ window.__shotHidePlayer = false; [Date.now, performance.now] = window.__shotClockSave; });
+  await settleFrame(page);
+}
 
 /* ===== --measure: 探検のHUDの実測(撮影はしない) =====
    縦持ち 375x667 / 375x812 / 414x896 と横持ち 667x375 / 812x375 / 1624x750 で探検を始め、
@@ -883,6 +912,7 @@ for(const vpName of vpNames){
       await settleFrame(page);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
+      await probePlayer(page, file, vp);
       const shotRec = { cut:c.name, vp:vpName, file:path.relative(ROOT, file), cam:info };
       /* 検査用(批評8巡目①): 狙撃銃を持っているときの技パネル(#movePanel)・弾数札(#sniperAmmoChip)・
          狙撃ボタン(#sniperAdsBtn)・FIRE/DASH・回転ボタンが互いに重なっていないかを、
@@ -977,7 +1007,14 @@ for(const vpName of vpNames){
       await settleFrame(page);
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
-      report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file) });
+      await probePlayer(page, file, vp);
+      // 出発の札: 地名と題字の矩形(explore_loot.js が描いたときの値。論理px)と、下の黒帯の上端(DOM の実測)
+      const cine = c.name === 'depart' ? await page.evaluate(()=>{
+        const bar = document.getElementById('exploreCineBarBottom');
+        return { rects: window.__exlCineDbg || null, barTop: bar ? (bar.offsetTop) : null, viewH };
+      }) : undefined;
+      if(cine) console.log(`  札の矩形 ${JSON.stringify(cine)}`);
+      report.shots.push({ cut:c.name, vp:vpName, file:path.relative(ROOT, file), cine });
       console.log(`撮影 ${c.name}_${vpName}`);
     }
   }

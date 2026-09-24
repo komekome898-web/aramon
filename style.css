@@ -7112,7 +7112,8 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
 .exf-ico.is-mini{ width:26px; height:26px; border-width:1.5px; border-radius:6px; }
 .exf-ico.is-mini .exf-emb{ font-size:9px; right:-4px; bottom:-4px; }
 .exf-ico.is-stage{ width:100%; height:100%; border-width:2.5px; border-radius:14px; }
-.exf-ico.is-stage .exf-emb{ font-size:18px; right:-7px; bottom:-7px; }
+/* 大きな絵の紋章は右上の角(右下だと絵の下の名前の行に重なった=批評指摘) */
+.exf-ico.is-stage .exf-emb{ font-size:18px; right:-7px; top:-6px; bottom:auto; }
 .exf-ico.is-hero{ width:104px; height:104px; border-width:3px; border-radius:18px; }
 .exf-ico.is-hero .exf-emb{ font-size:24px; right:-10px; bottom:-10px; }
 /* 詳細: 上に大きな見た目の欄、下に比較・合計・素材(送れる)、いちばん下にボタン */
@@ -7123,22 +7124,24 @@ html.narrow-screen .exf-body{ grid-template-columns:minmax(0,1fr) minmax(200px, 
    前は着けた姿を名前の横に並べたり右上の小さな飾りにしたりしたが、どちらも名前・副題が
    数文字で切れた(批評指摘)。名前の列を上段から完全に外して下段を全幅にし、
    着けた姿は上段の中で装備の絵と同じだけ大きく見せる。 */
-.exf-d-stage{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px;
+.exf-d-stage{ --stage-h:clamp(72px, calc(20 * var(--vh)), 168px); flex:0 0 auto; display:grid;
+  grid-template-columns:var(--stage-h) minmax(0, 1fr); grid-template-areas:"art fig" "text text"; column-gap:10px; row-gap:4px;
   padding:6px; border-radius:9px; background:linear-gradient(135deg, rgba(0,0,0,0.45), rgba(0,0,0,0.15)); }
-.exf-stage-top{ --stage-h:clamp(72px, calc(20 * var(--vh)), 168px); position:relative; height:var(--stage-h); display:flex; align-items:center; gap:10px; }
-/* 縦持ち(強制横向きの狭い実画面)は縦がいちばん厳しい。上段(絵)を縮めて、必要な素材(最優先)の
-   場所を残す(批評指摘=forge_weapon_portで素材行そのものが消えた)。着けた姿は縮んでも
-   カプセルの外に出た文字(.exf-fig-cap)は重ならない(絵の"中"に文字を置かないため) */
-/* 着けた姿の高さ≧150px(2倍画像で測る=統括の指定)を縦持ちでも守りつつ、
-   最優先の素材(.exf-d-need)に縦を残すため下限ぎりぎりまで詰める。76px×dsf2=152px */
-html.narrow-screen .exf-stage-top{ --stage-h:clamp(76px, calc(13 * var(--vh)), 92px); }
-html.narrow-screen .exf-d-stage{ padding:2px; gap:1px; }
+/* 縦持ち(強制横向きの狭い実画面): 着けた姿を右の列へ出し、絵+文字の2段ぶちぬきの高さで大きく見せる
+   (上段の中で絵と並べると上段の高さ=76〜92pxに縛られ、竜の本体が約56pxしかなかった=批評指摘)。
+   絵は小さめにして、文字が右の列に押されても2段の高さが伸びないようにする(比較と素材の縦を守る) */
+html.narrow-screen .exf-d-stage{ --stage-h:clamp(64px, calc(13 * var(--vh)), 80px);
+  grid-template-columns:minmax(0, 1fr) 46%; grid-template-areas:"art fig" "text fig"; column-gap:6px; row-gap:1px; padding:2px; }
 html.narrow-screen .exf-stage-text{ gap:0; }
+/* 縦持ちは文字の列が狭い(右に着けた姿)ので、副題・派生元は1行で「…」にする。折り返すと上の段が伸びて
+   比較と素材の縦を食った(iPhone SE で素材5行のうち2行しか見えなくなった) */
+html.narrow-screen .exf-d-meta{ white-space:nowrap; }
+html.narrow-screen .exf-d-meta-to, html.narrow-screen .exf-d-from{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 html.narrow-screen .exf-detail{ gap:3px; }
 /* 素材が最優先(絶対に削らない)なので、縦持ちでは行の高さそのものを詰めて場所を作る */
 html.narrow-screen .exf-cmp, html.narrow-screen .exf-setrow, html.narrow-screen .exf-matrow{ min-height:16px; }
 html.narrow-screen .exf-sec-label{ margin:3px 0 1px; }
-.exf-stage-art{ position:relative; flex:0 0 auto; width:min(46%, var(--stage-h)); aspect-ratio:1 / 1; display:flex; align-items:center; justify-content:center; }
+.exf-stage-art{ grid-area:art; position:relative; width:var(--stage-h); height:var(--stage-h); display:flex; align-items:center; justify-content:center; }
 .exf-stage-art::before{ content:''; position:absolute; inset:-10%; border-radius:50%; pointer-events:none;
   background:repeating-conic-gradient(from 0deg, var(--rc) 0deg 4deg, rgba(0,0,0,0) 4deg 18deg);
   -webkit-mask-image:radial-gradient(circle, #000 25%, rgba(0,0,0,0) 70%); mask-image:radial-gradient(circle, #000 25%, rgba(0,0,0,0) 70%);
@@ -7146,8 +7149,9 @@ html.narrow-screen .exf-sec-label{ margin:3px 0 1px; }
 /* 着けた姿(自分のモンスター+着けた後のセットの色の光と足元の輪)。上段の中で装備の絵と並ぶ、
    ふつうのflexの子(位置を決め打ちしない)。幅が余れば伸び、足りなければ縮む。
    「着けた姿」の文字は絵の外(下)に出す(絵に重ねると小さいとき兜と重なった=批評指摘) */
-.exf-stage-fig{ --wc:#ccc; position:relative; flex:1 1 auto; min-width:0; height:100%;
-  max-width:min(46%, calc(var(--stage-h) * 0.85)); display:flex; flex-direction:column; align-items:center; gap:1px; }
+.exf-stage-fig{ --wc:#ccc; grid-area:fig; position:relative; min-width:0; height:var(--stage-h);
+  width:min(100%, calc(var(--stage-h) * 0.85)); display:flex; flex-direction:column; align-items:center; gap:1px; }
+html.narrow-screen .exf-stage-fig{ width:100%; height:auto; align-self:stretch; }
 .exf-fig-pic{ position:relative; flex:1 1 auto; min-height:0; width:100%; }
 .exf-fig-cv{ position:absolute; z-index:1; left:0; top:0; width:100%; height:100%; display:block;
   filter:drop-shadow(0 0 2px var(--wc)) drop-shadow(0 0 6px var(--wc)); }
@@ -7161,7 +7165,7 @@ html.narrow-screen .exf-sec-label{ margin:3px 0 1px; }
 .exf-fig-cap{ flex:0 0 auto; text-align:center; font-size:9px; font-weight:700; letter-spacing:1px; color:var(--ink-dim); white-space:nowrap; }
 /* 下段: 名前・副題・派生元・状態(全幅)。名前は1行で切らず、2行まで折り返す(横持ちで4文字だけ見えて
    「…」になっていた=批評指摘)。副題・派生元も同じ理由でnowrap+ellipsisをやめ、2行まで折り返す */
-.exf-stage-text{ flex:0 0 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.exf-stage-text{ grid-area:text; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .exf-d-name{ font-weight:800; font-size:16px; color:#fff; line-height:1.18; text-shadow:0 0 10px var(--rc);
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .exf-d-meta{ display:flex; min-width:0; font-size:10px; color:var(--ink-dim); }
@@ -7209,18 +7213,17 @@ html.narrow-screen .exf-lower{ gap:6px; }
 .exf-matrow.is-ok .exf-mat-n b{ color:#7dffb0; }
 .exf-matrow.is-short .exf-mat-n b{ color:#ff6b5a; }
 .exf-note{ font-size:11px; line-height:1.5; color:var(--ink-dim); }
-/* 入手先は11pxで2行まで(1行に詰めて切らない)。それでも入らない分はこの要素自身が「…」で切る */
-.exf-src{ margin:0 0 4px 24px; font-size:11px; line-height:14px; max-height:28px; color:#ffb870; white-space:normal; overflow:hidden;
-  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-/* 縦持ち(強制横向きの狭い実画面)は縦がいちばん厳しいので、入手先は1行までにして
-   必要な素材の行そのものが丸ごと隠れないようにする(批評指摘=forge_weapon_portで素材行が消えた) */
-html.narrow-screen .exf-src{ max-height:14px; -webkit-line-clamp:1; }
+/* 入手先は1行。入らない分はこの要素自身が横へ「…」で切る(行の途中で縦に切らない)。
+   以前は2行(縦持ち1行)の line-clamp で、2行目以降が縦に切れていた(layout_test の「文字が切れる」16件)。
+   縦が足りないときは行ごと隠す(_exfKeepMatRows。R3=入手先の2件目から) */
+.exf-src{ margin:0 0 4px 24px; font-size:11px; line-height:14px; height:14px; color:#ffb870;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* 必要な素材(「作る」ボタンの直上)。**ここを最優先で確保し**(批評指摘)、能力差分・セット効果
    (.exf-d-body)は残りへ丸ごと単位で収める(exploreForgeSnapBody / _exfKeepRows) */
 /* 素材の行は絶対に削らない(_exfKeepMatRows)。入手先を1件に絞ってもまだ入りきらない
    ごく稀な場合は、隠して途中で切る(R3違反)よりスクロールで全部読めるほうを選ぶ(R2) */
 .exf-d-need{ position:relative; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
-  padding-left:4px; border-left:1px solid rgba(255,255,255,0.1); }
+  padding-left:4px; padding-bottom:3px; border-left:1px solid rgba(255,255,255,0.1); }
 /* セット効果(下段の一番下に1行だけ。統括の指定)。入らないときはexploreForgeSnapBodyが
    丸ごと隠す(空なら:emptyでも消える)。複数段の内訳は出さず、今効いている(か次に効く)1段だけ */
 .exf-d-set{ flex:0 0 auto; min-height:17px; padding:3px 8px; border-radius:6px; background:rgba(255,255,255,0.05); }

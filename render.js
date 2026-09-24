@@ -1355,8 +1355,11 @@ function drawMonster(e,p){
       const pose = exploreComputePose(e);
       if(pose) shrink = 1 - 0.3*clamp(Math.abs(pose.bob||0)/(e.radius*0.24), 0, 1);
     }
-    ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 0.72 : 0.9)*uiMult*shrink, e.radius*(pinLook ? 0.3 : 0.4)*uiMult*shrink, 0,0,Math.PI*2);
-    ctx.fillStyle = pinLook ? `rgba(0,0,0,${0.22*shrink})` : 'rgba(0,0,0,0.35)'; ctx.fill();
+    // 探検の帰還の光の中では影を描かない(光の輪の上に暗い楕円が残った。explore_loot.js)
+    if(!(game.explore && typeof exploreReturnGlow === 'function' && exploreReturnGlow(e))){
+      ctx.beginPath(); ctx.ellipse(0, e.radius*0.7, e.radius*(pinLook ? 0.72 : 0.9)*uiMult*shrink, e.radius*(pinLook ? 0.3 : 0.4)*uiMult*shrink, 0,0,Math.PI*2);
+      ctx.fillStyle = pinLook ? `rgba(0,0,0,${0.22*shrink})` : 'rgba(0,0,0,0.35)'; ctx.fill();
+    }
   }
   if(game.explore && !scopeUI) exploreDrawMonsterUnder(e, uiMult, p);   // 探検: 足元の輪(敵の赤・群れの長の金)・ボスの輪郭の光(explore.js)
 

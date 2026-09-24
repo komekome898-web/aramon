@@ -6304,9 +6304,13 @@ function exploreShowResult(res){
     if(craftEl){
       // 縦持ちで素材の一覧を潰さないよう、この欄は横1行に収める(統括の指定)。
       // 状態の文言は出さず、枠の色(作れる=緑)とアイコン+短い名前だけの小さな札にする
-      craftEl.classList.toggle('hidden', !cands.length);
-      craftEl.innerHTML = cands.length ? `<span class="exr-craft-label">⚒️ 作れる装備${n ? `<em>${n}</em>` : ''}</span>`
-        + `<span class="exr-craft-list" id="exploreResultCraftList">${cands.map(c=>
+      /* 「作れる装備 N」の下には今すぐ作れる物だけを並べる(見出しの数と札の数を一致させる)。
+         作れない物まで並べて、見出しの「3」に札が11枚並んでいた(批評指摘=横持ちのリザルト)。
+         今すぐ作れる物が1つも無いときだけ、今回の素材を使う物を「あと少しで作れる」として並べる */
+      const shown = n > 0 ? cands.filter(c=> c.ok) : cands;
+      craftEl.classList.toggle('hidden', !shown.length);
+      craftEl.innerHTML = shown.length ? `<span class="exr-craft-label">${n ? `⚒️ 作れる装備<em>${n}</em>` : '⚒️ あと少しで作れる'}</span>`
+        + `<span class="exr-craft-list" id="exploreResultCraftList">${shown.map(c=>
             `<button class="exr-craft-card${c.ok ? ' is-ok' : ''}" data-key="${c.k}">${exploreGearIconHtml(c.k, 'is-mini')}`
               + `<span class="exr-cc-name">${exploreGearShortName(c.k)}</span></button>`
           ).join('')}</span>` : '';
@@ -6630,16 +6634,21 @@ function _exfKeepMatRows(need, avail){
   if(!kids.length) return 0;
   const bottom = ()=> kids.filter(k=> !k.classList.contains('exf-row-hidden'))
     .reduce((m, k)=> Math.max(m, k.offsetTop + k.offsetHeight), 0);
+  /* 箱の下に余白(.exf-d-need の padding-bottom)を残して収める。行の高さぴったりだと、絵文字の字面が
+     行の下へ1px出る分や、1〜2pxだけのはみ出しが「送れないのに切れている」形になった(layout_test) */
+  avail -= parseFloat(getComputedStyle(need).paddingBottom) || 0;
   let h = bottom();
   if(!(avail > 0) || h <= avail + 0.5) return h;
-  // 入手先は1件目だけは何があっても残す(統括の指定「1件以上は見える」)。削るのは2件目以降から
+  /* 入手先は後ろから1行ずつ丸ごと隠す(統括の指定: 入らない入手先の行は丸ごと出さない=行の途中で切らない)。
+     以前は1件目を必ず残していたので、iPhone SE の縦持ちで素材の行が箱の下へ1〜2pxはみ出し、
+     文字の下の縁が切れていた(layout_test の「文字が切れる」) */
   const srcs = kids.filter(k=> k.classList.contains('exf-src'));
-  for(let i = srcs.length - 1; i >= 1; i--){
+  for(let i = srcs.length - 1; i >= 0; i--){
     srcs[i].classList.add('exf-row-hidden');
     h = bottom();
     if(h <= avail + 0.5) return h;
   }
-  return h;   // それでも入らない: 素材の行(fromRow含む)・入手先1件目は隠さずそのまま返す
+  return h;   // それでも入らない: 素材の行(fromRow含む)は隠さずそのまま返す(箱が縦に送れる)
 }
 /* セット効果は下段のいちばん下に1行だけ(統括の指定)。効いている段があればそれを、
    無ければ次の段(あと何個で届くか)を出す。複数段の内訳は出さない */
@@ -6657,7 +6666,7 @@ function _exfSetLineHtml(set, nIf){
 }
 /* 詳細の下段(統括の指定=2列固定): 左=今の装備→これの比較、右=必要な素材+入手先。
    使える高さ(R1)を2列で共有し、行の途中では切らない。
-   **削る順番(R3。統括の指定): ①入手先の2件目から ②セット効果(丸ごと) ③比較の3行目から**
+   **削る順番(R3。統括の指定): ①入手先(後ろの行から丸ごと) ②セット効果(丸ごと) ③比較の3行目から**
    ―― 必要な素材の行そのものと、比較の上2行は何があっても消さない。
    ボタンは .exf-d-actions の margin-top:auto で下に付いたまま。 */
 function exploreForgeSnapBody(){
@@ -6813,13 +6822,14 @@ function renderExploreForgeDetail(gear, stash){
     ? `<span class="exf-stage-fig${wearSet && wearSet.active ? ' is-lit' : ''}" style="--wc:${wearDef ? wearDef.color : set.color || rar.color}">`
       + `<span class="exf-fig-pic"><span class="exf-fig-ring"></span><canvas class="exf-fig-cv" id="exploreForgeFig"></canvas></span>`
       + `<span class="exf-fig-cap">着けた姿</span></span>` : '';
-  // 上段=装備の絵+着けた姿(--stage-hから幅を決める)、下段=名前・副題・派生元・状態(全幅。批評指摘で分離)
-  stage.innerHTML = `<span class="exf-stage-top"><span class="exf-stage-art">${exploreGearIconHtml(key, 'is-stage')}</span>${figHtml}</span>`
+  // 絵・着けた姿・文字の3つを並べる(並べ方は style.css の .exf-d-stage のグリッド。横持ち=上段に絵と姿・下段に文字、
+  // 縦持ち=左に絵と文字・右に着けた姿を2段ぶちぬきで大きく)
+  stage.innerHTML = `<span class="exf-stage-art">${exploreGearIconHtml(key, 'is-stage')}</span>${figHtml}`
     + `<span class="exf-stage-text"><span class="exf-d-name">${g.name}</span>`
     + `<span class="exf-d-meta"><span class="exf-d-rar">${rar.label}</span><span class="exf-d-meta-to">${set.name}セット・${slot ? slot.label : ''}${g.shape ? (g.shape==='bow' ? '・弓' : '・銃') : ''}</span></span>`
     + (from.length ? `<span class="exf-d-from">派生元 ${from.map(f=> EXPLORE_GEAR[f].name).join(' / ')}</span>` : '')
     + `<span class="exf-d-state is-${st}">${EXPLORE_GEAR_STATE_LABEL[st]}</span></span>`;
-  if(game && game.selectedElement) exploreRenderWornFigure(document.getElementById('exploreForgeFig'), game.selectedElement, { ...gear.equip, [g.slot]: key }, { padX:0.02, top:0.16, bottom:0.1 });
+  if(game && game.selectedElement) exploreRenderWornFigure(document.getElementById('exploreForgeFig'), game.selectedElement, { ...gear.equip, [g.slot]: key }, { padX:0.02, top:0.145, bottom:0.08 });   // 上=兜の出っぱり分・下=足元の輪(.exf-fig-ring)の中心
   const needEl = document.getElementById('exploreForgeDNeed');
   const setLineEl = document.getElementById('exploreForgeDSet');
   if(g.root){
