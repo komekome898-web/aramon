@@ -38,6 +38,64 @@ const FOG_FAR  = 3200;
    **FAR はパッチの半分(3600)より手前に保つ**(切れ目を見せない決まりは同じ)。倍率1では何も変えない */
 const FOG_ZOOM_NEAR = 2300, FOG_ZOOM_FAR = 3550, FOG_ZOOM_FULL = 4;   // この倍率で押し切る
 let fogBase = null;
+/* ---- 描画の入口の守り ----
+   カメラ・霞・日差しに非有限の値(NaN/Infinity)やワールドから桁外れに離れた値が入ると、
+   その1フレームだけでなく以後ずっと画面が霞の色一色になる(三角形が全部カリングされる・
+   影のカメラが壊れる)。2026-09-24: 画面揺れの残り時間が時計の巻き戻りで増え続け、
+   カメラが高さ8万まで飛んだまま戻らなかった。原因側は直したうえで、ここでも受け止める。
+   正常なフレームの値を覚えておき、壊れた値はその場で直前の正常な値へ戻す(正常なら何もしない)。 */
+const VIEW_SANE_XY = 60000;   // ワールド(最大18100)の外へこれ以上離れたカメラは壊れた値とみなす
+const VIEW_SANE_Z  = 30000;   // 同じく高さ(山の最高点は3000未満)
+const viewGuard = { cam:null, quat:null, sunI:null, sunC:null, warned:false };
+const finite = (v)=> typeof v === 'number' && isFinite(v);
+const finiteV3 = (v)=> finite(v.x) && finite(v.y) && finite(v.z);
+function guardWarn(what){
+  if(viewGuard.warned) return;
+  viewGuard.warned = true;
+  console.warn('[aramon] real3d: 壊れた値を直前の正常な値へ戻しました', what);
+}
+// camPos / camState(ゲーム側の値)。壊れていたらその場で直す
+function guardCamera(cp, cs){
+  const ok = finite(cp.x) && finite(cp.y) && finite(cp.z) && finite(cs.yaw) && finite(cs.pitch)
+          && Math.abs(cp.x) < VIEW_SANE_XY && Math.abs(cp.y) < VIEW_SANE_XY && Math.abs(cp.z) < VIEW_SANE_Z;
+  if(ok){
+    const g = viewGuard.cam || (viewGuard.cam = {});
+    g.x = cp.x; g.y = cp.y; g.z = cp.z; g.yaw = cs.yaw; g.pitch = cs.pitch;
+    return;
+  }
+  guardWarn({ x:cp.x, y:cp.y, z:cp.z, yaw:cs.yaw, pitch:cs.pitch });
+  const g = viewGuard.cam || { x:0, y:0, z:200, yaw:0, pitch:0.1 };
+  cp.x = g.x; cp.y = g.y; cp.z = g.z;
+  if(!finite(cs.yaw)) cs.yaw = g.yaw;
+  if(!finite(cs.pitch)) cs.pitch = g.pitch;
+}
+// 霞(線形 Fog / 探検の FogExp2)・日差し・カメラの向き。描く直前に見る
+function guardScene(){
+  const f = scene.fog;
+  if(f){
+    if(f.isFogExp2){ if(!finite(f.density) || f.density < 0){ guardWarn('fog.density'); f.density = 0.0002; } }
+    else if(!finite(f.near) || !finite(f.far)){ guardWarn('fog.near/far'); f.near = FOG_NEAR; f.far = FOG_FAR; fogBase = null; }
+    if(!(finite(f.color.r) && finite(f.color.g) && finite(f.color.b))){ guardWarn('fog.color'); f.color.setHex(R3.theme.haze); }
+  }
+  if(sun){
+    if(finite(sun.intensity) && finite(sun.color.r) && finite(sun.color.g) && finite(sun.color.b)){
+      viewGuard.sunI = sun.intensity;
+      (viewGuard.sunC || (viewGuard.sunC = new THREE.Color())).copy(sun.color);
+    } else {
+      guardWarn('sun');
+      sun.intensity = viewGuard.sunI != null ? viewGuard.sunI : 1;
+      if(viewGuard.sunC) sun.color.copy(viewGuard.sunC); else sun.color.setRGB(1, 1, 1);
+    }
+    if(!finiteV3(sun.position) || !finiteV3(sun.target.position)){
+      guardWarn('sun.position');
+      sun.target.position.copy(camera.position);
+      sun.position.set(camera.position.x + SUN_DIR.x*2200, camera.position.y + SUN_DIR.y*2200, camera.position.z + SUN_DIR.z*2200);
+    }
+  }
+  const q = camera.quaternion;
+  if(finite(q.x) && finite(q.y) && finite(q.z) && finite(q.w)) (viewGuard.quat || (viewGuard.quat = new THREE.Quaternion())).copy(q);
+  else { guardWarn('camera.quaternion'); if(viewGuard.quat) q.copy(viewGuard.quat); else q.identity(); }
+}
 const CAM_FAR  = 12000;
 /* ---- PBR(物理ベース描画)の調整値 ----
    環境光は「空をそのままPMREMに通した環境マップ」(=HDRIの代わり。画像ファイルは増やさない)。
@@ -245,11 +303,15 @@ const api = {
     if(!active || !scene) return false;
     const cp = window.camPos, cs = window.camState;
     if(!cp || !cs) return false;
+    guardCamera(cp, cs);
     // 視野角は2Dのproject()(world.jsのFOV_V)と必ず同じ値にする。設定で変えられるので毎フレーム見る
-    const fovDeg = (window.__aramonLook && window.__aramonLook.fovDeg) || 64;
+    const fovRaw = window.__aramonLook && window.__aramonLook.fovDeg;
+    const fovDeg = (finite(fovRaw) && fovRaw > 1 && fovRaw < 170) ? fovRaw : 64;
     if(camera.fov !== fovDeg){ camera.fov = fovDeg; camera.updateProjectionMatrix(); }
-    const zoom = (window.__aramonLook && window.__aramonLook.zoom) || 1;
-    if(scene.fog && (zoom > 1 || fogBase)){
+    const zoomRaw = window.__aramonLook && window.__aramonLook.zoom;
+    const zoom = (finite(zoomRaw) && zoomRaw > 0) ? zoomRaw : 1;
+    // 線形の霞だけ(探検の指数型の霞には near/far が無い。倍率での薄め方は real3d_explore.js)
+    if(scene.fog && scene.fog.isFog && (zoom > 1 || fogBase)){
       if(!fogBase) fogBase = { near:scene.fog.near, far:scene.fog.far };
       const t = Math.min(1, (zoom - 1) / (FOG_ZOOM_FULL - 1));
       scene.fog.near = fogBase.near + (Math.max(fogBase.near, FOG_ZOOM_NEAR) - fogBase.near) * t;
@@ -299,6 +361,7 @@ const api = {
       sun.target.position.set(fx, fz, fy);
       sun.position.set(fx + SUN_DIR.x*2200, fz + SUN_DIR.y*2200, fy + SUN_DIR.z*2200);
     }
+    guardScene();
     renderer.render(scene, camera);
     return true;
   },

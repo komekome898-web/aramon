@@ -7338,7 +7338,9 @@ function render(){
   if(game.explore) safeDraw(exploreCineFrame);   // 探検: ボス登場の寄り(狙撃の構え中は狙撃を優先。倍率は sniperFrameEnd が1へ戻す)
   /* 当たった衝撃でカメラをずらす。2DのprojectもWebGL層も同じcamPosを読むので、
      ここで1回ずらせば両方の層が一緒に揺れる。**必ず fxPunchRestore() で戻す。** */
-  fxPunchApply(_fxGlPrevMs ? Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000) : 0.016);
+  /* 経過時間は 0〜0.05秒に収める。時計が戻ると(撮影台は描く間 performance.now を固定する)負になり、
+     揺れの残り時間が減らずに増え続けて、カメラが何万単位も飛んだまま戻らなかった(3D層が霞一色)。 */
+  fxPunchApply(_fxGlPrevMs ? Math.max(0, Math.min(0.05, (performance.now()-_fxGlPrevMs)/1000)) : 0.016);
   // 序盤など弾/エフェクトが同時に多い時は重い影描画(shadowBlur)を間引いて負荷を下げる
   renderHeavyLoad = gfxLevel >= 1 || (projectiles.length + particles.length) > 22;
   // リアルマップ(テスト)では地面をWebGL(real3d.js)が描くので、2D側は空・地面・
@@ -7507,7 +7509,8 @@ function renderFxGlLayer(){
      端末でだけ技のエフェクトが出ない**という再現しにくい不具合になる。      */
   if(!fx.isActive() && !fx.setActive(true)) return;
   const now = performance.now();
-  const dt = _fxGlPrevMs ? (now - _fxGlPrevMs)/1000 : 0.016;
+  // 時計が戻っても(撮影台の固定時刻など)負の経過時間で演出を巻き戻さない
+  const dt = _fxGlPrevMs ? Math.max(0, (now - _fxGlPrevMs)/1000) : 0.016;
   _fxGlPrevMs = now;
   fx.begin(dt);
   fxGlFeed(fx, dt);
@@ -7559,8 +7562,8 @@ function fxFlashAdd(amount){ _fxFlash = Math.max(_fxFlash, Math.max(0, Math.min(
 // 描画の直前にカメラをずらす。必ず fxPunchRestore() と対で呼ぶ
 function fxPunchApply(dt){
   if(_fxPunchT <= 0){ _fxPunch = 0; _fxFlash = Math.max(0, _fxFlash - dt*FX_FLASH_DECAY); return; }
-  _fxPunchT -= dt;
-  const t = Math.max(0, _fxPunchT / FX_PUNCH_MAX_SEC);
+  _fxPunchT = Math.min(FX_PUNCH_MAX_SEC, _fxPunchT - Math.max(0, dt || 0));   // 残り時間は決して伸ばさない
+  const t = Math.max(0, Math.min(1, _fxPunchT / FX_PUNCH_MAX_SEC));
   const amp = _fxPunch * t * t * (viewH * FX_PUNCH_MAX_AMP);
   // 画面のピクセルではなくワールドでずらす。奥行きが変わらないよう横と縦だけ動かす
   const ph = matchTime * 90;

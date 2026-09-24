@@ -1586,7 +1586,7 @@ export function updateExplore(t, cp, ctx){
   fogX.color.copy(_hz);
   // 覗き込み(スコープ)の間は霞を薄くする(遠くを狙えるように)
   const zoom = (window.__aramonLook && window.__aramonLook.zoom) || 1;
-  fogX.density = exploreMixNum('fogD', w) / Math.max(1, zoom);
+  fogX.density = exploreMixNum('fogD', w) / (isFinite(zoom) ? Math.max(1, zoom) : 1);
   if(ctx.sun){
     if(sunBase == null) sunBase = ctx.sun.intensity;
     exploreMixColor(exploreRegionColors('sun'), w, _sun);
