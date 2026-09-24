@@ -797,7 +797,9 @@ function scaledSpriteFor(img, needPx){
      SCOPE_SHARPEN_BUCKETS の中から実際に必要な倍率以上の最小を選ぶので、キャッシュは1枚あたり最大3版まで */
 const SCOPE_SHARPEN_MIN_UPSCALE = 1.3;   // 元画像のこの倍より大きく描くときだけ使う
 const SCOPE_SHARPEN_AMOUNT = 1.6;        // 輪郭の締め具合(暗い側。アンシャープマスクの強さ)
-const SCOPE_SHARPEN_HILITE_AMOUNT = 0.5; // 明るい側の締め具合。暗い側と同じ強さだと縁がピンク〜白に浮く(ハロー。批評7巡目)ので弱くする
+const SCOPE_SHARPEN_HILITE_AMOUNT = 0;   // 明るい側の締め具合。暗い側と同じ強さだと縁がピンク〜白に浮く(ハロー。批評7巡目)。
+                                          // 0.5でも測定で平均差0.36/255と見た目には変わらなかった(批評8巡目)ので
+                                          // 明るい側は締めない(暗い側だけで輪郭を締める)
 const SCOPE_SHARPEN_RADIUS_PX = 2;       // ぼかしの半径(拡大後のpx)。絵ごとの差(批評6巡目: ヴォルガルーダ=
   // ganon_ssrだけ8倍でぼやける)を調べたところ、原因はこのコードではなく**元の歩行コマの絵自体**が
   // 輪郭のくっきりしたセル画(metag_ssr等)と違い、柔らかいグラデーションで描かれていたため

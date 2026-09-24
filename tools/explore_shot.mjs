@@ -884,6 +884,39 @@ for(const vpName of vpNames){
       const file = path.join(OUT, `${c.name}_${vpName}.png`);
       await shoot(page, file, vp);
       const shotRec = { cut:c.name, vp:vpName, file:path.relative(ROOT, file), cam:info };
+      /* 検査用(批評8巡目①): 狙撃銃を持っているときの技パネル(#movePanel)・弾数札(#sniperAmmoChip)・
+         狙撃ボタン(#sniperAdsBtn)・FIRE/DASH・回転ボタンが互いに重なっていないかを、
+         getBoundingClientRect()の実測(画面px)で総当たりして出す。0ならどの組も重ならない。
+         'hud'(通常のHUD)と全'sniper_*'(スコープを覗いたHUD)の両方で測る。 */
+      if(c.name === 'hud' || c.name.startsWith('sniper_')){
+        shotRec.hudOverlap = await page.evaluate(()=>{
+          const ids = ['movePanel','sniperAmmoChip','sniperAdsBtn','fireBtn','dashBtn','turnLeftBtn','turnRightBtn'];
+          const rects = {};
+          for(const id of ids){
+            const el = document.getElementById(id);
+            if(!el || el.offsetWidth === 0 || el.offsetHeight === 0) continue;
+            let hidden = false;
+            for(let n=el; n && n!==document.body; n=n.parentElement){
+              if(n.classList && n.classList.contains('hidden')){ hidden = true; break; }
+              const cs = getComputedStyle(n);
+              if(cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05){ hidden = true; break; }
+            }
+            if(hidden) continue;
+            const b = el.getBoundingClientRect();
+            rects[id] = [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)];
+          }
+          const pairs = [];
+          const keys = Object.keys(rects);
+          for(let i=0;i<keys.length;i++) for(let j=i+1;j<keys.length;j++){
+            const a = rects[keys[i]], b = rects[keys[j]];
+            const ow = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+            const oh = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+            const ov = (ow > 0 && oh > 0) ? Math.round(Math.min(ow, oh)) : 0;
+            if(ov > 0) pairs.push([keys[i], keys[j], ov]);
+          }
+          return { rects, overlaps: pairs };
+        });
+      }
       /* 検査用: 狙撃スコープの情報の枠(sniperView.__dbgInfoRect)がレンズの円(__dbgLens)へ
          食い込んでいないかを数字で出す(批評5巡目: 「レンズの内側には何も置かない」を検査する)。
          矩形と円の最短距離 >= 円の半径なら重ならない。ゲームの見た目には出ない値。 */
@@ -914,7 +947,9 @@ for(const vpName of vpNames){
                    // 批評7巡目①: 息止めの弧と情報の枠の重なり(0なら重なりなし)
                    breathArcInfoOverlapPx: ba ? rectOverlap(ba, r) : null,
                    // 批評7巡目④: 「弱点」の札の矩形とマーク中心の距離(px。40以下でOK)
-                   weakLabelDistPx: wl ? Math.round(wl.distPx) : null };
+                   weakLabelDistPx: wl ? Math.round(wl.distPx) : null,
+                   // 批評8巡目④: 水しぶきの根元と着弾点(曳光弾の終点)の画面上の差(px。10以下でOK)。水に当たっていない弾ならnull
+                   splash: v.__dbgSplash || null };
         });
       }
       report.shots.push(shotRec);
