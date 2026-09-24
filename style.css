@@ -4943,6 +4943,12 @@
   #turnLeftBtn{ right:calc(var(--turn-right) + var(--turn-size) + var(--turn-gap)); bottom:var(--turn-bottom); }
   #turnRightBtn{ right:var(--turn-right); bottom:var(--turn-bottom); }
   #turnLeftBtn:active, #turnRightBtn:active{ background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.8); }
+  /* 探検だけ: 木・岩など明るい地面の上だと縁が消えて見えなくなっていた(HUDの批評)。
+     下地を濃くし、縁と字にも暗い縁取りを足して、何の上でも輪郭が残るようにする(他モードは上の値のまま) */
+  #hud.explore-mode #turnLeftBtn, #hud.explore-mode #turnRightBtn{
+    background:rgba(6,10,16,0.62); border-color:rgba(255,255,255,0.32);
+    color:rgba(255,255,255,0.92); text-shadow:0 1px 2px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.7); }
+  #hud.explore-mode #turnLeftBtn:active, #hud.explore-mode #turnRightBtn:active{ background:rgba(255,255,255,0.14); color:rgba(255,255,255,0.95); }
 
   #tipBox{ position:absolute; bottom:128px; left:50%; transform:translateX(-50%); font-size:12px; letter-spacing:1px; color:var(--ink-dim); background:rgba(8,12,20,0.6); padding:6px 14px; border-radius:4px; opacity:0; transition:opacity .4s; text-align:center; white-space:nowrap;}
 
@@ -6626,9 +6632,11 @@ body.self-noguts #fireBtn{ opacity:0.42; filter:grayscale(0.7); }
 #expBossCanvas{ position:absolute; display:block; z-index:24; pointer-events:none; }
 #expObjPanel{ --k:var(--exp-hud-k, 1); position:absolute; top:142px; right:14px; width:calc(208px * var(--k)); z-index:6; pointer-events:none;
   box-sizing:border-box; padding:calc(4px * var(--k)) calc(9px * var(--k)) calc(4px * var(--k)) calc(8px * var(--k));
-  /* 左端を0.36→0.6に(余裕があれば対応: p896の「03:20」の「0」に背後の印が透けていた) */
-  background:linear-gradient(270deg, rgba(6,12,16,0.86), rgba(6,12,16,0.68) 70%, rgba(6,12,16,0.6));
-  border-right:3px solid #7dffb0; border-radius:9px 2px 2px 9px;
+  /* 左端を0.36→0.6→0.82に(第8周の指摘: p896で角の丸み(旧9px)が地上の◆印を欠けさせ、
+     不透明にしても角の外側は元々覆えないので「透ける」ように見えていた。
+     角を9px→3pxへ狭めて、覆う面積そのものを広げる) */
+  background:linear-gradient(270deg, rgba(6,12,16,0.9), rgba(6,12,16,0.82) 70%, rgba(6,12,16,0.78));
+  border-right:3px solid #7dffb0; border-radius:3px 2px 2px 3px;
   box-shadow:0 6px 16px -10px rgba(0,0,0,0.9); font-family:'Rajdhani',sans-serif; }
 html.narrow-screen #expObjPanel{ width:calc(188px * var(--k)); }
 /* R3 の最後の段(ミニマップの下に1行も入らない低い横持ち): 方位バーの真下の細い1行にまとめる。

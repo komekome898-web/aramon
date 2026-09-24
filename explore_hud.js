@@ -58,6 +58,26 @@ function exploreHudMeters(d){ return Math.max(1, Math.round(d / PING_UNITS_PER_M
 function exploreHudDist(d){ const m = exploreHudMeters(d); return m < 1000 ? `${m}m` : `${(m/1000).toFixed(1)}km`; }
 function exploreHudEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, (ch)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
+/* #trainBuffsLine を探検のあいだだけ #hpPanel の外(#topLeft の中。#expGearRow の直後)へ動かす。
+   **原因(第8周の批評): `.hud-panel` は clip-path(角を斜めに落とす)を持ち、position:absolute の
+   子であってもパネルの外へ出た部分は clip-path の形の外なので描かれない**―― #hpPanel の中に
+   置いたまま外へ絶対配置していたバフの札が、全カットで1枚も見えなくなっていた。
+   中身を作る場所(render.js の1か所)は変えず、置き場所(DOM上の親)だけ探検の入退場で動かす。
+   _trainBuffsHome に元の場所(#hpPanelの中・元のnextSibling)を覚えておき、戻すときに使う。 */
+let _trainBuffsHome = null;
+function exploreHudMoveBuffsOut(){
+  const line = exploreHudEl('trainBuffsLine'), topLeft = exploreHudEl('topLeft'), gear = exploreHudEl('expGearRow');
+  if(!line || !topLeft) return;
+  if(!_trainBuffsHome) _trainBuffsHome = { parent: line.parentNode, next: line.nextSibling };
+  if(line.parentNode === topLeft) return;
+  if(gear && gear.parentNode === topLeft) topLeft.insertBefore(line, gear.nextSibling);
+  else topLeft.appendChild(line);
+}
+function exploreHudMoveBuffsBack(){
+  const line = exploreHudEl('trainBuffsLine');
+  if(!line || !_trainBuffsHome) return;
+  if(line.parentNode !== _trainBuffsHome.parent) _trainBuffsHome.parent.insertBefore(line, _trainBuffsHome.next);
+}
 /* ===== 始まり・終わり ===== */
 function exploreHudStart(){
   _expHud.obj.sig = ''; _expHud.obj.fitSig = ''; _expHud.obj.layoutAt = -1;
@@ -70,12 +90,14 @@ function exploreHudStart(){
   exploreCloseMap();
   const p = exploreHudEl('expObjPanel');
   if(p) p.classList.remove('hidden');
+  exploreHudMoveBuffsOut();
   if(typeof bgmExploreSetMood === 'function') bgmExploreSetMood(null);   // 前の探検の気分を持ち越さない
 }
 // 結果画面へ移るとき(exploreFinish)。HUDを隠すだけ
 function exploreHudHide(){
   ['expObjPanel','expRegionCard','expBossCanvas'].forEach(id=>{ const el = exploreHudEl(id); if(el) el.classList.add('hidden'); });
   exploreCloseMap();
+  exploreHudMoveBuffsBack();   // #hpPanelの中(他モードの元の置き場所)へ戻す
   const hud = exploreHudEl('hud');
   if(hud) hud.classList.remove('exp-kf-off');
 }
@@ -322,15 +344,16 @@ function exploreObjLayout(){
 }
 /* バフの札(#trainBuffsLine)を #expGearRow(HPパネル直下の装備アイコンの行)の右の空きへ置く
    (第7周の指摘: 名前の行に重ねたら210px固定幅の中で名前が切れた。装備の行の右は空いているので
-   そちらへ)。#trainBuffsLine は今もDOM上は#hpPanelの中(position:relative)のままなので、
-   置きたい場所(#topLeftの中の#expGearRowの位置)を#hpPanel基準へ変換して書く
-   ―― どちらも#topLeftの直接の子(同じoffsetParent)なので、offsetTop/Leftの差がそのまま変換になる。 */
+   そちらへ)。**#trainBuffsLineはexploreHudMoveBuffsOut()が#topLeftの中(#expGearRowの直後)へ
+   動かした後**なので、どちらも#topLeftの直接の子=同じoffsetParent。offsetTop/Leftをそのまま使える
+   (第8周の指摘の対応: #hpPanelの中に置いたままだと.hud-panelのclip-pathで外側が全部切られ、
+   1枚も見えなくなっていた)。 */
 function exploreHudLayoutBuffs(){
-  const line = exploreHudEl('trainBuffsLine'), gear = exploreHudEl('expGearRow'), hp = exploreHudEl('hpPanel');
-  if(!line || !gear || !hp) return;
+  const line = exploreHudEl('trainBuffsLine'), gear = exploreHudEl('expGearRow');
+  if(!line || !gear) return;
   const gearOn = !gear.classList.contains('hidden') && gear.offsetWidth > 0;
-  const top = gear.offsetTop - hp.offsetTop;
-  const left = (gearOn ? gear.offsetLeft + gear.offsetWidth + 6 : gear.offsetLeft) - hp.offsetLeft;
+  const top = gear.offsetTop;
+  const left = gearOn ? gear.offsetLeft + gear.offsetWidth + 6 : gear.offsetLeft;
   const lt = top + 'px', ll = left + 'px';
   if(line.style.top !== lt) line.style.top = lt;
   if(line.style.left !== ll) line.style.left = ll;
@@ -806,9 +829,24 @@ function exploreDrawCompass(){
   g.font = bossBand ? "bold 9px 'Share Tech Mono', monospace" : "bold 11px 'Share Tech Mono', monospace";
   for(const { it, t } of labels){
     const tw = g.measureText(t).width;
-    const lx = clamp(it.x, tw/2 + 3, W - tw/2 - 3);   // 端に寄せた印の距離もバーの外へ切らさない
+    const lo = tw/2 + 3, hi = W - tw/2 - 3;
+    let lx = clamp(it.x, lo, hi);   // 端に寄せた印の距離もバーの外へ切らさない
+    const overlaps = (x)=> labelSpans.some(([a,b])=> x - tw/2 - 2 < b && x + tw/2 + 2 > a);
+    /* 隣の印(帰還ビーコンなど優先度が高い)に近いと、以前は諦めて数字そのものを出さなかった
+       (第8周の指摘: 補給箱の印だけ「≡」が出て距離が消える)。先に場所を取った印は動かさず、
+       このぶんだけ自分の印から離れない範囲(元の位置±半分の印の間隔)で右→左へ少し空きを探す */
+    if(overlaps(lx)){
+      const maxNudge = EXPLORE_COMPASS_ICON_GAP_PX * k * 0.9;
+      let found = false;
+      for(let d = 2; d <= maxNudge && !found; d += 2){
+        for(const dir of [1, -1]){
+          const x2 = clamp(it.x + dir*d, lo, hi);
+          if(!overlaps(x2)){ lx = x2; found = true; break; }
+        }
+      }
+      if(!found) continue;   // 空きが無ければ諦める(以前と同じ)
+    }
     const lx0 = lx - tw/2 - 2, lx1 = lx + tw/2 + 2;
-    if(labelSpans.some(([a,b])=> lx0 < b && lx1 > a)) continue;
     labelSpans.push([lx0, lx1]);
     g.lineWidth = bossBand ? 2.4 : 3; g.strokeStyle = 'rgba(0,0,0,0.85)';
     g.strokeText(t, lx, distY);
@@ -1185,6 +1223,15 @@ function exploreMapDrawDynamic(g, M, opts){
     const ang = d > 0.01 ? Math.atan2(dy, dx) : 0;
     return { x: selfQ.x + Math.cos(ang)*minR, y: selfQ.y + Math.sin(ang)*minR };
   };
+  /* refQからも離す版(帰還ビーコンはベースキャンプと同じ場所にあることが多く、印が重なった=第8周の指摘)。
+     基準が無ければ斜め上へ決め打ちで逃がす */
+  const declutterFrom = (q, refQ, minR)=>{
+    if(!refQ) return q;
+    const dx = q.x - refQ.x, dy = q.y - refQ.y, d = Math.hypot(dx, dy);
+    if(d >= minR) return q;
+    const ang = d > 0.01 ? Math.atan2(dy, dx) : -Math.PI*0.75;
+    return { x: refQ.x + Math.cos(ang)*minR, y: refQ.y + Math.sin(ang)*minR };
+  };
   /* ミニマップの外にいる大事な目標(ビーコン・追っているボス)は、消さずに縁へ矢印で出す(第4周の指摘:
      ビーコン505m・ボス361mが「無地」に見えていた=印を描かずに諦めていた)。全体地図(big)は世界全体が
      見えるので使わない(opts.edge を渡さない=何もしない) */
@@ -1237,9 +1284,10 @@ function exploreMapDrawDynamic(g, M, opts){
       if(hot){ g.lineWidth = 1; g.strokeStyle = '#ffffff'; g.stroke(); }
     }
   }
-  // 帰還ビーコン
+  // 帰還ビーコン(ベースキャンプと同じ場所にあることが多いので、キャンプの印からも離す)
   if(st.beacon){
-    const q = declutter(M(st.beacon.x, st.beacon.y));
+    let q = declutter(M(st.beacon.x, st.beacon.y));
+    if(st.camp) q = declutterFrom(q, M(st.camp.x, st.camp.y), ((big ? 13 : 10) + (big ? 7 : 5.5))*ms*0.9);
     if(!inView(q, 8)) edgeArrow(st.beacon.x, st.beacon.y, '#7dffb0');
     if(inView(q, 8)){
       const s = (big ? 7 : 5.5)*ms;
@@ -1293,6 +1341,12 @@ function exploreMapDrawDynamic(g, M, opts){
       const k = (performance.now()/900) % 1;
       g.beginPath(); g.arc(q.x, q.y, s*1.4 + k*s*1.6, 0, Math.PI*2);
       g.strokeStyle = `rgba(255,255,255,${0.8*(1-k)})`; g.lineWidth = 1.6; g.stroke();
+      /* 自分の矢印は「最前面」なだけでは足りない ―― 地図の★や水辺の丸と同じ明るさだと
+         重なった瞬間に紛れて見える(第8周の指摘)。矢印の下に暗い円+太い白縁を敷いて、
+         何の上にあっても自分だけ分かるようにする */
+      g.beginPath(); g.arc(q.x, q.y, s*1.05, 0, Math.PI*2);
+      g.fillStyle = 'rgba(6,10,14,0.75)'; g.fill();
+      g.lineWidth = 2.2; g.strokeStyle = '#ffffff'; g.stroke();
     }
     g.save(); g.translate(q.x, q.y); g.rotate(yaw + Math.PI/2);
     g.beginPath(); g.moveTo(0, -s); g.lineTo(s*0.75, s*0.8); g.lineTo(0, s*0.4); g.lineTo(-s*0.75, s*0.8); g.closePath();
@@ -1461,11 +1515,13 @@ function exploreDrawBigMap(){
   g.drawImage(bake, 0, 0, S, S);
   const k = S / WORLD.w;
   const M = (x, y)=> ({ x:x*k, y:y*k });
+  // 自分がいる場所(画面座標)。地名の札がここへ重なるならずらす(下のループで使う)
+  const meQ = M(player.x, player.y);
   // 地域の名前(危険度つき)
   g.textAlign = 'center'; g.textBaseline = 'middle';
   for(const r of EXPLORE_REGIONS){
     const c = exploreRegionCircle(r);
-    const q = M(c.x, c.y);
+    let q = M(c.x, c.y);
     const fs = Math.max(11, Math.round(S*0.034));
     g.font = `bold ${fs}px 'Rajdhani', sans-serif`;
     const nameW = g.measureText(r.name).width;
@@ -1475,6 +1531,17 @@ function exploreDrawBigMap(){
     /* 名前+危険度の後ろに薄い下地(批評指摘: 自分の矢印や落とし物の印が重なると読めなくなる)。
        印より先に(下に)描くので、印そのものは変わらず上に見える(操作系の情報を優先) */
     const padX = fs*0.55, padY = fs*0.22, boxW = Math.max(nameW, starsW) + padX*2, boxH = fs*1.7 + padY*2;
+    /* 自分がいる地点の真上に地名の札(と危険度の★)が来ると、自分の矢印へ重なって読めない
+       (第8周の指摘: 「凍った高地」の★が自分の矢印に重なった)。下地の箱の半分+矢印ぶんの
+       余裕より近ければ、自分から見て札の中心があった側(無ければ上)へ逃がす */
+    const minR = boxH/2 + 22*(S/360);
+    const ddx = q.x - meQ.x, ddy = q.y - meQ.y, dd = Math.hypot(ddx, ddy);
+    if(dd < minR){
+      const ang = dd > 0.01 ? Math.atan2(ddy, ddx) : -Math.PI/2;
+      q = { x: meQ.x + Math.cos(ang)*minR, y: meQ.y + Math.sin(ang)*minR };
+      q.x = clamp(q.x, boxW/2 + 2, S - boxW/2 - 2);
+      q.y = clamp(q.y, fs*1.05 + padY + 2, S - fs*0.6 - 2);
+    }
     g.fillStyle = 'rgba(6,10,14,0.55)';
     exploreRoundRect(q.x - boxW/2, q.y - fs*1.05 - padY, boxW, boxH, 6);
     g.fill();

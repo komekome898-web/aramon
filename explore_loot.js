@@ -545,12 +545,16 @@ function _exlShade(hexBase, n, k){
    exploreWildNear() は引数を取らず「自機の近くに野生がいるか」のグローバルな1個のフラグを返すだけで、
    呼び出し側が箱の座標を渡していても無視されていた ―― フィールドに野生がいる間ずっと札が
    出ない不具合の原因だった。ここでは箱の座標を実際に使う、箱ごとの判定にする)。 */
+const EXPLORE_CRATE_WILD_AVOID_R = 260;   // この距離に起きている野生がいる間だけ札を後回しにする(箱基準)
+/* 第8周の指摘の対応: 以前はEXPLORE_WILD_NEAR_LABEL(900。方位バーの「気づかれた」表示と共用の値)を
+   そのまま使っていたため、画面に写っている野生が900ユニットも離れていても札が後回しになり、
+   すぐ手前に見えている箱の札が出ない不具合になっていた。箱の頭上の印と実際に重なりうる距離だけに絞る。 */
 function exploreCrateWildNear(c){
   if(!exploreState.wild) return false;
   for(const w of exploreState.wild){
     const e = getEntity(w.id);
     if(!e || !e.alive || e.exploreAsleep) continue;
-    if(Math.hypot(e.x - c.x, e.y - c.y) < EXPLORE_WILD_NEAR_LABEL) return true;
+    if(Math.hypot(e.x - c.x, e.y - c.y) < EXPLORE_CRATE_WILD_AVOID_R) return true;
   }
   return false;
 }
@@ -948,7 +952,10 @@ function exploreDrawCrate(c, p0){
            見つからなければ札そのものを出さない(遠くへ/下へ出すより出さないほうが「本体との対応」が壊れない) */
         let showT2 = near;
         let hidden = false;
+        // HUDの欄(DOM)に加えて、地面に落ちている品のしるし(◆。キャンバス描画でDOMに無い)も避ける対象にする
         const hudRects = (typeof exploreHudRects === 'function') ? exploreHudRects() : [];
+        const dropRects = exploreDropAvoidRects(c.x, c.y);
+        if(dropRects.length) hudRects.push(...dropRects);
         if(hudRects.length){
           const boxAt = (x, y, withT2)=> ({ x:x-half, y:y-fs-4, w:half*2, h: withT2 ? fs*2 + 10 : fs + 8 });
           // ボタン等との間は目に見える隙間を残す(pad2だと「接して見える」=批評指摘)
@@ -959,8 +966,10 @@ function exploreDrawCrate(c, p0){
             if(hits(boxAt(lx, ly, false))){
               // 上→斜め上→左右の順(本体の真上に近い向きから試す。下は探さない=本体との対応を守る)
               const dirs = [[0,-1],[-1,-1],[1,-1],[-1,0],[1,0]];
-              // 単位はキャンバスの論理px(撮影画像は2倍)。下を探さないぶん、横に少し広く探してよい
-              const STEP = 10, MAX_R = 80;
+              /* 単位はキャンバスの論理px(撮影画像は2倍)。下を探さないぶん、横に少し広く探してよい。
+                 刻みは細かめ(第8周の指摘: 10刻みだと最初に見つかる場所が本体上端から
+                 32 CSS px も離れてしまい、条件(30 CSS px以内)を僅かに超えた) */
+              const STEP = 5, MAX_R = 80;
               let found = false;
               outer: for(let step=STEP; step<=MAX_R && !found; step+=STEP){
                 for(const [dx,dy] of dirs){
@@ -1118,6 +1127,23 @@ function exploreDrawPillar(x, y, z, rarity, grow, depth){
     }
     ctx.restore();
   }
+}
+/* 地面に落ちている品(良い落とし物。菱形のしるし+光の柱)の画面上のだいたいの矩形。
+   キャンバスに描くだけで#hud側のDOM要素(exploreHudRects)には入らないので、補給箱の札が
+   避ける対象から漏れていた(第8周の指摘: 「給」の字が灰色の◆印に重なった)。近く(nearX,nearY)の
+   物だけ数える。菱形+浮いている高さぶんを大きめに含める(名前の札が出る距離ならその分も) */
+function exploreDropAvoidRects(nearX, nearY){
+  const out = [];
+  if(!exploreState.drops) return out;
+  for(const d of exploreState.drops){
+    if(Math.hypot(d.x - nearX, d.y - nearY) > 700) continue;
+    const bob = Math.sin(matchTime*2.6 + d.bob)*5;
+    const q = project(d.x, d.y, d.z + EXPLORE_DROP_FLOAT + bob);
+    if(!q) continue;
+    const R = Math.max(8, (EXPLORE_DROP_BADGE[d.rarity] || 15) * clamp(q.scale, 0.35, 2.2));
+    out.push({ x:q.x - R, y:q.y - R*2.4, w:R*2, h:R*3.4 });
+  }
+  return out;
 }
 // 品物のしるし(レア度の色の菱形+アイコン)。画面の大きさは投影のスケールで決まる
 function exploreDrawDropBadge(q, info, rarity, alpha){
