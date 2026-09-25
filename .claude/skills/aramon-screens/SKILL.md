@@ -88,7 +88,7 @@ description: 荒野モン動の各画面の作り(タイトル・ロビー・カ
 
 ## ギャラリー(`#galleryOverlay`。スキン / ミュージアムの2タブ)
 
-- **所持スキン一覧はここが正**(旧バッグの「スキン」タブから移設。バッグは`アイテム`/`称号`の2タブに戻った)。`renderGallerySkins()`は旧`renderBagSkins()`をそのまま移しただけで、一覧はモンスターごとの見出しなしのフラットグリッド(レアリティ→種族→色の順)。
+- **所持スキン一覧はここが正**(バッグは`アイテム`/`称号`の2タブで、スキンは持たない)。`renderGallerySkins()`の一覧はモンスターごとの見出しなしのフラットグリッド(レアリティ→種族→色の順)。
 - **タップすると`showSkinPreview(id, {selectable:true, selectLabel:'着せ替え画面へ', onSelect:...})`。** `showSkinPreview`の`opts.selectLabel`で下部ボタンの文言を上書きできる(未指定なら従来通り「このスキンを選ぶ」)。**新しい選択ボタンの用途を足すときはここへ`selectLabel`を追加するだけでよい**(ボタン自体・開閉・アニメは共通のまま)。
 - **着せ替えへの導線は`jumpToDressup(element)`1つ**: `openMastermonScreen()`→`openMastermonDetail(element)`→`mmOpenTab('dressup')`の3呼び出し。**そのマスモンが未作成なら遷移せずトーストのみ**(着せ替えタブ自体がマスモン前提のため)。マスモンは`loadMastermons()[element]`で**種族名がそのままキー**(1種族1体)なので、スキンの`element`をそのままキーに使える。
 - **ミュージアムの一覧対象は「所持していて`SKIN_MEDIA`か専用SE表のどちらかを持つSSR」**(`galleryMuseumSkinIds()`)。**SSRの専用SEは2系統ある**(轟金剛・大喰いの利世・ゼウス・ちょこ・ペルセポネのように`SKIN_MEDIA`導入より前から手書きで登録された古い方と、`SKIN_MEDIA.se`で登録する新しい方)。片方(`SKIN_MEDIA`だけ)しか見ないと、古いSSRの専用SEを「無い」と誤診断する(実際に起きた不具合。2026-08-13)。
