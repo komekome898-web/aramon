@@ -7216,6 +7216,7 @@ let real3dActive = false;
    までの線が山(円錐)の内側を通るかを調べ、通るなら描かない
    (=従来の奥行きソートと同じ見え方に戻す)。                                      */
 const MOUNT_OCCLUDE_STEPS = 10;
+const MOUNT_OCCLUDE_SEG_PAD = 1;   // 視線が山の円に届かないかを先に見るときの余裕(ワールド単位。丸め誤差より十分大きい)
 let mountOccluders = [];
 /* 探検フィールドの尾根・峡谷・切り通し・峰(exploreGenWorld の block(...,'ridge'|'canyon'|'tunnel'|'peak'))は
    「登れない所」を測って並べた当たり判定の円で、見た目は地形そのもの(exploreRelief)。
@@ -7238,12 +7239,14 @@ function prepareMountainOccluders(){
     /* 遮蔽に使う円錐は「見えている山」と同じ形にする。r に v.radius を入れると
        裾を埋めたぶんだけ実物より太い円錐で隠してしまい、山肌の外にいる相手や技まで
        消える。r は地面の高さでの実半径、rise はそこから頂上までの高さ。 */
-    mountOccluders.push({
-      x:v.x, y:v.y, r: vr,
-      rise: mountainRiseOf(v),
-      baseZ: groundZAt(v.x, v.y),
-      camDist: Math.hypot(v.x-camPos.x, v.y-camPos.y),
-    });
+    /* 山は動かないので、足元の高さは staticGroundZ で1回だけ求め(毎フレーム約230回求め直していた)、
+       入れ物も山ごとに1つを使い回す(毎フレーム数百個の物を作らない)。値は毎フレーム入れ直すので中身は従来と同じ */
+    const o = v._occ || (v._occ = {});
+    o.x = v.x; o.y = v.y; o.r = vr;
+    o.rise = mountainRiseOf(v);
+    o.baseZ = staticGroundZ(v);
+    o.camDist = Math.hypot(v.x-camPos.x, v.y-camPos.y);
+    mountOccluders.push(o);
   }
 }
 /* リアルマップでは3Dの山が奥行きを持つのに対し、2Dで描く建物は距離に関係なく
@@ -7524,9 +7527,16 @@ function occludedByMountainCone(x, y, z){
   if(!mountOccluders.length) return false;
   const dx = x-camPos.x, dy = y-camPos.y, dz = z-camPos.z;
   const targetDist = Math.hypot(dx, dy);
+  const dd = dx*dx + dy*dy;
   for(const m of mountOccluders){
     // 対象より奥にある山は遮れない(手前の山だけ調べる)
     if(m.camDist > targetDist + m.r) continue;
+    /* 視線(カメラ→対象の線分)が山の足元の円に届かなければ、下の10点はどれも円の外なので調べない(結果は同じ)。
+       線分までの距離の丸め誤差ぶん MOUNT_OCCLUDE_SEG_PAD だけ広く見る */
+    if(dd > 0){
+      const t0 = clamp(((m.x-camPos.x)*dx + (m.y-camPos.y)*dy) / dd, 0, 1);
+      if(Math.hypot(camPos.x+dx*t0-m.x, camPos.y+dy*t0-m.y) >= m.r + MOUNT_OCCLUDE_SEG_PAD) continue;
+    }
     for(let i=1;i<=MOUNT_OCCLUDE_STEPS;i++){
       const t = i/(MOUNT_OCCLUDE_STEPS+1);
       const d = Math.hypot(camPos.x+dx*t-m.x, camPos.y+dy*t-m.y);
@@ -8753,11 +8763,35 @@ function renderMinimap(){
 const CD_RING_CIRC = 2*Math.PI*46; // SVG上の半径46に合わせた円周
 // ロックオン判定の遮蔽チェックを1フレームに何回まで走らせるか(岩は最大800個)
 const LOCKON_LOS_MAX_CHECKS = 3;
+/* HUDのDOMへは「中身が変わったときだけ」書く。
+   【なぜ】同じ文字・同じ値でも書けばDOMが作り直され、ブラウザはそのフレームの配置(レイアウト)を
+   やり直す。updateHUD は毎フレーム十数か所へ書いていたので、値が変わらないフレームでも毎回
+   配置が崩れ、同じフレームの後ろで寸法を読む所(探検の方位バーなど)がその場で配置を計算し直していた。
+   比べる相手はDOMそのもの(文字)か、「前回ここで書いた値と、書いた直後のDOMの値」の組(スタイル)。
+   ほかの所が同じ要素を書き換えていれば食い違って必ず書き直すので、表示は以前と同じになる。 */
+function hudSetText(el, v){
+  if(!el) return;
+  v = String(v);
+  if(el.textContent !== v) el.textContent = v;
+}
+function hudSetStyle(el, prop, v){
+  if(!el) return;
+  const m = el._hudSt || (el._hudSt = {});
+  const last = m[prop];
+  if(last && last.v === v && last.read === el.style[prop]) return;   // 前回と同じ値を書き、その後だれも変えていない
+  el.style[prop] = v;
+  m[prop] = { v, read: el.style[prop] };
+}
+// CSS変数(--accent など)。値は書いたとおりの文字で読めるので、DOMと比べるだけでよい
+function hudSetVar(el, name, v){
+  if(!el) return;
+  if(el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v);
+}
 function setCooldownRing(el, progress){
   if(!el) return;
   const p = clamp(progress, 0, 1);
-  el.style.strokeDasharray = `${CD_RING_CIRC}`;
-  el.style.strokeDashoffset = `${CD_RING_CIRC * (1-p)}`;
+  hudSetStyle(el, 'strokeDasharray', `${CD_RING_CIRC}`);
+  hudSetStyle(el, 'strokeDashoffset', `${CD_RING_CIRC * (1-p)}`);
 }
 /* ===== チーム戦: 小隊バー(味方2人の名前+HPバー+状態) =====
    #topLeft(縦flex)の中=HPパネルの直下に置いてあるので位置の計算は不要。
@@ -8842,10 +8876,10 @@ function updateHUD(){
   if(!ve) return;
   const el = ELEMENTS[ve.element];
   // ランキング表示名(名前入力欄)は自分を見ているときだけ。観戦中は観戦対象の名前を出す
-  document.getElementById('hudName').textContent = spectating
+  hudSetText(document.getElementById('hudName'), spectating
     ? ((typeof displayNameFor==='function') ? displayNameFor(ve) : (ve.name||'プレイヤー'))
     : (game.explore ? (player.name||'プレイヤー')   // 探検: 名前が空なら種族名(explorePlayerName)。「名無しのモンスター」を出さない
-    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー')));
+    : ((typeof getDisplayNameFromInput==='function') ? getDisplayNameFromInput() : (player.name||'プレイヤー'))));
   /* トレーニングで変わった数値を**全部**欄に出す(発注者指示)。観戦中は観戦対象のぶんを出す。
      一覧の作りは matchTrainBoardRows(ui.js)が1か所で持っている ―― カードぶんと
      拾ったアイテムぶんを同じ「元から何%」に揃えて混ぜる。ここは並べるだけ。
@@ -8863,11 +8897,11 @@ function updateHUD(){
         `<span class="tb-chip ${r.good?'up':'down'}">${r.label}<b>${r.text}</b></span>`).join('');
     }
   }
-  document.getElementById('hudElTag').textContent = el.label;
+  hudSetText(document.getElementById('hudElTag'), el.label);
   // HUD左上バーの色はモンスター本来の色ではなくオーラ色(スキンによる変化を考慮)
   const playerAura = (typeof getMonsterAura==='function') ? getMonsterAura(ve) : null;
   const accentColor = (playerAura && typeof auraColorHex==='function') ? auraColorHex(playerAura) : el.color;
-  document.documentElement.style.setProperty('--accent', accentColor);
+  hudSetVar(document.documentElement, '--accent', accentColor);
   if(typeof updateRaidHud==='function') updateRaidHud();   // レイド中だけボスHP・残り時間・与ダメを更新
   updateSquadPanel();   // チーム戦だけ小隊バー(個人戦では隠れたまま)
   if(typeof prunePings==='function') prunePings();             // ピンの寿命(ゲストのループでも回る)
@@ -8885,40 +8919,40 @@ function updateHUD(){
     }
   }
   const hpPct = clamp(ve.hp/ve.maxHp,0,1)*100;
-  document.getElementById('hpFill').style.width = hpPct+'%';
-  document.getElementById('hpFill').style.background = hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)');
-  document.getElementById('hpNum').textContent = `${Math.max(0,Math.round(ve.hp))} / ${ve.maxHp}`;
+  hudSetStyle(document.getElementById('hpFill'), 'width', hpPct+'%');
+  hudSetStyle(document.getElementById('hpFill'), 'background', hpPct>50?'linear-gradient(90deg,#6bff8e,#2fd35a)':(hpPct>22?'linear-gradient(90deg,#ffe06b,#f4c430)':'linear-gradient(90deg,#ff8a8a,#ff5d5d)'));
+  hudSetText(document.getElementById('hpNum'), `${Math.max(0,Math.round(ve.hp))} / ${ve.maxHp}`);
 
   const gutsPct = clamp(ve.guts/ve.maxGuts,0,1)*100;
-  document.getElementById('gutsFill').style.width = gutsPct+'%';
-  document.getElementById('gutsNum').textContent = `${Math.max(0,Math.round(ve.guts))} / ${ve.maxGuts}`;
+  hudSetStyle(document.getElementById('gutsFill'), 'width', gutsPct+'%');
+  hudSetText(document.getElementById('gutsNum'), `${Math.max(0,Math.round(ve.guts))} / ${ve.maxGuts}`);
 
   const stateSc = STATE_CHANGES[ve.element];
   const stateCdFillEl = document.getElementById('stateCdFill');
   const stateCdLabelEl = document.getElementById('stateCdLabel');
   if(stateSc){
     if(ve.stateUntil > matchTime){
-      stateCdFillEl.style.width = '100%';
-      stateCdFillEl.style.background = 'linear-gradient(90deg,#ff6b6b,#ff2b2b)';
+      hudSetStyle(stateCdFillEl, 'width', '100%');
+      hudSetStyle(stateCdFillEl, 'background', 'linear-gradient(90deg,#ff6b6b,#ff2b2b)');
       /* 探検モードは⚑のバーがHP/ガッツの数字欄と同じ幅の列に収まる(第5周の指摘: バーと同じ行の
          右に数値だけ戻した)。「発動中 残り」などの説明語は落とすが、**名前(2文字。STATE_CHANGESは
          全属性2文字)は必ず出す**(名前無しで「60秒」だけだと何の残り秒か分からない=批評指摘。
          以前は長い説明込みの文言でp896だけ折り返したので名前ごと消していたが、
          nowrap+ellipsis(CSS側)にした今は短い名前だけなら折り返さない) */
-      stateCdLabelEl.textContent = game.explore
+      hudSetText(stateCdLabelEl, game.explore
         ? `${stateSc.name} ${Math.ceil(ve.stateUntil-matchTime)}秒`
-        : `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`;
+        : `${stateSc.name} 発動中 残り${Math.ceil(ve.stateUntil-matchTime)}秒`);
     } else if(ve.stateCooldownUntil > matchTime){
       const cdPct = clamp(1-((ve.stateCooldownUntil-matchTime)/stateSc.cooldown),0,1)*100;
-      stateCdFillEl.style.width = cdPct+'%';
-      stateCdFillEl.style.background = 'linear-gradient(90deg,#8a5a5a,#c96b6b)';
-      stateCdLabelEl.textContent = game.explore
+      hudSetStyle(stateCdFillEl, 'width', cdPct+'%');
+      hudSetStyle(stateCdFillEl, 'background', 'linear-gradient(90deg,#8a5a5a,#c96b6b)');
+      hudSetText(stateCdLabelEl, game.explore
         ? `${stateSc.name} ${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`
-        : `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`;
+        : `${stateSc.name} クールタイム残り${Math.ceil(ve.stateCooldownUntil-matchTime)}秒`);
     } else {
-      stateCdFillEl.style.width = '100%';
-      stateCdFillEl.style.background = 'linear-gradient(90deg,#ffd76b,#ffb020)';
-      stateCdLabelEl.textContent = game.explore ? `${stateSc.name} 使用可` : `${stateSc.name} 発動可能`;
+      hudSetStyle(stateCdFillEl, 'width', '100%');
+      hudSetStyle(stateCdFillEl, 'background', 'linear-gradient(90deg,#ffd76b,#ffb020)');
+      hudSetText(stateCdLabelEl, game.explore ? `${stateSc.name} 使用可` : `${stateSc.name} 発動可能`);
     }
   }
 
@@ -8981,13 +9015,13 @@ function updateHUD(){
   // チーム戦BRだけ残り部隊数でBGMの盛り上がりを切替(残り人数だと、同じ部隊のbotが
   // 順に落ちるだけで人数が減り曲が動いてしまうため)。アリーナ・個人戦は従来どおり残り人数。
   bgmUpdateBattleIntensity(squadCount!=null ? squadCount : aliveCount);
-  document.getElementById('zoneStatus').textContent = zoneLabel();
+  hudSetText(document.getElementById('zoneStatus'), zoneLabel());
   const countdown = zoneCountdownSeconds();
-  document.getElementById('zoneCountdown').textContent = countdown===null ? '--:--' : fmtTime(countdown);
+  hudSetText(document.getElementById('zoneCountdown'), countdown===null ? '--:--' : fmtTime(countdown));
   // キル数・与ダメも観戦中は観戦対象のもの(HPや技と同じ「その本体の戦績」として揃える)
-  document.getElementById('killCountNum').textContent = ve.kills;
-  document.getElementById('damageDealtNum').textContent = Math.round(ve.damageDealt);
-  document.getElementById('matchClock').textContent = fmtTime(matchTime);
+  hudSetText(document.getElementById('killCountNum'), ve.kills);
+  hudSetText(document.getElementById('damageDealtNum'), Math.round(ve.damageDealt));
+  hudSetText(document.getElementById('matchClock'), fmtTime(matchTime));
 
   // 装備スキンでtier3が専用技に変わる場合は解決後の技を表示する(技名・消費ガッツが変わる)
   let mv = activeMove(ve);
@@ -8995,30 +9029,35 @@ function updateHUD(){
   // 技フィールドのマーク/テーマ色は、その技のオーラ色にする(tier3は装備SSRで一致技に変わる)
   const mvAura = (typeof getMoveAura==='function') ? getMoveAura(mv, ve) : mv.aura;
   const moveMarkColor = (mvAura && typeof auraColorHex==='function') ? auraColorHex(mvAura) : mv.color;
-  document.getElementById('moveName').textContent = (typeof getMoveName==='function') ? getMoveName(mv, ve) : mv.name;
-  document.documentElement.style.setProperty('--moveColor', moveMarkColor);
+  hudSetText(document.getElementById('moveName'), (typeof getMoveName==='function') ? getMoveName(mv, ve) : mv.name);
+  hudSetVar(document.documentElement, '--moveColor', moveMarkColor);
   /* 射程を技パネルに出す(技によって650〜1500と倍以上違うのに、どこにも出ていなかった)。
      DOMは増やさず既存の#gutsCostLabelへ同居させる。距離の換算はピン表示と同じ
      PING_UNITS_PER_M(ワールド10単位=1m)。 */
   // 探検モードだけ短く(点のすぐ横に置くための数字だけ。第4周の指摘: 「ガッツ消費 N」の1行が技パネルを広げていた)
-  document.getElementById('gutsCostLabel').textContent = game.explore
+  hudSetText(document.getElementById('gutsCostLabel'), game.explore
     ? `-${effectiveGutsCost(ve, mv)}`
-    : `ガッツ消費 ${effectiveGutsCost(ve, mv)}`;
+    : `ガッツ消費 ${effectiveGutsCost(ve, mv)}`);
   const tierMoves = SIGNATURE_MOVES[ve.element];
   for(let t=1;t<=3;t++){
     const dot = document.querySelector(`.tier-dot[data-tier="${t}"]`);
     const tierMove = tierMoves[t-1];
     const tierAura = (typeof getMoveAura==='function') ? getMoveAura(tierMove, ve) : tierMove.aura;
     const tierColor = (tierAura && typeof auraColorHex==='function') ? auraColorHex(tierAura) : moveMarkColor;
-    dot.style.setProperty('--dotColor', tierColor);
+    hudSetVar(dot, '--dotColor', tierColor);
     dot.classList.toggle('unlocked', t<=ve.moveTierUnlocked);
     dot.classList.toggle('selected', t===ve.moveTierSelected);
   }
   /* 探検だけ、技の色の丸に「技の属性の記号」(mv.icon。技ごとに元から持っている絵文字)を乗せる。
      以前は色だけの丸で「仮置きの丸」に見えていた(批評指摘)。他モードは今までの丸のまま変えない。 */
-  document.getElementById('moveIcon').innerHTML = game.explore
-    ? `<span class="exp-move-ico" style="background:${moveMarkColor}">${mv.icon || ''}</span>`
-    : `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
+  {
+    // 中身が変わったときだけ作り直す(毎フレーム作り直すと、そのたびにHUDの配置がやり直しになる)
+    const moveIconEl = document.getElementById('moveIcon');
+    const iconHtml = game.explore
+      ? `<span class="exp-move-ico" style="background:${moveMarkColor}">${mv.icon || ''}</span>`
+      : `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="${moveMarkColor}"/></svg>`;
+    if(moveIconEl._hudHtml !== iconHtml || !moveIconEl.firstChild){ moveIconEl._hudHtml = iconHtml; moveIconEl.innerHTML = iconHtml; }
+  }
   // 探検だけ: HPパネルの顔絵(静止画を丸く切り抜き)。素の姿で十分(スキンの着せ替えはモンスター一覧側の役目)
   if(game.explore){
     const face = document.getElementById('hpFaceImg');
@@ -9034,7 +9073,7 @@ function updateHUD(){
      重なって最新のキル行が読めなくなる=批評指摘。キルが起きている時点で
      操作は分かっているので、ヒントを譲るのが正しい優先順位)。 */
   const feedBusy = (()=>{ const kf = document.getElementById('killFeed'); return kf && kf.children.length > 0; })();
-  document.getElementById('tipBox').style.opacity = (!introState.active && game.tipTimer>0 && !feedBusy) ? '1':'0';
+  hudSetStyle(document.getElementById('tipBox'), 'opacity', (!introState.active && game.tipTimer>0 && !feedBusy) ? '1':'0');
 
   const fireMax = effectiveCooldown(ve, mv);
   const fireProgress = fireMax>0 ? clamp(1 - ve.fireCooldown/fireMax, 0, 1) : 1;
