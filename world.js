@@ -601,6 +601,20 @@ function baseTerrainHeightAt(x,y){
 function getTerrainHeightAt(x,y){
   return baseTerrainHeightAt(x,y);
 }
+/* 動かない物(岩・山・水晶)の足元の地面の高さ。物は試合ごとに作り直し、動かないので、一度求めたら物に覚えさせる。
+   【なぜ】探検の地面の高さ(real3dHeightAt)は尾根・峡谷まで足すので重い。弾1発ごとに全部の岩(約1400)・
+   山(約570)の足元を求め直していて、火山の撃ち合いで1フレーム2万回を超えていた(2026-09-24 実測)。
+   マップが変わったときだけ求め直す(同じ物を別のマップで使っても古い高さを返さない)。 */
+function staticGroundZ(o){
+  if(o._gzMap !== currentMap){ o._gzMap = currentMap; o._gz = baseTerrainHeightAt(o.x, o.y); }
+  return o._gz;
+}
+/* 2点の縦か横の差が R 以上か(=距離が R 以上なのが確実)。円の当たり判定の前に安く外れを除くためのもの。
+   Math.hypot(dx,dy) は |dx|・|dy| より小さくならないので、これが true のとき「距離 < R」は必ず false
+   (結果を変えずに hypot と後ろの処理を省ける)。R が NaN のときは false(=省かず元の判定に任せる)。 */
+function outsideBox(ax, ay, bx, by, R){
+  return Math.abs(ax - bx) >= R || Math.abs(ay - by) >= R;
+}
 function blockedByHeight(m,x,y){
   return getTerrainHeightAt(x,y) > m.z + CLIMB_TOLERANCE;
 }
@@ -608,15 +622,19 @@ function blockedByRock(m,x,y){
   // 建物の上に登っているときだけ岩をすり抜ける。起伏で z が上がっても効くよう地面基準で見る
   if(m.z > baseTerrainHeightAt(m.x,m.y) + 25) return false;
   for(const r of rocks){
-    if(Math.hypot(x-r.x, y-r.y) < r.radius+m.radius) return true;
+    const R = r.radius+m.radius;
+    if(outsideBox(x, y, r.x, r.y, R)) continue;
+    if(Math.hypot(x-r.x, y-r.y) < R) return true;
   }
   return false;
 }
 function blockedByVolcano(m,x,y){
   /* 火山(雪山/森/ピラミッド含む)は高さに関係なく(飛び越え不可)常にブロックする。
      広さは mountainGroundRadius() を使う。v.radius をそのまま使うと、裾を地面へ
-     埋めてあるぶん見えている山肌より外側で止まり「見えない壁」になる。 */
+     埋めてあるぶん見えている山肌より外側で止まり「見えない壁」になる。
+     (先に v.radius で外れを除くのは速さのためだけ。mountainGroundRadius は v.radius を超えない) */
   for(const v of volcanoObstacles){
+    if(outsideBox(x, y, v.x, v.y, v.radius+m.radius)) continue;
     if(Math.hypot(x-v.x, y-v.y) < mountainGroundRadius(v)+m.radius) return true;
   }
   return false;
@@ -624,7 +642,9 @@ function blockedByVolcano(m,x,y){
 function blockedByCrystal(m,x,y){
   if(m.z > baseTerrainHeightAt(m.x,m.y) + 25) return false;
   for(const c of crystalObstacles){
-    if(Math.hypot(x-c.x, y-c.y) < c.radius+m.radius) return true;
+    const R = c.radius+m.radius;
+    if(outsideBox(x, y, c.x, c.y, R)) continue;
+    if(Math.hypot(x-c.x, y-c.y) < R) return true;
   }
   return false;
 }
@@ -636,9 +656,10 @@ function blockedAt(m,x,y){
 function obstacleNormalAt(m,tx,ty){
   let nx=0, ny=0;
   const add=(cx,cy,r)=>{ if(Math.hypot(tx-cx,ty-cy) < r+m.radius){ const ox=m.x-cx, oy=m.y-cy; const d=Math.hypot(ox,oy)||0.0001; nx+=ox/d; ny+=oy/d; } };
-  if(m.z<=25){ for(const rk of rocks) add(rk.x,rk.y,rk.radius); }
-  for(const v of volcanoObstacles) add(v.x,v.y,mountainGroundRadius(v));
-  if(m.z<=25){ for(const c of crystalObstacles) add(c.x,c.y,c.radius); }
+  // outsideBox で先に除くのは速さのためだけ(除いた物は add の中の判定も必ず外れる)
+  if(m.z<=25){ for(const rk of rocks){ if(!outsideBox(tx, ty, rk.x, rk.y, rk.radius+m.radius)) add(rk.x,rk.y,rk.radius); } }
+  for(const v of volcanoObstacles){ if(!outsideBox(tx, ty, v.x, v.y, v.radius+m.radius)) add(v.x,v.y,mountainGroundRadius(v)); }
+  if(m.z<=25){ for(const c of crystalObstacles){ if(!outsideBox(tx, ty, c.x, c.y, c.radius+m.radius)) add(c.x,c.y,c.radius); } }
   const nl=Math.hypot(nx,ny);
   if(nl<0.0001) return null;
   return {x:nx/nl, y:ny/nl};
@@ -647,9 +668,12 @@ function obstacleNormalAt(m,tx,ty){
 function depenetrateObstacles(m){
   let ox=0, oy=0, depth=0;
   const consider=(cx,cy,r)=>{ const ddx=m.x-cx, ddy=m.y-cy; const d=Math.hypot(ddx,ddy)||0.0001; const pen=(r+m.radius)-d; if(pen>depth){ depth=pen; ox=ddx/d; oy=ddy/d; } };
-  if(m.z<=25){ for(const rk of rocks) consider(rk.x,rk.y,rk.radius); }
-  for(const v of volcanoObstacles) consider(v.x,v.y,mountainGroundRadius(v));
-  if(m.z<=25){ for(const c of crystalObstacles) consider(c.x,c.y,c.radius); }
+  /* めり込み(pen>0)が無い物は consider の中で何もしないので、outsideBox で先に除く(結果は同じ)。
+     毎フレーム全員×全部の岩・山(探検は約2100個)を回るので、ここを安くするのが効く */
+  const mx = m.x, my = m.y;
+  if(m.z<=25){ for(const rk of rocks){ if(!outsideBox(mx, my, rk.x, rk.y, rk.radius+m.radius)) consider(rk.x,rk.y,rk.radius); } }
+  for(const v of volcanoObstacles){ if(!outsideBox(mx, my, v.x, v.y, v.radius+m.radius)) consider(v.x,v.y,mountainGroundRadius(v)); }
+  if(m.z<=25){ for(const c of crystalObstacles){ if(!outsideBox(mx, my, c.x, c.y, c.radius+m.radius)) consider(c.x,c.y,c.radius); } }
   if(depth>0.5){
     const step = Math.min(depth, Math.max(6, m.radius)); // 一気にワープさせない
     m.x = clamp(m.x + ox*step, m.radius, WORLD.w-m.radius);

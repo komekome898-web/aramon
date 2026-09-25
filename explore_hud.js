@@ -304,6 +304,11 @@ function exploreObjLayout(){
     if(ex1 <= x0 || ex0 >= x1 || ey1 <= top) continue;   // 横に外れている / パネルの上端より上で終わっている
     bottom = Math.min(bottom, ey0 <= top ? top : ey0 - gap);
   }
+  /* 方位バー(#exploreHud)の位置は、パネルを書き換える前(=配置が計算済みの今)に読んでおく。
+     書き換えた後に読むと、ブラウザがその場で配置をもう1回計算し直す(0.5秒ごとに2回ぶんの重さが出ていた)。
+     方位バーは絶対配置でパネルの形に左右されないので、先に読んでも値は同じ */
+  const cmp = exploreHudEl('exploreHud');
+  const cmpR = cmp ? { top:cmp.offsetTop, h:cmp.offsetHeight, left:cmp.offsetLeft, w:cmp.offsetWidth } : null;
   const H = exploreObjH();
   /* 優先の目標の行+その2行目(次の目標・帰還の注意など)をひとかたまりとして扱う(第4周の指摘:
      行だけ出して2行目が入らないと、本文へ詰めて省略記号で切る羽目になり中身が読めなかった)。
@@ -318,23 +323,21 @@ function exploreObjLayout(){
        exploreUpdateHud() が毎フレーム行う**(この関数は0.5秒おきしか呼ばれないので、ここに
        置くと咆哮の直後〜最大0.5秒は重なって見える=第6周の指摘。位置そのものはここで決めておき、
        表示/非表示だけ毎フレーム側に任せる)。 */
-    const cmp = exploreHudEl('exploreHud');
     panel.classList.add('is-strip');
-    if(cmp){
-      panel.style.top = (cmp.offsetTop + cmp.offsetHeight + 2) + 'px';
-      panel.style.left = cmp.offsetLeft + 'px';
-      panel.style.width = cmp.offsetWidth + 'px';
+    if(cmpR){
+      panel.style.top = (cmpR.top + cmpR.h + 2) + 'px';
+      panel.style.left = cmpR.left + 'px';
+      panel.style.width = cmpR.w + 'px';
       panel.style.right = 'auto';
     }
     _expHud.obj.avail = 0;
     _expHud.obj.panelBottomLimit = 0;
-    hud.style.setProperty('--exp-rc-top', (cmp ? cmp.offsetTop + cmp.offsetHeight + 26*(_expHud.k || 1) : 70) + 'px');
+    hud.style.setProperty('--exp-rc-top', (cmpR ? cmpR.top + cmpR.h + 26*(_expHud.k || 1) : 70) + 'px');
     _expHud.band.at = -1;
     return;
   }
   panel.classList.remove('hidden');   // strip+ボスの帯で隠していた場合の戻し忘れ防止(通常の置き場所に戻る)
-  const cmp0 = exploreHudEl('exploreHud');
-  hud.style.setProperty('--exp-rc-top', (cmp0 ? cmp0.offsetTop + cmp0.offsetHeight + 4 : 56) + 'px');
+  hud.style.setProperty('--exp-rc-top', (cmpR ? cmpR.top + cmpR.h + 4 : 56) + 'px');
   const st = top + 'px', sr = right + 'px';
   if(panel.style.top !== st) panel.style.top = st;
   if(panel.style.right !== sr) panel.style.right = sr;
@@ -606,7 +609,23 @@ function exploreCompassCanvas(){
   if(!host) return null;
   if(!C.cv) C.cv = exploreHudEl('expCompassCanvas');
   if(!C.cv) return null;
-  const cssW = host.clientWidth, cssH = host.clientHeight, dpr = exploreHudDpr();
+  /* 方位バーの寸法は「変わったかもしれない」ときだけ読み直す。
+     【なぜ】これは描画の途中(HUDの文字を書き換えた後)で呼ばれるので、毎フレーム clientWidth を読むと
+     ブラウザがその場で画面全体の配置を計算し直していた(本物のループの実測で1フレーム約2〜3ms)。
+     変わったことは ResizeObserver と画面の resize が知らせる(resize はそのフレームの描画より前に来るので、
+     回転・画面の大きさの変化はそのフレームから新しい寸法で描く)。隠れている間(寸法0)は毎回読む(表示に戻った
+     フレームから描くため。以前と同じ)。 */
+  if(C.roHost !== host){
+    if(C.ro) C.ro.disconnect();
+    C.roHost = host; C.sizeStale = true;
+    C.ro = (typeof ResizeObserver === 'function') ? new ResizeObserver(()=>{ C.sizeStale = true; }) : null;
+    if(C.ro) C.ro.observe(host);
+    if(!C.onResize){ C.onResize = ()=>{ C.sizeStale = true; }; window.addEventListener('resize', C.onResize); }
+  }
+  if(C.sizeStale || !C.ro || !(C.hostW > 0 && C.hostH > 0)){
+    C.sizeStale = false; C.hostW = host.clientWidth; C.hostH = host.clientHeight;
+  }
+  const cssW = C.hostW, cssH = C.hostH, dpr = exploreHudDpr();
   if(cssW <= 0 || cssH <= 0) return null;
   if(C.cssW !== cssW || C.cssH !== cssH || C.dpr !== dpr || !C.ctx){
     C.cssW = cssW; C.cssH = cssH; C.dpr = dpr;

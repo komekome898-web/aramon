@@ -1094,6 +1094,10 @@ function computeObstacleAvoidAngle(m, target, ang){
   let strongestPush = 0, pushSign = m.avoidDirSign || 1;
   const consider=(ox,oy,r)=>{
     const clearance = r + m.radius + 70;
+    /* 下の「遠すぎる物は見ない」を、距離を求める前に縦横の差で先に済ませる(結果は同じ。
+       探検は岩・山が約2100個あり、群れの全員がこれを回すので効く) */
+    const lim = Math.min(targetDist + clearance, 2600);
+    if(Math.abs(m.x - ox) > lim || Math.abs(m.y - oy) > lim) return;
     const obDist = dist(m, {x:ox,y:oy});
     if(obDist > targetDist + clearance || obDist > 2600) return;
     const toOb = angTo(m, {x:ox,y:oy});
@@ -2283,9 +2287,13 @@ function updateProjectiles(dt){
     }
     if(!hit){
       for(const r of rocks){
+        /* 先に横の距離で外れを除いてから高さを見る(どちらも満たしたときだけ当たるので順番で結果は変わらない)。
+           岩の足元の高さは staticGroundZ で1回だけ求めて覚える(弾1発×全部の岩ぶん毎フレーム求め直していた) */
+        const R = r.radius+p.hitR;
+        if(outsideBox(p.x, p.y, r.x, r.y, R)) continue;
         // 岩の高さは地面からの高さ。起伏のあるマップでは岩の足元の地面を基準にする
-        if(p.z >= (p.terrain3d ? baseTerrainHeightAt(r.x,r.y) : 0) + r.height) continue;
-        if(Math.hypot(p.x-r.x,p.y-r.y) < r.radius+p.hitR){
+        if(p.z >= (p.terrain3d ? staticGroundZ(r) : 0) + r.height) continue;
+        if(Math.hypot(p.x-r.x,p.y-r.y) < R){
           spawnHit(p.x,p.y,p.z,p.color);
           if(p.splash>0){
             for(const o of entities){
@@ -2302,8 +2310,10 @@ function updateProjectiles(dt){
       for(const v of volcanoObstacles){
         /* 山は円錐なので、弾の高さによって当たる半径が変わる。v.radius をそのまま
            使うと、山肌のずっと外側・しかも山より高い所を飛ぶ弾まで止まってしまう
-           (実機で「技が遮断される」と報告された原因)。 */
-        const vTop = getTerrainHeightAt(v.x, v.y);
+           (実機で「技が遮断される」と報告された原因)。
+           mountainRadiusAt は v.radius を超えないので、v.radius で先に外れを除く(結果は同じ)。 */
+        if(outsideBox(p.x, p.y, v.x, v.y, v.radius+p.hitR)) continue;
+        const vTop = staticGroundZ(v);
         if(Math.hypot(p.x-v.x,p.y-v.y) < mountainRadiusAt(v, p.z - vTop)+p.hitR){
           spawnHit(p.x,p.y,p.z,p.color);
           if(p.splash>0){

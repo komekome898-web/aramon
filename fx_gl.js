@@ -624,11 +624,21 @@ function decalNearFade(gx, gy, cam, fwx, fwy){
   if(fwd <= 0) return 0;
   return fwd / DECAL_NEAR_FADE;
 }
+/* 輪の周の点。区間 s の終わりの角と区間 s+1 の始まりの角は同じ式・同じ値なので、
+   角ごと(SEGS+1 本)×内外2点の座標・地面の高さ・フェードを1回だけ求めて両隣の区間で使い回す
+   (以前は区間ごとに4点を求め直していて、地面の高さを同じ点で2回ずつ拾っていた。戦闘中に1フレーム約1500回)。
+   角の cos/sin は毎フレーム同じなので最初に1回だけ作る。値は以前の式とまったく同じ(見た目は1画素も変わらない)。
+   最後の角(2π)は cos/sin が 0 の角とわずかに違うので、別の点として持つ(以前と同じ)。 */
+const _dcCos = new Float64Array(D.SEGS+1), _dcSin = new Float64Array(D.SEGS+1);
+for(let s=0; s<=D.SEGS; s++){ const a = (s/D.SEGS)*Math.PI*2; _dcCos[s] = Math.cos(a); _dcSin[s] = Math.sin(a); }
+const _dcIn  = { x:new Float64Array(D.SEGS+1), y:new Float64Array(D.SEGS+1), z:new Float64Array(D.SEGS+1), f:new Float64Array(D.SEGS+1) };
+const _dcOut = { x:new Float64Array(D.SEGS+1), y:new Float64Array(D.SEGS+1), z:new Float64Array(D.SEGS+1), f:new Float64Array(D.SEGS+1) };
 function updateDecalGeometry(cam, fwx, fwy){
   const pos=D.pos, col=D.col;
   const groundZ = (typeof window.groundZAt === 'function') ? window.groundZAt : ()=>0;
   let q=0;
   const maxQ = MAX_DECALS*D.SEGS;
+  const I = _dcIn, O = _dcOut;
   for(let i=D.list.length-1;i>=0;i--){
     const d = D.list[i];
     const t = (clock0 - d.born)/d.life;
@@ -638,23 +648,26 @@ function updateDecalGeometry(cam, fwx, fwy){
     const rad = d.r0 + (d.r1-d.r0)*ease;
     const a = d.bright * (1-t) * (1-t);
     const halfW = d.width * (0.35 + 0.65*(1-t));
-    for(let s=0; s<D.SEGS && q<maxQ; s++, q++){
-      const a0 = (s/D.SEGS)*Math.PI*2, a1 = ((s+1)/D.SEGS)*Math.PI*2;
-      const c0=Math.cos(a0), s0=Math.sin(a0), c1=Math.cos(a1), s1=Math.sin(a1);
-      const pts = [
-        [d.x+c0*(rad-halfW), d.y+s0*(rad-halfW)],
-        [d.x+c0*(rad+halfW), d.y+s0*(rad+halfW)],
-        [d.x+c1*(rad+halfW), d.y+s1*(rad+halfW)],
-        [d.x+c1*(rad-halfW), d.y+s1*(rad-halfW)],
-      ];
+    const nSeg = Math.min(D.SEGS, maxQ - q);   // この輪で書ける区間の数(上限に達したら途中で打ち切る。以前と同じ)
+    if(nSeg <= 0) continue;
+    for(let s=0; s<=nSeg; s++){
+      const c = _dcCos[s], sn = _dcSin[s];
+      // 地面の高さを1点ずつ拾う。ここを定数にすると坂で輪が地面から浮く
+      const ix = d.x+c*(rad-halfW), iy = d.y+sn*(rad-halfW);
+      I.x[s] = ix; I.y[s] = iy; I.z[s] = groundZ(ix,iy)+2; I.f[s] = decalNearFade(ix, iy, cam, fwx, fwy);
+      const ox = d.x+c*(rad+halfW), oy = d.y+sn*(rad+halfW);
+      O.x[s] = ox; O.y[s] = oy; O.z[s] = groundZ(ox,oy)+2; O.f[s] = decalNearFade(ox, oy, cam, fwx, fwy);
+    }
+    const ai = a * 0.5, ao = a * 1.0;   // 内側は半分の明るさ(以前の a*(inner?0.5:1.0) と同じ値)
+    const cr = d.color[0], cg = d.color[1], cb = d.color[2];
+    for(let s=0; s<nSeg; s++, q++){
       const v=q*4*3, cc=q*4*4;
+      // 頂点の順は以前と同じ: 0=内・始まり / 1=外・始まり / 2=外・終わり / 3=内・終わり
       for(let k=0;k<4;k++){
-        const gx=pts[k][0], gy=pts[k][1];
-        // 地面の高さを1点ずつ拾う。ここを定数にすると坂で輪が地面から浮く
-        pos[v+k*3+0]=gx; pos[v+k*3+1]=groundZ(gx,gy)+2; pos[v+k*3+2]=gy;
-        const inner = (k===0||k===3);
-        const ka = a * (inner ? 0.5 : 1.0) * decalNearFade(gx, gy, cam, fwx, fwy);
-        col[cc+k*4+0]=d.color[0]*ka; col[cc+k*4+1]=d.color[1]*ka; col[cc+k*4+2]=d.color[2]*ka;
+        const P = (k===0||k===3) ? I : O, j = (k<2) ? s : s+1;
+        pos[v+k*3+0]=P.x[j]; pos[v+k*3+1]=P.z[j]; pos[v+k*3+2]=P.y[j];
+        const ka = (P===I ? ai : ao) * P.f[j];
+        col[cc+k*4+0]=cr*ka; col[cc+k*4+1]=cg*ka; col[cc+k*4+2]=cb*ka;
         col[cc+k*4+3]=0;
       }
     }

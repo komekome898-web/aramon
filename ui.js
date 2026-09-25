@@ -5561,7 +5561,8 @@ function raidStart(multi, demo){
 function updateRaidHud(){
   const hud = document.getElementById('raidHud');
   if(!hud) return;
-  if(!game.raid){ hud.classList.add('hidden'); return; }
+  // 隠れたままなら書かない(毎フレーム同じ class を書き直すとDOMの変更として扱われる)
+  if(!game.raid){ if(!hud.classList.contains('hidden')) hud.classList.add('hidden'); return; }
   hud.classList.remove('hidden');
   const b = (typeof raidBossEntity==='function') ? raidBossEntity() : null;
   const pct = b ? Math.max(0, b.hp/b.maxHp) : 0;
