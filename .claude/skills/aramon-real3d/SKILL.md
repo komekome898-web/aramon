@@ -61,9 +61,9 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
 
 ## テクスチャ・材質・ライティング
 
-- **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を地形セットに足してもジャギーになるだけ。`buildGroundTexture()`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
-- 地面の色は「高さ+傾斜」に`macroPatch()`(ワールド座標の純関数)のまだらを混ぜる。
-- **地面はPBR(`MeshStandardMaterial`)。** 色(`buildGroundTexture`)+ 法線・粗さ・AO(`buildDetailMaps`)の4枚組で、`groundMapsFor(style)`がスタイルごとに1回だけ作って使い回す。**4枚すべての`offset`をパッチ位置に合わせる。** 凹凸の強さはテーマの`bump`→`normalScale`(`bump*3`)。`metalness`は0。
+- **細かい質感はテクスチャで出す。** メッシュ分割は約50単位なので、それより細かい起伏を地形セットに足してもジャギーになるだけ。`buildGroundMaps(st)`が値ノイズのタイルを生成。**UVオフセットをパッチ位置に合わせること**(`tex.offset.set(sx/TEX_TILE, -sy/TEX_TILE)`。`uv.y`は`rotateX(-π/2)`で反転するので符号が逆)。無いと模様が地面の上を滑る。
+- 地面の色は「高さ+傾斜」に大きなまだら(`buildMacroMap`で作り`attachMacro`で貼る)を混ぜる。
+- **地面はPBR(`MeshStandardMaterial`)。** 色+法線・粗さ・AOの4枚組(`buildGroundMaps(st)`)で、`groundMapsFor(style)`がスタイルごとに1回だけ作って使い回す。**4枚すべての`offset`をパッチ位置に合わせる。** 凹凸の強さはテーマの`bump`→`normalScale`(`bump*3`)。`metalness`は0。
 - **色テクスチャだけ`colorSpace = SRGBColorSpace`。** 法線・粗さ・AOは`NoColorSpace`。取り違えると色が沈む/凹凸が壊れる。
 - **ライティングは「空から作った環境マップ(PMREM)+ DirectionalLight」。** HDRI画像は持たず、`applyEnvironment()`が同じ空シェーダーを`PMREMGenerator.fromScene()`に通す。テーマを変えたら必ず作り直す。**前の`envRT`は`dispose()`する。**
 - **仕上げはrenderer側で完結**(`toneMapping = ACESFilmic` / `outputColorSpace = SRGB` / `antialias:true`)。**ポストプロセス(EffectComposer)は入れない。** 挟むとMSAAが無効になりiPhoneのメモリと帯域を大きく使う。SSAOは開けた地形では画素差0.4/255程度しか出ず割に合わない(計測済み)。
@@ -128,7 +128,7 @@ description: 荒野モン動のリアルマップ(real3d.js / Three.js)。WebGL�
   `VEG_STYLES`の`kind`に岩の形を足さないこと。地面が寂しいときは`grass`の数を増やすか地面テクスチャで埋める。
 - **【足元に岩に見える飾りを置かない】** 以前は植生レイヤーとして飾りの小石を数百個撒いていたが、`rockSilhouette()`で作っていたため形も色も本物の岩と同じで、隠れられる岩と区別が付かなかった。「地面の模様なのに高さがあるように見える」と実機で2度reportされて撤去した(2026-08-14)。**見えている岩は必ず隠れられる本物、という状態を保つこと。**地面が寂しく見えるときは草か地面テクスチャで埋める。
 - モデルは「当たり判定の半径=1・地面=y0」のローカル空間で作り、配置時に`radius`で拡大。**足元4点のいちばん低い高さに合わせてから`sink`ぶん埋める。**
-- **影は本物のメッシュが落とす**(影専用ダミー球`updateShadowCasters`は廃止済み)。
+- **影は本物のメッシュが落とす。** 影専用のダミーを足さない。
 - three本体に`mergeGeometries`は無いので、複数パーツのモデルは`mergeGeos()`(自前・非indexed化して連結)でまとめる。一度も描いていないジオメトリは`dispose()`不要。
 
 ## 探検フィールド(MAPS.explore・地域ブレンド)
